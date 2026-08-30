@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
@@ -6,6 +7,15 @@ import { fileURLToPath } from "node:url";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(dirname, "..");
+
+// Enumerate actual apps instead of hardcoding names, so the test survives
+// apps being added or removed (e.g., the removed desktop app).
+const appNames = readdirSync(path.join(rootDir, "apps"), {
+  withFileTypes: true,
+})
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name)
+  .sort();
 
 async function readJson(relativePath) {
   const filePath = path.join(rootDir, relativePath);
@@ -50,7 +60,7 @@ test("vitest workspace config exists for later package-level adoption", async ()
   assert.match(workspaceConfig, /tests\/\*\*\/\*\.test\.mjs/);
 });
 
-for (const appName of ["web", "server", "desktop"]) {
+for (const appName of appNames) {
   test(`${appName} app scripts perform real validation instead of placeholder logs`, async () => {
     const manifest = await readJson(`apps/${appName}/package.json`);
 

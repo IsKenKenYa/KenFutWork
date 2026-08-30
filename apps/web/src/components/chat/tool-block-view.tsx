@@ -410,7 +410,7 @@ const ImageArtifactCard = React.memo(function ImageArtifactCard({
   hasDetails,
   onOpenPanel,
 }: {
-  artifact: { url: string; title?: string; type: string };
+  artifact: { url: string; title?: string | undefined; type: string };
   cardTitle: string;
   modelName: string | undefined;
   hasDetails: boolean;
@@ -623,7 +623,7 @@ function ToolDetailPanel({
                 附件
               </div>
               <div className="flex flex-wrap gap-2">
-                {block.artifacts.map((artifact: { type: string; url: string; title?: string }) =>
+                {block.artifacts.map((artifact) =>
                   artifact.type === "image" ? (
                     <ChatImage
                       key={artifact.url}

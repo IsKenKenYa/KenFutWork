@@ -15,12 +15,12 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
-    "turbo": "^2.3.3",
-    "typescript": "^5.7.3",
-    "vitest": "^3.0.7"
+    "turbo": "^2.10.12",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.57.0",
+    "@supabase/supabase-js": "^2.112.4",
     "global-agent": "^4.1.3"
   }
 }

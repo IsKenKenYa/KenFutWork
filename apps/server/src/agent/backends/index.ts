@@ -1,4 +1,7 @@
-import type { BackendFactory } from "deepagents";
+import type {
+  AnyBackendProtocol,
+  BackendRuntime,
+} from "deepagents";
 
 import type { ServerEnv } from "../../config/env.js";
 import { createDevelopmentBackend } from "./dev.js";
@@ -9,8 +12,13 @@ type AgentBackendEnv = Pick<
   "agentBackendMode" | "agentFilesRoot" | "skillsRoot"
 >;
 
+// deepagents ≥1.13: backend 工厂为同步签名，返回 BackendProtocolV2 兼容实例
+export type AgentBackendFactory = (
+  runtime: BackendRuntime,
+) => AnyBackendProtocol;
+
 export type AgentBackendResult = {
-  factory: BackendFactory;
+  factory: AgentBackendFactory;
   sandboxDir?: string;
 };
 

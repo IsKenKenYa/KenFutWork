@@ -1,8 +1,8 @@
 import { mkdirSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
-  type BackendFactory,
-  type StateAndStore,
+  type AnyBackendProtocol,
+  type BackendRuntime,
   CompositeBackend,
   FilesystemBackend,
   LocalShellBackend,
@@ -62,8 +62,9 @@ export function createDevelopmentBackend(
     virtualMode: true,
   });
 
-  const factory: BackendFactory = (stateAndStore: StateAndStore) => {
-    const routes: Record<string, FilesystemBackend | StoreBackend> = {
+  // deepagents ≥1.13: factory 参数为 BackendRuntime，返回值需为同步的 backend 实例
+  const factory = (stateAndStore: BackendRuntime) => {
+    const routes: Record<string, AnyBackendProtocol> = {
       "/workspace/": workspaceBackend,
       "/skills/": skillsBackend,
     };

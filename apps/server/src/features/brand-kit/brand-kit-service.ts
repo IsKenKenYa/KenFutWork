@@ -7,6 +7,7 @@ import type {
   BrandKitSummary,
   BrandKitUpdateRequest,
 } from "@loomic/shared";
+import type { Database } from "@loomic/shared";
 
 import type {
   AuthenticatedUser,
@@ -286,7 +287,7 @@ export function createBrandKitService(options: {
         }
       }
 
-      const payload: Record<string, unknown> = {};
+      const payload: Database["public"]["Tables"]["brand_kits"]["Update"] = {};
       if (input.name !== undefined) payload.name = input.name.trim();
       if (input.guidance_text !== undefined) payload.guidance_text = input.guidance_text;
       if (input.is_default !== undefined) payload.is_default = input.is_default;
@@ -433,12 +434,14 @@ export function createBrandKitService(options: {
     async updateAsset(user, kitId, assetId, input) {
       const client = options.createUserClient(user.accessToken);
 
-      const payload: Record<string, unknown> = {};
+      const payload: Database["public"]["Tables"]["brand_kit_assets"]["Update"] = {};
       if (input.display_name !== undefined) payload.display_name = input.display_name;
       if (input.text_content !== undefined) payload.text_content = input.text_content;
       if (input.role !== undefined) payload.role = input.role;
       if (input.sort_order !== undefined) payload.sort_order = input.sort_order;
-      if (input.metadata !== undefined) payload.metadata = input.metadata;
+      if (input.metadata !== undefined) {
+        payload.metadata = input.metadata as import("@loomic/shared").Json;
+      }
 
       if (Object.keys(payload).length === 0) {
         // Nothing to update, just fetch and return current state

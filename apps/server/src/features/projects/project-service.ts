@@ -3,6 +3,7 @@ import type {
   ProjectSummary,
   ProjectUpdateRequest,
 } from "@loomic/shared";
+import type { Database } from "@loomic/shared";
 
 import {
   BootstrapError,
@@ -328,7 +329,7 @@ export function createProjectService(options: {
     async updateProject(user, projectId, input) {
       const client = options.createUserClient(user.accessToken);
 
-      const payload: Record<string, unknown> = {};
+      const payload: Database["public"]["Tables"]["projects"]["Update"] = {};
       if (input.brand_kit_id !== undefined) payload.brand_kit_id = input.brand_kit_id;
       if (input.name !== undefined) payload.name = input.name;
 

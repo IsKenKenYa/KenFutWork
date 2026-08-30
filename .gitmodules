@@ -1,0 +1,44 @@
+[submodule "references/langgraph"]
+	path = references/langgraph
+	url = https://github.com/langchain-ai/langgraph.git
+	shallow = true
+[submodule "references/mcp-servers"]
+	path = references/mcp-servers
+	url = https://github.com/modelcontextprotocol/servers.git
+	shallow = true
+[submodule "references/mcp-typescript-sdk"]
+	path = references/mcp-typescript-sdk
+	url = https://github.com/modelcontextprotocol/typescript-sdk.git
+	shallow = true
+[submodule "references/nomifun-tauri"]
+	path = references/nomifun-tauri
+	url = https://github.com/nomifun/nomifun-tauri.git
+	shallow = true
+[submodule "references/jellyfish"]
+	path = references/jellyfish
+	url = https://github.com/Forget-C/Jellyfish.git
+	shallow = true
+[submodule "references/system-prompts-and-models-of-ai-tools"]
+	path = references/system-prompts-and-models-of-ai-tools
+	url = https://github.com/x1xhlol/system-prompts-and-models-of-ai-tools.git
+	shallow = true
+[submodule "references/jaaz"]
+	path = references/jaaz
+	url = https://github.com/11cafe/jaaz.git
+	shallow = true
+[submodule "references/loomic"]
+	path = references/loomic
+	url = https://github.com/fancyboi999/Loomic.git
+	shallow = true
+[submodule "references/codex"]
+	path = references/codex
+	url = https://github.com/openai/codex.git
+	shallow = true
+[submodule "references/seedance-2.0-skill"]
+	path = references/seedance-2.0-skill
+	url = https://github.com/Emily2040/seedance-2.0.git
+	shallow = true
+[submodule "references/deepseek-harness"]
+	path = references/deepseek-harness
+	url = https://github.com/deepseek-ai/deepseek-harness.git
+	shallow = true

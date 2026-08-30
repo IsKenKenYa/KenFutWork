@@ -1,5 +1,6 @@
 import type { ToolRuntime } from "@langchain/core/tools";
-import type { BackendFactory, BackendProtocol } from "deepagents";
+import { resolveBackend, type AnyBackendProtocol } from "deepagents";
+import type { BackendProtocolV2, BackendRuntime } from "deepagents";
 import { tool } from "langchain";
 import { z } from "zod";
 
@@ -25,24 +26,27 @@ type ProjectSearchResult = {
 };
 
 export async function runProjectSearch(
-  backend: BackendProtocol,
+  backend: BackendProtocolV2,
   input: ProjectSearchInput,
 ): Promise<ProjectSearchResult> {
-  const rawMatches = await backend.grepRaw(
+  // deepagents ≥1.13 (V2 协议)：grep 返回结构化 GrepResult（error/matches）
+  const result = await backend.grep(
     input.query,
     DEFAULT_SEARCH_ROOT,
     input.glob ?? null,
   );
 
-  if (typeof rawMatches === "string") {
+  if (result.error || !result.matches) {
     return {
       matchCount: 0,
       matches: [],
-      summary: rawMatches,
+      summary:
+        result.error ??
+        `No workspace matches found for "${input.query}".`,
     };
   }
 
-  const sortedMatches = [...rawMatches].sort((left, right) => {
+  const sortedMatches = [...result.matches].sort((left, right) => {
     if (left.path === right.path) {
       return left.line - right.line;
     }
@@ -71,11 +75,11 @@ export async function runProjectSearch(
 }
 
 export function createProjectSearchTool(
-  backend: BackendProtocol | BackendFactory,
+  backend: AnyBackendProtocol | ((runtime: BackendRuntime) => AnyBackendProtocol),
 ) {
   return tool(
     async (input, runtime: ToolRuntime) => {
-      return await runProjectSearch(resolveBackend(backend, runtime), input);
+      return await runProjectSearch(await resolveBackend(backend, runtime), input);
     },
     {
       name: "project_search",
@@ -84,17 +88,4 @@ export function createProjectSearchTool(
       schema: projectSearchSchema,
     },
   );
-}
-
-function resolveBackend(
-  backend: BackendProtocol | BackendFactory,
-  runtime: ToolRuntime,
-): BackendProtocol {
-  if (typeof backend === "function") {
-    return backend({
-      state: runtime.state,
-    });
-  }
-
-  return backend;
 }

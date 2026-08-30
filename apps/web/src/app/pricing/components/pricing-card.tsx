@@ -105,14 +105,14 @@ export function PricingCard({
           ? "shadow-card-hover z-10 scale-[1.02] border-2"
           : "shadow-card hover:shadow-card-hover border"
       }`}
-      style={
-        tier.highlighted
-          ? {
+      {...(tier.highlighted
+        ? {
+            style: {
               borderColor: "oklch(0.90 0.17 115)",
               boxShadow: "0 0 20px oklch(0.90 0.17 115 / 0.15)",
-            }
-          : undefined
-      }
+            },
+          }
+        : {})}
     >
       {/* Badge */}
       {tier.badge && (

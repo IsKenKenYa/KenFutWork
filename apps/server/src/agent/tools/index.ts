@@ -1,5 +1,8 @@
 import type { StructuredTool } from "@langchain/core/tools";
-import type { BackendFactory, BackendProtocol } from "deepagents";
+import type {
+  AnyBackendProtocol,
+  BackendRuntime,
+} from "deepagents";
 
 import type { ConnectionManager } from "../../ws/connection-manager.js";
 import { createBrandKitTool } from "./brand-kit.js";
@@ -52,7 +55,7 @@ export { createManipulateCanvasTool } from "./manipulate-canvas.js";
 // ---------------------------------------------------------------------------
 
 export function createMainAgentTools(
-  backend: BackendProtocol | BackendFactory,
+  backend: AnyBackendProtocol | ((runtime: BackendRuntime) => AnyBackendProtocol),
   deps: {
     createUserClient: (accessToken: string) => any;
     brandKitId?: string | null;
@@ -95,7 +98,9 @@ export function createMainAgentTools(
 }
 
 /** @deprecated Use createMainAgentTools + sub-agents instead */
-export function createPhaseATools(backend: BackendProtocol | BackendFactory) {
+export function createPhaseATools(
+  backend: AnyBackendProtocol | ((runtime: BackendRuntime) => AnyBackendProtocol),
+) {
   return [
     createProjectSearchTool(backend),
     createImageGenerateTool(),

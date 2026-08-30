@@ -335,7 +335,7 @@ export function ChatSidebar({
       .then((kit) => {
         if (cancelled) return;
         setBrandKitMentionItems(
-          kit.assets.map((asset: { id: string; display_name: string; asset_type: string; text_content?: string; file_url?: string }) => ({
+          kit.assets.map((asset) => ({
             kind: "brand-kit-asset" as const,
             id: asset.id,
             label: asset.display_name,
@@ -407,28 +407,38 @@ export function ChatSidebar({
         source: a.source,
         ...(a.name ? { name: a.name } : {}),
       }));
-      const mentionBlocks: ContentBlock[] = currentMentions.map((mention) =>
-        mention.mentionType === "image-model"
-          ? {
-              type: "mention" as const,
-              mentionType: "image-model" as const,
-              id: mention.id,
-              label: mention.label,
-            }
-          : {
-              type: "mention" as const,
-              mentionType: "brand-kit-asset" as const,
-              id: mention.id,
-              label: mention.label,
-              assetType: mention.assetType,
-              ...(mention.textContent !== undefined
-                ? { textContent: mention.textContent }
-                : {}),
-              ...(mention.fileUrl !== undefined
-                ? { fileUrl: mention.fileUrl }
-                : {}),
-            },
-      );
+      const mentionBlocks: ContentBlock[] = currentMentions.map((mention) => {
+        if (mention.mentionType === "image-model") {
+          return {
+            type: "mention" as const,
+            mentionType: "image-model" as const,
+            id: mention.id,
+            label: mention.label,
+          };
+        }
+        if (mention.mentionType === "brand-kit-asset") {
+          return {
+            type: "mention" as const,
+            mentionType: "brand-kit-asset" as const,
+            id: mention.id,
+            label: mention.label,
+            assetType: mention.assetType,
+            ...(mention.textContent !== undefined && mention.textContent !== null
+              ? { textContent: mention.textContent }
+              : {}),
+            ...(mention.fileUrl !== undefined && mention.fileUrl !== null
+              ? { fileUrl: mention.fileUrl }
+              : {}),
+          };
+        }
+        return {
+          type: "mention" as const,
+          mentionType: "skill" as const,
+          id: mention.id,
+          label: mention.label,
+          slug: mention.slug,
+        };
+      });
       const userMsg = {
         id: `user-${Date.now()}`,
         role: "user" as const,
