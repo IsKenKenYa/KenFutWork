@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { motion } from "framer-motion";
+import Link from "next/link";
 import { FadeUp } from "@/components/landing/motion";
 
 // ---------------------------------------------------------------------------
@@ -13,7 +13,13 @@ import { FadeUp } from "@/components/landing/motion";
 const PARTICLES = [
   { left: "10%", bottom: "15%", delay: "0s", duration: "6s", size: "3px" },
   { left: "25%", bottom: "8%", delay: "1.2s", duration: "7s", size: "2px" },
-  { left: "40%", bottom: "20%", delay: "2.5s", duration: "5.5s", size: "2.5px" },
+  {
+    left: "40%",
+    bottom: "20%",
+    delay: "2.5s",
+    duration: "5.5s",
+    size: "2.5px",
+  },
   { left: "55%", bottom: "12%", delay: "0.8s", duration: "6.5s", size: "3px" },
   { left: "70%", bottom: "18%", delay: "3s", duration: "7.5s", size: "2px" },
   { left: "82%", bottom: "10%", delay: "1.8s", duration: "6s", size: "2.5px" },

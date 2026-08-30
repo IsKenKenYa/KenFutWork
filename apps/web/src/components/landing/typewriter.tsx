@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
 import { useReducedMotion } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -29,9 +29,7 @@ export function useTypewriter({
 }: UseTypewriterOptions): UseTypewriterReturn {
   const shouldReduce = useReducedMotion();
   const reduceMotion = shouldReduce === true;
-  const [displayText, setDisplayText] = useState(
-    reduceMotion ? text : "",
-  );
+  const [displayText, setDisplayText] = useState(reduceMotion ? text : "");
   const [isComplete, setIsComplete] = useState(reduceMotion);
   const [cursor, setCursor] = useState(true);
   const indexRef = useRef(0);
@@ -112,7 +110,7 @@ export function TypewriterText({
           "inline-block w-[2px] h-[1em] align-middle ml-[1px] bg-current",
           "transition-opacity duration-100",
           cursor ? "opacity-100" : "opacity-0",
-          cursorClassName
+          cursorClassName,
         )}
       />
     </span>

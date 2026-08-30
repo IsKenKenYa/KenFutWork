@@ -28,7 +28,10 @@ async function query(table: string, params: string) {
   return res.json();
 }
 
-function parseSessionId(input: string): { sessionId: string; canvasId?: string } {
+function parseSessionId(input: string): {
+  sessionId: string;
+  canvasId?: string;
+} {
   if (input.includes("session=")) {
     const url = new URL(input);
     return {
@@ -65,7 +68,9 @@ const C = {
 async function main() {
   const raw = process.argv[2];
   if (!raw) {
-    console.error("Usage: tsx scripts/debug-session.ts <session_id|canvas_url>");
+    console.error(
+      "Usage: tsx scripts/debug-session.ts <session_id|canvas_url>",
+    );
     process.exit(1);
   }
 
@@ -106,19 +111,29 @@ async function main() {
           break;
 
         case "thinking":
-          console.log(`  ${C.magenta}🧠 thinking:${C.reset} ${truncate(b.thinking, 150)}`);
+          console.log(
+            `  ${C.magenta}🧠 thinking:${C.reset} ${truncate(b.thinking, 150)}`,
+          );
           break;
 
-        case "image":
+        case "image": {
           const url = b.url ?? "";
-          const prefix = url.startsWith("data:") ? `data:${url.slice(5, 30)}...` : truncate(url, 80);
+          const prefix = url.startsWith("data:")
+            ? `data:${url.slice(5, 30)}...`
+            : truncate(url, 80);
           console.log(`  ${C.cyan}🖼️  image:${C.reset} ${prefix}`);
           break;
+        }
 
         case "tool": {
           const tn = b.toolName ?? "?";
           const status = b.status ?? "?";
-          const statusColor = status === "completed" ? C.green : status === "failed" ? C.red : C.yellow;
+          const statusColor =
+            status === "completed"
+              ? C.green
+              : status === "failed"
+                ? C.red
+                : C.yellow;
 
           console.log(
             `  ${C.yellow}🔧 ${tn}${C.reset} ${statusColor}[${status}]${C.reset}`,
@@ -128,7 +143,10 @@ async function main() {
           if (b.input) {
             let inputStr: string;
             try {
-              const parsed = typeof b.input.input === "string" ? JSON.parse(b.input.input) : b.input;
+              const parsed =
+                typeof b.input.input === "string"
+                  ? JSON.parse(b.input.input)
+                  : b.input;
               inputStr = formatJson(parsed, 250);
             } catch {
               inputStr = formatJson(b.input, 250);
@@ -144,10 +162,14 @@ async function main() {
                 `     ${C.dim}← output:${C.reset} applied=${out.applied ?? "?"} success=${out.success}`,
               );
               if (out.summary) {
-                console.log(`     ${C.dim}  summary:${C.reset} ${truncate(out.summary, 200)}`);
+                console.log(
+                  `     ${C.dim}  summary:${C.reset} ${truncate(out.summary, 200)}`,
+                );
               }
               if (out.createdIds) {
-                console.log(`     ${C.dim}  ids:${C.reset}     ${formatJson(out.createdIds, 200)}`);
+                console.log(
+                  `     ${C.dim}  ids:${C.reset}     ${formatJson(out.createdIds, 200)}`,
+                );
               }
             } else if (out.elements !== undefined) {
               // inspect_canvas output
@@ -164,15 +186,23 @@ async function main() {
                   );
                 }
                 if (out.elements.length > 5) {
-                  console.log(`     ${C.dim}  ... +${out.elements.length - 5} more${C.reset}`);
+                  console.log(
+                    `     ${C.dim}  ... +${out.elements.length - 5} more${C.reset}`,
+                  );
                 }
               }
             } else if (out.summary) {
-              console.log(`     ${C.dim}← output:${C.reset} ${truncate(out.summary, 200)}`);
+              console.log(
+                `     ${C.dim}← output:${C.reset} ${truncate(out.summary, 200)}`,
+              );
             } else if (out.error) {
-              console.log(`     ${C.red}← error:${C.reset}  ${truncate(out.error, 200)}`);
+              console.log(
+                `     ${C.red}← error:${C.reset}  ${truncate(out.error, 200)}`,
+              );
             } else {
-              console.log(`     ${C.dim}← output:${C.reset} ${formatJson(out, 150)}`);
+              console.log(
+                `     ${C.dim}← output:${C.reset} ${formatJson(out, 150)}`,
+              );
             }
           }
           break;
@@ -188,7 +218,10 @@ async function main() {
   // Canvas element summary
   if (canvasId) {
     console.log(`${C.bold}━━━ CANVAS STATE ━━━${C.reset}`);
-    const canvases = await query("canvases", `id=eq.${canvasId}&select=content`);
+    const canvases = await query(
+      "canvases",
+      `id=eq.${canvasId}&select=content`,
+    );
     if (canvases?.[0]?.content) {
       const elements = canvases[0].content.elements ?? [];
       console.log(`Elements: ${elements.length}\n`);
@@ -197,7 +230,9 @@ async function main() {
       for (const el of elements) {
         byType[el.type] = (byType[el.type] ?? 0) + 1;
       }
-      for (const [type, count] of Object.entries(byType).sort((a, b) => b[1] - a[1])) {
+      for (const [type, count] of Object.entries(byType).sort(
+        (a, b) => b[1] - a[1],
+      )) {
         console.log(`  ${type}: ${count}`);
       }
     }

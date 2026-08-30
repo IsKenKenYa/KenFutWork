@@ -10,7 +10,11 @@ const fadeUp = {
   visible: (i: number) => ({
     opacity: 1,
     y: 0,
-    transition: { delay: i * 0.12, duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] },
+    transition: {
+      delay: i * 0.12,
+      duration: 0.5,
+      ease: [0.25, 0.46, 0.45, 0.94],
+    },
   }),
 } as any;
 
@@ -32,7 +36,11 @@ export function AuthShell({
       <div className="relative hidden overflow-hidden bg-black px-16 text-white lg:flex lg:w-1/2 lg:flex-col lg:justify-center">
         <div className="pointer-events-none absolute -left-1/4 -top-1/4 h-[80%] w-[80%] rounded-full bg-white/[0.03] blur-[100px]" />
 
-        <motion.div initial="hidden" animate="visible" className="relative z-10">
+        <motion.div
+          initial="hidden"
+          animate="visible"
+          className="relative z-10"
+        >
           <motion.div
             variants={fadeUp}
             custom={0}
@@ -42,11 +50,19 @@ export function AuthShell({
             <h1 className="text-4xl font-bold tracking-tight">Loomic</h1>
           </motion.div>
 
-          <motion.p variants={fadeUp} custom={1} className="mb-3 text-3xl font-semibold tracking-tight">
+          <motion.p
+            variants={fadeUp}
+            custom={1}
+            className="mb-3 text-3xl font-semibold tracking-tight"
+          >
             {title}
           </motion.p>
 
-          <motion.p variants={fadeUp} custom={2} className="mb-10 max-w-md text-lg text-muted-foreground">
+          <motion.p
+            variants={fadeUp}
+            custom={2}
+            className="mb-10 max-w-md text-lg text-muted-foreground"
+          >
             {description}
           </motion.p>
 
@@ -70,7 +86,11 @@ export function AuthShell({
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3, duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] }}
+          transition={{
+            delay: 0.3,
+            duration: 0.5,
+            ease: [0.25, 0.46, 0.45, 0.94],
+          }}
           className="w-full max-w-sm"
         >
           {children}

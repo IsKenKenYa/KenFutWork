@@ -2,8 +2,8 @@
 
 import type {
   BrandKitAsset,
-  BrandKitDetail,
   BrandKitAssetType,
+  BrandKitDetail,
 } from "@loomic/shared";
 import { Copy, Ellipsis, Sparkles, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -170,10 +170,7 @@ export function BrandKitEditor({
           <div className="h-5 w-px bg-border" />
 
           {/* More menu */}
-          <MoreMenu
-            onDuplicate={onDuplicateKit}
-            onDelete={onDeleteKit}
-          />
+          <MoreMenu onDuplicate={onDuplicateKit} onDelete={onDeleteKit} />
         </div>
       </header>
 

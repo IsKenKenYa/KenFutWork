@@ -1,8 +1,8 @@
 // @credits-system — Insufficient credits dialog: shown when balance is too low for a generation
 "use client";
 
-import { motion, AnimatePresence } from "framer-motion";
-import { AlertTriangle, Gift, Loader2, Zap, X } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { AlertTriangle, Gift, Loader2, X, Zap } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 
 import { useAuth } from "@/lib/auth-context";
@@ -105,7 +105,9 @@ export function CreditInsufficientDialog({
             </h3>
             <p className="mb-4 text-sm text-muted-foreground/70">
               This generation requires{" "}
-              <span className="font-medium text-foreground">{requiredAmount}</span>{" "}
+              <span className="font-medium text-foreground">
+                {requiredAmount}
+              </span>{" "}
               credits, but you only have{" "}
               <span className="font-medium text-foreground">
                 {currentBalance}

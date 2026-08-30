@@ -11,8 +11,18 @@ import {
 } from "./contracts.js";
 import { loomicErrorSchema } from "./errors.js";
 
-export { imageArtifactSchema, videoArtifactSchema, placementSchema, toolArtifactSchema } from "./artifacts.js";
-export type { ImageArtifact, VideoArtifact, Placement, ToolArtifact } from "./artifacts.js";
+export type {
+  ImageArtifact,
+  Placement,
+  ToolArtifact,
+  VideoArtifact,
+} from "./artifacts.js";
+export {
+  imageArtifactSchema,
+  placementSchema,
+  toolArtifactSchema,
+  videoArtifactSchema,
+} from "./artifacts.js";
 
 export const runStartedEventSchema = z.object({
   type: z.literal("run.started"),
@@ -35,7 +45,7 @@ export const toolStartedEventSchema = z.object({
   runId: runIdSchema,
   toolCallId: toolCallIdSchema,
   toolName: z.string().min(1),
-  input: z.record(z.unknown()).optional(),
+  input: z.record(z.string(), z.unknown()).optional(),
   timestamp: timestampSchema,
 });
 
@@ -44,7 +54,7 @@ export const toolCompletedEventSchema = z.object({
   runId: runIdSchema,
   toolCallId: toolCallIdSchema,
   toolName: z.string().min(1),
-  output: z.record(z.unknown()).optional(),
+  output: z.record(z.string(), z.unknown()).optional(),
   outputSummary: z.string().optional(),
   artifacts: z.array(toolArtifactSchema).optional(),
   timestamp: timestampSchema,

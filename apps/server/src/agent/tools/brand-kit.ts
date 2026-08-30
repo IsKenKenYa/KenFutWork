@@ -30,7 +30,9 @@ export function createBrandKitTool(
       // Fetch assets
       const { data: assets } = await client
         .from("brand_kit_assets")
-        .select("asset_type, display_name, role, text_content, file_url, metadata")
+        .select(
+          "asset_type, display_name, role, text_content, file_url, metadata",
+        )
         .eq("kit_id", brandKitId)
         .order("sort_order", { ascending: true });
 

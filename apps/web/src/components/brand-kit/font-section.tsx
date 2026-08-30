@@ -65,7 +65,11 @@ export function FontSection({
     setMenuOpen(false);
     const name = window.prompt("输入字体名称");
     if (!name?.trim()) return;
-    onAddFont({ family: name.trim(), variant: "regular", category: "sans-serif" });
+    onAddFont({
+      family: name.trim(),
+      variant: "regular",
+      category: "sans-serif",
+    });
   }, [onAddFont]);
 
   const handlePickerSelect = useCallback(

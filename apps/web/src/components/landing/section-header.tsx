@@ -2,8 +2,7 @@
 
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { ScrollReveal } from "./motion";
-import { fadeUp } from "./motion";
+import { fadeUp, ScrollReveal } from "./motion";
 
 // ---------------------------------------------------------------------------
 // SectionHeader component
@@ -29,7 +28,7 @@ export function SectionHeader({
       className={cn(
         "flex flex-col gap-4",
         isCenter && "items-center text-center",
-        className
+        className,
       )}
     >
       {/* Title */}
@@ -37,7 +36,7 @@ export function SectionHeader({
         variants={fadeUp}
         className={cn(
           "text-4xl md:text-5xl font-bold tracking-tight leading-tight",
-          "text-foreground"
+          "text-foreground",
         )}
       >
         {title}
@@ -49,7 +48,7 @@ export function SectionHeader({
           variants={fadeUp}
           transition={{ delay: 0.1 }}
           className={cn(
-            "text-lg text-muted-foreground max-w-2xl leading-relaxed"
+            "text-lg text-muted-foreground max-w-2xl leading-relaxed",
           )}
         >
           {subtitle}

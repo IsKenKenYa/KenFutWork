@@ -1,8 +1,8 @@
-import { clsx, type ClassValue } from "clsx"
-import { twMerge } from "tailwind-merge"
+import { type ClassValue, clsx } from "clsx";
+import { twMerge } from "tailwind-merge";
 
 export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
+  return twMerge(clsx(inputs));
 }
 
 /** Format an ISO date string to `YYYY-MM-DD` for display. */

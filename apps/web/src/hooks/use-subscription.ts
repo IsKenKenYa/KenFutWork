@@ -4,9 +4,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import {
-  getSubscription,
   cancelSubscription as apiCancelSubscription,
   changePlan as apiChangePlan,
+  getSubscription,
   type SubscriptionStatus,
 } from "@/lib/payments-api";
 

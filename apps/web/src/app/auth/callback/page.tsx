@@ -1,6 +1,6 @@
 "use client";
 
-import { useSearchParams, useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef } from "react";
 
 import { LoadingScreen } from "../../../components/loading-screen";
@@ -48,7 +48,8 @@ function AuthCallbackPageContent() {
 
     void (async () => {
       try {
-        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+        const { data, error } =
+          await supabase.auth.exchangeCodeForSession(code);
 
         if (cancelled) return;
 

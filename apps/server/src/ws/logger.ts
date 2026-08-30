@@ -19,11 +19,19 @@ import { join } from "node:path";
 type LogLevel = "info" | "warn" | "error";
 
 const LEVEL_NUM: Record<LogLevel, number> = { info: 30, warn: 40, error: 50 };
-const LEVEL_LABEL: Record<LogLevel, string> = { info: "INFO", warn: "WARN", error: "ERROR" };
+const LEVEL_LABEL: Record<LogLevel, string> = {
+  info: "INFO",
+  warn: "WARN",
+  error: "ERROR",
+};
 
 // Ensure log directory exists
 const LOG_DIR = join(import.meta.dirname ?? ".", "..", "..", "logs");
-try { mkdirSync(LOG_DIR, { recursive: true }); } catch { /* ignore */ }
+try {
+  mkdirSync(LOG_DIR, { recursive: true });
+} catch {
+  /* ignore */
+}
 
 /** Returns today's log file path: pipeline-YYYY-MM-DD.log */
 function getLogFile(): string {
@@ -61,18 +69,30 @@ export function createPipelineLogger(
 
     // stdout: human-friendly one-liner
     const ts = new Date(now).toISOString().slice(11, 23);
-    const ctxStr = ctx ? " " + Object.entries(ctx).map(([k, v]) => `${k}=${v}`).join(" ") : "";
-    process.stdout.write(`${ts} [${LEVEL_LABEL[level]}] ${scope}.${event}${ctxStr}\n`);
+    const ctxStr = ctx
+      ? " " +
+        Object.entries(ctx)
+          .map(([k, v]) => `${k}=${v}`)
+          .join(" ")
+      : "";
+    process.stdout.write(
+      `${ts} [${LEVEL_LABEL[level]}] ${scope}.${event}${ctxStr}\n`,
+    );
 
     // file: structured JSON lines (daily rotation)
-    try { appendFileSync(getLogFile(), line); } catch { /* ignore */ }
+    try {
+      appendFileSync(getLogFile(), line);
+    } catch {
+      /* ignore */
+    }
   }
 
   return {
     info: (event, ctx) => emit("info", event, ctx),
     warn: (event, ctx) => emit("warn", event, ctx),
     error: (event, ctx) => emit("error", event, ctx),
-    lap: (event, ctx) => emit("info", event, { ...ctx, elapsed_ms: Date.now() - t0 }),
+    lap: (event, ctx) =>
+      emit("info", event, { ...ctx, elapsed_ms: Date.now() - t0 }),
     elapsed: () => Date.now() - t0,
   };
 }

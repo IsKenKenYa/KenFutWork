@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { type GenerateVideosOperation, GoogleGenAI } from "@google/genai";
 
 import type {
   GeneratedVideo,
@@ -22,8 +22,10 @@ const ICON_GOOGLE =
  */
 const MODEL_MAP: Record<string, string> = {
   "google-official/veo-3.1-generate-preview": "veo-3.1-generate-preview",
-  "google-official/veo-3.1-fast-generate-preview": "veo-3.1-fast-generate-preview",
-  "google-official/veo-3.1-lite-generate-preview": "veo-3.1-lite-generate-preview",
+  "google-official/veo-3.1-fast-generate-preview":
+    "veo-3.1-fast-generate-preview",
+  "google-official/veo-3.1-lite-generate-preview":
+    "veo-3.1-lite-generate-preview",
   "google-official/veo-3.0-generate-001": "veo-3.0-generate-001",
   "google-official/veo-3.0-fast-generate-001": "veo-3.0-fast-generate-001",
   "google-official/veo-2.0-generate-001": "veo-2.0-generate-001",
@@ -89,7 +91,9 @@ const MODEL_CAPABILITIES: Record<string, ModelCapabilities> = {
 /**
  * Helper to derive max resolution label from MODEL_CAPABILITIES.
  */
-function deriveMaxResolution(resolutions: string[]): "480p" | "720p" | "1080p" | "2160p" {
+function deriveMaxResolution(
+  resolutions: string[],
+): "480p" | "720p" | "1080p" | "2160p" {
   if (resolutions.includes("4k")) return "2160p";
   if (resolutions.includes("1080p")) return "1080p";
   if (resolutions.includes("720p")) return "720p";
@@ -125,32 +129,38 @@ function buildVideoModelInfo(
 
 const GOOGLE_VIDEO_MODELS: readonly VideoModelInfo[] = [
   buildVideoModelInfo(
-    "google-official/veo-3.1-generate-preview", "Veo 3.1",
+    "google-official/veo-3.1-generate-preview",
+    "Veo 3.1",
     "Google flagship. T2V + I2V, native audio, reference images, 4–8s, up to 4K. Best quality.",
     "veo-3.1-generate-preview",
   ),
   buildVideoModelInfo(
-    "google-official/veo-3.1-fast-generate-preview", "Veo 3.1 Fast",
+    "google-official/veo-3.1-fast-generate-preview",
+    "Veo 3.1 Fast",
     "Speed-optimized Veo 3.1. T2V + I2V, native audio, 4–8s, up to 4K. Faster generation.",
     "veo-3.1-fast-generate-preview",
   ),
   buildVideoModelInfo(
-    "google-official/veo-3.1-lite-generate-preview", "Veo 3.1 Lite",
+    "google-official/veo-3.1-lite-generate-preview",
+    "Veo 3.1 Lite",
     "Lightweight Veo 3.1. T2V + I2V, native audio, 4–8s, up to 1080p. Fastest, lowest cost.",
     "veo-3.1-lite-generate-preview",
   ),
   buildVideoModelInfo(
-    "google-official/veo-3.0-generate-001", "Veo 3",
+    "google-official/veo-3.0-generate-001",
+    "Veo 3",
     "Stable Veo 3. T2V + I2V, native audio, reference images, up to 4K. Production-ready.",
     "veo-3.0-generate-001",
   ),
   buildVideoModelInfo(
-    "google-official/veo-3.0-fast-generate-001", "Veo 3 Fast",
+    "google-official/veo-3.0-fast-generate-001",
+    "Veo 3 Fast",
     "Speed-optimized Veo 3. T2V + I2V, native audio, up to 4K. Faster than Veo 3.",
     "veo-3.0-fast-generate-001",
   ),
   buildVideoModelInfo(
-    "google-official/veo-2.0-generate-001", "Veo 2",
+    "google-official/veo-2.0-generate-001",
+    "Veo 2",
     "Stable Veo 2. T2V + I2V, 720p only, silent (no audio), 5–8s. Most cost-effective.",
     "veo-2.0-generate-001",
   ),
@@ -265,7 +275,7 @@ export class GoogleVideoProvider implements VideoProvider {
     }
 
     // Start the asynchronous generation operation.
-    let operation;
+    let operation: GenerateVideosOperation;
     try {
       operation = await this.client.models.generateVideos({
         model: apiModel,
@@ -281,7 +291,11 @@ export class GoogleVideoProvider implements VideoProvider {
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       console.error(`[google-video] generateVideos API error:`, detail);
-      if (detail.includes("PERMISSION_DENIED") || detail.includes("403") || detail.includes("SERVICE_DISABLED")) {
+      if (
+        detail.includes("PERMISSION_DENIED") ||
+        detail.includes("403") ||
+        detail.includes("SERVICE_DISABLED")
+      ) {
         throw new GenerationError(
           PROVIDER_NAME,
           "api_error",
@@ -323,7 +337,10 @@ export class GoogleVideoProvider implements VideoProvider {
 
     // Check for operation-level errors.
     if (operation.error) {
-      console.error(`[google-video] operation error:`, JSON.stringify(operation.error));
+      console.error(
+        `[google-video] operation error:`,
+        JSON.stringify(operation.error),
+      );
       throw new GenerationError(
         PROVIDER_NAME,
         "api_error",

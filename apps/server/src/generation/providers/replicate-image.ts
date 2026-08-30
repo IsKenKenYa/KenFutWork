@@ -1,4 +1,9 @@
-import type { GeneratedImage, ImageGenerateParams, ImageProvider, ModelInfo } from "../types.js";
+import type {
+  GeneratedImage,
+  ImageGenerateParams,
+  ImageProvider,
+  ModelInfo,
+} from "../types.js";
 import { aspectRatioToDimensions, GenerationError } from "../utils.js";
 
 const REPLICATE_API_BASE = "https://api.replicate.com/v1";
@@ -37,9 +42,11 @@ const TEXT_ONLY_MODELS = new Set([
  */
 const RECRAFT_MODELS = new Set(["recraft-ai/recraft-v3"]);
 
-const ICON_GOOGLE = "https://tjzk.replicate.delivery/models_organizations_avatar/27e1e3fe-f766-4748-83b3-777bc282d8dd/1342004.png";
+const ICON_GOOGLE =
+  "https://tjzk.replicate.delivery/models_organizations_avatar/27e1e3fe-f766-4748-83b3-777bc282d8dd/1342004.png";
 const ICON_OPENAI = "https://github.com/openai.png";
-const ICON_BFL = "https://tjzk.replicate.delivery/models_organizations_avatar/01ed70be-0d47-4a4a-85fb-32c02cdd4ab5/bfl.png";
+const ICON_BFL =
+  "https://tjzk.replicate.delivery/models_organizations_avatar/01ed70be-0d47-4a4a-85fb-32c02cdd4ab5/bfl.png";
 const ICON_BYTEDANCE = "https://github.com/bytedance.png";
 const ICON_RECRAFT = "https://github.com/recraft-ai.png";
 
@@ -48,78 +55,92 @@ const REPLICATE_IMAGE_MODELS: readonly ModelInfo[] = [
   {
     id: "google/nano-banana-pro",
     displayName: "Nano Banana Pro",
-    description: "Google's SOTA image generation & editing model. Image input: up to 14 images. Up to 4K resolution. Best for multi-reference editing.",
+    description:
+      "Google's SOTA image generation & editing model. Image input: up to 14 images. Up to 4K resolution. Best for multi-reference editing.",
     iconUrl: ICON_GOOGLE,
   },
   {
     id: "google/nano-banana-2",
     displayName: "Nano Banana 2",
-    description: "Fast image generation with conversational editing and character consistency. Image input: up to 14 images. Good for multi-image fusion.",
+    description:
+      "Fast image generation with conversational editing and character consistency. Image input: up to 14 images. Good for multi-image fusion.",
     iconUrl: ICON_GOOGLE,
   },
   {
     id: "google/nano-banana",
     displayName: "Nano Banana",
-    description: "Google's image editing model in Gemini 2.5. Image input: up to 14 images. Best for editing & transformation tasks.",
+    description:
+      "Google's image editing model in Gemini 2.5. Image input: up to 14 images. Best for editing & transformation tasks.",
     iconUrl: ICON_GOOGLE,
   },
   {
     id: "google/imagen-4",
     displayName: "Imagen 4",
-    description: "Google's Imagen 4 flagship text-to-image model. Image input: NONE (text-only). Best pure text-to-image quality.",
+    description:
+      "Google's Imagen 4 flagship text-to-image model. Image input: NONE (text-only). Best pure text-to-image quality.",
     iconUrl: ICON_GOOGLE,
   },
   // OpenAI
   {
     id: "openai/gpt-image-1.5",
     displayName: "GPT Image 1.5",
-    description: "OpenAI's latest image model with better instruction following. Image input: multiple images. Supports background transparency.",
+    description:
+      "OpenAI's latest image model with better instruction following. Image input: multiple images. Supports background transparency.",
     iconUrl: ICON_OPENAI,
   },
   // Black Forest Labs
   {
     id: "black-forest-labs/flux-kontext-max",
     displayName: "Flux Kontext Max",
-    description: "Premium text-based image editing with maximum performance and improved typography. Image input: 1 image only. Best for single-image editing.",
+    description:
+      "Premium text-based image editing with maximum performance and improved typography. Image input: 1 image only. Best for single-image editing.",
     iconUrl: ICON_BFL,
   },
   {
     id: "black-forest-labs/flux-kontext-pro",
     displayName: "Flux Kontext Pro",
-    description: "SOTA text-based image editing with excellent prompt following and consistent results. Image input: 1 image only. Best for single-image editing.",
+    description:
+      "SOTA text-based image editing with excellent prompt following and consistent results. Image input: 1 image only. Best for single-image editing.",
     iconUrl: ICON_BFL,
   },
   // ByteDance
   {
     id: "bytedance/seedream-5-lite",
     displayName: "Seedream 5.0 Lite",
-    description: "Image generation with built-in reasoning and example-based editing. Image input: multiple images. Up to 3K resolution.",
+    description:
+      "Image generation with built-in reasoning and example-based editing. Image input: multiple images. Up to 3K resolution.",
     iconUrl: ICON_BYTEDANCE,
   },
   {
     id: "bytedance/seedream-4.5",
     displayName: "Seedream 4.5",
-    description: "Upgraded ByteDance model with stronger spatial understanding. Image input: multiple images. Up to 4K resolution.",
+    description:
+      "Upgraded ByteDance model with stronger spatial understanding. Image input: multiple images. Up to 4K resolution.",
     iconUrl: ICON_BYTEDANCE,
   },
   {
     id: "bytedance/seedream-4",
     displayName: "Seedream 4",
-    description: "Unified text-to-image generation and precise editing. Image input: multiple images. Up to 4K resolution.",
+    description:
+      "Unified text-to-image generation and precise editing. Image input: multiple images. Up to 4K resolution.",
     iconUrl: ICON_BYTEDANCE,
   },
   // Recraft
   {
     id: "recraft-ai/recraft-v3",
     displayName: "Recraft V3",
-    description: "SOTA text-to-image with long text rendering and wide style variety. Image input: NONE (text-only). #1 by Artificial Analysis benchmark.",
+    description:
+      "SOTA text-to-image with long text rendering and wide style variety. Image input: NONE (text-only). #1 by Artificial Analysis benchmark.",
     iconUrl: ICON_RECRAFT,
   },
 ];
 
 // ── Quality → model-specific resolution translation ──────────────────────
 
-type QualityMap = Record<string, Record<string, { param: string; value: string }>>;
+type QualityMap = Record<
+  string,
+  Record<string, { param: string; value: string }>
+>;
 
 /**
  * Maps (model prefix → quality level → { paramName, paramValue }).
@@ -129,37 +150,37 @@ const QUALITY_MAP: QualityMap = {
   // Google Nano Banana Pro / 2: uses `resolution`
   "google/nano-banana-pro": {
     standard: { param: "resolution", value: "1K" },
-    hd:       { param: "resolution", value: "2K" },
-    ultra:    { param: "resolution", value: "4K" },
+    hd: { param: "resolution", value: "2K" },
+    ultra: { param: "resolution", value: "4K" },
   },
   "google/nano-banana-2": {
     standard: { param: "resolution", value: "1K" },
-    hd:       { param: "resolution", value: "2K" },
-    ultra:    { param: "resolution", value: "4K" },
+    hd: { param: "resolution", value: "2K" },
+    ultra: { param: "resolution", value: "4K" },
   },
   // Google Imagen 4: uses `image_size`
   "google/imagen-4": {
     standard: { param: "image_size", value: "1K" },
-    hd:       { param: "image_size", value: "2K" },
-    ultra:    { param: "image_size", value: "2K" }, // max 2K, cap silently
+    hd: { param: "image_size", value: "2K" },
+    ultra: { param: "image_size", value: "2K" }, // max 2K, cap silently
   },
   // ByteDance Seedream 5 Lite: uses `size`, max 3K
   "bytedance/seedream-5-lite": {
     standard: { param: "size", value: "2K" },
-    hd:       { param: "size", value: "2K" },
-    ultra:    { param: "size", value: "3K" },
+    hd: { param: "size", value: "2K" },
+    ultra: { param: "size", value: "3K" },
   },
   // ByteDance Seedream 4.5: uses `size`, max 4K
   "bytedance/seedream-4.5": {
     standard: { param: "size", value: "2K" },
-    hd:       { param: "size", value: "2K" },
-    ultra:    { param: "size", value: "4K" },
+    hd: { param: "size", value: "2K" },
+    ultra: { param: "size", value: "4K" },
   },
   // ByteDance Seedream 4: uses `size`, max 4K
   "bytedance/seedream-4": {
     standard: { param: "size", value: "1K" },
-    hd:       { param: "size", value: "2K" },
-    ultra:    { param: "size", value: "4K" },
+    hd: { param: "size", value: "2K" },
+    ultra: { param: "size", value: "4K" },
   },
 };
 
@@ -202,12 +223,12 @@ function applyQuality(
  */
 const MODEL_ASPECT_RATIOS: Record<string, string[]> = {
   "openai/gpt-image-1.5": ["1:1", "3:2", "2:3"],
-  "openai/gpt-image-1":   ["1:1", "3:2", "2:3"],
+  "openai/gpt-image-1": ["1:1", "3:2", "2:3"],
 };
 
 function parseRatio(ratio: string): number {
   const [w, h] = ratio.split(":").map(Number);
-  return (w && h) ? w / h : 1;
+  return w && h ? w / h : 1;
 }
 
 /**
@@ -329,9 +350,12 @@ export class ReplicateImageProvider implements ImageProvider {
       );
     }
 
-    const mimeType = params.outputFormat === "jpg" ? "image/jpeg"
-      : params.outputFormat === "webp" ? "image/webp"
-      : "image/png";
+    const mimeType =
+      params.outputFormat === "jpg"
+        ? "image/jpeg"
+        : params.outputFormat === "webp"
+          ? "image/webp"
+          : "image/png";
 
     return { url: outputUrl, mimeType, width, height };
   }

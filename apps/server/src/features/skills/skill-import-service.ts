@@ -8,7 +8,7 @@
  * @module skill-import-service
  */
 
-import yaml from "js-yaml";
+import { load as loadYaml } from "js-yaml";
 import { Parser as TarParser } from "tar";
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -182,7 +182,7 @@ export function parseSkillManifest(skillMdContent: string): SkillManifest {
 
   let parsed: unknown;
   try {
-    parsed = yaml.load(yamlBlock);
+    parsed = loadYaml(yamlBlock);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new SkillImportError(
@@ -303,9 +303,7 @@ interface GitHubContentItem {
  */
 function parseGitHubUrl(url: string): GitHubUrlInfo {
   const parsed = new URL(url);
-  const segments = parsed.pathname
-    .split("/")
-    .filter((s) => s.length > 0);
+  const segments = parsed.pathname.split("/").filter((s) => s.length > 0);
 
   if (segments.length < 2) {
     throw new SkillImportError(
@@ -322,7 +320,10 @@ function parseGitHubUrl(url: string): GitHubUrlInfo {
   let path = "";
 
   // Handle /tree/{ref}/... or /blob/{ref}/... patterns
-  if (segments.length >= 4 && (segments[2] === "tree" || segments[2] === "blob")) {
+  if (
+    segments.length >= 4 &&
+    (segments[2] === "tree" || segments[2] === "blob")
+  ) {
     ref = segments[3]!;
     path = segments.slice(4).join("/");
   } else if (segments.length > 2) {
@@ -387,7 +388,9 @@ async function listGitHubDirectory(
   path: string,
   ref: string | null,
 ): Promise<GitHubContentItem[]> {
-  const encodedPath = path ? `/${encodeURIComponent(path).replace(/%2F/g, "/")}` : "";
+  const encodedPath = path
+    ? `/${encodeURIComponent(path).replace(/%2F/g, "/")}`
+    : "";
   let apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents${encodedPath}`;
   if (ref) {
     apiUrl += `?ref=${encodeURIComponent(ref)}`;
@@ -485,7 +488,9 @@ async function collectGitHubFiles(
  *
  * Downloads SKILL.md and all files under scripts/, references/, assets/.
  */
-export async function importFromGitHub(repoUrl: string): Promise<ImportedSkill> {
+export async function importFromGitHub(
+  repoUrl: string,
+): Promise<ImportedSkill> {
   const { owner, repo, path, ref } = parseGitHubUrl(repoUrl);
   console.log(
     `[skill-import] Importing from GitHub: ${owner}/${repo} path="${path}" ref="${ref ?? "default"}"`,
@@ -644,7 +649,9 @@ async function extractTarballEntries(buffer: Buffer): Promise<TarballEntry[]> {
  * Downloads the tarball, extracts SKILL.md, and collects files under
  * scripts/, references/, assets/.
  */
-export async function importFromTarballUrl(url: string): Promise<ImportedSkill> {
+export async function importFromTarballUrl(
+  url: string,
+): Promise<ImportedSkill> {
   console.log(`[skill-import] Downloading tarball: ${url}`);
 
   const response = await fetch(url, {
@@ -668,9 +675,7 @@ export async function importFromTarballUrl(url: string): Promise<ImportedSkill> 
   const entries = await extractTarballEntries(buffer);
 
   // Find SKILL.md (case-insensitive, at the root level after prefix stripping)
-  const skillMdEntry = entries.find(
-    (e) => e.path.toUpperCase() === "SKILL.MD",
-  );
+  const skillMdEntry = entries.find((e) => e.path.toUpperCase() === "SKILL.MD");
 
   // Also look for SKILL.md in subdirectories (multi-skill packages like skills/xxx/SKILL.md)
   const nestedSkillMd = !skillMdEntry
@@ -678,12 +683,8 @@ export async function importFromTarballUrl(url: string): Promise<ImportedSkill> 
     : null;
 
   // Fallback: use README.md + package.json when no SKILL.md exists
-  const readmeEntry = entries.find(
-    (e) => e.path.toUpperCase() === "README.MD",
-  );
-  const pkgJsonEntry = entries.find(
-    (e) => e.path === "package.json",
-  );
+  const readmeEntry = entries.find((e) => e.path.toUpperCase() === "README.MD");
+  const pkgJsonEntry = entries.find((e) => e.path === "package.json");
 
   const effectiveSkillMd = skillMdEntry ?? nestedSkillMd;
 
@@ -713,13 +714,16 @@ export async function importFromTarballUrl(url: string): Promise<ImportedSkill> 
     if (pkgJson.version) manifest.version = pkgJson.version as string;
     if (pkgJson.license) manifest.license = pkgJson.license as string;
     if (typeof pkgJson.author === "string") manifest.author = pkgJson.author;
-    else if (pkgJson.author && typeof (pkgJson.author as any).name === "string") {
+    else if (
+      pkgJson.author &&
+      typeof (pkgJson.author as any).name === "string"
+    ) {
       manifest.author = (pkgJson.author as any).name;
     }
 
     // Use README.md as skill content, or a minimal placeholder
-    skillContent = readmeEntry?.content
-      ?? `# ${shortName}\n\n${manifest.description}`;
+    skillContent =
+      readmeEntry?.content ?? `# ${shortName}\n\n${manifest.description}`;
 
     console.log(
       `[skill-import] No SKILL.md found, using package.json + README.md fallback for "${shortName}"`,
@@ -783,7 +787,9 @@ export async function importFromTarballUrl(url: string): Promise<ImportedSkill> 
 export async function importSkillFromUrl(url: string): Promise<ImportedSkill> {
   const source = detectImportSource(url);
 
-  console.log(`[skill-import] Import requested: url="${url}" detected="${source}"`);
+  console.log(
+    `[skill-import] Import requested: url="${url}" detected="${source}"`,
+  );
 
   switch (source) {
     case "github":

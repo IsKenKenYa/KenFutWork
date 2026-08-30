@@ -65,87 +65,132 @@ function tool(name: string, imgSrc: string): InputMention {
  * Keep this in code for now so prompts and image assets are easy to swap later.
  */
 export const homeExampleSeedCategories: HomeExampleCategory[] = [
-  cat("nano-banana-pro", "Nano Banana Pro", "Special", [
-    ex(
-      "Design pixel-perfect web interface.",
-      "Generate a landing page for a furniture shop called Loomic, Neo Brutalism style. These are the product images:",
-      [
-        "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e1-1.webp",
-        "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e1-2.webp",
-        "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e1-3.webp",
-      ],
-      [
-        tool("Nano Banana Pro", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
-        img("Chair", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/nano-banana-pro/e1-input-1.webp"),
-        img("Nightstand", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/nano-banana-pro/e1-input-2.webp"),
-        img("Beanbag", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/nano-banana-pro/e1-input-3.webp"),
-        img("Table", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/nano-banana-pro/e1-input-4.webp"),
-        img("Stool", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/nano-banana-pro/e1-input-5.webp"),
-      ],
-    ),
-    ex(
-      "Solve a complex math problem on the white board.",
-      "Generate an image of an undergraduate level math problem and solution written on a white board.",
-      [
-        "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e2-1.webp",
-        "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e2-2.webp",
-        "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e2-3.webp",
-      ],
-      [
-        tool("Nano Banana Pro", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
-      ],
-    ),
-    ex(
-      "Make a classic superhero comic strip.",
-      "A vintage 1970s comic book page depicting a multi-panel superhero story sequence. The art style is classic hand-drawn comic illustration with bold outlines and a vibrant but slightly faded color palette, including visible Ben-Day dots. The comic strip features Wonder Woman in her iconic costume, alongside two men in suits, set against the backdrop of New York City. The narrative shows Wonder Woman rescuing the men from their boring 9-to-5 office jobs. The page is laid out in a traditional comic panel grid, complete with speech bubbles, narration boxes, creating a nostalgic, adventurous, and quirky retro feel.",
-      [
-        "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e3-1.webp",
-        "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e3-2.webp",
-        "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e3-3.webp",
-      ],
-      [
-        tool("Nano Banana Pro", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
-      ],
-    ),
-    ex(
-      "Make your own wizard newspaper.",
-      "A yellowed, vintage, high-resolution front page of the 'Daily Prophet' newspaper, precisely matching the iconic visual style of the Harry Potter films. Prominently feature 'THE DAILY PROPHET' in its distinctive, ornate, gothic-inspired font at the top. A large, bold, impactful headline using a classic, slightly distressed serif font: 'BUTTERBEER FESTIVAL! AMOROUS CHOCOLATE!' A central black-and-white photo of joyful wizards clinking mugs.",
-      [
-        "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e4-1.webp",
-        "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e4-2.webp",
-        "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e4-3.webp",
-      ],
-      [
-        tool("Nano Banana Pro", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
-      ],
-    ),
-    ex(
-      "Generate professional engineering drawings.",
-      "A professional CAD drawing of  this object. Isometric view, white lines on professional high quality blue background; line weights and line types follow conventions; add dimension lines and annotations.",
-      [
-        "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e5-1.webp",
-        "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e5-2.webp",
-        "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e5-3.webp",
-      ],
-      [
-        tool("Nano Banana Pro", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
-        img("Image", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/nano-banana-pro/e5-input-1.webp"),
-      ],
-    ),
-    ex(
-      "Put your logo on everything.",
-      "A vibrant and playful photo of a well-groomed woman's hand holding a banana-shaped bright yellow glossy popsicle by a classic popsicle stick, against a clear blue summer sky background. The subject is medium-sized in the composition, leaving plenty of empty space around. The hand has manicured nails painted in a matching yellow colour. The popsicle has this exact logo  debossed on it. A slightly low-angle, eye-level shot, looking up at the hand and the popsicle. The scene is illuminated by hard, direct, and high-contrast sunlight; strong, crisp, and well-defined shadows. It creates a graphic, bold, and energetic feel.",
-      [
-        "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e6-1.webp",
-        "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e6-2.webp",
-        "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e6-3.webp",
-      ],
-      [
-        tool("Nano Banana Pro", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
-        img("Logo", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/common/loomic-logo.png"),
-      ],
-    ),
-  ], "special"),
+  cat(
+    "nano-banana-pro",
+    "Nano Banana Pro",
+    "Special",
+    [
+      ex(
+        "Design pixel-perfect web interface.",
+        "Generate a landing page for a furniture shop called Loomic, Neo Brutalism style. These are the product images:",
+        [
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e1-1.webp",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e1-2.webp",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e1-3.webp",
+        ],
+        [
+          tool(
+            "Nano Banana Pro",
+            "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+          ),
+          img(
+            "Chair",
+            "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/nano-banana-pro/e1-input-1.webp",
+          ),
+          img(
+            "Nightstand",
+            "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/nano-banana-pro/e1-input-2.webp",
+          ),
+          img(
+            "Beanbag",
+            "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/nano-banana-pro/e1-input-3.webp",
+          ),
+          img(
+            "Table",
+            "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/nano-banana-pro/e1-input-4.webp",
+          ),
+          img(
+            "Stool",
+            "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/nano-banana-pro/e1-input-5.webp",
+          ),
+        ],
+      ),
+      ex(
+        "Solve a complex math problem on the white board.",
+        "Generate an image of an undergraduate level math problem and solution written on a white board.",
+        [
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e2-1.webp",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e2-2.webp",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e2-3.webp",
+        ],
+        [
+          tool(
+            "Nano Banana Pro",
+            "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+          ),
+        ],
+      ),
+      ex(
+        "Make a classic superhero comic strip.",
+        "A vintage 1970s comic book page depicting a multi-panel superhero story sequence. The art style is classic hand-drawn comic illustration with bold outlines and a vibrant but slightly faded color palette, including visible Ben-Day dots. The comic strip features Wonder Woman in her iconic costume, alongside two men in suits, set against the backdrop of New York City. The narrative shows Wonder Woman rescuing the men from their boring 9-to-5 office jobs. The page is laid out in a traditional comic panel grid, complete with speech bubbles, narration boxes, creating a nostalgic, adventurous, and quirky retro feel.",
+        [
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e3-1.webp",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e3-2.webp",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e3-3.webp",
+        ],
+        [
+          tool(
+            "Nano Banana Pro",
+            "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+          ),
+        ],
+      ),
+      ex(
+        "Make your own wizard newspaper.",
+        "A yellowed, vintage, high-resolution front page of the 'Daily Prophet' newspaper, precisely matching the iconic visual style of the Harry Potter films. Prominently feature 'THE DAILY PROPHET' in its distinctive, ornate, gothic-inspired font at the top. A large, bold, impactful headline using a classic, slightly distressed serif font: 'BUTTERBEER FESTIVAL! AMOROUS CHOCOLATE!' A central black-and-white photo of joyful wizards clinking mugs.",
+        [
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e4-1.webp",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e4-2.webp",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e4-3.webp",
+        ],
+        [
+          tool(
+            "Nano Banana Pro",
+            "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+          ),
+        ],
+      ),
+      ex(
+        "Generate professional engineering drawings.",
+        "A professional CAD drawing of  this object. Isometric view, white lines on professional high quality blue background; line weights and line types follow conventions; add dimension lines and annotations.",
+        [
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e5-1.webp",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e5-2.webp",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e5-3.webp",
+        ],
+        [
+          tool(
+            "Nano Banana Pro",
+            "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+          ),
+          img(
+            "Image",
+            "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/nano-banana-pro/e5-input-1.webp",
+          ),
+        ],
+      ),
+      ex(
+        "Put your logo on everything.",
+        "A vibrant and playful photo of a well-groomed woman's hand holding a banana-shaped bright yellow glossy popsicle by a classic popsicle stick, against a clear blue summer sky background. The subject is medium-sized in the composition, leaving plenty of empty space around. The hand has manicured nails painted in a matching yellow colour. The popsicle has this exact logo  debossed on it. A slightly low-angle, eye-level shot, looking up at the hand and the popsicle. The scene is illuminated by hard, direct, and high-contrast sunlight; strong, crisp, and well-defined shadows. It creates a graphic, bold, and energetic feel.",
+        [
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e6-1.webp",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e6-2.webp",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/nano-banana-pro/e6-3.webp",
+        ],
+        [
+          tool(
+            "Nano Banana Pro",
+            "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+          ),
+          img(
+            "Logo",
+            "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/common/loomic-logo.png",
+          ),
+        ],
+      ),
+    ],
+    "special",
+  ),
   cat("design", "Design", "Poster", [
     ex(
       "Design a Bauhaus-inspired poster.",
@@ -156,7 +201,10 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/design/e1-3.webp",
       ],
       [
-        tool("Nano Banana", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
+        tool(
+          "Nano Banana",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+        ),
       ],
     ),
     ex(
@@ -178,8 +226,14 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/design/e3-3.webp",
       ],
       [
-        img("Necklace", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/design/e3-input-1.webp"),
-        tool("Nano Banana", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
+        img(
+          "Necklace",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/design/e3-input-1.webp",
+        ),
+        tool(
+          "Nano Banana",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+        ),
       ],
     ),
     ex(
@@ -191,8 +245,14 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/design/e4-3.webp",
       ],
       [
-        img("Cocoa Puffs", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/design/e4-input-1.webp"),
-        tool("Nano Banana", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
+        img(
+          "Cocoa Puffs",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/design/e4-input-1.webp",
+        ),
+        tool(
+          "Nano Banana",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+        ),
       ],
     ),
     ex(
@@ -204,7 +264,10 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/design/e5-3.webp",
       ],
       [
-        tool("Midjourney", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/midjourney.svg"),
+        tool(
+          "Midjourney",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/midjourney.svg",
+        ),
       ],
     ),
     ex(
@@ -216,8 +279,14 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/design/e6-3.webp",
       ],
       [
-        img("Interior", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/design/e6-input-1.webp"),
-        tool("Gemini Imagen 4", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
+        img(
+          "Interior",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/design/e6-input-1.webp",
+        ),
+        tool(
+          "Gemini Imagen 4",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+        ),
       ],
     ),
   ]),
@@ -231,7 +300,10 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/branding/e1-3.webp",
       ],
       [
-        tool("Gemini Imagen 4", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
+        tool(
+          "Gemini Imagen 4",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+        ),
       ],
     ),
     ex(
@@ -243,8 +315,14 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/branding/e2-3.webp",
       ],
       [
-        img("Logo", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/common/loomic-logo.png"),
-        tool("Nano Banana", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
+        img(
+          "Logo",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/common/loomic-logo.png",
+        ),
+        tool(
+          "Nano Banana",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+        ),
       ],
     ),
     ex(
@@ -256,8 +334,14 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/branding/e3-3.webp",
       ],
       [
-        img("Logo", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/common/loomic-logo.png"),
-        tool("Nano Banana", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
+        img(
+          "Logo",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/common/loomic-logo.png",
+        ),
+        tool(
+          "Nano Banana",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+        ),
       ],
     ),
     ex(
@@ -269,9 +353,18 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/branding/e4-3.webp",
       ],
       [
-        tool("Nano Banana", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
-        img("Board", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/branding/e4-input-1.webp"),
-        img("Image", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/branding/e4-input-2.webp"),
+        tool(
+          "Nano Banana",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+        ),
+        img(
+          "Board",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/branding/e4-input-1.webp",
+        ),
+        img(
+          "Image",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/branding/e4-input-2.webp",
+        ),
       ],
     ),
     ex(
@@ -283,8 +376,14 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/branding/e5-3.webp",
       ],
       [
-        img("Reference", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/branding/e5-input-1.webp"),
-        tool("Nano Banana", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
+        img(
+          "Reference",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/branding/e5-input-1.webp",
+        ),
+        tool(
+          "Nano Banana",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+        ),
       ],
     ),
     ex(
@@ -296,8 +395,14 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/branding/e6-3.webp",
       ],
       [
-        tool("Nano Banana", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
-        img("Earrings", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/branding/e6-input-1.webp"),
+        tool(
+          "Nano Banana",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+        ),
+        img(
+          "Earrings",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/branding/e6-input-1.webp",
+        ),
       ],
     ),
   ]),
@@ -311,8 +416,14 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/illustration/e1-3.webp",
       ],
       [
-        img("Cat", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e1-input-1.webp"),
-        tool("Nano Banana", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
+        img(
+          "Cat",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e1-input-1.webp",
+        ),
+        tool(
+          "Nano Banana",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+        ),
       ],
     ),
     ex(
@@ -324,8 +435,14 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/illustration/e2-3.webp",
       ],
       [
-        img("Image", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e2-input-1.webp"),
-        tool("Nano Banana", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
+        img(
+          "Image",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e2-input-1.webp",
+        ),
+        tool(
+          "Nano Banana",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+        ),
       ],
     ),
     ex(
@@ -337,15 +454,42 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/illustration/e3-3.webp",
       ],
       [
-        img("Spoon", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e3-input-1.webp"),
-        img("Umbrella", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e3-input-2.webp"),
-        img("Coca-Cola", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e3-input-3.webp"),
-        img("Egg", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e3-input-4.webp"),
-        img("Cherry", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e3-input-5.webp"),
-        img("Hat", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e3-input-6.webp"),
-        img("Box", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e3-input-7.webp"),
-        img("Stool", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e3-input-8.webp"),
-        img("Bunny", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e3-input-9.webp"),
+        img(
+          "Spoon",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e3-input-1.webp",
+        ),
+        img(
+          "Umbrella",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e3-input-2.webp",
+        ),
+        img(
+          "Coca-Cola",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e3-input-3.webp",
+        ),
+        img(
+          "Egg",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e3-input-4.webp",
+        ),
+        img(
+          "Cherry",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e3-input-5.webp",
+        ),
+        img(
+          "Hat",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e3-input-6.webp",
+        ),
+        img(
+          "Box",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e3-input-7.webp",
+        ),
+        img(
+          "Stool",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e3-input-8.webp",
+        ),
+        img(
+          "Bunny",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e3-input-9.webp",
+        ),
       ],
     ),
     ex(
@@ -367,9 +511,18 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/illustration/e5-3.webp",
       ],
       [
-        tool("Nano Banana", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
-        img("Avocado", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e5-input-1.webp"),
-        img("Reference", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e5-input-2.webp"),
+        tool(
+          "Nano Banana",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+        ),
+        img(
+          "Avocado",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e5-input-1.webp",
+        ),
+        img(
+          "Reference",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e5-input-2.webp",
+        ),
       ],
     ),
     ex(
@@ -381,8 +534,14 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/illustration/e6-3.webp",
       ],
       [
-        tool("Nano Banana", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
-        img("Image", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e6-input-1.webp"),
+        tool(
+          "Nano Banana",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+        ),
+        img(
+          "Image",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/illustration/e6-input-1.webp",
+        ),
       ],
     ),
   ]),
@@ -396,9 +555,18 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/e-commerce/e1-3.webp",
       ],
       [
-        img("Model", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/e-commerce/e1-input-1.webp"),
-        img("Sweater", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/e-commerce/e1-input-2.webp"),
-        tool("Nano Banana", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
+        img(
+          "Model",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/e-commerce/e1-input-1.webp",
+        ),
+        img(
+          "Sweater",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/e-commerce/e1-input-2.webp",
+        ),
+        tool(
+          "Nano Banana",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+        ),
       ],
     ),
     ex(
@@ -410,8 +578,14 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/e-commerce/e2-3.webp",
       ],
       [
-        img("Front View", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/e-commerce/e2-input-1.webp"),
-        tool("Nano Banana", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
+        img(
+          "Front View",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/e-commerce/e2-input-1.webp",
+        ),
+        tool(
+          "Nano Banana",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+        ),
       ],
     ),
     ex(
@@ -423,8 +597,14 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/e-commerce/e3-3.webp",
       ],
       [
-        img("Necklace", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/design/e3-input-1.webp"),
-        tool("Seedream 4", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/seedream_3.svg"),
+        img(
+          "Necklace",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/design/e3-input-1.webp",
+        ),
+        tool(
+          "Seedream 4",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/seedream_3.svg",
+        ),
       ],
     ),
     ex(
@@ -436,8 +616,14 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/e-commerce/e4-3.webp",
       ],
       [
-        img("Ceramic", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/e-commerce/e4-input-1.webp"),
-        tool("Nano Banana", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
+        img(
+          "Ceramic",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/e-commerce/e4-input-1.webp",
+        ),
+        tool(
+          "Nano Banana",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+        ),
       ],
     ),
     ex(
@@ -449,8 +635,14 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/e-commerce/e5-3.webp",
       ],
       [
-        img("Sofa", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/e-commerce/e5-input-1.webp"),
-        tool("Nano Banana", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
+        img(
+          "Sofa",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/e-commerce/e5-input-1.webp",
+        ),
+        tool(
+          "Nano Banana",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+        ),
       ],
     ),
     ex(
@@ -462,9 +654,18 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/e-commerce/e6-3.webp",
       ],
       [
-        img("Logo", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/common/loomic-logo.png"),
-        img("Perfume", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/e-commerce/e6-input-2.webp"),
-        tool("Nano Banana", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
+        img(
+          "Logo",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/common/loomic-logo.png",
+        ),
+        img(
+          "Perfume",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/e-commerce/e6-input-2.webp",
+        ),
+        tool(
+          "Nano Banana",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+        ),
       ],
     ),
   ]),
@@ -478,8 +679,14 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/design/e3-3.webp",
       ],
       [
-        tool("Kling 2.5 Turbo", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/kling.svg"),
-        img("Ring", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/video/e1-input-1.webp"),
+        tool(
+          "Kling 2.5 Turbo",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/kling.svg",
+        ),
+        img(
+          "Ring",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/video/e1-input-1.webp",
+        ),
       ],
     ),
     ex(
@@ -491,8 +698,14 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/e-commerce/e6-3.webp",
       ],
       [
-        img("Poster", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/video/e2-input-1.webp"),
-        tool("Kling 2.5 Turbo", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/kling.svg"),
+        img(
+          "Poster",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/video/e2-input-1.webp",
+        ),
+        tool(
+          "Kling 2.5 Turbo",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/kling.svg",
+        ),
       ],
     ),
     ex(
@@ -504,8 +717,14 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/video/e3-3.webp",
       ],
       [
-        img("Model", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/video/e3-input-1.webp"),
-        tool("Kling 2.5 Turbo", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/kling.svg"),
+        img(
+          "Model",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/video/e3-input-1.webp",
+        ),
+        tool(
+          "Kling 2.5 Turbo",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/kling.svg",
+        ),
       ],
     ),
     ex(
@@ -517,8 +736,14 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/video/e4-3.webp",
       ],
       [
-        img("Perfume", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/e-commerce/e6-input-2.webp"),
-        tool("Sora 2 Pro", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/sora.svg"),
+        img(
+          "Perfume",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/e-commerce/e6-input-2.webp",
+        ),
+        tool(
+          "Sora 2 Pro",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/sora.svg",
+        ),
       ],
     ),
     ex(
@@ -530,10 +755,22 @@ export const homeExampleSeedCategories: HomeExampleCategory[] = [
         "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/examples/video/e5-3.webp",
       ],
       [
-        tool("Veo 3.1", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg"),
-        img("Princess Elara", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/video/e5-input-1.webp"),
-        img("Forest Sprite", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/video/e5-input-2.webp"),
-        img("Forest Clearing", "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/video/e5-input-3.webp"),
+        tool(
+          "Veo 3.1",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/icons/imagen-3.svg",
+        ),
+        img(
+          "Princess Elara",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/video/e5-input-1.webp",
+        ),
+        img(
+          "Forest Sprite",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/video/e5-input-2.webp",
+        ),
+        img(
+          "Forest Clearing",
+          "https://jmcrxgenontlkxktpihl.supabase.co/storage/v1/object/public/project-assets/home-seeds/inputs/video/e5-input-3.webp",
+        ),
       ],
     ),
     ex(

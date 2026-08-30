@@ -41,7 +41,9 @@ export function mapHomeDiscoveryRows(
     }));
 }
 
-export async function loadHomeDiscoveryCategories(): Promise<HomeDiscoveryCategory[]> {
+export async function loadHomeDiscoveryCategories(): Promise<
+  HomeDiscoveryCategory[]
+> {
   const supabase = getSupabaseBrowserClient();
 
   const [categoriesResult, casesResult] = await Promise.all([

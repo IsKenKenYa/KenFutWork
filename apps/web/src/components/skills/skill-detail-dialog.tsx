@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import type { SkillDetail, SkillFileEntry, SkillSource } from "@loomic/shared";
 import { motion } from "framer-motion";
 import {
   Calendar,
@@ -11,10 +11,7 @@ import {
   UserPen,
   Users,
 } from "lucide-react";
-
-import type { SkillDetail, SkillFileEntry, SkillSource } from "@loomic/shared";
-
-import { cn } from "@/lib/utils";
+import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,6 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Source badge config (mirrors skill-card)
@@ -118,8 +116,9 @@ export function SkillDetailDialog({
   // SOURCE_CONFIG exhaustively covers all SkillSource values ("system" | "community" | "user")
   // Non-null assertion is safe: every possible SkillSource key is present in SOURCE_CONFIG.
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  const sourceEntry =
-    (SOURCE_CONFIG[skill.source as keyof typeof SOURCE_CONFIG] ?? SOURCE_CONFIG.system)!;
+  const sourceEntry = (SOURCE_CONFIG[
+    skill.source as keyof typeof SOURCE_CONFIG
+  ] ?? SOURCE_CONFIG.system)!;
   const { label: sourceLabel, icon: SourceIcon } = sourceEntry;
   const isUserSkill = skill.source === "user";
   const isInstalled = skill.installed ?? false;
@@ -216,10 +215,7 @@ export function SkillDetailDialog({
                     size="xs"
                     disabled={actionLoading === "delete"}
                     onClick={() =>
-                      handleAction(
-                        () => onDelete(skill.id),
-                        "delete",
-                      )
+                      handleAction(() => onDelete(skill.id), "delete")
                     }
                   >
                     {actionLoading === "delete" ? "删除中..." : "确认"}
@@ -261,10 +257,7 @@ export function SkillDetailDialog({
               size="sm"
               disabled={actionLoading === "uninstall"}
               onClick={() =>
-                handleAction(
-                  () => onUninstall(skill.id),
-                  "uninstall",
-                )
+                handleAction(() => onUninstall(skill.id), "uninstall")
               }
             >
               {actionLoading === "uninstall" ? "卸载中..." : "卸载"}
@@ -273,12 +266,7 @@ export function SkillDetailDialog({
             <Button
               size="sm"
               disabled={actionLoading === "install"}
-              onClick={() =>
-                handleAction(
-                  () => onInstall(skill.id),
-                  "install",
-                )
-              }
+              onClick={() => handleAction(() => onInstall(skill.id), "install")}
             >
               {actionLoading === "install" ? "安装中..." : "安装"}
             </Button>

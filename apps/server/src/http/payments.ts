@@ -1,18 +1,18 @@
 // @credits-system — Payment API routes: checkout, subscription status, plan change, cancellation
-import type { FastifyInstance, FastifyReply } from "fastify";
+
 import type { BillingPeriod, SubscriptionPlan } from "@loomic/shared";
 import {
-  subscriptionPlanSchema,
-  billingPeriodSchema,
   applicationErrorResponseSchema,
+  billingPeriodSchema,
+  subscriptionPlanSchema,
   unauthenticatedErrorResponseSchema,
 } from "@loomic/shared";
-
-import {
-  PaymentServiceError,
-  type PaymentService,
-} from "../features/payments/payment-service.js";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
+import {
+  type PaymentService,
+  PaymentServiceError,
+} from "../features/payments/payment-service.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
 
 export async function registerPaymentRoutes(
@@ -128,8 +128,7 @@ export async function registerPaymentRoutes(
           applicationErrorResponseSchema.parse({
             error: {
               code: "invalid_request",
-              message:
-                "Cannot change to the free plan. Use cancel instead.",
+              message: "Cannot change to the free plan. Use cancel instead.",
             },
           }),
         );

@@ -9,10 +9,10 @@
  * - Code readability and maintainability
  */
 
-export { ImageLightbox, ChatImage, ImagePill } from "./image-lightbox";
-export { MentionPill } from "./mention-pill";
-export { ThinkingBlockView } from "./thinking-block-view";
+export { ChatImage, ImageLightbox, ImagePill } from "./image-lightbox";
 export { MarkdownRenderer } from "./markdown-renderer";
-export { ToolBlockView } from "./tool-block-view";
+export { MentionPill } from "./mention-pill";
 export { MessageErrorBoundary } from "./message-error-boundary";
 export { MessageList } from "./message-list";
+export { ThinkingBlockView } from "./thinking-block-view";
+export { ToolBlockView } from "./tool-block-view";

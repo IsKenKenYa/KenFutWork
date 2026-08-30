@@ -71,7 +71,9 @@ export function createPersistSandboxFileTool(deps: PersistSandboxFileDeps) {
         const ext = extname(input.filePath).toLowerCase();
         const mimeType = MIME_MAP[ext] ?? "application/octet-stream";
         const safeTitle = input.title
-          ? input.title.replace(/[^a-zA-Z0-9_\u4e00-\u9fff-]/g, "_").slice(0, 100)
+          ? input.title
+              .replace(/[^a-zA-Z0-9_\u4e00-\u9fff-]/g, "_")
+              .slice(0, 100)
           : null;
         const fileName = safeTitle
           ? `${safeTitle}${ext}`

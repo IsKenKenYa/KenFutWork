@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
 
 import { LoomicLogo } from "@/components/icons/loomic-logo";
+import { useToast } from "@/components/toast";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,14 +25,13 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useCreateProject } from "@/hooks/use-create-project";
 import {
   createExcalidrawImageElement,
   getViewportCenter,
   scaleToFit,
 } from "@/lib/canvas-elements";
 import { deleteProject } from "@/lib/server-api";
-import { useToast } from "@/components/toast";
-import { useCreateProject } from "@/hooks/use-create-project";
 
 interface CanvasLogoMenuProps {
   accessToken: string;

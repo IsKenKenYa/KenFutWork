@@ -53,11 +53,14 @@ test("root test command wires node:test and turbo package tests", async () => {
   assert.match(manifest.scripts.test, /test:packages/);
 });
 
-test("vitest workspace config exists for later package-level adoption", async () => {
-  const workspaceConfig = await readText("vitest.workspace.ts");
+test("vitest root config exists for later package-level adoption", async () => {
+  const vitestConfig = await readText("vitest.config.mjs");
 
-  assert.match(workspaceConfig, /defineWorkspace/);
-  assert.match(workspaceConfig, /tests\/\*\*\/\*\.test\.mjs/);
+  // Vitest 4 removed defineWorkspace/vitest.workspace.ts in favor of
+  // `test.projects` declared in a root vitest config.
+  assert.match(vitestConfig, /defineConfig/);
+  assert.match(vitestConfig, /projects/);
+  assert.match(vitestConfig, /tests\/\*\*\/\*\.test\.mjs/);
 });
 
 for (const appName of appNames) {

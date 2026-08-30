@@ -1,6 +1,5 @@
-import type { FastifyInstance } from "fastify";
-
 import { healthResponseSchema } from "@loomic/shared";
+import type { FastifyInstance } from "fastify";
 
 import type { ServerEnv } from "../config/env.js";
 

@@ -50,7 +50,13 @@ function TrashIcon({ className }: { className?: string }) {
 
 function SearchIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5}>
+    <svg
+      className={className}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+    >
       <circle cx="7" cy="7" r="4.5" />
       <path d="m10.5 10.5 3 3" strokeLinecap="round" />
     </svg>
@@ -71,7 +77,9 @@ export function SessionSelector({
   const panelRef = useRef<HTMLDivElement>(null);
 
   const filtered = search.trim()
-    ? sessions.filter((s) => s.title.toLowerCase().includes(search.toLowerCase()))
+    ? sessions.filter((s) =>
+        s.title.toLowerCase().includes(search.toLowerCase()),
+      )
     : sessions;
 
   // Close panel on outside click
@@ -136,7 +144,9 @@ export function SessionSelector({
           <div className="absolute left-0 top-full mt-1.5 z-50 w-[260px] rounded-lg border border-border bg-popover shadow-lg overflow-hidden">
             {/* Header */}
             <div className="px-3 pt-3 pb-2">
-              <p className="text-xs font-medium text-foreground mb-2">历史对话</p>
+              <p className="text-xs font-medium text-foreground mb-2">
+                历史对话
+              </p>
               {/* Search */}
               <div className="relative">
                 <SearchIcon className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70" />
@@ -171,7 +181,10 @@ export function SessionSelector({
                     if (confirmingId !== s.id) handleSelect(s.id);
                   }}
                   onKeyDown={(e) => {
-                    if ((e.key === "Enter" || e.key === " ") && confirmingId !== s.id) {
+                    if (
+                      (e.key === "Enter" || e.key === " ") &&
+                      confirmingId !== s.id
+                    ) {
                       e.preventDefault();
                       handleSelect(s.id);
                     }

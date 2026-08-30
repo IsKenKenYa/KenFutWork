@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useSyncExternalStore } from "react";
 import type { ImageGenerationPreference } from "@loomic/shared";
+import { useCallback, useSyncExternalStore } from "react";
 
 const STORAGE_KEY = "loomic:image-model-preference";
 const DEFAULT_MODEL = "google/nano-banana-2";
@@ -29,7 +29,11 @@ function getSnapshot(): ImageModelPreference {
     if (raw !== cachedRaw) {
       cachedRaw = raw;
       cachedPreference = raw
-        ? normalizePreference(JSON.parse(raw) as Partial<ImageModelPreference> & { model?: string })
+        ? normalizePreference(
+            JSON.parse(raw) as Partial<ImageModelPreference> & {
+              model?: string;
+            },
+          )
         : defaultPreference;
     }
     return cachedPreference;
@@ -54,7 +58,8 @@ function normalizePreference(
 
   const models = Array.isArray(preference.models)
     ? preference.models.filter(
-        (model): model is string => typeof model === "string" && model.length > 0,
+        (model): model is string =>
+          typeof model === "string" && model.length > 0,
       )
     : typeof preference.model === "string" && preference.model.length > 0
       ? [preference.model]
@@ -67,7 +72,11 @@ function normalizePreference(
 }
 
 export function useImageModelPreference() {
-  const preference = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const preference = useSyncExternalStore(
+    subscribe,
+    getSnapshot,
+    getServerSnapshot,
+  );
 
   const setPreference = useCallback((next: ImageModelPreference) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));

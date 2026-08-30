@@ -61,7 +61,10 @@ export function ColorSection({
       <div className="flex flex-wrap gap-3">
         {colors.map((color) => (
           <div key={color.id} className="flex flex-col items-center gap-1.5">
-            <div className="relative group" ref={editingAsset?.id === color.id ? editAnchorRef : undefined}>
+            <div
+              className="relative group"
+              ref={editingAsset?.id === color.id ? editAnchorRef : undefined}
+            >
               <button
                 type="button"
                 onClick={() => handleSwatchClick(color)}

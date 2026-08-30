@@ -421,11 +421,11 @@ export const creditBalanceResponseSchema = z.object({
 export type CreditBalanceResponse = z.infer<typeof creditBalanceResponseSchema>;
 
 export const creditTransactionSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   transaction_type: creditTransactionTypeSchema,
   amount: z.number().int(),
   balance_after: z.number().int(),
-  job_id: z.string().uuid().nullable(),
+  job_id: z.uuid().nullable(),
   description: z.string().nullable(),
   created_at: z.string(),
 });

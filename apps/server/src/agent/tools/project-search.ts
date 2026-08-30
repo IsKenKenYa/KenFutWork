@@ -1,6 +1,6 @@
 import type { ToolRuntime } from "@langchain/core/tools";
-import { resolveBackend, type AnyBackendProtocol } from "deepagents";
 import type { BackendProtocolV2, BackendRuntime } from "deepagents";
+import { type AnyBackendProtocol, resolveBackend } from "deepagents";
 import { tool } from "langchain";
 import { z } from "zod";
 
@@ -41,8 +41,7 @@ export async function runProjectSearch(
       matchCount: 0,
       matches: [],
       summary:
-        result.error ??
-        `No workspace matches found for "${input.query}".`,
+        result.error ?? `No workspace matches found for "${input.query}".`,
     };
   }
 
@@ -75,11 +74,16 @@ export async function runProjectSearch(
 }
 
 export function createProjectSearchTool(
-  backend: AnyBackendProtocol | ((runtime: BackendRuntime) => AnyBackendProtocol),
+  backend:
+    | AnyBackendProtocol
+    | ((runtime: BackendRuntime) => AnyBackendProtocol),
 ) {
   return tool(
     async (input, runtime: ToolRuntime) => {
-      return await runProjectSearch(await resolveBackend(backend, runtime), input);
+      return await runProjectSearch(
+        await resolveBackend(backend, runtime),
+        input,
+      );
     },
     {
       name: "project_search",

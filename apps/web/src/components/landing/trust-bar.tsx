@@ -1,9 +1,9 @@
 "use client";
 
 import React from "react";
-import { cn } from "@/lib/utils";
 import { AnimatedCounter } from "@/components/landing/animated-counter";
-import { StaggerContainer, FadeUp } from "@/components/landing/motion";
+import { FadeUp, StaggerContainer } from "@/components/landing/motion";
+import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Stat item data
@@ -49,12 +49,14 @@ function StatCard({ stat, isLast }: { stat: StatItem; isLast: boolean }) {
         <div
           className={cn(
             "h-px w-8 rounded-full transition-all duration-300",
-            "bg-border group-hover:bg-accent/50 group-hover:w-12"
+            "bg-border group-hover:bg-accent/50 group-hover:w-12",
           )}
         />
 
         {/* Label */}
-        <span className="text-sm text-muted-foreground mt-0.5">{stat.label}</span>
+        <span className="text-sm text-muted-foreground mt-0.5">
+          {stat.label}
+        </span>
       </FadeUp>
 
       {/* Vertical separator between stats (hidden on last) */}
@@ -75,10 +77,7 @@ function StatCard({ stat, isLast }: { stat: StatItem; isLast: boolean }) {
 export function TrustBar() {
   return (
     <section
-      className={cn(
-        "py-16 md:py-24",
-        "border-y border-border/50"
-      )}
+      className={cn("py-16 md:py-24", "border-y border-border/50")}
       style={{
         background:
           "linear-gradient(180deg, oklch(0.556 0 0 / 0.04) 0%, oklch(0.556 0 0 / 0.08) 50%, oklch(0.556 0 0 / 0.04) 100%)",
@@ -87,11 +86,15 @@ export function TrustBar() {
       <StaggerContainer
         className={cn(
           "max-w-6xl mx-auto px-4",
-          "flex flex-wrap items-center justify-center gap-8 md:gap-12"
+          "flex flex-wrap items-center justify-center gap-8 md:gap-12",
         )}
       >
         {STATS.map((stat, i) => (
-          <StatCard key={stat.label} stat={stat} isLast={i === STATS.length - 1} />
+          <StatCard
+            key={stat.label}
+            stat={stat}
+            isLast={i === STATS.length - 1}
+          />
         ))}
       </StaggerContainer>
     </section>

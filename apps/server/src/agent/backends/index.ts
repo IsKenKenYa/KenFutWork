@@ -1,7 +1,4 @@
-import type {
-  AnyBackendProtocol,
-  BackendRuntime,
-} from "deepagents";
+import type { AnyBackendProtocol, BackendRuntime } from "deepagents";
 
 import type { ServerEnv } from "../../config/env.js";
 import { createDevelopmentBackend } from "./dev.js";

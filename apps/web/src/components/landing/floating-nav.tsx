@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Menu, Moon, Sun, X } from "lucide-react";
 import Link from "next/link";
-import { motion, AnimatePresence } from "framer-motion";
 import { useTheme } from "next-themes";
-import { Sun, Moon, Menu, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -146,16 +146,16 @@ export function FloatingNav() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo with hover animation */}
-          <Link
-            href="/"
-            className="flex items-center gap-2 shrink-0 group"
-          >
+          <Link href="/" className="flex items-center gap-2 shrink-0 group">
             <LoomicLogo className="size-6 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-6" />
             <span className="font-bold text-lg tracking-tight">Loomic</span>
           </Link>
 
           {/* Desktop Nav Links with underline animation */}
-          <nav className="hidden md:flex items-center gap-1" aria-label="Main navigation">
+          <nav
+            className="hidden md:flex items-center gap-1"
+            aria-label="Main navigation"
+          >
             {NAV_LINKS.map(({ label, href }) => (
               <a
                 key={href}
@@ -205,7 +205,10 @@ export function FloatingNav() {
             transition={{ duration: 0.25, ease: "easeInOut" }}
             className="md:hidden overflow-hidden border-t border-border bg-background/95 backdrop-blur-xl"
           >
-            <nav className="px-4 py-3 flex flex-col gap-1" aria-label="Mobile navigation">
+            <nav
+              className="px-4 py-3 flex flex-col gap-1"
+              aria-label="Mobile navigation"
+            >
               {NAV_LINKS.map(({ label, href }) => (
                 <a
                   key={href}

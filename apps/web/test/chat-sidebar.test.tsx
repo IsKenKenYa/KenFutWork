@@ -4,11 +4,10 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-import type { WebSocketHandle } from "../src/hooks/use-websocket";
 import { ChatSidebar } from "../src/components/chat-sidebar";
 import { TierLimitToastProvider } from "../src/components/credits/tier-limit-toast";
 import { ToastProvider } from "../src/components/toast";
+import type { WebSocketHandle } from "../src/hooks/use-websocket";
 
 const {
   createSessionMock,
@@ -140,9 +139,7 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(
-      /start with an idea/i,
-    );
+    const input = await screen.findByPlaceholderText(/start with an idea/i);
     await userEvent.type(input, "hello loom{Enter}");
 
     await waitFor(() =>

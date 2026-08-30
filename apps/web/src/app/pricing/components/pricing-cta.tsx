@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { motion } from "framer-motion";
-import { cn } from "@/lib/utils";
+import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { fadeInUp } from "./pricing-data";
 
 export function PricingCTA() {

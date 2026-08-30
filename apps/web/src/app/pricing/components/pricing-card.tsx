@@ -14,7 +14,10 @@ interface PricingCardProps {
   billingPeriod: BillingPeriod;
   index: number;
   currentPlan?: string | null | undefined;
-  onCheckout?: (plan: string, billingPeriod: BillingPeriod) => Promise<void> | undefined;
+  onCheckout?: (
+    plan: string,
+    billingPeriod: BillingPeriod,
+  ) => Promise<void> | undefined;
 }
 
 export function PricingCard({
@@ -138,9 +141,7 @@ export function PricingCard({
             transition={{ duration: 0.25 }}
             className="flex items-baseline gap-1"
           >
-            <span className="text-foreground text-4xl font-bold">
-              ${price}
-            </span>
+            <span className="text-foreground text-4xl font-bold">${price}</span>
             <span className="text-muted-foreground text-sm">/month</span>
           </motion.div>
         </AnimatePresence>

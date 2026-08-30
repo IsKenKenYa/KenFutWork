@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AgentSection } from "@/components/agent-section";
 import { BillingSection } from "@/components/billing-section";

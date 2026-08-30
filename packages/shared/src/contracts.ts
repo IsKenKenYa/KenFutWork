@@ -4,7 +4,7 @@ import { toolArtifactSchema } from "./artifacts.js";
 import { brandKitAssetTypeSchema } from "./brand-kit-contracts.js";
 
 export const identifierSchema = z.string().min(1);
-export const timestampSchema = z.string().datetime({ offset: true });
+export const timestampSchema = z.iso.datetime({ offset: true });
 
 export const sessionIdSchema = identifierSchema;
 export const conversationIdSchema = identifierSchema;
@@ -28,7 +28,7 @@ export const runStatusSchema = z.enum([
 
 export const imageAttachmentSchema = z.object({
   assetId: z.string().min(1),
-  url: z.string().url(),
+  url: z.url(),
   mimeType: z.string().min(1),
   name: z.string().min(1).optional(),
 });
@@ -45,7 +45,7 @@ export const brandKitAssetMentionSchema = z.object({
   label: z.string().min(1),
   assetType: brandKitAssetTypeSchema,
   textContent: z.string().nullable().optional(),
-  fileUrl: z.string().url().nullable().optional(),
+  fileUrl: z.url().nullable().optional(),
 });
 
 export const skillMentionSchema = z.object({
@@ -93,9 +93,9 @@ export const runCreateResponseSchema = z.object({
 
 export const viewerProfileSchema = z.object({
   id: userIdSchema,
-  email: z.string().email(),
+  email: z.email(),
   displayName: z.string().min(1),
-  avatarUrl: z.string().url().nullable().optional(),
+  avatarUrl: z.url().nullable().optional(),
 });
 
 export const workspaceSummarySchema = z.object({
@@ -130,9 +130,9 @@ export const projectSummarySchema = z.object({
 });
 
 export const canvasContentSchema = z.object({
-  elements: z.array(z.record(z.unknown())).default([]),
-  appState: z.record(z.unknown()).default({}),
-  files: z.record(z.record(z.unknown())).default({}),
+  elements: z.array(z.record(z.string(), z.unknown())).default([]),
+  appState: z.record(z.string(), z.unknown()).default({}),
+  files: z.record(z.string(), z.record(z.string(), z.unknown())).default({}),
 });
 
 export const canvasDetailSchema = z.object({
@@ -162,8 +162,8 @@ export const chatToolActivitySchema = z.object({
   toolCallId: z.string().min(1),
   toolName: z.string().min(1),
   status: z.enum(["running", "completed"]),
-  input: z.record(z.unknown()).optional(),
-  output: z.record(z.unknown()).optional(),
+  input: z.record(z.string(), z.unknown()).optional(),
+  output: z.record(z.string(), z.unknown()).optional(),
   outputSummary: z.string().optional(),
   artifacts: z.array(toolArtifactSchema).optional(),
 });
@@ -189,8 +189,8 @@ export const toolBlockSchema = z.object({
   toolCallId: z.string().min(1),
   toolName: z.string().min(1),
   status: z.enum(["running", "completed"]),
-  input: z.record(z.unknown()).optional(),
-  output: z.record(z.unknown()).optional(),
+  input: z.record(z.string(), z.unknown()).optional(),
+  output: z.record(z.string(), z.unknown()).optional(),
   outputSummary: z.string().optional(),
   artifacts: z.array(toolArtifactSchema).optional(),
 });
@@ -198,7 +198,7 @@ export const toolBlockSchema = z.object({
 export const imageBlockSchema = z.object({
   type: z.literal("image"),
   assetId: z.string().min(1),
-  url: z.string().url(),
+  url: z.url(),
   mimeType: z.string().min(1),
   source: z.enum(["upload", "canvas-ref"]),
   name: z.string().min(1).optional(),
@@ -218,7 +218,7 @@ export const brandKitAssetMentionBlockSchema = z.object({
   label: z.string().min(1),
   assetType: brandKitAssetTypeSchema,
   textContent: z.string().nullable().optional(),
-  fileUrl: z.string().url().nullable().optional(),
+  fileUrl: z.url().nullable().optional(),
 });
 
 export const skillMentionBlockSchema = z.object({
@@ -291,7 +291,9 @@ export type VideoGenerationPreference = z.infer<
 export type ContentBlock = z.infer<typeof contentBlockSchema>;
 export type ChatSessionSummary = z.infer<typeof chatSessionSummarySchema>;
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
-export type ChatMessageCreateRequest = z.infer<typeof chatMessageCreateRequestSchema>;
+export type ChatMessageCreateRequest = z.infer<
+  typeof chatMessageCreateRequestSchema
+>;
 export type ChatToolActivity = z.infer<typeof chatToolActivitySchema>;
 export type ProfileUpdateRequest = z.infer<typeof profileUpdateRequestSchema>;
 export type WorkspaceSettings = z.infer<typeof workspaceSettingsSchema>;

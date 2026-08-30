@@ -1,10 +1,10 @@
 "use client";
 
-import Image from "next/image";
 import { motion } from "framer-motion";
-import { cn } from "@/lib/utils";
-import { SectionHeader } from "@/components/landing/section-header";
+import Image from "next/image";
 import { StaggerContainer, scaleUp } from "@/components/landing/motion";
+import { SectionHeader } from "@/components/landing/section-header";
+import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Gallery -- local high-res images (1200px, optimized jpg)

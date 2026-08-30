@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { type GenerateContentResponse, GoogleGenAI } from "@google/genai";
 
 import type {
   GeneratedImage,
@@ -6,7 +6,11 @@ import type {
   ImageProvider,
   ModelInfo,
 } from "../types.js";
-import { aspectRatioToDimensions, fetchAsBase64, GenerationError } from "../utils.js";
+import {
+  aspectRatioToDimensions,
+  fetchAsBase64,
+  GenerationError,
+} from "../utils.js";
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -24,8 +28,7 @@ const MODEL_MAP: Record<string, string> = {
   "google-official/gemini-2.5-flash-image": "gemini-2.5-flash-image",
   "google-official/gemini-3.1-flash-image-preview":
     "gemini-3.1-flash-image-preview",
-  "google-official/gemini-3-pro-image-preview":
-    "gemini-3-pro-image-preview",
+  "google-official/gemini-3-pro-image-preview": "gemini-3-pro-image-preview",
 };
 
 const GOOGLE_IMAGE_MODELS: readonly ModelInfo[] = [
@@ -97,8 +100,7 @@ export class GoogleImageProvider implements ImageProvider {
 
     // Build content parts: text prompt + optional input images.
     const parts: Array<
-      | { text: string }
-      | { inlineData: { mimeType: string; data: string } }
+      { text: string } | { inlineData: { mimeType: string; data: string } }
     > = [{ text: params.prompt }];
 
     if (params.inputImages?.length) {
@@ -112,7 +114,7 @@ export class GoogleImageProvider implements ImageProvider {
       }
     }
 
-    let response;
+    let response: GenerateContentResponse;
     try {
       response = await this.client.models.generateContent({
         model: apiModel,

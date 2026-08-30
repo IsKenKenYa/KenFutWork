@@ -1,20 +1,16 @@
 "use client";
 
-import type { WorkspaceSummary, ProjectSummary } from "@loomic/shared";
-import { useCallback, useEffect, useRef, useState } from "react";
+import type { ProjectSummary, WorkspaceSummary } from "@loomic/shared";
 import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { LoadingScreen } from "@/components/loading-screen";
 import { ProjectList } from "@/components/project-list";
 import { ProjectsSkeleton } from "@/components/skeletons/projects-skeleton";
+import { Button } from "@/components/ui/button";
 import { useCreateProject } from "@/hooks/use-create-project";
 import { useAuth } from "@/lib/auth-context";
-import {
-  fetchViewer,
-  fetchProjects,
-  ApiAuthError,
-} from "@/lib/server-api";
-import { Button } from "@/components/ui/button";
+import { ApiAuthError, fetchProjects, fetchViewer } from "@/lib/server-api";
 
 export default function ProjectsPage() {
   const { session, signOut } = useAuth();

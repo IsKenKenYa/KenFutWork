@@ -1,22 +1,23 @@
 {
-  "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.11/schema.json",
   "files": {
     "ignoreUnknown": true,
-    "ignore": [
-      "**/node_modules/**",
-      "**/.turbo/**",
-      "**/.next/**",
-      "**/dist/**",
-      "**/out/**"
-    ],
-    "include": [
+    "includes": [
       "**/*.js",
       "**/*.mjs",
       "**/*.cjs",
       "**/*.ts",
       "**/*.tsx",
       "**/*.json",
-      "**/*.jsonc"
+      "**/*.jsonc",
+      "!**/node_modules",
+      "!**/.turbo",
+      "!**/.next",
+      "!**/dist",
+      "!**/out",
+      "!**/.pnpm-store",
+      "!**/tmp",
+      "!**/references"
     ]
   },
   "formatter": {
@@ -26,7 +27,27 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true
+      "preset": "recommended",
+      "style": {
+        "noNonNullAssertion": "warn"
+      },
+      "suspicious": {
+        "noExplicitAny": "warn",
+        "noTsIgnore": "warn",
+        "noArrayIndexKey": "warn"
+      },
+      "performance": {
+        "noImgElement": "warn"
+      },
+      "correctness": {
+        "useExhaustiveDependencies": "warn"
+      },
+      "a11y": {
+        "noSvgWithoutTitle": "warn",
+        "noStaticElementInteractions": "warn",
+        "useKeyWithClickEvents": "warn",
+        "useSemanticElements": "warn"
+      }
     }
   }
 }

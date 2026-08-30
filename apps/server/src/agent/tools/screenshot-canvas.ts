@@ -1,14 +1,15 @@
 import { DynamicStructuredTool } from "@langchain/core/tools";
+import type { ScreenshotResult } from "@loomic/shared";
 import { z } from "zod";
-
 import type { ConnectionManager } from "../../ws/connection-manager.js";
 import type { PersistImageFn } from "./image-generate.js";
-import type { ScreenshotResult } from "@loomic/shared";
 
 const screenshotCanvasSchema = z.object({
   mode: z
     .enum(["full", "region", "viewport"])
-    .describe("full: all elements; region: specific area; viewport: current user view"),
+    .describe(
+      "full: all elements; region: specific area; viewport: current user view",
+    ),
   region: z
     .object({
       x: z.number(),
@@ -21,7 +22,9 @@ const screenshotCanvasSchema = z.object({
   max_dimension: z
     .number()
     .default(1024)
-    .describe("Max width or height in pixels. 512=low, 1024=medium, 2048=high quality"),
+    .describe(
+      "Max width or height in pixels. 512=low, 1024=medium, 2048=high quality",
+    ),
 });
 
 export function createScreenshotCanvasTool(deps: {
@@ -42,7 +45,8 @@ export function createScreenshotCanvasTool(deps: {
       if (!userId) {
         return JSON.stringify({
           error: "no_user_context",
-          message: "screenshot_canvas requires a user context to communicate with the browser.",
+          message:
+            "screenshot_canvas requires a user context to communicate with the browser.",
         });
       }
 
@@ -90,7 +94,8 @@ export function createScreenshotCanvasTool(deps: {
 
         return JSON.stringify(output);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Screenshot failed";
+        const message =
+          error instanceof Error ? error.message : "Screenshot failed";
         return JSON.stringify({
           error: "screenshot_failed",
           message: `Screenshot failed: ${message}`,

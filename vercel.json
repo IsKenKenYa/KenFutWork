@@ -4,6 +4,9 @@
   "outputDirectory": "apps/web/out",
   "cleanUrls": true,
   "rewrites": [
-    { "source": "/((?!_next|favicon|logo|og-image|apple-touch-icon).*)", "destination": "/index.html" }
+    {
+      "source": "/((?!_next|favicon|logo|og-image|apple-touch-icon).*)",
+      "destination": "/index.html"
+    }
   ]
 }

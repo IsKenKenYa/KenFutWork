@@ -58,7 +58,8 @@ function itemLabel(item: MessageMentionPickerItem): string {
 function itemKeywords(item: MessageMentionPickerItem): string[] {
   if (item.kind === "canvas-image") return [item.name];
   if (item.kind === "image-model") return [item.label, item.description ?? ""];
-  if (item.kind === "skill") return [item.label, item.slug, item.description ?? ""];
+  if (item.kind === "skill")
+    return [item.label, item.slug, item.description ?? ""];
   return [item.label, item.assetType, item.textContent ?? ""];
 }
 
@@ -96,14 +97,17 @@ export function MessageMentionPicker({
       "canvas-image": [],
       "brand-kit-asset": [],
       "image-model": [],
-      "skill": [],
+      skill: [],
     },
   );
 
   // Close on click outside
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
         onClose();
       }
     }
@@ -127,7 +131,9 @@ export function MessageMentionPicker({
         className="absolute bottom-full left-2 mb-2 w-56 rounded-xl border border-border bg-popover p-3 shadow-lg"
       >
         <p className="text-xs text-muted-foreground">
-          {items.length === 0 ? "No items available to mention" : `No match for "${query}"`}
+          {items.length === 0
+            ? "No items available to mention"
+            : `No match for "${query}"`}
         </p>
       </div>
     );
@@ -140,12 +146,7 @@ export function MessageMentionPicker({
     >
       <div className="p-2">
         {(
-          [
-            "canvas-image",
-            "brand-kit-asset",
-            "image-model",
-            "skill",
-          ] as const
+          ["canvas-image", "brand-kit-asset", "image-model", "skill"] as const
         ).map((kind) => {
           const sectionItems = groupedItems[kind];
           if (!sectionItems.length) return null;

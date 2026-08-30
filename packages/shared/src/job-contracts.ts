@@ -25,7 +25,9 @@ export const imageGenerationPayloadSchema = z.object({
   model: z.string().optional(),
   aspect_ratio: z.string().optional(),
 });
-export type ImageGenerationPayload = z.infer<typeof imageGenerationPayloadSchema>;
+export type ImageGenerationPayload = z.infer<
+  typeof imageGenerationPayloadSchema
+>;
 
 export const videoGenerationPayloadSchema = z.object({
   prompt: z.string().min(1),
@@ -37,12 +39,14 @@ export const videoGenerationPayloadSchema = z.object({
   input_video: z.string().optional(),
   enable_audio: z.boolean().optional(),
 });
-export type VideoGenerationPayload = z.infer<typeof videoGenerationPayloadSchema>;
+export type VideoGenerationPayload = z.infer<
+  typeof videoGenerationPayloadSchema
+>;
 
 export const createVideoJobRequestSchema = z.object({
-  project_id: z.string().uuid().optional(),
-  canvas_id: z.string().uuid().optional(),
-  session_id: z.string().uuid().optional(),
+  project_id: z.uuid().optional(),
+  canvas_id: z.uuid().optional(),
+  session_id: z.uuid().optional(),
   thread_id: z.string().optional(),
   prompt: z.string().min(1),
   model: z.string().optional(),
@@ -58,11 +62,11 @@ export type CreateVideoJobRequest = z.infer<typeof createVideoJobRequestSchema>;
 // --- Job entity ---
 
 export const backgroundJobSchema = z.object({
-  id: z.string().uuid(),
-  workspace_id: z.string().uuid(),
-  project_id: z.string().uuid().nullable(),
-  canvas_id: z.string().uuid().nullable(),
-  session_id: z.string().uuid().nullable(),
+  id: z.uuid(),
+  workspace_id: z.uuid(),
+  project_id: z.uuid().nullable(),
+  canvas_id: z.uuid().nullable(),
+  session_id: z.uuid().nullable(),
   thread_id: z.string().nullable(),
   queue_name: z.string(),
   job_type: backgroundJobTypeSchema,
@@ -73,7 +77,7 @@ export const backgroundJobSchema = z.object({
   error_message: z.string().nullable(),
   attempt_count: z.number().int(),
   max_attempts: z.number().int(),
-  created_by: z.string().uuid(),
+  created_by: z.uuid(),
   created_at: z.string(),
   updated_at: z.string(),
   started_at: z.string().nullable(),
@@ -86,9 +90,9 @@ export type BackgroundJob = z.infer<typeof backgroundJobSchema>;
 // --- API Request schemas ---
 
 export const createImageJobRequestSchema = z.object({
-  project_id: z.string().uuid().optional(),
-  canvas_id: z.string().uuid().optional(),
-  session_id: z.string().uuid().optional(),
+  project_id: z.uuid().optional(),
+  canvas_id: z.uuid().optional(),
+  session_id: z.uuid().optional(),
   thread_id: z.string().optional(),
   prompt: z.string().min(1),
   model: z.string().optional(),

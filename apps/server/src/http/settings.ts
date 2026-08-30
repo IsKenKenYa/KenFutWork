@@ -1,16 +1,15 @@
-import type { FastifyInstance, FastifyReply } from "fastify";
-
 import {
   applicationErrorResponseSchema,
   unauthenticatedErrorResponseSchema,
   workspaceSettingsResponseSchema,
   workspaceSettingsUpdateRequestSchema,
 } from "@loomic/shared";
+import type { FastifyInstance, FastifyReply } from "fastify";
 
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import {
-  SettingsServiceError,
   type SettingsService,
+  SettingsServiceError,
 } from "../features/settings/settings-service.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
 

@@ -1,25 +1,27 @@
 // @credits-system — Direct generation routes with credit deduction and tier checks
-import type { FastifyInstance } from "fastify";
-import { z } from "zod";
 
 import {
   applicationErrorResponseSchema,
-  unauthenticatedErrorResponseSchema,
   type ImageQualityLevel,
+  unauthenticatedErrorResponseSchema,
   type VideoResolution,
 } from "@loomic/shared";
-
-import { generateImage } from "../generation/image-generation.js";
-import { resolveImageProviderName } from "../generation/providers/registry.js";
+import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { CreditService } from "../features/credits/credit-service.js";
 import { CreditServiceError } from "../features/credits/credit-service.js";
 import type { TierGuard } from "../features/credits/tier-guard.js";
 import { TierGuardError } from "../features/credits/tier-guard.js";
 import type { JobService } from "../features/jobs/job-service.js";
 import { JobServiceError } from "../features/jobs/job-service.js";
-import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { UploadService } from "../features/uploads/upload-service.js";
-import type { AuthenticatedUser, RequestAuthenticator } from "../supabase/user.js";
+import { generateImage } from "../generation/image-generation.js";
+import { resolveImageProviderName } from "../generation/providers/registry.js";
+import type {
+  AuthenticatedUser,
+  RequestAuthenticator,
+} from "../supabase/user.js";
 
 const generateImageRequestSchema = z.object({
   prompt: z.string().min(1),
@@ -83,18 +85,27 @@ export async function registerGenerateRoutes(
       let creditsCost = 0;
 
       if (options.creditService && options.tierGuard) {
-        const sub = await options.creditService.getSubscription(viewer.workspace.id);
+        const sub = await options.creditService.getSubscription(
+          viewer.workspace.id,
+        );
         const quality: ImageQualityLevel = payload.quality ?? "hd";
         options.tierGuard.checkModelAccess(sub.plan, model);
         // Throws TierGuardError (resolution_not_allowed) if plan doesn't allow this quality
         options.tierGuard.checkResolution(sub.plan, quality);
         await options.tierGuard.checkConcurrency(viewer.workspace.id, sub.plan);
-        creditsCost = options.tierGuard.calculateCreditCost(model, "image_generation", { quality });
+        creditsCost = options.tierGuard.calculateCreditCost(
+          model,
+          "image_generation",
+          { quality },
+        );
 
         // Deduct credits before generation
         if (creditsCost > 0) {
           await options.creditService.deductCredits(
-            viewer.workspace.id, user.id, creditsCost, undefined,
+            viewer.workspace.id,
+            user.id,
+            creditsCost,
+            undefined,
             `Direct image generation: ${model}`,
           );
         }
@@ -200,7 +211,8 @@ export async function registerGenerateRoutes(
         applicationErrorResponseSchema.parse({
           error: {
             code: "service_unavailable",
-            message: "Video generation is not available (job service not configured).",
+            message:
+              "Video generation is not available (job service not configured).",
           },
         }),
       );
@@ -245,9 +257,7 @@ export async function registerGenerateRoutes(
           model,
           ...(payload.duration != null ? { duration: payload.duration } : {}),
           ...(payload.resolution ? { resolution: payload.resolution } : {}),
-          ...(payload.aspectRatio
-            ? { aspect_ratio: payload.aspectRatio }
-            : {}),
+          ...(payload.aspectRatio ? { aspect_ratio: payload.aspectRatio } : {}),
           ...(payload.inputImages?.length
             ? { input_images: payload.inputImages }
             : {}),
@@ -415,7 +425,10 @@ async function downloadAndUpload(
   const buffer = Buffer.from(await response.arrayBuffer());
 
   const ext = mimeType === "image/webp" ? "webp" : "png";
-  const slug = prompt.slice(0, 40).replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const slug = prompt
+    .slice(0, 40)
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
   const fileName = `gen-${slug}-${Date.now()}.${ext}`;
 
   const viewer = await deps.viewerService.ensureViewer(user);

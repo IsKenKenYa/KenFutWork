@@ -1,4 +1,8 @@
-import type { GeneratedImage, ImageGenerateParams, ImageProvider } from "../types.js";
+import type {
+  GeneratedImage,
+  ImageGenerateParams,
+  ImageProvider,
+} from "../types.js";
 import { aspectRatioToDimensions, GenerationError } from "../utils.js";
 
 const DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
@@ -16,7 +20,9 @@ export class VolcesImageProvider implements ImageProvider {
   }
 
   async generate(params: ImageGenerateParams): Promise<GeneratedImage> {
-    const { width, height } = aspectRatioToDimensions(params.aspectRatio ?? "1:1");
+    const { width, height } = aspectRatioToDimensions(
+      params.aspectRatio ?? "1:1",
+    );
 
     const body = {
       model: params.model,
@@ -43,12 +49,18 @@ export class VolcesImageProvider implements ImageProvider {
       );
     }
 
-    const data = (await response.json()) as { data: Array<{ url?: string; b64_json?: string }> };
+    const data = (await response.json()) as {
+      data: Array<{ url?: string; b64_json?: string }>;
+    };
     const imageData = data.data[0];
     const url = imageData?.url;
 
     if (!url) {
-      throw new GenerationError("volces", "no_output", "Volces returned no image URL");
+      throw new GenerationError(
+        "volces",
+        "no_output",
+        "Volces returned no image URL",
+      );
     }
 
     return { url, mimeType: "image/png", width, height };

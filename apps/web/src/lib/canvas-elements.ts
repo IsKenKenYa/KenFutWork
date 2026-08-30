@@ -143,10 +143,7 @@ export async function insertImageOnCanvas(
     ) => void;
     getSceneElements: () => readonly any[];
     getAppState: () => any;
-    updateScene: (scene: {
-      elements: any[];
-      captureUpdate?: string;
-    }) => void;
+    updateScene: (scene: { elements: any[]; captureUpdate?: string }) => void;
   },
   artifact: ImageArtifact,
 ): Promise<void> {
@@ -232,15 +229,14 @@ export async function insertVideoOnCanvas(
   api: {
     getSceneElements: () => readonly any[];
     getAppState: () => any;
-    updateScene: (scene: {
-      elements: any[];
-      captureUpdate?: string;
-    }) => void;
+    updateScene: (scene: { elements: any[]; captureUpdate?: string }) => void;
   },
   artifact: VideoArtifact,
 ): Promise<void> {
   // Dynamic import — excalidraw is client-only and cannot be imported at module level
-  const { convertToExcalidrawElements } = await import("@excalidraw/excalidraw");
+  const { convertToExcalidrawElements } = await import(
+    "@excalidraw/excalidraw"
+  );
 
   let x: number;
   let y: number;
@@ -309,7 +305,6 @@ export async function insertVideoOnCanvas(
 
 function generateId(): string {
   return (
-    Math.random().toString(36).slice(2) +
-    Math.random().toString(36).slice(2)
+    Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
   ).slice(0, 20);
 }

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import type { ReactNode } from "react";
-import Script from "next/script";
 import { Geist } from "next/font/google";
+import Script from "next/script";
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 import { Providers } from "../components/providers";
@@ -32,7 +32,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={cn(geist.variable, "scroll-smooth")} suppressHydrationWarning>
+    <html
+      lang="en"
+      className={cn(geist.variable, "scroll-smooth")}
+      suppressHydrationWarning
+    >
       <body className="min-h-screen bg-background font-sans antialiased">
         <Providers>{children}</Providers>
         <Script

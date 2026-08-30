@@ -21,9 +21,7 @@ export async function applyWatermark(
   const height = metadata.height ?? 512;
 
   // Scale font size: ~3% of width, clamped between 12px and 48px
-  const fontSize = Math.round(
-    Math.min(48, Math.max(12, width * 0.03)),
-  );
+  const fontSize = Math.round(Math.min(48, Math.max(12, width * 0.03)));
   const padding = Math.round(fontSize * 1.2);
 
   const svg = Buffer.from(
@@ -46,7 +44,5 @@ export async function applyWatermark(
 </svg>`,
   );
 
-  return image
-    .composite([{ input: svg, top: 0, left: 0 }])
-    .toBuffer();
+  return image.composite([{ input: svg, top: 0, left: 0 }]).toBuffer();
 }

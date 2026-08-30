@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { WebSocket } from "ws";
 import type { StreamEvent } from "@loomic/shared";
+import type { WebSocket } from "ws";
 
 type PendingRPC = {
   resolve: (value: any) => void;
@@ -297,7 +297,10 @@ export class ConnectionManager {
   // Internal helpers
   // ---------------------------------------------------------------------------
 
-  private removeFromIndexes(connectionId: string, entry: ConnectionEntry): void {
+  private removeFromIndexes(
+    connectionId: string,
+    entry: ConnectionEntry,
+  ): void {
     // Remove from user index
     const userSet = this.userIndex.get(entry.userId);
     if (userSet) {

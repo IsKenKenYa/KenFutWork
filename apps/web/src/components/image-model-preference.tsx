@@ -1,14 +1,12 @@
 "use client";
 
+import { Lock, Zap } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Lock, Zap } from "lucide-react";
-
-import type { ImageModelInfo } from "../lib/server-api";
-import type { VideoModelInfo } from "../lib/server-api";
-import { fetchImageModels, fetchVideoModels } from "../lib/server-api";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { useVideoModelPreference } from "../hooks/use-video-model-preference";
+import type { ImageModelInfo, VideoModelInfo } from "../lib/server-api";
+import { fetchImageModels, fetchVideoModels } from "../lib/server-api";
 
 export function ImageModelPreferencePopover({
   open,
@@ -25,7 +23,11 @@ export function ImageModelPreferencePopover({
   const videoPreference = useVideoModelPreference();
   const [videoModels, setVideoModels] = useState<VideoModelInfo[]>([]);
   const popoverRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number; above: boolean } | null>(null);
+  const [pos, setPos] = useState<{
+    top: number;
+    left: number;
+    above: boolean;
+  } | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -79,10 +81,13 @@ export function ImageModelPreferencePopover({
     return () => document.removeEventListener("keydown", handler);
   }, [open, onClose]);
 
-  const currentPreference = activeTab === "image" ? preference : videoPreference.preference;
+  const currentPreference =
+    activeTab === "image" ? preference : videoPreference.preference;
   const currentModels = activeTab === "image" ? models : videoModels;
-  const currentSetMode = activeTab === "image" ? setMode : videoPreference.setMode;
-  const currentToggleModel = activeTab === "image" ? toggleModel : videoPreference.toggleModel;
+  const currentSetMode =
+    activeTab === "image" ? setMode : videoPreference.setMode;
+  const currentToggleModel =
+    activeTab === "image" ? toggleModel : videoPreference.toggleModel;
 
   if (!open || !pos) return null;
 
@@ -126,7 +131,9 @@ export function ImageModelPreferencePopover({
             <button
               type="button"
               onClick={() =>
-                currentSetMode(currentPreference.mode === "auto" ? "manual" : "auto")
+                currentSetMode(
+                  currentPreference.mode === "auto" ? "manual" : "auto",
+                )
               }
               className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
                 currentPreference.mode === "auto"
@@ -136,7 +143,9 @@ export function ImageModelPreferencePopover({
             >
               <span
                 className={`h-1.5 w-1.5 rounded-full ${
-                  currentPreference.mode === "auto" ? "bg-accent" : "bg-muted-foreground"
+                  currentPreference.mode === "auto"
+                    ? "bg-accent"
+                    : "bg-muted-foreground"
                 }`}
               />
               {currentPreference.mode === "auto" ? "Auto" : "Manual"}
@@ -159,7 +168,9 @@ export function ImageModelPreferencePopover({
                 type="button"
                 onClick={() => currentToggleModel(m.id)}
                 className={`group flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors ${
-                  selected ? "bg-accent/10 hover:bg-accent/15" : "hover:bg-muted"
+                  selected
+                    ? "bg-accent/10 hover:bg-accent/15"
+                    : "hover:bg-muted"
                 }`}
               >
                 {m.iconUrl && (

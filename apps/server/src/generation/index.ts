@@ -1,18 +1,18 @@
 export { generateImage } from "./image-generation.js";
-export { generateVideo } from "./video-generation.js";
 export {
-  registerImageProvider,
-  registerVideoProvider,
+  clearProviders,
   getImageProvider,
   getVideoProvider,
-  clearProviders,
+  registerImageProvider,
+  registerVideoProvider,
 } from "./providers/registry.js";
-export { GenerationError, aspectRatioToDimensions } from "./utils.js";
 export type {
-  ImageProvider,
-  VideoProvider,
-  ImageGenerateParams,
-  VideoGenerateParams,
   GeneratedImage,
   GeneratedVideo,
+  ImageGenerateParams,
+  ImageProvider,
+  VideoGenerateParams,
+  VideoProvider,
 } from "./types.js";
+export { aspectRatioToDimensions, GenerationError } from "./utils.js";
+export { generateVideo } from "./video-generation.js";

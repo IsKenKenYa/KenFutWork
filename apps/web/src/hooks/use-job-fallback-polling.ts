@@ -1,8 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
-
 import type { StreamEvent } from "@loomic/shared";
+import { useCallback, useEffect, useRef } from "react";
 
 import { fetchJob } from "../lib/server-api";
 
@@ -13,7 +12,11 @@ const POLL_INTERVAL_MS = 5_000;
 /** Maximum total polling duration before giving up (ms) */
 const MAX_POLL_DURATION_MS = 10 * 60 * 1_000; // 10 minutes
 /** Terminal job statuses that should stop polling */
-const TERMINAL_FAILURE_STATUSES = new Set(["failed", "dead_letter", "canceled"]);
+const TERMINAL_FAILURE_STATUSES = new Set([
+  "failed",
+  "dead_letter",
+  "canceled",
+]);
 
 // --- Types ---
 
@@ -144,10 +147,7 @@ export function useJobFallbackPolling({
         } catch (err) {
           // Network error or API error — log but continue polling
           // (transient errors should not stop the recovery mechanism)
-          console.warn(
-            `[job-fallback] Poll error for job ${jobId}:`,
-            err,
-          );
+          console.warn(`[job-fallback] Poll error for job ${jobId}:`, err);
         }
       }, POLL_INTERVAL_MS);
 
@@ -185,8 +185,7 @@ export function useJobFallbackPolling({
         return;
       }
 
-      const resolvedJobType =
-        typeof jobType === "string" ? jobType : "unknown";
+      const resolvedJobType = typeof jobType === "string" ? jobType : "unknown";
       startPolling(jobId, resolvedJobType);
     },
     [startPolling],

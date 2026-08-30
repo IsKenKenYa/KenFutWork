@@ -1,6 +1,5 @@
-import { describe, expect, it } from "vitest";
-
 import type { Database } from "@loomic/shared";
+import { describe, expect, it } from "vitest";
 
 import { mapHomeExampleRows } from "@/lib/home-example-library";
 
@@ -41,7 +40,9 @@ describe("mapHomeExampleRows", () => {
         title: "Second",
         prompt: "Prompt B",
         image_urls: ["b-1", "b-2"],
-        input_mentions: [{ type: "tool", name: "Nano Banana", imgSrc: "tool.svg" }],
+        input_mentions: [
+          { type: "tool", name: "Nano Banana", imgSrc: "tool.svg" },
+        ],
         sort_order: 1,
         is_active: true,
         created_at: "2026-03-29T00:00:00.000Z",
@@ -71,13 +72,17 @@ describe("mapHomeExampleRows", () => {
             title: "First",
             prompt: "Prompt A",
             previewImages: ["a-1", "a-2"],
-            inputMentions: [{ type: "image", name: "Logo", imgSrc: "logo.png" }],
+            inputMentions: [
+              { type: "image", name: "Logo", imgSrc: "logo.png" },
+            ],
           },
           {
             title: "Second",
             prompt: "Prompt B",
             previewImages: ["b-1", "b-2"],
-            inputMentions: [{ type: "tool", name: "Nano Banana", imgSrc: "tool.svg" }],
+            inputMentions: [
+              { type: "tool", name: "Nano Banana", imgSrc: "tool.svg" },
+            ],
           },
         ],
       },

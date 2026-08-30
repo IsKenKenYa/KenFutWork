@@ -10,7 +10,7 @@ type CanvasElement = Record<string, unknown>;
 
 type ImageInsertOpts = {
   canvasId: string;
-  objectPath: string;       // Storage path for oss:// marker (already uploaded by worker)
+  objectPath: string; // Storage path for oss:// marker (already uploaded by worker)
   width: number;
   height: number;
   mimeType: string;
@@ -19,7 +19,7 @@ type ImageInsertOpts = {
 
 type VideoInsertOpts = {
   canvasId: string;
-  signedUrl: string;        // Public URL for embeddable link
+  signedUrl: string; // Public URL for embeddable link
   width: number;
   height: number;
   mimeType: string;
@@ -43,7 +43,10 @@ function scaleToFit(
 ): { width: number; height: number } {
   if (width <= maxSize && height <= maxSize) return { width, height };
   const ratio = Math.min(maxSize / width, maxSize / height);
-  return { width: Math.round(width * ratio), height: Math.round(height * ratio) };
+  return {
+    width: Math.round(width * ratio),
+    height: Math.round(height * ratio),
+  };
 }
 
 function calculateAutoPlacement(
@@ -90,8 +93,7 @@ function calculateAutoPlacement(
 
 function generateId(): string {
   return (
-    Math.random().toString(36).slice(2) +
-    Math.random().toString(36).slice(2)
+    Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
   ).slice(0, 20);
 }
 
@@ -172,7 +174,9 @@ function buildVideoElement(
     customData: {
       isVideo: true,
       mimeType: opts.mimeType,
-      ...(opts.durationSeconds != null ? { durationSeconds: opts.durationSeconds } : {}),
+      ...(opts.durationSeconds != null
+        ? { durationSeconds: opts.durationSeconds }
+        : {}),
       ...(opts.title ? { title: opts.title } : {}),
       ...(opts.prompt ? { prompt: opts.prompt } : {}),
     },
@@ -196,17 +200,22 @@ const VIDEO_MAX_SIZE = 800;
  * Excalidraw can render it natively (consistent with frontend-inserted images).
  */
 export async function insertImageElement(
-  client: { from: (table: string) => any; storage: { from: (bucket: string) => any } },
+  client: {
+    from: (table: string) => any;
+    storage: { from: (bucket: string) => any };
+  },
   opts: ImageInsertOpts,
   explicitPlacement?: Placement,
 ): Promise<InsertResult> {
   // 1. Download image from storage and convert to base64 dataURL
-  const { data: blob, error: dlError } = await client
-    .storage.from(CANVAS_FILES_BUCKET)
+  const { data: blob, error: dlError } = await client.storage
+    .from(CANVAS_FILES_BUCKET)
     .download(opts.objectPath);
 
   if (dlError || !blob) {
-    throw new Error(`Failed to download image from storage: ${dlError?.message ?? "no data"}`);
+    throw new Error(
+      `Failed to download image from storage: ${dlError?.message ?? "no data"}`,
+    );
   }
 
   const buffer = Buffer.from(await blob.arrayBuffer());
@@ -224,14 +233,18 @@ export async function insertImageElement(
     throw new Error(`Canvas not found: ${opts.canvasId}`);
   }
 
-  const content = (data.content as CanvasContent) ?? { elements: [], appState: {} };
+  const content = (data.content as CanvasContent) ?? {
+    elements: [],
+    appState: {},
+  };
   const elements: CanvasElement[] = (content.elements as CanvasElement[]) ?? [];
-  const files = ((content as any).files as Record<string, Record<string, unknown>>) ?? {};
+  const files =
+    ((content as any).files as Record<string, Record<string, unknown>>) ?? {};
 
   // 3. Placement
-  const placement = explicitPlacement ?? calculateAutoPlacement(
-    elements, opts.width, opts.height, IMAGE_MAX_SIZE,
-  );
+  const placement =
+    explicitPlacement ??
+    calculateAutoPlacement(elements, opts.width, opts.height, IMAGE_MAX_SIZE);
 
   // 4. Build element + files entry with base64 dataURL
   const fileId = generateId();
@@ -263,7 +276,9 @@ export async function insertImageElement(
     throw new Error(`Failed to write canvas: ${writeError.message}`);
   }
 
-  console.log(`[canvas-element-writer] image inserted canvasId=${opts.canvasId} elementId=${element.id}`);
+  console.log(
+    `[canvas-element-writer] image inserted canvasId=${opts.canvasId} elementId=${element.id}`,
+  );
   return { elementId: element.id as string };
 }
 
@@ -272,7 +287,10 @@ export async function insertImageElement(
  * type with a link URL — no files map entry needed.
  */
 export async function insertVideoElement(
-  client: { from: (table: string) => any; storage: { from: (bucket: string) => any } },
+  client: {
+    from: (table: string) => any;
+    storage: { from: (bucket: string) => any };
+  },
   opts: VideoInsertOpts,
   explicitPlacement?: Placement,
 ): Promise<InsertResult> {
@@ -287,13 +305,16 @@ export async function insertVideoElement(
     throw new Error(`Canvas not found: ${opts.canvasId}`);
   }
 
-  const content = (data.content as CanvasContent) ?? { elements: [], appState: {} };
+  const content = (data.content as CanvasContent) ?? {
+    elements: [],
+    appState: {},
+  };
   const elements: CanvasElement[] = (content.elements as CanvasElement[]) ?? [];
 
   // 2. Placement
-  const placement = explicitPlacement ?? calculateAutoPlacement(
-    elements, opts.width, opts.height, VIDEO_MAX_SIZE,
-  );
+  const placement =
+    explicitPlacement ??
+    calculateAutoPlacement(elements, opts.width, opts.height, VIDEO_MAX_SIZE);
 
   // 3. Build element
   const element = buildVideoElement(placement, opts);
@@ -313,6 +334,8 @@ export async function insertVideoElement(
     throw new Error(`Failed to write canvas: ${writeError.message}`);
   }
 
-  console.log(`[canvas-element-writer] video inserted canvasId=${opts.canvasId} elementId=${element.id}`);
+  console.log(
+    `[canvas-element-writer] video inserted canvasId=${opts.canvasId} elementId=${element.id}`,
+  );
   return { elementId: element.id as string };
 }

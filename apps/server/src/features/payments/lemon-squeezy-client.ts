@@ -54,18 +54,14 @@ export type LemonSqueezyClient = {
     redirectUrl?: string,
   ): Promise<CheckoutResult>;
 
-  getSubscription(
-    subscriptionId: string,
-  ): Promise<LemonSqueezySubscription>;
+  getSubscription(subscriptionId: string): Promise<LemonSqueezySubscription>;
 
   updateSubscription(
     subscriptionId: string,
     attrs: Record<string, unknown>,
   ): Promise<LemonSqueezySubscription>;
 
-  cancelSubscription(
-    subscriptionId: string,
-  ): Promise<LemonSqueezySubscription>;
+  cancelSubscription(subscriptionId: string): Promise<LemonSqueezySubscription>;
 };
 
 // ── Factory ──────────────────────────────────────────────────

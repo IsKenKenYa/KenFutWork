@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import type {
+  ImageGenerationPreference,
+  VideoGenerationPreference,
+} from "@loomic/shared";
 import { useRouter } from "next/navigation";
-import type { ImageGenerationPreference, VideoGenerationPreference } from "@loomic/shared";
-
+import { useCallback, useRef, useState } from "react";
+import { useToast } from "@/components/toast";
 import type { ReadyAttachment } from "@/hooks/use-image-attachments";
 import { useAuth } from "@/lib/auth-context";
-import { useToast } from "@/components/toast";
 import { ApiAuthError, createProject } from "@/lib/server-api";
 
 /** sessionStorage key used to pass attachments from Home → Canvas auto-send. */

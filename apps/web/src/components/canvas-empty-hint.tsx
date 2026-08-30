@@ -64,9 +64,7 @@ export function CanvasEmptyHint({
             // Sidebar might animate open; retry once more.
             setTimeout(() => {
               document
-                .querySelector<HTMLTextAreaElement>(
-                  "textarea[data-chat-input]",
-                )
+                .querySelector<HTMLTextAreaElement>("textarea[data-chat-input]")
                 ?.focus();
             }, 100);
           }

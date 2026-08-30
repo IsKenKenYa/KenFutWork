@@ -1,5 +1,3 @@
-import type { FastifyInstance, FastifyReply } from "fastify";
-
 import {
   applicationErrorResponseSchema,
   runCancelResponseSchema,
@@ -7,16 +5,17 @@ import {
   runCreateResponseSchema,
   unauthenticatedErrorResponseSchema,
 } from "@loomic/shared";
+import type { FastifyInstance, FastifyReply } from "fastify";
 
 import type { AgentRunService } from "../agent/runtime.js";
+import {
+  type AgentRunMetadataService,
+  AgentRunPersistenceError,
+} from "../features/agent-runs/agent-run-service.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import {
-  AgentRunPersistenceError,
-  type AgentRunMetadataService,
-} from "../features/agent-runs/agent-run-service.js";
-import {
-  ThreadServiceError,
   type ThreadService,
+  ThreadServiceError,
 } from "../features/chat/thread-service.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
@@ -77,7 +76,12 @@ export async function registerRunRoutes(
 
       const response = runCreateResponseSchema.parse(
         agentRuns.createRun(payload, {
-          ...(authenticatedUser ? { accessToken: authenticatedUser.accessToken, userId: authenticatedUser.id } : {}),
+          ...(authenticatedUser
+            ? {
+                accessToken: authenticatedUser.accessToken,
+                userId: authenticatedUser.id,
+              }
+            : {}),
           ...(model ? { model } : {}),
           ...(sessionThread ? { threadId: sessionThread.threadId } : {}),
         }),

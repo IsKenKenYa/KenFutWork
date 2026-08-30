@@ -68,7 +68,11 @@ export async function loadWorkspaceSkills(
       .in("skill_id", skillIds);
 
     if (fileRows?.length) {
-      for (const fr of fileRows as Array<{ skill_id: string; file_path: string; content: string }>) {
+      for (const fr of fileRows as Array<{
+        skill_id: string;
+        file_path: string;
+        content: string;
+      }>) {
         const existing = filesBySkillId.get(fr.skill_id) ?? [];
         existing.push({ path: fr.file_path, content: fr.content });
         filesBySkillId.set(fr.skill_id, existing);

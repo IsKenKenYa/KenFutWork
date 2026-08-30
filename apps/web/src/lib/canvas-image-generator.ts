@@ -9,7 +9,11 @@ const RATIO_DIMENSIONS: Record<string, { w: number; h: number }> = {
   "3:4": { w: 768, h: 1024 },
 };
 
-export type ImageGeneratorStatus = "idle" | "generating" | "completed" | "error";
+export type ImageGeneratorStatus =
+  | "idle"
+  | "generating"
+  | "completed"
+  | "error";
 
 export type ImageGeneratorData = {
   type: "image-generator";
@@ -24,8 +28,7 @@ export type ImageGeneratorData = {
 
 function generateId(): string {
   return (
-    Math.random().toString(36).slice(2) +
-    Math.random().toString(36).slice(2)
+    Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
   ).slice(0, 20);
 }
 
@@ -130,7 +133,9 @@ export function createImageGeneratorElement(
 /**
  * Check if an Excalidraw element is an image-generator placeholder.
  */
-export function isImageGeneratorElement(element: any): element is { customData: ImageGeneratorData } & Record<string, unknown> {
+export function isImageGeneratorElement(
+  element: any,
+): element is { customData: ImageGeneratorData } & Record<string, unknown> {
   return element?.customData?.type === "image-generator";
 }
 

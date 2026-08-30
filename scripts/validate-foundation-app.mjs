@@ -1,15 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import ts from "typescript";
 
 const mode = process.argv[2] ?? "typecheck";
 const cwd = process.cwd();
-
-const formatHost = {
-  getCurrentDirectory: () => cwd,
-  getCanonicalFileName: (fileName) => fileName,
-  getNewLine: () => ts.sys.newLine,
-};
 
 const manifest = JSON.parse(
   await readFile(path.join(cwd, "package.json"), "utf8"),
@@ -26,22 +19,30 @@ if (
   );
 }
 
-const configResult = ts.readConfigFile("tsconfig.json", ts.sys.readFile);
-if (configResult.error) {
-  throw new Error(
-    ts.formatDiagnosticsWithColorAndContext([configResult.error], formatHost),
-  );
+// NOTE: TypeScript 7 (native port) no longer exposes the `ts.sys`-style
+// programmatic API, so we validate tsconfig.json without the compiler API.
+// Supports the subset this monorepo uses: single-chain `extends` merging of
+// compilerOptions. Keep in sync if tsconfigs grow exotic features.
+async function loadTsConfig(configPath) {
+  const raw = JSON.parse(await readFile(configPath, "utf8"));
+  if (typeof raw.extends !== "string") {
+    return raw;
+  }
+  const parentPath = path.resolve(path.dirname(configPath), raw.extends);
+  const parent = await loadTsConfig(parentPath);
+  return {
+    ...parent,
+    ...raw,
+    compilerOptions: {
+      ...(parent.compilerOptions ?? {}),
+      ...(raw.compilerOptions ?? {}),
+    },
+  };
 }
 
-const parsed = ts.parseJsonConfigFileContent(configResult.config, ts.sys, cwd);
-const diagnostics = parsed.errors.filter((error) => error.code !== 18003);
-if (diagnostics.length > 0) {
-  throw new Error(
-    ts.formatDiagnosticsWithColorAndContext(diagnostics, formatHost),
-  );
-}
+const config = await loadTsConfig(path.join(cwd, "tsconfig.json"));
 
-if (parsed.options.noEmit !== true) {
+if (config.compilerOptions?.noEmit !== true) {
   throw new Error("Task 1 app tsconfig files must set noEmit=true.");
 }
 
@@ -52,5 +53,8 @@ if (mode === "build") {
     path.join(outputDir, ".loomic-build"),
     "Task 1 foundation build marker\n",
     "utf8",
+  );
+  console.log(
+    `[validate-foundation-app] ${manifest.name} build marker written.`,
   );
 }

@@ -6,7 +6,10 @@ import type {
   Json,
 } from "@loomic/shared";
 
-import type { AuthenticatedUser, UserSupabaseClient } from "../../supabase/user.js";
+import type {
+  AuthenticatedUser,
+  UserSupabaseClient,
+} from "../../supabase/user.js";
 import type { ThreadService } from "./thread-service.js";
 
 export class ChatServiceError extends Error {
@@ -39,10 +42,7 @@ export type ChatService = {
     sessionId: string,
     title: string,
   ): Promise<void>;
-  deleteSession(
-    user: AuthenticatedUser,
-    sessionId: string,
-  ): Promise<void>;
+  deleteSession(user: AuthenticatedUser, sessionId: string): Promise<void>;
   listMessages(
     user: AuthenticatedUser,
     sessionId: string,
@@ -68,7 +68,10 @@ function synthesizeLegacyBlocks(
   }
   if (toolActivities && Array.isArray(toolActivities)) {
     for (const t of toolActivities) {
-      blocks.push({ type: "tool", ...(t as Omit<ContentBlock & { type: "tool" }, "type">) });
+      blocks.push({
+        type: "tool",
+        ...(t as Omit<ContentBlock & { type: "tool" }, "type">),
+      });
     }
   }
   return blocks.length > 0 ? blocks : null;
@@ -88,7 +91,11 @@ export function createChatService(options: {
         .order("updated_at", { ascending: false });
 
       if (error) {
-        throw new ChatServiceError("chat_error", "Failed to list sessions.", 500);
+        throw new ChatServiceError(
+          "chat_error",
+          "Failed to list sessions.",
+          500,
+        );
       }
 
       return (data ?? []).map((row) => ({
@@ -112,7 +119,11 @@ export function createChatService(options: {
         .single();
 
       if (error || !data) {
-        throw new ChatServiceError("chat_error", "Failed to create session.", 500);
+        throw new ChatServiceError(
+          "chat_error",
+          "Failed to create session.",
+          500,
+        );
       }
 
       return {
@@ -130,7 +141,11 @@ export function createChatService(options: {
         .eq("id", sessionId);
 
       if (error) {
-        throw new ChatServiceError("chat_error", "Failed to update session title.", 500);
+        throw new ChatServiceError(
+          "chat_error",
+          "Failed to update session title.",
+          500,
+        );
       }
     },
 
@@ -142,7 +157,11 @@ export function createChatService(options: {
         .eq("id", sessionId);
 
       if (error) {
-        throw new ChatServiceError("session_not_found", "Session not found.", 404);
+        throw new ChatServiceError(
+          "session_not_found",
+          "Session not found.",
+          404,
+        );
       }
     },
 
@@ -150,12 +169,18 @@ export function createChatService(options: {
       const client = options.createUserClient(user.accessToken);
       const { data, error } = await client
         .from("chat_messages")
-        .select("id, role, content, tool_activities, content_blocks, created_at")
+        .select(
+          "id, role, content, tool_activities, content_blocks, created_at",
+        )
         .eq("session_id", sessionId)
         .order("created_at", { ascending: true });
 
       if (error) {
-        throw new ChatServiceError("chat_error", "Failed to list messages.", 500);
+        throw new ChatServiceError(
+          "chat_error",
+          "Failed to list messages.",
+          500,
+        );
       }
 
       const rows = (data ?? []).map((row) => {
@@ -202,11 +227,17 @@ export function createChatService(options: {
             ? { content_blocks: input.contentBlocks as unknown as Json }
             : {}),
         })
-        .select("id, role, content, tool_activities, content_blocks, created_at")
+        .select(
+          "id, role, content, tool_activities, content_blocks, created_at",
+        )
         .single();
 
       if (error || !data) {
-        throw new ChatServiceError("chat_error", "Failed to save message.", 500);
+        throw new ChatServiceError(
+          "chat_error",
+          "Failed to save message.",
+          500,
+        );
       }
 
       // Touch session updated_at

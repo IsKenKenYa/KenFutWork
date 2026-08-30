@@ -1,22 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { SkillCategory, SkillDetail, SkillListItem } from "@loomic/shared";
 import { AnimatePresence, motion } from "framer-motion";
 import { ListFilter, Plus, Search, ShieldCheck } from "lucide-react";
-
-import type { SkillCategory, SkillDetail, SkillListItem } from "@loomic/shared";
-
-import { SkillCard } from "@/components/skills/skill-card";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { SkillsSkeleton } from "@/components/skeletons/skills-skeleton";
 import { CreateSkillDialog } from "@/components/skills/create-skill-dialog";
 import { ImportPanel } from "@/components/skills/import-panel";
 import { MarketplacePanel } from "@/components/skills/marketplace-panel";
+import { SkillCard } from "@/components/skills/skill-card";
 import { SkillDetailDialog } from "@/components/skills/skill-detail-dialog";
-import { SkillsSkeleton } from "@/components/skeletons/skills-skeleton";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
-  DropdownMenuContent,
   DropdownMenuCheckboxItem,
+  DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/lib/auth-context";
@@ -119,19 +117,31 @@ export default function SkillsPage() {
     try {
       const [catalog, workspace] = await Promise.all([
         fetchSkills(token),
-        fetchWorkspaceSkills(token).catch(() => ({ skills: [] as SkillListItem[] })),
+        fetchWorkspaceSkills(token).catch(() => ({
+          skills: [] as SkillListItem[],
+        })),
       ]);
 
       // Merge install status from workspace into catalog
       const installedMap = new Map(
-        (workspace.skills as SkillListItem[]).map((ws: SkillListItem) => [ws.id, ws]),
+        (workspace.skills as SkillListItem[]).map((ws: SkillListItem) => [
+          ws.id,
+          ws,
+        ]),
       );
-      const merged = (catalog.skills as SkillListItem[]).map((skill: SkillListItem) => {
-        const ws = installedMap.get(skill.id);
-        return ws
-          ? { ...skill, installed: true, enabled: ws.enabled ?? true, installedAt: ws.installedAt }
-          : { ...skill, installed: false, enabled: false };
-      });
+      const merged = (catalog.skills as SkillListItem[]).map(
+        (skill: SkillListItem) => {
+          const ws = installedMap.get(skill.id);
+          return ws
+            ? {
+                ...skill,
+                installed: true,
+                enabled: ws.enabled ?? true,
+                installedAt: ws.installedAt,
+              }
+            : { ...skill, installed: false, enabled: false };
+        },
+      );
       setSkills(merged);
     } catch (err) {
       if (err instanceof ApiAuthError) return;
@@ -216,9 +226,7 @@ export default function SkillsPage() {
       } catch {
         // Revert on failure
         setSkills((prev) =>
-          prev.map((s) =>
-            s.id === skillId ? { ...s, enabled: !enabled } : s,
-          ),
+          prev.map((s) => (s.id === skillId ? { ...s, enabled: !enabled } : s)),
         );
       }
     },

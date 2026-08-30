@@ -1,22 +1,22 @@
 "use client";
 
-import React from "react";
-import Image from "next/image";
+import type { Variants } from "framer-motion";
 import {
-  type LucideIcon,
   Layout,
+  type LucideIcon,
   MessageSquare,
-  Palette,
   MousePointer,
+  Palette,
 } from "lucide-react";
-import { type Variants } from "framer-motion";
-import { cn } from "@/lib/utils";
-import { SectionHeader } from "@/components/landing/section-header";
+import Image from "next/image";
+import React from "react";
 import {
   ScrollReveal,
   slideInLeft,
   slideInRight,
 } from "@/components/landing/motion";
+import { SectionHeader } from "@/components/landing/section-header";
+import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Feature visuals -- local high-res images matched to feature descriptions
@@ -183,7 +183,10 @@ function FeatureItem({ feature }: { feature: Feature }) {
   const Icon = feature.icon;
 
   const textContent = (
-    <ScrollReveal variants={feature.textVariants} className="flex flex-col gap-5">
+    <ScrollReveal
+      variants={feature.textVariants}
+      className="flex flex-col gap-5"
+    >
       {/* Icon */}
       <div className="inline-flex w-fit rounded-xl bg-accent/10 p-2.5 text-accent">
         <Icon className="size-5" />

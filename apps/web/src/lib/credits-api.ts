@@ -1,13 +1,13 @@
 // @credits-system — Frontend API client for credit balance, transactions, daily claim, admin ops
 import type {
+  ClaimDailyResponse,
   CreditBalanceResponse,
   CreditTransactionsResponse,
-  ClaimDailyResponse,
   SubscriptionPlan,
 } from "@loomic/shared";
 
 import { getServerBaseUrl } from "./env";
-import { ApiAuthError, ApiApplicationError } from "./server-api";
+import { ApiApplicationError, ApiAuthError } from "./server-api";
 
 // ── Helpers ──────────────────────────────────────────────────
 

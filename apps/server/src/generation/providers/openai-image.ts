@@ -1,6 +1,10 @@
 import OpenAI from "openai";
 
-import type { GeneratedImage, ImageGenerateParams, ImageProvider } from "../types.js";
+import type {
+  GeneratedImage,
+  ImageGenerateParams,
+  ImageProvider,
+} from "../types.js";
 import { aspectRatioToDimensions, GenerationError } from "../utils.js";
 
 export class OpenAIImageProvider implements ImageProvider {
@@ -14,7 +18,9 @@ export class OpenAIImageProvider implements ImageProvider {
   }
 
   async generate(params: ImageGenerateParams): Promise<GeneratedImage> {
-    const { width, height } = aspectRatioToDimensions(params.aspectRatio ?? "1:1");
+    const { width, height } = aspectRatioToDimensions(
+      params.aspectRatio ?? "1:1",
+    );
     const size = `${width}x${height}`;
 
     try {
@@ -27,7 +33,11 @@ export class OpenAIImageProvider implements ImageProvider {
 
       const url = response.data?.[0]?.url;
       if (!url) {
-        throw new GenerationError("openai", "no_output", "OpenAI returned no image URL");
+        throw new GenerationError(
+          "openai",
+          "no_output",
+          "OpenAI returned no image URL",
+        );
       }
 
       return { url, mimeType: "image/png", width, height };

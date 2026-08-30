@@ -1,6 +1,9 @@
 import type { CanvasContent, CanvasDetail, Json } from "@loomic/shared";
 
-import type { AuthenticatedUser, UserSupabaseClient } from "../../supabase/user.js";
+import type {
+  AuthenticatedUser,
+  UserSupabaseClient,
+} from "../../supabase/user.js";
 
 export class CanvasServiceError extends Error {
   readonly statusCode: number;
@@ -46,10 +49,17 @@ export function createCanvasService(options: {
         .single();
 
       if (error || !data) {
-        throw new CanvasServiceError("canvas_not_found", "Canvas not found.", 404);
+        throw new CanvasServiceError(
+          "canvas_not_found",
+          "Canvas not found.",
+          404,
+        );
       }
 
-      const content = (data.content as CanvasContent) ?? { elements: [], appState: {} };
+      const content = (data.content as CanvasContent) ?? {
+        elements: [],
+        appState: {},
+      };
 
       // Resolve OSS-stored files back to base64 dataURLs for the frontend
       const resolvedContent = await resolveFilesFromStorage(client, content);
@@ -66,7 +76,11 @@ export function createCanvasService(options: {
       const client = options.createUserClient(user.accessToken);
 
       // Extract base64 files to Storage, replacing dataURLs with oss:// markers
-      const leanContent = await extractFilesToStorage(client, canvasId, content);
+      const leanContent = await extractFilesToStorage(
+        client,
+        canvasId,
+        content,
+      );
 
       const { error } = await client
         .from("canvases")
@@ -74,7 +88,11 @@ export function createCanvasService(options: {
         .eq("id", canvasId);
 
       if (error) {
-        throw new CanvasServiceError("canvas_save_failed", "Unable to save canvas.", 500);
+        throw new CanvasServiceError(
+          "canvas_save_failed",
+          "Unable to save canvas.",
+          500,
+        );
       }
     },
   };
@@ -162,7 +180,12 @@ async function resolveFilesFromStorage(
 
   // Separate OSS files from inline files
   const updatedFiles: CanvasFileRecord = {};
-  const ossEntries: Array<{ fileId: string; fileData: Record<string, unknown>; bucket: string; objectPath: string }> = [];
+  const ossEntries: Array<{
+    fileId: string;
+    fileData: Record<string, unknown>;
+    bucket: string;
+    objectPath: string;
+  }> = [];
 
   for (const [fileId, fileData] of Object.entries(files)) {
     const dataURL = fileData.dataURL as string | undefined;
@@ -232,11 +255,17 @@ function parseDataURL(dataURL: string): { buffer: Buffer; mimeType: string } {
 
 function mimeToExt(mimeType: string): string {
   switch (mimeType) {
-    case "image/png": return "png";
-    case "image/jpeg": return "jpg";
-    case "image/webp": return "webp";
-    case "image/svg+xml": return "svg";
-    case "image/gif": return "gif";
-    default: return "bin";
+    case "image/png":
+      return "png";
+    case "image/jpeg":
+      return "jpg";
+    case "image/webp":
+      return "webp";
+    case "image/svg+xml":
+      return "svg";
+    case "image/gif":
+      return "gif";
+    default:
+      return "bin";
   }
 }

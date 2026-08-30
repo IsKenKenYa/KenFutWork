@@ -1,33 +1,36 @@
 "use client";
 
-import type { ImageGenerationPreference, ProjectSummary, VideoGenerationPreference } from "@loomic/shared";
-import type { ReadyAttachment } from "@/hooks/use-image-attachments";
+import type {
+  ImageGenerationPreference,
+  ProjectSummary,
+  VideoGenerationPreference,
+} from "@loomic/shared";
 import { motion } from "framer-motion";
+import { Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-
-import { Trash2 } from "lucide-react";
-import { HomeDiscoveryGallery } from "@/components/home-discovery-gallery";
 import { DeleteProjectDialog } from "@/components/delete-project-dialog";
+import { HomeDiscoveryGallery } from "@/components/home-discovery-gallery";
 import { HomeExampleBrowser } from "@/components/home-example-browser";
 import { HomePrompt, type HomePromptHandle } from "@/components/home-prompt";
-import { LoadingScreen } from "@/components/loading-screen";
 import { LoomicLogo } from "@/components/icons/loomic-logo";
+import { LoadingScreen } from "@/components/loading-screen";
 import { HomeProjectsSkeleton } from "@/components/skeletons/home-skeleton";
 import { useCreateProject } from "@/hooks/use-create-project";
 import { useDeleteProject } from "@/hooks/use-delete-project";
+import type { ReadyAttachment } from "@/hooks/use-image-attachments";
 import { useImageAttachments } from "@/hooks/use-image-attachments";
 import { useAuth } from "@/lib/auth-context";
 import { loadHomeDiscoveryCategories } from "@/lib/home-discovery-library";
 import {
-  homeDiscoverySeedCategories,
   type HomeDiscoverySelection,
+  homeDiscoverySeedCategories,
 } from "@/lib/home-discovery-seeds";
 import { loadHomeExampleCategories } from "@/lib/home-example-library";
 import {
-  homeExampleSeedCategories,
   type HomeExampleSelection,
+  homeExampleSeedCategories,
 } from "@/lib/home-example-seeds";
 import { ApiAuthError, fetchProjects } from "@/lib/server-api";
 import { formatDate } from "@/lib/utils";
@@ -43,7 +46,11 @@ const fadeUp = {
   visible: (i: number) => ({
     opacity: 1,
     y: 0,
-    transition: { delay: i * 0.1, duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] as const },
+    transition: {
+      delay: i * 0.1,
+      duration: 0.5,
+      ease: [0.25, 0.46, 0.45, 0.94] as const,
+    },
   }),
 };
 
@@ -183,12 +190,8 @@ export default function HomePage() {
       createNewProject({
         prompt,
         ...(attachments && attachments.length > 0 ? { attachments } : {}),
-        ...(imageGenerationPreference
-          ? { imageGenerationPreference }
-          : {}),
-        ...(videoGenerationPreference
-          ? { videoGenerationPreference }
-          : {}),
+        ...(imageGenerationPreference ? { imageGenerationPreference } : {}),
+        ...(videoGenerationPreference ? { videoGenerationPreference } : {}),
         ...(model ? { model } : {}),
       });
     },

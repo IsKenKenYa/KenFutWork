@@ -159,19 +159,43 @@ export const featureCategories: FeatureCategory[] = [
     features: [
       {
         name: "图片生成模型",
-        tiers: { free: "基础 3 款", starter: "全部", pro: "全部", ultra: "全部", business: "全部" },
+        tiers: {
+          free: "基础 3 款",
+          starter: "全部",
+          pro: "全部",
+          ultra: "全部",
+          business: "全部",
+        },
       },
       {
         name: "视频生成模型",
-        tiers: { free: false, starter: "基础 2 款", pro: "全部", ultra: "全部", business: "全部" },
+        tiers: {
+          free: false,
+          starter: "基础 2 款",
+          pro: "全部",
+          ultra: "全部",
+          business: "全部",
+        },
       },
       {
         name: "最高分辨率",
-        tiers: { free: "1K", starter: "1K", pro: "2K", ultra: "4K", business: "4K" },
+        tiers: {
+          free: "1K",
+          starter: "1K",
+          pro: "2K",
+          ultra: "4K",
+          business: "4K",
+        },
       },
       {
         name: "并发任务",
-        tiers: { free: "1", starter: "2", pro: "4", ultra: "8", business: "12" },
+        tiers: {
+          free: "1",
+          starter: "2",
+          pro: "4",
+          ultra: "8",
+          business: "12",
+        },
       },
     ],
   },
@@ -180,15 +204,33 @@ export const featureCategories: FeatureCategory[] = [
     features: [
       {
         name: "月积分",
-        tiers: { free: "50/天", starter: "1,200", pro: "5,000", ultra: "15,000", business: "50,000" },
+        tiers: {
+          free: "50/天",
+          starter: "1,200",
+          pro: "5,000",
+          ultra: "15,000",
+          business: "50,000",
+        },
       },
       {
         name: "积分充值折扣",
-        tiers: { free: false, starter: false, pro: "10%", ultra: "15%", business: "20%" },
+        tiers: {
+          free: false,
+          starter: false,
+          pro: "10%",
+          ultra: "15%",
+          business: "20%",
+        },
       },
       {
         name: "积分有效期",
-        tiers: { free: "当日", starter: "当月", pro: "当月", ultra: "当月", business: "当月" },
+        tiers: {
+          free: "当日",
+          starter: "当月",
+          pro: "当月",
+          ultra: "当月",
+          business: "当月",
+        },
       },
     ],
   },
@@ -197,19 +239,43 @@ export const featureCategories: FeatureCategory[] = [
     features: [
       {
         name: "项目数量",
-        tiers: { free: "3", starter: "10", pro: "50", ultra: "200", business: "无限" },
+        tiers: {
+          free: "3",
+          starter: "10",
+          pro: "50",
+          ultra: "200",
+          business: "无限",
+        },
       },
       {
         name: "品牌套件",
-        tiers: { free: "1", starter: "3", pro: "10", ultra: "30", business: "100" },
+        tiers: {
+          free: "1",
+          starter: "3",
+          pro: "10",
+          ultra: "30",
+          business: "100",
+        },
       },
       {
         name: "团队席位",
-        tiers: { free: false, starter: false, pro: false, ultra: "3", business: "10+" },
+        tiers: {
+          free: false,
+          starter: false,
+          pro: false,
+          ultra: "3",
+          business: "10+",
+        },
       },
       {
         name: "API 接入",
-        tiers: { free: false, starter: false, pro: false, ultra: "Beta", business: true },
+        tiers: {
+          free: false,
+          starter: false,
+          pro: false,
+          ultra: "Beta",
+          business: true,
+        },
       },
     ],
   },
@@ -218,15 +284,33 @@ export const featureCategories: FeatureCategory[] = [
     features: [
       {
         name: "商业授权",
-        tiers: { free: false, starter: "个人", pro: true, ultra: true, business: true },
+        tiers: {
+          free: false,
+          starter: "个人",
+          pro: true,
+          ultra: true,
+          business: true,
+        },
       },
       {
         name: "文件存储",
-        tiers: { free: "7 天", starter: "30 天", pro: "1 年", ultra: "1 年", business: "永久" },
+        tiers: {
+          free: "7 天",
+          starter: "30 天",
+          pro: "1 年",
+          ultra: "1 年",
+          business: "永久",
+        },
       },
       {
         name: "客户支持",
-        tiers: { free: "社区", starter: "社区", pro: "邮件", ultra: "优先邮件", business: "专属客服" },
+        tiers: {
+          free: "社区",
+          starter: "社区",
+          pro: "邮件",
+          ultra: "优先邮件",
+          business: "专属客服",
+        },
       },
     ],
   },

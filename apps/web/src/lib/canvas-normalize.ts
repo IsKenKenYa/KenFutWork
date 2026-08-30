@@ -24,7 +24,8 @@ function measureTextDOM(
   if (!ctx) {
     return { width: text.length * fontSize * 0.6, height: fontSize * 1.25 };
   }
-  const baseFontStr = EXCALIDRAW_FONT_FAMILY_MAP[fontFamily] ?? EXCALIDRAW_FONT_FAMILY_MAP[1]!;
+  const baseFontStr =
+    EXCALIDRAW_FONT_FAMILY_MAP[fontFamily] ?? EXCALIDRAW_FONT_FAMILY_MAP[1]!;
   const fontStr = baseFontStr.replace("20px", `${fontSize}px`);
   ctx.font = fontStr;
   const lines = text.split("\n");
@@ -57,11 +58,17 @@ function validateBindings(elements: CanvasElement[]): boolean {
     }
     if (el.startBinding) {
       const binding = el.startBinding as { elementId: string };
-      if (!activeIds.has(binding.elementId)) { el.startBinding = null; changed = true; }
+      if (!activeIds.has(binding.elementId)) {
+        el.startBinding = null;
+        changed = true;
+      }
     }
     if (el.endBinding) {
       const binding = el.endBinding as { elementId: string };
-      if (!activeIds.has(binding.elementId)) { el.endBinding = null; changed = true; }
+      if (!activeIds.has(binding.elementId)) {
+        el.endBinding = null;
+        changed = true;
+      }
     }
   }
   return changed;
@@ -97,8 +104,14 @@ function recenterBoundTextElements(elements: CanvasElement[]): boolean {
     const minContainerH = measured.height + paddingY * 2;
     const containerW = Number(container.width) || 0;
     const containerH = Number(container.height) || 0;
-    if (containerW < minContainerW) { container.width = minContainerW; changed = true; }
-    if (containerH < minContainerH) { container.height = minContainerH; changed = true; }
+    if (containerW < minContainerW) {
+      container.width = minContainerW;
+      changed = true;
+    }
+    if (containerH < minContainerH) {
+      container.height = minContainerH;
+      changed = true;
+    }
     const finalContainerW = Number(container.width);
     const finalContainerH = Number(container.height);
     const finalTextW = Number(el.width);
@@ -107,7 +120,10 @@ function recenterBoundTextElements(elements: CanvasElement[]): boolean {
     const expectedY = Number(container.y) + (finalContainerH - finalTextH) / 2;
     const currentX = Number(el.x) || 0;
     const currentY = Number(el.y) || 0;
-    if (Math.abs(expectedX - currentX) > 2 || Math.abs(expectedY - currentY) > 2) {
+    if (
+      Math.abs(expectedX - currentX) > 2 ||
+      Math.abs(expectedY - currentY) > 2
+    ) {
       el.x = expectedX;
       el.y = expectedY;
       changed = true;
@@ -116,9 +132,10 @@ function recenterBoundTextElements(elements: CanvasElement[]): boolean {
   return changed;
 }
 
-export function normalizeCanvasElements(
-  elements: CanvasElement[],
-): { elements: CanvasElement[]; changed: boolean } {
+export function normalizeCanvasElements(elements: CanvasElement[]): {
+  elements: CanvasElement[];
+  changed: boolean;
+} {
   let changed = false;
   if (validateBindings(elements)) changed = true;
   if (recenterBoundTextElements(elements)) changed = true;

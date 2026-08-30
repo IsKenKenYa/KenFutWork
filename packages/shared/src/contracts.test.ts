@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 import type { ZodType } from "zod";
-
+import * as sharedExports from "./index.js";
 import {
   type Database,
   errorCodeValues,
@@ -12,7 +12,6 @@ import {
   runCreateResponseSchema,
   streamEventSchema,
 } from "./index.js";
-import * as sharedExports from "./index.js";
 
 const databaseTypeSource = readFileSync(
   new URL("./supabase/database.ts", import.meta.url),
@@ -74,10 +73,7 @@ describe("@loomic/shared contracts", () => {
       prompt: "Generate a campaign key visual",
       imageGenerationPreference: {
         mode: "manual",
-        models: [
-          "google/nano-banana-2",
-          "black-forest-labs/flux-kontext-pro",
-        ],
+        models: ["google/nano-banana-2", "black-forest-labs/flux-kontext-pro"],
       },
     });
 

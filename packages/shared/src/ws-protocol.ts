@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { streamEventSchema } from "./events.js";
 import { runCreateRequestSchema } from "./contracts.js";
+import { streamEventSchema } from "./events.js";
 
 // --- Server → Client: Push Event (replaces SSE) ---
 
@@ -15,7 +15,7 @@ export const wsRpcRequestSchema = z.object({
   type: z.literal("rpc.request"),
   id: z.string().min(1),
   method: z.string().min(1),
-  params: z.record(z.unknown()).default({}),
+  params: z.record(z.string(), z.unknown()).default({}),
 });
 
 // --- Server → Client: Command Ack ---
@@ -23,7 +23,7 @@ export const wsRpcRequestSchema = z.object({
 export const wsCommandAckSchema = z.object({
   type: z.literal("command.ack"),
   action: z.string().min(1),
-  payload: z.record(z.unknown()),
+  payload: z.record(z.string(), z.unknown()),
 });
 
 // --- Client → Server: Command ---
@@ -60,7 +60,7 @@ export const wsCommandSchema = z.discriminatedUnion("action", [
 export const wsRpcResponseSchema = z.object({
   type: z.literal("rpc.response"),
   id: z.string().min(1),
-  result: z.record(z.unknown()).optional(),
+  result: z.record(z.string(), z.unknown()).optional(),
   error: z.string().optional(),
 });
 

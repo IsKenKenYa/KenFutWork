@@ -1,5 +1,4 @@
 // @credits-system — Image model list with tier annotations, credit costs, and accessibility flags
-import type { FastifyInstance } from "fastify";
 
 import {
   canAccessModel,
@@ -7,11 +6,11 @@ import {
   MODEL_MIN_TIER,
   type SubscriptionPlan,
 } from "@loomic/shared";
-
+import type { FastifyInstance } from "fastify";
+import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { CreditService } from "../features/credits/credit-service.js";
 import { getAvailableImageModels } from "../generation/providers/registry.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
-import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 
 export async function registerImageModelRoutes(
   app: FastifyInstance,

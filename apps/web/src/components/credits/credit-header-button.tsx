@@ -1,14 +1,13 @@
 // @credits-system — Header button showing credit balance + upgrade CTA (Lovart style)
 "use client";
 
+import { AnimatePresence, motion } from "framer-motion";
+import { ChevronRight, Gift, Zap } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { motion, AnimatePresence } from "framer-motion";
-import { Zap, ChevronRight, Gift } from "lucide-react";
-import Link from "next/link";
-
-import { useAuth } from "@/lib/auth-context";
 import { useCredits } from "@/hooks/use-credits";
+import { useAuth } from "@/lib/auth-context";
 
 // ── Plan badge color map ─────────────────────────────────────
 

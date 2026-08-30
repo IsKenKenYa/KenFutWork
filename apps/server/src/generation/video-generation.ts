@@ -1,5 +1,5 @@
-import type { GeneratedVideo, VideoGenerateParams } from "./types.js";
 import { getVideoProvider } from "./providers/registry.js";
+import type { GeneratedVideo, VideoGenerateParams } from "./types.js";
 
 export async function generateVideo(
   providerName: string,

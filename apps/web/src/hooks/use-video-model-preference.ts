@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useSyncExternalStore } from "react";
 import type { VideoGenerationPreference } from "@loomic/shared";
+import { useCallback, useSyncExternalStore } from "react";
 
 const STORAGE_KEY = "loomic:video-model-preference";
 const DEFAULT_MODEL = "google/veo-3.1";
@@ -27,7 +27,11 @@ function getSnapshot(): VideoModelPreference {
     if (raw !== cachedRaw) {
       cachedRaw = raw;
       cachedPreference = raw
-        ? normalizePreference(JSON.parse(raw) as Partial<VideoModelPreference> & { model?: string })
+        ? normalizePreference(
+            JSON.parse(raw) as Partial<VideoModelPreference> & {
+              model?: string;
+            },
+          )
         : defaultPreference;
     }
     return cachedPreference;
@@ -52,7 +56,8 @@ function normalizePreference(
 
   const models = Array.isArray(preference.models)
     ? preference.models.filter(
-        (model): model is string => typeof model === "string" && model.length > 0,
+        (model): model is string =>
+          typeof model === "string" && model.length > 0,
       )
     : typeof preference.model === "string" && preference.model.length > 0
       ? [preference.model]
@@ -65,7 +70,11 @@ function normalizePreference(
 }
 
 export function useVideoModelPreference() {
-  const preference = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const preference = useSyncExternalStore(
+    subscribe,
+    getSnapshot,
+    getServerSnapshot,
+  );
 
   const setPreference = useCallback((next: VideoModelPreference) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));

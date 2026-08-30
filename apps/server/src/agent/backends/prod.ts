@@ -66,7 +66,10 @@ export function createProductionBackendFactory(
     },
   });
 
-  const skillsBackend = new FilesystemBackend({ rootDir: skillsRoot, virtualMode: true });
+  const skillsBackend = new FilesystemBackend({
+    rootDir: skillsRoot,
+    virtualMode: true,
+  });
 
   // deepagents ≥1.13: factory 参数为 BackendRuntime，返回值需为同步的 backend 实例
   const factory = (stateAndStore: BackendRuntime) => {

@@ -1,5 +1,9 @@
 "use client";
 
+import type {
+  ImageGenerationPreference,
+  VideoGenerationPreference,
+} from "@loomic/shared";
 import {
   forwardRef,
   useCallback,
@@ -7,16 +11,17 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ImageGenerationPreference, VideoGenerationPreference } from "@loomic/shared";
-
-import type { ImageAttachmentState, ReadyAttachment } from "../hooks/use-image-attachments";
 import type { HomeExampleSelection } from "@/lib/home-example-seeds";
+import { useAgentModel } from "../hooks/use-agent-model";
+import type {
+  ImageAttachmentState,
+  ReadyAttachment,
+} from "../hooks/use-image-attachments";
+import { useImageModelPreference } from "../hooks/use-image-model-preference";
+import { useVideoModelPreference } from "../hooks/use-video-model-preference";
 import { AgentModelSelector } from "./agent-model-selector";
 import { ImageAttachmentBar } from "./image-attachment-bar";
 import { ImageModelPreferencePopover } from "./image-model-preference";
-import { useAgentModel } from "../hooks/use-agent-model";
-import { useImageModelPreference } from "../hooks/use-image-model-preference";
-import { useVideoModelPreference } from "../hooks/use-video-model-preference";
 
 export type HomePromptHandle = {
   /** Programmatically set the textarea value (e.g. from an example pill). */
@@ -104,7 +109,9 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
     const handleSubmit = useCallback(() => {
       const trimmed = value.trim();
       if (
-        (!trimmed && (!attachments || attachments.length === 0) && !selectedSeed) ||
+        (!trimmed &&
+          (!attachments || attachments.length === 0) &&
+          !selectedSeed) ||
         disabled ||
         isUploading
       )
@@ -148,7 +155,18 @@ export const HomePrompt = forwardRef<HomePromptHandle, HomePromptProps>(
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
       }
-    }, [value, disabled, isUploading, onSubmit, attachments, readyAttachments, preference, videoPreference, agentModel, selectedSeed]);
+    }, [
+      value,
+      disabled,
+      isUploading,
+      onSubmit,
+      attachments,
+      readyAttachments,
+      preference,
+      videoPreference,
+      agentModel,
+      selectedSeed,
+    ]);
 
     const handleKeyDown = useCallback(
       (e: React.KeyboardEvent) => {

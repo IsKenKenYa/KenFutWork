@@ -1,5 +1,5 @@
-import pg from "pg";
 import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
+import pg from "pg";
 
 export const LANGGRAPH_PERSISTENCE_SCHEMA = "langgraph";
 
@@ -25,7 +25,10 @@ export async function createSupabaseCheckpointer(options: {
 
   // Prevent pool-level errors from crashing the process
   pool.on("error", (err) => {
-    console.error("[checkpointer-pool] Unexpected error on idle client:", err.message);
+    console.error(
+      "[checkpointer-pool] Unexpected error on idle client:",
+      err.message,
+    );
   });
 
   const checkpointer = new PostgresSaver(pool, undefined, {

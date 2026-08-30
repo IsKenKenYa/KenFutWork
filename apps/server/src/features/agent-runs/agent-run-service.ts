@@ -25,13 +25,16 @@ export function createAgentRunMetadataService(options: {
 }): AgentRunMetadataService {
   return {
     async createAcceptedRun(input) {
-      const { error } = await options.getAdminClient().from("agent_runs").insert({
-        id: input.runId,
-        model: input.model ?? null,
-        session_id: input.sessionId,
-        status: "accepted",
-        thread_id: input.threadId,
-      });
+      const { error } = await options
+        .getAdminClient()
+        .from("agent_runs")
+        .insert({
+          id: input.runId,
+          model: input.model ?? null,
+          session_id: input.sessionId,
+          status: "accepted",
+          thread_id: input.threadId,
+        });
 
       if (error) {
         throw new AgentRunPersistenceError("Failed to persist accepted run.");
@@ -45,7 +48,8 @@ export function createAgentRunMetadataService(options: {
         ...(input.errorMessage ? { error_message: input.errorMessage } : {}),
         status: input.status,
       };
-      const { error } = await options.getAdminClient()
+      const { error } = await options
+        .getAdminClient()
         .from("agent_runs")
         .update(patch)
         .eq("id", input.runId);

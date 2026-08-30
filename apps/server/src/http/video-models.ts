@@ -1,12 +1,12 @@
 // @credits-system — Video model list with tier annotations, credit costs, and accessibility flags
-import type { FastifyInstance } from "fastify";
 
 import {
-  MODEL_MIN_TIER,
-  type SubscriptionPlan,
   canAccessModel,
   getVideoCreditCost,
+  MODEL_MIN_TIER,
+  type SubscriptionPlan,
 } from "@loomic/shared";
+import type { FastifyInstance } from "fastify";
 
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { CreditService } from "../features/credits/credit-service.js";

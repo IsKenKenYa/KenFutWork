@@ -1,13 +1,11 @@
 "use client";
 
 import type {
-  BrandKitSummary,
-  BrandKitDetail,
   BrandKitAssetType,
+  BrandKitDetail,
+  BrandKitSummary,
 } from "@loomic/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
-
-import { BrandKitSkeleton } from "../skeletons/brand-kit-skeleton";
 import { useAuth } from "../../lib/auth-context";
 import {
   createBrandKit,
@@ -22,6 +20,7 @@ import {
   uploadBrandKitAsset,
 } from "../../lib/brand-kit-api";
 import { ApiAuthError } from "../../lib/server-api";
+import { BrandKitSkeleton } from "../skeletons/brand-kit-skeleton";
 import { BrandKitEditor } from "./brand-kit-editor";
 import { BrandKitSidebar } from "./brand-kit-sidebar";
 import { EmptyState } from "./empty-state";

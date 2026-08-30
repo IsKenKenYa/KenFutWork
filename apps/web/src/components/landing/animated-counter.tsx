@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import {
-  useMotionValue,
-  useTransform,
   animate,
   useInView,
+  useMotionValue,
   useReducedMotion,
+  useTransform,
 } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -47,7 +47,7 @@ export function AnimatedCounter({
 
   const motionValue = useMotionValue(0);
   const [display, setDisplay] = useState(
-    shouldReduce ? formatNumber(target) : "0"
+    shouldReduce ? formatNumber(target) : "0",
   );
 
   // Subscribe to the motion value and update display string

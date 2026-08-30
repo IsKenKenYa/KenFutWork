@@ -73,7 +73,8 @@ export async function fetchAsBase64(
 
   const buffer = await response.arrayBuffer();
   const data = Buffer.from(buffer).toString("base64");
-  const mimeType = response.headers.get("content-type") ?? "application/octet-stream";
+  const mimeType =
+    response.headers.get("content-type") ?? "application/octet-stream";
 
   return { data, mimeType };
 }

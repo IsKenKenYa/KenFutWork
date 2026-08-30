@@ -1,5 +1,3 @@
-import type { FastifyInstance, FastifyReply } from "fastify";
-
 import {
   applicationErrorResponseSchema,
   projectCreateRequestSchema,
@@ -8,10 +6,11 @@ import {
   projectUpdateRequestSchema,
   unauthenticatedErrorResponseSchema,
 } from "@loomic/shared";
+import type { FastifyInstance, FastifyReply } from "fastify";
 
 import {
-  ProjectServiceError,
   type ProjectService,
+  ProjectServiceError,
 } from "../features/projects/project-service.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
 
@@ -61,7 +60,9 @@ export async function registerProjectRoutes(
       }
 
       const projects = await options.projectService.listProjects(user);
-      return reply.code(200).send(projectListResponseSchema.parse({ projects }));
+      return reply
+        .code(200)
+        .send(projectListResponseSchema.parse({ projects }));
     } catch (error) {
       return sendProjectError(error, reply, "project_query_failed");
     }

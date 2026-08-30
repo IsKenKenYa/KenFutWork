@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
 import { Play } from "lucide-react";
+import { useCallback, useRef, useState } from "react";
 
 type VideoCanvasElementProps = {
   src: string;

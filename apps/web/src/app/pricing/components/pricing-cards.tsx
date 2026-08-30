@@ -1,15 +1,16 @@
 "use client";
 
 import { motion } from "framer-motion";
-
+import { PricingCard } from "./pricing-card";
 import type { BillingPeriod } from "./pricing-data";
 import { pricingTiers, staggerContainer } from "./pricing-data";
-import { PricingCard } from "./pricing-card";
 
 interface PricingCardsProps {
   billingPeriod: BillingPeriod;
   currentPlan?: string | null | undefined;
-  onCheckout?: ((plan: string, billingPeriod: BillingPeriod) => Promise<void>) | undefined;
+  onCheckout?:
+    | ((plan: string, billingPeriod: BillingPeriod) => Promise<void>)
+    | undefined;
 }
 
 export function PricingCards({

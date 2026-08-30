@@ -3,10 +3,10 @@
 import type { Session, User } from "@supabase/supabase-js";
 import {
   createContext,
+  type ReactNode,
   useContext,
   useEffect,
   useState,
-  type ReactNode,
 } from "react";
 
 import { getSupabaseBrowserClient } from "./supabase-browser";

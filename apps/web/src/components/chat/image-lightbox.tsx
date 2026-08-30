@@ -246,11 +246,17 @@ export function ImageLightbox({
           <path d="M4 12h16" />
         </LightboxBtn>
         <div className="mx-1 h-4 w-px bg-white/20" />
-        <LightboxBtn title="\u9006\u65f6\u9488\u65cb\u8f6c" onClick={handleRotateCCW}>
+        <LightboxBtn
+          title="\u9006\u65f6\u9488\u65cb\u8f6c"
+          onClick={handleRotateCCW}
+        >
           <path d="M3.51 15a9 9 0 1 0 2.13-9.36L3 8" />
           <path d="M3 3v5h5" />
         </LightboxBtn>
-        <LightboxBtn title="\u987a\u65f6\u9488\u65cb\u8f6c (R)" onClick={handleRotateCW}>
+        <LightboxBtn
+          title="\u987a\u65f6\u9488\u65cb\u8f6c (R)"
+          onClick={handleRotateCW}
+        >
           <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
           <path d="M21 3v5h-5" />
         </LightboxBtn>
@@ -314,11 +320,7 @@ export const ChatImage = React.memo(function ChatImage({
         onError={() => setLoadError(true)}
       />
       {open && (
-        <ImageLightbox
-          src={src}
-          alt={alt}
-          onClose={() => setOpen(false)}
-        />
+        <ImageLightbox src={src} alt={alt} onClose={() => setOpen(false)} />
       )}
     </>
   );

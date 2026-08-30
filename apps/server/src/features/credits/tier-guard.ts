@@ -19,7 +19,10 @@ import type { AdminSupabaseClient } from "../../supabase/admin.js";
 
 // ── Error ────────────────────────────────────────────────────
 
-export type TierGuardErrorCode = Exclude<BillingErrorCode, "insufficient_credits">;
+export type TierGuardErrorCode = Exclude<
+  BillingErrorCode,
+  "insufficient_credits"
+>;
 
 export class TierGuardError extends Error {
   readonly statusCode: number;
@@ -42,15 +45,19 @@ export class TierGuardError extends Error {
 export type TierGuard = {
   checkModelAccess(plan: SubscriptionPlan, modelId: string): void;
   checkResolution(plan: SubscriptionPlan, quality: ImageQualityLevel): void;
-  checkVideoResolution(plan: SubscriptionPlan, resolution: VideoResolution): void;
-  checkConcurrency(
-    workspaceId: string,
+  checkVideoResolution(
     plan: SubscriptionPlan,
-  ): Promise<void>;
+    resolution: VideoResolution,
+  ): void;
+  checkConcurrency(workspaceId: string, plan: SubscriptionPlan): Promise<void>;
   calculateCreditCost(
     modelId: string,
     jobType: BackgroundJobType,
-    params?: { quality?: ImageQualityLevel; duration?: number; resolution?: VideoResolution },
+    params?: {
+      quality?: ImageQualityLevel;
+      duration?: number;
+      resolution?: VideoResolution;
+    },
   ): number;
 };
 

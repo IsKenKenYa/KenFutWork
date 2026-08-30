@@ -1,27 +1,25 @@
-import type { FastifyInstance, FastifyReply } from "fastify";
-
 import {
   applicationErrorResponseSchema,
   marketplaceInstallRequestSchema,
   skillDetailResponseSchema,
   unauthenticatedErrorResponseSchema,
 } from "@loomic/shared";
-
+import type { FastifyInstance, FastifyReply } from "fastify";
+import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import {
-  searchMarketplace,
   getMarketplaceDetail,
   installFromMarketplace,
   MarketplaceError,
+  searchMarketplace,
 } from "../features/skills/marketplace-service.js";
-
-import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type {
   RequestAuthenticator,
   UserSupabaseClient,
 } from "../supabase/user.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const untypedFrom = (client: UserSupabaseClient, table: string) => (client as any).from(table);
+const untypedFrom = (client: UserSupabaseClient, table: string) =>
+  (client as any).from(table);
 
 // ---------------------------------------------------------------------------
 // Skill row mappers (duplicated from skills.ts to avoid circular imports)
@@ -125,15 +123,32 @@ export async function registerMarketplaceRoutes(
       const user = await options.auth.authenticate(request);
       if (!user) return sendUnauthenticated(reply);
 
-      const { q = "", page = "1", limit = "20" } = request.query as Record<string, string>;
-      const result = await searchMarketplace(q, parseInt(page, 10), parseInt(limit, 10));
+      const {
+        q = "",
+        page = "1",
+        limit = "20",
+      } = request.query as Record<string, string>;
+      const result = await searchMarketplace(
+        q,
+        parseInt(page, 10),
+        parseInt(limit, 10),
+      );
       return reply.code(200).send(result);
     } catch (error) {
       if (error instanceof MarketplaceError) {
-        return sendError(reply, "marketplace_search_failed", error.message, 502);
+        return sendError(
+          reply,
+          "marketplace_search_failed",
+          error.message,
+          502,
+        );
       }
       request.log.error({ err: error }, "marketplace search error");
-      return sendError(reply, "marketplace_search_failed", "Marketplace search failed.");
+      return sendError(
+        reply,
+        "marketplace_search_failed",
+        "Marketplace search failed.",
+      );
     }
   });
 
@@ -147,7 +162,10 @@ export async function registerMarketplaceRoutes(
       if (!name) {
         return reply.code(400).send(
           applicationErrorResponseSchema.parse({
-            error: { code: "marketplace_detail_failed", message: "Package name is required (use ?name=package-name)" },
+            error: {
+              code: "marketplace_detail_failed",
+              message: "Package name is required (use ?name=package-name)",
+            },
           }),
         );
       }
@@ -156,10 +174,19 @@ export async function registerMarketplaceRoutes(
     } catch (error) {
       if (error instanceof MarketplaceError) {
         const status = error.code === "package_not_found" ? 404 : 502;
-        return sendError(reply, "marketplace_detail_failed", error.message, status);
+        return sendError(
+          reply,
+          "marketplace_detail_failed",
+          error.message,
+          status,
+        );
       }
       request.log.error({ err: error }, "marketplace detail error");
-      return sendError(reply, "marketplace_detail_failed", "Failed to fetch package detail.");
+      return sendError(
+        reply,
+        "marketplace_detail_failed",
+        "Failed to fetch package detail.",
+      );
     }
   });
 
@@ -169,17 +196,23 @@ export async function registerMarketplaceRoutes(
       const user = await options.auth.authenticate(request);
       if (!user) return sendUnauthenticated(reply);
 
-      const { packageName } = marketplaceInstallRequestSchema.parse(request.body);
+      const { packageName } = marketplaceInstallRequestSchema.parse(
+        request.body,
+      );
       const viewer = await options.viewerService.ensureViewer(user);
       const workspaceId = viewer.workspace.id;
       const client = options.createUserClient(user.accessToken);
 
       // Download and parse from npm registry
-      const { imported, packageName: pkgName } = await installFromMarketplace(packageName);
+      const { imported, packageName: pkgName } =
+        await installFromMarketplace(packageName);
       const slug = generateSlug(imported.manifest.name);
 
       // Insert skill
-      const { data: skillData, error: skillError } = await untypedFrom(client, "skills")
+      const { data: skillData, error: skillError } = await untypedFrom(
+        client,
+        "skills",
+      )
         .insert({
           name: imported.manifest.name,
           slug,
@@ -201,11 +234,23 @@ export async function registerMarketplaceRoutes(
         .single();
 
       if (skillError) {
-        request.log.error({ err: skillError }, "marketplace install DB insert failed");
+        request.log.error(
+          { err: skillError },
+          "marketplace install DB insert failed",
+        );
         if (skillError.code === "23505") {
-          return sendError(reply, "marketplace_install_failed", "This skill is already installed.", 409);
+          return sendError(
+            reply,
+            "marketplace_install_failed",
+            "This skill is already installed.",
+            409,
+          );
         }
-        return sendError(reply, "marketplace_install_failed", "Failed to save marketplace skill.");
+        return sendError(
+          reply,
+          "marketplace_install_failed",
+          "Failed to save marketplace skill.",
+        );
       }
 
       // Insert files
@@ -216,16 +261,27 @@ export async function registerMarketplaceRoutes(
           content: f.content,
           mime_type: f.mimeType,
         }));
-        const { error: fileError } = await untypedFrom(client, "skill_files").insert(fileRows);
+        const { error: fileError } = await untypedFrom(
+          client,
+          "skill_files",
+        ).insert(fileRows);
         if (fileError) {
-          request.log.error({ err: fileError }, "marketplace install file insert failed (non-fatal)");
+          request.log.error(
+            { err: fileError },
+            "marketplace install file insert failed (non-fatal)",
+          );
         }
       }
 
       // Auto-install to workspace
       if (skillData?.id) {
         await untypedFrom(client, "workspace_skills").upsert(
-          { workspace_id: workspaceId, skill_id: skillData.id, enabled: true, installed_by: user.id },
+          {
+            workspace_id: workspaceId,
+            skill_id: skillData.id,
+            enabled: true,
+            installed_by: user.id,
+          },
           { onConflict: "workspace_id,skill_id" },
         );
       }
@@ -244,10 +300,19 @@ export async function registerMarketplaceRoutes(
       return reply.code(201).send(skillDetailResponseSchema.parse({ skill }));
     } catch (error) {
       if (error instanceof MarketplaceError) {
-        return sendError(reply, "marketplace_install_failed", error.message, 502);
+        return sendError(
+          reply,
+          "marketplace_install_failed",
+          error.message,
+          502,
+        );
       }
       request.log.error({ err: error }, "marketplace install error");
-      return sendError(reply, "marketplace_install_failed", "Failed to install marketplace skill.");
+      return sendError(
+        reply,
+        "marketplace_install_failed",
+        "Failed to install marketplace skill.",
+      );
     }
   });
 }
@@ -259,7 +324,10 @@ export async function registerMarketplaceRoutes(
 function sendUnauthenticated(reply: FastifyReply) {
   return reply.code(401).send(
     unauthenticatedErrorResponseSchema.parse({
-      error: { code: "unauthorized", message: "Missing or invalid bearer token." },
+      error: {
+        code: "unauthorized",
+        message: "Missing or invalid bearer token.",
+      },
     }),
   );
 }

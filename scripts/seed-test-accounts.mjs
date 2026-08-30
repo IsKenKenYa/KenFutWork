@@ -18,10 +18,10 @@ import { createClient } from "@supabase/supabase-js";
 // ── Config ───────────────────────────────────────────────────────────
 
 const TEST_ACCOUNTS = [
-  { email: "free@test.loomic.com",    plan: "free",    credits: 50    },
+  { email: "free@test.loomic.com", plan: "free", credits: 50 },
   { email: "starter@test.loomic.com", plan: "starter", credits: 1_200 },
-  { email: "pro@test.loomic.com",     plan: "pro",     credits: 5_000 },
-  { email: "ultra@test.loomic.com",   plan: "ultra",   credits: 15_000 },
+  { email: "pro@test.loomic.com", plan: "pro", credits: 5_000 },
+  { email: "ultra@test.loomic.com", plan: "ultra", credits: 15_000 },
 ];
 
 const PASSWORD = "opensourceloomic";
@@ -41,8 +41,10 @@ async function loadEnv() {
         const key = trimmed.slice(0, eqIdx).trim();
         let val = trimmed.slice(eqIdx + 1).trim();
         // Strip surrounding quotes
-        if ((val.startsWith("'") && val.endsWith("'")) ||
-            (val.startsWith('"') && val.endsWith('"'))) {
+        if (
+          (val.startsWith("'") && val.endsWith("'")) ||
+          (val.startsWith('"') && val.endsWith('"'))
+        ) {
           val = val.slice(1, -1);
         }
         if (!process.env[key]) process.env[key] = val;
@@ -78,7 +80,9 @@ async function main() {
 
     // 1. Create auth user (or skip if exists)
     const { data: existingUsers } = await admin.auth.admin.listUsers();
-    const existing = existingUsers?.users?.find(u => u.email === account.email);
+    const existing = existingUsers?.users?.find(
+      (u) => u.email === account.email,
+    );
 
     let userId;
     if (existing) {
@@ -90,7 +94,10 @@ async function main() {
         password: PASSWORD,
         email_confirm: true,
         user_metadata: {
-          display_name: account.plan.charAt(0).toUpperCase() + account.plan.slice(1) + " Tester",
+          display_name:
+            account.plan.charAt(0).toUpperCase() +
+            account.plan.slice(1) +
+            " Tester",
         },
       });
       if (error) {
@@ -113,7 +120,9 @@ async function main() {
       .single();
 
     if (wsError || !workspace) {
-      console.error(`  [fail] ${label} — workspace not found: ${wsError?.message}`);
+      console.error(
+        `  [fail] ${label} — workspace not found: ${wsError?.message}`,
+      );
       continue;
     }
 
@@ -166,10 +175,14 @@ async function main() {
       );
 
       if (rpcError) {
-        console.error(`  [fail] ${label} — grant_plan_credits: ${rpcError.message}`);
+        console.error(
+          `  [fail] ${label} — grant_plan_credits: ${rpcError.message}`,
+        );
         continue;
       }
-      console.log(`  [done] ${label} — plan=${account.plan}, balance=${newBalance}\n`);
+      console.log(
+        `  [done] ${label} — plan=${account.plan}, balance=${newBalance}\n`,
+      );
     }
   }
 
@@ -179,13 +192,15 @@ async function main() {
   console.log("  Email                     │ Plan    │ Credits");
   console.log("  ──────────────────────────┼─────────┼────────");
   for (const a of TEST_ACCOUNTS) {
-    console.log(`  ${a.email.padEnd(25)} │ ${a.plan.padEnd(7)} │ ${String(a.credits).padStart(6)}`);
+    console.log(
+      `  ${a.email.padEnd(25)} │ ${a.plan.padEnd(7)} │ ${String(a.credits).padStart(6)}`,
+    );
   }
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 }
 
 function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 main().catch((err) => {

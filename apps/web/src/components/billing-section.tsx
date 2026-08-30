@@ -1,18 +1,17 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import Link from "next/link";
+import { AnimatePresence, motion } from "framer-motion";
 import {
+  AlertTriangle,
   CreditCard,
   Crown,
   ExternalLink,
   Loader2,
-  AlertTriangle,
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
-
-import { useSubscription } from "@/hooks/use-subscription";
+import Link from "next/link";
+import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useSubscription } from "@/hooks/use-subscription";
 
 export function BillingSection() {
   const { subscription, loading, error, cancel } = useSubscription();
@@ -158,9 +157,7 @@ export function BillingSection() {
               </p>
 
               {cancelError && (
-                <p className="mt-3 text-sm text-destructive">
-                  {cancelError}
-                </p>
+                <p className="mt-3 text-sm text-destructive">{cancelError}</p>
               )}
 
               <div className="mt-5 flex justify-end gap-2">

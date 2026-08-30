@@ -1,9 +1,8 @@
 "use client";
 
+import type { ContentBlock, ToolArtifact, ToolBlock } from "@loomic/shared";
 import { motion } from "framer-motion";
 import React, { useMemo } from "react";
-
-import type { ContentBlock, ToolArtifact, ToolBlock } from "@loomic/shared";
 import { ImagePill } from "./chat/image-lightbox";
 import { MarkdownRenderer } from "./chat/markdown-renderer";
 import { MentionPill } from "./chat/mention-pill";
@@ -38,11 +37,7 @@ type ChatMessageProps = {
  * each independently memoized for fine-grained update control.
  */
 export const ChatMessage = React.memo(
-  function ChatMessage({
-    role,
-    contentBlocks,
-    isStreaming,
-  }: ChatMessageProps) {
+  function ChatMessage({ role, contentBlocks, isStreaming }: ChatMessageProps) {
     const isUser = role === "user";
 
     if (isUser) {
@@ -134,10 +129,7 @@ const UserMessage = React.memo(function UserMessage({
                 <ImagePill
                   key={idx}
                   src={(block as { url: string }).url}
-                  name={
-                    (block as { name?: string }).name ??
-                    `image-${idx + 1}`
-                  }
+                  name={(block as { name?: string }).name ?? `image-${idx + 1}`}
                 />
               ))}
             </span>
@@ -163,9 +155,7 @@ const UserMessage = React.memo(function UserMessage({
             <ImagePill
               key={idx}
               src={(block as { url: string }).url}
-              name={
-                (block as { name?: string }).name ?? `image-${idx + 1}`
-              }
+              name={(block as { name?: string }).name ?? `image-${idx + 1}`}
             />
           ))}
         </div>
@@ -237,9 +227,7 @@ const AssistantMessage = React.memo(function AssistantMessage({
             <ThinkingBlockView
               key={`thinking-${idx}`}
               thinking={block.thinking}
-              isStreaming={
-                isStreaming && idx === contentBlocks.length - 1
-              }
+              isStreaming={isStreaming && idx === contentBlocks.length - 1}
             />
           );
         }
@@ -256,9 +244,7 @@ const AssistantMessage = React.memo(function AssistantMessage({
         }
 
         if (block.type === "tool") {
-          return (
-            <ToolBlockView key={block.toolCallId} block={block} />
-          );
+          return <ToolBlockView key={block.toolCallId} block={block} />;
         }
 
         // ImageBlock -- skip in assistant messages (user-side only)

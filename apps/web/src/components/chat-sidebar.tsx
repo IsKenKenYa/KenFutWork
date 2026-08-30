@@ -1,8 +1,5 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-
-import { useBreakpoint } from "../hooks/use-breakpoint";
 import type {
   ContentBlock,
   ImageArtifact,
@@ -12,7 +9,9 @@ import type {
   VideoArtifact,
   VideoGenerationPreference,
 } from "@loomic/shared";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAgentModel } from "../hooks/use-agent-model";
+import { useBreakpoint } from "../hooks/use-breakpoint";
 import { mapServerMessages, useChatSessions } from "../hooks/use-chat-sessions";
 import { useChatStream } from "../hooks/use-chat-stream";
 import {
@@ -27,24 +26,28 @@ import { useVideoModelPreference } from "../hooks/use-video-model-preference";
 import type { WebSocketHandle } from "../hooks/use-websocket";
 import { fetchBrandKit } from "../lib/brand-kit-api";
 import { claimDailyCredits } from "../lib/credits-api";
-import { fetchImageModels, fetchWorkspaceSkills, saveMessage } from "../lib/server-api";
+import {
+  fetchImageModels,
+  fetchWorkspaceSkills,
+  saveMessage,
+} from "../lib/server-api";
 import type { CanvasSelectedElement } from "./canvas-editor";
 import {
   type BrandKitMentionItem,
   type CanvasImageItem,
   type ImageModelMentionItem,
-  type SkillMentionItem,
   MessageMentionPicker,
   type MessageMentionPickerItem,
+  type SkillMentionItem,
 } from "./canvas-image-picker";
 import { ChatInput } from "./chat-input";
 import { ChatMessage } from "./chat-message";
 import { ChatSkills } from "./chat-skills";
 import { CreditInsufficientDialog } from "./credits/credit-insufficient-dialog";
 import { useTierLimitToast } from "./credits/tier-limit-toast";
-import { useToast } from "./toast";
 import { ErrorBoundary } from "./error-boundary";
 import { SessionSelector } from "./session-selector";
+import { useToast } from "./toast";
 
 type ChatSidebarProps = {
   accessToken: string;
@@ -236,7 +239,9 @@ export function ChatSidebar({
         document.removeEventListener("touchcancel", handleTouchEnd);
       };
 
-      document.addEventListener("touchmove", handleTouchMove, { passive: false });
+      document.addEventListener("touchmove", handleTouchMove, {
+        passive: false,
+      });
       document.addEventListener("touchend", handleTouchEnd);
       document.addEventListener("touchcancel", handleTouchEnd);
     },
@@ -302,7 +307,9 @@ export function ChatSidebar({
         if (cancelled) return;
         const allSkills = data.skills ?? [];
         const enabledSkills = allSkills.filter((s) => s.enabled);
-        console.log(`[chat-sidebar] Workspace skills loaded: ${allSkills.length} total, ${enabledSkills.length} enabled`);
+        console.log(
+          `[chat-sidebar] Workspace skills loaded: ${allSkills.length} total, ${enabledSkills.length} enabled`,
+        );
         setSkillMentionItems(
           enabledSkills.map((s) => ({
             kind: "skill" as const,
@@ -423,7 +430,8 @@ export function ChatSidebar({
             id: mention.id,
             label: mention.label,
             assetType: mention.assetType,
-            ...(mention.textContent !== undefined && mention.textContent !== null
+            ...(mention.textContent !== undefined &&
+            mention.textContent !== null
               ? { textContent: mention.textContent }
               : {}),
             ...(mention.fileUrl !== undefined && mention.fileUrl !== null
@@ -530,9 +538,11 @@ export function ChatSidebar({
 
           // Fire canvas insertion callbacks for image/video artifacts.
           // Skip if the backend already inserted the element (elementId in output).
-          const backendInserted = event.type === "tool.completed"
-            && event.output
-            && typeof (event.output as Record<string, unknown>).elementId === "string";
+          const backendInserted =
+            event.type === "tool.completed" &&
+            event.output &&
+            typeof (event.output as Record<string, unknown>).elementId ===
+              "string";
           if (
             event.type === "tool.completed" &&
             event.artifacts &&
@@ -684,9 +694,18 @@ export function ChatSidebar({
       setMessageMentions((prev) => {
         let nextMention: MessageMention;
         if (item.kind === "image-model") {
-          nextMention = { mentionType: "image-model", id: item.id, label: item.label };
+          nextMention = {
+            mentionType: "image-model",
+            id: item.id,
+            label: item.label,
+          };
         } else if (item.kind === "skill") {
-          nextMention = { mentionType: "skill", id: item.id, label: item.label, slug: item.slug };
+          nextMention = {
+            mentionType: "skill",
+            id: item.id,
+            label: item.label,
+            slug: item.slug,
+          };
         } else {
           nextMention = {
             mentionType: "brand-kit-asset",
@@ -696,9 +715,7 @@ export function ChatSidebar({
             ...(item.textContent !== undefined
               ? { textContent: item.textContent }
               : {}),
-            ...(item.fileUrl !== undefined
-              ? { fileUrl: item.fileUrl }
-              : {}),
+            ...(item.fileUrl !== undefined ? { fileUrl: item.fileUrl } : {}),
           };
         }
 
@@ -842,9 +859,11 @@ export function ChatSidebar({
 
             // Fire canvas insertion callbacks for artifacts arriving after reconnect.
             // Skip if the backend already inserted the element (elementId in output).
-            const wsBackendInserted = evt.type === "tool.completed"
-              && evt.output
-              && typeof (evt.output as Record<string, unknown>).elementId === "string";
+            const wsBackendInserted =
+              evt.type === "tool.completed" &&
+              evt.output &&
+              typeof (evt.output as Record<string, unknown>).elementId ===
+                "string";
             if (
               evt.type === "tool.completed" &&
               evt.artifacts &&
@@ -979,7 +998,11 @@ export function ChatSidebar({
           console.error("[chat-sidebar] message area render crashed:", err)
         }
       >
-        <div className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col gap-6 px-4 py-4" aria-live="polite" aria-relevant="additions">
+        <div
+          className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col gap-6 px-4 py-4"
+          aria-live="polite"
+          aria-relevant="additions"
+        >
           {sessionsLoading || messagesLoading ? (
             <div className="flex h-full items-center justify-center">
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-foreground" />
@@ -1097,9 +1120,7 @@ export function ChatSidebar({
         onTouchStart={handleTouchStart}
         onKeyDown={handleResizeKeyDown}
       />
-      <div className="flex flex-1 flex-col bg-card min-w-0">
-        {panelContent}
-      </div>
+      <div className="flex flex-1 flex-col bg-card min-w-0">{panelContent}</div>
       {creditDialogEl}
     </div>
   );

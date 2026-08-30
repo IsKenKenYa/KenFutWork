@@ -1,25 +1,24 @@
 import { randomUUID } from "node:crypto";
-import type { FastifyInstance, FastifyRequest } from "fastify";
-import type { WebSocket } from "ws";
-
+import type { ContentBlock, ToolBlock, WsCommand } from "@loomic/shared";
 import {
   type RunCreateRequest,
   wsCommandSchema,
   wsRpcResponseSchema,
 } from "@loomic/shared";
+import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { WebSocket } from "ws";
 import type { AgentRunService } from "../agent/runtime.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
+import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
+import type { ChatService } from "../features/chat/chat-service.js";
 import type { ThreadService } from "../features/chat/thread-service.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
-import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type {
   AuthenticatedUser,
   RequestAuthenticator,
 } from "../supabase/user.js";
 import type { ConnectionManager } from "./connection-manager.js";
 import type { CanvasEventBuffer } from "./event-buffer.js";
-import type { ChatService } from "../features/chat/chat-service.js";
-import type { ContentBlock, ToolBlock } from "@loomic/shared";
 import { createPipelineLogger } from "./logger.js";
 
 type RegisterWsOptions = {
@@ -40,17 +39,28 @@ export async function registerWsRoute(
 ) {
   const { agentRuns, connectionManager } = options;
 
-  app.get("/api/ws", { websocket: true }, (socket: WebSocket, request: FastifyRequest) => {
-    const url = new URL(request.url, `http://${request.headers.host}`);
-    const token = url.searchParams.get("token");
+  app.get(
+    "/api/ws",
+    { websocket: true },
+    (socket: WebSocket, request: FastifyRequest) => {
+      const url = new URL(request.url, `http://${request.headers.host}`);
+      const token = url.searchParams.get("token");
 
-    if (!token || !options.auth) {
-      socket.close(4001, "Unauthorized");
-      return;
-    }
+      if (!token || !options.auth) {
+        socket.close(4001, "Unauthorized");
+        return;
+      }
 
-    void authenticateAndBind(socket, token, request, options, agentRuns, connectionManager);
-  });
+      void authenticateAndBind(
+        socket,
+        token,
+        request,
+        options,
+        agentRuns,
+        connectionManager,
+      );
+    },
+  );
 }
 
 async function authenticateAndBind(
@@ -77,7 +87,9 @@ async function authenticateAndBind(
     authenticatedUser = user;
     log.info("connected", { userId: user.id });
   } catch (err) {
-    log.warn("auth_error", { error: err instanceof Error ? err.message : String(err) });
+    log.warn("auth_error", {
+      error: err instanceof Error ? err.message : String(err),
+    });
     socket.close(4001, "Unauthorized");
     return;
   }
@@ -86,19 +98,22 @@ async function authenticateAndBind(
 
   // Use client-provided connectionId for reconnect identity; fallback to server UUID
   const urlForParams = new URL(_request.url, `http://${_request.headers.host}`);
-  const connectionId = urlForParams.searchParams.get("connectionId") || randomUUID();
+  const connectionId =
+    urlForParams.searchParams.get("connectionId") || randomUUID();
   connectionManager.register(connectionId, authenticatedUser.id, socket);
 
   // Heartbeat with pong timeout (spec §1.3: 60s no-pong → disconnect)
   let lastPong = Date.now();
-  socket.on("pong", () => { lastPong = Date.now(); });
+  socket.on("pong", () => {
+    lastPong = Date.now();
+  });
 
   const pingInterval = setInterval(() => {
-      if (Date.now() - lastPong > 60_000) {
-        log.warn("pong_timeout", { userId: authenticatedUser.id });
-        socket.terminate();
-        return;
-      }
+    if (Date.now() - lastPong > 60_000) {
+      log.warn("pong_timeout", { userId: authenticatedUser.id });
+      socket.terminate();
+      return;
+    }
     if (socket.readyState === 1) {
       socket.ping();
     }
@@ -107,7 +122,9 @@ async function authenticateAndBind(
   socket.on("message", (raw: Buffer | string) => {
     let parsed: unknown;
     try {
-      parsed = JSON.parse(typeof raw === "string" ? raw : raw.toString("utf-8"));
+      parsed = JSON.parse(
+        typeof raw === "string" ? raw : raw.toString("utf-8"),
+      );
     } catch {
       socket.send(JSON.stringify({ type: "error", message: "Invalid JSON" }));
       return;
@@ -121,8 +138,12 @@ async function authenticateAndBind(
         connectionManager.handleRpcResponse(connectionId, {
           type: rpcResponse.type,
           id: rpcResponse.id,
-          ...(rpcResponse.result !== undefined ? { result: rpcResponse.result } : {}),
-          ...(rpcResponse.error !== undefined ? { error: rpcResponse.error } : {}),
+          ...(rpcResponse.result !== undefined
+            ? { result: rpcResponse.result }
+            : {}),
+          ...(rpcResponse.error !== undefined
+            ? { error: rpcResponse.error }
+            : {}),
         });
       } catch {
         // Ignore malformed RPC responses
@@ -131,11 +152,13 @@ async function authenticateAndBind(
     }
 
     if (obj.type === "command") {
-      let msg;
+      let msg: WsCommand;
       try {
         msg = wsCommandSchema.parse(parsed);
       } catch {
-        socket.send(JSON.stringify({ type: "error", message: "Invalid command format" }));
+        socket.send(
+          JSON.stringify({ type: "error", message: "Invalid command format" }),
+        );
         return;
       }
 
@@ -149,38 +172,53 @@ async function authenticateAndBind(
           },
           connectionId,
           {
-          sessionId: p.sessionId,
-          conversationId: p.conversationId,
-          prompt: p.prompt,
-          ...(p.canvasId !== undefined ? { canvasId: p.canvasId } : {}),
-          ...(p.attachments !== undefined ? { attachments: p.attachments } : {}),
-          ...(p.imageGenerationPreference !== undefined
-            ? { imageGenerationPreference: p.imageGenerationPreference }
-            : {}),
-          ...(p.videoGenerationPreference !== undefined
-            ? { videoGenerationPreference: p.videoGenerationPreference }
-            : {}),
-          ...(p.mentions !== undefined ? { mentions: p.mentions } : {}),
-          ...(p.model !== undefined ? { model: p.model } : {}),
+            sessionId: p.sessionId,
+            conversationId: p.conversationId,
+            prompt: p.prompt,
+            ...(p.canvasId !== undefined ? { canvasId: p.canvasId } : {}),
+            ...(p.attachments !== undefined
+              ? { attachments: p.attachments }
+              : {}),
+            ...(p.imageGenerationPreference !== undefined
+              ? { imageGenerationPreference: p.imageGenerationPreference }
+              : {}),
+            ...(p.videoGenerationPreference !== undefined
+              ? { videoGenerationPreference: p.videoGenerationPreference }
+              : {}),
+            ...(p.mentions !== undefined ? { mentions: p.mentions } : {}),
+            ...(p.model !== undefined ? { model: p.model } : {}),
           },
           agentRuns,
           connectionManager,
           options,
         );
       } else if (msg.action === "agent.cancel") {
-        log.info("run_cancel", { userId: authenticatedUser.id, runId: msg.payload.runId });
+        log.info("run_cancel", {
+          userId: authenticatedUser.id,
+          runId: msg.payload.runId,
+        });
         const cancelResult = agentRuns.cancelRun(msg.payload.runId);
         if (!cancelResult) {
-          socket.send(JSON.stringify({ type: "error", message: `Run not found: ${msg.payload.runId}` }));
+          socket.send(
+            JSON.stringify({
+              type: "error",
+              message: `Run not found: ${msg.payload.runId}`,
+            }),
+          );
         }
       } else if (msg.action === "canvas.resume") {
         const p = msg.payload;
-        log.info("canvas_resume", { userId: authenticatedUser.id, canvasId: p.canvasId, lastSeq: p.lastSeq });
+        log.info("canvas_resume", {
+          userId: authenticatedUser.id,
+          canvasId: p.canvasId,
+          lastSeq: p.lastSeq,
+        });
 
         // Re-bind this connection to the canvas
         connectionManager.bindCanvas(connectionId, p.canvasId);
 
-        const missed = options.eventBuffer?.getAfter(p.canvasId, p.lastSeq) ?? [];
+        const missed =
+          options.eventBuffer?.getAfter(p.canvasId, p.lastSeq) ?? [];
         const activeRun = connectionManager.getActiveRun(p.canvasId);
 
         // IMPORTANT: Send ACK FIRST so client registers event listener
@@ -239,10 +277,11 @@ async function handleRunCommand(
     (async (): Promise<string | undefined> => {
       if (!services.threadService) return undefined;
       try {
-        const sessionThread = await services.threadService.resolveOwnedSessionThread(
-          authenticatedUser,
-          payload.sessionId,
-        );
+        const sessionThread =
+          await services.threadService.resolveOwnedSessionThread(
+            authenticatedUser,
+            payload.sessionId,
+          );
         return sessionThread.threadId;
       } catch (error) {
         log.warn("thread_resolve_failed", {
@@ -252,9 +291,11 @@ async function handleRunCommand(
       }
     })(),
     (async (): Promise<string | undefined> => {
-      if (!services.settingsService || !services.viewerService) return undefined;
+      if (!services.settingsService || !services.viewerService)
+        return undefined;
       try {
-        const viewer = await services.viewerService.ensureViewer(authenticatedUser);
+        const viewer =
+          await services.viewerService.ensureViewer(authenticatedUser);
         const settings = await services.settingsService.getWorkspaceSettings(
           authenticatedUser,
           viewer.workspace.id,
@@ -361,14 +402,18 @@ async function handleRunCommand(
         });
       } else if (event.type === "tool.completed") {
         const idx = assistantBlocks.findIndex(
-          (b) => b.type === "tool" && (b as ToolBlock).toolCallId === event.toolCallId,
+          (b) =>
+            b.type === "tool" &&
+            (b as ToolBlock).toolCallId === event.toolCallId,
         );
         if (idx >= 0) {
           assistantBlocks[idx] = {
             ...(assistantBlocks[idx] as ToolBlock),
             status: "completed" as const,
             ...(event.output ? { output: event.output } : {}),
-            ...(event.outputSummary ? { outputSummary: event.outputSummary } : {}),
+            ...(event.outputSummary
+              ? { outputSummary: event.outputSummary }
+              : {}),
             ...(event.artifacts ? { artifacts: event.artifacts } : {}),
           };
         }
@@ -377,7 +422,10 @@ async function handleRunCommand(
     log.lap("stream_done", { runId });
 
     // ── Server-side assistant message persistence ──
-    if (services.chatService && (assistantText.length > 0 || assistantBlocks.length > 0)) {
+    if (
+      services.chatService &&
+      (assistantText.length > 0 || assistantBlocks.length > 0)
+    ) {
       try {
         await services.chatService.createMessage(
           authenticatedUser,
@@ -397,7 +445,10 @@ async function handleRunCommand(
       }
     }
   } catch (error) {
-    log.error("stream_error", { runId, error: error instanceof Error ? error.message : "unknown" });
+    log.error("stream_error", {
+      runId,
+      error: error instanceof Error ? error.message : "unknown",
+    });
     const failedEvent = {
       type: "run.failed" as const,
       runId,

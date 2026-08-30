@@ -1,18 +1,19 @@
 "use client";
 
-import { type VideoResolution, getVideoCreditCost } from "@loomic/shared";
+import { getVideoCreditCost, type VideoResolution } from "@loomic/shared";
 import { Lock, Plus, Zap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { useGenerationErrorHandler } from "../../hooks/use-generation-error-handler";
 import {
-  type VideoGeneratorData,
   resizeVideoGeneratorElement,
   updateVideoGeneratorElement,
+  type VideoGeneratorData,
 } from "../../lib/canvas-video-generator";
 import type { VideoModelInfo } from "../../lib/server-api";
 import { fetchVideoModels, generateVideoDirect } from "../../lib/server-api";
+
 // No longer needs poster frame extraction -- videos use embeddable elements
 
 type VideoGeneratorPanelProps = {

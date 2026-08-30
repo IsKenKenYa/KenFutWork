@@ -1,5 +1,3 @@
-import type { FastifyInstance, FastifyReply } from "fastify";
-
 import {
   applicationErrorResponseSchema,
   skillCreateRequestSchema,
@@ -11,10 +9,12 @@ import {
   workspaceSkillListResponseSchema,
   workspaceSkillToggleRequestSchema,
 } from "@loomic/shared";
-
-import { importSkillFromUrl, SkillImportError } from "../features/skills/skill-import-service.js";
-
+import type { FastifyInstance, FastifyReply } from "fastify";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
+import {
+  importSkillFromUrl,
+  SkillImportError,
+} from "../features/skills/skill-import-service.js";
 import type {
   RequestAuthenticator,
   UserSupabaseClient,
@@ -25,7 +25,8 @@ import type {
  * (skills, workspace_skills). Returns untyped client so PostgREST queries compile.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const untypedFrom = (client: UserSupabaseClient, table: string) => (client as any).from(table);
+const untypedFrom = (client: UserSupabaseClient, table: string) =>
+  (client as any).from(table);
 
 type SkillErrorCode =
   | "skill_not_found"
@@ -65,14 +66,22 @@ export async function registerSkillRoutes(
 
       if (error) {
         request.log.error({ err: error }, "skills list query failed");
-        return sendSkillError(reply, "skill_query_failed", "Unable to load skills.");
+        return sendSkillError(
+          reply,
+          "skill_query_failed",
+          "Unable to load skills.",
+        );
       }
 
       const skills = (data ?? []).map(mapSkillRow);
       return reply.code(200).send(skillListResponseSchema.parse({ skills }));
     } catch (error) {
       request.log.error({ err: error }, "skills list error");
-      return sendSkillError(reply, "skill_query_failed", "Unable to load skills.");
+      return sendSkillError(
+        reply,
+        "skill_query_failed",
+        "Unable to load skills.",
+      );
     }
   });
 
@@ -91,7 +100,11 @@ export async function registerSkillRoutes(
 
       if (error) {
         request.log.error({ err: error }, "skill detail query failed");
-        return sendSkillError(reply, "skill_query_failed", "Unable to load skill.");
+        return sendSkillError(
+          reply,
+          "skill_query_failed",
+          "Unable to load skill.",
+        );
       }
 
       if (!data) {
@@ -116,7 +129,11 @@ export async function registerSkillRoutes(
       return reply.code(200).send(skillDetailResponseSchema.parse({ skill }));
     } catch (error) {
       request.log.error({ err: error }, "skill detail error");
-      return sendSkillError(reply, "skill_query_failed", "Unable to load skill.");
+      return sendSkillError(
+        reply,
+        "skill_query_failed",
+        "Unable to load skill.",
+      );
     }
   });
 
@@ -136,13 +153,21 @@ export async function registerSkillRoutes(
 
       if (error) {
         request.log.error({ err: error }, "skill files list failed");
-        return sendSkillError(reply, "skill_file_query_failed", "Unable to load skill files.");
+        return sendSkillError(
+          reply,
+          "skill_file_query_failed",
+          "Unable to load skill files.",
+        );
       }
 
       return reply.code(200).send({ files: (data ?? []).map(mapSkillFileRow) });
     } catch (error) {
       request.log.error({ err: error }, "skill files list error");
-      return sendSkillError(reply, "skill_file_query_failed", "Unable to load skill files.");
+      return sendSkillError(
+        reply,
+        "skill_file_query_failed",
+        "Unable to load skill files.",
+      );
     }
   });
 
@@ -181,7 +206,11 @@ export async function registerSkillRoutes(
             409,
           );
         }
-        return sendSkillError(reply, "skill_create_failed", "Unable to create skill.");
+        return sendSkillError(
+          reply,
+          "skill_create_failed",
+          "Unable to create skill.",
+        );
       }
 
       // Insert associated files if provided
@@ -192,10 +221,16 @@ export async function registerSkillRoutes(
           content: f.content,
           mime_type: f.mimeType ?? "text/plain",
         }));
-        const { error: fileError } = await untypedFrom(client, "skill_files").insert(fileRows);
+        const { error: fileError } = await untypedFrom(
+          client,
+          "skill_files",
+        ).insert(fileRows);
         if (fileError) {
           // Non-fatal: skill was created but files failed — log and continue
-          request.log.error({ err: fileError }, "skill file insert failed (non-fatal)");
+          request.log.error(
+            { err: fileError },
+            "skill file insert failed (non-fatal)",
+          );
         }
       }
 
@@ -219,7 +254,11 @@ export async function registerSkillRoutes(
       }
 
       request.log.error({ err: error }, "skill create error");
-      return sendSkillError(reply, "skill_create_failed", "Unable to create skill.");
+      return sendSkillError(
+        reply,
+        "skill_create_failed",
+        "Unable to create skill.",
+      );
     }
   });
 
@@ -240,7 +279,10 @@ export async function registerSkillRoutes(
       const slug = generateSlug(imported.manifest.name);
 
       // Persist skill to DB (source = "community" for externally imported skills)
-      const { data: skillData, error: skillError } = await untypedFrom(client, "skills")
+      const { data: skillData, error: skillError } = await untypedFrom(
+        client,
+        "skills",
+      )
         .insert({
           name: imported.manifest.name,
           slug,
@@ -263,30 +305,52 @@ export async function registerSkillRoutes(
       if (skillError) {
         request.log.error({ err: skillError }, "skill import DB insert failed");
         if (skillError.code === "23505") {
-          return sendSkillError(reply, "skill_import_failed", "A skill with this name already exists.", 409);
+          return sendSkillError(
+            reply,
+            "skill_import_failed",
+            "A skill with this name already exists.",
+            409,
+          );
         }
-        return sendSkillError(reply, "skill_import_failed", "Failed to save imported skill.");
+        return sendSkillError(
+          reply,
+          "skill_import_failed",
+          "Failed to save imported skill.",
+        );
       }
 
       // Insert associated files (scripts/, references/, assets/)
       if (imported.files.length > 0 && skillData?.id) {
-        const fileRows = imported.files.map((f: { filePath: string; content: string; mimeType: string }) => ({
-          skill_id: skillData.id,
-          file_path: f.filePath,
-          content: f.content,
-          mime_type: f.mimeType,
-        }));
-        const { error: fileError } = await untypedFrom(client, "skill_files").insert(fileRows);
+        const fileRows = imported.files.map(
+          (f: { filePath: string; content: string; mimeType: string }) => ({
+            skill_id: skillData.id,
+            file_path: f.filePath,
+            content: f.content,
+            mime_type: f.mimeType,
+          }),
+        );
+        const { error: fileError } = await untypedFrom(
+          client,
+          "skill_files",
+        ).insert(fileRows);
         if (fileError) {
           // Non-fatal: skill record was created but file inserts failed
-          request.log.error({ err: fileError }, "skill import file insert failed (non-fatal)");
+          request.log.error(
+            { err: fileError },
+            "skill import file insert failed (non-fatal)",
+          );
         }
       }
 
       // Auto-install imported skill to the user's current workspace
       if (skillData?.id) {
         await untypedFrom(client, "workspace_skills").upsert(
-          { workspace_id: workspaceId, skill_id: skillData.id, enabled: true, installed_by: user.id },
+          {
+            workspace_id: workspaceId,
+            skill_id: skillData.id,
+            enabled: true,
+            installed_by: user.id,
+          },
           { onConflict: "workspace_id,skill_id" },
         );
       }
@@ -302,18 +366,31 @@ export async function registerSkillRoutes(
         files: (fileData ?? []).map(mapSkillFileRow),
       };
 
-      request.log.info({ skillId: skillData.id, sourceUrl: url }, "skill imported successfully");
+      request.log.info(
+        { skillId: skillData.id, sourceUrl: url },
+        "skill imported successfully",
+      );
       return reply.code(201).send(skillDetailResponseSchema.parse({ skill }));
     } catch (error) {
       if (isZodError(error)) {
-        return reply.code(400).send({ issues: (error as { issues: unknown[] }).issues, message: "Invalid request body" });
+        return reply.code(400).send({
+          issues: (error as { issues: unknown[] }).issues,
+          message: "Invalid request body",
+        });
       }
       if (error instanceof SkillImportError) {
-        request.log.warn({ code: error.code, message: error.message }, "skill import rejected");
+        request.log.warn(
+          { code: error.code, message: error.message },
+          "skill import rejected",
+        );
         return sendSkillError(reply, "skill_import_failed", error.message, 400);
       }
       request.log.error({ err: error }, "skill import error");
-      return sendSkillError(reply, "skill_import_failed", "Failed to import skill.");
+      return sendSkillError(
+        reply,
+        "skill_import_failed",
+        "Failed to import skill.",
+      );
     }
   });
 
@@ -333,9 +410,11 @@ export async function registerSkillRoutes(
         updates.name = payload.name;
         updates.slug = generateSlug(payload.name);
       }
-      if (payload.description !== undefined) updates.description = payload.description;
+      if (payload.description !== undefined)
+        updates.description = payload.description;
       if (payload.category !== undefined) updates.category = payload.category;
-      if (payload.skillContent !== undefined) updates.skill_content = payload.skillContent;
+      if (payload.skillContent !== undefined)
+        updates.skill_content = payload.skillContent;
       if (payload.iconName !== undefined) updates.icon_name = payload.iconName;
 
       if (Object.keys(updates).length === 0) {
@@ -366,7 +445,11 @@ export async function registerSkillRoutes(
             409,
           );
         }
-        return sendSkillError(reply, "skill_update_failed", "Unable to update skill.");
+        return sendSkillError(
+          reply,
+          "skill_update_failed",
+          "Unable to update skill.",
+        );
       }
 
       if (!data) {
@@ -389,7 +472,11 @@ export async function registerSkillRoutes(
       }
 
       request.log.error({ err: error }, "skill update error");
-      return sendSkillError(reply, "skill_update_failed", "Unable to update skill.");
+      return sendSkillError(
+        reply,
+        "skill_update_failed",
+        "Unable to update skill.",
+      );
     }
   });
 
@@ -409,7 +496,11 @@ export async function registerSkillRoutes(
 
       if (error) {
         request.log.error({ err: error }, "skill delete failed");
-        return sendSkillError(reply, "skill_delete_failed", "Unable to delete skill.");
+        return sendSkillError(
+          reply,
+          "skill_delete_failed",
+          "Unable to delete skill.",
+        );
       }
 
       if (count === 0) {
@@ -424,7 +515,11 @@ export async function registerSkillRoutes(
       return reply.code(204).send();
     } catch (error) {
       request.log.error({ err: error }, "skill delete error");
-      return sendSkillError(reply, "skill_delete_failed", "Unable to delete skill.");
+      return sendSkillError(
+        reply,
+        "skill_delete_failed",
+        "Unable to delete skill.",
+      );
     }
   });
 
@@ -505,7 +600,10 @@ export async function registerSkillRoutes(
       const client = options.createUserClient(user.accessToken);
 
       // Verify skill exists
-      const { data: skill, error: skillError } = await untypedFrom(client, "skills")
+      const { data: skill, error: skillError } = await untypedFrom(
+        client,
+        "skills",
+      )
         .select("id")
         .eq("id", body.skillId)
         .maybeSingle();
@@ -607,7 +705,10 @@ export async function registerSkillRoutes(
       const client = options.createUserClient(user.accessToken);
 
       // Verify skill exists in the catalog
-      const { data: skill, error: skillError } = await untypedFrom(client, "skills")
+      const { data: skill, error: skillError } = await untypedFrom(
+        client,
+        "skills",
+      )
         .select("id")
         .eq("id", skillId)
         .maybeSingle();

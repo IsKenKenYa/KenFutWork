@@ -18,10 +18,10 @@
  */
 
 import {
+  type ImportedSkill,
   importFromGitHub,
   importFromTarballUrl,
   parseSkillManifest,
-  type ImportedSkill,
   SkillImportError,
 } from "./skill-import-service.js";
 
@@ -38,7 +38,10 @@ const FETCH_TIMEOUT_MS = 15_000;
 
 export class MarketplaceError extends Error {
   constructor(
-    public readonly code: "search_failed" | "package_not_found" | "install_failed",
+    public readonly code:
+      | "search_failed"
+      | "package_not_found"
+      | "install_failed",
     message: string,
   ) {
     super(message);
@@ -82,10 +85,16 @@ async function registryFetch(url: string): Promise<Response> {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (response.status === 404) {
-    throw new MarketplaceError("package_not_found", `Package not found: ${url}`);
+    throw new MarketplaceError(
+      "package_not_found",
+      `Package not found: ${url}`,
+    );
   }
   if (!response.ok) {
-    throw new MarketplaceError("search_failed", `Registry request failed: ${response.status} for ${url}`);
+    throw new MarketplaceError(
+      "search_failed",
+      `Registry request failed: ${response.status} for ${url}`,
+    );
   }
   return response;
 }
@@ -153,9 +162,13 @@ export async function searchMarketplace(
     from: String(offset),
   });
 
-  console.log(`[marketplace] Searching: query="${query}" page=${safePage} limit=${safeLimit} offset=${offset}`);
+  console.log(
+    `[marketplace] Searching: query="${query}" page=${safePage} limit=${safeLimit} offset=${offset}`,
+  );
 
-  const response = await registryFetch(`${NPM_REGISTRY_BASE}/-/v1/search?${params}`);
+  const response = await registryFetch(
+    `${NPM_REGISTRY_BASE}/-/v1/search?${params}`,
+  );
   const data = (await response.json()) as {
     objects: Array<{
       package: {
@@ -173,9 +186,10 @@ export async function searchMarketplace(
 
   const skills: MarketplaceSkill[] = data.objects.map((obj) => {
     const pkg = obj.package;
-    const authorName = typeof pkg.author === "string"
-      ? pkg.author
-      : pkg.author?.name ?? "unknown";
+    const authorName =
+      typeof pkg.author === "string"
+        ? pkg.author
+        : (pkg.author?.name ?? "unknown");
 
     const result: MarketplaceSkill = {
       packageName: pkg.name,
@@ -191,7 +205,9 @@ export async function searchMarketplace(
     return result;
   });
 
-  console.log(`[marketplace] Search returned ${skills.length} results (total: ${data.total})`);
+  console.log(
+    `[marketplace] Search returned ${skills.length} results (total: ${data.total})`,
+  );
   return { skills, total: data.total };
 }
 
@@ -211,14 +227,18 @@ export async function getMarketplaceDetail(
 
   const distTags = data["dist-tags"] as Record<string, string> | undefined;
   const latestVersion = distTags?.latest ?? "0.0.0";
-  const versions = data.versions as Record<string, Record<string, unknown>> | undefined;
+  const versions = data.versions as
+    | Record<string, Record<string, unknown>>
+    | undefined;
   const latestMeta = versions?.[latestVersion];
-  const tarballUrl = (latestMeta?.dist as { tarball?: string } | undefined)?.tarball ?? "";
+  const tarballUrl =
+    (latestMeta?.dist as { tarball?: string } | undefined)?.tarball ?? "";
 
   const authorRaw = data.author;
-  const authorName = typeof authorRaw === "string"
-    ? authorRaw
-    : (authorRaw as { name?: string } | undefined)?.name ?? "unknown";
+  const authorName =
+    typeof authorRaw === "string"
+      ? authorRaw
+      : ((authorRaw as { name?: string } | undefined)?.name ?? "unknown");
 
   const repoUrl = extractGitHubRepo(data);
 
@@ -274,36 +294,51 @@ export async function installFromMarketplace(
     try {
       const imported = await trySkillsShDownload(detail.repoUrl);
       if (imported) {
-        console.log(`[marketplace] Installed via skills.sh download API: ${imported.manifest.name}`);
+        console.log(
+          `[marketplace] Installed via skills.sh download API: ${imported.manifest.name}`,
+        );
         return { imported, packageName };
       }
     } catch (err) {
-      console.log(`[marketplace] skills.sh download failed, trying GitHub import: ${err}`);
+      console.log(
+        `[marketplace] skills.sh download failed, trying GitHub import: ${err}`,
+      );
     }
 
     // Strategy 2: Try direct GitHub import
     try {
       const imported = await importFromGitHub(detail.repoUrl);
-      console.log(`[marketplace] Installed via GitHub import: ${imported.manifest.name} (${imported.files.length} files)`);
+      console.log(
+        `[marketplace] Installed via GitHub import: ${imported.manifest.name} (${imported.files.length} files)`,
+      );
       return { imported, packageName };
     } catch (err) {
-      console.log(`[marketplace] GitHub import failed, falling back to npm tarball: ${err}`);
+      console.log(
+        `[marketplace] GitHub import failed, falling back to npm tarball: ${err}`,
+      );
     }
   }
 
   // Strategy 3: Fallback to npm tarball
   if (!detail.tarballUrl) {
-    throw new MarketplaceError("install_failed", `No tarball URL available for ${packageName}`);
+    throw new MarketplaceError(
+      "install_failed",
+      `No tarball URL available for ${packageName}`,
+    );
   }
 
   try {
     const imported = await importFromTarballUrl(detail.tarballUrl);
-    console.log(`[marketplace] Installed via npm tarball: ${imported.manifest.name} (${imported.files.length} files)`);
+    console.log(
+      `[marketplace] Installed via npm tarball: ${imported.manifest.name} (${imported.files.length} files)`,
+    );
     return { imported, packageName };
   } catch (err) {
     if (err instanceof SkillImportError) {
-      throw new MarketplaceError("install_failed",
-        `Failed to extract skill from "${packageName}": ${err.message}`);
+      throw new MarketplaceError(
+        "install_failed",
+        `Failed to extract skill from "${packageName}": ${err.message}`,
+      );
     }
     throw err;
   }
@@ -317,7 +352,9 @@ export async function installFromMarketplace(
  * The API returns: { files: [{path, contents}], hash }
  * This is the fastest way to get skill files without cloning a repo.
  */
-async function trySkillsShDownload(repoUrl: string): Promise<ImportedSkill | null> {
+async function trySkillsShDownload(
+  repoUrl: string,
+): Promise<ImportedSkill | null> {
   // Parse GitHub URL: https://github.com/owner/repo → owner, repo
   const match = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
   if (!match) return null;
@@ -340,7 +377,9 @@ async function trySkillsShDownload(repoUrl: string): Promise<ImportedSkill | nul
     });
 
     if (!response.ok) {
-      console.log(`[marketplace] skills.sh returned ${response.status} for ${downloadUrl}`);
+      console.log(
+        `[marketplace] skills.sh returned ${response.status} for ${downloadUrl}`,
+      );
       return null;
     }
 
@@ -350,7 +389,9 @@ async function trySkillsShDownload(repoUrl: string): Promise<ImportedSkill | nul
     };
 
     if (!data.files?.length) {
-      console.log(`[marketplace] skills.sh returned empty files for ${downloadUrl}`);
+      console.log(
+        `[marketplace] skills.sh returned empty files for ${downloadUrl}`,
+      );
       return null;
     }
 
@@ -360,7 +401,9 @@ async function trySkillsShDownload(repoUrl: string): Promise<ImportedSkill | nul
     );
 
     if (!skillMdFile) {
-      console.log(`[marketplace] No SKILL.md in skills.sh response for ${downloadUrl}`);
+      console.log(
+        `[marketplace] No SKILL.md in skills.sh response for ${downloadUrl}`,
+      );
       return null;
     }
 

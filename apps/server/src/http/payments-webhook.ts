@@ -1,12 +1,11 @@
 // @credits-system — Lemon Squeezy webhook handler: subscription events, payment confirmation
 import crypto from "node:crypto";
 import type { FastifyInstance } from "fastify";
-
-import type { AdminSupabaseClient } from "../supabase/admin.js";
 import type {
   PaymentService,
   WebhookPayload,
 } from "../features/payments/payment-service.js";
+import type { AdminSupabaseClient } from "../supabase/admin.js";
 
 export async function registerPaymentWebhookRoute(
   app: FastifyInstance,
@@ -40,7 +39,9 @@ export async function registerPaymentWebhookRoute(
       .update(rawBody)
       .digest("hex");
 
-    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+    if (
+      !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
+    ) {
       return reply.code(401).send({ error: "Invalid webhook signature" });
     }
 
@@ -76,7 +77,10 @@ export async function registerPaymentWebhookRoute(
       });
 
     if (insertError) {
-      console.error("[Webhook] Failed to log payment event:", (insertError as any).message);
+      console.error(
+        "[Webhook] Failed to log payment event:",
+        (insertError as any).message,
+      );
       // Continue processing even if audit logging fails
     }
 

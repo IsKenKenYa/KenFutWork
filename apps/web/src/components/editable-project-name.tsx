@@ -1,7 +1,7 @@
 "use client";
 
-import { updateProject } from "@/lib/server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { updateProject } from "@/lib/server-api";
 
 interface EditableProjectNameProps {
   accessToken: string;

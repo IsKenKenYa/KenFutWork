@@ -1,27 +1,29 @@
 "use client";
 
-import { useSearchParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, Suspense } from "react";
-
 import type { ImageArtifact, VideoArtifact } from "@loomic/shared";
-import type { CanvasImageItem } from "../../components/canvas-image-picker";
-import type { CanvasSelectedElement } from "../../components/canvas-editor";
-import { LoadingScreen } from "../../components/loading-screen";
-import { useAuth } from "../../lib/auth-context";
-import { useWebSocket } from "../../hooks/use-websocket";
-import { useJobFallbackPolling } from "../../hooks/use-job-fallback-polling";
-import { CanvasEditor } from "../../components/canvas-editor";
-import { ChatSidebar } from "../../components/chat-sidebar";
-import { CanvasEmptyHint } from "../../components/canvas-empty-hint";
-import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
-import { EditableProjectName } from "../../components/editable-project-name";
-import { insertImageOnCanvas, insertVideoOnCanvas } from "../../lib/canvas-elements";
-import { fetchCanvas, fetchProject, ApiAuthError } from "../../lib/server-api";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { BrandKitSelector } from "../../components/brand-kit-selector";
 import { CanvasBottomBar } from "../../components/canvas-bottom-bar";
+import type { CanvasSelectedElement } from "../../components/canvas-editor";
+import { CanvasEditor } from "../../components/canvas-editor";
+import { CanvasEmptyHint } from "../../components/canvas-empty-hint";
 import { CanvasFilesPanel } from "../../components/canvas-files-panel";
+import type { CanvasImageItem } from "../../components/canvas-image-picker";
 import { CanvasLayersPanel } from "../../components/canvas-layers-panel";
+import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
+import { ChatSidebar } from "../../components/chat-sidebar";
 import { CreditHeaderButton } from "../../components/credits/credit-header-button";
+import { EditableProjectName } from "../../components/editable-project-name";
+import { LoadingScreen } from "../../components/loading-screen";
+import { useJobFallbackPolling } from "../../hooks/use-job-fallback-polling";
+import { useWebSocket } from "../../hooks/use-websocket";
+import { useAuth } from "../../lib/auth-context";
+import {
+  insertImageOnCanvas,
+  insertVideoOnCanvas,
+} from "../../lib/canvas-elements";
+import { ApiAuthError, fetchCanvas, fetchProject } from "../../lib/server-api";
 
 function CanvasPageContent() {
   const searchParams = useSearchParams();
@@ -29,7 +31,9 @@ function CanvasPageContent() {
   const initialSessionId = searchParams.get("session") ?? undefined;
   // Capture prompt once — router.replace will strip it from URL, but the
   // value must survive for the auto-send effect in ChatSidebar.
-  const [initialPrompt] = useState(() => searchParams.get("prompt") ?? undefined);
+  const [initialPrompt] = useState(
+    () => searchParams.get("prompt") ?? undefined,
+  );
   const { user, session, loading: authLoading, signOut } = useAuth();
   const router = useRouter();
 
@@ -54,7 +58,9 @@ function CanvasPageContent() {
   const [filesOpen, setFilesOpen] = useState(false);
   const [brandKitId, setBrandKitId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("Untitled");
-  const [selectedCanvasElements, setSelectedCanvasElements] = useState<CanvasSelectedElement[]>([]);
+  const [selectedCanvasElements, setSelectedCanvasElements] = useState<
+    CanvasSelectedElement[]
+  >([]);
 
   const excalidrawApiRef = useRef<any>(null);
   const [excalidrawApi, setExcalidrawApi] = useState<any>(null);
@@ -67,8 +73,14 @@ function CanvasPageContent() {
   // Stable callbacks for panel toggles to prevent re-renders of child components
   const handleOpenChat = useCallback(() => setChatOpen(true), []);
   const handleToggleChat = useCallback(() => setChatOpen((v) => !v), []);
-  const handleToggleLayers = useCallback(() => { setLayersOpen((v) => !v); setFilesOpen(false); }, []);
-  const handleToggleFiles = useCallback(() => { setFilesOpen((v) => !v); setLayersOpen(false); }, []);
+  const handleToggleLayers = useCallback(() => {
+    setLayersOpen((v) => !v);
+    setFilesOpen(false);
+  }, []);
+  const handleToggleFiles = useCallback(() => {
+    setFilesOpen((v) => !v);
+    setLayersOpen(false);
+  }, []);
   const handleCloseLayers = useCallback(() => setLayersOpen(false), []);
   const handleCloseFiles = useCallback(() => setFilesOpen(false), []);
 
@@ -109,7 +121,11 @@ function CanvasPageContent() {
       const { canvas } = await fetchCanvas(token, canvasData.id);
       const elements = canvas.content.elements ?? [];
       const files = (canvas.content as Record<string, unknown>).files as
-        Record<string, { id: string; dataURL: string; mimeType: string; created: number }> | undefined;
+        | Record<
+            string,
+            { id: string; dataURL: string; mimeType: string; created: number }
+          >
+        | undefined;
 
       // Sync files (base64 dataURLs from backend-inserted images) into Excalidraw
       if (files && Object.keys(files).length > 0) {
@@ -128,10 +144,13 @@ function CanvasPageContent() {
   // This hook detects completion and triggers a canvas re-fetch.
   const { checkForTimedOutJobs } = useJobFallbackPolling({
     accessTokenRef,
-    onJobSucceeded: useCallback((_jobId: string, _jobType: string) => {
-      // Element was inserted by backend — just refresh the canvas
-      handleCanvasSync();
-    }, [handleCanvasSync]),
+    onJobSucceeded: useCallback(
+      (_jobId: string, _jobType: string) => {
+        // Element was inserted by backend — just refresh the canvas
+        handleCanvasSync();
+      },
+      [handleCanvasSync],
+    ),
   });
 
   const handleSessionChange = useCallback(
@@ -156,9 +175,7 @@ function CanvasPageContent() {
         const file = files[el.fileId];
         const dataURL = file?.dataURL ?? "";
         const title =
-          el.customData?.title ||
-          el.customData?.label ||
-          `Image ${idx}`;
+          el.customData?.title || el.customData?.label || `Image ${idx}`;
         return {
           kind: "canvas-image",
           id: el.id,
@@ -206,7 +223,9 @@ function CanvasPageContent() {
             setBrandKitId(projectData.project.brand_kit_id);
             setProjectName(projectData.project.name ?? "Untitled");
           })
-          .catch((err) => console.warn("Failed to fetch project for brand kit:", err));
+          .catch((err) =>
+            console.warn("Failed to fetch project for brand kit:", err),
+          );
       })
       .catch((err) => {
         if (err instanceof ApiAuthError) {

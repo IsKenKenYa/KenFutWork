@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/components/toast";
+import { useAuth } from "@/lib/auth-context";
 import { ApiAuthError, deleteProject } from "@/lib/server-api";
 
 /**

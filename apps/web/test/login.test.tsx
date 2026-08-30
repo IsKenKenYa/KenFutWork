@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
@@ -80,13 +86,21 @@ describe("Login page", () => {
       </AuthProvider>,
     );
     expect((await screen.findByText("Loomic")).textContent).toBe("Loomic");
-    expect(screen.getByText(/Send login link/i).textContent).toContain("Send login link");
-    expect(screen.getByText(/Continue with Google/i).textContent).toContain("Continue with Google");
-    expect(screen.getByRole("link", { name: /create one/i }).getAttribute("href")).toBe("/register");
+    expect(screen.getByText(/Send login link/i).textContent).toContain(
+      "Send login link",
+    );
+    expect(screen.getByText(/Continue with Google/i).textContent).toContain(
+      "Continue with Google",
+    );
+    expect(
+      screen.getByRole("link", { name: /create one/i }).getAttribute("href"),
+    ).toBe("/register");
   });
 
   it("shows callback errors from the query string as a banner", async () => {
-    mockSearchParams.mockReturnValue(new URLSearchParams("error=auth_exchange_failed"));
+    mockSearchParams.mockReturnValue(
+      new URLSearchParams("error=auth_exchange_failed"),
+    );
 
     render(
       <AuthProvider>
@@ -129,7 +143,9 @@ describe("Login page", () => {
       </AuthProvider>,
     );
 
-    fireEvent.click(await screen.findByRole("button", { name: /use password instead/i }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /use password instead/i }),
+    );
     fireEvent.change(screen.getByLabelText(/email/i), {
       target: { value: "user@example.com" },
     });

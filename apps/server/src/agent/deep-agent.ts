@@ -1,17 +1,30 @@
-import type { BaseCheckpointSaver, BaseStore } from "@langchain/langgraph-checkpoint";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ChatVertexAI } from "@langchain/google-vertexai";
+import type {
+  BaseCheckpointSaver,
+  BaseStore,
+} from "@langchain/langgraph-checkpoint";
 import { ChatOpenAI } from "@langchain/openai";
 import { createDeepAgent } from "deepagents";
 
-import { DEFAULT_AGENT_MODEL, DEFAULT_GOOGLE_AGENT_MODEL, type ServerEnv } from "../config/env.js";
+import {
+  DEFAULT_AGENT_MODEL,
+  DEFAULT_GOOGLE_AGENT_MODEL,
+  type ServerEnv,
+} from "../config/env.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
-import { createAgentBackend, type AgentBackendResult } from "./backends/index.js";
+import {
+  type AgentBackendResult,
+  createAgentBackend,
+} from "./backends/index.js";
 import { LOOMIC_SYSTEM_PROMPT } from "./prompts/loomic-main.js";
 import { createVideoSubAgent } from "./sub-agents.js";
+import type {
+  PersistImageFn,
+  SubmitImageJobFn,
+} from "./tools/image-generate.js";
 import { createMainAgentTools } from "./tools/index.js";
-import type { PersistImageFn, SubmitImageJobFn } from "./tools/image-generate.js";
 import type { SubmitVideoJobFn } from "./tools/video-generate.js";
 import type { WorkspaceSkillEntry } from "./workspace-skills.js";
 
@@ -112,12 +125,20 @@ export function createLoomicDeepAgent(options: {
     tools: createMainAgentTools(backendResult.factory, {
       createUserClient,
       ...(options.brandKitId != null ? { brandKitId: options.brandKitId } : {}),
-      ...(options.connectionManager ? { connectionManager: options.connectionManager } : {}),
+      ...(options.connectionManager
+        ? { connectionManager: options.connectionManager }
+        : {}),
       ...(options.persistImage ? { persistImage: options.persistImage } : {}),
-      ...(backendResult.sandboxDir ? { sandboxDir: backendResult.sandboxDir } : {}),
+      ...(backendResult.sandboxDir
+        ? { sandboxDir: backendResult.sandboxDir }
+        : {}),
 
-      ...(options.submitImageJob ? { submitImageJob: options.submitImageJob } : {}),
-      ...(options.submitVideoJob ? { submitVideoJob: options.submitVideoJob } : {}),
+      ...(options.submitImageJob
+        ? { submitImageJob: options.submitImageJob }
+        : {}),
+      ...(options.submitVideoJob
+        ? { submitVideoJob: options.submitVideoJob }
+        : {}),
     }),
   });
 }
@@ -137,17 +158,23 @@ function createStreamingChatModel(specifier: string): BaseLanguageModel {
   let modelName = colonIdx > 0 ? specifier.slice(colonIdx + 1) : specifier;
 
   const hasGoogleApiKey = !!process.env.GOOGLE_API_KEY;
-  const hasVertexAI = !!(process.env.GOOGLE_VERTEX_PROJECT && process.env.GOOGLE_VERTEX_LOCATION);
+  const hasVertexAI = !!(
+    process.env.GOOGLE_VERTEX_PROJECT && process.env.GOOGLE_VERTEX_LOCATION
+  );
   const hasGoogle = hasGoogleApiKey || hasVertexAI;
 
   // Provider availability fallback
   if (provider === "google" && !hasGoogle) {
-    console.warn(`[model] Google unavailable (no GOOGLE_API_KEY or Vertex AI config), falling back to OpenAI for: ${specifier}`);
+    console.warn(
+      `[model] Google unavailable (no GOOGLE_API_KEY or Vertex AI config), falling back to OpenAI for: ${specifier}`,
+    );
     provider = "openai";
     modelName = DEFAULT_AGENT_MODEL;
   }
   if (provider === "openai" && !process.env.OPENAI_API_KEY && hasGoogle) {
-    console.warn(`[model] OpenAI unavailable (no OPENAI_API_KEY), falling back to Google for: ${specifier}`);
+    console.warn(
+      `[model] OpenAI unavailable (no OPENAI_API_KEY), falling back to Google for: ${specifier}`,
+    );
     provider = "google";
     modelName = DEFAULT_GOOGLE_AGENT_MODEL;
   }
@@ -158,7 +185,9 @@ function createStreamingChatModel(specifier: string): BaseLanguageModel {
       if (hasVertexAI) {
         const vertexProject = process.env.GOOGLE_VERTEX_PROJECT!;
         const vertexLocation = process.env.GOOGLE_VERTEX_LOCATION!;
-        console.log(`[model] Using Vertex AI for: ${modelName} (project=${vertexProject}, location=${vertexLocation})`);
+        console.log(
+          `[model] Using Vertex AI for: ${modelName} (project=${vertexProject}, location=${vertexLocation})`,
+        );
         return new ChatVertexAI({
           model: modelName,
           location: vertexLocation,

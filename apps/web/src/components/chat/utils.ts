@@ -26,13 +26,41 @@ export type ToolDisplayConfig = {
 
 const TOOL_CONFIG: Record<string, ToolDisplayConfig> = {
   think: { label: "\u601d\u8003\u4e2d", icon: "tool", showCard: false },
-  inspect_canvas: { label: "\u8bfb\u53d6\u753b\u5e03", icon: "eye", showCard: true },
-  manipulate_canvas: { label: "\u64cd\u4f5c\u753b\u5e03", icon: "brush", showCard: true },
-  generate_image: { label: "\u751f\u6210\u56fe\u7247", icon: "image", showCard: true },
-  generate_video: { label: "\u751f\u6210\u89c6\u9891", icon: "video", showCard: true },
-  screenshot_canvas: { label: "\u622a\u53d6\u753b\u5e03", icon: "eye", showCard: true },
-  get_brand_kit: { label: "\u54c1\u724c\u5de5\u5177\u5305", icon: "palette", showCard: true },
-  project_search: { label: "\u641c\u7d22\u9879\u76ee", icon: "search", showCard: true },
+  inspect_canvas: {
+    label: "\u8bfb\u53d6\u753b\u5e03",
+    icon: "eye",
+    showCard: true,
+  },
+  manipulate_canvas: {
+    label: "\u64cd\u4f5c\u753b\u5e03",
+    icon: "brush",
+    showCard: true,
+  },
+  generate_image: {
+    label: "\u751f\u6210\u56fe\u7247",
+    icon: "image",
+    showCard: true,
+  },
+  generate_video: {
+    label: "\u751f\u6210\u89c6\u9891",
+    icon: "video",
+    showCard: true,
+  },
+  screenshot_canvas: {
+    label: "\u622a\u53d6\u753b\u5e03",
+    icon: "eye",
+    showCard: true,
+  },
+  get_brand_kit: {
+    label: "\u54c1\u724c\u5de5\u5177\u5305",
+    icon: "palette",
+    showCard: true,
+  },
+  project_search: {
+    label: "\u641c\u7d22\u9879\u76ee",
+    icon: "search",
+    showCard: true,
+  },
   task: { label: "\u6267\u884c\u4efb\u52a1", icon: "tool", showCard: false },
 };
 
@@ -48,9 +76,7 @@ export function getToolConfig(toolName: string): ToolDisplayConfig {
 
 /** Convert raw tool name to human-readable: "generate_image" -> "Generate Image" */
 export function formatToolName(name: string): string {
-  return name
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 /** Format raw model ID to human-readable: "google/nano-banana-pro" -> "Nano Banana Pro" */
@@ -92,9 +118,7 @@ export function isHumanReadable(text: string): boolean {
 }
 
 /** Format first 3 entries of tool output as preview lines */
-export function formatOutputPreview(
-  output: Record<string, unknown>,
-): string[] {
+export function formatOutputPreview(output: Record<string, unknown>): string[] {
   const entries = Object.entries(output).slice(0, 3);
   return entries.map(([key, value]) => {
     const formattedKey = formatParamName(key);
@@ -102,8 +126,7 @@ export function formatOutputPreview(
     if (value === null || value === undefined) {
       formattedValue = "\u2014";
     } else if (typeof value === "string") {
-      formattedValue =
-        value.length > 80 ? `${value.slice(0, 77)}...` : value;
+      formattedValue = value.length > 80 ? `${value.slice(0, 77)}...` : value;
     } else if (typeof value === "boolean") {
       formattedValue = value ? "Yes" : "No";
     } else if (typeof value === "number") {

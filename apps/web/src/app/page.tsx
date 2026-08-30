@@ -29,8 +29,7 @@ const ShowcaseGallery = dynamic(
 );
 
 const HowItWorks = dynamic(
-  () =>
-    import("@/components/landing/how-it-works").then((m) => m.HowItWorks),
+  () => import("@/components/landing/how-it-works").then((m) => m.HowItWorks),
   { ssr: false },
 );
 
@@ -49,9 +48,7 @@ const FinalCTA = dynamic(
 
 const LandingFooter = dynamic(
   () =>
-    import("@/components/landing/landing-footer").then(
-      (m) => m.LandingFooter,
-    ),
+    import("@/components/landing/landing-footer").then((m) => m.LandingFooter),
   { ssr: false },
 );
 

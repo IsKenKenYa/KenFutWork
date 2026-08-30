@@ -2,12 +2,8 @@
 
 import { motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
-
-import {
-  Dialog,
-  DialogContent,
-} from "./ui/dialog";
 import { Button } from "./ui/button";
+import { Dialog, DialogContent } from "./ui/dialog";
 
 interface DeleteProjectDialogProps {
   open: boolean;
@@ -23,7 +19,12 @@ export function DeleteProjectDialog({
   onCancel,
 }: DeleteProjectDialogProps) {
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onCancel(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) onCancel();
+      }}
+    >
       <DialogContent className="sm:max-w-sm" showCloseButton={false}>
         <p className="text-sm font-medium text-foreground">
           确定删除此项目？此操作无法撤销。
@@ -50,7 +51,9 @@ export function DeleteProjectDialog({
               >
                 <Loader2 size={16} />
               </motion.span>
-            ) : "永久删除"}
+            ) : (
+              "永久删除"
+            )}
           </Button>
         </div>
       </DialogContent>

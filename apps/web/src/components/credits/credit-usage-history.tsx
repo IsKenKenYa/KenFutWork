@@ -1,9 +1,9 @@
 // @credits-system — Usage history table showing credit transactions
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Zap } from "lucide-react";
 import type { CreditTransaction } from "@loomic/shared";
+import { Loader2, Zap } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useAuth } from "@/lib/auth-context";
 import { fetchCreditTransactions } from "@/lib/credits-api";
@@ -166,7 +166,9 @@ export function CreditUsageHistory() {
                     }`}
                   >
                     <td className="px-4 py-2.5 text-foreground">
-                      {t.description ?? TYPE_LABELS[t.transaction_type] ?? t.transaction_type}
+                      {t.description ??
+                        TYPE_LABELS[t.transaction_type] ??
+                        t.transaction_type}
                     </td>
                     <td className="px-4 py-2.5 text-muted-foreground">
                       {TYPE_LABELS[t.transaction_type] ?? t.transaction_type}

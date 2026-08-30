@@ -1,15 +1,15 @@
 // @credits-system — Viewer endpoint: auto-claims daily credits, returns balance and plan info
-import type { FastifyInstance, FastifyReply } from "fastify";
 
 import {
-  PLAN_CONFIGS,
   applicationErrorResponseSchema,
+  PLAN_CONFIGS,
   profileUpdateRequestSchema,
   profileUpdateResponseSchema,
+  type SubscriptionPlan,
   unauthenticatedErrorResponseSchema,
   viewerResponseSchema,
-  type SubscriptionPlan,
 } from "@loomic/shared";
+import type { FastifyInstance, FastifyReply } from "fastify";
 
 import {
   BootstrapError,

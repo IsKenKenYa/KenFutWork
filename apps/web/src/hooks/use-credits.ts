@@ -1,10 +1,10 @@
 // @credits-system — React hook for credit balance, daily claim, and auto-refresh on focus
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
 import type { CreditBalanceResponse } from "@loomic/shared";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
-import { fetchCredits, claimDailyCredits } from "@/lib/credits-api";
+import { claimDailyCredits, fetchCredits } from "@/lib/credits-api";
 
 interface UseCreditsReturn {
   balance: number;

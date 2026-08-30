@@ -1,13 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-
 import type {
+  RunCreateRequest,
   StreamEvent,
   WsCommandAck,
   WsRpcRequest,
-  RunCreateRequest,
 } from "@loomic/shared";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getServerBaseUrl } from "../lib/env";
 
 type EventCallback = (event: StreamEvent) => void;
@@ -27,18 +26,17 @@ export type WebSocketHandle = {
   resumeCanvas: (canvasId: string, onAck?: (ack: WsCommandAck) => void) => void;
 };
 
-export function useWebSocket(
-  getToken: () => string | null,
-): WebSocketHandle {
+export function useWebSocket(getToken: () => string | null): WebSocketHandle {
   const wsRef = useRef<WebSocket | null>(null);
   const connectionIdRef = useRef(
     (() => {
       if (typeof sessionStorage !== "undefined") {
         const stored = sessionStorage.getItem("ws_connection_id");
         if (stored) return stored;
-        const id = typeof crypto !== "undefined" && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const id =
+          typeof crypto !== "undefined" && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
         sessionStorage.setItem("ws_connection_id", id);
         return id;
       }
@@ -53,9 +51,9 @@ export function useWebSocket(
   const disposed = useRef(false);
 
   const eventListeners = useRef<Set<EventCallback>>(new Set());
-  const ackListeners = useRef<
-    Map<string, (ack: WsCommandAck) => void>
-  >(new Map());
+  const ackListeners = useRef<Map<string, (ack: WsCommandAck) => void>>(
+    new Map(),
+  );
   const rpcHandlers = useRef<Map<string, RPCHandler>>(new Map());
 
   const connect = useCallback(() => {
@@ -147,10 +145,7 @@ export function useWebSocket(
       }
 
       if (!disposed.current) {
-        const delay = Math.min(
-          30_000,
-          1000 * Math.pow(2, reconnectAttempt.current),
-        );
+        const delay = Math.min(30_000, 1000 * 2 ** reconnectAttempt.current);
         const attempt = reconnectAttempt.current + 1;
         console.log(
           `[ws] scheduling reconnect attempt ${attempt} in ${delay}ms (code: ${event.code})`,
@@ -183,9 +178,7 @@ export function useWebSocket(
     try {
       const result = await handler(req.params);
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(
-          JSON.stringify({ type: "rpc.response", id: req.id, result }),
-        );
+        ws.send(JSON.stringify({ type: "rpc.response", id: req.id, result }));
       }
     } catch (error) {
       if (ws.readyState === WebSocket.OPEN) {
@@ -216,7 +209,10 @@ export function useWebSocket(
     (action: string, payload: Record<string, unknown>): boolean => {
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN) {
-        console.warn("[ws] command dropped -- not connected, readyState:", ws?.readyState);
+        console.warn(
+          "[ws] command dropped -- not connected, readyState:",
+          ws?.readyState,
+        );
         return false;
       }
       try {
@@ -232,10 +228,7 @@ export function useWebSocket(
   );
 
   const startRun = useCallback(
-    (
-      payload: RunCreateRequest,
-      onAck?: (ack: WsCommandAck) => void,
-    ) => {
+    (payload: RunCreateRequest, onAck?: (ack: WsCommandAck) => void) => {
       if (onAck) {
         ackListeners.current.set("agent.run", onAck);
       }
@@ -278,15 +271,12 @@ export function useWebSocket(
     };
   }, []);
 
-  const registerRPC = useCallback(
-    (method: string, handler: RPCHandler) => {
-      rpcHandlers.current.set(method, handler);
-      return () => {
-        rpcHandlers.current.delete(method);
-      };
-    },
-    [],
-  );
+  const registerRPC = useCallback((method: string, handler: RPCHandler) => {
+    rpcHandlers.current.set(method, handler);
+    return () => {
+      rpcHandlers.current.delete(method);
+    };
+  }, []);
 
   return { connected, startRun, cancelRun, onEvent, registerRPC, resumeCanvas };
 }

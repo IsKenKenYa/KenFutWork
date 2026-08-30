@@ -38,15 +38,9 @@ export type UploadService = {
     input: UploadFileInput,
   ): Promise<{ asset: AssetObject; url: string }>;
 
-  getAssetUrl(
-    user: AuthenticatedUser,
-    assetId: string,
-  ): Promise<string>;
+  getAssetUrl(user: AuthenticatedUser, assetId: string): Promise<string>;
 
-  deleteAsset(
-    user: AuthenticatedUser,
-    assetId: string,
-  ): Promise<void>;
+  deleteAsset(user: AuthenticatedUser, assetId: string): Promise<void>;
 };
 
 const SIGNED_URL_EXPIRY_SECONDS = 3600;
@@ -90,7 +84,9 @@ export function createUploadService(options: {
           created_by: user.id,
           ...(input.projectId ? { project_id: input.projectId } : {}),
         })
-        .select("id, bucket, object_path, mime_type, byte_size, workspace_id, project_id, created_at")
+        .select(
+          "id, bucket, object_path, mime_type, byte_size, workspace_id, project_id, created_at",
+        )
         .single();
 
       if (insertError || !assetRow) {
@@ -157,9 +153,7 @@ export function createUploadService(options: {
         );
       }
 
-      await client.storage
-        .from(assetRow.bucket)
-        .remove([assetRow.object_path]);
+      await client.storage.from(assetRow.bucket).remove([assetRow.object_path]);
 
       const { error: deleteError } = await client
         .from("asset_objects")

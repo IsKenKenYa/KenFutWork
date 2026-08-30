@@ -1,11 +1,11 @@
 // @credits-system — Sidebar credit balance widget with popover, animated counter, and daily claim
 "use client";
 
+import { AnimatePresence, motion } from "framer-motion";
+import { ChevronRight, Gift, Plus, Sparkles, Zap } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Plus, ChevronRight, Zap, Gift } from "lucide-react";
-import Link from "next/link";
 import { useCredits } from "@/hooks/use-credits";
 
 // ── Animated number display ──────────────────────────────────
@@ -28,7 +28,7 @@ function AnimatedBalance({ value }: { value: number }) {
       step++;
       const progress = step / steps;
       // Ease-out curve
-      const eased = 1 - Math.pow(1 - progress, 3);
+      const eased = 1 - (1 - progress) ** 3;
       setDisplayed(Math.round(prev + diff * eased));
       if (step >= steps) {
         clearInterval(timer);
@@ -159,85 +159,85 @@ export function CreditBalance() {
                 transition={{ duration: 0.15, ease: "easeOut" }}
                 className="w-64 rounded-xl border border-border bg-popover p-4 text-popover-foreground shadow-2xl"
               >
-              {/* Balance section */}
-              <div className="mb-3">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="h-5 w-5 text-muted-foreground" />
-                  <span className="text-2xl font-semibold tabular-nums text-foreground">
-                    <AnimatedBalance value={balance} />
-                  </span>
+                {/* Balance section */}
+                <div className="mb-3">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-5 w-5 text-muted-foreground" />
+                    <span className="text-2xl font-semibold tabular-nums text-foreground">
+                      <AnimatedBalance value={balance} />
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Available credits
+                  </p>
                 </div>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Available credits
-                </p>
-              </div>
 
-              {/* Plan badge */}
-              <div className="mb-3 flex items-center gap-2">
-                <span
-                  className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${PLAN_COLORS[plan] ?? PLAN_COLORS.free}`}
-                >
-                  {plan}
-                </span>
-                {limits && (
-                  <span className="text-xs text-muted-foreground">
-                    {isFree
-                      ? `${limits.dailyCredits}/day`
-                      : `${limits.monthlyCredits.toLocaleString()}/mo`}
+                {/* Plan badge */}
+                <div className="mb-3 flex items-center gap-2">
+                  <span
+                    className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${PLAN_COLORS[plan] ?? PLAN_COLORS.free}`}
+                  >
+                    {plan}
                   </span>
-                )}
-              </div>
-
-              {/* Divider */}
-              <div className="mb-3 h-px bg-border" />
-
-              {/* Claim daily button (free plan, unclaimed) */}
-              {canClaim && (
-                <button
-                  type="button"
-                  onClick={handleClaim}
-                  disabled={claiming}
-                  className="mb-3 flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-                >
-                  {claiming ? (
-                    <motion.div
-                      className="h-4 w-4 rounded-full border-2 border-primary-foreground/30 border-t-primary-foreground"
-                      animate={{ rotate: 360 }}
-                      transition={{
-                        duration: 0.6,
-                        repeat: Infinity,
-                        ease: "linear",
-                      }}
-                    />
-                  ) : (
-                    <Gift className="h-4 w-4" />
+                  {limits && (
+                    <span className="text-xs text-muted-foreground">
+                      {isFree
+                        ? `${limits.dailyCredits}/day`
+                        : `${limits.monthlyCredits.toLocaleString()}/mo`}
+                    </span>
                   )}
-                  {claiming ? "Claiming..." : "Claim Daily Credits"}
-                </button>
-              )}
-
-              {/* Already claimed indicator */}
-              {isFree && dailyClaimed && (
-                <div className="mb-3 flex items-center gap-2 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground/70">
-                  <Zap className="h-3.5 w-3.5 text-muted-foreground" />
-                  Daily credits claimed
                 </div>
-              )}
 
-              {/* Upgrade link */}
-              {plan !== "business" && (
-                <Link
-                  href="/pricing"
-                  onClick={() => setOpen(false)}
-                  className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
-                >
-                  <span className="flex items-center gap-2">
-                    <Zap className="h-4 w-4 text-muted-foreground" />
-                    Upgrade Plan
-                  </span>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                </Link>
-              )}
+                {/* Divider */}
+                <div className="mb-3 h-px bg-border" />
+
+                {/* Claim daily button (free plan, unclaimed) */}
+                {canClaim && (
+                  <button
+                    type="button"
+                    onClick={handleClaim}
+                    disabled={claiming}
+                    className="mb-3 flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    {claiming ? (
+                      <motion.div
+                        className="h-4 w-4 rounded-full border-2 border-primary-foreground/30 border-t-primary-foreground"
+                        animate={{ rotate: 360 }}
+                        transition={{
+                          duration: 0.6,
+                          repeat: Infinity,
+                          ease: "linear",
+                        }}
+                      />
+                    ) : (
+                      <Gift className="h-4 w-4" />
+                    )}
+                    {claiming ? "Claiming..." : "Claim Daily Credits"}
+                  </button>
+                )}
+
+                {/* Already claimed indicator */}
+                {isFree && dailyClaimed && (
+                  <div className="mb-3 flex items-center gap-2 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground/70">
+                    <Zap className="h-3.5 w-3.5 text-muted-foreground" />
+                    Daily credits claimed
+                  </div>
+                )}
+
+                {/* Upgrade link */}
+                {plan !== "business" && (
+                  <Link
+                    href="/pricing"
+                    onClick={() => setOpen(false)}
+                    className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Zap className="h-4 w-4 text-muted-foreground" />
+                      Upgrade Plan
+                    </span>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  </Link>
+                )}
               </motion.div>
             </div>
           </AnimatePresence>,

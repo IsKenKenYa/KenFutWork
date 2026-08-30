@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
 import { motion } from "framer-motion";
 import { Check } from "lucide-react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
-import { featureCategories, pricingTiers, fadeInUp } from "./pricing-data";
+import { fadeInUp, featureCategories, pricingTiers } from "./pricing-data";
 
 const tierIds = pricingTiers.map((t) => t.id);
 const proIndex = tierIds.indexOf("pro");

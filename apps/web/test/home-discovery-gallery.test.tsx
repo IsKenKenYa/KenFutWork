@@ -21,9 +21,15 @@ describe("HomeDiscoveryGallery", () => {
     );
 
     expect(screen.getByText("灵感发现")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "The ART & Cultural Arts Center" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Vintage Car Poster" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Cat Tarot Cards" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "The ART & Cultural Arts Center" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Vintage Car Poster" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Cat Tarot Cards" }),
+    ).toBeInTheDocument();
   });
 
   it("filters cards when a category tab is selected", async () => {
@@ -36,8 +42,12 @@ describe("HomeDiscoveryGallery", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "品牌设计" }));
 
-    expect(screen.getByRole("button", { name: "The ART & Cultural Arts Center" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Vintage Car Poster" })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "The ART & Cultural Arts Center" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Vintage Car Poster" }),
+    ).not.toBeInTheDocument();
   });
 
   it("emits the internal Loomic seed payload when a card is clicked", async () => {

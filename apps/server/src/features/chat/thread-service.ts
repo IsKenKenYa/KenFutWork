@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 
-import type { AuthenticatedUser, UserSupabaseClient } from "../../supabase/user.js";
+import type {
+  AuthenticatedUser,
+  UserSupabaseClient,
+} from "../../supabase/user.js";
 
 export class ThreadServiceError extends Error {
   readonly statusCode: number;

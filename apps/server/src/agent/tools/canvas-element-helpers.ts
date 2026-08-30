@@ -139,8 +139,7 @@ export function findElement(
 /** Return a short human-readable label for log / result messages. */
 export function shortLabel(el: CanvasElement): string {
   if (el.type === "text" && typeof el.text === "string") {
-    const short =
-      el.text.length > 20 ? el.text.slice(0, 17) + "..." : el.text;
+    const short = el.text.length > 20 ? el.text.slice(0, 17) + "..." : el.text;
     return `text '${short}'`;
   }
   return `${el.type ?? "element"}(${el.id})`;
@@ -214,7 +213,10 @@ export function validateBindings(elements: CanvasElement[]): void {
 export const BINDING_GAP = 8;
 
 /** Return the center point of a canvas element. */
-export function getElementCenter(el: CanvasElement): { cx: number; cy: number } {
+export function getElementCenter(el: CanvasElement): {
+  cx: number;
+  cy: number;
+} {
   const x = Number(el.x) || 0;
   const y = Number(el.y) || 0;
   const w = Number(el.width) || 0;

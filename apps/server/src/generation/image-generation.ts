@@ -1,5 +1,5 @@
-import type { GeneratedImage, ImageGenerateParams } from "./types.js";
 import { getImageProvider } from "./providers/registry.js";
+import type { GeneratedImage, ImageGenerateParams } from "./types.js";
 
 export async function generateImage(
   providerName: string,

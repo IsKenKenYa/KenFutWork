@@ -53,7 +53,9 @@ describe("HomeExampleBrowser", () => {
         title: "Design a Bauhaus-inspired poster.",
         prompt:
           "Make a poster for a music festival in the Bauhaus style. Use a limited color palette of pink, red, and cream. Abstract geometric shapes representing sound waves. Minimalist vertical text.",
-        previewImages: expect.arrayContaining([expect.stringContaining("supabase.co")]),
+        previewImages: expect.arrayContaining([
+          expect.stringContaining("supabase.co"),
+        ]),
       }),
     );
   });
@@ -82,7 +84,9 @@ describe("HomeExampleBrowser", () => {
         title: "Design a ceramic dinnerware set.",
         prompt:
           "Generate a set of 5 images, each a ceramic tableware piece: 1 small bowl, 1 large bowl, 1 small plate, 1 large plate, 1 mug. They belong to the same set, harmoniously blends Scandinavian minimalism and Japanese wabi-sabi aesthetics - soft neutral tones, organic textures, imperfect hand-thrown forms, subtle glaze variations, natural lighting. Each piece is photographed against a seamless white background; even studio production photography lighting.",
-        previewImages: expect.arrayContaining([expect.stringContaining("supabase.co")]),
+        previewImages: expect.arrayContaining([
+          expect.stringContaining("supabase.co"),
+        ]),
         inputMentions: [],
       }),
     );

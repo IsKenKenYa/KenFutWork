@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown } from "lucide-react";
+import { useState } from "react";
 
-import { faqItems, fadeInUp } from "./pricing-data";
+import { fadeInUp, faqItems } from "./pricing-data";
 
 export function PricingFAQ() {
   const [openIndex, setOpenIndex] = useState<number | null>(null);

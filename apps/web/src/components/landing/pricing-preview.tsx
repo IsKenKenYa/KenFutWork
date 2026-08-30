@@ -1,11 +1,11 @@
 "use client";
 
-import { Check, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { SectionHeader } from "@/components/landing/section-header";
+import { Check, Sparkles } from "lucide-react";
 import { StaggerContainer, scaleUp } from "@/components/landing/motion";
+import { SectionHeader } from "@/components/landing/section-header";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Pricing plan data
@@ -27,12 +27,7 @@ const PLANS: PricingPlan[] = [
     name: "免费版",
     price: "¥0",
     period: "永久免费",
-    features: [
-      "每月 10 次 AI 生成",
-      "基础设计模板",
-      "单项目空间",
-      "社区支持",
-    ],
+    features: ["每月 10 次 AI 生成", "基础设计模板", "单项目空间", "社区支持"],
     cta: "免费开始",
     highlighted: false,
   },
@@ -146,6 +141,7 @@ function PricingCard({ plan }: { plan: PricingPlan }) {
       <div className="mt-8">
         {plan.highlighted ? (
           <button
+            type="button"
             className={cn(
               "w-full rounded-lg py-2.5 text-sm font-medium transition-all duration-200",
               "hover:scale-[1.02] active:scale-[0.98]",
@@ -186,10 +182,7 @@ export function PricingPreview() {
 
       <div className="relative max-w-5xl mx-auto px-4">
         <div className="mb-14 md:mb-20">
-          <SectionHeader
-            title="选择你的计划"
-            subtitle="灵活定价，按需选择"
-          />
+          <SectionHeader title="选择你的计划" subtitle="灵活定价，按需选择" />
         </div>
 
         <StaggerContainer className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8 items-start">

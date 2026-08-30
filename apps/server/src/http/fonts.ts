@@ -39,7 +39,9 @@ async function loadGoogleFonts(apiKey: string): Promise<GoogleFontItem[]> {
     return fontsCache?.fonts ?? [];
   }
 
-  const data = (await res.json()) as { items: Array<{ family: string; category: string; variants: string[] }> };
+  const data = (await res.json()) as {
+    items: Array<{ family: string; category: string; variants: string[] }>;
+  };
   return (data.items ?? []).map((item) => ({
     family: item.family,
     category: item.category,

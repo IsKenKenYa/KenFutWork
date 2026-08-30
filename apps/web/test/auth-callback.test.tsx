@@ -81,7 +81,9 @@ describe("Auth callback page", () => {
     render(<CallbackPage />);
 
     await waitFor(() => {
-      expect(mockReplace).toHaveBeenCalledWith("/login?error=auth_exchange_failed");
+      expect(mockReplace).toHaveBeenCalledWith(
+        "/login?error=auth_exchange_failed",
+      );
     });
   });
 

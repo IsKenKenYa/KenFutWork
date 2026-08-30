@@ -8,9 +8,8 @@ import {
   AIMessage as AIMessageClass,
   ToolMessage as ToolMessageClass,
 } from "@langchain/core/messages";
-
-import { imageArtifactSchema, videoArtifactSchema } from "@loomic/shared";
 import type { StreamEvent, ToolArtifact } from "@loomic/shared";
+import { imageArtifactSchema, videoArtifactSchema } from "@loomic/shared";
 
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 
@@ -234,8 +233,13 @@ export async function* adaptDeepAgentStream(
         // suppress its artifacts because the parent will re-emit them.
         const isNestedInSubAgent =
           INNER_SUB_AGENT_TOOLS.has(toolName) && activeSubAgentRuns.size > 0;
-        const extractedArtifacts = isNestedInSubAgent ? undefined : extractArtifacts(output);
-        const extractedOutput = extractOutput(output, (extractedArtifacts?.length ?? 0) > 0);
+        const extractedArtifacts = isNestedInSubAgent
+          ? undefined
+          : extractArtifacts(output);
+        const extractedOutput = extractOutput(
+          output,
+          (extractedArtifacts?.length ?? 0) > 0,
+        );
         yield {
           output: extractedOutput,
           outputSummary: summarizeOutput(output),
@@ -259,7 +263,6 @@ export async function* adaptDeepAgentStream(
             timestamp: now(),
           } satisfies StreamEvent;
         }
-        continue;
       }
     }
   } catch (error) {
@@ -316,7 +319,8 @@ function unwrapCommandOutput(
     const content = messages[0]?.kwargs?.content ?? messages[0]?.content;
     if (typeof content !== "string") return record;
     const inner = JSON.parse(content);
-    if (inner && typeof inner === "object") return inner as Record<string, unknown>;
+    if (inner && typeof inner === "object")
+      return inner as Record<string, unknown>;
   } catch {
     // fall through
   }

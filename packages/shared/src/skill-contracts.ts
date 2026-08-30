@@ -28,13 +28,13 @@ export const skillListItemSchema = z.object({
   iconName: z.string().nullable(),
   source: skillSourceSchema,
   isFeatured: z.boolean(),
-  metadata: z.record(z.unknown()).default({}),
-  createdAt: z.string().datetime({ offset: true }),
-  updatedAt: z.string().datetime({ offset: true }),
+  metadata: z.record(z.string(), z.unknown()).default({}),
+  createdAt: z.iso.datetime({ offset: true }),
+  updatedAt: z.iso.datetime({ offset: true }),
   // Populated when listing for a workspace:
   installed: z.boolean().optional(),
   enabled: z.boolean().optional(),
-  installedAt: z.string().datetime({ offset: true }).optional(),
+  installedAt: z.iso.datetime({ offset: true }).optional(),
 });
 export type SkillListItem = z.infer<typeof skillListItemSchema>;
 
@@ -45,8 +45,8 @@ export const skillFileEntrySchema = z.object({
   filePath: z.string().min(1),
   content: z.string(),
   mimeType: z.string(),
-  createdAt: z.string().datetime({ offset: true }),
-  updatedAt: z.string().datetime({ offset: true }),
+  createdAt: z.iso.datetime({ offset: true }),
+  updatedAt: z.iso.datetime({ offset: true }),
 });
 export type SkillFileEntry = z.infer<typeof skillFileEntrySchema>;
 
@@ -68,11 +68,15 @@ export const skillCreateRequestSchema = z.object({
   category: skillCategorySchema,
   skillContent: z.string().min(1),
   iconName: z.string().max(100).optional(),
-  files: z.array(z.object({
-    filePath: z.string().min(1).max(500),
-    content: z.string(),
-    mimeType: z.string().max(100).optional(),
-  })).optional(),
+  files: z
+    .array(
+      z.object({
+        filePath: z.string().min(1).max(500),
+        content: z.string(),
+        mimeType: z.string().max(100).optional(),
+      }),
+    )
+    .optional(),
 });
 export type SkillCreateRequest = z.infer<typeof skillCreateRequestSchema>;
 
@@ -93,7 +97,7 @@ export type WorkspaceSkillToggleRequest = z.infer<
 >;
 
 export const skillImportRequestSchema = z.object({
-  url: z.string().url().min(1),
+  url: z.url().min(1),
 });
 export type SkillImportRequest = z.infer<typeof skillImportRequestSchema>;
 
@@ -141,7 +145,9 @@ export const marketplaceSearchResponseSchema = z.object({
   skills: z.array(marketplaceSkillSchema),
   total: z.number(),
 });
-export type MarketplaceSearchResponse = z.infer<typeof marketplaceSearchResponseSchema>;
+export type MarketplaceSearchResponse = z.infer<
+  typeof marketplaceSearchResponseSchema
+>;
 
 export const marketplaceDetailSchema = marketplaceSkillSchema.extend({
   readme: z.string(),
@@ -153,4 +159,6 @@ export type MarketplaceDetail = z.infer<typeof marketplaceDetailSchema>;
 export const marketplaceInstallRequestSchema = z.object({
   packageName: z.string().min(1),
 });
-export type MarketplaceInstallRequest = z.infer<typeof marketplaceInstallRequestSchema>;
+export type MarketplaceInstallRequest = z.infer<
+  typeof marketplaceInstallRequestSchema
+>;

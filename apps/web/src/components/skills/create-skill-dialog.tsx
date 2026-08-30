@@ -1,9 +1,8 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { FileText, Plus, X } from "lucide-react";
-
 import type { SkillCategory } from "@loomic/shared";
+import { FileText, Plus, X } from "lucide-react";
+import { useCallback, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -92,7 +91,9 @@ export function CreateSkillDialog({
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState<SkillCategory>("custom");
   const [skillContent, setSkillContent] = useState("");
-  const [files, setFiles] = useState<Array<{ filePath: string; content: string }>>([]);
+  const [files, setFiles] = useState<
+    Array<{ filePath: string; content: string }>
+  >([]);
   const [submitting, setSubmitting] = useState(false);
 
   // -- File management helpers --
@@ -154,7 +155,15 @@ export function CreateSkillDialog({
         setSubmitting(false);
       }
     },
-    [name, description, category, skillContent, files, onSubmit, handleOpenChange],
+    [
+      name,
+      description,
+      category,
+      skillContent,
+      files,
+      onSubmit,
+      handleOpenChange,
+    ],
   );
 
   const canSubmit =
@@ -244,12 +253,7 @@ export function CreateSkillDialog({
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <Label>附属文件（可选）</Label>
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                onClick={addFile}
-              >
+              <Button type="button" variant="ghost" size="xs" onClick={addFile}>
                 <Plus className="size-3" />
                 添加
               </Button>

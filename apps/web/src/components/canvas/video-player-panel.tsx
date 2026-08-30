@@ -68,12 +68,20 @@ export function VideoPlayerPanel({
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/50">
         <div className="flex items-center gap-2 text-sm font-medium text-foreground truncate">
-          <svg className="h-4 w-4 shrink-0 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            className="h-4 w-4 shrink-0 text-muted-foreground"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <polygon points="5 3 19 12 5 21 5 3" />
           </svg>
           <span className="truncate">{title || "Video"}</span>
           {durationSeconds != null && (
-            <span className="text-xs text-muted-foreground">{durationSeconds}s</span>
+            <span className="text-xs text-muted-foreground">
+              {durationSeconds}s
+            </span>
           )}
         </div>
         <button
@@ -81,7 +89,13 @@ export function VideoPlayerPanel({
           onClick={onClose}
           className="rounded-full p-1 hover:bg-muted/80 transition-colors"
         >
-          <svg className="h-4 w-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            className="h-4 w-4 text-muted-foreground"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <line x1="18" y1="6" x2="6" y2="18" />
             <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
@@ -90,6 +104,7 @@ export function VideoPlayerPanel({
 
       {/* Video Player */}
       <div className="bg-black">
+        {/* biome-ignore lint/a11y/useMediaCaption: AI-generated video has no caption track available */}
         <video
           src={videoUrl}
           controls
@@ -111,7 +126,13 @@ export function VideoPlayerPanel({
           rel="noopener noreferrer"
           className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted/80 transition-colors"
         >
-          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            className="h-3.5 w-3.5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
             <polyline points="7 10 12 15 17 10" />
             <line x1="12" y1="15" x2="12" y2="3" />

@@ -3,10 +3,9 @@
 import type { ProjectSummary } from "@loomic/shared";
 import { Trash2 } from "lucide-react";
 import Link from "next/link";
-
-import { DeleteProjectDialog } from "./delete-project-dialog";
 import { useDeleteProject } from "@/hooks/use-delete-project";
 import { formatDate } from "@/lib/utils";
+import { DeleteProjectDialog } from "./delete-project-dialog";
 
 interface ProjectListProps {
   projects: ProjectSummary[];
@@ -100,7 +99,8 @@ export function ProjectList({
                   className="h-full w-full object-cover"
                   loading="lazy"
                   onError={(e) => {
-                    (e.currentTarget as HTMLImageElement).style.display = "none";
+                    (e.currentTarget as HTMLImageElement).style.display =
+                      "none";
                   }}
                 />
               )}

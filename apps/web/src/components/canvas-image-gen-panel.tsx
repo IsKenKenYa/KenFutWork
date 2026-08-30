@@ -1,12 +1,10 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-
 import type { ImageArtifact } from "@loomic/shared";
-
-import { generateImageDirect } from "../lib/server-api";
-import { insertImageOnCanvas } from "../lib/canvas-elements";
+import { useCallback, useRef, useState } from "react";
 import { useGenerationErrorHandler } from "../hooks/use-generation-error-handler";
+import { insertImageOnCanvas } from "../lib/canvas-elements";
+import { generateImageDirect } from "../lib/server-api";
 
 type CanvasImageGenPanelProps = {
   accessToken: string;
@@ -33,7 +31,10 @@ export function CanvasImageGenPanel({
     setError(null);
 
     try {
-      const result = await generateImageDirect(accessTokenRef.current, prompt.trim());
+      const result = await generateImageDirect(
+        accessTokenRef.current,
+        prompt.trim(),
+      );
 
       if (excalidrawApi) {
         const artifact: ImageArtifact = {
@@ -62,6 +63,7 @@ export function CanvasImageGenPanel({
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-foreground">AI Image</h3>
         <button
+          type="button"
           onClick={onClose}
           className="text-muted-foreground hover:text-foreground transition-colors"
         >
@@ -89,6 +91,7 @@ export function CanvasImageGenPanel({
       {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
 
       <button
+        type="button"
         onClick={() => void handleGenerate()}
         disabled={!prompt.trim() || loading}
         className="mt-3 w-full rounded-lg bg-foreground text-background py-2 text-sm font-medium transition-opacity disabled:opacity-40 hover:opacity-90"

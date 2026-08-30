@@ -1,5 +1,3 @@
-import type { FastifyInstance, FastifyReply } from "fastify";
-
 import {
   applicationErrorResponseSchema,
   canvasGetResponseSchema,
@@ -7,10 +5,11 @@ import {
   canvasSaveResponseSchema,
   unauthenticatedErrorResponseSchema,
 } from "@loomic/shared";
+import type { FastifyInstance, FastifyReply } from "fastify";
 
 import {
-  CanvasServiceError,
   type CanvasService,
+  CanvasServiceError,
 } from "../features/canvas/canvas-service.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
 
@@ -31,9 +30,7 @@ export async function registerCanvasRoutes(
           user,
           request.params.canvasId,
         );
-        return reply
-          .code(200)
-          .send(canvasGetResponseSchema.parse({ canvas }));
+        return reply.code(200).send(canvasGetResponseSchema.parse({ canvas }));
       } catch (error) {
         return sendCanvasError(error, reply);
       }

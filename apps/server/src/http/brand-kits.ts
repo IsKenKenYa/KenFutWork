@@ -1,20 +1,19 @@
-import type { FastifyInstance, FastifyReply } from "fastify";
-
 import {
   applicationErrorResponseSchema,
   brandKitAssetCreateRequestSchema,
+  brandKitAssetResponseSchema,
   brandKitAssetUpdateRequestSchema,
   brandKitCreateRequestSchema,
   brandKitDetailResponseSchema,
   brandKitListResponseSchema,
-  brandKitAssetResponseSchema,
   brandKitUpdateRequestSchema,
   unauthenticatedErrorResponseSchema,
 } from "@loomic/shared";
+import type { FastifyInstance, FastifyReply } from "fastify";
 
 import {
-  BrandKitServiceError,
   type BrandKitService,
+  BrandKitServiceError,
 } from "../features/brand-kit/brand-kit-service.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
 

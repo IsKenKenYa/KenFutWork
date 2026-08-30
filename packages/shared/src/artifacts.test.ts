@@ -11,7 +11,12 @@ describe("imageArtifactSchema", () => {
       height: 512,
       placement: { x: 100, y: 200, width: 512, height: 512 },
     });
-    expect(result.placement).toEqual({ x: 100, y: 200, width: 512, height: 512 });
+    expect(result.placement).toEqual({
+      x: 100,
+      y: 200,
+      width: 512,
+      height: 512,
+    });
   });
 
   it("succeeds without placement (backward compat)", () => {

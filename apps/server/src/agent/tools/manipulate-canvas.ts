@@ -1,21 +1,21 @@
 import { tool } from "langchain";
 import { z } from "zod";
 import {
-  CanvasElement,
-  HandlerResult,
-  generateId,
-  measureTextWidth,
-  coerceColor,
-  createElementBase,
-  bumpVersion,
-  findElement,
-  shortLabel,
-  ensureBoundElements,
-  validateBindings,
   BINDING_GAP,
-  getElementCenter,
+  bumpVersion,
+  type CanvasElement,
+  coerceColor,
   computeEdgePoint,
   computeFixedPoint,
+  createElementBase,
+  ensureBoundElements,
+  findElement,
+  generateId,
+  getElementCenter,
+  type HandlerResult,
+  measureTextWidth,
+  shortLabel,
+  validateBindings,
 } from "./canvas-element-helpers.js";
 
 // Re-export for consumers that import measureTextWidth from this module
@@ -43,9 +43,17 @@ const labelSchema = z
 const operationSchema = z.object({
   action: z
     .enum([
-      "move", "resize", "delete", "update_style",
-      "add_text", "add_shape", "add_line",
-      "reorder", "align", "distribute", "update_text",
+      "move",
+      "resize",
+      "delete",
+      "update_style",
+      "add_text",
+      "add_shape",
+      "add_line",
+      "reorder",
+      "align",
+      "distribute",
+      "update_text",
     ])
     .describe("The operation to perform"),
 
@@ -59,39 +67,66 @@ const operationSchema = z.object({
   height: z.number().optional().describe("Height"),
 
   // Style (update_style, add_shape, add_line, add_text)
-  strokeColor: z.string().optional().describe("Stroke/text color hex, e.g. #FF0000"),
+  strokeColor: z
+    .string()
+    .optional()
+    .describe("Stroke/text color hex, e.g. #FF0000"),
   backgroundColor: z.string().optional().describe("Fill color hex"),
   opacity: z.number().optional().describe("Opacity 0-100"),
   fontSize: z.number().optional().describe("Font size"),
   strokeWidth: z.number().optional().describe("Stroke width"),
-  fillStyle: z.enum(["solid", "hachure", "cross-hatch"]).optional().describe("Fill style"),
+  fillStyle: z
+    .enum(["solid", "hachure", "cross-hatch"])
+    .optional()
+    .describe("Fill style"),
 
   // add_text / update_text
   text: z.string().optional().describe("Text content (add_text / update_text)"),
 
   // add_shape
-  shape: z.enum(["rectangle", "ellipse", "diamond"]).optional().describe("Shape type (add_shape)"),
+  shape: z
+    .enum(["rectangle", "ellipse", "diamond"])
+    .optional()
+    .describe("Shape type (add_shape)"),
   label: labelSchema,
 
   // add_line
-  line_type: z.enum(["line", "arrow"]).optional().describe("Line or arrow (add_line)"),
+  line_type: z
+    .enum(["line", "arrow"])
+    .optional()
+    .describe("Line or arrow (add_line)"),
   points: z
     .array(z.object({ x: z.number(), y: z.number() }))
     .optional()
     .describe("Array of {x,y} points (add_line, optional when using bindings)"),
-  start_element_id: z.string().optional().describe("Bind arrow start to this element ID"),
-  end_element_id: z.string().optional().describe("Bind arrow end to this element ID"),
+  start_element_id: z
+    .string()
+    .optional()
+    .describe("Bind arrow start to this element ID"),
+  end_element_id: z
+    .string()
+    .optional()
+    .describe("Bind arrow end to this element ID"),
 
   // reorder
-  position: z.enum(["front", "back"]).optional().describe("Bring to front or send to back (reorder)"),
+  position: z
+    .enum(["front", "back"])
+    .optional()
+    .describe("Bring to front or send to back (reorder)"),
 
   // align / distribute
-  element_ids: z.array(z.string()).optional().describe("IDs of elements (align/distribute)"),
+  element_ids: z
+    .array(z.string())
+    .optional()
+    .describe("IDs of elements (align/distribute)"),
   alignment: z
     .enum(["left", "right", "center", "top", "bottom", "middle"])
     .optional()
     .describe("Alignment direction (align)"),
-  direction: z.enum(["horizontal", "vertical"]).optional().describe("Distribution direction (distribute)"),
+  direction: z
+    .enum(["horizontal", "vertical"])
+    .optional()
+    .describe("Distribution direction (distribute)"),
 });
 
 const manipulateCanvasSchema = z.object({
@@ -108,10 +143,7 @@ type Operation = z.infer<typeof operationSchema>;
 // Operation handlers
 // ---------------------------------------------------------------------------
 
-function applyMove(
-  elements: CanvasElement[],
-  op: Operation,
-): HandlerResult {
+function applyMove(elements: CanvasElement[], op: Operation): HandlerResult {
   const el = findElement(elements, op.element_id!);
   if (!el) return { description: `[skip] element ${op.element_id} not found` };
   el.x = op.x;
@@ -120,10 +152,7 @@ function applyMove(
   return { description: `moved ${shortLabel(el)} to (${op.x}, ${op.y})` };
 }
 
-function applyResize(
-  elements: CanvasElement[],
-  op: Operation,
-): HandlerResult {
+function applyResize(elements: CanvasElement[], op: Operation): HandlerResult {
   const el = findElement(elements, op.element_id!);
   if (!el) return { description: `[skip] element ${op.element_id} not found` };
   el.width = op.width;
@@ -140,10 +169,7 @@ function applyResize(
  * - Cascades deletion to bound text elements (label cleanup)
  * - Clears startBinding / endBinding on arrows pointing to deleted element
  */
-function applyDelete(
-  elements: CanvasElement[],
-  op: Operation,
-): HandlerResult {
+function applyDelete(elements: CanvasElement[], op: Operation): HandlerResult {
   const el = findElement(elements, op.element_id!);
   if (!el) return { description: `[skip] element ${op.element_id} not found` };
   el.isDeleted = true;
@@ -153,7 +179,10 @@ function applyDelete(
 
   // Cascade to bound text children (labels)
   if (Array.isArray(el.boundElements)) {
-    for (const bound of el.boundElements as Array<{ type: string; id: string }>) {
+    for (const bound of el.boundElements as Array<{
+      type: string;
+      id: string;
+    }>) {
       if (bound.type === "text") {
         const textEl = findElement(elements, bound.id);
         if (textEl) {
@@ -180,7 +209,8 @@ function applyDelete(
     }
   }
 
-  const cascadeInfo = cascaded.length > 0 ? ` (cascaded: ${cascaded.join(", ")})` : "";
+  const cascadeInfo =
+    cascaded.length > 0 ? ` (cascaded: ${cascaded.join(", ")})` : "";
   return { description: `deleted ${shortLabel(el)}${cascadeInfo}` };
 }
 
@@ -211,10 +241,7 @@ function applyUpdateStyle(
   };
 }
 
-function applyAddText(
-  elements: CanvasElement[],
-  op: Operation,
-): HandlerResult {
+function applyAddText(elements: CanvasElement[], op: Operation): HandlerResult {
   const id = generateId();
   const el: CanvasElement = {
     ...createElementBase(),
@@ -236,8 +263,7 @@ function applyAddText(
     lineHeight: 1.25,
   };
   elements.push(el);
-  const short =
-    op.text!.length > 20 ? op.text!.slice(0, 17) + "..." : op.text!;
+  const short = op.text!.length > 20 ? op.text!.slice(0, 17) + "..." : op.text!;
   return {
     description: `added text '${short}' at (${op.x}, ${op.y}) [id=${id}]`,
     createdId: id,
@@ -259,13 +285,14 @@ function applyUpdateText(
   if (el.type === "text") {
     textEl = el;
   } else if (Array.isArray(el.boundElements)) {
-    const boundText = (el.boundElements as Array<{ type: string; id: string }>).find(
-      (b) => b.type === "text",
-    );
+    const boundText = (
+      el.boundElements as Array<{ type: string; id: string }>
+    ).find((b) => b.type === "text");
     if (boundText) textEl = findElement(elements, boundText.id);
   }
 
-  if (!textEl) return { description: `[skip] no text found for element ${op.element_id}` };
+  if (!textEl)
+    return { description: `[skip] no text found for element ${op.element_id}` };
 
   const newText = op.text!;
   const fontSize = (op.fontSize ?? textEl.fontSize ?? 20) as number;
@@ -273,7 +300,9 @@ function applyUpdateText(
   textEl.originalText = newText;
 
   const lines = newText.split("\n");
-  const textWidth = Math.max(...lines.map((l) => measureTextWidth(l, fontSize)));
+  const textWidth = Math.max(
+    ...lines.map((l) => measureTextWidth(l, fontSize)),
+  );
   const textHeight = lines.length * fontSize * 1.25;
   textEl.width = textWidth;
   textEl.height = textHeight;
@@ -291,12 +320,20 @@ function applyUpdateText(
       const minWidth = textWidth + paddingX * 2;
       const minHeight = textHeight + paddingY * 2;
       let resized = false;
-      if ((Number(container.width) || 0) < minWidth) { container.width = minWidth; resized = true; }
-      if ((Number(container.height) || 0) < minHeight) { container.height = minHeight; resized = true; }
+      if ((Number(container.width) || 0) < minWidth) {
+        container.width = minWidth;
+        resized = true;
+      }
+      if ((Number(container.height) || 0) < minHeight) {
+        container.height = minHeight;
+        resized = true;
+      }
       if (resized) {
         // Re-center text within the (possibly expanded) container
-        textEl.x = Number(container.x) + (Number(container.width) - textWidth) / 2;
-        textEl.y = Number(container.y) + (Number(container.height) - textHeight) / 2;
+        textEl.x =
+          Number(container.x) + (Number(container.width) - textWidth) / 2;
+        textEl.y =
+          Number(container.y) + (Number(container.height) - textHeight) / 2;
         bumpVersion(container);
       }
     }
@@ -335,7 +372,9 @@ function applyAddShape(
 
     // For multi-line labels, measure the longest line and compute total height
     const lines = op.label.text.split("\n");
-    const textWidth = Math.max(...lines.map((l) => measureTextWidth(l, fontSize)));
+    const textWidth = Math.max(
+      ...lines.map((l) => measureTextWidth(l, fontSize)),
+    );
     const textHeight = lines.length * fontSize * 1.25;
 
     // Proportional padding — scales with font size to avoid overflow at any size
@@ -401,10 +440,7 @@ function applyAddShape(
   };
 }
 
-function applyAddLine(
-  elements: CanvasElement[],
-  op: Operation,
-): HandlerResult {
+function applyAddLine(elements: CanvasElement[], op: Operation): HandlerResult {
   const hasBinding = op.start_element_id || op.end_element_id;
 
   if (hasBinding) {
@@ -414,8 +450,7 @@ function applyAddLine(
   // Non-binding path: points are required
   if (!op.points || op.points.length < 2) {
     return {
-      description:
-        "[skip] add_line without bindings requires points (>= 2)",
+      description: "[skip] add_line without bindings requires points (>= 2)",
     };
   }
 
@@ -509,7 +544,7 @@ function applyAddBoundLine(
   if (startEl) {
     const fixedPoint = endEl
       ? computeFixedPoint(startEl, endEl)
-      : [1, 0.5] as [number, number];
+      : ([1, 0.5] as [number, number]);
     startBinding = {
       elementId: op.start_element_id,
       focus: 0,
@@ -523,7 +558,7 @@ function applyAddBoundLine(
   if (endEl) {
     const fixedPoint = startEl
       ? computeFixedPoint(endEl, startEl)
-      : [0, 0.5] as [number, number];
+      : ([0, 0.5] as [number, number]);
     endBinding = {
       elementId: op.end_element_id,
       focus: 0,
@@ -564,10 +599,7 @@ function applyAddBoundLine(
   };
 }
 
-function applyReorder(
-  elements: CanvasElement[],
-  op: Operation,
-): HandlerResult {
+function applyReorder(elements: CanvasElement[], op: Operation): HandlerResult {
   const idx = elements.findIndex(
     (el) => el.id === op.element_id && !el.isDeleted,
   );
@@ -585,10 +617,7 @@ function applyReorder(
   return { description: `reordered ${shortLabel(el)} to ${op.position}` };
 }
 
-function applyAlign(
-  elements: CanvasElement[],
-  op: Operation,
-): HandlerResult {
+function applyAlign(elements: CanvasElement[], op: Operation): HandlerResult {
   const targets = (op.element_ids ?? [])
     .map((id) => findElement(elements, id))
     .filter((el): el is CanvasElement => el !== undefined);
@@ -602,14 +631,20 @@ function applyAlign(
   switch (op.alignment) {
     case "left": {
       const minX = Math.min(...targets.map((el) => Number(el.x) || 0));
-      for (const el of targets) { el.x = minX; bumpVersion(el); }
+      for (const el of targets) {
+        el.x = minX;
+        bumpVersion(el);
+      }
       break;
     }
     case "right": {
       const maxRight = Math.max(
         ...targets.map((el) => (Number(el.x) || 0) + (Number(el.width) || 0)),
       );
-      for (const el of targets) { el.x = maxRight - (Number(el.width) || 0); bumpVersion(el); }
+      for (const el of targets) {
+        el.x = maxRight - (Number(el.width) || 0);
+        bumpVersion(el);
+      }
       break;
     }
     case "center": {
@@ -617,19 +652,28 @@ function applyAlign(
         (el) => (Number(el.x) || 0) + (Number(el.width) || 0) / 2,
       );
       const avg = centers.reduce((a, b) => a + b, 0) / centers.length;
-      for (const el of targets) { el.x = avg - (Number(el.width) || 0) / 2; bumpVersion(el); }
+      for (const el of targets) {
+        el.x = avg - (Number(el.width) || 0) / 2;
+        bumpVersion(el);
+      }
       break;
     }
     case "top": {
       const minY = Math.min(...targets.map((el) => Number(el.y) || 0));
-      for (const el of targets) { el.y = minY; bumpVersion(el); }
+      for (const el of targets) {
+        el.y = minY;
+        bumpVersion(el);
+      }
       break;
     }
     case "bottom": {
       const maxBottom = Math.max(
         ...targets.map((el) => (Number(el.y) || 0) + (Number(el.height) || 0)),
       );
-      for (const el of targets) { el.y = maxBottom - (Number(el.height) || 0); bumpVersion(el); }
+      for (const el of targets) {
+        el.y = maxBottom - (Number(el.height) || 0);
+        bumpVersion(el);
+      }
       break;
     }
     case "middle": {
@@ -637,7 +681,10 @@ function applyAlign(
         (el) => (Number(el.y) || 0) + (Number(el.height) || 0) / 2,
       );
       const avg = middles.reduce((a, b) => a + b, 0) / middles.length;
-      for (const el of targets) { el.y = avg - (Number(el.height) || 0) / 2; bumpVersion(el); }
+      for (const el of targets) {
+        el.y = avg - (Number(el.height) || 0) / 2;
+        bumpVersion(el);
+      }
       break;
     }
   }
@@ -669,7 +716,10 @@ function applyDistribute(
       (Number(last.x) || 0) +
       (Number(last.width) || 0) -
       (Number(first.x) || 0);
-    const totalWidths = targets.reduce((sum, el) => sum + (Number(el.width) || 0), 0);
+    const totalWidths = targets.reduce(
+      (sum, el) => sum + (Number(el.width) || 0),
+      0,
+    );
     const gap = (totalSpan - totalWidths) / (targets.length - 1);
 
     let currentX = Number(first.x) || 0;
@@ -686,7 +736,10 @@ function applyDistribute(
       (Number(last.y) || 0) +
       (Number(last.height) || 0) -
       (Number(first.y) || 0);
-    const totalHeights = targets.reduce((sum, el) => sum + (Number(el.height) || 0), 0);
+    const totalHeights = targets.reduce(
+      (sum, el) => sum + (Number(el.height) || 0),
+      0,
+    );
     const gap = (totalSpan - totalHeights) / (targets.length - 1);
 
     let currentY = Number(first.y) || 0;

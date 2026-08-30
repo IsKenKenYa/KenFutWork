@@ -7,7 +7,11 @@ import { fetchGoogleFonts } from "../../lib/font-api";
 interface FontPickerDialogProps {
   open: boolean;
   onClose: () => void;
-  onSelect: (font: { family: string; variant: string; category: string }) => void;
+  onSelect: (font: {
+    family: string;
+    variant: string;
+    category: string;
+  }) => void;
 }
 
 const CATEGORIES = [
@@ -32,28 +36,38 @@ export function FontPickerDialog({
   const [selected, setSelected] = useState<GoogleFontItem | null>(null);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const loadedRef = useRef<Set<string>>(new Set());
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   const listRef = useRef<HTMLDivElement>(null);
 
   // Fetch fonts on open / search / category change
   useEffect(() => {
     if (!open) return;
     clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(async () => {
-      try {
-        const result = await fetchGoogleFonts(search || undefined, category || undefined);
-        setFonts(result);
-        setVisibleCount(PAGE_SIZE);
-      } catch {
-        // API failure — keep current list or show empty
-        setFonts([]);
-      }
-    }, search ? 300 : 0);
+    searchTimer.current = setTimeout(
+      async () => {
+        try {
+          const result = await fetchGoogleFonts(
+            search || undefined,
+            category || undefined,
+          );
+          setFonts(result);
+          setVisibleCount(PAGE_SIZE);
+        } catch {
+          // API failure — keep current list or show empty
+          setFonts([]);
+        }
+      },
+      search ? 300 : 0,
+    );
     return () => clearTimeout(searchTimer.current);
   }, [open, search, category]);
 
   // Load Google Fonts CSS for visible items (side-effect in useEffect, not during render)
-  const visibleFamilies = open ? fonts.slice(0, visibleCount).map((f) => f.family) : [];
+  const visibleFamilies = open
+    ? fonts.slice(0, visibleCount).map((f) => f.family)
+    : [];
   useEffect(() => {
     for (const family of visibleFamilies) {
       if (loadedRef.current.has(family)) continue;
@@ -78,7 +92,9 @@ export function FontPickerDialog({
     if (!selected) return;
     onSelect({
       family: selected.family,
-      variant: selected.variants.includes("regular") ? "regular" : selected.variants[0] ?? "400",
+      variant: selected.variants.includes("regular")
+        ? "regular"
+        : (selected.variants[0] ?? "400"),
       category: selected.category,
     });
     onClose();
@@ -90,7 +106,10 @@ export function FontPickerDialog({
   // Font CSS is loaded via useEffect above (visibleFamilies), not during render
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+      onClick={onClose}
+    >
       <div
         className="w-[420px] max-h-[520px] bg-popover rounded-xl shadow-lg border flex flex-col"
         onClick={(e) => e.stopPropagation()}
@@ -114,7 +133,9 @@ export function FontPickerDialog({
             className="text-sm bg-transparent outline-none cursor-pointer"
           >
             {CATEGORIES.map((c) => (
-              <option key={c.value} value={c.value}>{c.label}</option>
+              <option key={c.value} value={c.value}>
+                {c.label}
+              </option>
             ))}
           </select>
         </div>
@@ -126,17 +147,17 @@ export function FontPickerDialog({
           className="flex-1 overflow-y-auto min-h-0"
         >
           {visibleFonts.map((font) => (
-              <button
-                key={font.family}
-                type="button"
-                onClick={() => setSelected(font)}
-                className={`w-full px-4 py-2 text-left text-base hover:bg-muted cursor-pointer ${
-                  selected?.family === font.family ? "bg-muted" : ""
-                }`}
-                style={{ fontFamily: `"${font.family}", sans-serif` }}
-              >
-                {font.family}
-              </button>
+            <button
+              key={font.family}
+              type="button"
+              onClick={() => setSelected(font)}
+              className={`w-full px-4 py-2 text-left text-base hover:bg-muted cursor-pointer ${
+                selected?.family === font.family ? "bg-muted" : ""
+              }`}
+              style={{ fontFamily: `"${font.family}", sans-serif` }}
+            >
+              {font.family}
+            </button>
           ))}
           {fonts.length === 0 && (
             <p className="p-4 text-sm text-muted-foreground text-center">

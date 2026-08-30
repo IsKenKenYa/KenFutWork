@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useEffect, useCallback } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 
 import type { Message } from "../../hooks/use-chat-sessions";
 import { ChatMessage } from "../chat-message";
