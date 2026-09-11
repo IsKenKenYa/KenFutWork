@@ -1,7 +1,7 @@
 # DeepSeek Harness（dsh）插件架构调研
 
 > 状态：调研记录（基于 `references/deepseek-harness` 真实源码，commit `cd5ef81`，MIT，developer preview）
-> 用途：为 Loomic 插件化改造提供参照。结论落到《03-改造建议与路线》。
+> 用途：为 Loomic 插件化改造提供参照。结论已吸收进权威文档（见 `docs/README.md` 地图），本文作为调研记录保留。
 > 一句话：dsh 把「一切皆插件」做成了完整闭环——Cordis 内核（服务 + 类型化事件 + 可逆副作用）+ profile/bundle 分层组合 + `dsh plugin` 外部安装分发 + 严格工程门禁。agent 主循环、模型适配器、工具注册表、MCP、skill、子代理、模式、权限，全部是插件。
 
 ---
@@ -236,9 +236,9 @@ dsh 的 `packages/` 下每个能力都是独立 package（组），下面按职�
 
 ---
 
-## 9. 对 Loomic 的启示（摘要，详见《03-改造建议与路线》）
+## 9. 对 Loomic 的启示（摘要；权威版本见《改造计划》/《多端产品设计》）
 
 1. **dsh 的插件 = 服务 + 事件 + 可逆副作用**；Loomic《改造计划》v2 曾只取「服务 DI + 拓扑挂载」、砍掉事件系统，**v3 已修订为松绑最小 agent-run 事件缝**（`pre-step`/`tool-pre-execute`/`turn-stopping`，见《改造计划》§4.3）——因为事件（waterfall 拦截）恰恰是「让 agent 主循环可插拔」的关键，没有它 MCP / 模式 / 权限 / 用量都只能硬编码进 loop。
 2. **MCP、skill、子代理、模式、权限在 dsh 里都是插件**，且各自独立 package。Loomic 这些能力要么是硬编码（无 MCP、无模式、无通用权限），要么已实现但没被当插件设计（skill、子代理）。
-3. **外部插件开发模式（`dsh plugin` + profile/bundle/patch + topic 发现）是一整套分发闭环**；Loomic《多端产品设计》§12 的插件生态边界提到「独立仓库分发的插件视为独立作品」，但内核明确拒绝 Cordis/YAML/patch/live-reload、`ServiceKey` 封闭——**这处矛盾已在《改造计划》§6 决策 8 显式定为「本次暂缓第三方插件安装/分发」**。
+3. **外部插件开发模式（`dsh plugin` + profile/bundle/patch + topic 发现）是一整套分发闭环**；Loomic《多端产品设计》§12 的插件生态边界提到「独立仓库分发的插件视为独立作品」，但内核明确拒绝 Cordis/YAML/patch/live-reload、`ServiceKey` 封闭——**这处矛盾已在《改造计划》DEC-8 显式定为「本次暂缓第三方插件安装/分发」**。
 4. **克制点可借鉴**：模式不要过早抽象（先做单个产品包，出现第二个再抽缝），与 Loomic「不为投机性灵活性堆抽象」一致。
