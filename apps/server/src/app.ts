@@ -21,14 +21,7 @@ import {
 import { createViewerPlugin } from "./features/bootstrap/plugin.js";
 import { brandKitPlugin } from "./features/brand-kit/plugin.js";
 import { createCanvasPlugin } from "./features/canvas/plugin.js";
-import {
-  type ChatService,
-  createChatService,
-} from "./features/chat/chat-service.js";
-import {
-  createThreadService,
-  type ThreadService,
-} from "./features/chat/thread-service.js";
+import { createChatPlugin } from "./features/chat/plugin.js";
 import { createCreditsPlugin } from "./features/credits/plugin.js";
 import {
   createJobService,
@@ -50,7 +43,6 @@ import {
   type UploadService,
 } from "./features/uploads/upload-service.js";
 import { registerAllProviders } from "./generation/providers/register-all.js";
-import { registerChatRoutes } from "./http/chat.js";
 import { registerFontsRoutes } from "./http/fonts.js";
 import { registerGenerateRoutes } from "./http/generate.js";
 import { registerHealthRoutes } from "./http/health.js";
@@ -85,7 +77,6 @@ export type BuildAppOptions = {
   agentPersistenceService?: AgentPersistenceService;
   agentRunMetadataService?: AgentRunMetadataService;
   auth?: RequestAuthenticator;
-  chatService?: ChatService;
   connectionManager?: ConnectionManager;
   env?: Partial<ServerEnv>;
   jobService?: JobService;
@@ -93,7 +84,6 @@ export type BuildAppOptions = {
   uploadService?: UploadService;
   mockEventDelayMs?: number;
   settingsService?: SettingsService;
-  threadService?: ThreadService;
   /**
    * 内核服务直填（插件化改造过渡期收编 BuildAppOptions 逐项服务注入，P2 起）。
    * 命中 overrides 的 key 跳过对应插件工厂，语义与旧的单项可选字段一致。
@@ -142,6 +132,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       createCreditsPlugin({ getAdminClient }),
       createViewerPlugin({ getAdminClient }),
       createCanvasPlugin({ createUserClient }),
+      createChatPlugin({ createUserClient }),
       createProjectsPlugin({ createUserClient }),
     ],
     {
@@ -155,11 +146,8 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const viewerService = kernel.get("viewer");
   const creditService = kernel.get("credits");
   const tierGuard = kernel.get("tierGuard");
-  const threadService =
-    options.threadService ?? createThreadService({ createUserClient });
-  const chatService =
-    options.chatService ??
-    createChatService({ createUserClient, threadService });
+  const threadService = kernel.get("threads");
+  const chatService = kernel.get("chat");
   const agentRunMetadataService =
     options.agentRunMetadataService ??
     createAgentRunMetadataService({ getAdminClient });
@@ -268,10 +256,6 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void registerModelRoutes(app, env);
   void registerImageModelRoutes(app, { auth, creditService, viewerService });
   void registerVideoModelRoutes(app, { auth, creditService, viewerService });
-  void registerChatRoutes(app, {
-    auth,
-    chatService,
-  });
   void registerUploadRoutes(app, {
     auth,
     uploadService,
