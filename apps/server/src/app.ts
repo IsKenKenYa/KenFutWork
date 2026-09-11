@@ -43,10 +43,7 @@ import {
   createPaymentService,
   type PaymentService,
 } from "./features/payments/payment-service.js";
-import {
-  createProjectService,
-  type ProjectService,
-} from "./features/projects/project-service.js";
+import { createProjectsPlugin } from "./features/projects/plugin.js";
 import {
   createSettingsService,
   type SettingsService,
@@ -67,7 +64,6 @@ import { registerJobRoutes } from "./http/jobs.js";
 import { registerModelRoutes } from "./http/models.js";
 import { registerPaymentRoutes } from "./http/payments.js";
 import { registerPaymentWebhookRoute } from "./http/payments-webhook.js";
-import { registerProjectRoutes } from "./http/projects.js";
 import { registerRunRoutes } from "./http/runs.js";
 import { registerSettingsRoutes } from "./http/settings.js";
 import { registerSkillRoutes } from "./http/skills.js";
@@ -101,7 +97,6 @@ export type BuildAppOptions = {
   paymentService?: PaymentService;
   uploadService?: UploadService;
   mockEventDelayMs?: number;
-  projectService?: ProjectService;
   settingsService?: SettingsService;
   threadService?: ThreadService;
   /**
@@ -151,6 +146,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       brandKitPlugin,
       createCreditsPlugin({ getAdminClient }),
       createViewerPlugin({ getAdminClient }),
+      createProjectsPlugin({ createUserClient }),
     ],
     {
       app,
@@ -163,9 +159,6 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const viewerService = kernel.get("viewer");
   const creditService = kernel.get("credits");
   const tierGuard = kernel.get("tierGuard");
-  const projectService =
-    options.projectService ??
-    createProjectService({ createUserClient, viewerService });
   const canvasService =
     options.canvasService ?? createCanvasService({ createUserClient });
   const threadService =
@@ -272,10 +265,6 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     settingsService,
     threadService,
     viewerService,
-  });
-  void registerProjectRoutes(app, {
-    auth,
-    projectService,
   });
   void registerCanvasRoutes(app, {
     auth,
