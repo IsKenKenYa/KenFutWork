@@ -183,7 +183,7 @@ dsh 的 `packages/` 下每个能力都是独立 package（组），下面按职�
 
 ### 7.1 内核与组合
 
-| package | 职责 | ctx key |
+| package | 职责 | dsh ctx key |
 | --- | --- | --- |
 | `core/agent` | Agent 接口 + 活跃注册表 + `agent/*` 事件 | `ctx.agents` |
 | `core/agent-loop` | 实现 Agent 接口的**默认驱动**（主循环本身也是插件） | `ctx.agentLoop` |

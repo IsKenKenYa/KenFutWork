@@ -1,0 +1,9 @@
+{
+  "$comment": "冻结区锁文件，由 scripts/check-docs.mjs 读写。变更冻结区必须在 PR 说明理由并执行 node scripts/check-docs.mjs --update-lock。",
+  "frozen": [
+    {
+      "file": "docs/future/03-改造建议与路线.md",
+      "sha256": "7adc69319c0044312cec75520b8bf73937fb425d537a6ad467a419e5aa5dd837"
+    }
+  ]
+}
