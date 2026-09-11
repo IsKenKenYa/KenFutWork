@@ -13,6 +13,8 @@ import type { ThreadService } from "../features/chat/thread-service.js";
 import type { CreditService } from "../features/credits/credit-service.js";
 import type { TierGuard } from "../features/credits/tier-guard.js";
 import type { JobService } from "../features/jobs/job-service.js";
+import type { ModelCatalogService } from "../features/model-providers/model-catalog-service.js";
+import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type { PaymentService } from "../features/payments/payment-service.js";
 import type { ProjectService } from "../features/projects/project-service.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
@@ -51,6 +53,10 @@ export interface ServiceMap {
   auth: RequestAuthenticator;
   /** JobService（PGMQ，Postgres 扩展） */
   jobs: JobService;
+  /** 用户供应商实例管理（CRUD + 凭证解析，BYOK） */
+  modelProviders: ModelProviderService;
+  /** 模型目录（从用户供应商实例推导） */
+  modelCatalog: ModelCatalogService;
   /** 能力贡献者注册表（非工具能力：子代理 provider、执行模式等） */
   capabilities: CapabilityRegistry;
   /** 统一工具注册表（schema + 作用域 + guarded 执行） */

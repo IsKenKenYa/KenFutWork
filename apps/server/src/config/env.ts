@@ -28,6 +28,8 @@ export type ServerEnv = {
   agentBackendMode: AgentBackendMode;
   agentFilesRoot?: string;
   agentModel: string;
+  /** SecretStore 主密钥（DEC-7 凭证加密落库）；启用 BYOK 凭证写入时必须配置。 */
+  credentialSecret?: string;
   googleApiKey?: string;
   googleApplicationCredentials?: string;
   googleFontsApiKey?: string;
@@ -77,6 +79,9 @@ export function loadServerEnv(
   const agentFilesRoot =
     overrides.agentFilesRoot ??
     parseAgentFilesRoot(source.LOOMIC_AGENT_FILES_ROOT);
+  const credentialSecret =
+    overrides.credentialSecret ??
+    normalizeOptionalString(source.LOOMIC_CREDENTIAL_SECRET);
   const openAIApiBase =
     overrides.openAIApiBase ?? normalizeOptionalString(source.OPENAI_API_BASE);
   const openAIApiKey =
@@ -211,6 +216,7 @@ export function loadServerEnv(
     webOrigin:
       overrides.webOrigin ?? source.LOOMIC_WEB_ORIGIN ?? DEFAULT_WEB_ORIGIN,
     ...(agentFilesRoot ? { agentFilesRoot } : {}),
+    ...(credentialSecret ? { credentialSecret } : {}),
     ...(googleApiKey ? { googleApiKey } : {}),
     ...(googleApplicationCredentials ? { googleApplicationCredentials } : {}),
     ...(openAIApiBase ? { openAIApiBase } : {}),

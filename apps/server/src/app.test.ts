@@ -18,6 +18,8 @@ const AUTH_GATED_PROBES = [
   { method: "GET", url: "/api/viewer" },
   { method: "POST", url: "/api/agent/runs" },
   { method: "GET", url: "/api/workspace/settings" },
+  { method: "GET", url: "/api/provider-instances" },
+  { method: "GET", url: "/api/model-catalog" },
 ] as const;
 
 /** 无认证门但必须装配的路由（注册完整性用 200 探针）。 */
