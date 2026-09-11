@@ -2,6 +2,7 @@ import type {
   AssetSignedUrlResponse,
   CanvasDetail,
   ChatMessageCreateRequest,
+  ExecutionMode,
   JobResponse,
   MarketplaceDetail,
   MarketplaceSearchResponse,
@@ -268,6 +269,51 @@ export async function updateWorkspaceSettings(
   });
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as WorkspaceSettingsResponse;
+}
+
+// --- Execution Modes API（P7 执行模式切换，DEC-3）---
+
+export async function fetchExecutionModes(
+  accessToken: string,
+): Promise<{
+  modes: Array<{ id: ExecutionMode; label: string; description: string }>;
+}> {
+  const response = await fetch(`${getServerBaseUrl()}/api/execution-modes`, {
+    headers: authHeaders(accessToken),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as {
+    modes: Array<{ id: ExecutionMode; label: string; description: string }>;
+  };
+}
+
+export async function fetchExecutionMode(
+  accessToken: string,
+  threadId: string,
+): Promise<{ mode: ExecutionMode }> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/execution-modes/${threadId}`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as { mode: ExecutionMode };
+}
+
+export async function updateExecutionMode(
+  accessToken: string,
+  threadId: string,
+  input: { mode: ExecutionMode },
+): Promise<{ mode: ExecutionMode }> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/execution-modes/${threadId}`,
+    {
+      method: "PUT",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(input),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as { mode: ExecutionMode };
 }
 
 // --- Provider Instances API（BYOK 供应商设置，P5）---

@@ -46,6 +46,7 @@ import { ChatSkills } from "./chat-skills";
 import { CreditInsufficientDialog } from "./credits/credit-insufficient-dialog";
 import { useTierLimitToast } from "./credits/tier-limit-toast";
 import { ErrorBoundary } from "./error-boundary";
+import { ExecutionModeSelect } from "./execution-mode-select";
 import { SessionSelector } from "./session-selector";
 import { useToast } from "./toast";
 
@@ -1120,7 +1121,15 @@ export function ChatSidebar({
         onTouchStart={handleTouchStart}
         onKeyDown={handleResizeKeyDown}
       />
-      <div className="flex flex-1 flex-col bg-card min-w-0">{panelContent}</div>
+      <div className="flex flex-1 flex-col bg-card min-w-0">
+        {activeSessionId && accessToken ? (
+          <ExecutionModeSelect
+            accessToken={accessToken}
+            threadId={activeSessionId}
+          />
+        ) : null}
+        {panelContent}
+      </div>
       {creditDialogEl}
     </div>
   );

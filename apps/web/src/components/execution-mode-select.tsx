@@ -1,0 +1,96 @@
+"use client";
+
+import type { ExecutionMode } from "@loomic/shared";
+import { useCallback, useEffect, useState } from "react";
+import {
+  fetchExecutionMode,
+  fetchExecutionModes,
+  updateExecutionMode,
+} from "@/lib/server-api";
+
+/**
+ * 执行模式切换（P7 切换 UI，DEC-2/DEC-3）：
+ * 会话级（threadId）激活 agent / plan 模式。端点不可用或加载失败时整体隐藏，
+ * 不阻塞会话流。仅在有活跃会话时由 chat-sidebar 挂载。
+ */
+export function ExecutionModeSelect({
+  accessToken,
+  threadId,
+}: {
+  accessToken: string;
+  threadId: string;
+}) {
+  const [modes, setModes] = useState<Array<{
+    id: ExecutionMode;
+    label: string;
+    description: string;
+  }> | null>(null);
+  const [mode, setMode] = useState<ExecutionMode | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const [list, current] = await Promise.all([
+        fetchExecutionModes(accessToken),
+        fetchExecutionMode(accessToken, threadId),
+      ]);
+      setModes(list.modes);
+      setMode(current.mode);
+    } catch {
+      // 端点不可用（旧服务端/网络失败）→ 隐藏切换器，不阻塞会话
+      setModes(null);
+    }
+  }, [accessToken, threadId]);
+
+  useEffect(() => {
+    setMode(null);
+    void load();
+  }, [load]);
+
+  const handleChange = async (next: string) => {
+    const previous = mode;
+    setMode(next as ExecutionMode);
+    setSaving(true);
+    try {
+      await updateExecutionMode(accessToken, threadId, {
+        mode: next as ExecutionMode,
+      });
+    } catch {
+      setMode(previous);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!modes || modes.length === 0 || !mode) {
+    return null;
+  }
+
+  return (
+    <div
+      className="flex items-center gap-2 border-b px-3 py-1.5"
+      data-testid="execution-mode-select"
+    >
+      <label htmlFor="execution-mode" className="text-xs text-muted-foreground">
+        执行模式
+      </label>
+      <select
+        id="execution-mode"
+        aria-label="执行模式"
+        value={mode}
+        disabled={saving}
+        onChange={(e) => void handleChange(e.target.value)}
+        className="rounded-md border bg-transparent px-2 py-1 text-xs"
+      >
+        {modes.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.label}
+          </option>
+        ))}
+      </select>
+      {saving ? (
+        <span className="text-xs text-muted-foreground">保存中…</span>
+      ) : null}
+    </div>
+  );
+}
