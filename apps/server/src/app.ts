@@ -34,10 +34,7 @@ import {
   type PaymentService,
 } from "./features/payments/payment-service.js";
 import { createProjectsPlugin } from "./features/projects/plugin.js";
-import {
-  createSettingsService,
-  type SettingsService,
-} from "./features/settings/settings-service.js";
+import { createSettingsPlugin } from "./features/settings/plugin.js";
 import {
   createUploadService,
   type UploadService,
@@ -53,7 +50,6 @@ import { registerModelRoutes } from "./http/models.js";
 import { registerPaymentRoutes } from "./http/payments.js";
 import { registerPaymentWebhookRoute } from "./http/payments-webhook.js";
 import { registerRunRoutes } from "./http/runs.js";
-import { registerSettingsRoutes } from "./http/settings.js";
 import { registerSkillRoutes } from "./http/skills.js";
 import { registerMarketplaceRoutes } from "./http/skills-marketplace.js";
 import { registerUploadRoutes } from "./http/uploads.js";
@@ -83,7 +79,6 @@ export type BuildAppOptions = {
   paymentService?: PaymentService;
   uploadService?: UploadService;
   mockEventDelayMs?: number;
-  settingsService?: SettingsService;
   /**
    * 内核服务直填（插件化改造过渡期收编 BuildAppOptions 逐项服务注入，P2 起）。
    * 命中 overrides 的 key 跳过对应插件工厂，语义与旧的单项可选字段一致。
@@ -133,6 +128,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       createViewerPlugin({ getAdminClient }),
       createCanvasPlugin({ createUserClient }),
       createChatPlugin({ createUserClient }),
+      createSettingsPlugin({ createUserClient }),
       createProjectsPlugin({ createUserClient }),
     ],
     {
@@ -153,12 +149,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     createAgentRunMetadataService({ getAdminClient });
   const agentPersistenceService =
     options.agentPersistenceService ?? createAgentPersistenceService(env);
-  const settingsService =
-    options.settingsService ??
-    createSettingsService({
-      createUserClient,
-      defaultModel: resolveDefaultAgentModel(env),
-    });
+  const settingsService = kernel.get("settings");
   const uploadService =
     options.uploadService ?? createUploadService({ createUserClient });
   const pgmq = env.supabaseDbUrl
@@ -246,11 +237,6 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     auth,
     settingsService,
     threadService,
-    viewerService,
-  });
-  void registerSettingsRoutes(app, {
-    auth,
-    settingsService,
     viewerService,
   });
   void registerModelRoutes(app, env);
