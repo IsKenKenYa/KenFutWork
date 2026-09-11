@@ -18,6 +18,7 @@ import type { PaymentService } from "../features/payments/payment-service.js";
 import { createPaymentsPlugin } from "../features/payments/plugin.js";
 import { createPermissionsPlugin } from "../features/permissions/plugin.js";
 import { createProjectsPlugin } from "../features/projects/plugin.js";
+import { createSearchPlugin } from "../features/search/plugin.js";
 import { createSettingsPlugin } from "../features/settings/plugin.js";
 import { createSkillsPlugin } from "../features/skills/plugin.js";
 import { createUploadsPlugin } from "../features/uploads/plugin.js";
@@ -77,6 +78,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createAgentModesPlugin(),
     createCodeToolsPlugin(),
     createMcpPlugin(),
+    createSearchPlugin(),
     createModelProvidersPlugin({
       createUserClient: deps.createUserClient,
       getAdminClient: deps.getAdminClient,

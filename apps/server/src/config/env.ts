@@ -39,6 +39,9 @@ export type ServerEnv = {
   credentialSecret?: string;
   /** MCP server 配置（P4d）：JSON 数组，v1 支持 stdio 命令型。 */
   mcpServers?: McpServerConfig[];
+  /** 联网搜索（§4.5，BYOK 搜索供应商）：配置 Key 即启用 web_search 工具。 */
+  searchApiKey?: string;
+  searchProvider?: "metaso";
   googleApiKey?: string;
   googleApplicationCredentials?: string;
   googleFontsApiKey?: string;
@@ -93,6 +96,12 @@ export function loadServerEnv(
     normalizeOptionalString(source.LOOMIC_CREDENTIAL_SECRET);
   const mcpServers =
     overrides.mcpServers ?? parseMcpServers(source.LOOMIC_MCP_SERVERS);
+  const searchApiKey =
+    overrides.searchApiKey ??
+    normalizeOptionalString(source.LOOMIC_SEARCH_API_KEY);
+  const searchProvider =
+    overrides.searchProvider ??
+    parseSearchProvider(source.LOOMIC_SEARCH_PROVIDER);
   const openAIApiBase =
     overrides.openAIApiBase ?? normalizeOptionalString(source.OPENAI_API_BASE);
   const openAIApiKey =
@@ -229,6 +238,8 @@ export function loadServerEnv(
     ...(agentFilesRoot ? { agentFilesRoot } : {}),
     ...(credentialSecret ? { credentialSecret } : {}),
     ...(mcpServers?.length ? { mcpServers } : {}),
+    ...(searchApiKey ? { searchApiKey } : {}),
+    ...(searchProvider ? { searchProvider } : {}),
     ...(googleApiKey ? { googleApiKey } : {}),
     ...(googleApplicationCredentials ? { googleApplicationCredentials } : {}),
     ...(openAIApiBase ? { openAIApiBase } : {}),
@@ -291,6 +302,18 @@ function parseAgentBackendMode(rawMode: string | undefined): AgentBackendMode {
   }
 
   throw new Error(`Invalid LOOMIC_AGENT_BACKEND_MODE value: ${rawMode}`);
+}
+
+function parseSearchProvider(raw: string | undefined): "metaso" | undefined {
+  if (!raw?.trim()) {
+    return undefined;
+  }
+  if (raw === "metaso") {
+    return raw;
+  }
+  throw new Error(
+    `Invalid LOOMIC_SEARCH_PROVIDER value: ${raw} (supported: metaso)`,
+  );
 }
 
 export function parseMcpServers(
