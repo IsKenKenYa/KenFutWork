@@ -68,6 +68,7 @@ describe("profiles（P7 单一插件清单）", async () => {
         emitTurnStopping: () => Promise.resolve(),
       } satisfies KernelEvents,
       credentialEnv: {},
+      env,
     };
     expect(() =>
       composePlugins(env, workerProfile(deps), {

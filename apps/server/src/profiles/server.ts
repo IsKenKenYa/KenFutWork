@@ -1,14 +1,15 @@
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import type { LoomicAgentFactory } from "../agent/deep-agent.js";
+import type { ServerEnv } from "../config/env.js";
 import { createAgentModesPlugin } from "../features/agent-modes/plugin.js";
 import { createAgentRunsPlugin } from "../features/agent-runs/plugin.js";
 import { createViewerPlugin } from "../features/bootstrap/plugin.js";
-
 import { brandKitPlugin } from "../features/brand-kit/plugin.js";
 import { createCanvasPlugin } from "../features/canvas/plugin.js";
 import { createChatPlugin } from "../features/chat/plugin.js";
 import { createCodeToolsPlugin } from "../features/code-tools/plugin.js";
 import { createCreditsPlugin } from "../features/credits/plugin.js";
+import { createGenerationPlugin } from "../features/generation/plugin.js";
 import type { JobService } from "../features/jobs/job-service.js";
 import { createJobsPlugin } from "../features/jobs/plugin.js";
 import { createMcpPlugin } from "../features/mcp/plugin.js";
@@ -23,6 +24,7 @@ import { createUploadsPlugin } from "../features/uploads/plugin.js";
 import { createUsagePlugin } from "../features/usage/plugin.js";
 import type { KernelEvents, PluginDefinition } from "../kernel/types.js";
 import type { AdminSupabaseClient } from "../supabase/admin.js";
+import { authPlugin } from "../supabase/plugin.js";
 import type { UserSupabaseClient } from "../supabase/user.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 
@@ -32,12 +34,12 @@ import type { ConnectionManager } from "../ws/connection-manager.js";
  */
 
 export interface ServerProfileDeps {
-  auth: RequestAuthenticatorLike;
   createUserClient: (accessToken: string) => UserSupabaseClient;
   getAdminClient: () => AdminSupabaseClient;
   connectionManager: ConnectionManager;
   events: KernelEvents;
   credentialEnv: { credentialSecret?: string };
+  env: ServerEnv;
   agentFactory?: LoomicAgentFactory;
   agentModel?: BaseLanguageModel | string;
   mockEventDelayMs?: number;
@@ -46,12 +48,9 @@ export interface ServerProfileDeps {
   overridePayments?: PaymentService;
 }
 
-type RequestAuthenticatorLike = Parameters<
-  typeof createPermissionsPlugin
->[0]["auth"];
-
 export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
   return [
+    authPlugin,
     brandKitPlugin,
     createCreditsPlugin({ getAdminClient: deps.getAdminClient }),
     createViewerPlugin({ getAdminClient: deps.getAdminClient }),
@@ -74,10 +73,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
       createUserClient: deps.createUserClient,
       getAdminClient: deps.getAdminClient,
     }),
-    createPermissionsPlugin({
-      auth: deps.auth,
-      events: deps.events,
-    }),
+    createPermissionsPlugin({ events: deps.events }),
     createAgentModesPlugin(),
     createCodeToolsPlugin(),
     createMcpPlugin(),
@@ -86,6 +82,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
       getAdminClient: deps.getAdminClient,
       credentialEnv: deps.credentialEnv,
     }),
+    createGenerationPlugin({ env: deps.env }),
     createAgentRunsPlugin({
       createUserClient: deps.createUserClient,
       getAdminClient: deps.getAdminClient,

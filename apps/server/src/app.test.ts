@@ -34,7 +34,7 @@ const PUBLIC_GET_ROUTES = [
 function buildProbeApp() {
   return buildApp({
     env: { supabaseDbUrl: "postgres://localhost:5432/loomic-test" },
-    auth: { authenticate: async () => null },
+    overrides: { auth: { authenticate: async () => null } },
   });
 }
 
@@ -56,7 +56,7 @@ describe("buildApp 装配完整性（插件清单防漏挂）", () => {
 
   it("无 supabaseDbUrl 时 jobs 路由不装配（404），其余 feature 不受影响", async () => {
     const app = buildApp({
-      auth: { authenticate: async () => null },
+      overrides: { auth: { authenticate: async () => null } },
     });
     try {
       const jobs = await app.inject({ method: "GET", url: "/api/jobs" });

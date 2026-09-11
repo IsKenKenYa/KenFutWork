@@ -1,8 +1,5 @@
-import type { FastifyInstance } from "fastify";
-
 import { registerPermissionRoutes } from "../../http/permissions.js";
 import type { KernelEvents, PluginDefinition } from "../../kernel/types.js";
-import type { RequestAuthenticator } from "../../supabase/user.js";
 import {
   createPermissionService,
   type PermissionService,
@@ -16,13 +13,11 @@ import {
  *   画布工具（design scope）不触发审批（isDangerousTool 不匹配）。
  */
 export function createPermissionsPlugin(deps: {
-  auth: RequestAuthenticator;
   events?: KernelEvents;
-  app?: FastifyInstance;
 }): PluginDefinition {
   return {
     name: "permissions",
-    inject: [],
+    inject: ["auth"],
     apply(ctx) {
       const service: PermissionService = createPermissionService();
       ctx.register("permissions", () => service);
@@ -41,12 +36,10 @@ export function createPermissionsPlugin(deps: {
       });
     },
     mounted(ctx) {
-      if (deps.app) {
-        void registerPermissionRoutes(deps.app, {
-          auth: deps.auth,
-          permissions: ctx.get("permissions"),
-        });
-      }
+      void registerPermissionRoutes(ctx.app, {
+        auth: ctx.get("auth"),
+        permissions: ctx.get("permissions"),
+      });
     },
   };
 }

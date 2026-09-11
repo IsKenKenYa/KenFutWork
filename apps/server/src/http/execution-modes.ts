@@ -45,11 +45,9 @@ export async function registerExecutionModeRoutes(
       );
     }
     const { threadId } = request.params as { threadId: string };
-    return reply
-      .code(200)
-      .send({
-        mode: executionModeSchema.parse(options.agentModes.getMode(threadId)),
-      });
+    return reply.code(200).send({
+      mode: executionModeSchema.parse(options.agentModes.getMode(threadId)),
+    });
   });
 
   // PUT /api/execution-modes/:threadId — 激活/切换（会话级，DEC-2）

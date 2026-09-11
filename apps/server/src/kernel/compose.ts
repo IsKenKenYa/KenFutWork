@@ -25,6 +25,8 @@ export interface ComposeOptions {
   overrides?: Partial<ServiceMap>;
   /** 外部注入事件总线（装配方需要在 compose 前拿到派发器时使用）。 */
   events?: AgentRunEventBus;
+  /** 打印挂载树（dsh --dump-config 轻量等价物）。 */
+  dump?: boolean;
 }
 
 type ServiceState =
@@ -102,6 +104,9 @@ export function composePlugins(
 
   const events = options.events ?? new AgentRunEventBus();
 
+  const mountTree: Array<{ plugin: string; key: ServiceKey }> = [];
+  let currentPlugin = "kernel";
+
   const register = <K extends ServiceKey>(
     key: K,
     factory: (deps: DepsOf<K>) => ServiceMap[K],
@@ -113,6 +118,7 @@ export function composePlugins(
       kind: "pending",
       factory: factory as unknown as (deps: DepsOf<ServiceKey>) => unknown,
     });
+    mountTree.push({ plugin: currentPlugin, key });
   };
 
   // 内核自持的两个注册表型 key：在插件 apply 之前就绪（插件要在 apply 内向其贡献）。
@@ -129,8 +135,9 @@ export function composePlugins(
     });
   }
 
-  const kernelContextFor = (plugin: PluginDefinition): PluginContext =>
-    createPluginContext({
+  const kernelContextFor = (plugin: PluginDefinition): PluginContext => {
+    currentPlugin = plugin.name;
+    return createPluginContext({
       env,
       ...(options.app ? { app: options.app } : {}),
       register,
@@ -139,6 +146,7 @@ export function composePlugins(
       events,
       addDisposer,
     });
+  };
 
   for (const plugin of active) {
     const disposer = plugin.apply(kernelContextFor(plugin));
@@ -166,6 +174,19 @@ export function composePlugins(
   // mounted 阶段：服务全部就绪，插件在此做跨服务接线（路由注册等）。
   for (const plugin of active) {
     plugin.mounted?.(kernelContextFor(plugin));
+  }
+
+  if (options.dump) {
+    const tree = new Map<string, string[]>();
+    for (const { plugin, key } of mountTree) {
+      const bucket = tree.get(plugin) ?? [];
+      bucket.push(key);
+      tree.set(plugin, bucket);
+    }
+    const lines = [...tree.entries()].map(
+      ([plugin, keys]) => `  ${plugin} -> ${keys.join(", ")}`,
+    );
+    console.log(`[kernel] mount tree:\n${lines.join("\n")}`);
   }
 
   const kernelEvents: KernelEvents = createKernelEvents(events);
