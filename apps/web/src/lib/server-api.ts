@@ -13,6 +13,10 @@ import type {
   ProjectCreateResponse,
   ProjectListResponse,
   ProjectUpdateRequest,
+  ProviderInstanceCreateRequest,
+  ProviderInstanceListResponse,
+  ProviderInstanceResponse,
+  ProviderInstanceUpdateRequest,
   RunCreateRequest,
   RunCreateResponse,
   SessionCreateResponse,
@@ -264,6 +268,60 @@ export async function updateWorkspaceSettings(
   });
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as WorkspaceSettingsResponse;
+}
+
+// --- Provider Instances API（BYOK 供应商设置，P5）---
+
+export async function fetchProviderInstances(
+  accessToken: string,
+): Promise<ProviderInstanceListResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/provider-instances`, {
+    headers: authHeaders(accessToken),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as ProviderInstanceListResponse;
+}
+
+export async function createProviderInstance(
+  accessToken: string,
+  input: ProviderInstanceCreateRequest,
+): Promise<ProviderInstanceResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/provider-instances`, {
+    method: "POST",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as ProviderInstanceResponse;
+}
+
+export async function updateProviderInstance(
+  accessToken: string,
+  instanceId: string,
+  input: ProviderInstanceUpdateRequest,
+): Promise<ProviderInstanceResponse> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/provider-instances/${instanceId}`,
+    {
+      method: "PATCH",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(input),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as ProviderInstanceResponse;
+}
+
+export async function deleteProviderInstance(
+  accessToken: string,
+  instanceId: string,
+): Promise<void> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/provider-instances/${instanceId}`,
+    { method: "DELETE", headers: authHeaders(accessToken) },
+  );
+  if (!response.ok && response.status !== 204)
+    return handleErrorResponse(response);
 }
 
 export async function fetchModels(): Promise<ModelListResponse> {

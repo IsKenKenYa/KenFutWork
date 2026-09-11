@@ -199,7 +199,13 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void registerHealthRoutes(app, env);
   void registerFontsRoutes(app, { env });
   void registerImageProxyRoute(app);
-  void registerModelRoutes(app, env);
+  void registerModelRoutes(app, {
+    auth,
+    env,
+    ...(kernel.tryGet("modelCatalog")
+      ? { modelCatalog: kernel.get("modelCatalog") }
+      : {}),
+  });
   void registerImageModelRoutes(app, { auth, creditService, viewerService });
   void registerVideoModelRoutes(app, { auth, creditService, viewerService });
   void registerGenerateRoutes(app, {

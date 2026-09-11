@@ -7,6 +7,7 @@ import { AgentSection } from "@/components/agent-section";
 import { BillingSection } from "@/components/billing-section";
 import { CreditUsageHistory } from "@/components/credits/credit-usage-history";
 import { ProfileSection } from "@/components/profile-section";
+import { ProviderSettings } from "@/components/provider-settings";
 import { SettingsSkeleton } from "@/components/skeletons/settings-skeleton";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -18,11 +19,12 @@ import {
   updateWorkspaceSettings,
 } from "@/lib/server-api";
 
-type SettingsTab = "profile" | "agent" | "billing" | "usage";
+type SettingsTab = "profile" | "agent" | "providers" | "billing" | "usage";
 
 const tabs: Array<{ id: SettingsTab; label: string }> = [
   { id: "profile", label: "Profile" },
   { id: "agent", label: "Agent" },
+  { id: "providers", label: "Providers" },
   { id: "billing", label: "Billing" },
   { id: "usage", label: "Usage" },
 ];
@@ -154,6 +156,10 @@ export default function SettingsPage() {
             onSave={handleAgentSave}
             fetchModels={stableFetchModels}
           />
+        ) : activeTab === "providers" ? (
+          getToken() ? (
+            <ProviderSettings accessToken={getToken() ?? ""} />
+          ) : null
         ) : activeTab === "usage" ? (
           <CreditUsageHistory />
         ) : (
