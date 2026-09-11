@@ -2,19 +2,19 @@
 > 本文件是所有 coding Agent（Codex CLI / Claude Code / Trae IDE 等）的统一操作指南，是仓库的**唯一权威**。各 Agent 专用配置文件（`.codex/AGENTS.md`、`.claude/CLAUDE.md` 等）只保留各自的独占内容（如浏览器操作规范、框架文档索引），主体规范一律以本文件为准。
 
 ## 项目结构与模块组织
-本仓库是 **pnpm@10 workspace + Turborepo 的 monorepo**（Loomic：BYOK Work 画布创作平台——用户自定义供应商/模型的 AI 画布工作台；多端形态：Tauri 桌面端（内嵌服务端 + 沙箱）为主，服务端 Docker 自部署 / 云端，Web 与移动端为客户端；GPL-3.0 系开源）。产品与架构计划见 `docs/tech/插件化改造计划.md`（服务端插件内核 + BYOK 供应商缝）与 `docs/tech/多端产品架构计划.md`（桌面/自部署/Web/移动形态）。主要模块如下：
+本仓库是 **pnpm@10 workspace + Turborepo 的 monorepo**（Loomic：BYOK Work 平台——用户自定义供应商/模型的 AI 工作台，**design（画布创作）/ code（编码 agent）双模式**；多端形态：Tauri 桌面端（内嵌服务端 + 沙箱）为主，服务端 Docker 自部署 / 云端，Web 与移动端为客户端；GPL-3.0 系开源）。产品与架构计划见 `docs/tech/改造计划.md`（服务端插件内核 + BYOK 供应商缝 + design/code 双模式）与 `docs/tech/多端产品设计.md`（桌面/自部署/云/Web/移动形态）。主要模块如下：
 - `apps/web` — 前端：Next.js 16（App Router，Turbopack）+ React 19 + Tailwind 4 + Base UI + Excalidraw 画布。路由在 `src/app/`，组件在 `src/components/`，客户端纯逻辑在 `src/lib/`；测试在 `test/*.test.ts(x)`。
 - `apps/server` — 后端：Fastify 5 + LangChain 1.x / deepagents agent 运行时 + PGMQ 队列 worker。装配层在 `src/app.ts` 与 `src/worker.ts`；agent 相关在 `src/agent/`（backends / tools / prompts / persistence / sub-agents）；领域服务在 `src/features/`；生成 provider 在 `src/generation/providers/`；HTTP 路由在 `src/http/`；WS 在 `src/ws/`；队列在 `src/queue/`；环境变量解析在 `src/config/env.ts`。
 - `packages/shared` — 跨端 zod 契约（HTTP API、WS 协议、job 事件、credits、skills 等），构建到 `dist/` 后被前后端引用；改契约先改这里，两端跟着编译器走。
 - `packages/ui`、`packages/config` — 内部共享组件与 TS 配置。
 - `supabase/migrations/` — 唯一数据库 Schema 迁移源（原生 SQL）。
 - `references/` — 外部参考项目（deepseek-harness、langgraph、jaaz 等），**只作方向参考**，禁止直接复制代码/schema/字段名；不要批量删除或忽略该目录。
-- `docs/` — 技术文档与架构决策；`docs/tech/插件化改造计划.md` 是服务端架构演进蓝图。
+- `docs/` — 技术文档与架构决策；`docs/tech/改造计划.md` 是服务端架构演进蓝图，`docs/tech/多端产品设计.md` 是多端形态设计。
 
 本地开发需根目录 `.env.local`（模板见 `.env.example`），server 通过 `--env-file=../../.env.local` 读取。
 
 ## 插件化架构（服务端，硬约束）
-服务端正在向 deepseek-harness 式「一切皆插件」架构演进（蓝图与分阶段计划见 `docs/tech/插件化改造计划.md`），以下规则**现在就生效**：
+服务端正在向 deepseek-harness 式「一切皆插件」架构演进（蓝图与分阶段计划见 `docs/tech/改造计划.md`），以下规则**现在就生效**：
 
 - **没有特权核心**：`app.ts` 的角色随改造逐步退化为 profile 装配器。新增行为一律挂到扩展点上，**禁止往 `app.ts` / `worker.ts` 继续堆手工装配**。
 - **扩展点速查表**（新增行为对应机制，禁止绕过）：
@@ -30,7 +30,7 @@
 | 新增业务 feature | 服务定义 + Provider + Consumer（路由/工具/executor）内聚在 `src/features/<x>/`，暴露 `createXxxService(deps)` | — |
 
 - **能力缝三元组完整才算完整**：一个可替换能力 = Service Definition（接口）+ Service Provider（实现）+ Consumer（消费方）。只写实现不声明接口与消费方的「半个缝」不允许合入。
-- **服务 key 是稳定契约**：ctx key 表（viewer / projects / brandKit / canvas / threads / chat / agentRuns / settings / uploads / jobs / credits / tierGuard / payments / **generation / modelProviders / modelCatalog** / auth / backend / ws）新增或更名必须同步 `docs/tech/插件化改造计划.md` §4.2。
+- **服务 key 是稳定契约**：ctx key 表（viewer / projects / brandKit / canvas / threads / chat / agentRuns / settings / uploads / jobs / credits / tierGuard / payments / generation / modelProviders / modelCatalog / **tools / capabilities / permissions / usage / agentModes** / auth / backend / ws）新增或更名必须同步 `docs/tech/改造计划.md` §4.2。
 - **BYOK 凭证红线**：用户 API Key 只写不读（前端永不回显）、服务端日志脱敏、按工作区 RLS 隔离；`ProviderInstanceConfig.protocol` 是封闭集合（openai-compatible / anthropic / gemini / 图视频协议），新增协议必须先扩契约再写适配器，禁止在业务代码里内联供应商判断。
 - **配置 fail loud**：feature 的启用条件（如 Lemon Squeezy 配置齐全才建 PaymentService）必须显式表达为 `enabled(env)` 判定，禁止静默跳过；misconfiguration 在启动期报错。
 - **改造期纪律**：迁移按计划 §4 的拓扑序逐 PR 进行，每个 PR 行为不变、测试护航；新写的 feature 直接按插件形状组织，不等内核落地。

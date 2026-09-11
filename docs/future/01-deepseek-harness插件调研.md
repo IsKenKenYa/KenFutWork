@@ -166,7 +166,7 @@ export async function apply(ctx, config) {
 
 ## 6. 能力缝三元组（Capability Seam）
 
-来源 `docs/architecture.md` §Capability seams。Loomic 的《插件化改造计划》§4.3 已借鉴此模型。
+来源 `docs/architecture.md` §Capability seams。Loomic 的《改造计划》§4.4 已借鉴此模型。
 
 - 一个**可替换能力** = 三个角色：
     - **Service Definition**：声明接口。
@@ -238,7 +238,7 @@ dsh 的 `packages/` 下每个能力都是独立 package（组），下面按职�
 
 ## 9. 对 Loomic 的启示（摘要，详见《03-改造建议与路线》）
 
-1. **dsh 的插件 = 服务 + 事件 + 可逆副作用**；Loomic 现有《插件化改造计划》只取了「服务 DI + 拓扑挂载」，**主动砍掉了事件系统**——而事件（waterfall 拦截）恰恰是「让 agent 主循环也可插拔」的关键。没有它，MCP / 模式 / 权限 / 用量都只能硬编码进 loop。
+1. **dsh 的插件 = 服务 + 事件 + 可逆副作用**；Loomic《改造计划》v2 曾只取「服务 DI + 拓扑挂载」、砍掉事件系统，**v3 已修订为松绑最小 agent-run 事件缝**（`pre-step`/`tool-pre-execute`/`turn-stopping`，见《改造计划》§4.3）——因为事件（waterfall 拦截）恰恰是「让 agent 主循环可插拔」的关键，没有它 MCP / 模式 / 权限 / 用量都只能硬编码进 loop。
 2. **MCP、skill、子代理、模式、权限在 dsh 里都是插件**，且各自独立 package。Loomic 这些能力要么是硬编码（无 MCP、无模式、无通用权限），要么已实现但没被当插件设计（skill、子代理）。
-3. **外部插件开发模式（`dsh plugin` + profile/bundle/patch + topic 发现）是一整套分发闭环**；Loomic 的《多端产品架构计划》§9 声称要「第三方插件独立仓库 + 版本化契约 + 对齐 dsh-plugin topic」，但内核文档明确拒绝了 Cordis/YAML/patch/live-reload，且 `ServiceKey` 是封闭 enum——**这是一处结构性自相矛盾，必须显式决策**。
+3. **外部插件开发模式（`dsh plugin` + profile/bundle/patch + topic 发现）是一整套分发闭环**；Loomic《多端产品设计》§12 的插件生态边界提到「独立仓库分发的插件视为独立作品」，但内核明确拒绝 Cordis/YAML/patch/live-reload、`ServiceKey` 封闭——**这处矛盾已在《改造计划》§6 决策 8 显式定为「本次暂缓第三方插件安装/分发」**。
 4. **克制点可借鉴**：模式不要过早抽象（先做单个产品包，出现第二个再抽缝），与 Loomic「不为投机性灵活性堆抽象」一致。
