@@ -1,0 +1,221 @@
+import type { FastifyInstance } from "fastify";
+
+import type { AgentBackendFactory } from "../agent/backends/index.js";
+import type { AgentPersistenceService } from "../agent/persistence/index.js";
+import type { AgentRunService } from "../agent/runtime.js";
+import type { ServerEnv } from "../config/env.js";
+import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
+import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
+import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
+import type { CanvasService } from "../features/canvas/canvas-service.js";
+import type { ChatService } from "../features/chat/chat-service.js";
+import type { ThreadService } from "../features/chat/thread-service.js";
+import type { CreditService } from "../features/credits/credit-service.js";
+import type { TierGuard } from "../features/credits/tier-guard.js";
+import type { JobService } from "../features/jobs/job-service.js";
+import type { PaymentService } from "../features/payments/payment-service.js";
+import type { ProjectService } from "../features/projects/project-service.js";
+import type { SettingsService } from "../features/settings/settings-service.js";
+import type { UploadService } from "../features/uploads/upload-service.js";
+import type { RequestAuthenticator } from "../supabase/user.js";
+import type { ConnectionManager } from "../ws/connection-manager.js";
+import type { CanvasEventBuffer } from "../ws/event-buffer.js";
+
+/**
+ * 内核服务仓库（ctx key 表的唯一代码落点）。
+ *
+ * `ServiceKey` 是**封闭联合**：新增行为一律挂到注册表型 key（tools/capabilities），
+ * 需要 key 扩展时改本表（契约属主见《改造计划》§4.2），禁止业务代码自造 key。
+ */
+export interface ServiceMap {
+  /** agent 后端工厂 */
+  backend: AgentBackendFactory;
+  /** agent 运行时三件套 */
+  agentPersistence: AgentPersistenceService;
+  agentRunMetadata: AgentRunMetadataService;
+  agentRuns: AgentRunService;
+  /** 计费三件套（目标态默认关闭，DEC-5） */
+  credits: CreditService;
+  tierGuard: TierGuard;
+  payments: PaymentService;
+  /** 领域服务（design 侧为主） */
+  brandKit: BrandKitService;
+  canvas: CanvasService;
+  chat: ChatService;
+  projects: ProjectService;
+  settings: SettingsService;
+  threads: ThreadService;
+  uploads: UploadService;
+  viewer: ViewerService;
+  /** 认证缝（目标 local-trust / 自管 auth） */
+  auth: RequestAuthenticator;
+  /** JobService（PGMQ，Postgres 扩展） */
+  jobs: JobService;
+  /** 能力贡献者注册表（非工具能力：子代理 provider、执行模式等） */
+  capabilities: CapabilityRegistry;
+  /** 统一工具注册表（schema + 作用域 + guarded 执行） */
+  tools: ToolRegistry;
+  /** ConnectionManager + EventBuffer */
+  ws: WsServices;
+}
+
+export interface WsServices {
+  connectionManager: ConnectionManager;
+  eventBuffer: CanvasEventBuffer;
+}
+
+export type ServiceKey = keyof ServiceMap;
+
+export type ServiceOf<K extends ServiceKey> = ServiceMap[K];
+
+/** 插件工厂拿到的依赖解析器；只能解析 ServiceKey，未注册即 fail loud。 */
+export type DepsOf<K extends ServiceKey> = {
+  get: <D extends ServiceKey>(key: D) => ServiceMap[D];
+};
+
+/**
+ * agent-run 最小事件缝（DEC-1）：只有 3 个事件，不建通用事件总线。
+ * waterfall 监听器必须调 next() 委托；不调即拦截后续监听器。
+ */
+export type AgentRunEvent = "pre-step" | "tool-pre-execute" | "turn-stopping";
+
+export interface PreStepPayload {
+  input: unknown;
+  runId: string | undefined;
+}
+
+export interface ToolPreExecutePayload {
+  args: Record<string, unknown>;
+  decision: "allow" | "deny";
+  denyReason?: string | undefined;
+  runId: string | undefined;
+  toolName: string;
+}
+
+export interface TurnStoppingPayload {
+  runId: string;
+}
+
+export interface AgentRunEventPayloads {
+  "pre-step": PreStepPayload;
+  "tool-pre-execute": ToolPreExecutePayload;
+  "turn-stopping": TurnStoppingPayload;
+}
+
+export type WaterfallListener<E extends AgentRunEvent> = (
+  payload: AgentRunEventPayloads[E],
+  next: (
+    payload: AgentRunEventPayloads[E],
+  ) => Promise<AgentRunEventPayloads[E]>,
+) => Promise<AgentRunEventPayloads[E]>;
+
+export type SerialListener<E extends AgentRunEvent> = (
+  payload: AgentRunEventPayloads[E],
+  next: () => Promise<void>,
+) => Promise<void>;
+
+/** `turn-stopping` 是 serial，其余两个是 waterfall。 */
+export type ListenerOf<E extends AgentRunEvent> = E extends "turn-stopping"
+  ? SerialListener<E>
+  : WaterfallListener<E>;
+
+/** 工具作用域：preset 按此过滤各自工具子集（shared 恒可用）。 */
+export type ToolScope = "design" | "code" | "shared";
+
+export interface ToolExecutionContext {
+  runId?: string | undefined;
+  signal?: AbortSignal | undefined;
+  workspaceId?: string | undefined;
+}
+
+/**
+ * 模型可调用工具（`ctx.tools` 贡献条目）。
+ * `parameters` 是模型可见的 JSON Schema；入参校验由 execute 内部负责。
+ * MCP 工具命名约定：`mcp__<server>__<tool>`。
+ */
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  scope: ToolScope;
+  parameters: Record<string, unknown>;
+  execute(
+    args: Record<string, unknown>,
+    execCtx: ToolExecutionContext,
+  ): Promise<unknown>;
+}
+
+export interface ToolRegistry {
+  /** 注册工具，返回注销 disposer；重名 fail loud。 */
+  register(tool: ToolDefinition): () => void;
+  get(name: string): ToolDefinition | undefined;
+  require(name: string): ToolDefinition;
+  /** 列出工具；指定 scope 时返回该 scope + shared 子集。 */
+  list(scope?: ToolScope): ToolDefinition[];
+  /** guarded 执行：先派发 `tool-pre-execute` 事件，deny 即拒绝。 */
+  execute(
+    name: string,
+    args: Record<string, unknown>,
+    execCtx?: ToolExecutionContext,
+  ): Promise<unknown>;
+}
+
+/** 非工具能力贡献者条目（由运行时按 key 解析，模型不可见）。 */
+export interface CapabilityRegistration<T = unknown> {
+  id: string;
+  value: T;
+}
+
+/**
+ * 能力贡献者注册表（`ctx.capabilities`）：开放贡献、封闭 key 的承载点。
+ * 子代理 provider、执行模式等在此注册；同一 capability 可多 provider。
+ */
+export interface CapabilityRegistry {
+  register<T>(
+    capability: string,
+    provider: CapabilityRegistration<T>,
+  ): () => void;
+  list<T>(capability: string): Array<CapabilityRegistration<T>>;
+  get<T>(capability: string, id: string): T | undefined;
+  require<T>(capability: string, id: string): T;
+}
+
+/** 插件定义：稳定 name + inject 依赖 + enabled 判定 + apply 挂载。 */
+export interface PluginDefinition {
+  name: string;
+  inject: readonly ServiceKey[];
+  enabled?: (env: ServerEnv) => boolean;
+  apply(ctx: PluginContext): void | (() => void);
+}
+
+export interface PluginContext {
+  /** 注册服务工厂；同一 key 只允许注册一次（fail loud）。 */
+  register<K extends ServiceKey>(
+    key: K,
+    factory: (deps: DepsOf<K>) => ServiceMap[K],
+  ): void;
+  /** 解析服务：overrides > 工厂惰性实例化；未注册即抛错。 */
+  get<K extends ServiceKey>(key: K): ServiceMap[K];
+  /** 登记可逆副作用，kernel dispose 时 LIFO 执行。 */
+  effect(fn: () => void | (() => void)): void;
+  /** 订阅 agent-run 事件，返回取消订阅函数。 */
+  on<E extends AgentRunEvent>(event: E, listener: ListenerOf<E>): () => void;
+  /** Fastify 实例；worker 进程 compose 时不可用（访问即抛错）。 */
+  readonly app: FastifyInstance;
+  readonly env: ServerEnv;
+}
+
+/** 事件派发入口：agent 运行时（而非插件）在主循环挂钩处调用。 */
+export interface KernelEvents {
+  emitPreStep(payload: PreStepPayload): Promise<PreStepPayload>;
+  emitToolPreExecute(
+    payload: ToolPreExecutePayload,
+  ): Promise<ToolPreExecutePayload>;
+  emitTurnStopping(payload: TurnStoppingPayload): Promise<void>;
+}
+
+export interface KernelHandle {
+  /** 逆序执行全部 disposer（apply 返回值 + effect + 工具/事件注销）。 */
+  dispose(): void;
+  get<K extends ServiceKey>(key: K): ServiceMap[K];
+  readonly events: KernelEvents;
+}
