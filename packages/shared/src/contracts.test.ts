@@ -49,6 +49,24 @@ describe("@loomic/shared contracts", () => {
     expect(result.canvasId).toBeUndefined();
   });
 
+  it("accepts optional preset (DEC-2) and rejects unknown values", () => {
+    const parsed = runCreateRequestSchema.parse({
+      sessionId: "session-1",
+      conversationId: "conv-1",
+      prompt: "Hello",
+      preset: "code",
+    });
+    expect(parsed.preset).toBe("code");
+    expect(
+      runCreateRequestSchema.safeParse({
+        sessionId: "session-1",
+        conversationId: "conv-1",
+        prompt: "Hello",
+        preset: "both",
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts optional attachments in run creation", () => {
     const result = runCreateRequestSchema.parse({
       sessionId: "session-1",

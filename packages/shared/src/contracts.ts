@@ -82,6 +82,11 @@ export const runCreateRequestSchema = z.object({
   mentions: z.array(messageMentionSchema).optional(),
   accessToken: z.string().optional(),
   model: z.string().optional(),
+  /**
+   * agent preset（DEC-2，会话级）：design=画布工具集，code=编码工具集；
+   * 缺省由服务端推断（有 canvasId → design，否则 code）。
+   */
+  preset: z.enum(["design", "code"]).optional(),
 });
 
 export const runCreateResponseSchema = z.object({
