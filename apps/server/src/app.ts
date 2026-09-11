@@ -20,10 +20,7 @@ import {
 } from "./features/agent-runs/agent-run-service.js";
 import { createViewerPlugin } from "./features/bootstrap/plugin.js";
 import { brandKitPlugin } from "./features/brand-kit/plugin.js";
-import {
-  type CanvasService,
-  createCanvasService,
-} from "./features/canvas/canvas-service.js";
+import { createCanvasPlugin } from "./features/canvas/plugin.js";
 import {
   type ChatService,
   createChatService,
@@ -53,7 +50,6 @@ import {
   type UploadService,
 } from "./features/uploads/upload-service.js";
 import { registerAllProviders } from "./generation/providers/register-all.js";
-import { registerCanvasRoutes } from "./http/canvases.js";
 import { registerChatRoutes } from "./http/chat.js";
 import { registerFontsRoutes } from "./http/fonts.js";
 import { registerGenerateRoutes } from "./http/generate.js";
@@ -89,7 +85,6 @@ export type BuildAppOptions = {
   agentPersistenceService?: AgentPersistenceService;
   agentRunMetadataService?: AgentRunMetadataService;
   auth?: RequestAuthenticator;
-  canvasService?: CanvasService;
   chatService?: ChatService;
   connectionManager?: ConnectionManager;
   env?: Partial<ServerEnv>;
@@ -146,6 +141,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       brandKitPlugin,
       createCreditsPlugin({ getAdminClient }),
       createViewerPlugin({ getAdminClient }),
+      createCanvasPlugin({ createUserClient }),
       createProjectsPlugin({ createUserClient }),
     ],
     {
@@ -159,8 +155,6 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const viewerService = kernel.get("viewer");
   const creditService = kernel.get("credits");
   const tierGuard = kernel.get("tierGuard");
-  const canvasService =
-    options.canvasService ?? createCanvasService({ createUserClient });
   const threadService =
     options.threadService ?? createThreadService({ createUserClient });
   const chatService =
@@ -265,10 +259,6 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     settingsService,
     threadService,
     viewerService,
-  });
-  void registerCanvasRoutes(app, {
-    auth,
-    canvasService,
   });
   void registerSettingsRoutes(app, {
     auth,
