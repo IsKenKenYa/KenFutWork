@@ -56,6 +56,7 @@ export function createAgentRunsPlugin(
           ...(jobService ? { jobService } : {}),
           modelProviders: ctx.get("modelProviders"),
           runUsage: ctx.get("runUsage"),
+          tools: ctx.get("tools"),
           emitTurnStopping: (payload) => deps.events.emitTurnStopping(payload),
           ...(deps.emitPreStep ? { emitPreStep: deps.emitPreStep } : {}),
           creditService: d.get("credits"),

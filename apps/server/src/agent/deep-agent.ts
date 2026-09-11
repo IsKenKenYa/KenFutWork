@@ -7,17 +7,18 @@ import type {
 } from "@langchain/langgraph-checkpoint";
 import { ChatOpenAI } from "@langchain/openai";
 import { createDeepAgent } from "deepagents";
-
 import {
   DEFAULT_AGENT_MODEL,
   DEFAULT_GOOGLE_AGENT_MODEL,
   type ServerEnv,
 } from "../config/env.js";
+import type { ToolDefinition, ToolExecutionContext } from "../kernel/types.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import {
   type AgentBackendResult,
   createAgentBackend,
 } from "./backends/index.js";
+import { bridgeKernelTools } from "./kernel-tools-bridge.js";
 import { LOOMIC_SYSTEM_PROMPT } from "./prompts/loomic-main.js";
 import { createVideoSubAgent } from "./sub-agents.js";
 import type {
@@ -48,6 +49,10 @@ export type LoomicAgentFactory = (options: {
   submitVideoJob?: SubmitVideoJobFn;
   store?: BaseStore;
   workspaceSkills?: WorkspaceSkillEntry[];
+  /** 内核 ctx.tools 贡献的工具（按 preset 过滤后），桥接为模型可调用工具。 */
+  kernelTools?: ToolDefinition[];
+  /** 本次运行的工具执行上下文（runId/accessToken）。 */
+  runToolContext?: ToolExecutionContext;
 }) => LoomicAgent;
 
 export function createLoomicDeepAgent(options: {
@@ -65,6 +70,8 @@ export function createLoomicDeepAgent(options: {
   submitVideoJob?: SubmitVideoJobFn;
   store?: BaseStore;
   workspaceSkills?: WorkspaceSkillEntry[];
+  kernelTools?: ToolDefinition[];
+  runToolContext?: ToolExecutionContext;
 }): LoomicAgent {
   const backendResult =
     options.backendResult ?? createAgentBackend(options.env, options.canvasId);
@@ -122,24 +129,32 @@ export function createLoomicDeepAgent(options: {
     ...(options.store ? { store: options.store } : {}),
     subagents: [createVideoSubAgent()],
     systemPrompt,
-    tools: createMainAgentTools(backendResult.factory, {
-      createUserClient,
-      ...(options.brandKitId != null ? { brandKitId: options.brandKitId } : {}),
-      ...(options.connectionManager
-        ? { connectionManager: options.connectionManager }
-        : {}),
-      ...(options.persistImage ? { persistImage: options.persistImage } : {}),
-      ...(backendResult.sandboxDir
-        ? { sandboxDir: backendResult.sandboxDir }
-        : {}),
+    tools: [
+      ...createMainAgentTools(backendResult.factory, {
+        createUserClient,
+        ...(options.brandKitId != null
+          ? { brandKitId: options.brandKitId }
+          : {}),
+        ...(options.connectionManager
+          ? { connectionManager: options.connectionManager }
+          : {}),
+        ...(options.persistImage ? { persistImage: options.persistImage } : {}),
+        ...(backendResult.sandboxDir
+          ? { sandboxDir: backendResult.sandboxDir }
+          : {}),
 
-      ...(options.submitImageJob
-        ? { submitImageJob: options.submitImageJob }
-        : {}),
-      ...(options.submitVideoJob
-        ? { submitVideoJob: options.submitVideoJob }
-        : {}),
-    }),
+        ...(options.submitImageJob
+          ? { submitImageJob: options.submitImageJob }
+          : {}),
+        ...(options.submitVideoJob
+          ? { submitVideoJob: options.submitVideoJob }
+          : {}),
+      }),
+      ...bridgeKernelTools(
+        options.kernelTools ?? [],
+        options.runToolContext ?? {},
+      ),
+    ],
   });
 }
 

@@ -36,6 +36,7 @@ import type { JobService } from "../features/jobs/job-service.js";
 import { parseInstanceSpecifier } from "../features/model-providers/model-catalog-service.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type { RunUsageAccumulator } from "../features/usage/run-usage-accumulator.js";
+import type { ToolRegistry } from "../kernel/types.js";
 import { resolveInstanceChatModel } from "../providers/resolve.js";
 import type {
   AuthenticatedUser,
@@ -67,6 +68,18 @@ import {
  * Build the text portion of a user message, appending <input_images> XML
  * tags when attachments are present so the LLM can reference them by assetId.
  */
+/**
+ * run → agent preset（DEC-2 会话级能力集）：
+ * 画布内运行归 design preset（画布工具为主），无画布的纯会话归 code preset。
+ * 显式传入 preset 时以传入值优先。
+ */
+export function resolvePresetForRun(run: {
+  canvasId?: string | undefined;
+  preset?: "design" | "code" | undefined;
+}): "design" | "code" {
+  return run.preset ?? (run.canvasId ? "design" : "code");
+}
+
 export function buildUserMessage(
   prompt: string,
   attachments: ImageAttachment[],
@@ -288,6 +301,8 @@ type CreateAgentRuntimeOptions = {
   modelProviders?: ModelProviderService;
   /** agent 链路用量累积器（turn-stopping 结算，DEC-6）。 */
   runUsage?: RunUsageAccumulator;
+  /** 内核统一工具注册表：按 run 的 preset 过滤后桥接进模型工具列表（§4.5）。 */
+  tools?: ToolRegistry;
   /** 事件缝（DEC-1）：turn 收尾时发射 turn-stopping，插件据此结算。 */
   emitTurnStopping?: (payload: { runId: string }) => Promise<void>;
   /**
@@ -1214,6 +1229,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             });
           }
 
+          // §4.5 统一工具注册表：ctx.tools 按 preset 过滤后桥接进模型工具列表
+          const preset = resolvePresetForRun(run);
+          const kernelToolDefinitions = options.tools
+            ? options.tools.list(preset)
+            : [];
+
           agent = resolvedAgentFactory({
             backendResult,
             ...(brandKitId ? { brandKitId } : {}),
@@ -1230,6 +1251,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ...(submitVideoJob ? { submitVideoJob } : {}),
             ...(persistence ? { store: persistence.store } : {}),
             ...(workspaceSkills.length > 0 ? { workspaceSkills } : {}),
+            ...(kernelToolDefinitions.length > 0
+              ? { kernelTools: kernelToolDefinitions }
+              : {}),
+            runToolContext: {
+              runId,
+              ...(run.accessToken ? { accessToken: run.accessToken } : {}),
+            },
           });
           rlog.lap("agent_factory_done");
         } catch (error) {
