@@ -22,10 +22,7 @@ import {
   createViewerService,
   type ViewerService,
 } from "./features/bootstrap/ensure-user-foundation.js";
-import {
-  type BrandKitService,
-  createBrandKitService,
-} from "./features/brand-kit/brand-kit-service.js";
+import { brandKitPlugin } from "./features/brand-kit/plugin.js";
 import {
   type CanvasService,
   createCanvasService,
@@ -69,7 +66,6 @@ import {
   type UploadService,
 } from "./features/uploads/upload-service.js";
 import { registerAllProviders } from "./generation/providers/register-all.js";
-import { registerBrandKitRoutes } from "./http/brand-kits.js";
 import { registerCanvasRoutes } from "./http/canvases.js";
 import { registerChatRoutes } from "./http/chat.js";
 import { registerCreditRoutes } from "./http/credits.js";
@@ -90,6 +86,8 @@ import { registerMarketplaceRoutes } from "./http/skills-marketplace.js";
 import { registerUploadRoutes } from "./http/uploads.js";
 import { registerVideoModelRoutes } from "./http/video-models.js";
 import { registerViewerRoutes } from "./http/viewer.js";
+import { composePlugins } from "./kernel/compose.js";
+import type { ServiceMap } from "./kernel/types.js";
 import { createPgmqClient } from "./queue/pgmq-client.js";
 import { createAdminSupabaseClient } from "./supabase/admin.js";
 import {
@@ -107,7 +105,6 @@ export type BuildAppOptions = {
   agentPersistenceService?: AgentPersistenceService;
   agentRunMetadataService?: AgentRunMetadataService;
   auth?: RequestAuthenticator;
-  brandKitService?: BrandKitService;
   canvasService?: CanvasService;
   chatService?: ChatService;
   connectionManager?: ConnectionManager;
@@ -122,6 +119,11 @@ export type BuildAppOptions = {
   settingsService?: SettingsService;
   threadService?: ThreadService;
   viewerService?: ViewerService;
+  /**
+   * 内核服务直填（插件化改造过渡期收编 BuildAppOptions 逐项服务注入，P2 起）。
+   * 命中 overrides 的 key 跳过对应插件工厂，语义与旧的单项可选字段一致。
+   */
+  overrides?: Partial<ServiceMap>;
 };
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
@@ -162,8 +164,6 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const projectService =
     options.projectService ??
     createProjectService({ createUserClient, viewerService });
-  const brandKitService =
-    options.brandKitService ?? createBrandKitService({ createUserClient });
   const canvasService =
     options.canvasService ?? createCanvasService({ createUserClient });
   const threadService =
@@ -267,6 +267,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void registerHealthRoutes(app, env);
   void registerFontsRoutes(app, { env });
   void registerImageProxyRoute(app);
+  // 插件化改造（P2 试点）：brand-kit 走内核装配；其余 feature 仍为手工装配，P3 逐个迁移。
+  composePlugins(env, [brandKitPlugin], {
+    app,
+    overrides: {
+      auth,
+      ...(options.overrides ?? {}),
+    },
+  });
   void registerRunRoutes(app, agentRuns, {
     agentRunMetadataService,
     auth,
@@ -279,10 +287,6 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     createUserClient,
     creditService,
     viewerService,
-  });
-  void registerBrandKitRoutes(app, {
-    auth,
-    brandKitService,
   });
   void registerProjectRoutes(app, {
     auth,
