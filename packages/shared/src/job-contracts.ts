@@ -23,6 +23,8 @@ export type BackgroundJobType = z.infer<typeof backgroundJobTypeSchema>;
 export const imageGenerationPayloadSchema = z.object({
   prompt: z.string().min(1),
   model: z.string().optional(),
+  /** BYOK：任务携带的用户供应商实例 id（§5），worker 按其实例化协议适配器。 */
+  provider_instance_id: z.string().optional(),
   aspect_ratio: z.string().optional(),
 });
 export type ImageGenerationPayload = z.infer<
@@ -32,6 +34,8 @@ export type ImageGenerationPayload = z.infer<
 export const videoGenerationPayloadSchema = z.object({
   prompt: z.string().min(1),
   model: z.string().optional(),
+  /** BYOK：任务携带的用户供应商实例 id（§5），worker 按其实例化协议适配器。 */
+  provider_instance_id: z.string().optional(),
   duration: z.number().int().optional(),
   resolution: z.string().optional(),
   aspect_ratio: z.string().optional(),

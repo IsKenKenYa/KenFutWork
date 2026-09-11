@@ -154,6 +154,8 @@ export const modelInfoSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   provider: z.string().min(1),
+  /** 标识用户供应商实例（BYOK，§5）；内置目录无实例时缺省。 */
+  providerInstanceId: z.string().min(1).optional(),
 });
 
 export const chatSessionIdSchema = identifierSchema;
