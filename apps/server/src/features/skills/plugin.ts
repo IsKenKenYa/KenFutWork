@@ -1,11 +1,21 @@
 import { registerSkillRoutes } from "../../http/skills.js";
 import { registerMarketplaceRoutes } from "../../http/skills-marketplace.js";
-import type { PluginDefinition } from "../../kernel/types.js";
+import type {
+  PluginDefinition,
+  ToolDefinition,
+  ToolExecutionContext,
+} from "../../kernel/types.js";
 import type { UserSupabaseClient } from "../../supabase/user.js";
+import {
+  createSkillCatalogService,
+  type SkillCatalogService,
+} from "./skill-catalog-service.js";
 
 /**
- * skills 插件：技能导入 + 技能市场路由（服务在路由层经 createUserClient 内聚构造）。
- * P5 将把 skill 发现收敛为 ctx.tools 工具缝；本插件只承载 HTTP 面。
+ * skills 插件：技能导入 + 市场路由（HTTP 面）+ **skill 工具缝**（P5）。
+ * SKILL.md 发现经 SkillCatalogService 向 `ctx.tools` 贡献 `list_skills` /
+ * `use_skill`（shared scope，design/code 两 preset 均可用），与 SkillsMiddleware
+ * 的提示注入同源数据、互为补充。
  */
 export function createSkillsPlugin(deps: {
   createUserClient: (accessToken: string) => UserSupabaseClient;
@@ -13,7 +23,73 @@ export function createSkillsPlugin(deps: {
   return {
     name: "skills",
     inject: ["auth", "viewer"],
-    apply() {},
+    apply(ctx) {
+      const catalog: SkillCatalogService = createSkillCatalogService({
+        createUserClient: deps.createUserClient,
+      });
+
+      const listSkillsTool: ToolDefinition = {
+        name: "list_skills",
+        description: "列出当前工作区已安装并启用的 skill（名称与描述）。",
+        scope: "shared",
+        parameters: { type: "object", properties: {} },
+        execute: async (_args, execCtx: ToolExecutionContext) => {
+          if (!execCtx.accessToken) {
+            return { skills: [], hint: "当前执行上下文缺少用户令牌。" };
+          }
+          const skills = await catalog.listSkills({
+            accessToken: execCtx.accessToken,
+            email: "",
+            id: "",
+            userMetadata: {},
+          });
+          return {
+            skills: skills
+              .filter((s) => s.enabled)
+              .map((s) => ({ name: s.name, description: s.description })),
+          };
+        },
+      };
+
+      const useSkillTool: ToolDefinition = {
+        name: "use_skill",
+        description:
+          "读取指定 skill 的 SKILL.md 全文，按其指引完成任务。先用 list_skills 查看可用项。",
+        scope: "shared",
+        parameters: {
+          type: "object",
+          properties: {
+            name: { type: "string", description: "skill slug" },
+          },
+          required: ["name"],
+        },
+        execute: async (args, execCtx: ToolExecutionContext) => {
+          const name = String(args.name ?? "");
+          if (!name) {
+            throw new Error("use_skill 需要 name 参数");
+          }
+          if (!execCtx.accessToken) {
+            throw new Error("当前执行上下文缺少用户令牌，无法读取 skill。");
+          }
+          const detail = await catalog.getSkill(
+            {
+              accessToken: execCtx.accessToken,
+              email: "",
+              id: "",
+              userMetadata: {},
+            },
+            name,
+          );
+          if (!detail) {
+            throw new Error(`skill ${name} 未安装或未启用`);
+          }
+          return detail;
+        },
+      };
+
+      ctx.get("tools").register(listSkillsTool);
+      ctx.get("tools").register(useSkillTool);
+    },
     mounted(ctx) {
       void registerSkillRoutes(ctx.app, {
         auth: ctx.get("auth"),

@@ -145,6 +145,8 @@ export interface ToolExecutionContext {
   runId?: string | undefined;
   signal?: AbortSignal | undefined;
   workspaceId?: string | undefined;
+  /** 运行方（agent 运行时）传入的请求级用户令牌；需要用户上下文的工具据此解析数据。 */
+  accessToken?: string | undefined;
 }
 
 /**
