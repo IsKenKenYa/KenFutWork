@@ -4,6 +4,7 @@ import type { AgentBackendFactory } from "../agent/backends/index.js";
 import type { AgentPersistenceService } from "../agent/persistence/index.js";
 import type { AgentRunService } from "../agent/runtime.js";
 import type { ServerEnv } from "../config/env.js";
+import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
@@ -16,6 +17,7 @@ import type { JobService } from "../features/jobs/job-service.js";
 import type { ModelCatalogService } from "../features/model-providers/model-catalog-service.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type { PaymentService } from "../features/payments/payment-service.js";
+import type { PermissionService } from "../features/permissions/permission-service.js";
 import type { ProjectService } from "../features/projects/project-service.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import type { UploadService } from "../features/uploads/upload-service.js";
@@ -61,6 +63,10 @@ export interface ServiceMap {
   modelCatalog: ModelCatalogService;
   /** 用量计量服务（DEC-6） */
   usage: UsageService;
+  /** 跨模式 tool-call 策略缝（DEC-4） */
+  permissions: PermissionService;
+  /** 执行模式缝（DEC-3：v1 agent + plan） */
+  agentModes: ExecutionModeService;
   /** agent 链路 run 用量累积器（turn-stopping 结算） */
   runUsage: RunUsageAccumulator;
   /** 能力贡献者注册表（非工具能力：子代理 provider、执行模式等） */
@@ -94,6 +100,7 @@ export type AgentRunEvent = "pre-step" | "tool-pre-execute" | "turn-stopping";
 export interface PreStepPayload {
   input: unknown;
   runId: string | undefined;
+  threadId?: string | undefined;
 }
 
 export interface ToolPreExecutePayload {

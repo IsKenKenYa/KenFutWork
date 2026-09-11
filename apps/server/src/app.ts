@@ -9,16 +9,19 @@ import {
   resolveDefaultAgentModel,
   type ServerEnv,
 } from "./config/env.js";
+import { createAgentModesPlugin } from "./features/agent-modes/plugin.js";
 import { createAgentRunsPlugin } from "./features/agent-runs/plugin.js";
 import { createViewerPlugin } from "./features/bootstrap/plugin.js";
 import { brandKitPlugin } from "./features/brand-kit/plugin.js";
 import { createCanvasPlugin } from "./features/canvas/plugin.js";
 import { createChatPlugin } from "./features/chat/plugin.js";
+import { createCodeToolsPlugin } from "./features/code-tools/plugin.js";
 import { createCreditsPlugin } from "./features/credits/plugin.js";
 import { createJobsPlugin } from "./features/jobs/plugin.js";
 import { createMcpPlugin } from "./features/mcp/plugin.js";
 import { createModelProvidersPlugin } from "./features/model-providers/plugin.js";
 import { createPaymentsPlugin } from "./features/payments/plugin.js";
+import { createPermissionsPlugin } from "./features/permissions/plugin.js";
 import { createProjectsPlugin } from "./features/projects/plugin.js";
 import { createSettingsPlugin } from "./features/settings/plugin.js";
 import { createSkillsPlugin } from "./features/skills/plugin.js";
@@ -123,6 +126,13 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       }),
       createSkillsPlugin({ createUserClient }),
       createUsagePlugin({ createUserClient, getAdminClient }),
+      createPermissionsPlugin({
+        auth,
+        events: createKernelEvents(eventBus),
+        app,
+      }),
+      createAgentModesPlugin(),
+      createCodeToolsPlugin(),
       createMcpPlugin(),
       createModelProvidersPlugin({
         createUserClient,
@@ -134,6 +144,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         getAdminClient,
         connectionManager,
         events: createKernelEvents(eventBus),
+        emitPreStep: (payload) => eventBus.emitWaterfall("pre-step", payload),
         ...(options.agentFactory ? { agentFactory: options.agentFactory } : {}),
         ...(options.agentModel ? { agentModel: options.agentModel } : {}),
         ...(options.mockEventDelayMs === undefined

@@ -290,6 +290,15 @@ type CreateAgentRuntimeOptions = {
   runUsage?: RunUsageAccumulator;
   /** 事件缝（DEC-1）：turn 收尾时发射 turn-stopping，插件据此结算。 */
   emitTurnStopping?: (payload: { runId: string }) => Promise<void>;
+  /**
+   * 事件缝（DEC-1）：turn 开始时发射 pre-step（waterfall），插件可改写/拒绝模型输入。
+   * 返回改写后的 input（无监听器时原样返回）。
+   */
+  emitPreStep?: (payload: {
+    input: string;
+    runId: string;
+    threadId?: string | undefined;
+  }) => Promise<{ input: unknown }>;
   now?: () => string;
   runIdFactory?: () => string;
   tierGuard?: TierGuard;
@@ -302,6 +311,22 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
   const now = options.now ?? (() => new Date().toISOString());
   const runs = new Map<string, RuntimeRunRecord>();
   const runIdFactory = options.runIdFactory ?? (() => randomUUID());
+
+  // DEC-1 pre-step：把改写权交给事件监听器（执行模式 plan 引导等），无监听器原样返回
+  const applyPreStep = async (
+    input: string,
+    threadId: string | undefined,
+  ): Promise<string> => {
+    if (!options.emitPreStep) {
+      return input;
+    }
+    const result = await options.emitPreStep({
+      input,
+      runId: "",
+      ...(threadId ? { threadId } : {}),
+    });
+    return typeof result.input === "string" ? result.input : input;
+  };
 
   const resolvedAgentFactory: LoomicAgentFactory =
     options.agentFactory ??
@@ -1305,7 +1330,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             );
 
             // Build XML text tags for LLM to reference by assetId
-            const { text: enrichedPrompt } = buildUserMessage(
+            let { text: enrichedPrompt } = buildUserMessage(
               run.prompt,
               run.attachments!,
               run.imageGenerationPreference,
@@ -1313,6 +1338,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               run.videoGenerationPreference,
               canvasSummary,
             );
+            enrichedPrompt = await applyPreStep(enrichedPrompt, run.threadId);
 
             // Build assetId → data URI map for tool-level resolution
             attachmentDataMap = buildAttachmentDataMap(downloaded);
@@ -1324,7 +1350,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               ],
             });
           } else {
-            const { text: enrichedPrompt } = buildUserMessage(
+            let { text: enrichedPrompt } = buildUserMessage(
               run.prompt,
               [],
               run.imageGenerationPreference,
@@ -1332,6 +1358,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               run.videoGenerationPreference,
               canvasSummary,
             );
+            enrichedPrompt = await applyPreStep(enrichedPrompt, run.threadId);
             userMessage = new HumanMessage(enrichedPrompt);
           }
 

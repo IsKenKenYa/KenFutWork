@@ -15,6 +15,12 @@ export interface AgentRunsPluginDeps {
   connectionManager: ConnectionManager;
   /** 内核事件缝：turn 收尾发射 turn-stopping（用量结算挂钩点）。 */
   events: KernelEvents;
+  /** 事件缝（DEC-1）：pre-step waterfall，执行模式/权限插件改写模型输入。 */
+  emitPreStep?: (payload: {
+    input: string;
+    runId: string;
+    threadId?: string | undefined;
+  }) => Promise<{ input: unknown }>;
   agentFactory?: LoomicAgentFactory;
   agentModel?: BaseLanguageModel | string;
   mockEventDelayMs?: number;
@@ -51,6 +57,7 @@ export function createAgentRunsPlugin(
           modelProviders: ctx.get("modelProviders"),
           runUsage: ctx.get("runUsage"),
           emitTurnStopping: (payload) => deps.events.emitTurnStopping(payload),
+          ...(deps.emitPreStep ? { emitPreStep: deps.emitPreStep } : {}),
           creditService: d.get("credits"),
           tierGuard: d.get("tierGuard"),
           viewerService: d.get("viewer"),
