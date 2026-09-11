@@ -5,19 +5,11 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 
 import type { LoomicAgentFactory } from "./agent/deep-agent.js";
 import {
-  type AgentPersistenceService,
-  createAgentPersistenceService,
-} from "./agent/persistence/index.js";
-import { createAgentRunService } from "./agent/runtime.js";
-import {
   loadServerEnv,
   resolveDefaultAgentModel,
   type ServerEnv,
 } from "./config/env.js";
-import {
-  type AgentRunMetadataService,
-  createAgentRunMetadataService,
-} from "./features/agent-runs/agent-run-service.js";
+import { createAgentRunsPlugin } from "./features/agent-runs/plugin.js";
 import { createViewerPlugin } from "./features/bootstrap/plugin.js";
 import { brandKitPlugin } from "./features/brand-kit/plugin.js";
 import { createCanvasPlugin } from "./features/canvas/plugin.js";
@@ -36,7 +28,6 @@ import { registerHealthRoutes } from "./http/health.js";
 import { registerImageModelRoutes } from "./http/image-models.js";
 import { registerImageProxyRoute } from "./http/image-proxy.js";
 import { registerModelRoutes } from "./http/models.js";
-import { registerRunRoutes } from "./http/runs.js";
 import { registerVideoModelRoutes } from "./http/video-models.js";
 import { composePlugins } from "./kernel/compose.js";
 import type { KernelHandle, ServiceMap } from "./kernel/types.js";
@@ -53,8 +44,6 @@ import { registerWsRoute } from "./ws/handler.js";
 export type BuildAppOptions = {
   agentFactory?: LoomicAgentFactory;
   agentModel?: BaseLanguageModel | string;
-  agentPersistenceService?: AgentPersistenceService;
-  agentRunMetadataService?: AgentRunMetadataService;
   auth?: RequestAuthenticator;
   connectionManager?: ConnectionManager;
   env?: Partial<ServerEnv>;
@@ -99,7 +88,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     adminClient ??= createAdminSupabaseClient(env);
     return adminClient;
   };
-  // 插件化改造（P2 起）：已迁移 feature 走内核装配；其余仍为手工装配，P3 逐个迁移。
+  const connectionManager =
+    options.connectionManager ?? new ConnectionManager();
+  // 插件化改造（P2 起）：全部 feature 走内核装配；app.ts 只保留 CORS/静态路由/ws 装配。
   const kernel: KernelHandle = composePlugins(
     env,
     [
@@ -111,6 +102,30 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       createSettingsPlugin({ createUserClient }),
       createUploadsPlugin({ createUserClient }),
       createProjectsPlugin({ createUserClient }),
+      createJobsPlugin({
+        createUserClient,
+        getAdminClient,
+        ...(options.overrides?.jobs
+          ? { injected: options.overrides.jobs }
+          : {}),
+      }),
+      createPaymentsPlugin({
+        getAdminClient,
+        ...(options.overrides?.payments
+          ? { injected: options.overrides.payments }
+          : {}),
+      }),
+      createSkillsPlugin({ createUserClient }),
+      createAgentRunsPlugin({
+        createUserClient,
+        getAdminClient,
+        connectionManager,
+        ...(options.agentFactory ? { agentFactory: options.agentFactory } : {}),
+        ...(options.agentModel ? { agentModel: options.agentModel } : {}),
+        ...(options.mockEventDelayMs === undefined
+          ? {}
+          : { mockEventDelayMs: options.mockEventDelayMs }),
+      }),
     ],
     {
       app,
@@ -125,35 +140,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const tierGuard = kernel.get("tierGuard");
   const threadService = kernel.get("threads");
   const chatService = kernel.get("chat");
-  const agentRunMetadataService =
-    options.agentRunMetadataService ??
-    createAgentRunMetadataService({ getAdminClient });
-  const agentPersistenceService =
-    options.agentPersistenceService ?? createAgentPersistenceService(env);
+  const agentRunMetadataService = kernel.get("agentRunMetadata");
   const settingsService = kernel.get("settings");
   const uploadService = kernel.get("uploads");
   const jobService = kernel.tryGet("jobs");
 
-  const connectionManager =
-    options.connectionManager ?? new ConnectionManager();
   const eventBuffer = new CanvasEventBuffer();
   setInterval(() => eventBuffer.cleanup(), 5 * 60 * 1000);
-  const agentRuns = createAgentRunService({
-    agentPersistenceService,
-    ...(options.agentFactory ? { agentFactory: options.agentFactory } : {}),
-    agentRunMetadataService,
-    connectionManager,
-    createUserClient,
-    ...(options.agentModel ? { model: options.agentModel } : {}),
-    ...(options.mockEventDelayMs === undefined
-      ? {}
-      : { eventDelayMs: options.mockEventDelayMs }),
-    env,
-    ...(jobService ? { jobService } : {}),
-    creditService,
-    tierGuard,
-    viewerService,
-  });
+  const agentRuns = kernel.get("agentRuns");
 
   app.addHook("onRequest", async (request, reply) => {
     const corsResult = evaluateCors(request, env.webOrigin);
@@ -190,13 +184,6 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void registerHealthRoutes(app, env);
   void registerFontsRoutes(app, { env });
   void registerImageProxyRoute(app);
-  void registerRunRoutes(app, agentRuns, {
-    agentRunMetadataService,
-    auth,
-    settingsService,
-    threadService,
-    viewerService,
-  });
   void registerModelRoutes(app, env);
   void registerImageModelRoutes(app, { auth, creditService, viewerService });
   void registerVideoModelRoutes(app, { auth, creditService, viewerService });
