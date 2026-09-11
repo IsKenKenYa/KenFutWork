@@ -27,6 +27,7 @@ import { createJobsPlugin } from "./features/jobs/plugin.js";
 import { createPaymentsPlugin } from "./features/payments/plugin.js";
 import { createProjectsPlugin } from "./features/projects/plugin.js";
 import { createSettingsPlugin } from "./features/settings/plugin.js";
+import { createSkillsPlugin } from "./features/skills/plugin.js";
 import { createUploadsPlugin } from "./features/uploads/plugin.js";
 import { registerAllProviders } from "./generation/providers/register-all.js";
 import { registerFontsRoutes } from "./http/fonts.js";
@@ -36,8 +37,6 @@ import { registerImageModelRoutes } from "./http/image-models.js";
 import { registerImageProxyRoute } from "./http/image-proxy.js";
 import { registerModelRoutes } from "./http/models.js";
 import { registerRunRoutes } from "./http/runs.js";
-import { registerSkillRoutes } from "./http/skills.js";
-import { registerMarketplaceRoutes } from "./http/skills-marketplace.js";
 import { registerVideoModelRoutes } from "./http/video-models.js";
 import { composePlugins } from "./kernel/compose.js";
 import type { KernelHandle, ServiceMap } from "./kernel/types.js";
@@ -208,12 +207,6 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     viewerService,
     ...(jobService ? { jobService } : {}),
     ...(tierGuard ? { tierGuard } : {}),
-  });
-  void registerSkillRoutes(app, { auth, createUserClient, viewerService });
-  void registerMarketplaceRoutes(app, {
-    auth,
-    createUserClient,
-    viewerService,
   });
 
   return app;
