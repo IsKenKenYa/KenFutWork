@@ -185,6 +185,11 @@ export interface PluginDefinition {
   inject: readonly ServiceKey[];
   enabled?: (env: ServerEnv) => boolean;
   apply(ctx: PluginContext): void | (() => void);
+  /**
+   * 全部插件 apply 完成、服务定例化就绪后按声明顺序调用。
+   * 路由注册等「消费其他插件服务」的跨服务接线放这里，apply 只注册自己的服务。
+   */
+  mounted?(ctx: PluginContext): void;
 }
 
 export interface PluginContext {

@@ -18,10 +18,7 @@ import {
   type AgentRunMetadataService,
   createAgentRunMetadataService,
 } from "./features/agent-runs/agent-run-service.js";
-import {
-  createViewerService,
-  type ViewerService,
-} from "./features/bootstrap/ensure-user-foundation.js";
+import { createViewerPlugin } from "./features/bootstrap/plugin.js";
 import { brandKitPlugin } from "./features/brand-kit/plugin.js";
 import {
   type CanvasService,
@@ -35,14 +32,7 @@ import {
   createThreadService,
   type ThreadService,
 } from "./features/chat/thread-service.js";
-import {
-  type CreditService,
-  createCreditService,
-} from "./features/credits/credit-service.js";
-import {
-  createTierGuard,
-  type TierGuard,
-} from "./features/credits/tier-guard.js";
+import { createCreditsPlugin } from "./features/credits/plugin.js";
 import {
   createJobService,
   type JobService,
@@ -68,7 +58,6 @@ import {
 import { registerAllProviders } from "./generation/providers/register-all.js";
 import { registerCanvasRoutes } from "./http/canvases.js";
 import { registerChatRoutes } from "./http/chat.js";
-import { registerCreditRoutes } from "./http/credits.js";
 import { registerFontsRoutes } from "./http/fonts.js";
 import { registerGenerateRoutes } from "./http/generate.js";
 import { registerHealthRoutes } from "./http/health.js";
@@ -85,9 +74,8 @@ import { registerSkillRoutes } from "./http/skills.js";
 import { registerMarketplaceRoutes } from "./http/skills-marketplace.js";
 import { registerUploadRoutes } from "./http/uploads.js";
 import { registerVideoModelRoutes } from "./http/video-models.js";
-import { registerViewerRoutes } from "./http/viewer.js";
 import { composePlugins } from "./kernel/compose.js";
-import type { ServiceMap } from "./kernel/types.js";
+import type { KernelHandle, ServiceMap } from "./kernel/types.js";
 import { createPgmqClient } from "./queue/pgmq-client.js";
 import { createAdminSupabaseClient } from "./supabase/admin.js";
 import {
@@ -108,17 +96,14 @@ export type BuildAppOptions = {
   canvasService?: CanvasService;
   chatService?: ChatService;
   connectionManager?: ConnectionManager;
-  creditService?: CreditService;
   env?: Partial<ServerEnv>;
   jobService?: JobService;
   paymentService?: PaymentService;
-  tierGuard?: TierGuard;
   uploadService?: UploadService;
   mockEventDelayMs?: number;
   projectService?: ProjectService;
   settingsService?: SettingsService;
   threadService?: ThreadService;
-  viewerService?: ViewerService;
   /**
    * 内核服务直填（插件化改造过渡期收编 BuildAppOptions 逐项服务注入，P2 起）。
    * 命中 overrides 的 key 跳过对应插件工厂，语义与旧的单项可选字段一致。
@@ -159,8 +144,25 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     adminClient ??= createAdminSupabaseClient(env);
     return adminClient;
   };
-  const viewerService =
-    options.viewerService ?? createViewerService({ getAdminClient });
+  // 插件化改造（P2 起）：已迁移 feature 走内核装配；其余仍为手工装配，P3 逐个迁移。
+  const kernel: KernelHandle = composePlugins(
+    env,
+    [
+      brandKitPlugin,
+      createCreditsPlugin({ getAdminClient }),
+      createViewerPlugin({ getAdminClient }),
+    ],
+    {
+      app,
+      overrides: {
+        auth,
+        ...(options.overrides ?? {}),
+      },
+    },
+  );
+  const viewerService = kernel.get("viewer");
+  const creditService = kernel.get("credits");
+  const tierGuard = kernel.get("tierGuard");
   const projectService =
     options.projectService ??
     createProjectService({ createUserClient, viewerService });
@@ -192,9 +194,6 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     (pgmq
       ? createJobService({ createUserClient, getAdminClient, pgmq })
       : undefined);
-  const creditService =
-    options.creditService ?? createCreditService({ getAdminClient });
-  const tierGuard = options.tierGuard ?? createTierGuard({ getAdminClient });
 
   // Payment service — only created when Lemon Squeezy is configured
   let paymentService: PaymentService | undefined = options.paymentService;
@@ -267,25 +266,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void registerHealthRoutes(app, env);
   void registerFontsRoutes(app, { env });
   void registerImageProxyRoute(app);
-  // 插件化改造（P2 试点）：brand-kit 走内核装配；其余 feature 仍为手工装配，P3 逐个迁移。
-  composePlugins(env, [brandKitPlugin], {
-    app,
-    overrides: {
-      auth,
-      ...(options.overrides ?? {}),
-    },
-  });
   void registerRunRoutes(app, agentRuns, {
     agentRunMetadataService,
     auth,
     settingsService,
     threadService,
-    viewerService,
-  });
-  void registerViewerRoutes(app, {
-    auth,
-    createUserClient,
-    creditService,
     viewerService,
   });
   void registerProjectRoutes(app, {
@@ -321,7 +306,6 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     ...(jobService ? { jobService } : {}),
     ...(tierGuard ? { tierGuard } : {}),
   });
-  void registerCreditRoutes(app, { auth, creditService, viewerService });
   if (jobService) {
     void registerJobRoutes(app, {
       auth,

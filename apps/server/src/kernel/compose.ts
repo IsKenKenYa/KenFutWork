@@ -149,6 +149,11 @@ export function composePlugins(
     get(key);
   }
 
+  // mounted 阶段：服务全部就绪，插件在此做跨服务接线（路由注册等）。
+  for (const plugin of active) {
+    plugin.mounted?.(kernelContextFor(plugin));
+  }
+
   const kernelEvents: KernelEvents = createKernelEvents(events);
 
   return {

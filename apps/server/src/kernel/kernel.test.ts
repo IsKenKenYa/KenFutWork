@@ -31,6 +31,7 @@ function plugin(
     inject?: ReadonlyArray<keyof ServiceMap>;
     enabled?: (env: ServerEnv) => boolean;
     onApply?: (ctx: Ctx) => void | (() => void);
+    onMounted?: (ctx: Ctx) => void;
   } = {},
 ): PluginDefinition {
   return {
@@ -40,6 +41,7 @@ function plugin(
     apply(ctx) {
       return hooks.onApply?.(ctx);
     },
+    ...(hooks.onMounted ? { mounted: hooks.onMounted } : {}),
   };
 }
 
@@ -174,6 +176,42 @@ describe("composePlugins 装配", () => {
     ]);
     expect(() => kernel.get("canvas")).toThrow(/服务 key canvas 未注册/);
     kernel.dispose();
+  });
+
+  it("mounted 钩子在全部服务定例化后按声明顺序执行，可消费其他插件服务", () => {
+    const order: string[] = [];
+    const kernel = composePlugins(makeEnv(), [
+      plugin("a", {
+        onApply(ctx) {
+          ctx.register("viewer", () => {
+            order.push("factory-viewer");
+            return { tag: "v" } as never;
+          });
+        },
+      }),
+      plugin("b", {
+        inject: ["viewer"],
+        onApply(ctx) {
+          ctx.register("canvas", () => ({}) as never);
+        },
+        onMounted(ctx) {
+          const viewer = ctx.get("viewer") as unknown as { tag: string };
+          expect(viewer.tag).toBe("v");
+          order.push("mounted-b");
+          ctx.effect(() => () => {
+            order.push("dispose-mounted-effect");
+          });
+        },
+      }),
+      plugin("c", {
+        onMounted() {
+          order.push("mounted-c");
+        },
+      }),
+    ]);
+    expect(order).toEqual(["factory-viewer", "mounted-b", "mounted-c"]);
+    kernel.dispose();
+    expect(order[order.length - 1]).toBe("dispose-mounted-effect");
   });
 
   it("overrides 优先于工厂", () => {
