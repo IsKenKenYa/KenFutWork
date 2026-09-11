@@ -162,6 +162,30 @@ describe("composePlugins 装配", () => {
   it("get 未注册 key fail loud", () => {
     const kernel = composePlugins(makeEnv(), [plugin("empty")]);
     expect(() => kernel.get("payments")).toThrow(/服务 key payments 未注册/);
+    expect(kernel.tryGet("payments")).toBeUndefined();
+    kernel.dispose();
+  });
+
+  it("tryGet：注册返回实例，override 优先，未注册返回 undefined", () => {
+    const kernel = composePlugins(
+      makeEnv(),
+      [
+        plugin("a", {
+          onApply(ctx) {
+            expect(ctx.tryGet("viewer")).toBeUndefined();
+            ctx.register("viewer", () => ({ tag: "factory" }) as never);
+          },
+        }),
+      ],
+      { overrides: { canvas: { tag: "override" } as never } },
+    );
+    expect((kernel.tryGet("viewer") as unknown as { tag: string }).tag).toBe(
+      "factory",
+    );
+    expect((kernel.tryGet("canvas") as unknown as { tag: string }).tag).toBe(
+      "override",
+    );
+    expect(kernel.tryGet("chat")).toBeUndefined();
     kernel.dispose();
   });
 

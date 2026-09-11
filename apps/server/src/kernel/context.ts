@@ -218,6 +218,7 @@ export interface KernelContextOptions {
   app?: FastifyInstance;
   register: RegisterFn;
   get: GetFn;
+  tryGet: <K extends ServiceKey>(key: K) => ServiceMap[K] | undefined;
   events: AgentRunEventBus;
   /** kernel dispose 时 LIFO 执行的 disposer 收集器（ctx.effect 落点）。 */
   addDisposer: (disposer: () => void) => void;
@@ -232,6 +233,7 @@ export function createPluginContext(
   const context: PluginContext = {
     register: (key, factory) => options.register(key, factory),
     get: (key) => options.get(key),
+    tryGet: (key) => options.tryGet(key),
     effect: (fn) => {
       const disposer = fn();
       if (typeof disposer === "function") {

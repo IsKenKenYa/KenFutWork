@@ -87,6 +87,17 @@ export function composePlugins(
     return service as ServiceMap[K];
   };
 
+  const tryGet = <K extends ServiceKey>(key: K): ServiceMap[K] | undefined => {
+    const override = overrides[key];
+    if (override !== undefined) {
+      return override;
+    }
+    if (!factories.has(key)) {
+      return undefined;
+    }
+    return get(key);
+  };
+
   const events = new AgentRunEventBus();
 
   const register = <K extends ServiceKey>(
@@ -122,6 +133,7 @@ export function composePlugins(
       ...(options.app ? { app: options.app } : {}),
       register,
       get,
+      tryGet,
       events,
       addDisposer,
     });
@@ -165,6 +177,7 @@ export function composePlugins(
       factories.clear();
     },
     get,
+    tryGet,
     events: kernelEvents,
   };
 }

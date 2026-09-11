@@ -23,10 +23,7 @@ import { brandKitPlugin } from "./features/brand-kit/plugin.js";
 import { createCanvasPlugin } from "./features/canvas/plugin.js";
 import { createChatPlugin } from "./features/chat/plugin.js";
 import { createCreditsPlugin } from "./features/credits/plugin.js";
-import {
-  createJobService,
-  type JobService,
-} from "./features/jobs/job-service.js";
+import { createJobsPlugin } from "./features/jobs/plugin.js";
 import { createLemonSqueezyClient } from "./features/payments/lemon-squeezy-client.js";
 import {
   buildVariantMap,
@@ -42,7 +39,6 @@ import { registerGenerateRoutes } from "./http/generate.js";
 import { registerHealthRoutes } from "./http/health.js";
 import { registerImageModelRoutes } from "./http/image-models.js";
 import { registerImageProxyRoute } from "./http/image-proxy.js";
-import { registerJobRoutes } from "./http/jobs.js";
 import { registerModelRoutes } from "./http/models.js";
 import { registerPaymentRoutes } from "./http/payments.js";
 import { registerPaymentWebhookRoute } from "./http/payments-webhook.js";
@@ -52,7 +48,6 @@ import { registerMarketplaceRoutes } from "./http/skills-marketplace.js";
 import { registerVideoModelRoutes } from "./http/video-models.js";
 import { composePlugins } from "./kernel/compose.js";
 import type { KernelHandle, ServiceMap } from "./kernel/types.js";
-import { createPgmqClient } from "./queue/pgmq-client.js";
 import { createAdminSupabaseClient } from "./supabase/admin.js";
 import {
   createSupabaseRequestAuthenticator,
@@ -71,7 +66,6 @@ export type BuildAppOptions = {
   auth?: RequestAuthenticator;
   connectionManager?: ConnectionManager;
   env?: Partial<ServerEnv>;
-  jobService?: JobService;
   paymentService?: PaymentService;
   mockEventDelayMs?: number;
   /**
@@ -147,14 +141,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     options.agentPersistenceService ?? createAgentPersistenceService(env);
   const settingsService = kernel.get("settings");
   const uploadService = kernel.get("uploads");
-  const pgmq = env.supabaseDbUrl
-    ? createPgmqClient(env.supabaseDbUrl)
-    : undefined;
-  const jobService =
-    options.jobService ??
-    (pgmq
-      ? createJobService({ createUserClient, getAdminClient, pgmq })
-      : undefined);
+  const jobService = kernel.tryGet("jobs");
 
   // Payment service — only created when Lemon Squeezy is configured
   let paymentService: PaymentService | undefined = options.paymentService;
@@ -245,15 +232,6 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     ...(jobService ? { jobService } : {}),
     ...(tierGuard ? { tierGuard } : {}),
   });
-  if (jobService) {
-    void registerJobRoutes(app, {
-      auth,
-      creditService,
-      jobService,
-      tierGuard,
-      viewerService,
-    });
-  }
   void registerSkillRoutes(app, { auth, createUserClient, viewerService });
   void registerMarketplaceRoutes(app, {
     auth,

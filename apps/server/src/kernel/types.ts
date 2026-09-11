@@ -200,6 +200,8 @@ export interface PluginContext {
   ): void;
   /** 解析服务：overrides > 工厂惰性实例化；未注册即抛错。 */
   get<K extends ServiceKey>(key: K): ServiceMap[K];
+  /** 可选解析：key 无人提供时返回 undefined（jobs 等条件装配服务用）。 */
+  tryGet<K extends ServiceKey>(key: K): ServiceMap[K] | undefined;
   /** 登记可逆副作用，kernel dispose 时 LIFO 执行。 */
   effect(fn: () => void | (() => void)): void;
   /** 订阅 agent-run 事件，返回取消订阅函数。 */
@@ -222,5 +224,6 @@ export interface KernelHandle {
   /** 逆序执行全部 disposer（apply 返回值 + effect + 工具/事件注销）。 */
   dispose(): void;
   get<K extends ServiceKey>(key: K): ServiceMap[K];
+  tryGet<K extends ServiceKey>(key: K): ServiceMap[K] | undefined;
   readonly events: KernelEvents;
 }
