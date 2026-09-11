@@ -23,6 +23,8 @@ export interface ComposeOptions {
   app?: FastifyInstance;
   /** 服务实例直填（测试与 BuildAppOptions 收编用）；命中时跳过对应工厂。 */
   overrides?: Partial<ServiceMap>;
+  /** 外部注入事件总线（装配方需要在 compose 前拿到派发器时使用）。 */
+  events?: AgentRunEventBus;
 }
 
 type ServiceState =
@@ -98,7 +100,7 @@ export function composePlugins(
     return get(key);
   };
 
-  const events = new AgentRunEventBus();
+  const events = options.events ?? new AgentRunEventBus();
 
   const register = <K extends ServiceKey>(
     key: K,

@@ -22,6 +22,7 @@ import { createProjectsPlugin } from "./features/projects/plugin.js";
 import { createSettingsPlugin } from "./features/settings/plugin.js";
 import { createSkillsPlugin } from "./features/skills/plugin.js";
 import { createUploadsPlugin } from "./features/uploads/plugin.js";
+import { createUsagePlugin } from "./features/usage/plugin.js";
 import { registerAllProviders } from "./generation/providers/register-all.js";
 import { registerFontsRoutes } from "./http/fonts.js";
 import { registerGenerateRoutes } from "./http/generate.js";
@@ -31,6 +32,7 @@ import { registerImageProxyRoute } from "./http/image-proxy.js";
 import { registerModelRoutes } from "./http/models.js";
 import { registerVideoModelRoutes } from "./http/video-models.js";
 import { composePlugins } from "./kernel/compose.js";
+import { AgentRunEventBus, createKernelEvents } from "./kernel/context.js";
 import type { KernelHandle, ServiceMap } from "./kernel/types.js";
 import { createAdminSupabaseClient } from "./supabase/admin.js";
 import {
@@ -91,6 +93,8 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   };
   const connectionManager =
     options.connectionManager ?? new ConnectionManager();
+  // 事件总线独立创建：agent-runs 插件在装配期就需要派发器（turn-stopping）
+  const eventBus = new AgentRunEventBus();
   // 插件化改造（P2 起）：全部 feature 走内核装配；app.ts 只保留 CORS/静态路由/ws 装配。
   const kernel: KernelHandle = composePlugins(
     env,
@@ -117,6 +121,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
           : {}),
       }),
       createSkillsPlugin({ createUserClient }),
+      createUsagePlugin({ createUserClient, getAdminClient }),
       createModelProvidersPlugin({
         createUserClient,
         getAdminClient,
@@ -126,6 +131,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         createUserClient,
         getAdminClient,
         connectionManager,
+        events: createKernelEvents(eventBus),
         ...(options.agentFactory ? { agentFactory: options.agentFactory } : {}),
         ...(options.agentModel ? { agentModel: options.agentModel } : {}),
         ...(options.mockEventDelayMs === undefined
@@ -135,6 +141,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     ],
     {
       app,
+      events: eventBus,
       overrides: {
         auth,
         ...(options.overrides ?? {}),

@@ -117,6 +117,22 @@ registerExecutor(
       }
       lap(`${providerName}_call_done`);
 
+      // 用量落账（DEC-6 直连生成链路）：图像 provider 不报 token，记 0 留痕不留盲区
+      if (workspaceId) {
+        ctx.usageService
+          ?.record({
+            workspaceId,
+            provider: instanceProvider ? "instance" : providerName,
+            model,
+            capability: "image",
+            ...(payload.provider_instance_id
+              ? { providerInstanceId: payload.provider_instance_id }
+              : {}),
+            jobId,
+          })
+          .catch(() => {});
+      }
+
       // Download the generated image from the provider CDN
       const response = await fetch(generated.url);
       if (!response.ok) {

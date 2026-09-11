@@ -35,6 +35,7 @@ import {
 import type { JobService } from "../features/jobs/job-service.js";
 import { parseInstanceSpecifier } from "../features/model-providers/model-catalog-service.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
+import type { RunUsageAccumulator } from "../features/usage/run-usage-accumulator.js";
 import { resolveInstanceChatModel } from "../providers/resolve.js";
 import type {
   AuthenticatedUser,
@@ -264,6 +265,12 @@ type RuntimeRunRecord = RunCreateRequest & {
   status: RuntimeRunStatus;
   threadId?: string;
   userId?: string;
+  /** 用量归属元数据（DEC-6），模型解析后填入；turn-stopping 结算时消费。 */
+  usageMeta?: {
+    provider: string;
+    model: string;
+    providerInstanceId?: string;
+  };
 };
 
 type CreateAgentRuntimeOptions = {
@@ -279,6 +286,10 @@ type CreateAgentRuntimeOptions = {
   model?: BaseLanguageModel | string;
   /** BYOK：实例 specifier（<instanceId>:<model>）经此解析为协议适配器模型。 */
   modelProviders?: ModelProviderService;
+  /** agent 链路用量累积器（turn-stopping 结算，DEC-6）。 */
+  runUsage?: RunUsageAccumulator;
+  /** 事件缝（DEC-1）：turn 收尾时发射 turn-stopping，插件据此结算。 */
+  emitTurnStopping?: (payload: { runId: string }) => Promise<void>;
   now?: () => string;
   runIdFactory?: () => string;
   tierGuard?: TierGuard;
@@ -1003,6 +1014,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 : createDefaultModelSpecifier({ agentModel: run.modelOverride })
               : options.model;
 
+          run.usageMeta = {
+            provider: "builtin",
+            model:
+              typeof run.modelOverride === "string"
+                ? run.modelOverride
+                : String(options.model ?? "default"),
+          };
           // BYOK：run 的 model 携带实例 specifier 时，按用户供应商实例实例化聊天模型
           if (
             typeof resolvedModel === "string" &&
@@ -1032,6 +1050,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     : {}),
                 },
               );
+              run.usageMeta = {
+                provider: "instance",
+                model: instanceSpec.model,
+                providerInstanceId: instanceSpec.instanceId,
+              };
             }
           }
 
@@ -1355,10 +1378,33 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           return;
         }
 
+        const usageUserId = run.userId;
         try {
           for await (const event of adaptDeepAgentStream({
             conversationId: run.conversationId,
             now,
+            ...(options.runUsage && usageUserId
+              ? {
+                  onUsage: (usage: {
+                    inputTokens: number;
+                    outputTokens: number;
+                  }) => {
+                    options.runUsage?.update(runId, {
+                      inputTokens: usage.inputTokens,
+                      outputTokens: usage.outputTokens,
+                      provider: run.usageMeta?.provider ?? "builtin",
+                      model: run.usageMeta?.model ?? "unknown",
+                      ...(run.usageMeta?.providerInstanceId
+                        ? {
+                            providerInstanceId:
+                              run.usageMeta.providerInstanceId,
+                          }
+                        : {}),
+                      userId: usageUserId,
+                    });
+                  },
+                }
+              : {}),
             runId,
             sessionId: run.sessionId,
             signal: run.controller.signal,
@@ -1421,6 +1467,17 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           return;
         }
       } finally {
+        // DEC-1：turn 收尾（成功/失败/取消）发射 turn-stopping，用量等插件据此结算
+        if (options.emitTurnStopping) {
+          try {
+            await options.emitTurnStopping({ runId });
+          } catch (emitError) {
+            console.warn(
+              "[agent-runtime] turn-stopping listeners failed:",
+              emitError,
+            );
+          }
+        }
         if (backendResult.sandboxDir) {
           rm(backendResult.sandboxDir, { recursive: true, force: true }).catch(
             (err) => console.warn("[sandbox] cleanup failed:", err.message),

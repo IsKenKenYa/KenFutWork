@@ -22,6 +22,7 @@ import {
 } from "./features/jobs/job-executor.js";
 import { createJobService } from "./features/jobs/job-service.js";
 import { createModelProviderService } from "./features/model-providers/model-provider-service.js";
+import { createUsageService } from "./features/usage/usage-service.js";
 import { createPgmqClient, type PgmqMessage } from "./queue/pgmq-client.js";
 import { createAdminSupabaseClient } from "./supabase/admin.js";
 import { createUserSupabaseClientFactory } from "./supabase/user.js";
@@ -80,6 +81,11 @@ async function main() {
     getAdminClient,
     credentialEnv: env,
   });
+  // 用量落账（DEC-6）：直连生成链路的采集点
+  const usageService = createUsageService({
+    createUserClient,
+    getAdminClient,
+  });
 
   // Base context — per-message fields (queue, msgId, renewVt) are added in processMessage
   const baseCtx = {
@@ -88,6 +94,7 @@ async function main() {
     getAdminClient,
     env,
     modelProviders,
+    usageService,
   };
 
   const CONCURRENCY_BY_QUEUE: Record<string, number> = {

@@ -3,7 +3,7 @@ import type { LoomicAgentFactory } from "../../agent/deep-agent.js";
 import { createAgentPersistenceService } from "../../agent/persistence/index.js";
 import { createAgentRunService } from "../../agent/runtime.js";
 import { registerRunRoutes } from "../../http/runs.js";
-import type { PluginDefinition } from "../../kernel/types.js";
+import type { KernelEvents, PluginDefinition } from "../../kernel/types.js";
 import type { AdminSupabaseClient } from "../../supabase/admin.js";
 import type { UserSupabaseClient } from "../../supabase/user.js";
 import type { ConnectionManager } from "../../ws/connection-manager.js";
@@ -13,6 +13,8 @@ export interface AgentRunsPluginDeps {
   createUserClient: (accessToken: string) => UserSupabaseClient;
   getAdminClient: () => AdminSupabaseClient;
   connectionManager: ConnectionManager;
+  /** 内核事件缝：turn 收尾发射 turn-stopping（用量结算挂钩点）。 */
+  events: KernelEvents;
   agentFactory?: LoomicAgentFactory;
   agentModel?: BaseLanguageModel | string;
   mockEventDelayMs?: number;
@@ -47,6 +49,8 @@ export function createAgentRunsPlugin(
           env: ctx.env,
           ...(jobService ? { jobService } : {}),
           modelProviders: ctx.get("modelProviders"),
+          runUsage: ctx.get("runUsage"),
+          emitTurnStopping: (payload) => deps.events.emitTurnStopping(payload),
           creditService: d.get("credits"),
           tierGuard: d.get("tierGuard"),
           viewerService: d.get("viewer"),

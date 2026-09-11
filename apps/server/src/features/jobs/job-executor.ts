@@ -3,6 +3,7 @@ import type { ServerEnv } from "../../config/env.js";
 import type { PgmqClient } from "../../queue/pgmq-client.js";
 import type { AdminSupabaseClient } from "../../supabase/admin.js";
 import type { ModelProviderService } from "../model-providers/model-provider-service.js";
+import type { UsageService } from "../usage/usage-service.js";
 import type { JobService } from "./job-service.js";
 
 export type ExecutorContext = {
@@ -12,6 +13,8 @@ export type ExecutorContext = {
   env: ServerEnv;
   /** BYOK：任务携带 provider_instance_id 时经此解析凭证（P4）。 */
   modelProviders?: ModelProviderService;
+  /** 用量落账（DEC-6 直连生成链路采集点）。 */
+  usageService?: UsageService;
   /** PGMQ queue name for the current job (set per-message by the worker). */
   queue: string;
   /** PGMQ message id for the current job (set per-message by the worker). */

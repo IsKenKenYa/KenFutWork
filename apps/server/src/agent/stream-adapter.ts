@@ -28,6 +28,8 @@ type LangChainStreamEvent = {
 type AdaptDeepAgentStreamOptions = {
   conversationId: string;
   now?: () => string;
+  /** 用量采集点（§4.5）：chunk 携带 usage_metadata（cumulative）时回调最新累计值。 */
+  onUsage?: (usage: { inputTokens: number; outputTokens: number }) => void;
   runId: string;
   sessionId: string;
   signal?: AbortSignal;
@@ -90,6 +92,20 @@ export async function* adaptDeepAgentStream(
         ) {
           const msg = chunk as AIMessageChunk | AIMessage;
           if ((msg.tool_calls?.length ?? 0) > 0) continue;
+          const usageMeta = (
+            msg as unknown as {
+              usage_metadata?: {
+                input_tokens?: number;
+                output_tokens?: number;
+              };
+            }
+          ).usage_metadata;
+          if (usageMeta && options.onUsage) {
+            options.onUsage({
+              inputTokens: usageMeta.input_tokens ?? 0,
+              outputTokens: usageMeta.output_tokens ?? 0,
+            });
+          }
         }
 
         const messageId =

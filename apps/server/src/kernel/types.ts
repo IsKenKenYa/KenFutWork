@@ -19,6 +19,8 @@ import type { PaymentService } from "../features/payments/payment-service.js";
 import type { ProjectService } from "../features/projects/project-service.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import type { UploadService } from "../features/uploads/upload-service.js";
+import type { RunUsageAccumulator } from "../features/usage/run-usage-accumulator.js";
+import type { UsageService } from "../features/usage/usage-service.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import type { CanvasEventBuffer } from "../ws/event-buffer.js";
@@ -57,6 +59,10 @@ export interface ServiceMap {
   modelProviders: ModelProviderService;
   /** 模型目录（从用户供应商实例推导） */
   modelCatalog: ModelCatalogService;
+  /** 用量计量服务（DEC-6） */
+  usage: UsageService;
+  /** agent 链路 run 用量累积器（turn-stopping 结算） */
+  runUsage: RunUsageAccumulator;
   /** 能力贡献者注册表（非工具能力：子代理 provider、执行模式等） */
   capabilities: CapabilityRegistry;
   /** 统一工具注册表（schema + 作用域 + guarded 执行） */

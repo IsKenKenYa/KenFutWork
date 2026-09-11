@@ -82,6 +82,27 @@ registerExecutor(
         : await generateVideo(providerName, generateParams);
       lap(`${providerName}_call_done`);
 
+      // 用量落账（DEC-6 直连生成链路）：视频 provider 不报 token，记 0 留痕不留盲区
+      if (workspaceId) {
+        ctx.usageService
+          ?.record({
+            workspaceId,
+            provider: instanceProvider ? "instance" : providerName,
+            model,
+            capability: "video",
+            ...((payload as { provider_instance_id?: string })
+              .provider_instance_id
+              ? {
+                  providerInstanceId: (
+                    payload as { provider_instance_id?: string }
+                  ).provider_instance_id,
+                }
+              : {}),
+            jobId,
+          })
+          .catch(() => {});
+      }
+
       // Vertex AI returns inline base64 data URIs; Developer API returns HTTP URLs.
       let buffer: Buffer;
       if (generated.url.startsWith("data:")) {
