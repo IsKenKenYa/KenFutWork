@@ -7,6 +7,7 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "biome check .",
+    "test:docs": "node scripts/check-docs.mjs",
     "test:workspace": "node --test tests/workspace.test.mjs",
     "test:packages": "turbo run test",
     "test": "pnpm run test:workspace && pnpm run test:packages",
