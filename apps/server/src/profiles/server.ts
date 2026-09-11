@@ -1,0 +1,101 @@
+import type { BaseLanguageModel } from "@langchain/core/language_models/base";
+import type { LoomicAgentFactory } from "../agent/deep-agent.js";
+import { createAgentModesPlugin } from "../features/agent-modes/plugin.js";
+import { createAgentRunsPlugin } from "../features/agent-runs/plugin.js";
+import { createViewerPlugin } from "../features/bootstrap/plugin.js";
+
+import { brandKitPlugin } from "../features/brand-kit/plugin.js";
+import { createCanvasPlugin } from "../features/canvas/plugin.js";
+import { createChatPlugin } from "../features/chat/plugin.js";
+import { createCodeToolsPlugin } from "../features/code-tools/plugin.js";
+import { createCreditsPlugin } from "../features/credits/plugin.js";
+import type { JobService } from "../features/jobs/job-service.js";
+import { createJobsPlugin } from "../features/jobs/plugin.js";
+import { createMcpPlugin } from "../features/mcp/plugin.js";
+import { createModelProvidersPlugin } from "../features/model-providers/plugin.js";
+import type { PaymentService } from "../features/payments/payment-service.js";
+import { createPaymentsPlugin } from "../features/payments/plugin.js";
+import { createPermissionsPlugin } from "../features/permissions/plugin.js";
+import { createProjectsPlugin } from "../features/projects/plugin.js";
+import { createSettingsPlugin } from "../features/settings/plugin.js";
+import { createSkillsPlugin } from "../features/skills/plugin.js";
+import { createUploadsPlugin } from "../features/uploads/plugin.js";
+import { createUsagePlugin } from "../features/usage/plugin.js";
+import type { KernelEvents, PluginDefinition } from "../kernel/types.js";
+import type { AdminSupabaseClient } from "../supabase/admin.js";
+import type { UserSupabaseClient } from "../supabase/user.js";
+import type { ConnectionManager } from "../ws/connection-manager.js";
+
+/**
+ * server profile（§4.9）：HTTP 进程的插件清单——唯一属主。
+ * 新增 feature 插件只改这里一行（P8 起 app.ts 不再维护清单）。
+ */
+
+export interface ServerProfileDeps {
+  auth: RequestAuthenticatorLike;
+  createUserClient: (accessToken: string) => UserSupabaseClient;
+  getAdminClient: () => AdminSupabaseClient;
+  connectionManager: ConnectionManager;
+  events: KernelEvents;
+  credentialEnv: { credentialSecret?: string };
+  agentFactory?: LoomicAgentFactory;
+  agentModel?: BaseLanguageModel | string;
+  mockEventDelayMs?: number;
+  /** overrides 直填的条件装配插件需感知注入实例（enabled 判定，保持历史行为）。 */
+  overrideJobs?: JobService;
+  overridePayments?: PaymentService;
+}
+
+type RequestAuthenticatorLike = Parameters<
+  typeof createPermissionsPlugin
+>[0]["auth"];
+
+export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
+  return [
+    brandKitPlugin,
+    createCreditsPlugin({ getAdminClient: deps.getAdminClient }),
+    createViewerPlugin({ getAdminClient: deps.getAdminClient }),
+    createCanvasPlugin({ createUserClient: deps.createUserClient }),
+    createChatPlugin({ createUserClient: deps.createUserClient }),
+    createSettingsPlugin({ createUserClient: deps.createUserClient }),
+    createUploadsPlugin({ createUserClient: deps.createUserClient }),
+    createProjectsPlugin({ createUserClient: deps.createUserClient }),
+    createJobsPlugin({
+      createUserClient: deps.createUserClient,
+      getAdminClient: deps.getAdminClient,
+      ...(deps.overrideJobs ? { injected: deps.overrideJobs } : {}),
+    }),
+    createPaymentsPlugin({
+      getAdminClient: deps.getAdminClient,
+      ...(deps.overridePayments ? { injected: deps.overridePayments } : {}),
+    }),
+    createSkillsPlugin({ createUserClient: deps.createUserClient }),
+    createUsagePlugin({
+      createUserClient: deps.createUserClient,
+      getAdminClient: deps.getAdminClient,
+    }),
+    createPermissionsPlugin({
+      auth: deps.auth,
+      events: deps.events,
+    }),
+    createAgentModesPlugin(),
+    createCodeToolsPlugin(),
+    createMcpPlugin(),
+    createModelProvidersPlugin({
+      createUserClient: deps.createUserClient,
+      getAdminClient: deps.getAdminClient,
+      credentialEnv: deps.credentialEnv,
+    }),
+    createAgentRunsPlugin({
+      createUserClient: deps.createUserClient,
+      getAdminClient: deps.getAdminClient,
+      connectionManager: deps.connectionManager,
+      events: deps.events,
+      ...(deps.agentFactory ? { agentFactory: deps.agentFactory } : {}),
+      ...(deps.agentModel ? { agentModel: deps.agentModel } : {}),
+      ...(deps.mockEventDelayMs === undefined
+        ? {}
+        : { mockEventDelayMs: deps.mockEventDelayMs }),
+    }),
+  ];
+}

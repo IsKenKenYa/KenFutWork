@@ -12,17 +12,6 @@ if (process.env.GLOBAL_AGENT_HTTP_PROXY) {
 
 import { randomUUID } from "node:crypto";
 import { loadServerEnv } from "./config/env.js";
-import {
-  type CreditService,
-  createCreditService,
-} from "./features/credits/credit-service.js";
-import {
-  type ExecutorContext,
-  getExecutor,
-} from "./features/jobs/job-executor.js";
-import { createJobService } from "./features/jobs/job-service.js";
-import { createModelProviderService } from "./features/model-providers/model-provider-service.js";
-import { createUsageService } from "./features/usage/usage-service.js";
 import { createPgmqClient, type PgmqMessage } from "./queue/pgmq-client.js";
 import { createAdminSupabaseClient } from "./supabase/admin.js";
 import { createUserSupabaseClientFactory } from "./supabase/user.js";
@@ -32,9 +21,13 @@ import "./features/jobs/executors/image-generation.js";
 import "./features/jobs/executors/video-generation.js";
 
 import type { BackgroundJobType } from "@loomic/shared";
-
+import type { CreditService } from "./features/credits/credit-service.js";
+import type { ExecutorContext } from "./features/jobs/job-executor.js";
+import { getExecutor } from "./features/jobs/job-executor.js";
 // Register all image/video providers via shared helper (keeps parity with app.ts)
 import { registerAllProviders } from "./generation/providers/register-all.js";
+import { composePlugins } from "./kernel/compose.js";
+import { workerProfile } from "./profiles/worker.js";
 
 // 代码执行由 LocalShellBackend 的内置 execute 工具直接处理，不走 PGMQ。
 const QUEUES = ["image_generation_jobs", "video_generation_jobs"] as const;
@@ -69,23 +62,15 @@ async function main() {
     return adminClient;
   };
 
-  const jobService = createJobService({
-    createUserClient,
-    getAdminClient,
-    pgmq,
-  });
-  const creditService = createCreditService({ getAdminClient });
-  // BYOK：任务携带 provider_instance_id 时，executor 经此解析用户实例凭证
-  const modelProviders = createModelProviderService({
-    createUserClient,
-    getAdminClient,
-    credentialEnv: env,
-  });
-  // 用量落账（DEC-6）：直连生成链路的采集点
-  const usageService = createUsageService({
-    createUserClient,
-    getAdminClient,
-  });
+  // P7：worker 走内核装配（profiles/worker.ts 唯一插件清单）
+  const kernel = composePlugins(
+    env,
+    workerProfile({ createUserClient, getAdminClient, credentialEnv: env }),
+  );
+  const jobService = kernel.get("jobs");
+  const creditService = kernel.get("credits");
+  const modelProviders = kernel.get("modelProviders");
+  const usageService = kernel.get("usage");
 
   // Base context — per-message fields (queue, msgId, renewVt) are added in processMessage
   const baseCtx = {

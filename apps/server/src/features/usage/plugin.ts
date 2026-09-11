@@ -18,10 +18,13 @@ import { createUsageService } from "./usage-service.js";
 export function createUsagePlugin(deps: {
   createUserClient: (accessToken: string) => UserSupabaseClient;
   getAdminClient: () => AdminSupabaseClient;
+  /** HTTP 进程挂路由（需 auth）；worker 传 false。 */
+  withRoutes?: boolean;
 }): PluginDefinition {
+  const withRoutes = deps.withRoutes ?? true;
   return {
     name: "usage",
-    inject: ["auth"],
+    inject: withRoutes ? ["auth"] : [],
     apply(ctx) {
       const usageService = createUsageService({
         createUserClient: deps.createUserClient,
@@ -57,6 +60,9 @@ export function createUsagePlugin(deps: {
       });
     },
     mounted(ctx) {
+      if (!withRoutes) {
+        return;
+      }
       void registerUsageRoutes(ctx.app, {
         auth: ctx.get("auth"),
         usage: ctx.get("usage"),

@@ -1,3 +1,4 @@
+import { registerExecutionModeRoutes } from "../../http/execution-modes.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import {
   BUILTIN_EXECUTION_MODES,
@@ -13,12 +14,11 @@ import {
 export function createAgentModesPlugin(): PluginDefinition {
   return {
     name: "agent-modes",
-    inject: [],
+    inject: ["auth"],
     apply(ctx) {
       const service = createExecutionModeService();
       ctx.register("agentModes", () => service);
 
-      // 模式 → capabilities（非工具能力贡献者）
       for (const mode of BUILTIN_EXECUTION_MODES) {
         ctx.get("capabilities").register("execution-mode", {
           id: mode.id,
@@ -38,6 +38,12 @@ export function createAgentModesPlugin(): PluginDefinition {
           return next(payload);
         }
         return next({ ...payload, input: `${directive}\n\n${payload.input}` });
+      });
+    },
+    mounted(ctx) {
+      void registerExecutionModeRoutes(ctx.app, {
+        auth: ctx.get("auth"),
+        agentModes: ctx.get("agentModes"),
       });
     },
   };

@@ -11,10 +11,13 @@ import { createTierGuard } from "./tier-guard.js";
  */
 export function createCreditsPlugin(deps: {
   getAdminClient: () => AdminSupabaseClient;
+  /** HTTP 进程挂路由（需 auth/viewer）；worker 进程只取服务，传 false。 */
+  withRoutes?: boolean;
 }): PluginDefinition {
+  const withRoutes = deps.withRoutes ?? true;
   return {
     name: "credits",
-    inject: ["auth", "viewer"],
+    inject: withRoutes ? ["auth", "viewer"] : [],
     apply(ctx) {
       ctx.register("credits", () =>
         createCreditService({ getAdminClient: deps.getAdminClient }),
@@ -24,6 +27,9 @@ export function createCreditsPlugin(deps: {
       );
     },
     mounted(ctx) {
+      if (!withRoutes) {
+        return;
+      }
       void registerCreditRoutes(ctx.app, {
         auth: ctx.get("auth"),
         creditService: ctx.get("credits"),

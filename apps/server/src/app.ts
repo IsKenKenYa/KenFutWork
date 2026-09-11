@@ -9,24 +9,7 @@ import {
   resolveDefaultAgentModel,
   type ServerEnv,
 } from "./config/env.js";
-import { createAgentModesPlugin } from "./features/agent-modes/plugin.js";
-import { createAgentRunsPlugin } from "./features/agent-runs/plugin.js";
-import { createViewerPlugin } from "./features/bootstrap/plugin.js";
-import { brandKitPlugin } from "./features/brand-kit/plugin.js";
-import { createCanvasPlugin } from "./features/canvas/plugin.js";
-import { createChatPlugin } from "./features/chat/plugin.js";
-import { createCodeToolsPlugin } from "./features/code-tools/plugin.js";
-import { createCreditsPlugin } from "./features/credits/plugin.js";
-import { createJobsPlugin } from "./features/jobs/plugin.js";
-import { createMcpPlugin } from "./features/mcp/plugin.js";
-import { createModelProvidersPlugin } from "./features/model-providers/plugin.js";
-import { createPaymentsPlugin } from "./features/payments/plugin.js";
-import { createPermissionsPlugin } from "./features/permissions/plugin.js";
-import { createProjectsPlugin } from "./features/projects/plugin.js";
-import { createSettingsPlugin } from "./features/settings/plugin.js";
-import { createSkillsPlugin } from "./features/skills/plugin.js";
-import { createUploadsPlugin } from "./features/uploads/plugin.js";
-import { createUsagePlugin } from "./features/usage/plugin.js";
+
 import { registerAllProviders } from "./generation/providers/register-all.js";
 import { registerFontsRoutes } from "./http/fonts.js";
 import { registerGenerateRoutes } from "./http/generate.js";
@@ -38,6 +21,7 @@ import { registerVideoModelRoutes } from "./http/video-models.js";
 import { composePlugins } from "./kernel/compose.js";
 import { AgentRunEventBus, createKernelEvents } from "./kernel/context.js";
 import type { KernelHandle, ServiceMap } from "./kernel/types.js";
+import { serverProfile } from "./profiles/server.js";
 import { createAdminSupabaseClient } from "./supabase/admin.js";
 import {
   createSupabaseRequestAuthenticator,
@@ -99,59 +83,28 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     options.connectionManager ?? new ConnectionManager();
   // 事件总线独立创建：agent-runs 插件在装配期就需要派发器（turn-stopping）
   const eventBus = new AgentRunEventBus();
-  // 插件化改造（P2 起）：全部 feature 走内核装配；app.ts 只保留 CORS/静态路由/ws 装配。
+  // 插件化改造（P7）：插件清单由 profiles/server.ts 唯一属主，app.ts 只选 profile 装配。
   const kernel: KernelHandle = composePlugins(
     env,
-    [
-      brandKitPlugin,
-      createCreditsPlugin({ getAdminClient }),
-      createViewerPlugin({ getAdminClient }),
-      createCanvasPlugin({ createUserClient }),
-      createChatPlugin({ createUserClient }),
-      createSettingsPlugin({ createUserClient }),
-      createUploadsPlugin({ createUserClient }),
-      createProjectsPlugin({ createUserClient }),
-      createJobsPlugin({
-        createUserClient,
-        getAdminClient,
-        ...(options.overrides?.jobs
-          ? { injected: options.overrides.jobs }
-          : {}),
-      }),
-      createPaymentsPlugin({
-        getAdminClient,
-        ...(options.overrides?.payments
-          ? { injected: options.overrides.payments }
-          : {}),
-      }),
-      createSkillsPlugin({ createUserClient }),
-      createUsagePlugin({ createUserClient, getAdminClient }),
-      createPermissionsPlugin({
-        auth,
-        events: createKernelEvents(eventBus),
-        app,
-      }),
-      createAgentModesPlugin(),
-      createCodeToolsPlugin(),
-      createMcpPlugin(),
-      createModelProvidersPlugin({
-        createUserClient,
-        getAdminClient,
-        credentialEnv: env,
-      }),
-      createAgentRunsPlugin({
-        createUserClient,
-        getAdminClient,
-        connectionManager,
-        events: createKernelEvents(eventBus),
-        emitPreStep: (payload) => eventBus.emitWaterfall("pre-step", payload),
-        ...(options.agentFactory ? { agentFactory: options.agentFactory } : {}),
-        ...(options.agentModel ? { agentModel: options.agentModel } : {}),
-        ...(options.mockEventDelayMs === undefined
-          ? {}
-          : { mockEventDelayMs: options.mockEventDelayMs }),
-      }),
-    ],
+    serverProfile({
+      auth,
+      createUserClient,
+      getAdminClient,
+      connectionManager,
+      events: createKernelEvents(eventBus),
+      credentialEnv: env,
+      ...(options.agentFactory ? { agentFactory: options.agentFactory } : {}),
+      ...(options.agentModel ? { agentModel: options.agentModel } : {}),
+      ...(options.mockEventDelayMs === undefined
+        ? {}
+        : { mockEventDelayMs: options.mockEventDelayMs }),
+      ...(options.overrides?.jobs
+        ? { overrideJobs: options.overrides.jobs }
+        : {}),
+      ...(options.overrides?.payments
+        ? { overridePayments: options.overrides.payments }
+        : {}),
+    }),
     {
       app,
       events: eventBus,

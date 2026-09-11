@@ -16,12 +16,15 @@ export function createJobsPlugin(deps: {
   createUserClient: (accessToken: string) => UserSupabaseClient;
   getAdminClient: () => AdminSupabaseClient;
   injected?: JobService | undefined;
+  /** HTTP 进程挂路由（需 auth/credits/tierGuard/viewer）；worker 传 false。 */
+  withRoutes?: boolean;
 }): PluginDefinition {
   const isEnabled = (hasDatabaseUrl: boolean): boolean =>
     Boolean(deps.injected || hasDatabaseUrl);
+  const withRoutes = deps.withRoutes ?? true;
   return {
     name: "jobs",
-    inject: ["auth", "credits", "tierGuard", "viewer"],
+    inject: withRoutes ? ["auth", "credits", "tierGuard", "viewer"] : [],
     enabled: (env) => isEnabled(Boolean(env.supabaseDbUrl)),
     apply(ctx) {
       ctx.register("jobs", () => {
@@ -35,6 +38,9 @@ export function createJobsPlugin(deps: {
       });
     },
     mounted(ctx) {
+      if (!withRoutes) {
+        return;
+      }
       const jobService = ctx.get("jobs");
       void registerJobRoutes(ctx.app, {
         auth: ctx.get("auth"),

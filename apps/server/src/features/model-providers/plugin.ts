@@ -17,10 +17,13 @@ export function createModelProvidersPlugin(deps: {
   createUserClient: (accessToken: string) => UserSupabaseClient;
   getAdminClient: () => AdminSupabaseClient;
   credentialEnv: { credentialSecret?: string };
+  /** HTTP 进程挂路由（需 auth）；worker 传 false。 */
+  withRoutes?: boolean;
 }): PluginDefinition {
+  const withRoutes = deps.withRoutes ?? true;
   return {
     name: "model-providers",
-    inject: ["auth"],
+    inject: withRoutes ? ["auth"] : [],
     apply(ctx) {
       ctx.register("modelProviders", () =>
         createModelProviderService({
@@ -36,6 +39,9 @@ export function createModelProvidersPlugin(deps: {
       );
     },
     mounted(ctx) {
+      if (!withRoutes) {
+        return;
+      }
       void registerProviderInstanceRoutes(ctx.app, {
         auth: ctx.get("auth"),
         modelProviders: ctx.get("modelProviders"),

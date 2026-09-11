@@ -28,11 +28,9 @@ export async function registerPermissionRoutes(
         }),
       );
     }
-    return reply
-      .code(200)
-      .send({
-        tier: permissionTierSchema.parse(options.permissions.getTier()),
-      });
+    return reply.code(200).send({
+      tier: permissionTierSchema.parse(options.permissions.getTier()),
+    });
   });
 
   // PUT /api/permissions/tier — 设置档位（full-access 属明示开启）
