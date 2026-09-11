@@ -25,6 +25,7 @@ export function createModelProvidersPlugin(deps: {
       ctx.register("modelProviders", () =>
         createModelProviderService({
           createUserClient: deps.createUserClient,
+          getAdminClient: deps.getAdminClient,
           credentialEnv: deps.credentialEnv,
         }),
       );

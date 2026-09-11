@@ -33,6 +33,9 @@ import {
   TierGuardError,
 } from "../features/credits/tier-guard.js";
 import type { JobService } from "../features/jobs/job-service.js";
+import { parseInstanceSpecifier } from "../features/model-providers/model-catalog-service.js";
+import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
+import { resolveInstanceChatModel } from "../providers/resolve.js";
 import type {
   AuthenticatedUser,
   UserSupabaseClient,
@@ -274,6 +277,8 @@ type CreateAgentRuntimeOptions = {
   eventDelayMs?: number;
   jobService?: JobService;
   model?: BaseLanguageModel | string;
+  /** BYOK：实例 specifier（<instanceId>:<model>）经此解析为协议适配器模型。 */
+  modelProviders?: ModelProviderService;
   now?: () => string;
   runIdFactory?: () => string;
   tierGuard?: TierGuard;
@@ -991,11 +996,44 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       try {
         let agent: LoomicAgent;
         try {
-          const resolvedModel = run.modelOverride
-            ? run.modelOverride.includes(":")
-              ? run.modelOverride
-              : createDefaultModelSpecifier({ agentModel: run.modelOverride })
-            : options.model;
+          let resolvedModel: BaseLanguageModel | string | undefined =
+            run.modelOverride
+              ? run.modelOverride.includes(":")
+                ? run.modelOverride
+                : createDefaultModelSpecifier({ agentModel: run.modelOverride })
+              : options.model;
+
+          // BYOK：run 的 model 携带实例 specifier 时，按用户供应商实例实例化聊天模型
+          if (
+            typeof resolvedModel === "string" &&
+            run.accessToken &&
+            run.userId &&
+            options.modelProviders
+          ) {
+            const instanceSpec = parseInstanceSpecifier(resolvedModel);
+            if (instanceSpec) {
+              const credentials =
+                await options.modelProviders.resolveCredentials(
+                  {
+                    accessToken: run.accessToken,
+                    email: "",
+                    id: run.userId,
+                    userMetadata: {},
+                  },
+                  instanceSpec.instanceId,
+                );
+              resolvedModel = resolveInstanceChatModel(
+                credentials.protocol,
+                instanceSpec.model,
+                {
+                  apiKey: credentials.apiKey,
+                  ...(credentials.baseUrl
+                    ? { baseUrl: credentials.baseUrl }
+                    : {}),
+                },
+              );
+            }
+          }
 
           // Build persistImage closure using the user's Supabase client.
           // Client creation is deferred into the closure so it only runs

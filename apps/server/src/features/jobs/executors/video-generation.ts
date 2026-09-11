@@ -1,6 +1,7 @@
 import { resolveVideoProviderName } from "../../../generation/providers/registry.js";
 import { generateVideo } from "../../../generation/video-generation.js";
 import { type ExecutorContext, registerExecutor } from "../job-executor.js";
+import { resolveInstanceVideoProviderFromPayload } from "./instance-provider.js";
 
 registerExecutor(
   "video_generation",
@@ -42,7 +43,14 @@ registerExecutor(
     const workspaceId: string = jobRow.workspace_id ?? jobId;
 
     const model = payload.model ?? "wan-video/wan-2.6";
-    const providerName = resolveVideoProviderName(model);
+    // BYOK：任务携带 provider_instance_id 时按用户供应商实例实例化协议适配器（P4）
+    const instanceProvider = await resolveInstanceVideoProviderFromPayload(
+      (payload as { provider_instance_id?: string }).provider_instance_id,
+      ctx,
+    );
+    const providerName = instanceProvider
+      ? instanceProvider.name
+      : resolveVideoProviderName(model);
 
     // Renew VT every 120s (roughly half of the 300s video queue VT) to prevent
     // the message from becoming visible during long video generation.
@@ -52,8 +60,8 @@ registerExecutor(
     }, 120_000);
 
     try {
-      lap("replicate_call_start");
-      const generated = await generateVideo(providerName, {
+      lap(`${providerName}_call_start`);
+      const generateParams = {
         prompt: payload.prompt,
         model,
         ...(payload.duration != null ? { duration: payload.duration } : {}),
@@ -68,8 +76,11 @@ registerExecutor(
         ...(payload.enable_audio != null
           ? { enableAudio: payload.enable_audio }
           : {}),
-      });
-      lap("replicate_call_done");
+      };
+      const generated = instanceProvider
+        ? await instanceProvider.generate(generateParams)
+        : await generateVideo(providerName, generateParams);
+      lap(`${providerName}_call_done`);
 
       // Vertex AI returns inline base64 data URIs; Developer API returns HTTP URLs.
       let buffer: Buffer;

@@ -6,6 +6,7 @@ import { resolveImageProviderName } from "../../../generation/providers/registry
 import type { GeneratedImage } from "../../../generation/types.js";
 import { applyWatermark } from "../../credits/watermark.js";
 import { type ExecutorContext, registerExecutor } from "../job-executor.js";
+import { resolveInstanceImageProviderFromPayload } from "./instance-provider.js";
 
 registerExecutor(
   "image_generation",
@@ -35,6 +36,7 @@ registerExecutor(
     const payload = (jobRow.payload ?? {}) as {
       prompt: string;
       model?: string;
+      provider_instance_id?: string;
       aspect_ratio?: string;
       title?: string;
       input_images?: string[];
@@ -48,7 +50,14 @@ registerExecutor(
 
     // Resolve provider dynamically from model ID via registry
     const model = payload.model ?? "black-forest-labs/flux-kontext-pro";
-    const providerName = resolveImageProviderName(model);
+    // BYOK：任务携带 provider_instance_id 时按用户实例实例化协议适配器（P4）
+    const instanceProvider = await resolveInstanceImageProviderFromPayload(
+      payload.provider_instance_id,
+      ctx,
+    );
+    const providerName = instanceProvider
+      ? instanceProvider.name
+      : resolveImageProviderName(model);
 
     // Renew VT every 60s (half of the 120s image queue VT) to prevent
     // the message from becoming visible while we are still processing.
@@ -72,16 +81,30 @@ registerExecutor(
       lap(`${providerName}_call_start`);
       let generated: GeneratedImage;
       try {
-        generated = await generateImage(providerName, {
-          prompt: payload.prompt,
-          model,
-          ...(payload.aspect_ratio !== undefined
-            ? { aspectRatio: payload.aspect_ratio }
-            : {}),
-          ...(payload.input_images?.length
-            ? { inputImages: payload.input_images }
-            : {}),
-        });
+        if (instanceProvider) {
+          lap("instance_provider_call");
+          generated = await instanceProvider.generate({
+            prompt: payload.prompt,
+            model,
+            ...(payload.aspect_ratio !== undefined
+              ? { aspectRatio: payload.aspect_ratio }
+              : {}),
+            ...(payload.input_images?.length
+              ? { inputImages: payload.input_images }
+              : {}),
+          });
+        } else {
+          generated = await generateImage(providerName, {
+            prompt: payload.prompt,
+            model,
+            ...(payload.aspect_ratio !== undefined
+              ? { aspectRatio: payload.aspect_ratio }
+              : {}),
+            ...(payload.input_images?.length
+              ? { inputImages: payload.input_images }
+              : {}),
+          });
+        }
       } catch (genError) {
         const detail =
           genError instanceof Error ? genError.message : String(genError);

@@ -198,6 +198,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     creditService,
     uploadService,
     viewerService,
+    ...(kernel.tryGet("modelProviders")
+      ? { modelProviders: kernel.get("modelProviders") }
+      : {}),
     ...(jobService ? { jobService } : {}),
     ...(tierGuard ? { tierGuard } : {}),
   });

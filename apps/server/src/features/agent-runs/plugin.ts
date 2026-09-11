@@ -46,6 +46,7 @@ export function createAgentRunsPlugin(
             : { eventDelayMs: deps.mockEventDelayMs }),
           env: ctx.env,
           ...(jobService ? { jobService } : {}),
+          modelProviders: ctx.get("modelProviders"),
           creditService: d.get("credits"),
           tierGuard: d.get("tierGuard"),
           viewerService: d.get("viewer"),

@@ -21,6 +21,7 @@ import {
   getExecutor,
 } from "./features/jobs/job-executor.js";
 import { createJobService } from "./features/jobs/job-service.js";
+import { createModelProviderService } from "./features/model-providers/model-provider-service.js";
 import { createPgmqClient, type PgmqMessage } from "./queue/pgmq-client.js";
 import { createAdminSupabaseClient } from "./supabase/admin.js";
 import { createUserSupabaseClientFactory } from "./supabase/user.js";
@@ -73,6 +74,12 @@ async function main() {
     pgmq,
   });
   const creditService = createCreditService({ getAdminClient });
+  // BYOK：任务携带 provider_instance_id 时，executor 经此解析用户实例凭证
+  const modelProviders = createModelProviderService({
+    createUserClient,
+    getAdminClient,
+    credentialEnv: env,
+  });
 
   // Base context — per-message fields (queue, msgId, renewVt) are added in processMessage
   const baseCtx = {
@@ -80,6 +87,7 @@ async function main() {
     pgmq,
     getAdminClient,
     env,
+    modelProviders,
   };
 
   const CONCURRENCY_BY_QUEUE: Record<string, number> = {

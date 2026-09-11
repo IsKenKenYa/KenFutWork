@@ -6,6 +6,7 @@ import type {
   ProviderProtocol,
 } from "@loomic/shared";
 
+import type { AdminSupabaseClient } from "../../supabase/admin.js";
 import type {
   AuthenticatedUser,
   UserSupabaseClient,
@@ -67,7 +68,7 @@ interface ProviderInstanceRow {
 
 /** provider_instances 未纳入 supabase 生成类型，走宽松访问（同 skills 路由）。 */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const untypedFrom = (client: UserSupabaseClient, table: string): any =>
+const untypedFrom = (client: unknown, table: string): any =>
   (client as any).from(table);
 
 function toResponse(row: ProviderInstanceRow): ProviderInstanceResponse {
@@ -104,13 +105,22 @@ export interface ModelProviderService {
     user: AuthenticatedUser,
     instanceId: string,
   ): Promise<ResolvedInstanceCredentials>;
+  /**
+   * worker 路径：按实例 id 直接解析（服务角色，绕 RLS）。
+   * 任务 executor 无用户 access token，只能走 admin 客户端。
+   */
+  resolveCredentialsById(
+    instanceId: string,
+  ): Promise<ResolvedInstanceCredentials>;
 }
 
 export function createModelProviderService(options: {
   createUserClient: (accessToken: string) => UserSupabaseClient;
+  getAdminClient?: () => AdminSupabaseClient;
   credentialEnv: { credentialSecret?: string };
 }): ModelProviderService {
   const { createUserClient, credentialEnv } = options;
+  const getAdminClient = options.getAdminClient;
 
   function requireCredentialSecret(): string {
     if (!credentialEnv.credentialSecret) {
@@ -323,6 +333,49 @@ export function createModelProviderService(options: {
           "Unable to decrypt provider credentials (fail loud).",
         );
       }
+    },
+
+    async resolveCredentialsById(instanceId) {
+      if (!getAdminClient) {
+        throw new ModelProviderServiceError(
+          "credential_unavailable",
+          "resolveCredentialsById 需要注入 getAdminClient（fail loud）。",
+        );
+      }
+      const admin = getAdminClient();
+      const { data, error } = await untypedFrom(admin, "provider_instances")
+        .select("*")
+        .eq("id", instanceId)
+        .maybeSingle();
+      if (error || !data) {
+        throw new ModelProviderServiceError(
+          "instance_not_found",
+          "Provider instance not found.",
+          404,
+        );
+      }
+      const row = data as ProviderInstanceRow;
+      if (!row.enabled) {
+        throw new ModelProviderServiceError(
+          "credential_unavailable",
+          `Provider instance ${row.name} is disabled.`,
+          409,
+        );
+      }
+      const apiKey = decryptSecret(credentialEnv, row.encrypted_api_key);
+      return {
+        instanceId: row.id,
+        name: row.name,
+        protocol: row.protocol as ProviderProtocol,
+        ...(row.base_url ? { baseUrl: row.base_url } : {}),
+        apiKey,
+        ...(row.compat ? { compat: row.compat } : {}),
+        models: (row.models ?? []).map((m) => ({
+          id: m.id,
+          name: m.name,
+          capability: m.capability as ModelCapability,
+        })),
+      };
     },
   };
 }

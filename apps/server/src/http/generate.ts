@@ -15,9 +15,11 @@ import type { TierGuard } from "../features/credits/tier-guard.js";
 import { TierGuardError } from "../features/credits/tier-guard.js";
 import type { JobService } from "../features/jobs/job-service.js";
 import { JobServiceError } from "../features/jobs/job-service.js";
+import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type { UploadService } from "../features/uploads/upload-service.js";
 import { generateImage } from "../generation/image-generation.js";
 import { resolveImageProviderName } from "../generation/providers/registry.js";
+import { resolveInstanceImageProvider } from "../providers/resolve.js";
 import type {
   AuthenticatedUser,
   RequestAuthenticator,
@@ -26,6 +28,8 @@ import type {
 const generateImageRequestSchema = z.object({
   prompt: z.string().min(1),
   model: z.string().optional(),
+  /** BYOK：用户供应商实例 id；携带时按实例实例化协议适配器（P4）。 */
+  providerInstanceId: z.string().uuid().optional(),
   aspectRatio: z.enum(["1:1", "16:9", "9:16", "4:3", "3:4"]).optional(),
   quality: z.enum(["standard", "hd", "ultra"]).optional(),
 });
@@ -33,6 +37,8 @@ const generateImageRequestSchema = z.object({
 const generateVideoRequestSchema = z.object({
   prompt: z.string().min(1),
   model: z.string().optional(),
+  /** BYOK：用户供应商实例 id；携带时任务载荷透传，worker 按实例实例化适配器。 */
+  providerInstanceId: z.string().uuid().optional(),
   duration: z.number().int().min(3).max(16).optional(),
   resolution: z.enum(["720p", "1080p", "4k"]).optional(),
   aspectRatio: z.enum(["16:9", "9:16"]).optional(),
@@ -45,6 +51,8 @@ export async function registerGenerateRoutes(
     auth: RequestAuthenticator;
     creditService?: CreditService;
     jobService?: JobService;
+    /** BYOK 实例凭证解析（直连生成按实例实例化适配器）。 */
+    modelProviders?: ModelProviderService;
     tierGuard?: TierGuard;
     uploadService: UploadService;
     viewerService: ViewerService;
@@ -111,13 +119,35 @@ export async function registerGenerateRoutes(
         }
       }
 
-      const providerName = resolveImageProviderName(model);
-      const result = await generateImage(providerName, {
-        prompt: payload.prompt,
-        model,
-        aspectRatio: payload.aspectRatio ?? "1:1",
-        ...(payload.quality ? { quality: payload.quality } : {}),
-      });
+      let result;
+      if (payload.providerInstanceId && options.modelProviders) {
+        const credentials = await options.modelProviders.resolveCredentialsById(
+          payload.providerInstanceId,
+        );
+        const provider = resolveInstanceImageProvider(credentials.protocol, {
+          credentials: {
+            apiKey: credentials.apiKey,
+            ...(credentials.baseUrl ? { baseUrl: credentials.baseUrl } : {}),
+          },
+          models: credentials.models
+            .filter((m) => m.capability === "image")
+            .map((m) => ({ id: m.id, name: m.name })),
+        });
+        result = await provider.generate({
+          prompt: payload.prompt,
+          model,
+          aspectRatio: payload.aspectRatio ?? "1:1",
+          ...(payload.quality ? { quality: payload.quality } : {}),
+        });
+      } else {
+        const providerName = resolveImageProviderName(model);
+        result = await generateImage(providerName, {
+          prompt: payload.prompt,
+          model,
+          aspectRatio: payload.aspectRatio ?? "1:1",
+          ...(payload.quality ? { quality: payload.quality } : {}),
+        });
+      }
 
       // Download and persist to Supabase Storage
       const { signedUrl, assetId } = await downloadAndUpload(
@@ -255,6 +285,9 @@ export async function registerGenerateRoutes(
         payload: {
           prompt: payload.prompt,
           model,
+          ...(payload.providerInstanceId
+            ? { provider_instance_id: payload.providerInstanceId }
+            : {}),
           ...(payload.duration != null ? { duration: payload.duration } : {}),
           ...(payload.resolution ? { resolution: payload.resolution } : {}),
           ...(payload.aspectRatio ? { aspect_ratio: payload.aspectRatio } : {}),
