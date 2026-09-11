@@ -9,7 +9,7 @@
 - `packages/ui`、`packages/config` — 内部共享组件与 TS 配置。
 - `supabase/migrations/` — 唯一数据库 Schema 迁移源（原生 SQL）。
 - `references/` — 外部参考项目（deepseek-harness、langgraph、jaaz 等），**只作方向参考**，禁止直接复制代码/schema/字段名；不要批量删除或忽略该目录。
-- `docs/` — 技术文档与架构决策；入口与治理规则见 `docs/README.md`（文档地图、单源原则、决策 ID、快照刷新规则）；`docs/tech/改造计划.md` 是服务端架构演进蓝图，`docs/tech/多端产品设计.md` 是多端形态设计；`docs/现状盘点.md` 是代码现状快照。
+- `docs/` — 技术文档与架构决策；入口与治理规则见 `docs/README.md`（文档地图、单源原则、决策 ID、快照刷新规则）；`docs/tech/改造计划.md` 是服务端架构演进蓝图，`docs/tech/多端产品设计.md` 是多端形态设计；`docs/future/02-当前项目实现状态.md` 是代码现状快照。
 
 本地开发需根目录 `.env.local`（模板见 `.env.example`），server 通过 `--env-file=../../.env.local` 读取。
 
