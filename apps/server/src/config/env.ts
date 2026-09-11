@@ -24,12 +24,21 @@ export function resolveDefaultAgentModel(env: {
 
 export type AgentBackendMode = "filesystem" | "state";
 
+export interface McpServerConfig {
+  name: string;
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
 export type ServerEnv = {
   agentBackendMode: AgentBackendMode;
   agentFilesRoot?: string;
   agentModel: string;
   /** SecretStore 主密钥（DEC-7 凭证加密落库）；启用 BYOK 凭证写入时必须配置。 */
   credentialSecret?: string;
+  /** MCP server 配置（P4d）：JSON 数组，v1 支持 stdio 命令型。 */
+  mcpServers?: McpServerConfig[];
   googleApiKey?: string;
   googleApplicationCredentials?: string;
   googleFontsApiKey?: string;
@@ -82,6 +91,8 @@ export function loadServerEnv(
   const credentialSecret =
     overrides.credentialSecret ??
     normalizeOptionalString(source.LOOMIC_CREDENTIAL_SECRET);
+  const mcpServers =
+    overrides.mcpServers ?? parseMcpServers(source.LOOMIC_MCP_SERVERS);
   const openAIApiBase =
     overrides.openAIApiBase ?? normalizeOptionalString(source.OPENAI_API_BASE);
   const openAIApiKey =
@@ -217,6 +228,7 @@ export function loadServerEnv(
       overrides.webOrigin ?? source.LOOMIC_WEB_ORIGIN ?? DEFAULT_WEB_ORIGIN,
     ...(agentFilesRoot ? { agentFilesRoot } : {}),
     ...(credentialSecret ? { credentialSecret } : {}),
+    ...(mcpServers?.length ? { mcpServers } : {}),
     ...(googleApiKey ? { googleApiKey } : {}),
     ...(googleApplicationCredentials ? { googleApplicationCredentials } : {}),
     ...(openAIApiBase ? { openAIApiBase } : {}),
@@ -279,6 +291,32 @@ function parseAgentBackendMode(rawMode: string | undefined): AgentBackendMode {
   }
 
   throw new Error(`Invalid LOOMIC_AGENT_BACKEND_MODE value: ${rawMode}`);
+}
+
+export function parseMcpServers(
+  raw: string | undefined,
+): McpServerConfig[] | undefined {
+  if (!raw?.trim()) {
+    return undefined;
+  }
+  const parsed: unknown = JSON.parse(raw);
+  if (!Array.isArray(parsed)) {
+    throw new Error("Invalid LOOMIC_MCP_SERVERS value: must be a JSON array.");
+  }
+  return parsed.map((entry) => {
+    const config = entry as Partial<McpServerConfig>;
+    if (!config.name || !config.command) {
+      throw new Error(
+        "Invalid LOOMIC_MCP_SERVERS entry: name and command are required.",
+      );
+    }
+    return {
+      name: config.name,
+      command: config.command,
+      ...(config.args ? { args: config.args } : {}),
+      ...(config.env ? { env: config.env } : {}),
+    };
+  });
 }
 
 function parseAgentFilesRoot(rawRoot: string | undefined) {

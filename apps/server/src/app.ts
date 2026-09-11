@@ -16,6 +16,7 @@ import { createCanvasPlugin } from "./features/canvas/plugin.js";
 import { createChatPlugin } from "./features/chat/plugin.js";
 import { createCreditsPlugin } from "./features/credits/plugin.js";
 import { createJobsPlugin } from "./features/jobs/plugin.js";
+import { createMcpPlugin } from "./features/mcp/plugin.js";
 import { createModelProvidersPlugin } from "./features/model-providers/plugin.js";
 import { createPaymentsPlugin } from "./features/payments/plugin.js";
 import { createProjectsPlugin } from "./features/projects/plugin.js";
@@ -122,6 +123,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       }),
       createSkillsPlugin({ createUserClient }),
       createUsagePlugin({ createUserClient, getAdminClient }),
+      createMcpPlugin(),
       createModelProvidersPlugin({
         createUserClient,
         getAdminClient,

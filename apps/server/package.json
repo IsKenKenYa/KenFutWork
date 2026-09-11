@@ -16,6 +16,7 @@
     "@langchain/langgraph-checkpoint-postgres": "^1.0.5",
     "@langchain/openai": "^1.5.10",
     "@loomic/shared": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@supabase/supabase-js": "^2.112.4",
     "deepagents": "^1.13.2",
     "fastify": "^5.12.1",
