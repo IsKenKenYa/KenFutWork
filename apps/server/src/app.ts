@@ -35,10 +35,7 @@ import {
 } from "./features/payments/payment-service.js";
 import { createProjectsPlugin } from "./features/projects/plugin.js";
 import { createSettingsPlugin } from "./features/settings/plugin.js";
-import {
-  createUploadService,
-  type UploadService,
-} from "./features/uploads/upload-service.js";
+import { createUploadsPlugin } from "./features/uploads/plugin.js";
 import { registerAllProviders } from "./generation/providers/register-all.js";
 import { registerFontsRoutes } from "./http/fonts.js";
 import { registerGenerateRoutes } from "./http/generate.js";
@@ -52,7 +49,6 @@ import { registerPaymentWebhookRoute } from "./http/payments-webhook.js";
 import { registerRunRoutes } from "./http/runs.js";
 import { registerSkillRoutes } from "./http/skills.js";
 import { registerMarketplaceRoutes } from "./http/skills-marketplace.js";
-import { registerUploadRoutes } from "./http/uploads.js";
 import { registerVideoModelRoutes } from "./http/video-models.js";
 import { composePlugins } from "./kernel/compose.js";
 import type { KernelHandle, ServiceMap } from "./kernel/types.js";
@@ -77,7 +73,6 @@ export type BuildAppOptions = {
   env?: Partial<ServerEnv>;
   jobService?: JobService;
   paymentService?: PaymentService;
-  uploadService?: UploadService;
   mockEventDelayMs?: number;
   /**
    * 内核服务直填（插件化改造过渡期收编 BuildAppOptions 逐项服务注入，P2 起）。
@@ -129,6 +124,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       createCanvasPlugin({ createUserClient }),
       createChatPlugin({ createUserClient }),
       createSettingsPlugin({ createUserClient }),
+      createUploadsPlugin({ createUserClient }),
       createProjectsPlugin({ createUserClient }),
     ],
     {
@@ -150,8 +146,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const agentPersistenceService =
     options.agentPersistenceService ?? createAgentPersistenceService(env);
   const settingsService = kernel.get("settings");
-  const uploadService =
-    options.uploadService ?? createUploadService({ createUserClient });
+  const uploadService = kernel.get("uploads");
   const pgmq = env.supabaseDbUrl
     ? createPgmqClient(env.supabaseDbUrl)
     : undefined;
@@ -242,11 +237,6 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void registerModelRoutes(app, env);
   void registerImageModelRoutes(app, { auth, creditService, viewerService });
   void registerVideoModelRoutes(app, { auth, creditService, viewerService });
-  void registerUploadRoutes(app, {
-    auth,
-    uploadService,
-    viewerService,
-  });
   void registerGenerateRoutes(app, {
     auth,
     creditService,
