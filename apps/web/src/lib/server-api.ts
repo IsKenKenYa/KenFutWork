@@ -9,6 +9,7 @@ import type {
   MessageCreateResponse,
   MessageListResponse,
   ModelListResponse,
+  PermissionTier,
   ProfileUpdateResponse,
   ProjectCreateRequest,
   ProjectCreateResponse,
@@ -27,6 +28,7 @@ import type {
   SkillListResponse,
   SkillUpdateRequest,
   UploadResponse,
+  UsageSummaryResponse,
   ViewerResponse,
   WorkspaceSettingsResponse,
   WorkspaceSkillListResponse,
@@ -273,9 +275,7 @@ export async function updateWorkspaceSettings(
 
 // --- Execution Modes API（P7 执行模式切换，DEC-3）---
 
-export async function fetchExecutionModes(
-  accessToken: string,
-): Promise<{
+export async function fetchExecutionModes(accessToken: string): Promise<{
   modes: Array<{ id: ExecutionMode; label: string; description: string }>;
 }> {
   const response = await fetch(`${getServerBaseUrl()}/api/execution-modes`, {
@@ -314,6 +314,63 @@ export async function updateExecutionMode(
   );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as { mode: ExecutionMode };
+}
+
+// --- Permissions API（DEC-4 权限档位/审批）---
+
+export async function fetchPermissionTier(
+  accessToken: string,
+): Promise<{ tier: PermissionTier }> {
+  const response = await fetch(`${getServerBaseUrl()}/api/permissions/tier`, {
+    headers: authHeaders(accessToken),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as { tier: PermissionTier };
+}
+
+export async function updatePermissionTier(
+  accessToken: string,
+  tier: PermissionTier,
+): Promise<{ tier: PermissionTier }> {
+  const response = await fetch(`${getServerBaseUrl()}/api/permissions/tier`, {
+    method: "PUT",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify({ tier }),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as { tier: PermissionTier };
+}
+
+export async function approveToolPermission(
+  accessToken: string,
+  input: {
+    toolName: string;
+    scope: "once" | "thread" | "forever";
+    threadId?: string;
+  },
+): Promise<void> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/permissions/approve`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(input),
+    },
+  );
+  if (!response.ok && response.status !== 204)
+    return handleErrorResponse(response);
+}
+
+// --- Usage API（DEC-6 用量摘要）---
+
+export async function fetchUsageSummary(
+  accessToken: string,
+): Promise<UsageSummaryResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/usage/summary`, {
+    headers: authHeaders(accessToken),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as UsageSummaryResponse;
 }
 
 // --- Provider Instances API（BYOK 供应商设置，P5）---

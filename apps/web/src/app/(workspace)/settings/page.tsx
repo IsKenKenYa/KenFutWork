@@ -6,9 +6,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AgentSection } from "@/components/agent-section";
 import { BillingSection } from "@/components/billing-section";
 import { CreditUsageHistory } from "@/components/credits/credit-usage-history";
+import { PermissionSection } from "@/components/permission-section";
 import { ProfileSection } from "@/components/profile-section";
 import { ProviderSettings } from "@/components/provider-settings";
 import { SettingsSkeleton } from "@/components/skeletons/settings-skeleton";
+import { UsageSummarySection } from "@/components/usage-summary-section";
 import { useAuth } from "@/lib/auth-context";
 import {
   ApiAuthError,
@@ -19,12 +21,19 @@ import {
   updateWorkspaceSettings,
 } from "@/lib/server-api";
 
-type SettingsTab = "profile" | "agent" | "providers" | "billing" | "usage";
+type SettingsTab =
+  | "profile"
+  | "agent"
+  | "providers"
+  | "permissions"
+  | "billing"
+  | "usage";
 
 const tabs: Array<{ id: SettingsTab; label: string }> = [
   { id: "profile", label: "Profile" },
   { id: "agent", label: "Agent" },
   { id: "providers", label: "Providers" },
+  { id: "permissions", label: "Permissions" },
   { id: "billing", label: "Billing" },
   { id: "usage", label: "Usage" },
 ];
@@ -160,8 +169,17 @@ export default function SettingsPage() {
           getToken() ? (
             <ProviderSettings accessToken={getToken() ?? ""} />
           ) : null
+        ) : activeTab === "permissions" ? (
+          getToken() ? (
+            <PermissionSection accessToken={getToken() ?? ""} />
+          ) : null
         ) : activeTab === "usage" ? (
-          <CreditUsageHistory />
+          <>
+            {getToken() ? (
+              <UsageSummarySection accessToken={getToken() ?? ""} />
+            ) : null}
+            <CreditUsageHistory />
+          </>
         ) : (
           <BillingSection />
         )}
