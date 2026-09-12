@@ -3,7 +3,7 @@
  * 仅模拟 settings/providers/usage/skills 流所需的 PostgREST 形状。
  */
 
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 
 const USER_ID = "11111111-1111-1111-1111-111111111111";
@@ -20,6 +20,58 @@ const WORKSPACE = {
   owner_user_id: USER_ID,
 };
 
+const profileRow = {
+  id: USER_ID,
+  email: "tester@local.test",
+  display_name: "本地测试",
+  avatar_url: null,
+};
+
+/** 生成服务端本地 HS256 可验签的会话（密钥与 .env.local 的 SUPABASE_JWT_SECRET 一致）。 */
+const LOCAL_JWT_SECRET = "local-click-test-hmac-secret";
+
+function signLocalJwt() {
+  const b64 = (obj) => Buffer.from(JSON.stringify(obj)).toString("base64url");
+  const now = Math.floor(Date.now() / 1000);
+  const signingInput = `${b64({ alg: "HS256", typ: "JWT" })}.${b64({
+    sub: USER_ID,
+    email: "tester@local.test",
+    aud: "authenticated",
+    role: "authenticated",
+    iat: now,
+    exp: now + 3600,
+    user_metadata: { display_name: "本地测试" },
+  })}`;
+  const sig = createHmac("sha256", LOCAL_JWT_SECRET)
+    .update(signingInput)
+    .digest("base64url");
+  return `${signingInput}.${sig}`;
+}
+
+function buildLocalSession() {
+  const now = Math.floor(Date.now() / 1000);
+  return {
+    access_token: signLocalJwt(),
+    token_type: "bearer",
+    expires_in: 3600,
+    expires_at: now + 3600,
+    refresh_token: `local-refresh-${now}`,
+    user: {
+      id: USER_ID,
+      aud: "authenticated",
+      role: "authenticated",
+      email: "tester@local.test",
+      email_confirmed_at: new Date().toISOString(),
+      confirmed_at: new Date().toISOString(),
+      last_sign_in_at: new Date().toISOString(),
+      app_metadata: { provider: "email", providers: ["email"] },
+      user_metadata: { display_name: "本地测试" },
+      identities: [],
+      created_at: "2026-01-01T00:00:00.000Z",
+    },
+  };
+}
+
 const providerInstances = new Map();
 
 function send(res, status, payload, single) {
@@ -27,7 +79,12 @@ function send(res, status, payload, single) {
     single && (payload === null || payload === undefined)
       ? JSON.stringify(payload ?? null)
       : JSON.stringify(payload);
-  res.writeHead(status, { "content-type": "application/json" });
+  res.writeHead(status, {
+    "content-type": "application/json",
+    "access-control-allow-origin": "*",
+    "access-control-allow-headers": "*",
+    "access-control-allow-methods": "GET,POST,PATCH,PUT,DELETE,OPTIONS",
+  });
   res.end(body);
 }
 
@@ -38,6 +95,36 @@ const server = createServer((req, res) => {
     `[mock] ${req.method} ${req.url} accept=${req.headers.accept ?? ""}`,
   );
   const wantsObject = (req.headers.accept ?? "").includes("vnd.pgrst.object");
+
+  // 浏览器跨域预检（页面源 :3000 → mock :54321）
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, {
+      "access-control-allow-origin": "*",
+      "access-control-allow-headers": "*",
+      "access-control-allow-methods": "GET,POST,PATCH,PUT,DELETE,OPTIONS",
+    });
+    res.end();
+    return;
+  }
+
+  // GoTrue 最小模拟：账密登录/注册直接发本地会话（本地点击测试用）
+  if (path === "/auth/v1/token" && req.method === "POST") {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      send(res, 200, buildLocalSession());
+    });
+    return;
+  }
+  if (path === "/auth/v1/signup" && req.method === "POST") {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      // 本地环境视同邮箱已确认，直接返回会话
+      send(res, 200, { ...buildLocalSession(), ...{ email_confirm: true } });
+    });
+    return;
+  }
 
   if (!path.startsWith("/rest/v1/")) {
     send(res, 200, {});
@@ -83,9 +170,44 @@ const server = createServer((req, res) => {
     return;
   }
 
-  if (table === "projects" && req.method === "GET") {
-    send(res, 200, [...projects.values()]);
-    return;
+  if (table === "projects") {
+    if (req.method === "GET") {
+      let list = [...projects.values()];
+      const idParam = url.searchParams.get("id") ?? "";
+      if (idParam) {
+        list = list.filter((p) => p.id === idParam.replace("eq.", ""));
+      }
+      // .is("archived_at", null) → 未归档（mock 行无该字段视为未归档）
+      if ((url.searchParams.get("archived_at") ?? "").startsWith("is.null")) {
+        list = list.filter((p) => !p.archived_at);
+      }
+      if (wantsObject) {
+        send(res, 200, list[0] ?? null, true);
+        return;
+      }
+      send(res, 200, list);
+      return;
+    }
+    if (req.method === "PATCH") {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        const id = (url.searchParams.get("id") ?? "").replace("eq.", "");
+        const existing = projects.get(id);
+        if (!existing) {
+          send(res, 406, { message: "not found", code: "PGRST116" });
+          return;
+        }
+        const merged = {
+          ...existing,
+          ...JSON.parse(body || "{}"),
+          updated_at: new Date().toISOString(),
+        };
+        projects.set(id, merged);
+        send(res, 200, merged, true);
+      });
+      return;
+    }
   }
   if (table === "canvases" && req.method === "GET") {
     const idParam = (url.searchParams.get("id") ?? "").replace("eq.", "");
@@ -155,28 +277,22 @@ const server = createServer((req, res) => {
     send(res, 200, wantsObject ? WORKSPACE : [WORKSPACE], wantsObject);
     return;
   }
-  if (table === "profiles" && req.method === "GET") {
-    send(
-      res,
-      200,
-      wantsObject
-        ? {
-            id: USER_ID,
-            email: "tester@local.test",
-            display_name: "本地测试",
-            avatar_url: null,
-          }
-        : [
-            {
-              id: USER_ID,
-              email: "tester@local.test",
-              display_name: "本地测试",
-              avatar_url: null,
-            },
-          ],
-      wantsObject,
-    );
-    return;
+  if (table === "profiles") {
+    if (req.method === "GET") {
+      send(res, 200, wantsObject ? profileRow : [profileRow], wantsObject);
+      return;
+    }
+    if (req.method === "PATCH") {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        const patch = JSON.parse(body || "{}");
+        profileRow.display_name = patch.display_name ?? profileRow.display_name;
+        profileRow.avatar_url = patch.avatar_url ?? profileRow.avatar_url;
+        send(res, 200, profileRow, true);
+      });
+      return;
+    }
   }
   if (table === "workspace_members" && req.method === "GET") {
     const membership = {
