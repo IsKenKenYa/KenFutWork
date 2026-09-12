@@ -112,7 +112,7 @@ export function Workbench() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     null,
   );
-  const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
 
@@ -335,25 +335,39 @@ export function Workbench() {
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
-      {/* 顶部：模式切换（Code / Design 双模式，DEC-2） */}
+      {/* 顶部：模式切换（Code / Design 双模式，DEC-2）+ 侧栏收缩 */}
       <header className="flex items-center justify-between border-b px-4 py-2">
-        <div className="flex items-center gap-1 rounded-lg bg-muted p-1">
-          {(["code", "design"] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              data-active={mode === m}
-              onClick={() => {
-                setMode(m);
-                setActiveTaskId(null);
-              }}
-              className="flex min-h-[32px] items-center gap-1.5 rounded-md px-3 py-1 text-sm transition-colors data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:shadow-sm"
-            >
-              {m === "code" ? <Code2 className="h-4 w-4" /> : null}
-              {m === "design" ? <Palette className="h-4 w-4" /> : null}
-              {MODE_META[m].label}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            aria-label={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
+            onClick={() => setSidebarCollapsed((v) => !v)}
+            className="rounded-md p-2 hover:bg-muted"
+          >
+            {sidebarCollapsed ? (
+              <ChevronRight className="h-4 w-4" />
+            ) : (
+              <ChevronLeft className="h-4 w-4" />
+            )}
+          </button>
+          <div className="flex items-center gap-1 rounded-lg bg-muted p-1">
+            {(["code", "design"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                data-active={mode === m}
+                onClick={() => {
+                  setMode(m);
+                  setActiveTaskId(null);
+                }}
+                className="flex min-h-[32px] items-center gap-1.5 rounded-md px-3 py-1 text-sm transition-colors data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:shadow-sm"
+              >
+                {m === "code" ? <Code2 className="h-4 w-4" /> : null}
+                {m === "design" ? <Palette className="h-4 w-4" /> : null}
+                {MODE_META[m].label}
+              </button>
+            ))}
+          </div>
         </div>
         <button
           type="button"
@@ -366,61 +380,136 @@ export function Workbench() {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        {/* 侧栏：新建任务 / 模式功能 / 任务列表 */}
-        <aside className="flex w-64 shrink-0 flex-col border-r bg-card p-2">
-          <button
-            type="button"
-            onClick={() => setActiveTaskId(null)}
-            className="mb-2 flex min-h-[40px] items-center gap-2 rounded-lg bg-muted px-3 text-sm font-medium hover:bg-muted/70"
-          >
-            <Plus className="h-4 w-4" /> 新建任务
-          </button>
-          <div className="mt-2 flex items-center justify-between px-3 text-xs text-muted-foreground">
-            <span>任务列表</span>
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {tasks.length === 0 ? (
-              <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-                暂无任务
-              </p>
-            ) : (
-              <ul className="space-y-0.5 px-1">
-                {tasks.map((task) => (
-                  <li key={task.id}>
-                    <button
-                      type="button"
-                      data-active={activeTaskId === task.id}
-                      onClick={() => setActiveTaskId(task.id)}
-                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted data-[active=true]:bg-muted"
-                    >
-                      <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      <span className="truncate">{task.title}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          {mode === "design" ? (
+        {/* 左侧栏（可收缩）：新建任务 / 项目(design) / 任务列表 —— 二合一 */}
+        {sidebarCollapsed ? (
+          <aside className="flex w-12 shrink-0 flex-col items-center gap-2 border-r bg-card py-2">
             <button
               type="button"
-              onClick={() => router.push("/canvas")}
-              className="mb-1 flex min-h-[36px] items-center gap-2 rounded-lg border px-3 text-sm hover:bg-muted"
+              title="新建任务"
+              onClick={() => setActiveTaskId(null)}
+              className="rounded-md p-2 hover:bg-muted"
             >
-              <Palette className="h-4 w-4" /> 打开画布
+              <Plus className="h-4 w-4" />
             </button>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => router.push("/settings")}
-            className="flex min-h-[36px] items-center gap-2 rounded-lg px-3 text-sm text-muted-foreground hover:bg-muted"
-          >
-            <Settings className="h-4 w-4" /> 设置
-          </button>
-        </aside>
+            {mode === "design" ? (
+              <button
+                type="button"
+                title="项目"
+                onClick={() => setActiveTaskId(null)}
+                className="rounded-md p-2 hover:bg-muted"
+              >
+                <Palette className="h-4 w-4" />
+              </button>
+            ) : null}
+            <button
+              type="button"
+              title="任务列表"
+              onClick={() => setActiveTaskId(null)}
+              className="rounded-md p-2 hover:bg-muted"
+            >
+              <Folder className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              title="设置"
+              onClick={() => router.push("/settings")}
+              className="mt-auto rounded-md p-2 hover:bg-muted"
+            >
+              <Settings className="h-4 w-4" />
+            </button>
+          </aside>
+        ) : (
+          <aside className="flex w-64 shrink-0 flex-col border-r bg-card p-2">
+            <button
+              type="button"
+              onClick={() => setActiveTaskId(null)}
+              className="mb-2 flex min-h-[40px] items-center gap-2 rounded-lg bg-muted px-3 text-sm font-medium hover:bg-muted/70"
+            >
+              <Plus className="h-4 w-4" /> 新建任务
+            </button>
 
-        {/* 主区：任务视图 / Design 画布工作区 / 居中编排器 */}
-        <main className="min-w-0 flex-1 overflow-hidden rounded-xl border-l bg-card">
+            {mode === "design" ? (
+              <div className="mb-2">
+                <div className="px-3 pb-1 text-xs text-muted-foreground">
+                  项目
+                </div>
+                <div className="space-y-1.5 px-1 pb-2">
+                  <input
+                    aria-label="项目名称"
+                    placeholder="新项目名称"
+                    value={newProjectName}
+                    onChange={(e) => setNewProjectName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void handleCreateProject();
+                    }}
+                    className="w-full rounded-md border px-2 py-1.5 text-sm"
+                  />
+                  <button
+                    type="button"
+                    aria-label="创建项目"
+                    disabled={creatingProject || !newProjectName.trim()}
+                    onClick={() => void handleCreateProject()}
+                    className="w-full rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
+                  >
+                    {creatingProject ? "创建中…" : "创建项目"}
+                  </button>
+                </div>
+                <div className="max-h-48 overflow-y-auto px-1">
+                  {projects.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      data-active={selectedProjectId === p.id}
+                      onClick={() => {
+                        setSelectedProjectId(p.id);
+                        setActiveTaskId(null);
+                      }}
+                      className="flex w-full items-center gap-2 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted data-[active=true]:bg-muted"
+                    >
+                      <Palette className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{p.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="px-3 text-xs text-muted-foreground">任务列表</div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {tasks.length === 0 ? (
+                <p className="px-3 py-6 text-center text-xs text-muted-foreground">
+                  暂无任务
+                </p>
+              ) : (
+                <ul className="space-y-0.5 px-1">
+                  {tasks.map((task) => (
+                    <li key={task.id}>
+                      <button
+                        type="button"
+                        data-active={activeTaskId === task.id}
+                        onClick={() => setActiveTaskId(task.id)}
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted data-[active=true]:bg-muted"
+                      >
+                        <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{task.title}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => router.push("/settings")}
+              className="flex min-h-[36px] items-center gap-2 rounded-lg px-3 text-sm text-muted-foreground hover:bg-muted"
+            >
+              <Settings className="h-4 w-4" /> 设置
+            </button>
+          </aside>
+        )}
+
+        {/* 主区：任务视图 / 画布（选中项目自动打开）/ 居中编排器 */}
+        <main className="min-w-0 flex-1 overflow-hidden bg-card">
           {activeTask ? (
             <div className="mx-auto flex h-full max-w-3xl flex-col p-6">
               <h1 className="mb-4 text-lg font-medium">{activeTask.title}</h1>
@@ -460,82 +549,14 @@ export function Workbench() {
                 ) : null}
               </div>
             </div>
-          ) : mode === "design" ? (
-            <div className="flex h-full">
-              {panelCollapsed ? (
-                <button
-                  type="button"
-                  aria-label="展开项目面板"
-                  onClick={() => setPanelCollapsed(false)}
-                  className="w-10 shrink-0 border-r bg-card text-muted-foreground hover:bg-muted"
-                >
-                  <ChevronRight className="mx-auto h-4 w-4" />
-                </button>
-              ) : (
-                <div className="flex w-64 shrink-0 flex-col border-r bg-card">
-                  <div className="flex items-center justify-between px-3 py-2">
-                    <span className="text-sm font-medium">项目</span>
-                    <button
-                      type="button"
-                      aria-label="收起项目面板"
-                      onClick={() => setPanelCollapsed(true)}
-                      className="rounded-md p-1 text-muted-foreground hover:bg-muted"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </button>
-                  </div>
-                  <div className="space-y-2 px-3 pb-3">
-                    <input
-                      aria-label="项目名称"
-                      placeholder="新项目名称"
-                      value={newProjectName}
-                      onChange={(e) => setNewProjectName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") void handleCreateProject();
-                      }}
-                      className="w-full rounded-md border px-2 py-1.5 text-sm"
-                    />
-                    <button
-                      type="button"
-                      aria-label="创建项目"
-                      disabled={creatingProject || !newProjectName.trim()}
-                      onClick={() => void handleCreateProject()}
-                      className="w-full rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
-                    >
-                      {creatingProject ? "创建中…" : "创建项目"}
-                    </button>
-                  </div>
-                  <div className="min-h-0 flex-1 overflow-y-auto px-1">
-                    {projects.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        data-active={selectedProjectId === p.id}
-                        onClick={() => setSelectedProjectId(p.id)}
-                        className="flex w-full items-center gap-2 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted data-[active=true]:bg-muted"
-                      >
-                        <Palette className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        <span className="truncate">{p.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div className="min-w-0 flex-1 bg-background">
-                {selectedProject ? (
-                  <iframe
-                    key={selectedProject.primaryCanvas.id}
-                    src={`/canvas?id=${selectedProject.primaryCanvas.id}`}
-                    title={`${selectedProject.name} 画布`}
-                    className="h-full w-full border-0"
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
-                    选择或创建一个项目，右侧将打开原版画布。
-                  </div>
-                )}
-              </div>
-            </div>
+          ) : mode === "design" && selectedProject ? (
+            /* Design：选中项目后画布自动打开（原版 Loomic 画布，无额外按钮） */
+            <iframe
+              key={selectedProject.primaryCanvas.id}
+              src={`/canvas?id=${selectedProject.primaryCanvas.id}`}
+              title={`${selectedProject.name} 画布`}
+              className="h-full w-full border-0"
+            />
           ) : (
             <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-6">
               <div className="mb-6 flex items-center gap-3">
@@ -557,7 +578,11 @@ export function Workbench() {
                     }
                   }}
                   rows={2}
-                  placeholder={meta.placeholder}
+                  placeholder={
+                    mode === "design"
+                      ? "从想法到设计，生成可交付的页面原型。先在左侧创建一个项目。"
+                      : meta.placeholder
+                  }
                   className="w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                 />
                 <div className="mt-3 flex items-center justify-between">
