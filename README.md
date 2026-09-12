@@ -117,7 +117,16 @@ LOOMIC_CREDENTIAL_SECRET=any-long-random-string
 pnpm seed
 ```
 
-在你的数据库中创建 4 个测试账号（free / starter / pro / ultra，密码均为 `opensourceloomic`），无需接支付即可体验各套餐。
+在你的数据库中创建 4 个测试账号（free / starter / pro / ultra），无需接支付即可体验各套餐：
+
+| 邮箱 | 套餐 | 密码 |
+| --- | --- | --- |
+| `free@test.loomic.com` | free | `opensourceloomic` |
+| `starter@test.loomic.com` | starter | `opensourceloomic` |
+| `pro@test.loomic.com` | pro | `opensourceloomic` |
+| `ultra@test.loomic.com` | ultra | `opensourceloomic` |
+
+没有 Supabase 项目、只想本地点击体验？仓库自带最小 mock（`scripts/本地mock-supabase.mjs`，需按 `.env.example` 配占位环境变量）：任意邮箱 + 任意密码均可登录（mock 签发本地测试会话，不入库不持久）。
 
 ### 5. 启动开发
 
@@ -130,6 +139,10 @@ pnpm dev
 | Web | http://localhost:3000 | Next.js 前端 |
 | API Server | http://localhost:3001 | Fastify API + WebSocket |
 | Worker | — | PGMQ 后台任务（图像/视频生成） |
+
+**访问入口**：打开 <http://localhost:3000> 直接进入工作台（`/` 重定向 `/workbench`，未登录自动跳转 `/login`）。登录/注册均为邮箱 + 密码，账号属于你自己的数据库（Supabase Auth 或本地 mock）。
+
+> **没有管理后台**：本产品不存在管理员后台页面或后台登录地址——任何部署形态（本地 / 自托管）下，`http://localhost:3000` 就是唯一入口，所有管理动作（供应商配置、权限档位等）都在工作台内的设置里完成。
 
 只起单进程：
 
@@ -157,7 +170,7 @@ pnpm test:docs    # docs 治理校验（链接/冻结区/决策 ID）
 KenFutWork/
 ├── apps/
 │   ├── web/                        # Next.js 16 前端（App Router，静态导出）
-│   │   ├── src/app/                #   路由（workspace / canvas / auth / pricing）
+│   │   ├── src/app/                #   路由（workbench / canvas / auth / login）
 │   │   ├── src/components/         #   画布 / 对话 / 设置组件
 │   │   │   ├── provider-settings.tsx #  BYOK 供应商设置（Key 只写不读）
 │   │   │   └── execution-mode-select.tsx # 会话级执行模式切换
@@ -231,6 +244,11 @@ SERVICE_MODE=worker WORKER_ID=w1 ...
 ```
 
 Vercel / Railway 等平台托管配置已随该决策移除。桌面端（Tauri）与自托管 Compose 的路线见《多端产品设计》§13。
+
+部署形态与后台的关系：
+
+- **桌面本地**：单用户形态，不存在「管理员」角色，无需任何后台。
+- **自托管**（含部署到你自己的云 VPS）：多用户共享同一个前端入口，同样**没有管理后台**——没有独立的后台登录地址，管理员与普通用户看到的是同一个工作台。若需要运维级管理（如调整用户套餐），目前只有一个 API 端点（`POST /api/credits/admin/set-plan`，携带 service role 权限在服务端调用），没有页面。管理后台是尚未立项的功能，需要时先在 `docs/` 走决策流程。
 
 ## 测试与文档
 
