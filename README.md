@@ -62,10 +62,23 @@
 ### 前置要求
 
 - Node.js ≥ 20、pnpm ≥ 10（`npm install -g pnpm`）
-- Supabase CLI（`brew install supabase/tap/supabase`）+ 一个 Supabase 项目（免费档可用）
-- 至少一个 AI 供应商 Key（Google 或 OpenAI）
+- 仅路径 B 需要：Supabase CLI（`brew install supabase/tap/supabase`）+ 一个 Supabase 项目（免费档可用）
+- 至少一个 AI 供应商 Key（Google 或 OpenAI）——仅在需要真实模型产出时配置
 
-### 1. 安装
+### 路径 A：零配置本地体验（无需任何 key，推荐先跑通）
+
+```bash
+pnpm install
+pnpm dev:local
+```
+
+一条命令拉起 本地 mock Supabase(54321) + API Server(3001) + Web(3000)：首次运行自动生成占位 `.env.local`（已存在的文件不会被覆盖），**不需要真实 Supabase key**。打开 <http://localhost:3000>，登录页用**任意邮箱 + 任意密码**即可进入工作台（mock 签发本地测试会话，数据不入库、不持久）。
+
+> **为什么变量名里还有 Supabase？** 迁移期存储/认证缝仍是 Supabase 形状（见《多端产品设计》§5），`dev:local` 只是用占位值把它们指向本地 mock。替换为自管 Postgres 是已规划的独立迁移；桌面端届时由安装器捆绑本机 Postgres（同节 §5.4，用户无需自行安装）。
+
+### 路径 B：连接真实 Supabase（完整功能）
+
+#### 1. 安装
 
 ```bash
 git clone https://github.com/IsKenKenYa/KenFutWork.git
@@ -73,7 +86,7 @@ cd KenFutWork
 pnpm install
 ```
 
-### 2. 初始化数据库
+#### 2. 初始化数据库
 
 ```bash
 supabase link --project-ref YOUR_PROJECT_REF
@@ -82,7 +95,7 @@ supabase db push
 
 迁移会建齐全部表、RLS 策略、存储桶与 PGMQ 队列（源在 `supabase/migrations/`，是唯一 Schema 源）。
 
-### 3. 配置环境
+#### 3. 配置环境
 
 ```bash
 cp .env.example .env.local
@@ -111,7 +124,7 @@ LOOMIC_CREDENTIAL_SECRET=any-long-random-string
 
 完整变量见 [`.env.example`](.env.example)（含 MCP / 联网搜索 / Vertex / 支付 / Worker）。
 
-### 4. （可选）灌测试账号
+#### 4. （可选）灌测试账号
 
 ```bash
 pnpm seed
@@ -126,9 +139,7 @@ pnpm seed
 | `pro@test.loomic.com` | pro | `opensourceloomic` |
 | `ultra@test.loomic.com` | ultra | `opensourceloomic` |
 
-没有 Supabase 项目、只想本地点击体验？仓库自带最小 mock（`scripts/本地mock-supabase.mjs`，需按 `.env.example` 配占位环境变量）：任意邮箱 + 任意密码均可登录（mock 签发本地测试会话，不入库不持久）。
-
-### 5. 启动开发
+#### 5. 启动开发
 
 ```bash
 pnpm dev
