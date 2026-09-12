@@ -1,41 +1,39 @@
-<p align="center">
-  <img src="apps/web/public/logo.svg" alt="Loomic Logo" width="80" />
-</p>
-
-<h1 align="center">Loomic</h1>
+<h1 align="center">KenFutWork</h1>
 
 <p align="center">
-  插件化 <b>BYOK Work 平台</b>——画布 AI 创作（design）与编码 Agent（code）双模式。<br/>
-  自带模型 Key（BYOK），数据落在你自己的数据库里，开源（GPL-3.0）。
+  插件化 <b>BYOK Work 平台</b>——用户自定义供应商与模型的 AI 工作台。<br/>
+  画布创作（design）与编码 Agent（code）双模式，一切能力皆插件，数据与 Key 全部落在你手里。
 </p>
 
-<p align="center">
-  <img width="900" src="docs/images/base-image.png" alt="Loomic" />
-</p>
+> 项目定位、架构决策与阶段规划的唯一权威是本仓库的 `docs/`：
+> [docs/tech/改造计划.md](docs/tech/改造计划.md)（插件内核 × BYOK × 双模式蓝图）、
+> [docs/tech/多端产品设计.md](docs/tech/多端产品设计.md)（桌面 / 自托管多端形态）。
+> 本 README 是面向使用者的入口，与文档冲突时以文档为准。
 
 ---
 
-## Loomic 是什么
+## 这是什么
 
-Loomic 是一个基于无限画布的 AI 创作工作台：在画布上跟 Agent 对话，直接生成图片/视频、排版、迭代，不需要时间轴和模板。2026-09 完成插件化改造（P0–P8）后：
+按《改造计划》的定义，这是一个 **BYOK（Bring Your Own Key）Work 平台**：用户自带模型 Key，按工作区配置自己的供应商与模型实例，平台不再持有也不经手任何模型账单。两大产品模式共享同一套插件内核：
 
-- **插件内核**：一切行为挂在插件上，`app.ts` 只剩约百行的装配薄封装；新增 feature = 一个 `features/<x>/plugin.ts` + profiles 清单一行。
-- **BYOK 供应商缝**：用户在前端「供应商设置」添加自己的模型实例（OpenAI 兼容 / Anthropic / Gemini / 图像 / 视频协议），Key 加密落库、只写不读，对话与生成按实例实例化协议适配器——服务端零代码。
-- **统一工具注册表**：MCP、联网搜索、skill、文件预览、差异分析都注册进 `ctx.tools`，按会话 preset 过滤后桥接进模型工具列表。
-- **执行模式与权限**：会话级 agent/plan 模式切换；危险工具三档权限（默认审批 / 自动放行 / 完全访问），审批只能由用户发起。
-- **用量统计**：Agent 链路（streamUsage）与直连生成（job 回调）双采集点落同一张 `usage` 表。
+- **design 模式（画布创作）**：无限画布上与 Agent 对话，生成/编辑图像与视频、排版、多轮迭代；Agent 读写画布上下文。
+- **code 模式（编码 Agent）**：文件预览、差异分析、子代理、执行模式（agent / plan）、危险工具三档权限。
 
-架构蓝图见 [docs/tech/改造计划.md](docs/tech/改造计划.md)，多端形态（桌面/自托管）见 [docs/tech/多端产品设计.md](docs/tech/多端产品设计.md)。
+三个贯穿全局的设计决策：
 
-<p align="center">
-  <img width="900" src="docs/images/home-image.png" alt="Loomic Workspace" />
-</p>
+1. **插件内核（一切皆插件）**：自建约 150 行内核（`composePlugins` + 服务仓库 `ctx` + 统一工具注册表 `ctx.tools` + 3 个 agent-run 事件缝），所有业务能力都是挂到扩展点上的插件；新增 feature 不改核心。
+2. **BYOK 供应商缝**：协议适配器封闭集合（openai-compatible / anthropic / gemini / 图像 / 视频协议），用户实例加密落库（Key 只写不读），对话与生成按实例实例化——接入新供应商零代码。
+3. **多端形态（规划中）**：桌面本地（Tauri 内嵌服务端）为主形态 + Docker 自托管，已决策移除平台云托管；数据落在用户自己的 Postgres 里。
+
+存储现状：Supabase（Postgres + Auth + Storage + PGMQ）为迁移期存量，去 Supabase 的自管 Postgres 迁移是已规划的独立工程（见《多端产品设计》§5）。
+
+开源协议 GPL-3.0。
 
 ---
 
 ## 架构
 
-服务端是「内核 + 插件」的单插件树装配，双进程（API + Worker）来自同一棵树的两个 profile：
+服务端是「内核 + 插件」的单插件树装配，API 与 Worker 双进程来自同一棵树的两个 profile：
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -46,17 +44,18 @@ Loomic 是一个基于无限画布的 AI 创作工作台：在画布上跟 Agent
 │ 基础能力层  模型配置(BYOK) / MCP / Skill / 联网搜索 / 用量统计   │
 ├──────────────────────────────────────────────────────────────┤
 │ 内核层   composePlugins + ctx(服务仓库) + ctx.tools            │
-│          + 3 个 agent-run 事件缝（pre-step / tool-pre-execute  │
-│          / turn-stopping）                                    │
+│          + 3 个 agent-run 事件缝（pre-step / tool-pre-execute   │
+│          / turn-stopping）                                     │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-装配关系：
+- **profiles**（`apps/server/src/profiles/`）：进程形态的插件清单唯一属主——`server.ts`（HTTP 进程，含路由）、`worker.ts`（队列进程，只取服务）。入口文件只做「选 profile → composePlugins」。
+- **presets**（`apps/server/src/presets/`）：design / code 是会话级能力集（DEC-2），按工具 scope 过滤，shared 恒可用。
+- **能力缝三元组**：可替换能力 = 服务接口（`kernel/types.ts` 的 `ServiceMap`，即 ctx key 表）+ Provider（实现）+ Consumer（路由/工具/executor）；缺一角或循环依赖在启动期 fail loud。
+- **统一工具注册表**：MCP、联网搜索、skill、文件预览、差异分析注册进 `ctx.tools`，按会话 preset 过滤后桥接进模型工具列表；危险调用经 `tool-pre-execute` 事件走三档权限策略（DEC-4）。
+- **用量统计**：Agent 链路（LangChain streamUsage）与直连生成（job 回调）双采集点落同一张 `usage` 表（DEC-6）。
 
-- **profiles**（`apps/server/src/profiles/`）：进程形态的插件清单唯一属主——`server.ts`（HTTP 进程，含路由）、`worker.ts`（队列进程，只取服务）。`app.ts` / `worker.ts` 只做「选 profile → composePlugins」。
-- **presets**（`apps/server/src/presets/`）：design/code 是会话级能力集（DEC-2），按工具 scope 过滤，shared 恒可用。
-- **能力缝三元组**：可替换能力 = 服务接口（`kernel/types.ts` 的 `ServiceMap`，即 ctx key 表）+ Provider（实现）+ Consumer（路由/工具/executor）；缺一角启动期 fail loud，循环依赖启动期抛错。
-- **数据**：Supabase（Postgres + Auth + Storage + PGMQ）为迁移期存量；去 Supabase 的自管 Postgres 迁移路径见《多端产品设计》§5（D1–D3）。
+---
 
 ## 快速开始
 
@@ -118,7 +117,7 @@ LOOMIC_CREDENTIAL_SECRET=any-long-random-string
 pnpm seed
 ```
 
-在你的 Supabase 中创建 4 个测试账号（free / starter / pro / ultra，密码均为 `opensourceloomic`），无需接支付即可体验各套餐。
+在你的数据库中创建 4 个测试账号（free / starter / pro / ultra，密码均为 `opensourceloomic`），无需接支付即可体验各套餐。
 
 ### 5. 启动开发
 
@@ -150,6 +149,8 @@ pnpm lint         # biome check .
 pnpm test:docs    # docs 治理校验（链接/冻结区/决策 ID）
 ```
 
+---
+
 ## 目录结构
 
 ```
@@ -158,7 +159,8 @@ KenFutWork/
 │   ├── web/                        # Next.js 16 前端（App Router，静态导出）
 │   │   ├── src/app/                #   路由（workspace / canvas / auth / pricing）
 │   │   ├── src/components/         #   画布 / 对话 / 设置组件
-│   │   │   └── provider-settings.tsx #  BYOK 供应商设置（Key 只写不读）
+│   │   │   ├── provider-settings.tsx #  BYOK 供应商设置（Key 只写不读）
+│   │   │   └── execution-mode-select.tsx # 会话级执行模式切换
 │   │   ├── src/hooks/              #   use-chat-stream / use-websocket 等
 │   │   └── src/lib/                #   server-api 等客户端纯逻辑
 │   └── server/                     # Fastify API + Worker（同一棵插件树）
@@ -202,7 +204,7 @@ KenFutWork/
 └── scripts/                        # docs 校验 / 种子脚本等
 ```
 
-带 ★ 的是插件化改造的核心目录。**新增 feature 的标准动作**：建 `features/<x>/plugin.ts`（服务工厂 + 路由挂到 `mounted` 阶段）→ 在 `profiles/server.ts` 清单加一行——`app.ts` 不需要动。
+带 ★ 的是插件内核与插件目录。**新增 feature 的标准动作**：建 `features/<x>/plugin.ts`（服务工厂 + 路由挂到 `mounted` 阶段）→ 在 `profiles/server.ts` 清单加一行——入口文件不需要动。扩展点速查表见《改造计划》§4.10。
 
 ## 关键配置速查
 
@@ -215,13 +217,15 @@ KenFutWork/
 | `LOOMIC_SERVER_PORT` / `LOOMIC_WEB_ORIGIN` | API 端口（默认 3001）/ 前端源（CORS） |
 | `WORKER_*` | Worker 并发与轮询（见 `.env.example`） |
 
+> 注：`@loomic/*` 为 workspace 包名与镜像名（代码事实），与产品命名无关。
+
 ## 部署（自托管）
 
 产品方向为「桌面本地 + 自托管」两形态（2026-09-11 决策移除平台云托管）：
 
 ```bash
 # API 进程
-SERVICE_MODE=api docker build -t loomic-server -f apps/server/Dockerfile .
+SERVICE_MODE=api docker build -t work-server -f apps/server/Dockerfile .
 # Worker 进程（同镜像，不同环境变量）
 SERVICE_MODE=worker WORKER_ID=w1 ...
 ```
@@ -236,4 +240,4 @@ Vercel / Railway 等平台托管配置已随该决策移除。桌面端（Tauri�
 
 ## License
 
-GPL-3.0。第三方商标与模型服务归属各自所有者。
+GPL-3.0。
