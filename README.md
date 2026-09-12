@@ -2,31 +2,30 @@
   <img src="apps/web/public/logo.svg" alt="Loomic Logo" width="80" />
 </p>
 
-<h1 align="center">
-  Loomic
-</h1>
+<h1 align="center">Loomic</h1>
 
 <p align="center">
-  Open-source alternative to <b>Lovart</b> / <b>CapCut Video Studio</b> / <b>Canva AI</b><br/>
-  Canvas-based AI creative workspace — no timeline, no templates, just talk.
+  插件化 <b>BYOK Work 平台</b>——画布 AI 创作（design）与编码 Agent（code）双模式。<br/>
+  自带模型 Key（BYOK），数据落在你自己的数据库里，开源（GPL-3.0）。
 </p>
 
 <p align="center">
   <img width="900" src="docs/images/base-image.png" alt="Loomic" />
 </p>
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Next.js-15-black?logo=next.js" alt="Next.js" />
-  <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white" alt="React" />
-  <img src="https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white" alt="Tailwind CSS" />
-  <img src="https://img.shields.io/badge/Fastify-5-000000?logo=fastify" alt="Fastify" />
-  <img src="https://img.shields.io/badge/LangGraph-1.2-1C3C3C?logo=langchain&logoColor=white" alt="LangGraph" />
-  <img src="https://img.shields.io/badge/Supabase-PostgreSQL-3FCF8E?logo=supabase&logoColor=white" alt="Supabase" />
-  <img src="https://img.shields.io/badge/Excalidraw-Canvas-6965DB?logo=excalidraw&logoColor=white" alt="Excalidraw" />
-  <img src="https://img.shields.io/badge/Turborepo-Monorepo-EF4444?logo=turborepo&logoColor=white" alt="Turborepo" />
-  <img src="https://img.shields.io/badge/pnpm-10-F69220?logo=pnpm&logoColor=white" alt="pnpm" />
-</p>
+---
+
+## Loomic 是什么
+
+Loomic 是一个基于无限画布的 AI 创作工作台：在画布上跟 Agent 对话，直接生成图片/视频、排版、迭代，不需要时间轴和模板。2026-09 完成插件化改造（P0–P8）后：
+
+- **插件内核**：一切行为挂在插件上，`app.ts` 只剩约百行的装配薄封装；新增 feature = 一个 `features/<x>/plugin.ts` + profiles 清单一行。
+- **BYOK 供应商缝**：用户在前端「供应商设置」添加自己的模型实例（OpenAI 兼容 / Anthropic / Gemini / 图像 / 视频协议），Key 加密落库、只写不读，对话与生成按实例实例化协议适配器——服务端零代码。
+- **统一工具注册表**：MCP、联网搜索、skill、文件预览、差异分析都注册进 `ctx.tools`，按会话 preset 过滤后桥接进模型工具列表。
+- **执行模式与权限**：会话级 agent/plan 模式切换；危险工具三档权限（默认审批 / 自动放行 / 完全访问），审批只能由用户发起。
+- **用量统计**：Agent 链路（streamUsage）与直连生成（job 回调）双采集点落同一张 `usage` 表。
+
+架构蓝图见 [docs/tech/改造计划.md](docs/tech/改造计划.md)，多端形态（桌面/自托管）见 [docs/tech/多端产品设计.md](docs/tech/多端产品设计.md)。
 
 <p align="center">
   <img width="900" src="docs/images/home-image.png" alt="Loomic Workspace" />
@@ -34,444 +33,207 @@
 
 ---
 
-## 💡 Loomic 是什么
+## 架构
 
-CapCut 刚推出了 Video Studio——基于画布的 AI 视频制作空间，Lovart 做的是 AI 设计 Agent，Canva 也在往 AI 方向猛推。这类产品的共同点：闭源、数据不在你手里、定价你说了不算。
-
-Loomic 做的是同一件事，但完全开源。你在无限画布上跟 AI 对话，它直接生成图片、视频，摆好位置，调好样式。不需要时间轴，不需要模板，不需要学 prompt 工程。说"把左边那张换成暖色调"，AI 就懂了。
-
-从构思、角色设定、故事板、场景生成、细节打磨到导出——整个创作流程在一个画布上完成。底层是 LangGraph 驱动的 Agent，接了 Google Gemini / Vertex AI / OpenAI / Replicate 十几个模型（包括 Veo 3.1、Kling、Seedance、Sora 等），图片视频都能生。
-
-开源，可以自己部署，数据全在你手里。
-
-<p align="center">
-  <img width="900" src="docs/images/canvas-image.png" alt="Loomic Canvas" />
-</p>
-
----
-
-## ✨ Features
-
-🗣️ **对话式画布设计**
-- 在无限画布上和 AI 对话，直接生成、编辑、排版
-- 多轮对话迭代，说"把左边那张图换成暖色调"就行
-- Agent 看得懂画布上下文，知道你在说哪个元素
-
-🖼️ **图片生成（15+ 模型）**
-- Google Imagen 4 / Gemini Image / Vertex AI
-- OpenAI DALL-E 3 / GPT Image
-- Replicate: Flux Kontext, SDXL, Recraft, Seedream...
-- 填自己的 API Key，按需组合
-
-🎬 **视频生成**
-- Google Veo 3.1 / 3.0 / 2.0（文生视频、图生视频）
-- Replicate: Kling, Seedance, Wan, Sora, Hailuo...
-- 支持原生音频生成
-
-🎨 **无限画布**
-- 基于 Excalidraw，自由拖拽、缩放、分层
-- AI 生成的素材直接落在画布上，不用手动导入
-- 导出、截图、分享
-
-🏷️ **Brand Kit**
-- 设定品牌色、字体、Logo
-- AI 生成时自动遵循品牌规范
-- 集成 Google Fonts
-
-💰 **积分 & 付费**
-- 内置积分系统，按量计费
-- LemonSqueezy 订阅集成
-- 免费用户每天有基础额度
-
-🧩 **可扩展技能系统**
-- Markdown 定义 workspace 技能
-- 按项目扩展 Agent 能力
-
----
-
-## 🏗️ Architecture
+服务端是「内核 + 插件」的单插件树装配，双进程（API + Worker）来自同一棵树的两个 profile：
 
 ```
-┌─────────────┐     WebSocket / REST      ┌─────────────────┐
-│   Next.js   │ ◄──────────────────────►  │  Fastify API    │
-│   Frontend  │                           │  + LangGraph    │
-│  (Vercel)   │                           │  Agent (Railway) │
-└─────────────┘                           └────────┬────────┘
-                                                   │ PGMQ
-                                          ┌────────▼────────┐
-                                          │    Worker(s)     │
-                                          │  Image / Video   │
-                                          │  Generation      │
-                                          │  (Railway)       │
-                                          └────────┬────────┘
-                                                   │
-                                          ┌────────▼────────┐
-                                          │    Supabase      │
-                                          │  PostgreSQL      │
-                                          │  Auth / Storage  │
-                                          └─────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│ 模式层   design preset（画布 + 依附插件） / code preset（编码）  │
+├──────────────────────────────────────────────────────────────┤
+│ Agent 能力层  文件预览 / 差异分析 / 子代理缝 / 执行模式 / 权限    │
+├──────────────────────────────────────────────────────────────┤
+│ 基础能力层  模型配置(BYOK) / MCP / Skill / 联网搜索 / 用量统计   │
+├──────────────────────────────────────────────────────────────┤
+│ 内核层   composePlugins + ctx(服务仓库) + ctx.tools            │
+│          + 3 个 agent-run 事件缝（pre-step / tool-pre-execute  │
+│          / turn-stopping）                                    │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-| Component | Tech | Role |
-|-----------|------|------|
-| **Frontend** | Next.js 15 + React 19 + Tailwind CSS 4 | Canvas UI, chat panel, workspace |
-| **API Server** | Fastify 5 + LangGraph | Agent runtime, WebSocket, REST API |
-| **Worker** | Node.js poll-based consumer | Async image/video generation jobs |
-| **Database** | Supabase (PostgreSQL) | Data, auth, storage, job queue (PGMQ) |
-| **Canvas** | Excalidraw 0.18 | Infinite canvas rendering |
-| **AI** | LangChain + LangGraph | Agent orchestration, tool calling |
-| **Queue** | PGMQ | Reliable async job processing |
+装配关系：
 
----
+- **profiles**（`apps/server/src/profiles/`）：进程形态的插件清单唯一属主——`server.ts`（HTTP 进程，含路由）、`worker.ts`（队列进程，只取服务）。`app.ts` / `worker.ts` 只做「选 profile → composePlugins」。
+- **presets**（`apps/server/src/presets/`）：design/code 是会话级能力集（DEC-2），按工具 scope 过滤，shared 恒可用。
+- **能力缝三元组**：可替换能力 = 服务接口（`kernel/types.ts` 的 `ServiceMap`，即 ctx key 表）+ Provider（实现）+ Consumer（路由/工具/executor）；缺一角启动期 fail loud，循环依赖启动期抛错。
+- **数据**：Supabase（Postgres + Auth + Storage + PGMQ）为迁移期存量；去 Supabase 的自管 Postgres 迁移路径见《多端产品设计》§5（D1–D3）。
 
-## 🛠️ Tech Stack
+## 快速开始
 
-| Layer | Technology |
-|-------|-----------|
-| Monorepo | Turborepo + pnpm |
-| Frontend | Next.js 15 (App Router), React 19, Tailwind CSS 4 |
-| Canvas | Excalidraw |
-| Backend | Node.js, Fastify 5, TypeScript |
-| AI Framework | LangChain 1.2, LangGraph 1.2 |
-| LLM Providers | OpenAI, Google Gemini, Google Vertex AI |
-| Image Generation | Imagen, DALL-E, Replicate (13+ models) |
-| Video Generation | Google Veo 3.x, Replicate (Kling, Sora, Seedance, etc.), Metaso MiniMax H3 |
-| Database | PostgreSQL (Supabase) |
-| Auth | Supabase Auth (Magic Link + OAuth) |
-| Storage | Supabase Storage (S3-compatible) |
-| Queue | PGMQ (PostgreSQL native) |
-| Payments | LemonSqueezy |
-| Linting | Biome |
-| Testing | Vitest |
+### 前置要求
 
----
+- Node.js ≥ 20、pnpm ≥ 10（`npm install -g pnpm`）
+- Supabase CLI（`brew install supabase/tap/supabase`）+ 一个 Supabase 项目（免费档可用）
+- 至少一个 AI 供应商 Key（Google 或 OpenAI）
 
-## 🚀 Getting Started
-
-### Prerequisites
-
-- **Node.js** >= 20
-- **pnpm** >= 10 (`npm install -g pnpm`)
-- **Supabase CLI** (`brew install supabase/tap/supabase`)
-- A [Supabase](https://supabase.com) project (free tier works)
-- At least one AI API key (Google or OpenAI)
-
-### 1. Clone & Install
+### 1. 安装
 
 ```bash
-git clone https://github.com/fancyboi999/Loomic.git
-cd Loomic
+git clone https://github.com/IsKenKenYa/KenFutWork.git
+cd KenFutWork
 pnpm install
 ```
 
-### 2. Set Up Supabase
-
-Create a Supabase project at [supabase.com](https://supabase.com), then apply migrations:
+### 2. 初始化数据库
 
 ```bash
 supabase link --project-ref YOUR_PROJECT_REF
 supabase db push
 ```
 
-This creates all required tables, RLS policies, storage buckets, and the PGMQ job queue.
+迁移会建齐全部表、RLS 策略、存储桶与 PGMQ 队列（源在 `supabase/migrations/`，是唯一 Schema 源）。
 
-### 3. Configure Environment
+### 3. 配置环境
 
 ```bash
 cp .env.example .env.local
 ```
 
-Edit `.env.local` with your credentials:
+最小可用配置：
 
 ```bash
-# ── Required: Supabase ──────────────────────────────────────
+# ── Supabase（必需）────────────────────────────
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-SUPABASE_DB_URL=postgresql://postgres:pw@db.your-project.supabase.co:5432/postgres
-SUPABASE_PROJECT_ID=your-project-ref
+SUPABASE_DB_URL=postgresql://postgres:pw@db.xxx:5432/postgres
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 
-# ── Required: At least one AI provider ──────────────────────
-LOOMIC_AGENT_MODEL=google:gemini-2.5-flash     # or openai:gpt-4o
-GOOGLE_API_KEY=your-google-api-key             # for Gemini + Imagen + Veo
-# OPENAI_API_KEY=your-openai-key               # alternative: OpenAI provider
+# ── 至少一个 AI 供应商（内置目录，迁移期存量）───
+LOOMIC_AGENT_MODEL=google:gemini-2.5-flash        # 或 openai:gpt-4o
+GOOGLE_API_KEY=your-google-api-key
+# OPENAI_API_KEY=your-openai-key
 
-# ── Optional: More generation providers ─────────────────────
-# REPLICATE_API_TOKEN=                          # 13+ image/video models
-# METASO_API_KEY=                               # MiniMax H3 video
-# METASO_API_BASE=https://metaso.cn/api/minimax/
-# GOOGLE_VERTEX_PROJECT=                        # Vertex AI (service account)
-# GOOGLE_VERTEX_LOCATION=global                 # global for image/LLM
-# GOOGLE_VERTEX_VIDEO_LOCATION=us-central1      # us-central1 for video
-# GOOGLE_APPLICATION_CREDENTIALS=               # path to SA JSON
+# ── BYOK 供应商设置（可选，推荐）───────────────
+# 用户在前端「设置 → Providers」添加实例，Key 加密落库需要主密钥：
+LOOMIC_CREDENTIAL_SECRET=any-long-random-string
 ```
 
-> **Note**: See [Environment Variables Reference](#environment-variables-reference) for the full list.
+完整变量见 [`.env.example`](.env.example)（含 MCP / 联网搜索 / Vertex / 支付 / Worker）。
 
-### 4. Seed Test Accounts (optional)
-
-自部署后，跑一下种子脚本就能直接体验各套餐功能，不需要接支付：
+### 4. （可选）灌测试账号
 
 ```bash
 pnpm seed
 ```
 
-脚本会在**你自己的 Supabase** 中创建 4 个测试账号：
+在你的 Supabase 中创建 4 个测试账号（free / starter / pro / ultra，密码均为 `opensourceloomic`），无需接支付即可体验各套餐。
 
-| Email | Password | Plan | Credits |
-|-------|----------|------|---------|
-| `free@test.loomic.com` | `opensourceloomic` | Free | 50 |
-| `starter@test.loomic.com` | `opensourceloomic` | Starter | 1,200 |
-| `pro@test.loomic.com` | `opensourceloomic` | Pro | 5,000 |
-| `ultra@test.loomic.com` | `opensourceloomic` | Ultra | 15,000 |
-
-> These accounts are created in YOUR Supabase instance.
-
-### 5. Start Development
+### 5. 启动开发
 
 ```bash
 pnpm dev
 ```
 
-This starts all services simultaneously:
-
-| Service | URL | Description |
-|---------|-----|-------------|
-| Web | http://localhost:3000 | Next.js frontend |
+| 服务 | 地址 | 说明 |
+| --- | --- | --- |
+| Web | http://localhost:3000 | Next.js 前端 |
 | API Server | http://localhost:3001 | Fastify API + WebSocket |
-| Worker | — | Background job processor |
+| Worker | — | PGMQ 后台任务（图像/视频生成） |
 
-Open http://localhost:3000 and start creating!
-
----
-
-## ☁️ Deployment
-
-### Frontend → Vercel
+只起单进程：
 
 ```bash
-# Connect your repo to Vercel, then set:
-# Build Command:   pnpm --filter @loomic/shared build && pnpm --filter @loomic/web build
-# Output Directory: apps/web/out
-# Environment Variables: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, NEXT_PUBLIC_SERVER_BASE_URL
+pnpm --filter @loomic/server dev:server       # 仅 API
+pnpm --filter @loomic/server dev:worker       # 仅 Worker
+pnpm --filter @loomic/server dev:workers:2    # 2 个 Worker 横向扩容
 ```
 
-### Backend → Railway
-
-The backend runs as two services from a single Docker image, differentiated by `SERVICE_MODE`:
-
-**API Service:**
-```bash
-SERVICE_MODE=api
-LOOMIC_SERVER_PORT=3001
-```
-
-**Worker Service:**
-```bash
-SERVICE_MODE=worker
-WORKER_ID=railway-w1
-```
-
-Both services share the same environment variables (Supabase, AI keys, etc.).
-
-The `Dockerfile` at `apps/server/Dockerfile` handles the multi-stage build.
-
-### Database → Supabase
+### 常用命令
 
 ```bash
-# Apply all migrations
-supabase db push
-
-# Generate TypeScript types (after schema changes)
-supabase gen types typescript --linked > packages/shared/src/supabase-types.ts
+pnpm build        # 全量构建（shared 出 dist，web 静态导出）
+pnpm test         # workspace 门禁 + 各包 vitest
+pnpm typecheck    # 全包 tsc --noEmit
+pnpm lint         # biome check .
+pnpm test:docs    # docs 治理校验（链接/冻结区/决策 ID）
 ```
 
----
-
-## ⚡ Worker Scaling
-
-Each worker polls PGMQ and processes jobs concurrently. PGMQ guarantees exactly-once delivery.
-
-```bash
-# Local: start multiple workers
-pnpm --filter @loomic/server dev:workers:2   # 2 workers (6 concurrent jobs)
-pnpm --filter @loomic/server dev:workers:3   # 3 workers (9 concurrent jobs)
-```
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `WORKER_CONCURRENCY` | `3` | Jobs per worker instance |
-| `WORKER_IMAGE_CONCURRENCY` | `3` | Image generation slots |
-| `WORKER_VIDEO_CONCURRENCY` | `2` | Video generation slots |
-| `WORKER_POLL_INTERVAL_MS` | `2000` | Queue poll interval (ms) |
-| `WORKER_ID` | random | Worker instance identifier |
-
-On Railway, scale by adding more worker service replicas.
-
----
-
-## 📂 Project Structure
+## 目录结构
 
 ```
-Loomic/
+KenFutWork/
 ├── apps/
-│   ├── web/                    # Next.js 15 frontend
-│   │   ├── src/
-│   │   │   ├── app/            #   App Router pages (workspace, canvas, auth, pricing)
-│   │   │   ├── components/     #   React components (canvas, chat, credits, auth)
-│   │   │   ├── hooks/          #   Custom React hooks
-│   │   │   └── lib/            #   Client utilities & API helpers
-│   │   └── public/             #   Static assets
-│   │
-│   └── server/                 # Fastify API + Worker
+│   ├── web/                        # Next.js 16 前端（App Router，静态导出）
+│   │   ├── src/app/                #   路由（workspace / canvas / auth / pricing）
+│   │   ├── src/components/         #   画布 / 对话 / 设置组件
+│   │   │   └── provider-settings.tsx #  BYOK 供应商设置（Key 只写不读）
+│   │   ├── src/hooks/              #   use-chat-stream / use-websocket 等
+│   │   └── src/lib/                #   server-api 等客户端纯逻辑
+│   └── server/                     # Fastify API + Worker（同一棵插件树）
 │       ├── src/
-│       │   ├── agent/          #   LangGraph agent, tools, prompts
-│       │   ├── generation/     #   Image & video generation providers
-│       │   │   └── providers/  #     Google, OpenAI, Replicate, Vertex AI, Volces
-│       │   ├── features/       #   Domain services
-│       │   │   ├── credits/    #     Credit system & tier guard
-│       │   │   ├── payments/   #     LemonSqueezy integration
-│       │   │   ├── jobs/       #     PGMQ job queue & executors
-│       │   │   ├── canvas/     #     Canvas CRUD
-│       │   │   ├── chat/       #     Chat threads & messages
-│       │   │   └── brand-kit/  #     Brand kit management
-│       │   ├── http/           #   REST route handlers
-│       │   ├── ws/             #   WebSocket handlers
-│       │   ├── config/         #   Environment config loader
-│       │   └── queue/          #   PGMQ client
-│       └── Dockerfile          #   Multi-stage Docker build
-│
+│       │   ├── kernel/             # ★ 插件内核：composePlugins + ctx +
+│       │   │                       #   tools/capabilities 注册表 + 事件缝
+│       │   ├── profiles/           # ★ 进程插件清单（server.ts / worker.ts）
+│       │   ├── presets/            # ★ 会话级能力集（design / code）
+│       │   ├── features/           # ★ 领域插件（每个目录一个 plugin.ts）
+│       │   │   ├── model-providers/  #  BYOK 实例 CRUD + SecretStore + 目录
+│       │   │   ├── agent-runs/       #  agent 运行时三件套
+│       │   │   ├── permissions/      #  三档权限策略缝
+│       │   │   ├── agent-modes/      #  执行模式（agent / plan）
+│       │   │   ├── search/           #  联网搜索工具
+│       │   │   ├── mcp/              #  MCP 工具接入
+│       │   │   ├── usage/            #  用量统计（双采集点）
+│       │   │   └── …                 #  canvas / chat / credits / jobs / …
+│       │   ├── providers/          # ★ 线协议适配器（openai-compatible /
+│       │   │                       #   anthropic / gemini / google-image /
+│       │   │                       #   replicate / volces / metaso）
+│       │   ├── agent/              #   deepagents 运行时 / 工具桥 / 子代理
+│       │   ├── http/               #   REST 路由（registerXxxRoutes）
+│       │   ├── ws/                 #   WebSocket 连接管理与事件缓冲
+│       │   ├── generation/         #   图像/视频生成实现（迁移期 env 注册）
+│       │   ├── queue/              #   PGMQ 客户端
+│       │   ├── config/             #   环境变量解析（fail loud）
+│       │   ├── supabase/           #   admin / user 客户端（存储缝存量）
+│       │   └── app.ts              #   薄封装：选 profile → composePlugins
+│       └── Dockerfile              #   自托管镜像（SERVICE_MODE=api|worker）
 ├── packages/
-│   ├── shared/                 # Shared types, contracts, credit config
-│   ├── config/                 # Shared configuration
-│   └── ui/                     # Shared UI components
-│
-├── skills/                     # Extensible workspace skills
-│   ├── canvas-design/          #   Canvas design guidance
-│   └── json-image-prompt/      #   Image prompt templates
-│
-├── supabase/
-│   └── migrations/             # Database migrations (18 files)
-│
-├── .env.example                # Environment template
-├── turbo.json                  # Turborepo config
-├── pnpm-workspace.yaml         # pnpm workspace definition
-└── package.json                # Root scripts
+│   ├── shared/                     # zod 契约（HTTP/WS/job/provider）单一事实源
+│   ├── config/                     # 共享 TS 配置
+│   └── ui/                         # 共享组件
+├── supabase/migrations/            # 数据库迁移（唯一 Schema 源）
+├── skills/                         # 工作区技能（SKILL.md，运行时发现）
+├── docs/                           # 技术文档（地图见 docs/README.md）
+│   ├── tech/                       #   改造计划（权威）+ 多端产品设计
+│   ├── decisions/                  #   ADR（DEC-* / FORM-* 拍板记录）
+│   └── future/                     #   现状快照与调研
+├── references/                     # 外部参考项目（git submodule，只读参考）
+└── scripts/                        # docs 校验 / 种子脚本等
 ```
 
----
+带 ★ 的是插件化改造的核心目录。**新增 feature 的标准动作**：建 `features/<x>/plugin.ts`（服务工厂 + 路由挂到 `mounted` 阶段）→ 在 `profiles/server.ts` 清单加一行——`app.ts` 不需要动。
 
-## 🔐 Environment Variables Reference
+## 关键配置速查
 
-### Required
+| 变量 | 说明 |
+| --- | --- |
+| `LOOMIC_CREDENTIAL_SECRET` | BYOK 凭证加密主密钥（AES-256-GCM）；配置后用户才能在前端保存 Key |
+| `LOOMIC_MCP_SERVERS` | MCP server 配置（JSON 数组，stdio 命令型），工具自动注册进 `ctx.tools` |
+| `LOOMIC_SEARCH_API_KEY` | 联网搜索（`web_search` 工具）供应商 Key；`LOOMIC_SEARCH_PROVIDER` v1 仅 `metaso` |
+| `LOOMIC_AGENT_MODEL` | 内置默认模型（`google:gemini-2.5-flash` / `openai:gpt-4o`；BYOK 实例模型经前端选择器下发） |
+| `LOOMIC_SERVER_PORT` / `LOOMIC_WEB_ORIGIN` | API 端口（默认 3001）/ 前端源（CORS） |
+| `WORKER_*` | Worker 并发与轮询（见 `.env.example`） |
 
-| Variable | Description |
-|----------|-------------|
-| `SUPABASE_URL` | Supabase project URL |
-| `SUPABASE_ANON_KEY` | Supabase anonymous key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key (server-only) |
-| `SUPABASE_DB_URL` | PostgreSQL connection string (for PGMQ) |
-| `SUPABASE_PROJECT_ID` | Supabase project reference ID |
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase URL (exposed to frontend) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key (exposed to frontend) |
+## 部署（自托管）
 
-### AI Providers (at least one required)
+产品方向为「桌面本地 + 自托管」两形态（2026-09-11 决策移除平台云托管）：
 
-| Variable | Description |
-|----------|-------------|
-| `LOOMIC_AGENT_MODEL` | Agent LLM model (e.g., `google:gemini-2.5-flash`) |
-| `GOOGLE_API_KEY` | Google AI API key (Gemini + Imagen + Veo) |
-| `OPENAI_API_KEY` | OpenAI API key (GPT + DALL-E) |
-| `OPENAI_API_BASE` | Custom OpenAI-compatible endpoint |
-| `REPLICATE_API_TOKEN` | Replicate API token (13+ models) |
-| `METASO_API_KEY` | Metaso API key (MiniMax H3 video) |
-| `METASO_API_BASE` | Optional Metaso H3 V2 base URL (default: `https://metaso.cn/api/minimax/`) |
+```bash
+# API 进程
+SERVICE_MODE=api docker build -t loomic-server -f apps/server/Dockerfile .
+# Worker 进程（同镜像，不同环境变量）
+SERVICE_MODE=worker WORKER_ID=w1 ...
+```
 
-### Google Vertex AI (optional)
+Vercel / Railway 等平台托管配置已随该决策移除。桌面端（Tauri）与自托管 Compose 的路线见《多端产品设计》§13。
 
-| Variable | Description |
-|----------|-------------|
-| `GOOGLE_APPLICATION_CREDENTIALS` | Path to service account JSON |
-| `GOOGLE_VERTEX_PROJECT` | GCP project ID |
-| `GOOGLE_VERTEX_LOCATION` | Region for image/LLM (`global`) |
-| `GOOGLE_VERTEX_VIDEO_LOCATION` | Region for video (`us-central1`) |
+## 测试与文档
 
-### Payments (optional)
+- `pnpm test`：workspace 门禁（`tests/workspace.test.mjs`，含 docs 治理校验）+ 各包 vitest（内核 / 插件 / 契约 / 前端组件全覆盖）。
+- 文档治理：单一属主 + 决策稳定 ID（`DEC-*` / `FORM-*`）+ 机械校验（`pnpm test:docs`），规则见 [docs/README.md](docs/README.md)；架构改动先改文档再动代码。
+- `references/` 是外部参考项目（git submodule），只作方向参考，不参与构建。
 
-| Variable | Description |
-|----------|-------------|
-| `LEMONSQUEEZY_API_KEY` | LemonSqueezy API key |
-| `LEMONSQUEEZY_STORE_ID` | LemonSqueezy store ID |
-| `LEMONSQUEEZY_WEBHOOK_SECRET` | Webhook HMAC secret |
-| `LEMONSQUEEZY_VARIANT_*_MONTHLY` | Plan variant IDs (monthly) |
-| `LEMONSQUEEZY_VARIANT_*_YEARLY` | Plan variant IDs (yearly) |
+## License
 
-### Server & Worker
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `LOOMIC_SERVER_PORT` | `3001` | API server port |
-| `LOOMIC_WEB_ORIGIN` | `http://localhost:3000` | Frontend origin (CORS) |
-| `LOOMIC_AGENT_BACKEND_MODE` | `state` | Agent persistence (`state` or `filesystem`) |
-| `LOOMIC_SKILLS_ROOT` | `../../skills` | Path to skills directory |
-| `WORKER_CONCURRENCY` | `3` | Jobs per worker |
-| `WORKER_IMAGE_CONCURRENCY` | `3` | Image generation slots |
-| `WORKER_VIDEO_CONCURRENCY` | `2` | Video generation slots |
-| `GOOGLE_FONTS_API_KEY` | — | Google Fonts API (brand kit) |
-
----
-
-## 🤖 Supported Models
-
-### Image Generation
-
-| Provider | Models |
-|----------|--------|
-| Google (API Key) | Imagen 4, Gemini 2.5 Flash Image, Gemini 3 Pro Image |
-| Google (Vertex AI) | Gemini 3 Pro Image, Gemini 3.1 Flash Image, Gemini 2.5 Flash Image |
-| OpenAI | DALL-E 3, GPT Image 1.5 |
-| Replicate | Flux Kontext Pro/Max, SDXL, Recraft V3, Seedream, and more |
-
-### Video Generation
-
-| Provider | Models |
-|----------|--------|
-| Google (API Key) | Veo 3.1, Veo 3.1 Fast, Veo 3.1 Lite, Veo 3.0, Veo 2.0 |
-| Google (Vertex AI) | Veo 3.1, Veo 3.1 Fast, Veo 3.1 Lite, Veo 3.0, Veo 2.0 |
-| Replicate | Kling V3, Seedance 1.5, Wan 2.6, Sora 2, Hailuo 2.3, and more |
-| Metaso | MiniMax H3（文生视频、首帧/首尾帧，4–15 秒，768P/2K） |
-
-Metaso H3 的项目积分按生成秒数统一计算：768P 为 `10.2` 积分/秒，2K 为 `17` 积分/秒；最终扣分向上取整。人民币价格仅作为前端参考区间展示，不参与积分余额扣减。
-
-### LLM (Agent)
-
-| Provider | Models |
-|----------|--------|
-| Google | Gemini 2.5 Flash, Gemini 2.5 Pro, Gemini 3 Flash |
-| OpenAI | GPT-4o, GPT-4o-mini, or any OpenAI-compatible endpoint |
-
----
-
-## 🤝 Contributing
-
-Contributions welcome!
-
-1. Fork the repo
-2. Create a feature branch (`git checkout -b feat/amazing-feature`)
-3. Commit your changes
-4. Push to the branch (`git push origin feat/amazing-feature`)
-5. Open a Pull Request
-
----
-
-## 📄 License
-
-[MIT](LICENSE)
-
----
-
-<p align="center">
-  Built with ☕ and curiosity.
-</p>
+GPL-3.0。第三方商标与模型服务归属各自所有者。
