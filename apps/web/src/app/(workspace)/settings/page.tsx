@@ -118,7 +118,10 @@ export default function SettingsPage() {
     [getToken],
   );
 
-  const stableFetchModels = useCallback(() => fetchModels(), []);
+  const stableFetchModels = useCallback(
+    () => fetchModels(getToken() ?? undefined),
+    [getToken],
+  );
 
   if (pageLoading) {
     return <SettingsSkeleton />;

@@ -427,8 +427,13 @@ export async function deleteProviderInstance(
     return handleErrorResponse(response);
 }
 
-export async function fetchModels(): Promise<ModelListResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/models`);
+export async function fetchModels(
+  accessToken?: string,
+): Promise<ModelListResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/models`, {
+    // 带凭证时服务端并入 BYOK 实例目录（工作区隔离）；匿名仅返回内置目录
+    ...(accessToken ? { headers: authHeaders(accessToken) } : {}),
+  });
   if (!response.ok) {
     throw new Error(`Failed to fetch models: ${response.status}`);
   }

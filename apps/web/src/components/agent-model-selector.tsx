@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAgentModel } from "@/hooks/use-agent-model";
 import { fetchModels } from "@/lib/server-api";
+import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 type ModelOption = { id: string; name: string; provider: string };
 
@@ -47,11 +48,24 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
   const btnRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
-  // Fetch available models
+  // Fetch available models（带凭证时并入 BYOK 实例目录；失败回退匿名目录）
   useEffect(() => {
-    fetchModels()
-      .then((data) => setModels(data.models))
-      .catch(() => {});
+    const load = async () => {
+      let token: string | undefined;
+      try {
+        const { data } = await getSupabaseBrowserClient().auth.getSession();
+        token = data.session?.access_token;
+      } catch {
+        token = undefined;
+      }
+      try {
+        const data = await fetchModels(token);
+        setModels(data.models);
+      } catch {
+        setModels([]);
+      }
+    };
+    void load();
   }, []);
 
   // Close on outside click
