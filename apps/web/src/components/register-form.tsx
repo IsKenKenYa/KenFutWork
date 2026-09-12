@@ -9,7 +9,6 @@ import { getSupabaseBrowserClient } from "../lib/supabase-browser";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
-import { Separator } from "./ui/separator";
 
 const stagger = {
   hidden: {},
@@ -33,9 +32,9 @@ export function RegisterForm() {
   async function bootstrapWorkspace(accessToken: string) {
     try {
       await fetchViewer(accessToken);
-      router.replace("/home");
+      router.replace("/workbench");
     } catch {
-      setError("Could not finish creating your workspace. Please try again.");
+      setError("无法完成工作台初始化，请重试。");
     }
   }
 
@@ -44,7 +43,7 @@ export function RegisterForm() {
     const trimmed = email.trim();
     if (!trimmed || !password) return;
     if (password !== confirmPassword) {
-      setError("Passwords do not match");
+      setError("两次输入的密码不一致");
       return;
     }
 
@@ -116,15 +115,15 @@ export function RegisterForm() {
                 />
               </svg>
             </motion.div>
-            <h2 className="text-lg font-semibold">Check your email</h2>
+            <h2 className="text-lg font-semibold">请查收邮件</h2>
             <p className="text-sm text-muted-foreground">
-              We sent a confirmation link to <strong>{email}</strong>
+              我们向 <strong>{email}</strong> 发送了确认链接
             </p>
             <Link
               href="/login"
               className="text-sm text-foreground underline underline-offset-4"
             >
-              Back to sign in
+              返回登录
             </Link>
           </motion.div>
         ) : (
@@ -138,10 +137,10 @@ export function RegisterForm() {
           >
             <motion.div variants={fadeIn} className="space-y-2 text-center">
               <h2 className="text-2xl font-semibold tracking-tight">
-                Create your account
+                创建账号
               </h2>
               <p className="text-sm text-muted-foreground">
-                Start with email and password
+                使用邮箱和密码注册你的工作台
               </p>
             </motion.div>
 
@@ -151,7 +150,7 @@ export function RegisterForm() {
               className="space-y-4"
             >
               <div className="space-y-2">
-                <Label htmlFor="register-email">Email</Label>
+                <Label htmlFor="register-email">邮箱</Label>
                 <Input
                   id="register-email"
                   type="email"
@@ -162,7 +161,7 @@ export function RegisterForm() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="register-password">Password</Label>
+                <Label htmlFor="register-password">密码</Label>
                 <Input
                   id="register-password"
                   type="password"
@@ -173,9 +172,7 @@ export function RegisterForm() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="register-confirm-password">
-                  Confirm password
-                </Label>
+                <Label htmlFor="register-confirm-password">确认密码</Label>
                 <Input
                   id="register-confirm-password"
                   type="password"
@@ -186,7 +183,7 @@ export function RegisterForm() {
                 />
               </div>
               <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Creating account..." : "Create account"}
+                {loading ? "创建账号中…" : "创建账号"}
               </Button>
             </motion.form>
 
@@ -204,24 +201,16 @@ export function RegisterForm() {
               )}
             </AnimatePresence>
 
-            <motion.div variants={fadeIn} className="flex items-center gap-4">
-              <Separator className="flex-1" />
-              <span className="text-xs uppercase text-muted-foreground">
-                or
-              </span>
-              <Separator className="flex-1" />
-            </motion.div>
-
             <motion.p
               variants={fadeIn}
               className="text-center text-sm text-muted-foreground"
             >
-              Already have an account?{" "}
+              已有账号？{" "}
               <Link
                 href="/login"
                 className="font-medium text-foreground underline underline-offset-4"
               >
-                Sign in
+                去登录
               </Link>
             </motion.p>
           </motion.div>

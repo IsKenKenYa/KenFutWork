@@ -9,7 +9,6 @@ import { getSupabaseBrowserClient } from "../lib/supabase-browser";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
-import { Separator } from "./ui/separator";
 
 const stagger = {
   hidden: {},
@@ -29,7 +28,8 @@ export function LoginForm({ initialErrorMessage = null }: LoginFormProps) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [mode, setMode] = useState<"magic" | "password">("magic");
+  // 邮箱链接登录（magic link）代码保留但暂不暴露入口，当前只出账密登录
+  const [mode] = useState<"magic" | "password">("password");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(initialErrorMessage);
@@ -39,7 +39,7 @@ export function LoginForm({ initialErrorMessage = null }: LoginFormProps) {
       await fetchViewer(accessToken);
       router.replace("/workbench");
     } catch {
-      setError("Could not load your workspace. Please try again.");
+      setError("无法加载你的工作台，请重试。");
     }
   }
 
@@ -87,26 +87,12 @@ export function LoginForm({ initialErrorMessage = null }: LoginFormProps) {
       const accessToken = data.session?.access_token;
       if (!accessToken) {
         setLoading(false);
-        setError("Could not finish signing in. Please try again.");
+        setError("登录未完成，请重试。");
         return;
       }
 
       await bootstrapWorkspace(accessToken);
       setLoading(false);
-    }
-  }
-
-  async function handleGoogle() {
-    setError(null);
-    const supabase = getSupabaseBrowserClient();
-    const { error: authError } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
-    if (authError) {
-      setError(authError.message);
     }
   }
 
@@ -150,9 +136,9 @@ export function LoginForm({ initialErrorMessage = null }: LoginFormProps) {
                 />
               </svg>
             </motion.div>
-            <h2 className="text-lg font-semibold">Check your email</h2>
+            <h2 className="text-lg font-semibold">请查收邮件</h2>
             <p className="text-sm text-muted-foreground">
-              We sent a login link to <strong>{email}</strong>
+              我们向 <strong>{email}</strong> 发送了登录链接
             </p>
           </motion.div>
         ) : (
@@ -166,11 +152,9 @@ export function LoginForm({ initialErrorMessage = null }: LoginFormProps) {
           >
             <motion.div variants={fadeIn} className="space-y-2 text-center">
               <h2 className="text-2xl font-semibold tracking-tight">
-                Welcome back
+                欢迎回来
               </h2>
-              <p className="text-sm text-muted-foreground">
-                Sign in to your workspace
-              </p>
+              <p className="text-sm text-muted-foreground">登录你的工作台</p>
             </motion.div>
 
             <AnimatePresence>
@@ -194,7 +178,7 @@ export function LoginForm({ initialErrorMessage = null }: LoginFormProps) {
               className="space-y-4"
             >
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">邮箱</Label>
                 <Input
                   id="email"
                   type="email"
@@ -206,7 +190,7 @@ export function LoginForm({ initialErrorMessage = null }: LoginFormProps) {
               </div>
               {mode === "password" && (
                 <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
+                  <Label htmlFor="password">密码</Label>
                   <Input
                     id="password"
                     type="password"
@@ -218,57 +202,20 @@ export function LoginForm({ initialErrorMessage = null }: LoginFormProps) {
                 </div>
               )}
               <Button type="submit" className="w-full" disabled={loading}>
-                {loading
-                  ? mode === "password"
-                    ? "Signing in..."
-                    : "Sending..."
-                  : mode === "password"
-                    ? "Sign in"
-                    : "Send login link"}
+                {loading ? "登录中…" : "登录"}
               </Button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMode(mode === "password" ? "magic" : "password");
-                  setError(null);
-                }}
-                className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {mode === "password"
-                  ? "Use login link instead"
-                  : "Use password instead"}
-              </button>
             </motion.form>
-
-            <motion.div variants={fadeIn} className="flex items-center gap-4">
-              <Separator className="flex-1" />
-              <span className="text-xs text-muted-foreground uppercase">
-                or
-              </span>
-              <Separator className="flex-1" />
-            </motion.div>
-
-            <motion.div variants={fadeIn}>
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={handleGoogle}
-                type="button"
-              >
-                Continue with Google
-              </Button>
-            </motion.div>
 
             <motion.p
               variants={fadeIn}
               className="text-center text-sm text-muted-foreground"
             >
-              Need an account?{" "}
+              还没有账号？{" "}
               <Link
                 href="/register"
                 className="font-medium text-foreground underline underline-offset-4"
               >
-                Create one
+                注册一个
               </Link>
             </motion.p>
           </motion.div>

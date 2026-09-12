@@ -14,22 +14,14 @@ export default function RegisterPage() {
 
   useEffect(() => {
     if (!loading && user) {
-      router.replace("/home");
+      router.replace("/workbench");
     }
   }, [user, loading, router]);
 
   if (loading || user) return <LoadingScreen />;
 
   return (
-    <AuthShell
-      title="Create a workspace account"
-      description="Register with email and password, then come back to the same canvas from any device."
-      features={[
-        "Create a dedicated account with email and password",
-        "Return to your workspace after confirming your email",
-        "Use the same workspace layout as signed-in users",
-      ]}
-    >
+    <AuthShell>
       <RegisterForm />
     </AuthShell>
   );

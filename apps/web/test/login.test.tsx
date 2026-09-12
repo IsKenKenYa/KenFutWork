@@ -79,21 +79,22 @@ describe("Login page", () => {
     cleanup();
   });
 
-  it("renders split screen with brand panel and login form", async () => {
+  it("renders centered workbench-style card with password login only", async () => {
     render(
       <AuthProvider>
         <LoginPage />
       </AuthProvider>,
     );
-    expect((await screen.findByText("Loomic")).textContent).toBe("Loomic");
-    expect(screen.getByText(/Send login link/i).textContent).toContain(
-      "Send login link",
+    expect((await screen.findByText("KenFutWork")).textContent).toBe(
+      "KenFutWork",
     );
-    expect(screen.getByText(/Continue with Google/i).textContent).toContain(
-      "Continue with Google",
-    );
+    // 只暴露账密登录：密码输入框与登录按钮存在，无魔法链接/Google 入口
+    expect(screen.getByLabelText(/密码/)).toBeDefined();
+    expect(screen.getByRole("button", { name: "登录" })).toBeDefined();
+    expect(screen.queryByText(/发送登录链接/)).toBeNull();
+    expect(screen.queryByText(/Google/)).toBeNull();
     expect(
-      screen.getByRole("link", { name: /create one/i }).getAttribute("href"),
+      screen.getByRole("link", { name: /注册一个/ }).getAttribute("href"),
     ).toBe("/register");
   });
 
@@ -109,31 +110,8 @@ describe("Login page", () => {
     );
 
     expect((await screen.findByRole("alert")).textContent).toContain(
-      "This sign-in link could not be verified. Request a new one and try again.",
+      "登录链接校验失败，请重新发起登录。",
     );
-  });
-
-  it("sends a login-only magic link", async () => {
-    render(
-      <AuthProvider>
-        <LoginPage />
-      </AuthProvider>,
-    );
-
-    fireEvent.change(await screen.findByLabelText(/email/i), {
-      target: { value: "user@example.com" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /send login link/i }));
-
-    await waitFor(() => {
-      expect(mockSignInWithOtp).toHaveBeenCalledWith({
-        email: "user@example.com",
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-          shouldCreateUser: false,
-        },
-      });
-    });
   });
 
   it("bootstraps the viewer before redirecting after password sign-in", async () => {
@@ -143,16 +121,13 @@ describe("Login page", () => {
       </AuthProvider>,
     );
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: /use password instead/i }),
-    );
-    fireEvent.change(screen.getByLabelText(/email/i), {
+    fireEvent.change(await screen.findByLabelText(/邮箱/), {
       target: { value: "user@example.com" },
     });
-    fireEvent.change(screen.getByLabelText(/password/i), {
+    fireEvent.change(screen.getByLabelText(/密码/), {
       target: { value: "password-123" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
 
     await waitFor(() => {
       expect(mockSignInWithPassword).toHaveBeenCalledWith({
