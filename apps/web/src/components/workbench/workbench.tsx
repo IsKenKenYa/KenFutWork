@@ -1,7 +1,10 @@
 "use client";
 
+import type { ProjectSummary } from "@loomic/shared";
 import {
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Code2,
   Folder,
   Mic,
@@ -15,6 +18,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useAuth } from "@/lib/auth-context";
+import { createProject, fetchProjects } from "@/lib/server-api";
 
 /**
  * Agent 工作台（产品主入口）：Code / Design 双模式（DEC-2）。
@@ -103,12 +107,22 @@ export function Workbench() {
   const [models, setModels] = useState<Array<{ id: string; name: string }>>([]);
   const [model, setModel] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Design 模式：项目面板（创建/列表，可收缩）+ 原版画布内嵌
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
+    null,
+  );
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [creatingProject, setCreatingProject] = useState(false);
 
   const activeRunIdRef = useRef<string | null>(null);
   const activeTaskIdRef = useRef<string | null>(null);
   activeTaskIdRef.current = activeTaskId;
 
   const tasks = tasksByMode[mode];
+  const selectedProject =
+    projects.find((p) => p.id === selectedProjectId) ?? null;
   const activeTask = useMemo(
     () => tasks.find((t) => t.id === activeTaskId) ?? null,
     [tasks, activeTaskId],
@@ -126,6 +140,32 @@ export function Workbench() {
       design: loadTasks("design"),
     });
   }, []);
+
+  // Design 模式项目列表（复用 Loomic 项目/画布）
+  useEffect(() => {
+    if (!session?.access_token) return;
+    fetchProjects(session.access_token)
+      .then((data) => setProjects(data.projects))
+      .catch(() => {});
+  }, [session]);
+
+  const handleCreateProject = useCallback(async () => {
+    const token = session?.access_token;
+    if (!token || !newProjectName.trim()) return;
+    setCreatingProject(true);
+    try {
+      const result = await createProject(token, {
+        name: newProjectName.trim(),
+      });
+      setProjects((prev) => [result.project, ...prev]);
+      setSelectedProjectId(result.project.id);
+      setNewProjectName("");
+    } catch {
+      // 创建失败保留在创建视图
+    } finally {
+      setCreatingProject(false);
+    }
+  }, [session, newProjectName]);
 
   // 权限档位（DEC-4）与模型目录（含 BYOK 实例）：读取当前值
   useEffect(() => {
@@ -379,8 +419,8 @@ export function Workbench() {
           </button>
         </aside>
 
-        {/* 主区：任务视图 or 居中编排器 */}
-        <main className="min-w-0 flex-1 overflow-y-auto rounded-xl border-l bg-card">
+        {/* 主区：任务视图 / Design 画布工作区 / 居中编排器 */}
+        <main className="min-w-0 flex-1 overflow-hidden rounded-xl border-l bg-card">
           {activeTask ? (
             <div className="mx-auto flex h-full max-w-3xl flex-col p-6">
               <h1 className="mb-4 text-lg font-medium">{activeTask.title}</h1>
@@ -420,11 +460,86 @@ export function Workbench() {
                 ) : null}
               </div>
             </div>
+          ) : mode === "design" ? (
+            <div className="flex h-full">
+              {panelCollapsed ? (
+                <button
+                  type="button"
+                  aria-label="展开项目面板"
+                  onClick={() => setPanelCollapsed(false)}
+                  className="w-10 shrink-0 border-r bg-card text-muted-foreground hover:bg-muted"
+                >
+                  <ChevronRight className="mx-auto h-4 w-4" />
+                </button>
+              ) : (
+                <div className="flex w-64 shrink-0 flex-col border-r bg-card">
+                  <div className="flex items-center justify-between px-3 py-2">
+                    <span className="text-sm font-medium">项目</span>
+                    <button
+                      type="button"
+                      aria-label="收起项目面板"
+                      onClick={() => setPanelCollapsed(true)}
+                      className="rounded-md p-1 text-muted-foreground hover:bg-muted"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="space-y-2 px-3 pb-3">
+                    <input
+                      aria-label="项目名称"
+                      placeholder="新项目名称"
+                      value={newProjectName}
+                      onChange={(e) => setNewProjectName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void handleCreateProject();
+                      }}
+                      className="w-full rounded-md border px-2 py-1.5 text-sm"
+                    />
+                    <button
+                      type="button"
+                      aria-label="创建项目"
+                      disabled={creatingProject || !newProjectName.trim()}
+                      onClick={() => void handleCreateProject()}
+                      className="w-full rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
+                    >
+                      {creatingProject ? "创建中…" : "创建项目"}
+                    </button>
+                  </div>
+                  <div className="min-h-0 flex-1 overflow-y-auto px-1">
+                    {projects.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        data-active={selectedProjectId === p.id}
+                        onClick={() => setSelectedProjectId(p.id)}
+                        className="flex w-full items-center gap-2 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted data-[active=true]:bg-muted"
+                      >
+                        <Palette className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{p.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="min-w-0 flex-1 bg-background">
+                {selectedProject ? (
+                  <iframe
+                    key={selectedProject.primaryCanvas.id}
+                    src={`/canvas?id=${selectedProject.primaryCanvas.id}`}
+                    title={`${selectedProject.name} 画布`}
+                    className="h-full w-full border-0"
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
+                    选择或创建一个项目，右侧将打开原版画布。
+                  </div>
+                )}
+              </div>
+            </div>
           ) : (
             <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-6">
               <div className="mb-6 flex items-center gap-3">
-                {mode === "code" ? <Code2 className="h-8 w-8" /> : null}
-                {mode === "design" ? <Palette className="h-8 w-8" /> : null}
+                <Code2 className="h-8 w-8" />
                 <h1 className="text-4xl font-semibold tracking-tight">
                   {meta.title}
                 </h1>
