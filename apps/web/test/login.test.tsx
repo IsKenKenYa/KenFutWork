@@ -160,7 +160,7 @@ describe("Login page", () => {
         password: "password-123",
       });
       expect(mockFetchViewer).toHaveBeenCalledWith("session-token");
-      expect(mockReplace).toHaveBeenCalledWith("/home");
+      expect(mockReplace).toHaveBeenCalledWith("/workbench");
     });
   });
 });

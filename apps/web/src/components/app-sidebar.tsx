@@ -23,8 +23,8 @@ interface NavItem {
 
 const TOP_NAV_ITEMS: NavItem[] = [
   {
-    href: "/home",
-    label: "Home",
+    href: "/workbench",
+    label: "工作台",
     viewBox: 20,
     icon: "M8.69 2.136a2 2 0 0 1 2.62 0l5.655 4.905A3 3 0 0 1 18 9.307v7.194a1.5 1.5 0 0 1-1.5 1.5h-3c-.777 0-1.415-.59-1.493-1.347L12 16.501v-5.188a.6.6 0 0 0-.48-.588l-.12-.011H8.6a.6.6 0 0 0-.6.6V16.5A1.5 1.5 0 0 1 6.5 18h-3A1.5 1.5 0 0 1 2 16.5V9.307c0-.815.332-1.593.915-2.157l.119-.11zm1.769.983a.7.7 0 0 0-.918 0L3.886 8.023A1.7 1.7 0 0 0 3.3 9.307v7.194c0 .11.09.2.2.2h3a.2.2 0 0 0 .2-.2v-5.188a1.9 1.9 0 0 1 1.9-1.9H11.4c1.05.001 1.9.851 1.9 1.9v5.188c0 .11.09.2.2.2h3a.2.2 0 0 0 .2-.2V9.307a1.7 1.7 0 0 0-.587-1.284z",
   },
@@ -190,8 +190,8 @@ export function AppSidebar() {
       <aside className="hidden md:flex h-screen w-[60px] flex-col items-center border-r border-border bg-card py-3 gap-1">
         {/* Logo */}
         <Link
-          href="/home"
-          title="Loomic"
+          href="/workbench"
+          title="工作台"
           className="mb-1 flex h-9 w-9 items-center justify-center"
         >
           <motion.div

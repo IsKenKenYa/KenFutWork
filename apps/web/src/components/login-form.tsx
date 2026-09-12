@@ -37,7 +37,7 @@ export function LoginForm({ initialErrorMessage = null }: LoginFormProps) {
   async function bootstrapWorkspace(accessToken: string) {
     try {
       await fetchViewer(accessToken);
-      router.replace("/home");
+      router.replace("/workbench");
     } catch {
       setError("Could not load your workspace. Please try again.");
     }
