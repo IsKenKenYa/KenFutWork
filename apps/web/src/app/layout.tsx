@@ -11,21 +11,21 @@ import "./globals.css";
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
-  title: "Loomic",
-  description: "AI-powered creative workspace",
+  title: "KenFutWork 工作台",
+  description: "插件化 BYOK Work 平台——Code / Design 双模式 Agent 工作台",
   icons: {
     icon: "/favicon.svg",
     apple: "/apple-touch-icon.png",
   },
   openGraph: {
-    title: "Loomic",
-    description: "AI-powered creative workspace",
+    title: "KenFutWork 工作台",
+    description: "插件化 BYOK Work 平台——Code / Design 双模式 Agent 工作台",
     images: [{ url: "/og-image.png", width: 1200, height: 630 }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Loomic",
-    description: "AI-powered creative workspace",
+    title: "KenFutWork 工作台",
+    description: "插件化 BYOK Work 平台——Code / Design 双模式 Agent 工作台",
     images: ["/og-image.png"],
   },
 };

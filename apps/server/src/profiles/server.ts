@@ -49,6 +49,52 @@ export interface ServerProfileDeps {
   overridePayments?: PaymentService;
 }
 
+/** 插件市场目录：与清单同源维护（真实注册项的说明）。 */
+export const PLUGIN_CATALOG = [
+  {
+    name: "model-providers",
+    title: "BYOK 供应商",
+    description:
+      "添加你自己的模型实例（OpenAI 兼容 / Anthropic / Gemini / 图像 / 视频协议），Key 加密保存。",
+  },
+  {
+    name: "agent-runs",
+    title: "Agent 运行时",
+    description: "任务编排、流式输出、子代理与工具调用。",
+  },
+  {
+    name: "permissions",
+    title: "权限策略",
+    description: "危险工具三档审批（默认 / 自动放行 / 完全访问）。",
+  },
+  {
+    name: "agent-modes",
+    title: "执行模式",
+    description: "会话级 Code / Design 与 agent / plan 模式。",
+  },
+  {
+    name: "search",
+    title: "联网搜索",
+    description: "web_search 工具，为 Agent 接入实时信息。",
+  },
+  {
+    name: "mcp",
+    title: "MCP 接入",
+    description: "连接 MCP server，工具自动进入统一注册表。",
+  },
+  {
+    name: "usage",
+    title: "用量统计",
+    description: "Agent 与直连生成的 token/成本计量。",
+  },
+  {
+    name: "canvas",
+    title: "画布（Design）",
+    description: "无限画布创作、品牌套件与图像/视频生成。",
+  },
+  { name: "skills", title: "技能", description: "SKILL.md 技能发现与市场。" },
+];
+
 export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
   return [
     authPlugin,

@@ -57,7 +57,7 @@ function CanvasPageContent() {
   const [layersOpen, setLayersOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
   const [brandKitId, setBrandKitId] = useState<string | null>(null);
-  const [projectName, setProjectName] = useState("Untitled");
+  const [projectName, setProjectName] = useState("未命名画布");
   const [selectedCanvasElements, setSelectedCanvasElements] = useState<
     CanvasSelectedElement[]
   >([]);
@@ -221,7 +221,7 @@ function CanvasPageContent() {
         fetchProject(token, c.projectId)
           .then((projectData) => {
             setBrandKitId(projectData.project.brand_kit_id);
-            setProjectName(projectData.project.name ?? "Untitled");
+            setProjectName(projectData.project.name ?? "未命名画布");
           })
           .catch((err) =>
             console.warn("Failed to fetch project for brand kit:", err),

@@ -30,12 +30,12 @@ type SettingsTab =
   | "usage";
 
 const tabs: Array<{ id: SettingsTab; label: string }> = [
-  { id: "profile", label: "Profile" },
-  { id: "agent", label: "Agent" },
-  { id: "providers", label: "Providers" },
-  { id: "permissions", label: "Permissions" },
-  { id: "billing", label: "Billing" },
-  { id: "usage", label: "Usage" },
+  { id: "profile", label: "个人资料" },
+  { id: "agent", label: "模型" },
+  { id: "providers", label: "供应商" },
+  { id: "permissions", label: "权限" },
+  { id: "billing", label: "订阅" },
+  { id: "usage", label: "用量" },
 ];
 
 export default function SettingsPage() {

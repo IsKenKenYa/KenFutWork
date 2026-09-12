@@ -77,8 +77,11 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
     }
 
     const serverBase = getServerBaseUrl();
+    const wsBase = serverBase
+      ? serverBase.replace(/^http/, "ws")
+      : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}`;
     const wsUrl =
-      serverBase.replace(/^http/, "ws") +
+      wsBase +
       `/api/ws?token=${encodeURIComponent(token)}&connectionId=${encodeURIComponent(connectionIdRef.current)}`;
 
     const ws = new WebSocket(wsUrl);

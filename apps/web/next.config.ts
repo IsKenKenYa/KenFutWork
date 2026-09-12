@@ -16,4 +16,20 @@ const nextConfig: NextConfig = {
   },
 };
 
+// 开发期同源代理：NEXT_PUBLIC_SERVER_BASE_URL 留空时，/api/* 经 dev server
+// 代理到本地 API（3001），避免跨域。静态导出（production build）不受影响。
+if (
+  process.env.NODE_ENV !== "production" &&
+  !process.env.NEXT_PUBLIC_SERVER_BASE_URL
+) {
+  nextConfig.rewrites = async () => ({
+    beforeFiles: [
+      {
+        source: "/api/:path*",
+        destination: "http://127.0.0.1:3001/api/:path*",
+      },
+    ],
+  });
+}
+
 export default nextConfig;

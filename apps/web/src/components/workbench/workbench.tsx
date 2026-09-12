@@ -7,17 +7,21 @@ import {
   ChevronRight,
   Code2,
   Folder,
+  FolderOpen,
+  Layers,
   Mic,
   Palette,
   Plus,
   Send,
   Settings,
   ShieldCheck,
+  User,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useAuth } from "@/lib/auth-context";
+import { getServerBaseUrl } from "@/lib/env";
 import { createProject, fetchProjects } from "@/lib/server-api";
 
 /**
@@ -113,6 +117,8 @@ export function Workbench() {
     null,
   );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // Code 模式：本地工作目录（File System Access API，浏览器支持时可用）
+  const [workDirName, setWorkDirName] = useState<string | null>(null);
   const [newProjectName, setNewProjectName] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
 
@@ -170,22 +176,18 @@ export function Workbench() {
   // 权限档位（DEC-4）与模型目录（含 BYOK 实例）：读取当前值
   useEffect(() => {
     if (!session?.access_token) return;
-    fetch(
-      `${process.env.NEXT_PUBLIC_SERVER_BASE_URL ?? "http://localhost:3001"}/api/permissions/tier`,
-      {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      },
-    )
+    fetch(`${getServerBaseUrl()}/api/permissions/tier`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.tier) setTier(data.tier);
       })
       .catch(() => {});
     // 模型目录（带凭证并入 BYOK 实例）
-    fetch(
-      `${process.env.NEXT_PUBLIC_SERVER_BASE_URL ?? "http://localhost:3001"}/api/models`,
-      { headers: { Authorization: `Bearer ${session.access_token}` } },
-    )
+    fetch(`${getServerBaseUrl()}/api/models`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
       .then((r) => (r.ok ? r.json() : { models: [] }))
       .then((data: { models: Array<{ id: string; name: string }> }) => {
         setModels(data.models);
@@ -261,23 +263,37 @@ export function Workbench() {
       setTier(next);
       if (!session?.access_token) return;
       try {
-        await fetch(
-          `${process.env.NEXT_PUBLIC_SERVER_BASE_URL ?? "http://localhost:3001"}/api/permissions/tier`,
-          {
-            method: "PUT",
-            headers: {
-              "content-type": "application/json",
-              Authorization: `Bearer ${session.access_token}`,
-            },
-            body: JSON.stringify({ tier: next }),
+        await fetch(`${getServerBaseUrl()}/api/permissions/tier`, {
+          method: "PUT",
+          headers: {
+            "content-type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
           },
-        );
+          body: JSON.stringify({ tier: next }),
+        });
       } catch {
         // 权限档位失败不阻塞任务
       }
     },
     [session],
   );
+
+  const pickWorkDirectory = useCallback(async () => {
+    try {
+      const picker = (
+        window as unknown as {
+          showDirectoryPicker?: () => Promise<{ name: string }>;
+        }
+      ).showDirectoryPicker;
+      if (!picker) {
+        return;
+      }
+      const dir = await picker();
+      setWorkDirName(dir.name);
+    } catch {
+      // 用户取消或浏览器不支持
+    }
+  }, []);
 
   const startTask = useCallback(
     (text: string) => {
@@ -307,7 +323,11 @@ export function Workbench() {
         {
           sessionId,
           conversationId,
-          prompt: text.trim(),
+          prompt:
+            mode === "code" && workDirName
+              ? `【工作目录】${workDirName}\n\n${text.trim()}`
+              : text.trim(),
+          ...(model ? { model } : {}),
           ...(mode === "design" ? { preset: "design" as const } : {}),
         },
         (ack) => {
@@ -319,7 +339,7 @@ export function Workbench() {
         },
       );
     },
-    [mode, session, ws],
+    [mode, model, workDirName, session, ws],
   );
 
   if (loading) {
@@ -403,11 +423,27 @@ export function Workbench() {
             ) : null}
             <button
               type="button"
+              title="插件市场"
+              onClick={() => router.push("/plugins")}
+              className="rounded-md p-2 hover:bg-muted"
+            >
+              <Layers className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
               title="任务列表"
               onClick={() => setActiveTaskId(null)}
               className="rounded-md p-2 hover:bg-muted"
             >
               <Folder className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              title="个人中心"
+              onClick={() => router.push("/profile")}
+              className="rounded-md p-2 hover:bg-muted"
+            >
+              <User className="h-4 w-4" />
             </button>
             <button
               type="button"
@@ -474,6 +510,22 @@ export function Workbench() {
               </div>
             ) : null}
 
+            <nav className="mb-2 space-y-0.5">
+              <button
+                type="button"
+                onClick={() => router.push("/plugins")}
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-muted-foreground hover:bg-muted"
+              >
+                <Layers className="h-4 w-4" /> 插件市场
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/profile")}
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-muted-foreground hover:bg-muted"
+              >
+                <User className="h-4 w-4" /> 个人中心
+              </button>
+            </nav>
             <div className="px-3 text-xs text-muted-foreground">任务列表</div>
             <div className="min-h-0 flex-1 overflow-y-auto">
               {tasks.length === 0 ? (
@@ -498,13 +550,6 @@ export function Workbench() {
                 </ul>
               )}
             </div>
-            <button
-              type="button"
-              onClick={() => router.push("/settings")}
-              className="flex min-h-[36px] items-center gap-2 rounded-lg px-3 text-sm text-muted-foreground hover:bg-muted"
-            >
-              <Settings className="h-4 w-4" /> 设置
-            </button>
           </aside>
         )}
 
@@ -593,6 +638,15 @@ export function Workbench() {
                       className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
                     >
                       <Plus className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      title="选择工作目录"
+                      onClick={() => void pickWorkDirectory()}
+                      className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+                    >
+                      <FolderOpen className="h-3.5 w-3.5" />
+                      {workDirName ?? "选择文件夹"}
                     </button>
                     <label className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-muted-foreground">
                       <ShieldCheck className="h-3.5 w-3.5" />

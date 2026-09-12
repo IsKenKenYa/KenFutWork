@@ -23,9 +23,9 @@ const TYPE_LABELS: Record<string, string> = {
 type FilterMode = "all" | "deducted" | "granted";
 
 const FILTER_OPTIONS: Array<{ value: FilterMode; label: string }> = [
-  { value: "all", label: "All" },
-  { value: "deducted", label: "Deducted" },
-  { value: "granted", label: "Granted" },
+  { value: "all", label: "全部" },
+  { value: "deducted", label: "扣减" },
+  { value: "granted", label: "发放" },
 ];
 
 const DEDUCT_TYPES = new Set(["generation_deduct"]);
@@ -114,7 +114,7 @@ export function CreditUsageHistory() {
       <div>
         <h2 className="text-base font-semibold">Usage</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          View your credit usage history and transactions.
+          查看积分使用与交易记录。
         </p>
       </div>
 
@@ -140,9 +140,7 @@ export function CreditUsageHistory() {
       {filtered.length === 0 ? (
         <div className="flex flex-col items-center gap-2 py-12 text-center">
           <Zap className="h-8 w-8 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">
-            No transactions found.
-          </p>
+          <p className="text-sm text-muted-foreground">暂无交易记录</p>
         </div>
       ) : (
         <div className="overflow-hidden rounded-lg border">

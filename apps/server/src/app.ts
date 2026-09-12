@@ -6,6 +6,7 @@ import { loadServerEnv, type ServerEnv } from "./config/env.js";
 import { registerAllProviders } from "./generation/providers/register-all.js";
 import { registerCorsHook } from "./http/cors.js";
 import { registerInfraRoutes } from "./http/infra.js";
+import { registerPluginMarketRoutes } from "./http/plugin-market.js";
 import { composePlugins } from "./kernel/compose.js";
 import { AgentRunEventBus, createKernelEvents } from "./kernel/context.js";
 import type { ServiceMap } from "./kernel/types.js";
@@ -93,6 +94,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   });
 
   registerInfraRoutes(app, env);
+  registerPluginMarketRoutes(app);
 
   return app;
 }
