@@ -63,3 +63,8 @@ docs/home-discovery-library.md
 docs/lovart-deep-analysis-*.md
 docs/tech/pricing-profitability-report.md
 docs/tech/replicate-models-pricing.md
+
+# 本地打包产物（package-win / web 静态导出）
+release/
+apps/web/out/
+apps/web/tmp/

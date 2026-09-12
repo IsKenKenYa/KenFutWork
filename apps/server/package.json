@@ -50,6 +50,8 @@
     "dev:workers:3": "WORKER_ID=w1 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & WORKER_ID=w2 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & WORKER_ID=w3 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & wait",
     "worker": "node --env-file=../../.env.local --import tsx ./src/worker.ts",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
-  }
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node --env-file=../../.env.local --import tsx ./src/server.ts"
+  },
+  "start:worker": "node --env-file=../../.env.local --import tsx ./src/worker.ts"
 }

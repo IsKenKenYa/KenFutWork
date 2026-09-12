@@ -2,10 +2,6 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "export",
-  // TEMP-VERIFY: distDir pointed outside the project because the dev sandbox
-  // blocks Next's end-of-build unlink of .next/lock & export-detail.json.
-  // Revert to default after verification.
-  distDir: "/tmp/loomic-web-next-dist",
   typescript: {
     ignoreBuildErrors: true,
   },

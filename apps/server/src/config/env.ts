@@ -60,6 +60,8 @@ export type ServerEnv = {
   supabaseProjectId?: string;
   supabaseServiceRoleKey?: string;
   supabaseUrl?: string;
+  /** 静态 UI 目录（LOOMIC_WEB_DIST）：配置后 server 直接托管前端。 */
+  webDist?: string;
   version: string;
   volcesApiKey?: string;
   volcesBaseUrl?: string;
@@ -106,6 +108,8 @@ export function loadServerEnv(
     overrides.openAIApiBase ?? normalizeOptionalString(source.OPENAI_API_BASE);
   const openAIApiKey =
     overrides.openAIApiKey ?? normalizeOptionalString(source.OPENAI_API_KEY);
+  const webDist =
+    overrides.webDist ?? normalizeOptionalString(source.LOOMIC_WEB_DIST);
   const supabaseUrl =
     overrides.supabaseUrl ?? normalizeOptionalString(source.SUPABASE_URL);
   const supabaseAnonKey =
@@ -244,6 +248,7 @@ export function loadServerEnv(
     ...(googleApplicationCredentials ? { googleApplicationCredentials } : {}),
     ...(openAIApiBase ? { openAIApiBase } : {}),
     ...(openAIApiKey ? { openAIApiKey } : {}),
+    ...(webDist ? { webDist } : {}),
     ...(supabaseUrl ? { supabaseUrl } : {}),
     ...(supabaseAnonKey ? { supabaseAnonKey } : {}),
     ...(supabaseDbUrl ? { supabaseDbUrl } : {}),
@@ -369,11 +374,15 @@ function parsePort(rawPort: string | undefined) {
 }
 
 function readServerVersion() {
-  const packageJson = readFileSync(
-    new URL("../../package.json", import.meta.url),
-    "utf8",
-  );
-
-  const parsed = JSON.parse(packageJson) as { version?: string };
-  return parsed.version ?? "0.0.0";
+  try {
+    // import.meta.url 在 SEA（CJS 打包）下为空，回退到 "0.0.0"
+    const packageJson = readFileSync(
+      new URL("../../package.json", import.meta.url),
+      "utf8",
+    );
+    const parsed = JSON.parse(packageJson) as { version?: string };
+    return parsed.version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
 }

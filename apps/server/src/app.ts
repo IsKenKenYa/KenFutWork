@@ -7,6 +7,7 @@ import { registerAllProviders } from "./generation/providers/register-all.js";
 import { registerCorsHook } from "./http/cors.js";
 import { registerInfraRoutes } from "./http/infra.js";
 import { registerPluginMarketRoutes } from "./http/plugin-market.js";
+import { registerStaticWebRoutes } from "./http/static-web.js";
 import { composePlugins } from "./kernel/compose.js";
 import { AgentRunEventBus, createKernelEvents } from "./kernel/context.js";
 import type { ServiceMap } from "./kernel/types.js";
@@ -95,6 +96,10 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
 
   registerInfraRoutes(app, env);
   registerPluginMarketRoutes(app);
+  // 静态 UI 托管（自托管/桌面包）：配置 LOOMIC_WEB_DIST 后 server 直接托管前端
+  if (env.webDist) {
+    registerStaticWebRoutes(app, { distDir: env.webDist });
+  }
 
   return app;
 }

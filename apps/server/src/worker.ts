@@ -5,9 +5,11 @@ import { bootstrap } from "global-agent";
 bootstrap();
 
 // Native fetch() proxy — needed for @google/generative-ai SDK
-if (process.env.GLOBAL_AGENT_HTTP_PROXY) {
-  const { ProxyAgent, setGlobalDispatcher } = await import("undici");
-  setGlobalDispatcher(new ProxyAgent(process.env.GLOBAL_AGENT_HTTP_PROXY));
+async function setupProxy() {
+  if (process.env.GLOBAL_AGENT_HTTP_PROXY) {
+    const { ProxyAgent, setGlobalDispatcher } = await import("undici");
+    setGlobalDispatcher(new ProxyAgent(process.env.GLOBAL_AGENT_HTTP_PROXY));
+  }
 }
 
 import { randomUUID } from "node:crypto";
@@ -43,6 +45,8 @@ const VT_BY_QUEUE: Record<string, number> = {
 };
 
 async function main() {
+  await setupProxy();
+
   const env = loadServerEnv();
 
   if (!env.supabaseDbUrl) {

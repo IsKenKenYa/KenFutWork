@@ -4,29 +4,35 @@ import { bootstrap } from "global-agent";
 bootstrap();
 
 // Native fetch() proxy — needed for @google/generative-ai SDK
-if (process.env.GLOBAL_AGENT_HTTP_PROXY) {
-  const { ProxyAgent, setGlobalDispatcher } = await import("undici");
-  setGlobalDispatcher(new ProxyAgent(process.env.GLOBAL_AGENT_HTTP_PROXY));
+async function setupProxy() {
+  if (process.env.GLOBAL_AGENT_HTTP_PROXY) {
+    const { ProxyAgent, setGlobalDispatcher } = await import("undici");
+    setGlobalDispatcher(new ProxyAgent(process.env.GLOBAL_AGENT_HTTP_PROXY));
+  }
 }
 
 import { buildApp } from "./app.js";
 import { loadServerEnv } from "./config/env.js";
 
-const env = loadServerEnv();
-const app = buildApp({
-  env,
-});
+async function main() {
+  await setupProxy();
 
-const host = process.env.HOST ?? "127.0.0.1";
+  const env = loadServerEnv();
+  const app = buildApp({ env });
 
-try {
-  await app.listen({
-    host,
-    port: env.port,
-  });
+  const host = process.env.HOST ?? "127.0.0.1";
 
-  console.log(`@loomic/server listening on http://${host}:${env.port}`);
-} catch (error) {
-  app.log.error(error);
-  process.exitCode = 1;
+  try {
+    await app.listen({
+      host,
+      port: env.port,
+    });
+
+    console.log(`@loomic/server listening on http://${host}:${env.port}`);
+  } catch (error) {
+    app.log.error(error);
+    process.exitCode = 1;
+  }
 }
+
+void main();
