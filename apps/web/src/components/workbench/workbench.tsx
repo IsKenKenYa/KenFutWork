@@ -1,19 +1,15 @@
 "use client";
 
 import {
-  Bot,
-  Briefcase,
   ChevronDown,
   Code2,
   Folder,
-  Layers,
   Mic,
   Palette,
   Plus,
   Send,
   Settings,
   ShieldCheck,
-  Sparkles,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -21,13 +17,13 @@ import { useWebSocket } from "@/hooks/use-websocket";
 import { useAuth } from "@/lib/auth-context";
 
 /**
- * Agent 工作台（产品主入口，TRAE 式三模式）：
- * Work / Code / Design 顶部模式切换 + 任务侧栏 + 居中任务编排器。
+ * Agent 工作台（产品主入口）：Code / Design 双模式（DEC-2）。
+ * 顶部模式切换 + 任务侧栏 + 居中任务编排器。
  * design 模式的画布（Loomic 能力面）经「打开画布」进入，Loomic 仅作为
  * design 模式及其依赖能力的承载。
  */
 
-type WorkbenchMode = "work" | "code" | "design";
+type WorkbenchMode = "code" | "design";
 
 interface TaskMessage {
   role: "user" | "assistant";
@@ -51,30 +47,20 @@ const MODE_META: Record<
     title: string;
     placeholder: string;
     chips: string[];
-    sidebarItems: string[];
   }
 > = {
-  work: {
-    label: "Work",
-    title: "Work",
-    placeholder: "帮你处理日常工作任务，交付可靠结果。",
-    chips: ["日报生成", "会议纪要", "邮件草稿"],
-    sidebarItems: ["办公助理"],
-  },
   code: {
     label: "Code",
     title: "Code with KenFutWork",
     placeholder:
       "帮你编写代码、调试 Bug、优化性能等开发工作，交付生产级代码产物。",
     chips: ["应用开发", "项目理解", "游戏创意", "工具脚本"],
-    sidebarItems: ["插件市场", "模板库", "自动化", "办公助理"],
   },
   design: {
     label: "Design",
     title: "Design with KenFutWork",
     placeholder: "从想法到设计，生成可交付的页面原型。",
     chips: ["设计还原", "概念成稿", "规范出图"],
-    sidebarItems: ["插件市场", "设计系统", "办公助理"],
   },
 };
 
@@ -110,7 +96,7 @@ export function Workbench() {
   const [mode, setMode] = useState<WorkbenchMode>("code");
   const [tasksByMode, setTasksByMode] = useState<
     Record<WorkbenchMode, WorkbenchTask[]>
-  >({ work: [], code: [], design: [] });
+  >({ code: [], design: [] });
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [tier, setTier] = useState("default");
@@ -136,7 +122,6 @@ export function Workbench() {
   // 任务列表载入
   useEffect(() => {
     setTasksByMode({
-      work: loadTasks("work"),
       code: loadTasks("code"),
       design: loadTasks("design"),
     });
@@ -283,7 +268,6 @@ export function Workbench() {
           sessionId,
           conversationId,
           prompt: text.trim(),
-          ...(mode === "code" ? { preset: "code" as const } : {}),
           ...(mode === "design" ? { preset: "design" as const } : {}),
         },
         (ack) => {
@@ -311,10 +295,10 @@ export function Workbench() {
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
-      {/* 顶部：模式切换（Work / Code / Design） */}
+      {/* 顶部：模式切换（Code / Design 双模式，DEC-2） */}
       <header className="flex items-center justify-between border-b px-4 py-2">
         <div className="flex items-center gap-1 rounded-lg bg-muted p-1">
-          {(["work", "code", "design"] as const).map((m) => (
+          {(["code", "design"] as const).map((m) => (
             <button
               key={m}
               type="button"
@@ -325,7 +309,6 @@ export function Workbench() {
               }}
               className="flex min-h-[32px] items-center gap-1.5 rounded-md px-3 py-1 text-sm transition-colors data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:shadow-sm"
             >
-              {m === "work" ? <Briefcase className="h-4 w-4" /> : null}
               {m === "code" ? <Code2 className="h-4 w-4" /> : null}
               {m === "design" ? <Palette className="h-4 w-4" /> : null}
               {MODE_META[m].label}
@@ -352,31 +335,6 @@ export function Workbench() {
           >
             <Plus className="h-4 w-4" /> 新建任务
           </button>
-          <nav className="mb-2 space-y-0.5">
-            {meta.sidebarItems.map((item) => (
-              <button
-                key={item}
-                type="button"
-                title="即将上线"
-                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-muted-foreground hover:bg-muted"
-              >
-                {item === "办公助理" ? (
-                  <Bot className="h-4 w-4" />
-                ) : item === "设计系统" ? (
-                  <Palette className="h-4 w-4" />
-                ) : item === "插件市场" ? (
-                  <Layers className="h-4 w-4" />
-                ) : item === "模板库" ? (
-                  <Folder className="h-4 w-4" />
-                ) : item === "自动化" ? (
-                  <Sparkles className="h-4 w-4" />
-                ) : (
-                  <Briefcase className="h-4 w-4" />
-                )}
-                {item}
-              </button>
-            ))}
-          </nav>
           <div className="mt-2 flex items-center justify-between px-3 text-xs text-muted-foreground">
             <span>任务列表</span>
           </div>
@@ -465,9 +423,8 @@ export function Workbench() {
           ) : (
             <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-6">
               <div className="mb-6 flex items-center gap-3">
-                {mode === "code" ? <Bot className="h-8 w-8" /> : null}
+                {mode === "code" ? <Code2 className="h-8 w-8" /> : null}
                 {mode === "design" ? <Palette className="h-8 w-8" /> : null}
-                {mode === "work" ? <Briefcase className="h-8 w-8" /> : null}
                 <h1 className="text-4xl font-semibold tracking-tight">
                   {meta.title}
                 </h1>
