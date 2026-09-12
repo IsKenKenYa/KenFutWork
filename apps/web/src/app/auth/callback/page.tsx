@@ -75,7 +75,7 @@ function AuthCallbackPageContent() {
         }
 
         if (!cancelled) {
-          router.replace("/home");
+          router.replace("/workbench");
         }
       } catch {
         if (!cancelled) {

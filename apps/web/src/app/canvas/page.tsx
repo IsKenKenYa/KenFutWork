@@ -13,7 +13,6 @@ import type { CanvasImageItem } from "../../components/canvas-image-picker";
 import { CanvasLayersPanel } from "../../components/canvas-layers-panel";
 import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
 import { ChatSidebar } from "../../components/chat-sidebar";
-import { CreditHeaderButton } from "../../components/credits/credit-header-button";
 import { EditableProjectName } from "../../components/editable-project-name";
 import { LoadingScreen } from "../../components/loading-screen";
 import { useJobFallbackPolling } from "../../hooks/use-job-fallback-polling";
@@ -287,10 +286,6 @@ function CanvasPageContent() {
       </div>
       {/* Canvas always takes full width; on mobile/tablet, ChatSidebar overlays instead of side-by-side */}
       <div className="flex-1 relative min-w-0 overflow-hidden">
-        {/* Credits button — canvas area top-right, NOT chatbar */}
-        <div className="absolute top-3 right-3 z-20">
-          <CreditHeaderButton />
-        </div>
         <CanvasEditor
           canvasId={canvasData.id}
           projectId={canvasData.projectId}

@@ -6,10 +6,10 @@ export default function NotFound() {
       <h1 className="text-4xl font-bold text-foreground">404</h1>
       <p className="text-muted-foreground">Page not found</p>
       <Link
-        href="/home"
+        href="/workbench"
         className="text-sm text-foreground underline underline-offset-4 hover:opacity-70"
       >
-        Back to Home
+        返回工作台
       </Link>
     </div>
   );

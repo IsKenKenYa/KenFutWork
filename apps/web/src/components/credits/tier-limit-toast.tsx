@@ -3,7 +3,6 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { Lock, Maximize2, Timer, X } from "lucide-react";
-import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import {
   createContext,
@@ -30,7 +29,6 @@ interface TierToastConfig {
   accentClass: string; // Tailwind ring/bg/text color classes
   progressColor: string; // Tailwind bg for progress bar
   title: string;
-  cta: string;
 }
 
 const TOAST_CONFIG: Record<TierLimitCode, TierToastConfig> = {
@@ -39,21 +37,18 @@ const TOAST_CONFIG: Record<TierLimitCode, TierToastConfig> = {
     accentClass: "bg-muted",
     progressColor: "bg-primary",
     title: "\u5E76\u53D1\u4EFB\u52A1\u5DF2\u6EE1",
-    cta: "\u5347\u7EA7\u5957\u9910",
   },
   model_not_accessible: {
     icon: <Lock className="h-5 w-5 text-muted-foreground" />,
     accentClass: "bg-muted",
     progressColor: "bg-primary",
     title: "\u6A21\u578B\u9700\u8981\u66F4\u9AD8\u7EA7\u5957\u9910",
-    cta: "\u5347\u7EA7\u89E3\u9501",
   },
   resolution_not_allowed: {
     icon: <Maximize2 className="h-5 w-5 text-muted-foreground" />,
     accentClass: "bg-muted",
     progressColor: "bg-primary",
     title: "\u5206\u8FA8\u7387\u8D85\u51FA\u5957\u9910\u9650\u5236",
-    cta: "\u5347\u7EA7\u5957\u9910",
   },
 };
 
@@ -183,7 +178,6 @@ function TierToastItem({
   onDismiss: () => void;
 }) {
   const config = TOAST_CONFIG[toast.code];
-  const router = useRouter();
   const [paused, setPaused] = useState(false);
   const remainingRef = useRef(AUTO_DISMISS_MS);
   const startRef = useRef(Date.now());
@@ -236,16 +230,6 @@ function TierToastItem({
             </p>
             {/* CTA row */}
             <div className="mt-3 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  onDismiss();
-                  router.push("/pricing");
-                }}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 ${config.progressColor}`}
-              >
-                {config.cta}
-              </button>
               <button
                 type="button"
                 onClick={onDismiss}

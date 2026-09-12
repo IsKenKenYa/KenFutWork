@@ -4,8 +4,6 @@ import type {
   ChatMessageCreateRequest,
   ExecutionMode,
   JobResponse,
-  MarketplaceDetail,
-  MarketplaceSearchResponse,
   MessageCreateResponse,
   MessageListResponse,
   ModelListResponse,
@@ -23,12 +21,7 @@ import type {
   RunCreateResponse,
   SessionCreateResponse,
   SessionListResponse,
-  SkillCreateRequest,
-  SkillDetailResponse,
-  SkillListResponse,
-  SkillUpdateRequest,
   UploadResponse,
-  UsageSummaryResponse,
   ViewerResponse,
   WorkspaceSettingsResponse,
   WorkspaceSkillListResponse,
@@ -359,18 +352,6 @@ export async function approveToolPermission(
   );
   if (!response.ok && response.status !== 204)
     return handleErrorResponse(response);
-}
-
-// --- Usage API（DEC-6 用量摘要）---
-
-export async function fetchUsageSummary(
-  accessToken: string,
-): Promise<UsageSummaryResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/usage/summary`, {
-    headers: authHeaders(accessToken),
-  });
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as UsageSummaryResponse;
 }
 
 // --- Provider Instances API（BYOK 供应商设置，P5）---
@@ -730,89 +711,7 @@ export async function fetchJob(
   return (await response.json()) as JobResponse;
 }
 
-// --- Skills API ---
-
-export async function fetchSkills(
-  accessToken: string,
-): Promise<SkillListResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/skills`, {
-    headers: authHeaders(accessToken),
-  });
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as SkillListResponse;
-}
-
-export async function fetchSkillDetail(
-  accessToken: string,
-  id: string,
-): Promise<SkillDetailResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/skills/${id}`, {
-    headers: authHeaders(accessToken),
-  });
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as SkillDetailResponse;
-}
-
-export async function createSkill(
-  accessToken: string,
-  data: SkillCreateRequest,
-): Promise<SkillDetailResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/skills`, {
-    method: "POST",
-    headers: authJsonHeaders(accessToken),
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as SkillDetailResponse;
-}
-
-export async function updateSkill(
-  accessToken: string,
-  id: string,
-  data: SkillUpdateRequest,
-): Promise<SkillDetailResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/skills/${id}`, {
-    method: "PUT",
-    headers: authJsonHeaders(accessToken),
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as SkillDetailResponse;
-}
-
-export async function deleteSkill(
-  accessToken: string,
-  id: string,
-): Promise<void> {
-  const response = await fetch(`${getServerBaseUrl()}/api/skills/${id}`, {
-    method: "DELETE",
-    headers: authHeaders(accessToken),
-  });
-  if (!response.ok) return handleErrorResponse(response);
-}
-
-export async function fetchSkillFiles(
-  accessToken: string,
-  skillId: string,
-): Promise<{
-  files: Array<{
-    id: string;
-    filePath: string;
-    content: string;
-    mimeType: string;
-    createdAt: string;
-    updatedAt: string;
-  }>;
-}> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/skills/${skillId}/files`,
-    { headers: authHeaders(accessToken) },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as any;
-}
-
-// --- Workspace Skills API ---
+// --- Workspace Skills API（画布聊天技能目录）---
 
 export async function fetchWorkspaceSkills(
   accessToken: string,
@@ -822,109 +721,4 @@ export async function fetchWorkspaceSkills(
   });
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as WorkspaceSkillListResponse;
-}
-
-export async function installSkill(
-  accessToken: string,
-  skillId: string,
-): Promise<void> {
-  const response = await fetch(`${getServerBaseUrl()}/api/workspaces/skills`, {
-    method: "POST",
-    headers: authJsonHeaders(accessToken),
-    body: JSON.stringify({ skillId }),
-  });
-  if (!response.ok) return handleErrorResponse(response);
-}
-
-export async function uninstallSkill(
-  accessToken: string,
-  skillId: string,
-): Promise<void> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/workspaces/skills/${skillId}`,
-    {
-      method: "DELETE",
-      headers: authHeaders(accessToken),
-    },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-}
-
-export async function toggleSkill(
-  accessToken: string,
-  skillId: string,
-  enabled: boolean,
-): Promise<void> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/workspaces/skills/${skillId}`,
-    {
-      method: "PATCH",
-      headers: authJsonHeaders(accessToken),
-      body: JSON.stringify({ enabled }),
-    },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-}
-
-// --- Marketplace API ---
-
-export async function searchMarketplace(
-  accessToken: string,
-  query: string,
-  page = 1,
-  limit = 20,
-): Promise<MarketplaceSearchResponse> {
-  const params = new URLSearchParams({
-    q: query,
-    page: String(page),
-    limit: String(limit),
-  });
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/skills/marketplace/search?${params}`,
-    { headers: authHeaders(accessToken) },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as MarketplaceSearchResponse;
-}
-
-export async function getMarketplaceDetail(
-  accessToken: string,
-  packageName: string,
-): Promise<MarketplaceDetail> {
-  const params = new URLSearchParams({ name: packageName });
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/skills/marketplace/detail?${params}`,
-    { headers: authHeaders(accessToken) },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as MarketplaceDetail;
-}
-
-export async function installMarketplaceSkill(
-  accessToken: string,
-  packageName: string,
-): Promise<SkillDetailResponse> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/skills/marketplace/install`,
-    {
-      method: "POST",
-      headers: authJsonHeaders(accessToken),
-      body: JSON.stringify({ packageName }),
-    },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as SkillDetailResponse;
-}
-
-export async function importSkillFromUrl(
-  accessToken: string,
-  url: string,
-): Promise<SkillDetailResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/skills/import`, {
-    method: "POST",
-    headers: authJsonHeaders(accessToken),
-    body: JSON.stringify({ url }),
-  });
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as SkillDetailResponse;
 }

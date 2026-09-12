@@ -45,7 +45,7 @@ describe("Auth callback page", () => {
     vi.useRealTimers();
   });
 
-  it("exchanges the code, bootstraps viewer, and redirects to /home", async () => {
+  it("exchanges the code, bootstraps viewer, and redirects to /workbench", async () => {
     currentSearchParams = new URLSearchParams("code=magic-code");
     mockExchangeCodeForSession.mockResolvedValue({
       data: {
@@ -67,7 +67,7 @@ describe("Auth callback page", () => {
     await waitFor(() => {
       expect(mockExchangeCodeForSession).toHaveBeenCalledWith("magic-code");
       expect(mockFetchViewer).toHaveBeenCalledWith("viewer-token");
-      expect(mockReplace).toHaveBeenCalledWith("/home");
+      expect(mockReplace).toHaveBeenCalledWith("/workbench");
     });
   });
 

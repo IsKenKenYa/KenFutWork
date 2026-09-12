@@ -45,10 +45,7 @@ export function CreditInsufficientDialog({
 
   const handleUpgrade = useCallback(async () => {
     const token = accessTokenRef.current;
-    if (!token) {
-      window.location.href = "/pricing";
-      return;
-    }
+    if (!token) return;
 
     setUpgrading(true);
     try {
@@ -57,8 +54,7 @@ export function CreditInsufficientDialog({
       onClose();
       openLemonCheckout(checkoutUrl);
     } catch {
-      // Fallback to pricing page on error
-      window.location.href = "/pricing";
+      // 结账不可用（未配置/失败）时停留在对话框，不跳转
     } finally {
       setUpgrading(false);
     }

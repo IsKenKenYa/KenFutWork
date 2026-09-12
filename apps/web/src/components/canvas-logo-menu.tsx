@@ -2,8 +2,6 @@
 
 import {
   Copy,
-  FolderOpen,
-  Home,
   ImagePlus,
   Maximize2,
   Plus,
@@ -11,7 +9,6 @@ import {
   Trash2,
   Undo2,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
 
 import { LoomicLogo } from "@/components/icons/loomic-logo";
@@ -69,13 +66,12 @@ function generateFileId(): string {
 export function CanvasLogoMenu({
   accessToken,
   projectId,
-  canvasId,
   excalidrawApi,
 }: CanvasLogoMenuProps) {
-  const router = useRouter();
   const { error: toastError } = useToast();
   const { create: createNewProject } = useCreateProject();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const handleDuplicateElements = useCallback(() => {
@@ -112,14 +108,22 @@ export function CanvasLogoMenu({
     }
     try {
       await deleteProject(accessToken, projectId);
-      router.push("/projects");
+      if (window.parent !== window) {
+        // 嵌入工作台 iframe：回传宿主清选中并刷新项目列表
+        window.parent.postMessage(
+          { type: "workbench:project-deleted", projectId },
+          window.location.origin,
+        );
+      } else {
+        window.location.replace("/workbench");
+      }
     } catch (err) {
       console.warn("Failed to delete project:", err);
       toastError("项目删除失败");
     } finally {
       setConfirmingDelete(false);
     }
-  }, [accessToken, projectId, router, confirmingDelete, toastError]);
+  }, [accessToken, projectId, confirmingDelete, toastError]);
 
   const handleFileImport = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -174,7 +178,9 @@ export function CanvasLogoMenu({
   return (
     <>
       <DropdownMenu
+        open={menuOpen}
         onOpenChange={(open) => {
+          setMenuOpen(open);
           if (!open) setConfirmingDelete(false);
         }}
       >
@@ -186,21 +192,7 @@ export function CanvasLogoMenu({
         </DropdownMenuTrigger>
 
         <DropdownMenuContent align="start" sideOffset={6} className="w-56">
-          {/* Group 1 — Navigation */}
-          <DropdownMenuGroup>
-            <DropdownMenuItem onClick={() => router.push("/home")}>
-              <Home className="size-4" />
-              主页
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => router.push("/projects")}>
-              <FolderOpen className="size-4" />
-              项目库
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
-
-          <DropdownMenuSeparator />
-
-          {/* Group 2 — Project actions */}
+          {/* Group 1 — Project actions */}
           <DropdownMenuGroup>
             <DropdownMenuItem onClick={() => createNewProject()}>
               <Plus className="size-4" />
@@ -208,7 +200,15 @@ export function CanvasLogoMenu({
             </DropdownMenuItem>
             <DropdownMenuItem
               variant="destructive"
-              onClick={handleDeleteProject}
+              closeOnClick={false}
+              onClick={() => {
+                if (!confirmingDelete) {
+                  setConfirmingDelete(true);
+                  return;
+                }
+                setMenuOpen(false);
+                void handleDeleteProject();
+              }}
             >
               <Trash2 className="size-4" />
               {confirmingDelete ? "确认删除?" : "删除当前项目"}
@@ -217,7 +217,7 @@ export function CanvasLogoMenu({
 
           <DropdownMenuSeparator />
 
-          {/* Group 3 — Canvas import */}
+          {/* Group 2 — Canvas import */}
           <DropdownMenuGroup>
             <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
               <ImagePlus className="size-4" />
@@ -227,7 +227,7 @@ export function CanvasLogoMenu({
 
           <DropdownMenuSeparator />
 
-          {/* Group 4 — Edit operations */}
+          {/* Group 3 — Edit operations */}
           <DropdownMenuGroup>
             <DropdownMenuItem
               onClick={() => dispatchKeyToExcalidraw("z", { metaKey: true })}
@@ -257,7 +257,7 @@ export function CanvasLogoMenu({
 
           <DropdownMenuSeparator />
 
-          {/* Group 5 — View controls */}
+          {/* Group 4 — View controls */}
           <DropdownMenuGroup>
             <DropdownMenuItem onClick={() => excalidrawApi?.scrollToContent()}>
               <Maximize2 className="size-4" />
