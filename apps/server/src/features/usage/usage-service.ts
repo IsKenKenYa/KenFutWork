@@ -1,15 +1,15 @@
 import type { UsageSummaryResponse } from "@loomic/shared";
 
-import type { AdminSupabaseClient } from "../../supabase/admin.js";
-import type {
-  AuthenticatedUser,
-  UserSupabaseClient,
-} from "../../supabase/user.js";
+import type { AuthenticatedUser } from "../../supabase/user.js";
+import type { ViewerRepository } from "../bootstrap/repository.js";
+import type { UsageRecordRow, UsageRepository } from "./repository.js";
 
 /**
  * usage 缝（DEC-6）：token/成本计量，按 workspace/provider/model/run 落账。
- * 写入全部走服务角色（遥测追加，不经用户 RLS）；读取按用户客户端（RLS 隔离）。
+ * 写入与读取都经 `persistence` 缝的工作区作用域（隔离口径与其它聚合一致）。
  */
+
+const SUMMARY_ROW_LIMIT = 10000;
 
 export interface UsageEntry {
   workspaceId: string;
@@ -27,15 +27,6 @@ export interface UsageEntry {
   costUsd?: number;
 }
 
-interface UsageRow {
-  provider: string;
-  model: string;
-  capability: string;
-  input_tokens: string | number;
-  output_tokens: string | number;
-  cost_usd: string | null;
-}
-
 export interface UsageService {
   record(entry: UsageEntry): Promise<void>;
   summarize(user: AuthenticatedUser): Promise<UsageSummaryResponse>;
@@ -43,105 +34,109 @@ export interface UsageService {
   resolveWorkspaceIdByUser(userId: string): Promise<string | undefined>;
 }
 
-// usage_records 未纳入 supabase 生成类型，走宽松访问（同 provider_instances）。
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const untypedFrom = (client: unknown, table: string): any =>
-  (client as any).from(table);
+type ModelBucket = {
+  provider: string;
+  model: string;
+  capability: "chat" | "image" | "video";
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+};
 
 export function createUsageService(options: {
-  getAdminClient: () => AdminSupabaseClient;
-  createUserClient: (accessToken: string) => UserSupabaseClient;
+  repository: UsageRepository;
+  /** 复用 workspaces 域的数据访问（worker 进程无 auth，故不经 viewer 服务）。 */
+  workspaces: ViewerRepository;
 }): UsageService {
-  const { getAdminClient, createUserClient } = options;
+  const { repository, workspaces } = options;
+
+  function aggregate(rows: UsageRecordRow[]) {
+    const totals = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
+    const byModel = new Map<string, ModelBucket>();
+
+    for (const row of rows) {
+      const costUsd = row.cost_usd ?? 0;
+      totals.inputTokens += row.input_tokens;
+      totals.outputTokens += row.output_tokens;
+      totals.costUsd += costUsd;
+
+      const key = `${row.provider}:${row.model}`;
+      const bucket = byModel.get(key) ?? {
+        provider: row.provider,
+        model: row.model,
+        capability: row.capability as "chat" | "image" | "video",
+        inputTokens: 0,
+        outputTokens: 0,
+        costUsd: 0,
+      };
+      bucket.inputTokens += row.input_tokens;
+      bucket.outputTokens += row.output_tokens;
+      bucket.costUsd += costUsd;
+      byModel.set(key, bucket);
+    }
+
+    return { byModel, totals };
+  }
 
   async function resolveWorkspaceIdByUser(
     userId: string,
   ): Promise<string | undefined> {
-    const admin = getAdminClient();
-    const { data } = await admin
-      .from("workspaces")
-      .select("id")
-      .eq("owner_user_id", userId)
-      .eq("type", "personal")
-      .limit(1)
-      .maybeSingle();
-    return (data as { id: string } | null)?.id ?? undefined;
+    const workspace = await workspaces
+      .findPersonalWorkspace(userId)
+      .catch(() => null);
+    return workspace?.id;
   }
 
   return {
     resolveWorkspaceIdByUser,
 
     async record(entry) {
-      const admin = getAdminClient();
-      const { error } = await untypedFrom(admin, "usage_records").insert({
-        workspace_id: entry.workspaceId,
-        ...(entry.userId ? { user_id: entry.userId } : {}),
-        provider: entry.provider,
-        model: entry.model,
-        capability: entry.capability,
-        ...(entry.providerInstanceId
-          ? { provider_instance_id: entry.providerInstanceId }
-          : {}),
-        ...(entry.runId ? { run_id: entry.runId } : {}),
-        ...(entry.jobId ? { job_id: entry.jobId } : {}),
-        input_tokens: entry.inputTokens ?? 0,
-        output_tokens: entry.outputTokens ?? 0,
-        ...(entry.totalTokens != null
-          ? { total_tokens: entry.totalTokens }
-          : {}),
-        ...(entry.costUsd != null ? { cost_usd: entry.costUsd } : {}),
-      });
-      if (error) {
+      try {
+        await repository.insert({
+          workspaceId: entry.workspaceId,
+          ...(entry.userId ? { userId: entry.userId } : {}),
+          provider: entry.provider,
+          model: entry.model,
+          capability: entry.capability,
+          ...(entry.providerInstanceId
+            ? { providerInstanceId: entry.providerInstanceId }
+            : {}),
+          ...(entry.runId ? { runId: entry.runId } : {}),
+          ...(entry.jobId ? { jobId: entry.jobId } : {}),
+          inputTokens: entry.inputTokens ?? 0,
+          outputTokens: entry.outputTokens ?? 0,
+          ...(entry.totalTokens != null
+            ? { totalTokens: entry.totalTokens }
+            : {}),
+          ...(entry.costUsd != null ? { costUsd: entry.costUsd } : {}),
+        });
+      } catch (error) {
         // 计量失败不阻断主链路（「有剑不用」：usage 是旁路观测，不是主链路）
-        console.warn("[usage] failed to record usage:", error.message);
+        console.warn(
+          "[usage] failed to record usage:",
+          error instanceof Error ? error.message : error,
+        );
       }
     },
 
     async summarize(user): Promise<UsageSummaryResponse> {
-      const client = createUserClient(user.accessToken);
-      const { data, error } = await untypedFrom(client, "usage_records")
-        .select(
-          "provider, model, capability, input_tokens, output_tokens, cost_usd",
-        )
-        .order("occurred_at", { ascending: false })
-        .limit(10000);
-      if (error) {
-        throw new Error(`[usage] summary query failed: ${error.message}`);
+      const workspaceId = await resolveWorkspaceIdByUser(user.id);
+      if (!workspaceId) {
+        throw new Error("[usage] summary query failed: workspace not found");
       }
-      const rows = (data ?? []) as UsageRow[];
-      const totals = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
-      const byModel = new Map<
-        string,
-        {
-          provider: string;
-          model: string;
-          capability: "chat" | "image" | "video";
-          inputTokens: number;
-          outputTokens: number;
-          costUsd: number;
-        }
-      >();
-      for (const row of rows) {
-        const inputTokens = Number(row.input_tokens) || 0;
-        const outputTokens = Number(row.output_tokens) || 0;
-        const costUsd = row.cost_usd != null ? Number(row.cost_usd) : 0;
-        totals.inputTokens += inputTokens;
-        totals.outputTokens += outputTokens;
-        totals.costUsd += costUsd;
-        const key = `${row.provider}:${row.model}`;
-        const bucket = byModel.get(key) ?? {
-          provider: row.provider,
-          model: row.model,
-          capability: row.capability as "chat" | "image" | "video",
-          inputTokens: 0,
-          outputTokens: 0,
-          costUsd: 0,
-        };
-        bucket.inputTokens += inputTokens;
-        bucket.outputTokens += outputTokens;
-        bucket.costUsd += costUsd;
-        byModel.set(key, bucket);
-      }
+
+      const rows = await repository
+        .listRecent(workspaceId, SUMMARY_ROW_LIMIT)
+        .catch((error: unknown) => {
+          throw new Error(
+            `[usage] summary query failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        });
+
+      const { byModel, totals } = aggregate(rows);
+
       return {
         totals: {
           inputTokens: totals.inputTokens,

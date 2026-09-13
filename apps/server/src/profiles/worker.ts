@@ -32,11 +32,7 @@ export function workerProfile(deps: WorkerProfileDeps): PluginDefinition[] {
       getAdminClient: deps.getAdminClient,
       withRoutes: false,
     }),
-    createUsagePlugin({
-      createUserClient: deps.createUserClient,
-      getAdminClient: deps.getAdminClient,
-      withRoutes: false,
-    }),
+    createUsagePlugin({ withRoutes: false }),
     createModelProvidersPlugin({
       createUserClient: deps.createUserClient,
       getAdminClient: deps.getAdminClient,

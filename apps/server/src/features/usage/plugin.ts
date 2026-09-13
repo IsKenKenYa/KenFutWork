@@ -2,8 +2,8 @@ import { computeChatCreditCost } from "@loomic/shared";
 
 import { registerUsageRoutes } from "../../http/usage.js";
 import type { PluginContext, PluginDefinition } from "../../kernel/types.js";
-import type { AdminSupabaseClient } from "../../supabase/admin.js";
-import type { UserSupabaseClient } from "../../supabase/user.js";
+import { createViewerRepository } from "../bootstrap/repository.js";
+import { createUsageRepository } from "./repository.js";
 import {
   createRunUsageAccumulator,
   type RunUsageAccumulator,
@@ -18,20 +18,22 @@ import { createUsageService } from "./usage-service.js";
  * - `turn-stopping` 事件监听器：把累积用量归属到 run 并收尾结算（事件缝的唯一职责）；
  * - 直连生成链路由 executor 在 job 完成回调处直接落账，两处同表，不留盲区。
  */
-export function createUsagePlugin(deps: {
-  createUserClient: (accessToken: string) => UserSupabaseClient;
-  getAdminClient: () => AdminSupabaseClient;
-  /** HTTP 进程挂路由（需 auth）；worker 传 false。 */
-  withRoutes?: boolean;
-}): PluginDefinition {
+export function createUsagePlugin(
+  deps: {
+    /** HTTP 进程挂路由（需 auth）；worker 传 false。 */
+    withRoutes?: boolean;
+  } = {},
+): PluginDefinition {
   const withRoutes = deps.withRoutes ?? true;
   return {
     name: "usage",
-    inject: withRoutes ? ["auth"] : [],
+    // worker 进程无 auth（与无 viewer 同因），故 persistence 是两侧共同依赖。
+    inject: withRoutes ? ["auth", "persistence"] : ["persistence"],
     apply(ctx) {
+      const persistence = ctx.get("persistence");
       const usageService = createUsageService({
-        createUserClient: deps.createUserClient,
-        getAdminClient: deps.getAdminClient,
+        repository: createUsageRepository(persistence),
+        workspaces: createViewerRepository(persistence),
       });
       ctx.register("usage", () => usageService);
       const accumulator: RunUsageAccumulator = createRunUsageAccumulator();

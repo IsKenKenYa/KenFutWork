@@ -7,6 +7,10 @@ import { PRESETS, toolsForPreset } from "./index.js";
 const env = {
   agentBackendMode: "state" as const,
   agentModel: "m",
+  // 存储缝是必需项（M1 起）：缺 databaseUrl 时 persistence 不挂载，声明了
+  // inject 的插件在启动期 fail loud。这里给一个不实际连接的连接串——
+  // Provider 只在首次查询时才建连接，故 compose 期无网络访问。
+  databaseUrl: "postgres://localhost:5432/loomic-test",
   port: 0,
   version: "t",
   webOrigin: "http://x",

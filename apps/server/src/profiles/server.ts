@@ -119,10 +119,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
       ...(deps.overridePayments ? { injected: deps.overridePayments } : {}),
     }),
     createSkillsPlugin({ createUserClient: deps.createUserClient }),
-    createUsagePlugin({
-      createUserClient: deps.createUserClient,
-      getAdminClient: deps.getAdminClient,
-    }),
+    createUsagePlugin(),
     createPermissionsPlugin({ events: deps.events }),
     createAgentModesPlugin(),
     createCodeToolsPlugin(),
