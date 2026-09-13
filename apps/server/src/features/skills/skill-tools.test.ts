@@ -33,16 +33,28 @@ const skillRows = [
   },
 ];
 
+/** 目录与安装态方法的空实现：桩只覆盖用例关心的那一个，其余走默认。 */
+const CATALOG_DEFAULTS = {
+  deleteOwnedById: async () => 0,
+  findVisibleById: async () => null,
+  findVisibleSkill: async () => null,
+  insertFilesForOwnedSkill: async () => 0,
+  insertOwned: async () => null,
+  listFilesForVisibleSkill: async () => [],
+  listInstalled: async () => [],
+  listSkillFiles: async () => [],
+  listVisible: async () => [],
+  uninstall: async () => 0,
+  updateOwnedById: async () => null,
+  upsertInstallation: async () => {},
+};
+
 function fakeRepository(
   rows: typeof skillRows = skillRows,
 ): SkillCatalogRepository {
   return {
-    findVisibleSkill: async () => null,
-    listInstalled: async () => [],
-    listSkillFiles: async () => [],
+    ...CATALOG_DEFAULTS,
     listWorkspaceSkills: async () => rows,
-    uninstall: async () => 0,
-    upsertInstallation: async () => {},
   };
 }
 
@@ -135,14 +147,10 @@ describe("skill 目录服务（SKILL.md 发现缝）", () => {
   it("数据访问失败按「无 skill」降级，不炸工具链", async () => {
     const catalog = createSkillCatalogService({
       repository: {
-        findVisibleSkill: async () => null,
-        listInstalled: async () => [],
-        listSkillFiles: async () => [],
+        ...CATALOG_DEFAULTS,
         listWorkspaceSkills: async () => {
           throw new Error("connection reset");
         },
-        uninstall: async () => 0,
-        upsertInstallation: async () => {},
       },
     });
 

@@ -44,6 +44,54 @@ export interface SkillCatalogRepository {
     workspaceId: string,
     skillIds: readonly string[],
   ): Promise<SkillFileRecord[]>;
+  // ── 目录侧（`skills` / `skill_files`，均为全局表：读走「或」式可见性、写限本人） ──
+  /** 可见目录（内置/社区 + 自建），按精选与名称排序。 */
+  listVisible(userId: string): Promise<Record<string, unknown>[]>;
+  /** 可见 skill 明细；不可见或不存在均为 null。 */
+  findVisibleById(
+    userId: string,
+    skillId: string,
+  ): Promise<Record<string, unknown> | null>;
+  /** 建 skill（`source='user'` 且 `created_by=本人` —— 与 RLS 写策略同义）。 */
+  insertOwned(
+    userId: string,
+    input: {
+      category: string;
+      description: string;
+      iconName?: string | null | undefined;
+      license?: string | null | undefined;
+      name: string;
+      packageName?: string | null | undefined;
+      skillContent: string;
+      slug: string;
+      source?: string | undefined;
+      sourceUrl?: string | null | undefined;
+      version?: string | undefined;
+    },
+  ): Promise<Record<string, unknown> | null>;
+  /** 改 skill：仅本人创建的行（`created_by=本人` 写在语句里，不靠 RLS）。 */
+  updateOwnedById(
+    userId: string,
+    skillId: string,
+    patch: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | null>;
+  /** 删 skill：仅本人创建的行；返回受影响行数。 */
+  deleteOwnedById(userId: string, skillId: string): Promise<number>;
+  /** skill 的附带文件（经父链可见性）。 */
+  listFilesForVisibleSkill(
+    userId: string,
+    skillId: string,
+  ): Promise<Record<string, unknown>[]>;
+  /** 写附带文件：仅当父 skill 属于本人（父子校验内联在一条语句里）。 */
+  insertFilesForOwnedSkill(
+    userId: string,
+    skillId: string,
+    rows: readonly {
+      content: string;
+      filePath: string;
+      mimeType?: string | undefined;
+    }[],
+  ): Promise<number>;
   /** 工作区已安装 skill（含停用；工具侧自行过滤启用项）。 */
   listWorkspaceSkills(workspaceId: string): Promise<WorkspaceSkillRecord[]>;
   /** 已安装列表（含 skill 明细，供管理视图；嵌套形状与旧 PostgREST 查询一致）。 */
@@ -149,6 +197,122 @@ export function createSkillCatalogRepository(
           where workspace_id = :workspace
             and skill_id = $1`,
         [skillId],
+      );
+    },
+
+    async listVisible(userId) {
+      return persistence.forUser(userId).query<Record<string, unknown>>(
+        `select *
+           from public.skills
+          where source in ('system', 'community') or created_by = :user
+          order by is_featured desc, name asc`,
+      );
+    },
+
+    async findVisibleById(userId, skillId) {
+      return persistence.forUser(userId).queryOne<Record<string, unknown>>(
+        `select *
+           from public.skills
+          where id = $1
+            and (source in ('system', 'community') or created_by = :user)`,
+        [skillId],
+      );
+    },
+
+    async insertOwned(userId, input) {
+      return persistence.forUser(userId).queryOne<Record<string, unknown>>(
+        `insert into public.skills
+                (name, slug, description, category, skill_content, icon_name,
+                 source, created_by, version, license, source_url, package_name)
+         values ($1, $2, $3, $4, $5, $6, $7, :user, $8, $9, $10, $11)
+         returning *`,
+        [
+          input.name,
+          input.slug,
+          input.description,
+          input.category,
+          input.skillContent,
+          input.iconName ?? null,
+          input.source ?? "user",
+          input.version ?? "1.0",
+          input.license ?? null,
+          input.sourceUrl ?? null,
+          input.packageName ?? null,
+        ],
+      );
+    },
+
+    async updateOwnedById(userId, skillId, patch) {
+      const assignments: string[] = [];
+      const values: unknown[] = [skillId];
+
+      for (const [column, value] of Object.entries(patch)) {
+        if (value === undefined) {
+          continue;
+        }
+        values.push(column === "metadata" ? JSON.stringify(value) : value);
+        assignments.push(
+          `${column} = $${values.length}${column === "metadata" ? "::jsonb" : ""}`,
+        );
+      }
+
+      if (assignments.length === 0) {
+        return null;
+      }
+
+      return persistence.forUser(userId).queryOne<Record<string, unknown>>(
+        `update public.skills
+            set ${assignments.join(", ")}
+          where id = $1
+            and created_by = :user
+        returning *`,
+        values,
+      );
+    },
+
+    async deleteOwnedById(userId, skillId) {
+      return persistence.forUser(userId).execute(
+        `delete from public.skills
+          where id = $1
+            and created_by = :user`,
+        [skillId],
+      );
+    },
+
+    async listFilesForVisibleSkill(userId, skillId) {
+      return persistence.forUser(userId).query<Record<string, unknown>>(
+        `select sf.*
+           from public.skill_files sf
+           join public.skills s on s.id = sf.skill_id
+          where sf.skill_id = $1
+            and (s.source in ('system', 'community') or s.created_by = :user)
+          order by sf.file_path asc`,
+        [skillId],
+      );
+    },
+
+    async insertFilesForOwnedSkill(userId, skillId, rows) {
+      if (rows.length === 0) {
+        return 0;
+      }
+
+      const values: unknown[] = [skillId];
+      const tuples = rows.map((row) => {
+        values.push(row.filePath, row.content, row.mimeType ?? "text/plain");
+        const end = values.length;
+        return `($1, $${end - 2}, $${end - 1}, $${end})`;
+      });
+
+      return persistence.forUser(userId).execute(
+        `insert into public.skill_files (skill_id, file_path, content, mime_type)
+         select v.*
+           from (values ${tuples.join(", ")})
+                  as v(skill_id, file_path, content, mime_type)
+          where exists (
+            select 1 from public.skills s
+             where s.id = $1 and s.created_by = :user
+          )`,
+        values,
       );
     },
 

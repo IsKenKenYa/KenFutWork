@@ -61,13 +61,12 @@ export async function registerSkillRoutes(
       const user = await options.auth.authenticate(request);
       if (!user) return sendUnauthenticated(reply);
 
-      const client = options.createUserClient(user.accessToken);
-      const { data, error } = await untypedFrom(client, "skills")
-        .select("*")
-        .order("is_featured", { ascending: false })
-        .order("name", { ascending: true });
-
-      if (error) {
+      let data: Awaited<
+        ReturnType<typeof options.skillsRepository.listVisible>
+      >;
+      try {
+        data = await options.skillsRepository.listVisible(user.id);
+      } catch (error) {
         request.log.error({ err: error }, "skills list query failed");
         return sendSkillError(
           reply,
@@ -76,7 +75,7 @@ export async function registerSkillRoutes(
         );
       }
 
-      const skills = (data ?? []).map(mapSkillRow);
+      const skills = (data as unknown as SkillRow[]).map(mapSkillRow);
       return reply.code(200).send(skillListResponseSchema.parse({ skills }));
     } catch (error) {
       request.log.error({ err: error }, "skills list error");
@@ -96,12 +95,12 @@ export async function registerSkillRoutes(
 
       const { id } = request.params as { id: string };
       const client = options.createUserClient(user.accessToken);
-      const { data, error } = await untypedFrom(client, "skills")
-        .select("*")
-        .eq("id", id)
-        .maybeSingle();
-
-      if (error) {
+      let data: Awaited<
+        ReturnType<typeof options.skillsRepository.findVisibleById>
+      >;
+      try {
+        data = await options.skillsRepository.findVisibleById(user.id, id);
+      } catch (error) {
         request.log.error({ err: error }, "skill detail query failed");
         return sendSkillError(
           reply,
@@ -126,7 +125,7 @@ export async function registerSkillRoutes(
         .order("file_path", { ascending: true });
 
       const skill = {
-        ...mapSkillDetailRow(data),
+        ...mapSkillDetailRow(data as unknown as SkillRow),
         files: (fileData ?? []).map(mapSkillFileRow),
       };
       return reply.code(200).send(skillDetailResponseSchema.parse({ skill }));
@@ -244,7 +243,7 @@ export async function registerSkillRoutes(
         .order("file_path", { ascending: true });
 
       const skill = {
-        ...mapSkillDetailRow(data),
+        ...mapSkillDetailRow(data as unknown as SkillRow),
         files: (fileData ?? []).map(mapSkillFileRow),
       };
       return reply.code(201).send(skillDetailResponseSchema.parse({ skill }));
@@ -552,7 +551,13 @@ export async function registerSkillRoutes(
         );
       }
 
-      const skills = ((data ?? []) as any[])
+      const skills = (
+        (data ?? []) as Array<{
+          enabled: boolean;
+          installed_at: string;
+          skills: SkillRow | null;
+        }>
+      )
         .filter((row) => row.skills !== null)
         .map((row) => {
           const s = row.skills as SkillRow;
