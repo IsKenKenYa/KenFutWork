@@ -1,12 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-
-import type { PgmqClient } from "../../queue/pgmq-client.js";
 import type { AuthenticatedUser } from "../../supabase/user.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import {
   createPersistenceFromRunner,
   type PostgresQueryRunner,
 } from "../persistence/providers/postgres.js";
+import type { QueueClient } from "../queue/types.js";
 import { createJobService, JobServiceError } from "./job-service.js";
 import { createJobRepository, type JobRepository } from "./repository.js";
 
@@ -100,7 +99,7 @@ const VIEWER_STUB: ViewerService = {
   },
 };
 
-function fakePgmq(overrides: Partial<PgmqClient> = {}): PgmqClient {
+function fakeQueue(overrides: Partial<QueueClient> = {}): QueueClient {
   return {
     archive: vi.fn(async () => true),
     deleteMsg: vi.fn(async () => true),
@@ -110,7 +109,7 @@ function fakePgmq(overrides: Partial<PgmqClient> = {}): PgmqClient {
     setVt: vi.fn(async () => {}),
     shutdown: vi.fn(async () => {}),
     ...overrides,
-  } as unknown as PgmqClient;
+  } as unknown as QueueClient;
 }
 
 describe("jobs repository（background_jobs）", () => {
@@ -315,12 +314,12 @@ function createFakeRepository(
 function buildService(
   options: {
     repository?: Partial<JobRepository>;
-    pgmq?: PgmqClient;
+    queue?: QueueClient;
     viewerService?: ViewerService | null | undefined;
   } = {},
 ) {
   return createJobService({
-    pgmq: options.pgmq ?? fakePgmq(),
+    queue: options.queue ?? fakeQueue(),
     repository: createFakeRepository(options.repository),
     ...(options.viewerService === null
       ? {}
@@ -331,7 +330,7 @@ function buildService(
 describe("job service", () => {
   it("建任务：工作区由服务解析，落库后投递队列", async () => {
     const send = vi.fn(async () => 1);
-    const service = buildService({ pgmq: fakePgmq({ send }) });
+    const service = buildService({ queue: fakeQueue({ send }) });
 
     const job = await service.createJob(USER, {
       canvasId: "canvas-1",
@@ -354,7 +353,7 @@ describe("job service", () => {
   it("投递失败时回滚任务行并报 job_create_failed", async () => {
     const removed: string[] = [];
     const service = buildService({
-      pgmq: fakePgmq({
+      queue: fakeQueue({
         send: vi.fn(async () => {
           throw new Error("pgmq down");
         }),
@@ -379,7 +378,7 @@ describe("job service", () => {
   it("落库失败报 job_create_failed 且不投递", async () => {
     const send = vi.fn(async () => 1);
     const service = buildService({
-      pgmq: fakePgmq({ send }),
+      queue: fakeQueue({ send }),
       repository: { insert: async () => null },
     });
 

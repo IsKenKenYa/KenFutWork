@@ -61,6 +61,8 @@ export type ServerEnv = {
    * 切到 `local` 会让 GoTrue 签发的令牌失效，须与前端替换、口令种子同一 PR 完成。
    */
   authDriver?: string;
+  /** 队列形态：`pgmq`（服务端/自托管，默认）/ `in-process`（桌面，FORM-2）。 */
+  queueDriver?: string;
   /** `local` 形态的对象根目录。 */
   blobDir?: string;
   /** `local` 形态对外可读的基址（server 自己的 blob 读取路由）。 */
@@ -135,6 +137,9 @@ export function loadServerEnv(
     overrides.supabaseDbUrl ?? normalizeOptionalString(source.SUPABASE_DB_URL);
   const authDriver =
     overrides.authDriver ?? normalizeOptionalString(source.LOOMIC_AUTH_DRIVER);
+  const queueDriver =
+    overrides.queueDriver ??
+    normalizeOptionalString(source.LOOMIC_QUEUE_DRIVER);
   const blobDriver =
     overrides.blobDriver ?? normalizeOptionalString(source.LOOMIC_BLOB_DRIVER);
   const blobDir =
@@ -272,6 +277,7 @@ export function loadServerEnv(
     ...(credentialSecret ? { credentialSecret } : {}),
     ...(databaseUrl ? { databaseUrl } : {}),
     ...(authDriver ? { authDriver } : {}),
+    ...(queueDriver ? { queueDriver } : {}),
     ...(blobDriver ? { blobDriver } : {}),
     ...(blobDir ? { blobDir } : {}),
     ...(blobPublicBaseUrl ? { blobPublicBaseUrl } : {}),

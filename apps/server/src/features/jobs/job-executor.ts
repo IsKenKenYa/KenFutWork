@@ -1,16 +1,17 @@
 import type { BackgroundJobType } from "@loomic/shared";
 import type { ServerEnv } from "../../config/env.js";
-import type { PgmqClient } from "../../queue/pgmq-client.js";
 import type { BlobStore } from "../blob/types.js";
 import type { CreditService } from "../credits/credit-service.js";
 import type { ModelProviderService } from "../model-providers/model-provider-service.js";
+import type { QueueClient } from "../queue/types.js";
 import type { AssetWriter } from "../uploads/asset-writer.js";
 import type { UsageService } from "../usage/usage-service.js";
 import type { JobService } from "./job-service.js";
 
 export type ExecutorContext = {
   jobService: JobService;
-  pgmq: PgmqClient;
+  /** 队列缝（M3.2）。 */
+  queue: QueueClient;
   env: ServerEnv;
   /** BYOK：任务携带 provider_instance_id 时经此解析凭证（P4）。 */
   modelProviders?: ModelProviderService;
@@ -22,8 +23,8 @@ export type ExecutorContext = {
   assetWriter: AssetWriter;
   /** 对象存储（blob 缝）：生成物上传与 URL，executor 不再直连 Supabase Storage。 */
   blob: BlobStore;
-  /** PGMQ queue name for the current job (set per-message by the worker). */
-  queue: string;
+  /** 当前任务的队列名（worker 按消息设置）。 */
+  queueName: string;
   /** PGMQ message id for the current job (set per-message by the worker). */
   msgId: number;
   /**

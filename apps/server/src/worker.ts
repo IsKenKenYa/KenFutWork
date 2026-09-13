@@ -14,7 +14,7 @@ async function setupProxy() {
 
 import { randomUUID } from "node:crypto";
 import { loadServerEnv } from "./config/env.js";
-import { createPgmqClient, type PgmqMessage } from "./queue/pgmq-client.js";
+import type { QueueMessage } from "./features/queue/types.js";
 import { createAdminSupabaseClient } from "./supabase/admin.js";
 import { createUserSupabaseClientFactory } from "./supabase/user.js";
 
@@ -57,8 +57,6 @@ async function main() {
   // Register all generation providers (shared with app.ts)
   registerAllProviders(env);
 
-  const pgmq = createPgmqClient(env.supabaseDbUrl);
-
   let adminClient: ReturnType<typeof createAdminSupabaseClient> | undefined;
   const getAdminClient = () => {
     adminClient ??= createAdminSupabaseClient(env);
@@ -76,11 +74,12 @@ async function main() {
   const usageService = kernel.get("usage");
   const assetWriter = kernel.get("assetWriter");
   const blob = kernel.get("blob");
+  const queue = kernel.get("queue");
 
   // Base context — per-message fields (queue, msgId, renewVt) are added in processMessage
   const baseCtx = {
     jobService,
-    pgmq,
+    queue,
     env,
     modelProviders,
     usageService,
@@ -124,7 +123,7 @@ async function main() {
     if (allTasks.length > 0) {
       await Promise.allSettled(allTasks);
     }
-    await pgmq.shutdown();
+    await queue.shutdown();
     console.log(`${tag} Shutdown complete.`);
     process.exit(0);
   };
@@ -139,16 +138,17 @@ async function main() {
   );
 
   while (running) {
-    for (const queue of QUEUES) {
+    // `queueName` 是队列名，`queue` 是队列缝客户端——两者都用，故名字必须区分
+    for (const queueName of QUEUES) {
       try {
-        const inFlight = inFlightByQueue.get(queue)!;
-        const cap = CONCURRENCY_BY_QUEUE[queue] ?? 1;
+        const inFlight = inFlightByQueue.get(queueName)!;
+        const cap = CONCURRENCY_BY_QUEUE[queueName] ?? 1;
         const available = cap - inFlight.size;
         if (available <= 0) continue;
 
-        const vt = VT_BY_QUEUE[queue] ?? 120;
-        const messages = await pgmq.readWithPoll(
-          queue,
+        const vt = VT_BY_QUEUE[queueName] ?? 120;
+        const messages = await queue.readWithPoll(
+          queueName,
           vt,
           available,
           pollTimeoutSeconds,
@@ -158,18 +158,22 @@ async function main() {
         for (const msg of messages) {
           const ctx: ExecutorContext = {
             ...baseCtx,
-            queue,
+            queueName,
             msgId: msg.msg_id,
             renewVt: async (vtSeconds: number) => {
               try {
-                await pgmq.setVt(queue, msg.msg_id, vtSeconds);
+                await queue.setVisibilityTimeout(
+                  queueName,
+                  msg.msg_id,
+                  vtSeconds,
+                );
               } catch (e) {
                 console.warn(`[renewVt] failed for msg ${msg.msg_id}:`, e);
               }
             },
           };
           const task = processMessage(
-            queue,
+            queueName,
             msg,
             ctx,
             creditService,
@@ -178,7 +182,7 @@ async function main() {
           inFlight.add(task);
         }
       } catch (err) {
-        console.error(`${tag} Error polling ${queue}:`, err);
+        console.error(`${tag} Error polling ${queueName}:`, err);
       }
     }
   }
@@ -186,7 +190,7 @@ async function main() {
 
 async function processMessage(
   queue: string,
-  msg: PgmqMessage,
+  msg: QueueMessage,
   ctx: ExecutorContext,
   creditService: CreditService,
   tag: string,
@@ -197,7 +201,7 @@ async function processMessage(
 
   if (!jobId || !jobType) {
     console.error(`${tag} Invalid message in ${queue}:`, msg.message);
-    await ctx.pgmq.archive(queue, msg.msg_id);
+    await ctx.queue.archive(queue, msg.msg_id);
     return;
   }
 
@@ -219,7 +223,7 @@ async function processMessage(
       "no_executor",
       `No executor registered for ${jobType}`,
     );
-    await ctx.pgmq.archive(queue, msg.msg_id);
+    await ctx.queue.archive(queue, msg.msg_id);
     return;
   }
 
@@ -237,7 +241,7 @@ async function processMessage(
       ctx,
     );
     await ctx.jobService.markSucceeded(jobId, result);
-    await ctx.pgmq.deleteMsg(queue, msg.msg_id);
+    await ctx.queue.deleteMessage(queue, msg.msg_id);
     console.log(`${tag} Job ${jobId} succeeded +${Date.now() - startTime}ms`);
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
@@ -256,7 +260,7 @@ async function processMessage(
 
     if (shouldDeadLetter) {
       await ctx.jobService.markDeadLetter(jobId, errorCode, errorMessage);
-      await ctx.pgmq.archive(queue, msg.msg_id);
+      await ctx.queue.archive(queue, msg.msg_id);
 
       // Auto-refund credits for dead-lettered jobs
       await refundDeadLetteredJob(jobId, ctx, creditService, tag);

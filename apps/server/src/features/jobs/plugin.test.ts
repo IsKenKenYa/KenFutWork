@@ -26,6 +26,8 @@ describe("jobs 插件（enabled 条件装配）", () => {
           auth: { authenticate: async () => null },
           credits: {} as never,
           persistence: {} as never,
+          // jobs 插件经队列缝投递（M3.2）
+          queue: {} as never,
           tierGuard: {} as never,
           viewer: {} as never,
         },
@@ -58,6 +60,7 @@ describe("jobs 插件（enabled 条件装配）", () => {
         auth: { authenticate: async () => null },
         credits: {} as never,
         persistence: {} as never,
+        queue: {} as never,
         tierGuard: {} as never,
         viewer: {} as never,
       },

@@ -23,6 +23,7 @@ import type { PermissionService } from "../features/permissions/permission-servi
 import type { PersistenceService } from "../features/persistence/types.js";
 import type { PluginRegistryService } from "../features/plugins/plugin-registry-service.js";
 import type { ProjectService } from "../features/projects/project-service.js";
+import type { QueueClient } from "../features/queue/types.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import type { AssetWriter } from "../features/uploads/asset-writer.js";
 import type { UploadService } from "../features/uploads/upload-service.js";
@@ -80,6 +81,11 @@ export interface ServiceMap {
   auth: RequestAuthenticator;
   /** JobService（PGMQ，Postgres 扩展） */
   jobs: JobService;
+  /**
+   * 队列缝（M3.2）：任务投递与消费的唯一入口；Provider 随形态替换
+   * （`pgmq` 服务端/自托管 / `in-process` 桌面）。
+   */
+  queue: QueueClient;
   /** 用户供应商实例管理（CRUD + 凭证解析，BYOK） */
   modelProviders: ModelProviderService;
   /** 模型目录（从用户供应商实例推导） */

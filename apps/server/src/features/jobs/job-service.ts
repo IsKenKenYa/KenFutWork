@@ -3,10 +3,9 @@ import type {
   BackgroundJobStatus,
   BackgroundJobType,
 } from "@loomic/shared";
-
-import type { PgmqClient } from "../../queue/pgmq-client.js";
 import type { AuthenticatedUser } from "../../supabase/user.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
+import type { QueueClient } from "../queue/types.js";
 import type {
   BackgroundJobRecord,
   JobCreditsInfo,
@@ -118,7 +117,8 @@ function mapJobRow(row: BackgroundJobRecord): BackgroundJob {
 }
 
 export function createJobService(options: {
-  pgmq: PgmqClient;
+  /** 队列缝（M3.2）：投递与消费，Provider 随形态替换。 */
+  queue: QueueClient;
   repository: JobRepository;
   /**
    * 用户路径（建/查/列/取消）需要它解析工作区；worker 进程只走按 id 的
@@ -126,7 +126,7 @@ export function createJobService(options: {
    */
   viewerService?: ViewerService | undefined;
 }): JobService {
-  const { pgmq, repository } = options;
+  const { queue, repository } = options;
 
   function requireViewer(): ViewerService {
     if (!options.viewerService) {
@@ -186,9 +186,9 @@ export function createJobService(options: {
         );
       }
 
-      // Enqueue to pgmq — rollback on failure
+      // 投递到队列缝 — 失败即回滚（不留孤儿 job 行）
       try {
-        await pgmq.send(queueName, {
+        await queue.send(queueName, {
           job_id: job.id,
           job_type: input.jobType,
           workspace_id: workspaceId,
@@ -196,7 +196,7 @@ export function createJobService(options: {
           ...(input.sessionId ? { session_id: input.sessionId } : {}),
         });
       } catch (enqueueErr) {
-        console.error("[job-service] pgmq.send failed:", enqueueErr);
+        console.error("[job-service] queue.send failed:", enqueueErr);
         await repository.delete(workspaceId, job.id).catch(() => 0);
         throw new JobServiceError(
           "job_create_failed",

@@ -1,6 +1,5 @@
 import { registerJobRoutes } from "../../http/jobs.js";
 import type { PluginDefinition } from "../../kernel/types.js";
-import { createPgmqClient } from "../../queue/pgmq-client.js";
 import type { JobService } from "./job-service.js";
 import { createJobService } from "./job-service.js";
 import { createJobRepository } from "./repository.js";
@@ -26,16 +25,14 @@ export function createJobsPlugin(
     // worker 只走「按 id 迁移状态」路径（无用户身份、无 auth/viewer），
     // 用户路径缺 viewer 时由服务 fail loud。
     inject: withRoutes
-      ? ["auth", "credits", "persistence", "tierGuard", "viewer"]
-      : ["persistence"],
+      ? ["auth", "credits", "persistence", "queue", "tierGuard", "viewer"]
+      : ["persistence", "queue"],
     enabled: (env) => isEnabled(Boolean(env.databaseUrl)),
     apply(ctx) {
       const viewerService = ctx.tryGet("viewer");
       ctx.register("jobs", () => {
-        // enabled 已保证无注入实例时必有 databaseUrl；有注入实例时 override 优先，工厂不会执行。
-        const pgmq = createPgmqClient(ctx.env.databaseUrl as string);
         return createJobService({
-          pgmq,
+          queue: ctx.get("queue"),
           repository: createJobRepository(ctx.get("persistence")),
           ...(viewerService ? { viewerService } : {}),
         });

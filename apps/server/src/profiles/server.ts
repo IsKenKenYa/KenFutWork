@@ -26,6 +26,7 @@ import {
   type PluginCatalogEntry,
 } from "../features/plugins/plugin.js";
 import { createProjectsPlugin } from "../features/projects/plugin.js";
+import { createQueuePlugin } from "../features/queue/plugin.js";
 import { createSearchPlugin } from "../features/search/plugin.js";
 import { createSettingsPlugin } from "../features/settings/plugin.js";
 import { createSkillsPlugin } from "../features/skills/plugin.js";
@@ -127,6 +128,7 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
 export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
   return [
     persistencePlugin,
+    createQueuePlugin(),
     createBlobPlugin({ getAdminClient: deps.getAdminClient }),
     createAuthPlugin(),
     brandKitPlugin,
