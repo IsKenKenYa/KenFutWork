@@ -696,6 +696,40 @@ export function Workbench() {
       setPrompt("");
       setSubmitting(true);
 
+      // 失败兜底：WS 命令可能被丢弃（重连窗口）或 ack 丢失。没有兜底时任务会永远停在
+      // 「生成中」，且 submitting 不归位会让发送按钮**永久禁用**——用户只能刷新页面。
+      const markFailed = (text: string) => {
+        setTasksByMode((prev) => {
+          const list = prev[mode].map((t) =>
+            t.id === task.id && t.status === "running"
+              ? {
+                  ...t,
+                  status: "failed" as const,
+                  messages: [
+                    ...t.messages,
+                    { role: "assistant" as const, text },
+                  ],
+                }
+              : t,
+          );
+          saveTasks(mode, list);
+          return { ...prev, [mode]: list };
+        });
+        setSubmitting(false);
+      };
+
+      if (!ws.connected) {
+        markFailed("与服务端的连接未就绪（正在重连），请稍后重试。");
+        return;
+      }
+
+      let acked = false;
+      const ackTimer = window.setTimeout(() => {
+        if (!acked) {
+          markFailed("运行请求未被服务端确认（连接可能刚重连），请重试。");
+        }
+      }, 12_000);
+
       ws.startRun(
         {
           sessionId,
@@ -720,6 +754,8 @@ export function Workbench() {
           executionMode,
         },
         (ack) => {
+          acked = true;
+          window.clearTimeout(ackTimer);
           const payload = ack.payload as { runId?: string } | undefined;
           if (payload?.runId) {
             activeRunIdRef.current = payload.runId;

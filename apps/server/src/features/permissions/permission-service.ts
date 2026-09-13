@@ -8,11 +8,20 @@ import type { PermissionTier } from "@loomic/shared";
  * 拦截挂在 kernel 的 tool-pre-execute 事件上（permissions 插件订阅）。
  */
 
-/** 危险/不可逆工具名模式：default 档下必须审批。 */
+/**
+ * 危险/不可逆工具名模式：default 档下必须审批。
+ *
+ * 名称必须与**真实注册名**一致，否则该工具根本不进审批链（默认档下静默放行）。
+ * 曾经的错拼 `/^file_write$/` 就与 deepagents 内置工具的真实名 `write_file` 不匹配，
+ * 导致「写文件需审批」的政策实际从未生效——改动此表请以 `isDangerousTool` 的回归测试为准。
+ */
 export const DANGEROUS_TOOL_PATTERNS = [
   /^mcp__/,
   /^diff_patch$/,
-  /^file_write$/,
+  // deepagents FilesystemMiddleware 内置写工具
+  /^write_file$/,
+  /^edit_file$/,
+  // 命令执行
   /^execute$/,
   /shell/i,
 ] as const;

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { z } from "zod";
+import { ToolDeniedError } from "../kernel/context.js";
 import type { ToolDefinition } from "../kernel/types.js";
 import {
   bridgeKernelTools,
@@ -107,6 +108,65 @@ describe("kernelToolToStructuredTool（模型可调用桥）", () => {
     }));
     const bridged = bridgeKernelTools(defs);
     expect(bridged.map((t) => t.name)).toEqual(["mcp__srv__a", "mcp__srv__b"]);
+  });
+});
+
+/**
+ * 回归：权限拒绝**不得**中断整轮 run。
+ * 原先 ToolDeniedError 从工具节点抛出，默认权限档下任何 mcp__ 调用都会让整轮以
+ * 一个与因果无关的 LangChain 中间件错误收场（实测）。拒绝应作为工具级结果交回模型。
+ */
+describe("权限拒绝转工具级结果（回归）", () => {
+  function deniedTool(): ToolDefinition {
+    return {
+      name: "mcp__srv__danger",
+      description: "",
+      scope: "shared",
+      parameters: { type: "object", properties: {} },
+      execute: async () => {
+        throw new ToolDeniedError("mcp__srv__danger", "危险操作需审批");
+      },
+    };
+  }
+
+  it("ToolDeniedError 转为可读字符串结果，而不是抛出", async () => {
+    const structured = kernelToolToStructuredTool(deniedTool());
+    const result = await structured.invoke({});
+    expect(typeof result).toBe("string");
+    expect(result as string).toContain("mcp__srv__danger");
+    expect(result as string).toContain("危险操作需审批");
+  });
+
+  it("拒绝结果经 JSON 序列化后仍可读（模型能看到原因）", async () => {
+    const structured = kernelToolToStructuredTool(deniedTool());
+    const result = await structured.invoke({});
+    expect(JSON.stringify(result)).toContain("危险操作需审批");
+  });
+
+  it("非拒绝类错误仍然抛出（不把真实故障吞成正常结果）", async () => {
+    const broken: ToolDefinition = {
+      name: "mcp__srv__broken",
+      description: "",
+      scope: "shared",
+      parameters: { type: "object", properties: {} },
+      execute: async () => {
+        throw new Error("上游连接断开");
+      },
+    };
+    const structured = kernelToolToStructuredTool(broken);
+    await expect(structured.invoke({})).rejects.toThrow("上游连接断开");
+  });
+
+  it("正常工具不受影响", async () => {
+    const ok: ToolDefinition = {
+      name: "ok",
+      description: "",
+      scope: "shared",
+      parameters: { type: "object", properties: {} },
+      execute: async () => ({ value: 42 }),
+    };
+    const structured = kernelToolToStructuredTool(ok);
+    await expect(structured.invoke({})).resolves.toEqual({ value: 42 });
   });
 });
 

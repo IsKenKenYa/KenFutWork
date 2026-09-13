@@ -2,6 +2,7 @@ import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import type { ToolGate, LoomicAgentFactory } from "../../agent/deep-agent.js";
 import { createAgentPersistenceService } from "../../agent/persistence/index.js";
 import { createAgentRunService } from "../../agent/runtime.js";
+import { composeToolGate } from "../../agent/tool-gate.js";
 import { createWorkspaceSkillsLoader } from "../../agent/workspace-skills.js";
 import { registerRunRoutes } from "../../http/runs.js";
 import type { KernelEvents, PluginDefinition } from "../../kernel/types.js";
@@ -60,12 +61,30 @@ export function createAgentRunsPlugin(
         const jobService = ctx.tryGet("jobs");
         // 执行模式工具门：solo/plan 策略归 agent-modes，运行时只拿到判定函数
         const agentModes = d.get("agentModes");
-        const toolGateFor = (threadId: string): ToolGate | undefined => {
+        // 权限档同门：内置工具（execute/write_file/edit_file）不经过 ctx.tools.execute，
+        // tool-pre-execute 事件缝拦不到它们，必须在这里与模式判定合并（见 tool-gate.ts）。
+        const permissions = ctx.tryGet("permissions");
+        const toolGateFor = (threadId: string): ToolGate => {
           const policy = agentModes.resolveToolPolicy(threadId);
-          if (policy.kind === "allow-all") {
-            return undefined;
-          }
-          return (toolName) => evaluateToolPolicy(policy, toolName);
+          return composeToolGate({
+            modeVerdict: (toolName) => evaluateToolPolicy(policy, toolName),
+            ...(permissions
+              ? {
+                  permissionVerdict: (toolName: string) => {
+                    const decision = permissions.evaluate({ toolName, threadId });
+                    if (decision.decision !== "deny") {
+                      return { allowed: true } as const;
+                    }
+                    return {
+                      allowed: false as const,
+                      reason:
+                        decision.reason ??
+                        "该工具在当前权限档位下需审批后才能调用。",
+                    };
+                  },
+                }
+              : {}),
+          });
         };
         return createAgentRunService({
           agentPersistenceService: d.get("agentPersistence"),

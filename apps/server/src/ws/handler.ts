@@ -75,6 +75,23 @@ async function authenticateAndBind(
 ) {
   const log = createPipelineLogger("ws");
 
+  /**
+   * 鉴权期间的早期消息缓冲。
+   *
+   * 竞态背景：`socket.on("message")` 只能在本函数**异步鉴权之后**才挂上，而客户端在
+   * `onopen` 后立刻发命令（首个 run 常如此）。窗口期到达的消息会被直接丢弃——表现为
+   * 「点了发送但界面永远停在生成中」，且服务端连一行日志都没有。
+   *
+   * 修法：在首个 await 之前**同步**挂捕获监听器（async 函数在首个 await 前同步执行，
+   * 因此不存在间隙），鉴权成功并挂上真正处理器后回放缓冲。
+   */
+  const earlyMessages: Array<Buffer | string> = [];
+  let forwarding = false;
+  const captureEarly = (raw: Buffer | string) => {
+    if (!forwarding) earlyMessages.push(raw);
+  };
+  socket.on("message", captureEarly);
+
   let authenticatedUser: AuthenticatedUser;
   try {
     const fakeRequest = {
@@ -121,7 +138,7 @@ async function authenticateAndBind(
     }
   }, 30_000);
 
-  socket.on("message", (raw: Buffer | string) => {
+  const onMessage = (raw: Buffer | string) => {
     let parsed: unknown;
     try {
       parsed = JSON.parse(
@@ -249,7 +266,21 @@ async function authenticateAndBind(
         }
       }
     }
-  });
+  };
+
+  socket.on("message", onMessage);
+  // 回放鉴权期间缓冲的早期消息（否则 open 后立即发送的命令会静默丢失）
+  forwarding = true;
+  socket.off("message", captureEarly);
+  for (const raw of earlyMessages.splice(0)) {
+    try {
+      onMessage(raw);
+    } catch (error) {
+      log.warn("early_message_replay_failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 
   socket.on("close", () => {
     log.info("disconnected", { userId: authenticatedUser.id, connectionId });
@@ -349,6 +380,19 @@ async function handleRunCommand(
   //（threadId 是服务端内部 ID，客户端拿不到，故不走 PUT /execution-modes/:threadId）
   if (payload.executionMode && threadId && services.agentModes) {
     services.agentModes.activate(threadId, payload.executionMode);
+  } else if (payload.executionMode && payload.executionMode !== "agent") {
+    /**
+     * 模式**静默降级**是曾经的坑：threadId 解析不出来时，pre-step 会退化成 "agent"、
+     * 工具门整段跳过（见 agent-modes/plugin.ts），而客户端与模型都以为自己在目标模式里。
+     * 这里必须响亮：运行降级为 agent 时留下可检索的日志，别让它无声发生。
+     */
+    log.warn("execution_mode_not_applied", {
+      executionMode: payload.executionMode,
+      reason: threadId ? "agent_modes_service_missing" : "thread_unresolved",
+      detail: threadId
+        ? "agentModes 服务不可用"
+        : "会话未在服务端解析出 thread（客户端 sessionId 未被服务端持久化），模式引导与工具门都不会生效",
+    });
   }
 
   const response = agentRuns.createRun(payload, {

@@ -51,8 +51,19 @@ describe("permissions 缝（DEC-4）", () => {
   it("isDangerousTool 覆盖 shell/MCP/写类模式", () => {
     expect(isDangerousTool("LocalShell_execute")).toBe(true);
     expect(isDangerousTool("mcp__anything")).toBe(true);
-    expect(isDangerousTool("file_write")).toBe(true);
+    expect(isDangerousTool("execute")).toBe(true);
+    expect(isDangerousTool("diff_patch")).toBe(true);
     expect(isDangerousTool("diff_files")).toBe(false);
     expect(isDangerousTool("generate_image")).toBe(false);
+  });
+
+  /**
+   * 回归：模式表必须匹配**真实注册名**。
+   * 曾经写成 `/^file_write$/`（错拼），而 deepagents 内置工具真实名是 `write_file`——
+   * 于是默认档下「写文件需审批」静默失效，而当时的用例恰好也用了同一个错拼名，双双漏过。
+   */
+  it("deepagents 内置写工具按真实名进入审批（回归）", () => {
+    expect(isDangerousTool("write_file")).toBe(true);
+    expect(isDangerousTool("edit_file")).toBe(true);
   });
 });

@@ -2,6 +2,7 @@ import { type StructuredTool, tool } from "@langchain/core/tools";
 import { type ZodTypeAny, z } from "zod";
 
 import type { ToolDefinition, ToolExecutionContext } from "../kernel/types.js";
+import { ToolDeniedError } from "../kernel/context.js";
 
 /**
  * 内核工具桥（§4.5「统一工具注册表」的最后一环）：
@@ -71,8 +72,28 @@ export function kernelToolToStructuredTool(
 ): StructuredTool {
   const schema = jsonSchemaToZod(definition.parameters);
   const dynamic = tool(
-    async (args: Record<string, unknown>) =>
-      definition.execute(args as Record<string, unknown>, execCtx),
+    async (args: Record<string, unknown>) => {
+      try {
+        return await definition.execute(
+          args as Record<string, unknown>,
+          execCtx,
+        );
+      } catch (error) {
+        /**
+         * 权限拒绝是**工具级结果**，不是运行级失败。
+         *
+         * 原先 `ToolDeniedError` 从工具节点抛出，会中断整轮 run（实测表现为默认权限档下
+         * 任何 `mcp__*` 调用都以一个与因果无关的 LangChain 中间件错误收场）。这里转成
+         * 结构化结果交回模型，让它改道（请求审批 / 换方案），而不是把整轮打断。
+         */
+        if (error instanceof ToolDeniedError) {
+          // 用纯字符串：工具结果的最兼容形态。结构化对象虽也能用，但在
+          // 「模型偶发返回异常工具调用」时更易触发上游中间件的消息校验问题。
+          return `工具 ${definition.name} 被拒绝（当前权限档位需审批，需用户批准或改用它法）。原因：${error.message}`;
+        }
+        throw error;
+      }
+    },
     {
       name: definition.name,
       description: definition.description,
