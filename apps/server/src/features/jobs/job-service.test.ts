@@ -244,6 +244,46 @@ describe("jobs repository（background_jobs）", () => {
       ).incrementAttempt(JOB_ID),
     ).resolves.toEqual({ attempt_count: 1, max_attempts: 3 });
   });
+
+  it("扣费信息按 id 取最小字段（死信退款用；credits_cost 不在对外契约里）", async () => {
+    const hit = createRunner(() => ({
+      rowCount: 1,
+      rows: [{ credits_cost: 12, created_by: "user-1", workspace_id: "ws-1" }],
+    }));
+    await expect(
+      createJobRepository(
+        createPersistenceFromRunner(hit.runner),
+      ).findCreditsInfo(JOB_ID),
+    ).resolves.toEqual({
+      createdBy: "user-1",
+      creditsCost: 12,
+      workspaceId: "ws-1",
+    });
+
+    const sql = hit.sqls()[0] ?? "";
+    expect(sql).toContain(
+      "select credits_cost, workspace_id, created_by from public.background_jobs where id = $1",
+    );
+    expect(hit.calls[0]?.values).toEqual([JOB_ID]);
+
+    // credits_cost 可空（未扣费的任务），归一为 0 而不是 undefined
+    const nullCredits = createRunner(() => ({
+      rowCount: 1,
+      rows: [{ credits_cost: null, created_by: null, workspace_id: null }],
+    }));
+    await expect(
+      createJobRepository(
+        createPersistenceFromRunner(nullCredits.runner),
+      ).findCreditsInfo(JOB_ID),
+    ).resolves.toEqual({ createdBy: null, creditsCost: 0, workspaceId: null });
+
+    const miss = createRunner();
+    await expect(
+      createJobRepository(
+        createPersistenceFromRunner(miss.runner),
+      ).findCreditsInfo(JOB_ID),
+    ).resolves.toBeNull();
+  });
 });
 
 function createFakeRepository(
@@ -255,6 +295,11 @@ function createFakeRepository(
     delete: async () => 1,
     findById: async () => JOB_ROW,
     findByIdInWorkspace: async () => JOB_ROW,
+    findCreditsInfo: async () => ({
+      createdBy: "user-1",
+      creditsCost: 0,
+      workspaceId: "ws-1",
+    }),
     incrementAttempt: async () => ({ attempt_count: 1, max_attempts: 3 }),
     insert: async () => JOB_ROW,
     listByCreator: async () => [],

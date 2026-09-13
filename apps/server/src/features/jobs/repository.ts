@@ -42,6 +42,13 @@ export type JobListFilters = {
   status?: string | undefined;
 };
 
+/** 死信退款所需的最小字段（`credits_cost` 不在对外契约里，故单独取）。 */
+export type JobCreditsInfo = {
+  creditsCost: number;
+  createdBy: string | null;
+  workspaceId: string | null;
+};
+
 /**
  * jobs 聚合的数据访问（`background_jobs`，带 `workspace_id`）。
  *
@@ -60,6 +67,11 @@ export interface JobRepository {
   countActive(workspaceId: string): Promise<number>;
   delete(workspaceId: string, jobId: string): Promise<number>;
   findById(jobId: string): Promise<BackgroundJobRecord | null>;
+  /**
+   * 扣费信息（`credits_cost`/`workspace_id`/`created_by`）——死信自动退款用。
+   * `credits_cost` 不在对外 job 契约里，故单独取最小字段而不是复用 `findById`。
+   */
+  findCreditsInfo(jobId: string): Promise<JobCreditsInfo | null>;
   findByIdInWorkspace(
     workspaceId: string,
     jobId: string,
@@ -205,6 +217,30 @@ export function createJobRepository(
         `select ${JOB_COLUMNS} from public.background_jobs where id = $1`,
         [jobId],
       );
+    },
+
+    async findCreditsInfo(jobId) {
+      // worker 路径：消息里只有 job id，故按 id 走根客户端（同 findById 口径）
+      const row = await persistence.queryOne<{
+        created_by: string | null;
+        credits_cost: number | null;
+        workspace_id: string | null;
+      }>(
+        `select credits_cost, workspace_id, created_by
+           from public.background_jobs
+          where id = $1`,
+        [jobId],
+      );
+
+      if (!row) {
+        return null;
+      }
+
+      return {
+        createdBy: row.created_by,
+        creditsCost: row.credits_cost ?? 0,
+        workspaceId: row.workspace_id,
+      };
     },
 
     async setCreditsInfo(jobId, creditsCost, transactionId) {

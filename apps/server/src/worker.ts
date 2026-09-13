@@ -282,18 +282,11 @@ async function refundDeadLetteredJob(
   tag: string,
 ) {
   try {
-    const admin = ctx.getAdminClient();
-    const { data: jobRow } = await admin
-      .from("background_jobs")
-      .select("credits_cost, workspace_id, created_by")
-      .eq("id", jobId)
-      .single();
+    const creditsInfo = await ctx.jobService.getCreditsInfo(jobId);
 
-    if (!jobRow) return;
+    if (!creditsInfo) return;
 
-    const creditsCost = jobRow.credits_cost ?? 0;
-    const workspaceId = jobRow.workspace_id;
-    const createdBy = jobRow.created_by;
+    const { creditsCost, workspaceId, createdBy } = creditsInfo;
 
     if (creditsCost <= 0 || !workspaceId || !createdBy) return;
 

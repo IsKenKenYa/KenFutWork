@@ -7,7 +7,11 @@ import type {
 import type { PgmqClient } from "../../queue/pgmq-client.js";
 import type { AuthenticatedUser } from "../../supabase/user.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
-import type { BackgroundJobRecord, JobRepository } from "./repository.js";
+import type {
+  BackgroundJobRecord,
+  JobCreditsInfo,
+  JobRepository,
+} from "./repository.js";
 
 // Queue name mapping
 const QUEUE_MAP: Record<BackgroundJobType, string> = {
@@ -79,6 +83,11 @@ export type JobService = {
   incrementAttempt(
     jobId: string,
   ): Promise<{ attempt_count: number; max_attempts: number }>;
+  /**
+   * 死信退款所需的扣费信息（worker 路径，按 id 取数）。
+   * 不存在返回 null；查询失败抛 `job_query_failed`。
+   */
+  getCreditsInfo(jobId: string): Promise<JobCreditsInfo | null>;
 };
 
 function mapJobRow(row: BackgroundJobRecord): BackgroundJob {
@@ -271,6 +280,16 @@ export function createJobService(options: {
         throw new JobServiceError("job_not_found", "Job not found.", 404);
       }
       return mapJobRow(job);
+    },
+
+    async getCreditsInfo(jobId) {
+      return repository.findCreditsInfo(jobId).catch(() => {
+        throw new JobServiceError(
+          "job_query_failed",
+          "Failed to query job credits.",
+          500,
+        );
+      });
     },
 
     // --- worker/executor 路径：按 id 改状态（无用户身份） ---
