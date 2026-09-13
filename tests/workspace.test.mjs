@@ -291,6 +291,10 @@ test("docs fixture: 第二处 ctx key 表被拦截", async () => {
 // 代码侧与 SQL 侧的残留计数做成**只许减不许增**的门禁，消除残留的 PR
 // 必须在同一 PR 下调基线（tests/supabase-cleanup-baseline.json）。
 
+function countOccurrences(source, pattern) {
+  return (source.match(pattern) ?? []).length;
+}
+
 const SUPABASE_SOURCE_ROOTS = ["apps/server/src", "apps/web/src", "packages"];
 const IGNORED_DIRS = new Set([
   "node_modules",
@@ -300,8 +304,9 @@ const IGNORED_DIRS = new Set([
   ".turbo",
 ]);
 
-/** 仍与 Supabase 客户端耦合的源文件（排除测试）。 */
-function listSupabaseCoupledSources() {
+/** 全部源文件（排除测试）——按全量统计才能同口径比较：只统计「已耦合文件」时，
+ *  把一处存储调用从一个耦合文件挪到另一个，指标会凭空变化。 */
+function listSupabaseSources() {
   const files = [];
 
   const walk = (dir) => {
@@ -320,7 +325,10 @@ function listSupabaseCoupledSources() {
         }
         continue;
       }
-      if (!/\.(ts|tsx)$/.test(entry.name) || /\.test\.(ts|tsx)$/.test(entry.name)) {
+      if (
+        !/\.(ts|tsx)$/.test(entry.name) ||
+        /\.test\.(ts|tsx)$/.test(entry.name)
+      ) {
         continue;
       }
       files.push(target);
@@ -331,29 +339,32 @@ function listSupabaseCoupledSources() {
     walk(path.join(rootDir, root));
   }
 
-  return files.filter((filePath) =>
-    /UserSupabaseClient|AdminSupabaseClient|@supabase\//.test(
-      readFileSync(filePath, "utf8"),
-    ),
-  );
+  return files;
 }
 
-function countOccurrences(source, pattern) {
-  return (source.match(pattern) ?? []).length;
-}
+const CLIENT_WIRING_PATTERN =
+  /createUserClient|createAdminClient|UserSupabaseClient|AdminSupabaseClient|@supabase\//g;
 
 async function collectSupabaseResiduals() {
-  const coupled = listSupabaseCoupledSources();
+  const sources = listSupabaseSources();
   const code = {
-    filesUsingSupabaseClient: coupled.length,
-    fromCalls: 0,
-    storageCalls: 0,
+    filesUsingSupabaseClient: 0,
+    sdkRefs: 0,
+    dbFromCalls: 0,
+    storageRefs: 0,
   };
 
-  for (const filePath of coupled) {
+  for (const filePath of sources) {
     const source = readFileSync(filePath, "utf8");
-    code.fromCalls += countOccurrences(source, /\.from\(/g);
-    code.storageCalls += countOccurrences(source, /\.storage/g);
+    if (/UserSupabaseClient|AdminSupabaseClient|@supabase\//.test(source)) {
+      code.filesUsingSupabaseClient += 1;
+    }
+    code.sdkRefs += countOccurrences(source, CLIENT_WIRING_PATTERN);
+    // 去空白后判定：`.storage.from(...)` 是对象存储调用，不是 DB 查询，
+    // 原口径把它计进 DB 调用，导致「把存储调用搬个位置」就能污染指标。
+    const flat = source.replace(/\s+/g, "");
+    code.dbFromCalls += (flat.match(/(?<!storage)\.from\(/g) ?? []).length;
+    code.storageRefs += countOccurrences(flat, /\.storage/g);
   }
 
   const { stdout } = await execFileAsync(
@@ -396,11 +407,7 @@ test("去 Supabase 残留只许减不许增（棘轮门禁）", async () => {
   for (const group of ["code", "sql"]) {
     for (const [metric, value] of Object.entries(actual[group])) {
       const limit = baseline[group][metric];
-      assert.equal(
-        typeof limit,
-        "number",
-        `${group}.${metric} 基线必须是数字`,
-      );
+      assert.equal(typeof limit, "number", `${group}.${metric} 基线必须是数字`);
       if (value > limit) {
         regressions.push(`${group}.${metric}: ${value} > 基线 ${limit}`);
       } else if (value < limit) {

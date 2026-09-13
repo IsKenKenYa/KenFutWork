@@ -1,6 +1,6 @@
 // apps/server/src/features/canvas/canvas-element-writer.ts
 
-import type { CanvasContent, Json } from "@loomic/shared";
+import type { CanvasContent } from "@loomic/shared";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -31,6 +31,18 @@ type VideoInsertOpts = {
 type Placement = { x: number; y: number; width: number; height: number };
 
 type InsertResult = { elementId: string };
+
+/**
+ * 画布内容读写缝（由 canvas 服务的实现绑定工作区作用域）。
+ * 取代原先 duck-typed 的 Supabase client 参数——写入器因此不再接触供应商 SDK。
+ */
+export type CanvasContentStore = {
+  readContent(canvasId: string): Promise<CanvasContent | null>;
+  /** 覆盖写；0 行受影响视为失败（不存在或不属本工作区）。 */
+  writeContent(canvasId: string, content: CanvasContent): Promise<void>;
+  /** 下载对象字节（M3 前为 Supabase Storage，M3 后为 BlobStore）。 */
+  downloadObject(objectPath: string): Promise<Buffer>;
+};
 
 // ---------------------------------------------------------------------------
 // Placement calculation (ported from apps/web/src/lib/canvas-elements.ts)
@@ -187,59 +199,52 @@ function buildVideoElement(
 // Public API — Read-Modify-Write canvas content
 // ---------------------------------------------------------------------------
 
-const CANVAS_FILES_BUCKET = "project-assets";
 const IMAGE_MAX_SIZE = 600;
 const VIDEO_MAX_SIZE = 800;
+
+function readElements(content: CanvasContent | null): CanvasElement[] {
+  return ((content as { elements?: CanvasElement[] } | null)?.elements ??
+    []) as CanvasElement[];
+}
 
 /**
  * Insert an image element into a canvas. Reads current content, appends element
  * with auto-placement (or explicit placement), writes it back.
  *
- * The image file is already in Supabase Storage (uploaded by worker executor).
+ * The image file is already in object storage (uploaded by worker executor).
  * We download it and embed as base64 dataURL in the canvas files map so
  * Excalidraw can render it natively (consistent with frontend-inserted images).
  */
 export async function insertImageElement(
-  client: {
-    from: (table: string) => any;
-    storage: { from: (bucket: string) => any };
-  },
+  store: CanvasContentStore,
   opts: ImageInsertOpts,
   explicitPlacement?: Placement,
 ): Promise<InsertResult> {
-  // 1. Download image from storage and convert to base64 dataURL
-  const { data: blob, error: dlError } = await client.storage
-    .from(CANVAS_FILES_BUCKET)
-    .download(opts.objectPath);
-
-  if (dlError || !blob) {
+  // 1. Download image and convert to base64 dataURL
+  let buffer: Buffer;
+  try {
+    buffer = await store.downloadObject(opts.objectPath);
+  } catch (error) {
     throw new Error(
-      `Failed to download image from storage: ${dlError?.message ?? "no data"}`,
+      `Failed to download image from storage: ${
+        error instanceof Error ? error.message : "no data"
+      }`,
     );
   }
 
-  const buffer = Buffer.from(await blob.arrayBuffer());
-  const base64 = buffer.toString("base64");
-  const dataURL = `data:${opts.mimeType};base64,${base64}`;
+  const dataURL = `data:${opts.mimeType};base64,${buffer.toString("base64")}`;
 
   // 2. Read canvas
-  const { data, error } = await client
-    .from("canvases")
-    .select("content")
-    .eq("id", opts.canvasId)
-    .single();
-
-  if (error || !data) {
+  const content = await store.readContent(opts.canvasId);
+  if (!content) {
     throw new Error(`Canvas not found: ${opts.canvasId}`);
   }
 
-  const content = (data.content as CanvasContent) ?? {
-    elements: [],
-    appState: {},
-  };
-  const elements: CanvasElement[] = (content.elements as CanvasElement[]) ?? [];
+  const elements = readElements(content);
   const files =
-    ((content as any).files as Record<string, Record<string, unknown>>) ?? {};
+    ((content as { files?: Record<string, Record<string, unknown>> }).files as
+      | Record<string, Record<string, unknown>>
+      | undefined) ?? {};
 
   // 3. Placement
   const placement =
@@ -261,20 +266,11 @@ export async function insertImageElement(
   };
 
   // 5. Write
-  const updatedContent = {
+  await store.writeContent(opts.canvasId, {
     ...content,
     elements: [...elements, element],
     files: updatedFiles,
-  };
-
-  const { error: writeError } = await client
-    .from("canvases")
-    .update({ content: updatedContent as unknown as Json })
-    .eq("id", opts.canvasId);
-
-  if (writeError) {
-    throw new Error(`Failed to write canvas: ${writeError.message}`);
-  }
+  } as CanvasContent);
 
   console.log(
     `[canvas-element-writer] image inserted canvasId=${opts.canvasId} elementId=${element.id}`,
@@ -287,29 +283,17 @@ export async function insertImageElement(
  * type with a link URL — no files map entry needed.
  */
 export async function insertVideoElement(
-  client: {
-    from: (table: string) => any;
-    storage: { from: (bucket: string) => any };
-  },
+  store: CanvasContentStore,
   opts: VideoInsertOpts,
   explicitPlacement?: Placement,
 ): Promise<InsertResult> {
   // 1. Read
-  const { data, error } = await client
-    .from("canvases")
-    .select("content")
-    .eq("id", opts.canvasId)
-    .single();
-
-  if (error || !data) {
+  const content = await store.readContent(opts.canvasId);
+  if (!content) {
     throw new Error(`Canvas not found: ${opts.canvasId}`);
   }
 
-  const content = (data.content as CanvasContent) ?? {
-    elements: [],
-    appState: {},
-  };
-  const elements: CanvasElement[] = (content.elements as CanvasElement[]) ?? [];
+  const elements = readElements(content);
 
   // 2. Placement
   const placement =
@@ -320,19 +304,10 @@ export async function insertVideoElement(
   const element = buildVideoElement(placement, opts);
 
   // 4. Write
-  const updatedContent = {
+  await store.writeContent(opts.canvasId, {
     ...content,
     elements: [...elements, element],
-  };
-
-  const { error: writeError } = await client
-    .from("canvases")
-    .update({ content: updatedContent as unknown as Json })
-    .eq("id", opts.canvasId);
-
-  if (writeError) {
-    throw new Error(`Failed to write canvas: ${writeError.message}`);
-  }
+  } as CanvasContent);
 
   console.log(
     `[canvas-element-writer] video inserted canvasId=${opts.canvasId} elementId=${element.id}`,

@@ -32,7 +32,15 @@ export function createAgentRunsPlugin(
 ): PluginDefinition {
   return {
     name: "agent-runs",
-    inject: ["auth", "credits", "settings", "threads", "tierGuard", "viewer"],
+    inject: [
+      "auth",
+      "canvas",
+      "credits",
+      "settings",
+      "threads",
+      "tierGuard",
+      "viewer",
+    ],
     apply(ctx) {
       ctx.register("agentPersistence", () =>
         createAgentPersistenceService(ctx.env),
@@ -46,6 +54,7 @@ export function createAgentRunsPlugin(
           agentPersistenceService: d.get("agentPersistence"),
           ...(deps.agentFactory ? { agentFactory: deps.agentFactory } : {}),
           agentRunMetadataService: d.get("agentRunMetadata"),
+          canvasService: d.get("canvas"),
           connectionManager: deps.connectionManager,
           createUserClient: deps.createUserClient,
           ...(deps.agentModel ? { model: deps.agentModel } : {}),

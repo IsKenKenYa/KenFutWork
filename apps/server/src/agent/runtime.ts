@@ -23,10 +23,7 @@ import {
 import type { ServerEnv } from "../config/env.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
-import {
-  insertImageElement,
-  insertVideoElement,
-} from "../features/canvas/canvas-element-writer.js";
+import type { CanvasService } from "../features/canvas/canvas-service.js";
 import type { CreditService } from "../features/credits/credit-service.js";
 import {
   type TierGuard,
@@ -290,6 +287,8 @@ type CreateAgentRuntimeOptions = {
   agentPersistenceService?: AgentPersistenceService;
   agentFactory?: LoomicAgentFactory;
   agentRunMetadataService?: AgentRunMetadataService;
+  /** 画布写入（canvas 插件提供）：生成物落画布经此，运行时不再直连存储 SDK。 */
+  canvasService?: CanvasService;
   connectionManager?: ConnectionManager;
   createUserClient?: (accessToken: string) => unknown;
   creditService?: CreditService;
@@ -678,11 +677,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
               // Write element directly to canvas (backend-driven insertion)
               let elementId: string | undefined;
-              if (canvasId && result.object_path) {
+              if (canvasId && result.object_path && options.canvasService) {
                 try {
-                  const writerClient = createClient(
-                    accessToken,
-                  ) as UserSupabaseClient;
                   const explicitPlacement =
                     (input as any).placementX != null &&
                     (input as any).placementY != null
@@ -694,18 +690,21 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                         }
                       : undefined;
 
-                  const insertResult = await insertImageElement(
-                    writerClient,
-                    {
-                      canvasId,
-                      objectPath: result.object_path,
-                      width: result.width ?? 1024,
-                      height: result.height ?? 1024,
-                      mimeType: result.mime_type ?? "image/png",
-                      title: input.title,
-                    },
-                    explicitPlacement,
-                  );
+                  const insertResult =
+                    await options.canvasService.insertImageElement(
+                      { accessToken, id: userId },
+                      {
+                        canvasId,
+                        objectPath: result.object_path,
+                        width: result.width ?? 1024,
+                        height: result.height ?? 1024,
+                        mimeType: result.mime_type ?? "image/png",
+                        ...(input.title ? { title: input.title } : {}),
+                        ...(explicitPlacement
+                          ? { placement: explicitPlacement }
+                          : {}),
+                      },
+                    );
                   elementId = insertResult.elementId;
 
                   // Notify connected frontends to refresh canvas
@@ -927,11 +926,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
               // Write element directly to canvas (backend-driven insertion)
               let elementId: string | undefined;
-              if (canvasId && result.signed_url) {
+              if (canvasId && result.signed_url && options.canvasService) {
                 try {
-                  const writerClient = createClient(
-                    accessToken,
-                  ) as UserSupabaseClient;
                   const explicitPlacement =
                     (input as any).placementX != null &&
                     (input as any).placementY != null
@@ -943,22 +939,27 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                         }
                       : undefined;
 
-                  const insertResult = await insertVideoElement(
-                    writerClient,
-                    {
-                      canvasId,
-                      signedUrl: result.signed_url,
-                      width: result.width ?? 1280,
-                      height: result.height ?? 720,
-                      mimeType: result.mime_type ?? "video/mp4",
-                      ...(result.duration_seconds != null
-                        ? { durationSeconds: result.duration_seconds }
-                        : {}),
-                      title: (input as any).title,
-                      prompt: input.prompt,
-                    },
-                    explicitPlacement,
-                  );
+                  const insertResult =
+                    await options.canvasService.insertVideoElement(
+                      { accessToken, id: userId },
+                      {
+                        canvasId,
+                        signedUrl: result.signed_url,
+                        width: result.width ?? 1280,
+                        height: result.height ?? 720,
+                        mimeType: result.mime_type ?? "video/mp4",
+                        ...(result.duration_seconds != null
+                          ? { durationSeconds: result.duration_seconds }
+                          : {}),
+                        ...((input as any).title
+                          ? { title: (input as any).title }
+                          : {}),
+                        ...(input.prompt ? { prompt: input.prompt } : {}),
+                        ...(explicitPlacement
+                          ? { placement: explicitPlacement }
+                          : {}),
+                      },
+                    );
                   elementId = insertResult.elementId;
 
                   // Notify connected frontends to refresh canvas

@@ -14,8 +14,11 @@ export type ViewerService = {
   /**
    * 解析用户当前工作区（目标态：个人工作区；桌面单用户即本机工作区）。
    * 其它聚合一律经此取工作区，不各自拼同一查询；缺失即抛 `BootstrapError`。
+   * 只依赖身份 id，故 worker/agent 侧无需伪造完整用户对象。
    */
-  resolveWorkspace(user: AuthenticatedUser): Promise<ViewerWorkspace>;
+  resolveWorkspace(
+    user: Pick<AuthenticatedUser, "id">,
+  ): Promise<ViewerWorkspace>;
   /** 更新当前登录用户的显示名；失败抛 `ProfileUpdateError`。 */
   updateProfile(
     user: AuthenticatedUser,
