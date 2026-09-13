@@ -60,9 +60,8 @@ export async function registerUploadRoutes(
 
       const fileBuffer = await file.toBuffer();
 
-      // Resolve workspace from viewer
-      const viewer = await options.viewerService.ensureViewer(user);
-      const workspaceId = viewer.workspace.id;
+      // 引导工作区（幂等）；工作区 id 由 uploadService 内部自行解析，不从请求传入。
+      await options.viewerService.ensureViewer(user);
 
       // Extract projectId from fields if provided
       const projectId =
@@ -77,7 +76,6 @@ export async function registerUploadRoutes(
         fileName: file.filename,
         fileBuffer,
         mimeType,
-        workspaceId,
         ...(projectId ? { projectId } : {}),
       });
 

@@ -464,14 +464,14 @@ async function downloadAndUpload(
     .replace(/^-|-$/g, "");
   const fileName = `gen-${slug}-${Date.now()}.${ext}`;
 
-  const viewer = await deps.viewerService.ensureViewer(user);
+  // 引导工作区（幂等）；工作区 id 由 uploadService 内部解析。
+  await deps.viewerService.ensureViewer(user);
 
   const result = await deps.uploadService.uploadFile(user, {
     bucket: "project-assets",
     fileName,
     fileBuffer: buffer,
     mimeType,
-    workspaceId: viewer.workspace.id,
   });
 
   return { signedUrl: result.url, assetId: result.asset.id };

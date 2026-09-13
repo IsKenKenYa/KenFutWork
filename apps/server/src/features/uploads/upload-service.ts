@@ -4,9 +4,15 @@ import type {
   AuthenticatedUser,
   UserSupabaseClient,
 } from "../../supabase/user.js";
+import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
+import type { UploadRepository } from "./repository.js";
 
 /** Buckets configured as public in Supabase — use getPublicUrl instead of signed URLs */
 const PUBLIC_BUCKETS = new Set(["project-assets"]);
+
+const SIGNED_URL_EXPIRY_SECONDS = 3600;
+const UPLOAD_FAILED_MESSAGE = "Unable to upload asset.";
+const ASSET_NOT_FOUND_MESSAGE = "Asset not found.";
 
 export class UploadServiceError extends Error {
   readonly statusCode: number;
@@ -18,17 +24,18 @@ export class UploadServiceError extends Error {
     statusCode: number,
   ) {
     super(message);
+    this.name = "UploadServiceError";
     this.code = code;
     this.statusCode = statusCode;
   }
 }
 
+/** 工作区由服务端解析（`FORM-9`），故不由调用方传入。 */
 export type UploadFileInput = {
   bucket: AssetBucket;
   fileName: string;
   fileBuffer: Buffer;
   mimeType: string;
-  workspaceId: string;
   projectId?: string | undefined;
 };
 
@@ -43,17 +50,32 @@ export type UploadService = {
   deleteAsset(user: AuthenticatedUser, assetId: string): Promise<void>;
 };
 
-const SIGNED_URL_EXPIRY_SECONDS = 3600;
-
 export function createUploadService(options: {
+  /** 对象存储仍走 Supabase Storage（M3 blob 缝收口后移除）。 */
   createUserClient: (accessToken: string) => UserSupabaseClient;
+  repository: UploadRepository;
+  viewerService: ViewerService;
 }): UploadService {
+  const { repository, viewerService } = options;
+
+  const resolveWorkspaceId = async (user: AuthenticatedUser) => {
+    const workspace = await viewerService
+      .resolveWorkspace(user)
+      .catch(() => null);
+
+    if (!workspace) {
+      throw new UploadServiceError("upload_failed", UPLOAD_FAILED_MESSAGE, 500);
+    }
+
+    return workspace.id;
+  };
+
   return {
     async uploadFile(user, input) {
+      const workspaceId = await resolveWorkspaceId(user);
       const client = options.createUserClient(user.accessToken);
-
       const objectPath = buildObjectPath(
-        input.workspaceId,
+        workspaceId,
         input.projectId,
         input.fileName,
       );
@@ -73,24 +95,20 @@ export function createUploadService(options: {
         );
       }
 
-      const { data: assetRow, error: insertError } = await client
-        .from("asset_objects")
+      const assetRow = await repository
         .insert({
-          workspace_id: input.workspaceId,
           bucket: input.bucket,
-          object_path: objectPath,
-          mime_type: input.mimeType,
-          byte_size: input.fileBuffer.length,
-          created_by: user.id,
-          ...(input.projectId ? { project_id: input.projectId } : {}),
+          byteSize: input.fileBuffer.length,
+          mimeType: input.mimeType,
+          objectPath,
+          projectId: input.projectId,
+          userId: user.id,
+          workspaceId,
         })
-        .select(
-          "id, bucket, object_path, mime_type, byte_size, workspace_id, project_id, created_at",
-        )
-        .single();
+        .catch(() => null);
 
-      if (insertError || !assetRow) {
-        // Clean up the uploaded file on DB insert failure
+      if (!assetRow) {
+        // 元数据落库失败时清掉已上传对象，避免孤儿文件。
         await client.storage.from(input.bucket).remove([objectPath]);
         throw new UploadServiceError(
           "upload_failed",
@@ -98,8 +116,6 @@ export function createUploadService(options: {
           500,
         );
       }
-
-      const url = await getAssetUrl(client, input.bucket, objectPath);
 
       return {
         asset: {
@@ -112,59 +128,54 @@ export function createUploadService(options: {
           projectId: assetRow.project_id,
           createdAt: assetRow.created_at,
         },
-        url,
+        url: await getAssetUrl(client, input.bucket, objectPath),
       };
     },
 
     async getAssetUrl(user, assetId) {
+      const workspaceId = await resolveWorkspaceId(user);
       const client = options.createUserClient(user.accessToken);
+      const location = await repository
+        .findLocation(workspaceId, assetId)
+        .catch(() => null);
 
-      const { data: assetRow, error } = await client
-        .from("asset_objects")
-        .select("bucket, object_path")
-        .eq("id", assetId)
-        .single();
-
-      if (error || !assetRow) {
+      if (!location) {
         throw new UploadServiceError(
           "asset_not_found",
-          "Asset not found.",
+          ASSET_NOT_FOUND_MESSAGE,
           404,
         );
       }
 
-      return getAssetUrl(client, assetRow.bucket, assetRow.object_path);
+      return getAssetUrl(client, location.bucket, location.object_path);
     },
 
     async deleteAsset(user, assetId) {
+      const workspaceId = await resolveWorkspaceId(user);
       const client = options.createUserClient(user.accessToken);
+      const location = await repository
+        .findLocation(workspaceId, assetId)
+        .catch(() => null);
 
-      const { data: assetRow, error: fetchError } = await client
-        .from("asset_objects")
-        .select("bucket, object_path")
-        .eq("id", assetId)
-        .single();
-
-      if (fetchError || !assetRow) {
+      if (!location) {
         throw new UploadServiceError(
           "asset_not_found",
-          "Asset not found.",
+          ASSET_NOT_FOUND_MESSAGE,
           404,
         );
       }
 
-      await client.storage.from(assetRow.bucket).remove([assetRow.object_path]);
+      await client.storage.from(location.bucket).remove([location.object_path]);
 
-      const { error: deleteError } = await client
-        .from("asset_objects")
-        .delete()
-        .eq("id", assetId);
+      const deleted = await repository
+        .deleteById(workspaceId, assetId)
+        .catch(() => 0);
 
-      if (deleteError) {
+      if (deleted === 0) {
         throw new UploadServiceError(
-          "upload_failed",
-          "Failed to delete asset record.",
-          500,
+          "asset_not_found",
+          ASSET_NOT_FOUND_MESSAGE,
+          404,
         );
       }
     },
