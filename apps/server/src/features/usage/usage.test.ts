@@ -68,6 +68,8 @@ const WORKSPACES_STUB: ViewerRepository = {
     type: "personal",
   }),
   findProfile: async () => null,
+  findPlatformRole: async () => null,
+  updatePlatformRole: async () => 0,
   updateDisplayName: async () => null,
 };
 

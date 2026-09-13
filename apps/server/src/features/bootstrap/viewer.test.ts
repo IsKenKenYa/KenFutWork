@@ -122,6 +122,8 @@ function createFakeRepository(
       email: EMAIL,
       id: USER_ID,
     }),
+    findPlatformRole: async () => null,
+    updatePlatformRole: async () => 0,
     updateDisplayName: async () => ({
       avatarUrl: null,
       displayName: "Ada",

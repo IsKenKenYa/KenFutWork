@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
+import type { ViewerRepository } from "../bootstrap/repository.js";
+import {
+  createPersistenceFromRunner,
+  type PostgresQueryRunner,
+} from "../persistence/providers/postgres.js";
 import { AdminServiceError, createAdminService } from "./admin-service.js";
+import { type AdminRepository, createAdminRepository } from "./repository.js";
 
 const ADMIN_ID = "11111111-1111-1111-1111-111111111111";
 const USER_ID = "22222222-2222-2222-2222-222222222222";
@@ -13,54 +19,47 @@ const adminUser = {
   userMetadata: {},
 };
 
-/** 最小假 admin client：支持 from().select().eq()...maybeSingle() / update().eq() / rpc()。 */
-function fakeAdmin(options: {
-  role?: string | null;
-  workspaceId?: string | null;
-  overview?: unknown[];
-  rpcCalls?: Array<{ name: string; args: unknown }>;
-  rpcError?: { message: string } | null;
-}) {
-  /** select 链：eq 可重复，末端 maybeSingle/single 出结果。 */
-  const chain = (result: unknown) => {
-    const node: Record<string, unknown> = {};
-    node.eq = () => node;
-    node.maybeSingle = async () => ({ data: result, error: null });
-    node.single = async () => ({ data: result, error: null });
-    return node;
+type FakeResult = { rowCount: number | null; rows: unknown[] } | Error;
+
+function createRunner(
+  respond: (text: string, values: unknown[]) => FakeResult = () => ({
+    rowCount: 0,
+    rows: [],
+  }),
+) {
+  const calls: Array<{ text: string; values: unknown[] }> = [];
+
+  const run = (text: string, values: unknown[]) => {
+    calls.push({ text, values });
+    const result = respond(text, values);
+    if (result instanceof Error) {
+      throw result;
+    }
+    return result;
   };
-  /** update 链：`await update(...).eq(...)` 直接落定为成功。 */
-  const updateChain = () => ({ eq: async () => ({ data: null, error: null }) });
-  return {
-    rpc: async (name: string, args: unknown) => {
-      options.rpcCalls?.push({ name, args });
-      if (name === "admin_users_overview") {
-        return { data: options.overview ?? [], error: null };
-      }
-      return { data: "tx-id", error: options.rpcError ?? null };
+
+  const runner: PostgresQueryRunner = {
+    async query(text, values) {
+      return run(text, values);
     },
-    from: (table: string) => ({
-      select: () => {
-        if (table === "profiles") {
-          return chain(
-            options.role === undefined ? null : { role: options.role },
-          );
-        }
-        if (table === "workspaces") {
-          return chain(
-            options.workspaceId === undefined
-              ? null
-              : { id: options.workspaceId },
-          );
-        }
-        return chain(null);
-      },
-      update: () => updateChain(),
-    }),
-  } as never;
+    async acquire() {
+      return {
+        query: async (text, values) => run(text, values),
+        release: () => {},
+      };
+    },
+    async end() {},
+  };
+
+  return {
+    calls,
+    runner,
+    sqls: () => calls.map((c) => c.text.replace(/\s+/g, " ").trim()),
+  };
 }
 
-const overviewRow = {
+/** 驱动形状的原始行：bigint / numeric 列为字符串。 */
+const RAW_OVERVIEW_ROW = {
   user_id: USER_ID,
   email: "u@example.com",
   display_name: "用户",
@@ -72,43 +71,141 @@ const overviewRow = {
   cost_usd: "0.25",
 };
 
+const OVERVIEW_ROW = {
+  ...RAW_OVERVIEW_ROW,
+  total_tokens: 1500,
+  cost_usd: 0.25,
+};
+
+describe("admin repository（平台级系统取数）", () => {
+  it("平台总览调库函数并把 bigint/numeric 字符串归一为 number", async () => {
+    const { calls, runner } = createRunner(() => ({
+      rowCount: 1,
+      rows: [RAW_OVERVIEW_ROW],
+    }));
+
+    const rows = await createAdminRepository(
+      createPersistenceFromRunner(runner),
+    ).fetchUsersOverview();
+
+    expect(rows[0]).toEqual(OVERVIEW_ROW);
+    expect(typeof rows[0]?.total_tokens).toBe("number");
+    expect(typeof rows[0]?.cost_usd).toBe("number");
+    expect(calls[0]?.text).toContain("public.admin_users_overview()");
+    // 平台级取数：不做工作区限定（隔离边界是 HTTP 层的管理员门）
+    expect(calls[0]?.text).not.toContain("workspace_id =");
+  });
+
+  it("额度调剂把身份作为显式参数传入库函数", async () => {
+    const { calls, runner } = createRunner(() => ({
+      rowCount: 1,
+      rows: [{ tx_id: "tx-1" }],
+    }));
+
+    await expect(
+      createAdminRepository(createPersistenceFromRunner(runner)).adjustCredits({
+        amount: 500,
+        description: "活动赠送",
+        userId: USER_ID,
+        workspaceId: WORKSPACE_ID,
+      }),
+    ).resolves.toBe("tx-1");
+
+    expect(calls[0]?.text).toContain(
+      "select public.admin_adjust_credits($1, $2, $3, $4) as tx_id",
+    );
+    expect(calls[0]?.values).toEqual([WORKSPACE_ID, USER_ID, 500, "活动赠送"]);
+  });
+});
+
+function createFakeRepository(
+  overrides: Partial<AdminRepository> = {},
+): AdminRepository {
+  return {
+    adjustCredits: async () => "tx-1",
+    fetchUsersOverview: async () => [],
+    ...overrides,
+  };
+}
+
+function createFakeWorkspaces(
+  overrides: Partial<ViewerRepository> = {},
+): ViewerRepository {
+  return {
+    bootstrap: async () => {},
+    findMembership: async () => null,
+    findPersonalWorkspace: async () => ({
+      id: WORKSPACE_ID,
+      name: "Personal Workspace",
+      ownerUserId: USER_ID,
+      type: "personal",
+    }),
+    findPlatformRole: async () => "user",
+    findProfile: async () => null,
+    updateDisplayName: async () => null,
+    updatePlatformRole: async () => 1,
+    ...overrides,
+  };
+}
+
+function buildService(
+  options: {
+    repository?: Partial<AdminRepository>;
+    workspaces?: Partial<ViewerRepository>;
+    credits?: unknown;
+  } = {},
+) {
+  return createAdminService({
+    credits: (options.credits ?? {}) as never,
+    repository: createFakeRepository(options.repository),
+    workspaces: createFakeWorkspaces(options.workspaces),
+  });
+}
+
 describe("admin 服务（平台管理后台）", () => {
-  it("isAdmin：profiles.role='admin' 才是管理员", async () => {
-    const asAdmin = createAdminService({
-      getAdminClient: () => fakeAdmin({ role: "admin" }),
-      credits: {} as never,
-    });
-    const asUser = createAdminService({
-      getAdminClient: () => fakeAdmin({ role: "user" }),
-      credits: {} as never,
-    });
-    const asMissing = createAdminService({
-      getAdminClient: () => fakeAdmin({ role: null }),
-      credits: {} as never,
-    });
-    expect(await asAdmin.isAdmin(ADMIN_ID)).toBe(true);
-    expect(await asUser.isAdmin(USER_ID)).toBe(false);
-    expect(await asMissing.isAdmin(USER_ID)).toBe(false);
+  it("isAdmin：只有 role='admin' 才是管理员；查不到即 false", async () => {
+    await expect(
+      buildService({
+        workspaces: { findPlatformRole: async () => "admin" },
+      }).isAdmin(ADMIN_ID),
+    ).resolves.toBe(true);
+    await expect(buildService().isAdmin(USER_ID)).resolves.toBe(false);
+    await expect(
+      buildService({
+        workspaces: { findPlatformRole: async () => null },
+      }).isAdmin(USER_ID),
+    ).resolves.toBe(false);
   });
 
   it("requireAdmin：非管理员抛 403（前端隐藏不是安全边界）", async () => {
-    const service = createAdminService({
-      getAdminClient: () => fakeAdmin({ role: "user" }),
-      credits: {} as never,
-    });
+    const service = buildService();
     await expect(service.requireAdmin(adminUser)).rejects.toMatchObject({
       code: "forbidden",
       statusCode: 403,
     });
   });
 
-  it("listUsers：汇总行映射为契约（数字字符串转 number）", async () => {
-    const service = createAdminService({
-      getAdminClient: () => fakeAdmin({ overview: [overviewRow] }),
-      credits: {} as never,
+  it("总览读取失败按 admin_query_failed 报错（不泄露驱动细节）", async () => {
+    const service = buildService({
+      repository: {
+        fetchUsersOverview: async () => {
+          throw new Error("permission denied for function");
+        },
+      },
     });
-    const users = await service.listUsers();
-    expect(users).toEqual([
+
+    const error = await service.listUsers().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AdminServiceError);
+    expect(error).toMatchObject({ code: "admin_query_failed" });
+    expect((error as Error).message).not.toContain("permission denied");
+  });
+
+  it("listUsers：汇总行映射为契约形状", async () => {
+    const service = buildService({
+      repository: { fetchUsersOverview: async () => [OVERVIEW_ROW] },
+    });
+
+    await expect(service.listUsers()).resolves.toEqual([
       {
         userId: USER_ID,
         email: "u@example.com",
@@ -124,22 +221,21 @@ describe("admin 服务（平台管理后台）", () => {
   });
 
   it("platformUsage：总览只列有用量的用户", async () => {
-    const service = createAdminService({
-      getAdminClient: () =>
-        fakeAdmin({
-          overview: [
-            overviewRow,
-            {
-              ...overviewRow,
-              user_id: ADMIN_ID,
-              email: "a@x.com",
-              total_tokens: 0,
-              cost_usd: 0,
-            },
-          ],
-        }),
-      credits: {} as never,
+    const service = buildService({
+      repository: {
+        fetchUsersOverview: async () => [
+          OVERVIEW_ROW,
+          {
+            ...OVERVIEW_ROW,
+            user_id: ADMIN_ID,
+            email: "a@x.com",
+            total_tokens: 0,
+            cost_usd: 0,
+          },
+        ],
+      },
     });
+
     const usage = await service.platformUsage();
     expect(usage.totals.totalTokens).toBe(1500);
     expect(usage.totals.costUsd).toBeCloseTo(0.25);
@@ -147,54 +243,75 @@ describe("admin 服务（平台管理后台）", () => {
     expect(usage.byUser[0]?.email).toBe("u@example.com");
   });
 
-  it("grantCredits：解析个人工作区后走 admin_adjust_credits", async () => {
-    const rpcCalls: Array<{ name: string; args: unknown }> = [];
-    const service = createAdminService({
-      getAdminClient: () => fakeAdmin({ workspaceId: WORKSPACE_ID, rpcCalls }),
-      credits: {} as never,
-    });
-    await service.grantCredits(USER_ID, 500, "活动赠送");
-    expect(rpcCalls).toEqual([
-      {
-        name: "admin_adjust_credits",
-        args: {
-          p_workspace_id: WORKSPACE_ID,
-          p_user_id: USER_ID,
-          p_amount: 500,
-          p_description: "活动赠送",
+  it("grantCredits：解析目标用户工作区后带显式身份调剂额度", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const service = buildService({
+      repository: {
+        adjustCredits: async (input) => {
+          calls.push(input);
+          return "tx-1";
         },
+      },
+    });
+
+    await service.grantCredits(USER_ID, 500, "活动赠送");
+    expect(calls).toEqual([
+      {
+        amount: 500,
+        description: "活动赠送",
+        userId: USER_ID,
+        workspaceId: WORKSPACE_ID,
       },
     ]);
   });
 
-  it("grantCredits：无个人工作区时 fail loud（404）", async () => {
-    const service = createAdminService({
-      getAdminClient: () => fakeAdmin({ workspaceId: null }),
-      credits: {} as never,
+  it("grantCredits：描述缺省用 admin adjustment；无个人工作区即 404", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const withDefault = buildService({
+      repository: {
+        adjustCredits: async (input) => {
+          calls.push(input);
+          return "tx-1";
+        },
+      },
     });
-    await expect(service.grantCredits(USER_ID, 10)).rejects.toBeInstanceOf(
-      AdminServiceError,
-    );
+    await withDefault.grantCredits(USER_ID, 10);
+    expect(calls[0]).toMatchObject({ description: "admin adjustment" });
+
+    const missing = buildService({
+      workspaces: { findPersonalWorkspace: async () => null },
+    });
+    await expect(missing.grantCredits(USER_ID, 10)).rejects.toMatchObject({
+      code: "user_not_found",
+      statusCode: 404,
+    });
   });
 
-  it("setRole：更新 profiles.role", async () => {
-    const service = createAdminService({
-      getAdminClient: () => fakeAdmin({ role: "user" }),
-      credits: {} as never,
+  it("setRole：写 profiles.role（经 workspaces 域数据访问）", async () => {
+    const written: Array<[string, string]> = [];
+    const service = buildService({
+      workspaces: {
+        updatePlatformRole: async (userId, role) => {
+          written.push([userId, role]);
+          return 1;
+        },
+      },
     });
+
     await expect(service.setRole(USER_ID, "admin")).resolves.toBeUndefined();
+    expect(written).toEqual([[USER_ID, "admin"]]);
   });
 
   it("setPlan：委托 credits.updatePlan（套餐额度随后端一致）", async () => {
     const calls: Array<[string, string]> = [];
-    const service = createAdminService({
-      getAdminClient: () => fakeAdmin({ workspaceId: WORKSPACE_ID }),
+    const service = buildService({
       credits: {
         updatePlan: async (workspaceId: string, plan: string) => {
           calls.push([workspaceId, plan]);
         },
-      } as never,
+      },
     });
+
     await service.setPlan(USER_ID, "ultra");
     expect(calls).toEqual([[WORKSPACE_ID, "ultra"]]);
   });

@@ -15,6 +15,9 @@ export type ViewerProfileRecord = {
   id: string;
 };
 
+/** 平台角色：`profiles.role` 受 CHECK 约束，只有 user / admin 两值。 */
+export type PlatformRoleRecord = "user" | "admin";
+
 export type MembershipRecord = {
   role: string;
   userId: string;
@@ -41,6 +44,10 @@ export interface ViewerRepository {
     userId: string,
   ): Promise<PersonalWorkspaceRecord | null>;
   findProfile(userId: string): Promise<ViewerProfileRecord | null>;
+  /** 平台角色（`profiles.role`，与工作区成员角色是两回事）。 */
+  findPlatformRole(userId: string): Promise<PlatformRoleRecord | null>;
+  /** 设置平台角色（管理后台专用；调用方须先过管理员门）。 */
+  updatePlatformRole(userId: string, role: PlatformRoleRecord): Promise<number>;
   /** 仅能改自己的 profile：`user_id` 取自鉴权结果，不接受调用方传入他人 id。 */
   updateDisplayName(
     userId: string,
@@ -125,6 +132,25 @@ export function createViewerRepository(
         [userId],
       );
       return row ? mapProfile(row) : null;
+    },
+
+    async findPlatformRole(userId) {
+      const row = await persistence.queryOne<{ role: string }>(
+        "select role from public.profiles where id = $1",
+        [userId],
+      );
+      if (!row) {
+        return null;
+      }
+      return row.role === "admin" ? "admin" : "user";
+    },
+
+    async updatePlatformRole(userId, role) {
+      // updated_at 由 profiles_set_updated_at 触发器维护。
+      return persistence.execute(
+        "update public.profiles set role = $1 where id = $2",
+        [role, userId],
+      );
     },
 
     async updateDisplayName(userId, displayName) {

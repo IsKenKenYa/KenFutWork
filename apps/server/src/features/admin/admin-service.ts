@@ -6,9 +6,10 @@ import type {
   SubscriptionPlan,
 } from "@loomic/shared";
 
-import type { AdminSupabaseClient } from "../../supabase/admin.js";
 import type { AuthenticatedUser } from "../../supabase/user.js";
+import type { ViewerRepository } from "../bootstrap/repository.js";
 import type { CreditService } from "../credits/credit-service.js";
+import type { AdminRepository, PlatformOverviewRow } from "./repository.js";
 
 export class AdminServiceError extends Error {
   readonly code:
@@ -31,19 +32,6 @@ export class AdminServiceError extends Error {
   }
 }
 
-/** admin_users_overview() 的行形状（snake_case，见同名迁移）。 */
-interface AdminOverviewRow {
-  user_id: string;
-  email: string;
-  display_name: string | null;
-  role: string;
-  workspace_id: string | null;
-  plan: string;
-  balance: number;
-  total_tokens: number | string;
-  cost_usd: number | string;
-}
-
 export type AdminService = {
   /** 是否平台管理员（普通用户一律 false）。 */
   isAdmin(userId: string): Promise<boolean>;
@@ -61,11 +49,7 @@ export type AdminService = {
   setPlan(userId: string, plan: SubscriptionPlan): Promise<void>;
 };
 
-// provider_instances / profiles 的 role 列未纳入生成类型，走宽松访问（仓库既有做法）。
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const asAny = (client: unknown): any => client as any;
-
-function toSummary(row: AdminOverviewRow): AdminUserSummary {
+function toSummary(row: PlatformOverviewRow): AdminUserSummary {
   return {
     userId: row.user_id,
     email: row.email,
@@ -80,56 +64,41 @@ function toSummary(row: AdminOverviewRow): AdminUserSummary {
 }
 
 export function createAdminService(options: {
-  getAdminClient: () => AdminSupabaseClient;
   credits: CreditService;
+  repository: AdminRepository;
+  /** workspaces/profiles 域的数据访问（目标用户的工作区与平台角色）。 */
+  workspaces: ViewerRepository;
 }): AdminService {
-  async function fetchOverview(): Promise<AdminOverviewRow[]> {
-    const admin = options.getAdminClient();
-    const { data, error } = await asAny(admin).rpc("admin_users_overview");
-    if (error) {
+  const { repository, workspaces } = options;
+
+  async function fetchOverview(): Promise<PlatformOverviewRow[]> {
+    return repository.fetchUsersOverview().catch(() => {
       throw new AdminServiceError(
         "admin_query_failed",
         "Unable to load platform overview.",
       );
-    }
-    return (data ?? []) as AdminOverviewRow[];
+    });
   }
 
   async function requirePersonalWorkspace(userId: string): Promise<string> {
-    const admin = options.getAdminClient();
-    const { data, error } = await asAny(admin)
-      .from("workspaces")
-      .select("id")
-      .eq("owner_user_id", userId)
-      .eq("type", "personal")
-      .maybeSingle();
-    if (error) {
-      throw new AdminServiceError(
-        "admin_query_failed",
-        "Unable to resolve user workspace.",
-      );
-    }
-    const workspaceId = (data as { id: string } | null)?.id;
-    if (!workspaceId) {
+    const workspace = await workspaces
+      .findPersonalWorkspace(userId)
+      .catch(() => null);
+
+    if (!workspace) {
       throw new AdminServiceError(
         "user_not_found",
         "该用户尚无个人工作区，无法调整额度或套餐。",
         404,
       );
     }
-    return workspaceId;
+    return workspace.id;
   }
 
   return {
     async isAdmin(userId) {
-      const admin = options.getAdminClient();
-      const { data, error } = await asAny(admin)
-        .from("profiles")
-        .select("role")
-        .eq("id", userId)
-        .maybeSingle();
-      if (error || !data) return false;
-      return (data as { role: string | null }).role === "admin";
+      const role = await workspaces.findPlatformRole(userId).catch(() => null);
+      return role === "admin";
     },
 
     async requireAdmin(user) {
@@ -170,30 +139,27 @@ export function createAdminService(options: {
 
     async grantCredits(userId, amount, description) {
       const workspaceId = await requirePersonalWorkspace(userId);
-      const admin = options.getAdminClient();
-      const { error } = await asAny(admin).rpc("admin_adjust_credits", {
-        p_workspace_id: workspaceId,
-        p_user_id: userId,
-        p_amount: amount,
-        p_description: description ?? "admin adjustment",
-      });
-      if (error) {
-        throw new AdminServiceError(
-          "admin_action_failed",
-          `额度调整失败：${error.message ?? "unknown"}`,
-        );
-      }
+      await repository
+        .adjustCredits({
+          amount,
+          description: description ?? "admin adjustment",
+          userId,
+          workspaceId,
+        })
+        .catch((error: unknown) => {
+          throw new AdminServiceError(
+            "admin_action_failed",
+            `额度调整失败：${
+              error instanceof Error ? error.message : "unknown"
+            }`,
+          );
+        });
     },
 
     async setRole(userId, role) {
-      const admin = options.getAdminClient();
-      const { error } = await asAny(admin)
-        .from("profiles")
-        .update({ role })
-        .eq("id", userId);
-      if (error) {
+      await workspaces.updatePlatformRole(userId, role).catch(() => {
         throw new AdminServiceError("admin_action_failed", "角色更新失败。");
-      }
+      });
     },
 
     async setPlan(userId, plan) {
