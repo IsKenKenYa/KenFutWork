@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import type { HomeService } from "../features/home/service.js";
 
 import type { AgentBackendFactory } from "../agent/backends/index.js";
 import type { AgentPersistenceService } from "../agent/persistence/index.js";
@@ -40,6 +41,8 @@ import type { CanvasEventBuffer } from "../ws/event-buffer.js";
  * 需要 key 扩展时改本表（契约属主见《改造计划》§4.2），禁止业务代码自造 key。
  */
 export interface ServiceMap {
+  /** 首页示例库/发现库（静态产品种子 + blob 缝解析素材 URL）。 */
+  home: HomeService;
   /** agent 后端工厂 */
   backend: AgentBackendFactory;
   /** agent 运行时三件套 */

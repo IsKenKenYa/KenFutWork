@@ -13,6 +13,7 @@ import { createChatPlugin } from "../features/chat/plugin.js";
 import { createCodeToolsPlugin } from "../features/code-tools/plugin.js";
 import { createCreditsPlugin } from "../features/credits/plugin.js";
 import { createGenerationPlugin } from "../features/generation/plugin.js";
+import { createHomePlugin } from "../features/home/plugin.js";
 import type { JobService } from "../features/jobs/job-service.js";
 import { createJobsPlugin } from "../features/jobs/plugin.js";
 import { createMcpPlugin } from "../features/mcp/plugin.js";
@@ -149,6 +150,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createMcpPlugin(),
     createSearchPlugin(),
     createModelProvidersPlugin({ credentialEnv: deps.credentialEnv }),
+    createHomePlugin(),
     createGenerationPlugin({ env: deps.env }),
     createAdminPlugin(),
     createPluginsPlugin({
