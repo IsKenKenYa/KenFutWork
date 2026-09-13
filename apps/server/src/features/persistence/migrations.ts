@@ -226,9 +226,9 @@ export function planMigrations(
  */
 export async function assertNoDrift(
   db: SqlQueryable,
-  dir: string,
+  files: readonly MigrationFile[],
 ): Promise<MigrationPlan> {
-  const plan = planMigrations(loadMigrationFiles(dir), await readLedger(db));
+  const plan = planMigrations(files, await readLedger(db));
 
   if (plan.checksumDrift.length > 0) {
     const detail = plan.checksumDrift
@@ -265,12 +265,30 @@ async function recordApplied(
 }
 
 /**
+ * 装载完整迁移集：**供给前导**（`supabase/bootstrap/`）在前，历史迁移在后。
+ *
+ * 前导用保留版本号 `000000000000NN`（14 位、数值上先于一切时间戳），作用是把
+ * Supabase 供给的对象（`extensions`/`auth`/`storage`/`pgmq`/角色）**物化**成自管对象，
+ * 使历史迁移能在空库上重放（§4.13 M2.1「剔除/物化」）。放在独立目录而非
+ * `supabase/migrations/`，是为了不污染 Supabase CLI 的历史与残留统计口径。
+ */
+export function loadMigrationSet(dirs: {
+  bootstrapDir?: string | undefined;
+  migrationsDir: string;
+}): MigrationFile[] {
+  const bootstrap = dirs.bootstrapDir
+    ? loadMigrationFiles(dirs.bootstrapDir)
+    : [];
+  return [...bootstrap, ...loadMigrationFiles(dirs.migrationsDir)];
+}
+
+/**
  * 应用所有待执行迁移（按版本升序，每条一个事务）。
  * 先做漂移校验：不通过则**一条都不执行**（宁可不动，也不在不确定的历史上继续）。
  */
 export async function applyMigrations(
   db: SqlQueryable,
-  dir: string,
+  files: readonly MigrationFile[],
   options: {
     /** 注入时钟，便于测试；默认 `Date.now`。 */
     now?: () => number;
@@ -280,7 +298,7 @@ export async function applyMigrations(
   const now = options.now ?? (() => Date.now());
 
   await ensureLedger(db);
-  const plan = await assertNoDrift(db, dir);
+  const plan = await assertNoDrift(db, files);
   const applied: string[] = [];
 
   for (const file of plan.pending) {

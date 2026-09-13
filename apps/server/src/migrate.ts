@@ -8,6 +8,7 @@ import {
   applyMigrations,
   assertNoDrift,
   loadMigrationFiles,
+  loadMigrationSet,
   MigrationError,
   planMigrations,
   readLedgerIfExists,
@@ -25,14 +26,25 @@ import {
  * 用有 DDL 权限的连接执行（运行角色无 DDL），与 API/Worker 的 persistence 口径分开。
  */
 
-const MIGRATIONS_DIR = join(
+const SUPABASE_DIR = join(
   dirname(fileURLToPath(import.meta.url)),
   "..",
   "..",
   "..",
   "supabase",
-  "migrations",
 );
+
+const MIGRATIONS_DIR = join(SUPABASE_DIR, "migrations");
+/** 供给前导（物化 Supabase 专有对象，使历史可在空库重放；§4.13 M2.1）。 */
+const BOOTSTRAP_DIR = join(SUPABASE_DIR, "bootstrap");
+
+/** 完整迁移集 = 前导在前 + 历史在后（版本号排序，前导用保留段 000000000000NN）。 */
+function loadSet() {
+  return loadMigrationSet({
+    bootstrapDir: BOOTSTRAP_DIR,
+    migrationsDir: MIGRATIONS_DIR,
+  });
+}
 
 /** pg 的 `Pool` / `Client` 适配成执行器要的最小结构（多语句 SQL 整段下发）。 */
 function toQueryable(target: Pool | Client): SqlQueryable {
@@ -66,7 +78,7 @@ function databaseNameOf(url: string): string {
 }
 
 async function runStatus(databaseUrl: string): Promise<void> {
-  const files = loadMigrationFiles(MIGRATIONS_DIR);
+  const files = loadSet();
   const pool = new Pool({ connectionString: databaseUrl });
   try {
     // 只读：不建账本（校验角色可能没有 DDL 权限），账本缺失即视为 0 条已执行
@@ -108,7 +120,7 @@ async function runStatus(databaseUrl: string): Promise<void> {
 async function runApply(databaseUrl: string): Promise<void> {
   const pool = new Pool({ connectionString: databaseUrl });
   try {
-    const result = await applyMigrations(toQueryable(pool), MIGRATIONS_DIR, {
+    const result = await applyMigrations(toQueryable(pool), loadSet(), {
       onApplied: (file) => console.log(`  已执行 ${file.version}_${file.name}`),
     });
     console.log(
@@ -123,7 +135,7 @@ async function runApply(databaseUrl: string): Promise<void> {
 
 /** 过渡期一次性：把存量 Supabase 账本导入本执行器账本，避免把已落地的迁移当 pending 重跑。 */
 async function runAdopt(databaseUrl: string): Promise<void> {
-  const files = loadMigrationFiles(MIGRATIONS_DIR);
+  const files = loadSet();
   const pool = new Pool({ connectionString: databaseUrl });
   try {
     const { adopted, unknown } = await adoptLegacyLedger(
@@ -154,7 +166,7 @@ async function runStatusAfterAdopt(databaseUrl: string): Promise<number> {
   const pool = new Pool({ connectionString: databaseUrl });
   try {
     const plan = planMigrations(
-      loadMigrationFiles(MIGRATIONS_DIR),
+      loadSet(),
       await readLedgerIfExists(toQueryable(pool)),
     );
     return plan.pending.length;
@@ -194,12 +206,9 @@ async function runReplay(databaseUrl: string): Promise<void> {
   console.log(`已建临时库 ${scratch}（源库 ${describeUrl(databaseUrl)}）`);
 
   try {
-    const total = loadMigrationFiles(MIGRATIONS_DIR).length;
+    const total = loadSet().length;
 
-    const first = await applyMigrations(
-      toQueryable(scratchPool()),
-      MIGRATIONS_DIR,
-    );
+    const first = await applyMigrations(toQueryable(scratchPool()), loadSet());
     console.log(`首轮执行 ${first.applied.length} / ${total} 条`);
     if (first.applied.length !== total) {
       throw new MigrationError(
@@ -207,12 +216,9 @@ async function runReplay(databaseUrl: string): Promise<void> {
       );
     }
 
-    await assertNoDrift(toQueryable(scratchPool()), MIGRATIONS_DIR);
+    await assertNoDrift(toQueryable(scratchPool()), loadSet());
 
-    const second = await applyMigrations(
-      toQueryable(scratchPool()),
-      MIGRATIONS_DIR,
-    );
+    const second = await applyMigrations(toQueryable(scratchPool()), loadSet());
     console.log(`二轮执行 ${second.applied.length} 条（应为 0）`);
     if (second.applied.length !== 0) {
       throw new MigrationError(

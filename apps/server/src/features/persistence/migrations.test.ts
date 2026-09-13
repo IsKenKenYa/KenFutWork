@@ -9,6 +9,7 @@ import {
   checksumSql,
   type LedgerRecord,
   loadMigrationFiles,
+  loadMigrationSet,
   MigrationError,
   type MigrationFile,
   parseMigrationFileName,
@@ -130,6 +131,36 @@ describe("迁移装载", () => {
   });
 });
 
+describe("供给前导与历史合成一个迁移集", () => {
+  it("前导排在历史之前（保留版本段 000000000000NN 数值上先于时间戳）", () => {
+    const bootstrapDir = writeMigrations([
+      ["00000000000001_neutral_supply.sql", "select 'bootstrap'"],
+    ]);
+    const migrationsDir = writeMigrations([
+      ["20260323000001_foundation.sql", "select 'history-1'"],
+      ["20260323000002_hardening.sql", "select 'history-2'"],
+    ]);
+
+    const set = loadMigrationSet({ bootstrapDir, migrationsDir });
+
+    expect(set.map((f) => f.name)).toEqual([
+      "neutral_supply",
+      "foundation",
+      "hardening",
+    ]);
+  });
+
+  it("不给前导目录时就是纯历史集（自托管/生产迁移路径不变）", () => {
+    const migrationsDir = writeMigrations([
+      ["20260323000001_foundation.sql", "select 1"],
+    ]);
+
+    const set = loadMigrationSet({ migrationsDir });
+
+    expect(set.map((f) => f.version)).toEqual(["20260323000001"]);
+  });
+});
+
 describe("迁移计划", () => {
   it("区分待执行 / 校验和漂移 / 文件缺失", () => {
     const done = migrationFile("20260323000001", "done");
@@ -181,7 +212,7 @@ describe("漂移门禁（禁止改已执行的迁移）", () => {
       { ...ledgerRecord(drifted), checksum: "0".repeat(64) },
     ]);
 
-    await expect(assertNoDrift(db, dir)).rejects.toThrow(
+    await expect(assertNoDrift(db, loadMigrationFiles(dir))).rejects.toThrow(
       /20260323000002_drifted/,
     );
   });
@@ -197,7 +228,9 @@ describe("漂移门禁（禁止改已执行的迁移）", () => {
       },
     ]);
 
-    await expect(assertNoDrift(db, dir)).rejects.toThrow(/20260323000000_gone/);
+    await expect(assertNoDrift(db, loadMigrationFiles(dir))).rejects.toThrow(
+      /20260323000000_gone/,
+    );
   });
 });
 
@@ -213,7 +246,7 @@ describe("执行迁移", () => {
     let clock = 1000;
     const { calls, db } = dbWithLedger([ledgerRecord(a)]);
 
-    const result = await applyMigrations(db, dir, {
+    const result = await applyMigrations(db, loadMigrationFiles(dir), {
       now: () => (clock += 5),
       onApplied: (file) => applied.push(file.version),
     });
@@ -244,7 +277,9 @@ describe("执行迁移", () => {
       { ...ledgerRecord(a), checksum: "0".repeat(64) },
     ]);
 
-    await expect(applyMigrations(db, dir)).rejects.toThrow(MigrationError);
+    await expect(applyMigrations(db, loadMigrationFiles(dir))).rejects.toThrow(
+      MigrationError,
+    );
 
     const executable = calls.filter((sql) => sql !== "<ledger-select>");
     expect(executable).not.toContain("begin");
@@ -256,7 +291,9 @@ describe("执行迁移", () => {
     const dir = writeMigrations([["20260323000001_a.sql", a.sql]]);
     const { calls, db } = dbWithLedger([], { failOn: "this is not sql" });
 
-    await expect(applyMigrations(db, dir)).rejects.toThrow(/已回滚/);
+    await expect(applyMigrations(db, loadMigrationFiles(dir))).rejects.toThrow(
+      /已回滚/,
+    );
 
     const executable = calls.filter((sql) => sql !== "<ledger-select>");
     expect(executable).toContain("rollback");
@@ -269,7 +306,7 @@ describe("执行迁移", () => {
     const dir = writeMigrations([["20260323000001_a.sql", a.sql]]);
     const { calls, db } = dbWithLedger([ledgerRecord(a)]);
 
-    const result = await applyMigrations(db, dir);
+    const result = await applyMigrations(db, loadMigrationFiles(dir));
 
     expect(result.applied).toEqual([]);
     expect(calls.filter((sql) => sql !== "<ledger-select>")).not.toContain(
