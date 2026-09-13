@@ -278,6 +278,28 @@ async function handleRunCommand(
   });
   log.info("started", { prompt: payload.prompt.slice(0, 80) });
 
+  // Code 模式会话供给（方案 A）：工作台用**客户端自造**的 sessionId 发起 run，库里
+  // 没有对应 chat_sessions 行——于是线程解析失败、助手消息无处落库（实测 0 行）。
+  // 这里按该 id 供给真实会话与线程（载体是工作区隐藏的「Code 工作台」项目/画布），
+  // 供给成功则下面的解析直接命中；失败不阻断 run（解析处仍有兜底），只记一条 warn。
+  // Design 模式不供给：其会话由画布页经 API 先建行，缺行属真错误，不该被掩盖。
+  if (services.chatService && payload.preset !== "design") {
+    try {
+      const provisioned = await services.chatService.ensureCodeSession(
+        authenticatedUser,
+        {
+          sessionId: payload.sessionId,
+          title: payload.prompt.slice(0, 24),
+        },
+      );
+      log.info("code_session_ensured", { sessionId: provisioned.sessionId });
+    } catch (error) {
+      log.warn("code_session_ensure_failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   // Resolve thread + model in parallel
   const [threadId, model] = await Promise.all([
     (async (): Promise<string | undefined> => {

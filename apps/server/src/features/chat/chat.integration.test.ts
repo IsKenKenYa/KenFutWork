@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createViewerRepository } from "../bootstrap/repository.js";
 import { createPostgresPersistence } from "../persistence/providers/postgres.js";
 import { createProjectRepository } from "../projects/repository.js";
+import { createChatService } from "./chat-service.js";
 import { createChatRepository } from "./repository.js";
 
 /**
@@ -242,5 +243,204 @@ describe.skipIf(!DATABASE_URL)("chat 真实库集成", () => {
         expect(sessions.map((row) => row.id)).not.toContain(sessionId);
       },
     );
+  });
+});
+
+describe.skipIf(!DATABASE_URL)("Code 模式会话供给（方案 A）", () => {
+  /**
+   * 回归锁（用户可见症状：Code 模式回复正常但**消息不落库**）：工作台用客户端自造的
+   * sessionId 发起 run，库里没有会话行 → 线程解析失败、助手消息被丢弃。供给后必须满足
+   * 「发一条消息 → chat_messages 真有行」，且多轮复用同一 thread、载体只建一份。
+   */
+  async function withFixture(
+    run: (input: {
+      persistence: ReturnType<typeof createPostgresPersistence>;
+      userId: string;
+      workspaceId: string;
+    }) => Promise<void>,
+  ) {
+    const persistence = createPostgresPersistence({
+      databaseUrl: DATABASE_URL as string,
+    });
+
+    try {
+      const profile = await persistence.queryOne<IdRow>(
+        "select id from public.profiles order by created_at limit 1",
+      );
+      expect(profile, "需要至少一个已引导的 profile 作夹具").not.toBeNull();
+
+      const workspace = await createViewerRepository(
+        persistence,
+      ).findPersonalWorkspace((profile as IdRow).id);
+      const workspaceId = workspace?.id as string;
+      expect(workspaceId).toBeTruthy();
+
+      try {
+        await run({
+          persistence,
+          userId: (profile as IdRow).id,
+          workspaceId,
+        });
+      } finally {
+        // 清理：删会话（消息级联）+ 隐藏载体项目（画布级联）
+        await persistence.query(
+          `delete from public.chat_sessions
+            where canvas_id in (
+              select c.id from public.canvases c
+               join public.projects p on p.id = c.project_id
+              where p.slug = 'code-workbench' and p.workspace_id = $1
+            )`,
+          [workspaceId],
+        );
+        await persistence.query(
+          "delete from public.projects where slug = 'code-workbench' and workspace_id = $1",
+          [workspaceId],
+        );
+      }
+    } finally {
+      await persistence.close();
+    }
+  }
+
+  function buildServices(input: {
+    persistence: ReturnType<typeof createPostgresPersistence>;
+    userId: string;
+    workspaceId: string;
+  }) {
+    const repository = createChatRepository(input.persistence);
+    const user = {
+      accessToken: "t",
+      email: "code-session-int@test",
+      id: input.userId,
+      userMetadata: {},
+    };
+    const service = createChatService({
+      codeWorkbench: createProjectRepository(input.persistence),
+      repository,
+      threadService: {
+        createThreadId: () =>
+          `thread_test_${Math.random().toString(36).slice(2)}`,
+      } as never,
+      // 工作区解析注入夹具工作区（生产实现从鉴权用户解析，这里只需形状）
+      viewerService: {
+        resolveWorkspace: async () => ({
+          id: input.workspaceId,
+          name: "ws",
+          ownerUserId: input.userId,
+          type: "personal" as const,
+        }),
+      } as never,
+    });
+    return { repository, service, user };
+  }
+
+  it("供给后：会话行存在、线程绑定，且发消息真的落到 chat_messages", async () => {
+    await withFixture(async ({ persistence, userId, workspaceId }) => {
+      const { repository, service, user } = buildServices({
+        persistence,
+        userId,
+        workspaceId,
+      });
+      const sessionId = crypto.randomUUID();
+
+      const first = await service.ensureCodeSession(user, {
+        sessionId,
+        title: "写一个脚本",
+      });
+      expect(first.sessionId).toBe(sessionId);
+      expect(first.threadId).toBeTruthy();
+
+      const row = await repository.findSessionThread(workspaceId, sessionId);
+      expect(row?.thread_id).toBe(first.threadId);
+
+      // 关键断言：发消息后消息行存在（修复前这里是 0 行）
+      await service.createMessage(user, sessionId, {
+        content: "助手回复",
+        contentBlocks: [{ type: "text", text: "助手回复" }],
+        role: "assistant",
+      });
+      const messages = await persistence.query<{ count: string }>(
+        "select count(*)::text as count from public.chat_messages where session_id = $1",
+        [sessionId],
+      );
+      expect(Number(messages[0]?.count)).toBe(1);
+
+      // 多轮：同一 sessionId 再供给一次 → 复用同一 thread
+      const second = await service.ensureCodeSession(user, { sessionId });
+      expect(second.threadId).toBe(first.threadId);
+    });
+  });
+
+  it("载体只建一份，且不在 Design 项目列表里出现", async () => {
+    await withFixture(async ({ persistence, userId, workspaceId }) => {
+      const { service, user } = buildServices({
+        persistence,
+        userId,
+        workspaceId,
+      });
+
+      await service.ensureCodeSession(user, { sessionId: crypto.randomUUID() });
+      await service.ensureCodeSession(user, { sessionId: crypto.randomUUID() });
+
+      const projects = await persistence.query<{ count: string }>(
+        "select count(*)::text as count from public.projects where slug = 'code-workbench' and workspace_id = $1",
+        [workspaceId],
+      );
+      expect(Number(projects[0]?.count)).toBe(1);
+      const canvases = await persistence.query<{ count: string }>(
+        `select count(*)::text as count
+           from public.canvases c
+           join public.projects p on p.id = c.project_id
+          where p.slug = 'code-workbench' and p.workspace_id = $1 and c.is_primary`,
+        [workspaceId],
+      );
+      expect(Number(canvases[0]?.count)).toBe(1);
+
+      const listed = await createProjectRepository(persistence).listActive(
+        workspaceId,
+      );
+      expect(listed.some((p) => p.slug === "code-workbench")).toBe(false);
+    });
+  });
+
+  it("并发供给 8 个会话：载体仍只有一份，各自线程唯一", async () => {
+    await withFixture(async ({ persistence, userId, workspaceId }) => {
+      const { repository, service, user } = buildServices({
+        persistence,
+        userId,
+        workspaceId,
+      });
+      const ids = Array.from({ length: 8 }, () => crypto.randomUUID());
+
+      const results = await Promise.all(
+        ids.map((sessionId) => service.ensureCodeSession(user, { sessionId })),
+      );
+
+      const threads = new Set(results.map((r) => r.threadId));
+      expect(threads.size).toBe(8);
+      for (const sessionId of ids) {
+        const row = await repository.findSessionThread(workspaceId, sessionId);
+        expect(row?.thread_id, sessionId).toBeTruthy();
+      }
+      const projects = await persistence.query<{ count: string }>(
+        "select count(*)::text as count from public.projects where slug = 'code-workbench' and workspace_id = $1",
+        [workspaceId],
+      );
+      expect(Number(projects[0]?.count)).toBe(1);
+    });
+  });
+
+  it("非 uuid 的 sessionId 直接拒绝（不静默换 id）", async () => {
+    await withFixture(async ({ persistence, userId, workspaceId }) => {
+      const { service, user } = buildServices({
+        persistence,
+        userId,
+        workspaceId,
+      });
+
+      await expect(
+        service.ensureCodeSession(user, { sessionId: "not-a-uuid" }),
+      ).rejects.toThrow(/UUID/i);
+    });
   });
 });

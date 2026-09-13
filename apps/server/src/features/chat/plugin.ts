@@ -1,5 +1,6 @@
 import { registerChatRoutes } from "../../http/chat.js";
 import type { PluginDefinition } from "../../kernel/types.js";
+import { createProjectRepository } from "../projects/repository.js";
 import { createChatService } from "./chat-service.js";
 import { createChatRepository } from "./repository.js";
 import { createThreadService } from "./thread-service.js";
@@ -15,6 +16,8 @@ export function createChatPlugin(): PluginDefinition {
     inject: ["auth", "persistence", "viewer"],
     apply(ctx) {
       const repository = createChatRepository(ctx.get("persistence"));
+      // Code 模式会话载体（隐藏「Code 工作台」项目 + 主画布）由 projects 聚合供给
+      const codeWorkbench = createProjectRepository(ctx.get("persistence"));
 
       ctx.register("threads", () =>
         createThreadService({
@@ -24,6 +27,7 @@ export function createChatPlugin(): PluginDefinition {
       );
       ctx.register("chat", (d) =>
         createChatService({
+          codeWorkbench,
           repository,
           threadService: d.get("threads"),
           viewerService: ctx.get("viewer"),

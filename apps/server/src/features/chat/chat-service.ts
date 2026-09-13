@@ -36,6 +36,18 @@ export type ChatService = {
     canvasId: string,
     title?: string,
   ): Promise<ChatSessionSummary>;
+  /**
+   * 供给 **Code 模式会话**（方案 A）：工作区懒建一个隐藏的「Code 工作台」项目 + 主画布
+   * 作为载体，再以客户端给的 `sessionId` 落会话行并绑定线程；已存在则复用既有线程。
+   *
+   * 为什么需要它：Code 模式工作台用客户端自造 id 发起 run，库里没有对应 `chat_sessions`
+   * 行 → 线程解析失败（没有多轮上下文、`agent_runs` 不落库）且助手消息被丢弃。这里把
+   * 「客户端造 id」升级为「服务端按该 id 供给真实会话」，前端协议形状不变。
+   */
+  ensureCodeSession(
+    user: AuthenticatedUser,
+    input: { sessionId: string; title?: string | undefined },
+  ): Promise<{ sessionId: string; threadId: string }>;
   updateSessionTitle(
     user: AuthenticatedUser,
     sessionId: string,
@@ -95,10 +107,24 @@ function toChatMessage(row: ChatMessageRow): ChatMessage {
   };
 }
 
+/** 会话 id 必须是 uuid（库内是 uuid 主键）。 */
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function createChatService(options: {
   repository: ChatRepository;
   threadService: Pick<ThreadService, "createThreadId">;
   viewerService: ViewerService;
+  /**
+   * Code 模式会话载体的供给（projects 聚合的能力，窄接口注入以免跨聚合直连）。
+   * 由 chat 插件从持久层构造后传入。
+   */
+  codeWorkbench: {
+    ensureCodeWorkbench(input: {
+      userId: string;
+      workspaceId: string;
+    }): Promise<{ canvasId: string; projectId: string }>;
+  };
 }): ChatService {
   const { repository, viewerService } = options;
 
@@ -140,6 +166,72 @@ export function createChatService(options: {
         title: row.title,
         updatedAt: row.updated_at,
       }));
+    },
+
+    async ensureCodeSession(user, input) {
+      if (!UUID_PATTERN.test(input.sessionId)) {
+        // 会话 id 是库里的 uuid 主键；非 uuid 直接拒绝（fail loud，不静默换 id）
+        throw new ChatServiceError(
+          "chat_error",
+          "Session id must be a UUID.",
+          400,
+        );
+      }
+
+      const workspaceId = await requireWorkspaceId(
+        user,
+        "Failed to prepare code session.",
+      );
+
+      // 快路径：会话已存在（含线程）直接回，不跑载体供给
+      const known = await repository
+        .findSessionThread(workspaceId, input.sessionId)
+        .catch(() => null);
+      if (known?.thread_id) {
+        return { sessionId: known.id, threadId: known.thread_id };
+      }
+
+      const workbench = await options.codeWorkbench
+        .ensureCodeWorkbench({ userId: user.id, workspaceId })
+        .catch(() => null);
+      if (!workbench) {
+        throw new ChatServiceError(
+          "chat_error",
+          "Failed to prepare code workbench.",
+          500,
+        );
+      }
+
+      const threadId = options.threadService.createThreadId();
+      const row = await repository
+        .ensureSessionWithId(workspaceId, {
+          canvasId: workbench.canvasId,
+          sessionId: input.sessionId,
+          threadId,
+          userId: user.id,
+          ...(input.title ? { title: input.title } : {}),
+        })
+        .catch((error: unknown) => {
+          // 对外只给稳定错误码，原因留在服务端日志（不向客户端回显内部细节）
+          console.error(
+            "[chat] 供给 Code 会话失败：",
+            error instanceof Error ? error.message : error,
+          );
+          return null;
+        });
+      if (!row) {
+        throw new ChatServiceError(
+          "chat_error",
+          "Failed to prepare code session.",
+          500,
+        );
+      }
+
+      // 复用既有线程（多轮对话延续同一 thread），没有才用本次生成的
+      return {
+        sessionId: row.id,
+        threadId: row.thread_id ?? threadId,
+      };
     },
 
     async createSession(user, canvasId, title) {

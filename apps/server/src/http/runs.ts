@@ -15,6 +15,7 @@ import {
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
+import type { ChatService } from "../features/chat/chat-service.js";
 import {
   type ThreadService,
   ThreadServiceError,
@@ -32,6 +33,8 @@ export async function registerRunRoutes(
     agentRunMetadataService?: AgentRunMetadataService;
     auth?: RequestAuthenticator;
     settingsService?: SettingsService;
+    /** Code 模式会话供给（方案 A）：客户端自造 sessionId 时补真实会话行。 */
+    chatService?: Pick<ChatService, "ensureCodeSession">;
     threadService?: ThreadService;
     viewerService?: ViewerService;
     /** 平台池额度前置拦截（FORM-10）：只有走系统供应商的运行需要余额。 */
@@ -52,6 +55,24 @@ export async function registerRunRoutes(
 
       if (hasAuthorization && !authenticatedUser) {
         return sendUnauthorized(reply);
+      }
+
+      // Code 模式会话供给（方案 A，与 WS 路径同口径）：客户端自造的 sessionId 在库里没有
+      // 会话行 → 线程解析失败且助手消息无处落库。此处先按该 id 供给真实会话与线程。
+      // Design 模式不供给：其会话由画布页经 API 先建行，缺行属真错误，不该被掩盖。
+      if (
+        authenticatedUser &&
+        options?.chatService &&
+        payload.preset !== "design"
+      ) {
+        try {
+          await options.chatService.ensureCodeSession(authenticatedUser, {
+            sessionId: payload.sessionId,
+            title: payload.prompt.slice(0, 24),
+          });
+        } catch {
+          // 供给失败不阻断启动：下面仍按原路径解析（拿不到就照旧不带线程）
+        }
       }
 
       const sessionThread =

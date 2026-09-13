@@ -77,6 +77,22 @@ export interface ProjectRepository {
     workspaceId: string,
     projectId: string,
   ): Promise<ProjectDetailRow | null>;
+  /**
+   * 取得（必要时懒创建）工作区的 **Code 工作台**载体：保留 slug 的项目 + 主画布。
+   *
+   * 为什么 Code 模式也需要一个「画布」：`chat_sessions.canvas_id` 是 NOT NULL + FK →
+   * `canvases`，而 Code 模式的会话此前用客户端自造的 id 冒充画布 —— 库里没有这张画布，
+   * 于是会话行写不进去、线程解析与助手消息落库全部失败（消息「只活在内存里」）。
+   * 该载体是产品意义上的内部容器（不是用户在 Design 里管理的内容），故用保留 slug
+   * 并在 `listActive` 里排除，界面上不可见。
+   *
+   * 并发安全靠既有唯一约束：`projects_workspace_slug_key` 与
+   * `canvases_one_primary_per_project_key`（`on conflict do nothing` + 回读）。
+   */
+  ensureCodeWorkbench(input: {
+    userId: string;
+    workspaceId: string;
+  }): Promise<{ canvasId: string; projectId: string }>;
   listActive(workspaceId: string): Promise<ProjectListRow[]>;
   /** 取这批项目的主画布（跨项目一次查询）。 */
   listPrimaryCanvases(
@@ -103,6 +119,13 @@ const PROJECT_DETAIL_COLUMNS =
 const PROJECT_CREATED_COLUMNS =
   "id, name, slug, description, created_at, updated_at, workspace_id";
 
+/**
+ * Code 模式会话载体项目的保留 slug（`projects_workspace_slug_key` 唯一）。
+ * 它在 `listActive` 里被排除——用户不该在 Design 项目列表里看到内部容器。
+ */
+export const CODE_WORKBENCH_SLUG = "code-workbench";
+const CODE_WORKBENCH_NAME = "Code 工作台";
+
 export function createProjectRepository(
   persistence: PersistenceService,
 ): ProjectRepository {
@@ -113,8 +136,65 @@ export function createProjectRepository(
            from public.projects
           where workspace_id = :workspace
             and archived_at is null
+            and slug <> $1
           order by updated_at desc`,
+        [CODE_WORKBENCH_SLUG],
       );
+    },
+
+    async ensureCodeWorkbench(input) {
+      return persistence.transaction(async (tx) => {
+        const scoped = tx.forWorkspace(input.workspaceId);
+
+        // 1) 项目：唯一约束 (workspace_id, slug) 兜住并发；冲突即回读既有行
+        const insertedProject = await scoped.queryOne<{ id: string }>(
+          `insert into public.projects (workspace_id, name, slug, created_by)
+           values (:workspace, $1, $2, $3)
+           on conflict (workspace_id, slug) do nothing
+           returning id`,
+          [CODE_WORKBENCH_NAME, CODE_WORKBENCH_SLUG, input.userId],
+        );
+        const project =
+          insertedProject ??
+          (await scoped.queryOne<{ id: string }>(
+            `select id
+               from public.projects
+              where workspace_id = :workspace
+                and slug = $1`,
+            [CODE_WORKBENCH_SLUG],
+          ));
+        if (!project) {
+          throw new Error("[projects] Code 工作台项目供给失败（未插入也未读到）。");
+        }
+
+        // 2) 主画布：部分唯一索引 (project_id) WHERE is_primary 兜住并发
+        const insertedCanvas = await scoped.queryOne<{ id: string }>(
+          `insert into public.canvases (project_id, name, is_primary, created_by)
+           select p.id, $1, true, $2
+             from public.projects p
+            where p.id = $3
+              and p.workspace_id = :workspace
+           on conflict (project_id) where is_primary do nothing
+           returning id`,
+          ["Code 会话", input.userId, project.id],
+        );
+        const canvas =
+          insertedCanvas ??
+          (await scoped.queryOne<{ id: string }>(
+            `select c.id
+               from public.canvases c
+               join public.projects p on p.id = c.project_id
+              where c.project_id = $1
+                and c.is_primary = true
+                and p.workspace_id = :workspace`,
+            [project.id],
+          ));
+        if (!canvas) {
+          throw new Error("[projects] Code 工作台主画布供给失败（未插入也未读到）。");
+        }
+
+        return { canvasId: canvas.id, projectId: project.id };
+      });
     },
 
     async listPrimaryCanvases(workspaceId, projectIds) {

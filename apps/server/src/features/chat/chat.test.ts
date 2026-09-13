@@ -15,6 +15,7 @@ import { createThreadService, ThreadServiceError } from "./thread-service.js";
 const USER_ID = "user-1";
 const WORKSPACE_ID = "ws-1";
 const CANVAS_ID = "canvas-1";
+const PROJECT_ID = "project-1";
 const SESSION_ID = "session-1";
 
 const USER: AuthenticatedUser = {
@@ -274,6 +275,10 @@ function createFakeRepository(
 ): ChatRepository {
   return {
     createSession: async () => SESSION_ROW,
+    ensureSessionWithId: async (_workspaceId, input) => ({
+      id: input.sessionId,
+      thread_id: input.threadId,
+    }),
     deleteSession: async () => 1,
     findSessionThread: async () => ({ id: SESSION_ID, thread_id: "thread_1" }),
     insertMessage: async () => MESSAGE_ROW,
@@ -299,6 +304,12 @@ function buildService(
 
   return {
     chat: createChatService({
+      codeWorkbench: {
+        ensureCodeWorkbench: async () => ({
+          canvasId: CANVAS_ID,
+          projectId: PROJECT_ID,
+        }),
+      },
       repository,
       threadService,
       viewerService: options.viewerService ?? VIEWER_STUB,

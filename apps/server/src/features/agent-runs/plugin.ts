@@ -99,10 +99,13 @@ export function createAgentRunsPlugin(
       });
     },
     mounted(ctx) {
+      // chat 是可选依赖：缺席时（部分装配/测试）路由照常，只是不做 Code 会话供给
+      const chatService = ctx.tryGet("chat");
       void registerRunRoutes(ctx.app, ctx.get("agentRuns"), {
         agentModes: ctx.get("agentModes"),
         agentRunMetadataService: ctx.get("agentRunMetadata"),
         auth: ctx.get("auth"),
+        ...(chatService ? { chatService } : {}),
         settingsService: ctx.get("settings"),
         threadService: ctx.get("threads"),
         viewerService: ctx.get("viewer"),

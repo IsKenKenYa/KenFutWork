@@ -13,7 +13,10 @@ import {
   createProjectService,
   ProjectServiceError,
 } from "./project-service.js";
-import { createProjectRepository } from "./repository.js";
+import {
+  CODE_WORKBENCH_SLUG,
+  createProjectRepository,
+} from "./repository.js";
 
 const USER_ID = "user-1";
 const WORKSPACE_ID = "ws-1";
@@ -115,10 +118,12 @@ describe("projects repository（SQL 与隔离谓词）", () => {
 
     const [call] = dataCalls(calls);
     expect(call?.sql).toContain("from public.projects");
-    expect(call?.sql).toContain("where workspace_id = $1");
+    // Code 工作台载体是内部容器（保留 slug），不得出现在用户的项目列表里
+    expect(call?.sql).toContain("and slug <> $1");
+    expect(call?.sql).toContain("where workspace_id = $2");
     expect(call?.sql).toContain("and archived_at is null");
     expect(call?.sql).toContain("order by updated_at desc");
-    expect(call?.values).toEqual([WORKSPACE_ID]);
+    expect(call?.values).toEqual([CODE_WORKBENCH_SLUG, WORKSPACE_ID]);
   });
 
   it("主画布查询 JOIN projects 施加工作区谓词（canvases 无 workspace_id 列）", async () => {
