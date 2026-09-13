@@ -2,6 +2,7 @@ import type { BackgroundJobType } from "@loomic/shared";
 import type { ServerEnv } from "../../config/env.js";
 import type { PgmqClient } from "../../queue/pgmq-client.js";
 import type { AdminSupabaseClient } from "../../supabase/admin.js";
+import type { BlobStore } from "../blob/types.js";
 import type { CreditService } from "../credits/credit-service.js";
 import type { ModelProviderService } from "../model-providers/model-provider-service.js";
 import type { AssetWriter } from "../uploads/asset-writer.js";
@@ -21,6 +22,8 @@ export type ExecutorContext = {
   creditService: CreditService;
   /** 生成物元数据写入：executor 无用户身份，按任务记录的工作区写。 */
   assetWriter: AssetWriter;
+  /** 对象存储（blob 缝）：生成物上传与 URL，executor 不再直连 Supabase Storage。 */
+  blob: BlobStore;
   /** PGMQ queue name for the current job (set per-message by the worker). */
   queue: string;
   /** PGMQ message id for the current job (set per-message by the worker). */

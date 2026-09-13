@@ -140,17 +140,13 @@ describe("uploads 插件：两条路径的装配形状", () => {
         version: "t",
         webOrigin: "http://x",
       },
-      [
-        createUploadsPlugin(
-          withRoutes
-            ? { createUserClient: (() => ({})) as never }
-            : { withRoutes: false },
-        ),
-      ],
+      [createUploadsPlugin(withRoutes ? {} : { withRoutes: false })],
       {
         app: Fastify({ logger: false }),
         overrides: {
           auth: { authenticate: async () => null },
+          // 路由形态的 uploads 服务依赖 blob 缝
+          blob: { bucket: () => ({}) } as never,
           persistence: {
             forUser: () => ({}) as never,
             forWorkspace: () => ({}) as never,
@@ -179,31 +175,5 @@ describe("uploads 插件：两条路径的装配形状", () => {
 
     expect(k.get("assetWriter").recordGeneratedAsset).toBeTypeOf("function");
     expect(k.get("uploads").uploadFile).toBeTypeOf("function");
-  });
-
-  it("路由形态缺 createUserClient → fail loud（不静默降级）", () => {
-    expect(() =>
-      composePlugins(
-        {
-          agentBackendMode: "state" as const,
-          agentModel: "m",
-          port: 0,
-          version: "t",
-          webOrigin: "http://x",
-        },
-        [createUploadsPlugin({})],
-        {
-          app: Fastify({ logger: false }),
-          overrides: {
-            auth: { authenticate: async () => null },
-            persistence: {
-              forUser: () => ({}) as never,
-              forWorkspace: () => ({}) as never,
-            } as never,
-            viewer: {} as never,
-          },
-        },
-      ),
-    ).toThrow(/路由形态必须提供用户客户端工厂/);
   });
 });

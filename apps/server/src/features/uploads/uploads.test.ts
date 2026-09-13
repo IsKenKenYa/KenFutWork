@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AuthenticatedUser } from "../../supabase/user.js";
+import { BlobError } from "../blob/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import { BootstrapError } from "../bootstrap/errors.js";
 import { SqlError } from "../persistence/errors.js";
@@ -59,33 +60,34 @@ function createStorageStub(
 ) {
   const calls: string[] = [];
 
-  const client = {
-    storage: {
-      from: (bucket: string) => ({
-        upload: async (path: string) => {
-          calls.push(`upload:${bucket}:${path}`);
-          return { error: options.uploadError ?? null };
-        },
-        remove: async (paths: string[]) => {
-          calls.push(`remove:${bucket}:${paths.join(",")}`);
-          return { error: null };
-        },
-        getPublicUrl: (path: string) => {
-          calls.push(`publicUrl:${bucket}:${path}`);
-          return { data: { publicUrl: `https://blob.test/${bucket}/${path}` } };
-        },
-        createSignedUrl: async (path: string) => {
-          calls.push(`signedUrl:${bucket}:${path}`);
-          return {
-            data: { signedUrl: `https://signed.test/${bucket}/${path}` },
-            error: null,
-          };
-        },
-      }),
-    },
+  // blob 缝替身：只记录「哪个桶做了什么」，与 Provider 实现无关
+  const blob = {
+    bucket: (bucket: string) => ({
+      isPublic: async () => bucket === "project-assets",
+      resolveUrl: async (path: string) => {
+        calls.push(`resolveUrl:${bucket}:${path}`);
+        return bucket === "project-assets"
+          ? `https://blob.test/${bucket}/${path}`
+          : `https://signed.test/${bucket}/${path}`;
+      },
+      upload: async (path: string) => {
+        calls.push(`upload:${bucket}:${path}`);
+        if (options.uploadError) {
+          throw new BlobError(
+            "upload",
+            bucket,
+            path,
+            options.uploadError.message,
+          );
+        }
+      },
+      remove: async (paths: string[]) => {
+        calls.push(`remove:${bucket}:${paths.join(",")}`);
+      },
+    }),
   };
 
-  return { calls, client: client as never };
+  return { blob: blob as never, calls };
 }
 
 const VIEWER_STUB: ViewerService = {
@@ -190,7 +192,7 @@ describe("upload service", () => {
     const storage = options.storage ?? createStorageStub();
     return {
       service: createUploadService({
-        createUserClient: () => storage.client,
+        blob: storage.blob,
         repository: {
           deleteById: async () => 1,
           findLocation: async () => null,
@@ -221,7 +223,8 @@ describe("upload service", () => {
     expect(storage.calls[0]).toContain(
       `upload:project-assets:${WORKSPACE_ID}/`,
     );
-    expect(storage.calls.at(-1)).toContain("publicUrl:project-assets:");
+    // 公开性由存储侧回答，服务只调 resolveUrl（不再自己判公开桶）
+    expect(storage.calls.at(-1)).toContain("resolveUrl:project-assets:");
   });
 
   it("存储上传失败即中止，不写元数据", async () => {

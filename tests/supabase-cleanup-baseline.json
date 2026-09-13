@@ -1,10 +1,10 @@
 {
   "//": "去 Supabase 残留基线（棘轮门禁）：数值只许减不许增。消除残留后必须在本 PR 同步下调，台账说明见 docs/tech/改造计划.md §4.13。代码侧按**全部源文件**（排除测试）统计，并**排除 Provider 适配层**（`features/blob/providers/supabase-storage.ts`、`supabase/{user,admin}.ts`）——适配层是耦合的边界，把它计入会让「把 N 处调用收敛进适配器」反而抬高指标。dbFromCalls（2026-09-14 二次修正）：去空白后匹配 `.from(`，排除 ①紧邻 `.storage` 的对象存储调用、②`Buffer`/`Array`/`Uint8Array`/`String` 构造器调用（原口径噪声约 30 处，会逼代码为指标让路）；修正后该指标字面即「DB 查询调用点数」，当前 0。",
   "code": {
-    "filesUsingSupabaseClient": 17,
-    "sdkRefs": 104,
+    "filesUsingSupabaseClient": 10,
+    "sdkRefs": 42,
     "dbFromCalls": 0,
-    "storageRefs": 34
+    "storageRefs": 11
   },
   "sql": {
     "authUid": 78,

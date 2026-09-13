@@ -132,10 +132,10 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     brandKitPlugin,
     createCreditsPlugin(),
     createViewerPlugin(),
-    createCanvasPlugin({ createUserClient: deps.createUserClient }),
+    createCanvasPlugin(),
     createChatPlugin(),
     createSettingsPlugin(),
-    createUploadsPlugin({ createUserClient: deps.createUserClient }),
+    createUploadsPlugin(),
     createProjectsPlugin(),
     createJobsPlugin({
       ...(deps.overrideJobs ? { injected: deps.overrideJobs } : {}),

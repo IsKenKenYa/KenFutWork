@@ -1,6 +1,6 @@
 import type { StructuredTool } from "@langchain/core/tools";
 import type { AnyBackendProtocol, BackendRuntime } from "deepagents";
-
+import type { BlobStore } from "../../features/blob/types.js";
 import type { BrandKitService } from "../../features/brand-kit/brand-kit-service.js";
 import type { CanvasRepository } from "../../features/canvas/repository.js";
 import type { ConnectionManager } from "../../ws/connection-manager.js";
@@ -58,10 +58,11 @@ export function createMainAgentTools(
     | AnyBackendProtocol
     | ((runtime: BackendRuntime) => AnyBackendProtocol),
   deps: {
+    /** 对象存储（blob 缝）：沙箱文件持久化等。 */
+    blob: BlobStore;
     brandKitService?: BrandKitService;
     /** 画布数据访问（工作区作用域）：画布读写与工作区解析经它。 */
     canvasRepository?: CanvasRepository;
-    createUserClient: (accessToken: string) => any;
     brandKitId?: string | null;
     connectionManager?: ConnectionManager;
     persistImage?: PersistImageFn;
@@ -82,10 +83,10 @@ export function createMainAgentTools(
       ...(deps.submitVideoJob ? { submitVideoJob: deps.submitVideoJob } : {}),
     }),
     createPersistSandboxFileTool({
+      blob: deps.blob,
       ...(deps.canvasRepository
         ? { canvasRepository: deps.canvasRepository }
         : {}),
-      createUserClient: deps.createUserClient,
       ...(deps.sandboxDir ? { sandboxDir: deps.sandboxDir } : {}),
     }),
     // execute 工具由 deepagents FilesystemMiddleware 自动注入，

@@ -1,6 +1,5 @@
 import { registerBrandKitRoutes } from "../../http/brand-kits.js";
 import type { PluginDefinition } from "../../kernel/types.js";
-import { createUserSupabaseClientFactory } from "../../supabase/user.js";
 import { createBrandKitService } from "./brand-kit-service.js";
 import { createBrandKitRepository } from "./repository.js";
 
@@ -10,11 +9,11 @@ import { createBrandKitRepository } from "./repository.js";
  */
 export const brandKitPlugin: PluginDefinition = {
   name: "brand-kit",
-  inject: ["auth", "persistence"],
+  inject: ["auth", "blob", "persistence"],
   apply(ctx) {
     ctx.register("brandKit", () =>
       createBrandKitService({
-        createUserClient: createUserSupabaseClientFactory(ctx.env),
+        blob: ctx.get("blob"),
         repository: createBrandKitRepository(ctx.get("persistence")),
       }),
     );

@@ -22,6 +22,7 @@ import {
 } from "@loomic/shared";
 import type { ServerEnv } from "../config/env.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
+import type { BlobStore } from "../features/blob/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
 import type { CanvasService } from "../features/canvas/canvas-service.js";
@@ -297,6 +298,13 @@ type CreateAgentRuntimeOptions = {
   /** 工作区技能加载（skills/canvas 聚合的数据访问提供）：运行时不再直连 SDK。 */
   workspaceSkillsLoader?: WorkspaceSkillsLoader;
   connectionManager?: ConnectionManager;
+  /** 对象存储（blob 缝）：生成物落盘与 URL（M3.1 起不再直连 Supabase Storage）。 */
+  blob: BlobStore;
+  /**
+   * 用户客户端工厂：仍用于**任务提交**路径（`submitImageJob` 需要构造
+   * `AuthenticatedUser` 带 accessToken）。对象存储已改走 `blob` 缝，
+   * 该依赖随 M1.4 自管认证落地一并移除。
+   */
   createUserClient?: (accessToken: string) => unknown;
   creditService?: CreditService;
   env: ServerEnv;
@@ -354,9 +362,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     ((agentOptions) =>
       createLoomicDeepAgent({
         ...agentOptions,
-        ...(options.createUserClient
-          ? { createUserClient: options.createUserClient }
-          : {}),
+        blob: options.blob,
       }));
 
   // ── Billing error helper: push WS event + abort run ──────────
@@ -1135,18 +1141,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             }
           }
 
-          // Build persistImage closure using the user's Supabase client.
-          // Client creation is deferred into the closure so it only runs
-          // when an image is actually generated (avoids throwing in tests
-          // that don't configure Supabase env vars).
+          // Build persistImage closure over the blob seam. 上传发生在真正生成图片时。
           let persistImage:
             | ((url: string, mime: string, prompt: string) => Promise<string>)
             | undefined;
-          if (options.createUserClient && run.accessToken) {
-            const createClient = options.createUserClient;
-            const accessToken = run.accessToken;
+          const blob = options.blob;
+          if (blob) {
             persistImage = async (sourceUrl, mimeType, prompt) => {
-              const client = createClient(accessToken) as UserSupabaseClient;
               const response = await fetch(sourceUrl);
               if (!response.ok)
                 throw new Error(`Download failed: ${response.status}`);
@@ -1166,20 +1167,14 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               const workspaceId = resolved?.id ?? "default";
               const objectPath = `${workspaceId}/${Date.now()}-${fileName}`;
 
-              const { error: uploadError } = await client.storage
-                .from("project-assets")
-                .upload(objectPath, buffer, {
-                  contentType: mimeType,
-                  upsert: false,
-                });
-              if (uploadError)
-                throw new Error(`Upload failed: ${uploadError.message}`);
+              const assetBucket = blob.bucket("project-assets");
+              await assetBucket.upload(objectPath, buffer, {
+                contentType: mimeType,
+                upsert: false,
+              });
 
-              const { data: urlData } = client.storage
-                .from("project-assets")
-                .getPublicUrl(objectPath);
-
-              return urlData.publicUrl;
+              // 公开性由存储侧回答（实测 project-assets 可能非公开）
+              return assetBucket.resolveUrl(objectPath);
             };
           }
 

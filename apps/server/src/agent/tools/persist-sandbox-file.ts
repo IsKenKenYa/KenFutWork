@@ -2,8 +2,8 @@ import { realpathSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { basename, extname } from "node:path";
 import { tool } from "@langchain/core/tools";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import type { BlobStore } from "../../features/blob/types.js";
 import type { CanvasRepository } from "../../features/canvas/repository.js";
 
 const MIME_MAP: Record<string, string> = {
@@ -31,25 +31,19 @@ const persistSandboxFileSchema = z.object({
 });
 
 export type PersistSandboxFileDeps = {
+  /** 对象存储（blob 缝）：上传沙箱产物并按需签名。 */
+  blob: BlobStore;
   /** 画布数据访问：由画布解析工作区（对象路径用）。 */
   canvasRepository?: CanvasRepository;
-  createUserClient: (accessToken: string) => SupabaseClient;
   sandboxDir?: string;
 };
 
 export function createPersistSandboxFileTool(deps: PersistSandboxFileDeps) {
   return tool(
     async (input, config) => {
-      const accessToken = (config as any)?.configurable?.access_token as
-        | string
-        | undefined;
       const canvasId = (config as any)?.configurable?.canvas_id as
         | string
         | undefined;
-
-      if (!accessToken) {
-        return "Error: No access token available. Cannot upload file.";
-      }
 
       // Path traversal guard: restrict reads to sandbox directory.
       // Use realpathSync to resolve symlinks (macOS /tmp → /private/tmp).
@@ -82,8 +76,6 @@ export function createPersistSandboxFileTool(deps: PersistSandboxFileDeps) {
           ? `${safeTitle}${ext}`
           : basename(input.filePath);
 
-        const client = deps.createUserClient(accessToken);
-
         // Resolve workspace ID from canvas for Storage RLS compliance.
         // RLS requires: storage.foldername(name)[1] = workspace_id
         let workspaceId: string | null = null;
@@ -97,29 +89,18 @@ export function createPersistSandboxFileTool(deps: PersistSandboxFileDeps) {
         const storagePath = workspaceId
           ? `${workspaceId}/generated/${Date.now()}-${fileName}`
           : `uploads/${Date.now()}-${fileName}`;
-        const { data, error } = await client.storage
-          .from("project-assets")
-          .upload(storagePath, fileBuffer, {
-            contentType: mimeType,
-            upsert: false,
-          });
+        const bucket = deps.blob.bucket("project-assets");
+        await bucket.upload(storagePath, fileBuffer, {
+          contentType: mimeType,
+          upsert: false,
+        });
 
-        if (error) {
-          return `Error uploading file: ${error.message}`;
-        }
-
-        const signedResult = await client.storage
-          .from("project-assets")
-          .createSignedUrl(data.path, 3600);
-
-        if (signedResult.error || !signedResult.data) {
-          return `Error creating signed URL: ${signedResult.error?.message ?? "unknown"}`;
-        }
+        const signedUrl = await bucket.createSignedUrl(storagePath, 3600);
 
         return JSON.stringify({
           summary: `File uploaded successfully: ${fileName}`,
-          url: signedResult.data.signedUrl,
-          path: data.path,
+          url: signedUrl,
+          path: storagePath,
           mimeType,
           size: fileBuffer.length,
         });

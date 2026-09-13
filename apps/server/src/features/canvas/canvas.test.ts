@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AuthenticatedUser } from "../../supabase/user.js";
+import { BlobError } from "../blob/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import { BootstrapError } from "../bootstrap/errors.js";
 import { SqlError } from "../persistence/errors.js";
@@ -84,42 +85,41 @@ function createStorageStub(
 ) {
   const calls: string[] = [];
 
-  const client = {
-    storage: {
-      from: (bucket: string) => ({
-        upload: async (path: string) => {
-          calls.push(`upload:${bucket}:${path}`);
-          return { error: options.uploadError ?? null };
-        },
-        download: async (path: string) => {
-          calls.push(`download:${bucket}:${path}`);
-          // 注意用 === undefined 判定：null 是「下载失败」的显式夹具。
-          const bytes =
-            options.downloadBytes === undefined
-              ? Buffer.from("png-bytes")
-              : options.downloadBytes;
-          return bytes === null
-            ? { data: null, error: { message: "not found" } }
-            : {
-                data: {
-                  arrayBuffer: async () =>
-                    bytes.buffer.slice(
-                      bytes.byteOffset,
-                      bytes.byteOffset + bytes.byteLength,
-                    ),
-                },
-                error: null,
-              };
-        },
-        getPublicUrl: (path: string) => {
-          calls.push(`publicUrl:${bucket}:${path}`);
-          return { data: { publicUrl: `https://blob.test/${bucket}/${path}` } };
-        },
-      }),
-    },
+  // blob 缝替身：不是 Provider 细节的复刻，只记录调用并提供夹具数据
+  const blob = {
+    bucket: (bucket: string) => ({
+      upload: async (path: string) => {
+        calls.push(`upload:${bucket}:${path}`);
+        if (options.uploadError) {
+          throw new BlobError(
+            "upload",
+            bucket,
+            path,
+            options.uploadError.message,
+          );
+        }
+      },
+      download: async (path: string) => {
+        calls.push(`download:${bucket}:${path}`);
+        // 注意用 === undefined 判定：null 是「下载失败」的显式夹具。
+        const bytes =
+          options.downloadBytes === undefined
+            ? Buffer.from("png-bytes")
+            : options.downloadBytes;
+        if (bytes === null) {
+          throw new BlobError("download", bucket, path, "not found");
+        }
+        return new Uint8Array(bytes);
+      },
+      isPublic: async () => true,
+      resolveUrl: async (path: string) => {
+        calls.push(`resolveUrl:${bucket}:${path}`);
+        return `https://blob.test/${bucket}/${path}`;
+      },
+    }),
   };
 
-  return { calls, client: client as never };
+  return { calls, blob: blob as never };
 }
 
 const CANVAS_ROW = {
@@ -243,7 +243,7 @@ function buildService(options: {
   const storage = options.storage ?? createStorageStub();
   return {
     service: createCanvasService({
-      createUserClient: () => storage.client,
+      blob: storage.blob,
       repository: createFakeRepository(options.repository),
       viewerService: options.viewerService ?? VIEWER_STUB,
     }),
@@ -285,9 +285,10 @@ describe("canvas service", () => {
       "https://blob.test/project-assets/canvas-files/c1/f-oss.png",
     );
     expect(files["f-oss"]?.dataURL).toBeUndefined();
+    // 走 blob 缝的 resolveUrl（公开性由存储侧回答），不再自己判公开桶
     expect(
       storage.calls.some((call) =>
-        call.startsWith("publicUrl:project-assets:canvas-files/c1/f-oss.png"),
+        call.startsWith("resolveUrl:project-assets:canvas-files/c1/f-oss.png"),
       ),
     ).toBe(true);
   });

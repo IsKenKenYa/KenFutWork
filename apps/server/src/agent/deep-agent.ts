@@ -12,6 +12,7 @@ import {
   DEFAULT_GOOGLE_AGENT_MODEL,
   type ServerEnv,
 } from "../config/env.js";
+import type { BlobStore } from "../features/blob/types.js";
 import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
 import type { CanvasRepository } from "../features/canvas/repository.js";
 import type { ToolDefinition, ToolExecutionContext } from "../kernel/types.js";
@@ -42,7 +43,6 @@ export type LoomicAgentFactory = (options: {
   canvasId?: string;
   checkpointer?: BaseCheckpointSaver;
   connectionManager?: ConnectionManager;
-  createUserClient?: (accessToken: string) => any;
   env: ServerEnv;
   model?: BaseLanguageModel | string;
   persistImage?: PersistImageFn;
@@ -62,12 +62,13 @@ export function createLoomicDeepAgent(options: {
   brandKitId?: string | null;
   /** 品牌套件服务（工具 get_brand_kit 经它取数，不再直连 SDK）。 */
   brandKitService?: BrandKitService;
+  /** 对象存储（blob 缝）：沙箱文件持久化、生成物落盘经它（必需能力）。 */
+  blob: BlobStore;
   /** 画布数据访问（工作区作用域）：工具的画布读写经它。 */
   canvasRepository?: CanvasRepository;
   canvasId?: string;
   checkpointer?: BaseCheckpointSaver;
   connectionManager?: ConnectionManager;
-  createUserClient?: (accessToken: string) => any;
   env: ServerEnv;
   model?: BaseLanguageModel | string;
   persistImage?: PersistImageFn;
@@ -89,14 +90,6 @@ export function createLoomicDeepAgent(options: {
     typeof modelSpec === "string"
       ? createStreamingChatModel(modelSpec)
       : modelSpec;
-
-  const createUserClient =
-    options.createUserClient ??
-    ((_accessToken: string): never => {
-      throw new Error(
-        "inspect_canvas is unavailable: no createUserClient was provided to createLoomicDeepAgent.",
-      );
-    });
 
   let systemPrompt = options.brandKitId
     ? LOOMIC_SYSTEM_PROMPT +
@@ -140,10 +133,10 @@ export function createLoomicDeepAgent(options: {
         ...(options.brandKitService
           ? { brandKitService: options.brandKitService }
           : {}),
+        blob: options.blob,
         ...(options.canvasRepository
           ? { canvasRepository: options.canvasRepository }
           : {}),
-        createUserClient,
         ...(options.brandKitId != null
           ? { brandKitId: options.brandKitId }
           : {}),

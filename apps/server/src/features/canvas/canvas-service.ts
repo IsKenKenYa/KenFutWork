@@ -1,9 +1,7 @@
 import type { CanvasContent, CanvasDetail, Json } from "@loomic/shared";
 
-import type {
-  AuthenticatedUser,
-  UserSupabaseClient,
-} from "../../supabase/user.js";
+import type { AuthenticatedUser } from "../../supabase/user.js";
+import type { BlobStore } from "../blob/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import {
   type CanvasContentStore,
@@ -86,7 +84,8 @@ const CANVAS_FILES_BUCKET = "project-assets";
 
 export function createCanvasService(options: {
   /** 画布文件对象存储仍走 Supabase Storage（M3 blob 缝收口后移除）。 */
-  createUserClient: (accessToken: string) => UserSupabaseClient;
+  /** 对象存储走 blob 缝（画布文件本体：图片/视频等）。 */
+  blob: BlobStore;
   repository: CanvasRepository;
   viewerService: ViewerService;
 }): CanvasService {
@@ -114,7 +113,7 @@ export function createCanvasService(options: {
     actor: CanvasActor,
     workspaceId: string,
   ): CanvasContentStore => {
-    const client = options.createUserClient(actor.accessToken);
+    const blobBucket = options.blob.bucket(CANVAS_FILES_BUCKET);
 
     return {
       async readContent(canvasId) {
@@ -134,15 +133,7 @@ export function createCanvasService(options: {
       },
 
       async downloadObject(objectPath) {
-        const { data: blob, error } = await client.storage
-          .from(CANVAS_FILES_BUCKET)
-          .download(objectPath);
-
-        if (error || !blob) {
-          throw new Error(error?.message ?? "no data");
-        }
-
-        return Buffer.from(await blob.arrayBuffer());
+        return Buffer.from(await blobBucket.download(objectPath));
       },
     };
   };
@@ -165,8 +156,8 @@ export function createCanvasService(options: {
       const content = toCanvasContent(row.content);
 
       // Resolve OSS-stored files back to base64 dataURLs for the frontend
-      const resolvedContent = resolveFilesFromStorage(
-        options.createUserClient(user.accessToken),
+      const resolvedContent = await resolveFilesFromStorage(
+        options.blob,
         content,
       );
 
@@ -180,11 +171,9 @@ export function createCanvasService(options: {
 
     async saveCanvasContent(user, canvasId, content) {
       const workspaceId = await resolveWorkspaceId(user);
-      const client = options.createUserClient(user.accessToken);
-
       // Extract base64 files to Storage, replacing dataURLs with oss:// markers
       const leanContent = await extractFilesToStorage(
-        client,
+        options.blob,
         canvasId,
         content,
       );
@@ -260,7 +249,7 @@ function toCanvasContent(value: unknown): CanvasContent {
 type CanvasFileRecord = Record<string, Record<string, unknown>>;
 
 async function extractFilesToStorage(
-  client: UserSupabaseClient,
+  blob: BlobStore,
   canvasId: string,
   content: CanvasContent,
 ): Promise<CanvasContent> {
@@ -293,11 +282,14 @@ async function extractFilesToStorage(
         const objectPath = `canvas-files/${canvasId}/${fileId}.${ext}`;
 
         // Upsert: the same file ID may be re-saved
-        const { error: uploadError } = await client.storage
-          .from(CANVAS_FILES_BUCKET)
-          .upload(objectPath, buffer, { contentType: mimeType, upsert: true });
-
-        if (uploadError) {
+        try {
+          await blob
+            .bucket(CANVAS_FILES_BUCKET)
+            .upload(objectPath, buffer, {
+              contentType: mimeType,
+              upsert: true,
+            });
+        } catch {
           // On upload failure, keep the original base64 (graceful degradation)
           updatedFiles[fileId] = fileData;
           return;
@@ -324,10 +316,10 @@ async function extractFilesToStorage(
 // File resolution (load path): oss:// marker → public URL
 // ---------------------------------------------------------------------------
 
-function resolveFilesFromStorage(
-  client: UserSupabaseClient,
+async function resolveFilesFromStorage(
+  blob: BlobStore,
   content: CanvasContent,
-): CanvasContent {
+): Promise<CanvasContent> {
   const files = (content as { files?: CanvasFileRecord }).files;
   if (!files || Object.keys(files).length === 0) {
     return content;
@@ -350,15 +342,22 @@ function resolveFilesFromStorage(
       continue;
     }
 
-    // Resolve public URL instead of downloading each file
+    // 交给 blob 缝取「可直接访问」的 URL（公开性由存储侧回答）
     const bucket = ref.slice(0, slashIdx);
     const objectPath = ref.slice(slashIdx + 1);
-    const { data } = client.storage.from(bucket).getPublicUrl(objectPath);
+    let storageUrl: string | undefined;
+    try {
+      storageUrl = await blob.bucket(bucket).resolveUrl(objectPath);
+    } catch {
+      // 拿不到 URL 就保留原记录（不静默变成 undefined）
+      updatedFiles[fileId] = fileData;
+      continue;
+    }
 
     updatedFiles[fileId] = {
       ...fileData,
       dataURL: undefined,
-      storageUrl: data.publicUrl,
+      storageUrl,
     };
   }
 

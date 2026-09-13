@@ -8,10 +8,8 @@ import type {
   BrandKitUpdateRequest,
 } from "@loomic/shared";
 
-import type {
-  AuthenticatedUser,
-  UserSupabaseClient,
-} from "../../supabase/user.js";
+import type { AuthenticatedUser } from "../../supabase/user.js";
+import type { BlobStore } from "../blob/types.js";
 import type {
   BrandKitAssetPatch,
   BrandKitAssetRow,
@@ -98,11 +96,12 @@ export type BrandKitService = {
 
 /**
  * brand-kit 服务。数据访问经 repository（`brand_kits` 按 `user_id` 定权、
- * `brand_kit_assets` 经父链校验归属）；`createUserClient` 仅剩对象存储用途，
+ * `brand_kit_assets` 经父链校验归属）；对象存储经 `blob` 缝，
  * 随 M3 blob 缝落地移除。
  */
 export function createBrandKitService(options: {
-  createUserClient: (accessToken: string) => UserSupabaseClient;
+  /** 对象存储走 blob 缝（本聚合的桶非公开 → 用签名 URL）。 */
+  blob: BlobStore;
   repository: BrandKitRepository;
 }): BrandKitService {
   const { repository } = options;
@@ -146,17 +145,16 @@ export function createBrandKitService(options: {
     // Resolve signed URLs for file-based assets (logo/image)
     const fileAssets = mappedAssets.filter((a) => a.file_url);
     if (fileAssets.length > 0) {
-      const client = options.createUserClient(user.accessToken);
       const paths = fileAssets.map((a) => a.file_url!);
-      const { data: signedData } = await client.storage
-        .from(BRAND_KIT_BUCKET)
+      const signedEntries = await options.blob
+        .bucket(BRAND_KIT_BUCKET)
         .createSignedUrls(paths, SIGNED_URL_EXPIRY_SECONDS);
 
-      if (signedData) {
-        const urlByPath = new Map(
-          signedData
-            .filter((e) => e.signedUrl && e.path)
-            .map((e) => [e.path, e.signedUrl]),
+      if (signedEntries.length > 0) {
+        const urlByPath = new Map<string, string>(
+          signedEntries.flatMap((entry) =>
+            entry.signedUrl ? [[entry.path, entry.signedUrl] as const] : [],
+          ),
         );
         for (const asset of fileAssets) {
           const url = urlByPath.get(asset.file_url!);
@@ -323,8 +321,7 @@ export function createBrandKitService(options: {
         .catch(() => []);
 
       if (paths.length > 0) {
-        const client = options.createUserClient(user.accessToken);
-        await client.storage.from(BRAND_KIT_BUCKET).remove(paths);
+        await options.blob.bucket(BRAND_KIT_BUCKET).remove(paths);
       }
 
       await repository.deleteKit(user.id, kitId).catch(() => {
@@ -462,8 +459,7 @@ export function createBrandKitService(options: {
 
       // Clean up storage object if this asset has a file
       if (existing.file_url) {
-        const client = options.createUserClient(user.accessToken);
-        await client.storage.from(BRAND_KIT_BUCKET).remove([existing.file_url]);
+        await options.blob.bucket(BRAND_KIT_BUCKET).remove([existing.file_url]);
       }
 
       await repository.deleteAsset(user.id, kitId, assetId).catch(() => {
@@ -496,24 +492,24 @@ export function createBrandKitService(options: {
         );
       }
 
-      const client = options.createUserClient(user.accessToken);
+      const bucket = options.blob.bucket(BRAND_KIT_BUCKET);
 
       // Upload to storage
       const timestamp = Date.now();
       const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
       const objectPath = `${user.id}/${kitId}/${timestamp}-${safeName}`;
 
-      const { error: uploadError } = await client.storage
-        .from(BRAND_KIT_BUCKET)
-        .upload(objectPath, fileBuffer, {
+      try {
+        await bucket.upload(objectPath, fileBuffer, {
           contentType: mimeType,
           upsert: false,
         });
-
-      if (uploadError) {
+      } catch (error) {
         throw new BrandKitServiceError(
           "brand_kit_asset_create_failed",
-          `File upload failed: ${uploadError.message}`,
+          `File upload failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
           500,
         );
       }
@@ -535,7 +531,7 @@ export function createBrandKitService(options: {
 
       if (!asset) {
         // Clean up uploaded file on DB failure
-        await client.storage.from(BRAND_KIT_BUCKET).remove([objectPath]);
+        await bucket.remove([objectPath]);
         throw new BrandKitServiceError(
           "brand_kit_asset_create_failed",
           ASSET_CREATE_FAILED_MESSAGE,
@@ -543,14 +539,15 @@ export function createBrandKitService(options: {
         );
       }
 
-      // Generate signed URL for the response
-      const { data: urlData } = await client.storage
-        .from(BRAND_KIT_BUCKET)
-        .createSignedUrl(objectPath, SIGNED_URL_EXPIRY_SECONDS);
-
+      // 本桶非公开 → 走 blob 缝的 resolveUrl（公开桶会自然给公网 URL）
       const mapped = mapAssetRow(asset);
-      if (urlData?.signedUrl) {
-        mapped.file_url = urlData.signedUrl;
+      try {
+        mapped.file_url = await bucket.resolveUrl(
+          objectPath,
+          SIGNED_URL_EXPIRY_SECONDS,
+        );
+      } catch {
+        // 拿不到 URL 不影响资产已创建的事实：保持 file_url 为对象路径
       }
       return mapped;
     },
@@ -597,7 +594,7 @@ export function createBrandKitService(options: {
         .catch(() => []);
 
       if (assets.length > 0) {
-        const client = options.createUserClient(user.accessToken);
+        const bucket = options.blob.bucket(BRAND_KIT_BUCKET);
         const copies = [];
 
         for (const asset of assets) {
@@ -607,11 +604,11 @@ export function createBrandKitService(options: {
           if (asset.file_url) {
             const ext = asset.file_url.split(".").pop() ?? "bin";
             const newPath = `${user.id}/${newKitId}/${Date.now()}-copy.${ext}`;
-            const { error: copyError } = await client.storage
-              .from(BRAND_KIT_BUCKET)
-              .copy(asset.file_url, newPath);
-            if (!copyError) {
+            try {
+              await bucket.copy(asset.file_url, newPath);
               newFileUrl = newPath;
+            } catch {
+              // 复制失败则该项留空，不阻断整次复制
             }
           }
 

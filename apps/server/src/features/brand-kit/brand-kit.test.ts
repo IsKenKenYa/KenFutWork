@@ -229,33 +229,30 @@ function createFakeRepository(
 
 function createStorageStub() {
   const calls: string[] = [];
-  const client = {
-    storage: {
-      from: (bucket: string) => ({
-        copy: async (from: string, to: string) => {
-          calls.push(`copy:${bucket}:${from}->${to}`);
-          return { error: null };
-        },
-        createSignedUrl: async (path: string) => {
-          calls.push(`signed:${bucket}:${path}`);
-          return { data: { signedUrl: `https://signed.test/${path}` } };
-        },
-        createSignedUrls: async (paths: string[]) => {
-          calls.push(`signedMany:${bucket}:${paths.join(",")}`);
-          return { data: [] };
-        },
-        remove: async (paths: string[]) => {
-          calls.push(`remove:${bucket}:${paths.join(",")}`);
-          return { error: null };
-        },
-        upload: async (path: string) => {
-          calls.push(`upload:${bucket}:${path}`);
-          return { error: null };
-        },
-      }),
-    },
+  // blob 缝替身：只记录调用，不断言 Provider 细节
+  const blob = {
+    bucket: (bucket: string) => ({
+      isPublic: async () => false,
+      resolveUrl: async (path: string) => {
+        calls.push(`resolveUrl:${bucket}:${path}`);
+        return `https://signed.test/${path}`;
+      },
+      copy: async (from: string, to: string) => {
+        calls.push(`copy:${bucket}:${from}->${to}`);
+      },
+      createSignedUrls: async (paths: string[]) => {
+        calls.push(`signedMany:${bucket}:${paths.join(",")}`);
+        return [] as Array<{ path: string; signedUrl: string | null }>;
+      },
+      remove: async (paths: string[]) => {
+        calls.push(`remove:${bucket}:${paths.join(",")}`);
+      },
+      upload: async (path: string) => {
+        calls.push(`upload:${bucket}:${path}`);
+      },
+    }),
   };
-  return { calls, client: client as never };
+  return { calls, blob: blob as never };
 }
 
 function buildService(options: {
@@ -265,7 +262,7 @@ function buildService(options: {
   const storage = options.storage ?? createStorageStub();
   return {
     service: createBrandKitService({
-      createUserClient: () => storage.client,
+      blob: storage.blob,
       repository: createFakeRepository(options.repository),
     }),
     storage,

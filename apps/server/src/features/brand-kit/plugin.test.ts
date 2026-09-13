@@ -40,7 +40,12 @@ describe("brandKitPlugin（P2 插件化试点）", () => {
     const brandKit = fakeBrandKitService([]);
     const kernel = composePlugins(testEnv, [brandKitPlugin], {
       app,
-      overrides: { auth, brandKit, persistence: {} as never },
+      overrides: {
+        auth,
+        blob: { bucket: () => ({}) } as never,
+        brandKit,
+        persistence: {} as never,
+      },
     });
 
     const response = await app.inject({
@@ -68,7 +73,12 @@ describe("brandKitPlugin（P2 插件化试点）", () => {
     } as unknown as BrandKitService;
     const kernel = composePlugins(testEnv, [brandKitPlugin], {
       app,
-      overrides: { auth, brandKit, persistence: {} as never },
+      overrides: {
+        auth,
+        blob: { bucket: () => ({}) } as never,
+        brandKit,
+        persistence: {} as never,
+      },
     });
 
     const response = await app.inject({

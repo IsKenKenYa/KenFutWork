@@ -162,20 +162,15 @@ registerExecutor(
         }
       }
 
-      // Upload to Supabase Storage under the project-assets bucket
+      // Upload to object storage under the project-assets bucket（经 blob 缝）
       const timestamp = Date.now();
       const objectPath = `${workspaceId}/generated/${timestamp}-${jobId}.png`;
 
-      const { error: uploadError } = await admin.storage
-        .from("project-assets")
-        .upload(objectPath, buffer, {
-          contentType: generated.mimeType ?? "image/png",
-          upsert: false,
-        });
-
-      if (uploadError) {
-        throw new Error(`Storage upload failed: ${uploadError.message}`);
-      }
+      const bucket = ctx.blob.bucket("project-assets");
+      await bucket.upload(objectPath, buffer, {
+        contentType: generated.mimeType ?? "image/png",
+        upsert: false,
+      });
       lap("storage_upload_done");
 
       // Insert asset_objects record（经 assetWriter 缝：executor 无用户身份，
@@ -191,14 +186,13 @@ registerExecutor(
       lap("asset_record_done");
 
       // Generate a public URL for the result consumer
-      const { data: urlData } = admin.storage
-        .from("project-assets")
-        .getPublicUrl(objectPath);
+      // 公开性由存储侧回答（实测 project-assets 可能非公开）
+      const resultUrl = await bucket.resolveUrl(objectPath);
 
       lap("total");
       return {
         asset_id: assetId,
-        signed_url: urlData.publicUrl,
+        signed_url: resultUrl,
         object_path: objectPath,
         width: generated.width,
         height: generated.height,

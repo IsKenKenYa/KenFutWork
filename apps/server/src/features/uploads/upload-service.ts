@@ -1,16 +1,10 @@
 import type { AssetBucket, AssetObject } from "@loomic/shared";
 
-import type {
-  AuthenticatedUser,
-  UserSupabaseClient,
-} from "../../supabase/user.js";
+import type { AuthenticatedUser } from "../../supabase/user.js";
+import type { BlobStore } from "../blob/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import type { UploadRepository } from "./repository.js";
 
-/** Buckets configured as public in Supabase — use getPublicUrl instead of signed URLs */
-const PUBLIC_BUCKETS = new Set(["project-assets"]);
-
-const SIGNED_URL_EXPIRY_SECONDS = 3600;
 const UPLOAD_FAILED_MESSAGE = "Unable to upload asset.";
 const ASSET_NOT_FOUND_MESSAGE = "Asset not found.";
 
@@ -51,12 +45,12 @@ export type UploadService = {
 };
 
 export function createUploadService(options: {
-  /** 对象存储仍走 Supabase Storage（M3 blob 缝收口后移除）。 */
-  createUserClient: (accessToken: string) => UserSupabaseClient;
+  /** 对象存储走 blob 缝（Provider 随形态替换）。 */
+  blob: BlobStore;
   repository: UploadRepository;
   viewerService: ViewerService;
 }): UploadService {
-  const { repository, viewerService } = options;
+  const { blob, repository, viewerService } = options;
 
   const resolveWorkspaceId = async (user: AuthenticatedUser) => {
     const workspace = await viewerService
@@ -73,24 +67,24 @@ export function createUploadService(options: {
   return {
     async uploadFile(user, input) {
       const workspaceId = await resolveWorkspaceId(user);
-      const client = options.createUserClient(user.accessToken);
+      const bucket = blob.bucket(input.bucket);
       const objectPath = buildObjectPath(
         workspaceId,
         input.projectId,
         input.fileName,
       );
 
-      const { error: storageError } = await client.storage
-        .from(input.bucket)
-        .upload(objectPath, input.fileBuffer, {
+      try {
+        await bucket.upload(objectPath, input.fileBuffer, {
           contentType: input.mimeType,
           upsert: false,
         });
-
-      if (storageError) {
+      } catch (error) {
         throw new UploadServiceError(
           "upload_failed",
-          `Storage upload failed: ${storageError.message}`,
+          `Upload failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
           500,
         );
       }
@@ -109,7 +103,7 @@ export function createUploadService(options: {
 
       if (!assetRow) {
         // 元数据落库失败时清掉已上传对象，避免孤儿文件。
-        await client.storage.from(input.bucket).remove([objectPath]);
+        await bucket.remove([objectPath]);
         throw new UploadServiceError(
           "upload_failed",
           "Failed to record asset metadata.",
@@ -128,13 +122,12 @@ export function createUploadService(options: {
           projectId: assetRow.project_id,
           createdAt: assetRow.created_at,
         },
-        url: await getAssetUrl(client, input.bucket, objectPath),
+        url: await resolveAssetUrl(blob, input.bucket, objectPath),
       };
     },
 
     async getAssetUrl(user, assetId) {
       const workspaceId = await resolveWorkspaceId(user);
-      const client = options.createUserClient(user.accessToken);
       const location = await repository
         .findLocation(workspaceId, assetId)
         .catch(() => null);
@@ -147,12 +140,11 @@ export function createUploadService(options: {
         );
       }
 
-      return getAssetUrl(client, location.bucket, location.object_path);
+      return resolveAssetUrl(blob, location.bucket, location.object_path);
     },
 
     async deleteAsset(user, assetId) {
       const workspaceId = await resolveWorkspaceId(user);
-      const client = options.createUserClient(user.accessToken);
       const location = await repository
         .findLocation(workspaceId, assetId)
         .catch(() => null);
@@ -165,7 +157,7 @@ export function createUploadService(options: {
         );
       }
 
-      await client.storage.from(location.bucket).remove([location.object_path]);
+      await blob.bucket(location.bucket).remove([location.object_path]);
 
       const deleted = await repository
         .deleteById(workspaceId, assetId)
@@ -195,35 +187,25 @@ function buildObjectPath(
   return `${workspaceId}/${timestamp}-${safeName}`;
 }
 
-async function getAssetUrl(
-  client: UserSupabaseClient,
+/**
+ * 资产 URL 交给 blob 缝的 `resolveUrl`：**公开性由存储侧回答**，不在业务代码里
+ * 硬编码公开桶清单——实测 `project-assets` 的 public 标志在本地库里为 false，
+ * 硬编码会产出 400 死链（见 `features/blob/types.ts` 的 isPublic 注释）。
+ */
+async function resolveAssetUrl(
+  blob: BlobStore,
   bucket: string,
   objectPath: string,
 ): Promise<string> {
-  if (PUBLIC_BUCKETS.has(bucket)) {
-    const { data } = client.storage.from(bucket).getPublicUrl(objectPath);
-    return data.publicUrl;
-  }
-  // Fallback for private buckets (e.g. user-avatars)
-  return createSignedUrl(client, bucket, objectPath);
-}
-
-async function createSignedUrl(
-  client: UserSupabaseClient,
-  bucket: string,
-  objectPath: string,
-): Promise<string> {
-  const { data, error } = await client.storage
-    .from(bucket)
-    .createSignedUrl(objectPath, SIGNED_URL_EXPIRY_SECONDS);
-
-  if (error || !data?.signedUrl) {
+  try {
+    return await blob.bucket(bucket).resolveUrl(objectPath);
+  } catch (error) {
     throw new UploadServiceError(
       "upload_failed",
-      "Failed to generate signed URL.",
+      `Failed to generate asset URL: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
       500,
     );
   }
-
-  return data.signedUrl;
 }
