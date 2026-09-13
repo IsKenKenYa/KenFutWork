@@ -8,7 +8,7 @@
   },
   "sql": {
     "authUid": 78,
-    "authUsersTables": 13,
+    "authUsersTables": 15,
     "authUsersTriggers": 1,
     "storageObjectsRefs": 34,
     "cloudUrls": 307
