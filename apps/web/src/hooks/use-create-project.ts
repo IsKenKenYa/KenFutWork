@@ -106,6 +106,13 @@ export function useCreateProject() {
       try {
         const result = await createProject(token, { name: "Untitled" });
         const canvasId = result.project.primaryCanvas.id;
+        // 嵌入工作台 iframe：通知宿主刷新项目列表
+        if (window.parent !== window) {
+          window.parent.postMessage(
+            { type: "workbench:project-created" },
+            window.location.origin,
+          );
+        }
 
         const url = opts?.prompt
           ? `/canvas?id=${canvasId}&prompt=${encodeURIComponent(opts.prompt)}`

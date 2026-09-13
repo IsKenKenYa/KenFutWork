@@ -4,14 +4,13 @@ import {
   Copy,
   ImagePlus,
   Maximize2,
+  Menu,
   Plus,
   Redo2,
   Trash2,
   Undo2,
 } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
-
-import { LoomicLogo } from "@/components/icons/loomic-logo";
 import { useToast } from "@/components/toast";
 import {
   DropdownMenu,
@@ -188,7 +187,7 @@ export function CanvasLogoMenu({
           className="flex items-center justify-center size-8 rounded-xl bg-card/80 backdrop-blur-sm shadow-sm border border-border hover:bg-card transition-colors cursor-pointer outline-none"
           aria-label="菜单"
         >
-          <LoomicLogo className="size-5 text-foreground" />
+          <Menu className="size-4 text-foreground" />
         </DropdownMenuTrigger>
 
         <DropdownMenuContent align="start" sideOffset={6} className="w-56">

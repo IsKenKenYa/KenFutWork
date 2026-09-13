@@ -6,6 +6,7 @@ import {
   Code2,
   Folder,
   FolderOpen,
+  FolderPlus,
   Layers,
   Mic,
   Palette,
@@ -18,6 +19,7 @@ import {
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
+import { LoomicLogo } from "@/components/icons/loomic-logo";
 import {
   Select,
   SelectContent,
@@ -105,6 +107,38 @@ const MODE_META: Record<
 };
 
 const TASKS_STORAGE_KEY = "workbench-tasks";
+/** Code 模式项目（本地文件夹，与 Design 的 projects 实体隔离）。 */
+const CODE_PROJECTS_KEY = "workbench:code-projects";
+
+interface CodeProject {
+  id: string;
+  name: string;
+  createdAt: number;
+}
+
+function loadCodeProjects(): CodeProject[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(CODE_PROJECTS_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    return Array.isArray(parsed)
+      ? parsed.filter(
+          (p): p is CodeProject =>
+            typeof p?.id === "string" && typeof p?.name === "string",
+        )
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveCodeProjects(list: CodeProject[]) {
+  try {
+    window.localStorage.setItem(CODE_PROJECTS_KEY, JSON.stringify(list));
+  } catch {
+    // 存储失败不阻塞
+  }
+}
 
 function loadTasks(mode: WorkbenchMode): WorkbenchTask[] {
   if (typeof window === "undefined") return [];
@@ -147,6 +181,7 @@ export function Workbench() {
   const [prompt, setPrompt] = useState("");
   const [followUp, setFollowUp] = useState("");
   const [tier, setTier] = useState("default");
+  const [codeProjects, setCodeProjects] = useState<CodeProject[]>([]);
   const [thinking, setThinking] = useState("default");
   const [models, setModels] = useState<WorkbenchModelOption[]>([]);
   const [model, setModel] = useState("");
@@ -190,6 +225,7 @@ export function Workbench() {
       code: loadTasks("code"),
       design: loadTasks("design"),
     });
+    setCodeProjects(loadCodeProjects());
     try {
       setThinking(
         window.localStorage.getItem("workbench:thinking") ?? "default",
@@ -244,6 +280,10 @@ export function Workbench() {
         | { type?: string; projectId?: string }
         | null
         | undefined;
+      if (data?.type === "workbench:project-created") {
+        refreshProjects();
+        return;
+      }
       if (data?.type !== "workbench:project-deleted") return;
       setSelectedProjectId((current) =>
         current === data.projectId ? null : current,
@@ -350,6 +390,46 @@ export function Workbench() {
     },
     [mode],
   );
+
+  // ── Code 项目（本地文件夹）动作 ──
+  const createCodeProject = useCallback((name: string) => {
+    const project: CodeProject = {
+      id: `code-${crypto.randomUUID()}`,
+      name,
+      createdAt: Date.now(),
+    };
+    setCodeProjects((prev) => {
+      const next = [project, ...prev];
+      saveCodeProjects(next);
+      return next;
+    });
+    return project;
+  }, []);
+
+  const renameCodeProject = useCallback((id: string, name: string) => {
+    setCodeProjects((prev) => {
+      const next = prev.map((p) => (p.id === id ? { ...p, name } : p));
+      saveCodeProjects(next);
+      return next;
+    });
+  }, []);
+
+  const removeCodeProject = useCallback((id: string) => {
+    setCodeProjects((prev) => {
+      const next = prev.filter((p) => p.id !== id);
+      saveCodeProjects(next);
+      return next;
+    });
+    setSelectedProjectId((current) => (current === id ? null : current));
+    // 其下对话转为未分组
+    setTasksByMode((prev) => {
+      const list = prev.code.map((t) =>
+        t.projectId === id ? { ...t, projectId: null } : t,
+      );
+      saveTasks("code", list);
+      return { ...prev, code: list };
+    });
+  }, []);
 
   const deleteTask = useCallback(
     (taskId: string) => {
@@ -583,12 +663,19 @@ export function Workbench() {
       setSubmitting(true);
       const thinkingHint =
         thinking === "default" ? "" : `【思考强度：${thinking}】\n`;
+      const history = task.messages
+        .slice(-12)
+        .map((m) => `${m.role === "user" ? "用户" : "助手"}：${m.text}`)
+        .join("\n\n");
+      const historyBlock = history
+        ? `【对话历史（供参考，延续上文语境）】\n${history}\n\n【本轮用户消息】\n`
+        : "";
       ws.startRun(
         {
           sessionId: task.sessionId,
           conversationId: task.id,
           canvasId: task.id,
-          prompt: `${thinkingHint}${text.trim()}`,
+          prompt: `${thinkingHint}${historyBlock}${text.trim()}`,
           ...(model ? { model } : {}),
           ...(mode === "design" ? { preset: "design" as const } : {}),
         },
@@ -678,8 +765,11 @@ export function Workbench() {
         /* 展开态：logo + 模式切换 + 插件市场 + 项目(design) + 任务列表 + 底部个人中心 */
         <aside className="flex w-64 shrink-0 flex-col border-r bg-card">
           <div className="flex items-center justify-between px-3 pt-3 pb-2">
-            <span className="text-sm font-semibold tracking-tight">
-              KenFutWork
+            <span className="flex items-center gap-2">
+              <LoomicLogo className="size-7 text-foreground" />
+              <span className="text-sm font-semibold tracking-tight">
+                KenFutWork
+              </span>
             </span>
             <button
               type="button"
@@ -779,20 +869,29 @@ export function Workbench() {
             <div className="flex min-h-0 flex-1 flex-col px-2">
               <div className="flex items-center justify-between px-1 pb-1">
                 <span className="text-xs text-muted-foreground">项目列表</span>
-                <button
-                  type="button"
-                  aria-label="新建项目"
-                  title="新建项目"
-                  disabled={creatingProject}
-                  onClick={() => {
-                    void createProjectNamed("未命名项目").then((project) => {
-                      if (project) setSelectedProjectId(project.id);
-                    });
-                  }}
-                  className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </button>
+                <div className="flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    aria-label="新建项目"
+                    title="新建项目"
+                    onClick={() => {
+                      const project = createCodeProject("未命名项目");
+                      setSelectedProjectId(project.id);
+                    }}
+                    className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <FolderPlus className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="新建对话"
+                    title="新建对话"
+                    onClick={() => setActiveTaskId(null)}
+                    className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
               <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pb-1">
                 {(() => {
@@ -816,7 +915,7 @@ export function Workbench() {
                   );
                   return (
                     <>
-                      {projects.map((p) => {
+                      {codeProjects.map((p) => {
                         const items = tasks.filter(
                           (t) => !t.archived && t.projectId === p.id,
                         );
@@ -829,10 +928,8 @@ export function Workbench() {
                                 <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                               }
                               onOpen={() => setSelectedProjectId(p.id)}
-                              onRename={(next) =>
-                                void renameProject(p.id, next)
-                              }
-                              onDelete={() => void removeProject(p.id)}
+                              onRename={(next) => renameCodeProject(p.id, next)}
+                              onDelete={() => removeCodeProject(p.id)}
                             />
                             <div className="ml-4 space-y-0.5 border-l pl-1">
                               {items.length === 0 ? (
@@ -907,26 +1004,40 @@ export function Workbench() {
                 msg.role === "user" ? (
                   <div
                     key={i}
-                    className="ml-auto max-w-[80%] rounded-xl bg-primary px-4 py-2 text-sm text-primary-foreground whitespace-pre-wrap"
+                    className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground whitespace-pre-wrap"
                   >
                     {msg.text}
                   </div>
                 ) : (
                   <div
                     key={i}
-                    className="max-w-[92%] rounded-xl bg-muted px-4 py-2"
+                    className="w-fit max-w-full rounded-2xl rounded-bl-md bg-muted px-4 py-2.5"
                   >
                     <MarkdownRenderer text={msg.text} />
                   </div>
                 ),
               )}
               {activeTask.status === "running" ? (
-                <p className="text-xs text-muted-foreground">生成中…</p>
+                <div
+                  className="flex w-fit items-center gap-1.5 rounded-2xl rounded-bl-md bg-muted px-4 py-3"
+                  aria-label="生成中"
+                >
+                  {[0, 1, 2].map((dot) => (
+                    <span
+                      key={dot}
+                      className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/70"
+                      style={{ animationDelay: `${dot * 150}ms` }}
+                    />
+                  ))}
+                  <span className="ml-1 text-xs text-muted-foreground">
+                    生成中…
+                  </span>
+                </div>
               ) : null}
             </div>
-            {/* 底部：继续对话输入框（多轮，复用同一会话） */}
+            {/* 底部：继续对话（完整版工具行 + 多轮，复用同一会话） */}
             <form
-              className="mt-4 flex items-end gap-2 rounded-xl border bg-background p-3"
+              className="mt-4 rounded-xl border bg-background p-3"
               onSubmit={(e) => {
                 e.preventDefault();
                 const value = followUp;
@@ -946,28 +1057,124 @@ export function Workbench() {
                     continueTask(value);
                   }
                 }}
-                rows={1}
+                rows={2}
                 placeholder="继续追问…"
-                className="max-h-32 min-h-[24px] flex-1 resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                className="max-h-32 min-h-[24px] w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
               />
-              {activeTask.status === "running" && activeRunIdRef.current ? (
-                <button
-                  type="button"
-                  className="rounded-md border px-3 py-1.5 text-sm text-destructive hover:bg-muted"
-                  onClick={() => ws.cancelRun(activeRunIdRef.current!)}
-                >
-                  停止
-                </button>
-              ) : (
-                <button
-                  type="submit"
-                  aria-label="发送"
-                  disabled={!followUp.trim()}
-                  className="rounded-lg bg-primary p-2 text-primary-foreground disabled:opacity-50"
-                >
-                  <Send className="h-4 w-4" />
-                </button>
-              )}
+              <div className="mt-2 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Select
+                    aria-label="思考强度"
+                    value={thinking}
+                    onValueChange={(next) => {
+                      if (typeof next === "string") handleThinkingChange(next);
+                    }}
+                    items={[
+                      { value: "default", label: "默认" },
+                      { value: "低", label: "低" },
+                      { value: "中", label: "中" },
+                      { value: "高", label: "高" },
+                      { value: "最高", label: "最高" },
+                    ]}
+                  >
+                    <SelectTrigger
+                      className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
+                      aria-label="思考强度"
+                    >
+                      <Brain className="h-3.5 w-3.5" />
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="min-w-24">
+                      <SelectItem value="default">默认</SelectItem>
+                      <SelectItem value="低">低</SelectItem>
+                      <SelectItem value="中">中</SelectItem>
+                      <SelectItem value="高">高</SelectItem>
+                      <SelectItem value="最高">最高</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    aria-label="权限档位"
+                    value={tier}
+                    onValueChange={(next) => {
+                      const tierValue = typeof next === "string" ? next : tier;
+                      if (tierValue !== tier) void handleTierChange(tierValue);
+                    }}
+                    items={[
+                      { value: "default", label: "默认" },
+                      { value: "auto-approve", label: "自动放行" },
+                      { value: "full-access", label: "完全访问" },
+                    ]}
+                  >
+                    <SelectTrigger
+                      className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
+                      aria-label="权限档位"
+                    >
+                      <ShieldCheck className="h-3.5 w-3.5" />
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="min-w-28">
+                      <SelectItem value="default">默认</SelectItem>
+                      <SelectItem value="auto-approve">自动放行</SelectItem>
+                      <SelectItem value="full-access">完全访问</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    aria-label="模型"
+                    value={model}
+                    onValueChange={(next) => {
+                      if (typeof next === "string") setModel(next);
+                    }}
+                    items={
+                      models.length === 0
+                        ? [{ value: "", label: "默认模型" }]
+                        : models.map((m) => ({ value: m.id, label: m.name }))
+                    }
+                  >
+                    <SelectTrigger
+                      className="max-w-[200px] gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
+                      aria-label="模型"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="max-w-[300px]">
+                      {models.length === 0 ? (
+                        <SelectItem value="">默认模型</SelectItem>
+                      ) : (
+                        models.map((m) => (
+                          <SelectItem key={m.id} value={m.id}>
+                            <span className="flex items-center gap-1.5">
+                              <span>{m.name}</span>
+                              {m.vision ? (
+                                <span className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+                                  视觉
+                                </span>
+                              ) : null}
+                            </span>
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {activeTask.status === "running" && activeRunIdRef.current ? (
+                  <button
+                    type="button"
+                    className="rounded-md border px-3 py-1.5 text-sm text-destructive hover:bg-muted"
+                    onClick={() => ws.cancelRun(activeRunIdRef.current!)}
+                  >
+                    停止
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    aria-label="发送"
+                    disabled={!followUp.trim()}
+                    className="rounded-lg bg-primary p-2 text-primary-foreground disabled:opacity-50"
+                  >
+                    <Send className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
             </form>
           </div>
         ) : mode === "design" && selectedProject ? (
@@ -1132,7 +1339,8 @@ export function Workbench() {
                                 {byok.length > 0 ? (
                                   <>
                                     <SelectLabel>
-                                      {byok[0]!.providerName?.trim() ?? "我的供应商"}
+                                      {byok[0]!.providerName?.trim() ??
+                                        "我的供应商"}
                                     </SelectLabel>
                                     {byok.map((m) => (
                                       <SelectItem key={m.id} value={m.id}>
