@@ -125,11 +125,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createCodeToolsPlugin(),
     createMcpPlugin(),
     createSearchPlugin(),
-    createModelProvidersPlugin({
-      createUserClient: deps.createUserClient,
-      getAdminClient: deps.getAdminClient,
-      credentialEnv: deps.credentialEnv,
-    }),
+    createModelProvidersPlugin({ credentialEnv: deps.credentialEnv }),
     createGenerationPlugin({ env: deps.env }),
     createAdminPlugin({ getAdminClient: deps.getAdminClient }),
     createAgentRunsPlugin({

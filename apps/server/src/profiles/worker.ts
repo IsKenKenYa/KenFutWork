@@ -34,8 +34,6 @@ export function workerProfile(deps: WorkerProfileDeps): PluginDefinition[] {
     }),
     createUsagePlugin({ withRoutes: false }),
     createModelProvidersPlugin({
-      createUserClient: deps.createUserClient,
-      getAdminClient: deps.getAdminClient,
       credentialEnv: deps.credentialEnv,
       withRoutes: false,
     }),

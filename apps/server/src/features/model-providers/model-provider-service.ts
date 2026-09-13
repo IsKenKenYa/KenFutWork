@@ -7,11 +7,13 @@ import type {
   ProviderScope,
 } from "@loomic/shared";
 
-import type { AdminSupabaseClient } from "../../supabase/admin.js";
+import type { AuthenticatedUser } from "../../supabase/user.js";
+import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import type {
-  AuthenticatedUser,
-  UserSupabaseClient,
-} from "../../supabase/user.js";
+  ModelProviderRepository,
+  ProviderInstancePatch,
+  ProviderInstanceRecord,
+} from "./repository.js";
 import { decryptSecret, encryptSecret } from "./secret-store.js";
 
 /**
@@ -19,7 +21,8 @@ import { decryptSecret, encryptSecret } from "./secret-store.js";
  * 职责边界：不持有协议适配器实现（那是 providers/<protocol>/ + generation 注册表），
  * 不推导目录（那是 modelCatalog）。
  * 凭证红线（DEC-7）：明文 Key 只在 encryptSecret/decryptSecret 边界短暂出现，
- * 任何响应都不含 key；RLS 按工作区隔离，服务端按个人工作区解析。
+ * 任何响应都不含 key；工作区实例按鉴权用户解析的工作区隔离（`FORM-9`），
+ * 平台池实例（`scope='system'`）是系统级数据、按 scope 限定。
  */
 
 export class ModelProviderServiceError extends Error {
@@ -55,25 +58,25 @@ export interface ResolvedInstanceCredentials {
   models: Array<{ id: string; name: string; capability: ModelCapability }>;
 }
 
-interface ProviderInstanceRow {
+type InstanceModel = {
   id: string;
-  scope: string | null;
-  workspace_id: string | null;
   name: string;
-  protocol: string;
-  base_url: string | null;
-  encrypted_api_key: string;
-  models: Array<{ id: string; name: string; capability: string }> | null;
-  compat: Record<string, unknown> | null;
-  enabled: boolean;
+  capability: string;
+  vision?: boolean;
+  contextWindow?: number;
+};
+
+function mapModels(models: InstanceModel[] | null) {
+  return (models ?? []).map((m) => ({
+    id: m.id,
+    name: m.name,
+    capability: m.capability as ModelCapability,
+    ...(m.vision ? { vision: true } : {}),
+    ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
+  }));
 }
 
-/** provider_instances 未纳入 supabase 生成类型，走宽松访问（同 skills 路由）。 */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const untypedFrom = (client: unknown, table: string): any =>
-  (client as any).from(table);
-
-function toResponse(row: ProviderInstanceRow): ProviderInstanceResponse {
+function toResponse(row: ProviderInstanceRecord): ProviderInstanceResponse {
   return {
     id: row.id,
     scope: row.scope === "system" ? "system" : "workspace",
@@ -81,24 +84,33 @@ function toResponse(row: ProviderInstanceRow): ProviderInstanceResponse {
     protocol: row.protocol as ProviderProtocol,
     ...(row.base_url ? { baseUrl: row.base_url } : {}),
     hasCredential: true,
-    models: (row.models ?? []).map(
-      (m: {
-        id: string;
-        name: string;
-        capability: string;
-        vision?: boolean;
-        contextWindow?: number;
-      }) => ({
-        id: m.id,
-        name: m.name,
-        capability: m.capability as ModelCapability,
-        ...(m.vision ? { vision: true } : {}),
-        ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
-      }),
-    ),
+    models: mapModels(row.models),
     ...(row.compat ? { compat: row.compat } : {}),
     enabled: row.enabled,
   };
+}
+
+function toCredentials(row: ProviderInstanceRecord, apiKey: string) {
+  return {
+    instanceId: row.id,
+    name: row.name,
+    protocol: row.protocol as ProviderProtocol,
+    ...(row.base_url ? { baseUrl: row.base_url } : {}),
+    apiKey,
+    ...(row.compat ? { compat: row.compat } : {}),
+    models: mapModels(row.models),
+  };
+}
+
+/** 请求体 → 列补丁（仅含显式给出的字段）。 */
+function toPatch(input: ProviderInstanceUpdateRequest) {
+  const patch: ProviderInstancePatch = {};
+  if (input.name !== undefined) patch.name = input.name;
+  if (input.baseUrl !== undefined) patch.base_url = input.baseUrl;
+  if (input.models !== undefined) patch.models = input.models;
+  if (input.compat !== undefined) patch.compat = input.compat;
+  if (input.enabled !== undefined) patch.enabled = input.enabled;
+  return patch;
 }
 
 export interface ModelProviderService {
@@ -119,15 +131,14 @@ export interface ModelProviderService {
     instanceId: string,
   ): Promise<ResolvedInstanceCredentials>;
   /**
-   * worker 路径：按实例 id 直接解析（服务角色，绕 RLS）。
-   * 任务 executor 无用户 access token，只能走 admin 客户端。
+   * worker 路径：按实例 id 直接解析。
+   * 任务 executor 无用户 access token，故不做工作区限定（系统级取数）。
    */
   resolveCredentialsById(
     instanceId: string,
   ): Promise<ResolvedInstanceCredentials>;
   /**
    * 平台池（scope='system'）：管理员配置一份 Key，分发给全体用户使用。
-   * 走 admin 客户端（平台池无归属工作区，普通写策略不适用）。
    */
   listSystemInstances(): Promise<ProviderInstanceResponse[]>;
   createSystemInstance(
@@ -145,12 +156,26 @@ export interface ModelProviderService {
 }
 
 export function createModelProviderService(options: {
-  createUserClient: (accessToken: string) => UserSupabaseClient;
-  getAdminClient?: () => AdminSupabaseClient;
   credentialEnv: { credentialSecret?: string };
+  repository: ModelProviderRepository;
+  /**
+   * 工作区实例路径需要它；worker 进程只走平台池/按 id 解析路径，可缺省。
+   * 缺省时工作区方法**立即 fail loud**（不是静默降级）。
+   */
+  viewerService?: ViewerService | undefined;
 }): ModelProviderService {
-  const { createUserClient, credentialEnv } = options;
-  const getAdminClient = options.getAdminClient;
+  const { credentialEnv, repository, viewerService } = options;
+
+  function requireViewer(): ViewerService {
+    if (!viewerService) {
+      throw new ModelProviderServiceError(
+        "instance_query_failed",
+        "工作区级供应商实例操作需要 ViewerService（worker 进程不提供）。",
+        500,
+      );
+    }
+    return viewerService;
+  }
 
   function requireCredentialSecret(): string {
     if (!credentialEnv.credentialSecret) {
@@ -163,389 +188,309 @@ export function createModelProviderService(options: {
     return credentialEnv.credentialSecret;
   }
 
-  /** 平台池操作必须走服务角色（平台行无归属工作区，普通写策略不适用）。 */
-  function requireAdminClientFor(operation: string): AdminSupabaseClient {
-    if (!getAdminClient) {
-      throw new ModelProviderServiceError(
-        "instance_query_failed",
-        `${operation} 需要注入 getAdminClient（fail loud）。`,
-        500,
-      );
-    }
-    return getAdminClient();
-  }
-
-  async function resolveWorkspace(
-    client: UserSupabaseClient,
-    userId: string,
+  /** 工作区 id 一律由服务端从鉴权用户解析（`FORM-9`）。 */
+  async function requireWorkspaceId(
+    user: AuthenticatedUser,
     errorCode: ModelProviderServiceError["code"],
   ): Promise<string> {
-    const { data, error } = await client
-      .from("workspaces")
-      .select("id")
-      .eq("owner_user_id", userId)
-      .eq("type", "personal")
-      .limit(1)
-      .maybeSingle();
-    if (error || !data) {
+    const workspace = await requireViewer()
+      .resolveWorkspace(user)
+      .catch(() => null);
+
+    if (!workspace) {
       throw new ModelProviderServiceError(
         errorCode,
         "Unable to resolve workspace for provider instance.",
       );
     }
-    return (data as { id: string }).id;
+
+    return workspace.id;
+  }
+
+  /** 解密实例凭证；停用即 409，解密失败即 fail loud。 */
+  function decryptRow(row: ProviderInstanceRecord) {
+    if (!row.enabled) {
+      throw new ModelProviderServiceError(
+        "credential_unavailable",
+        `Provider instance ${row.name} is disabled.`,
+        409,
+      );
+    }
+
+    try {
+      return toCredentials(
+        row,
+        decryptSecret(credentialEnv, row.encrypted_api_key),
+      );
+    } catch (error) {
+      if (error instanceof ModelProviderServiceError) throw error;
+      throw new ModelProviderServiceError(
+        "credential_unavailable",
+        "Unable to decrypt provider credentials (fail loud).",
+      );
+    }
   }
 
   return {
     async listInstances(user) {
-      try {
-        const client = createUserClient(user.accessToken);
-        const { data, error } = await untypedFrom(client, "provider_instances")
-          .select("*")
-          // 用户侧只列自有实例：平台池（system）走 listSystemInstances 单独分发，
-          // 混进 BYOK 列表会让用户看到自己无权编辑的行。
-          .eq("scope", "workspace")
-          .order("created_at", { ascending: true });
-        if (error) {
+      const workspaceId = await requireWorkspaceId(
+        user,
+        "instance_query_failed",
+      );
+
+      const rows = await repository
+        .listWorkspaceInstances(workspaceId)
+        .catch(() => {
           throw new ModelProviderServiceError(
             "instance_query_failed",
             "Unable to load provider instances.",
           );
-        }
-        return ((data ?? []) as ProviderInstanceRow[]).map(toResponse);
-      } catch (error) {
-        if (error instanceof ModelProviderServiceError) throw error;
-        throw new ModelProviderServiceError(
-          "instance_query_failed",
-          "Unable to load provider instances.",
-        );
-      }
+        });
+
+      return rows.map(toResponse);
     },
 
     async createInstance(user, input) {
-      requireCredentialSecret();
-      try {
-        const client = createUserClient(user.accessToken);
-        const workspaceId = await resolveWorkspace(
-          client,
-          user.id,
-          "instance_create_failed",
-        );
-        const { data, error } = await untypedFrom(client, "provider_instances")
-          .insert({
-            workspace_id: workspaceId,
-            name: input.name,
-            protocol: input.protocol,
-            ...(input.baseUrl ? { base_url: input.baseUrl } : {}),
-            encrypted_api_key: encryptSecret(credentialEnv, input.apiKey),
-            models: input.models,
-            ...(input.compat ? { compat: input.compat } : {}),
-            enabled: input.enabled ?? true,
-            created_by: user.id,
-          })
-          .select("*")
-          .single();
-        if (error || !data) {
+      const secret = requireCredentialSecret();
+      const workspaceId = await requireWorkspaceId(
+        user,
+        "instance_create_failed",
+      );
+
+      const row = await repository
+        .insertWorkspaceInstance({
+          ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
+          ...(input.compat ? { compat: input.compat } : {}),
+          createdBy: user.id,
+          encryptedApiKey: encryptSecret(
+            { credentialSecret: secret },
+            input.apiKey,
+          ),
+          enabled: input.enabled ?? true,
+          models: input.models,
+          name: input.name,
+          protocol: input.protocol,
+          workspaceId,
+        })
+        .catch(() => {
           throw new ModelProviderServiceError(
             "instance_create_failed",
             "Unable to create provider instance.",
           );
-        }
-        return toResponse(data as ProviderInstanceRow);
-      } catch (error) {
-        if (error instanceof ModelProviderServiceError) throw error;
+        });
+
+      if (!row) {
         throw new ModelProviderServiceError(
           "instance_create_failed",
           "Unable to create provider instance.",
         );
       }
+
+      return toResponse(row);
     },
 
     async updateInstance(user, instanceId, input) {
-      try {
-        const client = createUserClient(user.accessToken);
-        const updates: Record<string, unknown> = {};
-        if (input.name !== undefined) updates.name = input.name;
-        if (input.baseUrl !== undefined) updates.base_url = input.baseUrl;
-        if (input.apiKey !== undefined) {
-          updates.encrypted_api_key = encryptSecret(
-            credentialEnv,
-            input.apiKey,
-          );
-        }
-        if (input.models !== undefined) updates.models = input.models;
-        if (input.compat !== undefined) updates.compat = input.compat;
-        if (input.enabled !== undefined) updates.enabled = input.enabled;
-        if (Object.keys(updates).length === 0) {
-          throw new ModelProviderServiceError(
-            "instance_update_failed",
-            "No fields to update.",
-            400,
-          );
-        }
-        const { data, error } = await untypedFrom(client, "provider_instances")
-          .update(updates)
-          .eq("id", instanceId)
-          .select("*")
-          .single();
-        if (error || !data) {
-          throw new ModelProviderServiceError(
-            "instance_not_found",
-            "Provider instance not found.",
-            404,
-          );
-        }
-        return toResponse(data as ProviderInstanceRow);
-      } catch (error) {
-        if (error instanceof ModelProviderServiceError) throw error;
-        throw new ModelProviderServiceError(
-          "instance_update_failed",
-          "Unable to update provider instance.",
-        );
-      }
-    },
-
-    async deleteInstance(user, instanceId) {
-      try {
-        const client = createUserClient(user.accessToken);
-        const { error } = await untypedFrom(client, "provider_instances")
-          .delete()
-          .eq("id", instanceId);
-        if (error) {
-          throw new ModelProviderServiceError(
-            "instance_delete_failed",
-            "Unable to delete provider instance.",
-          );
-        }
-      } catch (error) {
-        if (error instanceof ModelProviderServiceError) throw error;
-        throw new ModelProviderServiceError(
-          "instance_delete_failed",
-          "Unable to delete provider instance.",
-        );
-      }
-    },
-
-    async resolveCredentials(user, instanceId) {
-      let row: ProviderInstanceRow | undefined;
-      try {
-        const client = createUserClient(user.accessToken);
-        const { data, error } = await untypedFrom(client, "provider_instances")
-          .select("*")
-          .eq("id", instanceId)
-          .maybeSingle();
-        if (error || !data) {
-          throw new ModelProviderServiceError(
-            "instance_not_found",
-            "Provider instance not found.",
-            404,
-          );
-        }
-        row = data as ProviderInstanceRow;
-      } catch (error) {
-        if (error instanceof ModelProviderServiceError) throw error;
-        throw new ModelProviderServiceError(
-          "instance_query_failed",
-          "Unable to load provider instance.",
-        );
-      }
-      if (!row.enabled) {
-        throw new ModelProviderServiceError(
-          "credential_unavailable",
-          `Provider instance ${row.name} is disabled.`,
-          409,
-        );
-      }
-      try {
-        const apiKey = decryptSecret(credentialEnv, row.encrypted_api_key);
-        return {
-          instanceId: row.id,
-          name: row.name,
-          protocol: row.protocol as ProviderProtocol,
-          ...(row.base_url ? { baseUrl: row.base_url } : {}),
-          apiKey,
-          ...(row.compat ? { compat: row.compat } : {}),
-          models: (row.models ?? []).map(
-            (m: {
-              id: string;
-              name: string;
-              capability: string;
-              vision?: boolean;
-              contextWindow?: number;
-            }) => ({
-              id: m.id,
-              name: m.name,
-              capability: m.capability as ModelCapability,
-              ...(m.vision ? { vision: true } : {}),
-              ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
-            }),
-          ),
-        };
-      } catch (error) {
-        if (error instanceof ModelProviderServiceError) throw error;
-        throw new ModelProviderServiceError(
-          "credential_unavailable",
-          "Unable to decrypt provider credentials (fail loud).",
-        );
-      }
-    },
-
-    async resolveCredentialsById(instanceId) {
-      if (!getAdminClient) {
-        throw new ModelProviderServiceError(
-          "credential_unavailable",
-          "resolveCredentialsById 需要注入 getAdminClient（fail loud）。",
-        );
-      }
-      const admin = getAdminClient();
-      const { data, error } = await untypedFrom(admin, "provider_instances")
-        .select("*")
-        .eq("id", instanceId)
-        .maybeSingle();
-      if (error || !data) {
-        throw new ModelProviderServiceError(
-          "instance_not_found",
-          "Provider instance not found.",
-          404,
-        );
-      }
-      const row = data as ProviderInstanceRow;
-      if (!row.enabled) {
-        throw new ModelProviderServiceError(
-          "credential_unavailable",
-          `Provider instance ${row.name} is disabled.`,
-          409,
-        );
-      }
-      const apiKey = decryptSecret(credentialEnv, row.encrypted_api_key);
-      return {
-        instanceId: row.id,
-        name: row.name,
-        protocol: row.protocol as ProviderProtocol,
-        ...(row.base_url ? { baseUrl: row.base_url } : {}),
-        apiKey,
-        ...(row.compat ? { compat: row.compat } : {}),
-        models: (row.models ?? []).map(
-          (m: {
-            id: string;
-            name: string;
-            capability: string;
-            vision?: boolean;
-            contextWindow?: number;
-          }) => ({
-            id: m.id,
-            name: m.name,
-            capability: m.capability as ModelCapability,
-            ...(m.vision ? { vision: true } : {}),
-            ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
-          }),
-        ),
-      };
-    },
-
-    // ── 平台池（scope='system'）：管理员配置、分发给用户 ──
-    async listSystemInstances() {
-      const admin = requireAdminClientFor("listSystemInstances");
-      const { data, error } = await untypedFrom(admin, "provider_instances")
-        .select("*")
-        .eq("scope", "system")
-        .order("created_at", { ascending: true });
-      if (error) {
-        throw new ModelProviderServiceError(
-          "instance_query_failed",
-          "Unable to load system provider instances.",
-        );
-      }
-      return ((data ?? []) as ProviderInstanceRow[]).map(toResponse);
-    },
-
-    async createSystemInstance(input, createdByUserId) {
-      requireCredentialSecret();
-      const admin = requireAdminClientFor("createSystemInstance");
-      const { data, error } = await untypedFrom(admin, "provider_instances")
-        .insert({
-          scope: "system",
-          workspace_id: null,
-          name: input.name,
-          protocol: input.protocol,
-          ...(input.baseUrl ? { base_url: input.baseUrl } : {}),
-          encrypted_api_key: encryptSecret(credentialEnv, input.apiKey),
-          models: input.models,
-          ...(input.compat ? { compat: input.compat } : {}),
-          enabled: input.enabled ?? true,
-          created_by: createdByUserId,
-        })
-        .select("*")
-        .single();
-      if (error || !data) {
-        throw new ModelProviderServiceError(
-          "instance_create_failed",
-          "Unable to create system provider instance.",
-        );
-      }
-      return toResponse(data as ProviderInstanceRow);
-    },
-
-    async updateSystemInstance(instanceId, input) {
-      const admin = requireAdminClientFor("updateSystemInstance");
-      const updates: Record<string, unknown> = {};
-      if (input.name !== undefined) updates.name = input.name;
-      if (input.baseUrl !== undefined) updates.base_url = input.baseUrl;
+      const patch = toPatch(input);
       if (input.apiKey !== undefined) {
-        updates.encrypted_api_key = encryptSecret(credentialEnv, input.apiKey);
+        const secret = requireCredentialSecret();
+        patch.encrypted_api_key = encryptSecret(
+          { credentialSecret: secret },
+          input.apiKey,
+        );
       }
-      if (input.models !== undefined) updates.models = input.models;
-      if (input.compat !== undefined) updates.compat = input.compat;
-      if (input.enabled !== undefined) updates.enabled = input.enabled;
-      if (Object.keys(updates).length === 0) {
+      if (Object.keys(patch).length === 0) {
         throw new ModelProviderServiceError(
           "instance_update_failed",
           "No fields to update.",
           400,
         );
       }
-      const { data, error } = await untypedFrom(admin, "provider_instances")
-        .update(updates)
-        .eq("id", instanceId)
-        .eq("scope", "system")
-        .select("*")
-        .single();
-      if (error || !data) {
+
+      const workspaceId = await requireWorkspaceId(
+        user,
+        "instance_update_failed",
+      );
+
+      const row = await repository
+        .updateWorkspaceInstance(workspaceId, instanceId, patch)
+        .catch(() => {
+          throw new ModelProviderServiceError(
+            "instance_update_failed",
+            "Unable to update provider instance.",
+          );
+        });
+
+      if (!row) {
+        throw new ModelProviderServiceError(
+          "instance_not_found",
+          "Provider instance not found.",
+          404,
+        );
+      }
+
+      return toResponse(row);
+    },
+
+    async deleteInstance(user, instanceId) {
+      const workspaceId = await requireWorkspaceId(
+        user,
+        "instance_delete_failed",
+      );
+
+      // 未命中不报错：删除是幂等操作（重复删除返回成功）。
+      await repository
+        .deleteWorkspaceInstance(workspaceId, instanceId)
+        .catch(() => {
+          throw new ModelProviderServiceError(
+            "instance_delete_failed",
+            "Unable to delete provider instance.",
+          );
+        });
+    },
+
+    async resolveCredentials(user, instanceId) {
+      const workspaceId = await requireWorkspaceId(
+        user,
+        "instance_query_failed",
+      );
+
+      const row = await repository
+        .findWorkspaceInstance(workspaceId, instanceId)
+        .catch(() => {
+          throw new ModelProviderServiceError(
+            "instance_query_failed",
+            "Unable to load provider instance.",
+          );
+        });
+
+      if (!row) {
+        throw new ModelProviderServiceError(
+          "instance_not_found",
+          "Provider instance not found.",
+          404,
+        );
+      }
+
+      return decryptRow(row);
+    },
+
+    async resolveCredentialsById(instanceId) {
+      const row = await repository.findById(instanceId).catch(() => {
+        throw new ModelProviderServiceError(
+          "instance_query_failed",
+          "Unable to load provider instance.",
+        );
+      });
+
+      if (!row) {
+        throw new ModelProviderServiceError(
+          "instance_not_found",
+          "Provider instance not found.",
+          404,
+        );
+      }
+
+      return decryptRow(row);
+    },
+
+    // ── 平台池（scope='system'）：管理员配置、分发给用户 ──
+    async listSystemInstances() {
+      const rows = await repository.listSystemInstances().catch(() => {
+        throw new ModelProviderServiceError(
+          "instance_query_failed",
+          "Unable to load system provider instances.",
+        );
+      });
+      return rows.map(toResponse);
+    },
+
+    async createSystemInstance(input, createdByUserId) {
+      const secret = requireCredentialSecret();
+
+      const row = await repository
+        .insertSystemInstance({
+          ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
+          ...(input.compat ? { compat: input.compat } : {}),
+          createdBy: createdByUserId,
+          encryptedApiKey: encryptSecret(
+            { credentialSecret: secret },
+            input.apiKey,
+          ),
+          enabled: input.enabled ?? true,
+          models: input.models,
+          name: input.name,
+          protocol: input.protocol,
+        })
+        .catch(() => {
+          throw new ModelProviderServiceError(
+            "instance_create_failed",
+            "Unable to create system provider instance.",
+          );
+        });
+
+      if (!row) {
+        throw new ModelProviderServiceError(
+          "instance_create_failed",
+          "Unable to create system provider instance.",
+        );
+      }
+
+      return toResponse(row);
+    },
+
+    async updateSystemInstance(instanceId, input) {
+      const patch = toPatch(input);
+      if (input.apiKey !== undefined) {
+        const secret = requireCredentialSecret();
+        patch.encrypted_api_key = encryptSecret(
+          { credentialSecret: secret },
+          input.apiKey,
+        );
+      }
+      if (Object.keys(patch).length === 0) {
+        throw new ModelProviderServiceError(
+          "instance_update_failed",
+          "No fields to update.",
+          400,
+        );
+      }
+
+      const row = await repository
+        .updateSystemInstance(instanceId, patch)
+        .catch(() => {
+          throw new ModelProviderServiceError(
+            "instance_update_failed",
+            "Unable to update system provider instance.",
+          );
+        });
+
+      if (!row) {
         throw new ModelProviderServiceError(
           "instance_not_found",
           "System provider instance not found.",
           404,
         );
       }
-      return toResponse(data as ProviderInstanceRow);
+
+      return toResponse(row);
     },
 
     async deleteSystemInstance(instanceId) {
-      const admin = requireAdminClientFor("deleteSystemInstance");
-      const { error } = await untypedFrom(admin, "provider_instances")
-        .delete()
-        .eq("id", instanceId)
-        .eq("scope", "system");
-      if (error) {
+      // 未命中不报错：删除是幂等操作。
+      await repository.deleteSystemInstance(instanceId).catch(() => {
         throw new ModelProviderServiceError(
           "instance_delete_failed",
           "Unable to delete system provider instance.",
         );
-      }
+      });
     },
 
     async getInstanceScope(instanceId) {
-      if (!getAdminClient) return null;
-      const { data, error } = await untypedFrom(
-        getAdminClient(),
-        "provider_instances",
-      )
-        .select("scope")
-        .eq("id", instanceId)
-        .maybeSingle();
-      if (error || !data) return null;
-      const scope = (data as { scope: string | null }).scope;
-      return scope === "system" ? "system" : "workspace";
+      const row = await repository.findById(instanceId).catch(() => null);
+      if (!row) {
+        return null;
+      }
+      return row.scope === "system" ? "system" : "workspace";
     },
   };
 }
