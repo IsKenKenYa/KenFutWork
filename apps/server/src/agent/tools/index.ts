@@ -1,6 +1,7 @@
 import type { StructuredTool } from "@langchain/core/tools";
 import type { AnyBackendProtocol, BackendRuntime } from "deepagents";
 
+import type { BrandKitService } from "../../features/brand-kit/brand-kit-service.js";
 import type { ConnectionManager } from "../../ws/connection-manager.js";
 import { createBrandKitTool } from "./brand-kit.js";
 import {
@@ -56,6 +57,7 @@ export function createMainAgentTools(
     | AnyBackendProtocol
     | ((runtime: BackendRuntime) => AnyBackendProtocol),
   deps: {
+    brandKitService?: BrandKitService;
     createUserClient: (accessToken: string) => any;
     brandKitId?: string | null;
     connectionManager?: ConnectionManager;
@@ -84,8 +86,14 @@ export function createMainAgentTools(
     // 因为 CompositeBackend 的 default backend 是 LocalShellBackend。
     // 不需要在这里手动注册。
   ];
-  if (deps.brandKitId) {
-    tools.push(createBrandKitTool(deps, deps.brandKitId));
+  // 品牌套件工具需要服务实例（数据访问经它走 persistence 缝）
+  if (deps.brandKitId && deps.brandKitService) {
+    tools.push(
+      createBrandKitTool(
+        { brandKitService: deps.brandKitService },
+        deps.brandKitId,
+      ),
+    );
   }
   if (deps.connectionManager) {
     tools.push(

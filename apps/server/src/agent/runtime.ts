@@ -23,6 +23,7 @@ import {
 import type { ServerEnv } from "../config/env.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
+import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
 import type { CanvasService } from "../features/canvas/canvas-service.js";
 import type { CreditService } from "../features/credits/credit-service.js";
 import {
@@ -286,6 +287,8 @@ type CreateAgentRuntimeOptions = {
   agentPersistenceService?: AgentPersistenceService;
   agentFactory?: LoomicAgentFactory;
   agentRunMetadataService?: AgentRunMetadataService;
+  /** 品牌套件服务（brand-kit 插件提供）：get_brand_kit 工具经它取数。 */
+  brandKitService?: BrandKitService;
   /** 画布写入（canvas 插件提供）：生成物落画布经此，运行时不再直连存储 SDK。 */
   canvasService?: CanvasService;
   /** 工作区技能加载（skills/canvas 聚合的数据访问提供）：运行时不再直连 SDK。 */
@@ -1293,6 +1296,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           agent = resolvedAgentFactory({
             backendResult,
             ...(brandKitId ? { brandKitId } : {}),
+            ...(options.brandKitService
+              ? { brandKitService: options.brandKitService }
+              : {}),
             ...(run.canvasId ? { canvasId: run.canvasId } : {}),
             ...(persistence ? { checkpointer: persistence.checkpointer } : {}),
             ...(options.connectionManager

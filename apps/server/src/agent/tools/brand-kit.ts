@@ -1,92 +1,80 @@
 import { tool } from "langchain";
 import { z } from "zod";
 
+import type { BrandKitService } from "../../features/brand-kit/brand-kit-service.js";
+import type { AuthenticatedUser } from "../../supabase/user.js";
+
 const brandKitSchema = z.object({});
 
+/**
+ * `get_brand_kit` 工具：复用 brand-kit 服务读取套件（含签名 URL 解析），
+ * 不再自持 Supabase 客户端。
+ *
+ * 身份从运行上下文取：`access_token` + `user_id` 由 runtime 注入到
+ * `configurable`（`user_id` 是服务侧 `:user` 隔离谓词所需的身份）。
+ */
 export function createBrandKitTool(
-  deps: { createUserClient: (accessToken: string) => any },
+  deps: { brandKitService: BrandKitService },
   brandKitId: string,
 ) {
   return tool(
     async (_input, config) => {
-      const accessToken = (config as any)?.configurable?.access_token;
-      if (!accessToken) {
-        return JSON.stringify({ error: "No access token available" });
+      const configurable = (
+        config as { configurable?: Record<string, unknown> }
+      )?.configurable;
+      const accessToken = configurable?.access_token;
+      const userId = configurable?.user_id;
+
+      if (typeof accessToken !== "string" || typeof userId !== "string") {
+        return JSON.stringify({
+          error: "Missing access token or user id in run context",
+        });
       }
 
-      const client = deps.createUserClient(accessToken);
+      const user: AuthenticatedUser = {
+        accessToken,
+        email: "",
+        id: userId,
+        userMetadata: {},
+      };
 
-      // Fetch kit
-      const { data: kit } = await client
-        .from("brand_kits")
-        .select("id, name, guidance_text")
-        .eq("id", brandKitId)
-        .maybeSingle();
-
-      if (!kit) {
+      let kit;
+      try {
+        kit = await deps.brandKitService.getKit(user, brandKitId);
+      } catch {
         return JSON.stringify({ error: "Brand kit not found" });
       }
 
-      // Fetch assets
-      const { data: assets } = await client
-        .from("brand_kit_assets")
-        .select(
-          "asset_type, display_name, role, text_content, file_url, metadata",
-        )
-        .eq("kit_id", brandKitId)
-        .order("sort_order", { ascending: true });
-
-      const safeAssets = assets ?? [];
-
-      // Resolve signed URLs for file-based assets (logo/image)
-      const fileAssets = safeAssets.filter((a: any) => a.file_url);
-      if (fileAssets.length > 0) {
-        const paths = fileAssets.map((a: any) => a.file_url as string);
-        const { data: signedData } = await client.storage
-          .from("brand-kit-assets")
-          .createSignedUrls(paths, 3600);
-
-        if (signedData) {
-          const urlByPath = new Map(
-            signedData
-              .filter((e: any) => e.signedUrl && e.path)
-              .map((e: any) => [e.path, e.signedUrl]),
-          );
-          for (const asset of fileAssets) {
-            const url = urlByPath.get(asset.file_url);
-            if (url) asset.file_url = url;
-          }
-        }
-      }
+      const assets = kit.assets;
 
       const result = {
         kit_name: kit.name,
         design_guidance: kit.guidance_text ?? "",
-        colors: safeAssets
-          .filter((a: any) => a.asset_type === "color")
-          .map((a: any) => ({
+        colors: assets
+          .filter((a) => a.asset_type === "color")
+          .map((a) => ({
             name: a.display_name,
             hex: a.text_content,
             role: a.role,
           })),
-        fonts: safeAssets
-          .filter((a: any) => a.asset_type === "font")
-          .map((a: any) => ({
+        fonts: assets
+          .filter((a) => a.asset_type === "font")
+          .map((a) => ({
             name: a.display_name,
             family: a.text_content,
-            weight: (a.metadata as any)?.weight ?? "400",
+            weight: (a.metadata as { weight?: unknown })?.weight ?? "400",
             role: a.role,
           })),
-        logos: safeAssets
-          .filter((a: any) => a.asset_type === "logo")
-          .map((a: any) => ({
+        logos: assets
+          .filter((a) => a.asset_type === "logo")
+          .map((a) => ({
             name: a.display_name,
             url: a.file_url,
             role: a.role,
           })),
-        images: safeAssets
-          .filter((a: any) => a.asset_type === "image")
-          .map((a: any) => ({
+        images: assets
+          .filter((a) => a.asset_type === "image")
+          .map((a) => ({
             name: a.display_name,
             url: a.file_url,
           })),

@@ -36,6 +36,7 @@ export function createAgentRunsPlugin(
     name: "agent-runs",
     inject: [
       "auth",
+      "brandKit",
       "canvas",
       "credits",
       "persistence",
@@ -59,6 +60,7 @@ export function createAgentRunsPlugin(
           agentPersistenceService: d.get("agentPersistence"),
           ...(deps.agentFactory ? { agentFactory: deps.agentFactory } : {}),
           agentRunMetadataService: d.get("agentRunMetadata"),
+          brandKitService: d.get("brandKit"),
           canvasService: d.get("canvas"),
           workspaceSkillsLoader: createWorkspaceSkillsLoader({
             canvases: createCanvasRepository(ctx.get("persistence")),

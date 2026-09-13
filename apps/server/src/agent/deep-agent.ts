@@ -12,6 +12,7 @@ import {
   DEFAULT_GOOGLE_AGENT_MODEL,
   type ServerEnv,
 } from "../config/env.js";
+import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
 import type { ToolDefinition, ToolExecutionContext } from "../kernel/types.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import {
@@ -58,6 +59,8 @@ export type LoomicAgentFactory = (options: {
 export function createLoomicDeepAgent(options: {
   backendResult?: AgentBackendResult;
   brandKitId?: string | null;
+  /** 品牌套件服务（工具 get_brand_kit 经它取数，不再直连 SDK）。 */
+  brandKitService?: BrandKitService;
   canvasId?: string;
   checkpointer?: BaseCheckpointSaver;
   connectionManager?: ConnectionManager;
@@ -131,6 +134,9 @@ export function createLoomicDeepAgent(options: {
     systemPrompt,
     tools: [
       ...createMainAgentTools(backendResult.factory, {
+        ...(options.brandKitService
+          ? { brandKitService: options.brandKitService }
+          : {}),
         createUserClient,
         ...(options.brandKitId != null
           ? { brandKitId: options.brandKitId }
