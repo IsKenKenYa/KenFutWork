@@ -65,6 +65,20 @@ vitest 按 app 配置（`apps/web/vitest.config.mjs`、`apps/server/vitest.confi
 ## 提交与 PR 指南
 近期历史使用简洁摘要与 `feat:` / `fix:` 前缀，可带 scope：`feat(<scope>): ...`。保持 commit 小且祈使语气。PR 描述包含：问题/方案摘要、验证命令、关联 issue 或 spec、UI 改动截图或录屏。提交消息以中文为主，遵循 git commit message 规范，fix/feat 等关键词可用英文。
 
+### 提交纪律（硬约束，均为踩坑后的规则）
+1. **一步一提交、一步一测试**：每个 PR / 每次提交对应一个可验证的行为变化，提交前跑该范围的测试与 `pnpm typecheck`；行为变化必须带测试（见「测试哲学」）。
+2. **显式路径 `git add <path>`，禁止 `git add -A` / `git add .`**：工作区常有并行 agent 的未跟踪草稿与实现文件；`-A` 会把它们一起扫进提交。
+3. **共享文件逐 hunk 复核**：多个 agent 会同时改 `app.ts` / `profiles/*.ts` / `packages/shared` 等共享文件。提交前 `git diff` 逐 hunk 确认只含本次改动；若混入他人未提交的 hunk，用「补丁过滤后 `git apply --cached`」只暂存自己的 hunk，**不要**整文件 add，也不要替他人提交。
+4. **禁止把仓库置于悬空引用状态**：提交前额外检查 HEAD 是否引用了未跟踪文件（`git stash list` 之外最容易出事的场景）。历史上曾因误带他人 hunk 导致 HEAD 无法构建。
+5. **提交前必须复跑门禁**：`pnpm test`（含 `tests/workspace.test.mjs` 的仓库级棘轮/文档门禁）与 `pnpm typecheck` 至少要覆盖本次改动所在包；跨端契约（`packages/shared`）改动必须全量。
+6. **文档与提交同步**：里程碑或架构级改动在 `docs/tech/改造计划.md` §4.13 台账里**同一提交**内更新（含问题、方案、验证命令、遗留项）；只写代码不记账视为未完成。
+7. **不提交密钥与产物**：provider keys、`.env*`、凭据、`release/`、`data/`、日志、`**/dist` 一律不入库（见下节）。
+
+## 产品行为不变量（硬约束）
+主入口的行为约定在此登记，**任何 agent 改动前先读本节**，改动落点若与不变量冲突，先改回不变量再谈其它需求。
+
+- **Design 模式的主区恒为画布（canvas），永不被对话框取代**。工作台（`/workbench`）在 Design 模式下：选中项目即渲染画布（`/canvas?id=…` 的 iframe），对话走**画布页自带的助手面板**；工作台不得用「任务/会话对话框」占据主区。该判定集中在 `apps/web/src/lib/workbench-surface.ts` 的 `resolveWorkbenchSurface`（Design 分支永不返回 `conversation`），并由 `apps/web/test/workbench-surface.test.ts` 锁死。**历史事故**：主区判定曾内联在 JSX 里且把 `activeTask` 排在画布之前，导致「发一条消息画布就被对话框顶掉」，用户多次反馈。**验收**：Design 模式主区必须是画布 iframe；任何把 `conversation` 暴露到 Design 模式的改动都不许合入。
+
 ## 安全与配置提示
 禁止提交 provider keys、`.env`、`.env.local`、service account 凭据（`**/credentials/*.json` 已 gitignore）、构建产物、日志。`.env.local` 只放本机；CI 与生产密钥走平台环境变量。
 
