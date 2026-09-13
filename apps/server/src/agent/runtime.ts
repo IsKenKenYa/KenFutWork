@@ -1284,6 +1284,16 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ? options.tools.list(preset)
             : [];
 
+          // 工具执行上下文的工作区：工具侧（skill 目录等）按工作区取数，
+          // 否则只能拿到 runId/accessToken，无法解析工作区（曾致技能工具恒空）。
+          let toolWorkspaceId: string | undefined;
+          if (run.userId && options.viewerService) {
+            const workspace = await options.viewerService
+              .resolveWorkspace({ id: run.userId })
+              .catch(() => null);
+            toolWorkspaceId = workspace?.id;
+          }
+
           agent = resolvedAgentFactory({
             backendResult,
             ...(brandKitId ? { brandKitId } : {}),
@@ -1306,6 +1316,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             runToolContext: {
               runId,
               ...(run.accessToken ? { accessToken: run.accessToken } : {}),
+              ...(toolWorkspaceId ? { workspaceId: toolWorkspaceId } : {}),
             },
           });
           rlog.lap("agent_factory_done");

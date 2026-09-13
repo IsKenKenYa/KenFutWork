@@ -6,6 +6,7 @@ import type {
   ToolExecutionContext,
 } from "../../kernel/types.js";
 import type { UserSupabaseClient } from "../../supabase/user.js";
+import { createSkillCatalogRepository } from "./repository.js";
 import {
   createSkillCatalogService,
   type SkillCatalogService,
@@ -18,14 +19,15 @@ import {
  * 的提示注入同源数据、互为补充。
  */
 export function createSkillsPlugin(deps: {
+  /** HTTP 路由仍直接用用户客户端（随 http/skills 收口后再移除）。 */
   createUserClient: (accessToken: string) => UserSupabaseClient;
 }): PluginDefinition {
   return {
     name: "skills",
-    inject: ["auth", "viewer"],
+    inject: ["auth", "persistence", "viewer"],
     apply(ctx) {
       const catalog: SkillCatalogService = createSkillCatalogService({
-        createUserClient: deps.createUserClient,
+        repository: createSkillCatalogRepository(ctx.get("persistence")),
       });
 
       const listSkillsTool: ToolDefinition = {
@@ -34,15 +36,14 @@ export function createSkillsPlugin(deps: {
         scope: "shared",
         parameters: { type: "object", properties: {} },
         execute: async (_args, execCtx: ToolExecutionContext) => {
-          if (!execCtx.accessToken) {
-            return { skills: [], hint: "当前执行上下文缺少用户令牌。" };
+          if (!execCtx.workspaceId) {
+            // 不再静默返回空列表：缺工作区上下文必须说清原因
+            return {
+              skills: [],
+              hint: "当前执行上下文缺少工作区，无法读取 skill 目录。",
+            };
           }
-          const skills = await catalog.listSkills({
-            accessToken: execCtx.accessToken,
-            email: "",
-            id: "",
-            userMetadata: {},
-          });
+          const skills = await catalog.listSkills(execCtx.workspaceId);
           return {
             skills: skills
               .filter((s) => s.enabled)
@@ -68,18 +69,10 @@ export function createSkillsPlugin(deps: {
           if (!name) {
             throw new Error("use_skill 需要 name 参数");
           }
-          if (!execCtx.accessToken) {
-            throw new Error("当前执行上下文缺少用户令牌，无法读取 skill。");
+          if (!execCtx.workspaceId) {
+            throw new Error("当前执行上下文缺少工作区，无法读取 skill。");
           }
-          const detail = await catalog.getSkill(
-            {
-              accessToken: execCtx.accessToken,
-              email: "",
-              id: "",
-              userMetadata: {},
-            },
-            name,
-          );
+          const detail = await catalog.getSkill(execCtx.workspaceId, name);
           if (!detail) {
             throw new Error(`skill ${name} 未安装或未启用`);
           }
