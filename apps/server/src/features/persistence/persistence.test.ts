@@ -8,6 +8,8 @@ import {
 import {
   createPersistenceFromRunner,
   type PostgresQueryRunner,
+  toIsoTimestamp,
+  toIsoTimestampNoZone,
 } from "./providers/postgres.js";
 
 type QueryCall = { text: string; values: unknown[] };
@@ -427,5 +429,34 @@ describe("persistence 用户作用域（forUser）", () => {
         values: ["新名", "user-9"],
       },
     ]);
+  });
+});
+
+describe("persistence 时间戳归一（契约要求 ISO 字符串）", () => {
+  it("timestamptz 文本 → ISO 8601（带 Z）", () => {
+    // 驱动默认会把它解析成 Date；契约要求字符串，实测漏了会让接口 zod 失败并 500
+    expect(toIsoTimestamp("2026-09-13 12:50:32.131475+00")).toBe(
+      "2026-09-13T12:50:32.131Z",
+    );
+    expect(toIsoTimestamp("2026-09-13 08:00:00+08")).toBe(
+      "2026-09-13T00:00:00.000Z",
+    );
+  });
+
+  it("无时区 timestamp 文本按 UTC 解释", () => {
+    expect(toIsoTimestampNoZone("2026-09-13 12:50:32.131475")).toBe(
+      "2026-09-13T12:50:32.131Z",
+    );
+  });
+
+  it("输出可被契约的 ISO 校验接受（形如 z.iso.datetime({offset:true})）", () => {
+    const iso =
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+    expect(iso.test(toIsoTimestamp("2026-09-13 12:50:32.131475+00"))).toBe(
+      true,
+    );
+    expect(iso.test(toIsoTimestampNoZone("2026-09-13 12:50:32.131475"))).toBe(
+      true,
+    );
   });
 });

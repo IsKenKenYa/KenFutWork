@@ -1,4 +1,4 @@
-import { Pool } from "pg";
+import { Pool, types } from "pg";
 
 import {
   SqlError,
@@ -22,6 +22,32 @@ export const USER_MARKER = ":user";
 
 const DEFAULT_POOL_MAX = 10;
 const PING_SQL = "select 1 as ok";
+
+/** `timestamptz` 的 OID。 */
+const OID_TIMESTAMPTZ = 1184;
+/** `timestamp`（无时区）的 OID。 */
+const OID_TIMESTAMP = 1114;
+
+/**
+ * 时间戳归一为 ISO 8601 字符串。
+ *
+ * 驱动默认把 `timestamp*` 解析成 JS `Date`，而共享契约（`packages/shared`）要求
+ * ISO 字符串——原 PostgREST 返回的正是字符串。不归一的话，任何把时间戳回传前端的
+ * 接口都会 zod 校验失败（实测 `/api/projects`、`/api/skills` 直接 500）。
+ *
+ * 放在 Provider 一处解决：17 个聚合的映射层因此不需要各自转换，也不会漏。
+ * 无时区的 `timestamp` 按 UTC 解释（本项目所有时间列均以 UTC 写入）。
+ */
+export function toIsoTimestamp(value: string): string {
+  return new Date(value).toISOString();
+}
+
+export function toIsoTimestampNoZone(value: string): string {
+  return new Date(`${value}Z`).toISOString();
+}
+
+types.setTypeParser(OID_TIMESTAMPTZ, toIsoTimestamp);
+types.setTypeParser(OID_TIMESTAMP, toIsoTimestampNoZone);
 
 export type PostgresResult = { rowCount: number | null; rows: unknown[] };
 
@@ -96,7 +122,8 @@ export function createPersistenceFromRunner(
 
   return {
     ...root,
-    forUser: (userId) => createUserScopedClient(normalizeQuery(runner.query), userId),
+    forUser: (userId) =>
+      createUserScopedClient(normalizeQuery(runner.query), userId),
     forWorkspace: (workspaceId) =>
       createWorkspaceClient(normalizeQuery(runner.query), workspaceId),
     transaction: (fn) => runTransaction(runner, fn),
