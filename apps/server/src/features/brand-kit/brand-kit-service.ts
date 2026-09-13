@@ -6,13 +6,19 @@ import type {
   BrandKitDetail,
   BrandKitSummary,
   BrandKitUpdateRequest,
-  Database,
 } from "@loomic/shared";
 
 import type {
   AuthenticatedUser,
   UserSupabaseClient,
 } from "../../supabase/user.js";
+import type {
+  BrandKitAssetPatch,
+  BrandKitAssetRow,
+  BrandKitPatch,
+  BrandKitRepository,
+  BrandKitRow,
+} from "./repository.js";
 
 const BRAND_KIT_BUCKET = "brand-kit-assets";
 const SIGNED_URL_EXPIRY_SECONDS = 3600;
@@ -44,6 +50,7 @@ export class BrandKitServiceError extends Error {
     statusCode: number,
   ) {
     super(message);
+    this.name = "BrandKitServiceError";
     this.code = code;
     this.statusCode = statusCode;
   }
@@ -89,22 +96,25 @@ export type BrandKitService = {
   duplicateKit(user: AuthenticatedUser, kitId: string): Promise<BrandKitDetail>;
 };
 
+/**
+ * brand-kit 服务。数据访问经 repository（`brand_kits` 按 `user_id` 定权、
+ * `brand_kit_assets` 经父链校验归属）；`createUserClient` 仅剩对象存储用途，
+ * 随 M3 blob 缝落地移除。
+ */
 export function createBrandKitService(options: {
   createUserClient: (accessToken: string) => UserSupabaseClient;
+  repository: BrandKitRepository;
 }): BrandKitService {
+  const { repository } = options;
+
   async function fetchKitDetail(
-    client: UserSupabaseClient,
+    user: AuthenticatedUser,
     kitId: string,
   ): Promise<BrandKitDetail> {
-    const { data: kit, error: kitError } = await client
-      .from("brand_kits")
-      .select(
-        "id, name, is_default, guidance_text, cover_url, created_at, updated_at",
-      )
-      .eq("id", kitId)
-      .maybeSingle();
-
-    if (kitError) {
+    let kit: BrandKitRow | null;
+    try {
+      kit = await repository.findKit(user.id, kitId);
+    } catch {
       throw new BrandKitServiceError(
         "brand_kit_not_found",
         KIT_NOT_FOUND_MESSAGE,
@@ -120,16 +130,10 @@ export function createBrandKitService(options: {
       );
     }
 
-    const { data: assets, error: assetsError } = await client
-      .from("brand_kit_assets")
-      .select(
-        "id, asset_type, display_name, role, sort_order, text_content, file_url, metadata, created_at, updated_at",
-      )
-      .eq("kit_id", kitId)
-      .order("sort_order", { ascending: true })
-      .order("created_at", { ascending: true });
-
-    if (assetsError) {
+    let assetRows: BrandKitAssetRow[];
+    try {
+      assetRows = await repository.listAssets(user.id, kitId);
+    } catch {
       throw new BrandKitServiceError(
         "brand_kit_query_failed",
         KIT_QUERY_FAILED_MESSAGE,
@@ -137,11 +141,12 @@ export function createBrandKitService(options: {
       );
     }
 
-    const mappedAssets = (assets ?? []).map(mapAssetRow);
+    const mappedAssets = assetRows.map(mapAssetRow);
 
     // Resolve signed URLs for file-based assets (logo/image)
     const fileAssets = mappedAssets.filter((a) => a.file_url);
     if (fileAssets.length > 0) {
+      const client = options.createUserClient(user.accessToken);
       const paths = fileAssets.map((a) => a.file_url!);
       const { data: signedData } = await client.storage
         .from(BRAND_KIT_BUCKET)
@@ -174,15 +179,10 @@ export function createBrandKitService(options: {
 
   return {
     async listKits(user) {
-      const client = options.createUserClient(user.accessToken);
-
-      const { data: kits, error: kitsError } = await client
-        .from("brand_kits")
-        .select("id, name, is_default, cover_url, created_at, updated_at")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: true });
-
-      if (kitsError) {
+      let kits: Awaited<ReturnType<typeof repository.listKits>>;
+      try {
+        kits = await repository.listKits(user.id);
+      } catch {
         throw new BrandKitServiceError(
           "brand_kit_query_failed",
           KIT_QUERY_FAILED_MESSAGE,
@@ -190,19 +190,17 @@ export function createBrandKitService(options: {
         );
       }
 
-      if (!kits.length) {
+      if (kits.length === 0) {
         return [];
       }
 
-      const { data: assets, error: assetsError } = await client
-        .from("brand_kit_assets")
-        .select("kit_id, asset_type")
-        .in(
-          "kit_id",
+      let assets: Array<{ asset_type: string; kit_id: string }>;
+      try {
+        assets = await repository.listAssetCounts(
+          user.id,
           kits.map((k) => k.id),
         );
-
-      if (assetsError) {
+      } catch {
         throw new BrandKitServiceError(
           "brand_kit_query_failed",
           KIT_QUERY_FAILED_MESSAGE,
@@ -212,16 +210,16 @@ export function createBrandKitService(options: {
 
       const countsByKit = new Map<
         string,
-        { color: number; font: number; logo: number; image: number }
+        { color: number; font: number; image: number; logo: number }
       >();
 
-      for (const asset of assets ?? []) {
+      for (const asset of assets) {
         let counts = countsByKit.get(asset.kit_id);
         if (!counts) {
-          counts = { color: 0, font: 0, logo: 0, image: 0 };
+          counts = { color: 0, font: 0, image: 0, logo: 0 };
           countsByKit.set(asset.kit_id, counts);
         }
-        counts[asset.asset_type] += 1;
+        counts[asset.asset_type as "color" | "font" | "image" | "logo"] += 1;
       }
 
       return kits.map(
@@ -233,8 +231,8 @@ export function createBrandKitService(options: {
           asset_counts: countsByKit.get(kit.id) ?? {
             color: 0,
             font: 0,
-            logo: 0,
             image: 0,
+            logo: 0,
           },
           created_at: kit.created_at,
           updated_at: kit.updated_at,
@@ -243,21 +241,17 @@ export function createBrandKitService(options: {
     },
 
     async getKit(user, kitId) {
-      const client = options.createUserClient(user.accessToken);
-      return fetchKitDetail(client, kitId);
+      return fetchKitDetail(user, kitId);
     },
 
     async createKit(user, input) {
-      const client = options.createUserClient(user.accessToken);
-      const name = input.name?.trim() || "\u672A\u547D\u540D";
+      const name = input.name?.trim() || "未命名";
 
-      const { data: kit, error } = await client
-        .from("brand_kits")
-        .insert({ user_id: user.id, name })
-        .select("id")
-        .single();
+      const kitId = await repository
+        .insertKit(user.id, { name })
+        .catch(() => null);
 
-      if (error || !kit) {
+      if (!kitId) {
         throw new BrandKitServiceError(
           "brand_kit_create_failed",
           KIT_CREATE_FAILED_MESSAGE,
@@ -265,72 +259,49 @@ export function createBrandKitService(options: {
         );
       }
 
-      return fetchKitDetail(client, kit.id);
+      return fetchKitDetail(user, kitId);
     },
 
     async updateKit(user, kitId, input) {
-      const client = options.createUserClient(user.accessToken);
-
       // If setting as default, clear existing default first
       if (input.is_default === true) {
-        const { error: clearError } = await client
-          .from("brand_kits")
-          .update({ is_default: false })
-          .eq("user_id", user.id)
-          .eq("is_default", true);
-
-        if (clearError) {
+        await repository.clearDefault(user.id).catch(() => {
           throw new BrandKitServiceError(
             "brand_kit_update_failed",
             KIT_UPDATE_FAILED_MESSAGE,
             500,
           );
-        }
+        });
       }
 
-      const payload: Database["public"]["Tables"]["brand_kits"]["Update"] = {};
-      if (input.name !== undefined) payload.name = input.name.trim();
-      if (input.guidance_text !== undefined)
-        payload.guidance_text = input.guidance_text;
-      if (input.is_default !== undefined) payload.is_default = input.is_default;
+      const patch: BrandKitPatch = {};
+      if (input.name !== undefined) patch.name = input.name.trim();
+      if (input.guidance_text !== undefined) {
+        patch.guidance_text = input.guidance_text;
+      }
+      if (input.is_default !== undefined) patch.is_default = input.is_default;
 
-      if (Object.keys(payload).length === 0) {
-        return fetchKitDetail(client, kitId);
+      if (Object.keys(patch).length === 0) {
+        return fetchKitDetail(user, kitId);
       }
 
-      const { error: updateError, count } = await client
-        .from("brand_kits")
-        .update(payload)
-        .eq("id", kitId)
-        .eq("user_id", user.id);
-
-      if (updateError) {
+      await repository.updateKit(user.id, kitId, patch).catch(() => {
         throw new BrandKitServiceError(
           "brand_kit_update_failed",
           KIT_UPDATE_FAILED_MESSAGE,
           500,
         );
-      }
+      });
 
-      if (count === 0) {
-        // Supabase returns count=0 when head:true is used; since we don't use
-        // head:true the count may be null. Only treat an explicit 0 as not-found.
-        // In practice, the fetchKitDetail below will catch not-found scenarios.
-      }
-
-      return fetchKitDetail(client, kitId);
+      // 未命中的判定交给后续 fetchKitDetail（与旧实现的 count 语义一致）
+      return fetchKitDetail(user, kitId);
     },
 
     async deleteKit(user, kitId) {
-      const client = options.createUserClient(user.accessToken);
-
-      const { data: existing, error: findError } = await client
-        .from("brand_kits")
-        .select("id")
-        .eq("id", kitId)
-        .maybeSingle();
-
-      if (findError) {
+      let exists: string | null;
+      try {
+        exists = await repository.findKitRef(user.id, kitId);
+      } catch {
         throw new BrandKitServiceError(
           "brand_kit_delete_failed",
           KIT_DELETE_FAILED_MESSAGE,
@@ -338,7 +309,7 @@ export function createBrandKitService(options: {
         );
       }
 
-      if (!existing) {
+      if (!exists) {
         throw new BrandKitServiceError(
           "brand_kit_not_found",
           KIT_NOT_FOUND_MESSAGE,
@@ -347,82 +318,62 @@ export function createBrandKitService(options: {
       }
 
       // Clean up storage objects for file-based assets
-      const { data: fileAssets } = await client
-        .from("brand_kit_assets")
-        .select("file_url")
-        .eq("kit_id", kitId)
-        .not("file_url", "is", null);
+      const paths = await repository
+        .listAssetFilePaths(user.id, kitId)
+        .catch(() => []);
 
-      if (fileAssets && fileAssets.length > 0) {
-        const paths = fileAssets
-          .map((a) => a.file_url)
-          .filter((p): p is string => !!p);
-        if (paths.length > 0) {
-          await client.storage.from(BRAND_KIT_BUCKET).remove(paths);
-        }
+      if (paths.length > 0) {
+        const client = options.createUserClient(user.accessToken);
+        await client.storage.from(BRAND_KIT_BUCKET).remove(paths);
       }
 
-      const { error: deleteError } = await client
-        .from("brand_kits")
-        .delete()
-        .eq("id", kitId);
-
-      if (deleteError) {
+      await repository.deleteKit(user.id, kitId).catch(() => {
         throw new BrandKitServiceError(
           "brand_kit_delete_failed",
           KIT_DELETE_FAILED_MESSAGE,
           500,
         );
-      }
+      });
     },
 
     async createAsset(user, kitId, input) {
-      const client = options.createUserClient(user.accessToken);
-
-      // Verify kit exists
-      const { data: kit, error: kitError } = await client
-        .from("brand_kits")
-        .select("id")
-        .eq("id", kitId)
-        .maybeSingle();
-
-      if (kitError || !kit) {
+      // Verify kit exists（查询失败 500 / 无行 404 与旧实现一致）
+      let kitId_: string | null;
+      try {
+        kitId_ = await repository.findKitRef(user.id, kitId);
+      } catch {
         throw new BrandKitServiceError(
           "brand_kit_not_found",
           KIT_NOT_FOUND_MESSAGE,
-          kitError ? 500 : 404,
+          500,
+        );
+      }
+
+      if (!kitId_) {
+        throw new BrandKitServiceError(
+          "brand_kit_not_found",
+          KIT_NOT_FOUND_MESSAGE,
+          404,
         );
       }
 
       // Get max sort_order for this kit + asset_type
-      const { data: maxRow } = await client
-        .from("brand_kit_assets")
-        .select("sort_order")
-        .eq("kit_id", kitId)
-        .eq("asset_type", input.asset_type)
-        .order("sort_order", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const maxSortOrder = await repository
+        .maxAssetSortOrder(user.id, kitId, input.asset_type)
+        .catch(() => null);
 
-      const nextSortOrder = (maxRow?.sort_order ?? -1) + 1;
-
-      const { data: asset, error: insertError } = await client
-        .from("brand_kit_assets")
-        .insert({
-          kit_id: kitId,
+      const asset = await repository
+        .insertAsset(user.id, kitId, {
           asset_type: input.asset_type,
           display_name: input.display_name,
-          text_content: input.text_content ?? null,
+          metadata: input.metadata ?? {},
           role: input.role ?? null,
-          sort_order: nextSortOrder,
-          metadata: (input.metadata ?? {}) as import("@loomic/shared").Json,
+          sort_order: (maxSortOrder ?? -1) + 1,
+          text_content: input.text_content ?? null,
         })
-        .select(
-          "id, asset_type, display_name, role, sort_order, text_content, file_url, metadata, created_at, updated_at",
-        )
-        .single();
+        .catch(() => null);
 
-      if (insertError || !asset) {
+      if (!asset) {
         throw new BrandKitServiceError(
           "brand_kit_asset_create_failed",
           ASSET_CREATE_FAILED_MESSAGE,
@@ -434,53 +385,43 @@ export function createBrandKitService(options: {
     },
 
     async updateAsset(user, kitId, assetId, input) {
-      const client = options.createUserClient(user.accessToken);
-
-      const payload: Database["public"]["Tables"]["brand_kit_assets"]["Update"] =
-        {};
+      const patch: BrandKitAssetPatch = {};
       if (input.display_name !== undefined)
-        payload.display_name = input.display_name;
+        patch.display_name = input.display_name;
       if (input.text_content !== undefined)
-        payload.text_content = input.text_content;
-      if (input.role !== undefined) payload.role = input.role;
-      if (input.sort_order !== undefined) payload.sort_order = input.sort_order;
-      if (input.metadata !== undefined) {
-        payload.metadata = input.metadata as import("@loomic/shared").Json;
-      }
+        patch.text_content = input.text_content;
+      if (input.role !== undefined) patch.role = input.role;
+      if (input.sort_order !== undefined) patch.sort_order = input.sort_order;
+      if (input.metadata !== undefined) patch.metadata = input.metadata;
 
-      if (Object.keys(payload).length === 0) {
+      if (Object.keys(patch).length === 0) {
         // Nothing to update, just fetch and return current state
-        const { data: current, error } = await client
-          .from("brand_kit_assets")
-          .select(
-            "id, asset_type, display_name, role, sort_order, text_content, file_url, metadata, created_at, updated_at",
-          )
-          .eq("id", assetId)
-          .eq("kit_id", kitId)
-          .maybeSingle();
-
-        if (error || !current) {
+        let current: BrandKitAssetRow | null;
+        try {
+          current = await repository.findAsset(user.id, kitId, assetId);
+        } catch {
           throw new BrandKitServiceError(
             "brand_kit_asset_not_found",
             ASSET_NOT_FOUND_MESSAGE,
-            error ? 500 : 404,
+            500,
+          );
+        }
+
+        if (!current) {
+          throw new BrandKitServiceError(
+            "brand_kit_asset_not_found",
+            ASSET_NOT_FOUND_MESSAGE,
+            404,
           );
         }
 
         return mapAssetRow(current);
       }
 
-      const { data: asset, error: updateError } = await client
-        .from("brand_kit_assets")
-        .update(payload)
-        .eq("id", assetId)
-        .eq("kit_id", kitId)
-        .select(
-          "id, asset_type, display_name, role, sort_order, text_content, file_url, metadata, created_at, updated_at",
-        )
-        .maybeSingle();
-
-      if (updateError) {
+      let updated: BrandKitAssetRow | null;
+      try {
+        updated = await repository.updateAsset(user.id, kitId, assetId, patch);
+      } catch {
         throw new BrandKitServiceError(
           "brand_kit_update_failed",
           KIT_UPDATE_FAILED_MESSAGE,
@@ -488,7 +429,7 @@ export function createBrandKitService(options: {
         );
       }
 
-      if (!asset) {
+      if (!updated) {
         throw new BrandKitServiceError(
           "brand_kit_asset_not_found",
           ASSET_NOT_FOUND_MESSAGE,
@@ -496,20 +437,14 @@ export function createBrandKitService(options: {
         );
       }
 
-      return mapAssetRow(asset);
+      return mapAssetRow(updated);
     },
 
     async deleteAsset(user, kitId, assetId) {
-      const client = options.createUserClient(user.accessToken);
-
-      const { data: existing, error: findError } = await client
-        .from("brand_kit_assets")
-        .select("id, file_url")
-        .eq("id", assetId)
-        .eq("kit_id", kitId)
-        .maybeSingle();
-
-      if (findError) {
+      let existing: { file_url: string | null; id: string } | null;
+      try {
+        existing = await repository.findAssetRef(user.id, kitId, assetId);
+      } catch {
         throw new BrandKitServiceError(
           "brand_kit_delete_failed",
           KIT_DELETE_FAILED_MESSAGE,
@@ -527,41 +462,41 @@ export function createBrandKitService(options: {
 
       // Clean up storage object if this asset has a file
       if (existing.file_url) {
+        const client = options.createUserClient(user.accessToken);
         await client.storage.from(BRAND_KIT_BUCKET).remove([existing.file_url]);
       }
 
-      const { error: deleteError } = await client
-        .from("brand_kit_assets")
-        .delete()
-        .eq("id", assetId)
-        .eq("kit_id", kitId);
-
-      if (deleteError) {
+      await repository.deleteAsset(user.id, kitId, assetId).catch(() => {
         throw new BrandKitServiceError(
           "brand_kit_delete_failed",
           KIT_DELETE_FAILED_MESSAGE,
           500,
         );
-      }
+      });
     },
 
     async uploadAsset(user, kitId, assetType, fileName, fileBuffer, mimeType) {
-      const client = options.createUserClient(user.accessToken);
-
       // Verify kit exists and belongs to user
-      const { data: kit, error: kitError } = await client
-        .from("brand_kits")
-        .select("id")
-        .eq("id", kitId)
-        .maybeSingle();
-
-      if (kitError || !kit) {
+      let kitId_: string | null;
+      try {
+        kitId_ = await repository.findKitRef(user.id, kitId);
+      } catch {
         throw new BrandKitServiceError(
           "brand_kit_not_found",
           KIT_NOT_FOUND_MESSAGE,
-          kitError ? 500 : 404,
+          500,
         );
       }
+
+      if (!kitId_) {
+        throw new BrandKitServiceError(
+          "brand_kit_not_found",
+          KIT_NOT_FOUND_MESSAGE,
+          404,
+        );
+      }
+
+      const client = options.createUserClient(user.accessToken);
 
       // Upload to storage
       const timestamp = Date.now();
@@ -583,35 +518,22 @@ export function createBrandKitService(options: {
         );
       }
 
-      // Get max sort_order
-      const { data: maxRow } = await client
-        .from("brand_kit_assets")
-        .select("sort_order")
-        .eq("kit_id", kitId)
-        .eq("asset_type", assetType)
-        .order("sort_order", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      const nextSortOrder = (maxRow?.sort_order ?? -1) + 1;
+      const maxSortOrder = await repository
+        .maxAssetSortOrder(user.id, kitId, assetType)
+        .catch(() => null);
 
       // Create asset record — store object path in file_url
       const displayName = fileName.replace(/\.[^.]+$/, "");
-      const { data: asset, error: insertError } = await client
-        .from("brand_kit_assets")
-        .insert({
-          kit_id: kitId,
+      const asset = await repository
+        .insertAsset(user.id, kitId, {
           asset_type: assetType,
           display_name: displayName,
           file_url: objectPath,
-          sort_order: nextSortOrder,
+          sort_order: (maxSortOrder ?? -1) + 1,
         })
-        .select(
-          "id, asset_type, display_name, role, sort_order, text_content, file_url, metadata, created_at, updated_at",
-        )
-        .single();
+        .catch(() => null);
 
-      if (insertError || !asset) {
+      if (!asset) {
         // Clean up uploaded file on DB failure
         await client.storage.from(BRAND_KIT_BUCKET).remove([objectPath]);
         throw new BrandKitServiceError(
@@ -634,35 +556,34 @@ export function createBrandKitService(options: {
     },
 
     async duplicateKit(user, kitId) {
-      const client = options.createUserClient(user.accessToken);
-
-      // Fetch source kit
-      const { data: source, error: sourceError } = await client
-        .from("brand_kits")
-        .select("name, guidance_text")
-        .eq("id", kitId)
-        .maybeSingle();
-
-      if (sourceError || !source) {
+      let source: { guidance_text: string | null; name: string } | null;
+      try {
+        source = await repository.findKitSource(user.id, kitId);
+      } catch {
         throw new BrandKitServiceError(
           "brand_kit_not_found",
           KIT_NOT_FOUND_MESSAGE,
-          sourceError ? 500 : 404,
+          500,
+        );
+      }
+
+      if (!source) {
+        throw new BrandKitServiceError(
+          "brand_kit_not_found",
+          KIT_NOT_FOUND_MESSAGE,
+          404,
         );
       }
 
       // Create new kit (never copy is_default)
-      const { data: newKit, error: createError } = await client
-        .from("brand_kits")
-        .insert({
-          user_id: user.id,
-          name: `${source.name} (副本)`,
+      const newKitId = await repository
+        .insertKit(user.id, {
           guidance_text: source.guidance_text,
+          name: `${source.name} (副本)`,
         })
-        .select("id")
-        .single();
+        .catch(() => null);
 
-      if (createError || !newKit) {
+      if (!newKitId) {
         throw new BrandKitServiceError(
           "brand_kit_create_failed",
           KIT_CREATE_FAILED_MESSAGE,
@@ -670,24 +591,22 @@ export function createBrandKitService(options: {
         );
       }
 
-      // Copy non-file assets (colors, fonts) directly
-      const { data: assets } = await client
-        .from("brand_kit_assets")
-        .select(
-          "asset_type, display_name, role, sort_order, text_content, file_url, metadata",
-        )
-        .eq("kit_id", kitId)
-        .order("sort_order", { ascending: true });
+      // Copy assets (file-based ones copy the storage object too)
+      const assets = await repository
+        .listAssets(user.id, kitId)
+        .catch(() => []);
 
-      if (assets && assets.length > 0) {
+      if (assets.length > 0) {
+        const client = options.createUserClient(user.accessToken);
         const copies = [];
+
         for (const asset of assets) {
           let newFileUrl: string | null = null;
 
           // For file-based assets, copy the storage object
           if (asset.file_url) {
             const ext = asset.file_url.split(".").pop() ?? "bin";
-            const newPath = `${user.id}/${newKit.id}/${Date.now()}-copy.${ext}`;
+            const newPath = `${user.id}/${newKitId}/${Date.now()}-copy.${ext}`;
             const { error: copyError } = await client.storage
               .from(BRAND_KIT_BUCKET)
               .copy(asset.file_url, newPath);
@@ -697,37 +616,25 @@ export function createBrandKitService(options: {
           }
 
           copies.push({
-            kit_id: newKit.id,
             asset_type: asset.asset_type,
             display_name: asset.display_name,
+            file_url: newFileUrl,
+            metadata: asset.metadata,
             role: asset.role,
             sort_order: asset.sort_order,
             text_content: asset.text_content,
-            file_url: newFileUrl,
-            metadata: asset.metadata,
           });
         }
 
-        await client.from("brand_kit_assets").insert(copies);
+        await repository.insertAssets(user.id, newKitId, copies);
       }
 
-      return fetchKitDetail(client, newKit.id);
+      return fetchKitDetail(user, newKitId);
     },
   };
 }
 
-function mapAssetRow(row: {
-  id: string;
-  asset_type: string;
-  display_name: string;
-  role: string | null;
-  sort_order: number;
-  text_content: string | null;
-  file_url: string | null;
-  metadata: unknown;
-  created_at: string;
-  updated_at: string;
-}): BrandKitAsset {
+function mapAssetRow(row: BrandKitAssetRow): BrandKitAsset {
   return {
     id: row.id,
     asset_type: row.asset_type as BrandKitAsset["asset_type"],
