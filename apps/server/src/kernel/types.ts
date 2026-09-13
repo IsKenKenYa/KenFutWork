@@ -19,6 +19,7 @@ import type { ModelCatalogService } from "../features/model-providers/model-cata
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type { PaymentService } from "../features/payments/payment-service.js";
 import type { PermissionService } from "../features/permissions/permission-service.js";
+import type { PersistenceService } from "../features/persistence/types.js";
 import type { ProjectService } from "../features/projects/project-service.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import type { UploadService } from "../features/uploads/upload-service.js";
@@ -56,6 +57,11 @@ export interface ServiceMap {
   threads: ThreadService;
   uploads: UploadService;
   viewer: ViewerService;
+  /**
+   * 自管 Postgres 存储缝（§4.2；`FORM-9`）：唯一 DB 入口，workspace 隔离在
+   * 应用层强制（DB 层已无 RLS 兜底）。Provider 随形态替换（桌面捆绑 / 自托管）。
+   */
+  persistence: PersistenceService;
   /** 认证缝（目标 local-trust / 自管 auth） */
   auth: RequestAuthenticator;
   /** JobService（PGMQ，Postgres 扩展） */

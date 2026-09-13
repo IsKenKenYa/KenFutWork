@@ -18,6 +18,7 @@ import { createModelProvidersPlugin } from "../features/model-providers/plugin.j
 import type { PaymentService } from "../features/payments/payment-service.js";
 import { createPaymentsPlugin } from "../features/payments/plugin.js";
 import { createPermissionsPlugin } from "../features/permissions/plugin.js";
+import { persistencePlugin } from "../features/persistence/plugin.js";
 import { createProjectsPlugin } from "../features/projects/plugin.js";
 import { createSearchPlugin } from "../features/search/plugin.js";
 import { createSettingsPlugin } from "../features/settings/plugin.js";
@@ -98,6 +99,7 @@ export const PLUGIN_CATALOG = [
 
 export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
   return [
+    persistencePlugin,
     authPlugin,
     brandKitPlugin,
     createCreditsPlugin({ getAdminClient: deps.getAdminClient }),

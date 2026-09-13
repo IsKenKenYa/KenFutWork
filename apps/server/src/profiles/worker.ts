@@ -1,6 +1,7 @@
 import { createCreditsPlugin } from "../features/credits/plugin.js";
 import { createJobsPlugin } from "../features/jobs/plugin.js";
 import { createModelProvidersPlugin } from "../features/model-providers/plugin.js";
+import { persistencePlugin } from "../features/persistence/plugin.js";
 import { createUsagePlugin } from "../features/usage/plugin.js";
 import type { PluginDefinition } from "../kernel/types.js";
 import type { AdminSupabaseClient } from "../supabase/admin.js";
@@ -20,6 +21,7 @@ export interface WorkerProfileDeps {
 
 export function workerProfile(deps: WorkerProfileDeps): PluginDefinition[] {
   return [
+    persistencePlugin,
     // worker 无 HTTP 面：路由一律不挂（withRoutes: false），只取服务
     createCreditsPlugin({
       getAdminClient: deps.getAdminClient,

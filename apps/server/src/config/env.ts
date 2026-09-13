@@ -37,6 +37,11 @@ export type ServerEnv = {
   agentModel: string;
   /** SecretStore 主密钥（DEC-7 凭证加密落库）；启用 BYOK 凭证写入时必须配置。 */
   credentialSecret?: string;
+  /**
+   * 自管 Postgres 连接串（`persistence` 缝）。迁移期回退读 `SUPABASE_DB_URL`，
+   * 去 Supabase 收口后只认 `DATABASE_URL`。
+   */
+  databaseUrl?: string;
   /** MCP server 配置（P4d）：JSON 数组，v1 支持 stdio 命令型。 */
   mcpServers?: McpServerConfig[];
   /** 联网搜索（§4.5，BYOK 搜索供应商）：配置 Key 即启用 web_search 工具。 */
@@ -117,6 +122,10 @@ export function loadServerEnv(
     normalizeOptionalString(source.SUPABASE_ANON_KEY);
   const supabaseDbUrl =
     overrides.supabaseDbUrl ?? normalizeOptionalString(source.SUPABASE_DB_URL);
+  const databaseUrl =
+    overrides.databaseUrl ??
+    normalizeOptionalString(source.DATABASE_URL) ??
+    supabaseDbUrl;
   const supabaseJwtSecret =
     overrides.supabaseJwtSecret ??
     normalizeOptionalString(source.SUPABASE_JWT_SECRET);
@@ -241,6 +250,7 @@ export function loadServerEnv(
       overrides.webOrigin ?? source.LOOMIC_WEB_ORIGIN ?? DEFAULT_WEB_ORIGIN,
     ...(agentFilesRoot ? { agentFilesRoot } : {}),
     ...(credentialSecret ? { credentialSecret } : {}),
+    ...(databaseUrl ? { databaseUrl } : {}),
     ...(mcpServers?.length ? { mcpServers } : {}),
     ...(searchApiKey ? { searchApiKey } : {}),
     ...(searchProvider ? { searchProvider } : {}),
