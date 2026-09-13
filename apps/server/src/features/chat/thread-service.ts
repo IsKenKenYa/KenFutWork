@@ -1,9 +1,8 @@
 import { randomUUID } from "node:crypto";
 
-import type {
-  AuthenticatedUser,
-  UserSupabaseClient,
-} from "../../supabase/user.js";
+import type { AuthenticatedUser } from "../../supabase/user.js";
+import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
+import type { ChatRepository } from "./repository.js";
 
 export class ThreadServiceError extends Error {
   readonly statusCode: number;
@@ -11,6 +10,7 @@ export class ThreadServiceError extends Error {
 
   constructor(message: string, statusCode: number) {
     super(message);
+    this.name = "ThreadServiceError";
     this.code = "session_not_found";
     this.statusCode = statusCode;
   }
@@ -30,8 +30,10 @@ export type ThreadService = {
 };
 
 export function createThreadService(options: {
-  createUserClient: (accessToken: string) => UserSupabaseClient;
+  /** 会话属主校验经持久层（`chat_sessions → canvases → projects` 链）。 */
+  repository: ChatRepository;
   threadIdFactory?: () => string;
+  viewerService: ViewerService;
 }): ThreadService {
   const threadIdFactory =
     options.threadIdFactory ?? (() => `thread_${randomUUID()}`);
@@ -42,18 +44,23 @@ export function createThreadService(options: {
     },
 
     async resolveOwnedSessionThread(user, sessionId) {
-      const client = options.createUserClient(user.accessToken);
-      const { data, error } = await client
-        .from("chat_sessions")
-        .select("id, thread_id")
-        .eq("id", sessionId)
-        .single();
+      const workspace = await options.viewerService
+        .resolveWorkspace(user)
+        .catch(() => null);
 
-      if (error || !data) {
+      if (!workspace) {
         throw new ThreadServiceError("Session not found.", 404);
       }
 
-      if (!data.thread_id) {
+      const row = await options.repository
+        .findSessionThread(workspace.id, sessionId)
+        .catch(() => null);
+
+      if (!row) {
+        throw new ThreadServiceError("Session not found.", 404);
+      }
+
+      if (!row.thread_id) {
         throw new ThreadServiceError(
           "Session is not resumable because no thread is bound yet.",
           409,
@@ -61,8 +68,8 @@ export function createThreadService(options: {
       }
 
       return {
-        sessionId: data.id,
-        threadId: data.thread_id,
+        sessionId: row.id,
+        threadId: row.thread_id,
       };
     },
   };

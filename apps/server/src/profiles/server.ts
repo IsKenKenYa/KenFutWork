@@ -105,7 +105,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createCreditsPlugin({ getAdminClient: deps.getAdminClient }),
     createViewerPlugin(),
     createCanvasPlugin({ createUserClient: deps.createUserClient }),
-    createChatPlugin({ createUserClient: deps.createUserClient }),
+    createChatPlugin(),
     createSettingsPlugin(),
     createUploadsPlugin({ createUserClient: deps.createUserClient }),
     createProjectsPlugin({ createUserClient: deps.createUserClient }),

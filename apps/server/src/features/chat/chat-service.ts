@@ -3,13 +3,11 @@ import type {
   ChatMessageCreateRequest,
   ChatSessionSummary,
   ContentBlock,
-  Json,
 } from "@loomic/shared";
 
-import type {
-  AuthenticatedUser,
-  UserSupabaseClient,
-} from "../../supabase/user.js";
+import type { AuthenticatedUser } from "../../supabase/user.js";
+import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
+import type { ChatMessageRow, ChatRepository } from "./repository.js";
 import type { ThreadService } from "./thread-service.js";
 
 export class ChatServiceError extends Error {
@@ -22,6 +20,7 @@ export class ChatServiceError extends Error {
     statusCode: number,
   ) {
     super(message);
+    this.name = "ChatServiceError";
     this.code = code;
     this.statusCode = statusCode;
   }
@@ -77,28 +76,66 @@ function synthesizeLegacyBlocks(
   return blocks.length > 0 ? blocks : null;
 }
 
+function toChatMessage(row: ChatMessageRow): ChatMessage {
+  const contentBlocks =
+    Array.isArray(row.content_blocks) && row.content_blocks.length > 0
+      ? (row.content_blocks as ContentBlock[])
+      : synthesizeLegacyBlocks(
+          row.content,
+          row.tool_activities as unknown[] | null,
+        );
+
+  return {
+    id: row.id,
+    role: row.role as "user" | "assistant",
+    content: row.content,
+    toolActivities: row.tool_activities as ChatMessage["toolActivities"],
+    contentBlocks,
+    createdAt: row.created_at,
+  };
+}
+
 export function createChatService(options: {
-  createUserClient: (accessToken: string) => UserSupabaseClient;
+  repository: ChatRepository;
   threadService: Pick<ThreadService, "createThreadId">;
+  viewerService: ViewerService;
 }): ChatService {
+  const { repository, viewerService } = options;
+
+  /** 工作区一律由服务端从鉴权用户解析（`FORM-9`）。 */
+  const requireWorkspaceId = async (
+    user: AuthenticatedUser,
+    message: string,
+  ) => {
+    const workspace = await viewerService
+      .resolveWorkspace(user)
+      .catch(() => null);
+
+    if (!workspace) {
+      throw new ChatServiceError("chat_error", message, 500);
+    }
+
+    return workspace.id;
+  };
+
   return {
     async listSessions(user, canvasId) {
-      const client = options.createUserClient(user.accessToken);
-      const { data, error } = await client
-        .from("chat_sessions")
-        .select("id, title, updated_at")
-        .eq("canvas_id", canvasId)
-        .order("updated_at", { ascending: false });
+      const workspaceId = await requireWorkspaceId(
+        user,
+        "Failed to list sessions.",
+      );
 
-      if (error) {
-        throw new ChatServiceError(
-          "chat_error",
-          "Failed to list sessions.",
-          500,
-        );
-      }
+      const rows = await repository
+        .listSessions(workspaceId, canvasId)
+        .catch(() => {
+          throw new ChatServiceError(
+            "chat_error",
+            "Failed to list sessions.",
+            500,
+          );
+        });
 
-      return (data ?? []).map((row) => ({
+      return rows.map((row) => ({
         id: row.id,
         title: row.title,
         updatedAt: row.updated_at,
@@ -106,19 +143,22 @@ export function createChatService(options: {
     },
 
     async createSession(user, canvasId, title) {
-      const client = options.createUserClient(user.accessToken);
-      const { data, error } = await client
-        .from("chat_sessions")
-        .insert({
-          canvas_id: canvasId,
-          created_by: user.id,
-          thread_id: options.threadService.createThreadId(),
+      const workspaceId = await requireWorkspaceId(
+        user,
+        "Failed to create session.",
+      );
+
+      const row = await repository
+        .createSession(workspaceId, {
+          canvasId,
+          threadId: options.threadService.createThreadId(),
+          userId: user.id,
           ...(title ? { title } : {}),
         })
-        .select("id, title, updated_at")
-        .single();
+        .catch(() => null);
 
-      if (error || !data) {
+      // 0 行 = 画布不属本工作区（旧实现由 RLS 拒绝插入并报错，映射保持一致）。
+      if (!row) {
         throw new ChatServiceError(
           "chat_error",
           "Failed to create session.",
@@ -127,36 +167,52 @@ export function createChatService(options: {
       }
 
       return {
-        id: data.id,
-        title: data.title,
-        updatedAt: data.updated_at,
+        id: row.id,
+        title: row.title,
+        updatedAt: row.updated_at,
       };
     },
 
     async updateSessionTitle(user, sessionId, title) {
-      const client = options.createUserClient(user.accessToken);
-      const { error } = await client
-        .from("chat_sessions")
-        .update({ title })
-        .eq("id", sessionId);
+      const workspaceId = await requireWorkspaceId(
+        user,
+        "Failed to update session title.",
+      );
 
-      if (error) {
+      const affected = await repository
+        .updateSessionTitle(workspaceId, sessionId, title)
+        .catch(() => {
+          throw new ChatServiceError(
+            "chat_error",
+            "Failed to update session title.",
+            500,
+          );
+        });
+
+      // 0 行 = 不存在或不属本工作区；旧实现经 RLS 静默成功，此处显式 404。
+      if (affected === 0) {
         throw new ChatServiceError(
-          "chat_error",
-          "Failed to update session title.",
-          500,
+          "session_not_found",
+          "Session not found.",
+          404,
         );
       }
     },
 
     async deleteSession(user, sessionId) {
-      const client = options.createUserClient(user.accessToken);
-      const { error } = await client
-        .from("chat_sessions")
-        .delete()
-        .eq("id", sessionId);
+      const workspaceId = await requireWorkspaceId(user, "Session not found.");
 
-      if (error) {
+      const affected = await repository
+        .deleteSession(workspaceId, sessionId)
+        .catch(() => {
+          throw new ChatServiceError(
+            "session_not_found",
+            "Session not found.",
+            404,
+          );
+        });
+
+      if (affected === 0) {
         throw new ChatServiceError(
           "session_not_found",
           "Session not found.",
@@ -166,73 +222,54 @@ export function createChatService(options: {
     },
 
     async listMessages(user, sessionId) {
-      const client = options.createUserClient(user.accessToken);
-      const { data, error } = await client
-        .from("chat_messages")
-        .select(
-          "id, role, content, tool_activities, content_blocks, created_at",
-        )
-        .eq("session_id", sessionId)
-        .order("created_at", { ascending: true });
+      const workspaceId = await requireWorkspaceId(
+        user,
+        "Failed to list messages.",
+      );
 
-      if (error) {
-        throw new ChatServiceError(
-          "chat_error",
-          "Failed to list messages.",
-          500,
-        );
-      }
+      const rows = await repository
+        .listMessages(workspaceId, sessionId)
+        .catch(() => {
+          throw new ChatServiceError(
+            "chat_error",
+            "Failed to list messages.",
+            500,
+          );
+        });
 
-      const rows = (data ?? []).map((row) => {
-        const contentBlocks =
-          Array.isArray(row.content_blocks) && row.content_blocks.length > 0
-            ? (row.content_blocks as ContentBlock[])
-            : synthesizeLegacyBlocks(
-                row.content,
-                row.tool_activities as unknown[] | null,
-              );
-
-        return {
-          id: row.id,
-          role: row.role as "user" | "assistant",
-          content: row.content,
-          toolActivities: row.tool_activities as ChatMessage["toolActivities"],
-          contentBlocks,
-          createdAt: row.created_at,
-        };
-      });
+      const messages = rows.map(toChatMessage);
 
       // Deduplicate consecutive messages with same role + content
       // (caused by dual client+server save in earlier versions)
-      return rows.filter(
+      return messages.filter(
         (msg, i) =>
           i === 0 ||
-          msg.role !== rows[i - 1]!.role ||
-          msg.content !== rows[i - 1]!.content,
+          msg.role !== messages[i - 1]!.role ||
+          msg.content !== messages[i - 1]!.content,
       );
     },
 
     async createMessage(user, sessionId, input) {
-      const client = options.createUserClient(user.accessToken);
-      const { data, error } = await client
-        .from("chat_messages")
-        .insert({
-          session_id: sessionId,
+      const workspaceId = await requireWorkspaceId(
+        user,
+        "Failed to save message.",
+      );
+
+      const row = await repository
+        .insertMessage(workspaceId, {
+          sessionId,
           role: input.role,
           content: input.content,
           ...(input.toolActivities
-            ? { tool_activities: input.toolActivities as unknown as Json }
+            ? { toolActivities: input.toolActivities }
             : {}),
           ...(input.contentBlocks
-            ? { content_blocks: input.contentBlocks as unknown as Json }
+            ? { contentBlocks: input.contentBlocks }
             : {}),
         })
-        .select(
-          "id, role, content, tool_activities, content_blocks, created_at",
-        )
-        .single();
+        .catch(() => null);
 
-      if (error || !data) {
+      if (!row) {
         throw new ChatServiceError(
           "chat_error",
           "Failed to save message.",
@@ -240,28 +277,10 @@ export function createChatService(options: {
         );
       }
 
-      // Touch session updated_at
-      await client
-        .from("chat_sessions")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", sessionId);
+      // 会话排序时间随消息推进（消息表更新不会触发会话触发器）；失败不影响消息已落库。
+      await repository.touchSession(workspaceId, sessionId).catch(() => 0);
 
-      const contentBlocks =
-        Array.isArray(data.content_blocks) && data.content_blocks.length > 0
-          ? (data.content_blocks as ContentBlock[])
-          : synthesizeLegacyBlocks(
-              data.content,
-              data.tool_activities as unknown[] | null,
-            );
-
-      return {
-        id: data.id,
-        role: data.role as "user" | "assistant",
-        content: data.content,
-        toolActivities: data.tool_activities as ChatMessage["toolActivities"],
-        contentBlocks,
-        createdAt: data.created_at,
-      };
+      return toChatMessage(row);
     },
   };
 }
