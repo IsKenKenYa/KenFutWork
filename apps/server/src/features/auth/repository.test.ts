@@ -65,7 +65,7 @@ describe("auth repository：账号读取", () => {
     ).findAccountByEmail("Pro@Test.Loomic.com");
 
     const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
-    expect(sql).toContain("from auth.users u");
+    expect(sql).toContain("from public.accounts u");
     expect(sql).toContain(
       "join public.account_credentials c on c.user_id = u.id",
     );
@@ -88,10 +88,10 @@ describe("auth repository：账号读取", () => {
 describe("auth repository：建账号（同一事务）", () => {
   it("先查重、再插账号与凭据，全部在一个事务里", async () => {
     const { calls, runner } = createRunner((text) => {
-      if (text.includes("select id from auth.users")) {
+      if (text.includes("select id from public.accounts")) {
         return { rowCount: 0, rows: [] };
       }
-      if (text.includes("insert into auth.users")) {
+      if (text.includes("insert into public.accounts")) {
         return { rowCount: 1, rows: [{ id: "user-9" }] };
       }
       return { rowCount: 1, rows: [] };
@@ -109,13 +109,15 @@ describe("auth repository：建账号（同一事务）", () => {
     const sqls = calls.map((c) => c.text.replace(/\s+/g, " ").trim());
     expect(sqls[0]).toBe("begin");
     expect(sqls).toContain("commit");
-    expect(sqls.some((s) => s.includes("insert into auth.users"))).toBe(true);
+    expect(sqls.some((s) => s.includes("insert into public.accounts"))).toBe(
+      true,
+    );
     expect(
       sqls.some((s) => s.includes("insert into public.account_credentials")),
     ).toBe(true);
     // 插账号时把 display_name 写进 raw_user_meta_data（与既有 viewer 引导同源）
     const insertAccount = calls.find((c) =>
-      c.text.includes("insert into auth.users"),
+      c.text.includes("insert into public.accounts"),
     );
     expect(insertAccount?.text.replace(/\s+/g, " ")).toContain(
       "jsonb_build_object('display_name', $2::text)",
@@ -124,7 +126,7 @@ describe("auth repository：建账号（同一事务）", () => {
 
   it("邮箱已存在 → 抛 EmailTakenError 且回滚（不插任何行）", async () => {
     const { calls, runner } = createRunner((text) =>
-      text.includes("select id from auth.users")
+      text.includes("select id from public.accounts")
         ? { rowCount: 1, rows: [{ id: "user-1" }] }
         : { rowCount: 0, rows: [] },
     );
@@ -141,7 +143,7 @@ describe("auth repository：建账号（同一事务）", () => {
 
     const sqls = calls.map((c) => c.text.replace(/\s+/g, " ").trim());
     expect(sqls).toContain("rollback");
-    expect(sqls.some((s) => s.startsWith("insert into auth.users"))).toBe(
+    expect(sqls.some((s) => s.startsWith("insert into public.accounts"))).toBe(
       false,
     );
     expect(sqls.some((s) => s.includes("account_credentials"))).toBe(false);
@@ -170,7 +172,7 @@ describe("auth repository：会话", () => {
     expect(sql).toContain(
       "update public.account_sessions s set last_used_at = now()",
     );
-    expect(sql).toContain("from auth.users u");
+    expect(sql).toContain("from public.accounts u");
     expect(sql).toContain("where s.token_hash = $1");
     // 过期会话不算命中：过期判断必须落在语句里（不能靠应用层比较）
     expect(sql).toContain("s.expires_at > now()");

@@ -5,7 +5,7 @@ import { hashPassword } from "./features/auth/password.js";
 /**
  * 为既有账号设置自管认证口令（M1.4 切换用）。
  *
- * 存量账号（`auth.users` 里由 GoTrue 创建的那些）没有我们自己的口令凭据，切到
+ * 存量账号（`public.accounts` 里的那些）没有我们自己的口令凭据，切到
  * `LOOMIC_AUTH_DRIVER=local` 后无法登录。本脚本按邮箱把口令哈希写进
  * `account_credentials`（存在则覆盖，即重置口令）。
  *
@@ -69,7 +69,7 @@ async function main(): Promise<void> {
   try {
     for (const { email, password } of assignments) {
       const account = await client.query<{ id: string }>(
-        "select id from auth.users where lower(email::text) = lower($1)",
+        "select id from public.accounts where lower(email::text) = lower($1)",
         [email],
       );
       const userId = account.rows[0]?.id;

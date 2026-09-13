@@ -25,20 +25,27 @@ const countMatches = (text, re) => (text.match(re) ?? []).length;
 
 /** 取每个匹配的第一个捕获组（正则必须有捕获组）。 */
 /**
- * URL 中性化迁移：它们**专门用来**把硬编码云 URL 从数据里改写掉，语句里必然出现
- * 被改写的字面量（`replace(<云 URL>, '')`）。把这些字面量计入残留，等于惩罚
- * 「去除残留」这件事本身——历史迁移文件不可改（immutable），该指标会永久卡在历史值上。
- * 故口径（2026-09-14）：残留统计**排除中性化迁移**；权威口径是「迁移序列执行完后的
- * 库内状态」（本次实测 0 处，见 docs/tech/改造计划.md §4.13）。
+ * 中性化迁移：这些迁移**专门用来**删除 Supabase 专有构造（云 URL、`auth.*`、
+ * RLS 策略、`storage.*`），语句里必然出现被删除的字面量——`replace(<云 URL>, '')`、
+ * `drop function auth.uid()`、`drop table auth.users`。把删除动作本身计入残留，
+ * 等于惩罚「去除残留」这件事本身；历史迁移文件不可改（immutable），指标会永久卡在
+ * 历史值上。故口径（2026-09-14）：残留统计**整体排除中性化迁移**；权威口径是
+ * 「迁移序列执行完后的库内状态」——auth.uid()=0、auth.users 外键=0、策略=0、
+ * RLS 表=0、云 URL=0，由 `persistence` 的 schema 中性化集成测试锁定
+ * （见 docs/tech/改造计划.md §4.13）。
  */
-const URL_NEUTRALIZER_MIGRATIONS = new Set([
+const NEUTRALIZER_MIGRATIONS = new Set([
   "20260914120000_localize_home_seed_urls.sql",
+  "20260914180000_accounts_replace_auth_users.sql",
+  "20260914190000_drop_rls_policies.sql",
+  "20260914200000_drop_dead_auth_functions.sql",
+  "20260914210000_drop_bootstrap_viewer_rpc.sql",
 ]);
 
 function cloudUrlsExcludingNeutralizers(acc) {
   return Object.entries(acc.cloudUrlsByFile).reduce(
     (sum, [file, count]) =>
-      URL_NEUTRALIZER_MIGRATIONS.has(file) ? sum : sum + count,
+      NEUTRALIZER_MIGRATIONS.has(file) ? sum : sum + count,
     0,
   );
 }
@@ -170,6 +177,10 @@ function main() {
   };
 
   for (const file of files) {
+    // 中性化迁移只做「删除 Supabase 专有构造」，其语句必然出现被删字面量；
+    // 计入残留会惩罚去除残留本身（见 NEUTRALIZER_MIGRATIONS 注释）。
+    if (NEUTRALIZER_MIGRATIONS.has(file)) continue;
+
     const text = readFileSync(join(MIGRATIONS_DIR, file), "utf8");
 
     acc.authUsersTables.push(...tablesReferencingAuthUsers(text));

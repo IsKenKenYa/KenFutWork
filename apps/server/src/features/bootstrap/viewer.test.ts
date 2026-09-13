@@ -24,9 +24,13 @@ type RecordedCall = {
   workspaceId?: string;
 };
 
-/** 记录型 persistence 假体：断言 SQL 与是否走了工作区作用域。 */
+/**
+ * 记录型 persistence 假体：断言 SQL 与是否走了工作区作用域。
+ * `rows` 为所有语句共用的返回集；需要「按调用次序返回不同结果」时用 `rowsSequence`
+ * （第 n 项即第 n 条语句的结果，缺省空数组）。
+ */
 function createRecordingPersistence(
-  options: { fail?: Error; rows?: SqlRow[] } = {},
+  options: { fail?: Error; rows?: SqlRow[]; rowsSequence?: SqlRow[][] } = {},
 ) {
   const calls: RecordedCall[] = [];
   const rows = options.rows ?? [];
@@ -44,6 +48,7 @@ function createRecordingPersistence(
     if (options.fail) {
       throw options.fail;
     }
+    return options.rowsSequence?.[calls.length - 1] ?? rows;
   };
 
   const read = {
@@ -51,19 +56,16 @@ function createRecordingPersistence(
       sql: string,
       params?: readonly unknown[],
     ) {
-      record(sql, params);
-      return rows as T[];
+      return record(sql, params) as T[];
     },
     async queryOne<T extends SqlRow = SqlRow>(
       sql: string,
       params?: readonly unknown[],
     ) {
-      record(sql, params);
-      return (rows[0] as T | undefined) ?? null;
+      return (record(sql, params)[0] as T | undefined) ?? null;
     },
     async execute(sql: string, params?: readonly unknown[]) {
-      record(sql, params);
-      return rows.length;
+      return record(sql, params).length;
     },
   };
 
@@ -73,19 +75,16 @@ function createRecordingPersistence(
       sql: string,
       params?: readonly unknown[],
     ) {
-      record(sql, params, id);
-      return rows as T[];
+      return record(sql, params, id) as T[];
     },
     async queryOne<T extends SqlRow = SqlRow>(
       sql: string,
       params?: readonly unknown[],
     ) {
-      record(sql, params, id);
-      return (rows[0] as T | undefined) ?? null;
+      return (record(sql, params, id)[0] as T | undefined) ?? null;
     },
     async execute(sql: string, params?: readonly unknown[]) {
-      record(sql, params, id);
-      return rows.length;
+      return record(sql, params, id).length;
     },
   });
 
@@ -145,22 +144,80 @@ function createFakeRepository(
 }
 
 describe("viewer repository（workspaces/profiles/workspace_members）", () => {
-  it("bootstrap 经参数传入身份调用原子 RPC，不走工作区作用域", async () => {
-    const { calls, persistence } = createRecordingPersistence();
+  it("bootstrap 在单事务内写 profile + 个人工作区 + owner 成员，不走工作区作用域", async () => {
+    const { calls, persistence } = createRecordingPersistence({
+      // 第 2 条（工作区 insert）返回新行 ⇒ 不复用分支
+      rowsSequence: [[], [{ id: WORKSPACE_ID }], []],
+    });
     await createViewerRepository(persistence).bootstrap({
       email: EMAIL,
       userMeta: { full_name: "Ada" },
       userId: USER_ID,
     });
 
-    expect(calls).toHaveLength(1);
-    expect(calls[0]?.sql).toContain("public.bootstrap_viewer");
-    expect(calls[0]?.params).toEqual([
+    expect(calls).toHaveLength(3);
+    expect(calls.every((call) => call.workspaceId === undefined)).toBe(true);
+
+    const [profile, workspace, membership] = calls;
+    expect(profile?.sql).toContain("insert into public.profiles");
+    // 显示名回退链：meta 无 display_name → full_name
+    expect(profile?.params).toEqual([USER_ID, EMAIL, "Ada", null]);
+
+    expect(workspace?.sql).toContain("insert into public.workspaces");
+    expect(workspace?.params).toEqual(["Ada Workspace", USER_ID]);
+
+    expect(membership?.sql).toContain("insert into public.workspace_members");
+    expect(membership?.params).toEqual([WORKSPACE_ID, USER_ID]);
+  });
+
+  it("bootstrap 幂等：个人工作区已存在（insert 冲突）时复用既有 id", async () => {
+    const { calls, persistence } = createRecordingPersistence({
+      // 第 2 条 insert 因唯一索引冲突返回空 ⇒ 第 3 条 select 取到既有行
+      rowsSequence: [[], [], [{ id: WORKSPACE_ID }], []],
+    });
+    await createViewerRepository(persistence).bootstrap({
+      email: EMAIL,
+      userMeta: {},
+      userId: USER_ID,
+    });
+
+    expect(calls).toHaveLength(4);
+    expect(calls[1]?.sql).toContain("insert into public.workspaces");
+    expect(calls[1]?.sql).toContain(
+      "on conflict (owner_user_id) where type = 'personal'",
+    );
+    expect(calls[2]?.sql).toContain("select id");
+    expect(calls[2]?.params).toEqual([USER_ID]);
+    expect(calls[3]?.sql).toContain("insert into public.workspace_members");
+    expect(calls[3]?.params).toEqual([WORKSPACE_ID, USER_ID]);
+  });
+
+  it("显示名解析沿用原 RPC 口径：meta 空串不回退邮箱，只有缺省才回退", async () => {
+    const blank = createRecordingPersistence({
+      rowsSequence: [[], [{ id: WORKSPACE_ID }], []],
+    });
+    await createViewerRepository(blank.persistence).bootstrap({
+      email: EMAIL,
+      userMeta: { display_name: "   " },
+      userId: USER_ID,
+    });
+    expect(blank.calls[0]?.params?.[2]).toBeNull();
+    expect(blank.calls[1]?.params?.[0]).toBe("Personal Workspace");
+
+    const fromEmail = createRecordingPersistence({
+      rowsSequence: [[], [{ id: WORKSPACE_ID }], []],
+    });
+    await createViewerRepository(fromEmail.persistence).bootstrap({
+      email: "ada@example.com",
+      userMeta: { avatar_url: "  https://x.test/a.png  " },
+      userId: USER_ID,
+    });
+    expect(fromEmail.calls[0]?.params).toEqual([
       USER_ID,
-      EMAIL,
-      JSON.stringify({ full_name: "Ada" }),
+      "ada@example.com",
+      "ada",
+      "https://x.test/a.png",
     ]);
-    expect(calls[0]?.workspaceId).toBeUndefined();
   });
 
   it("成员读取走工作区作用域（SQL 带 :workspace 谓词）", async () => {

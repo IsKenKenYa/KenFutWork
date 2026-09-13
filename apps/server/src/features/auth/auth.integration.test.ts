@@ -36,7 +36,7 @@ describe.skipIf(!DATABASE_URL)("自管认证真实库集成", () => {
       expect(registered.user.email).toBe(email);
       expect(registered.token).toBeTruthy();
 
-      // 2) 会话可校验（走 `update … from auth.users` 的单语句取数）
+      // 2) 会话可校验（走 `update … from public.accounts` 的单语句取数）
       await expect(
         auth.resolveSession(registered.token),
       ).resolves.toMatchObject({
@@ -85,9 +85,9 @@ describe.skipIf(!DATABASE_URL)("自管认证真实库集成", () => {
       expect(stored?.password_hash.startsWith("scrypt$")).toBe(true);
       expect(stored?.password_hash).not.toContain("correct horse battery");
     } finally {
-      // account_credentials / account_sessions 对 auth.users 是 ON DELETE CASCADE
+      // account_credentials / account_sessions 对 public.accounts 是 ON DELETE CASCADE
       await persistence.query(
-        "delete from auth.users where lower(email::text) = lower($1)",
+        "delete from public.accounts where lower(email::text) = lower($1)",
         [email],
       );
       await persistence.close();
@@ -107,7 +107,9 @@ describe.skipIf(!DATABASE_URL)("自管认证真实库集成", () => {
       const session = await auth.register({ email, password: "cascade check" });
       const userId = session.user.id;
 
-      await persistence.query("delete from auth.users where id = $1", [userId]);
+      await persistence.query("delete from public.accounts where id = $1", [
+        userId,
+      ]);
 
       const credentials = await persistence.queryOne<{ n: number }>(
         "select count(*)::int as n from public.account_credentials where user_id = $1",
@@ -121,7 +123,7 @@ describe.skipIf(!DATABASE_URL)("自管认证真实库集成", () => {
       expect(sessions?.n).toBe(0);
     } finally {
       await persistence.query(
-        "delete from auth.users where lower(email::text) = lower($1)",
+        "delete from public.accounts where lower(email::text) = lower($1)",
         [email],
       );
       await persistence.close();

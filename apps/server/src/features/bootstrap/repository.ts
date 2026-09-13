@@ -1,4 +1,7 @@
-import type { PersistenceService, SqlRow } from "../persistence/types.js";
+import type {
+  PersistenceService,
+  SqlTransaction,
+} from "../persistence/types.js";
 
 export type PersonalWorkspaceRecord = {
   id: string;
@@ -77,10 +80,34 @@ export function createViewerRepository(
 ): ViewerRepository {
   return {
     async bootstrap({ email, userMeta, userId }) {
-      await persistence.query<SqlRow>(
-        "select public.bootstrap_viewer($1, $2, $3::jsonb) as workspace_id",
-        [userId, email, JSON.stringify(userMeta)],
-      );
+      const displayName = resolveDisplayName(email, userMeta);
+      const avatarUrl = resolveAvatarUrl(userMeta);
+
+      // 三项同事务：任一失败不得留下「有 workspace 无成员」这类半成品引导态
+      // （与 M1.3 起建项目改由应用层显式事务完成同一口径，原 RPC 已删）。
+      await persistence.transaction(async (tx) => {
+        await tx.execute(
+          `insert into public.profiles as p (id, email, display_name, avatar_url)
+           values ($1, $2, $3, $4)
+           on conflict (id) do update
+             set email = coalesce(excluded.email, p.email),
+                 display_name = coalesce(p.display_name, excluded.display_name),
+                 avatar_url = coalesce(p.avatar_url, excluded.avatar_url)`,
+          [userId, email, displayName, avatarUrl],
+        );
+
+        const workspaceId = await ensurePersonalWorkspace(tx, {
+          displayName,
+          userId,
+        });
+
+        await tx.execute(
+          `insert into public.workspace_members as wm (workspace_id, user_id, role)
+           values ($1, $2, 'owner')
+           on conflict (workspace_id, user_id) do update set role = 'owner'`,
+          [workspaceId, userId],
+        );
+      });
     },
 
     async findMembership(workspaceId, userId) {
@@ -174,4 +201,67 @@ function mapProfile(row: ProfileRow): ViewerProfileRecord {
     email: row.email ?? "",
     id: row.id,
   };
+}
+
+/**
+ * 取个人工作区 id，不存在则建。
+ * `workspaces_personal_owner_user_id_key`（owner_user_id WHERE type='personal'）保证
+ * 每人至多一个，故并发引导只会有一条插入成功，另一条走 select 分支拿同一 id。
+ * 建表触发器负责初始化额度与技能，无需在此调用。
+ */
+async function ensurePersonalWorkspace(
+  tx: SqlTransaction,
+  input: { displayName: string | null; userId: string },
+): Promise<string> {
+  const inserted = await tx.queryOne<{ id: string }>(
+    `insert into public.workspaces (type, name, owner_user_id)
+     values ('personal', $1, $2)
+     on conflict (owner_user_id) where type = 'personal' do nothing
+     returning id`,
+    [`${input.displayName ?? "Personal"} Workspace`, input.userId],
+  );
+
+  if (inserted) {
+    return inserted.id;
+  }
+
+  const existing = await tx.queryOne<{ id: string }>(
+    `select id
+       from public.workspaces
+      where owner_user_id = $1
+        and type = 'personal'`,
+    [input.userId],
+  );
+
+  if (!existing) {
+    throw new Error("个人工作区 upsert 未返回 id 且查无既有行");
+  }
+
+  return existing.id;
+}
+
+const META_NAME_KEYS = ["display_name", "full_name", "name"] as const;
+
+/**
+ * 显示名解析（沿用原 `bootstrap_user_foundation` 口径）：meta 中首个字符串字段，
+ * 缺省回退邮箱本地部分；btrim 后为空则 null（由上层 `mapProfile` 兜底 "Personal"）。
+ */
+function resolveDisplayName(
+  email: string,
+  userMeta: Record<string, unknown>,
+): string | null {
+  const candidate =
+    META_NAME_KEYS.map((key) => userMeta[key]).find(
+      (value) => typeof value === "string",
+    ) ??
+    email.split("@")[0] ??
+    "";
+  const trimmed = candidate.trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+function resolveAvatarUrl(userMeta: Record<string, unknown>): string | null {
+  const raw =
+    typeof userMeta.avatar_url === "string" ? userMeta.avatar_url.trim() : "";
+  return raw === "" ? null : raw;
 }

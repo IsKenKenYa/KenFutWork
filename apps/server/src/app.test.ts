@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { buildApp } from "./app.js";
 
@@ -66,16 +66,24 @@ describe("buildApp 装配完整性（插件清单防漏挂）", () => {
   });
 
   it("缺 databaseUrl 时启动期 fail loud（存储缝是必需项，不再静默降级）", () => {
-    expect(() =>
-      buildApp({
-        // blob 配置给全，让「缺 databaseUrl」成为唯一的失败原因
-        env: {
-          blobDir: "D:/Desktop/KenFutWork/data/blobs-test",
-          credentialSecret: "test-secret",
-        },
-        overrides: { auth: { authenticate: async () => null } },
-      }),
-    ).toThrow(/persistence/);
+    // 本例断言「未配置即失败」，故必须屏蔽进程环境里可能存在的连接串：
+    // 集成测试会带着 DATABASE_URL 跑整套用例，否则这里会因环境泄漏假失败。
+    vi.stubEnv("DATABASE_URL", "");
+    vi.stubEnv("LOOMIC_DATABASE_URL", "");
+    try {
+      expect(() =>
+        buildApp({
+          // blob 配置给全，让「缺 databaseUrl」成为唯一的失败原因
+          env: {
+            blobDir: "D:/Desktop/KenFutWork/data/blobs-test",
+            credentialSecret: "test-secret",
+          },
+          overrides: { auth: { authenticate: async () => null } },
+        }),
+      ).toThrow(/persistence/);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("公开路由不设认证门但必须装配：200 而非 404", async () => {

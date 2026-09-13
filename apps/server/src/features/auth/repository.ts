@@ -3,7 +3,8 @@ import { createHash } from "node:crypto";
 import type { PersistenceService } from "../persistence/types.js";
 
 /**
- * 自管认证的数据访问（`auth.users` + `account_credentials` + `account_sessions`）。
+ * 自管认证的数据访问（`public.accounts` + `account_credentials` + `account_sessions`）。
+ * 账号表是 `public.accounts`（M2.1 起；`auth.users` 是它的兼容视图）。
  *
  * **为什么不用 `:user`/`:workspace` 谓词**：登录、会话校验发生在**身份建立之前**
  * （此时还不知道用户是谁），谓词无从施加。归属由行自身携带（`user_id`），越权面由
@@ -42,7 +43,7 @@ export function hashSessionToken(token: string): string {
 export interface AccountRepository {
   /** 按邮箱取账号（含口令哈希）；不存在返回 null。邮箱比较不区分大小写。 */
   findAccountByEmail(email: string): Promise<AccountRecord | null>;
-  /** 建账号（`auth.users` + 凭据，同一事务）；邮箱已存在抛 `EmailTakenError`。 */
+  /** 建账号（`public.accounts` + 凭据，同一事务）；邮箱已存在抛 `EmailTakenError`。 */
   createAccount(input: {
     displayName: string | null;
     email: string;
@@ -74,7 +75,7 @@ export function createAccountRepository(
                 u.email,
                 u.raw_user_meta_data -> 'display_name' as display_name,
                 c.password_hash
-           from auth.users u
+           from public.accounts u
            join public.account_credentials c on c.user_id = u.id
           where lower(u.email::text) = lower($1)`,
         [email],
@@ -85,18 +86,16 @@ export function createAccountRepository(
     async createAccount(input) {
       return persistence.transaction(async (tx) => {
         const existing = await tx.queryOne<{ id: string }>(
-          "select id from auth.users where lower(email::text) = lower($1)",
+          "select id from public.accounts where lower(email::text) = lower($1)",
           [input.email],
         );
         if (existing) {
           throw new EmailTakenError();
         }
 
-        // `id` 显式取值：Supabase 供给的 auth.users 里 id **没有列默认值**（实测
-        // `null value in column "id"`），只有供给前导物化的那张才有。显式生成在两种
-        // 形态下都成立，不依赖列默认。
+        // `id` 显式取值（不依赖列默认）：显式生成在「表 / 兼容视图」两种形态下都成立
         const created = await tx.queryOne<{ id: string }>(
-          `insert into auth.users (id, email, raw_user_meta_data)
+          `insert into public.accounts (id, email, raw_user_meta_data)
            values (extensions.gen_random_uuid(), $1,
                    jsonb_build_object('display_name', $2::text))
            returning id`,
@@ -145,7 +144,7 @@ export function createAccountRepository(
       const row = await persistence.queryOne<SessionAccount>(
         `update public.account_sessions s
             set last_used_at = now()
-           from auth.users u
+           from public.accounts u
           where s.token_hash = $1
             and s.expires_at > now()
             and u.id = s.user_id

@@ -21,7 +21,7 @@ describe.skipIf(!DATABASE_URL)("persistence 真实库集成", () => {
   const connect = () =>
     createPostgresPersistence({ databaseUrl: DATABASE_URL as string });
 
-  /** 复用已引导的用户做夹具（不新建 auth 用户：M2 中性化前 profiles.id 仍外键 auth.users）。 */
+  /** 复用已引导的用户做夹具（不新建 auth 用户：profiles.id 外键 public.accounts）。 */
   async function pickFixtureUser() {
     const persistence = connect();
     try {

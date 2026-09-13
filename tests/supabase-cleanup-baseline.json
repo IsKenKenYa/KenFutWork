@@ -1,5 +1,5 @@
 {
-  "//": "去 Supabase 残留基线（棘轮门禁）：数值只许减不许增（确需上调须写明理由与回到 0 的时点）。**代码侧已全部归零**（2026-09-14，M1.5）：Supabase SDK / 用户客户端 / 管理员客户端 / Storage Provider 已从 server 与 web 删除，filesUsingSupabaseClient / sdkRefs / dbFromCalls / storageRefs 均为 0——此前为「把调用收敛进适配器」加的豁免口径已随之移除，门禁回到**无例外**。**SQL 侧仍在**：auth.uid() 78 处、auth.users 外键 15 表、storage 引用 34 处、历史迁移里的惰性云 URL 307 处——这些属 M2.1 的 schema 中性化（RLS 策略清扫 + 外键改指自管账号表），随删 GoTrue 一次做。cloudUrls 用「排除中性化迁移后的净值」，权威口径是执行完迁移序列后的库内状态（实测 0）。",
+  "//": "去 Supabase 残留基线（棘轮门禁）：数值只许减不许增（确需上调须写明理由与回到 0 的时点）。**代码侧全部归零**（2026-09-14，M1.5）：Supabase SDK / 用户客户端 / 管理员客户端 / Storage Provider 已从 server 与 web 删除，filesUsingSupabaseClient / sdkRefs / dbFromCalls / storageRefs 均为 0。**SQL 侧（2026-09-14，M2.1）：库内已中性化完成，恒为 0**——策略 0、开着 RLS 的表 0、auth/private 函数 0、指向 auth.users 的外键 0（改指 public.accounts，auth.users 退化为其兼容视图）、库内云 URL 0；该口径由真实库集成测试 `apps/server/src/features/persistence/schema-neutralization.integration.test.ts` 锁定（迁移文件不可改，文件计数看不到删除效果，故库里状态才是权威）。本文件的 sql.* 数值只剩**历史不可改迁移**里的字面量：auth.uid() 78 处、auth.users 外键 15 表（现指向 accounts）、storage 引用 34 处、惰性云 URL 307 处；这些迁移不重写，故永不下降。统计已**整体排除中性化迁移**（scripts/supabase-inventory.mjs 的 NEUTRALIZER_MIGRATIONS），否则「删除」动作本身会被计入残留。",
   "code": {
     "filesUsingSupabaseClient": 0,
     "sdkRefs": 0,
