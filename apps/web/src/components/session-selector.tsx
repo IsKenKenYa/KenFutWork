@@ -129,7 +129,7 @@ export function SessionSelector({
         >
           <HistoryIcon className="h-3.5 w-3.5" />
           <span className="max-w-[140px] truncate">
-            {activeSession?.title ?? "History"}
+            {activeSession?.title ?? "历史记录"}
           </span>
           <svg
             className={`h-3 w-3 opacity-50 transition-transform ${open ? "rotate-180" : ""}`}

@@ -26,11 +26,18 @@ import {
 } from "@/components/ui/select";
 import { PluginMarketModal } from "@/components/workbench/plugin-market-modal";
 import { SettingsModal } from "@/components/workbench/settings-modal";
+import { SidebarRow } from "@/components/workbench/sidebar-row";
 import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useAuth } from "@/lib/auth-context";
 import { getServerBaseUrl } from "@/lib/env";
-import { createProject, fetchProjects, fetchViewer } from "@/lib/server-api";
+import {
+  createProject,
+  deleteProject,
+  fetchProjects,
+  fetchViewer,
+  updateProject,
+} from "@/lib/server-api";
 
 /**
  * Agent 工作台（产品主入口）：Code / Design 双模式（DEC-2）。
@@ -54,6 +61,10 @@ interface WorkbenchTask {
   createdAt: number;
   messages: TaskMessage[];
   status: "running" | "completed" | "failed";
+  /** 所属项目（projects 实体 id）；null = 未分组 */
+  projectId?: string | null;
+  /** 归档后不显示在项目分组中，仅出现在「已归档」区 */
+  archived?: boolean;
 }
 
 const MODE_META: Record<
@@ -86,7 +97,13 @@ function loadTasks(mode: WorkbenchMode): WorkbenchTask[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = window.localStorage.getItem(`${TASKS_STORAGE_KEY}:${mode}`);
-    return raw ? (JSON.parse(raw) as WorkbenchTask[]) : [];
+    if (!raw) return [];
+    // 迁移：旧数据无 projectId/archived 字段时补默认值
+    return (JSON.parse(raw) as WorkbenchTask[]).map((t) => ({
+      ...t,
+      projectId: t.projectId ?? null,
+      archived: t.archived ?? false,
+    }));
   } catch {
     return [];
   }
@@ -127,7 +144,6 @@ export function Workbench() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   // Code 模式：本地工作目录（File System Access API，浏览器支持时可用）
   const [workDirName, setWorkDirName] = useState<string | null>(null);
-  const [newProjectName, setNewProjectName] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
   // 侧栏底部个人中心 + 模态（设置 / 插件市场）
   const [workbenchUser, setWorkbenchUser] = useState<WorkbenchUser | null>(
@@ -189,35 +205,6 @@ export function Workbench() {
     if (session?.access_token) refreshProjects();
   }, [session, refreshProjects]);
 
-  // Design 模式自动进画布：无选中项目时选第一个；列表为空则自动建「未命名画布」
-  useEffect(() => {
-    if (mode !== "design" || activeTaskId || creatingProject) return;
-    if (selectedProjectId) return;
-    if (projects.length > 0) {
-      setSelectedProjectId(projects[0]!.id);
-      return;
-    }
-    const token = session?.access_token;
-    if (!token) return;
-    setCreatingProject(true);
-    createProject(token, { name: "未命名画布" })
-      .then((result) => {
-        setProjects((prev) => [result.project, ...prev]);
-        setSelectedProjectId(result.project.id);
-      })
-      .catch(() => {
-        // 自动建画布失败：留在编排器（用户可手动创建）
-      })
-      .finally(() => setCreatingProject(false));
-  }, [
-    mode,
-    activeTaskId,
-    selectedProjectId,
-    projects,
-    creatingProject,
-    session,
-  ]);
-
   // 嵌入画布删除项目后回传：清选中并刷新列表
   useEffect(() => {
     const handler = (event: MessageEvent) => {
@@ -236,23 +223,134 @@ export function Workbench() {
     return () => window.removeEventListener("message", handler);
   }, [refreshProjects]);
 
-  const handleCreateProject = useCallback(async () => {
-    const token = session?.access_token;
-    if (!token || !newProjectName.trim()) return;
-    setCreatingProject(true);
-    try {
-      const result = await createProject(token, {
-        name: newProjectName.trim(),
+  /** 直接以指定名称创建项目（侧栏 + 号，跳过输入框）。 */
+  const createProjectNamed = useCallback(
+    async (name: string): Promise<ProjectSummary | null> => {
+      const token = session?.access_token;
+      if (!token) return null;
+      setCreatingProject(true);
+      try {
+        const result = await createProject(token, { name });
+        setProjects((prev) => [result.project, ...prev]);
+        return result.project;
+      } catch {
+        return null;
+      } finally {
+        setCreatingProject(false);
+      }
+    },
+    [session],
+  );
+
+  /** 项目重命名（updateProject API）。 */
+  const renameProject = useCallback(
+    async (projectId: string, name: string) => {
+      const token = session?.access_token;
+      if (!token) return;
+      try {
+        await updateProject(token, projectId, { name });
+        setProjects((prev) =>
+          prev.map((p) => (p.id === projectId ? { ...p, name } : p)),
+        );
+      } catch {
+        // 失败保留旧名
+      }
+    },
+    [session],
+  );
+
+  /** 项目删除：调 API 并清理本地两个模式的对话记录。 */
+  const removeProject = useCallback(
+    async (projectId: string) => {
+      const token = session?.access_token;
+      if (!token) return;
+      try {
+        await deleteProject(token, projectId);
+      } catch {
+        // mock/网络失败仍继续清本地，避免幽灵项目卡住 UI
+      }
+      setProjects((prev) => prev.filter((p) => p.id !== projectId));
+      setSelectedProjectId((current) =>
+        current === projectId ? null : current,
+      );
+      setTasksByMode((prev) => {
+        const next: typeof prev = { code: [], design: [] };
+        for (const m of ["code", "design"] as const) {
+          const kept = prev[m]
+            .filter((t) => t.projectId !== projectId)
+            .map((t) => (t.projectId == null ? t : t));
+          next[m] = kept;
+          saveTasks(m, kept);
+        }
+        return next;
       });
-      setProjects((prev) => [result.project, ...prev]);
-      setSelectedProjectId(result.project.id);
-      setNewProjectName("");
-    } catch {
-      // 创建失败保留在创建视图
-    } finally {
-      setCreatingProject(false);
+      setActiveTaskId(null);
+      refreshProjects();
+    },
+    [session, refreshProjects],
+  );
+
+  // ── 对话（task）动作：重命名 / 归档 / 删除 / 恒恢复 ──
+  const renameTask = useCallback(
+    (taskId: string, title: string) => {
+      setTasksByMode((prev) => {
+        const list = prev[mode].map((t) =>
+          t.id === taskId ? { ...t, title } : t,
+        );
+        saveTasks(mode, list);
+        return { ...prev, [mode]: list };
+      });
+    },
+    [mode],
+  );
+
+  const setTaskArchived = useCallback(
+    (taskId: string, archived: boolean) => {
+      setTasksByMode((prev) => {
+        const list = prev[mode].map((t) =>
+          t.id === taskId ? { ...t, archived } : t,
+        );
+        saveTasks(mode, list);
+        return { ...prev, [mode]: list };
+      });
+      if (archived) {
+        setActiveTaskId((current) => (current === taskId ? null : current));
+      }
+    },
+    [mode],
+  );
+
+  const deleteTask = useCallback(
+    (taskId: string) => {
+      setTasksByMode((prev) => {
+        const list = prev[mode].filter((t) => t.id !== taskId);
+        saveTasks(mode, list);
+        return { ...prev, [mode]: list };
+      });
+      setActiveTaskId((current) => (current === taskId ? null : current));
+    },
+    [mode],
+  );
+
+  // Design 模式自动进画布：无选中项目时选第一个；列表为空则自动建「未命名画布」
+  useEffect(() => {
+    if (mode !== "design" || activeTaskId || creatingProject) return;
+    if (selectedProjectId) return;
+    if (projects.length > 0) {
+      setSelectedProjectId(projects[0]!.id);
+      return;
     }
-  }, [session, newProjectName]);
+    void createProjectNamed("未命名画布").then((project) => {
+      if (project) setSelectedProjectId(project.id);
+    });
+  }, [
+    mode,
+    activeTaskId,
+    selectedProjectId,
+    projects,
+    creatingProject,
+    createProjectNamed,
+  ]);
 
   // 权限档位（DEC-4）与模型目录（含 BYOK 实例）：读取当前值
   useEffect(() => {
@@ -384,6 +482,8 @@ export function Workbench() {
         createdAt: Date.now(),
         messages: [{ role: "user", text: text.trim() }],
         status: "running",
+        projectId: mode === "code" ? (selectedProjectId ?? null) : null,
+        archived: false,
       };
       setTasksByMode((prev) => {
         const list = [task, ...prev[mode]];
@@ -417,7 +517,7 @@ export function Workbench() {
         },
       );
     },
-    [mode, model, workDirName, session, ws],
+    [mode, model, workDirName, selectedProjectId, session, ws],
   );
 
   const handleSignOut = useCallback(() => {
@@ -551,86 +651,160 @@ export function Workbench() {
           <div className="mx-3 my-2 border-t" />
 
           {mode === "design" ? (
-            <div className="mb-2 px-2">
-              <div className="px-1 pb-1 text-xs text-muted-foreground">
-                项目
-              </div>
-              <div className="space-y-1.5 px-1 pb-2">
-                <input
-                  aria-label="项目名称"
-                  placeholder="新项目名称"
-                  value={newProjectName}
-                  onChange={(e) => setNewProjectName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") void handleCreateProject();
-                  }}
-                  className="w-full rounded-md border px-2 py-1.5 text-sm"
-                />
+            /* Design：项目列表（+ 直接创建，无任务列表） */
+            <div className="flex min-h-0 flex-1 flex-col px-2">
+              <div className="flex items-center justify-between px-1 pb-1">
+                <span className="text-xs text-muted-foreground">项目</span>
                 <button
                   type="button"
                   aria-label="创建项目"
-                  disabled={creatingProject || !newProjectName.trim()}
-                  onClick={() => void handleCreateProject()}
-                  className="w-full rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
+                  title="创建项目"
+                  disabled={creatingProject}
+                  onClick={() => {
+                    void createProjectNamed("未命名画布").then((project) => {
+                      if (project) setSelectedProjectId(project.id);
+                    });
+                  }}
+                  className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
                 >
-                  {creatingProject ? "创建中…" : "创建项目"}
+                  <Plus className="h-3.5 w-3.5" />
                 </button>
               </div>
-              <div className="max-h-48 overflow-y-auto px-1">
-                {projects.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    data-active={selectedProjectId === p.id}
-                    onClick={() => {
-                      setSelectedProjectId(p.id);
-                      setActiveTaskId(null);
-                    }}
-                    className="flex w-full items-center gap-2 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted data-[active=true]:bg-muted"
-                  >
-                    <Palette className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="truncate">{p.name}</span>
-                  </button>
-                ))}
+              <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto pb-1">
+                {projects.length === 0 ? (
+                  <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+                    {creatingProject ? "创建中…" : "暂无项目"}
+                  </p>
+                ) : (
+                  projects.map((p) => (
+                    <SidebarRow
+                      key={p.id}
+                      label={p.name}
+                      active={selectedProjectId === p.id}
+                      icon={
+                        <Palette className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      }
+                      onOpen={() => {
+                        setSelectedProjectId(p.id);
+                        setActiveTaskId(null);
+                      }}
+                      onRename={(next) => void renameProject(p.id, next)}
+                      onDelete={() => void removeProject(p.id)}
+                    />
+                  ))
+                )}
               </div>
             </div>
-          ) : null}
-
-          <div className="flex items-center justify-between px-3 pb-1">
-            <span className="text-xs text-muted-foreground">任务列表</span>
-            <button
-              type="button"
-              aria-label="新建任务"
-              title="新建任务"
-              onClick={() => setActiveTaskId(null)}
-              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-1">
-            {tasks.length === 0 ? (
-              <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-                暂无任务
-              </p>
-            ) : (
-              <ul className="space-y-0.5">
-                {tasks.map((task) => (
-                  <li key={task.id}>
-                    <button
-                      type="button"
-                      data-active={activeTaskId === task.id}
-                      onClick={() => setActiveTaskId(task.id)}
-                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted data-[active=true]:bg-muted"
-                    >
-                      <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      <span className="truncate">{task.title}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+          ) : (
+            /* Code：项目列表（文件夹=项目，下面挂对话；右键重命名/归档/删除） */
+            <div className="flex min-h-0 flex-1 flex-col px-2">
+              <div className="flex items-center justify-between px-1 pb-1">
+                <span className="text-xs text-muted-foreground">项目列表</span>
+                <button
+                  type="button"
+                  aria-label="新建项目"
+                  title="新建项目"
+                  disabled={creatingProject}
+                  onClick={() => {
+                    void createProjectNamed("未命名项目").then((project) => {
+                      if (project) setSelectedProjectId(project.id);
+                    });
+                  }}
+                  className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pb-1">
+                {(() => {
+                  const ungrouped = tasks.filter(
+                    (t) => !t.archived && t.projectId == null,
+                  );
+                  const archived = tasks.filter((t) => t.archived);
+                  const taskRow = (t: WorkbenchTask) => (
+                    <SidebarRow
+                      key={t.id}
+                      label={t.title}
+                      active={activeTaskId === t.id}
+                      icon={
+                        <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      }
+                      onOpen={() => setActiveTaskId(t.id)}
+                      onRename={(next) => renameTask(t.id, next)}
+                      onArchive={() => setTaskArchived(t.id, true)}
+                      onDelete={() => deleteTask(t.id)}
+                    />
+                  );
+                  return (
+                    <>
+                      {projects.map((p) => {
+                        const items = tasks.filter(
+                          (t) => !t.archived && t.projectId === p.id,
+                        );
+                        return (
+                          <div key={p.id}>
+                            <SidebarRow
+                              label={p.name}
+                              active={selectedProjectId === p.id}
+                              icon={
+                                <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                              }
+                              onOpen={() => setSelectedProjectId(p.id)}
+                              onRename={(next) =>
+                                void renameProject(p.id, next)
+                              }
+                              onDelete={() => void removeProject(p.id)}
+                            />
+                            <div className="ml-4 space-y-0.5 border-l pl-1">
+                              {items.length === 0 ? (
+                                <p className="px-2 py-1 text-xs text-muted-foreground/70">
+                                  暂无对话
+                                </p>
+                              ) : (
+                                items.map(taskRow)
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {ungrouped.length > 0 ? (
+                        <div>
+                          <p className="px-2 py-1 text-xs text-muted-foreground">
+                            未分组
+                          </p>
+                          <div className="ml-4 space-y-0.5 border-l pl-1">
+                            {ungrouped.map(taskRow)}
+                          </div>
+                        </div>
+                      ) : null}
+                      {archived.length > 0 ? (
+                        <details className="px-1">
+                          <summary className="cursor-pointer px-1 py-1 text-xs text-muted-foreground hover:text-foreground">
+                            已归档（{archived.length}）
+                          </summary>
+                          <div className="ml-4 space-y-0.5 border-l pl-1">
+                            {archived.map((t) => (
+                              <SidebarRow
+                                key={t.id}
+                                label={t.title}
+                                icon={
+                                  <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+                                }
+                                onOpen={() => setActiveTaskId(t.id)}
+                                onRename={(next) => renameTask(t.id, next)}
+                                onRestore={() => setTaskArchived(t.id, false)}
+                                onDelete={() => deleteTask(t.id)}
+                              />
+                            ))}
+                          </div>
+                        </details>
+                      ) : null}
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
 
           {/* 底部：个人中心（头像弹出） */}
           <div className="border-t p-2">

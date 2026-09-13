@@ -139,7 +139,7 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(/start with an idea/i);
+    const input = await screen.findByPlaceholderText(/输入你的想法/);
     await userEvent.type(input, "hello loom{Enter}");
 
     await waitFor(() =>

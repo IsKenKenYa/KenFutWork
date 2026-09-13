@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   description: "插件化 BYOK Work 平台——Code / Design 双模式 Agent 工作台",
   icons: {
     icon: "/favicon.svg",
-    apple: "/apple-touch-icon.png",
+    apple: "/logo.svg",
   },
   openGraph: {
     title: "KenFutWork 工作台",

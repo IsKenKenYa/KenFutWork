@@ -6,7 +6,12 @@ import { useAgentModel } from "@/hooks/use-agent-model";
 import { fetchModels } from "@/lib/server-api";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
-type ModelOption = { id: string; name: string; provider: string };
+type ModelOption = {
+  id: string;
+  name: string;
+  provider: string;
+  providerInstanceId?: string | undefined;
+};
 
 // Sparkle icon SVG path from design spec
 const SPARKLE_ICON_PATH =
@@ -14,6 +19,15 @@ const SPARKLE_ICON_PATH =
 
 const CHECK_PATH =
   "M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 1 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0";
+
+const KNOWN_PROVIDERS = new Set([
+  "openai",
+  "google",
+  "anthropic",
+  "xai",
+  "deepseek",
+  "mistral",
+]);
 
 function ProviderLogo({ provider }: { provider: string }) {
   if (provider === "openai") {
@@ -97,7 +111,7 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
 
   const isActive = model !== null;
   const selectedModel = models.find((m) => m.id === model);
-  const displayLabel = selectedModel ? selectedModel.name : "Agent";
+  const displayLabel = selectedModel ? selectedModel.name : "自动";
 
   // Auto-positioning popover (above or below based on available space)
   const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
@@ -165,7 +179,7 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
             className="w-56 rounded-xl border border-border bg-popover p-2 shadow-lg"
           >
             <div className="mb-2 px-2 text-xs font-medium text-muted-foreground">
-              Agent Model
+              模型
             </div>
             {/* Auto option */}
             <button
@@ -180,7 +194,7 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
                   : "hover:bg-muted"
               }`}
             >
-              <span className="flex-1 text-left">Auto (workspace default)</span>
+              <span className="flex-1 text-left">自动（工作区默认）</span>
               {!isActive && (
                 <svg
                   className="h-3 w-3 text-accent-foreground"
@@ -205,7 +219,9 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
                       ? "OpenAI"
                       : provider === "google"
                         ? "Google"
-                        : provider}
+                        : KNOWN_PROVIDERS.has(provider)
+                          ? provider
+                          : "我的供应商"}
                   </div>
                   {providerModels.map((m) => (
                     <button
