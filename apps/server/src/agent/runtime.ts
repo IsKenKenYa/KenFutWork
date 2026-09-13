@@ -612,7 +612,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           }
 
           const job = await jobSvc.createJob(user, {
-            workspaceId,
             ...(canvasId ? { canvasId } : {}),
             ...(sessionId ? { sessionId } : {}),
             jobType: "image_generation",
@@ -855,7 +854,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           }
 
           const job = await jobSvc.createJob(user, {
-            workspaceId,
             ...(canvasId ? { canvasId } : {}),
             ...(sessionId ? { sessionId } : {}),
             jobType: "video_generation",

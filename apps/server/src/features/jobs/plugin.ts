@@ -1,10 +1,9 @@
 import { registerJobRoutes } from "../../http/jobs.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import { createPgmqClient } from "../../queue/pgmq-client.js";
-import type { AdminSupabaseClient } from "../../supabase/admin.js";
-import type { UserSupabaseClient } from "../../supabase/user.js";
 import type { JobService } from "./job-service.js";
 import { createJobService } from "./job-service.js";
+import { createJobRepository } from "./repository.js";
 
 /**
  * jobs 插件：PGMQ 任务服务 + 任务路由。
@@ -12,28 +11,33 @@ import { createJobService } from "./job-service.js";
  * 消费方（generate/agent-runs）经 ctx.tryGet("jobs") 可选解析。
  * 注入 injected（原 BuildAppOptions.jobService）时无条件启用，保持历史行为。
  */
-export function createJobsPlugin(deps: {
-  createUserClient: (accessToken: string) => UserSupabaseClient;
-  getAdminClient: () => AdminSupabaseClient;
-  injected?: JobService | undefined;
-  /** HTTP 进程挂路由（需 auth/credits/tierGuard/viewer）；worker 传 false。 */
-  withRoutes?: boolean;
-}): PluginDefinition {
+export function createJobsPlugin(
+  deps: {
+    injected?: JobService | undefined;
+    /** HTTP 进程挂路由（需 auth/credits/tierGuard/viewer）；worker 传 false。 */
+    withRoutes?: boolean;
+  } = {},
+): PluginDefinition {
   const isEnabled = (hasDatabaseUrl: boolean): boolean =>
     Boolean(deps.injected || hasDatabaseUrl);
   const withRoutes = deps.withRoutes ?? true;
   return {
     name: "jobs",
-    inject: withRoutes ? ["auth", "credits", "tierGuard", "viewer"] : [],
+    // worker 只走「按 id 迁移状态」路径（无用户身份、无 auth/viewer），
+    // 用户路径缺 viewer 时由服务 fail loud。
+    inject: withRoutes
+      ? ["auth", "credits", "persistence", "tierGuard", "viewer"]
+      : ["persistence"],
     enabled: (env) => isEnabled(Boolean(env.databaseUrl)),
     apply(ctx) {
+      const viewerService = ctx.tryGet("viewer");
       ctx.register("jobs", () => {
         // enabled 已保证无注入实例时必有 databaseUrl；有注入实例时 override 优先，工厂不会执行。
         const pgmq = createPgmqClient(ctx.env.databaseUrl as string);
         return createJobService({
-          createUserClient: deps.createUserClient,
-          getAdminClient: deps.getAdminClient,
           pgmq,
+          repository: createJobRepository(ctx.get("persistence")),
+          ...(viewerService ? { viewerService } : {}),
         });
       });
     },

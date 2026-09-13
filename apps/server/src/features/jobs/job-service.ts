@@ -2,15 +2,12 @@ import type {
   BackgroundJob,
   BackgroundJobStatus,
   BackgroundJobType,
-  Json,
 } from "@loomic/shared";
 
 import type { PgmqClient } from "../../queue/pgmq-client.js";
-import type { AdminSupabaseClient } from "../../supabase/admin.js";
-import type {
-  AuthenticatedUser,
-  UserSupabaseClient,
-} from "../../supabase/user.js";
+import type { AuthenticatedUser } from "../../supabase/user.js";
+import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
+import type { BackgroundJobRecord, JobRepository } from "./repository.js";
 
 // Queue name mapping
 const QUEUE_MAP: Record<BackgroundJobType, string> = {
@@ -38,8 +35,8 @@ export class JobServiceError extends Error {
   }
 }
 
+/** 工作区由服务端从鉴权用户解析（`FORM-9`），故不由调用方传入。 */
 export type CreateJobInput = {
-  workspaceId: string;
   projectId?: string;
   canvasId?: string;
   sessionId?: string;
@@ -61,7 +58,7 @@ export type JobService = {
   cancelJob(user: AuthenticatedUser, jobId: string): Promise<BackgroundJob>;
   getJobAdmin(jobId: string): Promise<BackgroundJob>;
 
-  // Admin-only methods (use admin client, no user auth)
+  // Admin-only methods (worker/executor 路径，无用户身份，按 id 取数)
   setCreditsInfo(
     jobId: string,
     creditsCost: number,
@@ -84,63 +81,95 @@ export type JobService = {
   ): Promise<{ attempt_count: number; max_attempts: number }>;
 };
 
+function mapJobRow(row: BackgroundJobRecord): BackgroundJob {
+  return {
+    id: row.id,
+    workspace_id: row.workspace_id,
+    project_id: row.project_id ?? null,
+    canvas_id: row.canvas_id ?? null,
+    session_id: row.session_id ?? null,
+    thread_id: row.thread_id ?? null,
+    queue_name: row.queue_name,
+    job_type: row.job_type as BackgroundJob["job_type"],
+    status: row.status as BackgroundJob["status"],
+    payload: row.payload ?? {},
+    result: row.result ?? null,
+    error_code: row.error_code ?? null,
+    error_message: row.error_message ?? null,
+    attempt_count: row.attempt_count,
+    max_attempts: row.max_attempts,
+    created_by: row.created_by,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    started_at: row.started_at ?? null,
+    completed_at: row.completed_at ?? null,
+    failed_at: row.failed_at ?? null,
+    canceled_at: row.canceled_at ?? null,
+  };
+}
+
 export function createJobService(options: {
-  createUserClient: (accessToken: string) => UserSupabaseClient;
-  getAdminClient: () => AdminSupabaseClient;
   pgmq: PgmqClient;
+  repository: JobRepository;
+  /**
+   * 用户路径（建/查/列/取消）需要它解析工作区；worker 进程只走按 id 的
+   * 状态迁移路径，可缺省。缺省时用户方法**立即 fail loud**。
+   */
+  viewerService?: ViewerService | undefined;
 }): JobService {
-  function mapJobRow(row: Record<string, unknown>): BackgroundJob {
-    return {
-      id: row.id as string,
-      workspace_id: row.workspace_id as string,
-      project_id: (row.project_id as string) ?? null,
-      canvas_id: (row.canvas_id as string) ?? null,
-      session_id: (row.session_id as string) ?? null,
-      thread_id: (row.thread_id as string) ?? null,
-      queue_name: row.queue_name as string,
-      job_type: row.job_type as BackgroundJob["job_type"],
-      status: row.status as BackgroundJob["status"],
-      payload: (row.payload as Record<string, unknown>) ?? {},
-      result: (row.result as Record<string, unknown>) ?? null,
-      error_code: (row.error_code as string) ?? null,
-      error_message: (row.error_message as string) ?? null,
-      attempt_count: row.attempt_count as number,
-      max_attempts: row.max_attempts as number,
-      created_by: row.created_by as string,
-      created_at: row.created_at as string,
-      updated_at: row.updated_at as string,
-      started_at: (row.started_at as string) ?? null,
-      completed_at: (row.completed_at as string) ?? null,
-      failed_at: (row.failed_at as string) ?? null,
-      canceled_at: (row.canceled_at as string) ?? null,
-    };
+  const { pgmq, repository } = options;
+
+  function requireViewer(): ViewerService {
+    if (!options.viewerService) {
+      throw new JobServiceError(
+        "job_query_failed",
+        "用户级任务操作需要 ViewerService（worker 进程不提供）。",
+        500,
+      );
+    }
+    return options.viewerService;
   }
 
-  const SELECT_COLS =
-    "id, workspace_id, project_id, canvas_id, session_id, thread_id, queue_name, job_type, status, payload, result, error_code, error_message, attempt_count, max_attempts, created_by, created_at, updated_at, started_at, completed_at, failed_at, canceled_at";
+  /** 工作区 id 一律由服务端从鉴权用户解析（`FORM-9`）。 */
+  async function requireWorkspaceId(
+    user: AuthenticatedUser,
+    errorCode: JobServiceError["code"],
+  ): Promise<string> {
+    const workspace = await requireViewer()
+      .resolveWorkspace(user)
+      .catch(() => null);
+
+    if (!workspace) {
+      throw new JobServiceError(
+        errorCode,
+        "Unable to resolve workspace for job.",
+        500,
+      );
+    }
+
+    return workspace.id;
+  }
 
   return {
     async createJob(user, input) {
-      const client = options.createUserClient(user.accessToken);
+      const workspaceId = await requireWorkspaceId(user, "job_create_failed");
       const queueName = QUEUE_MAP[input.jobType];
 
-      const { data: job, error } = await client
-        .from("background_jobs")
+      const job = await repository
         .insert({
-          workspace_id: input.workspaceId,
-          project_id: input.projectId ?? null,
-          canvas_id: input.canvasId ?? null,
-          session_id: input.sessionId ?? null,
-          thread_id: input.threadId ?? null,
-          queue_name: queueName,
-          job_type: input.jobType,
-          payload: input.payload as Json,
-          created_by: user.id,
+          ...(input.canvasId ? { canvasId: input.canvasId } : {}),
+          jobType: input.jobType,
+          payload: input.payload,
+          ...(input.projectId ? { projectId: input.projectId } : {}),
+          queueName,
+          ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+          ...(input.threadId ? { threadId: input.threadId } : {}),
+          userId: user.id,
+          workspaceId,
         })
-        .select(SELECT_COLS)
-        .single();
+        .catch(() => null);
 
-      if (error || !job) {
+      if (!job) {
         throw new JobServiceError(
           "job_create_failed",
           "Failed to create job record.",
@@ -150,16 +179,16 @@ export function createJobService(options: {
 
       // Enqueue to pgmq — rollback on failure
       try {
-        await options.pgmq.send(queueName, {
+        await pgmq.send(queueName, {
           job_id: job.id,
           job_type: input.jobType,
-          workspace_id: input.workspaceId,
+          workspace_id: workspaceId,
           ...(input.canvasId ? { canvas_id: input.canvasId } : {}),
           ...(input.sessionId ? { session_id: input.sessionId } : {}),
         });
       } catch (enqueueErr) {
         console.error("[job-service] pgmq.send failed:", enqueueErr);
-        await client.from("background_jobs").delete().eq("id", job.id);
+        await repository.delete(workspaceId, job.id).catch(() => 0);
         throw new JobServiceError(
           "job_create_failed",
           "Failed to enqueue job.",
@@ -167,72 +196,58 @@ export function createJobService(options: {
         );
       }
 
-      return mapJobRow(job as unknown as Record<string, unknown>);
+      return mapJobRow(job);
     },
 
     async getJob(user, jobId) {
-      const client = options.createUserClient(user.accessToken);
-      const { data: job, error } = await client
-        .from("background_jobs")
-        .select(SELECT_COLS)
-        .eq("id", jobId)
-        .maybeSingle();
+      const workspaceId = await requireWorkspaceId(user, "job_query_failed");
 
-      if (error) {
-        throw new JobServiceError(
-          "job_query_failed",
-          "Failed to query job.",
-          500,
-        );
-      }
+      const job = await repository
+        .findByIdInWorkspace(workspaceId, jobId)
+        .catch(() => {
+          throw new JobServiceError(
+            "job_query_failed",
+            "Failed to query job.",
+            500,
+          );
+        });
+
       if (!job) {
         throw new JobServiceError("job_not_found", "Job not found.", 404);
       }
-      return mapJobRow(job as unknown as Record<string, unknown>);
+      return mapJobRow(job);
     },
 
     async listJobs(user, filters) {
-      const client = options.createUserClient(user.accessToken);
-      let query = client
-        .from("background_jobs")
-        .select(SELECT_COLS)
-        .eq("created_by", user.id)
-        .order("created_at", { ascending: false })
-        .limit(50);
+      const workspaceId = await requireWorkspaceId(user, "job_query_failed");
 
-      if (filters?.status) query = query.eq("status", filters.status);
-      if (filters?.jobType) query = query.eq("job_type", filters.jobType);
+      const jobs = await repository
+        .listByCreator(workspaceId, user.id, {
+          ...(filters?.jobType ? { jobType: filters.jobType } : {}),
+          ...(filters?.status ? { status: filters.status } : {}),
+        })
+        .catch(() => {
+          throw new JobServiceError(
+            "job_query_failed",
+            "Failed to list jobs.",
+            500,
+          );
+        });
 
-      const { data: jobs, error } = await query;
-      if (error) {
-        throw new JobServiceError(
-          "job_query_failed",
-          "Failed to list jobs.",
-          500,
-        );
-      }
-      return (jobs ?? []).map((row) =>
-        mapJobRow(row as unknown as Record<string, unknown>),
-      );
+      return jobs.map(mapJobRow);
     },
 
     async cancelJob(user, jobId) {
-      const client = options.createUserClient(user.accessToken);
-      const { data: job, error } = await client
-        .from("background_jobs")
-        .update({ status: "canceled", canceled_at: new Date().toISOString() })
-        .eq("id", jobId)
-        .in("status", ["queued", "running"])
-        .select(SELECT_COLS)
-        .maybeSingle();
+      const workspaceId = await requireWorkspaceId(user, "job_cancel_failed");
 
-      if (error) {
+      const job = await repository.cancel(workspaceId, jobId).catch(() => {
         throw new JobServiceError(
           "job_cancel_failed",
           "Failed to cancel job.",
           500,
         );
-      }
+      });
+
       if (!job) {
         throw new JobServiceError(
           "job_not_found",
@@ -240,117 +255,61 @@ export function createJobService(options: {
           404,
         );
       }
-      return mapJobRow(job as unknown as Record<string, unknown>);
+      return mapJobRow(job);
     },
 
     async getJobAdmin(jobId) {
-      const admin = options.getAdminClient();
-      const { data: job, error } = await admin
-        .from("background_jobs")
-        .select(SELECT_COLS)
-        .eq("id", jobId)
-        .maybeSingle();
-
-      if (error) {
+      const job = await repository.findById(jobId).catch(() => {
         throw new JobServiceError(
           "job_query_failed",
           "Failed to query job.",
           500,
         );
-      }
+      });
+
       if (!job) {
         throw new JobServiceError("job_not_found", "Job not found.", 404);
       }
-      return mapJobRow(job as unknown as Record<string, unknown>);
+      return mapJobRow(job);
     },
 
-    // --- Admin-only methods (admin client, bypasses RLS) ---
+    // --- worker/executor 路径：按 id 改状态（无用户身份） ---
 
     async setCreditsInfo(jobId, creditsCost, transactionId) {
-      const admin = options.getAdminClient();
-      await admin
-        .from("background_jobs")
-        .update({
-          credits_cost: creditsCost,
-          credits_transaction_id: transactionId,
-        })
-        .eq("id", jobId);
+      await repository
+        .setCreditsInfo(jobId, creditsCost, transactionId)
+        .catch(() => 0);
     },
 
     async markRunning(jobId) {
-      const admin = options.getAdminClient();
-      await admin
-        .from("background_jobs")
-        .update({ status: "running", started_at: new Date().toISOString() })
-        .eq("id", jobId)
-        .eq("status", "queued");
+      await repository.markRunning(jobId).catch(() => 0);
     },
 
     async markSucceeded(jobId, result) {
-      const admin = options.getAdminClient();
-      await admin
-        .from("background_jobs")
-        .update({
-          status: "succeeded",
-          result: result as Json,
-          completed_at: new Date().toISOString(),
-        })
-        .eq("id", jobId);
+      await repository.markSucceeded(jobId, result).catch(() => 0);
     },
 
     async markFailed(jobId, errorCode, errorMessage) {
-      const admin = options.getAdminClient();
-      await admin
-        .from("background_jobs")
-        .update({
-          status: "failed",
-          error_code: errorCode,
-          error_message: errorMessage,
-          failed_at: new Date().toISOString(),
-        })
-        .eq("id", jobId);
+      await repository
+        .markFailed(jobId, errorCode, errorMessage)
+        .catch(() => 0);
     },
 
     async markDeadLetter(jobId, errorCode, errorMessage) {
-      const admin = options.getAdminClient();
-      await admin
-        .from("background_jobs")
-        .update({
-          status: "dead_letter",
-          error_code: errorCode,
-          error_message: errorMessage,
-          failed_at: new Date().toISOString(),
-        })
-        .eq("id", jobId);
+      await repository
+        .markDeadLetter(jobId, errorCode, errorMessage)
+        .catch(() => 0);
     },
 
     async incrementAttempt(jobId) {
-      const admin = options.getAdminClient();
-      // NOTE: increment_job_attempt may not be in generated Supabase types yet
-      const { data, error } = await (admin as any).rpc(
-        "increment_job_attempt",
-        {
-          p_job_id: jobId,
-        },
-      );
-
-      if (error) {
+      return repository.incrementAttempt(jobId).catch((error: unknown) => {
         console.error(
-          "[job-service] increment_job_attempt RPC failed:",
-          error.message,
+          "[job-service] increment_job_attempt failed:",
+          error instanceof Error ? error.message : error,
         );
+        // 累加失败返回安全默认值（与旧行为一致：不阻断任务处理）
         return { attempt_count: 1, max_attempts: 3 };
-      }
-
-      const row = Array.isArray(data) ? data[0] : data;
-      if (row && typeof row === "object") {
-        return {
-          attempt_count: (row as any).attempt_count as number,
-          max_attempts: ((row as any).max_attempts as number) ?? 3,
-        };
-      }
-      // Job not found — return safe defaults
-      return { attempt_count: 1, max_attempts: 3 };
+      });
     },
   };
 }

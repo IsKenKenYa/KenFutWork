@@ -110,8 +110,6 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createUploadsPlugin({ createUserClient: deps.createUserClient }),
     createProjectsPlugin({ createUserClient: deps.createUserClient }),
     createJobsPlugin({
-      createUserClient: deps.createUserClient,
-      getAdminClient: deps.getAdminClient,
       ...(deps.overrideJobs ? { injected: deps.overrideJobs } : {}),
     }),
     createPaymentsPlugin({

@@ -280,7 +280,6 @@ export async function registerGenerateRoutes(
 
       // ── Create job ──
       const job = await options.jobService.createJob(user, {
-        workspaceId,
         jobType: "video_generation",
         payload: {
           prompt: payload.prompt,

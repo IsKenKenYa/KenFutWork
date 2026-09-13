@@ -14,24 +14,18 @@ const baseEnv: ServerEnv = {
   webOrigin: "http://localhost:3000",
 };
 
-function stubKernelDeps() {
-  return {
-    createUserClient: (() => ({})) as never,
-    getAdminClient: (() => ({})) as never,
-  };
-}
-
 describe("jobs 插件（enabled 条件装配）", () => {
   it("有 databaseUrl 时装配并注册任务路由", async () => {
     const app = Fastify({ logger: false });
     const kernel = composePlugins(
       { ...baseEnv, databaseUrl: "postgres://localhost/test" },
-      [createJobsPlugin({ ...stubKernelDeps() })],
+      [createJobsPlugin()],
       {
         app,
         overrides: {
           auth: { authenticate: async () => null },
           credits: {} as never,
+          persistence: {} as never,
           tierGuard: {} as never,
           viewer: {} as never,
         },
@@ -47,9 +41,7 @@ describe("jobs 插件（enabled 条件装配）", () => {
 
   it("无 databaseUrl 且无注入实例时不装配，tryGet 返回 undefined", () => {
     const app = Fastify({ logger: false });
-    const kernel = composePlugins(baseEnv, [
-      createJobsPlugin({ ...stubKernelDeps() }),
-    ]);
+    const kernel = composePlugins(baseEnv, [createJobsPlugin()]);
     expect(kernel.tryGet("jobs")).toBeUndefined();
     kernel.dispose();
     void app;
@@ -59,20 +51,17 @@ describe("jobs 插件（enabled 条件装配）", () => {
     const app = Fastify({ logger: false });
     const injected = { markRunning: vi.fn() } as unknown as JobService;
     // 与 app.ts 接线一致：注入实例同时经 overrides 直填，插件工厂不会执行
-    const kernel = composePlugins(
-      baseEnv,
-      [createJobsPlugin({ ...stubKernelDeps(), injected })],
-      {
-        app,
-        overrides: {
-          jobs: injected,
-          auth: { authenticate: async () => null },
-          credits: {} as never,
-          tierGuard: {} as never,
-          viewer: {} as never,
-        },
+    const kernel = composePlugins(baseEnv, [createJobsPlugin({ injected })], {
+      app,
+      overrides: {
+        jobs: injected,
+        auth: { authenticate: async () => null },
+        credits: {} as never,
+        persistence: {} as never,
+        tierGuard: {} as never,
+        viewer: {} as never,
       },
-    );
+    });
     expect(kernel.tryGet("jobs")).toBe(injected);
     kernel.dispose();
     void app;
