@@ -51,7 +51,8 @@
     "worker": "node --env-file=../../.env.local --import tsx ./src/worker.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "start": "node --env-file=../../.env.local --import tsx ./src/server.ts"
+    "start": "node --env-file=../../.env.local --import tsx ./src/server.ts",
+    "migrate": "node --env-file=../../.env.local --import tsx ./src/migrate.ts"
   },
   "start:worker": "node --env-file=../../.env.local --import tsx ./src/worker.ts"
 }
