@@ -26,6 +26,16 @@ export class SqlError extends Error {
 /** PostgreSQL 唯一约束冲突（`23505`）。 */
 export const SQLSTATE_UNIQUE_VIOLATION = "23505";
 
+/** 隔离违约：用户作用域语句未引用 `:user` 谓词。 */
+export class UserIsolationError extends Error {
+  constructor(operation: string) {
+    super(
+      `[persistence] ${operation} 缺少 :user 谓词——用户归属数据必须经 forUser() 绑定用户（FORM-9）。`,
+    );
+    this.name = "UserIsolationError";
+  }
+}
+
 /** 隔离违约：workspace 作用域语句未引用 `:workspace` 谓词。 */
 export class WorkspaceIsolationError extends Error {
   constructor(operation: string) {

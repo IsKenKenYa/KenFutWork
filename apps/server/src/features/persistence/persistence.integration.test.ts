@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createViewerRepository } from "../bootstrap/repository.js";
-import { WorkspaceIsolationError } from "./errors.js";
+import { UserIsolationError, WorkspaceIsolationError } from "./errors.js";
 import { createPostgresPersistence } from "./providers/postgres.js";
 
 /**
@@ -139,6 +139,56 @@ describe.skipIf(!DATABASE_URL)("persistence 真实库集成", () => {
         );
       expect(foreign).toBeNull();
     } finally {
+      await persistence.close();
+    }
+  });
+
+  it("forUser 绑定的是用户：同库不同用户互不可见（brand_kits）", async () => {
+    const user = await pickFixtureUser();
+    expect(user, "需要至少一个已引导的 profile 作夹具").not.toBeNull();
+    const userId = (user as IdRow).id;
+
+    const persistence = connect();
+    let kitId: string | undefined;
+    try {
+      const created = await persistence
+        .forUser(userId)
+        .queryOne<{ id: string }>(
+          `insert into public.brand_kits (user_id, name, is_default)
+           values (:user, $1, false)
+           returning id`,
+          ["集成品牌套件"],
+        );
+      kitId = created?.id;
+      expect(kitId).toBeTruthy();
+
+      const mine = await persistence
+        .forUser(userId)
+        .queryOne<{ name: string }>(
+          "select name from public.brand_kits where user_id = :user and id = $1",
+          [kitId],
+        );
+      expect(mine?.name).toBe("集成品牌套件");
+
+      // 换一个用户作用域 → 看不到
+      const foreign = await persistence
+        .forUser("11111111-1111-1111-1111-111111111111")
+        .queryOne(
+          "select id from public.brand_kits where user_id = :user and id = $1",
+          [kitId],
+        );
+      expect(foreign).toBeNull();
+
+      // 漏写 :user 即违约，不下发查询
+      await expect(
+        persistence.forUser(userId).query("select id from public.brand_kits"),
+      ).rejects.toBeInstanceOf(UserIsolationError);
+    } finally {
+      if (kitId) {
+        await persistence.query("delete from public.brand_kits where id = $1", [
+          kitId,
+        ]);
+      }
       await persistence.close();
     }
   });

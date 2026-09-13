@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { SqlError, WorkspaceIsolationError } from "./errors.js";
+import {
+  SqlError,
+  UserIsolationError,
+  WorkspaceIsolationError,
+} from "./errors.js";
 import {
   createPersistenceFromRunner,
   type PostgresQueryRunner,
@@ -342,6 +346,85 @@ describe("persistence 事务", () => {
       {
         text: "delete from projects where workspace_id = $2 and id = $1",
         values: ["p1", "ws-9"],
+      },
+    ]);
+  });
+});
+
+describe("persistence 用户作用域（forUser）", () => {
+  it("forUser 把 :user 重写为末位参数占位符", async () => {
+    const fake = createFakeRunner();
+    const persistence = createPersistenceFromRunner(fake.runner);
+
+    await persistence
+      .forUser("user-1")
+      .query(
+        "select id from public.brand_kits where user_id = :user and id = $1",
+        ["kit-1"],
+      );
+
+    expect(fake.calls).toEqual([
+      {
+        text: "select id from public.brand_kits where user_id = $2 and id = $1",
+        values: ["kit-1", "user-1"],
+      },
+    ]);
+    expect(persistence.forUser("user-2").userId).toBe("user-2");
+  });
+
+  it("漏写 :user 谓词立即失败且不下发查询", async () => {
+    const fake = createFakeRunner();
+    const scoped = createPersistenceFromRunner(fake.runner).forUser("user-1");
+
+    await expect(
+      scoped.query("select id from public.brand_kits where id = $1", ["kit-1"]),
+    ).rejects.toBeInstanceOf(UserIsolationError);
+    await expect(
+      scoped.execute("delete from public.brand_kits where id = $1", ["kit-1"]),
+    ).rejects.toBeInstanceOf(UserIsolationError);
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it("两种作用域互不通用：标记不对即违约（防串用）", async () => {
+    const fake = createFakeRunner();
+    const persistence = createPersistenceFromRunner(fake.runner);
+
+    // 用户作用域遇到 workspace 语句 → 缺 :user
+    await expect(
+      persistence
+        .forUser("user-1")
+        .query(
+          "select id from public.projects where workspace_id = :workspace",
+        ),
+    ).rejects.toBeInstanceOf(UserIsolationError);
+
+    // 工作区作用域遇到用户语句 → 缺 :workspace
+    await expect(
+      persistence
+        .forWorkspace("ws-1")
+        .query("select id from public.brand_kits where user_id = :user"),
+    ).rejects.toBeInstanceOf(WorkspaceIsolationError);
+
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it("事务内 forUser 绑定用户并与业务参数共存", async () => {
+    const fake = createFakeRunner();
+    const persistence = createPersistenceFromRunner(fake.runner);
+
+    await persistence.transaction((tx) =>
+      tx
+        .forUser("user-9")
+        .execute(
+          "update public.brand_kits set name = $1 where user_id = :user",
+          ["新名"],
+        ),
+    );
+
+    expect(dataCalls(fake.calls)).toEqual([
+      {
+        text: "update public.brand_kits set name = $1 where user_id = $2",
+        values: ["新名", "user-9"],
       },
     ]);
   });

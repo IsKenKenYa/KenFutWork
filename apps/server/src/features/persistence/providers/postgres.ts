@@ -1,16 +1,24 @@
 import { Pool } from "pg";
 
-import { SqlError, WorkspaceIsolationError } from "../errors.js";
+import {
+  SqlError,
+  UserIsolationError,
+  WorkspaceIsolationError,
+} from "../errors.js";
 import type {
   PersistenceService,
   SqlClient,
   SqlRow,
   SqlTransaction,
+  UserSqlClient,
   WorkspaceSqlClient,
 } from "../types.js";
 
 /** 工作区谓词占位符：workspace 作用域语句必须显式引用它（`FORM-9`）。 */
 export const WORKSPACE_MARKER = ":workspace";
+
+/** 用户谓词占位符：按 `user_id` 定权的表（无 workspace_id）必须显式引用它。 */
+export const USER_MARKER = ":user";
 
 const DEFAULT_POOL_MAX = 10;
 const PING_SQL = "select 1 as ok";
@@ -88,6 +96,7 @@ export function createPersistenceFromRunner(
 
   return {
     ...root,
+    forUser: (userId) => createUserScopedClient(normalizeQuery(runner.query), userId),
     forWorkspace: (workspaceId) =>
       createWorkspaceClient(normalizeQuery(runner.query), workspaceId),
     transaction: (fn) => runTransaction(runner, fn),
@@ -113,6 +122,7 @@ async function runTransaction<T>(
     await query("begin", []);
     const result = await fn({
       ...createClient(query),
+      forUser: (userId) => createUserScopedClient(query, userId),
       forWorkspace: (workspaceId) => createWorkspaceClient(query, workspaceId),
     });
     await query("commit", []);
@@ -152,28 +162,30 @@ function createClient(query: QueryFn): SqlClient {
   };
 }
 
-function createWorkspaceClient(
-  query: QueryFn,
-  workspaceId: string,
-): WorkspaceSqlClient {
-  /** 绑定工作区：`:workspace` 命中末位占位符；漏写即隔离违约（不下发查询）。 */
-  const bind = (
-    sql: string,
-    params: readonly unknown[] | undefined,
-    operation: string,
-  ) => {
-    if (!sql.includes(WORKSPACE_MARKER)) {
-      throw new WorkspaceIsolationError(operation);
-    }
-    const values = [...(params ?? []), workspaceId];
-    return {
-      text: sql.split(WORKSPACE_MARKER).join(`$${values.length}`),
-      values,
-    };
-  };
+/** 作用域绑定器：命中标记 → 值追加为末位参数；漏写标记即隔离违约（不下发查询）。 */
+type BindFn = (
+  sql: string,
+  params: readonly unknown[] | undefined,
+  operation: string,
+) => { text: string; values: unknown[] };
 
+function createBind(
+  marker: string,
+  value: string,
+  makeError: (operation: string) => Error,
+): BindFn {
+  return (sql, params, operation) => {
+    if (!sql.includes(marker)) {
+      throw makeError(operation);
+    }
+    const values = [...(params ?? []), value];
+    return { text: sql.split(marker).join(`$${values.length}`), values };
+  };
+}
+
+/** 作用域客户端的三个查询方法（工作区/用户两种作用域共用，仅绑定器不同）。 */
+function createScopedMethods(bind: BindFn, query: QueryFn) {
   return {
-    workspaceId,
     async query<T extends SqlRow = SqlRow>(
       sql: string,
       params?: readonly unknown[],
@@ -196,6 +208,29 @@ function createWorkspaceClient(
       return result.rowCount ?? 0;
     },
   };
+}
+
+function createWorkspaceClient(
+  query: QueryFn,
+  workspaceId: string,
+): WorkspaceSqlClient {
+  const bind = createBind(
+    WORKSPACE_MARKER,
+    workspaceId,
+    (operation) => new WorkspaceIsolationError(operation),
+  );
+
+  return { workspaceId, ...createScopedMethods(bind, query) };
+}
+
+function createUserScopedClient(query: QueryFn, userId: string): UserSqlClient {
+  const bind = createBind(
+    USER_MARKER,
+    userId,
+    (operation) => new UserIsolationError(operation),
+  );
+
+  return { userId, ...createScopedMethods(bind, query) };
 }
 
 /** 把「可能抛驱动错误」的查询函数包成归一错误的 `QueryFn`。 */

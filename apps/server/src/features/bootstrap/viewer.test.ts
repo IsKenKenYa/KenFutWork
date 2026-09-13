@@ -67,32 +67,42 @@ function createRecordingPersistence(
     },
   };
 
-  const scoped = (workspaceId: string) => ({
-    workspaceId,
+  /** 作用域方法体（工作区/用户两种作用域共用，只记录绑定的 id）。 */
+  const scopedMethods = (id: string) => ({
     async query<T extends SqlRow = SqlRow>(
       sql: string,
       params?: readonly unknown[],
     ) {
-      record(sql, params, workspaceId);
+      record(sql, params, id);
       return rows as T[];
     },
     async queryOne<T extends SqlRow = SqlRow>(
       sql: string,
       params?: readonly unknown[],
     ) {
-      record(sql, params, workspaceId);
+      record(sql, params, id);
       return (rows[0] as T | undefined) ?? null;
     },
     async execute(sql: string, params?: readonly unknown[]) {
-      record(sql, params, workspaceId);
+      record(sql, params, id);
       return rows.length;
     },
   });
 
+  const forWorkspace = (workspaceId: string) => ({
+    workspaceId,
+    ...scopedMethods(workspaceId),
+  });
+  const forUser = (userId: string) => ({
+    userId,
+    ...scopedMethods(userId),
+  });
+
   const persistence: PersistenceService = {
     ...read,
-    forWorkspace: scoped,
-    transaction: (fn) => fn({ ...read, forWorkspace: scoped }),
+    forUser,
+    forWorkspace,
+    transaction: (fn) => fn({ ...read, forUser, forWorkspace }),
     ping: async () => {},
     close: async () => {},
   };
