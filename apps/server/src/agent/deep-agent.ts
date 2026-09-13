@@ -64,6 +64,25 @@ function createToolGateMiddleware(gate: ToolGate): AgentMiddleware {
   };
 }
 
+/**
+ * 未知工具兜底：模型依线程历史复述已停用/卸载插件的工具名时（工具不在当前
+ * 注册表，`request.tool` 为空），以工具级结果回复而非让整轮 run 失败。
+ */
+function createUnknownToolGuardMiddleware(): AgentMiddleware {
+  return {
+    name: "loomic-unknown-tool-guard",
+    wrapToolCall: async (request, handler) => {
+      if (request.tool) {
+        return handler(request);
+      }
+      return new ToolMessage({
+        tool_call_id: request.toolCall.id ?? request.toolCall.name,
+        content: `工具 ${request.toolCall.name} 当前不可用（可能已被停用或卸载）。请改用其它方式完成，或请用户重新启用相关插件。`,
+      });
+    },
+  };
+}
+
 export type LoomicAgentFactory = (options: {
   backendResult?: AgentBackendResult;
   brandKitId?: string | null;
@@ -159,10 +178,15 @@ export function createLoomicDeepAgent(options: {
     ...(options.store ? { store: options.store } : {}),
     subagents: [createVideoSubAgent()],
     systemPrompt,
-    // 执行模式工具门在标准中间件之后应用，覆盖内置与自定义工具的全部调用
+    // 未知工具兜底恒挂；执行模式工具门在标准中间件之后应用，覆盖全部工具调用
     ...(options.toolGate
-      ? { middleware: [createToolGateMiddleware(options.toolGate)] }
-      : {}),
+      ? {
+          middleware: [
+            createUnknownToolGuardMiddleware(),
+            createToolGateMiddleware(options.toolGate),
+          ],
+        }
+      : { middleware: [createUnknownToolGuardMiddleware()] }),
     tools: [
       ...createMainAgentTools(backendResult.factory, {
         ...(options.brandKitService
