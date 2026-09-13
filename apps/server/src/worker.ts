@@ -12,36 +12,18 @@ async function setupProxy() {
   }
 }
 
-import { randomUUID } from "node:crypto";
 import { loadServerEnv } from "./config/env.js";
-import type { QueueMessage } from "./features/queue/types.js";
-
-// Import executors to trigger registration via side effects
-import "./features/jobs/executors/image-generation.js";
-import "./features/jobs/executors/video-generation.js";
-
-import type { BackgroundJobType } from "@loomic/shared";
-import type { CreditService } from "./features/credits/credit-service.js";
-import type { ExecutorContext } from "./features/jobs/job-executor.js";
-import { getExecutor } from "./features/jobs/job-executor.js";
+import { startJobLoop } from "./features/jobs/job-loop.js";
 // Register all image/video providers via shared helper (keeps parity with app.ts)
 import { registerAllProviders } from "./generation/providers/register-all.js";
 import { composePlugins } from "./kernel/compose.js";
 import { workerProfile } from "./profiles/worker.js";
 
-// 代码执行由 LocalShellBackend 的内置 execute 工具直接处理，不走 PGMQ。
-const QUEUES = ["image_generation_jobs", "video_generation_jobs"] as const;
-
-const QUEUE_TO_TYPE: Record<string, BackgroundJobType> = {
-  image_generation_jobs: "image_generation",
-  video_generation_jobs: "video_generation",
-};
-
-const VT_BY_QUEUE: Record<string, number> = {
-  image_generation_jobs: 120,
-  video_generation_jobs: 300,
-};
-
+/**
+ * 独立 worker 进程入口：装配 worker profile（无 HTTP 面）→ 起消费循环。
+ * 循环实现在 `features/jobs/job-loop.ts`——桌面单进程形态复用同一份实现
+ * （进程内队列的生产者/消费者必须是同一个实例，故循环不能写死在入口里）。
+ */
 async function main() {
   await setupProxy();
 
@@ -54,261 +36,29 @@ async function main() {
     process.exit(1);
   }
 
-  // Register all generation providers (shared with app.ts)
   registerAllProviders(env);
 
   // P7：worker 走内核装配（profiles/worker.ts 唯一插件清单）
   const kernel = composePlugins(env, workerProfile({ credentialEnv: env }));
-  const jobService = kernel.get("jobs");
-  const creditService = kernel.get("credits");
-  const modelProviders = kernel.get("modelProviders");
-  const usageService = kernel.get("usage");
-  const assetWriter = kernel.get("assetWriter");
-  const blob = kernel.get("blob");
-  const queue = kernel.get("queue");
 
-  // Base context — per-message fields (queue, msgId, renewVt) are added in processMessage
-  const baseCtx = {
-    jobService,
-    queue,
+  const loop = startJobLoop({
+    assetWriter: kernel.get("assetWriter"),
+    blob: kernel.get("blob"),
+    creditService: kernel.get("credits"),
     env,
-    modelProviders,
-    usageService,
-    creditService,
-    assetWriter,
-    blob,
-  };
-
-  const CONCURRENCY_BY_QUEUE: Record<string, number> = {
-    image_generation_jobs: env.workerImageConcurrency ?? 3,
-    video_generation_jobs: env.workerVideoConcurrency ?? 2,
-  };
-
-  const inFlightByQueue = new Map<string, Set<Promise<void>>>(
-    QUEUES.map((q) => [q, new Set()]),
-  );
-
-  // Server-side long poll: wait up to N seconds inside Postgres for messages,
-  // checking every 500ms. This replaces the old client-side sleep(2000) + read()
-  // pattern that generated ~340K idle queries per monitoring period.
-  const pollTimeoutSeconds = Math.max(
-    1,
-    Math.floor((env.workerPollIntervalMs ?? 5000) / 1000),
-  );
-  const workerId = env.workerId ?? randomUUID().slice(0, 8);
-  const tag = `[worker:${workerId}]`;
-
-  let running = true;
+    jobService: kernel.get("jobs"),
+    modelProviders: kernel.get("modelProviders"),
+    queue: kernel.get("queue"),
+    usageService: kernel.get("usage"),
+  });
 
   // Graceful shutdown — wait for in-flight jobs then exit
   const shutdown = async () => {
-    const totalInFlight = [...inFlightByQueue.values()].reduce(
-      (n, s) => n + s.size,
-      0,
-    );
-    console.log(
-      `${tag} Shutting down, waiting for ${totalInFlight} in-flight jobs...`,
-    );
-    running = false;
-    const allTasks = [...inFlightByQueue.values()].flatMap((s) => [...s]);
-    if (allTasks.length > 0) {
-      await Promise.allSettled(allTasks);
-    }
-    await queue.shutdown();
-    console.log(`${tag} Shutdown complete.`);
+    await loop.shutdown();
     process.exit(0);
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
-
-  const concurrencyDesc = QUEUES.map(
-    (q) => `${q}=${CONCURRENCY_BY_QUEUE[q] ?? 1}`,
-  ).join(", ");
-  console.log(
-    `${tag} Started. concurrency={${concurrencyDesc}}, longPollTimeout=${pollTimeoutSeconds}s`,
-  );
-
-  while (running) {
-    // `queueName` 是队列名，`queue` 是队列缝客户端——两者都用，故名字必须区分
-    for (const queueName of QUEUES) {
-      try {
-        const inFlight = inFlightByQueue.get(queueName)!;
-        const cap = CONCURRENCY_BY_QUEUE[queueName] ?? 1;
-        const available = cap - inFlight.size;
-        if (available <= 0) continue;
-
-        const vt = VT_BY_QUEUE[queueName] ?? 120;
-        const messages = await queue.readWithPoll(
-          queueName,
-          vt,
-          available,
-          pollTimeoutSeconds,
-          500,
-        );
-
-        for (const msg of messages) {
-          const ctx: ExecutorContext = {
-            ...baseCtx,
-            queueName,
-            msgId: msg.msg_id,
-            renewVt: async (vtSeconds: number) => {
-              try {
-                await queue.setVisibilityTimeout(
-                  queueName,
-                  msg.msg_id,
-                  vtSeconds,
-                );
-              } catch (e) {
-                console.warn(`[renewVt] failed for msg ${msg.msg_id}:`, e);
-              }
-            },
-          };
-          const task = processMessage(
-            queueName,
-            msg,
-            ctx,
-            creditService,
-            tag,
-          ).finally(() => inFlight.delete(task));
-          inFlight.add(task);
-        }
-      } catch (err) {
-        console.error(`${tag} Error polling ${queueName}:`, err);
-      }
-    }
-  }
-}
-
-async function processMessage(
-  queue: string,
-  msg: QueueMessage,
-  ctx: ExecutorContext,
-  creditService: CreditService,
-  tag: string,
-) {
-  const jobId = msg.message.job_id as string;
-  const jobType =
-    (msg.message.job_type as BackgroundJobType) ?? QUEUE_TO_TYPE[queue];
-
-  if (!jobId || !jobType) {
-    console.error(`${tag} Invalid message in ${queue}:`, msg.message);
-    await ctx.queue.archive(queue, msg.msg_id);
-    return;
-  }
-
-  // Extract traceability context from PGMQ message (if present)
-  const sessionShort =
-    typeof msg.message.session_id === "string"
-      ? msg.message.session_id.slice(0, 8)
-      : undefined;
-  const startTime = Date.now();
-  console.log(
-    `${tag} Processing job ${jobId} (${jobType})${sessionShort ? ` session:${sessionShort}` : ""}`,
-  );
-
-  const executor = getExecutor(jobType);
-  if (!executor) {
-    console.error(`${tag} No executor for job type: ${jobType}`);
-    await ctx.jobService.markFailed(
-      jobId,
-      "no_executor",
-      `No executor registered for ${jobType}`,
-    );
-    await ctx.queue.archive(queue, msg.msg_id);
-    return;
-  }
-
-  // Increment attempt count
-  const { attempt_count, max_attempts } =
-    await ctx.jobService.incrementAttempt(jobId);
-
-  // Mark running
-  await ctx.jobService.markRunning(jobId);
-
-  try {
-    const result = await executor(
-      jobId,
-      msg.message as Record<string, unknown>,
-      ctx,
-    );
-    await ctx.jobService.markSucceeded(jobId, result);
-    await ctx.queue.deleteMessage(queue, msg.msg_id);
-    console.log(`${tag} Job ${jobId} succeeded +${Date.now() - startTime}ms`);
-  } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : String(err);
-    const errorCode = (err as { code?: string })?.code ?? "executor_error";
-
-    // Non-retryable errors: retrying with the same input will always fail.
-    // Dead-letter immediately so the caller (agent polling) gets fast feedback.
-    const NON_RETRYABLE_CODES = new Set([
-      "invalid_input",
-      "model_not_found",
-      "provider_not_found",
-      "safety_filter",
-    ]);
-    const shouldDeadLetter =
-      attempt_count >= max_attempts || NON_RETRYABLE_CODES.has(errorCode);
-
-    if (shouldDeadLetter) {
-      await ctx.jobService.markDeadLetter(jobId, errorCode, errorMessage);
-      await ctx.queue.archive(queue, msg.msg_id);
-
-      // Auto-refund credits for dead-lettered jobs
-      await refundDeadLetteredJob(jobId, ctx, creditService, tag);
-
-      console.error(
-        `${tag} Job ${jobId} dead-lettered after ${attempt_count} attempts +${Date.now() - startTime}ms: ${errorMessage}`,
-      );
-    } else {
-      await ctx.jobService.markFailed(jobId, errorCode, errorMessage);
-      // Message will re-appear after VT expires for retry
-      console.warn(
-        `${tag} Job ${jobId} failed (attempt ${attempt_count}/${max_attempts}) +${Date.now() - startTime}ms: ${errorMessage}`,
-      );
-    }
-  }
-}
-
-/**
- * Refund credits for a dead-lettered job if credits were deducted.
- * Only dead-lettered (permanently failed) jobs get refunds — not cancelled jobs.
- */
-async function refundDeadLetteredJob(
-  jobId: string,
-  ctx: ExecutorContext,
-  creditService: CreditService,
-  tag: string,
-) {
-  try {
-    const creditsInfo = await ctx.jobService.getCreditsInfo(jobId);
-
-    if (!creditsInfo) return;
-
-    const { creditsCost, workspaceId, createdBy } = creditsInfo;
-
-    if (creditsCost <= 0 || !workspaceId || !createdBy) return;
-
-    const txId = await creditService.refundCredits(
-      workspaceId,
-      createdBy,
-      creditsCost,
-      jobId,
-      "Auto-refund: job failed",
-    );
-    console.log(
-      `${tag} Refunded ${creditsCost} credits for job ${jobId} (tx: ${txId})`,
-    );
-  } catch (refundErr) {
-    // Log but don't crash the worker — the job is already dead-lettered
-    console.error(
-      `${tag} Failed to refund credits for job ${jobId}:`,
-      refundErr,
-    );
-  }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 main().catch((err) => {

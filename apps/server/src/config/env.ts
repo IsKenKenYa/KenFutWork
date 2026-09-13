@@ -5,6 +5,8 @@ export const DEFAULT_AGENT_MODEL = "gpt-4.1";
 export const DEFAULT_GOOGLE_AGENT_MODEL = "gemini-2.5-flash";
 export const DEFAULT_SERVER_PORT = 3001;
 export const DEFAULT_WEB_ORIGIN = "http://localhost:3000";
+/** 默认只监听回环：桌面/本地开发的安全默认（对外暴露需显式设 HOST）。 */
+export const DEFAULT_SERVER_HOST = "127.0.0.1";
 
 /**
  * Resolve the default agent model based on available provider configuration.
@@ -54,6 +56,10 @@ export type ServerEnv = {
   googleVertexProject?: string;
   googleVertexVideoLocation?: string;
   metasoApiBase?: string;
+  /** 认证形态：`managed`（服务端/自托管，默认，自管令牌）/ `local-trust`（桌面免登录）。 */
+  authDriver?: string;
+  /** HTTP 监听地址（`HOST`）；local-trust 形态必须是回环地址。缺省回环。 */
+  serverHost?: string;
   /** 队列形态：`pgmq`（服务端/自托管，默认）/ `in-process`（桌面，FORM-2）。 */
   queueDriver?: string;
   /** 桌面应用数据目录（`LOOMIC_DATA_DIR`）；缺省按平台惯例解析（FORM-2）。 */
@@ -123,6 +129,8 @@ export function loadServerEnv(
     overrides.openAIApiKey ?? normalizeOptionalString(source.OPENAI_API_KEY);
   const webDist =
     overrides.webDist ?? normalizeOptionalString(source.LOOMIC_WEB_DIST);
+  const authDriver =
+    overrides.authDriver ?? normalizeOptionalString(source.LOOMIC_AUTH_DRIVER);
   const queueDriver =
     overrides.queueDriver ??
     normalizeOptionalString(source.LOOMIC_QUEUE_DRIVER);
@@ -259,11 +267,13 @@ export function loadServerEnv(
       parseAgentBackendMode(source.LOOMIC_AGENT_BACKEND_MODE),
     agentModel: resolvedAgentModel,
     port: overrides.port ?? parsePort(source.LOOMIC_SERVER_PORT ?? source.PORT),
+    serverHost: overrides.serverHost ?? source.HOST ?? DEFAULT_SERVER_HOST,
     version: overrides.version ?? readServerVersion(),
     webOrigin:
       overrides.webOrigin ?? source.LOOMIC_WEB_ORIGIN ?? DEFAULT_WEB_ORIGIN,
     ...(agentFilesRoot ? { agentFilesRoot } : {}),
     ...(credentialSecret ? { credentialSecret } : {}),
+    ...(authDriver ? { authDriver } : {}),
     ...(databaseUrl ? { databaseUrl } : {}),
     ...(queueDriver ? { queueDriver } : {}),
     ...(blobDir ? { blobDir } : {}),

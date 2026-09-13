@@ -9,7 +9,7 @@ import { registerInfraRoutes } from "./http/infra.js";
 import { registerStaticWebRoutes } from "./http/static-web.js";
 import { composePlugins } from "./kernel/compose.js";
 import { AgentRunEventBus, createKernelEvents } from "./kernel/context.js";
-import type { ServiceMap } from "./kernel/types.js";
+import type { KernelHandle, ServiceMap } from "./kernel/types.js";
 import { serverProfile } from "./profiles/server.js";
 import { ConnectionManager } from "./ws/connection-manager.js";
 import { CanvasEventBuffer } from "./ws/event-buffer.js";
@@ -26,7 +26,9 @@ export type AppOptions = {
   dump?: boolean;
 };
 
-export function buildApp(options: AppOptions = {}): FastifyInstance {
+export function buildApp(
+  options: AppOptions = {},
+): FastifyInstance & { kernel: KernelHandle } {
   const env = loadServerEnv(options.env);
   registerAllProviders(env);
 
@@ -90,5 +92,12 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     registerStaticWebRoutes(app, { distDir: env.webDist });
   }
 
-  return app;
+  // HTTP 关闭即释放内核资源（连接池等 effect disposer）——否则停库时连接池还握着连接
+  app.addHook("onClose", async () => {
+    kernel.dispose();
+  });
+
+  // 内核句柄随 app 一起返回：桌面单进程形态要在同一内核上起任务消费循环
+  // （进程内队列的生产者与消费者必须是同一个实例，M3.2）
+  return Object.assign(app, { kernel });
 }

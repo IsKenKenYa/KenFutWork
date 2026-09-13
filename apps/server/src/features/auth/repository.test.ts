@@ -236,3 +236,51 @@ describe("auth repository：会话", () => {
     expect(calls[0]?.values).toEqual(["user-1", "scrypt$new"]);
   });
 });
+
+describe("auth repository：本机账号（local-trust，无口令）", () => {
+  it("先加事务级建议锁再取/建，保证并发首请求不各建一个账号", async () => {
+    const { calls, runner } = createRunner((text) =>
+      text.includes("select id, email")
+        ? { rowCount: 0, rows: [] }
+        : { rowCount: 1, rows: [{ email: "local@kenfutwork.local", id: "u-1" }] },
+    );
+
+    const account = await createAccountRepository(
+      createPersistenceFromRunner(runner),
+    ).ensurePasswordlessAccount({
+      displayName: "本机用户",
+      email: "local@kenfutwork.local",
+    });
+
+    expect(account).toEqual({ email: "local@kenfutwork.local", id: "u-1" });
+    const sqls = calls.map((c) => c.text.replace(/\s+/g, " ").trim());
+    expect(sqls[0]).toBe("begin");
+    // 锁必须在查询之前，且在事务内（pg_advisory_xact_lock 随事务释放）
+    expect(sqls[1]).toContain("pg_advisory_xact_lock");
+    expect(sqls[2]).toContain("select id, email");
+    expect(sqls.some((s) => s.includes("insert into public.accounts"))).toBe(true);
+    // 不写口令凭据：本形态不走口令登录
+    expect(sqls.some((s) => s.includes("account_credentials"))).toBe(false);
+    expect(sqls).toContain("commit");
+  });
+
+  it("账号已存在 → 不插入，直接返回既有行（幂等）", async () => {
+    const { calls, runner } = createRunner((text) =>
+      text.includes("select id, email")
+        ? { rowCount: 1, rows: [{ email: "local@kenfutwork.local", id: "u-9" }] }
+        : { rowCount: 0, rows: [] },
+    );
+
+    const account = await createAccountRepository(
+      createPersistenceFromRunner(runner),
+    ).ensurePasswordlessAccount({
+      displayName: "本机用户",
+      email: "local@kenfutwork.local",
+    });
+
+    expect(account.id).toBe("u-9");
+    expect(
+      calls.some((c) => c.text.includes("insert into public.accounts")),
+    ).toBe(false);
+  });
+});

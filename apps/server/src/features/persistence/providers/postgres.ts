@@ -89,6 +89,11 @@ export function createPostgresPersistence(options: {
     connectionString: options.databaseUrl,
     max: options.maxConnections ?? DEFAULT_POOL_MAX,
   });
+  // 空闲连接被服务端掐断（PG 重启 / pg_ctl stop -m fast）会以 error 事件抛出；
+  // 不接住它就是未捕获异常，会把优雅退出变成崩溃退出。
+  pool.on("error", (error) => {
+    console.error("[persistence] 连接池空闲连接出错：", error.message);
+  });
 
   return createPersistenceFromRunner(createPoolRunner(pool));
 }

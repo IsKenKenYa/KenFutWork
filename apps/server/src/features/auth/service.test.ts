@@ -35,6 +35,9 @@ function createFakeRepository(overrides: Partial<AccountRepository> = {}) {
       deleted.push(tokenHash);
       return 1;
     },
+    async ensurePasswordlessAccount() {
+      return { email: EMAIL, id: USER_ID };
+    },
     async findAccountByEmail() {
       return null;
     },

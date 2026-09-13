@@ -18,7 +18,11 @@ export type AuthenticatedUser = {
 };
 
 export type RequestAuthenticator = {
+  /**
+   * `ip` 由 Fastify 从 socket 取（不可由请求头伪造），仅 local-trust 形态用它做回环判定；
+   * 自管形态忽略之。声明为可选，以便 WS 握手等只有 headers 的调用点复用同一契约。
+   */
   authenticate(
-    request: Pick<FastifyRequest, "headers">,
+    request: Pick<FastifyRequest, "headers"> & { ip?: string },
   ): Promise<AuthenticatedUser | null>;
 };

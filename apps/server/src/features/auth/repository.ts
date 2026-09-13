@@ -49,6 +49,15 @@ export interface AccountRepository {
     email: string;
     passwordHash: string;
   }): Promise<string>;
+  /**
+   * 幂等取/建**无口令**账号（桌面 local-trust 用）。
+   * `accounts` 上的 `lower(email)` 只是普通索引（非唯一），故并发保护靠
+   * `pg_advisory_xact_lock`——并发的首请求不会各建一个本机账号。
+   */
+  ensurePasswordlessAccount(input: {
+    displayName: string | null;
+    email: string;
+  }): Promise<{ email: string; id: string }>;
   /** 覆盖口令哈希（如种子脚本重置测试账号）。 */
   setPasswordHash(userId: string, passwordHash: string): Promise<number>;
   /** 建会话；tokenHash 是明文令牌的 SHA-256。 */
@@ -112,6 +121,38 @@ export function createAccountRepository(
         );
 
         return created.id;
+      });
+    },
+
+    async ensurePasswordlessAccount(input) {
+      return persistence.transaction(async (tx) => {
+        // 事务级建议锁：同一邮箱的并发「取或建」串行化（索引非唯一，靠锁而非唯一约束兜底）
+        await tx.query("select pg_advisory_xact_lock(hashtext($1))", [
+          input.email.toLowerCase(),
+        ]);
+
+        const existing = await tx.queryOne<{ email: string; id: string }>(
+          `select id, email
+             from public.accounts
+            where lower(email::text) = lower($1)`,
+          [input.email],
+        );
+        if (existing) {
+          return existing;
+        }
+
+        const created = await tx.queryOne<{ email: string; id: string }>(
+          `insert into public.accounts (id, email, raw_user_meta_data)
+           values (extensions.gen_random_uuid(), $1,
+                   jsonb_build_object('display_name', $2::text))
+           returning id, email`,
+          [input.email, input.displayName],
+        );
+        if (!created) {
+          throw new Error("建本机账号未返回行。");
+        }
+
+        return created;
       });
     },
 
