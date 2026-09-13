@@ -718,9 +718,7 @@ export function Workbench() {
       {sidebarCollapsed ? (
         /* 收起态：图标栏（模式切换 + 插件市场 + 底部头像） */
         <aside className="flex w-12 shrink-0 flex-col items-center gap-1 border-r bg-card py-2">
-          <span className="mb-1 flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-xs font-bold text-primary-foreground">
-            K
-          </span>
+          <LoomicLogo className="mb-1 size-7 shrink-0" />
           <button
             type="button"
             aria-label="展开侧栏"
