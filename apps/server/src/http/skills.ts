@@ -217,16 +217,10 @@ export async function registerSkillRoutes(
 
       // Insert associated files if provided
       if (payload.files?.length && data?.id) {
-        const fileRows = payload.files.map((f) => ({
-          skill_id: data.id,
-          file_path: f.filePath,
-          content: f.content,
-          mime_type: f.mimeType ?? "text/plain",
-        }));
-        const { error: fileError } = await untypedFrom(
-          client,
-          "skill_files",
-        ).insert(fileRows);
+        const fileError = await options.skillsRepository
+          .insertFilesForOwnedSkill(user.id, data.id, payload.files)
+          .then(() => null)
+          .catch((caught: unknown) => caught);
         if (fileError) {
           // Non-fatal: skill was created but files failed — log and continue
           request.log.error(
@@ -323,18 +317,10 @@ export async function registerSkillRoutes(
 
       // Insert associated files (scripts/, references/, assets/)
       if (imported.files.length > 0 && skillData?.id) {
-        const fileRows = imported.files.map(
-          (f: { filePath: string; content: string; mimeType: string }) => ({
-            skill_id: skillData.id,
-            file_path: f.filePath,
-            content: f.content,
-            mime_type: f.mimeType,
-          }),
-        );
-        const { error: fileError } = await untypedFrom(
-          client,
-          "skill_files",
-        ).insert(fileRows);
+        const fileError = await options.skillsRepository
+          .insertFilesForOwnedSkill(user.id, skillData.id, imported.files)
+          .then(() => null)
+          .catch((caught: unknown) => caught);
         if (fileError) {
           // Non-fatal: skill record was created but file inserts failed
           request.log.error(
@@ -346,15 +332,12 @@ export async function registerSkillRoutes(
 
       // Auto-install imported skill to the user's current workspace
       if (skillData?.id) {
-        await untypedFrom(client, "workspace_skills").upsert(
-          {
-            workspace_id: workspaceId,
-            skill_id: skillData.id,
-            enabled: true,
-            installed_by: user.id,
-          },
-          { onConflict: "workspace_id,skill_id" },
-        );
+        await options.skillsRepository.upsertInstallation({
+          enabled: true,
+          installedBy: user.id,
+          skillId: skillData.id,
+          workspaceId,
+        });
       }
 
       // Fetch files back so the response includes them
@@ -430,16 +413,24 @@ export async function registerSkillRoutes(
         );
       }
 
-      const { data, error } = await untypedFrom(client, "skills")
-        .update(updates)
-        .eq("id", id)
-        .eq("created_by", user.id) // RLS also enforces this; belt-and-suspenders
-        .select("*")
-        .maybeSingle();
+      let data: Record<string, unknown> | null;
+      let error: unknown;
+      try {
+        // 仅本人创建的行；created_by 谓词写在语句里，不靠 RLS
+        data = await options.skillsRepository.updateOwnedById(
+          user.id,
+          id,
+          updates,
+        );
+        error = null;
+      } catch (caught) {
+        data = null;
+        error = caught;
+      }
 
       if (error) {
         request.log.error({ err: error }, "skill update failed");
-        if (error.code === "23505") {
+        if ((error as { code?: string }).code === "23505") {
           return sendSkillError(
             reply,
             "skill_update_failed",
@@ -463,7 +454,7 @@ export async function registerSkillRoutes(
         );
       }
 
-      const skill = mapSkillDetailRow(data);
+      const skill = mapSkillDetailRow(data as unknown as SkillRow);
       return reply.code(200).send(skillDetailResponseSchema.parse({ skill }));
     } catch (error) {
       if (isZodError(error)) {
@@ -489,14 +480,11 @@ export async function registerSkillRoutes(
       if (!user) return sendUnauthenticated(reply);
 
       const { id } = request.params as { id: string };
-      const client = options.createUserClient(user.accessToken);
-
-      const { error, count } = await untypedFrom(client, "skills")
-        .delete({ count: "exact" })
-        .eq("id", id)
-        .eq("created_by", user.id); // RLS also enforces this
-
-      if (error) {
+      let count: number;
+      try {
+        // 仅本人创建的行（created_by 谓词写在语句里，不靠 RLS）
+        count = await options.skillsRepository.deleteOwnedById(user.id, id);
+      } catch (error) {
         request.log.error({ err: error }, "skill delete failed");
         return sendSkillError(
           reply,
