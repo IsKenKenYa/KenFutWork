@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
 import {
   Select,
   SelectContent,
@@ -187,6 +188,35 @@ export function Workbench() {
   useEffect(() => {
     if (session?.access_token) refreshProjects();
   }, [session, refreshProjects]);
+
+  // Design 模式自动进画布：无选中项目时选第一个；列表为空则自动建「未命名画布」
+  useEffect(() => {
+    if (mode !== "design" || activeTaskId || creatingProject) return;
+    if (selectedProjectId) return;
+    if (projects.length > 0) {
+      setSelectedProjectId(projects[0]!.id);
+      return;
+    }
+    const token = session?.access_token;
+    if (!token) return;
+    setCreatingProject(true);
+    createProject(token, { name: "未命名画布" })
+      .then((result) => {
+        setProjects((prev) => [result.project, ...prev]);
+        setSelectedProjectId(result.project.id);
+      })
+      .catch(() => {
+        // 自动建画布失败：留在编排器（用户可手动创建）
+      })
+      .finally(() => setCreatingProject(false));
+  }, [
+    mode,
+    activeTaskId,
+    selectedProjectId,
+    projects,
+    creatingProject,
+    session,
+  ]);
 
   // 嵌入画布删除项目后回传：清选中并刷新列表
   useEffect(() => {
@@ -620,18 +650,23 @@ export function Workbench() {
           <div className="mx-auto flex h-full max-w-3xl flex-col p-6">
             <h1 className="mb-4 text-lg font-medium">{activeTask.title}</h1>
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
-              {activeTask.messages.map((msg, i) => (
-                <div
-                  key={i}
-                  className={
-                    msg.role === "user"
-                      ? "ml-auto max-w-[80%] rounded-xl bg-primary px-4 py-2 text-sm text-primary-foreground whitespace-pre-wrap"
-                      : "max-w-[90%] rounded-xl bg-muted px-4 py-2 text-sm whitespace-pre-wrap"
-                  }
-                >
-                  {msg.text}
-                </div>
-              ))}
+              {activeTask.messages.map((msg, i) =>
+                msg.role === "user" ? (
+                  <div
+                    key={i}
+                    className="ml-auto max-w-[80%] rounded-xl bg-primary px-4 py-2 text-sm text-primary-foreground whitespace-pre-wrap"
+                  >
+                    {msg.text}
+                  </div>
+                ) : (
+                  <div
+                    key={i}
+                    className="max-w-[92%] rounded-xl bg-muted px-4 py-2"
+                  >
+                    <MarkdownRenderer text={msg.text} />
+                  </div>
+                ),
+              )}
               {activeTask.status === "running" ? (
                 <p className="text-xs text-muted-foreground">生成中…</p>
               ) : null}
