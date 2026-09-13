@@ -1,6 +1,11 @@
 /**
- * 最小 Supabase REST 模拟（本地点击测试用，不入库不提交）。
- * 仅模拟 settings/providers/usage/skills 流所需的 PostgREST 形状。
+ * 演示模式用的最小 Supabase REST 模拟（由 `pnpm dev:local` 拉起，也可手工 node 直跑）。
+ *
+ * ⚠️ 这不是真实存储：数据全在进程内存里，重启即丢；认证不校验密码。
+ * 真实开发环境请用真实本地栈：`supabase start` + `pnpm seed`（见 README「开发环境」节）。
+ *
+ * 覆盖：GoTrue 最小认证（签发本地 HS256 会话）、projects/canvases/chat_sessions/
+ * provider_instances/profiles/workspaces/skills 等流的 PostgREST 形状。
  */
 
 import { createHmac, randomUUID } from "node:crypto";
@@ -74,6 +79,11 @@ function buildLocalSession() {
 }
 
 const providerInstances = new Map();
+
+// —— skills 链路（创建/安装/list_skills/use_skill）所需的最小表形状 ——
+const skillsTable = new Map();
+const skillFilesTable = [];
+const workspaceSkillsRows = new Map(); // key: skill_id
 
 function send(res, status, payload, single) {
   const body =
@@ -438,9 +448,130 @@ const server = createServer((req, res) => {
     send(res, 200, []);
     return;
   }
-  if (table === "workspace_skills" && req.method === "GET") {
-    send(res, 200, []);
-    return;
+  if (table === "skills") {
+    if (req.method === "GET") {
+      const id = (url.searchParams.get("id") ?? "").replace("eq.", "");
+      let rows = [...skillsTable.values()];
+      if (id) rows = rows.filter((r) => r.id === id);
+      if (rows.length === 0 && wantsObject) {
+        send(res, 200, null, true);
+        return;
+      }
+      send(res, 200, wantsObject ? rows[0] : rows, wantsObject);
+      return;
+    }
+    if (req.method === "POST") {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        const input = JSON.parse(body || "{}");
+        const make = (row) => ({
+          id: randomUUID(),
+          is_featured: false,
+          icon_name: null,
+          author: "unknown",
+          version: "1.0",
+          license: null,
+          category: "custom",
+          source: "user",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          ...row,
+          created_by: row.created_by ?? USER_ID,
+        });
+        const created = Array.isArray(input) ? input.map(make) : [make(input)];
+        for (const row of created) skillsTable.set(row.id, row);
+        send(res, 201, wantsObject ? created[0] : created, wantsObject);
+      });
+      return;
+    }
+    if (req.method === "DELETE") {
+      const id = (url.searchParams.get("id") ?? "").replace("eq.", "");
+      skillsTable.delete(id);
+      for (let i = skillFilesTable.length - 1; i >= 0; i--) {
+        if (skillFilesTable[i].skill_id === id) skillFilesTable.splice(i, 1);
+      }
+      workspaceSkillsRows.delete(id);
+      send(res, 204, null);
+      return;
+    }
+  }
+  if (table === "skill_files") {
+    if (req.method === "POST") {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        const input = JSON.parse(body || "{}");
+        const rows = Array.isArray(input) ? input : [input];
+        for (const r of rows) skillFilesTable.push({ id: randomUUID(), ...r });
+        send(res, 201, rows);
+      });
+      return;
+    }
+    if (req.method === "GET") {
+      const skillId = (url.searchParams.get("skill_id") ?? "").replace("eq.", "");
+      send(res, 200, skillId ? skillFilesTable.filter((f) => f.skill_id === skillId) : [...skillFilesTable]);
+      return;
+    }
+    if (req.method === "DELETE") {
+      const skillId = (url.searchParams.get("skill_id") ?? "").replace("eq.", "");
+      for (let i = skillFilesTable.length - 1; i >= 0; i--) {
+        if (skillFilesTable[i].skill_id === skillId) skillFilesTable.splice(i, 1);
+      }
+      send(res, 204, null);
+      return;
+    }
+  }
+  if (table === "workspace_skills") {
+    if (req.method === "GET") {
+      const select = url.searchParams.get("select") ?? "";
+      const rows = [...workspaceSkillsRows.values()].map((r) => {
+        const full = skillsTable.get(r.skill_id) ?? null;
+        if (select.includes("skill:skills(")) {
+          const slim = full
+            ? {
+                id: full.id,
+                slug: full.slug,
+                name: full.name,
+                description: full.description,
+                skill_content: full.skill_content,
+              }
+            : null;
+          return { enabled: r.enabled, skill: slim };
+        }
+        if (select.includes("skills(")) {
+          return {
+            skill_id: r.skill_id,
+            enabled: r.enabled,
+            installed_at: r.installed_at,
+            skills: full,
+          };
+        }
+        return r;
+      });
+      send(res, 200, rows);
+      return;
+    }
+    if (req.method === "POST" || req.method === "PUT") {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        const row = JSON.parse(body || "{}");
+        workspaceSkillsRows.set(row.skill_id, {
+          installed_at: new Date().toISOString(),
+          enabled: true,
+          ...row,
+        });
+        send(res, 201, row, wantsObject);
+      });
+      return;
+    }
+    if (req.method === "DELETE") {
+      const skillId = (url.searchParams.get("skill_id") ?? "").replace("eq.", "");
+      workspaceSkillsRows.delete(skillId);
+      send(res, 204, null);
+      return;
+    }
   }
 
   // 兜底：空数组成功

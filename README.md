@@ -25,7 +25,16 @@
 2. **BYOK 供应商缝**：协议适配器封闭集合（openai-compatible / anthropic / gemini / 图像 / 视频协议），用户实例加密落库（Key 只写不读），对话与生成按实例实例化——接入新供应商零代码。
 3. **多端形态（规划中）**：桌面本地（Tauri 内嵌服务端）为主形态 + Docker 自托管，已决策移除平台云托管；数据落在用户自己的 Postgres 里。
 
-存储现状：Supabase（Postgres + Auth + Storage + PGMQ）为迁移期存量，去 Supabase 的自管 Postgres 迁移是已规划的独立工程（见《多端产品设计》§5）。
+存储现状：Supabase（Postgres + Auth + Storage + PGMQ）为迁移期存量，去 Supabase 的自管 Postgres 迁移是已立项工程（`FORM-2`/`FORM-9` 已拍板，里程碑与专有对象底账见《改造计划》§4.13）。
+
+## 平台管理（管理员后台）
+
+除自带 Key 的 BYOK 玩法外，平台侧可以统一配好模型再分发给用户，并做额度计费：
+
+- **系统供应商（平台池）**：管理员在 `/admin` 配置带平台 Key 的供应商实例（`provider_instances.scope='system'`），**全体用户无需自带 Key 即可在模型选择器里直接使用**；停用即回收分发。
+- **计费与额度**：走平台池的对话按 token 折算 credit 扣用户额度（独立 `chat_deduct` 台账）；**额度耗尽会拦住运行并给出可读原因**（充值或改用自带 Key 即恢复）；**自带 Key 的调用不计费**。
+- **统一管理**：用户/工作区列表、用量 token 与成本总览、发/减额度、切换套餐、授予/回收管理员。
+- **权限**：平台管理员由 `profiles.role='admin'` 标记；普通用户界面上没有入口，服务端对所有 `/api/admin/*` 端点返回 403（前端隐藏不是安全边界）。决策见《改造计划》§6 `FORM-10`。
 
 开源协议 GPL-3.0。
 
@@ -63,22 +72,37 @@
 
 | 环境 | 用途 | 入口 |
 | --- | --- | --- |
-| 开发环境 | 日常开发（本地起 mock + API + Web 热更新） | `pnpm dev:local` |
+| 开发环境（真实） | 日常开发：真实本地 Supabase 栈（真 PostgREST + GoTrue + Postgres），数据持久 | `supabase start` + `pnpm seed` + `pnpm dev` |
+| 演示环境（零依赖） | 不装 Docker 时快速试用/UI 走查，**数据全在内存不落库** | `pnpm dev:local` |
 | 测试环境 | 模拟用户安装后的成品体验（生产构建 + 生产模式运行） | `pnpm build` + `pnpm --filter @loomic/server start` |
 | 生产环境 | 真实部署：Windows exe 包 / Docker 自托管 | `pnpm package:win` / Docker |
 
-访问入口（三种环境一致）：打开服务地址直接进入工作台（`/` 重定向 `/workbench`，未登录自动跳 `/login`）；登录/注册均为邮箱 + 密码。**没有管理后台**——本产品不存在管理员后台页面或后台登录地址，所有管理动作都在工作台内的设置里完成。
+访问入口（三种环境一致）：打开服务地址直接进入工作台（`/` 重定向 `/workbench`，未登录自动跳 `/login`）；登录/注册均为邮箱 + 密码。日常管理动作在工作台内的设置里完成；**管理员另有独立后台**（`/admin`，见下文「平台管理」），普通用户在界面上看不到任何入口。
 
-### 开发环境（服务器部署形态，本地跑）
+### 开发环境（真实本地 Supabase 栈，推荐）
+
+前置：Docker Desktop 运行中 + `supabase` CLI（`npm i -g supabase`）。
+
+```bash
+supabase start     # 首次拉镜像并按 supabase/migrations 建 schema（API 54321 / DB 54322 / Studio 54323）
+pnpm seed          # 灌 4 个真实测试账号（真实密码哈希）
+pnpm dev           # API 3001 + Web 3000 + worker，读根 .env.local
+```
+
+`.env.local` 与 `apps/web/.env.local` 的 Supabase 相关变量取 `supabase status` 的真实值：`SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_URL` 用 `http://127.0.0.1:54321`，ANON / SERVICE_ROLE key 用输出的 `ANON_KEY` / `SERVICE_ROLE_KEY`，`SUPABASE_DB_URL` 用 `postgresql://postgres:postgres@127.0.0.1:54322/postgres`。登录用 `pro@test.loomic.com` / `opensourceloomic`。
+
+> **不要设 `SUPABASE_JWT_SECRET`**：本地栈签发的 access token 是 ES256 非对称签名，用共享密钥做本地 HS256 校验会失败（表现为 BYOK 供应商列表为空）。留空时服务端会拿 token 向真实 GoTrue 验签（`auth.getUser`），且栈重建换密钥后依然可用。
+
+### 演示环境（零依赖，数据不落库）
 
 ```bash
 pnpm install
 pnpm dev:local
 ```
 
-一条命令拉起 本地 mock Supabase(54321) + API Server(3001) + Web(3000)：首次运行自动生成占位 `.env.local`（已存在的文件不会被覆盖），**不需要真实 Supabase key**。打开 <http://localhost:3000>，登录页用**任意邮箱 + 任意密码**即可进入工作台（mock 签发本地测试会话，数据不入库、不持久）。热更新开发请用 `pnpm dev`（turbo 全量）配合已生成的 `.env.local`。
+一条命令拉起 本地 mock Supabase(54321) + API Server(3001) + Web(3000)：首次运行自动生成占位 `.env.local`（已存在的文件不会被覆盖），**不需要真实 Supabase key**。打开 <http://localhost:3000>，登录页用**任意邮箱 + 任意密码**即可进入工作台（mock 签发本地测试会话，**数据全在内存、重启即丢**）。仅用于快速试用与 UI 走查，不要把它当真实数据环境；日常开发请用上面的真实本地栈。
 
-> **为什么变量名里还有 Supabase？** 迁移期存储/认证缝仍是 Supabase 形状（见《多端产品设计》§5），`dev:local` 只是用占位值把它们指向本地 mock。替换为自管 Postgres 是已规划的独立迁移；桌面端届时由安装器捆绑本机 Postgres（同节 §5.4，用户无需自行安装）。
+> **为什么变量名里还有 Supabase？** 迁移期存储/认证缝仍是 Supabase 形状（见《多端产品设计》§5），`dev:local` 只是用占位值把它们指向本地 mock。去 Supabase 已立项并完成关键决策：`FORM-2` 桌面捆绑 `embedded-postgres`、`FORM-9` 应用层强制工作区隔离、`FORM-10` 最小运维台（结论与理由见《改造计划》§6.1）；桌面端由安装包捆绑本机 Postgres，用户无需自行安装。
 
 连接真实 Supabase（完整功能，可选）：
 
@@ -129,7 +153,7 @@ $env:LOOMIC_WEB_DIST = "D:/path/to/KenFutWork/apps/web/out"
 pnpm --filter @loomic/server start
 ```
 
-打开 <http://localhost:3001>——这就是装好的产品的样子：注册/登录、Code/Design 工作台、画布、设置全部可用。配合 `scripts/本地mock-supabase.mjs`（或 `pnpm dev:local` 已生成的占位 `.env.local`）即可在无任何外部依赖的情况下走通全流程。
+打开 <http://localhost:3001>——这就是装好的产品的样子：注册/登录、Code/Design 工作台、画布、设置全部可用。想零依赖走一遍可配 `pnpm dev:local` 生成的占位 `.env.local`（数据不落库）；要看真实数据请用「开发环境」节的真实本地栈或在同目录放 `.env` 指向自管 Postgres / Supabase。
 
 ### 生产环境
 
@@ -151,7 +175,7 @@ SERVICE_MODE=api docker build -t work-server -f apps/server/Dockerfile .
 SERVICE_MODE=worker WORKER_ID=w1 ...
 ```
 
-自托管为多用户形态，服务端部署在用户自己的服务器/NAS/VPS 上，同样**没有管理后台**；若需要运维级管理（如调整用户套餐），目前只有服务端 API（`POST /api/credits/admin/set-plan`），没有页面。管理后台是尚未立项的功能，需要时先在 `docs/` 走决策流程。
+自托管为多用户形态，服务端部署在用户自己的服务器/NAS/VPS 上。管理员可使用平台管理后台做运维级管理（用户/额度/套餐/系统供应商，见下文「平台管理」）。
 
 Vercel / Railway 等平台托管配置已随 2026-09-11 决策移除。桌面端（Tauri）与自托管 Compose 的路线见《多端产品设计》§13。
 
@@ -246,8 +270,8 @@ KenFutWork/
 
 Docker 自托管与 Windows exe 包的完整命令见上文「环境与启动 → 生产环境」。
 
-- **桌面本地**：单用户形态，不存在「管理员」角色，无需任何后台。
-- **自托管**（含部署到你自己的云 VPS）：多用户共享同一个前端入口，同样**没有管理后台**——管理员与普通用户看到的是同一个工作台。若需要运维级管理（如调整用户套餐），目前只有一个 API 端点（`POST /api/credits/admin/set-plan`，携带 service role 权限在服务端调用），没有页面。管理后台是尚未立项的功能，需要时先在 `docs/` 走决策流程。
+- **桌面本地**：单用户形态，本机所有者即管理员，可直接使用平台管理后台。
+- **自托管**（含部署到你自己的云 VPS）：多用户共享同一个前端入口；管理员登录后用 `/admin` 做统一管理（普通用户界面上无入口，且服务端对非管理员一律 403）。
 - 平台托管（Vercel / Railway 等 SaaS 云）配置已随 2026-09-11 决策移除；桌面端（Tauri）与自托管 Compose 的路线见《多端产品设计》§13。
 
 ## 测试与文档
