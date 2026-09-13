@@ -5,7 +5,6 @@ import type {
   ToolDefinition,
   ToolExecutionContext,
 } from "../../kernel/types.js";
-import type { UserSupabaseClient } from "../../supabase/user.js";
 import {
   createSkillCatalogRepository,
   type SkillCatalogRepository,
@@ -20,11 +19,9 @@ import {
  * SKILL.md 发现经 SkillCatalogService 向 `ctx.tools` 贡献 `list_skills` /
  * `use_skill`（shared scope，design/code 两 preset 均可用），与 SkillsMiddleware
  * 的提示注入同源数据、互为补充。
+ * HTTP 路由与工具同走 `SkillCatalogRepository`：不再持有用户 Supabase 客户端。
  */
-export function createSkillsPlugin(deps: {
-  /** HTTP 路由仍直接用用户客户端（随 http/skills 收口后再移除）。 */
-  createUserClient: (accessToken: string) => UserSupabaseClient;
-}): PluginDefinition {
+export function createSkillsPlugin(): PluginDefinition {
   // apply 期构造、mounted 期复用（同一实例）
   let skillsRepository: SkillCatalogRepository;
   return {
@@ -92,13 +89,12 @@ export function createSkillsPlugin(deps: {
     mounted(ctx) {
       void registerSkillRoutes(ctx.app, {
         auth: ctx.get("auth"),
-        createUserClient: deps.createUserClient,
         skillsRepository,
         viewerService: ctx.get("viewer"),
       });
       void registerMarketplaceRoutes(ctx.app, {
         auth: ctx.get("auth"),
-        createUserClient: deps.createUserClient,
+        skillsRepository,
         viewerService: ctx.get("viewer"),
       });
     },

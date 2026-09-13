@@ -173,7 +173,7 @@ describe("skills 插件向 ctx.tools 贡献工具（P5 缝）", () => {
         version: "t",
         webOrigin: "http://x",
       },
-      [createSkillsPlugin({ createUserClient: (() => ({})) as never })],
+      [createSkillsPlugin()],
       {
         app,
         overrides: {

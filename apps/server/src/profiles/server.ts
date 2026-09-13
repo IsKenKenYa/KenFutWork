@@ -19,6 +19,10 @@ import type { PaymentService } from "../features/payments/payment-service.js";
 import { createPaymentsPlugin } from "../features/payments/plugin.js";
 import { createPermissionsPlugin } from "../features/permissions/plugin.js";
 import { persistencePlugin } from "../features/persistence/plugin.js";
+import {
+  createPluginsPlugin,
+  type PluginCatalogEntry,
+} from "../features/plugins/plugin.js";
 import { createProjectsPlugin } from "../features/projects/plugin.js";
 import { createSearchPlugin } from "../features/search/plugin.js";
 import { createSettingsPlugin } from "../features/settings/plugin.js";
@@ -49,52 +53,74 @@ export interface ServerProfileDeps {
   /** overrides 直填的条件装配插件需感知注入实例（enabled 判定，保持历史行为）。 */
   overrideJobs?: JobService;
   overridePayments?: PaymentService;
+  /** GitHub token（可选）：插件从仓库安装时提升匿名速率上限。 */
+  githubToken?: string;
 }
 
-/** 插件市场目录：与清单同源维护（真实注册项的说明）。 */
-export const PLUGIN_CATALOG = [
+/** 插件市场目录：与清单同源维护（真实注册项的说明 + 能力声明，供导出用）。 */
+export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
   {
     name: "model-providers",
     title: "BYOK 供应商",
     description:
       "添加你自己的模型实例（OpenAI 兼容 / Anthropic / Gemini / 图像 / 视频协议），Key 加密保存。",
+    capabilities: ["llm"],
   },
   {
     name: "agent-runs",
     title: "Agent 运行时",
     description: "任务编排、流式输出、子代理与工具调用。",
+    capabilities: ["agents", "tools"],
   },
   {
     name: "permissions",
     title: "权限策略",
     description: "危险工具三档审批（默认 / 自动放行 / 完全访问）。",
+    capabilities: ["tools"],
   },
   {
     name: "agent-modes",
     title: "执行模式",
     description: "会话级 Code / Design 与 agent / plan 模式。",
+    capabilities: [],
   },
   {
     name: "search",
     title: "联网搜索",
     description: "web_search 工具，为 Agent 接入实时信息。",
+    capabilities: ["tools"],
   },
   {
     name: "mcp",
     title: "MCP 接入",
     description: "连接 MCP server，工具自动进入统一注册表。",
+    capabilities: ["tools"],
   },
   {
     name: "usage",
     title: "用量统计",
     description: "Agent 与直连生成的 token/成本计量。",
+    capabilities: [],
   },
   {
     name: "canvas",
     title: "画布（Design）",
     description: "无限画布创作、品牌套件与图像/视频生成。",
+    capabilities: ["tools"],
   },
-  { name: "skills", title: "技能", description: "SKILL.md 技能发现与市场。" },
+  {
+    name: "skills",
+    title: "技能",
+    description: "SKILL.md 技能发现与市场。",
+    capabilities: ["tools"],
+  },
+  {
+    name: "plugin-registry",
+    title: "插件市场",
+    description:
+      "安装第三方插件（dsh bundle / 本项目 bundle），安装前过兼容性门禁，支持导入导出。",
+    capabilities: [],
+  },
 ];
 
 export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
@@ -115,7 +141,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createPaymentsPlugin({
       ...(deps.overridePayments ? { injected: deps.overridePayments } : {}),
     }),
-    createSkillsPlugin({ createUserClient: deps.createUserClient }),
+    createSkillsPlugin(),
     createUsagePlugin(),
     createPermissionsPlugin({ events: deps.events }),
     createAgentModesPlugin(),
@@ -125,6 +151,10 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createModelProvidersPlugin({ credentialEnv: deps.credentialEnv }),
     createGenerationPlugin({ env: deps.env }),
     createAdminPlugin(),
+    createPluginsPlugin({
+      builtinCatalog: PLUGIN_CATALOG,
+      ...(deps.githubToken ? { githubToken: deps.githubToken } : {}),
+    }),
     createAgentRunsPlugin({
       createUserClient: deps.createUserClient,
       connectionManager: deps.connectionManager,

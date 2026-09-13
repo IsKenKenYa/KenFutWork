@@ -154,3 +154,161 @@ describe("skills repository：可见性（用户作用域，「或」式谓词�
     ).resolves.toBeNull();
   });
 });
+
+describe("skills repository：目录写入（用户作用域）", () => {
+  it("建 skill：缺省列用 coalesce 保留列默认，不能写成 NULL 覆盖", async () => {
+    const { calls, runner } = createRunner(() => ({
+      rowCount: 1,
+      rows: [{ id: SKILL_ID }],
+    }));
+
+    await createSkillCatalogRepository(
+      createPersistenceFromRunner(runner),
+    ).insertOwned(USER_ID, {
+      category: "custom",
+      description: "d",
+      name: "My Skill",
+      skillContent: "# mine",
+      slug: "my-skill",
+    });
+
+    const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
+    // 回归锁：旧 PostgREST insert 不传的列即不出现（走列默认）；直接传 null 会把
+    // author/version/metadata 写成 NULL，与列默认 'system'/'1.0'/'{}' 分叉。
+    expect(sql).toContain("coalesce($8, 'system')");
+    expect(sql).toContain("coalesce($9, '1.0')");
+    expect(sql).toContain("coalesce($11::jsonb, '{}'::jsonb)");
+    // `:user` 由标记绑定为末位参数（此处 $14），与文本位置无关
+    expect(sql).toContain("values ($1, $2, $3, $4, $5, $6, $7, $14,");
+    expect(sql).toContain("returning *");
+
+    expect(calls[0]?.values).toEqual([
+      "My Skill",
+      "my-skill",
+      "d",
+      "custom",
+      "# mine",
+      null,
+      "user",
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      USER_ID,
+    ]);
+  });
+
+  it("建 skill：显式 author/version/license/metadata 覆盖缺省（导入路径）", async () => {
+    const { calls, runner } = createRunner(() => ({
+      rowCount: 1,
+      rows: [{ id: SKILL_ID }],
+    }));
+
+    await createSkillCatalogRepository(
+      createPersistenceFromRunner(runner),
+    ).insertOwned(USER_ID, {
+      author: "someone",
+      category: "custom",
+      description: "d",
+      license: "MIT",
+      metadata: { source_url: "https://x/skill", tag: "x" },
+      name: "Imported",
+      skillContent: "# imported",
+      slug: "imported",
+      version: "2.1",
+    });
+
+    const values = calls[0]?.values ?? [];
+    expect(values.slice(7, 13)).toEqual([
+      "someone",
+      "2.1",
+      "MIT",
+      JSON.stringify({ source_url: "https://x/skill", tag: "x" }),
+      null,
+      null,
+    ]);
+  });
+
+  it("附带文件：父子校验内联在一条语句里（非本人 skill 不写入）", async () => {
+    const { calls, runner } = createRunner(() => ({ rowCount: 2, rows: [] }));
+
+    await createSkillCatalogRepository(
+      createPersistenceFromRunner(runner),
+    ).insertFilesForOwnedSkill(USER_ID, SKILL_ID, [
+      { content: "a", filePath: "scripts/a.py" },
+      { content: "b", filePath: "references/b.md", mimeType: "text/markdown" },
+    ]);
+
+    const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
+    expect(sql).toContain("where exists");
+    expect(sql).toContain("s.created_by = $8");
+    // 多行 values 单语句插入（不是逐行 N 次往返）
+    expect(sql.match(/\(\$1, \$/g)).toHaveLength(2);
+    expect(calls[0]?.values).toEqual([
+      SKILL_ID,
+      "scripts/a.py",
+      "a",
+      "text/plain",
+      "references/b.md",
+      "b",
+      "text/markdown",
+      USER_ID,
+    ]);
+  });
+
+  it("附带文件为空时不发语句（避免空 VALUES 语法错）", async () => {
+    const { calls, runner } = createRunner();
+
+    const count = await createSkillCatalogRepository(
+      createPersistenceFromRunner(runner),
+    ).insertFilesForOwnedSkill(USER_ID, SKILL_ID, []);
+
+    expect(count).toBe(0);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("文件读取经父链可见性（不能裸 skill id 取数）", async () => {
+    const { calls, runner } = createRunner(() => ({ rowCount: 0, rows: [] }));
+
+    await createSkillCatalogRepository(
+      createPersistenceFromRunner(runner),
+    ).listFilesForVisibleSkill(USER_ID, SKILL_ID);
+
+    const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
+    expect(sql).toContain("join public.skills s on s.id = sf.skill_id");
+    expect(sql).toContain(
+      "and (s.source in ('system', 'community') or s.created_by = $2)",
+    );
+    expect(sql).toContain("order by sf.file_path asc");
+    expect(calls[0]?.values).toEqual([SKILL_ID, USER_ID]);
+  });
+
+  it("改 skill：SET 占位符从 WHERE 之后续号（不与 id 撞号）", async () => {
+    const { calls, runner } = createRunner(() => ({
+      rowCount: 1,
+      rows: [{ id: SKILL_ID }],
+    }));
+
+    await createSkillCatalogRepository(
+      createPersistenceFromRunner(runner),
+    ).updateOwnedById(USER_ID, SKILL_ID, {
+      metadata: { a: 1 },
+      name: "Renamed",
+      slug: "renamed",
+    });
+
+    const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
+    // 回归锁：`set name = $1` 会把 WHERE 的 id 写进 name 列
+    expect(sql).toContain("set metadata = $2::jsonb, name = $3, slug = $4");
+    expect(sql).toContain("where id = $1 and created_by = $5");
+    expect(calls[0]?.values).toEqual([
+      SKILL_ID,
+      JSON.stringify({ a: 1 }),
+      "Renamed",
+      "renamed",
+      USER_ID,
+    ]);
+  });
+});

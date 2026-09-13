@@ -52,21 +52,28 @@ export interface SkillCatalogRepository {
     userId: string,
     skillId: string,
   ): Promise<Record<string, unknown> | null>;
-  /** 建 skill（`source='user'` 且 `created_by=本人` —— 与 RLS 写策略同义）。 */
+  /**
+   * 建 skill（`source='user'` 且 `created_by=本人` —— 与 RLS 写策略同义）。
+   * 缺省字段沿用**列默认值**（`author='system'`/`version='1.0'`/`metadata='{}'`）：
+   * 旧 PostgREST insert 不传的列即不出现，故此处用 `coalesce` 复刻同一语义，
+   * 不能直接传 `null`（会写进 NULL 覆盖掉列默认）。
+   */
   insertOwned(
     userId: string,
     input: {
+      author?: string | null | undefined;
       category: string;
       description: string;
       iconName?: string | null | undefined;
       license?: string | null | undefined;
+      metadata?: Record<string, unknown> | null | undefined;
       name: string;
       packageName?: string | null | undefined;
       skillContent: string;
       slug: string;
       source?: string | undefined;
       sourceUrl?: string | null | undefined;
-      version?: string | undefined;
+      version?: string | null | undefined;
     },
   ): Promise<Record<string, unknown> | null>;
   /** 改 skill：仅本人创建的行（`created_by=本人` 写在语句里，不靠 RLS）。 */
@@ -223,8 +230,11 @@ export function createSkillCatalogRepository(
       return persistence.forUser(userId).queryOne<Record<string, unknown>>(
         `insert into public.skills
                 (name, slug, description, category, skill_content, icon_name,
-                 source, created_by, version, license, source_url, package_name)
-         values ($1, $2, $3, $4, $5, $6, $7, :user, $8, $9, $10, $11)
+                 source, created_by, author, version, license, metadata,
+                 source_url, package_name)
+         values ($1, $2, $3, $4, $5, $6, $7, :user,
+                 coalesce($8, 'system'), coalesce($9, '1.0'), $10,
+                 coalesce($11::jsonb, '{}'::jsonb), $12, $13)
          returning *`,
         [
           input.name,
@@ -234,8 +244,10 @@ export function createSkillCatalogRepository(
           input.skillContent,
           input.iconName ?? null,
           input.source ?? "user",
-          input.version ?? "1.0",
+          input.author ?? null,
+          input.version ?? null,
           input.license ?? null,
+          input.metadata ? JSON.stringify(input.metadata) : null,
           input.sourceUrl ?? null,
           input.packageName ?? null,
         ],

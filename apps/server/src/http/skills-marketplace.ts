@@ -7,19 +7,17 @@ import {
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import {
+  SQLSTATE_UNIQUE_VIOLATION,
+  SqlError,
+} from "../features/persistence/errors.js";
+import {
   getMarketplaceDetail,
   installFromMarketplace,
   MarketplaceError,
   searchMarketplace,
 } from "../features/skills/marketplace-service.js";
-import type {
-  RequestAuthenticator,
-  UserSupabaseClient,
-} from "../supabase/user.js";
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const untypedFrom = (client: UserSupabaseClient, table: string) =>
-  (client as any).from(table);
+import type { SkillCatalogRepository } from "../features/skills/repository.js";
+import type { RequestAuthenticator } from "../supabase/user.js";
 
 // ---------------------------------------------------------------------------
 // Skill row mappers (duplicated from skills.ts to avoid circular imports)
@@ -44,16 +42,6 @@ type SkillRow = {
   updated_at: string;
   source_url: string | null;
   package_name: string | null;
-};
-
-type SkillFileRow = {
-  id: string;
-  skill_id: string;
-  file_path: string;
-  content: string;
-  mime_type: string;
-  created_at: string;
-  updated_at: string;
 };
 
 function mapSkillRow(row: SkillRow) {
@@ -85,14 +73,14 @@ function mapSkillDetailRow(row: SkillRow) {
   };
 }
 
-function mapSkillFileRow(row: SkillFileRow) {
+function mapSkillFileRow(row: Record<string, unknown>) {
   return {
-    id: row.id,
-    filePath: row.file_path,
-    content: row.content,
-    mimeType: row.mime_type,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    id: row.id as string,
+    filePath: row.file_path as string,
+    content: row.content as string,
+    mimeType: row.mime_type as string,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
   };
 }
 
@@ -113,7 +101,8 @@ export async function registerMarketplaceRoutes(
   app: FastifyInstance,
   options: {
     auth: RequestAuthenticator;
-    createUserClient: (accessToken: string) => UserSupabaseClient;
+    /** 安装态与目录的数据访问（persistence 缝）。 */
+    skillsRepository: SkillCatalogRepository;
     viewerService: ViewerService;
   },
 ) {
@@ -201,7 +190,6 @@ export async function registerMarketplaceRoutes(
       );
       const viewer = await options.viewerService.ensureViewer(user);
       const workspaceId = viewer.workspace.id;
-      const client = options.createUserClient(user.accessToken);
 
       // Download and parse from npm registry
       const { imported, packageName: pkgName } =
@@ -209,36 +197,32 @@ export async function registerMarketplaceRoutes(
       const slug = generateSlug(imported.manifest.name);
 
       // Insert skill
-      const { data: skillData, error: skillError } = await untypedFrom(
-        client,
-        "skills",
-      )
-        .insert({
-          name: imported.manifest.name,
-          slug,
-          description: imported.manifest.description,
+      let skillData: Record<string, unknown> | null;
+      try {
+        skillData = await options.skillsRepository.insertOwned(user.id, {
           author: imported.manifest.author ?? "unknown",
-          version: imported.manifest.version ?? "1.0",
-          license: imported.manifest.license ?? null,
           category: "custom",
-          source: "user",
-          skill_content: imported.skillContent,
+          description: imported.manifest.description,
+          license: imported.manifest.license ?? null,
           metadata: {
             ...(imported.manifest.metadata ?? {}),
             source_url: `https://www.npmjs.com/package/${packageName}`,
             package_name: pkgName,
           },
-          created_by: user.id,
-        })
-        .select("*")
-        .single();
-
-      if (skillError) {
+          name: imported.manifest.name,
+          skillContent: imported.skillContent,
+          slug,
+          version: imported.manifest.version ?? "1.0",
+        });
+      } catch (error) {
         request.log.error(
-          { err: skillError },
+          { err: error },
           "marketplace install DB insert failed",
         );
-        if (skillError.code === "23505") {
+        if (
+          error instanceof SqlError &&
+          error.code === SQLSTATE_UNIQUE_VIOLATION
+        ) {
           return sendError(
             reply,
             "marketplace_install_failed",
@@ -253,18 +237,22 @@ export async function registerMarketplaceRoutes(
         );
       }
 
+      if (!skillData) {
+        return sendError(
+          reply,
+          "marketplace_install_failed",
+          "Failed to save marketplace skill.",
+        );
+      }
+
+      const skillId = skillData.id as string;
+
       // Insert files
-      if (imported.files.length > 0 && skillData?.id) {
-        const fileRows = imported.files.map((f) => ({
-          skill_id: skillData.id,
-          file_path: f.filePath,
-          content: f.content,
-          mime_type: f.mimeType,
-        }));
-        const { error: fileError } = await untypedFrom(
-          client,
-          "skill_files",
-        ).insert(fileRows);
+      if (imported.files.length > 0) {
+        const fileError = await options.skillsRepository
+          .insertFilesForOwnedSkill(user.id, skillId, imported.files)
+          .then(() => null)
+          .catch((caught: unknown) => caught);
         if (fileError) {
           request.log.error(
             { err: fileError },
@@ -274,27 +262,22 @@ export async function registerMarketplaceRoutes(
       }
 
       // Auto-install to workspace
-      if (skillData?.id) {
-        await untypedFrom(client, "workspace_skills").upsert(
-          {
-            workspace_id: workspaceId,
-            skill_id: skillData.id,
-            enabled: true,
-            installed_by: user.id,
-          },
-          { onConflict: "workspace_id,skill_id" },
-        );
-      }
+      await options.skillsRepository.upsertInstallation({
+        enabled: true,
+        installedBy: user.id,
+        skillId,
+        workspaceId,
+      });
 
       // Return full skill detail with files
-      const { data: fileData } = await untypedFrom(client, "skill_files")
-        .select("*")
-        .eq("skill_id", skillData.id)
-        .order("file_path", { ascending: true });
+      const fileData = await options.skillsRepository.listFilesForVisibleSkill(
+        user.id,
+        skillId,
+      );
 
       const skill = {
-        ...mapSkillDetailRow(skillData),
-        files: (fileData ?? []).map(mapSkillFileRow),
+        ...mapSkillDetailRow(skillData as unknown as SkillRow),
+        files: fileData.map(mapSkillFileRow),
       };
 
       return reply.code(201).send(skillDetailResponseSchema.parse({ skill }));

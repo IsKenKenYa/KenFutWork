@@ -11,23 +11,16 @@ import {
 } from "@loomic/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
+import {
+  SQLSTATE_UNIQUE_VIOLATION,
+  SqlError,
+} from "../features/persistence/errors.js";
 import type { SkillCatalogRepository } from "../features/skills/repository.js";
 import {
   importSkillFromUrl,
   SkillImportError,
 } from "../features/skills/skill-import-service.js";
-import type {
-  RequestAuthenticator,
-  UserSupabaseClient,
-} from "../supabase/user.js";
-
-/**
- * Helper to bypass Supabase generated types for tables not yet in the schema
- * (skills, workspace_skills). Returns untyped client so PostgREST queries compile.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const untypedFrom = (client: UserSupabaseClient, table: string) =>
-  (client as any).from(table);
+import type { RequestAuthenticator } from "../supabase/user.js";
 
 type SkillErrorCode =
   | "skill_not_found"
@@ -45,7 +38,6 @@ export async function registerSkillRoutes(
   app: FastifyInstance,
   options: {
     auth: RequestAuthenticator;
-    createUserClient: (accessToken: string) => UserSupabaseClient;
     /** 安装态与目录的数据访问（persistence 缝）。 */
     skillsRepository: SkillCatalogRepository;
     viewerService: ViewerService;
@@ -94,7 +86,6 @@ export async function registerSkillRoutes(
       if (!user) return sendUnauthenticated(reply);
 
       const { id } = request.params as { id: string };
-      const client = options.createUserClient(user.accessToken);
       let data: Awaited<
         ReturnType<typeof options.skillsRepository.findVisibleById>
       >;
@@ -118,15 +109,15 @@ export async function registerSkillRoutes(
         );
       }
 
-      // Fetch associated files
-      const { data: fileData } = await untypedFrom(client, "skill_files")
-        .select("*")
-        .eq("skill_id", id)
-        .order("file_path", { ascending: true });
+      // Fetch associated files（经父链可见性；不含跨用户 skill 的文件）
+      const fileData = await options.skillsRepository.listFilesForVisibleSkill(
+        user.id,
+        id,
+      );
 
       const skill = {
         ...mapSkillDetailRow(data as unknown as SkillRow),
-        files: (fileData ?? []).map(mapSkillFileRow),
+        files: fileData.map(mapSkillFileRow),
       };
       return reply.code(200).send(skillDetailResponseSchema.parse({ skill }));
     } catch (error) {
@@ -146,14 +137,16 @@ export async function registerSkillRoutes(
       if (!user) return sendUnauthenticated(reply);
 
       const { id } = request.params as { id: string };
-      const client = options.createUserClient(user.accessToken);
 
-      const { data, error } = await untypedFrom(client, "skill_files")
-        .select("*")
-        .eq("skill_id", id)
-        .order("file_path", { ascending: true });
-
-      if (error) {
+      let data: Awaited<
+        ReturnType<typeof options.skillsRepository.listFilesForVisibleSkill>
+      >;
+      try {
+        data = await options.skillsRepository.listFilesForVisibleSkill(
+          user.id,
+          id,
+        );
+      } catch (error) {
         request.log.error({ err: error }, "skill files list failed");
         return sendSkillError(
           reply,
@@ -162,7 +155,7 @@ export async function registerSkillRoutes(
         );
       }
 
-      return reply.code(200).send({ files: (data ?? []).map(mapSkillFileRow) });
+      return reply.code(200).send({ files: data.map(mapSkillFileRow) });
     } catch (error) {
       request.log.error({ err: error }, "skill files list error");
       return sendSkillError(
@@ -181,26 +174,23 @@ export async function registerSkillRoutes(
 
       const payload = skillCreateRequestSchema.parse(request.body);
       const slug = generateSlug(payload.name);
-      const client = options.createUserClient(user.accessToken);
 
-      const { data, error } = await untypedFrom(client, "skills")
-        .insert({
-          name: payload.name,
-          slug,
-          description: payload.description,
+      let data: Record<string, unknown> | null;
+      try {
+        data = await options.skillsRepository.insertOwned(user.id, {
           category: payload.category,
-          skill_content: payload.skillContent,
-          icon_name: payload.iconName ?? null,
-          source: "user",
-          created_by: user.id,
-        })
-        .select("*")
-        .single();
-
-      if (error) {
+          description: payload.description,
+          iconName: payload.iconName ?? null,
+          name: payload.name,
+          skillContent: payload.skillContent,
+          slug,
+        });
+      } catch (error) {
         request.log.error({ err: error }, "skill create failed");
-        // Check for unique slug conflict
-        if (error.code === "23505") {
+        if (
+          error instanceof SqlError &&
+          error.code === SQLSTATE_UNIQUE_VIOLATION
+        ) {
           return sendSkillError(
             reply,
             "skill_create_failed",
@@ -215,10 +205,20 @@ export async function registerSkillRoutes(
         );
       }
 
+      if (!data) {
+        return sendSkillError(
+          reply,
+          "skill_create_failed",
+          "Unable to create skill.",
+        );
+      }
+
+      const skillId = data.id as string;
+
       // Insert associated files if provided
-      if (payload.files?.length && data?.id) {
+      if (payload.files?.length) {
         const fileError = await options.skillsRepository
-          .insertFilesForOwnedSkill(user.id, data.id, payload.files)
+          .insertFilesForOwnedSkill(user.id, skillId, payload.files)
           .then(() => null)
           .catch((caught: unknown) => caught);
         if (fileError) {
@@ -231,14 +231,14 @@ export async function registerSkillRoutes(
       }
 
       // Fetch files back so the response includes them
-      const { data: fileData } = await untypedFrom(client, "skill_files")
-        .select("*")
-        .eq("skill_id", data.id)
-        .order("file_path", { ascending: true });
+      const fileData = await options.skillsRepository.listFilesForVisibleSkill(
+        user.id,
+        skillId,
+      );
 
       const skill = {
         ...mapSkillDetailRow(data as unknown as SkillRow),
-        files: (fileData ?? []).map(mapSkillFileRow),
+        files: fileData.map(mapSkillFileRow),
       };
       return reply.code(201).send(skillDetailResponseSchema.parse({ skill }));
     } catch (error) {
@@ -267,40 +267,35 @@ export async function registerSkillRoutes(
       const { url } = skillImportRequestSchema.parse(request.body);
       const viewer = await options.viewerService.ensureViewer(user);
       const workspaceId = viewer.workspace.id;
-      const client = options.createUserClient(user.accessToken);
 
       // Import skill from external URL (downloads SKILL.md + associated files)
       const imported = await importSkillFromUrl(url);
 
       const slug = generateSlug(imported.manifest.name);
 
-      // Persist skill to DB (source = "community" for externally imported skills)
-      const { data: skillData, error: skillError } = await untypedFrom(
-        client,
-        "skills",
-      )
-        .insert({
-          name: imported.manifest.name,
-          slug,
-          description: imported.manifest.description,
+      // Persist skill to DB
+      let skillData: Record<string, unknown> | null;
+      try {
+        skillData = await options.skillsRepository.insertOwned(user.id, {
           author: imported.manifest.author ?? "unknown",
-          version: imported.manifest.version ?? "1.0",
-          license: imported.manifest.license ?? null,
           category: "custom",
-          source: "user",
-          skill_content: imported.skillContent,
+          description: imported.manifest.description,
+          license: imported.manifest.license ?? null,
           metadata: {
             ...(imported.manifest.metadata ?? {}),
             source_url: imported.sourceUrl,
           },
-          created_by: user.id,
-        })
-        .select("*")
-        .single();
-
-      if (skillError) {
-        request.log.error({ err: skillError }, "skill import DB insert failed");
-        if (skillError.code === "23505") {
+          name: imported.manifest.name,
+          skillContent: imported.skillContent,
+          slug,
+          version: imported.manifest.version ?? "1.0",
+        });
+      } catch (error) {
+        request.log.error({ err: error }, "skill import DB insert failed");
+        if (
+          error instanceof SqlError &&
+          error.code === SQLSTATE_UNIQUE_VIOLATION
+        ) {
           return sendSkillError(
             reply,
             "skill_import_failed",
@@ -315,10 +310,20 @@ export async function registerSkillRoutes(
         );
       }
 
+      if (!skillData) {
+        return sendSkillError(
+          reply,
+          "skill_import_failed",
+          "Failed to save imported skill.",
+        );
+      }
+
+      const skillId = skillData.id as string;
+
       // Insert associated files (scripts/, references/, assets/)
-      if (imported.files.length > 0 && skillData?.id) {
+      if (imported.files.length > 0) {
         const fileError = await options.skillsRepository
-          .insertFilesForOwnedSkill(user.id, skillData.id, imported.files)
+          .insertFilesForOwnedSkill(user.id, skillId, imported.files)
           .then(() => null)
           .catch((caught: unknown) => caught);
         if (fileError) {
@@ -331,28 +336,26 @@ export async function registerSkillRoutes(
       }
 
       // Auto-install imported skill to the user's current workspace
-      if (skillData?.id) {
-        await options.skillsRepository.upsertInstallation({
-          enabled: true,
-          installedBy: user.id,
-          skillId: skillData.id,
-          workspaceId,
-        });
-      }
+      await options.skillsRepository.upsertInstallation({
+        enabled: true,
+        installedBy: user.id,
+        skillId,
+        workspaceId,
+      });
 
       // Fetch files back so the response includes them
-      const { data: fileData } = await untypedFrom(client, "skill_files")
-        .select("*")
-        .eq("skill_id", skillData.id)
-        .order("file_path", { ascending: true });
+      const fileData = await options.skillsRepository.listFilesForVisibleSkill(
+        user.id,
+        skillId,
+      );
 
       const skill = {
-        ...mapSkillDetailRow(skillData),
-        files: (fileData ?? []).map(mapSkillFileRow),
+        ...mapSkillDetailRow(skillData as unknown as SkillRow),
+        files: fileData.map(mapSkillFileRow),
       };
 
       request.log.info(
-        { skillId: skillData.id, sourceUrl: url },
+        { skillId, sourceUrl: url },
         "skill imported successfully",
       );
       return reply.code(201).send(skillDetailResponseSchema.parse({ skill }));
@@ -387,7 +390,6 @@ export async function registerSkillRoutes(
 
       const { id } = request.params as { id: string };
       const payload = skillUpdateRequestSchema.parse(request.body);
-      const client = options.createUserClient(user.accessToken);
 
       // Build the update object with only provided fields
       const updates: Record<string, unknown> = {};
@@ -777,17 +779,6 @@ type SkillRow = {
   package_name?: string | null;
 };
 
-/** Shape of a row from the `skill_files` table. */
-type SkillFileRow = {
-  id: string;
-  skill_id: string;
-  file_path: string;
-  content: string;
-  mime_type: string;
-  created_at: string;
-  updated_at: string;
-};
-
 function mapSkillRow(row: SkillRow) {
   return {
     id: row.id,
@@ -806,14 +797,17 @@ function mapSkillRow(row: SkillRow) {
   };
 }
 
-function mapSkillFileRow(row: SkillFileRow) {
+/**
+ * `skill_files` 行归一（repository 返回裸行，故入参为宽松形状，转换集中在此）。
+ */
+function mapSkillFileRow(row: Record<string, unknown>) {
   return {
-    id: row.id,
-    filePath: row.file_path,
-    content: row.content,
-    mimeType: row.mime_type,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    id: row.id as string,
+    filePath: row.file_path as string,
+    content: row.content as string,
+    mimeType: row.mime_type as string,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
   };
 }
 

@@ -1,9 +1,9 @@
 {
   "//": "去 Supabase 残留基线（棘轮门禁）：数值只许减不许增。消除残留后必须在本 PR 同步下调，台账说明见 docs/tech/改造计划.md §4.13。代码侧按**全部源文件**（排除测试）统计：只统计「已耦合文件」会把「存储调用在文件间挪位」误报成增减；dbFromCalls 去空白后排除紧邻 .storage 的 .from(，否则对象存储调用会被误计为 DB 查询。",
   "code": {
-    "filesUsingSupabaseClient": 23,
-    "sdkRefs": 154,
-    "dbFromCalls": 35,
+    "filesUsingSupabaseClient": 20,
+    "sdkRefs": 131,
+    "dbFromCalls": 33,
     "storageRefs": 37
   },
   "sql": {
