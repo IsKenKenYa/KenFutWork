@@ -765,7 +765,7 @@ export function Workbench() {
           <div className="flex items-center justify-between px-3 pt-3 pb-2">
             <span className="flex items-center gap-2">
               <LoomicLogo className="size-7 text-foreground" />
-              <span className="text-sm font-semibold tracking-tight">
+              <span className="text-base font-semibold tracking-tight">
                 KenFutWork
               </span>
             </span>
