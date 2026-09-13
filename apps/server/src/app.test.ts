@@ -39,7 +39,7 @@ const PUBLIC_GET_ROUTES = [
 
 function buildProbeApp() {
   return buildApp({
-    env: { supabaseDbUrl: "postgres://localhost:5432/loomic-test" },
+    env: { databaseUrl: "postgres://localhost:5432/loomic-test" },
     overrides: { auth: { authenticate: async () => null } },
   });
 }
@@ -60,18 +60,10 @@ describe("buildApp 装配完整性（插件清单防漏挂）", () => {
     }
   });
 
-  it("无 supabaseDbUrl 时 jobs 路由不装配（404），其余 feature 不受影响", async () => {
-    const app = buildApp({
-      overrides: { auth: { authenticate: async () => null } },
-    });
-    try {
-      const jobs = await app.inject({ method: "GET", url: "/api/jobs" });
-      expect(jobs.statusCode).toBe(404);
-      const viewer = await app.inject({ method: "GET", url: "/api/viewer" });
-      expect(viewer.statusCode).toBe(401);
-    } finally {
-      await app.close();
-    }
+  it("缺 databaseUrl 时启动期 fail loud（存储缝是必需项，不再静默降级）", () => {
+    expect(() =>
+      buildApp({ overrides: { auth: { authenticate: async () => null } } }),
+    ).toThrow(/persistence/);
   });
 
   it("公开路由不设认证门但必须装配：200 而非 404", async () => {

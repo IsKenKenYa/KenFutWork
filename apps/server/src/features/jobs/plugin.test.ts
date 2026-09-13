@@ -22,10 +22,10 @@ function stubKernelDeps() {
 }
 
 describe("jobs 插件（enabled 条件装配）", () => {
-  it("有 supabaseDbUrl 时装配并注册任务路由", async () => {
+  it("有 databaseUrl 时装配并注册任务路由", async () => {
     const app = Fastify({ logger: false });
     const kernel = composePlugins(
-      { ...baseEnv, supabaseDbUrl: "postgres://localhost/test" },
+      { ...baseEnv, databaseUrl: "postgres://localhost/test" },
       [createJobsPlugin({ ...stubKernelDeps() })],
       {
         app,

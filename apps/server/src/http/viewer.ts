@@ -11,21 +11,14 @@ import {
 } from "@loomic/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
-import {
-  BootstrapError,
-  type ViewerService,
-} from "../features/bootstrap/ensure-user-foundation.js";
+import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { CreditService } from "../features/credits/credit-service.js";
-import type {
-  RequestAuthenticator,
-  UserSupabaseClient,
-} from "../supabase/user.js";
+import type { RequestAuthenticator } from "../supabase/user.js";
 
 export async function registerViewerRoutes(
   app: FastifyInstance,
   options: {
     auth: RequestAuthenticator;
-    createUserClient: (accessToken: string) => UserSupabaseClient;
     creditService?: CreditService;
     viewerService: ViewerService;
   },
@@ -110,35 +103,14 @@ export async function registerViewerRoutes(
       }
 
       const payload = profileUpdateRequestSchema.parse(request.body);
-      const client = options.createUserClient(user.accessToken);
-      const { data, error } = await client
-        .from("profiles")
-        .update({ display_name: payload.displayName })
-        .eq("id", user.id)
-        .select("id, email, display_name, avatar_url")
-        .single();
-
-      if (error || !data) {
-        return reply.code(500).send(
-          applicationErrorResponseSchema.parse({
-            error: {
-              code: "profile_update_failed",
-              message: "Unable to update profile.",
-            },
-          }),
-        );
-      }
-
-      return reply.code(200).send(
-        profileUpdateResponseSchema.parse({
-          profile: {
-            id: data.id,
-            email: data.email ?? "",
-            displayName: data.display_name ?? "",
-            avatarUrl: data.avatar_url ?? null,
-          },
-        }),
+      const profile = await options.viewerService.updateProfile(
+        user,
+        payload.displayName,
       );
+
+      return reply
+        .code(200)
+        .send(profileUpdateResponseSchema.parse({ profile }));
     } catch (error) {
       if (isZodError(error)) {
         return reply.code(400).send({
@@ -174,7 +146,7 @@ function sendApplicationError(
   fallbackCode: "application_error" | "bootstrap_failed",
   fallbackMessage: string,
 ) {
-  if (error instanceof BootstrapError) {
+  if (isApplicationError(error)) {
     return reply.code(error.statusCode).send(
       applicationErrorResponseSchema.parse({
         error: {
@@ -192,5 +164,18 @@ function sendApplicationError(
         message: fallbackMessage,
       },
     }),
+  );
+}
+
+/** 带 HTTP 语义的领域错误（BootstrapError / ProfileUpdateError 等）。 */
+function isApplicationError(
+  error: unknown,
+): error is { code: string; message: string; statusCode: number } {
+  return (
+    error instanceof Error &&
+    "statusCode" in error &&
+    typeof error.statusCode === "number" &&
+    "code" in error &&
+    typeof error.code === "string"
   );
 }

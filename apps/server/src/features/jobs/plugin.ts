@@ -25,11 +25,11 @@ export function createJobsPlugin(deps: {
   return {
     name: "jobs",
     inject: withRoutes ? ["auth", "credits", "tierGuard", "viewer"] : [],
-    enabled: (env) => isEnabled(Boolean(env.supabaseDbUrl)),
+    enabled: (env) => isEnabled(Boolean(env.databaseUrl)),
     apply(ctx) {
       ctx.register("jobs", () => {
-        // enabled 已保证无注入实例时必有 supabaseDbUrl；有注入实例时 override 优先，工厂不会执行。
-        const pgmq = createPgmqClient(ctx.env.supabaseDbUrl as string);
+        // enabled 已保证无注入实例时必有 databaseUrl；有注入实例时 override 优先，工厂不会执行。
+        const pgmq = createPgmqClient(ctx.env.databaseUrl as string);
         return createJobService({
           createUserClient: deps.createUserClient,
           getAdminClient: deps.getAdminClient,
