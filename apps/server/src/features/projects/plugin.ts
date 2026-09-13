@@ -1,24 +1,20 @@
 import { registerProjectRoutes } from "../../http/projects.js";
 import type { PluginDefinition } from "../../kernel/types.js";
-import type { UserSupabaseClient } from "../../supabase/user.js";
 import { createProjectService } from "./project-service.js";
 import { createProjectRepository } from "./repository.js";
 
 /**
  * projects 插件：项目 CRUD + 缩略图服务 + HTTP 路由（路由注册放 mounted）。
- * 数据访问经 `persistence` 缝；`createUserClient` 仅剩缩略图存储用途，
- * 随 M3 blob 缝落地移除。
+ * 数据访问经 `persistence` 缝，缩略图经 `blob` 缝——不再持有用户 Supabase 客户端。
  */
-export function createProjectsPlugin(deps: {
-  createUserClient: (accessToken: string) => UserSupabaseClient;
-}): PluginDefinition {
+export function createProjectsPlugin(): PluginDefinition {
   return {
     name: "projects",
-    inject: ["auth", "persistence", "viewer"],
+    inject: ["auth", "blob", "persistence", "viewer"],
     apply(ctx) {
       ctx.register("projects", () =>
         createProjectService({
-          createUserClient: deps.createUserClient,
+          blob: ctx.get("blob"),
           repository: createProjectRepository(ctx.get("persistence")),
           viewerService: ctx.get("viewer"),
         }),

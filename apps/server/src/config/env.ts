@@ -54,6 +54,12 @@ export type ServerEnv = {
   googleVertexProject?: string;
   googleVertexVideoLocation?: string;
   metasoApiBase?: string;
+  /** blob 缝形态：`local`（桌面本地 FS）/ `supabase`（过渡期与自托管现状）。 */
+  blobDriver?: string;
+  /** `local` 形态的对象根目录。 */
+  blobDir?: string;
+  /** `local` 形态对外可读的基址（server 自己的 blob 读取路由）。 */
+  blobPublicBaseUrl?: string;
   metasoApiKey?: string;
   openAIApiBase?: string;
   openAIApiKey?: string;
@@ -122,6 +128,13 @@ export function loadServerEnv(
     normalizeOptionalString(source.SUPABASE_ANON_KEY);
   const supabaseDbUrl =
     overrides.supabaseDbUrl ?? normalizeOptionalString(source.SUPABASE_DB_URL);
+  const blobDriver =
+    overrides.blobDriver ?? normalizeOptionalString(source.LOOMIC_BLOB_DRIVER);
+  const blobDir =
+    overrides.blobDir ?? normalizeOptionalString(source.LOOMIC_BLOB_DIR);
+  const blobPublicBaseUrl =
+    overrides.blobPublicBaseUrl ??
+    normalizeOptionalString(source.LOOMIC_BLOB_PUBLIC_BASE_URL);
   const databaseUrl =
     overrides.databaseUrl ??
     normalizeOptionalString(source.DATABASE_URL) ??
@@ -251,6 +264,9 @@ export function loadServerEnv(
     ...(agentFilesRoot ? { agentFilesRoot } : {}),
     ...(credentialSecret ? { credentialSecret } : {}),
     ...(databaseUrl ? { databaseUrl } : {}),
+    ...(blobDriver ? { blobDriver } : {}),
+    ...(blobDir ? { blobDir } : {}),
+    ...(blobPublicBaseUrl ? { blobPublicBaseUrl } : {}),
     ...(mcpServers?.length ? { mcpServers } : {}),
     ...(searchApiKey ? { searchApiKey } : {}),
     ...(searchProvider ? { searchProvider } : {}),

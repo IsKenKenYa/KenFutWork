@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AuthenticatedUser } from "../../supabase/user.js";
+import { BlobError } from "../blob/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import { BootstrapError } from "../bootstrap/errors.js";
 import { SQLSTATE_UNIQUE_VIOLATION, SqlError } from "../persistence/errors.js";
@@ -295,20 +296,23 @@ describe("project service（错误映射与行为保持不变）", () => {
     uploadError?: { message: string } | null;
   }) =>
     createProjectService({
-      createUserClient: () =>
-        ({
-          storage: {
-            from: () => ({
-              getPublicUrl: (path: string) => ({
-                data: { publicUrl: `https://blob.test/${path}` },
-              }),
-              upload: async () =>
-                options.uploadError
-                  ? { error: options.uploadError }
-                  : { error: null },
-            }),
+      blob: {
+        bucket: () => ({
+          getPublicUrl: (path: string) => `https://blob.test/${path}`,
+          // 缩略图走 resolveUrl（公开性由存储侧决定）；测试里等价于公开桶
+          resolveUrl: async (path: string) => `https://blob.test/${path}`,
+          upload: async () => {
+            if (options.uploadError) {
+              throw new BlobError(
+                "upload",
+                "project-assets",
+                "x",
+                options.uploadError.message,
+              );
+            }
           },
-        }) as never,
+        }),
+      } as never,
       repository: {
         archive: async () => 1,
         createWithCanvas: async () => {

@@ -4,6 +4,7 @@ import type { ServerEnv } from "../config/env.js";
 import { createAdminPlugin } from "../features/admin/plugin.js";
 import { createAgentModesPlugin } from "../features/agent-modes/plugin.js";
 import { createAgentRunsPlugin } from "../features/agent-runs/plugin.js";
+import { createBlobPlugin } from "../features/blob/plugin.js";
 import { createViewerPlugin } from "../features/bootstrap/plugin.js";
 import { brandKitPlugin } from "../features/brand-kit/plugin.js";
 import { createCanvasPlugin } from "../features/canvas/plugin.js";
@@ -126,6 +127,7 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
 export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
   return [
     persistencePlugin,
+    createBlobPlugin({ getAdminClient: deps.getAdminClient }),
     authPlugin,
     brandKitPlugin,
     createCreditsPlugin(),
@@ -134,7 +136,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createChatPlugin(),
     createSettingsPlugin(),
     createUploadsPlugin({ createUserClient: deps.createUserClient }),
-    createProjectsPlugin({ createUserClient: deps.createUserClient }),
+    createProjectsPlugin(),
     createJobsPlugin({
       ...(deps.overrideJobs ? { injected: deps.overrideJobs } : {}),
     }),

@@ -3,11 +3,8 @@ import type {
   ProjectSummary,
   ProjectUpdateRequest,
 } from "@loomic/shared";
-
-import type {
-  AuthenticatedUser,
-  UserSupabaseClient,
-} from "../../supabase/user.js";
+import type { AuthenticatedUser } from "../../supabase/user.js";
+import type { BlobStore } from "../blob/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import { BootstrapError } from "../bootstrap/errors.js";
 import { SQLSTATE_UNIQUE_VIOLATION } from "../persistence/errors.js";
@@ -77,7 +74,8 @@ export class ProjectServiceError extends Error {
 
 export function createProjectService(options: {
   /** 缩略图仍走 Supabase Storage（M3 blob 缝落地后移除）。 */
-  createUserClient: (accessToken: string) => UserSupabaseClient;
+  /** 对象存储（缩略图）：走 blob 缝，不再直连 Supabase Storage。 */
+  blob: BlobStore;
   repository: ProjectRepository;
   viewerService: ViewerService;
 }): ProjectService {
@@ -214,9 +212,8 @@ export function createProjectService(options: {
         );
       }
 
-      // 缩略图 URL 仍由 Supabase Storage 生成（M3 blob 缝落地后移除）。
-      const thumbnailUrls = generateThumbnailUrls(
-        options.createUserClient(user.accessToken),
+      const thumbnailUrls = await resolveThumbnailUrls(
+        options.blob,
         projects.filter((project) => project.thumbnail_path),
       );
 
@@ -250,18 +247,19 @@ export function createProjectService(options: {
         );
       }
 
-      const client = options.createUserClient(user.accessToken);
       const ext = mimeType === "image/webp" ? "webp" : "png";
       const objectPath = `${workspace.id}/${projectId}/thumbnail.${ext}`;
 
-      const { error: uploadError } = await client.storage
-        .from(THUMBNAIL_BUCKET)
-        .upload(objectPath, buffer, { contentType: mimeType, upsert: true });
-
-      if (uploadError) {
+      try {
+        await options.blob
+          .bucket(THUMBNAIL_BUCKET)
+          .upload(objectPath, buffer, { contentType: mimeType, upsert: true });
+      } catch (error) {
         throw new ProjectServiceError(
           "project_create_failed",
-          `Thumbnail upload failed: ${uploadError.message}`,
+          `Thumbnail upload failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
           500,
         );
       }
@@ -276,11 +274,11 @@ export function createProjectService(options: {
           );
         });
 
-      const { data: urlData } = client.storage
-        .from(THUMBNAIL_BUCKET)
-        .getPublicUrl(objectPath);
-
-      return { thumbnailUrl: urlData.publicUrl };
+      return {
+        thumbnailUrl: await options.blob
+          .bucket(THUMBNAIL_BUCKET)
+          .resolveUrl(objectPath),
+      };
     },
 
     async updateProject(user, projectId, input) {
@@ -409,22 +407,27 @@ function mapProjectSummary(options: {
   };
 }
 
-/** 缩略图公开 URL（Supabase Storage 期间实现；M3 换 BlobStore）。 */
-function generateThumbnailUrls(
-  client: UserSupabaseClient,
+/**
+ * 缩略图 URL（经 blob 缝的 `resolveUrl`：公开性由存储侧决定，不硬编码假设）。
+ * 非公开桶会走签名 URL，故这里是异步。
+ */
+async function resolveThumbnailUrls(
+  blob: BlobStore,
   projects: Array<{ id: string; thumbnail_path: string | null }>,
-): Map<string, string> {
-  const urlMap = new Map<string, string>();
-
-  for (const project of projects) {
-    if (!project.thumbnail_path) continue;
-    const { data } = client.storage
-      .from(THUMBNAIL_BUCKET)
-      .getPublicUrl(project.thumbnail_path);
-    urlMap.set(project.id, data.publicUrl);
-  }
-
-  return urlMap;
+): Promise<Map<string, string>> {
+  const bucket = blob.bucket(THUMBNAIL_BUCKET);
+  const entries = await Promise.all(
+    projects
+      .filter((project) => project.thumbnail_path)
+      .map(
+        async (project) =>
+          [
+            project.id,
+            await bucket.resolveUrl(project.thumbnail_path as string),
+          ] as const,
+      ),
+  );
+  return new Map(entries);
 }
 
 function normalizeDescription(description: string | undefined) {

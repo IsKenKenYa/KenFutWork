@@ -7,6 +7,7 @@ import type { ServerEnv } from "../config/env.js";
 import type { AdminService } from "../features/admin/admin-service.js";
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
+import type { BlobStore } from "../features/blob/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
 import type { CanvasService } from "../features/canvas/canvas-service.js";
@@ -20,6 +21,7 @@ import type { ModelProviderService } from "../features/model-providers/model-pro
 import type { PaymentService } from "../features/payments/payment-service.js";
 import type { PermissionService } from "../features/permissions/permission-service.js";
 import type { PersistenceService } from "../features/persistence/types.js";
+import type { PluginRegistryService } from "../features/plugins/plugin-registry-service.js";
 import type { ProjectService } from "../features/projects/project-service.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import type { AssetWriter } from "../features/uploads/asset-writer.js";
@@ -63,6 +65,11 @@ export interface ServiceMap {
    * 同表不同口径，故独立成 key，且 worker profile 也能装配（§4.2）。
    */
   assetWriter: AssetWriter;
+  /**
+   * blob 缝（M3.1）：对象存储唯一入口；Provider 随形态替换
+   * （`local` 桌面本地 FS / `supabase` 过渡期与自托管现状 / 后续 MinIO）。
+   */
+  blob: BlobStore;
   viewer: ViewerService;
   /**
    * 自管 Postgres 存储缝（§4.2；`FORM-9`）：唯一 DB 入口，workspace 隔离在
@@ -81,6 +88,11 @@ export interface ServiceMap {
   usage: UsageService;
   /** 跨模式 tool-call 策略缝（DEC-4） */
   permissions: PermissionService;
+  /**
+   * 插件注册表缝：第三方/内置插件的目录、安装（含安装前兼容性门禁）、
+   * 启停与导出。插件代码是机器本地的，安装态落在 pluginsDir。
+   */
+  plugins: PluginRegistryService;
   /** 执行模式缝（DEC-3：v1 agent + plan） */
   agentModes: ExecutionModeService;
   /** agent 链路 run 用量累积器（turn-stopping 结算） */

@@ -1,3 +1,4 @@
+import { createBlobPlugin } from "../features/blob/plugin.js";
 import { createCreditsPlugin } from "../features/credits/plugin.js";
 import { createJobsPlugin } from "../features/jobs/plugin.js";
 import { createModelProvidersPlugin } from "../features/model-providers/plugin.js";
@@ -23,6 +24,7 @@ export interface WorkerProfileDeps {
 export function workerProfile(deps: WorkerProfileDeps): PluginDefinition[] {
   return [
     persistencePlugin,
+    createBlobPlugin({ getAdminClient: deps.getAdminClient }),
     // worker 无 HTTP 面：路由一律不挂（withRoutes: false），只取服务
     createCreditsPlugin({ withRoutes: false }),
     createJobsPlugin({ withRoutes: false }),

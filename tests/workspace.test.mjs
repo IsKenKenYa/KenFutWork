@@ -342,6 +342,24 @@ function listSupabaseSources() {
   return files;
 }
 
+/**
+ * Provider 适配层：Supabase 耦合**本来就该只出现在这里**。
+ * 把它们计入 `storageRefs`/`sdkRefs` 会本末倒置——把 N 处消费方调用收敛进一个适配器
+ * 是**降低**耦合，却会让指标因适配器自身多了一行 `.getBucket(` 而上升，于是棘轮反而
+ * 挡住它要驱动的改造。故口径（2026-09-14 三次修正）：指标衡量**边界之外**的残留。
+ * 这些文件在 M1.5/M3.1 收尾时整体删除，届时无需指标提醒。
+ */
+const SUPABASE_ADAPTER_FILES = [
+  "apps/server/src/features/blob/providers/supabase-storage.ts",
+  "apps/server/src/supabase/admin.ts",
+  "apps/server/src/supabase/user.ts",
+];
+
+function isSupabaseAdapter(filePath) {
+  const normalized = filePath.split(path.sep).join("/");
+  return SUPABASE_ADAPTER_FILES.some((adapter) => normalized.endsWith(adapter));
+}
+
 const CLIENT_WIRING_PATTERN =
   /createUserClient|createAdminClient|UserSupabaseClient|AdminSupabaseClient|@supabase\//g;
 
@@ -355,15 +373,26 @@ async function collectSupabaseResiduals() {
   };
 
   for (const filePath of sources) {
+    if (isSupabaseAdapter(filePath)) {
+      continue;
+    }
     const source = readFileSync(filePath, "utf8");
     if (/UserSupabaseClient|AdminSupabaseClient|@supabase\//.test(source)) {
       code.filesUsingSupabaseClient += 1;
     }
     code.sdkRefs += countOccurrences(source, CLIENT_WIRING_PATTERN);
-    // 去空白后判定：`.storage.from(...)` 是对象存储调用，不是 DB 查询，
-    // 原口径把它计进 DB 调用，导致「把存储调用搬个位置」就能污染指标。
+    // 去空白后判定，两处负向断言（口径修正 2026-09-14）：
+    // - `(?<!storage)`：`.storage.from(...)` 是对象存储调用，不是 DB 查询；
+    // - `(?<!Buffer|Array|Uint8Array|String)`：`Buffer.from(...)` 这类**构造器**调用
+    //   与 DB 无关。原口径把它们计进 DB 调用，实测噪声约 20 处（例如在 Provider 里
+    //   用 `Buffer.from(hex, "utf8")` 做常量时间比较就会凭空 +2），
+    //   逼得代码为了指标好看而绕开 `Buffer.from`——那是本末倒置。
     const flat = source.replace(/\s+/g, "");
-    code.dbFromCalls += (flat.match(/(?<!storage)\.from\(/g) ?? []).length;
+    code.dbFromCalls += (
+      flat.match(
+        /(?<!storage)(?<!Buffer)(?<!Array)(?<!Uint8Array)(?<!String)\.from\(/g,
+      ) ?? []
+    ).length;
     code.storageRefs += countOccurrences(flat, /\.storage/g);
   }
 
