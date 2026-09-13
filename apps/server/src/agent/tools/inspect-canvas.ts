@@ -1,6 +1,8 @@
 import { tool } from "langchain";
 import { z } from "zod";
 
+import type { CanvasRepository } from "../../features/canvas/repository.js";
+
 const inspectCanvasSchema = z.object({
   detail_level: z
     .enum(["summary", "full"])
@@ -159,14 +161,14 @@ export function buildCanvasSummaryForContext(
 }
 
 export function createInspectCanvasTool(deps: {
-  createUserClient: (accessToken: string) => any;
+  /** 画布数据访问（工作区作用域）：内容读取不再直连 SDK。 */
+  canvasRepository?: CanvasRepository;
 }) {
   return tool(
     async (input, config) => {
       const canvasId = (config as any)?.configurable?.canvas_id;
-      const accessToken = (config as any)?.configurable?.access_token;
 
-      if (!canvasId || !accessToken) {
+      if (!canvasId) {
         return JSON.stringify({
           error: "no_canvas_context",
           message:
@@ -174,21 +176,33 @@ export function createInspectCanvasTool(deps: {
         });
       }
 
-      const client = deps.createUserClient(accessToken);
-      const { data, error } = await client
-        .from("canvases")
-        .select("content")
-        .eq("id", canvasId)
-        .single();
+      if (!deps.canvasRepository) {
+        // 缺数据访问必须说清原因，不能伪装成「画布不存在」
+        return JSON.stringify({
+          error: "canvas_context_unavailable",
+          message:
+            "Canvas data access is not wired into this agent runtime (canvasRepository missing).",
+        });
+      }
 
-      if (error || !data) {
+      // 经 projects 父链解析工作区，再按工作区作用域取内容（不直连 SDK）
+      const workspaceId = await deps.canvasRepository
+        .findWorkspaceIdByCanvas(canvasId)
+        .catch(() => null);
+      const canvasRow = workspaceId
+        ? await deps.canvasRepository
+            .findById(workspaceId, canvasId)
+            .catch(() => null)
+        : null;
+
+      if (!canvasRow) {
         return JSON.stringify({
           error: "canvas_not_found",
           message: "Canvas not found or access denied.",
         });
       }
 
-      const content = data.content as {
+      const content = canvasRow.content as {
         elements?: CanvasElement[];
         appState?: Record<string, unknown>;
       };

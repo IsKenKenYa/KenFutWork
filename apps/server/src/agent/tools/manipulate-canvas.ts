@@ -784,14 +784,12 @@ const handlers: Record<
 export function createManipulateCanvasTool(deps: {
   /** 画布数据访问（工作区作用域）：内容读写不再直连 SDK。 */
   canvasRepository?: CanvasRepository;
-  createUserClient: (accessToken: string) => any;
 }) {
   return tool(
     async (input, config) => {
       const canvasId = (config as any)?.configurable?.canvas_id;
-      const accessToken = (config as any)?.configurable?.access_token;
 
-      if (!canvasId || !accessToken) {
+      if (!canvasId) {
         return JSON.stringify({
           error: "no_canvas_context",
           message:
@@ -800,7 +798,6 @@ export function createManipulateCanvasTool(deps: {
       }
 
       // --- Read current canvas -------------------------------------------------
-      const client = deps.createUserClient(accessToken);
       const workspaceId = await deps.canvasRepository
         ?.findWorkspaceIdByCanvas(canvasId)
         .catch(() => null);
