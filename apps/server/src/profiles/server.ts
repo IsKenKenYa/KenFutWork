@@ -127,7 +127,6 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createAdminPlugin(),
     createAgentRunsPlugin({
       createUserClient: deps.createUserClient,
-      getAdminClient: deps.getAdminClient,
       connectionManager: deps.connectionManager,
       events: deps.events,
       ...(deps.agentFactory ? { agentFactory: deps.agentFactory } : {}),

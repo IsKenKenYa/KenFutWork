@@ -1,4 +1,4 @@
-import type { AdminSupabaseClient } from "../../supabase/admin.js";
+import type { AgentRunRepository } from "./repository.js";
 import type {
   CreateAcceptedAgentRunInput,
   UpdateAgentRunInput,
@@ -21,24 +21,23 @@ export type AgentRunMetadataService = {
 };
 
 export function createAgentRunMetadataService(options: {
-  getAdminClient: () => AdminSupabaseClient;
+  repository: AgentRunRepository;
 }): AgentRunMetadataService {
+  const { repository } = options;
+
   return {
     async createAcceptedRun(input) {
-      const { error } = await options
-        .getAdminClient()
-        .from("agent_runs")
+      await repository
         .insert({
-          id: input.runId,
           model: input.model ?? null,
-          session_id: input.sessionId,
+          runId: input.runId,
+          sessionId: input.sessionId,
           status: "accepted",
-          thread_id: input.threadId,
+          threadId: input.threadId,
+        })
+        .catch(() => {
+          throw new AgentRunPersistenceError("Failed to persist accepted run.");
         });
-
-      if (error) {
-        throw new AgentRunPersistenceError("Failed to persist accepted run.");
-      }
     },
 
     async updateRun(input) {
@@ -48,15 +47,9 @@ export function createAgentRunMetadataService(options: {
         ...(input.errorMessage ? { error_message: input.errorMessage } : {}),
         status: input.status,
       };
-      const { error } = await options
-        .getAdminClient()
-        .from("agent_runs")
-        .update(patch)
-        .eq("id", input.runId);
-
-      if (error) {
+      await repository.updateById(input.runId, patch).catch(() => {
         throw new AgentRunPersistenceError("Failed to update run metadata.");
-      }
+      });
     },
   };
 }

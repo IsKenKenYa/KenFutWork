@@ -15,6 +15,12 @@ export type CanvasRow = {
 export interface CanvasRepository {
   /** 读画布（含内容）；不属本工作区或不存在均返回 null。 */
   findById(workspaceId: string, canvasId: string): Promise<CanvasRow | null>;
+  /**
+   * 由画布反查工作区（画布 → 项目链）。
+   * 无工作区谓词可言（查的就是「这块画布属于谁」），故走根客户端；
+   * 调用方是已鉴权的 agent 运行（画布 id 来自本次运行），不是外部输入。
+   */
+  findWorkspaceIdByCanvas(canvasId: string): Promise<string | null>;
   /** 覆盖写画布内容；返回受影响行数（0 = 不存在或不属本工作区）。 */
   saveContent(
     workspaceId: string,
@@ -29,6 +35,17 @@ export function createCanvasRepository(
   persistence: PersistenceService,
 ): CanvasRepository {
   return {
+    async findWorkspaceIdByCanvas(canvasId) {
+      const row = await persistence.queryOne<{ workspace_id: string }>(
+        `select p.workspace_id
+           from public.canvases c
+           join public.projects p on p.id = c.project_id
+          where c.id = $1`,
+        [canvasId],
+      );
+      return row?.workspace_id ?? null;
+    },
+
     async findById(workspaceId, canvasId) {
       const row = await persistence
         .forWorkspace(workspaceId)

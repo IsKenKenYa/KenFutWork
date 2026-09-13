@@ -37,6 +37,7 @@ function fakeRepository(
   rows: typeof skillRows = skillRows,
 ): SkillCatalogRepository {
   return {
+    listSkillFiles: async () => [],
     listWorkspaceSkills: async () => rows,
   };
 }
@@ -130,6 +131,7 @@ describe("skill 目录服务（SKILL.md 发现缝）", () => {
   it("数据访问失败按「无 skill」降级，不炸工具链", async () => {
     const catalog = createSkillCatalogService({
       repository: {
+        listSkillFiles: async () => [],
         listWorkspaceSkills: async () => {
           throw new Error("connection reset");
         },

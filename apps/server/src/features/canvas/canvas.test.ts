@@ -188,6 +188,7 @@ function createFakeRepository(
 ): CanvasRepository {
   return {
     findById: async () => CANVAS_ROW,
+    findWorkspaceIdByCanvas: async () => WORKSPACE_ID,
     saveContent: async () => 1,
     ...overrides,
   };

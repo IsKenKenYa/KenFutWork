@@ -56,11 +56,10 @@ import { adaptDeepAgentStream } from "./stream-adapter.js";
 import type { SubmitImageJobFn } from "./tools/image-generate.js";
 import { buildCanvasSummaryForContext } from "./tools/inspect-canvas.js";
 import type { SubmitVideoJobFn } from "./tools/video-generate.js";
-import {
-  loadWorkspaceSkills,
-  type WorkspaceSkillEntry,
+import type {
+  WorkspaceSkillEntry,
+  WorkspaceSkillsLoader,
 } from "./workspace-skills.js";
-
 /**
  * Build the text portion of a user message, appending <input_images> XML
  * tags when attachments are present so the LLM can reference them by assetId.
@@ -289,6 +288,8 @@ type CreateAgentRuntimeOptions = {
   agentRunMetadataService?: AgentRunMetadataService;
   /** 画布写入（canvas 插件提供）：生成物落画布经此，运行时不再直连存储 SDK。 */
   canvasService?: CanvasService;
+  /** 工作区技能加载（skills/canvas 聚合的数据访问提供）：运行时不再直连 SDK。 */
+  workspaceSkillsLoader?: WorkspaceSkillsLoader;
   connectionManager?: ConnectionManager;
   createUserClient?: (accessToken: string) => unknown;
   creditService?: CreditService;
@@ -1027,12 +1028,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       // Done before backend creation so we know whether to add the
       // /workspace-skills/ Store route.
       let workspaceSkills: WorkspaceSkillEntry[] = [];
-      if (run.canvasId && run.accessToken && options.createUserClient) {
+      if (run.canvasId && options.workspaceSkillsLoader) {
         try {
-          const wsClient = options.createUserClient(
-            run.accessToken,
-          ) as UserSupabaseClient;
-          workspaceSkills = await loadWorkspaceSkills(wsClient, run.canvasId);
+          workspaceSkills = await options.workspaceSkillsLoader(run.canvasId);
           rlog.lap("workspace_skills_loaded", {
             count: workspaceSkills.length,
           });

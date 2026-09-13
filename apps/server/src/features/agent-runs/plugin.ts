@@ -2,16 +2,18 @@ import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import type { LoomicAgentFactory } from "../../agent/deep-agent.js";
 import { createAgentPersistenceService } from "../../agent/persistence/index.js";
 import { createAgentRunService } from "../../agent/runtime.js";
+import { createWorkspaceSkillsLoader } from "../../agent/workspace-skills.js";
 import { registerRunRoutes } from "../../http/runs.js";
 import type { KernelEvents, PluginDefinition } from "../../kernel/types.js";
-import type { AdminSupabaseClient } from "../../supabase/admin.js";
 import type { UserSupabaseClient } from "../../supabase/user.js";
 import type { ConnectionManager } from "../../ws/connection-manager.js";
+import { createCanvasRepository } from "../canvas/repository.js";
+import { createSkillCatalogRepository } from "../skills/repository.js";
 import { createAgentRunMetadataService } from "./agent-run-service.js";
+import { createAgentRunRepository } from "./repository.js";
 
 export interface AgentRunsPluginDeps {
   createUserClient: (accessToken: string) => UserSupabaseClient;
-  getAdminClient: () => AdminSupabaseClient;
   connectionManager: ConnectionManager;
   /** 内核事件缝：turn 收尾发射 turn-stopping（用量结算挂钩点）。 */
   events: KernelEvents;
@@ -36,6 +38,7 @@ export function createAgentRunsPlugin(
       "auth",
       "canvas",
       "credits",
+      "persistence",
       "settings",
       "threads",
       "tierGuard",
@@ -46,7 +49,9 @@ export function createAgentRunsPlugin(
         createAgentPersistenceService(ctx.env),
       );
       ctx.register("agentRunMetadata", () =>
-        createAgentRunMetadataService({ getAdminClient: deps.getAdminClient }),
+        createAgentRunMetadataService({
+          repository: createAgentRunRepository(ctx.get("persistence")),
+        }),
       );
       ctx.register("agentRuns", (d) => {
         const jobService = ctx.tryGet("jobs");
@@ -55,6 +60,10 @@ export function createAgentRunsPlugin(
           ...(deps.agentFactory ? { agentFactory: deps.agentFactory } : {}),
           agentRunMetadataService: d.get("agentRunMetadata"),
           canvasService: d.get("canvas"),
+          workspaceSkillsLoader: createWorkspaceSkillsLoader({
+            canvases: createCanvasRepository(ctx.get("persistence")),
+            skills: createSkillCatalogRepository(ctx.get("persistence")),
+          }),
           connectionManager: deps.connectionManager,
           createUserClient: deps.createUserClient,
           ...(deps.agentModel ? { model: deps.agentModel } : {}),

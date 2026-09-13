@@ -1,4 +1,5 @@
-import type { UserSupabaseClient } from "../supabase/user.js";
+import type { CanvasRepository } from "../features/canvas/repository.js";
+import type { SkillCatalogRepository } from "../features/skills/repository.js";
 
 /**
  * A file bundled with a skill (scripts/, references/, assets/).
@@ -27,122 +28,67 @@ export interface WorkspaceSkillEntry {
   files: SkillFileEntry[];
 }
 
+export type WorkspaceSkillsLoader = (
+  canvasId: string,
+) => Promise<WorkspaceSkillEntry[]>;
+
 /**
- * Load enabled skills (both system and user-created) for a given canvas.
+ * 技能加载缝（agent 侧消费）：把「画布 → 工作区 → 已启用 skill + 附带文件」
+ * 从 agent 内部装配收敛到数据访问层。
  *
- * Resolves the canvas → project → workspace chain, then fetches all
- * skills installed and enabled in that workspace. Only skills with
- * non-empty `skill_content` are returned.
+ * 数据访问全部经 repository（工作区谓词）——技能表本身没有 workspace_id，
+ * 靠 `workspace_skills` 这一层限定；不用裸 skill id 取数。
  */
-export async function loadWorkspaceSkills(
-  userClient: UserSupabaseClient,
-  canvasId: string,
-): Promise<WorkspaceSkillEntry[]> {
-  // Step 1: Resolve canvas → project → workspace
-  const workspaceId = await resolveWorkspaceId(userClient, canvasId);
-  if (!workspaceId) return [];
+export function createWorkspaceSkillsLoader(options: {
+  canvases: CanvasRepository;
+  skills: SkillCatalogRepository;
+}): WorkspaceSkillsLoader {
+  const { canvases, skills } = options;
 
-  // Step 2: Query enabled workspace skills with full skill data
-  // NOTE: workspace_skills / skills tables may not yet be in the generated
-  // Supabase types — use `as any` to bypass PostgREST type checking.
-  const { data: rows, error } = await (userClient as any)
-    .from("workspace_skills")
-    .select(
-      "skill:skills(id, slug, name, description, skill_content, metadata)",
-    )
-    .eq("workspace_id", workspaceId)
-    .eq("enabled", true);
+  return async (canvasId) => {
+    const workspaceId = await canvases
+      .findWorkspaceIdByCanvas(canvasId)
+      .catch(() => null);
+    if (!workspaceId) return [];
 
-  if (error || !rows?.length) return [];
+    const installed = await skills
+      .listWorkspaceSkills(workspaceId)
+      .catch(() => []);
 
-  // Step 3: Batch-load associated files for all enabled skills
-  const skillIds = (rows as any[])
-    .map((r: any) => r.skill?.id)
-    .filter((id: unknown): id is string => typeof id === "string");
+    // 只取启用项；无 SKILL.md 正文的条目跳过（旧的告警语义保留）
+    const enabled = installed.filter((entry) => entry.enabled);
 
-  const filesBySkillId = new Map<string, SkillFileEntry[]>();
-  if (skillIds.length > 0) {
-    const { data: fileRows } = await (userClient as any)
-      .from("skill_files")
-      .select("skill_id, file_path, content")
-      .in("skill_id", skillIds);
+    const filesBySkillId = new Map<string, SkillFileEntry[]>();
+    const files = await skills
+      .listSkillFiles(
+        workspaceId,
+        enabled.map((entry) => entry.skillId),
+      )
+      .catch(() => []);
 
-    if (fileRows?.length) {
-      for (const fr of fileRows as Array<{
-        skill_id: string;
-        file_path: string;
-        content: string;
-      }>) {
-        const existing = filesBySkillId.get(fr.skill_id) ?? [];
-        existing.push({ path: fr.file_path, content: fr.content });
-        filesBySkillId.set(fr.skill_id, existing);
-      }
+    for (const file of files) {
+      const existing = filesBySkillId.get(file.skillId) ?? [];
+      existing.push({ path: file.path, content: file.content });
+      filesBySkillId.set(file.skillId, existing);
     }
-  }
 
-  // Step 4: Map to WorkspaceSkillEntry, filtering out skills without DB content
-  return (rows as Array<{ skill: Record<string, unknown> | null }>)
-    .map((row: { skill: Record<string, unknown> | null }) => {
-      const skill = row.skill;
-      if (!skill?.skill_content) {
-        if (skill?.slug) {
+    return enabled
+      .map((entry) => {
+        if (!entry.skillContent) {
           console.warn(
-            `[workspace-skills] Skill "${skill.slug}" is enabled but has empty content — skipping`,
+            `[workspace-skills] Skill "${entry.slug}" is enabled but has empty content — skipping`,
           );
+          return null;
         }
-        return null;
-      }
-      const slug = skill.slug as string;
-      return {
-        name: slug,
-        description: skill.description as string,
-        path: `/workspace-skills/${slug}/SKILL.md`,
-        content: skill.skill_content as string,
-        files: filesBySkillId.get(skill.id as string) ?? [],
-      };
-    })
-    .filter((entry): entry is WorkspaceSkillEntry => entry !== null);
-}
 
-/**
- * Resolve canvas ID → workspace ID via the canvas → project join.
- */
-async function resolveWorkspaceId(
-  client: UserSupabaseClient,
-  canvasId: string,
-): Promise<string | null> {
-  // Try joined query first (single round-trip)
-  try {
-    const { data } = await client
-      .from("canvases")
-      .select("project:projects(workspace_id)")
-      .eq("id", canvasId)
-      .maybeSingle();
-
-    const project = data?.project as { workspace_id?: string } | null;
-    if (project?.workspace_id) return project.workspace_id;
-  } catch {
-    // FK may not be exposed via PostgREST — fall back to two-step
-  }
-
-  // Two-step fallback
-  try {
-    const { data: canvas } = await client
-      .from("canvases")
-      .select("project_id")
-      .eq("id", canvasId)
-      .maybeSingle();
-
-    if (!canvas?.project_id) return null;
-
-    const { data: project } = await client
-      .from("projects")
-      .select("workspace_id")
-      .eq("id", canvas.project_id)
-      .maybeSingle();
-
-    return (project?.workspace_id as string) ?? null;
-  } catch {
-    return null;
-  }
+        return {
+          name: entry.slug,
+          description: entry.description,
+          path: `/workspace-skills/${entry.slug}/SKILL.md`,
+          content: entry.skillContent,
+          files: filesBySkillId.get(entry.skillId) ?? [],
+        };
+      })
+      .filter((entry): entry is WorkspaceSkillEntry => entry !== null);
+  };
 }
