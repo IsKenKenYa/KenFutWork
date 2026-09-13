@@ -45,6 +45,10 @@ import {
   fetchViewer,
   updateProject,
 } from "@/lib/server-api";
+import {
+  resolveWorkbenchSurface,
+  type WorkbenchMode,
+} from "@/lib/workbench-surface";
 
 /**
  * Agent 工作台（产品主入口）：Code / Design 双模式（DEC-2）。
@@ -52,8 +56,6 @@ import {
  * 设置与插件市场为居中模态；design 模式的画布经项目面板自动打开（Loomic
  * 仅作为 design 模式及其依赖能力的承载）。
  */
-
-type WorkbenchMode = "code" | "design";
 
 interface TaskMessage {
   role: "user" | "assistant";
@@ -179,6 +181,8 @@ export function Workbench() {
   >({ code: [], design: [] });
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
+  /** Design 模式的输入交给画布页（`/canvas?...&prompt=`）自动发送，不落到工作台会话视图。 */
+  const [canvasPrompt, setCanvasPrompt] = useState<string | null>(null);
   const [followUp, setFollowUp] = useState("");
   const [tier, setTier] = useState("default");
   const [codeProjects, setCodeProjects] = useState<CodeProject[]>([]);
@@ -220,10 +224,18 @@ export function Workbench() {
   const tasks = tasksByMode[mode];
   const selectedProject =
     projects.find((p) => p.id === selectedProjectId) ?? null;
+
   const activeTask = useMemo(
     () => tasks.find((t) => t.id === activeTaskId) ?? null,
     [tasks, activeTaskId],
   );
+
+  /** 主区判定：Design 模式恒为画布（不变量集中在 resolveWorkbenchSurface 与它的测试里）。 */
+  const surface = resolveWorkbenchSurface({
+    hasActiveTask: activeTask !== null,
+    hasSelectedProject: selectedProject !== null,
+    mode,
+  });
 
   // 鉴权守卫
   useEffect(() => {
@@ -647,6 +659,16 @@ export function Workbench() {
   const startTask = useCallback(
     (text: string) => {
       if (!text.trim() || !session?.access_token) return;
+
+      if (mode === "design") {
+        // Design 模式：主区是画布，对话属于画布页自己的助手面板。
+        // 这里把输入交给画布（`/canvas?id=...&prompt=...` 由画布页自动发送），
+        // **不**创建工作任务、**不**激活会话视图——否则对话框会把画布顶掉。
+        setPrompt("");
+        setCanvasPrompt(text.trim());
+        return;
+      }
+
       const sessionId = crypto.randomUUID();
       const conversationId = crypto.randomUUID();
       const title = text.trim().slice(0, 24) || "新任务";
@@ -691,7 +713,6 @@ export function Workbench() {
 `
           }${text.trim()}`,
           ...(model ? { model } : {}),
-          ...(mode === "design" ? { preset: "design" as const } : {}),
           executionMode,
         },
         (ack) => {
@@ -703,7 +724,16 @@ export function Workbench() {
         },
       );
     },
-    [mode, model, workDirName, thinking, executionMode, selectedProjectId, session, ws],
+    [
+      mode,
+      model,
+      workDirName,
+      thinking,
+      executionMode,
+      selectedProjectId,
+      session,
+      ws,
+    ],
   );
 
   const handleSignOut = useCallback(() => {
@@ -753,7 +783,6 @@ export function Workbench() {
           canvasId: task.id,
           prompt: `${thinkingHint}${historyBlock}${text.trim()}`,
           ...(model ? { model } : {}),
-          ...(mode === "design" ? { preset: "design" as const } : {}),
           executionMode,
         },
         (ack) => {
@@ -765,16 +794,7 @@ export function Workbench() {
         },
       );
     },
-    [
-      activeTaskId,
-      tasks,
-      mode,
-      model,
-      thinking,
-      executionMode,
-      session,
-      ws,
-    ],
+    [activeTaskId, tasks, mode, model, thinking, executionMode, session, ws],
   );
 
   if (loading) {
@@ -1082,9 +1102,19 @@ export function Workbench() {
         </aside>
       )}
 
-      {/* 主区：任务视图 / 画布（选中项目自动打开）/ 居中编排器 */}
+      {/* 主区：Design＝画布（恒为画布，见 resolveWorkbenchSurface）/ Code＝任务视图 或 居中编排器 */}
       <main className="min-w-0 flex-1 overflow-hidden bg-card">
-        {activeTask ? (
+        {surface === "canvas" ? (
+          /* Design：选中项目后画布自动打开（原版 Loomic 画布，对话在画布内助手里） */
+          <iframe
+            key={`${selectedProject?.primaryCanvas.id}:${canvasPrompt ?? ""}`}
+            src={`/canvas?id=${selectedProject?.primaryCanvas.id}${
+              canvasPrompt ? `&prompt=${encodeURIComponent(canvasPrompt)}` : ""
+            }`}
+            title={`${selectedProject?.name ?? ""} 画布`}
+            className="h-full w-full border-0"
+          />
+        ) : activeTask ? (
           <div className="mx-auto flex h-full max-w-3xl flex-col p-6">
             <h1 className="mb-4 text-lg font-medium">{activeTask.title}</h1>
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
@@ -1316,14 +1346,6 @@ export function Workbench() {
               </div>
             </form>
           </div>
-        ) : mode === "design" && selectedProject ? (
-          /* Design：选中项目后画布自动打开（原版 Loomic 画布，无额外按钮） */
-          <iframe
-            key={selectedProject.primaryCanvas.id}
-            src={`/canvas?id=${selectedProject.primaryCanvas.id}`}
-            title={`${selectedProject.name} 画布`}
-            className="h-full w-full border-0"
-          />
         ) : (
           <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-6">
             <div className="mb-6 flex items-center gap-3">
