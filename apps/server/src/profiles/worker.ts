@@ -23,10 +23,7 @@ export function workerProfile(deps: WorkerProfileDeps): PluginDefinition[] {
   return [
     persistencePlugin,
     // worker 无 HTTP 面：路由一律不挂（withRoutes: false），只取服务
-    createCreditsPlugin({
-      getAdminClient: deps.getAdminClient,
-      withRoutes: false,
-    }),
+    createCreditsPlugin({ withRoutes: false }),
     createJobsPlugin({ withRoutes: false }),
     createUsagePlugin({ withRoutes: false }),
     createModelProvidersPlugin({

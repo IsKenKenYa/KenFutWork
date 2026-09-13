@@ -102,7 +102,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     persistencePlugin,
     authPlugin,
     brandKitPlugin,
-    createCreditsPlugin({ getAdminClient: deps.getAdminClient }),
+    createCreditsPlugin(),
     createViewerPlugin(),
     createCanvasPlugin({ createUserClient: deps.createUserClient }),
     createChatPlugin(),

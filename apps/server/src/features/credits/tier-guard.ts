@@ -15,8 +15,6 @@ import {
   PLAN_CONFIGS,
 } from "@loomic/shared";
 
-import type { AdminSupabaseClient } from "../../supabase/admin.js";
-
 // ── Error ────────────────────────────────────────────────────
 
 export type TierGuardErrorCode = Exclude<
@@ -64,7 +62,8 @@ export type TierGuard = {
 // ── Factory ──────────────────────────────────────────────────
 
 export function createTierGuard(options: {
-  getAdminClient: () => AdminSupabaseClient;
+  /** 并发检查所需的工作区进行中任务数（数据访问归 jobs 聚合）。 */
+  countActiveJobs: (workspaceId: string) => Promise<number>;
 }): TierGuard {
   return {
     checkModelAccess(plan, modelId) {
@@ -98,25 +97,20 @@ export function createTierGuard(options: {
     },
 
     async checkConcurrency(workspaceId, plan) {
-      const admin = options.getAdminClient();
       const maxConcurrent = PLAN_CONFIGS[plan].maxConcurrentJobs;
 
-      const { count, error } = await admin
-        .from("background_jobs")
-        .select("id", { count: "exact", head: true })
-        .eq("workspace_id", workspaceId)
-        .in("status", ["queued", "running"]);
-
-      if (error) {
-        // Log but don't block — fail open on query errors
+      let activeCount: number;
+      try {
+        activeCount = await options.countActiveJobs(workspaceId);
+      } catch (error) {
+        // Log but don't block — fail open on query errors（与旧行为一致）
         console.error(
           "[tier-guard] Failed to check concurrency:",
-          error.message,
+          error instanceof Error ? error.message : error,
         );
         return;
       }
 
-      const activeCount = count ?? 0;
       if (activeCount >= maxConcurrent) {
         throw new TierGuardError(
           "concurrency_limit",

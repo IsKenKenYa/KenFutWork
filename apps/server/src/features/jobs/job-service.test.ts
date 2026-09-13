@@ -251,6 +251,7 @@ function createFakeRepository(
 ): JobRepository {
   return {
     cancel: async () => JOB_ROW,
+    countActive: async () => 0,
     delete: async () => 1,
     findById: async () => JOB_ROW,
     findByIdInWorkspace: async () => JOB_ROW,

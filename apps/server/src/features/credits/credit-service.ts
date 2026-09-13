@@ -6,7 +6,7 @@ import type {
 } from "@loomic/shared";
 import { PLAN_CONFIGS } from "@loomic/shared";
 
-import type { AdminSupabaseClient } from "../../supabase/admin.js";
+import type { CreditRepository } from "./repository.js";
 
 // ── Error ────────────────────────────────────────────────────
 
@@ -98,289 +98,211 @@ export type CreditService = {
 // ── Factory ──────────────────────────────────────────────────
 
 export function createCreditService(options: {
-  getAdminClient: () => AdminSupabaseClient;
+  repository: CreditRepository;
 }): CreditService {
+  const { repository } = options;
+
+  /** 「额度不足」由库函数以异常抛出，消息含 INSUFFICIENT_CREDITS。 */
+  function mapDeductError(error: unknown, action: string): CreditServiceError {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("INSUFFICIENT_CREDITS")) {
+      return new CreditServiceError(
+        "insufficient_credits",
+        "Not enough credits to perform this action.",
+        402,
+      );
+    }
+    return new CreditServiceError(
+      "credit_deduct_failed",
+      `Failed to ${action}: ${message}`,
+      500,
+    );
+  }
+
   return {
     async getBalance(workspaceId) {
-      const admin = options.getAdminClient();
-
-      const [balanceResult, subscriptionResult, dailyClaimResult] =
-        await Promise.all([
-          admin
-            .from("credit_balances")
-            .select("balance")
-            .eq("workspace_id", workspaceId)
-            .maybeSingle(),
-          admin
-            .from("subscriptions")
-            .select("plan")
-            .eq("workspace_id", workspaceId)
-            .maybeSingle(),
-          admin
-            .from("daily_credit_claims")
-            .select("id")
-            .eq("workspace_id", workspaceId)
-            .eq("claim_date", new Date().toISOString().slice(0, 10))
-            .maybeSingle(),
-        ]);
-
-      if (balanceResult.error || subscriptionResult.error) {
+      // 余额与套餐查询失败即报错；今日领取状态查询失败按「未领取」处理（与旧行为一致）。
+      const [balance, plan, dailyClaimed] = await Promise.all([
+        repository.findBalance(workspaceId),
+        repository.findPlan(workspaceId),
+        repository
+          .hasClaimedToday(workspaceId, new Date().toISOString().slice(0, 10))
+          .catch(() => false),
+      ]).catch(() => {
         throw new CreditServiceError(
           "credit_query_failed",
           "Failed to query credit balance.",
           500,
         );
-      }
+      });
 
       return {
-        balance: balanceResult.data?.balance ?? 0,
-        plan: (subscriptionResult.data?.plan as SubscriptionPlan) ?? "free",
-        dailyClaimed: dailyClaimResult.data !== null,
+        balance: balance ?? 0,
+        plan: (plan as SubscriptionPlan) ?? "free",
+        dailyClaimed,
       };
     },
 
     async deductCredits(workspaceId, userId, amount, jobId, description) {
-      const admin = options.getAdminClient();
+      const txId = await repository
+        .deductCredits({
+          amount,
+          description,
+          jobId,
+          userId,
+          workspaceId,
+        })
+        .catch((error: unknown) => {
+          throw mapDeductError(error, "deduct credits");
+        });
 
-      const { data, error } = await admin.rpc("deduct_credits", {
-        p_workspace_id: workspaceId,
-        p_user_id: userId,
-        p_amount: amount,
-        p_job_id: (jobId ?? null) as string,
-        p_description: (description ?? null) as string,
-      });
-
-      if (error) {
-        if (error.message?.includes("INSUFFICIENT_CREDITS")) {
-          throw new CreditServiceError(
-            "insufficient_credits",
-            "Not enough credits to perform this action.",
-            402,
-          );
-        }
-        throw new CreditServiceError(
-          "credit_deduct_failed",
-          `Failed to deduct credits: ${error.message}`,
-          500,
-        );
-      }
-
-      return data as string;
+      return txId as string;
     },
 
     async deductChatCredits(workspaceId, userId, amount, runId, description) {
-      const admin = options.getAdminClient();
+      const txId = await repository
+        .deductChatCredits({
+          amount,
+          description,
+          runId,
+          userId,
+          workspaceId,
+        })
+        .catch((error: unknown) => {
+          throw mapDeductError(error, "deduct chat credits");
+        });
 
-      // NOTE: deduct_chat_credits 未纳入生成类型（同 increment_job_attempt 的处理）
-      const { data, error } = await (admin as any).rpc("deduct_chat_credits", {
-        p_workspace_id: workspaceId,
-        p_user_id: userId,
-        p_amount: amount,
-        p_run_id: runId,
-        p_description: description ?? null,
-      });
-
-      if (error) {
-        if (error.message?.includes("INSUFFICIENT_CREDITS")) {
-          throw new CreditServiceError(
-            "insufficient_credits",
-            "Not enough credits to perform this action.",
-            402,
-          );
-        }
-        throw new CreditServiceError(
-          "credit_deduct_failed",
-          `Failed to deduct chat credits: ${error.message}`,
-          500,
-        );
-      }
-
-      return data as string;
+      return txId as string;
     },
 
     async adminAdjustCredits(workspaceId, userId, amount, description) {
-      const admin = options.getAdminClient();
-
-      // NOTE: admin_adjust_credits 未纳入生成类型（同 increment_job_attempt 的处理）
-      const { data, error } = await (admin as any).rpc("admin_adjust_credits", {
-        p_workspace_id: workspaceId,
-        p_user_id: userId,
-        p_amount: amount,
-        p_description: description ?? null,
-      });
-
-      if (error) {
-        if (error.message?.includes("INSUFFICIENT_CREDITS")) {
+      const txId = await repository
+        .adjustCredits({ amount, description, userId, workspaceId })
+        .catch((error: unknown) => {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          if (message.includes("INSUFFICIENT_CREDITS")) {
+            throw new CreditServiceError(
+              "insufficient_credits",
+              "Deduction exceeds current balance.",
+              402,
+            );
+          }
           throw new CreditServiceError(
-            "insufficient_credits",
-            "Deduction exceeds current balance.",
-            402,
+            "credit_deduct_failed",
+            `Failed to adjust credits: ${message}`,
+            500,
           );
-        }
-        throw new CreditServiceError(
-          "credit_deduct_failed",
-          `Failed to adjust credits: ${error.message}`,
-          500,
-        );
-      }
+        });
 
-      return data as string;
+      return txId as string;
     },
 
     async refundCredits(workspaceId, userId, amount, jobId, description) {
-      const admin = options.getAdminClient();
+      const txId = await repository
+        .refundCredits({ amount, description, jobId, userId, workspaceId })
+        .catch((error: unknown) => {
+          throw new CreditServiceError(
+            "credit_refund_failed",
+            `Failed to refund credits: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+            500,
+          );
+        });
 
-      const { data, error } = await admin.rpc("refund_credits", {
-        p_workspace_id: workspaceId,
-        p_user_id: userId,
-        p_amount: amount,
-        p_job_id: jobId ?? null,
-        p_description: description ?? null,
-      });
-
-      if (error) {
-        throw new CreditServiceError(
-          "credit_refund_failed",
-          `Failed to refund credits: ${error.message}`,
-          500,
-        );
-      }
-
-      return data as string;
+      return txId as string;
     },
 
     async claimDailyCredits(workspaceId) {
-      const admin = options.getAdminClient();
+      const plan =
+        (await repository.findPlan(workspaceId).catch(() => {
+          throw new CreditServiceError(
+            "credit_claim_failed",
+            "Failed to query subscription.",
+            500,
+          );
+        })) ?? "free";
 
-      // Determine the workspace's plan
-      const { data: sub, error: subError } = await admin
-        .from("subscriptions")
-        .select("plan")
-        .eq("workspace_id", workspaceId)
-        .maybeSingle();
-
-      if (subError) {
-        throw new CreditServiceError(
-          "credit_claim_failed",
-          "Failed to query subscription.",
-          500,
-        );
-      }
-
-      const plan = (sub?.plan as SubscriptionPlan) ?? "free";
-      const config = PLAN_CONFIGS[plan];
+      const config = PLAN_CONFIGS[plan as SubscriptionPlan];
 
       if (config.dailyCredits <= 0) {
         return { success: false };
       }
 
-      const { data: claimed, error: claimError } = await admin.rpc(
-        "claim_daily_credits",
-        {
-          p_workspace_id: workspaceId,
-          p_amount: config.dailyCredits,
-        },
-      );
-
-      if (claimError) {
-        throw new CreditServiceError(
-          "credit_claim_failed",
-          `Failed to claim daily credits: ${claimError.message}`,
-          500,
-        );
-      }
+      const claimed = await repository
+        .claimDailyCredits(workspaceId, config.dailyCredits)
+        .catch((error: unknown) => {
+          throw new CreditServiceError(
+            "credit_claim_failed",
+            `Failed to claim daily credits: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+            500,
+          );
+        });
 
       if (!claimed) {
         return { success: false };
       }
 
-      // Fetch updated balance
-      const { data: balanceRow } = await admin
-        .from("credit_balances")
-        .select("balance")
-        .eq("workspace_id", workspaceId)
-        .maybeSingle();
-
-      return {
-        success: true,
-        balance: balanceRow?.balance ?? 0,
-      };
+      const balance = await repository
+        .findBalance(workspaceId)
+        .catch(() => null);
+      return { success: true, balance: balance ?? 0 };
     },
 
     async getTransactions(workspaceId, limit = 20) {
-      const admin = options.getAdminClient();
       const safeLimit = Math.min(Math.max(limit, 1), 100);
 
-      const { data, error } = await admin
-        .from("credit_transactions")
-        .select(
-          "id, transaction_type, amount, balance_after, job_id, description, created_at",
-        )
-        .eq("workspace_id", workspaceId)
-        .order("created_at", { ascending: false })
-        .limit(safeLimit);
+      const rows = await repository
+        .listTransactions(workspaceId, safeLimit)
+        .catch(() => {
+          throw new CreditServiceError(
+            "credit_query_failed",
+            "Failed to query transactions.",
+            500,
+          );
+        });
 
-      if (error) {
-        throw new CreditServiceError(
-          "credit_query_failed",
-          "Failed to query transactions.",
-          500,
-        );
-      }
-
-      return (data ?? []) as CreditTransaction[];
+      return rows as CreditTransaction[];
     },
 
     async getSubscription(workspaceId) {
-      const admin = options.getAdminClient();
-
-      const { data, error } = await admin
-        .from("subscriptions")
-        .select(
-          "plan, billing_period, stripe_customer_id, stripe_subscription_id, current_period_start, current_period_end, canceled_at",
-        )
-        .eq("workspace_id", workspaceId)
-        .maybeSingle();
-
-      if (error) {
+      const row = await repository.findSubscription(workspaceId).catch(() => {
         throw new CreditServiceError(
           "credit_query_failed",
           "Failed to query subscription.",
           500,
         );
-      }
+      });
 
       return {
-        plan: (data?.plan as SubscriptionPlan) ?? "free",
-        billingPeriod: (data?.billing_period as BillingPeriod) ?? null,
-        stripeCustomerId: data?.stripe_customer_id ?? null,
-        stripeSubscriptionId: data?.stripe_subscription_id ?? null,
-        currentPeriodStart: data?.current_period_start ?? null,
-        currentPeriodEnd: data?.current_period_end ?? null,
-        canceledAt: data?.canceled_at ?? null,
+        plan: (row?.plan as SubscriptionPlan) ?? "free",
+        billingPeriod: (row?.billing_period as BillingPeriod) ?? null,
+        stripeCustomerId: row?.stripe_customer_id ?? null,
+        stripeSubscriptionId: row?.stripe_subscription_id ?? null,
+        currentPeriodStart: row?.current_period_start ?? null,
+        currentPeriodEnd: row?.current_period_end ?? null,
+        canceledAt: row?.canceled_at ?? null,
       };
     },
 
     async updatePlan(workspaceId, plan) {
-      const admin = options.getAdminClient();
       const config = PLAN_CONFIGS[plan];
 
-      // Atomic plan update + credit grant via RPC to avoid read-then-write race condition.
-      // The RPC uses FOR UPDATE row locking so concurrent deductions cannot be overwritten.
-      // TODO: Remove `as any` after running `supabase gen types` to regenerate database.ts
-      const { error } = await (admin.rpc as any)("grant_plan_credits", {
-        p_workspace_id: workspaceId,
-        p_plan: plan,
-        p_credits: config.monthlyCredits,
-      });
-
-      if (error) {
-        throw new CreditServiceError(
-          "credit_plan_update_failed",
-          `Failed to update plan: ${error.message}`,
-          500,
-        );
-      }
+      // 原子「改套餐 + 发额度」由库函数承担（FOR UPDATE 行锁，避免读改写竞态）。
+      await repository
+        .grantPlanCredits(workspaceId, plan, config.monthlyCredits)
+        .catch((error: unknown) => {
+          throw new CreditServiceError(
+            "credit_plan_update_failed",
+            `Failed to update plan: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+            500,
+          );
+        });
     },
   };
 }

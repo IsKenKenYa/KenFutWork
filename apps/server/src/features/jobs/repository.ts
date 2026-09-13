@@ -56,6 +56,8 @@ export interface JobRepository {
     workspaceId: string,
     jobId: string,
   ): Promise<BackgroundJobRecord | null>;
+  /** 进行中任务数（queued/running）——套餐并发上限检查用（tierGuard 只读消费）。 */
+  countActive(workspaceId: string): Promise<number>;
   delete(workspaceId: string, jobId: string): Promise<number>;
   findById(jobId: string): Promise<BackgroundJobRecord | null>;
   findByIdInWorkspace(
@@ -183,6 +185,19 @@ export function createJobRepository(
             and id = $1`,
         [jobId],
       );
+    },
+
+    async countActive(workspaceId) {
+      // count(*) 是 bigint，显式转 int 避免驱动回字符串。
+      const row = await persistence
+        .forWorkspace(workspaceId)
+        .queryOne<{ active: number }>(
+          `select count(*)::int as active
+             from public.background_jobs
+            where workspace_id = :workspace
+              and status in ('queued', 'running')`,
+        );
+      return row?.active ?? 0;
     },
 
     async findById(jobId) {
