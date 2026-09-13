@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAgentModel } from "@/hooks/use-agent-model";
 import { fetchModels } from "@/lib/server-api";
-import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { loadSession } from "@/lib/session";
 
 type ModelOption = {
   id: string;
@@ -67,8 +67,8 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
     const load = async () => {
       let token: string | undefined;
       try {
-        const { data } = await getSupabaseBrowserClient().auth.getSession();
-        token = data.session?.access_token;
+        const sessionFromStore = await loadSession();
+        token = sessionFromStore?.access_token;
       } catch {
         token = undefined;
       }

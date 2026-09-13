@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 import { fetchViewer } from "../lib/server-api";
-import { getSupabaseBrowserClient } from "../lib/supabase-browser";
+import { signUp } from "../lib/session";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -50,24 +50,20 @@ export function RegisterForm() {
     setLoading(true);
     setError(null);
 
-    const supabase = getSupabaseBrowserClient();
-    const { data, error: authError } = await supabase.auth.signUp({
-      email: trimmed,
-      password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
-
-    if (authError) {
+    let session: Awaited<ReturnType<typeof signUp>>;
+    try {
+      session = await signUp({ email: trimmed, password });
+    } catch (authError) {
       setLoading(false);
-      setError(authError.message);
+      setError(
+        authError instanceof Error ? authError.message : "注册失败，请重试。",
+      );
       return;
     }
 
-    const accessToken = data.session?.access_token;
-    if (accessToken) {
-      await bootstrapWorkspace(accessToken);
+    // 自管认证注册即签发会话；Supabase 形态在需要邮箱确认时返回 null
+    if (session) {
+      await bootstrapWorkspace(session.access_token);
       setLoading(false);
       return;
     }

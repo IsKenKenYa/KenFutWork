@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef } from "react";
 
 import { LoadingScreen } from "../../../components/loading-screen";
+import { getAuthDriver } from "../../../lib/auth-client";
 import {
   ApiApplicationError,
   ApiAuthError,
@@ -25,6 +26,13 @@ function AuthCallbackPageContent() {
   useEffect(() => {
     if (started.current) return;
     started.current = true;
+
+    // 只有 Supabase 形态才有「邮件链接 → PKCE code 换会话」这条路；
+    // 自管认证不经邮件，落到这里说明链接不是本形态发出的
+    if (getAuthDriver() !== "supabase") {
+      router.replace(loginErrorUrl("magic_link_not_supported"));
+      return;
+    }
 
     const code = searchParams.get("code");
     const providerError = searchParams.get("error");

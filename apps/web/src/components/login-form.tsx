@@ -5,7 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 import { fetchViewer } from "../lib/server-api";
-import { getSupabaseBrowserClient } from "../lib/supabase-browser";
+import {
+  isMagicLinkSupported,
+  sendMagicLink,
+  signInWithPassword,
+} from "../lib/session";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -47,24 +51,24 @@ export function LoginForm({ initialErrorMessage = null }: LoginFormProps) {
     e.preventDefault();
     const trimmed = email.trim();
     if (!trimmed) return;
+    if (!isMagicLinkSupported()) {
+      // 自管认证不依赖邮件服务；此处显式拦截而不是让请求打到不存在的端点上
+      setError("当前部署未启用邮箱登录，请使用密码登录。");
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
-    const supabase = getSupabaseBrowserClient();
-    const { error: authError } = await supabase.auth.signInWithOtp({
-      email: trimmed,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-        shouldCreateUser: false,
-      },
-    });
-
-    setLoading(false);
-    if (authError) {
-      setError(authError.message);
-    } else {
+    try {
+      await sendMagicLink(trimmed);
       setSent(true);
+    } catch (authError) {
+      setError(
+        authError instanceof Error ? authError.message : "发送失败，请重试。",
+      );
     }
+    setLoading(false);
   }
 
   async function handlePassword(e: FormEvent<HTMLFormElement>) {
@@ -74,26 +78,19 @@ export function LoginForm({ initialErrorMessage = null }: LoginFormProps) {
     setLoading(true);
     setError(null);
 
-    const supabase = getSupabaseBrowserClient();
-    const { data, error: authError } = await supabase.auth.signInWithPassword({
-      email: trimmed,
-      password,
-    });
-
-    if (authError) {
+    let session: Awaited<ReturnType<typeof signInWithPassword>>;
+    try {
+      session = await signInWithPassword({ email: trimmed, password });
+    } catch (authError) {
       setLoading(false);
-      setError(authError.message);
-    } else {
-      const accessToken = data.session?.access_token;
-      if (!accessToken) {
-        setLoading(false);
-        setError("登录未完成，请重试。");
-        return;
-      }
-
-      await bootstrapWorkspace(accessToken);
-      setLoading(false);
+      setError(
+        authError instanceof Error ? authError.message : "登录失败，请重试。",
+      );
+      return;
     }
+
+    await bootstrapWorkspace(session.access_token);
+    setLoading(false);
   }
 
   return (
