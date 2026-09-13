@@ -4,6 +4,7 @@ import { basename, extname } from "node:path";
 import { tool } from "@langchain/core/tools";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import type { CanvasRepository } from "../../features/canvas/repository.js";
 
 const MIME_MAP: Record<string, string> = {
   ".png": "image/png",
@@ -30,6 +31,8 @@ const persistSandboxFileSchema = z.object({
 });
 
 export type PersistSandboxFileDeps = {
+  /** 画布数据访问：由画布解析工作区（对象路径用）。 */
+  canvasRepository?: CanvasRepository;
   createUserClient: (accessToken: string) => SupabaseClient;
   sandboxDir?: string;
 };
@@ -84,13 +87,11 @@ export function createPersistSandboxFileTool(deps: PersistSandboxFileDeps) {
         // Resolve workspace ID from canvas for Storage RLS compliance.
         // RLS requires: storage.foldername(name)[1] = workspace_id
         let workspaceId: string | null = null;
-        if (canvasId) {
-          const { data: canvas } = await client
-            .from("canvases")
-            .select("project:projects(workspace_id)")
-            .eq("id", canvasId)
-            .single();
-          workspaceId = (canvas?.project as any)?.workspace_id ?? null;
+        if (canvasId && deps.canvasRepository) {
+          // 由画布反查工作区（单条 JOIN；画布 id 来自本次运行）
+          workspaceId = await deps.canvasRepository
+            .findWorkspaceIdByCanvas(canvasId)
+            .catch(() => null);
         }
 
         const storagePath = workspaceId

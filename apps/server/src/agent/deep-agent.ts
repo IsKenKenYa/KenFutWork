@@ -13,6 +13,7 @@ import {
   type ServerEnv,
 } from "../config/env.js";
 import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
+import type { CanvasRepository } from "../features/canvas/repository.js";
 import type { ToolDefinition, ToolExecutionContext } from "../kernel/types.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import {
@@ -61,6 +62,8 @@ export function createLoomicDeepAgent(options: {
   brandKitId?: string | null;
   /** 品牌套件服务（工具 get_brand_kit 经它取数，不再直连 SDK）。 */
   brandKitService?: BrandKitService;
+  /** 画布数据访问（工作区作用域）：工具的画布读写经它。 */
+  canvasRepository?: CanvasRepository;
   canvasId?: string;
   checkpointer?: BaseCheckpointSaver;
   connectionManager?: ConnectionManager;
@@ -136,6 +139,9 @@ export function createLoomicDeepAgent(options: {
       ...createMainAgentTools(backendResult.factory, {
         ...(options.brandKitService
           ? { brandKitService: options.brandKitService }
+          : {}),
+        ...(options.canvasRepository
+          ? { canvasRepository: options.canvasRepository }
           : {}),
         createUserClient,
         ...(options.brandKitId != null

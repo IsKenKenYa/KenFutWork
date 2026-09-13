@@ -3,7 +3,7 @@
   "code": {
     "filesUsingSupabaseClient": 23,
     "sdkRefs": 160,
-    "dbFromCalls": 38,
+    "dbFromCalls": 35,
     "storageRefs": 37
   },
   "sql": {

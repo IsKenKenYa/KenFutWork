@@ -1265,6 +1265,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ...(options.brandKitService
               ? { brandKitService: options.brandKitService }
               : {}),
+            ...(options.canvasRepository
+              ? { canvasRepository: options.canvasRepository }
+              : {}),
             ...(run.canvasId ? { canvasId: run.canvasId } : {}),
             ...(persistence ? { checkpointer: persistence.checkpointer } : {}),
             ...(options.connectionManager

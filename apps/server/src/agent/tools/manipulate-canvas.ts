@@ -1,5 +1,6 @@
 import { tool } from "langchain";
 import { z } from "zod";
+import type { CanvasRepository } from "../../features/canvas/repository.js";
 import {
   BINDING_GAP,
   bumpVersion,
@@ -781,6 +782,8 @@ const handlers: Record<
 // ---------------------------------------------------------------------------
 
 export function createManipulateCanvasTool(deps: {
+  /** 画布数据访问（工作区作用域）：内容读写不再直连 SDK。 */
+  canvasRepository?: CanvasRepository;
   createUserClient: (accessToken: string) => any;
 }) {
   return tool(
@@ -798,13 +801,19 @@ export function createManipulateCanvasTool(deps: {
 
       // --- Read current canvas -------------------------------------------------
       const client = deps.createUserClient(accessToken);
-      const { data, error } = await client
-        .from("canvases")
-        .select("content")
-        .eq("id", canvasId)
-        .single();
+      const workspaceId = await deps.canvasRepository
+        ?.findWorkspaceIdByCanvas(canvasId)
+        .catch(() => null);
+      const canvasRow = workspaceId
+        ? await deps.canvasRepository
+            ?.findById(workspaceId, canvasId)
+            .catch(() => null)
+        : null;
+      const data = canvasRow
+        ? { content: canvasRow.content as { elements?: unknown[] } }
+        : null;
 
-      if (error || !data) {
+      if (!data) {
         return JSON.stringify({
           error: "canvas_not_found",
           message: "Canvas not found or access denied.",
@@ -846,10 +855,13 @@ export function createManipulateCanvasTool(deps: {
 
       // --- Write back ----------------------------------------------------------
       const updatedContent = { ...content, elements };
-      const { error: writeError } = await client
-        .from("canvases")
-        .update({ content: updatedContent })
-        .eq("id", canvasId);
+      const writeError =
+        workspaceId &&
+        (await deps.canvasRepository
+          ?.saveContent(workspaceId, canvasId, updatedContent)
+          .catch(() => 0)) === 0
+          ? new Error("write_failed")
+          : null;
 
       if (writeError) {
         return JSON.stringify({
