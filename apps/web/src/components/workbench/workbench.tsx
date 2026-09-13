@@ -1603,6 +1603,7 @@ export function Workbench() {
       <PluginMarketModal
         open={pluginsOpen}
         onClose={() => setPluginsOpen(false)}
+        accessToken={session?.access_token ?? null}
       />
     </div>
   );

@@ -1,0 +1,4 @@
+- insert:
+    - id: loomic-example-clock
+      name: loomic-example-clock
+      inject: [tools]

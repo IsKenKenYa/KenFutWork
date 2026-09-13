@@ -1,0 +1,253 @@
+import { z } from "zod";
+
+/**
+ * 插件互操作契约（HTTP + bundle 产物）。
+ *
+ * 设计前提：Loomic kernel 与 deepseek-harness（dsh）的插件接口形状同源——
+ * 都是 `{ name, inject, apply(ctx) }`，差异只在**能力命名**与**组合文件**。
+ * 因此一份 bundle 可以同时被两端加载，本文件即该产物的规范化定义：
+ *
+ * - `dshBundle`：dsh 原生格式（`package.json` 的 `dsh.bundle.patch` + `cordis.patch.yml`）
+ * - `loomicBundle`：本项目格式（同名字段 + 能力绑定表）
+ *
+ * 兼容性判定见 `compatReportSchema`：**门禁是产品的一部分**，未通过即拒绝安装。
+ */
+
+// === 能力命名（互操作的语言） ===
+
+/**
+ * 规范能力名：以 dsh 的 ctx key 作为互操作通用语（dsh 生态更大，向其对齐成本更低）。
+ * 我方 kernel 的 `ServiceKey` 是封闭联合，两者的映射表在服务端
+ * `features/plugins/capability-binding.ts`（唯一属主）。
+ */
+export const CANONICAL_CAPABILITIES = [
+  "tools",
+  "settings",
+  "llm",
+  "sessions",
+  "commands",
+  "jobs",
+  "systemPrompt",
+  "fs",
+  "subprocess",
+  "sandbox",
+  "agents",
+] as const;
+export const canonicalCapabilitySchema = z.enum(CANONICAL_CAPABILITIES);
+export type CanonicalCapability = z.infer<typeof canonicalCapabilitySchema>;
+
+export const BUNDLE_FORMATS = ["loomic", "dsh"] as const;
+export const bundleFormatSchema = z.enum(BUNDLE_FORMATS);
+export type BundleFormat = z.infer<typeof bundleFormatSchema>;
+
+// === Bundle 规范化清单 ===
+
+/**
+ * 由 `package.json` + `cordis.patch.yml` 归一化得到的清单。
+ * 两种来源格式都收敛到这里，后续校验/安装只看本结构。
+ */
+export const pluginBundleManifestSchema = z.object({
+  /** 包名（npm 语义；也可作为插件稳定 id） */
+  name: z.string().min(1),
+  version: z.string().min(1),
+  description: z.string().default(""),
+  license: z.string().nullable().default(null),
+  repositoryUrl: z.string().nullable().default(null),
+  homepage: z.string().nullable().default(null),
+  /** 产物格式：dsh 原生 / 本项目 */
+  format: bundleFormatSchema,
+  /** 配置层文件（相对包根）；dsh 为 `dsh.bundle.patch` 指向的文件 */
+  patchPath: z.string().nullable().default(null),
+  /** 插件模块入口（相对包根） */
+  entry: z.string().nullable().default(null),
+  /**
+   * 插件声明所需能力（**原始名**，取自 patch 行 inject 与模块静态扫描的并集）。
+   * 可能含未知名——由门禁归入不支持并给出理由，故此处不做 canonical 收窄。
+   */
+  requiredCapabilities: z.array(z.string()).default([]),
+  /** 声明的作用域（仅本项目格式有意义） */
+  scope: z.enum(["design", "code", "shared"]).nullable().default(null),
+  enginesNode: z.string().nullable().default(null),
+  /** 是否携带 dsh web 客户端 UI（`dsh.client`） */
+  hasClientUi: z.boolean().default(false),
+  /** 安装期会执行的包生命周期脚本（危险面） */
+  lifecycleScripts: z.array(z.string()).default([]),
+  /** 依赖的 in-box dsh bundle（`@deepseek-ai/dsh-*`），需要 dsh 运行时 */
+  dshBaseDependencies: z.array(z.string()).default([]),
+  /** 是否声明原生构建（binding.gyp / .node） */
+  hasNativeBuild: z.boolean().default(false),
+  dependencies: z.record(z.string(), z.string()).default({}),
+  peerDependencies: z.record(z.string(), z.string()).default({}),
+});
+export type PluginBundleManifest = z.infer<typeof pluginBundleManifestSchema>;
+
+// === 兼容性报告（门禁输出） ===
+
+export const COMPAT_ISSUE_CODES = [
+  /** 缺 package.json 或不可解析 */
+  "manifest_missing",
+  /** package.json 不是合法 JSON，或缺少 name / 声明的配置层文件不存在 */
+  "manifest_invalid",
+  /** 既非 dsh bundle 也非本项目 bundle（无 patch 声明） */
+  "bundle_declaration_missing",
+  /** patch 文件缺失或不是合法 YAML 行数组 */
+  "patch_invalid",
+  /** 依赖 dsh in-box base bundle（`@deepseek-ai/dsh-*`）——需要 dsh 运行时 */
+  "requires_dsh_runtime",
+  /** 携带 dsh web 客户端 UI */
+  "requires_dsh_client",
+  /** 依赖我方 kernel 未提供的能力 */
+  "capability_unsupported",
+  /** 订阅了本内核不派发的事件（订阅也不会触发） */
+  "event_unsupported",
+  /** 安装期生命周期脚本会执行任意代码（需显式授权） */
+  "lifecycle_script_present",
+  /** 声明原生构建 */
+  "native_build_required",
+  /** 模块直连系统能力（child_process / worker_threads / fs 等），绕过能力面 */
+  "unsafe_module_require",
+  /** 使用动态属性访问上下文（`ctx[...]`），所需能力无法静态判定 */
+  "dynamic_context_access",
+  /** Node 引擎不满足 */
+  "engines_incompatible",
+  /** 声明了无法安全求值的配置表达式（dsh `!!js`） */
+  "config_expression_unsupported",
+  /** 未声明任何能力（纯副作用插件，无法保证行为） */
+  "capability_undeclared",
+] as const;
+export const compatIssueCodeSchema = z.enum(COMPAT_ISSUE_CODES);
+export type CompatIssueCode = z.infer<typeof compatIssueCodeSchema>;
+
+export const compatIssueSchema = z.object({
+  code: compatIssueCodeSchema,
+  /** blocker 阻止安装；warning 提示但放行 */
+  severity: z.enum(["blocker", "warning"]),
+  message: z.string().min(1),
+  detail: z.string().optional(),
+});
+export type CompatIssue = z.infer<typeof compatIssueSchema>;
+
+export const compatReportSchema = z.object({
+  /** 全部门禁通过才为 true；false 即拒绝安装 */
+  compatible: z.boolean(),
+  format: bundleFormatSchema,
+  name: z.string(),
+  version: z.string(),
+  requiredCapabilities: z.array(canonicalCapabilitySchema),
+  supportedCapabilities: z.array(canonicalCapabilitySchema),
+  unsupportedCapabilities: z.array(canonicalCapabilitySchema),
+  issues: z.array(compatIssueSchema),
+  checkedAt: z.iso.datetime({ offset: true }),
+});
+export type CompatReport = z.infer<typeof compatReportSchema>;
+
+// === 市场与已安装条目 ===
+
+export const pluginMarketSourceSchema = z.enum(["builtin", "registry", "url"]);
+export type PluginMarketSource = z.infer<typeof pluginMarketSourceSchema>;
+
+export const pluginMarketEntrySchema = z.object({
+  /** 市场条目 id：内置为插件名，第三方为 `owner/repo` */
+  id: z.string().min(1),
+  name: z.string().min(1),
+  title: z.string(),
+  description: z.string(),
+  source: pluginMarketSourceSchema,
+  /** 第三方条目的仓库地址 */
+  repositoryUrl: z.string().nullable().default(null),
+  /** 第三方条目的精确提交（安装前固定，防上游漂移） */
+  headSha: z.string().nullable().default(null),
+  /** 上游可安装性标注（如 skillhub 的 verified） */
+  installability: z.string().nullable().default(null),
+  category: z.string().nullable().default(null),
+  /** 内核必需插件，不可卸载 */
+  system: z.boolean().default(false),
+  installed: z.boolean().default(false),
+});
+export type PluginMarketEntry = z.infer<typeof pluginMarketEntrySchema>;
+
+export const installedPluginSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  version: z.string().min(1),
+  source: pluginMarketSourceSchema,
+  repositoryUrl: z.string().nullable().default(null),
+  /** 固定的提交；`url` 来源安装必须非空 */
+  headSha: z.string().nullable().default(null),
+  enabled: z.boolean().default(true),
+  manifest: pluginBundleManifestSchema,
+  report: compatReportSchema,
+  installedAt: z.iso.datetime({ offset: true }),
+});
+export type InstalledPlugin = z.infer<typeof installedPluginSchema>;
+
+// === 请求 / 响应 ===
+
+/** 直接填 GitHub 仓库链接安装；`ref` 为分支/tag/commit，省略时锁默认分支 HEAD。 */
+export const pluginInstallRequestSchema = z.object({
+  url: z.string().trim().min(1),
+  ref: z.string().trim().min(1).optional(),
+  /** 显式授权安装期生命周期脚本（默认拒绝，见门禁 lifecycle_script_present） */
+  allowLifecycleScripts: z.boolean().default(false),
+});
+export type PluginInstallRequest = z.infer<typeof pluginInstallRequestSchema>;
+
+/** 导入本地/远端 bundle 目录（不安装，仅校验并返回报告）。 */
+export const pluginInspectRequestSchema = z.object({
+  url: z.string().trim().min(1),
+  ref: z.string().trim().min(1).optional(),
+});
+export type PluginInspectRequest = z.infer<typeof pluginInspectRequestSchema>;
+
+/** 导出的目标格式：dsh 原生 bundle 或本项目 bundle。 */
+export const pluginExportRequestSchema = z.object({
+  name: z.string().trim().min(1),
+  format: bundleFormatSchema.default("dsh"),
+});
+export type PluginExportRequest = z.infer<typeof pluginExportRequestSchema>;
+
+/** 导出产物：可直接落盘为 npm 包的文件集合。 */
+export const pluginExportArtifactSchema = z.object({
+  name: z.string().min(1),
+  version: z.string().min(1),
+  format: bundleFormatSchema,
+  /** 相对包根的文件路径 → 文本内容 */
+  files: z.record(z.string(), z.string()),
+  /** 该产物在目标宿主的安装命令（人类可读指引） */
+  installHint: z.string(),
+});
+export type PluginExportArtifact = z.infer<typeof pluginExportArtifactSchema>;
+
+export const pluginMarketListResponseSchema = z.object({
+  plugins: z.array(pluginMarketEntrySchema),
+});
+export type PluginMarketListResponse = z.infer<
+  typeof pluginMarketListResponseSchema
+>;
+
+export const pluginInspectResponseSchema = z.object({
+  manifest: pluginBundleManifestSchema,
+  report: compatReportSchema,
+});
+export type PluginInspectResponse = z.infer<typeof pluginInspectResponseSchema>;
+
+export const pluginInstallResponseSchema = z.object({
+  installed: installedPluginSchema,
+  report: compatReportSchema,
+});
+export type PluginInstallResponse = z.infer<typeof pluginInstallResponseSchema>;
+
+/**
+ * 门禁拦截响应（HTTP 422）：安装被拒时**必须回传完整报告**，
+ * 让用户看到是哪条判定拦下的，而不是一句笼统的「安装失败」。
+ */
+export const pluginIncompatibleResponseSchema = z.object({
+  error: z.object({
+    code: z.literal("plugin_incompatible"),
+    message: z.string(),
+  }),
+  report: compatReportSchema,
+});
+export type PluginIncompatibleResponse = z.infer<
+  typeof pluginIncompatibleResponseSchema
+>;
