@@ -75,6 +75,7 @@ export function buildApp(
     await instance.register(websocket);
     await registerWsRoute(instance, {
       agentRuns: kernel.get("agentRuns"),
+      agentModes: kernel.get("agentModes"),
       agentRunMetadataService: kernel.get("agentRunMetadata"),
       auth: kernel.get("auth"),
       chatService: kernel.get("chat"),

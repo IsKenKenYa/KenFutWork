@@ -37,11 +37,12 @@ import type { JobService } from "../features/jobs/job-service.js";
 import { parseInstanceSpecifier } from "../features/model-providers/model-catalog-service.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type { RunUsageAccumulator } from "../features/usage/run-usage-accumulator.js";
-import type { ToolRegistry } from "../kernel/types.js";
+import type { ToolExecutionContext, ToolRegistry } from "../kernel/types.js";
 import { resolveInstanceChatModel } from "../providers/resolve.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createPipelineLogger } from "../ws/logger.js";
+import type { ToolGate } from "./deep-agent.js";
 import { createAgentBackend } from "./backends/index.js";
 import {
   createDefaultModelSpecifier,
@@ -319,6 +320,11 @@ type CreateAgentRuntimeOptions = {
     runId: string;
     threadId?: string | undefined;
   }) => Promise<{ input: unknown }>;
+  /**
+   * 执行模式工具门（agent-modes 缝经 agent-runs 插件注入）：按线程返回
+   * solo/plan 的工具拦截判定；返回 undefined 表示全放行（agent 等模式）。
+   */
+  toolGateFor?: (threadId: string) => ToolGate | undefined;
   now?: () => string;
   runIdFactory?: () => string;
   tierGuard?: TierGuard;
@@ -1223,11 +1229,27 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             });
           }
 
-          // §4.5 统一工具注册表：ctx.tools 按 preset 过滤后桥接进模型工具列表
+          // §4.5 统一工具注册表：ctx.tools 按 preset 过滤后桥接进模型工具列表；
+          // execute 改经注册表 guarded 路径派发（tool-pre-execute 拦截在注册表侧生效）
           const preset = resolvePresetForRun(run);
-          const kernelToolDefinitions = options.tools
-            ? options.tools.list(preset)
+          const kernelToolRegistry = options.tools;
+          const kernelToolDefinitions = kernelToolRegistry
+            ? kernelToolRegistry
+                .list(preset)
+                .map((tool) => ({
+                  ...tool,
+                  execute: (
+                    args: Record<string, unknown>,
+                    execCtx: ToolExecutionContext,
+                  ) => kernelToolRegistry.execute(tool.name, args, execCtx),
+                }))
             : [];
+
+          // 执行模式工具门：solo/plan 按线程策略拦截（undefined = 全放行）
+          const toolGate =
+            run.threadId && options.toolGateFor
+              ? options.toolGateFor(run.threadId)
+              : undefined;
 
           // 工具执行上下文的工作区：工具侧（skill 目录等）按工作区取数，
           // 否则只能拿到 runId/accessToken，无法解析工作区（曾致技能工具恒空）。
@@ -1264,8 +1286,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ...(kernelToolDefinitions.length > 0
               ? { kernelTools: kernelToolDefinitions }
               : {}),
+            // 执行模式工具门（solo/plan 硬约束）：拦截内置与桥接工具的全部调用
+            ...(toolGate ? { toolGate } : {}),
             runToolContext: {
               runId,
+              ...(run.threadId ? { threadId: run.threadId } : {}),
               ...(run.accessToken ? { accessToken: run.accessToken } : {}),
               ...(toolWorkspaceId ? { workspaceId: toolWorkspaceId } : {}),
             },

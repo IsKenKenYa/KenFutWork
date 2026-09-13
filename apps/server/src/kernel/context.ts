@@ -155,6 +155,7 @@ export class ToolRegistryImpl implements ToolRegistry {
       args,
       decision: "allow",
       runId: execCtx.runId,
+      ...(execCtx.threadId ? { threadId: execCtx.threadId } : {}),
       toolName: name,
     });
     if (decision.decision === "deny") {

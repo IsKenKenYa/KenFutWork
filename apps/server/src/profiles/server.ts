@@ -158,6 +158,8 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createAgentRunsPlugin({
       connectionManager: deps.connectionManager,
       events: deps.events,
+      // DEC-1 事件缝：pre-step 改写权交给事件监听器（执行模式指令注入等）
+      emitPreStep: (payload) => deps.events.emitPreStep(payload),
       ...(deps.agentFactory ? { agentFactory: deps.agentFactory } : {}),
       ...(deps.agentModel ? { agentModel: deps.agentModel } : {}),
       ...(deps.mockEventDelayMs === undefined

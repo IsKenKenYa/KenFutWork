@@ -25,7 +25,7 @@ export const toolListResponseSchema = z.object({
 });
 export type ToolListResponse = z.infer<typeof toolListResponseSchema>;
 
-// --- 执行模式（DEC-3：v1 只实现 agent + plan，词汇表开放） ---
+// --- 执行模式（DEC-3：agent/plan/goal/loop/solo + creative 创造引导） ---
 
 export const executionModeSchema = z.enum([
   "agent",
@@ -33,6 +33,7 @@ export const executionModeSchema = z.enum([
   "goal",
   "loop",
   "solo",
+  "creative",
 ]);
 export type ExecutionMode = z.infer<typeof executionModeSchema>;
 

@@ -8,6 +8,7 @@ import {
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { WebSocket } from "ws";
 import type { AgentRunService } from "../agent/runtime.js";
+import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type {
   AuthenticatedUser,
@@ -23,6 +24,7 @@ import { createPipelineLogger } from "./logger.js";
 
 type RegisterWsOptions = {
   agentRuns: AgentRunService;
+  agentModes?: ExecutionModeService;
   agentRunMetadataService?: AgentRunMetadataService;
   auth?: RequestAuthenticator;
   chatService?: ChatService;
@@ -187,6 +189,10 @@ async function authenticateAndBind(
               : {}),
             ...(p.mentions !== undefined ? { mentions: p.mentions } : {}),
             ...(p.model !== undefined ? { model: p.model } : {}),
+            ...(p.preset !== undefined ? { preset: p.preset } : {}),
+            ...(p.executionMode !== undefined
+              ? { executionMode: p.executionMode }
+              : {}),
           },
           agentRuns,
           connectionManager,
@@ -316,6 +322,12 @@ async function handleRunCommand(
     threadIdValue: threadId ?? null,
     model: resolvedModel,
   });
+
+  // 执行模式（DEC-3）：WS 载荷声明 → 按真实 threadId 激活
+  //（threadId 是服务端内部 ID，客户端拿不到，故不走 PUT /execution-modes/:threadId）
+  if (payload.executionMode && threadId && services.agentModes) {
+    services.agentModes.activate(threadId, payload.executionMode);
+  }
 
   const response = agentRuns.createRun(payload, {
     accessToken: authenticatedUser.accessToken,

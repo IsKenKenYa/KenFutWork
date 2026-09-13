@@ -1,4 +1,5 @@
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
+import { ToolMessage } from "@langchain/core/messages";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ChatVertexAI } from "@langchain/google-vertexai";
 import type {
@@ -6,6 +7,7 @@ import type {
   BaseStore,
 } from "@langchain/langgraph-checkpoint";
 import { ChatOpenAI } from "@langchain/openai";
+import type { AgentMiddleware } from "langchain";
 import { createDeepAgent } from "deepagents";
 import {
   DEFAULT_AGENT_MODEL,
@@ -37,6 +39,31 @@ export type LoomicAgent = Pick<
   "stream" | "streamEvents"
 >;
 
+/**
+ * 执行模式工具门（solo/plan 硬约束）：拦截 deepagents 内置工具
+ * （write_file/edit_file/execute/task 等）与桥接工具的全部调用。
+ */
+export type ToolGate = (
+  toolName: string,
+) => { allowed: true } | { allowed: false; reason: string };
+
+/** 按工具门构造 wrapToolCall 中间件：拒绝即以 ToolMessage 回给模型，不执行。 */
+function createToolGateMiddleware(gate: ToolGate): AgentMiddleware {
+  return {
+    name: "loomic-tool-gate",
+    wrapToolCall: async (request, handler) => {
+      const verdict = gate(request.toolCall.name);
+      if (verdict.allowed) {
+        return handler(request);
+      }
+      return new ToolMessage({
+        tool_call_id: request.toolCall.id ?? request.toolCall.name,
+        content: `工具 ${request.toolCall.name} 被拒绝：${verdict.reason}`,
+      });
+    },
+  };
+}
+
 export type LoomicAgentFactory = (options: {
   backendResult?: AgentBackendResult;
   brandKitId?: string | null;
@@ -55,6 +82,8 @@ export type LoomicAgentFactory = (options: {
   kernelTools?: ToolDefinition[];
   /** 本次运行的工具执行上下文（runId/accessToken）。 */
   runToolContext?: ToolExecutionContext;
+  /** 执行模式工具门（solo/plan 硬约束），拦截包括内置工具在内的全部调用。 */
+  toolGate?: ToolGate;
 }) => LoomicAgent;
 
 export function createLoomicDeepAgent(options: {
@@ -79,6 +108,8 @@ export function createLoomicDeepAgent(options: {
   workspaceSkills?: WorkspaceSkillEntry[];
   kernelTools?: ToolDefinition[];
   runToolContext?: ToolExecutionContext;
+  /** 执行模式工具门（solo/plan 硬约束），拦截包括内置工具在内的全部调用。 */
+  toolGate?: ToolGate;
 }): LoomicAgent {
   const backendResult =
     options.backendResult ?? createAgentBackend(options.env, options.canvasId);
@@ -128,6 +159,10 @@ export function createLoomicDeepAgent(options: {
     ...(options.store ? { store: options.store } : {}),
     subagents: [createVideoSubAgent()],
     systemPrompt,
+    // 执行模式工具门在标准中间件之后应用，覆盖内置与自定义工具的全部调用
+    ...(options.toolGate
+      ? { middleware: [createToolGateMiddleware(options.toolGate)] }
+      : {}),
     tools: [
       ...createMainAgentTools(backendResult.factory, {
         ...(options.brandKitService

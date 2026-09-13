@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { toolArtifactSchema } from "./artifacts.js";
 import { brandKitAssetTypeSchema } from "./brand-kit-contracts.js";
+import { executionModeSchema } from "./capability-contracts.js";
 
 export const identifierSchema = z.string().min(1);
 export const timestampSchema = z.iso.datetime({ offset: true });
@@ -87,6 +88,11 @@ export const runCreateRequestSchema = z.object({
    * 缺省由服务端推断（有 canvasId → design，否则 code）。
    */
   preset: z.enum(["design", "code"]).optional(),
+  /**
+   * 执行模式（DEC-3，会话级）：WS 路径随 run 声明，服务端按真实 threadId 激活
+   * （threadId 是服务端内部 ID，客户端拿不到，故不走 PUT /execution-modes）。
+   */
+  executionMode: executionModeSchema.optional(),
 });
 
 export const runCreateResponseSchema = z.object({

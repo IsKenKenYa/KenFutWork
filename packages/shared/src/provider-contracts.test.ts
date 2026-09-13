@@ -102,6 +102,10 @@ describe("capability-contracts（能力层共享契约）", () => {
   it("执行模式与权限档位词汇表按 DEC-3/DEC-4 封闭", () => {
     expect(executionModeSchema.safeParse("agent").success).toBe(true);
     expect(executionModeSchema.safeParse("plan").success).toBe(true);
+    expect(executionModeSchema.safeParse("goal").success).toBe(true);
+    expect(executionModeSchema.safeParse("loop").success).toBe(true);
+    expect(executionModeSchema.safeParse("solo").success).toBe(true);
+    expect(executionModeSchema.safeParse("creative").success).toBe(true);
     expect(executionModeSchema.safeParse("auto").success).toBe(false);
     expect(permissionTierSchema.safeParse("default").success).toBe(true);
     expect(permissionTierSchema.safeParse("full-access").success).toBe(true);

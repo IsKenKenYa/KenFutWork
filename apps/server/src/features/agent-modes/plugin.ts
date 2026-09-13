@@ -3,13 +3,17 @@ import type { PluginDefinition } from "../../kernel/types.js";
 import {
   BUILTIN_EXECUTION_MODES,
   createExecutionModeService,
+  evaluateToolPolicy,
 } from "./execution-mode-service.js";
 
 /**
  * agent-modes 插件（DEC-3，P6）：
  * - `agentModes` ctx key：激活/切换/持久化；
  * - 模式作为能力贡献者注册进 `ctx.capabilities`（开放贡献：新模式零改 loop）；
- * - pre-step 事件监听器：plan 模式给模型输入注入规划引导（inputDirective）。
+ * - pre-step 事件监听器：按模式给模型输入注入引导（inputDirective）；
+ * - tool-pre-execute 事件监听器：solo/plan 的硬约束——内核注册表工具按线程策略拒绝。
+ *   （deepagents 内置工具 write_file/execute 等的同等拦截在 deep-agent 的工具门中间件，
+ *   两处共用 evaluateToolPolicy，策略来源同一 service。）
  */
 export function createAgentModesPlugin(): PluginDefinition {
   return {
@@ -26,7 +30,7 @@ export function createAgentModesPlugin(): PluginDefinition {
         });
       }
 
-      // plan 模式：pre-step waterfall 注入规划引导（先规划待批准再执行）
+      // pre-step：按模式给模型输入注入引导（plan 规划、solo 禁工具提示等）
       ctx.on("pre-step", async (payload, next) => {
         const mode = payload.threadId
           ? service.getMode(payload.threadId)
@@ -38,6 +42,23 @@ export function createAgentModesPlugin(): PluginDefinition {
           return next(payload);
         }
         return next({ ...payload, input: `${directive}\n\n${payload.input}` });
+      });
+
+      // tool-pre-execute：solo 全禁、plan 只读（内核注册表路径的硬约束）
+      ctx.on("tool-pre-execute", async (payload, next) => {
+        if (!payload.threadId) {
+          return next(payload);
+        }
+        const policy = service.resolveToolPolicy(payload.threadId);
+        const verdict = evaluateToolPolicy(policy, payload.toolName);
+        if (verdict.allowed) {
+          return next(payload);
+        }
+        return next({
+          ...payload,
+          decision: "deny",
+          denyReason: verdict.reason,
+        });
       });
     },
     mounted(ctx) {

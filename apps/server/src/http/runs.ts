@@ -12,6 +12,7 @@ import {
   type AgentRunMetadataService,
   AgentRunPersistenceError,
 } from "../features/agent-runs/agent-run-service.js";
+import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import {
@@ -27,6 +28,7 @@ export async function registerRunRoutes(
   app: FastifyInstance,
   agentRuns: AgentRunService,
   options: {
+    agentModes?: ExecutionModeService;
     agentRunMetadataService?: AgentRunMetadataService;
     auth?: RequestAuthenticator;
     settingsService?: SettingsService;
@@ -119,6 +121,11 @@ export async function registerRunRoutes(
             // 额度查询失败不阻断启动（结算侧仍有兜底），避免误伤正常使用
           }
         }
+      }
+
+      // 执行模式（DEC-3）：载荷声明 → 按真实 threadId 激活（与 WS 路径一致）
+      if (payload.executionMode && sessionThread && options.agentModes) {
+        options.agentModes.activate(sessionThread.threadId, payload.executionMode);
       }
 
       const response = runCreateResponseSchema.parse(

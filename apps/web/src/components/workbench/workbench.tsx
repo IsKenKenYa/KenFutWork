@@ -1,6 +1,6 @@
 "use client";
 
-import type { ProjectSummary } from "@loomic/shared";
+import type { ExecutionMode, ProjectSummary } from "@loomic/shared";
 import {
   Brain,
   Code2,
@@ -183,10 +183,10 @@ export function Workbench() {
   const [tier, setTier] = useState("default");
   const [codeProjects, setCodeProjects] = useState<CodeProject[]>([]);
   const [thinking, setThinking] = useState("default");
-  const [executionMode, setExecutionMode] = useState("agent");
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>("agent");
   const [executionModes, setExecutionModes] = useState<
     Array<{
-      id: string;
+      id: ExecutionMode;
       label: string;
       description: string;
       inputDirective?: string | undefined;
@@ -294,7 +294,7 @@ export function Workbench() {
       .then(
         (data: {
           modes: Array<{
-            id: string;
+            id: ExecutionMode;
             label: string;
             description: string;
             inputDirective?: string | undefined;
@@ -677,15 +677,11 @@ export function Workbench() {
           // state 后端要求 run 挂 canvas；workbench 任务以 conversationId 作为
           // 独立标识（事件按它路由，与 handler 的绑定逻辑一致）
           canvasId: conversationId,
+          // 模式指令（inputDirective）由服务端 pre-step 事件缝注入，客户端不再拼接
           prompt: `${
             mode === "code" && workDirName
               ? `【工作目录】${workDirName}
 
-`
-              : ""
-          }${
-            executionModes.find((m) => m.id === executionMode)?.inputDirective
-              ? `${executionModes.find((m) => m.id === executionMode)?.inputDirective}
 `
               : ""
           }${
@@ -696,6 +692,7 @@ export function Workbench() {
           }${text.trim()}`,
           ...(model ? { model } : {}),
           ...(mode === "design" ? { preset: "design" as const } : {}),
+          executionMode,
         },
         (ack) => {
           const payload = ack.payload as { runId?: string } | undefined;
@@ -706,17 +703,7 @@ export function Workbench() {
         },
       );
     },
-    [
-      mode,
-      model,
-      workDirName,
-      thinking,
-      executionMode,
-      executionModes,
-      selectedProjectId,
-      session,
-      ws,
-    ],
+    [mode, model, workDirName, thinking, executionMode, selectedProjectId, session, ws],
   );
 
   const handleSignOut = useCallback(() => {
@@ -750,9 +737,6 @@ export function Workbench() {
       setSubmitting(true);
       const thinkingHint =
         thinking === "default" ? "" : `【思考强度：${thinking}】\n`;
-      const modeDirective =
-        executionModes.find((m) => m.id === executionMode)?.inputDirective ??
-        "";
       const history = task.messages
         .slice(-12)
         .map((m) => `${m.role === "user" ? "用户" : "助手"}：${m.text}`)
@@ -760,14 +744,17 @@ export function Workbench() {
       const historyBlock = history
         ? `【对话历史（供参考，延续上文语境）】\n${history}\n\n【本轮用户消息】\n`
         : "";
+      // 模式指令由服务端 pre-step 事件缝注入；这里只随载荷声明当前模式，
+      // 服务端按 threadId 重新激活（continueTask 复用同一 thread）
       ws.startRun(
         {
           sessionId: task.sessionId,
           conversationId: task.id,
           canvasId: task.id,
-          prompt: `${thinkingHint}${modeDirective}${historyBlock}${text.trim()}`,
+          prompt: `${thinkingHint}${historyBlock}${text.trim()}`,
           ...(model ? { model } : {}),
           ...(mode === "design" ? { preset: "design" as const } : {}),
+          executionMode,
         },
         (ack) => {
           const payload = ack.payload as { runId?: string } | undefined;
@@ -785,7 +772,6 @@ export function Workbench() {
       model,
       thinking,
       executionMode,
-      executionModes,
       session,
       ws,
     ],
@@ -1211,7 +1197,8 @@ export function Workbench() {
                     aria-label="执行模式"
                     value={executionMode}
                     onValueChange={(next) => {
-                      if (typeof next === "string") setExecutionMode(next);
+                      if (typeof next === "string")
+                        setExecutionMode(next as ExecutionMode);
                     }}
                     items={executionModes.map((m) => ({
                       value: m.id,
@@ -1417,7 +1404,8 @@ export function Workbench() {
                     aria-label="执行模式"
                     value={executionMode}
                     onValueChange={(next) => {
-                      if (typeof next === "string") setExecutionMode(next);
+                      if (typeof next === "string")
+                        setExecutionMode(next as ExecutionMode);
                     }}
                     items={executionModes.map((m) => ({
                       value: m.id,

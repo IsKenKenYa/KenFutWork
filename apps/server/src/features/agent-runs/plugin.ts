@@ -1,11 +1,12 @@
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
-import type { LoomicAgentFactory } from "../../agent/deep-agent.js";
+import type { ToolGate, LoomicAgentFactory } from "../../agent/deep-agent.js";
 import { createAgentPersistenceService } from "../../agent/persistence/index.js";
 import { createAgentRunService } from "../../agent/runtime.js";
 import { createWorkspaceSkillsLoader } from "../../agent/workspace-skills.js";
 import { registerRunRoutes } from "../../http/runs.js";
 import type { KernelEvents, PluginDefinition } from "../../kernel/types.js";
 import type { ConnectionManager } from "../../ws/connection-manager.js";
+import { evaluateToolPolicy } from "../agent-modes/execution-mode-service.js";
 import { createCanvasRepository } from "../canvas/repository.js";
 import { createSkillCatalogRepository } from "../skills/repository.js";
 import { createAgentRunMetadataService } from "./agent-run-service.js";
@@ -33,6 +34,7 @@ export function createAgentRunsPlugin(
   return {
     name: "agent-runs",
     inject: [
+      "agentModes",
       "auth",
       "brandKit",
       "canvas",
@@ -56,6 +58,15 @@ export function createAgentRunsPlugin(
 
       ctx.register("agentRuns", (d) => {
         const jobService = ctx.tryGet("jobs");
+        // 执行模式工具门：solo/plan 策略归 agent-modes，运行时只拿到判定函数
+        const agentModes = d.get("agentModes");
+        const toolGateFor = (threadId: string): ToolGate | undefined => {
+          const policy = agentModes.resolveToolPolicy(threadId);
+          if (policy.kind === "allow-all") {
+            return undefined;
+          }
+          return (toolName) => evaluateToolPolicy(policy, toolName);
+        };
         return createAgentRunService({
           agentPersistenceService: d.get("agentPersistence"),
           ...(deps.agentFactory ? { agentFactory: deps.agentFactory } : {}),
@@ -80,6 +91,7 @@ export function createAgentRunsPlugin(
           tools: ctx.get("tools"),
           emitTurnStopping: (payload) => deps.events.emitTurnStopping(payload),
           ...(deps.emitPreStep ? { emitPreStep: deps.emitPreStep } : {}),
+          toolGateFor,
           creditService: d.get("credits"),
           tierGuard: d.get("tierGuard"),
           viewerService: d.get("viewer"),
@@ -88,6 +100,7 @@ export function createAgentRunsPlugin(
     },
     mounted(ctx) {
       void registerRunRoutes(ctx.app, ctx.get("agentRuns"), {
+        agentModes: ctx.get("agentModes"),
         agentRunMetadataService: ctx.get("agentRunMetadata"),
         auth: ctx.get("auth"),
         settingsService: ctx.get("settings"),

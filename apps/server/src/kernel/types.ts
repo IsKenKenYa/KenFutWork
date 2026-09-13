@@ -142,6 +142,8 @@ export interface ToolPreExecutePayload {
   decision: "allow" | "deny";
   denyReason?: string | undefined;
   runId: string | undefined;
+  /** 会话线程（执行模式等按线程拦截的监听器据此取策略）。 */
+  threadId?: string | undefined;
   toolName: string;
 }
 
@@ -178,6 +180,8 @@ export type ToolScope = "design" | "code" | "shared";
 export interface ToolExecutionContext {
   runId?: string | undefined;
   signal?: AbortSignal | undefined;
+  /** 会话线程：tool-pre-execute 监听器（执行模式拦截）据此定位线程策略。 */
+  threadId?: string | undefined;
   workspaceId?: string | undefined;
   /** 运行方（agent 运行时）传入的请求级用户令牌；需要用户上下文的工具据此解析数据。 */
   accessToken?: string | undefined;
