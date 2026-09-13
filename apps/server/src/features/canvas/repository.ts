@@ -32,6 +32,24 @@ export interface CanvasRepository {
     canvasId: string,
     content: unknown,
   ): Promise<number>;
+  /**
+   * **原子追加**元素与文件（单条 SQL 内做 jsonb 合并）；返回受影响行数。
+   *
+   * 为什么必须原子：生成物落画布原先走「读 content → 追加 → 覆盖写」，两个任务并发
+   * 落同一块画布时后写者会覆盖前者，**丢元素**（与《AGENTS.md》「持久副作用与幂等性」
+   * 冲突）。把合并放进语句里，读-改-写之间就不存在窗口。
+   *
+   * 位置计算仍基于调用前的读取：并发插入**不会丢**元素，但可能算出相近落点（元素重叠，
+   * 可拖动）。这是「不丢数据」与「不为落图加行锁」之间的取舍。
+   */
+  appendContent(
+    workspaceId: string,
+    canvasId: string,
+    input: {
+      elements: readonly unknown[];
+      files?: Record<string, unknown> | undefined;
+    },
+  ): Promise<number>;
 }
 
 const CANVAS_COLUMNS = "c.id, c.name, c.project_id, c.content";
@@ -89,6 +107,34 @@ export function createCanvasRepository(
             and c.id = $1
             and p.workspace_id = :workspace`,
         [canvasId, JSON.stringify(content)],
+      );
+    },
+
+    async appendContent(workspaceId, canvasId, input) {
+      // 合并全在语句内完成：elements 数组拼接、files 顶层键合并（缺失即建）。
+      // 空 content（新建画布）与缺 elements/files 键都由 coalesce 兜住。
+      return persistence.forWorkspace(workspaceId).execute(
+        `update public.canvases c
+            set content = jsonb_set(
+                  jsonb_set(
+                    coalesce(c.content, '{}'::jsonb),
+                    '{elements}',
+                    coalesce(c.content -> 'elements', '[]'::jsonb) || $2::jsonb,
+                    true
+                  ),
+                  '{files}',
+                  coalesce(c.content -> 'files', '{}'::jsonb) || $3::jsonb,
+                  true
+                )
+           from public.projects p
+          where p.id = c.project_id
+            and c.id = $1
+            and p.workspace_id = :workspace`,
+        [
+          canvasId,
+          JSON.stringify(input.elements),
+          JSON.stringify(input.files ?? {}),
+        ],
       );
     },
   };

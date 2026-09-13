@@ -132,6 +132,15 @@ export function createCanvasService(options: {
         }
       },
 
+      async appendContent(canvasId, input) {
+        const affected = await repository
+          .appendContent(workspaceId, canvasId, input)
+          .catch(() => 0);
+        if (affected === 0) {
+          throw new Error(`Failed to append to canvas: ${canvasId} not found`);
+        }
+      },
+
       async downloadObject(objectPath) {
         return Buffer.from(await blobBucket.download(objectPath));
       },

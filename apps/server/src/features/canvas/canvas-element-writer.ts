@@ -40,6 +40,17 @@ export type CanvasContentStore = {
   readContent(canvasId: string): Promise<CanvasContent | null>;
   /** 覆盖写；0 行受影响视为失败（不存在或不属本工作区）。 */
   writeContent(canvasId: string, content: CanvasContent): Promise<void>;
+  /**
+   * **原子追加**元素/文件（单条 SQL 内合并）。
+   * 落画布只能走这里，不能「读-改-写」：并发任务同时落图时后者会覆盖前者，**丢元素**。
+   */
+  appendContent(
+    canvasId: string,
+    input: {
+      elements: readonly CanvasElement[];
+      files?: Record<string, Record<string, unknown>> | undefined;
+    },
+  ): Promise<void>;
   /** 下载对象字节（M3 前为 Supabase Storage，M3 后为 BlobStore）。 */
   downloadObject(objectPath: string): Promise<Buffer>;
 };
@@ -241,11 +252,6 @@ export async function insertImageElement(
   }
 
   const elements = readElements(content);
-  const files =
-    ((content as { files?: Record<string, Record<string, unknown>> }).files as
-      | Record<string, Record<string, unknown>>
-      | undefined) ?? {};
-
   // 3. Placement
   const placement =
     explicitPlacement ??
@@ -255,22 +261,18 @@ export async function insertImageElement(
   const fileId = generateId();
   const element = buildImageElement(fileId, placement, opts);
 
-  const updatedFiles = {
-    ...files,
-    [fileId]: {
-      id: fileId,
-      dataURL,
-      mimeType: opts.mimeType,
-      created: Date.now(),
+  // 5. Write：单条 SQL 追加（不能整份覆盖写——并发落图会互相覆盖）
+  await store.appendContent(opts.canvasId, {
+    elements: [element],
+    files: {
+      [fileId]: {
+        id: fileId,
+        dataURL,
+        mimeType: opts.mimeType,
+        created: Date.now(),
+      },
     },
-  };
-
-  // 5. Write
-  await store.writeContent(opts.canvasId, {
-    ...content,
-    elements: [...elements, element],
-    files: updatedFiles,
-  } as CanvasContent);
+  });
 
   console.log(
     `[canvas-element-writer] image inserted canvasId=${opts.canvasId} elementId=${element.id}`,
@@ -303,11 +305,8 @@ export async function insertVideoElement(
   // 3. Build element
   const element = buildVideoElement(placement, opts);
 
-  // 4. Write
-  await store.writeContent(opts.canvasId, {
-    ...content,
-    elements: [...elements, element],
-  } as CanvasContent);
+  // 4. Write：单条 SQL 追加（理由同图片路径）
+  await store.appendContent(opts.canvasId, { elements: [element] });
 
   console.log(
     `[canvas-element-writer] video inserted canvasId=${opts.canvasId} elementId=${element.id}`,

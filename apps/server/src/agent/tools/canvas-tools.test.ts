@@ -61,6 +61,7 @@ function repo(overrides: RepoOptions = {}): CanvasRepository {
     findProjectBrandKitId: async () => null,
     findWorkspaceIdByCanvas: async () => WORKSPACE_ID,
     saveContent: async () => 1,
+    appendContent: async () => 1,
     ...overrides,
   };
 }

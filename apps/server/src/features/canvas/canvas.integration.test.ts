@@ -130,3 +130,120 @@ describe.skipIf(!DATABASE_URL)("canvas 真实库集成", () => {
     });
   });
 });
+
+describe.skipIf(!DATABASE_URL)("canvas 原子追加（并发落图不丢元素）", () => {
+  /**
+   * 回归锁：生成物落画布曾经是「读 content → 追加 → 覆盖写」，两个任务并发落同一块
+   * 画布时后写者覆盖前者（lost update）。现在合并发生在单条 SQL 内，这里用真库并发
+   * 追加固定数量元素，断言**一个都不少**。
+   */
+  async function withCanvasFixture(
+    run: (input: {
+      canvasId: string;
+      persistence: ReturnType<typeof createPostgresPersistence>;
+      workspaceId: string;
+    }) => Promise<void>,
+  ) {
+    const persistence = createPostgresPersistence({
+      databaseUrl: DATABASE_URL as string,
+    });
+
+    try {
+      const profile = await persistence.queryOne<IdRow>(
+        "select id from public.profiles order by created_at limit 1",
+      );
+      expect(profile, "需要至少一个已引导的 profile 作夹具").not.toBeNull();
+
+      const workspace = await createViewerRepository(
+        persistence,
+      ).findPersonalWorkspace((profile as IdRow).id);
+      const workspaceId = workspace?.id as string;
+      expect(workspaceId).toBeTruthy();
+
+      const created = await createProjectRepository(
+        persistence,
+      ).createWithCanvas({
+        canvasName: "并发画布",
+        description: null,
+        name: "并发项目",
+        slug: `canvas-append-${Date.now().toString(36)}`,
+        userId: (profile as IdRow).id,
+        workspaceId,
+      });
+
+      try {
+        await run({ canvasId: created.canvas.id, persistence, workspaceId });
+      } finally {
+        await persistence.query(
+          "delete from public.canvases where project_id = $1",
+          [created.project.id],
+        );
+        await persistence.query("delete from public.projects where id = $1", [
+          created.project.id,
+        ]);
+      }
+    } finally {
+      await persistence.close();
+    }
+  }
+
+  it("8 路并发追加后元素与文件一个不少（覆盖写时代会丢）", async () => {
+    await withCanvasFixture(async ({ canvasId, persistence, workspaceId }) => {
+      const repository = createCanvasRepository(persistence);
+      const N = 8;
+
+      await Promise.all(
+        Array.from({ length: N }, (_, i) =>
+          repository.appendContent(workspaceId, canvasId, {
+            elements: [{ id: `el-${i}`, type: "image" }],
+            files: { [`file-${i}`]: { id: `file-${i}`, dataURL: "data:," } },
+          }),
+        ),
+      );
+
+      const row = await repository.findById(workspaceId, canvasId);
+      const content = (row?.content ?? {}) as {
+        elements?: Array<{ id: string }>;
+        files?: Record<string, unknown>;
+      };
+      expect(content.elements?.map((el) => el.id).sort()).toEqual(
+        Array.from({ length: N }, (_, i) => `el-${i}`).sort(),
+      );
+      expect(Object.keys(content.files ?? {}).sort()).toEqual(
+        Array.from({ length: N }, (_, i) => `file-${i}`).sort(),
+      );
+    });
+  });
+
+  it("空 content 与缺键都能追加（新建画布首次落图）", async () => {
+    await withCanvasFixture(async ({ canvasId, persistence, workspaceId }) => {
+      const repository = createCanvasRepository(persistence);
+      // 先显式清成空对象，模拟「尚无 elements/files 键」的历史行
+      await repository.saveContent(workspaceId, canvasId, {});
+
+      const affected = await repository.appendContent(workspaceId, canvasId, {
+        elements: [{ id: "first" }],
+      });
+
+      expect(affected).toBe(1);
+      const row = await repository.findById(workspaceId, canvasId);
+      const content = (row?.content ?? {}) as {
+        elements?: Array<{ id: string }>;
+        files?: Record<string, unknown>;
+      };
+      expect(content.elements?.map((el) => el.id)).toEqual(["first"]);
+      expect(content.files).toEqual({});
+    });
+  });
+
+  it("跨工作区追加 0 行（越界不可写）", async () => {
+    await withCanvasFixture(async ({ canvasId, persistence }) => {
+      const affected = await createCanvasRepository(persistence).appendContent(
+        FOREIGN_WORKSPACE,
+        canvasId,
+        { elements: [{ id: "evil" }] },
+      );
+      expect(affected).toBe(0);
+    });
+  });
+});

@@ -231,6 +231,7 @@ function createFakeRepository(
     findProjectBrandKitId: async () => null,
     findWorkspaceIdByCanvas: async () => WORKSPACE_ID,
     saveContent: async () => 1,
+    appendContent: async () => 1,
     ...overrides,
   };
 }
@@ -411,8 +412,8 @@ describe("canvas service", () => {
     expect(reads).toBe(0);
   });
 
-  it("插入图片元素：下载对象→内联 dataURL→追加元素与 files 条目", async () => {
-    let written: any;
+  it("插入图片元素：下载对象→内联 dataURL→**原子追加**元素与 files 条目", async () => {
+    let appended: any;
     const { service, storage } = buildService({
       repository: {
         findById: async () => ({
@@ -422,8 +423,8 @@ describe("canvas service", () => {
             elements: [{ id: "el-old", x: 0, width: 10 }],
           },
         }),
-        saveContent: async (_workspaceId, _canvasId, content) => {
-          written = content;
+        appendContent: async (_workspaceId, _canvasId, input) => {
+          appended = input;
           return 1;
         },
       },
@@ -443,18 +444,19 @@ describe("canvas service", () => {
     );
 
     expect(storage.calls[0]).toBe("download:project-assets:gen/shot.png");
-    expect(written.elements).toHaveLength(2);
-    const element = written.elements[1];
+    // 只追加新元素（不是整份元素表）——覆盖写会在并发落图时丢元素
+    expect(appended.elements).toHaveLength(1);
+    const element = appended.elements[0];
     expect(element).toMatchObject({ type: "image", id: elementId, angle: 0 });
     expect(element.customData).toEqual({
       title: "生成图",
       source: "generated",
     });
     // 图片以 base64 内联进 files，Excalidraw 才能原生渲染
-    expect(written.files[element.fileId].dataURL).toBe(
+    expect(appended.files[element.fileId].dataURL).toBe(
       `data:image/png;base64,${Buffer.from("img").toString("base64")}`,
     );
-    // 新元素排在原有元素右侧
+    // 新元素排在原有元素右侧（读回的元素表参与落点计算）
     expect(element.x).toBeGreaterThan(0);
   });
 
@@ -462,7 +464,7 @@ describe("canvas service", () => {
     let writes = 0;
     const { service } = buildService({
       repository: {
-        saveContent: async () => {
+        appendContent: async () => {
           writes += 1;
           return 1;
         },
@@ -490,8 +492,8 @@ describe("canvas service", () => {
     const { service } = buildService({
       repository: {
         findById: async () => CANVAS_ROW,
-        saveContent: async (_workspaceId, _canvasId, content) => {
-          written = content;
+        appendContent: async (_workspaceId, _canvasId, input) => {
+          written = input;
           return 1;
         },
       },
@@ -528,7 +530,7 @@ describe("canvas service", () => {
 
   it("插入元素时写入未命中（0 行）抛错，不再静默成功", async () => {
     const { service } = buildService({
-      repository: { saveContent: async () => 0 },
+      repository: { appendContent: async () => 0 },
     });
 
     await expect(
@@ -542,6 +544,6 @@ describe("canvas service", () => {
           width: 10,
         },
       ),
-    ).rejects.toThrow(/Failed to write canvas/);
+    ).rejects.toThrow(/Failed to append to canvas/);
   });
 });
