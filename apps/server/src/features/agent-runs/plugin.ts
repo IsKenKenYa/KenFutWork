@@ -54,6 +54,8 @@ export function createAgentRunsPlugin(
           repository: createAgentRunRepository(ctx.get("persistence")),
         }),
       );
+      const canvasRepository = createCanvasRepository(ctx.get("persistence"));
+
       ctx.register("agentRuns", (d) => {
         const jobService = ctx.tryGet("jobs");
         return createAgentRunService({
@@ -61,9 +63,10 @@ export function createAgentRunsPlugin(
           ...(deps.agentFactory ? { agentFactory: deps.agentFactory } : {}),
           agentRunMetadataService: d.get("agentRunMetadata"),
           brandKitService: d.get("brandKit"),
+          canvasRepository,
           canvasService: d.get("canvas"),
           workspaceSkillsLoader: createWorkspaceSkillsLoader({
-            canvases: createCanvasRepository(ctx.get("persistence")),
+            canvases: canvasRepository,
             skills: createSkillCatalogRepository(ctx.get("persistence")),
           }),
           connectionManager: deps.connectionManager,

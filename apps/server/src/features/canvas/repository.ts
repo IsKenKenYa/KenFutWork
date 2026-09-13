@@ -21,6 +21,11 @@ export interface CanvasRepository {
    * 调用方是已鉴权的 agent 运行（画布 id 来自本次运行），不是外部输入。
    */
   findWorkspaceIdByCanvas(canvasId: string): Promise<string | null>;
+  /** 画布 → 项目 → 品牌套件 id（run 启动时解析 brandKitId 用，单条 JOIN）。 */
+  findProjectBrandKitId(
+    workspaceId: string,
+    canvasId: string,
+  ): Promise<string | null>;
   /** 覆盖写画布内容；返回受影响行数（0 = 不存在或不属本工作区）。 */
   saveContent(
     workspaceId: string,
@@ -44,6 +49,20 @@ export function createCanvasRepository(
         [canvasId],
       );
       return row?.workspace_id ?? null;
+    },
+
+    async findProjectBrandKitId(workspaceId, canvasId) {
+      const row = await persistence
+        .forWorkspace(workspaceId)
+        .queryOne<{ brand_kit_id: string | null }>(
+          `select p.brand_kit_id
+             from public.canvases c
+             join public.projects p on p.id = c.project_id
+            where c.id = $1
+              and p.workspace_id = :workspace`,
+          [canvasId],
+        );
+      return row?.brand_kit_id ?? null;
     },
 
     async findById(workspaceId, canvasId) {

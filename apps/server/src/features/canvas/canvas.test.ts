@@ -171,6 +171,46 @@ describe("canvas repository（canvases 无 workspace_id 列 → JOIN projects）
     ]);
   });
 
+  it("按画布反查工作区/品牌套件：走同一父链，且用工作区谓词", async () => {
+    const byCanvas = createRunner(() => ({
+      rowCount: 1,
+      rows: [{ workspace_id: WORKSPACE_ID }],
+    }));
+    await expect(
+      createCanvasRepository(
+        createPersistenceFromRunner(byCanvas.runner),
+      ).findWorkspaceIdByCanvas(CANVAS_ID),
+    ).resolves.toBe(WORKSPACE_ID);
+    const byCanvasSql = byCanvas.sqls()[0] ?? "";
+    expect(byCanvasSql).toContain(
+      "join public.projects p on p.id = c.project_id",
+    );
+    expect(byCanvasSql).toContain("where c.id = $1");
+    // 反查工作区时还不知道工作区，故无谓词（画布 id 来自本次运行）
+    expect(byCanvasSql).not.toContain("workspace_id =");
+
+    const brandKit = createRunner(() => ({
+      rowCount: 1,
+      rows: [{ brand_kit_id: "kit-1" }],
+    }));
+    await expect(
+      createCanvasRepository(
+        createPersistenceFromRunner(brandKit.runner),
+      ).findProjectBrandKitId(WORKSPACE_ID, CANVAS_ID),
+    ).resolves.toBe("kit-1");
+    expect(brandKit.sqls()[0]).toContain(
+      "where c.id = $1 and p.workspace_id = $2",
+    );
+    expect(brandKit.calls[0]?.values).toEqual([CANVAS_ID, WORKSPACE_ID]);
+
+    const empty = createRunner();
+    await expect(
+      createCanvasRepository(
+        createPersistenceFromRunner(empty.runner),
+      ).findProjectBrandKitId(WORKSPACE_ID, CANVAS_ID),
+    ).resolves.toBeNull();
+  });
+
   it("0 行受影响即未命中（不属本工作区或不存在）", async () => {
     const { runner } = createRunner();
     await expect(
@@ -188,6 +228,7 @@ function createFakeRepository(
 ): CanvasRepository {
   return {
     findById: async () => CANVAS_ROW,
+    findProjectBrandKitId: async () => null,
     findWorkspaceIdByCanvas: async () => WORKSPACE_ID,
     saveContent: async () => 1,
     ...overrides,

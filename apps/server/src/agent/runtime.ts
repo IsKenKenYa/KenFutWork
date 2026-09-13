@@ -25,6 +25,7 @@ import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-s
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
 import type { CanvasService } from "../features/canvas/canvas-service.js";
+import type { CanvasRepository } from "../features/canvas/repository.js";
 import type { CreditService } from "../features/credits/credit-service.js";
 import {
   type TierGuard,
@@ -289,6 +290,8 @@ type CreateAgentRuntimeOptions = {
   agentRunMetadataService?: AgentRunMetadataService;
   /** 品牌套件服务（brand-kit 插件提供）：get_brand_kit 工具经它取数。 */
   brandKitService?: BrandKitService;
+  /** 画布数据访问（工作区作用域）：run 启动时读画布摘要、解析 brandKitId。 */
+  canvasRepository?: CanvasRepository;
   /** 画布写入（canvas 插件提供）：生成物落画布经此，运行时不再直连存储 SDK。 */
   canvasService?: CanvasService;
   /** 工作区技能加载（skills/canvas 聚合的数据访问提供）：运行时不再直连 SDK。 */
@@ -546,13 +549,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           // Look up personal workspace directly — the viewer is already
           // bootstrapped from the normal auth flow, so we skip ensureViewer
           // to avoid its strict email validation on the profile schema.
-          const client = createClient(accessToken) as UserSupabaseClient;
-          const { data: ws } = await client
-            .from("workspaces")
-            .select("id")
-            .eq("type", "personal")
-            .limit(1)
-            .single();
+          const ws = await options.viewerService
+            ?.resolveWorkspace({ id: userId })
+            .catch(() => null);
           if (!ws?.id) throw new Error("No personal workspace found");
 
           const user: AuthenticatedUser = {
@@ -779,13 +778,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             );
           };
 
-          const client = createClient(accessToken) as UserSupabaseClient;
-          const { data: ws } = await client
-            .from("workspaces")
-            .select("id")
-            .eq("type", "personal")
-            .limit(1)
-            .single();
+          const ws = await options.viewerService
+            ?.resolveWorkspace({ id: userId })
+            .catch(() => null);
           if (!ws?.id) throw new Error("No personal workspace found");
 
           const user: AuthenticatedUser = {
@@ -1113,15 +1108,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 options.creditService &&
                 options.createUserClient
               ) {
-                const balanceClient = options.createUserClient(
-                  run.accessToken,
-                ) as UserSupabaseClient;
-                const { data: balanceWorkspace } = await balanceClient
-                  .from("workspaces")
-                  .select("id")
-                  .eq("type", "personal")
-                  .limit(1)
-                  .single();
+                const balanceWorkspace = await options.viewerService
+                  ?.resolveWorkspace({ id: run.userId })
+                  .catch(() => null);
                 if (balanceWorkspace?.id) {
                   const balanceInfo = await options.creditService.getBalance(
                     balanceWorkspace.id,
@@ -1169,13 +1158,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 .replace(/^-|-$/g, "");
               const fileName = `gen-${slug}-${Date.now()}.${ext}`;
 
-              const { data: ws } = await client
-                .from("workspaces")
-                .select("id")
-                .eq("type", "personal")
-                .limit(1)
-                .single();
-              const workspaceId = ws?.id ?? "default";
+              const resolved = run.userId
+                ? await options.viewerService
+                    ?.resolveWorkspace({ id: run.userId })
+                    .catch(() => null)
+                : null;
+              const workspaceId = resolved?.id ?? "default";
               const objectPath = `${workspaceId}/${Date.now()}-${fileName}`;
 
               const { error: uploadError } = await client.storage
@@ -1195,38 +1183,16 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             };
           }
 
-          // Resolve brand kit ID from canvas → project in a single joined query
+          // Resolve brand kit ID from canvas to project (single JOIN, workspace-scoped)
           let brandKitId: string | null = null;
-          if (run.canvasId && run.accessToken && options.createUserClient) {
-            try {
-              const client = options.createUserClient(run.accessToken) as any;
-              const { data: canvas } = await client
-                .from("canvases")
-                .select("project_id, projects!inner(brand_kit_id)")
-                .eq("id", run.canvasId)
-                .maybeSingle();
-              brandKitId = canvas?.projects?.brand_kit_id ?? null;
-            } catch (err) {
-              // Fallback: joined query may fail if FK isn't exposed via PostgREST
-              // In that case, try the two-step approach
-              try {
-                const client = options.createUserClient(run.accessToken) as any;
-                const { data: c } = await client
-                  .from("canvases")
-                  .select("project_id")
-                  .eq("id", run.canvasId)
-                  .maybeSingle();
-                if (c?.project_id) {
-                  const { data: p } = await client
-                    .from("projects")
-                    .select("brand_kit_id")
-                    .eq("id", c.project_id)
-                    .maybeSingle();
-                  brandKitId = p?.brand_kit_id ?? null;
-                }
-              } catch (err2) {
-                console.warn("Failed to resolve brand kit ID:", err2);
-              }
+          if (run.canvasId && run.userId && options.canvasRepository) {
+            const canvasWorkspace = await options.viewerService
+              ?.resolveWorkspace({ id: run.userId })
+              .catch(() => null);
+            if (canvasWorkspace) {
+              brandKitId = await options.canvasRepository
+                .findProjectBrandKitId(canvasWorkspace.id, run.canvasId)
+                .catch(() => null);
             }
           }
 
@@ -1340,19 +1306,22 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           // Auto-inject canvas state summary so the agent has immediate awareness
           // of what's on the canvas without needing to call inspect_canvas first.
           let canvasSummary: string | null = null;
-          if (run.canvasId && run.accessToken && options.createUserClient) {
+          if (run.canvasId && run.userId && options.canvasRepository) {
             try {
-              const canvasClient = options.createUserClient(
-                run.accessToken,
-              ) as any;
-              const { data: canvasData } = await canvasClient
-                .from("canvases")
-                .select("content")
-                .eq("id", run.canvasId)
-                .single();
-              if (canvasData?.content?.elements) {
+              const canvasWorkspace = await options.viewerService
+                ?.resolveWorkspace({ id: run.userId })
+                .catch(() => null);
+              const canvasRow = canvasWorkspace
+                ? await options.canvasRepository
+                    .findById(canvasWorkspace.id, run.canvasId)
+                    .catch(() => null)
+                : null;
+              const content = canvasRow?.content as
+                | { elements?: unknown[] }
+                | undefined;
+              if (content?.elements) {
                 canvasSummary = buildCanvasSummaryForContext(
-                  canvasData.content.elements as Array<Record<string, unknown>>,
+                  content.elements as Array<Record<string, unknown>>,
                 );
               }
             } catch {
