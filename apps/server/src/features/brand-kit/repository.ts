@@ -357,6 +357,11 @@ export function createBrandKitRepository(
       }
 
       // 单条语句批量插入：归属校验内联在 WHERE，整批原子生效。
+      // 这个 `insert … select … from (values …)` 形状里，Postgres **不会**把
+      // 目标列的类型反推给未定型参数（unknown 一律按 text 处理），故凡不是 text 的列
+      // 都必须显式 cast：`kit_id::uuid` 漏了报 `operator does not exist: uuid = text`
+      // （42883），`sort_order::int` 漏了报 `column "sort_order" is of type integer
+      // but expression is of type text`（42804）。
       const values: unknown[] = [kitId];
       const tuples = rows.map((row) => {
         values.push(
@@ -370,7 +375,7 @@ export function createBrandKitRepository(
         );
         const end = values.length;
         const start = end - 6;
-        return `($1, $${start}::public.brand_kit_asset_type, $${start + 1}, $${start + 2}, $${start + 3}, $${start + 4}, $${start + 5}, $${end}::jsonb)`;
+        return `($1::uuid, $${start}::public.brand_kit_asset_type, $${start + 1}, $${start + 2}, $${start + 3}::int, $${start + 4}, $${start + 5}, $${end}::jsonb)`;
       });
 
       return persistence.forUser(userId).execute(

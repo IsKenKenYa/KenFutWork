@@ -243,9 +243,9 @@ describe("skills repository：目录写入（用户作用域）", () => {
 
     const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
     expect(sql).toContain("where exists");
-    expect(sql).toContain("s.created_by = $8");
+    expect(sql).toContain("s.id = $1::uuid");
     // 多行 values 单语句插入（不是逐行 N 次往返）
-    expect(sql.match(/\(\$1, \$/g)).toHaveLength(2);
+    expect(sql.match(/\(\$1::uuid, \$/g)).toHaveLength(2);
     expect(calls[0]?.values).toEqual([
       SKILL_ID,
       "scripts/a.py",

@@ -309,10 +309,14 @@ export function createSkillCatalogRepository(
       }
 
       const values: unknown[] = [skillId];
+      // `$1::uuid` 是必需的：`insert … select … from (values …)` 这个形状下，
+      // Postgres 无法把目标列的 uuid 类型反推给未定型的参数，会把 $1 定成 text，
+      // 于是 `s.id = $1` 报 `operator does not exist: uuid = text`（SQLSTATE 42883）。
+      // 显式定型后 v.skill_id 也随之是 uuid，与目标列一致。
       const tuples = rows.map((row) => {
         values.push(row.filePath, row.content, row.mimeType ?? "text/plain");
         const end = values.length;
-        return `($1, $${end - 2}, $${end - 1}, $${end})`;
+        return `($1::uuid, $${end - 2}, $${end - 1}, $${end})`;
       });
 
       return persistence.forUser(userId).execute(
@@ -322,7 +326,7 @@ export function createSkillCatalogRepository(
                   as v(skill_id, file_path, content, mime_type)
           where exists (
             select 1 from public.skills s
-             where s.id = $1 and s.created_by = :user
+             where s.id = $1::uuid and s.created_by = :user
           )`,
         values,
       );

@@ -89,4 +89,101 @@ describe.skipIf(!DATABASE_URL)("skills 真实库集成", () => {
       await persistence.close();
     }
   });
+
+  /**
+   * 回归锁：`insertFilesForOwnedSkill` 是 `insert ... select ... from (values ...)`
+   * 形状，Postgres 不会把目标列的 uuid 类型反推给未定型参数——漏了 `$1::uuid`
+   * 就报 `operator does not exist: uuid = text`（SQLSTATE 42883）。
+   *
+   * 这条只在**真库执行**时才暴露：单测只断言 SQL 文本，当时全绿；路由又把该错误
+   * 当非致命吞掉（skill 建了、文件没进），所以必须有一条真的跑起来。
+   */
+  it("写入路径可在真库执行：coalesce 缺省 + 批量插文件 + 非本人拒绝", async () => {
+    const persistence = createPostgresPersistence({
+      databaseUrl: DATABASE_URL as string,
+    });
+
+    try {
+      const profile = await persistence.queryOne<IdRow>(
+        "select id from public.profiles order by created_at limit 1",
+      );
+      expect(profile, "需要至少一个已引导的 profile 作夹具").not.toBeNull();
+      const userId = (profile as IdRow).id;
+
+      const skills = createSkillCatalogRepository(persistence);
+      const slug = `integration-write-${Date.now().toString(36)}`;
+      let skillId: string | undefined;
+
+      try {
+        const created = await skills.insertOwned(userId, {
+          category: "custom",
+          description: "写入路径集成测试",
+          name: "集成写入技能",
+          skillContent: "# 集成写入",
+          slug,
+        });
+        skillId = created?.id as string;
+        expect(skillId).toBeTruthy();
+
+        // coalesce 复刻「列缺席即用列默认」：不传 author/version/metadata 时
+        // 落库必须是列默认，而不是 NULL
+        expect(created).toMatchObject({
+          author: "system",
+          metadata: {},
+          source: "user",
+          version: "1.0",
+        });
+
+        const written = await skills.insertFilesForOwnedSkill(userId, skillId, [
+          { content: "print(1)", filePath: "scripts/a.py" },
+          {
+            content: "# b",
+            filePath: "references/b.md",
+            mimeType: "text/markdown",
+          },
+        ]);
+        expect(written).toBe(2);
+
+        const files = await skills.listFilesForVisibleSkill(userId, skillId);
+        expect(files.map((f) => f.file_path)).toEqual([
+          "references/b.md",
+          "scripts/a.py",
+        ]);
+        expect(files.map((f) => f.mime_type)).toEqual([
+          "text/markdown",
+          "text/plain",
+        ]);
+
+        // 非本人不写入（父子校验内联在语句里，不靠 RLS）
+        await expect(
+          skills.insertFilesForOwnedSkill(FOREIGN_WORKSPACE, skillId, [
+            { content: "x", filePath: "scripts/evil.py" },
+          ]),
+        ).resolves.toBe(0);
+
+        await expect(
+          skills.listFilesForVisibleSkill(FOREIGN_WORKSPACE, skillId),
+        ).resolves.toEqual([]);
+
+        // 非本人不可改、不可删
+        await expect(
+          skills.updateOwnedById(FOREIGN_WORKSPACE, skillId, {
+            name: "hijack",
+          }),
+        ).resolves.toBeNull();
+        await expect(
+          skills.deleteOwnedById(FOREIGN_WORKSPACE, skillId),
+        ).resolves.toBe(0);
+      } finally {
+        if (skillId) {
+          // skill_files 对 skills 是 ON DELETE CASCADE，删 skill 即连带清理
+          await persistence.query("delete from public.skills where id = $1", [
+            skillId,
+          ]);
+        }
+      }
+    } finally {
+      await persistence.close();
+    }
+  });
 });
