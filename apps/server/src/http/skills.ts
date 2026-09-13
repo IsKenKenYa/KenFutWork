@@ -11,6 +11,7 @@ import {
 } from "@loomic/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
+import type { SkillCatalogRepository } from "../features/skills/repository.js";
 import {
   importSkillFromUrl,
   SkillImportError,
@@ -45,6 +46,8 @@ export async function registerSkillRoutes(
   options: {
     auth: RequestAuthenticator;
     createUserClient: (accessToken: string) => UserSupabaseClient;
+    /** 安装态与目录的数据访问（persistence 缝）。 */
+    skillsRepository: SkillCatalogRepository;
     viewerService: ViewerService;
   },
 ) {
@@ -535,15 +538,12 @@ export async function registerSkillRoutes(
 
       const viewer = await options.viewerService.ensureViewer(user);
       const workspaceId = viewer.workspace.id;
-      const client = options.createUserClient(user.accessToken);
-
-      // Join workspace_skills with skills to return full skill info + install status
-      const { data, error } = await untypedFrom(client, "workspace_skills")
-        .select("skill_id, enabled, installed_at, skills(*)")
-        .eq("workspace_id", workspaceId)
-        .order("installed_at", { ascending: false });
-
-      if (error) {
+      let data: Awaited<
+        ReturnType<typeof options.skillsRepository.listInstalled>
+      >;
+      try {
+        data = await options.skillsRepository.listInstalled(workspaceId);
+      } catch (error) {
         request.log.error({ err: error }, "workspace skills list query failed");
         return sendSkillError(
           reply,
@@ -597,18 +597,18 @@ export async function registerSkillRoutes(
 
       const viewer = await options.viewerService.ensureViewer(user);
       const workspaceId = viewer.workspace.id;
-      const client = options.createUserClient(user.accessToken);
+      // Verify skill exists（可见 = 内置/社区 或 自己创建，与 RLS 读策略同义）
+      let skill: { id: string } | null;
+      try {
+        skill = await options.skillsRepository.findVisibleSkill(
+          user.id,
+          body.skillId,
+        );
+      } catch {
+        skill = null;
+      }
 
-      // Verify skill exists
-      const { data: skill, error: skillError } = await untypedFrom(
-        client,
-        "skills",
-      )
-        .select("id")
-        .eq("id", body.skillId)
-        .maybeSingle();
-
-      if (skillError || !skill) {
+      if (!skill) {
         return sendSkillError(
           reply,
           "skill_not_found",
@@ -617,18 +617,18 @@ export async function registerSkillRoutes(
         );
       }
 
-      const { error } = await untypedFrom(client, "workspace_skills").upsert(
-        {
-          workspace_id: workspaceId,
-          skill_id: body.skillId,
+      const installError = await options.skillsRepository
+        .upsertInstallation({
           enabled: true,
-          installed_by: user.id,
-        },
-        { onConflict: "workspace_id,skill_id" },
-      );
+          installedBy: user.id,
+          skillId: body.skillId,
+          workspaceId,
+        })
+        .then(() => null)
+        .catch((error: unknown) => error);
 
-      if (error) {
-        request.log.error({ err: error }, "skill install failed");
+      if (installError) {
+        request.log.error({ err: installError }, "skill install failed");
         return sendSkillError(
           reply,
           "skill_install_failed",
@@ -656,14 +656,10 @@ export async function registerSkillRoutes(
       const { skillId } = request.params as { skillId: string };
       const viewer = await options.viewerService.ensureViewer(user);
       const workspaceId = viewer.workspace.id;
-      const client = options.createUserClient(user.accessToken);
-
-      const { error, count } = await untypedFrom(client, "workspace_skills")
-        .delete({ count: "exact" })
-        .eq("workspace_id", workspaceId)
-        .eq("skill_id", skillId);
-
-      if (error) {
+      let count: number;
+      try {
+        count = await options.skillsRepository.uninstall(workspaceId, skillId);
+      } catch (error) {
         request.log.error({ err: error }, "skill uninstall failed");
         return sendSkillError(
           reply,
@@ -702,18 +698,18 @@ export async function registerSkillRoutes(
       const payload = workspaceSkillToggleRequestSchema.parse(request.body);
       const viewer = await options.viewerService.ensureViewer(user);
       const workspaceId = viewer.workspace.id;
-      const client = options.createUserClient(user.accessToken);
+      // Verify skill exists in the catalog（可见性 = RLS 读策略等价物）
+      let skill: { id: string } | null;
+      try {
+        skill = await options.skillsRepository.findVisibleSkill(
+          user.id,
+          skillId,
+        );
+      } catch {
+        skill = null;
+      }
 
-      // Verify skill exists in the catalog
-      const { data: skill, error: skillError } = await untypedFrom(
-        client,
-        "skills",
-      )
-        .select("id")
-        .eq("id", skillId)
-        .maybeSingle();
-
-      if (skillError || !skill) {
+      if (!skill) {
         return sendSkillError(
           reply,
           "skill_not_found",
@@ -723,18 +719,18 @@ export async function registerSkillRoutes(
       }
 
       // Upsert: create workspace_skills row if not installed, or update enabled state
-      const { error } = await untypedFrom(client, "workspace_skills").upsert(
-        {
-          workspace_id: workspaceId,
-          skill_id: skillId,
+      const toggleError = await options.skillsRepository
+        .upsertInstallation({
           enabled: payload.enabled,
-          installed_by: user.id,
-        },
-        { onConflict: "workspace_id,skill_id" },
-      );
+          installedBy: user.id,
+          skillId,
+          workspaceId,
+        })
+        .then(() => null)
+        .catch((error: unknown) => error);
 
-      if (error) {
-        request.log.error({ err: error }, "skill toggle failed");
+      if (toggleError) {
+        request.log.error({ err: toggleError }, "skill toggle failed");
         return sendSkillError(
           reply,
           "skill_toggle_failed",

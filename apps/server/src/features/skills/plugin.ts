@@ -6,7 +6,10 @@ import type {
   ToolExecutionContext,
 } from "../../kernel/types.js";
 import type { UserSupabaseClient } from "../../supabase/user.js";
-import { createSkillCatalogRepository } from "./repository.js";
+import {
+  createSkillCatalogRepository,
+  type SkillCatalogRepository,
+} from "./repository.js";
 import {
   createSkillCatalogService,
   type SkillCatalogService,
@@ -22,12 +25,15 @@ export function createSkillsPlugin(deps: {
   /** HTTP 路由仍直接用用户客户端（随 http/skills 收口后再移除）。 */
   createUserClient: (accessToken: string) => UserSupabaseClient;
 }): PluginDefinition {
+  // apply 期构造、mounted 期复用（同一实例）
+  let skillsRepository: SkillCatalogRepository;
   return {
     name: "skills",
     inject: ["auth", "persistence", "viewer"],
     apply(ctx) {
+      skillsRepository = createSkillCatalogRepository(ctx.get("persistence"));
       const catalog: SkillCatalogService = createSkillCatalogService({
-        repository: createSkillCatalogRepository(ctx.get("persistence")),
+        repository: skillsRepository,
       });
 
       const listSkillsTool: ToolDefinition = {
@@ -87,6 +93,7 @@ export function createSkillsPlugin(deps: {
       void registerSkillRoutes(ctx.app, {
         auth: ctx.get("auth"),
         createUserClient: deps.createUserClient,
+        skillsRepository,
         viewerService: ctx.get("viewer"),
       });
       void registerMarketplaceRoutes(ctx.app, {
