@@ -21,6 +21,12 @@ const AUTH_GATED_PROBES = [
   { method: "GET", url: "/api/provider-instances" },
   { method: "GET", url: "/api/model-catalog" },
   { method: "GET", url: "/api/usage/summary" },
+  // 平台管理后台（FORM-10）：探针只断言「已装配」（非 404）；
+  // 未认证 401 / 非管理员 403 的判定由 admin-service 单测覆盖。
+  { method: "GET", url: "/api/admin/me" },
+  { method: "GET", url: "/api/admin/users" },
+  { method: "GET", url: "/api/admin/usage" },
+  { method: "GET", url: "/api/admin/providers" },
 ] as const;
 
 /** 无认证门但必须装配的路由（注册完整性用 200 探针）。 */

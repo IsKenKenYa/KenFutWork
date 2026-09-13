@@ -1,6 +1,6 @@
 "use client";
 
-import { LogOut, Settings } from "lucide-react";
+import { LogOut, Settings, ShieldCheck } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -18,18 +18,23 @@ export interface WorkbenchUser {
 }
 
 /**
- * 个人中心（侧栏底部头像弹出）：用户信息 + 设置 + 退出登录。
+ * 个人中心（侧栏底部头像弹出）：用户信息 + 设置 + 管理后台（仅管理员）+ 退出登录。
  * 收起态只显示头像，展开态显示头像 + 用户名。
  */
 export function UserMenu({
   user,
   collapsed,
+  isAdmin = false,
   onOpenSettings,
+  onOpenAdmin,
   onSignOut,
 }: {
   user: WorkbenchUser | null;
   collapsed: boolean;
+  /** 平台管理员才渲染「管理后台」入口（服务端仍会独立鉴权）。 */
+  isAdmin?: boolean;
   onOpenSettings: () => void;
+  onOpenAdmin?: () => void;
   onSignOut: () => void;
 }) {
   const displayName = user?.displayName ?? "未登录";
@@ -71,6 +76,12 @@ export function UserMenu({
           <Settings className="size-4" />
           设置
         </DropdownMenuItem>
+        {isAdmin && onOpenAdmin ? (
+          <DropdownMenuItem onClick={onOpenAdmin}>
+            <ShieldCheck className="size-4" />
+            管理后台
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onClick={onSignOut}>
           <LogOut className="size-4" />

@@ -1,6 +1,22 @@
 import { describe, expect, it } from "vitest";
 
-import { getVideoCreditCost } from "./credits.js";
+import { computeChatCreditCost, getVideoCreditCost } from "./credits.js";
+
+describe("computeChatCreditCost（平台池聊天计费）", () => {
+  it("按千 token 向上取整计费（有调用即最低 1）", () => {
+    expect(computeChatCreditCost(0)).toBe(1);
+    expect(computeChatCreditCost(1)).toBe(1);
+    expect(computeChatCreditCost(1000)).toBe(1);
+    expect(computeChatCreditCost(1001)).toBe(2);
+    expect(computeChatCreditCost(14_123)).toBe(15);
+  });
+
+  it("异常输入兜底为最低 1，不产生 NaN/负数账单", () => {
+    expect(computeChatCreditCost(-100)).toBe(1);
+    expect(computeChatCreditCost(Number.NaN)).toBe(1);
+    expect(computeChatCreditCost(Number.POSITIVE_INFINITY)).toBe(1);
+  });
+});
 
 describe("getVideoCreditCost", () => {
   it("preserves base-plus-duration pricing for existing models", () => {

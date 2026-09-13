@@ -1,5 +1,6 @@
 // Cross-app contract barrel, including Supabase viewer/project HTTP schemas.
 
+export * from "./admin-contracts.js";
 export * from "./brand-kit-contracts.js";
 export * from "./capability-contracts.js";
 export * from "./contracts.js";

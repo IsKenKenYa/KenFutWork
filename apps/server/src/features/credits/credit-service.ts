@@ -59,6 +59,24 @@ export type CreditService = {
     jobId?: string,
     description?: string,
   ): Promise<string>;
+  /**
+   * 平台池聊天扣费（FORM-10）：与生成扣费分离，台账类型 chat_deduct，
+   * 便于后台区分「生成消耗」与「平台池对话消耗」。
+   */
+  deductChatCredits(
+    workspaceId: string,
+    userId: string,
+    amount: number,
+    runId: string,
+    description?: string,
+  ): Promise<string>;
+  /** 管理员手动调剂额度（正发负扣，台账类型 admin_adjustment）。 */
+  adminAdjustCredits(
+    workspaceId: string,
+    userId: string,
+    amount: number,
+    description?: string,
+  ): Promise<string>;
   refundCredits(
     workspaceId: string,
     userId: string,
@@ -143,6 +161,65 @@ export function createCreditService(options: {
         throw new CreditServiceError(
           "credit_deduct_failed",
           `Failed to deduct credits: ${error.message}`,
+          500,
+        );
+      }
+
+      return data as string;
+    },
+
+    async deductChatCredits(workspaceId, userId, amount, runId, description) {
+      const admin = options.getAdminClient();
+
+      // NOTE: deduct_chat_credits 未纳入生成类型（同 increment_job_attempt 的处理）
+      const { data, error } = await (admin as any).rpc("deduct_chat_credits", {
+        p_workspace_id: workspaceId,
+        p_user_id: userId,
+        p_amount: amount,
+        p_run_id: runId,
+        p_description: description ?? null,
+      });
+
+      if (error) {
+        if (error.message?.includes("INSUFFICIENT_CREDITS")) {
+          throw new CreditServiceError(
+            "insufficient_credits",
+            "Not enough credits to perform this action.",
+            402,
+          );
+        }
+        throw new CreditServiceError(
+          "credit_deduct_failed",
+          `Failed to deduct chat credits: ${error.message}`,
+          500,
+        );
+      }
+
+      return data as string;
+    },
+
+    async adminAdjustCredits(workspaceId, userId, amount, description) {
+      const admin = options.getAdminClient();
+
+      // NOTE: admin_adjust_credits 未纳入生成类型（同 increment_job_attempt 的处理）
+      const { data, error } = await (admin as any).rpc("admin_adjust_credits", {
+        p_workspace_id: workspaceId,
+        p_user_id: userId,
+        p_amount: amount,
+        p_description: description ?? null,
+      });
+
+      if (error) {
+        if (error.message?.includes("INSUFFICIENT_CREDITS")) {
+          throw new CreditServiceError(
+            "insufficient_credits",
+            "Deduction exceeds current balance.",
+            402,
+          );
+        }
+        throw new CreditServiceError(
+          "credit_deduct_failed",
+          `Failed to adjust credits: ${error.message}`,
           500,
         );
       }

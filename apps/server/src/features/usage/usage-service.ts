@@ -13,6 +13,8 @@ import type {
 
 export interface UsageEntry {
   workspaceId: string;
+  /** 归属用户：平台池计费与管理后台按用户聚合都需要。 */
+  userId?: string;
   provider: string;
   model: string;
   capability: "chat" | "image" | "video";
@@ -73,6 +75,7 @@ export function createUsageService(options: {
       const admin = getAdminClient();
       const { error } = await untypedFrom(admin, "usage_records").insert({
         workspace_id: entry.workspaceId,
+        ...(entry.userId ? { user_id: entry.userId } : {}),
         provider: entry.provider,
         model: entry.model,
         capability: entry.capability,

@@ -17,6 +17,9 @@ import {
   type ThreadService,
   ThreadServiceError,
 } from "../features/chat/thread-service.js";
+import type { CreditService } from "../features/credits/credit-service.js";
+import { parseInstanceSpecifier } from "../features/model-providers/model-catalog-service.js";
+import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
 
@@ -29,6 +32,9 @@ export async function registerRunRoutes(
     settingsService?: SettingsService;
     threadService?: ThreadService;
     viewerService?: ViewerService;
+    /** 平台池额度前置拦截（FORM-10）：只有走系统供应商的运行需要余额。 */
+    creditService?: CreditService;
+    modelProviders?: ModelProviderService;
   } = {},
 ) {
   app.post("/api/agent/runs", async (request, reply) => {
@@ -71,6 +77,47 @@ export async function registerRunRoutes(
           model = settings.defaultModel;
         } catch {
           // Fall through to server default model if settings lookup fails
+        }
+      }
+
+      // 平台池额度前置拦截（FORM-10）：走系统供应商（scope='system'）的运行
+      // 先查余额；余额耗尽直接 402，不让 run 起跑后才在结算处失败。
+      // 自带 Key（BYOK）不受此限——用户自带凭证不计费。
+      const effectiveModel = payload.model ?? model;
+      if (
+        authenticatedUser &&
+        effectiveModel &&
+        options.modelProviders &&
+        options.creditService &&
+        options.viewerService
+      ) {
+        const specifier = parseInstanceSpecifier(effectiveModel);
+        if (specifier) {
+          try {
+            const scope = await options.modelProviders.getInstanceScope(
+              specifier.instanceId,
+            );
+            if (scope === "system") {
+              const viewer =
+                await options.viewerService.ensureViewer(authenticatedUser);
+              const { balance } = await options.creditService.getBalance(
+                viewer.workspace.id,
+              );
+              if (balance <= 0) {
+                return reply.code(402).send(
+                  applicationErrorResponseSchema.parse({
+                    error: {
+                      code: "insufficient_credits",
+                      message:
+                        "平台额度已用完，请联系管理员充值或改用自己的供应商 Key。",
+                    },
+                  }),
+                );
+              }
+            }
+          } catch {
+            // 额度查询失败不阻断启动（结算侧仍有兜底），避免误伤正常使用
+          }
         }
       }
 

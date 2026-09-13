@@ -405,6 +405,20 @@ export function canUseVideoResolution(
   );
 }
 
+// ── 平台池计费（FORM-10：管理员配置系统供应商并分发给用户）────
+// 自带 Key（BYOK）不计费；只有走平台池（scope='system'）的运行按 token 计费。
+// 费率是产品参数，集中在此，改费率只动这里。
+export const CHAT_CREDITS_PER_1K_TOKENS = 1;
+
+/** 平台池聊天的 credit 成本：按千 token 向上取整，最低 1（有调用即计费）。 */
+export function computeChatCreditCost(totalTokens: number): number {
+  if (!Number.isFinite(totalTokens) || totalTokens <= 0) return 1;
+  return Math.max(
+    1,
+    Math.ceil(totalTokens / 1000) * CHAT_CREDITS_PER_1K_TOKENS,
+  );
+}
+
 // ── API schemas ──────────────────────────────────────────────
 
 export const creditBalanceResponseSchema = z.object({

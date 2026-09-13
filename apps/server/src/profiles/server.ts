@@ -1,6 +1,7 @@
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import type { LoomicAgentFactory } from "../agent/deep-agent.js";
 import type { ServerEnv } from "../config/env.js";
+import { createAdminPlugin } from "../features/admin/plugin.js";
 import { createAgentModesPlugin } from "../features/agent-modes/plugin.js";
 import { createAgentRunsPlugin } from "../features/agent-runs/plugin.js";
 import { createViewerPlugin } from "../features/bootstrap/plugin.js";
@@ -131,6 +132,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
       credentialEnv: deps.credentialEnv,
     }),
     createGenerationPlugin({ env: deps.env }),
+    createAdminPlugin({ getAdminClient: deps.getAdminClient }),
     createAgentRunsPlugin({
       createUserClient: deps.createUserClient,
       getAdminClient: deps.getAdminClient,

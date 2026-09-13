@@ -18,6 +18,7 @@ function instance(
 ): ProviderInstanceResponse {
   return {
     id: "11111111-1111-1111-1111-111111111111",
+    scope: "workspace",
     name: "我的网关",
     protocol: "openai-compatible",
     hasCredential: true,
@@ -42,6 +43,7 @@ describe("modelCatalog（目录推导）", () => {
             enabled: false,
           }),
         ],
+        listSystemInstances: async () => [],
       } as never,
     });
     const entries = await catalog.listCatalog(user);
@@ -50,13 +52,51 @@ describe("modelCatalog（目录推导）", () => {
       true,
     );
     expect(entries.map((e) => e.capability).sort()).toEqual(["chat", "image"]);
+    expect(entries.every((e) => e.provider.scope === "workspace")).toBe(true);
   });
 
   it("空实例列表返回空目录", async () => {
     const catalog = createModelCatalogService({
-      modelProviders: { listInstances: async () => [] } as never,
+      modelProviders: {
+        listInstances: async () => [],
+        listSystemInstances: async () => [],
+      } as never,
     });
     expect(await catalog.listCatalog(user)).toEqual([]);
+  });
+
+  it("平台池（system）实例并入目录并标记 scope，供前端与计费区分", async () => {
+    const catalog = createModelCatalogService({
+      modelProviders: {
+        listInstances: async () => [],
+        listSystemInstances: async () => [
+          instance({
+            id: "33333333-3333-3333-3333-333333333333",
+            scope: "system",
+            name: "平台池",
+            models: [{ id: "pool-model", name: "Pool", capability: "chat" }],
+          }),
+        ],
+      } as never,
+    });
+    const entries = await catalog.listCatalog(user);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.provider.scope).toBe("system");
+    expect(entries[0]!.provider.name).toBe("平台池");
+  });
+
+  it("平台池读取失败不拖垮用户自有目录（降级）", async () => {
+    const catalog = createModelCatalogService({
+      modelProviders: {
+        listInstances: async () => [instance()],
+        listSystemInstances: async () => {
+          throw new Error("admin client missing");
+        },
+      } as never,
+    });
+    const entries = await catalog.listCatalog(user);
+    expect(entries).toHaveLength(2);
+    expect(entries.every((e) => e.provider.scope === "workspace")).toBe(true);
   });
 });
 

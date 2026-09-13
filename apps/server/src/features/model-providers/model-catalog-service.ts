@@ -39,10 +39,39 @@ export function createModelCatalogService(options: {
               instanceId: instance.id,
               name: instance.name,
               protocol: instance.protocol as ProviderProtocol,
+              scope: "workspace",
             },
           });
         }
       }
+
+      // 平台池（scope='system'）：管理员配置一次，分发给全体用户。
+      // 目录读取失败不阻断用户自有实例目录（降级为空）。
+      try {
+        const systemInstances = await modelProviders.listSystemInstances();
+        for (const instance of systemInstances) {
+          if (!instance.enabled) {
+            continue;
+          }
+          for (const model of instance.models) {
+            entries.push({
+              id: model.id,
+              name: model.name,
+              capability: model.capability,
+              model,
+              provider: {
+                instanceId: instance.id,
+                name: instance.name,
+                protocol: instance.protocol as ProviderProtocol,
+                scope: "system",
+              },
+            });
+          }
+        }
+      } catch (error) {
+        console.warn("[modelCatalog] system instance merge failed:", error);
+      }
+
       return entries;
     },
   };

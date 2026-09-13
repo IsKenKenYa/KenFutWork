@@ -72,6 +72,9 @@ export function createAgentRunsPlugin(
         settingsService: ctx.get("settings"),
         threadService: ctx.get("threads"),
         viewerService: ctx.get("viewer"),
+        // 平台池额度前置拦截（FORM-10）：走系统供应商且余额耗尽时拒绝启动
+        creditService: ctx.get("credits"),
+        modelProviders: ctx.get("modelProviders"),
       });
     },
   };

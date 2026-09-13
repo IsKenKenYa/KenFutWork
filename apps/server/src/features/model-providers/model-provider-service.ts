@@ -4,6 +4,7 @@ import type {
   ProviderInstanceResponse,
   ProviderInstanceUpdateRequest,
   ProviderProtocol,
+  ProviderScope,
 } from "@loomic/shared";
 
 import type { AdminSupabaseClient } from "../../supabase/admin.js";
@@ -56,7 +57,8 @@ export interface ResolvedInstanceCredentials {
 
 interface ProviderInstanceRow {
   id: string;
-  workspace_id: string;
+  scope: string | null;
+  workspace_id: string | null;
   name: string;
   protocol: string;
   base_url: string | null;
@@ -74,6 +76,7 @@ const untypedFrom = (client: unknown, table: string): any =>
 function toResponse(row: ProviderInstanceRow): ProviderInstanceResponse {
   return {
     id: row.id,
+    scope: row.scope === "system" ? "system" : "workspace",
     name: row.name,
     protocol: row.protocol as ProviderProtocol,
     ...(row.base_url ? { baseUrl: row.base_url } : {}),
@@ -122,6 +125,23 @@ export interface ModelProviderService {
   resolveCredentialsById(
     instanceId: string,
   ): Promise<ResolvedInstanceCredentials>;
+  /**
+   * 平台池（scope='system'）：管理员配置一份 Key，分发给全体用户使用。
+   * 走 admin 客户端（平台池无归属工作区，普通写策略不适用）。
+   */
+  listSystemInstances(): Promise<ProviderInstanceResponse[]>;
+  createSystemInstance(
+    input: ProviderInstanceCreateRequest,
+    /** 创建者（管理员用户 id）：provider_instances.created_by 仍是非空外键。 */
+    createdByUserId: string,
+  ): Promise<ProviderInstanceResponse>;
+  updateSystemInstance(
+    instanceId: string,
+    input: ProviderInstanceUpdateRequest,
+  ): Promise<ProviderInstanceResponse>;
+  deleteSystemInstance(instanceId: string): Promise<void>;
+  /** 实例作用域（平台池计费归属用）；实例不存在返回 null。 */
+  getInstanceScope(instanceId: string): Promise<ProviderScope | null>;
 }
 
 export function createModelProviderService(options: {
@@ -141,6 +161,18 @@ export function createModelProviderService(options: {
       );
     }
     return credentialEnv.credentialSecret;
+  }
+
+  /** 平台池操作必须走服务角色（平台行无归属工作区，普通写策略不适用）。 */
+  function requireAdminClientFor(operation: string): AdminSupabaseClient {
+    if (!getAdminClient) {
+      throw new ModelProviderServiceError(
+        "instance_query_failed",
+        `${operation} 需要注入 getAdminClient（fail loud）。`,
+        500,
+      );
+    }
+    return getAdminClient();
   }
 
   async function resolveWorkspace(
@@ -170,6 +202,9 @@ export function createModelProviderService(options: {
         const client = createUserClient(user.accessToken);
         const { data, error } = await untypedFrom(client, "provider_instances")
           .select("*")
+          // 用户侧只列自有实例：平台池（system）走 listSystemInstances 单独分发，
+          // 混进 BYOK 列表会让用户看到自己无权编辑的行。
+          .eq("scope", "workspace")
           .order("created_at", { ascending: true });
         if (error) {
           throw new ModelProviderServiceError(
@@ -406,6 +441,111 @@ export function createModelProviderService(options: {
           }),
         ),
       };
+    },
+
+    // ── 平台池（scope='system'）：管理员配置、分发给用户 ──
+    async listSystemInstances() {
+      const admin = requireAdminClientFor("listSystemInstances");
+      const { data, error } = await untypedFrom(admin, "provider_instances")
+        .select("*")
+        .eq("scope", "system")
+        .order("created_at", { ascending: true });
+      if (error) {
+        throw new ModelProviderServiceError(
+          "instance_query_failed",
+          "Unable to load system provider instances.",
+        );
+      }
+      return ((data ?? []) as ProviderInstanceRow[]).map(toResponse);
+    },
+
+    async createSystemInstance(input, createdByUserId) {
+      requireCredentialSecret();
+      const admin = requireAdminClientFor("createSystemInstance");
+      const { data, error } = await untypedFrom(admin, "provider_instances")
+        .insert({
+          scope: "system",
+          workspace_id: null,
+          name: input.name,
+          protocol: input.protocol,
+          ...(input.baseUrl ? { base_url: input.baseUrl } : {}),
+          encrypted_api_key: encryptSecret(credentialEnv, input.apiKey),
+          models: input.models,
+          ...(input.compat ? { compat: input.compat } : {}),
+          enabled: input.enabled ?? true,
+          created_by: createdByUserId,
+        })
+        .select("*")
+        .single();
+      if (error || !data) {
+        throw new ModelProviderServiceError(
+          "instance_create_failed",
+          "Unable to create system provider instance.",
+        );
+      }
+      return toResponse(data as ProviderInstanceRow);
+    },
+
+    async updateSystemInstance(instanceId, input) {
+      const admin = requireAdminClientFor("updateSystemInstance");
+      const updates: Record<string, unknown> = {};
+      if (input.name !== undefined) updates.name = input.name;
+      if (input.baseUrl !== undefined) updates.base_url = input.baseUrl;
+      if (input.apiKey !== undefined) {
+        updates.encrypted_api_key = encryptSecret(credentialEnv, input.apiKey);
+      }
+      if (input.models !== undefined) updates.models = input.models;
+      if (input.compat !== undefined) updates.compat = input.compat;
+      if (input.enabled !== undefined) updates.enabled = input.enabled;
+      if (Object.keys(updates).length === 0) {
+        throw new ModelProviderServiceError(
+          "instance_update_failed",
+          "No fields to update.",
+          400,
+        );
+      }
+      const { data, error } = await untypedFrom(admin, "provider_instances")
+        .update(updates)
+        .eq("id", instanceId)
+        .eq("scope", "system")
+        .select("*")
+        .single();
+      if (error || !data) {
+        throw new ModelProviderServiceError(
+          "instance_not_found",
+          "System provider instance not found.",
+          404,
+        );
+      }
+      return toResponse(data as ProviderInstanceRow);
+    },
+
+    async deleteSystemInstance(instanceId) {
+      const admin = requireAdminClientFor("deleteSystemInstance");
+      const { error } = await untypedFrom(admin, "provider_instances")
+        .delete()
+        .eq("id", instanceId)
+        .eq("scope", "system");
+      if (error) {
+        throw new ModelProviderServiceError(
+          "instance_delete_failed",
+          "Unable to delete system provider instance.",
+        );
+      }
+    },
+
+    async getInstanceScope(instanceId) {
+      if (!getAdminClient) return null;
+      const { data, error } = await untypedFrom(
+        getAdminClient(),
+        "provider_instances",
+      )
+        .select("scope")
+        .eq("id", instanceId)
+        .maybeSingle();
+      if (error || !data) return null;
+      const scope = (data as { scope: string | null }).scope;
+      return scope === "system" ? "system" : "workspace";
     },
   };
 }

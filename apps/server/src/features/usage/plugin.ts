@@ -1,10 +1,13 @@
+import { computeChatCreditCost } from "@loomic/shared";
+
 import { registerUsageRoutes } from "../../http/usage.js";
-import type { PluginDefinition } from "../../kernel/types.js";
+import type { PluginContext, PluginDefinition } from "../../kernel/types.js";
 import type { AdminSupabaseClient } from "../../supabase/admin.js";
 import type { UserSupabaseClient } from "../../supabase/user.js";
 import {
   createRunUsageAccumulator,
   type RunUsageAccumulator,
+  type RunUsageEntry,
 } from "./run-usage-accumulator.js";
 import { createUsageService } from "./usage-service.js";
 
@@ -44,6 +47,7 @@ export function createUsagePlugin(deps: {
           if (!workspaceId) return;
           await usageService.record({
             workspaceId,
+            userId: entry.userId,
             provider: entry.provider,
             model: entry.model,
             capability: "chat",
@@ -55,6 +59,10 @@ export function createUsagePlugin(deps: {
             outputTokens: entry.outputTokens,
             totalTokens: entry.inputTokens + entry.outputTokens,
           });
+
+          // 平台池计费（FORM-10）：只有走系统供应商（scope='system'）的运行
+          // 才扣额度——用户自带 Key（BYOK）不计费。计量失败不阻断主链路。
+          await chargePlatformPoolUsage(ctx, entry, workspaceId, payload.runId);
         }
         await next();
       });
@@ -69,4 +77,39 @@ export function createUsagePlugin(deps: {
       });
     },
   };
+}
+
+/**
+ * 平台池运行的费用结算：按 token 折算 credit 扣额度。
+ *
+ * 依赖用 tryGet 取（worker profile 无 credits/modelProviders，读到就跳过），
+ * 任何失败只记警告——额度结算是旁路，不能反过来打断用户对话。
+ */
+async function chargePlatformPoolUsage(
+  ctx: PluginContext,
+  entry: RunUsageEntry,
+  workspaceId: string,
+  runId: string,
+): Promise<void> {
+  if (!entry.providerInstanceId) return;
+  const modelProviders = ctx.tryGet("modelProviders");
+  const credits = ctx.tryGet("credits");
+  if (!modelProviders || !credits) return;
+  try {
+    const scope = await modelProviders.getInstanceScope(
+      entry.providerInstanceId,
+    );
+    if (scope !== "system") return;
+    const totalTokens = entry.inputTokens + entry.outputTokens;
+    const cost = computeChatCreditCost(totalTokens);
+    await credits.deductChatCredits(
+      workspaceId,
+      entry.userId,
+      cost,
+      runId,
+      `平台池对话 ${totalTokens} tokens`,
+    );
+  } catch (error) {
+    console.warn("[usage] platform pool charging failed:", error);
+  }
 }

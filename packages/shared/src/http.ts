@@ -67,6 +67,12 @@ export const unauthenticatedErrorResponseSchema = z.object({
 
 export const applicationErrorCodeSchema = z.enum([
   "application_error",
+  // 平台管理后台（FORM-10）
+  "forbidden",
+  "admin_query_failed",
+  "admin_action_failed",
+  "user_not_found",
+  "invalid_action",
   "bootstrap_failed",
   "brand_kit_not_found",
   "brand_kit_create_failed",

@@ -210,6 +210,8 @@ export function Workbench() {
   );
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
   const [pluginsOpen, setPluginsOpen] = useState(false);
+  /** 平台管理员标记：仅用于「显示后台入口」，鉴权在服务端（/api/admin/*）。 */
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
 
   const activeRunIdRef = useRef<string | null>(null);
   const activeTaskIdRef = useRef<string | null>(null);
@@ -300,6 +302,29 @@ export function Workbench() {
         }) => setExecutionModes(data.modes),
       )
       .catch(() => {});
+  }, [session]);
+
+  // 平台管理员标记（FORM-10）：决定是否显示「管理后台」入口，鉴权在服务端
+  useEffect(() => {
+    const token = session?.access_token;
+    if (!token) {
+      setIsPlatformAdmin(false);
+      return;
+    }
+    let cancelled = false;
+    fetch(`${getServerBaseUrl()}/api/admin/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => (r.ok ? r.json() : { isAdmin: false }))
+      .then((data: { isAdmin?: boolean }) => {
+        if (!cancelled) setIsPlatformAdmin(Boolean(data.isAdmin));
+      })
+      .catch(() => {
+        if (!cancelled) setIsPlatformAdmin(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [session]);
 
   // 嵌入画布删除项目后回传：清选中并刷新列表
@@ -551,6 +576,16 @@ export function Workbench() {
         });
       } else if (type === "run.completed") {
         apply((task) => ({ ...task, status: "completed" }));
+      } else if (type === "billing.error") {
+        // 平台池额度/套餐拦截（FORM-10）：服务端给的是可读原因，
+        // 直接透出，别让用户只看到「运行失败，请重试」。
+        const message =
+          (evt as { message?: string }).message ?? "额度不足，请联系管理员。";
+        apply((task) => ({
+          ...task,
+          status: "failed",
+          messages: [...task.messages, { role: "assistant", text: message }],
+        }));
       } else if (type === "run.failed") {
         apply((task) => ({
           ...task,
@@ -819,7 +854,9 @@ export function Workbench() {
             <UserMenu
               user={workbenchUser}
               collapsed
+              isAdmin={isPlatformAdmin}
               onOpenSettings={() => setSettingsTab("general")}
+              onOpenAdmin={() => router.push("/admin")}
               onSignOut={handleSignOut}
             />
           </div>
@@ -1050,7 +1087,9 @@ export function Workbench() {
             <UserMenu
               user={workbenchUser}
               collapsed={false}
+              isAdmin={isPlatformAdmin}
               onOpenSettings={() => setSettingsTab("general")}
+              onOpenAdmin={() => router.push("/admin")}
               onSignOut={handleSignOut}
             />
           </div>

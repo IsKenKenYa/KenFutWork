@@ -87,9 +87,14 @@ export type ProviderInstanceUpdateRequest = z.infer<
   typeof providerInstanceUpdateRequestSchema
 >;
 
+/** 实例作用域：workspace = 用户自带（BYOK）；system = 平台池（管理员配置、分发给用户）。 */
+export const providerScopeSchema = z.enum(["workspace", "system"]);
+export type ProviderScope = z.infer<typeof providerScopeSchema>;
+
 /** 实例响应：只有 apiKeyRef 语义的 hasCredential 标记，绝无 key 本体。 */
 export const providerInstanceResponseSchema = z.object({
   id: identifier,
+  scope: providerScopeSchema,
   name: z.string().min(1),
   protocol: providerProtocolSchema,
   baseUrl: z.string().optional(),
@@ -121,6 +126,8 @@ export const modelCatalogEntrySchema = z.object({
     instanceId: identifier,
     name: z.string().min(1),
     protocol: providerProtocolSchema,
+    /** workspace = 用户自带（不计费）；system = 平台池（按 token 计费）。 */
+    scope: providerScopeSchema,
   }),
 });
 export type ModelCatalogEntry = z.infer<typeof modelCatalogEntrySchema>;

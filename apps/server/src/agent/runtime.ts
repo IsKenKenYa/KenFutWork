@@ -1099,6 +1099,50 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 model: instanceSpec.model,
                 providerInstanceId: instanceSpec.instanceId,
               };
+
+              // 平台池额度门（FORM-10）：走系统供应商的对话必须有余额。
+              // 放在 runtime 而非 HTTP 路由，是因为 workbench 经 WS 发起 run，
+              // 只在路由拦会漏掉真实使用路径。BYOK 不计费也不拦。
+              // 工作区直查用户 client（同图像路径）：ensureViewer 的邮箱校验
+              // 在 runtime 上下文拿不到真实邮箱，不可用。
+              const scope = await options.modelProviders.getInstanceScope(
+                instanceSpec.instanceId,
+              );
+              if (
+                scope === "system" &&
+                options.creditService &&
+                options.createUserClient
+              ) {
+                const balanceClient = options.createUserClient(
+                  run.accessToken,
+                ) as UserSupabaseClient;
+                const { data: balanceWorkspace } = await balanceClient
+                  .from("workspaces")
+                  .select("id")
+                  .eq("type", "personal")
+                  .limit(1)
+                  .single();
+                if (balanceWorkspace?.id) {
+                  const balanceInfo = await options.creditService.getBalance(
+                    balanceWorkspace.id,
+                  );
+                  if (balanceInfo.balance <= 0) {
+                    pushBillingErrorAndAbort(
+                      run,
+                      run.canvasId,
+                      options,
+                      "insufficient_credits",
+                      "平台额度已用完，请联系管理员充值或改用自己的供应商 Key。",
+                      {
+                        currentBalance: balanceInfo.balance,
+                        plan: balanceInfo.plan,
+                        dailyClaimed: balanceInfo.dailyClaimed,
+                      },
+                    );
+                    return;
+                  }
+                }
+              }
             }
           }
 

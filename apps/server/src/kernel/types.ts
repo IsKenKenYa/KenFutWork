@@ -4,6 +4,7 @@ import type { AgentBackendFactory } from "../agent/backends/index.js";
 import type { AgentPersistenceService } from "../agent/persistence/index.js";
 import type { AgentRunService } from "../agent/runtime.js";
 import type { ServerEnv } from "../config/env.js";
+import type { AdminService } from "../features/admin/admin-service.js";
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
@@ -44,6 +45,8 @@ export interface ServiceMap {
   credits: CreditService;
   tierGuard: TierGuard;
   payments: PaymentService;
+  /** 平台管理后台（FORM-10：系统供应商分发 + 额度/套餐统一管理） */
+  admin: AdminService;
   /** 领域服务（design 侧为主） */
   brandKit: BrandKitService;
   canvas: CanvasService;

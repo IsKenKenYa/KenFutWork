@@ -23,6 +23,7 @@ import type { ProviderInstanceResponse } from "@loomic/shared";
 
 const instance: ProviderInstanceResponse = {
   id: "inst-1",
+  scope: "workspace",
   name: "我的网关",
   protocol: "openai-compatible",
   hasCredential: true,
