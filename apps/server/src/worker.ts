@@ -75,6 +75,7 @@ async function main() {
   const creditService = kernel.get("credits");
   const modelProviders = kernel.get("modelProviders");
   const usageService = kernel.get("usage");
+  const assetWriter = kernel.get("assetWriter");
 
   // Base context — per-message fields (queue, msgId, renewVt) are added in processMessage
   const baseCtx = {
@@ -84,6 +85,8 @@ async function main() {
     env,
     modelProviders,
     usageService,
+    creditService,
+    assetWriter,
   };
 
   const CONCURRENCY_BY_QUEUE: Record<string, number> = {

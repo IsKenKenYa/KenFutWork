@@ -23,7 +23,8 @@ export type NewAssetInput = {
   mimeType: string;
   objectPath: string;
   projectId?: string | undefined;
-  userId: string;
+  /** `created_by` 可空：worker/executor 路径无用户身份（生成物元数据）。 */
+  userId?: string | undefined;
   workspaceId: string;
 };
 
@@ -73,7 +74,7 @@ export function createUploadRepository(
             input.objectPath,
             input.mimeType,
             input.byteSize,
-            input.userId,
+            input.userId ?? null,
             input.projectId ?? null,
           ],
         );

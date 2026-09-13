@@ -22,6 +22,7 @@ import type { PermissionService } from "../features/permissions/permission-servi
 import type { PersistenceService } from "../features/persistence/types.js";
 import type { ProjectService } from "../features/projects/project-service.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
+import type { AssetWriter } from "../features/uploads/asset-writer.js";
 import type { UploadService } from "../features/uploads/upload-service.js";
 import type { RunUsageAccumulator } from "../features/usage/run-usage-accumulator.js";
 import type { UsageService } from "../features/usage/usage-service.js";
@@ -56,6 +57,12 @@ export interface ServiceMap {
   settings: SettingsService;
   threads: ThreadService;
   uploads: UploadService;
+  /**
+   * 生成物元数据写入缝（worker/executor 路径）：executor 无用户身份、也无 viewer，
+   * 只能按任务记录里的工作区写 `asset_objects`——与 `uploads`（身份取自鉴权用户）
+   * 同表不同口径，故独立成 key，且 worker profile 也能装配（§4.2）。
+   */
+  assetWriter: AssetWriter;
   viewer: ViewerService;
   /**
    * 自管 Postgres 存储缝（§4.2；`FORM-9`）：唯一 DB 入口，workspace 隔离在

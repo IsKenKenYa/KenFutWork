@@ -2,6 +2,7 @@ import { createCreditsPlugin } from "../features/credits/plugin.js";
 import { createJobsPlugin } from "../features/jobs/plugin.js";
 import { createModelProvidersPlugin } from "../features/model-providers/plugin.js";
 import { persistencePlugin } from "../features/persistence/plugin.js";
+import { createUploadsPlugin } from "../features/uploads/plugin.js";
 import { createUsagePlugin } from "../features/usage/plugin.js";
 import type { PluginDefinition } from "../kernel/types.js";
 import type { AdminSupabaseClient } from "../supabase/admin.js";
@@ -26,6 +27,8 @@ export function workerProfile(deps: WorkerProfileDeps): PluginDefinition[] {
     createCreditsPlugin({ withRoutes: false }),
     createJobsPlugin({ withRoutes: false }),
     createUsagePlugin({ withRoutes: false }),
+    // 只取 assetWriter 缝（生成物元数据写入）；路由与上传服务不注册
+    createUploadsPlugin({ withRoutes: false }),
     createModelProvidersPlugin({
       credentialEnv: deps.credentialEnv,
       withRoutes: false,

@@ -1,3 +1,5 @@
+import type { BackgroundJob } from "@loomic/shared";
+
 import { resolveVideoProviderName } from "../../../generation/providers/registry.js";
 import { generateVideo } from "../../../generation/video-generation.js";
 import { type ExecutorContext, registerExecutor } from "../job-executor.js";
@@ -10,7 +12,7 @@ registerExecutor(
 
     const admin = ctx.getAdminClient();
     // 经 jobService 取（按 id 的系统级读，与 worker 其它状态迁移同一入口）。
-    let jobRow;
+    let jobRow: BackgroundJob;
     try {
       jobRow = await ctx.jobService.getJobAdmin(jobId);
     } catch {
@@ -137,24 +139,14 @@ registerExecutor(
       }
       lap("storage_upload_done");
 
-      const { data: assetRow, error: assetError } = await admin
-        .from("asset_objects")
-        .insert({
-          workspace_id: workspaceId,
-          bucket: "project-assets",
-          object_path: objectPath,
-          mime_type: generated.mimeType ?? "video/mp4",
-          byte_size: buffer.length,
-          ...(createdBy ? { created_by: createdBy } : {}),
-        })
-        .select("id")
-        .single();
-
-      if (assetError || !assetRow) {
-        throw new Error(
-          `Failed to create asset record: ${assetError?.message ?? "unknown error"}`,
-        );
-      }
+      // 经 assetWriter 缝：executor 无用户身份，按任务记录的工作区写入
+      const assetId = await ctx.assetWriter.recordGeneratedAsset({
+        byteSize: buffer.length,
+        mimeType: generated.mimeType ?? "video/mp4",
+        objectPath,
+        ...(createdBy ? { userId: createdBy } : {}),
+        workspaceId,
+      });
       lap("asset_record_done");
 
       const { data: urlData } = admin.storage
@@ -163,7 +155,7 @@ registerExecutor(
 
       lap("total");
       return {
-        asset_id: (assetRow as { id: string }).id,
+        asset_id: assetId,
         signed_url: urlData.publicUrl,
         object_path: objectPath,
         width: generated.width,

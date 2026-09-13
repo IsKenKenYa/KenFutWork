@@ -1,6 +1,6 @@
 // @credits-system — Image generation executor: applies watermark for free-tier users
 
-import type { SubscriptionPlan } from "@loomic/shared";
+import type { BackgroundJob, SubscriptionPlan } from "@loomic/shared";
 import { generateImage } from "../../../generation/image-generation.js";
 import { resolveImageProviderName } from "../../../generation/providers/registry.js";
 import type { GeneratedImage } from "../../../generation/types.js";
@@ -18,7 +18,7 @@ registerExecutor(
     // so we must fetch prompt/model/aspect_ratio from background_jobs.payload.
     // 经 jobService 取（按 id 的系统级读，与 worker 其它状态迁移同一入口）。
     const admin = ctx.getAdminClient();
-    let jobRow;
+    let jobRow: BackgroundJob;
     try {
       jobRow = await ctx.jobService.getJobAdmin(jobId);
     } catch {
@@ -146,14 +146,9 @@ registerExecutor(
       // Apply watermark for free-plan users
       if (workspaceId) {
         try {
-          const { data: sub } = await admin
-            .from("subscriptions")
-            .select("plan")
-            .eq("workspace_id", workspaceId)
-            .maybeSingle();
-
-          const plan: SubscriptionPlan =
-            (sub?.plan as SubscriptionPlan) ?? "free";
+          const subscription =
+            await ctx.creditService.getSubscription(workspaceId);
+          const plan: SubscriptionPlan = subscription.plan;
           if (plan === "free") {
             buffer = await applyWatermark(
               buffer,
@@ -183,25 +178,15 @@ registerExecutor(
       }
       lap("storage_upload_done");
 
-      // Insert asset_objects record — only include created_by if we have a valid user UUID
-      const { data: assetRow, error: assetError } = await admin
-        .from("asset_objects")
-        .insert({
-          workspace_id: workspaceId,
-          bucket: "project-assets",
-          object_path: objectPath,
-          mime_type: generated.mimeType ?? "image/png",
-          byte_size: buffer.length,
-          ...(createdBy ? { created_by: createdBy } : {}),
-        })
-        .select("id")
-        .single();
-
-      if (assetError || !assetRow) {
-        throw new Error(
-          `Failed to create asset record: ${assetError?.message ?? "unknown error"}`,
-        );
-      }
+      // Insert asset_objects record（经 assetWriter 缝：executor 无用户身份，
+      // 按任务记录的工作区写入；`created_by` 可空）
+      const assetId = await ctx.assetWriter.recordGeneratedAsset({
+        byteSize: buffer.length,
+        mimeType: generated.mimeType ?? "image/png",
+        objectPath,
+        ...(createdBy ? { userId: createdBy } : {}),
+        workspaceId,
+      });
 
       lap("asset_record_done");
 
@@ -212,7 +197,7 @@ registerExecutor(
 
       lap("total");
       return {
-        asset_id: (assetRow as { id: string }).id,
+        asset_id: assetId,
         signed_url: urlData.publicUrl,
         object_path: objectPath,
         width: generated.width,
