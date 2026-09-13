@@ -1,28 +1,22 @@
 import type { WorkspaceSettings } from "@loomic/shared";
 
-import type {
-  AuthenticatedUser,
-  UserSupabaseClient,
-} from "../../supabase/user.js";
+import type { AuthenticatedUser } from "../../supabase/user.js";
+import type { SettingsRepository } from "./repository.js";
 
 const FALLBACK_MODEL = "gpt-5.4-mini";
 
+type SettingsErrorCode =
+  | "settings_not_found"
+  | "settings_read_failed"
+  | "settings_update_failed";
+
 export class SettingsServiceError extends Error {
   readonly statusCode: number;
-  readonly code:
-    | "settings_not_found"
-    | "settings_read_failed"
-    | "settings_update_failed";
+  readonly code: SettingsErrorCode;
 
-  constructor(
-    code:
-      | "settings_not_found"
-      | "settings_read_failed"
-      | "settings_update_failed",
-    message: string,
-    statusCode: number,
-  ) {
+  constructor(code: SettingsErrorCode, message: string, statusCode: number) {
     super(message);
+    this.name = "SettingsServiceError";
     this.code = code;
     this.statusCode = statusCode;
   }
@@ -41,51 +35,38 @@ export type SettingsService = {
 };
 
 export function createSettingsService(options: {
-  createUserClient: (accessToken: string) => UserSupabaseClient;
+  repository: SettingsRepository;
   /** Override the fallback model when no workspace setting exists. */
   defaultModel?: string;
 }): SettingsService {
   const defaultModel = options.defaultModel ?? FALLBACK_MODEL;
+  const { repository } = options;
 
   return {
-    async getWorkspaceSettings(user, workspaceId) {
-      const client = options.createUserClient(user.accessToken);
-      const { data, error } = await client
-        .from("workspace_settings")
-        .select("default_model")
-        .eq("workspace_id", workspaceId)
-        .maybeSingle();
+    async getWorkspaceSettings(_user, workspaceId) {
+      const stored = await repository
+        .findDefaultModel(workspaceId)
+        .catch(() => {
+          throw new SettingsServiceError(
+            "settings_read_failed",
+            "Unable to load workspace settings.",
+            500,
+          );
+        });
 
-      if (error) {
-        throw new SettingsServiceError(
-          "settings_read_failed",
-          "Unable to load workspace settings.",
-          500,
-        );
-      }
-
-      return {
-        defaultModel: data?.default_model ?? defaultModel,
-      };
+      return { defaultModel: stored ?? defaultModel };
     },
 
-    async updateWorkspaceSettings(user, workspaceId, settings) {
-      const client = options.createUserClient(user.accessToken);
-      const { error } = await client.from("workspace_settings").upsert(
-        {
-          workspace_id: workspaceId,
-          default_model: settings.defaultModel,
-        },
-        { onConflict: "workspace_id" },
-      );
-
-      if (error) {
-        throw new SettingsServiceError(
-          "settings_update_failed",
-          "Unable to update workspace settings.",
-          500,
-        );
-      }
+    async updateWorkspaceSettings(_user, workspaceId, settings) {
+      await repository
+        .upsertDefaultModel(workspaceId, settings.defaultModel)
+        .catch(() => {
+          throw new SettingsServiceError(
+            "settings_update_failed",
+            "Unable to update workspace settings.",
+            500,
+          );
+        });
 
       return settings;
     },
