@@ -28,6 +28,15 @@ export interface WorkspaceSqlClient extends SqlClient {
 }
 
 /**
+ * 单连接事务句柄：回调内语句同事务提交，抛错整体回滚。
+ * 原子写（余额/额度、多表插入）必须走事务，禁止用多条独立语句拼「伪事务」。
+ */
+export interface SqlTransaction extends SqlClient {
+  /** 事务内的工作区作用域客户端（与根客户端同一隔离规则）。 */
+  forWorkspace(workspaceId: string): WorkspaceSqlClient;
+}
+
+/**
  * persistence 缝的服务定义（三元组 Definition）。
  * Provider：自管 Postgres（`FORM-2` 桌面捆绑实例 / 自托管用户 Postgres）；
  * Consumer：各聚合 repository。
@@ -35,6 +44,8 @@ export interface WorkspaceSqlClient extends SqlClient {
 export interface PersistenceService extends SqlClient {
   /** 工作区隔离入口；workspace 归属数据一律经此访问。 */
   forWorkspace(workspaceId: string): WorkspaceSqlClient;
+  /** 原子写入口：回调内全部语句同事务，抛错回滚。 */
+  transaction<T>(fn: (tx: SqlTransaction) => Promise<T>): Promise<T>;
   /** 启动期连通性检查（配置 fail loud）。 */
   ping(): Promise<void>;
   close(): Promise<void>;

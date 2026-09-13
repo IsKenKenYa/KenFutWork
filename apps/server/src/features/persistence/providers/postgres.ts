@@ -5,6 +5,7 @@ import type {
   PersistenceService,
   SqlClient,
   SqlRow,
+  SqlTransaction,
   WorkspaceSqlClient,
 } from "../types.js";
 
@@ -14,14 +15,33 @@ export const WORKSPACE_MARKER = ":workspace";
 const DEFAULT_POOL_MAX = 10;
 const PING_SQL = "select 1 as ok";
 
+export type PostgresResult = { rowCount: number | null; rows: unknown[] };
+
+type QueryFn = (text: string, values: unknown[]) => Promise<PostgresResult>;
+
+/** 独占连接（事务用）：对应池借出的单个物理连接，用完必须 release。 */
+export interface PostgresConnection {
+  query(text: string, values: unknown[]): Promise<PostgresResult>;
+  release(): void;
+}
+
 /** 连接池抽象：生产用 pg `Pool`，测试与桌面内嵌实例注入自定义 runner。 */
 export interface PostgresQueryRunner {
-  query(
-    text: string,
-    values: unknown[],
-  ): Promise<{ rowCount: number | null; rows: unknown[] }>;
+  query(text: string, values: unknown[]): Promise<PostgresResult>;
+  acquire(): Promise<PostgresConnection>;
   end(): Promise<void>;
 }
+
+/** 池借出对象与连接对象的共同查询形状（`Pool` 与 `PoolClient` 均满足）。 */
+type Queryable = {
+  query: (
+    text: string,
+    values: never[],
+  ) => Promise<{
+    rowCount: number | null;
+    rows: unknown[];
+  }>;
+};
 
 /**
  * 自管 Postgres Provider（`FORM-2`/`FORM-9`）：单一信任 DB 角色、参数化查询、
@@ -36,24 +56,41 @@ export function createPostgresPersistence(options: {
     max: options.maxConnections ?? DEFAULT_POOL_MAX,
   });
 
-  return createPersistenceFromRunner({
-    query: async (text, values) => {
-      const result = await pool.query(text, values as never[]);
+  return createPersistenceFromRunner(createPoolRunner(pool));
+}
+
+function createPoolRunner(pool: Pool): PostgresQueryRunner {
+  const runOn = (target: Queryable): QueryFn => {
+    return async (text, values) => {
+      const result = await target.query(text, values as never[]);
       return { rowCount: result.rowCount, rows: result.rows };
+    };
+  };
+
+  return {
+    query: runOn(pool),
+    async acquire() {
+      const client = await pool.connect();
+      return {
+        query: runOn(client),
+        release: () => client.release(),
+      };
     },
     end: () => pool.end(),
-  });
+  };
 }
 
 /** 由给定 runner 组装服务（测试用假 runner；桌面内嵌 Postgres 复用同一逻辑）。 */
 export function createPersistenceFromRunner(
   runner: PostgresQueryRunner,
 ): PersistenceService {
-  const root = createClient(runner);
+  const root = createClient(normalizeQuery(runner.query));
 
   return {
     ...root,
-    forWorkspace: (workspaceId) => createWorkspaceClient(runner, workspaceId),
+    forWorkspace: (workspaceId) =>
+      createWorkspaceClient(normalizeQuery(runner.query), workspaceId),
+    transaction: (fn) => runTransaction(runner, fn),
     async ping() {
       await root.query(PING_SQL);
     },
@@ -61,31 +98,62 @@ export function createPersistenceFromRunner(
   };
 }
 
-function createClient(runner: PostgresQueryRunner): SqlClient {
+/**
+ * 单连接事务：回调内语句同事务生效，抛错回滚并原样上抛。
+ * 连接在 `finally` 释放——回滚失败也不泄漏连接。
+ */
+async function runTransaction<T>(
+  runner: PostgresQueryRunner,
+  fn: (tx: SqlTransaction) => Promise<T>,
+): Promise<T> {
+  const connection = await runner.acquire();
+  const query = normalizeQuery(connection.query);
+
+  try {
+    await query("begin", []);
+    const result = await fn({
+      ...createClient(query),
+      forWorkspace: (workspaceId) => createWorkspaceClient(query, workspaceId),
+    });
+    await query("commit", []);
+    return result;
+  } catch (error) {
+    try {
+      await query("rollback", []);
+    } catch {
+      // 回滚失败不覆盖原始错误：连接仍被释放，健康度交池判定。
+    }
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+function createClient(query: QueryFn): SqlClient {
   return {
     async query<T extends SqlRow = SqlRow>(
       sql: string,
       params?: readonly unknown[],
     ) {
-      const result = await runRaw(runner, sql, [...(params ?? [])]);
+      const result = await query(sql, [...(params ?? [])]);
       return result.rows as T[];
     },
     async queryOne<T extends SqlRow = SqlRow>(
       sql: string,
       params?: readonly unknown[],
     ) {
-      const result = await runRaw(runner, sql, [...(params ?? [])]);
+      const result = await query(sql, [...(params ?? [])]);
       return (result.rows[0] as T | undefined) ?? null;
     },
     async execute(sql: string, params?: readonly unknown[]) {
-      const result = await runRaw(runner, sql, [...(params ?? [])]);
+      const result = await query(sql, [...(params ?? [])]);
       return result.rowCount ?? 0;
     },
   };
 }
 
 function createWorkspaceClient(
-  runner: PostgresQueryRunner,
+  query: QueryFn,
   workspaceId: string,
 ): WorkspaceSqlClient {
   /** 绑定工作区：`:workspace` 命中末位占位符；漏写即隔离违约（不下发查询）。 */
@@ -111,7 +179,7 @@ function createWorkspaceClient(
       params?: readonly unknown[],
     ) {
       const { text, values } = bind(sql, params, "query");
-      const result = await runRaw(runner, text, values);
+      const result = await query(text, values);
       return result.rows as T[];
     },
     async queryOne<T extends SqlRow = SqlRow>(
@@ -119,27 +187,26 @@ function createWorkspaceClient(
       params?: readonly unknown[],
     ) {
       const { text, values } = bind(sql, params, "queryOne");
-      const result = await runRaw(runner, text, values);
+      const result = await query(text, values);
       return (result.rows[0] as T | undefined) ?? null;
     },
     async execute(sql: string, params?: readonly unknown[]) {
       const { text, values } = bind(sql, params, "execute");
-      const result = await runRaw(runner, text, values);
+      const result = await query(text, values);
       return result.rowCount ?? 0;
     },
   };
 }
 
-async function runRaw(
-  runner: PostgresQueryRunner,
-  sql: string,
-  values: unknown[],
-): Promise<{ rowCount: number | null; rows: unknown[] }> {
-  try {
-    return await runner.query(sql, values);
-  } catch (error) {
-    throw toSqlError(error);
-  }
+/** 把「可能抛驱动错误」的查询函数包成归一错误的 `QueryFn`。 */
+function normalizeQuery(raw: QueryFn): QueryFn {
+  return async (text, values) => {
+    try {
+      return await raw(text, values);
+    } catch (error) {
+      throw toSqlError(error);
+    }
+  };
 }
 
 /** 驱动错误 → `SqlError`：只保留判重需要的字段，业务代码不依赖 pg 错误形状。 */
