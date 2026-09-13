@@ -67,6 +67,11 @@ export const unauthenticatedErrorResponseSchema = z.object({
 
 export const applicationErrorCodeSchema = z.enum([
   "application_error",
+  // 自管认证（M1.4）：与 auth-contracts.ts 的 authErrorResponseSchema 同一组码
+  "auth_unavailable",
+  "email_taken",
+  "invalid_credentials",
+  "invalid_input",
   // 平台管理后台（FORM-10）
   "forbidden",
   "admin_query_failed",
@@ -129,6 +134,16 @@ export const applicationErrorCodeSchema = z.enum([
   "variant_not_found",
   "checkout_failed",
   "generation_failed",
+  // 插件市场（安装前兼容性门禁 + 启停）
+  "invalid_request",
+  "plugin_not_found",
+  "plugin_source_failed",
+  "plugin_incompatible",
+  "install_failed",
+  "uninstall_failed",
+  "toggle_failed",
+  "system_plugin",
+  "not_installed",
 ]);
 
 export const applicationErrorResponseSchema = z.object({

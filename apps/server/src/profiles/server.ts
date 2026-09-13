@@ -4,6 +4,7 @@ import type { ServerEnv } from "../config/env.js";
 import { createAdminPlugin } from "../features/admin/plugin.js";
 import { createAgentModesPlugin } from "../features/agent-modes/plugin.js";
 import { createAgentRunsPlugin } from "../features/agent-runs/plugin.js";
+import { createAuthPlugin } from "../features/auth/plugin.js";
 import { createBlobPlugin } from "../features/blob/plugin.js";
 import { createViewerPlugin } from "../features/bootstrap/plugin.js";
 import { brandKitPlugin } from "../features/brand-kit/plugin.js";
@@ -32,7 +33,6 @@ import { createUploadsPlugin } from "../features/uploads/plugin.js";
 import { createUsagePlugin } from "../features/usage/plugin.js";
 import type { KernelEvents, PluginDefinition } from "../kernel/types.js";
 import type { AdminSupabaseClient } from "../supabase/admin.js";
-import { authPlugin } from "../supabase/plugin.js";
 import type { UserSupabaseClient } from "../supabase/user.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 
@@ -128,7 +128,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
   return [
     persistencePlugin,
     createBlobPlugin({ getAdminClient: deps.getAdminClient }),
-    authPlugin,
+    createAuthPlugin(),
     brandKitPlugin,
     createCreditsPlugin(),
     createViewerPlugin(),

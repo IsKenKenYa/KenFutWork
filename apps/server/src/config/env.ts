@@ -56,6 +56,11 @@ export type ServerEnv = {
   metasoApiBase?: string;
   /** blob 缝形态：`local`（桌面本地 FS）/ `supabase`（过渡期与自托管现状）。 */
   blobDriver?: string;
+  /**
+   * 认证形态：`supabase`（过渡期，默认）/ `local`（自管）。
+   * 切到 `local` 会让 GoTrue 签发的令牌失效，须与前端替换、口令种子同一 PR 完成。
+   */
+  authDriver?: string;
   /** `local` 形态的对象根目录。 */
   blobDir?: string;
   /** `local` 形态对外可读的基址（server 自己的 blob 读取路由）。 */
@@ -128,6 +133,8 @@ export function loadServerEnv(
     normalizeOptionalString(source.SUPABASE_ANON_KEY);
   const supabaseDbUrl =
     overrides.supabaseDbUrl ?? normalizeOptionalString(source.SUPABASE_DB_URL);
+  const authDriver =
+    overrides.authDriver ?? normalizeOptionalString(source.LOOMIC_AUTH_DRIVER);
   const blobDriver =
     overrides.blobDriver ?? normalizeOptionalString(source.LOOMIC_BLOB_DRIVER);
   const blobDir =
@@ -264,6 +271,7 @@ export function loadServerEnv(
     ...(agentFilesRoot ? { agentFilesRoot } : {}),
     ...(credentialSecret ? { credentialSecret } : {}),
     ...(databaseUrl ? { databaseUrl } : {}),
+    ...(authDriver ? { authDriver } : {}),
     ...(blobDriver ? { blobDriver } : {}),
     ...(blobDir ? { blobDir } : {}),
     ...(blobPublicBaseUrl ? { blobPublicBaseUrl } : {}),
