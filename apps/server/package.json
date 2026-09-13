@@ -18,6 +18,7 @@
     "@loomic/shared": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "deepagents": "^1.13.2",
+    "embedded-postgres": "17.10.0-beta.17",
     "fastify": "^5.12.1",
     "google-auth-library": "^11.0.2",
     "jose": "^6.2.10",

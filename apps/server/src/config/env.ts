@@ -56,6 +56,14 @@ export type ServerEnv = {
   metasoApiBase?: string;
   /** 队列形态：`pgmq`（服务端/自托管，默认）/ `in-process`（桌面，FORM-2）。 */
   queueDriver?: string;
+  /** 桌面应用数据目录（`LOOMIC_DATA_DIR`）；缺省按平台惯例解析（FORM-2）。 */
+  desktopDataDir?: string;
+  /** 内嵌 Postgres 二进制目录（`LOOMIC_PG_BIN_DIR`）；缺省按发布包/依赖包解析。 */
+  pgBinDir?: string;
+  /** 桌面形态：由本进程拉起内嵌 Postgres 并跑迁移（FORM-2）。 */
+  embeddedPostgres?: boolean;
+  /** 内嵌 Postgres 端口；缺省自动挑空闲端口（避免与用户自装 Postgres 冲突）。 */
+  embeddedPostgresPort?: number;
   /** `local` 形态的对象根目录。 */
   blobDir?: string;
   /** `local` 形态对外可读的基址（server 自己的 blob 读取路由）。 */
@@ -120,6 +128,18 @@ export function loadServerEnv(
     normalizeOptionalString(source.LOOMIC_QUEUE_DRIVER);
   const blobDir =
     overrides.blobDir ?? normalizeOptionalString(source.LOOMIC_BLOB_DIR);
+  const desktopDataDir =
+    overrides.desktopDataDir ?? normalizeOptionalString(source.LOOMIC_DATA_DIR);
+  const pgBinDir =
+    overrides.pgBinDir ?? normalizeOptionalString(source.LOOMIC_PG_BIN_DIR);
+  const embeddedPostgres =
+    overrides.embeddedPostgres ?? parseBooleanFlag(source.LOOMIC_EMBEDDED_PG);
+  const embeddedPostgresPort =
+    overrides.embeddedPostgresPort ??
+    parseOptionalPort(
+      source.LOOMIC_EMBEDDED_PG_PORT,
+      "LOOMIC_EMBEDDED_PG_PORT",
+    );
   const blobPublicBaseUrl =
     overrides.blobPublicBaseUrl ??
     normalizeOptionalString(source.LOOMIC_BLOB_PUBLIC_BASE_URL);
@@ -247,6 +267,10 @@ export function loadServerEnv(
     ...(databaseUrl ? { databaseUrl } : {}),
     ...(queueDriver ? { queueDriver } : {}),
     ...(blobDir ? { blobDir } : {}),
+    ...(desktopDataDir ? { desktopDataDir } : {}),
+    ...(pgBinDir ? { pgBinDir } : {}),
+    ...(embeddedPostgres ? { embeddedPostgres } : {}),
+    ...(embeddedPostgresPort ? { embeddedPostgresPort } : {}),
     ...(blobPublicBaseUrl ? { blobPublicBaseUrl } : {}),
     ...(mcpServers?.length ? { mcpServers } : {}),
     ...(searchApiKey ? { searchApiKey } : {}),
@@ -369,6 +393,30 @@ function parsePort(rawPort: string | undefined) {
   const port = Number.parseInt(rawPort, 10);
   if (!Number.isInteger(port) || port <= 0) {
     throw new Error(`Invalid LOOMIC_SERVER_PORT value: ${rawPort}`);
+  }
+
+  return port;
+}
+
+/** 布尔开关：`1`/`true`/`yes`/`on` 为真，其余视为未设置（fail loud 落在使用处）。 */
+function parseBooleanFlag(rawValue: string | undefined) {
+  const normalized = rawValue?.trim().toLowerCase();
+  if (!normalized) {
+    return undefined;
+  }
+  return ["1", "true", "yes", "on"].includes(normalized) ? true : undefined;
+}
+
+/** 可选端口：缺省 `undefined`（由内核自动挑空闲端口），非法值 fail loud。 */
+function parseOptionalPort(rawValue: string | undefined, name: string) {
+  const normalized = normalizeOptionalString(rawValue);
+  if (!normalized) {
+    return undefined;
+  }
+
+  const port = Number.parseInt(normalized, 10);
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    throw new Error(`Invalid ${name} value: ${rawValue}`);
   }
 
   return port;

@@ -5,6 +5,8 @@ packages:
 ignoredBuiltDependencies:
   - '@biomejs/biome'
   - msw
+  # 只分发 Postgres 17 二进制；其 postinstall 仅重建 POSIX 符号链接（Windows 上无意义）
+  - '@embedded-postgres/windows-x64'
 
 onlyBuiltDependencies:
   - esbuild
