@@ -3,6 +3,13 @@
 import type { ExecutionMode } from "@loomic/shared";
 import { useCallback, useEffect, useState } from "react";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   fetchExecutionMode,
   fetchExecutionModes,
   updateExecutionMode,
@@ -74,20 +81,29 @@ export function ExecutionModeSelect({
       <label htmlFor="execution-mode" className="text-xs text-muted-foreground">
         执行模式
       </label>
-      <select
-        id="execution-mode"
-        aria-label="执行模式"
+      <Select
         value={mode}
         disabled={saving}
-        onChange={(e) => void handleChange(e.target.value)}
-        className="rounded-md border bg-transparent px-2 py-1 text-xs"
+        onValueChange={(next) => {
+          if (typeof next === "string") void handleChange(next);
+        }}
+        items={modes.map((m) => ({ value: m.id, label: m.label }))}
       >
-        {modes.map((m) => (
-          <option key={m.id} value={m.id}>
-            {m.label}
-          </option>
-        ))}
-      </select>
+        <SelectTrigger
+          id="execution-mode"
+          aria-label="执行模式"
+          className="px-2 py-1 text-xs"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {modes.map((m) => (
+            <SelectItem key={m.id} value={m.id}>
+              {m.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       {saving ? (
         <span className="text-xs text-muted-foreground">保存中…</span>
       ) : null}

@@ -3,6 +3,13 @@
 import type { PermissionTier } from "@loomic/shared";
 import { useCallback, useEffect, useState } from "react";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   approveToolPermission,
   fetchPermissionTier,
   updatePermissionTier,
@@ -127,18 +134,24 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
           onChange={(e) => setToolName(e.target.value)}
           className="w-48 rounded-md border px-3 py-1.5 text-sm"
         />
-        <select
-          aria-label="记忆粒度"
+        <Select
           value={scope}
-          onChange={(e) => setScope(e.target.value as typeof scope)}
-          className="rounded-md border px-2 py-1.5 text-sm"
+          onValueChange={(next) => {
+            if (typeof next === "string") setScope(next as typeof scope);
+          }}
+          items={SCOPES.map((s) => ({ value: s.value, label: s.label }))}
         >
-          {SCOPES.map((s) => (
-            <option key={s.value} value={s.value}>
-              {s.label}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger aria-label="记忆粒度" className="py-1.5">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SCOPES.map((s) => (
+              <SelectItem key={s.value} value={s.value}>
+                {s.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <button
           type="button"
           onClick={() => void handleApprove()}

@@ -1,6 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 /** 浏览器设置：Agent 浏览器行为偏好（本机持久化，workbench 专属）。 */
 interface BrowserSettings {
@@ -109,22 +116,29 @@ export function BrowserSettingsSection() {
             Agent 联网检索时使用的搜索引擎
           </span>
         </span>
-        <select
-          aria-label="默认搜索引擎"
+        <Select
           value={settings.searchEngine}
-          onChange={(e) =>
-            update({
-              searchEngine: e.target.value as BrowserSettings["searchEngine"],
-            })
-          }
-          className="rounded-md border bg-background px-2 py-1.5 text-sm"
+          onValueChange={(next) => {
+            if (typeof next === "string") {
+              update({ searchEngine: next as BrowserSettings["searchEngine"] });
+            }
+          }}
+          items={SEARCH_ENGINES.map((e) => ({
+            value: e.value,
+            label: e.label,
+          }))}
         >
-          {SEARCH_ENGINES.map((engine) => (
-            <option key={engine.value} value={engine.value}>
-              {engine.label}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger aria-label="默认搜索引擎">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SEARCH_ENGINES.map((engine) => (
+              <SelectItem key={engine.value} value={engine.value}>
+                {engine.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </label>
 
       <div className="divide-y">

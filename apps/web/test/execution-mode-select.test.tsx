@@ -54,30 +54,32 @@ afterEach(() => {
 
 describe("ExecutionModeSelect（P7 执行模式切换 UI）", () => {
   it("加载模式词汇表与当前模式并渲染下拉", async () => {
+    const user = userEvent.setup();
     render(<ExecutionModeSelect accessToken="token" threadId="thread-1" />);
-    const select = (await screen.findByLabelText(
-      "执行模式",
-    )) as HTMLSelectElement;
+    const select = await screen.findByLabelText("执行模式");
     await waitFor(() => {
-      expect((select as HTMLSelectElement).value).toBe("agent");
+      expect(select.textContent).toContain("自主执行");
     });
-    expect(Array.from(select.options).map((o) => o.textContent)).toEqual([
-      "自主执行",
-      "先规划",
-    ]);
+    // 打开下拉验证词汇表（Base UI Select 为按钮触发，无原生 options）
+    await user.click(select);
+    expect(
+      await screen.findByRole("option", { name: "自主执行" }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("option", { name: "先规划" }),
+    ).toBeInTheDocument();
   });
 
   it("模拟点击切换为 plan：发起 PUT 并保持选中", async () => {
     const user = userEvent.setup();
     render(<ExecutionModeSelect accessToken="token" threadId="thread-1" />);
-    const select = (await screen.findByLabelText(
-      "执行模式",
-    )) as HTMLSelectElement;
+    const select = await screen.findByLabelText("执行模式");
     await waitFor(() => {
-      expect((select as HTMLSelectElement).value).toBe("agent");
+      expect(select.textContent).toContain("自主执行");
     });
 
-    await user.selectOptions(select, "plan");
+    await user.click(select);
+    await user.click(await screen.findByRole("option", { name: "先规划" }));
     await waitFor(() => {
       expect(updateExecutionModeMock).toHaveBeenCalledWith(
         "token",
@@ -85,23 +87,24 @@ describe("ExecutionModeSelect（P7 执行模式切换 UI）", () => {
         { mode: "plan" },
       );
     });
-    expect((select as HTMLSelectElement).value).toBe("plan");
+    await waitFor(() => {
+      expect(select.textContent).toContain("先规划");
+    });
   });
 
   it("PUT 失败回滚到原模式", async () => {
     updateExecutionModeMock.mockRejectedValue(new Error("network"));
     const user = userEvent.setup();
     render(<ExecutionModeSelect accessToken="token" threadId="thread-1" />);
-    const select = (await screen.findByLabelText(
-      "执行模式",
-    )) as HTMLSelectElement;
+    const select = await screen.findByLabelText("执行模式");
     await waitFor(() => {
-      expect((select as HTMLSelectElement).value).toBe("agent");
+      expect(select.textContent).toContain("自主执行");
     });
 
-    await user.selectOptions(select, "plan");
+    await user.click(select);
+    await user.click(await screen.findByRole("option", { name: "先规划" }));
     await waitFor(() => {
-      expect((select as HTMLSelectElement).value).toBe("agent");
+      expect(select.textContent).toContain("自主执行");
     });
   });
 

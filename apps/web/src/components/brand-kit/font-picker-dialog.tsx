@@ -1,6 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { GoogleFontItem } from "../../lib/font-api";
 import { fetchGoogleFonts } from "../../lib/font-api";
 
@@ -127,17 +134,27 @@ export function FontPickerDialog({
 
         {/* Category filter */}
         <div className="px-3 py-2 border-b">
-          <select
+          <Select
             value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className="text-sm bg-transparent outline-none cursor-pointer"
+            onValueChange={(next) => {
+              if (typeof next === "string") setCategory(next);
+            }}
+            items={CATEGORIES.map((c) => ({ value: c.value, label: c.label }))}
           >
-            {CATEGORIES.map((c) => (
-              <option key={c.value} value={c.value}>
-                {c.label}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger
+              aria-label="字体分类"
+              className="border-0 px-2 py-1 shadow-none"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CATEGORIES.map((c) => (
+                <SelectItem key={c.value} value={c.value}>
+                  {c.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Font list */}

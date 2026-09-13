@@ -2,7 +2,6 @@
 
 import type { ProjectSummary } from "@loomic/shared";
 import {
-  ChevronDown,
   Code2,
   Folder,
   FolderOpen,
@@ -17,6 +16,13 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { PluginMarketModal } from "@/components/workbench/plugin-market-modal";
 import { SettingsModal } from "@/components/workbench/settings-modal";
 import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
@@ -362,6 +368,9 @@ export function Workbench() {
         {
           sessionId,
           conversationId,
+          // state 后端要求 run 挂 canvas；workbench 任务以 conversationId 作为
+          // 独立标识（事件按它路由，与 handler 的绑定逻辑一致）
+          canvasId: conversationId,
           prompt:
             mode === "code" && workDirName
               ? `【工作目录】${workDirName}\n\n${text.trim()}`
@@ -473,21 +482,29 @@ export function Workbench() {
             </button>
           </div>
 
-          {/* 模式切换（侧栏一体化，堆叠列表） */}
-          <nav aria-label="模式切换" className="space-y-0.5 px-2">
-            {modeItems.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                data-active={mode === item.id}
-                onClick={() => switchMode(item.id)}
-                className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[active=true]:bg-muted data-[active=true]:font-medium data-[active=true]:text-foreground data-[active=true]:shadow-sm"
-              >
-                {item.icon}
-                {item.label}
-              </button>
-            ))}
-          </nav>
+          {/* 模式切换（开关式：一个分段控件内左右切换 Code / Design） */}
+          <div className="px-3 pt-1 pb-0.5">
+            <div
+              role="radiogroup"
+              aria-label="模式切换"
+              className="flex items-center gap-1 rounded-lg bg-muted p-1"
+            >
+              {modeItems.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={mode === item.id}
+                  data-active={mode === item.id}
+                  onClick={() => switchMode(item.id)}
+                  className="flex min-h-[30px] flex-1 items-center justify-center gap-1.5 rounded-md px-2 text-sm text-muted-foreground transition-colors hover:text-foreground data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:text-foreground data-[active=true]:shadow-sm"
+                >
+                  {item.icon}
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div className="mx-3 my-2 border-t" />
 
@@ -696,39 +713,62 @@ export function Workbench() {
                     <FolderOpen className="h-3.5 w-3.5" />
                     {workDirName ?? "选择文件夹"}
                   </button>
-                  <label className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-muted-foreground">
-                    <ShieldCheck className="h-3.5 w-3.5" />
-                    <select
+                  <Select
+                    aria-label="权限档位"
+                    value={tier}
+                    onValueChange={(next) => {
+                      const tierValue = typeof next === "string" ? next : tier;
+                      if (tierValue !== tier) void handleTierChange(tierValue);
+                    }}
+                    items={[
+                      { value: "default", label: "默认" },
+                      { value: "auto-approve", label: "自动放行" },
+                      { value: "full-access", label: "完全访问" },
+                    ]}
+                  >
+                    <SelectTrigger
+                      className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
                       aria-label="权限档位"
-                      value={tier}
-                      onChange={(e) => void handleTierChange(e.target.value)}
-                      className="bg-transparent text-xs outline-none"
                     >
-                      <option value="default">默认</option>
-                      <option value="auto-approve">自动放行</option>
-                      <option value="full-access">完全访问</option>
-                    </select>
-                    <ChevronDown className="h-3 w-3" />
-                  </label>
-                  <label className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-muted-foreground">
-                    <select
+                      <ShieldCheck className="h-3.5 w-3.5" />
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="min-w-28">
+                      <SelectItem value="default">默认</SelectItem>
+                      <SelectItem value="auto-approve">自动放行</SelectItem>
+                      <SelectItem value="full-access">完全访问</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    aria-label="模型"
+                    value={model}
+                    onValueChange={(next) => {
+                      if (typeof next === "string") setModel(next);
+                    }}
+                    items={
+                      models.length === 0
+                        ? [{ value: "", label: "默认模型" }]
+                        : models.map((m) => ({ value: m.id, label: m.name }))
+                    }
+                  >
+                    <SelectTrigger
+                      className="max-w-[200px] gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
                       aria-label="模型"
-                      value={model}
-                      onChange={(e) => setModel(e.target.value)}
-                      className="max-w-[180px] bg-transparent text-xs outline-none"
                     >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="max-w-[280px]">
                       {models.length === 0 ? (
-                        <option value="">默认模型</option>
+                        <SelectItem value="">默认模型</SelectItem>
                       ) : (
                         models.map((m) => (
-                          <option key={m.id} value={m.id}>
+                          <SelectItem key={m.id} value={m.id}>
                             {m.name}
-                          </option>
+                          </SelectItem>
                         ))
                       )}
-                    </select>
-                    <ChevronDown className="h-3 w-3" />
-                  </label>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="flex items-center gap-2">
                   <button

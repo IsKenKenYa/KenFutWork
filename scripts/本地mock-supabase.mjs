@@ -330,7 +330,8 @@ const server = createServer((req, res) => {
           name: row.name ?? "",
           protocol: row.protocol ?? "openai-compatible",
           base_url: row.base_url ?? null,
-          encrypted_api_key: "v1:mock",
+          // 存服务端真实加密密文（解密依赖 LOOMIC_CREDENTIAL_SECRET，不能写假值）
+          encrypted_api_key: row.encrypted_api_key ?? "v1:mock",
           models: row.models ?? [],
           compat: row.compat ?? null,
           enabled: row.enabled ?? true,

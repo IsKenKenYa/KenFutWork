@@ -74,7 +74,8 @@ describe("PermissionSection（DEC-4 权限设置 UI）", () => {
     expect(approveToolPermissionMock).not.toHaveBeenCalled();
 
     await user.type(screen.getByLabelText("工具名"), "mcp__fs__write");
-    await user.selectOptions(screen.getByLabelText("记忆粒度"), "forever");
+    await user.click(screen.getByLabelText("记忆粒度"));
+    await user.click(await screen.findByRole("option", { name: "永久" }));
     await user.click(screen.getByRole("button", { name: "批准" }));
     await waitFor(() => {
       expect(approveToolPermissionMock).toHaveBeenCalledWith("token", {

@@ -2,7 +2,13 @@
 
 import type { ModelInfo } from "@loomic/shared";
 import { useEffect, useState } from "react";
-
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
 
@@ -74,18 +80,24 @@ export function AgentSection({
           {modelsLoading ? (
             <p className="text-sm text-muted-foreground">模型加载中…</p>
           ) : (
-            <select
-              id="defaultModel"
+            <Select
               value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              onValueChange={(next) => {
+                if (typeof next === "string") setSelectedModel(next);
+              }}
+              items={models.map((m) => ({ value: m.id, label: m.name }))}
             >
-              {models.map((model) => (
-                <option key={model.id} value={model.id}>
-                  {model.name} ({model.provider})
-                </option>
-              ))}
-            </select>
+              <SelectTrigger id="defaultModel" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {models.map((model) => (
+                  <SelectItem key={model.id} value={model.id}>
+                    {model.name} ({model.provider})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
           <p className="text-xs text-muted-foreground">
             该模型将用于工作区内所有新的 Agent 运行。

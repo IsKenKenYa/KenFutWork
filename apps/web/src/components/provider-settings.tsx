@@ -3,6 +3,13 @@
 import type { ProviderInstanceResponse } from "@loomic/shared";
 import { useCallback, useEffect, useState } from "react";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   createProviderInstance,
   deleteProviderInstance,
   fetchProviderInstances,
@@ -150,18 +157,24 @@ export function ProviderSettings({ accessToken }: { accessToken: string }) {
             <label htmlFor="provider-protocol" className="text-sm">
               协议
             </label>
-            <select
-              id="provider-protocol"
+            <Select
               value={protocol}
-              onChange={(e) => setProtocol(e.target.value)}
-              className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+              onValueChange={(next) => {
+                if (typeof next === "string") setProtocol(next);
+              }}
+              items={PROTOCOLS.map((p) => ({ value: p.value, label: p.label }))}
             >
-              {PROTOCOLS.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger id="provider-protocol" className="mt-1 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PROTOCOLS.map((p) => (
+                  <SelectItem key={p.value} value={p.value}>
+                    {p.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <label htmlFor="provider-base-url" className="text-sm">
