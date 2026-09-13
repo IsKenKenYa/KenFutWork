@@ -77,7 +77,7 @@ export function VideoPlayerPanel({
           >
             <polygon points="5 3 19 12 5 21 5 3" />
           </svg>
-          <span className="truncate">{title || "Video"}</span>
+          <span className="truncate">{title || "视频"}</span>
           {durationSeconds != null && (
             <span className="text-xs text-muted-foreground">
               {durationSeconds}s

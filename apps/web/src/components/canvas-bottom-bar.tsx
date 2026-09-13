@@ -207,10 +207,22 @@ const TYPE_ICONS: Record<string, string> = {
   arrow: "→",
 };
 const elTypeIcon = (t: string) => TYPE_ICONS[t] ?? "◆";
+const EL_TYPE_LABELS: Record<string, string> = {
+  rectangle: "矩形",
+  ellipse: "椭圆",
+  diamond: "菱形",
+  line: "直线",
+  arrow: "箭头",
+  text: "文字",
+  frame: "框架",
+  freedraw: "画笔",
+  image: "图像",
+  video: "视频",
+};
+
 function elLabel(el: ExcalidrawEl): string {
-  if (el.type === "text") return (el.text as string)?.slice(0, 20) || "Text";
-  if (el.type === "image") return "Image";
-  return el.type.charAt(0).toUpperCase() + el.type.slice(1);
+  if (el.type === "text") return (el.text as string)?.slice(0, 20) || "文字";
+  return EL_TYPE_LABELS[el.type] ?? el.type;
 }
 
 function ElementRow({
