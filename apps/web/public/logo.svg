@@ -1,4 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!--
+    KenFutWork 品牌 logo 定稿：KF-2 骨架版 C（岚配色）——严格对应用户红笔手绘骨架，上臂加长伸出顶横
+    本文件是唯一权威源；落地副本见 apps/web/public/logo.svg 与 favicon.svg。
+    修改几何/配色请先改本文件，再同步到落地副本，规范见同目录《品牌Logo说明.md》。
+    骨架四笔：顶横(y64-136, 至x352)+竖笔(y64-384)=F 起笔；上臂(372,176)→(180,252) 尾端伸出顶横右端；下腿(180,252)→(346,359)=K。
+  -->
   <defs>
     <linearGradient id="design" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#575E96"/>

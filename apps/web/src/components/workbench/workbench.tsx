@@ -1063,35 +1063,22 @@ export function Workbench() {
               />
               <div className="mt-2 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Select
-                    aria-label="思考强度"
-                    value={thinking}
-                    onValueChange={(next) => {
-                      if (typeof next === "string") handleThinkingChange(next);
-                    }}
-                    items={[
-                      { value: "default", label: "默认" },
-                      { value: "低", label: "低" },
-                      { value: "中", label: "中" },
-                      { value: "高", label: "高" },
-                      { value: "最高", label: "最高" },
-                    ]}
+                  <button
+                    type="button"
+                    title="附件（即将上线）"
+                    className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
                   >
-                    <SelectTrigger
-                      className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
-                      aria-label="思考强度"
-                    >
-                      <Brain className="h-3.5 w-3.5" />
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="min-w-24">
-                      <SelectItem value="default">默认</SelectItem>
-                      <SelectItem value="低">低</SelectItem>
-                      <SelectItem value="中">中</SelectItem>
-                      <SelectItem value="高">高</SelectItem>
-                      <SelectItem value="最高">最高</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    <Plus className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    title="选择工作目录"
+                    onClick={() => void pickWorkDirectory()}
+                    className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+                  >
+                    <FolderOpen className="h-3.5 w-3.5" />
+                    {workDirName ?? "选择文件夹"}
+                  </button>
                   <Select
                     aria-label="权限档位"
                     value={tier}
@@ -1155,25 +1142,63 @@ export function Workbench() {
                       )}
                     </SelectContent>
                   </Select>
+                  <Select
+                    aria-label="思考强度"
+                    value={thinking}
+                    onValueChange={(next) => {
+                      if (typeof next === "string") handleThinkingChange(next);
+                    }}
+                    items={[
+                      { value: "default", label: "默认" },
+                      { value: "低", label: "低" },
+                      { value: "中", label: "中" },
+                      { value: "高", label: "高" },
+                      { value: "最高", label: "最高" },
+                    ]}
+                  >
+                    <SelectTrigger
+                      className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
+                      aria-label="思考强度"
+                    >
+                      <Brain className="h-3.5 w-3.5" />
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="min-w-24">
+                      <SelectItem value="default">默认</SelectItem>
+                      <SelectItem value="低">低</SelectItem>
+                      <SelectItem value="中">中</SelectItem>
+                      <SelectItem value="高">高</SelectItem>
+                      <SelectItem value="最高">最高</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-                {activeTask.status === "running" && activeRunIdRef.current ? (
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    className="rounded-md border px-3 py-1.5 text-sm text-destructive hover:bg-muted"
-                    onClick={() => ws.cancelRun(activeRunIdRef.current!)}
+                    title="语音（即将上线）"
+                    className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
                   >
-                    停止
+                    <Mic className="h-4 w-4" />
                   </button>
-                ) : (
-                  <button
-                    type="submit"
-                    aria-label="发送"
-                    disabled={!followUp.trim()}
-                    className="rounded-lg bg-primary p-2 text-primary-foreground disabled:opacity-50"
-                  >
-                    <Send className="h-4 w-4" />
-                  </button>
-                )}
+                  {activeTask.status === "running" && activeRunIdRef.current ? (
+                    <button
+                      type="button"
+                      className="rounded-md border px-3 py-1.5 text-sm text-destructive hover:bg-muted"
+                      onClick={() => ws.cancelRun(activeRunIdRef.current!)}
+                    >
+                      停止
+                    </button>
+                  ) : (
+                    <button
+                      type="submit"
+                      aria-label="发送"
+                      disabled={!followUp.trim()}
+                      className="rounded-lg bg-primary p-2 text-primary-foreground disabled:opacity-50"
+                    >
+                      <Send className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
               </div>
             </form>
           </div>
@@ -1235,35 +1260,6 @@ export function Workbench() {
                     <FolderOpen className="h-3.5 w-3.5" />
                     {workDirName ?? "选择文件夹"}
                   </button>
-                  <Select
-                    aria-label="思考强度"
-                    value={thinking}
-                    onValueChange={(next) => {
-                      if (typeof next === "string") handleThinkingChange(next);
-                    }}
-                    items={[
-                      { value: "default", label: "默认" },
-                      { value: "低", label: "低" },
-                      { value: "中", label: "中" },
-                      { value: "高", label: "高" },
-                      { value: "最高", label: "最高" },
-                    ]}
-                  >
-                    <SelectTrigger
-                      className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
-                      aria-label="思考强度"
-                    >
-                      <Brain className="h-3.5 w-3.5" />
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="min-w-24">
-                      <SelectItem value="default">默认</SelectItem>
-                      <SelectItem value="低">低</SelectItem>
-                      <SelectItem value="中">中</SelectItem>
-                      <SelectItem value="高">高</SelectItem>
-                      <SelectItem value="最高">最高</SelectItem>
-                    </SelectContent>
-                  </Select>
                   <Select
                     aria-label="权限档位"
                     value={tier}
@@ -1378,6 +1374,35 @@ export function Workbench() {
                           </button>
                         </>
                       )}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    aria-label="思考强度"
+                    value={thinking}
+                    onValueChange={(next) => {
+                      if (typeof next === "string") handleThinkingChange(next);
+                    }}
+                    items={[
+                      { value: "default", label: "默认" },
+                      { value: "低", label: "低" },
+                      { value: "中", label: "中" },
+                      { value: "高", label: "高" },
+                      { value: "最高", label: "最高" },
+                    ]}
+                  >
+                    <SelectTrigger
+                      className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
+                      aria-label="思考强度"
+                    >
+                      <Brain className="h-3.5 w-3.5" />
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="min-w-24">
+                      <SelectItem value="default">默认</SelectItem>
+                      <SelectItem value="低">低</SelectItem>
+                      <SelectItem value="中">中</SelectItem>
+                      <SelectItem value="高">高</SelectItem>
+                      <SelectItem value="最高">最高</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
