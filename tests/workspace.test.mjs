@@ -268,24 +268,15 @@ test("docs fixture: 断链与坏锚点被拦截", async () => {
   });
 });
 
-test("docs fixture: 第二处 ctx key 表与非法 ADR 命名被拦截", async () => {
+test("docs fixture: 第二处 ctx key 表被拦截", async () => {
   await withDocsFixture(async (fixtureRoot) => {
-    await mkdir(path.join(fixtureRoot, "docs", "decisions"), {
-      recursive: true,
-    });
     await writeFile(
       path.join(fixtureRoot, "docs", "ok.md"),
       "# 正常\n\n| ctx key | 服务 |\n| --- | --- |\n| `x` | X |\n",
       "utf8",
     );
-    await writeFile(
-      path.join(fixtureRoot, "docs", "decisions", "ADR-bad-name.md"),
-      "# x\n",
-      "utf8",
-    );
 
     const errors = errorsOf(await checkDocs({ rootDir: fixtureRoot }));
     assert.match(errors, /ctx key 清单表/);
-    assert.match(errors, /ADR 命名/);
   });
 });

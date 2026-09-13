@@ -9,9 +9,8 @@
  *   1) docs 内相对链接与锚点可解析（外部 http(s)/mailto 跳过，HTML 注释与代码块内跳过）；
  *   2) 冻结区（<!-- frozen:start --> ~ <!-- frozen:end -->）SHA-256 与 docs/frozen-lock.json 一致；
  *   3) 文档中出现的决策 ID（DEC-* / FORM-*）均已登记进 docs/README.md「决策 ID 登记表」；
- *   4) docs/**\/*.md 均已登记进文档地图（`Loomic原版文档/`、`decisions/ADR-*.md`、README 自身豁免）；
+ *   4) docs/**\/*.md 均已登记进文档地图（`Loomic原版文档/`、README 自身豁免）；
  *   5) 全仓库只有《改造计划》§4.2 一处以表头 `ctx key` 定义 key 清单；
- *   6) `docs/decisions/` 下 ADR 文件名符合 `ADR-<YYYYMMDD>-<ID>.md`。
  *
  * 用法：
  *   node scripts/check-docs.mjs                # 校验，失败退出码 1
@@ -28,17 +27,15 @@ const FROZEN_START = "<!-- frozen:start -->";
 const FROZEN_END = "<!-- frozen:end -->";
 const LOCK_FILE = "docs/frozen-lock.json";
 const MAP_FILE = "docs/README.md";
-/** 文档地图自身不入图；原版历史文档整目录豁免；ADR 由 docs/decisions/README.md 索引，不逐个入图。 */
+/** 文档地图自身不入图；原版历史文档整目录豁免。 */
 const MAP_EXCLUDE_FILES = new Set(["docs/README.md"]);
 const MAP_EXCLUDE_PREFIXES = ["docs/Loomic原版文档/"];
-const MAP_EXCLUDE_PATTERN = /^docs\/decisions\/ADR-/;
 /**
  * 冻结扫描豁免：`docs/README.md` 的治理规则 3 必须把冻结标记写成字面量来定义规则，
  * 因而天然含有这两个标记，不能据此判定「自己也冻结」。
  */
 const FROZEN_SCAN_EXCLUDE = new Set(["docs/README.md"]);
 const DECISION_ID_PATTERN = /\b(DEC|FORM)-(\d+)\b/g;
-const ADR_NAME_PATTERN = /^ADR-(\d{8})-(DEC|FORM)-(\d+)\.md$/;
 /** 唯一允许定义 ctx key 清单的文档。 */
 const CTX_KEY_TABLE_OWNER = "docs/tech/改造计划.md";
 const CTX_KEY_HEADER_CELL = "ctx key";
@@ -292,8 +289,7 @@ export async function checkDocs({ rootDir }) {
   for (const file of files) {
     if (
       MAP_EXCLUDE_FILES.has(file) ||
-      MAP_EXCLUDE_PREFIXES.some((p) => file.startsWith(p)) ||
-      MAP_EXCLUDE_PATTERN.test(file)
+      MAP_EXCLUDE_PREFIXES.some((p) => file.startsWith(p))
     ) {
       continue;
     }
@@ -317,20 +313,6 @@ export async function checkDocs({ rootDir }) {
     errors.push(
       `ctx key 清单表只允许出现在 ${CTX_KEY_TABLE_OWNER}，实际出现在：[${ctxKeyTables.join(", ") || "无"}]`,
     );
-  }
-
-  // 6) ADR 文件命名
-  for (const file of files) {
-    const name = path.posix.basename(file);
-    if (
-      file.startsWith("docs/decisions/") &&
-      name.startsWith("ADR-") &&
-      !ADR_NAME_PATTERN.test(name)
-    ) {
-      errors.push(
-        `${file}: ADR 命名必须为 ADR-<YYYYMMDD>-<ID>.md（见 docs/decisions/README.md）`,
-      );
-    }
   }
 
   return { errors, files };
