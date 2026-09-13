@@ -15,20 +15,46 @@ export const BUILTIN_EXECUTION_MODES: Array<{
 }> = [
   {
     id: "agent",
-    label: "自主执行",
+    label: "自主",
     description: "默认：agent 自主循环完成任务。",
   },
   {
     id: "plan",
-    label: "先规划",
+    label: "计划",
     description: "先产出分步计划待用户批准，再逐步执行。",
     inputDirective:
       '<execution_mode name="plan">\n请先给出分步执行计划并等待用户批准，再开始实际修改；未获批准前不要执行不可逆操作。\n</execution_mode>',
   },
+  {
+    id: "solo",
+    label: "对话",
+    description: "纯对话交流，不执行工具与文件修改。",
+    inputDirective:
+      '<execution_mode name="solo">\n本轮为纯对话模式：只进行文字交流，不调用任何工具、不修改任何文件。\n</execution_mode>',
+  },
+  {
+    id: "goal",
+    label: "目标",
+    description: "目标驱动：先明确成功标准，循环推进直至达成。",
+    inputDirective:
+      '<execution_mode name="goal">\n本轮为目标驱动模式：先与用户明确成功标准（可验证），再围绕目标循环推进，每步说明进度与剩余差距。\n</execution_mode>',
+  },
+  {
+    id: "loop",
+    label: "循环",
+    description: "循环执行：按固定步骤反复迭代直到完成。",
+    inputDirective:
+      '<execution_mode name="loop">\n本轮为循环模式：按固定步骤反复迭代（执行→检查→修正），直到任务完成或达到用户设定的停止条件。\n</execution_mode>',
+  },
 ];
 
 export interface ExecutionModeService {
-  listModes(): Array<{ id: ExecutionMode; label: string; description: string }>;
+  listModes(): Array<{
+    id: ExecutionMode;
+    label: string;
+    description: string;
+    inputDirective?: string;
+  }>;
   /** 当前线程激活的模式；未激活返回默认 agent。 */
   getMode(threadId: string): ExecutionMode;
   /** 激活/切换当前线程模式；未知模式 fail loud。 */
@@ -40,11 +66,14 @@ export function createExecutionModeService(): ExecutionModeService {
   const known = new Set(BUILTIN_EXECUTION_MODES.map((m) => m.id));
   return {
     listModes() {
-      return BUILTIN_EXECUTION_MODES.map(({ id, label, description }) => ({
-        id,
-        label,
-        description,
-      }));
+      return BUILTIN_EXECUTION_MODES.map(
+        ({ id, label, description, inputDirective }) => ({
+          id,
+          label,
+          description,
+          ...(inputDirective ? { inputDirective } : {}),
+        }),
+      );
     },
     getMode(threadId) {
       return active.get(threadId) ?? "agent";

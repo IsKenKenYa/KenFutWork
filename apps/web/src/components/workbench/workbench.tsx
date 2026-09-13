@@ -183,6 +183,15 @@ export function Workbench() {
   const [tier, setTier] = useState("default");
   const [codeProjects, setCodeProjects] = useState<CodeProject[]>([]);
   const [thinking, setThinking] = useState("default");
+  const [executionMode, setExecutionMode] = useState("agent");
+  const [executionModes, setExecutionModes] = useState<
+    Array<{
+      id: string;
+      label: string;
+      description: string;
+      inputDirective?: string | undefined;
+    }>
+  >([]);
   const [models, setModels] = useState<WorkbenchModelOption[]>([]);
   const [model, setModel] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -271,6 +280,27 @@ export function Workbench() {
   useEffect(() => {
     if (session?.access_token) refreshProjects();
   }, [session, refreshProjects]);
+
+  // 执行模式词汇表（需 token）
+  useEffect(() => {
+    const token = session?.access_token;
+    if (!token) return;
+    fetch(`${getServerBaseUrl()}/api/execution-modes`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => (r.ok ? r.json() : { modes: [] }))
+      .then(
+        (data: {
+          modes: Array<{
+            id: string;
+            label: string;
+            description: string;
+            inputDirective?: string | undefined;
+          }>;
+        }) => setExecutionModes(data.modes),
+      )
+      .catch(() => {});
+  }, [session]);
 
   // 嵌入画布删除项目后回传：清选中并刷新列表
   useEffect(() => {
@@ -614,9 +644,21 @@ export function Workbench() {
           canvasId: conversationId,
           prompt: `${
             mode === "code" && workDirName
-              ? `【工作目录】${workDirName}\n\n`
+              ? `【工作目录】${workDirName}
+
+`
               : ""
-          }${thinking === "default" ? "" : `【思考强度：${thinking}】\n`}${text.trim()}`,
+          }${
+            executionModes.find((m) => m.id === executionMode)?.inputDirective
+              ? `${executionModes.find((m) => m.id === executionMode)?.inputDirective}
+`
+              : ""
+          }${
+            thinking === "default"
+              ? ""
+              : `【思考强度：${thinking}】
+`
+          }${text.trim()}`,
           ...(model ? { model } : {}),
           ...(mode === "design" ? { preset: "design" as const } : {}),
         },
@@ -629,7 +671,17 @@ export function Workbench() {
         },
       );
     },
-    [mode, model, workDirName, thinking, selectedProjectId, session, ws],
+    [
+      mode,
+      model,
+      workDirName,
+      thinking,
+      executionMode,
+      executionModes,
+      selectedProjectId,
+      session,
+      ws,
+    ],
   );
 
   const handleSignOut = useCallback(() => {
@@ -663,6 +715,9 @@ export function Workbench() {
       setSubmitting(true);
       const thinkingHint =
         thinking === "default" ? "" : `【思考强度：${thinking}】\n`;
+      const modeDirective =
+        executionModes.find((m) => m.id === executionMode)?.inputDirective ??
+        "";
       const history = task.messages
         .slice(-12)
         .map((m) => `${m.role === "user" ? "用户" : "助手"}：${m.text}`)
@@ -675,7 +730,7 @@ export function Workbench() {
           sessionId: task.sessionId,
           conversationId: task.id,
           canvasId: task.id,
-          prompt: `${thinkingHint}${historyBlock}${text.trim()}`,
+          prompt: `${thinkingHint}${modeDirective}${historyBlock}${text.trim()}`,
           ...(model ? { model } : {}),
           ...(mode === "design" ? { preset: "design" as const } : {}),
         },
@@ -688,7 +743,17 @@ export function Workbench() {
         },
       );
     },
-    [activeTaskId, tasks, mode, model, thinking, session, ws],
+    [
+      activeTaskId,
+      tasks,
+      mode,
+      model,
+      thinking,
+      executionMode,
+      executionModes,
+      session,
+      ws,
+    ],
   );
 
   if (loading) {
@@ -1104,6 +1169,31 @@ export function Workbench() {
                     </SelectContent>
                   </Select>
                   <Select
+                    aria-label="执行模式"
+                    value={executionMode}
+                    onValueChange={(next) => {
+                      if (typeof next === "string") setExecutionMode(next);
+                    }}
+                    items={executionModes.map((m) => ({
+                      value: m.id,
+                      label: m.label,
+                    }))}
+                  >
+                    <SelectTrigger
+                      className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
+                      aria-label="执行模式"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="min-w-28">
+                      {executionModes.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select
                     aria-label="模型"
                     value={model}
                     onValueChange={(next) => {
@@ -1282,6 +1372,31 @@ export function Workbench() {
                       <SelectItem value="default">默认</SelectItem>
                       <SelectItem value="auto-approve">自动放行</SelectItem>
                       <SelectItem value="full-access">完全访问</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    aria-label="执行模式"
+                    value={executionMode}
+                    onValueChange={(next) => {
+                      if (typeof next === "string") setExecutionMode(next);
+                    }}
+                    items={executionModes.map((m) => ({
+                      value: m.id,
+                      label: m.label,
+                    }))}
+                  >
+                    <SelectTrigger
+                      className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
+                      aria-label="执行模式"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="min-w-28">
+                      {executionModes.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <Select

@@ -20,6 +20,27 @@ interface PluginEntry {
   name: string;
   title: string;
   description: string;
+  system: boolean;
+  installed: boolean;
+}
+
+async function togglePlugin(
+  name: string,
+  action: "install" | "uninstall",
+  setPlugins: React.Dispatch<React.SetStateAction<PluginEntry[]>>,
+) {
+  const res = await fetch(
+    `${getServerBaseUrl()}/api/plugins/${name}/${action}`,
+    {
+      method: "POST",
+    },
+  );
+  if (res.ok) {
+    const { installed } = (await res.json()) as { installed: boolean };
+    setPlugins((prev) =>
+      prev.map((p) => (p.name === name ? { ...p, installed } : p)),
+    );
+  }
 }
 
 const ICONS: Record<
@@ -146,9 +167,31 @@ export function PluginMarketModal({
                         {p.name}
                       </code>
                     </div>
-                    <span className="shrink-0 rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">
-                      已安装
-                    </span>
+                    {p.system ? (
+                      <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                        系统
+                      </span>
+                    ) : p.installed ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void togglePlugin(p.name, "uninstall", setPlugins);
+                        }}
+                        className="shrink-0 rounded-full border px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                      >
+                        卸载
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void togglePlugin(p.name, "install", setPlugins);
+                        }}
+                        className="shrink-0 rounded-full bg-primary px-2.5 py-0.5 text-xs text-primary-foreground"
+                      >
+                        安装
+                      </button>
+                    )}
                   </li>
                 );
               })}
