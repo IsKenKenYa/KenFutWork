@@ -24,6 +24,25 @@ const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 const countMatches = (text, re) => (text.match(re) ?? []).length;
 
 /** 取每个匹配的第一个捕获组（正则必须有捕获组）。 */
+/**
+ * URL 中性化迁移：它们**专门用来**把硬编码云 URL 从数据里改写掉，语句里必然出现
+ * 被改写的字面量（`replace(<云 URL>, '')`）。把这些字面量计入残留，等于惩罚
+ * 「去除残留」这件事本身——历史迁移文件不可改（immutable），该指标会永久卡在历史值上。
+ * 故口径（2026-09-14）：残留统计**排除中性化迁移**；权威口径是「迁移序列执行完后的
+ * 库内状态」（本次实测 0 处，见 docs/tech/改造计划.md §4.13）。
+ */
+const URL_NEUTRALIZER_MIGRATIONS = new Set([
+  "20260914120000_localize_home_seed_urls.sql",
+]);
+
+function cloudUrlsExcludingNeutralizers(acc) {
+  return Object.entries(acc.cloudUrlsByFile).reduce(
+    (sum, [file, count]) =>
+      URL_NEUTRALIZER_MIGRATIONS.has(file) ? sum : sum + count,
+    0,
+  );
+}
+
 function captureAll(text, re) {
   const out = [];
   for (const m of text.matchAll(re)) {
@@ -139,6 +158,7 @@ function main() {
     extensions: [],
     schemas: {},
     cloudUrls: [],
+    cloudUrlsByFile: {},
     cloudHosts: [],
     securityDefinerFns: [],
     fnsUsingAuthUid: [],
@@ -201,6 +221,9 @@ function main() {
       /(https?:\/\/[\w.-]*supabase\.co[^\s'")]*)/gi,
     );
     acc.cloudUrls.push(...urls);
+    if (urls.length > 0) {
+      acc.cloudUrlsByFile[file] = urls.length;
+    }
     acc.cloudHosts.push(...urls.map((u) => new URL(u).host));
 
     acc.policyCount += countMatches(text, /create\s+policy/gi);
@@ -246,6 +269,11 @@ function main() {
       ["CREATE EXTENSION", uniq(acc.extensions)],
       ["Supabase schema 引用", acc.schemas],
       ["硬编码云端 URL", acc.cloudUrls.length],
+      [
+        "硬编码云端 URL（排除中性化迁移后的净值）",
+        cloudUrlsExcludingNeutralizers(acc),
+      ],
+      ["硬编码云端 URL（按文件）", acc.cloudUrlsByFile],
       ["硬编码云主机", uniq(acc.cloudHosts)],
     ],
     keep: [
@@ -297,10 +325,10 @@ function main() {
       uniq(acc.authUsersTables).length +
       uniq(acc.authUsersTriggers).length +
       acc.storageObjectsRefs +
-      acc.cloudUrls.length;
+      cloudUrlsExcludingNeutralizers(acc);
     if (residual > 0) {
       console.error(
-        `\n[gate] 仍有 Supabase 专有构造残留（${residual} 处）：auth.uid()=${acc.authUidTotal}、auth.users FK 表=${uniq(acc.authUsersTables).length}、auth.users 触发器=${uniq(acc.authUsersTriggers).length}、storage.objects=${acc.storageObjectsRefs}、硬编码云 URL=${acc.cloudUrls.length}——中性化未完成。`,
+        `\n[gate] 仍有 Supabase 专有构造残留（${residual} 处）：auth.uid()=${acc.authUidTotal}、auth.users FK 表=${uniq(acc.authUsersTables).length}、auth.users 触发器=${uniq(acc.authUsersTriggers).length}、storage.objects=${acc.storageObjectsRefs}、硬编码云 URL=${cloudUrlsExcludingNeutralizers(acc)}——中性化未完成。`,
       );
       process.exitCode = 1;
     } else {

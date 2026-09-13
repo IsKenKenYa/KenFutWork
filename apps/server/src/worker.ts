@@ -58,7 +58,6 @@ async function main() {
   registerAllProviders(env);
 
   const pgmq = createPgmqClient(env.supabaseDbUrl);
-  const createUserClient = createUserSupabaseClientFactory(env);
 
   let adminClient: ReturnType<typeof createAdminSupabaseClient> | undefined;
   const getAdminClient = () => {
@@ -69,7 +68,7 @@ async function main() {
   // P7：worker 走内核装配（profiles/worker.ts 唯一插件清单）
   const kernel = composePlugins(
     env,
-    workerProfile({ createUserClient, getAdminClient, credentialEnv: env }),
+    workerProfile({ getAdminClient, credentialEnv: env }),
   );
   const jobService = kernel.get("jobs");
   const creditService = kernel.get("credits");
@@ -82,7 +81,6 @@ async function main() {
   const baseCtx = {
     jobService,
     pgmq,
-    getAdminClient,
     env,
     modelProviders,
     usageService,

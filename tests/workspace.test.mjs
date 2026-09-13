@@ -393,7 +393,11 @@ async function collectSupabaseResiduals() {
         /(?<!storage)(?<!Buffer)(?<!Array)(?<!Uint8Array)(?<!String)\.from\(/g,
       ) ?? []
     ).length;
-    code.storageRefs += countOccurrences(flat, /\.storage/g);
+    // 口径（2026-09-14 三次修正）：只数**存储客户端成员访问**（`.storage.` / `.storage(`），
+    // 不数产品数据字段 `storageUrl`。原口径把 `el.storageUrl` 也算成存储耦合，
+    // 实测让服务端清零后指标仍卡在 11 处（全在 web 且全是字段名）——
+    // 那样的指标永远到不了 0，M1.5 的「全清」门禁也就永远过不去。
+    code.storageRefs += countOccurrences(flat, /\.storage(?=[.(])/g);
   }
 
   const { stdout } = await execFileAsync(
@@ -407,7 +411,10 @@ async function collectSupabaseResiduals() {
     authUsersTables: inventory.rewrite["FK → auth.users 的表"].length,
     authUsersTriggers: inventory.rewrite["auth.users 上的触发器"].length,
     storageObjectsRefs: inventory.rewrite["storage.objects 引用"],
-    cloudUrls: inventory.rewrite["硬编码云端 URL"],
+    // 用「排除中性化迁移」的净值：中性化迁移的语句里必然出现被改写的字面量，
+    // 计入它等于惩罚「去除残留」本身（历史迁移不可改，指标会永久卡住）。
+    cloudUrls:
+      inventory.rewrite["硬编码云端 URL（排除中性化迁移后的净值）"],
   };
 
   return { code, sql };

@@ -1,7 +1,6 @@
 import type { BackgroundJobType } from "@loomic/shared";
 import type { ServerEnv } from "../../config/env.js";
 import type { PgmqClient } from "../../queue/pgmq-client.js";
-import type { AdminSupabaseClient } from "../../supabase/admin.js";
 import type { BlobStore } from "../blob/types.js";
 import type { CreditService } from "../credits/credit-service.js";
 import type { ModelProviderService } from "../model-providers/model-provider-service.js";
@@ -12,7 +11,6 @@ import type { JobService } from "./job-service.js";
 export type ExecutorContext = {
   jobService: JobService;
   pgmq: PgmqClient;
-  getAdminClient: () => AdminSupabaseClient;
   env: ServerEnv;
   /** BYOK：任务携带 provider_instance_id 时经此解析凭证（P4）。 */
   modelProviders?: ModelProviderService;

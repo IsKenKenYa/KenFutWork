@@ -17,7 +17,6 @@ registerExecutor(
     // The PGMQ message only contains { job_id, job_type, workspace_id },
     // so we must fetch prompt/model/aspect_ratio from background_jobs.payload.
     // 经 jobService 取（按 id 的系统级读，与 worker 其它状态迁移同一入口）。
-    const admin = ctx.getAdminClient();
     let jobRow: BackgroundJob;
     try {
       jobRow = await ctx.jobService.getJobAdmin(jobId);

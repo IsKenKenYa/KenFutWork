@@ -10,7 +10,6 @@ registerExecutor(
   async (jobId, _rawPayload, ctx: ExecutorContext) => {
     const t0 = Date.now();
 
-    const admin = ctx.getAdminClient();
     // 经 jobService 取（按 id 的系统级读，与 worker 其它状态迁移同一入口）。
     let jobRow: BackgroundJob;
     try {

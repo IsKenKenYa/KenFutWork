@@ -7,7 +7,6 @@ import { createUploadsPlugin } from "../features/uploads/plugin.js";
 import { createUsagePlugin } from "../features/usage/plugin.js";
 import type { PluginDefinition } from "../kernel/types.js";
 import type { AdminSupabaseClient } from "../supabase/admin.js";
-import type { UserSupabaseClient } from "../supabase/user.js";
 
 /**
  * worker profile（§4.9）：队列 worker 进程的插件清单——唯一属主。
@@ -16,7 +15,6 @@ import type { UserSupabaseClient } from "../supabase/user.js";
  */
 
 export interface WorkerProfileDeps {
-  createUserClient: (accessToken: string) => UserSupabaseClient;
   getAdminClient: () => AdminSupabaseClient;
   credentialEnv: { credentialSecret?: string };
 }
