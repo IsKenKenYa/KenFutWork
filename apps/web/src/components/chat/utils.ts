@@ -5,16 +5,15 @@
  * and to allow tree-shaking of unused helpers.
  */
 
-/** Regex patterns for detecting image URLs in markdown content */
-const IMAGE_URL_RE = /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i;
-const SUPABASE_STORAGE_RE = /supabase\.\w+\/storage\/v1\//i;
-
 /**
- * Check if a URL points to an image resource.
- * Matches common image extensions and Supabase storage URLs.
+ * Regex for detecting image URLs in markdown content.
+ * 按扩展名判断即可：对象存储 URL（`/api/blobs/<bucket>/<path>`）同样以扩展名结尾；
+ * 原用于识别 Supabase 存储 URL 的专用正则已随 M1.5 删除（不再产生此类 URL）。
  */
+const IMAGE_URL_RE = /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i;
+
 export function isImageUrl(url: string): boolean {
-  return IMAGE_URL_RE.test(url) || SUPABASE_STORAGE_RE.test(url);
+  return IMAGE_URL_RE.test(url);
 }
 
 /** Tool display configuration */

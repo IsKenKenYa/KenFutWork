@@ -3,22 +3,18 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockOnAuthStateChange, mockGetSession, mockSignOut } = vi.hoisted(
+const { mockLoadSession, mockSignOut, mockSubscribeSession } = vi.hoisted(
   () => ({
-    mockOnAuthStateChange: vi.fn(),
-    mockGetSession: vi.fn(),
+    mockLoadSession: vi.fn(),
     mockSignOut: vi.fn(),
+    mockSubscribeSession: vi.fn(() => () => {}),
   }),
 );
 
-vi.mock("../src/lib/supabase-browser", () => ({
-  getSupabaseBrowserClient: vi.fn(() => ({
-    auth: {
-      onAuthStateChange: mockOnAuthStateChange,
-      getSession: mockGetSession,
-      signOut: mockSignOut,
-    },
-  })),
+vi.mock("../src/lib/session", () => ({
+  loadSession: mockLoadSession,
+  signOut: mockSignOut,
+  subscribeSession: mockSubscribeSession,
 }));
 
 import { AuthProvider, useAuth } from "../src/lib/auth-context";
@@ -40,13 +36,7 @@ describe("AuthProvider", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetSession.mockResolvedValue({
-      data: { session: null },
-      error: null,
-    });
-    mockOnAuthStateChange.mockReturnValue({
-      data: { subscription: { unsubscribe: vi.fn() } },
-    });
+    mockLoadSession.mockResolvedValue(null);
   });
 
   it("starts in loading state then resolves to no user", async () => {
@@ -63,13 +53,10 @@ describe("AuthProvider", () => {
   });
 
   it("exposes user when session exists", async () => {
-    const mockSession = {
+    mockLoadSession.mockResolvedValue({
       access_token: "token_123",
-      user: { id: "user_1", email: "test@test.com" },
-    };
-    mockGetSession.mockResolvedValue({
-      data: { session: mockSession },
-      error: null,
+      expiresAt: null,
+      user: { id: "user_1", email: "test@test.com", displayName: null },
     });
 
     render(

@@ -6,7 +6,7 @@ import {
 import type { FastifyInstance } from "fastify";
 
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
-import type { RequestAuthenticator } from "../supabase/user.js";
+import type { RequestAuthenticator } from "../features/auth/types.js";
 
 export async function registerExecutionModeRoutes(
   app: FastifyInstance,

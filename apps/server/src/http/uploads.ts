@@ -5,12 +5,12 @@ import {
   uploadResponseSchema,
 } from "@loomic/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
+import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import {
   type UploadService,
   UploadServiceError,
 } from "../features/uploads/upload-service.js";
-import type { RequestAuthenticator } from "../supabase/user.js";
 
 const ALLOWED_MIME_TYPES = new Set([
   "image/png",

@@ -1,8 +1,7 @@
 import { tool } from "langchain";
 import { z } from "zod";
-
+import type { AuthenticatedUser } from "../../features/auth/types.js";
 import type { BrandKitService } from "../../features/brand-kit/brand-kit-service.js";
-import type { AuthenticatedUser } from "../../supabase/user.js";
 
 const brandKitSchema = z.object({});
 

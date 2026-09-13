@@ -8,6 +8,10 @@ import {
 } from "@loomic/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import type {
+  AuthenticatedUser,
+  RequestAuthenticator,
+} from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { CreditService } from "../features/credits/credit-service.js";
 import { CreditServiceError } from "../features/credits/credit-service.js";
@@ -20,10 +24,6 @@ import type { UploadService } from "../features/uploads/upload-service.js";
 import { generateImage } from "../generation/image-generation.js";
 import { resolveImageProviderName } from "../generation/providers/registry.js";
 import { resolveInstanceImageProvider } from "../providers/resolve.js";
-import type {
-  AuthenticatedUser,
-  RequestAuthenticator,
-} from "../supabase/user.js";
 
 const generateImageRequestSchema = z.object({
   prompt: z.string().min(1),

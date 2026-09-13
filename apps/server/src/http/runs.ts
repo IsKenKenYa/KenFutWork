@@ -12,6 +12,7 @@ import {
   type AgentRunMetadataService,
   AgentRunPersistenceError,
 } from "../features/agent-runs/agent-run-service.js";
+import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import {
   type ThreadService,
@@ -21,7 +22,6 @@ import type { CreditService } from "../features/credits/credit-service.js";
 import { parseInstanceSpecifier } from "../features/model-providers/model-catalog-service.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
-import type { RequestAuthenticator } from "../supabase/user.js";
 
 export async function registerRunRoutes(
   app: FastifyInstance,

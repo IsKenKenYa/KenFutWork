@@ -1,6 +1,6 @@
 import type { WorkspaceSettings } from "@loomic/shared";
 
-import type { AuthenticatedUser } from "../../supabase/user.js";
+import type { AuthenticatedUser } from "../auth/types.js";
 import type { SettingsRepository } from "./repository.js";
 
 const FALLBACK_MODEL = "gpt-5.4-mini";

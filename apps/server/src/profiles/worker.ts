@@ -7,7 +7,6 @@ import { createQueuePlugin } from "../features/queue/plugin.js";
 import { createUploadsPlugin } from "../features/uploads/plugin.js";
 import { createUsagePlugin } from "../features/usage/plugin.js";
 import type { PluginDefinition } from "../kernel/types.js";
-import type { AdminSupabaseClient } from "../supabase/admin.js";
 
 /**
  * worker profile（§4.9）：队列 worker 进程的插件清单——唯一属主。
@@ -16,7 +15,6 @@ import type { AdminSupabaseClient } from "../supabase/admin.js";
  */
 
 export interface WorkerProfileDeps {
-  getAdminClient: () => AdminSupabaseClient;
   credentialEnv: { credentialSecret?: string };
 }
 
@@ -24,7 +22,7 @@ export function workerProfile(deps: WorkerProfileDeps): PluginDefinition[] {
   return [
     persistencePlugin,
     createQueuePlugin(),
-    createBlobPlugin({ getAdminClient: deps.getAdminClient }),
+    createBlobPlugin({ withRoutes: false }),
     // worker 无 HTTP 面：路由一律不挂（withRoutes: false），只取服务
     createCreditsPlugin({ withRoutes: false }),
     createJobsPlugin({ withRoutes: false }),

@@ -26,22 +26,23 @@ const {
   mockReplace: vi.fn(),
   mockSignUp: vi
     .fn()
-    .mockResolvedValue({ data: { session: null }, error: null }),
+    .mockResolvedValue({
+    access_token: "token_1",
+    expiresAt: "2026-10-13T00:00:00.000Z",
+    user: { displayName: null, email: "new@test.com", id: "user-1" },
+  }),
 }));
 
 vi.mock("../src/lib/server-api", () => ({
   fetchViewer: mockFetchViewer,
 }));
 
-vi.mock("../src/lib/supabase-browser", () => ({
-  getSupabaseBrowserClient: vi.fn(() => ({
-    auth: {
-      signUp: mockSignUp,
-      onAuthStateChange: mockOnAuthStateChange,
-      getSession: mockGetSession,
-      signOut: vi.fn(),
-    },
-  })),
+vi.mock("../src/lib/session", () => ({
+  // AuthProvider 也在渲染链上：替身需覆盖它用到的导出
+  loadSession: vi.fn(async () => null),
+  signOut: vi.fn(async () => {}),
+  signUp: mockSignUp,
+  subscribeSession: vi.fn(() => () => {}),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -64,7 +65,7 @@ describe("Register page", () => {
     cleanup();
   });
 
-  it("creates an account and shows the confirmation state", async () => {
+  it("注册成功后用签发的会话令牌引导工作台（自管认证不做邮件确认）", async () => {
     render(
       <AuthProvider>
         <RegisterPage />
@@ -86,29 +87,18 @@ describe("Register page", () => {
       expect(mockSignUp).toHaveBeenCalledWith({
         email: "new-user@example.com",
         password: "password-123",
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
       });
     });
-
-    expect(
-      (await screen.findByText(/请查收邮件/)).textContent,
-    ).toContain("请查收邮件");
-    expect(
-      screen.getByRole("link", { name: /返回登录/ }).getAttribute("href"),
-    ).toBe("/login");
+    await waitFor(() => {
+      expect(mockFetchViewer).toHaveBeenCalledWith("token_1");
+    });
   });
 
   it("bootstraps the viewer when sign-up returns an active session", async () => {
     mockSignUp.mockResolvedValueOnce({
-      data: {
-        session: {
-          access_token: "fresh-token",
-          user: { id: "u1", email: "new-user@example.com" },
-        },
-      },
-      error: null,
+      access_token: "fresh-token",
+      expiresAt: "2026-10-13T00:00:00.000Z",
+      user: { displayName: null, email: "new-user@example.com", id: "u1" },
     });
 
     render(

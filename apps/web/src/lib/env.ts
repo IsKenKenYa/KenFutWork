@@ -9,25 +9,15 @@ export function getServerBaseUrl() {
 
 export type WebEnv = {
   serverBaseUrl: string;
-  supabaseAnonKey: string;
-  supabaseUrl: string;
 };
 
+/**
+ * 读取浏览器侧配置。Supabase 两键已随 M1.5 删除（前端不再直连任何外部服务，
+ * 认证/存储都经本服务）。
+ */
 export function loadWebEnv(overrides: Partial<WebEnv> = {}): WebEnv {
   return {
     serverBaseUrl: overrides.serverBaseUrl ?? getServerBaseUrl(),
-    supabaseUrl:
-      overrides.supabaseUrl ??
-      requireEnv(
-        "NEXT_PUBLIC_SUPABASE_URL",
-        process.env.NEXT_PUBLIC_SUPABASE_URL,
-      ),
-    supabaseAnonKey:
-      overrides.supabaseAnonKey ??
-      requireEnv(
-        "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      ),
   };
 }
 

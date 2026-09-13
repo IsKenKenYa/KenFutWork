@@ -7,6 +7,7 @@ import type { ServerEnv } from "../config/env.js";
 import type { AdminService } from "../features/admin/admin-service.js";
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
+import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { BlobStore } from "../features/blob/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
@@ -29,7 +30,6 @@ import type { AssetWriter } from "../features/uploads/asset-writer.js";
 import type { UploadService } from "../features/uploads/upload-service.js";
 import type { RunUsageAccumulator } from "../features/usage/run-usage-accumulator.js";
 import type { UsageService } from "../features/usage/usage-service.js";
-import type { RequestAuthenticator } from "../supabase/user.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import type { CanvasEventBuffer } from "../ws/event-buffer.js";
 

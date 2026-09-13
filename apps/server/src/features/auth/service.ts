@@ -1,6 +1,4 @@
 import type { FastifyRequest } from "fastify";
-
-import type { AuthenticatedUser } from "../../supabase/user.js";
 import {
   generateSessionToken,
   hashPassword,
@@ -12,6 +10,7 @@ import {
   hashSessionToken,
   SESSION_TTL_SECONDS,
 } from "./repository.js";
+import type { AuthenticatedUser } from "./types.ts";
 
 /**
  * 自管认证服务（M1.4）：邮箱 + 口令注册/登录，签发**不透明会话令牌**。

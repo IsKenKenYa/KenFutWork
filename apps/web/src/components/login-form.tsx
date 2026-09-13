@@ -5,11 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 import { fetchViewer } from "../lib/server-api";
-import {
-  isMagicLinkSupported,
-  sendMagicLink,
-  signInWithPassword,
-} from "../lib/session";
+import { signInWithPassword } from "../lib/session";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -33,7 +29,6 @@ export function LoginForm({ initialErrorMessage = null }: LoginFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   // 邮箱链接登录（magic link）代码保留但暂不暴露入口，当前只出账密登录
-  const [mode] = useState<"magic" | "password">("password");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(initialErrorMessage);
@@ -45,30 +40,6 @@ export function LoginForm({ initialErrorMessage = null }: LoginFormProps) {
     } catch {
       setError("无法加载你的工作台，请重试。");
     }
-  }
-
-  async function handleMagicLink(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const trimmed = email.trim();
-    if (!trimmed) return;
-    if (!isMagicLinkSupported()) {
-      // 自管认证不依赖邮件服务；此处显式拦截而不是让请求打到不存在的端点上
-      setError("当前部署未启用邮箱登录，请使用密码登录。");
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      await sendMagicLink(trimmed);
-      setSent(true);
-    } catch (authError) {
-      setError(
-        authError instanceof Error ? authError.message : "发送失败，请重试。",
-      );
-    }
-    setLoading(false);
   }
 
   async function handlePassword(e: FormEvent<HTMLFormElement>) {
@@ -171,7 +142,7 @@ export function LoginForm({ initialErrorMessage = null }: LoginFormProps) {
 
             <motion.form
               variants={fadeIn}
-              onSubmit={mode === "password" ? handlePassword : handleMagicLink}
+              onSubmit={handlePassword}
               className="space-y-4"
             >
               <div className="space-y-2">
@@ -185,19 +156,17 @@ export function LoginForm({ initialErrorMessage = null }: LoginFormProps) {
                   required
                 />
               </div>
-              {mode === "password" && (
-                <div className="space-y-2">
-                  <Label htmlFor="password">密码</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
-                </div>
-              )}
+              <div className="space-y-2">
+                <Label htmlFor="password">密码</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </div>
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? "登录中…" : "登录"}
               </Button>

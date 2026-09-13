@@ -26,7 +26,8 @@ import {
  * 用有 DDL 权限的连接执行（运行角色无 DDL），与 API/Worker 的 persistence 口径分开。
  */
 
-const SUPABASE_DIR = join(
+// 目录名沿用 `supabase/`（《AGENTS.md》约定：迁移目录名不改），但内容已是自管 Postgres SQL
+const MIGRATIONS_ROOT = join(
   dirname(fileURLToPath(import.meta.url)),
   "..",
   "..",
@@ -34,9 +35,9 @@ const SUPABASE_DIR = join(
   "supabase",
 );
 
-const MIGRATIONS_DIR = join(SUPABASE_DIR, "migrations");
+const MIGRATIONS_DIR = join(MIGRATIONS_ROOT, "migrations");
 /** 供给前导（物化 Supabase 专有对象，使历史可在空库重放；§4.13 M2.1）。 */
-const BOOTSTRAP_DIR = join(SUPABASE_DIR, "bootstrap");
+const BOOTSTRAP_DIR = join(MIGRATIONS_ROOT, "bootstrap");
 
 /** 完整迁移集 = 前导在前 + 历史在后（版本号排序，前导用保留段 000000000000NN）。 */
 function loadSet() {
@@ -244,7 +245,7 @@ async function main(): Promise<void> {
 
   if (!databaseUrl) {
     console.error(
-      "缺少数据库连接串：请设置 LOOMIC_DATABASE_URL（或 DATABASE_URL / SUPABASE_DB_URL，见 .env.example）。",
+      "缺少数据库连接串：请设置 LOOMIC_DATABASE_URL 或 DATABASE_URL（见 .env.example）。",
     );
     process.exit(1);
   }

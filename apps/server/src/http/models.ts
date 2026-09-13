@@ -2,11 +2,11 @@ import { type ModelInfo, modelListResponseSchema } from "@loomic/shared";
 import type { FastifyInstance } from "fastify";
 
 import type { ServerEnv } from "../config/env.js";
+import type { RequestAuthenticator } from "../features/auth/types.js";
 import {
   type ModelCatalogService,
   toInstanceSpecifier,
 } from "../features/model-providers/model-catalog-service.js";
-import type { RequestAuthenticator } from "../supabase/user.js";
 
 const OPENAI_MODELS: ModelInfo[] = [
   { id: "openai:az_sre/gpt-5.4", name: "GPT-5.4", provider: "openai" },

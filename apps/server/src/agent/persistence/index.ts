@@ -30,7 +30,7 @@ function createInMemoryPersistence(): AgentPersistence {
 }
 
 export function createAgentPersistenceService(
-  env: Pick<ServerEnv, "supabaseDbUrl">,
+  env: Pick<ServerEnv, "databaseUrl">,
   overrides?: {
     createCheckpointer?: typeof createSupabaseCheckpointer;
     createStore?: typeof createSupabaseStore;
@@ -40,7 +40,7 @@ export function createAgentPersistenceService(
 
   return {
     async getPersistence() {
-      if (!env.supabaseDbUrl) {
+      if (!env.databaseUrl) {
         // 未配置 Postgres：降级为进程内存实现（同进程内 thread 上下文可用）
         return createInMemoryPersistence();
       }
@@ -48,10 +48,10 @@ export function createAgentPersistenceService(
       if (!pendingPersistence) {
         pendingPersistence = Promise.all([
           (overrides?.createCheckpointer ?? createSupabaseCheckpointer)({
-            connectionString: env.supabaseDbUrl,
+            connectionString: env.databaseUrl,
           }),
           (overrides?.createStore ?? createSupabaseStore)({
-            connectionString: env.supabaseDbUrl,
+            connectionString: env.databaseUrl,
           }),
         ])
           .then(([checkpointer, store]) => ({ checkpointer, store }))

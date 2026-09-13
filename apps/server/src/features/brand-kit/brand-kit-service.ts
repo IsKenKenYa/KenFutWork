@@ -8,7 +8,7 @@ import type {
   BrandKitUpdateRequest,
 } from "@loomic/shared";
 
-import type { AuthenticatedUser } from "../../supabase/user.js";
+import type { AuthenticatedUser } from "../auth/types.js";
 import type { BlobStore } from "../blob/types.js";
 import type {
   BrandKitAssetPatch,

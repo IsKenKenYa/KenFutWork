@@ -1,6 +1,6 @@
 import { type ViewerResponse, viewerResponseSchema } from "@loomic/shared";
 
-import type { AuthenticatedUser } from "../../supabase/user.js";
+import type { AuthenticatedUser } from "../auth/types.js";
 import { BootstrapError, ProfileUpdateError } from "./errors.js";
 import type { ViewerProfileRecord, ViewerRepository } from "./repository.js";
 

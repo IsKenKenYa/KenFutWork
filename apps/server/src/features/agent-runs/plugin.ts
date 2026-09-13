@@ -5,7 +5,6 @@ import { createAgentRunService } from "../../agent/runtime.js";
 import { createWorkspaceSkillsLoader } from "../../agent/workspace-skills.js";
 import { registerRunRoutes } from "../../http/runs.js";
 import type { KernelEvents, PluginDefinition } from "../../kernel/types.js";
-import type { UserSupabaseClient } from "../../supabase/user.js";
 import type { ConnectionManager } from "../../ws/connection-manager.js";
 import { createCanvasRepository } from "../canvas/repository.js";
 import { createSkillCatalogRepository } from "../skills/repository.js";
@@ -13,7 +12,6 @@ import { createAgentRunMetadataService } from "./agent-run-service.js";
 import { createAgentRunRepository } from "./repository.js";
 
 export interface AgentRunsPluginDeps {
-  createUserClient: (accessToken: string) => UserSupabaseClient;
   connectionManager: ConnectionManager;
   /** 内核事件缝：turn 收尾发射 turn-stopping（用量结算挂钩点）。 */
   events: KernelEvents;
@@ -70,11 +68,11 @@ export function createAgentRunsPlugin(
             skills: createSkillCatalogRepository(ctx.get("persistence")),
           }),
           connectionManager: deps.connectionManager,
-          createUserClient: deps.createUserClient,
           ...(deps.agentModel ? { model: deps.agentModel } : {}),
           ...(deps.mockEventDelayMs === undefined
             ? {}
             : { eventDelayMs: deps.mockEventDelayMs }),
+          blob: ctx.get("blob"),
           env: ctx.env,
           ...(jobService ? { jobService } : {}),
           modelProviders: ctx.get("modelProviders"),

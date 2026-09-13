@@ -1,10 +1,7 @@
-import { readFileSync } from "node:fs";
-
 import { describe, expect, it } from "vitest";
 import type { ZodType } from "zod";
 import * as sharedExports from "./index.js";
 import {
-  type Database,
   errorCodeValues,
   healthResponseSchema,
   runCancelResponseSchema,
@@ -12,11 +9,6 @@ import {
   runCreateResponseSchema,
   streamEventSchema,
 } from "./index.js";
-
-const databaseTypeSource = readFileSync(
-  new URL("./supabase/database.ts", import.meta.url),
-  "utf8",
-);
 
 describe("@loomic/shared contracts", () => {
   it("shares the health response schema for server and web", () => {
@@ -516,25 +508,6 @@ describe("@loomic/shared contracts", () => {
       conversationId: "conversation_123",
       status: "accepted",
     });
-  });
-
-  it("tracks server-owned thread_id in shared Supabase typings", () => {
-    expect(databaseTypeSource).toMatch(/thread_id:\s*string \| null/);
-  });
-
-  it("declares shared agent_runs persistence typings", () => {
-    expect(databaseTypeSource).toMatch(/agent_runs:\s*{/);
-    expect(databaseTypeSource).toMatch(/session_id:\s*string/);
-    expect(databaseTypeSource).toMatch(/thread_id:\s*string/);
-  });
-
-  it("tracks official langgraph persistence schema typings", () => {
-    expect(databaseTypeSource).toMatch(/langgraph:\s*{/);
-    expect(databaseTypeSource).toMatch(/checkpoint_migrations:\s*{/);
-    expect(databaseTypeSource).toMatch(/checkpoints:\s*{/);
-    expect(databaseTypeSource).toMatch(/checkpoint_blobs:\s*{/);
-    expect(databaseTypeSource).toMatch(/checkpoint_writes:\s*{/);
-    expect(databaseTypeSource).toMatch(/store:\s*{/);
   });
 });
 

@@ -6,7 +6,7 @@ import type {
   SubscriptionPlan,
 } from "@loomic/shared";
 
-import type { AuthenticatedUser } from "../../supabase/user.js";
+import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerRepository } from "../bootstrap/repository.js";
 import type { CreditService } from "../credits/credit-service.js";
 import type { AdminRepository, PlatformOverviewRow } from "./repository.js";

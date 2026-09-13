@@ -10,12 +10,11 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@loomic/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
-
+import type { RequestAuthenticator } from "../features/auth/types.js";
 import {
   type BrandKitService,
   BrandKitServiceError,
 } from "../features/brand-kit/brand-kit-service.js";
-import type { RequestAuthenticator } from "../supabase/user.js";
 
 const ALLOWED_UPLOAD_MIME_TYPES = new Set([
   "image/png",

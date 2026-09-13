@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { describe, expect, it } from "vitest";
 import { AuthError, type AuthService } from "../features/auth/service.js";
-import type { AuthenticatedUser } from "../supabase/user.js";
+import type { AuthenticatedUser } from "../features/auth/types.js";
 import { registerAuthRoutes } from "./auth.js";
 
 const USER: AuthenticatedUser = {

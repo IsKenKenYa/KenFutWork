@@ -7,7 +7,7 @@ import type {
   ProviderScope,
 } from "@loomic/shared";
 
-import type { AuthenticatedUser } from "../../supabase/user.js";
+import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import type {
   ModelProviderRepository,
@@ -363,7 +363,15 @@ export function createModelProviderService(options: {
           );
         });
 
-      if (!row) {
+      if (row) {
+        return decryptRow(row);
+      }
+
+      // 回退到**平台池**（`scope='system'`，FORM-10）：管理员配一份 Key 分发全体用户，
+      // 模型目录里就包含这些实例，故凭证解析必须覆盖它们——否则选中平台池模型必然 404。
+      // **只接受 system 作用域**：工作区实例拿不到别人的（隔离性不因此放宽）。
+      const systemRow = await repository.findById(instanceId).catch(() => null);
+      if (!systemRow || systemRow.scope !== "system") {
         throw new ModelProviderServiceError(
           "instance_not_found",
           "Provider instance not found.",
@@ -371,7 +379,7 @@ export function createModelProviderService(options: {
         );
       }
 
-      return decryptRow(row);
+      return decryptRow(systemRow);
     },
 
     async resolveCredentialsById(instanceId) {

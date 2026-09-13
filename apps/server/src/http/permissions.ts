@@ -4,9 +4,8 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@loomic/shared";
 import type { FastifyInstance } from "fastify";
-
+import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { PermissionService } from "../features/permissions/permission-service.js";
-import type { RequestAuthenticator } from "../supabase/user.js";
 
 export async function registerPermissionRoutes(
   app: FastifyInstance,

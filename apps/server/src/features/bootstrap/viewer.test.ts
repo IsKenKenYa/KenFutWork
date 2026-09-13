@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { AuthenticatedUser } from "../../supabase/user.js";
+import type { AuthenticatedUser } from "../auth/types.js";
 import { SqlError } from "../persistence/errors.js";
 import type { PersistenceService, SqlRow } from "../persistence/types.js";
 import { createViewerService } from "./ensure-user-foundation.js";

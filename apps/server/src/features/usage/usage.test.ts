@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { AuthenticatedUser } from "../../supabase/user.js";
+import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerRepository } from "../bootstrap/repository.js";
 import {
   createPersistenceFromRunner,

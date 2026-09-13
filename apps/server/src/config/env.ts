@@ -38,7 +38,7 @@ export type ServerEnv = {
   /** SecretStore 主密钥（DEC-7 凭证加密落库）；启用 BYOK 凭证写入时必须配置。 */
   credentialSecret?: string;
   /**
-   * 自管 Postgres 连接串（`persistence` 缝）。迁移期回退读 `SUPABASE_DB_URL`，
+   * 自管 Postgres 连接串（`persistence` 缝）。
    * 去 Supabase 收口后只认 `DATABASE_URL`。
    */
   databaseUrl?: string;
@@ -54,13 +54,6 @@ export type ServerEnv = {
   googleVertexProject?: string;
   googleVertexVideoLocation?: string;
   metasoApiBase?: string;
-  /** blob 缝形态：`local`（桌面本地 FS）/ `supabase`（过渡期与自托管现状）。 */
-  blobDriver?: string;
-  /**
-   * 认证形态：`supabase`（过渡期，默认）/ `local`（自管）。
-   * 切到 `local` 会让 GoTrue 签发的令牌失效，须与前端替换、口令种子同一 PR 完成。
-   */
-  authDriver?: string;
   /** 队列形态：`pgmq`（服务端/自托管，默认）/ `in-process`（桌面，FORM-2）。 */
   queueDriver?: string;
   /** `local` 形态的对象根目录。 */
@@ -72,12 +65,6 @@ export type ServerEnv = {
   openAIApiKey?: string;
   port: number;
   replicateApiToken?: string;
-  supabaseAnonKey?: string;
-  supabaseDbUrl?: string;
-  supabaseJwtSecret?: string;
-  supabaseProjectId?: string;
-  supabaseServiceRoleKey?: string;
-  supabaseUrl?: string;
   /** 静态 UI 目录（LOOMIC_WEB_DIST）：配置后 server 直接托管前端。 */
   webDist?: string;
   version: string;
@@ -128,41 +115,20 @@ export function loadServerEnv(
     overrides.openAIApiKey ?? normalizeOptionalString(source.OPENAI_API_KEY);
   const webDist =
     overrides.webDist ?? normalizeOptionalString(source.LOOMIC_WEB_DIST);
-  const supabaseUrl =
-    overrides.supabaseUrl ?? normalizeOptionalString(source.SUPABASE_URL);
-  const supabaseAnonKey =
-    overrides.supabaseAnonKey ??
-    normalizeOptionalString(source.SUPABASE_ANON_KEY);
-  const supabaseDbUrl =
-    overrides.supabaseDbUrl ?? normalizeOptionalString(source.SUPABASE_DB_URL);
-  const authDriver =
-    overrides.authDriver ?? normalizeOptionalString(source.LOOMIC_AUTH_DRIVER);
   const queueDriver =
     overrides.queueDriver ??
     normalizeOptionalString(source.LOOMIC_QUEUE_DRIVER);
-  const blobDriver =
-    overrides.blobDriver ?? normalizeOptionalString(source.LOOMIC_BLOB_DRIVER);
   const blobDir =
     overrides.blobDir ?? normalizeOptionalString(source.LOOMIC_BLOB_DIR);
   const blobPublicBaseUrl =
     overrides.blobPublicBaseUrl ??
     normalizeOptionalString(source.LOOMIC_BLOB_PUBLIC_BASE_URL);
-  // 连接串取名优先级：自管形态的 `LOOMIC_DATABASE_URL` → 通用 `DATABASE_URL`
-  // → 迁移期回退 `SUPABASE_DB_URL`。三者的含义完全一致，前两个是目标态口径。
+  // 连接串取名优先级：`LOOMIC_DATABASE_URL`（首选）→ 通用 `DATABASE_URL`。
+  // 云托管时期的连接串回退（`SUPABASE_DB_URL`）已随 M1.5 删除。
   const databaseUrl =
     overrides.databaseUrl ??
     normalizeOptionalString(source.LOOMIC_DATABASE_URL) ??
-    normalizeOptionalString(source.DATABASE_URL) ??
-    supabaseDbUrl;
-  const supabaseJwtSecret =
-    overrides.supabaseJwtSecret ??
-    normalizeOptionalString(source.SUPABASE_JWT_SECRET);
-  const supabaseServiceRoleKey =
-    overrides.supabaseServiceRoleKey ??
-    normalizeOptionalString(source.SUPABASE_SERVICE_ROLE_KEY);
-  const supabaseProjectId =
-    overrides.supabaseProjectId ??
-    normalizeOptionalString(source.SUPABASE_PROJECT_ID);
+    normalizeOptionalString(source.DATABASE_URL);
   const googleApiKey =
     overrides.googleApiKey ?? normalizeOptionalString(source.GOOGLE_API_KEY);
   const googleApplicationCredentials =
@@ -279,9 +245,7 @@ export function loadServerEnv(
     ...(agentFilesRoot ? { agentFilesRoot } : {}),
     ...(credentialSecret ? { credentialSecret } : {}),
     ...(databaseUrl ? { databaseUrl } : {}),
-    ...(authDriver ? { authDriver } : {}),
     ...(queueDriver ? { queueDriver } : {}),
-    ...(blobDriver ? { blobDriver } : {}),
     ...(blobDir ? { blobDir } : {}),
     ...(blobPublicBaseUrl ? { blobPublicBaseUrl } : {}),
     ...(mcpServers?.length ? { mcpServers } : {}),
@@ -292,12 +256,6 @@ export function loadServerEnv(
     ...(openAIApiBase ? { openAIApiBase } : {}),
     ...(openAIApiKey ? { openAIApiKey } : {}),
     ...(webDist ? { webDist } : {}),
-    ...(supabaseUrl ? { supabaseUrl } : {}),
-    ...(supabaseAnonKey ? { supabaseAnonKey } : {}),
-    ...(supabaseDbUrl ? { supabaseDbUrl } : {}),
-    ...(supabaseJwtSecret ? { supabaseJwtSecret } : {}),
-    ...(supabaseServiceRoleKey ? { supabaseServiceRoleKey } : {}),
-    ...(supabaseProjectId ? { supabaseProjectId } : {}),
     ...(googleFontsApiKey ? { googleFontsApiKey } : {}),
     ...(googleVertexProject ? { googleVertexProject } : {}),
     ...(googleVertexLocation ? { googleVertexLocation } : {}),

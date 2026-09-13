@@ -15,6 +15,7 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@loomic/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
+import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import {
   type CreditService,
@@ -28,7 +29,6 @@ import {
   type JobService,
   JobServiceError,
 } from "../features/jobs/job-service.js";
-import type { RequestAuthenticator } from "../supabase/user.js";
 
 export async function registerJobRoutes(
   app: FastifyInstance,

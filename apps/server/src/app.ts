@@ -12,8 +12,6 @@ import { composePlugins } from "./kernel/compose.js";
 import { AgentRunEventBus, createKernelEvents } from "./kernel/context.js";
 import type { ServiceMap } from "./kernel/types.js";
 import { serverProfile } from "./profiles/server.js";
-import { createAdminSupabaseClient } from "./supabase/admin.js";
-import { createUserSupabaseClientFactory } from "./supabase/user.js";
 import { ConnectionManager } from "./ws/connection-manager.js";
 import { CanvasEventBuffer } from "./ws/event-buffer.js";
 import { registerWsRoute } from "./ws/handler.js";
@@ -28,11 +26,6 @@ export type AppOptions = {
   overrides?: Partial<ServiceMap>;
   dump?: boolean;
 };
-
-function getLazyAdminClient(env: ServerEnv) {
-  let admin: ReturnType<typeof createAdminSupabaseClient> | undefined;
-  return () => (admin ??= createAdminSupabaseClient(env));
-}
 
 export function buildApp(options: AppOptions = {}): FastifyInstance {
   const env = loadServerEnv(options.env);
@@ -51,8 +44,6 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   const kernel = composePlugins(
     env,
     serverProfile({
-      createUserClient: createUserSupabaseClientFactory(env),
-      getAdminClient: getLazyAdminClient(env),
       connectionManager,
       events: createKernelEvents(eventBus),
       credentialEnv: env,

@@ -3,10 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ServerEnv } from "../../config/env.js";
 import { composePlugins } from "../../kernel/compose.js";
-import type {
-  AuthenticatedUser,
-  RequestAuthenticator,
-} from "../../supabase/user.js";
+import type { AuthenticatedUser, RequestAuthenticator } from "../auth/types.js";
 import type { BrandKitService } from "./brand-kit-service.js";
 import { brandKitPlugin } from "./plugin.js";
 

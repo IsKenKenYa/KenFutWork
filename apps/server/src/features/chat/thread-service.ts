@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { AuthenticatedUser } from "../../supabase/user.js";
+import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import type { ChatRepository } from "./repository.js";
 

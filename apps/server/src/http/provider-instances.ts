@@ -8,12 +8,11 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@loomic/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
-
+import type { RequestAuthenticator } from "../features/auth/types.js";
 import {
   type ModelProviderService,
   ModelProviderServiceError,
 } from "../features/model-providers/model-provider-service.js";
-import type { RequestAuthenticator } from "../supabase/user.js";
 
 function sendError(
   error: unknown,

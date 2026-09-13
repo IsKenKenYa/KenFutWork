@@ -1,6 +1,6 @@
 import type { UsageSummaryResponse } from "@loomic/shared";
 
-import type { AuthenticatedUser } from "../../supabase/user.js";
+import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerRepository } from "../bootstrap/repository.js";
 import type { UsageRecordRow, UsageRepository } from "./repository.js";
 

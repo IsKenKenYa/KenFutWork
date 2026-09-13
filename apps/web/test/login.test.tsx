@@ -13,9 +13,7 @@ const {
   mockFetchViewer,
   mockGetSession,
   mockOnAuthStateChange,
-  mockSignInWithOtp,
   mockSignInWithPassword,
-  mockSignInWithOAuth,
   mockReplace,
   mockSearchParams,
 } = vi.hoisted(() => ({
@@ -26,17 +24,11 @@ const {
   }),
   mockGetSession: vi.fn(),
   mockOnAuthStateChange: vi.fn(),
-  mockSignInWithOtp: vi.fn().mockResolvedValue({ error: null }),
   mockSignInWithPassword: vi.fn().mockResolvedValue({
-    data: {
-      session: {
-        access_token: "session-token",
-        user: { id: "u1", email: "user@example.com" },
-      },
-    },
-    error: null,
+    access_token: "session-token",
+    expiresAt: "2026-10-13T00:00:00.000Z",
+    user: { displayName: null, email: "user@example.com", id: "u1" },
   }),
-  mockSignInWithOAuth: vi.fn().mockResolvedValue({ error: null }),
   mockReplace: vi.fn(),
   mockSearchParams: vi.fn(() => new URLSearchParams()),
 }));
@@ -45,16 +37,12 @@ vi.mock("../src/lib/server-api", () => ({
   fetchViewer: mockFetchViewer,
 }));
 
-vi.mock("../src/lib/supabase-browser", () => ({
-  getSupabaseBrowserClient: vi.fn(() => ({
-    auth: {
-      signInWithOtp: mockSignInWithOtp,
-      signInWithPassword: mockSignInWithPassword,
-      signInWithOAuth: mockSignInWithOAuth,
-      onAuthStateChange: mockOnAuthStateChange,
-      getSession: mockGetSession,
-    },
-  })),
+vi.mock("../src/lib/session", () => ({
+  // AuthProvider 也在渲染链上：替身需覆盖它用到的导出
+  loadSession: mockGetSession,
+  signInWithPassword: mockSignInWithPassword,
+  signOut: vi.fn(async () => {}),
+  subscribeSession: mockOnAuthStateChange,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -68,10 +56,8 @@ import { AuthProvider } from "../src/lib/auth-context";
 describe("Login page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetSession.mockResolvedValue({ data: { session: null }, error: null });
-    mockOnAuthStateChange.mockReturnValue({
-      data: { subscription: { unsubscribe: vi.fn() } },
-    });
+    mockGetSession.mockResolvedValue(null);
+    mockOnAuthStateChange.mockReturnValue(() => {});
     mockSearchParams.mockReturnValue(new URLSearchParams());
   });
 
@@ -96,22 +82,6 @@ describe("Login page", () => {
     expect(
       screen.getByRole("link", { name: /注册一个/ }).getAttribute("href"),
     ).toBe("/register");
-  });
-
-  it("shows callback errors from the query string as a banner", async () => {
-    mockSearchParams.mockReturnValue(
-      new URLSearchParams("error=auth_exchange_failed"),
-    );
-
-    render(
-      <AuthProvider>
-        <LoginPage />
-      </AuthProvider>,
-    );
-
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "登录链接校验失败，请重新发起登录。",
-    );
   });
 
   it("bootstraps the viewer before redirecting after password sign-in", async () => {

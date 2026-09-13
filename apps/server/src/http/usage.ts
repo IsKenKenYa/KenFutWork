@@ -4,9 +4,8 @@ import {
   usageSummaryResponseSchema,
 } from "@loomic/shared";
 import type { FastifyInstance } from "fastify";
-
+import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { UsageService } from "../features/usage/usage-service.js";
-import type { RequestAuthenticator } from "../supabase/user.js";
 
 export async function registerUsageRoutes(
   app: FastifyInstance,

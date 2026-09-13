@@ -5,6 +5,7 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@loomic/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
+import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import {
   SQLSTATE_UNIQUE_VIOLATION,
@@ -17,7 +18,6 @@ import {
   searchMarketplace,
 } from "../features/skills/marketplace-service.js";
 import type { SkillCatalogRepository } from "../features/skills/repository.js";
-import type { RequestAuthenticator } from "../supabase/user.js";
 
 // ---------------------------------------------------------------------------
 // Skill row mappers (duplicated from skills.ts to avoid circular imports)

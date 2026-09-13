@@ -11,6 +11,9 @@ const env = {
   // inject 的插件在启动期 fail loud。这里给一个不实际连接的连接串——
   // Provider 只在首次查询时才建连接，故 compose 期无网络访问。
   databaseUrl: "postgres://localhost:5432/loomic-test",
+  // blob 缝是必需能力且只有本地 FS 形态（M1.5 已删 Supabase Provider）
+  blobDir: "D:/Desktop/KenFutWork/data/blobs-test",
+  credentialSecret: "test-secret",
   port: 0,
   version: "t",
   webOrigin: "http://x",
@@ -63,8 +66,6 @@ describe("profiles（P7 单一插件清单）", async () => {
   it("server/worker profile 均可装配（无 app 时 ctx.app 访问抛错但不崩）", () => {
     const deps = {
       auth: { authenticate: async () => null },
-      createUserClient: (() => ({})) as never,
-      getAdminClient: (() => ({})) as never,
       connectionManager: {} as never,
       events: {
         emitPreStep: (payload) => Promise.resolve(payload),

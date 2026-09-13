@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { AuthenticatedUser } from "../../supabase/user.js";
+import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import {
   createPersistenceFromRunner,
@@ -269,6 +269,68 @@ describe("model-providers 服务（BYOK 凭证红线）", () => {
     const missing = buildService({ rows: [] });
     await expect(
       missing.service.resolveCredentials(USER, INSTANCE_ID),
+    ).rejects.toMatchObject({ code: "instance_not_found", statusCode: 404 });
+  });
+
+  it("工作区未命中时回退到平台池（scope='system'）：平台池模型选得中", async () => {
+    const { encryptSecret } = await import("./secret-store.js");
+    const enc = encryptSecret(
+      { credentialSecret: CREDENTIAL_SECRET },
+      "sk-pool",
+    );
+    const runner = createRunner((text) =>
+      // 工作区查询为空；按 id 的查询返回系统池实例
+      text.includes("scope = 'workspace'")
+        ? { rowCount: 0, rows: [] }
+        : { rowCount: 1, rows: [{ ...SYSTEM_ROW, encrypted_api_key: enc }] },
+    );
+    const service = createModelProviderService({
+      credentialEnv: { credentialSecret: CREDENTIAL_SECRET },
+      repository: createModelProviderRepository(
+        createPersistenceFromRunner(runner.runner),
+      ),
+      viewerService: VIEWER_STUB,
+    });
+
+    await expect(
+      service.resolveCredentials(USER, SYSTEM_ROW.id),
+    ).resolves.toMatchObject({
+      instanceId: SYSTEM_ROW.id,
+      apiKey: "sk-pool",
+    });
+  });
+
+  it("回退**只接受** system 作用域：别人的工作区实例仍然 404（隔离不放宽）", async () => {
+    const { encryptSecret } = await import("./secret-store.js");
+    const enc = encryptSecret(
+      { credentialSecret: CREDENTIAL_SECRET },
+      "sk-other",
+    );
+    const runner = createRunner((text) =>
+      text.includes("scope = 'workspace'")
+        ? { rowCount: 0, rows: [] }
+        : {
+            rowCount: 1,
+            // 按 id 查到了，但它是**另一个工作区**的实例
+            rows: [
+              {
+                ...INSTANCE_ROW,
+                workspace_id: "other-workspace",
+                encrypted_api_key: enc,
+              },
+            ],
+          },
+    );
+    const service = createModelProviderService({
+      credentialEnv: { credentialSecret: CREDENTIAL_SECRET },
+      repository: createModelProviderRepository(
+        createPersistenceFromRunner(runner.runner),
+      ),
+      viewerService: VIEWER_STUB,
+    });
+
+    await expect(
+      service.resolveCredentials(USER, INSTANCE_ID),
     ).rejects.toMatchObject({ code: "instance_not_found", statusCode: 404 });
   });
 

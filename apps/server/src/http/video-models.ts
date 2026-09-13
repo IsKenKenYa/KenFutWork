@@ -7,11 +7,10 @@ import {
   type SubscriptionPlan,
 } from "@loomic/shared";
 import type { FastifyInstance } from "fastify";
-
+import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { CreditService } from "../features/credits/credit-service.js";
 import { getAvailableVideoModels } from "../generation/providers/registry.js";
-import type { RequestAuthenticator } from "../supabase/user.js";
 
 export async function registerVideoModelRoutes(
   app: FastifyInstance,

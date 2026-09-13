@@ -38,19 +38,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let active = true;
 
     // 先订阅再拉取：避免「拉取期间发生的变化」丢失
-    let unsubscribe: (() => void) | undefined;
-    void subscribeSession((next) => {
+    const unsubscribe = subscribeSession((next) => {
       if (!active) return;
       setSession(next);
       setLoading(false);
-    })
-      .then((dispose) => {
-        unsubscribe = dispose;
-      })
-      .catch(() => {
-        // 订阅失败不该让界面卡在 loading（未登录态可继续渲染登录页）
-        if (active) setLoading(false);
-      });
+    });
 
     void loadSession()
       .then((next) => {
@@ -67,7 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       active = false;
-      unsubscribe?.();
+      unsubscribe();
     };
   }, []);
 

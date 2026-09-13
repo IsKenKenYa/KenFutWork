@@ -8,12 +8,11 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@loomic/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
-
+import type { RequestAuthenticator } from "../features/auth/types.js";
 import {
   type ChatService,
   ChatServiceError,
 } from "../features/chat/chat-service.js";
-import type { RequestAuthenticator } from "../supabase/user.js";
 
 export async function registerChatRoutes(
   app: FastifyInstance,

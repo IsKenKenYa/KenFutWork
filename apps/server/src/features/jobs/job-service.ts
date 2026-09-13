@@ -3,7 +3,7 @@ import type {
   BackgroundJobStatus,
   BackgroundJobType,
 } from "@loomic/shared";
-import type { AuthenticatedUser } from "../../supabase/user.js";
+import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import type { QueueClient } from "../queue/types.js";
 import type {

@@ -18,14 +18,14 @@ import {
   type AdminService,
   AdminServiceError,
 } from "../features/admin/admin-service.js";
+import type {
+  AuthenticatedUser,
+  RequestAuthenticator,
+} from "../features/auth/types.js";
 import {
   type ModelProviderService,
   ModelProviderServiceError,
 } from "../features/model-providers/model-provider-service.js";
-import type {
-  AuthenticatedUser,
-  RequestAuthenticator,
-} from "../supabase/user.js";
 
 /**
  * 平台管理后台路由（FORM-10）。**全部端点过 requireAdmin → 非管理员 403**：

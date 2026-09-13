@@ -1,6 +1,6 @@
 import type { CanvasContent, CanvasDetail, Json } from "@loomic/shared";
 
-import type { AuthenticatedUser } from "../../supabase/user.js";
+import type { AuthenticatedUser } from "../auth/types.js";
 import type { BlobStore } from "../blob/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import {
@@ -283,12 +283,10 @@ async function extractFilesToStorage(
 
         // Upsert: the same file ID may be re-saved
         try {
-          await blob
-            .bucket(CANVAS_FILES_BUCKET)
-            .upload(objectPath, buffer, {
-              contentType: mimeType,
-              upsert: true,
-            });
+          await blob.bucket(CANVAS_FILES_BUCKET).upload(objectPath, buffer, {
+            contentType: mimeType,
+            upsert: true,
+          });
         } catch {
           // On upload failure, keep the original base64 (graceful degradation)
           updatedFiles[fileId] = fileData;

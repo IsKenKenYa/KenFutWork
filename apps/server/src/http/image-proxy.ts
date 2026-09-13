@@ -10,19 +10,17 @@ export function registerImageProxyRoute(app: FastifyInstance) {
     "replicate.delivery",
     "replicate.com",
     "pbxt.replicate.delivery",
-    "supabase.co",
   ];
 
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const dynamicAllowed = supabaseUrl
-    ? (() => {
-        try {
-          return [new URL(supabaseUrl).hostname];
-        } catch {
-          return [];
-        }
-      })()
-    : [];
+  /**
+   * 额外允许的主机由 env 给出（`LOOMIC_IMAGE_PROXY_ALLOWED_HOSTS`，逗号分隔）。
+   * 原实现从 `SUPABASE_URL` 推出允许主机——云托管已移除（M1.5），故改为显式配置：
+   * 自托管可把自有对象存储/CDN 主机写进来，不必再依赖某个供应商的变量名。
+   */
+  const dynamicAllowed = (process.env.LOOMIC_IMAGE_PROXY_ALLOWED_HOSTS ?? "")
+    .split(",")
+    .map((host) => host.trim())
+    .filter((host) => host.length > 0);
 
   const allowed = [...staticAllowed, ...dynamicAllowed];
 

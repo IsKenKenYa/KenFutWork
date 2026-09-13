@@ -22,6 +22,7 @@ import {
 } from "@loomic/shared";
 import type { ServerEnv } from "../config/env.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
+import type { AuthenticatedUser } from "../features/auth/types.js";
 import type { BlobStore } from "../features/blob/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
@@ -38,10 +39,6 @@ import type { ModelProviderService } from "../features/model-providers/model-pro
 import type { RunUsageAccumulator } from "../features/usage/run-usage-accumulator.js";
 import type { ToolRegistry } from "../kernel/types.js";
 import { resolveInstanceChatModel } from "../providers/resolve.js";
-import type {
-  AuthenticatedUser,
-  UserSupabaseClient,
-} from "../supabase/user.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createPipelineLogger } from "../ws/logger.js";
@@ -300,12 +297,6 @@ type CreateAgentRuntimeOptions = {
   connectionManager?: ConnectionManager;
   /** 对象存储（blob 缝）：生成物落盘与 URL（M3.1 起不再直连 Supabase Storage）。 */
   blob: BlobStore;
-  /**
-   * 用户客户端工厂：仍用于**任务提交**路径（`submitImageJob` 需要构造
-   * `AuthenticatedUser` 带 accessToken）。对象存储已改走 `blob` 缝，
-   * 该依赖随 M1.4 自管认证落地一并移除。
-   */
-  createUserClient?: (accessToken: string) => unknown;
   creditService?: CreditService;
   env: ServerEnv;
   eventDelayMs?: number;
@@ -513,14 +504,18 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         const failedEvent = toFailedEvent(
           runId,
           now,
-          new Error("SUPABASE_DB_URL is required for persisted agent threads."),
+          new Error(
+            "LOOMIC_DATABASE_URL（或 DATABASE_URL）是持久化 agent 线程的必需项。",
+          ),
         );
         run.status = "failed";
         await updatePersistedRunFailure(
           options.agentRunMetadataService,
           run,
           now,
-          new Error("SUPABASE_DB_URL is required for persisted agent threads."),
+          new Error(
+            "LOOMIC_DATABASE_URL（或 DATABASE_URL）是持久化 agent 线程的必需项。",
+          ),
         );
         yield failedEvent;
         return;
@@ -529,14 +524,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       // Build submitImageJob / submitVideoJob closures for async jobs via PGMQ
       let submitImageJob: SubmitImageJobFn | undefined;
       let submitVideoJob: SubmitVideoJobFn | undefined;
-      if (
-        options.jobService &&
-        options.createUserClient &&
-        run.accessToken &&
-        run.userId
-      ) {
+      if (options.jobService && run.accessToken && run.userId) {
         const jobSvc = options.jobService;
-        const createClient = options.createUserClient;
         const accessToken = run.accessToken;
         const userId = run.userId;
         const canvasId = run.canvasId;
@@ -1109,11 +1098,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               const scope = await options.modelProviders.getInstanceScope(
                 instanceSpec.instanceId,
               );
-              if (
-                scope === "system" &&
-                options.creditService &&
-                options.createUserClient
-              ) {
+              if (scope === "system" && options.creditService) {
                 const balanceWorkspace = await options.viewerService
                   ?.resolveWorkspace({ id: run.userId })
                   .catch(() => null);

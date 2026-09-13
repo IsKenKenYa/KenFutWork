@@ -39,7 +39,12 @@ const PUBLIC_GET_ROUTES = [
 
 function buildProbeApp() {
   return buildApp({
-    env: { databaseUrl: "postgres://localhost:5432/loomic-test" },
+    env: {
+      databaseUrl: "postgres://localhost:5432/loomic-test",
+      // blob 缝是必需能力且只有本地 FS 形态（M1.5 已删 Supabase Provider）
+      blobDir: "D:/Desktop/KenFutWork/data/blobs-test",
+      credentialSecret: "test-secret",
+    },
     overrides: { auth: { authenticate: async () => null } },
   });
 }
@@ -62,7 +67,14 @@ describe("buildApp 装配完整性（插件清单防漏挂）", () => {
 
   it("缺 databaseUrl 时启动期 fail loud（存储缝是必需项，不再静默降级）", () => {
     expect(() =>
-      buildApp({ overrides: { auth: { authenticate: async () => null } } }),
+      buildApp({
+        // blob 配置给全，让「缺 databaseUrl」成为唯一的失败原因
+        env: {
+          blobDir: "D:/Desktop/KenFutWork/data/blobs-test",
+          credentialSecret: "test-secret",
+        },
+        overrides: { auth: { authenticate: async () => null } },
+      }),
     ).toThrow(/persistence/);
   });
 

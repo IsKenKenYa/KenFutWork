@@ -4,7 +4,7 @@ import type {
   ProviderProtocol,
 } from "@loomic/shared";
 
-import type { AuthenticatedUser } from "../../supabase/user.js";
+import type { AuthenticatedUser } from "../auth/types.js";
 import type { ModelProviderService } from "./model-provider-service.js";
 
 /**

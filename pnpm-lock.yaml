@@ -75,9 +75,6 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
         version: 1.30.0(@cfworker/json-schema@4.1.1)(zod@4.5.2)
-      '@supabase/supabase-js':
-        specifier: ^2.112.4
-        version: 2.112.4
       deepagents:
         specifier: ^1.13.2
         version: 1.13.2(@langchain/core@1.2.9(openai@7.8.0(undici@8.10.0)(ws@8.21.3)(zod@4.5.2))(ws@8.21.3))(@langchain/langgraph-checkpoint@1.1.5(@langchain/core@1.2.9(openai@7.8.0(undici@8.10.0)(ws@8.21.3)(zod@4.5.2))(ws@8.21.3)))(@langchain/langgraph-sdk@1.10.0(@langchain/core@1.2.9(openai@7.8.0(undici@8.10.0)(ws@8.21.3)(zod@4.5.2))(ws@8.21.3))(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(@langchain/langgraph@1.4.13(@langchain/core@1.2.9(openai@7.8.0(undici@8.10.0)(ws@8.21.3)(zod@4.5.2))(ws@8.21.3))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@4.5.2))(langchain@1.5.10(@langchain/core@1.2.9(openai@7.8.0(undici@8.10.0)(ws@8.21.3)(zod@4.5.2))(ws@8.21.3))(openai@7.8.0(undici@8.10.0)(ws@8.21.3)(zod@4.5.2))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(ws@8.21.3))(langsmith@0.9.0(openai@7.8.0(undici@8.10.0)(ws@8.21.3)(zod@4.5.2))(ws@8.21.3))
@@ -148,9 +145,6 @@ importers:
       '@loomic/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@supabase/supabase-js':
-        specifier: ^2.112.4
-        version: 2.112.4
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1

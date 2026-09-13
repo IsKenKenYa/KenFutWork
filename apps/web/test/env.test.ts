@@ -7,25 +7,20 @@ describe("@loomic/web env helpers", () => {
     vi.unstubAllEnvs();
   });
 
-  it("loads the browser-safe Supabase env and explicit server base url", () => {
+  it("只暴露 server base url：Supabase 两键已随 M1.5 删除", () => {
     vi.stubEnv("NEXT_PUBLIC_SERVER_BASE_URL", "http://localhost:4010");
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", " https://example.supabase.co ");
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", " anon-key ");
 
     const env = loadWebEnv();
 
-    expect(env).toEqual({
-      serverBaseUrl: "http://localhost:4010",
-      supabaseUrl: "https://example.supabase.co",
-      supabaseAnonKey: "anon-key",
-    });
+    expect(env).toEqual({ serverBaseUrl: "http://localhost:4010" });
+    // 回归锁：不再要求任何 Supabase 变量（缺了也不该抛错）
+    expect(Object.keys(env)).toEqual(["serverBaseUrl"]);
   });
 
-  it("rejects missing browser-safe Supabase env values", () => {
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "");
+  it("不设 server base url 时退回同源/默认值（不再因缺 Supabase 键报错）", () => {
+    vi.stubEnv("NEXT_PUBLIC_SERVER_BASE_URL", "");
 
-    expect(() => loadWebEnv()).toThrow(/NEXT_PUBLIC_SUPABASE_ANON_KEY/);
+    expect(() => loadWebEnv()).not.toThrow();
   });
 
   it("empty NEXT_PUBLIC_SERVER_BASE_URL enables same-origin mode (empty base)", () => {

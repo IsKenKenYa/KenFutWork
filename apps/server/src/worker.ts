@@ -15,8 +15,6 @@ async function setupProxy() {
 import { randomUUID } from "node:crypto";
 import { loadServerEnv } from "./config/env.js";
 import type { QueueMessage } from "./features/queue/types.js";
-import { createAdminSupabaseClient } from "./supabase/admin.js";
-import { createUserSupabaseClientFactory } from "./supabase/user.js";
 
 // Import executors to trigger registration via side effects
 import "./features/jobs/executors/image-generation.js";
@@ -49,25 +47,18 @@ async function main() {
 
   const env = loadServerEnv();
 
-  if (!env.supabaseDbUrl) {
-    console.error("SUPABASE_DB_URL is required for worker process.");
+  if (!env.databaseUrl) {
+    console.error(
+      "LOOMIC_DATABASE_URL（或 DATABASE_URL）是 worker 进程的必需项。",
+    );
     process.exit(1);
   }
 
   // Register all generation providers (shared with app.ts)
   registerAllProviders(env);
 
-  let adminClient: ReturnType<typeof createAdminSupabaseClient> | undefined;
-  const getAdminClient = () => {
-    adminClient ??= createAdminSupabaseClient(env);
-    return adminClient;
-  };
-
   // P7：worker 走内核装配（profiles/worker.ts 唯一插件清单）
-  const kernel = composePlugins(
-    env,
-    workerProfile({ getAdminClient, credentialEnv: env }),
-  );
+  const kernel = composePlugins(env, workerProfile({ credentialEnv: env }));
   const jobService = kernel.get("jobs");
   const creditService = kernel.get("credits");
   const modelProviders = kernel.get("modelProviders");

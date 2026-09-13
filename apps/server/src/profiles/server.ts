@@ -33,8 +33,6 @@ import { createSkillsPlugin } from "../features/skills/plugin.js";
 import { createUploadsPlugin } from "../features/uploads/plugin.js";
 import { createUsagePlugin } from "../features/usage/plugin.js";
 import type { KernelEvents, PluginDefinition } from "../kernel/types.js";
-import type { AdminSupabaseClient } from "../supabase/admin.js";
-import type { UserSupabaseClient } from "../supabase/user.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 
 /**
@@ -43,8 +41,6 @@ import type { ConnectionManager } from "../ws/connection-manager.js";
  */
 
 export interface ServerProfileDeps {
-  createUserClient: (accessToken: string) => UserSupabaseClient;
-  getAdminClient: () => AdminSupabaseClient;
   connectionManager: ConnectionManager;
   events: KernelEvents;
   credentialEnv: { credentialSecret?: string };
@@ -129,7 +125,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
   return [
     persistencePlugin,
     createQueuePlugin(),
-    createBlobPlugin({ getAdminClient: deps.getAdminClient }),
+    createBlobPlugin(),
     createAuthPlugin(),
     brandKitPlugin,
     createCreditsPlugin(),
@@ -160,7 +156,6 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
       ...(deps.githubToken ? { githubToken: deps.githubToken } : {}),
     }),
     createAgentRunsPlugin({
-      createUserClient: deps.createUserClient,
       connectionManager: deps.connectionManager,
       events: deps.events,
       ...(deps.agentFactory ? { agentFactory: deps.agentFactory } : {}),

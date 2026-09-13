@@ -37,7 +37,11 @@ export function registerStaticWebRoutes(
   options: { distDir: string },
 ) {
   const distDir = normalize(options.distDir);
-  if (!isAbsolute(distDir) || !existsSync(distDir) || !statSync(distDir).isDirectory()) {
+  if (
+    !isAbsolute(distDir) ||
+    !existsSync(distDir) ||
+    !statSync(distDir).isDirectory()
+  ) {
     throw new Error(
       `LOOMIC_WEB_DIST 目录无效：${options.distDir}（启动期 fail loud）`,
     );
@@ -59,7 +63,10 @@ export function registerStaticWebRoutes(
     const isHtml = extname(file) === ".html";
     reply
       .code(code)
-      .header("content-type", MIME_TYPES[extname(file)] ?? "application/octet-stream")
+      .header(
+        "content-type",
+        MIME_TYPES[extname(file)] ?? "application/octet-stream",
+      )
       .header("cache-control", isHtml ? "no-cache" : "public, max-age=86400");
     return reply.send(createReadStream(file));
   };
