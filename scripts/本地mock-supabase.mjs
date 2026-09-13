@@ -12,6 +12,7 @@ const WORKSPACE_ID = "ws-00000000-0000-0000-0000-000000000001";
 const projects = new Map();
 const canvases = new Map();
 const sessionsByCanvas = new Map();
+const chatSessions = new Map();
 
 const WORKSPACE = {
   id: WORKSPACE_ID,
@@ -258,6 +259,66 @@ const server = createServer((req, res) => {
       return;
     }
   }
+  // chat_sessions：会话线程绑定（agent run 的 thread resolve 源）
+  if (table === "chat_sessions") {
+    if (req.method === "GET") {
+      const idParam = (url.searchParams.get("id") ?? "").replace("eq.", "");
+      let row = chatSessions.get(idParam) ?? null;
+      if (!row && idParam) {
+        // 演示 mock：读时建档，保证 agent run 的 thread resolve 成功
+        row = {
+          id: idParam,
+          canvas_id: "",
+          thread_id: `thread_${idParam.replace(/-/g, "").slice(0, 20)}`,
+          title: "会话",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        chatSessions.set(idParam, row);
+      }
+      send(res, 200, wantsObject ? row : row ? [row] : [], wantsObject);
+      return;
+    }
+    if (req.method === "POST") {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        const row = JSON.parse(body || "{}");
+        const full = {
+          id: row.id ?? randomUUID(),
+          canvas_id: row.canvas_id ?? "",
+          thread_id: row.thread_id ?? `thread_${randomUUID()}`,
+          title: row.title ?? "新会话",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        chatSessions.set(full.id, full);
+        send(res, 201, full, true);
+      });
+      return;
+    }
+    if (req.method === "PATCH") {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        const id = (url.searchParams.get("id") ?? "").replace("eq.", "");
+        const existing = chatSessions.get(id);
+        if (!existing) {
+          send(res, 406, { message: "not found", code: "PGRST116" });
+          return;
+        }
+        const merged = {
+          ...existing,
+          ...JSON.parse(body || "{}"),
+          updated_at: new Date().toISOString(),
+        };
+        chatSessions.set(id, merged);
+        send(res, 200, merged, true);
+      });
+      return;
+    }
+  }
+
   if (table === "messages") {
     if (req.method === "GET") {
       send(res, 200, []);

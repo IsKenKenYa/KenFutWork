@@ -2,6 +2,7 @@
 
 import type { ProjectSummary } from "@loomic/shared";
 import {
+  Brain,
   Code2,
   Folder,
   FolderOpen,
@@ -21,11 +22,15 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 import { PluginMarketModal } from "@/components/workbench/plugin-market-modal";
-import { SettingsModal } from "@/components/workbench/settings-modal";
+import {
+  SettingsModal,
+  type SettingsTab,
+} from "@/components/workbench/settings-modal";
 import { SidebarRow } from "@/components/workbench/sidebar-row";
 import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
 import { useWebSocket } from "@/hooks/use-websocket";
@@ -52,6 +57,14 @@ interface TaskMessage {
   role: "user" | "assistant";
   text: string;
 }
+
+type WorkbenchModelOption = {
+  id: string;
+  name: string;
+  providerName?: string | undefined;
+  vision?: boolean | undefined;
+  contextWindow?: number | undefined;
+};
 
 interface WorkbenchTask {
   id: string; // conversationId
@@ -132,8 +145,10 @@ export function Workbench() {
   >({ code: [], design: [] });
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
+  const [followUp, setFollowUp] = useState("");
   const [tier, setTier] = useState("default");
-  const [models, setModels] = useState<Array<{ id: string; name: string }>>([]);
+  const [thinking, setThinking] = useState("default");
+  const [models, setModels] = useState<WorkbenchModelOption[]>([]);
   const [model, setModel] = useState("");
   const [submitting, setSubmitting] = useState(false);
   // Design 模式：项目面板（创建/列表）+ 原版画布内嵌
@@ -149,7 +164,7 @@ export function Workbench() {
   const [workbenchUser, setWorkbenchUser] = useState<WorkbenchUser | null>(
     null,
   );
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
   const [pluginsOpen, setPluginsOpen] = useState(false);
 
   const activeRunIdRef = useRef<string | null>(null);
@@ -169,12 +184,28 @@ export function Workbench() {
     if (!loading && !user) router.replace("/login");
   }, [loading, user, router]);
 
-  // 任务列表载入
+  // 任务列表载入 + 思考强度偏好
   useEffect(() => {
     setTasksByMode({
       code: loadTasks("code"),
       design: loadTasks("design"),
     });
+    try {
+      setThinking(
+        window.localStorage.getItem("workbench:thinking") ?? "default",
+      );
+    } catch {
+      // 存储不可用时用默认档
+    }
+  }, []);
+
+  const handleThinkingChange = useCallback((next: string) => {
+    setThinking(next);
+    try {
+      window.localStorage.setItem("workbench:thinking", next);
+    } catch {
+      // 存储失败不阻塞
+    }
   }, []);
 
   // 个人中心用户信息（真实 viewer）
@@ -368,7 +399,7 @@ export function Workbench() {
       headers: { Authorization: `Bearer ${session.access_token}` },
     })
       .then((r) => (r.ok ? r.json() : { models: [] }))
-      .then((data: { models: Array<{ id: string; name: string }> }) => {
+      .then((data: { models: WorkbenchModelOption[] }) => {
         setModels(data.models);
         setModel((current) => current || data.models[0]?.id || "");
       })
@@ -501,10 +532,11 @@ export function Workbench() {
           // state 后端要求 run 挂 canvas；workbench 任务以 conversationId 作为
           // 独立标识（事件按它路由，与 handler 的绑定逻辑一致）
           canvasId: conversationId,
-          prompt:
+          prompt: `${
             mode === "code" && workDirName
-              ? `【工作目录】${workDirName}\n\n${text.trim()}`
-              : text.trim(),
+              ? `【工作目录】${workDirName}\n\n`
+              : ""
+          }${thinking === "default" ? "" : `【思考强度：${thinking}】\n`}${text.trim()}`,
           ...(model ? { model } : {}),
           ...(mode === "design" ? { preset: "design" as const } : {}),
         },
@@ -517,13 +549,60 @@ export function Workbench() {
         },
       );
     },
-    [mode, model, workDirName, selectedProjectId, session, ws],
+    [mode, model, workDirName, thinking, selectedProjectId, session, ws],
   );
 
   const handleSignOut = useCallback(() => {
     void signOut();
     router.push("/login");
   }, [signOut, router]);
+
+  /** 任务视图内继续追问：追加 user 消息并复用同一会话发起新 run。 */
+  const continueTask = useCallback(
+    (text: string) => {
+      const taskId = activeTaskId;
+      if (!text.trim() || !taskId || !session?.access_token) return;
+      const task = tasks.find((t) => t.id === taskId);
+      if (!task) return;
+      setTasksByMode((prev) => {
+        const list = prev[mode].map((t) =>
+          t.id === taskId
+            ? {
+                ...t,
+                messages: [
+                  ...t.messages,
+                  { role: "user" as const, text: text.trim() },
+                ],
+                status: "running" as const,
+              }
+            : t,
+        );
+        saveTasks(mode, list);
+        return { ...prev, [mode]: list };
+      });
+      setSubmitting(true);
+      const thinkingHint =
+        thinking === "default" ? "" : `【思考强度：${thinking}】\n`;
+      ws.startRun(
+        {
+          sessionId: task.sessionId,
+          conversationId: task.id,
+          canvasId: task.id,
+          prompt: `${thinkingHint}${text.trim()}`,
+          ...(model ? { model } : {}),
+          ...(mode === "design" ? { preset: "design" as const } : {}),
+        },
+        (ack) => {
+          const payload = ack.payload as { runId?: string } | undefined;
+          if (payload?.runId) {
+            activeRunIdRef.current = payload.runId;
+          }
+          setSubmitting(false);
+        },
+      );
+    },
+    [activeTaskId, tasks, mode, model, thinking, session, ws],
+  );
 
   if (loading) {
     return (
@@ -590,7 +669,7 @@ export function Workbench() {
             <UserMenu
               user={workbenchUser}
               collapsed
-              onOpenSettings={() => setSettingsOpen(true)}
+              onOpenSettings={() => setSettingsTab("general")}
               onSignOut={handleSignOut}
             />
           </div>
@@ -811,7 +890,7 @@ export function Workbench() {
             <UserMenu
               user={workbenchUser}
               collapsed={false}
-              onOpenSettings={() => setSettingsOpen(true)}
+              onOpenSettings={() => setSettingsTab("general")}
               onSignOut={handleSignOut}
             />
           </div>
@@ -845,14 +924,32 @@ export function Workbench() {
                 <p className="text-xs text-muted-foreground">生成中…</p>
               ) : null}
             </div>
-            <div className="mt-4 flex items-center gap-2">
-              <button
-                type="button"
-                className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
-                onClick={() => setActiveTaskId(null)}
-              >
-                返回
-              </button>
+            {/* 底部：继续对话输入框（多轮，复用同一会话） */}
+            <form
+              className="mt-4 flex items-end gap-2 rounded-xl border bg-background p-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const value = followUp;
+                setFollowUp("");
+                continueTask(value);
+              }}
+            >
+              <textarea
+                aria-label="继续对话"
+                value={followUp}
+                onChange={(e) => setFollowUp(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    const value = followUp;
+                    setFollowUp("");
+                    continueTask(value);
+                  }
+                }}
+                rows={1}
+                placeholder="继续追问…"
+                className="max-h-32 min-h-[24px] flex-1 resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              />
               {activeTask.status === "running" && activeRunIdRef.current ? (
                 <button
                   type="button"
@@ -861,8 +958,17 @@ export function Workbench() {
                 >
                   停止
                 </button>
-              ) : null}
-            </div>
+              ) : (
+                <button
+                  type="submit"
+                  aria-label="发送"
+                  disabled={!followUp.trim()}
+                  className="rounded-lg bg-primary p-2 text-primary-foreground disabled:opacity-50"
+                >
+                  <Send className="h-4 w-4" />
+                </button>
+              )}
+            </form>
           </div>
         ) : mode === "design" && selectedProject ? (
           /* Design：选中项目后画布自动打开（原版 Loomic 画布，无额外按钮） */
@@ -923,6 +1029,35 @@ export function Workbench() {
                     {workDirName ?? "选择文件夹"}
                   </button>
                   <Select
+                    aria-label="思考强度"
+                    value={thinking}
+                    onValueChange={(next) => {
+                      if (typeof next === "string") handleThinkingChange(next);
+                    }}
+                    items={[
+                      { value: "default", label: "默认" },
+                      { value: "低", label: "低" },
+                      { value: "中", label: "中" },
+                      { value: "高", label: "高" },
+                      { value: "最高", label: "最高" },
+                    ]}
+                  >
+                    <SelectTrigger
+                      className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
+                      aria-label="思考强度"
+                    >
+                      <Brain className="h-3.5 w-3.5" />
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="min-w-24">
+                      <SelectItem value="default">默认</SelectItem>
+                      <SelectItem value="低">低</SelectItem>
+                      <SelectItem value="中">中</SelectItem>
+                      <SelectItem value="高">高</SelectItem>
+                      <SelectItem value="最高">最高</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select
                     aria-label="权限档位"
                     value={tier}
                     onValueChange={(next) => {
@@ -966,15 +1101,74 @@ export function Workbench() {
                     >
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="max-w-[280px]">
+                    <SelectContent className="max-w-[300px]">
                       {models.length === 0 ? (
                         <SelectItem value="">默认模型</SelectItem>
                       ) : (
-                        models.map((m) => (
-                          <SelectItem key={m.id} value={m.id}>
-                            {m.name}
-                          </SelectItem>
-                        ))
+                        <>
+                          {(() => {
+                            // BYOK（providerName 存在）分组在前，内置目录在后
+                            const byok = models.filter((m) => m.providerName);
+                            const builtin = models.filter(
+                              (m) => !m.providerName,
+                            );
+                            const badge = (m: (typeof models)[number]) => (
+                              <>
+                                {m.vision ? (
+                                  <span className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+                                    视觉
+                                  </span>
+                                ) : null}
+                                {m.contextWindow &&
+                                m.contextWindow >= 1_000_000 ? (
+                                  <span className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+                                    1M
+                                  </span>
+                                ) : null}
+                              </>
+                            );
+                            return (
+                              <>
+                                {byok.length > 0 ? (
+                                  <>
+                                    <SelectLabel>
+                                      {byok[0]!.providerName?.trim() ?? "我的供应商"}
+                                    </SelectLabel>
+                                    {byok.map((m) => (
+                                      <SelectItem key={m.id} value={m.id}>
+                                        <span className="flex items-center gap-1.5">
+                                          <span>{m.name}</span>
+                                          {badge(m)}
+                                        </span>
+                                      </SelectItem>
+                                    ))}
+                                  </>
+                                ) : null}
+                                {builtin.length > 0 ? (
+                                  <>
+                                    <SelectLabel>内置模型</SelectLabel>
+                                    {builtin.map((m) => (
+                                      <SelectItem key={m.id} value={m.id}>
+                                        <span className="flex items-center gap-1.5">
+                                          <span>{m.name}</span>
+                                          {badge(m)}
+                                        </span>
+                                      </SelectItem>
+                                    ))}
+                                  </>
+                                ) : null}
+                              </>
+                            );
+                          })()}
+                          <div className="-mx-1 my-1 border-t" />
+                          <button
+                            type="button"
+                            onClick={() => setSettingsTab("providers")}
+                            className="w-full rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                          >
+                            管理模型…
+                          </button>
+                        </>
                       )}
                     </SelectContent>
                   </Select>
@@ -1017,8 +1211,9 @@ export function Workbench() {
       </main>
 
       <SettingsModal
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
+        open={settingsTab !== null}
+        initialTab={settingsTab === null ? undefined : settingsTab}
+        onClose={() => setSettingsTab(null)}
       />
       <PluginMarketModal
         open={pluginsOpen}

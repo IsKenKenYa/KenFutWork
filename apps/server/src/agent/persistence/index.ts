@@ -1,3 +1,4 @@
+import { InMemoryStore, MemorySaver } from "@langchain/langgraph";
 import type {
   BaseCheckpointSaver,
   BaseStore,
@@ -16,6 +17,18 @@ export type AgentPersistenceService = {
   getPersistence(): Promise<AgentPersistence | null>;
 };
 
+/**
+ * 进程内共享的内存持久化（无 Postgres 时的 fallback）：
+ * 单进程内多轮上下文/checkpoint 完整生效，进程重启即失。
+ */
+function createInMemoryPersistence(): AgentPersistence {
+  // 惰性 require 避免 ESM/工具链差异；包在 server 依赖树内必然存在
+  return {
+    checkpointer: new MemorySaver(),
+    store: new InMemoryStore(),
+  };
+}
+
 export function createAgentPersistenceService(
   env: Pick<ServerEnv, "supabaseDbUrl">,
   overrides?: {
@@ -28,7 +41,8 @@ export function createAgentPersistenceService(
   return {
     async getPersistence() {
       if (!env.supabaseDbUrl) {
-        return null;
+        // 未配置 Postgres：降级为进程内存实现（同进程内 thread 上下文可用）
+        return createInMemoryPersistence();
       }
 
       if (!pendingPersistence) {
@@ -41,9 +55,10 @@ export function createAgentPersistenceService(
           }),
         ])
           .then(([checkpointer, store]) => ({ checkpointer, store }))
-          .catch((error) => {
+          .catch(() => {
+            // Postgres 不可达：降级为内存实现，保证多轮对话在本机可用
             pendingPersistence = null;
-            throw error;
+            return createInMemoryPersistence();
           });
       }
 

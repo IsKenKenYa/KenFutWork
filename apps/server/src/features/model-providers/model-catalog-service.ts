@@ -34,6 +34,7 @@ export function createModelCatalogService(options: {
             id: model.id,
             name: model.name,
             capability: model.capability,
+            model,
             provider: {
               instanceId: instance.id,
               name: instance.name,

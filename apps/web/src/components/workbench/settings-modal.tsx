@@ -18,7 +18,7 @@ import {
   updateWorkspaceSettings,
 } from "@/lib/server-api";
 
-type SettingsTab =
+export type SettingsTab =
   | "general"
   | "model"
   | "providers"
@@ -41,13 +41,23 @@ const TABS: Array<{ id: SettingsTab; label: string }> = [
  */
 export function SettingsModal({
   open,
+  initialTab,
   onClose,
 }: {
   open: boolean;
+  /** 打开时定位的分类（如「管理模型」直达供应商页）。 */
+  initialTab?: SettingsTab | undefined;
   onClose: () => void;
 }) {
   const { session } = useAuth();
-  const [activeTab, setActiveTab] = useState<SettingsTab>("general");
+  const [activeTab, setActiveTab] = useState<SettingsTab>(
+    initialTab ?? "general",
+  );
+
+  // 每次打开按 initialTab 重新定位
+  useEffect(() => {
+    if (open && initialTab) setActiveTab(initialTab);
+  }, [open, initialTab]);
   const [profile, setProfile] = useState<{
     displayName: string;
     email: string;

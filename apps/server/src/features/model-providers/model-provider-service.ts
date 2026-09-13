@@ -78,11 +78,21 @@ function toResponse(row: ProviderInstanceRow): ProviderInstanceResponse {
     protocol: row.protocol as ProviderProtocol,
     ...(row.base_url ? { baseUrl: row.base_url } : {}),
     hasCredential: true,
-    models: (row.models ?? []).map((m) => ({
-      id: m.id,
-      name: m.name,
-      capability: m.capability as ModelCapability,
-    })),
+    models: (row.models ?? []).map(
+      (m: {
+        id: string;
+        name: string;
+        capability: string;
+        vision?: boolean;
+        contextWindow?: number;
+      }) => ({
+        id: m.id,
+        name: m.name,
+        capability: m.capability as ModelCapability,
+        ...(m.vision ? { vision: true } : {}),
+        ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
+      }),
+    ),
     ...(row.compat ? { compat: row.compat } : {}),
     enabled: row.enabled,
   };
@@ -320,11 +330,21 @@ export function createModelProviderService(options: {
           ...(row.base_url ? { baseUrl: row.base_url } : {}),
           apiKey,
           ...(row.compat ? { compat: row.compat } : {}),
-          models: (row.models ?? []).map((m) => ({
-            id: m.id,
-            name: m.name,
-            capability: m.capability as ModelCapability,
-          })),
+          models: (row.models ?? []).map(
+            (m: {
+              id: string;
+              name: string;
+              capability: string;
+              vision?: boolean;
+              contextWindow?: number;
+            }) => ({
+              id: m.id,
+              name: m.name,
+              capability: m.capability as ModelCapability,
+              ...(m.vision ? { vision: true } : {}),
+              ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
+            }),
+          ),
         };
       } catch (error) {
         if (error instanceof ModelProviderServiceError) throw error;
@@ -370,11 +390,21 @@ export function createModelProviderService(options: {
         ...(row.base_url ? { baseUrl: row.base_url } : {}),
         apiKey,
         ...(row.compat ? { compat: row.compat } : {}),
-        models: (row.models ?? []).map((m) => ({
-          id: m.id,
-          name: m.name,
-          capability: m.capability as ModelCapability,
-        })),
+        models: (row.models ?? []).map(
+          (m: {
+            id: string;
+            name: string;
+            capability: string;
+            vision?: boolean;
+            contextWindow?: number;
+          }) => ({
+            id: m.id,
+            name: m.name,
+            capability: m.capability as ModelCapability,
+            ...(m.vision ? { vision: true } : {}),
+            ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
+          }),
+        ),
       };
     },
   };

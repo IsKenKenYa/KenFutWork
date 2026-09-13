@@ -33,6 +33,10 @@ export const providerInstanceModelSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   capability: modelCapabilitySchema,
+  /** 支持图像输入（前端显示「视觉」徽标）。 */
+  vision: z.boolean().optional(),
+  /** 上下文窗口 token 数（前端按量级显示徽标，如 1M）。 */
+  contextWindow: z.number().int().positive().optional(),
 });
 export type ProviderInstanceModel = z.infer<typeof providerInstanceModelSchema>;
 
@@ -111,6 +115,8 @@ export const modelCatalogEntrySchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   capability: modelCapabilitySchema,
+  /** 原始实例模型（vision / contextWindow 透传用）。 */
+  model: providerInstanceModelSchema,
   provider: z.object({
     instanceId: identifier,
     name: z.string().min(1),

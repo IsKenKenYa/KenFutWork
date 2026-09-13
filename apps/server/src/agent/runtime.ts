@@ -479,7 +479,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           run.threadId && options.agentPersistenceService
             ? await options.agentPersistenceService.getPersistence()
             : null;
-        rlog.lap("persistence_init");
+        rlog.lap("persistence_init", {
+          threadId: run.threadId ?? null,
+          hasCheckpointer: !!persistence?.checkpointer,
+          hasStore: !!persistence?.store,
+        });
       } catch (error) {
         const failedEvent = toFailedEvent(runId, now, error);
         run.status = "failed";

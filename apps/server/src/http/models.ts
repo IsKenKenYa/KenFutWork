@@ -77,8 +77,13 @@ export async function registerModelRoutes(
               .filter((entry) => entry.capability === "chat")
               .map((entry) => ({
                 id: toInstanceSpecifier(entry),
-                name: `${entry.name}（${entry.provider.name}）`,
+                name: entry.name,
                 provider: entry.provider.instanceId,
+                providerName: entry.provider.name,
+                ...(entry.model.vision ? { vision: true } : {}),
+                ...(entry.model.contextWindow
+                  ? { contextWindow: entry.model.contextWindow }
+                  : {}),
               })),
           );
         }

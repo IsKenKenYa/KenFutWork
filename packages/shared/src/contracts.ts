@@ -161,6 +161,12 @@ export const modelInfoSchema = z.object({
   provider: z.string().min(1),
   /** 标识用户供应商实例（BYOK，§5）；内置目录无实例时缺省。 */
   providerInstanceId: z.string().min(1).optional(),
+  /** 实例显示名（BYOK 分组头用）；内置目录缺省。 */
+  providerName: z.string().min(1).optional(),
+  /** 支持图像输入（前端「视觉」徽标）。 */
+  vision: z.boolean().optional(),
+  /** 上下文窗口 token 数（前端量级徽标）。 */
+  contextWindow: z.number().int().positive().optional(),
 });
 
 export const chatSessionIdSchema = identifierSchema;

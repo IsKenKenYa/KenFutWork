@@ -311,7 +311,11 @@ async function handleRunCommand(
   ]);
   // Client-provided model takes priority over workspace default
   const resolvedModel = payload.model ?? model;
-  log.lap("resolve", { threadId: !!threadId, model: resolvedModel });
+  log.lap("resolve", {
+    threadId: !!threadId,
+    threadIdValue: threadId ?? null,
+    model: resolvedModel,
+  });
 
   const response = agentRuns.createRun(payload, {
     accessToken: authenticatedUser.accessToken,
