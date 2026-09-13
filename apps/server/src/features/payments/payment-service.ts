@@ -2,8 +2,8 @@
 import type { BillingPeriod, SubscriptionPlan } from "@loomic/shared";
 import { PLAN_CONFIGS } from "@loomic/shared";
 
-import type { AdminSupabaseClient } from "../../supabase/admin.js";
 import type { LemonSqueezyClient } from "./lemon-squeezy-client.js";
+import type { PaymentRepository, SubscriptionPatch } from "./repository.js";
 
 // ── Error ────────────────────────────────────────────────────
 
@@ -93,11 +93,11 @@ export type WebhookPayload = {
 
 export function createPaymentService(options: {
   lemonSqueezy: LemonSqueezyClient;
-  getAdminClient: () => AdminSupabaseClient;
+  repository: PaymentRepository;
   variantMap: VariantMap;
   webOrigin: string;
 }): PaymentService {
-  const { lemonSqueezy, getAdminClient, variantMap, webOrigin } = options;
+  const { lemonSqueezy, repository, variantMap, webOrigin } = options;
 
   // Build reverse lookup: variantId -> "plan_period"
   const reverseVariantMap = new Map<
@@ -164,23 +164,16 @@ export function createPaymentService(options: {
           const plan: SubscriptionPlan = resolved?.plan ?? "starter";
           const billingPeriod: BillingPeriod = resolved?.period ?? "monthly";
 
-          // NOTE: lemon_squeezy_* columns added via migration but not yet in
-          // generated Database type — cast to `any` for update calls.
-          const admin = getAdminClient();
-          await (admin as any)
-            .from("subscriptions")
-            .update({
-              plan,
-              billing_period: billingPeriod,
-              lemon_squeezy_subscription_id: subscriptionId,
-              lemon_squeezy_customer_id: String(attrs.customer_id),
-              lemon_squeezy_variant_id: String(attrs.variant_id),
-              lemon_squeezy_order_id: String(attrs.order_id),
-              current_period_end: attrs.renews_at ?? null,
-              canceled_at: null,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("workspace_id", workspaceId);
+          await repository.updateSubscriptionByWorkspace(workspaceId, {
+            plan,
+            billing_period: billingPeriod,
+            lemon_squeezy_subscription_id: subscriptionId,
+            lemon_squeezy_customer_id: String(attrs.customer_id),
+            lemon_squeezy_variant_id: String(attrs.variant_id),
+            lemon_squeezy_order_id: String(attrs.order_id),
+            current_period_end: attrs.renews_at ?? null,
+            canceled_at: null,
+          });
 
           // Credits are granted by the subscription_payment_success event
           // which always fires alongside subscription_created on initial purchase.
@@ -189,10 +182,11 @@ export function createPaymentService(options: {
 
         case "subscription_updated": {
           // Find workspace by LS subscription ID
-          const admin = getAdminClient();
           const wsId =
             workspaceId ??
-            (await findWorkspaceByLsSubscription(admin, subscriptionId));
+            (await repository.findWorkspaceIdByLsSubscriptionId(
+              subscriptionId,
+            ));
           if (!wsId) {
             console.warn(
               "[PaymentService] subscription_updated: cannot resolve workspace",
@@ -201,10 +195,9 @@ export function createPaymentService(options: {
           }
 
           const resolved = resolvePlanFromVariant(attrs.variant_id);
-          const updateData: Record<string, unknown> = {
+          const updateData: SubscriptionPatch = {
             lemon_squeezy_variant_id: String(attrs.variant_id),
             current_period_end: attrs.renews_at ?? null,
-            updated_at: new Date().toISOString(),
           };
 
           if (resolved) {
@@ -219,23 +212,21 @@ export function createPaymentService(options: {
             updateData.canceled_at = null;
           }
 
-          await (admin as any)
-            .from("subscriptions")
-            .update(updateData)
-            .eq("workspace_id", wsId);
+          await repository.updateSubscriptionByWorkspace(wsId, updateData);
 
           // If plan changed (upgrade/downgrade), grant credits difference
           if (resolved) {
-            await grantMonthlyCredits(getAdminClient(), wsId, resolved.plan);
+            await grantMonthlyCredits(repository, wsId, resolved.plan);
           }
           break;
         }
 
         case "subscription_cancelled": {
-          const admin = getAdminClient();
           const wsId =
             workspaceId ??
-            (await findWorkspaceByLsSubscription(admin, subscriptionId));
+            (await repository.findWorkspaceIdByLsSubscriptionId(
+              subscriptionId,
+            ));
           if (!wsId) {
             console.warn(
               "[PaymentService] subscription_cancelled: cannot resolve workspace",
@@ -244,21 +235,18 @@ export function createPaymentService(options: {
           }
 
           // Mark as cancelled but keep plan active until period end
-          await admin
-            .from("subscriptions")
-            .update({
-              canceled_at: attrs.ends_at ?? new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            })
-            .eq("workspace_id", wsId);
+          await repository.updateSubscriptionByWorkspace(wsId, {
+            canceled_at: attrs.ends_at ?? new Date().toISOString(),
+          });
           break;
         }
 
         case "subscription_payment_success": {
-          const admin = getAdminClient();
           const wsId =
             workspaceId ??
-            (await findWorkspaceByLsSubscription(admin, subscriptionId));
+            (await repository.findWorkspaceIdByLsSubscriptionId(
+              subscriptionId,
+            ));
           if (!wsId) {
             console.warn(
               "[PaymentService] subscription_payment_success: cannot resolve workspace",
@@ -267,35 +255,28 @@ export function createPaymentService(options: {
           }
 
           // Get current plan for the workspace
-          const { data: sub } = await admin
-            .from("subscriptions")
-            .select("plan, current_period_end")
-            .eq("workspace_id", wsId)
-            .maybeSingle();
+          const sub = await repository.findSubscriptionByWorkspace(wsId);
 
           if (sub) {
             // Update renewal period
-            await admin
-              .from("subscriptions")
-              .update({
-                current_period_end: attrs.renews_at ?? null,
-                canceled_at: null,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("workspace_id", wsId);
+            await repository.updateSubscriptionByWorkspace(wsId, {
+              current_period_end: attrs.renews_at ?? null,
+              canceled_at: null,
+            });
 
             // Grant monthly credits for renewal
             const plan = sub.plan as SubscriptionPlan;
-            await grantMonthlyCredits(getAdminClient(), wsId, plan);
+            await grantMonthlyCredits(repository, wsId, plan);
           }
           break;
         }
 
         case "subscription_payment_failed": {
-          const admin = getAdminClient();
           const wsId =
             workspaceId ??
-            (await findWorkspaceByLsSubscription(admin, subscriptionId));
+            (await repository.findWorkspaceIdByLsSubscriptionId(
+              subscriptionId,
+            ));
           console.warn(
             `[PaymentService] Payment failed for workspace=${wsId ?? "unknown"} subscription=${subscriptionId}`,
           );
@@ -303,10 +284,11 @@ export function createPaymentService(options: {
         }
 
         case "subscription_expired": {
-          const admin = getAdminClient();
           const wsId =
             workspaceId ??
-            (await findWorkspaceByLsSubscription(admin, subscriptionId));
+            (await repository.findWorkspaceIdByLsSubscriptionId(
+              subscriptionId,
+            ));
           if (!wsId) {
             console.warn(
               "[PaymentService] subscription_expired: cannot resolve workspace",
@@ -315,20 +297,16 @@ export function createPaymentService(options: {
           }
 
           // Downgrade to free plan
-          await (admin as any)
-            .from("subscriptions")
-            .update({
-              plan: "free",
-              billing_period: null,
-              lemon_squeezy_subscription_id: null,
-              lemon_squeezy_customer_id: null,
-              lemon_squeezy_variant_id: null,
-              lemon_squeezy_order_id: null,
-              current_period_end: null,
-              canceled_at: null,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("workspace_id", wsId);
+          await repository.updateSubscriptionByWorkspace(wsId, {
+            plan: "free",
+            billing_period: null,
+            lemon_squeezy_subscription_id: null,
+            lemon_squeezy_customer_id: null,
+            lemon_squeezy_variant_id: null,
+            lemon_squeezy_order_id: null,
+            current_period_end: null,
+            canceled_at: null,
+          });
           break;
         }
 
@@ -338,31 +316,19 @@ export function createPaymentService(options: {
     },
 
     async getSubscriptionStatus(workspaceId) {
-      const admin = getAdminClient();
-
-      // NOTE: lemon_squeezy_* columns exist via migration but are not yet in
-      // the generated Database type — cast to `any` for those selects.
-      const { data, error } = await (admin as any)
-        .from("subscriptions")
-        .select(
-          "plan, billing_period, lemon_squeezy_subscription_id, current_period_end, canceled_at",
-        )
-        .eq("workspace_id", workspaceId)
-        .maybeSingle();
-
-      if (error) {
-        throw new PaymentServiceError(
-          "subscription_not_found",
-          "Failed to query subscription.",
-          500,
-        );
-      }
+      const data = await repository
+        .findSubscriptionByWorkspace(workspaceId)
+        .catch(() => {
+          throw new PaymentServiceError(
+            "subscription_not_found",
+            "Failed to query subscription.",
+            500,
+          );
+        });
 
       // If there is a LS subscription, fetch portal URL from the API
       let customerPortalUrl: string | null = null;
-      const lsSubId = (data as any)?.lemon_squeezy_subscription_id as
-        | string
-        | null;
+      const lsSubId = data?.lemon_squeezy_subscription_id ?? null;
       if (lsSubId) {
         try {
           const lsSub = await lemonSqueezy.getSubscription(lsSubId);
@@ -373,28 +339,22 @@ export function createPaymentService(options: {
       }
 
       return {
-        plan: ((data as any)?.plan as SubscriptionPlan) ?? "free",
-        billingPeriod: ((data as any)?.billing_period as BillingPeriod) ?? null,
+        plan: (data?.plan as SubscriptionPlan) ?? "free",
+        billingPeriod: (data?.billing_period as BillingPeriod) ?? null,
         status: lsSubId ? "active" : null,
         lemonSqueezySubscriptionId: lsSubId ?? null,
-        currentPeriodEnd: (data as any)?.current_period_end ?? null,
-        canceledAt: (data as any)?.canceled_at ?? null,
+        currentPeriodEnd: data?.current_period_end ?? null,
+        canceledAt: data?.canceled_at ?? null,
         customerPortalUrl,
       };
     },
 
     async cancelSubscription(workspaceId) {
-      const admin = getAdminClient();
+      const data = await repository
+        .findSubscriptionByWorkspace(workspaceId)
+        .catch(() => null);
 
-      const { data } = await (admin as any)
-        .from("subscriptions")
-        .select("lemon_squeezy_subscription_id")
-        .eq("workspace_id", workspaceId)
-        .maybeSingle();
-
-      const lsSubId = (data as any)?.lemon_squeezy_subscription_id as
-        | string
-        | null;
+      const lsSubId = data?.lemon_squeezy_subscription_id ?? null;
       if (!lsSubId) {
         throw new PaymentServiceError(
           "subscription_not_found",
@@ -411,17 +371,11 @@ export function createPaymentService(options: {
     },
 
     async changePlan(workspaceId, newPlanId, billingPeriod) {
-      const admin = getAdminClient();
+      const data = await repository
+        .findSubscriptionByWorkspace(workspaceId)
+        .catch(() => null);
 
-      const { data } = await (admin as any)
-        .from("subscriptions")
-        .select("lemon_squeezy_subscription_id")
-        .eq("workspace_id", workspaceId)
-        .maybeSingle();
-
-      const lsSubId = (data as any)?.lemon_squeezy_subscription_id as
-        | string
-        | null;
+      const lsSubId = data?.lemon_squeezy_subscription_id ?? null;
       if (!lsSubId) {
         throw new PaymentServiceError(
           "subscription_not_found",
@@ -444,75 +398,22 @@ export function createPaymentService(options: {
 
 // ── Helpers ──────────────────────────────────────────────────
 
-async function findWorkspaceByLsSubscription(
-  admin: AdminSupabaseClient,
-  subscriptionId: string,
-): Promise<string | null> {
-  const { data } = await (admin as any)
-    .from("subscriptions")
-    .select("workspace_id")
-    .eq("lemon_squeezy_subscription_id", subscriptionId)
-    .maybeSingle();
-
-  return (data as any)?.workspace_id ?? null;
-}
-
+/** 发月度额度：余额与流水的原子性由 repository 的事务 + 行锁保证。 */
 async function grantMonthlyCredits(
-  admin: AdminSupabaseClient,
+  repository: PaymentRepository,
   workspaceId: string,
   plan: SubscriptionPlan,
 ): Promise<void> {
   const config = PLAN_CONFIGS[plan];
   if (config.monthlyCredits <= 0) return;
 
-  const { data: balanceRow } = await admin
-    .from("credit_balances")
-    .select("balance, version")
-    .eq("workspace_id", workspaceId)
-    .maybeSingle();
-
-  if (balanceRow) {
-    const newBalance = (balanceRow.balance ?? 0) + config.monthlyCredits;
-    await admin
-      .from("credit_balances")
-      .update({
-        balance: newBalance,
-        version: (balanceRow.version ?? 0) + 1,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("workspace_id", workspaceId);
-
-    await admin.from("credit_transactions").insert({
-      workspace_id: workspaceId,
-      transaction_type: "subscription_grant",
-      amount: config.monthlyCredits,
-      balance_after: newBalance,
-      description: `${plan} plan — monthly credits granted`,
-    });
-  } else {
-    // Create balance row if it doesn't exist
-    await admin.from("credit_balances").insert({
-      workspace_id: workspaceId,
-      balance: config.monthlyCredits,
-      version: 1,
-    });
-
-    await admin.from("credit_transactions").insert({
-      workspace_id: workspaceId,
-      transaction_type: "subscription_grant",
-      amount: config.monthlyCredits,
-      balance_after: config.monthlyCredits,
-      description: `${plan} plan — initial monthly credits granted`,
-    });
-  }
+  await repository.grantMonthlyCredits({
+    amount: config.monthlyCredits,
+    description: `${plan} plan — monthly credits granted`,
+    workspaceId,
+  });
 }
 
-// ── Variant map builder ──────────────────────────────────────
-
-/**
- * Build a variant map from ServerEnv.
- * Keys are "plan_period" (e.g. "starter_monthly"), values are variant IDs.
- */
 export function buildVariantMap(env: {
   lemonSqueezyVariantStarterMonthly?: string;
   lemonSqueezyVariantStarterYearly?: string;

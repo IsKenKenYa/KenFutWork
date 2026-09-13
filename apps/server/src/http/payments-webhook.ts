@@ -5,13 +5,13 @@ import type {
   PaymentService,
   WebhookPayload,
 } from "../features/payments/payment-service.js";
-import type { AdminSupabaseClient } from "../supabase/admin.js";
+import type { PaymentRepository } from "../features/payments/repository.js";
 
 export async function registerPaymentWebhookRoute(
   app: FastifyInstance,
   options: {
-    getAdminClient: () => AdminSupabaseClient;
     paymentService: PaymentService;
+    repository: PaymentRepository;
     webhookSecret: string;
   },
 ) {
@@ -61,25 +61,19 @@ export async function registerPaymentWebhookRoute(
     const workspaceId = payload.meta?.custom_data?.workspace_id ?? null;
 
     // ── 3. Log to payment_events audit table ─────────────────
-    // NOTE: payment_events table is added via migration but not yet in the
-    // generated Database type — use `as any` until types are regenerated.
-    const admin = options.getAdminClient();
     const eventId = payload.data?.id ?? null;
 
-    const { error: insertError } = await (admin as any)
-      .from("payment_events")
-      .insert({
-        event_name: eventName,
-        lemon_squeezy_event_id: eventId,
-        workspace_id: workspaceId,
+    try {
+      await options.repository.insertPaymentEvent({
+        eventId,
+        eventName,
         payload: payload as unknown as Record<string, unknown>,
-        processed: false,
+        workspaceId,
       });
-
-    if (insertError) {
+    } catch (error) {
       console.error(
         "[Webhook] Failed to log payment event:",
-        (insertError as any).message,
+        error instanceof Error ? error.message : error,
       );
       // Continue processing even if audit logging fails
     }
@@ -90,10 +84,9 @@ export async function registerPaymentWebhookRoute(
 
       // Mark as processed
       if (eventId) {
-        await (admin as any)
-          .from("payment_events")
-          .update({ processed: true })
-          .eq("lemon_squeezy_event_id", eventId);
+        await options.repository
+          .markPaymentEventProcessed(eventId)
+          .catch(() => 0);
       }
     } catch (processingError) {
       const errorMessage =
@@ -105,10 +98,9 @@ export async function registerPaymentWebhookRoute(
 
       // Record error in audit trail
       if (eventId) {
-        await (admin as any)
-          .from("payment_events")
-          .update({ error_message: errorMessage })
-          .eq("lemon_squeezy_event_id", eventId);
+        await options.repository
+          .markPaymentEventError(eventId, errorMessage)
+          .catch(() => 0);
       }
 
       // Still return 200 to prevent Lemon Squeezy from retrying endlessly.

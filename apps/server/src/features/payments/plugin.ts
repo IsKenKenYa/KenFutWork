@@ -1,10 +1,10 @@
 import { registerPaymentRoutes } from "../../http/payments.js";
 import { registerPaymentWebhookRoute } from "../../http/payments-webhook.js";
 import type { PluginDefinition } from "../../kernel/types.js";
-import type { AdminSupabaseClient } from "../../supabase/admin.js";
 import { createLemonSqueezyClient } from "./lemon-squeezy-client.js";
 import type { PaymentService } from "./payment-service.js";
 import { buildVariantMap, createPaymentService } from "./payment-service.js";
+import { createPaymentRepository } from "./repository.js";
 
 /**
  * payments 插件：Lemon Squeezy 支付服务 + 支付/webhook 路由。
@@ -12,13 +12,12 @@ import { buildVariantMap, createPaymentService } from "./payment-service.js";
  * 注入 injected（原 BuildAppOptions.paymentService）时无条件启用，保持历史行为。
  * DEC-5：目标态（桌面/自托管）默认关闭；迁移期保持现状行为不变。
  */
-export function createPaymentsPlugin(deps: {
-  getAdminClient: () => AdminSupabaseClient;
-  injected?: PaymentService | undefined;
-}): PluginDefinition {
+export function createPaymentsPlugin(
+  deps: { injected?: PaymentService | undefined } = {},
+): PluginDefinition {
   return {
     name: "payments",
-    inject: ["auth", "viewer"],
+    inject: ["auth", "persistence", "viewer"],
     enabled: (env) =>
       Boolean(
         deps.injected || (env.lemonSqueezyApiKey && env.lemonSqueezyStoreId),
@@ -30,7 +29,7 @@ export function createPaymentsPlugin(deps: {
             apiKey: ctx.env.lemonSqueezyApiKey as string,
             storeId: ctx.env.lemonSqueezyStoreId as string,
           }),
-          getAdminClient: deps.getAdminClient,
+          repository: createPaymentRepository(ctx.get("persistence")),
           variantMap: buildVariantMap(ctx.env),
           webOrigin: ctx.env.webOrigin,
         }),
@@ -48,7 +47,7 @@ export function createPaymentsPlugin(deps: {
         // Webhook 路由注册在封装作用域内，自定义 content-type parser 不外泄。
         void ctx.app.register(async (webhookScope) => {
           await registerPaymentWebhookRoute(webhookScope, {
-            getAdminClient: deps.getAdminClient,
+            repository: createPaymentRepository(ctx.get("persistence")),
             paymentService,
             webhookSecret: ctx.env.lemonSqueezyWebhookSecret as string,
           });
