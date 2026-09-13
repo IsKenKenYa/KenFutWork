@@ -14,7 +14,8 @@
     "test:packages": "turbo run test",
     "test": "pnpm run test:workspace && pnpm run test:packages",
     "seed": "node scripts/seed-test-accounts.mjs",
-    "typecheck": "turbo run typecheck"
+    "typecheck": "turbo run typecheck",
+    "smoke:desktop": "node scripts/desktop-offline-smoke.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.11",

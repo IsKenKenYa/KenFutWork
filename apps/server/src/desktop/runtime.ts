@@ -148,11 +148,35 @@ export async function prepareDesktopRuntime(options: {
       ...env,
       // 显式配置优先：桌面下若用户自己配了库/队列/blob，尊重之
       blobDir: env.blobDir ?? paths.blobDir,
+      // BYOK 凭证加密主密钥：桌面必须开箱可用，故首次生成并持久化（用户不配也不报错）
+      credentialSecret:
+        env.credentialSecret ??
+        (await readOrCreateSecret(paths.credentialSecretFile)),
       databaseUrl: env.databaseUrl ?? postgres.connectionString,
       queueDriver: env.queueDriver ?? "in-process",
     },
     shutdown,
   };
+}
+
+/**
+ * 读取或生成持久化密钥（首次 48 字符随机）。
+ * 与 PG 口令同样的处置：只在数据目录、不进仓库、不打印。
+ */
+async function readOrCreateSecret(file: string): Promise<string> {
+  const { readFile, writeFile } = await import("node:fs/promises");
+  const { randomBytes } = await import("node:crypto");
+  try {
+    const existing = (await readFile(file, "utf8")).trim();
+    if (existing) {
+      return existing;
+    }
+  } catch {
+    // 不存在：走下面的生成
+  }
+  const secret = randomBytes(36).toString("base64url");
+  await writeFile(file, secret, { encoding: "utf8", mode: 0o600 });
+  return secret;
 }
 
 function toQueryable(pool: Pool) {

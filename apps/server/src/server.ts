@@ -93,14 +93,16 @@ async function main() {
   }
 }
 
-/** 打包（SEA）态取 exe 所在目录；开发态回退 cwd。 */
+/**
+ * 资源根目录：打包（SEA）态是 exe 所在目录（pg/、supabase/、web/ 都在那），
+ * 开发态是仓库根。SEA 下 import.meta.url 为空，故回退到 process.execPath。
+ */
 function resolveExeDir(): string {
   try {
-    // SEA 下 import.meta.url 为空；开发态指向 apps/server/src/server.ts
     const thisFile = fileURLToPath(import.meta.url);
     return dirname(dirname(dirname(thisFile)));
   } catch {
-    return process.cwd();
+    return dirname(process.execPath);
   }
 }
 

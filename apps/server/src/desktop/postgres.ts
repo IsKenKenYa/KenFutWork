@@ -51,10 +51,13 @@ export type EmbeddedPostgresDeps = {
   ensureDatabase(connectionString: string, database: string): Promise<void>;
   fs: {
     exists(path: string): boolean;
+    readFile(path: string): Promise<string>;
     mkdir(path: string): Promise<void>;
     readFile(path: string): Promise<string>;
     writeFile(path: string, content: string): Promise<void>;
   };
+  /** 进程存活探测（仅探测不发信号；注入便于测试）。 */
+  isProcessAlive(pid: number): boolean;
   randomPassword(): string;
   run(command: string, args: readonly string[]): Promise<void>;
 };
@@ -62,6 +65,8 @@ export type EmbeddedPostgresDeps = {
 const DEFAULT_USER = "loomic";
 const DEFAULT_DATABASE = "loomic";
 const CLUSTER_MARKER = "PG_VERSION";
+/** Postgres 运行时写入集群目录的进程信息文件。 */
+const POSTMASTER_PID = "postmaster.pid";
 /** 单条 pg 命令的上限（initdb 在慢盘上最久，60s 足够；超时即 fail loud 而非挂死）。 */
 const COMMAND_TIMEOUT_MS = 60_000;
 
@@ -227,6 +232,60 @@ export function isClusterInitialised(
   return exists(join(dataDir, CLUSTER_MARKER));
 }
 
+/**
+ * 解析 `postmaster.pid`（Postgres 的格式，行序固定）：
+ * 1 行 pid、2 行数据目录、3 行启动时间、4 行端口、5 行 socket 目录、6 行监听地址……
+ * 只要 pid 与端口两行，且 pid 仍在（进程存活）才算「运行中」——否则是上次崩溃留下的
+ * 陈旧文件，交给 `pg_ctl start` 自行处理。
+ */
+export function parsePostmasterPid(content: string): {
+  pid: number;
+  port: number;
+} | null {
+  const lines = content.split("\n").map((line) => line.trim());
+  const pid = Number.parseInt(lines[0] ?? "", 10);
+  const port = Number.parseInt(lines[3] ?? "", 10);
+  if (
+    !Number.isInteger(pid) ||
+    pid <= 0 ||
+    !Number.isInteger(port) ||
+    port <= 0
+  ) {
+    return null;
+  }
+  return { pid, port };
+}
+
+/** 进程是否存活（`kill(pid, 0)`：仅探测，不发信号）。 */
+export function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM 表示进程存在但无权限探测（仍算活着）；ESRCH 才是真没了
+    return (error as { code?: string }).code === "EPERM";
+  }
+}
+
+async function readRunningCluster(
+  dataDir: string,
+  deps: EmbeddedPostgresDeps,
+): Promise<{ pid: number; port: number } | null> {
+  const pidFile = join(dataDir, POSTMASTER_PID);
+  if (!deps.fs.exists(pidFile)) {
+    return null;
+  }
+  try {
+    const parsed = parsePostmasterPid(await deps.fs.readFile(pidFile));
+    if (!parsed || !deps.isProcessAlive(parsed.pid)) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 export async function startEmbeddedPostgres(
   options: EmbeddedPostgresOptions,
   overrides: Partial<EmbeddedPostgresDeps> = {},
@@ -264,17 +323,31 @@ export async function startEmbeddedPostgres(
     options.onLog?.(`已初始化内嵌 Postgres 集群：${options.dataDir}`);
   }
 
-  const port = options.port ?? (await deps.allocatePort());
-  await runOrThrow(
-    deps,
-    pgCtl,
-    buildStartArgs({
-      dataDir: options.dataDir,
-      logFile: options.logFile,
-      port,
-    }),
-    "启动内嵌 Postgres",
-  );
+  const running = await readRunningCluster(options.dataDir, deps);
+  let port: number;
+
+  if (running) {
+    // 上次进程被强杀（Windows 关窗/任务管理器结束进程时不会走退出钩子）会留下活着的
+    // postmaster：此时**接管**它，而不是再起一个（同一数据目录起第二个必然失败，
+    // 表现为「崩过一次就再也打不开」）。接管后退出时照常停库，顺带清掉上次的孤儿。
+    port = running.port;
+    options.onLog?.(
+      `检测到数据目录已有运行中的集群（pid=${running.pid}，端口 ${port}），直接接管`,
+    );
+  } else {
+    const port2 = options.port ?? (await deps.allocatePort());
+    await runOrThrow(
+      deps,
+      pgCtl,
+      buildStartArgs({
+        dataDir: options.dataDir,
+        logFile: options.logFile,
+        port: port2,
+      }),
+      "启动内嵌 Postgres",
+    );
+    port = port2;
+  }
 
   const connectionString = buildConnectionString({
     database,
@@ -386,6 +459,8 @@ const defaultDeps: EmbeddedPostgresDeps = {
       await writeFile(path, content, { encoding: "utf8", mode: 0o600 });
     },
   },
+
+  isProcessAlive,
 
   randomPassword() {
     return Array.from({ length: 32 }, () =>

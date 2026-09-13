@@ -136,6 +136,25 @@ importers:
       ws:
         specifier: ^8.21.3
         version: 8.21.3
+    optionalDependencies:
+      '@embedded-postgres/darwin-arm64':
+        specifier: 17.10.0-beta.17
+        version: 17.10.0-beta.17
+      '@embedded-postgres/darwin-x64':
+        specifier: 17.10.0-beta.17
+        version: 17.10.0-beta.17
+      '@embedded-postgres/linux-arm64':
+        specifier: 17.10.0-beta.17
+        version: 17.10.0-beta.17
+      '@embedded-postgres/linux-x64':
+        specifier: 17.10.0-beta.17
+        version: 17.10.0-beta.17
+      '@embedded-postgres/windows-x64':
+        specifier: 17.10.0-beta.17
+        version: 17.10.0-beta.17
+      '@img/sharp-win32-x64':
+        specifier: 0.35.4
+        version: 0.35.4
 
   apps/web:
     dependencies:

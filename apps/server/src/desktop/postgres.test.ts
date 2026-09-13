@@ -9,6 +9,7 @@ import {
   buildStopArgs,
   type EmbeddedPostgresDeps,
   isClusterInitialised,
+  parsePostmasterPid,
   resolvePgBinDir,
   startEmbeddedPostgres,
 } from "./postgres.js";
@@ -48,6 +49,8 @@ function createFakeDeps(
         files.set(path, content);
       },
     },
+    // 默认「进程存活」：接管分支由各用例按需覆盖
+    isProcessAlive: () => true,
     randomPassword: () => "generated-password",
     run: async (command, args) => {
       commands.push({ args, command });
@@ -278,5 +281,44 @@ describe("内嵌 Postgres：生命周期", () => {
   it("集群判据只看 PG_VERSION（半初始化的目录会被重新初始化）", () => {
     expect(isClusterInitialised(DATA_DIR, () => true)).toBe(true);
     expect(isClusterInitialised(DATA_DIR, () => false)).toBe(false);
+  });
+});
+
+describe("内嵌 Postgres：接管上次崩溃留下的集群", () => {
+  const PID_FILE = join(DATA_DIR, "postmaster.pid");
+  const PID_CONTENT = ["4321", DATA_DIR, "1700000000", "55999", "/tmp", "", "12345", "0"].join("\n");
+
+  it("postmaster.pid 解析：取 pid 与端口两行，畸形内容返回 null", () => {
+    expect(parsePostmasterPid(PID_CONTENT)).toEqual({ pid: 4321, port: 55999 });
+    expect(parsePostmasterPid("")).toBeNull();
+    expect(parsePostmasterPid("not-a-pid\nx\ny\nz")).toBeNull();
+  });
+
+  it("pid 存活时接管：不再 initdb、不再 pg_ctl start，直接复用既有端口", async () => {
+    const { commands, deps } = withBinaries({
+      [join(DATA_DIR, "PG_VERSION")]: "17",
+      [PID_FILE]: PID_CONTENT,
+      [PASSWORD_FILE]: "p",
+    });
+
+    const handle = await startEmbeddedPostgres(baseOptions, deps);
+
+    // 只应有「确保数据库存在」这一步，没有任何进程命令
+    expect(commands).toEqual([]);
+    expect(handle.port).toBe(55999);
+    expect(handle.connectionString).toContain(":55999/");
+  });
+
+  it("pid 已死（上次崩溃留下陈旧文件）→ 走正常启动", async () => {
+    const { commands, deps } = withBinaries({
+      [join(DATA_DIR, "PG_VERSION")]: "17",
+      [PID_FILE]: PID_CONTENT,
+      [PASSWORD_FILE]: "p",
+    });
+    deps.isProcessAlive = () => false;
+
+    await startEmbeddedPostgres(baseOptions, deps);
+
+    expect(commands.map((c) => c.command)).toEqual([PG_CTL]);
   });
 });

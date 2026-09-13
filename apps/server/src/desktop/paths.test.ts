@@ -74,6 +74,7 @@ describe("桌面数据目录解析（FORM-2）", () => {
       pgDataDir: join("D:/", "data", "postgres"),
       pgLogFile: join("D:/", "data", "logs", "postgres.log"),
       pgPasswordFile: join("D:/", "data", "postgres-password"),
+      credentialSecretFile: join("D:/", "data", "credential-secret"),
       pluginsDir: join("D:/", "data", "plugins"),
     });
     // 口令文件与集群目录分离：集群目录会被 pg 自己写满，凭据不该混在里面
