@@ -26,6 +26,7 @@ graph LR
 | `future/03-改造建议与路线.md` | 双模式改造建议稿（v3） | **收口中**：§0–§7 为冻结区（`<!-- frozen:start/end -->` + `docs/frozen-lock.json` 校验，禁改）；**仅 §8 可编辑**；P0 定稿后整篇归档 |
 | `Agent设计最佳实践研究报告.md` | agent 质量最佳实践 | 参考 |
 | `Loomic原版文档/` | 原版产品文档 | 历史参考 |
+| `design/logo/品牌Logo说明.md` | 品牌 logo 规范（定稿 V4 · 岚：几何/色值/应用位置） | 参考 |
 | `images/`、`future/` 其余 | 配图与历史材料 | 参考 |
 
 ## 治理规则

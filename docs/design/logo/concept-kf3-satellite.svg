@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- KF-3 · 双字对角：K 为主体居右下，小 F 收在左上浅色半区（与 K 保持明确间距） -->
+  <defs>
+    <linearGradient id="design" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#575E96"/>
+      <stop offset="1" stop-color="#686FA9"/>
+    </linearGradient>
+    <linearGradient id="code" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3C4272"/>
+      <stop offset="1" stop-color="#494F84"/>
+    </linearGradient>
+    <clipPath id="round">
+      <rect width="512" height="512" rx="115"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#round)">
+    <rect width="512" height="512" fill="url(#design)"/>
+    <path d="M512 0 L512 512 L0 512 Z" fill="url(#code)"/>
+  </g>
+  <g fill="#FFFFFF">
+    <rect x="96" y="100" width="44" height="136" rx="5"/>
+    <rect x="96" y="100" width="88" height="44"/>
+    <rect x="96" y="192" width="80" height="44"/>
+  </g>
+  <g fill="#FFFFFF">
+    <rect x="204" y="164" width="74" height="244" rx="8"/>
+  </g>
+  <g stroke="#FFFFFF" stroke-width="74" fill="none">
+    <path d="M380 188 L241 286"/>
+    <path d="M241 286 L380 384"/>
+  </g>
+</svg>

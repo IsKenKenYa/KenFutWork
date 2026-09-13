@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>KenFutWork · 方案 C 配色变体</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 44px 46px 40px;
+    background: #0B0E14; color: #E7EAF1;
+    font-family: "Segoe UI", system-ui, -apple-system, "Microsoft YaHei", sans-serif;
+    width: 1420px;
+  }
+  h1 { font-size: 25px; margin: 0 0 6px; letter-spacing: 0.2px; }
+  .sub { color: #8B93A5; font-size: 13.5px; margin-bottom: 28px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+  .card {
+    background: #12161F; border: 1px solid #242C3B; border-radius: 18px;
+    padding: 20px 18px 18px; position: relative;
+  }
+  .card.reco { border-color: #4A5674; }
+  .badge {
+    position: absolute; top: 14px; right: 14px;
+    font-size: 11px; color: #AEB6C8; background: #222A3A;
+    border: 1px solid #39435A; border-radius: 999px; padding: 3px 10px;
+  }
+  .card h2 { font-size: 15.5px; margin: 0 0 4px; }
+  .card h2 em { font-style: normal; color: #8B93A5; font-weight: 500; font-size: 12px; margin-left: 6px; }
+  .desc { font-size: 12px; color: #8B93A5; line-height: 1.6; margin: 0 0 16px; min-height: 56px; }
+  .hero { display: flex; justify-content: center; margin-bottom: 16px; }
+  .hero img { width: 190px; height: 190px; filter: drop-shadow(0 16px 30px rgba(0,0,0,0.45)); }
+  .strip { display: flex; align-items: flex-end; justify-content: center; gap: 16px; margin-bottom: 8px; }
+  .strip .cell { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+  .strip .cap { font-size: 10.5px; color: #5D6577; }
+  .strip img { border-radius: 24%; display: block; }
+  .ctx { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+  .mock { border-radius: 11px; padding: 12px 10px; font-size: 11px; }
+  .mock.dark { background: #0F1420; border: 1px solid #1F2735; }
+  .mock.light { background: #FFFFFF; border: 1px solid #E4E7EE; color: #232838; }
+  .brand { display: flex; align-items: center; gap: 7px; font-weight: 600; font-size: 12px; margin-bottom: 10px; }
+  .brand img { width: 19px; height: 19px; border-radius: 5px; }
+  .item { padding: 4px 7px; border-radius: 6px; color: #7E8698; margin-bottom: 2px; white-space: nowrap; }
+  .mock.dark .item.on { background: #222A3A; color: #E7EAF1; }
+  .mock.light .item { color: #6C7285; }
+  .mock.light .item.on { background: #E9EBF4; color: #232838; }
+  .compare {
+    margin-top: 24px; padding: 22px 28px;
+    background: #12161F; border: 1px solid #242C3B; border-radius: 18px;
+    display: flex; align-items: center; justify-content: center; gap: 44px;
+  }
+  .compare .cell { display: flex; flex-direction: column; align-items: center; gap: 9px; font-size: 12px; color: #8B93A5; }
+  .compare img { width: 84px; height: 84px; border-radius: 20px; }
+  .compare .old img { border: 1px solid #242C3B; }
+  .note { color: #667080; font-size: 12.5px; margin-top: 20px; text-align: center; line-height: 1.7; }
+</style>
+</head>
+<body>
+  <h1>方案 C · 双模式 K 配色变体</h1>
+  <div class="sub">同一几何结构，四组低饱和沉稳配色 · 饱和度与明度对比原版大幅降低，不再扎眼 · 2026-09-13</div>
+
+  <div class="grid">
+    <div class="card reco">
+      <div class="badge">推荐</div>
+      <h2>V1 · 暮靛 <em>灰紫 × 黛蓝</em></h2>
+      <p class="desc">保留原版「紫 = Design、蓝 = Code」的叙事，饱和度压到约三成，像黄昏时分的靛蓝。双色可辨又足够安静，与全灰的界面最协调。</p>
+      <div class="hero"><img src="concept-c-v1-dusk.svg" alt="V1"></div>
+      <div class="strip">
+        <div class="cell"><img src="concept-c-v1-dusk.svg" width="88" height="88"><span class="cap">88</span></div>
+        <div class="cell"><img src="concept-c-v1-dusk.svg" width="48" height="48"><span class="cap">48</span></div>
+        <div class="cell"><img src="concept-c-v1-dusk.svg" width="32" height="32"><span class="cap">32</span></div>
+        <div class="cell"><img src="concept-c-v1-dusk.svg" width="16" height="16"><span class="cap">16</span></div>
+      </div>
+      <div class="ctx">
+        <div class="mock dark">
+          <div class="brand"><img src="concept-c-v1-dusk.svg" alt="">KenFutWork</div>
+          <div class="item on">Code 模式</div>
+          <div class="item">Design 模式</div>
+          <div class="item">任务列表</div>
+        </div>
+        <div class="mock light">
+          <div class="brand"><img src="concept-c-v1-dusk.svg" alt="">KenFutWork</div>
+          <div class="item on">Code 模式</div>
+          <div class="item">Design 模式</div>
+          <div class="item">任务列表</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>V2 · 青瓷 <em>灰紫 × 青瓷蓝</em></h2>
+      <p class="desc">紫灰保留给 Design，Code 半边换成青瓷蓝绿，两半色相差更大、层次更清楚，整体依然低饱和，带一点清新感。</p>
+      <div class="hero"><img src="concept-c-v2-celadon.svg" alt="V2"></div>
+      <div class="strip">
+        <div class="cell"><img src="concept-c-v2-celadon.svg" width="88" height="88"><span class="cap">88</span></div>
+        <div class="cell"><img src="concept-c-v2-celadon.svg" width="48" height="48"><span class="cap">48</span></div>
+        <div class="cell"><img src="concept-c-v2-celadon.svg" width="32" height="32"><span class="cap">32</span></div>
+        <div class="cell"><img src="concept-c-v2-celadon.svg" width="16" height="16"><span class="cap">16</span></div>
+      </div>
+      <div class="ctx">
+        <div class="mock dark">
+          <div class="brand"><img src="concept-c-v2-celadon.svg" alt="">KenFutWork</div>
+          <div class="item on">Code 模式</div>
+          <div class="item">Design 模式</div>
+          <div class="item">任务列表</div>
+        </div>
+        <div class="mock light">
+          <div class="brand"><img src="concept-c-v2-celadon.svg" alt="">KenFutWork</div>
+          <div class="item on">Code 模式</div>
+          <div class="item">Design 模式</div>
+          <div class="item">任务列表</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>V3 · 石墨 <em>石板蓝 × 墨青</em></h2>
+      <p class="desc">近乎单色的高级灰蓝，最低调的一版，气质接近 Vercel / Linear。代价是「双色」的叙事几乎不可见，只剩对角线的微妙深浅。</p>
+      <div class="hero"><img src="concept-c-v3-graphite.svg" alt="V3"></div>
+      <div class="strip">
+        <div class="cell"><img src="concept-c-v3-graphite.svg" width="88" height="88"><span class="cap">88</span></div>
+        <div class="cell"><img src="concept-c-v3-graphite.svg" width="48" height="48"><span class="cap">48</span></div>
+        <div class="cell"><img src="concept-c-v3-graphite.svg" width="32" height="32"><span class="cap">32</span></div>
+        <div class="cell"><img src="concept-c-v3-graphite.svg" width="16" height="16"><span class="cap">16</span></div>
+      </div>
+      <div class="ctx">
+        <div class="mock dark">
+          <div class="brand"><img src="concept-c-v3-graphite.svg" alt="">KenFutWork</div>
+          <div class="item on">Code 模式</div>
+          <div class="item">Design 模式</div>
+          <div class="item">任务列表</div>
+        </div>
+        <div class="mock light">
+          <div class="brand"><img src="concept-c-v3-graphite.svg" alt="">KenFutWork</div>
+          <div class="item on">Code 模式</div>
+          <div class="item">Design 模式</div>
+          <div class="item">任务列表</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>V4 · 岚 <em>靛蓝双深浅</em></h2>
+      <p class="desc">同一个靛蓝色相只靠深浅分两半，最含蓄的双色。比 V3 多一点颜色温度，比 V1 更收敛，适合想要「隐约可见双色」的效果。</p>
+      <div class="hero"><img src="concept-c-v4-azure.svg" alt="V4"></div>
+      <div class="strip">
+        <div class="cell"><img src="concept-c-v4-azure.svg" width="88" height="88"><span class="cap">88</span></div>
+        <div class="cell"><img src="concept-c-v4-azure.svg" width="48" height="48"><span class="cap">48</span></div>
+        <div class="cell"><img src="concept-c-v4-azure.svg" width="32" height="32"><span class="cap">32</span></div>
+        <div class="cell"><img src="concept-c-v4-azure.svg" width="16" height="16"><span class="cap">16</span></div>
+      </div>
+      <div class="ctx">
+        <div class="mock dark">
+          <div class="brand"><img src="concept-c-v4-azure.svg" alt="">KenFutWork</div>
+          <div class="item on">Code 模式</div>
+          <div class="item">Design 模式</div>
+          <div class="item">任务列表</div>
+        </div>
+        <div class="mock light">
+          <div class="brand"><img src="concept-c-v4-azure.svg" alt="">KenFutWork</div>
+          <div class="item on">Code 模式</div>
+          <div class="item">Design 模式</div>
+          <div class="item">任务列表</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="compare">
+    <div class="cell"><img src="concept-c-v1-dusk.svg" alt="">V1 暮靛</div>
+    <div class="cell"><img src="concept-c-v2-celadon.svg" alt="">V2 青瓷</div>
+    <div class="cell"><img src="concept-c-v3-graphite.svg" alt="">V3 石墨</div>
+    <div class="cell"><img src="concept-c-v4-azure.svg" alt="">V4 岚</div>
+    <div class="cell old"><img src="concept-c-dual-k.svg" alt="">原版 C（扎眼）</div>
+    <div class="cell old"><img src="../../../apps/web/public/logo.svg" alt="">现有 logo</div>
+  </div>
+
+  <div class="note">
+    选定后即落地：替换 <code>apps/web/public/logo.svg</code> 与 <code>favicon.svg</code>，同步生成 Tauri 桌面端各尺寸图标；色值还可以在选定变体上继续微调（更灰一点 / 更亮一点都行）。
+  </div>
+</body>
+</html>
