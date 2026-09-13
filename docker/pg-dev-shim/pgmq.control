@@ -1,0 +1,4 @@
+comment = 'Loomic dev shim: minimal pgmq.create() so historical migrations replay on plain Postgres'
+default_version = '1.0'
+relocatable = false
+schema = pgmq

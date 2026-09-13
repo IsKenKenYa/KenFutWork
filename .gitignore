@@ -68,3 +68,6 @@ docs/tech/replicate-models-pricing.md
 release/
 apps/web/out/
 apps/web/tmp/
+
+# 本地 blob 目录（M3.1 local 形态）：本机数据，不入库
+/data/

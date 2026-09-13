@@ -147,8 +147,11 @@ export function loadServerEnv(
   const blobPublicBaseUrl =
     overrides.blobPublicBaseUrl ??
     normalizeOptionalString(source.LOOMIC_BLOB_PUBLIC_BASE_URL);
+  // 连接串取名优先级：自管形态的 `LOOMIC_DATABASE_URL` → 通用 `DATABASE_URL`
+  // → 迁移期回退 `SUPABASE_DB_URL`。三者的含义完全一致，前两个是目标态口径。
   const databaseUrl =
     overrides.databaseUrl ??
+    normalizeOptionalString(source.LOOMIC_DATABASE_URL) ??
     normalizeOptionalString(source.DATABASE_URL) ??
     supabaseDbUrl;
   const supabaseJwtSecret =

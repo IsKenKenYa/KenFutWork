@@ -1,0 +1,42 @@
+# 纯 Postgres 开发库（M1.5）：替代 Supabase 供给栈（12 个容器）用于本地开发。
+#
+# 为什么可以只要一个 Postgres：自管 Postgres 迁移完成后，应用对「Supabase 供给对象」的
+# 依赖已被 `supabase/bootstrap/` 前导物化（extensions/auth/storage schema、角色、pgmq 替身），
+# 认证换成自管（M1.4）、对象存储换成 blob 缝（M3.1）、队列可走进程内（M3.2）。
+# 空库重放由迁移执行器验证（`migrate replay`），本文件只负责「起一个空库」。
+#
+# 用法：
+#   docker compose -f docker-compose.pg.yml up -d --build
+#   LOOMIC_DATABASE_URL=postgres://loomic:loomic@127.0.0.1:5433/loomic \
+#     pnpm --filter @loomic/server migrate apply
+#
+# 端口用 5433：避开 Supabase 栈的 54322，两者可并存以便逐步切换。
+
+services:
+  postgres:
+    build:
+      context: ./docker/pg-dev-shim
+    image: loomic-pg-dev:17
+    container_name: loomic_pg_dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: loomic
+      POSTGRES_PASSWORD: loomic
+      POSTGRES_USER: loomic
+      # 与 Supabase 的本地库保持同样的时区口径（迁移里用 timezone('utc', now())）
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - loomic_pg_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      # 迁移执行器与集成测试都要求「库已就绪」，故这里必须真的能连上
+      test: ["CMD-SHELL", "pg_isready -U loomic -d loomic"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+volumes:
+  loomic_pg_dev_data:
