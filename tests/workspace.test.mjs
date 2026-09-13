@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
-import { readdirSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { readdirSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { checkDocs, updateFrozenLock } from "../scripts/check-docs.mjs";
+
+const execFileAsync = promisify(execFile);
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(dirname, "..");
@@ -279,4 +283,142 @@ test("docs fixture: 第二处 ctx key 表被拦截", async () => {
     const errors = errorsOf(await checkDocs({ rootDir: fixtureRoot }));
     assert.match(errors, /ctx key 清单表/);
   });
+});
+
+// --- 去 Supabase 棘轮门禁（§4.13）---
+//
+// 底账不能只活在文档里：残留量一旦只靠自觉，迁移就会边清边涨。这里把
+// 代码侧与 SQL 侧的残留计数做成**只许减不许增**的门禁，消除残留的 PR
+// 必须在同一 PR 下调基线（tests/supabase-cleanup-baseline.json）。
+
+const SUPABASE_SOURCE_ROOTS = ["apps/server/src", "apps/web/src", "packages"];
+const IGNORED_DIRS = new Set([
+  "node_modules",
+  "dist",
+  ".next",
+  "out",
+  ".turbo",
+]);
+
+/** 仍与 Supabase 客户端耦合的源文件（排除测试）。 */
+function listSupabaseCoupledSources() {
+  const files = [];
+
+  const walk = (dir) => {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      const target = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!IGNORED_DIRS.has(entry.name)) {
+          walk(target);
+        }
+        continue;
+      }
+      if (!/\.(ts|tsx)$/.test(entry.name) || /\.test\.(ts|tsx)$/.test(entry.name)) {
+        continue;
+      }
+      files.push(target);
+    }
+  };
+
+  for (const root of SUPABASE_SOURCE_ROOTS) {
+    walk(path.join(rootDir, root));
+  }
+
+  return files.filter((filePath) =>
+    /UserSupabaseClient|AdminSupabaseClient|@supabase\//.test(
+      readFileSync(filePath, "utf8"),
+    ),
+  );
+}
+
+function countOccurrences(source, pattern) {
+  return (source.match(pattern) ?? []).length;
+}
+
+async function collectSupabaseResiduals() {
+  const coupled = listSupabaseCoupledSources();
+  const code = {
+    filesUsingSupabaseClient: coupled.length,
+    fromCalls: 0,
+    storageCalls: 0,
+  };
+
+  for (const filePath of coupled) {
+    const source = readFileSync(filePath, "utf8");
+    code.fromCalls += countOccurrences(source, /\.from\(/g);
+    code.storageCalls += countOccurrences(source, /\.storage/g);
+  }
+
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    ["scripts/supabase-inventory.mjs", "--json"],
+    { cwd: rootDir },
+  );
+  const inventory = JSON.parse(stdout);
+  const sql = {
+    authUid: inventory.rewrite["auth.uid() 总数"],
+    authUsersTables: inventory.rewrite["FK → auth.users 的表"].length,
+    authUsersTriggers: inventory.rewrite["auth.users 上的触发器"].length,
+    storageObjectsRefs: inventory.rewrite["storage.objects 引用"],
+    cloudUrls: inventory.rewrite["硬编码云端 URL"],
+  };
+
+  return { code, sql };
+}
+
+test("去 Supabase 残留只许减不许增（棘轮门禁）", async () => {
+  const baseline = await readJson("tests/supabase-cleanup-baseline.json");
+  const actual = await collectSupabaseResiduals();
+
+  // 基线必须与度量口径一一对应，防止某个指标被悄悄删掉而门禁失效。
+  assert.deepEqual(
+    Object.keys(actual).sort(),
+    ["code", "sql"],
+    "度量分组与基线不一致",
+  );
+  for (const group of ["code", "sql"]) {
+    assert.deepEqual(
+      Object.keys(actual[group]).sort(),
+      Object.keys(baseline[group]).sort(),
+      `${group} 度量指标与基线不一致：新增/删除指标必须同步基线`,
+    );
+  }
+
+  const regressions = [];
+  const improvements = [];
+  for (const group of ["code", "sql"]) {
+    for (const [metric, value] of Object.entries(actual[group])) {
+      const limit = baseline[group][metric];
+      assert.equal(
+        typeof limit,
+        "number",
+        `${group}.${metric} 基线必须是数字`,
+      );
+      if (value > limit) {
+        regressions.push(`${group}.${metric}: ${value} > 基线 ${limit}`);
+      } else if (value < limit) {
+        improvements.push(`${group}.${metric}: ${value} < 基线 ${limit}`);
+      }
+    }
+  }
+
+  assert.deepEqual(
+    regressions,
+    [],
+    `新增了 Supabase 耦合（去 Supabase 迁移期间禁止）：\n    ${regressions.join("\n    ")}`,
+  );
+
+  // 有进展就把基线一起降下来——否则基线会长期虚高，棘轮失去意义。
+  assert.deepEqual(
+    improvements,
+    [],
+    `残留已下降，请在本 PR 同步下调 tests/supabase-cleanup-baseline.json：\n    ${improvements.join("\n    ")}`,
+  );
 });

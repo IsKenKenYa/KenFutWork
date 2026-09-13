@@ -1,0 +1,15 @@
+{
+  "//": "去 Supabase 残留基线（棘轮门禁）：数值只许减不许增。消除残留后必须在本 PR 同步下调，台账说明见 docs/tech/改造计划.md §4.13。",
+  "code": {
+    "filesUsingSupabaseClient": 43,
+    "fromCalls": 125,
+    "storageCalls": 21
+  },
+  "sql": {
+    "authUid": 78,
+    "authUsersTables": 13,
+    "authUsersTriggers": 1,
+    "storageObjectsRefs": 34,
+    "cloudUrls": 307
+  }
+}
