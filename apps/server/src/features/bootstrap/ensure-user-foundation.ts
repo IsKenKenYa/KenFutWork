@@ -6,8 +6,16 @@ import type { ViewerProfileRecord, ViewerRepository } from "./repository.js";
 
 export { BootstrapError, ProfileUpdateError } from "./errors.js";
 
+/** 工作区摘要（契约类型取自 viewer 响应，避免第二份定义）。 */
+export type ViewerWorkspace = ViewerResponse["workspace"];
+
 export type ViewerService = {
   ensureViewer(user: AuthenticatedUser): Promise<ViewerResponse>;
+  /**
+   * 解析用户当前工作区（目标态：个人工作区；桌面单用户即本机工作区）。
+   * 其它聚合一律经此取工作区，不各自拼同一查询；缺失即抛 `BootstrapError`。
+   */
+  resolveWorkspace(user: AuthenticatedUser): Promise<ViewerWorkspace>;
   /** 更新当前登录用户的显示名；失败抛 `ProfileUpdateError`。 */
   updateProfile(
     user: AuthenticatedUser,
@@ -20,6 +28,18 @@ export function createViewerService(options: {
 }): ViewerService {
   const { repository } = options;
 
+  const resolveWorkspace: ViewerService["resolveWorkspace"] = async (user) => {
+    const workspace = await guard(() =>
+      repository.findPersonalWorkspace(user.id),
+    );
+
+    if (!workspace) {
+      throw new BootstrapError();
+    }
+
+    return workspace;
+  };
+
   return {
     async ensureViewer(user) {
       await guard(() =>
@@ -30,13 +50,7 @@ export function createViewerService(options: {
         }),
       );
 
-      const workspace = await guard(() =>
-        repository.findPersonalWorkspace(user.id),
-      );
-
-      if (!workspace) {
-        throw new BootstrapError();
-      }
+      const workspace = await resolveWorkspace(user);
 
       const [profile, membership] = await Promise.all([
         guard(() => repository.findProfile(user.id)),
@@ -49,6 +63,8 @@ export function createViewerService(options: {
 
       return viewerResponseSchema.parse({ membership, profile, workspace });
     },
+
+    resolveWorkspace,
 
     async updateProfile(user, displayName) {
       const profile = await repository

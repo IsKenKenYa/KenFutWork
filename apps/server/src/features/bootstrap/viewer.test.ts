@@ -302,6 +302,25 @@ describe("viewer service", () => {
     }
   });
 
+  it("resolveWorkspace 供其它聚合复用，缺失即 BootstrapError", async () => {
+    const service = createViewerService({ repository: createFakeRepository() });
+    await expect(service.resolveWorkspace(USER)).resolves.toEqual({
+      id: WORKSPACE_ID,
+      name: "Personal Workspace",
+      ownerUserId: USER_ID,
+      type: "personal",
+    });
+
+    const missing = createViewerService({
+      repository: createFakeRepository({
+        findPersonalWorkspace: async () => null,
+      }),
+    });
+    await expect(missing.resolveWorkspace(USER)).rejects.toBeInstanceOf(
+      BootstrapError,
+    );
+  });
+
   it("更新 profile 用鉴权结果里的 id，不接受调用方传入他人 id", async () => {
     const seen: string[] = [];
     const service = createViewerService({

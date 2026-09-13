@@ -1,17 +1,17 @@
 import type {
-  Database,
   ProjectCreateRequest,
   ProjectSummary,
   ProjectUpdateRequest,
 } from "@loomic/shared";
+
 import type {
   AuthenticatedUser,
   UserSupabaseClient,
 } from "../../supabase/user.js";
-import {
-  BootstrapError,
-  type ViewerService,
-} from "../bootstrap/ensure-user-foundation.js";
+import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
+import { BootstrapError } from "../bootstrap/errors.js";
+import { SQLSTATE_UNIQUE_VIOLATION } from "../persistence/errors.js";
+import type { ProjectRepository, ProjectUpdatePatch } from "./repository.js";
 
 const THUMBNAIL_BUCKET = "project-assets";
 const PROJECT_QUERY_FAILED_MESSAGE = "Unable to load projects.";
@@ -21,6 +21,14 @@ const PROJECT_NOT_FOUND_MESSAGE = "Project not found.";
 const PROJECT_UPDATE_FAILED_MESSAGE = "Unable to update project.";
 const PROJECT_SLUG_TAKEN_MESSAGE =
   "Project slug is already taken in this workspace.";
+
+type ProjectErrorCode =
+  | "project_create_failed"
+  | "project_delete_failed"
+  | "project_not_found"
+  | "project_query_failed"
+  | "project_slug_taken"
+  | "project_update_failed";
 
 export type ProjectService = {
   archiveProject(user: AuthenticatedUser, projectId: string): Promise<void>;
@@ -57,247 +65,184 @@ export type ProjectService = {
 
 export class ProjectServiceError extends Error {
   readonly statusCode: number;
-  readonly code:
-    | "project_create_failed"
-    | "project_delete_failed"
-    | "project_not_found"
-    | "project_query_failed"
-    | "project_slug_taken"
-    | "project_update_failed";
+  readonly code: ProjectErrorCode;
 
-  constructor(
-    code:
-      | "project_create_failed"
-      | "project_delete_failed"
-      | "project_not_found"
-      | "project_query_failed"
-      | "project_slug_taken"
-      | "project_update_failed",
-    message: string,
-    statusCode: number,
-  ) {
+  constructor(code: ProjectErrorCode, message: string, statusCode: number) {
     super(message);
+    this.name = "ProjectServiceError";
     this.code = code;
     this.statusCode = statusCode;
   }
 }
 
 export function createProjectService(options: {
+  /** 缩略图仍走 Supabase Storage（M3 blob 缝落地后移除）。 */
   createUserClient: (accessToken: string) => UserSupabaseClient;
+  repository: ProjectRepository;
   viewerService: ViewerService;
 }): ProjectService {
-  return {
-    async archiveProject(user, projectId) {
-      const client = options.createUserClient(user.accessToken);
+  const { repository, viewerService } = options;
 
-      const { data: existing, error: findError } = await client
-        .from("projects")
-        .select("id")
-        .eq("id", projectId)
-        .is("archived_at", null)
-        .maybeSingle();
-
-      if (findError) {
+  const resolveWorkspace = (
+    user: AuthenticatedUser,
+    errorCode: keyof typeof WORKSPACE_FAILURE_MESSAGES,
+  ) =>
+    viewerService.resolveWorkspace(user).catch((error: unknown) => {
+      if (error instanceof BootstrapError) {
         throw new ProjectServiceError(
-          "project_delete_failed",
-          PROJECT_DELETE_FAILED_MESSAGE,
+          errorCode,
+          WORKSPACE_FAILURE_MESSAGES[errorCode],
           500,
         );
       }
+      throw error;
+    });
 
-      if (!existing) {
+  return {
+    async archiveProject(user, projectId) {
+      const workspace = await resolveWorkspace(user, "project_query_failed");
+
+      const archived = await repository
+        .archive(workspace.id, projectId)
+        .catch(() => {
+          throw new ProjectServiceError(
+            "project_delete_failed",
+            PROJECT_DELETE_FAILED_MESSAGE,
+            500,
+          );
+        });
+
+      if (archived === 0) {
         throw new ProjectServiceError(
           "project_not_found",
           PROJECT_NOT_FOUND_MESSAGE,
           404,
         );
       }
-
-      const { error: updateError } = await client
-        .from("projects")
-        .update({ archived_at: new Date().toISOString() })
-        .eq("id", projectId);
-
-      if (updateError) {
-        throw new ProjectServiceError(
-          "project_delete_failed",
-          PROJECT_DELETE_FAILED_MESSAGE,
-          500,
-        );
-      }
     },
-    async getProject(user, projectId) {
-      const client = options.createUserClient(user.accessToken);
-      const { data, error } = await client
-        .from("projects")
-        .select(
-          "id, name, slug, description, workspace_id, brand_kit_id, created_at, updated_at",
-        )
-        .eq("id", projectId)
-        .is("archived_at", null)
-        .maybeSingle();
 
-      if (error)
-        throw new ProjectServiceError(
-          "project_query_failed",
-          "Failed to load project.",
-          500,
-        );
-      if (!data)
+    async getProject(user, projectId) {
+      const workspace = await resolveWorkspace(user, "project_query_failed");
+
+      const project = await repository
+        .findActiveById(workspace.id, projectId)
+        .catch(() => {
+          throw new ProjectServiceError(
+            "project_query_failed",
+            "Failed to load project.",
+            500,
+          );
+        });
+
+      if (!project) {
         throw new ProjectServiceError(
           "project_not_found",
           "Project not found.",
           404,
         );
-      return data;
+      }
+
+      return project;
     },
+
     async createProject(user, input) {
-      await ensureFoundation(
-        options.viewerService,
-        user,
-        "project_create_failed",
-      );
-
-      const client = options.createUserClient(user.accessToken);
-      const workspace = await resolvePersonalWorkspace(
-        client,
-        user.id,
-        "project_create_failed",
-      );
+      await ensureFoundation(viewerService, user, "project_create_failed");
+      const workspace = await resolveWorkspace(user, "project_create_failed");
       const normalizedName = input.name.trim();
-      const slug = slugify(normalizedName);
 
-      const { data, error } = await client.rpc("create_project_with_canvas", {
-        p_workspace_id: workspace.id,
-        p_name: normalizedName,
-        p_slug: slug,
-        p_description: (normalizeDescription(input.description) ??
-          "") as string,
-        p_canvas_name: "Main Canvas",
-      });
-
-      if (error) {
-        throw mapProjectCreateError(error);
-      }
-
-      const result = data as {
-        project: {
-          id: string;
-          name: string;
-          slug: string;
-          description: string | null;
-          created_at: string;
-          updated_at: string;
-          workspace_id: string;
-        };
-        canvas: {
-          id: string;
-          name: string;
-          is_primary: boolean;
-        };
-      } | null;
-
-      if (!result?.project?.id || !result?.canvas?.id) {
-        throw new ProjectServiceError(
-          "project_create_failed",
-          PROJECT_CREATE_FAILED_MESSAGE,
-          500,
-        );
-      }
+      const created = await repository
+        .createWithCanvas({
+          canvasName: "Main Canvas",
+          description: normalizeDescription(input.description),
+          name: normalizedName,
+          slug: slugify(normalizedName),
+          userId: user.id,
+          workspaceId: workspace.id,
+        })
+        .catch((error: unknown) => {
+          throw mapProjectCreateError(error);
+        });
 
       return mapProjectSummary({
-        canvas: result.canvas,
-        project: result.project,
+        canvas: created.canvas,
+        project: created.project,
         workspace,
       });
     },
-    async listProjects(user) {
-      // Skip bootstrap for read-only queries — user is already authenticated,
-      // and /api/viewer handles bootstrap on page load.
-      const client = options.createUserClient(user.accessToken);
-      const workspace = await resolvePersonalWorkspace(
-        client,
-        user.id,
-        "project_query_failed",
-      );
-      const { data: projects, error: projectQueryError } = await client
-        .from("projects")
-        .select(
-          "id, name, slug, description, created_at, updated_at, workspace_id, thumbnail_path",
-        )
-        .eq("workspace_id", workspace.id)
-        .is("archived_at", null)
-        .order("updated_at", { ascending: false });
 
-      if (projectQueryError) {
+    async listProjects(user) {
+      // 只读路径不做引导：用户已认证，引导由 /api/viewer 在页面加载时完成。
+      const workspace = await resolveWorkspace(user, "project_query_failed");
+
+      const projects = await repository.listActive(workspace.id).catch(() => {
         throw new ProjectServiceError(
           "project_query_failed",
           PROJECT_QUERY_FAILED_MESSAGE,
           500,
         );
-      }
+      });
 
-      if (!projects.length) {
+      if (projects.length === 0) {
         return [];
       }
 
-      const { data: canvases, error: canvasQueryError } = await client
-        .from("canvases")
-        .select("id, name, is_primary, project_id")
-        .in(
-          "project_id",
+      const canvases = await repository
+        .listPrimaryCanvases(
+          workspace.id,
           projects.map((project) => project.id),
         )
-        .eq("is_primary", true);
-
-      if (canvasQueryError) {
-        throw new ProjectServiceError(
-          "project_query_failed",
-          PROJECT_QUERY_FAILED_MESSAGE,
-          500,
-        );
-      }
-
-      const primaryCanvasByProjectId = new Map(
-        canvases.map((canvas) => [canvas.project_id, canvas]),
-      );
-
-      // Generate public thumbnail URLs for projects that have them
-      const thumbnailUrls = generateThumbnailUrls(
-        client,
-        projects.filter((p) => p.thumbnail_path),
-      );
-
-      return projects.map((project) => {
-        const canvas = primaryCanvasByProjectId.get(project.id);
-
-        if (!canvas) {
+        .catch(() => {
           throw new ProjectServiceError(
             "project_query_failed",
             PROJECT_QUERY_FAILED_MESSAGE,
             500,
           );
-        }
+        });
 
-        return mapProjectSummary({
-          canvas,
+      const primaryCanvasByProjectId = new Map(
+        canvases.map((canvas) => [canvas.project_id, canvas]),
+      );
+      const projectIdsMissingCanvas = projects.filter(
+        (project) => !primaryCanvasByProjectId.has(project.id),
+      );
+
+      if (projectIdsMissingCanvas.length > 0) {
+        throw new ProjectServiceError(
+          "project_query_failed",
+          PROJECT_QUERY_FAILED_MESSAGE,
+          500,
+        );
+      }
+
+      // 缩略图 URL 仍由 Supabase Storage 生成（M3 blob 缝落地后移除）。
+      const thumbnailUrls = generateThumbnailUrls(
+        options.createUserClient(user.accessToken),
+        projects.filter((project) => project.thumbnail_path),
+      );
+
+      return projects.map((project) =>
+        mapProjectSummary({
+          // 上面的缺失检查保证存在；此处断言避免在每个 map 里再抛一次。
+          canvas: primaryCanvasByProjectId.get(project.id) as {
+            id: string;
+            is_primary: boolean;
+            name: string;
+          },
           project,
           thumbnailUrl: thumbnailUrls.get(project.id) ?? null,
           workspace,
-        });
-      });
+        }),
+      );
     },
 
     async saveThumbnail(user, projectId, buffer, mimeType) {
-      const client = options.createUserClient(user.accessToken);
+      const workspace = await resolveWorkspace(user, "project_create_failed");
 
-      // Resolve workspace_id — RLS requires first path segment to be the workspace UUID
-      const { data: proj } = await client
-        .from("projects")
-        .select("workspace_id")
-        .eq("id", projectId)
-        .single();
-      if (!proj) {
+      const project = await repository
+        .findActiveById(workspace.id, projectId)
+        .catch(() => null);
+
+      if (!project) {
         throw new ProjectServiceError(
           "project_create_failed",
           "Project not found.",
@@ -305,8 +250,9 @@ export function createProjectService(options: {
         );
       }
 
+      const client = options.createUserClient(user.accessToken);
       const ext = mimeType === "image/webp" ? "webp" : "png";
-      const objectPath = `${proj.workspace_id}/${projectId}/thumbnail.${ext}`;
+      const objectPath = `${workspace.id}/${projectId}/thumbnail.${ext}`;
 
       const { error: uploadError } = await client.storage
         .from(THUMBNAIL_BUCKET)
@@ -320,18 +266,15 @@ export function createProjectService(options: {
         );
       }
 
-      const { error: updateError } = await client
-        .from("projects")
-        .update({ thumbnail_path: objectPath })
-        .eq("id", projectId);
-
-      if (updateError) {
-        throw new ProjectServiceError(
-          "project_create_failed",
-          "Failed to save thumbnail reference.",
-          500,
-        );
-      }
+      await repository
+        .setThumbnailPath(workspace.id, projectId, objectPath)
+        .catch(() => {
+          throw new ProjectServiceError(
+            "project_create_failed",
+            "Failed to save thumbnail reference.",
+            500,
+          );
+        });
 
       const { data: urlData } = client.storage
         .from(THUMBNAIL_BUCKET)
@@ -341,31 +284,31 @@ export function createProjectService(options: {
     },
 
     async updateProject(user, projectId, input) {
-      const client = options.createUserClient(user.accessToken);
+      const patch: ProjectUpdatePatch = {};
+      if (input.brand_kit_id !== undefined) {
+        patch.brandKitId = input.brand_kit_id;
+      }
+      if (input.name !== undefined) {
+        patch.name = input.name;
+      }
 
-      const payload: Database["public"]["Tables"]["projects"]["Update"] = {};
-      if (input.brand_kit_id !== undefined)
-        payload.brand_kit_id = input.brand_kit_id;
-      if (input.name !== undefined) payload.name = input.name;
-
-      if (Object.keys(payload).length === 0) {
+      if (patch.name === undefined && patch.brandKitId === undefined) {
         return;
       }
 
-      const { error: updateError, count } = await client
-        .from("projects")
-        .update(payload)
-        .eq("id", projectId);
+      const workspace = await resolveWorkspace(user, "project_update_failed");
 
-      if (updateError) {
-        throw new ProjectServiceError(
-          "project_update_failed",
-          PROJECT_UPDATE_FAILED_MESSAGE,
-          500,
-        );
-      }
+      const updated = await repository
+        .update(workspace.id, projectId, patch)
+        .catch(() => {
+          throw new ProjectServiceError(
+            "project_update_failed",
+            PROJECT_UPDATE_FAILED_MESSAGE,
+            500,
+          );
+        });
 
-      if (count === 0) {
+      if (updated === 0) {
         throw new ProjectServiceError(
           "project_not_found",
           PROJECT_NOT_FOUND_MESSAGE,
@@ -376,10 +319,17 @@ export function createProjectService(options: {
   };
 }
 
+/** 工作区解析失败时的错误码 → 用户可见消息（按调用场景选择错误码）。 */
+const WORKSPACE_FAILURE_MESSAGES = {
+  project_create_failed: PROJECT_CREATE_FAILED_MESSAGE,
+  project_query_failed: PROJECT_QUERY_FAILED_MESSAGE,
+  project_update_failed: PROJECT_UPDATE_FAILED_MESSAGE,
+} as const;
+
 async function ensureFoundation(
   viewerService: ViewerService,
   user: AuthenticatedUser,
-  errorCode: "project_create_failed" | "project_query_failed",
+  errorCode: keyof typeof WORKSPACE_FAILURE_MESSAGES,
 ) {
   try {
     await viewerService.ensureViewer(user);
@@ -387,9 +337,7 @@ async function ensureFoundation(
     if (error instanceof BootstrapError) {
       throw new ProjectServiceError(
         errorCode,
-        errorCode === "project_create_failed"
-          ? PROJECT_CREATE_FAILED_MESSAGE
-          : PROJECT_QUERY_FAILED_MESSAGE,
+        WORKSPACE_FAILURE_MESSAGES[errorCode],
         500,
       );
     }
@@ -397,40 +345,12 @@ async function ensureFoundation(
   }
 }
 
-async function resolvePersonalWorkspace(
-  client: UserSupabaseClient,
-  userId: string,
-  errorCode: "project_create_failed" | "project_query_failed",
-) {
-  const { data, error } = await client
-    .from("workspaces")
-    .select("id, name, type, owner_user_id")
-    .eq("owner_user_id", userId)
-    .eq("type", "personal")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-
-  if (error || !data) {
-    throw new ProjectServiceError(
-      errorCode,
-      errorCode === "project_create_failed"
-        ? PROJECT_CREATE_FAILED_MESSAGE
-        : PROJECT_QUERY_FAILED_MESSAGE,
-      500,
-    );
-  }
-
-  return {
-    id: data.id,
-    name: data.name,
-    ownerUserId: data.owner_user_id,
-    type: data.type,
-  } as const;
-}
-
-function mapProjectCreateError(error: { code?: string; message?: string }) {
-  if (error.code === "23505") {
+function mapProjectCreateError(error: unknown) {
+  if (
+    error instanceof Error &&
+    "code" in error &&
+    error.code === SQLSTATE_UNIQUE_VIOLATION
+  ) {
     return new ProjectServiceError(
       "project_slug_taken",
       PROJECT_SLUG_TAKEN_MESSAGE,
@@ -489,6 +409,24 @@ function mapProjectSummary(options: {
   };
 }
 
+/** 缩略图公开 URL（Supabase Storage 期间实现；M3 换 BlobStore）。 */
+function generateThumbnailUrls(
+  client: UserSupabaseClient,
+  projects: Array<{ id: string; thumbnail_path: string | null }>,
+): Map<string, string> {
+  const urlMap = new Map<string, string>();
+
+  for (const project of projects) {
+    if (!project.thumbnail_path) continue;
+    const { data } = client.storage
+      .from(THUMBNAIL_BUCKET)
+      .getPublicUrl(project.thumbnail_path);
+    urlMap.set(project.id, data.publicUrl);
+  }
+
+  return urlMap;
+}
+
 function normalizeDescription(description: string | undefined) {
   const normalized = description?.trim();
   return normalized || null;
@@ -503,22 +441,4 @@ function slugify(value: string) {
 
   const suffix = Math.random().toString(36).slice(2, 8);
   return base ? `${base}-${suffix}` : `project-${suffix}`;
-}
-
-function generateThumbnailUrls(
-  client: UserSupabaseClient,
-  projects: Array<{ id: string; thumbnail_path: string | null }>,
-): Map<string, string> {
-  const urlMap = new Map<string, string>();
-  if (projects.length === 0) return urlMap;
-
-  for (const project of projects) {
-    if (!project.thumbnail_path) continue;
-    const { data } = client.storage
-      .from(THUMBNAIL_BUCKET)
-      .getPublicUrl(project.thumbnail_path);
-    urlMap.set(project.id, data.publicUrl);
-  }
-
-  return urlMap;
 }

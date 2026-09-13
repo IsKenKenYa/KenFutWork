@@ -4,7 +4,8 @@ export type PersonalWorkspaceRecord = {
   id: string;
   name: string;
   ownerUserId: string;
-  type: string;
+  /** 查询按 `type = 'personal'` 限定，故恒为 personal（契约类型要求窄化）。 */
+  type: "personal";
 };
 
 export type ViewerProfileRecord = {
@@ -114,7 +115,7 @@ export function createViewerRepository(
         id: row.id,
         name: row.name,
         ownerUserId: row.owner_user_id,
-        type: row.type,
+        type: "personal",
       };
     },
 
