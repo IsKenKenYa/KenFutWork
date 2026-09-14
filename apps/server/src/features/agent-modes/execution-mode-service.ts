@@ -125,7 +125,7 @@ const PLAN_APPROVAL_PHRASES: ReadonlySet<string> = new Set([
   "lgtm",
 ]);
 
-/** 判定一条 run 输入是否为 plan 批准短语（整句、忽略首尾空白与句末标点、拉丁不区分大小写）。 */
+/** 判定单行文本是否为 plan 批准短语（整句、忽略首尾空白与句末标点、拉丁不区分大小写）。 */
 export function isPlanApprovalMessage(input: string): boolean {
   const trimmed = input.trim();
   if (!trimmed || trimmed.length > 12) {
@@ -136,6 +136,20 @@ export function isPlanApprovalMessage(input: string): boolean {
     .trim()
     .toLowerCase();
   return PLAN_APPROVAL_PHRASES.has(normalized);
+}
+
+/**
+ * 判定一条 run 输入（可能是 workbench 组合的带历史块 prompt）是否为批准。
+ *
+ * workbench 的追问把对话历史拼进 prompt：`【对话历史…】【本轮用户消息】\n<原文>`，
+ * 对整块匹配会因长度超限永远不命中（GUI 实测踩中）。marker 存在时**本轮用户消息
+ * 一定是最后一行**；无 marker 的首条消息取末行同样保守（多行消息以「批准」结尾
+ * 视为批准，语义成立）。
+ */
+export function isPlanApprovalInput(prompt: string): boolean {
+  const lines = prompt.trim().split(/\r?\n/);
+  const lastLine = lines[lines.length - 1] ?? "";
+  return isPlanApprovalMessage(lastLine);
 }
 
 /** 模式工具策略：solo 全禁、plan 只读，其余全放行。 */

@@ -9,7 +9,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { WebSocket } from "ws";
 import type { AgentRunService } from "../agent/runtime.js";
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
-import { isPlanApprovalMessage } from "../features/agent-modes/execution-mode-service.js";
+import { isPlanApprovalInput } from "../features/agent-modes/execution-mode-service.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type {
   AuthenticatedUser,
@@ -401,7 +401,7 @@ async function handleRunCommand(
     effectiveMode === "plan" &&
     threadId &&
     services.agentModes &&
-    isPlanApprovalMessage(payload.prompt)
+    isPlanApprovalInput(payload.prompt)
   ) {
     effectiveMode = "agent";
     log.info("plan_approval_auto_upgrade", {

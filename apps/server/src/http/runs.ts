@@ -9,7 +9,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 
 import type { AgentRunService } from "../agent/runtime.js";
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
-import { isPlanApprovalMessage } from "../features/agent-modes/execution-mode-service.js";
+import { isPlanApprovalInput } from "../features/agent-modes/execution-mode-service.js";
 import {
   type AgentRunMetadataService,
   AgentRunPersistenceError,
@@ -157,7 +157,7 @@ export async function registerRunRoutes(
             : null;
         const modeScope = workspace ? { workspaceId: workspace.id } : undefined;
         let effectiveMode = payload.executionMode;
-        if (effectiveMode === "plan" && isPlanApprovalMessage(payload.prompt)) {
+        if (effectiveMode === "plan" && isPlanApprovalInput(payload.prompt)) {
           effectiveMode = "agent";
         }
         try {

@@ -5,6 +5,7 @@ import {
   BUILTIN_EXECUTION_MODES,
   createExecutionModeService,
   evaluateToolPolicy,
+  isPlanApprovalInput,
   isPlanApprovalMessage,
 } from "./execution-mode-service.js";
 import type { ExecutionModeStore } from "./execution-mode-store.js";
@@ -231,5 +232,29 @@ describe("plan 批准门（isPlanApprovalMessage，机器可读批准）", () =>
       isPlanApprovalMessage("这个方案看起来非常周密，辛苦你了，请继续保持"),
     ).toBe(false);
     expect(isPlanApprovalMessage("帮我写个爬虫")).toBe(false);
+  });
+});
+
+describe("plan 批准门对组合 prompt 的判定（isPlanApprovalInput）", () => {
+  const HISTORY_BLOCK =
+    "【对话历史（供参考，延续上文语境）】\n用户：创建文件\n助手：好的，这是计划\n\n【本轮用户消息】\n";
+
+  it("workbench 组合 prompt：本轮消息（末行）是批准短语即命中", () => {
+    expect(isPlanApprovalInput(`${HISTORY_BLOCK}批准`)).toBe(true);
+    expect(isPlanApprovalInput(`${HISTORY_BLOCK}批准！`)).toBe(true);
+    expect(isPlanApprovalInput("批准")).toBe(true);
+  });
+
+  it("组合 prompt 本轮消息带额外内容不命中", () => {
+    expect(isPlanApprovalInput(`${HISTORY_BLOCK}批准，但先改第三步`)).toBe(
+      false,
+    );
+    expect(isPlanApprovalInput(`${HISTORY_BLOCK}不批准`)).toBe(false);
+  });
+
+  it("历史里出现批准字样不误判（只看末行）", () => {
+    const tricky =
+      "【对话历史（供参考，延续上文语境）】\n用户：批准了吗\n助手：等待批准\n\n【本轮用户消息】\n先等等，我再看看";
+    expect(isPlanApprovalInput(tricky)).toBe(false);
   });
 });
