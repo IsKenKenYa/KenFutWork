@@ -51,6 +51,7 @@ pnpm dev
 | `packages/config`、`packages/ui` | 共享 TS 配置与组件 |
 | `supabase/migrations` | 数据库迁移，唯一 Schema 源（Postgres SQL） |
 | `skills` | 工作区技能（SKILL.md，运行时发现） |
+| `tmp/sandbox` | Agent 沙箱工作目录：dev 落仓库根、打包落 exe 目录，每个画布一个 `<画布UUID>` 子目录（**运行时生成，不入库**；`LOOMIC_SANDBOX_ROOT` 可改，`LOOMIC_CANVAS_WORK_DIRS` 可把某画布直接映射到本机真实目录） |
 | `docs` | 技术文档（地图见 [docs/README.md](docs/README.md)） |
 | `scripts` | docs 校验 / 打包 / 运行时下载 |
 
