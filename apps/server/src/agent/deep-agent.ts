@@ -1,5 +1,6 @@
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
-import { ToolMessage } from "@langchain/core/messages";
+import { AIMessage, ToolMessage } from "@langchain/core/messages";
+import { isCommand } from "@langchain/langgraph";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ChatVertexAI } from "@langchain/google-vertexai";
 import type {
@@ -78,6 +79,90 @@ function createUnknownToolGuardMiddleware(): AgentMiddleware {
       return new ToolMessage({
         tool_call_id: request.toolCall.id ?? request.toolCall.name,
         content: `工具 ${request.toolCall.name} 当前不可用（可能已被停用或卸载）。请改用其它方式完成，或请用户重新启用相关插件。`,
+      });
+    },
+  };
+}
+
+/**
+ * 模型响应守卫：LangChain 对每层 wrapModelCall 的返回做形状校验
+ * （AIMessage / Command / {structuredResponse, messages}），不合规即抛
+ * `Invalid response from "wrapModelCall" …` 并**整轮 run 失败**。
+ *
+ * 实测（one-api 代理 + glm，工具执行后的下一轮模型调用偶发）：内层
+ * handler 会返回未规整的裸对象——此前没有任何我方帧能介入。本守卫挂在
+ * 最外层，把非法形状**规整为 AIMessage**（保住 content / tool_calls /
+ * additional_kwargs），规整不了才放行让其按原错误暴露。日志记录原始形状
+ * 便于追根（lc 序列化对象 / 供应商原始响应等）。
+ */
+function createModelResponseGuardMiddleware(): AgentMiddleware {
+  return {
+    name: "loomic-model-response-guard",
+    wrapModelCall: async (request, handler) => {
+      let result: unknown;
+      try {
+        result = await handler(request);
+      } catch (error) {
+        // 内层已抛「Invalid response from wrapModelCall」形状校验错：原始对象
+        // 不可得，但整轮 run 不必陪葬——以降级消息收尾，错误细节进日志。
+        const message = error instanceof Error ? error.message : String(error);
+        if (/Invalid response from "wrapModelCall"/.test(message)) {
+          console.warn(
+            `[model-response-guard] 内层模型响应形状校验失败（降级收尾）：${message}`,
+          );
+          return new AIMessage({
+            content:
+              "（本轮模型响应异常，系统已降级收尾；请重试或换模型。）",
+          });
+        }
+        throw error;
+      }
+      const valid =
+        AIMessage.isInstance(result) ||
+        isCommand(result) ||
+        (typeof result === "object" &&
+          result !== null &&
+          "structuredResponse" in result &&
+          "messages" in result);
+      if (valid) {
+        return result as AIMessage;
+      }
+      const shape =
+        result instanceof Error
+          ? `Error: ${result.message}`
+          : result === null || result === undefined
+            ? String(result)
+            : `${Object.prototype.toString.call(result)} keys=${Object.keys(
+                result,
+              ).slice(0, 20).join(",")}`;
+      console.warn(
+        `[model-response-guard] 模型返回未规整形状（已尝试收敛为 AIMessage）：${shape}`,
+      );
+      if (typeof result !== "object" || result === null) {
+        return result as AIMessage;
+      }
+      // lc 序列化对象或裸响应：收敛字段，缺的给空默认（content 空 + 无工具调用）
+      const raw = result as Record<string, unknown>;
+      const toolCalls = Array.isArray(raw.tool_calls)
+        ? raw.tool_calls
+        : undefined;
+      return new AIMessage({
+        content:
+          typeof raw.content === "string"
+            ? raw.content
+            : Array.isArray(raw.content)
+              ? raw.content
+              : "",
+        ...(toolCalls ? { tool_calls: toolCalls as never } : {}),
+        ...(typeof raw.id === "string" ? { id: raw.id } : {}),
+        ...(raw.additional_kwargs && typeof raw.additional_kwargs === "object"
+          ? {
+              additional_kwargs: raw.additional_kwargs as Record<
+                string,
+                unknown
+              >,
+            }
+          : {}),
       });
     },
   };
@@ -178,15 +263,22 @@ export function createLoomicDeepAgent(options: {
     ...(options.store ? { store: options.store } : {}),
     subagents: [createVideoSubAgent()],
     systemPrompt,
-    // 未知工具兜底恒挂；执行模式工具门在标准中间件之后应用，覆盖全部工具调用
+    // 未知工具兜底恒挂；模型响应守卫挂最外层（收敛非法形状）；执行模式工具门在
+    // 标准中间件之后应用，覆盖全部工具调用
     ...(options.toolGate
       ? {
           middleware: [
+            createModelResponseGuardMiddleware(),
             createUnknownToolGuardMiddleware(),
             createToolGateMiddleware(options.toolGate),
           ],
         }
-      : { middleware: [createUnknownToolGuardMiddleware()] }),
+      : {
+          middleware: [
+            createModelResponseGuardMiddleware(),
+            createUnknownToolGuardMiddleware(),
+          ],
+        }),
     tools: [
       ...createMainAgentTools(backendResult.factory, {
         ...(options.brandKitService
