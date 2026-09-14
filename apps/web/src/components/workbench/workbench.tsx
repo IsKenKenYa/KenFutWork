@@ -52,6 +52,7 @@ import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useAuth } from "@/lib/auth-context";
 import { getServerBaseUrl } from "@/lib/env";
+import { describeRunFailure } from "@/lib/run-failure";
 import {
   createProject,
   deleteProject,
@@ -638,12 +639,17 @@ export function Workbench() {
           messages: [...task.messages, { role: "assistant", text: message }],
         }));
       } else if (type === "run.failed") {
+        // 服务端在 error.message 里给的是可读原因（如「模型流已 180 秒没有任何
+        // 输出（上游停滞）」「run 未绑定项目」）。此前一律丢弃、只显示固定文案，
+        // 用户无法判断该重试、换模型还是去建项目——这里按 billing.error 的同一
+        // 口径透出；确实没有原因时才回落到通用文案。
+        const failureText = describeRunFailure(evt);
         apply((task) => ({
           ...task,
           status: "failed",
           messages: [
             ...task.messages,
-            { role: "assistant", text: "运行失败，请重试。" },
+            { role: "assistant", text: failureText },
           ],
         }));
       } else if (type === "run.canceled") {
