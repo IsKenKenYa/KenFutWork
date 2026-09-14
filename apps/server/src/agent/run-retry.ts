@@ -62,14 +62,29 @@ export interface RunRetryDecision {
  * @param maxAttempts 上限（含首次）；0 = 不重试
  * @param failureMessage 服务端给出的可读失败原因
  * @param sawToolExecution 本轮是否已执行过工具（有副作用 → 绝不重试）
+ * @param terminal 本轮的**显式终态**（由流事件判定）：成功与用户取消都不是失败
  */
 export function decideRunRetry(input: {
   attempt: number;
   maxAttempts: number;
   failureMessage?: string | undefined;
   sawToolExecution: boolean;
+  /**
+   * 显式终态。事故背景：早期实现只在 `run.failed` 上记失败原因，于是「成功收场但没跑
+   * 工具」的轮次里 `failureMessage` 仍是 undefined，而 `isRetryableRunFailure(undefined)`
+   * 按「可重试」处理——**每轮纯对话都被重跑满 10 次**（实测：solo 与画布助手一次消息
+   * 产出 10 个 run、10 倍 token，而用户看到的回复第一次就已经成功了）；用户取消同理，
+   * 重试会把刚取消的轮次顶回去。
+   */
+  terminal?: "completed" | "canceled" | undefined;
 }): RunRetryDecision {
   const maxAttempts = clampMaxRunRetries(input.maxAttempts);
+  if (input.terminal === "completed") {
+    return { retry: false, reason: "本轮已成功完成" };
+  }
+  if (input.terminal === "canceled") {
+    return { retry: false, reason: "本轮已被取消，不重试" };
+  }
   if (maxAttempts <= 1) {
     return { retry: false, reason: "重试上限为 1（即不重试）" };
   }

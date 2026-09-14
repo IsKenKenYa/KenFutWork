@@ -104,4 +104,42 @@ describe("重试决策", () => {
     });
     expect(decision.retry).toBe(false);
   });
+
+  /**
+   * 回归（GUI 全流程实测）：成功收场的一轮**没有** `run.failed`，`failureMessage` 仍是
+   * undefined，而 `isRetryableRunFailure(undefined)` 按「可重试」处理 —— 于是纯对话轮次
+   * 被重跑满 10 次（实测 solo 与画布助手一次消息产出 10 个 run、10 倍 token，而用户看到的
+   * 回复第一次就成功了）。显式终态必须直接判否。
+   */
+  it("显式成功终态 → 不重试（哪怕没跑工具、没有失败原因）", () => {
+    const decision = decideRunRetry({
+      ...base,
+      failureMessage: undefined,
+      sawToolExecution: false,
+      terminal: "completed",
+    });
+    expect(decision.retry).toBe(false);
+    expect(decision.reason).toMatch(/成功完成/);
+  });
+
+  it("用户取消 → 不重试（否则会把刚取消的轮次顶回去）", () => {
+    const decision = decideRunRetry({
+      ...base,
+      failureMessage: undefined,
+      sawToolExecution: false,
+      terminal: "canceled",
+    });
+    expect(decision.retry).toBe(false);
+    expect(decision.reason).toMatch(/取消/);
+  });
+
+  it("无终态且无失败原因（流静默结束）仍按可重试处理", () => {
+    const decision = decideRunRetry({
+      ...base,
+      failureMessage: undefined,
+      sawToolExecution: false,
+      terminal: undefined,
+    });
+    expect(decision.retry).toBe(true);
+  });
 });

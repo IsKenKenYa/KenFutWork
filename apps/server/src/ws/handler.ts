@@ -533,6 +533,8 @@ async function handleRunCommand(
       assistantBlocks.length = 0;
       let sawToolExecution = false;
       let failureMessage: string | undefined;
+      // 显式终态：成功与「用户取消」都不是失败，绝不能被重试判定当成「无原因可重试」
+      let terminal: "completed" | "canceled" | undefined;
       let firstEvent = true;
       for await (const event of agentRuns.streamRun(runId)) {
         if (firstEvent) {
@@ -545,6 +547,8 @@ async function handleRunCommand(
 
         // Broadcast to all viewers
         connectionManager.pushToCanvas(canvasId, event);
+        if (event.type === "run.completed") terminal = "completed";
+        if (event.type === "run.canceled") terminal = "canceled";
         // 副作用观测点：只要工具跑过，本轮就**不允许**重试（否则重复施加副作用）
         if (event.type === "tool.started" || event.type === "tool.completed") {
           sawToolExecution = true;
@@ -594,6 +598,7 @@ async function handleRunCommand(
         failureMessage,
         maxAttempts,
         sawToolExecution,
+        terminal,
       });
       if (!decision.retry) {
         // ── Server-side assistant message persistence ──
