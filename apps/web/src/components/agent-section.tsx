@@ -13,17 +13,23 @@ import { Button } from "./ui/button";
 import { Label } from "./ui/label";
 
 interface AgentSectionProps {
+  agentMaxRetries: number;
   defaultModel: string;
-  onSave: (defaultModel: string) => Promise<void>;
   fetchModels: () => Promise<{ models: ModelInfo[] }>;
+  onSave: (next: {
+    agentMaxRetries: number;
+    defaultModel: string;
+  }) => Promise<void>;
 }
 
 export function AgentSection({
+  agentMaxRetries: initialRetries,
   defaultModel: initialModel,
-  onSave,
   fetchModels,
+  onSave,
 }: AgentSectionProps) {
   const [selectedModel, setSelectedModel] = useState(initialModel);
+  const [maxRetries, setMaxRetries] = useState(String(initialRetries));
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [modelsLoading, setModelsLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -32,7 +38,15 @@ export function AgentSection({
     message: string;
   } | null>(null);
 
-  const hasChanges = selectedModel !== initialModel;
+  // 重试次数为空/非法时视为未改（保存按钮不给点），避免把空串写成 0
+  const parsedRetries = Number.parseInt(maxRetries, 10);
+  const retriesValid =
+    Number.isInteger(parsedRetries) &&
+    parsedRetries >= 0 &&
+    parsedRetries <= 50;
+  const hasChanges =
+    selectedModel !== initialModel ||
+    (retriesValid && parsedRetries !== initialRetries);
 
   useEffect(() => {
     fetchModels()
@@ -49,13 +63,16 @@ export function AgentSection({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedModel) return;
+    if (!selectedModel || !retriesValid) return;
 
     setSaving(true);
     setFeedback(null);
 
     try {
-      await onSave(selectedModel);
+      await onSave({
+        agentMaxRetries: parsedRetries,
+        defaultModel: selectedModel,
+      });
       setFeedback({ type: "success", message: "模型设置已更新" });
     } catch {
       setFeedback({
@@ -101,6 +118,24 @@ export function AgentSection({
           )}
           <p className="text-xs text-muted-foreground">
             该模型将用于工作区内所有新的 Agent 运行。
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="agentMaxRetries">失败自动重试次数</Label>
+          <input
+            id="agentMaxRetries"
+            aria-label="失败自动重试次数"
+            type="number"
+            min={0}
+            max={50}
+            value={maxRetries}
+            onChange={(event) => setMaxRetries(event.target.value)}
+            className="w-24 rounded-md border px-2 py-1 text-sm outline-none"
+          />
+          <p className="text-xs text-muted-foreground">
+            上限（含首次尝试），缺省 10；0
+            表示不重试。**已执行工具的那一轮不会重试**—— 重试会重复施加副作用。
           </p>
         </div>
 

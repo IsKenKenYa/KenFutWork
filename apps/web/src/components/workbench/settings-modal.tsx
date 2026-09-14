@@ -65,6 +65,7 @@ export function SettingsModal({
     email: string;
   } | null>(null);
   const [defaultModel, setDefaultModel] = useState("");
+  const [agentMaxRetries, setAgentMaxRetries] = useState(10);
   const [loading, setLoading] = useState(false);
 
   const accessTokenRef = useRef(session?.access_token);
@@ -85,6 +86,7 @@ export function SettingsModal({
         email: viewer.profile.email,
       });
       setDefaultModel(settings.settings.defaultModel);
+      setAgentMaxRetries(settings.settings.agentMaxRetries);
     } catch {
       // 加载失败时保留空态，各分区自行提示
     } finally {
@@ -110,13 +112,12 @@ export function SettingsModal({
   );
 
   const handleModelSave = useCallback(
-    async (model: string) => {
+    async (next: { agentMaxRetries: number; defaultModel: string }) => {
       const token = getToken();
       if (!token) return;
-      const result = await updateWorkspaceSettings(token, {
-        defaultModel: model,
-      });
+      const result = await updateWorkspaceSettings(token, next);
       setDefaultModel(result.settings.defaultModel);
+      setAgentMaxRetries(result.settings.agentMaxRetries);
     },
     [getToken],
   );
@@ -167,9 +168,10 @@ export function SettingsModal({
               ) : null
             ) : activeTab === "model" ? (
               <AgentSection
+                agentMaxRetries={agentMaxRetries}
                 defaultModel={defaultModel}
-                onSave={handleModelSave}
                 fetchModels={stableFetchModels}
+                onSave={handleModelSave}
               />
             ) : activeTab === "providers" ? (
               token ? (

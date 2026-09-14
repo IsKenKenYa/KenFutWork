@@ -40,6 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { GitBranchSelect } from "@/components/workbench/git-branch-select";
 import { McpModal } from "@/components/workbench/mcp-modal";
 import { PluginMarketModal } from "@/components/workbench/plugin-market-modal";
 import {
@@ -1397,6 +1398,10 @@ export function Workbench() {
                   >
                     <Plus className="h-4 w-4" />
                   </button>
+                  <GitBranchSelect
+                    accessToken={session?.access_token ?? null}
+                    canvasId={selectedProject?.primaryCanvas.id ?? null}
+                  />
                   <WorkDirectorySelect
                     projects={codeProjects}
                     selectedProjectId={selectedProjectId}
@@ -1605,6 +1610,10 @@ export function Workbench() {
                   >
                     <Plus className="h-4 w-4" />
                   </button>
+                  <GitBranchSelect
+                    accessToken={session?.access_token ?? null}
+                    canvasId={selectedProject?.primaryCanvas.id ?? null}
+                  />
                   <WorkDirectorySelect
                     projects={codeProjects}
                     selectedProjectId={selectedProjectId}
