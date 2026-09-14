@@ -76,6 +76,30 @@ export const unauthenticatedErrorResponseSchema = z.object({
   }),
 });
 
+// --- Code 模式 git 分支视图（工作目录=项目） ---
+
+export const codeGitBranchSchema = z.object({
+  name: z.string().min(1),
+  current: z.boolean(),
+});
+
+export const codeGitStatusResponseSchema = z.object({
+  git: z.object({
+    isRepo: z.boolean(),
+    branch: z.string().nullable(),
+    branches: z.array(codeGitBranchSchema),
+    /** 有未提交改动（切分支前提示用）。 */
+    dirty: z.boolean(),
+    /** 实际使用的 git 来源，便于排查「为什么没有分支可切」。 */
+    source: z.enum(["system", "bundled", "unavailable"]),
+  }),
+});
+
+export const codeGitCheckoutRequestSchema = z.object({
+  canvasId: z.string().min(1),
+  branch: z.string().min(1),
+});
+
 export const applicationErrorCodeSchema = z.enum([
   "application_error",
   // 自管认证（M1.4）：与 auth-contracts.ts 的 authErrorResponseSchema 同一组码

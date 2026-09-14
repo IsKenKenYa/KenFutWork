@@ -69,6 +69,13 @@ const SPECS = {
       checksumUrl: `https://api.adoptium.net/v3/assets/latest/${version}/hotspot?architecture=x64&image_type=jre&os=windows&vendor=eclipse`,
     }),
   },
+  // MinGit（portable git）：用户要求「git 优先用本地自带的，打包的只作兜底」——
+  // 兜底之所以需要，是因为「工作目录=项目」的分支视图要有可用的 git 才能干活。
+  // 解压后是 cmd/ + mingw64/ 等多顶层目录，extractFlat 会整体落到 runtime/git。
+  git: {
+    probe: join("cmd", "git.exe"),
+    resolve: async () => resolveMinGitAsset(),
+  },
 };
 
 function parseArgs(argv) {
@@ -151,6 +158,43 @@ const PYTHON_RELEASE_API =
 const UV_RELEASE_API =
   "https://api.github.com/repos/astral-sh/uv/releases/latest";
 const UV_ASSET_NAME = "uv-x86_64-pc-windows-msvc.zip";
+const GIT_RELEASE_API =
+  "https://api.github.com/repos/git-for-windows/git/releases/latest";
+/** MinGit（portable，免安装）：版本号随上游走，故按正则挑而不是硬编码。 */
+const GIT_ASSET_PATTERN = /^MinGit-[\d.]+-64-bit\.zip$/;
+
+/**
+ * 在 git-for-windows 最新发布里取 MinGit（portable）zip 与其**官方 SHA-256**。
+ *
+ * 校验值不在独立资产里，而是写在**发布说明的表格**中（`<文件名> | <sha256>`），
+ * 故这里解析 body——拿不到就 fail loud（与其余运行时的口径一致）。
+ */
+async function resolveMinGitAsset() {
+  const release = await (await fetch(GIT_RELEASE_API)).json();
+  const asset = (release?.assets ?? []).find((item) =>
+    GIT_ASSET_PATTERN.test(item.name),
+  );
+  if (!asset) {
+    throw new Error(
+      `git 最新发布（${release?.tag_name ?? "?"}）里找不到 MinGit-*-64-bit.zip（fail loud）。`,
+    );
+  }
+  const line = (release.body ?? "")
+    .split("\n")
+    .find((row) => row.trim().startsWith(`${asset.name} |`));
+  const bodySha = line ? (line.split("|")[1] ?? "").trim() : "";
+  if (!/^[0-9a-f]{64}$/.test(bodySha)) {
+    throw new Error(
+      `git 发布说明里找不到 ${asset.name} 的 sha256（fail loud）。`,
+    );
+  }
+  log(`git 选中 ${asset.name}（发布 ${release.tag_name}）`);
+  return {
+    url: asset.browser_download_url,
+    bodySha,
+    fileName: asset.name,
+  };
+}
 
 /**
  * 在 portable-standalone 最新发布里挑 `cpython-<series>.<patch>+<build>-x86_64-pc-windows-msvc-install_only.tar.gz`
@@ -202,6 +246,10 @@ async function resolveUvAsset() {
 
 /** 取官方校验值：SHASUMS 文件按文件名查行，Adoptium 则读 assets JSON 的 checksum。 */
 async function resolveExpectedSha(resolved, url) {
+  // 校验值直接来自发布说明的表格（git-for-windows 的 MinGit 就是这么发布的）
+  if (resolved.bodySha) {
+    return resolved.bodySha;
+  }
   if (resolved.sumsUrl) {
     const sums = await (await fetch(resolved.sumsUrl)).text();
     const fileName = resolved.fileName ?? basename(url);

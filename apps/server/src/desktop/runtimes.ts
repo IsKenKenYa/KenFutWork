@@ -17,7 +17,7 @@ import { join } from "node:path";
  * 不阻断启动——宿主自带的 node/python/java 仍可用）。
  */
 
-export type RuntimeName = "node" | "python" | "uv" | "java";
+export type RuntimeName = "node" | "python" | "uv" | "java" | "git";
 
 export interface RuntimeRoot {
   name: RuntimeName;
@@ -70,6 +70,13 @@ const RUNTIME_LAYOUT: Record<
     probe: "java.exe",
     envKey: "LOOMIC_JAVA_BIN_DIR",
   },
+  // MinGit 的可执行体在 cmd/ 下（另有 mingw64/bin，二者都含 git.exe；取 cmd 更稳）
+  git: {
+    dir: "git",
+    bin: "cmd",
+    probe: "git.exe",
+    envKey: "LOOMIC_GIT_BIN_DIR",
+  },
 };
 
 function dirOf(input: { layoutBin: string; base: string }): string {
@@ -108,7 +115,10 @@ export function resolveRuntime(
 
 export interface ResolvedRuntimes {
   roots: RuntimeRoot[];
-  /** 注入 sandbox 的 PATH 前缀（顺序：node → python → uv → java）。 */
+  /**
+   * 注入 sandbox 的 PATH 前缀（顺序：node → python → uv → java → git）。
+   * 注意 git 只在其未被宿主找到时才出现——见 `hasSystemGit`。
+   */
   pathAdditions: string[];
   /** JDK 存在时设置（许多 Java 工具依赖）。 */
   javaHome: string | undefined;
@@ -116,11 +126,51 @@ export interface ResolvedRuntimes {
   bundled: RuntimeName[];
 }
 
+/**
+ * 宿主自带 git 的探测：扫 PATH 各段里有没有 `git.exe`。
+ *
+ * 为什么要探测：用户要求 **git 优先用本地的、打包的只作兜底**（python/node/jdk 相反，
+ * 那三个是随包优先）。PATH 前缀一旦无脑前置打包目录就会把本地 git 顶掉，故这里先探
+ * 本地；本地有就**不注入**打包 git。
+ *
+ * 纯函数（注入 exists）便于测试；`pathValue` 为 undefined 视为「本地没有」。
+ */
+export function hasSystemGit(options: {
+  path?: string | undefined;
+  exists?: (path: string) => boolean;
+  separator?: string;
+  executable?: string;
+}): boolean {
+  const exists = options.exists ?? existsSync;
+  const executable = options.executable ?? "git.exe";
+  const separator = options.separator ?? ";";
+  return (options.path ?? "")
+    .split(separator)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+    .some((dir) => exists(join(dir, executable)));
+}
+
 export function resolveRuntimes(
-  input: RuntimeResolutionInput,
+  input: RuntimeResolutionInput & {
+    /** 宿主 PATH（判定本地 git；缺省读 process.env.PATH）。 */
+    systemPath?: string | undefined;
+  },
 ): ResolvedRuntimes {
   const roots: RuntimeRoot[] = [];
-  for (const name of ["node", "python", "uv", "java"] as const) {
+  const names: RuntimeName[] = ["node", "python", "uv", "java"];
+  // git 优先本地：宿主已有 git 就不注入打包的（显式 LOOMIC_GIT_BIN_DIR 仍优先，走同一解析）
+  const gitExplicit = input.env[RUNTIME_LAYOUT.git.envKey]?.trim();
+  if (
+    gitExplicit ||
+    !hasSystemGit({
+      path: input.systemPath ?? process.env.PATH,
+      ...(input.exists ? { exists: input.exists } : {}),
+    })
+  ) {
+    names.push("git");
+  }
+  for (const name of names) {
     const root = resolveRuntime(name, input);
     if (root) {
       roots.push(root);

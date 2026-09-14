@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  hasSystemGit,
   prependRuntimePath,
   resolveRuntime,
   resolveRuntimes,
@@ -167,5 +168,79 @@ describe("sandbox env 片段", () => {
       pathext: ".EXE",
     });
     expect(env.PATH).toBe("C:/Windows");
+  });
+});
+
+/**
+ * Git 的解析口径与其余运行时**相反**：用户要求 git 优先用宿主自带的，打包的只作兜底
+ * （python/node/jdk 才是随包优先）。这里锁住这个优先级，避免「打包目录一前置就把本地
+ * git 顶掉」。
+ */
+describe("git 运行时的优先级（本地优先，打包兜底）", () => {
+  const app = join("C:", "app");
+  const bundledGit = join(app, "runtime", "git", "cmd", "git.exe");
+
+  it("宿主 PATH 里有 git.exe → 不注入打包 git", () => {
+    expect(
+      hasSystemGit({
+        path: ["C:/Windows", "C:/Program Files/Git/cmd"].join(";"),
+        exists: fakeFs([join("C:/Program Files/Git/cmd", "git.exe")]),
+      }),
+    ).toBe(true);
+
+    const resolved = resolveRuntimes({
+      env: {},
+      exeDir: app,
+      exists: fakeFs([
+        bundledGit,
+        join("C:/Program Files/Git/cmd", "git.exe"),
+      ]),
+      systemPath: "C:/Program Files/Git/cmd",
+    });
+    expect(resolved.bundled).not.toContain("git");
+    expect(resolved.pathAdditions).not.toContain(
+      join(app, "runtime", "git", "cmd"),
+    );
+  });
+
+  it("宿主没有 git → 注入打包 git（cmd/ 布局）", () => {
+    const resolved = resolveRuntimes({
+      env: {},
+      exeDir: app,
+      exists: fakeFs([bundledGit]),
+      systemPath: "C:/Windows;C:/Windows/System32",
+    });
+    expect(resolved.bundled).toContain("git");
+    expect(resolved.pathAdditions).toContain(
+      join(app, "runtime", "git", "cmd"),
+    );
+  });
+
+  it("显式 LOOMIC_GIT_BIN_DIR 时不受「本地有 git」影响（显式覆盖优先）", () => {
+    const explicit = join("D:", "portable-git");
+    const resolved = resolveRuntimes({
+      env: { LOOMIC_GIT_BIN_DIR: explicit },
+      exeDir: app,
+      exists: fakeFs([join(explicit, "git.exe")]),
+      systemPath: "C:/Program Files/Git/cmd",
+    });
+    expect(resolved.bundled).toContain("git");
+    expect(resolved.pathAdditions).toContain(explicit);
+  });
+
+  it("hasSystemGit 的边界：空 PATH / 空段 / 只认可执行体", () => {
+    expect(hasSystemGit({ path: undefined, exists: () => true })).toBe(false);
+    expect(hasSystemGit({ path: "", exists: () => true })).toBe(false);
+    // 空段（连续分隔符）不该被当成根目录去命中
+    expect(hasSystemGit({ path: ";;", exists: () => true })).toBe(false);
+    // 目录存在但里面没有 git.exe → 仍算没有
+    expect(hasSystemGit({ path: "C:/Git", exists: fakeFs([]) })).toBe(false);
+    // 只认「该目录下有 git.exe」，不认同名的目录
+    expect(
+      hasSystemGit({
+        path: "C:/Git",
+        exists: fakeFs([join("C:/Git", "git.exe")]),
+      }),
+    ).toBe(true);
   });
 });

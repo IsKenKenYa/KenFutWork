@@ -10,8 +10,8 @@ import {
 } from "deepagents";
 
 import { runtimeEnvAdditions } from "../../desktop/runtimes.js";
+import { resolveSandboxDir } from "../sandbox-dir.js";
 
-const DEFAULT_SANDBOX_ROOT = "/tmp/loomic-sandbox";
 const DEFAULT_SKILLS_ROOT = "/opt/loomic/skills";
 
 /**
@@ -51,12 +51,10 @@ export function createProductionBackendFactory(
   /** false：目录按画布持久（跨 run 保留），runtime 不做 run 级清理。 */
   ephemeral: false;
 } {
-  const sandboxRoot = resolve(options?.sandboxRoot ?? DEFAULT_SANDBOX_ROOT);
   const skillsRoot = resolve(options?.skillsRoot ?? DEFAULT_SKILLS_ROOT);
 
-  // 目录名来自画布 id（uuid），仍做防御性清洗防路径穿越
-  const dirName = canvasId.replace(/[^a-zA-Z0-9_-]/g, "-");
-  const sandboxDir = join(sandboxRoot, dirName);
+  // 沙箱目录的判定集中在 resolveSandboxDir（git 分支操作等能力共用同一处，避免漂移）
+  const sandboxDir = resolveSandboxDir(canvasId, options?.sandboxRoot);
   mkdirSync(sandboxDir, { recursive: true });
   const realSandboxDir = realpathSync(sandboxDir);
 

@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import { buildApp } from "./app.js";
 import { loadServerEnv } from "./config/env.js";
 import { isDesktopRuntime, prepareDesktopRuntime } from "./desktop/runtime.js";
-import { resolveRuntimes } from "./desktop/runtimes.js";
+import { hasSystemGit, resolveRuntimes } from "./desktop/runtimes.js";
 import { startJobLoop } from "./features/jobs/job-loop.js";
 import { registerAllProviders } from "./generation/providers/register-all.js";
 
@@ -34,6 +34,14 @@ async function main() {
   const exeDir = resolveExeDir();
   // 随包运行时（Node/Python/JDK）：解析出 bin 目录注入 sandbox PATH，宿主机没装也能跑
   const runtimes = resolveRuntimes({ env: process.env, exeDir });
+  // git 与其余运行时优先级相反：宿主自带优先，随包只兜底（runtimes 里出现 git 即表示
+  // 宿主没有）。三者都没有时明确标记 unavailable，界面据此说明「为什么没有分支可切」。
+  const bundledGit = runtimes.roots.find((root) => root.name === "git");
+  const gitSource: "system" | "bundled" | "unavailable" = bundledGit
+    ? "bundled"
+    : hasSystemGit({ path: process.env.PATH })
+      ? "system"
+      : "unavailable";
   if (runtimes.bundled.length > 0) {
     console.log(
       `[runtime] 随包运行时：${runtimes.bundled.join(", ")}（PATH=${runtimes.pathAdditions.join(", ")}）`,
@@ -42,6 +50,8 @@ async function main() {
   const baseEnv = loadServerEnv({
     runtimePathAdditions: runtimes.pathAdditions,
     ...(runtimes.javaHome ? { javaHome: runtimes.javaHome } : {}),
+    ...(bundledGit ? { gitBinDir: bundledGit.binDir } : {}),
+    gitSource,
   });
   const desktop = await prepareDesktopRuntime({
     env: baseEnv,

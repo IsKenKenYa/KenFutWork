@@ -80,6 +80,13 @@ export type ServerEnv = {
   runtimePathAdditions?: string[];
   /** 随包 JDK 的根目录（JAVA_HOME）。 */
   javaHome?: string;
+  /**
+   * 随包 git 的 bin 目录（<exeDir>/runtime/git/cmd）。**仅在宿主没有 git 时才有值**——
+   * 用户要求 git 优先用本地自带的，打包的只作兜底（见 desktop/runtimes.ts 的 hasSystemGit）。
+   */
+  gitBinDir?: string;
+  /** git 来源：system=宿主自带 / bundled=随包 / unavailable=两者都没有。 */
+  gitSource?: "system" | "bundled" | "unavailable";
   /** 桌面形态：由本进程拉起内嵌 Postgres 并跑迁移（FORM-2）。 */
   embeddedPostgres?: boolean;
   /** 内嵌 Postgres 端口；缺省自动挑空闲端口（避免与用户自装 Postgres 冲突）。 */
@@ -306,6 +313,8 @@ export function loadServerEnv(
       ? { runtimePathAdditions: overrides.runtimePathAdditions }
       : {}),
     ...(overrides.javaHome ? { javaHome: overrides.javaHome } : {}),
+    ...(overrides.gitBinDir ? { gitBinDir: overrides.gitBinDir } : {}),
+    ...(overrides.gitSource ? { gitSource: overrides.gitSource } : {}),
     ...(embeddedPostgres ? { embeddedPostgres } : {}),
     ...(embeddedPostgresPort ? { embeddedPostgresPort } : {}),
     ...(blobPublicBaseUrl ? { blobPublicBaseUrl } : {}),

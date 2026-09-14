@@ -13,6 +13,7 @@ import type { ViewerService } from "../features/bootstrap/ensure-user-foundation
 import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
 import type { CanvasService } from "../features/canvas/canvas-service.js";
 import type { ChatService } from "../features/chat/chat-service.js";
+import type { CodeGitService } from "../features/code-git/code-git-service.js";
 import type { ThreadService } from "../features/chat/thread-service.js";
 import type { CreditService } from "../features/credits/credit-service.js";
 import type { TierGuard } from "../features/credits/tier-guard.js";
@@ -56,6 +57,11 @@ export interface ServiceMap {
   brandKit: BrandKitService;
   canvas: CanvasService;
   chat: ChatService;
+  /**
+   * Code 模式的 git 分支视图（工作目录=项目）：列分支 / 切分支。
+   * 目录经 `resolveSandboxDir` 解析（与 agent 后端同一处），归属校验在服务内。
+   */
+  codeGit: CodeGitService;
   projects: ProjectService;
   settings: SettingsService;
   threads: ThreadService;

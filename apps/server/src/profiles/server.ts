@@ -10,6 +10,7 @@ import { createViewerPlugin } from "../features/bootstrap/plugin.js";
 import { brandKitPlugin } from "../features/brand-kit/plugin.js";
 import { createCanvasPlugin } from "../features/canvas/plugin.js";
 import { createChatPlugin } from "../features/chat/plugin.js";
+import { createCodeGitPlugin } from "../features/code-git/plugin.js";
 import { createCodeToolsPlugin } from "../features/code-tools/plugin.js";
 import { createCreditsPlugin } from "../features/credits/plugin.js";
 import { createGenerationPlugin } from "../features/generation/plugin.js";
@@ -131,6 +132,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createCreditsPlugin(),
     createViewerPlugin(),
     createCanvasPlugin(),
+    createCodeGitPlugin(),
     createChatPlugin(),
     createSettingsPlugin(),
     createUploadsPlugin(),
