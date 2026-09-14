@@ -54,6 +54,8 @@ export type ServerEnv = {
   /** 联网搜索（§4.5，BYOK 搜索供应商）：配置 Key 即启用 web_search 工具。 */
   searchApiKey?: string;
   searchProvider?: "metaso";
+  /** 覆盖搜索端点（镜像/代理/联调）；默认走供应商官方端点。 */
+  searchEndpoint?: string;
   googleApiKey?: string;
   googleApplicationCredentials?: string;
   googleFontsApiKey?: string;
@@ -135,6 +137,9 @@ export function loadServerEnv(
   const searchProvider =
     overrides.searchProvider ??
     parseSearchProvider(source.LOOMIC_SEARCH_PROVIDER);
+  const searchEndpoint =
+    overrides.searchEndpoint ??
+    normalizeOptionalString(source.LOOMIC_SEARCH_ENDPOINT);
   const openAIApiBase =
     overrides.openAIApiBase ?? normalizeOptionalString(source.OPENAI_API_BASE);
   const openAIApiKey =
@@ -307,6 +312,7 @@ export function loadServerEnv(
     ...(mcpServers?.length ? { mcpServers } : {}),
     ...(searchApiKey ? { searchApiKey } : {}),
     ...(searchProvider ? { searchProvider } : {}),
+    ...(searchEndpoint ? { searchEndpoint } : {}),
     ...(googleApiKey ? { googleApiKey } : {}),
     ...(googleApplicationCredentials ? { googleApplicationCredentials } : {}),
     ...(openAIApiBase ? { openAIApiBase } : {}),
