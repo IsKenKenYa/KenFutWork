@@ -41,6 +41,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { GitBranchSelect } from "@/components/workbench/git-branch-select";
+import { ToolOutputRenderer } from "@/components/chat/tool-block-view";
 import { McpModal } from "@/components/workbench/mcp-modal";
 import { PluginMarketModal } from "@/components/workbench/plugin-market-modal";
 import {
@@ -55,6 +56,10 @@ import { useWebSocket } from "@/hooks/use-websocket";
 import { useAuth } from "@/lib/auth-context";
 import { getServerBaseUrl } from "@/lib/env";
 import { describeRunFailure } from "@/lib/run-failure";
+import {
+  applyToolEvent,
+  type TaskToolEntry,
+} from "@/lib/workbench-tools";
 import {
   createProject,
   deleteProject,
@@ -104,10 +109,44 @@ interface WorkbenchTask {
   projectId?: string | null;
   /** 归档后不显示在项目分组中，仅出现在「已归档」区 */
   archived?: boolean;
+  /**
+   * 本轮的工具调用轨迹（工作台此前**完全忽略** tool.* 事件，用户只看得到模型的话术，
+   * 看不到工具跑了什么——联网搜索的来源列表因此从未在 Code 模式里出现过，
+   * 产品早就写好的来源渲染器只管着已退役的旧对话 UI）。
+   */
+  tools?: TaskToolEntry[];
 }
 
-const MODE_META: Record<
-  WorkbenchMode,
+/**
+ * 工具调用一行：名称 + 状态；完成的 `web_search` 直接把来源渲染成可点击列表
+ * （复用既有 `ToolOutputRenderer`——它本来就为联网搜索写好了来源视图，
+ * 只是此前没有任何 Code 模式消费方）。
+ */
+function WorkbenchToolRow({ tool }: { tool: TaskToolEntry }) {  return (
+    <div className="w-fit max-w-full rounded-xl border border-border/60 bg-card px-3 py-2">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+            tool.status === "running"
+              ? "animate-pulse bg-amber-500"
+              : "bg-emerald-500"
+          }`}
+        />
+        <span className="font-mono">{tool.toolName}</span>
+        <span>{tool.status === "running" ? "执行中…" : "已完成"}</span>
+      </div>
+      {tool.output ? (
+        <div className="mt-2">
+          <ToolOutputRenderer toolName={tool.toolName} output={tool.output} />
+        </div>
+      ) : tool.summary ? (
+        <div className="mt-1 text-xs text-muted-foreground">{tool.summary}</div>
+      ) : null}
+    </div>
+  );
+}
+
+const MODE_META: Record<  WorkbenchMode,
   {
     label: string;
     title: string;
@@ -632,6 +671,14 @@ export function Workbench() {
           }
           return { ...task, messages };
         });
+      } else if (type === "tool.started" || type === "tool.completed") {
+        apply((task) => ({
+          ...task,
+          tools: applyToolEvent(
+            task.tools ?? [],
+            evt as Parameters<typeof applyToolEvent>[1],
+          ),
+        }));
       } else if (type === "run.completed") {
         apply((task) => ({ ...task, status: "completed" }));
       } else if (type === "billing.error") {
@@ -1355,6 +1402,9 @@ export function Workbench() {
                   </div>
                 ),
               )}
+              {(activeTask.tools ?? []).map((tool) => (
+                <WorkbenchToolRow key={tool.toolCallId} tool={tool} />
+              ))}
               {activeTask.status === "running" ? (
                 <div
                   className="flex w-fit items-center gap-1.5 rounded-2xl rounded-bl-md bg-muted px-4 py-3"
