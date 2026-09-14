@@ -116,7 +116,9 @@ describe("Code git 服务", () => {
       canvasWorkDirs: { [CANVAS_ID]: mapped },
     });
     await service.status(USER, CANVAS_ID);
-    expect(git.describe).toHaveBeenCalledWith(resolveSandboxDir(CANVAS_ID, undefined, mapped));
+    expect(git.describe).toHaveBeenCalledWith(
+      resolveSandboxDir(CANVAS_ID, undefined, mapped),
+    );
   });
 
   it("切换分支：成功后回读新状态", async () => {

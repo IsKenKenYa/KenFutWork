@@ -396,9 +396,8 @@ describe.skipIf(!DATABASE_URL)("Code 模式会话供给（方案 A）", () => {
       );
       expect(Number(canvases[0]?.count)).toBe(1);
 
-      const listed = await createProjectRepository(persistence).listActive(
-        workspaceId,
-      );
+      const listed =
+        await createProjectRepository(persistence).listActive(workspaceId);
       expect(listed.some((p) => p.slug === "code-workbench")).toBe(false);
     });
   });

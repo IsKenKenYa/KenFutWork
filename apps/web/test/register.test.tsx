@@ -24,9 +24,7 @@ const {
   mockGetSession: vi.fn(),
   mockOnAuthStateChange: vi.fn(),
   mockReplace: vi.fn(),
-  mockSignUp: vi
-    .fn()
-    .mockResolvedValue({
+  mockSignUp: vi.fn().mockResolvedValue({
     access_token: "token_1",
     expiresAt: "2026-10-13T00:00:00.000Z",
     user: { displayName: null, email: "new@test.com", id: "user-1" },

@@ -131,6 +131,7 @@ export function GitBranchSelect({
         <span className="truncate">{label}</span>
         {status.dirty ? (
           <span
+            role="img"
             aria-label="有未提交改动"
             title="有未提交改动"
             className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"

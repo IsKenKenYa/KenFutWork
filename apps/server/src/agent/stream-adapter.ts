@@ -673,7 +673,9 @@ function describeToolError(error: unknown): string {
   }
   const deepest = messages[messages.length - 1];
   const readable =
-    deepest && deepest.length <= 200 ? deepest : (messages[0] ?? "工具执行失败");
+    deepest && deepest.length <= 200
+      ? deepest
+      : (messages[0] ?? "工具执行失败");
   return readable.length > 200 ? `${readable.slice(0, 200)}…` : readable;
 }
 

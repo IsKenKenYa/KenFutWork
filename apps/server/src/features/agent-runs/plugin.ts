@@ -1,5 +1,5 @@
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
-import type { ToolGate, LoomicAgentFactory } from "../../agent/deep-agent.js";
+import type { LoomicAgentFactory, ToolGate } from "../../agent/deep-agent.js";
 import { createAgentPersistenceService } from "../../agent/persistence/index.js";
 import { createAgentRunService } from "../../agent/runtime.js";
 import { composeToolGate } from "../../agent/tool-gate.js";
@@ -71,7 +71,10 @@ export function createAgentRunsPlugin(
             ...(permissions
               ? {
                   permissionVerdict: (toolName: string) => {
-                    const decision = permissions.evaluate({ toolName, threadId });
+                    const decision = permissions.evaluate({
+                      toolName,
+                      threadId,
+                    });
                     if (decision.decision !== "deny") {
                       return { allowed: true } as const;
                     }

@@ -1,3 +1,4 @@
+import type { BrandKitDetail } from "@loomic/shared";
 import { tool } from "langchain";
 import { z } from "zod";
 import type { AuthenticatedUser } from "../../features/auth/types.js";
@@ -37,7 +38,7 @@ export function createBrandKitTool(
         userMetadata: {},
       };
 
-      let kit;
+      let kit: BrandKitDetail;
       try {
         kit = await deps.brandKitService.getKit(user, brandKitId);
       } catch {

@@ -392,8 +392,7 @@ async function collectSupabaseResiduals() {
     storageObjectsRefs: inventory.rewrite["storage.objects 引用"],
     // 用「排除中性化迁移」的净值：中性化迁移的语句里必然出现被改写的字面量，
     // 计入它等于惩罚「去除残留」本身（历史迁移不可改，指标会永久卡住）。
-    cloudUrls:
-      inventory.rewrite["硬编码云端 URL（排除中性化迁移后的净值）"],
+    cloudUrls: inventory.rewrite["硬编码云端 URL（排除中性化迁移后的净值）"],
   };
 
   return { code, sql };

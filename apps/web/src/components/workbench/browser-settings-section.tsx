@@ -109,6 +109,7 @@ export function BrowserSettingsSection() {
         控制 Agent 使用浏览器的方式（搜索、自动化与运行形态）。
       </p>
 
+      {/* biome-ignore lint/a11y/noLabelWithoutControl: 控件是内嵌的 Base UI SelectTrigger（自定义组件），规则无法静态识别包裹关联 */}
       <label className="flex items-center justify-between gap-4 py-3">
         <span>
           <span className="block text-sm">默认搜索引擎</span>

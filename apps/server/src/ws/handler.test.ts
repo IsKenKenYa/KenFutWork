@@ -1,7 +1,7 @@
 import websocket from "@fastify/websocket";
 import Fastify from "fastify";
-import { WebSocket } from "ws";
 import { describe, expect, it } from "vitest";
+import { WebSocket } from "ws";
 
 import { registerWsRoute } from "./handler.js";
 
@@ -16,7 +16,10 @@ import { registerWsRoute } from "./handler.js";
  */
 
 function makeStubs() {
-  const sockets = new Map<string, { readyState: number; send: (d: string) => void }>();
+  const sockets = new Map<
+    string,
+    { readyState: number; send: (d: string) => void }
+  >();
   /**
    * 用 Proxy 兜底：连接管理器的方法随 run 流程演进而增减，逐个列举会让测试随实现变化而碎。
    * `register`/`sendTo`/`remove` 必须**真的投递**（否则 ack 到不了客户端，测试假失败）。
@@ -123,7 +126,11 @@ describe("WS 早期消息不丢失（回归）", () => {
     try {
       const { got } = await sendImmediatelyOnOpen(
         port,
-        JSON.stringify({ type: "command", action: "agent.cancel", payload: {} }),
+        JSON.stringify({
+          type: "command",
+          action: "agent.cancel",
+          payload: {},
+        }),
       );
       expect(got).not.toBeNull();
       expect(got).toContain("Invalid command format");
@@ -149,9 +156,9 @@ describe("WS 早期消息不丢失（回归）", () => {
       );
       expect(got).not.toBeNull();
       // 受理即回 ack；若后续构建失败则回 run.failed 事件——两者都证明消息没被丢弃
-      expect(
-        got!.includes("command.ack") || got!.includes("run.failed"),
-      ).toBe(true);
+      expect(got!.includes("command.ack") || got!.includes("run.failed")).toBe(
+        true,
+      );
     } finally {
       await app.close();
     }

@@ -44,7 +44,11 @@ describe("画布 → 沙箱目录解析", () => {
    * 也看不到文件落在哪（回归护栏）。
    */
   it("真实目录映射优先于根目录拼接", () => {
-    const dir = resolveSandboxDir(CANVAS_ID, "C:/tmp/root", "D:\\Desktop\\test");
+    const dir = resolveSandboxDir(
+      CANVAS_ID,
+      "C:/tmp/root",
+      "D:\\Desktop\\test",
+    );
     expect(dir).not.toContain(sanitizeCanvasIdForPath(CANVAS_ID));
     expect(dir.toLowerCase()).toContain("desktop");
     expect(dir.toLowerCase()).toContain("test");

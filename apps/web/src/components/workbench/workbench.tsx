@@ -1335,6 +1335,7 @@ export function Workbench() {
               )}
               {activeTask.status === "running" ? (
                 <div
+                  role="status"
                   className="flex w-fit items-center gap-1.5 rounded-2xl rounded-bl-md bg-muted px-4 py-3"
                   aria-label="生成中"
                 >

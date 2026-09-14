@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -153,15 +154,29 @@ describe("内嵌 Postgres：二进制目录解析", () => {
     ).toBe(bundled);
   });
 
-  it("开发态回落到已安装的平台依赖包 native/bin", () => {
-    const binDir = resolvePgBinDir({
-      env: {},
-      exists: (path) => path.includes("native"),
-      exeDir: "D:/nope",
-      platform: "win32",
-    });
-    expect(binDir).toMatch(/windows-x64[/\\]native[/\\]bin$/);
-  });
+  // 平台二进制包是 pnpm 可选依赖，只在对应平台安装；未安装的机器上跳过本用例
+  // （依赖缺失时的 fail loud 行为由「二进制缺失时 fail loud」用例覆盖）。
+  const win32DependencyInstalled = (() => {
+    try {
+      createRequire(import.meta.url).resolve("@embedded-postgres/windows-x64");
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+
+  it.skipIf(!win32DependencyInstalled)(
+    "开发态回落到已安装的平台依赖包 native/bin",
+    () => {
+      const binDir = resolvePgBinDir({
+        env: {},
+        exists: (path) => path.includes("native"),
+        exeDir: "D:/nope",
+        platform: "win32",
+      });
+      expect(binDir).toMatch(/windows-x64[/\\]native[/\\]bin$/);
+    },
+  );
 });
 
 describe("内嵌 Postgres：生命周期", () => {
@@ -286,7 +301,16 @@ describe("内嵌 Postgres：生命周期", () => {
 
 describe("内嵌 Postgres：接管上次崩溃留下的集群", () => {
   const PID_FILE = join(DATA_DIR, "postmaster.pid");
-  const PID_CONTENT = ["4321", DATA_DIR, "1700000000", "55999", "/tmp", "", "12345", "0"].join("\n");
+  const PID_CONTENT = [
+    "4321",
+    DATA_DIR,
+    "1700000000",
+    "55999",
+    "/tmp",
+    "",
+    "12345",
+    "0",
+  ].join("\n");
 
   it("postmaster.pid 解析：取 pid 与端口两行，畸形内容返回 null", () => {
     expect(parsePostmasterPid(PID_CONTENT)).toEqual({ pid: 4321, port: 55999 });

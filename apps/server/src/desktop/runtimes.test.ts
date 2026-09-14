@@ -191,10 +191,7 @@ describe("git 运行时的优先级（本地优先，打包兜底）", () => {
     const resolved = resolveRuntimes({
       env: {},
       exeDir: app,
-      exists: fakeFs([
-        bundledGit,
-        join("C:/Program Files/Git/cmd", "git.exe"),
-      ]),
+      exists: fakeFs([bundledGit, join("C:/Program Files/Git/cmd", "git.exe")]),
       systemPath: "C:/Program Files/Git/cmd",
     });
     expect(resolved.bundled).not.toContain("git");

@@ -1,8 +1,7 @@
 import { type StructuredTool, tool } from "@langchain/core/tools";
 import { type ZodTypeAny, z } from "zod";
-
-import type { ToolDefinition, ToolExecutionContext } from "../kernel/types.js";
 import { ToolDeniedError } from "../kernel/context.js";
+import type { ToolDefinition, ToolExecutionContext } from "../kernel/types.js";
 
 /**
  * 内核工具桥（§4.5「统一工具注册表」的最后一环）：

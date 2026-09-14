@@ -4,8 +4,20 @@
   "description": "Loomic 参考插件：一个双端兼容的 bundle（dsh + loomic），提供一个读取当前时间的工具。",
   "type": "module",
   "main": "index.js",
-  "files": ["index.js", "cordis.patch.yml", "README.md"],
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
   "license": "GPL-3.0",
-  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
-  "loomic": { "bundle": { "patch": "./cordis.patch.yml" } }
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "loomic": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
 }

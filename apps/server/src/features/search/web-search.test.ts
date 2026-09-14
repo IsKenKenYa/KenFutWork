@@ -262,8 +262,8 @@ describe("web_search 的错误是面向用户的（可透传到客户端）", ()
         json: async () => ({ webpages: [] }),
       })),
     });
-    await expect(missingQuery.execute({ query: " " }, {})).rejects.toMatchObject(
-      { exposeToClient: true },
-    );
+    await expect(
+      missingQuery.execute({ query: " " }, {}),
+    ).rejects.toMatchObject({ exposeToClient: true });
   });
 });

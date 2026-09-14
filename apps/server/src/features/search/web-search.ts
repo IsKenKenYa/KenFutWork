@@ -123,7 +123,10 @@ export function createWebSearchTool(deps: {
       if (!query) {
         throw new WebSearchError("web_search 需要 query 参数");
       }
-      const num = Math.min(Math.max(Math.floor(Number(args.num ?? 8)) || 8, 1), 20);
+      const num = Math.min(
+        Math.max(Math.floor(Number(args.num ?? 8)) || 8, 1),
+        20,
+      );
       const endpoint =
         deps.config.endpoint ??
         (deps.config.provider === "metaso" ? METASO_ENDPOINT : "");

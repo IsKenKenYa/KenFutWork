@@ -23,6 +23,7 @@ import type { ModelProviderService } from "../features/model-providers/model-pro
 import type { UploadService } from "../features/uploads/upload-service.js";
 import { generateImage } from "../generation/image-generation.js";
 import { resolveImageProviderName } from "../generation/providers/registry.js";
+import type { GeneratedImage } from "../generation/types.js";
 import { resolveInstanceImageProvider } from "../providers/resolve.js";
 
 const generateImageRequestSchema = z.object({
@@ -119,7 +120,7 @@ export async function registerGenerateRoutes(
         }
       }
 
-      let result;
+      let result: GeneratedImage;
       if (payload.providerInstanceId && options.modelProviders) {
         const credentials = await options.modelProviders.resolveCredentialsById(
           payload.providerInstanceId,

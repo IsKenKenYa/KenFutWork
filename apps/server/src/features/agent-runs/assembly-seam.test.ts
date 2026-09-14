@@ -1,21 +1,20 @@
+import type { StreamEvent } from "@loomic/shared";
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
-
-import type { ServerEnv } from "../../config/env.js";
 import type {
   LoomicAgent,
   LoomicAgentFactory,
   ToolGate,
 } from "../../agent/deep-agent.js";
-import { createAgentModesPlugin } from "../agent-modes/plugin.js";
+import type { ServerEnv } from "../../config/env.js";
 import { composePlugins } from "../../kernel/compose.js";
 import {
   AgentRunEventBus,
   createKernelEvents,
   ToolDeniedError,
 } from "../../kernel/context.js";
+import { createAgentModesPlugin } from "../agent-modes/plugin.js";
 import { createAgentRunsPlugin } from "./plugin.js";
-import type { StreamEvent } from "@loomic/shared";
 
 /**
  * 装配缝回归（P0 事故防复发）：
@@ -62,6 +61,7 @@ describe("agent-runs × agent-modes 装配缝（pre-step 指令 + 工具门）",
       return {
         streamEvents: async function* (input: never) {
           inputs.push(input);
+          yield* [] as never[];
         },
       } as unknown as LoomicAgent;
     };

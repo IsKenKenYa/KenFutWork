@@ -17,7 +17,9 @@ export function resolveEntryRoot(input: {
 }): string {
   if (input.entryFileUrl) {
     try {
-      return dirname(dirname(dirname(dirname(fileURLToPath(input.entryFileUrl)))));
+      return dirname(
+        dirname(dirname(dirname(fileURLToPath(input.entryFileUrl)))),
+      );
     } catch {
       // 非法 file URL 与 SEA 的空值同样处理：落到 exe 目录
     }

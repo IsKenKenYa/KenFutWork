@@ -13,10 +13,7 @@ import {
   createProjectService,
   ProjectServiceError,
 } from "./project-service.js";
-import {
-  CODE_WORKBENCH_SLUG,
-  createProjectRepository,
-} from "./repository.js";
+import { CODE_WORKBENCH_SLUG, createProjectRepository } from "./repository.js";
 
 const USER_ID = "user-1";
 const WORKSPACE_ID = "ws-1";
@@ -136,10 +133,9 @@ describe("projects repository（SQL 与隔离谓词）", () => {
    */
   it("按 kind 取列表：code 项目与画布项目互不串味", async () => {
     const { calls, runner } = createRunner();
-    await createProjectRepository(createPersistenceFromRunner(runner)).listActive(
-      WORKSPACE_ID,
-      "code",
-    );
+    await createProjectRepository(
+      createPersistenceFromRunner(runner),
+    ).listActive(WORKSPACE_ID, "code");
 
     const [call] = dataCalls(calls);
     expect(call?.values).toEqual(["code", CODE_WORKBENCH_SLUG, WORKSPACE_ID]);

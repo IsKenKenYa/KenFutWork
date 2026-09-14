@@ -1,15 +1,15 @@
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { AIMessage, ToolMessage } from "@langchain/core/messages";
-import { isCommand } from "@langchain/langgraph";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ChatVertexAI } from "@langchain/google-vertexai";
+import { isCommand } from "@langchain/langgraph";
 import type {
   BaseCheckpointSaver,
   BaseStore,
 } from "@langchain/langgraph-checkpoint";
 import { ChatOpenAI } from "@langchain/openai";
-import type { AgentMiddleware } from "langchain";
 import { createDeepAgent } from "deepagents";
+import type { AgentMiddleware } from "langchain";
 import {
   DEFAULT_AGENT_MODEL,
   DEFAULT_GOOGLE_AGENT_MODEL,
@@ -111,8 +111,7 @@ function createModelResponseGuardMiddleware(): AgentMiddleware {
             `[model-response-guard] 内层模型响应形状校验失败（降级收尾）：${message}`,
           );
           return new AIMessage({
-            content:
-              "（本轮模型响应异常，系统已降级收尾；请重试或换模型。）",
+            content: "（本轮模型响应异常，系统已降级收尾；请重试或换模型。）",
           });
         }
         throw error;
@@ -134,7 +133,9 @@ function createModelResponseGuardMiddleware(): AgentMiddleware {
             ? String(result)
             : `${Object.prototype.toString.call(result)} keys=${Object.keys(
                 result,
-              ).slice(0, 20).join(",")}`;
+              )
+                .slice(0, 20)
+                .join(",")}`;
       console.warn(
         `[model-response-guard] 模型返回未规整形状（已尝试收敛为 AIMessage）：${shape}`,
       );

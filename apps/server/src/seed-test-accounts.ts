@@ -1,8 +1,6 @@
 import { loadServerEnv } from "./config/env.js";
 import { hashPassword } from "./features/auth/password.js";
-import {
-  createAccountRepository,
-} from "./features/auth/repository.js";
+import { createAccountRepository } from "./features/auth/repository.js";
 import type { AuthenticatedUser } from "./features/auth/types.js";
 import { createViewerService } from "./features/bootstrap/ensure-user-foundation.js";
 import { createViewerRepository } from "./features/bootstrap/repository.js";
@@ -61,7 +59,10 @@ function parsePasswords(args: string[]): Map<string, string> {
   for (const arg of args) {
     const separator = arg.indexOf("=");
     if (separator <= 0) continue;
-    passwords.set(arg.slice(0, separator).toLowerCase(), arg.slice(separator + 1));
+    passwords.set(
+      arg.slice(0, separator).toLowerCase(),
+      arg.slice(separator + 1),
+    );
   }
   return passwords;
 }
@@ -85,7 +86,8 @@ async function main(): Promise<void> {
   });
 
   for (const account of accounts) {
-    const password = passwords.get(account.email.toLowerCase()) ?? TEST_PASSWORD;
+    const password =
+      passwords.get(account.email.toLowerCase()) ?? TEST_PASSWORD;
     const passwordHash = await hashPassword(password);
 
     let user: AuthenticatedUser | null = null;
@@ -104,7 +106,9 @@ async function main(): Promise<void> {
       console.log(`已创建账号：${account.email}`);
     } catch {
       // 已存在：重置口令（幂等重跑/改口令都走这里）
-      const existing = await accountRepository.findAccountByEmail(account.email);
+      const existing = await accountRepository.findAccountByEmail(
+        account.email,
+      );
       if (!existing) {
         console.error(`账号既建不出来也读不到，跳过：${account.email}`);
         continue;
@@ -145,7 +149,9 @@ async function main(): Promise<void> {
        do update set plan = excluded.plan, updated_at = now()`,
       [workspaceId, account.plan],
     );
-    console.log(`  工作区 ${workspaceId}｜套餐 ${account.plan}｜额度 ${account.credits}`);
+    console.log(
+      `  工作区 ${workspaceId}｜套餐 ${account.plan}｜额度 ${account.credits}`,
+    );
   }
 
   console.log(

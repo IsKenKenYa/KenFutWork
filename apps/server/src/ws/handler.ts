@@ -22,8 +22,8 @@ import type {
 } from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { ChatService } from "../features/chat/chat-service.js";
-import type { ThreadService } from "../features/chat/thread-service.js";
 import { deriveSessionTitle } from "../features/chat/session-title.js";
+import type { ThreadService } from "../features/chat/thread-service.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import type { ConnectionManager } from "./connection-manager.js";
 import type { CanvasEventBuffer } from "./event-buffer.js";

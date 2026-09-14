@@ -233,7 +233,10 @@ describe("settings service", () => {
         agentMaxRetries: 10,
         defaultModel: "gemini-2.5-flash",
       }),
-    ).resolves.toEqual({ agentMaxRetries: 10, defaultModel: "gemini-2.5-flash" });
+    ).resolves.toEqual({
+      agentMaxRetries: 10,
+      defaultModel: "gemini-2.5-flash",
+    });
     expect(written).toBe("gemini-2.5-flash");
   });
 });
