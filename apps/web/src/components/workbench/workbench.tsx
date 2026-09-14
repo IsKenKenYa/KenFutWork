@@ -61,6 +61,7 @@ import {
   updateProject,
 } from "@/lib/server-api";
 import {
+  resolveWorkDirProject,
   workDirectoryPromptHint,
   pickWorkDirectory as workDirPick,
 } from "@/lib/work-directory";
@@ -264,6 +265,9 @@ export function Workbench() {
   const tasks = tasksByMode[mode];
   const selectedProject =
     projects.find((p) => p.id === selectedProjectId) ?? null;
+
+  /** Code 模式 run 的作用域画布（工作目录=项目 → 取项目主画布）。 */
+  const codeCanvasScope = selectedProject?.primaryCanvas?.id ?? null;
 
   const activeTask = useMemo(
     () => tasks.find((t) => t.id === activeTaskId) ?? null,
@@ -684,6 +688,24 @@ export function Workbench() {
     if (result.status === "picked") {
       setWorkDirName(result.name);
       setWorkDirNotice(null);
+      // Code 模式：**工作目录即项目**。run 的生产后端要求绑定项目
+      // （缺 canvasId 会立刻失败），而浏览器只拿得到目录名——所以这里按目录名
+      // 建同名项目并选中，run 以该项目的主画布为作用域，文件落在项目的沙箱目录里。
+      if (mode === "code") {
+        const plan = resolveWorkDirProject(result.name, projects);
+        if (plan.kind === "reuse") {
+          setSelectedProjectId(plan.projectId);
+          return;
+        }
+        const created = await createProjectNamed(plan.name);
+        if (created) {
+          setSelectedProjectId(created.id);
+          return;
+        }
+        setWorkDirNotice(
+          "已选定目录名，但项目创建失败，本次运行可能无法开始。",
+        );
+      }
       return;
     }
     if (result.status === "cancelled") {
@@ -692,7 +714,7 @@ export function Workbench() {
     }
     // 不支持/失败都必须说出来（曾经是静默 return + 空 catch）
     setWorkDirNotice(result.notice);
-  }, []);
+  }, [mode, projects, createProjectNamed]);
 
   const switchMode = useCallback((next: WorkbenchMode) => {
     setMode(next);
@@ -773,9 +795,11 @@ export function Workbench() {
         {
           sessionId,
           conversationId,
-          // state 后端要求 run 挂 canvas；workbench 任务以 conversationId 作为
-          // 独立标识（事件按它路由，与 handler 的绑定逻辑一致）
-          canvasId: conversationId,
+          // state 后端要求 run 挂项目。Code 模式下「工作目录=项目」：选中项目时
+          // 用它的主画布作作用域（同一项目的多次运行共享同一沙箱目录）；
+          // 未选项目时退回 conversationId，由服务端懒供给会话。
+          canvasId:
+            (mode === "code" ? codeCanvasScope : null) ?? conversationId,
           // 模式指令（inputDirective）由服务端 pre-step 事件缝注入，客户端不再拼接
           prompt: `${
             mode === "code" && workDirName
@@ -810,6 +834,7 @@ export function Workbench() {
       thinking,
       executionMode,
       selectedProjectId,
+      codeCanvasScope,
       session,
       ws,
     ],
@@ -855,11 +880,18 @@ export function Workbench() {
         : "";
       // 模式指令由服务端 pre-step 事件缝注入；这里只随载荷声明当前模式，
       // 服务端按 threadId 重新激活（continueTask 复用同一 thread）
+      // 作用域必须与首轮一致：Code 模式下 run 挂的是项目主画布（工作目录=项目），
+      // 追问若退回 conversationId 会换到另一个沙箱目录，上一轮写的文件就"消失"了。
+      const taskProject =
+        mode === "code" && task.projectId
+          ? projects.find((p) => p.id === task.projectId)
+          : null;
+      const taskCanvasId = taskProject?.primaryCanvas?.id ?? task.id;
       ws.startRun(
         {
           sessionId: task.sessionId,
           conversationId: task.id,
-          canvasId: task.id,
+          canvasId: taskCanvasId,
           prompt: `${thinkingHint}${historyBlock}${text.trim()}`,
           ...(model ? { model } : {}),
           executionMode,
@@ -873,7 +905,17 @@ export function Workbench() {
         },
       );
     },
-    [activeTaskId, tasks, mode, model, thinking, executionMode, session, ws],
+    [
+      activeTaskId,
+      tasks,
+      mode,
+      model,
+      thinking,
+      executionMode,
+      session,
+      ws,
+      projects,
+    ],
   );
 
   if (loading) {

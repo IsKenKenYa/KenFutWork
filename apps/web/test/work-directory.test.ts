@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   pickWorkDirectory,
   resolveDirectoryPicker,
+  resolveWorkDirProject,
   UNSUPPORTED_DIRECTORY_PICKER_NOTICE,
   workDirectoryPromptHint,
 } from "../src/lib/work-directory.js";
@@ -80,5 +81,64 @@ describe("工作目录选择", () => {
     expect(hint).toContain("沙箱工作区");
     // 不再声称「工作目录」是本机可操作路径
     expect(hint).not.toContain("【工作目录】");
+  });
+
+  /**
+   * 回归：Code 模式「工作目录=项目」。run 的生产后端要求绑定项目
+   * （不绑定会整轮失败：canvasId is required for production backend mode），
+   * 选定目录后必须落到一个真实项目上——同名项目复用，没有才新建。
+   */
+  describe("resolveWorkDirProject（Code：工作目录=项目）", () => {
+    const projects = [
+      { id: "p1", name: "test" },
+      { id: "p2", name: "kfw-demo" },
+    ];
+
+    it("目录名与既有项目同名 → 复用（不重复建项目）", () => {
+      expect(resolveWorkDirProject("test", projects)).toEqual({
+        kind: "reuse",
+        projectId: "p1",
+      });
+      expect(resolveWorkDirProject("kfw-demo", projects)).toEqual({
+        kind: "reuse",
+        projectId: "p2",
+      });
+    });
+
+    it("无同名项目 → 按目录名新建", () => {
+      expect(resolveWorkDirProject("new-dir", projects)).toEqual({
+        kind: "create",
+        name: "new-dir",
+      });
+    });
+
+    it("目录名两侧空白归一后再匹配", () => {
+      expect(resolveWorkDirProject("  test  ", projects)).toEqual({
+        kind: "reuse",
+        projectId: "p1",
+      });
+    });
+
+    it("空目录名不退化成复用（避免把任意项目当作用域）", () => {
+      expect(resolveWorkDirProject("", projects)).toEqual({
+        kind: "create",
+        name: "",
+      });
+      expect(resolveWorkDirProject("   ", projects)).toEqual({
+        kind: "create",
+        name: "",
+      });
+    });
+
+    it("项目列表为空 → 新建；大小写不同不视为同名", () => {
+      expect(resolveWorkDirProject("any", [])).toEqual({
+        kind: "create",
+        name: "any",
+      });
+      expect(resolveWorkDirProject("TEST", projects)).toEqual({
+        kind: "create",
+        name: "TEST",
+      });
+    });
   });
 });

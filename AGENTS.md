@@ -78,6 +78,9 @@ vitest 按 app 配置（`apps/web/vitest.config.mjs`、`apps/server/vitest.confi
 主入口的行为约定在此登记，**任何 agent 改动前先读本节**，改动落点若与不变量冲突，先改回不变量再谈其它需求。
 
 - **Design 模式的主区恒为画布（canvas），永不被对话框取代**。工作台（`/workbench`）在 Design 模式下：选中项目即渲染画布（`/canvas?id=…` 的 iframe），对话走**画布页自带的助手面板**；工作台不得用「任务/会话对话框」占据主区。该判定集中在 `apps/web/src/lib/workbench-surface.ts` 的 `resolveWorkbenchSurface`（Design 分支永不返回 `conversation`），并由 `apps/web/test/workbench-surface.test.ts` 锁死。**历史事故**：主区判定曾内联在 JSX 里且把 `activeTask` 排在画布之前，导致「发一条消息画布就被对话框顶掉」，用户多次反馈。**验收**：Design 模式主区必须是画布 iframe；任何把 `conversation` 暴露到 Design 模式的改动都不许合入。
+- **Code 模式：工作目录 = 项目，run 必须绑定项目**。选定工作目录即按目录名解析出项目并选中，run 的作用域取该项目的**主画布**（`canvasId` 同时就是沙箱目录名，故同一项目的多轮运行共享同一个工作目录；追问必须沿用同一作用域，否则上一轮写的文件会「消失」）。目录名到项目的判定集中在 `apps/web/src/lib/work-directory.ts` 的 `resolveWorkDirProject`，run 侧口径在 `apps/web/src/components/workbench/workbench.tsx`，由 `apps/web/test/work-directory.test.ts` 锁死。**历史事故**：客户端曾用 `conversationId` 顶替 `canvasId`（每会话一个沙箱、项目是假的），而 run 不绑项目会**整轮秒失败**（`canvasId is required for production (state) backend mode`），且失败原因被客户端吞成「运行失败，请重试」。**验收**：Code 模式起 run 必须带项目作用域；run 失败必须透出服务端给出的可读原因。
+
+> **遗留（待拍板）**：Code 侧「项目列表」目前读 `localStorage` 的 `codeProjects`（本地文件夹语义），与服务端 `projects` 是两套真相，且 `projects` 表无 kind 列、无法区分 design / code。做实它需先定方案：给 `projects` 加 kind 并按 kind 过滤列表（推荐），或保留两套并给每个 codeProject 挂服务端画布作用域。
 
 ## 安全与配置提示
 禁止提交 provider keys、`.env`、`.env.local`、service account 凭据（`**/credentials/*.json` 已 gitignore）、构建产物、日志。`.env.local` 只放本机；CI 与生产密钥走平台环境变量。

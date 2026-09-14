@@ -89,3 +89,29 @@ export async function pickWorkDirectory(
 export function workDirectoryPromptHint(name: string): string {
   return `【目录名称：${name}（仅用户标注的命名提示；本机路径对服务端不可达，读写发生在沙箱工作区，路径以工具返回为准）】`;
 }
+
+/**
+ * Code 模式「工作目录 = 项目」：选定目录名后应落到哪个项目。
+ *
+ * 为什么必须有这一步：生产后端要求每轮 run 绑定项目（`canvasId is required for
+ * production (state) backend mode`），不绑定就整轮失败；而浏览器只给得到目录名。
+ * 所以选定目录后按目录名找同名项目复用，没有才新建——run 以项目主画布为作用域，
+ * 同一项目的多轮运行共享同一个沙箱工作目录。
+ */
+export type WorkDirProjectPlan =
+  | { kind: "reuse"; projectId: string }
+  | { kind: "create"; name: string };
+
+export function resolveWorkDirProject(
+  pickedName: string,
+  projects: ReadonlyArray<{ id: string; name: string }>,
+): WorkDirProjectPlan {
+  const name = pickedName.trim();
+  if (!name) {
+    return { kind: "create", name };
+  }
+  const existing = projects.find((project) => project.name === name);
+  return existing
+    ? { kind: "reuse", projectId: existing.id }
+    : { kind: "create", name };
+}
