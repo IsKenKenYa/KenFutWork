@@ -9,6 +9,8 @@ export type UsageRecordRow = {
   output_tokens: number;
   /** `numeric` 列：驱动回来是字符串，归一为 number。 */
   cost_usd: number | null;
+  /** `timestamptz` 列：归一为 ISO 字符串（R4-2 按天聚合用）。 */
+  occurred_at: string;
 };
 
 export type NewUsageRecord = {
@@ -44,6 +46,7 @@ type RawUsageRow = {
   input_tokens: string | number;
   output_tokens: string | number;
   cost_usd: string | number | null;
+  occurred_at: string | Date;
 };
 
 export function createUsageRepository(
@@ -77,7 +80,7 @@ export function createUsageRepository(
       const rows = await persistence
         .forWorkspace(workspaceId)
         .query<RawUsageRow>(
-          `select provider, model, capability, input_tokens, output_tokens, cost_usd
+          `select provider, model, capability, input_tokens, output_tokens, cost_usd, occurred_at
              from public.usage_records
             where workspace_id = :workspace
             order by occurred_at desc
@@ -92,6 +95,10 @@ export function createUsageRepository(
         input_tokens: Number(row.input_tokens) || 0,
         output_tokens: Number(row.output_tokens) || 0,
         cost_usd: row.cost_usd === null ? null : Number(row.cost_usd),
+        occurred_at:
+          row.occurred_at instanceof Date
+            ? row.occurred_at.toISOString()
+            : String(row.occurred_at),
       }));
     },
   };

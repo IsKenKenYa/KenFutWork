@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { BrowserSettingsSection } from "@/components/workbench/browser-settings-section";
 import { ListLoading } from "@/components/workbench/list-state";
 import { RulesMemorySection } from "@/components/workbench/rules-memory-section";
+import { UsageStatsSection } from "@/components/workbench/usage-stats-section";
 import { useAuth } from "@/lib/auth-context";
 import {
   fetchModels,
@@ -25,15 +26,38 @@ export type SettingsTab =
   | "providers"
   | "permissions"
   | "browser"
-  | "rules";
+  | "rules"
+  | "usage";
 
-const TABS: Array<{ id: SettingsTab; label: string }> = [
-  { id: "general", label: "通用" },
-  { id: "model", label: "模型" },
-  { id: "providers", label: "供应商" },
-  { id: "permissions", label: "权限" },
-  { id: "browser", label: "浏览器" },
-  { id: "rules", label: "规则与记忆" },
+/**
+ * 侧栏分组（R5-1）：基础设置 / Agent 能力 / 数据与统计。
+ * 参考图中的其余条目（外观、电脑控制、子智能体、索引库等）暂无实现，
+ * 不放空壳入口——落地一个登记一个。
+ */
+const TAB_GROUPS: Array<{
+  label: string;
+  tabs: Array<{ id: SettingsTab; label: string }>;
+}> = [
+  {
+    label: "基础设置",
+    tabs: [
+      { id: "general", label: "通用" },
+      { id: "model", label: "模型" },
+      { id: "providers", label: "供应商" },
+      { id: "browser", label: "浏览器" },
+    ],
+  },
+  {
+    label: "Agent 能力",
+    tabs: [
+      { id: "permissions", label: "权限" },
+      { id: "rules", label: "规则与记忆" },
+    ],
+  },
+  {
+    label: "数据与统计",
+    tabs: [{ id: "usage", label: "使用统计" }],
+  },
 ];
 
 /**
@@ -141,18 +165,25 @@ export function SettingsModal({
         <div className="flex min-h-0 flex-1">
           <nav
             aria-label="设置分类"
-            className="w-36 shrink-0 space-y-0.5 border-r p-2"
+            className="w-36 shrink-0 space-y-3 overflow-y-auto border-r p-2"
           >
-            {TABS.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                data-active={activeTab === tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className="w-full rounded-md px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[active=true]:bg-muted data-[active=true]:font-medium data-[active=true]:text-foreground"
-              >
-                {tab.label}
-              </button>
+            {TAB_GROUPS.map((group) => (
+              <div key={group.label}>
+                <div className="px-3 pb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+                  {group.label}
+                </div>
+                {group.tabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    data-active={activeTab === tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className="w-full rounded-md px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[active=true]:bg-muted data-[active=true]:font-medium data-[active=true]:text-foreground"
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
             ))}
           </nav>
           <div className="min-w-0 flex-1 overflow-y-auto px-6 py-4">
@@ -183,6 +214,8 @@ export function SettingsModal({
               ) : null
             ) : activeTab === "browser" ? (
               <BrowserSettingsSection />
+            ) : activeTab === "usage" ? (
+              <UsageStatsSection />
             ) : (
               <RulesMemorySection />
             )}

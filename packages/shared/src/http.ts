@@ -204,6 +204,8 @@ export const applicationErrorCodeSchema = z.enum([
   // Code 模式 git 写操作（R2-1：提交/推送/建分支）
   "git_unavailable",
   "git_write_failed",
+  // 用户侧使用统计（R4-2）
+  "usage_query_failed",
 ]);
 
 export const applicationErrorResponseSchema = z.object({
