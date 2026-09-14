@@ -530,3 +530,16 @@
 .context-menu > .context-menu-item-separator:last-child {
   display: none;
 }
+
+/* ------------------------------------------------------------------ */
+/*  画布空态提示 vs Excalidraw 浮层                                    */
+/* ------------------------------------------------------------------ */
+/* 空态提示是 z-20 的覆盖层，而 Excalidraw 的右键菜单/弹层在它自己的容器里
+   （无层叠层级）——不处理就会出现「提示文字压在菜单上」，看起来像菜单透明
+   （用户反馈原话：透明是能看到画布的文字）。用 :has() 在画布出现任何浮层时
+   把提示压下去（Chromium 105+ 支持）。 */
+.canvas-stage:has(.context-menu) .canvas-empty-hint,
+.canvas-stage:has(.popover) .canvas-empty-hint,
+.canvas-stage:has([role="dialog"]) .canvas-empty-hint {
+  visibility: hidden;
+}

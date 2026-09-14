@@ -79,7 +79,7 @@ export function CanvasEmptyHint({
   if (hasElements) return null;
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
+    <div className="canvas-empty-hint pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
       <p className="text-base text-muted-foreground/50">
         {"输入你的想法开始创作"}
       </p>
