@@ -17,6 +17,11 @@ export type AgentBackendFactory = (
 export type AgentBackendResult = {
   factory: AgentBackendFactory;
   sandboxDir?: string;
+  /**
+   * 沙箱目录是否随 run 结束清理。dev（filesystem 模式）为 per-run 目录 → true；
+   * prod（state 模式）为 per-canvas 持久工作区 → false（文件跨 run 保留）。
+   */
+  ephemeral: boolean;
 };
 
 export function createAgentBackend(

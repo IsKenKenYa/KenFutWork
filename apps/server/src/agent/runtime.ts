@@ -42,8 +42,8 @@ import { resolveInstanceChatModel } from "../providers/resolve.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createPipelineLogger } from "../ws/logger.js";
-import type { ToolGate } from "./deep-agent.js";
 import { createAgentBackend } from "./backends/index.js";
+import type { ToolGate } from "./deep-agent.js";
 import {
   createDefaultModelSpecifier,
   createLoomicDeepAgent,
@@ -1234,15 +1234,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           const preset = resolvePresetForRun(run);
           const kernelToolRegistry = options.tools;
           const kernelToolDefinitions = kernelToolRegistry
-            ? kernelToolRegistry
-                .list(preset)
-                .map((tool) => ({
-                  ...tool,
-                  execute: (
-                    args: Record<string, unknown>,
-                    execCtx: ToolExecutionContext,
-                  ) => kernelToolRegistry.execute(tool.name, args, execCtx),
-                }))
+            ? kernelToolRegistry.list(preset).map((tool) => ({
+                ...tool,
+                execute: (
+                  args: Record<string, unknown>,
+                  execCtx: ToolExecutionContext,
+                ) => kernelToolRegistry.execute(tool.name, args, execCtx),
+              }))
             : [];
 
           // 执行模式工具门：solo/plan 按线程策略拦截（undefined = 全放行）
@@ -1572,7 +1570,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             );
           }
         }
-        if (backendResult.sandboxDir) {
+        // 仅临时沙箱随 run 清理（dev per-run 目录）；prod 的工作区按画布持久，
+        // 清掉它等于删用户项目文件（文件系统统一后 /workspace 即此目录）
+        if (backendResult.sandboxDir && backendResult.ephemeral) {
           rm(backendResult.sandboxDir, { recursive: true, force: true }).catch(
             (err) => console.warn("[sandbox] cleanup failed:", err.message),
           );

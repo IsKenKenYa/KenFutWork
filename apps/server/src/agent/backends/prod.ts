@@ -13,20 +13,24 @@ const DEFAULT_SANDBOX_ROOT = "/tmp/loomic-sandbox";
 const DEFAULT_SKILLS_ROOT = "/opt/loomic/skills";
 
 /**
- * Create a production backend with per-project LocalShellBackend sandbox.
+ * Create a production backend with a per-project persistent workspace.
  *
- * LocalShellBackend 作为 default backend，deepagents 自动暴露内置 `execute` 工具。
- * 每个 canvasId 对应一个独立的工作目录，用完由 runtime.ts 清理。
- *
- * 文件持久化（/workspace/、/memories/）走 StoreBackend (PostgresStore)，
- * 与 LocalShellBackend 完全独立互不影响。
+ * **文件系统统一（割裂修复）**：曾经 default backend（execute 的 cwd）是
+ * per-run 目录、`/workspace/` 路由是 StoreBackend（Postgres）——两套互不可见的
+ * 文件系统，模型 write_file 写 /workspace 后 execute 找不到文件，被迫用 shell
+ * 绕行（GUI 实测复现）。现在 /workspace 路由改为 **FilesystemBackend 且
+ * rootDir 与 default backend 相同**（每画布一个持久目录）：
+ * - write_file("/workspace/x") ≡ 沙箱根下的 x（同一物理文件）；
+ * - execute 的 cwd 就是沙箱根 → 相对路径直接命中 /workspace 的内容；
+ * - 持久化从 Postgres store 变为**磁盘持久**（每画布目录，跨 run 保留，
+ *   不再随 run 结束清理——runtime 按 `ephemeral` 标志区分）。
  *
  * Routes:
- *   /workspace/        → StoreBackend (PostgresStore, per-project)
- *   /memories/         → StoreBackend (PostgresStore, per-project)
+ *   /workspace/        → FilesystemBackend（与 default 同一根目录：统一文件系统）
+ *   /memories/         → StoreBackend (PostgresStore, per-project，跨 run 记忆)
  *   /skills/           → FilesystemBackend (shared, read-only system skills)
  *   /workspace-skills/ → StoreBackend (user-installed workspace skills, optional)
- *   default            → LocalShellBackend (per-run sandbox, provides execute tool)
+ *   default            → LocalShellBackend (per-project persistent dir, provides execute tool)
  */
 export function createProductionBackendFactory(
   canvasId: string,
@@ -38,13 +42,15 @@ export function createProductionBackendFactory(
 ): {
   factory: (runtime: BackendRuntime) => AnyBackendProtocol;
   sandboxDir: string;
+  /** false：目录按画布持久（跨 run 保留），runtime 不做 run 级清理。 */
+  ephemeral: false;
 } {
   const sandboxRoot = resolve(options?.sandboxRoot ?? DEFAULT_SANDBOX_ROOT);
   const skillsRoot = resolve(options?.skillsRoot ?? DEFAULT_SKILLS_ROOT);
 
-  // Per-run isolated directory
-  const runId = crypto.randomUUID();
-  const sandboxDir = join(sandboxRoot, runId);
+  // 目录名来自画布 id（uuid），仍做防御性清洗防路径穿越
+  const dirName = canvasId.replace(/[^a-zA-Z0-9_-]/g, "-");
+  const sandboxDir = join(sandboxRoot, dirName);
   mkdirSync(sandboxDir, { recursive: true });
   const realSandboxDir = realpathSync(sandboxDir);
 
@@ -54,13 +60,13 @@ export function createProductionBackendFactory(
   // 防止多用户并发时通过 write_file 写绝对路径导致冲突。
   // 注意：virtualMode 不限制 execute 工具（shell 命令仍可访问全文件系统）。
   const sandbox = new LocalShellBackend({
-    rootDir: sandboxDir,
+    rootDir: realSandboxDir,
     virtualMode: true,
     timeout: 120,
     maxOutputBytes: 200_000,
     env: {
       PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
-      HOME: sandboxDir,
+      HOME: realSandboxDir,
       FONT_DIR: join(skillsRoot, "canvas-design", "canvas-fonts"),
       PYTHONDONTWRITEBYTECODE: "1",
     },
@@ -71,15 +77,19 @@ export function createProductionBackendFactory(
     virtualMode: true,
   });
 
+  // /workspace 与 default backend 同一根目录：文件工具与 execute 看到同一份文件
+  const workspaceBackend = new FilesystemBackend({
+    rootDir: realSandboxDir,
+    virtualMode: true,
+  });
+
   // deepagents ≥1.13: factory 参数为 BackendRuntime，返回值需为同步的 backend 实例
   const factory = (stateAndStore: BackendRuntime) => {
     const routes: Record<string, AnyBackendProtocol> = {
       "/memories/": new StoreBackend(stateAndStore, {
         namespace: ["projects", canvasId, "memories"],
       }),
-      "/workspace/": new StoreBackend(stateAndStore, {
-        namespace: ["projects", canvasId, "workspace"],
-      }),
+      "/workspace/": workspaceBackend,
       "/skills/": skillsBackend,
     };
 
@@ -92,5 +102,5 @@ export function createProductionBackendFactory(
     return new CompositeBackend(sandbox, routes);
   };
 
-  return { factory, sandboxDir: realSandboxDir };
+  return { factory, sandboxDir: realSandboxDir, ephemeral: false };
 }

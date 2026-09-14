@@ -88,5 +88,5 @@ export function createDevelopmentBackend(
     return new CompositeBackend(sandbox, routes);
   };
 
-  return { factory, sandboxDir: realSandboxDir };
+  return { factory, sandboxDir: realSandboxDir, ephemeral: true };
 }
