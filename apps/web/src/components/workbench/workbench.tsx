@@ -15,6 +15,7 @@ import {
   Plus,
   Send,
   ShieldCheck,
+  Sparkles,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -34,6 +35,7 @@ import {
   type SettingsTab,
 } from "@/components/workbench/settings-modal";
 import { SidebarRow } from "@/components/workbench/sidebar-row";
+import { SkillsModal } from "@/components/workbench/skills-modal";
 import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useAuth } from "@/lib/auth-context";
@@ -220,6 +222,7 @@ export function Workbench() {
   );
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
   const [pluginsOpen, setPluginsOpen] = useState(false);
+  const [skillsOpen, setSkillsOpen] = useState(false);
   /** 平台管理员标记：仅用于「显示后台入口」，鉴权在服务端（/api/admin/*）。 */
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
 
@@ -961,6 +964,13 @@ export function Workbench() {
             >
               <Layers className="h-4 w-4 shrink-0" /> 插件市场
             </button>
+            <button
+              type="button"
+              onClick={() => setSkillsOpen(true)}
+              className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <Sparkles className="h-4 w-4 shrink-0" /> 技能
+            </button>
           </nav>
 
           <div className="mx-3 my-2 border-t" />
@@ -1660,6 +1670,13 @@ export function Workbench() {
         <PluginMarketModal
           open={pluginsOpen}
           onClose={() => setPluginsOpen(false)}
+          accessToken={session?.access_token ?? null}
+        />
+      ) : null}
+      {skillsOpen ? (
+        <SkillsModal
+          open={skillsOpen}
+          onClose={() => setSkillsOpen(false)}
           accessToken={session?.access_token ?? null}
         />
       ) : null}
