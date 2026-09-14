@@ -79,7 +79,11 @@ export function CanvasEmptyHint({
   if (hasElements) return null;
 
   return (
-    <div className="canvas-empty-hint pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
+    <div
+      // z-[3]：夹在 Excalidraw 的层之间——画布 z=1/2，右键菜单弹层 z=10，
+      // 这样提示浮在画布之上、又被菜单正常盖住（不靠隐藏提示来躲遮挡）
+      className="canvas-empty-hint pointer-events-none absolute inset-0 z-[3] flex items-center justify-center"
+    >
       <p className="text-base text-muted-foreground/50">
         {"输入你的想法开始创作"}
       </p>

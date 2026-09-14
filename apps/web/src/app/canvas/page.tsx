@@ -285,7 +285,7 @@ function CanvasPageContent() {
         />
       </div>
       {/* Canvas always takes full width; on mobile/tablet, ChatSidebar overlays instead of side-by-side */}
-      <div className="canvas-stage flex-1 relative min-w-0 overflow-hidden">
+      <div className="flex-1 relative min-w-0 overflow-hidden">
         <CanvasEditor
           canvasId={canvasData.id}
           projectId={canvasData.projectId}
@@ -295,10 +295,12 @@ function CanvasPageContent() {
           ws={ws}
           leftPanelOpen={layersOpen || filesOpen}
           onSelectionChange={setSelectedCanvasElements}
-        />
-        <CanvasEmptyHint
-          excalidrawApi={excalidrawApi}
-          onOpenChat={handleOpenChat}
+          overlay={
+            <CanvasEmptyHint
+              excalidrawApi={excalidrawApi}
+              onOpenChat={handleOpenChat}
+            />
+          }
         />
         <CanvasBottomBar
           excalidrawApi={excalidrawApi}

@@ -137,16 +137,15 @@ describe("画布右键菜单：无关项按 action 名隐藏", () => {
     expect(css).not.toContain('.context-menu li[data-testid="stats"],');
   });
 
-  it("画布浮层打开时空态提示隐藏（否则提示文字压在菜单上，看着像菜单透明）", () => {
+  it("画布菜单样式与应用内菜单一致（字体/卡片底/hover 色/圆角）", () => {
     const css = readFileSync(join(ROOT, "..", "app", "globals.css"), "utf-8");
-    expect(css).toContain(".canvas-stage:has(.context-menu) .canvas-empty-hint");
-    const page = readFileSync(
-      join(ROOT, "..", "app", "canvas", "page.tsx"),
-      "utf-8",
-    );
-    expect(page).toContain("canvas-stage");
-    const hint = readFileSync(join(ROOT, "canvas-empty-hint.tsx"), "utf-8");
-    expect(hint).toContain("canvas-empty-hint");
+    // 与应用内菜单同源的设计 token
+    expect(css).toContain("font-family: var(--font-sans");
+    expect(css).toContain("background-color: var(--card)");
+    expect(css).toContain("background-color: var(--muted)");
+    expect(css).toContain(".excalidraw .context-menu .context-menu-item:hover");
+    expect(css).toContain(".excalidraw .context-menu.context-menu {");
+    expect(css).toContain("border-radius: 0.5rem");
   });
 
   it("网格能力仍可用：底部栏有中文「网格」开关（第二种便捷入口）", () => {

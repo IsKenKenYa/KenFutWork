@@ -532,14 +532,58 @@
 }
 
 /* ------------------------------------------------------------------ */
-/*  画布空态提示 vs Excalidraw 浮层                                    */
+/*  画布右键菜单：样式对齐应用内菜单（对话区/输入框右键菜单）            */
 /* ------------------------------------------------------------------ */
-/* 空态提示是 z-20 的覆盖层，而 Excalidraw 的右键菜单/弹层在它自己的容器里
-   （无层叠层级）——不处理就会出现「提示文字压在菜单上」，看起来像菜单透明
-   （用户反馈原话：透明是能看到画布的文字）。用 :has() 在画布出现任何浮层时
-   把提示压下去（Chromium 105+ 支持）。 */
-.canvas-stage:has(.context-menu) .canvas-empty-hint,
-.canvas-stage:has(.popover) .canvas-empty-hint,
-.canvas-stage:has([role="dialog"]) .canvas-empty-hint {
-  visibility: hidden;
+/* Excalidraw 自带菜单是「Assistant 字体 + 灰底 + 默认 hover + 2px 圆角」，
+   与我们的卡片式菜单不一致（用户要求字体与选中颜色一致）。统一为
+   --card 底 / --border 边框 / rounded-lg / shadow-lg / 13px / hover=--muted。
+   注意：容器规则要写 `.excalidraw .context-menu.context-menu`——Excalidraw 自身
+   也用了 `.excalidraw .context-menu`，同特异性且**后于** globals.css 加载，
+   不加一级就会由它胜出（实测：只改 font 生效、背景与圆角未生效）。
+   只覆盖菜单本身，不动画布文本渲染（画布字体另有 --ui-font）。 */
+.excalidraw .context-menu.context-menu {
+  min-width: 180px;
+  padding: 0.25rem 0;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background-color: var(--card);
+  font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  box-shadow:
+    0 10px 15px -3px rgb(0 0 0 / 0.1),
+    0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+
+.excalidraw .context-menu .context-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 0;
+  color: var(--foreground);
+  font-size: 13px;
+  line-height: 1.25rem;
+  text-align: start;
+}
+
+.excalidraw .context-menu .context-menu-item:hover {
+  background-color: var(--muted);
+}
+
+.excalidraw .context-menu .context-menu-item__label {
+  margin-inline-end: 0;
+}
+
+.excalidraw .context-menu .context-menu-item__shortcut,
+.excalidraw .context-menu .context-menu-item kbd {
+  color: var(--muted-foreground);
+  font-family: inherit;
+  font-size: 11px;
+}
+
+.excalidraw .context-menu .context-menu-item-separator {
+  height: 1px;
+  margin: 0.25rem 0;
+  border: 0;
+  background-color: var(--border);
 }

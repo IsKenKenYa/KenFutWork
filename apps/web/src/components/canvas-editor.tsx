@@ -59,6 +59,8 @@ type CanvasEditorProps = {
     files: Record<string, Record<string, unknown>>;
   };
   onApiReady?: (api: any) => void;
+  /** 画布内覆盖层（渲染在 Excalidraw 内部：位于画布之上、其浮层之下）。 */
+  overlay?: React.ReactNode;
   ws?: WebSocketHandle;
   leftPanelOpen?: boolean;
   onSelectionChange?: (elements: CanvasSelectedElement[]) => void;
@@ -74,6 +76,7 @@ export function CanvasEditor({
   accessToken,
   initialContent,
   onApiReady,
+  overlay,
   ws,
   leftPanelOpen,
   onSelectionChange,
@@ -621,7 +624,11 @@ export function CanvasEditor({
           excalidrawAPI={handleExcalidrawApi}
           renderEmbeddable={renderEmbeddable}
           validateEmbeddable={validateEmbeddable}
-        />
+        >
+          {/* 画布内覆盖层：放在 Excalidraw 内部，使其右键菜单/弹层自然盖在它之上
+              （此前是外部 z-20 兄弟节点，会压住菜单——用户反馈「像菜单透明」） */}
+          {overlay}
+        </Excalidraw>
         {excalidrawApi && (
           <MemoizedCanvasToolMenu
             accessToken={accessToken}
