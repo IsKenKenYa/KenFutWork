@@ -15,7 +15,6 @@ import {
   Plus,
   Send,
   ShieldCheck,
-  Sparkles,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -29,7 +28,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { HomeLibraryModal } from "@/components/workbench/home-library-modal";
 import { PluginMarketModal } from "@/components/workbench/plugin-market-modal";
 import {
   SettingsModal,
@@ -216,8 +214,6 @@ export function Workbench() {
   );
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
   const [pluginsOpen, setPluginsOpen] = useState(false);
-  /** 首页示例库/发现库模态（Design 模式的灵感入口）。 */
-  const [homeLibraryOpen, setHomeLibraryOpen] = useState(false);
   /** 平台管理员标记：仅用于「显示后台入口」，鉴权在服务端（/api/admin/*）。 */
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
 
@@ -961,13 +957,6 @@ export function Workbench() {
             >
               <Layers className="h-4 w-4 shrink-0" /> 插件市场
             </button>
-            <button
-              type="button"
-              onClick={() => setHomeLibraryOpen(true)}
-              className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <Sparkles className="h-4 w-4 shrink-0" /> 示例库
-            </button>
           </nav>
 
           <div className="mx-3 my-2 border-t" />
@@ -1662,22 +1651,6 @@ export function Workbench() {
           open={pluginsOpen}
           onClose={() => setPluginsOpen(false)}
           accessToken={session?.access_token ?? null}
-        />
-      ) : null}
-      {/* 条件渲染：Base UI 会等退出动画结束才卸载，动画不结束就会「关不掉」——
-          这里用挂载/卸载兜底，保证关闭一定生效（插件市场模态同样处理） */}
-      {homeLibraryOpen && session?.access_token ? (
-        <HomeLibraryModal
-          accessToken={session.access_token}
-          open={homeLibraryOpen}
-          onClose={() => setHomeLibraryOpen(false)}
-          onPick={(pick) => {
-            // 点示例/发现卡片 = 用它当画布提示词：切到 Design、确保有项目，
-            // 再把 prompt 交给画布页（与 Design 模式的输入同一条通路）
-            setMode("design");
-            setActiveTaskId(null);
-            setCanvasPrompt(pick.prompt);
-          }}
         />
       ) : null}
     </div>

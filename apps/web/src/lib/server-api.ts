@@ -3,7 +3,6 @@ import type {
   CanvasDetail,
   ChatMessageCreateRequest,
   ExecutionMode,
-  HomeLibraryResponse,
   JobResponse,
   MessageCreateResponse,
   MessageListResponse,
@@ -106,19 +105,6 @@ export async function fetchViewer(
   });
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as ViewerResponse;
-}
-
-/**
- * 首页示例库 / 发现库（静态种子；素材 URL 已由服务端经 blob 缝解析）。
- */
-export async function fetchHomeLibrary(
-  accessToken: string,
-): Promise<HomeLibraryResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/home/library`, {
-    headers: authHeaders(accessToken),
-  });
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as HomeLibraryResponse;
 }
 
 export async function fetchProjects(
