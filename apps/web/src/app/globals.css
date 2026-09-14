@@ -566,8 +566,26 @@
   text-align: start;
 }
 
-.excalidraw .context-menu .context-menu-item:hover {
-  background-color: var(--muted);
+/* 选中态与应用内菜单同款：主色底 + 文字变白。
+   （Excalidraw 原生只是把文字改成 --popup-bg-color（白），底色用它的紫色高亮；
+   我们统一成应用主色，避免与低饱和配色冲突，同时保证「选中文字变白」不丢） */
+.excalidraw .context-menu .context-menu-item:hover,
+.excalidraw .context-menu .context-menu-item:focus-visible {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+/* 高亮时快捷键与危险项也要可读 */
+.excalidraw .context-menu .context-menu-item:hover .context-menu-item__shortcut,
+.excalidraw .context-menu .context-menu-item:hover kbd {
+  color: var(--primary-foreground);
+  opacity: 0.75;
+}
+
+.excalidraw .context-menu .context-menu-item:hover.dangerous,
+.excalidraw .context-menu .context-menu-item:hover.dangerous .context-menu-item__label {
+  background-color: var(--destructive);
+  color: var(--primary-foreground);
 }
 
 .excalidraw .context-menu .context-menu-item__label {
@@ -586,4 +604,14 @@
   margin: 0.25rem 0;
   border: 0;
   background-color: var(--border);
+}
+
+/* ------------------------------------------------------------------ */
+/*  文字选中（::selection）                                            */
+/* ------------------------------------------------------------------ */
+/* 应用此前没有 ::selection 样式 → 走浏览器默认（浅蓝底 + 原色文字），
+   输入框里选中文字不会变白（用户反馈）。统一为主色底 + 主色前景（浅色模式=白字）。 */
+::selection {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
 }

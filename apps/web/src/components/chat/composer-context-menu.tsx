@@ -251,11 +251,11 @@ export function ComposerContextMenu({
               onClose();
               onRun(item);
             }}
-            className="flex w-full items-center justify-between gap-6 px-3 py-1.5 text-left text-[13px] text-foreground transition-colors hover:bg-muted"
+            className="group flex w-full items-center justify-between gap-6 px-3 py-1.5 text-left text-[13px] text-foreground transition-colors hover:bg-primary hover:text-primary-foreground"
           >
             <span>{item.label}</span>
             {item.shortcut ? (
-              <span className="text-[11px] text-muted-foreground">
+              <span className="text-[11px] text-muted-foreground group-hover:text-primary-foreground/75">
                 {item.shortcut}
               </span>
             ) : null}

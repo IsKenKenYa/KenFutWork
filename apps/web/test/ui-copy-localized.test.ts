@@ -142,7 +142,11 @@ describe("画布右键菜单：无关项按 action 名隐藏", () => {
     // 与应用内菜单同源的设计 token
     expect(css).toContain("font-family: var(--font-sans");
     expect(css).toContain("background-color: var(--card)");
-    expect(css).toContain("background-color: var(--muted)");
+    // 选中态：主色底 + 文字变白（与应用内菜单同款；Excalidraw 原生只改文字色）
+    expect(css).toContain("background-color: var(--primary)");
+    expect(css).toContain("color: var(--primary-foreground)");
+    // 全站文字选中同样是主色底 + 主色前景（输入框选中文字会变白）
+    expect(css).toContain("::selection {");
     expect(css).toContain(".excalidraw .context-menu .context-menu-item:hover");
     expect(css).toContain(".excalidraw .context-menu.context-menu {");
     expect(css).toContain("border-radius: 0.5rem");
