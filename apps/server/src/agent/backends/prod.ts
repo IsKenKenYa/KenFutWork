@@ -38,6 +38,8 @@ export function createProductionBackendFactory(
   canvasId: string,
   options?: {
     sandboxRoot?: string;
+    /** 画布 → 真实目录映射（`LOOMIC_CANVAS_WORK_DIRS`）；命中时直接落该目录。 */
+    workDir?: string;
     skillsRoot?: string;
     hasWorkspaceSkills?: boolean;
     /** 随包运行时 bin 目录（前置到 sandbox PATH）。 */
@@ -54,7 +56,11 @@ export function createProductionBackendFactory(
   const skillsRoot = resolve(options?.skillsRoot ?? DEFAULT_SKILLS_ROOT);
 
   // 沙箱目录的判定集中在 resolveSandboxDir（git 分支操作等能力共用同一处，避免漂移）
-  const sandboxDir = resolveSandboxDir(canvasId, options?.sandboxRoot);
+  const sandboxDir = resolveSandboxDir(
+    canvasId,
+    options?.sandboxRoot,
+    options?.workDir,
+  );
   mkdirSync(sandboxDir, { recursive: true });
   const realSandboxDir = realpathSync(sandboxDir);
 

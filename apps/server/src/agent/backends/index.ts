@@ -8,6 +8,8 @@ type AgentBackendEnv = Pick<
   ServerEnv,
   | "agentBackendMode"
   | "agentFilesRoot"
+  | "canvasWorkDirs"
+  | "sandboxRoot"
   | "skillsRoot"
   | "runtimePathAdditions"
   | "javaHome"
@@ -51,7 +53,10 @@ export function createAgentBackend(
     );
   }
 
+  const workDir = env.canvasWorkDirs?.[canvasId];
   return createProductionBackendFactory(canvasId, {
+    ...(workDir ? { workDir } : {}),
+    ...(env.sandboxRoot ? { sandboxRoot: env.sandboxRoot } : {}),
     ...(env.skillsRoot ? { skillsRoot: env.skillsRoot } : {}),
     ...(options?.hasWorkspaceSkills ? { hasWorkspaceSkills: true } : {}),
     ...(env.runtimePathAdditions?.length

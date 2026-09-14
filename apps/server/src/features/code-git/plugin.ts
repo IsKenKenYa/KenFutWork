@@ -29,6 +29,8 @@ export function createCodeGitPlugin(): PluginDefinition {
             }),
           }),
           source: ctx.env.gitSource ?? (gitBinDir ? "bundled" : "system"),
+          canvasWorkDirs: ctx.env.canvasWorkDirs,
+          sandboxRoot: ctx.env.sandboxRoot,
           viewerService: ctx.get("viewer"),
         }),
       );

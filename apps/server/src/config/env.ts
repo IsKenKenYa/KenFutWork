@@ -38,6 +38,18 @@ export type ServerEnv = {
   agentFilesRoot?: string;
   agentModel: string;
   /**
+   * 画布 → 真实工作目录映射（`LOOMIC_CANVAS_WORK_DIRS`，JSON 对象）。
+   * 本地/桌面形态把工作目录映射到真实电脑环境时用；映射存在时 agent 直接读写
+   * 该目录而不落 `<sandboxRoot>/<canvasId>`（产品决策 2026-09-14）。
+   */
+  canvasWorkDirs?: Record<string, string>;
+  /**
+   * 沙箱根目录（`LOOMIC_SANDBOX_ROOT`，可相对）。缺省由入口解析为
+   * `<项目根（dev）/ exe 安装目录（打包）>/tmp/sandbox`，画布目录为其下画布 UUID；
+   * 显式配置时相对路径按入口目录解析。
+   */
+  sandboxRoot?: string;
+  /**
    * 模型流空闲看门狗阈值（毫秒，`LOOMIC_AGENT_STREAM_IDLE_TIMEOUT_MS`）。
    * 上游停滞超过该时长即按有界失败终止本轮（缺省 180s，见 stream-idle-guard）。
    */
@@ -138,6 +150,11 @@ export function loadServerEnv(
     normalizeOptionalString(source.LOOMIC_CREDENTIAL_SECRET);
   const mcpServers =
     overrides.mcpServers ?? parseMcpServers(source.LOOMIC_MCP_SERVERS);
+  const canvasWorkDirs =
+    overrides.canvasWorkDirs ??
+    parseCanvasWorkDirs(source.LOOMIC_CANVAS_WORK_DIRS);
+  const sandboxRoot =
+    overrides.sandboxRoot ?? normalizeOptionalString(source.LOOMIC_SANDBOX_ROOT);
   const searchApiKey =
     overrides.searchApiKey ??
     normalizeOptionalString(source.LOOMIC_SEARCH_API_KEY);
@@ -302,6 +319,8 @@ export function loadServerEnv(
     webOrigin:
       overrides.webOrigin ?? source.LOOMIC_WEB_ORIGIN ?? DEFAULT_WEB_ORIGIN,
     ...(agentFilesRoot ? { agentFilesRoot } : {}),
+    ...(canvasWorkDirs ? { canvasWorkDirs } : {}),
+    ...(sandboxRoot ? { sandboxRoot } : {}),
     ...(credentialSecret ? { credentialSecret } : {}),
     ...(authDriver ? { authDriver } : {}),
     ...(databaseUrl ? { databaseUrl } : {}),
@@ -391,6 +410,37 @@ function parseSearchProvider(raw: string | undefined): "metaso" | undefined {
   throw new Error(
     `Invalid LOOMIC_SEARCH_PROVIDER value: ${raw} (supported: metaso)`,
   );
+}
+
+/**
+ * `LOOMIC_CANVAS_WORK_DIRS`：画布 → 真实目录映射，JSON 对象（如
+ * `{"<canvasId>":"D:/Desktop/test"}`）。解析 fail loud：结构非法即启动期报错，
+ * 不静默降级（否则「以为映射了、实际还在沙箱」这种静默漂移无法排查）。
+ */
+export function parseCanvasWorkDirs(
+  raw: string | undefined,
+): Record<string, string> | undefined {
+  if (!raw?.trim()) {
+    return undefined;
+  }
+  const parsed: unknown = JSON.parse(raw);
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(
+      "Invalid LOOMIC_CANVAS_WORK_DIRS value: must be a JSON object mapping canvasId to an absolute directory.",
+    );
+  }
+  const result: Record<string, string> = {};
+  for (const [canvasId, dir] of Object.entries(
+    parsed as Record<string, unknown>,
+  )) {
+    if (!canvasId.trim() || typeof dir !== "string" || !dir.trim()) {
+      throw new Error(
+        "Invalid LOOMIC_CANVAS_WORK_DIRS entry: canvasId keys and directory string values are required.",
+      );
+    }
+    result[canvasId.trim()] = dir.trim();
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 export function parseMcpServers(

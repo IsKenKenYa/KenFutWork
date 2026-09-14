@@ -32,6 +32,7 @@ function build(options: {
   canvasFound?: boolean;
   git?: Partial<GitClient>;
   source?: GitSource;
+  canvasWorkDirs?: Record<string, string>;
 }) {
   const git: GitClient = {
     checkout: vi.fn(async () => {}),
@@ -46,6 +47,9 @@ function build(options: {
     canvasRepository: { findById },
     git,
     source: options.source ?? "system",
+    ...(options.canvasWorkDirs
+      ? { canvasWorkDirs: options.canvasWorkDirs }
+      : {}),
     viewerService: { resolveWorkspace },
   });
   return { findById, git, resolveWorkspace, service };
@@ -100,6 +104,19 @@ describe("Code git 服务", () => {
     const { service, git } = build({});
     await service.status(USER, CANVAS_ID);
     expect(git.describe).toHaveBeenCalledWith(resolveSandboxDir(CANVAS_ID));
+  });
+
+  /**
+   * 真实目录映射（产品决策 2026-09-14）：git 操作必须与 agent 一起落到映射后的
+   * 真实目录，否则「界面看分支状态」与「agent 实际工作目录」再次分叉。
+   */
+  it("画布命中真实目录映射时，git 命令跑映射目录而非沙箱根", async () => {
+    const mapped = "D:\\Desktop\\test";
+    const { service, git } = build({
+      canvasWorkDirs: { [CANVAS_ID]: mapped },
+    });
+    await service.status(USER, CANVAS_ID);
+    expect(git.describe).toHaveBeenCalledWith(resolveSandboxDir(CANVAS_ID, undefined, mapped));
   });
 
   it("切换分支：成功后回读新状态", async () => {

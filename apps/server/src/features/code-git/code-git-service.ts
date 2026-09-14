@@ -52,6 +52,8 @@ export function createCodeGitService(options: {
   git: GitClient;
   source: GitSource;
   sandboxRoot?: string | undefined;
+  /** 画布 → 真实目录映射（与 agent 后端同一张表，保证 git 操作的就是 agent 读写的目录）。 */
+  canvasWorkDirs?: Record<string, string> | undefined;
 }): CodeGitService {
   const { canvasRepository, git, source, viewerService } = options;
 
@@ -76,7 +78,11 @@ export function createCodeGitService(options: {
         404,
       );
     }
-    return resolveSandboxDir(canvasId, options.sandboxRoot);
+    return resolveSandboxDir(
+      canvasId,
+      options.sandboxRoot,
+      options.canvasWorkDirs?.[canvasId],
+    );
   };
 
   const read = async (dir: string): Promise<CodeGitStatus> => {

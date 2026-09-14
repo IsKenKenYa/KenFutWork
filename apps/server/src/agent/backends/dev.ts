@@ -13,9 +13,13 @@ import type { ServerEnv } from "../../config/env.js";
 import { runtimeEnvAdditions } from "../../desktop/runtimes.js";
 import type { AgentBackendResult } from "./index.js";
 
-type AgentBackendEnv = Pick<ServerEnv, "agentFilesRoot" | "skillsRoot">;
+type AgentBackendEnv = Pick<
+  ServerEnv,
+  "agentFilesRoot" | "sandboxRoot" | "skillsRoot"
+>;
 
-const DEFAULT_DEV_SANDBOX_ROOT = "/tmp/loomic-sandbox-dev";
+/** filesystem 模式的缺省沙箱根（相对 cwd；生产入口会注入 `<项目根>/tmp/sandbox`）。 */
+const DEFAULT_DEV_SANDBOX_ROOT = "tmp/sandbox-dev";
 
 /**
  * Create a development backend with local sandbox execution.
@@ -43,7 +47,10 @@ export function createDevelopmentBackend(
   }
 
   const runId = crypto.randomUUID();
-  const sandboxDir = join(resolve(DEFAULT_DEV_SANDBOX_ROOT), runId);
+  const sandboxDir = join(
+    resolve(env.sandboxRoot ?? DEFAULT_DEV_SANDBOX_ROOT),
+    runId,
+  );
   mkdirSync(sandboxDir, { recursive: true });
   const realSandboxDir = realpathSync(sandboxDir);
 

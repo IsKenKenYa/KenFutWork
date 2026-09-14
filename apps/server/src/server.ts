@@ -11,7 +11,7 @@ async function setupProxy() {
   }
 }
 
-import { dirname } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildApp } from "./app.js";
@@ -48,6 +48,7 @@ async function main() {
     );
   }
   const baseEnv = loadServerEnv({
+    sandboxRoot: resolveSandboxRoot(exeDir),
     runtimePathAdditions: runtimes.pathAdditions,
     ...(runtimes.javaHome ? { javaHome: runtimes.javaHome } : {}),
     ...(bundledGit ? { gitBinDir: bundledGit.binDir } : {}),
@@ -125,6 +126,20 @@ function resolveExeDir(): string {
   } catch {
     return dirname(process.execPath);
   }
+}
+
+/**
+ * 沙箱根目录：`LOOMIC_SANDBOX_ROOT`（可为相对路径，按入口目录解析）优先；
+ * 缺省 `<项目根（dev）/ exe 安装目录（打包）>/tmp/sandbox`。
+ * 画布工作目录 = `<sandboxRoot>/<画布UUID>`（真实目录映射命中时走映射，见
+ * `LOOMIC_CANVAS_WORK_DIRS` — 产品决策 2026-09-14）。
+ */
+function resolveSandboxRoot(exeDir: string): string {
+  const explicit = process.env.LOOMIC_SANDBOX_ROOT?.trim();
+  if (explicit) {
+    return isAbsolute(explicit) ? explicit : resolve(exeDir, explicit);
+  }
+  return join(exeDir, "tmp", "sandbox");
 }
 
 void main();
