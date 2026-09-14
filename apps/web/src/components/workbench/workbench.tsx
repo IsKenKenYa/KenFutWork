@@ -50,6 +50,7 @@ import {
 } from "@/components/workbench/settings-modal";
 import { SidebarRow } from "@/components/workbench/sidebar-row";
 import { SkillsModal } from "@/components/workbench/skills-modal";
+import { SubagentDirectoryView } from "@/components/workbench/subagent-directory-view";
 import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
 import { WorkDirectorySelect } from "@/components/workbench/work-directory-select";
 import { useWebSocket } from "@/hooks/use-websocket";
@@ -63,6 +64,13 @@ import {
   fetchViewer,
   updateProject,
 } from "@/lib/server-api";
+import {
+  closeAllSubagents,
+  completeSubagent,
+  isSubagentTool,
+  type SubagentEntry,
+  upsertSubagentStarted,
+} from "@/lib/subagent-directory";
 import {
   resolveWorkDirProject,
   workDirectoryPromptHint,
@@ -108,6 +116,8 @@ interface WorkbenchTask {
   /** 最近一轮 run 的起止（ISO，来自 run.started / 终态事件；R1-1 工作时间） */
   runStartedAt?: string | undefined;
   runEndedAt?: string | undefined;
+  /** 子代理运行条目（R1-3：由 task/video_generate 工具事件推导） */
+  subagents?: SubagentEntry[];
 }
 
 const MODE_META: Record<
@@ -624,6 +634,38 @@ export function Workbench() {
         // 服务端权威起表时刻（覆盖提交时的本地乐观值）
         const ts = (evt as { timestamp?: string }).timestamp;
         if (ts) apply((task) => ({ ...task, runStartedAt: ts }));
+      } else if (type === "tool.started") {
+        const toolName = (evt as { toolName?: string }).toolName ?? "";
+        if (!isSubagentTool(toolName)) return;
+        const toolCallId = (evt as { toolCallId?: string }).toolCallId ?? "";
+        if (!toolCallId) return;
+        const timestamp = (evt as { timestamp?: string }).timestamp ?? "";
+        const input = (evt as { input?: Record<string, unknown> }).input;
+        apply((task) => ({
+          ...task,
+          subagents: upsertSubagentStarted(task.subagents ?? [], {
+            toolCallId,
+            toolName,
+            ...(input ? { input } : {}),
+            timestamp,
+          }),
+        }));
+      } else if (type === "tool.completed") {
+        const toolCallId = (evt as { toolCallId?: string }).toolCallId ?? "";
+        const timestamp = (evt as { timestamp?: string }).timestamp;
+        if (!toolCallId || !timestamp) return;
+        apply((task) =>
+          task.subagents
+            ? {
+                ...task,
+                subagents: completeSubagent(
+                  task.subagents,
+                  toolCallId,
+                  timestamp,
+                ),
+              }
+            : task,
+        );
       } else if (type === "message.delta") {
         const delta = (evt as { delta?: string }).delta ?? "";
         if (!delta) return;
@@ -646,6 +688,9 @@ export function Workbench() {
           ...task,
           status: "completed",
           ...(ts ? { runEndedAt: ts } : {}),
+          ...(task.subagents && ts
+            ? { subagents: closeAllSubagents(task.subagents, ts) }
+            : {}),
         }));
       } else if (type === "billing.error") {
         // 平台池额度/套餐拦截（FORM-10）：服务端给的是可读原因，
@@ -668,6 +713,9 @@ export function Workbench() {
           ...task,
           status: "failed",
           ...(failedTs ? { runEndedAt: failedTs } : {}),
+          ...(task.subagents && failedTs
+            ? { subagents: closeAllSubagents(task.subagents, failedTs) }
+            : {}),
           messages: [
             ...task.messages,
             { role: "assistant", text: failureText },
@@ -679,6 +727,9 @@ export function Workbench() {
           ...task,
           status: "completed",
           ...(canceledTs ? { runEndedAt: canceledTs } : {}),
+          ...(task.subagents && canceledTs
+            ? { subagents: closeAllSubagents(task.subagents, canceledTs) }
+            : {}),
         }));
       }
     });
@@ -1346,6 +1397,12 @@ export function Workbench() {
                 <ElapsedEntry
                   startedAt={activeTask.runStartedAt}
                   endedAt={activeTask.runEndedAt}
+                  running={activeTask.status === "running"}
+                />
+              ) : null}
+              {activeTask.subagents && activeTask.subagents.length > 0 ? (
+                <SubagentDirectoryView
+                  entries={activeTask.subagents}
                   running={activeTask.status === "running"}
                 />
               ) : null}

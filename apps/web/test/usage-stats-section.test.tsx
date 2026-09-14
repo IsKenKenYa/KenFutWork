@@ -37,7 +37,7 @@ const STATS_7D = {
 };
 
 function mockFetchWith(stats: unknown, ok = true) {
-  return vi.fn(async () =>
+  return vi.fn(async (_input: RequestInfo | URL) =>
     ok
       ? new Response(JSON.stringify(stats), {
           status: 200,
