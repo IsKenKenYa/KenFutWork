@@ -5,6 +5,7 @@ import {
   type GitCommandResult,
   isSafeBranchName,
   parseBranchList,
+  toDiffStat,
   toRepoView,
 } from "./git-client.js";
 
@@ -152,6 +153,125 @@ describe("git 客户端", () => {
     const exec = vi.fn(async () => ok());
     const client = createGitClient({ exec });
     await expect(client.checkout("/sandbox/x", "--force")).rejects.toThrow(
+      /非法分支名/,
+    );
+    expect(exec).not.toHaveBeenCalled();
+  });
+});
+
+describe("更改统计（R2-1）", () => {
+  it("numstat 求和增删行数；porcelain 数文件（含未跟踪）", () => {
+    const stat = toDiffStat({
+      numstat: ok("12\t3\tsrc/a.ts\n0\t1\tsrc/b.ts\n"),
+      status: ok(" M src/a.ts\nM  src/b.ts\n?? notes.md\n"),
+    });
+    expect(stat).toEqual({
+      files: 3,
+      additions: 12,
+      deletions: 4,
+      untracked: 1,
+    });
+  });
+
+  it("二进制文件（-/—行）不计行数但计文件", () => {
+    const stat = toDiffStat({
+      numstat: ok("-\t-\tlogo.png\n"),
+      status: ok("?? logo.png\n"),
+    });
+    expect(stat).toEqual({
+      files: 1,
+      additions: 0,
+      deletions: 0,
+      untracked: 1,
+    });
+  });
+
+  it("unborn HEAD（无提交）时 numstat 失败不算失败：行数为 0，文件数仍可见", () => {
+    const stat = toDiffStat({
+      numstat: fail("fatal: ambiguous argument 'HEAD'"),
+      status: ok("?? a.md\n?? b.md\n"),
+    });
+    expect(stat).toEqual({
+      files: 2,
+      additions: 0,
+      deletions: 0,
+      untracked: 2,
+    });
+  });
+
+  it("干净工作区：全 0", () => {
+    const stat = toDiffStat({ numstat: ok(""), status: ok("") });
+    expect(stat).toEqual({
+      files: 0,
+      additions: 0,
+      deletions: 0,
+      untracked: 0,
+    });
+  });
+});
+
+describe("git 写操作（R2-1：提交/推送/建分支）", () => {
+  it("commitAll：先 add -A 再 commit -m（message 是单个 argv，不经 shell）", async () => {
+    const exec = vi.fn(async (_args: readonly string[], _cwd: string) => ok());
+    const client = createGitClient({ exec });
+    await client.commitAll("/sandbox/x", "fix: 修复登录");
+    expect(exec.mock.calls.map((call) => call[0])).toEqual([
+      ["add", "-A"],
+      ["commit", "-m", "fix: 修复登录"],
+    ]);
+  });
+
+  it("commitAll：空信息直接拒绝，不下发命令", async () => {
+    const exec = vi.fn(async () => ok());
+    const client = createGitClient({ exec });
+    await expect(client.commitAll("/sandbox/x", "   ")).rejects.toThrow(
+      /提交信息不能为空/,
+    );
+    expect(exec).not.toHaveBeenCalled();
+  });
+
+  it("commitAll：nothing to commit 翻译成可读文案", async () => {
+    const exec = vi.fn(async (args: readonly string[]) =>
+      args[0] === "commit"
+        ? fail("nothing to commit, working tree clean")
+        : ok(),
+    );
+    const client = createGitClient({ exec });
+    await expect(client.commitAll("/sandbox/x", "msg")).rejects.toThrow(
+      /没有可提交的更改/,
+    );
+  });
+
+  it("push：无上游时给可读指引而不是裸 git stderr", async () => {
+    const client = createGitClient({
+      exec: vi.fn(async () =>
+        fail("fatal: The current branch main has no upstream branch."),
+      ),
+    });
+    await expect(client.push("/sandbox/x")).rejects.toThrow(/git push -u/);
+  });
+
+  it("createBranch 用 switch -c；已存在时翻译成可读文案", async () => {
+    const exec = vi.fn(async () => ok());
+    const client = createGitClient({ exec });
+    await client.createBranch("/sandbox/x", "feature/new");
+    expect(exec).toHaveBeenCalledWith(
+      ["switch", "-c", "feature/new"],
+      "/sandbox/x",
+    );
+
+    const exists = createGitClient({
+      exec: vi.fn(async () => fail("fatal: a branch named 'x' already exists")),
+    });
+    await expect(exists.createBranch("/sandbox/x", "x")).rejects.toThrow(
+      /已存在/,
+    );
+  });
+
+  it("createBranch 的非法名字在执行前被拒", async () => {
+    const exec = vi.fn(async () => ok());
+    const client = createGitClient({ exec });
+    await expect(client.createBranch("/sandbox/x", "-D")).rejects.toThrow(
       /非法分支名/,
     );
     expect(exec).not.toHaveBeenCalled();

@@ -1,12 +1,23 @@
 "use client";
 
-import { Check, ChevronDown, GitBranch, TriangleAlert } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  GitBranch,
+  Plus,
+  TriangleAlert,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   checkoutGitBranch,
+  commitGitAll,
+  createGitBranch,
+  fetchGitDiffStat,
   fetchGitStatus,
+  type GitDiffStat,
   type GitStatus,
+  pushGit,
 } from "@/lib/code-git-api";
 
 /**
@@ -17,6 +28,9 @@ import {
  *   - 该目录不是 git 仓库（isRepo=false）→ 显示「非 Git 仓库」；
  *   - 环境里没有 git（source=unavailable）→ 显示不可用并给出原因。
  * 切换前若工作区脏（dirty）会二次确认——避免用户以为改动丢了。
+ *
+ * R2-1 增强：弹层顶部提供「更改统计 / 提交 / 推送 / 创建并检出新的分支」
+ * （参考图条目 1/3/5）。写操作全部走服务端（归属校验 + 幂等纪律在 service 层）。
  */
 export function GitBranchSelect({
   accessToken,
@@ -29,22 +43,34 @@ export function GitBranchSelect({
   className?: string;
 }) {
   const [status, setStatus] = useState<GitStatus | null>(null);
+  const [diffStat, setDiffStat] = useState<GitDiffStat | null>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [commitMessage, setCommitMessage] = useState("");
+  const [newBranchName, setNewBranchName] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     if (!accessToken || !canvasId) {
       setStatus(null);
+      setDiffStat(null);
       return;
     }
     try {
-      setStatus(await fetchGitStatus(accessToken, canvasId));
+      const next = await fetchGitStatus(accessToken, canvasId);
+      setStatus(next);
       setNotice(null);
+      // 统计只在打开时按需取（避免每敲一个文件都打接口）
+      setDiffStat(
+        next.isRepo && next.source !== "unavailable"
+          ? await fetchGitDiffStat(accessToken, canvasId).catch(() => null)
+          : null,
+      );
     } catch {
       // 取不到就当没有（例如目录还没建）；不打断输入区
       setStatus(null);
+      setDiffStat(null);
     }
   }, [accessToken, canvasId]);
 
@@ -73,6 +99,16 @@ export function GitBranchSelect({
     };
   }, [open]);
 
+  const refresh = useCallback(async () => {
+    if (!accessToken || !canvasId) return;
+    const next = await fetchGitStatus(accessToken, canvasId).catch(() => null);
+    if (next) setStatus(next);
+    const stat = await fetchGitDiffStat(accessToken, canvasId).catch(
+      () => null,
+    );
+    setDiffStat(stat);
+  }, [accessToken, canvasId]);
+
   const switchTo = useCallback(
     async (branch: string) => {
       if (!accessToken || !canvasId) return;
@@ -95,6 +131,52 @@ export function GitBranchSelect({
     },
     [accessToken, canvasId, status],
   );
+
+  const doCommit = useCallback(async () => {
+    if (!accessToken || !canvasId || !commitMessage.trim()) return;
+    setBusy(true);
+    try {
+      setStatus(await commitGitAll(accessToken, canvasId, commitMessage));
+      setCommitMessage("");
+      setNotice(null);
+      await refresh();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "提交失败。");
+    } finally {
+      setBusy(false);
+    }
+  }, [accessToken, canvasId, commitMessage, refresh]);
+
+  const doPush = useCallback(async () => {
+    if (!accessToken || !canvasId) return;
+    setBusy(true);
+    try {
+      setStatus(await pushGit(accessToken, canvasId));
+      setNotice(null);
+      await refresh();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "推送失败。");
+    } finally {
+      setBusy(false);
+    }
+  }, [accessToken, canvasId, refresh]);
+
+  const doCreateBranch = useCallback(async () => {
+    if (!accessToken || !canvasId || !newBranchName.trim()) return;
+    setBusy(true);
+    try {
+      setStatus(
+        await createGitBranch(accessToken, canvasId, newBranchName.trim()),
+      );
+      setNewBranchName("");
+      setNotice(null);
+      setOpen(false);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "创建分支失败。");
+    } finally {
+      setBusy(false);
+    }
+  }, [accessToken, canvasId, newBranchName]);
 
   if (!canvasId || !status) return null;
 
@@ -144,9 +226,83 @@ export function GitBranchSelect({
         <div
           role="listbox"
           aria-label="分支列表"
-          className="absolute bottom-full left-0 z-50 mb-2 w-64 overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-md"
+          className="absolute bottom-full left-0 z-50 mb-2 w-72 overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-md"
         >
-          <div className="max-h-64 overflow-y-auto p-1">
+          {/* 更改统计（R2-1 条目 1） */}
+          <div className="flex items-center justify-between gap-2 px-3 py-2 text-xs">
+            <span className="text-muted-foreground">
+              {status.dirty ? "更改" : "没有未提交的更改"}
+            </span>
+            {diffStat && status.dirty ? (
+              <span className="font-mono">
+                <span className="text-emerald-600">+{diffStat.additions}</span>{" "}
+                <span className="text-rose-500">−{diffStat.deletions}</span>
+                <span className="ml-2 text-muted-foreground">
+                  {diffStat.files} 个文件
+                </span>
+              </span>
+            ) : null}
+          </div>
+
+          {/* 提交（R2-1 条目 3） */}
+          <div className="flex items-center gap-1.5 border-t px-2 py-2">
+            <input
+              value={commitMessage}
+              onChange={(e) => setCommitMessage(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && commitMessage.trim() && !busy) {
+                  e.preventDefault();
+                  void doCommit();
+                }
+              }}
+              placeholder={status.dirty ? "提交信息…" : "没有可提交的更改"}
+              disabled={!status.dirty || busy}
+              aria-label="提交信息"
+              className="min-w-0 flex-1 rounded-md border bg-transparent px-2 py-1 text-xs outline-none placeholder:text-muted-foreground/60 focus:ring-1 focus:ring-ring disabled:opacity-40"
+            />
+            <button
+              type="button"
+              disabled={!status.dirty || busy || !commitMessage.trim()}
+              onClick={() => void doCommit()}
+              className="shrink-0 rounded-md bg-primary px-2 py-1 text-xs text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
+            >
+              提交
+            </button>
+          </div>
+
+          {/* 推送（R2-1 条目 3） */}
+          <div className="px-2 pb-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void doPush()}
+              className="w-full rounded-md border px-2 py-1 text-left text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
+            >
+              推送到上游
+            </button>
+          </div>
+
+          {/* 创建并检出新的分支（R2-1 条目 5） */}
+          <div className="flex items-center gap-1.5 border-t px-2 py-2">
+            <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <input
+              value={newBranchName}
+              onChange={(e) => setNewBranchName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && newBranchName.trim() && !busy) {
+                  e.preventDefault();
+                  void doCreateBranch();
+                }
+              }}
+              placeholder="创建并检出新的分支…"
+              disabled={busy}
+              aria-label="新分支名"
+              className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60"
+            />
+          </div>
+
+          {/* 分支列表 */}
+          <div className="max-h-64 overflow-y-auto border-t p-1">
             {status.branches.map((branch) => (
               <button
                 key={branch.name}
@@ -163,6 +319,12 @@ export function GitBranchSelect({
               </button>
             ))}
           </div>
+
+          {notice ? (
+            <p className="border-t px-3 py-1.5 text-[11px] text-destructive">
+              {notice}
+            </p>
+          ) : null}
           {status.source === "bundled" ? (
             <p className="border-t px-2 py-1.5 text-[11px] text-muted-foreground">
               使用随包 git（本机未检测到 git）

@@ -1,6 +1,9 @@
 import {
   applicationErrorResponseSchema,
+  codeGitBranchCreateRequestSchema,
   codeGitCheckoutRequestSchema,
+  codeGitCommitRequestSchema,
+  codeGitDiffStatResponseSchema,
   codeGitStatusResponseSchema,
   unauthenticatedErrorResponseSchema,
 } from "@loomic/shared";
@@ -51,6 +54,78 @@ export async function registerCodeGitRoutes(
         user,
         payload.canvasId,
         payload.branch,
+      );
+      return reply.code(200).send(codeGitStatusResponseSchema.parse({ git }));
+    } catch (error) {
+      return sendCodeGitError(error, reply);
+    }
+  });
+
+  // --- R2-1：更改统计 / 提交 / 推送 / 新建分支（写操作纪律在 service 里） ---
+
+  app.get<{ Querystring: { canvasId?: string } }>(
+    "/api/code/git/diff-stat",
+    async (request, reply) => {
+      const user = await options.auth.authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      const canvasId = request.query.canvasId ?? "";
+      if (!canvasId) {
+        return reply.code(400).send(
+          applicationErrorResponseSchema.parse({
+            error: { code: "invalid_input", message: "缺少 canvasId。" },
+          }),
+        );
+      }
+      try {
+        const stat = await options.codeGitService.diffStat(user, canvasId);
+        return reply
+          .code(200)
+          .send(codeGitDiffStatResponseSchema.parse({ stat }));
+      } catch (error) {
+        return sendCodeGitError(error, reply);
+      }
+    },
+  );
+
+  app.post("/api/code/git/commit", async (request, reply) => {
+    const user = await options.auth.authenticate(request);
+    if (!user) return sendUnauthorized(reply);
+    try {
+      const payload = codeGitCommitRequestSchema.parse(request.body);
+      const git = await options.codeGitService.commit(
+        user,
+        payload.canvasId,
+        payload.message,
+      );
+      return reply.code(200).send(codeGitStatusResponseSchema.parse({ git }));
+    } catch (error) {
+      return sendCodeGitError(error, reply);
+    }
+  });
+
+  app.post("/api/code/git/push", async (request, reply) => {
+    const user = await options.auth.authenticate(request);
+    if (!user) return sendUnauthorized(reply);
+    try {
+      const payload = codeGitCheckoutRequestSchema
+        .pick({ canvasId: true })
+        .parse(request.body);
+      const git = await options.codeGitService.push(user, payload.canvasId);
+      return reply.code(200).send(codeGitStatusResponseSchema.parse({ git }));
+    } catch (error) {
+      return sendCodeGitError(error, reply);
+    }
+  });
+
+  app.post("/api/code/git/branch", async (request, reply) => {
+    const user = await options.auth.authenticate(request);
+    if (!user) return sendUnauthorized(reply);
+    try {
+      const payload = codeGitBranchCreateRequestSchema.parse(request.body);
+      const git = await options.codeGitService.createBranch(
+        user,
+        payload.canvasId,
+        payload.name,
       );
       return reply.code(200).send(codeGitStatusResponseSchema.parse({ git }));
     } catch (error) {

@@ -37,6 +37,15 @@ function build(options: {
   const git: GitClient = {
     checkout: vi.fn(async () => {}),
     describe: vi.fn(async () => REPO_VIEW),
+    diffStat: vi.fn(async () => ({
+      files: 0,
+      additions: 0,
+      deletions: 0,
+      untracked: 0,
+    })),
+    commitAll: vi.fn(async () => {}),
+    push: vi.fn(async () => {}),
+    createBranch: vi.fn(async () => {}),
     ...options.git,
   };
   const findById = vi.fn(async () =>

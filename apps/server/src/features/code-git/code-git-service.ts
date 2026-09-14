@@ -2,7 +2,7 @@ import { resolveSandboxDir } from "../../agent/sandbox-dir.js";
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import type { CanvasRepository } from "../canvas/repository.js";
-import type { GitClient, GitRepoView } from "./git-client.js";
+import type { GitClient, GitDiffStat, GitRepoView } from "./git-client.js";
 
 /**
  * git 分支视图服务（Code 模式）。
@@ -24,6 +24,8 @@ export interface CodeGitStatus {
   source: GitSource;
 }
 
+export type CodeGitDiffStat = GitDiffStat;
+
 export type CodeGitService = {
   status(user: AuthenticatedUser, canvasId: string): Promise<CodeGitStatus>;
   checkout(
@@ -31,10 +33,30 @@ export type CodeGitService = {
     canvasId: string,
     branch: string,
   ): Promise<CodeGitStatus>;
+  /** 更改统计（R2-1）：相对 HEAD 的增删行数 + 未跟踪数。 */
+  diffStat(user: AuthenticatedUser, canvasId: string): Promise<CodeGitDiffStat>;
+  /** 提交全部改动（写操作：git 不可用即 503，未仓库/空改动 409）。 */
+  commit(
+    user: AuthenticatedUser,
+    canvasId: string,
+    message: string,
+  ): Promise<CodeGitStatus>;
+  /** 推送当前分支（写操作，同上纪律）。 */
+  push(user: AuthenticatedUser, canvasId: string): Promise<CodeGitStatus>;
+  /** 创建并检出新分支（写操作，同上纪律）。 */
+  createBranch(
+    user: AuthenticatedUser,
+    canvasId: string,
+    name: string,
+  ): Promise<CodeGitStatus>;
 };
 
 export class CodeGitError extends Error {
-  readonly code: "not_found" | "git_unavailable" | "checkout_failed";
+  readonly code:
+    | "not_found"
+    | "git_unavailable"
+    | "checkout_failed"
+    | "git_write_failed";
   readonly statusCode: number;
 
   constructor(code: CodeGitError["code"], message: string, statusCode: number) {
@@ -96,6 +118,28 @@ export function createCodeGitService(options: {
     };
   };
 
+  /** 写操作的公共前置：git 可用性（写必须真的有 git 可执行）。 */
+  const requireGitForWrite = () => {
+    if (source === "unavailable") {
+      throw new CodeGitError(
+        "git_unavailable",
+        "当前环境没有可用的 git（既未装本地 git，也未随包分发）。",
+        503,
+      );
+    }
+  };
+
+  const requireRepo = async (dir: string): Promise<void> => {
+    const view = await git.describe(dir);
+    if (!view.isRepo) {
+      throw new CodeGitError(
+        "git_write_failed",
+        "该工作目录还不是 git 仓库（可先在对话里让 Agent 执行 git init）。",
+        409,
+      );
+    }
+  };
+
   return {
     async status(user, canvasId) {
       return read(await sandboxDirFor(user, canvasId));
@@ -103,18 +147,65 @@ export function createCodeGitService(options: {
 
     async checkout(user, canvasId, branch) {
       const dir = await sandboxDirFor(user, canvasId);
-      if (source === "unavailable") {
-        throw new CodeGitError(
-          "git_unavailable",
-          "当前环境没有可用的 git（既未装本地 git，也未随包分发）。",
-          503,
-        );
-      }
+      requireGitForWrite();
       try {
         await git.checkout(dir, branch);
       } catch (error) {
         throw new CodeGitError(
           "checkout_failed",
+          error instanceof Error ? error.message : String(error),
+          409,
+        );
+      }
+      return read(dir);
+    },
+
+    async diffStat(user, canvasId) {
+      const dir = await sandboxDirFor(user, canvasId);
+      return git.diffStat(dir);
+    },
+
+    async commit(user, canvasId, message) {
+      const dir = await sandboxDirFor(user, canvasId);
+      requireGitForWrite();
+      await requireRepo(dir);
+      try {
+        await git.commitAll(dir, message);
+      } catch (error) {
+        throw new CodeGitError(
+          "git_write_failed",
+          error instanceof Error ? error.message : String(error),
+          409,
+        );
+      }
+      return read(dir);
+    },
+
+    async push(user, canvasId) {
+      const dir = await sandboxDirFor(user, canvasId);
+      requireGitForWrite();
+      await requireRepo(dir);
+      try {
+        await git.push(dir);
+      } catch (error) {
+        throw new CodeGitError(
+          "git_write_failed",
+          error instanceof Error ? error.message : String(error),
+          409,
+        );
+      }
+      return read(dir);
+    },
+
+    async createBranch(user, canvasId, name) {
+      const dir = await sandboxDirFor(user, canvasId);
+      requireGitForWrite();
+      await requireRepo(dir);
+      try {
+        await git.createBranch(dir, name);
+      } catch (error) {
+        throw new CodeGitError(
+          "git_write_failed",
           error instanceof Error ? error.message : String(error),
           409,
         );

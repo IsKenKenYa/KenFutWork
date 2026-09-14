@@ -100,6 +100,28 @@ export const codeGitCheckoutRequestSchema = z.object({
   branch: z.string().min(1),
 });
 
+// --- Code 模式 git 写操作（R2-1：更改统计 / 提交 / 推送 / 新建分支） ---
+
+export const codeGitDiffStatResponseSchema = z.object({
+  stat: z.object({
+    /** 有改动的文件数（含未跟踪）。 */
+    files: z.number().int().min(0),
+    additions: z.number().int().min(0),
+    deletions: z.number().int().min(0),
+    untracked: z.number().int().min(0),
+  }),
+});
+
+export const codeGitCommitRequestSchema = z.object({
+  canvasId: z.string().min(1),
+  message: z.string().trim().min(1).max(500),
+});
+
+export const codeGitBranchCreateRequestSchema = z.object({
+  canvasId: z.string().min(1),
+  name: z.string().trim().min(1).max(200),
+});
+
 export const applicationErrorCodeSchema = z.enum([
   "application_error",
   // 自管认证（M1.4）：与 auth-contracts.ts 的 authErrorResponseSchema 同一组码
@@ -179,6 +201,9 @@ export const applicationErrorCodeSchema = z.enum([
   "toggle_failed",
   "system_plugin",
   "not_installed",
+  // Code 模式 git 写操作（R2-1：提交/推送/建分支）
+  "git_unavailable",
+  "git_write_failed",
 ]);
 
 export const applicationErrorResponseSchema = z.object({

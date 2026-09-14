@@ -86,6 +86,62 @@ export interface GitClient {
   describe(cwd: string): Promise<GitRepoView>;
   /** 切分支；名字非法或 git 报错都抛可读错误。 */
   checkout(cwd: string, branch: string): Promise<void>;
+  /** 更改统计（R2-1）：相对 HEAD 的增删行数 + 未跟踪文件数。 */
+  diffStat(cwd: string): Promise<GitDiffStat>;
+  /** 暂存全部改动并提交；空信息或无可提交内容抛可读错误。 */
+  commitAll(cwd: string, message: string): Promise<void>;
+  /** 推送当前分支到其上游；无上游时给可读指引。 */
+  push(cwd: string): Promise<void>;
+  /** 创建并检出新分支（`switch -c`）。 */
+  createBranch(cwd: string, name: string): Promise<void>;
+}
+
+/** 更改统计（R2-1 参考图「更改 +1230 -10 · 21 个文件」）。 */
+export interface GitDiffStat {
+  /** 有改动的文件数（含未跟踪）。 */
+  files: number;
+  additions: number;
+  deletions: number;
+  untracked: number;
+}
+
+/**
+ * 由 `diff --numstat HEAD` 与 `status --porcelain` 拼 heirloom 统计（纯函数）。
+ *
+ * - numstat 在仓库没有任何提交（unborn HEAD）时会非零退出——此时增删行数按 0 算，
+ *   文件数仍来自 porcelain（全部算未跟踪/改动，用户能看到「有东西没提交」）。
+ * - 二进制文件的 numstat 行是 `-\t-\t路径`，行数不计但文件数照算。
+ */
+export function toDiffStat(input: {
+  numstat: GitCommandResult;
+  status: GitCommandResult;
+}): GitDiffStat {
+  const changedLines = input.status.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const untracked = changedLines.filter((line) => line.startsWith("??")).length;
+  const trackedChanged = changedLines.length - untracked;
+
+  let additions = 0;
+  let deletions = 0;
+  if (input.numstat.code === 0) {
+    for (const line of input.numstat.stdout.split("\n")) {
+      const [add = "", del = ""] = line.trim().split("\t");
+      if (!add) continue;
+      const addNum = Number(add);
+      const delNum = Number(del);
+      if (Number.isFinite(addNum)) additions += addNum;
+      if (Number.isFinite(delNum)) deletions += delNum;
+    }
+  }
+
+  return {
+    files: trackedChanged + untracked,
+    additions,
+    deletions,
+    untracked,
+  };
 }
 
 export function createGitClient(deps: { exec: ExecGit }): GitClient {
@@ -113,5 +169,58 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
     }
   };
 
-  return { checkout, describe };
+  const diffStat = async (cwd: string): Promise<GitDiffStat> => {
+    const status = await exec(["status", "--porcelain"], cwd);
+    const numstat = await exec(["diff", "--numstat", "HEAD"], cwd);
+    return toDiffStat({ numstat, status });
+  };
+
+  const commitAll = async (cwd: string, message: string): Promise<void> => {
+    const trimmed = message.trim();
+    if (!trimmed) {
+      throw new Error("提交信息不能为空。");
+    }
+    const add = await exec(["add", "-A"], cwd);
+    if (add.code !== 0) {
+      throw new Error(add.stderr.trim() || "git add 失败。");
+    }
+    const commit = await exec(["commit", "-m", trimmed], cwd);
+    if (commit.code !== 0) {
+      const reason = commit.stderr.trim() || commit.stdout.trim();
+      throw new Error(
+        /nothing to commit/i.test(reason)
+          ? "没有可提交的更改。"
+          : reason || "git commit 失败。",
+      );
+    }
+  };
+
+  const push = async (cwd: string): Promise<void> => {
+    const result = await exec(["push"], cwd);
+    if (result.code !== 0) {
+      const reason = result.stderr.trim() || result.stdout.trim();
+      throw new Error(
+        /no upstream|has no upstream/i.test(reason)
+          ? "当前分支还没有上游分支，请先在终端执行一次 `git push -u`。"
+          : reason || "git push 失败。",
+      );
+    }
+  };
+
+  const createBranch = async (cwd: string, name: string): Promise<void> => {
+    if (!isSafeBranchName(name)) {
+      throw new Error(`非法分支名：${name}`);
+    }
+    const result = await exec(["switch", "-c", name], cwd);
+    if (result.code !== 0) {
+      const reason = result.stderr.trim() || result.stdout.trim();
+      throw new Error(
+        /already.*(branch|used)|already exists/i.test(reason)
+          ? `分支「${name}」已存在。`
+          : reason || `创建分支失败：${name}`,
+      );
+    }
+  };
+
+  return { checkout, describe, diffStat, commitAll, push, createBranch };
 }
