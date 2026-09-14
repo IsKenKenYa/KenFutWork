@@ -15,11 +15,11 @@ import { hashPassword } from "./features/auth/password.js";
  * 明文口令只在命令行出现，不落日志、不进数据库（库里只有 scrypt 哈希）。
  */
 const TEST_ACCOUNT_EMAILS = [
-  "free@test.loomic.com",
-  "integration@test.loomic.com",
-  "pro@test.loomic.com",
-  "starter@test.loomic.com",
-  "ultra@test.loomic.com",
+  "free@test.kenfutwork.com",
+  "integration@test.kenfutwork.com",
+  "pro@test.kenfutwork.com",
+  "starter@test.kenfutwork.com",
+  "ultra@test.kenfutwork.com",
 ];
 
 async function main(): Promise<void> {
