@@ -54,10 +54,17 @@ export class ConnectionManager {
     userSet.add(connectionId);
   }
 
-  /** Remove a connection from all indexes. */
-  remove(connectionId: string): void {
+  /**
+   * Remove a connection from all indexes.
+   *
+   * `socket` 是身份校验用：connectionId 由客户端提供且**重连时复用**（handler.ts 查询参数），
+   * 新 socket 注册同一 id 后，旧 socket 迟到的 close/error 事件不能把新注册误删——
+   * 否则连接活着但 map entry 没了，run 事件全部 `delivered=false`（消息进得来、推送出不去）。
+   */
+  remove(connectionId: string, socket?: WebSocket): void {
     const entry = this.connections.get(connectionId);
     if (!entry) return;
+    if (socket && entry.ws !== socket) return;
     this.removeFromIndexes(connectionId, entry);
     this.connections.delete(connectionId);
   }

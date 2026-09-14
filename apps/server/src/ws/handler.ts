@@ -285,13 +285,14 @@ async function authenticateAndBind(
   socket.on("close", () => {
     log.info("disconnected", { userId: authenticatedUser.id, connectionId });
     clearInterval(pingInterval);
-    connectionManager.remove(connectionId);
+    // 带 socket 身份：客户端重连复用 connectionId，迟到的旧 socket close 不得删掉新注册
+    connectionManager.remove(connectionId, socket);
   });
 
   socket.on("error", () => {
     log.error("socket_error", { userId: authenticatedUser.id, connectionId });
     clearInterval(pingInterval);
-    connectionManager.remove(connectionId);
+    connectionManager.remove(connectionId, socket);
   });
 }
 
