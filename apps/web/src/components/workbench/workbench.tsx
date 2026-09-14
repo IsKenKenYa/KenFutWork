@@ -40,6 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ElapsedEntry } from "@/components/workbench/elapsed-entry";
 import { GitBranchSelect } from "@/components/workbench/git-branch-select";
 import { McpModal } from "@/components/workbench/mcp-modal";
 import { PluginMarketModal } from "@/components/workbench/plugin-market-modal";
@@ -104,6 +105,9 @@ interface WorkbenchTask {
   projectId?: string | null;
   /** 归档后不显示在项目分组中，仅出现在「已归档」区 */
   archived?: boolean;
+  /** 最近一轮 run 的起止（ISO，来自 run.started / 终态事件；R1-1 工作时间） */
+  runStartedAt?: string | undefined;
+  runEndedAt?: string | undefined;
 }
 
 const MODE_META: Record<
@@ -616,7 +620,11 @@ export function Workbench() {
           return nextAll;
         });
       };
-      if (type === "message.delta") {
+      if (type === "run.started") {
+        // 服务端权威起表时刻（覆盖提交时的本地乐观值）
+        const ts = (evt as { timestamp?: string }).timestamp;
+        if (ts) apply((task) => ({ ...task, runStartedAt: ts }));
+      } else if (type === "message.delta") {
         const delta = (evt as { delta?: string }).delta ?? "";
         if (!delta) return;
         apply((task) => {
@@ -633,7 +641,12 @@ export function Workbench() {
           return { ...task, messages };
         });
       } else if (type === "run.completed") {
-        apply((task) => ({ ...task, status: "completed" }));
+        const ts = (evt as { timestamp?: string }).timestamp;
+        apply((task) => ({
+          ...task,
+          status: "completed",
+          ...(ts ? { runEndedAt: ts } : {}),
+        }));
       } else if (type === "billing.error") {
         // 平台池额度/套餐拦截（FORM-10）：服务端给的是可读原因，
         // 直接透出，别让用户只看到「运行失败，请重试」。
@@ -650,16 +663,23 @@ export function Workbench() {
         // 用户无法判断该重试、换模型还是去建项目——这里按 billing.error 的同一
         // 口径透出；确实没有原因时才回落到通用文案。
         const failureText = describeRunFailure(evt);
+        const failedTs = (evt as { timestamp?: string }).timestamp;
         apply((task) => ({
           ...task,
           status: "failed",
+          ...(failedTs ? { runEndedAt: failedTs } : {}),
           messages: [
             ...task.messages,
             { role: "assistant", text: failureText },
           ],
         }));
       } else if (type === "run.canceled") {
-        apply((task) => ({ ...task, status: "completed" }));
+        const canceledTs = (evt as { timestamp?: string }).timestamp;
+        apply((task) => ({
+          ...task,
+          status: "completed",
+          ...(canceledTs ? { runEndedAt: canceledTs } : {}),
+        }));
       }
     });
     return off;
@@ -778,6 +798,8 @@ export function Workbench() {
         status: "running",
         projectId: mode === "code" ? (resolvedProject?.id ?? null) : null,
         archived: false,
+        // 先用本地时钟乐观起表，run.started 事件到达后以服务端时间戳为准
+        runStartedAt: new Date().toISOString(),
       };
       setTasksByMode((prev) => {
         const list = [task, ...prev[mode]];
@@ -797,6 +819,7 @@ export function Workbench() {
               ? {
                   ...t,
                   status: "failed" as const,
+                  runEndedAt: new Date().toISOString(),
                   messages: [
                     ...t.messages,
                     { role: "assistant" as const, text },
@@ -893,6 +916,9 @@ export function Workbench() {
                   { role: "user" as const, text: text.trim() },
                 ],
                 status: "running" as const,
+                // 新一轮起表，清掉上一轮的终态时刻
+                runStartedAt: new Date().toISOString(),
+                runEndedAt: undefined,
               }
             : t,
         );
@@ -1316,23 +1342,42 @@ export function Workbench() {
               className="min-h-0 flex-1 space-y-4 overflow-y-auto"
               onContextMenu={chatMenu.open}
             >
-              {activeTask.messages.map((msg, i) =>
-                msg.role === "user" ? (
-                  <div
-                    key={i}
-                    className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground whitespace-pre-wrap"
-                  >
-                    {msg.text}
+              {activeTask.runStartedAt ? (
+                <ElapsedEntry
+                  startedAt={activeTask.runStartedAt}
+                  endedAt={activeTask.runEndedAt}
+                  running={activeTask.status === "running"}
+                />
+              ) : null}
+              {(() => {
+                // 「最终总结」标题挂在本轮最后一个 assistant 消息上方（R1-1 收尾总结）
+                const lastAssistantIdx = activeTask.messages.reduce(
+                  (last, msg, idx) => (msg.role === "assistant" ? idx : last),
+                  -1,
+                );
+                const showSummary =
+                  activeTask.status === "completed" &&
+                  Boolean(activeTask.runEndedAt) &&
+                  lastAssistantIdx >= 0;
+                return activeTask.messages.map((msg, i) => (
+                  <div key={i} className="space-y-1">
+                    {showSummary && i === lastAssistantIdx ? (
+                      <div className="text-xs font-medium text-muted-foreground">
+                        最终总结
+                      </div>
+                    ) : null}
+                    {msg.role === "user" ? (
+                      <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground whitespace-pre-wrap">
+                        {msg.text}
+                      </div>
+                    ) : (
+                      <div className="w-fit max-w-full rounded-2xl rounded-bl-md bg-muted px-4 py-2.5">
+                        <MarkdownRenderer text={msg.text} />
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  <div
-                    key={i}
-                    className="w-fit max-w-full rounded-2xl rounded-bl-md bg-muted px-4 py-2.5"
-                  >
-                    <MarkdownRenderer text={msg.text} />
-                  </div>
-                ),
-              )}
+                ));
+              })()}
               {activeTask.status === "running" ? (
                 <div
                   role="status"
