@@ -2,6 +2,7 @@
 
 import type { BrandKitSummary } from "@loomic/shared";
 import { Plus, Trash2 } from "lucide-react";
+import Link from "next/link";
 
 import { cn } from "../../lib/utils";
 
@@ -28,6 +29,13 @@ export function BrandKitSidebar({
         <span className="ml-1 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
           Beta
         </span>
+        {/* 返回入口：本页由画布的「品牌套件 → 管理品牌套件…」进入，得能回去 */}
+        <Link
+          href="/workbench"
+          className="ml-auto text-xs text-muted-foreground underline-offset-2 hover:underline"
+        >
+          返回工作台
+        </Link>
       </div>
 
       {/* Create button */}

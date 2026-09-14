@@ -5,6 +5,7 @@ import type {
   BrandKitDetail,
   BrandKitSummary,
 } from "@loomic/shared";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../../lib/auth-context";
 import {
@@ -26,7 +27,8 @@ import { BrandKitSidebar } from "./brand-kit-sidebar";
 import { EmptyState } from "./empty-state";
 
 export function BrandKitPage() {
-  const { session, signOut } = useAuth();
+  const { session, loading: authLoading, signOut } = useAuth();
+  const router = useRouter();
 
   const [kits, setKits] = useState<BrandKitSummary[]>([]);
   const [selectedKit, setSelectedKit] = useState<BrandKitDetail | null>(null);
@@ -82,9 +84,20 @@ export function BrandKitPage() {
     }
   }, [getToken, handleAuthError]);
 
-  // Initial load — runs exactly once (workspace layout guarantees auth).
+  // Initial load — 等会话就绪后再发请求。
+  //
+  // 曾经的写法注释说「workspace layout guarantees auth」，但 `/brand-kit` 是**独立路由**
+  // （不经 workspace layout）：挂载时 `session` 还是 null，`getToken()` 抛 ApiAuthError，
+  // 被 `handleAuthError` 当成鉴权失败 → **signOut()** —— 结果是打开这一页就把用户登出了
+  // （实测：进页面 0.6s 内 localStorage 的令牌被清空、工作台随后跳登录页）。
+  // 现在：等 authLoading 结束；仍无会话则去登录页，而不是「把自己登出」。
   const hasInitialized = useRef(false);
   useEffect(() => {
+    if (authLoading) return;
+    if (!session) {
+      router.replace("/login");
+      return;
+    }
     if (hasInitialized.current) return;
     hasInitialized.current = true;
 
@@ -105,7 +118,7 @@ export function BrandKitPage() {
         setLoading(false);
       }
     })();
-  }, [getToken, handleAuthError]);
+  }, [authLoading, session, getToken, handleAuthError, router]);
 
   // --- Kit handlers ---
 

@@ -278,6 +278,59 @@ export function CanvasBottomBar({
   const [gridOn, setGridOn] = useState(false);
   const zoomBtnRef = useRef<HTMLButtonElement>(null);
 
+  /**
+   * 与底部居中的绘图工具条避让。
+   *
+   * 画布区被侧栏/助手面板挤压后会变窄（实测 1280 视口下只剩 624px），而工具条
+   * 是居中的、自身就有 ~400px：从左簇右缘到画布右边的空档放不下它，两者就会重叠
+   * ——工具条 z-30 压在左簇之上，`网格/缩小/100%/放大` 被盖住点不到（elementFromPoint
+   * 命中的是「拖拽画布/选择/椭圆」）。
+   *
+   * 取舍：**抬高左簇、不动工具条**。工具条是主 affordance，位置应稳定；左簇是次级
+   * 控件，让位代价最小。实测行不通的替代方案：只挪 left 或只调 z-index——前者在
+   * 「空档 < 工具条宽度」时无解，后者只是把点不到的控件换一批。
+   */
+  const barRef = useRef<HTMLDivElement>(null);
+  const [raised, setRaised] = useState(false);
+  useEffect(() => {
+    const el = barRef.current;
+    const container = el?.offsetParent as HTMLElement | null;
+    if (!el || !container) return;
+
+    let observer: ResizeObserver | null = null;
+    let observedTools: HTMLElement | null = null;
+    const measure = () => {
+      const tools = container.querySelector<HTMLElement>(
+        "[data-canvas-tool-row]",
+      );
+      // 工具条自身宽度也会变（工具增减）——找到后就一起观察
+      if (tools && tools !== observedTools) {
+        observer?.observe(tools);
+        observedTools = tools;
+      }
+      if (!tools) {
+        setRaised(false);
+        return;
+      }
+      const barRect = el.getBoundingClientRect();
+      const toolRect = tools.getBoundingClientRect();
+      const sameRow =
+        toolRect.top < barRect.bottom && toolRect.bottom > barRect.top;
+      setRaised(sameRow && toolRect.left < barRect.right + 8);
+    };
+
+    observer = new ResizeObserver(measure);
+    observer.observe(container);
+    measure();
+    // 底栏与工具条是兄弟节点，挂载顺序不保证；容器尺寸不变时 RO 不会再触发，
+    // 故挂载后补测一次（这是实测到的唯一时序缺口）。
+    const retry = window.setTimeout(measure, 400);
+    return () => {
+      observer?.disconnect();
+      window.clearTimeout(retry);
+    };
+  }, [leftPanelOpen]);
+
   /* ── Background color state ── */
   const [bgColor, setBgColor] = useState("#FFFFFF");
   const [bgPickerOpen, setBgPickerOpen] = useState(false);
@@ -392,8 +445,13 @@ export function CanvasBottomBar({
 
   return (
     <div
-      className="absolute bottom-4 z-20 transition-[left] duration-200"
-      style={{ left: leftPanelOpen ? 296 : 16 }}
+      ref={barRef}
+      className="absolute z-20 transition-[left,bottom] duration-200"
+      style={{
+        left: leftPanelOpen ? 296 : 16,
+        // 空间不够时抬到工具条上方一行（见 raised 的说明）
+        bottom: raised ? 72 : 16,
+      }}
       onKeyDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
     >

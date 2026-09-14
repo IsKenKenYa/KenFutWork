@@ -1,7 +1,7 @@
 "use client";
 
 import type { BrandKitSummary } from "@loomic/shared";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, Settings2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchBrandKits } from "@/lib/brand-kit-api";
 import { updateProject } from "@/lib/server-api";
@@ -129,6 +129,28 @@ export function BrandKitSelector({
               暂无品牌套件
             </p>
           )}
+
+          {/* 管理入口：品牌套件的创建/编辑在 /brand-kit。
+              画布跑在 iframe 里，直接 `location.href` 只会把 iframe 换掉，
+              故导航**顶层窗口**（同源，允许）——会话与页面栈都留在原地，
+              用户可正常后退/返回工作台。 */}
+          <div className="my-1 h-px bg-border" />
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              const top = window.top ?? window;
+              try {
+                top.location.assign("/brand-kit");
+              } catch {
+                window.location.assign("/brand-kit");
+              }
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-muted transition-colors cursor-pointer"
+          >
+            <Settings2 className="h-3.5 w-3.5 shrink-0 opacity-70" />
+            <span>管理品牌套件…</span>
+          </button>
         </div>
       )}
     </div>

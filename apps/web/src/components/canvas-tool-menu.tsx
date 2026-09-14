@@ -486,6 +486,7 @@ export function CanvasToolMenu({
   return (
     <>
       <div
+        data-canvas-tool-row=""
         className="absolute bottom-5 z-30 flex items-center gap-0.5 rounded-xl p-1 bg-card border border-border shadow-card transition-[left,transform] duration-200"
         style={{
           left: leftPanelOpen ? "calc(140px + 50%)" : "50%",
