@@ -609,6 +609,8 @@ export function CanvasEditor({
     >
       <div className="h-full w-full relative">
         <Excalidraw
+          // 原生 UI 语言：不指定则默认英文（右键菜单 / 缩放 / 帮助 等全英文）
+          langCode="zh-CN"
           theme={resolvedTheme === "dark" ? "dark" : "light"}
           initialData={{
             elements: initialContent.elements as any,

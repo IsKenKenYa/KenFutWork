@@ -189,7 +189,7 @@ export function CanvasFilesPanel({
           type="button"
           className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
           onClick={onClose}
-          aria-label="Close files panel"
+          aria-label="关闭文件面板"
         >
           <CloseIcon className="h-3.5 w-3.5" />
         </button>

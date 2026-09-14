@@ -382,7 +382,7 @@ export function ImageGeneratorPanel({
                 ? "text-foreground"
                 : "text-muted-foreground hover:text-foreground"
             }`}
-            title="Add reference image"
+            title="添加参考图"
           >
             <ImageUp className="h-3.5 w-3.5" />
           </button>

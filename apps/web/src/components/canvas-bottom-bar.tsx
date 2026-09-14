@@ -380,7 +380,7 @@ export function CanvasBottomBar({
           type="button"
           className={btnClass}
           onClick={toggleBgPicker}
-          aria-label="Background color"
+          aria-label="背景色"
         >
           {bgColor === "transparent" ? (
             <CheckerIcon className="h-4 w-4 rounded-full" />
@@ -397,7 +397,7 @@ export function CanvasBottomBar({
           type="button"
           className={`${btnClass} ${layersOpen ? "bg-muted text-foreground" : ""}`}
           onClick={handleToggleLayers}
-          aria-label="Layers"
+          aria-label="图层"
         >
           <LayersIcon className="h-4 w-4" />
         </button>
@@ -407,7 +407,7 @@ export function CanvasBottomBar({
           type="button"
           className={`${btnClass} ${filesOpen ? "bg-muted text-foreground" : ""}`}
           onClick={handleToggleFiles}
-          aria-label="Generated files"
+          aria-label="生成文件"
         >
           <FileIcon className="h-3.5 w-3.5" />
         </button>
@@ -420,7 +420,7 @@ export function CanvasBottomBar({
           type="button"
           className={btnClass}
           onClick={handleZoomOut}
-          aria-label="Zoom out"
+          aria-label="缩小"
         >
           <MinusIcon className="h-3.5 w-3.5" />
         </button>
@@ -436,7 +436,7 @@ export function CanvasBottomBar({
           type="button"
           className={btnClass}
           onClick={handleZoomIn}
-          aria-label="Zoom in"
+          aria-label="放大"
         >
           <PlusIcon className="h-3.5 w-3.5" />
         </button>
@@ -487,7 +487,7 @@ export function CanvasBottomBar({
               type="button"
               className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground transition-colors"
               onClick={() => setBgPickerOpen(false)}
-              aria-label="Close color picker"
+              aria-label="关闭取色器"
             >
               <CloseIcon className="h-3.5 w-3.5" />
             </button>

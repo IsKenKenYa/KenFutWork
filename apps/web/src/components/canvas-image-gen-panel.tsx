@@ -61,7 +61,7 @@ export function CanvasImageGenPanel({
   return (
     <div className="w-80 rounded-xl bg-card shadow-xl border border-border p-4">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-foreground">AI Image</h3>
+        <h3 className="text-sm font-semibold text-foreground">AI 图片生成</h3>
         <button
           type="button"
           onClick={onClose}
@@ -83,7 +83,7 @@ export function CanvasImageGenPanel({
             void handleGenerate();
           }
         }}
-        placeholder="Describe the image you want to create..."
+        placeholder="描述你想生成的图片…"
         className="w-full h-20 resize-none rounded-lg border border-border px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
         disabled={loading}
       />

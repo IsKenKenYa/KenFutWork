@@ -228,8 +228,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                       <circle cx="8.5" cy="8.5" r="1.5" />
                       <path d="m21 15-5-5L5 21" />
                     </svg>
-                    {selectionImageCount}{" "}
-                    {selectionImageCount === 1 ? "image" : "images"}
+                    {selectionImageCount} 张图片
                   </span>
                 )}
                 {selectionImageCount > 0 && selectionShapeCount > 0 && (
@@ -246,12 +245,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                     >
                       <rect x="3" y="3" width="18" height="18" rx="2" />
                     </svg>
-                    {selectionShapeCount}{" "}
-                    {selectionShapeCount === 1 ? "shape" : "shapes"}
+                    {selectionShapeCount} 个图形
                   </span>
                 )}
                 <span className="text-[10px] text-muted-foreground/60">
-                  selected on canvas
+                  已在画布中选中
                 </span>
               </div>
             </div>
@@ -271,7 +269,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                   type="button"
                   onClick={() => onRemoveMention(mention)}
                   className="inline-flex items-center gap-1 rounded-md border border-border bg-muted px-2 py-1 text-[11px] text-foreground transition-colors hover:bg-muted/80"
-                  title="Remove mention"
+                  title="移除引用"
                 >
                   <span className="text-muted-foreground">@</span>
                   <span className="max-w-[180px] truncate">
@@ -319,7 +317,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     className="flex h-8 w-8 items-center justify-center rounded-full border-[0.5px] border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                    title="Attach images"
+                    title="添加图片"
                   >
                     <svg
                       className="h-[14px] w-[14px]"
@@ -339,7 +337,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                   ref={modelBtnRef}
                   type="button"
                   onClick={() => setModelPopoverOpen((prev) => !prev)}
-                  title="Image model"
+                  title="图像模型"
                   className={`flex h-8 w-8 items-center justify-center rounded-full border-[0.5px] transition-colors ${
                     preference.mode === "manual" ||
                     videoPreference.mode === "manual"
