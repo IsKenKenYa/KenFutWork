@@ -2,6 +2,7 @@ import {
   applicationErrorResponseSchema,
   projectCreateRequestSchema,
   projectCreateResponseSchema,
+  projectListQuerySchema,
   projectListResponseSchema,
   projectUpdateRequestSchema,
   unauthenticatedErrorResponseSchema,
@@ -58,7 +59,10 @@ export async function registerProjectRoutes(
         );
       }
 
-      const projects = await options.projectService.listProjects(user);
+      const projects = await options.projectService.listProjects(
+        user,
+        projectListQuerySchema.parse(request.query ?? {}).kind,
+      );
       return reply
         .code(200)
         .send(projectListResponseSchema.parse({ projects }));

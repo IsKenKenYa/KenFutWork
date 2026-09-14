@@ -128,10 +128,18 @@ export const canvasSummarySchema = z.object({
   isPrimary: z.boolean(),
 });
 
+/**
+ * 项目类型：design=画布项目（Design 模式），code=工作目录项目（Code 模式
+ * 「工作目录=项目」）。两端各自按 kind 取列表，两类项目互不串味。
+ */
+export const projectKindSchema = z.enum(["design", "code"]);
+export type ProjectKind = z.infer<typeof projectKindSchema>;
+
 export const projectSummarySchema = z.object({
   id: projectIdSchema,
   name: z.string().min(1),
   slug: z.string().min(1),
+  kind: projectKindSchema,
   description: z.string().nullable(),
   thumbnailUrl: z.string().nullable().optional(),
   workspace: workspaceSummarySchema,

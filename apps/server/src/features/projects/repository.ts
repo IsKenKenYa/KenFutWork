@@ -1,9 +1,12 @@
+import type { ProjectKind } from "@loomic/shared";
+
 import type { PersistenceService } from "../persistence/types.js";
 
 export type ProjectListRow = {
   id: string;
   name: string;
   slug: string;
+  kind: ProjectKind;
   description: string | null;
   created_at: string;
   updated_at: string;
@@ -33,6 +36,7 @@ export type CreatedProjectRow = {
   id: string;
   name: string;
   slug: string;
+  kind: ProjectKind;
   description: string | null;
   created_at: string;
   updated_at: string;
@@ -56,6 +60,8 @@ export type CreateProjectInput = {
   description: string | null;
   name: string;
   slug: string;
+  /** 缺省 design（画布项目）；Code 模式传 code（工作目录项目）。 */
+  kind?: ProjectKind;
   userId: string;
   workspaceId: string;
 };
@@ -93,7 +99,10 @@ export interface ProjectRepository {
     userId: string;
     workspaceId: string;
   }): Promise<{ canvasId: string; projectId: string }>;
-  listActive(workspaceId: string): Promise<ProjectListRow[]>;
+  listActive(
+    workspaceId: string,
+    kind?: ProjectKind,
+  ): Promise<ProjectListRow[]>;
   /** 取这批项目的主画布（跨项目一次查询）。 */
   listPrimaryCanvases(
     workspaceId: string,
@@ -113,15 +122,15 @@ export interface ProjectRepository {
 }
 
 const PROJECT_LIST_COLUMNS =
-  "id, name, slug, description, created_at, updated_at, workspace_id, thumbnail_path";
+  "id, name, slug, kind, description, created_at, updated_at, workspace_id, thumbnail_path";
 const PROJECT_DETAIL_COLUMNS =
-  "id, name, slug, description, workspace_id, brand_kit_id, created_at, updated_at";
+  "id, name, slug, kind, description, workspace_id, brand_kit_id, created_at, updated_at";
 const PROJECT_CREATED_COLUMNS =
-  "id, name, slug, description, created_at, updated_at, workspace_id";
+  "id, name, slug, kind, description, created_at, updated_at, workspace_id";
 
 /**
  * Code 模式会话载体项目的保留 slug（`projects_workspace_slug_key` 唯一）。
- * 它在 `listActive` 里被排除——用户不该在 Design 项目列表里看到内部容器。
+ * 它在 `listActive` 里被排除——用户不该在项目列表里看到内部容器。
  */
 export const CODE_WORKBENCH_SLUG = "code-workbench";
 const CODE_WORKBENCH_NAME = "Code 工作台";
@@ -130,15 +139,16 @@ export function createProjectRepository(
   persistence: PersistenceService,
 ): ProjectRepository {
   return {
-    async listActive(workspaceId) {
+    async listActive(workspaceId, kind = "design") {
       return persistence.forWorkspace(workspaceId).query<ProjectListRow>(
         `select ${PROJECT_LIST_COLUMNS}
            from public.projects
           where workspace_id = :workspace
             and archived_at is null
-            and slug <> $1
+            and kind = $1
+            and slug <> $2
           order by updated_at desc`,
-        [CODE_WORKBENCH_SLUG],
+        [kind, CODE_WORKBENCH_SLUG],
       );
     },
 
@@ -148,8 +158,8 @@ export function createProjectRepository(
 
         // 1) 项目：唯一约束 (workspace_id, slug) 兜住并发；冲突即回读既有行
         const insertedProject = await scoped.queryOne<{ id: string }>(
-          `insert into public.projects (workspace_id, name, slug, created_by)
-           values (:workspace, $1, $2, $3)
+          `insert into public.projects (workspace_id, name, slug, kind, created_by)
+           values (:workspace, $1, $2, 'code', $3)
            on conflict (workspace_id, slug) do nothing
            returning id`,
           [CODE_WORKBENCH_NAME, CODE_WORKBENCH_SLUG, input.userId],
@@ -164,7 +174,9 @@ export function createProjectRepository(
             [CODE_WORKBENCH_SLUG],
           ));
         if (!project) {
-          throw new Error("[projects] Code 工作台项目供给失败（未插入也未读到）。");
+          throw new Error(
+            "[projects] Code 工作台项目供给失败（未插入也未读到）。",
+          );
         }
 
         // 2) 主画布：部分唯一索引 (project_id) WHERE is_primary 兜住并发
@@ -190,7 +202,9 @@ export function createProjectRepository(
             [project.id],
           ));
         if (!canvas) {
-          throw new Error("[projects] Code 工作台主画布供给失败（未插入也未读到）。");
+          throw new Error(
+            "[projects] Code 工作台主画布供给失败（未插入也未读到）。",
+          );
         }
 
         return { canvasId: canvas.id, projectId: project.id };
@@ -268,10 +282,16 @@ export function createProjectRepository(
 
         const project = await scoped.queryOne<CreatedProjectRow>(
           `insert into public.projects
-                  (workspace_id, name, slug, description, created_by)
-           values (:workspace, $1, $2, $3, $4)
+                  (workspace_id, name, slug, kind, description, created_by)
+           values (:workspace, $1, $2, $3, $4, $5)
            returning ${PROJECT_CREATED_COLUMNS}`,
-          [input.name, input.slug, input.description, input.userId],
+          [
+            input.name,
+            input.slug,
+            input.kind ?? "design",
+            input.description,
+            input.userId,
+          ],
         );
 
         if (!project) {

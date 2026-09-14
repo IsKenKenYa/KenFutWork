@@ -221,6 +221,14 @@ describe("@loomic/shared contracts", () => {
       name: "Brand System",
       description: "Primary workspace project",
     });
+    // kind 可选：缺省即画布项目（design），存量调用方不受影响
+    expect(createRequest.kind).toBeUndefined();
+    expect(
+      projectCreateRequestSchema.parse({ name: "x", kind: "code" }).kind,
+    ).toBe("code");
+    expect(
+      projectCreateRequestSchema.safeParse({ name: "x", kind: "nope" }).success,
+    ).toBe(false);
 
     const parsedList = projectListResponseSchema.parse({
       projects: [
@@ -228,6 +236,7 @@ describe("@loomic/shared contracts", () => {
           id: "project_123",
           name: createRequest.name,
           slug: "brand-system",
+          kind: "design",
           description: createRequest.description,
           workspace: {
             id: "workspace_123",

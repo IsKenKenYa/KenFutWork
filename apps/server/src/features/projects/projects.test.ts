@@ -118,12 +118,84 @@ describe("projects repository（SQL 与隔离谓词）", () => {
 
     const [call] = dataCalls(calls);
     expect(call?.sql).toContain("from public.projects");
+    // kind 决定取哪一类项目（design=画布 / code=工作目录）
+    expect(call?.sql).toContain("kind = $1");
     // Code 工作台载体是内部容器（保留 slug），不得出现在用户的项目列表里
-    expect(call?.sql).toContain("and slug <> $1");
-    expect(call?.sql).toContain("where workspace_id = $2");
+    expect(call?.sql).toContain("and slug <> $2");
+    // :workspace 由缝追加为末位参数
+    expect(call?.sql).toContain("where workspace_id = $3");
     expect(call?.sql).toContain("and archived_at is null");
     expect(call?.sql).toContain("order by updated_at desc");
-    expect(call?.values).toEqual([CODE_WORKBENCH_SLUG, WORKSPACE_ID]);
+    expect(call?.values).toEqual(["design", CODE_WORKBENCH_SLUG, WORKSPACE_ID]);
+  });
+
+  /**
+   * 回归：项目分两类（design=画布项目 / code=工作目录项目），各自只取自己那一类。
+   * 此前 projects 只有一种语义，Code 侧「工作目录=项目」只能在客户端另造一套
+   * localStorage 项目，导致两套真相（选了工作目录列表里看不到）。
+   */
+  it("按 kind 取列表：code 项目与画布项目互不串味", async () => {
+    const { calls, runner } = createRunner();
+    await createProjectRepository(createPersistenceFromRunner(runner)).listActive(
+      WORKSPACE_ID,
+      "code",
+    );
+
+    const [call] = dataCalls(calls);
+    expect(call?.values).toEqual(["code", CODE_WORKBENCH_SLUG, WORKSPACE_ID]);
+    expect(call?.sql).toContain("kind = $1");
+  });
+
+  it("建 code 类项目时 kind 随参数落库（不落 design）", async () => {
+    const { calls, runner } = createRunner((text) => {
+      if (text.includes("insert into public.projects")) {
+        return {
+          rowCount: 1,
+          rows: [
+            {
+              id: PROJECT_ID,
+              kind: "code",
+              name: "kenfutwork",
+              slug: "kenfutwork-ab12cd",
+              description: null,
+              created_at: "2026-09-14T00:00:00+00:00",
+              updated_at: "2026-09-14T00:00:00+00:00",
+              workspace_id: WORKSPACE_ID,
+            },
+          ],
+        };
+      }
+      if (text.includes("insert into public.canvases")) {
+        return {
+          rowCount: 1,
+          rows: [{ id: "canvas-1", name: "Main Canvas", is_primary: true }],
+        };
+      }
+      return { rowCount: 0, rows: [] };
+    });
+
+    const created = await createProjectRepository(
+      createPersistenceFromRunner(runner),
+    ).createWithCanvas({
+      canvasName: "Main Canvas",
+      description: null,
+      kind: "code",
+      name: "kenfutwork",
+      slug: "kenfutwork-ab12cd",
+      userId: USER_ID,
+      workspaceId: WORKSPACE_ID,
+    });
+
+    const [projectInsert] = dataCalls(calls);
+    expect(projectInsert?.values).toEqual([
+      "kenfutwork",
+      "kenfutwork-ab12cd",
+      "code",
+      null,
+      USER_ID,
+      WORKSPACE_ID,
+    ]);
+    expect(created.project.kind).toBe("code");
   });
 
   it("主画布查询 JOIN projects 施加工作区谓词（canvases 无 workspace_id 列）", async () => {
@@ -255,11 +327,13 @@ describe("projects repository（SQL 与隔离谓词）", () => {
 
     const [projectInsert, canvasInsert] = dataCalls(calls);
     expect(projectInsert?.sql).toContain("insert into public.projects");
-    // :workspace 由缝追加为末位参数，故列位序里工作区落在 $5
-    expect(projectInsert?.sql).toContain("values ($5, $1, $2, $3, $4)");
+    // :workspace 由缝追加为末位参数，故列位序里工作区落在 $6
+    expect(projectInsert?.sql).toContain("values ($6, $1, $2, $3, $4, $5)");
+    // 缺省 kind 落 design：存量调用方（Design 建项目）语义不变
     expect(projectInsert?.values).toEqual([
       "新项目",
       "xin-xiangmu-ab12cd",
+      "design",
       null,
       USER_ID,
       WORKSPACE_ID,
@@ -341,6 +415,7 @@ describe("project service（错误映射与行为保持不变）", () => {
             id: PROJECT_ID,
             name: "项目",
             slug: "xiangmu",
+            kind: "design",
             description: "描述",
             created_at: "2026-09-13T00:00:00+00:00",
             updated_at: "2026-09-13T01:00:00+00:00",
@@ -364,6 +439,7 @@ describe("project service（错误映射与行为保持不变）", () => {
         createdAt: "2026-09-13T00:00:00+00:00",
         description: "描述",
         id: PROJECT_ID,
+        kind: "design",
         name: "项目",
         primaryCanvas: {
           id: "canvas-1",
@@ -390,6 +466,7 @@ describe("project service（错误映射与行为保持不变）", () => {
             id: PROJECT_ID,
             name: "项目",
             slug: "xiangmu",
+            kind: "design",
             description: null,
             created_at: "2026-09-13T00:00:00+00:00",
             updated_at: "2026-09-13T00:00:00+00:00",

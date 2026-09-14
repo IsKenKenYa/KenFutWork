@@ -7,6 +7,7 @@ import {
   chatMessageSchema,
   chatSessionSummarySchema,
   modelInfoSchema,
+  projectKindSchema,
   projectSummarySchema,
   runIdSchema,
   viewerProfileSchema,
@@ -49,9 +50,19 @@ export const projectListResponseSchema = z.object({
   projects: z.array(projectSummarySchema),
 });
 
+export const projectListQuerySchema = z.object({
+  /** 只取该类型的项目；缺省取 design（画布项目）。 */
+  kind: projectKindSchema.optional(),
+});
+
 export const projectCreateRequestSchema = z.object({
   name: z.string().trim().min(1),
   description: z.string().trim().min(1).optional(),
+  /**
+   * 项目类型（默认 design）。Code 模式「工作目录=项目」建 kind='code'，
+   * 两端各自按 kind 取列表，避免画布项目与工作目录项目互相串味。
+   */
+  kind: projectKindSchema.optional(),
 });
 
 export const projectCreateResponseSchema = z.object({

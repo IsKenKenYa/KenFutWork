@@ -1,5 +1,6 @@
 import type {
   ProjectCreateRequest,
+  ProjectKind,
   ProjectSummary,
   ProjectUpdateRequest,
 } from "@loomic/shared";
@@ -46,7 +47,10 @@ export type ProjectService = {
     created_at: string;
     updated_at: string;
   }>;
-  listProjects(user: AuthenticatedUser): Promise<ProjectSummary[]>;
+  listProjects(
+    user: AuthenticatedUser,
+    kind?: ProjectKind,
+  ): Promise<ProjectSummary[]>;
   saveThumbnail(
     user: AuthenticatedUser,
     projectId: string,
@@ -152,6 +156,8 @@ export function createProjectService(options: {
         .createWithCanvas({
           canvasName: "Main Canvas",
           description: normalizeDescription(input.description),
+          // 缺省 design：存量调用方（Design 建项目）语义不变
+          kind: input.kind ?? "design",
           name: normalizedName,
           slug: slugify(normalizedName),
           userId: user.id,
@@ -168,17 +174,19 @@ export function createProjectService(options: {
       });
     },
 
-    async listProjects(user) {
+    async listProjects(user, kind) {
       // 只读路径不做引导：用户已认证，引导由 /api/viewer 在页面加载时完成。
       const workspace = await resolveWorkspace(user, "project_query_failed");
 
-      const projects = await repository.listActive(workspace.id).catch(() => {
-        throw new ProjectServiceError(
-          "project_query_failed",
-          PROJECT_QUERY_FAILED_MESSAGE,
-          500,
-        );
-      });
+      const projects = await repository
+        .listActive(workspace.id, kind ?? "design")
+        .catch(() => {
+          throw new ProjectServiceError(
+            "project_query_failed",
+            PROJECT_QUERY_FAILED_MESSAGE,
+            500,
+          );
+        });
 
       if (projects.length === 0) {
         return [];
@@ -373,6 +381,7 @@ function mapProjectSummary(options: {
     created_at: string;
     description: string | null;
     id: string;
+    kind: ProjectKind;
     name: string;
     slug: string;
     updated_at: string;
@@ -389,6 +398,7 @@ function mapProjectSummary(options: {
     createdAt: options.project.created_at,
     description: options.project.description,
     id: options.project.id,
+    kind: options.project.kind,
     name: options.project.name,
     primaryCanvas: {
       id: options.canvas.id,
