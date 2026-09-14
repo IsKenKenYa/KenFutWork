@@ -20,12 +20,18 @@
  * 注意：结果来自必应网页抓取，**不是秘塔**；要接入秘塔本体就去掉 `LOOMIC_SEARCH_ENDPOINT`
  * 并填真实 Key（用 `node scripts/诊断联网搜索.mjs` 验收）。代理不可达或上游改版都会返回
  * 可读的 `errCode/errMsg`，不会伪装成「搜到 0 条」。
+ *
+ * 另两个可选环境变量：`LOOMIC_SEARCH_PORT`（监听端口，缺省 9099）、
+ * `LOOMIC_SEARCH_UPSTREAM`（上游搜索页，缺省必应；换引擎或验证解析失配时用）。
  */
 import { createServer } from "node:http";
 
 const PORT = Number(
   process.env.LOOMIC_SEARCH_PORT ?? process.env.MOCK_SEARCH_PORT ?? 9099,
 );
+/** 上游搜索结果页；改这个可以换搜索引擎（也用于验证解析失配时的报错路径）。 */
+const UPSTREAM =
+  process.env.LOOMIC_SEARCH_UPSTREAM ?? "https://www.bing.com/search";
 
 function decodeEntities(text) {
   return text
@@ -70,15 +76,12 @@ function parseBing(html) {
   return out;
 }
 
-const server = createServer(async (req, res) => {
-  // 技能 ZIP 导入联调：把测试用技能包直接喂给「从链接导入」
-  if (req.method === "GET" && req.url?.startsWith("/kfw-skill.zip")) {
-    const { readFile } = await import("node:fs/promises");
-    const buf = await readFile(new URL("./kfw-zip-import-check.zip", import.meta.url));
-    res.writeHead(200, { "content-type": "application/zip", "access-control-allow-origin": "*" });
-    res.end(buf);
-    return;
-  }
+/**
+ * 请求处理。整个函数体裹在 try/catch 里：代理是常驻进程，**一个坏请求不能把它带走**
+ * ——此前它内部还挂过一条测试用的 ZIP 路由，移动脚本后那条相对路径失效（ENOENT），
+ * 未捕获的 rejection 直接让进程退出，表现为「搜索突然不可用」且看不到原因。
+ */
+async function handleRequest(req, res) {
   if (req.method !== "POST" || !req.url?.startsWith("/search")) {
     res.writeHead(405, { "content-type": "application/json" });
     res.end(JSON.stringify({ errCode: 405, errMsg: "只支持 POST /search" }));
@@ -109,7 +112,7 @@ const server = createServer(async (req, res) => {
   const size = Math.min(Math.max(Number(body.size) || 8, 1), 20);
   try {
     const upstream = await fetch(
-      `https://www.bing.com/search?q=${encodeURIComponent(q)}&setlang=zh-CN`,
+      `${UPSTREAM}?q=${encodeURIComponent(q)}&setlang=zh-CN`,
       {
         headers: {
           "user-agent":
@@ -119,8 +122,36 @@ const server = createServer(async (req, res) => {
       },
     );
     const html = await upstream.text();
-    const webpages = parseBing(html).slice(0, size);
-    console.log(`[search-proxy] q="${q}" -> ${webpages.length} 条（bing ${upstream.status}）`);
+    const parsed = parseBing(html);
+    /**
+     * 「抓到了东西但不是搜索结果页」必须**报错**，不能返回空数组：空数组会被产品当成
+     * 「搜到 0 条」呈现给用户，把「代理坏了/端点配错/上游改版」伪装成「这个词没结果」，
+     * 排查时完全无从下手。两种可判定的情形各自给一句话：
+     * ① 拿到的不是 HTML（content-type 不对）——多半是 ENDPOINT/UPSTREAM 配错；
+     * ② 是大页面却一条都解不出来——多半是上游改版，选择器失配。
+     */
+    const contentType = upstream.headers.get("content-type") ?? "";
+    const looksLikeHtml = contentType.includes("text/html") || contentType === "";
+    const looksLikeResultsPage = html.length > 20_000;
+    if (parsed.length === 0 && upstream.ok) {
+      const reason = !looksLikeHtml
+        ? `上游返回的不是网页（content-type: ${contentType || "未知"}），请检查上游地址是否配错。`
+        : looksLikeResultsPage
+          ? "上游页面结构已变（大页面却解析不到结果），请更新搜索代理的解析规则。"
+          : "";
+      if (reason) {
+        console.log(
+          `[search-proxy] q="${q}" -> 0 条被判定为故障：${reason}`,
+        );
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ errCode: 5002, errMsg: reason }));
+        return;
+      }
+    }
+    const webpages = parsed.slice(0, size);
+    console.log(
+      `[search-proxy] q="${q}" -> ${webpages.length} 条（${new URL(UPSTREAM).host} ${upstream.status}）`,
+    );
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ webpages }));
   } catch (error) {
@@ -128,6 +159,16 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ errCode: 5001, errMsg: `上游抓取失败：${error.message}` }));
   }
+}
+
+const server = createServer((req, res) => {
+  void handleRequest(req, res).catch((error) => {
+    console.log(`[search-proxy] 请求处理异常（已兜住，进程继续）：${error.message}`);
+    if (!res.headersSent) {
+      res.writeHead(200, { "content-type": "application/json" });
+    }
+    res.end(JSON.stringify({ errCode: 5003, errMsg: `代理内部错误：${error.message}` }));
+  });
 });
 
 server.listen(PORT, "127.0.0.1", () => {
