@@ -185,3 +185,84 @@ describe("工具输出透传（web_search 来源可达客户端）", () => {
     expect((completed?.output?.results as unknown[]).length).toBe(2);
   });
 });
+
+/**
+ * 回归（GUI 全流程实测）：工具抛错时 LangChain 发 `on_tool_error`（不发 `on_tool_end`），
+ * 适配器没有对应分支 → 客户端工具块**永远停在 status:"running"**（转圈的假象），
+ * 用户既看不到失败、也看不到原因。这条支路必须以终态事件收尾并带上可读原因。
+ */
+describe("工具抛错：以终态事件收尾并带可读原因", () => {
+  function toolErrorStream(error: unknown): AsyncIterable<unknown> {
+    return {
+      async *[Symbol.asyncIterator]() {
+        yield {
+          event: "on_tool_start",
+          name: "web_search",
+          run_id: "call-err-1",
+          data: { input: { query: "python 教程" } },
+        };
+        yield {
+          event: "on_tool_error",
+          name: "web_search",
+          run_id: "call-err-1",
+          data: { error },
+        };
+      },
+    };
+  }
+
+  it("on_tool_error → tool.completed，outputSummary 带「失败：」与可读原因", async () => {
+    const events = await collect(
+      toolErrorStream(
+        new Error("web_search 请求失败（API密钥无效），请检查搜索供应商配置。"),
+      ),
+      {},
+    );
+    const completed = events.find((e) => e.type === "tool.completed") as
+      | { outputSummary?: string; output?: Record<string, unknown> }
+      | undefined;
+
+    expect(completed).toBeDefined();
+    expect(completed?.outputSummary).toContain("失败：");
+    expect(completed?.outputSummary).toContain("API密钥无效");
+    expect(completed?.output?.error).toContain("API密钥无效");
+  });
+
+  it("被包装的工具错误（cause 链）：取最内层的可读文案", async () => {
+    const inner = new Error("web_search 请求失败（429），请检查搜索供应商配置。");
+    const wrapped = new Error("Tool execution failed", { cause: inner });
+    const events = await collect(toolErrorStream(wrapped), {});
+    const completed = events.find((e) => e.type === "tool.completed") as
+      | { outputSummary?: string }
+      | undefined;
+
+    expect(completed?.outputSummary).toContain("429");
+  });
+
+  it("message 带堆栈时不透出内部路径（只取首行）", async () => {
+    const withStack = new Error(
+      [
+        "web_search 请求失败（API密钥无效），请检查搜索供应商配置。",
+        "WebSearchError: 同上",
+        "    at Object.execute (/repo/apps/server/src/features/search/web-search.ts:152:15)",
+      ].join("\n"),
+    );
+    const events = await collect(toolErrorStream(withStack), {});
+    const completed = events.find((e) => e.type === "tool.completed") as
+      | { outputSummary?: string }
+      | undefined;
+
+    expect(completed?.outputSummary).toBe(
+      "失败：web_search 请求失败（API密钥无效），请检查搜索供应商配置。",
+    );
+    expect(completed?.outputSummary).not.toContain("at Object.execute");
+  });
+
+  it("错误对象缺失时不产出空文案块（有兜底文案）", async () => {
+    const events = await collect(toolErrorStream(undefined), {});
+    const completed = events.find((e) => e.type === "tool.completed") as
+      | { outputSummary?: string }
+      | undefined;
+    expect(completed?.outputSummary).toContain("失败：");
+  });
+});

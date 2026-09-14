@@ -28,6 +28,28 @@ function isClientFacing(error: unknown): boolean {
   );
 }
 
+/**
+ * 沿 `cause` 链找第一个面向用户的错误，取其文案。
+ *
+ * 存在的理由：工具抛出的可读错误会被 LangChain 包一层（ToolNode 包装错误把原文
+ * 放进 `cause`），而 `exposeToClient` 标记只落在最内层——只看顶层就会把「web_search
+ * 请求失败（API密钥无效）」压成通用文案（GUI 实测踩中：用户看不到原因）。
+ */
+function clientFacingMessage(error: unknown): string | undefined {
+  let current: unknown = error;
+  let depth = 0;
+  while (current !== undefined && current !== null && depth < 5) {
+    if (isClientFacing(current)) {
+      const message =
+        current instanceof Error ? current.message : String(current);
+      if (message.trim()) return message;
+    }
+    current = (current as { cause?: unknown }).cause;
+    depth += 1;
+  }
+  return undefined;
+}
+
 export function sanitizeErrorForClient(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
   // Log full detail server-side for debugging
@@ -65,8 +87,9 @@ export function sanitizeErrorForClient(error: unknown): string {
   }
 
   // Map to user-friendly messages
-  if (isClientFacing(error) && raw.length <= 200) {
-    return raw;
+  const clientFacing = clientFacingMessage(error);
+  if (clientFacing && clientFacing.length <= 200) {
+    return clientFacing;
   }
   if (PROVIDER_PATTERN.test(raw)) {
     return "AI 服务暂时不可用，请稍后重试。";

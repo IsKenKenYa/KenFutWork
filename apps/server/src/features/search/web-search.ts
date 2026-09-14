@@ -80,6 +80,22 @@ export function parseSearchError(payload: unknown): string | undefined {
   return message || `上游错误码 ${code}`;
 }
 
+/**
+ * 面向用户的工具错误。
+ *
+ * 这些文案本身就能直接展示（「请检查搜索供应商配置」是可执行的下一步），而通用
+ * sanitizer 会把未知错误压成「请求处理失败，请重试。」——用户既看不到原因、也
+ * 不知道去哪儿改。标记 `exposeToClient` 后 sanitizer 原样透传（见 utils/error-sanitizer）。
+ */
+export class WebSearchError extends Error {
+  readonly exposeToClient = true;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "WebSearchError";
+  }
+}
+
 export function createWebSearchTool(deps: {
   config: WebSearchProviderConfig;
   fetchImpl?: FetchImpl;
@@ -105,7 +121,7 @@ export function createWebSearchTool(deps: {
     execute: async (args) => {
       const query = String(args.query ?? "").trim();
       if (!query) {
-        throw new Error("web_search 需要 query 参数");
+        throw new WebSearchError("web_search 需要 query 参数");
       }
       const num = Math.min(Math.max(Math.floor(Number(args.num ?? 8)) || 8, 1), 20);
       const endpoint =
@@ -126,14 +142,14 @@ export function createWebSearchTool(deps: {
         }),
       });
       if (!response.ok) {
-        throw new Error(
+        throw new WebSearchError(
           `web_search 请求失败（${response.status}），请检查搜索供应商配置。`,
         );
       }
       const payload = await response.json();
       const upstreamError = parseSearchError(payload);
       if (upstreamError) {
-        throw new Error(
+        throw new WebSearchError(
           `web_search 请求失败（${upstreamError}），请检查搜索供应商配置。`,
         );
       }

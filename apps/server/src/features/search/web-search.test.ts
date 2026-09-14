@@ -234,3 +234,36 @@ describe("web_search 工具（§4.5 联网搜索）", () => {
     disabled.dispose();
   });
 });
+
+/**
+ * 回归（GUI 全流程实测）：工具错误若不是「面向用户」的，会被通用 sanitizer 压成
+ * 「请求处理失败，请重试。」——用户看不出是 Key 的问题。这里把「可读文案必须带
+ * exposeToClient 标记」锁死，防止以后新增抛错点时漏标记。
+ */
+describe("web_search 的错误是面向用户的（可透传到客户端）", () => {
+  it("Key 无效 / 缺 Key / 缺参数：抛出的错误都带 exposeToClient", async () => {
+    const noKey = createWebSearchTool({
+      config: { provider: "metaso", apiKey: "" },
+      fetchImpl: vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ errCode: 2005, errMsg: "API密钥无效" }),
+      })),
+    });
+    await expect(noKey.execute({ query: "x" }, {})).rejects.toMatchObject({
+      exposeToClient: true,
+    });
+
+    const missingQuery = createWebSearchTool({
+      config: { provider: "metaso", apiKey: "k" },
+      fetchImpl: vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ webpages: [] }),
+      })),
+    });
+    await expect(missingQuery.execute({ query: " " }, {})).rejects.toMatchObject(
+      { exposeToClient: true },
+    );
+  });
+});

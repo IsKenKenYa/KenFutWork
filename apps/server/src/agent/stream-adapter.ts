@@ -298,6 +298,37 @@ export async function* adaptDeepAgentStream(
           } satisfies StreamEvent;
         }
       }
+
+      /**
+       * 工具抛错（LangChain 发 on_tool_error，不发 on_tool_end）。
+       *
+       * 没有这一支时，工具块在客户端永远停在 `status: "running"`——用户看到
+       * 一个转圈的工具调用，既不知道它失败了、也不知道为什么失败（GUI 实测：
+       * web_search 打真实秘塔端点、Key 无效，块停在 running，run 只报通用文案）。
+       * 用 `tool.completed` 收尾（契约里工具块只有 running/completed 两态），
+       * 把可读原因放进 outputSummary，失败的块因此变成「有结论」而不是「卡住」。
+       */
+      if (evt.event === "on_tool_error") {
+        const toolName = evt.name ?? "unknown_tool";
+        const toolCallId = readString(evt.run_id) ?? `tool_${Date.now()}`;
+        if (seenCompletedToolCalls.has(toolCallId)) continue;
+        seenCompletedToolCalls.add(toolCallId);
+
+        const reason = describeToolError(evt.data?.error);
+        yield {
+          output: { error: reason },
+          outputSummary: `失败：${reason}`,
+          runId: options.runId,
+          timestamp: now(),
+          toolCallId,
+          toolName,
+          type: "tool.completed",
+        };
+
+        if (SUB_AGENT_PARENT_TOOLS.has(toolName)) {
+          activeSubAgentRuns.delete(toolCallId);
+        }
+      }
     }
   } catch (error) {
     /**
@@ -613,6 +644,37 @@ function isAbortError(error: unknown) {
     (error.name === "AbortError" ||
       error.message === "This operation was aborted")
   );
+}
+
+/**
+ * 从工具错误里取一句可读原因（面向用户）。
+ *
+ * LangChain 会把工具抛的错包一层（`ToolNode` 的包装错误 + `cause` 链），直接取
+ * `error.message` 有时只剩包装文案；故沿 `cause` 链找**最深**的一条消息。
+ *
+ * 另外 LangChain 的 `message` 常把堆栈一起带上（`Error.message + "\n at …"`），
+ * 直接透出会把内部路径摊给用户看——只取首行，并按长度收敛（工具报错都短；
+ * 超过 200 字的当噪声，退回顶层消息）。
+ */
+function describeToolError(error: unknown): string {
+  const firstLine = (value: unknown): string => {
+    const raw = value instanceof Error ? value.message : String(value ?? "");
+    return (raw.split("\n")[0] ?? "").trim();
+  };
+
+  const messages: string[] = [];
+  let current: unknown = error;
+  let depth = 0;
+  while (current !== undefined && current !== null && depth < 5) {
+    const line = firstLine(current);
+    if (line) messages.push(line);
+    current = (current as { cause?: unknown }).cause;
+    depth += 1;
+  }
+  const deepest = messages[messages.length - 1];
+  const readable =
+    deepest && deepest.length <= 200 ? deepest : (messages[0] ?? "工具执行失败");
+  return readable.length > 200 ? `${readable.slice(0, 200)}…` : readable;
 }
 
 function isStreamEvent(value: unknown): value is LangChainStreamEvent {
