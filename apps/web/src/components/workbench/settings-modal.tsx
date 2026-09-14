@@ -8,7 +8,6 @@ import { ProfileSection } from "@/components/profile-section";
 import { ProviderSettings } from "@/components/provider-settings";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { BrowserSettingsSection } from "@/components/workbench/browser-settings-section";
-import { McpSettingsSection } from "@/components/workbench/mcp-settings-section";
 import { RulesMemorySection } from "@/components/workbench/rules-memory-section";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -24,7 +23,6 @@ export type SettingsTab =
   | "model"
   | "providers"
   | "permissions"
-  | "mcp"
   | "browser"
   | "rules";
 
@@ -33,7 +31,6 @@ const TABS: Array<{ id: SettingsTab; label: string }> = [
   { id: "model", label: "模型" },
   { id: "providers", label: "供应商" },
   { id: "permissions", label: "权限" },
-  { id: "mcp", label: "MCP" },
   { id: "browser", label: "浏览器" },
   { id: "rules", label: "规则与记忆" },
 ];
@@ -41,6 +38,7 @@ const TABS: Array<{ id: SettingsTab; label: string }> = [
 /**
  * 设置（居中大模态，左侧分类导航 + 右侧内容）：
  * 通用/模型/供应商/权限走真实后端，浏览器/规则与记忆为本机偏好。
+ * MCP 管理不在设置内——见侧栏「MCP」（含精选目录与官方注册表）。
  */
 export function SettingsModal({
   open,
@@ -179,10 +177,6 @@ export function SettingsModal({
             ) : activeTab === "permissions" ? (
               token ? (
                 <PermissionSection accessToken={token} />
-              ) : null
-            ) : activeTab === "mcp" ? (
-              token ? (
-                <McpSettingsSection accessToken={token} />
               ) : null
             ) : activeTab === "browser" ? (
               <BrowserSettingsSection />

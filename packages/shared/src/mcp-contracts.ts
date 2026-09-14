@@ -73,3 +73,66 @@ export const mcpServerResponseSchema = z.object({
   server: mcpServerViewSchema,
 });
 export type McpServerResponse = z.infer<typeof mcpServerResponseSchema>;
+
+// === 精选目录与官方注册表（MCP 市场） ===
+
+export const mcpCuratedParamSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  example: z.string(),
+  required: z.boolean(),
+});
+
+export const mcpCuratedServerSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  title: z.string(),
+  description: z.string(),
+  command: z.string(),
+  argsTemplate: z.array(z.string()),
+  params: z.array(mcpCuratedParamSchema),
+  envKeys: z.array(z.string()).optional(),
+  requires: z.enum(["node", "python"]),
+  homepage: z.string().optional(),
+});
+export type McpCuratedServer = z.infer<typeof mcpCuratedServerSchema>;
+
+export const mcpCuratedListResponseSchema = z.object({
+  servers: z.array(mcpCuratedServerSchema),
+});
+export type McpCuratedListResponse = z.infer<
+  typeof mcpCuratedListResponseSchema
+>;
+
+export const mcpRegistryServerSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  version: z.string(),
+  repositoryUrl: z.string().nullable(),
+  packages: z.array(
+    z.object({
+      registryType: z.string(),
+      identifier: z.string(),
+      version: z.string().optional(),
+      transportType: z.string().optional(),
+      runtimeHint: z.string().optional(),
+    }),
+  ),
+  remotes: z.array(z.object({ type: z.string(), url: z.string().optional() })),
+  installable: z.boolean(),
+  unsupportedReason: z.string().nullable(),
+  suggestedCommand: z.string().nullable(),
+  suggestedArgs: z.array(z.string()),
+  suggestedName: z.string(),
+  isLatest: z.boolean(),
+});
+export type McpRegistryServer = z.infer<typeof mcpRegistryServerSchema>;
+
+export const mcpRegistrySearchResponseSchema = z.object({
+  servers: z.array(mcpRegistryServerSchema),
+  count: z.number(),
+  nextCursor: z.string().nullable(),
+});
+export type McpRegistrySearchResponse = z.infer<
+  typeof mcpRegistrySearchResponseSchema
+>;

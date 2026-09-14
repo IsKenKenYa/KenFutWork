@@ -8,7 +8,9 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 
 import type { AdminService } from "../features/admin/admin-service.js";
 import type { RequestAuthenticator } from "../features/auth/types.js";
+import { CURATED_MCP_SERVERS } from "../features/mcp/curated-catalog.js";
 import type { McpService } from "../features/mcp/mcp-service.js";
+import { searchOfficialRegistry } from "../features/mcp/registry-client.js";
 
 /**
  * MCP server 管理路由（新增：此前只能改环境变量）。
@@ -72,6 +74,37 @@ export async function registerMcpRoutes(
     return reply
       .code(200)
       .send({ servers: await options.service.listStatuses() });
+  });
+
+  // GET /api/mcp/catalog — 内置精选目录（离线可用，一键添加）
+  app.get("/api/mcp/catalog", async (request, reply) => {
+    const user = await options.auth.authenticate(request);
+    if (!user) return sendUnauthenticated(reply);
+    return reply.code(200).send({ servers: CURATED_MCP_SERVERS });
+  });
+
+  // GET /api/mcp/registry — 官方 MCP Registry 检索（代理；无需密钥）
+  // 只读：登录即可。检索词走官方 `search`（对名称做子串匹配）。
+  app.get("/api/mcp/registry", async (request, reply) => {
+    const user = await options.auth.authenticate(request);
+    if (!user) return sendUnauthenticated(reply);
+    const { q = "", limit = "20" } = request.query as Record<string, string>;
+    try {
+      const result = await searchOfficialRegistry(
+        q,
+        Number.parseInt(limit, 10) || 20,
+      );
+      return reply.code(200).send(result);
+    } catch (error) {
+      return sendError(
+        reply,
+        "mcp_registry_unavailable",
+        `官方 MCP 注册表暂不可用：${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        502,
+      );
+    }
   });
 
   // POST /api/mcp/servers — 新增（连接失败不报错：状态里可查原因）

@@ -2,16 +2,19 @@
 
 import type { ExecutionMode, ProjectSummary } from "@loomic/shared";
 import {
+  Blocks,
   Brain,
   Code2,
   Folder,
   FolderOpen,
   FolderPlus,
   Layers,
+  MessageSquare,
   Mic,
   Palette,
   PanelLeftClose,
   PanelLeftOpen,
+  Plug,
   Plus,
   Send,
   ShieldCheck,
@@ -37,6 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { McpModal } from "@/components/workbench/mcp-modal";
 import { PluginMarketModal } from "@/components/workbench/plugin-market-modal";
 import {
   SettingsModal,
@@ -248,6 +252,7 @@ export function Workbench() {
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
+  const [mcpOpen, setMcpOpen] = useState(false);
   /** 平台管理员标记：仅用于「显示后台入口」，鉴权在服务端（/api/admin/*）。 */
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
 
@@ -994,7 +999,14 @@ export function Workbench() {
               onClick={() => setSkillsOpen(true)}
               className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
-              <Sparkles className="h-4 w-4 shrink-0" /> 技能
+              <Blocks className="h-4 w-4 shrink-0" /> 技能
+            </button>
+            <button
+              type="button"
+              onClick={() => setMcpOpen(true)}
+              className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <Plug className="h-4 w-4 shrink-0" /> MCP
             </button>
           </nav>
 
@@ -1086,7 +1098,7 @@ export function Workbench() {
                       label={t.title}
                       active={activeTaskId === t.id}
                       icon={
-                        <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       }
                       onOpen={() => setActiveTaskId(t.id)}
                       onRename={(next) => renameTask(t.id, next)}
@@ -1715,6 +1727,14 @@ export function Workbench() {
         <SkillsModal
           open={skillsOpen}
           onClose={() => setSkillsOpen(false)}
+          accessToken={session?.access_token ?? null}
+        />
+      ) : null}
+      {/* MCP 管理：从「设置」挪到侧栏（与技能并列），页面带精选目录与官方注册表 */}
+      {mcpOpen ? (
+        <McpModal
+          open={mcpOpen}
+          onClose={() => setMcpOpen(false)}
           accessToken={session?.access_token ?? null}
         />
       ) : null}
