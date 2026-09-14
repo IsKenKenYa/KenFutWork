@@ -244,7 +244,7 @@ export function ImageGeneratorPanel({
     <div
       ref={panelRef}
       style={{ left: screenX, top: screenY }}
-      className="fixed z-[100] w-[450px] rounded-xl border-[0.5px] border-border bg-card/95 p-2 shadow-card backdrop-blur-lg"
+      className="fixed z-[100] w-[450px] rounded-xl border-[0.5px] border-border bg-card p-2 shadow-card"
       onKeyDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
     >

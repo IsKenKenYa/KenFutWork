@@ -89,7 +89,7 @@ export function BrandKitSelector({
         type="button"
         disabled={updating}
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 rounded-xl bg-card/80 backdrop-blur-sm border border-border shadow-sm px-3 py-1.5 text-sm transition-colors hover:bg-card/90 disabled:opacity-50"
+        className="flex items-center gap-1.5 rounded-xl bg-card border border-border shadow-sm px-3 py-1.5 text-sm transition-colors hover:bg-card disabled:opacity-50"
       >
         <span className="truncate max-w-[120px]">{label}</span>
         <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-50" />

@@ -342,7 +342,7 @@ export function VideoGeneratorPanel({
     <div
       ref={panelRef}
       style={{ left: screenX, top: screenY }}
-      className="fixed z-[100] w-[520px] rounded-[24px] border border-border bg-card/95 shadow-card backdrop-blur-lg"
+      className="fixed z-[100] w-[520px] rounded-[24px] border border-border bg-card shadow-card"
       onKeyDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
     >

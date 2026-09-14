@@ -35,6 +35,8 @@ type ChatInputProps = {
 export type ChatInputHandle = {
   /** Remove the @query text from input after picker selection */
   clearAtQuery: () => void;
+  /** 追加文本并聚焦（对话区右键「粘贴」回填用）。 */
+  appendText: (text: string) => void;
 };
 
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
@@ -68,6 +70,18 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           const lastAtIdx = prev.lastIndexOf("@");
           if (lastAtIdx === -1) return prev;
           return prev.slice(0, lastAtIdx);
+        });
+      },
+      appendText(text: string) {
+        if (!text) return;
+        setValue((prev) => (prev ? `${prev}${text}` : text));
+        // 聚焦并把光标放到末尾（用户可直接继续编辑）
+        requestAnimationFrame(() => {
+          const textarea = textareaRef.current;
+          if (!textarea) return;
+          textarea.focus();
+          const end = textarea.value.length;
+          textarea.setSelectionRange(end, end);
         });
       },
     }));

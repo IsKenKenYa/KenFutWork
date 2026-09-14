@@ -29,7 +29,7 @@ export function CanvasAIToolbar({
   return (
     <>
       {/* AI toolbar buttons — top-right, below the nav bar */}
-      <div className="absolute top-3 right-3 z-20 flex gap-0.5 rounded-xl p-1 bg-card/75 backdrop-blur-lg border border-border shadow-card">
+      <div className="absolute top-3 right-3 z-20 flex gap-0.5 rounded-xl p-1 bg-card border border-border shadow-card">
         <button
           type="button"
           onClick={() =>

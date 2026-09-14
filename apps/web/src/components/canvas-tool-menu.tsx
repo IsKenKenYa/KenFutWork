@@ -486,7 +486,7 @@ export function CanvasToolMenu({
   return (
     <>
       <div
-        className="absolute bottom-5 z-30 flex items-center gap-0.5 rounded-xl p-1 bg-card/75 backdrop-blur-lg border border-border shadow-card transition-[left,transform] duration-200"
+        className="absolute bottom-5 z-30 flex items-center gap-0.5 rounded-xl p-1 bg-card border border-border shadow-card transition-[left,transform] duration-200"
         style={{
           left: leftPanelOpen ? "calc(140px + 50%)" : "50%",
           transform: "translateX(-50%)",

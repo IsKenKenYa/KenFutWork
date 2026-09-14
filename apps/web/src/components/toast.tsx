@@ -154,7 +154,7 @@ function ToastItem({
       exit={{ opacity: 0, y: -8, scale: 0.95 }}
       transition={{ duration: 0.25, ease: [0.25, 0.46, 0.45, 0.94] }}
       onClick={onDismiss}
-      className={`flex cursor-pointer items-center gap-2.5 rounded-xl px-4 py-3 text-sm font-medium shadow-lg backdrop-blur-sm ${bg}`}
+      className={`flex cursor-pointer items-center gap-2.5 rounded-xl px-4 py-3 text-sm font-medium shadow-lg ${bg}`}
     >
       {icon}
       {toast.message}

@@ -397,7 +397,7 @@ export function CanvasBottomBar({
       onKeyDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
     >
-      <div className="flex items-center gap-0.5 rounded-full bg-card/90 backdrop-blur-lg border border-border px-1 py-1 shadow-card">
+      <div className="flex items-center gap-0.5 rounded-full bg-card border border-border px-1 py-1 shadow-card">
         {/* ── Background color button ── */}
         <button
           ref={bgBtnRef}

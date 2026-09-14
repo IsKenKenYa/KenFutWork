@@ -61,7 +61,7 @@ export function VideoPlayerPanel({
     <div
       ref={panelRef}
       style={{ left: screenX, top: screenY }}
-      className="fixed z-[100] w-[480px] rounded-2xl border border-border bg-card/95 shadow-card backdrop-blur-lg overflow-hidden"
+      className="fixed z-[100] w-[480px] rounded-2xl border border-border bg-card shadow-card overflow-hidden"
       onKeyDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
     >

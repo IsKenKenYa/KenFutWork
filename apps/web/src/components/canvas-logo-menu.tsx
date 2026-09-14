@@ -184,7 +184,7 @@ export function CanvasLogoMenu({
         }}
       >
         <DropdownMenuTrigger
-          className="flex items-center justify-center size-8 rounded-xl bg-card/80 backdrop-blur-sm shadow-sm border border-border hover:bg-card transition-colors cursor-pointer outline-none"
+          className="flex items-center justify-center size-8 rounded-xl bg-card shadow-sm border border-border hover:bg-card transition-colors cursor-pointer outline-none"
           aria-label="菜单"
         >
           <Menu className="size-4 text-foreground" />

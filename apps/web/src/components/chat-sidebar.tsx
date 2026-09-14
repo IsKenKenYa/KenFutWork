@@ -10,6 +10,7 @@ import type {
   VideoGenerationPreference,
 } from "@loomic/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toChatMenuMessages } from "@/lib/chat-menu";
 import { useAgentModel } from "../hooks/use-agent-model";
 import { useBreakpoint } from "../hooks/use-breakpoint";
 import { mapServerMessages, useChatSessions } from "../hooks/use-chat-sessions";
@@ -40,6 +41,7 @@ import {
   type MessageMentionPickerItem,
   type SkillMentionItem,
 } from "./canvas-image-picker";
+import { ChatContextMenu, useChatContextMenu } from "./chat/chat-context-menu";
 import { ChatInput } from "./chat-input";
 import { ChatMessage } from "./chat-message";
 import { ChatSkills } from "./chat-skills";
@@ -138,9 +140,13 @@ export function ChatSidebar({
     dailyClaimed: boolean;
   } | null>(null);
   const chatInputRef = useRef<import("./chat-input").ChatInputHandle>(null);
+  // 对话区右键菜单（原生菜单在应用内浏览器里不弹，用户无法复制/粘贴）
+  const chatMenu = useChatContextMenu();
 
   const initialPromptSent = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  /** 对话内容容器（右键菜单「全选对话」用）。 */
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef(false);
   const messageMentionsRef = useRef(messageMentions);
   messageMentionsRef.current = messageMentions;
@@ -921,7 +927,7 @@ export function ChatSidebar({
         <button
           onClick={onToggle}
           type="button"
-          className="group inline-flex items-center gap-1 rounded-xl bg-card/80 backdrop-blur-sm border border-border px-2.5 py-1.5 text-xs text-foreground/60 shadow-sm hover:bg-card hover:text-foreground transition-colors cursor-pointer md:px-2.5 md:py-1.5 min-h-[36px] md:min-h-0"
+          className="group inline-flex items-center gap-1 rounded-xl bg-card border border-border px-2.5 py-1.5 text-xs text-foreground/60 shadow-sm hover:bg-card hover:text-foreground transition-colors cursor-pointer md:px-2.5 md:py-1.5 min-h-[36px] md:min-h-0"
         >
           <svg className="size-4 md:size-3.5" viewBox="0 0 24 24" fill="none">
             <path
@@ -1000,9 +1006,11 @@ export function ChatSidebar({
         }
       >
         <div
+          ref={messagesContainerRef}
           className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col gap-6 px-4 py-4"
           aria-live="polite"
           aria-relevant="additions"
+          onContextMenu={chatMenu.open}
         >
           {sessionsLoading || messagesLoading ? (
             <div className="flex h-full items-center justify-center">
@@ -1131,6 +1139,14 @@ export function ChatSidebar({
         {panelContent}
       </div>
       {creditDialogEl}
+      <ChatContextMenu
+        state={chatMenu.state}
+        messages={toChatMenuMessages(messages)}
+        containerRef={messagesContainerRef}
+        onPasteText={(text) => chatInputRef.current?.appendText(text)}
+        onNotice={(message) => showToast(message)}
+        onClose={chatMenu.close}
+      />
     </div>
   );
 }

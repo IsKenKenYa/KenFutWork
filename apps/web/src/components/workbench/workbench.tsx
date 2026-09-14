@@ -19,6 +19,10 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ChatContextMenu,
+  useChatContextMenu,
+} from "@/components/chat/chat-context-menu";
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
 import { LoomicLogo } from "@/components/icons/loomic-logo";
 import {
@@ -190,6 +194,15 @@ export function Workbench() {
   /** Design 模式的输入交给画布页（`/canvas?...&prompt=`）自动发送，不落到工作台会话视图。 */
   const [canvasPrompt, setCanvasPrompt] = useState<string | null>(null);
   const [followUp, setFollowUp] = useState("");
+  // Code 模式对话区右键菜单（原生菜单在应用内浏览器不弹，用户无法复制/粘贴）
+  const chatMenu = useChatContextMenu();
+  const codeMessagesRef = useRef<HTMLDivElement>(null);
+  const [chatNotice, setChatNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (!chatNotice) return;
+    const timer = window.setTimeout(() => setChatNotice(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [chatNotice]);
   const [tier, setTier] = useState("default");
   const [codeProjects, setCodeProjects] = useState<CodeProject[]>([]);
   const [thinking, setThinking] = useState("default");
@@ -1167,7 +1180,11 @@ export function Workbench() {
         ) : activeTask ? (
           <div className="mx-auto flex h-full max-w-3xl flex-col p-6">
             <h1 className="mb-4 text-lg font-medium">{activeTask.title}</h1>
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
+            <div
+              ref={codeMessagesRef}
+              className="min-h-0 flex-1 space-y-4 overflow-y-auto"
+              onContextMenu={chatMenu.open}
+            >
               {activeTask.messages.map((msg, i) =>
                 msg.role === "user" ? (
                   <div
@@ -1679,6 +1696,25 @@ export function Workbench() {
           onClose={() => setSkillsOpen(false)}
           accessToken={session?.access_token ?? null}
         />
+      ) : null}
+      <ChatContextMenu
+        state={chatMenu.state}
+        messages={(activeTask?.messages ?? []).map((message) => ({
+          role: message.role,
+          text: message.text,
+        }))}
+        containerRef={codeMessagesRef}
+        onPasteText={(text) => setFollowUp((prev) => `${prev}${text}`)}
+        onNotice={(message) => setChatNotice(message)}
+        onClose={chatMenu.close}
+      />
+      {chatNotice ? (
+        <div
+          role="status"
+          className="fixed bottom-6 left-1/2 z-[3000] -translate-x-1/2 rounded-xl border border-border bg-card px-4 py-2 text-xs text-foreground shadow-lg"
+        >
+          {chatNotice}
+        </div>
       ) : null}
     </div>
   );
