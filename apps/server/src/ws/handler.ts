@@ -9,6 +9,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { WebSocket } from "ws";
 import type { AgentRunService } from "../agent/runtime.js";
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
+import { isPlanApprovalMessage } from "../features/agent-modes/execution-mode-service.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type {
   AuthenticatedUser,
@@ -393,26 +394,32 @@ async function handleRunCommand(
   // 执行模式（DEC-3）：WS 载荷声明 → 按真实 threadId 激活（写穿 chat_sessions）
   //（threadId 是服务端内部 ID，客户端拿不到，故不走 PUT /execution-modes/:threadId）
   const modeScope = viewer ? { workspaceId: viewer.workspace.id } : undefined;
-  if (payload.executionMode && threadId && services.agentModes) {
+  // plan 批准门（机器可读）：线程在 plan 且消息本身就是批准短语时，本条消息起按
+  // agent 执行——过去文字「批准」不解锁工具门，用户必须再手动切档（GUI 实测多绕一步）
+  let effectiveMode = payload.executionMode;
+  if (
+    effectiveMode === "plan" &&
+    threadId &&
+    services.agentModes &&
+    isPlanApprovalMessage(payload.prompt)
+  ) {
+    effectiveMode = "agent";
+    log.info("plan_approval_auto_upgrade", {
+      threadId,
+      detail: "plan 批准短语命中，本条消息起按 agent 执行",
+    });
+  }
+  if (effectiveMode && threadId && services.agentModes) {
     try {
-      await services.agentModes.activate(
-        threadId,
-        payload.executionMode,
-        modeScope,
-      );
+      await services.agentModes.activate(threadId, effectiveMode, modeScope);
     } catch (error) {
       // 内存激活已先生效（store 失败只影响重启后的读回），run 按新模式继续
       log.warn("execution_mode_persist_failed", {
-        executionMode: payload.executionMode,
+        executionMode: effectiveMode,
         error: error instanceof Error ? error.message : String(error),
       });
     }
-  } else if (
-    !payload.executionMode &&
-    threadId &&
-    services.agentModes &&
-    modeScope
-  ) {
+  } else if (!effectiveMode && threadId && services.agentModes && modeScope) {
     // 未声明模式的 run（画布助手/旧客户端）：读回线程持久化模式，
     // 重启后线程仍按既定模式走（引导 + 工具门都以 hydrate 后的缓存为准）
     try {

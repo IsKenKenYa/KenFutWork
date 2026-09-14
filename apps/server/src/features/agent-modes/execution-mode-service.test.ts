@@ -5,6 +5,7 @@ import {
   BUILTIN_EXECUTION_MODES,
   createExecutionModeService,
   evaluateToolPolicy,
+  isPlanApprovalMessage,
 } from "./execution-mode-service.js";
 import type { ExecutionModeStore } from "./execution-mode-store.js";
 
@@ -183,5 +184,52 @@ describe("模式工具策略（evaluateToolPolicy）", () => {
       expect(evaluateToolPolicy(policy, "write_file").allowed).toBe(true);
       expect(evaluateToolPolicy(policy, "execute").allowed).toBe(true);
     }
+  });
+});
+
+describe("plan 批准门（isPlanApprovalMessage，机器可读批准）", () => {
+  it("整句批准短语命中：中英文、句末标点、大小写、首尾空白", () => {
+    for (const text of [
+      "批准",
+      "批准！",
+      "批准。",
+      "  批准  ",
+      "同意执行",
+      "开始执行",
+      "按计划执行",
+      "就这么办",
+      "没问题。",
+      "可以",
+      "OK",
+      "ok!",
+      "Approved.",
+      "LGTM",
+      "go ahead",
+    ]) {
+      expect(isPlanApprovalMessage(text), JSON.stringify(text)).toBe(true);
+    }
+  });
+
+  it("含批准词但带额外内容的不算（误升档比多切一次档危险）", () => {
+    for (const text of [
+      "批准这个方案，不过第三步先改改",
+      "不批准",
+      "先不批准，我再想想",
+      "同意，但是换一个文件名",
+      "批准了，另外帮我看看测试",
+      "什么时候开始执行？",
+      "我要开始执行我的计划了",
+    ]) {
+      expect(isPlanApprovalMessage(text), JSON.stringify(text)).toBe(false);
+    }
+  });
+
+  it("空串/超长/普通对话不命中", () => {
+    expect(isPlanApprovalMessage("")).toBe(false);
+    expect(isPlanApprovalMessage("   ")).toBe(false);
+    expect(
+      isPlanApprovalMessage("这个方案看起来非常周密，辛苦你了，请继续保持"),
+    ).toBe(false);
+    expect(isPlanApprovalMessage("帮我写个爬虫")).toBe(false);
   });
 });

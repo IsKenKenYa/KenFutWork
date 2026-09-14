@@ -86,6 +86,58 @@ const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "get_brand_kit",
 ]);
 
+/**
+ * plan 批准短语的**保守白名单**（机器可读批准门）。
+ *
+ * 背景：plan 档产出计划后模型会等用户批准，但文字「批准」过去不解锁工具门，
+ * 用户必须再手动把执行模式切回自主（GUI 实测多绕一步）。现在 run 入口检测到
+ * 「线程处于 plan + 消息本身就是批准短语」时，本条消息起按 agent 执行。
+ *
+ * 刻意用**整句精确匹配**而非子串：含批准词但带额外内容的消息
+ * （「批准这个方案，不过第三步先改改」「不批准」）一律不算——
+ * 误升档比多切一次档危险。
+ */
+const PLAN_APPROVAL_PHRASES: ReadonlySet<string> = new Set([
+  "批准",
+  "批准了",
+  "批准执行",
+  "同意",
+  "同意执行",
+  "通过",
+  "开始执行",
+  "开始吧",
+  "执行吧",
+  "继续执行",
+  "按计划执行",
+  "照计划执行",
+  "就这么办",
+  "没问题",
+  "可以",
+  "行",
+  "好",
+  "好的",
+  "ok",
+  "okay",
+  "go",
+  "go ahead",
+  "approved",
+  "approve",
+  "lgtm",
+]);
+
+/** 判定一条 run 输入是否为 plan 批准短语（整句、忽略首尾空白与句末标点、拉丁不区分大小写）。 */
+export function isPlanApprovalMessage(input: string): boolean {
+  const trimmed = input.trim();
+  if (!trimmed || trimmed.length > 12) {
+    return false;
+  }
+  const normalized = trimmed
+    .replace(/[.!?:;、。！？：；，,\s]+$/u, "")
+    .trim()
+    .toLowerCase();
+  return PLAN_APPROVAL_PHRASES.has(normalized);
+}
+
 /** 模式工具策略：solo 全禁、plan 只读，其余全放行。 */
 export type ToolPolicy =
   | { kind: "allow-all" }

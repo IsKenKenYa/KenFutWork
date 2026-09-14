@@ -9,6 +9,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 
 import type { AgentRunService } from "../agent/runtime.js";
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
+import { isPlanApprovalMessage } from "../features/agent-modes/execution-mode-service.js";
 import {
   type AgentRunMetadataService,
   AgentRunPersistenceError,
@@ -145,7 +146,8 @@ export async function registerRunRoutes(
       }
 
       // 执行模式（DEC-3）：载荷声明 → 按真实 threadId 激活并写穿持久化；
-      // 未声明 → 读回线程持久化模式（与 WS 路径同口径，重启后仍按线程模式走）
+      // 未声明 → 读回线程持久化模式（与 WS 路径同口径，重启后仍按线程模式走）。
+      // plan 批准门（机器可读）：与 WS 路径同口径，批准短语本条消息起按 agent 执行。
       if (sessionThread && options.agentModes) {
         const workspace =
           authenticatedUser && options.viewerService
@@ -154,11 +156,15 @@ export async function registerRunRoutes(
                 .catch(() => null)
             : null;
         const modeScope = workspace ? { workspaceId: workspace.id } : undefined;
+        let effectiveMode = payload.executionMode;
+        if (effectiveMode === "plan" && isPlanApprovalMessage(payload.prompt)) {
+          effectiveMode = "agent";
+        }
         try {
-          if (payload.executionMode) {
+          if (effectiveMode) {
             await options.agentModes.activate(
               sessionThread.threadId,
-              payload.executionMode,
+              effectiveMode,
               modeScope,
             );
           } else if (modeScope) {
