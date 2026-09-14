@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { getServerBaseUrl } from "@/lib/env";
+import { ListEmpty, ListLoading } from "./list-state";
 import { PluginExportDialog } from "./plugin-export-dialog";
 import { PluginInstallByUrl } from "./plugin-install-by-url";
 
@@ -173,11 +174,16 @@ export function PluginMarketModal({
             ) : null}
 
             {loading ? (
-              <p className="text-sm text-muted-foreground">加载中…</p>
+              <ListLoading label="正在加载插件…" rows={3} />
             ) : visible.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                {tab === "installed" ? "暂无已安装插件" : "未找到匹配的插件"}
-              </p>
+              <ListEmpty
+                title={
+                  tab === "installed" ? "暂无已安装插件" : "未找到匹配的插件"
+                }
+                {...(tab === "installed"
+                  ? { hint: "可在「发现」里按来源链接安装。" }
+                  : {})}
+              />
             ) : (
               <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {visible.map((entry) => {

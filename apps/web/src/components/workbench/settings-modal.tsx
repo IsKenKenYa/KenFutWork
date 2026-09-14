@@ -8,6 +8,7 @@ import { ProfileSection } from "@/components/profile-section";
 import { ProviderSettings } from "@/components/provider-settings";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { BrowserSettingsSection } from "@/components/workbench/browser-settings-section";
+import { ListLoading } from "@/components/workbench/list-state";
 import { RulesMemorySection } from "@/components/workbench/rules-memory-section";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -155,7 +156,7 @@ export function SettingsModal({
           </nav>
           <div className="min-w-0 flex-1 overflow-y-auto px-6 py-4">
             {loading && !profile ? (
-              <p className="text-sm text-muted-foreground">加载中…</p>
+              <ListLoading label="正在加载设置…" rows={2} />
             ) : activeTab === "general" ? (
               profile ? (
                 <ProfileSection

@@ -26,6 +26,7 @@ import {
   skillSourceLabel,
   skillStateLabel,
 } from "@/lib/skills-view";
+import { ListEmpty, ListError, ListLoading } from "./list-state";
 
 const CATEGORIES: SkillCategory[] = [
   "design",
@@ -249,13 +250,12 @@ export function SkillsModal({
 
             {tab === "mine" ? (
               loading ? (
-                <p className="text-sm text-muted-foreground">加载中…</p>
+                <ListLoading label="正在加载技能…" rows={3} />
               ) : visible.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  {query
-                    ? "未找到匹配的技能"
-                    : "暂无技能，去「导入 / 新建」添加"}
-                </p>
+                <ListEmpty
+                  title={query ? "未找到匹配的技能" : "暂无技能"}
+                  {...(query ? {} : { hint: "去「导入 / 新建」添加" })}
+                />
               ) : (
                 <ul className="space-y-2">
                   {visible.map((row) => (
@@ -672,9 +672,10 @@ function SkillsMarketPanel({
           type="button"
           onClick={() => search(query)}
           disabled={loading}
-          className="rounded-md bg-foreground px-3 py-1.5 text-sm text-background disabled:opacity-40"
+          className="flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-sm text-background disabled:opacity-40"
         >
-          {loading ? "检索中…" : "搜索"}
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+          {loading ? "搜索中" : "搜索"}
         </button>
       </div>
 
@@ -684,14 +685,19 @@ function SkillsMarketPanel({
       </p>
 
       {message ? <p className="text-xs text-emerald-600">{message}</p> : null}
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
 
       {loading && items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">正在检索市场…</p>
+        <ListLoading label="正在检索技能市场…" rows={3} />
+      ) : error ? (
+        <ListError
+          message={error}
+          hint="市场数据来自 npm / skills.sh 外部服务；也可以用「导入 / 新建」从链接或本地包安装。"
+        />
       ) : items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          {error ? "" : "没有匹配的技能。"}
-        </p>
+        <ListEmpty
+          title="没有匹配的技能"
+          hint="换英文关键词再试（如 pdf / browser / seo）。"
+        />
       ) : (
         <ul className="space-y-2">
           {items.map((item) => (

@@ -16,6 +16,7 @@ import {
   formatArgsText,
   type McpServerFormInput,
 } from "@/lib/mcp-form";
+import { ListEmpty, ListError, ListLoading } from "./list-state";
 
 const EMPTY_FORM: McpServerFormInput = {
   name: "",
@@ -310,11 +311,12 @@ function ConfiguredTab({
       </p>
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">加载中…</p>
+        <ListLoading label="正在加载已配置的 MCP server…" rows={2} />
       ) : servers.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          尚未配置——去「推荐」一键添加，或在下方手动添加。
-        </p>
+        <ListEmpty
+          title="尚未配置 MCP server"
+          hint="去「推荐」一键添加，或在下方手动添加。"
+        />
       ) : (
         <ul className="space-y-2">
           {servers.map((server) => {
@@ -723,69 +725,88 @@ function RegistryTab({
           type="button"
           onClick={() => search(query)}
           disabled={loading}
-          className="rounded-md bg-foreground px-3 py-1.5 text-sm text-background disabled:opacity-40"
+          className="flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-sm text-background disabled:opacity-40"
         >
-          {loading ? "检索中…" : "搜索"}
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+          {loading ? "搜索中" : "搜索"}
         </button>
       </div>
 
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
-      {count > 0 ? (
-        <p className="text-xs text-muted-foreground">
-          共 {count} 条（按官方接口返回计）
-        </p>
-      ) : null}
-
-      <ul className="space-y-2">
-        {servers.map((server) => (
-          <li
-            key={`${server.name}@${server.version}`}
-            className="rounded-xl border p-3 transition-colors hover:border-foreground/30"
-          >
-            <div className="flex items-start gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-sm font-medium">{server.name}</span>
-                  {server.version ? <Tag>v{server.version}</Tag> : null}
-                  {server.installable ? (
-                    <Tag tone="on">可添加</Tag>
-                  ) : (
-                    <Tag tone="err">暂不支持</Tag>
-                  )}
-                </div>
-                <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                  {server.description || "（无描述）"}
-                </p>
-                <p className="mt-1 font-mono text-[11px] text-muted-foreground/70">
-                  {server.installable
-                    ? `${server.suggestedCommand} ${server.suggestedArgs.join(" ")}`
-                    : (server.unsupportedReason ?? "")}
-                </p>
-              </div>
-              <button
-                type="button"
-                disabled={!server.installable || busy !== null}
-                title={
-                  server.installable
-                    ? "添加为本机 MCP server"
-                    : (server.unsupportedReason ?? "")
-                }
-                onClick={() => {
-                  if (!server.suggestedCommand) return;
-                  void onCreate({
-                    name: server.suggestedName,
-                    command: server.suggestedCommand,
-                    args: server.suggestedArgs,
-                  });
-                }}
-                className="shrink-0 rounded-md border px-3 py-1.5 text-xs disabled:opacity-40"
-              >
-                {busy === server.suggestedName ? "添加中…" : "添加"}
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
+      {loading ? (
+        <ListLoading label="正在检索官方 MCP 注册表…" rows={3} />
+      ) : error ? (
+        <ListError
+          message={error}
+          hint="注册表是外部服务；网络不可达时可在「推荐」里添加内置的常用 server。"
+        />
+      ) : (
+        <>
+          {count > 0 ? (
+            <p className="text-xs text-muted-foreground">
+              共 {count} 条（按官方接口返回计）
+            </p>
+          ) : null}
+          {servers.length === 0 ? (
+            <ListEmpty
+              title="没有匹配的 server"
+              hint="检索词越短结果越多（官方只做名称子串匹配）。"
+            />
+          ) : (
+            <ul className="space-y-2">
+              {servers.map((server) => (
+                <li
+                  key={`${server.name}@${server.version}`}
+                  className="rounded-xl border p-3 transition-colors hover:border-foreground/30"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-sm font-medium">
+                          {server.name}
+                        </span>
+                        {server.version ? <Tag>v{server.version}</Tag> : null}
+                        {server.installable ? (
+                          <Tag tone="on">可添加</Tag>
+                        ) : (
+                          <Tag tone="err">暂不支持</Tag>
+                        )}
+                      </div>
+                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                        {server.description || "（无描述）"}
+                      </p>
+                      <p className="mt-1 font-mono text-[11px] text-muted-foreground/70">
+                        {server.installable
+                          ? `${server.suggestedCommand} ${server.suggestedArgs.join(" ")}`
+                          : (server.unsupportedReason ?? "")}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={!server.installable || busy !== null}
+                      title={
+                        server.installable
+                          ? "添加为本机 MCP server"
+                          : (server.unsupportedReason ?? "")
+                      }
+                      onClick={() => {
+                        if (!server.suggestedCommand) return;
+                        void onCreate({
+                          name: server.suggestedName,
+                          command: server.suggestedCommand,
+                          args: server.suggestedArgs,
+                        });
+                      }}
+                      className="shrink-0 rounded-md border px-3 py-1.5 text-xs disabled:opacity-40"
+                    >
+                      {busy === server.suggestedName ? "添加中…" : "添加"}
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
     </div>
   );
 }
