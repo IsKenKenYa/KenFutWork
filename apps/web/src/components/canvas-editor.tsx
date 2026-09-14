@@ -9,6 +9,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { WebSocketHandle } from "../hooks/use-websocket";
 import { isVideoUrl } from "../lib/canvas-elements";
 import { normalizeCanvasElements } from "../lib/canvas-normalize";
+import { shouldRefuseEmptySave } from "../lib/canvas-save-guard";
 import { getServerBaseUrl } from "../lib/env";
 import { saveCanvas, uploadThumbnail } from "../lib/server-api";
 import { VideoCanvasElement } from "./canvas/video-canvas-element";
@@ -289,6 +290,23 @@ export function CanvasEditor({
           },
           files,
         };
+
+        // 空场景覆盖护栏（与卸载前 flush 共用同一判定）：挂载期 Excalidraw 可能先回调
+        // 一次空列表，整表替换会把服务端已有内容清空——实测漏过一次，别再各自漂移。
+        if (
+          shouldRefuseEmptySave({
+            incomingCount: content.elements.length,
+            loadedCount: initialElementCountRef.current,
+          })
+        ) {
+          console.warn(
+            "[canvas-editor] 跳过空场景保存：服务端已有",
+            initialElementCountRef.current,
+            "个元素",
+          );
+          pendingSaveRef.current = null;
+          return;
+        }
         pendingSaveRef.current = content;
 
         saveCanvas(accessTokenRef.current, canvasId, content)
@@ -493,8 +511,14 @@ export function CanvasEditor({
 
       // Safety: refuse to save empty when we loaded with elements — prevents
       // race conditions from wiping canvas content during page teardown.
+      // 与防抖自动保存共用同一判定（canvas-save-guard），两条路径不再各写一份。
       const liveCount = sceneElements.filter((el: any) => !el.isDeleted).length;
-      if (liveCount === 0 && initialElementCountRef.current > 0) {
+      if (
+        shouldRefuseEmptySave({
+          incomingCount: liveCount,
+          loadedCount: initialElementCountRef.current,
+        })
+      ) {
         console.warn(
           "[canvas-editor] skipping save: 0 elements but loaded with",
           initialElementCountRef.current,
