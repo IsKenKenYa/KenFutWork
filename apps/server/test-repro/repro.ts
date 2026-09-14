@@ -59,7 +59,7 @@ async function main() {
   console.log("[R2 最后回复]", last?.slice(0, 120));
   console.log(
     "[结论]",
-    last?.includes("42") ? "✅ 上下文延续成功" : "❌ 上下文未延续",
+    last?.includes("42") ? "上下文延续成功" : "上下文未延续",
   );
 }
 

@@ -51,17 +51,17 @@ async function main(): Promise<void> {
 
       if (report.compatible) {
         passed += 1;
-        console.log("✅ 可安装");
+        console.log("可安装");
       } else {
         blocked += 1;
-        console.log("⛔ 拦截");
+        console.log("拦截");
       }
       console.log(
         `  能力：支持 [${report.supportedCapabilities.join(", ") || "-"}] / 缺 [${report.unsupportedCapabilities.join(", ") || "-"}]`,
       );
       for (const item of report.issues) {
         console.log(
-          `  ${item.severity === "blocker" ? "⛔" : "⚠️ "} ${item.code}：${item.message}`,
+          `  ${item.severity === "blocker" ? "[blocker]" : "[warn]"} ${item.code}：${item.message}`,
         );
         if (item.detail) {
           console.log(
@@ -75,7 +75,7 @@ async function main(): Promise<void> {
     } catch (error) {
       unreachable += 1;
       console.log(
-        `⚠️  无法获取：${error instanceof Error ? error.message : String(error)}`,
+        `无法获取：${error instanceof Error ? error.message : String(error)}`,
       );
     }
     console.log("");

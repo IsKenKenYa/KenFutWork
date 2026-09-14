@@ -120,8 +120,8 @@ Write a complete Python script, then execute it.
 ```
 
 **禁止使用绝对路径写文件**：
-- ❌ `write_file path="/tmp/script.py"` — 多用户会覆盖
-- ✅ `write_file path="script.py"` — 每个用户独立沙箱
+- 反例：`write_file path="/tmp/script.py"` — 多用户会覆盖
+- 正例：`write_file path="script.py"` — 每个用户独立沙箱
 
 **Critical**: In Python scripts:
 - Use `os.environ["FONT_DIR"]` for font paths（唯一允许的绝对路径）

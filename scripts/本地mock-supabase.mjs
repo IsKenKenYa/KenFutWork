@@ -1,7 +1,7 @@
 /**
  * 演示模式用的最小 Supabase REST 模拟（由 `pnpm dev:local` 拉起，也可手工 node 直跑）。
  *
- * ⚠️ 这不是真实存储：数据全在进程内存里，重启即丢；认证不校验密码。
+ * 注意：这不是真实存储：数据全在进程内存里，重启即丢；认证不校验密码。
  * 真实开发环境请用真实本地栈：`supabase start` + `pnpm seed`（见 README「开发环境」节）。
  *
  * 覆盖：GoTrue 最小认证（签发本地 HS256 会话）、projects/canvases/chat_sessions/
