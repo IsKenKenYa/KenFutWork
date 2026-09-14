@@ -15,6 +15,10 @@ import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { useVideoModelPreference } from "../hooks/use-video-model-preference";
 import { AgentModelSelector } from "./agent-model-selector";
 import type { CanvasSelectedElement } from "./canvas-editor";
+import {
+  ComposerContextMenu,
+  useComposerContextMenu,
+} from "./chat/composer-context-menu";
 import { ImageAttachmentBar } from "./image-attachment-bar";
 import { ImageModelPreferencePopover } from "./image-model-preference";
 
@@ -63,6 +67,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const { preference: videoPreference } = useVideoModelPreference();
     const [modelPopoverOpen, setModelPopoverOpen] = useState(false);
     const modelBtnRef = useRef<HTMLButtonElement>(null);
+
+    // 输入框右键菜单（撤销/重做/剪切/复制/粘贴/删除/全选）
+    const composerMenu = useComposerContextMenu({
+      value,
+      setValue,
+      textareaRef,
+    });
 
     useImperativeHandle(ref, () => ({
       clearAtQuery() {
@@ -221,6 +232,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     return (
       <div className="px-2 pb-2">
+        <ComposerContextMenu
+          state={composerMenu.state}
+          items={composerMenu.items}
+          onRun={(item) => void composerMenu.run(item)}
+          onClose={composerMenu.close}
+        />
         <div
           className="flex min-h-[120px] flex-col justify-between gap-2 rounded-xl border-[0.5px] border-border bg-card p-2 transition-[border] focus-within:border-border"
           onDrop={handleDrop}
@@ -309,6 +326,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             onChange={handleChange}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
+            onContextMenu={composerMenu.open}
             placeholder='输入你的想法，或输入 "@" 引用技能'
             aria-label="输入消息"
             rows={1}

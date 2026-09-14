@@ -501,13 +501,28 @@
    升级该依赖后可复核本规则是否仍需保留。 */
 .context-menu li[data-testid="zenMode"],
 .context-menu li[data-testid="viewMode"],
-.context-menu li[data-testid="stats"],
-.context-menu li[data-testid="gridMode"],
 .context-menu li[data-testid="linkToElement"],
 .context-menu li[data-testid="copyElementLink"],
 .context-menu li[data-testid="wrapSelectionInFrame"],
 .context-menu li[data-testid="toggleLinearEditor"] {
   display: none;
+}
+
+/* 保留「网格」与「画布与元素属性」两项（用户要求）——这两个键在 Excalidraw 的
+   zh-CN 语言包里缺失，会回落英文。Excalidraw 未导出 setLanguage、也无自定义语言
+   对象入参，故用 CSS 覆盖标签文案（视觉中文，DOM 文本仍为英文，无障碍读英文）。
+   语言包补齐后可删除本节。 */
+.context-menu li[data-testid="gridMode"] .context-menu-item__label,
+.context-menu li[data-testid="stats"] .context-menu-item__label {
+  font-size: 0;
+}
+.context-menu li[data-testid="gridMode"] .context-menu-item__label::after {
+  content: "显示/隐藏网格";
+  font-size: 0.875rem;
+}
+.context-menu li[data-testid="stats"] .context-menu-item__label::after {
+  content: "画布与元素属性";
+  font-size: 0.875rem;
 }
 
 /* 隐藏后可能留下孤立分隔线（菜单自带的分隔去重不会因隐藏而重跑） */

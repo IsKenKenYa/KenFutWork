@@ -109,8 +109,6 @@ describe("画布右键菜单：无关项按 action 名隐藏", () => {
   const HIDDEN_ACTIONS = [
     "zenMode", // 禅模式（用户点名移除）
     "viewMode", // 查看模式（用户点名移除）
-    "stats", // Canvas & Shape properties（英文 + 与 AI 创作无关）
-    "gridMode", // Toggle grid（英文；已由底部栏中文开关替代）
     "linkToElement", // Add link / Link to object（英文 + 小众）
     "copyElementLink", // Copy link to object（英文 + 小众）
     "wrapSelectionInFrame", // Wrap selection in frame（英文）
@@ -126,7 +124,20 @@ describe("画布右键菜单：无关项按 action 名隐藏", () => {
     }
   });
 
-  it("网格能力仍可用：底部栏有中文「网格」开关（替掉英文 Toggle grid）", () => {
+  it("保留项的中文标签覆盖存在（gridMode/stats 语言包缺键，用 CSS 兜）", () => {
+    const css = readFileSync(join(ROOT, "..", "app", "globals.css"), "utf-8");
+    expect(css).toContain(
+      'li[data-testid="gridMode"] .context-menu-item__label',
+    );
+    expect(css).toContain('"显示/隐藏网格"');
+    expect(css).toContain('li[data-testid="stats"] .context-menu-item__label');
+    expect(css).toContain('"画布与元素属性"');
+    // 这两项不得再被隐藏（用户要求保留）
+    expect(css).not.toContain('.context-menu li[data-testid="gridMode"],');
+    expect(css).not.toContain('.context-menu li[data-testid="stats"],');
+  });
+
+  it("网格能力仍可用：底部栏有中文「网格」开关（第二种便捷入口）", () => {
     const bar = readFileSync(join(ROOT, "canvas-bottom-bar.tsx"), "utf-8");
     expect(bar).toContain('aria-label="网格"');
     expect(bar).toContain("gridSize");

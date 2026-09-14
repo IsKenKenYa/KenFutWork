@@ -23,6 +23,10 @@ import {
   ChatContextMenu,
   useChatContextMenu,
 } from "@/components/chat/chat-context-menu";
+import {
+  ComposerContextMenu,
+  useComposerContextMenu,
+} from "@/components/chat/composer-context-menu";
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
 import { LoomicLogo } from "@/components/icons/loomic-logo";
 import {
@@ -198,6 +202,14 @@ export function Workbench() {
   const chatMenu = useChatContextMenu();
   const codeMessagesRef = useRef<HTMLDivElement>(null);
   const [chatNotice, setChatNotice] = useState<string | null>(null);
+  /** Code 模式输入框（右键编辑菜单需要拿它的选区）。 */
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const composerMenu = useComposerContextMenu({
+    value: followUp,
+    setValue: setFollowUp,
+    textareaRef: composerRef,
+    onNotice: setChatNotice,
+  });
   useEffect(() => {
     if (!chatNotice) return;
     const timer = window.setTimeout(() => setChatNotice(null), 3000);
@@ -1231,9 +1243,17 @@ export function Workbench() {
               }}
             >
               <textarea
+                ref={composerRef}
                 aria-label="继续对话"
                 value={followUp}
-                onChange={(e) => setFollowUp(e.target.value)}
+                onChange={(e) => {
+                  setFollowUp(e.target.value);
+                  // 自动长高（并隐藏滚动条：对话框右侧不出现滚动条）
+                  const el = e.currentTarget;
+                  el.style.height = "auto";
+                  el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+                }}
+                onContextMenu={composerMenu.open}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
@@ -1244,7 +1264,8 @@ export function Workbench() {
                 }}
                 rows={2}
                 placeholder="继续追问…"
-                className="max-h-32 min-h-[24px] w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                style={{ scrollbarWidth: "none" }}
+                className="max-h-40 min-h-[24px] w-full resize-none overflow-hidden bg-transparent text-sm outline-none placeholder:text-muted-foreground [&::-webkit-scrollbar]:hidden"
               />
               {workDirNotice ? (
                 <p className="mt-2 text-xs text-destructive">{workDirNotice}</p>
@@ -1697,6 +1718,12 @@ export function Workbench() {
           accessToken={session?.access_token ?? null}
         />
       ) : null}
+      <ComposerContextMenu
+        state={composerMenu.state}
+        items={composerMenu.items}
+        onRun={(item) => void composerMenu.run(item)}
+        onClose={composerMenu.close}
+      />
       <ChatContextMenu
         state={chatMenu.state}
         messages={(activeTask?.messages ?? []).map((message) => ({
