@@ -268,6 +268,8 @@ type RuntimeRunStatus =
 
 type RuntimeRunRecord = RunCreateRequest & {
   accessToken?: string;
+  /** billing 门中止原因：流会静默结束（无终态事件），收尾须据此补 run.failed。 */
+  billingFailure?: { code: string; message: string };
   consumed: boolean;
   controller: AbortController;
   modelOverride?: string;
@@ -364,7 +366,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
   // ── Billing error helper: push WS event + abort run ──────────
   function pushBillingErrorAndAbort(
-    run: { runId: string; conversationId: string; controller: AbortController },
+    run: {
+      billingFailure?: { code: string; message: string };
+      conversationId: string;
+      controller: AbortController;
+      runId: string;
+    },
     canvasId: string | undefined,
     opts: { connectionManager?: ConnectionManager },
     code: BillingErrorCode,
@@ -377,6 +384,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     },
   ): void {
     const canvasTarget = canvasId ?? run.conversationId;
+    // 先记录中止原因：billing 门直接 abort 会让流静默结束（不产生 run.failed），
+    // 收尾处据此补发失败事件——否则 run 行永远停在 running，且 WS 重试判定
+    // 拿不到失败文案，额度不足这类永久性失败会被无意义地连环重试。
+    run.billingFailure = { code, message };
     if (!opts.connectionManager || !canvasTarget) {
       console.warn(
         `[billing] pushBillingErrorAndAbort: no connectionManager or canvasTarget, billing.error (${code}) not sent to client`,
@@ -1113,18 +1124,40 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     balanceWorkspace.id,
                   );
                   if (balanceInfo.balance <= 0) {
+                    const billingMessage =
+                      "平台额度已用完，请联系管理员充值或改用自己的供应商 Key。";
                     pushBillingErrorAndAbort(
                       run,
                       run.canvasId,
                       options,
                       "insufficient_credits",
-                      "平台额度已用完，请联系管理员充值或改用自己的供应商 Key。",
+                      billingMessage,
                       {
                         currentBalance: balanceInfo.balance,
                         plan: balanceInfo.plan,
                         dailyClaimed: balanceInfo.dailyClaimed,
                       },
                     );
+                    // 不能静默 return：生成器零事件结束会让 run 行停在 running、
+                    // WS 重试判定拿不到失败文案（额度这类永久性失败被连环重试）。
+                    run.status = "failed";
+                    await updatePersistedRunFailure(
+                      options.agentRunMetadataService,
+                      run,
+                      now,
+                      new Error(billingMessage),
+                    ).catch((persistErr) =>
+                      console.error(
+                        "[agent-runtime] Failed to persist billing run failure:",
+                        persistErr,
+                      ),
+                    );
+                    yield {
+                      error: { code: "run_failed", message: billingMessage },
+                      runId,
+                      timestamp: now(),
+                      type: "run.failed",
+                    };
                     return;
                   }
                 }
@@ -1471,6 +1504,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         }
 
         const usageUserId = run.userId;
+        // 终态事件哨兵：正常路径适配器必发 run.completed / run.canceled / run.failed；
+        // billing 门中止等异常路径会让 for-await 静默结束——收尾必须补失败事件。
+        let sawTerminalEvent = false;
         try {
           for await (const event of adaptDeepAgentStream({
             conversationId: run.conversationId,
@@ -1508,6 +1544,37 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             stream,
           })) {
             run.status = mapEventToStatus(event);
+            if (isTerminalEvent(event)) {
+              sawTerminalEvent = true;
+            }
+            // billing 门中止（如图片生成的额度/tier 拒绝）会把异常误报成「用户取消」
+            // ——中止信号先于错误到达适配器。有 billingFailure 在身却报取消的，
+            // 一律改判 run.failed，文案给可读的 billing 原因。
+            if (event.type === "run.canceled" && run.billingFailure) {
+              const failedEvent: StreamEvent = {
+                error: {
+                  code: "run_failed",
+                  message: run.billingFailure.message,
+                },
+                runId,
+                timestamp: now(),
+                type: "run.failed",
+              };
+              run.status = "failed";
+              await updatePersistedRunFailure(
+                options.agentRunMetadataService,
+                run,
+                now,
+                new Error(run.billingFailure.message),
+              ).catch((persistErr) =>
+                console.error(
+                  "[agent-runtime] Failed to persist billing-canceled run failure:",
+                  persistErr,
+                ),
+              );
+              yield failedEvent;
+              return;
+            }
             try {
               await syncPersistedRunFromEvent(
                 options.agentRunMetadataService,
@@ -1557,6 +1624,37 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           ).catch((persistErr) =>
             console.error(
               "[agent-runtime] Failed to persist run failure:",
+              persistErr,
+            ),
+          );
+          yield failedEvent;
+          return;
+        }
+
+        // 流静默结束（无终态事件）：billing 门中止是已知路径（abort 后适配器不发
+        // 事件）。这里补发 run.failed——持久化失败终态，并让 WS 重试判定拿到
+        // 失败文案（额度不足命中永久性失败模式，不再连环重试）。
+        if (!sawTerminalEvent && run.status === "running") {
+          // error.code 是封闭枚举（shared/errors.ts），billing 细节留在 billing.error
+          // 事件里；这里统一 run_failed，可读原因由 message 承载。
+          const message =
+            run.billingFailure?.message ??
+            "运行被中止且未产生结束事件（无终态事件）。";
+          const failedEvent: StreamEvent = {
+            error: { code: "run_failed", message },
+            runId,
+            timestamp: now(),
+            type: "run.failed",
+          };
+          run.status = "failed";
+          await updatePersistedRunFailure(
+            options.agentRunMetadataService,
+            run,
+            now,
+            new Error(message),
+          ).catch((persistErr) =>
+            console.error(
+              "[agent-runtime] Failed to persist silent-abort run failure:",
               persistErr,
             ),
           );

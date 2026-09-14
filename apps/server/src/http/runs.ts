@@ -22,6 +22,7 @@ import {
   ThreadServiceError,
 } from "../features/chat/thread-service.js";
 import type { CreditService } from "../features/credits/credit-service.js";
+import { deriveSessionTitle } from "../features/chat/session-title.js";
 import { parseInstanceSpecifier } from "../features/model-providers/model-catalog-service.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
@@ -69,7 +70,8 @@ export async function registerRunRoutes(
         try {
           await options.chatService.ensureCodeSession(authenticatedUser, {
             sessionId: payload.sessionId,
-            title: payload.prompt.slice(0, 24),
+            // 与 WS 路径同口径：先剥 prompt 首部指令块再派生标题
+            title: deriveSessionTitle(payload.prompt),
           });
         } catch {
           // 供给失败不阻断启动：下面仍按原路径解析（拿不到就照旧不带线程）

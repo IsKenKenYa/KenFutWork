@@ -23,6 +23,7 @@ import type {
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { ChatService } from "../features/chat/chat-service.js";
 import type { ThreadService } from "../features/chat/thread-service.js";
+import { deriveSessionTitle } from "../features/chat/session-title.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import type { ConnectionManager } from "./connection-manager.js";
 import type { CanvasEventBuffer } from "./event-buffer.js";
@@ -327,7 +328,9 @@ async function handleRunCommand(
         authenticatedUser,
         {
           sessionId: payload.sessionId,
-          title: payload.prompt.slice(0, 24),
+          // 标题派生先剥 prompt 首部的【…】指令块（目录提示/思考强度），
+          // 否则侧栏会出现「【目录名称：test（仅用户标注的命名提示…」泄漏。
+          title: deriveSessionTitle(payload.prompt),
         },
       );
       log.info("code_session_ensured", { sessionId: provisioned.sessionId });
