@@ -16,8 +16,8 @@ import { isAbsolute, join, resolve } from "node:path";
 import { buildApp } from "./app.js";
 import { loadServerEnv } from "./config/env.js";
 import { resolveEntryRoot } from "./desktop/entry-root.js";
-import { isDesktopRuntime, prepareDesktopRuntime } from "./desktop/runtime.js";
-import { hasSystemGit, resolveRuntimes } from "./desktop/runtimes.js";
+import { isDesktopRuntime, prepareDesktopRuntime } from "./desktop/runtime.js";import { hasSystemGit, resolveRuntimes } from "./desktop/runtimes.js";
+import { reconcileInterruptedRuns } from "./features/agent-runs/reconcile.js";
 import { startJobLoop } from "./features/jobs/job-loop.js";
 import { registerAllProviders } from "./generation/providers/register-all.js";
 
@@ -30,6 +30,9 @@ import { registerAllProviders } from "./generation/providers/register-all.js";
  */
 async function main() {
   await setupProxy();
+
+  /** 进程启动时刻：孤儿对账只碰**早于它**创建的非终态 run（本进程不可能在跑那些）。 */
+  const bootAt = new Date();
 
   const exeDir = resolveExeDir();
   // 随包运行时（Node/Python/JDK）：解析出 bin 目录注入 sandbox PATH，宿主机没装也能跑
@@ -108,6 +111,23 @@ async function main() {
     });
 
     console.log(`@loomic/server listening on http://${host}:${env.port}`);
+
+    /**
+     * 孤儿 run 对账：**绑上端口之后**才做（见 reconcile.ts 的说明——抢不到端口的
+     * 第二条 dev server 链也会走完装配，由它做对账会误杀正在服务的那条进程在飞的 run）。
+     */
+    void reconcileInterruptedRuns(app.kernel.get("persistence"), bootAt)
+      .then((count) => {
+        if (count > 0) {
+          console.log(`[agent-runs] 启动对账：${count} 个遗留 run 已收敛为 failed`);
+        }
+      })
+      .catch((error: unknown) => {
+        console.warn(
+          "[agent-runs] 启动对账失败（不阻断启动）：",
+          error instanceof Error ? error.message : String(error),
+        );
+      });
   } catch (error) {
     app.log.error(error);
     await shutdown();

@@ -32,8 +32,6 @@ export interface AgentRunsPluginDeps {
 export function createAgentRunsPlugin(
   deps: AgentRunsPluginDeps,
 ): PluginDefinition {
-  /** 进程启动时刻：只对账**早于它**的非终态 run（本进程不可能在跑那些）。 */
-  const bootAt = new Date();
   return {
     name: "agent-runs",
     inject: [
@@ -121,28 +119,6 @@ export function createAgentRunsPlugin(
       });
     },
     mounted(ctx) {
-      /**
-       * 孤儿 run 对账（启动期一次）：进程重启会留下永远 `running` 的行，客户端于是
-       * 永远「生成中」。本进程刚起来时它没在跑任何 run，故启动前的非终态行必是孤儿。
-       * 失败不阻断启动（对账是兜底，不是启动前置条件）。
-       */
-      void createAgentRunRepository(ctx.get("persistence"))
-        .reconcileInterrupted(
-          bootAt,
-          "服务重启，本轮已中断（进程在生成过程中退出，未有终态事件）。",
-        )
-        .then((count) => {
-          if (count > 0) {
-            console.log(`[agent-runs] 启动对账：${count} 个遗留 run 已收敛为 failed`);
-          }
-        })
-        .catch((error: unknown) => {
-          console.warn(
-            "[agent-runs] 启动对账失败（不阻断启动）：",
-            error instanceof Error ? error.message : String(error),
-          );
-        });
-
       // chat 是可选依赖：缺席时（部分装配/测试）路由照常，只是不做 Code 会话供给
       const chatService = ctx.tryGet("chat");
       void registerRunRoutes(ctx.app, ctx.get("agentRuns"), {
