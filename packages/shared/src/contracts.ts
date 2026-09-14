@@ -167,6 +167,11 @@ export const profileUpdateRequestSchema = z.object({
 
 export const workspaceSettingsSchema = z.object({
   defaultModel: z.string().min(1),
+  /**
+   * run 失败自动重试上限（含首次尝试；0 = 不重试）。
+   * 缺省 10；服务端对「已执行工具」的轮次一律不重试（副作用安全），见 agent/run-retry.ts。
+   */
+  agentMaxRetries: z.number().int().min(0).max(50).default(10),
 });
 
 export const modelInfoSchema = z.object({

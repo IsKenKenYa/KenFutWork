@@ -7,6 +7,11 @@ import {
 } from "@loomic/shared";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { WebSocket } from "ws";
+import {
+  clampMaxRunRetries,
+  DEFAULT_MAX_RUN_RETRIES,
+  decideRunRetry,
+} from "../agent/run-retry.js";
 import type { AgentRunService } from "../agent/runtime.js";
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import { isPlanApprovalInput } from "../features/agent-modes/execution-mode-service.js";
@@ -444,53 +449,61 @@ async function handleRunCommand(
     });
   }
 
-  const response = agentRuns.createRun(payload, {
-    accessToken: authenticatedUser.accessToken,
-    userId: authenticatedUser.id,
-    ...(resolvedModel ? { model: resolvedModel } : {}),
-    ...(threadId ? { threadId } : {}),
-  });
-  const runId = response.runId;
-  log.lap("run_created", { runId });
-
-  // Persist run metadata
-  if (threadId && services.agentRunMetadataService) {
-    try {
-      await services.agentRunMetadataService.createAcceptedRun({
-        ...(resolvedModel ? { model: resolvedModel } : {}),
-        runId,
-        sessionId: payload.sessionId,
-        threadId,
-      });
-    } catch {
-      // Non-fatal
-    }
-  }
-
-  // Bind this connection to the canvas so events route correctly
   const canvasId = payload.canvasId ?? payload.conversationId;
-  connectionManager.bindCanvas(connectionId, canvasId);
 
-  // Send ACK to the specific connection that initiated the run.
-  // Retry with short delays if the connection is temporarily unavailable
-  // (e.g., brief disconnect/reconnect during page transitions).
-  const ackMessage = {
-    type: "command.ack",
-    action: "agent.run",
-    payload: response,
-  };
-  let ackSent = connectionManager.sendTo(connectionId, ackMessage);
-  if (!ackSent) {
-    for (let i = 0; i < 5; i++) {
-      await new Promise((r) => setTimeout(r, 500));
-      ackSent = connectionManager.sendTo(connectionId, ackMessage);
-      if (ackSent) break;
+  /**
+   * 起一次尝试：建 run + 落元数据 + 绑定画布 + 发 ack + 标活跃。
+   * 重试必须整段重来：**新 runId 要重新 ack 给客户端**，否则事件因 runId 不匹配被丢。
+   */
+  const startAttempt = async (): Promise<string> => {
+    const response = agentRuns.createRun(payload, {
+      accessToken: authenticatedUser.accessToken,
+      userId: authenticatedUser.id,
+      ...(resolvedModel ? { model: resolvedModel } : {}),
+      ...(threadId ? { threadId } : {}),
+    });
+    const runId = response.runId;
+    log.lap("run_created", { runId });
+
+    // Persist run metadata
+    if (threadId && services.agentRunMetadataService) {
+      try {
+        await services.agentRunMetadataService.createAcceptedRun({
+          ...(resolvedModel ? { model: resolvedModel } : {}),
+          runId,
+          sessionId: payload.sessionId,
+          threadId,
+        });
+      } catch {
+        // Non-fatal
+      }
     }
-  }
-  log.lap("ack_sent", { runId, connectionId, delivered: ackSent });
 
-  // Track active run so reconnecting clients can detect it
-  connectionManager.setActiveRun(canvasId, runId);
+    // Bind this connection to the canvas so events route correctly
+    connectionManager.bindCanvas(connectionId, canvasId);
+
+    // Send ACK to the specific connection that initiated the run.
+    // Retry with short delays if the connection is temporarily unavailable
+    // (e.g., brief disconnect/reconnect during page transitions).
+    const ackMessage = {
+      type: "command.ack",
+      action: "agent.run",
+      payload: response,
+    };
+    let ackSent = connectionManager.sendTo(connectionId, ackMessage);
+    if (!ackSent) {
+      for (let i = 0; i < 5; i++) {
+        await new Promise((r) => setTimeout(r, 500));
+        ackSent = connectionManager.sendTo(connectionId, ackMessage);
+        if (ackSent) break;
+      }
+    }
+    log.lap("ack_sent", { runId, connectionId, delivered: ackSent });
+
+    // Track active run so reconnecting clients can detect it
+    connectionManager.setActiveRun(canvasId, runId);
+    return runId;
+  };
 
   const keepAlive = setInterval(() => {
     connectionManager.sendTo(connectionId, { type: "keep-alive" });
@@ -500,80 +513,124 @@ async function handleRunCommand(
   const assistantText: string[] = [];
   const assistantBlocks: ContentBlock[] = [];
 
+  const runSettings =
+    viewer && services.settingsService
+      ? await services.settingsService
+          .getWorkspaceSettings(authenticatedUser, viewer.workspace.id)
+          .catch(() => undefined)
+      : undefined;
+  const maxAttempts = clampMaxRunRetries(
+    runSettings?.agentMaxRetries ?? DEFAULT_MAX_RUN_RETRIES,
+  );
+  let runId = await startAttempt();
   try {
-    let firstEvent = true;
-    for await (const event of agentRuns.streamRun(runId)) {
-      if (firstEvent) {
-        log.lap("first_token", { runId });
-        firstEvent = false;
-      }
-
-      // Buffer for replay on reconnect
-      services.eventBuffer?.push(canvasId, event);
-
-      // Broadcast to all viewers
-      connectionManager.pushToCanvas(canvasId, event);
-
-      // Accumulate content for server-side persistence
-      if (event.type === "message.delta") {
-        const lastBlock = assistantBlocks[assistantBlocks.length - 1];
-        if (lastBlock && lastBlock.type === "text") {
-          (lastBlock as { type: "text"; text: string }).text += event.delta;
-        } else {
-          assistantBlocks.push({ type: "text", text: event.delta });
+    // 失败自动重试（判定集中在 agent/run-retry.ts）。上限取自工作区设置，缺省 10。
+    for (let attempt = 1; ; attempt += 1) {
+      assistantText.length = 0;
+      assistantBlocks.length = 0;
+      let sawToolExecution = false;
+      let failureMessage: string | undefined;
+      let firstEvent = true;
+      for await (const event of agentRuns.streamRun(runId)) {
+        if (firstEvent) {
+          log.lap("first_token", { runId });
+          firstEvent = false;
         }
-        assistantText.push(event.delta);
-      } else if (event.type === "tool.started") {
-        assistantBlocks.push({
-          type: "tool",
-          toolCallId: event.toolCallId,
-          toolName: event.toolName,
-          status: "running" as const,
-          ...(event.input ? { input: event.input } : {}),
-        });
-      } else if (event.type === "tool.completed") {
-        const idx = assistantBlocks.findIndex(
-          (b) =>
-            b.type === "tool" &&
-            (b as ToolBlock).toolCallId === event.toolCallId,
-        );
-        if (idx >= 0) {
-          assistantBlocks[idx] = {
-            ...(assistantBlocks[idx] as ToolBlock),
-            status: "completed" as const,
-            ...(event.output ? { output: event.output } : {}),
-            ...(event.outputSummary
-              ? { outputSummary: event.outputSummary }
-              : {}),
-            ...(event.artifacts ? { artifacts: event.artifacts } : {}),
-          };
+
+        // Buffer for replay on reconnect
+        services.eventBuffer?.push(canvasId, event);
+
+        // Broadcast to all viewers
+        connectionManager.pushToCanvas(canvasId, event);
+        // 副作用观测点：只要工具跑过，本轮就**不允许**重试（否则重复施加副作用）
+        if (event.type === "tool.started" || event.type === "tool.completed") {
+          sawToolExecution = true;
+        }
+        if (event.type === "run.failed") failureMessage = event.error.message;
+
+        // Accumulate content for server-side persistence
+        if (event.type === "message.delta") {
+          const lastBlock = assistantBlocks[assistantBlocks.length - 1];
+          if (lastBlock && lastBlock.type === "text") {
+            (lastBlock as { type: "text"; text: string }).text += event.delta;
+          } else {
+            assistantBlocks.push({ type: "text", text: event.delta });
+          }
+          assistantText.push(event.delta);
+        } else if (event.type === "tool.started") {
+          assistantBlocks.push({
+            type: "tool",
+            toolCallId: event.toolCallId,
+            toolName: event.toolName,
+            status: "running" as const,
+            ...(event.input ? { input: event.input } : {}),
+          });
+        } else if (event.type === "tool.completed") {
+          const idx = assistantBlocks.findIndex(
+            (b) =>
+              b.type === "tool" &&
+              (b as ToolBlock).toolCallId === event.toolCallId,
+          );
+          if (idx >= 0) {
+            assistantBlocks[idx] = {
+              ...(assistantBlocks[idx] as ToolBlock),
+              status: "completed" as const,
+              ...(event.output ? { output: event.output } : {}),
+              ...(event.outputSummary
+                ? { outputSummary: event.outputSummary }
+                : {}),
+              ...(event.artifacts ? { artifacts: event.artifacts } : {}),
+            };
+          }
         }
       }
-    }
-    log.lap("stream_done", { runId });
+      log.lap("stream_done", { runId });
 
-    // ── Server-side assistant message persistence ──
-    if (
-      services.chatService &&
-      (assistantText.length > 0 || assistantBlocks.length > 0)
-    ) {
-      try {
-        await services.chatService.createMessage(
-          authenticatedUser,
-          payload.sessionId,
-          {
-            role: "assistant",
-            content: assistantText.join(""),
-            contentBlocks: assistantBlocks,
-          },
-        );
-        log.lap("assistant_message_persisted", { runId });
-      } catch (err) {
-        log.warn("assistant_message_persist_failed", {
-          runId,
-          error: err instanceof Error ? err.message : String(err),
-        });
+      const decision = decideRunRetry({
+        attempt,
+        failureMessage,
+        maxAttempts,
+        sawToolExecution,
+      });
+      if (!decision.retry) {
+        // ── Server-side assistant message persistence ──
+        if (
+          services.chatService &&
+          (assistantText.length > 0 || assistantBlocks.length > 0)
+        ) {
+          try {
+            await services.chatService.createMessage(
+              authenticatedUser,
+              payload.sessionId,
+              {
+                role: "assistant",
+                content: assistantText.join(""),
+                contentBlocks: assistantBlocks,
+              },
+            );
+            log.lap("assistant_message_persisted", { runId });
+          } catch (err) {
+            log.warn("assistant_message_persist_failed", {
+              runId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+
+        break;
       }
+      log.warn("run_retrying", { attempt, reason: decision.reason, runId });
+      runId = await startAttempt();
+      const retryEvent = {
+        type: "run.retrying" as const,
+        runId,
+        attempt: attempt + 1,
+        maxAttempts,
+        reason: decision.reason,
+        timestamp: new Date().toISOString(),
+      };
+      services.eventBuffer?.push(canvasId, retryEvent);
+      connectionManager.pushToCanvas(canvasId, retryEvent);
     }
   } catch (error) {
     log.error("stream_error", {

@@ -7,11 +7,18 @@ import type { PersistenceService } from "../persistence/types.js";
 export interface SettingsRepository {
   /** 读默认模型；无行返回 null（由服务落回退默认值）。 */
   findDefaultModel(workspaceId: string): Promise<string | null>;
+  /** 读 run 重试上限；无行返回 null（由服务落缺省 10）。 */
+  findAgentMaxRetries(workspaceId: string): Promise<number | null>;
   /** 一工作区一行，冲突即更新。 */
   upsertDefaultModel(workspaceId: string, defaultModel: string): Promise<void>;
+  upsertAgentMaxRetries(
+    workspaceId: string,
+    agentMaxRetries: number,
+  ): Promise<void>;
 }
 
 type DefaultModelRow = { default_model: string };
+type AgentMaxRetriesRow = { agent_max_retries: number };
 
 export function createSettingsRepository(
   persistence: PersistenceService,
@@ -28,6 +35,17 @@ export function createSettingsRepository(
       return row?.default_model ?? null;
     },
 
+    async findAgentMaxRetries(workspaceId) {
+      const row = await persistence
+        .forWorkspace(workspaceId)
+        .queryOne<AgentMaxRetriesRow>(
+          `select agent_max_retries
+             from public.workspace_settings
+            where workspace_id = :workspace`,
+        );
+      return row?.agent_max_retries ?? null;
+    },
+
     async upsertDefaultModel(workspaceId, defaultModel) {
       await persistence.forWorkspace(workspaceId).query(
         `insert into public.workspace_settings (workspace_id, default_model)
@@ -35,6 +53,20 @@ export function createSettingsRepository(
          on conflict (workspace_id)
          do update set default_model = excluded.default_model`,
         [defaultModel],
+      );
+    },
+
+    /**
+     * 逐列 upsert：只写重试上限，不动默认模型。同一行上「每设置一条语句」比「整行覆盖」
+     * 更抗并发——两个设置各自保存时不会把对方的改动盖掉。
+     */
+    async upsertAgentMaxRetries(workspaceId, agentMaxRetries) {
+      await persistence.forWorkspace(workspaceId).query(
+        `insert into public.workspace_settings (workspace_id, agent_max_retries)
+         values (:workspace, $1)
+         on conflict (workspace_id)
+         do update set agent_max_retries = excluded.agent_max_retries`,
+        [agentMaxRetries],
       );
     },
   };

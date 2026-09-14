@@ -1,5 +1,9 @@
 import type { WorkspaceSettings } from "@loomic/shared";
 
+import {
+  clampMaxRunRetries,
+  DEFAULT_MAX_RUN_RETRIES,
+} from "../../agent/run-retry.js";
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { SettingsRepository } from "./repository.js";
 
@@ -44,31 +48,40 @@ export function createSettingsService(options: {
 
   return {
     async getWorkspaceSettings(_user, workspaceId) {
-      const stored = await repository
-        .findDefaultModel(workspaceId)
-        .catch(() => {
-          throw new SettingsServiceError(
-            "settings_read_failed",
-            "Unable to load workspace settings.",
-            500,
-          );
-        });
+      const [storedModel, storedRetries] = await Promise.all([
+        repository.findDefaultModel(workspaceId),
+        repository.findAgentMaxRetries(workspaceId),
+      ]).catch(() => {
+        throw new SettingsServiceError(
+          "settings_read_failed",
+          "Unable to load workspace settings.",
+          500,
+        );
+      });
 
-      return { defaultModel: stored ?? defaultModel };
+      return {
+        agentMaxRetries: clampMaxRunRetries(
+          storedRetries ?? DEFAULT_MAX_RUN_RETRIES,
+        ),
+        defaultModel: storedModel ?? defaultModel,
+      };
     },
 
     async updateWorkspaceSettings(_user, workspaceId, settings) {
-      await repository
-        .upsertDefaultModel(workspaceId, settings.defaultModel)
-        .catch(() => {
-          throw new SettingsServiceError(
-            "settings_update_failed",
-            "Unable to update workspace settings.",
-            500,
-          );
-        });
+      const retries = clampMaxRunRetries(settings.agentMaxRetries);
+      // 逐列 upsert（各写各的列）——两个设置之间不会互相覆盖
+      await Promise.all([
+        repository.upsertDefaultModel(workspaceId, settings.defaultModel),
+        repository.upsertAgentMaxRetries(workspaceId, retries),
+      ]).catch(() => {
+        throw new SettingsServiceError(
+          "settings_update_failed",
+          "Unable to update workspace settings.",
+          500,
+        );
+      });
 
-      return settings;
+      return { ...settings, agentMaxRetries: retries };
     },
   };
 }

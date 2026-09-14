@@ -100,24 +100,28 @@ describe("settings service", () => {
     const fallback = createSettingsService({
       repository: {
         findDefaultModel: async () => null,
+        findAgentMaxRetries: async () => null,
         upsertDefaultModel: async () => {},
+        upsertAgentMaxRetries: async () => {},
       },
       defaultModel: "fallback-model",
     });
     await expect(
       fallback.getWorkspaceSettings(USER, WORKSPACE_ID),
-    ).resolves.toEqual({ defaultModel: "fallback-model" });
+    ).resolves.toEqual({ agentMaxRetries: 10, defaultModel: "fallback-model" });
 
     const stored = createSettingsService({
       repository: {
         findDefaultModel: async () => "stored-model",
+        findAgentMaxRetries: async () => null,
         upsertDefaultModel: async () => {},
+        upsertAgentMaxRetries: async () => {},
       },
       defaultModel: "fallback-model",
     });
     await expect(
       stored.getWorkspaceSettings(USER, WORKSPACE_ID),
-    ).resolves.toEqual({ defaultModel: "stored-model" });
+    ).resolves.toEqual({ agentMaxRetries: 10, defaultModel: "stored-model" });
   });
 
   it("读写失败分别映射 settings_read_failed / settings_update_failed", async () => {
@@ -126,7 +130,9 @@ describe("settings service", () => {
         findDefaultModel: async () => {
           throw new SqlError("connection reset");
         },
+        findAgentMaxRetries: async () => null,
         upsertDefaultModel: async () => {},
+        upsertAgentMaxRetries: async () => {},
       },
     });
     await expect(
@@ -139,13 +145,18 @@ describe("settings service", () => {
     const writeFailure = createSettingsService({
       repository: {
         findDefaultModel: async () => null,
+        findAgentMaxRetries: async () => null,
         upsertDefaultModel: async () => {
           throw new SqlError("permission denied", { code: "42501" });
         },
+        upsertAgentMaxRetries: async () => {},
       },
     });
     const error = await writeFailure
-      .updateWorkspaceSettings(USER, WORKSPACE_ID, { defaultModel: "x" })
+      .updateWorkspaceSettings(USER, WORKSPACE_ID, {
+        agentMaxRetries: 10,
+        defaultModel: "x",
+      })
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(SettingsServiceError);
     expect(error).toMatchObject({
@@ -159,17 +170,20 @@ describe("settings service", () => {
     const service = createSettingsService({
       repository: {
         findDefaultModel: async () => null,
+        findAgentMaxRetries: async () => null,
         upsertDefaultModel: async (_workspaceId, defaultModel) => {
           written = defaultModel;
         },
+        upsertAgentMaxRetries: async () => {},
       },
     });
 
     await expect(
       service.updateWorkspaceSettings(USER, WORKSPACE_ID, {
+        agentMaxRetries: 10,
         defaultModel: "gemini-2.5-flash",
       }),
-    ).resolves.toEqual({ defaultModel: "gemini-2.5-flash" });
+    ).resolves.toEqual({ agentMaxRetries: 10, defaultModel: "gemini-2.5-flash" });
     expect(written).toBe("gemini-2.5-flash");
   });
 });

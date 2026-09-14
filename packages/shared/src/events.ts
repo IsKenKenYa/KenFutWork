@@ -79,6 +79,22 @@ export const runFailedEventSchema = z.object({
   timestamp: timestampSchema,
 });
 
+/**
+ * 失败后自动重试（服务端行为，判定见 apps/server/src/agent/run-retry.ts）。
+ *
+ * 客户端据它丢弃上一轮已流出的半截内容并提示进度——否则重试产生的新内容会**续写**在
+ * 失败那轮的残句之后，读起来是乱的。`runId` 是**新**一轮的 id（客户端据此更新跟踪值）。
+ */
+export const runRetryingEventSchema = z.object({
+  type: z.literal("run.retrying"),
+  runId: runIdSchema,
+  /** 即将开始的尝试序号（2 = 首次失败后重试）。 */
+  attempt: z.number().int().min(1),
+  maxAttempts: z.number().int().min(1),
+  reason: z.string(),
+  timestamp: timestampSchema,
+});
+
 export const thinkingDeltaEventSchema = z.object({
   type: z.literal("thinking.delta"),
   runId: runIdSchema,
@@ -124,6 +140,7 @@ export const streamEventSchema = z.discriminatedUnion("type", [
   runCanceledEventSchema,
   runCompletedEventSchema,
   runFailedEventSchema,
+  runRetryingEventSchema,
   canvasSyncEventSchema,
   billingErrorEventSchema,
 ]);
