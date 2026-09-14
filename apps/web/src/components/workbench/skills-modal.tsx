@@ -6,7 +6,7 @@ import type {
   SkillDetail,
   SkillListItem,
 } from "@loomic/shared";
-import { Folder, Loader2, Plus, Search, Trash2 } from "lucide-react";
+import { Blocks, Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -186,7 +186,7 @@ export function SkillsModal({
         >
           <div className="flex items-center gap-3 border-b px-5 py-3 pr-12">
             <DialogTitle className="flex items-center gap-2 text-base font-medium">
-              <Folder className="h-4 w-4" /> 技能
+              <Blocks className="h-4 w-4" /> 技能
             </DialogTitle>
             <div className="flex items-center gap-1 rounded-lg bg-muted p-1">
               {(

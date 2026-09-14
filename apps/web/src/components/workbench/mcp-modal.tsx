@@ -31,7 +31,7 @@ type McpTab = "configured" | "curated" | "registry";
  *
  * 三个页签：**已配置**（列表/启停/重连/编辑/删除 + 手动添加）、
  * **推荐**（内置精选目录，一键添加，参数就地填）、
- * **官方注册表**（registry.modelcontextprotocol.io 检索，仅 stdio+npm/pypi 可添加）。
+ * **官方 MCP 市场**（registry.modelcontextprotocol.io 检索，仅 stdio+npm/pypi 可添加）。
  *
  * 安全：MCP server 会在本机以子进程执行命令——变更类操作服务端有管理员门，
  * 界面也逐条提示，不做静默安装。
@@ -130,7 +130,7 @@ export function McpModal({
               [
                 { id: "configured", label: "已配置" },
                 { id: "curated", label: "推荐" },
-                { id: "registry", label: "官方注册表" },
+                { id: "registry", label: "官方 MCP 市场" },
               ] as const
             ).map((item) => (
               <button
@@ -659,34 +659,37 @@ function RegistryTab({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const search = useCallback((rawQuery: string) => {
-    setLoading(true);
-    setError(null);
-    const params = new URLSearchParams({
-      q: rawQuery.trim(),
-      limit: "20",
-    });
-    void fetch(`${getServerBaseUrl()}/api/mcp/registry?${params}`, {
-      headers: authHeaders(),
-    })
-      .then(async (response) => {
-        if (!response.ok) {
-          const payload = (await response.json().catch(() => ({}))) as {
-            error?: { message?: string };
-          };
-          setError(payload.error?.message ?? "注册表检索失败。");
-          return;
-        }
-        const payload = (await response.json()) as {
-          servers: McpRegistryServer[];
-          count: number;
-        };
-        setServers(payload.servers);
-        setCount(payload.count);
+  const search = useCallback(
+    (rawQuery: string) => {
+      setLoading(true);
+      setError(null);
+      const params = new URLSearchParams({
+        q: rawQuery.trim(),
+        limit: "20",
+      });
+      void fetch(`${getServerBaseUrl()}/api/mcp/registry?${params}`, {
+        headers: authHeaders(),
       })
-      .catch(() => setError("注册表请求失败（需要网络）。"))
-      .finally(() => setLoading(false));
-  }, [authHeaders]);
+        .then(async (response) => {
+          if (!response.ok) {
+            const payload = (await response.json().catch(() => ({}))) as {
+              error?: { message?: string };
+            };
+            setError(payload.error?.message ?? "注册表检索失败。");
+            return;
+          }
+          const payload = (await response.json()) as {
+            servers: McpRegistryServer[];
+            count: number;
+          };
+          setServers(payload.servers);
+          setCount(payload.count);
+        })
+        .catch(() => setError("注册表请求失败（需要网络）。"))
+        .finally(() => setLoading(false));
+    },
+    [authHeaders],
+  );
 
   useEffect(() => {
     search("");
@@ -695,7 +698,7 @@ function RegistryTab({
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        官方注册表：
+        官方 MCP 市场：
         <code className="mx-1">registry.modelcontextprotocol.io</code>
         只做名称子串匹配，故检索词越短结果越多。当前只支持**本地 stdio**
         且包生态为 npm / pypi
