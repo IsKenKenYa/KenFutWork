@@ -12,6 +12,7 @@ import type { StreamEvent, ToolArtifact } from "@loomic/shared";
 import { imageArtifactSchema, videoArtifactSchema } from "@loomic/shared";
 
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
+import { withStreamIdleGuard } from "./stream-idle-guard.js";
 
 /**
  * Shape of a LangChain v2 stream event from `streamEvents()`.
@@ -34,6 +35,13 @@ type AdaptDeepAgentStreamOptions = {
   sessionId: string;
   signal?: AbortSignal;
   stream: AsyncIterable<LangChainStreamEvent | unknown>;
+  /**
+   * 空闲看门狗阈值（毫秒，见 `stream-idle-guard.ts`）：上游停滞超过该时长即
+   * 有界失败。缺省用库内默认值。
+   */
+  idleTimeoutMs?: number;
+  /** 空闲超时触发时调用（中止底层请求、释放上游连接）。 */
+  abortRun?: () => void;
 };
 
 /**
@@ -68,7 +76,14 @@ export async function* adaptDeepAgentStream(
   }
 
   try {
-    for await (const rawEvent of options.stream) {
+    // 空闲看门狗：上游停滞不再是无限挂起，且中止信号在等待期即可生效
+    for await (const rawEvent of withStreamIdleGuard(options.stream, {
+      ...(options.idleTimeoutMs === undefined
+        ? {}
+        : { idleMs: options.idleTimeoutMs }),
+      ...(options.signal ? { signal: options.signal } : {}),
+      ...(options.abortRun ? { onIdle: options.abortRun } : {}),
+    })) {
       if (options.signal?.aborted) {
         yield canceledEvent(options.runId, now);
         return;
@@ -302,6 +317,12 @@ export async function* adaptDeepAgentStream(
       timestamp: now(),
       type: "run.failed",
     };
+    return;
+  }
+
+  // 看门狗因中止信号收场（而非上游正常结束）：仍按「取消」上报
+  if (options.signal?.aborted) {
+    yield canceledEvent(options.runId, now);
     return;
   }
 

@@ -37,6 +37,11 @@ export type ServerEnv = {
   agentBackendMode: AgentBackendMode;
   agentFilesRoot?: string;
   agentModel: string;
+  /**
+   * 模型流空闲看门狗阈值（毫秒，`LOOMIC_AGENT_STREAM_IDLE_TIMEOUT_MS`）。
+   * 上游停滞超过该时长即按有界失败终止本轮（缺省 180s，见 stream-idle-guard）。
+   */
+  agentStreamIdleTimeoutMs?: number;
   /** SecretStore 主密钥（DEC-7 凭证加密落库）；启用 BYOK 凭证写入时必须配置。 */
   credentialSecret?: string;
   /**
@@ -261,11 +266,17 @@ export function loadServerEnv(
       openAIApiKey,
     });
 
+  const agentStreamIdleTimeoutMs = parsePositiveInt(
+    overrides.agentStreamIdleTimeoutMs ??
+      source.LOOMIC_AGENT_STREAM_IDLE_TIMEOUT_MS,
+  );
+
   return {
     agentBackendMode:
       overrides.agentBackendMode ??
       parseAgentBackendMode(source.LOOMIC_AGENT_BACKEND_MODE),
     agentModel: resolvedAgentModel,
+    ...(agentStreamIdleTimeoutMs ? { agentStreamIdleTimeoutMs } : {}),
     port: overrides.port ?? parsePort(source.LOOMIC_SERVER_PORT ?? source.PORT),
     serverHost: overrides.serverHost ?? source.HOST ?? DEFAULT_SERVER_HOST,
     version: overrides.version ?? readServerVersion(),
@@ -393,6 +404,20 @@ function parseAgentModel(rawModel: string | undefined) {
 function normalizeOptionalString(value: string | undefined) {
   const normalizedValue = value?.trim();
   return normalizedValue || undefined;
+}
+
+/** 正整数（毫秒阈值一类）：未设置返回 undefined；设置了但非法则 fail loud。 */
+function parsePositiveInt(
+  raw: string | number | undefined,
+): number | undefined {
+  if (raw === undefined) {
+    return undefined;
+  }
+  const value = typeof raw === "number" ? raw : Number.parseInt(raw, 10);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`Invalid positive integer value: ${String(raw)}`);
+  }
+  return value;
 }
 
 function parsePort(rawPort: string | undefined) {

@@ -12,9 +12,24 @@ const AUTH_PATTERN =
 const INFRA_PATTERN =
   /econnrefused|econnreset|etimedout|dns|socket|tls|certificate/i;
 
+/**
+ * 自带面向用户文案的错误（我方显式构造）：直接透传，不套用下面的通用文案。
+ *
+ * 存在的理由：通用文案会把所有未知错误压成「请求处理失败，请重试。」——
+ * 用户看不出发生了什么（历史上 patchToolCallsMiddleware 的内部错误就是这样
+ * 变成一句无从下手的提示）。显式标记的错误带可执行信息（如「流已停滞 N 秒，
+ * 请重试或换模型」），交由用户判断。
+ */
+function isClientFacing(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { exposeToClient?: unknown }).exposeToClient === true
+  );
+}
+
 export function sanitizeErrorForClient(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
-
   // Log full detail server-side for debugging
   console.error("[error-sanitizer] Raw error:", raw);
   if (error instanceof Error) {
@@ -50,6 +65,9 @@ export function sanitizeErrorForClient(error: unknown): string {
   }
 
   // Map to user-friendly messages
+  if (isClientFacing(error) && raw.length <= 200) {
+    return raw;
+  }
   if (PROVIDER_PATTERN.test(raw)) {
     return "AI 服务暂时不可用，请稍后重试。";
   }

@@ -1500,6 +1500,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             runId,
             sessionId: run.sessionId,
             signal: run.controller.signal,
+            ...(options.env.agentStreamIdleTimeoutMs
+              ? { idleTimeoutMs: options.env.agentStreamIdleTimeoutMs }
+              : {}),
+            // 空闲超时即中止底层请求（释放上游连接），本轮按有界失败收尾
+            abortRun: () => run.controller.abort(),
             stream,
           })) {
             run.status = mapEventToStatus(event);
