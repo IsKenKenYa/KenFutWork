@@ -4,6 +4,7 @@ import type { ToolBlock } from "@loomic/shared";
 import { motion } from "framer-motion";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { parseSearchResultView } from "@/lib/search-results";
 import { ChatImage } from "./image-lightbox";
 import {
   formatModelDisplayName,
@@ -635,7 +636,8 @@ function ToolDetailPanel({
 /*  Tool-specific output renderers                                     */
 /* ------------------------------------------------------------------ */
 
-function ToolOutputRenderer({
+/** 工具输出渲染（导出供单测：分流正确性——品牌套件 / 联网搜索来源 / 通用回退）。 */
+export function ToolOutputRenderer({
   toolName,
   output,
 }: {
@@ -644,6 +646,12 @@ function ToolOutputRenderer({
 }) {
   if (toolName === "get_brand_kit" && isBrandKitOutput(output)) {
     return <BrandKitOutput data={output} />;
+  }
+
+  // 联网搜索：把来源渲染成可点击列表（此前只显示摘要，用户看不到出处）
+  const searchView = parseSearchResultView(toolName, output);
+  if (searchView) {
+    return <SearchSourcesOutput view={searchView} />;
   }
 
   const entries = Object.entries(output);
@@ -716,6 +724,60 @@ function isBrandKitOutput(
     "fonts" in output ||
     "logos" in output ||
     "kit_name" in output
+  );
+}
+
+/** 联网搜索来源列表：标题可点击直达，附主机名与摘要。 */
+function SearchSourcesOutput({
+  view,
+}: {
+  view: {
+    query: string;
+    sources: Array<{
+      title: string;
+      url: string;
+      snippet: string;
+      host: string;
+    }>;
+  };
+}) {
+  return (
+    <div>
+      <div className="text-xs font-medium text-muted-foreground mb-2">
+        {view.query ? `搜索来源 · ${view.query}` : "搜索来源"}
+      </div>
+      {view.sources.length === 0 ? (
+        <div className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
+          没有返回结果
+        </div>
+      ) : (
+        <ol className="space-y-1.5">
+          {view.sources.map((source, index) => (
+            <li
+              key={`${source.url}-${index}`}
+              className="rounded-lg bg-muted px-3 py-2"
+            >
+              <a
+                href={source.url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-sm font-medium text-foreground underline-offset-2 hover:underline"
+              >
+                {source.title}
+              </a>
+              <div className="mt-0.5 text-[11px] text-muted-foreground break-all">
+                {source.host}
+              </div>
+              {source.snippet ? (
+                <div className="mt-1 line-clamp-3 text-xs text-muted-foreground">
+                  {source.snippet}
+                </div>
+              ) : null}
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
   );
 }
 

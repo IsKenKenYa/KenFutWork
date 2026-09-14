@@ -55,6 +55,11 @@ const TOOL_CONFIG: Record<string, ToolDisplayConfig> = {
     icon: "palette",
     showCard: true,
   },
+  web_search: {
+    label: "联网搜索",
+    icon: "search",
+    showCard: true,
+  },
   project_search: {
     label: "\u641c\u7d22\u9879\u76ee",
     icon: "search",

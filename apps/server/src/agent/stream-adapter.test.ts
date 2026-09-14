@@ -122,3 +122,66 @@ describe("stream-adapter 停滞与取消", () => {
     expect(events.at(-1)?.type).toBe("run.completed");
   });
 });
+
+/**
+ * 联网搜索的来源必须真的到达客户端：`web_search` 的返回是 `{query, results}`，
+ * 事件里要能原样看到 results（客户端据此渲染可点击来源）。
+ * 这条缝此前没被任何测试覆盖——服务端工具测试只验工具本身，
+ * 客户端解析测试只验形状，中间「事件是否携带输出」是断的。
+ */
+describe("工具输出透传（web_search 来源可达客户端）", () => {
+  const searchPayload = {
+    query: "今天天气",
+    results: [
+      { title: "中国天气网", link: "https://weather.com.cn/a", content: "晴" },
+      { title: "另一来源", link: "https://example.com/b", content: "多云" },
+    ],
+  };
+
+  function toolEndStream(output: unknown): AsyncIterable<unknown> {
+    return {
+      async *[Symbol.asyncIterator]() {
+        yield {
+          event: "on_tool_start",
+          name: "web_search",
+          run_id: "call-1",
+          data: { input: { query: "今天天气" } },
+        };
+        yield {
+          event: "on_tool_end",
+          name: "web_search",
+          run_id: "call-1",
+          data: { output },
+        };
+      },
+    };
+  }
+
+  it("对象形态输出：tool.completed.output 携带 query 与 results", async () => {
+    const events = await collect(toolEndStream(searchPayload), {});
+    const completed = events.find((e) => e.type === "tool.completed") as
+      | { output?: Record<string, unknown> }
+      | undefined;
+
+    expect(completed).toBeDefined();
+    expect(completed?.output?.query).toBe("今天天气");
+    expect(Array.isArray(completed?.output?.results)).toBe(true);
+    const results = completed?.output?.results as Array<{ link: string }>;
+    expect(results.map((r) => r.link)).toEqual([
+      "https://weather.com.cn/a",
+      "https://example.com/b",
+    ]);
+  });
+
+  it("JSON 字符串输出：同样被解析为结构化 output（客户端解析器直接可用）", async () => {
+    const events = await collect(
+      toolEndStream(JSON.stringify(searchPayload)),
+      {},
+    );
+    const completed = events.find((e) => e.type === "tool.completed") as
+      | { output?: Record<string, unknown> }
+      | undefined;
+    expect(completed?.output?.query).toBe("今天天气");
+    expect((completed?.output?.results as unknown[]).length).toBe(2);
+  });
+});
