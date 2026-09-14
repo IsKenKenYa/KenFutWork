@@ -486,3 +486,32 @@
 .dark .landing-hero-glow-1 { opacity: 0.15 !important; }
 .dark .landing-hero-glow-2 { opacity: 0.12 !important; }
 
+
+/* ------------------------------------------------------------------ */
+/*  画布右键菜单：隐藏与本产品无关的项                                  */
+/* ------------------------------------------------------------------ */
+/* 按 Excalidraw 的 action 名（菜单项 li 上带 data-testid={actionName}）隐藏。
+   理由两类：
+   1. 与 AI 创作场景无关（禅模式/查看模式/属性统计）；
+   2. Excalidraw 自带 zh-CN 语言包缺这些键，会回落英文（Toggle grid、
+      Canvas & Shape properties、Add link、Copy link to object、
+      Wrap selection in frame、编辑箭头）——要么隐藏，要么由我们自绘中文入口替代
+      （网格开关已在 canvas-bottom-bar 自绘）。
+   语言包缺键无法配置修复：Excalidraw 未导出 setLanguage，也无自定义语言对象入参，
+   升级该依赖后可复核本规则是否仍需保留。 */
+.context-menu li[data-testid="zenMode"],
+.context-menu li[data-testid="viewMode"],
+.context-menu li[data-testid="stats"],
+.context-menu li[data-testid="gridMode"],
+.context-menu li[data-testid="linkToElement"],
+.context-menu li[data-testid="copyElementLink"],
+.context-menu li[data-testid="wrapSelectionInFrame"],
+.context-menu li[data-testid="toggleLinearEditor"] {
+  display: none;
+}
+
+/* 隐藏后可能留下孤立分隔线（菜单自带的分隔去重不会因隐藏而重跑） */
+.context-menu > .context-menu-item-separator:first-child,
+.context-menu > .context-menu-item-separator:last-child {
+  display: none;
+}

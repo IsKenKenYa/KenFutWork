@@ -70,6 +70,21 @@ const PlusIcon = ({ className }: { className?: string }) => (
     />
   </Ico>
 );
+const GridIcon = ({ className }: { className?: string }) => (
+  <svg
+    className={className}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.6}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <path d="M9 3v18M15 3v18M3 9h18M3 15h18" />
+  </svg>
+);
+
 const LayersIcon = ({ className }: { className?: string }) => (
   <Ico className={className} vb="0 0 20 20" fill="currentColor">
     <path d="M17.189 12.48a.65.65 0 0 1 .622 1.141l-7.5 4.1a.65.65 0 0 1-.623 0l-7.5-4.1a.65.65 0 0 1 .624-1.14L10 16.41zm0-3.036a.65.65 0 0 1 .622 1.14l-7.5 4.1a.65.65 0 0 1-.623 0l-7.5-4.1a.65.65 0 0 1 .624-1.14L10 13.374zm-7.426-7.2a.65.65 0 0 1 .549.035l7.5 4.1a.651.651 0 0 1 0 1.14l-7.5 4.101a.65.65 0 0 1-.624 0l-7.5-4.1a.651.651 0 0 1 0-1.14l7.5-4.101zM3.854 6.948 10 10.31l6.145-3.36L10 3.59z" />
@@ -260,6 +275,7 @@ export function CanvasBottomBar({
   /* ── Zoom state ── */
   const [zoom, setZoom] = useState(1);
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
+  const [gridOn, setGridOn] = useState(false);
   const zoomBtnRef = useRef<HTMLButtonElement>(null);
 
   /* ── Background color state ── */
@@ -279,14 +295,22 @@ export function CanvasBottomBar({
     setBgColor(initBg);
     setHexInput(initBg.replace(/^#/, "").toUpperCase());
 
+    setGridOn(Boolean(state.gridSize));
     const unsubscribe = excalidrawApi.onChange(() => {
       const s = excalidrawApi.getAppState();
       setZoom(s.zoom.value);
       setBgColor(s.viewBackgroundColor ?? "#FFFFFF");
+      setGridOn(Boolean(s.gridSize));
     });
     return () => {
       if (typeof unsubscribe === "function") unsubscribe();
     };
+  }, [excalidrawApi]);
+
+  /* ── 网格开关（Excalidraw 原生的「Toggle grid」缺中文键，改由底部栏自绘） ── */
+  const handleToggleGrid = useCallback(() => {
+    const current = excalidrawApi?.getAppState().gridSize ?? null;
+    excalidrawApi?.updateScene({ appState: { gridSize: current ? null : 20 } });
   }, [excalidrawApi]);
 
   /* ── Zoom helpers ── */
@@ -410,6 +434,18 @@ export function CanvasBottomBar({
           aria-label="生成文件"
         >
           <FileIcon className="h-3.5 w-3.5" />
+        </button>
+
+        {/* ── Grid toggle ── */}
+        <button
+          type="button"
+          className={`${btnClass} ${gridOn ? "bg-muted text-foreground" : ""}`}
+          onClick={handleToggleGrid}
+          aria-label="网格"
+          aria-pressed={gridOn}
+          title={gridOn ? "关闭网格" : "显示网格"}
+        >
+          <GridIcon className="h-4 w-4" />
         </button>
 
         {/* ── Divider ── */}

@@ -95,3 +95,43 @@ describe("画布与对话区文案已汉化", () => {
     expect(content).toContain('langCode="zh-CN"');
   });
 });
+
+/**
+ * 画布右键菜单：无用项隐藏 + 网格入口自绘中文。
+ *
+ * 背景：Excalidraw 自带的 zh-CN 语言包缺 `toggleGrid`/`fullTitle`/
+ * `copyElementLink`/`linkToElement`/`wrapSelectionInFrame` 等键，这些项必然回落
+ * 英文（且 Excalidraw 未导出 setLanguage、也无自定义语言对象入参，配置层修不了）。
+ * 处理方式是按 action 名隐藏，并为我们想保留的能力（网格）自绘中文入口。
+ */
+describe("画布右键菜单：无关项按 action 名隐藏", () => {
+  /** Excalidraw 菜单项 li 上带 data-testid={actionName}。 */
+  const HIDDEN_ACTIONS = [
+    "zenMode", // 禅模式（用户点名移除）
+    "viewMode", // 查看模式（用户点名移除）
+    "stats", // Canvas & Shape properties（英文 + 与 AI 创作无关）
+    "gridMode", // Toggle grid（英文；已由底部栏中文开关替代）
+    "linkToElement", // Add link / Link to object（英文 + 小众）
+    "copyElementLink", // Copy link to object（英文 + 小众）
+    "wrapSelectionInFrame", // Wrap selection in frame（英文）
+    "toggleLinearEditor", // 编辑箭头（labels.lineEditor.editArrow 缺中文键；Enter/双击仍可编辑）
+  ];
+
+  it("隐藏规则覆盖全部目标动作（避免升级依赖后静默回退）", () => {
+    const css = readFileSync(join(ROOT, "..", "app", "globals.css"), "utf-8");
+    for (const action of HIDDEN_ACTIONS) {
+      expect(css, action).toContain(
+        `.context-menu li[data-testid="${action}"]`,
+      );
+    }
+  });
+
+  it("网格能力仍可用：底部栏有中文「网格」开关（替掉英文 Toggle grid）", () => {
+    const bar = readFileSync(join(ROOT, "canvas-bottom-bar.tsx"), "utf-8");
+    expect(bar).toContain('aria-label="网格"');
+    expect(bar).toContain("gridSize");
+    // 不把 Excalidraw 的英文文案渲染成界面标签（注释里提到它不算违规）
+    expect(bar).not.toContain('aria-label="Toggle grid"');
+    expect(bar).not.toContain('title="Toggle grid"');
+  });
+});
