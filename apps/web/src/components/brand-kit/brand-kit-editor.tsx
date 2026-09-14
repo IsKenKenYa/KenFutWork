@@ -139,7 +139,7 @@ export function BrandKitEditor({
         <InlineInput
           value={kit.name}
           onCommit={handleNameCommit}
-          placeholder="Kit name"
+          placeholder="套件名称"
           inputClassName="text-2xl font-semibold text-foreground"
         />
 
@@ -255,7 +255,7 @@ function MoreMenu({
         type="button"
         onClick={() => setOpen((prev) => !prev)}
         className="rounded-lg p-2 text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
-        aria-label="More actions"
+        aria-label="更多操作"
       >
         <Ellipsis className="h-5 w-5" />
       </button>

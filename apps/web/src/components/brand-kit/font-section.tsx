@@ -81,7 +81,7 @@ export function FontSection({
 
   return (
     <section>
-      <SectionHeader title="Fonts" count={fonts.length} />
+      <SectionHeader title="字体" count={fonts.length} />
       <div className="flex flex-wrap gap-3">
         {fonts.map((font) => (
           <div key={font.id} className="flex flex-col items-center gap-1.5">
@@ -127,7 +127,7 @@ export function FontSection({
               type="button"
               onClick={() => setMenuOpen((prev) => !prev)}
               className="w-[150px] h-[113px] rounded-xl border-2 border-dashed border-muted-foreground/30 flex items-center justify-center hover:border-muted-foreground/50 transition-colors cursor-pointer"
-              aria-label="Add font"
+              aria-label="添加字体"
             >
               <Plus className="h-5 w-5 text-muted-foreground/60" />
             </button>
@@ -154,7 +154,7 @@ export function FontSection({
               </div>
             )}
           </div>
-          <span className="text-xs text-muted-foreground/60">Add</span>
+          <span className="text-xs text-muted-foreground/60">添加</span>
         </div>
       </div>
 

@@ -24,7 +24,7 @@ export function BrandKitSidebar({
     <aside className="flex w-full shrink-0 flex-col border-b bg-secondary md:w-[260px] md:border-b-0 md:border-r">
       {/* Header */}
       <div className="flex items-center gap-2 px-4 pt-4 pb-3">
-        <h1 className="text-sm font-semibold text-foreground">Brand Kit</h1>
+        <h1 className="text-sm font-semibold text-foreground">品牌套件</h1>
         <span className="ml-1 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
           Beta
         </span>

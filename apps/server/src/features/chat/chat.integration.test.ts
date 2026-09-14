@@ -98,7 +98,7 @@ describe.skipIf(!DATABASE_URL)("chat 真实库集成", () => {
           threadId: "thread_integration_a",
           userId,
         });
-        expect(bare?.title).toBe("New Chat");
+        expect(bare?.title).toBe("新对话");
         expect(bare?.id).toBeTruthy();
 
         const titled = await chat.createSession(workspaceId, {
