@@ -46,6 +46,10 @@ import {
   updateProject,
 } from "@/lib/server-api";
 import {
+  workDirectoryPromptHint,
+  pickWorkDirectory as workDirPick,
+} from "@/lib/work-directory";
+import {
   resolveWorkbenchSurface,
   type WorkbenchMode,
 } from "@/lib/workbench-surface";
@@ -207,6 +211,8 @@ export function Workbench() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   // Code 模式：本地工作目录（File System Access API，浏览器支持时可用）
   const [workDirName, setWorkDirName] = useState<string | null>(null);
+  /** 目录选择的反馈（不支持/失败）；成功或取消时清空。 */
+  const [workDirNotice, setWorkDirNotice] = useState<string | null>(null);
   const [creatingProject, setCreatingProject] = useState(false);
   // 侧栏底部个人中心 + 模态（设置 / 插件市场）
   const [workbenchUser, setWorkbenchUser] = useState<WorkbenchUser | null>(
@@ -635,20 +641,18 @@ export function Workbench() {
   );
 
   const pickWorkDirectory = useCallback(async () => {
-    try {
-      const picker = (
-        window as unknown as {
-          showDirectoryPicker?: () => Promise<{ name: string }>;
-        }
-      ).showDirectoryPicker;
-      if (!picker) {
-        return;
-      }
-      const dir = await picker();
-      setWorkDirName(dir.name);
-    } catch {
-      // 用户取消或浏览器不支持
+    const result = await workDirPick(window);
+    if (result.status === "picked") {
+      setWorkDirName(result.name);
+      setWorkDirNotice(null);
+      return;
     }
+    if (result.status === "cancelled") {
+      // 用户主动取消：不打扰
+      return;
+    }
+    // 不支持/失败都必须说出来（曾经是静默 return + 空 catch）
+    setWorkDirNotice(result.notice);
   }, []);
 
   const switchMode = useCallback((next: WorkbenchMode) => {
@@ -736,7 +740,7 @@ export function Workbench() {
           // 模式指令（inputDirective）由服务端 pre-step 事件缝注入，客户端不再拼接
           prompt: `${
             mode === "code" && workDirName
-              ? `【工作目录】${workDirName}
+              ? `${workDirectoryPromptHint(workDirName)}
 
 `
               : ""
@@ -1215,6 +1219,9 @@ export function Workbench() {
                 placeholder="继续追问…"
                 className="max-h-32 min-h-[24px] w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
               />
+              {workDirNotice ? (
+                <p className="mt-2 text-xs text-destructive">{workDirNotice}</p>
+              ) : null}
               <div className="mt-2 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <button
@@ -1414,6 +1421,9 @@ export function Workbench() {
                 }
                 className="w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
               />
+              {workDirNotice ? (
+                <p className="mt-2 text-xs text-destructive">{workDirNotice}</p>
+              ) : null}
               <div className="mt-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <button
