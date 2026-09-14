@@ -258,7 +258,7 @@ export async function registerSkillRoutes(
     }
   });
 
-  // POST /api/skills/import — import skill from external URL (GitHub, npm tarball)
+  // POST /api/skills/import — import skill from external URL (GitHub / npm tarball / zip)
   app.post("/api/skills/import", async (request, reply) => {
     try {
       const user = await options.auth.authenticate(request);

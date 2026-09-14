@@ -10,6 +10,7 @@
 
 import { load as loadYaml } from "js-yaml";
 import { Parser as TarParser } from "tar";
+import { readZipArchiveEntries } from "./zip-archive.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -56,6 +57,7 @@ export class SkillImportError extends Error {
     | "manifest_validation_error"
     | "github_fetch_error"
     | "tarball_extract_error"
+    | "zip_extract_error"
     | "unsupported_source";
 
   constructor(code: SkillImportError["code"], message: string) {
@@ -549,11 +551,11 @@ export async function importFromGitHub(
   };
 }
 
-// ── Tarball Importer ──────────────────────────────────────────────────────
+// ── Archive (tarball / zip) Importer ──────────────────────────────────────
 
-/** In-memory file extracted from a tarball */
-interface TarballEntry {
-  /** Path within the tarball (after stripping the root prefix) */
+/** In-memory file extracted from an archive (tarball or zip). */
+interface ArchiveEntry {
+  /** Path within the archive (after stripping the root prefix) */
   path: string;
   /** Raw text content */
   content: string;
@@ -565,9 +567,9 @@ interface TarballEntry {
  * npm tarballs typically have a `package/` prefix on all paths;
  * this is automatically detected and stripped.
  */
-async function extractTarballEntries(buffer: Buffer): Promise<TarballEntry[]> {
+async function extractTarballEntries(buffer: Buffer): Promise<ArchiveEntry[]> {
   return new Promise((resolve, reject) => {
-    const entries: TarballEntry[] = [];
+    const entries: ArchiveEntry[] = [];
     let rootPrefix: string | null = null;
 
     const parser = new TarParser({
@@ -673,6 +675,30 @@ export async function importFromTarballUrl(
   );
 
   const entries = await extractTarballEntries(buffer);
+  const imported = buildSkillFromArchiveEntries(entries, {
+    label: "tarball",
+    url,
+  });
+
+  console.log(
+    `[skill-import] Tarball import complete: ${imported.files.length} files collected from ${url}`,
+  );
+
+  return imported;
+}
+
+/**
+ * 从压缩包条目构建技能（tarball 与 zip 共用）。
+ *
+ * 两个来源的差异只在「怎么拿到条目」，之后完全同构：
+ * 找 SKILL.md（根或子目录）→ 无则回落 package.json + README → 收集
+ * scripts/references/assets 下的文本文件。共用一份避免两条路径漂移。
+ */
+function buildSkillFromArchiveEntries(
+  entries: ArchiveEntry[],
+  source: { label: "tarball" | "zip"; url: string },
+): ImportedSkill {
+  const { label, url } = source;
 
   // Find SKILL.md (case-insensitive, at the root level after prefix stripping)
   const skillMdEntry = entries.find((e) => e.path.toUpperCase() === "SKILL.MD");
@@ -731,12 +757,12 @@ export async function importFromTarballUrl(
   } else {
     throw new SkillImportError(
       "manifest_not_found",
-      `Neither SKILL.md nor package.json found in tarball: ${url}`,
+      `Neither SKILL.md nor package.json found in ${label}: ${url}`,
     );
   }
 
   console.log(
-    `[skill-import] Parsed tarball manifest: name="${manifest.name}" version="${manifest.version ?? "unversioned"}"`,
+    `[skill-import] Parsed ${label} manifest: name="${manifest.name}" version="${manifest.version ?? "unversioned"}"`,
   );
 
   // Collect files from allowed subdirectories
@@ -756,16 +782,80 @@ export async function importFromTarballUrl(
       mimeType: detectMimeType(entry.path),
     }));
 
-  console.log(
-    `[skill-import] Tarball import complete: ${files.length} files collected from ${url}`,
-  );
-
   return {
     manifest,
     skillContent,
     files,
     sourceUrl: url,
   };
+}
+
+// ── ZIP Importer ──────────────────────────────────────────────────────────
+
+/**
+ * Import a skill from a .zip / .skill URL.
+ *
+ * 与 tarball 的差异只在解包方式（见 zip-archive.ts 的自研最小读取器：
+ * 不引第三方依赖，明确拒绝加密/Zip64/越界路径/超限体积）。
+ */
+export async function importFromZipUrl(url: string): Promise<ImportedSkill> {
+  console.log(`[skill-import] Downloading zip: ${url}`);
+
+  const response = await fetch(url, {
+    headers: { "User-Agent": "Loomic-Skill-Importer/1.0" },
+  });
+
+  if (!response.ok) {
+    throw new SkillImportError(
+      "zip_extract_error",
+      `Failed to download zip: HTTP ${response.status} ${response.statusText} for ${url}`,
+    );
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  console.log(
+    `[skill-import] Zip downloaded: ${(buffer.length / 1024).toFixed(1)} KB, extracting...`,
+  );
+
+  let entries: ArchiveEntry[];
+  try {
+    entries = readZipArchiveEntries(buffer);
+  } catch (error) {
+    throw new SkillImportError(
+      "zip_extract_error",
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+
+  // 单层包裹目录（常见于「右键压缩文件夹」产物）：路径统一去掉首层前缀，
+  // 否则 SKILL.md 会被当成子目录文件而找不到（tarball 有 package/ 前缀的同类处理）
+  const stripped = stripSingleRootPrefix(entries);
+  const imported = buildSkillFromArchiveEntries(stripped, {
+    label: "zip",
+    url,
+  });
+
+  console.log(
+    `[skill-import] Zip import complete: ${imported.files.length} files collected from ${url}`,
+  );
+
+  return imported;
+}
+
+/** 若所有条目共享同一层根目录前缀（如 `my-skill/`），统一剥掉。 */
+function stripSingleRootPrefix(entries: ArchiveEntry[]): ArchiveEntry[] {
+  const firstSlash = entries[0]?.path.indexOf("/") ?? -1;
+  if (firstSlash <= 0) {
+    return entries;
+  }
+  const prefix = entries[0]?.path.slice(0, firstSlash + 1) ?? "";
+  if (!prefix || !entries.every((entry) => entry.path.startsWith(prefix))) {
+    return entries;
+  }
+  return entries.map((entry) => ({
+    ...entry,
+    path: entry.path.slice(prefix.length),
+  }));
 }
 
 // ── Main Entry Point ──────────────────────────────────────────────────────
@@ -799,16 +889,12 @@ export async function importSkillFromUrl(url: string): Promise<ImportedSkill> {
       return importFromTarballUrl(url);
 
     case "zip":
-      // TODO: Implement ZIP support when needed
-      throw new SkillImportError(
-        "unsupported_source",
-        "ZIP import is not yet supported. Use a GitHub URL or npm tarball (.tgz) instead.",
-      );
+      return importFromZipUrl(url);
 
     case "unknown":
       throw new SkillImportError(
         "unsupported_source",
-        `Unsupported import URL format: ${url}. Supported: GitHub repos, npm tarballs (.tgz/.tar.gz)`,
+        `Unsupported import URL format: ${url}. Supported: GitHub repos, npm tarballs (.tgz/.tar.gz), zip archives (.zip/.skill)`,
       );
   }
 }
