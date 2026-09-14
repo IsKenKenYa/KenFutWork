@@ -10,6 +10,7 @@ import {
 } from "deepagents";
 
 import type { ServerEnv } from "../../config/env.js";
+import { runtimeEnvAdditions } from "../../desktop/runtimes.js";
 import type { AgentBackendResult } from "./index.js";
 
 type AgentBackendEnv = Pick<ServerEnv, "agentFilesRoot" | "skillsRoot">;
@@ -29,6 +30,10 @@ export function createDevelopmentBackend(
     canvasId?: string;
     /** When true, add a /workspace-skills/ route backed by the Store. */
     hasWorkspaceSkills?: boolean;
+    /** 随包运行时 bin 目录（前置到 sandbox PATH）。 */
+    runtimePathAdditions?: string[];
+    /** 随包 JDK 根目录（JAVA_HOME）。 */
+    javaHome?: string;
   },
 ): AgentBackendResult {
   if (!env.agentFilesRoot) {
@@ -51,7 +56,11 @@ export function createDevelopmentBackend(
     timeout: 120,
     maxOutputBytes: 200_000,
     env: {
-      PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
+      // 随包运行时（Node/Python/uv/JDK）前置到 PATH 并补 PATHEXT：宿主机没装也能跑对应任务
+      ...runtimeEnvAdditions({
+        runtimePathAdditions: options?.runtimePathAdditions,
+        javaHome: options?.javaHome,
+      }),
       HOME: process.env.HOME ?? "/tmp",
       FONT_DIR: join(skillsRoot, "canvas-design", "canvas-fonts"),
       PYTHONDONTWRITEBYTECODE: "1",

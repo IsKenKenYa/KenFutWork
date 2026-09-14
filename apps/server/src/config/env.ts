@@ -71,6 +71,13 @@ export type ServerEnv = {
   desktopDataDir?: string;
   /** 内嵌 Postgres 二进制目录（`LOOMIC_PG_BIN_DIR`）；缺省按发布包/依赖包解析。 */
   pgBinDir?: string;
+  /**
+   * 随包分发的语言运行时 bin 目录（Node/Python/uv/JDK，desktop/runtimes.ts 解析）。
+   * 注入 sandbox 的 PATH，使宿主机没装这些运行时也能执行对应任务。
+   */
+  runtimePathAdditions?: string[];
+  /** 随包 JDK 的根目录（JAVA_HOME）。 */
+  javaHome?: string;
   /** 桌面形态：由本进程拉起内嵌 Postgres 并跑迁移（FORM-2）。 */
   embeddedPostgres?: boolean;
   /** 内嵌 Postgres 端口；缺省自动挑空闲端口（避免与用户自装 Postgres 冲突）。 */
@@ -290,6 +297,10 @@ export function loadServerEnv(
     ...(blobDir ? { blobDir } : {}),
     ...(desktopDataDir ? { desktopDataDir } : {}),
     ...(pgBinDir ? { pgBinDir } : {}),
+    ...(overrides.runtimePathAdditions?.length
+      ? { runtimePathAdditions: overrides.runtimePathAdditions }
+      : {}),
+    ...(overrides.javaHome ? { javaHome: overrides.javaHome } : {}),
     ...(embeddedPostgres ? { embeddedPostgres } : {}),
     ...(embeddedPostgresPort ? { embeddedPostgresPort } : {}),
     ...(blobPublicBaseUrl ? { blobPublicBaseUrl } : {}),

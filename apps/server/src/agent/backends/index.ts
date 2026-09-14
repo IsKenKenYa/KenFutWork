@@ -6,7 +6,11 @@ import { createProductionBackendFactory } from "./prod.js";
 
 type AgentBackendEnv = Pick<
   ServerEnv,
-  "agentBackendMode" | "agentFilesRoot" | "skillsRoot"
+  | "agentBackendMode"
+  | "agentFilesRoot"
+  | "skillsRoot"
+  | "runtimePathAdditions"
+  | "javaHome"
 >;
 
 // deepagents ≥1.13: backend 工厂为同步签名，返回 BackendProtocolV2 兼容实例
@@ -33,6 +37,10 @@ export function createAgentBackend(
     return createDevelopmentBackend(env, {
       ...(canvasId != null ? { canvasId } : {}),
       ...(options?.hasWorkspaceSkills ? { hasWorkspaceSkills: true } : {}),
+      ...(env.runtimePathAdditions?.length
+        ? { runtimePathAdditions: env.runtimePathAdditions }
+        : {}),
+      ...(env.javaHome ? { javaHome: env.javaHome } : {}),
     });
   }
 
@@ -46,5 +54,9 @@ export function createAgentBackend(
   return createProductionBackendFactory(canvasId, {
     ...(env.skillsRoot ? { skillsRoot: env.skillsRoot } : {}),
     ...(options?.hasWorkspaceSkills ? { hasWorkspaceSkills: true } : {}),
+    ...(env.runtimePathAdditions?.length
+      ? { runtimePathAdditions: env.runtimePathAdditions }
+      : {}),
+    ...(env.javaHome ? { javaHome: env.javaHome } : {}),
   });
 }

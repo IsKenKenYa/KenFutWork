@@ -9,6 +9,8 @@ import {
   StoreBackend,
 } from "deepagents";
 
+import { runtimeEnvAdditions } from "../../desktop/runtimes.js";
+
 const DEFAULT_SANDBOX_ROOT = "/tmp/loomic-sandbox";
 const DEFAULT_SKILLS_ROOT = "/opt/loomic/skills";
 
@@ -38,6 +40,10 @@ export function createProductionBackendFactory(
     sandboxRoot?: string;
     skillsRoot?: string;
     hasWorkspaceSkills?: boolean;
+    /** 随包运行时 bin 目录（前置到 sandbox PATH）。 */
+    runtimePathAdditions?: string[];
+    /** 随包 JDK 根目录（JAVA_HOME）。 */
+    javaHome?: string;
   },
 ): {
   factory: (runtime: BackendRuntime) => AnyBackendProtocol;
@@ -65,7 +71,11 @@ export function createProductionBackendFactory(
     timeout: 120,
     maxOutputBytes: 200_000,
     env: {
-      PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
+      // 随包运行时（Node/Python/uv/JDK）前置到 PATH 并补 PATHEXT：宿主机没装也能跑对应任务
+      ...runtimeEnvAdditions({
+        runtimePathAdditions: options?.runtimePathAdditions,
+        javaHome: options?.javaHome,
+      }),
       HOME: realSandboxDir,
       FONT_DIR: join(skillsRoot, "canvas-design", "canvas-fonts"),
       PYTHONDONTWRITEBYTECODE: "1",

@@ -12,7 +12,9 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
@@ -192,6 +194,27 @@ function main() {
     "[package] 捆绑 sharp 原生扩展（node_modules/@img/sharp-win32-x64）",
   );
 
+  // 4d) 随包语言运行时（Node / Python / JRE）：agent 的 execute 跑在**宿主机**上，
+  //     用户机器没装 Node/Python/JDK 时「建 python 项目」「跑 Java」「npx 起 MCP server」
+  //     都不可用。由 scripts/fetch-runtimes.mjs 预取，这里整目录拷进包（<exeDir>/runtime/，
+  //     由 desktop/runtimes.ts 解析并注入 sandbox PATH）。
+  const runtimeDir = join(ROOT, "runtime");
+  const runtimeNames = existsSync(runtimeDir)
+    ? readdirSync(runtimeDir).filter((name) =>
+        statSync(join(runtimeDir, name)).isDirectory(),
+      )
+    : [];
+  if (runtimeNames.length > 0) {
+    cpSync(runtimeDir, join(RELEASE, "runtime"), { recursive: true });
+    console.log(
+      `[package] 捆绑随包运行时（runtime/）：${runtimeNames.join("、")}`,
+    );
+  } else {
+    console.warn(
+      "[package] 未发现 runtime/：agent 将依赖宿主机自带的 Node/Python/JDK。先跑 pnpm fetch:runtimes 再打包。",
+    );
+  }
+
   writeFileSync(
     join(RELEASE, "启动.bat"),
     `@echo off
@@ -230,6 +253,8 @@ pause
   认证：本机免登录（只监听 127.0.0.1，仅本机可访问）
   队列：进程内（不依赖 Postgres 扩展）
   文件：本机磁盘（数据目录下的 blobs/）
+  运行时：随包 Node / Python / JDK（runtime/）——agent 执行命令时自动注入其路径，
+          无需在系统里预装；若打包时未取到 runtime/，则回退用系统自带的那些
 
 模型与搜索
   在本目录新建 .env，每行一条「键=值」，例如：

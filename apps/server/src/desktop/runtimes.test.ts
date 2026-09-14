@@ -1,0 +1,171 @@
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+import {
+  prependRuntimePath,
+  resolveRuntime,
+  resolveRuntimes,
+  runtimeEnvAdditions,
+} from "./runtimes.js";
+
+/**
+ * 回归背景：桌面包是 Node SEA 单 exe，agent 的 execute 跑在宿主机上——用户机器
+ * 没装 Node/Python/JDK 时相关任务全不可用。用户要求把三者随包分发，这里锁
+ * 「运行时目录怎么找」与「PATH 怎么注入」。
+ */
+function fakeFs(present: string[]) {
+  return (path: string) => present.includes(path);
+}
+
+describe("运行时目录解析", () => {
+  it("发布包布局：<exeDir>/runtime/<node|python|uv|jdk>/… 命中即可用", () => {
+    const app = join("C:", "app");
+    const present = [
+      join(app, "runtime", "node", "node.exe"),
+      join(app, "runtime", "python", "python.exe"),
+      join(app, "runtime", "uv", "uvx.exe"),
+      join(app, "runtime", "jdk", "bin", "java.exe"),
+    ];
+    const resolved = resolveRuntimes({
+      env: {},
+      exeDir: app,
+      exists: fakeFs(present),
+    });
+    expect(resolved.bundled).toEqual(["node", "python", "uv", "java"]);
+    expect(resolved.pathAdditions).toEqual([
+      join(app, "runtime", "node"),
+      join(app, "runtime", "python"),
+      join(app, "runtime", "uv"),
+      join(app, "runtime", "jdk", "bin"),
+    ]);
+    // JDK 的 JAVA_HOME 指向运行时根（不是 bin）
+    expect(resolved.javaHome).toBe(join(app, "runtime", "jdk"));
+  });
+
+  it("未捆绑：返回 null 且不抛错（宿主自带运行时仍可用，属增强项）", () => {
+    const resolved = resolveRuntimes({
+      env: {},
+      exeDir: "C:/app",
+      exists: () => false,
+    });
+    expect(resolved.roots).toEqual([]);
+    expect(resolved.bundled).toEqual([]);
+    expect(resolved.javaHome).toBeUndefined();
+    expect(
+      resolveRuntime("python", {
+        env: {},
+        exeDir: "C:/app",
+        exists: () => false,
+      }),
+    ).toBeNull();
+  });
+
+  it("部分捆绑：缺失的运行时既不进 PATH 也不报错", () => {
+    const app = join("C:", "app");
+    const resolved = resolveRuntimes({
+      env: {},
+      exeDir: app,
+      exists: fakeFs([join(app, "runtime", "node", "node.exe")]),
+    });
+    expect(resolved.bundled).toEqual(["node"]);
+    expect(resolved.pathAdditions).toEqual([join(app, "runtime", "node")]);
+    expect(resolved.javaHome).toBeUndefined();
+  });
+
+  it("显式环境变量优先于包内目录", () => {
+    const portable = join("D:", "portable-node");
+    const app = join("C:", "app");
+    const root = resolveRuntime("node", {
+      env: { LOOMIC_NODE_BIN_DIR: portable },
+      exeDir: app,
+      exists: fakeFs([
+        join(portable, "node.exe"),
+        join(app, "runtime", "node", "node.exe"),
+      ]),
+    });
+    expect(root?.binDir).toBe(portable);
+    expect(root?.homeDir).toBe(portable);
+  });
+
+  it("显式环境变量指向错误目录：fail loud（不静默回落宿主运行时）", () => {
+    expect(() =>
+      resolveRuntime("java", {
+        env: { LOOMIC_JAVA_BIN_DIR: join("D:", "empty") },
+        exeDir: "C:/app",
+        exists: () => false,
+      }),
+    ).toThrow(/LOOMIC_JAVA_BIN_DIR/);
+  });
+
+  it("JAVA_HOME 推导：bin 目录覆盖式显式配置时回到运行时根", () => {
+    const jdkBin = join("D:", "jdk-21", "bin");
+    const root = resolveRuntime("java", {
+      env: { LOOMIC_JAVA_BIN_DIR: jdkBin },
+      exeDir: join("C:", "app"),
+      exists: fakeFs([join(jdkBin, "java.exe")]),
+    });
+    expect(root?.binDir).toBe(jdkBin);
+    expect(root?.homeDir).toBe(join("D:", "jdk-21"));
+  });
+});
+
+describe("PATH 注入", () => {
+  it("前置且去重；空 PATH 也能工作", () => {
+    expect(
+      prependRuntimePath("C:/Windows;C:/tools", ["C:/app/runtime/node"]),
+    ).toBe("C:/app/runtime/node;C:/Windows;C:/tools");
+
+    // 已在 PATH 中则不重复添加
+    expect(
+      prependRuntimePath("C:/app/runtime/node;C:/Windows", [
+        "C:/app/runtime/node",
+      ]),
+    ).toBe("C:/app/runtime/node;C:/Windows");
+
+    expect(prependRuntimePath(undefined, ["A"])).toBe("A");
+    expect(prependRuntimePath("", ["A", "B"])).toBe("A;B");
+  });
+});
+
+describe("sandbox env 片段", () => {
+  /**
+   * 回归背景（实测）：Windows 上 `uv venv --python python` 在只给运行时 PATH 时
+   * 报「No interpreter found」——uv / npx 这类工具自己扫 PATH，靠 PATHEXT 把
+   * `python` 匹配到 `python.exe`。sandbox env 不带 PATHEXT 时，随包 Python 形同不存在。
+   */
+  it("Windows：PATH 前置 + JAVA_HOME + PATHEXT 透传", () => {
+    const env = runtimeEnvAdditions({
+      runtimePathAdditions: ["D:/app/runtime/python", "D:/app/runtime/jdk/bin"],
+      javaHome: "D:/app/runtime/jdk",
+      platform: "win32",
+      basePath: "C:/Windows",
+      pathext: ".COM;.EXE;.BAT",
+    });
+    expect(env.PATH).toBe(
+      "D:/app/runtime/python;D:/app/runtime/jdk/bin;C:/Windows",
+    );
+    expect(env.JAVA_HOME).toBe("D:/app/runtime/jdk");
+    expect(env.PATHEXT).toBe(".COM;.EXE;.BAT");
+  });
+
+  it("POSIX：分隔符为冒号，且不注入 PATHEXT", () => {
+    const env = runtimeEnvAdditions({
+      runtimePathAdditions: ["/opt/rt/python"],
+      platform: "linux",
+      basePath: "/usr/bin",
+      pathext: ".COM;.EXE",
+    });
+    expect(env.PATH).toBe("/opt/rt/python:/usr/bin");
+    expect(env.PATHEXT).toBeUndefined();
+    expect(env.JAVA_HOME).toBeUndefined();
+  });
+
+  it("未捆绑运行时：PATH 原样返回，不产生空条目", () => {
+    const env = runtimeEnvAdditions({
+      platform: "win32",
+      basePath: "C:/Windows",
+      pathext: ".EXE",
+    });
+    expect(env.PATH).toBe("C:/Windows");
+  });
+});

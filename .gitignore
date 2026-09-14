@@ -77,3 +77,6 @@ apps/web/tmp/
 
 # 本机临时目录（如 .tmp-mcp：E2E 测试用 MCP server 夹具，由 .env.local 的 LOOMIC_MCP_SERVERS 挂载）
 .tmp-*/
+
+# 随包分发的语言运行时（Node/Python/JDK，scripts/fetch-runtimes.mjs 拉取）
+/runtime/
