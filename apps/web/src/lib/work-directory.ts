@@ -22,7 +22,7 @@ export type WorkDirectoryPickResult =
   | { status: "failed"; notice: string };
 
 export const UNSUPPORTED_DIRECTORY_PICKER_NOTICE =
-  "当前环境不支持选择文件夹（需要 Chromium 内核，且页面未被 iframe 策略禁用）。智能体在沙箱工作区中执行，本机文件夹暂不能直接绑定。";
+  "当前环境不支持选择工作目录（需要 Chromium 内核，且页面未被 iframe 策略禁用）。智能体在沙箱工作区中执行，本机目录暂不能直接绑定。";
 
 /** 从 window 形态对象里取目录选择器；缺失返回 undefined。 */
 export function resolveDirectoryPicker(
@@ -51,7 +51,7 @@ export function describePickFailure(error: unknown): WorkDirectoryPickResult {
     error instanceof Error ? error.message : String(error ?? "未知错误");
   return {
     status: "failed",
-    notice: `选择文件夹失败：${message}`,
+    notice: `选择工作目录失败：${message}`,
   };
 }
 

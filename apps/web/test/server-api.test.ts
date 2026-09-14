@@ -149,13 +149,30 @@ describe("authenticated server API", () => {
     });
 
     const result = await fetchProjects("token_abc");
+    // 缺省取画布项目（design）；工作目录项目用 kind=code 单独取
     expect(mockFetch).toHaveBeenCalledWith(
-      "http://localhost:3001/api/projects",
+      "http://localhost:3001/api/projects?kind=design",
       expect.objectContaining({
         headers: { Authorization: "Bearer token_abc" },
       }),
     );
     expect(result.projects).toHaveLength(1);
+  });
+
+  it("fetchProjects 可指定 kind（Code 模式取工作目录项目）", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ projects: [] }),
+    });
+
+    await fetchProjects("token_abc", "code");
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:3001/api/projects?kind=code",
+      expect.objectContaining({
+        headers: { Authorization: "Bearer token_abc" },
+      }),
+    );
   });
 
   it("fetchVideoModels preserves capability, limits, and verified pricing metadata", async () => {

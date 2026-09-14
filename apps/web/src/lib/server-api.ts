@@ -11,6 +11,7 @@ import type {
   ProfileUpdateResponse,
   ProjectCreateRequest,
   ProjectCreateResponse,
+  ProjectKind,
   ProjectListResponse,
   ProjectUpdateRequest,
   ProviderInstanceCreateRequest,
@@ -109,10 +110,13 @@ export async function fetchViewer(
 
 export async function fetchProjects(
   accessToken: string,
+  kind: ProjectKind = "design",
 ): Promise<ProjectListResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/projects`, {
-    headers: authHeaders(accessToken),
-  });
+  const query = new URLSearchParams({ kind });
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/projects?${query.toString()}`,
+    { headers: authHeaders(accessToken) },
+  );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as ProjectListResponse;
 }

@@ -49,6 +49,7 @@ import {
 import { SidebarRow } from "@/components/workbench/sidebar-row";
 import { SkillsModal } from "@/components/workbench/skills-modal";
 import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
+import { WorkDirectorySelect } from "@/components/workbench/work-directory-select";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useAuth } from "@/lib/auth-context";
 import { getServerBaseUrl } from "@/lib/env";
@@ -129,38 +130,6 @@ const MODE_META: Record<
 };
 
 const TASKS_STORAGE_KEY = "workbench-tasks";
-/** Code 模式项目（本地文件夹，与 Design 的 projects 实体隔离）。 */
-const CODE_PROJECTS_KEY = "workbench:code-projects";
-
-interface CodeProject {
-  id: string;
-  name: string;
-  createdAt: number;
-}
-
-function loadCodeProjects(): CodeProject[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(CODE_PROJECTS_KEY);
-    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
-    return Array.isArray(parsed)
-      ? parsed.filter(
-          (p): p is CodeProject =>
-            typeof p?.id === "string" && typeof p?.name === "string",
-        )
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveCodeProjects(list: CodeProject[]) {
-  try {
-    window.localStorage.setItem(CODE_PROJECTS_KEY, JSON.stringify(list));
-  } catch {
-    // 存储失败不阻塞
-  }
-}
 
 function loadTasks(mode: WorkbenchMode): WorkbenchTask[] {
   if (typeof window === "undefined") return [];
@@ -222,7 +191,11 @@ export function Workbench() {
     return () => window.clearTimeout(timer);
   }, [chatNotice]);
   const [tier, setTier] = useState("default");
-  const [codeProjects, setCodeProjects] = useState<CodeProject[]>([]);
+  /**
+   * Code 模式的「工作目录项目」（服务端 projects, kind='code'）。
+   * 「工作目录=项目」：用户选的每个工作目录就是一个项目，对话挂在它下面。
+   */
+  const [codeProjects, setCodeProjects] = useState<ProjectSummary[]>([]);
   const [thinking, setThinking] = useState("default");
   const [executionMode, setExecutionMode] = useState<ExecutionMode>("agent");
   const [executionModes, setExecutionModes] = useState<
@@ -263,11 +236,15 @@ export function Workbench() {
   activeTaskIdRef.current = activeTaskId;
 
   const tasks = tasksByMode[mode];
+  /**
+   * 当前选中的项目：Code 模式在「工作目录项目」（kind='code'）里找，Design 在画布
+   * 项目（kind='design'）里找。两类项目在服务端就分开了，故同一 selectedProjectId
+   * 不会跨模式误命中。
+   */
   const selectedProject =
-    projects.find((p) => p.id === selectedProjectId) ?? null;
-
-  /** Code 模式 run 的作用域画布（工作目录=项目 → 取项目主画布）。 */
-  const codeCanvasScope = selectedProject?.primaryCanvas?.id ?? null;
+    (mode === "code" ? codeProjects : projects).find(
+      (p) => p.id === selectedProjectId,
+    ) ?? null;
 
   const activeTask = useMemo(
     () => tasks.find((t) => t.id === activeTaskId) ?? null,
@@ -292,7 +269,6 @@ export function Workbench() {
       code: loadTasks("code"),
       design: loadTasks("design"),
     });
-    setCodeProjects(loadCodeProjects());
     try {
       setThinking(
         window.localStorage.getItem("workbench:thinking") ?? "default",
@@ -329,12 +305,17 @@ export function Workbench() {
   const refreshProjects = useCallback(() => {
     const token = session?.access_token;
     if (!token) return;
-    fetchProjects(token)
+    // 两类项目各取一份：design=画布项目，code=工作目录项目（「工作目录=项目」）。
+    // 都在服务端一处持有，客户端不再另造 localStorage 项目（那是两套真相的来源）。
+    fetchProjects(token, "design")
       .then((data) => setProjects(data.projects))
+      .catch(() => {});
+    fetchProjects(token, "code")
+      .then((data) => setCodeProjects(data.projects))
       .catch(() => {});
   }, [session]);
 
-  // Design 模式项目列表（复用 Loomic 项目/画布）
+  // 项目列表（两个模式各自一份 kind）
   useEffect(() => {
     if (session?.access_token) refreshProjects();
   }, [session, refreshProjects]);
@@ -502,45 +483,65 @@ export function Workbench() {
     [mode],
   );
 
-  // ── Code 项目（本地文件夹）动作 ──
-  const createCodeProject = useCallback((name: string) => {
-    const project: CodeProject = {
-      id: `code-${crypto.randomUUID()}`,
-      name,
-      createdAt: Date.now(),
-    };
-    setCodeProjects((prev) => {
-      const next = [project, ...prev];
-      saveCodeProjects(next);
-      return next;
-    });
-    return project;
-  }, []);
+  // ── Code 项目（工作目录项目，kind='code'，与 Design 的画布项目分开）──
+  /** 建工作目录项目并选中（「工作目录=项目」）；失败返回 null 由调用方提示。 */
+  const createCodeProject = useCallback(
+    async (name: string): Promise<ProjectSummary | null> => {
+      const token = session?.access_token;
+      if (!token) return null;
+      setCreatingProject(true);
+      try {
+        const result = await createProject(token, { kind: "code", name });
+        setCodeProjects((prev) => [result.project, ...prev]);
+        return result.project;
+      } catch {
+        return null;
+      } finally {
+        setCreatingProject(false);
+      }
+    },
+    [session],
+  );
 
-  const renameCodeProject = useCallback((id: string, name: string) => {
-    setCodeProjects((prev) => {
-      const next = prev.map((p) => (p.id === id ? { ...p, name } : p));
-      saveCodeProjects(next);
-      return next;
-    });
-  }, []);
+  const renameCodeProject = useCallback(
+    async (id: string, name: string) => {
+      const token = session?.access_token;
+      if (!token) return;
+      try {
+        await updateProject(token, id, { name });
+        setCodeProjects((prev) =>
+          prev.map((p) => (p.id === id ? { ...p, name } : p)),
+        );
+      } catch {
+        // 失败保留旧名
+      }
+    },
+    [session],
+  );
 
-  const removeCodeProject = useCallback((id: string) => {
-    setCodeProjects((prev) => {
-      const next = prev.filter((p) => p.id !== id);
-      saveCodeProjects(next);
-      return next;
-    });
-    setSelectedProjectId((current) => (current === id ? null : current));
-    // 其下对话转为未分组
-    setTasksByMode((prev) => {
-      const list = prev.code.map((t) =>
-        t.projectId === id ? { ...t, projectId: null } : t,
-      );
-      saveTasks("code", list);
-      return { ...prev, code: list };
-    });
-  }, []);
+  const removeCodeProject = useCallback(
+    async (id: string) => {
+      const token = session?.access_token;
+      if (token) {
+        try {
+          await deleteProject(token, id);
+        } catch {
+          // 服务端删除失败仍继续清本地，避免幽灵项目卡住 UI
+        }
+      }
+      setCodeProjects((prev) => prev.filter((p) => p.id !== id));
+      setSelectedProjectId((current) => (current === id ? null : current));
+      // 其下对话转为未分组
+      setTasksByMode((prev) => {
+        const list = prev.code.map((t) =>
+          t.projectId === id ? { ...t, projectId: null } : t,
+        );
+        saveTasks("code", list);
+        return { ...prev, code: list };
+      });
+    },
+    [session],
+  );
 
   const deleteTask = useCallback(
     (taskId: string) => {
@@ -692,12 +693,13 @@ export function Workbench() {
       // （缺 canvasId 会立刻失败），而浏览器只拿得到目录名——所以这里按目录名
       // 建同名项目并选中，run 以该项目的主画布为作用域，文件落在项目的沙箱目录里。
       if (mode === "code") {
-        const plan = resolveWorkDirProject(result.name, projects);
+        // 目录名 → 工作目录项目：同名复用，没有就自动建（服务端 kind='code'）
+        const plan = resolveWorkDirProject(result.name, codeProjects);
         if (plan.kind === "reuse") {
           setSelectedProjectId(plan.projectId);
           return;
         }
-        const created = await createProjectNamed(plan.name);
+        const created = await createCodeProject(plan.name);
         if (created) {
           setSelectedProjectId(created.id);
           return;
@@ -714,7 +716,17 @@ export function Workbench() {
     }
     // 不支持/失败都必须说出来（曾经是静默 return + 空 catch）
     setWorkDirNotice(result.notice);
-  }, [mode, projects, createProjectNamed]);
+  }, [mode, codeProjects, createCodeProject]);
+
+  /**
+   * 「不在项目中工作」：清掉工作目录与项目选择。
+   * run 会退回会话自身的作用域（服务端懒供给的 Code 载体），不再绑定工作目录项目。
+   */
+  const clearWorkDirectory = useCallback(() => {
+    setWorkDirName(null);
+    setWorkDirNotice(null);
+    setSelectedProjectId(null);
+  }, []);
 
   const switchMode = useCallback((next: WorkbenchMode) => {
     setMode(next);
@@ -722,7 +734,7 @@ export function Workbench() {
   }, []);
 
   const startTask = useCallback(
-    (text: string) => {
+    async (text: string) => {
       if (!text.trim() || !session?.access_token) return;
 
       if (mode === "design") {
@@ -736,6 +748,24 @@ export function Workbench() {
 
       const sessionId = crypto.randomUUID();
       const conversationId = crypto.randomUUID();
+
+      // Code 模式：工作目录=项目。选了工作目录却没有对应项目（项目被删过、或历史
+      // 会话只留了目录名）时按目录名自动补建——否则 run 绑不上项目会整轮秒失败。
+      let resolvedProject = mode === "code" ? selectedProject : null;
+      if (mode === "code" && !resolvedProject && workDirName) {
+        const plan = resolveWorkDirProject(workDirName, codeProjects);
+        resolvedProject =
+          plan.kind === "reuse"
+            ? (codeProjects.find((p) => p.id === plan.projectId) ?? null)
+            : await createCodeProject(plan.name);
+        if (resolvedProject) setSelectedProjectId(resolvedProject.id);
+      }
+      // 作用域：项目主画布优先；未选工作目录时退回会话自身（服务端懒供给 Code 载体）
+      const runCanvasId =
+        mode === "code"
+          ? (resolvedProject?.primaryCanvas?.id ?? conversationId)
+          : conversationId;
+
       const title = text.trim().slice(0, 24) || "新任务";
       const task: WorkbenchTask = {
         id: conversationId,
@@ -745,7 +775,7 @@ export function Workbench() {
         createdAt: Date.now(),
         messages: [{ role: "user", text: text.trim() }],
         status: "running",
-        projectId: mode === "code" ? (selectedProjectId ?? null) : null,
+        projectId: mode === "code" ? (resolvedProject?.id ?? null) : null,
         archived: false,
       };
       setTasksByMode((prev) => {
@@ -797,9 +827,8 @@ export function Workbench() {
           conversationId,
           // state 后端要求 run 挂项目。Code 模式下「工作目录=项目」：选中项目时
           // 用它的主画布作作用域（同一项目的多次运行共享同一沙箱目录）；
-          // 未选项目时退回 conversationId，由服务端懒供给会话。
-          canvasId:
-            (mode === "code" ? codeCanvasScope : null) ?? conversationId,
+          // 未选工作目录时退回 conversationId，由服务端懒供给会话。
+          canvasId: runCanvasId,
           // 模式指令（inputDirective）由服务端 pre-step 事件缝注入，客户端不再拼接
           prompt: `${
             mode === "code" && workDirName
@@ -833,8 +862,9 @@ export function Workbench() {
       workDirName,
       thinking,
       executionMode,
-      selectedProjectId,
-      codeCanvasScope,
+      selectedProject,
+      codeProjects,
+      createCodeProject,
       session,
       ws,
     ],
@@ -884,7 +914,7 @@ export function Workbench() {
       // 追问若退回 conversationId 会换到另一个沙箱目录，上一轮写的文件就"消失"了。
       const taskProject =
         mode === "code" && task.projectId
-          ? projects.find((p) => p.id === task.projectId)
+          ? codeProjects.find((p) => p.id === task.projectId)
           : null;
       const taskCanvasId = taskProject?.primaryCanvas?.id ?? task.id;
       ws.startRun(
@@ -914,7 +944,7 @@ export function Workbench() {
       executionMode,
       session,
       ws,
-      projects,
+      codeProjects,
     ],
   );
 
@@ -1106,28 +1136,39 @@ export function Workbench() {
               </div>
             </div>
           ) : (
-            /* Code：项目列表（文件夹=项目，下面挂对话；右键重命名/归档/删除） */
+            /* Code：项目列表（工作目录=项目，下面挂对话；右键重命名/归档/删除） */
             <div className="flex min-h-0 flex-1 flex-col px-2">
               <div className="flex items-center justify-between px-1 pb-1">
-                <span className="text-xs text-muted-foreground">项目列表</span>
+                <span className="text-xs text-muted-foreground">工作目录</span>
                 <div className="flex items-center gap-0.5">
                   <button
                     type="button"
-                    aria-label="新建项目"
-                    title="新建项目"
+                    aria-label="新建工作目录"
+                    title="新建工作目录"
+                    disabled={creatingProject}
                     onClick={() => {
-                      const project = createCodeProject("未命名项目");
-                      setSelectedProjectId(project.id);
+                      void createCodeProject("未命名工作目录").then(
+                        (project) => {
+                          if (project) setSelectedProjectId(project.id);
+                        },
+                      );
                     }}
-                    className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
                   >
                     <FolderPlus className="h-3.5 w-3.5" />
                   </button>
                   <button
                     type="button"
                     aria-label="新建对话"
-                    title="新建对话"
-                    onClick={() => setActiveTaskId(null)}
+                    title={
+                      selectedProject
+                        ? `在「${selectedProject.name}」下新建对话`
+                        : "选中工作目录后新建对话会自动关联它"
+                    }
+                    onClick={() => {
+                      // 新建对话：保留当前选中的工作目录，新对话即挂在它下面
+                      setActiveTaskId(null);
+                    }}
                     className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
                   >
                     <Plus className="h-3.5 w-3.5" />
@@ -1136,8 +1177,19 @@ export function Workbench() {
               </div>
               <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pb-1">
                 {(() => {
+                  const knownProjectIds = new Set(
+                    codeProjects.map((p) => p.id),
+                  );
+                  /**
+                   * 未分组 = 没有项目，或 projectId 指向一个已不存在的项目。
+                   * 后者是必须的防御：项目被删/换库后，任务若仍带着孤儿 id，
+                   * 既进不了任何项目分组、也不进未分组——对话会「凭空消失」。
+                   */
                   const ungrouped = tasks.filter(
-                    (t) => !t.archived && t.projectId == null,
+                    (t) =>
+                      !t.archived &&
+                      (t.projectId == null ||
+                        !knownProjectIds.has(t.projectId)),
                   );
                   const archived = tasks.filter((t) => t.archived);
                   const taskRow = (t: WorkbenchTask) => (
@@ -1168,9 +1220,15 @@ export function Workbench() {
                               icon={
                                 <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                               }
-                              onOpen={() => setSelectedProjectId(p.id)}
-                              onRename={(next) => renameCodeProject(p.id, next)}
-                              onDelete={() => removeCodeProject(p.id)}
+                              onOpen={() => {
+                                setSelectedProjectId(p.id);
+                                setWorkDirName(p.name);
+                                setWorkDirNotice(null);
+                              }}
+                              onRename={(next) =>
+                                void renameCodeProject(p.id, next)
+                              }
+                              onDelete={() => void removeCodeProject(p.id)}
                             />
                             <div className="ml-4 space-y-0.5 border-l pl-1">
                               {items.length === 0 ? (
@@ -1339,15 +1397,21 @@ export function Workbench() {
                   >
                     <Plus className="h-4 w-4" />
                   </button>
-                  <button
-                    type="button"
-                    title="选择工作目录"
-                    onClick={() => void pickWorkDirectory()}
-                    className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
-                  >
-                    <FolderOpen className="h-3.5 w-3.5" />
-                    {workDirName ?? "选择文件夹"}
-                  </button>
+                  <WorkDirectorySelect
+                    projects={codeProjects}
+                    selectedProjectId={selectedProjectId}
+                    busy={creatingProject}
+                    onSelect={(projectId) => {
+                      const project = codeProjects.find(
+                        (p) => p.id === projectId,
+                      );
+                      setSelectedProjectId(projectId);
+                      setWorkDirName(project?.name ?? null);
+                      setWorkDirNotice(null);
+                    }}
+                    onOpenFolder={() => void pickWorkDirectory()}
+                    onClear={clearWorkDirectory}
+                  />
                   <Select
                     aria-label="权限档位"
                     value={tier}
@@ -1541,15 +1605,21 @@ export function Workbench() {
                   >
                     <Plus className="h-4 w-4" />
                   </button>
-                  <button
-                    type="button"
-                    title="选择工作目录"
-                    onClick={() => void pickWorkDirectory()}
-                    className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
-                  >
-                    <FolderOpen className="h-3.5 w-3.5" />
-                    {workDirName ?? "选择文件夹"}
-                  </button>
+                  <WorkDirectorySelect
+                    projects={codeProjects}
+                    selectedProjectId={selectedProjectId}
+                    busy={creatingProject}
+                    onSelect={(projectId) => {
+                      const project = codeProjects.find(
+                        (p) => p.id === projectId,
+                      );
+                      setSelectedProjectId(projectId);
+                      setWorkDirName(project?.name ?? null);
+                      setWorkDirNotice(null);
+                    }}
+                    onOpenFolder={() => void pickWorkDirectory()}
+                    onClear={clearWorkDirectory}
+                  />
                   <Select
                     aria-label="权限档位"
                     value={tier}
