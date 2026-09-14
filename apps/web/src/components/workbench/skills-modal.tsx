@@ -1,11 +1,22 @@
 "use client";
 
-import type { SkillCategory, SkillDetail, SkillListItem } from "@loomic/shared";
+import type {
+  MarketplaceSkill,
+  SkillCategory,
+  SkillDetail,
+  SkillListItem,
+} from "@loomic/shared";
 import { Folder, Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { getServerBaseUrl } from "@/lib/env";
+import {
+  describeInstallFailure,
+  type MarketItemView,
+  normalizeMarketQuery,
+  toMarketItemView,
+} from "@/lib/skill-market";
 import {
   filterSkillViews,
   mergeSkillViews,
@@ -25,7 +36,7 @@ const CATEGORIES: SkillCategory[] = [
   "custom",
 ];
 
-type SkillsTab = "mine" | "create";
+type SkillsTab = "mine" | "market" | "create";
 
 /**
  * 技能管理页（模态，与插件市场同形）。
@@ -181,6 +192,7 @@ export function SkillsModal({
               {(
                 [
                   { id: "mine", label: "技能库" },
+                  { id: "market", label: "市场" },
                   { id: "create", label: "导入 / 新建" },
                 ] as const
               ).map((item) => (
@@ -210,6 +222,16 @@ export function SkillsModal({
           </div>
 
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+            {tab === "market" ? (
+              <SkillsMarketPanel
+                accessToken={accessToken}
+                onInstalled={(name) => {
+                  setNotice(`已安装「${name}」，可在「技能库」启用。`);
+                  refresh();
+                }}
+              />
+            ) : null}
+
             {tab === "create" ? (
               <SkillsCreatePanel
                 accessToken={accessToken}
@@ -537,6 +559,174 @@ function SkillsCreatePanel({
           {busy === "create" ? "创建中…" : "创建技能"}
         </button>
       </section>
+    </div>
+  );
+}
+
+/**
+ * 技能市场面板。
+ *
+ * 数据源：服务端按 **npm registry 的 `keywords:agent-skill`** 检索候选，安装时经
+ * **skills.sh** 取 tarball 导入（见 `features/skills/marketplace-service.ts`）。
+ * 此前前端没有任何市场入口（技能页只有「技能库 / 导入·新建」），用户误以为市场是空的。
+ */
+function SkillsMarketPanel({
+  accessToken,
+  onInstalled,
+}: {
+  accessToken: string | null;
+  onInstalled: (name: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [items, setItems] = useState<MarketItemView[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [busyPkg, setBusyPkg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const authHeaders = (): Record<string, string> =>
+    accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+
+  const search = useCallback(
+    (rawQuery: string) => {
+      setLoading(true);
+      setError(null);
+      const params = new URLSearchParams({
+        q: normalizeMarketQuery(rawQuery),
+        limit: "20",
+      });
+      void fetch(
+        `${getServerBaseUrl()}/api/skills/marketplace/search?${params}`,
+        { headers: authHeaders() },
+      )
+        .then(async (response) => {
+          if (!response.ok) {
+            setError(await readErrorMessage(response, "市场检索失败。"));
+            return;
+          }
+          const payload = (await response.json()) as {
+            skills: MarketplaceSkill[];
+            total: number;
+          };
+          setItems(payload.skills.map(toMarketItemView));
+          setTotal(payload.total);
+        })
+        .catch(() => setError("市场检索请求失败（检查网络）。"))
+        .finally(() => setLoading(false));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [accessToken],
+  );
+
+  // 打开面板先给一屏「全部」结果，避免空白让人误以为市场为空
+  useEffect(() => {
+    search("");
+  }, [search]);
+
+  async function install(item: MarketItemView) {
+    setBusyPkg(item.packageName);
+    setError(null);
+    setMessage(null);
+    try {
+      const response = await fetch(
+        `${getServerBaseUrl()}/api/skills/marketplace/install`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", ...authHeaders() },
+          body: JSON.stringify({ packageName: item.packageName }),
+        },
+      );
+      if (!response.ok) {
+        setError(
+          describeInstallFailure(
+            response.status,
+            await readErrorMessage(response, ""),
+          ),
+        );
+        return;
+      }
+      setMessage(`已安装「${item.name}」。`);
+      onInstalled(item.name);
+    } catch {
+      setError("安装请求失败。");
+    } finally {
+      setBusyPkg(null);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <input
+          aria-label="搜索市场"
+          placeholder="搜索技能（英文关键词更准，如 pdf / browser / seo）"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") search(query);
+          }}
+          className="min-w-0 flex-1 rounded-md border px-2 py-1.5 text-sm outline-none"
+        />
+        <button
+          type="button"
+          onClick={() => search(query)}
+          disabled={loading}
+          className="rounded-md bg-foreground px-3 py-1.5 text-sm text-background disabled:opacity-40"
+        >
+          {loading ? "检索中…" : "搜索"}
+        </button>
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        来源：npm 上标记 <code>agent-skill</code> 的包（经由 skills.sh 拉取）。
+        {total > 0 ? ` 共 ${total} 个，显示前 ${items.length} 个。` : ""}
+      </p>
+
+      {message ? <p className="text-xs text-emerald-600">{message}</p> : null}
+      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+
+      {loading && items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">正在检索市场…</p>
+      ) : items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          {error ? "" : "没有匹配的技能。"}
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {items.map((item) => (
+            <li
+              key={item.packageName}
+              className="rounded-xl border p-3 transition-colors hover:border-foreground/30"
+            >
+              <div className="flex items-start gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-sm font-medium">{item.name}</span>
+                    <Badge>v{item.version}</Badge>
+                    <Badge>{item.downloadsLabel} 下载</Badge>
+                  </div>
+                  <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                    {item.description || "（无描述）"}
+                  </p>
+                  <p className="mt-1 text-[11px] text-muted-foreground/70">
+                    {item.packageName}
+                    {item.authorLabel ? ` · ${item.authorLabel}` : ""}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void install(item)}
+                  disabled={busyPkg !== null}
+                  className="shrink-0 rounded-md border px-3 py-1.5 text-xs disabled:opacity-40"
+                >
+                  {busyPkg === item.packageName ? "安装中…" : "安装"}
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

@@ -140,8 +140,33 @@ function normalizeGitHubUrl(raw: string): string {
 // ── Search ─────────────────────────────────────────────────────────────────
 
 /**
+ * 判断一条 npm 结果是否匹配查询词（名称 / 描述 / 关键词，任意词命中即可）。
+ *
+ * 为什么需要它：npm 的 `text=` 对多词是**相关性排序**而非过滤——查
+ * `sheleg-design-skill` 仍返回全部 1061 个 keyword 命中项（目标排第一但列表没变），
+ * 用户会以为「搜索无效」。这里在服务端补一层显式过滤。
+ */
+export function matchesMarketQuery(
+  item: { name: string; description: string; keywords: string[] },
+  query: string,
+): boolean {
+  const terms = query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((term) => term.length > 0);
+  if (terms.length === 0) {
+    return true;
+  }
+  const haystack = [item.name, item.description, item.keywords.join(" ")]
+    .join(" ")
+    .toLowerCase();
+  return terms.some((term) => haystack.includes(term));
+}
+
+/**
  * Search the npm registry for skill packages.
- * Uses `keywords:agent-skill` to scope results.
+ * Uses `keywords:agent-skill` to scope results；带查询词时再做一次显式过滤
+ * （npm 只排序不过滤），并多取一些候选以免过滤后为空。
  */
 export async function searchMarketplace(
   query: string,
@@ -151,14 +176,20 @@ export async function searchMarketplace(
   const safePage = Math.max(1, Math.min(page, 100));
   const safeLimit = Math.max(1, Math.min(limit, MAX_PAGE_SIZE));
   const offset = (safePage - 1) * safeLimit;
+  const trimmedQuery = query.trim();
 
-  const searchText = query.trim()
-    ? `keywords:${SKILL_KEYWORD} ${query.trim()}`
+  const searchText = trimmedQuery
+    ? `keywords:${SKILL_KEYWORD} ${trimmedQuery}`
     : `keywords:${SKILL_KEYWORD}`;
+
+  // 带查询词时多取候选（npm 返回的是按相关性排序的全量命中，过滤后可能变少）
+  const fetchSize = trimmedQuery
+    ? Math.min(Math.max(safeLimit * 3, 50), MAX_PAGE_SIZE)
+    : safeLimit;
 
   const params = new URLSearchParams({
     text: searchText,
-    size: String(safeLimit),
+    size: String(fetchSize),
     from: String(offset),
   });
 
@@ -205,10 +236,15 @@ export async function searchMarketplace(
     return result;
   });
 
+  // 带查询词：显式过滤后再截断到 limit（避免"搜索无效"的观感）
+  const visible = trimmedQuery
+    ? skills.filter((item) => matchesMarketQuery(item, trimmedQuery))
+    : skills;
+
   console.log(
-    `[marketplace] Search returned ${skills.length} results (total: ${data.total})`,
+    `[marketplace] Search returned ${visible.length} results (fetched: ${skills.length}, total: ${data.total})`,
   );
-  return { skills, total: data.total };
+  return { skills: visible.slice(0, safeLimit), total: data.total };
 }
 
 // ── Detail ─────────────────────────────────────────────────────────────────
