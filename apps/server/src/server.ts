@@ -11,11 +11,11 @@ async function setupProxy() {
   }
 }
 
-import { dirname, isAbsolute, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { isAbsolute, join, resolve } from "node:path";
 
 import { buildApp } from "./app.js";
 import { loadServerEnv } from "./config/env.js";
+import { resolveEntryRoot } from "./desktop/entry-root.js";
 import { isDesktopRuntime, prepareDesktopRuntime } from "./desktop/runtime.js";
 import { hasSystemGit, resolveRuntimes } from "./desktop/runtimes.js";
 import { startJobLoop } from "./features/jobs/job-loop.js";
@@ -117,15 +117,13 @@ async function main() {
 
 /**
  * 资源根目录：打包（SEA）态是 exe 所在目录（pg/、supabase/、web/ 都在那），
- * 开发态是仓库根。SEA 下 import.meta.url 为空，故回退到 process.execPath。
+ * 开发态是仓库根（判定与回归见 `desktop/entry-root.ts`）。
  */
 function resolveExeDir(): string {
-  try {
-    const thisFile = fileURLToPath(import.meta.url);
-    return dirname(dirname(dirname(thisFile)));
-  } catch {
-    return dirname(process.execPath);
-  }
+  return resolveEntryRoot({
+    entryFileUrl: import.meta.url,
+    execPath: process.execPath,
+  });
 }
 
 /**
