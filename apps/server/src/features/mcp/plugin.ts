@@ -1,15 +1,18 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-
 import type { ServerEnv } from "../../config/env.js";
+import { registerMcpRoutes } from "../../http/mcp.js";
 import type { PluginDefinition } from "../../kernel/types.js";
-import { type McpClientLike, registerMcpServerTools } from "./mcp-tools.js";
+import { createMcpService, type McpService } from "./mcp-service.js";
+import { createMcpServerStore } from "./server-store.js";
 
 /**
- * mcp-client 插件（P4d，§4.5）：连接 MCP server → 工具注册进 ctx.tools。
- * 配置：`LOOMIC_MCP_SERVERS`（JSON 数组，v1 支持 stdio 命令型 server）：
- *   [{"name":"fs","command":"npx","args":["-y","@modelcontextprotocol/server-fs","/tmp"]}]
- * 配置非法 fail loud；单个 server 连接失败记日志并跳过（可用性是运行态，不是配置错误）。
+ * mcp 插件（P4d，§4.5）：连接 MCP server → 工具注册进 ctx.tools。
+ *
+ * 配置来源两处（**同名时库内优先**）：
+ * - `mcp_servers` 表：界面可增删改（变更类走管理员门，因为会在本机起子进程）；
+ * - `LOOMIC_MCP_SERVERS` 环境变量：引导/遗留入口，UI 标注来源且只读。
+ *
+ * 插件**常驻挂载**（不再以「有没有配 server」决定 enabled）——否则没配环境变量时
+ * 连管理入口都不存在。连接失败是运行态（状态里可查原因），不阻断进程启动。
  */
 
 export interface McpServerConfig {
@@ -44,64 +47,40 @@ export function parseMcpServers(raw: string | undefined): McpServerConfig[] {
 }
 
 export function createMcpPlugin(): PluginDefinition {
+  // 同一个 service 实例贯穿 apply（连接）与 mounted（路由）：
+  // 两处各建一个实例会让路由拿到空连接表——状态恒为 error、重连会开出第二条连接
+  let service: McpService | undefined;
+
   return {
     name: "mcp",
-    inject: [],
-    enabled: (env: ServerEnv) => Boolean(env.mcpServers?.length),
+    inject: ["auth", "admin", "persistence"],
     apply(ctx) {
-      const disposers: Array<() => void> = [];
-      ctx.effect(() => () => {
-        for (const dispose of disposers.reverse()) {
-          try {
-            dispose();
-          } catch (error) {
-            console.warn("[mcp] disconnect failed:", error);
-          }
-        }
+      service = createMcpService({
+        env: ctx.env as ServerEnv,
+        registry: ctx.get("tools"),
+        store: createMcpServerStore(ctx.get("persistence")),
       });
-
+      ctx.effect(() => () => {
+        void service?.shutdown();
+      });
       // 连接是异步的：挂载后逐个连接并注册工具（可用性不影响进程启动）
-      void (async () => {
-        const registry = ctx.get("tools");
-        for (const server of ctx.env.mcpServers ?? []) {
-          try {
-            const transport = new StdioClientTransport({
-              command: server.command,
-              ...(server.args ? { args: server.args } : {}),
-              ...(server.env ? { env: server.env } : {}),
-            });
-            const mcpClient = new Client({
-              name: "loomic-server",
-              version: ctx.env.version,
-            });
-            await mcpClient.connect(transport);
-            // 结构化收窄：SDK 类型过宽，显式适配为 McpClientLike
-            const client: McpClientLike = {
-              listTools: async () => {
-                const result = await mcpClient.listTools();
-                return { tools: result.tools };
-              },
-              callTool: async (args) =>
-                await mcpClient.callTool({
-                  name: args.name,
-                  ...(args.arguments ? { arguments: args.arguments } : {}),
-                }),
-            };
-            const { tools } = await client.listTools();
-            disposers.push(
-              registerMcpServerTools(registry, server.name, tools, client),
-            );
-            console.log(
-              `[mcp] server ${server.name} connected, ${tools.length} tools registered.`,
-            );
-          } catch (error) {
-            console.warn(
-              `[mcp] server ${server.name} 连接失败，跳过其工具：`,
-              error,
-            );
-          }
-        }
-      })();
+      // 兜底 catch：即使 connectAll 内部失效，也不能把进程带走（unhandled rejection）
+      void service.connectAll().catch((error: unknown) => {
+        console.warn(
+          "[mcp] 启动连接异常（不影响进程）：",
+          error instanceof Error ? error.message : String(error),
+        );
+      });
+    },
+    mounted(ctx) {
+      if (!service) {
+        throw new Error("[mcp] service 未初始化（apply 未执行）。");
+      }
+      void registerMcpRoutes(ctx.app, {
+        admin: ctx.get("admin"),
+        auth: ctx.get("auth"),
+        service,
+      });
     },
   };
 }
