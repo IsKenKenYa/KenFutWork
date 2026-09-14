@@ -104,6 +104,12 @@ pnpm --filter @loomic/server dev:worker   # 仅 Worker（热更新）
 
 两个可调行为：**失败自动重试**缺省上限 10 次（设置 → 模型可改；已执行工具的那轮绝不重试）；**git** 优先用本机自带，随包 MinGit 只兜底（`pnpm fetch:runtimes` 下载，`pnpm package:win` 打包）。
 
+**联网搜索**（`web_search`）走 BYOK：把秘塔 Key 写进 `.env.local` 的 `LOOMIC_SEARCH_API_KEY`（缺省端点 `https://metaso.cn/api/v1/search`；`LOOMIC_SEARCH_ENDPOINT` 只用于联调替身）。验收真实检索：
+
+```bash
+node scripts/诊断联网搜索.mjs            # 读 .env.local 的 Key，打真实端点并打印结果
+```
+
 ## 部署（自托管）
 
 - **Windows exe 单机包**：`pnpm package:win` 产出 `release/`（Node SEA 单文件服务端 + 静态 UI + 启动.bat），内置本机 Postgres 与 Node/Python/JDK 运行时，拷到任意 Windows 机器双击即用。

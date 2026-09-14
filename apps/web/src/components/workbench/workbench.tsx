@@ -816,11 +816,33 @@ export function Workbench() {
       }
 
       let acked = false;
-      const ackTimer = window.setTimeout(() => {
-        if (!acked) {
-          markFailed("运行请求未被服务端确认（连接可能刚重连），请重试。");
+      /**
+       * ack 超时：**不能一律报「请重试」**。
+       *
+       * 实测：服务端把 ack 推给一条已经断掉的连接（`ack_sent delivered=false`），客户端
+       * 12s 后照报「运行请求未被服务端确认…请重试」——可那个 run 其实已经在跑了。盲重试
+       * 会造出重复 run（重复扣额度、重复副作用）。所以：连接断着就先等着（服务端重连时
+       * 按 lastSeq 重放事件，本轮会自己接上），只有「连接正常却收不到 ack」或「长时间没
+       * 恢复」才判失败。
+       */
+      const ACK_TIMEOUT_MS = 12_000;
+      const ACK_MAX_WAIT_MS = 90_000;
+      let waitedMs = 0;
+      let ackTimer: number;
+      const checkAck = () => {
+        if (acked) return;
+        waitedMs += ACK_TIMEOUT_MS;
+        if (!ws.connected && waitedMs < ACK_MAX_WAIT_MS) {
+          ackTimer = window.setTimeout(checkAck, 6_000);
+          return;
         }
-      }, 12_000);
+        markFailed(
+          ws.connected
+            ? "运行请求未被服务端确认（连接正常但未收到确认），请重试。"
+            : "与服务端的连接长时间未恢复，本轮未能确认；重连后会自动同步，若一直无输出再重试。",
+        );
+      };
+      ackTimer = window.setTimeout(checkAck, ACK_TIMEOUT_MS);
 
       ws.startRun(
         {

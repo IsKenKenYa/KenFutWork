@@ -27,6 +27,18 @@ export type NewAgentRun = {
 export interface AgentRunRepository {
   insert(input: NewAgentRun): Promise<void>;
   updateById(runId: string, patch: Record<string, unknown>): Promise<number>;
+  /**
+   * 孤儿对账：把**本进程启动前**遗留的非终态 run 收敛成 `failed` 终态。
+   *
+   * 为什么需要：run 的行只在本进程的内存里推进——进程被重启/杀掉时没人写终态，
+   * 行就永远停在 `running`，客户端于是永远显示「生成中」（实测复现过一次）。
+   * 进程刚起来时它必然没在跑任何 run，故「启动前的非终态行」一定是孤儿。
+   *
+   * 边界：只碰 `created_at < before` 的行——本进程启动后起的 run 绝不会被误杀。
+   * 多副本拓扑下这条会误伤同伴在飞的 run（本仓当前部署是单 API 实例：Docker 一份
+   * api、桌面单进程），故不引入心跳/租约那套机制。
+   */
+  reconcileInterrupted(before: Date, message: string): Promise<number>;
 }
 
 export function createAgentRunRepository(
@@ -68,6 +80,19 @@ export function createAgentRunRepository(
             set ${assignments.join(", ")}
           where id = $1`,
         values,
+      );
+    },
+
+    async reconcileInterrupted(before, message) {
+      return persistence.execute(
+        `update public.agent_runs
+            set status = 'failed',
+                completed_at = now(),
+                error_code = 'run_failed',
+                error_message = $1
+          where status in ('accepted', 'running')
+            and created_at < $2`,
+        [message, before.toISOString()],
       );
     },
   };

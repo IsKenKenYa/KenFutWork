@@ -106,3 +106,40 @@ describe("agent-runs repository（agent_runs，按 run id 定权）", () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+/**
+ * 回归（实测事故）：进程在 run 在飞时被重启/杀掉，没人写终态 —— 行永远停在
+ * `running`，客户端永远显示「生成中」（本机复现过一次）。启动期对账把这些孤儿
+ * 收敛成 failed，且只碰「启动前创建」的行，绝不误杀本进程新起的 run。
+ */
+describe("agent_runs 启动期孤儿对账", () => {
+  it("只收敛启动前的非终态行，并写入可读原因", async () => {
+    const { calls, runner } = createRunner(() => ({ rowCount: 3, rows: [] }));
+    const before = new Date("2026-09-15T10:00:00.000Z");
+    const count = await createAgentRunRepository(
+      createPersistenceFromRunner(runner),
+    ).reconcileInterrupted(before, "服务重启，本轮已中断。");
+
+    expect(count).toBe(3);
+    const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
+    expect(sql).toContain("status = 'failed'");
+    expect(sql).toContain("completed_at = now()");
+    expect(sql).toContain("error_code = 'run_failed'");
+    // 只碰非终态 + 启动前创建的行（两条谓词缺一不可）
+    expect(sql).toContain("status in ('accepted', 'running')");
+    expect(sql).toContain("created_at < $2");
+    expect(calls[0]?.values).toEqual([
+      "服务重启，本轮已中断。",
+      before.toISOString(),
+    ]);
+  });
+
+  it("没有孤儿时返回 0（启动日志不应报数）", async () => {
+    const { runner } = createRunner(() => ({ rowCount: 0, rows: [] }));
+    await expect(
+      createAgentRunRepository(
+        createPersistenceFromRunner(runner),
+      ).reconcileInterrupted(new Date(), "x"),
+    ).resolves.toBe(0);
+  });
+});
