@@ -1,10 +1,19 @@
 import type { ExecutionMode } from "@loomic/shared";
 
+import type {
+  ExecutionModeScope,
+  ExecutionModeStore,
+} from "./execution-mode-store.js";
+
 /**
  * agentModes 缝（DEC-3，P6）：只管激活/切换/持久化当前模式。
  * 指令引导（inputDirective）+ 工具硬约束（resolveToolPolicy）双层：
  * plan/solo 在引导之外还有 tool-pre-execute 级别的强制拦截（§4.6「引导不是强制」
  * 仅适用于 goal/loop/creative 等无法机械判定的模式）。
+ *
+ * 持久化是**写穿缓存**：Map 是本进程热缓存，activate 带 scope 时写回
+ * chat_sessions.execution_mode；未声明模式的 run 起跑前 hydrate 读回。
+ * 无 store（部分装配/单测）时退化为纯内存——与旧版行为一致。
  */
 
 export const BUILTIN_EXECUTION_MODES: Array<{
@@ -121,15 +130,28 @@ export interface ExecutionModeService {
     description: string;
     inputDirective?: string;
   }>;
-  /** 当前线程激活的模式；未激活返回默认 agent。 */
+  /** 当前线程激活的模式（进程内缓存）；未激活返回默认 agent。 */
   getMode(threadId: string): ExecutionMode;
-  /** 激活/切换当前线程模式；未知模式 fail loud。 */
-  activate(threadId: string, mode: ExecutionMode): void;
+  /** 激活/切换当前线程模式；未知模式 fail loud。带 scope 时写回库（重启后仍生效）。 */
+  activate(
+    threadId: string,
+    mode: ExecutionMode,
+    scope?: ExecutionModeScope,
+  ): Promise<void>;
+  /** 读回线程持久化模式并 warm 缓存；无行/未设置/无 store 时回落 agent。 */
+  hydrate(threadId: string, scope: ExecutionModeScope): Promise<ExecutionMode>;
+  /** 归属校验 + 读回（HTTP 读端点与 PUT 的越权校验用）。 */
+  lookup(
+    threadId: string,
+    scope: ExecutionModeScope,
+  ): Promise<{ exists: boolean; mode: ExecutionMode | null }>;
   /** 当前线程的工具策略（tool-pre-execute 拦截与 deep-agent 工具门共用）。 */
   resolveToolPolicy(threadId: string): ToolPolicy;
 }
 
-export function createExecutionModeService(): ExecutionModeService {
+export function createExecutionModeService(
+  deps: { store?: ExecutionModeStore } = {},
+): ExecutionModeService {
   const active = new Map<string, ExecutionMode>();
   const known = new Set(BUILTIN_EXECUTION_MODES.map((m) => m.id));
   return {
@@ -146,11 +168,32 @@ export function createExecutionModeService(): ExecutionModeService {
     getMode(threadId) {
       return active.get(threadId) ?? "agent";
     },
-    activate(threadId, mode) {
+    async activate(threadId, mode, scope) {
       if (!known.has(mode)) {
         throw new Error(`[agent-modes] 未知执行模式 ${mode}（fail loud）。`);
       }
       active.set(threadId, mode);
+      if (scope && deps.store) {
+        await deps.store.save(scope.workspaceId, threadId, mode);
+      }
+    },
+    async hydrate(threadId, scope) {
+      const cached = active.get(threadId);
+      if (cached) {
+        return cached;
+      }
+      const row = deps.store
+        ? await deps.store.lookup(scope.workspaceId, threadId)
+        : { exists: false, mode: null };
+      const mode = row.mode ?? "agent";
+      active.set(threadId, mode);
+      return mode;
+    },
+    async lookup(threadId, scope) {
+      if (!deps.store) {
+        return { exists: false, mode: active.get(threadId) ?? null };
+      }
+      return deps.store.lookup(scope.workspaceId, threadId);
     },
     resolveToolPolicy(threadId) {
       return policyForMode(this.getMode(threadId));

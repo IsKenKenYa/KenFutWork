@@ -5,10 +5,11 @@ import {
   createExecutionModeService,
   evaluateToolPolicy,
 } from "./execution-mode-service.js";
+import { createExecutionModeStore } from "./execution-mode-store.js";
 
 /**
  * agent-modes 插件（DEC-3，P6）：
- * - `agentModes` ctx key：激活/切换/持久化；
+ * - `agentModes` ctx key：激活/切换/持久化（写穿 chat_sessions.execution_mode）；
  * - 模式作为能力贡献者注册进 `ctx.capabilities`（开放贡献：新模式零改 loop）；
  * - pre-step 事件监听器：按模式给模型输入注入引导（inputDirective）；
  * - tool-pre-execute 事件监听器：solo/plan 的硬约束——内核注册表工具按线程策略拒绝。
@@ -18,9 +19,11 @@ import {
 export function createAgentModesPlugin(): PluginDefinition {
   return {
     name: "agent-modes",
-    inject: ["auth"],
+    inject: ["auth", "persistence", "viewer"],
     apply(ctx) {
-      const service = createExecutionModeService();
+      const service = createExecutionModeService({
+        store: createExecutionModeStore(ctx.get("persistence")),
+      });
       ctx.register("agentModes", () => service);
 
       for (const mode of BUILTIN_EXECUTION_MODES) {
@@ -64,6 +67,7 @@ export function createAgentModesPlugin(): PluginDefinition {
     mounted(ctx) {
       void registerExecutionModeRoutes(ctx.app, {
         auth: ctx.get("auth"),
+        viewer: ctx.get("viewer"),
         agentModes: ctx.get("agentModes"),
       });
     },

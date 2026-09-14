@@ -331,8 +331,21 @@ async function handleRunCommand(
     }
   }
 
+  // viewer 解析（工作区作用域）：模型默认值、执行模式持久化共用，只解析一次
+  const viewerPromise = (async () => {
+    if (!services.viewerService) return undefined;
+    try {
+      return await services.viewerService.ensureViewer(authenticatedUser);
+    } catch (error) {
+      log.warn("viewer_resolve_failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return undefined;
+    }
+  })();
+
   // Resolve thread + model in parallel
-  const [threadId, model] = await Promise.all([
+  const [threadId, viewer, model] = await Promise.all([
     (async (): Promise<string | undefined> => {
       if (!services.threadService) return undefined;
       try {
@@ -349,12 +362,12 @@ async function handleRunCommand(
         return undefined;
       }
     })(),
+    viewerPromise,
     (async (): Promise<string | undefined> => {
-      if (!services.settingsService || !services.viewerService)
-        return undefined;
+      if (!services.settingsService) return undefined;
       try {
-        const viewer =
-          await services.viewerService.ensureViewer(authenticatedUser);
+        const viewer = await viewerPromise;
+        if (!viewer) return undefined;
         const settings = await services.settingsService.getWorkspaceSettings(
           authenticatedUser,
           viewer.workspace.id,
@@ -376,10 +389,38 @@ async function handleRunCommand(
     model: resolvedModel,
   });
 
-  // 执行模式（DEC-3）：WS 载荷声明 → 按真实 threadId 激活
+  // 执行模式（DEC-3）：WS 载荷声明 → 按真实 threadId 激活（写穿 chat_sessions）
   //（threadId 是服务端内部 ID，客户端拿不到，故不走 PUT /execution-modes/:threadId）
+  const modeScope = viewer ? { workspaceId: viewer.workspace.id } : undefined;
   if (payload.executionMode && threadId && services.agentModes) {
-    services.agentModes.activate(threadId, payload.executionMode);
+    try {
+      await services.agentModes.activate(
+        threadId,
+        payload.executionMode,
+        modeScope,
+      );
+    } catch (error) {
+      // 内存激活已先生效（store 失败只影响重启后的读回），run 按新模式继续
+      log.warn("execution_mode_persist_failed", {
+        executionMode: payload.executionMode,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  } else if (
+    !payload.executionMode &&
+    threadId &&
+    services.agentModes &&
+    modeScope
+  ) {
+    // 未声明模式的 run（画布助手/旧客户端）：读回线程持久化模式，
+    // 重启后线程仍按既定模式走（引导 + 工具门都以 hydrate 后的缓存为准）
+    try {
+      await services.agentModes.hydrate(threadId, modeScope);
+    } catch (error) {
+      log.warn("execution_mode_hydrate_failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   } else if (payload.executionMode && payload.executionMode !== "agent") {
     /**
      * 模式**静默降级**是曾经的坑：threadId 解析不出来时，pre-step 会退化成 "agent"、

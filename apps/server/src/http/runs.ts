@@ -8,11 +8,11 @@ import {
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import type { AgentRunService } from "../agent/runtime.js";
+import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import {
   type AgentRunMetadataService,
   AgentRunPersistenceError,
 } from "../features/agent-runs/agent-run-service.js";
-import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { ChatService } from "../features/chat/chat-service.js";
@@ -144,9 +144,29 @@ export async function registerRunRoutes(
         }
       }
 
-      // 执行模式（DEC-3）：载荷声明 → 按真实 threadId 激活（与 WS 路径一致）
-      if (payload.executionMode && sessionThread && options.agentModes) {
-        options.agentModes.activate(sessionThread.threadId, payload.executionMode);
+      // 执行模式（DEC-3）：载荷声明 → 按真实 threadId 激活并写穿持久化；
+      // 未声明 → 读回线程持久化模式（与 WS 路径同口径，重启后仍按线程模式走）
+      if (sessionThread && options.agentModes) {
+        const workspace =
+          authenticatedUser && options.viewerService
+            ? await options.viewerService
+                .resolveWorkspace(authenticatedUser)
+                .catch(() => null)
+            : null;
+        const modeScope = workspace ? { workspaceId: workspace.id } : undefined;
+        try {
+          if (payload.executionMode) {
+            await options.agentModes.activate(
+              sessionThread.threadId,
+              payload.executionMode,
+              modeScope,
+            );
+          } else if (modeScope) {
+            await options.agentModes.hydrate(sessionThread.threadId, modeScope);
+          }
+        } catch {
+          // 持久化失败不阻断启动：内存激活/默认 agent 兜底（载荷模式已过 zod 枚举）
+        }
       }
 
       const response = runCreateResponseSchema.parse(

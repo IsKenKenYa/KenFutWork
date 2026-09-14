@@ -69,7 +69,7 @@ describe("agent-runs × agent-modes 装配缝（pre-step 指令 + 工具门）",
     const { kernel, app } = assembleSeamKernel(agentFactory);
     try {
       const threadId = "thread-seam-plan";
-      kernel.get("agentModes").activate(threadId, "plan");
+      await kernel.get("agentModes").activate(threadId, "plan");
 
       const runs = kernel.get("agentRuns");
       const { runId } = runs.createRun(
@@ -113,7 +113,7 @@ describe("agent-runs × agent-modes 装配缝（pre-step 指令 + 工具门）",
     const { kernel, app } = assembleSeamKernel(agentFactory);
     try {
       const threadId = "thread-seam-solo";
-      kernel.get("agentModes").activate(threadId, "solo");
+      await kernel.get("agentModes").activate(threadId, "solo");
 
       const runs = kernel.get("agentRuns");
       const { runId } = runs.createRun(
