@@ -12,7 +12,10 @@ import type { StreamEvent, ToolArtifact } from "@loomic/shared";
 import { imageArtifactSchema, videoArtifactSchema } from "@loomic/shared";
 
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
-import { withStreamIdleGuard } from "./stream-idle-guard.js";
+import {
+  StreamIdleTimeoutError,
+  withStreamIdleGuard,
+} from "./stream-idle-guard.js";
 
 /**
  * Shape of a LangChain v2 stream event from `streamEvents()`.
@@ -297,7 +300,13 @@ export async function* adaptDeepAgentStream(
       }
     }
   } catch (error) {
-    if (isAbortError(error) || options.signal?.aborted) {
+    /**
+     * 停滞优先于取消：看门狗触发时会中止同一信号（释放上游连接），故
+     * `signal.aborted` 此时也为真——若先判取消，上游故障会被误报成
+     * 「用户取消」（E2E 实测踩中：run.canceled 而非 run.failed）。
+     */
+    const idleTimedOut = error instanceof StreamIdleTimeoutError;
+    if (!idleTimedOut && (isAbortError(error) || options.signal?.aborted)) {
       yield canceledEvent(options.runId, now);
       return;
     }

@@ -85,6 +85,24 @@ describe("stream-adapter 停滞与取消", () => {
     expect(Date.now() - startedAt).toBeLessThan(1000);
   });
 
+  it("真实接线（signal 与 abortRun 同一控制器）：停滞报 run.failed 而非 run.canceled", async () => {
+    // 运行时的真实接法：onIdle 中止的信号同时是取消信号。若先判 aborted，
+    // 上游故障会被误报成「用户取消」——E2E 实测踩中，本用例锁死判定顺序。
+    const controller = new AbortController();
+    const events = await collect(stalledStream(), {
+      idleTimeoutMs: 40,
+      signal: controller.signal,
+      abortRun: () => controller.abort(),
+    });
+
+    expect(controller.signal.aborted).toBe(true);
+    const last = events.at(-1);
+    expect(last?.type).toBe("run.failed");
+    expect((last as { error?: { message?: string } }).error?.message).toContain(
+      "没有任何输出",
+    );
+  });
+
   it("已中止的信号：进入即取消，不消费上游", async () => {
     const controller = new AbortController();
     controller.abort();

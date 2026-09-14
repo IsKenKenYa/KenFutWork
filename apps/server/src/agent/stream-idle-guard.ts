@@ -23,8 +23,11 @@ export class StreamIdleTimeoutError extends Error {
   readonly exposeToClient = true;
 
   constructor(readonly idleMs: number) {
+    const seconds = idleMs / 1000;
+    const human =
+      seconds >= 1 ? `${Math.round(seconds)} 秒` : `${idleMs} 毫秒`;
     super(
-      `模型流已 ${Math.round(idleMs / 1000)} 秒没有任何输出（上游停滞），本轮已终止。请重试或更换模型。`,
+      `模型流已 ${human}没有任何输出（上游停滞），本轮已终止。请重试或更换模型。`,
     );
     this.name = "StreamIdleTimeoutError";
   }
