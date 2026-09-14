@@ -124,6 +124,56 @@ describe("settings service", () => {
     ).resolves.toEqual({ agentMaxRetries: 10, defaultModel: "stored-model" });
   });
 
+  /**
+   * 回归（GUI 实测）：无工作区设置时，静态兜底是 env 里的内置目录名（如 `gpt-4.1`），
+   * 而实际可用模型由供应商实例决定。画布助手这类**不显式传 model** 的客户端会拿到该
+   * 不存在的模型，上游直接拒绝 → 客户端只看到「处理过程中遇到问题」并重试 10 次。
+   * 故无库值时必须优先用目录解析出的真实模型，只有目录为空才退回静态名。
+   */
+  it("无库值时用目录兜底（而非不存在的静态名），有库值时不再问目录", async () => {
+    const noStore = {
+      findDefaultModel: async () => null,
+      findAgentMaxRetries: async () => null,
+      upsertDefaultModel: async () => {},
+      upsertAgentMaxRetries: async () => {},
+    };
+
+    const withCatalog = createSettingsService({
+      repository: noStore,
+      defaultModel: "gpt-4.1",
+      resolveFallbackModel: async () => "inst-1:glm-5.3-flash",
+    });
+    await expect(
+      withCatalog.getWorkspaceSettings(USER, WORKSPACE_ID),
+    ).resolves.toEqual({
+      agentMaxRetries: 10,
+      defaultModel: "inst-1:glm-5.3-flash",
+    });
+
+    const emptyCatalog = createSettingsService({
+      repository: noStore,
+      defaultModel: "gpt-4.1",
+      resolveFallbackModel: async () => undefined,
+    });
+    await expect(
+      emptyCatalog.getWorkspaceSettings(USER, WORKSPACE_ID),
+    ).resolves.toEqual({ agentMaxRetries: 10, defaultModel: "gpt-4.1" });
+
+    let catalogCalls = 0;
+    const stored = createSettingsService({
+      repository: { ...noStore, findDefaultModel: async () => "stored-model" },
+      defaultModel: "gpt-4.1",
+      resolveFallbackModel: async () => {
+        catalogCalls += 1;
+        return "inst-1:glm-5.3-flash";
+      },
+    });
+    await expect(
+      stored.getWorkspaceSettings(USER, WORKSPACE_ID),
+    ).resolves.toEqual({ agentMaxRetries: 10, defaultModel: "stored-model" });
+    expect(catalogCalls).toBe(0);
+  });
+
   it("读写失败分别映射 settings_read_failed / settings_update_failed", async () => {
     const readFailure = createSettingsService({
       repository: {

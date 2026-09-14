@@ -42,12 +42,23 @@ export function createSettingsService(options: {
   repository: SettingsRepository;
   /** Override the fallback model when no workspace setting exists. */
   defaultModel?: string;
+  /**
+   * 无工作区设置时**动态解析**兜底模型（目录里首个可用的 chat 模型）。
+   *
+   * 为什么不能只用静态兜底：静态值来自 env（内置目录名，如 `gpt-4.1`），而实际可用模型
+   * 由供应商实例决定——平台池只配了 GLM 时 `gpt-4.1` 在目录里根本不存在。不显式传 model
+   * 的客户端（画布助手）会拿它起 run，上游直接拒绝：客户端只看到「处理过程中遇到问题」，
+   * 服务端按可重试处理并重试满 10 次（实测 Design 模式面板整段不可用）。
+   */
+  resolveFallbackModel?: (
+    user: AuthenticatedUser,
+  ) => Promise<string | undefined>;
 }): SettingsService {
   const defaultModel = options.defaultModel ?? FALLBACK_MODEL;
   const { repository } = options;
 
   return {
-    async getWorkspaceSettings(_user, workspaceId) {
+    async getWorkspaceSettings(user, workspaceId) {
       const [storedModel, storedRetries] = await Promise.all([
         repository.findDefaultModel(workspaceId),
         repository.findAgentMaxRetries(workspaceId),
@@ -59,11 +70,17 @@ export function createSettingsService(options: {
         );
       });
 
+      // 只在无库值时问目录：已显式设置过的工作区不额外付一次目录读
+      const resolvedFallback =
+        storedModel === null
+          ? await options.resolveFallbackModel?.(user)
+          : undefined;
+
       return {
         agentMaxRetries: clampMaxRunRetries(
           storedRetries ?? DEFAULT_MAX_RUN_RETRIES,
         ),
-        defaultModel: storedModel ?? defaultModel,
+        defaultModel: storedModel ?? resolvedFallback ?? defaultModel,
       };
     },
 
