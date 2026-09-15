@@ -1182,8 +1182,8 @@ export function ChatSidebar({
             </div>
         </>
       </div>
-      {/* 第二行：执行模式 + 视图切换（对话/图层/文件）+ 收起 */}
-      <div className="flex min-h-[40px] shrink-0 items-center gap-2 border-b border-border pl-3 pr-2">
+      {/* 第二行：模式 + 历史/新建 + 视图切换（对话/图层/文件）+ 收起（间距收紧，别留空档） */}
+      <div className="flex min-h-[40px] shrink-0 items-center gap-1 border-b border-border pl-3 pr-2">
         {panelTab === "chat" && activeSessionId && accessToken ? (
           <ExecutionModeSelect
             accessToken={accessToken}

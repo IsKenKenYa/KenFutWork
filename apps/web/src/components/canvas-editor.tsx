@@ -709,9 +709,10 @@ export function CanvasEditor({
     >
       <div className="h-full w-full relative">
         {saveHint && (
+          /* 提示放顶部居中（用户要求）：底部居中会被绘图工具条压住，角落又容易被忽略 */
           <div
             role="status"
-            className="pointer-events-none absolute bottom-4 right-4 z-40 rounded-md border border-border bg-card px-2.5 py-1 text-xs text-foreground shadow-card"
+            className="pointer-events-none absolute left-1/2 top-4 z-40 -translate-x-1/2 rounded-md border border-border bg-card px-3 py-1 text-xs text-foreground shadow-card"
           >
             {saveHint === "saved"
               ? "已保存"

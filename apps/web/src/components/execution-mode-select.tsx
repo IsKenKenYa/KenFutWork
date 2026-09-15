@@ -75,7 +75,8 @@ export function ExecutionModeSelect({
 
   return (
     <div
-      className="flex items-center gap-2 px-3 py-1.5"
+      /* 左右留白交给父容器：自己再带 px-3 会和父级间距叠成一段空档（用户反馈「中间缝隙」） */
+      className="flex items-center gap-1.5 py-1.5"
       data-testid="execution-mode-select"
     >
       <label htmlFor="execution-mode" className="text-xs text-muted-foreground">

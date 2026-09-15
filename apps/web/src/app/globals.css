@@ -346,11 +346,13 @@
    （components/canvas-stats-panel.tsx 经 renderCustomStats 注入；该口子是**追加**，
    故默认那份必须藏：折叠头 General/箭头 + 行表 Shapes/Canvas/Grid step 等）。 */
 .excalidraw .exc-stats {
+  /* 居中别用 left/top:50% + translate：这个面板的祖先（layer-ui__wrapper）带 transform，
+     会把 fixed 的包含块换成它自己，translate 再叠上去就偏了（用户实测偏上）。 */
   position: fixed;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  inset: 0;
+  margin: auto;
   width: 280px;
+  height: fit-content;
   border: 1px solid var(--border);
   border-radius: 0.75rem;
   box-shadow: var(--shadow-float, 0 12px 32px rgba(15, 23, 42, 0.18));
