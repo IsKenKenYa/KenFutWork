@@ -61,6 +61,32 @@ export interface PluginRegistryDeps {
   };
 }
 
+/** 插件贡献物（提示段 / 路由 / UI 入口）——卸载或停用时一并收回。 */
+interface PluginContributions {
+  promptFragments: Array<{ pluginId: string; id: string; text: string }>;
+  routes: Array<{
+    pluginId: string;
+    method: "GET" | "POST";
+    path: string;
+    publicRoute: boolean;
+    handler: (request: {
+      method: string;
+      path: string;
+      query: Record<string, string>;
+      body: unknown;
+      headers: Record<string, string | undefined>;
+    }) => unknown | Promise<unknown>;
+  }>;
+  ui: Array<{ pluginId: string; id: string; title: string; slot: string; url: string }>;
+}
+
+export interface PluginRouteDispatchResult {
+  status: number;
+  /** JSON 可序列化的 body，或字符串（插件可返回 HTML 文本）。 */
+  body: unknown;
+  headers?: Record<string, string>;
+}
+
 export interface PluginRegistryService {
   list(): Promise<PluginMarketEntry[]>;
   inspect(input: { url: string; ref?: string | undefined }): Promise<{
@@ -73,6 +99,32 @@ export interface PluginRegistryService {
     allowLifecycleScripts: boolean;
   }): Promise<{ installed: InstalledPlugin; report: CompatReport }>;
   uninstall(id: string): Promise<void>;
+  /** 已启用插件贡献的提示段（按装载顺序）。 */
+  listPromptFragments(): string[];
+  /** 已启用插件贡献的 UI 入口。 */
+  listUiEntries(): Array<{
+    pluginId: string;
+    id: string;
+    title: string;
+    slot: string;
+    url: string;
+  }>;
+  /** 路由派发：找不到（未启用/未注册/路径不匹配）返回 undefined。 */
+  dispatchRoute(input: {
+    pluginId: string;
+    method: string;
+    path: string;
+    query: Record<string, string>;
+    body: unknown;
+    headers: Record<string, string | undefined>;
+    isAuthenticated: boolean;
+  }): Promise<PluginRouteDispatchResult | undefined>;
+  /** 该路由是否声明为公开（未注册时 undefined —— 由调用方决定鉴权口径）。 */
+  routeVisibility(input: {
+    pluginId: string;
+    method: string;
+    path: string;
+  }): "public" | "private" | undefined;
   setEnabled(id: string, enabled: boolean): Promise<InstalledPlugin>;
   exportPlugin(name: string, format: "dsh" | "kenfutwork"): PluginExportArtifact;
   /** 启动时装载全部 enabled 的已安装插件（单个失败不阻断启动）。 */
@@ -149,6 +201,7 @@ function manifestOrPlaceholder(
       scope: null,
       enginesNode: null,
       hasClientUi: false,
+      ui: [],
       lifecycleScripts: [],
       dshBaseDependencies: [],
       hasNativeBuild: false,
@@ -237,6 +290,52 @@ export function createPluginRegistryService(
         tools: deps.tools,
         subscribe: deps.subscribe,
         label: record.id,
+        // 贡献物统一记账：提示段进 system prompt、路由挂 /api/plugins/<id>/、UI 入口给前端
+        promptFragments: (fragment) => {
+          const fragmentId =
+            fragment.id ?? `${record.id}:${contributions.promptFragments.length + 1}`;
+          const entry = {
+            pluginId: record.id,
+            id: fragmentId,
+            text: fragment.text,
+          };
+          contributions.promptFragments.push(entry);
+          return () => {
+            contributions.promptFragments =
+              contributions.promptFragments.filter((item) => item !== entry);
+          };
+        },
+        routes: (spec) => {
+          const entry = {
+            pluginId: record.id,
+            method: spec.method ?? ("GET" as const),
+            path: spec.path.replace(/^\/+/, ""),
+            publicRoute: spec.public ?? false,
+            handler: spec.handler,
+          };
+          contributions.routes.push(entry);
+          return () => {
+            contributions.routes = contributions.routes.filter(
+              (item) => item !== entry,
+            );
+          };
+        },
+        ui: (entry) => {
+          const item = {
+            pluginId: record.id,
+            id:
+              typeof entry.id === "string" && entry.id
+                ? entry.id
+                : `${record.id}-panel`,
+            title: entry.title,
+            slot: entry.slot ?? "sidebar",
+            url: entry.url,
+          };
+          contributions.ui.push(item);
+          return () => {
+            contributions.ui = contributions.ui.filter((row) => row !== item);
+          };
+        },
       });
       loaded.set(record.id, result);
       log.info(
@@ -255,7 +354,27 @@ export function createPluginRegistryService(
     }
   }
 
+  /** 贡献物记账（每插件一组；卸载/停用时按 pluginId 收回）。 */
+  const contributions: PluginContributions = {
+    promptFragments: [],
+    routes: [],
+    ui: [],
+  };
+
+  function dropContributions(pluginId: string): void {
+    contributions.promptFragments = contributions.promptFragments.filter(
+      (item) => item.pluginId !== pluginId,
+    );
+    contributions.routes = contributions.routes.filter(
+      (item) => item.pluginId !== pluginId,
+    );
+    contributions.ui = contributions.ui.filter(
+      (item) => item.pluginId !== pluginId,
+    );
+  }
+
   function unloadPlugin(id: string): void {
+    dropContributions(id);
     const handle = loaded.get(id);
     if (!handle) return;
     try {
@@ -281,6 +400,8 @@ export function createPluginRegistryService(
         category: null,
         system: SYSTEM_PLUGIN_NAMES.has(entry.name),
         installed: true,
+        // 系统插件不带 UI 入口（它们本来就有专门的界面）
+        ui: [],
       }));
 
       for (const record of state.installed) {
@@ -296,6 +417,8 @@ export function createPluginRegistryService(
           category: null,
           system: false,
           installed: record.enabled,
+          // 停用即收回入口（侧栏不该出现点不开的插件）
+          ui: record.enabled ? (record.manifest.ui ?? []) : [],
         });
       }
       return entries;
@@ -393,6 +516,85 @@ export function createPluginRegistryService(
       await writeState(next);
 
       return { installed: record, report };
+    },
+
+    listPromptFragments() {
+      return contributions.promptFragments.map((item) => item.text);
+    },
+
+    listUiEntries() {
+      return contributions.ui.map((item) => ({ ...item }));
+    },
+
+    routeVisibility({ pluginId, method, path: routePath }) {
+      const normalized = routePath.replace(/^\/+/, "");
+      const route = contributions.routes.find(
+        (item) =>
+          item.pluginId === pluginId &&
+          item.method === method.toUpperCase() &&
+          item.path === normalized,
+      );
+      if (!route) return undefined;
+      return route.publicRoute ? "public" : "private";
+    },
+
+    async dispatchRoute({
+      pluginId,
+      method,
+      path: routePath,
+      query,
+      body,
+      headers,
+      isAuthenticated,
+    }) {
+      const normalized = routePath.replace(/^\/+/, "");
+      const route = contributions.routes.find(
+        (item) =>
+          item.pluginId === pluginId &&
+          item.method === method.toUpperCase() &&
+          item.path === normalized,
+      );
+      if (!route) return undefined;
+      if (!route.publicRoute && !isAuthenticated) {
+        return { status: 401, body: { error: "需要登录。" } };
+      }
+      try {
+        const result = await route.handler({
+          method: method.toUpperCase(),
+          path: normalized,
+          query,
+          body,
+          headers,
+        });
+        if (
+          result &&
+          typeof result === "object" &&
+          "status" in (result as Record<string, unknown>)
+        ) {
+          const shaped = result as {
+            status?: number;
+            body?: unknown;
+            headers?: Record<string, string>;
+          };
+          return {
+            status: shaped.status ?? 200,
+            body: shaped.body ?? null,
+            ...(shaped.headers ? { headers: shaped.headers } : {}),
+          };
+        }
+        return { status: 200, body: result ?? null };
+      } catch (error) {
+        log.warn(
+          `[plugins] ${pluginId} 路由 ${normalized} 处理失败：`,
+          error instanceof Error ? error.message : String(error),
+        );
+        return {
+          status: 500,
+          body: {
+            error: error instanceof Error ? error.message : "插件路由处理失败。",
+          },
+        };
+      }
     },
 
     async uninstall(id) {

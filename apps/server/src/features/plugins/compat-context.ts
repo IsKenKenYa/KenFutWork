@@ -27,11 +27,53 @@ export interface CompatToolDefinition {
   execute?: (args: unknown, exec: unknown) => unknown | Promise<unknown>;
 }
 
+/** 插件贡献的提示段（追加进 system prompt——插件的「行为/工作模式」就是这么给的）。 */
+export interface CompatPromptFragment {
+  id?: string;
+  text: string;
+}
+
+/** 插件自带的 HTTP 路由（挂在 `/api/plugins/<id>/…`）。 */
+export interface CompatRouteSpec {
+  method?: "GET" | "POST";
+  /** 插件内路径（不含插件前缀），如 `panel` 或 `data/list`。 */
+  path: string;
+  /** 默认 false = 需要登录；面板页面本身（iframe 带不上头）通常声明 true。 */
+  public?: boolean;
+  handler: (request: {
+    method: string;
+    path: string;
+    query: Record<string, string>;
+    body: unknown;
+    headers: Record<string, string | undefined>;
+  }) => unknown | Promise<unknown>;
+}
+
+/** 插件贡献的 UI 面板入口（侧栏条目 + 面板里 iframe 渲染 url）。 */
+export interface CompatUiEntry {
+  id: string;
+  title: string;
+  slot?: "sidebar";
+  url: string;
+}
+
 export interface CompatContext {
   readonly tools: {
     register(definition: CompatToolDefinition): () => void;
     get(name: string): ToolDefinition | undefined;
     list(): ToolDefinition[];
+  };
+  /** 提示段贡献（能力名 `systemPrompt`）。 */
+  readonly promptFragments: {
+    register(fragment: CompatPromptFragment): () => void;
+  };
+  /** 路由贡献（能力名 `routes`）。 */
+  readonly routes: {
+    register(spec: CompatRouteSpec): () => void;
+  };
+  /** UI 入口贡献（能力名 `ui`；清单里声明亦可）。 */
+  readonly ui: {
+    register(entry: CompatUiEntry): () => void;
   };
   effect(fn: () => void | (() => void)): void;
   on(
@@ -71,6 +113,12 @@ export interface CompatHostDeps {
     event: string,
     listener: (payload: unknown, next?: unknown) => unknown,
   ) => () => void;
+  /** 提示段 sink（返回注销函数）。 */
+  promptFragments: (fragment: CompatPromptFragment) => () => void;
+  /** 路由 sink（返回注销函数）。 */
+  routes: (spec: CompatRouteSpec) => () => void;
+  /** UI 入口 sink（返回注销函数）。 */
+  ui: (entry: CompatUiEntry) => () => void;
   /** 插件标识，用于日志前缀与错误信息。 */
   label: string;
 }
@@ -217,6 +265,7 @@ export async function loadCompatPlugin(
 
   const toolDisposers: Array<() => void> = [];
   const effectDisposers: Array<() => void> = [];
+  const contributionDisposers: Array<() => void> = [];
   const toolNames: string[] = [];
 
   const context: CompatContext = {
@@ -233,6 +282,49 @@ export async function loadCompatPlugin(
       },
       list() {
         return deps.tools.list();
+      },
+    },
+    promptFragments: {
+      register(fragment) {
+        const text = typeof fragment?.text === "string" ? fragment.text : "";
+        if (!text.trim()) {
+          throw new CompatLoadError(
+            `${deps.label}：ctx.promptFragments.register 需要非空 text。`,
+            "tool_invalid",
+          );
+        }
+        const dispose = deps.promptFragments({ ...fragment, text });
+        contributionDisposers.push(dispose);
+        return dispose;
+      },
+    },
+    routes: {
+      register(spec) {
+        const routePath = typeof spec?.path === "string" ? spec.path.trim() : "";
+        if (!routePath || typeof spec?.handler !== "function") {
+          throw new CompatLoadError(
+            `${deps.label}：ctx.routes.register 需要 path 与 handler。`,
+            "tool_invalid",
+          );
+        }
+        const dispose = deps.routes({ ...spec, path: routePath });
+        contributionDisposers.push(dispose);
+        return dispose;
+      },
+    },
+    ui: {
+      register(entry) {
+        const title = typeof entry?.title === "string" ? entry.title.trim() : "";
+        const url = typeof entry?.url === "string" ? entry.url.trim() : "";
+        if (!title || !url) {
+          throw new CompatLoadError(
+            `${deps.label}：ctx.ui.register 需要 title 与 url。`,
+            "tool_invalid",
+          );
+        }
+        const dispose = deps.ui({ ...entry, title, url });
+        contributionDisposers.push(dispose);
+        return dispose;
       },
     },
     // 副作用由本适配层自己调用并登记：不能同时委托给 kernel 的 effect，
@@ -289,6 +381,13 @@ export async function loadCompatPlugin(
         dispose();
       } catch (error) {
         console.warn(`[plugin:${deps.label}] 回滚副作用失败：`, error);
+      }
+    }
+    for (const dispose of contributionDisposers.reverse()) {
+      try {
+        dispose();
+      } catch (error) {
+        console.warn(`[plugin:${deps.label}] 回滚贡献物失败：`, error);
       }
     }
   };

@@ -122,6 +122,9 @@ describe("plugin-exporter：回灌往返", () => {
         {
           tools: kernel.get("tools"),
           subscribe: () => () => {},
+      promptFragments: () => () => {},
+      routes: () => () => {},
+      ui: () => () => {},
           label: artifact.name,
         },
       );

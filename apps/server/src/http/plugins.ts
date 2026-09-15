@@ -9,7 +9,7 @@ import {
   sandboxPluginInstallRequestSchema,
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import type { AdminService } from "../features/admin/admin-service.js";
 import type { AuthenticatedUser } from "../features/auth/types.js";
@@ -243,6 +243,58 @@ export async function registerPluginRoutes(
       return sendError(reply, "install_failed", "安装失败。", 500);
     }
   });
+
+  /**
+   * 插件自带路由：`/api/plugins/<pluginId>/<path>`。
+   *
+   * 派发而不是注册到 Fastify：插件可以在运行时装卸，Fastify 的路由表注册后不可撤——
+   * 一张每次都现查的派发表才能做到「卸载即失效」。默认要求登录，插件可用
+   * `public: true` 显式开放（UI 面板 iframe 带不上 Authorization 头）。
+   */
+  const dispatchPluginRoute = async (
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ) => {
+    const params = request.params as { pluginId?: string; "*"?: string };
+    const pluginId = params.pluginId ?? "";
+    const routePath = params["*"] ?? "";
+    const query = (request.query ?? {}) as Record<string, string>;
+    if (!pluginId) {
+      return sendError(reply, "not_found", "缺少插件 id。", 404);
+    }
+    const user = await options.auth.authenticate(request);
+    const result = await options.registry.dispatchRoute({
+      pluginId,
+      method: request.method,
+      path: routePath,
+      query,
+      body: request.body,
+      headers: request.headers as Record<string, string | undefined>,
+      isAuthenticated: Boolean(user),
+    });
+    if (!result) {
+      return sendError(
+        reply,
+        "not_found",
+        "插件路由不存在（插件可能未安装或未启用）。",
+        404,
+      );
+    }
+    for (const [name, value] of Object.entries(result.headers ?? {})) {
+      reply.header(name, value);
+    }
+    if (typeof result.body === "string") {
+      // HTML/文本（面板页面）原样下发；plugin 自管的 content-type
+      return reply
+        .code(result.status)
+        .type(result.headers?.["content-type"] ?? "text/html; charset=utf-8")
+        .send(result.body);
+    }
+    return reply.code(result.status).send(result.body);
+  };
+
+  app.get("/api/plugins/:pluginId/*", dispatchPluginRoute);
+  app.post("/api/plugins/:pluginId/*", dispatchPluginRoute);
 
   app.post("/api/plugins/:id/uninstall", async (request, reply) => {
     if (!(await requireAdmin(request, reply))) return reply;

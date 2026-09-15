@@ -115,6 +115,9 @@ export function createAgentRunsPlugin(
           emitTurnStopping: (payload) => deps.events.emitTurnStopping(payload),
           ...(deps.emitPreStep ? { emitPreStep: deps.emitPreStep } : {}),
           toolGateFor,
+          // 插件提示段（能力 systemPrompt）：plugins 是可选依赖（部分装配/测试里没有）
+          pluginPromptFragments: () =>
+            ctx.tryGet("plugins")?.listPromptFragments() ?? [],
           creditService: d.get("credits"),
           tierGuard: d.get("tierGuard"),
           viewerService: d.get("viewer"),

@@ -217,6 +217,8 @@ export type KenFutWorkAgentFactory = (options: {
   toolGate?: ToolGate;
   /** 工具门旁路钩子（拒绝可见性 + 连续拒绝计数）。 */
   toolGateHooks?: ToolGateHooks;
+  /** 插件贡献的提示段（能力 `systemPrompt`）：追加在系统提示之后。 */
+  systemPromptExtras?: readonly string[];
 }) => KenFutWorkAgent;
 
 export function createKenFutWorkDeepAgent(options: {
@@ -245,6 +247,8 @@ export function createKenFutWorkDeepAgent(options: {
   toolGate?: ToolGate;
   /** 工具门旁路钩子（拒绝可见性 + 连续拒绝计数）。 */
   toolGateHooks?: ToolGateHooks;
+  /** 插件贡献的提示段（能力 `systemPrompt`）：追加在系统提示之后。 */
+  systemPromptExtras?: readonly string[];
 }): KenFutWorkAgent {
   const backendResult =
     options.backendResult ?? createAgentBackend(options.env, options.canvasId);
@@ -284,6 +288,15 @@ export function createKenFutWorkDeepAgent(options: {
       })
       .join("\n");
     systemPrompt += `\n\n## Skills\n\nThe following skills are enabled in this workspace:\n${skillsList}`;
+  }
+
+  // 插件提示段（能力 systemPrompt）：接在品牌/技能之后——插件是外部贡献，
+  // 不该覆盖内置规则，只追加行为引导。
+  const extras = (options.systemPromptExtras ?? []).filter(
+    (section) => section.trim().length > 0,
+  );
+  if (extras.length > 0) {
+    systemPrompt += `\n\n## 插件提示段\n\n${extras.join("\n\n")}`;
   }
 
   return createDeepAgent({

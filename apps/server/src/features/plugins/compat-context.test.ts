@@ -24,6 +24,9 @@ function makeHost() {
   return {
     tools: kernel.get("tools"),
     subscribe: () => () => {},
+    promptFragments: () => () => {},
+    routes: () => () => {},
+    ui: () => () => {},
     label: "demo",
   };
 }

@@ -1,0 +1,31 @@
+{
+  "name": "kenfutwork-demo-panel",
+  "version": "1.0.0",
+  "description": "KenFutWork 参考插件：演示全部能力面（tools / systemPrompt / routes / ui）——注册工具、追加提示段、自带面板路由与侧栏入口。",
+  "type": "module",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "license": "GPL-3.0",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "kenfutwork": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "ui": [
+      {
+        "id": "demo-panel",
+        "title": "示例面板",
+        "slot": "sidebar",
+        "url": "/api/plugins/local__kenfutwork-demo-panel/panel"
+      }
+    ]
+  }
+}

@@ -324,3 +324,134 @@ describe("plugin-registry：导出", () => {
     }
   });
 });
+
+/**
+ * 插件能力面 v1（用户拍板「插件拥有所有能力」后落地的一部分）：
+ * 提示段（systemPrompt）/ 自带路由（routes）/ UI 入口（ui）都要能注册、能派发、能收回。
+ */
+describe("插件贡献物：提示段 / 路由 / UI 入口", () => {
+  const CONTRIBUTOR = "loomic-contributor";
+
+  async function writeContributor(): Promise<string> {
+    const dir = await mkdtemp(path.join(tmpdir(), "kfw-contributor-"));
+    await writeFile(
+      path.join(dir, "package.json"),
+      JSON.stringify({
+        name: CONTRIBUTOR,
+        version: "1.0.0",
+        type: "module",
+        main: "index.js",
+        kenfutwork: { bundle: { patch: "./cordis.patch.yml" } },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      path.join(dir, "cordis.patch.yml"),
+      `- insert:
+    - id: ${CONTRIBUTOR}
+      name: ${CONTRIBUTOR}
+      inject: [tools, systemPrompt, routes, ui]
+`,
+      "utf8",
+    );
+    await writeFile(
+      path.join(dir, "index.js"),
+      `export const name = "${CONTRIBUTOR}";
+export const inject = ["tools", "systemPrompt", "routes", "ui"];
+export function apply(ctx) {
+  ctx.promptFragments.register({ id: "tone", text: "回答一律先给结论。" });
+  ctx.routes.register({
+    path: "panel",
+    public: true,
+    handler: async () => ({ status: 200, body: "<h1>panel</h1>" }),
+  });
+  ctx.routes.register({
+    path: "data",
+    handler: async (request) => ({ ok: true, query: request.query }),
+  });
+  ctx.ui.register({ id: "panel", title: "插件面板", url: "/api/plugins/${CONTRIBUTOR}/panel" });
+}
+`,
+      "utf8",
+    );
+    return dir;
+  }
+
+  it("注册后：提示段可见、公开路由可匿名访问、私有路由要登录、UI 入口带出", async () => {
+    const { service } = makeService();
+    const source = await writeContributor();
+    const installed = await service.install({
+      allowLifecycleScripts: false,
+      url: source,
+    });
+    // 本机目录安装的 id 形如 local__<包名>：派发与卸载都用它
+    const pluginId = installed.installed.id;
+
+    expect(service.listPromptFragments()).toEqual(["回答一律先给结论。"]);
+    const ui = service.listUiEntries();
+    expect(ui).toHaveLength(1);
+    expect(ui[0]).toMatchObject({ title: "插件面板", slot: "sidebar" });
+
+    // 公开路由：匿名可访问
+    const publicResult = await service.dispatchRoute({
+      pluginId,
+      method: "GET",
+      path: "panel",
+      query: {},
+      body: undefined,
+      headers: {},
+      isAuthenticated: false,
+    });
+    expect(publicResult?.status).toBe(200);
+    expect(publicResult?.body).toContain("panel");
+
+    // 私有路由：未登录 401，登录后带参派发
+    expect(
+      await service.dispatchRoute({
+        pluginId,
+        method: "GET",
+        path: "data",
+        query: {},
+        body: undefined,
+        headers: {},
+        isAuthenticated: false,
+      }),
+    ).toMatchObject({ status: 401 });
+
+    const authed = await service.dispatchRoute({
+      pluginId,
+      method: "GET",
+      path: "data",
+      query: { q: "1" },
+      body: undefined,
+      headers: { authorization: "Bearer t" },
+      isAuthenticated: true,
+    });
+    expect(authed).toMatchObject({ status: 200, body: { ok: true } });
+
+    // 未注册路径 → undefined（路由层转 404）
+    expect(
+      await service.dispatchRoute({
+        pluginId,
+        method: "GET",
+        path: "nope",
+        query: {},
+        body: undefined,
+        headers: {},
+        isAuthenticated: true,
+      }),
+    ).toBeUndefined();
+
+    // 卸载后贡献物一并收回
+    await service.uninstall(pluginId);
+    expect(service.listPromptFragments()).toEqual([]);
+    expect(service.listUiEntries()).toEqual([]);
+    expect(
+      service.routeVisibility({
+        pluginId,
+        method: "GET",
+        path: "panel",
+      }),
+    ).toBeUndefined();
+  });
+});

@@ -3,6 +3,7 @@
 import type { ExecutionMode, ProjectSummary } from "@kenfutwork/shared";
 import {
   Blocks,
+  PanelsTopLeft,
   Brain,
   Code2,
   Folder,
@@ -41,6 +42,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ElapsedEntry } from "@/components/workbench/elapsed-entry";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { GitBranchSelect } from "@/components/workbench/git-branch-select";
 import { commitGitAll } from "@/lib/code-git-api";
 import { ToolOutputRenderer } from "@/components/chat/tool-block-view";
@@ -351,6 +358,13 @@ export function Workbench() {
   /** 最近一次「本轮自动提交」的时间戳（仅用于给用户一个可见回执 + 刷新分支 chip）。 */
   const [lastAutoCommitAt, setLastAutoCommitAt] = useState<string | null>(null);
 
+  /** 插件贡献的 UI 面板入口（能力 `ui`）：已安装且启用的插件才带出来。 */
+  const [pluginPanels, setPluginPanels] = useState<
+    Array<{ id: string; pluginId: string; title: string; url: string }>
+  >([]);
+  /** 正在打开的插件面板（iframe）。 */
+  const [activePluginPanel, setActivePluginPanel] = useState<string | null>(null);
+
   /** 侧栏里被收起的工作目录项目 id（默认全展开；持久化到 localStorage）。 */
   const [collapsedProjects, setCollapsedProjects] = useState<string[]>([]);
 
@@ -365,6 +379,43 @@ export function Workbench() {
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
   }, [loading, user, router]);
+
+  /** 拉插件 UI 入口（顺带刷新；插件装卸后由调用方再次触发）。 */
+  const refreshPluginPanels = useCallback(() => {
+    const token = session?.access_token;
+    if (!token) return;
+    fetch(`${getServerBaseUrl()}/api/plugins`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((response) => (response.ok ? response.json() : { plugins: [] }))
+      .then(
+        (data: {
+          plugins: Array<{
+            id: string;
+            installed?: boolean;
+            ui?: Array<{ id: string; title: string; url: string }>;
+          }>;
+        }) => {
+          setPluginPanels(
+            data.plugins
+              .filter((plugin) => plugin.installed)
+              .flatMap((plugin) =>
+                (plugin.ui ?? []).map((entry) => ({
+                  id: `${plugin.id}:${entry.id}`,
+                  pluginId: plugin.id,
+                  title: entry.title,
+                  url: entry.url,
+                })),
+              ),
+          );
+        },
+      )
+      .catch(() => setPluginPanels([]));
+  }, [session]);
+
+  useEffect(() => {
+    refreshPluginPanels();
+  }, [refreshPluginPanels]);
 
   // 任务列表载入 + 思考强度偏好
   useEffect(() => {
@@ -1328,6 +1379,18 @@ export function Workbench() {
             >
               <Plug className="h-4 w-4 shrink-0" /> MCP
             </button>
+            {/* 插件贡献的 UI 面板（能力 `ui`）：装了带面板的插件就会出现在这里 */}
+            {pluginPanels.map((panel) => (
+              <button
+                key={panel.id}
+                type="button"
+                onClick={() => setActivePluginPanel(panel.url)}
+                title={`插件 ${panel.pluginId} 提供的面板`}
+                className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <PanelsTopLeft className="h-4 w-4 shrink-0" /> {panel.title}
+              </button>
+            ))}
           </nav>
 
           <div className="mx-3 my-2 border-t" />
@@ -2152,10 +2215,38 @@ export function Workbench() {
         initialTab={settingsTab === null ? undefined : settingsTab}
         onClose={() => setSettingsTab(null)}
       />
+      {/* 插件面板（能力 `ui`）：iframe 指向插件自己的 URL（相对路径补服务端 base） */}
+      {activePluginPanel ? (
+        <Dialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setActivePluginPanel(null);
+          }}
+        >
+          <DialogContent className="flex h-[80vh] max-h-[80vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
+            <DialogHeader className="flex-row items-center justify-between border-b px-5 py-3 pr-12">
+              <DialogTitle className="text-base font-medium">插件面板</DialogTitle>
+            </DialogHeader>
+            <iframe
+              title="插件面板"
+              src={
+                activePluginPanel.startsWith("http")
+                  ? activePluginPanel
+                  : `${getServerBaseUrl()}${activePluginPanel}`
+              }
+              className="min-h-0 flex-1 border-0"
+            />
+          </DialogContent>
+        </Dialog>
+      ) : null}
+
       {pluginsOpen ? (
         <PluginMarketModal
           open={pluginsOpen}
-          onClose={() => setPluginsOpen(false)}
+          onClose={() => {
+            setPluginsOpen(false);
+            refreshPluginPanels();
+          }}
           accessToken={session?.access_token ?? null}
           // 「从工作目录安装」用：服务端据此解析沙箱目录
           canvasId={selectedProject?.primaryCanvas?.id ?? null}

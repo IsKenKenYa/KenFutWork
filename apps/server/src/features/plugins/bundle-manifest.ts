@@ -8,6 +8,17 @@ import { type ModuleScan, scanPluginModule } from "./module-scan.js";
 import { parsePatch } from "./patch-parser.js";
 
 /**
+ * `ctx.<成员>` → 规范能力名的别名表（其余成员与能力名同名）。
+ *
+ * 例：插件写 `ctx.promptFragments.register(...)`，对应能力名是 `systemPrompt`
+ * （提示段能力）——不映射的话门禁会把它当成一项未识别能力而拒绝安装。
+ */
+const CTX_MEMBER_CAPABILITY_ALIASES: Record<string, string> = {
+  promptFragments: "systemPrompt",
+};
+
+
+/**
  * bundle 清单归一化：把「一个插件的文件集合」收敛为 `PluginBundleManifest`。
  *
  * 同时支持两种声明（互操作的前提）：
@@ -133,6 +144,13 @@ function asStringRecord(value: unknown): Record<string, string> {
 }
 
 /** 从文件集合构建归一化清单；并返回模块扫描结果供门禁复用（避免重复解析）。 */
+/** 只把对象当对象看（清单里的第三方字段可能是任意类型）。 */
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
 export function buildBundleManifest(files: BundleFiles): {
   manifest: PluginBundleManifest;
   scan: ModuleScan;
@@ -197,10 +215,29 @@ export function buildBundleManifest(files: BundleFiles): {
     ...patch.rows.flatMap((row) => row.inject),
     ...patch.overrides.flatMap((row) => row.inject),
     ...scan.declaredInject,
-    ...scan.accessedMembers,
+    // ctx 成员名 → 规范能力名：多数同名（tools/routes/ui），例外在此列一行
+    ...scan.accessedMembers.map(
+      (member) => CTX_MEMBER_CAPABILITY_ALIASES[member] ?? member,
+    ),
   ]);
 
   const engines = pkg.engines as Record<string, unknown> | undefined;
+
+  // UI 面板入口：`kenfutwork.ui`（本项目扩展；dsh 侧没有对应声明）。
+  // 刻意放在厂商键下一级而不是 bundle 里：UI 不属于「配置层 patch」的概念。
+  const kenfutworkBlock = asRecord(pkg.kenfutwork) ?? {};
+  const declaredUi = Array.isArray(kenfutworkBlock.ui)
+    ? (kenfutworkBlock.ui as unknown[])
+        .map((item) => asRecord(item))
+        .filter((item): item is Record<string, unknown> => Boolean(item))
+        .map((item) => ({
+          id: typeof item.id === "string" ? item.id : "",
+          title: typeof item.title === "string" ? item.title : "",
+          slot: "sidebar" as const,
+          url: typeof item.url === "string" ? item.url : "",
+        }))
+        .filter((item) => item.id && item.title && item.url)
+    : [];
 
   const manifest = pluginBundleManifestSchema.parse({
     name,
@@ -217,6 +254,7 @@ export function buildBundleManifest(files: BundleFiles): {
     scope: null,
     enginesNode:
       engines && typeof engines.node === "string" ? engines.node : null,
+    ui: declaredUi,
     hasClientUi:
       typeof pkg.dsh === "object" &&
       pkg.dsh !== null &&

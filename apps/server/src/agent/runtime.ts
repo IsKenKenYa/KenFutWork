@@ -331,6 +331,8 @@ type CreateAgentRuntimeOptions = {
    * solo/plan 的工具拦截判定；返回 undefined 表示全放行（agent 等模式）。
    */
   toolGateFor?: (threadId: string) => ToolGate | undefined;
+  /** 插件贡献的提示段（能力 systemPrompt）；每次 run 调用一次。 */
+  pluginPromptFragments?: () => string[];
   now?: () => string;
   runIdFactory?: () => string;
   tierGuard?: TierGuard;
@@ -1342,6 +1344,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             // 执行模式工具门（solo/plan 硬约束）：拦截内置与桥接工具的全部调用
             ...(toolGate ? { toolGate } : {}),
             ...(toolGateHooks ? { toolGateHooks } : {}),
+            // 插件提示段每次 run 取一次：新装/卸载插件下一轮即生效
+            ...(options.pluginPromptFragments
+              ? { systemPromptExtras: options.pluginPromptFragments() }
+              : {}),
             runToolContext: {
               runId,
               ...(run.canvasId ? { canvasId: run.canvasId } : {}),

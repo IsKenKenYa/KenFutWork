@@ -32,6 +32,10 @@ export const CANONICAL_CAPABILITIES = [
   "subprocess",
   "sandbox",
   "agents",
+  /** 本项目扩展：插件自带 HTTP 路由（`/api/plugins/<id>/…`，默认要求登录）。 */
+  "routes",
+  /** 本项目扩展：插件贡献 UI 面板入口（侧栏条目 + 面板渲染其 URL）。 */
+  "ui",
 ] as const;
 export const canonicalCapabilitySchema = z.enum(CANONICAL_CAPABILITIES);
 export type CanonicalCapability = z.infer<typeof canonicalCapabilitySchema>;
@@ -70,6 +74,21 @@ export const pluginBundleManifestSchema = z.object({
   enginesNode: z.string().nullable().default(null),
   /** 是否携带 dsh web 客户端 UI（`dsh.client`） */
   hasClientUi: z.boolean().default(false),
+  /**
+   * 本项目 UI 面板入口（`kenfutwork.ui`，与 bundle 同级）：
+   * 侧栏出现一条目，点开在面板里以 iframe 渲染 `url`（通常是插件自己的路由）。
+   */
+  ui: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        title: z.string().min(1),
+        /** 目前只支持侧栏槽位；后续可扩 settings / canvas 等。 */
+        slot: z.literal("sidebar").default("sidebar"),
+        url: z.string().min(1),
+      }),
+    )
+    .default([]),
   /** 安装期会执行的包生命周期脚本（危险面） */
   lifecycleScripts: z.array(z.string()).default([]),
   /** 依赖的 in-box dsh bundle（`@deepseek-ai/dsh-*`），需要 dsh 运行时 */
@@ -163,6 +182,17 @@ export const pluginMarketEntrySchema = z.object({
   /** 内核必需插件，不可卸载 */
   system: z.boolean().default(false),
   installed: z.boolean().default(false),
+  /** 插件贡献的 UI 面板入口（仅已安装且启用时非空）。 */
+  ui: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        title: z.string().min(1),
+        slot: z.string().default("sidebar"),
+        url: z.string().min(1),
+      }),
+    )
+    .default([]),
 });
 export type PluginMarketEntry = z.infer<typeof pluginMarketEntrySchema>;
 
@@ -262,6 +292,18 @@ export const pluginInspectResponseSchema = z.object({
   report: compatReportSchema,
 });
 export type PluginInspectResponse = z.infer<typeof pluginInspectResponseSchema>;
+
+/** 插件路由声明（`ctx.routes.register`；服务端据此把请求派发给插件）。 */
+export const pluginRouteSpecSchema = z.object({
+  method: z.enum(["GET", "POST"]).default("GET"),
+  path: z.string().min(1),
+  /**
+   * 是否公开（默认 false = 需要登录）。UI 面板 iframe 无法带 Authorization 头，
+   * 面板页面本身通常声明 public: true，数据接口仍保持登录门。
+   */
+  public: z.boolean().default(false),
+});
+export type PluginRouteSpec = z.infer<typeof pluginRouteSpecSchema>;
 
 export const pluginInstallResponseSchema = z.object({
   installed: installedPluginSchema,
