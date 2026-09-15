@@ -81,7 +81,10 @@ function AiImageIcon({ className }: { className?: string }) {
   );
 }
 
-/** 「AI 生成视频」图标：圆角方块 + 播放三角（方正、与其它图标同高；此前拉长的摄像机不好看）。 */
+/**
+ * 「AI 生成视频」图标：**胶片 + 右上角四角星**，与「AI 生成图片」的「图框 + 四角星」成对
+ * ——同一族两枚，都是「AI 生成 X」的读法（用户要求的形态）。
+ */
 function AiVideoIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -93,8 +96,11 @@ function AiVideoIcon({ className }: { className?: string }) {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <rect x="2" y="2" width="20" height="20" rx="5" />
-      <path d="m10 8.2 6.4 3.8-6.4 3.8z" />
+      <rect x="1.5" y="4" width="17" height="17" rx="2.4" />
+      <path d="M6 4v17M14 4v17" />
+      <path d="M1.5 8.5H6M1.5 12.5h17M1.5 16.5H6" />
+      <path d="M14 8.5h4.5M14 16.5h4.5" />
+      <path d="M20.6 1.4l1 2.6 2.6 1-2.6 1-1 2.6-1-2.6-2.6-1 2.6-1z" />
     </svg>
   );
 }
