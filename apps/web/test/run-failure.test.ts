@@ -56,4 +56,19 @@ describe("run.failed 的失败说明", () => {
     );
     expect(describeRunFailure("boom")).toBe(GENERIC_RUN_FAILURE_TEXT);
   });
+
+  it("有错误码但没文案时带上错误码（不再只说「运行失败」）", () => {
+    expect(describeRunFailure({ error: { code: "run_failed" } })).toBe(
+      `${GENERIC_RUN_FAILURE_TEXT}（错误码 run_failed）`,
+    );
+  });
+
+  /** 服务端的「通用文案 + 原始错误」要原样进对话气泡（用户要求能看到上游原文）。 */
+  it("多行原文（通用文案 + 原始错误）原样透出", () => {
+    const message =
+      'AI 服务暂时不可用，请稍后重试。\n\n原始错误：400 {"error":{"message":"model not found"}}';
+    expect(
+      describeRunFailure({ error: { code: "run_failed", message } }),
+    ).toBe(message);
+  });
 });

@@ -50,6 +50,54 @@ function clientFacingMessage(error: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * 凭证脱敏：原始错误**要进结构化日志、也要给用户看**，所以先过这一遍。
+ *
+ * BYOK 红线是「Key 只写不读、日志脱敏」——上游报错常把请求头里的 Key 原样回显
+ * （`401 {"error":"invalid api key sk-..."}`），不脱敏就等于把用户凭证写进日志文件
+ * 再贴到对话里。
+ */
+export function redactSecrets(text: string): string {
+  return text
+    .replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]{8,}/gi, "$1***")
+    .replace(
+      /((?:api[_-]?key|apikey|access[_-]?token|token|secret|password)["'\s:=]{1,4})[A-Za-z0-9._~+/=-]{8,}/gi,
+      "$1***",
+    )
+    .replace(/\b(sk|pk|rk|ghp|xox[baprs]|QC)-[A-Za-z0-9_-]{12,}/g, (match) =>
+      `${match.slice(0, 5)}***`,
+    );
+}
+
+/**
+ * 原始错误详情（脱敏、截断）：顶层 message + `cause` 链 + 上游 HTTP 状态。
+ *
+ * 存在的理由：失败原因此前只 `console.error` 到 stderr，**不落 pipeline 日志、也不给
+ * 用户看**——实测「每轮 run 都失败」时只能看到笼统文案，无法回溯上游返回了什么。
+ */
+export function describeErrorDetail(error: unknown, maxLength = 300): string {
+  const parts: string[] = [];
+  let current: unknown = error;
+  let depth = 0;
+  while (current !== undefined && current !== null && depth < 5) {
+    const message =
+      current instanceof Error
+        ? current.message
+        : typeof current === "string"
+          ? current
+          : "";
+    const trimmed = message.trim();
+    if (trimmed && !parts.includes(trimmed)) parts.push(trimmed);
+    const status = (current as { status?: unknown }).status;
+    if (typeof status === "number") parts.push(`HTTP ${status}`);
+    current = (current as { cause?: unknown }).cause;
+    depth += 1;
+  }
+  const text = redactSecrets(parts.join(" ← ")).replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  return text.length > maxLength ? `${text.slice(0, maxLength)}…` : text;
+}
+
 export function sanitizeErrorForClient(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
   // Log full detail server-side for debugging
@@ -92,25 +140,34 @@ export function sanitizeErrorForClient(error: unknown): string {
     return clientFacing;
   }
   if (PROVIDER_PATTERN.test(raw)) {
-    return "AI 服务暂时不可用，请稍后重试。";
+    return withRawDetail("AI 服务暂时不可用，请稍后重试。", error);
   }
   if (DB_PATTERN.test(raw)) {
-    return "数据服务异常，请稍后重试。";
+    return withRawDetail("数据服务异常，请稍后重试。", error);
   }
   if (AUTH_PATTERN.test(raw)) {
-    return "认证失败，请刷新页面重新登录。";
+    return withRawDetail("认证失败，请刷新页面重新登录。", error);
   }
   if (INFRA_PATTERN.test(raw)) {
-    return "网络连接异常，请检查网络后重试。";
+    return withRawDetail("网络连接异常，请检查网络后重试。", error);
   }
   if (raw.includes("abort") || raw.includes("cancel")) {
     return "请求已取消。";
   }
-  if (raw.length > 100) {
-    // Long messages are likely stack traces or JSON errors
-    return "请求处理失败，请重试。";
-  }
 
-  // Short, non-technical messages can pass through
-  return "请求处理失败，请重试。";
+  return withRawDetail("请求处理失败，请重试。", error);
+}
+
+/**
+ * 通用文案后面挂原始错误（脱敏 + 截断）。
+ *
+ * 为什么挂：通用文案只说明「哪一类」，判断不了是上游 4xx、Key 失效、模型不存在还是
+ * 网络不通——实测「每轮 run 都失败」时用户与运维都只能看到一句笼统话，无从下手，
+ * 也没法贴给上游排查。原始错误的落点有两处：结构化日志（ws/handler 的 `run_failed`）
+ * 与 `agent_runs.error_message`，两端同源，都是这里产出的字符串。
+ */
+function withRawDetail(generic: string, error: unknown): string {
+  const detail = describeErrorDetail(error);
+  // 空行分隔：前端用 markdown 渲染（单换行会被并进同一段），也便于纯文本场景阅读
+  return detail ? `${generic}\n\n原始错误：${detail}` : generic;
 }

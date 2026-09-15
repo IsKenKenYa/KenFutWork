@@ -553,7 +553,20 @@ async function handleRunCommand(
         if (event.type === "tool.started" || event.type === "tool.completed") {
           sawToolExecution = true;
         }
-        if (event.type === "run.failed") failureMessage = event.error.message;
+        if (event.type === "run.failed") {
+          failureMessage = event.error.message;
+          /**
+           * 失败原因进**结构化日志**（pipeline-*.log）。
+           * 此前原始错误只 `console.error` 到 stderr（终端一关就没了），实测「每轮 run
+           * 都失败」时既回溯不了上游返回了什么、也贴不给上游排查。message 里已含脱敏后的
+           * 原始错误（见 error-sanitizer 的 withRawDetail），与 agent_runs.error_message 同源。
+           */
+          log.error("run_failed", {
+            runId,
+            code: event.error.code,
+            error: event.error.message,
+          });
+        }
 
         // Accumulate content for server-side persistence
         if (event.type === "message.delta") {

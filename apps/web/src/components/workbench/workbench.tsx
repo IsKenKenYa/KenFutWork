@@ -427,6 +427,12 @@ export function Workbench() {
       // 存储不可用时用默认档
     }
     try {
+      // 上次选的模型；目录拉回后再校验是否仍存在（见下面的 setModel 回调）
+      setModel(window.localStorage.getItem("workbench:model") ?? "");
+    } catch {
+      // 存储不可用：由目录第一条兜底
+    }
+    try {
       const rawExpanded = window.localStorage.getItem(
         "workbench:expanded-groups",
       );
@@ -839,10 +845,31 @@ export function Workbench() {
       .then((r) => (r.ok ? r.json() : { models: [] }))
       .then((data: { models: WorkbenchModelOption[] }) => {
         setModels(data.models);
-        setModel((current) => current || data.models[0]?.id || "");
+        /**
+         * 默认取「上次选的」（`workbench:model`），失效才回落目录第一条。
+         *
+         * 只取第一条会踩到：目录顺序取决于实例创建序，工作区里常同时挂着多个实例
+         * （自带的、替身、平台池），刷新后默认模型可能变成用户没要的那个实例——
+         * 实测因此拿着一个失效实例的 Key 每轮 401。
+         */
+        setModel((current) =>
+          current && data.models.some((m) => m.id === current)
+            ? current
+            : (data.models[0]?.id ?? ""),
+        );
       })
       .catch(() => {});
   }, [session]);
+
+  /** 模型选择：记住到 localStorage（与 thinking 同一口径）。 */
+  const handleModelChange = useCallback((next: string) => {
+    setModel(next);
+    try {
+      window.localStorage.setItem("workbench:model", next);
+    } catch {
+      // 存储失败不阻塞
+    }
+  }, []);
 
   // 流事件 → 任务消息
   useEffect(() => {
@@ -2012,7 +2039,7 @@ export function Workbench() {
                     aria-label="模型"
                     value={model}
                     onValueChange={(next) => {
-                      if (typeof next === "string") setModel(next);
+                      if (typeof next === "string") handleModelChange(next);
                     }}
                     items={
                       models.length === 0
@@ -2230,7 +2257,7 @@ export function Workbench() {
                     aria-label="模型"
                     value={model}
                     onValueChange={(next) => {
-                      if (typeof next === "string") setModel(next);
+                      if (typeof next === "string") handleModelChange(next);
                     }}
                     items={
                       models.length === 0
