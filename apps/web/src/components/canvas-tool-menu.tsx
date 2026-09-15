@@ -3,11 +3,14 @@
 import {
   ArrowUpRight,
   Circle,
+  Film,
   Hand,
+  Image as ImageIcon,
   ImageUp,
   Minus,
   MousePointer2,
   Pencil,
+  Sparkles,
   Square,
   Type,
 } from "lucide-react";
@@ -57,54 +60,30 @@ const TOOL_GROUPS: (ToolType | null)[] = [
 ];
 
 /**
- * 「AI 生成图片」图标：图片框 + 右上角星芒——与「图片」工具（纯图片框）区分开。
+ * 「AI 生成 X」图标：**lucide 基础字形 + 右上角四角星徽标**。
  *
- * 别画小：同排其它图标（lucide 系）的图形普遍占 24 视框的 3/4，这张的图框与星芒按同比例
- * 铺满，否则在工具条里明显比邻居小一圈（用户反馈「这两个图标是不是有点小」）。
+ * 早先是自绘 SVG，结果在工具条里风格与邻居不一致（自绘线宽 1.6、齿孔线条密，
+ * 同排其它都是 lucide 的线宽 2）——用户反馈「风格和大小高度都不对」。
+ * 现在直接用 lucide 的字形（图片框 / 胶片），只额外挂一枚四角星徽标表示 AI，
+ * 线宽、视框、占幅天然与其它工具图标一致。
  */
-function AiImageIcon({ className }: { className?: string }) {
+function AiBadgeIcon({
+  Base,
+  className,
+}: {
+  Base: React.ComponentType<{ className?: string }>;
+  className?: string;
+}) {
   return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.6}
-      strokeLinecap="round"
-      strokeLinejoin="round"
+    <span
+      className={`relative inline-flex items-center justify-center ${className ?? ''}`}
     >
-      <rect x="2" y="3" width="18" height="18" rx="2.6" />
-      <circle cx="7.4" cy="8.8" r="1.6" />
-      <path d="M2.6 17.6 8.4 11.8l6 6" />
-      <path d="M20.6 1.4l1 2.6 2.6 1-2.6 1-1 2.6-1-2.6-2.6-1 2.6-1z" />
-    </svg>
+      <Base className="size-full" />
+      {/* 徽标压在右上角外沿：16px 下也能看清「这是 AI 那几个」 */}
+      <Sparkles className="absolute -right-1.5 -top-1.5 size-[9px]" strokeWidth={2.5} />
+    </span>
   );
 }
-
-/**
- * 「AI 生成视频」图标：**胶片 + 右上角四角星**，与「AI 生成图片」的「图框 + 四角星」成对
- * ——同一族两枚，都是「AI 生成 X」的读法（用户要求的形态）。
- */
-function AiVideoIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.6}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <rect x="1.5" y="4" width="17" height="17" rx="2.4" />
-      <path d="M6 4v17M14 4v17" />
-      <path d="M1.5 8.5H6M1.5 12.5h17M1.5 16.5H6" />
-      <path d="M14 8.5h4.5M14 16.5h4.5" />
-      <path d="M20.6 1.4l1 2.6 2.6 1-2.6 1-1 2.6-1-2.6-2.6-1 2.6-1z" />
-    </svg>
-  );
-}
-
 const TOOL_ICONS: Record<
   ToolType,
   React.ComponentType<{ className?: string }>
@@ -587,7 +566,7 @@ export function CanvasToolMenu({
               : "text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground"
           }`}
         >
-          <AiImageIcon className="size-[16px]" />
+          <AiBadgeIcon Base={ImageIcon} className="size-[16px]" />
         </button>
 
         {/* AI Video -- creates a placeholder on canvas */}
@@ -602,7 +581,7 @@ export function CanvasToolMenu({
               : "text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground"
           }`}
         >
-          <AiVideoIcon className="size-[16px]" />
+          <AiBadgeIcon Base={Film} className="size-[16px]" />
         </button>
       </div>
 
