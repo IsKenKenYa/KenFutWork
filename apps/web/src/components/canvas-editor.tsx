@@ -98,9 +98,6 @@ export function CanvasEditor({
   // Without this, a page reload can fire onChange with empty elements before
   // initialData is applied, causing a FULL REPLACE that wipes existing content.
   const hydratedRef = useRef(false);
-  const initialElementCountRef = useRef(
-    initialContent.elements.filter((e) => !e.isDeleted).length,
-  );
 
   // Track pending save payload so we can flush on tab close / unmount
   const pendingSaveRef = useRef<{
@@ -289,19 +286,12 @@ export function CanvasEditor({
           files,
         };
 
-        // 空场景覆盖护栏（与卸载前 flush 共用同一判定）：挂载期 Excalidraw 可能先回调
-        // 一次空列表，整表替换会把服务端已有内容清空——实测漏过一次，别再各自漂移。
-        if (
-          shouldRefuseEmptySave({
-            incomingCount: content.elements.length,
-            loadedCount: initialElementCountRef.current,
-          })
-        ) {
-          console.warn(
-            "[canvas-editor] 跳过空场景保存：服务端已有",
-            initialElementCountRef.current,
-            "个元素",
-          );
+        // 空场景覆盖护栏（与卸载前 flush 共用同一判定）：空内容一律不写——整表替换下
+        // 「写空」等于删光，而空场景本身没有可写的信息。实测吃过两次亏：挂载期 Excalidraw
+        // 先回调一次空列表，以及同一画布在别处（工作台 iframe）也开着、那份空场景因焦点
+        // 变化触发保存。判定收敛在纯函数里，两条写路径共用，别再各自漂移。
+        if (shouldRefuseEmptySave({ incomingCount: content.elements.length })) {
+          console.warn("[canvas-editor] 跳过空场景保存（空内容不写库）");
           pendingSaveRef.current = null;
           return;
         }
@@ -507,20 +497,10 @@ export function CanvasEditor({
       const rawFiles = excalidrawApi.getFiles() as Record<string, any>;
       const appState = excalidrawApi.getAppState();
 
-      // Safety: refuse to save empty when we loaded with elements — prevents
-      // race conditions from wiping canvas content during page teardown.
       // 与防抖自动保存共用同一判定（canvas-save-guard），两条路径不再各写一份。
       const liveCount = sceneElements.filter((el: any) => !el.isDeleted).length;
-      if (
-        shouldRefuseEmptySave({
-          incomingCount: liveCount,
-          loadedCount: initialElementCountRef.current,
-        })
-      ) {
-        console.warn(
-          "[canvas-editor] skipping save: 0 elements but loaded with",
-          initialElementCountRef.current,
-        );
+      if (shouldRefuseEmptySave({ incomingCount: liveCount })) {
+        console.warn("[canvas-editor] skipping save: 空场景不写库");
         return null;
       }
       const files: Record<string, Record<string, unknown>> = {};
