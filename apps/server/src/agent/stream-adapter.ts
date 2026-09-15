@@ -33,7 +33,12 @@ type AdaptDeepAgentStreamOptions = {
   conversationId: string;
   now?: () => string;
   /** 用量采集点（§4.5）：chunk 携带 usage_metadata（cumulative）时回调最新累计值。 */
-  onUsage?: (usage: { inputTokens: number; outputTokens: number }) => void;
+  onUsage?: (usage: {
+    inputTokens: number;
+    outputTokens: number;
+    /** 上游上报的「命中缓存的输入 token」；上游不报时为 undefined。 */
+    cachedInputTokens?: number | undefined;
+  }) => void;
   runId: string;
   sessionId: string;
   signal?: AbortSignal;
@@ -64,6 +69,8 @@ export async function* adaptDeepAgentStream(
   const seenStartedToolCalls = new Set<string>();
   /** Tracks active sub-agent parent runs so we can detect nested inner tools. */
   const activeSubAgentRuns = new Set<string>();
+  /** 上一次下发 run.usage 时的 input token 数（同一提示词大小不重复发）。 */
+  let lastUsageInputTokens = -1;
 
   yield {
     conversationId: options.conversationId,
@@ -115,14 +122,39 @@ export async function* adaptDeepAgentStream(
               usage_metadata?: {
                 input_tokens?: number;
                 output_tokens?: number;
+                input_token_details?: { cache_read?: number };
               };
             }
           ).usage_metadata;
-          if (usageMeta && options.onUsage) {
-            options.onUsage({
-              inputTokens: usageMeta.input_tokens ?? 0,
-              outputTokens: usageMeta.output_tokens ?? 0,
+          if (usageMeta) {
+            const inputTokens = usageMeta.input_tokens ?? 0;
+            const outputTokens = usageMeta.output_tokens ?? 0;
+            const cachedRaw = usageMeta.input_token_details?.cache_read;
+            const cachedInputTokens =
+              typeof cachedRaw === "number" && cachedRaw >= 0
+                ? cachedRaw
+                : undefined;
+            options.onUsage?.({
+              inputTokens,
+              outputTokens,
+              ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
             });
+            // 用量快照发给前端（上下文容量/缓存命中浮层）。**只在输入侧变化时发**：
+            // input_tokens 是每次模型调用的提示词大小（一轮里随工具结果增长），
+            // output_tokens 则每个 chunk 都在涨——逐 chunk 下发会把 WS 灌满。
+            if (inputTokens !== lastUsageInputTokens) {
+              lastUsageInputTokens = inputTokens;
+              yield {
+                type: "run.usage" as const,
+                runId: options.runId,
+                inputTokens,
+                outputTokens,
+                ...(cachedInputTokens === undefined
+                  ? {}
+                  : { cachedInputTokens }),
+                timestamp: now(),
+              };
+            }
           }
         }
 

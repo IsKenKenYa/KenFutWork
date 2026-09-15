@@ -1,3 +1,4 @@
+import { AIMessageChunk } from "@langchain/core/messages";
 import type { StreamEvent } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
 
@@ -268,5 +269,118 @@ describe("工具抛错：以终态事件收尾并带可读原因", () => {
       | { outputSummary?: string }
       | undefined;
     expect(completed?.outputSummary).toContain("失败：");
+  });
+});
+
+/**
+ * 用量快照事件（R4-1 上下文容量 / 缓存命中浮层的唯一数据源）。
+ * 关键约束：只在**输入侧**变化时下发——output_tokens 每个 chunk 都在涨，
+ * 逐 chunk 下发会把 WS 灌满；缓存字段上游不报时不许编 0。
+ */
+describe("stream-adapter 用量快照", () => {
+  function usageChunk(inputTokens: number, cacheRead?: number) {
+    // usage_metadata 在 AIMessageChunk 的构造类型里不开放，构造后再挂（真实流也是
+    // 在 chunk 上带这个字段的）
+    const chunk = new AIMessageChunk({ content: "" });
+    (chunk as { usage_metadata?: unknown }).usage_metadata = {
+      input_tokens: inputTokens,
+      output_tokens: 3,
+      total_tokens: inputTokens + 3,
+      ...(cacheRead === undefined
+        ? {}
+        : { input_token_details: { cache_read: cacheRead } }),
+    };
+    return chunk;
+  }
+
+  function chunkStream(chunks: unknown[]): AsyncIterable<unknown> {
+    return {
+      async *[Symbol.asyncIterator]() {
+        for (const chunk of chunks) {
+          yield { event: "on_chat_model_stream", data: { chunk } };
+        }
+      },
+    };
+  }
+
+  it("带缓存字段的用量下发一次 run.usage（含 cachedInputTokens）", async () => {
+    const seen: Array<{
+      inputTokens: number;
+      cachedInputTokens?: number | undefined;
+    }> = [];
+    const events: StreamEvent[] = [];
+    for await (const event of adaptDeepAgentStream({
+      conversationId: "conv-1",
+      runId: "run-1",
+      sessionId: "sess-1",
+      stream: chunkStream([usageChunk(1200, 1000)]),
+      onUsage: (usage) => seen.push(usage),
+    })) {
+      events.push(event);
+    }
+
+    const usageEvents = events.filter((event) => event.type === "run.usage");
+    expect(usageEvents).toHaveLength(1);
+    expect(usageEvents[0]).toMatchObject({
+      type: "run.usage",
+      runId: "run-1",
+      inputTokens: 1200,
+      cachedInputTokens: 1000,
+    });
+    expect(seen[0]).toMatchObject({
+      inputTokens: 1200,
+      outputTokens: 3,
+      cachedInputTokens: 1000,
+    });
+  });
+
+  it("同一提示词大小的多次 chunk 只下发一次（不逐 chunk 灌 WS）", async () => {
+    const events: StreamEvent[] = [];
+    for await (const event of adaptDeepAgentStream({
+      conversationId: "conv-1",
+      runId: "run-1",
+      sessionId: "sess-1",
+      stream: chunkStream([
+        usageChunk(500),
+        usageChunk(500),
+        usageChunk(500),
+      ]),
+    })) {
+      events.push(event);
+    }
+    expect(events.filter((event) => event.type === "run.usage")).toHaveLength(1);
+  });
+
+  it("工具轮次之间提示词变大：按新的大小再下发一次", async () => {
+    const events: StreamEvent[] = [];
+    for await (const event of adaptDeepAgentStream({
+      conversationId: "conv-1",
+      runId: "run-1",
+      sessionId: "sess-1",
+      stream: chunkStream([usageChunk(500), usageChunk(1500, 1200)]),
+    })) {
+      events.push(event);
+    }
+    const usageEvents = events.filter((event) => event.type === "run.usage");
+    expect(usageEvents).toHaveLength(2);
+    expect(usageEvents[1]).toMatchObject({
+      inputTokens: 1500,
+      cachedInputTokens: 1200,
+    });
+  });
+
+  it("上游不报缓存：事件里没有 cachedInputTokens 字段（不编 0）", async () => {
+    const events: StreamEvent[] = [];
+    for await (const event of adaptDeepAgentStream({
+      conversationId: "conv-1",
+      runId: "run-1",
+      sessionId: "sess-1",
+      stream: chunkStream([usageChunk(800)]),
+    })) {
+      events.push(event);
+    }
+    const usage = events.find((event) => event.type === "run.usage");
+    expect(usage).toBeDefined();
+    expect(usage).not.toHaveProperty("cachedInputTokens");
   });
 });

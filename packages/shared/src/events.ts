@@ -66,6 +66,23 @@ export const runCompletedEventSchema = z.object({
   timestamp: timestampSchema,
 });
 
+/**
+ * 本轮模型的用量快照（每次「一次新的模型调用」发一次，值均为**累计**口径）。
+ *
+ * 用途是「上下文容量 / 缓存命中」浮层（R4-1）：容量 = `inputTokens` 与模型目录里
+ * `contextWindow` 之比；缓存命中 = `cachedInputTokens / inputTokens`。
+ * `cachedInputTokens` 只在**上游确实上报**时出现（部分网关不返回 prompt 缓存字段）——
+ * 缺省时客户端显示「上游未上报」，不拿 0 冒充。
+ */
+export const runUsageEventSchema = z.object({
+  type: z.literal("run.usage"),
+  runId: runIdSchema,
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  cachedInputTokens: z.number().int().nonnegative().optional(),
+  timestamp: timestampSchema,
+});
+
 export const runCanceledEventSchema = z.object({
   type: z.literal("run.canceled"),
   runId: runIdSchema,
@@ -139,6 +156,7 @@ export const streamEventSchema = z.discriminatedUnion("type", [
   toolCompletedEventSchema,
   runCanceledEventSchema,
   runCompletedEventSchema,
+  runUsageEventSchema,
   runFailedEventSchema,
   runRetryingEventSchema,
   canvasSyncEventSchema,

@@ -175,3 +175,86 @@ describe("applyTaskToolEvent（工具事件 → 任务状态）", () => {
     expect(done.subagents?.[0]?.endedAt).toBe("2026-09-15T00:00:00.000Z");
   });
 });
+
+describe("applyTaskToolEvent：目标进度（write_todos）", () => {
+  it("write_todos 的入参成为当前待办表（整表替换）", () => {
+    const first = applyTaskToolEvent({ tools: [] } as TaskToolState, {
+      type: "tool.started",
+      toolCallId: "t1",
+      toolName: "write_todos",
+      input: {
+        todos: [
+          { content: "读契约", status: "in_progress" },
+          { content: "改服务端", status: "pending" },
+        ],
+      },
+    });
+    expect(first.todos).toEqual([
+      { content: "读契约", status: "in_progress" },
+      { content: "改服务端", status: "pending" },
+    ]);
+
+    const second = applyTaskToolEvent(first, {
+      type: "tool.started",
+      toolCallId: "t2",
+      toolName: "write_todos",
+      input: { todos: [{ content: "读契约", status: "completed" }] },
+    });
+    // 整表替换：第二次调用只留一条
+    expect(second.todos).toEqual([{ content: "读契约", status: "completed" }]);
+  });
+
+  it("坏入参不清空已有进度（保持原状）", () => {
+    const state = applyTaskToolEvent({ tools: [] } as TaskToolState, {
+      type: "tool.started",
+      toolCallId: "t1",
+      toolName: "write_todos",
+      input: { todos: [{ content: "读契约", status: "completed" }] },
+    });
+    const afterBad = applyTaskToolEvent(state, {
+      type: "tool.started",
+      toolCallId: "t2",
+      toolName: "write_todos",
+      input: { todos: "broken" },
+    });
+    expect(afterBad.todos).toEqual([{ content: "读契约", status: "completed" }]);
+  });
+
+  it("非 write_todos 的工具事件不动待办表", () => {
+    const state = applyTaskToolEvent({ tools: [] } as TaskToolState, {
+      type: "tool.started",
+      toolCallId: "t1",
+      toolName: "write_todos",
+      input: { todos: [{ content: "读契约", status: "pending" }] },
+    });
+    const afterOther = applyTaskToolEvent(state, {
+      type: "tool.started",
+      toolCallId: "x1",
+      toolName: "read_file",
+      input: { todos: [{ content: "伪造成待办", status: "completed" }] },
+    });
+    expect(afterOther.todos).toEqual([
+      { content: "读契约", status: "pending" },
+    ]);
+  });
+
+  it("write_todos 的完成事件也保留待办表并写入轨迹", () => {
+    const state = applyTaskToolEvent({ tools: [] } as TaskToolState, {
+      type: "tool.started",
+      toolCallId: "t1",
+      toolName: "write_todos",
+      input: { todos: [{ content: "读契约", status: "in_progress" }] },
+    });
+    const done = applyTaskToolEvent(state, {
+      type: "tool.completed",
+      toolCallId: "t1",
+      toolName: "write_todos",
+      outputSummary: "Updated todo list",
+      timestamp: "2026-09-16T00:00:00.000Z",
+    });
+    expect(done.todos).toEqual([
+      { content: "读契约", status: "in_progress" },
+    ]);
+    expect(done.tools?.[0]).toMatchObject({ status: "completed" });
+  });
+});

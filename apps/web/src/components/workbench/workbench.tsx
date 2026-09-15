@@ -50,6 +50,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ContextUsageButton } from "@/components/workbench/context-usage-button";
 import { ElapsedEntry } from "@/components/workbench/elapsed-entry";
 import { GitBranchSelect } from "@/components/workbench/git-branch-select";
 import { McpModal } from "@/components/workbench/mcp-modal";
@@ -61,11 +62,13 @@ import {
 import { SidebarRow } from "@/components/workbench/sidebar-row";
 import { SkillsModal } from "@/components/workbench/skills-modal";
 import { SubagentDirectoryView } from "@/components/workbench/subagent-directory-view";
+import { TodoProgressPanel } from "@/components/workbench/todo-progress-panel";
 import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
 import { WorkDirectorySelect } from "@/components/workbench/work-directory-select";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useAuth } from "@/lib/auth-context";
 import { commitGitAll } from "@/lib/code-git-api";
+import type { RunUsageSnapshot } from "@/lib/context-usage";
 import { resolveDesignAutoCanvas } from "@/lib/design-auto-canvas";
 import { getServerBaseUrl } from "@/lib/env";
 import { PluginPanelButtons } from "@/lib/plugin-panels";
@@ -99,6 +102,7 @@ import {
   resolveTaskIndicator,
   SESSION_PREVIEW_LIMIT,
 } from "@/lib/workbench-task-list";
+import type { TodoItem } from "@/lib/todo-progress";
 import {
   applyTaskToolEvent,
   type TaskToolEntry,
@@ -147,6 +151,10 @@ interface WorkbenchTask {
   runEndedAt?: string | undefined;
   /** 子代理运行条目（R1-3：由 task/video_generate 工具事件推导） */
   subagents?: SubagentEntry[];
+  /** agent 自己维护的待办表（R1-2：由 write_todos 工具事件推导） */
+  todos?: TodoItem[];
+  /** 本轮用量快照（R4-1：服务端 run.usage 事件，上下文容量/缓存命中浮层的数据源） */
+  usage?: RunUsageSnapshot;
 }
 
 /**
@@ -939,6 +947,25 @@ export function Workbench() {
             evt as Parameters<typeof applyTaskToolEvent>[1],
           ),
         );
+      } else if (type === "run.usage") {
+        // 本轮最后一次模型调用的累计用量（上下文容量 / 缓存命中浮层）
+        const payload = evt as {
+          inputTokens?: number;
+          outputTokens?: number;
+          cachedInputTokens?: number;
+        };
+        if (typeof payload.inputTokens === "number") {
+          apply((task) => ({
+            ...task,
+            usage: {
+              inputTokens: payload.inputTokens ?? 0,
+              outputTokens: payload.outputTokens ?? 0,
+              ...(typeof payload.cachedInputTokens === "number"
+                ? { cachedInputTokens: payload.cachedInputTokens }
+                : {}),
+            },
+          }));
+        }
       } else if (type === "message.delta") {
         const delta = (evt as { delta?: string }).delta ?? "";
         if (!delta) return;
@@ -1891,6 +1918,14 @@ export function Workbench() {
                   running={activeTask.status === "running"}
                 />
               ) : null}
+              {/* 目标 + 进度（R1-2）：模型用了 write_todos 才出现，条数从事件流推导 */}
+              {activeTask.todos && activeTask.todos.length > 0 ? (
+                <TodoProgressPanel
+                  goal={activeTask.messages[0]?.text ?? activeTask.title}
+                  items={activeTask.todos}
+                  running={activeTask.status === "running"}
+                />
+              ) : null}
               {activeTask.subagents && activeTask.subagents.length > 0 ? (
                 <SubagentDirectoryView
                   entries={activeTask.subagents}
@@ -2090,6 +2125,13 @@ export function Workbench() {
                       )}
                     </SelectContent>
                   </Select>
+                  {/* 上下文容量 / 缓存命中（R4-1）：模型旁一个圆形入口 */}
+                  <ContextUsageButton
+                    usage={activeTask.usage ?? null}
+                    contextWindow={
+                      models.find((m) => m.id === model)?.contextWindow ?? null
+                    }
+                  />
                   <Select
                     aria-label="思考强度"
                     value={thinking}
@@ -2364,6 +2406,13 @@ export function Workbench() {
                       )}
                     </SelectContent>
                   </Select>
+                  {/* 上下文容量 / 缓存命中（R4-1）：模型旁一个圆形入口 */}
+                  <ContextUsageButton
+                    usage={null}
+                    contextWindow={
+                      models.find((m) => m.id === model)?.contextWindow ?? null
+                    }
+                  />
                   <Select
                     aria-label="思考强度"
                     value={thinking}

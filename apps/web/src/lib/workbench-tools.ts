@@ -4,6 +4,7 @@ import {
   type SubagentEntry,
   upsertSubagentStarted,
 } from "./subagent-directory";
+import { parseTodos, type TodoItem } from "./todo-progress";
 
 /**
  * 工作台的工具调用轨迹（`tool.started` / `tool.completed` 事件 → 任务状态）。
@@ -76,10 +77,12 @@ export function applyToolEvent(
 }
 
 
-/** 任务里与工具事件相关的两块状态（工具轨迹 + 子代理目录）；都可缺省。 */
+/** 任务里与工具事件相关的状态（工具轨迹 + 子代理目录 + 目标进度）；都可缺省。 */
 export interface TaskToolState {
   tools?: TaskToolEntry[];
   subagents?: SubagentEntry[];
+  /** agent 自己维护的待办表（`write_todos` 整表替换语义，见 lib/todo-progress）。 */
+  todos?: TodoItem[];
 }
 
 /**
@@ -99,12 +102,15 @@ export function applyTaskToolEvent<T extends TaskToolState>(
   if (!toolCallId) return task;
   const toolName = event.toolName ?? "tool";
   const tools = applyToolEvent(task.tools ?? [], event);
+  // 目标进度：只在 write_todos 的入参可解析时覆盖（解析失败保持原状，
+  // 不让一次坏参数把用户看到的进度清空）。
+  const todos = toolName === "write_todos" ? parseTodos(event.input) : null;
+  const base = { ...task, tools, ...(todos ? { todos } : {}) };
 
   if (event.type === "tool.started") {
-    if (!isSubagentTool(toolName)) return { ...task, tools };
+    if (!isSubagentTool(toolName)) return base;
     return {
-      ...task,
-      tools,
+      ...base,
       subagents: upsertSubagentStarted(task.subagents ?? [], {
         toolCallId,
         toolName,
@@ -114,10 +120,9 @@ export function applyTaskToolEvent<T extends TaskToolState>(
     };
   }
 
-  if (!task.subagents) return { ...task, tools };
+  if (!task.subagents) return base;
   return {
-    ...task,
-    tools,
+    ...base,
     subagents: completeSubagent(
       task.subagents,
       toolCallId,

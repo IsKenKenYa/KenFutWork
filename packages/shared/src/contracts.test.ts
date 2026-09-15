@@ -597,3 +597,42 @@ function getExportedSchema(name: string): ZodType {
 
   return candidate as ZodType;
 }
+
+describe("run.usage 事件（上下文容量 / 缓存命中）", () => {
+  it("接受带缓存字段的用量快照", () => {
+    const event = streamEventSchema.parse({
+      type: "run.usage",
+      runId: "run_123",
+      inputTokens: 614000,
+      outputTokens: 1200,
+      cachedInputTokens: 610000,
+      timestamp: "2026-03-23T12:00:00.000Z",
+    });
+    expect(event.type).toBe("run.usage");
+  });
+
+  it("cachedInputTokens 可缺省（上游不上报缓存时不许编 0）", () => {
+    const event = streamEventSchema.parse({
+      type: "run.usage",
+      runId: "run_123",
+      inputTokens: 100,
+      outputTokens: 1,
+      timestamp: "2026-03-23T12:00:00.000Z",
+    });
+    expect(event).not.toHaveProperty("cachedInputTokens");
+  });
+
+  it("token 数必须是非负整数", () => {
+    for (const bad of [-1, 1.5]) {
+      expect(() =>
+        streamEventSchema.parse({
+          type: "run.usage",
+          runId: "run_123",
+          inputTokens: bad,
+          outputTokens: 1,
+          timestamp: "2026-03-23T12:00:00.000Z",
+        }),
+      ).toThrow();
+    }
+  });
+});
