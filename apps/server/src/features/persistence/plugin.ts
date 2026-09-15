@@ -16,7 +16,7 @@ export const persistencePlugin: PluginDefinition = {
       const databaseUrl = ctx.env.databaseUrl;
       if (!databaseUrl) {
         throw new Error(
-          "[persistence] 缺少数据库连接串（LOOMIC_DATABASE_URL / DATABASE_URL）——自管 Postgres Provider 无法建立连接池。",
+          "[persistence] 缺少数据库连接串（KENFUTWORK_DATABASE_URL / DATABASE_URL）——自管 Postgres Provider 无法建立连接池。",
         );
       }
       return createPostgresPersistence({ databaseUrl });

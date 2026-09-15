@@ -23,7 +23,7 @@ graph LR
 | `future/03-改造建议与路线.md` | 双模式改造建议稿（v3） | **收口中**：§0–§7 为冻结区（`<!-- frozen:start/end -->` + `docs/frozen-lock.json` 校验，禁改）；**仅 §8 可编辑**；P0 定稿后整篇归档 |
 | `Agent设计最佳实践研究报告.md` | agent 质量最佳实践 | 参考 |
 | `产品需求规格.md` | 需求访谈沉淀：产品定位、领域模型（统一 Task 模型/双层权限）、北极星场景、各缝行为测试清单与验收标准 | 参考：架构决策、ctx key 表、阶段编号以《改造计划》《多端产品设计》为准 |
-| `Loomic原版文档/` | 原版产品文档 | 历史参考 |
+| `KenFutWork原版文档/` | 原版产品文档 | 历史参考 |
 | `design/logo/品牌Logo说明.md` | 品牌 logo 规范（定稿 V4 · 岚：几何/色值/应用位置） | 参考 |
 | `参考图/未做需求.md` | 把 `参考图/*.png` 逐张读成需求条目，并**逐条核对当前代码**标注「已做 / 部分 / 未做」+ 证据路径 | 待办清单：条目状态以代码为准，落地后请同步更新该表；参考图本身只是方向参考 |
 | `images/`、`future/` 其余 | 配图与历史材料 | 参考 |
@@ -73,4 +73,4 @@ graph LR
 3. **冻结区（建议稿收口）**：`future/03` 的 §0–§7 是历史快照，修订一律改权威文档；**仅 §8 可编辑**。冻结区用 `<!-- frozen:start -->` / `<!-- frozen:end -->` 标出，其 SHA-256 记录在 `docs/frozen-lock.json`，由 `scripts/check-docs.mjs` 校验（改冻结区必然失败）。确需变更冻结区时，在 PR 描述说明理由并跑 `node scripts/check-docs.mjs --update-lock` 同步锁文件。《改造计划》P0（定稿 + DEC 拍板）完成后整篇归档。
 4. **现状盘点刷新**：`future/02-当前项目实现状态.md` 在改造各阶段（P1–P8、D1–D7）合并时由该阶段 PR 同步刷新对应章节；日常代码 PR 不强制维护，允许滞后，与代码冲突时以代码为准。
 5. **新文档入图**：新增 docs 文档必须同步登记本文件地图，并在文头声明角色（权威/快照/调研/参考/历史）。
-6. **机械校验**：以上规则由 `scripts/check-docs.mjs` 执行——单独跑 `pnpm test:docs`，同一校验也由 `tests/workspace.test.mjs` 挂进 `pnpm test`（`test:workspace` 阶段）。覆盖：① docs 相对链接与锚点可解析；② 冻结区 SHA-256 匹配；③ 出现的决策 ID 均已在「决策 ID 登记表」登记；④ `docs/**/*.md` 均已登记进文档地图（`Loomic原版文档/` 与本文除外）；⑤ 全仓库只有《改造计划》§4.2 一处以表头 `ctx key` 定义 key 清单。规则靠校验落地，不靠自觉。
+6. **机械校验**：以上规则由 `scripts/check-docs.mjs` 执行——单独跑 `pnpm test:docs`，同一校验也由 `tests/workspace.test.mjs` 挂进 `pnpm test`（`test:workspace` 阶段）。覆盖：① docs 相对链接与锚点可解析；② 冻结区 SHA-256 匹配；③ 出现的决策 ID 均已在「决策 ID 登记表」登记；④ `docs/**/*.md` 均已登记进文档地图（`KenFutWork原版文档/` 与本文除外）；⑤ 全仓库只有《改造计划》§4.2 一处以表头 `ctx key` 定义 key 清单。规则靠校验落地，不靠自觉。

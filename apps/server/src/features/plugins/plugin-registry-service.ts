@@ -74,7 +74,7 @@ export interface PluginRegistryService {
   }): Promise<{ installed: InstalledPlugin; report: CompatReport }>;
   uninstall(id: string): Promise<void>;
   setEnabled(id: string, enabled: boolean): Promise<InstalledPlugin>;
-  exportPlugin(name: string, format: "dsh" | "loomic"): PluginExportArtifact;
+  exportPlugin(name: string, format: "dsh" | "kenfutwork"): PluginExportArtifact;
   /** 启动时装载全部 enabled 的已安装插件（单个失败不阻断启动）。 */
   restore(): Promise<void>;
   /** kernel 关闭时卸载全部已装载插件（释放工具与副作用）。 */
@@ -455,7 +455,7 @@ export function createPluginRegistryService(
           description: builtin.description,
           capabilities: builtin.capabilities ?? ["tools"],
           tools: [],
-          note: "该插件是 Loomic 内置能力，实现留在内核；导出物是**能力声明骨架**，供其他宿主识别它需要什么。",
+          note: "该插件是 KenFutWork 内置能力，实现留在内核；导出物是**能力声明骨架**，供其他宿主识别它需要什么。",
         };
         return exportPluginBundle(spec, format);
       }

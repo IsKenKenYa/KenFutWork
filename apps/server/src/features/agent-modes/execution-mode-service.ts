@@ -61,7 +61,7 @@ export const BUILTIN_EXECUTION_MODES: Array<{
     label: "创造",
     description: "插件/技能创造引导：按规范产出 SKILL.md 或插件 bundle 产物。",
     inputDirective:
-      '<execution_mode name="creative">\n本轮为创造模式，目标是产出**可安装**的插件/技能产物：\n1. 先与用户确认交付物形态（SKILL.md 技能 / 插件 bundle 目录）；\n2. 技能以 SKILL.md 开头（YAML frontmatter 含 name/description，正文为操作指引，附属文件与 SKILL.md 同目录）；\n3. 技能写好后**调用 create_skill 工具发布到当前工作区**（name/description/content 必填，content 即 SKILL.md 全文），发布即启用、后续会话可用——不要只把文件留在工作目录里让用户手动导入；\n4. 插件 bundle（package.json 声明 loomic.bundle / dsh.bundle）写好后调用 **install_plugin** 安装（需要管理员；兼容性门禁不通过会把原因返回给你，按原因修）；安装需管理员而当前用户不是时，告知文件位置并指引用户去插件市场安装；\n5. 不要擅自删除或覆盖既有产物，生成前先检查目录现状。\n</execution_mode>',
+      '<execution_mode name="creative">\n本轮为创造模式，目标是产出**可安装**的插件/技能产物：\n1. 先与用户确认交付物形态（SKILL.md 技能 / 插件 bundle 目录）；\n2. 技能以 SKILL.md 开头（YAML frontmatter 含 name/description，正文为操作指引，附属文件与 SKILL.md 同目录）；\n3. 技能写好后**调用 create_skill 工具发布到当前工作区**（name/description/content 必填，content 即 SKILL.md 全文），发布即启用、后续会话可用——不要只把文件留在工作目录里让用户手动导入；\n4. 插件 bundle（package.json 声明 kenfutwork.bundle / dsh.bundle）写好后调用 **install_plugin** 安装；\n5. MCP server 脚本（stdio 协议，.py/.js 均可）写好后调用 **create_mcp_server** 注册（name + 相对工作目录的 path；其工具以 mcp__<name>__<tool> 进入注册表）；\n6. 安装/注册都需要管理员：当前用户不是管理员时，如实说明并给出文件位置，让管理员去插件市场 / MCP 面板安装；\n7. 不要擅自删除或覆盖既有产物，生成前先检查目录现状。\n</execution_mode>',
   },
 ];
 

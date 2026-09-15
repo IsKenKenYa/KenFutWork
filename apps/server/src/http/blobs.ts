@@ -10,11 +10,11 @@ import {
 import { LOCAL_PUBLIC_BUCKETS } from "../features/blob/types.js";
 
 /**
- * 本地 blob 读取路由（仅 `LOOMIC_BLOB_DRIVER=local` 时挂载）。
+ * 本地 blob 读取路由（仅 `KENFUTWORK_BLOB_DRIVER=local` 时挂载）。
  *
  * 桌面单用户形态下，`getPublicUrl` 指向这里；公开桶直接放行，非公开桶要求有效签名
  * （`?exp=<秒>&sig=<hmac>`）——签名由 `local-fs` Provider 生成，密钥是
- * `LOOMIC_CREDENTIAL_SECRET`，与上传侧同源。
+ * `KENFUTWORK_CREDENTIAL_SECRET`，与上传侧同源。
  *
  * 路径经 `resolveBlobPath` 规范化并做前缀校验：拒绝 `..` 逃逸出对象根目录
  * （`bucket`/`path` 都来自 URL，属外部输入）。

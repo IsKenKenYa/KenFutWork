@@ -49,12 +49,15 @@ export function PluginMarketModal({
   onClose,
   accessToken,
   canvasId = null,
+  isAdmin = false,
 }: {
   open: boolean;
   onClose: () => void;
   accessToken: string | null;
   /** 当前工作目录的画布 id（「从工作目录安装」用）。 */
   canvasId?: string | null;
+  /** 安装端点要管理员：非管理员时两个安装入口都前置说明并禁用。 */
+  isAdmin?: boolean;
 }) {
   const [tab, setTab] = useState<MarketTab>("discover");
   const [query, setQuery] = useState("");
@@ -170,11 +173,13 @@ export function PluginMarketModal({
               <>
                 <PluginInstallByUrl
                   accessToken={accessToken}
+                  isAdmin={isAdmin}
                   onInstalled={refresh}
                 />
                 <PluginInstallFromWorkdir
                   accessToken={accessToken}
                   canvasId={canvasId}
+                  isAdmin={isAdmin}
                   onInstalled={refresh}
                 />
               </>

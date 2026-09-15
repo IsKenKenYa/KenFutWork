@@ -50,7 +50,7 @@ if (mode === "build") {
   const outputDir = path.join(cwd, "dist");
   await mkdir(outputDir, { recursive: true });
   await writeFile(
-    path.join(outputDir, ".loomic-build"),
+    path.join(outputDir, ".kenfutwork-build"),
     "Task 1 foundation build marker\n",
     "utf8",
   );

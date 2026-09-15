@@ -40,7 +40,7 @@ const PUBLIC_GET_ROUTES = [
 function buildProbeApp() {
   return buildApp({
     env: {
-      databaseUrl: "postgres://localhost:5432/loomic-test",
+      databaseUrl: "postgres://localhost:5432/kenfutwork-test",
       // blob 缝是必需能力且只有本地 FS 形态（M1.5 已删 Supabase Provider）
       blobDir: "D:/Desktop/KenFutWork/data/blobs-test",
       credentialSecret: "test-secret",
@@ -69,7 +69,7 @@ describe("buildApp 装配完整性（插件清单防漏挂）", () => {
     // 本例断言「未配置即失败」，故必须屏蔽进程环境里可能存在的连接串：
     // 集成测试会带着 DATABASE_URL 跑整套用例，否则这里会因环境泄漏假失败。
     vi.stubEnv("DATABASE_URL", "");
-    vi.stubEnv("LOOMIC_DATABASE_URL", "");
+    vi.stubEnv("KENFUTWORK_DATABASE_URL", "");
     try {
       expect(() =>
         buildApp({

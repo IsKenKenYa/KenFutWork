@@ -3,7 +3,7 @@
 import type { VideoGenerationPreference } from "@loomic/shared";
 import { useCallback, useSyncExternalStore } from "react";
 
-const STORAGE_KEY = "loomic:video-model-preference";
+const STORAGE_KEY = "kenfutwork:video-model-preference";
 const DEFAULT_MODEL = "google/veo-3.1";
 
 export type VideoModelPreference = VideoGenerationPreference;

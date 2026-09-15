@@ -9,7 +9,7 @@ import {
 } from "./repository.js";
 import { AuthError, createAuthService, parseBearerToken } from "./service.js";
 
-const EMAIL = "Pro@Test.Loomic.com";
+const EMAIL = "Pro@Test.KenFutWork.com";
 const USER_ID = "user-1";
 
 function createFakeRepository(overrides: Partial<AccountRepository> = {}) {
@@ -88,12 +88,12 @@ describe("自管认证服务：注册", () => {
     });
 
     expect(created).toHaveLength(1);
-    expect(created[0]?.email).toBe("pro@test.loomic.com");
+    expect(created[0]?.email).toBe("pro@test.kenfutwork.com");
     expect(created[0]?.passwordHash.startsWith("scrypt$")).toBe(true);
     expect(created[0]?.passwordHash).not.toContain("correct horse battery");
     expect(created[0]?.displayName).toBe("Pro Tester");
 
-    expect(session.user.email).toBe("pro@test.loomic.com");
+    expect(session.user.email).toBe("pro@test.kenfutwork.com");
     expect(session.user.id).toBe(USER_ID);
     expect(session.user.accessToken).toBe(session.token);
     expect(session.user.userMetadata).toEqual({ display_name: "Pro Tester" });
@@ -202,7 +202,7 @@ describe("自管认证服务：会话解析与登出", () => {
       async findSessionByTokenHash(tokenHash) {
         seen.push(tokenHash);
         return {
-          email: "pro@test.loomic.com",
+          email: "pro@test.kenfutwork.com",
           expires_at: "2026-10-13T00:00:00.000Z",
           raw_user_meta_data: { display_name: "Pro Tester" },
           user_id: USER_ID,
@@ -215,7 +215,7 @@ describe("自管认证服务：会话解析与登出", () => {
 
     expect(seen).toEqual([hashSessionToken("plaintext-token-value")]);
     expect(user).toMatchObject({
-      email: "pro@test.loomic.com",
+      email: "pro@test.kenfutwork.com",
       id: USER_ID,
     });
     expect(user?.accessToken).toBe("plaintext-token-value");

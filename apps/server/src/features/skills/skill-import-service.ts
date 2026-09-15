@@ -348,7 +348,7 @@ async function githubApiFetch(url: string): Promise<Response> {
   const response = await fetch(url, {
     headers: {
       Accept: "application/vnd.github.v3+json",
-      "User-Agent": "Loomic-Skill-Importer/1.0",
+      "User-Agent": "KenFutWork-Skill-Importer/1.0",
     },
   });
 
@@ -415,7 +415,7 @@ async function listGitHubDirectory(
  */
 async function downloadGitHubFile(downloadUrl: string): Promise<string> {
   const response = await fetch(downloadUrl, {
-    headers: { "User-Agent": "Loomic-Skill-Importer/1.0" },
+    headers: { "User-Agent": "KenFutWork-Skill-Importer/1.0" },
   });
 
   if (!response.ok) {
@@ -658,7 +658,7 @@ export async function importFromTarballUrl(
   console.log(`[skill-import] Downloading tarball: ${url}`);
 
   const response = await fetch(url, {
-    headers: { "User-Agent": "Loomic-Skill-Importer/1.0" },
+    headers: { "User-Agent": "KenFutWork-Skill-Importer/1.0" },
   });
 
   if (!response.ok) {
@@ -818,7 +818,7 @@ export async function importFromZipUrl(url: string): Promise<ImportedSkill> {
   console.log(`[skill-import] Downloading zip: ${url}`);
 
   const response = await fetch(url, {
-    headers: { "User-Agent": "Loomic-Skill-Importer/1.0" },
+    headers: { "User-Agent": "KenFutWork-Skill-Importer/1.0" },
   });
 
   if (!response.ok) {

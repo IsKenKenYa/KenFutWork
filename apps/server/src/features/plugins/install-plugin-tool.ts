@@ -29,7 +29,7 @@ export function createInstallPluginTool(options: {
   return {
     name: "install_plugin",
     description:
-      "把**工作目录里的插件 bundle 目录**安装到本实例（需要管理员权限）。用于「创造」模式产出的插件产物：先用 write_file 在工作目录写好 bundle（package.json 里声明 loomic.bundle 或 dsh.bundle），再调用本工具安装。安装前会跑兼容性门禁，不通过会返回原因。",
+      "把**工作目录里的插件 bundle 目录**安装到本实例（需要管理员权限）。用于「创造」模式产出的插件产物：先用 write_file 在工作目录写好 bundle（package.json 里声明 kenfutwork.bundle 或 dsh.bundle），再调用本工具安装。安装前会跑兼容性门禁，不通过会返回原因。",
     scope: "shared",
     parameters: {
       type: "object",

@@ -14,7 +14,7 @@ import type {
 /**
  * MCP server 运行态管理（连接生命周期 + 配置变更后的收敛）。
  *
- * 此前 MCP 配置只能来自 `LOOMIC_MCP_SERVERS` 环境变量，连接在启动时一次性完成，
+ * 此前 MCP 配置只能来自 `KENFUTWORK_MCP_SERVERS` 环境变量，连接在启动时一次性完成，
  * 界面上既不能增删也不能重连。本服务把「连接」变成可增删改的运行态：
  *
  * - 来源两种：`env`（环境变量，只读，UI 标注来源）与 `managed`（库内配置，可增删改）；
@@ -87,7 +87,7 @@ export function createMcpService(options: {
         env,
       });
       const mcpClient = new Client({
-        name: "loomic-server",
+        name: "kenfutwork-server",
         version: options.env.version,
       });
       await mcpClient.connect(transport);

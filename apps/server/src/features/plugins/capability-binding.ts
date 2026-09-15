@@ -5,7 +5,7 @@ import type { ServiceKey } from "../../kernel/types.js";
 /**
  * 能力绑定表（互操作缝的 Service Definition）：规范能力名 → 我方 kernel 服务。
  *
- * 这是**唯一**的 dsh/Loomic 能力映射属主。新增可被第三方插件使用的 kernel 能力，
+ * 这是**唯一**的 dsh/KenFutWork 能力映射属主。新增可被第三方插件使用的 kernel 能力，
  * 只改本表一行；不支持的能力必须显式列出并给出面向用户的理由——门禁据此拒绝安装，
  * 禁止静默降级（会得到「装上了但行为不确定」的插件）。
  */

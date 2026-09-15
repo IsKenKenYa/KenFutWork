@@ -7,7 +7,7 @@
 #
 # 用法：
 #   docker compose -f docker-compose.pg.yml up -d --build
-#   LOOMIC_DATABASE_URL=postgres://loomic:loomic@127.0.0.1:5433/loomic \
+#   KENFUTWORK_DATABASE_URL=postgres://kenfutwork:kenfutwork@127.0.0.1:5433/kenfutwork \
 #     pnpm --filter @loomic/server migrate apply
 #
 # 端口用 5433：避开 Supabase 栈的 54322，两者可并存以便逐步切换。
@@ -16,27 +16,27 @@ services:
   postgres:
     build:
       context: ./docker/pg-dev-shim
-    image: loomic-pg-dev:17
-    container_name: loomic_pg_dev
+    image: kenfutwork-pg-dev:17
+    container_name: kenfutwork_pg_dev
     restart: unless-stopped
     environment:
-      POSTGRES_DB: loomic
-      POSTGRES_PASSWORD: loomic
-      POSTGRES_USER: loomic
+      POSTGRES_DB: kenfutwork
+      POSTGRES_PASSWORD: kenfutwork
+      POSTGRES_USER: kenfutwork
       # 与 Supabase 的本地库保持同样的时区口径（迁移里用 timezone('utc', now())）
       TZ: UTC
       PGTZ: UTC
     ports:
       - "127.0.0.1:5433:5432"
     volumes:
-      - loomic_pg_dev_data:/var/lib/postgresql/data
+      - kenfutwork_pg_dev_data:/var/lib/postgresql/data
     healthcheck:
       # 迁移执行器与集成测试都要求「库已就绪」，故这里必须真的能连上
-      test: ["CMD-SHELL", "pg_isready -U loomic -d loomic"]
+      test: ["CMD-SHELL", "pg_isready -U kenfutwork -d kenfutwork"]
       interval: 3s
       timeout: 3s
       retries: 20
       start_period: 5s
 
 volumes:
-  loomic_pg_dev_data:
+  kenfutwork_pg_dev_data:

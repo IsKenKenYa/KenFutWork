@@ -33,7 +33,7 @@ vi.mock("../features/skills/marketplace-service.js", async (importOriginal) => {
 
 const USER = {
   accessToken: "token-1",
-  email: "pro@test.loomic.com",
+  email: "pro@test.kenfutwork.com",
   id: "user-1",
   userMetadata: {},
 };

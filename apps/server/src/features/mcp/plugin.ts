@@ -1,6 +1,7 @@
 import type { ServerEnv } from "../../config/env.js";
 import { registerMcpRoutes } from "../../http/mcp.js";
 import type { PluginDefinition } from "../../kernel/types.js";
+import { createCreateMcpServerTool } from "./create-mcp-server-tool.js";
 import { createMcpService, type McpService } from "./mcp-service.js";
 import { createMcpServerStore } from "./server-store.js";
 
@@ -9,7 +10,7 @@ import { createMcpServerStore } from "./server-store.js";
  *
  * 配置来源两处（**同名时库内优先**）：
  * - `mcp_servers` 表：界面可增删改（变更类走管理员门，因为会在本机起子进程）；
- * - `LOOMIC_MCP_SERVERS` 环境变量：引导/遗留入口，UI 标注来源且只读。
+ * - `KENFUTWORK_MCP_SERVERS` 环境变量：引导/遗留入口，UI 标注来源且只读。
  *
  * 插件**常驻挂载**（不再以「有没有配 server」决定 enabled）——否则没配环境变量时
  * 连管理入口都不存在。连接失败是运行态（状态里可查原因），不阻断进程启动。
@@ -28,13 +29,13 @@ export function parseMcpServers(raw: string | undefined): McpServerConfig[] {
   }
   const parsed: unknown = JSON.parse(raw);
   if (!Array.isArray(parsed)) {
-    throw new Error("[mcp] LOOMIC_MCP_SERVERS 必须是 JSON 数组（fail loud）。");
+    throw new Error("[mcp] KENFUTWORK_MCP_SERVERS 必须是 JSON 数组（fail loud）。");
   }
   return parsed.map((entry) => {
     const config = entry as Partial<McpServerConfig>;
     if (!config.name || !config.command) {
       throw new Error(
-        "[mcp] LOOMIC_MCP_SERVERS 每项需要 name 与 command（fail loud）。",
+        "[mcp] KENFUTWORK_MCP_SERVERS 每项需要 name 与 command（fail loud）。",
       );
     }
     return {
@@ -76,6 +77,18 @@ export function createMcpPlugin(): PluginDefinition {
       if (!service) {
         throw new Error("[mcp] service 未初始化（apply 未执行）。");
       }
+      // 创造模式的第三种产物：把工作目录里的 MCP server 脚本注册成本实例的工具源。
+      // 注册放 mounted（不是 apply）：apply 期 ctx.get 只解析得到「更早 apply 的插件」的
+      // key，admin 依赖会因顺序而 fail loud（probe 装配实测踩中）。
+      ctx.get("tools").register(
+        createCreateMcpServerTool({
+          service,
+          auth: ctx.get("auth"),
+          admin: ctx.get("admin"),
+          sandboxRoot: ctx.env.sandboxRoot,
+          canvasWorkDirs: ctx.env.canvasWorkDirs,
+        }),
+      );
       void registerMcpRoutes(ctx.app, {
         admin: ctx.get("admin"),
         auth: ctx.get("auth"),

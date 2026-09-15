@@ -6,7 +6,7 @@ import { hashPassword } from "./features/auth/password.js";
  * 为既有账号设置自管认证口令（M1.4 切换用）。
  *
  * 存量账号（`public.accounts` 里的那些）没有我们自己的口令凭据，切到
- * `LOOMIC_AUTH_DRIVER=local` 后无法登录。本脚本按邮箱把口令哈希写进
+ * `KENFUTWORK_AUTH_DRIVER=local` 后无法登录。本脚本按邮箱把口令哈希写进
  * `account_credentials`（存在则覆盖，即重置口令）。
  *
  *   pnpm --filter @loomic/server auth:seed -- <邮箱>=<口令> [<邮箱>=<口令> …]
@@ -26,7 +26,7 @@ async function main(): Promise<void> {
   const env = loadServerEnv();
   const databaseUrl = env.databaseUrl;
   if (!databaseUrl) {
-    console.error("缺少数据库连接串（LOOMIC_DATABASE_URL 或 DATABASE_URL）。");
+    console.error("缺少数据库连接串（KENFUTWORK_DATABASE_URL 或 DATABASE_URL）。");
     process.exit(1);
   }
 

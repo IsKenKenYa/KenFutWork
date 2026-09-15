@@ -8,7 +8,7 @@ import {
 /**
  * SecretStore（DEC-7）：服务端加密落库的凭证存取。
  * 红线：encrypt 一次性写入；decrypt 仅在实例化协议适配器时内部调用，永不回传前端、不落日志。
- * 密钥来自 LOOMIC_CREDENTIAL_SECRET（scrypt 派生 AES-256-GCM key）；缺失即 fail loud。
+ * 密钥来自 KENFUTWORK_CREDENTIAL_SECRET（scrypt 派生 AES-256-GCM key）；缺失即 fail loud。
  */
 
 const ALGORITHM = "aes-256-gcm";
@@ -27,10 +27,10 @@ function getCredentialKey(env: CredentialEnv): Buffer {
   const secret = env.credentialSecret;
   if (!secret) {
     throw new Error(
-      "[secret-store] LOOMIC_CREDENTIAL_SECRET 未配置，拒绝加解密用户凭证（fail loud）。",
+      "[secret-store] KENFUTWORK_CREDENTIAL_SECRET 未配置，拒绝加解密用户凭证（fail loud）。",
     );
   }
-  cachedKey ??= scryptSync(secret, "loomic:credential-store:v1", KEY_LENGTH);
+  cachedKey ??= scryptSync(secret, "kenfutwork:credential-store:v1", KEY_LENGTH);
   return cachedKey;
 }
 

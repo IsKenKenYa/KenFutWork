@@ -2,7 +2,7 @@
 /**
  * 联网搜索验收脚本（真 Key 专用，不被 CI 调用）。
  *
- * 背景：`LOOMIC_SEARCH_API_KEY` 是秘塔的付费 Key，只能由用户提供——没有它时
+ * 背景：`KENFUTWORK_SEARCH_API_KEY` 是秘塔的付费 Key，只能由用户提供——没有它时
  * 「真实检索结果」这一格无法验收（此前只验收了「替身端点验缝 + 真实端点验契约与
  * 错误语义」）。拿到 Key 后跑这一条命令即可完成验收：
  *
@@ -15,7 +15,7 @@
  * - 业务错误：秘塔用 HTTP 200 承载 `{errCode, errMsg}`，本脚本会原样报出来
  *   （如「API密钥无效」），并给出可执行的下一步。
  *
- * 注意：若 `.env.local` 里还留着 `LOOMIC_SEARCH_ENDPOINT`（联调用的替身端点），
+ * 注意：若 `.env.local` 里还留着 `KENFUTWORK_SEARCH_ENDPOINT`（联调用的替身端点），
  * 本脚本**不会**用它——验收真实检索必须打真实端点，脚本会显式提醒。
  */
 import { readFileSync } from "node:fs";
@@ -49,19 +49,19 @@ const argOf = (name) => {
 };
 
 const envLocal = readEnvLocal();
-const key = argOf("key") ?? envLocal.LOOMIC_SEARCH_API_KEY ?? process.env.LOOMIC_SEARCH_API_KEY;
+const key = argOf("key") ?? envLocal.KENFUTWORK_SEARCH_API_KEY ?? process.env.KENFUTWORK_SEARCH_API_KEY;
 const query = argOf("query") ?? "Python 3.13 新特性";
 const endpoint = argOf("endpoint") ?? METASO_ENDPOINT;
 
 if (!key) {
   console.error(
-    "缺少 LOOMIC_SEARCH_API_KEY：请把秘塔 Key 写进 .env.local，或用 --key=sk-xxx 传入。",
+    "缺少 KENFUTWORK_SEARCH_API_KEY：请把秘塔 Key 写进 .env.local，或用 --key=sk-xxx 传入。",
   );
   process.exit(1);
 }
-if (endpoint !== METASO_ENDPOINT || envLocal.LOOMIC_SEARCH_ENDPOINT) {
+if (endpoint !== METASO_ENDPOINT || envLocal.KENFUTWORK_SEARCH_ENDPOINT) {
   console.warn(
-    `注意：.env.local 里配了 LOOMIC_SEARCH_ENDPOINT=${envLocal.LOOMIC_SEARCH_ENDPOINT ?? ""}` +
+    `注意：.env.local 里配了 KENFUTWORK_SEARCH_ENDPOINT=${envLocal.KENFUTWORK_SEARCH_ENDPOINT ?? ""}` +
       "（联调替身端点）。本脚本按真实端点验收，不使用该覆盖。",
   );
 }
@@ -119,5 +119,5 @@ for (const [index, item] of results.entries()) {
   console.log(`\n${index + 1}. ${title}\n   ${link}\n   ${snippet.slice(0, 120)}`);
 }
 console.log(
-  "\n下一步：把 Key 留在 .env.local（并删掉 LOOMIC_SEARCH_ENDPOINT 那行），重启服务后在 GUI 里让 agent 调 web_search 复验端到端。",
+  "\n下一步：把 Key 留在 .env.local（并删掉 KENFUTWORK_SEARCH_ENDPOINT 那行），重启服务后在 GUI 里让 agent 调 web_search 复验端到端。",
 );

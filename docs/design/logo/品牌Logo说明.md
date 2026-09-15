@@ -27,7 +27,7 @@
 
 调整流程：白字形**不能手改**——它是字体轮廓的布尔并集结果，要改先改 `preview-logo字形.html` 的生成参数
 （目标字体、字面高、画布位置）再重出，然后按顺序同步：`定稿-kf2-岚.svg` → `apps/web/public/logo.svg`
-→ `apps/web/public/favicon.svg` → `apps/web/src/components/icons/loomic-logo.tsx` → `apple-touch-icon.png`
+→ `apps/web/public/favicon.svg` → `apps/web/src/components/icons/kenfutwork-logo.tsx` → `apple-touch-icon.png`
 → `og-image.png`。前四个是同一份 SVG 内容（直接复制），后两个是位图，按下面的说明重出。
 
 ## 应用位置
@@ -38,7 +38,7 @@
 | Apple 触屏图标 | `apps/web/public/apple-touch-icon.png` | 180×180 方角全出血（iOS 自动裁圆角）：把定稿的圆角 `clipPath` 换成整块矩形（对角双色铺满），无头 Chrome 截 180×180 |
 | metadata apple 图标 | `apps/web/public/logo.svg` | `layout.tsx` metadata `icons.apple` |
 | 加载页 | `apps/web/src/components/loading-screen.tsx` | 以 `<img src="/logo.svg">` 引用，浮动动画保留 |
-| React 组件 | `apps/web/src/components/icons/loomic-logo.tsx` | 定稿的 React 落地（侧栏收起/展开、登录页 `auth-shell.tsx`） |
+| React 组件 | `apps/web/src/components/icons/kenfutwork-logo.tsx` | 定稿的 React 落地（侧栏收起/展开、登录页 `auth-shell.tsx`） |
 | 社交分享卡 | `apps/web/public/og-image.png` | 1200×630，深蓝渐变底 + 标 + 字标 + 「插件化 BYOK Agent 工作台」+ Code/Design/自管 Postgres 三个胶囊 |
 
 Code / Design 双模式的界面承载（侧栏分段开关）与 logo 的对角双色隐喻对应，**界面不随 logo 调整改动**。
@@ -128,7 +128,7 @@ Code / Design 双模式的界面承载（侧栏分段开关）与 logo 的对角
 ### 已定（2026-09-15）
 
 用户选定 **Chakra Petch Italic**，已落地：权威源 `定稿-kf2-岚.svg` 与 `logo.svg`／`favicon.svg`／
-`loomic-logo.tsx`／`apple-touch-icon.png`／`og-image.png` 全部换新。对照页只保留三款合格变体
+`kenfutwork-logo.tsx`／`apple-touch-icon.png`／`og-image.png` 全部换新。对照页只保留三款合格变体
 （Chakra Petch Italic 采用版、Sounso Quality、K2D Italic）；YEFONTPaws-Bold、ArtierEN、Romance Frances
 三款因结构不成立已从页面移除。
 
@@ -141,7 +141,7 @@ Code / Design 双模式的界面承载（侧栏分段开关）与 logo 的对角
 - 2026-09-15 之前，白字形是**等宽直线骨架四笔**（`rect` + `stroke-width=72` 的斜线）；本轮换成 Chakra Petch Italic 的字体笔画，
   结构未变。旧字形存档在 `preview-logo字形.html` 的「旧定稿（历史对照，已替换）」一块里。
 - **字标（「KenFutWork」那行字）仍是系统无衬线**，未随本次更换。用户在 2026-09-15 明确「改的是 logo，不是旁边的字」。
-- `apps/web/src/components/icons/loomic-logo.tsx` 就是本定稿的 React 落地（沿用旧文件名），不是另一套品牌；
+- `apps/web/src/components/icons/kenfutwork-logo.tsx` 就是本定稿的 React 落地（沿用旧文件名），不是另一套品牌；
   工作台侧栏（收起/展开）、登录页 `auth-shell.tsx` 都用它。
 - `apps/web/public/og-image.png` 已在 2026-09-15 随新标重出（1200×630：深蓝渐变底 + 标 + 字标 + 「插件化 BYOK Agent 工作台」+ Code/Design/自管 Postgres 三个胶囊）。
 - 本目录其余文件为设计过程存档：`preview.html`（三概念提案 A/B/C）、`preview-c-colors.html`（方案 C 配色变体 V1–V4）、`preview-kf.html`（K+F 融合提案与上臂调整，终稿为 KF-2 骨架版 C）、`concept-*.svg`（各提案源文件）、`preview-字标字体.html`／`字标字体对照.png`（字标字体候选，未采用）。

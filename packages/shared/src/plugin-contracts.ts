@@ -3,12 +3,12 @@ import { z } from "zod";
 /**
  * 插件互操作契约（HTTP + bundle 产物）。
  *
- * 设计前提：Loomic kernel 与 deepseek-harness（dsh）的插件接口形状同源——
+ * 设计前提：KenFutWork kernel 与 deepseek-harness（dsh）的插件接口形状同源——
  * 都是 `{ name, inject, apply(ctx) }`，差异只在**能力命名**与**组合文件**。
  * 因此一份 bundle 可以同时被两端加载，本文件即该产物的规范化定义：
  *
  * - `dshBundle`：dsh 原生格式（`package.json` 的 `dsh.bundle.patch` + `cordis.patch.yml`）
- * - `loomicBundle`：本项目格式（同名字段 + 能力绑定表）
+ * - `kenfutworkBundle`：本项目格式（同名字段 + 能力绑定表）
  *
  * 兼容性判定见 `compatReportSchema`：**门禁是产品的一部分**，未通过即拒绝安装。
  */
@@ -36,7 +36,7 @@ export const CANONICAL_CAPABILITIES = [
 export const canonicalCapabilitySchema = z.enum(CANONICAL_CAPABILITIES);
 export type CanonicalCapability = z.infer<typeof canonicalCapabilitySchema>;
 
-export const BUNDLE_FORMATS = ["loomic", "dsh"] as const;
+export const BUNDLE_FORMATS = ["kenfutwork", "dsh"] as const;
 export const bundleFormatSchema = z.enum(BUNDLE_FORMATS);
 export type BundleFormat = z.infer<typeof bundleFormatSchema>;
 
@@ -196,7 +196,8 @@ export type PluginInstallRequest = z.infer<typeof pluginInstallRequestSchema>;
  * 从**沙箱工作目录**安装插件 bundle（创造模式产物的人工入口）。
  *
  * `canvasId` 决定沙箱目录（与技能/agent 同一处解析）；`path` 是相对沙箱根的
- * bundle 目录（其 package.json 需声明 loomic.bundle / dsh.bundle）。服务端校验
+ * bundle 目录（其 package.json 需声明 kenfutwork.bundle / dsh.bundle；旧名
+ * loomic.bundle 仍被接受）。服务端校验
  * 画布归属与路径不越界，不信任前端传来的路径。
  */
 export const sandboxPluginInstallRequestSchema = z.object({
@@ -212,7 +213,7 @@ export const sandboxPluginBundleSchema = z.object({
   path: z.string(),
   name: z.string(),
   version: z.string(),
-  declaredBy: z.enum(["loomic", "dsh"]),
+  declaredBy: z.enum(["kenfutwork", "dsh"]),
 });
 export type SandboxPluginBundle = z.infer<typeof sandboxPluginBundleSchema>;
 

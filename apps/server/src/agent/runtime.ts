@@ -50,9 +50,9 @@ import {
 } from "./tool-denial.js";
 import {
   createDefaultModelSpecifier,
-  createLoomicDeepAgent,
-  type LoomicAgent,
-  type LoomicAgentFactory,
+  createKenFutWorkDeepAgent,
+  type KenFutWorkAgent,
+  type KenFutWorkAgentFactory,
 } from "./deep-agent.js";
 import type { AgentPersistenceService } from "./persistence/index.js";
 import { adaptDeepAgentStream } from "./stream-adapter.js";
@@ -291,7 +291,7 @@ type RuntimeRunRecord = RunCreateRequest & {
 
 type CreateAgentRuntimeOptions = {
   agentPersistenceService?: AgentPersistenceService;
-  agentFactory?: LoomicAgentFactory;
+  agentFactory?: KenFutWorkAgentFactory;
   agentRunMetadataService?: AgentRunMetadataService;
   /** 品牌套件服务（brand-kit 插件提供）：get_brand_kit 工具经它取数。 */
   brandKitService?: BrandKitService;
@@ -360,10 +360,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     return typeof result.input === "string" ? result.input : input;
   };
 
-  const resolvedAgentFactory: LoomicAgentFactory =
+  const resolvedAgentFactory: KenFutWorkAgentFactory =
     options.agentFactory ??
     ((agentOptions) =>
-      createLoomicDeepAgent({
+      createKenFutWorkDeepAgent({
         ...agentOptions,
         blob: options.blob,
       }));
@@ -526,7 +526,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           runId,
           now,
           new Error(
-            "LOOMIC_DATABASE_URL（或 DATABASE_URL）是持久化 agent 线程的必需项。",
+            "KENFUTWORK_DATABASE_URL（或 DATABASE_URL）是持久化 agent 线程的必需项。",
           ),
         );
         run.status = "failed";
@@ -535,7 +535,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           run,
           now,
           new Error(
-            "LOOMIC_DATABASE_URL（或 DATABASE_URL）是持久化 agent 线程的必需项。",
+            "KENFUTWORK_DATABASE_URL（或 DATABASE_URL）是持久化 agent 线程的必需项。",
           ),
         );
         yield failedEvent;
@@ -1062,7 +1062,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       try {
         /** 被拒工具调用的记账（含连续拒绝计数）；门存在时才有值。 */
         let denialTracker: ReturnType<typeof createToolDenialTracker> | undefined;
-        let agent: LoomicAgent;
+        let agent: KenFutWorkAgent;
         try {
           let resolvedModel: BaseLanguageModel | string | undefined =
             run.modelOverride

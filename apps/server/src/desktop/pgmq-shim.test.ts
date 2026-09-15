@@ -47,8 +47,8 @@ describe("pgmq shim：源目录解析", () => {
   const allPresent = (path: string) =>
     path.includes("pgmq.control") || path.includes("pgmq--1.0.sql");
 
-  it("优先级：LOOMIC_PGMQ_SHIM_DIR → <exe>/pg/shim → 仓库 docker/pg-dev-shim", () => {
-    const env = { LOOMIC_PGMQ_SHIM_DIR: join("E:/", "shim") };
+  it("优先级：KENFUTWORK_PGMQ_SHIM_DIR → <exe>/pg/shim → 仓库 docker/pg-dev-shim", () => {
+    const env = { KENFUTWORK_PGMQ_SHIM_DIR: join("E:/", "shim") };
     expect(
       resolvePgmqShimDir({
         env,
@@ -117,7 +117,7 @@ describe("pgmq shim：安装", () => {
     expect(client).toBeTruthy();
   });
 
-  it("不可用且没有 shim 源 → fail loud 并给出 LOOMIC_PGMQ_SHIM_DIR 提示", async () => {
+  it("不可用且没有 shim 源 → fail loud 并给出 KENFUTWORK_PGMQ_SHIM_DIR 提示", async () => {
     const { client } = createFakeClient();
     const { deps } = createFakeDeps([]);
 
@@ -127,7 +127,7 @@ describe("pgmq shim：安装", () => {
         { binDir: BIN_DIR, shimDir: undefined },
         deps,
       ),
-    ).rejects.toThrow(/LOOMIC_PGMQ_SHIM_DIR/);
+    ).rejects.toThrow(/KENFUTWORK_PGMQ_SHIM_DIR/);
   });
 
   it("不可用时把两个文件装进 share/extension，已存在的不重复覆盖", async () => {

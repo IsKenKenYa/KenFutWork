@@ -1,6 +1,6 @@
-# Loomic 图片/视频生成模型参考手册
+# KenFutWork 图片/视频生成模型参考手册
 
-> 覆盖 Loomic 支持的全部图片和视频生成模型，包括每个模型的原始参数、工具层归一化方案、以及 Provider 层的参数映射逻辑。
+> 覆盖 KenFutWork 支持的全部图片和视频生成模型，包括每个模型的原始参数、工具层归一化方案、以及 Provider 层的参数映射逻辑。
 
 ---
 
@@ -155,7 +155,7 @@ Tool 层的 `standard / hd / ultra` 被翻译为每个模型各自的分辨率�
 
 创建任务调用 `POST v2/video_generation`，随后轮询 `GET v2/query/video_generation/{task_id}`，仅将 `succeeded` 的 `task.content.url` 作为视频结果。当前集成不声明参考视频、音频或运行中取消能力。
 
-项目统一使用共享的 `getVideoCreditCost()` 计算预估和实际扣分。Metaso H3 按“每秒费率 × 生成秒数”计费，并向上取整为整数 Loomic 积分；人民币区间只用于价格透明展示，不参与扣款。
+项目统一使用共享的 `getVideoCreditCost()` 计算预估和实际扣分。Metaso H3 按“每秒费率 × 生成秒数”计费，并向上取整为整数 KenFutWork 积分；人民币区间只用于价格透明展示，不参与扣款。
 
 #### 每个模型的 Replicate API 输入参数
 

@@ -2,8 +2,8 @@ import type { StreamEvent } from "@loomic/shared";
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import type {
-  LoomicAgent,
-  LoomicAgentFactory,
+  KenFutWorkAgent,
+  KenFutWorkAgentFactory,
   ToolGate,
 } from "../../agent/deep-agent.js";
 import type { ServerEnv } from "../../config/env.js";
@@ -56,14 +56,14 @@ describe("agent-runs × agent-modes 装配缝（pre-step 指令 + 工具门）",
   it("plan 模式：指令注入模型输入，工具门只读放行/写操作拒绝", async () => {
     const gates: Array<ToolGate | undefined> = [];
     const inputs: Array<{ messages: Array<{ content: unknown }> }> = [];
-    const agentFactory: LoomicAgentFactory = (options) => {
+    const agentFactory: KenFutWorkAgentFactory = (options) => {
       gates.push(options.toolGate);
       return {
         streamEvents: async function* (input: never) {
           inputs.push(input);
           yield* [] as never[];
         },
-      } as unknown as LoomicAgent;
+      } as unknown as KenFutWorkAgent;
     };
 
     const { kernel, app } = assembleSeamKernel(agentFactory);
@@ -103,11 +103,11 @@ describe("agent-runs × agent-modes 装配缝（pre-step 指令 + 工具门）",
 
   it("solo 模式：工具门全禁，内核注册表 guarded 执行同步拒绝", async () => {
     const gates: Array<ToolGate | undefined> = [];
-    const agentFactory: LoomicAgentFactory = (options) => {
+    const agentFactory: KenFutWorkAgentFactory = (options) => {
       gates.push(options.toolGate);
       return {
         streamEvents: async function* () {},
-      } as unknown as LoomicAgent;
+      } as unknown as KenFutWorkAgent;
     };
 
     const { kernel, app } = assembleSeamKernel(agentFactory);
@@ -159,7 +159,7 @@ describe("agent-runs × agent-modes 装配缝（pre-step 指令 + 工具门）",
 });
 
 /** 按 server profile 的真实接线方式组合内核（events + emitPreStep 同源）。 */
-function assembleSeamKernel(agentFactory: LoomicAgentFactory) {
+function assembleSeamKernel(agentFactory: KenFutWorkAgentFactory) {
   const bus = new AgentRunEventBus();
   const kernelEvents = createKernelEvents(bus);
   const app = Fastify();

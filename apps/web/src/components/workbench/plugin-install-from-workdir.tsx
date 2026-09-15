@@ -20,11 +20,14 @@ import { CompatReportView } from "./plugin-compat-report";
 export function PluginInstallFromWorkdir({
   accessToken,
   canvasId,
+  isAdmin = false,
   onInstalled,
 }: {
   accessToken: string | null;
   /** 当前工作目录所在画布（服务端据此解析沙箱目录）。 */
   canvasId: string | null;
+  /** 安装要过管理员门：非管理员直接说清，而不是点了才失败。 */
+  isAdmin?: boolean;
   onInstalled: () => void;
 }) {
   const [bundles, setBundles] = useState<SandboxPluginBundle[]>([]);
@@ -94,9 +97,15 @@ export function PluginInstallFromWorkdir({
         </button>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        「创造」模式在工作目录里写好的插件 bundle（package.json 声明 loomic.bundle /
+        「创造」模式在工作目录里写好的插件 bundle（package.json 声明 kenfutwork.bundle /
         dsh.bundle）会出现在这里；安装前同样会过兼容性门禁。
       </p>
+      {!isAdmin ? (
+        <p className="mt-1 text-xs text-amber-600">
+          安装需要管理员权限（插件会在本机加载并执行第三方代码）；你可以照常浏览扫描结果，
+          或复制目录路径交给管理员安装。
+        </p>
+      ) : null}
 
       {scanError ? (
         <p className="mt-2 text-xs text-destructive">{scanError}</p>
@@ -132,7 +141,7 @@ export function PluginInstallFromWorkdir({
                 onClick={() => {
                   void install(item.path);
                 }}
-                disabled={installingPath !== null}
+                disabled={!isAdmin || installingPath !== null}
                 className="shrink-0 rounded-md border px-3 py-1.5 text-sm disabled:opacity-40"
               >
                 {installingPath === item.path ? (

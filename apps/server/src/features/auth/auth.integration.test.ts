@@ -21,7 +21,7 @@ describe.skipIf(!DATABASE_URL)("自管认证真实库集成", () => {
     const persistence = createPostgresPersistence({
       databaseUrl: DATABASE_URL as string,
     });
-    const email = `auth-probe-${Date.now().toString(36)}@test.loomic.com`;
+    const email = `auth-probe-${Date.now().toString(36)}@test.kenfutwork.com`;
 
     try {
       const repository = createAccountRepository(persistence);
@@ -98,7 +98,7 @@ describe.skipIf(!DATABASE_URL)("自管认证真实库集成", () => {
     const persistence = createPostgresPersistence({
       databaseUrl: DATABASE_URL as string,
     });
-    const email = `auth-cascade-${Date.now().toString(36)}@test.loomic.com`;
+    const email = `auth-cascade-${Date.now().toString(36)}@test.kenfutwork.com`;
 
     try {
       const auth = createAuthService({

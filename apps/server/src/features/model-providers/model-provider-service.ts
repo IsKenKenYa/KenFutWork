@@ -181,7 +181,7 @@ export function createModelProviderService(options: {
     if (!credentialEnv.credentialSecret) {
       throw new ModelProviderServiceError(
         "credential_unavailable",
-        "LOOMIC_CREDENTIAL_SECRET 未配置，无法写入用户凭证（fail loud）。",
+        "KENFUTWORK_CREDENTIAL_SECRET 未配置，无法写入用户凭证（fail loud）。",
         500,
       );
     }

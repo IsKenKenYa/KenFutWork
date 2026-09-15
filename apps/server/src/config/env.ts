@@ -38,19 +38,19 @@ export type ServerEnv = {
   agentFilesRoot?: string;
   agentModel: string;
   /**
-   * 画布 → 真实工作目录映射（`LOOMIC_CANVAS_WORK_DIRS`，JSON 对象）。
+   * 画布 → 真实工作目录映射（`KENFUTWORK_CANVAS_WORK_DIRS`，JSON 对象）。
    * 本地/桌面形态把工作目录映射到真实电脑环境时用；映射存在时 agent 直接读写
    * 该目录而不落 `<sandboxRoot>/<canvasId>`（产品决策 2026-09-14）。
    */
   canvasWorkDirs?: Record<string, string>;
   /**
-   * 沙箱根目录（`LOOMIC_SANDBOX_ROOT`，可相对）。缺省由入口解析为
+   * 沙箱根目录（`KENFUTWORK_SANDBOX_ROOT`，可相对）。缺省由入口解析为
    * `<项目根（dev）/ exe 安装目录（打包）>/tmp/sandbox`，画布目录为其下画布 UUID；
    * 显式配置时相对路径按入口目录解析。
    */
   sandboxRoot?: string;
   /**
-   * 模型流空闲看门狗阈值（毫秒，`LOOMIC_AGENT_STREAM_IDLE_TIMEOUT_MS`）。
+   * 模型流空闲看门狗阈值（毫秒，`KENFUTWORK_AGENT_STREAM_IDLE_TIMEOUT_MS`）。
    * 上游停滞超过该时长即按有界失败终止本轮（缺省 180s，见 stream-idle-guard）。
    */
   agentStreamIdleTimeoutMs?: number;
@@ -81,9 +81,9 @@ export type ServerEnv = {
   serverHost?: string;
   /** 队列形态：`pgmq`（服务端/自托管，默认）/ `in-process`（桌面，FORM-2）。 */
   queueDriver?: string;
-  /** 桌面应用数据目录（`LOOMIC_DATA_DIR`）；缺省按平台惯例解析（FORM-2）。 */
+  /** 桌面应用数据目录（`KENFUTWORK_DATA_DIR`）；缺省按平台惯例解析（FORM-2）。 */
   desktopDataDir?: string;
-  /** 内嵌 Postgres 二进制目录（`LOOMIC_PG_BIN_DIR`）；缺省按发布包/依赖包解析。 */
+  /** 内嵌 Postgres 二进制目录（`KENFUTWORK_PG_BIN_DIR`）；缺省按发布包/依赖包解析。 */
   pgBinDir?: string;
   /**
    * 随包分发的语言运行时 bin 目录（Node/Python/uv/JDK，desktop/runtimes.ts 解析）。
@@ -112,7 +112,7 @@ export type ServerEnv = {
   openAIApiKey?: string;
   port: number;
   replicateApiToken?: string;
-  /** 静态 UI 目录（LOOMIC_WEB_DIST）：配置后 server 直接托管前端。 */
+  /** 静态 UI 目录（KENFUTWORK_WEB_DIST）：配置后 server 直接托管前端。 */
   webDist?: string;
   version: string;
   volcesApiKey?: string;
@@ -138,66 +138,86 @@ export type ServerEnv = {
   workerMaxBatchSize?: number;
 };
 
+/**
+ * 兼容旧环境变量名：`LOOMIC_*` 是历史前缀，现名 `KENFUTWORK_*`。
+ *
+ * 已存在的 `.env.local` / 部署配置不用改也能跑：新名优先、旧名兜底（只做一次映射，
+ * 不写回 process.env）。品牌统一后新配置一律用 KENFUTWORK_*。
+ */
+export function withLegacyEnvNames(
+  source: NodeJS.ProcessEnv,
+): NodeJS.ProcessEnv {
+  const merged: NodeJS.ProcessEnv = { ...source };
+  for (const [key, value] of Object.entries(source)) {
+    if (!key.startsWith("LOOMIC_") || value === undefined) continue;
+    const next = `KENFUTWORK_${key.slice("LOOMIC_".length)}`;
+    if (merged[next] === undefined) merged[next] = value;
+  }
+  return merged;
+}
+
 export function loadServerEnv(
   overrides: Partial<ServerEnv> = {},
   source: NodeJS.ProcessEnv = process.env,
 ): ServerEnv {
+  // 旧前缀兜底（LOOMIC_* → KENFUTWORK_*）：只在读取前合一次，调用方无感
+  source = withLegacyEnvNames(source);
   const agentFilesRoot =
     overrides.agentFilesRoot ??
-    parseAgentFilesRoot(source.LOOMIC_AGENT_FILES_ROOT);
+    parseAgentFilesRoot(source.KENFUTWORK_AGENT_FILES_ROOT);
   const credentialSecret =
     overrides.credentialSecret ??
-    normalizeOptionalString(source.LOOMIC_CREDENTIAL_SECRET);
+    normalizeOptionalString(source.KENFUTWORK_CREDENTIAL_SECRET);
   const mcpServers =
-    overrides.mcpServers ?? parseMcpServers(source.LOOMIC_MCP_SERVERS);
+    overrides.mcpServers ?? parseMcpServers(source.KENFUTWORK_MCP_SERVERS);
   const canvasWorkDirs =
     overrides.canvasWorkDirs ??
-    parseCanvasWorkDirs(source.LOOMIC_CANVAS_WORK_DIRS);
+    parseCanvasWorkDirs(source.KENFUTWORK_CANVAS_WORK_DIRS);
   const sandboxRoot =
     overrides.sandboxRoot ??
-    normalizeOptionalString(source.LOOMIC_SANDBOX_ROOT);
+    normalizeOptionalString(source.KENFUTWORK_SANDBOX_ROOT);
   const searchApiKey =
     overrides.searchApiKey ??
-    normalizeOptionalString(source.LOOMIC_SEARCH_API_KEY);
+    normalizeOptionalString(source.KENFUTWORK_SEARCH_API_KEY);
   const searchProvider =
     overrides.searchProvider ??
-    parseSearchProvider(source.LOOMIC_SEARCH_PROVIDER);
+    parseSearchProvider(source.KENFUTWORK_SEARCH_PROVIDER);
   const searchEndpoint =
     overrides.searchEndpoint ??
-    normalizeOptionalString(source.LOOMIC_SEARCH_ENDPOINT);
+    normalizeOptionalString(source.KENFUTWORK_SEARCH_ENDPOINT);
   const openAIApiBase =
     overrides.openAIApiBase ?? normalizeOptionalString(source.OPENAI_API_BASE);
   const openAIApiKey =
     overrides.openAIApiKey ?? normalizeOptionalString(source.OPENAI_API_KEY);
   const webDist =
-    overrides.webDist ?? normalizeOptionalString(source.LOOMIC_WEB_DIST);
+    overrides.webDist ?? normalizeOptionalString(source.KENFUTWORK_WEB_DIST);
   const authDriver =
-    overrides.authDriver ?? normalizeOptionalString(source.LOOMIC_AUTH_DRIVER);
+    overrides.authDriver ?? normalizeOptionalString(source.KENFUTWORK_AUTH_DRIVER);
   const queueDriver =
     overrides.queueDriver ??
-    normalizeOptionalString(source.LOOMIC_QUEUE_DRIVER);
+    normalizeOptionalString(source.KENFUTWORK_QUEUE_DRIVER);
   const blobDir =
-    overrides.blobDir ?? normalizeOptionalString(source.LOOMIC_BLOB_DIR);
+    overrides.blobDir ?? normalizeOptionalString(source.KENFUTWORK_BLOB_DIR);
   const desktopDataDir =
-    overrides.desktopDataDir ?? normalizeOptionalString(source.LOOMIC_DATA_DIR);
+    overrides.desktopDataDir ?? normalizeOptionalString(source.KENFUTWORK_DATA_DIR);
   const pgBinDir =
-    overrides.pgBinDir ?? normalizeOptionalString(source.LOOMIC_PG_BIN_DIR);
+    overrides.pgBinDir ?? normalizeOptionalString(source.KENFUTWORK_PG_BIN_DIR);
   const embeddedPostgres =
-    overrides.embeddedPostgres ?? parseBooleanFlag(source.LOOMIC_EMBEDDED_PG);
+    overrides.embeddedPostgres ?? parseBooleanFlag(source.KENFUTWORK_EMBEDDED_PG);
   const embeddedPostgresPort =
     overrides.embeddedPostgresPort ??
     parseOptionalPort(
-      source.LOOMIC_EMBEDDED_PG_PORT,
-      "LOOMIC_EMBEDDED_PG_PORT",
+      source.KENFUTWORK_EMBEDDED_PG_PORT,
+      "KENFUTWORK_EMBEDDED_PG_PORT",
     );
   const blobPublicBaseUrl =
     overrides.blobPublicBaseUrl ??
-    normalizeOptionalString(source.LOOMIC_BLOB_PUBLIC_BASE_URL);
-  // 连接串取名优先级：`LOOMIC_DATABASE_URL`（首选）→ 通用 `DATABASE_URL`。
+    normalizeOptionalString(source.KENFUTWORK_BLOB_PUBLIC_BASE_URL);
+  // 连接串取名优先级：`KENFUTWORK_DATABASE_URL`（首选）→ 通用 `DATABASE_URL`。
   // 云托管时期的连接串回退（`SUPABASE_DB_URL`）已随 M1.5 删除。
   const databaseUrl =
     overrides.databaseUrl ??
-    normalizeOptionalString(source.LOOMIC_DATABASE_URL) ??
+    normalizeOptionalString(source.KENFUTWORK_DATABASE_URL) ??
     normalizeOptionalString(source.DATABASE_URL);
   const googleApiKey =
     overrides.googleApiKey ?? normalizeOptionalString(source.GOOGLE_API_KEY);
@@ -261,7 +281,7 @@ export function loadServerEnv(
     overrides.lemonSqueezyVariantBusinessYearly ??
     normalizeOptionalString(source.LEMONSQUEEZY_VARIANT_BUSINESS_YEARLY);
   const skillsRoot =
-    overrides.skillsRoot ?? normalizeOptionalString(source.LOOMIC_SKILLS_ROOT);
+    overrides.skillsRoot ?? normalizeOptionalString(source.KENFUTWORK_SKILLS_ROOT);
   const workerConcurrency =
     overrides.workerConcurrency ??
     (source.WORKER_CONCURRENCY
@@ -291,10 +311,10 @@ export function loadServerEnv(
       : undefined);
 
   // Resolve default agent model based on available provider keys.
-  // Explicit LOOMIC_AGENT_MODEL always takes precedence; otherwise fall back
+  // Explicit KENFUTWORK_AGENT_MODEL always takes precedence; otherwise fall back
   // to Gemini 2.5 Flash when only Google/Vertex is configured.
   const explicitModel =
-    overrides.agentModel ?? parseAgentModel(source.LOOMIC_AGENT_MODEL);
+    overrides.agentModel ?? parseAgentModel(source.KENFUTWORK_AGENT_MODEL);
   const resolvedAgentModel =
     explicitModel ??
     resolveDefaultAgentModel({
@@ -305,20 +325,20 @@ export function loadServerEnv(
 
   const agentStreamIdleTimeoutMs = parsePositiveInt(
     overrides.agentStreamIdleTimeoutMs ??
-      source.LOOMIC_AGENT_STREAM_IDLE_TIMEOUT_MS,
+      source.KENFUTWORK_AGENT_STREAM_IDLE_TIMEOUT_MS,
   );
 
   return {
     agentBackendMode:
       overrides.agentBackendMode ??
-      parseAgentBackendMode(source.LOOMIC_AGENT_BACKEND_MODE),
+      parseAgentBackendMode(source.KENFUTWORK_AGENT_BACKEND_MODE),
     agentModel: resolvedAgentModel,
     ...(agentStreamIdleTimeoutMs ? { agentStreamIdleTimeoutMs } : {}),
-    port: overrides.port ?? parsePort(source.LOOMIC_SERVER_PORT ?? source.PORT),
+    port: overrides.port ?? parsePort(source.KENFUTWORK_SERVER_PORT ?? source.PORT),
     serverHost: overrides.serverHost ?? source.HOST ?? DEFAULT_SERVER_HOST,
     version: overrides.version ?? readServerVersion(),
     webOrigin:
-      overrides.webOrigin ?? source.LOOMIC_WEB_ORIGIN ?? DEFAULT_WEB_ORIGIN,
+      overrides.webOrigin ?? source.KENFUTWORK_WEB_ORIGIN ?? DEFAULT_WEB_ORIGIN,
     ...(agentFilesRoot ? { agentFilesRoot } : {}),
     ...(canvasWorkDirs ? { canvasWorkDirs } : {}),
     ...(sandboxRoot ? { sandboxRoot } : {}),
@@ -398,7 +418,7 @@ function parseAgentBackendMode(rawMode: string | undefined): AgentBackendMode {
     return rawMode;
   }
 
-  throw new Error(`Invalid LOOMIC_AGENT_BACKEND_MODE value: ${rawMode}`);
+  throw new Error(`Invalid KENFUTWORK_AGENT_BACKEND_MODE value: ${rawMode}`);
 }
 
 function parseSearchProvider(raw: string | undefined): "metaso" | undefined {
@@ -409,12 +429,12 @@ function parseSearchProvider(raw: string | undefined): "metaso" | undefined {
     return raw;
   }
   throw new Error(
-    `Invalid LOOMIC_SEARCH_PROVIDER value: ${raw} (supported: metaso)`,
+    `Invalid KENFUTWORK_SEARCH_PROVIDER value: ${raw} (supported: metaso)`,
   );
 }
 
 /**
- * `LOOMIC_CANVAS_WORK_DIRS`：画布 → 真实目录映射，JSON 对象（如
+ * `KENFUTWORK_CANVAS_WORK_DIRS`：画布 → 真实目录映射，JSON 对象（如
  * `{"<canvasId>":"D:/Desktop/test"}`）。解析 fail loud：结构非法即启动期报错，
  * 不静默降级（否则「以为映射了、实际还在沙箱」这种静默漂移无法排查）。
  */
@@ -427,7 +447,7 @@ export function parseCanvasWorkDirs(
   const parsed: unknown = JSON.parse(raw);
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error(
-      "Invalid LOOMIC_CANVAS_WORK_DIRS value: must be a JSON object mapping canvasId to an absolute directory.",
+      "Invalid KENFUTWORK_CANVAS_WORK_DIRS value: must be a JSON object mapping canvasId to an absolute directory.",
     );
   }
   const result: Record<string, string> = {};
@@ -436,7 +456,7 @@ export function parseCanvasWorkDirs(
   )) {
     if (!canvasId.trim() || typeof dir !== "string" || !dir.trim()) {
       throw new Error(
-        "Invalid LOOMIC_CANVAS_WORK_DIRS entry: canvasId keys and directory string values are required.",
+        "Invalid KENFUTWORK_CANVAS_WORK_DIRS entry: canvasId keys and directory string values are required.",
       );
     }
     result[canvasId.trim()] = dir.trim();
@@ -452,13 +472,13 @@ export function parseMcpServers(
   }
   const parsed: unknown = JSON.parse(raw);
   if (!Array.isArray(parsed)) {
-    throw new Error("Invalid LOOMIC_MCP_SERVERS value: must be a JSON array.");
+    throw new Error("Invalid KENFUTWORK_MCP_SERVERS value: must be a JSON array.");
   }
   return parsed.map((entry) => {
     const config = entry as Partial<McpServerConfig>;
     if (!config.name || !config.command) {
       throw new Error(
-        "Invalid LOOMIC_MCP_SERVERS entry: name and command are required.",
+        "Invalid KENFUTWORK_MCP_SERVERS entry: name and command are required.",
       );
     }
     return {
@@ -504,7 +524,7 @@ function parsePort(rawPort: string | undefined) {
 
   const port = Number.parseInt(rawPort, 10);
   if (!Number.isInteger(port) || port <= 0) {
-    throw new Error(`Invalid LOOMIC_SERVER_PORT value: ${rawPort}`);
+    throw new Error(`Invalid KENFUTWORK_SERVER_PORT value: ${rawPort}`);
   }
 
   return port;

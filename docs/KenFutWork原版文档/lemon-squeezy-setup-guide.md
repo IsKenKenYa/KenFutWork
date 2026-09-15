@@ -8,12 +8,12 @@
 
 ---
 
-### 产品 1: Loomic Starter
+### 产品 1: KenFutWork Starter
 
 **General 区域：**
 | 字段 | 填写内容 |
 |------|---------|
-| **Name** | `Loomic Starter` |
+| **Name** | `KenFutWork Starter` |
 | **Description** | `AI creative workspace for individual creators. 1,200 credits/month, all image models, 2 concurrent tasks.` |
 
 **Pricing 区域：**
@@ -62,13 +62,13 @@
 
 ---
 
-### 产品 2: Loomic Pro
+### 产品 2: KenFutWork Pro
 
 **创建方式同上，字段如下：**
 
 | 字段 | 内容 |
 |------|------|
-| **Name** | `Loomic Pro` |
+| **Name** | `KenFutWork Pro` |
 | **Description** | `Professional AI creative workspace. 5,000 credits/month, all image & video models, 4 concurrent tasks, 2K resolution.` |
 | **Pricing 类型** | **Subscription** |
 | **Price** | `CN¥289` (Monthly) |
@@ -78,11 +78,11 @@
 
 ---
 
-### 产品 3: Loomic Ultra
+### 产品 3: KenFutWork Ultra
 
 | 字段 | 内容 |
 |------|------|
-| **Name** | `Loomic Ultra` |
+| **Name** | `KenFutWork Ultra` |
 | **Description** | `Team AI creative workspace. 15,000 credits/month, all models, 8 concurrent tasks, 4K resolution, 3 team seats.` |
 | **Pricing 类型** | **Subscription** |
 | **Price** | `CN¥719` (Monthly) |
@@ -92,11 +92,11 @@
 
 ---
 
-### 产品 4: Loomic Business
+### 产品 4: KenFutWork Business
 
 | 字段 | 内容 |
 |------|------|
-| **Name** | `Loomic Business` |
+| **Name** | `KenFutWork Business` |
 | **Description** | `Enterprise AI creative production. 50,000 credits/month, all models, 12 concurrent tasks, 4K resolution, 10+ team seats, API access.` |
 | **Pricing 类型** | **Subscription** |
 | **Price** | `CN¥1799` (Monthly) |

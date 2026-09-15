@@ -5,14 +5,14 @@ import type { BundleFormat, PluginExportArtifact } from "@loomic/shared";
  *
  * 产物同时是两种宿主都认的 bundle：
  * - dsh：`package.json` 的 `dsh.bundle.patch` + `cordis.patch.yml` + `index.js`
- * - 本项目：同一份文件，额外带 `loomic.bundle` 声明
+ * - 本项目：同一份文件，额外带 `kenfutwork.bundle` 声明
  *
  * 因此一份导出物可以 `dsh plugin add <目录>`，也可以直接回灌本项目安装流程，
  * 无需转换步骤——这就是「双方互通」的具体含义。
  *
  * 诚实边界：本函数导出的是**声明与骨架**（能力声明 + 工具 schema + 装载形状），
  * 工具 `execute` 是占位实现。真正的业务逻辑属于插件作者；导出解决的是
- * 「形状与能力契约可移植」，不是「把 Loomic 内部实现搬过去」。
+ * 「形状与能力契约可移植」，不是「把 KenFutWork 内部实现搬过去」。
  */
 
 export interface PluginExportToolSpec {
@@ -57,7 +57,7 @@ function sanitizePackageName(raw: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, "-")
     .replace(/^[-._]+|[-._]+$/g, "");
-  return normalized || "loomic-plugin";
+  return normalized || "kenfutwork-plugin";
 }
 
 function renderIndexJs(spec: PluginExportSpec, packageName: string): string {
@@ -68,7 +68,7 @@ function renderIndexJs(spec: PluginExportSpec, packageName: string): string {
   }));
 
   return `/**
- * ${spec.name} — 由 Loomic 导出的插件骨架（双端兼容 bundle）。
+ * ${spec.name} — 由 KenFutWork 导出的插件骨架（双端兼容 bundle）。
  *
  * 装载形状与 dsh 一致：导出 \`name\` / \`inject\` / \`apply(ctx)\`。
  * 实现工具逻辑：替换下面的占位 execute。
@@ -197,7 +197,7 @@ function resolveCapabilities(spec: PluginExportSpec): string[] {
  * 生成导出产物（文件集合 + 安装指引）。
  * 不写盘：由调用方决定落盘位置或直接回灌安装流程。
  *
- * 产物**始终双声明**（`dsh.bundle` + `loomic.bundle`），因此一份产物两端都能装；
+ * 产物**始终双声明**（`dsh.bundle` + `kenfutwork.bundle`），因此一份产物两端都能装；
  * `format` 只决定 README 里的安装指引面向哪个宿主。
  */
 export function exportPluginBundle(
@@ -220,7 +220,7 @@ export function exportPluginBundle(
       : {}),
     // 双声明：两种宿主都认同一份产物
     dsh: { bundle: { patch: "./cordis.patch.yml" } },
-    loomic: { bundle: { patch: "./cordis.patch.yml" } },
+    kenfutwork: { bundle: { patch: "./cordis.patch.yml" } },
   };
 
   const files: Record<string, string> = {

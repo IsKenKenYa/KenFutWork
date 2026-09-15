@@ -74,7 +74,7 @@ function dbWithLedger(
 }
 
 function writeMigrations(files: Array<[string, string]>): string {
-  const dir = mkdtempSync(join(tmpdir(), "loomic-migrations-"));
+  const dir = mkdtempSync(join(tmpdir(), "kenfutwork-migrations-"));
   for (const [fileName, sql] of files) {
     writeFileSync(join(dir, fileName), sql, "utf8");
   }

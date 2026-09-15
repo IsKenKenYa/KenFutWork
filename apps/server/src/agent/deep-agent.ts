@@ -25,7 +25,7 @@ import {
   createAgentBackend,
 } from "./backends/index.js";
 import { bridgeKernelTools } from "./kernel-tools-bridge.js";
-import { LOOMIC_SYSTEM_PROMPT } from "./prompts/loomic-main.js";
+import { KENFUTWORK_SYSTEM_PROMPT } from "./prompts/kenfutwork-main.js";
 import { createVideoSubAgent } from "./sub-agents.js";
 import type {
   PersistImageFn,
@@ -35,7 +35,7 @@ import { createMainAgentTools } from "./tools/index.js";
 import type { SubmitVideoJobFn } from "./tools/video-generate.js";
 import type { WorkspaceSkillEntry } from "./workspace-skills.js";
 
-export type LoomicAgent = Pick<
+export type KenFutWorkAgent = Pick<
   ReturnType<typeof createDeepAgent>,
   "stream" | "streamEvents"
 >;
@@ -68,7 +68,7 @@ export function createToolGateMiddleware(
   hooks?: ToolGateHooks,
 ): AgentMiddleware {
   return {
-    name: "loomic-tool-gate",
+    name: "kenfutwork-tool-gate",
     wrapToolCall: async (request, handler) => {
       const verdict = gate(request.toolCall.name);
       if (verdict.allowed) {
@@ -97,7 +97,7 @@ export function createToolGateMiddleware(
  */
 function createUnknownToolGuardMiddleware(): AgentMiddleware {
   return {
-    name: "loomic-unknown-tool-guard",
+    name: "kenfutwork-unknown-tool-guard",
     wrapToolCall: async (request, handler) => {
       if (request.tool) {
         return handler(request);
@@ -123,7 +123,7 @@ function createUnknownToolGuardMiddleware(): AgentMiddleware {
  */
 function createModelResponseGuardMiddleware(): AgentMiddleware {
   return {
-    name: "loomic-model-response-guard",
+    name: "kenfutwork-model-response-guard",
     wrapModelCall: async (request, handler) => {
       let result: unknown;
       try {
@@ -195,7 +195,7 @@ function createModelResponseGuardMiddleware(): AgentMiddleware {
   };
 }
 
-export type LoomicAgentFactory = (options: {
+export type KenFutWorkAgentFactory = (options: {
   backendResult?: AgentBackendResult;
   brandKitId?: string | null;
   canvasId?: string;
@@ -217,9 +217,9 @@ export type LoomicAgentFactory = (options: {
   toolGate?: ToolGate;
   /** 工具门旁路钩子（拒绝可见性 + 连续拒绝计数）。 */
   toolGateHooks?: ToolGateHooks;
-}) => LoomicAgent;
+}) => KenFutWorkAgent;
 
-export function createLoomicDeepAgent(options: {
+export function createKenFutWorkDeepAgent(options: {
   backendResult?: AgentBackendResult;
   brandKitId?: string | null;
   /** 品牌套件服务（工具 get_brand_kit 经它取数，不再直连 SDK）。 */
@@ -245,7 +245,7 @@ export function createLoomicDeepAgent(options: {
   toolGate?: ToolGate;
   /** 工具门旁路钩子（拒绝可见性 + 连续拒绝计数）。 */
   toolGateHooks?: ToolGateHooks;
-}): LoomicAgent {
+}): KenFutWorkAgent {
   const backendResult =
     options.backendResult ?? createAgentBackend(options.env, options.canvasId);
 
@@ -258,9 +258,9 @@ export function createLoomicDeepAgent(options: {
       : modelSpec;
 
   let systemPrompt = options.brandKitId
-    ? LOOMIC_SYSTEM_PROMPT +
+    ? KENFUTWORK_SYSTEM_PROMPT +
       "\n\n当前项目已绑定品牌套件。在进行设计相关工作时，请先使用 get_brand_kit 工具查询品牌信息，确保设计符合品牌规范。"
-    : LOOMIC_SYSTEM_PROMPT;
+    : KENFUTWORK_SYSTEM_PROMPT;
 
   // Inject enabled skills (both system and user-created) into the system prompt.
   // All skills are loaded from the database via loadWorkspaceSkills() in runtime.ts.
@@ -290,7 +290,7 @@ export function createLoomicDeepAgent(options: {
     backend: backendResult.factory,
     ...(options.checkpointer ? { checkpointer: options.checkpointer } : {}),
     model: resolvedModel,
-    name: "loomic",
+    name: "kenfutwork",
     ...(options.store ? { store: options.store } : {}),
     subagents: [createVideoSubAgent()],
     systemPrompt,

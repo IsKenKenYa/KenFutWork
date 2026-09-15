@@ -2,7 +2,7 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 
-const STORAGE_KEY = "loomic:agent-model";
+const STORAGE_KEY = "kenfutwork:agent-model";
 
 type AgentModel = string | null; // null = auto (workspace default)
 

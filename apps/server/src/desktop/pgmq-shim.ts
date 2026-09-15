@@ -37,7 +37,7 @@ export type PgmqShimDeps = {
 const SHIM_FILES = ["pgmq.control", "pgmq--1.0.sql"] as const;
 
 /**
- * shim 源目录：`LOOMIC_PGMQ_SHIM_DIR` → 发布包 `<exe>/pg/shim` → 仓库 `docker/pg-dev-shim`。
+ * shim 源目录：`KENFUTWORK_PGMQ_SHIM_DIR` → 发布包 `<exe>/pg/shim` → 仓库 `docker/pg-dev-shim`。
  * 返回 undefined 表示「没有 shim 可用」——此时若库里也没装真 pgmq，由 `ensurePgmqAvailable`
  * 给出可执行的报错。
  */
@@ -49,7 +49,7 @@ export function resolvePgmqShimDir(input: {
 }): string | undefined {
   const exists = input.exists ?? existsSync;
   const candidates = [
-    input.env.LOOMIC_PGMQ_SHIM_DIR?.trim(),
+    input.env.KENFUTWORK_PGMQ_SHIM_DIR?.trim(),
     join(input.exeDir ?? process.cwd(), "pg", "shim"),
     join(input.repoRoot ?? process.cwd(), "docker", "pg-dev-shim"),
   ].filter((candidate): candidate is string => Boolean(candidate));
@@ -81,7 +81,7 @@ export async function ensurePgmqAvailable(
   if (!options.shimDir) {
     throw new Error(
       "内嵌 Postgres 缺少 pgmq 扩展，且未找到兼容 shim（应为 pgmq.control + pgmq--1.0.sql）。" +
-        "请设置 LOOMIC_PGMQ_SHIM_DIR，或在桌面包里保留 <exe>/pg/shim 目录。",
+        "请设置 KENFUTWORK_PGMQ_SHIM_DIR，或在桌面包里保留 <exe>/pg/shim 目录。",
     );
   }
 

@@ -28,7 +28,7 @@ export type { PluginCatalogEntry, PluginRegistryService };
 export interface PluginsPluginDeps {
   /** 内置插件目录（来自 profile，避免与 profiles 互相 import） */
   builtinCatalog: readonly PluginCatalogEntry[];
-  /** 已安装插件落盘目录；缺省 `<cwd>/.loomic/plugins`，可用 LOOMIC_PLUGINS_DIR 覆盖 */
+  /** 已安装插件落盘目录；缺省 `<cwd>/.kenfutwork/plugins`，可用 KENFUTWORK_PLUGINS_DIR 覆盖 */
   pluginsDir?: string;
   /** GitHub token（可选，提升匿名速率上限） */
   githubToken?: string;
@@ -41,13 +41,13 @@ export interface PluginsPluginDeps {
  *
  * 默认按 `process.cwd()` 解析——**启动期会把绝对路径打进日志**，因为 cwd 随启动方式变化
  * （`pnpm --filter` 时是 `apps/server`，桌面 exe 启动时是任意目录），不打印出来会很难排查。
- * 需要固定位置时用 `LOOMIC_PLUGINS_DIR` 覆盖。
+ * 需要固定位置时用 `KENFUTWORK_PLUGINS_DIR` 覆盖。
  */
 function resolvePluginsDir(explicit?: string): string {
   if (explicit) return path.resolve(explicit);
-  const fromEnv = process.env.LOOMIC_PLUGINS_DIR?.trim();
+  const fromEnv = process.env.KENFUTWORK_PLUGINS_DIR?.trim();
   if (fromEnv) return path.resolve(fromEnv);
-  return path.resolve(process.cwd(), ".loomic", "plugins");
+  return path.resolve(process.cwd(), ".kenfutwork", "plugins");
 }
 
 function resolveHostNodeMajor(explicit?: number): number {
@@ -119,19 +119,20 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
         void service?.shutdown();
       });
 
-      // install_plugin：创造模式的插件产物收尾（从工作目录安装；管理员门 + 兼容性门禁不绕过）
+    },
+    mounted(ctx) {
+      const registry = ctx.get("plugins");
+      // install_plugin：创造模式的插件产物收尾（从工作目录安装；管理员门 + 兼容性门禁不绕过）。
+      // 与 mcp 的 create_mcp_server 同理，注册放 mounted——apply 期解析 admin 依赖看顺序。
       ctx.get("tools").register(
         createInstallPluginTool({
-          registry: ctx.get("plugins"),
+          registry,
           auth: ctx.get("auth"),
           admin: ctx.get("admin"),
           sandboxRoot: ctx.env.sandboxRoot,
           canvasWorkDirs: ctx.env.canvasWorkDirs,
         }),
       );
-    },
-    mounted(ctx) {
-      const registry = ctx.get("plugins");
       void registerPluginRoutes(ctx.app, {
         auth: ctx.get("auth"),
         admin: ctx.get("admin"),

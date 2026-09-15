@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { loadServerEnv, parseCanvasWorkDirs } from "./env.js";
 
-describe("LOOMIC_CANVAS_WORK_DIRS 解析", () => {
+describe("KENFUTWORK_CANVAS_WORK_DIRS 解析", () => {
   it("空值返回 undefined", () => {
     expect(parseCanvasWorkDirs(undefined)).toBeUndefined();
     expect(parseCanvasWorkDirs("")).toBeUndefined();
@@ -25,7 +25,7 @@ describe("LOOMIC_CANVAS_WORK_DIRS 解析", () => {
 
   it("loadServerEnv 把映射装入 env（overrides 优先）", () => {
     const fromSource = loadServerEnv({}, {
-      LOOMIC_CANVAS_WORK_DIRS: '{"c1":"D:/Desktop/test"}',
+      KENFUTWORK_CANVAS_WORK_DIRS: '{"c1":"D:/Desktop/test"}',
     } as NodeJS.ProcessEnv);
     expect(fromSource.canvasWorkDirs).toEqual({ c1: "D:/Desktop/test" });
 

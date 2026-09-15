@@ -5,7 +5,7 @@ import { join, relative, resolve, sep } from "node:path";
  * 沙箱工作目录里的**插件 bundle**扫描（「从工作目录安装插件」+ 创造模式的插件产物）。
  *
  * 判定：目录的 `package.json` 里声明了 bundle——
- * - 本项目：`loomic.bundle`
+ * - 本项目：`kenfutwork.bundle`（旧名 `loomic.bundle` 仍认）
  * - dsh 原生：`dsh.bundle`（互操作）
  *
  * 与技能包扫描同一套护栏：深度/目录数受限、跳过依赖与构建目录、路径不出沙箱根。
@@ -34,8 +34,8 @@ export interface SandboxPluginBundleCandidate {
   path: string;
   name: string;
   version: string;
-  /** 声明来源：loomic（本项目）/ dsh（原生互操作） */
-  declaredBy: "loomic" | "dsh";
+  /** 声明来源：kenfutwork（本项目）/ dsh（原生互操作） */
+  declaredBy: "kenfutwork" | "dsh";
 }
 
 function toPosixRelative(root: string, absolute: string): string {
@@ -45,7 +45,7 @@ function toPosixRelative(root: string, absolute: string): string {
 /** 读 package.json 并判断它是否声明了 bundle。 */
 function readBundleDeclaration(
   dir: string,
-): { name: string; version: string; declaredBy: "loomic" | "dsh" } | null {
+): { name: string; version: string; declaredBy: "kenfutwork" | "dsh" } | null {
   const manifestPath = join(dir, "package.json");
   try {
     const stat = statSync(manifestPath);
@@ -62,9 +62,9 @@ function readBundleDeclaration(
   } catch {
     return null;
   }
-  const loomic = parsed.loomic as { bundle?: unknown } | undefined;
+  const kenfutwork = parsed.kenfutwork as { bundle?: unknown } | undefined;
   const dsh = parsed.dsh as { bundle?: unknown } | undefined;
-  const declaredBy = loomic?.bundle ? "loomic" : dsh?.bundle ? "dsh" : null;
+  const declaredBy = kenfutwork?.bundle ? "kenfutwork" : dsh?.bundle ? "dsh" : null;
   if (!declaredBy) return null;
   return {
     name: typeof parsed.name === "string" ? parsed.name : dir.split(sep).pop()!,

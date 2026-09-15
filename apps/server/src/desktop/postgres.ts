@@ -12,7 +12,7 @@ import { Client } from "pg";
  *
  * **为什么自己管而不用 `embedded-postgres` 的 JS**：它的 JS 通过包内相对路径定位
  * 二进制，SEA 单文件产物里没有 `node_modules` 结构——同一份代码在仓库里跑得通、
- * 打包后必然找不到 `initdb`。本模块只依赖「二进制目录」这一件事（`LOOMIC_PG_BIN_DIR`
+ * 打包后必然找不到 `initdb`。本模块只依赖「二进制目录」这一件事（`KENFUTWORK_PG_BIN_DIR`
  * → 发布包 `<exe>/pg/bin` → 依赖包 `native/bin`），开发、测试、打包三种场景同一条解析链。
  * 二进制本身仍由 `embedded-postgres` 的按平台可选依赖分发（PG 17 线）。
  *
@@ -24,7 +24,7 @@ export type EmbeddedPostgresOptions = {
   binDir: string;
   /** 集群目录（`PG_VERSION` 存在即已初始化）。 */
   dataDir: string;
-  /** 目标库名，默认 `loomic`。 */
+  /** 目标库名，默认 `kenfutwork`。 */
   database?: string;
   /** 运行日志文件。 */
   logFile: string;
@@ -32,7 +32,7 @@ export type EmbeddedPostgresOptions = {
   passwordFile: string;
   /** 端口；缺省自动挑一个当前空闲的端口（避免与用户自装 Postgres 撞端口）。 */
   port?: number;
-  /** 超级用户名，默认 `loomic`。 */
+  /** 超级用户名，默认 `kenfutwork`。 */
   user?: string;
   onLog?: (message: string) => void;
 };
@@ -62,8 +62,8 @@ export type EmbeddedPostgresDeps = {
   run(command: string, args: readonly string[]): Promise<void>;
 };
 
-const DEFAULT_USER = "loomic";
-const DEFAULT_DATABASE = "loomic";
+const DEFAULT_USER = "kenfutwork";
+const DEFAULT_DATABASE = "kenfutwork";
 const CLUSTER_MARKER = "PG_VERSION";
 /** Postgres 运行时写入集群目录的进程信息文件。 */
 const POSTMASTER_PID = "postmaster.pid";
@@ -122,7 +122,7 @@ export function binaryName(base: string, platform: NodeJS.Platform): string {
 }
 
 /**
- * 二进制目录解析：`LOOMIC_PG_BIN_DIR` → 发布包内 `<exeDir>/pg/bin` → 依赖包 `native/bin`。
+ * 二进制目录解析：`KENFUTWORK_PG_BIN_DIR` → 发布包内 `<exeDir>/pg/bin` → 依赖包 `native/bin`。
  * 找不到即 fail loud（桌面启动期的第一现场诊断，不能静默降级为「稍后再炸」）。
  */
 export function resolvePgBinDir(input: {
@@ -133,12 +133,12 @@ export function resolvePgBinDir(input: {
 }): string {
   const exists = input.exists ?? existsSync;
   const platform = input.platform ?? process.platform;
-  const explicit = input.env.LOOMIC_PG_BIN_DIR?.trim();
+  const explicit = input.env.KENFUTWORK_PG_BIN_DIR?.trim();
 
   if (explicit) {
     if (!exists(explicit)) {
       throw new Error(
-        `LOOMIC_PG_BIN_DIR 指向的目录不存在：${explicit}（应包含 ${binaryName("initdb", platform)} 与 ${binaryName("pg_ctl", platform)}）`,
+        `KENFUTWORK_PG_BIN_DIR 指向的目录不存在：${explicit}（应包含 ${binaryName("initdb", platform)} 与 ${binaryName("pg_ctl", platform)}）`,
       );
     }
     return explicit;
@@ -167,7 +167,7 @@ export function resolvePgBinDir(input: {
 
   throw new Error(
     `未找到内嵌 Postgres 二进制（平台 ${platform}-${process.arch}）。` +
-      `请设置 LOOMIC_PG_BIN_DIR 指向 Postgres 的 bin 目录，或安装依赖 ${dependency ?? "（该平台暂无预编译包）"}。`,
+      `请设置 KENFUTWORK_PG_BIN_DIR 指向 Postgres 的 bin 目录，或安装依赖 ${dependency ?? "（该平台暂无预编译包）"}。`,
   );
 }
 

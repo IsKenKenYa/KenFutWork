@@ -105,15 +105,15 @@ async function main() {
     env: {
       ...process.env,
       HOST: "127.0.0.1",
-      LOOMIC_AGENT_MODEL:
-        process.env.LOOMIC_AGENT_MODEL ?? "google:gemini-2.5-flash",
-      LOOMIC_AUTH_DRIVER: "local-trust",
-      LOOMIC_DATA_DIR: dataDir,
-      LOOMIC_EMBEDDED_PG: "1",
-      LOOMIC_QUEUE_DRIVER: "in-process",
-      LOOMIC_SERVER_PORT: String(port),
-      LOOMIC_WEB_DIST: join(RELEASE, "web"),
-      LOOMIC_WEB_ORIGIN: base,
+      KENFUTWORK_AGENT_MODEL:
+        process.env.KENFUTWORK_AGENT_MODEL ?? "google:gemini-2.5-flash",
+      KENFUTWORK_AUTH_DRIVER: "local-trust",
+      KENFUTWORK_DATA_DIR: dataDir,
+      KENFUTWORK_EMBEDDED_PG: "1",
+      KENFUTWORK_QUEUE_DRIVER: "in-process",
+      KENFUTWORK_SERVER_PORT: String(port),
+      KENFUTWORK_WEB_DIST: join(RELEASE, "web"),
+      KENFUTWORK_WEB_ORIGIN: base,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

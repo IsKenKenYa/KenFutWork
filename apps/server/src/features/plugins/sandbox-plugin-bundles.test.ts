@@ -29,7 +29,7 @@ describe("工作目录里的插件 bundle 扫描（从工作目录安装）", ()
     writePackage(root, "my-plugin", {
       name: "my-plugin",
       version: "1.2.3",
-      loomic: { bundle: { patch: "loomic.patch.yml" } },
+      kenfutwork: { bundle: { patch: "kenfutwork.patch.yml" } },
     });
     writePackage(root, "dsh-plugin", {
       name: "dsh-plugin",
@@ -50,7 +50,7 @@ describe("工作目录里的插件 bundle 扫描（从工作目录安装）", ()
         path: "my-plugin",
         name: "my-plugin",
         version: "1.2.3",
-        declaredBy: "loomic",
+        declaredBy: "kenfutwork",
       },
     ]);
   });

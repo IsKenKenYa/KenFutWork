@@ -10,7 +10,7 @@ const env = {
   // 存储缝是必需项（M1 起）：缺 databaseUrl 时 persistence 不挂载，声明了
   // inject 的插件在启动期 fail loud。这里给一个不实际连接的连接串——
   // Provider 只在首次查询时才建连接，故 compose 期无网络访问。
-  databaseUrl: "postgres://localhost:5432/loomic-test",
+  databaseUrl: "postgres://localhost:5432/kenfutwork-test",
   // blob 缝是必需能力且只有本地 FS 形态（M1.5 已删 Supabase Provider）
   blobDir: "D:/Desktop/KenFutWork/data/blobs-test",
   credentialSecret: "test-secret",

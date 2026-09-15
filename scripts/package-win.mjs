@@ -222,19 +222,19 @@ rem KenFutWork 桌面启动器：内嵌 Postgres + 本机免登录，开箱即�
 rem 自定义：同目录建 .env（每行「键=值」）覆盖下列默认值。
 setlocal
 cd /d "%~dp0"
-set "LOOMIC_EMBEDDED_PG=1"
-set "LOOMIC_AUTH_DRIVER=local-trust"
-set "LOOMIC_QUEUE_DRIVER=in-process"
-set "LOOMIC_SERVER_PORT=3001"
-set "LOOMIC_WEB_ORIGIN=http://127.0.0.1:3001"
-set "LOOMIC_WEB_DIST=%~dp0web"
-rem 数据目录默认 %LOCALAPPDATA%\\KenFutWork\\data；需要随身携带再设 LOOMIC_DATA_DIR
-set "LOOMIC_AGENT_MODEL=google:gemini-2.5-flash"
+set "KENFUTWORK_EMBEDDED_PG=1"
+set "KENFUTWORK_AUTH_DRIVER=local-trust"
+set "KENFUTWORK_QUEUE_DRIVER=in-process"
+set "KENFUTWORK_SERVER_PORT=3001"
+set "KENFUTWORK_WEB_ORIGIN=http://127.0.0.1:3001"
+set "KENFUTWORK_WEB_DIST=%~dp0web"
+rem 数据目录默认 %LOCALAPPDATA%\\KenFutWork\\data；需要随身携带再设 KENFUTWORK_DATA_DIR
+set "KENFUTWORK_AGENT_MODEL=google:gemini-2.5-flash"
 if exist "%~dp0.env" (
   for /f "usebackq eol=# tokens=1,* delims==" %%a in ("%~dp0.env") do set "%%a=%%b"
 )
-echo KenFutWork 启动中：http://localhost:%LOOMIC_SERVER_PORT%
-start "" http://localhost:%LOOMIC_SERVER_PORT%
+echo KenFutWork 启动中：http://localhost:%KENFUTWORK_SERVER_PORT%
+start "" http://localhost:%KENFUTWORK_SERVER_PORT%
 "%~dp0${EXE_NAME}"
 pause
 `,
@@ -258,11 +258,11 @@ pause
 
 模型与搜索
   在本目录新建 .env，每行一条「键=值」，例如：
-    LOOMIC_AGENT_MODEL=google:gemini-2.5-flash
+    KENFUTWORK_AGENT_MODEL=google:gemini-2.5-flash
     GOOGLE_API_KEY=your-key
   供应商 Key 也可在界面里按 BYOK 添加（加密后只存本机数据目录）。
 
-端口：默认 3001，可在 .env 中用 LOOMIC_SERVER_PORT 修改。
+端口：默认 3001，可在 .env 中用 KENFUTWORK_SERVER_PORT 修改。
 重置数据：删除 %LOCALAPPDATA%\\KenFutWork\\data 即回到全新状态。
 `,
   );

@@ -50,7 +50,7 @@ describe.skipIf(!DATABASE_URL)("persistence 真实库集成", () => {
     try {
       const repository = createViewerRepository(persistence);
       const input = {
-        email: "integration@test.loomic.com",
+        email: "integration@test.kenfutwork.com",
         userMeta: { full_name: "集成测试" },
         userId: (user as IdRow).id,
       };

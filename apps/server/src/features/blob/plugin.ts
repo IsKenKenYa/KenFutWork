@@ -6,7 +6,7 @@ import type { BlobStore } from "./types.js";
 /**
  * blob 插件（M3.1）：对象存储缝的 Provider 选择。
  *
- * **当前只有本地 FS 形态**（桌面 / 本地开发 / 自托管单机）：目录 `<LOOMIC_BLOB_DIR>`，
+ * **当前只有本地 FS 形态**（桌面 / 本地开发 / 自托管单机）：目录 `<KENFUTWORK_BLOB_DIR>`，
  * 对外 URL 走 server 自己的 `/api/blobs` 读取路由。原 Supabase Storage Provider 已随
  * M1.5 删除——它在过渡期承担了「不改业务代码先切缝」的角色，现在使命完成。
  *
@@ -33,12 +33,12 @@ export function createBlobPlugin(
 
       if (!rootDir) {
         throw new Error(
-          "[blob] 缺少 LOOMIC_BLOB_DIR（本地对象根目录）——对象存储是必需能力，配置缺失即失败。",
+          "[blob] 缺少 KENFUTWORK_BLOB_DIR（本地对象根目录）——对象存储是必需能力，配置缺失即失败。",
         );
       }
       if (!signingSecret) {
         throw new Error(
-          "[blob] 缺少 LOOMIC_CREDENTIAL_SECRET（blob 签名密钥）。",
+          "[blob] 缺少 KENFUTWORK_CREDENTIAL_SECRET（blob 签名密钥）。",
         );
       }
 
@@ -62,7 +62,7 @@ export function createBlobPlugin(
       if (!rootDir || !signingSecret) {
         // apply 已 fail loud；此处只是类型收窄（同一次启动不会走到这里）
         throw new Error(
-          "[blob] 缺少 LOOMIC_BLOB_DIR / LOOMIC_CREDENTIAL_SECRET。",
+          "[blob] 缺少 KENFUTWORK_BLOB_DIR / KENFUTWORK_CREDENTIAL_SECRET。",
         );
       }
       void registerBlobRoutes(ctx.app, { rootDir, signingSecret });

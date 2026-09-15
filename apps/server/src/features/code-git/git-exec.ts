@@ -6,7 +6,7 @@ import type { ExecGit, GitCommandResult } from "./git-client.js";
  * 真实 git 执行：把定稿的 `args` 交给 git 二进制，在沙箱目录里跑。
  *
  * 二进制来源（顺序与「git 优先本地、打包兜底」一致）：
- *   1. 显式 `LOOMIC_GIT_BIN_DIR`；
+ *   1. 显式 `KENFUTWORK_GIT_BIN_DIR`；
  *   2. 随包 git（`<exeDir>/runtime/git/cmd`，仅当宿主没有 git 时才由 runtimes 解析出来）；
  *   3. 兜底用 PATH 上的 `git`（宿主的本地 git）。
  *

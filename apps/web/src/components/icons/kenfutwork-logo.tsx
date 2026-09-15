@@ -11,9 +11,9 @@ import { useId } from "react";
  * 渐变/裁剪 id 用 useId 生成，避免同页多实例冲突。
  *
  * @example
- * <LoomicLogo className="size-7" />
+ * <KenFutWorkLogo className="size-7" />
  */
-export function LoomicLogo(props: SVGProps<SVGSVGElement>) {
+export function KenFutWorkLogo(props: SVGProps<SVGSVGElement>) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
   const designId = `design-${uid}`;
   const codeId = `code-${uid}`;

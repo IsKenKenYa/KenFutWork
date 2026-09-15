@@ -1,7 +1,7 @@
 /**
  * 本地联网搜索代理：把秘塔的接口契约接到真实搜索引擎上。
  *
- * **它不是测试替身，而是一条受支持的配置**：`LOOMIC_SEARCH_ENDPOINT` 正是为
+ * **它不是测试替身，而是一条受支持的配置**：`KENFUTWORK_SEARCH_ENDPOINT` 正是为
  * 「镜像 / 代理 / 联调」准备的覆盖点（见 `features/search/plugin.ts`），本脚本实现与
  * `features/search/web-search.ts` 完全一致的契约——请求 `POST {q, scope, size, page}`
  * + `Bearer` 鉴权 → 响应 `{ webpages: [{ title, link, snippet }] }`，业务错误同样走
@@ -11,21 +11,21 @@
  * 任意字符串 Key 一律 `errCode 2005`），没有 Key 时 search 插件按 enabled 判定不装配、
  * `web_search` 不注册。把本代理跑起来并在 `.env.local` 里指过去，联网搜索即可用：
  *
- *   node scripts/本地搜索代理.mjs        # 监听 127.0.0.1:9099（可用 LOOMIC_SEARCH_PORT 改）
+ *   node scripts/本地搜索代理.mjs        # 监听 127.0.0.1:9099（可用 KENFUTWORK_SEARCH_PORT 改）
  *
  *   # .env.local：
- *   LOOMIC_SEARCH_API_KEY=<任意非空字符串，本代理只校验格式>
- *   LOOMIC_SEARCH_ENDPOINT=http://127.0.0.1:9099/search
+ *   KENFUTWORK_SEARCH_API_KEY=<任意非空字符串，本代理只校验格式>
+ *   KENFUTWORK_SEARCH_ENDPOINT=http://127.0.0.1:9099/search
  *
- * 注意：结果来自必应网页抓取，**不是秘塔**；要接入秘塔本体就去掉 `LOOMIC_SEARCH_ENDPOINT`
+ * 注意：结果来自必应网页抓取，**不是秘塔**；要接入秘塔本体就去掉 `KENFUTWORK_SEARCH_ENDPOINT`
  * 并填真实 Key（用 `node scripts/诊断联网搜索.mjs` 验收）。代理不可达、上游改版、以及
  * 「上游回兜底页」都会返回可读的 `errCode/errMsg`，不会伪装成「搜到 0 条」，更不会把跑题的
  * 页面当来源交出去（见 `looksRelevant`）。**代价是命中率**：实测 6 个中文查询里 3 个正常返回、
  * 3 个被拦成 5002——被拦时是「搜索失败」，不是「这个查询没结果」，模型会看到原因。
- * 这是抓取式上游的天花板，要稳定就把 `LOOMIC_SEARCH_ENDPOINT` 指向真正的搜索 API。
+ * 这是抓取式上游的天花板，要稳定就把 `KENFUTWORK_SEARCH_ENDPOINT` 指向真正的搜索 API。
  *
- * 另两个可选环境变量：`LOOMIC_SEARCH_PORT`（监听端口，缺省 9099）、
- * `LOOMIC_SEARCH_UPSTREAM`（上游搜索页，缺省必应；换引擎或验证解析失配时用）。
+ * 另两个可选环境变量：`KENFUTWORK_SEARCH_PORT`（监听端口，缺省 9099）、
+ * `KENFUTWORK_SEARCH_UPSTREAM`（上游搜索页，缺省必应；换引擎或验证解析失配时用）。
  *
  * 上游必须带中文市场参数（`mkt=zh-CN&cc=CN`）：不带时必应对「无 Cookie 的程序化抓取」
  * 会回**跑题的兜底页**——实测中文查询会拿到单位换算站、邮轮游记、越南股票站这类完全无关的
@@ -36,11 +36,11 @@
 import { createServer } from "node:http";
 
 const PORT = Number(
-  process.env.LOOMIC_SEARCH_PORT ?? process.env.MOCK_SEARCH_PORT ?? 9099,
+  process.env.KENFUTWORK_SEARCH_PORT ?? process.env.MOCK_SEARCH_PORT ?? 9099,
 );
 /** 上游搜索结果页；改这个可以换搜索引擎（也用于验证解析失配时的报错路径）。 */
 const UPSTREAM =
-  process.env.LOOMIC_SEARCH_UPSTREAM ?? "https://www.bing.com/search";
+  process.env.KENFUTWORK_SEARCH_UPSTREAM ?? "https://www.bing.com/search";
 
 function decodeEntities(text) {
   return text

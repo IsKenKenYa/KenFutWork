@@ -12,7 +12,8 @@ import { parsePatch } from "./patch-parser.js";
  *
  * 同时支持两种声明（互操作的前提）：
  * - dsh 原生：`package.json` 的 `dsh.bundle.patch` → `cordis.patch.yml`
- * - 本项目：`package.json` 的 `loomic.bundle`（同形状，便于同一产物两端加载）
+ * - 本项目：`package.json` 的 `kenfutwork.bundle`（同形状，便于同一产物两端加载；
+ *   旧名 `loomic.bundle` 仍接受）
  *
  * 只有 `profile` 声明、没有 `bundle` 声明的包不是插件（dsh 的 profile 是组合清单，
  * 本项目不支持从上游导入 profile），按 `bundle_declaration_missing` 拒绝。
@@ -84,7 +85,7 @@ function resolveEntry(
 }
 
 /**
- * 识别 bundle 声明。产物通常**双声明**（同时带 `dsh.bundle` 与 `loomic.bundle`），
+ * 识别 bundle 声明。产物通常**双声明**（同时带 `dsh.bundle` 与 `kenfutwork.bundle`），
  * 此时按 dsh 识别——dsh 生态更大，约定以它为主格式；两条声明指向同一配置层，
  * 功能上等价，故顺序不影响判定结果。
  */
@@ -99,13 +100,24 @@ function detectBundleDeclaration(pkg: Record<string, unknown>): {
     return { format: "dsh", patchPath: dshPatchPath.replace(/^\.\//, "") };
   }
 
-  const loomic = pkg.loomic as Record<string, unknown> | undefined;
-  const loomicPatch = loomic?.bundle as Record<string, unknown> | undefined;
-  const loomicPatchPath = loomicPatch?.patch;
-  if (typeof loomicPatchPath === "string" && loomicPatchPath.trim()) {
+  // 旧名兼容：品牌统一前发布过的 bundle 用 `loomic.bundle`，安装端继续认
+  const legacy = pkg.loomic as Record<string, unknown> | undefined;
+  const legacyPatch = legacy?.bundle as Record<string, unknown> | undefined;
+  const legacyPatchPath = legacyPatch?.patch;
+  if (typeof legacyPatchPath === "string" && legacyPatchPath.trim()) {
     return {
-      format: "loomic",
-      patchPath: loomicPatchPath.replace(/^\.\//, ""),
+      format: "kenfutwork",
+      patchPath: legacyPatchPath.replace(/^\.\//, ""),
+    };
+  }
+
+  const kenfutwork = pkg.kenfutwork as Record<string, unknown> | undefined;
+  const kenfutworkPatch = kenfutwork?.bundle as Record<string, unknown> | undefined;
+  const kenfutworkPatchPath = kenfutworkPatch?.patch;
+  if (typeof kenfutworkPatchPath === "string" && kenfutworkPatchPath.trim()) {
+    return {
+      format: "kenfutwork",
+      patchPath: kenfutworkPatchPath.replace(/^\.\//, ""),
     };
   }
   return null;
@@ -154,7 +166,7 @@ export function buildBundleManifest(files: BundleFiles): {
   const declaration = detectBundleDeclaration(pkg);
   if (!declaration) {
     throw new BundleManifestError(
-      "包未声明 `dsh.bundle.patch`（dsh 原生）或 `loomic.bundle`（本项目），不是可安装的插件 bundle。",
+      "包未声明 `dsh.bundle.patch`（dsh 原生）或 `kenfutwork.bundle`（本项目；旧名 `loomic.bundle` 仍认），不是可安装的插件 bundle。",
       "bundle_declaration_missing",
     );
   }

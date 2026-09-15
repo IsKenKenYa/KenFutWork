@@ -19,7 +19,7 @@ import { createPostgresPersistence } from "./features/persistence/providers/post
  * 幂等：账号已存在则**重置口令**，不重复建；工作区/额度存在即跳过。
  * 口令只以 scrypt 哈希落库，明文只在命令行出现，不进日志。
  *
- * 品牌口径：账号域名与口令都随当前品牌（KenFutWork），不再沿用 Loomic。
+ * 品牌口径：账号域名与口令都随当前品牌（KenFutWork），不再沿用 KenFutWork。
  * 若需改动品牌，改这一处即可（README 的账号表与之一致）。
  */
 export const TEST_PASSWORD = "kenfutwork";
@@ -71,7 +71,7 @@ async function main(): Promise<void> {
   const env = loadServerEnv();
   const databaseUrl = env.databaseUrl;
   if (!databaseUrl) {
-    console.error("缺少数据库连接串（LOOMIC_DATABASE_URL 或 DATABASE_URL）。");
+    console.error("缺少数据库连接串（KENFUTWORK_DATABASE_URL 或 DATABASE_URL）。");
     process.exit(1);
   }
 

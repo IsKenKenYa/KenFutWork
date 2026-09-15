@@ -14,12 +14,12 @@ describe("@loomic/shared contracts", () => {
   it("shares the health response schema for server and web", () => {
     const parsed = healthResponseSchema.parse({
       ok: true,
-      service: "loomic-server",
+      service: "kenfutwork-server",
       version: "0.1.0",
     });
 
     expect(parsed.ok).toBe(true);
-    expect(parsed.service).toBe("loomic-server");
+    expect(parsed.service).toBe("kenfutwork-server");
   });
 
   it("accepts canvasId as optional field", () => {
@@ -126,7 +126,7 @@ describe("@loomic/shared contracts", () => {
         {
           mentionType: "brand-kit-asset",
           id: "brand-logo-1",
-          label: "Loomic 主 Logo",
+          label: "KenFutWork 主 Logo",
           assetType: "logo",
           fileUrl: "https://example.com/logo.png",
         },
@@ -184,13 +184,13 @@ describe("@loomic/shared contracts", () => {
     const parsed = viewerResponseSchema.parse({
       profile: {
         id: "user_123",
-        email: "maker@loomic.test",
-        displayName: "Loomic Maker",
+        email: "maker@kenfutwork.test",
+        displayName: "KenFutWork Maker",
         avatarUrl: "https://example.com/avatar.png",
       },
       workspace: {
         id: "workspace_123",
-        name: "Loomic Maker",
+        name: "KenFutWork Maker",
         type: "personal",
         ownerUserId: "user_123",
       },
@@ -240,7 +240,7 @@ describe("@loomic/shared contracts", () => {
           description: createRequest.description,
           workspace: {
             id: "workspace_123",
-            name: "Loomic Maker",
+            name: "KenFutWork Maker",
             type: "personal",
             ownerUserId: "user_123",
           },
@@ -345,7 +345,7 @@ describe("@loomic/shared contracts", () => {
             description: "Primary workspace project",
             workspace: {
               id: "workspace_123",
-              name: "Loomic Maker",
+              name: "KenFutWork Maker",
               type: "personal",
               ownerUserId: "user_123",
             },

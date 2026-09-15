@@ -3,7 +3,7 @@ import { extname, isAbsolute, join, normalize, sep } from "node:path";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 /**
- * 静态 UI 托管（自托管/桌面包形态）：LOOMIC_WEB_DIST 指向 Next 静态导出目录时，
+ * 静态 UI 托管（自托管/桌面包形态）：KENFUTWORK_WEB_DIST 指向 Next 静态导出目录时，
  * server 直接托管前端（单一入口，无需额外静态服务器）。
  * 解析顺序：精确文件 → `<path>.html`（Next 导出约定）→ 目录 index.html → 404.html。
  */
@@ -43,7 +43,7 @@ export function registerStaticWebRoutes(
     !statSync(distDir).isDirectory()
   ) {
     throw new Error(
-      `LOOMIC_WEB_DIST 目录无效：${options.distDir}（启动期 fail loud）`,
+      `KENFUTWORK_WEB_DIST 目录无效：${options.distDir}（启动期 fail loud）`,
     );
   }
 

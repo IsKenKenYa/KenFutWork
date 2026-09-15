@@ -67,7 +67,7 @@ async function exists(target: string): Promise<boolean> {
 
 /** 造一个注定被门禁拦下的 bundle（依赖 llm 能力）。 */
 async function writeIncompatibleBundle(): Promise<string> {
-  const dir = await mkdtemp(path.join(tmpdir(), "loomic-bad-"));
+  const dir = await mkdtemp(path.join(tmpdir(), "kenfutwork-bad-"));
   await writeFile(
     path.join(dir, "package.json"),
     JSON.stringify({
@@ -93,7 +93,7 @@ async function writeIncompatibleBundle(): Promise<string> {
 }
 
 beforeEach(async () => {
-  pluginsDir = await mkdtemp(path.join(tmpdir(), "loomic-plugins-"));
+  pluginsDir = await mkdtemp(path.join(tmpdir(), "kenfutwork-plugins-"));
 });
 
 afterEach(async () => {
@@ -113,7 +113,7 @@ describe("plugin-registry：安装并真的能用", () => {
 
     expect(report.compatible).toBe(true);
     expect(report.supportedCapabilities).toEqual(["tools"]);
-    expect(installed.name).toBe("loomic-example-clock");
+    expect(installed.name).toBe("kenfutwork-example-clock");
 
     const tool = kernel.get("tools").require("clock_now");
     expect(tool.scope).toBe("shared");
@@ -135,7 +135,7 @@ describe("plugin-registry：安装并真的能用", () => {
     });
 
     const entries = await service.list();
-    const mine = entries.find((entry) => entry.name === "loomic-example-clock");
+    const mine = entries.find((entry) => entry.name === "kenfutwork-example-clock");
     expect(mine).toBeDefined();
     expect(mine?.installed).toBe(true);
     expect(mine?.system).toBe(false);
@@ -154,7 +154,7 @@ describe("plugin-registry：安装并真的能用", () => {
     expect(kernel.get("tools").get("clock_now")).toBeUndefined();
     expect(await exists(path.join(pluginsDir, installed.id))).toBe(false);
     const entries = await service.list();
-    expect(entries.some((entry) => entry.name === "loomic-example-clock")).toBe(
+    expect(entries.some((entry) => entry.name === "kenfutwork-example-clock")).toBe(
       false,
     );
   });
@@ -203,7 +203,7 @@ describe("plugin-registry：安装并真的能用", () => {
     expect(kernel.get("tools").get("clock_now")).toBeDefined();
     const entries = await service.list();
     expect(
-      entries.filter((entry) => entry.name === "loomic-example-clock"),
+      entries.filter((entry) => entry.name === "kenfutwork-example-clock"),
     ).toHaveLength(1);
   });
 });
@@ -240,11 +240,11 @@ describe("plugin-registry：门禁拦截", () => {
     const { kernel, service } = makeService();
     const { manifest, report } = await service.inspect({ url: EXAMPLE_PLUGIN });
     expect(report.compatible).toBe(true);
-    expect(manifest.name).toBe("loomic-example-clock");
+    expect(manifest.name).toBe("kenfutwork-example-clock");
     // 没有装载，也没有落盘
     expect(kernel.get("tools").get("clock_now")).toBeUndefined();
     const entries = await service.list();
-    expect(entries.some((entry) => entry.name === "loomic-example-clock")).toBe(
+    expect(entries.some((entry) => entry.name === "kenfutwork-example-clock")).toBe(
       false,
     );
   });
@@ -280,10 +280,10 @@ describe("plugin-registry：导出", () => {
     const artifact = service.exportPlugin("skills", "dsh");
     const pkg = JSON.parse(artifact.files["package.json"]!) as {
       dsh?: unknown;
-      loomic?: unknown;
+      kenfutwork?: unknown;
     };
     expect(pkg.dsh).toBeDefined();
-    expect(pkg.loomic).toBeDefined();
+    expect(pkg.kenfutwork).toBeDefined();
     expect(artifact.files["index.js"]).toBeDefined();
   });
 
@@ -293,7 +293,7 @@ describe("plugin-registry：导出", () => {
       url: EXAMPLE_PLUGIN,
       allowLifecycleScripts: false,
     });
-    const artifact = service.exportPlugin("loomic-example-clock", "dsh");
+    const artifact = service.exportPlugin("kenfutwork-example-clock", "dsh");
     const indexJs = artifact.files["index.js"]!;
     expect(indexJs).toContain("clock_now");
   });
@@ -304,10 +304,10 @@ describe("plugin-registry：导出", () => {
       url: EXAMPLE_PLUGIN,
       allowLifecycleScripts: false,
     });
-    const artifact = service.exportPlugin("loomic-example-clock", "dsh");
+    const artifact = service.exportPlugin("kenfutwork-example-clock", "dsh");
 
     // 落盘为独立 bundle 后再走一次真实安装
-    const dir = await mkdtemp(path.join(tmpdir(), "loomic-roundtrip-"));
+    const dir = await mkdtemp(path.join(tmpdir(), "kenfutwork-roundtrip-"));
     try {
       await mkdir(dir, { recursive: true });
       for (const [relative, content] of Object.entries(artifact.files)) {

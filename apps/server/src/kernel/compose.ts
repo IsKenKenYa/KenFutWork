@@ -61,7 +61,7 @@ export function composePlugins(
   );
   if (skipped.length > 0) {
     // 配置 fail loud 的可见性面：enabled 判定为 false 的插件在此处留痕，
-    // 否则「没配 key → 能力静默消失」无从排查（如联网搜索缺 LOOMIC_SEARCH_API_KEY）
+    // 否则「没配 key → 能力静默消失」无从排查（如联网搜索缺 KENFUTWORK_SEARCH_API_KEY）
     console.log(
       `[kernel] 未启用插件（enabled 判定为 false）：${skipped
         .map((plugin) => plugin.name)

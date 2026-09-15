@@ -121,7 +121,7 @@ export function assertLocalTrustPosture(input: {
     return;
   }
   throw new Error(
-    `LOOMIC_AUTH_DRIVER=local-trust 是免登录形态，只能绑定回环地址（当前 HOST=${input.host}）。` +
-      "需要对外提供服务时请改用自管认证（LOOMIC_AUTH_DRIVER=managed）。",
+    `KENFUTWORK_AUTH_DRIVER=local-trust 是免登录形态，只能绑定回环地址（当前 HOST=${input.host}）。` +
+      "需要对外提供服务时请改用自管认证（KENFUTWORK_AUTH_DRIVER=managed）。",
   );
 }

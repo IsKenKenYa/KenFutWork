@@ -57,7 +57,7 @@ const SPEC: PluginExportSpec = {
 async function writeBundle(
   files: Record<string, string>,
 ): Promise<{ dir: string; entry: string }> {
-  const dir = await mkdtemp(path.join(tmpdir(), "loomic-bundle-"));
+  const dir = await mkdtemp(path.join(tmpdir(), "kenfutwork-bundle-"));
   for (const [relative, content] of Object.entries(files)) {
     const target = path.join(dir, relative);
     await import("node:fs/promises").then((fs) =>
@@ -82,12 +82,12 @@ describe("plugin-exporter：dsh 形状契约", () => {
     const pkg = JSON.parse(artifact.files["package.json"]!) as {
       name: string;
       dsh?: { bundle?: { patch?: string } };
-      loomic?: { bundle?: { patch?: string } };
+      kenfutwork?: { bundle?: { patch?: string } };
       files?: string[];
       type?: string;
     };
     expect(pkg.dsh?.bundle?.patch).toBe("./cordis.patch.yml");
-    expect(pkg.loomic?.bundle?.patch).toBe("./cordis.patch.yml");
+    expect(pkg.kenfutwork?.bundle?.patch).toBe("./cordis.patch.yml");
     expect(pkg.type).toBe("module");
     expect(pkg.files).toContain("index.js");
     expect(artifact.files["cordis.patch.yml"]).toBeDefined();
@@ -143,15 +143,15 @@ describe("plugin-exporter：回灌往返", () => {
   });
 
   it("双声明的产物两端都能装（format 只影响安装指引）", () => {
-    const artifact = exportPluginBundle(SPEC, "loomic");
+    const artifact = exportPluginBundle(SPEC, "kenfutwork");
     const pkg = JSON.parse(artifact.files["package.json"]!) as {
       dsh?: unknown;
-      loomic?: unknown;
+      kenfutwork?: unknown;
     };
     // 双声明：dsh 与本项目都能识别同一份文件
     expect(pkg.dsh).toBeDefined();
-    expect(pkg.loomic).toBeDefined();
-    expect(artifact.format).toBe("loomic");
+    expect(pkg.kenfutwork).toBeDefined();
+    expect(artifact.format).toBe("kenfutwork");
     expect(artifact.installHint).toContain("插件市场");
 
     const report = gate(artifact.files);

@@ -31,7 +31,7 @@ import {
   useComposerContextMenu,
 } from "@/components/chat/composer-context-menu";
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
-import { LoomicLogo } from "@/components/icons/loomic-logo";
+import { KenFutWorkLogo } from "@/components/icons/kenfutwork-logo";
 import {
   Select,
   SelectContent,
@@ -91,7 +91,7 @@ import { resolveDesignAutoCanvas } from "@/lib/design-auto-canvas";
 /**
  * Agent 工作台（产品主入口）：Code / Design 双模式（DEC-2）。
  * 模式切换、插件市场、任务列表与个人中心全部内聚在左侧栏（TRAE 式），
- * 设置与插件市场为居中模态；design 模式的画布经项目面板自动打开（Loomic
+ * 设置与插件市场为居中模态；design 模式的画布经项目面板自动打开（KenFutWork
  * 仅作为 design 模式及其依赖能力的承载）。
  */
 
@@ -1216,7 +1216,7 @@ export function Workbench() {
       {sidebarCollapsed ? (
         /* 收起态：图标栏（模式切换 + 插件市场 + 底部头像） */
         <aside className="flex w-12 shrink-0 flex-col items-center gap-1 border-r bg-card py-2">
-          <LoomicLogo className="mb-1 size-7 shrink-0" />
+          <KenFutWorkLogo className="mb-1 size-7 shrink-0" />
           <button
             type="button"
             aria-label="展开侧栏"
@@ -1264,7 +1264,7 @@ export function Workbench() {
         <aside className="flex w-64 shrink-0 flex-col border-r bg-card">
           <div className="flex items-center justify-between px-3 pt-3 pb-2">
             <span className="flex items-center gap-2">
-              <LoomicLogo className="size-7 text-foreground" />
+              <KenFutWorkLogo className="size-7 text-foreground" />
               {/* 字标：加粗放大 + 品牌「岚」渐变（低饱和双色，深浅色各一套） */}
               <span className="bg-gradient-to-r from-[#2F3459] to-[#575E96] bg-clip-text text-lg font-bold tracking-tight text-transparent dark:from-[#A6ACD8] dark:to-[#C3C8E6]">
                 KenFutWork
@@ -1559,7 +1559,7 @@ export function Workbench() {
       {/* 主区：Design＝画布（恒为画布，见 resolveWorkbenchSurface）/ Code＝任务视图 或 居中编排器 */}
       <main className="min-w-0 flex-1 overflow-hidden bg-card">
         {surface === "canvas" ? (
-          /* Design：选中项目后画布自动打开（原版 Loomic 画布，对话在画布内助手里） */
+          /* Design：选中项目后画布自动打开（原版 KenFutWork 画布，对话在画布内助手里） */
           <iframe
             key={`${selectedProject?.primaryCanvas.id}:${canvasPrompt ?? ""}`}
             src={`/canvas?id=${selectedProject?.primaryCanvas.id}${
@@ -2159,6 +2159,7 @@ export function Workbench() {
           accessToken={session?.access_token ?? null}
           // 「从工作目录安装」用：服务端据此解析沙箱目录
           canvasId={selectedProject?.primaryCanvas?.id ?? null}
+          isAdmin={isPlatformAdmin}
         />
       ) : null}
       {skillsOpen ? (

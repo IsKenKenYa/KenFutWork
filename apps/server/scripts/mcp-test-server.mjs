@@ -13,7 +13,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 
 const server = new Server(
-  { name: "loomic-test-mcp", version: "1.0.0" },
+  { name: "kenfutwork-test-mcp", version: "1.0.0" },
   { capabilities: { tools: {} } },
 );
 

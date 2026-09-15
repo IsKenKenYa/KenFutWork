@@ -15,7 +15,7 @@
 # 1) 起本地开发库（纯 Postgres 单容器；首次加 --build）
 docker compose -f docker-compose.pg.yml up -d --build
 
-# 2) 配置环境变量（模板 .env.example）：至少填 LOOMIC_DATABASE_URL、LOOMIC_CREDENTIAL_SECRET
+# 2) 配置环境变量（模板 .env.example）：至少填 KENFUTWORK_DATABASE_URL、KENFUTWORK_CREDENTIAL_SECRET
 cp .env.example .env.local
 
 # 3) 装依赖 + 建表 + 灌测试账号
@@ -28,7 +28,7 @@ pnpm dev
 ```
 
 打开 <http://localhost:3000> 登录，或直接注册新账号。本机库连接串
-`postgres://loomic:loomic@127.0.0.1:5433/loomic`（容器 `loomic_pg_dev`；停库 `docker compose -f docker-compose.pg.yml down`，**别删卷**）。
+`postgres://kenfutwork:kenfutwork@127.0.0.1:5433/kenfutwork`（容器 `kenfutwork_pg_dev`；停库 `docker compose -f docker-compose.pg.yml down`，**别删卷**）。
 
 **测试账号**（`pnpm seed` 创建，幂等，口令均为 `kenfutwork`）：
 
@@ -51,7 +51,7 @@ pnpm dev
 | `packages/config`、`packages/ui` | 共享 TS 配置与组件 |
 | `supabase/migrations` | 数据库迁移，唯一 Schema 源（Postgres SQL） |
 | `skills` | 工作区技能（SKILL.md，运行时发现） |
-| `tmp/sandbox` | Agent 沙箱工作目录：dev 落仓库根、打包落 exe 目录，每个画布一个 `<画布UUID>` 子目录（**运行时生成，不入库**；`LOOMIC_SANDBOX_ROOT` 可改，`LOOMIC_CANVAS_WORK_DIRS` 可把某画布直接映射到本机真实目录） |
+| `tmp/sandbox` | Agent 沙箱工作目录：dev 落仓库根、打包落 exe 目录，每个画布一个 `<画布UUID>` 子目录（**运行时生成，不入库**；`KENFUTWORK_SANDBOX_ROOT` 可改，`KENFUTWORK_CANVAS_WORK_DIRS` 可把某画布直接映射到本机真实目录） |
 | `docs` | 技术文档（地图见 [docs/README.md](docs/README.md)） |
 | `scripts` | docs 校验 / 打包 / 运行时下载 |
 
@@ -104,15 +104,15 @@ pnpm --filter @loomic/server dev:worker   # 仅 Worker（热更新）
 
 两个可调行为：**失败自动重试**缺省上限 10 次（设置 → 模型可改；已执行工具的那轮绝不重试）；**git** 优先用本机自带，随包 MinGit 只兜底（`pnpm fetch:runtimes` 下载，`pnpm package:win` 打包）。
 
-**联网搜索**（`web_search`）走 BYOK：把秘塔 Key 写进 `.env.local` 的 `LOOMIC_SEARCH_API_KEY`（缺省端点 `https://metaso.cn/api/v1/search`；`LOOMIC_SEARCH_ENDPOINT` 只用于联调替身）。秘塔**按量付费、无免费额度**——实测无 Key/任意字符串 Key 一律返回 `errCode 2005「API密钥无效」`，所以未配 Key 时它不装配（`web_search` 工具不注册）属预期，不是故障。
+**联网搜索**（`web_search`）走 BYOK：把秘塔 Key 写进 `.env.local` 的 `KENFUTWORK_SEARCH_API_KEY`（缺省端点 `https://metaso.cn/api/v1/search`；`KENFUTWORK_SEARCH_ENDPOINT` 只用于联调替身）。秘塔**按量付费、无免费额度**——实测无 Key/任意字符串 Key 一律返回 `errCode 2005「API密钥无效」`，所以未配 Key 时它不装配（`web_search` 工具不注册）属预期，不是故障。
 
 **没有秘塔 Key 也能用**：起本地搜索代理（把同一套契约接到真实必应），再把 Key 填任意非空值、端点指过去：
 
 ```bash
 node scripts/本地搜索代理.mjs      # 监听 127.0.0.1:9099
 # .env.local（两者配套，缺一不可）：
-#   LOOMIC_SEARCH_API_KEY=local
-#   LOOMIC_SEARCH_ENDPOINT=http://127.0.0.1:9099/search
+#   KENFUTWORK_SEARCH_API_KEY=local
+#   KENFUTWORK_SEARCH_ENDPOINT=http://127.0.0.1:9099/search
 ```
 
 代理是**抓取式**上游，不是稳定服务：中文查询实测约半数正常返回，其余会因「上游回了与查询无关的兜底页」被判为失败并给出可读原因——那是「搜索失败」，不是「没搜到」；要稳定就把端点指向真正的搜索 API。
@@ -127,7 +127,7 @@ node scripts/诊断联网搜索.mjs      # 读 .env.local 的 Key，直打真实
 
 - **Windows exe 单机包**：`pnpm package:win` 产出 `release/`（Node SEA 单文件服务端 + 静态 UI + 启动.bat），内置本机 Postgres 与 Node/Python/JDK 运行时，拷到任意 Windows 机器双击即用。
 - **Docker 多用户**：同一镜像按 `SERVICE_MODE=api|worker` 起两个容器（`apps/server/Dockerfile`）。
-- 验证成品 UI：`pnpm build` 后 `LOOMIC_WEB_DIST=<repo>/apps/web/out pnpm --filter @loomic/server start`，开 <http://localhost:3001>。
+- 验证成品 UI：`pnpm build` 后 `KENFUTWORK_WEB_DIST=<repo>/apps/web/out pnpm --filter @loomic/server start`，开 <http://localhost:3001>。
 
 ## 测试与文档
 
