@@ -10,7 +10,6 @@ import {
   Pencil,
   Square,
   Type,
-  Video,
 } from "lucide-react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -57,7 +56,12 @@ const TOOL_GROUPS: (ToolType | null)[] = [
   "image",
 ];
 
-/** 「AI 生成图片」图标：图片框 + 右上角星芒——与「图片」工具（纯图片框）区分开。 */
+/**
+ * 「AI 生成图片」图标：图片框 + 右上角星芒——与「图片」工具（纯图片框）区分开。
+ *
+ * 别画小：同排其它图标（lucide 系）的图形普遍占 24 视框的 3/4，这张的图框与星芒按同比例
+ * 铺满，否则在工具条里明显比邻居小一圈（用户反馈「这两个图标是不是有点小」）。
+ */
 function AiImageIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -69,10 +73,28 @@ function AiImageIcon({ className }: { className?: string }) {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <rect x="3" y="5" width="14" height="14" rx="2" />
-      <circle cx="7.5" cy="9.5" r="1.2" />
-      <path d="M3.5 16.5 8 12l4.5 4.5" />
-      <path d="M19 3.2l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" />
+      <rect x="1.8" y="4.2" width="16.4" height="16.4" rx="2.4" />
+      <circle cx="7" cy="9.4" r="1.5" />
+      <path d="M2.4 17.2 8 11.6l5.4 5.4" />
+      <path d="M20.4 1.6l1 2.6 2.6 1-2.6 1-1 2.6-1-2.6-2.6-1 2.6-1z" />
+    </svg>
+  );
+}
+
+/** 「AI 生成视频」图标：摄像机机身 + 右侧三角，同样铺满视框（lucide 的 Video 上下只占一半）。 */
+function AiVideoIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.6}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="1.8" y="4.2" width="13.2" height="15.6" rx="2.4" />
+      <path d="m15 10.8 6.2-3.6v9.6L15 13.2z" />
     </svg>
   );
 }
@@ -574,7 +596,7 @@ export function CanvasToolMenu({
               : "text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground"
           }`}
         >
-          <Video className="size-[16px]" />
+          <AiVideoIcon className="size-[16px]" />
         </button>
       </div>
 
