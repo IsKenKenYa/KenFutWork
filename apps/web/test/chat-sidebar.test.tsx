@@ -3,6 +3,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ChatSidebar,
@@ -164,10 +165,10 @@ describe("ChatSidebar", () => {
     );
   });
 
-  it("面板按标签渲染内容：图层/文件标签渲染各自内容，且不再有「Agent 助手」标题", async () => {
-    // 标签栏本身已上移到画布页顶部（components/side-panel-tabs.tsx），
-    // 面板只按 panelTab 决定渲染哪块内容。
-    function Harness({ tab }: { tab: SidePanelTab }) {
+  it("右侧面板按标签切换：图层/文件标签渲染各自内容，且不再有「Agent 助手」标题", async () => {
+    // 受控标签：由外部持有 state，点击标签条才真的切换（与画布页的接法一致）
+    function Harness() {
+      const [tab, setTab] = useState<SidePanelTab>("layers");
       return (
         <ChatSidebar
           accessToken="token_abc"
@@ -176,16 +177,17 @@ describe("ChatSidebar", () => {
           onToggle={() => {}}
           ws={mockWs}
           panelTab={tab}
+          onPanelTabChange={setTab}
           layersPanel={<div>图层列表占位</div>}
           filesPanel={<div>生成文件占位</div>}
         />
       );
     }
 
-    const { rerender } = render(
+    render(
       <ToastProvider>
         <TierLimitToastProvider>
-          <Harness tab="layers" />
+          <Harness />
         </TierLimitToastProvider>
       </ToastProvider>,
     );
@@ -193,17 +195,11 @@ describe("ChatSidebar", () => {
     // 图层标签：显示图层内容，且不渲染对话输入区
     expect(await screen.findByText("图层列表占位")).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/输入你的想法/)).toBeNull();
-    // 原「Agent 助手」标题已由顶部标签栏取代
+    // 原「Agent 助手」标题已由标签条取代
     expect(screen.queryByText("Agent 助手")).toBeNull();
 
-    // 切到「文件」标签：内容随之切换
-    rerender(
-      <ToastProvider>
-        <TierLimitToastProvider>
-          <Harness tab="files" />
-        </TierLimitToastProvider>
-      </ToastProvider>,
-    );
+    // 切到「文件」标签：内容随之切换（文件面板由画布页以 slot 传入）
+    await userEvent.click(screen.getByRole("tab", { name: "文件" }));
     expect(await screen.findByText("生成文件占位")).toBeInTheDocument();
     expect(screen.queryByText("图层列表占位")).toBeNull();
   });

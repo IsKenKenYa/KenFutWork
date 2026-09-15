@@ -24,7 +24,6 @@ const FILES = [
   "canvas-layers-panel.tsx",
   "canvas-empty-hint.tsx",
   "canvas-tool-menu.tsx",
-  "side-panel-tabs.tsx",
   "chat-input.tsx",
   "chat-sidebar.tsx",
   "session-selector.tsx",

@@ -52,10 +52,55 @@ import { ErrorBoundary } from "./error-boundary";
 import { ExecutionModeSelect } from "./execution-mode-select";
 import { SessionSelector } from "./session-selector";
 import { useToast } from "./toast";
-import type { SidePanelTab } from "./side-panel-tabs";
 
-/** 顶部标签栏的标签类型（组件见 components/side-panel-tabs.tsx）。 */
-export type { SidePanelTab };
+/** 右侧面板的三个标签：对话、图层、生成文件。 */
+export type SidePanelTab = "chat" | "layers" | "files";
+
+const SIDE_PANEL_TABS: Array<{ id: SidePanelTab; label: string }> = [
+  { id: "chat", label: "会话" },
+  { id: "layers", label: "图层" },
+  { id: "files", label: "文件" },
+];
+
+/**
+ * 面板顶部标签条。
+ *
+ * 图层与生成文件原先是画布上的两块独立浮层（各自 `fixed left-0` + 自己的标题栏和
+ * 关闭按钮），三是同一块空间的三份入口。改成右侧面板的三个标签后：面板只有一个，
+ * 标题栏只有一条，画布上不再压浮层。
+ */
+function SidePanelTabs({
+  value,
+  onChange,
+}: {
+  value: SidePanelTab;
+  onChange?: ((tab: SidePanelTab) => void) | undefined;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label="右侧面板"
+      className="flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5"
+    >
+      {SIDE_PANEL_TABS.map((tab) => (
+        <button
+          key={tab.id}
+          type="button"
+          role="tab"
+          aria-selected={value === tab.id}
+          onClick={() => onChange?.(tab.id)}
+          className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+            value === tab.id
+              ? "bg-card text-foreground shadow-subtle"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 type ChatSidebarProps = {
   accessToken: string;
@@ -76,6 +121,7 @@ type ChatSidebarProps = {
   selectedCanvasElements?: CanvasSelectedElement[];
   /** 当前标签（缺省「会话」）。 */
   panelTab?: SidePanelTab;
+  onPanelTabChange?: (tab: SidePanelTab) => void;
   /** 「图层」标签的内容（由画布页提供）。 */
   layersPanel?: ReactNode;
   /** 「文件」标签的内容（由画布页提供）。 */
@@ -99,6 +145,7 @@ export function ChatSidebar({
   ws,
   selectedCanvasElements,
   panelTab = "chat",
+  onPanelTabChange,
   layersPanel,
   filesPanel,
 }: ChatSidebarProps) {
@@ -972,9 +1019,10 @@ export function ChatSidebar({
   // between overlay (mobile/tablet) and inline (desktop) render paths.
   const panelContent = (
     <>
-      {/* Header：会话下拉 + 收起（标签栏已上移到画布页顶部，见 components/side-panel-tabs.tsx） */}
-      <div className="flex min-h-[44px] items-center justify-between gap-2 pl-3 pr-2">
+      {/* Header：标签条取代了原「Agent 助手」标题（面板现在承载会话/图层/文件三块内容） */}
+      <div className="flex min-h-[48px] items-center justify-between gap-2 pl-3 pr-2">
         <div className="flex items-center gap-1 min-w-0">
+          <SidePanelTabs value={panelTab} onChange={onPanelTabChange} />
           {panelTab === "chat" && !sessionsLoading && (
             <SessionSelector
               sessions={sessions}

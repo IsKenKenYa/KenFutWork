@@ -13,7 +13,6 @@ import type { CanvasImageItem } from "../../components/canvas-image-picker";
 import { CanvasLayersPanel } from "../../components/canvas-layers-panel";
 import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
 import { type SidePanelTab, ChatSidebar } from "../../components/chat-sidebar";
-import { SidePanelTabs } from "../../components/side-panel-tabs";
 import { EditableProjectName } from "../../components/editable-project-name";
 import { LoadingScreen } from "../../components/loading-screen";
 import { useJobFallbackPolling } from "../../hooks/use-job-fallback-polling";
@@ -82,11 +81,6 @@ function CanvasPageContent() {
     setChatOpen(true);
   }, []);
   const handleToggleChat = useCallback(() => setChatOpen((v) => !v), []);
-  /** 顶部标签栏：切标签同时展开面板（面板收起时点标签也该看到内容）。 */
-  const handlePanelTabChange = useCallback((tab: SidePanelTab) => {
-    setPanelTab(tab);
-    setChatOpen(true);
-  }, []);
   // 底部栏的「图层 / 生成文件」按钮：切到对应标签并确保面板展开。
   // （不在这里「再点一次就收起」——那会把整个右侧面板（含对话）一起关掉，
   //   收起面板有标题栏右上角的专用按钮。）
@@ -279,13 +273,9 @@ function CanvasPageContent() {
   if (!canvasData || !accessToken) return null;
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden">
-      {/*
-        顶部条：左边是画布自身控件（菜单 / 项目名 / 品牌套件），右边是多标签栏
-        （会话 / 图层 / 文件，即右侧面板的标签）。标签原先挤在右侧面板的标题行里，
-        现提到页面最上方成为一条真正的标签栏——面板收起时它仍在，点一下即展开面板。
-      */}
-      <header className="flex h-11 shrink-0 items-center gap-1.5 border-b border-border bg-card pl-3 pr-3">
+    <div className="flex h-screen w-screen overflow-hidden">
+      {/* Top-left navigation bar */}
+      <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5">
         <CanvasLogoMenu
           accessToken={accessToken}
           projectId={canvasData.projectId}
@@ -303,70 +293,65 @@ function CanvasPageContent() {
           currentBrandKitId={brandKitId}
           onBrandKitChange={(kitId) => setBrandKitId(kitId)}
         />
-        <div className="h-5 w-px bg-border ml-1" />
-        <div className="flex-1" />
-        <SidePanelTabs value={panelTab} onChange={handlePanelTabChange} />
-      </header>
-      <div className="flex flex-1 min-h-0">
-        {/* Canvas always takes full width; on mobile/tablet, ChatSidebar overlays instead of side-by-side */}
-        <div className="flex-1 relative min-w-0 overflow-hidden">
-          <CanvasEditor
-            canvasId={canvasData.id}
-            projectId={canvasData.projectId}
-            accessToken={accessToken}
-            initialContent={canvasData.content}
-            onApiReady={handleApiReady}
-            ws={ws}
-            onSelectionChange={setSelectedCanvasElements}
-            overlay={
-              <CanvasEmptyHint
-                excalidrawApi={excalidrawApi}
-                onOpenChat={handleOpenChat}
-              />
-            }
-          />
-          {excalidrawApi && (
-            <CanvasToolMenu
-              accessToken={accessToken}
-              excalidrawApi={excalidrawApi}
-              layersOpen={panelTab === "layers" && chatOpen}
-              onToggleLayers={handleToggleLayers}
-              filesOpen={panelTab === "files" && chatOpen}
-              onToggleFiles={handleToggleFiles}
-            />
-          )}
-        </div>
-        <ChatSidebar
-          accessToken={accessToken}
+      </div>
+      {/* Canvas always takes full width; on mobile/tablet, ChatSidebar overlays instead of side-by-side */}
+      <div className="flex-1 relative min-w-0 overflow-hidden">
+        <CanvasEditor
           canvasId={canvasData.id}
-          open={chatOpen}
-          onToggle={handleToggleChat}
-          onImageGenerated={handleImageGenerated}
-          onVideoGenerated={handleVideoGenerated}
-          onCanvasSync={handleCanvasSync}
-          onStreamEvent={checkForTimedOutJobs}
-          initialPrompt={initialPrompt}
-          initialSessionId={initialSessionId}
-          onSessionChange={handleSessionChange}
-          onRequestCanvasImages={handleRequestCanvasImages}
-          currentBrandKitId={brandKitId}
+          projectId={canvasData.projectId}
+          accessToken={accessToken}
+          initialContent={canvasData.content}
+          onApiReady={handleApiReady}
           ws={ws}
-          selectedCanvasElements={selectedCanvasElements}
-          panelTab={panelTab}
-          layersPanel={
-            <CanvasLayersPanel
+          onSelectionChange={setSelectedCanvasElements}
+          overlay={
+            <CanvasEmptyHint
               excalidrawApi={excalidrawApi}
-              active={panelTab === "layers"}
-            />
-          }
-          filesPanel={
-            <CanvasFilesPanel
-              excalidrawApi={excalidrawApi}
-              active={panelTab === "files"}
+              onOpenChat={handleOpenChat}
             />
           }
         />
-      </div>
+        {excalidrawApi && (
+          <CanvasToolMenu
+            accessToken={accessToken}
+            excalidrawApi={excalidrawApi}
+            layersOpen={panelTab === "layers" && chatOpen}
+            onToggleLayers={handleToggleLayers}
+            filesOpen={panelTab === "files" && chatOpen}
+            onToggleFiles={handleToggleFiles}
+          />
+        )}      </div>
+      <ChatSidebar
+        accessToken={accessToken}
+        canvasId={canvasData.id}
+        open={chatOpen}
+        onToggle={handleToggleChat}
+        onImageGenerated={handleImageGenerated}
+        onVideoGenerated={handleVideoGenerated}
+        onCanvasSync={handleCanvasSync}
+        onStreamEvent={checkForTimedOutJobs}
+        initialPrompt={initialPrompt}
+        initialSessionId={initialSessionId}
+        onSessionChange={handleSessionChange}
+        onRequestCanvasImages={handleRequestCanvasImages}
+        currentBrandKitId={brandKitId}
+        ws={ws}
+        selectedCanvasElements={selectedCanvasElements}
+        panelTab={panelTab}
+        onPanelTabChange={setPanelTab}
+        layersPanel={
+          <CanvasLayersPanel
+            excalidrawApi={excalidrawApi}
+            active={panelTab === "layers"}
+          />
+        }
+        filesPanel={
+          <CanvasFilesPanel
+            excalidrawApi={excalidrawApi}
+            active={panelTab === "files"}
+          />
+        }
+      />
     </div>
   );
 }
