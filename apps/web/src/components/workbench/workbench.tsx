@@ -3,18 +3,19 @@
 import type { ExecutionMode, ProjectSummary } from "@kenfutwork/shared";
 import {
   Blocks,
-  PanelsTopLeft,
   Brain,
   Code2,
   Folder,
   FolderOpen,
   FolderPlus,
   Layers,
+  Loader2,
   MessageSquare,
   Mic,
   Palette,
   PanelLeftClose,
   PanelLeftOpen,
+  PanelsTopLeft,
   Plug,
   Plus,
   Send,
@@ -32,7 +33,14 @@ import {
   useComposerContextMenu,
 } from "@/components/chat/composer-context-menu";
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
+import { ToolOutputRenderer } from "@/components/chat/tool-block-view";
 import { KenFutWorkLogo } from "@/components/icons/kenfutwork-logo";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -42,16 +50,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ElapsedEntry } from "@/components/workbench/elapsed-entry";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { GitBranchSelect } from "@/components/workbench/git-branch-select";
-import { PluginPanelButtons } from "@/lib/plugin-panels";
-import { commitGitAll } from "@/lib/code-git-api";
-import { ToolOutputRenderer } from "@/components/chat/tool-block-view";
 import { McpModal } from "@/components/workbench/mcp-modal";
 import { PluginMarketModal } from "@/components/workbench/plugin-market-modal";
 import {
@@ -65,12 +64,12 @@ import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
 import { WorkDirectorySelect } from "@/components/workbench/work-directory-select";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useAuth } from "@/lib/auth-context";
+import { commitGitAll } from "@/lib/code-git-api";
+import { resolveDesignAutoCanvas } from "@/lib/design-auto-canvas";
 import { getServerBaseUrl } from "@/lib/env";
+import { PluginPanelButtons } from "@/lib/plugin-panels";
+import { dropPartialAssistantTail } from "@/lib/run-events";
 import { describeRunFailure } from "@/lib/run-failure";
-import {
-  applyTaskToolEvent,
-  type TaskToolEntry,
-} from "@/lib/workbench-tools";
 import {
   createProject,
   deleteProject,
@@ -94,7 +93,15 @@ import {
   resolveWorkbenchSurface,
   type WorkbenchMode,
 } from "@/lib/workbench-surface";
-import { resolveDesignAutoCanvas } from "@/lib/design-auto-canvas";
+import {
+  previewGroup,
+  resolveTaskIndicator,
+  SESSION_PREVIEW_LIMIT,
+} from "@/lib/workbench-task-list";
+import {
+  applyTaskToolEvent,
+  type TaskToolEntry,
+} from "@/lib/workbench-tools";
 
 /**
  * Agent 工作台（产品主入口）：Code / Design 双模式（DEC-2）。
@@ -226,6 +233,9 @@ const MODE_META: Record<  WorkbenchMode,
 };
 
 const TASKS_STORAGE_KEY = "workbench-tasks";
+
+/** 「未分组」在「显示更多」展开状态里的分组 key（项目 id 不会取到这个名字）。 */
+const UNGROUPED_KEY = "__ungrouped__";
 
 function loadTasks(mode: WorkbenchMode): WorkbenchTask[] {
   if (typeof window === "undefined") return [];
@@ -362,6 +372,25 @@ export function Workbench() {
   /** 侧栏里被收起的工作目录项目 id（默认全展开；持久化到 localStorage）。 */
   const [collapsedProjects, setCollapsedProjects] = useState<string[]>([]);
 
+  /**
+   * 侧栏里「显示更多」展开过的分组（项目 id / 未分组用常量 key；持久化）。
+   * 一个工作目录下几十条对话时，默认只露前 `SESSION_PREVIEW_LIMIT` 条。
+   */
+  const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
+
+  /**
+   * 已结束但用户还没打开过的对话 id（侧栏图标显示实心气泡）。
+   * 跑完的那一刻若不在当前会话，就标记未读；打开即清（见下面的 effect）。
+   */
+  const [unreadTaskIds, setUnreadTaskIds] = useState<string[]>([]);
+
+  /**
+   * 本页确实在跑的那条会话（侧栏转圈只认它）。
+   * 不能拿任务数据里的 `status === "running"` 当判据：那是「起过表、还没收到终态」，
+   * 进程重启/关页会留下永远转圈的陈旧记录（实测侧栏一排假转圈）。
+   */
+  const [runningTaskId, setRunningTaskId] = useState<string | null>(null);
+
   /** 主区判定：Design 模式恒为画布（不变量集中在 resolveWorkbenchSurface 与它的测试里）。 */
   const surface = resolveWorkbenchSurface({
     hasActiveTask: activeTask !== null,
@@ -397,7 +426,79 @@ export function Workbench() {
     } catch {
       // 存储不可用时用默认档
     }
+    try {
+      const rawExpanded = window.localStorage.getItem(
+        "workbench:expanded-groups",
+      );
+      setExpandedGroups(
+        rawExpanded ? (JSON.parse(rawExpanded) as string[]) : [],
+      );
+    } catch {
+      setExpandedGroups([]);
+    }
   }, []);
+
+  // 未读数按模式各存一份（切模式不该把另一边清空）
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(`workbench-unread:${mode}`);
+      setUnreadTaskIds(raw ? (JSON.parse(raw) as string[]) : []);
+    } catch {
+      setUnreadTaskIds([]);
+    }
+  }, [mode]);
+
+  /** 未读标记的读写：写 localStorage 与 state 一起（打开会话即清）。 */
+  const setTaskUnread = useCallback(
+    (taskId: string, unread: boolean) => {
+      setUnreadTaskIds((prev) => {
+        const already = prev.includes(taskId);
+        if (already === unread) return prev;
+        const next = unread
+          ? [...prev, taskId]
+          : prev.filter((id) => id !== taskId);
+        try {
+          window.localStorage.setItem(
+            `workbench-unread:${mode}`,
+            JSON.stringify(next),
+          );
+        } catch {
+          // 存储失败不影响本次会话内的标记
+        }
+        return next;
+      });
+    },
+    [mode],
+  );
+
+  // 打开（或新建）会话即视为已读
+  useEffect(() => {
+    if (activeTaskId) setTaskUnread(activeTaskId, false);
+  }, [activeTaskId, setTaskUnread]);
+
+  /** 「显示更多 / 收起」：按分组切换并持久化（分组 key = 项目 id / 未分组常量）。 */
+  const toggleGroupExpanded = useCallback((groupKey: string) => {
+    setExpandedGroups((prev) => {
+      const next = prev.includes(groupKey)
+        ? prev.filter((key) => key !== groupKey)
+        : [...prev, groupKey];
+      try {
+        window.localStorage.setItem(
+          "workbench:expanded-groups",
+          JSON.stringify(next),
+        );
+      } catch {
+        // 存储失败不影响使用
+      }
+      return next;
+    });
+  }, []);
+
+  /** run → 所属会话的映射（放在 ref 里供挂载期注册的事件回调读）。 */
+  const runTaskIdRef = useRef<string | null>(null);
+  /** 事件回调的 deps 只有 ws/mode，未读标记经 ref 读最新实现。 */
+  const setTaskUnreadRef = useRef(setTaskUnread);
+  setTaskUnreadRef.current = setTaskUnread;
 
   const handleThinkingChange = useCallback((next: string) => {
     setThinking(next);
@@ -746,10 +847,14 @@ export function Workbench() {
   // 流事件 → 任务消息
   useEffect(() => {
     const off = ws.onEvent((evt) => {
-      const runId = (evt as { runId?: string }).runId;
-      if (!runId || runId !== activeRunIdRef.current) return;
       const type = (evt as { type?: string }).type;
-      const taskId = activeTaskIdRef.current;
+      const runId = (evt as { runId?: string }).runId;
+      /**
+       * 事件归属：run 起跑时记下的那个会话，而不是「此刻打开的会话」——
+       * 用户在运行中切到别的对话时，delta/工具/终态都还该落在原来那条对话上
+       * （否则串到当前打开的会话里），且终态要能把后台那条对话标成未读。
+       */
+      const taskId = runTaskIdRef.current ?? activeTaskIdRef.current;
       if (!taskId) return;
       const apply = (mutate: (task: WorkbenchTask) => WorkbenchTask) => {
         setTasksByMode((prev) => {
@@ -760,6 +865,29 @@ export function Workbench() {
           return nextAll;
         });
       };
+      /** 终态：不在前台就标未读（侧栏图标转实心），并把转圈收掉。 */
+      const markUnreadIfBackground = () => {
+        setRunningTaskId(null);
+        if (taskId !== activeTaskIdRef.current) {
+          setTaskUnreadRef.current(taskId, true);
+        }
+      };
+      /**
+       * 重试：服务端整段重跑并**换一个新 runId**（事件里带的就是新 id）。
+       * 这条必须在 runId 过滤**之前**处理——新 id 与跟踪值不相等，按常规过滤会被丢掉，
+       * 紧接着这一轮所有事件（含终态）一起丢，任务永远停在「运行中」。
+       */
+      if (type === "run.retrying") {
+        if (!runId || !activeRunIdRef.current) return;
+        activeRunIdRef.current = runId;
+        // 整段重来：丢掉上一轮已流出的半截回复，避免新旧内容接在一起
+        apply((task) => ({
+          ...task,
+          messages: dropPartialAssistantTail(task.messages),
+        }));
+        return;
+      }
+      if (!runId || runId !== activeRunIdRef.current) return;
       if (type === "run.started") {
         // 服务端权威起表时刻（覆盖提交时的本地乐观值）
         const ts = (evt as { timestamp?: string }).timestamp;
@@ -801,8 +929,9 @@ export function Workbench() {
         }));
         // 每轮成功结束自动提交一次（Code 模式 + 已绑项目），让对话在 git 里有迹可循
         if (mode === "code") {
-          void autoCommitTurn(activeTaskIdRef.current);
+          void autoCommitTurn(taskId);
         }
+        markUnreadIfBackground();
       } else if (type === "billing.error") {
         // 平台池额度/套餐拦截（FORM-10）：服务端给的是可读原因，
         // 直接透出，别让用户只看到「运行失败，请重试」。
@@ -813,6 +942,7 @@ export function Workbench() {
           status: "failed",
           messages: [...task.messages, { role: "assistant", text: message }],
         }));
+        markUnreadIfBackground();
       } else if (type === "run.failed") {
         // 服务端在 error.message 里给的是可读原因（如「模型流已 180 秒没有任何
         // 输出（上游停滞）」「run 未绑定项目」）。此前一律丢弃、只显示固定文案，
@@ -832,6 +962,7 @@ export function Workbench() {
             { role: "assistant", text: failureText },
           ],
         }));
+        markUnreadIfBackground();
       } else if (type === "run.canceled") {
         const canceledTs = (evt as { timestamp?: string }).timestamp;
         apply((task) => ({
@@ -842,6 +973,8 @@ export function Workbench() {
             ? { subagents: closeAllSubagents(task.subagents, canceledTs) }
             : {}),
         }));
+        // 用户自己按的停止：算已读，但转圈要收掉
+        setRunningTaskId(null);
       }
     });
     return off;
@@ -1059,6 +1192,9 @@ export function Workbench() {
           const payload = ack.payload as { runId?: string } | undefined;
           if (payload?.runId) {
             activeRunIdRef.current = payload.runId;
+            // 事件归属：本轮 run 属于哪个会话（用户中途切走也不会串台）
+            runTaskIdRef.current = task.id;
+            setRunningTaskId(task.id);
           }
           setSubmitting(false);
         },
@@ -1179,6 +1315,8 @@ export function Workbench() {
           const payload = ack.payload as { runId?: string } | undefined;
           if (payload?.runId) {
             activeRunIdRef.current = payload.runId;
+            runTaskIdRef.current = taskId;
+            setRunningTaskId(taskId);
           }
           setSubmitting(false);
         },
@@ -1458,20 +1596,74 @@ export function Workbench() {
                         !knownProjectIds.has(t.projectId)),
                   );
                   const archived = tasks.filter((t) => t.archived);
-                  const taskRow = (t: WorkbenchTask) => (
-                    <SidebarRow
-                      key={t.id}
-                      label={t.title}
-                      active={activeTaskId === t.id}
-                      icon={
-                        <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      }
-                      onOpen={() => setActiveTaskId(t.id)}
-                      onRename={(next) => renameTask(t.id, next)}
-                      onArchive={() => setTaskArchived(t.id, true)}
-                      onDelete={() => deleteTask(t.id)}
-                    />
-                  );
+                  const taskRow = (t: WorkbenchTask) => {
+                    const indicator = resolveTaskIndicator(
+                      t.status === "running" && runningTaskId === t.id,
+                      unreadTaskIds.includes(t.id),
+                    );
+                    return (
+                      <SidebarRow
+                        key={t.id}
+                        label={t.title}
+                        active={activeTaskId === t.id}
+                        icon={
+                          indicator === "running" ? (
+                            <Loader2
+                              aria-label="运行中"
+                              className="h-3.5 w-3.5 shrink-0 animate-spin text-amber-500"
+                            />
+                          ) : (
+                            <MessageSquare
+                              className={`h-3.5 w-3.5 shrink-0 ${
+                                indicator === "unread"
+                                  ? "fill-current text-foreground"
+                                  : "text-muted-foreground"
+                              }`}
+                            />
+                          )
+                        }
+                        onOpen={() => setActiveTaskId(t.id)}
+                        onRename={(next) => renameTask(t.id, next)}
+                        onArchive={() => setTaskArchived(t.id, true)}
+                        onDelete={() => deleteTask(t.id)}
+                      />
+                    );
+                  };
+                  /**
+                   * 分组内的对话列表：默认只露前 `SESSION_PREVIEW_LIMIT` 条，
+                   * 其余收进「显示更多」——一个工作目录下几十条对话时，侧栏不该被单个
+                   * 工作目录撑满（展开状态按分组持久化）。
+                   */
+                  const taskGroup = (groupKey: string, items: WorkbenchTask[]) => {
+                    const { visible, hiddenCount } = previewGroup(
+                      items,
+                      expandedGroups.includes(groupKey),
+                    );
+                    return (
+                      <div className="ml-4 space-y-0.5 border-l pl-1">
+                        {visible.map(taskRow)}
+                        {hiddenCount > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => toggleGroupExpanded(groupKey)}
+                            className="w-full rounded-md px-2 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                          >
+                            显示更多
+                          </button>
+                        ) : null}
+                        {items.length > SESSION_PREVIEW_LIMIT &&
+                        expandedGroups.includes(groupKey) ? (
+                          <button
+                            type="button"
+                            onClick={() => toggleGroupExpanded(groupKey)}
+                            className="w-full rounded-md px-2 py-1 text-left text-xs text-muted-foreground/70 transition-colors hover:bg-muted hover:text-muted-foreground"
+                          >
+                            收起
+                          </button>
+                        ) : null}
+                      </div>
+                    );
+                  };
                   return (
                     <>
                       {codeProjects.map((p) => {
@@ -1514,15 +1706,15 @@ export function Workbench() {
                               onDelete={() => void removeCodeProject(p.id)}
                             />
                             {collapsedProjects.includes(p.id) ? null : (
-                              <div className="ml-4 space-y-0.5 border-l pl-1">
-                                {items.length === 0 ? (
+                              items.length === 0 ? (
+                                <div className="ml-4 space-y-0.5 border-l pl-1">
                                   <p className="px-2 py-1 text-xs text-muted-foreground/70">
                                     暂无对话
                                   </p>
-                                ) : (
-                                  items.map(taskRow)
-                                )}
-                              </div>
+                                </div>
+                              ) : (
+                                taskGroup(p.id, items)
+                              )
                             )}
                           </div>
                         );
@@ -1532,9 +1724,7 @@ export function Workbench() {
                           <p className="px-2 py-1 text-xs text-muted-foreground">
                             未分组
                           </p>
-                          <div className="ml-4 space-y-0.5 border-l pl-1">
-                            {ungrouped.map(taskRow)}
-                          </div>
+                          {taskGroup(UNGROUPED_KEY, ungrouped)}
                         </div>
                       ) : null}
                       {archived.length > 0 ? (
@@ -1594,25 +1784,12 @@ export function Workbench() {
           />
         ) : activeTask ? (
           <div className="mx-auto flex h-full max-w-3xl flex-col p-6">
-            {/* 标题行：会话标题 + 项目 + 分支（分支从输入框挪上来——那里挤不下） */}
+            {/* 标题行：只留会话标题 + 本轮回执 + 插件面板入口。
+                工作目录与分支挪到输入框上沿的标签条（见下方 composer），这里不再挤。 */}
             <div className="mb-4 flex items-center gap-2">
               <h1 className="min-w-0 truncate text-lg font-medium">
                 {activeTask.title}
               </h1>
-              {workDirName ? (
-                <span className="flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-xs text-muted-foreground">
-                  <FolderOpen className="h-3.5 w-3.5" />
-                  {workDirName}
-                </span>
-              ) : null}
-              <span className="shrink-0">
-                <GitBranchSelect
-                  accessToken={session?.access_token ?? null}
-                  canvasId={selectedProject?.primaryCanvas.id ?? null}
-                  /* 自动提交后 key 变化 → 重新拉取更改统计 */
-                  key={`${selectedProject?.primaryCanvas.id ?? ""}:${lastAutoCommitAt ?? ""}`}
-                />
-              </span>
               {lastAutoCommitAt ? (
                 <span className="shrink-0 text-xs text-muted-foreground">
                   已自动提交本轮
@@ -1707,7 +1884,7 @@ export function Workbench() {
             </div>
             {/* 底部：继续对话（完整版工具行 + 多轮，复用同一会话） */}
             <form
-              className="mt-4 rounded-xl border bg-background p-3"
+              className="mt-4"
               onSubmit={(e) => {
                 e.preventDefault();
                 const value = followUp;
@@ -1715,58 +1892,70 @@ export function Workbench() {
                 continueTask(value);
               }}
             >
-              <textarea
-                ref={composerRef}
-                aria-label="继续对话"
-                value={followUp}
-                onChange={(e) => {
-                  setFollowUp(e.target.value);
-                  // 自动长高（并隐藏滚动条：对话框右侧不出现滚动条）
-                  const el = e.currentTarget;
-                  el.style.height = "auto";
-                  el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-                }}
-                onContextMenu={composerMenu.open}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    const value = followUp;
-                    setFollowUp("");
-                    continueTask(value);
-                  }
-                }}
-                rows={2}
-                placeholder="继续追问…"
-                style={{ scrollbarWidth: "none" }}
-                className="max-h-40 min-h-[24px] w-full resize-none overflow-hidden bg-transparent text-sm outline-none placeholder:text-muted-foreground [&::-webkit-scrollbar]:hidden"
-              />
-              {workDirNotice ? (
-                <p className="mt-2 text-xs text-destructive">{workDirNotice}</p>
-              ) : null}
-              <div className="mt-2 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    title="附件（即将上线）"
-                    className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </button>
-                  <WorkDirectorySelect
-                    projects={codeProjects}
-                    selectedProjectId={selectedProjectId}
-                    busy={creatingProject}
-                    onSelect={(projectId) => {
-                      const project = codeProjects.find(
-                        (p) => p.id === projectId,
-                      );
-                      setSelectedProjectId(projectId);
-                      setWorkDirName(project?.name ?? null);
-                      setWorkDirNotice(null);
-                    }}
-                    onOpenFolder={() => void pickWorkDirectory()}
-                    onClear={clearWorkDirectory}
-                  />
+              {/* 工作目录 + 分支：贴住输入框上沿的标签条（文件夹标签的读法） */}
+              <div className="flex items-center gap-3 rounded-t-xl border border-b-0 bg-muted/50 px-3 py-1.5">
+                <WorkDirectorySelect
+                  projects={codeProjects}
+                  selectedProjectId={selectedProjectId}
+                  busy={creatingProject}
+                  onSelect={(projectId) => {
+                    const project = codeProjects.find(
+                      (p) => p.id === projectId,
+                    );
+                    setSelectedProjectId(projectId);
+                    setWorkDirName(project?.name ?? null);
+                    setWorkDirNotice(null);
+                  }}
+                  onOpenFolder={() => void pickWorkDirectory()}
+                  onClear={clearWorkDirectory}
+                />
+                <GitBranchSelect
+                  accessToken={session?.access_token ?? null}
+                  canvasId={selectedProject?.primaryCanvas.id ?? null}
+                  /* 自动提交后 key 变化 → 重新拉取更改统计 */
+                  key={`${selectedProject?.primaryCanvas.id ?? ""}:${lastAutoCommitAt ?? ""}`}
+                />
+              </div>
+              <div className="rounded-b-xl border bg-background p-3">
+                <textarea
+                  ref={composerRef}
+                  aria-label="继续对话"
+                  value={followUp}
+                  onChange={(e) => {
+                    setFollowUp(e.target.value);
+                    // 自动长高（并隐藏滚动条：对话框右侧不出现滚动条）
+                    const el = e.currentTarget;
+                    el.style.height = "auto";
+                    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+                  }}
+                  onContextMenu={composerMenu.open}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      const value = followUp;
+                      setFollowUp("");
+                      continueTask(value);
+                    }
+                  }}
+                  rows={2}
+                  placeholder="继续追问…"
+                  style={{ scrollbarWidth: "none" }}
+                  className="max-h-40 min-h-[24px] w-full resize-none overflow-hidden bg-transparent text-sm outline-none placeholder:text-muted-foreground [&::-webkit-scrollbar]:hidden"
+                />
+                {workDirNotice ? (
+                  <p className="mt-2 text-xs text-destructive">
+                    {workDirNotice}
+                  </p>
+                ) : null}
+                <div className="mt-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      title="附件（即将上线）"
+                      className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </button>
                   <Select
                     aria-label="权限档位"
                     value={tier}
@@ -1914,11 +2103,12 @@ export function Workbench() {
                   )}
                 </div>
               </div>
+              </div>
             </form>
           </div>
         ) : (
           <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-6">
-            <div className="mb-6 flex items-center gap-3">
+            <div className="mb-9 flex items-center gap-3">
               {mode === "code" ? (
                 <Code2 className="h-8 w-8" />
               ) : (
@@ -1929,7 +2119,31 @@ export function Workbench() {
               </h1>
             </div>
 
-            <div className="w-full rounded-2xl border bg-background p-4 shadow-sm">
+            <div className="w-full">
+              {/* 工作目录 + 分支：贴住输入框上沿的标签条（文件夹标签的读法），
+                  不再挤进输入框底部那排小控件 */}
+              <div className="flex items-center gap-3 rounded-t-2xl border border-b-0 bg-muted/50 px-3 py-1.5">
+                <WorkDirectorySelect
+                  projects={codeProjects}
+                  selectedProjectId={selectedProjectId}
+                  busy={creatingProject}
+                  onSelect={(projectId) => {
+                    const project = codeProjects.find(
+                      (p) => p.id === projectId,
+                    );
+                    setSelectedProjectId(projectId);
+                    setWorkDirName(project?.name ?? null);
+                    setWorkDirNotice(null);
+                  }}
+                  onOpenFolder={() => void pickWorkDirectory()}
+                  onClear={clearWorkDirectory}
+                />
+                <GitBranchSelect
+                  accessToken={session?.access_token ?? null}
+                  canvasId={selectedProject?.primaryCanvas.id ?? null}
+                />
+              </div>
+              <div className="rounded-b-2xl border bg-background p-4 shadow-sm">
               <textarea
                 aria-label="任务描述"
                 value={prompt}
@@ -1960,25 +2174,6 @@ export function Workbench() {
                   >
                     <Plus className="h-4 w-4" />
                   </button>
-                  <GitBranchSelect
-                    accessToken={session?.access_token ?? null}
-                    canvasId={selectedProject?.primaryCanvas.id ?? null}
-                  />
-                  <WorkDirectorySelect
-                    projects={codeProjects}
-                    selectedProjectId={selectedProjectId}
-                    busy={creatingProject}
-                    onSelect={(projectId) => {
-                      const project = codeProjects.find(
-                        (p) => p.id === projectId,
-                      );
-                      setSelectedProjectId(projectId);
-                      setWorkDirName(project?.name ?? null);
-                      setWorkDirNotice(null);
-                    }}
-                    onOpenFolder={() => void pickWorkDirectory()}
-                    onClear={clearWorkDirectory}
-                  />
                   <Select
                     aria-label="权限档位"
                     value={tier}
@@ -2169,6 +2364,7 @@ export function Workbench() {
                     <Send className="h-4 w-4" />
                   </button>
                 </div>
+              </div>
               </div>
             </div>
 

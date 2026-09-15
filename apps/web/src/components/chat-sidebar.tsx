@@ -699,6 +699,11 @@ export function ChatSidebar({
         const runIdRef = { current: "" };
 
         const cleanup = ws.onEvent((event) => {
+          // 重试会换一个新 runId（服务端 run.retrying 带着新 id）：先认领再过滤，
+          // 否则这一轮后续事件（含终态）全被丢掉，助手永远停在「正在生成」。
+          if (event.type === "run.retrying" && runIdRef.current) {
+            runIdRef.current = event.runId;
+          }
           if (!runIdRef.current || event.runId !== runIdRef.current) return;
           if (abortRef.current) {
             resolveStream();
