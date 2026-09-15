@@ -122,9 +122,27 @@ interface WorkbenchTask {
  * （复用既有 `ToolOutputRenderer`——它本来就为联网搜索写好了来源视图，
  * 只是此前没有任何 Code 模式消费方）。
  */
-function WorkbenchToolRow({ tool }: { tool: TaskToolEntry }) {  return (
+/**
+ * 对话里的工具调用行：**默认折叠**，只留「状态点 + 工具名 + 状态」一行，点一下展开输出。
+ *
+ * 折叠是默认值而不是可选开关：一轮任务里工具调用可能有十几条（web_search 的来源列表尤其长），
+ * 全展开会把对话正文挤没。展开状态自持（每个工具行各管各的），不写进任务数据。
+ */
+function WorkbenchToolRow({ tool }: { tool: TaskToolEntry }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasDetail = Boolean(tool.output) || Boolean(tool.summary);
+  const statusText = tool.status === "running" ? "执行中…" : "已完成";
+  return (
     <div className="w-fit max-w-full rounded-xl border border-border/60 bg-card px-3 py-2">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <button
+        type="button"
+        disabled={!hasDetail}
+        aria-expanded={hasDetail ? expanded : undefined}
+        onClick={() => hasDetail && setExpanded((v) => !v)}
+        className={`flex items-center gap-2 text-xs text-muted-foreground ${
+          hasDetail ? "cursor-pointer hover:text-foreground" : ""
+        }`}
+      >
         <span
           className={`h-1.5 w-1.5 shrink-0 rounded-full ${
             tool.status === "running"
@@ -133,14 +151,28 @@ function WorkbenchToolRow({ tool }: { tool: TaskToolEntry }) {  return (
           }`}
         />
         <span className="font-mono">{tool.toolName}</span>
-        <span>{tool.status === "running" ? "执行中…" : "已完成"}</span>
-      </div>
-      {tool.output ? (
-        <div className="mt-2">
-          <ToolOutputRenderer toolName={tool.toolName} output={tool.output} />
-        </div>
-      ) : tool.summary ? (
-        <div className="mt-1 text-xs text-muted-foreground">{tool.summary}</div>
+        <span>{statusText}</span>
+        {hasDetail && (
+          <svg
+            aria-hidden
+            viewBox="0 0 16 16"
+            className={`h-3 w-3 transition-transform ${expanded ? "rotate-90" : ""}`}
+            fill="currentColor"
+          >
+            <path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" />
+          </svg>
+        )}
+      </button>
+      {expanded ? (
+        tool.output ? (
+          <div className="mt-2">
+            <ToolOutputRenderer toolName={tool.toolName} output={tool.output} />
+          </div>
+        ) : (
+          <div className="mt-1 text-xs text-muted-foreground">
+            {tool.summary}
+          </div>
+        )
       ) : null}
     </div>
   );

@@ -11,6 +11,8 @@ interface BrandKitSelectorProps {
   projectId: string;
   currentBrandKitId: string | null;
   onBrandKitChange: (kitId: string | null) => void;
+  /** 「管理品牌套件…」的回调：由画布页开浮窗；不传则退化为导航到 /brand-kit。 */
+  onManage?: (() => void) | undefined;
 }
 
 export function BrandKitSelector({
@@ -18,6 +20,7 @@ export function BrandKitSelector({
   projectId,
   currentBrandKitId,
   onBrandKitChange,
+  onManage,
 }: BrandKitSelectorProps) {
   const [kits, setKits] = useState<BrandKitSummary[]>([]);
   const [open, setOpen] = useState(false);
@@ -130,15 +133,18 @@ export function BrandKitSelector({
             </p>
           )}
 
-          {/* 管理入口：品牌套件的创建/编辑在 /brand-kit。
-              画布跑在 iframe 里，直接 `location.href` 只会把 iframe 换掉，
-              故导航**顶层窗口**（同源，允许）——会话与页面栈都留在原地，
-              用户可正常后退/返回工作台。 */}
+          {/* 管理入口：改为画布内的浮窗（onManage 由画布页提供）。
+              此前是导航到 /brand-kit——画布跑在 iframe 里，导航会把整页换掉，
+              用户反馈「跳走」；未传回调时保留原导航行为兜底。 */}
           <div className="my-1 h-px bg-border" />
           <button
             type="button"
             onClick={() => {
               setOpen(false);
+              if (onManage) {
+                onManage();
+                return;
+              }
               const top = window.top ?? window;
               try {
                 top.location.assign("/brand-kit");

@@ -342,6 +342,32 @@
   display: none !important;
 }
 
+/* 「画布与元素属性」面板：居中 + 藏掉英文默认体，内容换成自己的中文版
+   （components/canvas-stats-panel.tsx 经 renderCustomStats 注入；该口子是**追加**，
+   故默认那份必须藏：折叠头 General/箭头 + 行表 Shapes/Canvas/Grid step 等）。 */
+.excalidraw .exc-stats {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 280px;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  box-shadow: var(--shadow-float, 0 12px 32px rgba(15, 23, 42, 0.18));
+}
+.excalidraw .exc-stats h3,
+.excalidraw .exc-stats h3 + span,
+.excalidraw .exc-stats .exc-stats__rows {
+  display: none !important;
+}
+
+/* 菜单里的勾选符：Excalidraw 用 `.context-menu-item.checkmark:before` 画 ✓；
+   这两项一个开关一个面板入口，挂着勾只会让人以为「点了没生效」，按用户要求去掉。 */
+.context-menu li[data-testid="gridMode"] .context-menu-item.checkmark:before,
+.context-menu li[data-testid="stats"] .context-menu-item.checkmark:before {
+  display: none !important;
+}
+
 
 /* Hide the native Library (素材库) trigger — we don't ship Excalidraw's library UI.
    同样**不能整块隐藏 `.layer-ui__wrapper__top-right`**：「画布与元素属性」（stats）面板

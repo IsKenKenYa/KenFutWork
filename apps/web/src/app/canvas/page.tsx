@@ -10,6 +10,7 @@ import { CanvasEditor } from "../../components/canvas-editor";
 import { CanvasEmptyHint } from "../../components/canvas-empty-hint";
 import { CanvasFilesPanel } from "../../components/canvas-files-panel";
 import type { CanvasImageItem } from "../../components/canvas-image-picker";
+import { BrandKitModal } from "../../components/brand-kit-modal";
 import { CanvasLayersPanel } from "../../components/canvas-layers-panel";
 import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
 import { type SidePanelTab, ChatSidebar } from "../../components/chat-sidebar";
@@ -62,6 +63,8 @@ function CanvasPageContent() {
    */
   const [panelTab, setPanelTab] = useState<SidePanelTab>("chat");
   const [brandKitId, setBrandKitId] = useState<string | null>(null);
+  /** 品牌套件管理浮窗（90%×85%）——此前是导航到 /brand-kit，会把整页换掉。 */
+  const [brandKitOpen, setBrandKitOpen] = useState(false);
   const [projectName, setProjectName] = useState("未命名画布");
   const [selectedCanvasElements, setSelectedCanvasElements] = useState<
     CanvasSelectedElement[]
@@ -282,6 +285,7 @@ function CanvasPageContent() {
           projectId={canvasData.projectId}
           currentBrandKitId={brandKitId}
           onBrandKitChange={(kitId) => setBrandKitId(kitId)}
+          onManage={() => setBrandKitOpen(true)}
         />
       </div>
       {/* Canvas always takes full width; on mobile/tablet, ChatSidebar overlays instead of side-by-side */}
@@ -337,6 +341,10 @@ function CanvasPageContent() {
             active={panelTab === "files"}
           />
         }
+      />
+      <BrandKitModal
+        open={brandKitOpen}
+        onClose={() => setBrandKitOpen(false)}
       />
     </div>
   );

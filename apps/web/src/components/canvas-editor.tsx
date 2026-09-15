@@ -12,6 +12,7 @@ import { normalizeCanvasElements } from "../lib/canvas-normalize";
 import { shouldRefuseEmptySave } from "../lib/canvas-save-guard";
 import { getServerBaseUrl } from "../lib/env";
 import { saveCanvas, uploadThumbnail } from "../lib/server-api";
+import { CanvasStatsPanel } from "./canvas-stats-panel";
 import { VideoCanvasElement } from "./canvas/video-canvas-element";
 import { ErrorBoundary } from "./error-boundary";
 
@@ -44,6 +45,9 @@ export type CanvasSelectedElement = {
   /** Supabase storage public URL -- prefer over dataUrl for message attachments */
   storageUrl?: string;
 };
+
+/** 手动保存的结果：成功 / 没内容可存 / 真的失败——三者文案不同，别把空画布说成失败。 */
+type SaveOutcome = "saved" | "empty" | "error";
 
 type CanvasEditorProps = {
   canvasId: string;
@@ -528,45 +532,54 @@ export function CanvasEditor({
    * 立即保存（Ctrl/Cmd+S 与右键菜单「保存画布」共用）。
    *
    * 自动保存是防抖的（1.5s），手动保存要的是「按下去就落库」：先取消挂起的防抖任务，
-   * 再从 Excalidraw 当前状态取一份完整 payload 写库。空场景依旧不写（见 canvas-save-guard）。
+   * 再从 Excalidraw 当前状态取一份完整 payload 写库。空场景依旧不写（见 canvas-save-guard），
+   * 且**空场景不算失败**——提示语区分「已保存 / 画布为空无需保存 / 保存失败」。
    */
-  const saveNow = useCallback(async (): Promise<boolean> => {
-    if (!excalidrawApi || !hydratedRef.current) return false;
+  const saveNow = useCallback(async (): Promise<SaveOutcome> => {
+    if (!excalidrawApi || !hydratedRef.current) return "empty";
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
     }
     const payload = buildSavePayloadRef.current();
-    if (!payload) return false;
+    // 空场景无处可存（见 canvas-save-guard）——这是「没内容」，不是「失败」
+    if (!payload) return "empty";
     try {
       await saveCanvas(accessTokenRef.current, canvasIdRef.current, payload);
       pendingSaveRef.current = null;
-      return true;
+      return "saved";
     } catch (err) {
       console.error("[canvas-editor] 手动保存失败:", err);
-      return false;
+      return "error";
     }
   }, [excalidrawApi]);
 
   const saveNowRef = useRef(saveNow);
   saveNowRef.current = saveNow;
 
-  /** 保存反馈：右下角短暂显示「已保存 / 保存失败」。 */
-  const [saveHint, setSaveHint] = useState<{ ok: boolean; at: number } | null>(
-    null,
-  );
+  /** 保存反馈：右下角短暂显示「已保存 / 画布为空无需保存 / 保存失败」。 */
+  const [saveHint, setSaveHint] = useState<SaveOutcome | null>(null);
 
-  // Ctrl/Cmd+S：立即保存（并拦下浏览器自带的「保存网页」）
+  /**
+   * Ctrl/Cmd+S → 立即保存到服务端。
+   *
+   * **必须在捕获阶段截住并 stopImmediatePropagation**：Excalidraw 自己把原生 Ctrl+S 绑给了
+   * `saveToActiveFile`（导出到文件），只在冒泡阶段 preventDefault 挡不住它——用户实测按
+   * Ctrl+S 弹出的是「保存 .excalidraw 文件」对话框（文件名 `无标题-<时间戳>.excalidraw`），
+   * 我们的服务端保存虽然也跑了，但用户看到的是那个对话框。捕获阶段在 window 上先拿到事件并
+   * 阻断传播，Excalidraw 的处理器就再也收不到。
+   */
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "s") return;
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
+      if (e.key.toLowerCase() !== "s") return;
       e.preventDefault();
-      void saveNowRef.current().then((ok) => {
-        setSaveHint({ ok, at: Date.now() });
-      });
+      e.stopImmediatePropagation();
+      void saveNowRef.current().then((outcome) => setSaveHint(outcome));
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    return () =>
+      window.removeEventListener("keydown", onKeyDown, { capture: true });
   }, []);
 
   // 保存提示 2 秒后自动消失
@@ -597,9 +610,7 @@ export function CanvasEditor({
         '<span class="context-menu-item__shortcut">Ctrl+S</span>';
       item.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        void saveNowRef.current().then((ok) =>
-          setSaveHint({ ok, at: Date.now() }),
-        );
+        void saveNowRef.current().then((outcome) => setSaveHint(outcome));
         // 自己收起菜单：向画布派发一次 pointerdown（走 Excalidraw 的「点击外部关闭」）
         document.querySelector("canvas")?.dispatchEvent(
           new PointerEvent("pointerdown", { bubbles: true, cancelable: true }),
@@ -702,7 +713,11 @@ export function CanvasEditor({
             role="status"
             className="pointer-events-none absolute bottom-4 right-4 z-40 rounded-md border border-border bg-card px-2.5 py-1 text-xs text-foreground shadow-card"
           >
-            {saveHint.ok ? "已保存" : "保存失败，请重试"}
+            {saveHint === "saved"
+              ? "已保存"
+              : saveHint === "empty"
+                ? "画布为空，无需保存"
+                : "保存失败，请重试"}
           </div>
         )}
         <Excalidraw
@@ -716,6 +731,13 @@ export function CanvasEditor({
           }}
           onChange={handleChange}
           excalidrawAPI={handleExcalidrawApi}
+          renderCustomStats={(elements: any, appState: any) => (
+            <CanvasStatsPanel
+              elements={elements}
+              appState={appState}
+              excalidrawApi={excalidrawApi}
+            />
+          )}
           renderEmbeddable={renderEmbeddable}
           validateEmbeddable={validateEmbeddable}
         >
