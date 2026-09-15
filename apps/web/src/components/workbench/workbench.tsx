@@ -51,20 +51,11 @@ import {
 import { SidebarRow } from "@/components/workbench/sidebar-row";
 import { SkillsModal } from "@/components/workbench/skills-modal";
 import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
-import { WorkbenchTabs } from "@/components/workbench/workbench-tabs";
 import { WorkDirectorySelect } from "@/components/workbench/work-directory-select";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useAuth } from "@/lib/auth-context";
 import { getServerBaseUrl } from "@/lib/env";
 import { describeRunFailure } from "@/lib/run-failure";
-import {
-  closeTab,
-  loadTabs,
-  pruneTabs,
-  saveTabs,
-  upsertTab,
-  type WorkbenchTab,
-} from "@/lib/workbench-tabs";
 import {
   applyToolEvent,
   type TaskToolEntry,
@@ -263,8 +254,6 @@ export function Workbench() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     null,
   );
-  /** Design 的「打开的画布」标签（编辑器式多标签）：刷新后仍在。 */
-  const [openTabs, setOpenTabs] = useState<WorkbenchTab[]>(() => loadTabs());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   // Code 模式：本地工作目录（File System Access API，浏览器支持时可用）
   const [workDirName, setWorkDirName] = useState<string | null>(null);
@@ -625,58 +614,6 @@ export function Workbench() {
     creatingProject,
     createProjectNamed,
   ]);
-
-  /**
-   * 打开的画布 = 顶部标签（编辑器式）。选中的项目同步成一个标签：已开过就原地更新
-   * （项目改名要跟上），没开过就追加。`upsertTab` 在无变化时返回原引用，故这里不会
-   * 因 projects 列表刷新而反复重渲染/写盘。
-   */
-  useEffect(() => {
-    if (mode !== "design" || !selectedProject) return;
-    const tab: WorkbenchTab = {
-      projectId: selectedProject.id,
-      canvasId: selectedProject.primaryCanvas.id,
-      name: selectedProject.name,
-    };
-    setOpenTabs((prev) => {
-      const next = upsertTab(prev, tab);
-      if (next !== prev) saveTabs(next);
-      return next;
-    });
-  }, [mode, selectedProject]);
-
-  /** 项目被删/换账号后清掉幽灵标签（列表还在加载时不动，避免误清空）。 */
-  useEffect(() => {
-    if (mode !== "design" || projects.length === 0) return;
-    setOpenTabs((prev) => {
-      const next = pruneTabs(
-        prev,
-        projects.map((p) => p.id),
-      );
-      if (next !== prev) saveTabs(next);
-      return next;
-    });
-  }, [mode, projects]);
-
-  const handleSelectTab = useCallback((projectId: string) => {
-    setSelectedProjectId(projectId);
-  }, []);
-
-  /** 关标签：关掉当前标签时由 closeTab 决定接替者（右邻优先，其次左邻）。 */
-  const handleCloseTab = useCallback(
-    (projectId: string) => {
-      const { tabs: next, nextActiveId } = closeTab(
-        openTabs,
-        projectId,
-        selectedProjectId,
-      );
-      if (next === openTabs) return;
-      setOpenTabs(next);
-      saveTabs(next);
-      if (nextActiveId !== selectedProjectId) setSelectedProjectId(nextActiveId);
-    },
-    [openTabs, selectedProjectId],
-  );
 
   // 权限档位（DEC-4）与模型目录（含 BYOK 实例）：读取当前值
   useEffect(() => {
@@ -1432,22 +1369,14 @@ export function Workbench() {
       <main className="min-w-0 flex-1 overflow-hidden bg-card">
         {surface === "canvas" ? (
           /* Design：选中项目后画布自动打开（原版 Loomic 画布，对话在画布内助手里） */
-          <div className="flex h-full flex-col">
-            <WorkbenchTabs
-              tabs={openTabs}
-              activeId={selectedProject?.id ?? null}
-              onSelect={handleSelectTab}
-              onClose={handleCloseTab}
-            />
-            <iframe
-              key={`${selectedProject?.primaryCanvas.id}:${canvasPrompt ?? ""}`}
-              src={`/canvas?id=${selectedProject?.primaryCanvas.id}${
-                canvasPrompt ? `&prompt=${encodeURIComponent(canvasPrompt)}` : ""
-              }`}
-              title={`${selectedProject?.name ?? ""} 画布`}
-              className="min-h-0 w-full flex-1 border-0"
-            />
-          </div>
+          <iframe
+            key={`${selectedProject?.primaryCanvas.id}:${canvasPrompt ?? ""}`}
+            src={`/canvas?id=${selectedProject?.primaryCanvas.id}${
+              canvasPrompt ? `&prompt=${encodeURIComponent(canvasPrompt)}` : ""
+            }`}
+            title={`${selectedProject?.name ?? ""} 画布`}
+            className="h-full w-full border-0"
+          />
         ) : activeTask ? (
           <div className="mx-auto flex h-full max-w-3xl flex-col p-6">
             <h1 className="mb-4 text-lg font-medium">{activeTask.title}</h1>
