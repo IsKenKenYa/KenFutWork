@@ -180,7 +180,7 @@ const FIXTURE_OK = [
 ].join("\n");
 
 async function withDocsFixture(run) {
-  const fixtureRoot = await mkdtemp(path.join(tmpdir(), "loomic-docs-"));
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), "kenfutwork-docs-"));
   try {
     await mkdir(path.join(fixtureRoot, "docs", "sub"), { recursive: true });
     await mkdir(path.join(fixtureRoot, "docs", "tech"), { recursive: true });
