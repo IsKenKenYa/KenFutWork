@@ -76,11 +76,15 @@ function AiBadgeIcon({
 }) {
   return (
     <span
-      className={`relative inline-flex items-center justify-center ${className ?? ''}`}
+      className={`relative inline-flex items-center justify-center ${className ?? ""}`}
     >
-      <Base className="size-full" />
-      {/* 徽标压在右上角外沿：16px 下也能看清「这是 AI 那几个」 */}
-      <Sparkles className="absolute -right-1.5 -top-1.5 size-[9px]" strokeWidth={2.5} />
+      {/* 底字形缩到 13px、星压在右上角**内侧**：整体轮廓与邻居同样是 16px——星吊在框外
+          会让这两枚看起来比旁边大一圈（用户反馈「看过去又太大了」）。 */}
+      <Base className="size-[13px]" />
+      <Sparkles
+        className="absolute right-0 top-0 size-[7px]"
+        strokeWidth={2.6}
+      />
     </span>
   );
 }
