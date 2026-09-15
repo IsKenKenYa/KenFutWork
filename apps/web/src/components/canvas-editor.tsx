@@ -524,6 +524,95 @@ export function CanvasEditor({
     }
   }, [excalidrawApi]);
 
+  /**
+   * 立即保存（Ctrl/Cmd+S 与右键菜单「保存画布」共用）。
+   *
+   * 自动保存是防抖的（1.5s），手动保存要的是「按下去就落库」：先取消挂起的防抖任务，
+   * 再从 Excalidraw 当前状态取一份完整 payload 写库。空场景依旧不写（见 canvas-save-guard）。
+   */
+  const saveNow = useCallback(async (): Promise<boolean> => {
+    if (!excalidrawApi || !hydratedRef.current) return false;
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    const payload = buildSavePayloadRef.current();
+    if (!payload) return false;
+    try {
+      await saveCanvas(accessTokenRef.current, canvasIdRef.current, payload);
+      pendingSaveRef.current = null;
+      return true;
+    } catch (err) {
+      console.error("[canvas-editor] 手动保存失败:", err);
+      return false;
+    }
+  }, [excalidrawApi]);
+
+  const saveNowRef = useRef(saveNow);
+  saveNowRef.current = saveNow;
+
+  /** 保存反馈：右下角短暂显示「已保存 / 保存失败」。 */
+  const [saveHint, setSaveHint] = useState<{ ok: boolean; at: number } | null>(
+    null,
+  );
+
+  // Ctrl/Cmd+S：立即保存（并拦下浏览器自带的「保存网页」）
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "s") return;
+      e.preventDefault();
+      void saveNowRef.current().then((ok) => {
+        setSaveHint({ ok, at: Date.now() });
+      });
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  // 保存提示 2 秒后自动消失
+  useEffect(() => {
+    if (!saveHint) return;
+    const t = window.setTimeout(() => setSaveHint(null), 2000);
+    return () => window.clearTimeout(t);
+  }, [saveHint]);
+
+  /**
+   * 右键菜单补一项「保存画布 Ctrl+S」。
+   *
+   * Excalidraw 0.18 的画布右键菜单没有保存（它天然没有「存到服务端」的概念），也没有
+   * 自定义菜单项的口子（无 renderCustomContextMenu），故用 MutationObserver 在菜单挂载
+   * 时把这一项追加进去——与本项目既有的「用 CSS 覆写菜单文案」是同一类做法：只补一项、
+   * 点击后自己收起菜单；上游改版导致注入失败时，最坏情况只是这一项不出现。
+   */
+  useEffect(() => {
+    const inject = () => {
+      const menu = document.querySelector<HTMLElement>(".context-menu");
+      if (!menu || menu.querySelector("[data-kfw-save]")) return;
+      const item = document.createElement("li");
+      item.className = "context-menu-item";
+      item.setAttribute("data-kfw-save", "");
+      item.setAttribute("data-testid", "kfwSave");
+      item.innerHTML =
+        '<div class="context-menu-item__label">保存画布</div>' +
+        '<span class="context-menu-item__shortcut">Ctrl+S</span>';
+      item.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        void saveNowRef.current().then((ok) =>
+          setSaveHint({ ok, at: Date.now() }),
+        );
+        // 自己收起菜单：向画布派发一次 pointerdown（走 Excalidraw 的「点击外部关闭」）
+        document.querySelector("canvas")?.dispatchEvent(
+          new PointerEvent("pointerdown", { bubbles: true, cancelable: true }),
+        );
+      });
+      menu.appendChild(item);
+    };
+    const observer = new MutationObserver(inject);
+    observer.observe(document.body, { childList: true, subtree: true });
+    inject();
+    return () => observer.disconnect();
+  }, []);
+
   // Keep buildSavePayload accessible without stale closures
   const buildSavePayloadRef = useRef(buildSavePayload);
   buildSavePayloadRef.current = buildSavePayload;
@@ -608,6 +697,14 @@ export function CanvasEditor({
       onError={(err) => console.error("[canvas-editor] render crashed:", err)}
     >
       <div className="h-full w-full relative">
+        {saveHint && (
+          <div
+            role="status"
+            className="pointer-events-none absolute bottom-4 right-4 z-40 rounded-md border border-border bg-card px-2.5 py-1 text-xs text-foreground shadow-card"
+          >
+            {saveHint.ok ? "已保存" : "保存失败，请重试"}
+          </div>
+        )}
         <Excalidraw
           // 原生 UI 语言：不指定则默认英文（右键菜单 / 缩放 / 帮助 等全英文）
           langCode="zh-CN"

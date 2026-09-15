@@ -335,13 +335,19 @@
 
 /* ── Excalidraw UI overrides (aligned with Jaaz) ── */
 
-/* Hide left menu button — replaced by CanvasLogoMenu */
-.excalidraw .App-menu_top__left {
+/* Hide the native main-menu (hamburger) button — replaced by CanvasLogoMenu.
+   注意**不能隐藏整个 `.App-menu_top__left` 容器**：「画布与元素属性」（stats）面板
+   也渲染在这个容器里（与主菜单按钮并列），整块隐藏会导致点菜单项只有 ✓、面板永不出现。*/
+.excalidraw .App-menu_top__left [data-testid="main-menu-trigger"] {
   display: none !important;
 }
 
-/* Hide top-right buttons (Library, Share, Export) */
-.excalidraw .layer-ui__wrapper__top-right {
+
+/* Hide the native Library (素材库) trigger — we don't ship Excalidraw's library UI.
+   同样**不能整块隐藏 `.layer-ui__wrapper__top-right`**：「画布与元素属性」（stats）面板
+   就渲染在这个容器里，整块隐藏会让它点开也永远看不见（实测：面板在 DOM 里、父容器
+   display:none）。只藏素材库那个 label 即可。*/
+.excalidraw .layer-ui__wrapper__top-right .sidebar-trigger__label-element {
   display: none !important;
 }
 
@@ -504,7 +510,12 @@
 .context-menu li[data-testid="linkToElement"],
 .context-menu li[data-testid="copyElementLink"],
 .context-menu li[data-testid="wrapSelectionInFrame"],
-.context-menu li[data-testid="toggleLinearEditor"] {
+.context-menu li[data-testid="toggleLinearEditor"],
+/* 「吸附至对象」：当前 Excalidraw（0.18）里这个开关**不驱动任何行为**——
+   objectsSnapModeEnabled 全库只在「动作/菜单勾选态/属性透传」出现，拖拽与渲染路径
+   一处都不读（对齐参考线另有其路径）。用户实测「点了只多个 ✓」，故按「假开关不留」
+   隐藏；真要对齐吸附得另找实现。 */
+.context-menu li[data-testid="objectsSnapMode"] {
   display: none;
 }
 
