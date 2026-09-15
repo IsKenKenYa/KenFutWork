@@ -57,7 +57,13 @@ async function main() {
   const desktop = await prepareDesktopRuntime({
     env: baseEnv,
     exeDir,
-    repoRoot: process.cwd(),
+    // 仓库根必须从入口文件上溯解析：dev 态 cwd 是 apps/server，拿 cwd 当 repoRoot
+    // 会找不到 <repoRoot>/supabase 迁移集与 docker/pg-dev-shim（entry-root 的注释里
+    // 记录过这次修正——源码态上四级到仓库根，打包态回落 exe 目录）
+    repoRoot: resolveEntryRoot({
+      entryFileUrl: import.meta.url,
+      execPath: process.execPath,
+    }),
   });
   const env = desktop.env;
 

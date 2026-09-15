@@ -83,3 +83,4 @@ apps/web/tmp/
 
 # 随包分发的语言运行时（Node/Python/JDK，scripts/fetch-runtimes.mjs 拉取）
 /runtime/
+.loomic-data/
