@@ -23,6 +23,16 @@ describe("parseTodos", () => {
     ]);
   });
 
+  it("真实载荷形状（{input: '<json>'} 包装）也能解析出来", () => {
+    const real = {
+      input:
+        '{"todos":[{"content":"创建 kfw-s1.txt 并写入 1","status":"in_progress"}]}',
+    };
+    expect(parseTodos(real)).toEqual([
+      { content: "创建 kfw-s1.txt 并写入 1", status: "in_progress" },
+    ]);
+  });
+
   it("未知/缺失 status 一律按未完成处理（模型写 done/blocked 不算完成）", () => {
     expect(
       parseTodos({

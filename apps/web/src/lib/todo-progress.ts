@@ -1,3 +1,5 @@
+import { normalizeToolArgs } from "./tool-args";
+
 /**
  * 「目标 + 进度」面板的数据来源（参考图 R1-2）。
  *
@@ -34,9 +36,11 @@ export interface TodoProgress {
  * 返回 `null` 表示「这次调用没有可用的待办表」（形状不对/空表）——调用方应保持原状，
  * 而不是把面板清空：一次解析失败不该让用户看到进度消失。
  */
-export function parseTodos(input: unknown): TodoItem[] | null {
-  if (typeof input !== "object" || input === null) return null;
-  const raw = (input as { todos?: unknown }).todos;
+export function parseTodos(rawInput: unknown): TodoItem[] | null {
+  // 服务端透传的是包了一层的节点输入（`{input:"{\"todos\":[…]}"}`），先归一化
+  const input = normalizeToolArgs(rawInput);
+  if (!input) return null;
+  const raw = input.todos;
   if (!Array.isArray(raw)) return null;
 
   const items: TodoItem[] = [];

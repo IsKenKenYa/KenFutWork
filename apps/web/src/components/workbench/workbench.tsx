@@ -1909,7 +1909,14 @@ export function Workbench() {
               {/* 目标 + 进度（R1-2）：模型用了 write_todos 才出现，条数从事件流推导 */}
               {activeTask.todos && activeTask.todos.length > 0 ? (
                 <TodoProgressPanel
-                  goal={activeTask.messages[0]?.text ?? activeTask.title}
+                  /* 目标 = 本轮的用户诉求（最后一条用户消息），不是首条——
+                     首条是这条对话最初问的，跟当前这轮的待办不是一回事 */
+                  goal={
+                    [...activeTask.messages]
+                      .reverse()
+                      .find((message) => message.role === "user")?.text ??
+                    activeTask.title
+                  }
                   items={activeTask.todos}
                   running={activeTask.status === "running"}
                 />

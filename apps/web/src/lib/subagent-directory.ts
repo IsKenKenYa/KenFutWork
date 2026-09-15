@@ -1,3 +1,5 @@
+import { normalizeToolArgs } from "./tool-args";
+
 /**
  * 子代理目录（R1-3）的纯逻辑：从工具事件流推导子代理运行条目。
  *
@@ -31,11 +33,11 @@ export function upsertSubagentStarted(
     timestamp: string;
   },
 ): SubagentEntry[] {
-  const inputName = event.input?.name;
+  // 入参同样要归一化：服务端透传的是包了一层的节点输入（见 lib/tool-args）
+  const args = normalizeToolArgs(event.input) ?? {};
+  const inputName = args.name;
   const description =
-    typeof event.input?.description === "string"
-      ? (event.input.description as string)
-      : undefined;
+    typeof args.description === "string" ? args.description : undefined;
   const name =
     typeof inputName === "string" && inputName.length > 0
       ? inputName
