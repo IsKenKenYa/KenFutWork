@@ -1073,10 +1073,13 @@ export function ChatSidebar({
       <div className="flex min-h-[44px] items-center gap-1.5 border-b border-border pl-2 pr-2">
         {panelTab === "chat" ? (
           <>
+            {/* 标签区：横向可滚但**不显示滚动条**（标签多了滚动条会盖住标签，
+                「历史记录/新建对话」也被卷进去看不见——它们改放到右侧固定区） */}
             <div
               role="tablist"
               aria-label="打开的对话"
-              className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto py-1.5"
+              style={{ scrollbarWidth: "none" }}
+              className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto py-1.5 [&::-webkit-scrollbar]:hidden"
             >
               {openTabs.map((tab) => {
                 const active = tab.sessionId === activeSessionId;
@@ -1124,16 +1127,17 @@ export function ChatSidebar({
                   </div>
                 );
               })}
-              {!sessionsLoading && (
-                <SessionSelector
-                  sessions={sessions}
-                  activeSessionId={activeSessionId}
-                  onSelect={handleOpenSessionTab}
-                  onNewChat={handleNewChat}
-                  onDelete={handleDeleteSession}
-                />
-              )}
             </div>
+            {/* 固定区：历史记录（含新建对话）永远可见，不随标签滚动 */}
+            {!sessionsLoading && (
+              <SessionSelector
+                sessions={sessions}
+                activeSessionId={activeSessionId}
+                onSelect={handleOpenSessionTab}
+                onNewChat={handleNewChat}
+                onDelete={handleDeleteSession}
+              />
+            )}
           </>
         ) : (
           <span className="flex-1 text-xs font-medium text-foreground">
@@ -1192,6 +1196,14 @@ export function ChatSidebar({
 
       {panelTab === "chat" ? (
         <>
+          {/* 执行模式：排在标签页**下面**（标签页是面板的第一行，任何模式相关控件都不该压它上面） */}
+          {activeSessionId && accessToken ? (
+            <ExecutionModeSelect
+              accessToken={accessToken}
+              threadId={activeSessionId}
+            />
+          ) : null}
+
           {/* Disconnected banner */}
           {!ws.connected && (
             <div className="flex items-center gap-2 px-4 py-2 bg-muted border-b border-border">
@@ -1339,12 +1351,6 @@ export function ChatSidebar({
         onKeyDown={handleResizeKeyDown}
       />
       <div className="flex flex-1 flex-col bg-card min-w-0">
-        {panelTab === "chat" && activeSessionId && accessToken ? (
-          <ExecutionModeSelect
-            accessToken={accessToken}
-            threadId={activeSessionId}
-          />
-        ) : null}
         {panelContent}
       </div>
       {creditDialogEl}

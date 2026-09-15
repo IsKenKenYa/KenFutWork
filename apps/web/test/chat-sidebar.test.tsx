@@ -16,6 +16,8 @@ import type { WebSocketHandle } from "../src/hooks/use-websocket";
 const {
   createSessionMock,
   deleteSessionMock,
+  fetchExecutionModeMock,
+  fetchExecutionModesMock,
   fetchImageModelsMock,
   fetchMessagesMock,
   fetchModelsMock,
@@ -26,6 +28,8 @@ const {
 } = vi.hoisted(() => ({
   createSessionMock: vi.fn(),
   deleteSessionMock: vi.fn(),
+  fetchExecutionModeMock: vi.fn(),
+  fetchExecutionModesMock: vi.fn(),
   fetchImageModelsMock: vi.fn(),
   fetchMessagesMock: vi.fn(),
   fetchModelsMock: vi.fn(),
@@ -38,6 +42,8 @@ const {
 vi.mock("../src/lib/server-api", () => ({
   createSession: createSessionMock,
   deleteSession: deleteSessionMock,
+  fetchExecutionMode: fetchExecutionModeMock,
+  fetchExecutionModes: fetchExecutionModesMock,
   fetchImageModels: fetchImageModelsMock,
   fetchMessages: fetchMessagesMock,
   fetchModels: fetchModelsMock,
@@ -103,6 +109,10 @@ describe("ChatSidebar", () => {
     fetchModelsMock.mockReset();
     fetchModelsMock.mockResolvedValue({ models: [] });
     fetchImageModelsMock.mockReset();
+    fetchExecutionModesMock.mockReset();
+    fetchExecutionModesMock.mockResolvedValue({ modes: ["agent", "plan"] });
+    fetchExecutionModeMock.mockReset();
+    fetchExecutionModeMock.mockResolvedValue({ mode: "agent" });
     fetchImageModelsMock.mockResolvedValue({ models: [] });
     fetchWorkspaceSkillsMock.mockReset();
     fetchWorkspaceSkillsMock.mockResolvedValue({ skills: [] });
@@ -229,5 +239,10 @@ describe("ChatSidebar", () => {
     ).toBeInTheDocument();
     // 历史记录入口仍在（点历史对话＝新开一个标签）
     expect(screen.getByRole("button", { name: /历史记录/ })).toBeInTheDocument();
+
+    // 标签页是面板的第一行：执行模式排在它下面，不得压在它上面
+    const mode = await screen.findByRole("combobox", { name: "执行模式" });
+    const order = tablist.compareDocumentPosition(mode);
+    expect(order & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
