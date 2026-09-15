@@ -16,6 +16,7 @@ import {
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { isVideoUrl } from "../lib/canvas-elements";
+import { CanvasViewControls } from "./canvas-bottom-bar";
 import {
   createImageGeneratorElement,
   getImageGeneratorData,
@@ -87,6 +88,11 @@ const TOOL_LABELS: Record<ToolType, string> = {
 type CanvasToolMenuProps = {
   accessToken: string;
   excalidrawApi: any;
+  /** 视图控件组（背景色/图层/网格/缩放）的状态与回调——它们与绘图工具同处一行。 */
+  layersOpen: boolean;
+  onToggleLayers: () => void;
+  filesOpen: boolean;
+  onToggleFiles: () => void;
 };
 
 /** Memoized shimmer overlay for a single generating element */
@@ -155,6 +161,10 @@ const GeneratingOverlay = memo(function GeneratingOverlay({
 export function CanvasToolMenu({
   accessToken,
   excalidrawApi,
+  layersOpen,
+  onToggleLayers,
+  filesOpen,
+  onToggleFiles,
 }: CanvasToolMenuProps) {
   const [activeTool, setActiveTool] = useState<string>("selection");
 
@@ -483,10 +493,21 @@ export function CanvasToolMenu({
 
   return (
     <>
-      <div
-        data-canvas-tool-row=""
-        className="absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-border bg-card p-1 shadow-card"
-      >
+      <div className="absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-border bg-card p-1 shadow-card">
+        {/*
+          底部只此一条：视图控件（背景色/图层/生成文件/网格/缩放）与绘图工具同排。
+          此前是两条并列的浮条——窄视口下互相遮挡，靠测量避让（抬高一行）兜；合成一条后
+          那套避让连同它的测量代码一起删了。
+        */}
+        <CanvasViewControls
+          excalidrawApi={excalidrawApi}
+          layersOpen={layersOpen}
+          onToggleLayers={onToggleLayers}
+          filesOpen={filesOpen}
+          onToggleFiles={onToggleFiles}
+        />
+        <div className="mx-0.5 h-6 w-px bg-border" />
+
         {/* Standard Excalidraw tools */}
         {TOOL_GROUPS.map((tool, i) => {
           if (tool === null) {

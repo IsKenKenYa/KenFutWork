@@ -74,6 +74,7 @@ const FORBIDDEN = [
   'label="Upload"',
   "No brand kits yet",
   "Create Brand Kit",
+  "Fit All",
 ];
 
 describe("画布与对话区文案已汉化", () => {

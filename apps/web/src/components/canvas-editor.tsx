@@ -4,7 +4,7 @@ import "@excalidraw/excalidraw/index.css";
 
 import dynamic from "next/dynamic";
 import { useTheme } from "next-themes";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { WebSocketHandle } from "../hooks/use-websocket";
 import { isVideoUrl } from "../lib/canvas-elements";
@@ -13,7 +13,6 @@ import { shouldRefuseEmptySave } from "../lib/canvas-save-guard";
 import { getServerBaseUrl } from "../lib/env";
 import { saveCanvas, uploadThumbnail } from "../lib/server-api";
 import { VideoCanvasElement } from "./canvas/video-canvas-element";
-import { CanvasToolMenu } from "./canvas-tool-menu";
 import { ErrorBoundary } from "./error-boundary";
 
 const Excalidraw = dynamic(
@@ -31,10 +30,6 @@ const cic: typeof cancelIdleCallback =
   typeof window !== "undefined" && window.cancelIdleCallback
     ? window.cancelIdleCallback.bind(window)
     : clearTimeout;
-
-// Memoize CanvasToolMenu to prevent re-renders when parent state changes
-// (e.g. selection changes in the editor don't need to re-render the toolbar)
-const MemoizedCanvasToolMenu = memo(CanvasToolMenu);
 
 export type CanvasSelectedElement = {
   id: string;
@@ -631,12 +626,6 @@ export function CanvasEditor({
               （此前是外部 z-20 兄弟节点，会压住菜单——用户反馈「像菜单透明」） */}
           {overlay}
         </Excalidraw>
-        {excalidrawApi && (
-          <MemoizedCanvasToolMenu
-            accessToken={accessToken}
-            excalidrawApi={excalidrawApi}
-          />
-        )}
       </div>
     </ErrorBoundary>
   );

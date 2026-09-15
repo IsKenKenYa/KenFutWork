@@ -4,7 +4,7 @@ import type { ImageArtifact, VideoArtifact } from "@loomic/shared";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { BrandKitSelector } from "../../components/brand-kit-selector";
-import { CanvasBottomBar } from "../../components/canvas-bottom-bar";
+import { CanvasToolMenu } from "../../components/canvas-tool-menu";
 import type { CanvasSelectedElement } from "../../components/canvas-editor";
 import { CanvasEditor } from "../../components/canvas-editor";
 import { CanvasEmptyHint } from "../../components/canvas-empty-hint";
@@ -311,14 +311,16 @@ function CanvasPageContent() {
             />
           }
         />
-        <CanvasBottomBar
-          excalidrawApi={excalidrawApi}
-          layersOpen={panelTab === "layers" && chatOpen}
-          onToggleLayers={handleToggleLayers}
-          filesOpen={panelTab === "files" && chatOpen}
-          onToggleFiles={handleToggleFiles}
-        />
-      </div>
+        {excalidrawApi && (
+          <CanvasToolMenu
+            accessToken={accessToken}
+            excalidrawApi={excalidrawApi}
+            layersOpen={panelTab === "layers" && chatOpen}
+            onToggleLayers={handleToggleLayers}
+            filesOpen={panelTab === "files" && chatOpen}
+            onToggleFiles={handleToggleFiles}
+          />
+        )}      </div>
       <ChatSidebar
         accessToken={accessToken}
         canvasId={canvasData.id}

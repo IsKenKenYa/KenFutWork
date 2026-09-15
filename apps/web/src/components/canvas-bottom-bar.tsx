@@ -22,7 +22,7 @@ const ZOOM_MAX = 30;
 const ZOOM_STEP = 1.1;
 
 /* ── Types ── */
-interface CanvasBottomBarProps {
+interface CanvasViewControlsProps {
   // biome-ignore lint/suspicious/noExplicitAny: Excalidraw API has no public type definition
   excalidrawApi: any | null;
   layersOpen: boolean;
@@ -262,13 +262,22 @@ function ElementRow({
 /* ================================================================
    Main component
    ================================================================ */
-export function CanvasBottomBar({
+
+/**
+ * 画布底部工具条左侧的**视图控件组**（背景色 / 图层 / 生成文件 / 网格 / 缩放）。
+ *
+ * 它不再自带定位与外框：底部原本是两条并列的浮条（这条左簇 + 居中的绘图工具条），
+ * 窄视口下互相遮挡，还得靠测量避让（抬高一行）来兜。现在两条合成一条，外框由
+ * `CanvasToolMenu` 那一行提供，本组件只出控件本身，于是避让逻辑连同它的测量代码一起
+ * 消失——那套代码存在的唯一理由就是「两条并列」。
+ */
+export function CanvasViewControls({
   excalidrawApi,
   layersOpen,
   onToggleLayers,
   filesOpen,
   onToggleFiles,
-}: CanvasBottomBarProps) {
+}: CanvasViewControlsProps) {
   /* ── Zoom state ── */
   const [zoom, setZoom] = useState(1);
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
@@ -286,47 +295,9 @@ export function CanvasBottomBar({
    * 取舍：**抬高左簇、不动工具条**。工具条是主 affordance，位置应稳定；左簇是次级
    * 控件，让位代价最小。实测行不通的替代方案：只挪 left 或只调 z-index——前者在
    * 「空档 < 工具条宽度」时无解，后者只是把点不到的控件换一批。
+   *
+   * **后续**：两条已合成一条（见组件注释），这段避让随「两条并列」这个前提一起作废。
    */
-  const barRef = useRef<HTMLDivElement>(null);
-  const [raised, setRaised] = useState(false);
-  useEffect(() => {
-    const el = barRef.current;
-    const container = el?.offsetParent as HTMLElement | null;
-    if (!el || !container) return;
-
-    let observer: ResizeObserver | null = null;
-    let observedTools: HTMLElement | null = null;
-    const measure = () => {
-      const tools = container.querySelector<HTMLElement>(
-        "[data-canvas-tool-row]",
-      );
-      // 工具条自身宽度也会变（工具增减）——找到后就一起观察
-      if (tools && tools !== observedTools) {
-        observer?.observe(tools);
-        observedTools = tools;
-      }
-      if (!tools) {
-        setRaised(false);
-        return;
-      }
-      const barRect = el.getBoundingClientRect();
-      const toolRect = tools.getBoundingClientRect();
-      const sameRow =
-        toolRect.top < barRect.bottom && toolRect.bottom > barRect.top;
-      setRaised(sameRow && toolRect.left < barRect.right + 8);
-    };
-
-    observer = new ResizeObserver(measure);
-    observer.observe(container);
-    measure();
-    // 底栏与工具条是兄弟节点，挂载顺序不保证；容器尺寸不变时 RO 不会再触发，
-    // 故挂载后补测一次（这是实测到的唯一时序缺口）。
-    const retry = window.setTimeout(measure, 400);
-    return () => {
-      observer?.disconnect();
-      window.clearTimeout(retry);
-    };
-  }, []);
 
   /* ── Background color state ── */
   const [bgColor, setBgColor] = useState("#FFFFFF");
@@ -442,16 +413,11 @@ export function CanvasBottomBar({
 
   return (
     <div
-      ref={barRef}
-      className="absolute left-4 z-20 transition-[bottom] duration-200"
-      style={{
-        // 空间不够时抬到工具条上方一行（见 raised 的说明）
-        bottom: raised ? 72 : 16,
-      }}
+      className="flex items-center gap-0.5"
       onKeyDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
     >
-      <div className="flex items-center gap-0.5 rounded-full bg-card border border-border px-1 py-1 shadow-card">
+      <div className="flex items-center gap-0.5">
         {/* ── Background color button ── */}
         <button
           ref={bgBtnRef}
@@ -555,7 +521,7 @@ export function CanvasBottomBar({
             className="px-3 py-1.5 text-xs text-left rounded-md hover:bg-muted transition-colors text-foreground"
             onClick={handleFitAll}
           >
-            Fit All
+            全览
           </button>
         </div>
       </Popover>
@@ -645,8 +611,6 @@ export function CanvasBottomBar({
           </div>
         </div>
       </Popover>
-
-      {/* Files panel is now a separate left sidebar component */}
     </div>
   );
 }
