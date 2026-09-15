@@ -78,12 +78,14 @@ function AiBadgeIcon({
     <span
       className={`relative inline-flex items-center justify-center ${className ?? ""}`}
     >
-      {/* 底字形缩到 13px、星压在右上角**内侧**：整体轮廓与邻居同样是 16px——星吊在框外
-          会让这两枚看起来比旁边大一圈（用户反馈「看过去又太大了」）。 */}
-      <Base className="size-[13px]" />
+      {/* 主体**不缩**（与邻居一样满 16px）——缩的是四角星，它是徽标不该抢主体。
+          星 8px 压在右上角、只露 2px 出框（此前 9px/-1.5 偏移让整体轮廓 22px，显大；
+          而缩主体到 13px 又显小，两者都被用户否掉）。星下垫一圈底色做「挖空」，
+          免得和边框糊在一起。 */}
+      <Base className="size-full" />
       <Sparkles
-        className="absolute right-0 top-0 size-[7px]"
-        strokeWidth={2.6}
+        className="absolute -right-[2px] -top-[2px] size-[8px] rounded-full bg-card"
+        strokeWidth={2.4}
       />
     </span>
   );
