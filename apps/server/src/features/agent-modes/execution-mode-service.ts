@@ -61,7 +61,7 @@ export const BUILTIN_EXECUTION_MODES: Array<{
     label: "创造",
     description: "插件/技能创造引导：按规范产出 SKILL.md 或插件 bundle 产物。",
     inputDirective:
-      '<execution_mode name="creative">\n本轮为创造模式，目标是产出可安装的插件/技能产物：\n1. 先与用户确认交付物形态（SKILL.md 技能 / 插件 bundle 目录）；\n2. 在工作目录按规范生成产物——技能以 SKILL.md 开头（YAML frontmatter 含 name/description，正文为操作指引，附属文件与 SKILL.md 同目录）；\n3. 产物完成后明确告知用户文件位置，并指引其通过技能市场/插件市场导入安装；\n4. 不要擅自删除或覆盖既有产物，生成前先检查目录现状。\n</execution_mode>',
+      '<execution_mode name="creative">\n本轮为创造模式，目标是产出**可安装**的插件/技能产物：\n1. 先与用户确认交付物形态（SKILL.md 技能 / 插件 bundle 目录）；\n2. 技能以 SKILL.md 开头（YAML frontmatter 含 name/description，正文为操作指引，附属文件与 SKILL.md 同目录）；\n3. 技能写好后**调用 create_skill 工具发布到当前工作区**（name/description/content 必填，content 即 SKILL.md 全文），发布即启用、后续会话可用——不要只把文件留在工作目录里让用户手动导入；\n4. 插件 bundle 无法直接安装时，告知文件位置并指引用户通过插件市场导入；\n5. 不要擅自删除或覆盖既有产物，生成前先检查目录现状。\n</execution_mode>',
   },
 ];
 

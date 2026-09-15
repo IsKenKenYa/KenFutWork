@@ -101,6 +101,37 @@ export const skillImportRequestSchema = z.object({
 });
 export type SkillImportRequest = z.infer<typeof skillImportRequestSchema>;
 
+/**
+ * 从**沙箱工作目录**导入技能包（技能弹窗的「从工作目录导入」入口）。
+ *
+ * `canvasId` 决定沙箱目录（与 agent / git 同一处解析：工作目录映射优先，否则
+ * `<沙箱根>/<画布UUID>`）；`path` 是**相对沙箱根**的技能包目录（内含 SKILL.md）。
+ * 服务端校验画布归属与路径不越界——不信任前端传来的路径。
+ */
+export const sandboxSkillImportRequestSchema = z.object({
+  canvasId: z.string().min(1),
+  path: z.string().min(1),
+});
+export type SandboxSkillImportRequest = z.infer<
+  typeof sandboxSkillImportRequestSchema
+>;
+
+/** 工作目录里扫到的技能包候选（含 SKILL.md 的目录）。 */
+export const sandboxSkillPackageSchema = z.object({
+  /** 相对沙箱根的目录路径 */
+  path: z.string(),
+  name: z.string(),
+  description: z.string(),
+});
+export type SandboxSkillPackage = z.infer<typeof sandboxSkillPackageSchema>;
+
+export const sandboxSkillPackageListResponseSchema = z.object({
+  packages: z.array(sandboxSkillPackageSchema),
+});
+export type SandboxSkillPackageListResponse = z.infer<
+  typeof sandboxSkillPackageListResponseSchema
+>;
+
 // === Response Schemas ===
 
 export const skillListResponseSchema = z.object({

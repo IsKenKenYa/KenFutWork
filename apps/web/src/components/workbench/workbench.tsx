@@ -2089,6 +2089,8 @@ export function Workbench() {
           open={skillsOpen}
           onClose={() => setSkillsOpen(false)}
           accessToken={session?.access_token ?? null}
+          // 「从工作目录导入」用：两类项目都有主画布，服务端据此解析沙箱目录
+          canvasId={selectedProject?.primaryCanvas?.id ?? null}
         />
       ) : null}
       {/* MCP 管理：从「设置」挪到侧栏（与技能并列），页面带精选目录与官方注册表 */}

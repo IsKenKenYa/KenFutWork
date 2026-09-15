@@ -1,5 +1,7 @@
 import {
   applicationErrorResponseSchema,
+  sandboxSkillImportRequestSchema,
+  sandboxSkillPackageListResponseSchema,
   skillCreateRequestSchema,
   skillDetailResponseSchema,
   skillImportRequestSchema,
@@ -10,17 +12,26 @@ import {
   workspaceSkillToggleRequestSchema,
 } from "@loomic/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
+import { resolveSandboxDir } from "../agent/sandbox-dir.js";
 import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
+import type { CanvasRepository } from "../features/canvas/repository.js";
 import {
   SQLSTATE_UNIQUE_VIOLATION,
   SqlError,
 } from "../features/persistence/errors.js";
 import type { SkillCatalogRepository } from "../features/skills/repository.js";
+import { generateSlug } from "../features/skills/slug.js";
 import {
+  buildSkillFromFiles,
   importSkillFromUrl,
+  type ImportedSkill,
   SkillImportError,
 } from "../features/skills/skill-import-service.js";
+import {
+  listSandboxSkillPackages,
+  readSandboxSkillPackage,
+} from "../features/skills/sandbox-skill-packages.js";
 
 type SkillErrorCode =
   | "skill_not_found"
@@ -41,8 +52,94 @@ export async function registerSkillRoutes(
     /** 安装态与目录的数据访问（persistence 缝）。 */
     skillsRepository: SkillCatalogRepository;
     viewerService: ViewerService;
+    /** 「从工作目录导入」需要：画布归属校验 + 沙箱目录解析（与 agent/git 同一处）。 */
+    canvasRepository: CanvasRepository;
+    sandboxRoot?: string | undefined;
+    canvasWorkDirs?: Record<string, string> | undefined;
   },
 ) {
+  /**
+   * 落库 + 装进当前工作区（URL 导入与工作目录导入共用，避免两套持久化路径漂移）。
+   *
+   * 同名 slug 冲突时抛 SqlError（由路由转 409）；返回读回的技能行与文件列表。
+   */
+  const persistImportedSkill = async (
+    user: { id: string },
+    workspaceId: string,
+    imported: ImportedSkill,
+  ): Promise<{
+    skillRow: Record<string, unknown>;
+    skillId: string;
+    files: ReturnType<typeof mapSkillFileRow>[];
+  }> => {
+    const slug = generateSlug(imported.manifest.name);
+    const skillRow = await options.skillsRepository.insertOwned(user.id, {
+      author: imported.manifest.author ?? "unknown",
+      category: "custom",
+      description: imported.manifest.description,
+      license: imported.manifest.license ?? null,
+      metadata: {
+        ...(imported.manifest.metadata ?? {}),
+        source_url: imported.sourceUrl,
+      },
+      name: imported.manifest.name,
+      skillContent: imported.skillContent,
+      slug,
+      version: imported.manifest.version ?? "1.0",
+    });
+    if (!skillRow) {
+      throw new SkillImportError(
+        "save_failed",
+        "Failed to save imported skill.",
+      );
+    }
+    const skillId = skillRow.id as string;
+
+    if (imported.files.length > 0) {
+      await options.skillsRepository
+        .insertFilesForOwnedSkill(user.id, skillId, imported.files)
+        .catch((error: unknown) => {
+          // 非致命：技能本体已建，附带文件失败只记日志
+          app.log.error({ err: error }, "skill file insert failed (non-fatal)");
+          return 0;
+        });
+    }
+
+    // 自动装进当前工作区：导入即启用，用户不必再去点一次「安装」
+    await options.skillsRepository.upsertInstallation({
+      enabled: true,
+      installedBy: user.id,
+      skillId,
+      workspaceId,
+    });
+
+    const fileData = await options.skillsRepository.listFilesForVisibleSkill(
+      user.id,
+      skillId,
+    );
+    return { skillRow, skillId, files: fileData.map(mapSkillFileRow) };
+  };
+
+  /** canvasId → 已校验归属的沙箱目录（不可见即 404，不给账号/资源枚举留信号）。 */
+  const sandboxDirFor = async (
+    user: { id: string } & Record<string, unknown>,
+    canvasId: string,
+  ): Promise<string | null> => {
+    const workspace = await options.viewerService
+      .resolveWorkspace(user as never)
+      .catch(() => null);
+    if (!workspace) return null;
+    const canvas = await options.canvasRepository
+      .findById(workspace.id, canvasId)
+      .catch(() => null);
+    if (!canvas) return null;
+    return resolveSandboxDir(
+      canvasId,
+      options.sandboxRoot,
+      options.canvasWorkDirs?.[canvasId],
+    );
+  };
+
   // =========================================================================
   // Skills Registry (public catalog)
   // =========================================================================
@@ -271,91 +368,15 @@ export async function registerSkillRoutes(
       // Import skill from external URL (downloads SKILL.md + associated files)
       const imported = await importSkillFromUrl(url);
 
-      const slug = generateSlug(imported.manifest.name);
-
-      // Persist skill to DB
-      let skillData: Record<string, unknown> | null;
-      try {
-        skillData = await options.skillsRepository.insertOwned(user.id, {
-          author: imported.manifest.author ?? "unknown",
-          category: "custom",
-          description: imported.manifest.description,
-          license: imported.manifest.license ?? null,
-          metadata: {
-            ...(imported.manifest.metadata ?? {}),
-            source_url: imported.sourceUrl,
-          },
-          name: imported.manifest.name,
-          skillContent: imported.skillContent,
-          slug,
-          version: imported.manifest.version ?? "1.0",
-        });
-      } catch (error) {
-        request.log.error({ err: error }, "skill import DB insert failed");
-        if (
-          error instanceof SqlError &&
-          error.code === SQLSTATE_UNIQUE_VIOLATION
-        ) {
-          return sendSkillError(
-            reply,
-            "skill_import_failed",
-            "A skill with this name already exists.",
-            409,
-          );
-        }
-        return sendSkillError(
-          reply,
-          "skill_import_failed",
-          "Failed to save imported skill.",
-        );
-      }
-
-      if (!skillData) {
-        return sendSkillError(
-          reply,
-          "skill_import_failed",
-          "Failed to save imported skill.",
-        );
-      }
-
-      const skillId = skillData.id as string;
-
-      // Insert associated files (scripts/, references/, assets/)
-      if (imported.files.length > 0) {
-        const fileError = await options.skillsRepository
-          .insertFilesForOwnedSkill(user.id, skillId, imported.files)
-          .then(() => null)
-          .catch((caught: unknown) => caught);
-        if (fileError) {
-          // Non-fatal: skill record was created but file inserts failed
-          request.log.error(
-            { err: fileError },
-            "skill import file insert failed (non-fatal)",
-          );
-        }
-      }
-
-      // Auto-install imported skill to the user's current workspace
-      await options.skillsRepository.upsertInstallation({
-        enabled: true,
-        installedBy: user.id,
-        skillId,
-        workspaceId,
-      });
-
-      // Fetch files back so the response includes them
-      const fileData = await options.skillsRepository.listFilesForVisibleSkill(
-        user.id,
-        skillId,
-      );
+      const persisted = await persistImportedSkill(user, workspaceId, imported);
 
       const skill = {
-        ...mapSkillDetailRow(skillData as unknown as SkillRow),
-        files: fileData.map(mapSkillFileRow),
+        ...mapSkillDetailRow(persisted.skillRow as unknown as SkillRow),
+        files: persisted.files,
       };
 
       request.log.info(
-        { skillId, sourceUrl: url },
+        { skillId: persisted.skillId, sourceUrl: url },
         "skill imported successfully",
       );
       return reply.code(201).send(skillDetailResponseSchema.parse({ skill }));
@@ -365,6 +386,17 @@ export async function registerSkillRoutes(
           issues: (error as { issues: unknown[] }).issues,
           message: "Invalid request body",
         });
+      }
+      if (
+        error instanceof SqlError &&
+        error.code === SQLSTATE_UNIQUE_VIOLATION
+      ) {
+        return sendSkillError(
+          reply,
+          "skill_import_failed",
+          "A skill with this name already exists.",
+          409,
+        );
       }
       if (error instanceof SkillImportError) {
         request.log.warn(
@@ -378,6 +410,128 @@ export async function registerSkillRoutes(
         reply,
         "skill_import_failed",
         "Failed to import skill.",
+      );
+    }
+  });
+
+  // GET /api/skills/sandbox-packages?canvasId=… — 列出工作目录里的技能包候选
+  // （「从工作目录导入」用：agent 在沙箱里造出来的技能包就在这儿被发现）
+  app.get<{ Querystring: { canvasId?: string } }>(
+    "/api/skills/sandbox-packages",
+    async (request, reply) => {
+      try {
+        const user = await options.auth.authenticate(request);
+        if (!user) return sendUnauthenticated(reply);
+        const canvasId = request.query.canvasId ?? "";
+        if (!canvasId) {
+          return sendSkillError(
+            reply,
+            "skill_query_failed",
+            "缺少 canvasId。",
+            400,
+          );
+        }
+        const sandboxDir = await sandboxDirFor(user, canvasId);
+        if (!sandboxDir) {
+          return sendSkillError(
+            reply,
+            "skill_not_found",
+            "画布不存在或不属于当前工作区。",
+            404,
+          );
+        }
+        return reply
+          .code(200)
+          .send(
+            sandboxSkillPackageListResponseSchema.parse({
+              packages: listSandboxSkillPackages(sandboxDir),
+            }),
+          );
+      } catch (error) {
+        request.log.error({ err: error }, "sandbox skill package scan failed");
+        return sendSkillError(
+          reply,
+          "skill_query_failed",
+          "扫描工作目录失败。",
+        );
+      }
+    },
+  );
+
+  // POST /api/skills/sandbox-import — 把工作目录里的技能包导入并装进当前工作区
+  app.post("/api/skills/sandbox-import", async (request, reply) => {
+    try {
+      const user = await options.auth.authenticate(request);
+      if (!user) return sendUnauthenticated(reply);
+
+      const payload = sandboxSkillImportRequestSchema.parse(request.body);
+      const viewer = await options.viewerService.ensureViewer(user);
+      const workspaceId = viewer.workspace.id;
+
+      const sandboxDir = await sandboxDirFor(user, payload.canvasId);
+      if (!sandboxDir) {
+        return sendSkillError(
+          reply,
+          "skill_not_found",
+          "画布不存在或不属于当前工作区。",
+          404,
+        );
+      }
+
+      // 服务端自己读盘（不信任前端传内容）；越界/缺 SKILL.md 在这里报错
+      let files: Array<{ path: string; content: string }>;
+      try {
+        files = readSandboxSkillPackage(sandboxDir, payload.path);
+      } catch (error) {
+        return sendSkillError(
+          reply,
+          "skill_import_failed",
+          error instanceof Error ? error.message : "读取技能包失败。",
+          400,
+        );
+      }
+
+      const imported = buildSkillFromFiles(files, {
+        label: "sandbox",
+        url: `sandbox:${payload.path}`,
+      });
+      const persisted = await persistImportedSkill(user, workspaceId, imported);
+      const skill = {
+        ...mapSkillDetailRow(persisted.skillRow as unknown as SkillRow),
+        files: persisted.files,
+      };
+
+      request.log.info(
+        { skillId: persisted.skillId, sandboxPath: payload.path },
+        "skill imported from sandbox",
+      );
+      return reply.code(201).send(skillDetailResponseSchema.parse({ skill }));
+    } catch (error) {
+      if (isZodError(error)) {
+        return reply.code(400).send({
+          issues: (error as { issues: unknown[] }).issues,
+          message: "Invalid request body",
+        });
+      }
+      if (
+        error instanceof SqlError &&
+        error.code === SQLSTATE_UNIQUE_VIOLATION
+      ) {
+        return sendSkillError(
+          reply,
+          "skill_import_failed",
+          "同名技能已存在，请先改名或删除旧技能。",
+          409,
+        );
+      }
+      if (error instanceof SkillImportError) {
+        return sendSkillError(reply, "skill_import_failed", error.message, 400);
+      }
+      request.log.error({ err: error }, "sandbox skill import failed");
+      return sendSkillError(
+        reply,
+        "skill_import_failed",
+        "从工作目录导入失败。",
       );
     }
   });
@@ -820,15 +974,6 @@ function mapSkillDetailRow(row: SkillRow) {
     sourceUrl: row.source_url ?? null,
     packageName: row.package_name ?? null,
   };
-}
-
-function generateSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 100);
 }
 
 function sendUnauthenticated(reply: FastifyReply) {

@@ -58,6 +58,7 @@ export class SkillImportError extends Error {
     | "github_fetch_error"
     | "tarball_extract_error"
     | "zip_extract_error"
+    | "save_failed"
     | "unsupported_source";
 
   constructor(code: SkillImportError["code"], message: string) {
@@ -696,7 +697,7 @@ export async function importFromTarballUrl(
  */
 function buildSkillFromArchiveEntries(
   entries: ArchiveEntry[],
-  source: { label: "tarball" | "zip"; url: string },
+  source: { label: "tarball" | "zip" | "sandbox"; url: string },
 ): ImportedSkill {
   const { label, url } = source;
 
@@ -790,8 +791,23 @@ function buildSkillFromArchiveEntries(
   };
 }
 
-// ── ZIP Importer ──────────────────────────────────────────────────────────
+/**
+ * 由「已在内存里的文件列表」构建技能（从**工作目录**导入 / 创造模式的产物）。
+ *
+ * 直接复用档案包构建器：SKILL.md 判定、frontmatter 解析、`scripts|references|assets`
+ * 附带文件与二进制过滤口径与 zip/tarball 完全一致——两条导入路径不会各自漂移。
+ *
+ * @param files 相对**技能包根**的文件（`path` 用 `/` 分隔）
+ * @param source 来源标签与来源标识（sandbox 导入用 `sandbox:<相对路径>`）
+ */
+export function buildSkillFromFiles(
+  files: Array<{ path: string; content: string }>,
+  source: { label: "tarball" | "zip" | "sandbox"; url: string },
+): ImportedSkill {
+  return buildSkillFromArchiveEntries(files, source);
+}
 
+// ── ZIP Importer ──────────────────────────────────────────────────────────
 /**
  * Import a skill from a .zip / .skill URL.
  *

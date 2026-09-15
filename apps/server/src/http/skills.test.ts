@@ -1,3 +1,7 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import Fastify, { type FastifyInstance } from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -91,7 +95,12 @@ function fakeRepository(
 
 async function buildApp(
   repository: Partial<SkillCatalogRepository> = {},
-  options: { unauthenticated?: boolean } = {},
+  options: {
+    unauthenticated?: boolean;
+    /** 工作目录导入相关：假画布仓库 + 沙箱根（默认「画布找不到」）。 */
+    canvas?: { id: string } | null;
+    sandboxRoot?: string;
+  } = {},
 ): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
   const deps = {
@@ -101,7 +110,16 @@ async function buildApp(
     skillsRepository: fakeRepository(repository),
     viewerService: {
       ensureViewer: async () => ({ workspace: { id: WORKSPACE_ID } }),
+      resolveWorkspace: async () => ({ id: WORKSPACE_ID }),
     } as never,
+    // 工作目录导入相关：默认「画布找不到」；用例可传入假画布与沙箱根
+    canvasRepository: {
+      findById: async () =>
+        options.canvas === undefined || options.canvas === null
+          ? null
+          : options.canvas,
+    } as never,
+    ...(options.sandboxRoot ? { sandboxRoot: options.sandboxRoot } : {}),
   };
   await registerSkillRoutes(app, deps);
   await registerMarketplaceRoutes(app, deps);
@@ -713,5 +731,125 @@ describe("/api/workspaces/skills（安装态）", () => {
 
     expect(res.statusCode).toBe(204);
     expect(installs).toEqual([expect.objectContaining({ enabled: false })]);
+  });
+});
+
+/**
+ * 「从工作目录导入」：agent 在沙箱里造出来的技能包（创造模式产物）要能一键装进工作区。
+ * 这两条路由是创造模式的最后一段路：列出候选 → 读取并导入（自动安装 + 启用）。
+ */
+describe("工作目录里的技能包（从工作目录导入）", () => {
+  const CANVAS_ID = "canvas-1";
+
+  function makeSandbox(): string {
+    const root = mkdtempSync(join(tmpdir(), "kfw-skill-import-"));
+    // 包落在 `<沙箱根>/<画布UUID>/`：与 resolveSandboxDir 的口径一致
+    const workspaceDir = join(root, CANVAS_ID);
+    mkdirSync(join(workspaceDir, "en-zh-translate", "scripts"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(workspaceDir, "en-zh-translate", "SKILL.md"),
+      "---\nname: en-zh-translate\ndescription: 英译中\n---\n\n步骤…\n",
+      "utf8",
+    );
+    writeFileSync(
+      join(workspaceDir, "en-zh-translate", "scripts", "run.py"),
+      "print('x')",
+      "utf8",
+    );
+    return root;
+  }
+
+  it("列出候选：只列含 SKILL.md 的目录，带解析出的名字与说明", async () => {
+    const sandboxRoot = makeSandbox();
+    const app = await buildApp(
+      {},
+      { canvas: { id: CANVAS_ID }, sandboxRoot },
+    );
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/skills/sandbox-packages?canvasId=${CANVAS_ID}`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      packages: [
+        expect.objectContaining({
+          path: "en-zh-translate",
+          name: "en-zh-translate",
+          description: "英译中",
+        }),
+      ],
+    });
+  });
+
+  it("导入：读取磁盘内容 → 落库 → 自动装进当前工作区（附带文件一并写入）", async () => {
+    const sandboxRoot = makeSandbox();
+    const inserts: unknown[] = [];
+    const installs: unknown[] = [];
+    const app = await buildApp(
+      {
+        insertOwned: async (_userId, input) => {
+          inserts.push(input);
+          return { ...SKILL_ROW, id: SKILL_ID };
+        },
+        insertFilesForOwnedSkill: async () => 1,
+        listFilesForVisibleSkill: async () => [FILE_ROW],
+        upsertInstallation: async (input) => {
+          installs.push(input);
+        },
+      },
+      { canvas: { id: CANVAS_ID }, sandboxRoot },
+    );
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/skills/sandbox-import",
+      payload: { canvasId: CANVAS_ID, path: "en-zh-translate" },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(inserts[0]).toMatchObject({
+      name: "en-zh-translate",
+      skillContent: expect.stringContaining("英译中"),
+    });
+    expect(installs[0]).toMatchObject({
+      enabled: true,
+      skillId: SKILL_ID,
+      workspaceId: WORKSPACE_ID,
+    });
+    expect(res.json().skill.files).toHaveLength(1);
+  });
+
+  it("路径越界 / 缺 SKILL.md / 画布不属于本工作区都如实拒绝", async () => {
+    const sandboxRoot = makeSandbox();
+    const app = await buildApp({}, { canvas: { id: CANVAS_ID }, sandboxRoot });
+
+    const escaped = await app.inject({
+      method: "POST",
+      url: "/api/skills/sandbox-import",
+      payload: { canvasId: CANVAS_ID, path: "../../etc" },
+    });
+    expect(escaped.statusCode).toBe(400);
+    expect(escaped.json().error.message).toContain("越出工作目录");
+
+    const missing = await app.inject({
+      method: "POST",
+      url: "/api/skills/sandbox-import",
+      payload: { canvasId: CANVAS_ID, path: "en-zh-translate/scripts" },
+    });
+    expect(missing.statusCode).toBe(400);
+    expect(missing.json().error.message).toContain("SKILL.md");
+
+    // 画布查询默认返回 null（不属于当前工作区）
+    const foreign = await buildApp({}, { sandboxRoot });
+    const denied = await foreign.inject({
+      method: "POST",
+      url: "/api/skills/sandbox-import",
+      payload: { canvasId: "someone-else", path: "en-zh-translate" },
+    });
+    expect(denied.statusCode).toBe(404);
   });
 });

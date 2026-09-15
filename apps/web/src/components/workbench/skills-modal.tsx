@@ -2,12 +2,17 @@
 
 import type {
   MarketplaceSkill,
+  SandboxSkillPackage,
   SkillCategory,
   SkillDetail,
   SkillListItem,
 } from "@loomic/shared";
 import { Blocks, Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  importSandboxSkill,
+  listSandboxSkillPackages,
+} from "@/lib/skills-sandbox";
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { getServerBaseUrl } from "@/lib/env";
@@ -51,10 +56,13 @@ export function SkillsModal({
   open,
   onClose,
   accessToken,
+  canvasId = null,
 }: {
   open: boolean;
   onClose: () => void;
   accessToken: string | null;
+  /** 当前工作目录的画布 id（「从工作目录导入」用；没有选中项目时为 null）。 */
+  canvasId?: string | null;
 }) {
   const [tab, setTab] = useState<SkillsTab>("mine");
   const [query, setQuery] = useState("");
@@ -239,6 +247,7 @@ export function SkillsModal({
             {tab === "create" ? (
               <SkillsCreatePanel
                 accessToken={accessToken}
+                canvasId={canvasId}
                 onCreated={() => {
                   setTab("mine");
                   refresh();
@@ -407,9 +416,12 @@ function SkillDetailPanel({
 /** 导入（URL：GitHub / npm tarball / ZIP）与手动新建。 */
 function SkillsCreatePanel({
   accessToken,
+  canvasId,
   onCreated,
 }: {
   accessToken: string | null;
+  /** 当前工作目录所在画布：服务端据此解析沙箱目录（工作目录映射优先）。 */
+  canvasId: string | null;
   onCreated: () => void;
 }) {
   const [url, setUrl] = useState("");
@@ -420,9 +432,53 @@ function SkillsCreatePanel({
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState<SkillCategory>("custom");
   const [content, setContent] = useState("");
+  /** 「从工作目录导入」：agent（创造模式）在沙箱里造出的技能包 */
+  const [packages, setPackages] = useState<SandboxSkillPackage[]>([]);
+  const [packagesError, setPackagesError] = useState<string | null>(null);
+  const [packagesLoading, setPackagesLoading] = useState(false);
+  const [importingPath, setImportingPath] = useState<string | null>(null);
 
   const authHeaders = (): Record<string, string> =>
     accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+
+  const scanSandbox = useCallback(() => {
+    setPackagesLoading(true);
+    setPackagesError(null);
+    void listSandboxSkillPackages({
+      baseUrl: getServerBaseUrl(),
+      token: accessToken,
+      canvasId,
+    })
+      .then(({ packages: found, error: reason }) => {
+        setPackages(found);
+        setPackagesError(reason);
+      })
+      .finally(() => setPackagesLoading(false));
+  }, [accessToken, canvasId]);
+
+  // 打开「导入 / 新建」就扫一次：创造模式的产物应当**自动出现**在列表里
+  useEffect(() => {
+    scanSandbox();
+  }, [scanSandbox]);
+
+  async function importFromSandbox(path: string) {
+    setImportingPath(path);
+    setError(null);
+    setMessage(null);
+    const result = await importSandboxSkill({
+      baseUrl: getServerBaseUrl(),
+      token: accessToken,
+      canvasId,
+      path,
+    });
+    setImportingPath(null);
+    if (!result.ok) {
+      setError(result.reason);
+      return;
+    }
+    setMessage(`已从工作目录导入「${result.skill.name}」并启用`);
+    onCreated();
+  }
 
   async function importByUrl() {
     if (!url.trim()) return;
@@ -491,6 +547,58 @@ function SkillsCreatePanel({
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
 
       <section className="space-y-2">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium">从工作目录导入</h3>
+          <button
+            type="button"
+            onClick={scanSandbox}
+            disabled={packagesLoading}
+            className="rounded-md border px-2 py-1 text-xs disabled:opacity-40"
+          >
+            {packagesLoading ? "扫描中…" : "刷新"}
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          agent 在沙箱里写好的技能包（含 SKILL.md 的目录）会出现在这里——「创造」模式的产出
+          可一键装进当前工作区。
+        </p>
+        {packagesError ? (
+          <p className="text-xs text-destructive">{packagesError}</p>
+        ) : null}
+        {!packagesError && !packagesLoading && packages.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            当前工作目录里还没有技能包。用「创造」模式生成一个，或把 SKILL.md 写进工作目录。
+          </p>
+        ) : null}
+        {packages.length > 0 ? (
+          <ul className="space-y-2">
+            {packages.map((item) => (
+              <li
+                key={item.path}
+                className="flex items-center gap-3 rounded-lg border px-3 py-2"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium">{item.name}</div>
+                  <div className="truncate text-xs text-muted-foreground">
+                    {item.path}
+                    {item.description ? ` · ${item.description}` : ""}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void importFromSandbox(item.path)}
+                  disabled={importingPath !== null}
+                  className="shrink-0 rounded-md border px-3 py-1.5 text-sm disabled:opacity-40"
+                >
+                  {importingPath === item.path ? "导入中…" : "导入"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </section>
+
+      <section className="space-y-2 border-t pt-4">
         <h3 className="text-sm font-medium">从链接导入</h3>
         <p className="text-xs text-muted-foreground">{SKILL_IMPORT_HINT}</p>
         <div className="flex gap-2">
