@@ -73,15 +73,15 @@ function AiImageIcon({ className }: { className?: string }) {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <rect x="1.8" y="4.2" width="16.4" height="16.4" rx="2.4" />
-      <circle cx="7" cy="9.4" r="1.5" />
-      <path d="M2.4 17.2 8 11.6l5.4 5.4" />
-      <path d="M20.4 1.6l1 2.6 2.6 1-2.6 1-1 2.6-1-2.6-2.6-1 2.6-1z" />
+      <rect x="2" y="3" width="18" height="18" rx="2.6" />
+      <circle cx="7.4" cy="8.8" r="1.6" />
+      <path d="M2.6 17.6 8.4 11.8l6 6" />
+      <path d="M20.6 1.4l1 2.6 2.6 1-2.6 1-1 2.6-1-2.6-2.6-1 2.6-1z" />
     </svg>
   );
 }
 
-/** 「AI 生成视频」图标：摄像机机身 + 右侧三角，同样铺满视框（lucide 的 Video 上下只占一半）。 */
+/** 「AI 生成视频」图标：圆角方块 + 播放三角（方正、与其它图标同高；此前拉长的摄像机不好看）。 */
 function AiVideoIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -93,8 +93,8 @@ function AiVideoIcon({ className }: { className?: string }) {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <rect x="1.8" y="4.2" width="13.2" height="15.6" rx="2.4" />
-      <path d="m15 10.8 6.2-3.6v9.6L15 13.2z" />
+      <rect x="2" y="2" width="20" height="20" rx="5" />
+      <path d="m10 8.2 6.4 3.8-6.4 3.8z" />
     </svg>
   );
 }
