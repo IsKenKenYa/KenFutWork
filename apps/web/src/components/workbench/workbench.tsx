@@ -414,6 +414,9 @@ export function Workbench() {
         | undefined;
       if (data?.type === "workbench:project-created") {
         refreshProjects();
+        // 画布里点「新建项目」：宿主直接把选中切到新项目（画布区随之打开新画布）。
+        // 不这样做，用户会觉得「点了没反应」；而画布那边若自行开新标签，就会被「弹走」。
+        if (data.projectId) setSelectedProjectId(data.projectId);
         return;
       }
       if (data?.type !== "workbench:project-deleted") return;

@@ -97,19 +97,30 @@ export function useCreateProject() {
         sessionStorage.removeItem(INITIAL_AGENT_MODEL_KEY);
       }
 
-      // Open the new tab synchronously within the user gesture so the
-      // browser popup-blocker doesn't intervene. We'll set the real URL
-      // once the API call returns.
-      const newTab = window.open("/loading-preview", "_blank");
+      /**
+       * 嵌在工作台 iframe 里时**不要**开新浏览器标签：用户点的是画布菜单里的「新建项目」，
+       * 期望留在工作台里看新画布，而不是被弹到另一个浏览器标签（实测反馈「会跳走」）。
+       * 这时改为把新画布 id 回传宿主，由宿主切换选中（见 workbench 的 message 处理）。
+       * 独立打开画布页时保持原行为：同步开标签、拿到 URL 再赋值——同步开是为了不被弹窗拦截。
+       */
+      const embedded =
+        typeof window !== "undefined" && window.parent !== window;
+      const newTab = embedded
+        ? null
+        : window.open("/loading-preview", "_blank");
 
       setCreating(true);
       try {
         const result = await createProject(token, { name: "Untitled" });
         const canvasId = result.project.primaryCanvas.id;
-        // 嵌入工作台 iframe：通知宿主刷新项目列表
-        if (window.parent !== window) {
+        // 嵌入工作台 iframe：通知宿主刷新项目列表并切到新画布
+        if (embedded) {
           window.parent.postMessage(
-            { type: "workbench:project-created" },
+            {
+              type: "workbench:project-created",
+              projectId: result.project.id,
+              canvasId,
+            },
             window.location.origin,
           );
         }
@@ -118,7 +129,9 @@ export function useCreateProject() {
           ? `/canvas?id=${canvasId}&prompt=${encodeURIComponent(opts.prompt)}`
           : `/canvas?id=${canvasId}`;
 
-        if (newTab) {
+        if (embedded) {
+          // 宿主负责切换（上面的 postMessage）；本页不跳转
+        } else if (newTab) {
           newTab.location.href = url;
         } else {
           // Popup was blocked despite sync open — fallback to in-page navigation

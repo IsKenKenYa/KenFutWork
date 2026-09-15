@@ -2,6 +2,7 @@
 
 import {
   Copy,
+  Download,
   ImagePlus,
   Maximize2,
   Menu,
@@ -33,6 +34,8 @@ interface CanvasLogoMenuProps {
   accessToken: string;
   projectId: string;
   canvasId: string;
+  /** 项目名——导出画布时用作文件名（缺省回落到 canvas）。 */
+  projectName?: string | undefined;
   // biome-ignore lint/suspicious/noExplicitAny: Excalidraw API has no public type definition
   excalidrawApi: any | null;
 }
@@ -65,6 +68,7 @@ function generateFileId(): string {
 export function CanvasLogoMenu({
   accessToken,
   projectId,
+  projectName,
   excalidrawApi,
 }: CanvasLogoMenuProps) {
   const { error: toastError } = useToast();
@@ -99,6 +103,37 @@ export function CanvasLogoMenu({
       captureUpdate: "IMMEDIATELY",
     });
   }, [excalidrawApi]);
+
+  /**
+   * 导出画布：用 Excalidraw 官方的 `serializeAsJSON` 产出 **.excalidraw 原生文件**
+   * （就是本项目画布组件的存储格式：type/version/source/elements/appState/files），
+   * 下载到本地后可以直接拖回 Excalidraw / 本画布继续编辑。
+   *
+   * 注意与「保存画布」的区别：保存是写服务端数据库（Ctrl+S），导出是落一个可带走、
+   * 可再导入的文件——用户要的「保存成 ex 啥的文件」说的是后者。
+   */
+  const handleExportCanvas = useCallback(async () => {
+    if (!excalidrawApi) return;
+    try {
+      const { serializeAsJSON } = await import("@excalidraw/excalidraw");
+      const json = serializeAsJSON(
+        excalidrawApi.getSceneElements(),
+        excalidrawApi.getAppState(),
+        excalidrawApi.getFiles(),
+        "local",
+      );
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${projectName || "canvas"}.excalidraw`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.warn("Export canvas failed:", err);
+      toastError("导出画布失败");
+    }
+  }, [excalidrawApi, projectName, toastError]);
 
   const handleDeleteProject = useCallback(async () => {
     if (!confirmingDelete) {
@@ -216,11 +251,16 @@ export function CanvasLogoMenu({
 
           <DropdownMenuSeparator />
 
-          {/* Group 2 — Canvas import */}
+          {/* Group 2 — Canvas import / export */}
           <DropdownMenuGroup>
             <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
               <ImagePlus className="size-4" />
               导入图片
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => void handleExportCanvas()}>
+              <Download className="size-4" />
+              导出画布
+              <DropdownMenuShortcut>.excalidraw</DropdownMenuShortcut>
             </DropdownMenuItem>
           </DropdownMenuGroup>
 

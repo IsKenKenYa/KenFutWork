@@ -269,6 +269,7 @@ function CanvasPageContent() {
           accessToken={accessToken}
           projectId={canvasData.projectId}
           canvasId={canvasData.id}
+          projectName={projectName}
           excalidrawApi={excalidrawApi}
         />
         <EditableProjectName
