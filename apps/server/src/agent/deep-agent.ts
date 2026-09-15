@@ -48,15 +48,41 @@ export type ToolGate = (
   toolName: string,
 ) => { allowed: true } | { allowed: false; reason: string };
 
+/**
+ * 工具门的旁路钩子：运行时接上它，就能把「被拒的调用」合成成 tool.* 事件下发给
+ * 客户端（此前门一拦，客户端什么都看不到），并据连续拒绝次数做有界失败。
+ */
+export interface ToolGateHooks {
+  onDenied(entry: {
+    toolCallId: string;
+    toolName: string;
+    reason: string;
+    input?: Record<string, unknown> | undefined;
+  }): void;
+  onAllowed?(toolName: string): void;
+}
+
 /** 按工具门构造 wrapToolCall 中间件：拒绝即以 ToolMessage 回给模型，不执行。 */
-function createToolGateMiddleware(gate: ToolGate): AgentMiddleware {
+export function createToolGateMiddleware(
+  gate: ToolGate,
+  hooks?: ToolGateHooks,
+): AgentMiddleware {
   return {
     name: "loomic-tool-gate",
     wrapToolCall: async (request, handler) => {
       const verdict = gate(request.toolCall.name);
       if (verdict.allowed) {
+        hooks?.onAllowed?.(request.toolCall.name);
         return handler(request);
       }
+      hooks?.onDenied({
+        toolCallId: request.toolCall.id ?? request.toolCall.name,
+        toolName: request.toolCall.name,
+        reason: verdict.reason,
+        ...(request.toolCall.args && typeof request.toolCall.args === "object"
+          ? { input: request.toolCall.args as Record<string, unknown> }
+          : {}),
+      });
       return new ToolMessage({
         tool_call_id: request.toolCall.id ?? request.toolCall.name,
         content: `工具 ${request.toolCall.name} 被拒绝：${verdict.reason}`,
@@ -189,6 +215,8 @@ export type LoomicAgentFactory = (options: {
   runToolContext?: ToolExecutionContext;
   /** 执行模式工具门（solo/plan 硬约束），拦截包括内置工具在内的全部调用。 */
   toolGate?: ToolGate;
+  /** 工具门旁路钩子（拒绝可见性 + 连续拒绝计数）。 */
+  toolGateHooks?: ToolGateHooks;
 }) => LoomicAgent;
 
 export function createLoomicDeepAgent(options: {
@@ -215,6 +243,8 @@ export function createLoomicDeepAgent(options: {
   runToolContext?: ToolExecutionContext;
   /** 执行模式工具门（solo/plan 硬约束），拦截包括内置工具在内的全部调用。 */
   toolGate?: ToolGate;
+  /** 工具门旁路钩子（拒绝可见性 + 连续拒绝计数）。 */
+  toolGateHooks?: ToolGateHooks;
 }): LoomicAgent {
   const backendResult =
     options.backendResult ?? createAgentBackend(options.env, options.canvasId);
@@ -271,7 +301,7 @@ export function createLoomicDeepAgent(options: {
           middleware: [
             createModelResponseGuardMiddleware(),
             createUnknownToolGuardMiddleware(),
-            createToolGateMiddleware(options.toolGate),
+            createToolGateMiddleware(options.toolGate, options.toolGateHooks),
           ],
         }
       : {

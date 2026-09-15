@@ -43,7 +43,11 @@ import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createPipelineLogger } from "../ws/logger.js";
 import { createAgentBackend } from "./backends/index.js";
-import type { ToolGate } from "./deep-agent.js";
+import type { ToolGate, ToolGateHooks } from "./deep-agent.js";
+import {
+  createToolDenialTracker,
+  type ToolDenialRecord,
+} from "./tool-denial.js";
 import {
   createDefaultModelSpecifier,
   createLoomicDeepAgent,
@@ -1056,6 +1060,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       });
 
       try {
+        /** 被拒工具调用的记账（含连续拒绝计数）；门存在时才有值。 */
+        let denialTracker: ReturnType<typeof createToolDenialTracker> | undefined;
         let agent: LoomicAgent;
         try {
           let resolvedModel: BaseLanguageModel | string | undefined =
@@ -1281,6 +1287,22 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             run.threadId && options.toolGateFor
               ? options.toolGateFor(run.threadId)
               : undefined;
+          // 被拒调用的可见性与有界失败：门只做判定，记账与中止由运行时负责
+          // （只有它拿得到 runId/时间戳/abort 控制器）
+          denialTracker = toolGate ? createToolDenialTracker() : undefined;
+          const toolGateHooks: ToolGateHooks | undefined = denialTracker
+            ? {
+                onAllowed: (toolName) => denialTracker?.recordAllowed(toolName),
+                onDenied: (entry) => {
+                  denialTracker?.recordDenied(entry);
+                  // 达上限立即中止：模型「只发工具调用」的回合不产生任何适配器事件，
+                  // 光靠事件循环里的检查会漏（实测替身连调 5 次仍停在 running）
+                  if (denialTracker?.fatalReason()) {
+                    run.controller.abort();
+                  }
+                },
+              }
+            : undefined;
 
           // 工具执行上下文的工作区：工具侧（skill 目录等）按工作区取数，
           // 否则只能拿到 runId/accessToken，无法解析工作区（曾致技能工具恒空）。
@@ -1319,6 +1341,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               : {}),
             // 执行模式工具门（solo/plan 硬约束）：拦截内置与桥接工具的全部调用
             ...(toolGate ? { toolGate } : {}),
+            ...(toolGateHooks ? { toolGateHooks } : {}),
             runToolContext: {
               runId,
               ...(run.canvasId ? { canvasId: run.canvasId } : {}),
@@ -1544,6 +1567,37 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             abortRun: () => run.controller.abort(),
             stream,
           })) {
+            // 被拒的工具调用先合成 tool.* 事件下发（否则界面上「谁被拦了、为什么」
+            // 完全没有记录——门在中间件里直接回了 ToolMessage，不产生任何工具事件）
+            for (const denied of denialTracker?.drain() ?? []) {
+              for (const synthetic of denialEvents(denied, runId, now())) {
+                yield synthetic;
+              }
+            }
+            // 有界失败：同一工具连续被拒达上限就中止本轮，不再让它空转
+            const fatalDenial = denialTracker?.fatalReason() ?? null;
+            if (fatalDenial) {
+              run.controller.abort();
+              run.status = "failed";
+              await updatePersistedRunFailure(
+                options.agentRunMetadataService,
+                run,
+                now,
+                new Error(fatalDenial),
+              ).catch((persistErr) =>
+                console.error(
+                  "[agent-runtime] Failed to persist tool-denial abort:",
+                  persistErr,
+                ),
+              );
+              yield {
+                error: { code: "run_failed", message: fatalDenial },
+                runId,
+                timestamp: now(),
+                type: "run.failed",
+              };
+              return;
+            }
             run.status = mapEventToStatus(event);
             if (isTerminalEvent(event)) {
               sawTerminalEvent = true;
@@ -1551,6 +1605,35 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             // billing 门中止（如图片生成的额度/tier 拒绝）会把异常误报成「用户取消」
             // ——中止信号先于错误到达适配器。有 billingFailure 在身却报取消的，
             // 一律改判 run.failed，文案给可读的 billing 原因。
+            // 被拒工具触发的有界失败：abort 后适配器报「用户取消」，但这是系统
+            // 主动中止——改判 run.failed 并把可读原因带给客户端（同 billing 口径）
+            if (
+              event.type === "run.canceled" &&
+              !run.billingFailure &&
+              denialTracker?.fatalReason()
+            ) {
+              const message = denialTracker.fatalReason() ?? "工具连续被拒，已中止本轮。";
+              const failedEvent: StreamEvent = {
+                error: { code: "run_failed", message },
+                runId,
+                timestamp: now(),
+                type: "run.failed",
+              };
+              run.status = "failed";
+              await updatePersistedRunFailure(
+                options.agentRunMetadataService,
+                run,
+                now,
+                new Error(message),
+              ).catch((persistErr) =>
+                console.error(
+                  "[agent-runtime] Failed to persist tool-denial abort:",
+                  persistErr,
+                ),
+              );
+              yield failedEvent;
+              return;
+            }
             if (event.type === "run.canceled" && run.billingFailure) {
               const failedEvent: StreamEvent = {
                 error: {
@@ -1684,6 +1767,43 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       }
     },
   };
+}
+
+/**
+ * 把一次被拒的工具调用合成成 `tool.started` + `tool.completed` 事件。
+ *
+ * 形状与真实工具事件一致（客户端 `applyToolEvent` 直接可用），差别只在结果：
+ * `output.denied === true` 且 summary 是拒绝原因——界面因此能显示「被拦」而不只是
+ * 模型的转述。
+ */
+function denialEvents(
+  denied: ToolDenialRecord,
+  runId: string,
+  timestamp: string,
+): StreamEvent[] {
+  return [
+    {
+      ...(denied.input ? { input: denied.input } : {}),
+      runId,
+      timestamp,
+      toolCallId: denied.toolCallId,
+      toolName: denied.toolName,
+      type: "tool.started",
+    },
+    {
+      output: {
+        denied: true,
+        reason: denied.reason,
+        count: denied.count,
+      },
+      outputSummary: `工具被拒绝（第 ${denied.count} 次）：${denied.reason}`,
+      runId,
+      timestamp,
+      toolCallId: denied.toolCallId,
+      toolName: denied.toolName,
+      type: "tool.completed",
+    },
+  ] as StreamEvent[];
 }
 
 function isTerminalEvent(event: StreamEvent) {

@@ -59,7 +59,7 @@ import { useAuth } from "@/lib/auth-context";
 import { getServerBaseUrl } from "@/lib/env";
 import { describeRunFailure } from "@/lib/run-failure";
 import {
-  applyToolEvent,
+  applyTaskToolEvent,
   type TaskToolEntry,
 } from "@/lib/workbench-tools";
 import {
@@ -732,37 +732,14 @@ export function Workbench() {
         // 服务端权威起表时刻（覆盖提交时的本地乐观值）
         const ts = (evt as { timestamp?: string }).timestamp;
         if (ts) apply((task) => ({ ...task, runStartedAt: ts }));
-      } else if (type === "tool.started") {
-        const toolName = (evt as { toolName?: string }).toolName ?? "";
-        if (!isSubagentTool(toolName)) return;
-        const toolCallId = (evt as { toolCallId?: string }).toolCallId ?? "";
-        if (!toolCallId) return;
-        const timestamp = (evt as { timestamp?: string }).timestamp ?? "";
-        const input = (evt as { input?: Record<string, unknown> }).input;
-        apply((task) => ({
-          ...task,
-          subagents: upsertSubagentStarted(task.subagents ?? [], {
-            toolCallId,
-            toolName,
-            ...(input ? { input } : {}),
-            timestamp,
-          }),
-        }));
-      } else if (type === "tool.completed") {
-        const toolCallId = (evt as { toolCallId?: string }).toolCallId ?? "";
-        const timestamp = (evt as { timestamp?: string }).timestamp;
-        if (!toolCallId || !timestamp) return;
+      } else if (type === "tool.started" || type === "tool.completed") {
+        // 工具轨迹对所有工具都记（含被工具门拒绝的合成事件），子代理工具另进目录。
+        // 曾经这里写成「先处理子代理、非子代理直接 return」，把通用分支变成死代码。
         apply((task) =>
-          task.subagents
-            ? {
-                ...task,
-                subagents: completeSubagent(
-                  task.subagents,
-                  toolCallId,
-                  timestamp,
-                ),
-              }
-            : task,
+          applyTaskToolEvent(
+            task,
+            evt as Parameters<typeof applyTaskToolEvent>[1],
+          ),
         );
       } else if (type === "message.delta") {
         const delta = (evt as { delta?: string }).delta ?? "";
@@ -780,14 +757,6 @@ export function Workbench() {
           }
           return { ...task, messages };
         });
-      } else if (type === "tool.started" || type === "tool.completed") {
-        apply((task) => ({
-          ...task,
-          tools: applyToolEvent(
-            task.tools ?? [],
-            evt as Parameters<typeof applyToolEvent>[1],
-          ),
-        }));
       } else if (type === "run.completed") {
         const ts = (evt as { timestamp?: string }).timestamp;
         apply((task) => ({

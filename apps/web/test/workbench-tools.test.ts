@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  applyTaskToolEvent,
   applyToolEvent,
   capTools,
   MAX_TASK_TOOLS,
   type TaskToolEntry,
+  type TaskToolState,
 } from "../src/lib/workbench-tools";
 
 /**
@@ -112,5 +114,64 @@ describe("工作台工具轨迹", () => {
       ["a", "running"],
       ["b", "completed"],
     ]);
+  });
+});
+
+/**
+ * 回归：一条工具事件必须**同时**喂给工具轨迹与子代理目录。
+ *
+ * 线上曾写成「先处理子代理、非子代理直接 return」，把下面的通用分支变成死代码，
+ * 于是界面上从来没有普通工具（含被工具门拒绝的合成事件）的记录。
+ */
+describe("applyTaskToolEvent（工具事件 → 任务状态）", () => {
+  it("普通工具也要进轨迹（不是只有子代理工具）", () => {
+    const next = applyTaskToolEvent(
+      { tools: [] } as TaskToolState,
+      { type: "tool.started", toolCallId: "c1", toolName: "web_search" },
+    );
+    expect(next.tools).toEqual([
+      { toolCallId: "c1", toolName: "web_search", status: "running" },
+    ]);
+    expect(next.subagents).toBeUndefined();
+  });
+
+  it("被工具门拒绝的合成事件同样进轨迹，并带出拒绝原因", () => {
+    let state: TaskToolState = { tools: [] };
+    state = applyTaskToolEvent(state, {
+      type: "tool.started",
+      toolCallId: "d1",
+      toolName: "write_file",
+    });
+    state = applyTaskToolEvent(state, {
+      type: "tool.completed",
+      toolCallId: "d1",
+      toolName: "write_file",
+      outputSummary: "工具被拒绝（第 1 次）：plan 计划模式：计划批准前仅允许只读工具",
+      output: { denied: true, reason: "plan 计划模式：计划批准前仅允许只读工具" },
+    });
+
+    expect(state.tools?.[0]).toMatchObject({
+      status: "completed",
+      summary: expect.stringContaining("工具被拒绝"),
+      output: { denied: true },
+    });
+  });
+
+  it("子代理工具同时进目录（两块状态一起更新）", () => {
+    const started = applyTaskToolEvent(
+      { tools: [], subagents: [] } as TaskToolState,
+      { type: "tool.started", toolCallId: "s1", toolName: "task" },
+    );
+    expect(started.tools).toHaveLength(1);
+    expect(started.subagents).toHaveLength(1);
+
+    const done = applyTaskToolEvent(started, {
+      type: "tool.completed",
+      toolCallId: "s1",
+      toolName: "task",
+      timestamp: "2026-09-15T00:00:00.000Z",
+    });
+    // 子代理条目以 endedAt 表达终态（不是 status）
+    expect(done.subagents?.[0]?.endedAt).toBe("2026-09-15T00:00:00.000Z");
   });
 });

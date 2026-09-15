@@ -173,6 +173,22 @@ function pickScenario(messages) {
   if (/批准/.test(user)) {
     return { kind: "text", text: "已收到批准，继续执行完成。" };
   }
+  if (/web_search|搜索|联网/.test(user)) {
+    // 已有搜索结果就不再重调（否则会一直重调同一工具）
+    const results = currentRunToolResults(messages);
+    const searched = results.find((m) => /https?:\/\/|标题/.test(toolResultText(m)));
+    if (searched) {
+      return {
+        kind: "text",
+        text: `搜索已完成，结果摘要：${toolResultText(searched).slice(0, 300)}`,
+      };
+    }
+    return {
+      kind: "tool",
+      name: "web_search",
+      args: { query: process.env.MOCK_SEARCH_QUERY ?? "python pytest 参数化 用法" },
+    };
+  }
   if (tools.length > 0) {
     const last = tools[tools.length - 1];
     const text =
@@ -196,22 +212,6 @@ function pickScenario(messages) {
         file_path: "kfw-mock-check.txt",
         content: "mock 模型替身写入：计划模式应被拦，自主模式应落盘。",
       },
-    };
-  }
-  if (/web_search|搜索|联网/.test(user)) {
-    // 已有搜索结果就不再重调（否则会一直重调同一工具）
-    const results = currentRunToolResults(messages);
-    const searched = results.find((m) => /https?:\/\/|标题/.test(toolResultText(m)));
-    if (searched) {
-      return {
-        kind: "text",
-        text: `搜索已完成，结果摘要：${toolResultText(searched).slice(0, 300)}`,
-      };
-    }
-    return {
-      kind: "tool",
-      name: "web_search",
-      args: { query: process.env.MOCK_SEARCH_QUERY ?? "python pytest 参数化 用法" },
     };
   }
   return { kind: "text", text: `PONG:${user.replace(/\s+/g, " ").slice(0, 30)}` };
