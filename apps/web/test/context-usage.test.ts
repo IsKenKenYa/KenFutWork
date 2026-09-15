@@ -93,3 +93,18 @@ describe("usageFromEvent（run.usage 载荷 → 页面状态）", () => {
     });
   });
 });
+
+describe("窗口已知但本轮还没有用量（回归：文案不许把两件事混成一件）", () => {
+  it("窗口已声明 + 无用量：windowKnown 为 true，不是「没有声明窗口」", () => {
+    const view = contextUsageView(null, 1_000_000);
+    expect(view.hasUsage).toBe(false);
+    expect(view.windowKnown).toBe(true);
+    expect(view.windowLabel).toBe("100万");
+    expect(view.percent).toBeNull();
+  });
+
+  it("窗口缺失 + 无用量：windowKnown 为 false", () => {
+    expect(contextUsageView(null, null).windowKnown).toBe(false);
+    expect(contextUsageView(null, 0).windowKnown).toBe(false);
+  });
+});

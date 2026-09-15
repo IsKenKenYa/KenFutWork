@@ -42,6 +42,14 @@ export interface ContextUsageView {
   hasUsage: boolean;
   /** 形如「61.4万」；无数据时为 null。 */
   inputLabel: string | null;
+  /**
+   * 模型目录是否声明了上下文窗口。
+   *
+   * 与 `hasUsage` **解耦**：本轮没有用量时窗口照样可能是已知的，
+   * 不能因为「没数据」就写「该模型没有声明上下文窗口」（曾这么错过一次——
+   * 文案把两件事混成一件，用户会以为模型目录缺字段）。
+   */
+  windowKnown: boolean;
   /** 模型上下文窗口；未知时为 null（此时不显示百分比）。 */
   windowLabel: string | null;
   /** 占用百分比（0-100 的整数）；窗口未知或无数据时为 null。 */
@@ -69,10 +77,15 @@ export function contextUsageView(
   usage: RunUsageSnapshot | null | undefined,
   contextWindow: number | null | undefined,
 ): ContextUsageView {
+  const window =
+    typeof contextWindow === "number" && contextWindow > 0
+      ? contextWindow
+      : null;
   const empty: ContextUsageView = {
     hasUsage: false,
     inputLabel: null,
-    windowLabel: null,
+    windowKnown: window !== null,
+    windowLabel: window === null ? null : formatTokens(window),
     percent: null,
     percentLabel: null,
     cacheHitLabel: null,
@@ -80,10 +93,6 @@ export function contextUsageView(
   };
   if (!usage || usage.inputTokens <= 0) return empty;
 
-  const window =
-    typeof contextWindow === "number" && contextWindow > 0
-      ? contextWindow
-      : null;
   const percent =
     window === null
       ? null
@@ -93,7 +102,8 @@ export function contextUsageView(
   return {
     hasUsage: true,
     inputLabel: formatTokens(usage.inputTokens),
-    windowLabel: window === null ? null : formatTokens(window),
+    windowKnown: window !== null,
+    windowLabel: empty.windowLabel,
     percent,
     percentLabel: percent === null ? null : `${percent}%`,
     // 上游没报缓存字段 → 不显示命中率（0% 会被读成「缓存全失效」）

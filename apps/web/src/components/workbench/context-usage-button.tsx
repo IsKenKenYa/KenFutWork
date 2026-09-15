@@ -104,11 +104,11 @@ export function ContextUsageButton({
             </div>
           </dl>
 
-          {view.windowLabel === null ? (
+          {view.windowKnown ? null : (
             <p className="mt-2 text-[11px] text-muted-foreground">
               该模型没有声明上下文窗口，无法计算容量占比。
             </p>
-          ) : null}
+          )}
         </div>
       ) : null}
     </div>

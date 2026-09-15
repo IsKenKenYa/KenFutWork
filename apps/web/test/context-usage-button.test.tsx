@@ -48,6 +48,13 @@ describe("ContextUsageButton", () => {
     expect(dialog).not.toHaveTextContent("0%");
   });
 
+  it("窗口已声明但本轮无用量：不写「没有声明上下文窗口」（回归）", async () => {
+    render(<ContextUsageButton usage={null} contextWindow={1_000_000} />);
+    const dialog = await openPopover();
+    expect(dialog).toHaveTextContent("本轮暂无用量");
+    expect(dialog).not.toHaveTextContent("没有声明上下文窗口");
+  });
+
   it("模型没声明窗口时说明无法计算占比", async () => {
     render(
       <ContextUsageButton
