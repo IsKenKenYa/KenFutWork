@@ -9,6 +9,8 @@ export type ChatSessionRow = {
 export type ChatSessionThreadRow = {
   id: string;
   thread_id: string | null;
+  /** 会话所属画布（沙箱目录名就用它，见 resolveSandboxDir 的调用方）。 */
+  canvas_id: string;
 };
 
 export type ChatMessageRow = {
@@ -158,7 +160,7 @@ export function createChatRepository(
             where c.id = ${canvasParam}::uuid
               and p.workspace_id = :workspace
            on conflict (id) do nothing
-           returning id, thread_id`,
+           returning id, thread_id, canvas_id`,
           [
             input.sessionId,
             input.userId,
@@ -172,7 +174,7 @@ export function createChatRepository(
         }
 
         const existing = await scoped.queryOne<ChatSessionThreadRow>(
-          `select s.id, s.thread_id
+          `select s.id, s.thread_id, s.canvas_id
              from public.chat_sessions s
              join public.canvases c on c.id = s.canvas_id
              join public.projects p on p.id = c.project_id
@@ -233,7 +235,7 @@ export function createChatRepository(
       const row = await persistence
         .forWorkspace(workspaceId)
         .queryOne<ChatSessionThreadRow>(
-          `select s.id, s.thread_id
+          `select s.id, s.thread_id, s.canvas_id
              from public.chat_sessions s
              join public.canvases c on c.id = s.canvas_id
              join public.projects p on p.id = c.project_id

@@ -19,6 +19,15 @@ export class ThreadServiceError extends Error {
 export type SessionThreadBinding = {
   sessionId: string;
   threadId: string;
+  /**
+   * 会话所属画布 id。
+   *
+   * 用途：agent 的沙箱目录名取「画布 UUID」（`tmp/sandbox/<画布UUID>`）。无工作目录的
+   * Code 会话，客户端只能拿会话 UUID 当 canvasId 发上来，直接落盘会得到
+   * `tmp/sandbox/<会话UUID>`——与服务端懒供给的「Code 工作台」画布对不上。故运行入口
+   * 用它把沙箱作用域改回真实画布（事件路由仍按客户端给的 canvasId，不受影响）。
+   */
+  canvasId: string;
 };
 
 export type ThreadService = {
@@ -68,6 +77,7 @@ export function createThreadService(options: {
       }
 
       return {
+        canvasId: row.canvas_id,
         sessionId: row.id,
         threadId: row.thread_id,
       };

@@ -278,9 +278,14 @@ function createFakeRepository(
     ensureSessionWithId: async (_workspaceId, input) => ({
       id: input.sessionId,
       thread_id: input.threadId,
+      canvas_id: input.canvasId,
     }),
     deleteSession: async () => 1,
-    findSessionThread: async () => ({ id: SESSION_ID, thread_id: "thread_1" }),
+    findSessionThread: async () => ({
+      canvas_id: CANVAS_ID,
+      id: SESSION_ID,
+      thread_id: "thread_1",
+    }),
     insertMessage: async () => MESSAGE_ROW,
     listMessages: async () => [],
     listSessions: async () => [],
@@ -475,7 +480,11 @@ describe("thread service（会话线程绑定）", () => {
     const { threadService } = buildService();
     await expect(
       threadService.resolveOwnedSessionThread(USER, SESSION_ID),
-    ).resolves.toEqual({ sessionId: SESSION_ID, threadId: "thread_1" });
+    ).resolves.toEqual({
+      canvasId: CANVAS_ID,
+      sessionId: SESSION_ID,
+      threadId: "thread_1",
+    });
   });
 
   it("会话不存在（或不属本工作区）返回 404", async () => {
@@ -493,7 +502,11 @@ describe("thread service（会话线程绑定）", () => {
   it("会话未绑定线程返回 409（不可续跑）", async () => {
     const { threadService } = buildService({
       repository: {
-        findSessionThread: async () => ({ id: SESSION_ID, thread_id: null }),
+        findSessionThread: async () => ({
+        canvas_id: CANVAS_ID,
+        id: SESSION_ID,
+        thread_id: null,
+      }),
       },
     });
 

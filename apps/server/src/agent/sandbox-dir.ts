@@ -41,3 +41,25 @@ export function resolveSandboxDir(
   const root = resolve(sandboxRoot ?? DEFAULT_SANDBOX_ROOT);
   return resolve(root, sanitizeCanvasIdForPath(canvasId));
 }
+
+/**
+ * 运行入口的沙箱作用域判定：**沙箱目录名要落在画布 UUID 上**。
+ *
+ * 背景：无工作目录的 Code 会话，客户端手里只有会话 UUID，会把 `canvasId` 发成
+ * 会话 id（`payload.canvasId ?? payload.conversationId` 就是会话作用域）。直接用它会得到
+ * `tmp/sandbox/<会话UUID>`，与服务端懒供给的「Code 工作台」画布对不上（用户要求的是
+ * `tmp/sandbox/<画布UUID>`）。
+ *
+ * 规则：**只有当客户端发的就是会话作用域、且服务端确实解析出了会话的真实画布时**，
+ * 才把沙箱作用域换成画布 UUID；正常项目作用域（客户端给了项目主画布）一律不动。
+ */
+export function resolveSandboxScopeId(input: {
+  requestedCanvasId: string;
+  conversationId: string;
+  sessionCanvasId?: string | null | undefined;
+}): string | undefined {
+  if (!input.sessionCanvasId) return undefined;
+  return input.requestedCanvasId === input.conversationId
+    ? input.sessionCanvasId
+    : undefined;
+}

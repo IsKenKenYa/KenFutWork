@@ -7,6 +7,7 @@ import {
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
+import { resolveSandboxScopeId } from "../agent/sandbox-dir.js";
 import type { AgentRunService } from "../agent/runtime.js";
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import { isPlanApprovalInput } from "../features/agent-modes/execution-mode-service.js";
@@ -186,6 +187,15 @@ export async function registerRunRoutes(
               }
             : {}),
           ...(model ? { model } : {}),
+          // 与 WS 路径同口径：客户端只能给会话 UUID 时，沙箱目录名改用会话的真实画布
+          ...(() => {
+            const sandboxScopeId = resolveSandboxScopeId({
+              conversationId: payload.conversationId,
+              requestedCanvasId: payload.canvasId ?? payload.conversationId,
+              sessionCanvasId: sessionThread?.canvasId,
+            });
+            return sandboxScopeId ? { sandboxScopeId } : {};
+          })(),
           ...(sessionThread ? { threadId: sessionThread.threadId } : {}),
         }),
       );

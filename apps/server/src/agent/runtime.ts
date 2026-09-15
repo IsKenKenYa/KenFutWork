@@ -278,6 +278,14 @@ type RuntimeRunRecord = RunCreateRequest & {
   controller: AbortController;
   modelOverride?: string;
   runId: string;
+  /**
+   * 沙箱目录名用的 id（画布 UUID）。
+   *
+   * 无工作目录的 Code 会话，客户端只能把**会话 UUID** 当 canvasId 发上来，
+   * 直接落盘会得到 `tmp/sandbox/<会话UUID>`——与服务端懒供给的「Code 工作台」画布对不上。
+   * 运行入口解析出真实画布后放这里；事件路由仍用 `canvasId`（客户端认的是它）。
+   */
+  sandboxScopeId?: string;
   status: RuntimeRunStatus;
   threadId?: string;
   userId?: string;
@@ -436,6 +444,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       runOptions?: {
         accessToken?: string;
         model?: string;
+        /** 沙箱目录名用的 id（画布 UUID）；缺省回落到 canvasId。 */
+        sandboxScopeId?: string;
         threadId?: string;
         userId?: string;
       },
@@ -451,6 +461,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         consumed: false,
         controller: new AbortController(),
         ...(runOptions?.model ? { modelOverride: runOptions.model } : {}),
+        ...(runOptions?.sandboxScopeId
+          ? { sandboxScopeId: runOptions.sandboxScopeId }
+          : {}),
         ...(runOptions?.threadId ? { threadId: runOptions.threadId } : {}),
         ...(runOptions?.userId ? { userId: runOptions.userId } : {}),
         runId,
@@ -1057,9 +1070,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       }
 
       // Create backend — production uses StateBackend (no local shell).
-      const backendResult = createAgentBackend(options.env, run.canvasId, {
-        hasWorkspaceSkills: workspaceSkills.length > 0,
-      });
+      const backendResult = createAgentBackend(
+        options.env,
+        run.sandboxScopeId ?? run.canvasId,
+        {
+          hasWorkspaceSkills: workspaceSkills.length > 0,
+        },
+      );
 
       try {
         /** 被拒工具调用的记账（含连续拒绝计数）；门存在时才有值。 */
