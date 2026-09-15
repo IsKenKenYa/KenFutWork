@@ -75,11 +75,11 @@ export function ExecutionModeSelect({
 
   return (
     <div
-      className="flex items-center gap-2 border-b px-3 py-1.5"
+      className="flex items-center gap-2 px-3 py-1.5"
       data-testid="execution-mode-select"
     >
       <label htmlFor="execution-mode" className="text-xs text-muted-foreground">
-        执行模式
+        模式
       </label>
       <Select
         value={mode}
@@ -91,7 +91,7 @@ export function ExecutionModeSelect({
       >
         <SelectTrigger
           id="execution-mode"
-          aria-label="执行模式"
+          aria-label="模式"
           className="px-2 py-1 text-xs"
         >
           <SelectValue />

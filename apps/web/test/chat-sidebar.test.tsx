@@ -207,6 +207,9 @@ describe("ChatSidebar", () => {
     expect(
       screen.getByRole("tablist", { name: "打开的对话" }),
     ).toBeInTheDocument();
+    // 历史记录/新建对话只在对话视图里（用户要求：不带进别的面板）
+    expect(screen.queryByRole("button", { name: "历史记录" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "新建对话" })).toBeNull();
     // 原「Agent 助手」标题已由标签页取代
     expect(screen.queryByText("Agent 助手")).toBeNull();
 
@@ -249,8 +252,25 @@ describe("ChatSidebar", () => {
     expect(screen.getByRole("button", { name: /历史记录/ })).toBeInTheDocument();
 
     // 标签页是面板的第一行：执行模式排在它下面，不得压在它上面
-    const mode = await screen.findByRole("combobox", { name: "执行模式" });
+    const mode = await screen.findByRole("combobox", { name: "模式" });
     const order = tablist.compareDocumentPosition(mode);
     expect(order & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // 三个视图图标：**空心**（fill=none）且尺寸一致（用户反馈有的大有的小、有的实心）
+    for (const name of ["对话", "图层", "生成文件"]) {
+      const svg = screen
+        .getByRole("button", { name })
+        .querySelector("svg");
+      expect(svg).not.toBeNull();
+      expect(svg?.getAttribute("fill")).toBe("none");
+      expect(svg?.getAttribute("class")).toBe("h-4 w-4");
+    }
+    // 历史记录/新建对话两个图标同样统一为 h-4 w-4
+    for (const name of ["历史记录", "新建对话"]) {
+      const svg = screen
+        .getByRole("button", { name })
+        .querySelector("svg");
+      expect(svg?.getAttribute("class")).toBe("h-4 w-4");
+    }
   });
 });

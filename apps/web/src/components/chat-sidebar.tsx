@@ -61,24 +61,38 @@ import {
   type ChatTab,
 } from "../lib/chat-tabs";
 
-/** 对话视图图标：应用自己的气泡字形（与「收起面板」按钮同源），不是通用聊天气泡。 */
+/** 对话视图图标：空心气泡（与图层/文件同一套：24 视框、stroke 1.5、无填充）。 */
 function ChatBubbleIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none">
-      <path
-        fill="currentColor"
-        fillOpacity={0.9}
-        d="M18.25 3c2.071 0 3.946 2.16 3.946 4.23L22 15.75a3.75 3.75 0 0 1-3.75 3.75h-2.874a.25.25 0 0 0-.16.058l-2.098 1.738a1.75 1.75 0 0 1-2.24-.007l-2.065-1.73a.25.25 0 0 0-.162-.059H5.75A3.75 3.75 0 0 1 2 15.75v-9A3.75 3.75 0 0 1 5.75 3zM7.5 10q-.053 0-.104.005a1.25 1.25 0 0 0-1.14 1.117l-.006.128.007.128a1.25 1.25 0 1 0 1.37-1.371l-.02-.002A1 1 0 0 0 7.5 10m4.5 0q-.053 0-.104.005a1.25 1.25 0 0 0-1.14 1.117l-.006.128.007.128a1.25 1.25 0 1 0 1.37-1.371l-.02-.002A1 1 0 0 0 12 10m4.5 0q-.053 0-.105.005a1.25 1.25 0 0 0-1.138 1.117l-.007.128.007.128a1.25 1.25 0 1 0 1.37-1.371l-.02-.002A1 1 0 0 0 16.5 10"
-      />
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
     </svg>
   );
 }
 
-/** 图层图标：画布底部工具条原本用的叠层字形。 */
+/** 图层图标：空心叠层（同一套线宽与视框）。 */
 function LayersStackIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 20 20" fill="currentColor">
-      <path d="M17.189 12.48a.65.65 0 0 1 .622 1.141l-7.5 4.1a.65.65 0 0 1-.623 0l-7.5-4.1a.65.65 0 0 1 .624-1.14L10 16.41zm0-3.036a.65.65 0 0 1 .622 1.14l-7.5 4.1a.65.65 0 0 1-.623 0l-7.5-4.1a.65.65 0 0 1 .624-1.14L10 13.374zm-7.426-7.2a.65.65 0 0 1 .549.035l7.5 4.1a.651.651 0 0 1 0 1.14l-7.5 4.101a.65.65 0 0 1-.624 0l-7.5-4.1a.651.651 0 0 1 0-1.14l7.5-4.101zM3.854 6.948 10 10.31l6.145-3.36L10 3.59z" />
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 2 2 7l10 5 10-5-10-5Z" />
+      <path d="m2 17 10 5 10-5" />
+      <path d="m2 12 10 5 10-5" />
     </svg>
   );
 }
@@ -1180,8 +1194,8 @@ export function ChatSidebar({
             {panelTab === "layers" ? "图层" : "生成文件"}
           </span>
         )}
-        {/* 历史记录（含新建对话）：紧跟执行模式，只留图标 */}
-        {!sessionsLoading && (
+        {/* 历史记录（含新建对话）：只在对话视图出现，紧贴「模式」右侧 */}
+        {panelTab === "chat" && !sessionsLoading && (
           <SessionSelector
             sessions={sessions}
             activeSessionId={activeSessionId}
@@ -1220,7 +1234,7 @@ export function ChatSidebar({
                 : "text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
           >
-            <LayersStackIcon className="h-3.5 w-3.5" />
+            <LayersStackIcon className="h-4 w-4" />
           </button>
           <button
             type="button"
@@ -1236,7 +1250,7 @@ export function ChatSidebar({
                 : "text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
           >
-            <GeneratedFileIcon className="h-3.5 w-3.5" />
+            <GeneratedFileIcon className="h-4 w-4" />
           </button>
         </div>
         <button
