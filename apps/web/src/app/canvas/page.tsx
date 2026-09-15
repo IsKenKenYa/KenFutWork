@@ -1,5 +1,6 @@
 "use client";
 
+import { PanelsTopLeft } from "lucide-react";
 import type { ImageArtifact, VideoArtifact } from "@kenfutwork/shared";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
@@ -13,6 +14,7 @@ import type { CanvasImageItem } from "../../components/canvas-image-picker";
 import { BrandKitModal } from "../../components/brand-kit-modal";
 import { CanvasLayersPanel } from "../../components/canvas-layers-panel";
 import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
+import { PluginPanelButtons } from "@/lib/plugin-panels";
 import { type SidePanelTab, ChatSidebar } from "../../components/chat-sidebar";
 import { EditableProjectName } from "../../components/editable-project-name";
 import { LoadingScreen } from "../../components/loading-screen";
@@ -286,6 +288,23 @@ function CanvasPageContent() {
           currentBrandKitId={brandKitId}
           onBrandKitChange={(kitId) => setBrandKitId(kitId)}
           onManage={() => setBrandKitOpen(true)}
+        />
+        {/* 插件面板（能力 `ui`）：画布槽位 */}
+        <PluginPanelButtons
+          accessToken={accessToken}
+          slot="canvas"
+          renderButton={(panel, open) => (
+            <button
+              key={panel.id}
+              type="button"
+              onClick={open}
+              title={`插件 ${panel.pluginId} 提供的面板`}
+              className="flex items-center gap-1.5 rounded-lg border-[0.5px] border-border bg-card px-2.5 py-1.5 text-xs text-muted-foreground shadow-sm transition-colors hover:text-foreground"
+            >
+              <PanelsTopLeft className="h-3.5 w-3.5" />
+              {panel.title}
+            </button>
+          )}
         />
       </div>
       {/* Canvas always takes full width; on mobile/tablet, ChatSidebar overlays instead of side-by-side */}

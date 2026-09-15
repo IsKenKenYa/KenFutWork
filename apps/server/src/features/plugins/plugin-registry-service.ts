@@ -1,13 +1,15 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import type {
-  CompatReport,
-  InstalledPlugin,
-  PluginBundleManifest,
-  PluginExportArtifact,
-  PluginMarketEntry,
+import {
+  type CompatReport,
+  type InstalledPlugin,
+  PLUGIN_UI_SLOTS,
+  type PluginBundleManifest,
+  type PluginExportArtifact,
+  type PluginMarketEntry,
+  type PluginUiSlot,
 } from "@kenfutwork/shared";
 
 import type { ToolRegistry } from "../../kernel/types.js";
@@ -35,6 +37,32 @@ import {
  * 安装事务：先门禁、后落盘、再装载；装载失败回滚落盘。**门禁不通过则一个字节都不写**。
  */
 
+/** 静态资源体积上限（面板页面/样式够用；挡住误托管的打包产物）。 */
+const MAX_ASSET_BYTES = 2 * 1024 * 1024;
+
+/** 按扩展名给 content-type（够面板用；未知一律 octet-stream 由浏览器下载）。 */
+function contentTypeOf(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  const table: Record<string, string> = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".mjs": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".ico": "image/x-icon",
+    ".woff2": "font/woff2",
+    ".txt": "text/plain; charset=utf-8",
+    ".md": "text/markdown; charset=utf-8",
+  };
+  return table[ext] ?? "application/octet-stream";
+}
+
 export interface PluginCatalogEntry {
   name: string;
   title: string;
@@ -44,6 +72,12 @@ export interface PluginCatalogEntry {
 }
 
 export interface PluginRegistryDeps {
+  /**
+   * 是否允许第三方插件（来自部署形态；云端默认 false）。
+   * false 时 `install()` 直接拒绝、`restore()` 不装载既有第三方插件——
+   * 这是能力开关，不是 UI 提示。
+   */
+  allowThirdParty?: boolean;
   pluginsDir: string;
   tools: ToolRegistry;
   subscribe: (
@@ -119,6 +153,16 @@ export interface PluginRegistryService {
     headers: Record<string, string | undefined>;
     isAuthenticated: boolean;
   }): Promise<PluginRouteDispatchResult | undefined>;
+  /**
+   * 读插件 bundle 里的静态资源（`/api/plugins/<id>/assets/…`）。
+   *
+   * 只在清单声明 `kenfutwork.assets === true` 时开放；只读、防路径穿越、限体积、
+   * 拒绝 `node_modules` 与点文件。返回 undefined = 不存在 / 未开放（路由层转 404）。
+   */
+  readAsset(input: {
+    pluginId: string;
+    relativePath: string;
+  }): Promise<{ content: Buffer; contentType: string } | undefined>;
   /** 该路由是否声明为公开（未注册时 undefined —— 由调用方决定鉴权口径）。 */
   routeVisibility(input: {
     pluginId: string;
@@ -202,6 +246,7 @@ function manifestOrPlaceholder(
       enginesNode: null,
       hasClientUi: false,
       ui: [],
+      assets: false,
       lifecycleScripts: [],
       dshBaseDependencies: [],
       hasNativeBuild: false,
@@ -321,6 +366,12 @@ export function createPluginRegistryService(
           };
         },
         ui: (entry) => {
+          // 运行时注册的槽位同样收窄到四个（清单侧已由 schema 收窄，这里防插件写错）。
+          const slot = (PLUGIN_UI_SLOTS as readonly string[]).includes(
+            entry.slot ?? "",
+          )
+            ? (entry.slot as PluginUiSlot)
+            : "sidebar";
           const item = {
             pluginId: record.id,
             id:
@@ -328,7 +379,7 @@ export function createPluginRegistryService(
                 ? entry.id
                 : `${record.id}-panel`,
             title: entry.title,
-            slot: entry.slot ?? "sidebar",
+            slot,
             url: entry.url,
           };
           contributions.ui.push(item);
@@ -441,6 +492,14 @@ export function createPluginRegistryService(
     },
 
     async install(input) {
+      // 云端等多租户形态：默认不允许在本实例上跑租户装的任意代码
+      if (deps.allowThirdParty === false) {
+        throw new PluginRegistryError(
+          "当前部署形态不允许安装第三方插件（云端的共享基础设施不执行租户代码；" +
+            "如确需开启，请显式设置 KENFUTWORK_ALLOW_THIRD_PARTY_PLUGINS=true）。",
+          "install_failed",
+        );
+      }
       const { files, origin } = await fetchBundleFiles(input.url, {
         ...(input.ref ? { ref: input.ref } : {}),
         ...(deps.githubToken ? { token: deps.githubToken } : {}),
@@ -524,6 +583,37 @@ export function createPluginRegistryService(
 
     listUiEntries() {
       return contributions.ui.map((item) => ({ ...item }));
+    },
+
+    async readAsset({ pluginId, relativePath }) {
+      const state = await readState();
+      const record = state.installed.find((item) => item.id === pluginId);
+      if (!record || !record.enabled || record.manifest.assets !== true) {
+        return undefined;
+      }
+      const bundleDir = bundleDirOf(pluginId);
+      const normalized = relativePath
+        .replace(/\\/g, "/")
+        .replace(/^\/+/, "");
+      if (
+        !normalized ||
+        normalized.includes("..") ||
+        normalized.split("/").some((part) => part.startsWith(".") || part === "node_modules")
+      ) {
+        return undefined;
+      }
+      const absolute = path.resolve(bundleDir, normalized);
+      if (!absolute.startsWith(path.resolve(bundleDir) + path.sep)) {
+        return undefined;
+      }
+      try {
+        const info = await stat(absolute);
+        if (!info.isFile() || info.size > MAX_ASSET_BYTES) return undefined;
+        const content = await readFile(absolute);
+        return { content, contentType: contentTypeOf(absolute) };
+      } catch {
+        return undefined;
+      }
     },
 
     routeVisibility({ pluginId, method, path: routePath }) {
@@ -691,6 +781,10 @@ export function createPluginRegistryService(
       return exportPluginBundle(spec, format);
     },
     async restore() {
+      if (deps.allowThirdParty === false) {
+        log.info("[plugins] 当前部署形态禁止第三方插件：跳过重启恢复。");
+        return;
+      }
       const state = await readState();
       for (const record of state.installed) {
         records.set(record.id, record);

@@ -66,6 +66,19 @@ export type ServerEnv = {
   /** 联网搜索（§4.5，BYOK 搜索供应商）：配置 Key 即启用 web_search 工具。 */
   searchApiKey?: string;
   searchProvider?: "metaso";
+  /**
+   * 部署形态：`local`（桌面/本机，默认）/ `self-hosted`（自托管实例）/ `cloud`（多租户云端）。
+   *
+   * 用途是**能力开关**：云端形态下禁止加载第三方插件（多租户共享基础设施上跑租户装的
+   * 任意代码不能接受），`cloud` 时插件安装/装载一律拒绝，除非显式设置
+   * `KENFUTWORK_ALLOW_THIRD_PARTY_PLUGINS=true` 覆盖。
+   */
+  deployment?: "local" | "self-hosted" | "cloud";
+  /**
+   * 是否允许第三方插件（云端默认 false，见 `resolveAllowThirdPartyPlugins`）。
+   * 这是**能力开关**而不是建议：false 时插件安装/装载一律拒绝。
+   */
+  allowThirdPartyPlugins?: boolean;
   /** 覆盖搜索端点（镜像/代理/联调）；默认走供应商官方端点。 */
   searchEndpoint?: string;
   googleApiKey?: string;
@@ -179,6 +192,7 @@ export function loadServerEnv(
   const searchApiKey =
     overrides.searchApiKey ??
     normalizeOptionalString(source.KENFUTWORK_SEARCH_API_KEY);
+  const deployment = parseDeployment(source);
   const searchProvider =
     overrides.searchProvider ??
     parseSearchProvider(source.KENFUTWORK_SEARCH_PROVIDER);
@@ -356,6 +370,8 @@ export function loadServerEnv(
     ...(overrides.gitBinDir ? { gitBinDir: overrides.gitBinDir } : {}),
     ...(overrides.gitSource ? { gitSource: overrides.gitSource } : {}),
     ...(embeddedPostgres ? { embeddedPostgres } : {}),
+    deployment,
+    allowThirdPartyPlugins: resolveAllowThirdPartyPlugins(source, deployment),
     ...(embeddedPostgresPort ? { embeddedPostgresPort } : {}),
     ...(blobPublicBaseUrl ? { blobPublicBaseUrl } : {}),
     ...(mcpServers?.length ? { mcpServers } : {}),
@@ -566,4 +582,35 @@ function readServerVersion() {
   } catch {
     return "0.0.0";
   }
+}
+
+/** 部署形态：未知值 fail loud（拼错形态会静默改变安全口径，不能容忍）。 */
+function parseDeployment(
+  source: NodeJS.ProcessEnv,
+): "local" | "self-hosted" | "cloud" {
+  const raw = normalizeOptionalString(source.KENFUTWORK_DEPLOYMENT);
+  if (!raw) return "local";
+  if (raw === "local" || raw === "self-hosted" || raw === "cloud") {
+    return raw;
+  }
+  throw new Error(
+    `Invalid KENFUTWORK_DEPLOYMENT value: ${raw} (supported: local, self-hosted, cloud)`,
+  );
+}
+
+/**
+ * 是否允许第三方插件。
+ *
+ * 默认：非 cloud 一律允许；**cloud 默认禁止**（多租户共享基础设施上不允许跑租户装的
+ * 任意代码）。要开必须显式声明 `KENFUTWORK_ALLOW_THIRD_PARTY_PLUGINS=true`——云端
+ * 开启意味着接受该风险，不能是"忘了关"的结果。
+ */
+function resolveAllowThirdPartyPlugins(
+  source: NodeJS.ProcessEnv,
+  deployment: "local" | "self-hosted" | "cloud",
+): boolean {
+  const raw = normalizeOptionalString(source.KENFUTWORK_ALLOW_THIRD_PARTY_PLUGINS);
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  return deployment !== "cloud";
 }

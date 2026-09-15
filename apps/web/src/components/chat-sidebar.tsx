@@ -12,6 +12,8 @@ import type {
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { toChatMenuMessages } from "@/lib/chat-menu";
+import { PanelsTopLeft } from "lucide-react";
+import { PluginPanelButtons } from "@/lib/plugin-panels";
 import { useAgentModel } from "../hooks/use-agent-model";
 import { useBreakpoint } from "../hooks/use-breakpoint";
 import { mapServerMessages, useChatSessions } from "../hooks/use-chat-sessions";
@@ -1222,6 +1224,23 @@ export function ChatSidebar({
                 );
               })}
             </div>
+            {/* 插件面板（能力 `ui`）：对话槽位——Design 模式的对话界面就是这块画布内面板 */}
+            <PluginPanelButtons
+              accessToken={accessToken}
+              slot="conversation"
+              renderButton={(panel, open) => (
+                <button
+                  key={panel.id}
+                  type="button"
+                  onClick={open}
+                  title={`插件 ${panel.pluginId} 提供的面板`}
+                  className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                >
+                  <PanelsTopLeft className="h-3.5 w-3.5" />
+                  <span className="max-w-[96px] truncate">{panel.title}</span>
+                </button>
+              )}
+            />
         </>
       </div>
       {/* 第二行：模式 + 历史/新建 + 视图切换（对话/图层/文件）+ 收起（间距收紧，别留空档） */}

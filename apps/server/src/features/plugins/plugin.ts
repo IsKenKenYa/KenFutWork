@@ -104,6 +104,8 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
       const pluginsDir = resolvePluginsDir(deps.pluginsDir);
       ctx.register("plugins", () => {
         service = createPluginRegistryService({
+          // 部署形态决定能不能跑第三方插件（云端默认禁止；见 env.resolveAllowThirdPartyPlugins）
+          allowThirdParty: ctx.env.allowThirdPartyPlugins !== false,
           pluginsDir,
           tools: ctx.get("tools"),
           subscribe: bridgeSubscribe(ctx),

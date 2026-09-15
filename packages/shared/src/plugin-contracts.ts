@@ -50,6 +50,34 @@ export type BundleFormat = z.infer<typeof bundleFormatSchema>;
  * 由 `package.json` + `cordis.patch.yml` 归一化得到的清单。
  * 两种来源格式都收敛到这里，后续校验/安装只看本结构。
  */
+/**
+ * 插件 UI 面板槽位——四个槽位各对应一处渲染位置：
+ * - `sidebar`：工作台左侧栏条目（Code / Design 共用同一条侧栏）；
+ * - `conversation`：对话界面（Code 的工作台对话标题行 / Design 的画布内对话面板）；
+ * - `canvas`：画布页顶部栏；
+ * - `settings`：设置弹窗里的「插件面板」页。
+ */
+export const PLUGIN_UI_SLOTS = [
+  "sidebar",
+  "conversation",
+  "canvas",
+  "settings",
+] as const;
+export const pluginUiSlotSchema = z.enum(PLUGIN_UI_SLOTS);
+export type PluginUiSlot = z.infer<typeof pluginUiSlotSchema>;
+
+/**
+ * 插件 UI 面板入口：清单 `kenfutwork.ui` 与运行时 `ctx.ui.register` **同一形状**
+ * （两处都映射到这个 schema，避免槽位集合各写一份）。
+ */
+export const pluginUiEntrySchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  slot: pluginUiSlotSchema.default("sidebar"),
+  url: z.string().min(1),
+});
+export type PluginUiEntry = z.infer<typeof pluginUiEntrySchema>;
+
 export const pluginBundleManifestSchema = z.object({
   /** 包名（npm 语义；也可作为插件稳定 id） */
   name: z.string().min(1),
@@ -75,20 +103,16 @@ export const pluginBundleManifestSchema = z.object({
   /** 是否携带 dsh web 客户端 UI（`dsh.client`） */
   hasClientUi: z.boolean().default(false),
   /**
-   * 本项目 UI 面板入口（`kenfutwork.ui`，与 bundle 同级）：
-   * 侧栏出现一条目，点开在面板里以 iframe 渲染 `url`（通常是插件自己的路由）。
+   * 是否把 bundle 目录（除 node_modules）当作**静态资源**托管在
+   * `/api/plugins/<id>/assets/…`（只读、限体积）。开了插件就能自带页面/样式，
+   * 不必自己起 HTTP 服务。
    */
-  ui: z
-    .array(
-      z.object({
-        id: z.string().min(1),
-        title: z.string().min(1),
-        /** 目前只支持侧栏槽位；后续可扩 settings / canvas 等。 */
-        slot: z.literal("sidebar").default("sidebar"),
-        url: z.string().min(1),
-      }),
-    )
-    .default([]),
+  assets: z.boolean().default(false),
+  /**
+   * 本项目 UI 面板入口（`kenfutwork.ui`，与 bundle 同级）：按 `slot` 出现在四处之一，
+   * 点开在面板里以 iframe 渲染 `url`（通常是插件自己的路由或由本项目托管的资源）。
+   */
+  ui: z.array(pluginUiEntrySchema).default([]),
   /** 安装期会执行的包生命周期脚本（危险面） */
   lifecycleScripts: z.array(z.string()).default([]),
   /** 依赖的 in-box dsh bundle（`@deepseek-ai/dsh-*`），需要 dsh 运行时 */

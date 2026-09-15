@@ -293,6 +293,30 @@ export async function registerPluginRoutes(
     return reply.code(result.status).send(result.body);
   };
 
+  /**
+   * 插件静态资源：`/api/plugins/<id>/assets/<path>`（只读、公开）。
+   *
+   * 面板页面若由插件自带，iframe 可以直接加载这里（无需鉴权头）。仅在清单声明
+   * `kenfutwork.assets: true` 时开放；越界/点文件/node_modules/超限一律 404。
+   */
+  app.get<{ Params: { pluginId: string; "*": string } }>(
+    "/api/plugins/:pluginId/assets/*",
+    async (request, reply) => {
+      const asset = await options.registry.readAsset({
+        pluginId: request.params.pluginId,
+        relativePath: request.params["*"] ?? "",
+      });
+      if (!asset) {
+        return sendError(reply, "not_found", "资源不存在。", 404);
+      }
+      return reply
+        .code(200)
+        .header("cache-control", "no-cache")
+        .type(asset.contentType)
+        .send(asset.content);
+    },
+  );
+
   app.get("/api/plugins/:pluginId/*", dispatchPluginRoute);
   app.post("/api/plugins/:pluginId/*", dispatchPluginRoute);
 

@@ -1,3 +1,5 @@
+import type { PluginUiSlot } from "@kenfutwork/shared";
+
 import type {
   ToolDefinition,
   ToolExecutionContext,
@@ -49,11 +51,11 @@ export interface CompatRouteSpec {
   }) => unknown | Promise<unknown>;
 }
 
-/** 插件贡献的 UI 面板入口（侧栏条目 + 面板里 iframe 渲染 url）。 */
+/** 插件贡献的 UI 面板入口（按 `slot` 出现在侧栏 / 对话 / 画布 / 设置页四处之一）。 */
 export interface CompatUiEntry {
   id: string;
   title: string;
-  slot?: "sidebar";
+  slot?: PluginUiSlot;
   url: string;
 }
 

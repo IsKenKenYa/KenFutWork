@@ -370,6 +370,10 @@ export function apply(ctx) {
     handler: async (request) => ({ ok: true, query: request.query }),
   });
   ctx.ui.register({ id: "panel", title: "插件面板", url: "/api/plugins/${CONTRIBUTOR}/panel" });
+  ctx.ui.register({ id: "talk", title: "对话面板", slot: "conversation", url: "assets/talk.html" });
+  ctx.ui.register({ id: "cv", title: "画布面板", slot: "canvas", url: "assets/cv.html" });
+  ctx.ui.register({ id: "cfg", title: "设置面板", slot: "settings", url: "assets/cfg.html" });
+  ctx.ui.register({ id: "bad", title: "非法槽位", slot: "nope", url: "assets/bad.html" });
 }
 `,
       "utf8",
@@ -388,9 +392,16 @@ export function apply(ctx) {
     const pluginId = installed.installed.id;
 
     expect(service.listPromptFragments()).toEqual(["回答一律先给结论。"]);
-    const ui = service.listUiEntries();
-    expect(ui).toHaveLength(1);
-    expect(ui[0]).toMatchObject({ title: "插件面板", slot: "sidebar" });
+    // 四个槽位各自带出（缺省 sidebar）；非法槽位落回 sidebar，不静默丢失面板
+    expect(
+      service.listUiEntries().map((item) => `${item.id}:${item.slot}`),
+    ).toEqual([
+      "panel:sidebar",
+      "talk:conversation",
+      "cv:canvas",
+      "cfg:settings",
+      "bad:sidebar",
+    ]);
 
     // 公开路由：匿名可访问
     const publicResult = await service.dispatchRoute({
@@ -453,5 +464,30 @@ export function apply(ctx) {
         path: "panel",
       }),
     ).toBeUndefined();
+  });
+});
+
+/**
+ * 云端护栏：部署形态禁止第三方插件时，安装必须**显式拒绝**（不是 UI 隐藏）。
+ */
+describe("部署形态禁止第三方插件", () => {
+  it("allowThirdParty=false：install 拒绝并给出可读原因", async () => {
+    const kernel = composePlugins(makeEnv(), []);
+    kernels.push(kernel);
+    const service = createPluginRegistryService({
+      allowThirdParty: false,
+      pluginsDir,
+      tools: kernel.get("tools"),
+      subscribe: () => () => {},
+      hostNodeMajor: 22,
+      builtinCatalog: [],
+    });
+
+    await expect(
+      service.install({
+        allowLifecycleScripts: false,
+        url: EXAMPLE_PLUGIN,
+      }),
+    ).rejects.toThrow(/不允许安装第三方插件/);
   });
 });

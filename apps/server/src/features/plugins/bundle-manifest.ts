@@ -1,6 +1,8 @@
 import {
   type BundleFormat,
+  PLUGIN_UI_SLOTS,
   type PluginBundleManifest,
+  type PluginUiSlot,
   pluginBundleManifestSchema,
 } from "@kenfutwork/shared";
 
@@ -226,16 +228,23 @@ export function buildBundleManifest(files: BundleFiles): {
   // UI 面板入口：`kenfutwork.ui`（本项目扩展；dsh 侧没有对应声明）。
   // 刻意放在厂商键下一级而不是 bundle 里：UI 不属于「配置层 patch」的概念。
   const kenfutworkBlock = asRecord(pkg.kenfutwork) ?? {};
+  /** 是否托管 bundle 目录为静态资源（`kenfutwork.assets`）。 */
+  const serveAssets = kenfutworkBlock.assets === true;
   const declaredUi = Array.isArray(kenfutworkBlock.ui)
     ? (kenfutworkBlock.ui as unknown[])
         .map((item) => asRecord(item))
         .filter((item): item is Record<string, unknown> => Boolean(item))
-        .map((item) => ({
-          id: typeof item.id === "string" ? item.id : "",
-          title: typeof item.title === "string" ? item.title : "",
-          slot: "sidebar" as const,
-          url: typeof item.url === "string" ? item.url : "",
-        }))
+        .map((item) => {
+          const slot = String(item.slot ?? "sidebar");
+          return {
+            id: typeof item.id === "string" ? item.id : "",
+            title: typeof item.title === "string" ? item.title : "",
+            slot: (PLUGIN_UI_SLOTS as readonly string[]).includes(slot)
+              ? (slot as PluginUiSlot)
+              : "sidebar",
+            url: typeof item.url === "string" ? item.url : "",
+          };
+        })
         .filter((item) => item.id && item.title && item.url)
     : [];
 
@@ -255,6 +264,7 @@ export function buildBundleManifest(files: BundleFiles): {
     enginesNode:
       engines && typeof engines.node === "string" ? engines.node : null,
     ui: declaredUi,
+    assets: serveAssets,
     hasClientUi:
       typeof pkg.dsh === "object" &&
       pkg.dsh !== null &&
