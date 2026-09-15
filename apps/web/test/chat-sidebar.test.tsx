@@ -165,8 +165,7 @@ describe("ChatSidebar", () => {
     );
   });
 
-  it("右侧面板按标签切换：图层/文件标签渲染各自内容，且不再有「Agent 助手」标题", async () => {
-    // 受控标签：由外部持有 state，点击标签条才真的切换（与画布页的接法一致）
+  it("图层/文件是面板的另两个视图（图标按钮切换），对话标签页只在对话视图里", async () => {
     function Harness() {
       const [tab, setTab] = useState<SidePanelTab>("layers");
       return (
@@ -192,15 +191,43 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    // 图层标签：显示图层内容，且不渲染对话输入区
+    // 图层视图：显示图层内容，且不渲染对话输入区与对话标签
     expect(await screen.findByText("图层列表占位")).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/输入你的想法/)).toBeNull();
-    // 原「Agent 助手」标题已由标签条取代
+    expect(screen.queryByRole("tablist", { name: "打开的对话" })).toBeNull();
+    // 原「Agent 助手」标题已由标签页取代
     expect(screen.queryByText("Agent 助手")).toBeNull();
 
-    // 切到「文件」标签：内容随之切换（文件面板由画布页以 slot 传入）
-    await userEvent.click(screen.getByRole("tab", { name: "文件" }));
+    // 点「生成文件」图标 → 切到文件视图
+    await userEvent.click(screen.getByRole("button", { name: "生成文件" }));
     expect(await screen.findByText("生成文件占位")).toBeInTheDocument();
     expect(screen.queryByText("图层列表占位")).toBeNull();
+  });
+
+  it("对话视图里显示「打开的对话」标签页，当前会话占一个标签且可关闭", async () => {
+    render(
+      <ToastProvider>
+        <TierLimitToastProvider>
+          <ChatSidebar
+            accessToken="token_abc"
+            canvasId="canvas-1"
+            open
+            onToggle={() => {}}
+            ws={mockWs}
+          />
+        </TierLimitToastProvider>
+      </ToastProvider>,
+    );
+
+    const tablist = await screen.findByRole("tablist", { name: "打开的对话" });
+    expect(tablist).toBeInTheDocument();
+    // 当前会话自动成为一个标签（mock 的历史列表里只有 "Existing Chat"）
+    const tab = await screen.findByRole("tab", { name: "Existing Chat" });
+    expect(tab).toHaveAttribute("aria-selected", "true");
+    expect(
+      screen.getByRole("button", { name: "关闭 Existing Chat" }),
+    ).toBeInTheDocument();
+    // 历史记录入口仍在（点历史对话＝新开一个标签）
+    expect(screen.getByRole("button", { name: /历史记录/ })).toBeInTheDocument();
   });
 });

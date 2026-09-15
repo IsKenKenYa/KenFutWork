@@ -52,55 +52,18 @@ import { ErrorBoundary } from "./error-boundary";
 import { ExecutionModeSelect } from "./execution-mode-select";
 import { SessionSelector } from "./session-selector";
 import { useToast } from "./toast";
+import { FolderOpen, Layers } from "lucide-react";
+import {
+  closeTab as closeChatTab,
+  loadTabs,
+  pruneTabs,
+  saveTabs,
+  upsertTab,
+  type ChatTab,
+} from "../lib/chat-tabs";
 
-/** 右侧面板的三个标签：对话、图层、生成文件。 */
+/** 面板的三个视图：对话 / 图层 / 生成文件（对话视图内部再分「对话标签页」）。 */
 export type SidePanelTab = "chat" | "layers" | "files";
-
-const SIDE_PANEL_TABS: Array<{ id: SidePanelTab; label: string }> = [
-  { id: "chat", label: "会话" },
-  { id: "layers", label: "图层" },
-  { id: "files", label: "文件" },
-];
-
-/**
- * 面板顶部标签条。
- *
- * 图层与生成文件原先是画布上的两块独立浮层（各自 `fixed left-0` + 自己的标题栏和
- * 关闭按钮），三是同一块空间的三份入口。改成右侧面板的三个标签后：面板只有一个，
- * 标题栏只有一条，画布上不再压浮层。
- */
-function SidePanelTabs({
-  value,
-  onChange,
-}: {
-  value: SidePanelTab;
-  onChange?: ((tab: SidePanelTab) => void) | undefined;
-}) {
-  return (
-    <div
-      role="tablist"
-      aria-label="右侧面板"
-      className="flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5"
-    >
-      {SIDE_PANEL_TABS.map((tab) => (
-        <button
-          key={tab.id}
-          type="button"
-          role="tab"
-          aria-selected={value === tab.id}
-          onClick={() => onChange?.(tab.id)}
-          className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
-            value === tab.id
-              ? "bg-card text-foreground shadow-subtle"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          {tab.label}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 type ChatSidebarProps = {
   accessToken: string;
@@ -180,6 +143,89 @@ export function ChatSidebar({
 
   // ── Stream event handler (extracted hook, shared between send & reconnect) ──
   const { applyStreamEvent } = useChatStream(updateSessionMessages);
+
+  /**
+   * 对话标签页：每个打开的历史对话占一个标签（可开多个、可关闭、左对齐）。
+   * 点历史对话＝新开一个标签而不是顶掉当前这轮；按画布分别存 localStorage，刷新后仍在。
+   */
+  const [openTabs, setOpenTabs] = useState<ChatTab[]>(() => loadTabs(canvasId));
+
+  // 换画布 → 换一套标签
+  useEffect(() => {
+    setOpenTabs(loadTabs(canvasId));
+  }, [canvasId]);
+
+  // 当前会话始终保证有一个标签，标题随会话自动标题同步
+  useEffect(() => {
+    const current = sessions.find((s) => s.id === activeSessionId);
+    if (!activeSessionId || !current) return;
+    setOpenTabs((prev) => {
+      const next = upsertTab(prev, {
+        sessionId: current.id,
+        title: current.title,
+      });
+      if (next !== prev) saveTabs(canvasId, next);
+      return next;
+    });
+  }, [canvasId, activeSessionId, sessions]);
+
+  // 会话被删（或在别处删了）→ 清掉对应标签；列表还在加载时不动，避免误清空
+  useEffect(() => {
+    if (sessionsLoading || sessions.length === 0) return;
+    setOpenTabs((prev) => {
+      const next = pruneTabs(
+        prev,
+        sessions.map((s) => s.id),
+      );
+      if (next !== prev) saveTabs(canvasId, next);
+      return next;
+    });
+  }, [canvasId, sessions, sessionsLoading]);
+
+  /** 打开（或切到）一个对话标签：已开过就切过去，没开过就新开一个。 */
+  const handleOpenSessionTab = useCallback(
+    (sessionId: string) => {
+      const target = sessions.find((s) => s.id === sessionId);
+      setOpenTabs((prev) => {
+        const next = upsertTab(prev, {
+          sessionId,
+          title: target?.title ?? "新对话",
+        });
+        if (next !== prev) saveTabs(canvasId, next);
+        return next;
+      });
+      void handleSelectSession(sessionId);
+    },
+    [canvasId, sessions, handleSelectSession],
+  );
+
+  /** 关标签：接替者由 closeTab 决定（右邻优先、其次左邻）；关光了就开一个空白对话。 */
+  const handleCloseSessionTab = useCallback(
+    (sessionId: string) => {
+      const { tabs: next, nextActiveId } = closeChatTab(
+        openTabs,
+        sessionId,
+        activeSessionId,
+      );
+      if (next === openTabs) return;
+      setOpenTabs(next);
+      saveTabs(canvasId, next);
+      if (nextActiveId) {
+        if (nextActiveId !== activeSessionId) {
+          void handleSelectSession(nextActiveId);
+        }
+      } else {
+        void handleNewChat();
+      }
+    },
+    [
+      canvasId,
+      openTabs,
+      activeSessionId,
+      handleSelectSession,
+      handleNewChat,
+    ],
+  );
 
   // ── Mention & attachment state ──
   const [atQuery, setAtQuery] = useState<string | null>(null);
@@ -1019,19 +1065,115 @@ export function ChatSidebar({
   // between overlay (mobile/tablet) and inline (desktop) render paths.
   const panelContent = (
     <>
-      {/* Header：标签条取代了原「Agent 助手」标题（面板现在承载会话/图层/文件三块内容） */}
-      <div className="flex min-h-[48px] items-center justify-between gap-2 pl-3 pr-2">
-        <div className="flex items-center gap-1 min-w-0">
-          <SidePanelTabs value={panelTab} onChange={onPanelTabChange} />
-          {panelTab === "chat" && !sessionsLoading && (
-            <SessionSelector
-              sessions={sessions}
-              activeSessionId={activeSessionId}
-              onSelect={handleSelectSession}
-              onNewChat={handleNewChat}
-              onDelete={handleDeleteSession}
-            />
-          )}
+      {/*
+        Header：对话标签页（左对齐、可关闭、可开多个）＋ 历史记录入口 ＋ 图层/文件/收起。
+        点历史对话＝**新开一个标签**而不是顶掉当前这轮；关掉最后一个标签会自动开一个空白
+        对话，面板永远有可用输入区。
+      */}
+      <div className="flex min-h-[44px] items-center gap-1.5 border-b border-border pl-2 pr-2">
+        {panelTab === "chat" ? (
+          <>
+            <div
+              role="tablist"
+              aria-label="打开的对话"
+              className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto py-1.5"
+            >
+              {openTabs.map((tab) => {
+                const active = tab.sessionId === activeSessionId;
+                return (
+                  <div
+                    key={tab.sessionId}
+                    className={`group flex max-w-[160px] shrink-0 items-center gap-1 rounded-md px-2 py-1 transition-colors ${
+                      active
+                        ? "bg-muted text-foreground"
+                        : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      title={tab.title}
+                      onClick={() => handleOpenSessionTab(tab.sessionId)}
+                      className="min-w-0 flex-1 truncate text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {tab.title}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`关闭 ${tab.title}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCloseSessionTab(tab.sessionId);
+                      }}
+                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded transition-colors ${
+                        active
+                          ? "text-muted-foreground hover:bg-card hover:text-foreground"
+                          : "text-transparent group-hover:text-muted-foreground hover:bg-card hover:text-foreground"
+                      }`}
+                    >
+                      <svg viewBox="0 0 16 16" fill="none" className="h-3 w-3">
+                        <path
+                          d="M4.5 4.5l7 7M11.5 4.5l-7 7"
+                          stroke="currentColor"
+                          strokeWidth="1.3"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                );
+              })}
+              {!sessionsLoading && (
+                <SessionSelector
+                  sessions={sessions}
+                  activeSessionId={activeSessionId}
+                  onSelect={handleOpenSessionTab}
+                  onNewChat={handleNewChat}
+                  onDelete={handleDeleteSession}
+                />
+              )}
+            </div>
+          </>
+        ) : (
+          <span className="flex-1 text-xs font-medium text-foreground">
+            {panelTab === "layers" ? "图层" : "生成文件"}
+          </span>
+        )}
+        {/* 图层 / 文件：面板的另两个视图（不是对话标签，故用图标按钮） */}
+        <div className="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            aria-label="图层"
+            aria-pressed={panelTab === "layers"}
+            title="图层"
+            onClick={() =>
+              onPanelTabChange?.(panelTab === "layers" ? "chat" : "layers")
+            }
+            className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${
+              panelTab === "layers"
+                ? "bg-muted text-foreground"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            }`}
+          >
+            <Layers className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            aria-label="生成文件"
+            aria-pressed={panelTab === "files"}
+            title="生成文件"
+            onClick={() =>
+              onPanelTabChange?.(panelTab === "files" ? "chat" : "files")
+            }
+            className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${
+              panelTab === "files"
+                ? "bg-muted text-foreground"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            }`}
+          >
+            <FolderOpen className="h-3.5 w-3.5" />
+          </button>
         </div>
         <button
           type="button"
