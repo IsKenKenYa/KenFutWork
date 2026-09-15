@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>KenFutWork · 字标字体对照</title>
+<!--
+  字标（wordmark）字体对照页：把候选字体套进真实 lockup（KF 图标 + KenFutWork）看效果。
+  图标几何与 docs/design/logo/定稿-kf2-岚.svg 一致；真实尺寸取界面实际值：
+    侧栏展开态 size-7(28px) 图标 + text-base(16px) 文字；登录页 size-9(36px) 图标 + text-lg(18px) 文字。
+  字体取自本目录 ./字体/（本机预览用，已在 .gitignore 排除）：
+    三个非商免样张来自字体天下，禁止随产品分发；OFL 替代来自 Google Fonts，可直接分发。
+  重装方法与授权口径见同目录《品牌Logo说明.md》「字标字体」一节。
+-->
+<style>
+  /* —— 用户候选：非商免，仅本机预览 —— */
+  @font-face { font-family: "Sounso Quality";   src: url("./字体/No.019-Sounso-Quality-2.ttf") format("truetype"); }
+  @font-face { font-family: "ArtierEN";         src: url("./字体/ArtierEN-2.ttf") format("truetype"); }
+  @font-face { font-family: "YEFONTPaws";       src: url("./字体/YEFONTPaws-Bold-2.ttf") format("truetype"); }
+  /* —— OFL 可商用替代（Google Fonts latin 子集） —— */
+  @font-face { font-family: "Chakra Petch Alt"; src: url("./字体/ChakraPetch.woff2") format("woff2"); }
+  @font-face { font-family: "K2D Alt";          src: url("./字体/K2D.woff2") format("woff2"); }
+  @font-face { font-family: "Pacifico Alt";     src: url("./字体/Pacifico.woff2") format("woff2"); }
+  @font-face { font-family: "Marker Alt";       src: url("./字体/PermanentMarker.woff2") format("woff2"); }
+  @font-face { font-family: "Caveat Brush Alt"; src: url("./字体/CaveatBrush.woff2") format("woff2"); }
+  @font-face { font-family: "Gochi Alt";        src: url("./字体/GochiHand.woff2") format("woff2"); }
+
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 44px 52px 56px;
+    background: #0B0E14; color: #E7EAF1;
+    font-family: "Segoe UI", system-ui, -apple-system, "Microsoft YaHei", sans-serif;
+  }
+  h1 { font-size: 26px; margin: 0 0 6px; }
+  .sub { color: #8B93A5; font-size: 13.5px; line-height: 1.75; margin-bottom: 22px; }
+  .sub code, .legend code { color: #AEB6C8; background: #171C27; padding: 1px 5px; border-radius: 4px; }
+  .toolbar { margin-bottom: 20px; font-size: 13px; color: #8B93A5; }
+  .toolbar input {
+    font: inherit; color: #E7EAF1; background: #161C28; border: 1px solid #2A3346;
+    border-radius: 8px; padding: 6px 10px; width: 240px; margin-left: 8px;
+  }
+  .strip { background: #12161F; border: 1px solid #242C3B; border-radius: 16px; padding: 18px 22px 14px; margin-bottom: 22px; }
+  .strip h3 { font-size: 13px; margin: 0 0 12px; color: #8B93A5; font-weight: 600; }
+  .strip .item { display: flex; align-items: baseline; gap: 14px; padding: 7px 0; border-top: 1px solid #1B2130; }
+  .strip .item:first-of-type { border-top: 0; }
+  .strip .who { flex: none; width: 200px; font-size: 12px; color: #8B93A5; }
+  .strip .wm { font-size: 34px; line-height: 1.15; }
+  .row { background: #12161F; border: 1px solid #242C3B; border-radius: 18px; padding: 22px 24px 20px; margin-bottom: 18px; }
+  .row.baseline { border-style: dashed; }
+  .head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+  .head h2 { font-size: 17px; margin: 0; }
+  .head .origin { font-size: 12.5px; color: #8B93A5; }
+  .badge { font-size: 11px; border-radius: 999px; padding: 3px 10px; border: 1px solid #39435A; color: #AEB6C8; background: #222A3A; }
+  .badge.warn { border-color: #5A4433; background: #2A2018; color: #D2A878; }
+  .badge.ok   { border-color: #2F4A3A; background: #17251E; color: #7FBF9A; }
+  .legend { font-size: 12.5px; color: #8B93A5; margin: 0 0 16px; }
+  .hero { display: flex; align-items: center; padding: 18px 4px 22px; }
+  .hero svg { flex: none; }
+  .sizes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .mock { border-radius: 12px; padding: 14px 13px; }
+  .mock.dark  { background: #0F1420; border: 1px solid #1F2735; }
+  .mock.light { background: #FFFFFF; border: 1px solid #E4E7EE; color: #232838; }
+  .mock .cap { font-size: 10.5px; color: #5D6577; margin-bottom: 10px; }
+  .mock.light .cap { color: #98A0B0; }
+  .lock { display: flex; align-items: center; }
+  .alt { background: #0E121B; border: 1px solid #1E2534; border-radius: 14px; padding: 16px 18px 14px; margin-top: 14px; }
+</style>
+</head>
+<body>
+<h1>KenFutWork · 字标字体对照</h1>
+<p class="sub">
+  图标为定稿 <code>KF-2 骨架版 C（岚配色）</code>，字标默认 <code>KenFutWork</code>。<br>
+  尺寸取界面实际值：<code>侧栏 28px + 16px</code>、<code>登录页 36px + 18px</code>，另附放大样。<br>
+  四个候选均为字体天下「<b>非商免</b>」字体：随产品分发前须向出品方取得书面商用授权。每行下方的
+  <span class="badge ok">OFL 可商用</span> 是同风格替代，可直接随包分发。
+</p>
+<div class="toolbar">字标文案：<input id="wmtext" value="KenFutWork" spellcheck="false"></div>
+<div class="strip" id="strip"></div>
+<div id="rows"></div>
+
+<script>
+const MARK = (size) => `
+<svg viewBox="0 0 512 512" width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <defs>
+    <linearGradient id="dg-${size}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#444B7E"/><stop offset="1" stop-color="#575E96"/></linearGradient>
+    <linearGradient id="cg-${size}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2F3459"/><stop offset="1" stop-color="#3C4272"/></linearGradient>
+    <clipPath id="rd-${size}"><rect width="512" height="512" rx="115"/></clipPath>
+  </defs>
+  <g clip-path="url(#rd-${size})">
+    <rect width="512" height="512" fill="url(#dg-${size})"/>
+    <path d="M512 0 L512 512 L0 512 Z" fill="url(#cg-${size})"/>
+  </g>
+  <g fill="#FFFFFF"><rect x="144" y="64" width="72" height="320" rx="8"/><rect x="144" y="64" width="208" height="72"/></g>
+  <g stroke="#FFFFFF" stroke-width="72" fill="none"><path d="M372 176 L180 252"/><path d="M180 252 L346 359"/></g>
+</svg>`;
+
+const esc = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+const LOCK = (markPx, textPx, family, extra, text) =>
+  `<div class="lock" style="gap:${Math.round(markPx * 0.29)}px">
+     ${MARK(markPx)}
+     <span style="font-family:${family};font-size:${textPx}px;line-height:1.1;${extra}">${esc(text)}</span>
+   </div>`;
+
+const SYSUI = {
+  name: "现状 · 系统无衬线",
+  note: "当前实现：text-base / text-lg + font-semibold + tracking-tight",
+  family: `'Segoe UI', system-ui, -apple-system, sans-serif`,
+  extra: "font-weight:600;letter-spacing:-0.02em;",
+  alts: [],
+};
+
+const styles = [
+  {
+    name: "Sounso Quality", origin: "上首造字 · 科技", license: ["warn", "非商免"],
+    note: "方形圆角 + 斜体的科技感，字形骨架与图标的几何超椭圆最贴合",
+    family: `'Sounso Quality', sans-serif`, extra: "letter-spacing:0.01em;",
+    alts: [
+      { name: "Chakra Petch Italic", label: "可商用替代 · 方切角更硬", family: `'Chakra Petch Alt', sans-serif` },
+      { name: "K2D Italic", label: "可商用替代 · 圆角更柔和", family: `'K2D Alt', sans-serif` },
+    ],
+  },
+  {
+    name: "Romance Frances", origin: "字语字库 · 手写", license: ["warn", "付费授权"],
+    note: "粗笔刷连体手写；字体天下下载即需购买授权，本地无样张，本行用同风格替代渲染",
+    family: `'Pacifico Alt', cursive`, extra: "",
+    alts: [{ name: "Pacifico", label: "同风格可商用替代", family: `'Pacifico Alt', cursive` }],
+  },
+  {
+    name: "YEFONTPaws-Bold", origin: "也字工厂 · 卡通漫画", license: ["warn", "非商免"],
+    note: "蜡笔／马克笔手绘字，最松弛；小字号下笔画粘连明显",
+    family: `'YEFONTPaws', cursive`, extra: "letter-spacing:0.01em;",
+    alts: [
+      { name: "Permanent Marker", label: "可商用替代 · 更规整", family: `'Marker Alt', cursive` },
+      { name: "Gochi Hand", label: "可商用替代 · 更轻快", family: `'Gochi Alt', cursive` },
+    ],
+  },
+  {
+    name: "ArtierEN", origin: "字语字库 · 手写", license: ["warn", "非商免"],
+    note: "硬角粗笔刷、斜切收笔，力量感最强，偏运动／涂鸦气质",
+    family: `'ArtierEN', cursive`, extra: "letter-spacing:0.01em;",
+    alts: [{ name: "Caveat Brush", label: "可商用替代", family: `'Caveat Brush Alt', cursive` }],
+  },
+];
+
+const blocksOf = (s) => ({ ...s, alts: s.alts || [] });
+
+function render(text) {
+  const t = text.trim() || "KenFutWork";
+  const rows = [SYSUI, ...styles];
+
+  // 顶部速览：只看字标（不含图标），一屏横向比完
+  const stripItems = [
+    { who: "现状 · 系统无衬线", s: SYSUI },
+    ...styles.map((s) => ({ who: `${s.name} · ${s.license[1]}`, s })),
+    ...styles.flatMap((s) => s.alts.map((a) => ({ who: `↳ ${a.name} · OFL`, s: a }))),
+  ];
+  document.getElementById("strip").innerHTML =
+    `<h3>速览 · 仅字标 34px</h3>` +
+    stripItems.map((r) => `<div class="item"><span class="who">${r.who}</span>
+      <span class="wm" style="font-family:${r.s.family};${r.s.extra}">${esc(t)}</span></div>`).join("");
+
+  document.getElementById("rows").innerHTML = rows.map((s) => {
+    const b = blocksOf(s);
+    const badges = b.license ? `<span class="badge ${b.license[0]}">${b.license[1]}</span>` : "";
+    const altBlock = b.alts.map((a) => `
+      <div class="alt">
+        <div class="head"><h2 style="font-size:14px">${a.name}</h2><span class="badge ok">OFL 可商用</span><span class="origin">${a.label}</span></div>
+        <div class="hero">${LOCK(56, 42, a.family, "", t)}</div>
+        <div class="sizes">
+          <div class="mock dark"><div class="cap">侧栏 28 / 16</div>${LOCK(28, 16, a.family, "", t)}</div>
+          <div class="mock dark"><div class="cap">登录页 36 / 18</div>${LOCK(36, 18, a.family, "", t)}</div>
+          <div class="mock light"><div class="cap">浅色底</div>${LOCK(28, 16, a.family, "", t)}</div>
+        </div>
+      </div>`).join("");
+    return `
+      <div class="row${b.name === SYSUI.name ? " baseline" : ""}">
+        <div class="head"><h2>${b.name}</h2>${b.origin ? `<span class="origin">${b.origin}</span>` : ""}${badges}</div>
+        <p class="legend">${b.note}</p>
+        <div class="hero">${LOCK(56, 42, b.family, b.extra, t)}</div>
+        <div class="sizes">
+          <div class="mock dark"><div class="cap">侧栏 28 / 16</div>${LOCK(28, 16, b.family, b.extra, t)}</div>
+          <div class="mock dark"><div class="cap">登录页 36 / 18</div>${LOCK(36, 18, b.family, b.extra, t)}</div>
+          <div class="mock light"><div class="cap">浅色底</div>${LOCK(28, 16, b.family, b.extra, t)}</div>
+        </div>
+        ${altBlock}
+      </div>`;
+  }).join("");
+}
+
+const input = document.getElementById("wmtext");
+input.addEventListener("input", () => render(input.value));
+document.fonts.ready.then(() => render(input.value));
+</script>
+</body>
+</html>
