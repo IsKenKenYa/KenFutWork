@@ -16,6 +16,27 @@ export interface RunUsageSnapshot {
   cachedInputTokens?: number | undefined;
 }
 
+/**
+ * 从 `run.usage` 事件载荷取用量快照。
+ *
+ * 没有 inputTokens（事件类型被服务端扩过、老服务端不发这个字段）时返回 null——
+ * 页面保持原样，而不是把「0 token」当成真实读数写进状态。
+ */
+export function usageFromEvent(
+  payload: unknown,
+): RunUsageSnapshot | null {
+  if (typeof payload !== "object" || payload === null) return null;
+  const inputTokens = (payload as { inputTokens?: unknown }).inputTokens;
+  if (typeof inputTokens !== "number") return null;
+  const outputTokens = (payload as { outputTokens?: unknown }).outputTokens;
+  const cached = (payload as { cachedInputTokens?: unknown }).cachedInputTokens;
+  return {
+    inputTokens,
+    outputTokens: typeof outputTokens === "number" ? outputTokens : 0,
+    ...(typeof cached === "number" ? { cachedInputTokens: cached } : {}),
+  };
+}
+
 export interface ContextUsageView {
   /** 有可用用量数据（否则整个浮层只显示「暂无数据」）。 */
   hasUsage: boolean;

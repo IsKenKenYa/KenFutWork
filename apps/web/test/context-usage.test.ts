@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { contextUsageView, formatTokens } from "../src/lib/context-usage";
+import {
+  contextUsageView,
+  formatTokens,
+  usageFromEvent,
+} from "../src/lib/context-usage";
 
 describe("formatTokens", () => {
   it("按中文习惯缩写万/亿，并去掉多余的 .0", () => {
@@ -59,5 +63,33 @@ describe("contextUsageView", () => {
   it("超过窗口时封顶 100%（不出现 137% 这种读数）", () => {
     const view = contextUsageView({ inputTokens: 1_370_000, outputTokens: 1 }, 1_000_000);
     expect(view.percent).toBe(100);
+  });
+});
+
+describe("usageFromEvent（run.usage 载荷 → 页面状态）", () => {
+  it("真实网关载荷（探针实测样本）映射成快照", () => {
+    expect(
+      usageFromEvent({
+        type: "run.usage",
+        runId: "run_1",
+        inputTokens: 8561,
+        outputTokens: 20,
+        cachedInputTokens: 0,
+        timestamp: "2026-09-15T17:35:54.747Z",
+      }),
+    ).toEqual({ inputTokens: 8561, outputTokens: 20, cachedInputTokens: 0 });
+  });
+
+  it("没有 inputTokens（老服务端不发这个事件）返回 null，不写成 0", () => {
+    expect(usageFromEvent({ type: "run.usage", outputTokens: 5 })).toBeNull();
+    expect(usageFromEvent(null)).toBeNull();
+    expect(usageFromEvent("run.usage")).toBeNull();
+  });
+
+  it("上游未上报缓存：快照里没有 cachedInputTokens 字段", () => {
+    expect(usageFromEvent({ inputTokens: 100 })).toEqual({
+      inputTokens: 100,
+      outputTokens: 0,
+    });
   });
 });

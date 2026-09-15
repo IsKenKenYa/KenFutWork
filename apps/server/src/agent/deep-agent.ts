@@ -9,7 +9,7 @@ import type {
 } from "@langchain/langgraph-checkpoint";
 import { ChatOpenAI } from "@langchain/openai";
 import { createDeepAgent } from "deepagents";
-import type { AgentMiddleware } from "langchain";
+import { type AgentMiddleware, todoListMiddleware } from "langchain";
 import {
   DEFAULT_AGENT_MODEL,
   DEFAULT_GOOGLE_AGENT_MODEL,
@@ -307,11 +307,18 @@ export function createKenFutWorkDeepAgent(options: {
     ...(options.store ? { store: options.store } : {}),
     subagents: [createVideoSubAgent()],
     systemPrompt,
+    // 待办表（`write_todos`）：deepagents 只在它的 Codex profile 里挂 todoListMiddleware，
+    // 非 Codex 模型默认**没有这个工具**——不挂的话「目标 + 进度」面板永远没有数据源，
+    // 执行模式的 plan 只读白名单里的 write_todos 也形同虚设。这里显式挂上：
+    // 工具是整表替换语义（langchain todoListMiddleware），前端据工具事件推导进度。
+    // 该中间件自带 state 泛型（todos 通道），与 deepagents 的宽松 middleware 签名不同型，
+    // 按 deepagents 内部同样的做法擦除一次类型。
     // 未知工具兜底恒挂；模型响应守卫挂最外层（收敛非法形状）；执行模式工具门在
     // 标准中间件之后应用，覆盖全部工具调用
     ...(options.toolGate
       ? {
           middleware: [
+            todoListMiddleware() as unknown as AgentMiddleware,
             createModelResponseGuardMiddleware(),
             createUnknownToolGuardMiddleware(),
             createToolGateMiddleware(options.toolGate, options.toolGateHooks),
@@ -319,6 +326,7 @@ export function createKenFutWorkDeepAgent(options: {
         }
       : {
           middleware: [
+            todoListMiddleware() as unknown as AgentMiddleware,
             createModelResponseGuardMiddleware(),
             createUnknownToolGuardMiddleware(),
           ],

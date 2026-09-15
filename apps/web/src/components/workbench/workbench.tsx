@@ -68,7 +68,10 @@ import { WorkDirectorySelect } from "@/components/workbench/work-directory-selec
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useAuth } from "@/lib/auth-context";
 import { commitGitAll } from "@/lib/code-git-api";
-import type { RunUsageSnapshot } from "@/lib/context-usage";
+import {
+  usageFromEvent,
+  type RunUsageSnapshot,
+} from "@/lib/context-usage";
 import { resolveDesignAutoCanvas } from "@/lib/design-auto-canvas";
 import { getServerBaseUrl } from "@/lib/env";
 import { PluginPanelButtons } from "@/lib/plugin-panels";
@@ -949,23 +952,8 @@ export function Workbench() {
         );
       } else if (type === "run.usage") {
         // 本轮最后一次模型调用的累计用量（上下文容量 / 缓存命中浮层）
-        const payload = evt as {
-          inputTokens?: number;
-          outputTokens?: number;
-          cachedInputTokens?: number;
-        };
-        if (typeof payload.inputTokens === "number") {
-          apply((task) => ({
-            ...task,
-            usage: {
-              inputTokens: payload.inputTokens ?? 0,
-              outputTokens: payload.outputTokens ?? 0,
-              ...(typeof payload.cachedInputTokens === "number"
-                ? { cachedInputTokens: payload.cachedInputTokens }
-                : {}),
-            },
-          }));
-        }
+        const usage = usageFromEvent(evt);
+        if (usage) apply((task) => ({ ...task, usage }));
       } else if (type === "message.delta") {
         const delta = (evt as { delta?: string }).delta ?? "";
         if (!delta) return;
