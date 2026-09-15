@@ -13,8 +13,8 @@ import type { ViewerService } from "../features/bootstrap/ensure-user-foundation
 import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
 import type { CanvasService } from "../features/canvas/canvas-service.js";
 import type { ChatService } from "../features/chat/chat-service.js";
-import type { CodeGitService } from "../features/code-git/code-git-service.js";
 import type { ThreadService } from "../features/chat/thread-service.js";
+import type { CodeGitService } from "../features/code-git/code-git-service.js";
 import type { CreditService } from "../features/credits/credit-service.js";
 import type { TierGuard } from "../features/credits/tier-guard.js";
 import type { JobService } from "../features/jobs/job-service.js";

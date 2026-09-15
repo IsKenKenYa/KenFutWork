@@ -1,6 +1,5 @@
-import type { WebSocket } from "ws";
-
 import { describe, expect, it } from "vitest";
+import type { WebSocket } from "ws";
 
 import { ConnectionManager } from "./connection-manager.js";
 
@@ -25,9 +24,17 @@ describe("ConnectionManager 重连身份校验", () => {
     const oldSocket = fakeSocket();
     const newSocket = fakeSocket();
 
-    manager.register("conn-reused", "user-1", oldSocket as unknown as WebSocket);
+    manager.register(
+      "conn-reused",
+      "user-1",
+      oldSocket as unknown as WebSocket,
+    );
     // 重连：同一 id 的新 socket 顶掉旧注册
-    manager.register("conn-reused", "user-1", newSocket as unknown as WebSocket);
+    manager.register(
+      "conn-reused",
+      "user-1",
+      newSocket as unknown as WebSocket,
+    );
 
     // 旧 socket 的 close 迟到触发 remove —— 必须因 socket 身份不匹配而 no-op
     manager.remove("conn-reused", oldSocket as unknown as WebSocket);

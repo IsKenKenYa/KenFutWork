@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -16,10 +16,19 @@ const rootDir = path.resolve(dirname, "..");
 
 // Enumerate actual apps instead of hardcoding names, so the test survives
 // apps being added or removed (e.g., the removed desktop app).
+//
+// 只纳入**有 npm 清单**的 app：`apps/desktop` 是纯 Cargo/Tauri 壳
+// （dev.sh + src-tauri/，没有 package.json，也不进 pnpm workspace），
+// 对它的门禁是 `apps/desktop/src-tauri` 那一侧的 cargo check/test，
+// 在这里按 npm 脚本口径要求它只会得到「文件不存在」的假警报。
 const appNames = readdirSync(path.join(rootDir, "apps"), {
   withFileTypes: true,
 })
-  .filter((entry) => entry.isDirectory())
+  .filter(
+    (entry) =>
+      entry.isDirectory() &&
+      existsSync(path.join(rootDir, "apps", entry.name, "package.json")),
+  )
   .map((entry) => entry.name)
   .sort();
 
@@ -392,8 +401,7 @@ async function collectSupabaseResiduals() {
     storageObjectsRefs: inventory.rewrite["storage.objects 引用"],
     // 用「排除中性化迁移」的净值：中性化迁移的语句里必然出现被改写的字面量，
     // 计入它等于惩罚「去除残留」本身（历史迁移不可改，指标会永久卡住）。
-    cloudUrls:
-      inventory.rewrite["硬编码云端 URL（排除中性化迁移后的净值）"],
+    cloudUrls: inventory.rewrite["硬编码云端 URL（排除中性化迁移后的净值）"],
   };
 
   return { code, sql };

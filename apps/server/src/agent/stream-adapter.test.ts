@@ -182,7 +182,9 @@ describe("工具输出透传（web_search 来源可达客户端）", () => {
       | { output?: Record<string, unknown> }
       | undefined;
     expect(completed?.output?.query).toBe("今天天气");
-    expect((completed?.output?.results as unknown[]).length).toBe(2);
+    expect((completed?.output?.results as unknown[] | undefined)?.length).toBe(
+      2,
+    );
   });
 });
 
@@ -229,7 +231,9 @@ describe("工具抛错：以终态事件收尾并带可读原因", () => {
   });
 
   it("被包装的工具错误（cause 链）：取最内层的可读文案", async () => {
-    const inner = new Error("web_search 请求失败（429），请检查搜索供应商配置。");
+    const inner = new Error(
+      "web_search 请求失败（429），请检查搜索供应商配置。",
+    );
     const wrapped = new Error("Tool execution failed", { cause: inner });
     const events = await collect(toolErrorStream(wrapped), {});
     const completed = events.find((e) => e.type === "tool.completed") as

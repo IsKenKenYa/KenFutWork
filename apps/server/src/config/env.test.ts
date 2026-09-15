@@ -10,9 +10,7 @@ describe("LOOMIC_CANVAS_WORK_DIRS 解析", () => {
   });
 
   it("合法映射逐条归一化（去空白）", () => {
-    const parsed = parseCanvasWorkDirs(
-      '{" canvas-1 ":" D:/Desktop/test "}',
-    );
+    const parsed = parseCanvasWorkDirs('{" canvas-1 ":" D:/Desktop/test "}');
     expect(parsed).toEqual({ "canvas-1": "D:/Desktop/test" });
   });
 
@@ -26,12 +24,9 @@ describe("LOOMIC_CANVAS_WORK_DIRS 解析", () => {
   });
 
   it("loadServerEnv 把映射装入 env（overrides 优先）", () => {
-    const fromSource = loadServerEnv(
-      {},
-      {
-        LOOMIC_CANVAS_WORK_DIRS: '{"c1":"D:/Desktop/test"}',
-      } as NodeJS.ProcessEnv,
-    );
+    const fromSource = loadServerEnv({}, {
+      LOOMIC_CANVAS_WORK_DIRS: '{"c1":"D:/Desktop/test"}',
+    } as NodeJS.ProcessEnv);
     expect(fromSource.canvasWorkDirs).toEqual({ c1: "D:/Desktop/test" });
 
     const overridden = loadServerEnv({

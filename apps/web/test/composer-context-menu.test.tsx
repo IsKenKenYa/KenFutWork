@@ -11,9 +11,9 @@ import { COMPOSER_MENU_ITEMS } from "../src/lib/composer-edit.js";
  */
 afterEach(() => {
   vi.unstubAllGlobals();
-  document
-    .querySelectorAll("textarea[data-test-harness]")
-    .forEach((el) => el.remove());
+  document.querySelectorAll("textarea[data-test-harness]").forEach((el) => {
+    el.remove();
+  });
 });
 
 /** 真实挂载 textarea（选区语义依赖 DOM 连接），并把受控值同步到 DOM。 */

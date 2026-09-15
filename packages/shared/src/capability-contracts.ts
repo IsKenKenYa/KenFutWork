@@ -98,3 +98,36 @@ export const usageSummaryResponseSchema = z.object({
   ),
 });
 export type UsageSummaryResponse = z.infer<typeof usageSummaryResponseSchema>;
+
+/**
+ * 用户侧使用统计（R4-2，设置「使用统计」页）：按天的 token 活动、
+ * 连续天数等派生指标与按模型聚合。日期为 UTC 口径（YYYY-MM-DD）。
+ */
+export const usageStatsResponseSchema = z.object({
+  rangeDays: z.number().int().min(1).max(90),
+  totals: z.object({
+    tokens: z.number().int().nonnegative(),
+    inputTokens: z.number().int().nonnegative(),
+    outputTokens: z.number().int().nonnegative(),
+  }),
+  /** 单日峰值 token 数。 */
+  peakDayTokens: z.number().int().nonnegative(),
+  /** 当前连续活跃天数（从今天或昨天往回数）。 */
+  currentStreakDays: z.number().int().nonnegative(),
+  longestStreakDays: z.number().int().nonnegative(),
+  /** 窗口内逐日序列（缺数据的天补 0，保证连续）。 */
+  daily: z.array(
+    z.object({
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      tokens: z.number().int().nonnegative(),
+    }),
+  ),
+  byModel: z.array(
+    z.object({
+      provider: z.string(),
+      model: z.string(),
+      tokens: z.number().int().nonnegative(),
+    }),
+  ),
+});
+export type UsageStatsResponse = z.infer<typeof usageStatsResponseSchema>;

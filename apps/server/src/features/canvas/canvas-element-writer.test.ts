@@ -78,7 +78,8 @@ describe("画布元素写入器：原子追加", () => {
       mimeType: "image/png",
     });
     expect(
-      (appended.files?.[fileKeys[0]!] as { dataURL: string }).dataURL,
+      (appended.files?.[fileKeys[0]!] as { dataURL: string } | undefined)
+        ?.dataURL,
     ).toBe(
       `data:image/png;base64,${Buffer.from("image-bytes").toString("base64")}`,
     );

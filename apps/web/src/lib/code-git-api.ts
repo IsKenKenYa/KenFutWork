@@ -72,3 +72,70 @@ export async function checkoutGitBranch(
   const payload = (await response.json()) as { git: GitStatus };
   return payload.git;
 }
+
+// --- R2-1：更改统计 / 提交 / 推送 / 新建分支 ---
+
+export interface GitDiffStat {
+  files: number;
+  additions: number;
+  deletions: number;
+  untracked: number;
+}
+
+export async function fetchGitDiffStat(
+  accessToken: string,
+  canvasId: string,
+): Promise<GitDiffStat> {
+  const query = new URLSearchParams({ canvasId });
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/code/git/diff-stat?${query.toString()}`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  const payload = (await response.json()) as { stat: GitDiffStat };
+  return payload.stat;
+}
+
+export async function commitGitAll(
+  accessToken: string,
+  canvasId: string,
+  message: string,
+): Promise<GitStatus> {
+  const response = await fetch(`${getServerBaseUrl()}/api/code/git/commit`, {
+    method: "POST",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify({ canvasId, message }),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  const payload = (await response.json()) as { git: GitStatus };
+  return payload.git;
+}
+
+export async function pushGit(
+  accessToken: string,
+  canvasId: string,
+): Promise<GitStatus> {
+  const response = await fetch(`${getServerBaseUrl()}/api/code/git/push`, {
+    method: "POST",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify({ canvasId }),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  const payload = (await response.json()) as { git: GitStatus };
+  return payload.git;
+}
+
+export async function createGitBranch(
+  accessToken: string,
+  canvasId: string,
+  name: string,
+): Promise<GitStatus> {
+  const response = await fetch(`${getServerBaseUrl()}/api/code/git/branch`, {
+    method: "POST",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify({ canvasId, name }),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  const payload = (await response.json()) as { git: GitStatus };
+  return payload.git;
+}

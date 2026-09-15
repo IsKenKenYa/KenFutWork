@@ -154,7 +154,8 @@ export function loadServerEnv(
     overrides.canvasWorkDirs ??
     parseCanvasWorkDirs(source.LOOMIC_CANVAS_WORK_DIRS);
   const sandboxRoot =
-    overrides.sandboxRoot ?? normalizeOptionalString(source.LOOMIC_SANDBOX_ROOT);
+    overrides.sandboxRoot ??
+    normalizeOptionalString(source.LOOMIC_SANDBOX_ROOT);
   const searchApiKey =
     overrides.searchApiKey ??
     normalizeOptionalString(source.LOOMIC_SEARCH_API_KEY);

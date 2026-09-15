@@ -61,7 +61,9 @@ const CANVAS_ID = "22222222-2222-2222-2222-222222222222";
 const USER_ID = "33333333-3333-3333-3333-333333333333";
 
 function insertSql(calls: Array<{ text: string }>) {
-  const call = calls.find((c) => c.text.includes("insert into public.chat_sessions"));
+  const call = calls.find((c) =>
+    c.text.includes("insert into public.chat_sessions"),
+  );
   return (call?.text ?? "").replace(/\s+/g, " ").trim();
 }
 
@@ -160,7 +162,10 @@ describe("chat repository：按 id 供给会话（SQL 形状）", () => {
         return { rowCount: 1, rows: [{ id: SESSION_ID, thread_id: null }] };
       }
       if (text.includes("set thread_id = $1::text")) {
-        return { rowCount: 1, rows: [{ id: SESSION_ID, thread_id: "thread_new" }] };
+        return {
+          rowCount: 1,
+          rows: [{ id: SESSION_ID, thread_id: "thread_new" }],
+        };
       }
       return { rowCount: 1, rows: [] };
     });
@@ -175,8 +180,8 @@ describe("chat repository：按 id 供给会话（SQL 形状）", () => {
     });
 
     expect(row?.thread_id).toBe("thread_new");
-    expect(
-      calls.some((c) => c.text.includes("set thread_id = $1::text")),
-    ).toBe(true);
+    expect(calls.some((c) => c.text.includes("set thread_id = $1::text"))).toBe(
+      true,
+    );
   });
 });

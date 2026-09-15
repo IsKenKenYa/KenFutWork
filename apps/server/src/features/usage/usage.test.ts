@@ -149,7 +149,7 @@ describe("usage repository（workspace 作用域 + 驱动数值归一）", () =>
     ]);
   });
 
-  it("读取按工作区限定，bigint/numeric 字符串归一为 number", async () => {
+  it("读取按工作区限定，bigint/numeric 字符串归一为 number，occurred_at 归一为 ISO", async () => {
     const { calls, runner } = createRunner(() => ({
       rowCount: 2,
       rows: [
@@ -161,6 +161,7 @@ describe("usage repository（workspace 作用域 + 驱动数值归一）", () =>
           input_tokens: "120",
           output_tokens: "80",
           cost_usd: "0.0123",
+          occurred_at: "2026-09-14 12:00:00+00",
         },
         {
           provider: "openai",
@@ -169,6 +170,7 @@ describe("usage repository（workspace 作用域 + 驱动数值归一）", () =>
           input_tokens: "1",
           output_tokens: "2",
           cost_usd: null,
+          occurred_at: new Date("2026-09-15T08:00:00Z"),
         },
       ],
     }));
@@ -177,16 +179,13 @@ describe("usage repository（workspace 作用域 + 驱动数值归一）", () =>
       createPersistenceFromRunner(runner),
     ).listRecent(WORKSPACE_ID, 10000);
 
-    expect(rows[0]).toEqual({
-      provider: "openai",
-      model: "gpt-4.1",
-      capability: "chat",
-      input_tokens: 120,
-      output_tokens: 80,
-      cost_usd: 0.0123,
-    });
+    expect(rows[0]?.input_tokens).toBe(120);
+    expect(rows[0]?.output_tokens).toBe(80);
+    expect(rows[0]?.cost_usd).toBe(0.0123);
+    expect(rows[0]?.occurred_at).toBe("2026-09-14 12:00:00+00");
     expect(typeof rows[0]?.input_tokens).toBe("number");
     expect(rows[1]?.cost_usd).toBeNull();
+    expect(rows[1]?.occurred_at).toBe("2026-09-15T08:00:00.000Z");
 
     const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
     expect(sql).toContain("where workspace_id = $2");
@@ -208,6 +207,7 @@ describe("usage service", () => {
             input_tokens: 100,
             output_tokens: 50,
             cost_usd: 0.25,
+            occurred_at: "2026-09-15T10:00:00.000Z",
           },
           {
             provider: "openai",
@@ -216,6 +216,7 @@ describe("usage service", () => {
             input_tokens: 20,
             output_tokens: 10,
             cost_usd: null,
+            occurred_at: "2026-09-15T10:01:00.000Z",
           },
           {
             provider: "google",
@@ -224,6 +225,7 @@ describe("usage service", () => {
             input_tokens: 5,
             output_tokens: 0,
             cost_usd: 0,
+            occurred_at: "2026-09-15T10:02:00.000Z",
           },
         ],
       }),
@@ -324,5 +326,120 @@ describe("usage service", () => {
     await expect(service.summarize(USER)).rejects.toThrow(
       /summary query failed: permission denied/,
     );
+  });
+});
+
+describe("usage stats（R4-2 用户侧使用统计）", () => {
+  const NOW = new Date("2026-09-15T12:00:00Z");
+  const day = (offsetFromToday: number, hour = 12) =>
+    new Date(
+      Date.parse("2026-09-15T00:00:00Z") +
+        offsetFromToday * 86_400_000 +
+        hour * 3_600_000,
+    ).toISOString();
+
+  function rowsFor(
+    entries: Array<{
+      offsetFromToday: number;
+      model: string;
+      input: number;
+      output: number;
+    }>,
+  ) {
+    return entries.map((entry) => ({
+      provider: "openai",
+      model: entry.model,
+      capability: "chat" as const,
+      input_tokens: entry.input,
+      output_tokens: entry.output,
+      cost_usd: null,
+      occurred_at: day(entry.offsetFromToday),
+    }));
+  }
+
+  function createStatsService(listRecent: () => ReturnType<typeof rowsFor>) {
+    return createUsageService({
+      repository: createFakeRepository({
+        listRecent: async () => listRecent(),
+      }),
+      workspaces: WORKSPACES_STUB,
+      now: () => NOW,
+    });
+  }
+
+  it("按天聚合补零成连续序列，给峰值与总量（R4-2 汇总卡）", async () => {
+    const service = createStatsService(() =>
+      rowsFor([
+        { offsetFromToday: 0, model: "gpt-4.1", input: 300, output: 100 },
+        { offsetFromToday: -2, model: "gpt-4.1", input: 1000, output: 500 },
+        { offsetFromToday: -2, model: "gemini", input: 50, output: 10 },
+      ]),
+    );
+
+    const stats = await service.stats(USER, 7);
+
+    expect(stats.rangeDays).toBe(7);
+    expect(stats.daily).toHaveLength(7);
+    expect(stats.daily[6]).toEqual({ date: "2026-09-15", tokens: 400 });
+    expect(stats.daily[4]).toEqual({ date: "2026-09-13", tokens: 1560 });
+    expect(stats.daily[5]?.tokens).toBe(0);
+    expect(stats.totals).toEqual({
+      tokens: 1960,
+      inputTokens: 1350,
+      outputTokens: 610,
+    });
+    expect(stats.peakDayTokens).toBe(1560);
+  });
+
+  it("窗口外（30 天前）的记录不计入 7 日统计", async () => {
+    const service = createStatsService(() =>
+      rowsFor([
+        { offsetFromToday: -20, model: "gpt-4.1", input: 9, output: 1 },
+      ]),
+    );
+
+    const stats = await service.stats(USER, 7);
+    expect(stats.totals.tokens).toBe(0);
+    expect(stats.byModel).toEqual([]);
+  });
+
+  it("连续天数：今天有活动从今天倒数；今天没有则从昨天起算；最长段取窗口内最大", async () => {
+    const service = createStatsService(() =>
+      rowsFor([
+        { offsetFromToday: 0, model: "m", input: 1, output: 1 },
+        { offsetFromToday: -1, model: "m", input: 1, output: 1 },
+        { offsetFromToday: -2, model: "m", input: 1, output: 1 },
+        // -3、-4 空档
+        { offsetFromToday: -5, model: "m", input: 1, output: 1 },
+      ]),
+    );
+
+    const stats = await service.stats(USER, 7);
+    expect(stats.currentStreakDays).toBe(3);
+    expect(stats.longestStreakDays).toBe(3);
+  });
+
+  it("今天没活动时当前连续天数从昨天起算（不打断昨天刚跑完的用户）", async () => {
+    const service = createStatsService(() =>
+      rowsFor([
+        { offsetFromToday: -1, model: "m", input: 1, output: 1 },
+        { offsetFromToday: -2, model: "m", input: 1, output: 1 },
+      ]),
+    );
+
+    const stats = await service.stats(USER, 7);
+    expect(stats.currentStreakDays).toBe(2);
+  });
+
+  it("按模型聚合降序排列", async () => {
+    const service = createStatsService(() =>
+      rowsFor([
+        { offsetFromToday: 0, model: "small", input: 10, output: 0 },
+        { offsetFromToday: 0, model: "big", input: 500, output: 0 },
+      ]),
+    );
+
+    const stats = await service.stats(USER, 7);
+    expect(stats.byModel.map((entry) => entry.model)).toEqual(["big", "small"]);
   });
 });

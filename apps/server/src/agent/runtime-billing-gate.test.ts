@@ -1,8 +1,7 @@
+import type { StreamEvent } from "@loomic/shared";
 import { describe, expect, it } from "vitest";
-
 import type { ServerEnv } from "../config/env.js";
 import { createAgentRunService } from "./runtime.js";
-import type { StreamEvent } from "@loomic/shared";
 
 /**
  * 额度门回归（GUI 实测复现的事故）：
