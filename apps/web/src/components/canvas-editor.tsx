@@ -63,7 +63,6 @@ type CanvasEditorProps = {
   /** 画布内覆盖层（渲染在 Excalidraw 内部：位于画布之上、其浮层之下）。 */
   overlay?: React.ReactNode;
   ws?: WebSocketHandle;
-  leftPanelOpen?: boolean;
   onSelectionChange?: (elements: CanvasSelectedElement[]) => void;
 };
 
@@ -79,7 +78,6 @@ export function CanvasEditor({
   onApiReady,
   overlay,
   ws,
-  leftPanelOpen,
   onSelectionChange,
 }: CanvasEditorProps) {
   const { resolvedTheme } = useTheme();
@@ -657,7 +655,6 @@ export function CanvasEditor({
           <MemoizedCanvasToolMenu
             accessToken={accessToken}
             excalidrawApi={excalidrawApi}
-            leftPanelOpen={leftPanelOpen ?? false}
           />
         )}
       </div>

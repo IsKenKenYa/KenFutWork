@@ -8,8 +8,8 @@ type ExcalidrawEl = any;
 export type CanvasFilesPanelProps = {
   // biome-ignore lint/suspicious/noExplicitAny: Excalidraw API has no public type definition
   excalidrawApi: any;
-  open: boolean;
-  onClose: () => void;
+  /** 面板是否可见：不可见时退订画布变更（隐藏的列表没必要跟着重算）。 */
+  active: boolean;
 };
 
 /* -- Throttle utility -- */
@@ -37,17 +37,6 @@ function throttle<T extends (...args: any[]) => void>(
   };
   return throttled;
 }
-
-const CloseIcon = ({ className }: { className?: string }) => (
-  <svg viewBox="0 0 16 16" fill="none" className={className}>
-    <path
-      d="M4.5 4.5l7 7M11.5 4.5l-7 7"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinecap="round"
-    />
-  </svg>
-);
 
 const DownloadIcon = ({ className }: { className?: string }) => (
   <svg
@@ -115,8 +104,7 @@ const FileRow = memo(function FileRow({
 
 export function CanvasFilesPanel({
   excalidrawApi,
-  open,
-  onClose,
+  active,
 }: CanvasFilesPanelProps) {
   const [imageFiles, setImageFiles] = useState<ImageFile[]>([]);
 
@@ -142,7 +130,7 @@ export function CanvasFilesPanel({
 
   // Throttle refresh to avoid excessive re-renders during canvas operations
   useEffect(() => {
-    if (!open || !excalidrawApi) return;
+    if (!active || !excalidrawApi) return;
     refreshFiles();
     const throttledRefresh = throttle(refreshFiles, 200);
     const unsubscribe = excalidrawApi.onChange(() => throttledRefresh());
@@ -150,19 +138,7 @@ export function CanvasFilesPanel({
       throttledRefresh.cancel();
       if (typeof unsubscribe === "function") unsubscribe();
     };
-  }, [open, excalidrawApi, refreshFiles]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    document.addEventListener("keydown", onKey, true);
-    return () => document.removeEventListener("keydown", onKey, true);
-  }, [open, onClose]);
+  }, [active, excalidrawApi, refreshFiles]);
 
   const handleDownload = useCallback((file: ImageFile) => {
     if (!file.dataURL) return;
@@ -172,49 +148,29 @@ export function CanvasFilesPanel({
     a.click();
   }, []);
 
-  if (!open) return null;
+  if (!active) return null;
 
   return (
     <div
-      className="fixed left-0 top-0 z-30 flex h-full w-[280px] flex-col border-r border-border bg-card animate-in slide-in-from-left duration-200"
+      className="flex-1 overflow-y-auto px-2 pb-4"
+      style={{ contain: "layout style" }}
       onKeyDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
     >
-      {/* Title bar */}
-      <div className="flex h-[50px] shrink-0 items-center justify-between px-4">
-        <span className="text-base font-medium text-foreground">
-          已生成文件列表
-        </span>
-        <button
-          type="button"
-          className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-          onClick={onClose}
-          aria-label="关闭文件面板"
-        >
-          <CloseIcon className="h-3.5 w-3.5" />
-        </button>
-      </div>
-
-      {/* File list -- uses content-visibility and memoized rows for performance */}
-      <div
-        className="flex-1 overflow-y-auto px-2 pb-4"
-        style={{ contain: "layout style" }}
-      >
-        {imageFiles.length === 0 ? (
-          <p className="px-2 py-8 text-center text-sm text-muted-foreground">
-            暂无生成文件
+      {imageFiles.length === 0 ? (
+        <p className="px-2 py-8 text-center text-sm text-muted-foreground">
+          暂无生成文件
+        </p>
+      ) : (
+        <div className="flex flex-col gap-1">
+          {imageFiles.map((file) => (
+            <FileRow key={file.id} file={file} onDownload={handleDownload} />
+          ))}
+          <p className="py-2 text-center text-sm text-muted-foreground">
+            到底了
           </p>
-        ) : (
-          <div className="flex flex-col gap-1">
-            {imageFiles.map((file) => (
-              <FileRow key={file.id} file={file} onDownload={handleDownload} />
-            ))}
-            <p className="py-2 text-center text-sm text-muted-foreground">
-              到底了
-            </p>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

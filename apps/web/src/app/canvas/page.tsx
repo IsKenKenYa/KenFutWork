@@ -12,7 +12,7 @@ import { CanvasFilesPanel } from "../../components/canvas-files-panel";
 import type { CanvasImageItem } from "../../components/canvas-image-picker";
 import { CanvasLayersPanel } from "../../components/canvas-layers-panel";
 import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
-import { ChatSidebar } from "../../components/chat-sidebar";
+import { type SidePanelTab, ChatSidebar } from "../../components/chat-sidebar";
 import { EditableProjectName } from "../../components/editable-project-name";
 import { LoadingScreen } from "../../components/loading-screen";
 import { useJobFallbackPolling } from "../../hooks/use-job-fallback-polling";
@@ -53,8 +53,14 @@ function CanvasPageContent() {
     if (typeof window === "undefined") return true;
     return window.innerWidth >= 1024;
   });
-  const [layersOpen, setLayersOpen] = useState(false);
-  const [filesOpen, setFilesOpen] = useState(false);
+  /**
+   * 右侧面板的标签：会话 / 图层 / 文件。
+   *
+   * 图层与生成文件原先各自是画布上的一层浮层（`fixed left-0` + 自己的标题栏），
+   * 与右侧助手面板三足鼎立：同一块信息分散在三处、画布还常被浮层压住。现在只有
+   * 一个右侧面板，三者是它的三个标签。
+   */
+  const [panelTab, setPanelTab] = useState<SidePanelTab>("chat");
   const [brandKitId, setBrandKitId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("未命名画布");
   const [selectedCanvasElements, setSelectedCanvasElements] = useState<
@@ -70,18 +76,22 @@ function CanvasPageContent() {
   routerRef.current = router;
 
   // Stable callbacks for panel toggles to prevent re-renders of child components
-  const handleOpenChat = useCallback(() => setChatOpen(true), []);
+  const handleOpenChat = useCallback(() => {
+    setPanelTab("chat");
+    setChatOpen(true);
+  }, []);
   const handleToggleChat = useCallback(() => setChatOpen((v) => !v), []);
+  // 底部栏的「图层 / 生成文件」按钮：切到对应标签并确保面板展开。
+  // （不在这里「再点一次就收起」——那会把整个右侧面板（含对话）一起关掉，
+  //   收起面板有标题栏右上角的专用按钮。）
   const handleToggleLayers = useCallback(() => {
-    setLayersOpen((v) => !v);
-    setFilesOpen(false);
+    setPanelTab("layers");
+    setChatOpen(true);
   }, []);
   const handleToggleFiles = useCallback(() => {
-    setFilesOpen((v) => !v);
-    setLayersOpen(false);
+    setPanelTab("files");
+    setChatOpen(true);
   }, []);
-  const handleCloseLayers = useCallback(() => setLayersOpen(false), []);
-  const handleCloseFiles = useCallback(() => setFilesOpen(false), []);
 
   const accessToken = session?.access_token;
   const accessTokenRef = useRef(accessToken);
@@ -293,7 +303,6 @@ function CanvasPageContent() {
           initialContent={canvasData.content}
           onApiReady={handleApiReady}
           ws={ws}
-          leftPanelOpen={layersOpen || filesOpen}
           onSelectionChange={setSelectedCanvasElements}
           overlay={
             <CanvasEmptyHint
@@ -304,21 +313,10 @@ function CanvasPageContent() {
         />
         <CanvasBottomBar
           excalidrawApi={excalidrawApi}
-          layersOpen={layersOpen}
+          layersOpen={panelTab === "layers" && chatOpen}
           onToggleLayers={handleToggleLayers}
-          filesOpen={filesOpen}
+          filesOpen={panelTab === "files" && chatOpen}
           onToggleFiles={handleToggleFiles}
-          leftPanelOpen={layersOpen || filesOpen}
-        />
-        <CanvasLayersPanel
-          excalidrawApi={excalidrawApi}
-          open={layersOpen}
-          onClose={handleCloseLayers}
-        />
-        <CanvasFilesPanel
-          excalidrawApi={excalidrawApi}
-          open={filesOpen}
-          onClose={handleCloseFiles}
         />
       </div>
       <ChatSidebar
@@ -337,6 +335,20 @@ function CanvasPageContent() {
         currentBrandKitId={brandKitId}
         ws={ws}
         selectedCanvasElements={selectedCanvasElements}
+        panelTab={panelTab}
+        onPanelTabChange={setPanelTab}
+        layersPanel={
+          <CanvasLayersPanel
+            excalidrawApi={excalidrawApi}
+            active={panelTab === "layers"}
+          />
+        }
+        filesPanel={
+          <CanvasFilesPanel
+            excalidrawApi={excalidrawApi}
+            active={panelTab === "files"}
+          />
+        }
       />
     </div>
   );

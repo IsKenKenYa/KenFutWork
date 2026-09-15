@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 
 /* -- Types -- */
 // biome-ignore lint/suspicious/noExplicitAny: Excalidraw element has no public type
@@ -9,8 +10,8 @@ type ExcalidrawEl = any;
 export type CanvasLayersPanelProps = {
   // biome-ignore lint/suspicious/noExplicitAny: Excalidraw API has no public type definition
   excalidrawApi: any;
-  open: boolean;
-  onClose: () => void;
+  /** 面板是否可见：不可见时退订画布变更（隐藏的列表没必要跟着重算）。 */
+  active: boolean;
 };
 
 /* -- Throttle utility -- */
@@ -70,17 +71,6 @@ const EyeIcon = ({ className }: { className?: string }) => (
       strokeLinejoin="round"
     />
     <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.3" />
-  </svg>
-);
-
-const CloseIcon = ({ className }: { className?: string }) => (
-  <svg viewBox="0 0 16 16" fill="none" className={className}>
-    <path
-      d="M4.5 4.5l7 7M11.5 4.5l-7 7"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinecap="round"
-    />
   </svg>
 );
 
@@ -155,17 +145,32 @@ const LayerRow = memo(function LayerRow({
   onSelect: (id: string) => void;
 }) {
   const handleClick = useCallback(() => onSelect(el.id), [onSelect, el.id]);
+  const handleKeyDown = useCallback(
+    (e: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      onSelect(el.id);
+    },
+    [onSelect, el.id],
+  );
 
   return (
     <div
       style={{ contentVisibility: "auto", containIntrinsicSize: "auto 44px" }}
     >
-      <button
-        type="button"
-        className={`group/layer flex h-11 w-full items-center gap-2.5 rounded-lg px-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
+      {/*
+        行本体是 div + role="button"，不是 <button>：行内还有「锁定 / 可见性」两个
+        真按钮，<button> 套 <button> 是非法 DOM（Next.js 开发覆盖层会报
+        "button cannot contain a nested button"）。键盘等价性用 Enter/Space 补回。
+      */}
+      <div
+        role="button"
+        tabIndex={0}
+        className={`group/layer flex h-11 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
           selected ? "bg-muted" : "hover:bg-muted"
         }`}
         onClick={handleClick}
+        onKeyDown={handleKeyDown}
       >
         <LayerThumbnail el={el} files={files} />
         <span className="flex-1 truncate text-[11px] text-foreground min-w-0">
@@ -189,7 +194,7 @@ const LayerRow = memo(function LayerRow({
             <EyeIcon className="h-4 w-4" />
           </button>
         </div>
-      </button>
+      </div>
     </div>
   );
 });
@@ -199,8 +204,7 @@ const LayerRow = memo(function LayerRow({
    ================================================================ */
 export function CanvasLayersPanel({
   excalidrawApi,
-  open,
-  onClose,
+  active,
 }: CanvasLayersPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [elements, setElements] = useState<ExcalidrawEl[]>([]);
@@ -220,7 +224,7 @@ export function CanvasLayersPanel({
   // Throttle refresh to avoid hammering React state on every drag frame.
   // 100ms gives smooth UI without excessive re-renders during drawing.
   useEffect(() => {
-    if (!open || !excalidrawApi) return;
+    if (!active || !excalidrawApi) return;
     // Initial refresh is immediate
     refreshElements();
 
@@ -232,20 +236,7 @@ export function CanvasLayersPanel({
       throttledRefresh.cancel();
       if (typeof unsubscribe === "function") unsubscribe();
     };
-  }, [open, excalidrawApi, refreshElements]);
-
-  /* -- Escape to close -- */
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    document.addEventListener("keydown", onKey, true);
-    return () => document.removeEventListener("keydown", onKey, true);
-  }, [open, onClose]);
+  }, [active, excalidrawApi, refreshElements]);
 
   /* -- Select element on canvas -- */
   const selectElement = useCallback(
@@ -257,52 +248,31 @@ export function CanvasLayersPanel({
     [excalidrawApi],
   );
 
-  if (!open) return null;
+  if (!active) return null;
 
   return (
     <div
       ref={panelRef}
-      className="fixed left-0 top-0 z-30 flex h-full w-[280px] flex-col border-r border-border bg-card animate-in slide-in-from-left duration-200"
+      className="flex-1 overflow-y-auto px-1 py-1"
+      style={{ contain: "layout style" }}
       onKeyDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
     >
-      {/* Title bar */}
-      <div className="flex h-11 shrink-0 items-center justify-between px-3">
-        <span className="text-sm font-medium text-foreground">图层</span>
-        <button
-          type="button"
-          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-          onClick={onClose}
-          aria-label="关闭图层面板"
-        >
-          <CloseIcon className="h-4 w-4" />
-        </button>
-      </div>
-
-      {/* Separator */}
-      <div className="h-px bg-border" />
-
-      {/* Layer list -- uses content-visibility for large canvas performance */}
-      <div
-        className="flex-1 overflow-y-auto px-1 py-1"
-        style={{ contain: "layout style" }}
-      >
-        {elements.length === 0 ? (
-          <p className="px-2 py-8 text-center text-xs text-muted-foreground">
-            画布为空
-          </p>
-        ) : (
-          elements.map((el: ExcalidrawEl) => (
-            <LayerRow
-              key={el.id}
-              el={el}
-              files={files}
-              selected={!!selectedIds[el.id]}
-              onSelect={selectElement}
-            />
-          ))
-        )}
-      </div>
+      {elements.length === 0 ? (
+        <p className="px-2 py-8 text-center text-xs text-muted-foreground">
+          画布为空
+        </p>
+      ) : (
+        elements.map((el: ExcalidrawEl) => (
+          <LayerRow
+            key={el.id}
+            el={el}
+            files={files}
+            selected={!!selectedIds[el.id]}
+            onSelect={selectElement}
+          />
+        ))
+      )}
     </div>
   );
 }

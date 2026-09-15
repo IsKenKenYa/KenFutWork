@@ -29,8 +29,6 @@ interface CanvasBottomBarProps {
   onToggleLayers: () => void;
   filesOpen: boolean;
   onToggleFiles: () => void;
-  /** Whether any left panel (layers/files) is open — shifts the bar right */
-  leftPanelOpen: boolean;
 }
 
 /* ── Inline SVG icons ── */
@@ -270,7 +268,6 @@ export function CanvasBottomBar({
   onToggleLayers,
   filesOpen,
   onToggleFiles,
-  leftPanelOpen,
 }: CanvasBottomBarProps) {
   /* ── Zoom state ── */
   const [zoom, setZoom] = useState(1);
@@ -329,7 +326,7 @@ export function CanvasBottomBar({
       observer?.disconnect();
       window.clearTimeout(retry);
     };
-  }, [leftPanelOpen]);
+  }, []);
 
   /* ── Background color state ── */
   const [bgColor, setBgColor] = useState("#FFFFFF");
@@ -446,9 +443,8 @@ export function CanvasBottomBar({
   return (
     <div
       ref={barRef}
-      className="absolute z-20 transition-[left,bottom] duration-200"
+      className="absolute left-4 z-20 transition-[bottom] duration-200"
       style={{
-        left: leftPanelOpen ? 296 : 16,
         // 空间不够时抬到工具条上方一行（见 raised 的说明）
         bottom: raised ? 72 : 16,
       }}

@@ -10,6 +10,7 @@ import type {
   VideoGenerationPreference,
 } from "@loomic/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { toChatMenuMessages } from "@/lib/chat-menu";
 import { useAgentModel } from "../hooks/use-agent-model";
 import { useBreakpoint } from "../hooks/use-breakpoint";
@@ -52,6 +53,55 @@ import { ExecutionModeSelect } from "./execution-mode-select";
 import { SessionSelector } from "./session-selector";
 import { useToast } from "./toast";
 
+/** 右侧面板的三个标签：对话、图层、生成文件。 */
+export type SidePanelTab = "chat" | "layers" | "files";
+
+const SIDE_PANEL_TABS: Array<{ id: SidePanelTab; label: string }> = [
+  { id: "chat", label: "会话" },
+  { id: "layers", label: "图层" },
+  { id: "files", label: "文件" },
+];
+
+/**
+ * 面板顶部标签条。
+ *
+ * 图层与生成文件原先是画布上的两块独立浮层（各自 `fixed left-0` + 自己的标题栏和
+ * 关闭按钮），三是同一块空间的三份入口。改成右侧面板的三个标签后：面板只有一个，
+ * 标题栏只有一条，画布上不再压浮层。
+ */
+function SidePanelTabs({
+  value,
+  onChange,
+}: {
+  value: SidePanelTab;
+  onChange?: ((tab: SidePanelTab) => void) | undefined;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label="右侧面板"
+      className="flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5"
+    >
+      {SIDE_PANEL_TABS.map((tab) => (
+        <button
+          key={tab.id}
+          type="button"
+          role="tab"
+          aria-selected={value === tab.id}
+          onClick={() => onChange?.(tab.id)}
+          className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+            value === tab.id
+              ? "bg-card text-foreground shadow-subtle"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 type ChatSidebarProps = {
   accessToken: string;
   canvasId: string;
@@ -69,6 +119,13 @@ type ChatSidebarProps = {
   currentBrandKitId?: string | null;
   ws: WebSocketHandle;
   selectedCanvasElements?: CanvasSelectedElement[];
+  /** 当前标签（缺省「会话」）。 */
+  panelTab?: SidePanelTab;
+  onPanelTabChange?: (tab: SidePanelTab) => void;
+  /** 「图层」标签的内容（由画布页提供）。 */
+  layersPanel?: ReactNode;
+  /** 「文件」标签的内容（由画布页提供）。 */
+  filesPanel?: ReactNode;
 };
 
 export function ChatSidebar({
@@ -87,6 +144,10 @@ export function ChatSidebar({
   currentBrandKitId,
   ws,
   selectedCanvasElements,
+  panelTab = "chat",
+  onPanelTabChange,
+  layersPanel,
+  filesPanel,
 }: ChatSidebarProps) {
   const breakpoint = useBreakpoint();
   const isOverlay = breakpoint !== "desktop";
@@ -958,13 +1019,11 @@ export function ChatSidebar({
   // between overlay (mobile/tablet) and inline (desktop) render paths.
   const panelContent = (
     <>
-      {/* Header */}
-      <div className="flex min-h-[48px] items-center justify-between pl-4 pr-2">
+      {/* Header：标签条取代了原「Agent 助手」标题（面板现在承载会话/图层/文件三块内容） */}
+      <div className="flex min-h-[48px] items-center justify-between gap-2 pl-3 pr-2">
         <div className="flex items-center gap-1 min-w-0">
-          <h2 className="text-sm font-semibold text-foreground shrink-0">
-            Agent 助手
-          </h2>
-          {!sessionsLoading && (
+          <SidePanelTabs value={panelTab} onChange={onPanelTabChange} />
+          {panelTab === "chat" && !sessionsLoading && (
             <SessionSelector
               sessions={sessions}
               activeSessionId={activeSessionId}
@@ -989,82 +1048,90 @@ export function ChatSidebar({
         </button>
       </div>
 
-      {/* Disconnected banner */}
-      {!ws.connected && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-muted border-b border-border">
-          <div className="h-2 w-2 rounded-full bg-red-500 animate-[pulse_1.2s_ease-in-out_infinite]" />
-          <span className="text-[11px] text-muted-foreground">
-            连接已断开，正在重连...
-          </span>
+      {panelTab === "chat" ? (
+        <>
+          {/* Disconnected banner */}
+          {!ws.connected && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-muted border-b border-border">
+              <div className="h-2 w-2 rounded-full bg-red-500 animate-[pulse_1.2s_ease-in-out_infinite]" />
+              <span className="text-[11px] text-muted-foreground">
+                连接已断开，正在重连...
+              </span>
+            </div>
+          )}
+
+          {/* Messages */}
+          <ErrorBoundary
+            onError={(err) =>
+              console.error("[chat-sidebar] message area render crashed:", err)
+            }
+          >
+            <div
+              ref={messagesContainerRef}
+              className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col gap-6 px-4 py-4"
+              aria-live="polite"
+              aria-relevant="additions"
+              onContextMenu={chatMenu.open}
+            >
+              {sessionsLoading || messagesLoading ? (
+                <div className="flex h-full items-center justify-center">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-foreground" />
+                </div>
+              ) : messages.length === 0 ? (
+                <ChatSkills onSend={handleSend} />
+              ) : (
+                messages.map((msg) => (
+                  <ChatMessage
+                    key={msg.id}
+                    role={msg.role}
+                    contentBlocks={msg.contentBlocks}
+                    isStreaming={
+                      streaming &&
+                      msg.role === "assistant" &&
+                      msg === messages[messages.length - 1]
+                    }
+                  />
+                ))
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+          </ErrorBoundary>
+
+          {/* Input */}
+          <div className="relative">
+            {atQuery !== null && mentionPickerItems.length > 0 && (
+              <MessageMentionPicker
+                items={mentionPickerItems}
+                query={atQuery}
+                onSelect={(item) => {
+                  handleMentionSelect(item);
+                  chatInputRef.current?.clearAtQuery();
+                  setAtQuery(null);
+                }}
+                onClose={() => setAtQuery(null)}
+              />
+            )}
+            <ChatInput
+              ref={chatInputRef}
+              onSend={handleSend}
+              disabled={streaming || sessionsLoading}
+              attachments={imageAttachments}
+              onAddFiles={addFiles}
+              onRemoveAttachment={removeAttachment}
+              onRetryAttachment={retryUpload}
+              isUploading={isUploading}
+              onAtQuery={setAtQuery}
+              mentions={messageMentions}
+              onRemoveMention={handleRemoveMention}
+              {...(selectedCanvasElements ? { selectedCanvasElements } : {})}
+            />
+          </div>
+        </>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col">
+          {panelTab === "layers" ? layersPanel : filesPanel}
         </div>
       )}
-
-      {/* Messages */}
-      <ErrorBoundary
-        onError={(err) =>
-          console.error("[chat-sidebar] message area render crashed:", err)
-        }
-      >
-        <div
-          ref={messagesContainerRef}
-          className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col gap-6 px-4 py-4"
-          aria-live="polite"
-          aria-relevant="additions"
-          onContextMenu={chatMenu.open}
-        >
-          {sessionsLoading || messagesLoading ? (
-            <div className="flex h-full items-center justify-center">
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-foreground" />
-            </div>
-          ) : messages.length === 0 ? (
-            <ChatSkills onSend={handleSend} />
-          ) : (
-            messages.map((msg) => (
-              <ChatMessage
-                key={msg.id}
-                role={msg.role}
-                contentBlocks={msg.contentBlocks}
-                isStreaming={
-                  streaming &&
-                  msg.role === "assistant" &&
-                  msg === messages[messages.length - 1]
-                }
-              />
-            ))
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-      </ErrorBoundary>
-
-      {/* Input */}
-      <div className="relative">
-        {atQuery !== null && mentionPickerItems.length > 0 && (
-          <MessageMentionPicker
-            items={mentionPickerItems}
-            query={atQuery}
-            onSelect={(item) => {
-              handleMentionSelect(item);
-              chatInputRef.current?.clearAtQuery();
-              setAtQuery(null);
-            }}
-            onClose={() => setAtQuery(null)}
-          />
-        )}
-        <ChatInput
-          ref={chatInputRef}
-          onSend={handleSend}
-          disabled={streaming || sessionsLoading}
-          attachments={imageAttachments}
-          onAddFiles={addFiles}
-          onRemoveAttachment={removeAttachment}
-          onRetryAttachment={retryUpload}
-          isUploading={isUploading}
-          onAtQuery={setAtQuery}
-          mentions={messageMentions}
-          onRemoveMention={handleRemoveMention}
-          {...(selectedCanvasElements ? { selectedCanvasElements } : {})}
-        />
-      </div>
     </>
   );
 
@@ -1130,7 +1197,7 @@ export function ChatSidebar({
         onKeyDown={handleResizeKeyDown}
       />
       <div className="flex flex-1 flex-col bg-card min-w-0">
-        {activeSessionId && accessToken ? (
+        {panelTab === "chat" && activeSessionId && accessToken ? (
           <ExecutionModeSelect
             accessToken={accessToken}
             threadId={activeSessionId}

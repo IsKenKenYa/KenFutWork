@@ -87,7 +87,6 @@ const TOOL_LABELS: Record<ToolType, string> = {
 type CanvasToolMenuProps = {
   accessToken: string;
   excalidrawApi: any;
-  leftPanelOpen?: boolean;
 };
 
 /** Memoized shimmer overlay for a single generating element */
@@ -156,7 +155,6 @@ const GeneratingOverlay = memo(function GeneratingOverlay({
 export function CanvasToolMenu({
   accessToken,
   excalidrawApi,
-  leftPanelOpen,
 }: CanvasToolMenuProps) {
   const [activeTool, setActiveTool] = useState<string>("selection");
 
@@ -487,11 +485,7 @@ export function CanvasToolMenu({
     <>
       <div
         data-canvas-tool-row=""
-        className="absolute bottom-5 z-30 flex items-center gap-0.5 rounded-xl p-1 bg-card border border-border shadow-card transition-[left,transform] duration-200"
-        style={{
-          left: leftPanelOpen ? "calc(140px + 50%)" : "50%",
-          transform: "translateX(-50%)",
-        }}
+        className="absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-border bg-card p-1 shadow-card"
       >
         {/* Standard Excalidraw tools */}
         {TOOL_GROUPS.map((tool, i) => {
