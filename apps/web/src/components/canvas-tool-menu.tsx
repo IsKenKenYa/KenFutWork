@@ -8,7 +8,6 @@ import {
   Minus,
   MousePointer2,
   Pencil,
-  Sparkles,
   Square,
   Type,
   Video,
@@ -57,6 +56,26 @@ const TOOL_GROUPS: (ToolType | null)[] = [
   "text",
   "image",
 ];
+
+/** 「AI 生成图片」图标：图片框 + 右上角星芒——与「图片」工具（纯图片框）区分开。 */
+function AiImageIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.6}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="3" y="5" width="14" height="14" rx="2" />
+      <circle cx="7.5" cy="9.5" r="1.2" />
+      <path d="M3.5 16.5 8 12l4.5 4.5" />
+      <path d="M19 3.2l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" />
+    </svg>
+  );
+}
 
 const TOOL_ICONS: Record<
   ToolType,
@@ -540,7 +559,7 @@ export function CanvasToolMenu({
               : "text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground"
           }`}
         >
-          <Sparkles className="size-[16px]" />
+          <AiImageIcon className="size-[16px]" />
         </button>
 
         {/* AI Video -- creates a placeholder on canvas */}

@@ -1,18 +1,32 @@
 /**
- * 右侧面板的「对话标签页」纯逻辑（Editor 式：每个打开的历史对话占一个标签）。
+ * 右侧面板的标签页纯逻辑。
  *
- * 语义：点历史对话不是把当前这轮顶掉，而是**新开一个标签**；标签可以同时开多个、
- * 点一下切换、× 关掉，切换画布/刷新页面后仍在（按画布分别存 localStorage）。
- * 组件只做展示与事件转发，增删与「关掉当前标签后选谁」这类判定都在这里，便于单测。
+ * 标签有两种：
+ * - `chat`：每个打开的历史对话一个标签（`id` = 会话 id）；
+ * - `layers` / `files`：图层与生成文件两个**面板视图**，点底部/顶部的入口按钮就开一个标签
+ *   （`id` 就是视图名本身）。
+ *
+ * 语义与编辑器一致：可以同时开多个、点一下切换、× 关掉，刷新后仍在（按画布分别存
+ * localStorage）。增删与「关掉当前标签后选谁」都在这里，便于单测。
  */
+export type TabKind = "chat" | "layers" | "files";
+
 export type ChatTab = {
-  sessionId: string;
-  /** 标签文字＝会话标题（会话自动改标题时会同步过来）。 */
+  kind: TabKind;
+  /** chat 用会话 id；视图标签用视图名（layers / files）。 */
+  id: string;
+  /** 标签文字。 */
   title: string;
 };
 
 /** 标签上限：再多也放不下，且 localStorage 不该无限增长。 */
 const MAX_TABS = 12;
+
+/** 视图标签的固定标题。 */
+export const VIEW_TAB_TITLES: Record<Exclude<TabKind, "chat">, string> = {
+  layers: "图层",
+  files: "生成文件",
+};
 
 export function tabsStorageKey(canvasId: string): string {
   return `chat-open-tabs:${canvasId}`;
@@ -30,8 +44,9 @@ export function loadTabs(canvasId: string): ChatTab[] {
         (t): t is ChatTab =>
           typeof t === "object" &&
           t !== null &&
-          typeof (t as ChatTab).sessionId === "string" &&
-          typeof (t as ChatTab).title === "string",
+          typeof (t as ChatTab).id === "string" &&
+          typeof (t as ChatTab).title === "string" &&
+          ["chat", "layers", "files"].includes((t as ChatTab).kind),
       )
       .slice(0, MAX_TABS);
   } catch {
@@ -51,11 +66,11 @@ export function saveTabs(canvasId: string, tabs: ChatTab[]): void {
 }
 
 /**
- * 打开/聚焦一个对话：已开过则**原地更新标题**（会话自动改名要跟上），没开过则追加。
+ * 打开/聚焦一个标签：已开过则**原地更新标题**（会话自动改名要跟上），没开过则追加。
  * 无变化时返回原数组引用，避免无谓的重渲染与写盘。
  */
 export function upsertTab(tabs: ChatTab[], tab: ChatTab): ChatTab[] {
-  const idx = tabs.findIndex((t) => t.sessionId === tab.sessionId);
+  const idx = tabs.findIndex((t) => t.id === tab.id && t.kind === tab.kind);
   if (idx < 0) return [...tabs, tab].slice(-MAX_TABS);
   if (tabs[idx]!.title === tab.title) return tabs;
   const next = [...tabs];
@@ -69,25 +84,28 @@ export function upsertTab(tabs: ChatTab[], tab: ChatTab): ChatTab[] {
  */
 export function closeTab(
   tabs: ChatTab[],
-  sessionId: string,
+  id: string,
+  kind: TabKind,
   activeId: string | null,
 ): { tabs: ChatTab[]; nextActiveId: string | null } {
-  const idx = tabs.findIndex((t) => t.sessionId === sessionId);
+  const idx = tabs.findIndex((t) => t.id === id && t.kind === kind);
   if (idx < 0) return { tabs, nextActiveId: activeId };
   const rest = tabs.filter((_, i) => i !== idx);
-  if (activeId !== sessionId) return { tabs: rest, nextActiveId: activeId };
+  const wasActive = activeId === id;
+  if (!wasActive) return { tabs: rest, nextActiveId: activeId };
+  // 接替者优先取同一个视图种类，其次右邻、再左邻
   const neighbour = rest[idx] ?? rest[idx - 1] ?? null;
-  return { tabs: rest, nextActiveId: neighbour?.sessionId ?? null };
+  return { tabs: rest, nextActiveId: neighbour?.id ?? null };
 }
 
 /**
- * 丢掉已不存在的会话（在别处删了、或换账号）。
+ * 清掉已不存在的会话标签（在别处删了、或换账号）。**视图标签不受影响**。
  */
 export function pruneTabs(
   tabs: ChatTab[],
   knownSessionIds: Iterable<string>,
 ): ChatTab[] {
   const known = new Set(knownSessionIds);
-  const kept = tabs.filter((t) => known.has(t.sessionId));
+  const kept = tabs.filter((t) => t.kind !== "chat" || known.has(t.id));
   return kept.length === tabs.length ? tabs : kept;
 }

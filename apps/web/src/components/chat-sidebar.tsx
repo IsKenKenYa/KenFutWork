@@ -58,7 +58,9 @@ import {
   pruneTabs,
   saveTabs,
   upsertTab,
+  VIEW_TAB_TITLES,
   type ChatTab,
+  type TabKind,
 } from "../lib/chat-tabs";
 
 /** 对话视图图标：空心气泡（与图层/文件同一套：24 视框、stroke 1.5、无填充）。 */
@@ -197,8 +199,9 @@ export function ChatSidebar({
   const { applyStreamEvent } = useChatStream(updateSessionMessages);
 
   /**
-   * 对话标签页：每个打开的历史对话占一个标签（可开多个、可关闭、左对齐）。
-   * 点历史对话＝新开一个标签而不是顶掉当前这轮；按画布分别存 localStorage，刷新后仍在。
+   * 面板标签页：**对话**（每个打开的历史对话一个）＋**视图**（图层 / 生成文件，
+   * 点对应按钮就开一个标签）。可多开、可关闭、左对齐；按画布分别存 localStorage，刷新后仍在。
+   * 点历史对话＝新开一个标签而不是顶掉当前这轮。
    */
   const [openTabs, setOpenTabs] = useState<ChatTab[]>(() => loadTabs(canvasId));
 
@@ -213,7 +216,8 @@ export function ChatSidebar({
     if (!activeSessionId || !current) return;
     setOpenTabs((prev) => {
       const next = upsertTab(prev, {
-        sessionId: current.id,
+        kind: "chat",
+        id: current.id,
         title: current.title,
       });
       if (next !== prev) saveTabs(canvasId, next);
@@ -240,7 +244,8 @@ export function ChatSidebar({
       const target = sessions.find((s) => s.id === sessionId);
       setOpenTabs((prev) => {
         const next = upsertTab(prev, {
-          sessionId,
+          kind: "chat",
+          id: sessionId,
           title: target?.title ?? "新对话",
         });
         if (next !== prev) saveTabs(canvasId, next);
@@ -251,29 +256,57 @@ export function ChatSidebar({
     [canvasId, sessions, handleSelectSession],
   );
 
+  /** 打开（或切到）一个**视图标签**（图层 / 生成文件）：点按钮就多一个标签而不是切走。 */
+  const handleOpenViewTab = useCallback(
+    (kind: Exclude<TabKind, "chat">) => {
+      setOpenTabs((prev) => {
+        const next = upsertTab(prev, {
+          kind,
+          id: kind,
+          title: VIEW_TAB_TITLES[kind],
+        });
+        if (next !== prev) saveTabs(canvasId, next);
+        return next;
+      });
+      onPanelTabChange?.(kind);
+    },
+    [canvasId, onPanelTabChange],
+  );
+
   /** 关标签：接替者由 closeTab 决定（右邻优先、其次左邻）；关光了就开一个空白对话。 */
   const handleCloseSessionTab = useCallback(
-    (sessionId: string) => {
+    (id: string, kind: TabKind) => {
       const { tabs: next, nextActiveId } = closeChatTab(
         openTabs,
-        sessionId,
-        activeSessionId,
+        id,
+        kind,
+        panelTab === "chat" ? activeSessionId : panelTab,
       );
       if (next === openTabs) return;
       setOpenTabs(next);
       saveTabs(canvasId, next);
-      if (nextActiveId) {
-        if (nextActiveId !== activeSessionId) {
-          void handleSelectSession(nextActiveId);
-        }
-      } else {
+      if (!nextActiveId) {
+        onPanelTabChange?.("chat");
         void handleNewChat();
+        return;
+      }
+      // 接替者可能是视图标签（id 即视图名）也可能是会话标签
+      const nextTab = next.find((t) => t.id === nextActiveId);
+      if (nextTab && nextTab.kind !== "chat") {
+        onPanelTabChange?.(nextTab.kind);
+        return;
+      }
+      onPanelTabChange?.("chat");
+      if (nextActiveId !== activeSessionId) {
+        void handleSelectSession(nextActiveId);
       }
     },
     [
       canvasId,
       openTabs,
       activeSessionId,
+      panelTab,
+      onPanelTabChange,
       handleSelectSession,
       handleNewChat,
     ],
@@ -1134,10 +1167,13 @@ export function ChatSidebar({
               className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto py-1.5 [&::-webkit-scrollbar]:hidden"
             >
               {openTabs.map((tab) => {
-                const active = tab.sessionId === activeSessionId;
+                const active =
+                  tab.kind === "chat"
+                    ? panelTab === "chat" && tab.id === activeSessionId
+                    : panelTab === tab.kind;
                 return (
                   <div
-                    key={tab.sessionId}
+                    key={`${tab.kind}:${tab.id}`}
                     className={`group flex max-w-[160px] shrink-0 items-center gap-1 rounded-md px-2 py-1 transition-colors ${
                       active
                         ? "bg-muted text-foreground"
@@ -1149,7 +1185,13 @@ export function ChatSidebar({
                       role="tab"
                       aria-selected={active}
                       title={tab.title}
-                      onClick={() => handleOpenSessionTab(tab.sessionId)}
+                      onClick={() => {
+                        if (tab.kind === "chat") {
+                          handleOpenSessionTab(tab.id);
+                        } else {
+                          onPanelTabChange?.(tab.kind);
+                        }
+                      }}
                       className="min-w-0 flex-1 truncate text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {tab.title}
@@ -1159,7 +1201,7 @@ export function ChatSidebar({
                       aria-label={`关闭 ${tab.title}`}
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleCloseSessionTab(tab.sessionId);
+                        handleCloseSessionTab(tab.id, tab.kind);
                       }}
                       className={`flex h-4 w-4 shrink-0 items-center justify-center rounded transition-colors ${
                         active
@@ -1225,9 +1267,7 @@ export function ChatSidebar({
             aria-label="图层"
             aria-pressed={panelTab === "layers"}
             title="图层"
-            onClick={() =>
-              onPanelTabChange?.(panelTab === "layers" ? "chat" : "layers")
-            }
+            onClick={() => handleOpenViewTab("layers")}
             className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${
               panelTab === "layers"
                 ? "bg-muted text-foreground"
@@ -1241,9 +1281,7 @@ export function ChatSidebar({
             aria-label="生成文件"
             aria-pressed={panelTab === "files"}
             title="生成文件"
-            onClick={() =>
-              onPanelTabChange?.(panelTab === "files" ? "chat" : "files")
-            }
+            onClick={() => handleOpenViewTab("files")}
             className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${
               panelTab === "files"
                 ? "bg-muted text-foreground"

@@ -273,4 +273,47 @@ describe("ChatSidebar", () => {
       expect(svg?.getAttribute("class")).toBe("h-4 w-4");
     }
   });
+
+  it("点「图层」「生成文件」是**多开标签**：标签栏多出对应标签而不是把对话顶掉", async () => {
+    function Harness() {
+      const [tab, setTab] = useState<SidePanelTab>("chat");
+      return (
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+          panelTab={tab}
+          onPanelTabChange={setTab}
+          layersPanel={<div>图层列表占位</div>}
+          filesPanel={<div>生成文件占位</div>}
+        />
+      );
+    }
+    render(
+      <ToastProvider>
+        <TierLimitToastProvider>
+          <Harness />
+        </TierLimitToastProvider>
+      </ToastProvider>,
+    );
+
+    const tablist = await screen.findByRole("tablist", { name: "打开的对话" });
+    const before = tablist.querySelectorAll('[role="tab"]').length;
+
+    await userEvent.click(screen.getByRole("button", { name: "图层" }));
+    expect(await screen.findByText("图层列表占位")).toBeInTheDocument();
+    expect(tablist.querySelectorAll('[role="tab"]').length).toBe(before + 1);
+    expect(screen.getByRole("tab", { name: "图层" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    // 再点「生成文件」→ 又多一个标签，图层的仍在（多开，不是替换）
+    await userEvent.click(screen.getByRole("button", { name: "生成文件" }));
+    expect(await screen.findByText("生成文件占位")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "图层" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "生成文件" })).toBeInTheDocument();
+  });
 });
