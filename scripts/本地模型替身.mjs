@@ -23,6 +23,14 @@ import { createServer } from "node:http";
 const PORT = Number(process.env.MOCK_MODEL_PORT ?? 9098);
 const MODEL_ID = process.env.MOCK_MODEL_ID ?? "mock-1";
 
+/**
+ * 工具调用 id 必须**逐次唯一**：LangGraph 的 messages reducer 以 id 关联
+ * tool_call 与 ToolMessage，重复 id 会让第二次调用被静默丢弃（实测：整轮 run
+ * 在第一个工具后直接结束，且不报错）。
+ */
+let callSeq = 0;
+const nextCallId = () => `call_mock_${(callSeq += 1)}`;
+
 function json(res, status, body) {
   res.writeHead(status, { "content-type": "application/json" });
   res.end(JSON.stringify(body));
@@ -56,10 +64,101 @@ function toolResultsSoFar(messages) {
   return messages.filter((m) => m?.role === "tool");
 }
 
+/** 工具结果的纯文本（判「写成功」用）。 */
+function toolResultText(entry) {
+  return typeof entry?.content === "string"
+    ? entry.content
+    : JSON.stringify(entry?.content ?? "");
+}
+
+/** 「python 项目」脚本：多步文件序列 + 最后调一次 MCP 校验。 */
+const PY_PROJECT_FILES = [
+  {
+    file_path: "kfw-py-demo/pyproject.toml",
+    content:
+      '[project]\nname = "kfw-py-demo"\nversion = "0.1.0"\nrequires-python = ">=3.11"\n',
+  },
+  { file_path: "kfw-py-demo/src/kfw_py_demo/__init__.py", content: '__all__ = []\n' },
+  {
+    file_path: "kfw-py-demo/tests/test_smoke.py",
+    content: "from kfw_py_demo import __all__\n\n\ndef test_smoke():\n    assert __all__ == []\n",
+  },
+  {
+    file_path: "kfw-py-demo/README.md",
+    content: "# kfw-py-demo\n\n由「计划 / 自主」模式实测创建（本地模型替身驱动）。\n",
+  },
+  {
+    file_path: "kfw-py-demo/.gitignore",
+    content: "__pycache__/\n.pytest_cache/\n.venv/\n",
+  },
+];
+
+/**
+ * 「python 项目」脚本的**步进口径**：按**本轮 run** 已有的工具结果条数推进，而不是
+ * 按「写成功的条数」。
+ *
+ * 为什么按本轮：会话带检查点，历史消息会被回放——跨轮计数会让「批准」后的新一轮
+ * 以为文件已经写过、直接跳到收尾。为什么按结果条数而不是成功数：被门拦下的调用也会
+ * 产生一条工具结果（拒绝折叠成 ToolMessage），按成功数推进会让被拦的步永远重试同一个
+ * 文件、直到图的步数上限。
+ */
+function currentRunToolResults(messages) {
+  let lastUser = -1;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i]?.role === "user") {
+      lastUser = i;
+      break;
+    }
+  }
+  return messages.slice(lastUser + 1).filter((m) => m?.role === "tool");
+}
+
+/** 本轮已成功写入的文件数（被门拦下的结果不含 Successfully wrote）。 */
+function approvedWriteCount(results) {
+  return results.filter((m) => /Successfully wrote/.test(toolResultText(m)))
+    .length;
+}
+
+function pythonProjectStep(messages) {
+  const results = currentRunToolResults(messages);
+  if (results.length < PY_PROJECT_FILES.length) {
+    return {
+      kind: "tool",
+      name: "write_file",
+      args: PY_PROJECT_FILES[results.length],
+    };
+  }
+  // MCP **只试一次**：被拒（计划模式把外部调用当副作用拦掉）就收尾说明，不再重试。
+  // 否则模型会一直重调被拒工具，整轮 run 永远不结束（实测 180s 内 2971 次重试，
+  // 既不失败也不结束——图的步数上限对这种情况形同虚设）。
+  const mcpAttempted = results.length > PY_PROJECT_FILES.length;
+  if (!mcpAttempted) {
+    return { kind: "tool", name: "mcp__py-helper__add", args: { a: 2024, b: 4888 } };
+  }
+  const mcpOk = results.some((m) => /6912/.test(toolResultText(m)));
+  const skillSeen = JSON.stringify(messages).includes("python-project-init");
+  const skillNote = skillSeen
+    ? "（已读到技能 python-project-init 的内容）"
+    : "（未读到技能内容）";
+  return {
+    kind: "text",
+    text: `python 项目脚手架：本轮尝试写入 ${PY_PROJECT_FILES.length} 个文件，其中成功 ${approvedWriteCount(results)} 个；MCP 校验 ${mcpOk ? "成功（2024+4888=6912）" : "被拒/失败见工具结果"}。${skillNote}`,
+  };
+}
+
 /** 决定这一轮怎么回。返回 {kind:"text", text} 或 {kind:"tool", name, args}。 */
 function pickScenario(messages) {
   const user = lastUserText(messages);
   const tools = toolResultsSoFar(messages);
+  const wholeConversation = JSON.stringify(messages);
+  const inPythonProject =
+    /python[\s-]?项目|脚手架|kfw-py-demo/i.test(user) ||
+    (/批准/.test(user) && /kfw-py-demo/.test(wholeConversation));
+
+  // 「建 python 项目」整段序列（含批准后继续）：优先于其它规则
+  if (inPythonProject) {
+    return pythonProjectStep(messages);
+  }
 
   if (/写文件|创建文件|write_file/.test(user)) {
     return {
@@ -100,6 +199,15 @@ function pickScenario(messages) {
     };
   }
   if (/web_search|搜索|联网/.test(user)) {
+    // 已有搜索结果就不再重调（否则会一直重调同一工具）
+    const results = currentRunToolResults(messages);
+    const searched = results.find((m) => /https?:\/\/|标题/.test(toolResultText(m)));
+    if (searched) {
+      return {
+        kind: "text",
+        text: `搜索已完成，结果摘要：${toolResultText(searched).slice(0, 300)}`,
+      };
+    }
     return {
       kind: "tool",
       name: "web_search",
@@ -109,9 +217,18 @@ function pickScenario(messages) {
   return { kind: "text", text: `PONG:${user.replace(/\s+/g, " ").slice(0, 30)}` };
 }
 
-function chunk(delta, finish = null) {
+/**
+ * 响应 id 必须**逐次唯一**：ChatOpenAI 把响应 id 当作 AIMessage.id，而 LangGraph 的
+ * add_messages 按 id 去重——同一个 id 的第二次响应会**替换**掉上一条 AIMessage，
+ * 工具结果被挤到消息列表末尾，路由判定「没有工具调用」→ 图在第一个工具后静默结束
+ * （实测：整轮 run 正常 completed，但后续步骤一个都没发生，且不报任何错）。
+ */
+let responseSeq = 0;
+const nextResponseId = () => `chatcmpl-mock-${(responseSeq += 1)}`;
+
+function chunk(id, delta, finish = null) {
   return {
-    id: "chatcmpl-mock",
+    id,
     object: "chat.completion.chunk",
     created: Math.floor(Date.now() / 1000),
     model: MODEL_ID,
@@ -137,9 +254,10 @@ const server = createServer(async (req, res) => {
     const messages = body.messages ?? [];
     const scenario = pickScenario(messages);
     console.log(
-      `[mock-model] ${scenario.kind === "tool" ? `tool_call ${scenario.name}` : "text"}`,
+      `[mock-model] ${scenario.kind === "tool" ? `tool_call ${scenario.name} ${JSON.stringify(scenario.args).slice(0, 120)}` : "text"}`,
     );
 
+    const responseId = nextResponseId();
     if (!body.stream) {
       const message =
         scenario.kind === "tool"
@@ -148,7 +266,7 @@ const server = createServer(async (req, res) => {
               content: null,
               tool_calls: [
                 {
-                  id: "call_mock_1",
+                  id: nextCallId(),
                   type: "function",
                   function: {
                     name: scenario.name,
@@ -159,7 +277,7 @@ const server = createServer(async (req, res) => {
             }
           : { role: "assistant", content: scenario.text };
       return json(res, 200, {
-        id: "chatcmpl-mock",
+        id: responseId,
         object: "chat.completion",
         created: Math.floor(Date.now() / 1000),
         model: MODEL_ID,
@@ -174,14 +292,14 @@ const server = createServer(async (req, res) => {
     }
 
     const write = sse(res);
-    write(chunk({ role: "assistant", content: "" }));
+    write(chunk(responseId, { role: "assistant", content: "" }));
     if (scenario.kind === "tool") {
       write(
-        chunk({
+        chunk(responseId, {
           tool_calls: [
             {
               index: 0,
-              id: "call_mock_1",
+              id: nextCallId(),
               type: "function",
               function: {
                 name: scenario.name,
@@ -191,12 +309,12 @@ const server = createServer(async (req, res) => {
           ],
         }),
       );
-      write(chunk({}, "tool_calls"));
+      write(chunk(responseId, {}, "tool_calls"));
     } else {
       for (const piece of scenario.text.match(/.{1,8}/gs) ?? []) {
-        write(chunk({ content: piece }));
+        write(chunk(responseId, { content: piece }));
       }
-      write(chunk({}, "stop"));
+      write(chunk(responseId, {}, "stop"));
     }
     res.write("data: [DONE]\n\n");
     res.end();
