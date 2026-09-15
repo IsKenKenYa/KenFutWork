@@ -85,6 +85,7 @@ import {
   resolveWorkbenchSurface,
   type WorkbenchMode,
 } from "@/lib/workbench-surface";
+import { resolveDesignAutoCanvas } from "@/lib/design-auto-canvas";
 
 /**
  * Agent 工作台（产品主入口）：Code / Design 双模式（DEC-2）。
@@ -297,6 +298,8 @@ export function Workbench() {
   const [submitting, setSubmitting] = useState(false);
   // Design 模式：项目面板（创建/列表）+ 原版画布内嵌
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  /** 画布项目列表至少取过一次（成功或失败）——自动进画布的判据之一，避免拉取途中误建画布。 */
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     null,
   );
@@ -394,8 +397,15 @@ export function Workbench() {
     // 两类项目各取一份：design=画布项目，code=工作目录项目（「工作目录=项目」）。
     // 都在服务端一处持有，客户端不再另造 localStorage 项目（那是两套真相的来源）。
     fetchProjects(token, "design")
-      .then((data) => setProjects(data.projects))
-      .catch(() => {});
+      .then((data) => {
+        setProjects(data.projects);
+        setProjectsLoaded(true);
+      })
+      .catch(() => {
+        // 拉取失败也标记「已尝试」：否则 Design 模式会永远停在编排器；
+        // 自动建画布只试一次，失败后由用户从侧栏手动新建。
+        setProjectsLoaded(true);
+      });
     fetchProjects(token, "code")
       .then((data) => setCodeProjects(data.projects))
       .catch(() => {});
@@ -644,23 +654,37 @@ export function Workbench() {
     [mode],
   );
 
-  // Design 模式自动进画布：无选中项目时选第一个；列表为空则自动建「未命名画布」
+  // Design 模式自动进画布：无选中项目时选第一个；列表为空则自动建「未命名画布」。
+  // 判定抽到 `resolveDesignAutoCanvas`（纯函数 + 单测），这里只做副作用。
+  /** 自动建画布只试一次：项目列表拉取失败时避免每次渲染都重发创建请求。 */
+  const autoCanvasTriedRef = useRef(false);
   useEffect(() => {
-    if (mode !== "design" || activeTaskId || creatingProject) return;
-    if (selectedProjectId) return;
-    if (projects.length > 0) {
-      setSelectedProjectId(projects[0]!.id);
+    const decision = resolveDesignAutoCanvas({
+      mode,
+      activeTaskId,
+      creatingProject,
+      projectsLoaded,
+      designProjectIds: projects.map((p) => p.id),
+      selectedProjectId,
+      autoCreateTried: autoCanvasTriedRef.current,
+    });
+    if (decision.kind === "select") {
+      setSelectedProjectId(decision.projectId);
       return;
     }
-    void createProjectNamed("未命名画布").then((project) => {
-      if (project) setSelectedProjectId(project.id);
-    });
+    if (decision.kind === "create") {
+      autoCanvasTriedRef.current = true;
+      void createProjectNamed("未命名画布").then((project) => {
+        if (project) setSelectedProjectId(project.id);
+      });
+    }
   }, [
     mode,
     activeTaskId,
-    selectedProjectId,
-    projects,
     creatingProject,
+    projectsLoaded,
+    projects,
+    selectedProjectId,
     createProjectNamed,
   ]);
 

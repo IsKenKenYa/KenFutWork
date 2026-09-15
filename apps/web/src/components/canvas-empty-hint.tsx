@@ -82,8 +82,13 @@ export function CanvasEmptyHint({
     <div
       // z-[3]：夹在 Excalidraw 的层之间——画布 z=1/2，右键菜单弹层 z=10，
       // 这样提示浮在画布之上、又被菜单正常盖住（不靠隐藏提示来躲遮挡）
-      className="canvas-empty-hint pointer-events-none absolute inset-0 z-[3] flex items-center justify-center"
+      className="canvas-empty-hint pointer-events-none absolute inset-0 z-[3] flex flex-col items-center justify-center gap-2"
     >
+      {/* Design 模式的问候语画在**画布上**（不是 Code 那种居中编排器）：
+          颜色与排版沿用原提示文案，两句同款。 */}
+      <p className="text-base text-muted-foreground/50">
+        Design with KenFutWork
+      </p>
       <p className="text-base text-muted-foreground/50">
         {"输入你的想法开始创作"}
       </p>
