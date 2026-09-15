@@ -52,7 +52,6 @@ import { ErrorBoundary } from "./error-boundary";
 import { ExecutionModeSelect } from "./execution-mode-select";
 import { SessionSelector } from "./session-selector";
 import { useToast } from "./toast";
-import { FolderOpen, Layers, MessageSquare } from "lucide-react";
 import {
   closeTab as closeChatTab,
   loadTabs,
@@ -61,6 +60,45 @@ import {
   upsertTab,
   type ChatTab,
 } from "../lib/chat-tabs";
+
+/** 对话视图图标：应用自己的气泡字形（与「收起面板」按钮同源），不是通用聊天气泡。 */
+function ChatBubbleIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none">
+      <path
+        fill="currentColor"
+        fillOpacity={0.9}
+        d="M18.25 3c2.071 0 3.946 2.16 3.946 4.23L22 15.75a3.75 3.75 0 0 1-3.75 3.75h-2.874a.25.25 0 0 0-.16.058l-2.098 1.738a1.75 1.75 0 0 1-2.24-.007l-2.065-1.73a.25.25 0 0 0-.162-.059H5.75A3.75 3.75 0 0 1 2 15.75v-9A3.75 3.75 0 0 1 5.75 3zM7.5 10q-.053 0-.104.005a1.25 1.25 0 0 0-1.14 1.117l-.006.128.007.128a1.25 1.25 0 1 0 1.37-1.371l-.02-.002A1 1 0 0 0 7.5 10m4.5 0q-.053 0-.104.005a1.25 1.25 0 0 0-1.14 1.117l-.006.128.007.128a1.25 1.25 0 1 0 1.37-1.371l-.02-.002A1 1 0 0 0 12 10m4.5 0q-.053 0-.105.005a1.25 1.25 0 0 0-1.138 1.117l-.007.128.007.128a1.25 1.25 0 1 0 1.37-1.371l-.02-.002A1 1 0 0 0 16.5 10"
+      />
+    </svg>
+  );
+}
+
+/** 图层图标：画布底部工具条原本用的叠层字形。 */
+function LayersStackIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" fill="currentColor">
+      <path d="M17.189 12.48a.65.65 0 0 1 .622 1.141l-7.5 4.1a.65.65 0 0 1-.623 0l-7.5-4.1a.65.65 0 0 1 .624-1.14L10 16.41zm0-3.036a.65.65 0 0 1 .622 1.14l-7.5 4.1a.65.65 0 0 1-.623 0l-7.5-4.1a.65.65 0 0 1 .624-1.14L10 13.374zm-7.426-7.2a.65.65 0 0 1 .549.035l7.5 4.1a.651.651 0 0 1 0 1.14l-7.5 4.101a.65.65 0 0 1-.624 0l-7.5-4.1a.651.651 0 0 1 0-1.14l7.5-4.101zM3.854 6.948 10 10.31l6.145-3.36L10 3.59z" />
+    </svg>
+  );
+}
+
+/** 生成文件图标：**原来在画布底部工具条上的那个**（折角文档 + 两行字）。 */
+function GeneratedFileIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M9 17h6M9 13h6M13 3H8.2c-1.12 0-1.68 0-2.108.218a2 2 0 0 0-.874.874C5 4.52 5 5.08 5 6.2v11.6c0 1.12 0 1.68.218 2.108a2 2 0 0 0 .874.874C6.52 21 7.08 21 8.2 21h7.6c1.12 0 1.68 0 2.108-.218a2 2 0 0 0 .874-.874C19 19.48 19 18.92 19 17.8V9m-6-6 6 6m-6-6v4.4c0 .56 0 .84.109 1.054a1 1 0 0 0 .437.437C13.76 9 14.04 9 14.6 9H19" />
+    </svg>
+  );
+}
 
 /** 面板的三个视图：对话 / 图层 / 生成文件（对话视图内部再分「对话标签页」）。 */
 export type SidePanelTab = "chat" | "layers" | "files";
@@ -1128,16 +1166,6 @@ export function ChatSidebar({
                 );
               })}
             </div>
-            {/* 固定区：历史记录（含新建对话）永远可见，不随标签滚动 */}
-            {!sessionsLoading && (
-              <SessionSelector
-                sessions={sessions}
-                activeSessionId={activeSessionId}
-                onSelect={handleOpenSessionTab}
-                onNewChat={handleNewChat}
-                onDelete={handleDeleteSession}
-              />
-            )}
         </>
       </div>
       {/* 第二行：执行模式 + 视图切换（对话/图层/文件）+ 收起 */}
@@ -1151,6 +1179,16 @@ export function ChatSidebar({
           <span className="flex-1 text-xs font-medium text-foreground">
             {panelTab === "layers" ? "图层" : "生成文件"}
           </span>
+        )}
+        {/* 历史记录（含新建对话）：紧跟执行模式，只留图标 */}
+        {!sessionsLoading && (
+          <SessionSelector
+            sessions={sessions}
+            activeSessionId={activeSessionId}
+            onSelect={handleOpenSessionTab}
+            onNewChat={handleNewChat}
+            onDelete={handleDeleteSession}
+          />
         )}
         {/* 视图切换：对话 / 图层 / 生成文件（不遮标签行，点哪个切哪个视图） */}
         <div className="ml-auto flex shrink-0 items-center justify-end gap-0.5">
@@ -1166,7 +1204,7 @@ export function ChatSidebar({
                 : "text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
           >
-            <MessageSquare className="h-3.5 w-3.5" />
+            <ChatBubbleIcon className="h-4 w-4" />
           </button>
           <button
             type="button"
@@ -1182,7 +1220,7 @@ export function ChatSidebar({
                 : "text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
           >
-            <Layers className="h-3.5 w-3.5" />
+            <LayersStackIcon className="h-3.5 w-3.5" />
           </button>
           <button
             type="button"
@@ -1198,7 +1236,7 @@ export function ChatSidebar({
                 : "text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
           >
-            <FolderOpen className="h-3.5 w-3.5" />
+            <GeneratedFileIcon className="h-3.5 w-3.5" />
           </button>
         </div>
         <button

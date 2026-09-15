@@ -292,12 +292,12 @@ export function CanvasViewControls({
     setBgColor(initBg);
     setHexInput(initBg.replace(/^#/, "").toUpperCase());
 
-    setGridOn(Boolean(state.gridSize));
+    setGridOn(Boolean(state.gridModeEnabled));
     const unsubscribe = excalidrawApi.onChange(() => {
       const s = excalidrawApi.getAppState();
       setZoom(s.zoom.value);
       setBgColor(s.viewBackgroundColor ?? "#FFFFFF");
-      setGridOn(Boolean(s.gridSize));
+      setGridOn(Boolean(s.gridModeEnabled));
     });
     return () => {
       if (typeof unsubscribe === "function") unsubscribe();
@@ -305,9 +305,21 @@ export function CanvasViewControls({
   }, [excalidrawApi]);
 
   /* ── 网格开关（Excalidraw 原生的「Toggle grid」缺中文键，改由底部栏自绘） ── */
+  /**
+   * 网格开关。Excalidraw 0.18 的**渲染看的是 `gridModeEnabled`**，`gridSize` 只决定格子
+   * 间距——只翻 gridSize 会得到「按钮亮了、画布没有网格」。两处一起写：开关走 gridModeEnabled，
+   * 间距在首次打开时补一个默认值（Excalidraw 自己的菜单动作也只翻 gridModeEnabled）。
+   */
   const handleToggleGrid = useCallback(() => {
-    const current = excalidrawApi?.getAppState().gridSize ?? null;
-    excalidrawApi?.updateScene({ appState: { gridSize: current ? null : 20 } });
+    const state = excalidrawApi?.getAppState();
+    if (!state) return;
+    const next = !state.gridModeEnabled;
+    excalidrawApi?.updateScene({
+      appState: {
+        gridModeEnabled: next,
+        gridSize: state.gridSize || 20,
+      },
+    });
   }, [excalidrawApi]);
 
   /* ── Zoom helpers ── */

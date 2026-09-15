@@ -119,6 +119,8 @@ export function SessionSelector({
       <div className="relative" ref={panelRef}>
         <button
           type="button"
+          aria-label="历史记录"
+          title="历史记录"
           onClick={() => {
             setOpen(!open);
             setConfirmingId(null);
@@ -127,15 +129,7 @@ export function SessionSelector({
           className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
         >
           <HistoryIcon className="h-3.5 w-3.5" />
-          {/* 当前会话名已由对话标签页显示，这里只作「历史记录」入口，不重复标题 */}
-          <span className="whitespace-nowrap">历史记录</span>
-          <svg
-            className={`h-3 w-3 opacity-50 transition-transform ${open ? "rotate-180" : ""}`}
-            viewBox="0 0 16 16"
-            fill="currentColor"
-          >
-            <path d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" />
-          </svg>
+          {/* 只留图标：当前会话名已由对话标签页显示，这里只是「历史记录」入口 */}
         </button>
 
         {open && (
