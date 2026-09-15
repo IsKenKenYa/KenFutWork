@@ -84,3 +84,6 @@ apps/web/tmp/
 # 随包分发的语言运行时（Node/Python/JDK，scripts/fetch-runtimes.mjs 拉取）
 /runtime/
 .loomic-data/
+
+# logo 字标字体样张（非商免/第三方字体，仅本机预览，禁止入库）
+docs/design/logo/字体/

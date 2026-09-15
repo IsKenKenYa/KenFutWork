@@ -2,9 +2,12 @@ import type { SVGProps } from "react";
 import { useId } from "react";
 
 /**
- * KenFutWork 品牌 logo（KF-2 骨架版 C，岚配色）。
+ * KenFutWork 品牌 logo（KF-2 骨架版 C，岚配色；白字形为 Chakra Petch Italic 笔画）。
  * 唯一权威源：docs/design/logo/定稿-kf2-岚.svg；本组件是其 React 落地，
  * 几何/配色修改须先改权威源再同步此处与 public/*.svg。
+ *
+ * 白字形与旧骨架同一结构：竖笔 + 顶横（F）+ 上臂 + 下腿（K），F 与 K 共用同一根竖笔；
+ * 笔画取自 Chakra Petch Italic（SIL OFL），生成过程见同目录 preview-logo字形.html。
  * 渐变/裁剪 id 用 useId 生成，避免同页多实例冲突。
  *
  * @example
@@ -40,14 +43,10 @@ export function LoomicLogo(props: SVGProps<SVGSVGElement>) {
         <rect width="512" height="512" fill={`url(#${designId})`} />
         <path d="M512 0 L512 512 L0 512 Z" fill={`url(#${codeId})`} />
       </g>
-      <g fill="#FFFFFF">
-        <rect x="144" y="64" width="72" height="320" rx="8" />
-        <rect x="144" y="64" width="208" height="72" />
-      </g>
-      <g stroke="#FFFFFF" strokeWidth="72" fill="none">
-        <path d="M372 176 L180 252" />
-        <path d="M180 252 L346 359" />
-      </g>
+      <path
+        fill="#FFFFFF"
+        d="M157.9 90.0 103.1 402.0H163.7L186.5 272.3H237.7L297.0 402.0H361.6L290.3 245.6L408.9 90.0H337.1L239.1 220.6H195.8L208.5 147.6L209.6 141.3H296.1V90.0Z"
+      />
     </svg>
   );
 }

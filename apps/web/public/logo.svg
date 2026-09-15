@@ -1,9 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <!--
-    KenFutWork 品牌 logo 定稿：KF-2 骨架版 C（岚配色）——严格对应用户红笔手绘骨架，上臂加长伸出顶横
+    KenFutWork 品牌 logo 定稿：KF-2 骨架版 C（岚配色）——白字形改用 Chakra Petch Italic 笔画重绘
     本文件是唯一权威源；落地副本见 apps/web/public/logo.svg 与 favicon.svg。
     修改几何/配色请先改本文件，再同步到落地副本，规范见同目录《品牌Logo说明.md》。
-    骨架四笔：顶横(y64-136, 至x352)+竖笔(y64-384)=F 起笔；上臂(372,176)→(180,252) 尾端伸出顶横右端；下腿(180,252)→(346,359)=K。
+    白字形：与旧骨架同一结构——竖笔 + 顶横（F）+ 上臂 + 下腿（K），F 与 K 共用同一根竖笔。
+    笔画取自 Chakra Petch Italic（SIL OFL）：竖笔/上臂/下腿 = 该字体 K 的完整轮廓；
+    顶横 = 该字体 F 裁掉顶横以下、并把右端裁到定稿比例（总长 ≈ 2.9 × 竖笔宽）后剩下的那段；
+    两者以布尔并集焊成一根笔画。裁短顶横是为了让上臂尖露在顶横之外，否则会围成封闭碗形读成 R。
+    生成过程与逐款对照见同目录 preview-logo字形.html、logo字形对照.png。
   -->
   <defs>
     <linearGradient id="design" x1="0" y1="0" x2="1" y2="1">
@@ -22,12 +26,5 @@
     <rect width="512" height="512" fill="url(#design)"/>
     <path d="M512 0 L512 512 L0 512 Z" fill="url(#code)"/>
   </g>
-  <g fill="#FFFFFF">
-    <rect x="144" y="64" width="72" height="320" rx="8"/>
-    <rect x="144" y="64" width="208" height="72"/>
-  </g>
-  <g stroke="#FFFFFF" stroke-width="72" fill="none">
-    <path d="M372 176 L180 252"/>
-    <path d="M180 252 L346 359"/>
-  </g>
+  <path fill="#FFFFFF" d="M157.9 90.0 103.1 402.0H163.7L186.5 272.3H237.7L297.0 402.0H361.6L290.3 245.6L408.9 90.0H337.1L239.1 220.6H195.8L208.5 147.6L209.6 141.3H296.1V90.0Z"/>
 </svg>
