@@ -16,6 +16,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   PanelsTopLeft,
+  Pause,
   Plug,
   Plus,
   Send,
@@ -365,6 +366,16 @@ export function Workbench() {
     () => tasks.find((t) => t.id === activeTaskId) ?? null,
     [tasks, activeTaskId],
   );
+
+  /**
+   * 对话视图里工作目录/分支该显示哪个项目：**以对话自己绑定的项目为准**
+   * （run 的作用域就是它的主画布）。只认页面的 `selectedProjectId` 会让打开历史
+   * 对话时两个 chip 消失/显示成别的工作目录——用户反馈「对话开始之后不显示」。
+   */
+  const conversationProject =
+    mode === "code" && activeTask?.projectId
+      ? (codeProjects.find((p) => p.id === activeTask.projectId) ?? null)
+      : null;
 
   /** 最近一次「本轮自动提交」的时间戳（仅用于给用户一个可见回执 + 刷新分支 chip）。 */
   const [lastAutoCommitAt, setLastAutoCommitAt] = useState<string | null>(null);
@@ -1635,9 +1646,10 @@ export function Workbench() {
                         active={activeTaskId === t.id}
                         icon={
                           indicator === "running" ? (
+                            /* 与对话图标同色（不再用琥珀色：侧栏一排转圈太抢眼） */
                             <Loader2
                               aria-label="运行中"
-                              className="h-3.5 w-3.5 shrink-0 animate-spin text-amber-500"
+                              className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground"
                             />
                           ) : (
                             <MessageSquare
@@ -1810,10 +1822,13 @@ export function Workbench() {
             className="h-full w-full border-0"
           />
         ) : activeTask ? (
-          <div className="mx-auto flex h-full max-w-3xl flex-col p-6">
-            {/* 标题行：只留会话标题 + 本轮回执 + 插件面板入口。
-                工作目录与分支挪到输入框上沿的标签条（见下方 composer），这里不再挤。 */}
-            <div className="mb-4 flex items-center gap-2">
+          /* 面板列（标题 / 转录 / 输入框）自己居中，**滚动条留在主区最右侧**：
+             滚动条若挂在 768px 列内，出现/消失都会横向挤动对话内容（用户反馈）。 */
+          <div className="flex h-full flex-col">
+            {/* 标题行：会话标题 + 本轮回执 + 插件面板入口；右端贴住工作目录与分支。
+                这两个 chip 取**对话自己绑定的项目**（run 的作用域就是它），
+                不依赖侧栏选中态——否则打开历史对话时它们会消失（用户反馈）。 */}
+            <div className="mx-auto flex w-full max-w-3xl shrink-0 items-center gap-2 px-6 pt-6 pb-4">
               <h1 className="min-w-0 truncate text-lg font-medium">
                 {activeTask.title}
               </h1>
@@ -1839,12 +1854,36 @@ export function Workbench() {
                   </button>
                 )}
               />
+              {mode === "code" ? (
+                <div className="ml-auto flex shrink-0 items-center gap-2">
+                  <WorkDirectorySelect
+                    projects={codeProjects}
+                    selectedProjectId={conversationProject?.id ?? null}
+                    lockedHint={
+                      conversationProject
+                        ? `本次对话已绑定工作目录「${conversationProject.name}」`
+                        : "本次对话没有绑定工作目录"
+                    }
+                    busy={creatingProject}
+                    onSelect={() => undefined}
+                    onOpenFolder={() => undefined}
+                    onClear={() => undefined}
+                  />
+                  <GitBranchSelect
+                    accessToken={session?.access_token ?? null}
+                    canvasId={conversationProject?.primaryCanvas.id ?? null}
+                    /* 自动提交后 key 变化 → 重新拉取更改统计 */
+                    key={`${conversationProject?.primaryCanvas.id ?? ""}:${lastAutoCommitAt ?? ""}`}
+                  />
+                </div>
+              ) : null}
             </div>
             <div
               ref={codeMessagesRef}
-              className="min-h-0 flex-1 space-y-4 overflow-y-auto"
+              className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
               onContextMenu={chatMenu.open}
             >
+              <div className="mx-auto w-full max-w-3xl space-y-4 px-6 pb-2">
               {activeTask.runStartedAt ? (
                 <ElapsedEntry
                   startedAt={activeTask.runStartedAt}
@@ -1908,10 +1947,13 @@ export function Workbench() {
                   </span>
                 </div>
               ) : null}
+              </div>
             </div>
-            {/* 底部：继续对话（完整版工具行 + 多轮，复用同一会话） */}
+            {/* 底部：继续对话（完整版工具行 + 多轮，复用同一会话）。
+                工作目录与分支已移到标题行右端，输入框不再背标签条。 */}
+
             <form
-              className="mt-4"
+              className="mx-auto w-full max-w-3xl shrink-0 px-6 pt-4 pb-6"
               onSubmit={(e) => {
                 e.preventDefault();
                 const value = followUp;
@@ -1919,31 +1961,7 @@ export function Workbench() {
                 continueTask(value);
               }}
             >
-              {/* 工作目录 + 分支：贴住输入框上沿的标签条（文件夹标签的读法） */}
-              <div className="flex items-center gap-3 rounded-t-xl border border-b-0 bg-muted/50 px-3 py-1.5">
-                <WorkDirectorySelect
-                  projects={codeProjects}
-                  selectedProjectId={selectedProjectId}
-                  busy={creatingProject}
-                  onSelect={(projectId) => {
-                    const project = codeProjects.find(
-                      (p) => p.id === projectId,
-                    );
-                    setSelectedProjectId(projectId);
-                    setWorkDirName(project?.name ?? null);
-                    setWorkDirNotice(null);
-                  }}
-                  onOpenFolder={() => void pickWorkDirectory()}
-                  onClear={clearWorkDirectory}
-                />
-                <GitBranchSelect
-                  accessToken={session?.access_token ?? null}
-                  canvasId={selectedProject?.primaryCanvas.id ?? null}
-                  /* 自动提交后 key 变化 → 重新拉取更改统计 */
-                  key={`${selectedProject?.primaryCanvas.id ?? ""}:${lastAutoCommitAt ?? ""}`}
-                />
-              </div>
-              <div className="rounded-b-xl border bg-background p-3">
+              <div className="rounded-xl border bg-background p-3">
                 <textarea
                   ref={composerRef}
                   aria-label="继续对话"
@@ -2111,12 +2129,15 @@ export function Workbench() {
                     <Mic className="h-4 w-4" />
                   </button>
                   {activeTask.status === "running" && activeRunIdRef.current ? (
+                    /* 停止 = 暂停图标（与发送按钮同一个图标位，不再是一枚突兀的文字按钮） */
                     <button
                       type="button"
-                      className="rounded-md border px-3 py-1.5 text-sm text-destructive hover:bg-muted"
+                      aria-label="停止本轮"
+                      title="停止本轮"
+                      className="rounded-lg border p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                       onClick={() => ws.cancelRun(activeRunIdRef.current!)}
                     >
-                      停止
+                      <Pause className="h-4 w-4" />
                     </button>
                   ) : (
                     <button
