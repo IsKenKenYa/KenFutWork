@@ -111,6 +111,53 @@ function createUnknownToolGuardMiddleware(): AgentMiddleware {
 }
 
 /**
+ * 工具执行失败兜底：**工具失败是工具级结果，不是运行级失败**。
+ *
+ * 实测（2026-09-16 全流程走查）：联网搜索上游偶发失败（本地代理回 errCode 5002
+ * 「结果与查询没有词面重合」）时，异常从工具节点抛出 → 整轮 run 以 run.failed 收场。
+ * 用户看到的是「跑一半突然失败」：模型既没机会换个关键词重搜，也没机会继续做
+ * 后面的步骤。工具门拒绝早就按工具级结果处理（见上），执行失败同理——回一条带原因的
+ * ToolMessage，让模型自己降级或改道。
+ *
+ * 连续失败会累计：同一个工具连续失败达上限后，回的消息明确要求停止重试并说明情况
+ * （防止模型对着失败工具空转刷调用）。
+ */
+export function createToolErrorGuardMiddleware(
+  options: { maxConsecutiveFailures?: number } = {},
+): AgentMiddleware {
+  const limit = options.maxConsecutiveFailures ?? 3;
+  const failures = new Map<string, number>();
+  return {
+    name: "kenfutwork-tool-error-guard",
+    wrapToolCall: async (request, handler) => {
+      const toolName = request.toolCall.name;
+      try {
+        const result = await handler(request);
+        failures.delete(toolName);
+        return result;
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        const count = (failures.get(toolName) ?? 0) + 1;
+        failures.set(toolName, count);
+        console.warn(
+          `[agent] 工具执行失败降级为工具级结果：${toolName}（第 ${count} 次）：${reason}`,
+        );
+        const advice =
+          count >= limit
+            ? `该工具已连续失败 ${count} 次，**不要再重试它**：改用其它工具或直接说明限制后收尾。`
+            : "这是工具级失败（不影响本轮其它步骤）：可换关键词/换方案重试，但不要重复同样的调用。";
+        return new ToolMessage({
+          tool_call_id: request.toolCall.id ?? toolName,
+          content: `工具 ${toolName} 执行失败：${reason}
+${advice}`,
+          status: "error",
+        });
+      }
+    },
+  };
+}
+
+/**
  * 模型响应守卫：LangChain 对每层 wrapModelCall 的返回做形状校验
  * （AIMessage / Command / {structuredResponse, messages}），不合规即抛
  * `Invalid response from "wrapModelCall" …` 并**整轮 run 失败**。
@@ -319,6 +366,7 @@ export function createKenFutWorkDeepAgent(options: {
       ? {
           middleware: [
             todoListMiddleware() as unknown as AgentMiddleware,
+            createToolErrorGuardMiddleware(),
             createModelResponseGuardMiddleware(),
             createUnknownToolGuardMiddleware(),
             createToolGateMiddleware(options.toolGate, options.toolGateHooks),
@@ -327,6 +375,7 @@ export function createKenFutWorkDeepAgent(options: {
       : {
           middleware: [
             todoListMiddleware() as unknown as AgentMiddleware,
+            createToolErrorGuardMiddleware(),
             createModelResponseGuardMiddleware(),
             createUnknownToolGuardMiddleware(),
           ],
