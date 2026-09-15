@@ -22,8 +22,32 @@ import { createPostgresPersistence } from "./features/persistence/providers/post
  * 品牌口径：账号域名与口令都随当前品牌（KenFutWork），不再沿用 KenFutWork。
  * 若需改动品牌，改这一处即可（README 的账号表与之一致）。
  */
-export const TEST_PASSWORD = "kenfutwork";
+/**
+ * 测试账号口令：可用 `KENFUTWORK_TEST_ACCOUNT_PASSWORD` 覆盖（云端部署应显式设置，
+ * 不要沿用公开的缺省值）。
+ */
+export const TEST_PASSWORD =
+  process.env.KENFUTWORK_TEST_ACCOUNT_PASSWORD?.trim() || "kenfutwork";
 export const TEST_ACCOUNT_DOMAIN = "test.kenfutwork.com";
+
+/**
+ * 管理员账号：云端的第一个管理员由环境变量给出，不写死在代码/文档里。
+ *
+ * - `KENFUTWORK_ADMIN_EMAIL`（缺省 `admin@kenfutwork.local`）
+ * - `KENFUTWORK_ADMIN_PASSWORD`：**给了才会创建/提升该账号为 admin**（幂等：已存在则重置口令 + 置角色）
+ *
+ * 不给口令就跳过——本地开发沿用既有账号即可，不会凭空多出一个公开口令的管理员。
+ */
+export function readAdminSeed(env: NodeJS.ProcessEnv = process.env): {
+  email: string;
+  password: string;
+} | null {
+  const password = env.KENFUTWORK_ADMIN_PASSWORD?.trim();
+  if (!password) return null;
+  const email =
+    env.KENFUTWORK_ADMIN_EMAIL?.trim() || "admin@kenfutwork.local";
+  return { email, password };
+}
 
 const TEST_ACCOUNTS: Array<{ credits: number; email: string; plan: string }> = [
   { email: `free@${TEST_ACCOUNT_DOMAIN}`, plan: "free", credits: 50 },
@@ -84,6 +108,16 @@ async function main(): Promise<void> {
   const viewerService = createViewerService({
     repository: createViewerRepository(persistence),
   });
+
+  // 管理员账号（云端首次部署用）：`KENFUTWORK_ADMIN_PASSWORD` 给了才做，幂等
+  const adminSeed = readAdminSeed();
+  if (
+    adminSeed &&
+    !accounts.some((account) => account.email.toLowerCase() === adminSeed.email.toLowerCase())
+  ) {
+    accounts.push({ credits: 0, email: adminSeed.email, plan: "ultra" });
+    passwords.set(adminSeed.email.toLowerCase(), adminSeed.password);
+  }
 
   for (const account of accounts) {
     const password =
@@ -149,6 +183,18 @@ async function main(): Promise<void> {
        do update set plan = excluded.plan, updated_at = now()`,
       [workspaceId, account.plan],
     );
+
+    // 管理员：由环境变量指定的那个账号提升为平台管理员（幂等）
+    if (
+      adminSeed &&
+      account.email.toLowerCase() === adminSeed.email.toLowerCase()
+    ) {
+      await persistence.query(
+        `update public.profiles set role = 'admin' where id = $1`,
+        [user.id],
+      );
+      console.log(`已置为平台管理员：${account.email}`);
+    }
     console.log(
       `  工作区 ${workspaceId}｜套餐 ${account.plan}｜额度 ${account.credits}`,
     );
