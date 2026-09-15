@@ -26,11 +26,12 @@ const markdownComponents: Components = {
       );
     }
     return (
+      /* 颜色交给 `.markdown-content a`（品牌色）：在这里再写一个颜色类会变成两处真相 */
       <a
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-foreground underline break-all"
+        className="underline break-all"
       >
         {children}
       </a>
