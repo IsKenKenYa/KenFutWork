@@ -1,4 +1,4 @@
-import { type ViewerResponse, viewerResponseSchema } from "@loomic/shared";
+import { type ViewerResponse, viewerResponseSchema } from "@kenfutwork/shared";
 
 import type { AuthenticatedUser } from "../auth/types.js";
 import { BootstrapError, ProfileUpdateError } from "./errors.js";

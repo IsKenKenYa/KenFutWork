@@ -9,7 +9,7 @@ import { createSettingsRepository } from "./repository.js";
  * 目的：验证 upsert 的 ON CONFLICT (workspace_id) 语法与读回在真库成立。
  *
  * 运行：DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
- *       pnpm --filter @loomic/server exec vitest run settings.integration
+ *       pnpm --filter @kenfutwork/server exec vitest run settings.integration
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 

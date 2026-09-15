@@ -14,12 +14,12 @@ import type {
   RunCreateResponse,
   StreamEvent,
   VideoGenerationPreference,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import {
   type BillingErrorCode,
   getPlanConfig,
   type ImageQualityLevel,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { ServerEnv } from "../config/env.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type { AuthenticatedUser } from "../features/auth/types.js";

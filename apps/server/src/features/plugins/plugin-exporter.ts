@@ -1,4 +1,4 @@
-import type { BundleFormat, PluginExportArtifact } from "@loomic/shared";
+import type { BundleFormat, PluginExportArtifact } from "@kenfutwork/shared";
 
 /**
  * 插件导出：把插件发布为**可分发的 bundle 骨架**。

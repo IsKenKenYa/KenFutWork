@@ -1,7 +1,7 @@
 import type {
   SandboxSkillPackage,
   SkillDetail,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 
 /**
  * 「从工作目录导入」的客户端调用：列出当前画布沙箱里的技能包候选，并把选中的导入工作区。

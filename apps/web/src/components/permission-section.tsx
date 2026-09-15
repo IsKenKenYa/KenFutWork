@@ -1,6 +1,6 @@
 "use client";
 
-import type { PermissionTier } from "@loomic/shared";
+import type { PermissionTier } from "@kenfutwork/shared";
 import { useCallback, useEffect, useState } from "react";
 import {
   Select,

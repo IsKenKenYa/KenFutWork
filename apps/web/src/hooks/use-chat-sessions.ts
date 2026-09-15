@@ -4,7 +4,7 @@ import type {
   ChatMessage as ChatMessageData,
   ChatSessionSummary,
   ContentBlock,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createSession,

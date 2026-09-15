@@ -1,6 +1,6 @@
 "use client";
 
-import type { CompatReport, SandboxPluginBundle } from "@loomic/shared";
+import type { CompatReport, SandboxPluginBundle } from "@kenfutwork/shared";
 import { FolderInput, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 

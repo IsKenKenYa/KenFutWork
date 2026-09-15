@@ -1,6 +1,6 @@
 "use client";
 
-import type { PluginMarketEntry } from "@loomic/shared";
+import type { PluginMarketEntry } from "@kenfutwork/shared";
 import {
   BarChart3,
   Bot,

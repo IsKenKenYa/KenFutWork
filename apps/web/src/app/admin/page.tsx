@@ -6,7 +6,7 @@ import type {
   ProviderInstanceResponse,
   ProviderProtocol,
   SubscriptionPlan,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 

@@ -1,4 +1,4 @@
-import type { StreamEvent } from "@loomic/shared";
+import type { StreamEvent } from "@kenfutwork/shared";
 
 type BufferedEvent = {
   event: StreamEvent;

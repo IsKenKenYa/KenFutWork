@@ -8,7 +8,7 @@ import {
   sandboxPluginBundleListResponseSchema,
   sandboxPluginInstallRequestSchema,
   unauthenticatedErrorResponseSchema,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import type { AdminService } from "../features/admin/admin-service.js";

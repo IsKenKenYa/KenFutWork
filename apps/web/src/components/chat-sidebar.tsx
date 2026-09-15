@@ -8,7 +8,7 @@ import type {
   StreamEvent,
   VideoArtifact,
   VideoGenerationPreference,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { toChatMenuMessages } from "@/lib/chat-menu";

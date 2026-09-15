@@ -2,7 +2,7 @@ import type {
   ModelCapability,
   ModelCatalogEntry,
   ProviderProtocol,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { ModelProviderService } from "./model-provider-service.js";

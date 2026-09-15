@@ -1,4 +1,4 @@
-import type { BackgroundJobType } from "@loomic/shared";
+import type { BackgroundJobType } from "@kenfutwork/shared";
 import type { ServerEnv } from "../../config/env.js";
 import type { BlobStore } from "../blob/types.js";
 import type { CreditService } from "../credits/credit-service.js";

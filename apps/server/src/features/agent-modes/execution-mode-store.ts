@@ -1,4 +1,4 @@
-import { type ExecutionMode, executionModeSchema } from "@loomic/shared";
+import { type ExecutionMode, executionModeSchema } from "@kenfutwork/shared";
 
 import type { PersistenceService } from "../persistence/types.js";
 

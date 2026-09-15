@@ -31,8 +31,8 @@ pnpm desktop          # 仓库根执行；等价于 bash apps/desktop/dev.sh
 手动分步（需要单独验证某一层时）：
 
 ```sh
-pnpm --filter @loomic/server dev:server   # 桌面形态：KENFUTWORK_EMBEDDED_PG=1 …（见仓库根 .env.local 样例）
-pnpm --filter @loomic/web dev             # web UI（3000）
+pnpm --filter @kenfutwork/server dev:server   # 桌面形态：KENFUTWORK_EMBEDDED_PG=1 …（见仓库根 .env.local 样例）
+pnpm --filter @kenfutwork/web dev             # web UI（3000）
 cd apps/desktop/src-tauri && cargo tauri dev
 ```
 

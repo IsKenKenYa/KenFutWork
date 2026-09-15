@@ -13,7 +13,7 @@
     "test:workspace": "node --test tests/workspace.test.mjs",
     "test:packages": "turbo run test",
     "test": "pnpm run test:workspace && pnpm run test:packages",
-    "seed": "pnpm --filter @loomic/server seed:accounts",
+    "seed": "pnpm --filter @kenfutwork/server seed:accounts",
     "typecheck": "turbo run typecheck",
     "smoke:desktop": "node scripts/desktop-offline-smoke.mjs",
     "fetch:runtimes": "node scripts/fetch-runtimes.mjs"

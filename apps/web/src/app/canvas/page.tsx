@@ -1,6 +1,6 @@
 "use client";
 
-import type { ImageArtifact, VideoArtifact } from "@loomic/shared";
+import type { ImageArtifact, VideoArtifact } from "@kenfutwork/shared";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { BrandKitSelector } from "../../components/brand-kit-selector";

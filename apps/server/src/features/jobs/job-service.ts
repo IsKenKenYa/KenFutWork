@@ -2,7 +2,7 @@ import type {
   BackgroundJob,
   BackgroundJobStatus,
   BackgroundJobType,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import type { QueueClient } from "../queue/types.js";

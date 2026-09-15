@@ -116,7 +116,7 @@ async function main() {
       port: env.port,
     });
 
-    console.log(`@loomic/server listening on http://${host}:${env.port}`);
+    console.log(`@kenfutwork/server listening on http://${host}:${env.port}`);
 
     /**
      * 孤儿 run 对账：**绑上端口之后**才做（见 reconcile.ts 的说明——抢不到端口的

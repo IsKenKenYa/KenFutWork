@@ -12,10 +12,10 @@ if (
   !manifest.private ||
   manifest.type !== "module" ||
   typeof manifest.name !== "string" ||
-  !manifest.name.startsWith("@loomic/")
+  !manifest.name.startsWith("@kenfutwork/")
 ) {
   throw new Error(
-    "Task 1 app manifests must stay private, ESM, and scoped under @loomic/.",
+    "Task 1 app manifests must stay private, ESM, and scoped under @kenfutwork/.",
   );
 }
 

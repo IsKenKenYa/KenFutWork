@@ -4,7 +4,7 @@ import type {
   BackgroundJobStatus,
   BackgroundJobType,
   ImageQualityLevel,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import {
   applicationErrorResponseSchema,
   createImageJobRequestSchema,
@@ -13,7 +13,7 @@ import {
   jobListResponseSchema,
   jobResponseSchema,
   unauthenticatedErrorResponseSchema,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";

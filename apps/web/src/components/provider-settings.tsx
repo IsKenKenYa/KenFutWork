@@ -1,6 +1,6 @@
 "use client";
 
-import type { ProviderInstanceResponse } from "@loomic/shared";
+import type { ProviderInstanceResponse } from "@kenfutwork/shared";
 import { useCallback, useEffect, useState } from "react";
 import {
   Select,

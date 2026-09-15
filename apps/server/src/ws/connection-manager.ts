@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { StreamEvent } from "@loomic/shared";
+import type { StreamEvent } from "@kenfutwork/shared";
 import type { WebSocket } from "ws";
 
 type PendingRPC = {

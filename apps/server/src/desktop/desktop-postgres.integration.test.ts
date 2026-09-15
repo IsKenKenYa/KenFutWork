@@ -6,7 +6,7 @@ import { resolvePgBinDir, startEmbeddedPostgres } from "./postgres.js";
 /**
  * 内嵌 Postgres 真实集成测试（桌面供给，FORM-2）。默认 skipped：需要显式开启。
  *
- *   KENFUTWORK_DESKTOP_PG_IT=1 pnpm --filter @loomic/server exec vitest run desktop-postgres.integration
+ *   KENFUTWORK_DESKTOP_PG_IT=1 pnpm --filter @kenfutwork/server exec vitest run desktop-postgres.integration
  *
  * 为什么必须真跑一次：单元测试用假 run，只能证明「参数拼对了」。这里证明的是
  * ① 二进制目录解析在当前平台成立；② 我们直接 spawn 的 initdb/pg_ctl 参数在真实二进制上

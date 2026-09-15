@@ -1,4 +1,4 @@
-import type { AssetBucket, AssetObject } from "@loomic/shared";
+import type { AssetBucket, AssetObject } from "@kenfutwork/shared";
 
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { BlobStore } from "../blob/types.js";

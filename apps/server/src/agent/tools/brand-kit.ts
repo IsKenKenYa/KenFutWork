@@ -1,4 +1,4 @@
-import type { BrandKitDetail } from "@loomic/shared";
+import type { BrandKitDetail } from "@kenfutwork/shared";
 import { tool } from "langchain";
 import { z } from "zod";
 import type { AuthenticatedUser } from "../../features/auth/types.js";

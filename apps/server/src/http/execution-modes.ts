@@ -2,7 +2,7 @@ import {
   applicationErrorResponseSchema,
   executionModeSchema,
   unauthenticatedErrorResponseSchema,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { FastifyInstance } from "fastify";
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import type { RequestAuthenticator } from "../features/auth/types.js";

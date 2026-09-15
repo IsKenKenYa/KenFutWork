@@ -5,7 +5,7 @@ import {
   authRegisterRequestSchema,
   authSessionResponseSchema,
   unauthenticatedErrorResponseSchema,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import type { AuthError, AuthService } from "../features/auth/service.js";

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ProjectSummary } from "@loomic/shared";
+import type { ProjectSummary } from "@kenfutwork/shared";
 import {
   Check,
   ChevronDown,

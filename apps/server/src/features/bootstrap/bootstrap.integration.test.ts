@@ -15,7 +15,7 @@ import { createViewerRepository } from "./repository.js";
  * 这里用真库把该路径锁死：SQL 与真 schema 不匹配、引导后的读取口径不对，
  * `ensureViewer` 都会抛 BootstrapError 而失败。
  *
- * 运行：DATABASE_URL=postgres://... pnpm --filter @loomic/server exec vitest run bootstrap.integration
+ * 运行：DATABASE_URL=postgres://... pnpm --filter @kenfutwork/server exec vitest run bootstrap.integration
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 

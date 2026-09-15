@@ -1,4 +1,4 @@
-import type { CanvasContent } from "@loomic/shared";
+import type { CanvasContent } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
 
 import {

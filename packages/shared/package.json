@@ -1,5 +1,5 @@
 {
-  "name": "@loomic/shared",
+  "name": "@kenfutwork/shared",
   "version": "0.0.0",
   "type": "module",
   "main": "./dist/index.js",

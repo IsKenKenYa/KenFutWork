@@ -69,7 +69,7 @@ importers:
       '@langchain/openai':
         specifier: ^1.5.13
         version: 1.5.13(@langchain/core@1.2.11(openai@7.8.0(undici@8.10.2)(ws@8.21.3)(zod@4.5.2))(ws@8.21.3))(undici@8.10.2)(ws@8.21.3)
-      '@loomic/shared':
+      '@kenfutwork/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@modelcontextprotocol/sdk':
@@ -115,7 +115,7 @@ importers:
         specifier: ^4.5.2
         version: 4.5.2
     devDependencies:
-      '@loomic/config':
+      '@kenfutwork/config':
         specifier: workspace:*
         version: link:../../packages/config
       '@types/node':
@@ -164,7 +164,7 @@ importers:
       '@excalidraw/excalidraw':
         specifier: ^0.18.1
         version: 0.18.1(@types/react-dom@19.2.5(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@loomic/shared':
+      '@kenfutwork/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       class-variance-authority:
@@ -207,10 +207,10 @@ importers:
         specifier: ^1.4.0
         version: 1.4.0
     devDependencies:
-      '@loomic/config':
+      '@kenfutwork/config':
         specifier: workspace:*
         version: link:../../packages/config
-      '@loomic/ui':
+      '@kenfutwork/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       '@tailwindcss/postcss':
@@ -254,7 +254,7 @@ importers:
 
   packages/ui:
     devDependencies:
-      '@loomic/config':
+      '@kenfutwork/config':
         specifier: workspace:*
         version: link:../config
 

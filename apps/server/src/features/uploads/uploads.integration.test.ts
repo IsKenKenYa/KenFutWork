@@ -9,7 +9,7 @@ import { createUploadRepository } from "./repository.js";
  * 目的：确证 bigint 列经 pg 驱动回来的真实形状，以及元数据读写的工作区隔离。
  *
  * 运行：DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
- *       pnpm --filter @loomic/server exec vitest run uploads.integration
+ *       pnpm --filter @kenfutwork/server exec vitest run uploads.integration
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 

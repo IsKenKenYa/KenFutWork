@@ -1,4 +1,4 @@
-import type { StreamEvent } from "@loomic/shared";
+import type { StreamEvent } from "@kenfutwork/shared";
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import type {

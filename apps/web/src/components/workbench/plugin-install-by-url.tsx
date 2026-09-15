@@ -1,6 +1,6 @@
 "use client";
 
-import type { CompatReport, PluginBundleManifest } from "@loomic/shared";
+import type { CompatReport, PluginBundleManifest } from "@kenfutwork/shared";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 

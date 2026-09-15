@@ -1,6 +1,6 @@
 // apps/server/src/features/canvas/canvas-element-writer.ts
 
-import type { CanvasContent } from "@loomic/shared";
+import type { CanvasContent } from "@kenfutwork/shared";
 
 // ---------------------------------------------------------------------------
 // Types

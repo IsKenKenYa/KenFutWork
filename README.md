@@ -20,7 +20,7 @@ cp .env.example .env.local
 
 # 3) 装依赖 + 建表 + 灌测试账号
 pnpm install
-pnpm --filter @loomic/server migrate apply
+pnpm --filter @kenfutwork/server migrate apply
 pnpm seed
 
 # 4) 启动（Web 3000 / API 3001 / worker）
@@ -98,8 +98,8 @@ pnpm typecheck    # 全包 tsc --noEmit
 pnpm lint         # biome check .
 pnpm seed         # 灌测试账号（幂等）
 
-pnpm --filter @loomic/server dev:server   # 仅 API（热更新）
-pnpm --filter @loomic/server dev:worker   # 仅 Worker（热更新）
+pnpm --filter @kenfutwork/server dev:server   # 仅 API（热更新）
+pnpm --filter @kenfutwork/server dev:worker   # 仅 Worker（热更新）
 ```
 
 两个可调行为：**失败自动重试**缺省上限 10 次（设置 → 模型可改；已执行工具的那轮绝不重试）；**git** 优先用本机自带，随包 MinGit 只兜底（`pnpm fetch:runtimes` 下载，`pnpm package:win` 打包）。
@@ -127,7 +127,7 @@ node scripts/诊断联网搜索.mjs      # 读 .env.local 的 Key，直打真实
 
 - **Windows exe 单机包**：`pnpm package:win` 产出 `release/`（Node SEA 单文件服务端 + 静态 UI + 启动.bat），内置本机 Postgres 与 Node/Python/JDK 运行时，拷到任意 Windows 机器双击即用。
 - **Docker 多用户**：同一镜像按 `SERVICE_MODE=api|worker` 起两个容器（`apps/server/Dockerfile`）。
-- 验证成品 UI：`pnpm build` 后 `KENFUTWORK_WEB_DIST=<repo>/apps/web/out pnpm --filter @loomic/server start`，开 <http://localhost:3001>。
+- 验证成品 UI：`pnpm build` 后 `KENFUTWORK_WEB_DIST=<repo>/apps/web/out pnpm --filter @kenfutwork/server start`，开 <http://localhost:3001>。
 
 ## 测试与文档
 

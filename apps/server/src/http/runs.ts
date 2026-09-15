@@ -4,7 +4,7 @@ import {
   runCreateRequestSchema,
   runCreateResponseSchema,
   unauthenticatedErrorResponseSchema,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import type { AgentRunService } from "../agent/runtime.js";

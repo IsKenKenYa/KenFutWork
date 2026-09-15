@@ -2,7 +2,7 @@ import {
   type BundleFormat,
   type PluginBundleManifest,
   pluginBundleManifestSchema,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 
 import { type ModuleScan, scanPluginModule } from "./module-scan.js";
 import { parsePatch } from "./patch-parser.js";

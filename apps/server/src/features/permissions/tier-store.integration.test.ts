@@ -7,7 +7,7 @@ import { createPermissionTierStore } from "./tier-store.js";
  * 权限档位持久化真实库集成测试（默认 skipped：需要 DATABASE_URL）。
  * 目的：证明全局档位写穿 app_config 后跨连接读回一致（重启漂移的回归锁）。
  *
- * 运行：DATABASE_URL=postgresql://... pnpm --filter @loomic/server exec vitest run permission-tier-store.integration
+ * 运行：DATABASE_URL=postgresql://... pnpm --filter @kenfutwork/server exec vitest run permission-tier-store.integration
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 

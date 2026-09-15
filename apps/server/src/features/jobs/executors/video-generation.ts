@@ -1,4 +1,4 @@
-import type { BackgroundJob } from "@loomic/shared";
+import type { BackgroundJob } from "@kenfutwork/shared";
 
 import { resolveVideoProviderName } from "../../../generation/providers/registry.js";
 import { generateVideo } from "../../../generation/video-generation.js";

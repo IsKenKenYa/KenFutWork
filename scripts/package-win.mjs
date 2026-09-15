@@ -81,8 +81,8 @@ function main() {
   mkdirSync(BUILD, { recursive: true });
 
   // 1) 构建共享契约包与静态 UI
-  run("构建 @loomic/shared", "pnpm", ["--filter", "@loomic/shared", "build"]);
-  run("构建静态 UI", "pnpm", ["--filter", "@loomic/web", "build"]);
+  run("构建 @kenfutwork/shared", "pnpm", ["--filter", "@kenfutwork/shared", "build"]);
+  run("构建静态 UI", "pnpm", ["--filter", "@kenfutwork/web", "build"]);
   const webOut = join(ROOT, "apps", "web", "out");
   if (!existsSync(join(webOut, "index.html"))) {
     console.error("[package] 静态导出缺失（apps/web/out）");

@@ -1,6 +1,6 @@
 "use client";
 
-import type { VideoGenerationPreference } from "@loomic/shared";
+import type { VideoGenerationPreference } from "@kenfutwork/shared";
 import { useCallback, useSyncExternalStore } from "react";
 
 const STORAGE_KEY = "kenfutwork:video-model-preference";

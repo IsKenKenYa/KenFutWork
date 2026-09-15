@@ -10,7 +10,7 @@ import { createPostgresPersistence } from "./providers/postgres.js";
  * 经信任连接调用、工作区作用域、隔离违约拦截、触发器维护的写路径与事务。
  *
  * 运行：DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
- *       pnpm --filter @loomic/server exec vitest run persistence.integration
+ *       pnpm --filter @kenfutwork/server exec vitest run persistence.integration
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 const ABSENT_WORKSPACE = "00000000-0000-0000-0000-000000000000";

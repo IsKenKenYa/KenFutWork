@@ -9,8 +9,8 @@ import { hashPassword } from "./features/auth/password.js";
  * `KENFUTWORK_AUTH_DRIVER=local` 后无法登录。本脚本按邮箱把口令哈希写进
  * `account_credentials`（存在则覆盖，即重置口令）。
  *
- *   pnpm --filter @loomic/server auth:seed -- <邮箱>=<口令> [<邮箱>=<口令> …]
- *   pnpm --filter @loomic/server auth:seed -- --all-test-accounts <口令>
+ *   pnpm --filter @kenfutwork/server auth:seed -- <邮箱>=<口令> [<邮箱>=<口令> …]
+ *   pnpm --filter @kenfutwork/server auth:seed -- --all-test-accounts <口令>
  *
  * 明文口令只在命令行出现，不落日志、不进数据库（库里只有 scrypt 哈希）。
  */

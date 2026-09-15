@@ -4,7 +4,7 @@ import type {
   McpCuratedServer,
   McpRegistryServer,
   McpServerView,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import { Loader2, Plug, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 

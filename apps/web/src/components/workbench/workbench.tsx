@@ -1,6 +1,6 @@
 "use client";
 
-import type { ExecutionMode, ProjectSummary } from "@loomic/shared";
+import type { ExecutionMode, ProjectSummary } from "@kenfutwork/shared";
 import {
   Blocks,
   Brain,

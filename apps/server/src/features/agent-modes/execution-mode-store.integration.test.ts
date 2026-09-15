@@ -13,7 +13,7 @@ import { createExecutionModeStore } from "./execution-mode-store.js";
  * 归属工作区可见、外工作区不可见，迁移落列后无脏读。
  *
  * 运行：DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5433/postgres \
- *       pnpm --filter @loomic/server exec vitest run execution-mode-store.integration
+ *       pnpm --filter @kenfutwork/server exec vitest run execution-mode-store.integration
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 const FOREIGN_WORKSPACE = "00000000-0000-0000-0000-000000000000";

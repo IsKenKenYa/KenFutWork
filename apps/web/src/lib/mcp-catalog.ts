@@ -1,4 +1,4 @@
-import type { McpCuratedServer } from "@loomic/shared";
+import type { McpCuratedServer } from "@kenfutwork/shared";
 
 /**
  * 内置 MCP 目录 → 可直接提交的配置（纯函数）。

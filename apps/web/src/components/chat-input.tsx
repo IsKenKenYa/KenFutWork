@@ -1,6 +1,6 @@
 "use client";
 
-import type { MessageMention } from "@loomic/shared";
+import type { MessageMention } from "@kenfutwork/shared";
 import {
   forwardRef,
   useCallback,

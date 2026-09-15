@@ -8,7 +8,7 @@
 # 用法：
 #   docker compose -f docker-compose.pg.yml up -d --build
 #   KENFUTWORK_DATABASE_URL=postgres://kenfutwork:kenfutwork@127.0.0.1:5433/kenfutwork \
-#     pnpm --filter @loomic/server migrate apply
+#     pnpm --filter @kenfutwork/server migrate apply
 #
 # 端口用 5433：避开 Supabase 栈的 54322，两者可并存以便逐步切换。
 

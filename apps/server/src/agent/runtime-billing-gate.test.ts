@@ -1,4 +1,4 @@
-import type { StreamEvent } from "@loomic/shared";
+import type { StreamEvent } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
 import type { ServerEnv } from "../config/env.js";
 import { createAgentRunService } from "./runtime.js";

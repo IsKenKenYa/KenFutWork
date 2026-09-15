@@ -1,5 +1,5 @@
 {
-  "name": "@loomic/ui",
+  "name": "@kenfutwork/ui",
   "version": "0.0.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -14,7 +14,7 @@
     "dist"
   ],
   "devDependencies": {
-    "@loomic/config": "workspace:*"
+    "@kenfutwork/config": "workspace:*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

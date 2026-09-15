@@ -1,4 +1,4 @@
-import type { CompatReport, SandboxPluginBundle } from "@loomic/shared";
+import type { CompatReport, SandboxPluginBundle } from "@kenfutwork/shared";
 
 /**
  * 「从工作目录安装插件」的客户端调用：列出当前画布沙箱里的 bundle 候选，并把选中的安装到本实例。

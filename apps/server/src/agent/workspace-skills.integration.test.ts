@@ -12,7 +12,7 @@ import { createWorkspaceSkillsLoader } from "./workspace-skills.js";
  * 在真库上成立，且停用技能与跨工作区技能都不会被注入。
  *
  * 运行：DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
- *       pnpm --filter @loomic/server exec vitest run workspace-skills.integration
+ *       pnpm --filter @kenfutwork/server exec vitest run workspace-skills.integration
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 

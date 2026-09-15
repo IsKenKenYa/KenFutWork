@@ -16,7 +16,7 @@ import { createPaymentRepository } from "./repository.js";
  * 不留数据残留。
  *
  * 运行：DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
- *       pnpm --filter @loomic/server exec vitest run payments.integration
+ *       pnpm --filter @kenfutwork/server exec vitest run payments.integration
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 const MARKER = "integration:payments";

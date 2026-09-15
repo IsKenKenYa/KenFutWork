@@ -7,7 +7,7 @@ import { prepareDesktopRuntime } from "./runtime.js";
 /**
  * 桌面运行时真实启动测试（FORM-2）。默认 skipped：需要显式开启。
  *
- *   KENFUTWORK_DESKTOP_PG_IT=1 pnpm --filter @loomic/server exec vitest run desktop-runtime.integration
+ *   KENFUTWORK_DESKTOP_PG_IT=1 pnpm --filter @kenfutwork/server exec vitest run desktop-runtime.integration
  *
  * 这条用例是 M2.3 的「开箱即用」验收：一个空数据目录 → 拉起内嵌 Postgres →
  * 跑完 40 条迁移 → 起 HTTP → **不带任何令牌**访问受保护接口成功（local-trust）→

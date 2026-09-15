@@ -1,6 +1,6 @@
 "use client";
 
-import type { PluginExportArtifact } from "@loomic/shared";
+import type { PluginExportArtifact } from "@kenfutwork/shared";
 import { Check, Copy, Download, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 

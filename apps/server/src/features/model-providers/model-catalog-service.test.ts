@@ -1,4 +1,4 @@
-import type { ProviderInstanceResponse } from "@loomic/shared";
+import type { ProviderInstanceResponse } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
 import {
   createModelCatalogService,

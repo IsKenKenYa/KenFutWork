@@ -1,4 +1,4 @@
-import type { SkillCategory, SkillListItem, SkillSource } from "@loomic/shared";
+import type { SkillCategory, SkillListItem, SkillSource } from "@kenfutwork/shared";
 
 /**
  * 技能管理页的纯视图逻辑（列表合并 / 过滤 / 标签）。

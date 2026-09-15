@@ -6,7 +6,7 @@ import {
   codeGitDiffStatResponseSchema,
   codeGitStatusResponseSchema,
   unauthenticatedErrorResponseSchema,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { RequestAuthenticator } from "../features/auth/types.js";
 import {

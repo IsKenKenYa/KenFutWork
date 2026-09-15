@@ -1,12 +1,12 @@
 // @credits-system — Payment API routes: checkout, subscription status, plan change, cancellation
 
-import type { BillingPeriod, SubscriptionPlan } from "@loomic/shared";
+import type { BillingPeriod, SubscriptionPlan } from "@kenfutwork/shared";
 import {
   applicationErrorResponseSchema,
   billingPeriodSchema,
   subscriptionPlanSchema,
   unauthenticatedErrorResponseSchema,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";

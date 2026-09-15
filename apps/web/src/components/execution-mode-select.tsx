@@ -1,6 +1,6 @@
 "use client";
 
-import type { ExecutionMode } from "@loomic/shared";
+import type { ExecutionMode } from "@kenfutwork/shared";
 import { useCallback, useEffect, useState } from "react";
 import {
   Select,

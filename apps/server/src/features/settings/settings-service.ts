@@ -1,4 +1,4 @@
-import type { WorkspaceSettings } from "@loomic/shared";
+import type { WorkspaceSettings } from "@kenfutwork/shared";
 
 import {
   clampMaxRunRetries,

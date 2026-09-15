@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
-import type { ContentBlock, ToolBlock, WsCommand } from "@loomic/shared";
+import type { ContentBlock, ToolBlock, WsCommand } from "@kenfutwork/shared";
 import {
   type RunCreateRequest,
   wsCommandSchema,
   wsRpcResponseSchema,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { WebSocket } from "ws";
 import {

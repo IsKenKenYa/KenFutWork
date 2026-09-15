@@ -1,6 +1,6 @@
 // @credits-system — Image generation executor: applies watermark for free-tier users
 
-import type { BackgroundJob, SubscriptionPlan } from "@loomic/shared";
+import type { BackgroundJob, SubscriptionPlan } from "@kenfutwork/shared";
 import { generateImage } from "../../../generation/image-generation.js";
 import { resolveImageProviderName } from "../../../generation/providers/registry.js";
 import type { GeneratedImage } from "../../../generation/types.js";

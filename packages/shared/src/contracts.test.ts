@@ -10,7 +10,7 @@ import {
   streamEventSchema,
 } from "./index.js";
 
-describe("@loomic/shared contracts", () => {
+describe("@kenfutwork/shared contracts", () => {
   it("shares the health response schema for server and web", () => {
     const parsed = healthResponseSchema.parse({
       ok: true,

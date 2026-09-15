@@ -6,7 +6,7 @@ import type {
   ProviderInstanceCreateRequest,
   ProviderInstanceResponse,
   SubscriptionPlan,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import { getServerBaseUrl } from "./env";
 import { ApiAuthError } from "./server-api";
 

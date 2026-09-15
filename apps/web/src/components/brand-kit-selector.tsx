@@ -1,6 +1,6 @@
 "use client";
 
-import type { BrandKitSummary } from "@loomic/shared";
+import type { BrandKitSummary } from "@kenfutwork/shared";
 import { Check, ChevronDown, Settings2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchBrandKits } from "@/lib/brand-kit-api";

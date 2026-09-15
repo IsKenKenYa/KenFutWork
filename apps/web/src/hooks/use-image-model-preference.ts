@@ -1,6 +1,6 @@
 "use client";
 
-import type { ImageGenerationPreference } from "@loomic/shared";
+import type { ImageGenerationPreference } from "@kenfutwork/shared";
 import { useCallback, useSyncExternalStore } from "react";
 
 const STORAGE_KEY = "kenfutwork:image-model-preference";

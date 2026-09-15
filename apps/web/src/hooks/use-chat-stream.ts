@@ -1,6 +1,6 @@
 "use client";
 
-import type { StreamEvent, ToolBlock } from "@loomic/shared";
+import type { StreamEvent, ToolBlock } from "@kenfutwork/shared";
 import { useCallback } from "react";
 import type { Message } from "./use-chat-sessions";
 

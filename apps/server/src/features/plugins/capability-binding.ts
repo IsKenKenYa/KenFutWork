@@ -1,4 +1,4 @@
-import type { CanonicalCapability } from "@loomic/shared";
+import type { CanonicalCapability } from "@kenfutwork/shared";
 
 import type { ServiceKey } from "../../kernel/types.js";
 

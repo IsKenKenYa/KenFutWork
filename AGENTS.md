@@ -38,13 +38,13 @@
 ## 构建、测试与开发命令
 - `pnpm install`：安装 workspace 依赖（CI 环境加 `CI=true`）。
 - `pnpm dev`：turbo 并行启动全部包的 dev（web 在 3000 端口，server API 在 3001，worker 同时拉起）。
-- `pnpm --filter @loomic/server dev:server`：只启动 API 进程（需要根 `.env.local`）。
-- `pnpm --filter @loomic/server dev:worker`：只启动队列 worker。
+- `pnpm --filter @kenfutwork/server dev:server`：只启动 API 进程（需要根 `.env.local`）。
+- `pnpm --filter @kenfutwork/server dev:worker`：只启动队列 worker。
 - `pnpm build`：turbo 全量构建（shared/ui/config 出 `dist/`，web 出静态产物，server 走 `scripts/validate-foundation-app.mjs` 门禁）。
 - `pnpm test`：= `test:workspace`（`node --test tests/workspace.test.mjs`）+ `test:packages`（`turbo run test`，vitest）。
 - `pnpm typecheck`：turbo 全包 `tsc --noEmit`（web 先跑 `next typegen`）。
 - `pnpm lint`：`biome check .`（格式 + lint，Biome 2）。
-- `pnpm seed`：`pnpm --filter @loomic/server seed:accounts` 经自管 Postgres 灌测试账号（幂等；账号与口令见 README「测试账号」表）。
+- `pnpm seed`：`pnpm --filter @kenfutwork/server seed:accounts` 经自管 Postgres 灌测试账号（幂等；账号与口令见 README「测试账号」表）。
 
 命令必须是可直接复制执行的完整调用，包含 flags——「运行测试」这类模糊表述留给 Agent 自由发挥，是常见失败模式。
 

@@ -8,7 +8,7 @@ import type {
   PluginBundleManifest,
   PluginExportArtifact,
   PluginMarketEntry,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 
 import type { ToolRegistry } from "../../kernel/types.js";
 import { type BundleFiles, buildBundleManifest } from "./bundle-manifest.js";

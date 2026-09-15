@@ -4,7 +4,7 @@ import type {
   CreditBalanceResponse,
   CreditTransactionsResponse,
   SubscriptionPlan,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 
 import { getServerBaseUrl } from "./env";
 import { ApiApplicationError, ApiAuthError } from "./server-api";

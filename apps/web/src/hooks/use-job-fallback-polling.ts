@@ -1,6 +1,6 @@
 "use client";
 
-import type { StreamEvent } from "@loomic/shared";
+import type { StreamEvent } from "@kenfutwork/shared";
 import { useCallback, useEffect, useRef } from "react";
 
 import { fetchJob } from "../lib/server-api";

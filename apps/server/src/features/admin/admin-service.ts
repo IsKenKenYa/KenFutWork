@@ -4,7 +4,7 @@ import type {
   AdminUserSummary,
   PlatformRole,
   SubscriptionPlan,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerRepository } from "../bootstrap/repository.js";

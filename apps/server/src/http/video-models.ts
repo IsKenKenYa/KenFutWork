@@ -5,7 +5,7 @@ import {
   getVideoCreditCost,
   MODEL_MIN_TIER,
   type SubscriptionPlan,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { FastifyInstance } from "fastify";
 import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";

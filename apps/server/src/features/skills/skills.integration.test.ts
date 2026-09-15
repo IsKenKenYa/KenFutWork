@@ -10,7 +10,7 @@ import { createSkillCatalogRepository } from "./repository.js";
  * （跨工作区安装的技能不可见）。
  *
  * 运行：DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
- *       pnpm --filter @loomic/server exec vitest run skills.integration
+ *       pnpm --filter @kenfutwork/server exec vitest run skills.integration
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 const FOREIGN_WORKSPACE = "00000000-0000-0000-0000-000000000000";

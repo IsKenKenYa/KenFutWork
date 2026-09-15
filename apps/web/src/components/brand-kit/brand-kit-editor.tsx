@@ -4,7 +4,7 @@ import type {
   BrandKitAsset,
   BrandKitAssetType,
   BrandKitDetail,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import { Copy, Ellipsis, Sparkles, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 

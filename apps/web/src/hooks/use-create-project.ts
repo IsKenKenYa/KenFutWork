@@ -3,7 +3,7 @@
 import type {
   ImageGenerationPreference,
   VideoGenerationPreference,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
 import { useToast } from "@/components/toast";

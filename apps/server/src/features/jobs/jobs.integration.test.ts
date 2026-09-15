@@ -10,7 +10,7 @@ import { createJobRepository } from "./repository.js";
  * 在真库上都成立，且跨工作区不可读写；尝试次数经库函数原子累加。
  *
  * 运行：DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
- *       pnpm --filter @loomic/server exec vitest run jobs.integration
+ *       pnpm --filter @kenfutwork/server exec vitest run jobs.integration
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 const FOREIGN_WORKSPACE = "00000000-0000-0000-0000-000000000000";

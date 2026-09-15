@@ -78,13 +78,13 @@ describe("compat-validator：通过路径", () => {
   it("本项目格式（loomic.bundle）同样通过", () => {
     const report = validate({
       "package.json": JSON.stringify({
-        name: "@loomic/demo",
+        name: "@kenfutwork/demo",
         version: "0.1.0",
         main: "index.js",
         kenfutwork: { bundle: { patch: "./cordis.patch.yml" } },
       }),
       "cordis.patch.yml":
-        "- insert:\n    - id: demo\n      name: '@loomic/demo'\n",
+        "- insert:\n    - id: demo\n      name: '@kenfutwork/demo'\n",
       "index.js":
         "export const inject = ['tools']\nexport function apply(ctx) {}\n",
     });

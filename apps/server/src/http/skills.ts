@@ -10,7 +10,7 @@ import {
   unauthenticatedErrorResponseSchema,
   workspaceSkillListResponseSchema,
   workspaceSkillToggleRequestSchema,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { AuthenticatedUser } from "../features/auth/types.js";
 import { resolveSandboxForCanvas } from "./sandbox-scope.js";

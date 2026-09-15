@@ -19,7 +19,7 @@ const mockedFetch = vi.mocked(fetchProviderInstances);
 const mockedCreate = vi.mocked(createProviderInstance);
 const mockedDelete = vi.mocked(deleteProviderInstance);
 
-import type { ProviderInstanceResponse } from "@loomic/shared";
+import type { ProviderInstanceResponse } from "@kenfutwork/shared";
 
 const instance: ProviderInstanceResponse = {
   id: "inst-1",

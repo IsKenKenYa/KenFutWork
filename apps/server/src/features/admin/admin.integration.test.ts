@@ -11,7 +11,7 @@ import { createAdminRepository } from "./repository.js";
  * 迁移后不再有 service_role 客户端可用，必须确证这一点。
  *
  * 运行：DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
- *       pnpm --filter @loomic/server exec vitest run admin.integration
+ *       pnpm --filter @kenfutwork/server exec vitest run admin.integration
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 

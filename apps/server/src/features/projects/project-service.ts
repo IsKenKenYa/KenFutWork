@@ -3,7 +3,7 @@ import type {
   ProjectKind,
   ProjectSummary,
   ProjectUpdateRequest,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { BlobStore } from "../blob/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
