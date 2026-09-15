@@ -12,18 +12,27 @@
 - **服务端 sidecar 是下一步**（见「路线」）：把 `apps/server` 打成单文件可执行
   （Node SEA / `bun build --compile`），随 Tauri 资源分发，桌面数据落本地数据目录。
 
-## 本机运行（需要 Rust ≥1.77）
+## 本机运行
+
+前置（一次性）：Rust 工具链（本机已装在**外置盘** `DevTools/rust/`，`~/.zshenv` 已配好，
+任何终端直接可用）+ tauri-cli：
 
 ```sh
-# 一次性：装 Rust 与 tauri-cli（本 Mac 尚未安装，Windows 同理）
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-cargo install tauri-cli --version "^2"
+cargo install tauri-cli --version "^2" --locked   # 已装可跳过
+```
 
-# 先把两端跑起来再开壳（推荐，验证内核/迁移正常）：
+**一键桌面形态**（推荐——自动拉起服务端内嵌 PG + web + Tauri 窗口，已在跑的自动复用，
+退出时回收自己拉起的进程）：
+
+```sh
+pnpm desktop          # 仓库根执行；等价于 bash apps/desktop/dev.sh
+```
+
+手动分步（需要单独验证某一层时）：
+
+```sh
 pnpm --filter @loomic/server dev:server   # 桌面形态：LOOMIC_EMBEDDED_PG=1 …（见仓库根 .env.local 样例）
 pnpm --filter @loomic/web dev             # web UI（3000）
-
-# 开壳：
 cd apps/desktop/src-tauri && cargo tauri dev
 ```
 
