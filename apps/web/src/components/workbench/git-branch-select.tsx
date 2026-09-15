@@ -244,7 +244,7 @@ export function GitBranchSelect({
         <div
           role="listbox"
           aria-label="分支列表"
-          className="absolute bottom-full left-0 z-50 mb-2 w-72 overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-md"
+          className="absolute top-full left-0 z-50 mt-2 w-72 overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-md"
         >
           <p className="px-3 py-2 text-xs text-muted-foreground">
             该工作目录还不是 git 仓库。初始化后，每一轮对话结束都会自动提交一次，便于回滚。
@@ -273,7 +273,7 @@ export function GitBranchSelect({
         <div
           role="listbox"
           aria-label="分支列表"
-          className="absolute bottom-full left-0 z-50 mb-2 w-72 overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-md"
+          className="absolute top-full left-0 z-50 mt-2 w-72 overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-md"
         >
           {/* 更改统计（R2-1 条目 1） */}
           <div className="flex items-center justify-between gap-2 px-3 py-2 text-xs">

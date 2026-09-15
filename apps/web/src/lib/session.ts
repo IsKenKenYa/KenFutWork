@@ -188,8 +188,14 @@ export async function loadSession(): Promise<AuthSession | null> {
     // 网络不可达：不武断清令牌（可能是服务还没起来），但也不声称已登录
     return null;
   }
-  if (!response.ok) {
+  if (response.status === 401) {
+    // 令牌确实无效/过期：清掉，别每次进页面都白跑一趟
     persist(null);
+    return null;
+  }
+  if (!response.ok) {
+    // 服务端暂时不可用（重启 / 编译中 / 5xx）：**不动令牌**——否则重启一次就把人踢到登录页
+    // （实测：dev 热重载窗口里刷新页面 = 被登出；用户也报过「会话失效被踢到登录页」）
     return null;
   }
 

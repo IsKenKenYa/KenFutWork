@@ -34,6 +34,16 @@ describe("可重试判定", () => {
     expect(isRetryableRunFailure(STALL)).toBe(true);
   });
 
+  it("认证/凭据类失败不重试（实测：改名换盐后每轮被重试 10 次全是「认证失败」）", () => {
+    expect(isRetryableRunFailure("认证失败，请刷新页面重新登录。")).toBe(false);
+    expect(
+      isRetryableRunFailure(
+        "Unable to decrypt provider credentials (fail loud).",
+      ),
+    ).toBe(false);
+    expect(isRetryableRunFailure("invalid token")).toBe(false);
+  });
+
   it("没给原因时按可重试处理（常见的是上游抖动）", () => {
     expect(isRetryableRunFailure(undefined)).toBe(true);
     expect(isRetryableRunFailure("   ")).toBe(true);
