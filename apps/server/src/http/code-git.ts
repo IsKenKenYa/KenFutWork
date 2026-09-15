@@ -87,6 +87,22 @@ export async function registerCodeGitRoutes(
     },
   );
 
+  // POST /api/code/git/init — 初始化仓库（幂等）：让「每次对话用 git 跟踪」在
+  // 非仓库目录上也能开始（分支 chip 里「非 Git 仓库」时提供入口）
+  app.post("/api/code/git/init", async (request, reply) => {
+    const user = await options.auth.authenticate(request);
+    if (!user) return sendUnauthorized(reply);
+    try {
+      const payload = codeGitCheckoutRequestSchema
+        .pick({ canvasId: true })
+        .parse(request.body);
+      const git = await options.codeGitService.init(user, payload.canvasId);
+      return reply.code(200).send(codeGitStatusResponseSchema.parse({ git }));
+    } catch (error) {
+      return sendCodeGitError(error, reply);
+    }
+  });
+
   app.post("/api/code/git/commit", async (request, reply) => {
     const user = await options.auth.authenticate(request);
     if (!user) return sendUnauthorized(reply);

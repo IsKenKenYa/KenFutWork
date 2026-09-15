@@ -36,6 +36,8 @@ export type CodeGitService = {
   /** 更改统计（R2-1）：相对 HEAD 的增删行数 + 未跟踪数。 */
   diffStat(user: AuthenticatedUser, canvasId: string): Promise<CodeGitDiffStat>;
   /** 提交全部改动（写操作：git 不可用即 503，未仓库/空改动 409）。 */
+  /** 初始化仓库（幂等）。 */
+  init(user: AuthenticatedUser, canvasId: string): Promise<CodeGitStatus>;
   commit(
     user: AuthenticatedUser,
     canvasId: string,
@@ -163,6 +165,20 @@ export function createCodeGitService(options: {
     async diffStat(user, canvasId) {
       const dir = await sandboxDirFor(user, canvasId);
       return git.diffStat(dir);
+    },
+
+    /**
+     * 把工作目录初始化成仓库（「每次对话用 git 跟踪」的前置；已有仓库则无副作用）。
+     * 失败时给可读原因（git 不可用 / 目录不可写）。
+     */
+    async init(user, canvasId) {
+      requireGitForWrite();
+      const dir = await sandboxDirFor(user, canvasId);
+      const view = await git.describe(dir);
+      if (!view.isRepo) {
+        await git.init(dir);
+      }
+      return read(dir);
     },
 
     async commit(user, canvasId, message) {

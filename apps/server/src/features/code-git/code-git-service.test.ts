@@ -36,6 +36,7 @@ function build(options: {
 }) {
   const git: GitClient = {
     checkout: vi.fn(async () => {}),
+    init: vi.fn(async () => {}),
     describe: vi.fn(async () => REPO_VIEW),
     diffStat: vi.fn(async () => ({
       files: 0,
@@ -164,5 +165,28 @@ describe("Code git 服务", () => {
     expect(error).toBeInstanceOf(CodeGitError);
     expect((error as CodeGitError).statusCode).toBe(409);
     expect((error as CodeGitError).message).toMatch(/local changes/);
+  });
+});
+
+/**
+ * 「每次对话用 git 跟踪」的前置：非仓库目录要能一键初始化，且**幂等**
+ * （已是仓库时不重复 init）。
+ */
+describe("git init（工作目录初始化仓库）", () => {
+  it("非仓库时调用 git init；已是仓库时跳过", async () => {
+    const notRepo = build({
+      git: { describe: vi.fn(async () => ({ ...REPO_VIEW, isRepo: false })) },
+    });
+    await notRepo.service.init(USER, CANVAS_ID);
+    expect(notRepo.git.init).toHaveBeenCalledTimes(1);
+
+    const repo = build({});
+    await repo.service.init(USER, CANVAS_ID);
+    expect(repo.git.init).not.toHaveBeenCalled();
+  });
+
+  it("git 不可用时如实拒绝（不静默）", async () => {
+    const { service } = build({ source: "unavailable" });
+    await expect(service.init(USER, CANVAS_ID)).rejects.toThrow(/git/i);
   });
 });

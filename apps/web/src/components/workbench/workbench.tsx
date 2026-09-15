@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/select";
 import { ElapsedEntry } from "@/components/workbench/elapsed-entry";
 import { GitBranchSelect } from "@/components/workbench/git-branch-select";
+import { commitGitAll } from "@/lib/code-git-api";
 import { ToolOutputRenderer } from "@/components/chat/tool-block-view";
 import { McpModal } from "@/components/workbench/mcp-modal";
 import { PluginMarketModal } from "@/components/workbench/plugin-market-modal";
@@ -324,6 +325,13 @@ export function Workbench() {
   const activeTaskIdRef = useRef<string | null>(null);
   activeTaskIdRef.current = activeTaskId;
 
+  /** tasksByMode 的镜像：事件回调里要读最新任务（状态更新是异步的）。 */
+  const tasksByModeRef = useRef<Record<WorkbenchMode, WorkbenchTask[]>>({
+    code: [],
+    design: [],
+  });
+  tasksByModeRef.current = tasksByMode;
+
   const tasks = tasksByMode[mode];
   /**
    * 当前选中的项目：Code 模式在「工作目录项目」（kind='code'）里找，Design 在画布
@@ -339,6 +347,12 @@ export function Workbench() {
     () => tasks.find((t) => t.id === activeTaskId) ?? null,
     [tasks, activeTaskId],
   );
+
+  /** 最近一次「本轮自动提交」的时间戳（仅用于给用户一个可见回执 + 刷新分支 chip）。 */
+  const [lastAutoCommitAt, setLastAutoCommitAt] = useState<string | null>(null);
+
+  /** 侧栏里被收起的工作目录项目 id（默认全展开；持久化到 localStorage）。 */
+  const [collapsedProjects, setCollapsedProjects] = useState<string[]>([]);
 
   /** 主区判定：Design 模式恒为画布（不变量集中在 resolveWorkbenchSurface 与它的测试里）。 */
   const surface = resolveWorkbenchSurface({
@@ -358,6 +372,16 @@ export function Workbench() {
       code: loadTasks("code"),
       design: loadTasks("design"),
     });
+    try {
+      const rawCollapsed = window.localStorage.getItem(
+        "workbench:collapsed-projects",
+      );
+      setCollapsedProjects(
+        rawCollapsed ? (JSON.parse(rawCollapsed) as string[]) : [],
+      );
+    } catch {
+      setCollapsedProjects([]);
+    }
     try {
       setThinking(
         window.localStorage.getItem("workbench:thinking") ?? "default",
@@ -767,6 +791,10 @@ export function Workbench() {
             ? { subagents: closeAllSubagents(task.subagents, ts) }
             : {}),
         }));
+        // 每轮成功结束自动提交一次（Code 模式 + 已绑项目），让对话在 git 里有迹可循
+        if (mode === "code") {
+          void autoCommitTurn(activeTaskIdRef.current);
+        }
       } else if (type === "billing.error") {
         // 平台池额度/套餐拦截（FORM-10）：服务端给的是可读原因，
         // 直接透出，别让用户只看到「运行失败，请重试」。
@@ -1047,6 +1075,44 @@ export function Workbench() {
     router.push("/login");
   }, [signOut, router]);
 
+  /**
+   * 本轮结束自动提交（「每次对话用 git 跟踪」）：Code 模式 + 已绑工作目录项目时，
+   * 把这一轮的改动提交到工作目录的仓库里，便于回滚。
+   *
+   * 静默失败：不是 git 仓库 / 改动的就是没东西可提交 / git 不可用——都不打扰用户
+   * （分支 chip 上本来就写着「非 Git 仓库」）。
+   */
+  /** 事件回调注册在挂载期（deps 只有 ws/mode），必须经 ref 读最新值——否则拿到的是
+      首轮的 null（实测：自动提交静默不触发，就是因为闭包里的 token/项目是 null）。 */
+  const autoCommitContextRef = useRef<{ token: string | null; canvasId: string | null }>({
+    token: null,
+    canvasId: null,
+  });
+  autoCommitContextRef.current = {
+    token: session?.access_token ?? null,
+    canvasId: selectedProject?.primaryCanvas?.id ?? null,
+  };
+
+  const autoCommitTurn = useCallback(
+    async (taskId: string | null) => {
+      const { token, canvasId } = autoCommitContextRef.current;
+      if (!token || !canvasId || !taskId) return;
+      const task = tasksByModeRef.current.code.find((t) => t.id === taskId);
+      if (!task) return;
+      const round = Math.max(
+        1,
+        task.messages.filter((m) => m.role === "assistant").length,
+      );
+      try {
+        await commitGitAll(token, canvasId, `${task.title}（第 ${round} 轮）`);
+        setLastAutoCommitAt(new Date().toISOString());
+      } catch {
+        // 没有仓库 / 无改动可提交：跳过
+      }
+    },
+    [],
+  );
+
   /** 任务视图内继续追问：追加 user 消息并复用同一会话发起新 run。 */
   const continueTask = useCallback(
     (text: string) => {
@@ -1199,7 +1265,8 @@ export function Workbench() {
           <div className="flex items-center justify-between px-3 pt-3 pb-2">
             <span className="flex items-center gap-2">
               <LoomicLogo className="size-7 text-foreground" />
-              <span className="text-base font-semibold tracking-tight">
+              {/* 字标：加粗放大 + 品牌「岚」渐变（低饱和双色，深浅色各一套） */}
+              <span className="bg-gradient-to-r from-[#2F3459] to-[#575E96] bg-clip-text text-lg font-bold tracking-tight text-transparent dark:from-[#A6ACD8] dark:to-[#C3C8E6]">
                 KenFutWork
               </span>
             </span>
@@ -1395,6 +1462,23 @@ export function Workbench() {
                               icon={
                                 <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                               }
+                              expanded={!collapsedProjects.includes(p.id)}
+                              onToggleExpanded={() =>
+                                setCollapsedProjects((prev) => {
+                                  const next = prev.includes(p.id)
+                                    ? prev.filter((id) => id !== p.id)
+                                    : [...prev, p.id];
+                                  try {
+                                    window.localStorage.setItem(
+                                      "workbench:collapsed-projects",
+                                      JSON.stringify(next),
+                                    );
+                                  } catch {
+                                    // 存储失败不影响使用
+                                  }
+                                  return next;
+                                })
+                              }
                               onOpen={() => {
                                 setSelectedProjectId(p.id);
                                 setWorkDirName(p.name);
@@ -1405,15 +1489,17 @@ export function Workbench() {
                               }
                               onDelete={() => void removeCodeProject(p.id)}
                             />
-                            <div className="ml-4 space-y-0.5 border-l pl-1">
-                              {items.length === 0 ? (
-                                <p className="px-2 py-1 text-xs text-muted-foreground/70">
-                                  暂无对话
-                                </p>
-                              ) : (
-                                items.map(taskRow)
-                              )}
-                            </div>
+                            {collapsedProjects.includes(p.id) ? null : (
+                              <div className="ml-4 space-y-0.5 border-l pl-1">
+                                {items.length === 0 ? (
+                                  <p className="px-2 py-1 text-xs text-muted-foreground/70">
+                                    暂无对话
+                                  </p>
+                                ) : (
+                                  items.map(taskRow)
+                                )}
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -1484,7 +1570,31 @@ export function Workbench() {
           />
         ) : activeTask ? (
           <div className="mx-auto flex h-full max-w-3xl flex-col p-6">
-            <h1 className="mb-4 text-lg font-medium">{activeTask.title}</h1>
+            {/* 标题行：会话标题 + 项目 + 分支（分支从输入框挪上来——那里挤不下） */}
+            <div className="mb-4 flex items-center gap-2">
+              <h1 className="min-w-0 truncate text-lg font-medium">
+                {activeTask.title}
+              </h1>
+              {workDirName ? (
+                <span className="flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-xs text-muted-foreground">
+                  <FolderOpen className="h-3.5 w-3.5" />
+                  {workDirName}
+                </span>
+              ) : null}
+              <span className="shrink-0">
+                <GitBranchSelect
+                  accessToken={session?.access_token ?? null}
+                  canvasId={selectedProject?.primaryCanvas.id ?? null}
+                  /* 自动提交后 key 变化 → 重新拉取更改统计 */
+                  key={`${selectedProject?.primaryCanvas.id ?? ""}:${lastAutoCommitAt ?? ""}`}
+                />
+              </span>
+              {lastAutoCommitAt ? (
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  已自动提交本轮
+                </span>
+              ) : null}
+            </div>
             <div
               ref={codeMessagesRef}
               className="min-h-0 flex-1 space-y-4 overflow-y-auto"
@@ -1601,10 +1711,6 @@ export function Workbench() {
                   >
                     <Plus className="h-4 w-4" />
                   </button>
-                  <GitBranchSelect
-                    accessToken={session?.access_token ?? null}
-                    canvasId={selectedProject?.primaryCanvas.id ?? null}
-                  />
                   <WorkDirectorySelect
                     projects={codeProjects}
                     selectedProjectId={selectedProjectId}

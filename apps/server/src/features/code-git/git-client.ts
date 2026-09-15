@@ -94,6 +94,8 @@ export interface GitClient {
   push(cwd: string): Promise<void>;
   /** 创建并检出新分支（`switch -c`）。 */
   createBranch(cwd: string, name: string): Promise<void>;
+  /** 把普通目录初始化成仓库（`git init`；已是仓库时无副作用）。 */
+  init(cwd: string): Promise<void>;
 }
 
 /** 更改统计（R2-1 参考图「更改 +1230 -10 · 21 个文件」）。 */
@@ -207,6 +209,14 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
     }
   };
 
+  const init = async (cwd: string): Promise<void> => {
+    const result = await exec(["init"], cwd);
+    if (result.code !== 0) {
+      const reason = result.stderr.trim() || result.stdout.trim();
+      throw new Error(reason || "git init 失败。");
+    }
+  };
+
   const createBranch = async (cwd: string, name: string): Promise<void> => {
     if (!isSafeBranchName(name)) {
       throw new Error(`非法分支名：${name}`);
@@ -222,5 +232,5 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
     }
   };
 
-  return { checkout, describe, diffStat, commitAll, push, createBranch };
+  return { checkout, describe, diffStat, commitAll, push, createBranch, init };
 }

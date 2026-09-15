@@ -15,6 +15,7 @@ import {
   createGitBranch,
   fetchGitDiffStat,
   fetchGitStatus,
+  initGitRepo,
   type GitDiffStat,
   type GitStatus,
   pushGit,
@@ -161,6 +162,21 @@ export function GitBranchSelect({
     }
   }, [accessToken, canvasId, refresh]);
 
+  /** 非仓库目录 → 一键初始化（初始化后自动提交就能工作）。 */
+  const doInit = useCallback(async () => {
+    if (!accessToken || !canvasId) return;
+    setBusy(true);
+    try {
+      setStatus(await initGitRepo(accessToken, canvasId));
+      setNotice("已初始化仓库，后续每轮对话会自动提交。");
+      await refresh();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "初始化仓库失败。");
+    } finally {
+      setBusy(false);
+    }
+  }, [accessToken, canvasId, refresh]);
+
   const doCreateBranch = useCallback(async () => {
     if (!accessToken || !canvasId || !newBranchName.trim()) return;
     setBusy(true);
@@ -195,12 +211,12 @@ export function GitBranchSelect({
         aria-label="分支"
         aria-haspopup="listbox"
         aria-expanded={open}
-        disabled={!canSwitch || busy}
+        disabled={status.source === "unavailable" || busy}
         title={
           notice ??
           (status.isRepo
             ? undefined
-            : "该工作目录还不是 git 仓库（在对话里让 Agent 执行 git init 即可）")
+            : "该工作目录还不是 git 仓库（点开可一键初始化）")
         }
         onClick={() => setOpen((current) => !current)}
         className="flex max-w-[10rem] items-center gap-1.5 rounded-lg border px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
@@ -219,8 +235,39 @@ export function GitBranchSelect({
             className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
           />
         ) : null}
-        {canSwitch ? <ChevronDown className="h-3 w-3 shrink-0" /> : null}
+        {status.source === "unavailable" ? null : (
+          <ChevronDown className="h-3 w-3 shrink-0" />
+        )}
       </button>
+
+      {open && status.source !== "unavailable" && !status.isRepo ? (
+        <div
+          role="listbox"
+          aria-label="分支列表"
+          className="absolute bottom-full left-0 z-50 mb-2 w-72 overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-md"
+        >
+          <p className="px-3 py-2 text-xs text-muted-foreground">
+            该工作目录还不是 git 仓库。初始化后，每一轮对话结束都会自动提交一次，便于回滚。
+          </p>
+          <div className="border-t px-2 py-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                void doInit();
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted disabled:opacity-40"
+            >
+              <GitBranch className="size-4" /> 初始化仓库
+            </button>
+          </div>
+          {notice ? (
+            <p className="border-t px-3 py-2 text-xs text-muted-foreground">
+              {notice}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {open && canSwitch ? (
         <div

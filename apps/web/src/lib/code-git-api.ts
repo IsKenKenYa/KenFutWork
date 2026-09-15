@@ -111,6 +111,21 @@ export async function commitGitAll(
   return payload.git;
 }
 
+/** 把工作目录初始化成仓库（幂等）：「每次对话用 git 跟踪」在非仓库目录上的入口。 */
+export async function initGitRepo(
+  accessToken: string,
+  canvasId: string,
+): Promise<GitStatus> {
+  const response = await fetch(`${getServerBaseUrl()}/api/code/git/init`, {
+    method: "POST",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify({ canvasId }),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  const payload = (await response.json()) as { git: GitStatus };
+  return payload.git;
+}
+
 export async function pushGit(
   accessToken: string,
   canvasId: string,
