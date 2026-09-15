@@ -1,6 +1,8 @@
 import path from "node:path";
 
 import { registerPluginRoutes } from "../../http/plugins.js";
+import { createCanvasRepository } from "../canvas/repository.js";
+import { createInstallPluginTool } from "./install-plugin-tool.js";
 import type { PluginContext, PluginDefinition } from "../../kernel/types.js";
 import { CompatLoadError } from "./compat-context.js";
 import {
@@ -97,7 +99,7 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
 
   return {
     name: "plugin-registry",
-    inject: ["auth", "admin"],
+    inject: ["auth", "admin", "persistence", "viewer"],
     apply(ctx) {
       const pluginsDir = resolvePluginsDir(deps.pluginsDir);
       ctx.register("plugins", () => {
@@ -116,6 +118,17 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
       ctx.effect(() => () => {
         void service?.shutdown();
       });
+
+      // install_plugin：创造模式的插件产物收尾（从工作目录安装；管理员门 + 兼容性门禁不绕过）
+      ctx.get("tools").register(
+        createInstallPluginTool({
+          registry: ctx.get("plugins"),
+          auth: ctx.get("auth"),
+          admin: ctx.get("admin"),
+          sandboxRoot: ctx.env.sandboxRoot,
+          canvasWorkDirs: ctx.env.canvasWorkDirs,
+        }),
+      );
     },
     mounted(ctx) {
       const registry = ctx.get("plugins");
@@ -123,6 +136,10 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
         auth: ctx.get("auth"),
         admin: ctx.get("admin"),
         registry,
+        canvasRepository: createCanvasRepository(ctx.get("persistence")),
+        viewerService: ctx.get("viewer"),
+        sandboxRoot: ctx.env.sandboxRoot,
+        canvasWorkDirs: ctx.env.canvasWorkDirs,
       });
       // 启动装载已启用插件：单个失败只记日志，不阻断进程启动
       void registry.restore();

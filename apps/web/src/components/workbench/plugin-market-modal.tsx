@@ -20,6 +20,7 @@ import { getServerBaseUrl } from "@/lib/env";
 import { ListEmpty, ListLoading } from "./list-state";
 import { PluginExportDialog } from "./plugin-export-dialog";
 import { PluginInstallByUrl } from "./plugin-install-by-url";
+import { PluginInstallFromWorkdir } from "./plugin-install-from-workdir";
 
 const ICONS: Record<
   string,
@@ -47,10 +48,13 @@ export function PluginMarketModal({
   open,
   onClose,
   accessToken,
+  canvasId = null,
 }: {
   open: boolean;
   onClose: () => void;
   accessToken: string | null;
+  /** 当前工作目录的画布 id（「从工作目录安装」用）。 */
+  canvasId?: string | null;
 }) {
   const [tab, setTab] = useState<MarketTab>("discover");
   const [query, setQuery] = useState("");
@@ -163,10 +167,17 @@ export function PluginMarketModal({
 
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
             {tab === "discover" ? (
-              <PluginInstallByUrl
-                accessToken={accessToken}
-                onInstalled={refresh}
-              />
+              <>
+                <PluginInstallByUrl
+                  accessToken={accessToken}
+                  onInstalled={refresh}
+                />
+                <PluginInstallFromWorkdir
+                  accessToken={accessToken}
+                  canvasId={canvasId}
+                  onInstalled={refresh}
+                />
+              </>
             ) : null}
 
             {notice ? (

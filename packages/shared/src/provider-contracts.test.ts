@@ -69,6 +69,8 @@ describe("provider-contracts（BYOK 供应商缝）", () => {
       id: "inst-1",
       name: "网关",
       protocol: "gemini",
+      // scope 是契约必填（6a3155c 平台管理后台引入：workspace=BYOK / system=平台池）
+      scope: "workspace",
       hasCredential: true,
       models: [{ id: "m1", name: "M1", capability: "image" }],
       enabled: true,
@@ -86,6 +88,7 @@ describe("provider-contracts（BYOK 供应商缝）", () => {
           id: "i",
           name: "n",
           protocol: "volces",
+          scope: "system",
           hasCredential: false,
           models: [{ id: "m", name: "M", capability: "video" }],
           enabled: false,

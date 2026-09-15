@@ -1321,6 +1321,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ...(toolGate ? { toolGate } : {}),
             runToolContext: {
               runId,
+              ...(run.canvasId ? { canvasId: run.canvasId } : {}),
               ...(run.threadId ? { threadId: run.threadId } : {}),
               ...(run.accessToken ? { accessToken: run.accessToken } : {}),
               ...(toolWorkspaceId ? { workspaceId: toolWorkspaceId } : {}),

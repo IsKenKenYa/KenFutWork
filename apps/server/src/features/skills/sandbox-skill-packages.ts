@@ -1,6 +1,8 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 
+import { resolveInsideRoot } from "../../utils/inside-root.js";
+
 import { parseSkillManifest } from "./skill-import-service.js";
 
 /**
@@ -56,19 +58,6 @@ function toPosixRelative(root: string, absolute: string): string {
   return relative(root, absolute).split(sep).join("/");
 }
 
-/**
- * 断言目标目录在沙箱根内（防 `../` 逃逸）。返回解析后的绝对路径。
- * @throws Error 越界时抛出（调用方转 400）。
- */
-export function resolveInsideRoot(root: string, relativePath: string): string {
-  const rootAbsolute = resolve(root);
-  const target = resolve(rootAbsolute, relativePath);
-  if (target !== rootAbsolute && !target.startsWith(rootAbsolute + sep)) {
-    throw new Error("路径越出工作目录。");
-  }
-  return target;
-}
-
 function isSkillMd(fileName: string): boolean {
   return fileName.toLowerCase() === "skill.md";
 }
@@ -88,6 +77,8 @@ function hasSkillMd(dir: string): boolean {
  * 解析不出 frontmatter 的目录也会列出（name 用目录名、描述为空），
  * 由用户决定是否导入；导入时再严格校验。
  */
+export { resolveInsideRoot };
+
 export function listSandboxSkillPackages(
   root: string,
   options: { maxDepth?: number } = {},

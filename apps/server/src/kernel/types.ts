@@ -189,6 +189,11 @@ export interface ToolExecutionContext {
   /** 会话线程：tool-pre-execute 监听器（执行模式拦截）据此定位线程策略。 */
   threadId?: string | undefined;
   workspaceId?: string | undefined;
+  /**
+   * 本轮 run 绑定的画布：需要落点的工具（如 install_plugin 从工作目录安装）
+   * 据此解析沙箱目录——解析口径与 agent/git 同一处（resolveSandboxDir）。
+   */
+  canvasId?: string | undefined;
   /** 运行方（agent 运行时）传入的请求级用户令牌；需要用户上下文的工具据此解析数据。 */
   accessToken?: string | undefined;
 }

@@ -2082,6 +2082,8 @@ export function Workbench() {
           open={pluginsOpen}
           onClose={() => setPluginsOpen(false)}
           accessToken={session?.access_token ?? null}
+          // 「从工作目录安装」用：服务端据此解析沙箱目录
+          canvasId={selectedProject?.primaryCanvas?.id ?? null}
         />
       ) : null}
       {skillsOpen ? (

@@ -12,7 +12,8 @@ import {
   workspaceSkillToggleRequestSchema,
 } from "@loomic/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { resolveSandboxDir } from "../agent/sandbox-dir.js";
+import type { AuthenticatedUser } from "../features/auth/types.js";
+import { resolveSandboxForCanvas } from "./sandbox-scope.js";
 import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { CanvasRepository } from "../features/canvas/repository.js";
@@ -120,25 +121,18 @@ export async function registerSkillRoutes(
     return { skillRow, skillId, files: fileData.map(mapSkillFileRow) };
   };
 
-  /** canvasId → 已校验归属的沙箱目录（不可见即 404，不给账号/资源枚举留信号）。 */
-  const sandboxDirFor = async (
-    user: { id: string } & Record<string, unknown>,
-    canvasId: string,
-  ): Promise<string | null> => {
-    const workspace = await options.viewerService
-      .resolveWorkspace(user as never)
-      .catch(() => null);
-    if (!workspace) return null;
-    const canvas = await options.canvasRepository
-      .findById(workspace.id, canvasId)
-      .catch(() => null);
-    if (!canvas) return null;
-    return resolveSandboxDir(
+  /** canvasId → 已校验归属的沙箱目录（与插件安装共用同一判定）。 */
+  const sandboxDirFor = (user: AuthenticatedUser, canvasId: string) =>
+    resolveSandboxForCanvas(
+      {
+        viewerService: options.viewerService,
+        canvasRepository: options.canvasRepository,
+        sandboxRoot: options.sandboxRoot,
+        canvasWorkDirs: options.canvasWorkDirs,
+      },
+      user,
       canvasId,
-      options.sandboxRoot,
-      options.canvasWorkDirs?.[canvasId],
     );
-  };
 
   // =========================================================================
   // Skills Registry (public catalog)

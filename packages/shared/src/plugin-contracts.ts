@@ -192,6 +192,37 @@ export const pluginInstallRequestSchema = z.object({
 });
 export type PluginInstallRequest = z.infer<typeof pluginInstallRequestSchema>;
 
+/**
+ * 从**沙箱工作目录**安装插件 bundle（创造模式产物的人工入口）。
+ *
+ * `canvasId` 决定沙箱目录（与技能/agent 同一处解析）；`path` 是相对沙箱根的
+ * bundle 目录（其 package.json 需声明 loomic.bundle / dsh.bundle）。服务端校验
+ * 画布归属与路径不越界，不信任前端传来的路径。
+ */
+export const sandboxPluginInstallRequestSchema = z.object({
+  canvasId: z.string().min(1),
+  path: z.string().min(1),
+});
+export type SandboxPluginInstallRequest = z.infer<
+  typeof sandboxPluginInstallRequestSchema
+>;
+
+/** 工作目录里扫到的插件 bundle 候选。 */
+export const sandboxPluginBundleSchema = z.object({
+  path: z.string(),
+  name: z.string(),
+  version: z.string(),
+  declaredBy: z.enum(["loomic", "dsh"]),
+});
+export type SandboxPluginBundle = z.infer<typeof sandboxPluginBundleSchema>;
+
+export const sandboxPluginBundleListResponseSchema = z.object({
+  bundles: z.array(sandboxPluginBundleSchema),
+});
+export type SandboxPluginBundleListResponse = z.infer<
+  typeof sandboxPluginBundleListResponseSchema
+>;
+
 /** 导入本地/远端 bundle 目录（不安装，仅校验并返回报告）。 */
 export const pluginInspectRequestSchema = z.object({
   url: z.string().trim().min(1),
