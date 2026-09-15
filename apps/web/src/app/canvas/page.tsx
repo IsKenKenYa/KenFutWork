@@ -81,17 +81,6 @@ function CanvasPageContent() {
     setChatOpen(true);
   }, []);
   const handleToggleChat = useCallback(() => setChatOpen((v) => !v), []);
-  // 底部栏的「图层 / 生成文件」按钮：切到对应标签并确保面板展开。
-  // （不在这里「再点一次就收起」——那会把整个右侧面板（含对话）一起关掉，
-  //   收起面板有标题栏右上角的专用按钮。）
-  const handleToggleLayers = useCallback(() => {
-    setPanelTab("layers");
-    setChatOpen(true);
-  }, []);
-  const handleToggleFiles = useCallback(() => {
-    setPanelTab("files");
-    setChatOpen(true);
-  }, []);
 
   const accessToken = session?.access_token;
   const accessTokenRef = useRef(accessToken);
@@ -315,10 +304,6 @@ function CanvasPageContent() {
           <CanvasToolMenu
             accessToken={accessToken}
             excalidrawApi={excalidrawApi}
-            layersOpen={panelTab === "layers" && chatOpen}
-            onToggleLayers={handleToggleLayers}
-            filesOpen={panelTab === "files" && chatOpen}
-            onToggleFiles={handleToggleFiles}
           />
         )}      </div>
       <ChatSidebar

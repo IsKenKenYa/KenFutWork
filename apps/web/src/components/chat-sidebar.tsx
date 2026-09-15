@@ -52,7 +52,7 @@ import { ErrorBoundary } from "./error-boundary";
 import { ExecutionModeSelect } from "./execution-mode-select";
 import { SessionSelector } from "./session-selector";
 import { useToast } from "./toast";
-import { FolderOpen, Layers } from "lucide-react";
+import { FolderOpen, Layers, MessageSquare } from "lucide-react";
 import {
   closeTab as closeChatTab,
   loadTabs,
@@ -1070,9 +1070,9 @@ export function ChatSidebar({
         点历史对话＝**新开一个标签**而不是顶掉当前这轮；关掉最后一个标签会自动开一个空白
         对话，面板永远有可用输入区。
       */}
-      <div className="flex min-h-[44px] items-center gap-1.5 border-b border-border pl-2 pr-2">
-        {panelTab === "chat" ? (
-          <>
+      {/* 第一行：对话标签页——任何视图下都在（切图层/文件不会把它顶掉） */}
+      <div className="flex min-h-[40px] shrink-0 items-center gap-1.5 border-b border-border pl-2 pr-2">
+        <>
             {/* 标签区：横向可滚但**不显示滚动条**（标签多了滚动条会盖住标签，
                 「历史记录/新建对话」也被卷进去看不见——它们改放到右侧固定区） */}
             <div
@@ -1138,14 +1138,36 @@ export function ChatSidebar({
                 onDelete={handleDeleteSession}
               />
             )}
-          </>
+        </>
+      </div>
+      {/* 第二行：执行模式 + 视图切换（对话/图层/文件）+ 收起 */}
+      <div className="flex min-h-[40px] shrink-0 items-center gap-2 border-b border-border pl-3 pr-2">
+        {panelTab === "chat" && activeSessionId && accessToken ? (
+          <ExecutionModeSelect
+            accessToken={accessToken}
+            threadId={activeSessionId}
+          />
         ) : (
           <span className="flex-1 text-xs font-medium text-foreground">
             {panelTab === "layers" ? "图层" : "生成文件"}
           </span>
         )}
-        {/* 图层 / 文件：面板的另两个视图（不是对话标签，故用图标按钮） */}
-        <div className="flex shrink-0 items-center gap-0.5">
+        {/* 视图切换：对话 / 图层 / 生成文件（不遮标签行，点哪个切哪个视图） */}
+        <div className="ml-auto flex shrink-0 items-center justify-end gap-0.5">
+          <button
+            type="button"
+            aria-label="对话"
+            aria-pressed={panelTab === "chat"}
+            title="对话"
+            onClick={() => onPanelTabChange?.("chat")}
+            className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${
+              panelTab === "chat"
+                ? "bg-muted text-foreground"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            }`}
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+          </button>
           <button
             type="button"
             aria-label="图层"
@@ -1196,14 +1218,6 @@ export function ChatSidebar({
 
       {panelTab === "chat" ? (
         <>
-          {/* 执行模式：排在标签页**下面**（标签页是面板的第一行，任何模式相关控件都不该压它上面） */}
-          {activeSessionId && accessToken ? (
-            <ExecutionModeSelect
-              accessToken={accessToken}
-              threadId={activeSessionId}
-            />
-          ) : null}
-
           {/* Disconnected banner */}
           {!ws.connected && (
             <div className="flex items-center gap-2 px-4 py-2 bg-muted border-b border-border">

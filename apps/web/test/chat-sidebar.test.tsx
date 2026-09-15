@@ -175,7 +175,7 @@ describe("ChatSidebar", () => {
     );
   });
 
-  it("图层/文件是面板的另两个视图（图标按钮切换），对话标签页只在对话视图里", async () => {
+  it("图层/文件是另两个视图（图标切换），且切过去不顶掉对话标签行", async () => {
     function Harness() {
       const [tab, setTab] = useState<SidePanelTab>("layers");
       return (
@@ -201,17 +201,25 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    // 图层视图：显示图层内容，且不渲染对话输入区与对话标签
+    // 图层视图：显示图层内容、不渲染对话输入区，但**标签行仍在**（切视图不影响多标签页）
     expect(await screen.findByText("图层列表占位")).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/输入你的想法/)).toBeNull();
-    expect(screen.queryByRole("tablist", { name: "打开的对话" })).toBeNull();
+    expect(
+      screen.getByRole("tablist", { name: "打开的对话" }),
+    ).toBeInTheDocument();
     // 原「Agent 助手」标题已由标签页取代
     expect(screen.queryByText("Agent 助手")).toBeNull();
 
-    // 点「生成文件」图标 → 切到文件视图
+    // 点「生成文件」→ 切到文件视图
     await userEvent.click(screen.getByRole("button", { name: "生成文件" }));
     expect(await screen.findByText("生成文件占位")).toBeInTheDocument();
     expect(screen.queryByText("图层列表占位")).toBeNull();
+
+    // 点「对话」→ 切回对话视图（新增的回到对话按钮）
+    await userEvent.click(screen.getByRole("button", { name: "对话" }));
+    expect(
+      await screen.findByPlaceholderText(/输入你的想法/),
+    ).toBeInTheDocument();
   });
 
   it("对话视图里显示「打开的对话」标签页，当前会话占一个标签且可关闭", async () => {

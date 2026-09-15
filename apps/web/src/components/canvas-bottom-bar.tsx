@@ -25,10 +25,6 @@ const ZOOM_STEP = 1.1;
 interface CanvasViewControlsProps {
   // biome-ignore lint/suspicious/noExplicitAny: Excalidraw API has no public type definition
   excalidrawApi: any | null;
-  layersOpen: boolean;
-  onToggleLayers: () => void;
-  filesOpen: boolean;
-  onToggleFiles: () => void;
 }
 
 /* ── Inline SVG icons ── */
@@ -83,22 +79,6 @@ const GridIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const LayersIcon = ({ className }: { className?: string }) => (
-  <Ico className={className} vb="0 0 20 20" fill="currentColor">
-    <path d="M17.189 12.48a.65.65 0 0 1 .622 1.141l-7.5 4.1a.65.65 0 0 1-.623 0l-7.5-4.1a.65.65 0 0 1 .624-1.14L10 16.41zm0-3.036a.65.65 0 0 1 .622 1.14l-7.5 4.1a.65.65 0 0 1-.623 0l-7.5-4.1a.65.65 0 0 1 .624-1.14L10 13.374zm-7.426-7.2a.65.65 0 0 1 .549.035l7.5 4.1a.651.651 0 0 1 0 1.14l-7.5 4.101a.65.65 0 0 1-.624 0l-7.5-4.1a.651.651 0 0 1 0-1.14l7.5-4.101zM3.854 6.948 10 10.31l6.145-3.36L10 3.59z" />
-  </Ico>
-);
-const FileIcon = ({ className }: { className?: string }) => (
-  <Ico className={className} vb="0 0 24 24">
-    <path
-      d="M9 17h6M9 13h6M13 3H8.2c-1.12 0-1.68 0-2.108.218a2 2 0 0 0-.874.874C5 4.52 5 5.08 5 6.2v11.6c0 1.12 0 1.68.218 2.108a2 2 0 0 0 .874.874C6.52 21 7.08 21 8.2 21h7.6c1.12 0 1.68 0 2.108-.218a2 2 0 0 0 .874-.874C19 19.48 19 18.92 19 17.8V9m-6-6 6 6m-6-6v4.4c0 .56 0 .84.109 1.054a1 1 0 0 0 .437.437C13.76 9 14.04 9 14.6 9H19"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </Ico>
-);
 const CloseIcon = ({ className }: { className?: string }) => (
   <Ico className={className}>
     <path
@@ -273,10 +253,6 @@ function ElementRow({
  */
 export function CanvasViewControls({
   excalidrawApi,
-  layersOpen,
-  onToggleLayers,
-  filesOpen,
-  onToggleFiles,
 }: CanvasViewControlsProps) {
   /* ── Zoom state ── */
   const [zoom, setZoom] = useState(1);
@@ -402,14 +378,6 @@ export function CanvasViewControls({
     closeAllPopovers();
     if (next) setBgPickerOpen(true);
   }, [bgPickerOpen, closeAllPopovers]);
-  const handleToggleLayers = useCallback(() => {
-    closeAllPopovers();
-    onToggleLayers();
-  }, [closeAllPopovers, onToggleLayers]);
-  const handleToggleFiles = useCallback(() => {
-    closeAllPopovers();
-    onToggleFiles();
-  }, [closeAllPopovers, onToggleFiles]);
 
   return (
     <div
@@ -434,26 +402,6 @@ export function CanvasViewControls({
               style={{ backgroundColor: bgColor }}
             />
           )}
-        </button>
-
-        {/* ── Layers button ── */}
-        <button
-          type="button"
-          className={`${btnClass} ${layersOpen ? "bg-muted text-foreground" : ""}`}
-          onClick={handleToggleLayers}
-          aria-label="图层"
-        >
-          <LayersIcon className="h-4 w-4" />
-        </button>
-
-        {/* ── Files button ── */}
-        <button
-          type="button"
-          className={`${btnClass} ${filesOpen ? "bg-muted text-foreground" : ""}`}
-          onClick={handleToggleFiles}
-          aria-label="生成文件"
-        >
-          <FileIcon className="h-3.5 w-3.5" />
         </button>
 
         {/* ── Grid toggle ── */}
