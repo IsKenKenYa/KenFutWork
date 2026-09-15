@@ -127,11 +127,11 @@ export function PluginMarketModal({
           className="flex h-[78vh] max-h-[88vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl"
           aria-describedby={undefined}
         >
-          <div className="flex items-center gap-3 border-b px-5 py-3 pr-12">
-            <DialogTitle className="flex items-center gap-2 text-base font-medium">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-5 py-3 pr-12">
+            <DialogTitle className="flex shrink-0 items-center gap-2 text-base font-medium">
               <Layers className="h-4 w-4" /> 插件市场
             </DialogTitle>
-            <div className="flex items-center gap-1 rounded-lg bg-muted p-1">
+            <div className="flex shrink-0 items-center gap-1 rounded-lg bg-muted p-1">
               {(
                 [
                   { id: "discover", label: "发现" },
@@ -143,7 +143,7 @@ export function PluginMarketModal({
                   type="button"
                   data-active={tab === item.id}
                   onClick={() => setTab(item.id)}
-                  className="rounded-md px-3 py-1 text-sm transition-colors data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:shadow-sm"
+                  className="whitespace-nowrap rounded-md px-3 py-1 text-sm transition-colors data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:shadow-sm"
                 >
                   {item.label}
                 </button>

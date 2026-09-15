@@ -185,11 +185,14 @@ export function SkillsModal({
           className="flex h-[78vh] max-h-[88vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl"
           aria-describedby={undefined}
         >
-          <div className="flex items-center gap-3 border-b px-5 py-3 pr-12">
-            <DialogTitle className="flex items-center gap-2 text-base font-medium">
+          {/* 头部要能收窄：窄窗口下原来不换行，标题与「技能库/市场/导入」被挤成竖排、
+              搜索框还溢出到卡片外（用户看到的「透明框 + 内容跑出框外」就是这个）。
+              → 允许换行 + 各段 shrink-0 + 搜索框在自己的行里占满。 */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-5 py-3 pr-12">
+            <DialogTitle className="flex shrink-0 items-center gap-2 text-base font-medium">
               <Blocks className="h-4 w-4" /> 技能
             </DialogTitle>
-            <div className="flex items-center gap-1 rounded-lg bg-muted p-1">
+            <div className="flex shrink-0 items-center gap-1 rounded-lg bg-muted p-1">
               {(
                 [
                   { id: "mine", label: "技能库" },
@@ -202,21 +205,21 @@ export function SkillsModal({
                   type="button"
                   data-active={tab === item.id}
                   onClick={() => setTab(item.id)}
-                  className="rounded-md px-3 py-1 text-sm transition-colors data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:shadow-sm"
+                  className="whitespace-nowrap rounded-md px-3 py-1 text-sm transition-colors data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:shadow-sm"
                 >
                   {item.label}
                 </button>
               ))}
             </div>
             {tab === "mine" ? (
-              <div className="ml-auto flex items-center gap-2 rounded-md border px-2 py-1">
-                <Search className="h-3.5 w-3.5 text-muted-foreground" />
+              <div className="ml-auto flex min-w-0 flex-1 items-center gap-2 rounded-md border px-2 py-1 sm:flex-none">
+                <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <input
                   aria-label="搜索技能"
                   placeholder="搜索技能…"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  className="w-40 bg-transparent text-sm outline-none"
+                  className="min-w-0 flex-1 bg-transparent text-sm outline-none sm:w-40 sm:flex-none"
                 />
               </div>
             ) : null}
