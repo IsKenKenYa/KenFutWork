@@ -11,7 +11,7 @@
 笔画则取自 **Chakra Petch Italic**（SIL OFL）——竖笔／上臂／下腿是该字体 `K` 的完整轮廓，顶横是该字体
 `F` 裁掉顶横以下、并把右端裁到定稿比例后剩下的那段，两者以布尔并集焊成一根笔画。
 上臂尖露在顶横右端之外（沿用旧骨架「上臂加长伸出」的规矩）；裁短顶横正是为了让这道缝留出来，
-否则真字体的 K 上臂顶到 cap 高，会和顶横围出封闭碗形、整个标读成 R。生成过程见 `preview-logo字形.html`。
+否则真字体的 K 上臂顶到 cap 高，会和顶横围出封闭碗形、整个标读成 R。生成过程见 `方案对比.html`。
 
 ## 几何与色值
 
@@ -20,13 +20,13 @@
 | 元素 | 参数 |
 | --- | --- |
 | 底形 | 超椭圆（小米式方圆角）：`|x/256|⁵ + |y/256|⁵ = 1`，n=5、中心 (256,256)，path 内嵌于 `clipPath`（参数方程采样生成，见定稿文件） |
-| 左上半（Design 画布） | 135° 渐变 `#575E96 → #686FA9` |
-| 右下半（Code 终端） | 135° 渐变 `#3C4272 → #494F84`，分界对角线为 (512,0)→(0,512) |
+| 左上半（Design 画布） | 135° 渐变 `#444B7E → #575E96` |
+| 右下半（Code 终端） | 135° 渐变 `#2F3459 → #3C4272`，分界对角线为 (512,0)→(0,512) |
 | 白字形 | 单条 `<path fill="#FFFFFF">`（Chakra Petch Italic 的 K 轮廓 + 裁短后的 F 顶横，布尔并集后烘焙到 512 画布坐标） |
 | 字形外框 | 高 312、宽 306，水平居中 (x 103→409)、垂直中心 y=246 |
 
-调整流程：白字形**不能手改**——它是字体轮廓的布尔并集结果，要改先改 `preview-logo字形.html` 的生成参数
-（目标字体、字面高、画布位置）再重出，然后按顺序同步：`定稿-kf2-岚.svg` → `apps/web/public/logo.svg`
+调整流程：白字形**不能手改**——它是字体轮廓的布尔并集结果，要改先改 `方案对比.html` 的生成参数
+（目标字体、字面高、画布位置）再重出，然后按顺序同步：`最终定稿.svg` → `apps/web/public/logo.svg`
 → `apps/web/public/favicon.svg` → `apps/web/src/components/icons/kenfutwork-logo.tsx` → `apple-touch-icon.png`
 → `og-image.png`。前四个是同一份 SVG 内容（直接复制），后两个是位图，按下面的说明重出。
 
@@ -48,10 +48,10 @@ Code / Design 双模式的界面承载（侧栏分段开关）与 logo 的对角
 2026-09-15 用户从字体天下（fonts.net.cn）挑了四款字体，用于改 logo 字形。图标是纯几何图形、没有文字，
 「KenFutWork」字样（字标）目前是系统无衬线、无自有字体。两个落点各有一份对照页：
 
-| 落点 | 对照页 | 渲染快照 | 现状 |
-| --- | --- | --- | --- |
-| **logo 图标字形**（**已换**） | `preview-logo字形.html` | `logo字形对照.png` | Chakra Petch Italic 笔画，结构同旧骨架（共竖笔） |
-| 字标文字（旁边那行字） | `preview-字标字体.html` | `字标字体对照.png` | `text-base`/`text-lg` + `font-semibold tracking-tight` |
+| 落点 | 对照页 | 现状 |
+| --- | --- | --- |
+| **logo 图标字形**（**已换**） | `方案对比.html` | Chakra Petch Italic 笔画，结构同旧骨架（共竖笔） |
+| 字标文字（旁边那行字） | `字体风格对比.html` | `text-base`/`text-lg` + `font-semibold tracking-tight` |
 
 两页都要把字体放进本目录 `字体/`（已 gitignore）才能渲染，重装方法见文末。
 
@@ -127,7 +127,7 @@ Code / Design 双模式的界面承载（侧栏分段开关）与 logo 的对角
 
 ### 已定（2026-09-15）
 
-用户选定 **Chakra Petch Italic**，已落地：权威源 `定稿-kf2-岚.svg` 与 `logo.svg`／`favicon.svg`／
+用户选定 **Chakra Petch Italic**，已落地：权威源 `最终定稿.svg` 与 `logo.svg`／`favicon.svg`／
 `kenfutwork-logo.tsx`／`apple-touch-icon.png`／`og-image.png` 全部换新。对照页只保留三款合格变体
 （Chakra Petch Italic 采用版、Sounso Quality、K2D Italic）；YEFONTPaws-Bold、ArtierEN、Romance Frances
 三款因结构不成立已从页面移除。
@@ -139,9 +139,14 @@ Code / Design 双模式的界面承载（侧栏分段开关）与 logo 的对角
 ## 边界与历史
 
 - 2026-09-15 之前，白字形是**等宽直线骨架四笔**（`rect` + `stroke-width=72` 的斜线）；本轮换成 Chakra Petch Italic 的字体笔画，
-  结构未变。旧字形存档在 `preview-logo字形.html` 的「旧定稿（历史对照，已替换）」一块里。
+  结构未变。旧字形存档在 `方案对比.html` 的「旧定稿（历史对照，已替换）」一块里。
 - **字标（「KenFutWork」那行字）仍是系统无衬线**，未随本次更换。用户在 2026-09-15 明确「改的是 logo，不是旁边的字」。
 - `apps/web/src/components/icons/kenfutwork-logo.tsx` 就是本定稿的 React 落地（沿用旧文件名），不是另一套品牌；
   工作台侧栏（收起/展开）、登录页 `auth-shell.tsx` 都用它。
 - `apps/web/public/og-image.png` 已在 2026-09-15 随新标重出（1200×630：深蓝渐变底 + 标 + 字标 + 「插件化 BYOK Agent 工作台」+ Code/Design/自管 Postgres 三个胶囊）。
-- 本目录其余文件为设计过程存档：`preview.html`（三概念提案 A/B/C）、`preview-c-colors.html`（方案 C 配色变体 V1–V4）、`preview-kf.html`（K+F 融合提案与上臂调整，终稿为 KF-2 骨架版 C）、`concept-*.svg`（各提案源文件）、`preview-字标字体.html`／`字标字体对照.png`（字标字体候选，未采用）。
+- **本目录只留定稿与说明（2026-09-16 清理）**，共四个文件：本文件（说明）、`最终定稿.svg`（唯一权威源）、
+  `方案对比.html`（字形生成工具——改白字形先改这里的参数再重出）、`字体风格对比.html`（字标候选，未采用，留作后续决策）。
+  同日又改名：`定稿-kf2-岚.svg` → `最终定稿.svg`，`preview-logo字形.html` → `方案对比.html`，
+  `preview-字标字体.html` → `字体风格对比.html`；两张渲染快照（`logo字形对照.png`／`字标字体对照.png`）已删除，要重出照上文命令走。
+  更早的三概念提案 A/B/C、方案 C 配色变体 V1–V4、K+F 融合提案的对照页与 `concept-*.svg` 源文件亦已删除，
+  需要时从 git 历史取回（`git checkout <删除提交>^ -- docs/design/logo`）。

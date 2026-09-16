@@ -3,11 +3,11 @@ import { useId } from "react";
 
 /**
  * KenFutWork 品牌 logo（KF-2 骨架版 C，岚配色；白字形为 Chakra Petch Italic 笔画）。
- * 唯一权威源：docs/design/logo/定稿-kf2-岚.svg；本组件是其 React 落地，
+ * 唯一权威源：docs/design/logo/最终定稿.svg；本组件是其 React 落地，
  * 几何/配色修改须先改权威源再同步此处与 public/*.svg。
  *
  * 白字形与旧骨架同一结构：竖笔 + 顶横（F）+ 上臂 + 下腿（K），F 与 K 共用同一根竖笔；
- * 笔画取自 Chakra Petch Italic（SIL OFL），生成过程见同目录 preview-logo字形.html。
+ * 笔画取自 Chakra Petch Italic（SIL OFL），生成过程见同目录 方案对比.html。
  * 渐变/裁剪 id 用 useId 生成，避免同页多实例冲突。
  *
  * @example
