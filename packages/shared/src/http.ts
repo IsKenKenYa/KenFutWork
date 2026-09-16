@@ -187,6 +187,27 @@ export const codeGitDiffResponseSchema = z.object({
   }),
 });
 
+// --- 工作目录的文件目录（R3-1「文件目录」标签） ---
+
+export const codeFileEntrySchema = z.object({
+  name: z.string().min(1),
+  /** 相对工作目录的路径（点进去时原样回传）。 */
+  path: z.string(),
+  type: z.enum(["file", "dir"]),
+  /** 目录为 null。 */
+  bytes: z.number().int().nonnegative().nullable(),
+});
+
+export const codeFilesResponseSchema = z.object({
+  files: z.object({
+    /** 列的是哪个目录（相对工作目录；根目录是空串）。 */
+    path: z.string(),
+    entries: z.array(codeFileEntrySchema),
+    /** 条目数超上限（只列前 N 项）。 */
+    truncated: z.boolean(),
+  }),
+});
+
 /** 工作目录里的项目文档（R3-3「文档入口」）。 */
 export const codeDocsResponseSchema = z.object({
   docs: z.array(

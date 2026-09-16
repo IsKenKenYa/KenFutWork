@@ -157,6 +157,36 @@ export interface SandboxFileView {
   content: string;
 }
 
+// --- R3-1「文件目录」标签：列一层目录（子目录由界面点进去） ---
+
+export interface CodeFileEntry {
+  name: string;
+  path: string;
+  type: "file" | "dir";
+  bytes: number | null;
+}
+
+export interface CodeFileListing {
+  path: string;
+  entries: CodeFileEntry[];
+  truncated: boolean;
+}
+
+export async function fetchCodeFiles(
+  accessToken: string,
+  canvasId: string,
+  path = "",
+): Promise<CodeFileListing> {
+  const query = new URLSearchParams({ canvasId, path });
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/code/files?${query.toString()}`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  const payload = (await response.json()) as { files: CodeFileListing };
+  return payload.files;
+}
+
 /** 工作目录里的项目文档（R3-3「文档入口」）。 */
 export async function fetchCodeDocs(
   accessToken: string,

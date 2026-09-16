@@ -3,6 +3,7 @@ import {
   codeGitBranchCreateRequestSchema,
   codeGitCheckoutRequestSchema,
   codeDocsResponseSchema,
+  codeFilesResponseSchema,
   codeGitChangesResponseSchema,
   codeGitCommitRequestSchema,
   codeGitDiffResponseSchema,
@@ -198,6 +199,33 @@ export async function registerCodeGitRoutes(
       try {
         const file = await options.codeGitService.readFile(user, canvasId, path);
         return reply.code(200).send(codeGitFileResponseSchema.parse({ file }));
+      } catch (error) {
+        return sendCodeGitError(error, reply);
+      }
+    },
+  );
+
+  // GET /api/code/files — 工作目录的文件目录（R3-1「文件目录」标签）：只列一层
+  app.get<{ Querystring: { canvasId?: string; path?: string } }>(
+    "/api/code/files",
+    async (request, reply) => {
+      const user = await options.auth.authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      const canvasId = request.query.canvasId ?? "";
+      if (!canvasId) {
+        return reply.code(400).send(
+          applicationErrorResponseSchema.parse({
+            error: { code: "invalid_input", message: "缺少 canvasId。" },
+          }),
+        );
+      }
+      try {
+        const files = await options.codeGitService.listFiles(
+          user,
+          canvasId,
+          request.query.path ?? "",
+        );
+        return reply.code(200).send(codeFilesResponseSchema.parse({ files }));
       } catch (error) {
         return sendCodeGitError(error, reply);
       }

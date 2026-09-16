@@ -12,11 +12,13 @@ import {
 
 const {
   fetchCodeDocsMock,
+  fetchCodeFilesMock,
   fetchGitChangesMock,
   fetchGitFileDiffMock,
   fetchSandboxFileMock,
 } = vi.hoisted(() => ({
   fetchCodeDocsMock: vi.fn(),
+  fetchCodeFilesMock: vi.fn(),
   fetchGitChangesMock: vi.fn(),
   fetchGitFileDiffMock: vi.fn(),
   fetchSandboxFileMock: vi.fn(),
@@ -24,6 +26,7 @@ const {
 
 vi.mock("../src/lib/code-git-api", () => ({
   fetchCodeDocs: fetchCodeDocsMock,
+  fetchCodeFiles: fetchCodeFilesMock,
   fetchGitChanges: fetchGitChangesMock,
   fetchGitFileDiff: fetchGitFileDiffMock,
   fetchSandboxFile: fetchSandboxFileMock,
@@ -69,6 +72,14 @@ describe("WorkbenchSidePanel", () => {
       content: "export const app = 1;\n",
     });
     fetchCodeDocsMock.mockResolvedValue([{ path: "AGENTS.md", bytes: 12 }]);
+    fetchCodeFilesMock.mockResolvedValue({
+      path: "",
+      truncated: false,
+      entries: [
+        { name: "src", path: "src", type: "dir", bytes: null },
+        { name: "AGENTS.md", path: "AGENTS.md", type: "file", bytes: 12 },
+      ],
+    });
   });
 
   afterEach(() => {
@@ -170,6 +181,22 @@ describe("WorkbenchSidePanel", () => {
       await screen.findByText(/这个会话没有绑定工作目录/),
     ).toBeInTheDocument();
     expect(fetchGitChangesMock).not.toHaveBeenCalled();
+  });
+
+  it("文件目录标签：列一层、目录可进、文件可打开", async () => {
+    render(<Harness initialTab="files" />);
+    await waitFor(() =>
+      expect(fetchCodeFilesMock).toHaveBeenCalledWith("token", "canvas-1", ""),
+    );
+    const list = await screen.findByRole("list", { name: "目录内容" });
+    expect(within(list).getByText("src")).toBeInTheDocument();
+    expect(within(list).getByText("AGENTS.md")).toBeInTheDocument();
+
+    // 进子目录 → 用新路径再拉一次
+    await userEvent.click(within(list).getByRole("button", { name: "进入 src" }));
+    await waitFor(() =>
+      expect(fetchCodeFilesMock).toHaveBeenLastCalledWith("token", "canvas-1", "src"),
+    );
   });
 
   it("子智能体标签：没有条目时说清楚，而不是一片空白", async () => {

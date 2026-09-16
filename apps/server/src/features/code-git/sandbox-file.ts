@@ -1,4 +1,5 @@
-import { closeSync, openSync, readSync, statSync } from "node:fs";
+import { closeSync, openSync, readdirSync, readSync, statSync } from "node:fs";
+import { join } from "node:path";
 
 import { resolveInsideRoot } from "../../utils/inside-root.js";
 
@@ -87,4 +88,72 @@ export function existingSandboxFiles(
     }
   }
   return found;
+}
+
+/**
+ * 列一层目录（R3-1「文件目录」标签）。**只列一层**：子目录由界面点进去再看——
+ * 递归整棵树在大型工作目录上会变成几千条，而这个面板是用来「看这一层有什么」的。
+ *
+ * 排序：目录在前、同类型按名字；跳过 `.git`（版本元数据不是工作内容，且条目极多）。
+ * 上限 {@link MAX_DIR_ENTRIES}：超出即标 truncated，界面如实说明「只列前 N 项」。
+ */
+export const MAX_DIR_ENTRIES = 500;
+
+export interface SandboxDirEntry {
+  name: string;
+  /** 相对工作目录的路径（点进去时原样回传）。 */
+  path: string;
+  type: "file" | "dir";
+  bytes: number | null;
+}
+
+export interface SandboxDirListing {
+  /** 列的是哪个目录（相对工作目录；根目录是空串）。 */
+  path: string;
+  entries: SandboxDirEntry[];
+  truncated: boolean;
+}
+
+export function listSandboxDir(
+  root: string,
+  relativePath: string,
+): SandboxDirListing {
+  const normalized = relativePath.replace(/^[/\\]+/, "");
+  const absolute = normalized
+    ? resolveInsideRoot(root, normalized)
+    : resolveInsideRoot(root, ".");
+  const stat = statSync(absolute, { throwIfNoEntry: false });
+  if (!stat) {
+    throw new Error(`目录不存在：${relativePath || "."}`);
+  }
+  if (!stat.isDirectory()) {
+    throw new Error(`${relativePath} 不是目录。`);
+  }
+
+  const entries: SandboxDirEntry[] = [];
+  let truncated = false;
+  for (const entry of readdirSync(absolute, { withFileTypes: true })) {
+    if (entry.name === ".git") continue;
+    if (entries.length >= MAX_DIR_ENTRIES) {
+      truncated = true;
+      break;
+    }
+    const childAbsolute = join(absolute, entry.name);
+    const isDir = entry.isDirectory();
+    entries.push({
+      name: entry.name,
+      path: normalized ? `${normalized}/${entry.name}` : entry.name,
+      type: isDir ? "dir" : "file",
+      bytes: isDir
+        ? null
+        : (statSync(childAbsolute, { throwIfNoEntry: false })?.size ?? null),
+    });
+  }
+
+  entries.sort((a, b) => {
+    if (a.type !== b.type) return a.type === "dir" ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  return { path: normalized, entries, truncated };
 }

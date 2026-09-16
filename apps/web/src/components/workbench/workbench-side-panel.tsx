@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   FileDiff as FileDiffIcon,
   FileText,
+  Folder,
   GitBranch,
   X,
 } from "lucide-react";
@@ -12,9 +13,11 @@ import { useCallback, useEffect, useState } from "react";
 import { SubagentDirectoryView } from "@/components/workbench/subagent-directory-view";
 import {
   fetchCodeDocs,
+  fetchCodeFiles,
   fetchGitChanges,
   fetchGitFileDiff,
   fetchSandboxFile,
+  type CodeFileListing,
   type GitChanges,
   type SandboxFileView,
 } from "@/lib/code-git-api";
@@ -30,10 +33,11 @@ import type { SubagentEntry } from "@/lib/subagent-directory";
  * 标签是**视图**，不是会话内容：切标签只换正文。终端/浏览器两个标签要各自的执行缝与浏览器能力
  * （R3-1 的另两项、R3-4），另一个批次做；这里先把已有能力装进正确的容器。
  */
-export type WorkbenchPanelTab = "changes" | "docs" | "subagents";
+export type WorkbenchPanelTab = "changes" | "files" | "docs" | "subagents";
 
 const TABS: Array<{ id: WorkbenchPanelTab; label: string }> = [
   { id: "changes", label: "变更" },
+  { id: "files", label: "文件目录" },
   { id: "docs", label: "文档" },
   { id: "subagents", label: "子智能体" },
 ];
@@ -75,6 +79,19 @@ export function WorkbenchSidePanel({
   );
   const [reading, setReading] = useState<Reading | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** 文件目录：当前浏览的相对路径（根目录是空串）与列表。 */
+  const [dir, setDir] = useState("");
+  const [listing, setListing] = useState<CodeFileListing | null>(null);
+  /** 面板宽度（可拖拽，持久化到 localStorage：宽度是用户偏好）。 */
+  const [width, setWidth] = useState(() => {
+    if (typeof window === "undefined") return DEFAULT_PANEL_WIDTH;
+    const saved = Number(window.localStorage.getItem(PANEL_WIDTH_KEY));
+    return Number.isFinite(saved) &&
+      saved >= MIN_PANEL_WIDTH &&
+      saved <= MAX_PANEL_WIDTH
+      ? saved
+      : DEFAULT_PANEL_WIDTH;
+  });
 
   /** 拉取当前标签需要的数据（变更/文档各一个端点；子智能体走已有事件流）。 */
   useEffect(() => {
@@ -93,6 +110,19 @@ export function WorkbenchSidePanel({
           }
         });
     }
+    if (tab === "files") {
+      setListing(null);
+      fetchCodeFiles(accessToken, canvasId, dir)
+        .then((next) => {
+          if (!cancelled) setListing(next);
+        })
+        .catch((err: unknown) => {
+          if (!cancelled) {
+            setListing({ path: dir, entries: [], truncated: false });
+            setError(err instanceof Error ? err.message : "读取目录失败。");
+          }
+        });
+    }
     if (tab === "docs") {
       setDocs(null);
       fetchCodeDocs(accessToken, canvasId)
@@ -106,12 +136,13 @@ export function WorkbenchSidePanel({
     return () => {
       cancelled = true;
     };
-  }, [open, tab, accessToken, canvasId]);
+  }, [open, tab, accessToken, canvasId, dir]);
 
   // 切标签/关面板时退出「正在看某个文件」的状态，免得下次进来还停在上次的文件上
   useEffect(() => {
     setReading(null);
     setError(null);
+    setDir("");
   }, [tab, open]);
 
   const openDiff = useCallback(
@@ -158,6 +189,34 @@ export function WorkbenchSidePanel({
     [accessToken, canvasId],
   );
 
+  /**
+   * 拖左边缘调宽（参考图：左右面板都能调）。面板在右侧，故向左拖 = 变宽；
+   * 松手时落 localStorage——宽度是用户偏好，刷新后保持。
+   */
+  const startResize = useCallback(
+    (event: React.MouseEvent) => {
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = width;
+      const clamp = (next: number) =>
+        Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, next));
+      const onMove = (moveEvent: MouseEvent) => {
+        setWidth(clamp(startWidth + (startX - moveEvent.clientX)));
+      };
+      const onUp = (upEvent: MouseEvent) => {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+        window.localStorage.setItem(
+          PANEL_WIDTH_KEY,
+          String(clamp(startWidth + (startX - upEvent.clientX))),
+        );
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    },
+    [width],
+  );
+
   if (!open) return null;
 
   const totals = (changes?.files ?? []).reduce(
@@ -171,8 +230,17 @@ export function WorkbenchSidePanel({
   return (
     <aside
       aria-label="工作台面板"
-      className="flex w-[360px] shrink-0 flex-col border-l bg-card"
+      style={{ width }}
+      className="relative flex shrink-0 flex-col border-l bg-card"
     >
+      {/* 拖拽把手：贴面板左边缘（按住拖动改宽） */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="调整面板宽度"
+        onMouseDown={startResize}
+        className="absolute top-0 -left-0.5 z-10 h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-foreground/20"
+      />
       {/* 标签条：与参考图一致——标签是视图，右侧是关闭 */}
       <div className="flex min-h-[44px] items-center gap-1 border-b px-2">
         <div role="tablist" aria-label="面板视图" className="flex items-center gap-1">
@@ -245,6 +313,14 @@ export function WorkbenchSidePanel({
               这个会话还没有派过子智能体。
             </p>
           )
+        ) : tab === "files" ? (
+          <FilesView
+            listing={listing}
+            canvasId={canvasId}
+            dir={dir}
+            onNavigate={(next) => setDir(next)}
+            onOpen={(path) => void openFile(path)}
+          />
         ) : tab === "docs" ? (
           <DocsView
             docs={docs}
@@ -429,4 +505,116 @@ function DocsView({
       })}
     </ul>
   );
+}
+
+/** 面板宽度的边界与持久化键（用户偏好，刷新后保持）。 */
+const MIN_PANEL_WIDTH = 280;
+const MAX_PANEL_WIDTH = 720;
+const DEFAULT_PANEL_WIDTH = 360;
+const PANEL_WIDTH_KEY = "workbench:panel-width";
+
+/**
+ * 文件目录（R3-1「文件目录」标签）：**只列一层**，子目录点进去、面包屑回退。
+ *
+ * 为什么不做整棵树：大型工作目录一次递归能出几千条，而这个面板是给「这一层有什么」
+ * 用的；一层一层走既快又看得清（与参考图的文件浏览器一致）。
+ */
+function FilesView({
+  listing,
+  canvasId,
+  dir,
+  onNavigate,
+  onOpen,
+}: {
+  listing: CodeFileListing | null;
+  canvasId: string | null;
+  dir: string;
+  onNavigate: (path: string) => void;
+  onOpen: (path: string) => void;
+}) {
+  if (!canvasId) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        这个会话没有绑定工作目录。
+      </p>
+    );
+  }
+  if (listing === null) {
+    return <p className="text-xs text-muted-foreground">读取中…</p>;
+  }
+
+  const segments = dir ? dir.split("/") : [];
+
+  return (
+    <div className="space-y-2">
+      {/* 面包屑：工作目录 → … → 当前目录 */}
+      <div className="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+        <button
+          type="button"
+          onClick={() => onNavigate("")}
+          className="rounded px-1 hover:bg-muted hover:text-foreground"
+        >
+          工作目录
+        </button>
+        {segments.map((segment, index) => (
+          <span key={segment} className="flex items-center gap-1">
+            <span aria-hidden>/</span>
+            <button
+              type="button"
+              onClick={() => onNavigate(segments.slice(0, index + 1).join("/"))}
+              className="rounded px-1 hover:bg-muted hover:text-foreground"
+            >
+              {segment}
+            </button>
+          </span>
+        ))}
+      </div>
+
+      {listing.entries.length === 0 ? (
+        <p className="text-xs text-muted-foreground">这个目录是空的。</p>
+      ) : (
+        <ul aria-label="目录内容" className="divide-y rounded-xl border">
+          {listing.entries.map((entry) => (
+            <li
+              key={entry.path}
+              className="flex items-center gap-2 px-2.5 py-1.5"
+            >
+              <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <button
+                type="button"
+                onClick={() =>
+                  entry.type === "dir"
+                    ? onNavigate(entry.path)
+                    : onOpen(entry.path)
+                }
+                aria-label={
+                  entry.type === "dir"
+                    ? `进入 ${entry.path}`
+                    : `打开 ${entry.path}`
+                }
+                className="min-w-0 flex-1 truncate text-left text-xs hover:underline"
+              >
+                {entry.name}
+              </button>
+              {entry.type === "dir" ? null : (
+                <span className="shrink-0 text-[10px] text-muted-foreground">
+                  {entry.bytes === null ? "" : formatBytes(entry.bytes)}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {listing.truncated ? (
+        <p className="text-[10px] text-muted-foreground">只列出前 500 项。</p>
+      ) : null}
+    </div>
+  );
+}
+
+/** 字节数的人类可读形态（列表里只表示量级）。 */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

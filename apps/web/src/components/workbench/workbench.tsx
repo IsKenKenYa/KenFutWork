@@ -403,6 +403,33 @@ export function Workbench() {
    * `子代理和git显示位置.png`：右侧面板带标签）。此前把「变更列表 / 文档」塞在分支下拉与
    * 工作目录下拉里——那是**形态做错**：这些是「边看边改」的长驻视图，不是一次性弹层内容。
    */
+  /** 左侧栏宽度（可拖拽，持久化：与右栏面板同样，宽度是用户偏好）。 */
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    if (typeof window === "undefined") return 256;
+    const saved = Number(window.localStorage.getItem("workbench:sidebar-width"));
+    return Number.isFinite(saved) && saved >= 200 && saved <= 420 ? saved : 256;
+  });
+
+  const startSidebarResize = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = sidebarWidth;
+    const clamp = (next: number) => Math.min(420, Math.max(200, next));
+    const onMove = (moveEvent: MouseEvent) => {
+      setSidebarWidth(clamp(startWidth + (moveEvent.clientX - startX)));
+    };
+    const onUp = (upEvent: MouseEvent) => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      window.localStorage.setItem(
+        "workbench:sidebar-width",
+        String(clamp(startWidth + (upEvent.clientX - startX))),
+      );
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [sidebarWidth]);
+
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab, setPanelTab] = useState<WorkbenchPanelTab>("changes");
 
@@ -1475,7 +1502,18 @@ export function Workbench() {
         </aside>
       ) : (
         /* 展开态：logo + 模式切换 + 插件市场 + 项目(design) + 任务列表 + 底部个人中心 */
-        <aside className="flex w-64 shrink-0 flex-col border-r bg-card">
+        <aside
+          style={{ width: sidebarWidth }}
+          className="relative flex shrink-0 flex-col border-r bg-card"
+        >
+          {/* 拖拽把手：贴侧栏右边缘；向右拖 = 变宽 */}
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="调整侧栏宽度"
+            onMouseDown={startSidebarResize}
+            className="absolute top-0 -right-0.5 z-10 h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-foreground/20"
+          />
           <div className="flex items-center justify-between px-3 pt-3 pb-2">
             <span className="flex items-center gap-2">
               <KenFutWorkLogo className="size-7 text-foreground" />

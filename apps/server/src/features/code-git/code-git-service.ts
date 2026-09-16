@@ -11,7 +11,9 @@ import type {
 } from "./git-client.js";
 import {
   existingSandboxFiles,
+  listSandboxDir,
   readSandboxTextFile,
+  type SandboxDirListing,
   type SandboxFileView,
 } from "./sandbox-file.js";
 
@@ -72,6 +74,9 @@ export interface CodeGitFileDiff {
 /** 单文件内容（R3-2「打开」/ R3-3「文档入口」）。 */
 export type CodeGitFileView = SandboxFileView;
 
+/** 目录清单（R3-1「文件目录」标签）。 */
+export type CodeFileListing = SandboxDirListing;
+
 export type CodeGitService = {
   status(user: AuthenticatedUser, canvasId: string): Promise<CodeGitStatus>;
   checkout(
@@ -105,6 +110,12 @@ export type CodeGitService = {
     canvasId: string,
     path: string,
   ): Promise<CodeGitFileView>;
+  /** 列一层目录（R3-1「文件目录」标签）：只列一层，子目录由界面点进去。 */
+  listFiles(
+    user: AuthenticatedUser,
+    canvasId: string,
+    path: string,
+  ): Promise<CodeFileListing>;
   /** 工作目录里的项目文档（R3-3）：候选清单里存在的那些，附字节数。 */
   listDocs(
     user: AuthenticatedUser,
@@ -305,6 +316,20 @@ export function createCodeGitService(options: {
         truncated: text.includes("…（已截断）"),
         untracked: false,
       };
+    },
+
+    /** 列一层目录：路径越界/不存在/不是目录都折成 400 可读原因。 */
+    async listFiles(user, canvasId, path) {
+      const dir = await sandboxDirFor(user, canvasId);
+      try {
+        return listSandboxDir(dir, path);
+      } catch (error) {
+        throw new CodeGitError(
+          "git_write_failed",
+          error instanceof Error ? error.message : String(error),
+          400,
+        );
+      }
     },
 
     /** 项目文档清单：只 stat 候选文件，不读内容（列表要轻）。 */
