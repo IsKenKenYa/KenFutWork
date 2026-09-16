@@ -36,9 +36,11 @@ const generateImageRequestSchema = z.object({
   /**
    * 会话标识（§4.8 自定义头占位符的渲染上下文）：画布助手发起时带上当前会话，
    * 使 `{{sessionId}}` 能取到值；确无会话的调用方可缺省（实例若配了占位符会 fail loud）。
+   * **口径与 run 路径一致**（`sessionIdSchema` = 非空字符串）——Code 模式的会话 id 是
+   * 客户端自造的，按 uuid 校验会把合法值挡在门外。
    */
-  sessionId: z.string().uuid().optional(),
-  threadId: z.string().optional(),
+  sessionId: z.string().min(1).optional(),
+  threadId: z.string().min(1).optional(),
 });
 
 const generateVideoRequestSchema = z.object({
@@ -50,9 +52,9 @@ const generateVideoRequestSchema = z.object({
   resolution: z.enum(["720p", "1080p", "4k"]).optional(),
   aspectRatio: z.enum(["16:9", "9:16"]).optional(),
   inputImages: z.array(z.string()).max(3).optional(),
-  /** 会话标识：随 job 行落库，worker 侧按同一口径渲染自定义头（§4.8）。 */
-  sessionId: z.string().uuid().optional(),
-  threadId: z.string().optional(),
+  /** 会话标识：随 job 行落库，worker 侧按同一口径渲染自定义头（§4.8）。口径同 run 路径。 */
+  sessionId: z.string().min(1).optional(),
+  threadId: z.string().min(1).optional(),
 });
 
 export async function registerGenerateRoutes(

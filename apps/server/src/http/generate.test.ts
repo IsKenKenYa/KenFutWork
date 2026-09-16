@@ -109,17 +109,24 @@ describe("直连生成：会话上下文落进 job 行（§4.8 占位符渲染�
     }
   });
 
-  it("sessionId 必须是 uuid：随便一个字符串在写入时就被拒（400）", async () => {
+  it("会话 id 口径同 run 路径：非空字符串即收，空串才拒（400）", async () => {
     const { app, createdJobs } = buildGenerateApp();
     try {
-      const response = await app.inject({
+      // Code 模式的会话 id 由客户端自造，不保证是 uuid——按 uuid 校验会挡掉合法值
+      const accepted = await app.inject({
         method: "POST",
         url: "/api/agent/generate-video",
-        payload: { prompt: "一只猫在跑", sessionId: "not-a-uuid" },
+        payload: { prompt: "一只猫在跑", sessionId: "client-made-session" },
       });
+      expect(accepted.statusCode).toBe(200);
+      expect(createdJobs[0]?.sessionId).toBe("client-made-session");
 
-      expect(response.statusCode).toBe(400);
-      expect(createdJobs).toHaveLength(0);
+      const rejected = await app.inject({
+        method: "POST",
+        url: "/api/agent/generate-video",
+        payload: { prompt: "一只猫在跑", sessionId: "" },
+      });
+      expect(rejected.statusCode).toBe(400);
     } finally {
       await app.close();
     }
