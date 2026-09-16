@@ -71,6 +71,32 @@ export async function* adaptDeepAgentStream(
   const activeSubAgentRuns = new Set<string>();
   /** 上一次下发 run.usage 时的 input token 数（同一提示词大小不重复发）。 */
   let lastUsageInputTokens = -1;
+  /**
+   * 本轮 run 的累计用量（跨模型调用求和），用于「平均缓存命中率」。
+   *
+   * 口径：命中率 = 累计命中缓存输入 ÷ 累计输入（**按 token 加权**），而不是各次百分比的
+   * 算术平均——一轮里短调用多时后者会虚高。每次模型调用的用量在 chunk 上会反复出现同一
+   * 份（调用内累计值），故只在「输入侧变化 = 新调用开始」时把上一轮调用结算进累计。
+   */
+  let completedCallsInput = 0;
+  let completedCallsCached = 0;
+  let sawCachedFromUpstream = false;
+  let lastCallInput: number | null = null;
+  let lastCallCached: number | undefined;
+
+  /** 当前累计（含正在进行的那次调用），供 run.usage 下发。 */
+  const runTotals = (currentInput: number, currentCached?: number) => {
+    const runInputTokens = completedCallsInput + currentInput;
+    const cachedKnown = sawCachedFromUpstream || currentCached !== undefined;
+    if (!cachedKnown) {
+      return { runInputTokens };
+    }
+    return {
+      runInputTokens,
+      runCachedInputTokens:
+        completedCallsCached + (currentCached ?? 0),
+    };
+  };
 
   yield {
     conversationId: options.conversationId,
@@ -143,6 +169,16 @@ export async function* adaptDeepAgentStream(
             // input_tokens 是每次模型调用的提示词大小（一轮里随工具结果增长），
             // output_tokens 则每个 chunk 都在涨——逐 chunk 下发会把 WS 灌满。
             if (inputTokens !== lastUsageInputTokens) {
+              // 输入侧变了 = 这是一次新的模型调用：把上一次调用结算进累计
+              if (lastCallInput !== null) {
+                completedCallsInput += lastCallInput;
+                if (lastCallCached !== undefined) {
+                  completedCallsCached += lastCallCached;
+                  sawCachedFromUpstream = true;
+                }
+              }
+              lastCallInput = inputTokens;
+              lastCallCached = cachedInputTokens;
               lastUsageInputTokens = inputTokens;
               yield {
                 type: "run.usage" as const,
@@ -152,6 +188,7 @@ export async function* adaptDeepAgentStream(
                 ...(cachedInputTokens === undefined
                   ? {}
                   : { cachedInputTokens }),
+                ...runTotals(inputTokens, cachedInputTokens),
                 timestamp: now(),
               };
             }

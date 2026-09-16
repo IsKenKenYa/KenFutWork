@@ -384,3 +384,93 @@ describe("stream-adapter 用量快照", () => {
     expect(usage).not.toHaveProperty("cachedInputTokens");
   });
 });
+
+/**
+ * 平均缓存命中率的口径：**跨模型调用累计**（按 token 加权）。
+ *
+ * 一轮里工具调用会让提示词逐次变大（input 100 → 900），各次命中率差异很大；
+ * 客户端要拿「累计命中 ÷ 累计输入」才能算出正确的平均命中率，故服务端把累计值
+ * 一并下发。这里用两次调用（100/90 与 900/0）锁住：runInputTokens=1000、
+ * runCachedInputTokens=90（加权 9%），而不是两份单次读数的算术平均。
+ */
+describe("stream-adapter 累计用量（平均缓存命中率的分母）", () => {
+  function usageChunk(inputTokens: number, cacheRead?: number) {
+    const chunk = new AIMessageChunk({ content: "" });
+    (chunk as { usage_metadata?: unknown }).usage_metadata = {
+      input_tokens: inputTokens,
+      output_tokens: 1,
+      total_tokens: inputTokens + 1,
+      ...(cacheRead === undefined
+        ? {}
+        : { input_token_details: { cache_read: cacheRead } }),
+    };
+    return chunk;
+  }
+
+  it("两次调用的累计值随最后一次 run.usage 下发", async () => {
+    const stream: AsyncIterable<unknown> = {
+      async *[Symbol.asyncIterator]() {
+        // 第一次调用：同一输入会随多个 chunk 反复出现，只应算一次
+        yield {
+          event: "on_chat_model_stream",
+          data: { chunk: usageChunk(100, 90) },
+        };
+        yield {
+          event: "on_chat_model_stream",
+          data: { chunk: usageChunk(100, 90) },
+        };
+        // 第二次调用：提示词变长（工具结果进了上下文），这次没命中缓存
+        yield {
+          event: "on_chat_model_stream",
+          data: { chunk: usageChunk(900, 0) },
+        };
+      },
+    };
+
+    const events: StreamEvent[] = [];
+    for await (const event of adaptDeepAgentStream({
+      conversationId: "conv-1",
+      runId: "run-1",
+      sessionId: "sess-1",
+      stream,
+    })) {
+      events.push(event);
+    }
+
+    const usageEvents = events.filter((event) => event.type === "run.usage");
+    expect(usageEvents).toHaveLength(2);
+    expect(usageEvents[0]).toMatchObject({
+      inputTokens: 100,
+      runInputTokens: 100,
+      runCachedInputTokens: 90,
+    });
+    expect(usageEvents[1]).toMatchObject({
+      inputTokens: 900,
+      runInputTokens: 1000,
+      runCachedInputTokens: 90,
+    });
+  });
+
+  it("上游一次都没报缓存：不下发累计缓存字段（不拿 0 冒充）", async () => {
+    const stream: AsyncIterable<unknown> = {
+      async *[Symbol.asyncIterator]() {
+        yield {
+          event: "on_chat_model_stream",
+          data: { chunk: usageChunk(500) },
+        };
+      },
+    };
+    const events: StreamEvent[] = [];
+    for await (const event of adaptDeepAgentStream({
+      conversationId: "conv-1",
+      runId: "run-1",
+      sessionId: "sess-1",
+      stream,
+    })) {
+      events.push(event);
+    }
+    const usage = events.find((event) => event.type === "run.usage");
+    expect(usage).toMatchObject({ runInputTokens: 500 });
+    expect(usage).not.toHaveProperty("runCachedInputTokens");
+  });
+});

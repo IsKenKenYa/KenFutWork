@@ -108,3 +108,60 @@ describe("窗口已知但本轮还没有用量（回归：文案不许把两件�
     expect(contextUsageView(null, 0).windowKnown).toBe(false);
   });
 });
+
+/**
+ * 平均缓存命中率的口径（用户点名要研究的那一项）。
+ *
+ * 口径：**累计命中缓存输入 ÷ 累计输入**（按 token 加权，跨本轮所有模型调用求和）。
+ * 最容易写错的是「各次百分比的算术平均」——短调用权重过大，会把命中率算虚高。
+ */
+describe("平均缓存命中率（run 累计口径）", () => {
+  it("有累计字段：按 token 加权，不用单次百分比", () => {
+    const view = contextUsageView(
+      {
+        inputTokens: 900,
+        outputTokens: 10,
+        // 本次调用命中 0，但本轮累计命中 900/1000 → 90%
+        cachedInputTokens: 0,
+        runInputTokens: 1000,
+        runCachedInputTokens: 900,
+      },
+      1_000_000,
+    );
+    expect(view.cacheHitLabel).toBe("90%");
+    expect(view.cacheHitScope).toBe("run");
+  });
+
+  it("加权 ≠ 算术平均（两次调用 90%/0%，各自输入 100/900 → 9% 而不是 45%）", () => {
+    // 第一次调用：input 100、cached 90；第二次：input 900、cached 0
+    const view = contextUsageView(
+      {
+        inputTokens: 900,
+        outputTokens: 0,
+        cachedInputTokens: 0,
+        runInputTokens: 1000,
+        runCachedInputTokens: 90,
+      },
+      1_000_000,
+    );
+    expect(view.cacheHitLabel).toBe("9%");
+  });
+
+  it("服务端没带累计字段：退回单次并标注口径（不冒充平均）", () => {
+    const view = contextUsageView(
+      { inputTokens: 200, outputTokens: 0, cachedInputTokens: 150 },
+      1_000_000,
+    );
+    expect(view.cacheHitLabel).toBe("75%");
+    expect(view.cacheHitScope).toBe("call");
+  });
+
+  it("一次都没上报缓存：不给命中率（0% 会被读成「缓存全失效」）", () => {
+    const view = contextUsageView(
+      { inputTokens: 200, outputTokens: 0, runInputTokens: 200 },
+      1_000_000,
+    );
+    expect(view.cacheHitLabel).toBeNull();
+    expect(view.cacheHitScope).toBeNull();
+  });
+});

@@ -12,8 +12,12 @@
 export interface RunUsageSnapshot {
   inputTokens: number;
   outputTokens: number;
-  /** 上游上报的命中缓存输入 token；上游不报时为 undefined。 */
+  /** 上游上报的**本次调用**命中缓存输入 token；上游不报时为 undefined。 */
   cachedInputTokens?: number | undefined;
+  /** 本轮 run 累计输入 token（跨模型调用求和）；老服务端不发的字段。 */
+  runInputTokens?: number | undefined;
+  /** 本轮 run 累计命中缓存输入 token；一次都没上报时为 undefined。 */
+  runCachedInputTokens?: number | undefined;
 }
 
 /**
@@ -30,10 +34,15 @@ export function usageFromEvent(
   if (typeof inputTokens !== "number") return null;
   const outputTokens = (payload as { outputTokens?: unknown }).outputTokens;
   const cached = (payload as { cachedInputTokens?: unknown }).cachedInputTokens;
+  const runInput = (payload as { runInputTokens?: unknown }).runInputTokens;
+  const runCached = (payload as { runCachedInputTokens?: unknown })
+    .runCachedInputTokens;
   return {
     inputTokens,
     outputTokens: typeof outputTokens === "number" ? outputTokens : 0,
     ...(typeof cached === "number" ? { cachedInputTokens: cached } : {}),
+    ...(typeof runInput === "number" ? { runInputTokens: runInput } : {}),
+    ...(typeof runCached === "number" ? { runCachedInputTokens: runCached } : {}),
   };
 }
 
@@ -56,8 +65,17 @@ export interface ContextUsageView {
   percent: number | null;
   /** 形如「61.4%」。 */
   percentLabel: string | null;
-  /** 形如「99.9%」；上游未上报缓存时为 null。 */
+  /**
+   * 平均缓存命中率（形如「99.9%」）。
+   *
+   * **口径**：累计命中缓存输入 ÷ 累计输入（按 token 加权，跨本轮所有模型调用求和）。
+   * 不是各次调用百分比的算术平均——那样短调用权重过大，会把命中率算虚高。
+   * 上游一次都没报缓存字段时为 null（显示「上游未上报」，不拿 0 冒充）。
+   * 服务端没带累计字段（老版本）时退回「本次调用」的单次命中率并标注。
+   */
   cacheHitLabel: string | null;
+  /** 「平均」还是「本次调用」（老服务端只有单次数据时如实标注）。 */
+  cacheHitScope: "run" | "call" | null;
   outputLabel: string | null;
 }
 
@@ -89,6 +107,7 @@ export function contextUsageView(
     percent: null,
     percentLabel: null,
     cacheHitLabel: null,
+    cacheHitScope: null,
     outputLabel: null,
   };
   if (!usage || usage.inputTokens <= 0) return empty;
@@ -98,6 +117,21 @@ export function contextUsageView(
       ? null
       : Math.min(100, Math.round((usage.inputTokens / window) * 1000) / 10);
   const cached = usage.cachedInputTokens;
+  const runInput = usage.runInputTokens;
+  const runCached = usage.runCachedInputTokens;
+
+  // 累计口径优先（平均命中率需要分母 = 整轮输入）；服务端没带就退回单次并标注口径
+  const useRunTotals =
+    typeof runInput === "number" &&
+    runInput > 0 &&
+    typeof runCached === "number" &&
+    runCached >= 0;
+  const singleKnown = typeof cached === "number" && cached >= 0;
+  const hitRate = useRunTotals
+    ? (runCached / runInput) * 100
+    : singleKnown
+      ? (cached / usage.inputTokens) * 100
+      : null;
 
   return {
     hasUsage: true,
@@ -108,9 +142,8 @@ export function contextUsageView(
     percentLabel: percent === null ? null : `${percent}%`,
     // 上游没报缓存字段 → 不显示命中率（0% 会被读成「缓存全失效」）
     cacheHitLabel:
-      typeof cached === "number" && cached >= 0
-        ? `${Math.round((cached / usage.inputTokens) * 1000) / 10}%`
-        : null,
+      hitRate === null ? null : `${Math.round(hitRate * 10) / 10}%`,
+    cacheHitScope: hitRate === null ? null : useRunTotals ? "run" : "call",
     outputLabel: formatTokens(usage.outputTokens),
   };
 }
