@@ -15,7 +15,9 @@ export function createGenerationPlugin(deps: {
 }): PluginDefinition {
   return {
     name: "generation",
-    inject: ["auth", "credits", "tierGuard", "uploads", "viewer"],
+    // `jobs` 是直连视频生成的必需依赖（建 job + 轮询终态）——真机踩过：
+    // 漏了它时路由恒走「jobService 未配置」分支，视频生成整条不可用。
+    inject: ["auth", "credits", "tierGuard", "uploads", "viewer", "jobs"],
     apply() {},
     mounted(ctx) {
       void registerModelRoutes(ctx.app, {
@@ -40,6 +42,7 @@ export function createGenerationPlugin(deps: {
         viewerService: ctx.get("viewer"),
         tierGuard: ctx.get("tierGuard"),
         modelProviders: ctx.get("modelProviders"),
+        jobService: ctx.get("jobs"),
       });
     },
   };

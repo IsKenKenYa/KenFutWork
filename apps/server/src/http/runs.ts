@@ -27,6 +27,7 @@ import type { CreditService } from "../features/credits/credit-service.js";
 import { parseInstanceSpecifier } from "../features/model-providers/model-catalog-service.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
+import { isZodError } from "./zod-error.js";
 
 export async function registerRunRoutes(
   app: FastifyInstance,
@@ -280,15 +281,4 @@ function handleZodError(error: unknown, reply: FastifyReply) {
   }
 
   throw error;
-}
-
-function isZodError(
-  error: unknown,
-): error is { issues: unknown[]; name: string } {
-  return (
-    error instanceof Error &&
-    error.name === "ZodError" &&
-    "issues" in error &&
-    Array.isArray(error.issues)
-  );
 }

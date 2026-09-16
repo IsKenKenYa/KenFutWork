@@ -641,7 +641,13 @@ export async function fetchVideoModels(): Promise<{
 export async function generateImageDirect(
   accessToken: string,
   prompt: string,
-  options?: { model?: string; aspectRatio?: string; quality?: string },
+  options?: {
+    model?: string;
+    aspectRatio?: string;
+    quality?: string;
+    /** 会话标识（§4.8）：实例自定义头里的 `{{sessionId}}` 按它渲染。 */
+    sessionId?: string;
+  },
 ): Promise<GenerateImageResponse> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/agent/generate-image`,
@@ -653,6 +659,7 @@ export async function generateImageDirect(
         ...(options?.model ? { model: options.model } : {}),
         ...(options?.aspectRatio ? { aspectRatio: options.aspectRatio } : {}),
         ...(options?.quality ? { quality: options.quality } : {}),
+        ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
       }),
     },
   );
@@ -679,6 +686,8 @@ export async function generateVideoDirect(
     resolution?: string;
     aspectRatio?: string;
     inputImages?: string[];
+    /** 会话标识（§4.8）：随任务落库，worker 侧按它渲染自定义头占位符。 */
+    sessionId?: string;
   },
 ): Promise<GenerateVideoResponse> {
   const response = await fetch(
@@ -695,6 +704,7 @@ export async function generateVideoDirect(
         ...(options?.inputImages?.length
           ? { inputImages: options.inputImages }
           : {}),
+        ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
       }),
     },
   );

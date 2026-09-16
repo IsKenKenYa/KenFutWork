@@ -52,6 +52,11 @@ registerExecutor(
     const instanceProvider = await resolveInstanceImageProviderFromPayload(
       payload.provider_instance_id,
       ctx,
+      // 自定义头（§4.8）的会话占位符按本条 job 的会话取值
+      {
+        ...(jobRow.session_id ? { sessionId: jobRow.session_id } : {}),
+        ...(jobRow.thread_id ? { threadId: jobRow.thread_id } : {}),
+      },
     );
     const providerName = instanceProvider
       ? instanceProvider.name

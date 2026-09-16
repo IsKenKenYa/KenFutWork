@@ -15,6 +15,7 @@ import {
   type BrandKitService,
   BrandKitServiceError,
 } from "../features/brand-kit/brand-kit-service.js";
+import { isZodError } from "./zod-error.js";
 
 const ALLOWED_UPLOAD_MIME_TYPES = new Set([
   "image/png",
@@ -360,16 +361,5 @@ function sendBrandKitError(
         message: "An unexpected error occurred.",
       },
     }),
-  );
-}
-
-function isZodError(
-  error: unknown,
-): error is { issues: unknown[]; name: string } {
-  return (
-    error instanceof Error &&
-    error.name === "ZodError" &&
-    "issues" in error &&
-    Array.isArray(error.issues)
   );
 }

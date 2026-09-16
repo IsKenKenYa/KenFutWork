@@ -124,6 +124,12 @@ export const codeGitBranchCreateRequestSchema = z.object({
 
 export const applicationErrorCodeSchema = z.enum([
   "application_error",
+  /**
+   * 依赖的服务/能力未装配或不可用（HTTP 503）。
+   * 真机踩过：直连视频生成路由的 `jobService` 从未装配，而该分支写的错误码不在本枚举里
+   * ——`parse` 抛错后响应体变成 ZodError 转储，前端只看到一段乱码 JSON。
+   */
+  "service_unavailable",
   // 自管认证（M1.4）：与 auth-contracts.ts 的 authErrorResponseSchema 同一组码
   "auth_unavailable",
   "email_taken",

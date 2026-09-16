@@ -7,7 +7,10 @@ import type { InstanceImageAdapterOptions } from "../types.js";
 export function createInstanceImageProvider(
   options: InstanceImageAdapterOptions,
 ): ImageProvider {
-  const delegate = new GoogleImageProvider(options.credentials.apiKey);
+  const delegate = new GoogleImageProvider(
+    options.credentials.apiKey,
+    options.credentials.headers,
+  );
   return {
     name: "google-image",
     models: options.models.map((m) => ({

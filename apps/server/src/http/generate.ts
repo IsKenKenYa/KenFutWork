@@ -24,6 +24,7 @@ import type { UploadService } from "../features/uploads/upload-service.js";
 import { generateImage } from "../generation/image-generation.js";
 import { resolveImageProviderName } from "../generation/providers/registry.js";
 import type { GeneratedImage } from "../generation/types.js";
+import { instanceHeadersOption } from "../providers/instance-headers.js";
 import { resolveInstanceImageProvider } from "../providers/resolve.js";
 
 const generateImageRequestSchema = z.object({
@@ -33,6 +34,14 @@ const generateImageRequestSchema = z.object({
   providerInstanceId: z.string().uuid().optional(),
   aspectRatio: z.enum(["1:1", "16:9", "9:16", "4:3", "3:4"]).optional(),
   quality: z.enum(["standard", "hd", "ultra"]).optional(),
+  /**
+   * 会话标识（§4.8 自定义头占位符的渲染上下文）：画布助手发起时带上当前会话，
+   * 使 `{{sessionId}}` 能取到值；确无会话的调用方可缺省（实例若配了占位符会 fail loud）。
+   * **口径与 run 路径一致**（`sessionIdSchema` = 非空字符串）——Code 模式的会话 id 是
+   * 客户端自造的，按 uuid 校验会把合法值挡在门外。
+   */
+  sessionId: z.string().min(1).optional(),
+  threadId: z.string().min(1).optional(),
 });
 
 const generateVideoRequestSchema = z.object({
@@ -44,6 +53,9 @@ const generateVideoRequestSchema = z.object({
   resolution: z.enum(["720p", "1080p", "4k"]).optional(),
   aspectRatio: z.enum(["16:9", "9:16"]).optional(),
   inputImages: z.array(z.string()).max(3).optional(),
+  /** 会话标识：随 job 行落库，worker 侧按同一口径渲染自定义头（§4.8）。口径同 run 路径。 */
+  sessionId: z.string().min(1).optional(),
+  threadId: z.string().min(1).optional(),
 });
 
 export async function registerGenerateRoutes(
@@ -129,6 +141,12 @@ export async function registerGenerateRoutes(
           credentials: {
             apiKey: credentials.apiKey,
             ...(credentials.baseUrl ? { baseUrl: credentials.baseUrl } : {}),
+            // 自定义头（§4.8）占位符按请求携带的会话渲染；确无会话时由渲染层 fail loud
+            // 给出可读原因，而不是发出字面量 `{{sessionId}}`。
+            ...instanceHeadersOption(credentials.headers, {
+              sessionId: payload.sessionId,
+              threadId: payload.threadId,
+            }),
           },
           models: credentials.models
             .filter((m) => m.capability === "image")
@@ -282,6 +300,8 @@ export async function registerGenerateRoutes(
       // ── Create job ──
       const job = await options.jobService.createJob(user, {
         jobType: "video_generation",
+        ...(payload.sessionId ? { sessionId: payload.sessionId } : {}),
+        ...(payload.threadId ? { threadId: payload.threadId } : {}),
         payload: {
           prompt: payload.prompt,
           model,

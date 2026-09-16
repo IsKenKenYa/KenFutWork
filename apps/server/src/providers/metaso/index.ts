@@ -10,6 +10,7 @@ export function createInstanceVideoProvider(
   const delegate = new MetasoVideoProvider(
     options.credentials.apiKey,
     options.credentials.baseUrl,
+    options.credentials.headers ? { headers: options.credentials.headers } : {},
   );
   return {
     name: "metaso",

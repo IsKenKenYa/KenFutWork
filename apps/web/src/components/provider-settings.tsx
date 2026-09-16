@@ -2,45 +2,26 @@
 
 import type { ProviderInstanceResponse } from "@kenfutwork/shared";
 import { useCallback, useEffect, useState } from "react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { ProviderInstanceForm } from "@/components/provider-instance-form";
 import {
   createProviderInstance,
   deleteProviderInstance,
   fetchProviderInstances,
+  updateProviderInstance,
 } from "@/lib/server-api";
-
-const PROTOCOLS = [
-  { value: "openai-compatible", label: "OpenAI 兼容" },
-  { value: "anthropic", label: "Anthropic" },
-  { value: "gemini", label: "Gemini" },
-  { value: "google-image", label: "Google 图像" },
-  { value: "replicate", label: "Replicate" },
-  { value: "volces", label: "火山引擎" },
-  { value: "metaso", label: "Metaso 视频" },
-] as const;
 
 /**
  * 供应商设置（P5 BYOK）：用户供应商实例 CRUD。
- * 凭证红线：apiKey 只写不读——列表只有 hasCredential 标记，编辑不回显。
+ * 凭证红线：apiKey 与自定义头值都只写不读——列表只有 hasCredential 与 headerKeys（键名）。
  */
 export function ProviderSettings({ accessToken }: { accessToken: string }) {
   const [instances, setInstances] = useState<ProviderInstanceResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
-  const [name, setName] = useState("");
-  const [protocol, setProtocol] = useState<string>("openai-compatible");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [modelsJson, setModelsJson] = useState(
-    '[{"id":"gpt-4.1","name":"GPT-4.1","capability":"chat"}]',
-  );
+  /** `null` = 表单关闭；`"create"` = 新建；实例对象 = 编辑该实例。 */
+  const [formTarget, setFormTarget] = useState<
+    "create" | ProviderInstanceResponse | null
+  >(null);
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
@@ -60,40 +41,19 @@ export function ProviderSettings({ accessToken }: { accessToken: string }) {
     void load();
   }, [load]);
 
-  const handleCreate = async () => {
+  /** 表单动作统一收口：报错、关表单、刷新列表。 */
+  const runSubmission = async (
+    action: () => Promise<unknown>,
+    fallbackMessage: string,
+  ) => {
     setError(null);
-    let models: unknown;
-    try {
-      models = JSON.parse(modelsJson);
-    } catch {
-      setError("模型清单必须是合法 JSON");
-      return;
-    }
-    if (!name.trim()) {
-      setError("请填写实例名称");
-      return;
-    }
-    if (!apiKey.trim()) {
-      setError("请填写 API Key（只写不读，保存后不可查看）");
-      return;
-    }
     setSubmitting(true);
     try {
-      await createProviderInstance(accessToken, {
-        name: name.trim(),
-        protocol: protocol as (typeof PROTOCOLS)[number]["value"],
-        ...(baseUrl.trim() ? { baseUrl: baseUrl.trim() } : {}),
-        apiKey: apiKey.trim(),
-        models: models as never,
-        enabled: true,
-      });
-      setShowForm(false);
-      setName("");
-      setApiKey("");
-      setBaseUrl("");
+      await action();
+      setFormTarget(null);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "创建实例失败");
+      setError(err instanceof Error ? err.message : fallbackMessage);
     } finally {
       setSubmitting(false);
     }
@@ -120,10 +80,12 @@ export function ProviderSettings({ accessToken }: { accessToken: string }) {
         </div>
         <button
           type="button"
-          onClick={() => setShowForm((v) => !v)}
+          onClick={() =>
+            setFormTarget((current) => (current === null ? "create" : null))
+          }
           className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground"
         >
-          {showForm ? "取消" : "添加供应商"}
+          {formTarget === null ? "添加供应商" : "取消"}
         </button>
       </div>
 
@@ -133,92 +95,26 @@ export function ProviderSettings({ accessToken }: { accessToken: string }) {
         </p>
       ) : null}
 
-      {showForm ? (
-        <form
-          aria-label="新建供应商实例"
-          className="mb-4 space-y-3 rounded-md border p-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void handleCreate();
-          }}
-        >
-          <div>
-            <label htmlFor="provider-name" className="text-sm">
-              实例名称
-            </label>
-            <input
-              id="provider-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label htmlFor="provider-protocol" className="text-sm">
-              协议
-            </label>
-            <Select
-              value={protocol}
-              onValueChange={(next) => {
-                if (typeof next === "string") setProtocol(next);
-              }}
-              items={PROTOCOLS.map((p) => ({ value: p.value, label: p.label }))}
-            >
-              <SelectTrigger id="provider-protocol" className="mt-1 w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PROTOCOLS.map((p) => (
-                  <SelectItem key={p.value} value={p.value}>
-                    {p.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <label htmlFor="provider-base-url" className="text-sm">
-              Base URL（可选）
-            </label>
-            <input
-              id="provider-base-url"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label htmlFor="provider-api-key" className="text-sm">
-              API Key
-            </label>
-            <input
-              id="provider-api-key"
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label htmlFor="provider-models" className="text-sm">
-              模型清单（JSON）
-            </label>
-            <textarea
-              id="provider-models"
-              value={modelsJson}
-              onChange={(e) => setModelsJson(e.target.value)}
-              rows={3}
-              className="mt-1 w-full rounded-md border px-3 py-2 font-mono text-xs"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={submitting}
-            className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-50"
-          >
-            {submitting ? "保存中…" : "保存实例"}
-          </button>
-        </form>
+      {formTarget !== null ? (
+        <ProviderInstanceForm
+          key={formTarget === "create" ? "create" : formTarget.id}
+          editing={formTarget === "create" ? undefined : formTarget}
+          submitting={submitting}
+          onCancel={() => setFormTarget(null)}
+          onError={setError}
+          onSubmitCreate={(input) =>
+            runSubmission(
+              () => createProviderInstance(accessToken, input),
+              "创建实例失败",
+            )
+          }
+          onSubmitUpdate={(instanceId, patch) =>
+            runSubmission(
+              () => updateProviderInstance(accessToken, instanceId, patch),
+              "更新实例失败",
+            )
+          }
+        />
       ) : null}
 
       {loading ? (
@@ -238,14 +134,31 @@ export function ProviderSettings({ accessToken }: { accessToken: string }) {
                   {instance.protocol} · {instance.models.length} 个模型 ·{" "}
                   {instance.enabled ? "已启用" : "已停用"}
                 </p>
+                {instance.headerKeys.length > 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    自定义请求头：{instance.headerKeys.join("、")}（值不回显）
+                  </p>
+                ) : null}
               </div>
-              <button
-                type="button"
-                onClick={() => void handleDelete(instance.id)}
-                className="rounded-md border px-3 py-1 text-sm text-destructive"
-              >
-                删除
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError(null);
+                    setFormTarget(instance);
+                  }}
+                  className="rounded-md border px-3 py-1 text-sm"
+                >
+                  编辑
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleDelete(instance.id)}
+                  className="rounded-md border px-3 py-1 text-sm text-destructive"
+                >
+                  删除
+                </button>
+              </div>
             </li>
           ))}
         </ul>

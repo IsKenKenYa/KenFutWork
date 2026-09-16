@@ -64,6 +64,10 @@ function CanvasPageContent() {
    * 一个右侧面板，三者是它的三个标签。
    */
   const [panelTab, setPanelTab] = useState<SidePanelTab>("chat");
+  /** 当前画布会话：由聊天侧栏回调更新（URL 只作初始值），供生成类工具渲染自定义头占位符。 */
+  const [activeSessionId, setActiveSessionId] = useState<string | undefined>(
+    initialSessionId,
+  );
   const [brandKitId, setBrandKitId] = useState<string | null>(null);
   /** 品牌套件管理浮窗（90%×85%）——此前是导航到 /brand-kit，会把整页换掉。 */
   const [brandKitOpen, setBrandKitOpen] = useState(false);
@@ -159,6 +163,9 @@ function CanvasPageContent() {
   const handleSessionChange = useCallback(
     (sessionId: string) => {
       if (!canvasId) return;
+      // 会话 id 同时留在状态里：生成类工具（图片/视频）要用它渲染实例自定义头的
+      // {{sessionId}} 占位符（§4.8）——只改 URL 的话面板取不到（此前正是如此）。
+      setActiveSessionId(sessionId);
       // Update URL: set session param, remove prompt param to prevent re-send on refresh
       routerRef.current.replace(`/canvas?id=${canvasId}&session=${sessionId}`);
     },
@@ -328,8 +335,10 @@ function CanvasPageContent() {
           <CanvasToolMenu
             accessToken={accessToken}
             excalidrawApi={excalidrawApi}
+            sessionId={activeSessionId}
           />
-        )}      </div>
+        )}
+      </div>
       <ChatSidebar
         accessToken={accessToken}
         canvasId={canvasData.id}

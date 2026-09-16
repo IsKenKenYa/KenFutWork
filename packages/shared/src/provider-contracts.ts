@@ -29,6 +29,105 @@ export const providerCompatSchema = z.object({
 });
 export type ProviderCompat = z.infer<typeof providerCompatSchema>;
 
+/**
+ * 自定义请求头（§4.8）：值可写占位符，按**发送时刻**的会话上下文替换。
+ * 亲和类头（如 `x-opencode-session`）必须逐会话取值——写死一个固定值会把所有会话
+ * 钉到同一上游分片、提示词缓存亲和失效；每次请求现随机生成同样无意义。
+ */
+export const providerHeaderPlaceholders = ["sessionId", "threadId"] as const;
+export type ProviderHeaderPlaceholder =
+  (typeof providerHeaderPlaceholders)[number];
+
+/**
+ * 保留头（大小写不敏感）：由适配器/运行时按凭证与线协议持有，自定义头**不得覆盖**。
+ * 不加这条，就能用自定义头顶掉凭证头，等于绕开「apiKey 只写不读」的整个模型。
+ */
+export const reservedProviderHeaderNames = [
+  // 凭证类：由 apiKey 解析生成，或线协议的 key 头
+  "authorization",
+  "proxy-authorization",
+  "x-api-key",
+  "api-key",
+  "x-goog-api-key",
+  // 寻址与帧界类：由运行时/HTTP 客户端持有
+  "host",
+  "content-length",
+  "content-type",
+  "connection",
+  "transfer-encoding",
+  "upgrade",
+  "expect",
+  "te",
+  "trailer",
+  "keep-alive",
+  "cookie",
+  "set-cookie",
+] as const;
+
+export const providerHeadersMaxEntries = 32;
+export const providerHeaderValueMaxLength = 1024;
+
+const RESERVED_HEADER_SET = new Set<string>(reservedProviderHeaderNames);
+
+/** RFC 7230 token：头名字符集。 */
+const HTTP_TOKEN_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+/** 可打印 ASCII（含空格），**不含** CR/LF 与控制字符——否则可注入额外头（请求走私）。 */
+const PRINTABLE_ASCII_PATTERN = /^[\x20-\x7e]*$/;
+const PLACEHOLDER_PATTERN = /\{\{([^{}]*)\}\}/g;
+
+export function isReservedProviderHeaderName(name: string): boolean {
+  return RESERVED_HEADER_SET.has(name.trim().toLowerCase());
+}
+
+/** 白名单外的占位符名（空数组 = 全部合法）。写入时即拒，不允许运行时才炸。 */
+export function findUnknownProviderHeaderPlaceholders(value: string): string[] {
+  const unknown: string[] = [];
+  for (const match of value.matchAll(PLACEHOLDER_PATTERN)) {
+    const name = match[1] ?? "";
+    if (!(providerHeaderPlaceholders as readonly string[]).includes(name)) {
+      unknown.push(name);
+    }
+  }
+  return unknown;
+}
+
+export const providerHeaderNameSchema = z
+  .string()
+  .regex(HTTP_TOKEN_PATTERN, "头名必须是合法 HTTP token（RFC 7230）")
+  .refine(
+    (name) => !isReservedProviderHeaderName(name),
+    "该请求头由适配器持有（凭证/帧界类），不可自定义覆盖",
+  );
+
+export const providerHeaderValueSchema = z
+  .string()
+  .max(providerHeaderValueMaxLength, "头值过长")
+  .regex(
+    PRINTABLE_ASCII_PATTERN,
+    "头值只能含可打印 ASCII 字符，且不得包含换行或控制字符",
+  )
+  .refine(
+    (value) => findUnknownProviderHeaderPlaceholders(value).length === 0,
+    "只支持占位符 {{sessionId}} / {{threadId}}（白名单外不做模板求值）",
+  );
+
+/** 实例级自定义请求头：头名合法且非保留、头值可打印且只含白名单占位符。 */
+export const providerInstanceHeadersSchema = z
+  .record(providerHeaderNameSchema, providerHeaderValueSchema)
+  .refine(
+    (headers) => Object.keys(headers).length <= providerHeadersMaxEntries,
+    `自定义请求头最多 ${providerHeadersMaxEntries} 条`,
+  )
+  .refine(
+    (headers) =>
+      new Set(Object.keys(headers).map((key) => key.toLowerCase())).size ===
+      Object.keys(headers).length,
+    "头名不得大小写重复（HTTP 头名不区分大小写）",
+  );
+export type ProviderInstanceHeaders = z.infer<
+  typeof providerInstanceHeadersSchema
+>;
+
 export const providerInstanceModelSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -52,6 +151,8 @@ export const providerInstanceConfigSchema = z.object({
   apiKeyRef: identifier,
   models: z.array(providerInstanceModelSchema).min(1),
   compat: providerCompatSchema.optional(),
+  /** 自定义请求头（值含占位符，只写不读）。 */
+  headers: providerInstanceHeadersSchema.optional(),
   enabled: z.boolean(),
 });
 export type ProviderInstanceConfig = z.infer<
@@ -68,6 +169,11 @@ export const providerInstanceCreateRequestSchema = z.object({
   apiKey: z.string().min(1),
   models: z.array(providerInstanceModelSchema).min(1),
   compat: providerCompatSchema.optional(),
+  /**
+   * 自定义请求头：值只写不读（响应只回 `headerKeys`）。
+   * 显式传 `{}` 即清空；缺省表示不设置/不修改。
+   */
+  headers: providerInstanceHeadersSchema.optional(),
   enabled: z.boolean().optional(),
 });
 export type ProviderInstanceCreateRequest = z.infer<
@@ -81,6 +187,8 @@ export const providerInstanceUpdateRequestSchema = z.object({
   apiKey: z.string().min(1).optional(),
   models: z.array(providerInstanceModelSchema).min(1).optional(),
   compat: providerCompatSchema.optional(),
+  /** 只写不读：更新即整体覆盖（`{}` = 清空）。 */
+  headers: providerInstanceHeadersSchema.optional(),
   enabled: z.boolean().optional(),
 });
 export type ProviderInstanceUpdateRequest = z.infer<
@@ -91,7 +199,10 @@ export type ProviderInstanceUpdateRequest = z.infer<
 export const providerScopeSchema = z.enum(["workspace", "system"]);
 export type ProviderScope = z.infer<typeof providerScopeSchema>;
 
-/** 实例响应：只有 apiKeyRef 语义的 hasCredential 标记，绝无 key 本体。 */
+/**
+ * 实例响应：只有 apiKeyRef 语义的 hasCredential 标记，绝无 key 本体。
+ * `headerKeys` 同理——自定义头的**键名**可见，值一律不回显（与 MCP `env`/`envKeys` 同口径）。
+ */
 export const providerInstanceResponseSchema = z.object({
   id: identifier,
   scope: providerScopeSchema,
@@ -101,6 +212,7 @@ export const providerInstanceResponseSchema = z.object({
   hasCredential: z.boolean(),
   models: z.array(providerInstanceModelSchema),
   compat: providerCompatSchema.optional(),
+  headerKeys: z.array(z.string()),
   enabled: z.boolean(),
 });
 export type ProviderInstanceResponse = z.infer<

@@ -382,9 +382,11 @@ export class ReplicateVideoProvider implements VideoProvider {
   readonly name = "replicate";
   readonly models = REPLICATE_VIDEO_MODELS;
   private apiToken: string;
+  private headers: Record<string, string> | undefined;
 
-  constructor(apiToken: string) {
+  constructor(apiToken: string, headers?: Record<string, string>) {
     this.apiToken = apiToken;
+    this.headers = headers;
   }
 
   async generate(params: VideoGenerateParams): Promise<GeneratedVideo> {
@@ -411,6 +413,8 @@ export class ReplicateVideoProvider implements VideoProvider {
       {
         method: "POST",
         headers: {
+          // 自定义头（§4.8）在前，凭证与内容类型随后——保留头永远由适配器说了算
+          ...this.headers,
           Authorization: `Bearer ${this.apiToken}`,
           "Content-Type": "application/json",
           Prefer: "wait=300",
@@ -471,7 +475,11 @@ export class ReplicateVideoProvider implements VideoProvider {
       await new Promise((r) => setTimeout(r, interval));
 
       const res = await fetch(predictionUrl, {
-        headers: { Authorization: `Bearer ${this.apiToken}` },
+        // 自定义头（§4.8）随每次轮询一并带上，凭证头在后
+        headers: {
+          ...this.headers,
+          Authorization: `Bearer ${this.apiToken}`,
+        },
         signal: AbortSignal.timeout(15_000), // 15s per poll request
       });
       if (!res.ok) continue;

@@ -11,7 +11,10 @@ import type {
 export function createInstanceImageProvider(
   options: InstanceImageAdapterOptions,
 ): ImageProvider {
-  const delegate = new ReplicateImageProvider(options.credentials.apiKey);
+  const delegate = new ReplicateImageProvider(
+    options.credentials.apiKey,
+    options.credentials.headers,
+  );
   return {
     name: "replicate",
     models: options.models.map((m) => ({
@@ -26,7 +29,10 @@ export function createInstanceImageProvider(
 export function createInstanceVideoProvider(
   options: InstanceVideoAdapterOptions,
 ): VideoProvider {
-  const delegate = new ReplicateVideoProvider(options.credentials.apiKey);
+  const delegate = new ReplicateVideoProvider(
+    options.credentials.apiKey,
+    options.credentials.headers,
+  );
   return {
     name: "replicate",
     models: options.models.map((m) => ({

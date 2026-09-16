@@ -13,6 +13,7 @@ import {
   type ProjectService,
   ProjectServiceError,
 } from "../features/projects/project-service.js";
+import { isZodError } from "./zod-error.js";
 
 export async function registerProjectRoutes(
   app: FastifyInstance,
@@ -241,16 +242,5 @@ function sendProjectError(
               : "Unable to create project.",
       },
     }),
-  );
-}
-
-function isZodError(
-  error: unknown,
-): error is { issues: unknown[]; name: string } {
-  return (
-    error instanceof Error &&
-    error.name === "ZodError" &&
-    "issues" in error &&
-    Array.isArray(error.issues)
   );
 }

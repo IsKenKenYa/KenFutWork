@@ -16,6 +16,7 @@ export type ProviderInstanceRecord = {
     contextWindow?: number;
   }> | null;
   compat: Record<string, unknown> | null;
+  headers: Record<string, string> | null;
   enabled: boolean;
 };
 
@@ -26,12 +27,14 @@ export type ProviderInstancePatch = {
   encrypted_api_key?: string | undefined;
   models?: unknown;
   compat?: unknown;
+  headers?: unknown;
   enabled?: boolean | undefined;
 };
 
 export type NewWorkspaceInstance = {
   baseUrl?: string | undefined;
   compat?: Record<string, unknown> | undefined;
+  headers?: Record<string, string> | undefined;
   createdBy: string;
   encryptedApiKey: string;
   enabled: boolean;
@@ -44,6 +47,7 @@ export type NewWorkspaceInstance = {
 export type NewSystemInstance = {
   baseUrl?: string | undefined;
   compat?: Record<string, unknown> | undefined;
+  headers?: Record<string, string> | undefined;
   createdBy: string;
   encryptedApiKey: string;
   enabled: boolean;
@@ -96,7 +100,7 @@ export interface ModelProviderRepository {
 }
 
 const INSTANCE_COLUMNS =
-  "id, scope, workspace_id, name, protocol, base_url, encrypted_api_key, models, compat, enabled";
+  "id, scope, workspace_id, name, protocol, base_url, encrypted_api_key, models, compat, headers, enabled";
 
 /** 把补丁翻成 SET 片段；`$1` 固定留作目标 id，故列从 `$2` 起编号。 */
 function buildPatch(
@@ -121,6 +125,9 @@ function buildPatch(
   }
   if (patch.compat !== undefined) {
     push("compat", JSON.stringify(patch.compat), "::jsonb");
+  }
+  if (patch.headers !== undefined) {
+    push("headers", JSON.stringify(patch.headers), "::jsonb");
   }
   if (patch.enabled !== undefined) push("enabled", patch.enabled);
 
@@ -162,8 +169,8 @@ export function createModelProviderRepository(
         .queryOne<ProviderInstanceRecord>(
           `insert into public.provider_instances
                   (workspace_id, scope, name, protocol, base_url,
-                   encrypted_api_key, models, compat, enabled, created_by)
-           values (:workspace, 'workspace', $1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8)
+                   encrypted_api_key, models, compat, headers, enabled, created_by)
+           values (:workspace, 'workspace', $1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9)
            returning ${INSTANCE_COLUMNS}`,
           [
             input.name,
@@ -172,6 +179,7 @@ export function createModelProviderRepository(
             input.encryptedApiKey,
             JSON.stringify(input.models),
             input.compat === undefined ? null : JSON.stringify(input.compat),
+            input.headers === undefined ? null : JSON.stringify(input.headers),
             input.enabled,
             input.createdBy,
           ],
@@ -229,8 +237,8 @@ export function createModelProviderRepository(
       return persistence.queryOne<ProviderInstanceRecord>(
         `insert into public.provider_instances
                 (workspace_id, scope, name, protocol, base_url,
-                 encrypted_api_key, models, compat, enabled, created_by)
-         values (null, 'system', $1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8)
+                 encrypted_api_key, models, compat, headers, enabled, created_by)
+         values (null, 'system', $1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9)
          returning ${INSTANCE_COLUMNS}`,
         [
           input.name,
@@ -239,6 +247,7 @@ export function createModelProviderRepository(
           input.encryptedApiKey,
           JSON.stringify(input.models),
           input.compat === undefined ? null : JSON.stringify(input.compat),
+          input.headers === undefined ? null : JSON.stringify(input.headers),
           input.enabled,
           input.createdBy,
         ],

@@ -2,6 +2,11 @@
 export interface InstanceCredentials {
   apiKey: string;
   baseUrl?: string | undefined;
+  /**
+   * 实例自定义请求头（§4.8）——**已按会话上下文渲染**（`renderInstanceHeaders`），
+   * 不含占位符；保留头（authorization/content-type/host 等）不在其中。
+   */
+  headers?: Record<string, string> | undefined;
 }
 
 export interface InstanceImageAdapterOptions {
