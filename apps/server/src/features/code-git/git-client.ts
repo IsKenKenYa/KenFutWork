@@ -96,6 +96,69 @@ export interface GitClient {
   createBranch(cwd: string, name: string): Promise<void>;
   /** 把普通目录初始化成仓库（`git init`；已是仓库时无副作用）。 */
   init(cwd: string): Promise<void>;
+  /** git 图谱（R2-1 条目 6）：最近 N 条提交的图形行。 */
+  graph(cwd: string, limit: number): Promise<GitGraph>;
+}
+
+/** git 图谱（R2-1 参考图的「Git 图谱」）。 */
+export interface GitGraph {
+  /** 图形行（保留 `*`/`|`/`\` 等字符，交给界面用等宽字体原样渲染）。 */
+  lines: string[];
+  /** 顶到条数上限（更早的历史没画进来）。 */
+  truncated: boolean;
+}
+
+/**
+ * 由 `log --graph --oneline --decorate --all -n <limit+1>` 的输出拼图谱（纯函数）。
+ *
+ * 判定「一条提交」的口径：把行首的图形字符（`* | \ / 空格`）剥掉后，紧跟的是
+ * 7–40 位 hex（oneline 的短 sha）。这样只数提交行，不数图形连接线。
+ * 多取一条（limit+1）是为了知道「是否还有更早的历史」，多的那条从结果里去掉。
+ *
+ * 非零退出（仓库没有任何提交、或目录不是仓库）按「空图谱」返回——空仓库不是错误，
+ * 界面显示「还没有提交」比抛错更贴事实。
+ */
+export function toGraph(input: {
+  result: GitCommandResult;
+  limit: number;
+}): GitGraph {
+  if (input.result.code !== 0) {
+    return { lines: [], truncated: false };
+  }
+
+  const lines = input.result.stdout
+    .split("\n")
+    .map((line) => line.replace(/\s+$/, ""))
+    .filter((line) => line.length > 0);
+
+  const commitCount = lines.filter((line) =>
+    /^[0-9a-f]{7,40}\b/.test(line.replace(/^[|\\/\s*]+/, "")),
+  ).length;
+
+  const truncated = commitCount > input.limit;
+  return {
+    lines: truncated ? dropOldestCommitLine(lines) : lines,
+    truncated,
+  };
+}
+
+/**
+ * 去掉最早的那条提交及其图形行（`-n limit+1` 多取的那条）。
+ *
+ * 图形行是「自下而上」画的历史，所以从**末尾**往回删到第一条提交行（含）为止——
+ * 只删图形线会留下悬空的连接字符。
+ */
+function dropOldestCommitLine(lines: string[]): string[] {
+  const kept = [...lines];
+  while (kept.length > 0) {
+    const last = kept[kept.length - 1] ?? "";
+    const isCommit = /^[0-9a-f]{7,40}\b/.test(
+      last.replace(/^[|\\/\s*]+/, ""),
+    );
+    kept.pop();
+    if (isCommit) break;
+  }
+  return kept;
 }
 
 /** 更改统计（R2-1 参考图「更改 +1230 -10 · 21 个文件」）。 */
@@ -232,5 +295,36 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
     }
   };
 
-  return { checkout, describe, diffStat, commitAll, push, createBranch, init };
+  /**
+   * git 图谱：多取一条用于判断「还有更早的历史吗」（见 `toGraph`）。
+   * `--no-color` 必须给——用户配置 `color.ui=always` 时图形行会夹带 ANSI 转义，
+   * 渲染出来是一堆乱码方块。
+   */
+  const graph = async (cwd: string, limit: number): Promise<GitGraph> => {
+    const result = await exec(
+      [
+        "log",
+        "--graph",
+        "--oneline",
+        "--decorate",
+        "--all",
+        "--no-color",
+        "-n",
+        String(limit + 1),
+      ],
+      cwd,
+    );
+    return toGraph({ result, limit });
+  };
+
+  return {
+    checkout,
+    describe,
+    diffStat,
+    commitAll,
+    push,
+    createBranch,
+    init,
+    graph,
+  };
 }

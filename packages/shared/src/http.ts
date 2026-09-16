@@ -122,6 +122,21 @@ export const codeGitBranchCreateRequestSchema = z.object({
   name: z.string().trim().min(1).max(200),
 });
 
+/**
+ * git 图谱（R2-1 条目 6）：`git log --graph --oneline --decorate --all` 的图形行。
+ *
+ * 服务端**不解析**图形（`*` / `|` / `\` 这些字符本身就是画法），原样给前端用等宽字体渲染；
+ * 只额外给两个判断：`isRepo`（非仓库时前端显示初始化引导）与 `truncated`（历史比条数上限更长）。
+ */
+export const codeGitGraphResponseSchema = z.object({
+  graph: z.object({
+    isRepo: z.boolean(),
+    /** 图形行；无提交时为空数组（不是错误）。 */
+    lines: z.array(z.string()),
+    truncated: z.boolean(),
+  }),
+});
+
 export const applicationErrorCodeSchema = z.enum([
   "application_error",
   /**

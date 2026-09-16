@@ -6,6 +6,7 @@ import {
   isSafeBranchName,
   parseBranchList,
   toDiffStat,
+  toGraph,
   toRepoView,
 } from "./git-client.js";
 
@@ -275,5 +276,66 @@ describe("git 写操作（R2-1：提交/推送/建分支）", () => {
       /非法分支名/,
     );
     expect(exec).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Git 图谱（R2-1 条目 6）。
+ *
+ * `log --graph` 的输出里，提交行与连接线（`|` / `\` / `/`）混在一起，故「数了几条提交」
+ * 必须按「剥掉图形字符后紧跟短 sha」判，否则截断判定会把连接线也算进去。
+ */
+describe("git 图谱（纯解析）", () => {
+  it("保留图形行，并按提交行判定是否截断", () => {
+    const stdout = [
+      "* abc1234 第三轮",
+      "* def5678 第二轮",
+      "* 0123456 第一轮",
+    ].join("\n");
+    expect(toGraph({ result: ok(stdout), limit: 3 })).toEqual({
+      lines: stdout.split("\n"),
+      truncated: false,
+    });
+  });
+
+  it("超过上限：只丢掉多取的那条提交（图形输出里是最后一行），标 truncated", () => {
+    // 图形行不是线性的：`|\` + `| * …` 是同一条分支上的提交，故「最旧」是**最后一行**，
+    // 不是「分支最深处」那条——判定按行序走，不按图形缩进。
+    const stdout = [
+      "* aaa1111 新",
+      "|\\",
+      "| * bbb2222 分支上的旧提交",
+      "* ccc3333 更早的一条",
+    ].join("\n");
+    const graph = toGraph({ result: ok(stdout), limit: 2 });
+    expect(graph.truncated).toBe(true);
+    expect(graph.lines.join("\n")).not.toContain("ccc3333");
+    // 其余两行一字不动（图形字符原样保留）
+    expect(graph.lines).toEqual(["* aaa1111 新", "|\\", "| * bbb2222 分支上的旧提交"]);
+  });
+
+  it("无提交 / 非仓库：空图谱而不是抛错", () => {
+    expect(
+      toGraph({ result: fail("your current branch does not have any commits yet"), limit: 30 }),
+    ).toEqual({ lines: [], truncated: false });
+  });
+
+  it("客户端执行时带 --no-color 且多取一条（用于判断是否还有更早的历史）", async () => {
+    const exec = vi.fn(async () => ok("* abc1234 x"));
+    const client = createGitClient({ exec });
+    await client.graph("/sandbox/x", 30);
+    expect(exec).toHaveBeenCalledWith(
+      [
+        "log",
+        "--graph",
+        "--oneline",
+        "--decorate",
+        "--all",
+        "--no-color",
+        "-n",
+        "31",
+      ],
+      "/sandbox/x",
+    );
   });
 });

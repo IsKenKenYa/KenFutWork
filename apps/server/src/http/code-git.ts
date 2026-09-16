@@ -4,6 +4,7 @@ import {
   codeGitCheckoutRequestSchema,
   codeGitCommitRequestSchema,
   codeGitDiffStatResponseSchema,
+  codeGitGraphResponseSchema,
   codeGitStatusResponseSchema,
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
@@ -87,6 +88,33 @@ export async function registerCodeGitRoutes(
     },
   );
 
+  // GET /api/code/git/graph — git 图谱（R2-1 条目 6）。条数上限由查询给，
+  // 这里夹到 1..200：界面只画最近几十条，给个越界值不该让服务端去 log 十万行。
+  app.get<{ Querystring: { canvasId?: string; limit?: string } }>(
+    "/api/code/git/graph",
+    async (request, reply) => {
+      const user = await options.auth.authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      const canvasId = request.query.canvasId ?? "";
+      if (!canvasId) {
+        return reply.code(400).send(
+          applicationErrorResponseSchema.parse({
+            error: { code: "invalid_input", message: "缺少 canvasId。" },
+          }),
+        );
+      }
+      const limit = clampGraphLimit(request.query.limit);
+      try {
+        const graph = await options.codeGitService.graph(user, canvasId, limit);
+        return reply
+          .code(200)
+          .send(codeGitGraphResponseSchema.parse({ graph }));
+      } catch (error) {
+        return sendCodeGitError(error, reply);
+      }
+    },
+  );
+
   // POST /api/code/git/init — 初始化仓库（幂等）：让「每次对话用 git 跟踪」在
   // 非仓库目录上也能开始（分支 chip 里「非 Git 仓库」时提供入口）
   app.post("/api/code/git/init", async (request, reply) => {
@@ -148,6 +176,18 @@ export async function registerCodeGitRoutes(
       return sendCodeGitError(error, reply);
     }
   });
+}
+
+/**
+ * 图谱条数上限：默认 30，非法值回落默认，越界夹到 1..200。
+ *
+ * 上限存在的意义不是性能（git log 很快），而是别让一个越界的 `limit` 把十万行
+ * 塞进 WS/HTTP 响应里。
+ */
+function clampGraphLimit(raw: string | undefined): number {
+  const parsed = Number.parseInt(raw ?? "", 10);
+  if (!Number.isFinite(parsed)) return 30;
+  return Math.min(Math.max(parsed, 1), 200);
 }
 
 function sendUnauthorized(reply: FastifyReply) {

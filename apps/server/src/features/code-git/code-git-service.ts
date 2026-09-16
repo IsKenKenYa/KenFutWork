@@ -2,7 +2,12 @@ import { resolveSandboxDir } from "../../agent/sandbox-dir.js";
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import type { CanvasRepository } from "../canvas/repository.js";
-import type { GitClient, GitDiffStat, GitRepoView } from "./git-client.js";
+import type {
+  GitClient,
+  GitDiffStat,
+  GitGraph,
+  GitRepoView,
+} from "./git-client.js";
 
 /**
  * git 分支视图服务（Code 模式）。
@@ -26,6 +31,9 @@ export interface CodeGitStatus {
 
 export type CodeGitDiffStat = GitDiffStat;
 
+/** 图谱视图：多一个 `isRepo`，非仓库时前端显示初始化引导而不是空图。 */
+export type CodeGitGraph = GitGraph & { isRepo: boolean };
+
 export type CodeGitService = {
   status(user: AuthenticatedUser, canvasId: string): Promise<CodeGitStatus>;
   checkout(
@@ -35,6 +43,12 @@ export type CodeGitService = {
   ): Promise<CodeGitStatus>;
   /** 更改统计（R2-1）：相对 HEAD 的增删行数 + 未跟踪数。 */
   diffStat(user: AuthenticatedUser, canvasId: string): Promise<CodeGitDiffStat>;
+  /** git 图谱（R2-1 条目 6）：只读；非仓库或还没有提交时给空图，不抛错。 */
+  graph(
+    user: AuthenticatedUser,
+    canvasId: string,
+    limit: number,
+  ): Promise<CodeGitGraph>;
   /** 提交全部改动（写操作：git 不可用即 503，未仓库/空改动 409）。 */
   /** 初始化仓库（幂等）。 */
   init(user: AuthenticatedUser, canvasId: string): Promise<CodeGitStatus>;
@@ -165,6 +179,21 @@ export function createCodeGitService(options: {
     async diffStat(user, canvasId) {
       const dir = await sandboxDirFor(user, canvasId);
       return git.diffStat(dir);
+    },
+
+    /**
+     * 图谱是**只读视图**：非仓库、仓库还没有任何提交都返回空图 + `isRepo`
+     * ——这两种情况界面各自有话说（初始化引导 / 还没有提交），抛错反而把「状态」
+     * 说成「故障」。越权仍在 `sandboxDirFor` 一轮挡住（404）。
+     */
+    async graph(user, canvasId, limit) {
+      const dir = await sandboxDirFor(user, canvasId);
+      const view = await git.describe(dir);
+      if (!view.isRepo) {
+        return { isRepo: false, lines: [], truncated: false };
+      }
+      const graph = await git.graph(dir, limit);
+      return { isRepo: true, ...graph };
     },
 
     /**

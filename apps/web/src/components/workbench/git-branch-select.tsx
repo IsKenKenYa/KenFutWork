@@ -4,6 +4,7 @@ import {
   Check,
   ChevronDown,
   GitBranch,
+  GitGraph as GitGraphIcon,
   Plus,
   TriangleAlert,
 } from "lucide-react";
@@ -14,10 +15,12 @@ import {
   commitGitAll,
   createGitBranch,
   fetchGitDiffStat,
+  fetchGitGraph,
   fetchGitStatus,
-  initGitRepo,
+  type GitGraph,
   type GitDiffStat,
   type GitStatus,
+  initGitRepo,
   pushGit,
 } from "@/lib/code-git-api";
 
@@ -31,7 +34,8 @@ import {
  * 切换前若工作区脏（dirty）会二次确认——避免用户以为改动丢了。
  *
  * R2-1 增强：弹层顶部提供「更改统计 / 提交 / 推送 / 创建并检出新的分支」
- * （参考图条目 1/3/5）。写操作全部走服务端（归属校验 + 幂等纪律在 service 层）。
+ * （参考图条目 1/3/5），底部提供「Git 图谱」（条目 6，按需加载）。写操作全部走服务端
+ * （归属校验 + 幂等纪律在 service 层）。
  */
 export function GitBranchSelect({
   accessToken,
@@ -50,6 +54,12 @@ export function GitBranchSelect({
   const [notice, setNotice] = useState<string | null>(null);
   const [commitMessage, setCommitMessage] = useState("");
   const [newBranchName, setNewBranchName] = useState("");
+  /**
+   * Git 图谱（R2-1 条目 6）：**按需加载**——图谱是整段历史，没必要每次开弹层都拉；
+   * `null` = 还没加载过，`lines` 为空且 `isRepo` 为真 = 仓库还没有提交。
+   */
+  const [graph, setGraph] = useState<GitGraph | null>(null);
+  const [graphOpen, setGraphOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
@@ -110,6 +120,22 @@ export function GitBranchSelect({
     setDiffStat(stat);
   }, [accessToken, canvasId]);
 
+  /** 展开/收起 Git 图谱：首次展开时加载；收起后再展开用缓存（提交后 refresh 会清掉）。 */
+  const toggleGraph = useCallback(async () => {
+    if (graphOpen) {
+      setGraphOpen(false);
+      return;
+    }
+    setGraphOpen(true);
+    if (graph || !accessToken || !canvasId) return;
+    try {
+      setGraph(await fetchGitGraph(accessToken, canvasId));
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "读取 git 图谱失败。");
+      setGraphOpen(false);
+    }
+  }, [accessToken, canvasId, graph, graphOpen]);
+
   const switchTo = useCallback(
     async (branch: string) => {
       if (!accessToken || !canvasId) return;
@@ -140,6 +166,8 @@ export function GitBranchSelect({
       setStatus(await commitGitAll(accessToken, canvasId, commitMessage));
       setCommitMessage("");
       setNotice(null);
+      // 提交改了历史：缓存里的图谱已经过期，下次展开重新拉
+      setGraph(null);
       await refresh();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "提交失败。");
@@ -169,6 +197,7 @@ export function GitBranchSelect({
     try {
       setStatus(await initGitRepo(accessToken, canvasId));
       setNotice("已初始化仓库，后续每轮对话会自动提交。");
+      setGraph(null);
       await refresh();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "初始化仓库失败。");
@@ -346,6 +375,48 @@ export function GitBranchSelect({
               aria-label="新分支名"
               className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60"
             />
+          </div>
+
+          {/* Git 图谱（R2-1 条目 6）：按需展开，图形行原样等宽渲染 */}
+          <div className="border-t px-2 py-2">
+            <button
+              type="button"
+              aria-expanded={graphOpen}
+              aria-label="Git 图谱"
+              onClick={() => void toggleGraph()}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <GitGraphIcon className="h-3.5 w-3.5 shrink-0" />
+              Git 图谱
+              <ChevronDown
+                className={`ml-auto h-3 w-3 transition-transform ${
+                  graphOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+            {graphOpen ? (
+              <div className="mt-1 rounded-md border bg-muted/40 p-2">
+                {graph && graph.lines.length > 0 ? (
+                  <>
+                    <pre
+                      aria-label="提交图谱"
+                      className="max-h-56 overflow-auto font-mono text-[11px] leading-5 whitespace-pre"
+                    >
+                      {graph.lines.join("\n")}
+                    </pre>
+                    {graph.truncated ? (
+                      <p className="mt-1 text-[10px] text-muted-foreground">
+                        只显示最近 30 条提交。
+                      </p>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground">
+                    {graph ? "还没有提交。" : "读取中…"}
+                  </p>
+                )}
+              </div>
+            ) : null}
           </div>
 
           {/* 分支列表 */}

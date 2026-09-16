@@ -47,6 +47,7 @@ function build(options: {
     commitAll: vi.fn(async () => {}),
     push: vi.fn(async () => {}),
     createBranch: vi.fn(async () => {}),
+    graph: vi.fn(async () => ({ lines: [], truncated: false })),
     ...options.git,
   };
   const findById = vi.fn(async () =>
@@ -188,5 +189,49 @@ describe("git init（工作目录初始化仓库）", () => {
   it("git 不可用时如实拒绝（不静默）", async () => {
     const { service } = build({ source: "unavailable" });
     await expect(service.init(USER, CANVAS_ID)).rejects.toThrow(/git/i);
+  });
+});
+
+/**
+ * Git 图谱（R2-1 条目 6）。
+ *
+ * 关键是**把「状态」与「故障」分开**：非仓库、仓库还没有提交都不是错误，
+ * 界面要拿到 isRepo 去显示初始化引导 / 「还没有提交」；抛错会把状态说成故障。
+ */
+describe("Git 图谱", () => {
+  const GRAPH = { lines: ["* abc1234 第一轮"], truncated: false };
+
+  it("仓库：转发图形行与截断标记", async () => {
+    const graphFn = vi.fn(async () => GRAPH);
+    const { service } = build({ git: { graph: graphFn } });
+    const graph = await service.graph(USER, CANVAS_ID, 30);
+    expect(graph).toEqual({ isRepo: true, ...GRAPH });
+    expect(graphFn).toHaveBeenCalledWith(resolveSandboxDir(CANVAS_ID), 30);
+  });
+
+  it("非仓库：返回 isRepo=false 且不下发 log 命令", async () => {
+    const graphFn = vi.fn(async () => GRAPH);
+    const { service } = build({
+      git: {
+        describe: vi.fn(async () => ({ ...REPO_VIEW, isRepo: false })),
+        graph: graphFn,
+      },
+    });
+    expect(await service.graph(USER, CANVAS_ID, 30)).toEqual({
+      isRepo: false,
+      lines: [],
+      truncated: false,
+    });
+    expect(graphFn).not.toHaveBeenCalled();
+  });
+
+  it("越权：画布不属于当前工作区 → 404，且不下发任何 git 命令", async () => {
+    const graphFn = vi.fn(async () => GRAPH);
+    const { service, git } = build({ canvasFound: false, git: { graph: graphFn } });
+    await expect(service.graph(USER, CANVAS_ID, 30)).rejects.toMatchObject({
+      statusCode: 404,
+    });
+    expect(graphFn).not.toHaveBeenCalled();
+    expect(git.describe).not.toHaveBeenCalled();
   });
 });

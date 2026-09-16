@@ -96,6 +96,28 @@ export async function fetchGitDiffStat(
   return payload.stat;
 }
 
+/** git 图谱（R2-1 条目 6）：图形行原样给界面用等宽字体渲染（服务端不解析画法）。 */
+export interface GitGraph {
+  isRepo: boolean;
+  lines: string[];
+  truncated: boolean;
+}
+
+export async function fetchGitGraph(
+  accessToken: string,
+  canvasId: string,
+  limit = 30,
+): Promise<GitGraph> {
+  const query = new URLSearchParams({ canvasId, limit: String(limit) });
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/code/git/graph?${query.toString()}`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  const payload = (await response.json()) as { graph: GitGraph };
+  return payload.graph;
+}
+
 export async function commitGitAll(
   accessToken: string,
   canvasId: string,
