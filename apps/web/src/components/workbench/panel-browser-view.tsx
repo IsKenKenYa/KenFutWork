@@ -56,6 +56,11 @@ export function BrowserPane({
 }) {
   const normalized = normalizeUrl(draft);
   const [viewportPreset, setViewportPreset] = useState<ViewportPresetId>("fit");
+  /**
+   * 自由尺寸（参考图的「退出自由尺寸」）：视口尺寸由用户自己拖/填——
+   * 预设给常用档，自由尺寸给「就想看看 900px 宽什么样子」。
+   */
+  const [freeSize, setFreeSize] = useState({ width: 1280, height: 720 });
   const [zoom, setZoom] = useState<ZoomPresetId>("fit");
   /** 面板里这块预览区有多大（「适应面板」时的视口尺寸 = 它）。 */
   const frameRef = useRef<HTMLDivElement>(null);
@@ -74,8 +79,14 @@ export function BrowserPane({
   }, [url]);
 
   const sizePreset = VIEWPORT_PRESETS.find((p) => p.id === viewportPreset)!;
-  const viewportWidth = sizePreset.width ?? paneWidth;
-  const viewportHeight = sizePreset.height ?? paneHeight;
+  const viewportWidth =
+    viewportPreset === "free"
+      ? freeSize.width
+      : (sizePreset.width ?? paneWidth);
+  const viewportHeight =
+    viewportPreset === "free"
+      ? freeSize.height
+      : (sizePreset.height ?? paneHeight);
   const fitScale =
     viewportWidth > 0 && viewportHeight > 0
       ? Math.min(1, paneWidth / viewportWidth, paneHeight / viewportHeight)
@@ -188,9 +199,41 @@ export function BrowserPane({
         <span className="font-mono text-muted-foreground">
           {viewportWidth > 0 ? `${viewportWidth} × ${viewportHeight}` : "—"}
         </span>
-        {sizePreset.width !== null && scale !== 1 ? (
+        {viewportWidth !== paneWidth && scale !== 1 ? (
           <span className="text-muted-foreground">
             {Math.round(scale * 100)}%
+          </span>
+        ) : null}
+        {viewportPreset === "free" ? (
+          <span className="flex items-center gap-1">
+            <ViewportSizeInput
+              ariaLabel="视口宽度"
+              value={freeSize.width}
+              min={320}
+              max={3840}
+              onCommit={(width) => setFreeSize((current) => ({ ...current, width }))}
+            />
+            <span aria-hidden className="text-muted-foreground">
+              ×
+            </span>
+            <ViewportSizeInput
+              ariaLabel="视口高度"
+              value={freeSize.height}
+              min={240}
+              max={2160}
+              onCommit={(height) =>
+                setFreeSize((current) => ({ ...current, height }))
+              }
+            />
+            <button
+              type="button"
+              aria-label="退出自由尺寸"
+              title="退出自由尺寸（回到跟随面板）"
+              onClick={() => setViewportPreset("fit")}
+              className="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+            >
+              退出自由尺寸
+            </button>
           </span>
         ) : null}
         <Select
@@ -265,6 +308,44 @@ export function BrowserPane({
             }}
             className="absolute top-0 left-0"
           />
+          {viewportPreset === "free" ? (
+            <button
+              type="button"
+              aria-label="拖动调整视口尺寸"
+              title="拖动调整视口尺寸"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                const startX = event.clientX;
+                const startY = event.clientY;
+                const start = freeSize;
+                const onMove = (moveEvent: MouseEvent) => {
+                  setFreeSize({
+                    width: clampViewport(
+                      Math.round(start.width + (moveEvent.clientX - startX)),
+                      320,
+                      3840,
+                    ),
+                    height: clampViewport(
+                      Math.round(start.height + (moveEvent.clientY - startY)),
+                      240,
+                      2160,
+                    ),
+                  });
+                };
+                const onUp = () => {
+                  window.removeEventListener("mousemove", onMove);
+                  window.removeEventListener("mouseup", onUp);
+                };
+                window.addEventListener("mousemove", onMove);
+                window.addEventListener("mouseup", onUp);
+              }}
+              style={{
+                left: `${viewportWidth * scale - 10}px`,
+                top: `${viewportHeight * scale - 10}px`,
+              }}
+              className="absolute h-3 w-3 cursor-nwse-resize rounded-sm border border-foreground/40 bg-background"
+            />
+          ) : null}
         </div>
       ) : (
         <p className="text-xs text-muted-foreground">
@@ -285,7 +366,61 @@ const VIEWPORT_PRESETS = [
   { id: "laptop", label: "1280 × 720", width: 1280, height: 720 },
   { id: "tablet", label: "1024 × 768", width: 1024, height: 768 },
   { id: "phone", label: "375 × 812", width: 375, height: 812 },
+  { id: "free", label: "自由尺寸", width: null, height: null },
 ] as const;
+
+/**
+ * 自由尺寸的数字输入：**边打字边夹取是错的**（第一次按「9」，空值被夹成 320，接着变成 3209…）。
+ * 做法：打字期间只在「解析出来且落在范围内」时提交，落焦时再夹一次并规范化文本。
+ */
+function ViewportSizeInput({
+  ariaLabel,
+  value,
+  min,
+  max,
+  onCommit,
+}: {
+  ariaLabel: string;
+  value: number;
+  min: number;
+  max: number;
+  onCommit: (value: number) => void;
+}) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => {
+    setText(String(value));
+  }, [value]);
+  return (
+    <input
+      aria-label={ariaLabel}
+      type="number"
+      min={min}
+      max={max}
+      value={text}
+      onChange={(event) => {
+        const next = event.target.value;
+        setText(next);
+        const parsed = Number(next);
+        if (next.trim() !== "" && Number.isFinite(parsed) && parsed >= min && parsed <= max) {
+          onCommit(Math.round(parsed));
+        }
+      }}
+      onBlur={() => {
+        const parsed = Number(text);
+        const clamped = clampViewport(parsed, min, max);
+        setText(String(clamped));
+        onCommit(clamped);
+      }}
+      className="w-16 rounded border bg-transparent px-1 py-0.5 font-mono text-[11px] tabular-nums outline-none focus:ring-1 focus:ring-ring"
+    />
+  );
+}
+
+/** 视口尺寸的夹取（自由尺寸的两个输入框与拖拽把手共用）。 */
+function clampViewport(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
 
 type ViewportPresetId = (typeof VIEWPORT_PRESETS)[number]["id"];
 

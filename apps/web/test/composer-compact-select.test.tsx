@@ -118,8 +118,9 @@ describe("ComposerCompactSelect", () => {
       />,
     );
     const panel = screen.getByRole("tooltip", { name: "权限档位说明" });
-    // 面板靠 group-hover 显示（容器变窄时文字藏起来，得有个地方说明每一档是什么意思）
-    expect(panel.className).toContain("group-hover:block");
+    // 面板靠 group-hover 显示（容器变窄时文字藏起来，得有个地方说明每一档是什么意思）；
+    // **只在图标态（容器 < 36rem）出现**——宽列下文字都在，悬停再弹一个面板是多余的
+    expect(panel.className).toContain("@max-xl/composer:group-hover:block");
     expect(panel.className).toContain("hidden");
     expect(panel).toHaveTextContent("当前：完全访问");
     expect(panel).toHaveTextContent("危险 / 不可逆操作需人工审批");

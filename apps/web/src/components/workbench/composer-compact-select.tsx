@@ -141,7 +141,7 @@ export function ComposerCompactSelect({
       <span
         role="tooltip"
         aria-label={`${ariaLabel}说明`}
-        className="pointer-events-none absolute top-full left-0 z-50 mt-1 hidden w-56 rounded-lg border bg-popover p-2 text-xs shadow-md group-hover:block"
+        className="pointer-events-none absolute top-full left-0 z-50 mt-1 hidden w-56 rounded-lg border bg-popover p-2 text-xs shadow-md @max-xl/composer:group-hover:block"
       >
         <span className="mb-1 block font-medium">
           {ariaLabel}

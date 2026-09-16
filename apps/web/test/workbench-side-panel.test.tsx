@@ -563,6 +563,25 @@ describe("右栏浏览器（点链接自动打开）", () => {
       await screen.findByRole("option", { name: "在系统浏览器打开" }),
     ).toBeInTheDocument();
 
+    // 自由尺寸（参考图的「退出自由尺寸」）：尺寸可改、可拖，退出即回到跟随面板
+    await userEvent.click(viewport);
+    await userEvent.click(
+      await screen.findByRole("option", { name: "自由尺寸" }),
+    );
+    const widthInput = screen.getByLabelText("视口宽度");
+    await userEvent.clear(widthInput);
+    await userEvent.type(widthInput, "900");
+    await waitFor(() =>
+      expect(screen.getByTitle("右栏浏览器：http://localhost:8000").style.width).toBe(
+        "900px",
+      ),
+    );
+    expect(
+      screen.getByRole("button", { name: "拖动调整视口尺寸" }),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "退出自由尺寸" }));
+    expect(screen.queryByLabelText("视口宽度")).not.toBeInTheDocument();
+
     // 元素拾取需要 CDP，不给假按钮：按钮存在但禁用
     expect(
       screen.getByRole("button", { name: /选择网页元素加入聊天/ }),

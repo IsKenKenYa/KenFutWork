@@ -2215,7 +2215,7 @@ export function Workbench() {
                 continueTask(value);
               }}
             >
-              <div className="@container/composer rounded-xl border bg-background p-3">
+              <div className="@container/composer rounded-xl border bg-background px-3 pt-2.5 pb-2">
                 <textarea
                   ref={composerRef}
                   aria-label="继续对话"
@@ -2236,7 +2236,7 @@ export function Workbench() {
                       continueTask(value);
                     }
                   }}
-                  rows={2}
+                  rows={1}
                   placeholder="继续追问…"
                   style={{ scrollbarWidth: "none" }}
                   className="max-h-40 min-h-[24px] w-full resize-none overflow-hidden bg-transparent text-sm outline-none placeholder:text-muted-foreground [&::-webkit-scrollbar]:hidden"
@@ -2246,8 +2246,8 @@ export function Workbench() {
                     {workDirNotice}
                   </p>
                 ) : null}
-                <div className="mt-1.5 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
+                <div className="mt-1 flex items-center justify-between">
+                  <div className="flex min-w-0 items-center gap-1.5">
                     <button
                       type="button"
                       title="附件（即将上线）"
@@ -2430,7 +2430,7 @@ export function Workbench() {
                   canvasId={selectedProject?.primaryCanvas.id ?? null}
                 />
               </div>
-              <div className="@container/composer rounded-b-2xl border bg-background p-4 shadow-sm">
+              <div className="@container/composer rounded-b-2xl border bg-background px-3 pt-3 pb-2.5 shadow-sm">
               <textarea
                 aria-label="任务描述"
                 value={prompt}
@@ -2452,8 +2452,8 @@ export function Workbench() {
               {workDirNotice ? (
                 <p className="mt-2 text-xs text-destructive">{workDirNotice}</p>
               ) : null}
-              <div className="mt-2 flex items-center justify-between">
-                <div className="flex items-center gap-2">
+              <div className="mt-1.5 flex items-center justify-between">
+                <div className="flex min-w-0 items-center gap-1.5">
                   <button
                     type="button"
                     title="附件（即将上线）"
