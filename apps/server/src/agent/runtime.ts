@@ -1878,7 +1878,7 @@ function toFailedEvent(
 async function updatePersistedRunStatus(
   agentRunMetadataService: AgentRunMetadataService | undefined,
   run: RuntimeRunRecord,
-  status: "running" | "completed",
+  status: "running" | "completed" | "canceled",
   options?: {
     completedAt?: string;
   },
@@ -1934,5 +1934,17 @@ async function syncPersistedRunFromEvent(
       now,
       new Error(event.error.message),
     );
+    return;
+  }
+
+  /**
+   * 用户取消也要落终态。此前漏了这一支（只认 completed/failed），实测后果：点「停止本轮」
+   * 后流确实停了（`stream_done`），但行永远停在 `running`——只能等下次进程启动的孤儿对账
+   * 收敛成 `failed`，那一轮明明是用户主动取消却被记成失败。
+   */
+  if (event.type === "run.canceled") {
+    await updatePersistedRunStatus(agentRunMetadataService, run, "canceled", {
+      completedAt: now(),
+    });
   }
 }
