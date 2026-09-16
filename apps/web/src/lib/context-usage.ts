@@ -18,6 +18,8 @@ export interface RunUsageSnapshot {
   runInputTokens?: number | undefined;
   /** 本轮 run 累计命中缓存输入 token；一次都没上报时为 undefined。 */
   runCachedInputTokens?: number | undefined;
+  /** 上下文容量的分类占比（字符数口径）；老服务端不带这个字段。 */
+  composition?: Array<{ label: string; chars: number }> | undefined;
 }
 
 /**
@@ -37,9 +39,27 @@ export function usageFromEvent(
   const runInput = (payload as { runInputTokens?: unknown }).runInputTokens;
   const runCached = (payload as { runCachedInputTokens?: unknown })
     .runCachedInputTokens;
+  const parts = (payload as { composition?: unknown }).composition;
   return {
     inputTokens,
     outputTokens: typeof outputTokens === "number" ? outputTokens : 0,
+    ...(Array.isArray(parts)
+      ? {
+          composition: parts.flatMap((part) =>
+            part &&
+            typeof part === "object" &&
+            typeof (part as { label?: unknown }).label === "string" &&
+            typeof (part as { chars?: unknown }).chars === "number"
+              ? [
+                  {
+                    label: (part as { label: string }).label,
+                    chars: (part as { chars: number }).chars,
+                  },
+                ]
+              : [],
+          ),
+        }
+      : {}),
     ...(typeof cached === "number" ? { cachedInputTokens: cached } : {}),
     ...(typeof runInput === "number" ? { runInputTokens: runInput } : {}),
     ...(typeof runCached === "number" ? { runCachedInputTokens: runCached } : {}),
@@ -76,6 +96,11 @@ export interface ContextUsageView {
   cacheHitLabel: string | null;
   /** 「平均」还是「本次调用」（老服务端只有单次数据时如实标注）。 */
   cacheHitScope: "run" | "call" | null;
+  /**
+   * 分类占比（按字符数降序，带百分比）。没有数据时为空数组——宁缺毋滥，
+   * 不编一段「其他 100%」。百分比按各段字符数占合计算。
+   */
+  composition: Array<{ label: string; percent: number }>;
   outputLabel: string | null;
 }
 
@@ -85,6 +110,21 @@ export function formatTokens(value: number): string {
   if (value >= 100_000_000) return `${trimZero(value / 100_000_000)}亿`;
   if (value >= 10_000) return `${trimZero(value / 10_000)}万`;
   return String(Math.round(value));
+}
+
+/** 分类占比：字符数 → 百分比（一位小数），降序；无数据返回空数组。 */
+function compositionView(
+  parts: Array<{ label: string; chars: number }> | undefined,
+): Array<{ label: string; percent: number }> {
+  if (!parts || parts.length === 0) return [];
+  const total = parts.reduce((sum, part) => sum + Math.max(0, part.chars), 0);
+  if (total <= 0) return [];
+  return [...parts]
+    .map((part) => ({
+      label: part.label,
+      percent: Math.round((Math.max(0, part.chars) / total) * 1000) / 10,
+    }))
+    .sort((a, b) => b.percent - a.percent);
 }
 
 function trimZero(value: number): string {
@@ -109,6 +149,7 @@ export function contextUsageView(
     cacheHitLabel: null,
     cacheHitScope: null,
     outputLabel: null,
+    composition: [],
   };
   if (!usage || usage.inputTokens <= 0) return empty;
 
@@ -145,5 +186,6 @@ export function contextUsageView(
       hitRate === null ? null : `${Math.round(hitRate * 10) / 10}%`,
     cacheHitScope: hitRate === null ? null : useRunTotals ? "run" : "call",
     outputLabel: formatTokens(usage.outputTokens),
+    composition: compositionView(usage.composition),
   };
 }

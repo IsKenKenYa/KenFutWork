@@ -165,3 +165,53 @@ describe("平均缓存命中率（run 累计口径）", () => {
     expect(view.cacheHitScope).toBeNull();
   });
 });
+
+/**
+ * 分类占比（R4-1 那一栏）的展示口径：按字符数算百分比、降序、无数据不编。
+ */
+describe("上下文分类占比", () => {
+  it("按字符数折算百分比并降序（参考图那六行就是这个读法）", () => {
+    const view = contextUsageView(
+      {
+        inputTokens: 1000,
+        outputTokens: 0,
+        composition: [
+          { label: "消息", chars: 933 },
+          { label: "MCP 工具", chars: 37 },
+          { label: "系统工具", chars: 21 },
+          { label: "其他", chars: 5 },
+          { label: "系统提示词", chars: 3 },
+          { label: "技能", chars: 1 },
+        ],
+      },
+      1_000_000,
+    );
+    expect(view.composition.map((part) => part.label)).toEqual([
+      "消息",
+      "MCP 工具",
+      "系统工具",
+      "其他",
+      "系统提示词",
+      "技能",
+    ]);
+    expect(view.composition[0]?.percent).toBe(93.3);
+  });
+
+  it("没有分类数据（老服务端）：空数组，不编一段「其他 100%」", () => {
+    const view = contextUsageView({ inputTokens: 10, outputTokens: 0 }, 1000);
+    expect(view.composition).toEqual([]);
+  });
+
+  it("从 run.usage 事件里解出分段（只认 label 是字符串、chars 是数字的条目）", () => {
+    const snapshot = usageFromEvent({
+      inputTokens: 10,
+      outputTokens: 1,
+      composition: [
+        { label: "消息", chars: 100 },
+        { label: 42, chars: 5 },
+        { chars: 7 },
+      ],
+    });
+    expect(snapshot?.composition).toEqual([{ label: "消息", chars: 100 }]);
+  });
+});

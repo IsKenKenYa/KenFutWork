@@ -13,6 +13,11 @@ import { imageArtifactSchema, videoArtifactSchema } from "@kenfutwork/shared";
 
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import {
+  type CompositionPart,
+  measureMessages,
+  mergeComposition,
+} from "./prompt-composition.js";
+import {
   StreamIdleTimeoutError,
   withStreamIdleGuard,
 } from "./stream-idle-guard.js";
@@ -42,6 +47,11 @@ type AdaptDeepAgentStreamOptions = {
   runId: string;
   sessionId: string;
   signal?: AbortSignal;
+  /**
+   * 工具 schema 的分段量（runtime 在装配后量好传入）：MCP 工具 / 系统工具。
+   * 消息侧分段由本适配器在 `on_chat_model_start` 时量，两边合并成一条 composition。
+   */
+  toolComposition?: readonly CompositionPart[] | undefined;
   stream: AsyncIterable<LangChainStreamEvent | unknown>;
   /**
    * 空闲看门狗阈值（毫秒，见 `stream-idle-guard.ts`）：上游停滞超过该时长即
@@ -78,6 +88,12 @@ export async function* adaptDeepAgentStream(
    * 算术平均——一轮里短调用多时后者会虚高。每次模型调用的用量在 chunk 上会反复出现同一
    * 份（调用内累计值），故只在「输入侧变化 = 新调用开始」时把上一轮调用结算进累计。
    */
+  /**
+   * 分类占比（R4-1）：在 on_chat_model_start 时按模型**实际输入**量一次，
+   * 与 runtime 传来的工具分段合并，随 run.usage 下发。**字符数口径**（不是 token 拆分）。
+   */
+  let composition: CompositionPart[] | undefined;
+
   let completedCallsInput = 0;
   let completedCallsCached = 0;
   let sawCachedFromUpstream = false;
@@ -130,6 +146,24 @@ export async function* adaptDeepAgentStream(
       }
 
       const evt = rawEvent;
+
+      // 模型输入就绪：量一次分类占比（系统提示词 / 消息 / 技能 …）
+      if (evt.event === "on_chat_model_start") {
+        const data = (evt as { data?: unknown }).data as
+          | { input?: { messages?: unknown } }
+          | undefined;
+        const raw = data?.input?.messages;
+        const groups = Array.isArray(raw) ? raw : [];
+        // 有的版本给 [[messages]]（批量），有的给 [messages]——两种都摊平
+        const flat = groups.flatMap((group) =>
+          Array.isArray(group) ? group : [group],
+        );
+        composition = mergeComposition([
+          ...measureMessages(flat),
+          ...(options.toolComposition ?? []),
+        ]);
+        continue;
+      }
 
       // Per-token streaming from the chat model
       if (evt.event === "on_chat_model_stream") {
@@ -189,6 +223,9 @@ export async function* adaptDeepAgentStream(
                   ? {}
                   : { cachedInputTokens }),
                 ...runTotals(inputTokens, cachedInputTokens),
+                ...(composition && composition.length > 0
+                  ? { composition }
+                  : {}),
                 timestamp: now(),
               };
             }

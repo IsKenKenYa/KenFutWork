@@ -1,4 +1,8 @@
-import { AIMessageChunk } from "@langchain/core/messages";
+import {
+  AIMessageChunk,
+  HumanMessage,
+  SystemMessage,
+} from "@langchain/core/messages";
 import type { StreamEvent } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
 
@@ -472,5 +476,87 @@ describe("stream-adapter 累计用量（平均缓存命中率的分母）", () =
     const usage = events.find((event) => event.type === "run.usage");
     expect(usage).toMatchObject({ runInputTokens: 500 });
     expect(usage).not.toHaveProperty("runCachedInputTokens");
+  });
+});
+
+/**
+ * 分类占比随 run.usage 下发（R4-1 浮层那一栏）。
+ *
+ * 消息侧在 `on_chat_model_start` 量、工具侧由 runtime 传入，两边合并成一条
+ * composition；**没有 on_chat_model_start（老上游/非 chat 模型）时不下发该字段**，
+ * 而不是编一段空的。
+ */
+describe("stream-adapter 分类占比", () => {
+  it("on_chat_model_start 的 messages + 传入的工具分段 → 合并后随 run.usage 下发", async () => {
+    const stream: AsyncIterable<unknown> = {
+      async *[Symbol.asyncIterator]() {
+        yield {
+          event: "on_chat_model_start",
+          data: {
+            input: {
+              messages: [
+                [
+                  new SystemMessage("sys"),
+                  new HumanMessage("用户消息"),
+                ],
+              ],
+            },
+          },
+        };
+        const chunk = new AIMessageChunk({ content: "" });
+        (chunk as { usage_metadata?: unknown }).usage_metadata = {
+          input_tokens: 100,
+          output_tokens: 1,
+          total_tokens: 101,
+        };
+        yield { event: "on_chat_model_stream", data: { chunk } };
+      },
+    };
+
+    const events: StreamEvent[] = [];
+    for await (const event of adaptDeepAgentStream({
+      conversationId: "conv-1",
+      runId: "run-1",
+      sessionId: "sess-1",
+      stream,
+      toolComposition: [{ label: "系统工具", chars: 300 }],
+    })) {
+      events.push(event);
+    }
+
+    const usage = events.find((event) => event.type === "run.usage");
+    expect(usage).toMatchObject({
+      composition: [
+        { label: "系统工具", chars: 300 },
+        { label: "消息", chars: "用户消息".length },
+        { label: "系统提示词", chars: "sys".length },
+      ],
+    });
+  });
+
+  it("没有模型输入事件：不下发 composition（不编空段）", async () => {
+    const stream: AsyncIterable<unknown> = {
+      async *[Symbol.asyncIterator]() {
+        const chunk = new AIMessageChunk({ content: "" });
+        (chunk as { usage_metadata?: unknown }).usage_metadata = {
+          input_tokens: 10,
+          output_tokens: 1,
+          total_tokens: 11,
+        };
+        yield { event: "on_chat_model_stream", data: { chunk } };
+      },
+    };
+    const events: StreamEvent[] = [];
+    for await (const event of adaptDeepAgentStream({
+      conversationId: "conv-1",
+      runId: "run-1",
+      sessionId: "sess-1",
+      stream,
+      toolComposition: [{ label: "系统工具", chars: 300 }],
+    })) {
+      events.push(event);
+    }
+    const usage = events.find((event) => event.type === "run.usage");
+    expect(usage).not.toHaveProperty("composition");
   });
 });

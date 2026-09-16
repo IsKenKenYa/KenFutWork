@@ -44,6 +44,7 @@ import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createPipelineLogger } from "../ws/logger.js";
 import { createAgentBackend } from "./backends/index.js";
+import { measureTools } from "./prompt-composition.js";
 import type { ToolGate, ToolGateHooks } from "./deep-agent.js";
 import {
   createToolDenialTracker,
@@ -371,12 +372,21 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     return typeof result.input === "string" ? result.input : input;
   };
 
+  /**
+   * 最近一次装配回吐的工具清单（R4-1 分类占比要按 schema 分「系统工具 / MCP 工具」）。
+   * 每次 run 装配一次 agent，装配期内赋值、随后立刻读取，故不存在跨 run 串用。
+   */
+  let lastToolInventory: readonly unknown[] = [];
+
   const resolvedAgentFactory: KenFutWorkAgentFactory =
     options.agentFactory ??
     ((agentOptions) =>
       createKenFutWorkDeepAgent({
         ...agentOptions,
         blob: options.blob,
+        onToolInventory: (tools) => {
+          lastToolInventory = tools;
+        },
       }));
 
   // ── Billing error helper: push WS event + abort run ──────────
@@ -1588,6 +1598,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               : {}),
             runId,
             sessionId: run.sessionId,
+            // 分类占比（R4-1）：工具 schema 在这里量（装配刚回吐），消息侧由适配器在
+            // on_chat_model_start 里量；两边在适配器里合并成一条 composition 随 run.usage 下发。
+            toolComposition: measureTools(lastToolInventory),
             signal: run.controller.signal,
             ...(options.env.agentStreamIdleTimeoutMs
               ? { idleTimeoutMs: options.env.agentStreamIdleTimeoutMs }

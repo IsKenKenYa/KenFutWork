@@ -266,6 +266,11 @@ export type KenFutWorkAgentFactory = (options: {
   toolGateHooks?: ToolGateHooks;
   /** 插件贡献的提示段（能力 `systemPrompt`）：追加在系统提示之后。 */
   systemPromptExtras?: readonly string[];
+  /**
+   * 装配完成时回吐工具清单（R4-1 分类占比要按 schema 量「系统工具 / MCP 工具」）。
+   * 用回调而不是返回值：调用方（runtime）拿的是 agent 对象，工具清单只在装配期有。
+   */
+  onToolInventory?: (tools: readonly unknown[]) => void;
 }) => KenFutWorkAgent;
 
 export function createKenFutWorkDeepAgent(options: {
@@ -296,6 +301,11 @@ export function createKenFutWorkDeepAgent(options: {
   toolGateHooks?: ToolGateHooks;
   /** 插件贡献的提示段（能力 `systemPrompt`）：追加在系统提示之后。 */
   systemPromptExtras?: readonly string[];
+  /**
+   * 装配完成时回吐工具清单（R4-1 分类占比要按 schema 量「系统工具 / MCP 工具」）。
+   * 用回调而不是返回值：调用方（runtime）拿到的是 agent 对象，工具清单只在装配期有。
+   */
+  onToolInventory?: (tools: readonly unknown[]) => void;
 }): KenFutWorkAgent {
   const backendResult =
     options.backendResult ?? createAgentBackend(options.env, options.canvasId);
@@ -346,6 +356,38 @@ export function createKenFutWorkDeepAgent(options: {
     systemPrompt += `\n\n## 插件提示段\n\n${extras.join("\n\n")}`;
   }
 
+  // 工具清单先落地成变量：R4-1 的分类占比要按 schema 量「系统工具 / MCP 工具」，
+  // 而调用方（runtime）拿到的是 agent 对象，只有这里才知道装配了什么工具。
+  const tools = [
+    ...createMainAgentTools(backendResult.factory, {
+      ...(options.brandKitService
+        ? { brandKitService: options.brandKitService }
+        : {}),
+      blob: options.blob,
+      ...(options.canvasRepository
+        ? { canvasRepository: options.canvasRepository }
+        : {}),
+      ...(options.brandKitId != null ? { brandKitId: options.brandKitId } : {}),
+      ...(options.connectionManager
+        ? { connectionManager: options.connectionManager }
+        : {}),
+      ...(options.persistImage ? { persistImage: options.persistImage } : {}),
+      ...(backendResult.sandboxDir
+        ? { sandboxDir: backendResult.sandboxDir }
+        : {}),
+
+      ...(options.submitImageJob
+        ? { submitImageJob: options.submitImageJob }
+        : {}),
+      ...(options.submitVideoJob
+        ? { submitVideoJob: options.submitVideoJob }
+        : {}),
+    }),
+    ...bridgeKernelTools(options.kernelTools ?? [], options.runToolContext ?? {}),
+  ];
+
+  options.onToolInventory?.(tools);
+
   return createDeepAgent({
     backend: backendResult.factory,
     ...(options.checkpointer ? { checkpointer: options.checkpointer } : {}),
@@ -380,38 +422,7 @@ export function createKenFutWorkDeepAgent(options: {
             createUnknownToolGuardMiddleware(),
           ],
         }),
-    tools: [
-      ...createMainAgentTools(backendResult.factory, {
-        ...(options.brandKitService
-          ? { brandKitService: options.brandKitService }
-          : {}),
-        blob: options.blob,
-        ...(options.canvasRepository
-          ? { canvasRepository: options.canvasRepository }
-          : {}),
-        ...(options.brandKitId != null
-          ? { brandKitId: options.brandKitId }
-          : {}),
-        ...(options.connectionManager
-          ? { connectionManager: options.connectionManager }
-          : {}),
-        ...(options.persistImage ? { persistImage: options.persistImage } : {}),
-        ...(backendResult.sandboxDir
-          ? { sandboxDir: backendResult.sandboxDir }
-          : {}),
-
-        ...(options.submitImageJob
-          ? { submitImageJob: options.submitImageJob }
-          : {}),
-        ...(options.submitVideoJob
-          ? { submitVideoJob: options.submitVideoJob }
-          : {}),
-      }),
-      ...bridgeKernelTools(
-        options.kernelTools ?? [],
-        options.runToolContext ?? {},
-      ),
-    ],
+    tools,
   });
 }
 

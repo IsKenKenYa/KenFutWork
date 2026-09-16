@@ -92,6 +92,19 @@ export const runUsageEventSchema = z.object({
   runInputTokens: z.number().int().nonnegative().optional(),
   /** 本轮 run 累计命中缓存的输入 token；一次都没上报时为 undefined。 */
   runCachedInputTokens: z.number().int().nonnegative().optional(),
+  /**
+   * 上下文容量的**分类占比**（R4-1 浮层的那一栏）：按模型实际输入的**字符数**分段。
+   * 口径是字符数而不是 token——上游不提供分类 token，编不出来（界面会写明）。
+   * 段名由服务端给（系统提示词 / 消息 / 技能 / MCP 工具 / 系统工具 / 其他）。
+   */
+  composition: z
+    .array(
+      z.object({
+        label: z.string().min(1),
+        chars: z.number().int().nonnegative(),
+      }),
+    )
+    .optional(),
   timestamp: timestampSchema,
 });
 
