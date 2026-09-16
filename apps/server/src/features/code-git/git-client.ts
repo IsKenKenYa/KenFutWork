@@ -113,13 +113,26 @@ export interface GitClient {
    */
   stageFile(cwd: string, path: string, staged: boolean): Promise<void>;
   /**
-   * 暂存 / 取消暂存**一个块（hunk）**（参考图审查视图里的「暂存块」）。
+   * 应用 / 反向应用**一个块（hunk）**（参考图审查视图里的「暂存块 / 撤销块」）。
    *
-   * 做法：把「文件头 + 这一块」拼成一条 patch，交给 `git apply --cached --recount`
-   * （`--recount` 让 git 自己数行数，块头的计数不精确也不至于打歪）；
-   * 取消暂存走 `-R`（反向应用）。patch 从 stdin 进，落不到磁盘上。
+   * 做法：把「文件头 + 这一块」拼成一条 patch，交给 `git apply --recount`
+   * （`--recount` 让 git 自己数行数，块头的计数不精确也不至于打歪）。patch 从 stdin 进。
+   * - `target: "index"` + 正向 = 暂存这一块；反向 = 从索引撤下这一块；
+   * - `target: "worktree"` + 反向 = **撤销这一块的工作区改动**（会丢内容，由界面二次确认）。
    */
-  applyHunk(cwd: string, patch: string, reverse?: boolean): Promise<void>;
+  applyHunk(
+    cwd: string,
+    patch: string,
+    options?: { reverse?: boolean; target?: "index" | "worktree" },
+  ): Promise<void>;
+  /** 撤销单个文件的改动（未跟踪的走 `clean -f` 删除，其余 `restore` 回工作区）。 */
+  discardFile(
+    cwd: string,
+    path: string,
+    untracked: boolean,
+  ): Promise<void>;
+  /** 撤销全部未提交改动（`restore` + `clean -fd`）。 */
+  discardAll(cwd: string): Promise<void>;
 }
 
 /** 变更清单（R3-2 参考图「24 个文件已更改 +1022 −396」的逐行形态）。 */
@@ -465,17 +478,52 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
     }
   };
 
-  /** 暂存 / 取消暂存一个块：patch 走 stdin，失败把 git 的原话抛出去。 */
+  /** 应用一个块：patch 走 stdin，失败把 git 的原话抛出去。 */
   const applyHunk = async (
     cwd: string,
     patch: string,
-    reverse = false,
+    options: { reverse?: boolean; target?: "index" | "worktree" } = {},
   ): Promise<void> => {
-    const args = ["apply", "--cached", "--recount"];
-    if (reverse) args.push("-R");
+    const args = ["apply", "--recount"];
+    if ((options.target ?? "index") === "index") args.push("--cached");
+    if (options.reverse) args.push("-R");
     const result = await exec(args, cwd, patch);
     if (result.code !== 0) {
-      throw new Error(result.stderr.trim() || "git apply 失败（这个块打不上）。");
+      throw new Error(
+        result.stderr.trim() ||
+          (options.target === "worktree"
+            ? "git apply 失败（这个块撤不掉，可能内容已经变了）。"
+            : "git apply 失败（这个块打不上）。"),
+      );
+    }
+  };
+
+  /**
+   * 撤销单个文件：未跟踪 = 删掉它（`clean -f`），其余 = 用索引里的内容覆盖工作区（`restore`）。
+   * 两条都是**丢内容**的操作，界面负责二次确认；这里只做 git 那一半。
+   */
+  const discardFile = async (
+    cwd: string,
+    path: string,
+    untracked: boolean,
+  ): Promise<void> => {
+    const result = untracked
+      ? await exec(["clean", "-f", "--", path], cwd)
+      : await exec(["restore", "--", path], cwd);
+    if (result.code !== 0) {
+      throw new Error(result.stderr.trim() || "撤销失败。");
+    }
+  };
+
+  /** 撤销全部未提交改动：先恢复已跟踪文件，再删掉未跟踪文件与目录。 */
+  const discardAll = async (cwd: string): Promise<void> => {
+    const restore = await exec(["restore", "--", "."], cwd);
+    if (restore.code !== 0 && !/did not match any file/i.test(restore.stderr)) {
+      throw new Error(restore.stderr.trim() || "撤销失败。");
+    }
+    const clean = await exec(["clean", "-fd"], cwd);
+    if (clean.code !== 0) {
+      throw new Error(clean.stderr.trim() || "清理未跟踪文件失败。");
     }
   };
 
@@ -608,6 +656,8 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
     diffStat,
     commitAll,
     applyHunk,
+    discardFile,
+    discardAll,
     stageFile,
     push,
     createBranch,

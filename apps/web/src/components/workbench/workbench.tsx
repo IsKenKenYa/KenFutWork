@@ -94,6 +94,7 @@ import {
 } from "@/lib/panel-layout";
 import { PluginPanelButtons } from "@/lib/plugin-panels";
 import { dropPartialAssistantTail } from "@/lib/run-events";
+import { formatElapsedSeconds, parseTimestampMs } from "@/lib/elapsed";
 import { describeRunFailure } from "@/lib/run-failure";
 import {
   createProject,
@@ -139,6 +140,14 @@ import {
 interface TaskMessage {
   role: "user" | "assistant";
   text: string;
+  /**
+   * 这条消息「工作了多久」（毫秒）：从这条消息的第一个字到本轮终态。
+   * 用户口径：「工作时间每个 AI 对话消息都要显示，而不是只显示一部分」——
+   * 所以是**每条**助手消息各自记一份，而不是只在会话头显示一个总时长。
+   */
+  elapsedMs?: number;
+  /** 这条消息开始的时间（内部用：终态时据此算 elapsedMs）。 */
+  startedAt?: number;
 }
 
 type WorkbenchModelOption = {
@@ -148,6 +157,30 @@ type WorkbenchModelOption = {
   vision?: boolean | undefined;
   contextWindow?: number | undefined;
 };
+
+/**
+ * 结算最后一条助手消息的耗时（终态时调用）。
+ *
+ * 口径：**这一条消息到上一条之间**的整段时间（含中间的思考与工具调用）——
+ * 只算它自己「从第一个字到这一刻」会恒等于 0（实测：模型把回复一口气吐完，
+ * 第一个字与最后一个字相差几十毫秒，界面上就成了「已工作 0 秒」）。
+ */
+function settleAssistantElapsed(task: WorkbenchTask): WorkbenchTask {
+  const messages = [...task.messages];
+  const last = messages[messages.length - 1];
+  if (!last || last.role !== "assistant" || last.startedAt === undefined) {
+    return task;
+  }
+  const elapsedMs = Math.max(0, Date.now() - last.startedAt);
+  messages[messages.length - 1] = {
+    role: "assistant",
+    text: last.text,
+    elapsedMs,
+    // **保留起点**：下一条消息要拿「上一条的起点 + 它的耗时」推算自己从哪一刻开始
+    startedAt: last.startedAt,
+  };
+  return { ...task, messages };
+}
 
 interface WorkbenchTask {
   id: string; // conversationId
@@ -1074,20 +1107,41 @@ export function Workbench() {
               text: last.text + delta,
             };
           } else {
-            messages.push({ role: "assistant", text: delta });
+            // 新的一条助手消息：起点取「上一条结束的时刻」，没有就退到本轮起点——
+            // 这样它记的是这一段的整段时间（含中间的思考与工具调用）
+            const previousEnd = [...messages]
+              .reverse()
+              .find((m) => m.role === "assistant" && m.elapsedMs !== undefined);
+            // 只有上一条**同时有起点与耗时**时才能链式推——老数据（只有耗时没有起点）
+            // 直接相加会得到「0 + 耗时」这种荒唐的绝对时刻（实测显示成 49 万小时）
+            const previousEndMs =
+              previousEnd?.startedAt !== undefined &&
+              previousEnd.elapsedMs !== undefined
+                ? previousEnd.startedAt + previousEnd.elapsedMs
+                : null;
+            const runStart = task.runStartedAt
+              ? parseTimestampMs(task.runStartedAt)
+              : null;
+            messages.push({
+              role: "assistant",
+              text: delta,
+              startedAt: previousEndMs ?? runStart ?? Date.now(),
+            });
           }
           return { ...task, messages };
         });
       } else if (type === "run.completed") {
         const ts = (evt as { timestamp?: string }).timestamp;
-        apply((task) => ({
-          ...task,
-          status: "completed",
-          ...(ts ? { runEndedAt: ts } : {}),
-          ...(task.subagents && ts
-            ? { subagents: closeAllSubagents(task.subagents, ts) }
-            : {}),
-        }));
+        apply((task) =>
+          settleAssistantElapsed({
+            ...task,
+            status: "completed",
+            ...(ts ? { runEndedAt: ts } : {}),
+            ...(task.subagents && ts
+              ? { subagents: closeAllSubagents(task.subagents, ts) }
+              : {}),
+          }),
+        );
         // 每轮成功结束自动提交一次（Code 模式 + 已绑项目），让对话在 git 里有迹可循
         if (mode === "code") {
           void autoCommitTurn(taskId);
@@ -1126,14 +1180,16 @@ export function Workbench() {
         markUnreadIfBackground();
       } else if (type === "run.canceled") {
         const canceledTs = (evt as { timestamp?: string }).timestamp;
-        apply((task) => ({
-          ...task,
-          status: "completed",
-          ...(canceledTs ? { runEndedAt: canceledTs } : {}),
-          ...(task.subagents && canceledTs
-            ? { subagents: closeAllSubagents(task.subagents, canceledTs) }
-            : {}),
-        }));
+        apply((task) =>
+          settleAssistantElapsed({
+            ...task,
+            status: "completed",
+            ...(canceledTs ? { runEndedAt: canceledTs } : {}),
+            ...(task.subagents && canceledTs
+              ? { subagents: closeAllSubagents(task.subagents, canceledTs) }
+              : {}),
+          }),
+        );
         // 用户自己按的停止：算已读，但转圈要收掉
         setRunningTaskId(null);
       }
@@ -2089,6 +2145,12 @@ export function Workbench() {
                     {showSummary && i === lastAssistantIdx ? (
                       <div className="text-xs font-medium text-muted-foreground">
                         最终总结
+                      </div>
+                    ) : null}
+                    {/* 每条助手消息都带上「工作了多久」（用户口径：不能只显示一部分） */}
+                    {msg.role === "assistant" && msg.elapsedMs !== undefined ? (
+                      <div className="text-[11px] text-muted-foreground">
+                        已工作 {formatElapsedSeconds(msg.elapsedMs / 1000)}
                       </div>
                     ) : null}
                     {msg.role === "user" ? (

@@ -16,8 +16,12 @@ function Select({ ...props }: SelectRootProps) {
 function SelectTrigger({
   className,
   children,
+  /** 不显示右侧箭头（图标按钮当菜单用时，箭头会和图标叠在一起）。 */
+  hideChevron = false,
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.Trigger>) {
+}: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
+  hideChevron?: boolean;
+}) {
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
@@ -28,9 +32,11 @@ function SelectTrigger({
       {...props}
     >
       {children}
-      <SelectPrimitive.Icon>
-        <ChevronDownIcon className="size-3.5 opacity-50" />
-      </SelectPrimitive.Icon>
+      {hideChevron ? null : (
+        <SelectPrimitive.Icon>
+          <ChevronDownIcon className="size-3.5 opacity-50" />
+        </SelectPrimitive.Icon>
+      )}
     </SelectPrimitive.Trigger>
   );
 }

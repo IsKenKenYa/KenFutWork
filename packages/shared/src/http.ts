@@ -185,8 +185,23 @@ export const codeGitStageHunkRequestSchema = z.object({
   path: z.string().min(1).max(1000),
   /** 「文件头 + 这一块」的 patch 文本（由审查视图从 diff 里切出来）。 */
   patch: z.string().min(1).max(200_000),
-  /** true = 反向应用（取消暂存这一块）。 */
+  /** true = 反向应用（索引里撤下 / 工作区里撤销）。 */
   reverse: z.boolean().optional(),
+  /** `index` = 动索引（暂存/取消暂存）；`worktree` = 动工作区（撤销这一块的改动）。 */
+  target: z.enum(["index", "worktree"]).optional(),
+});
+
+/** 撤销：单个文件（未跟踪的会被删掉）或全部未提交改动。 */
+export const codeGitDiscardRequestSchema = z.object({
+  canvasId: z.string().min(1),
+  /** 缺省 = 撤销全部。 */
+  path: z.string().min(1).max(1000).optional(),
+  /** 该文件是否未跟踪（未跟踪的撤销 = 删除文件）。 */
+  untracked: z.boolean().optional(),
+});
+
+export const codeGitDiscardResponseSchema = z.object({
+  ok: z.literal(true),
 });
 
 export const codeGitStageResponseSchema = z.object({

@@ -3,7 +3,6 @@
 import "@testing-library/jest-dom/vitest";
 import {
   cleanup,
-  configure,
   fireEvent,
   render,
   screen,
@@ -17,12 +16,6 @@ import {
   WorkbenchSidePanel,
   type WorkbenchPanelTab,
 } from "../src/components/workbench/workbench-side-panel";
-
-/**
- * 这个文件现在有 14 个面板用例、每个都要真渲染 + user-event 交互，
- * 并行跑全仓时默认 1s 的异步查询预算不够（单跑 ~3s、并行下会偶发超时）。
- */
-configure({ asyncUtilTimeout: 5000 });
 
 const {
   fetchCodeDocsMock,
@@ -169,24 +162,7 @@ describe("WorkbenchSidePanel", () => {
     );
   });
 
-  it("切到文档标签：列出文档并可打开内容（不串到变更标签的数据）", async () => {
-    render(<Harness />);
-    await screen.findByRole("list", { name: "变更文件" });
-
-    await userEvent.click(screen.getByRole("tab", { name: "文档" }));
-    await waitFor(() =>
-      expect(fetchCodeDocsMock).toHaveBeenCalledWith("token", "canvas-1"),
-    );
-    const docs = await screen.findByRole("list", { name: "项目文档" });
-    expect(within(docs).getByText("AGENTS.md")).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: "打开 AGENTS.md" }));
-    expect((await screen.findByLabelText("文件内容")).textContent).toContain(
-      "export const app = 1;",
-    );
-  });
-
-  it("没绑工作目录：变更与文档都说真话，不空转「读取中…」", async () => {
+  it("没绑工作目录：变更说真话，不空转「读取中…」", async () => {
     render(
       <WorkbenchSidePanel
         open

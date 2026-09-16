@@ -4,6 +4,8 @@ import {
   codeGitCheckoutRequestSchema,
   codeDocsResponseSchema,
   codeFilesResponseSchema,
+  codeGitDiscardRequestSchema,
+  codeGitDiscardResponseSchema,
   codeGitStageHunkRequestSchema,
   codeGitStageRequestSchema,
   codeGitStageResponseSchema,
@@ -287,11 +289,38 @@ export async function registerCodeGitRoutes(
         payload.canvasId,
         payload.path,
         payload.patch,
-        payload.reverse,
+        {
+          ...(payload.reverse !== undefined ? { reverse: payload.reverse } : {}),
+          ...(payload.target ? { target: payload.target } : {}),
+        },
       );
       return reply.code(200).send(
         codeGitStageResponseSchema.parse({ path: result.path, staged: true }),
       );
+    } catch (error) {
+      return sendCodeGitError(error, reply);
+    }
+  });
+
+  // POST /api/code/git/discard — 撤销更改（单文件或全部）。**丢内容**，界面负责二次确认。
+  app.post("/api/code/git/discard", async (request, reply) => {
+    const user = await options.auth.authenticate(request);
+    if (!user) return sendUnauthorized(reply);
+    try {
+      const payload = codeGitDiscardRequestSchema.parse(request.body);
+      if (payload.path) {
+        await options.codeGitService.discardFile(
+          user,
+          payload.canvasId,
+          payload.path,
+          payload.untracked ?? false,
+        );
+      } else {
+        await options.codeGitService.discardAllChanges(user, payload.canvasId);
+      }
+      return reply
+        .code(200)
+        .send(codeGitDiscardResponseSchema.parse({ ok: true }));
     } catch (error) {
       return sendCodeGitError(error, reply);
     }

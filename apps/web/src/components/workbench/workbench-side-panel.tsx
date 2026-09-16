@@ -25,13 +25,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SubagentDirectoryView } from "@/components/workbench/subagent-directory-view";
-import { onBrowserOpen } from "@/lib/browser-panel";
-import {
-  hunkPatch,
-  markHunkStarts,
-  splitHunks,
-  toDiffLines,
-} from "@/lib/git-hunks";
 import {
   canGoBack,
   canGoForward,
@@ -41,22 +34,30 @@ import {
   goForward,
   openUrl,
 } from "@/lib/browser-history";
+import { onBrowserOpen } from "@/lib/browser-panel";
+import { highlightCode } from "@/lib/code-highlight";
 import {
   type CodeFileListing,
-  fetchCodeDocs,
+  discardGitChanges,
   fetchCodeFiles,
   fetchGitChanges,
   fetchGitFileDiff,
   fetchSandboxFile,
   fetchTerminalShells,
-  setGitFileStaged,
-  stageGitHunk,
   type GitChanges,
   runTerminalCommand,
   type SandboxFileView,
+  setGitFileStaged,
+  stageGitHunk,
   type TerminalResult,
   type TerminalShellOption,
 } from "@/lib/code-git-api";
+import {
+  hunkPatch,
+  markHunkStarts,
+  splitHunks,
+  toDiffLines,
+} from "@/lib/git-hunks";
 import {
   clampPanelWidth,
   DEFAULT_PANEL_WIDTH,
@@ -82,7 +83,6 @@ export type WorkbenchPanelTab =
   | "files"
   | "terminal"
   | "browser"
-  | "docs"
   | "subagents";
 
 const TABS: Array<{ id: WorkbenchPanelTab; label: string }> = [
@@ -90,7 +90,6 @@ const TABS: Array<{ id: WorkbenchPanelTab; label: string }> = [
   { id: "files", label: "文件目录" },
   { id: "terminal", label: "终端" },
   { id: "browser", label: "浏览器" },
-  { id: "docs", label: "文档" },
   { id: "subagents", label: "子智能体" },
 ];
 
@@ -139,10 +138,6 @@ export function WorkbenchSidePanel({
   maxWidthExpression?: string;
 }) {
   const [changes, setChanges] = useState<GitChanges | null>(null);
-  const [docs, setDocs] = useState<Array<{
-    path: string;
-    bytes: number;
-  }> | null>(null);
   const [reading, setReading] = useState<Reading | null>(null);
   const [error, setError] = useState<string | null>(null);
   /**
@@ -171,8 +166,11 @@ export function WorkbenchSidePanel({
 
   /** 暂存 / 取消暂存当前审查的文件，成功后刷新变更清单（列表与按钮跟着变）。 */
   const toggleStaged = useCallback(async () => {
-    if (!accessToken || !canvasId || !reading || reading.kind !== "diff") return;
-    const staged = !(changes?.files.find((f) => f.path === reading.path)?.staged ?? false);
+    if (!accessToken || !canvasId || !reading || reading.kind !== "diff")
+      return;
+    const staged = !(
+      changes?.files.find((f) => f.path === reading.path)?.staged ?? false
+    );
     setStaging(true);
     setError(null);
     try {
@@ -185,17 +183,30 @@ export function WorkbenchSidePanel({
     }
   }, [accessToken, canvasId, reading, changes]);
 
-  /** 正在暂存第几块（null = 没有在暂存）。 */
-  const [stagingHunk, setStagingHunk] = useState<number | null>(null);
+  /** 正在处理第几块（null = 空闲）；撤销动作与它互斥。 */
+  const [hunkBusy, setHunkBusy] = useState<number | null>(null);
 
-  /** 暂存**一块**：把「文件头 + 这一块」拼成 patch 交给服务端，然后刷新清单。 */
-  const stageHunk = useCallback(
-    async (hunkIndex: number) => {
-      if (!accessToken || !canvasId || !reading || reading.kind !== "diff") return;
+  /**
+   * 块级动作：`stage` = 这一块进索引；`discard` = 丢掉这一块的工作区改动（**丢内容**，先确认）。
+   * 两者都只发「文件头 + 这一块」的 patch。
+   */
+  const applyHunkAction = useCallback(
+    async (hunkIndex: number, action: "stage" | "discard") => {
+      if (!accessToken || !canvasId || !reading || reading.kind !== "diff") {
+        return;
+      }
       const { fileHeader, hunks } = splitHunks(reading.text);
       const hunk = hunks[hunkIndex];
       if (!hunk) return;
-      setStagingHunk(hunkIndex);
+      if (
+        action === "discard" &&
+        !window.confirm(
+          `撤销第 ${hunkIndex + 1} 块？这一块在 ${reading.path} 里的改动会被丢掉，无法从这里恢复。`,
+        )
+      ) {
+        return;
+      }
+      setHunkBusy(hunkIndex);
       setError(null);
       try {
         await stageGitHunk(
@@ -203,18 +214,77 @@ export function WorkbenchSidePanel({
           canvasId,
           reading.path,
           hunkPatch(fileHeader, hunk),
+          action === "discard" ? { reverse: true, target: "worktree" } : {},
         );
         setChanges(await fetchGitChanges(accessToken, canvasId));
+        if (action === "discard") {
+          // 内容变了，重读这份 diff（否则界面上还留着已经不存在的改动）
+          const diff = await fetchGitFileDiff(
+            accessToken,
+            canvasId,
+            reading.path,
+          );
+          setReading({ kind: "diff", path: reading.path, text: diff.text });
+        }
       } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "暂存这一块失败（可能已经暂存过）。",
-        );
+        setError(err instanceof Error ? err.message : "这一块没处理成功。");
       } finally {
-        setStagingHunk(null);
+        setHunkBusy(null);
       }
     },
     [accessToken, canvasId, reading],
   );
+
+  /** 正在撤销（单文件或全部）时禁用按钮。 */
+  const [discarding, setDiscarding] = useState(false);
+
+  /** 撤销单个文件的改动（未跟踪 = 删除该文件）；**丢内容**，先确认。 */
+  const discardFileChanges = useCallback(
+    async (path: string, untracked: boolean) => {
+      if (!accessToken || !canvasId) return;
+      const what = untracked
+        ? `删除未跟踪文件 ${path}`
+        : `把 ${path} 恢复成仓库里的样子`;
+      if (!window.confirm(`确定撤销？将${what}，这些改动无法从这里恢复。`))
+        return;
+      setDiscarding(true);
+      setError(null);
+      try {
+        await discardGitChanges(accessToken, canvasId, { path, untracked });
+        setChanges(await fetchGitChanges(accessToken, canvasId));
+        setReading(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "撤销失败。");
+      } finally {
+        setDiscarding(false);
+      }
+    },
+    [accessToken, canvasId],
+  );
+
+  /** 撤销全部未提交改动；**丢内容**，先确认（确认框里带文件数）。 */
+  const discardEverything = useCallback(async () => {
+    if (!accessToken || !canvasId) return;
+    const count = changes?.files.length ?? 0;
+    if (
+      !window.confirm(
+        `确定撤销全部 ${count} 个文件的改动？未跟踪的新文件会被删除，且无法从这里恢复。`,
+      )
+    ) {
+      return;
+    }
+    setDiscarding(true);
+    setError(null);
+    try {
+      await discardGitChanges(accessToken, canvasId);
+      setChanges(await fetchGitChanges(accessToken, canvasId));
+      setReading(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "撤销失败。");
+    } finally {
+      setDiscarding(false);
+    }
+  }, [accessToken, canvasId, changes]);
 
   /** 文件目录：当前浏览的相对路径（根目录是空串）与列表。 */
   const [dir, setDir] = useState("");
@@ -271,16 +341,6 @@ export function WorkbenchSidePanel({
             setListing({ path: dir, entries: [], truncated: false });
             setError(err instanceof Error ? err.message : "读取目录失败。");
           }
-        });
-    }
-    if (tab === "docs") {
-      setDocs(null);
-      fetchCodeDocs(accessToken, canvasId)
-        .then((next) => {
-          if (!cancelled) setDocs(next);
-        })
-        .catch(() => {
-          if (!cancelled) setDocs([]);
         });
     }
     return () => {
@@ -388,6 +448,10 @@ export function WorkbenchSidePanel({
   );
 
   if (!open) return null;
+
+  /** 文件预览的高亮 HTML（认不出语言或高亮失败是 null → 纯文本）。 */
+  const highlighted =
+    reading?.kind === "file" ? highlightCode(reading.text, reading.path) : null;
 
   /** 当前审查的文件是否已在索引里（决定按钮文案）。 */
   const stagedNow =
@@ -508,44 +572,82 @@ export function WorkbenchSidePanel({
                 aria-label="文件差异"
                 className="max-h-[60vh] overflow-auto p-2 font-mono text-[11px] leading-5"
               >
-                {markHunkStarts(toDiffLines(reading.text)).map((line, index) => (
-                  <div
-                    key={`${index}-${line.text.slice(0, 12)}`}
-                    className={`whitespace-pre ${
-                      line.kind === "add"
-                        ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                        : line.kind === "del"
-                          ? "bg-rose-500/10 text-rose-700 dark:text-rose-400"
-                          : line.kind === "hunk"
-                            ? "bg-muted/60 text-muted-foreground"
-                            : line.kind === "meta"
-                              ? "text-muted-foreground"
-                              : ""
-                    }`}
-                  >
-                    {line.text}
-                    {line.hunkIndex !== undefined ? (
-                      <button
-                        type="button"
-                        aria-label={`暂存第 ${line.hunkIndex + 1} 块`}
-                        disabled={stagingHunk !== null}
-                        title="只把这一块加进索引（其余块留在工作区）"
-                        onClick={() => void stageHunk(line.hunkIndex!)}
-                        className="ml-2 rounded border px-1.5 py-0.5 align-middle text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
-                      >
-                        {stagingHunk === line.hunkIndex ? "处理中…" : "暂存块"}
-                      </button>
-                    ) : null}
-                  </div>
-                ))}
+                {markHunkStarts(toDiffLines(reading.text)).map(
+                  (line, index) => (
+                    <div
+                      key={`${index}-${line.text.slice(0, 12)}`}
+                      className={`flex items-start gap-1 whitespace-pre ${
+                        line.kind === "add"
+                          ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                          : line.kind === "del"
+                            ? "bg-rose-500/10 text-rose-700 dark:text-rose-400"
+                            : line.kind === "hunk"
+                              ? "bg-muted/60 text-muted-foreground"
+                              : line.kind === "meta"
+                                ? "text-muted-foreground"
+                                : ""
+                      }`}
+                    >
+                      {/* 块头左侧的 gutter：＋ 暂存块 / ⟲ 撤销块（参考图就在左边） */}
+                      <span className="flex w-10 shrink-0 items-center gap-0.5 pl-0.5">
+                        {line.hunkIndex === undefined ? null : (
+                          <>
+                            <button
+                              type="button"
+                              aria-label={`暂存第 ${line.hunkIndex + 1} 块`}
+                              disabled={hunkBusy !== null}
+                              title="暂存块：只把这一块加进索引（其余块留在工作区）"
+                              onClick={() =>
+                                void applyHunkAction(line.hunkIndex!, "stage")
+                              }
+                              className="rounded border border-emerald-600/40 px-1 text-[10px] leading-4 text-emerald-700 transition-colors hover:bg-emerald-500/10 disabled:opacity-40 dark:text-emerald-400"
+                            >
+                              ＋
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`撤销第 ${line.hunkIndex + 1} 块`}
+                              disabled={hunkBusy !== null}
+                              title="撤销块：丢掉这一块的工作区改动（会丢内容，需确认）"
+                              onClick={() =>
+                                void applyHunkAction(line.hunkIndex!, "discard")
+                              }
+                              className="rounded border border-rose-600/40 px-1 text-[10px] leading-4 text-rose-700 transition-colors hover:bg-rose-500/10 disabled:opacity-40 dark:text-rose-400"
+                            >
+                              ⟲
+                            </button>
+                          </>
+                        )}
+                      </span>
+                      <span className="min-w-0 flex-1">{line.text}</span>
+                      {line.hunkIndex !== undefined &&
+                      hunkBusy === line.hunkIndex ? (
+                        <span className="shrink-0 pr-1 text-[10px] text-muted-foreground">
+                          处理中…
+                        </span>
+                      ) : null}
+                    </div>
+                  ),
+                )}
               </div>
             ) : (
-              <pre
-                aria-label="文件内容"
-                className="max-h-[60vh] overflow-auto p-2 font-mono text-[11px] leading-5 whitespace-pre"
-              >
-                {reading.text}
-              </pre>
+              /* 文件预览：能认语言就按高亮渲染（highlight.js 的输出已转义），
+                 认不出来就纯文本——不猜语言，也不半渲染 */
+              highlighted ? (
+                <pre
+                  aria-label="文件内容"
+                  className="hljs max-h-[60vh] overflow-auto p-2 font-mono text-[11px] leading-5 whitespace-pre"
+                  // biome-ignore lint/security/noDangerouslySetInnerHtml: highlight.js 的输出自己转义（见 lib/code-highlight 的单测）
+                  dangerouslySetInnerHTML={{ __html: highlighted }}
+                />
+              ) : (
+                <pre
+                  aria-label="文件内容"
+                  className="max-h-[60vh] overflow-auto p-2 font-mono text-[11px] leading-5 whitespace-pre"
+                >
+                  {reading.text}
+                </pre>
+              )
             )}
           </div>
         ) : tab === "subagents" ? (
@@ -594,19 +696,16 @@ export function WorkbenchSidePanel({
             onNavigate={(next) => setDir(next)}
             onOpen={(path) => void openFile(path)}
           />
-        ) : tab === "docs" ? (
-          <DocsView
-            docs={docs}
-            canvasId={canvasId}
-            onOpen={(path) => void openFile(path)}
-          />
         ) : (
           <ChangesView
             changes={changes}
             canvasId={canvasId}
             totals={totals}
+            discarding={discarding}
             onReview={(path) => void openDiff(path)}
             onOpen={(path) => void openFile(path)}
+            onDiscard={discardFileChanges}
+            onDiscardAll={discardEverything}
           />
         )}
       </div>
@@ -628,12 +727,20 @@ function ChangesView({
   totals,
   onReview,
   onOpen,
+  onDiscard,
+  onDiscardAll,
+  discarding,
 }: {
   changes: GitChanges | null;
   canvasId: string | null;
   totals: { additions: number; deletions: number };
   onReview: (path: string) => void;
   onOpen: (path: string) => void;
+  /** 撤销单个文件（未跟踪的会被删除）。二次确认在调用方。 */
+  onDiscard: (path: string, untracked: boolean) => Promise<void>;
+  /** 撤销全部未提交改动。二次确认在调用方。 */
+  onDiscardAll: () => Promise<void>;
+  discarding: boolean;
 }) {
   if (!canvasId) {
     return (
@@ -678,6 +785,16 @@ function ChangesView({
           <span className="text-emerald-600">+{totals.additions}</span>{" "}
           <span className="text-rose-500">−{totals.deletions}</span>
         </span>
+        <button
+          type="button"
+          aria-label="撤销全部更改"
+          disabled={discarding || changes.files.length === 0}
+          title="撤销全部未提交改动（未跟踪的新文件会被删除）"
+          onClick={() => void onDiscardAll()}
+          className="shrink-0 rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive disabled:opacity-40"
+        >
+          撤销
+        </button>
       </div>
       <ul aria-label="变更文件" className="divide-y">
         {changes.files.map((file) => {
@@ -729,6 +846,22 @@ function ChangesView({
               >
                 打开
               </button>
+              <button
+                type="button"
+                aria-label={`撤销 ${file.path}`}
+                disabled={discarding}
+                onClick={() =>
+                  void onDiscard(file.path, file.status === "untracked")
+                }
+                title={
+                  file.status === "untracked"
+                    ? "撤销：删除这个未跟踪文件"
+                    : "撤销：把这个文件恢复成仓库里的样子"
+                }
+                className="shrink-0 rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive disabled:opacity-40"
+              >
+                撤销
+              </button>
             </li>
           );
         })}
@@ -739,70 +872,6 @@ function ChangesView({
         </p>
       ) : null}
     </div>
-  );
-}
-
-/**
- * 文档列表（参考图：`AGENTS.md` / `文档 · MD` / 「打开」）。
- * 打不开时如实说原因（例如目录里没有文档），不留空白。
- */
-function DocsView({
-  docs,
-  canvasId,
-  onOpen,
-}: {
-  docs: Array<{ path: string; bytes: number }> | null;
-  canvasId: string | null;
-  onOpen: (path: string) => void;
-}) {
-  if (!canvasId) {
-    return (
-      <p className="text-xs text-muted-foreground">
-        这个会话没有绑定工作目录。
-      </p>
-    );
-  }
-  if (docs === null) {
-    return <p className="text-xs text-muted-foreground">读取中…</p>;
-  }
-  if (docs.length === 0) {
-    return (
-      <p className="text-xs text-muted-foreground">
-        这个目录里没有 AGENTS.md / README.md 等文档。
-      </p>
-    );
-  }
-
-  return (
-    <ul aria-label="项目文档" className="space-y-2">
-      {docs.map((doc) => {
-        const { name } = splitPath(doc.path);
-        const ext = name.includes(".") ? name.split(".").pop() : "";
-        return (
-          <li
-            key={doc.path}
-            className="flex items-center gap-2 rounded-xl border px-3 py-2.5"
-          >
-            <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm">{name}</span>
-              <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                <GitBranch className="h-3 w-3" />
-                文档{ext ? ` · ${ext.toUpperCase()}` : ""}
-              </span>
-            </span>
-            <button
-              type="button"
-              aria-label={`打开 ${doc.path}`}
-              onClick={() => onOpen(doc.path)}
-              className="shrink-0 rounded-md border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
-            >
-              打开
-            </button>
-          </li>
-        );
-      })}
-    </ul>
   );
 }
 
@@ -913,21 +982,12 @@ function formatBytes(bytes: number): string {
 }
 
 /**
- * 右栏浏览器（参考图 `待办插件、浏览器参考、工具调用可展开.png` 的浏览器视口）。
- *
- * 边界如实写在界面上：这是**内嵌 iframe**，能否渲染取决于目标站点是否允许被嵌入
- * （X-Frame-Options / CSP frame-ancestors）——允许的（本机 dev server 等）能看能用，
- * 不允许的会是一片空白，此时右侧给「在系统浏览器打开」的出口。
- * 「选择网页元素加入聊天」（R3-4）需要跨源 DOM 访问，内嵌 iframe 拿不到，故按钮置灰
- * 并说明原因，不做假开关。
- */
-/**
  * 右栏浏览器（R3-1 / R3-4 的可用形态）。工具栏按参考图的浏览器面板排：
  * **后退 / 前进 / 刷新在左，地址栏居中，右侧是视图宽度与 ⋯ 菜单**（「在系统浏览器打开」等）。
  *
  * 三条如实写明的边界：
  * - 后退/前进走**面板内历史栈**（跨源 iframe 读不到页面自己的 history）；
- * - 视图宽度只是**本面板里的预览宽度**（参考图的「适应窗口 / 自由尺寸」），不改目标站点；
+ * - 预览缩放是**真的缩放**（iframe transform），只影响这个面板里的显示；
  * - 「选择网页元素加入聊天」需要浏览器调试接口（CDP / 扩展），内嵌 iframe 拿不到跨源 DOM，
  *   所以按钮**禁用**并写明原因——不做假开关。
  */
@@ -955,9 +1015,23 @@ function BrowserView({
   onReload: () => void;
 }) {
   const normalized = normalizeUrl(draft);
-  const [viewport, setViewport] = useState<ViewportPreset>("fit");
-  const viewportWidth =
-    VIEWPORT_PRESETS.find((preset) => preset.id === viewport)?.width ?? 0;
+  const [zoom, setZoom] = useState<ZoomPreset>("fit");
+  const zoomScale = ZOOM_PRESETS.find((p) => p.id === zoom)?.scale ?? 1;
+  /** 面板里这块预览区有多大（参考图那行「1280 × 720」）。 */
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [paneWidth, setPaneWidth] = useState(0);
+  const [paneHeight, setPaneHeight] = useState(0);
+  useEffect(() => {
+    const measure = () => {
+      const el = frameRef.current;
+      if (!el) return;
+      setPaneWidth(el.clientWidth);
+      setPaneHeight(el.clientHeight);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [url]);
 
   const navButtonClass =
     "shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40";
@@ -1017,33 +1091,6 @@ function BrowserView({
           placeholder="输入网址，回车打开"
           className="min-w-0 flex-1 rounded-md border bg-transparent px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
         />
-        <Select
-          aria-label="视图宽度"
-          value={viewport}
-          onValueChange={(next) => {
-            if (typeof next === "string") setViewport(next as ViewportPreset);
-          }}
-          items={VIEWPORT_PRESETS.map((preset) => ({
-            value: preset.id,
-            label: preset.label,
-          }))}
-        >
-          <SelectTrigger
-            className="shrink-0 gap-1 border-transparent bg-muted/60 px-2 py-1 text-[11px]"
-            aria-label="视图宽度"
-            title="本面板里的预览宽度（不改目标站点）"
-          >
-            <Monitor className="h-3.5 w-3.5" />
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="min-w-32">
-            {VIEWPORT_PRESETS.map((preset) => (
-              <SelectItem key={preset.id} value={preset.id}>
-                {preset.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
         <button
           type="button"
           aria-label="选择网页元素加入聊天"
@@ -1072,6 +1119,7 @@ function BrowserView({
           <SelectTrigger
             className="shrink-0 gap-0 border-transparent px-1.5 py-1"
             aria-label="浏览器菜单"
+            hideChevron
             title="更多（在系统浏览器打开 / 复制地址）"
           >
             <Ellipsis className="h-3.5 w-3.5" />
@@ -1083,16 +1131,57 @@ function BrowserView({
         </Select>
       </form>
 
+      {/* 预览控制行（参考图：地址栏下面一行显示尺寸 + 预设）。**缩放是真的缩放**——
+          iframe 用 transform 放大/缩小，指针坐标照样对得上，不是拿宽度假装缩放 */}
+      <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-2 py-1 text-[11px]">
+        <span className="font-mono text-muted-foreground">
+          {paneWidth > 0 ? `${paneWidth} × ${paneHeight}` : "—"}
+        </span>
+        <Select
+          aria-label="预览缩放"
+          value={zoom}
+          onValueChange={(next) => {
+            if (typeof next === "string") setZoom(next as ZoomPreset);
+          }}
+          items={ZOOM_PRESETS.map((preset) => ({
+            value: preset.id,
+            label: preset.label,
+          }))}
+        >
+          <SelectTrigger
+            className="ml-auto shrink-0 gap-1 border-transparent bg-transparent px-1.5 py-0.5 text-[11px]"
+            aria-label="预览缩放"
+            title="预览缩放（只影响这个面板里的显示）"
+          >
+            <Monitor className="h-3.5 w-3.5" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="min-w-32">
+            {ZOOM_PRESETS.map((preset) => (
+              <SelectItem key={preset.id} value={preset.id}>
+                {preset.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       {url ? (
-        <div className="flex min-h-0 flex-1 justify-center rounded-xl border bg-background">
+        <div
+          ref={frameRef}
+          className="relative min-h-0 flex-1 overflow-hidden rounded-xl border bg-background"
+        >
           <iframe
             key={`${url}#${reloadToken}`}
             src={url}
             title={`右栏浏览器：${url}`}
-            {...(viewportWidth > 0 ? { style: { width: viewportWidth } } : {})}
-            className={
-              viewportWidth > 0 ? "h-full max-w-full shrink-0" : "h-full w-full"
-            }
+            style={{
+              transform: `scale(${zoomScale})`,
+              transformOrigin: "top left",
+              width: `${100 / zoomScale}%`,
+              height: `${100 / zoomScale}%`,
+            }}
+            className="absolute top-0 left-0"
           />
         </div>
       ) : (
@@ -1102,21 +1191,23 @@ function BrowserView({
       )}
       <p className="text-[10px] text-muted-foreground">
         内嵌页面能否显示取决于目标站点是否允许被嵌入；被拒绝时会是一片空白，用「在系统浏览器
-        打开」兜底。后退 / 前进记的是**本面板打开过的地址**（跨源页面自己的历史读不到）。
+        打开」兜底。后退 /
+        前进记的是**本面板打开过的地址**（跨源页面自己的历史读不到）。
       </p>
     </div>
   );
 }
 
-/** 预览宽度预设（参考图的「适应窗口 / 自由尺寸」）。 */
-const VIEWPORT_PRESETS = [
-  { id: "fit", label: "适应面板", width: 0 },
-  { id: "phone", label: "手机 390", width: 390 },
-  { id: "tablet", label: "平板 768", width: 768 },
-  { id: "desktop", label: "桌面 1280", width: 1280 },
+/** 预览缩放预设（参考图：适应窗口 / 50% / 75% / 100%）。 */
+const ZOOM_PRESETS = [
+  { id: "fit", label: "适应窗口", scale: 1 },
+  { id: "half", label: "50%", scale: 0.5 },
+  { id: "three-quarter", label: "75%", scale: 0.75 },
+  { id: "full", label: "100%", scale: 1 },
+  { id: "one-quarter", label: "125%", scale: 1.25 },
 ] as const;
 
-type ViewportPreset = (typeof VIEWPORT_PRESETS)[number]["id"];
+type ZoomPreset = (typeof ZOOM_PRESETS)[number]["id"];
 
 /** 补全协议：裸地址（如 localhost:3000）按 http 处理；空串返回 null。 */
 export function normalizeUrl(value: string): string | null {

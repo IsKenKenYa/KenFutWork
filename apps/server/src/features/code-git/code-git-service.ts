@@ -154,14 +154,26 @@ export type CodeGitService = {
     path: string,
     staged: boolean,
   ): Promise<{ path: string; staged: boolean }>;
-  /** 暂存 / 取消暂存**一个块**（参考图审查视图的「暂存块」）。 */
+  /** 应用 / 反向应用**一个块**（参考图审查视图的「暂存块 / 撤销块」）。 */
   applyFileHunk(
     user: AuthenticatedUser,
     canvasId: string,
     path: string,
     patch: string,
-    reverse?: boolean,
+    options?: { reverse?: boolean; target?: "index" | "worktree" },
   ): Promise<{ path: string; applied: true }>;
+  /** 撤销单个文件的改动（二次确认在界面）；未跟踪 = 删除该文件。 */
+  discardFile(
+    user: AuthenticatedUser,
+    canvasId: string,
+    path: string,
+    untracked: boolean,
+  ): Promise<{ path: string }>;
+  /** 撤销全部未提交改动（二次确认在界面）。 */
+  discardAllChanges(
+    user: AuthenticatedUser,
+    canvasId: string,
+  ): Promise<{ ok: true }>;
   /** 工作目录里的项目文档（R3-3）：候选清单里存在的那些，附字节数。 */
   listDocs(
     user: AuthenticatedUser,
@@ -449,7 +461,7 @@ export function createCodeGitService(options: {
      * 暂存单个块：先过「路径落在工作目录内」，再**核对 patch 里改的确实只有这个文件**，
      * 最后才交给 git apply（见 hunk-patch.ts 的注释：patch 里的路径才是 git 真会动的路径）。
      */
-    async applyFileHunk(user, canvasId, path, patch, reverse) {
+    async applyFileHunk(user, canvasId, path, patch, options = {}) {
       const dir = await sandboxDirFor(user, canvasId);
       try {
         resolveInsideRoot(dir, path);
@@ -469,7 +481,7 @@ export function createCodeGitService(options: {
       }
       await requireRepo(dir);
       try {
-        await git.applyHunk(dir, patch, reverse ?? false);
+        await git.applyHunk(dir, patch, options);
       } catch (error) {
         throw new CodeGitError(
           "git_write_failed",
@@ -478,6 +490,47 @@ export function createCodeGitService(options: {
         );
       }
       return { path, applied: true };
+    },
+
+    /** 撤销单个文件：与暂存同一道门（路径在工作目录内 + 是仓库）。 */
+    async discardFile(user, canvasId, path, untracked) {
+      const dir = await sandboxDirFor(user, canvasId);
+      try {
+        resolveInsideRoot(dir, path);
+      } catch (error) {
+        throw new CodeGitError(
+          "git_write_failed",
+          error instanceof Error ? error.message : "路径越出工作目录。",
+          400,
+        );
+      }
+      await requireRepo(dir);
+      try {
+        await git.discardFile(dir, path, untracked);
+      } catch (error) {
+        throw new CodeGitError(
+          "git_write_failed",
+          error instanceof Error ? error.message : "撤销失败。",
+          400,
+        );
+      }
+      return { path };
+    },
+
+    /** 撤销全部未提交改动。 */
+    async discardAllChanges(user, canvasId) {
+      const dir = await sandboxDirFor(user, canvasId);
+      await requireRepo(dir);
+      try {
+        await git.discardAll(dir);
+      } catch (error) {
+        throw new CodeGitError(
+          "git_write_failed",
+          error instanceof Error ? error.message : "撤销失败。",
+          400,
+        );
+      }
+      return { ok: true };
     },
 
     /** 列一层目录：路径越界/不存在/不是目录都折成 400 可读原因。 */

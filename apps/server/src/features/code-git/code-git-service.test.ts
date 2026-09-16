@@ -70,6 +70,8 @@ function build(options: {
     fileDiff: vi.fn(async () => ""),
     stageFile: vi.fn(async () => {}),
     applyHunk: vi.fn(async () => {}),
+    discardFile: vi.fn(async () => {}),
+    discardAll: vi.fn(async () => {}),
     ...options.git,
   };
   const findById = vi.fn(async () =>

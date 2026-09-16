@@ -720,3 +720,84 @@
   background-color: var(--primary);
   color: var(--primary-foreground);
 }
+
+/* 文件预览的高亮主题（highlight.js 输出的类名）。只认扩展名的那些语言会走到这里；
+   颜色用项目自己的 token，深浅色各一套 */
+.hljs {
+  color: var(--foreground);
+  background: transparent;
+}
+.hljs-comment,
+.hljs-quote {
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-name {
+  color: #8250df;
+}
+.dark .hljs-keyword,
+.dark .hljs-selector-tag,
+.dark .hljs-literal,
+.dark .hljs-name {
+  color: #d2a8ff;
+}
+.hljs-string,
+.hljs-doctag,
+.hljs-regexp {
+  color: #0a3069;
+}
+.dark .hljs-string,
+.dark .hljs-doctag,
+.dark .hljs-regexp {
+  color: #a5d6ff;
+}
+.hljs-title,
+.hljs-section,
+.hljs-title.function_ {
+  color: #6639ba;
+}
+.dark .hljs-title,
+.dark .hljs-section,
+.dark .hljs-title.function_ {
+  color: #d2a8ff;
+}
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-attr,
+.hljs-attribute {
+  color: #953800;
+}
+.dark .hljs-number,
+.dark .hljs-symbol,
+.dark .hljs-bullet,
+.dark .hljs-variable,
+.dark .hljs-template-variable,
+.dark .hljs-attr,
+.dark .hljs-attribute {
+  color: #ffa657;
+}
+.hljs-built_in,
+.hljs-type,
+.hljs-class .hljs-title {
+  color: #0550ae;
+}
+.dark .hljs-built_in,
+.dark .hljs-type,
+.dark .hljs-class .hljs-title {
+  color: #79c0ff;
+}
+.hljs-meta {
+  color: var(--muted-foreground);
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 600;
+}
