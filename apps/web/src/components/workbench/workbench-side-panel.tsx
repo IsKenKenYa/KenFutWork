@@ -11,10 +11,18 @@ import {
   MousePointerSquareDashed,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { SubagentDirectoryView } from "@/components/workbench/subagent-directory-view";
 import { onBrowserOpen } from "@/lib/browser-panel";
+import {
+  clampPanelWidth,
+  DEFAULT_PANEL_WIDTH,
+  MAX_PANEL_WIDTH,
+  MIN_PANEL_WIDTH,
+  PANEL_WIDTH_KEY,
+  type PanelWidthLimits,
+} from "@/lib/panel-layout";
 import {
   fetchCodeDocs,
   fetchCodeFiles,
@@ -76,6 +84,9 @@ export function WorkbenchSidePanel({
   canvasId,
   subagents,
   running,
+  widthLimits,
+  onGrowBlocked,
+  onWidthChange,
 }: {
   open: boolean;
   onClose: () => void;
@@ -86,6 +97,12 @@ export function WorkbenchSidePanel({
   canvasId: string | null;
   subagents: SubagentEntry[];
   running: boolean;
+  /** 宽度上下限（工作台按视口与左栏现算，见 lib/panel-layout）。 */
+  widthLimits?: PanelWidthLimits;
+  /** 拖到上限还继续往里拖：工作台据此把左栏收起来腾地方。 */
+  onGrowBlocked?: () => void;
+  /** 实际占宽回传给工作台（对话列宽度 = 视口 − 左栏 − 面板，据此决定 composer 形态）。 */
+  onWidthChange?: (width: number) => void;
 }) {
   const [changes, setChanges] = useState<GitChanges | null>(null);
   const [docs, setDocs] = useState<Array<{ path: string; bytes: number }> | null>(
@@ -115,12 +132,28 @@ export function WorkbenchSidePanel({
   const [width, setWidth] = useState(() => {
     if (typeof window === "undefined") return DEFAULT_PANEL_WIDTH;
     const saved = Number(window.localStorage.getItem(PANEL_WIDTH_KEY));
-    return Number.isFinite(saved) &&
-      saved >= MIN_PANEL_WIDTH &&
-      saved <= MAX_PANEL_WIDTH
-      ? saved
-      : DEFAULT_PANEL_WIDTH;
+    const fallback =
+      Number.isFinite(saved) && saved >= MIN_PANEL_WIDTH && saved <= MAX_PANEL_WIDTH
+        ? saved
+        : DEFAULT_PANEL_WIDTH;
+    return widthLimits ? clampPanelWidth(fallback, widthLimits) : fallback;
   });
+
+  /**
+   * 视口变小或左栏重新展开时，把面板收回到当前上限内——中间对话列不被挤没
+   * （用户口径：「保证右侧面板大小可以比较灵活调整」，但对话列要有下限）。
+   */
+  const limitsRef = useRef(widthLimits);
+  limitsRef.current = widthLimits;
+  useEffect(() => {
+    if (!widthLimits) return;
+    setWidth((current) => clampPanelWidth(current, widthLimits));
+  }, [widthLimits]);
+
+  /** 占宽回传（含拖动过程中的每一次变化与上限收回）。 */
+  useEffect(() => {
+    onWidthChange?.(width);
+  }, [width, onWidthChange]);
 
   /** 拉取当前标签需要的数据（变更/文档各一个端点；子智能体走已有事件流）。 */
   useEffect(() => {
@@ -221,29 +254,49 @@ export function WorkbenchSidePanel({
   /**
    * 拖左边缘调宽（参考图：左右面板都能调）。面板在右侧，故向左拖 = 变宽；
    * 松手时落 localStorage——宽度是用户偏好，刷新后保持。
+   *
+   * **拖过上限 = 请求腾地方**：上限是「视口 − 左栏 − 对话列最小宽度」现算的，所以继续拖只会
+   * 卡住不动。此时通知工作台把左栏收成图标栏（一次拖拽只请求一次，避免来回抖动），
+   * 上限随之变大、面板接着变宽。
    */
   const startResize = useCallback(
     (event: React.MouseEvent) => {
       event.preventDefault();
       const startX = event.clientX;
       const startWidth = width;
-      const clamp = (next: number) =>
-        Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, next));
+      let askedForRoom = false;
       const onMove = (moveEvent: MouseEvent) => {
-        setWidth(clamp(startWidth + (startX - moveEvent.clientX)));
+        const desired = startWidth + (startX - moveEvent.clientX);
+        const limits = limitsRef.current;
+        if (!askedForRoom && limits && desired > limits.max) {
+          askedForRoom = true;
+          onGrowBlocked?.();
+        }
+        setWidth(
+          clampPanelWidth(
+            desired,
+            limits ?? { min: MIN_PANEL_WIDTH, max: MAX_PANEL_WIDTH },
+          ),
+        );
       };
       const onUp = (upEvent: MouseEvent) => {
         window.removeEventListener("mousemove", onMove);
         window.removeEventListener("mouseup", onUp);
+        const limits = limitsRef.current;
         window.localStorage.setItem(
           PANEL_WIDTH_KEY,
-          String(clamp(startWidth + (startX - upEvent.clientX))),
+          String(
+            clampPanelWidth(
+              startWidth + (startX - upEvent.clientX),
+              limits ?? { min: MIN_PANEL_WIDTH, max: MAX_PANEL_WIDTH },
+            ),
+          ),
         );
       };
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
     },
-    [width],
+    [width, onGrowBlocked],
   );
 
   if (!open) return null;
@@ -270,9 +323,14 @@ export function WorkbenchSidePanel({
         onMouseDown={startResize}
         className="absolute top-0 -left-0.5 z-10 h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-foreground/20"
       />
-      {/* 标签条：与参考图一致——标签是视图，右侧是关闭 */}
+      {/* 标签条：与参考图一致——标签是视图，右侧是关闭。
+          窄面板（拖到 280px）下标签会换行，而不是把关闭键挤出去 */}
       <div className="flex min-h-[44px] items-center gap-1 border-b px-2">
-        <div role="tablist" aria-label="面板视图" className="flex items-center gap-1">
+        <div
+          role="tablist"
+          aria-label="面板视图"
+          className="flex min-w-0 flex-wrap items-center gap-1"
+        >
           {TABS.map((item) => (
             <button
               key={item.id}
@@ -547,12 +605,6 @@ function DocsView({
     </ul>
   );
 }
-
-/** 面板宽度的边界与持久化键（用户偏好，刷新后保持）。 */
-const MIN_PANEL_WIDTH = 280;
-const MAX_PANEL_WIDTH = 720;
-const DEFAULT_PANEL_WIDTH = 360;
-const PANEL_WIDTH_KEY = "workbench:panel-width";
 
 /**
  * 文件目录（R3-1「文件目录」标签）：**只列一层**，子目录点进去、面包屑回退。

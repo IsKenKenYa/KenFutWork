@@ -1,7 +1,14 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -204,6 +211,90 @@ describe("WorkbenchSidePanel", () => {
     expect(
       await screen.findByText(/这个会话还没有派过子智能体/),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * 面板宽度口径（用户口径：面板要能灵活调大，但不能把中间的对话列挤没；
+ * 拖过上限时把左栏收起来腾地方）。上限由工作台按「视口 − 左栏 − 对话列最小宽度」现算后传入。
+ */
+describe("面板宽度受对话列最小宽度约束", () => {
+  /** 面板的宽度是模块级 localStorage 偏好，用例之间必须清干净。 */
+  afterEach(() => {
+    cleanup();
+    window.localStorage.clear();
+  });
+
+  function Harness({
+    widthLimits,
+    onGrowBlocked,
+  }: {
+    widthLimits?: { min: number; max: number };
+    onGrowBlocked?: () => void;
+  }) {
+    const [tab, setTab] = useState<WorkbenchPanelTab>("changes");
+    return (
+      <WorkbenchSidePanel
+        open
+        onClose={() => {}}
+        tab={tab}
+        onTabChange={setTab}
+        accessToken="token"
+        canvasId="canvas-1"
+        subagents={[]}
+        running={false}
+        {...(widthLimits ? { widthLimits } : {})}
+        {...(onGrowBlocked ? { onGrowBlocked } : {})}
+      />
+    );
+  }
+
+  /** 面板当前渲染宽度（px）。 */
+  function panelWidth(): number {
+    const style = screen.getByLabelText("工作台面板").style.width;
+    return Number(style.replace("px", ""));
+  }
+
+  function drag(widthPx: number) {
+    const handle = screen.getByLabelText("调整面板宽度");
+    fireEvent.mouseDown(handle, { clientX: 0 });
+    fireEvent.mouseMove(window, { clientX: -widthPx });
+    fireEvent.mouseUp(window, { clientX: -widthPx });
+  }
+
+  it("存过更宽的偏好也收回到当前上限内（视口变小 / 左栏重新展开）", () => {
+    window.localStorage.setItem("workbench:panel-width", "900");
+    render(<Harness widthLimits={{ min: 280, max: 600 }} />);
+    expect(panelWidth()).toBe(600);
+  });
+
+  it("拖过上限：请求腾地方（左栏收起），且一次拖拽只请求一次", () => {
+    window.localStorage.setItem("workbench:panel-width", "360");
+    const onGrowBlocked = vi.fn();
+    render(
+      <Harness widthLimits={{ min: 280, max: 400 }} onGrowBlocked={onGrowBlocked} />,
+    );
+
+    const handle = screen.getByLabelText("调整面板宽度");
+    fireEvent.mouseDown(handle, { clientX: 0 });
+    fireEvent.mouseMove(window, { clientX: -500 });
+    fireEvent.mouseMove(window, { clientX: -600 });
+    fireEvent.mouseUp(window, { clientX: -600 });
+
+    expect(onGrowBlocked).toHaveBeenCalledTimes(1);
+    // 宽度仍夹在上限内（上限要等工作台把左栏收起后才变）
+    expect(panelWidth()).toBe(400);
+  });
+
+  it("没拖过上限：不动左栏", () => {
+    window.localStorage.setItem("workbench:panel-width", "360");
+    const onGrowBlocked = vi.fn();
+    render(
+      <Harness widthLimits={{ min: 280, max: 900 }} onGrowBlocked={onGrowBlocked} />,
+    );
+    drag(120);
+    expect(onGrowBlocked).not.toHaveBeenCalled();
+    expect(panelWidth()).toBe(480);
   });
 });
 

@@ -52,6 +52,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ContextUsageButton } from "@/components/workbench/context-usage-button";
+import {
+  ComposerCompactSelect,
+  THINKING_OPTIONS,
+  TIER_OPTIONS,
+} from "@/components/workbench/composer-compact-select";
 import { ElapsedEntry } from "@/components/workbench/elapsed-entry";
 import { GitBranchSelect } from "@/components/workbench/git-branch-select";
 import { McpModal } from "@/components/workbench/mcp-modal";
@@ -80,6 +85,13 @@ import {
 } from "@/lib/context-usage";
 import { resolveDesignAutoCanvas } from "@/lib/design-auto-canvas";
 import { getServerBaseUrl } from "@/lib/env";
+import {
+  conversationColumnWidth,
+  isCompactComposer,
+  MAX_SIDEBAR_WIDTH,
+  MIN_SIDEBAR_WIDTH,
+  panelWidthLimits,
+} from "@/lib/panel-layout";
 import { PluginPanelButtons } from "@/lib/plugin-panels";
 import { dropPartialAssistantTail } from "@/lib/run-events";
 import { describeRunFailure } from "@/lib/run-failure";
@@ -408,14 +420,19 @@ export function Workbench() {
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     if (typeof window === "undefined") return 256;
     const saved = Number(window.localStorage.getItem("workbench:sidebar-width"));
-    return Number.isFinite(saved) && saved >= 200 && saved <= 420 ? saved : 256;
+    return Number.isFinite(saved) &&
+      saved >= MIN_SIDEBAR_WIDTH &&
+      saved <= MAX_SIDEBAR_WIDTH
+      ? saved
+      : 256;
   });
 
   const startSidebarResize = useCallback((event: React.MouseEvent) => {
     event.preventDefault();
     const startX = event.clientX;
     const startWidth = sidebarWidth;
-    const clamp = (next: number) => Math.min(420, Math.max(200, next));
+    const clamp = (next: number) =>
+      Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, next));
     const onMove = (moveEvent: MouseEvent) => {
       setSidebarWidth(clamp(startWidth + (moveEvent.clientX - startX)));
     };
@@ -431,8 +448,43 @@ export function Workbench() {
     window.addEventListener("mouseup", onUp);
   }, [sidebarWidth]);
 
+  /**
+   * 视口宽度（面板上限要按它现算：视口 − 左栏 − 对话列最小宽度）。
+   * 窗口尺寸变化时重算，面板会被收回到新上限内（见 lib/panel-layout）。
+   */
+  const [windowWidth, setWindowWidth] = useState(() =>
+    typeof window === "undefined" ? 0 : window.innerWidth,
+  );
+  useEffect(() => {
+    const onResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const panelLimits = useMemo(
+    () => panelWidthLimits({ windowWidth, sidebarWidth, sidebarCollapsed }),
+    [windowWidth, sidebarWidth, sidebarCollapsed],
+  );
+
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab, setPanelTab] = useState<WorkbenchPanelTab>("changes");
+
+  /**
+   * 对话列宽度：视口 − 左栏 − 右栏面板（三栏宽度都是受控 state，见 lib/panel-layout 的口径）。
+   * 窄到那排控件排不下时，composer 的权限 / 思考强度收成图标
+   * （用户口径：「面板里的东西塞不下了，思考强度和权限改成图标」）。
+   */
+  const [panelWidth, setPanelWidth] = useState(0);
+  const compactComposer = isCompactComposer(
+    windowWidth > 0
+      ? conversationColumnWidth({
+          windowWidth,
+          sidebarWidth,
+          sidebarCollapsed,
+          panelWidth: panelOpen ? panelWidth : 0,
+        })
+      : null,
+  );
 
   /**
    * 转录里点链接 → 自动打开右栏「浏览器」标签（用户口径：点对话里的 URL 就在右边打开）。
@@ -2110,32 +2162,16 @@ export function Workbench() {
                     >
                       <Plus className="h-4 w-4" />
                     </button>
-                  <Select
-                    aria-label="权限档位"
+                  <ComposerCompactSelect
+                    ariaLabel="权限档位"
+                    icon={<ShieldCheck className="h-3.5 w-3.5" />}
+                    compact={compactComposer}
+                    options={TIER_OPTIONS}
                     value={tier}
-                    onValueChange={(next) => {
-                      const tierValue = typeof next === "string" ? next : tier;
-                      if (tierValue !== tier) void handleTierChange(tierValue);
+                    onChange={(next) => {
+                      void handleTierChange(next);
                     }}
-                    items={[
-                      { value: "default", label: "默认" },
-                      { value: "auto-approve", label: "自动放行" },
-                      { value: "full-access", label: "完全访问" },
-                    ]}
-                  >
-                    <SelectTrigger
-                      className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
-                      aria-label="权限档位"
-                    >
-                      <ShieldCheck className="h-3.5 w-3.5" />
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="min-w-28">
-                      <SelectItem value="default">默认</SelectItem>
-                      <SelectItem value="auto-approve">自动放行</SelectItem>
-                      <SelectItem value="full-access">完全访问</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  />
                   <Select
                     aria-label="执行模式"
                     value={executionMode}
@@ -2206,35 +2242,15 @@ export function Workbench() {
                       models.find((m) => m.id === model)?.contextWindow ?? null
                     }
                   />
-                  <Select
-                    aria-label="思考强度"
+                  <ComposerCompactSelect
+                    ariaLabel="思考强度"
+                    icon={<Brain className="h-3.5 w-3.5" />}
+                    compact={compactComposer}
+                    options={THINKING_OPTIONS}
                     value={thinking}
-                    onValueChange={(next) => {
-                      if (typeof next === "string") handleThinkingChange(next);
-                    }}
-                    items={[
-                      { value: "default", label: "默认" },
-                      { value: "低", label: "低" },
-                      { value: "中", label: "中" },
-                      { value: "高", label: "高" },
-                      { value: "最高", label: "最高" },
-                    ]}
-                  >
-                    <SelectTrigger
-                      className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
-                      aria-label="思考强度"
-                    >
-                      <Brain className="h-3.5 w-3.5" />
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="min-w-24">
-                      <SelectItem value="default">默认</SelectItem>
-                      <SelectItem value="低">低</SelectItem>
-                      <SelectItem value="中">中</SelectItem>
-                      <SelectItem value="高">高</SelectItem>
-                      <SelectItem value="最高">最高</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    onChange={handleThinkingChange}
+                    contentClassName="min-w-24"
+                  />
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -2275,10 +2291,14 @@ export function Workbench() {
             canvasId={conversationProject?.primaryCanvas.id ?? null}
             subagents={activeTask.subagents ?? []}
             running={activeTask.status === "running"}
+            widthLimits={panelLimits}
+            /* 拖到上限还往里拖 → 收起左栏腾地方（用户口径：再往左边拉，侧栏自动收起来） */
+            onGrowBlocked={() => setSidebarCollapsed(true)}
+            onWidthChange={setPanelWidth}
           />
           </div>
         ) : (
-          <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-6">
+            <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-6">
             <div className="mb-9 flex items-center gap-3">
               {mode === "code" ? (
                 <Code2 className="h-8 w-8" />
@@ -2345,32 +2365,16 @@ export function Workbench() {
                   >
                     <Plus className="h-4 w-4" />
                   </button>
-                  <Select
-                    aria-label="权限档位"
+                  <ComposerCompactSelect
+                    ariaLabel="权限档位"
+                    icon={<ShieldCheck className="h-3.5 w-3.5" />}
+                    compact={compactComposer}
+                    options={TIER_OPTIONS}
                     value={tier}
-                    onValueChange={(next) => {
-                      const tierValue = typeof next === "string" ? next : tier;
-                      if (tierValue !== tier) void handleTierChange(tierValue);
+                    onChange={(next) => {
+                      void handleTierChange(next);
                     }}
-                    items={[
-                      { value: "default", label: "默认" },
-                      { value: "auto-approve", label: "自动放行" },
-                      { value: "full-access", label: "完全访问" },
-                    ]}
-                  >
-                    <SelectTrigger
-                      className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
-                      aria-label="权限档位"
-                    >
-                      <ShieldCheck className="h-3.5 w-3.5" />
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="min-w-28">
-                      <SelectItem value="default">默认</SelectItem>
-                      <SelectItem value="auto-approve">自动放行</SelectItem>
-                      <SelectItem value="full-access">完全访问</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  />
                   <Select
                     aria-label="执行模式"
                     value={executionMode}
@@ -2494,35 +2498,15 @@ export function Workbench() {
                       models.find((m) => m.id === model)?.contextWindow ?? null
                     }
                   />
-                  <Select
-                    aria-label="思考强度"
+                  <ComposerCompactSelect
+                    ariaLabel="思考强度"
+                    icon={<Brain className="h-3.5 w-3.5" />}
+                    compact={compactComposer}
+                    options={THINKING_OPTIONS}
                     value={thinking}
-                    onValueChange={(next) => {
-                      if (typeof next === "string") handleThinkingChange(next);
-                    }}
-                    items={[
-                      { value: "default", label: "默认" },
-                      { value: "低", label: "低" },
-                      { value: "中", label: "中" },
-                      { value: "高", label: "高" },
-                      { value: "最高", label: "最高" },
-                    ]}
-                  >
-                    <SelectTrigger
-                      className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
-                      aria-label="思考强度"
-                    >
-                      <Brain className="h-3.5 w-3.5" />
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="min-w-24">
-                      <SelectItem value="default">默认</SelectItem>
-                      <SelectItem value="低">低</SelectItem>
-                      <SelectItem value="中">中</SelectItem>
-                      <SelectItem value="高">高</SelectItem>
-                      <SelectItem value="最高">最高</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    onChange={handleThinkingChange}
+                    contentClassName="min-w-24"
+                  />
                 </div>
                 <div className="flex items-center gap-2">
                   <button
