@@ -27,6 +27,12 @@ import {
 import { SubagentDirectoryView } from "@/components/workbench/subagent-directory-view";
 import { onBrowserOpen } from "@/lib/browser-panel";
 import {
+  hunkPatch,
+  markHunkStarts,
+  splitHunks,
+  toDiffLines,
+} from "@/lib/git-hunks";
+import {
   canGoBack,
   canGoForward,
   createHistory,
@@ -44,6 +50,7 @@ import {
   fetchSandboxFile,
   fetchTerminalShells,
   setGitFileStaged,
+  stageGitHunk,
   type GitChanges,
   runTerminalCommand,
   type SandboxFileView,
@@ -177,6 +184,37 @@ export function WorkbenchSidePanel({
       setStaging(false);
     }
   }, [accessToken, canvasId, reading, changes]);
+
+  /** 正在暂存第几块（null = 没有在暂存）。 */
+  const [stagingHunk, setStagingHunk] = useState<number | null>(null);
+
+  /** 暂存**一块**：把「文件头 + 这一块」拼成 patch 交给服务端，然后刷新清单。 */
+  const stageHunk = useCallback(
+    async (hunkIndex: number) => {
+      if (!accessToken || !canvasId || !reading || reading.kind !== "diff") return;
+      const { fileHeader, hunks } = splitHunks(reading.text);
+      const hunk = hunks[hunkIndex];
+      if (!hunk) return;
+      setStagingHunk(hunkIndex);
+      setError(null);
+      try {
+        await stageGitHunk(
+          accessToken,
+          canvasId,
+          reading.path,
+          hunkPatch(fileHeader, hunk),
+        );
+        setChanges(await fetchGitChanges(accessToken, canvasId));
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "暂存这一块失败（可能已经暂存过）。",
+        );
+      } finally {
+        setStagingHunk(null);
+      }
+    },
+    [accessToken, canvasId, reading],
+  );
 
   /** 文件目录：当前浏览的相对路径（根目录是空串）与列表。 */
   const [dir, setDir] = useState("");
@@ -463,12 +501,52 @@ export function WorkbenchSidePanel({
                 </span>
               ) : null}
             </div>
-            <pre
-              aria-label={reading.kind === "diff" ? "文件差异" : "文件内容"}
-              className="max-h-[60vh] overflow-auto p-2 font-mono text-[11px] leading-5 whitespace-pre"
-            >
-              {reading.text}
-            </pre>
+            {reading.kind === "diff" ? (
+              /* 差异视图逐行渲染：每个块（hunk）的第一行右侧给「暂存块」——
+                 参考图的审查视图就是这么把改动一块一块收进索引的 */
+              <div
+                aria-label="文件差异"
+                className="max-h-[60vh] overflow-auto p-2 font-mono text-[11px] leading-5"
+              >
+                {markHunkStarts(toDiffLines(reading.text)).map((line, index) => (
+                  <div
+                    key={`${index}-${line.text.slice(0, 12)}`}
+                    className={`whitespace-pre ${
+                      line.kind === "add"
+                        ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                        : line.kind === "del"
+                          ? "bg-rose-500/10 text-rose-700 dark:text-rose-400"
+                          : line.kind === "hunk"
+                            ? "bg-muted/60 text-muted-foreground"
+                            : line.kind === "meta"
+                              ? "text-muted-foreground"
+                              : ""
+                    }`}
+                  >
+                    {line.text}
+                    {line.hunkIndex !== undefined ? (
+                      <button
+                        type="button"
+                        aria-label={`暂存第 ${line.hunkIndex + 1} 块`}
+                        disabled={stagingHunk !== null}
+                        title="只把这一块加进索引（其余块留在工作区）"
+                        onClick={() => void stageHunk(line.hunkIndex!)}
+                        className="ml-2 rounded border px-1.5 py-0.5 align-middle text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
+                      >
+                        {stagingHunk === line.hunkIndex ? "处理中…" : "暂存块"}
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <pre
+                aria-label="文件内容"
+                className="max-h-[60vh] overflow-auto p-2 font-mono text-[11px] leading-5 whitespace-pre"
+              >
+                {reading.text}
+              </pre>
+            )}
           </div>
         ) : tab === "subagents" ? (
           subagents.length > 0 ? (

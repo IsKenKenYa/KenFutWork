@@ -29,10 +29,14 @@ export interface GitCommandResult {
   stdout: string;
 }
 
-/** 执行 git：`args` 已定稿，`cwd` 为沙箱目录。 */
+/**
+ * 执行 git：`args` 已定稿，`cwd` 为沙箱目录。
+ * `input` 写进子进程 stdin——`git apply` 就是这么收 patch 的（没有第三个参数时行为不变）。
+ */
 export type ExecGit = (
   args: readonly string[],
   cwd: string,
+  input?: string,
 ) => Promise<GitCommandResult>;
 
 /**
@@ -108,6 +112,14 @@ export interface GitClient {
    * （新版 git 对「新增文件的反向暂存」也能正确处理，实测 exit 0）。
    */
   stageFile(cwd: string, path: string, staged: boolean): Promise<void>;
+  /**
+   * 暂存 / 取消暂存**一个块（hunk）**（参考图审查视图里的「暂存块」）。
+   *
+   * 做法：把「文件头 + 这一块」拼成一条 patch，交给 `git apply --cached --recount`
+   * （`--recount` 让 git 自己数行数，块头的计数不精确也不至于打歪）；
+   * 取消暂存走 `-R`（反向应用）。patch 从 stdin 进，落不到磁盘上。
+   */
+  applyHunk(cwd: string, patch: string, reverse?: boolean): Promise<void>;
 }
 
 /** 变更清单（R3-2 参考图「24 个文件已更改 +1022 −396」的逐行形态）。 */
@@ -453,6 +465,20 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
     }
   };
 
+  /** 暂存 / 取消暂存一个块：patch 走 stdin，失败把 git 的原话抛出去。 */
+  const applyHunk = async (
+    cwd: string,
+    patch: string,
+    reverse = false,
+  ): Promise<void> => {
+    const args = ["apply", "--cached", "--recount"];
+    if (reverse) args.push("-R");
+    const result = await exec(args, cwd, patch);
+    if (result.code !== 0) {
+      throw new Error(result.stderr.trim() || "git apply 失败（这个块打不上）。");
+    }
+  };
+
   /**
    * 暂存 / 取消暂存单个文件。路径由调用方先做「必须落在沙箱目录内」的校验
    * （这里只负责把 git 的原话变成可读错误）。
@@ -581,6 +607,7 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
     describe,
     diffStat,
     commitAll,
+    applyHunk,
     stageFile,
     push,
     createBranch,

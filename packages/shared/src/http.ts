@@ -178,6 +178,17 @@ export const codeGitStageRequestSchema = z.object({
   staged: z.boolean(),
 });
 
+/** 暂存 / 取消暂存**一个块**（参考图审查视图的「暂存块」）。 */
+export const codeGitStageHunkRequestSchema = z.object({
+  canvasId: z.string().min(1),
+  /** 这个块属于哪个文件（服务端会核对 patch 里改的确实只有它）。 */
+  path: z.string().min(1).max(1000),
+  /** 「文件头 + 这一块」的 patch 文本（由审查视图从 diff 里切出来）。 */
+  patch: z.string().min(1).max(200_000),
+  /** true = 反向应用（取消暂存这一块）。 */
+  reverse: z.boolean().optional(),
+});
+
 export const codeGitStageResponseSchema = z.object({
   path: z.string(),
   staged: z.boolean(),

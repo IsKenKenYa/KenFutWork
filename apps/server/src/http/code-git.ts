@@ -4,6 +4,7 @@ import {
   codeGitCheckoutRequestSchema,
   codeDocsResponseSchema,
   codeFilesResponseSchema,
+  codeGitStageHunkRequestSchema,
   codeGitStageRequestSchema,
   codeGitStageResponseSchema,
   codeShellsResponseSchema,
@@ -270,6 +271,27 @@ export async function registerCodeGitRoutes(
         payload.staged,
       );
       return reply.code(200).send(codeGitStageResponseSchema.parse(result));
+    } catch (error) {
+      return sendCodeGitError(error, reply);
+    }
+  });
+
+  // POST /api/code/git/stage-hunk — 暂存 / 取消暂存一个块（参考图的「暂存块」）。
+  app.post("/api/code/git/stage-hunk", async (request, reply) => {
+    const user = await options.auth.authenticate(request);
+    if (!user) return sendUnauthorized(reply);
+    try {
+      const payload = codeGitStageHunkRequestSchema.parse(request.body);
+      const result = await options.codeGitService.applyFileHunk(
+        user,
+        payload.canvasId,
+        payload.path,
+        payload.patch,
+        payload.reverse,
+      );
+      return reply.code(200).send(
+        codeGitStageResponseSchema.parse({ path: result.path, staged: true }),
+      );
     } catch (error) {
       return sendCodeGitError(error, reply);
     }

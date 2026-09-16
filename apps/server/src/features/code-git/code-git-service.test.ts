@@ -69,6 +69,7 @@ function build(options: {
     changedFiles: vi.fn(async () => ({ files: [], truncated: false })),
     fileDiff: vi.fn(async () => ""),
     stageFile: vi.fn(async () => {}),
+    applyHunk: vi.fn(async () => {}),
     ...options.git,
   };
   const findById = vi.fn(async () =>

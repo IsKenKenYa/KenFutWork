@@ -154,6 +154,23 @@ export async function setGitFileStaged(
   return (await response.json()) as { path: string; staged: boolean };
 }
 
+/** 暂存一个块（参考图审查视图的「暂存块」）：patch = 文件头 + 这一块。 */
+export async function stageGitHunk(
+  accessToken: string,
+  canvasId: string,
+  path: string,
+  patch: string,
+  reverse = false,
+): Promise<{ path: string; staged: boolean }> {
+  const response = await fetch(`${getServerBaseUrl()}/api/code/git/stage-hunk`, {
+    method: "POST",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify({ canvasId, path, patch, reverse }),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as { path: string; staged: boolean };
+}
+
 export async function fetchGitFileDiff(
   accessToken: string,
   canvasId: string,

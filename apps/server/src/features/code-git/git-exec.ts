@@ -19,9 +19,13 @@ export function createProcessGitExec(options: {
   timeoutMs?: number;
 }): ExecGit {
   const timeout = options.timeoutMs ?? 15_000;
-  return (args: readonly string[], cwd: string): Promise<GitCommandResult> =>
+  return (
+    args: readonly string[],
+    cwd: string,
+    input?: string,
+  ): Promise<GitCommandResult> =>
     new Promise((resolve) => {
-      execFile(
+      const child = execFile(
         options.binary,
         [...args],
         { cwd, timeout, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
@@ -40,5 +44,9 @@ export function createProcessGitExec(options: {
           });
         },
       );
+      if (input !== undefined) {
+        // `git apply` 从 stdin 读 patch；写完就关，否则 git 会一直等
+        child.stdin?.end(input);
+      }
     });
 }

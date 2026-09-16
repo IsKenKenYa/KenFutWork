@@ -3,6 +3,7 @@
 import "@testing-library/jest-dom/vitest";
 import {
   cleanup,
+  configure,
   fireEvent,
   render,
   screen,
@@ -17,6 +18,12 @@ import {
   type WorkbenchPanelTab,
 } from "../src/components/workbench/workbench-side-panel";
 
+/**
+ * 这个文件现在有 14 个面板用例、每个都要真渲染 + user-event 交互，
+ * 并行跑全仓时默认 1s 的异步查询预算不够（单跑 ~3s、并行下会偶发超时）。
+ */
+configure({ asyncUtilTimeout: 5000 });
+
 const {
   fetchCodeDocsMock,
   fetchCodeFilesMock,
@@ -24,6 +31,7 @@ const {
   fetchGitFileDiffMock,
   fetchSandboxFileMock,
   setGitFileStagedMock,
+  stageGitHunkMock,
 } = vi.hoisted(() => ({
   fetchCodeDocsMock: vi.fn(),
   fetchCodeFilesMock: vi.fn(),
@@ -31,6 +39,7 @@ const {
   fetchGitFileDiffMock: vi.fn(),
   fetchSandboxFileMock: vi.fn(),
   setGitFileStagedMock: vi.fn(),
+  stageGitHunkMock: vi.fn(),
 }));
 
 vi.mock("../src/lib/code-git-api", () => ({
@@ -40,6 +49,7 @@ vi.mock("../src/lib/code-git-api", () => ({
   fetchGitFileDiff: fetchGitFileDiffMock,
   fetchSandboxFile: fetchSandboxFileMock,
   setGitFileStaged: setGitFileStagedMock,
+  stageGitHunk: stageGitHunkMock,
 }));
 
 /**
@@ -310,6 +320,9 @@ describe("面板宽度受对话列最小宽度约束", () => {
  * 以及浏览器标签本身（地址栏补协议、iframe 渲染、系统浏览器兜底）。
  */
 describe("右栏浏览器（点链接自动打开）", () => {
+  /** 这个 describe 里的用例会连开好几个面板渲染，必须逐个清干净（否则查询命中两份 DOM）。 */
+  afterEach(cleanup);
+
   function Harness({
     initialTab = "changes" as WorkbenchPanelTab,
   }: {
@@ -393,7 +406,8 @@ describe("右栏浏览器（点链接自动打开）", () => {
     expect(
       screen.getByRole("button", { name: /选择网页元素加入聊天/ }),
     ).toBeDisabled();
-  });
+    // 这条要开两页 + 回退/前进 + 开菜单，并行跑全仓时默认 5s 不够（单跑 ~1.4s）
+  }, 20_000);
 
   it("审查视图可以暂存 / 取消暂存，并刷新变更清单", async () => {
     render(<Harness />);
@@ -442,5 +456,46 @@ describe("右栏浏览器（点链接自动打开）", () => {
     await userEvent.click(screen.getByRole("button", { name: "返回列表" }));
     const list = await screen.findByRole("list", { name: "变更文件" });
     expect(within(list).getByText("已暂存")).toBeInTheDocument();
+  });
+
+  it("审查视图按块给「暂存块」：只发这一块的 patch（文件头 + 块）", async () => {
+    fetchGitFileDiffMock.mockResolvedValueOnce({
+      path: "src/app.ts",
+      untracked: false,
+      truncated: false,
+      text: [
+        "diff --git a/src/app.ts b/src/app.ts",
+        "index 1111111..2222222 100644",
+        "--- a/src/app.ts",
+        "+++ b/src/app.ts",
+        "@@ -1,3 +1,3 @@",
+        " line1",
+        "-old2",
+        "+new2",
+        " line3",
+        "@@ -20,3 +20,4 @@",
+        " line20",
+        "+extra",
+        "",
+      ].join("\n"),
+    });
+    stageGitHunkMock.mockResolvedValue({ path: "src/app.ts", staged: true });
+    render(<Harness />);
+    await screen.findByRole("list", { name: "变更文件" });
+    await userEvent.click(screen.getByRole("button", { name: "审查 src/app.ts" }));
+
+    // 两个块 = 两个「暂存块」键
+    const buttons = await screen.findAllByRole("button", { name: /暂存第 \d 块/ });
+    expect(buttons).toHaveLength(2);
+    await userEvent.click(buttons[1]!);
+
+    await waitFor(() => expect(stageGitHunkMock).toHaveBeenCalledTimes(1));
+    const [, , path, patch] = stageGitHunkMock.mock.calls[0]!;
+    expect(path).toBe("src/app.ts");
+    // 第二块的 patch：带文件头、只带第二块
+    expect(patch).toContain("diff --git a/src/app.ts b/src/app.ts");
+    expect(patch).toContain("@@ -20,3 +20,4 @@");
+    expect(patch).toContain("+extra");
+    expect(patch).not.toContain("+new2");
   });
 });
