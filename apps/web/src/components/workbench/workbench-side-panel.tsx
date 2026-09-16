@@ -43,6 +43,7 @@ import {
   fetchGitFileDiff,
   fetchSandboxFile,
   fetchTerminalShells,
+  setGitFileStaged,
   type GitChanges,
   runTerminalCommand,
   type SandboxFileView,
@@ -157,6 +158,25 @@ export function WorkbenchSidePanel({
       }),
     [],
   );
+
+  /** 暂存动作的进行态（按钮禁用 + 文案切换）。 */
+  const [staging, setStaging] = useState(false);
+
+  /** 暂存 / 取消暂存当前审查的文件，成功后刷新变更清单（列表与按钮跟着变）。 */
+  const toggleStaged = useCallback(async () => {
+    if (!accessToken || !canvasId || !reading || reading.kind !== "diff") return;
+    const staged = !(changes?.files.find((f) => f.path === reading.path)?.staged ?? false);
+    setStaging(true);
+    setError(null);
+    try {
+      await setGitFileStaged(accessToken, canvasId, reading.path, staged);
+      setChanges(await fetchGitChanges(accessToken, canvasId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "暂存失败。");
+    } finally {
+      setStaging(false);
+    }
+  }, [accessToken, canvasId, reading, changes]);
 
   /** 文件目录：当前浏览的相对路径（根目录是空串）与列表。 */
   const [dir, setDir] = useState("");
@@ -331,6 +351,13 @@ export function WorkbenchSidePanel({
 
   if (!open) return null;
 
+  /** 当前审查的文件是否已在索引里（决定按钮文案）。 */
+  const stagedNow =
+    reading?.kind === "diff"
+      ? (changes?.files.find((file) => file.path === reading.path)?.staged ??
+        false)
+      : false;
+
   const totals = (changes?.files ?? []).reduce(
     (acc, file) => ({
       additions: acc.additions + file.additions,
@@ -410,6 +437,23 @@ export function WorkbenchSidePanel({
               >
                 <ArrowLeft className="h-3.5 w-3.5" />
               </button>
+              {/* 暂存 / 取消暂存（参考图审查视图的「暂存」）：只有差异视图有这个东西 */}
+              {reading.kind === "diff" ? (
+                <button
+                  type="button"
+                  aria-label={stagedNow ? "取消暂存此文件" : "暂存此文件"}
+                  disabled={staging}
+                  title={
+                    stagedNow
+                      ? "从索引里撤下这个文件（工作区内容不动）"
+                      : "把这个文件加入索引（下次提交会带上它）"
+                  }
+                  onClick={() => void toggleStaged()}
+                  className="ml-auto rounded-md border px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
+                >
+                  {staging ? "处理中…" : stagedNow ? "取消暂存" : "暂存此文件"}
+                </button>
+              ) : null}
               <span className="min-w-0 flex-1 truncate font-mono text-[11px]">
                 {reading.path}
               </span>
@@ -574,6 +618,11 @@ function ChangesView({
                   </span>
                 ) : null}
               </span>
+              {file.staged ? (
+                <span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+                  已暂存
+                </span>
+              ) : null}
               {file.binary ? (
                 <span
                   className={`${CHANGE_STAT_CELL} text-[10px] text-muted-foreground`}

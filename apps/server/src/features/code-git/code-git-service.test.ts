@@ -68,6 +68,7 @@ function build(options: {
     graph: vi.fn(async () => ({ entries: [], truncated: false })),
     changedFiles: vi.fn(async () => ({ files: [], truncated: false })),
     fileDiff: vi.fn(async () => ""),
+    stageFile: vi.fn(async () => {}),
     ...options.git,
   };
   const findById = vi.fn(async () =>
@@ -291,6 +292,7 @@ describe("变更清单与文件查看", () => {
         deletions: 1,
         binary: false,
         status: "modified" as const,
+        staged: true,
       },
       {
         path: "draft.md",
@@ -298,6 +300,7 @@ describe("变更清单与文件查看", () => {
         deletions: 0,
         binary: false,
         status: "untracked" as const,
+        staged: false,
       },
     ],
     truncated: false,
@@ -466,5 +469,52 @@ describe("终端 shell 解析", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * 暂存 / 取消暂存（参考图审查视图的「暂存」）：路径必须先过「落在工作目录内」这道门。
+ */
+describe("暂存单个文件", () => {
+  const root = mkdtempSync(join(tmpdir(), "kfw-stage-"));
+  afterAll(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("在工作目录内：转交 git，并把 path/staged 原样回给客户端", async () => {
+    const stageFile = vi.fn(async () => {});
+    const { service } = build({
+      git: { stageFile },
+      canvasWorkDirs: { [CANVAS_ID]: root },
+    });
+    await expect(
+      service.setFileStaged(USER, CANVAS_ID, "src/app.ts", true),
+    ).resolves.toEqual({ path: "src/app.ts", staged: true });
+    expect(stageFile).toHaveBeenCalledWith(root, "src/app.ts", true);
+  });
+
+  it("路径越界（../ 逃逸）：400 且不碰 git", async () => {
+    const stageFile = vi.fn(async () => {});
+    const { service } = build({
+      git: { stageFile },
+      canvasWorkDirs: { [CANVAS_ID]: root },
+    });
+    await expect(
+      service.setFileStaged(USER, CANVAS_ID, "../outside.ts", true),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(stageFile).not.toHaveBeenCalled();
+  });
+
+  it("画布不属于本工作区：一轮 404（与其它端点同一口径）", async () => {
+    const stageFile = vi.fn(async () => {});
+    const { service } = build({
+      git: { stageFile },
+      canvasFound: false,
+      canvasWorkDirs: { [CANVAS_ID]: root },
+    });
+    await expect(
+      service.setFileStaged(USER, CANVAS_ID, "src/app.ts", true),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    expect(stageFile).not.toHaveBeenCalled();
   });
 });

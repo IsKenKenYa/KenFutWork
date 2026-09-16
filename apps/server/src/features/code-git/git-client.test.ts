@@ -405,6 +405,8 @@ describe("变更清单（纯解析）", () => {
           deletions: 0,
           binary: false,
           status: "untracked",
+          // `??` 的第一个字符不是空格，但**未跟踪不是已暂存**
+          staged: false,
         },
         {
           path: "public/logo.png",
@@ -412,6 +414,7 @@ describe("变更清单（纯解析）", () => {
           deletions: 0,
           binary: true,
           status: "modified",
+          staged: false,
         },
         {
           path: "src/app.ts",
@@ -419,6 +422,7 @@ describe("变更清单（纯解析）", () => {
           deletions: 3,
           binary: false,
           status: "modified",
+          staged: false,
         },
         {
           path: "src/new-name.ts",
@@ -426,6 +430,8 @@ describe("变更清单（纯解析）", () => {
           deletions: 7,
           binary: false,
           status: "renamed",
+          // `R ` 的 X 位是 R：重命名已进索引
+          staged: true,
         },
       ],
       truncated: false,
@@ -476,6 +482,34 @@ describe("变更清单（纯解析）", () => {
     await expect(client.fileDiff("/sandbox/x", "a.md", 4096)).rejects.toThrow(
       /没有可显示的差异/,
     );
+  });
+
+  /**
+   * 暂存 / 取消暂存（参考图审查视图的「暂存」）：命令本身要逐字锁住——
+   * 取消暂存用 `restore --staged`（新版 git 对「新增文件的反向暂存」也能正确处理）。
+   */
+  it("客户端：暂存走 git add，取消暂存走 git restore --staged", async () => {
+    const exec = vi.fn(async (_args: readonly string[], _cwd: string) => ok(""));
+    const client = createGitClient({ exec });
+
+    await client.stageFile("/sandbox/x", "src/app.ts", true);
+    expect(exec).toHaveBeenCalledWith(["add", "--", "src/app.ts"], "/sandbox/x");
+
+    await client.stageFile("/sandbox/x", "src/app.ts", false);
+    expect(exec).toHaveBeenCalledWith(
+      ["restore", "--staged", "--", "src/app.ts"],
+      "/sandbox/x",
+    );
+  });
+
+  it("客户端：暂存失败把 git 的原话抛出来（不吞成静默失败）", async () => {
+    const exec = vi.fn(async (_args: readonly string[], _cwd: string) =>
+      fail("fatal: pathspec 'nope' did not match any files"),
+    );
+    const client = createGitClient({ exec });
+    await expect(
+      client.stageFile("/sandbox/x", "nope", true),
+    ).rejects.toThrow(/pathspec/);
   });
 
   it("客户端：fileDiff 超上限截断并标注", async () => {

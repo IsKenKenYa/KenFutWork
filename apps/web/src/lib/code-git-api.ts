@@ -106,6 +106,8 @@ export interface GitChangedFile {
   deletions: number;
   binary: boolean;
   status: "modified" | "added" | "deleted" | "renamed" | "untracked";
+  /** 已进索引（界面标「已暂存」，并决定按钮是「暂存」还是「取消暂存」）。 */
+  staged: boolean;
 }
 
 export interface GitChanges {
@@ -134,6 +136,22 @@ export interface GitFileDiff {
   truncated: boolean;
   /** 未跟踪文件：文本是「按新增行」的合成视图，不是 git 给的 diff。 */
   untracked: boolean;
+}
+
+/** 暂存 / 取消暂存单个文件（审查视图里的「暂存」）。 */
+export async function setGitFileStaged(
+  accessToken: string,
+  canvasId: string,
+  path: string,
+  staged: boolean,
+): Promise<{ path: string; staged: boolean }> {
+  const response = await fetch(`${getServerBaseUrl()}/api/code/git/stage`, {
+    method: "POST",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify({ canvasId, path, staged }),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as { path: string; staged: boolean };
 }
 
 export async function fetchGitFileDiff(

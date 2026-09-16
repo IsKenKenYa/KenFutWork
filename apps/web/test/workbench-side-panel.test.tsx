@@ -23,12 +23,14 @@ const {
   fetchGitChangesMock,
   fetchGitFileDiffMock,
   fetchSandboxFileMock,
+  setGitFileStagedMock,
 } = vi.hoisted(() => ({
   fetchCodeDocsMock: vi.fn(),
   fetchCodeFilesMock: vi.fn(),
   fetchGitChangesMock: vi.fn(),
   fetchGitFileDiffMock: vi.fn(),
   fetchSandboxFileMock: vi.fn(),
+  setGitFileStagedMock: vi.fn(),
 }));
 
 vi.mock("../src/lib/code-git-api", () => ({
@@ -37,6 +39,7 @@ vi.mock("../src/lib/code-git-api", () => ({
   fetchGitChanges: fetchGitChangesMock,
   fetchGitFileDiff: fetchGitFileDiffMock,
   fetchSandboxFile: fetchSandboxFileMock,
+  setGitFileStaged: setGitFileStagedMock,
 }));
 
 /**
@@ -55,6 +58,7 @@ describe("WorkbenchSidePanel", () => {
           deletions: 3,
           binary: false,
           status: "modified",
+          staged: false,
         },
         {
           path: "notes.md",
@@ -62,6 +66,7 @@ describe("WorkbenchSidePanel", () => {
           deletions: 0,
           binary: false,
           status: "untracked",
+          staged: false,
         },
       ],
     });
@@ -305,7 +310,11 @@ describe("面板宽度受对话列最小宽度约束", () => {
  * 以及浏览器标签本身（地址栏补协议、iframe 渲染、系统浏览器兜底）。
  */
 describe("右栏浏览器（点链接自动打开）", () => {
-  function Harness({ initialTab }: { initialTab: WorkbenchPanelTab }) {
+  function Harness({
+    initialTab = "changes" as WorkbenchPanelTab,
+  }: {
+    initialTab?: WorkbenchPanelTab;
+  }) {
     const [tab, setTab] = useState<WorkbenchPanelTab>(initialTab);
     return (
       <WorkbenchSidePanel
@@ -384,5 +393,54 @@ describe("右栏浏览器（点链接自动打开）", () => {
     expect(
       screen.getByRole("button", { name: /选择网页元素加入聊天/ }),
     ).toBeDisabled();
+  });
+
+  it("审查视图可以暂存 / 取消暂存，并刷新变更清单", async () => {
+    render(<Harness />);
+    await screen.findByRole("list", { name: "变更文件" });
+
+    await userEvent.click(screen.getByRole("button", { name: "审查 src/app.ts" }));
+    const stage = await screen.findByRole("button", { name: "暂存此文件" });
+    setGitFileStagedMock.mockResolvedValue({ path: "src/app.ts", staged: true });
+    fetchGitChangesMock.mockResolvedValueOnce({
+      isRepo: true,
+      truncated: false,
+      files: [
+        {
+          path: "src/app.ts",
+          additions: 12,
+          deletions: 3,
+          binary: false,
+          status: "modified",
+          staged: true,
+        },
+        {
+          path: "notes.md",
+          additions: 0,
+          deletions: 0,
+          binary: false,
+          status: "untracked",
+          staged: false,
+        },
+      ],
+    });
+    await userEvent.click(stage);
+
+    await waitFor(() =>
+      expect(setGitFileStagedMock).toHaveBeenCalledWith(
+        "token",
+        "canvas-1",
+        "src/app.ts",
+        true,
+      ),
+    );
+    // 暂存后按钮变「取消暂存」（仍在差异视图里）
+    expect(
+      await screen.findByRole("button", { name: "取消暂存此文件" }),
+    ).toBeInTheDocument();
+    // 回列表：该文件标「已暂存」
+    await userEvent.click(screen.getByRole("button", { name: "返回列表" }));
+    const list = await screen.findByRole("list", { name: "变更文件" });
+    expect(within(list).getByText("已暂存")).toBeInTheDocument();
   });
 });

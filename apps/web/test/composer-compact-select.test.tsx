@@ -106,4 +106,23 @@ describe("ComposerCompactSelect", () => {
       "思考强度：自定义档",
     );
   });
+
+  it("鼠标悬停显示说明面板：列出各档含义、高亮当前档（纯 CSS，不依赖事件）", () => {
+    render(
+      <ComposerCompactSelect
+        ariaLabel="权限档位"
+        icon={icon}
+        options={TIER_OPTIONS}
+        value="full-access"
+        onChange={() => {}}
+      />,
+    );
+    const panel = screen.getByRole("tooltip", { name: "权限档位说明" });
+    // 面板靠 group-hover 显示（容器变窄时文字藏起来，得有个地方说明每一档是什么意思）
+    expect(panel.className).toContain("group-hover:block");
+    expect(panel.className).toContain("hidden");
+    expect(panel).toHaveTextContent("当前：完全访问");
+    expect(panel).toHaveTextContent("危险 / 不可逆操作需人工审批");
+    expect(panel).toHaveTextContent("命中已批准策略的调用自动通过");
+  });
 });

@@ -1,4 +1,4 @@
-import type { WorkspaceSettings } from "@kenfutwork/shared";
+import type { TerminalShellId, WorkspaceSettings } from "@kenfutwork/shared";
 
 import {
   clampMaxRunRetries,
@@ -26,8 +26,17 @@ export class SettingsServiceError extends Error {
   }
 }
 
-/** 部分更新：只带要改的字段。 */
-export type WorkspaceSettingsPatch = Partial<WorkspaceSettings>;
+/**
+ * 部分更新：只带要改的字段。
+ *
+ * 每个字段显式写 `| undefined`：zod 的 `.partial()` 产出就是「键可缺、值可为 undefined」，
+ * 而项目开着 `exactOptionalPropertyTypes`，用 `Partial<WorkspaceSettings>` 接会不兼容。
+ */
+export type WorkspaceSettingsPatch = {
+  defaultModel?: string | undefined;
+  agentMaxRetries?: number | undefined;
+  terminalShell?: TerminalShellId | undefined;
+};
 
 export type SettingsService = {
   getWorkspaceSettings(

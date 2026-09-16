@@ -167,6 +167,20 @@ export const codeGitChangedFileSchema = z.object({
   /** 二进制文件没有行数概念：`additions`/`deletions` 恒为 0。 */
   binary: z.boolean(),
   status: z.enum(["modified", "added", "deleted", "renamed", "untracked"]),
+  /** 已进索引（审查视图据此标「已暂存」并决定按钮文案）。 */
+  staged: z.boolean(),
+});
+
+/** 「审查」里的暂存/取消暂存（参考图审查视图的「暂存」）。 */
+export const codeGitStageRequestSchema = z.object({
+  canvasId: z.string().min(1),
+  path: z.string().min(1).max(1000),
+  staged: z.boolean(),
+});
+
+export const codeGitStageResponseSchema = z.object({
+  path: z.string(),
+  staged: z.boolean(),
 });
 
 export const codeGitChangesResponseSchema = z.object({

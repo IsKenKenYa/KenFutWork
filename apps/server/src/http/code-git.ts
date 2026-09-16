@@ -4,6 +4,8 @@ import {
   codeGitCheckoutRequestSchema,
   codeDocsResponseSchema,
   codeFilesResponseSchema,
+  codeGitStageRequestSchema,
+  codeGitStageResponseSchema,
   codeShellsResponseSchema,
   codeTerminalRequestSchema,
   codeTerminalResponseSchema,
@@ -250,6 +252,24 @@ export async function registerCodeGitRoutes(
         payload.shell,
       );
       return reply.code(200).send(codeTerminalResponseSchema.parse({ result }));
+    } catch (error) {
+      return sendCodeGitError(error, reply);
+    }
+  });
+
+  // POST /api/code/git/stage — 暂存 / 取消暂存单个文件（参考图审查视图里的「暂存」）。
+  app.post("/api/code/git/stage", async (request, reply) => {
+    const user = await options.auth.authenticate(request);
+    if (!user) return sendUnauthorized(reply);
+    try {
+      const payload = codeGitStageRequestSchema.parse(request.body);
+      const result = await options.codeGitService.setFileStaged(
+        user,
+        payload.canvasId,
+        payload.path,
+        payload.staged,
+      );
+      return reply.code(200).send(codeGitStageResponseSchema.parse(result));
     } catch (error) {
       return sendCodeGitError(error, reply);
     }

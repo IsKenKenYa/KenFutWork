@@ -14,17 +14,25 @@ import {
  * 它们也负责「值 → 中文名」的查表：窄列下控件只剩图标，当前值要靠 `title` 交代。
  */
 export const TIER_OPTIONS = [
-  { value: "default", label: "默认" },
-  { value: "auto-approve", label: "自动放行" },
-  { value: "full-access", label: "完全访问" },
+  { value: "default", label: "默认", hint: "危险 / 不可逆操作需人工审批" },
+  {
+    value: "auto-approve",
+    label: "自动放行",
+    hint: "命中已批准策略的调用自动通过",
+  },
+  {
+    value: "full-access",
+    label: "完全访问",
+    hint: "不限制（明示开启，风险自担）",
+  },
 ] as const;
 
 export const THINKING_OPTIONS = [
-  { value: "default", label: "默认" },
-  { value: "低", label: "低" },
-  { value: "中", label: "中" },
-  { value: "高", label: "高" },
-  { value: "最高", label: "最高" },
+  { value: "default", label: "默认", hint: "不额外要求，用模型自己的默认" },
+  { value: "低", label: "低", hint: "想得少、回得快" },
+  { value: "中", label: "中", hint: "常规推理" },
+  { value: "高", label: "高", hint: "多想一步再答" },
+  { value: "最高", label: "最高", hint: "尽量深想（更慢、更费 token）" },
 ] as const;
 
 export function optionLabel(
@@ -56,35 +64,73 @@ export function ComposerCompactSelect({
 }: {
   ariaLabel: string;
   icon: ReactNode;
-  options: readonly { value: string; label: string }[];
+  options: readonly { value: string; label: string; hint?: string }[];
   value: string;
   onChange: (next: string) => void;
   contentClassName?: string;
 }) {
+  const current = options.find((option) => option.value === value);
   return (
-    <Select
-      aria-label={ariaLabel}
-      value={value}
-      onValueChange={(next) => {
-        if (typeof next === "string" && next !== value) onChange(next);
-      }}
-      items={options.map((option) => ({ ...option }))}
-    >
-      <SelectTrigger
-        className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
+    <span className="group relative inline-flex">
+      <Select
         aria-label={ariaLabel}
-        title={`${ariaLabel}：${optionLabel(options, value)}`}
+        value={value}
+        onValueChange={(next) => {
+          if (typeof next === "string" && next !== value) onChange(next);
+        }}
+        items={options.map((option) => ({ ...option }))}
       >
-        {icon}
-        <SelectValue className="@max-xl/composer:hidden" />
-      </SelectTrigger>
-      <SelectContent className={contentClassName}>
-        {options.map((option) => (
-          <SelectItem key={option.value} value={option.value}>
-            {option.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+        <SelectTrigger
+          className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
+          aria-label={ariaLabel}
+          title={`${ariaLabel}：${optionLabel(options, value)}`}
+        >
+          {icon}
+          <SelectValue className="@max-xl/composer:hidden" />
+        </SelectTrigger>
+        <SelectContent className={contentClassName}>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {/*
+        鼠标悬停时的说明面板（用户口径：「鼠标放上去显示面板」）：收起文字后只剩图标，
+        光有 title 说不清每一档是什么意思——这里把选项与各自的含义一并列出，当前档位高亮。
+        纯 CSS（group-hover），不依赖 JS 事件；`pointer-events-none` 免得抢走下拉的点击。
+      */}
+      <span
+        role="tooltip"
+        aria-label={`${ariaLabel}说明`}
+        className="pointer-events-none absolute top-full left-0 z-50 mt-1 hidden w-56 rounded-lg border bg-popover p-2 text-xs shadow-md group-hover:block"
+      >
+        <span className="mb-1 block font-medium">
+          {ariaLabel}
+          {current ? ` · 当前：${current.label}` : ""}
+        </span>
+        <span className="block space-y-1">
+          {options.map((option) => (
+            <span key={option.value} className="block">
+              <span
+                className={
+                  option.value === value
+                    ? "text-foreground"
+                    : "text-muted-foreground"
+                }
+              >
+                {option.label}
+              </span>
+              {option.hint ? (
+                <span className="block text-[10px] text-muted-foreground">
+                  {option.hint}
+                </span>
+              ) : null}
+            </span>
+          ))}
+        </span>
+      </span>
+    </span>
   );
 }

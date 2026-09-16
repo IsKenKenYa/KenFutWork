@@ -132,7 +132,8 @@ describe("终端 shell 选择", () => {
     expect(result.shell).toBe("powershell");
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("KFW-SHELL-OK");
-  });
+    // PowerShell 冷启动要几秒：并行跑全仓时超过默认 5s 超时（单跑 3.2s 通过）——显式给足
+  }, 20_000);
 
   it("结果里带上实际用的 shell（auto 时也解析到具体那个）", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kfw-terminal-shell-"));

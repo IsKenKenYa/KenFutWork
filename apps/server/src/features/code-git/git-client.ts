@@ -102,6 +102,12 @@ export interface GitClient {
   changedFiles(cwd: string, maxFiles: number): Promise<GitChangedFiles>;
   /** 单个文件的统一 diff（R3-2「审查」）。 */
   fileDiff(cwd: string, path: string, maxBytes: number): Promise<string>;
+  /**
+   * 暂存 / 取消暂存**单个文件**（参考图审查视图里的「暂存」）。
+   * 暂存 = `git add -- <path>`；取消 = `git restore --staged -- <path>`
+   * （新版 git 对「新增文件的反向暂存」也能正确处理，实测 exit 0）。
+   */
+  stageFile(cwd: string, path: string, staged: boolean): Promise<void>;
 }
 
 /** 变更清单（R3-2 参考图「24 个文件已更改 +1022 −396」的逐行形态）。 */
@@ -119,6 +125,8 @@ export interface GitChangedFile {
   deletions: number;
   binary: boolean;
   status: "modified" | "added" | "deleted" | "renamed" | "untracked";
+  /** 已进索引（porcelain 的 X 位非空）：界面据此标「已暂存」并决定按钮文案。 */
+  staged: boolean;
 }
 
 /** git 图谱（参考图 `git图谱.png`：独立窗口 + 图/描述/日期/作者/提交 表格）。 */
@@ -236,7 +244,15 @@ export function toChangedFiles(input: {
   maxFiles: number;
 }): GitChangedFiles {
   /** porcelain 的 XY 码 → 我们的状态。`??` 是未跟踪，`R` 重命名，`A`/`D` 新增/删除。 */
-  const statusByPath = new Map<string, GitChangedFile["status"]>();
+  /**
+   * porcelain 的 XY 码 → 状态 + 是否已暂存。
+   * `X` 是索引态、`Y` 是工作区态：`M ` 已暂存、` M` 未暂存、`MM` 两处都有。
+   * `??`（未跟踪）的第一个字符不是空格，必须显式排除——否则未跟踪文件会被当成「已暂存」。
+   */
+  const statusByPath = new Map<
+    string,
+    { status: GitChangedFile["status"]; staged: boolean }
+  >();
   for (const line of input.status.stdout.split("\n")) {
     const trimmed = line.replace(/\s+$/, "");
     if (trimmed.length < 4) continue;
@@ -246,7 +262,10 @@ export function toChangedFiles(input: {
     const path = rest.includes(" -> ")
       ? (rest.split(" -> ").pop() ?? rest)
       : rest;
-    statusByPath.set(path, porcelainStatus(code));
+    statusByPath.set(path, {
+      status: porcelainStatus(code),
+      staged: code[0] !== " " && code[0] !== "?",
+    });
   }
 
   const files: GitChangedFile[] = [];
@@ -270,15 +289,23 @@ export function toChangedFiles(input: {
         additions: binary ? 0 : Number(add) || 0,
         deletions: binary ? 0 : Number(del) || 0,
         binary,
-        status: statusByPath.get(path) ?? "modified",
+        status: statusByPath.get(path)?.status ?? "modified",
+        staged: statusByPath.get(path)?.staged ?? false,
       });
     }
   }
 
   // 未跟踪文件只在 porcelain 里出现：补到末尾（新增 0 行是诚实的——还没进索引，无从统计）
-  for (const [path, status] of statusByPath) {
-    if (seen.has(path) || status !== "untracked") continue;
-    files.push({ path, additions: 0, deletions: 0, binary: false, status });
+  for (const [path, entry] of statusByPath) {
+    if (seen.has(path) || entry.status !== "untracked") continue;
+    files.push({
+      path,
+      additions: 0,
+      deletions: 0,
+      binary: false,
+      status: entry.status,
+      staged: entry.staged,
+    });
   }
 
   files.sort((a, b) => a.path.localeCompare(b.path));
@@ -426,6 +453,26 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
     }
   };
 
+  /**
+   * 暂存 / 取消暂存单个文件。路径由调用方先做「必须落在沙箱目录内」的校验
+   * （这里只负责把 git 的原话变成可读错误）。
+   */
+  const stageFile = async (
+    cwd: string,
+    path: string,
+    staged: boolean,
+  ): Promise<void> => {
+    const result = staged
+      ? await exec(["add", "--", path], cwd)
+      : await exec(["restore", "--staged", "--", path], cwd);
+    if (result.code !== 0) {
+      throw new Error(
+        result.stderr.trim() ||
+          (staged ? "git add 失败。" : "git restore --staged 失败。"),
+      );
+    }
+  };
+
   const push = async (cwd: string): Promise<void> => {
     const result = await exec(["push"], cwd);
     if (result.code !== 0) {
@@ -534,6 +581,7 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
     describe,
     diffStat,
     commitAll,
+    stageFile,
     push,
     createBranch,
     init,

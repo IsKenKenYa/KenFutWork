@@ -10,6 +10,7 @@ import type {
   GitGraph,
   GitRepoView,
 } from "./git-client.js";
+import { resolveInsideRoot } from "../../utils/inside-root.js";
 import {
   existingSandboxFiles,
   listSandboxDir,
@@ -145,6 +146,13 @@ export type CodeGitService = {
     canvasId: string,
     path: string,
   ): Promise<CodeFileListing>;
+  /** 暂存 / 取消暂存单个文件（参考图审查视图的「暂存」）。 */
+  setFileStaged(
+    user: AuthenticatedUser,
+    canvasId: string,
+    path: string,
+    staged: boolean,
+  ): Promise<{ path: string; staged: boolean }>;
   /** 工作目录里的项目文档（R3-3）：候选清单里存在的那些，附字节数。 */
   listDocs(
     user: AuthenticatedUser,
@@ -401,6 +409,31 @@ export function createCodeGitService(options: {
         defaultShell,
         resolvedShell: resolveTerminalShell(defaultShell, shells)?.id ?? "auto",
       };
+    },
+
+    /** 暂存单个文件：路径先过「必须落在工作目录内」这道门（与读文件同一处判定）。 */
+    async setFileStaged(user, canvasId, path, staged) {
+      const dir = await sandboxDirFor(user, canvasId);
+      try {
+        resolveInsideRoot(dir, path);
+      } catch (error) {
+        throw new CodeGitError(
+          "git_write_failed",
+          error instanceof Error ? error.message : "路径越出工作目录。",
+          400,
+        );
+      }
+      await requireRepo(dir);
+      try {
+        await git.stageFile(dir, path, staged);
+      } catch (error) {
+        throw new CodeGitError(
+          "git_write_failed",
+          error instanceof Error ? error.message : "暂存失败。",
+          400,
+        );
+      }
+      return { path, staged };
     },
 
     /** 列一层目录：路径越界/不存在/不是目录都折成 400 可读原因。 */
