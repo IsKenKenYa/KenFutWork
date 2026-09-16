@@ -67,30 +67,6 @@ export function readSandboxTextFile(
 }
 
 /**
- * 候选文档的存在性探测（R3-3「文档入口」）：只 stat，不读内容。
- *
- * 候选清单是**约定俗成**的项目文档名；不存在的直接跳过（这是便利入口，不是错误路径），
- * 越界与读盘失败同样静默跳过——一个候选文件有问题不该把整份清单打空。
- */
-export function existingSandboxFiles(
-  root: string,
-  candidates: readonly string[],
-): Array<{ path: string; bytes: number }> {
-  const found: Array<{ path: string; bytes: number }> = [];
-  for (const candidate of candidates) {
-    try {
-      const absolute = resolveInsideRoot(root, candidate);
-      const stat = statSync(absolute, { throwIfNoEntry: false });
-      if (!stat || !stat.isFile()) continue;
-      found.push({ path: candidate, bytes: stat.size });
-    } catch {
-      continue;
-    }
-  }
-  return found;
-}
-
-/**
  * 列一层目录（R3-1「文件目录」标签）。**只列一层**：子目录由界面点进去再看——
  * 递归整棵树在大型工作目录上会变成几千条，而这个面板是用来「看这一层有什么」的。
  *

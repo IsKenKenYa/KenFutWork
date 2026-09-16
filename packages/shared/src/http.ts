@@ -302,16 +302,6 @@ export const agentRunActivityResponseSchema = z.object({
   }),
 });
 
-/** 工作目录里的项目文档（R3-3「文档入口」）。 */
-export const codeDocsResponseSchema = z.object({
-  docs: z.array(
-    z.object({
-      path: z.string().min(1),
-      bytes: z.number().int().nonnegative(),
-    }),
-  ),
-});
-
 export const codeGitFileResponseSchema = z.object({
   file: z.object({
     path: z.string().min(1),

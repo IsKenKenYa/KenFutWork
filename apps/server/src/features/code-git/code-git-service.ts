@@ -13,7 +13,6 @@ import type {
 import { resolveInsideRoot } from "../../utils/inside-root.js";
 import { patchTargetsOnly } from "./hunk-patch.js";
 import {
-  existingSandboxFiles,
   listSandboxDir,
   readSandboxTextFile,
   type SandboxDirListing,
@@ -27,18 +26,6 @@ import {
   type TerminalShellId,
   type TerminalShellOption,
 } from "./terminal-runner.js";
-
-/**
- * 「文档入口」（R3-3）的候选清单：约定俗成的项目文档名。
- * 顺序即展示顺序——AGENTS.md 在最前（它才是给 Agent 的规则书）。
- */
-const DOC_CANDIDATES = [
-  "AGENTS.md",
-  "CLAUDE.md",
-  "README.md",
-  "CONTRIBUTING.md",
-  "docs/README.md",
-] as const;
 
 /**
  * git 分支视图服务（Code 模式）。
@@ -174,11 +161,6 @@ export type CodeGitService = {
     user: AuthenticatedUser,
     canvasId: string,
   ): Promise<{ ok: true }>;
-  /** 工作目录里的项目文档（R3-3）：候选清单里存在的那些，附字节数。 */
-  listDocs(
-    user: AuthenticatedUser,
-    canvasId: string,
-  ): Promise<Array<{ path: string; bytes: number }>>;
   /** 提交全部改动（写操作：git 不可用即 503，未仓库/空改动 409）。 */
   /** 初始化仓库（幂等）。 */
   init(user: AuthenticatedUser, canvasId: string): Promise<CodeGitStatus>;
@@ -545,12 +527,6 @@ export function createCodeGitService(options: {
           400,
         );
       }
-    },
-
-    /** 项目文档清单：只 stat 候选文件，不读内容（列表要轻）。 */
-    async listDocs(user, canvasId) {
-      const dir = await sandboxDirFor(user, canvasId);
-      return existingSandboxFiles(dir, DOC_CANDIDATES);
     },
 
     /** 文件内容：路径越界/不存在/是目录都折成 400 的可读原因（`sendCodeGitError` 兜底 500）。 */
