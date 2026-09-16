@@ -42,3 +42,7 @@
 	path = references/deepseek-harness
 	url = https://github.com/deepseek-ai/deepseek-harness.git
 	shallow = true
+[submodule "references/futureFlow"]
+	path = references/futureFlow
+	url = https://github.com/future73807/futureFlow.git
+	shallow = true
