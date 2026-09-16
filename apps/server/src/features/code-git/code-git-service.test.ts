@@ -50,7 +50,7 @@ function build(options: {
     commitAll: vi.fn(async () => {}),
     push: vi.fn(async () => {}),
     createBranch: vi.fn(async () => {}),
-    graph: vi.fn(async () => ({ lines: [], truncated: false })),
+    graph: vi.fn(async () => ({ entries: [], truncated: false })),
     changedFiles: vi.fn(async () => ({ files: [], truncated: false })),
     fileDiff: vi.fn(async () => ""),
     ...options.git,
@@ -204,7 +204,19 @@ describe("git init（工作目录初始化仓库）", () => {
  * 界面要拿到 isRepo 去显示初始化引导 / 「还没有提交」；抛错会把状态说成故障。
  */
 describe("Git 图谱", () => {
-  const GRAPH = { lines: ["* abc1234 第一轮"], truncated: false };
+  const GRAPH = {
+    entries: [{
+      rail: "* ",
+      sha: "abc1234full",
+      shortSha: "abc1234",
+      subject: "第一轮",
+      author: "t",
+      date: "2026-09-16T00:00:00+08:00",
+      refs: ["HEAD -> main"],
+      parents: [],
+    }],
+    truncated: false,
+  };
 
   it("仓库：转发图形行与截断标记", async () => {
     const graphFn = vi.fn(async () => GRAPH);
@@ -224,7 +236,7 @@ describe("Git 图谱", () => {
     });
     expect(await service.graph(USER, CANVAS_ID, 30)).toEqual({
       isRepo: false,
-      lines: [],
+      entries: [],
       truncated: false,
     });
     expect(graphFn).not.toHaveBeenCalled();

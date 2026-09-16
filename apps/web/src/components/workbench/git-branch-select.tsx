@@ -10,14 +10,13 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { GitGraphDialog } from "@/components/workbench/git-graph-dialog";
 import {
   checkoutGitBranch,
   commitGitAll,
   createGitBranch,
   fetchGitDiffStat,
-  fetchGitGraph,
   fetchGitStatus,
-  type GitGraph,
   type GitDiffStat,
   type GitStatus,
   initGitRepo,
@@ -58,8 +57,8 @@ export function GitBranchSelect({
    * Git 图谱（R2-1 条目 6）：**按需加载**——图谱是整段历史，没必要每次开弹层都拉；
    * `null` = 还没加载过，`lines` 为空且 `isRepo` 为真 = 仓库还没有提交。
    */
-  const [graph, setGraph] = useState<GitGraph | null>(null);
-  const [graphOpen, setGraphOpen] = useState(false);
+  /** Git 图谱是**独立窗口**（参考图 `git图谱.png`）：弹层里只留入口。 */
+  const [graphDialogOpen, setGraphDialogOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
@@ -120,22 +119,6 @@ export function GitBranchSelect({
     setDiffStat(stat);
   }, [accessToken, canvasId]);
 
-  /** 展开/收起 Git 图谱：首次展开时加载；收起后再展开用缓存（提交后 refresh 会清掉）。 */
-  const toggleGraph = useCallback(async () => {
-    if (graphOpen) {
-      setGraphOpen(false);
-      return;
-    }
-    setGraphOpen(true);
-    if (graph || !accessToken || !canvasId) return;
-    try {
-      setGraph(await fetchGitGraph(accessToken, canvasId));
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "读取 git 图谱失败。");
-      setGraphOpen(false);
-    }
-  }, [accessToken, canvasId, graph, graphOpen]);
-
   const switchTo = useCallback(
     async (branch: string) => {
       if (!accessToken || !canvasId) return;
@@ -166,8 +149,6 @@ export function GitBranchSelect({
       setStatus(await commitGitAll(accessToken, canvasId, commitMessage));
       setCommitMessage("");
       setNotice(null);
-      // 提交改了历史与工作区状态：图谱与变更列表的缓存都过期了，下次展开重新拉
-      setGraph(null);
       await refresh();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "提交失败。");
@@ -197,7 +178,6 @@ export function GitBranchSelect({
     try {
       setStatus(await initGitRepo(accessToken, canvasId));
       setNotice("已初始化仓库，后续每轮对话会自动提交。");
-      setGraph(null);
       await refresh();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "初始化仓库失败。");
@@ -377,46 +357,21 @@ export function GitBranchSelect({
             />
           </div>
 
-          {/* Git 图谱（R2-1 条目 6）：按需展开，图形行原样等宽渲染 */}
+          {/* Git 图谱：独立窗口（参考图 git图谱.png），弹层里只留入口 */}
           <div className="border-t px-2 py-2">
             <button
               type="button"
-              aria-expanded={graphOpen}
               aria-label="Git 图谱"
-              onClick={() => void toggleGraph()}
+              onClick={() => {
+                setGraphDialogOpen(true);
+                setOpen(false);
+              }}
               className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <GitGraphIcon className="h-3.5 w-3.5 shrink-0" />
               Git 图谱
-              <ChevronDown
-                className={`ml-auto h-3 w-3 transition-transform ${
-                  graphOpen ? "rotate-180" : ""
-                }`}
-              />
+              <ChevronDown className="ml-auto h-3 w-3 -rotate-90" />
             </button>
-            {graphOpen ? (
-              <div className="mt-1 rounded-md border bg-muted/40 p-2">
-                {graph && graph.lines.length > 0 ? (
-                  <>
-                    <pre
-                      aria-label="提交图谱"
-                      className="max-h-56 overflow-auto font-mono text-[11px] leading-5 whitespace-pre"
-                    >
-                      {graph.lines.join("\n")}
-                    </pre>
-                    {graph.truncated ? (
-                      <p className="mt-1 text-[10px] text-muted-foreground">
-                        只显示最近 30 条提交。
-                      </p>
-                    ) : null}
-                  </>
-                ) : (
-                  <p className="text-[11px] text-muted-foreground">
-                    {graph ? "还没有提交。" : "读取中…"}
-                  </p>
-                )}
-              </div>
-            ) : null}
           </div>
 
           {/* 分支列表 */}
@@ -450,6 +405,12 @@ export function GitBranchSelect({
           ) : null}
         </div>
       ) : null}
+      <GitGraphDialog
+        open={graphDialogOpen}
+        onClose={() => setGraphDialogOpen(false)}
+        accessToken={accessToken}
+        canvasId={canvasId}
+      />
     </div>
   );
 }

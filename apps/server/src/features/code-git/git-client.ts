@@ -121,20 +121,45 @@ export interface GitChangedFile {
   status: "modified" | "added" | "deleted" | "renamed" | "untracked";
 }
 
-/** git 图谱（R2-1 参考图的「Git 图谱」）。 */
+/** git 图谱（参考图 `git图谱.png`：独立窗口 + 图/描述/日期/作者/提交 表格）。 */
 export interface GitGraph {
-  /** 图形行（保留 `*`/`|`/`\` 等字符，交给界面用等宽字体原样渲染）。 */
-  lines: string[];
+  /**
+   * 逐行数据。提交行与「连接线行」（只有图形字符）都在里面——图形是逐行画的，
+   * 抽掉连接线会让分支图形断掉。
+   */
+  entries: GitGraphEntry[];
   /** 顶到条数上限（更早的历史没画进来）。 */
   truncated: boolean;
 }
 
+export interface GitGraphEntry {
+  /** 该行的图形字符（`*`、`|`、`|\` 等），界面按等宽渲染成左侧的「图」列。 */
+  rail: string;
+  /** 提交行才有；连接线行为 null。 */
+  sha: string | null;
+  shortSha: string | null;
+  subject: string;
+  author: string;
+  /** 提交时间（ISO 8601）。 */
+  date: string;
+  /** 该提交上的 ref 装饰（`HEAD`、`main`、`origin/main`…）。 */
+  refs: string[];
+  /** 父提交短 sha（详情面板的「父提交」）。 */
+  parents: string[];
+}
+
+/** 字段分隔符（unit separator）：提交信息里几乎不可能出现，比分行解析稳。 */
+const FIELD_SEP = "\u001f";
+
 /**
- * 由 `log --graph --oneline --decorate --all -n <limit+1>` 的输出拼图谱（纯函数）。
+ * 由 `log --graph --pretty=format:…` 的输出解析图谱（纯函数）。
  *
- * 判定「一条提交」的口径：把行首的图形字符（`* | \ / 空格`）剥掉后，紧跟的是
- * 7–40 位 hex（oneline 的短 sha）。这样只数提交行，不数图形连接线。
- * 多取一条（limit+1）是为了知道「是否还有更早的历史」，多的那条从结果里去掉。
+ * 每一行形如 `<图形字符>␟<sha>␟<短 sha>␟<作者>␟<日期>␟<主题>␟<refs>␟<父提交>`：
+ * 按第一个 `␟` 切成「图形 + 字段」。**没有 `␟` 的行是连接线**（`|\`、`|/` 这些），
+ * 保留为 rail-only 行，否则分支图形会缺笔画。
+ *
+ * 多取一条（`-n limit+1`）用于判断「是否还有更早的历史」；截断时丢掉**行序末尾**的
+ * 那条提交（图形行不是线性的，末尾就是最旧）。
  *
  * 非零退出（仓库没有任何提交、或目录不是仓库）按「空图谱」返回——空仓库不是错误，
  * 界面显示「还没有提交」比抛错更贴事实。
@@ -144,7 +169,7 @@ export function toGraph(input: {
   limit: number;
 }): GitGraph {
   if (input.result.code !== 0) {
-    return { lines: [], truncated: false };
+    return { entries: [], truncated: false };
   }
 
   const lines = input.result.stdout
@@ -152,13 +177,44 @@ export function toGraph(input: {
     .map((line) => line.replace(/\s+$/, ""))
     .filter((line) => line.length > 0);
 
-  const commitCount = lines.filter((line) =>
-    /^[0-9a-f]{7,40}\b/.test(line.replace(/^[|\\/\s*]+/, "")),
-  ).length;
+  const entries: GitGraphEntry[] = [];
+  for (const line of lines) {
+    const sepIndex = line.indexOf(FIELD_SEP);
+    if (sepIndex < 0) {
+      // 连接线行：只有图形字符
+      entries.push({
+        rail: line,
+        sha: null,
+        shortSha: null,
+        subject: "",
+        author: "",
+        date: "",
+        refs: [],
+        parents: [],
+      });
+      continue;
+    }
+    const rail = line.slice(0, sepIndex);
+    const fields = line.slice(sepIndex + 1).split(FIELD_SEP);
+    entries.push({
+      rail,
+      sha: fields[0] ?? "",
+      shortSha: fields[1] ?? "",
+      author: fields[2] ?? "",
+      date: fields[3] ?? "",
+      subject: fields[4] ?? "",
+      refs: (fields[5] ?? "")
+        .split(",")
+        .map((ref) => ref.trim())
+        .filter((ref) => ref.length > 0),
+      parents: (fields[6] ?? "").split(" ").filter((sha) => sha.length > 0),
+    });
+  }
 
+  const commitCount = entries.filter((entry) => entry.sha !== null).length;
   const truncated = commitCount > input.limit;
   return {
-    lines: truncated ? dropOldestCommitLine(lines) : lines,
+    entries: truncated ? dropOldestCommitEntry(entries) : entries,
     truncated,
   };
 }
@@ -258,18 +314,15 @@ function unfoldRenamePath(raw: string): string {
 /**
  * 去掉最早的那条提交及其图形行（`-n limit+1` 多取的那条）。
  *
- * 图形行是「自下而上」画的历史，所以从**末尾**往回删到第一条提交行（含）为止——
+ * 图形是「自下而上」画的历史，所以从**末尾**往回删到第一条提交行（含）为止——
  * 只删图形线会留下悬空的连接字符。
  */
-function dropOldestCommitLine(lines: string[]): string[] {
-  const kept = [...lines];
+function dropOldestCommitEntry(entries: GitGraphEntry[]): GitGraphEntry[] {
+  const kept = [...entries];
   while (kept.length > 0) {
-    const last = kept[kept.length - 1] ?? "";
-    const isCommit = /^[0-9a-f]{7,40}\b/.test(
-      last.replace(/^[|\\/\s*]+/, ""),
-    );
+    const last = kept[kept.length - 1];
     kept.pop();
-    if (isCommit) break;
+    if (last?.sha) break;
   }
   return kept;
 }
@@ -413,15 +466,29 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
    * `--no-color` 必须给——用户配置 `color.ui=always` 时图形行会夹带 ANSI 转义，
    * 渲染出来是一堆乱码方块。
    */
+  /**
+   * 图谱：`--graph` 画图形，`--pretty=format:` 出结构化字段（参考图的表格要 描述/日期/作者/提交）。
+   * 字段用 `%x1f`（unit separator）分隔——提交信息里几乎不可能出现，比按字符宽度切稳。
+   * `--date=iso-strict` 让日期是机器可读的 ISO，界面自己决定怎么显示。
+   */
   const graph = async (cwd: string, limit: number): Promise<GitGraph> => {
+    const format = [
+      "%H",
+      "%h",
+      "%an",
+      "%aI",
+      "%s",
+      "%D",
+      "%P",
+    ].join("%x1f");
     const result = await exec(
       [
         "log",
         "--graph",
-        "--oneline",
-        "--decorate",
+        `--pretty=format:%x1f${format}`,
         "--all",
         "--no-color",
+        "--date=iso-strict",
         "-n",
         String(limit + 1),
       ],

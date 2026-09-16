@@ -251,7 +251,7 @@ export function createCodeGitService(options: {
       const dir = await sandboxDirFor(user, canvasId);
       const view = await git.describe(dir);
       if (!view.isRepo) {
-        return { isRepo: false, lines: [], truncated: false };
+        return { isRepo: false, entries: [], truncated: false };
       }
       const graph = await git.graph(dir, limit);
       return { isRepo: true, ...graph };

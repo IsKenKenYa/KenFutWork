@@ -287,57 +287,91 @@ describe("git 写操作（R2-1：提交/推送/建分支）", () => {
  * 必须按「剥掉图形字符后紧跟短 sha」判，否则截断判定会把连接线也算进去。
  */
 describe("git 图谱（纯解析）", () => {
-  it("保留图形行，并按提交行判定是否截断", () => {
+  const F = "\u001f";
+  const row = (rail: string, fields: string[]) => rail + F + fields.join(F);
+
+  it("解析出图/描述/日期/作者/提交与 refs，并保留连接线行", () => {
     const stdout = [
-      "* abc1234 第三轮",
-      "* def5678 第二轮",
-      "* 0123456 第一轮",
+      row("* ", [
+        "aaa1111full",
+        "aaa1111",
+        "future73807",
+        "2026-09-16T17:08:00+08:00",
+        "第三轮",
+        "HEAD -> main, origin/main",
+        "bbb2222full",
+      ]),
+      "|\\",
+      row("| * ", [
+        "bbb2222full",
+        "bbb2222",
+        "future73807",
+        "2026-09-16T16:00:00+08:00",
+        "分支上的旧提交",
+        "",
+        "ccc3333full",
+      ]),
     ].join("\n");
-    expect(toGraph({ result: ok(stdout), limit: 3 })).toEqual({
-      lines: stdout.split("\n"),
-      truncated: false,
+
+    const graph = toGraph({ result: ok(stdout), limit: 10 });
+    expect(graph.truncated).toBe(false);
+    expect(graph.entries).toHaveLength(3);
+    expect(graph.entries[0]).toMatchObject({
+      rail: "* ",
+      sha: "aaa1111full",
+      shortSha: "aaa1111",
+      subject: "第三轮",
+      author: "future73807",
+      date: "2026-09-16T17:08:00+08:00",
+      refs: ["HEAD -> main", "origin/main"],
+      parents: ["bbb2222full"],
     });
+    // 连接线行保留（否则分支图形缺笔画）：rail-only，无提交字段
+    expect(graph.entries[1]).toMatchObject({ sha: null, subject: "" });
+    expect(graph.entries[2]).toMatchObject({ rail: "| * ", sha: "bbb2222full" });
+    expect(graph.entries[2]?.refs).toEqual([]);
   });
 
-  it("超过上限：只丢掉多取的那条提交（图形输出里是最后一行），标 truncated", () => {
-    // 图形行不是线性的：`|\` + `| * …` 是同一条分支上的提交，故「最旧」是**最后一行**，
-    // 不是「分支最深处」那条——判定按行序走，不按图形缩进。
+  it("超过上限：丢掉行序末尾的那条提交（含它前面的图形行），标 truncated", () => {
     const stdout = [
-      "* aaa1111 新",
+      row("* ", ["aaa", "aaa1111", "a", "2026-09-16T00:00:00+08:00", "新", "", ""]),
       "|\\",
-      "| * bbb2222 分支上的旧提交",
-      "* ccc3333 更早的一条",
+      row("| * ", ["bbb", "bbb2222", "a", "2026-09-15T00:00:00+08:00", "旧", "", ""]),
+      row("* ", ["ccc", "ccc3333", "a", "2026-09-14T00:00:00+08:00", "更旧", "", ""]),
     ].join("\n");
+
     const graph = toGraph({ result: ok(stdout), limit: 2 });
     expect(graph.truncated).toBe(true);
-    expect(graph.lines.join("\n")).not.toContain("ccc3333");
-    // 其余两行一字不动（图形字符原样保留）
-    expect(graph.lines).toEqual(["* aaa1111 新", "|\\", "| * bbb2222 分支上的旧提交"]);
+    expect(graph.entries.map((entry) => entry.shortSha)).toEqual([
+      "aaa1111",
+      null,
+      "bbb2222",
+    ]);
   });
 
   it("无提交 / 非仓库：空图谱而不是抛错", () => {
     expect(
-      toGraph({ result: fail("your current branch does not have any commits yet"), limit: 30 }),
-    ).toEqual({ lines: [], truncated: false });
+      toGraph({
+        result: fail("your current branch does not have any commits yet"),
+        limit: 30,
+      }),
+    ).toEqual({ entries: [], truncated: false });
   });
 
-  it("客户端执行时带 --no-color 且多取一条（用于判断是否还有更早的历史）", async () => {
-    const exec = vi.fn(async () => ok("* abc1234 x"));
+  it("客户端：结构化 format + --no-color，且多取一条用于判截断", async () => {
+    // 形参要写全（`ExecGit` 的 args 是 readonly string[]），否则 mock 的调用记录类型为 []
+    const exec = vi.fn(async (_args: readonly string[], _cwd: string) =>
+      ok(row("* ", ["abc", "abc1234", "a", "2026-09-16T00:00:00+08:00", "x", "", ""])),
+    );
     const client = createGitClient({ exec });
     await client.graph("/sandbox/x", 30);
-    expect(exec).toHaveBeenCalledWith(
-      [
-        "log",
-        "--graph",
-        "--oneline",
-        "--decorate",
-        "--all",
-        "--no-color",
-        "-n",
-        "31",
-      ],
-      "/sandbox/x",
-    );
+
+    const args = exec.mock.calls[0]?.[0] ?? [];
+    expect(args[0]).toBe("log");
+    expect(args).toContain("--graph");
+    expect(args).toContain("--no-color");
+    expect(args.join(" ")).toContain("%x1f");
+    expect(args.slice(-2)).toEqual(["-n", "31"]);
   });
 });
 

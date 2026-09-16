@@ -189,10 +189,22 @@ export async function fetchSandboxFile(
   return payload.file;
 }
 
-/** git 图谱（R2-1 条目 6）：图形行原样给界面用等宽字体渲染（服务端不解析画法）。 */
+/** git 图谱（参考图 `git图谱.png`）：独立窗口里的 图/描述/日期/作者/提交 表格。 */
+export interface GitGraphEntry {
+  /** 该行的图形字符，界面按等宽渲染成「图」列；连接线行没有提交字段。 */
+  rail: string;
+  sha: string | null;
+  shortSha: string | null;
+  subject: string;
+  author: string;
+  date: string;
+  refs: string[];
+  parents: string[];
+}
+
 export interface GitGraph {
   isRepo: boolean;
-  lines: string[];
+  entries: GitGraphEntry[];
   truncated: boolean;
 }
 

@@ -128,11 +128,31 @@ export const codeGitBranchCreateRequestSchema = z.object({
  * 服务端**不解析**图形（`*` / `|` / `\` 这些字符本身就是画法），原样给前端用等宽字体渲染；
  * 只额外给两个判断：`isRepo`（非仓库时前端显示初始化引导）与 `truncated`（历史比条数上限更长）。
  */
+/**
+ * git 图谱（参考图 `git图谱.png`）：独立窗口里的 图/描述/日期/作者/提交 表格。
+ * 服务端**不解析图形语义**，只把每行的图形字符与结构化字段分行给出（连接线行也保留，
+ * 否则分支图形会缺笔画）。
+ */
+export const codeGitGraphEntrySchema = z.object({
+  /** 该行的图形字符（`*`、`|`、`|\`…），界面按等宽渲染成「图」列。 */
+  rail: z.string(),
+  /** 提交行才有；连接线行为 null。 */
+  sha: z.string().nullable(),
+  shortSha: z.string().nullable(),
+  subject: z.string(),
+  author: z.string(),
+  date: z.string(),
+  /** ref 装饰（HEAD / main / origin/main…）。 */
+  refs: z.array(z.string()),
+  /** 父提交短 sha（详情面板用）。 */
+  parents: z.array(z.string()),
+});
+
 export const codeGitGraphResponseSchema = z.object({
   graph: z.object({
     isRepo: z.boolean(),
-    /** 图形行；无提交时为空数组（不是错误）。 */
-    lines: z.array(z.string()),
+    /** 逐行数据；无提交时为空数组（不是错误）。 */
+    entries: z.array(codeGitGraphEntrySchema),
     truncated: z.boolean(),
   }),
 });
