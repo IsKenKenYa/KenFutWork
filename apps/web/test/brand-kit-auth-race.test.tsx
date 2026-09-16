@@ -10,14 +10,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * **signOut()**：打开这一页就把用户登出了（实测进页面 0.6s 内 localStorage 的令牌
  * 被清空，工作台随后跳登录页）。修复后：等 `loading` 结束再发请求；仍无会话则去登录页。
  */
-const { fetchBrandKitsMock, fetchBrandKitMock, replaceMock, signOutMock, authState } =
-  vi.hoisted(() => ({
-    fetchBrandKitsMock: vi.fn(),
-    fetchBrandKitMock: vi.fn(),
-    replaceMock: vi.fn(),
-    signOutMock: vi.fn(),
-    authState: { loading: true, session: null as null | { access_token: string } },
-  }));
+const {
+  fetchBrandKitsMock,
+  fetchBrandKitMock,
+  replaceMock,
+  signOutMock,
+  authState,
+} = vi.hoisted(() => ({
+  fetchBrandKitsMock: vi.fn(),
+  fetchBrandKitMock: vi.fn(),
+  replaceMock: vi.fn(),
+  signOutMock: vi.fn(),
+  authState: {
+    loading: true,
+    session: null as null | { access_token: string },
+  },
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: replaceMock, push: vi.fn() }),
@@ -28,7 +36,9 @@ vi.mock("../src/lib/auth-context", () => ({
     session: authState.session,
     loading: authState.loading,
     signOut: signOutMock,
-    user: authState.session ? { id: "u1", email: "u@test", displayName: null } : null,
+    user: authState.session
+      ? { id: "u1", email: "u@test", displayName: null }
+      : null,
   }),
 }));
 

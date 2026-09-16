@@ -162,11 +162,14 @@ export async function stageGitHunk(
   patch: string,
   reverse = false,
 ): Promise<{ path: string; staged: boolean }> {
-  const response = await fetch(`${getServerBaseUrl()}/api/code/git/stage-hunk`, {
-    method: "POST",
-    headers: authJsonHeaders(accessToken),
-    body: JSON.stringify({ canvasId, path, patch, reverse }),
-  });
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/code/git/stage-hunk`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify({ canvasId, path, patch, reverse }),
+    },
+  );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as { path: string; staged: boolean };
 }

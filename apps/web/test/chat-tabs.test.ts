@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  type ChatTab,
   closeTab,
   pruneTabs,
   tabsStorageKey,
   upsertTab,
-  type ChatTab,
 } from "../src/lib/chat-tabs";
 
 const chat = (id: string, title = `会话 ${id}`): ChatTab => ({

@@ -26,7 +26,9 @@ async function main(): Promise<void> {
   const env = loadServerEnv();
   const databaseUrl = env.databaseUrl;
   if (!databaseUrl) {
-    console.error("缺少数据库连接串（KENFUTWORK_DATABASE_URL 或 DATABASE_URL）。");
+    console.error(
+      "缺少数据库连接串（KENFUTWORK_DATABASE_URL 或 DATABASE_URL）。",
+    );
     process.exit(1);
   }
 

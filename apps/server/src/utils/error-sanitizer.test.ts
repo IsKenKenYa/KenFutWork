@@ -98,7 +98,9 @@ describe("原始错误详情：脱敏与截断", () => {
   });
 
   it("普通短文案脱敏后进用户可见文案（AI 服务暂时不可用 + 原始错误）", () => {
-    const err = new Error('fetch failed: 400 {"error":{"message":"model not found"}}');
+    const err = new Error(
+      'fetch failed: 400 {"error":{"message":"model not found"}}',
+    );
     const message = sanitizeErrorForClient(err);
     expect(message).toContain("AI 服务暂时不可用");
     expect(message).toContain("model not found");

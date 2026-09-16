@@ -228,16 +228,18 @@ describe("git init（工作目录初始化仓库）", () => {
  */
 describe("Git 图谱", () => {
   const GRAPH = {
-    entries: [{
-      rail: "* ",
-      sha: "abc1234full",
-      shortSha: "abc1234",
-      subject: "第一轮",
-      author: "t",
-      date: "2026-09-16T00:00:00+08:00",
-      refs: ["HEAD -> main"],
-      parents: [],
-    }],
+    entries: [
+      {
+        rail: "* ",
+        sha: "abc1234full",
+        shortSha: "abc1234",
+        subject: "第一轮",
+        author: "t",
+        date: "2026-09-16T00:00:00+08:00",
+        refs: ["HEAD -> main"],
+        parents: [],
+      },
+    ],
     truncated: false,
   };
 
@@ -267,7 +269,10 @@ describe("Git 图谱", () => {
 
   it("越权：画布不属于当前工作区 → 404，且不下发任何 git 命令", async () => {
     const graphFn = vi.fn(async () => GRAPH);
-    const { service, git } = build({ canvasFound: false, git: { graph: graphFn } });
+    const { service, git } = build({
+      canvasFound: false,
+      git: { graph: graphFn },
+    });
     await expect(service.graph(USER, CANVAS_ID, 30)).rejects.toMatchObject({
       statusCode: 404,
     });
@@ -408,7 +413,11 @@ describe("项目文档清单", () => {
 describe("终端 shell 解析", () => {
   const shells: TerminalShellOption[] = [
     { id: "cmd", label: "cmd", executable: "cmd.exe" },
-    { id: "powershell", label: "Windows PowerShell", executable: "powershell.exe" },
+    {
+      id: "powershell",
+      label: "Windows PowerShell",
+      executable: "powershell.exe",
+    },
   ];
 
   it("清单与默认值：读工作区设置，读不到落 auto", async () => {

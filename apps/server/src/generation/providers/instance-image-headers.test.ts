@@ -2,10 +2,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import {
-  METASO_VIDEO_MODEL_ID,
-  MetasoVideoProvider,
-} from "./metaso-video.js";
+import { METASO_VIDEO_MODEL_ID, MetasoVideoProvider } from "./metaso-video.js";
 import { ReplicateImageProvider } from "./replicate-image.js";
 import { ReplicateVideoProvider } from "./replicate-video.js";
 import { VolcesImageProvider } from "./volces-image.js";
@@ -97,10 +94,10 @@ describe("replicate 图/视频适配器自定义头", () => {
       status: "succeeded",
     }));
 
-    await new ReplicateImageProvider(
-      "r8-token",
-      CUSTOM_HEADERS,
-    ).generate({ model: "black-forest-labs/flux-kontext-pro", prompt: "猫" });
+    await new ReplicateImageProvider("r8-token", CUSTOM_HEADERS).generate({
+      model: "black-forest-labs/flux-kontext-pro",
+      prompt: "猫",
+    });
 
     expect(requests[0]?.headers["x-tenant-id"]).toBe("ws-42");
     expect(requests[0]?.headers.authorization).toBe("Bearer r8-token");
@@ -235,7 +232,7 @@ describe("openai-compatible 图像适配器自定义头", () => {
     await new Promise<void>((resolve) => {
       server?.listen(0, "127.0.0.1", () => resolve());
     });
-    const { port } = server?.address() as AddressInfo;
+    const { port } = server.address() as AddressInfo;
 
     const { OpenAIImageProvider } = await import("./openai-image.js");
     const provider = new OpenAIImageProvider(

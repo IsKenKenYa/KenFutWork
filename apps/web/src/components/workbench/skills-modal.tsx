@@ -9,11 +9,6 @@ import type {
 } from "@kenfutwork/shared";
 import { Blocks, Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  importSandboxSkill,
-  listSandboxSkillPackages,
-} from "@/lib/skills-sandbox";
-
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { getServerBaseUrl } from "@/lib/env";
 import {
@@ -22,6 +17,10 @@ import {
   normalizeMarketQuery,
   toMarketItemView,
 } from "@/lib/skill-market";
+import {
+  importSandboxSkill,
+  listSandboxSkillPackages,
+} from "@/lib/skills-sandbox";
 import {
   filterSkillViews,
   mergeSkillViews,
@@ -559,15 +558,16 @@ function SkillsCreatePanel({
           </button>
         </div>
         <p className="text-xs text-muted-foreground">
-          agent 在沙箱里写好的技能包（含 SKILL.md 的目录）会出现在这里——「创造」模式的产出
-          可一键装进当前工作区。
+          agent 在沙箱里写好的技能包（含 SKILL.md
+          的目录）会出现在这里——「创造」模式的产出 可一键装进当前工作区。
         </p>
         {packagesError ? (
           <p className="text-xs text-destructive">{packagesError}</p>
         ) : null}
         {!packagesError && !packagesLoading && packages.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            当前工作目录里还没有技能包。用「创造」模式生成一个，或把 SKILL.md 写进工作目录。
+            当前工作目录里还没有技能包。用「创造」模式生成一个，或把 SKILL.md
+            写进工作目录。
           </p>
         ) : null}
         {packages.length > 0 ? (
@@ -578,7 +578,9 @@ function SkillsCreatePanel({
                 className="flex items-center gap-3 rounded-lg border px-3 py-2"
               >
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">{item.name}</div>
+                  <div className="truncate text-sm font-medium">
+                    {item.name}
+                  </div>
                   <div className="truncate text-xs text-muted-foreground">
                     {item.path}
                     {item.description ? ` · ${item.description}` : ""}

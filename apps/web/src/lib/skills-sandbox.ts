@@ -1,7 +1,4 @@
-import type {
-  SandboxSkillPackage,
-  SkillDetail,
-} from "@kenfutwork/shared";
+import type { SandboxSkillPackage, SkillDetail } from "@kenfutwork/shared";
 
 /**
  * 「从工作目录导入」的客户端调用：列出当前画布沙箱里的技能包候选，并把选中的导入工作区。
@@ -14,7 +11,10 @@ export type SandboxImportResult =
   | { ok: true; skill: SkillDetail }
   | { ok: false; reason: string };
 
-async function readError(response: Response, fallback: string): Promise<string> {
+async function readError(
+  response: Response,
+  fallback: string,
+): Promise<string> {
   const payload = (await response.json().catch(() => null)) as {
     error?: { message?: string };
   } | null;
@@ -34,9 +34,7 @@ export async function listSandboxSkillPackages(input: {
     const response = await fetch(
       `${input.baseUrl}/api/skills/sandbox-packages?canvasId=${encodeURIComponent(input.canvasId)}`,
       {
-        headers: input.token
-          ? { Authorization: `Bearer ${input.token}` }
-          : {},
+        headers: input.token ? { Authorization: `Bearer ${input.token}` } : {},
       },
     );
     if (!response.ok) {

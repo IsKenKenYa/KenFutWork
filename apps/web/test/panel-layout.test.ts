@@ -35,7 +35,9 @@ describe("panelWidthLimits", () => {
       sidebarWidth: 256,
       sidebarCollapsed: true,
     });
-    expect(collapsed.max).toBe(1200 - SIDEBAR_RAIL_WIDTH - MIN_CONVERSATION_WIDTH);
+    expect(collapsed.max).toBe(
+      1200 - SIDEBAR_RAIL_WIDTH - MIN_CONVERSATION_WIDTH,
+    );
     expect(collapsed.max).toBeGreaterThan(expanded.max);
   });
 
@@ -77,4 +79,3 @@ describe("clampPanelWidth", () => {
     expect(clampPanelWidth(500, { min: 280, max: 900 })).toBe(500);
   });
 });
-

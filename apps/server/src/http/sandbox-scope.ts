@@ -1,7 +1,7 @@
 import { resolveSandboxDir } from "../agent/sandbox-dir.js";
 import type { AuthenticatedUser } from "../features/auth/types.js";
-import type { CanvasRepository } from "../features/canvas/repository.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
+import type { CanvasRepository } from "../features/canvas/repository.js";
 
 /**
  * `canvasId → 已校验归属的沙箱目录`：HTTP 路由里「从工作目录导入/安装」类端点的公共前置。

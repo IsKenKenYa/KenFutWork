@@ -1,10 +1,10 @@
 import path from "node:path";
 
 import { registerPluginRoutes } from "../../http/plugins.js";
-import { createCanvasRepository } from "../canvas/repository.js";
-import { createInstallPluginTool } from "./install-plugin-tool.js";
 import type { PluginContext, PluginDefinition } from "../../kernel/types.js";
+import { createCanvasRepository } from "../canvas/repository.js";
 import { CompatLoadError } from "./compat-context.js";
+import { createInstallPluginTool } from "./install-plugin-tool.js";
 import {
   createPluginRegistryService,
   type PluginCatalogEntry,
@@ -120,7 +120,6 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
       ctx.effect(() => () => {
         void service?.shutdown();
       });
-
     },
     mounted(ctx) {
       const registry = ctx.get("plugins");

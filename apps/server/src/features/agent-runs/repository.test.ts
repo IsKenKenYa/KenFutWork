@@ -173,14 +173,15 @@ describe("workspaceActivity（运行活动）", () => {
     expect(sql).toContain("p.workspace_id = $2");
     // 仍在跑的轮按「到现在」计，数字不会冻住
     expect(sql).toContain("coalesce(r.completed_at, now())");
-    expect(calls[0]?.values).toEqual([
-      "2026-09-09T00:00:00.000Z",
-      "ws-1",
-    ]);
+    expect(calls[0]?.values).toEqual(["2026-09-09T00:00:00.000Z", "ws-1"]);
   });
 
   it("没有记录 / 脏值：一律归 0（不显示 NaN 秒）", async () => {
-    for (const rows of [[], [{ runs: null, seconds: null }], [{ runs: "x", seconds: "y" }]]) {
+    for (const rows of [
+      [],
+      [{ runs: null, seconds: null }],
+      [{ runs: "x", seconds: "y" }],
+    ]) {
       const { runner } = createRunner(() => ({ rowCount: 1, rows }));
       const activity = await createAgentRunRepository(
         createPersistenceFromRunner(runner),

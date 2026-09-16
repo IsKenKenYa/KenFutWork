@@ -20,7 +20,9 @@ description: 把英文段落翻译成中文
 2. 输出中文
 `;
 
-function makeRepository(calls: Record<string, unknown[]>): SkillCatalogRepository {
+function makeRepository(
+  calls: Record<string, unknown[]>,
+): SkillCatalogRepository {
   return {
     insertOwned: async (userId, input) => {
       calls.insertOwned = [userId, input];

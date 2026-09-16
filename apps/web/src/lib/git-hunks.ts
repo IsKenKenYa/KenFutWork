@@ -54,9 +54,10 @@ export function splitHunks(diffText: string): SplitDiff {
  * patch 的最后一行没有换行符时 git 会认为文件被截断（`\ No newline` 语义）。
  */
 export function hunkPatch(fileHeader: string, hunk: DiffHunk): string {
-  const header = fileHeader.endsWith("\n") || fileHeader === ""
-    ? fileHeader
-    : `${fileHeader}\n`;
+  const header =
+    fileHeader.endsWith("\n") || fileHeader === ""
+      ? fileHeader
+      : `${fileHeader}\n`;
   return `${header}${hunk.body.endsWith("\n") ? hunk.body : `${hunk.body}\n`}`;
 }
 

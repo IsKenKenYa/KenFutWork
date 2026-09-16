@@ -76,8 +76,8 @@ describe("部署形态与第三方插件开关", () => {
   });
 
   it("形态值非法：fail loud（静默回落会改变安全口径）", () => {
-    expect(() =>
-      loadServerEnv({}, { KENFUTWORK_DEPLOYMENT: "prd" }),
-    ).toThrow(/KENFUTWORK_DEPLOYMENT/);
+    expect(() => loadServerEnv({}, { KENFUTWORK_DEPLOYMENT: "prd" })).toThrow(
+      /KENFUTWORK_DEPLOYMENT/,
+    );
   });
 });

@@ -52,7 +52,8 @@ describe("工作台工具轨迹", () => {
       type: "tool.completed",
       toolCallId: "c9",
       toolName: "web_search",
-      outputSummary: "失败：web_search 请求失败（API密钥无效），请检查搜索供应商配置。",
+      outputSummary:
+        "失败：web_search 请求失败（API密钥无效），请检查搜索供应商配置。",
       output: { error: "…" },
     });
     expect(tools[0]?.status).toBe("completed");
@@ -87,9 +88,7 @@ describe("工作台工具轨迹", () => {
     }
     expect(tools).toHaveLength(MAX_TASK_TOOLS);
     // 保留的是最近的一批
-    expect(tools[tools.length - 1]?.toolCallId).toBe(
-      `c${MAX_TASK_TOOLS + 4}`,
-    );
+    expect(tools[tools.length - 1]?.toolCallId).toBe(`c${MAX_TASK_TOOLS + 4}`);
     expect(capTools([])).toEqual([]);
   });
 
@@ -125,10 +124,11 @@ describe("工作台工具轨迹", () => {
  */
 describe("applyTaskToolEvent（工具事件 → 任务状态）", () => {
   it("普通工具也要进轨迹（不是只有子代理工具）", () => {
-    const next = applyTaskToolEvent(
-      { tools: [] } as TaskToolState,
-      { type: "tool.started", toolCallId: "c1", toolName: "web_search" },
-    );
+    const next = applyTaskToolEvent({ tools: [] } as TaskToolState, {
+      type: "tool.started",
+      toolCallId: "c1",
+      toolName: "web_search",
+    });
     expect(next.tools).toEqual([
       { toolCallId: "c1", toolName: "web_search", status: "running" },
     ]);
@@ -146,8 +146,12 @@ describe("applyTaskToolEvent（工具事件 → 任务状态）", () => {
       type: "tool.completed",
       toolCallId: "d1",
       toolName: "write_file",
-      outputSummary: "工具被拒绝（第 1 次）：plan 计划模式：计划批准前仅允许只读工具",
-      output: { denied: true, reason: "plan 计划模式：计划批准前仅允许只读工具" },
+      outputSummary:
+        "工具被拒绝（第 1 次）：plan 计划模式：计划批准前仅允许只读工具",
+      output: {
+        denied: true,
+        reason: "plan 计划模式：计划批准前仅允许只读工具",
+      },
     });
 
     expect(state.tools?.[0]).toMatchObject({
@@ -217,7 +221,9 @@ describe("applyTaskToolEvent：目标进度（write_todos）", () => {
       toolName: "write_todos",
       input: { todos: "broken" },
     });
-    expect(afterBad.todos).toEqual([{ content: "读契约", status: "completed" }]);
+    expect(afterBad.todos).toEqual([
+      { content: "读契约", status: "completed" },
+    ]);
   });
 
   it("非 write_todos 的工具事件不动待办表", () => {
@@ -252,9 +258,7 @@ describe("applyTaskToolEvent：目标进度（write_todos）", () => {
       outputSummary: "Updated todo list",
       timestamp: "2026-09-16T00:00:00.000Z",
     });
-    expect(done.todos).toEqual([
-      { content: "读契约", status: "in_progress" },
-    ]);
+    expect(done.todos).toEqual([{ content: "读契约", status: "in_progress" }]);
     expect(done.tools?.[0]).toMatchObject({ status: "completed" });
   });
 });

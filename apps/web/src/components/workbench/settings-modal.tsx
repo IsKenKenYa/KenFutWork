@@ -9,9 +9,9 @@ import { ProfileSection } from "@/components/profile-section";
 import { ProviderSettings } from "@/components/provider-settings";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { BrowserSettingsSection } from "@/components/workbench/browser-settings-section";
-import { TerminalSettingsSection } from "@/components/workbench/terminal-settings-section";
 import { ListLoading } from "@/components/workbench/list-state";
 import { RulesMemorySection } from "@/components/workbench/rules-memory-section";
+import { TerminalSettingsSection } from "@/components/workbench/terminal-settings-section";
 import { UsageStatsSection } from "@/components/workbench/usage-stats-section";
 import { useAuth } from "@/lib/auth-context";
 import { PluginPanelButtons } from "@/lib/plugin-panels";
@@ -246,11 +246,7 @@ export function SettingsModal({
  * 「插件面板」设置页：列出 settings 槽位的插件面板。
  * 没有插件声明该槽位时，明确说明「当前没有插件提供设置面板」——不放空壳。
  */
-function PluginPanelsSettings({
-  accessToken,
-}: {
-  accessToken: string | null;
-}) {
+function PluginPanelsSettings({ accessToken }: { accessToken: string | null }) {
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">

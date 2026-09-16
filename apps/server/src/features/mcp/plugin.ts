@@ -29,7 +29,9 @@ export function parseMcpServers(raw: string | undefined): McpServerConfig[] {
   }
   const parsed: unknown = JSON.parse(raw);
   if (!Array.isArray(parsed)) {
-    throw new Error("[mcp] KENFUTWORK_MCP_SERVERS 必须是 JSON 数组（fail loud）。");
+    throw new Error(
+      "[mcp] KENFUTWORK_MCP_SERVERS 必须是 JSON 数组（fail loud）。",
+    );
   }
   return parsed.map((entry) => {
     const config = entry as Partial<McpServerConfig>;

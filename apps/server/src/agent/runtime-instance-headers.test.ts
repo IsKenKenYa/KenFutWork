@@ -1,7 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import type { StreamEvent } from "@kenfutwork/shared";
+import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { ServerEnv } from "../config/env.js";
@@ -56,7 +56,7 @@ async function startStub(): Promise<{
   await new Promise<void>((resolve) => {
     server?.listen(0, "127.0.0.1", () => resolve());
   });
-  const { port } = server?.address() as AddressInfo;
+  const { port } = server.address() as AddressInfo;
   return { baseUrl: `http://127.0.0.1:${port}/v1`, requests };
 }
 

@@ -1,5 +1,9 @@
-import { HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
-import { AIMessage } from "@langchain/core/messages";
+import {
+  AIMessage,
+  HumanMessage,
+  SystemMessage,
+  ToolMessage,
+} from "@langchain/core/messages";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -20,7 +24,11 @@ describe("提示词分段（分类占比的采集口径）", () => {
       new SystemMessage("system-prompt"),
       new HumanMessage("hello"),
       new AIMessage("hi there"),
-      new ToolMessage({ content: "tool result", tool_call_id: "c1", name: "read_file" }),
+      new ToolMessage({
+        content: "tool result",
+        tool_call_id: "c1",
+        name: "read_file",
+      }),
     ]);
 
     const byLabel = Object.fromEntries(parts.map((p) => [p.label, p.chars]));
@@ -33,15 +41,28 @@ describe("提示词分段（分类占比的采集口径）", () => {
 
   it("技能工具的**结果**归「技能」（技能文档就是这么进上下文的）", () => {
     const parts = measureMessages([
-      new ToolMessage({ content: "技能正文", tool_call_id: "c1", name: "use_skill" }),
-      new ToolMessage({ content: "技能清单", tool_call_id: "c2", name: "list_skills" }),
+      new ToolMessage({
+        content: "技能正文",
+        tool_call_id: "c1",
+        name: "use_skill",
+      }),
+      new ToolMessage({
+        content: "技能清单",
+        tool_call_id: "c2",
+        name: "list_skills",
+      }),
     ]);
-    expect(parts).toEqual([{ label: "技能", chars: "技能正文".length + "技能清单".length }]);
+    expect(parts).toEqual([
+      { label: "技能", chars: "技能正文".length + "技能清单".length },
+    ]);
   });
 
   it("认不出的消息形态归「其他」（例如非文本块）", () => {
     const parts = measureMessages([
-      { content: [{ type: "image", data: "xxx" }], constructor: { name: "WeirdMessage" } },
+      {
+        content: [{ type: "image", data: "xxx" }],
+        constructor: { name: "WeirdMessage" },
+      },
     ]);
     expect(parts[0]?.label).toBe("其他");
     expect(parts[0]?.chars).toBeGreaterThan(0);
@@ -59,11 +80,15 @@ describe("提示词分段（分类占比的采集口径）", () => {
     const system = parts.find((p) => p.label === "系统工具");
     const mcp = parts.find((p) => p.label === "MCP 工具");
     expect(system?.chars).toBe(
-      JSON.stringify({ name: "read_file", description: "读文件", schema: {} }).length,
+      JSON.stringify({ name: "read_file", description: "读文件", schema: {} })
+        .length,
     );
     expect(mcp?.chars).toBe(
-      JSON.stringify({ name: "mcp__py_helper__add", description: "加法", schema: {} })
-        .length,
+      JSON.stringify({
+        name: "mcp__py_helper__add",
+        description: "加法",
+        schema: {},
+      }).length,
     );
   });
 

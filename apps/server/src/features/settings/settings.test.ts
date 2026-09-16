@@ -112,10 +112,10 @@ describe("settings service", () => {
     await expect(
       fallback.getWorkspaceSettings(USER, WORKSPACE_ID),
     ).resolves.toEqual({
-        agentMaxRetries: 10,
-        defaultModel: "fallback-model",
-        terminalShell: "auto",
-      });
+      agentMaxRetries: 10,
+      defaultModel: "fallback-model",
+      terminalShell: "auto",
+    });
 
     const stored = createSettingsService({
       repository: {
@@ -131,10 +131,10 @@ describe("settings service", () => {
     await expect(
       stored.getWorkspaceSettings(USER, WORKSPACE_ID),
     ).resolves.toEqual({
-        agentMaxRetries: 10,
-        defaultModel: "stored-model",
-        terminalShell: "auto",
-      });
+      agentMaxRetries: 10,
+      defaultModel: "stored-model",
+      terminalShell: "auto",
+    });
   });
 
   /**
@@ -174,10 +174,10 @@ describe("settings service", () => {
     await expect(
       emptyCatalog.getWorkspaceSettings(USER, WORKSPACE_ID),
     ).resolves.toEqual({
-        agentMaxRetries: 10,
-        defaultModel: "gpt-4.1",
-        terminalShell: "auto",
-      });
+      agentMaxRetries: 10,
+      defaultModel: "gpt-4.1",
+      terminalShell: "auto",
+    });
 
     let catalogCalls = 0;
     const stored = createSettingsService({
@@ -191,10 +191,10 @@ describe("settings service", () => {
     await expect(
       stored.getWorkspaceSettings(USER, WORKSPACE_ID),
     ).resolves.toEqual({
-        agentMaxRetries: 10,
-        defaultModel: "stored-model",
-        terminalShell: "auto",
-      });
+      agentMaxRetries: 10,
+      defaultModel: "stored-model",
+      terminalShell: "auto",
+    });
     expect(catalogCalls).toBe(0);
   });
 

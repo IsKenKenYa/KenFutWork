@@ -104,9 +104,7 @@ export function measureMessages(
  * 按工具 schema 分段：`mcp__` 前缀 → MCP 工具，其余 → 系统工具。
  * 字符数取 `JSON.stringify({name, description, schema})` 的长度——这是模型实际看到的形状。
  */
-export function measureTools(
-  tools: readonly unknown[],
-): CompositionPart[] {
+export function measureTools(tools: readonly unknown[]): CompositionPart[] {
   let mcpChars = 0;
   let systemChars = 0;
 

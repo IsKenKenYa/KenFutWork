@@ -83,9 +83,7 @@ export function existingSandboxFiles(
       const stat = statSync(absolute, { throwIfNoEntry: false });
       if (!stat || !stat.isFile()) continue;
       found.push({ path: candidate, bytes: stat.size });
-    } catch {
-      continue;
-    }
+    } catch {}
   }
   return found;
 }

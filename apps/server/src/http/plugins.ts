@@ -12,8 +12,10 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import type { AdminService } from "../features/admin/admin-service.js";
-import type { AuthenticatedUser } from "../features/auth/types.js";
-import type { RequestAuthenticator } from "../features/auth/types.js";
+import type {
+  AuthenticatedUser,
+  RequestAuthenticator,
+} from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { CanvasRepository } from "../features/canvas/repository.js";
 import type { PluginRegistryService } from "../features/plugins/plugin-registry-service.js";

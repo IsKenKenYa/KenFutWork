@@ -23,9 +23,7 @@ export function parseHeadersJson(
   }
 
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    return new Error(
-      '自定义请求头必须是 JSON 对象，如 {"x-tenant-id":"ws-1"}',
-    );
+    return new Error('自定义请求头必须是 JSON 对象，如 {"x-tenant-id":"ws-1"}');
   }
 
   return parsed as ProviderInstanceHeaders;

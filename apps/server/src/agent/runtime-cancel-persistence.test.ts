@@ -2,8 +2,8 @@ import type { StreamEvent } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
 
 import type { ServerEnv } from "../config/env.js";
-import { createAgentRunService } from "./runtime.js";
 import type { KenFutWorkAgent, KenFutWorkAgentFactory } from "./deep-agent.js";
+import { createAgentRunService } from "./runtime.js";
 
 /**
  * 取消要落终态（GUI 实测抓到的缺陷）。
@@ -103,7 +103,11 @@ describe("取消的终态落库（run.canceled）", () => {
     })();
 
     // 等本轮真的跑起来（run.started 已出）再取消，避免取消信号打在创建之前
-    for (let i = 0; i < 100 && !events.some((e) => e.type === "run.started"); i += 1) {
+    for (
+      let i = 0;
+      i < 100 && !events.some((e) => e.type === "run.started");
+      i += 1
+    ) {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     expect(events.some((e) => e.type === "run.started")).toBe(true);

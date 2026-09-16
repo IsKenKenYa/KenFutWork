@@ -13,8 +13,8 @@ import {
   decideRunRetry,
 } from "../agent/run-retry.js";
 import type { AgentRunService } from "../agent/runtime.js";
-import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import { resolveSandboxScopeId } from "../agent/sandbox-dir.js";
+import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import { isPlanApprovalInput } from "../features/agent-modes/execution-mode-service.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type {

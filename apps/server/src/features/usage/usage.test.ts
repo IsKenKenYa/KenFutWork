@@ -529,7 +529,9 @@ describe("usage stats（R4-2 用户侧使用统计）", () => {
 describe("usage stats 热力图窗口", () => {
   const NOW = new Date("2026-09-15T12:00:00Z");
   const dayIso = (offset: number) =>
-    new Date(Date.parse("2026-09-15T00:00:00Z") + offset * 86_400_000).toISOString();
+    new Date(
+      Date.parse("2026-09-15T00:00:00Z") + offset * 86_400_000,
+    ).toISOString();
 
   it("恒为 365 天、末位是今天；一年内的量进图、去年的不进", async () => {
     const service = createUsageService({
@@ -562,7 +564,9 @@ describe("usage stats 热力图窗口", () => {
     const stats = await service.stats(USER, 7);
     expect(stats.heatmap).toHaveLength(365);
     expect(stats.heatmap.at(-1)?.date).toBe("2026-09-15");
-    expect(stats.heatmap.map((d) => d.tokens).reduce((a, b) => a + b, 0)).toBe(100);
+    expect(stats.heatmap.map((d) => d.tokens).reduce((a, b) => a + b, 0)).toBe(
+      100,
+    );
     // 7 天窗口里没有这些天 → daily 全 0（两条都在窗口外）
     expect(stats.daily.every((d) => d.tokens === 0)).toBe(true);
   });

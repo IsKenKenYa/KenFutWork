@@ -29,7 +29,10 @@ const MODEL_ID = process.env.MOCK_MODEL_ID ?? "mock-1";
  * 在第一个工具后直接结束，且不报错）。
  */
 let callSeq = 0;
-const nextCallId = () => `call_mock_${(callSeq += 1)}`;
+const nextCallId = () => {
+  callSeq += 1;
+  return `call_mock_${callSeq}`;
+};
 
 function json(res, status, body) {
   res.writeHead(status, { "content-type": "application/json" });
@@ -52,7 +55,7 @@ function lastUserText(messages) {
       if (typeof content === "string") return content;
       if (Array.isArray(content)) {
         return content
-          .map((part) => (typeof part === "string" ? part : part?.text ?? ""))
+          .map((part) => (typeof part === "string" ? part : (part?.text ?? "")))
           .join(" ");
       }
     }
@@ -78,14 +81,19 @@ const PY_PROJECT_FILES = [
     content:
       '[project]\nname = "kfw-py-demo"\nversion = "0.1.0"\nrequires-python = ">=3.11"\n',
   },
-  { file_path: "kfw-py-demo/src/kfw_py_demo/__init__.py", content: '__all__ = []\n' },
+  {
+    file_path: "kfw-py-demo/src/kfw_py_demo/__init__.py",
+    content: "__all__ = []\n",
+  },
   {
     file_path: "kfw-py-demo/tests/test_smoke.py",
-    content: "from kfw_py_demo import __all__\n\n\ndef test_smoke():\n    assert __all__ == []\n",
+    content:
+      "from kfw_py_demo import __all__\n\n\ndef test_smoke():\n    assert __all__ == []\n",
   },
   {
     file_path: "kfw-py-demo/README.md",
-    content: "# kfw-py-demo\n\n由「计划 / 自主」模式实测创建（本地模型替身驱动）。\n",
+    content:
+      "# kfw-py-demo\n\n由「计划 / 自主」模式实测创建（本地模型替身驱动）。\n",
   },
   {
     file_path: "kfw-py-demo/.gitignore",
@@ -133,7 +141,11 @@ function pythonProjectStep(messages) {
   // 既不失败也不结束——图的步数上限对这种情况形同虚设）。
   const mcpAttempted = results.length > PY_PROJECT_FILES.length;
   if (!mcpAttempted) {
-    return { kind: "tool", name: "mcp__py-helper__add", args: { a: 2024, b: 4888 } };
+    return {
+      kind: "tool",
+      name: "mcp__py-helper__add",
+      args: { a: 2024, b: 4888 },
+    };
   }
   const mcpOk = results.some((m) => /6912/.test(toolResultText(m)));
   const skillSeen = JSON.stringify(messages).includes("python-project-init");
@@ -176,7 +188,9 @@ function pickScenario(messages) {
   if (/web_search|搜索|联网/.test(user)) {
     // 已有搜索结果就不再重调（否则会一直重调同一工具）
     const results = currentRunToolResults(messages);
-    const searched = results.find((m) => /https?:\/\/|标题/.test(toolResultText(m)));
+    const searched = results.find((m) =>
+      /https?:\/\/|标题/.test(toolResultText(m)),
+    );
     if (searched) {
       return {
         kind: "text",
@@ -186,7 +200,9 @@ function pickScenario(messages) {
     return {
       kind: "tool",
       name: "web_search",
-      args: { query: process.env.MOCK_SEARCH_QUERY ?? "python pytest 参数化 用法" },
+      args: {
+        query: process.env.MOCK_SEARCH_QUERY ?? "python pytest 参数化 用法",
+      },
     };
   }
   if (tools.length > 0) {
@@ -214,7 +230,10 @@ function pickScenario(messages) {
       },
     };
   }
-  return { kind: "text", text: `PONG:${user.replace(/\s+/g, " ").slice(0, 30)}` };
+  return {
+    kind: "text",
+    text: `PONG:${user.replace(/\s+/g, " ").slice(0, 30)}`,
+  };
 }
 
 /**
@@ -224,7 +243,10 @@ function pickScenario(messages) {
  * （实测：整轮 run 正常 completed，但后续步骤一个都没发生，且不报任何错）。
  */
 let responseSeq = 0;
-const nextResponseId = () => `chatcmpl-mock-${(responseSeq += 1)}`;
+const nextResponseId = () => {
+  responseSeq += 1;
+  return `chatcmpl-mock-${responseSeq}`;
+};
 
 function chunk(id, delta, finish = null) {
   return {

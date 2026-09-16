@@ -16,10 +16,12 @@ const USER = {
 };
 const CANVAS_ID = "canvas-1";
 
-function makeDeps(overrides: {
-  admin?: Partial<AdminService>;
-  install?: (input: unknown) => Promise<unknown>;
-} = {}) {
+function makeDeps(
+  overrides: {
+    admin?: Partial<AdminService>;
+    install?: (input: unknown) => Promise<unknown>;
+  } = {},
+) {
   const install =
     overrides.install ??
     (async () => ({
@@ -82,7 +84,10 @@ describe("install_plugin 工具（创造模式的插件产物收尾）", () => {
     const tool = createInstallPluginTool(deps);
 
     await expect(
-      tool.execute({ path: "my-plugin" }, { canvasId: CANVAS_ID, accessToken: "tok-1" }),
+      tool.execute(
+        { path: "my-plugin" },
+        { canvasId: CANVAS_ID, accessToken: "tok-1" },
+      ),
     ).rejects.toThrow(/管理员/);
 
     const okAdmin = createInstallPluginTool(makeDeps().deps);
@@ -103,7 +108,9 @@ describe("install_plugin 工具（创造模式的插件产物收尾）", () => {
   it("兼容性门禁失败时把报告带给模型（不让它瞎猜）", async () => {
     const { deps } = makeDeps({
       install: async () => {
-        const error = new Error("兼容性校验未通过，已阻止安装：缺少 engines 声明") as Error & {
+        const error = new Error(
+          "兼容性校验未通过，已阻止安装：缺少 engines 声明",
+        ) as Error & {
           report?: unknown;
         };
         error.report = { compatible: false, issues: [{ severity: "blocker" }] };
@@ -129,7 +136,10 @@ describe("install_plugin 工具（创造模式的插件产物收尾）", () => {
     const tool = createInstallPluginTool(deps);
 
     await expect(
-      tool.execute({ path: "../outside" }, { canvasId: CANVAS_ID, accessToken: "tok-1" }),
+      tool.execute(
+        { path: "../outside" },
+        { canvasId: CANVAS_ID, accessToken: "tok-1" },
+      ),
     ).rejects.toThrow();
     expect(install).not.toHaveBeenCalled();
   });

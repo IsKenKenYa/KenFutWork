@@ -19,7 +19,6 @@ const CTX_MEMBER_CAPABILITY_ALIASES: Record<string, string> = {
   promptFragments: "systemPrompt",
 };
 
-
 /**
  * bundle 清单归一化：把「一个插件的文件集合」收敛为 `PluginBundleManifest`。
  *
@@ -125,7 +124,9 @@ function detectBundleDeclaration(pkg: Record<string, unknown>): {
   }
 
   const kenfutwork = pkg.kenfutwork as Record<string, unknown> | undefined;
-  const kenfutworkPatch = kenfutwork?.bundle as Record<string, unknown> | undefined;
+  const kenfutworkPatch = kenfutwork?.bundle as
+    | Record<string, unknown>
+    | undefined;
   const kenfutworkPatchPath = kenfutworkPatch?.patch;
   if (typeof kenfutworkPatchPath === "string" && kenfutworkPatchPath.trim()) {
     return {

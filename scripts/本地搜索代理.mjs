@@ -183,7 +183,10 @@ async function handleRequest(req, res) {
      * 绝不能把这类结果当来源交给模型——它会照着实实在在的标题与链接编出跑题的答案，
      * 比「搜索失败」危险得多。
      */
-    if (attempt.webpages.length > 0 && !looksRelevant(attempt.webpages, tokens)) {
+    if (
+      attempt.webpages.length > 0 &&
+      !looksRelevant(attempt.webpages, tokens)
+    ) {
       console.log(`[search-proxy] q="${q}" -> 结果与查询无词面重合，重试一次`);
       const retry = await searchUpstream(q);
       if (retry.webpages.length > 0 && looksRelevant(retry.webpages, tokens)) {
@@ -230,20 +233,34 @@ async function handleRequest(req, res) {
   } catch (error) {
     console.log(`[search-proxy] 抓取失败：${error.message}`);
     res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ errCode: 5001, errMsg: `上游抓取失败：${error.message}` }));
+    res.end(
+      JSON.stringify({
+        errCode: 5001,
+        errMsg: `上游抓取失败：${error.message}`,
+      }),
+    );
   }
 }
 
 const server = createServer((req, res) => {
   void handleRequest(req, res).catch((error) => {
-    console.log(`[search-proxy] 请求处理异常（已兜住，进程继续）：${error.message}`);
+    console.log(
+      `[search-proxy] 请求处理异常（已兜住，进程继续）：${error.message}`,
+    );
     if (!res.headersSent) {
       res.writeHead(200, { "content-type": "application/json" });
     }
-    res.end(JSON.stringify({ errCode: 5003, errMsg: `代理内部错误：${error.message}` }));
+    res.end(
+      JSON.stringify({
+        errCode: 5003,
+        errMsg: `代理内部错误：${error.message}`,
+      }),
+    );
   });
 });
 
 server.listen(PORT, "127.0.0.1", () => {
-  console.log(`[search-proxy] 本地搜索代理监听 http://127.0.0.1:${PORT}/search`);
+  console.log(
+    `[search-proxy] 本地搜索代理监听 http://127.0.0.1:${PORT}/search`,
+  );
 });

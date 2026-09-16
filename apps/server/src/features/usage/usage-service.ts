@@ -1,4 +1,7 @@
-import type { UsageStatsResponse, UsageSummaryResponse } from "@kenfutwork/shared";
+import type {
+  UsageStatsResponse,
+  UsageSummaryResponse,
+} from "@kenfutwork/shared";
 
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerRepository } from "../bootstrap/repository.js";

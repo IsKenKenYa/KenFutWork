@@ -5,10 +5,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  ChatSidebar,
-  type SidePanelTab,
-} from "../src/components/chat-sidebar";
+import { ChatSidebar, type SidePanelTab } from "../src/components/chat-sidebar";
 import { TierLimitToastProvider } from "../src/components/credits/tier-limit-toast";
 import { ToastProvider } from "../src/components/toast";
 import type { WebSocketHandle } from "../src/hooks/use-websocket";
@@ -276,7 +273,9 @@ describe("ChatSidebar", () => {
       screen.getByRole("button", { name: "关闭 Existing Chat" }),
     ).toBeInTheDocument();
     // 历史记录入口仍在（点历史对话＝新开一个标签）
-    expect(screen.getByRole("button", { name: /历史记录/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /历史记录/ }),
+    ).toBeInTheDocument();
 
     // 标签页是面板的第一行：执行模式排在它下面，不得压在它上面
     const mode = await screen.findByRole("combobox", { name: "模式" });
@@ -285,18 +284,14 @@ describe("ChatSidebar", () => {
 
     // 三个视图图标：**空心**（fill=none）且尺寸一致（用户反馈有的大有的小、有的实心）
     for (const name of ["对话", "图层", "生成文件"]) {
-      const svg = screen
-        .getByRole("button", { name })
-        .querySelector("svg");
+      const svg = screen.getByRole("button", { name }).querySelector("svg");
       expect(svg).not.toBeNull();
       expect(svg?.getAttribute("fill")).toBe("none");
       expect(svg?.getAttribute("class")).toBe("h-4 w-4");
     }
     // 历史记录/新建对话两个图标同样统一为 h-4 w-4
     for (const name of ["历史记录", "新建对话"]) {
-      const svg = screen
-        .getByRole("button", { name })
-        .querySelector("svg");
+      const svg = screen.getByRole("button", { name }).querySelector("svg");
       expect(svg?.getAttribute("class")).toBe("h-4 w-4");
     }
   });

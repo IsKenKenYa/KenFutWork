@@ -40,7 +40,10 @@ describe("contextUsageView", () => {
   });
 
   it("窗口未知：不给百分比（不编分母）", () => {
-    const view = contextUsageView({ inputTokens: 1000, outputTokens: 10 }, null);
+    const view = contextUsageView(
+      { inputTokens: 1000, outputTokens: 10 },
+      null,
+    );
     expect(view.percent).toBeNull();
     expect(view.percentLabel).toBeNull();
     expect(view.inputLabel).toBe("1000");
@@ -55,13 +58,20 @@ describe("contextUsageView", () => {
   });
 
   it("没有用量数据：整层为空态", () => {
-    for (const usage of [null, undefined, { inputTokens: 0, outputTokens: 0 }]) {
+    for (const usage of [
+      null,
+      undefined,
+      { inputTokens: 0, outputTokens: 0 },
+    ]) {
       expect(contextUsageView(usage, 1_000_000).hasUsage).toBe(false);
     }
   });
 
   it("超过窗口时封顶 100%（不出现 137% 这种读数）", () => {
-    const view = contextUsageView({ inputTokens: 1_370_000, outputTokens: 1 }, 1_000_000);
+    const view = contextUsageView(
+      { inputTokens: 1_370_000, outputTokens: 1 },
+      1_000_000,
+    );
     expect(view.percent).toBe(100);
   });
 });

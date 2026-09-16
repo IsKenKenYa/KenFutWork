@@ -16,7 +16,8 @@ import { isAbsolute, join, resolve } from "node:path";
 import { buildApp } from "./app.js";
 import { loadServerEnv } from "./config/env.js";
 import { resolveEntryRoot } from "./desktop/entry-root.js";
-import { isDesktopRuntime, prepareDesktopRuntime } from "./desktop/runtime.js";import { hasSystemGit, resolveRuntimes } from "./desktop/runtimes.js";
+import { isDesktopRuntime, prepareDesktopRuntime } from "./desktop/runtime.js";
+import { hasSystemGit, resolveRuntimes } from "./desktop/runtimes.js";
 import { reconcileInterruptedRuns } from "./features/agent-runs/reconcile.js";
 import { startJobLoop } from "./features/jobs/job-loop.js";
 import { registerAllProviders } from "./generation/providers/register-all.js";
@@ -125,7 +126,9 @@ async function main() {
     void reconcileInterruptedRuns(app.kernel.get("persistence"), bootAt)
       .then((count) => {
         if (count > 0) {
-          console.log(`[agent-runs] 启动对账：${count} 个遗留 run 已收敛为 failed`);
+          console.log(
+            `[agent-runs] 启动对账：${count} 个遗留 run 已收敛为 failed`,
+          );
         }
       })
       .catch((error: unknown) => {

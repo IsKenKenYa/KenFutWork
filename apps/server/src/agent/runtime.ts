@@ -2,9 +2,6 @@
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
-
-import type { BaseLanguageModel } from "@langchain/core/language_models/base";
-import { HumanMessage } from "@langchain/core/messages";
 import type {
   ImageAttachment,
   ImageGenerationPreference,
@@ -20,6 +17,8 @@ import {
   getPlanConfig,
   type ImageQualityLevel,
 } from "@kenfutwork/shared";
+import type { BaseLanguageModel } from "@langchain/core/language_models/base";
+import { HumanMessage } from "@langchain/core/messages";
 import type { ServerEnv } from "../config/env.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type { AuthenticatedUser } from "../features/auth/types.js";
@@ -44,12 +43,7 @@ import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createPipelineLogger } from "../ws/logger.js";
 import { createAgentBackend } from "./backends/index.js";
-import { measureTools } from "./prompt-composition.js";
 import type { ToolGate, ToolGateHooks } from "./deep-agent.js";
-import {
-  createToolDenialTracker,
-  type ToolDenialRecord,
-} from "./tool-denial.js";
 import {
   createDefaultModelSpecifier,
   createKenFutWorkDeepAgent,
@@ -57,7 +51,12 @@ import {
   type KenFutWorkAgentFactory,
 } from "./deep-agent.js";
 import type { AgentPersistenceService } from "./persistence/index.js";
+import { measureTools } from "./prompt-composition.js";
 import { adaptDeepAgentStream } from "./stream-adapter.js";
+import {
+  createToolDenialTracker,
+  type ToolDenialRecord,
+} from "./tool-denial.js";
 // execute 工具由 deepagents 内置提供（LocalShellBackend 作为 sandbox backend）
 // 不需要自定义代码执行工具
 import type { SubmitImageJobFn } from "./tools/image-generate.js";
@@ -1091,7 +1090,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
       try {
         /** 被拒工具调用的记账（含连续拒绝计数）；门存在时才有值。 */
-        let denialTracker: ReturnType<typeof createToolDenialTracker> | undefined;
+        let denialTracker:
+          | ReturnType<typeof createToolDenialTracker>
+          | undefined;
         let agent: KenFutWorkAgent;
         try {
           let resolvedModel: BaseLanguageModel | string | undefined =
@@ -1654,7 +1655,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               !run.billingFailure &&
               denialTracker?.fatalReason()
             ) {
-              const message = denialTracker.fatalReason() ?? "工具连续被拒，已中止本轮。";
+              const message =
+                denialTracker.fatalReason() ?? "工具连续被拒，已中止本轮。";
               const failedEvent: StreamEvent = {
                 error: { code: "run_failed", message },
                 runId,

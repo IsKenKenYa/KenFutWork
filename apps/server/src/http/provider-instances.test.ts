@@ -99,9 +99,10 @@ describe("POST /api/provider-instances 自定义请求头（HTTP 边界）", () 
           url: "/api/provider-instances",
           payload: { ...base, headers },
         });
-        expect(response.statusCode, JSON.stringify(headers)).toBeGreaterThanOrEqual(
-          400,
-        );
+        expect(
+          response.statusCode,
+          JSON.stringify(headers),
+        ).toBeGreaterThanOrEqual(400);
         expect(response.statusCode).toBeLessThan(500);
       }
       expect(createInstance).not.toHaveBeenCalled();

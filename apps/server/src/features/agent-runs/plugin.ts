@@ -1,5 +1,8 @@
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
-import type { KenFutWorkAgentFactory, ToolGate } from "../../agent/deep-agent.js";
+import type {
+  KenFutWorkAgentFactory,
+  ToolGate,
+} from "../../agent/deep-agent.js";
 import { createAgentPersistenceService } from "../../agent/persistence/index.js";
 import { createAgentRunService } from "../../agent/runtime.js";
 import { composeToolGate } from "../../agent/tool-gate.js";

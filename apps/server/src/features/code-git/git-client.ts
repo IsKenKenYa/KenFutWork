@@ -475,7 +475,9 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
     if (reverse) args.push("-R");
     const result = await exec(args, cwd, patch);
     if (result.code !== 0) {
-      throw new Error(result.stderr.trim() || "git apply 失败（这个块打不上）。");
+      throw new Error(
+        result.stderr.trim() || "git apply 失败（这个块打不上）。",
+      );
     }
   };
 
@@ -545,15 +547,7 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
    * `--date=iso-strict` 让日期是机器可读的 ISO，界面自己决定怎么显示。
    */
   const graph = async (cwd: string, limit: number): Promise<GitGraph> => {
-    const format = [
-      "%H",
-      "%h",
-      "%an",
-      "%aI",
-      "%s",
-      "%D",
-      "%P",
-    ].join("%x1f");
+    const format = ["%H", "%h", "%an", "%aI", "%s", "%D", "%P"].join("%x1f");
     const result = await exec(
       [
         "log",
@@ -599,7 +593,9 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
         `${path} 没有可显示的差异（未跟踪文件请用「打开」查看内容）。`,
       );
     }
-    return text.length > maxBytes ? `${text.slice(0, maxBytes)}\n…（已截断）` : text;
+    return text.length > maxBytes
+      ? `${text.slice(0, maxBytes)}\n…（已截断）`
+      : text;
   };
 
   return {

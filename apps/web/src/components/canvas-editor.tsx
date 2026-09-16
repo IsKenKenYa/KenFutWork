@@ -12,8 +12,8 @@ import { normalizeCanvasElements } from "../lib/canvas-normalize";
 import { shouldRefuseEmptySave } from "../lib/canvas-save-guard";
 import { getServerBaseUrl } from "../lib/env";
 import { saveCanvas, uploadThumbnail } from "../lib/server-api";
-import { CanvasStatsPanel } from "./canvas-stats-panel";
 import { VideoCanvasElement } from "./canvas/video-canvas-element";
+import { CanvasStatsPanel } from "./canvas-stats-panel";
 import { ErrorBoundary } from "./error-boundary";
 
 const Excalidraw = dynamic(
@@ -613,7 +613,10 @@ export function CanvasEditor({
         void saveNowRef.current().then((outcome) => setSaveHint(outcome));
         // 自己收起菜单：向画布派发一次 pointerdown（走 Excalidraw 的「点击外部关闭」）
         document.querySelector("canvas")?.dispatchEvent(
-          new PointerEvent("pointerdown", { bubbles: true, cancelable: true }),
+          new PointerEvent("pointerdown", {
+            bubbles: true,
+            cancelable: true,
+          }),
         );
       });
       menu.appendChild(item);

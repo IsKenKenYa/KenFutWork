@@ -102,7 +102,10 @@ describe("子代理入参归一化（真实载荷是 {input: '<json>'} 包装）
       input: wrapped,
       timestamp: STARTED,
     });
-    expect(list[0]).toMatchObject({ name: "Explore", description: "审查 server 其余模块" });
+    expect(list[0]).toMatchObject({
+      name: "Explore",
+      description: "审查 server 其余模块",
+    });
   });
 
   it("取不到名字时回落成工具名（行为不变）", () => {

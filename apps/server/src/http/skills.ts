@@ -12,9 +12,10 @@ import {
   workspaceSkillToggleRequestSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
-import type { AuthenticatedUser } from "../features/auth/types.js";
-import { resolveSandboxForCanvas } from "./sandbox-scope.js";
-import type { RequestAuthenticator } from "../features/auth/types.js";
+import type {
+  AuthenticatedUser,
+  RequestAuthenticator,
+} from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { CanvasRepository } from "../features/canvas/repository.js";
 import {
@@ -22,17 +23,18 @@ import {
   SqlError,
 } from "../features/persistence/errors.js";
 import type { SkillCatalogRepository } from "../features/skills/repository.js";
-import { generateSlug } from "../features/skills/slug.js";
-import {
-  buildSkillFromFiles,
-  importSkillFromUrl,
-  type ImportedSkill,
-  SkillImportError,
-} from "../features/skills/skill-import-service.js";
 import {
   listSandboxSkillPackages,
   readSandboxSkillPackage,
 } from "../features/skills/sandbox-skill-packages.js";
+import {
+  buildSkillFromFiles,
+  type ImportedSkill,
+  importSkillFromUrl,
+  SkillImportError,
+} from "../features/skills/skill-import-service.js";
+import { generateSlug } from "../features/skills/slug.js";
+import { resolveSandboxForCanvas } from "./sandbox-scope.js";
 import { isZodError } from "./zod-error.js";
 
 type SkillErrorCode =
@@ -435,13 +437,11 @@ export async function registerSkillRoutes(
             404,
           );
         }
-        return reply
-          .code(200)
-          .send(
-            sandboxSkillPackageListResponseSchema.parse({
-              packages: listSandboxSkillPackages(sandboxDir),
-            }),
-          );
+        return reply.code(200).send(
+          sandboxSkillPackageListResponseSchema.parse({
+            packages: listSandboxSkillPackages(sandboxDir),
+          }),
+        );
       } catch (error) {
         request.log.error({ err: error }, "sandbox skill package scan failed");
         return sendSkillError(

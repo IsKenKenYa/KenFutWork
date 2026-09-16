@@ -1,3 +1,5 @@
+import type { StreamEvent, ToolArtifact } from "@kenfutwork/shared";
+import { imageArtifactSchema, videoArtifactSchema } from "@kenfutwork/shared";
 import type {
   AIMessage,
   AIMessageChunk,
@@ -8,8 +10,6 @@ import {
   AIMessage as AIMessageClass,
   ToolMessage as ToolMessageClass,
 } from "@langchain/core/messages";
-import type { StreamEvent, ToolArtifact } from "@kenfutwork/shared";
-import { imageArtifactSchema, videoArtifactSchema } from "@kenfutwork/shared";
 
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import {
@@ -109,8 +109,7 @@ export async function* adaptDeepAgentStream(
     }
     return {
       runInputTokens,
-      runCachedInputTokens:
-        completedCallsCached + (currentCached ?? 0),
+      runCachedInputTokens: completedCallsCached + (currentCached ?? 0),
     };
   };
 

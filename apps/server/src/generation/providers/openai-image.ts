@@ -13,7 +13,11 @@ export class OpenAIImageProvider implements ImageProvider {
   readonly models = [] as const;
   private client: OpenAI;
 
-  constructor(apiKey: string, baseURL?: string, headers?: Record<string, string>) {
+  constructor(
+    apiKey: string,
+    baseURL?: string,
+    headers?: Record<string, string>,
+  ) {
     this.client = new OpenAI({
       apiKey,
       ...(baseURL ? { baseURL } : {}),

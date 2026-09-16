@@ -14,8 +14,8 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  WorkbenchSidePanel,
   type WorkbenchPanelTab,
+  WorkbenchSidePanel,
 } from "../src/components/workbench/workbench-side-panel";
 
 /**
@@ -150,7 +150,9 @@ describe("WorkbenchSidePanel", () => {
     render(<Harness />);
     await screen.findByRole("list", { name: "变更文件" });
 
-    await userEvent.click(screen.getByRole("button", { name: "审查 notes.md" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "审查 notes.md" }),
+    );
     await waitFor(() =>
       expect(fetchGitFileDiffMock).toHaveBeenCalledWith(
         "token",
@@ -163,7 +165,9 @@ describe("WorkbenchSidePanel", () => {
 
     // 返回列表 → 打开另一文件看内容
     await userEvent.click(screen.getByRole("button", { name: "返回列表" }));
-    await userEvent.click(screen.getByRole("button", { name: "打开 src/app.ts" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "打开 src/app.ts" }),
+    );
     expect((await screen.findByLabelText("文件内容")).textContent).toContain(
       "export const app = 1;",
     );
@@ -180,7 +184,9 @@ describe("WorkbenchSidePanel", () => {
     const docs = await screen.findByRole("list", { name: "项目文档" });
     expect(within(docs).getByText("AGENTS.md")).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "打开 AGENTS.md" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "打开 AGENTS.md" }),
+    );
     expect((await screen.findByLabelText("文件内容")).textContent).toContain(
       "export const app = 1;",
     );
@@ -215,9 +221,15 @@ describe("WorkbenchSidePanel", () => {
     expect(within(list).getByText("AGENTS.md")).toBeInTheDocument();
 
     // 进子目录 → 用新路径再拉一次
-    await userEvent.click(within(list).getByRole("button", { name: "进入 src" }));
+    await userEvent.click(
+      within(list).getByRole("button", { name: "进入 src" }),
+    );
     await waitFor(() =>
-      expect(fetchCodeFilesMock).toHaveBeenLastCalledWith("token", "canvas-1", "src"),
+      expect(fetchCodeFilesMock).toHaveBeenLastCalledWith(
+        "token",
+        "canvas-1",
+        "src",
+      ),
     );
   });
 
@@ -287,7 +299,10 @@ describe("面板宽度受对话列最小宽度约束", () => {
     window.localStorage.setItem("workbench:panel-width", "360");
     const onGrowBlocked = vi.fn();
     render(
-      <Harness widthLimits={{ min: 280, max: 400 }} onGrowBlocked={onGrowBlocked} />,
+      <Harness
+        widthLimits={{ min: 280, max: 400 }}
+        onGrowBlocked={onGrowBlocked}
+      />,
     );
 
     const handle = screen.getByLabelText("调整面板宽度");
@@ -305,7 +320,10 @@ describe("面板宽度受对话列最小宽度约束", () => {
     window.localStorage.setItem("workbench:panel-width", "360");
     const onGrowBlocked = vi.fn();
     render(
-      <Harness widthLimits={{ min: 280, max: 900 }} onGrowBlocked={onGrowBlocked} />,
+      <Harness
+        widthLimits={{ min: 280, max: 900 }}
+        onGrowBlocked={onGrowBlocked}
+      />,
     );
     drag(120);
     expect(onGrowBlocked).not.toHaveBeenCalled();
@@ -362,7 +380,9 @@ describe("右栏浏览器（点链接自动打开）", () => {
     const { normalizeUrl } = await import(
       "../src/components/workbench/workbench-side-panel"
     );
-    expect(normalizeUrl("localhost:8000/demo")).toBe("http://localhost:8000/demo");
+    expect(normalizeUrl("localhost:8000/demo")).toBe(
+      "http://localhost:8000/demo",
+    );
     expect(normalizeUrl("https://example.com")).toBe("https://example.com");
     expect(normalizeUrl("   ")).toBeNull();
   });
@@ -413,9 +433,14 @@ describe("右栏浏览器（点链接自动打开）", () => {
     render(<Harness />);
     await screen.findByRole("list", { name: "变更文件" });
 
-    await userEvent.click(screen.getByRole("button", { name: "审查 src/app.ts" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "审查 src/app.ts" }),
+    );
     const stage = await screen.findByRole("button", { name: "暂存此文件" });
-    setGitFileStagedMock.mockResolvedValue({ path: "src/app.ts", staged: true });
+    setGitFileStagedMock.mockResolvedValue({
+      path: "src/app.ts",
+      staged: true,
+    });
     fetchGitChangesMock.mockResolvedValueOnce({
       isRepo: true,
       truncated: false,
@@ -482,10 +507,14 @@ describe("右栏浏览器（点链接自动打开）", () => {
     stageGitHunkMock.mockResolvedValue({ path: "src/app.ts", staged: true });
     render(<Harness />);
     await screen.findByRole("list", { name: "变更文件" });
-    await userEvent.click(screen.getByRole("button", { name: "审查 src/app.ts" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "审查 src/app.ts" }),
+    );
 
     // 两个块 = 两个「暂存块」键
-    const buttons = await screen.findAllByRole("button", { name: /暂存第 \d 块/ });
+    const buttons = await screen.findAllByRole("button", {
+      name: /暂存第 \d 块/,
+    });
     expect(buttons).toHaveLength(2);
     await userEvent.click(buttons[1]!);
 

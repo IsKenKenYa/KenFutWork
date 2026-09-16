@@ -2,10 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import {
-  contextUsageView,
-  type RunUsageSnapshot,
-} from "@/lib/context-usage";
+import { contextUsageView, type RunUsageSnapshot } from "@/lib/context-usage";
 
 /**
  * 模型选择器旁的「上下文容量 / 缓存命中」浮层（R4-1）。
@@ -113,7 +110,10 @@ export function ContextUsageButton({
           {view.composition.length > 0 ? (
             <ul aria-label="上下文分类占比" className="mt-3 space-y-1 text-xs">
               {view.composition.map((part) => (
-                <li key={part.label} className="flex items-center justify-between">
+                <li
+                  key={part.label}
+                  className="flex items-center justify-between"
+                >
                   <span className="flex items-center gap-1.5 text-muted-foreground">
                     <span
                       aria-hidden
@@ -129,7 +129,8 @@ export function ContextUsageButton({
 
           {view.cacheHitScope === "run" ? (
             <p className="mt-2 text-[10px] text-muted-foreground/80">
-              按 token 加权：累计命中缓存输入 ÷ 累计输入，不是各次百分比的算术平均。
+              按 token 加权：累计命中缓存输入 ÷
+              累计输入，不是各次百分比的算术平均。
               {view.composition.length > 0
                 ? " 分类占比按字符数估算（上游不提供分类 token）。"
                 : ""}
@@ -158,7 +159,8 @@ function ContextRing({ percent }: { percent: number | null }) {
   const stroke = 2.5;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
-  const ratio = percent === null ? 0 : Math.min(100, Math.max(0, percent)) / 100;
+  const ratio =
+    percent === null ? 0 : Math.min(100, Math.max(0, percent)) / 100;
 
   return (
     <span className="relative inline-flex items-center justify-center">

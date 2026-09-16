@@ -81,7 +81,9 @@ describe("浏览器面板历史栈", () => {
       state = openUrl(state, `http://site-${i}.com/`);
     }
     expect(state.entries.length).toBe(MAX_HISTORY_ENTRIES);
-    expect(state.entries[0]).toBe(`http://site-${total - MAX_HISTORY_ENTRIES}.com/`);
+    expect(state.entries[0]).toBe(
+      `http://site-${total - MAX_HISTORY_ENTRIES}.com/`,
+    );
     expect(currentUrl(state)).toBe(`http://site-${total - 1}.com/`);
     expect(canGoBack(state)).toBe(true);
   });

@@ -1,9 +1,14 @@
 "use client";
 
 import type { ProjectSummary } from "@kenfutwork/shared";
-import { Check, ChevronDown, Folder, FolderOpen, MessageSquare } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Folder,
+  FolderOpen,
+  MessageSquare,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-
 
 /**
  * 工作目录选择器（Code 模式 composer 底部）。
@@ -152,7 +157,6 @@ export function WorkDirectorySelect({
             )}
           </div>
 
-
           <div className="border-t p-1">
             <button
               type="button"
@@ -179,7 +183,6 @@ export function WorkDirectorySelect({
           </div>
         </div>
       ) : null}
-
     </div>
   );
 }

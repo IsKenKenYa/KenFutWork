@@ -33,7 +33,11 @@ afterEach(() => {
 describe("工作目录里的技能包扫描（从工作目录导入）", () => {
   it("扫出含 SKILL.md 的目录，并解析出 name/description", () => {
     const root = makeRoot();
-    writeFile(root, "en-zh-translate/SKILL.md", SKILL_MD("en-zh-translate", "英译中"));
+    writeFile(
+      root,
+      "en-zh-translate/SKILL.md",
+      SKILL_MD("en-zh-translate", "英译中"),
+    );
     writeFile(root, "en-zh-translate/glossary.md", "# 术语表");
     writeFile(root, "普通目录/notes.md", "不是技能包");
 
@@ -92,6 +96,8 @@ describe("工作目录里的技能包扫描（从工作目录导入）", () => {
     const root = makeRoot();
     writeFile(root, "plain/readme.md", "hello");
 
-    expect(() => readSandboxSkillPackage(root, "plain")).toThrow("没有 SKILL.md");
+    expect(() => readSandboxSkillPackage(root, "plain")).toThrow(
+      "没有 SKILL.md",
+    );
   });
 });

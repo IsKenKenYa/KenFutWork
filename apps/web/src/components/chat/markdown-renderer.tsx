@@ -4,10 +4,7 @@ import React, { useMemo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import {
-  canOpenInBrowserPanel,
-  requestBrowserOpen,
-} from "@/lib/browser-panel";
+import { canOpenInBrowserPanel, requestBrowserOpen } from "@/lib/browser-panel";
 import { ChatImage } from "./image-lightbox";
 import { isImageUrl } from "./utils";
 

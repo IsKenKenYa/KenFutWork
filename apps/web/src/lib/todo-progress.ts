@@ -56,7 +56,9 @@ export function parseTodos(rawInput: unknown): TodoItem[] | null {
 /** 未知 status 归为 pending（模型偶尔会写 "done"/"blocked"，一律不当作完成）。 */
 function readStatus(entry: unknown): TodoStatus {
   const status = (entry as { status?: unknown }).status;
-  return status === "completed" || status === "in_progress" ? status : "pending";
+  return status === "completed" || status === "in_progress"
+    ? status
+    : "pending";
 }
 
 export function todoProgress(items: TodoItem[]): TodoProgress {

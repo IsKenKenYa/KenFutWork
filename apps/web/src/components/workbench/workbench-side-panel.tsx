@@ -25,13 +25,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SubagentDirectoryView } from "@/components/workbench/subagent-directory-view";
-import { onBrowserOpen } from "@/lib/browser-panel";
-import {
-  hunkPatch,
-  markHunkStarts,
-  splitHunks,
-  toDiffLines,
-} from "@/lib/git-hunks";
 import {
   canGoBack,
   canGoForward,
@@ -41,6 +34,7 @@ import {
   goForward,
   openUrl,
 } from "@/lib/browser-history";
+import { onBrowserOpen } from "@/lib/browser-panel";
 import {
   type CodeFileListing,
   fetchCodeDocs,
@@ -49,14 +43,20 @@ import {
   fetchGitFileDiff,
   fetchSandboxFile,
   fetchTerminalShells,
-  setGitFileStaged,
-  stageGitHunk,
   type GitChanges,
   runTerminalCommand,
   type SandboxFileView,
+  setGitFileStaged,
+  stageGitHunk,
   type TerminalResult,
   type TerminalShellOption,
 } from "@/lib/code-git-api";
+import {
+  hunkPatch,
+  markHunkStarts,
+  splitHunks,
+  toDiffLines,
+} from "@/lib/git-hunks";
 import {
   clampPanelWidth,
   DEFAULT_PANEL_WIDTH,
@@ -171,8 +171,11 @@ export function WorkbenchSidePanel({
 
   /** 暂存 / 取消暂存当前审查的文件，成功后刷新变更清单（列表与按钮跟着变）。 */
   const toggleStaged = useCallback(async () => {
-    if (!accessToken || !canvasId || !reading || reading.kind !== "diff") return;
-    const staged = !(changes?.files.find((f) => f.path === reading.path)?.staged ?? false);
+    if (!accessToken || !canvasId || !reading || reading.kind !== "diff")
+      return;
+    const staged = !(
+      changes?.files.find((f) => f.path === reading.path)?.staged ?? false
+    );
     setStaging(true);
     setError(null);
     try {
@@ -191,7 +194,8 @@ export function WorkbenchSidePanel({
   /** 暂存**一块**：把「文件头 + 这一块」拼成 patch 交给服务端，然后刷新清单。 */
   const stageHunk = useCallback(
     async (hunkIndex: number) => {
-      if (!accessToken || !canvasId || !reading || reading.kind !== "diff") return;
+      if (!accessToken || !canvasId || !reading || reading.kind !== "diff")
+        return;
       const { fileHeader, hunks } = splitHunks(reading.text);
       const hunk = hunks[hunkIndex];
       if (!hunk) return;
@@ -207,7 +211,9 @@ export function WorkbenchSidePanel({
         setChanges(await fetchGitChanges(accessToken, canvasId));
       } catch (err) {
         setError(
-          err instanceof Error ? err.message : "暂存这一块失败（可能已经暂存过）。",
+          err instanceof Error
+            ? err.message
+            : "暂存这一块失败（可能已经暂存过）。",
         );
       } finally {
         setStagingHunk(null);
@@ -505,42 +511,48 @@ export function WorkbenchSidePanel({
               /* 差异视图逐行渲染：每个块（hunk）的第一行右侧给「暂存块」——
                  参考图的审查视图就是这么把改动一块一块收进索引的 */
               <div
+                role="region"
                 aria-label="文件差异"
                 className="max-h-[60vh] overflow-auto p-2 font-mono text-[11px] leading-5"
               >
-                {markHunkStarts(toDiffLines(reading.text)).map((line, index) => (
-                  <div
-                    key={`${index}-${line.text.slice(0, 12)}`}
-                    className={`whitespace-pre ${
-                      line.kind === "add"
-                        ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                        : line.kind === "del"
-                          ? "bg-rose-500/10 text-rose-700 dark:text-rose-400"
-                          : line.kind === "hunk"
-                            ? "bg-muted/60 text-muted-foreground"
-                            : line.kind === "meta"
-                              ? "text-muted-foreground"
-                              : ""
-                    }`}
-                  >
-                    {line.text}
-                    {line.hunkIndex !== undefined ? (
-                      <button
-                        type="button"
-                        aria-label={`暂存第 ${line.hunkIndex + 1} 块`}
-                        disabled={stagingHunk !== null}
-                        title="只把这一块加进索引（其余块留在工作区）"
-                        onClick={() => void stageHunk(line.hunkIndex!)}
-                        className="ml-2 rounded border px-1.5 py-0.5 align-middle text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
-                      >
-                        {stagingHunk === line.hunkIndex ? "处理中…" : "暂存块"}
-                      </button>
-                    ) : null}
-                  </div>
-                ))}
+                {markHunkStarts(toDiffLines(reading.text)).map(
+                  (line, index) => (
+                    <div
+                      key={`${index}-${line.text.slice(0, 12)}`}
+                      className={`whitespace-pre ${
+                        line.kind === "add"
+                          ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                          : line.kind === "del"
+                            ? "bg-rose-500/10 text-rose-700 dark:text-rose-400"
+                            : line.kind === "hunk"
+                              ? "bg-muted/60 text-muted-foreground"
+                              : line.kind === "meta"
+                                ? "text-muted-foreground"
+                                : ""
+                      }`}
+                    >
+                      {line.text}
+                      {line.hunkIndex !== undefined ? (
+                        <button
+                          type="button"
+                          aria-label={`暂存第 ${line.hunkIndex + 1} 块`}
+                          disabled={stagingHunk !== null}
+                          title="只把这一块加进索引（其余块留在工作区）"
+                          onClick={() => void stageHunk(line.hunkIndex!)}
+                          className="ml-2 rounded border px-1.5 py-0.5 align-middle text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
+                        >
+                          {stagingHunk === line.hunkIndex
+                            ? "处理中…"
+                            : "暂存块"}
+                        </button>
+                      ) : null}
+                    </div>
+                  ),
+                )}
               </div>
             ) : (
               <pre
+                role="region"
                 aria-label="文件内容"
                 className="max-h-[60vh] overflow-auto p-2 font-mono text-[11px] leading-5 whitespace-pre"
               >
@@ -1102,7 +1114,8 @@ function BrowserView({
       )}
       <p className="text-[10px] text-muted-foreground">
         内嵌页面能否显示取决于目标站点是否允许被嵌入；被拒绝时会是一片空白，用「在系统浏览器
-        打开」兜底。后退 / 前进记的是**本面板打开过的地址**（跨源页面自己的历史读不到）。
+        打开」兜底。后退 /
+        前进记的是**本面板打开过的地址**（跨源页面自己的历史读不到）。
       </p>
     </div>
   );
@@ -1289,6 +1302,7 @@ function TerminalView({
       ) : null}
 
       <div
+        role="region"
         aria-label="终端输出"
         className="min-h-0 flex-1 overflow-y-auto rounded-xl border bg-muted/30 p-2 font-mono text-[11px] leading-5"
       >

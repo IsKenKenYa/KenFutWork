@@ -49,7 +49,10 @@ const argOf = (name) => {
 };
 
 const envLocal = readEnvLocal();
-const key = argOf("key") ?? envLocal.KENFUTWORK_SEARCH_API_KEY ?? process.env.KENFUTWORK_SEARCH_API_KEY;
+const key =
+  argOf("key") ??
+  envLocal.KENFUTWORK_SEARCH_API_KEY ??
+  process.env.KENFUTWORK_SEARCH_API_KEY;
 const query = argOf("query") ?? "Python 3.13 新特性";
 const endpoint = argOf("endpoint") ?? METASO_ENDPOINT;
 
@@ -72,11 +75,16 @@ if (key === "local-dev-standin-key") {
   process.exit(1);
 }
 
-console.log(`端点：${endpoint}\n检索词：${query}\nKey：${key.slice(0, 6)}…（${key.length} 字符）\n`);
+console.log(
+  `端点：${endpoint}\n检索词：${query}\nKey：${key.slice(0, 6)}…（${key.length} 字符）\n`,
+);
 
 const response = await fetch(endpoint, {
   method: "POST",
-  headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+  headers: {
+    "content-type": "application/json",
+    authorization: `Bearer ${key}`,
+  },
   // 秘塔只认 q/scope/size/page（与 web-search.ts 保持一致）
   body: JSON.stringify({ q: query, scope: "webpage", size: "5", page: "1" }),
 }).catch((error) => {
@@ -116,7 +124,9 @@ for (const [index, item] of results.entries()) {
   const title = String(item.title ?? "(无标题)");
   const link = String(item.link ?? item.url ?? "");
   const snippet = String(item.snippet ?? item.content ?? item.summary ?? "");
-  console.log(`\n${index + 1}. ${title}\n   ${link}\n   ${snippet.slice(0, 120)}`);
+  console.log(
+    `\n${index + 1}. ${title}\n   ${link}\n   ${snippet.slice(0, 120)}`,
+  );
 }
 console.log(
   "\n下一步：把 Key 留在 .env.local（并删掉 KENFUTWORK_SEARCH_ENDPOINT 那行），重启服务后在 GUI 里让 agent 调 web_search 复验端到端。",

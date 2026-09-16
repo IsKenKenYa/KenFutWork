@@ -1,21 +1,21 @@
 "use client";
 
-import { PanelsTopLeft } from "lucide-react";
 import type { ImageArtifact, VideoArtifact } from "@kenfutwork/shared";
+import { PanelsTopLeft } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { PluginPanelButtons } from "@/lib/plugin-panels";
+import { BrandKitModal } from "../../components/brand-kit-modal";
 import { BrandKitSelector } from "../../components/brand-kit-selector";
-import { CanvasToolMenu } from "../../components/canvas-tool-menu";
 import type { CanvasSelectedElement } from "../../components/canvas-editor";
 import { CanvasEditor } from "../../components/canvas-editor";
 import { CanvasEmptyHint } from "../../components/canvas-empty-hint";
 import { CanvasFilesPanel } from "../../components/canvas-files-panel";
 import type { CanvasImageItem } from "../../components/canvas-image-picker";
-import { BrandKitModal } from "../../components/brand-kit-modal";
 import { CanvasLayersPanel } from "../../components/canvas-layers-panel";
 import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
-import { PluginPanelButtons } from "@/lib/plugin-panels";
-import { type SidePanelTab, ChatSidebar } from "../../components/chat-sidebar";
+import { CanvasToolMenu } from "../../components/canvas-tool-menu";
+import { ChatSidebar, type SidePanelTab } from "../../components/chat-sidebar";
 import { EditableProjectName } from "../../components/editable-project-name";
 import { LoadingScreen } from "../../components/loading-screen";
 import { useJobFallbackPolling } from "../../hooks/use-job-fallback-polling";

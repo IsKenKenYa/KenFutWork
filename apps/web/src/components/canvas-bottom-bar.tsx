@@ -251,9 +251,7 @@ function ElementRow({
  * `CanvasToolMenu` 那一行提供，本组件只出控件本身，于是避让逻辑连同它的测量代码一起
  * 消失——那套代码存在的唯一理由就是「两条并列」。
  */
-export function CanvasViewControls({
-  excalidrawApi,
-}: CanvasViewControlsProps) {
+export function CanvasViewControls({ excalidrawApi }: CanvasViewControlsProps) {
   /* ── Zoom state ── */
   const [zoom, setZoom] = useState(1);
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false);

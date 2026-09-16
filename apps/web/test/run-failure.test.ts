@@ -67,8 +67,8 @@ describe("run.failed 的失败说明", () => {
   it("多行原文（通用文案 + 原始错误）原样透出", () => {
     const message =
       'AI 服务暂时不可用，请稍后重试。\n\n原始错误：400 {"error":{"message":"model not found"}}';
-    expect(
-      describeRunFailure({ error: { code: "run_failed", message } }),
-    ).toBe(message);
+    expect(describeRunFailure({ error: { code: "run_failed", message } })).toBe(
+      message,
+    );
   });
 });

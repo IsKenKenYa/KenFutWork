@@ -1,12 +1,18 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  GitGraphDialog,
   formatCommitDate,
+  GitGraphDialog,
 } from "../src/components/workbench/git-graph-dialog";
 
 const { fetchGitGraphMock } = vi.hoisted(() => ({
@@ -107,8 +113,12 @@ describe("GitGraphDialog", () => {
     await userEvent.click(screen.getByText("收进右栏停靠面板"));
     const detail = screen.getByText("主题").closest("dl");
     expect(detail).not.toBeNull();
-    expect(within(detail as HTMLElement).getByText("e050aaefull")).toBeInTheDocument();
-    expect(within(detail as HTMLElement).getByText("1e4e518")).toBeInTheDocument();
+    expect(
+      within(detail as HTMLElement).getByText("e050aaefull"),
+    ).toBeInTheDocument();
+    expect(
+      within(detail as HTMLElement).getByText("1e4e518"),
+    ).toBeInTheDocument();
   });
 
   it("非仓库 / 没有提交：说清状态，不是空白", async () => {

@@ -1,4 +1,5 @@
 import { resolveSandboxDir } from "../../agent/sandbox-dir.js";
+import { resolveInsideRoot } from "../../utils/inside-root.js";
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import type { CanvasRepository } from "../canvas/repository.js";
@@ -10,7 +11,6 @@ import type {
   GitGraph,
   GitRepoView,
 } from "./git-client.js";
-import { resolveInsideRoot } from "../../utils/inside-root.js";
 import { patchTargetsOnly } from "./hunk-patch.js";
 import {
   existingSandboxFiles,

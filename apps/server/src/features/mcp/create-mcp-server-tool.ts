@@ -1,10 +1,12 @@
 import { extname } from "node:path";
-
+import { resolveSandboxDir } from "../../agent/sandbox-dir.js";
+import type {
+  ToolDefinition,
+  ToolExecutionContext,
+} from "../../kernel/types.js";
+import { resolveInsideRoot } from "../../utils/inside-root.js";
 import type { AdminService } from "../admin/admin-service.js";
 import type { RequestAuthenticator } from "../auth/types.js";
-import type { ToolDefinition, ToolExecutionContext } from "../../kernel/types.js";
-import { resolveInsideRoot } from "../../utils/inside-root.js";
-import { resolveSandboxDir } from "../../agent/sandbox-dir.js";
 import type { McpService } from "./mcp-service.js";
 
 /**

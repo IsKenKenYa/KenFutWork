@@ -1,8 +1,11 @@
+import { resolveSandboxDir } from "../../agent/sandbox-dir.js";
+import type {
+  ToolDefinition,
+  ToolExecutionContext,
+} from "../../kernel/types.js";
+import { resolveInsideRoot } from "../../utils/inside-root.js";
 import type { AdminService } from "../admin/admin-service.js";
 import type { RequestAuthenticator } from "../auth/types.js";
-import type { ToolDefinition, ToolExecutionContext } from "../../kernel/types.js";
-import { resolveInsideRoot } from "../../utils/inside-root.js";
-import { resolveSandboxDir } from "../../agent/sandbox-dir.js";
 import type { PluginRegistryService } from "./plugin-registry-service.js";
 
 /**
@@ -44,7 +47,9 @@ export function createInstallPluginTool(options: {
     execute: async (args, execCtx: ToolExecutionContext) => {
       const relativePath = String(args.path ?? "").trim();
       if (!relativePath) {
-        throw new Error("install_plugin 需要 path（相对工作目录的 bundle 目录）。");
+        throw new Error(
+          "install_plugin 需要 path（相对工作目录的 bundle 目录）。",
+        );
       }
       if (!execCtx.canvasId) {
         throw new Error(
@@ -93,7 +98,9 @@ export function createInstallPluginTool(options: {
         const report = (error as { report?: unknown }).report;
         throw new Error(
           `安装失败：${error instanceof Error ? error.message : String(error)}${
-            report ? `（门禁报告：${JSON.stringify(report).slice(0, 500)}）` : ""
+            report
+              ? `（门禁报告：${JSON.stringify(report).slice(0, 500)}）`
+              : ""
           }`,
         );
       }
