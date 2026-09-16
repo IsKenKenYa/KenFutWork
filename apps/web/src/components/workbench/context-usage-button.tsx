@@ -10,20 +10,31 @@ import {
 /**
  * 模型选择器旁的「上下文容量 / 缓存命中」浮层（R4-1）。
  *
- * 按钮本身是**圆环 + 实际百分比**（参考图口径：不是图标，一眼能看出占了窗口多少），
- * 数据来自服务端 `run.usage` 与模型目录里的上下文窗口。**没有数据时不显示 0**：
- * 窗口未知就不给百分比，上游没报缓存就写「上游未上报」。
+ * 形态照参考图：按钮是**圆环 + 实际百分比**（不是图标、也不是问号），浮层第一行给
+ * 「当前 / 窗口（百分比）」的读数，下面一条横向进度条，再下面是各分类占比，
+ * 分隔线之后是平均缓存命中率。
+ *
+ * 口径（与业界一致，也是上下游字段能支持的最小口径）：
+ * - **占用** = 本轮模型调用实际收到的 input tokens（最近一次调用的输入 = 当前真正占着窗口的量）
+ *   ÷ 模型上下文窗口；
+ * - **平均缓存命中率** = 命中缓存的输入 token ÷ 全部输入 token（**按 token 加权**，不是各次
+ *   百分比的算术平均——短调用多的一轮里算术平均会虚高）；
+ * - 窗口：供应商实例声明优先，没声明用 `@kenfutwork/shared` 的常见模型兜底表；
+ *   两边都没有时**不给百分比**，环里显示绝对量（不写问号）。
  */
 export function ContextUsageButton({
   usage,
   contextWindow,
+  modelId,
 }: {
   usage: RunUsageSnapshot | null | undefined;
   contextWindow: number | null | undefined;
+  /** 当前模型 id（用于兜底表查窗口；BYOK 的 `<实例>:<模型>` 写法也认）。 */
+  modelId?: string | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const view = contextUsageView(usage, contextWindow);
+  const view = contextUsageView(usage, contextWindow, modelId ?? "");
 
   useEffect(() => {
     if (!open) return;
@@ -53,11 +64,14 @@ export function ContextUsageButton({
         aria-label="上下文容量"
         aria-haspopup="dialog"
         aria-expanded={open}
-        title="上下文容量与缓存命中"
+        title={view.usageLine ?? "上下文容量与缓存命中"}
         onClick={() => setOpen((current) => !current)}
         className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       >
-        <ContextRing percent={view.percent} />
+        <ContextRing
+          percent={view.percent}
+          fallbackLabel={view.hasUsage ? view.inputLabel : null}
+        />
       </button>
 
       {open ? (
@@ -66,54 +80,28 @@ export function ContextUsageButton({
           aria-label="上下文容量与缓存命中"
           className="absolute right-0 bottom-full z-50 mb-2 w-72 rounded-xl border bg-popover p-3 text-popover-foreground shadow-md"
         >
-          <div className="flex items-center justify-between text-xs">
+          {/* 第一行：当前 / 窗口（百分比）——参考图的读数 */}
+          <div className="flex items-baseline justify-between gap-2 text-xs">
             <span className="font-medium">上下文容量</span>
-            <span className="tabular-nums text-muted-foreground">
-              {view.hasUsage
-                ? `${view.inputLabel}${view.windowLabel ? `/${view.windowLabel}` : ""}${
-                    view.percentLabel ? `（${view.percentLabel}）` : ""
-                  }`
-                : "本轮暂无用量"}
+            <span className="tabular-nums">
+              {view.usageLine ?? "本轮暂无用量"}
             </span>
           </div>
 
-          {view.percent !== null ? (
-            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-foreground/70"
-                style={{ width: `${view.percent}%` }}
-              />
-            </div>
-          ) : null}
+          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-info"
+              style={{ width: `${view.percent ?? 0}%` }}
+            />
+          </div>
 
-          <dl className="mt-3 space-y-1 text-xs">
-            <div className="flex items-center justify-between">
-              <dt className="text-muted-foreground">输入 token</dt>
-              <dd className="tabular-nums">{view.inputLabel ?? "—"}</dd>
-            </div>
-            <div className="flex items-center justify-between">
-              <dt className="text-muted-foreground">输出 token</dt>
-              <dd className="tabular-nums">{view.outputLabel ?? "—"}</dd>
-            </div>
-            <div className="flex items-center justify-between">
-              <dt className="text-muted-foreground">
-                平均缓存命中率
-                {view.cacheHitScope === "call" ? (
-                  <span className="ml-1 text-[10px] text-muted-foreground/70">
-                    （本次调用）
-                  </span>
-                ) : null}
-              </dt>
-              <dd className="tabular-nums">
-                {view.cacheHitLabel ?? "上游未上报"}
-              </dd>
-            </div>
-          </dl>
-          {/* 分类占比（R4-1）：参考图那一栏。**字符数口径**——上游不提供分类 token。 */}
           {view.composition.length > 0 ? (
             <ul aria-label="上下文分类占比" className="mt-3 space-y-1 text-xs">
               {view.composition.map((part) => (
-                <li key={part.label} className="flex items-center justify-between">
+                <li
+                  key={part.label}
+                  className="flex items-center justify-between"
+                >
                   <span className="flex items-center gap-1.5 text-muted-foreground">
                     <span
                       aria-hidden
@@ -127,20 +115,12 @@ export function ContextUsageButton({
             </ul>
           ) : null}
 
-          {view.cacheHitScope === "run" ? (
-            <p className="mt-2 text-[10px] text-muted-foreground/80">
-              按 token 加权：累计命中缓存输入 ÷ 累计输入，不是各次百分比的算术平均。
-              {view.composition.length > 0
-                ? " 分类占比按字符数估算（上游不提供分类 token）。"
-                : ""}
-            </p>
-          ) : null}
-
-          {view.windowKnown ? null : (
-            <p className="mt-2 text-[11px] text-muted-foreground">
-              该模型没有声明上下文窗口，无法计算容量占比。
-            </p>
-          )}
+          <div className="mt-3 flex items-center justify-between border-t pt-2 text-xs">
+            <span className="text-muted-foreground">平均缓存命中率</span>
+            <span className="tabular-nums">
+              {view.cacheHitLabel ?? "上游未上报"}
+            </span>
+          </div>
         </div>
       ) : null}
     </div>
@@ -148,13 +128,19 @@ export function ContextUsageButton({
 }
 
 /**
- * 容量圆环：一圈轨道 + 一段进度弧，中心写百分比。
+ * 容量圆环：一圈轨道 + 一段进度弧，中心写**实际百分比**（参考图口径：一眼看出占了多少）。
  *
- * 为什么不用图标：参考图要的是「一眼看出占了多少」（圆圈 + 实际百分比）。
- * 窗口未知时百分比为 null：画空轨道、中心写「?」——不编分母、也不假装是 0%。
+ * 窗口未知（既没声明、兜底表也认不出）时不编百分比：环里写**绝对量**（如 `51万`），
+ * 不写问号——问号等于什么都没给。
  */
-function ContextRing({ percent }: { percent: number | null }) {
-  const size = 20;
+function ContextRing({
+  percent,
+  fallbackLabel,
+}: {
+  percent: number | null;
+  fallbackLabel: string | null;
+}) {
+  const size = 22;
   const stroke = 2.5;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -186,12 +172,12 @@ function ContextRing({ percent }: { percent: number | null }) {
             strokeWidth={stroke}
             strokeLinecap="round"
             strokeDasharray={`${circumference * ratio} ${circumference}`}
-            className="stroke-foreground/70"
+            className="stroke-info"
           />
         ) : null}
       </svg>
-      <span className="absolute text-[8px] tabular-nums">
-        {percent === null ? "?" : Math.round(percent)}
+      <span className="absolute text-[7px] leading-none tabular-nums">
+        {percent !== null ? Math.round(percent) : (fallbackLabel ?? "—")}
       </span>
     </span>
   );
