@@ -1045,7 +1045,19 @@ export function ChatSidebar({
       ws.resumeCanvas(canvasId, (ack) => {
         const activeRunId = (ack.payload as Record<string, unknown>)
           .activeRunId;
-        if (activeRunId && typeof activeRunId === "string") {
+        /**
+         * 服务端说「没有在跑的 run」时要把本地的「生成中」收掉。
+         *
+         * GUI 实测踩到：进程重启（含 dev 的 --watch 重建）会把在飞的 run 收敛成 failed，
+         * 但客户端不知道——`streaming` 停在 true ⇒ 停止键常驻、输入框一直禁用，而那颗键
+         * 指向一个已经不存在的 run（点了没反应）。这里是「run 失踪」的唯一兜底信号。
+         */
+        if (!activeRunId || typeof activeRunId !== "string") {
+          setStreaming(false);
+          setActiveRunId(null);
+          return;
+        }
+        {
           setStreaming(true);
           // 断线重连接上的这一轮同样要能停（否则重连后按钮消失，只能干等）
           setActiveRunId(activeRunId);

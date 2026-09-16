@@ -101,7 +101,13 @@ export function WorkDirectorySelect({
    * 工作目录会在会话里切换，清单跟着当前选中的项目走，且关着的时候不发请求。
    */
   useEffect(() => {
-    if (!open || !accessToken || !canvasId) return;
+    // 没绑画布（还没选工作目录）：清单无从谈起，直接给空——此前留 null 会让文案
+    // 永远停在「读取中…」（GUI 实测），把「没得读」说成「在读」是撒谎。
+    if (!accessToken || !canvasId) {
+      setDocs([]);
+      return;
+    }
+    if (!open) return;
     let cancelled = false;
     setDocs(null);
     void fetchCodeDocs(accessToken, canvasId)
@@ -220,7 +226,11 @@ export function WorkDirectorySelect({
             <p className="px-2 pt-1 pb-0.5 text-[10px] font-medium tracking-wide text-muted-foreground/70">
               项目文档
             </p>
-            {docs === null ? (
+            {!canvasId ? (
+              <p className="px-2 py-1 text-xs text-muted-foreground">
+                先选一个工作目录
+              </p>
+            ) : docs === null ? (
               <p className="px-2 py-1 text-xs text-muted-foreground">读取中…</p>
             ) : docs.length === 0 ? (
               <p className="px-2 py-1 text-xs text-muted-foreground">
