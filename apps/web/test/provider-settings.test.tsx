@@ -28,6 +28,7 @@ const instance: ProviderInstanceResponse = {
   protocol: "openai-compatible",
   hasCredential: true,
   models: [{ id: "gpt-x", name: "GPT X", capability: "chat" }],
+  headerKeys: [],
   enabled: true,
 };
 

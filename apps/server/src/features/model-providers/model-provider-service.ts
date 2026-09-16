@@ -55,6 +55,8 @@ export interface ResolvedInstanceCredentials {
   baseUrl?: string;
   apiKey: string;
   compat?: Record<string, unknown>;
+  /** 自定义请求头（原值，含占位符）：调用方按会话上下文渲染后再交给适配器。 */
+  headers?: Record<string, string>;
   models: Array<{ id: string; name: string; capability: ModelCapability }>;
 }
 
@@ -86,6 +88,8 @@ function toResponse(row: ProviderInstanceRecord): ProviderInstanceResponse {
     hasCredential: true,
     models: mapModels(row.models),
     ...(row.compat ? { compat: row.compat } : {}),
+    // 自定义头只回键名，值不回显（与 MCP env/envKeys 同口径）。
+    headerKeys: Object.keys(row.headers ?? {}),
     enabled: row.enabled,
   };
 }
@@ -98,6 +102,7 @@ function toCredentials(row: ProviderInstanceRecord, apiKey: string) {
     ...(row.base_url ? { baseUrl: row.base_url } : {}),
     apiKey,
     ...(row.compat ? { compat: row.compat } : {}),
+    ...(row.headers ? { headers: row.headers } : {}),
     models: mapModels(row.models),
   };
 }
@@ -109,6 +114,8 @@ function toPatch(input: ProviderInstanceUpdateRequest) {
   if (input.baseUrl !== undefined) patch.base_url = input.baseUrl;
   if (input.models !== undefined) patch.models = input.models;
   if (input.compat !== undefined) patch.compat = input.compat;
+  // 自定义头整体覆盖：显式 `{}` 即清空。
+  if (input.headers !== undefined) patch.headers = input.headers;
   if (input.enabled !== undefined) patch.enabled = input.enabled;
   return patch;
 }
@@ -261,6 +268,7 @@ export function createModelProviderService(options: {
         .insertWorkspaceInstance({
           ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
           ...(input.compat ? { compat: input.compat } : {}),
+          ...(input.headers ? { headers: input.headers } : {}),
           createdBy: user.id,
           encryptedApiKey: encryptSecret(
             { credentialSecret: secret },

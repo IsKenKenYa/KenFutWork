@@ -92,6 +92,7 @@ const INSTANCE_ROW: ProviderInstanceRecord = {
   encrypted_api_key: "v1:iv:tag:cipher",
   models: [{ id: "gpt-4.1", name: "GPT-4.1", capability: "chat" }],
   compat: { streamUsage: true },
+  headers: null,
   enabled: true,
 };
 
@@ -153,6 +154,7 @@ describe("model-providers 服务（BYOK 凭证红线）", () => {
         hasCredential: true,
         models: [{ id: "gpt-4.1", name: "GPT-4.1", capability: "chat" }],
         compat: { streamUsage: true },
+        headerKeys: [],
         enabled: true,
       },
     ]);
@@ -416,5 +418,91 @@ describe("model-providers 服务（BYOK 凭证红线）", () => {
     await expect(service.listSystemInstances()).resolves.toMatchObject([
       { scope: "system" },
     ]);
+  });
+});
+
+describe("model-providers 自定义请求头（§4.8，R6-1）", () => {
+  const HEADERS = {
+    "x-opencode-session": "{{sessionId}}",
+    "x-tenant-id": "ws-42",
+  };
+
+  it("创建携带 headers：整批落库为 jsonb，响应只回键名", async () => {
+    const { calls, service } = buildService({
+      rows: [{ ...INSTANCE_ROW, headers: HEADERS }],
+      rowCount: 1,
+    });
+
+    const created = await service.createInstance(USER, {
+      apiKey: "sk-x",
+      models: [{ id: "gpt-4.1", name: "GPT-4.1", capability: "chat" }],
+      name: "opencode",
+      protocol: "openai-compatible",
+      headers: HEADERS,
+    });
+
+    expect(created.headerKeys).toEqual(["x-opencode-session", "x-tenant-id"]);
+    // 响应体里没有值，只有键名
+    expect(JSON.stringify(created)).not.toContain("{{sessionId}}");
+    expect(JSON.stringify(created)).not.toContain("ws-42");
+
+    const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
+    expect(sql).toContain("headers");
+    const stored = (calls[0]?.values ?? []).find(
+      (value) => typeof value === "string" && value.includes("x-opencode"),
+    );
+    expect(JSON.parse(String(stored))).toEqual(HEADERS);
+  });
+
+  it("更新 headers 为 {}：整体清空（而非忽略）", async () => {
+    const { calls, service } = buildService({
+      rows: [{ ...INSTANCE_ROW, headers: null }],
+    });
+
+    const updated = await service.updateInstance(USER, INSTANCE_ID, {
+      headers: {},
+    });
+
+    expect(updated.headerKeys).toEqual([]);
+    const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
+    expect(sql).toContain("headers = $2::jsonb");
+    expect(calls[0]?.values[1]).toBe("{}");
+  });
+
+  it("凭证解析带出 headers 原值（含占位符）——渲染在适配器调用点完成", async () => {
+    const { encryptSecret } = await import("./secret-store.js");
+    const enc = encryptSecret(
+      { credentialSecret: CREDENTIAL_SECRET },
+      "sk-live",
+    );
+    const { service } = buildService({
+      rows: [{ ...INSTANCE_ROW, encrypted_api_key: enc, headers: HEADERS }],
+    });
+
+    const resolved = await service.resolveCredentials(USER, INSTANCE_ID);
+    expect(resolved.headers).toEqual(HEADERS);
+    // 键名可回，但解析结果属于「只进适配器」通道：不落日志、不进响应
+    expect(resolved.apiKey).toBe("sk-live");
+  });
+
+  it("未设置 headers 的实例：凭证不含 headers 字段，响应 headerKeys 为空", async () => {
+    const { encryptSecret } = await import("./secret-store.js");
+    const { service } = buildService({
+      rows: [
+        {
+          ...INSTANCE_ROW,
+          encrypted_api_key: encryptSecret(
+            { credentialSecret: CREDENTIAL_SECRET },
+            "sk-live",
+          ),
+        },
+      ],
+    });
+
+    const [instance] = await service.listInstances(USER);
+    expect(instance?.headerKeys).toEqual([]);
+    await expect(
+      service.resolveCredentials(USER, INSTANCE_ID),
+    ).resolves.not.toHaveProperty("headers");
   });
 });

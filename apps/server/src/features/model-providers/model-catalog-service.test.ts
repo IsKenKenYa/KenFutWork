@@ -26,6 +26,7 @@ function instance(
       { id: "gpt-x", name: "GPT X", capability: "chat" },
       { id: "img-1", name: "IMG 1", capability: "image" },
     ],
+    headerKeys: [],
     enabled: true,
     ...overrides,
   };
