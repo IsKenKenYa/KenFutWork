@@ -1,19 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   clampPanelWidth,
-  conversationColumnWidth,
-  isCompactComposer,
   MAX_PANEL_WIDTH,
   MIN_CONVERSATION_WIDTH,
   MIN_PANEL_WIDTH,
   panelWidthLimits,
   SIDEBAR_RAIL_WIDTH,
-  shouldAutoCollapseSidebar,
 } from "../src/lib/panel-layout";
 
 /**
  * 三栏宽度口径：面板上限由视口与左栏现算（给中间的对话列留最小宽度），
- * 拖过上限时左栏自动收起来腾地方，对话列窄到控件排不下时 composer 收成图标。
+ * 拖过上限时左栏自动收起来腾地方（`workbench-side-panel.test.tsx` 锁拖动行为）。
+ * 窄列下 composer 收成图标是 CSS 容器查询的事，见 `composer-compact-select.test.tsx`。
  */
 describe("panelWidthLimits", () => {
   it("上限 = 视口 − 左栏 − 对话列最小宽度（正常视口）", () => {
@@ -80,86 +78,3 @@ describe("clampPanelWidth", () => {
   });
 });
 
-describe("shouldAutoCollapseSidebar", () => {
-  const base = { windowWidth: 1512, sidebarWidth: 256 };
-
-  it("越过上限且左栏能腾地方 → 收起", () => {
-    expect(
-      shouldAutoCollapseSidebar({ ...base, nextPanelWidth: 900 }),
-    ).toBe(true);
-  });
-
-  it("没越过上限 → 不动左栏", () => {
-    expect(
-      shouldAutoCollapseSidebar({ ...base, nextPanelWidth: 700 }),
-    ).toBe(false);
-  });
-
-  it("左栏已是图标栏（视口小、收起来也没用）→ 不收", () => {
-    // 视口小到两种左栏状态下上限都塌到面板下限：收起来什么也换不来。
-    expect(
-      shouldAutoCollapseSidebar({
-        windowWidth: 700,
-        sidebarWidth: 256,
-        nextPanelWidth: 500,
-      }),
-    ).toBe(false);
-  });
-});
-
-describe("conversationColumnWidth", () => {
-  it("对话列 = 视口 − 左栏 − 面板", () => {
-    expect(
-      conversationColumnWidth({
-        windowWidth: 1716,
-        sidebarWidth: 256,
-        sidebarCollapsed: false,
-        panelWidth: 720,
-      }),
-    ).toBe(740);
-  });
-
-  it("左栏收起按图标栏算", () => {
-    expect(
-      conversationColumnWidth({
-        windowWidth: 1716,
-        sidebarWidth: 256,
-        sidebarCollapsed: true,
-        panelWidth: 720,
-      }),
-    ).toBe(1716 - 48 - 720);
-  });
-
-  it("面板没开时只扣左栏", () => {
-    expect(
-      conversationColumnWidth({
-        windowWidth: 1512,
-        sidebarWidth: 256,
-        sidebarCollapsed: false,
-        panelWidth: 0,
-      }),
-    ).toBe(1256);
-  });
-
-  it("极窄视口不返回负数", () => {
-    expect(
-      conversationColumnWidth({
-        windowWidth: 600,
-        sidebarWidth: 256,
-        sidebarCollapsed: false,
-        panelWidth: 900,
-      }),
-    ).toBe(0);
-  });
-});
-
-describe("isCompactComposer", () => {
-  it("窄于阈值收成图标，宽于阈值保持文字", () => {
-    expect(isCompactComposer(520)).toBe(true);
-    expect(isCompactComposer(760)).toBe(false);
-  });
-
-  it("宽度未知（还没量到）不误伤成紧凑", () => {
-    expect(isCompactComposer(null)).toBe(false);
-  });
-});

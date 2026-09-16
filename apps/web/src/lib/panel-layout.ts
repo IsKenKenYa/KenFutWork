@@ -5,7 +5,9 @@
  * 会把中间的对话列挤到几百像素，composer 那排控件（权限 / 模式 / 模型 / 思考强度）互相压扁。
  * 现在口径收在一处：**中间对话列恒有最小可用宽度**，面板上限由「视口 − 左栏 − 最小对话列」现算；
  * 拖到上限还继续往里拖时，**左栏自动收成图标栏**腾地方（用户口径：「再往左边拉侧边栏自动收起来」）。
- * 对话列再窄下去（小窗口 / 面板开得很大）时，composer 的权限与思考强度收成图标。
+ *
+ * 窄列下 composer 收成图标是**另一条口径**（CSS 容器查询，见 composer-compact-select.tsx）：
+ * 容器查询在排版时算，不依赖 JS 事件，内嵌环境拖窄窗口时也生效。
  */
 
 /** 左栏收起态（图标栏，`w-12`）的占宽。 */
@@ -21,8 +23,6 @@ export const MAX_PANEL_WIDTH = 900;
 export const DEFAULT_PANEL_WIDTH = 360;
 /** 面板宽度的持久化键（宽度是用户偏好，刷新后保持）。 */
 export const PANEL_WIDTH_KEY = "workbench:panel-width";
-/** 对话列窄于此宽度时，composer 的权限 / 思考强度收成图标。 */
-export const COMPACT_COMPOSER_WIDTH = 620;
 
 export interface PanelWidthLimits {
   min: number;
@@ -56,54 +56,4 @@ export function clampPanelWidth(
   limits: PanelWidthLimits,
 ): number {
   return Math.min(limits.max, Math.max(limits.min, width));
-}
-
-/**
- * 拖到上限还要往里拖时，是否该把左栏收起来腾地方。
- *
- * 两个条件缺一不可：**左栏确实能腾出更多空间**（收起来后上限变大），且**这次拖拽已经越过当前上限**
- * （没越过就不该动左栏——用户只是想把面板拉大一点，不该顺手把左栏收走）。
- */
-export function shouldAutoCollapseSidebar(input: {
-  windowWidth: number;
-  sidebarWidth: number;
-  nextPanelWidth: number;
-}): boolean {
-  const expanded = panelWidthLimits({
-    windowWidth: input.windowWidth,
-    sidebarWidth: input.sidebarWidth,
-    sidebarCollapsed: false,
-  });
-  if (input.nextPanelWidth <= expanded.max) return false;
-  const collapsed = panelWidthLimits({
-    windowWidth: input.windowWidth,
-    sidebarWidth: input.sidebarWidth,
-    sidebarCollapsed: true,
-  });
-  return collapsed.max > expanded.max;
-}
-
-/**
- * 中间对话列的宽度：视口减去左栏与右栏面板。
- *
- * 为什么用算的而不是量 DOM：三栏都是固定/受控宽度（左栏 fixed、面板受控、main 是剩下的），
- * 算出来与量出来是同一个数（实测 1716−256−720 = 740 = 量到的 740）；而算的版本只依赖 React
- * state——不依赖 ResizeObserver 回调是否送达（内嵌/离屏环境可能不派发），窄列判定因此是确定的。
- */
-export function conversationColumnWidth(input: {
-  windowWidth: number;
-  sidebarWidth: number;
-  sidebarCollapsed: boolean;
-  /** 面板实际占宽（没开或没渲染时为 0）。 */
-  panelWidth: number;
-}): number {
-  const sidebar = input.sidebarCollapsed
-    ? SIDEBAR_RAIL_WIDTH
-    : input.sidebarWidth;
-  return Math.max(0, input.windowWidth - sidebar - input.panelWidth);
-}
-
-/** 对话列窄到控件排不下时收成图标（宽度未知＝还没量到，保持完整形态）。 */
-export function isCompactComposer(columnWidth: number | null): boolean {
-  return columnWidth !== null && columnWidth < COMPACT_COMPOSER_WIDTH;
 }

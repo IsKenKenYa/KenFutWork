@@ -86,10 +86,10 @@ import {
 import { resolveDesignAutoCanvas } from "@/lib/design-auto-canvas";
 import { getServerBaseUrl } from "@/lib/env";
 import {
-  conversationColumnWidth,
-  isCompactComposer,
   MAX_SIDEBAR_WIDTH,
+  MIN_CONVERSATION_WIDTH,
   MIN_SIDEBAR_WIDTH,
+  SIDEBAR_RAIL_WIDTH,
   panelWidthLimits,
 } from "@/lib/panel-layout";
 import { PluginPanelButtons } from "@/lib/plugin-panels";
@@ -312,6 +312,23 @@ export function Workbench() {
   // Code 模式对话区右键菜单（原生菜单在应用内浏览器不弹，用户无法复制/粘贴）
   const chatMenu = useChatContextMenu();
   const codeMessagesRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * 转录列预留的滚动条走廊宽度（`scrollbar-gutter: stable` 让滚动条不挤动内容，
+   * 但那条走廊只属于 scroller——标题行与输入区若不留同样一条，三块内容就对不齐
+   * （实测窄列差 10px、居中时中心差 5px）。宽度与平台/缩放有关，故量一次写进 CSS 变量。
+   */
+  const [scrollbarLane, setScrollbarLane] = useState(0);
+  useEffect(() => {
+    const measure = () => {
+      const el = codeMessagesRef.current;
+      if (!el) return;
+      setScrollbarLane(el.offsetWidth - el.clientWidth);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [activeTaskId]);
   const [chatNotice, setChatNotice] = useState<string | null>(null);
   /** Code 模式输入框（右键编辑菜单需要拿它的选区）。 */
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -468,23 +485,6 @@ export function Workbench() {
 
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab, setPanelTab] = useState<WorkbenchPanelTab>("changes");
-
-  /**
-   * 对话列宽度：视口 − 左栏 − 右栏面板（三栏宽度都是受控 state，见 lib/panel-layout 的口径）。
-   * 窄到那排控件排不下时，composer 的权限 / 思考强度收成图标
-   * （用户口径：「面板里的东西塞不下了，思考强度和权限改成图标」）。
-   */
-  const [panelWidth, setPanelWidth] = useState(0);
-  const compactComposer = isCompactComposer(
-    windowWidth > 0
-      ? conversationColumnWidth({
-          windowWidth,
-          sidebarWidth,
-          sidebarCollapsed,
-          panelWidth: panelOpen ? panelWidth : 0,
-        })
-      : null,
-  );
 
   /**
    * 转录里点链接 → 自动打开右栏「浏览器」标签（用户口径：点对话里的 URL 就在右边打开）。
@@ -1519,7 +1519,16 @@ export function Workbench() {
   }));
 
   return (
-    <div className="flex h-screen bg-background text-foreground">
+    <div
+      className="flex h-screen bg-background text-foreground"
+      style={
+        {
+          "--workbench-sidebar": `${
+            sidebarCollapsed ? SIDEBAR_RAIL_WIDTH : sidebarWidth
+          }px`,
+        } as React.CSSProperties
+      }
+    >
       {sidebarCollapsed ? (
         /* 收起态：图标栏（模式切换 + 插件市场 + 底部头像） */
         <aside className="flex w-12 shrink-0 flex-col items-center gap-1 border-r bg-card py-2">
@@ -1958,11 +1967,17 @@ export function Workbench() {
         ) : activeTask ? (
           /* 转录列 + 右栏停靠面板（面板收起时返回 null，不占宽）。 */
           <div className="flex h-full">
-          <div className="flex h-full min-w-0 flex-1 flex-col">
+          <div
+            className="flex h-full min-w-0 flex-1 flex-col"
+            style={
+              { "--scrollbar-lane": `${scrollbarLane}px` } as React.CSSProperties
+            }
+          >
             {/* 标题行：会话标题 + 本轮回执 + 插件面板入口；右端贴住工作目录与分支。
                 这两个 chip 取**对话自己绑定的项目**（run 的作用域就是它），
                 不依赖侧栏选中态——否则打开历史对话时它们会消失（用户反馈）。 */}
-            <div className="mx-auto flex w-full max-w-3xl shrink-0 items-center gap-2 px-6 pt-6 pb-4">
+            <div className="shrink-0 pr-[var(--scrollbar-lane,0px)]">
+              <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-6 pt-6 pb-4">
               <h1 className="min-w-0 truncate text-lg font-medium">
                 {activeTask.title}
               </h1>
@@ -2023,6 +2038,7 @@ export function Workbench() {
                   </button>
                 </div>
               ) : null}
+              </div>
             </div>
             <div
               ref={codeMessagesRef}
@@ -2113,8 +2129,9 @@ export function Workbench() {
             {/* 底部：继续对话（完整版工具行 + 多轮，复用同一会话）。
                 工作目录与分支已移到标题行右端，输入框不再背标签条。 */}
 
+            <div className="shrink-0 pr-[var(--scrollbar-lane,0px)]">
             <form
-              className="mx-auto w-full max-w-3xl shrink-0 px-6 pt-4 pb-6"
+              className="mx-auto w-full max-w-3xl px-6 pt-3 pb-4"
               onSubmit={(e) => {
                 e.preventDefault();
                 const value = followUp;
@@ -2122,7 +2139,7 @@ export function Workbench() {
                 continueTask(value);
               }}
             >
-              <div className="rounded-xl border bg-background p-3">
+              <div className="@container/composer rounded-xl border bg-background p-3">
                 <textarea
                   ref={composerRef}
                   aria-label="继续对话"
@@ -2153,7 +2170,7 @@ export function Workbench() {
                     {workDirNotice}
                   </p>
                 ) : null}
-                <div className="mt-2 flex items-center justify-between">
+                <div className="mt-1.5 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
@@ -2165,7 +2182,6 @@ export function Workbench() {
                   <ComposerCompactSelect
                     ariaLabel="权限档位"
                     icon={<ShieldCheck className="h-3.5 w-3.5" />}
-                    compact={compactComposer}
                     options={TIER_OPTIONS}
                     value={tier}
                     onChange={(next) => {
@@ -2245,7 +2261,6 @@ export function Workbench() {
                   <ComposerCompactSelect
                     ariaLabel="思考强度"
                     icon={<Brain className="h-3.5 w-3.5" />}
-                    compact={compactComposer}
                     options={THINKING_OPTIONS}
                     value={thinking}
                     onChange={handleThinkingChange}
@@ -2280,6 +2295,7 @@ export function Workbench() {
               </div>
               </div>
             </form>
+            </div>
           </div>
           {/* 右栏停靠面板：变更 / 文档 / 子智能体（参考图 R3-1 的多标签面板） */}
           <WorkbenchSidePanel
@@ -2292,9 +2308,11 @@ export function Workbench() {
             subagents={activeTask.subagents ?? []}
             running={activeTask.status === "running"}
             widthLimits={panelLimits}
+            /* CSS 兜底：宿主不派发 resize 事件时 JS 的 limits 会陈旧，这条由排版保证
+               对话列 ≥ MIN_CONVERSATION_WIDTH（数值与 lib/panel-layout 同一口径） */
+            maxWidthExpression={`calc(100vw - var(--workbench-sidebar, 256px) - ${MIN_CONVERSATION_WIDTH}px)`}
             /* 拖到上限还往里拖 → 收起左栏腾地方（用户口径：再往左边拉，侧栏自动收起来） */
             onGrowBlocked={() => setSidebarCollapsed(true)}
-            onWidthChange={setPanelWidth}
           />
           </div>
         ) : (
@@ -2334,7 +2352,7 @@ export function Workbench() {
                   canvasId={selectedProject?.primaryCanvas.id ?? null}
                 />
               </div>
-              <div className="rounded-b-2xl border bg-background p-4 shadow-sm">
+              <div className="@container/composer rounded-b-2xl border bg-background p-4 shadow-sm">
               <textarea
                 aria-label="任务描述"
                 value={prompt}
@@ -2356,7 +2374,7 @@ export function Workbench() {
               {workDirNotice ? (
                 <p className="mt-2 text-xs text-destructive">{workDirNotice}</p>
               ) : null}
-              <div className="mt-3 flex items-center justify-between">
+              <div className="mt-2 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -2368,7 +2386,6 @@ export function Workbench() {
                   <ComposerCompactSelect
                     ariaLabel="权限档位"
                     icon={<ShieldCheck className="h-3.5 w-3.5" />}
-                    compact={compactComposer}
                     options={TIER_OPTIONS}
                     value={tier}
                     onChange={(next) => {
@@ -2501,7 +2518,6 @@ export function Workbench() {
                   <ComposerCompactSelect
                     ariaLabel="思考强度"
                     icon={<Brain className="h-3.5 w-3.5" />}
-                    compact={compactComposer}
                     options={THINKING_OPTIONS}
                     value={thinking}
                     onChange={handleThinkingChange}

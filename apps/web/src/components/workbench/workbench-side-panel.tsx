@@ -86,7 +86,7 @@ export function WorkbenchSidePanel({
   running,
   widthLimits,
   onGrowBlocked,
-  onWidthChange,
+  maxWidthExpression,
 }: {
   open: boolean;
   onClose: () => void;
@@ -101,8 +101,12 @@ export function WorkbenchSidePanel({
   widthLimits?: PanelWidthLimits;
   /** 拖到上限还继续往里拖：工作台据此把左栏收起来腾地方。 */
   onGrowBlocked?: () => void;
-  /** 实际占宽回传给工作台（对话列宽度 = 视口 − 左栏 − 面板，据此决定 composer 形态）。 */
-  onWidthChange?: (width: number) => void;
+  /**
+   * 面板宽度的 CSS 上限表达式（如 `calc(100vw - var(--workbench-sidebar, 256px) - 420px)`）。
+   * JS 的 `widthLimits` 依赖 resize 事件，宿主不派发时会陈旧；这条由浏览器排版保证
+   * 中间的对话列不被挤没（两条同一口径，见 lib/panel-layout）。
+   */
+  maxWidthExpression?: string;
 }) {
   const [changes, setChanges] = useState<GitChanges | null>(null);
   const [docs, setDocs] = useState<Array<{ path: string; bytes: number }> | null>(
@@ -149,11 +153,6 @@ export function WorkbenchSidePanel({
     if (!widthLimits) return;
     setWidth((current) => clampPanelWidth(current, widthLimits));
   }, [widthLimits]);
-
-  /** 占宽回传（含拖动过程中的每一次变化与上限收回）。 */
-  useEffect(() => {
-    onWidthChange?.(width);
-  }, [width, onWidthChange]);
 
   /** 拉取当前标签需要的数据（变更/文档各一个端点；子智能体走已有事件流）。 */
   useEffect(() => {
@@ -312,7 +311,11 @@ export function WorkbenchSidePanel({
   return (
     <aside
       aria-label="工作台面板"
-      style={{ width }}
+      style={
+        maxWidthExpression
+          ? { width, minWidth: MIN_PANEL_WIDTH, maxWidth: maxWidthExpression }
+          : { width }
+      }
       className="relative flex shrink-0 flex-col border-l bg-card"
     >
       {/* 拖拽把手：贴面板左边缘（按住拖动改宽） */}
@@ -440,6 +443,13 @@ export function WorkbenchSidePanel({
   );
 }
 
+/**
+ * 变更列表的统计列：**定宽 + 右对齐 + 等宽数字**——三个口径缺一个，逐行的 `+a −d`
+ * 就会左右晃（`+0 −0` 与 `+1022 −396` 宽度差一倍），行与行之间看不出是一列。
+ */
+const CHANGE_STAT_CELL =
+  "w-[4.75rem] shrink-0 text-right font-mono text-[11px] tabular-nums";
+
 /** 变更列表（参考图：N 个文件已更改 +a −d，逐行 图标/名称/路径/统计/审查/打开）。 */
 function ChangesView({
   changes,
@@ -484,7 +494,13 @@ function ChangesView({
         <span>
           <span className="font-medium">{changes.files.length}</span> 个文件已更改
         </span>
-        <span className="ml-auto font-mono">
+        {/* 合计与逐行统计对齐同一列：按两个行内按钮的实际占宽留白（同一套标签与内边距，
+            写死像素会在字体/本地化变化时错位） */}
+        <span aria-hidden className="invisible ml-auto flex shrink-0 items-center gap-2">
+          <span className="rounded border px-1.5 py-0.5 text-[10px]">审查</span>
+          <span className="rounded border px-1.5 py-0.5 text-[10px]">打开</span>
+        </span>
+        <span className={CHANGE_STAT_CELL}>
           <span className="text-emerald-600">+{totals.additions}</span>{" "}
           <span className="text-rose-500">−{totals.deletions}</span>
         </span>
@@ -504,11 +520,11 @@ function ChangesView({
                 ) : null}
               </span>
               {file.binary ? (
-                <span className="shrink-0 text-[10px] text-muted-foreground">
+                <span className={`${CHANGE_STAT_CELL} text-[10px] text-muted-foreground`}>
                   二进制
                 </span>
               ) : (
-                <span className="shrink-0 font-mono text-[11px]">
+                <span className={CHANGE_STAT_CELL}>
                   <span className="text-emerald-600">+{file.additions}</span>{" "}
                   <span className="text-rose-500">−{file.deletions}</span>
                 </span>
