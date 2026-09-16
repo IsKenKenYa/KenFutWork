@@ -67,6 +67,7 @@ import {
   WorkbenchSidePanel,
   type WorkbenchPanelTab,
 } from "@/components/workbench/workbench-side-panel";
+import { onBrowserOpen } from "@/lib/browser-panel";
 import { TodoProgressPanel } from "@/components/workbench/todo-progress-panel";
 import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
 import { WorkDirectorySelect } from "@/components/workbench/work-directory-select";
@@ -432,6 +433,19 @@ export function Workbench() {
 
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab, setPanelTab] = useState<WorkbenchPanelTab>("changes");
+
+  /**
+   * 转录里点链接 → 自动打开右栏「浏览器」标签（用户口径：点对话里的 URL 就在右边打开）。
+   * 订阅放工作台：面板只渲染，开合与切标签由这里决定。
+   */
+  useEffect(
+    () =>
+      onBrowserOpen(() => {
+        setPanelOpen(true);
+        setPanelTab("browser");
+      }),
+    [],
+  );
 
   /** 侧栏里被收起的工作目录项目 id（默认全展开；持久化到 localStorage）。 */
   const [collapsedProjects, setCollapsedProjects] = useState<string[]>([]);

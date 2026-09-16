@@ -219,6 +219,56 @@ export async function fetchSandboxFile(
   return payload.file;
 }
 
+/**
+ * agent 运行活动（Git 弹层的「智能体 26 秒 · 4 运行」）。
+ * 口径（服务端定义）：该**工作区**近 7 天的运行次数与各轮时长之和。
+ */
+export interface AgentActivity {
+  windowDays: number;
+  runs: number;
+  totalSeconds: number;
+}
+
+export async function fetchAgentActivity(
+  accessToken: string,
+): Promise<AgentActivity> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/agent/runs/activity`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  const payload = (await response.json()) as { activity: AgentActivity };
+  return payload.activity;
+}
+
+// --- R3-1「终端」标签：在画布工作目录里跑用户命令 ---
+
+export interface TerminalResult {
+  command: string;
+  exitCode: number | null;
+  timedOut: boolean;
+  stdout: string;
+  stderr: string;
+  truncated: boolean;
+  durationMs: number;
+}
+
+export async function runTerminalCommand(
+  accessToken: string,
+  canvasId: string,
+  command: string,
+): Promise<TerminalResult> {
+  const response = await fetch(`${getServerBaseUrl()}/api/code/terminal`, {
+    method: "POST",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify({ canvasId, command }),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  const payload = (await response.json()) as { result: TerminalResult };
+  return payload.result;
+}
+
+
 /** git 图谱（参考图 `git图谱.png`）：独立窗口里的 图/描述/日期/作者/提交 表格。 */
 export interface GitGraphEntry {
   /** 该行的图形字符，界面按等宽渲染成「图」列；连接线行没有提交字段。 */

@@ -4,6 +4,8 @@ import {
   codeGitCheckoutRequestSchema,
   codeDocsResponseSchema,
   codeFilesResponseSchema,
+  codeTerminalRequestSchema,
+  codeTerminalResponseSchema,
   codeGitChangesResponseSchema,
   codeGitCommitRequestSchema,
   codeGitDiffResponseSchema,
@@ -231,6 +233,25 @@ export async function registerCodeGitRoutes(
       }
     },
   );
+
+  // POST /api/code/terminal — 在画布的工作目录里跑一条用户命令（R3-1「终端」标签）。
+  // 权限口径见 features/code-git/terminal-runner.ts（用户自己的操作，不套 agent 工具门；
+  // 但同样要求登录 + 画布归属，且固定 cwd、有超时与输出上限）。
+  app.post("/api/code/terminal", async (request, reply) => {
+    const user = await options.auth.authenticate(request);
+    if (!user) return sendUnauthorized(reply);
+    try {
+      const payload = codeTerminalRequestSchema.parse(request.body);
+      const result = await options.codeGitService.runTerminal(
+        user,
+        payload.canvasId,
+        payload.command,
+      );
+      return reply.code(200).send(codeTerminalResponseSchema.parse({ result }));
+    } catch (error) {
+      return sendCodeGitError(error, reply);
+    }
+  });
 
   // GET /api/code/docs — 工作目录里的项目文档清单（R3-3「文档入口」）
   app.get<{ Querystring: { canvasId?: string } }>(

@@ -11,16 +11,19 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { GitGraphDialog } from "@/components/workbench/git-graph-dialog";
+import { formatDuration } from "@/lib/usage-format";
 import {
   checkoutGitBranch,
   commitGitAll,
   createGitBranch,
+  fetchAgentActivity,
   fetchGitDiffStat,
   fetchGitStatus,
-  type GitDiffStat,
-  type GitStatus,
   initGitRepo,
   pushGit,
+  type AgentActivity,
+  type GitDiffStat,
+  type GitStatus,
 } from "@/lib/code-git-api";
 
 /**
@@ -57,6 +60,8 @@ export function GitBranchSelect({
    * Git 图谱（R2-1 条目 6）：**按需加载**——图谱是整段历史，没必要每次开弹层都拉；
    * `null` = 还没加载过，`lines` 为空且 `isRepo` 为真 = 仓库还没有提交。
    */
+  /** 运行活动（近 7 天）：参考图 Git 弹层的「智能体 26 秒 · 4 运行」。 */
+  const [activity, setActivity] = useState<AgentActivity | null>(null);
   /** Git 图谱是**独立窗口**（参考图 `git图谱.png`）：弹层里只留入口。 */
   const [graphDialogOpen, setGraphDialogOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -109,6 +114,21 @@ export function GitBranchSelect({
     };
   }, [open]);
 
+  /**
+   * 拉运行活动（失败就当没有——不打断弹层）。
+   *
+   * **按工作区统计**：客户端任务 id 与服务端会话 id 不保证一致，run 挂的又是会话的
+   * 载体画布而非项目画布——按会话或画布做键实测都会显示 0，故取工作区口径。
+   */
+  const loadActivity = useCallback(async () => {
+    if (!accessToken) return;
+    setActivity(await fetchAgentActivity(accessToken).catch(() => null));
+  }, [accessToken]);
+
+  useEffect(() => {
+    void loadActivity();
+  }, [loadActivity]);
+
   const refresh = useCallback(async () => {
     if (!accessToken || !canvasId) return;
     const next = await fetchGitStatus(accessToken, canvasId).catch(() => null);
@@ -118,6 +138,10 @@ export function GitBranchSelect({
     );
     setDiffStat(stat);
   }, [accessToken, canvasId]);
+
+  useEffect(() => {
+    void loadActivity();
+  }, [loadActivity]);
 
   const switchTo = useCallback(
     async (branch: string) => {
@@ -356,6 +380,19 @@ export function GitBranchSelect({
               className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60"
             />
           </div>
+
+          {/* 运行活动（参考图：「智能体 26 秒 · 4 运行」）。口径挂 title：近 7 天。 */}
+          {activity && activity.runs > 0 ? (
+            <div className="border-t px-3 py-2 text-xs text-muted-foreground">
+              <span
+                title={`本工作区近 ${activity.windowDays} 天的 agent 运行：${activity.runs} 次、累计 ${formatDuration(
+                  activity.totalSeconds,
+                )}`}
+              >
+                智能体 {formatDuration(activity.totalSeconds)} · {activity.runs} 运行
+              </span>
+            </div>
+          ) : null}
 
           {/* Git 图谱：独立窗口（参考图 git图谱.png），弹层里只留入口 */}
           <div className="border-t px-2 py-2">

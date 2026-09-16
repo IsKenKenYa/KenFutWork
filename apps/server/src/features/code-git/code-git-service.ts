@@ -10,6 +10,10 @@ import type {
   GitRepoView,
 } from "./git-client.js";
 import {
+  type TerminalResult,
+  runTerminalCommand,
+} from "./terminal-runner.js";
+import {
   existingSandboxFiles,
   listSandboxDir,
   readSandboxTextFile,
@@ -110,6 +114,16 @@ export type CodeGitService = {
     canvasId: string,
     path: string,
   ): Promise<CodeGitFileView>;
+  /**
+   * 在**该画布的工作目录**里执行用户自己敲的命令（R3-1「终端」标签）。
+   * 权限口径见 `terminal-runner.ts`：这是用户操作自己的机器，不是 agent 工具调用；
+   * 因此没有工具门，但同样受「登录 + 画布归属 + 沙箱 cwd + 超时/输出上限」约束。
+   */
+  runTerminal(
+    user: AuthenticatedUser,
+    canvasId: string,
+    command: string,
+  ): Promise<TerminalResult>;
   /** 列一层目录（R3-1「文件目录」标签）：只列一层，子目录由界面点进去。 */
   listFiles(
     user: AuthenticatedUser,
@@ -316,6 +330,15 @@ export function createCodeGitService(options: {
         truncated: text.includes("…（已截断）"),
         untracked: false,
       };
+    },
+
+    async runTerminal(user, canvasId, command) {
+      const trimmed = command.trim();
+      if (!trimmed) {
+        throw new CodeGitError("git_write_failed", "命令不能为空。", 400);
+      }
+      const dir = await sandboxDirFor(user, canvasId);
+      return runTerminalCommand({ command: trimmed, cwd: dir });
     },
 
     /** 列一层目录：路径越界/不存在/不是目录都折成 400 可读原因。 */

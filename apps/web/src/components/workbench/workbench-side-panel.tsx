@@ -6,19 +6,25 @@ import {
   FileText,
   Folder,
   GitBranch,
+  Globe,
+  SquareTerminal,
+  MousePointerSquareDashed,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { SubagentDirectoryView } from "@/components/workbench/subagent-directory-view";
+import { onBrowserOpen } from "@/lib/browser-panel";
 import {
   fetchCodeDocs,
   fetchCodeFiles,
   fetchGitChanges,
+  runTerminalCommand,
   fetchGitFileDiff,
   fetchSandboxFile,
   type CodeFileListing,
   type GitChanges,
+  type TerminalResult,
   type SandboxFileView,
 } from "@/lib/code-git-api";
 import type { SubagentEntry } from "@/lib/subagent-directory";
@@ -33,11 +39,19 @@ import type { SubagentEntry } from "@/lib/subagent-directory";
  * 标签是**视图**，不是会话内容：切标签只换正文。终端/浏览器两个标签要各自的执行缝与浏览器能力
  * （R3-1 的另两项、R3-4），另一个批次做；这里先把已有能力装进正确的容器。
  */
-export type WorkbenchPanelTab = "changes" | "files" | "docs" | "subagents";
+export type WorkbenchPanelTab =
+  | "changes"
+  | "files"
+  | "terminal"
+  | "browser"
+  | "docs"
+  | "subagents";
 
 const TABS: Array<{ id: WorkbenchPanelTab; label: string }> = [
   { id: "changes", label: "变更" },
   { id: "files", label: "文件目录" },
+  { id: "terminal", label: "终端" },
+  { id: "browser", label: "浏览器" },
   { id: "docs", label: "文档" },
   { id: "subagents", label: "子智能体" },
 ];
@@ -79,6 +93,21 @@ export function WorkbenchSidePanel({
   );
   const [reading, setReading] = useState<Reading | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** 右栏浏览器（R3-1）：地址栏当前 URL（空 = 还没打开过）。 */
+  const [browserUrl, setBrowserUrl] = useState("");
+  /** 地址栏输入框（与已加载的 URL 分开，回车才加载）。 */
+  const [urlDraft, setUrlDraft] = useState("");
+
+  /** 转录里点链接 → 打开本标签并加载该 URL（见 lib/browser-panel）。 */
+  useEffect(
+    () =>
+      onBrowserOpen((url) => {
+        setBrowserUrl(url);
+        setUrlDraft(url);
+      }),
+    [],
+  );
+
   /** 文件目录：当前浏览的相对路径（根目录是空串）与列表。 */
   const [dir, setDir] = useState("");
   const [listing, setListing] = useState<CodeFileListing | null>(null);
@@ -313,6 +342,18 @@ export function WorkbenchSidePanel({
               这个会话还没有派过子智能体。
             </p>
           )
+        ) : tab === "terminal" ? (
+          <TerminalView accessToken={accessToken} canvasId={canvasId} />
+        ) : tab === "browser" ? (
+          <BrowserView
+            url={browserUrl}
+            draft={urlDraft}
+            onDraftChange={setUrlDraft}
+            onNavigate={(next) => {
+              setBrowserUrl(next);
+              setUrlDraft(next);
+            }}
+          />
         ) : tab === "files" ? (
           <FilesView
             listing={listing}
@@ -617,4 +658,210 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * 右栏浏览器（参考图 `待办插件、浏览器参考、工具调用可展开.png` 的浏览器视口）。
+ *
+ * 边界如实写在界面上：这是**内嵌 iframe**，能否渲染取决于目标站点是否允许被嵌入
+ * （X-Frame-Options / CSP frame-ancestors）——允许的（本机 dev server 等）能看能用，
+ * 不允许的会是一片空白，此时右侧给「在系统浏览器打开」的出口。
+ * 「选择网页元素加入聊天」（R3-4）需要跨源 DOM 访问，内嵌 iframe 拿不到，故按钮置灰
+ * 并说明原因，不做假开关。
+ */
+function BrowserView({
+  url,
+  draft,
+  onDraftChange,
+  onNavigate,
+}: {
+  url: string;
+  draft: string;
+  onDraftChange: (value: string) => void;
+  onNavigate: (url: string) => void;
+}) {
+  const normalized = normalizeUrl(draft);
+
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-2">
+      <form
+        className="flex items-center gap-1.5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (normalized) onNavigate(normalized);
+        }}
+      >
+        <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <input
+          aria-label="地址"
+          value={draft}
+          onChange={(event) => onDraftChange(event.target.value)}
+          placeholder="输入网址，回车打开"
+          className="min-w-0 flex-1 rounded-md border bg-transparent px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
+        />
+        <button
+          type="submit"
+          disabled={normalized === null}
+          className="shrink-0 rounded-md border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
+        >
+          打开
+        </button>
+      </form>
+
+      <div className="flex items-center gap-2">
+        {/* R3-4：拾取网页元素需要跨源 DOM 访问，内嵌 iframe 做不到——不给假按钮 */}
+        <button
+          type="button"
+          disabled
+          title="选择网页元素加入聊天需要浏览器的调试接口（CDP/扩展），内嵌 iframe 拿不到跨源 DOM——属未实现能力"
+          className="flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] text-muted-foreground opacity-50"
+        >
+          <MousePointerSquareDashed className="h-3 w-3" />
+          选择网页元素加入聊天
+        </button>
+        {url ? (
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[11px] text-muted-foreground underline hover:text-foreground"
+          >
+            在系统浏览器打开
+          </a>
+        ) : null}
+      </div>
+
+      {url ? (
+        <iframe
+          key={url}
+          src={url}
+          title={`右栏浏览器：${url}`}
+          className="min-h-0 flex-1 rounded-xl border bg-background"
+        />
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          还没有打开页面。对话里点链接会自动在这里打开，也可以在地址栏输入。
+        </p>
+      )}
+      <p className="text-[10px] text-muted-foreground">
+        内嵌页面能否显示取决于目标站点是否允许被嵌入；被拒绝时会是一片空白，用上面的
+        「在系统浏览器打开」兜底。
+      </p>
+    </div>
+  );
+}
+
+/** 补全协议：裸地址（如 localhost:3000）按 http 处理；空串返回 null。 */
+export function normalizeUrl(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `http://${trimmed}`;
+}
+
+/**
+ * 终端（R3-1「终端」标签）：在**该画布的工作目录**里跑用户自己敲的命令。
+ *
+ * 口径写在界面上：cwd = 工作目录、每次执行有超时（服务端 20s）与输出上限；
+ * 这是「用户操作自己的机器」（不套 agent 的工具门），但没有 stdin——交互式命令会被超时掐掉。
+ */
+function TerminalView({
+  accessToken,
+  canvasId,
+}: {
+  accessToken: string | null;
+  canvasId: string | null;
+}) {
+  const [command, setCommand] = useState("");
+  const [history, setHistory] = useState<TerminalResult[]>([]);
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = useCallback(async () => {
+    const trimmed = command.trim();
+    if (!trimmed || !accessToken || !canvasId || running) return;
+    setRunning(true);
+    setError(null);
+    try {
+      const result = await runTerminalCommand(accessToken, canvasId, trimmed);
+      setHistory((prev) => [...prev, result]);
+      setCommand("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "执行失败。");
+    } finally {
+      setRunning(false);
+    }
+  }, [accessToken, canvasId, command, running]);
+
+  if (!canvasId) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        这个会话没有绑定工作目录——终端要在工作目录里执行。
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-2">
+      <form
+        className="flex items-center gap-1.5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void run();
+        }}
+      >
+        <SquareTerminal className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <input
+          aria-label="终端命令"
+          value={command}
+          onChange={(event) => setCommand(event.target.value)}
+          placeholder="输入命令，回车执行"
+          className="min-w-0 flex-1 rounded-md border bg-transparent px-2 py-1 font-mono text-xs outline-none focus:ring-1 focus:ring-ring"
+        />
+        <button
+          type="submit"
+          disabled={running || command.trim().length === 0}
+          className="shrink-0 rounded-md border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
+        >
+          {running ? "执行中…" : "执行"}
+        </button>
+      </form>
+
+      {error ? (
+        <p className="rounded-md border border-destructive/40 bg-destructive/5 px-2 py-1 text-[11px] text-destructive">
+          {error}
+        </p>
+      ) : null}
+
+      <div
+        aria-label="终端输出"
+        className="min-h-0 flex-1 overflow-y-auto rounded-xl border bg-muted/30 p-2 font-mono text-[11px] leading-5"
+      >
+        {history.length === 0 ? (
+          <p className="text-muted-foreground">
+            还没有执行过命令。命令在**工作目录**里运行，有超时与输出上限。
+          </p>
+        ) : (
+          history.map((entry, index) => (
+            <div key={`${entry.command}-${index}`} className="mb-2 last:mb-0">
+              <div className="text-muted-foreground">$ {entry.command}</div>
+              {entry.stdout ? <pre className="m-0 whitespace-pre-wrap">{entry.stdout}</pre> : null}
+              {entry.stderr ? (
+                <pre className="m-0 whitespace-pre-wrap text-destructive">{entry.stderr}</pre>
+              ) : null}
+              <div className="text-muted-foreground">
+                {entry.timedOut
+                  ? `超时终止（${entry.durationMs}ms）`
+                  : `退出码 ${entry.exitCode ?? "未知"} · ${entry.durationMs}ms`}
+                {entry.truncated ? " · 输出已截断" : ""}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+      <p className="text-[10px] text-muted-foreground">
+        工作目录内执行；单次上限 20 秒、输出各 64 KB；不支持交互式命令（没有 stdin）。
+      </p>
+    </div>
+  );
 }

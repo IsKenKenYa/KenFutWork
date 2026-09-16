@@ -208,6 +208,40 @@ export const codeFilesResponseSchema = z.object({
   }),
 });
 
+// --- 右栏终端（R3-1「终端」标签）：在画布工作目录里跑用户命令 ---
+
+export const codeTerminalRequestSchema = z.object({
+  canvasId: z.string().min(1),
+  command: z.string().trim().min(1).max(4000),
+});
+
+export const codeTerminalResponseSchema = z.object({
+  result: z.object({
+    command: z.string(),
+    /** 被超时杀掉时为 null。 */
+    exitCode: z.number().int().nullable(),
+    timedOut: z.boolean(),
+    stdout: z.string(),
+    stderr: z.string(),
+    /** 任一流被截断（超出每次执行的输出上限）。 */
+    truncated: z.boolean(),
+    durationMs: z.number().int().nonnegative(),
+  }),
+});
+
+// --- agent 运行活动（Git 弹层的「智能体 N 秒 · M 运行」；口径：近 7 天） ---
+
+export const agentRunActivityResponseSchema = z.object({
+  activity: z.object({
+    /** 统计窗口（天）。 */
+    windowDays: z.number().int().min(1).max(90),
+    /** 窗口内该工作目录的 agent 运行次数。 */
+    runs: z.number().int().nonnegative(),
+    /** 窗口内各轮运行时长之和（秒）；仍在跑的轮按「到现在」计。 */
+    totalSeconds: z.number().int().nonnegative(),
+  }),
+});
+
 /** 工作目录里的项目文档（R3-3「文档入口」）。 */
 export const codeDocsResponseSchema = z.object({
   docs: z.array(

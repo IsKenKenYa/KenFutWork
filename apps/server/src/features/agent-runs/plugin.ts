@@ -10,7 +10,10 @@ import type { ConnectionManager } from "../../ws/connection-manager.js";
 import { evaluateToolPolicy } from "../agent-modes/execution-mode-service.js";
 import { createCanvasRepository } from "../canvas/repository.js";
 import { createSkillCatalogRepository } from "../skills/repository.js";
-import { createAgentRunMetadataService } from "./agent-run-service.js";
+import {
+  createAgentActivityQuery,
+  createAgentRunMetadataService,
+} from "./agent-run-service.js";
 import { createAgentRunRepository } from "./repository.js";
 
 export interface AgentRunsPluginDeps {
@@ -128,6 +131,11 @@ export function createAgentRunsPlugin(
       // chat 是可选依赖：缺席时（部分装配/测试）路由照常，只是不做 Code 会话供给
       const chatService = ctx.tryGet("chat");
       void registerRunRoutes(ctx.app, ctx.get("agentRuns"), {
+        // 活动查询：mounted 与 apply 是两段作用域，这里按需新建一个仓储包装
+        // （仓储是无状态包装，重建不引入额外连接/状态）
+        activityQuery: createAgentActivityQuery({
+          repository: createAgentRunRepository(ctx.get("persistence")),
+        }),
         agentModes: ctx.get("agentModes"),
         agentRunMetadataService: ctx.get("agentRunMetadata"),
         auth: ctx.get("auth"),

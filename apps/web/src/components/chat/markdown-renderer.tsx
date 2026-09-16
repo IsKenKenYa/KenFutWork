@@ -4,6 +4,10 @@ import React, { useMemo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import {
+  canOpenInBrowserPanel,
+  requestBrowserOpen,
+} from "@/lib/browser-panel";
 import { ChatImage } from "./image-lightbox";
 import { isImageUrl } from "./utils";
 
@@ -32,6 +36,15 @@ const markdownComponents: Components = {
         target="_blank"
         rel="noopener noreferrer"
         className="underline break-all"
+        onClick={(event) => {
+          // 右栏浏览器（R3-1「浏览器」标签）：有面板时接管左键点击——
+          // 用户在对话里点链接的意图通常是「看看这个」，不是「开一堆系统标签页」。
+          // Ctrl/Cmd+点击仍走系统新标签（保留逃逸口）；没有面板时不拦截。
+          if (!href || event.metaKey || event.ctrlKey || event.shiftKey) return;
+          if (!canOpenInBrowserPanel()) return;
+          if (!/^https?:/i.test(href)) return;
+          if (requestBrowserOpen(href)) event.preventDefault();
+        }}
       >
         {children}
       </a>

@@ -206,3 +206,65 @@ describe("WorkbenchSidePanel", () => {
     ).toBeInTheDocument();
   });
 });
+
+/**
+ * 「点对话里的 URL → 右栏浏览器打开」（用户口径）。
+ *
+ * 两个层面：模块级请求通道（有订阅者才拦截点击，没订阅者不吞掉链接默认行为），
+ * 以及浏览器标签本身（地址栏补协议、iframe 渲染、系统浏览器兜底）。
+ */
+describe("右栏浏览器（点链接自动打开）", () => {
+  function Harness({ initialTab }: { initialTab: WorkbenchPanelTab }) {
+    const [tab, setTab] = useState<WorkbenchPanelTab>(initialTab);
+    return (
+      <WorkbenchSidePanel
+        open
+        onClose={() => {}}
+        tab={tab}
+        onTabChange={setTab}
+        accessToken="token"
+        canvasId="canvas-1"
+        subagents={[]}
+        running={false}
+      />
+    );
+  }
+
+  it("请求通道：没有面板时返回 false（调用方不拦截点击）", async () => {
+    const { canOpenInBrowserPanel, onBrowserOpen, requestBrowserOpen } =
+      await import("../src/lib/browser-panel");
+    const seen: string[] = [];
+    expect(requestBrowserOpen("http://localhost:3000/")).toBe(false);
+
+    const unsubscribe = onBrowserOpen((url) => seen.push(url));
+    expect(canOpenInBrowserPanel()).toBe(true);
+    expect(requestBrowserOpen("http://localhost:3001/docs")).toBe(true);
+    expect(seen).toEqual(["http://localhost:3001/docs"]);
+
+    unsubscribe();
+    expect(requestBrowserOpen("http://localhost:3001/")).toBe(false);
+  });
+
+  it("地址栏补协议：裸地址按 http；空串不可打开", async () => {
+    const { normalizeUrl } = await import(
+      "../src/components/workbench/workbench-side-panel"
+    );
+    expect(normalizeUrl("localhost:8000/demo")).toBe("http://localhost:8000/demo");
+    expect(normalizeUrl("https://example.com")).toBe("https://example.com");
+    expect(normalizeUrl("   ")).toBeNull();
+  });
+
+  it("地址栏回车后渲染 iframe，并给「在系统浏览器打开」的出口", async () => {
+    render(<Harness initialTab="browser" />);
+    const input = screen.getByLabelText("地址");
+    await userEvent.type(input, "localhost:8000{Enter}");
+    expect(
+      await screen.findByTitle("右栏浏览器：http://localhost:8000"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("在系统浏览器打开")).toBeInTheDocument();
+    // 元素拾取需要 CDP，不给假按钮：按钮存在但禁用
+    expect(
+      screen.getByRole("button", { name: /选择网页元素加入聊天/ }),
+    ).toBeDisabled();
+  });
+});

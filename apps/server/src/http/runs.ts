@@ -1,4 +1,5 @@
 import {
+  agentRunActivityResponseSchema,
   applicationErrorResponseSchema,
   runCancelResponseSchema,
   runCreateRequestSchema,
@@ -33,6 +34,10 @@ export async function registerRunRoutes(
   app: FastifyInstance,
   agentRuns: AgentRunService,
   options: {
+    /** 运行活动查询（Git 弹层的「智能体 N 秒 · M 运行」；口径见仓储 workspaceActivity）。 */
+    activityQuery?: (input: {
+      workspaceId: string;
+    }) => Promise<{ runs: number; totalSeconds: number; windowDays: number }>;
     agentModes?: ExecutionModeService;
     agentRunMetadataService?: AgentRunMetadataService;
     auth?: RequestAuthenticator;
@@ -46,6 +51,42 @@ export async function registerRunRoutes(
     modelProviders?: ModelProviderService;
   } = {},
 ) {
+  // GET /api/agent/runs/activity — 该**工作区**近 7 天的运行次数与累计时长。
+  // 范围取工作区而不是会话/画布：客户端任务 id 与服务端会话 id 不保证一致，
+  // run 挂的又是会话的载体画布而非项目画布——两条更细的路实测都不可靠（详见仓储注释）。
+  // 归属校验：先解析工作区（拿不到就返回全 0——不区分「不存在」与「不属于你」，
+  // 与其它只读端点同一口径，不给账号/资源枚举留信号）。
+  app.get(
+    "/api/agent/runs/activity",
+    async (request, reply) => {
+      const authenticatedUser = options.auth
+        ? await options.auth.authenticate(request)
+        : null;
+      if (!authenticatedUser) {
+        return reply.code(401).send(
+          applicationErrorResponseSchema.parse({
+            error: {
+              code: "unauthorized",
+              message: "Missing or invalid bearer token.",
+            },
+          }),
+        );
+      }
+      const workspace = options.viewerService
+        ? await options.viewerService
+            .resolveWorkspace(authenticatedUser)
+            .catch(() => null)
+        : null;
+      const activity =
+        workspace && options.activityQuery
+          ? await options.activityQuery({ workspaceId: workspace.id })
+          : { runs: 0, totalSeconds: 0, windowDays: 7 };
+      return reply
+        .code(200)
+        .send(agentRunActivityResponseSchema.parse({ activity }));
+    },
+  );
+
   app.post("/api/agent/runs", async (request, reply) => {
     try {
       const payload = runCreateRequestSchema.parse(request.body);
