@@ -519,3 +519,51 @@ describe("usage stats（R4-2 用户侧使用统计）", () => {
     expect(stats.totals.tokens).toBe(15);
   });
 });
+
+/**
+ * 热力图窗口（用户反馈「格子要显示全，而不是就一点点」）。
+ *
+ * 与 7/30 天的 `daily` 分开：热力图是「一年活动全貌」，固定 365 天、缺数据补 0，
+ * 不随范围切换变窄。这里锁「长度恒为 365、末位是今天、窗口外的旧数据不计入」。
+ */
+describe("usage stats 热力图窗口", () => {
+  const NOW = new Date("2026-09-15T12:00:00Z");
+  const dayIso = (offset: number) =>
+    new Date(Date.parse("2026-09-15T00:00:00Z") + offset * 86_400_000).toISOString();
+
+  it("恒为 365 天、末位是今天；一年内的量进图、去年的不进", async () => {
+    const service = createUsageService({
+      repository: createFakeRepository({
+        listRecent: async () => [
+          {
+            provider: "openai",
+            model: "m",
+            capability: "chat",
+            input_tokens: 100,
+            output_tokens: 0,
+            cost_usd: null,
+            occurred_at: dayIso(-200),
+          },
+          {
+            provider: "openai",
+            model: "m",
+            capability: "chat",
+            input_tokens: 999,
+            output_tokens: 0,
+            cost_usd: null,
+            occurred_at: dayIso(-400),
+          },
+        ],
+      }),
+      workspaces: WORKSPACES_STUB,
+      now: () => NOW,
+    });
+
+    const stats = await service.stats(USER, 7);
+    expect(stats.heatmap).toHaveLength(365);
+    expect(stats.heatmap.at(-1)?.date).toBe("2026-09-15");
+    expect(stats.heatmap.map((d) => d.tokens).reduce((a, b) => a + b, 0)).toBe(100);
+    // 7 天窗口里没有这些天 → daily 全 0（两条都在窗口外）
+    expect(stats.daily.every((d) => d.tokens === 0)).toBe(true);
+  });
+});

@@ -22,6 +22,11 @@ const STATS_7D = {
   currentStreakDays: 3,
   longestStreakDays: 4,
   longestSessionSeconds: 42_300,
+  // 热力图是近一年逐日（组件按周分列渲染）
+  heatmap: [
+    { date: "2026-09-15", tokens: 400 },
+    { date: "2026-09-14", tokens: 0 },
+  ],
   daily: [
     { date: "2026-09-09", tokens: 0 },
     { date: "2026-09-10", tokens: 0 },

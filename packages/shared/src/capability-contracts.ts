@@ -128,6 +128,19 @@ export const usageStatsResponseSchema = z.object({
       tokens: z.number().int().nonnegative(),
     }),
   ),
+  /**
+   * 热力图用的**近一年**逐日序列（365 天，缺数据补 0）。
+   *
+   * 与 `daily`（7/30 天窗口）分开：热力图是「一年活动全貌」，不该随范围切换而变窄
+   * （参考图就是一整年的格子铺满）。上限：只统计最近 {@link STATS_ROW_LIMIT} 行
+   * 用量记录覆盖到的天数——超出这个行数的老数据不在图里。
+   */
+  heatmap: z.array(
+    z.object({
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      tokens: z.number().int().nonnegative(),
+    }),
+  ),
   byModel: z.array(
     z.object({
       provider: z.string(),

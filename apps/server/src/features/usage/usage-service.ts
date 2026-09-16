@@ -11,6 +11,8 @@ import type { UsageRecordRow, UsageRepository } from "./repository.js";
 
 const SUMMARY_ROW_LIMIT = 10000;
 const STATS_ROW_LIMIT = 20000;
+/** 热力图窗口：一整年（参考图铺满 12 个月）。 */
+const HEATMAP_DAYS = 365;
 
 export interface UsageEntry {
   workspaceId: string;
@@ -117,10 +119,17 @@ export function createUsageService(options: {
     const modelTotals = new Map<string, { provider: string; tokens: number }>();
     const totals = { tokens: 0, inputTokens: 0, outputTokens: 0 };
 
+    // 热力图要铺满一年（参考图是一整年的格子），故另起一个窗口的逐日聚合
+    const heatmapStart = addUtcDays(today, -(HEATMAP_DAYS - 1));
+    const heatmapTotals = new Map<string, number>();
+
     for (const row of rows) {
       const date = utcDateOf(row.occurred_at);
-      if (date < windowStart || date > today) continue;
       const tokens = row.input_tokens + row.output_tokens;
+      if (date >= heatmapStart && date <= today) {
+        heatmapTotals.set(date, (heatmapTotals.get(date) ?? 0) + tokens);
+      }
+      if (date < windowStart || date > today) continue;
       totals.tokens += tokens;
       totals.inputTokens += row.input_tokens;
       totals.outputTokens += row.output_tokens;
@@ -131,6 +140,12 @@ export function createUsageService(options: {
       };
       bucket.tokens += tokens;
       modelTotals.set(row.model, bucket);
+    }
+
+    const heatmap: UsageStatsResponse["heatmap"] = [];
+    for (let i = 0; i < HEATMAP_DAYS; i += 1) {
+      const date = addUtcDays(heatmapStart, i);
+      heatmap.push({ date, tokens: heatmapTotals.get(date) ?? 0 });
     }
 
     const daily: UsageStatsResponse["daily"] = [];
@@ -163,6 +178,7 @@ export function createUsageService(options: {
       longestStreakDays,
       longestSessionSeconds,
       daily,
+      heatmap,
       byModel: [...modelTotals.entries()]
         .map(([model, bucket]) => ({
           provider: bucket.provider,
