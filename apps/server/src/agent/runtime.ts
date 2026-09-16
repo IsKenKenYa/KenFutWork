@@ -38,6 +38,7 @@ import { parseInstanceSpecifier } from "../features/model-providers/model-catalo
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type { RunUsageAccumulator } from "../features/usage/run-usage-accumulator.js";
 import type { ToolExecutionContext, ToolRegistry } from "../kernel/types.js";
+import { instanceHeadersOption } from "../providers/instance-headers.js";
 import { resolveInstanceChatModel } from "../providers/resolve.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
@@ -1099,6 +1100,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   ...(credentials.baseUrl
                     ? { baseUrl: credentials.baseUrl }
                     : {}),
+                  // 自定义头逐会话取值（§4.8）：亲和类头写死固定值会把所有会话钉到同一分片
+                  ...instanceHeadersOption(credentials.headers, {
+                    sessionId: run.sessionId,
+                    threadId: run.threadId,
+                  }),
                 },
               );
               run.usageMeta = {

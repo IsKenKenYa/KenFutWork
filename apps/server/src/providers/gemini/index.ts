@@ -13,6 +13,8 @@ export function createInstanceChatModel(
     model,
     apiKey: credentials.apiKey,
     ...(credentials.baseUrl ? { baseUrl: credentials.baseUrl } : {}),
+    // 自定义头（§4.8）：SDK 顶层 `customHeaders`；凭证头 x-goog-api-key 由 apiKey 生成
+    ...(credentials.headers ? { customHeaders: credentials.headers } : {}),
     streaming: true,
   });
 }

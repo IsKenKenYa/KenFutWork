@@ -14,11 +14,18 @@ export function createInstanceChatModel(
   model: string,
   credentials: InstanceCredentials,
 ): BaseLanguageModel {
+  // 自定义头经 `configuration.defaultHeaders` 交给 OpenAI 客户端（§4.8）；
+  // 保留头（authorization 等）由 SDK 按 apiKey 生成，契约层与渲染层都拒绝覆盖。
+  const clientOptions = {
+    ...(credentials.baseUrl ? { baseURL: credentials.baseUrl } : {}),
+    ...(credentials.headers ? { defaultHeaders: credentials.headers } : {}),
+  };
+
   return new ChatOpenAI({
     model,
     apiKey: credentials.apiKey,
-    ...(credentials.baseUrl
-      ? { configuration: { baseURL: credentials.baseUrl } }
+    ...(Object.keys(clientOptions).length > 0
+      ? { configuration: clientOptions }
       : {}),
     streaming: true,
     // 用量统计（DEC-6）：token 用量经 streamUsage 采集，落 usage 表
