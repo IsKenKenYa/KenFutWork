@@ -1874,6 +1874,9 @@ export function Workbench() {
                   <WorkDirectorySelect
                     projects={codeProjects}
                     selectedProjectId={conversationProject?.id ?? null}
+                    /* 文档入口（R3-3）读的是这个对话自己绑定目录里的 AGENTS.md 等 */
+                    accessToken={session?.access_token ?? null}
+                    canvasId={conversationProject?.primaryCanvas.id ?? null}
                     lockedHint={
                       conversationProject
                         ? `本次对话已绑定工作目录「${conversationProject.name}」`
@@ -2206,6 +2209,8 @@ export function Workbench() {
                 <WorkDirectorySelect
                   projects={codeProjects}
                   selectedProjectId={selectedProjectId}
+                  accessToken={session?.access_token ?? null}
+                  canvasId={selectedProject?.primaryCanvas.id ?? null}
                   busy={creatingProject}
                   onSelect={(projectId) => {
                     const project = codeProjects.find(

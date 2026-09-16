@@ -4,11 +4,15 @@ import type { ProjectSummary } from "@kenfutwork/shared";
 import {
   Check,
   ChevronDown,
+  FileText as FileTextIcon,
   Folder,
   FolderOpen,
   MessageSquare,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { fetchCodeDocs, fetchSandboxFile } from "@/lib/code-git-api";
 
 /**
  * 工作目录选择器（Code 模式 composer 底部）。
@@ -23,6 +27,9 @@ export interface WorkDirectorySelectProps {
   /** 工作目录项目（kind='code'），已按 updated_at 倒序。 */
   projects: ProjectSummary[];
   selectedProjectId: string | null;
+  /** 文档入口（R3-3）用：作用域画布 = 当前选中项目的主画布，与 run 同一口径。 */
+  accessToken?: string | null;
+  canvasId?: string | null;
   /**
    * 只读展示：已有对话绑定工作目录时传入提示文案。
    *
@@ -42,6 +49,8 @@ export interface WorkDirectorySelectProps {
 export function WorkDirectorySelect({
   projects,
   selectedProjectId,
+  accessToken = null,
+  canvasId = null,
   lockedHint,
   busy = false,
   onSelect,
@@ -50,6 +59,15 @@ export function WorkDirectorySelect({
 }: WorkDirectorySelectProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  /** 项目文档（R3-3）：`null` = 还没读过；打开下拉时才拉一次。 */
+  const [docs, setDocs] = useState<
+    Array<{ path: string; bytes: number }> | null
+  >(null);
+  const [openedDoc, setOpenedDoc] = useState<{
+    path: string;
+    text: string;
+    note?: string;
+  } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // 点外面 / Esc 关闭（与 brand-kit-selector 同一套交互）
@@ -77,6 +95,46 @@ export function WorkDirectorySelect({
   useEffect(() => {
     if (!open) setQuery("");
   }, [open]);
+
+  /**
+   * 打开下拉时读一次项目文档清单（R3-3）。挂在 `open` 上而不是挂载时：
+   * 工作目录会在会话里切换，清单跟着当前选中的项目走，且关着的时候不发请求。
+   */
+  useEffect(() => {
+    if (!open || !accessToken || !canvasId) return;
+    let cancelled = false;
+    setDocs(null);
+    void fetchCodeDocs(accessToken, canvasId)
+      .then((next) => {
+        if (!cancelled) setDocs(next);
+      })
+      .catch(() => {
+        // 列不出来就当没有（例如目录还没建）：不打断选目录这件事
+        if (!cancelled) setDocs([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, accessToken, canvasId]);
+
+  const openDoc = useCallback(
+    async (path: string) => {
+      if (!accessToken || !canvasId) return;
+      try {
+        const file = await fetchSandboxFile(accessToken, canvasId, path);
+        setOpenedDoc({
+          path: file.path,
+          text: file.binary ? "（二进制文件，无法按文本显示）" : file.content,
+          ...(file.truncated ? { note: "已截断（只显示前 256 KB）" } : {}),
+        });
+        setOpen(false);
+      } catch {
+        // 读不到通常是「文件刚被删/改名」：关掉下拉即可，不弹错
+        setOpen(false);
+      }
+    },
+    [accessToken, canvasId],
+  );
 
   const selected = projects.find((project) => project.id === selectedProjectId);
   const keyword = query.trim().toLowerCase();
@@ -157,6 +215,38 @@ export function WorkDirectorySelect({
             )}
           </div>
 
+          {/* 项目文档（R3-3）：工作目录里的 AGENTS.md / README.md 等，「打开」看内容 */}
+          <div className="border-t p-1">
+            <p className="px-2 pt-1 pb-0.5 text-[10px] font-medium tracking-wide text-muted-foreground/70">
+              项目文档
+            </p>
+            {docs === null ? (
+              <p className="px-2 py-1 text-xs text-muted-foreground">读取中…</p>
+            ) : docs.length === 0 ? (
+              <p className="px-2 py-1 text-xs text-muted-foreground">
+                这个目录里没有 AGENTS.md / README.md 等文档
+              </p>
+            ) : (
+              docs.map((doc) => (
+                <div
+                  key={doc.path}
+                  className="flex items-center gap-2 rounded-md px-2 py-1 text-xs"
+                >
+                  <FileTextIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate">{doc.path}</span>
+                  <button
+                    type="button"
+                    aria-label={`打开 ${doc.path}`}
+                    onClick={() => void openDoc(doc.path)}
+                    className="shrink-0 rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+                  >
+                    打开
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+
           <div className="border-t p-1">
             <button
               type="button"
@@ -183,6 +273,34 @@ export function WorkDirectorySelect({
           </div>
         </div>
       ) : null}
+
+      {/* 文档内容（R3-3）：浮窗而不是下拉里再套一层滚动区——内容可能很长 */}
+      <Dialog
+        open={openedDoc !== null}
+        onOpenChange={(next) => !next && setOpenedDoc(null)}
+      >
+        <DialogContent
+          className="flex max-h-[80vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl"
+          aria-describedby={undefined}
+        >
+          <div className="flex items-center gap-2 border-b px-5 py-3 pr-12">
+            <DialogTitle className="min-w-0 flex-1 truncate font-mono text-sm">
+              {openedDoc?.path ?? ""}
+            </DialogTitle>
+            {openedDoc?.note ? (
+              <span className="shrink-0 text-[11px] text-muted-foreground">
+                {openedDoc.note}
+              </span>
+            ) : null}
+          </div>
+          <pre
+            aria-label="文档内容"
+            className="m-0 max-h-[64vh] overflow-auto p-4 font-mono text-xs leading-5 whitespace-pre"
+          >
+            {openedDoc?.text ?? ""}
+          </pre>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

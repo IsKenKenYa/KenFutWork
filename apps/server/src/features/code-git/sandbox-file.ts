@@ -64,3 +64,27 @@ export function readSandboxTextFile(
     closeSync(fd);
   }
 }
+
+/**
+ * 候选文档的存在性探测（R3-3「文档入口」）：只 stat，不读内容。
+ *
+ * 候选清单是**约定俗成**的项目文档名；不存在的直接跳过（这是便利入口，不是错误路径），
+ * 越界与读盘失败同样静默跳过——一个候选文件有问题不该把整份清单打空。
+ */
+export function existingSandboxFiles(
+  root: string,
+  candidates: readonly string[],
+): Array<{ path: string; bytes: number }> {
+  const found: Array<{ path: string; bytes: number }> = [];
+  for (const candidate of candidates) {
+    try {
+      const absolute = resolveInsideRoot(root, candidate);
+      const stat = statSync(absolute, { throwIfNoEntry: false });
+      if (!stat || !stat.isFile()) continue;
+      found.push({ path: candidate, bytes: stat.size });
+    } catch {
+      continue;
+    }
+  }
+  return found;
+}

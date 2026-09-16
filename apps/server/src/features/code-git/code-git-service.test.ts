@@ -328,3 +328,38 @@ describe("变更清单与文件查看", () => {
     ).rejects.toMatchObject({ statusCode: 400 });
   });
 });
+
+/** 项目文档清单（R3-3「文档入口」）：候选里存在的列出来，不读内容。 */
+describe("项目文档清单", () => {
+  const root = mkdtempSync(join(tmpdir(), "kfw-code-docs-"));
+  afterAll(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("只列存在的候选文档，并给字节数（按候选顺序：AGENTS.md 在前）", async () => {
+    writeFileSync(join(root, "README.md"), "# readme\n", "utf8");
+    writeFileSync(join(root, "AGENTS.md"), "# 指南\n", "utf8");
+    const { service } = build({ canvasWorkDirs: { [CANVAS_ID]: root } });
+
+    const docs = await service.listDocs(USER, CANVAS_ID);
+    expect(docs.map((doc) => doc.path)).toEqual(["AGENTS.md", "README.md"]);
+    expect(docs[0]?.bytes).toBe(Buffer.byteLength("# 指南\n"));
+  });
+
+  it("目录里没有候选文档时给空数组（不是错误）", async () => {
+    const empty = mkdtempSync(join(tmpdir(), "kfw-code-docs-empty-"));
+    try {
+      const { service } = build({ canvasWorkDirs: { [CANVAS_ID]: empty } });
+      expect(await service.listDocs(USER, CANVAS_ID)).toEqual([]);
+    } finally {
+      rmSync(empty, { recursive: true, force: true });
+    }
+  });
+
+  it("越权：画布不属于当前工作区 → 404，不碰文件系统", async () => {
+    const { service } = build({ canvasFound: false });
+    await expect(service.listDocs(USER, CANVAS_ID)).rejects.toMatchObject({
+      statusCode: 404,
+    });
+  });
+});

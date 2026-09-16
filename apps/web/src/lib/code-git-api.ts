@@ -157,6 +157,23 @@ export interface SandboxFileView {
   content: string;
 }
 
+/** 工作目录里的项目文档（R3-3「文档入口」）。 */
+export async function fetchCodeDocs(
+  accessToken: string,
+  canvasId: string,
+): Promise<Array<{ path: string; bytes: number }>> {
+  const query = new URLSearchParams({ canvasId });
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/code/docs?${query.toString()}`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  const payload = (await response.json()) as {
+    docs: Array<{ path: string; bytes: number }>;
+  };
+  return payload.docs;
+}
+
 export async function fetchSandboxFile(
   accessToken: string,
   canvasId: string,
