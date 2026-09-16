@@ -94,6 +94,16 @@ export interface ContextUsageView {
    * 不是各次调用百分比的算术平均——那样短调用权重过大，会把命中率算虚高。
    * 上游一次都没报缓存字段时为 null（显示「上游未上报」，不拿 0 冒充）。
    * 服务端没带累计字段（老版本）时退回「本次调用」的单次命中率并标注。
+   *
+   * **与各家上游字段的对照**（2026-09-17 联网核对，源见《改造计划》§4.13 用户第七批）：
+   * - OpenAI `usage.prompt_tokens_details.cached_tokens`：**含在** prompt_tokens 里的命中量
+   *   （文档只当命中指示，不给公式）——`cached ÷ prompt_tokens` 就是这里的算法；
+   * - Anthropic `cache_read_input_tokens`（缓存里取到的输入）与 `input_tokens`（**未命中**
+   *   的那部分）互斥，故其分母应是 input + cache_read + cache_creation；
+   * - Google `usage.total_cached_tokens` = 命中缓存服务的 token 数；
+   * - Langfuse 把各桶归一成互斥（`input` 排除 `input_cached_tokens`，`total` = 各桶之和）；
+   * - LangChain（我们的采集处，见 `agent/stream-adapter.ts`）归一后 `input_tokens` 是**总**
+   *   提示词、`input_token_details.cache_read` 是其中命中部分——分母即总量，无需按上游分叉。
    */
   cacheHitLabel: string | null;
   /** 命中率数值（0-100，供进度条用）；上游未上报时为 null。 */
