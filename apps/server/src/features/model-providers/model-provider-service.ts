@@ -427,6 +427,7 @@ export function createModelProviderService(options: {
         .insertSystemInstance({
           ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
           ...(input.compat ? { compat: input.compat } : {}),
+          ...(input.headers ? { headers: input.headers } : {}),
           createdBy: createdByUserId,
           encryptedApiKey: encryptSecret(
             { credentialSecret: secret },

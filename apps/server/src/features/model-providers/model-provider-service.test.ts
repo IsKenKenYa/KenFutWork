@@ -485,8 +485,39 @@ describe("model-providers 自定义请求头（§4.8，R6-1）", () => {
     expect(resolved.apiKey).toBe("sk-live");
   });
 
-  it("未设置 headers 的实例：凭证不含 headers 字段，响应 headerKeys 为空", async () => {
-    const { encryptSecret } = await import("./secret-store.js");
+  it("平台池实例（scope='system'）同样支持自定义头：整批落库、只回键名", async () => {
+    const { calls, service } = buildService({
+      rows: [{ ...SYSTEM_ROW, headers: HEADERS }],
+      rowCount: 1,
+    });
+
+    const created = await service.createSystemInstance(
+      {
+        apiKey: "sk-pool",
+        models: [{ id: "gpt-4.1", name: "GPT-4.1", capability: "chat" }],
+        name: "平台池 opencode",
+        protocol: "openai-compatible",
+        headers: HEADERS,
+      },
+      "admin-1",
+    );
+
+    expect(created.headerKeys).toEqual([
+      "x-opencode-session",
+      "x-tenant-id",
+    ]);
+    expect(JSON.stringify(created)).not.toContain("ws-42");
+
+    const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
+    expect(sql).toContain("values (null, 'system'");
+    expect(sql).toContain("headers");
+    const stored = (calls[0]?.values ?? []).find(
+      (value) => typeof value === "string" && value.includes("x-opencode"),
+    );
+    expect(JSON.parse(String(stored))).toEqual(HEADERS);
+  });
+
+  it("未设置 headers 的实例：凭证不含 headers 字段，响应 headerKeys 为空", async () => {    const { encryptSecret } = await import("./secret-store.js");
     const { service } = buildService({
       rows: [
         {

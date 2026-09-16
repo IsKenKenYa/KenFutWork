@@ -4,6 +4,7 @@ import { z } from "zod";
 import { subscriptionPlanSchema } from "./credits.js";
 import {
   providerCompatSchema,
+  providerInstanceHeadersSchema,
   providerInstanceModelSchema,
   providerInstanceResponseSchema,
   providerProtocolSchema,
@@ -63,6 +64,8 @@ export const adminSystemInstanceCreateRequestSchema = z.object({
   apiKey: z.string().min(1),
   models: z.array(providerInstanceModelSchema).min(1),
   compat: providerCompatSchema.optional(),
+  /** 自定义请求头（§4.8）：与用户实例同一套校验与只写口径。 */
+  headers: providerInstanceHeadersSchema.optional(),
   enabled: z.boolean().optional(),
 });
 export type AdminSystemInstanceCreateRequest = z.infer<
@@ -75,6 +78,8 @@ export const adminSystemInstanceUpdateRequestSchema = z.object({
   apiKey: z.string().min(1).optional(),
   models: z.array(providerInstanceModelSchema).min(1).optional(),
   compat: providerCompatSchema.optional(),
+  /** 只写不读：更新即整体覆盖（`{}` = 清空）。 */
+  headers: providerInstanceHeadersSchema.optional(),
   enabled: z.boolean().optional(),
 });
 export type AdminSystemInstanceUpdateRequest = z.infer<
