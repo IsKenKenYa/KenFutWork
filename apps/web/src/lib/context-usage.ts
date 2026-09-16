@@ -96,6 +96,8 @@ export interface ContextUsageView {
    * 服务端没带累计字段（老版本）时退回「本次调用」的单次命中率并标注。
    */
   cacheHitLabel: string | null;
+  /** 命中率数值（0-100，供进度条用）；上游未上报时为 null。 */
+  cacheHitPercent: number | null;
   /** 「平均」还是「本次调用」（老服务端只有单次数据时如实标注）。 */
   cacheHitScope: "run" | "call" | null;
   /**
@@ -157,6 +159,7 @@ export function contextUsageView(
     percent: null,
     percentLabel: null,
     cacheHitLabel: null,
+    cacheHitPercent: null,
     cacheHitScope: null,
     outputLabel: null,
     composition: [],
@@ -195,6 +198,7 @@ export function contextUsageView(
     // 上游没报缓存字段 → 不显示命中率（0% 会被读成「缓存全失效」）
     cacheHitLabel:
       hitRate === null ? null : `${Math.round(hitRate * 10) / 10}%`,
+    cacheHitPercent: hitRate === null ? null : Math.min(100, hitRate),
     cacheHitScope: hitRate === null ? null : useRunTotals ? "run" : "call",
     outputLabel: formatTokens(usage.outputTokens),
     composition: compositionView(usage.composition),

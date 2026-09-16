@@ -1116,10 +1116,30 @@ export function Workbench() {
             const runStart = task.runStartedAt
               ? parseTimestampMs(task.runStartedAt)
               : null;
+            const nextStartMs = previousEndMs ?? runStart ?? Date.now();
+            /*
+              上一条助手消息到此定稿（模型已经开了下一轮）：把它的耗时结算掉。
+              只在终态结算最后一条时，中间那些消息永远没有 elapsedMs，界面上就
+              「只显示一部分」——用户口径是每条 AI 消息都要显示工作时间。
+            */
+            for (let i = messages.length - 1; i >= 0; i -= 1) {
+              const candidate = messages[i];
+              if (
+                candidate?.role === "assistant" &&
+                candidate.elapsedMs === undefined &&
+                candidate.startedAt !== undefined
+              ) {
+                messages[i] = {
+                  ...candidate,
+                  elapsedMs: Math.max(0, nextStartMs - candidate.startedAt),
+                };
+                break;
+              }
+            }
             messages.push({
               role: "assistant",
               text: delta,
-              startedAt: previousEndMs ?? runStart ?? Date.now(),
+              startedAt: nextStartMs,
             });
           }
           return { ...task, messages };

@@ -115,11 +115,23 @@ export function ContextUsageButton({
             </ul>
           ) : null}
 
-          <div className="mt-3 flex items-center justify-between border-t pt-2 text-xs">
-            <span className="text-muted-foreground">平均缓存命中率</span>
-            <span className="tabular-nums">
-              {view.cacheHitLabel ?? "上游未上报"}
-            </span>
+          <div className="mt-3 border-t pt-2 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">
+                平均缓存命中率
+                {view.cacheHitScope === "call" ? "（本次调用）" : ""}
+              </span>
+              <span className="tabular-nums">
+                {view.cacheHitLabel ?? "上游未上报"}
+              </span>
+            </div>
+            {/* 命中率也画成进度条（用户口径：思考强度与缓存都要有进度条） */}
+            <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-emerald-500"
+                style={{ width: `${view.cacheHitPercent ?? 0}%` }}
+              />
+            </div>
           </div>
         </div>
       ) : null}
