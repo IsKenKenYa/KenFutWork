@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -103,6 +103,49 @@ describe("ProviderSettings（BYOK 供应商设置）", () => {
     await user.click(screen.getByRole("button", { name: "保存实例" }));
     expect(await screen.findByText(/合法 JSON/)).toBeDefined();
     expect(mockedCreate).not.toHaveBeenCalled();
+  });
+
+  it("自定义请求头（JSON）：合法对象随创建提交，非法 JSON 与数组被拦截", async () => {
+    const user = userEvent.setup();
+    mockedFetch.mockResolvedValue({ instances: [] });
+    mockedCreate.mockResolvedValue(instance);
+    render(<ProviderSettings accessToken="token" />);
+    await user.click(screen.getByRole("button", { name: "添加供应商" }));
+    await user.type(screen.getByLabelText("实例名称"), "opencode");
+    await user.type(screen.getByLabelText("API Key"), "k");
+
+    // 非法 JSON：拦在提交前（含 `[`/`{` 的值用 change 直填，避开 userEvent 的按键转义语法）
+    await fireEvent.change(screen.getByLabelText("自定义请求头（JSON，可选）"), {
+      target: { value: "[1,2]" },
+    });
+    await user.click(screen.getByRole("button", { name: "保存实例" }));
+    expect(await screen.findByText(/必须是 JSON 对象/)).toBeDefined();
+    expect(mockedCreate).not.toHaveBeenCalled();
+
+    // 合法对象：值原样提交（只写通道）
+    await fireEvent.change(screen.getByLabelText("自定义请求头（JSON，可选）"), {
+      target: { value: '{"x-opencode-session":"{{sessionId}}"}' },
+    });
+    await user.click(screen.getByRole("button", { name: "保存实例" }));
+    await waitFor(() => {
+      expect(mockedCreate).toHaveBeenCalledWith(
+        "token",
+        expect.objectContaining({
+          name: "opencode",
+          headers: { "x-opencode-session": "{{sessionId}}" },
+        }),
+      );
+    });
+  });
+
+  it("列表只显示自定义头的键名，值不回显", async () => {
+    mockedFetch.mockResolvedValue({
+      instances: [{ ...instance, headerKeys: ["x-opencode-session"] }],
+    });
+    render(<ProviderSettings accessToken="token" />);
+    expect(
+      await screen.findByText(/自定义请求头：x-opencode-session（值不回显）/),
+    ).toBeDefined();
   });
 
   it("点击删除调用删除接口并刷新列表", async () => {

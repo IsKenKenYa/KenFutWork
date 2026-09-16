@@ -26,8 +26,31 @@ const PROTOCOLS = [
 ] as const;
 
 /**
+ * 自定义请求头（§4.8）：值为只写通道，故这里只收「本次提交的头表」。
+ * 留空 = 不带自定义头；非法 JSON 或非对象在提交前拦下（服务端还会再校验一次）。
+ */
+function parseHeadersJson(
+  input: string,
+): Record<string, string> | undefined | Error {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return new Error("自定义请求头必须是合法 JSON");
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return new Error("自定义请求头必须是 JSON 对象，如 {\"x-tenant-id\":\"ws-1\"}");
+  }
+  return parsed as Record<string, string>;
+}
+
+/**
  * 供应商设置（P5 BYOK）：用户供应商实例 CRUD。
- * 凭证红线：apiKey 只写不读——列表只有 hasCredential 标记，编辑不回显。
+ * 凭证红线：apiKey 与自定义头值都只写不读——列表只有 hasCredential 与 headerKeys（键名）。
  */
 export function ProviderSettings({ accessToken }: { accessToken: string }) {
   const [instances, setInstances] = useState<ProviderInstanceResponse[]>([]);
@@ -41,6 +64,7 @@ export function ProviderSettings({ accessToken }: { accessToken: string }) {
   const [modelsJson, setModelsJson] = useState(
     '[{"id":"gpt-4.1","name":"GPT-4.1","capability":"chat"}]',
   );
+  const [headersJson, setHeadersJson] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
@@ -69,6 +93,11 @@ export function ProviderSettings({ accessToken }: { accessToken: string }) {
       setError("模型清单必须是合法 JSON");
       return;
     }
+    const headers = parseHeadersJson(headersJson);
+    if (headers instanceof Error) {
+      setError(headers.message);
+      return;
+    }
     if (!name.trim()) {
       setError("请填写实例名称");
       return;
@@ -85,12 +114,14 @@ export function ProviderSettings({ accessToken }: { accessToken: string }) {
         ...(baseUrl.trim() ? { baseUrl: baseUrl.trim() } : {}),
         apiKey: apiKey.trim(),
         models: models as never,
+        ...(headers ? { headers } : {}),
         enabled: true,
       });
       setShowForm(false);
       setName("");
       setApiKey("");
       setBaseUrl("");
+      setHeadersJson("");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "创建实例失败");
@@ -211,6 +242,23 @@ export function ProviderSettings({ accessToken }: { accessToken: string }) {
               className="mt-1 w-full rounded-md border px-3 py-2 font-mono text-xs"
             />
           </div>
+          <div>
+            <label htmlFor="provider-headers" className="text-sm">
+              自定义请求头（JSON，可选）
+            </label>
+            <textarea
+              id="provider-headers"
+              value={headersJson}
+              onChange={(e) => setHeadersJson(e.target.value)}
+              rows={2}
+              placeholder='{"x-opencode-session":"{{sessionId}}"}'
+              className="mt-1 w-full rounded-md border px-3 py-2 font-mono text-xs"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              值可写占位符 {"{{sessionId}}"} / {"{{threadId}}"}
+              （按会话取值）；保存后只显示头名，值不再回显。
+            </p>
+          </div>
           <button
             type="submit"
             disabled={submitting}
@@ -238,6 +286,11 @@ export function ProviderSettings({ accessToken }: { accessToken: string }) {
                   {instance.protocol} · {instance.models.length} 个模型 ·{" "}
                   {instance.enabled ? "已启用" : "已停用"}
                 </p>
+                {instance.headerKeys.length > 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    自定义请求头：{instance.headerKeys.join("、")}（值不回显）
+                  </p>
+                ) : null}
               </div>
               <button
                 type="button"
