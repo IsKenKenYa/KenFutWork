@@ -7,16 +7,19 @@ import {
   createProviderInstance,
   deleteProviderInstance,
   fetchProviderInstances,
+  updateProviderInstance,
 } from "@/lib/server-api";
 
 vi.mock("@/lib/server-api", () => ({
   fetchProviderInstances: vi.fn(),
   createProviderInstance: vi.fn(),
+  updateProviderInstance: vi.fn(),
   deleteProviderInstance: vi.fn(),
 }));
 
 const mockedFetch = vi.mocked(fetchProviderInstances);
 const mockedCreate = vi.mocked(createProviderInstance);
+const mockedUpdate = vi.mocked(updateProviderInstance);
 const mockedDelete = vi.mocked(deleteProviderInstance);
 
 import type { ProviderInstanceResponse } from "@loomic/shared";
@@ -164,6 +167,81 @@ describe("ProviderSettings（BYOK 供应商设置）", () => {
     });
     await waitFor(() => {
       expect(screen.getByText("暂无供应商实例")).toBeDefined();
+    });
+  });
+
+  it("编辑既有实例：带出当前值，只提交改动字段", async () => {
+    const user = userEvent.setup();
+    const editing = {
+      ...instance,
+      baseUrl: "https://api.example.com/v1",
+      headerKeys: ["x-opencode-session"],
+    };
+    mockedFetch.mockResolvedValue({ instances: [editing] });
+    mockedUpdate.mockResolvedValue(editing);
+    render(<ProviderSettings accessToken="token" />);
+    await waitFor(() => {
+      expect(screen.getByText("我的网关")).toBeDefined();
+    });
+
+    await user.click(screen.getByRole("button", { name: "编辑" }));
+    expect(screen.getByLabelText("编辑供应商实例")).toBeDefined();
+    // 既有值带出；协议不可改（更新契约里没有 protocol）；API Key 只写不回显
+    expect(screen.getByLabelText("实例名称")).toHaveProperty(
+      "value",
+      "我的网关",
+    );
+    expect(screen.queryByLabelText("协议")).toBeNull();
+    expect(screen.getByText(/协议不可改/)).toBeDefined();
+    expect(screen.getByLabelText("API Key（留空则不改）")).toHaveProperty(
+      "value",
+      "",
+    );
+    expect(
+      screen.getByText(/已存：x-opencode-session（留空则保留；填 \{\} 清空）/),
+    ).toBeDefined();
+
+    // 只改名字：patch 里不该出现 apiKey / headers / models
+    await user.clear(screen.getByLabelText("实例名称"));
+    await user.type(screen.getByLabelText("实例名称"), "我的网关 v2");
+    await user.click(screen.getByRole("button", { name: "保存修改" }));
+
+    await waitFor(() => {
+      expect(mockedUpdate).toHaveBeenCalledWith("token", "inst-1", {
+        name: "我的网关 v2",
+      });
+    });
+    expect(mockedCreate).not.toHaveBeenCalled();
+  });
+
+  it("编辑时填 {} 表示清空自定义头；无改动提交被拦下", async () => {
+    const user = userEvent.setup();
+    const editing = {
+      ...instance,
+      headerKeys: ["x-opencode-session"],
+    };
+    mockedFetch.mockResolvedValue({ instances: [editing] });
+    mockedUpdate.mockResolvedValue(editing);
+    render(<ProviderSettings accessToken="token" />);
+    await waitFor(() => {
+      expect(screen.getByText("我的网关")).toBeDefined();
+    });
+    await user.click(screen.getByRole("button", { name: "编辑" }));
+
+    // 无改动 → 明确拦下，不发请求
+    await user.click(screen.getByRole("button", { name: "保存修改" }));
+    expect(await screen.findByText(/没有需要保存的修改/)).toBeDefined();
+    expect(mockedUpdate).not.toHaveBeenCalled();
+
+    // 填 {} → 清空（而不是「无 headers 字段」）
+    await fireEvent.change(screen.getByLabelText("自定义请求头（JSON，可选）"), {
+      target: { value: "{}" },
+    });
+    await user.click(screen.getByRole("button", { name: "保存修改" }));
+    await waitFor(() => {
+      expect(mockedUpdate).toHaveBeenCalledWith("token", "inst-1", {
+        headers: {},
+      });
     });
   });
 });
