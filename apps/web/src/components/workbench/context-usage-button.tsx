@@ -1,6 +1,5 @@
 "use client";
 
-import { Gauge } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -11,9 +10,9 @@ import {
 /**
  * 模型选择器旁的「上下文容量 / 缓存命中」浮层（R4-1）。
  *
- * 圆形图标按钮 + 点开浮层，数据来自服务端 `run.usage`（本轮最后一次模型调用的
- * 累计用量）与模型目录里的上下文窗口。**没有数据时不显示 0**——分类占比那一块
- * 参考图里有，但服务端根本没有「按分类拆 token」的采集口径，宁缺毋滥。
+ * 按钮本身是**圆环 + 实际百分比**（参考图口径：不是图标，一眼能看出占了窗口多少），
+ * 数据来自服务端 `run.usage` 与模型目录里的上下文窗口。**没有数据时不显示 0**：
+ * 窗口未知就不给百分比，上游没报缓存就写「上游未上报」。
  */
 export function ContextUsageButton({
   usage,
@@ -56,9 +55,9 @@ export function ContextUsageButton({
         aria-expanded={open}
         title="上下文容量与缓存命中"
         onClick={() => setOpen((current) => !current)}
-        className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       >
-        <Gauge className="h-4 w-4" />
+        <ContextRing percent={view.percent} />
       </button>
 
       {open ? (
@@ -97,12 +96,24 @@ export function ContextUsageButton({
               <dd className="tabular-nums">{view.outputLabel ?? "—"}</dd>
             </div>
             <div className="flex items-center justify-between">
-              <dt className="text-muted-foreground">缓存命中率</dt>
+              <dt className="text-muted-foreground">
+                平均缓存命中率
+                {view.cacheHitScope === "call" ? (
+                  <span className="ml-1 text-[10px] text-muted-foreground/70">
+                    （本次调用）
+                  </span>
+                ) : null}
+              </dt>
               <dd className="tabular-nums">
                 {view.cacheHitLabel ?? "上游未上报"}
               </dd>
             </div>
           </dl>
+          {view.cacheHitScope === "run" ? (
+            <p className="mt-2 text-[10px] text-muted-foreground/80">
+              按 token 加权：累计命中缓存输入 ÷ 累计输入，不是各次百分比的算术平均。
+            </p>
+          ) : null}
 
           {view.windowKnown ? null : (
             <p className="mt-2 text-[11px] text-muted-foreground">
@@ -112,5 +123,55 @@ export function ContextUsageButton({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * 容量圆环：一圈轨道 + 一段进度弧，中心写百分比。
+ *
+ * 为什么不用图标：参考图要的是「一眼看出占了多少」（圆圈 + 实际百分比）。
+ * 窗口未知时百分比为 null：画空轨道、中心写「?」——不编分母、也不假装是 0%。
+ */
+function ContextRing({ percent }: { percent: number | null }) {
+  const size = 20;
+  const stroke = 2.5;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const ratio = percent === null ? 0 : Math.min(100, Math.max(0, percent)) / 100;
+
+  return (
+    <span className="relative inline-flex items-center justify-center">
+      <svg
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        aria-hidden
+        className="-rotate-90"
+      >
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          strokeWidth={stroke}
+          className="stroke-border"
+        />
+        {percent !== null ? (
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            strokeWidth={stroke}
+            strokeLinecap="round"
+            strokeDasharray={`${circumference * ratio} ${circumference}`}
+            className="stroke-foreground/70"
+          />
+        ) : null}
+      </svg>
+      <span className="absolute text-[8px] tabular-nums">
+        {percent === null ? "?" : Math.round(percent)}
+      </span>
+    </span>
   );
 }
