@@ -1,0 +1,181 @@
+// @vitest-environment jsdom
+
+import "@testing-library/jest-dom/vitest";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { useState } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  WorkbenchSidePanel,
+  type WorkbenchPanelTab,
+} from "../src/components/workbench/workbench-side-panel";
+
+const {
+  fetchCodeDocsMock,
+  fetchGitChangesMock,
+  fetchGitFileDiffMock,
+  fetchSandboxFileMock,
+} = vi.hoisted(() => ({
+  fetchCodeDocsMock: vi.fn(),
+  fetchGitChangesMock: vi.fn(),
+  fetchGitFileDiffMock: vi.fn(),
+  fetchSandboxFileMock: vi.fn(),
+}));
+
+vi.mock("../src/lib/code-git-api", () => ({
+  fetchCodeDocs: fetchCodeDocsMock,
+  fetchGitChanges: fetchGitChangesMock,
+  fetchGitFileDiff: fetchGitFileDiffMock,
+  fetchSandboxFile: fetchSandboxFileMock,
+}));
+
+/**
+ * 右栏停靠面板（R3-1 的形态：参考图里「变更 / 文档 / 子智能体」都在右侧面板的标签页里，
+ * 不是一次性弹层）。这里锁三件事：切标签换正文、逐文件「审查 / 打开」、空态说真话。
+ */
+describe("WorkbenchSidePanel", () => {
+  beforeEach(() => {
+    fetchGitChangesMock.mockResolvedValue({
+      isRepo: true,
+      truncated: false,
+      files: [
+        {
+          path: "src/app.ts",
+          additions: 12,
+          deletions: 3,
+          binary: false,
+          status: "modified",
+        },
+        {
+          path: "notes.md",
+          additions: 0,
+          deletions: 0,
+          binary: false,
+          status: "untracked",
+        },
+      ],
+    });
+    fetchGitFileDiffMock.mockResolvedValue({
+      path: "notes.md",
+      text: "+第一行\n+第二行",
+      truncated: false,
+      untracked: true,
+    });
+    fetchSandboxFileMock.mockResolvedValue({
+      path: "src/app.ts",
+      bytes: 42,
+      truncated: false,
+      binary: false,
+      content: "export const app = 1;\n",
+    });
+    fetchCodeDocsMock.mockResolvedValue([{ path: "AGENTS.md", bytes: 12 }]);
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  function Harness({ initialTab = "changes" as WorkbenchPanelTab }) {
+    const [tab, setTab] = useState<WorkbenchPanelTab>(initialTab);
+    return (
+      <WorkbenchSidePanel
+        open
+        onClose={() => {}}
+        tab={tab}
+        onTabChange={setTab}
+        accessToken="token"
+        canvasId="canvas-1"
+        subagents={[]}
+        running={false}
+      />
+    );
+  }
+
+  it("变更标签：头部给总数与增删、逐行给「审查 / 打开」", async () => {
+    render(<Harness />);
+
+    // 头部一行：N 个文件已更改 + 总增删（参考图的读法）
+    const head = await screen.findByText("个文件已更改");
+    expect(head.parentElement?.textContent).toContain("2");
+    expect(head.parentElement?.textContent).toContain("+12");
+    expect(head.parentElement?.textContent).toContain("−3");
+    const list = await screen.findByRole("list", { name: "变更文件" });
+    // 参考图的读法：文件名 + 路径 + 统计；这里两个文件分别在 src/ 与根目录
+    expect(within(list).getByText("app.ts")).toBeInTheDocument();
+    expect(within(list).getByText("src")).toBeInTheDocument();
+    expect(within(list).getByText("notes.md")).toBeInTheDocument();
+    expect(
+      within(list).getByRole("button", { name: "审查 src/app.ts" }),
+    ).toBeInTheDocument();
+    expect(
+      within(list).getByRole("button", { name: "打开 src/app.ts" }),
+    ).toBeInTheDocument();
+  });
+
+  it("未跟踪文件的「审查」标「按新增展示」；「打开」显示文件内容", async () => {
+    render(<Harness />);
+    await screen.findByRole("list", { name: "变更文件" });
+
+    await userEvent.click(screen.getByRole("button", { name: "审查 notes.md" }));
+    await waitFor(() =>
+      expect(fetchGitFileDiffMock).toHaveBeenCalledWith(
+        "token",
+        "canvas-1",
+        "notes.md",
+      ),
+    );
+    expect(screen.getByText("未跟踪文件（按新增展示）")).toBeInTheDocument();
+    expect(screen.getByLabelText("文件差异").textContent).toContain("+第一行");
+
+    // 返回列表 → 打开另一文件看内容
+    await userEvent.click(screen.getByRole("button", { name: "返回列表" }));
+    await userEvent.click(screen.getByRole("button", { name: "打开 src/app.ts" }));
+    expect((await screen.findByLabelText("文件内容")).textContent).toContain(
+      "export const app = 1;",
+    );
+  });
+
+  it("切到文档标签：列出文档并可打开内容（不串到变更标签的数据）", async () => {
+    render(<Harness />);
+    await screen.findByRole("list", { name: "变更文件" });
+
+    await userEvent.click(screen.getByRole("tab", { name: "文档" }));
+    await waitFor(() =>
+      expect(fetchCodeDocsMock).toHaveBeenCalledWith("token", "canvas-1"),
+    );
+    const docs = await screen.findByRole("list", { name: "项目文档" });
+    expect(within(docs).getByText("AGENTS.md")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "打开 AGENTS.md" }));
+    expect((await screen.findByLabelText("文件内容")).textContent).toContain(
+      "export const app = 1;",
+    );
+  });
+
+  it("没绑工作目录：变更与文档都说真话，不空转「读取中…」", async () => {
+    render(
+      <WorkbenchSidePanel
+        open
+        onClose={() => {}}
+        tab="changes"
+        onTabChange={() => {}}
+        accessToken="token"
+        canvasId={null}
+        subagents={[]}
+        running={false}
+      />,
+    );
+    expect(
+      await screen.findByText(/这个会话没有绑定工作目录/),
+    ).toBeInTheDocument();
+    expect(fetchGitChangesMock).not.toHaveBeenCalled();
+  });
+
+  it("子智能体标签：没有条目时说清楚，而不是一片空白", async () => {
+    render(<Harness initialTab="subagents" />);
+    expect(
+      await screen.findByText(/这个会话还没有派过子智能体/),
+    ).toBeInTheDocument();
+  });
+});

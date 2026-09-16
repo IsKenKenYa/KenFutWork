@@ -15,6 +15,7 @@ import {
   Palette,
   PanelLeftClose,
   PanelLeftOpen,
+  PanelRight,
   PanelsTopLeft,
   Plug,
   Plus,
@@ -62,6 +63,10 @@ import {
 import { SidebarRow } from "@/components/workbench/sidebar-row";
 import { SkillsModal } from "@/components/workbench/skills-modal";
 import { SubagentDirectoryView } from "@/components/workbench/subagent-directory-view";
+import {
+  WorkbenchSidePanel,
+  type WorkbenchPanelTab,
+} from "@/components/workbench/workbench-side-panel";
 import { TodoProgressPanel } from "@/components/workbench/todo-progress-panel";
 import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
 import { WorkDirectorySelect } from "@/components/workbench/work-directory-select";
@@ -390,6 +395,16 @@ export function Workbench() {
 
   /** 最近一次「本轮自动提交」的时间戳（仅用于给用户一个可见回执 + 刷新分支 chip）。 */
   const [lastAutoCommitAt, setLastAutoCommitAt] = useState<string | null>(null);
+
+  /**
+   * 右栏停靠面板（R3-1）：变更 / 文档 / 子智能体 三个视图。
+   *
+   * 形态取自参考图（`扩展插件-添加终端、浏览器、变更等功能.png`：右栏是多标签面板；
+   * `子代理和git显示位置.png`：右侧面板带标签）。此前把「变更列表 / 文档」塞在分支下拉与
+   * 工作目录下拉里——那是**形态做错**：这些是「边看边改」的长驻视图，不是一次性弹层内容。
+   */
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [panelTab, setPanelTab] = useState<WorkbenchPanelTab>("changes");
 
   /** 侧栏里被收起的工作目录项目 id（默认全展开；持久化到 localStorage）。 */
   const [collapsedProjects, setCollapsedProjects] = useState<string[]>([]);
@@ -1837,9 +1852,9 @@ export function Workbench() {
             className="h-full w-full border-0"
           />
         ) : activeTask ? (
-          /* 面板列（标题 / 转录 / 输入框）自己居中，**滚动条留在主区最右侧**：
-             滚动条若挂在 768px 列内，出现/消失都会横向挤动对话内容（用户反馈）。 */
-          <div className="flex h-full flex-col">
+          /* 转录列 + 右栏停靠面板（面板收起时返回 null，不占宽）。 */
+          <div className="flex h-full">
+          <div className="flex h-full min-w-0 flex-1 flex-col">
             {/* 标题行：会话标题 + 本轮回执 + 插件面板入口；右端贴住工作目录与分支。
                 这两个 chip 取**对话自己绑定的项目**（run 的作用域就是它），
                 不依赖侧栏选中态——否则打开历史对话时它们会消失（用户反馈）。 */}
@@ -1874,9 +1889,6 @@ export function Workbench() {
                   <WorkDirectorySelect
                     projects={codeProjects}
                     selectedProjectId={conversationProject?.id ?? null}
-                    /* 文档入口（R3-3）读的是这个对话自己绑定目录里的 AGENTS.md 等 */
-                    accessToken={session?.access_token ?? null}
-                    canvasId={conversationProject?.primaryCanvas.id ?? null}
                     lockedHint={
                       conversationProject
                         ? `本次对话已绑定工作目录「${conversationProject.name}」`
@@ -1893,6 +1905,18 @@ export function Workbench() {
                     /* 自动提交后 key 变化 → 重新拉取更改统计 */
                     key={`${conversationProject?.primaryCanvas.id ?? ""}:${lastAutoCommitAt ?? ""}`}
                   />
+                  {/* 面板开关：与参考图一致，右栏由这个键开合 */}
+                  <button
+                    type="button"
+                    aria-label="面板"
+                    aria-expanded={panelOpen}
+                    title={panelOpen ? "收起面板" : "打开面板（变更 / 文档 / 子智能体）"}
+                    onClick={() => setPanelOpen((current) => !current)}
+                    className="rounded-md border p-1.5 text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground data-[active=true]:border-foreground/30 data-[active=true]:text-foreground"
+                    data-active={panelOpen}
+                  >
+                    <PanelRight className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               ) : null}
             </div>
@@ -2189,6 +2213,18 @@ export function Workbench() {
               </div>
             </form>
           </div>
+          {/* 右栏停靠面板：变更 / 文档 / 子智能体（参考图 R3-1 的多标签面板） */}
+          <WorkbenchSidePanel
+            open={panelOpen}
+            onClose={() => setPanelOpen(false)}
+            tab={panelTab}
+            onTabChange={setPanelTab}
+            accessToken={session?.access_token ?? null}
+            canvasId={conversationProject?.primaryCanvas.id ?? null}
+            subagents={activeTask.subagents ?? []}
+            running={activeTask.status === "running"}
+          />
+          </div>
         ) : (
           <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-6">
             <div className="mb-9 flex items-center gap-3">
@@ -2209,8 +2245,6 @@ export function Workbench() {
                 <WorkDirectorySelect
                   projects={codeProjects}
                   selectedProjectId={selectedProjectId}
-                  accessToken={session?.access_token ?? null}
-                  canvasId={selectedProject?.primaryCanvas.id ?? null}
                   busy={creatingProject}
                   onSelect={(projectId) => {
                     const project = codeProjects.find(
