@@ -79,6 +79,7 @@ function createFakeRepository(
   return {
     insert: async () => {},
     listRecent: async () => [],
+    longestSessionSeconds: async () => 0,
     ...overrides,
   };
 }
@@ -192,6 +193,46 @@ describe("usage repository（workspace 作用域 + 驱动数值归一）", () =>
     expect(sql).toContain("order by occurred_at desc");
     expect(sql).toContain("limit $1");
     expect(calls[0]?.values).toEqual([10000, WORKSPACE_ID]);
+  });
+
+  /**
+   * 最长聊天时长（R4-2 剩下的卡）。这条口径最容易写错成「所有消息的首尾差」——
+   * 那会把跨天的多条对话算成一条。这里锁死「先按会话分组取跨度、再取最大值」，
+   * 以及 FORM-9 的父链谓词（chat_sessions 没有 workspace_id 列）。
+   */
+  it("最长聊天时长：按会话分组取首尾跨度，谓词走 canvases → projects 父链", async () => {
+    const { calls, runner } = createRunner(() => ({
+      rowCount: 1,
+      rows: [{ seconds: "42300" }],
+    }));
+
+    const seconds = await createUsageRepository(
+      createPersistenceFromRunner(runner),
+    ).longestSessionSeconds(WORKSPACE_ID);
+
+    expect(seconds).toBe(42300);
+    const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
+    expect(sql).toContain("max(m.created_at) - min(m.created_at)");
+    expect(sql).toContain("group by s.id");
+    expect(sql).toContain("join public.canvases c on c.id = s.canvas_id");
+    // `:workspace` 由 persistence 层重写成位置参数；本条语句只有它一个参数，故是 $1
+    expect(sql).toContain("p.workspace_id = $1");
+    expect(calls[0]?.values).toEqual([WORKSPACE_ID]);
+    // 没有任何会话时 coalesce 兜 0，而不是把 null 透出去
+    expect(sql).toContain("coalesce(max(span_seconds), 0)");
+  });
+
+  it("最长聊天时长：NULL / 负值 / 非数字一律归 0（统计页不该出现 -1 秒）", async () => {
+    for (const raw of [null, "-5", "abc"]) {
+      const { runner } = createRunner(() => ({
+        rowCount: 1,
+        rows: [{ seconds: raw }],
+      }));
+      const seconds = await createUsageRepository(
+        createPersistenceFromRunner(runner),
+      ).longestSessionSeconds(WORKSPACE_ID);
+      expect(seconds).toBe(0);
+    }
   });
 });
 
@@ -441,5 +482,40 @@ describe("usage stats（R4-2 用户侧使用统计）", () => {
 
     const stats = await service.stats(USER, 7);
     expect(stats.byModel.map((entry) => entry.model)).toEqual(["big", "small"]);
+  });
+
+  it("最长聊天时长透出到响应（来自会话表的第二个数据源）", async () => {
+    const service = createUsageService({
+      repository: createFakeRepository({
+        listRecent: async () => [],
+        longestSessionSeconds: async () => 42_300,
+      }),
+      workspaces: WORKSPACES_STUB,
+      now: () => NOW,
+    });
+
+    expect((await service.stats(USER, 7)).longestSessionSeconds).toBe(42_300);
+  });
+
+  /**
+   * 会话表那条查询失败时，**不该把整页统计打成 500**：token 数字仍然有效，
+   * 缺的只是那一张卡。这里锁「其余字段照常给 + 该字段回落 0」。
+   */
+  it("最长聊天时长查询失败：统计仍返回，该字段回落 0", async () => {
+    const service = createUsageService({
+      repository: createFakeRepository({
+        listRecent: async () =>
+          rowsFor([{ offsetFromToday: 0, model: "m", input: 10, output: 5 }]),
+        longestSessionSeconds: async () => {
+          throw new Error("relation does not exist");
+        },
+      }),
+      workspaces: WORKSPACES_STUB,
+      now: () => NOW,
+    });
+
+    const stats = await service.stats(USER, 7);
+    expect(stats.longestSessionSeconds).toBe(0);
+    expect(stats.totals.tokens).toBe(15);
   });
 });

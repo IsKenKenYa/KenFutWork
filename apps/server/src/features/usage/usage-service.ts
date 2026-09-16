@@ -104,6 +104,11 @@ export function createUsageService(options: {
     rows: UsageRecordRow[],
     rangeDays: number,
     now: Date,
+    /**
+     * 最长聊天时长来自**另一个数据源**（会话/消息表），故由调用方传入而不是在函数里兜默认值：
+     * 类型上强制调用方显式提供，避免「忘了查」被静默成 0。
+     */
+    longestSessionSeconds: number,
   ): UsageStatsResponse {
     const today = now.toISOString().slice(0, 10);
     const windowStart = addUtcDays(today, -(rangeDays - 1));
@@ -156,6 +161,7 @@ export function createUsageService(options: {
       peakDayTokens: daily.reduce((peak, day) => Math.max(peak, day.tokens), 0),
       currentStreakDays,
       longestStreakDays,
+      longestSessionSeconds,
       daily,
       byModel: [...modelTotals.entries()]
         .map(([model, bucket]) => ({
@@ -257,7 +263,23 @@ export function createUsageService(options: {
             }`,
           );
         });
-      return buildStats(rows, rangeDays, (options.now ?? (() => new Date()))());
+      // 最长聊天时长来自会话/消息表（与 usage_records 无关的第二个数据源）：
+      // 它失败不该把整页统计打成 500 —— 卡片显示 0 并在日志留痕，其余数字照常给。
+      const longestSessionSeconds = await repository
+        .longestSessionSeconds(workspaceId)
+        .catch((error: unknown) => {
+          console.error(
+            "[usage] longestSessionSeconds query failed:",
+            error instanceof Error ? error.message : error,
+          );
+          return 0;
+        });
+      return buildStats(
+        rows,
+        rangeDays,
+        (options.now ?? (() => new Date()))(),
+        longestSessionSeconds,
+      );
     },
   };
 }

@@ -115,6 +115,12 @@ export const usageStatsResponseSchema = z.object({
   /** 当前连续活跃天数（从今天或昨天往回数）。 */
   currentStreakDays: z.number().int().nonnegative(),
   longestStreakDays: z.number().int().nonnegative(),
+  /**
+   * 最长聊天时长（秒）：**单会话首尾消息的时间跨度**里的最大值。
+   * 口径与取向见 `features/usage/repository.ts` 的 `longestSessionSeconds`——
+   * 不是「agent 跑了多久」，也不是「所有消息的首尾差」。
+   */
+  longestSessionSeconds: z.number().int().nonnegative(),
   /** 窗口内逐日序列（缺数据的天补 0，保证连续）。 */
   daily: z.array(
     z.object({

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/lib/auth-context";
 import { getServerBaseUrl } from "@/lib/env";
+import { formatDuration } from "@/lib/usage-format";
 
 // ── R4-2 使用统计（用户侧，设置「数据与统计 → 使用统计」） ──
 // 数据来自 /api/usage/stats?days=7|30（usage_records 按 UTC 日聚合）。
@@ -15,6 +16,8 @@ interface UsageStats {
   peakDayTokens: number;
   currentStreakDays: number;
   longestStreakDays: number;
+  /** 单条对话首尾消息的最大跨度（秒）；服务端口径见 usage 仓储的 longestSessionSeconds。 */
+  longestSessionSeconds: number;
   daily: Array<{ date: string; tokens: number }>;
   byModel: Array<{ provider: string; model: string; tokens: number }>;
 }
@@ -38,9 +41,18 @@ function shortDate(date: string): string {
   return date.slice(5).replace("-", "/");
 }
 
-function SummaryCard({ label, value }: { label: string; value: string }) {
+function SummaryCard({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  /** 口径说明（挂在 title 上）：数字含义有歧义时，别让用户自己猜。 */
+  hint?: string;
+}) {
   return (
-    <div className="rounded-xl border bg-card px-4 py-3">
+    <div className="rounded-xl border bg-card px-4 py-3" title={hint}>
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="mt-1 text-lg font-medium tabular-nums">{value}</div>
     </div>
@@ -292,6 +304,12 @@ export function UsageStatsSection() {
             <SummaryCard
               label="最长连续天数"
               value={`${stats.longestStreakDays} 天`}
+            />
+            {/* 口径挂在 title 上：这是「单条对话首尾消息的跨度」，不是「agent 跑了多久」 */}
+            <SummaryCard
+              label="最长聊天时长"
+              value={formatDuration(stats.longestSessionSeconds)}
+              hint="单条对话从第一条消息到最后一条消息的跨度"
             />
           </div>
 
