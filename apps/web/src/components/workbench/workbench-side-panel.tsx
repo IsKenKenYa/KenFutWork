@@ -3,12 +3,16 @@
 import type { TerminalShellId } from "@kenfutwork/shared";
 import {
   ArrowLeft,
+  ArrowRight,
+  Ellipsis,
   FileDiff as FileDiffIcon,
   FileText,
   Folder,
   GitBranch,
   Globe,
+  Monitor,
   MousePointerSquareDashed,
+  RotateCw,
   SquareTerminal,
   X,
 } from "lucide-react";
@@ -22,6 +26,15 @@ import {
 } from "@/components/ui/select";
 import { SubagentDirectoryView } from "@/components/workbench/subagent-directory-view";
 import { onBrowserOpen } from "@/lib/browser-panel";
+import {
+  canGoBack,
+  canGoForward,
+  createHistory,
+  currentUrl,
+  goBack,
+  goForward,
+  openUrl,
+} from "@/lib/browser-history";
 import {
   type CodeFileListing,
   fetchCodeDocs,
@@ -124,16 +137,22 @@ export function WorkbenchSidePanel({
   }> | null>(null);
   const [reading, setReading] = useState<Reading | null>(null);
   const [error, setError] = useState<string | null>(null);
-  /** 右栏浏览器（R3-1）：地址栏当前 URL（空 = 还没打开过）。 */
-  const [browserUrl, setBrowserUrl] = useState("");
+  /**
+   * 右栏浏览器（R3-1）：**面板内历史栈**（后退/前进/刷新按参考图补齐）。
+   * 不用 `iframe.contentWindow.history`——内嵌页面基本跨源，读不到它的历史（见 lib/browser-history）。
+   */
+  const [browserHistory, setBrowserHistory] = useState(createHistory);
+  const browserUrl = currentUrl(browserHistory);
   /** 地址栏输入框（与已加载的 URL 分开，回车才加载）。 */
   const [urlDraft, setUrlDraft] = useState("");
+  /** 刷新用的计数：改 key 让 iframe 真的重新加载（同 src 不会重载）。 */
+  const [reloadToken, setReloadToken] = useState(0);
 
   /** 转录里点链接 → 打开本标签并加载该 URL（见 lib/browser-panel）。 */
   useEffect(
     () =>
       onBrowserOpen((url) => {
-        setBrowserUrl(url);
+        setBrowserHistory((current) => openUrl(current, url));
         setUrlDraft(url);
       }),
     [],
@@ -421,11 +440,29 @@ export function WorkbenchSidePanel({
           <BrowserView
             url={browserUrl}
             draft={urlDraft}
+            reloadToken={reloadToken}
+            canBack={canGoBack(browserHistory)}
+            canForward={canGoForward(browserHistory)}
             onDraftChange={setUrlDraft}
             onNavigate={(next) => {
-              setBrowserUrl(next);
+              setBrowserHistory((current) => openUrl(current, next));
               setUrlDraft(next);
             }}
+            onBack={() => {
+              setBrowserHistory((current) => {
+                const next = goBack(current);
+                setUrlDraft(currentUrl(next));
+                return next;
+              });
+            }}
+            onForward={() => {
+              setBrowserHistory((current) => {
+                const next = goForward(current);
+                setUrlDraft(currentUrl(next));
+                return next;
+              });
+            }}
+            onReload={() => setReloadToken((token) => token + 1)}
           />
         ) : tab === "files" ? (
           <FilesView
@@ -757,87 +794,202 @@ function formatBytes(bytes: number): string {
  * 「选择网页元素加入聊天」（R3-4）需要跨源 DOM 访问，内嵌 iframe 拿不到，故按钮置灰
  * 并说明原因，不做假开关。
  */
+/**
+ * 右栏浏览器（R3-1 / R3-4 的可用形态）。工具栏按参考图的浏览器面板排：
+ * **后退 / 前进 / 刷新在左，地址栏居中，右侧是视图宽度与 ⋯ 菜单**（「在系统浏览器打开」等）。
+ *
+ * 三条如实写明的边界：
+ * - 后退/前进走**面板内历史栈**（跨源 iframe 读不到页面自己的 history）；
+ * - 视图宽度只是**本面板里的预览宽度**（参考图的「适应窗口 / 自由尺寸」），不改目标站点；
+ * - 「选择网页元素加入聊天」需要浏览器调试接口（CDP / 扩展），内嵌 iframe 拿不到跨源 DOM，
+ *   所以按钮**禁用**并写明原因——不做假开关。
+ */
 function BrowserView({
   url,
   draft,
+  reloadToken,
+  canBack,
+  canForward,
   onDraftChange,
   onNavigate,
+  onBack,
+  onForward,
+  onReload,
 }: {
   url: string;
   draft: string;
+  reloadToken: number;
+  canBack: boolean;
+  canForward: boolean;
   onDraftChange: (value: string) => void;
   onNavigate: (url: string) => void;
+  onBack: () => void;
+  onForward: () => void;
+  onReload: () => void;
 }) {
   const normalized = normalizeUrl(draft);
+  const [viewport, setViewport] = useState<ViewportPreset>("fit");
+  const viewportWidth =
+    VIEWPORT_PRESETS.find((preset) => preset.id === viewport)?.width ?? 0;
+
+  const navButtonClass =
+    "shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40";
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
       <form
-        className="flex items-center gap-1.5"
+        className="flex items-center gap-1"
         onSubmit={(event) => {
           event.preventDefault();
           if (normalized) onNavigate(normalized);
         }}
       >
-        <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <button
+          type="button"
+          aria-label="后退"
+          disabled={!canBack}
+          title="后退（本面板打开过的上一个地址）"
+          onClick={onBack}
+          className={navButtonClass}
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          aria-label="前进"
+          disabled={!canForward}
+          title="前进（本面板打开过的下一个地址）"
+          onClick={onForward}
+          className={navButtonClass}
+        >
+          <ArrowRight className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          aria-label="刷新"
+          disabled={!url}
+          title="重新加载当前页面"
+          onClick={onReload}
+          className={navButtonClass}
+        >
+          <RotateCw className="h-3.5 w-3.5" />
+        </button>
+        <Globe className="ml-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <input
           aria-label="地址"
           value={draft}
           onChange={(event) => onDraftChange(event.target.value)}
+          onKeyDown={(event) => {
+            // 工具栏里没有「打开」按钮（与参考图一致）：回车即打开。
+            // 不依赖表单的隐式提交——那要求表单里只有一个输入框，加个控件就会失效。
+            if (event.key === "Enter") {
+              event.preventDefault();
+              if (normalized) onNavigate(normalized);
+            }
+          }}
           placeholder="输入网址，回车打开"
           className="min-w-0 flex-1 rounded-md border bg-transparent px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
         />
-        <button
-          type="submit"
-          disabled={normalized === null}
-          className="shrink-0 rounded-md border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
+        <Select
+          aria-label="视图宽度"
+          value={viewport}
+          onValueChange={(next) => {
+            if (typeof next === "string") setViewport(next as ViewportPreset);
+          }}
+          items={VIEWPORT_PRESETS.map((preset) => ({
+            value: preset.id,
+            label: preset.label,
+          }))}
         >
-          打开
-        </button>
-      </form>
-
-      <div className="flex items-center gap-2">
-        {/* R3-4：拾取网页元素需要跨源 DOM 访问，内嵌 iframe 做不到——不给假按钮 */}
+          <SelectTrigger
+            className="shrink-0 gap-1 border-transparent bg-muted/60 px-2 py-1 text-[11px]"
+            aria-label="视图宽度"
+            title="本面板里的预览宽度（不改目标站点）"
+          >
+            <Monitor className="h-3.5 w-3.5" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="min-w-32">
+            {VIEWPORT_PRESETS.map((preset) => (
+              <SelectItem key={preset.id} value={preset.id}>
+                {preset.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <button
           type="button"
+          aria-label="选择网页元素加入聊天"
           disabled
-          title="选择网页元素加入聊天需要浏览器的调试接口（CDP/扩展），内嵌 iframe 拿不到跨源 DOM——属未实现能力"
-          className="flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] text-muted-foreground opacity-50"
+          title="需要浏览器调试接口（CDP / 扩展）才能读到跨源页面的 DOM，内嵌 iframe 做不到——未实现能力，不做假开关"
+          className="shrink-0 rounded-md p-1 text-muted-foreground opacity-40"
         >
-          <MousePointerSquareDashed className="h-3 w-3" />
-          选择网页元素加入聊天
+          <MousePointerSquareDashed className="h-3.5 w-3.5" />
         </button>
-        {url ? (
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[11px] text-muted-foreground underline hover:text-foreground"
+        <Select
+          aria-label="浏览器菜单"
+          value=""
+          onValueChange={(next) => {
+            if (next === "open-system" && url) {
+              window.open(url, "_blank", "noopener");
+            }
+            if (next === "copy" && url) {
+              void navigator.clipboard?.writeText(url);
+            }
+          }}
+          items={[
+            { value: "open-system", label: "在系统浏览器打开" },
+            { value: "copy", label: "复制地址" },
+          ]}
+        >
+          <SelectTrigger
+            className="shrink-0 gap-0 border-transparent px-1.5 py-1"
+            aria-label="浏览器菜单"
+            title="更多（在系统浏览器打开 / 复制地址）"
           >
-            在系统浏览器打开
-          </a>
-        ) : null}
-      </div>
+            <Ellipsis className="h-3.5 w-3.5" />
+          </SelectTrigger>
+          <SelectContent className="min-w-40">
+            <SelectItem value="open-system">在系统浏览器打开</SelectItem>
+            <SelectItem value="copy">复制地址</SelectItem>
+          </SelectContent>
+        </Select>
+      </form>
 
       {url ? (
-        <iframe
-          key={url}
-          src={url}
-          title={`右栏浏览器：${url}`}
-          className="min-h-0 flex-1 rounded-xl border bg-background"
-        />
+        <div className="flex min-h-0 flex-1 justify-center rounded-xl border bg-background">
+          <iframe
+            key={`${url}#${reloadToken}`}
+            src={url}
+            title={`右栏浏览器：${url}`}
+            {...(viewportWidth > 0 ? { style: { width: viewportWidth } } : {})}
+            className={
+              viewportWidth > 0 ? "h-full max-w-full shrink-0" : "h-full w-full"
+            }
+          />
+        </div>
       ) : (
         <p className="text-xs text-muted-foreground">
           还没有打开页面。对话里点链接会自动在这里打开，也可以在地址栏输入。
         </p>
       )}
       <p className="text-[10px] text-muted-foreground">
-        内嵌页面能否显示取决于目标站点是否允许被嵌入；被拒绝时会是一片空白，用上面的
-        「在系统浏览器打开」兜底。
+        内嵌页面能否显示取决于目标站点是否允许被嵌入；被拒绝时会是一片空白，用「在系统浏览器
+        打开」兜底。后退 / 前进记的是**本面板打开过的地址**（跨源页面自己的历史读不到）。
       </p>
     </div>
   );
 }
+
+/** 预览宽度预设（参考图的「适应窗口 / 自由尺寸」）。 */
+const VIEWPORT_PRESETS = [
+  { id: "fit", label: "适应面板", width: 0 },
+  { id: "phone", label: "手机 390", width: 390 },
+  { id: "tablet", label: "平板 768", width: 768 },
+  { id: "desktop", label: "桌面 1280", width: 1280 },
+] as const;
+
+type ViewportPreset = (typeof VIEWPORT_PRESETS)[number]["id"];
 
 /** 补全协议：裸地址（如 localhost:3000）按 http 处理；空串返回 null。 */
 export function normalizeUrl(value: string): string | null {

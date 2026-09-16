@@ -345,14 +345,41 @@ describe("右栏浏览器（点链接自动打开）", () => {
     expect(normalizeUrl("   ")).toBeNull();
   });
 
-  it("地址栏回车后渲染 iframe，并给「在系统浏览器打开」的出口", async () => {
+  it("地址栏回车后渲染 iframe；工具栏给后退/前进/刷新与「在系统浏览器打开」出口", async () => {
     render(<Harness initialTab="browser" />);
+    // 还没有打开过页面：后退/前进/刷新都是禁用的（不摆能点但没反应的键）
+    expect(screen.getByRole("button", { name: "后退" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "前进" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "刷新" })).toBeDisabled();
+
     const input = screen.getByLabelText("地址");
     await userEvent.type(input, "localhost:8000{Enter}");
     expect(
       await screen.findByTitle("右栏浏览器：http://localhost:8000"),
     ).toBeInTheDocument();
-    expect(screen.getByText("在系统浏览器打开")).toBeInTheDocument();
+
+    // 打开过一页后刷新可用、前进仍不可用；再开一页才出现后退
+    expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "前进" })).toBeDisabled();
+    await userEvent.clear(input);
+    await userEvent.type(input, "localhost:8001{Enter}");
+    expect(
+      await screen.findByTitle("右栏浏览器：http://localhost:8001"),
+    ).toBeInTheDocument();
+    const back = screen.getByRole("button", { name: "后退" });
+    expect(back).toBeEnabled();
+    await userEvent.click(back);
+    expect(
+      await screen.findByTitle("右栏浏览器：http://localhost:8000"),
+    ).toBeInTheDocument();
+
+    // 「在系统浏览器打开」在 ⋯ 菜单里（地址栏右侧）
+    const menu = screen.getByLabelText("浏览器菜单");
+    await userEvent.click(menu);
+    expect(
+      await screen.findByRole("option", { name: "在系统浏览器打开" }),
+    ).toBeInTheDocument();
+
     // 元素拾取需要 CDP，不给假按钮：按钮存在但禁用
     expect(
       screen.getByRole("button", { name: /选择网页元素加入聊天/ }),
