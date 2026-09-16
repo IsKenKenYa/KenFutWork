@@ -22,6 +22,8 @@ type ImageGeneratorPanelProps = {
   data: ImageGeneratorData;
   excalidrawApi: any;
   accessToken: string;
+  /** 当前画布会话（§4.8）：实例自定义头的 `{{sessionId}}` 按它渲染；无会话时缺省。 */
+  sessionId?: string | undefined;
   canvasScrollZoom: { scrollX: number; scrollY: number; zoom: number };
   onClose: () => void;
 };
@@ -45,6 +47,7 @@ export function ImageGeneratorPanel({
   data,
   excalidrawApi,
   accessToken,
+  sessionId,
   canvasScrollZoom,
   onClose,
 }: ImageGeneratorPanelProps) {
@@ -172,7 +175,7 @@ export function ImageGeneratorPanel({
       const result = await generateImageDirect(
         accessTokenRef.current,
         prompt.trim(),
-        { model, aspectRatio, quality },
+        { model, aspectRatio, quality, ...(sessionId ? { sessionId } : {}) },
       );
 
       // Check if this generation was cancelled while awaiting
@@ -233,6 +236,7 @@ export function ImageGeneratorPanel({
     model,
     aspectRatio,
     quality,
+    sessionId,
     excalidrawApi,
     elementId,
     elementBounds,

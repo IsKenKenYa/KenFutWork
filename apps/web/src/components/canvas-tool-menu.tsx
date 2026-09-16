@@ -88,6 +88,8 @@ type CanvasToolMenuProps = {
   accessToken: string;
   excalidrawApi: any;
   leftPanelOpen?: boolean;
+  /** 当前画布会话（§4.8）：透给生成面板，实例自定义头的 {{sessionId}} 按它渲染。 */
+  sessionId?: string | undefined;
 };
 
 /** Memoized shimmer overlay for a single generating element */
@@ -157,6 +159,7 @@ export function CanvasToolMenu({
   accessToken,
   excalidrawApi,
   leftPanelOpen,
+  sessionId,
 }: CanvasToolMenuProps) {
   const [activeTool, setActiveTool] = useState<string>("selection");
 
@@ -566,6 +569,7 @@ export function CanvasToolMenu({
           data={generatorData}
           excalidrawApi={excalidrawApi}
           accessToken={accessToken}
+          sessionId={sessionId}
           canvasScrollZoom={canvasScrollZoom}
           onClose={handleCloseGenerator}
         />
@@ -579,6 +583,7 @@ export function CanvasToolMenu({
           data={videoGenData}
           excalidrawApi={excalidrawApi}
           accessToken={accessToken}
+          sessionId={sessionId}
           canvasScrollZoom={canvasScrollZoom}
           onClose={handleCloseVideoGenerator}
         />

@@ -55,6 +55,10 @@ function CanvasPageContent() {
   });
   const [layersOpen, setLayersOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
+  /** 当前画布会话：由聊天侧栏回调更新（URL 只作初始值），供生成类工具渲染自定义头占位符。 */
+  const [activeSessionId, setActiveSessionId] = useState<string | undefined>(
+    initialSessionId,
+  );
   const [brandKitId, setBrandKitId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("未命名画布");
   const [selectedCanvasElements, setSelectedCanvasElements] = useState<
@@ -155,6 +159,9 @@ function CanvasPageContent() {
   const handleSessionChange = useCallback(
     (sessionId: string) => {
       if (!canvasId) return;
+      // 会话 id 同时留在状态里：生成类工具（图片/视频）要用它渲染实例自定义头的
+      // {{sessionId}} 占位符（§4.8）——只改 URL 的话面板取不到（此前正是如此）。
+      setActiveSessionId(sessionId);
       // Update URL: set session param, remove prompt param to prevent re-send on refresh
       routerRef.current.replace(`/canvas?id=${canvasId}&session=${sessionId}`);
     },
@@ -295,6 +302,7 @@ function CanvasPageContent() {
           ws={ws}
           leftPanelOpen={layersOpen || filesOpen}
           onSelectionChange={setSelectedCanvasElements}
+          sessionId={activeSessionId}
           overlay={
             <CanvasEmptyHint
               excalidrawApi={excalidrawApi}

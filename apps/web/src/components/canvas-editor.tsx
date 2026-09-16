@@ -64,6 +64,8 @@ type CanvasEditorProps = {
   ws?: WebSocketHandle;
   leftPanelOpen?: boolean;
   onSelectionChange?: (elements: CanvasSelectedElement[]) => void;
+  /** 当前画布会话（§4.8）：生成类工具的自定义头占位符按它渲染。 */
+  sessionId?: string | undefined;
 };
 
 const SAVE_DEBOUNCE_MS = 1500;
@@ -80,6 +82,7 @@ export function CanvasEditor({
   ws,
   leftPanelOpen,
   onSelectionChange,
+  sessionId,
 }: CanvasEditorProps) {
   const { resolvedTheme } = useTheme();
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -634,6 +637,7 @@ export function CanvasEditor({
             accessToken={accessToken}
             excalidrawApi={excalidrawApi}
             leftPanelOpen={leftPanelOpen ?? false}
+            sessionId={sessionId}
           />
         )}
       </div>
