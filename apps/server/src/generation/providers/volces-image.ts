@@ -13,10 +13,16 @@ export class VolcesImageProvider implements ImageProvider {
   readonly models = [] as const;
   private apiKey: string;
   private baseURL: string;
+  private headers: Record<string, string> | undefined;
 
-  constructor(apiKey: string, baseURL?: string) {
+  constructor(
+    apiKey: string,
+    baseURL?: string,
+    headers?: Record<string, string>,
+  ) {
     this.apiKey = apiKey;
     this.baseURL = baseURL ?? DEFAULT_BASE_URL;
+    this.headers = headers;
   }
 
   async generate(params: ImageGenerateParams): Promise<GeneratedImage> {
@@ -34,6 +40,8 @@ export class VolcesImageProvider implements ImageProvider {
     const response = await fetch(`${this.baseURL}/images/generations`, {
       method: "POST",
       headers: {
+        // 自定义头（§4.8）在前，凭证与内容类型随后——保留头永远由适配器说了算
+        ...this.headers,
         Authorization: `Bearer ${this.apiKey}`,
         "Content-Type": "application/json",
       },

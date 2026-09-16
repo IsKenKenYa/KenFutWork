@@ -3,6 +3,10 @@ import type {
   VideoProvider,
 } from "../../../generation/types.js";
 import {
+  type HeaderRenderContext,
+  instanceHeadersOption,
+} from "../../../providers/instance-headers.js";
+import {
   resolveInstanceImageProvider,
   resolveInstanceVideoProvider,
 } from "../../../providers/resolve.js";
@@ -11,6 +15,9 @@ import type { ModelProviderService } from "../../model-providers/model-provider-
 /**
  * BYOK：任务载荷带 provider_instance_id 时，按用户供应商实例实例化协议适配器。
  * 无实例 id（内置目录）返回 undefined，走遗留全局注册表路径。
+ *
+ * 自定义请求头（§4.8）：会话上下文取自 **job 行**的 session_id/thread_id——
+ * 必须逐会话取值，否则亲和类头会塌成实例级常量。
  */
 
 type ExecutorCtx = { modelProviders?: ModelProviderService };
@@ -27,6 +34,7 @@ async function resolveCredentials(instanceId: string, ctx: ExecutorCtx) {
 export async function resolveInstanceImageProviderFromPayload(
   instanceId: string | undefined,
   ctx: ExecutorCtx,
+  headerContext: HeaderRenderContext = {},
 ): Promise<ImageProvider | undefined> {
   if (!instanceId) {
     return undefined;
@@ -36,6 +44,7 @@ export async function resolveInstanceImageProviderFromPayload(
     credentials: {
       apiKey: credentials.apiKey,
       ...(credentials.baseUrl ? { baseUrl: credentials.baseUrl } : {}),
+      ...instanceHeadersOption(credentials.headers, headerContext),
     },
     models: credentials.models
       .filter((m) => m.capability === "image")
@@ -46,6 +55,7 @@ export async function resolveInstanceImageProviderFromPayload(
 export async function resolveInstanceVideoProviderFromPayload(
   instanceId: string | undefined,
   ctx: ExecutorCtx,
+  headerContext: HeaderRenderContext = {},
 ): Promise<VideoProvider | undefined> {
   if (!instanceId) {
     return undefined;
@@ -55,6 +65,7 @@ export async function resolveInstanceVideoProviderFromPayload(
     credentials: {
       apiKey: credentials.apiKey,
       ...(credentials.baseUrl ? { baseUrl: credentials.baseUrl } : {}),
+      ...instanceHeadersOption(credentials.headers, headerContext),
     },
     models: credentials.models
       .filter((m) => m.capability === "video")

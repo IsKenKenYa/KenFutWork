@@ -10,6 +10,7 @@ export function createInstanceImageProvider(
   const delegate = new VolcesImageProvider(
     options.credentials.apiKey,
     options.credentials.baseUrl,
+    options.credentials.headers,
   );
   return {
     name: "volces",

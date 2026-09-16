@@ -39,6 +39,7 @@ export function createInstanceImageProvider(
   const delegate = new OpenAIImageProvider(
     options.credentials.apiKey,
     options.credentials.baseUrl,
+    options.credentials.headers,
   );
   return {
     name: "openai-compatible",

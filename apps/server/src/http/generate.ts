@@ -23,6 +23,7 @@ import type { ModelProviderService } from "../features/model-providers/model-pro
 import type { UploadService } from "../features/uploads/upload-service.js";
 import { generateImage } from "../generation/image-generation.js";
 import { resolveImageProviderName } from "../generation/providers/registry.js";
+import { instanceHeadersOption } from "../providers/instance-headers.js";
 import { resolveInstanceImageProvider } from "../providers/resolve.js";
 
 const generateImageRequestSchema = z.object({
@@ -128,6 +129,9 @@ export async function registerGenerateRoutes(
           credentials: {
             apiKey: credentials.apiKey,
             ...(credentials.baseUrl ? { baseUrl: credentials.baseUrl } : {}),
+            // 直连生成请求没有会话上下文：实例若把 {{sessionId}} 用在这里，
+            // renderInstanceHeaders 会 fail loud 给出可读原因，而不是发出字面量。
+            ...instanceHeadersOption(credentials.headers, {}),
           },
           models: credentials.models
             .filter((m) => m.capability === "image")

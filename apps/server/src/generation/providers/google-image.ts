@@ -79,8 +79,12 @@ export class GoogleImageProvider implements ImageProvider {
 
   private client: GoogleGenAI;
 
-  constructor(apiKey: string) {
-    this.client = new GoogleGenAI({ apiKey });
+  constructor(apiKey: string, headers?: Record<string, string>) {
+    this.client = new GoogleGenAI({
+      apiKey,
+      // 自定义头（§4.8）：x-goog-api-key 等保留头由 SDK 按 apiKey 生成，不受其影响
+      ...(headers ? { httpOptions: { headers } } : {}),
+    });
   }
 
   async generate(params: ImageGenerateParams): Promise<GeneratedImage> {
