@@ -1,6 +1,6 @@
 "use client";
 
-import type { ExecutionMode, ProjectSummary } from "@loomic/shared";
+import type { ExecutionMode, ProjectSummary } from "@kenfutwork/shared";
 import {
   Blocks,
   Brain,
@@ -9,11 +9,14 @@ import {
   FolderOpen,
   FolderPlus,
   Layers,
+  Loader2,
   MessageSquare,
   Mic,
   Palette,
   PanelLeftClose,
   PanelLeftOpen,
+  PanelRight,
+  PanelsTopLeft,
   Plug,
   Plus,
   Send,
@@ -31,7 +34,15 @@ import {
   useComposerContextMenu,
 } from "@/components/chat/composer-context-menu";
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
-import { LoomicLogo } from "@/components/icons/loomic-logo";
+import { RunStopButton } from "@/components/chat/run-stop-button";
+import { ToolOutputRenderer } from "@/components/chat/tool-block-view";
+import { KenFutWorkLogo } from "@/components/icons/kenfutwork-logo";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -40,9 +51,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ContextUsageButton } from "@/components/workbench/context-usage-button";
+import {
+  ComposerCompactSelect,
+  THINKING_OPTIONS,
+  TIER_OPTIONS,
+} from "@/components/workbench/composer-compact-select";
 import { ElapsedEntry } from "@/components/workbench/elapsed-entry";
 import { GitBranchSelect } from "@/components/workbench/git-branch-select";
-import { ToolOutputRenderer } from "@/components/chat/tool-block-view";
 import { McpModal } from "@/components/workbench/mcp-modal";
 import { PluginMarketModal } from "@/components/workbench/plugin-market-modal";
 import {
@@ -52,16 +68,33 @@ import {
 import { SidebarRow } from "@/components/workbench/sidebar-row";
 import { SkillsModal } from "@/components/workbench/skills-modal";
 import { SubagentDirectoryView } from "@/components/workbench/subagent-directory-view";
+import {
+  WorkbenchSidePanel,
+  type WorkbenchPanelTab,
+} from "@/components/workbench/workbench-side-panel";
+import { onBrowserOpen } from "@/lib/browser-panel";
+import { TodoProgressPanel } from "@/components/workbench/todo-progress-panel";
 import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
 import { WorkDirectorySelect } from "@/components/workbench/work-directory-select";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useAuth } from "@/lib/auth-context";
-import { getServerBaseUrl } from "@/lib/env";
-import { describeRunFailure } from "@/lib/run-failure";
+import { commitGitAll } from "@/lib/code-git-api";
 import {
-  applyToolEvent,
-  type TaskToolEntry,
-} from "@/lib/workbench-tools";
+  usageFromEvent,
+  type RunUsageSnapshot,
+} from "@/lib/context-usage";
+import { resolveDesignAutoCanvas } from "@/lib/design-auto-canvas";
+import { getServerBaseUrl } from "@/lib/env";
+import {
+  MAX_SIDEBAR_WIDTH,
+  MIN_CONVERSATION_WIDTH,
+  MIN_SIDEBAR_WIDTH,
+  SIDEBAR_RAIL_WIDTH,
+  panelWidthLimits,
+} from "@/lib/panel-layout";
+import { PluginPanelButtons } from "@/lib/plugin-panels";
+import { dropPartialAssistantTail } from "@/lib/run-events";
+import { describeRunFailure } from "@/lib/run-failure";
 import {
   createProject,
   deleteProject,
@@ -85,11 +118,21 @@ import {
   resolveWorkbenchSurface,
   type WorkbenchMode,
 } from "@/lib/workbench-surface";
+import {
+  previewGroup,
+  resolveTaskIndicator,
+  SESSION_PREVIEW_LIMIT,
+} from "@/lib/workbench-task-list";
+import type { TodoItem } from "@/lib/todo-progress";
+import {
+  applyTaskToolEvent,
+  type TaskToolEntry,
+} from "@/lib/workbench-tools";
 
 /**
  * Agent 工作台（产品主入口）：Code / Design 双模式（DEC-2）。
  * 模式切换、插件市场、任务列表与个人中心全部内聚在左侧栏（TRAE 式），
- * 设置与插件市场为居中模态；design 模式的画布经项目面板自动打开（Loomic
+ * 设置与插件市场为居中模态；design 模式的画布经项目面板自动打开（KenFutWork
  * 仅作为 design 模式及其依赖能力的承载）。
  */
 
@@ -129,6 +172,10 @@ interface WorkbenchTask {
   runEndedAt?: string | undefined;
   /** 子代理运行条目（R1-3：由 task/video_generate 工具事件推导） */
   subagents?: SubagentEntry[];
+  /** agent 自己维护的待办表（R1-2：由 write_todos 工具事件推导） */
+  todos?: TodoItem[];
+  /** 本轮用量快照（R4-1：服务端 run.usage 事件，上下文容量/缓存命中浮层的数据源） */
+  usage?: RunUsageSnapshot;
 }
 
 /**
@@ -217,6 +264,9 @@ const MODE_META: Record<  WorkbenchMode,
 
 const TASKS_STORAGE_KEY = "workbench-tasks";
 
+/** 「未分组」在「显示更多」展开状态里的分组 key（项目 id 不会取到这个名字）。 */
+const UNGROUPED_KEY = "__ungrouped__";
+
 function loadTasks(mode: WorkbenchMode): WorkbenchTask[] {
   if (typeof window === "undefined") return [];
   try {
@@ -262,6 +312,23 @@ export function Workbench() {
   // Code 模式对话区右键菜单（原生菜单在应用内浏览器不弹，用户无法复制/粘贴）
   const chatMenu = useChatContextMenu();
   const codeMessagesRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * 转录列预留的滚动条走廊宽度（`scrollbar-gutter: stable` 让滚动条不挤动内容，
+   * 但那条走廊只属于 scroller——标题行与输入区若不留同样一条，三块内容就对不齐
+   * （实测窄列差 10px、居中时中心差 5px）。宽度与平台/缩放有关，故量一次写进 CSS 变量。
+   */
+  const [scrollbarLane, setScrollbarLane] = useState(0);
+  useEffect(() => {
+    const measure = () => {
+      const el = codeMessagesRef.current;
+      if (!el) return;
+      setScrollbarLane(el.offsetWidth - el.clientWidth);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [activeTaskId]);
   const [chatNotice, setChatNotice] = useState<string | null>(null);
   /** Code 模式输入框（右键编辑菜单需要拿它的选区）。 */
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -297,6 +364,8 @@ export function Workbench() {
   const [submitting, setSubmitting] = useState(false);
   // Design 模式：项目面板（创建/列表）+ 原版画布内嵌
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  /** 画布项目列表至少取过一次（成功或失败）——自动进画布的判据之一，避免拉取途中误建画布。 */
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     null,
   );
@@ -321,6 +390,13 @@ export function Workbench() {
   const activeTaskIdRef = useRef<string | null>(null);
   activeTaskIdRef.current = activeTaskId;
 
+  /** tasksByMode 的镜像：事件回调里要读最新任务（状态更新是异步的）。 */
+  const tasksByModeRef = useRef<Record<WorkbenchMode, WorkbenchTask[]>>({
+    code: [],
+    design: [],
+  });
+  tasksByModeRef.current = tasksByMode;
+
   const tasks = tasksByMode[mode];
   /**
    * 当前选中的项目：Code 模式在「工作目录项目」（kind='code'）里找，Design 在画布
@@ -336,6 +412,114 @@ export function Workbench() {
     () => tasks.find((t) => t.id === activeTaskId) ?? null,
     [tasks, activeTaskId],
   );
+
+  /**
+   * 对话视图里工作目录/分支该显示哪个项目：**以对话自己绑定的项目为准**
+   * （run 的作用域就是它的主画布）。只认页面的 `selectedProjectId` 会让打开历史
+   * 对话时两个 chip 消失/显示成别的工作目录——用户反馈「对话开始之后不显示」。
+   */
+  const conversationProject =
+    mode === "code" && activeTask?.projectId
+      ? (codeProjects.find((p) => p.id === activeTask.projectId) ?? null)
+      : null;
+
+  /** 最近一次「本轮自动提交」的时间戳（仅用于给用户一个可见回执 + 刷新分支 chip）。 */
+  const [lastAutoCommitAt, setLastAutoCommitAt] = useState<string | null>(null);
+
+  /**
+   * 右栏停靠面板（R3-1）：变更 / 文档 / 子智能体 三个视图。
+   *
+   * 形态取自参考图（`扩展插件-添加终端、浏览器、变更等功能.png`：右栏是多标签面板；
+   * `子代理和git显示位置.png`：右侧面板带标签）。此前把「变更列表 / 文档」塞在分支下拉与
+   * 工作目录下拉里——那是**形态做错**：这些是「边看边改」的长驻视图，不是一次性弹层内容。
+   */
+  /** 左侧栏宽度（可拖拽，持久化：与右栏面板同样，宽度是用户偏好）。 */
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    if (typeof window === "undefined") return 256;
+    const saved = Number(window.localStorage.getItem("workbench:sidebar-width"));
+    return Number.isFinite(saved) &&
+      saved >= MIN_SIDEBAR_WIDTH &&
+      saved <= MAX_SIDEBAR_WIDTH
+      ? saved
+      : 256;
+  });
+
+  const startSidebarResize = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = sidebarWidth;
+    const clamp = (next: number) =>
+      Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, next));
+    const onMove = (moveEvent: MouseEvent) => {
+      setSidebarWidth(clamp(startWidth + (moveEvent.clientX - startX)));
+    };
+    const onUp = (upEvent: MouseEvent) => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      window.localStorage.setItem(
+        "workbench:sidebar-width",
+        String(clamp(startWidth + (upEvent.clientX - startX))),
+      );
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [sidebarWidth]);
+
+  /**
+   * 视口宽度（面板上限要按它现算：视口 − 左栏 − 对话列最小宽度）。
+   * 窗口尺寸变化时重算，面板会被收回到新上限内（见 lib/panel-layout）。
+   */
+  const [windowWidth, setWindowWidth] = useState(() =>
+    typeof window === "undefined" ? 0 : window.innerWidth,
+  );
+  useEffect(() => {
+    const onResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const panelLimits = useMemo(
+    () => panelWidthLimits({ windowWidth, sidebarWidth, sidebarCollapsed }),
+    [windowWidth, sidebarWidth, sidebarCollapsed],
+  );
+
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [panelTab, setPanelTab] = useState<WorkbenchPanelTab>("changes");
+
+  /**
+   * 转录里点链接 → 自动打开右栏「浏览器」标签（用户口径：点对话里的 URL 就在右边打开）。
+   * 订阅放工作台：面板只渲染，开合与切标签由这里决定。
+   */
+  useEffect(
+    () =>
+      onBrowserOpen(() => {
+        setPanelOpen(true);
+        setPanelTab("browser");
+      }),
+    [],
+  );
+
+  /** 侧栏里被收起的工作目录项目 id（默认全展开；持久化到 localStorage）。 */
+  const [collapsedProjects, setCollapsedProjects] = useState<string[]>([]);
+
+  /**
+   * 侧栏里「显示更多」展开过的分组（项目 id / 未分组用常量 key；持久化）。
+   * 一个工作目录下几十条对话时，默认只露前 `SESSION_PREVIEW_LIMIT` 条。
+   */
+  const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
+
+  /**
+   * 已结束但用户还没打开过的对话 id（侧栏图标显示实心气泡）。
+   * 跑完的那一刻若不在当前会话，就标记未读；打开即清（见下面的 effect）。
+   */
+  const [unreadTaskIds, setUnreadTaskIds] = useState<string[]>([]);
+
+  /**
+   * 本页确实在跑的那条会话（侧栏转圈只认它）。
+   * 不能拿任务数据里的 `status === "running"` 当判据：那是「起过表、还没收到终态」，
+   * 进程重启/关页会留下永远转圈的陈旧记录（实测侧栏一排假转圈）。
+   */
+  const [runningTaskId, setRunningTaskId] = useState<string | null>(null);
 
   /** 主区判定：Design 模式恒为画布（不变量集中在 resolveWorkbenchSurface 与它的测试里）。 */
   const surface = resolveWorkbenchSurface({
@@ -356,13 +540,101 @@ export function Workbench() {
       design: loadTasks("design"),
     });
     try {
+      const rawCollapsed = window.localStorage.getItem(
+        "workbench:collapsed-projects",
+      );
+      setCollapsedProjects(
+        rawCollapsed ? (JSON.parse(rawCollapsed) as string[]) : [],
+      );
+    } catch {
+      setCollapsedProjects([]);
+    }
+    try {
       setThinking(
         window.localStorage.getItem("workbench:thinking") ?? "default",
       );
     } catch {
       // 存储不可用时用默认档
     }
+    try {
+      // 上次选的模型；目录拉回后再校验是否仍存在（见下面的 setModel 回调）
+      setModel(window.localStorage.getItem("workbench:model") ?? "");
+    } catch {
+      // 存储不可用：由目录第一条兜底
+    }
+    try {
+      const rawExpanded = window.localStorage.getItem(
+        "workbench:expanded-groups",
+      );
+      setExpandedGroups(
+        rawExpanded ? (JSON.parse(rawExpanded) as string[]) : [],
+      );
+    } catch {
+      setExpandedGroups([]);
+    }
   }, []);
+
+  // 未读数按模式各存一份（切模式不该把另一边清空）
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(`workbench-unread:${mode}`);
+      setUnreadTaskIds(raw ? (JSON.parse(raw) as string[]) : []);
+    } catch {
+      setUnreadTaskIds([]);
+    }
+  }, [mode]);
+
+  /** 未读标记的读写：写 localStorage 与 state 一起（打开会话即清）。 */
+  const setTaskUnread = useCallback(
+    (taskId: string, unread: boolean) => {
+      setUnreadTaskIds((prev) => {
+        const already = prev.includes(taskId);
+        if (already === unread) return prev;
+        const next = unread
+          ? [...prev, taskId]
+          : prev.filter((id) => id !== taskId);
+        try {
+          window.localStorage.setItem(
+            `workbench-unread:${mode}`,
+            JSON.stringify(next),
+          );
+        } catch {
+          // 存储失败不影响本次会话内的标记
+        }
+        return next;
+      });
+    },
+    [mode],
+  );
+
+  // 打开（或新建）会话即视为已读
+  useEffect(() => {
+    if (activeTaskId) setTaskUnread(activeTaskId, false);
+  }, [activeTaskId, setTaskUnread]);
+
+  /** 「显示更多 / 收起」：按分组切换并持久化（分组 key = 项目 id / 未分组常量）。 */
+  const toggleGroupExpanded = useCallback((groupKey: string) => {
+    setExpandedGroups((prev) => {
+      const next = prev.includes(groupKey)
+        ? prev.filter((key) => key !== groupKey)
+        : [...prev, groupKey];
+      try {
+        window.localStorage.setItem(
+          "workbench:expanded-groups",
+          JSON.stringify(next),
+        );
+      } catch {
+        // 存储失败不影响使用
+      }
+      return next;
+    });
+  }, []);
+
+  /** run → 所属会话的映射（放在 ref 里供挂载期注册的事件回调读）。 */
+  const runTaskIdRef = useRef<string | null>(null);
+  /** 事件回调的 deps 只有 ws/mode，未读标记经 ref 读最新实现。 */
+  const setTaskUnreadRef = useRef(setTaskUnread);
+  setTaskUnreadRef.current = setTaskUnread;
 
   const handleThinkingChange = useCallback((next: string) => {
     setThinking(next);
@@ -394,8 +666,15 @@ export function Workbench() {
     // 两类项目各取一份：design=画布项目，code=工作目录项目（「工作目录=项目」）。
     // 都在服务端一处持有，客户端不再另造 localStorage 项目（那是两套真相的来源）。
     fetchProjects(token, "design")
-      .then((data) => setProjects(data.projects))
-      .catch(() => {});
+      .then((data) => {
+        setProjects(data.projects);
+        setProjectsLoaded(true);
+      })
+      .catch(() => {
+        // 拉取失败也标记「已尝试」：否则 Design 模式会永远停在编排器；
+        // 自动建画布只试一次，失败后由用户从侧栏手动新建。
+        setProjectsLoaded(true);
+      });
     fetchProjects(token, "code")
       .then((data) => setCodeProjects(data.projects))
       .catch(() => {});
@@ -644,23 +923,37 @@ export function Workbench() {
     [mode],
   );
 
-  // Design 模式自动进画布：无选中项目时选第一个；列表为空则自动建「未命名画布」
+  // Design 模式自动进画布：无选中项目时选第一个；列表为空则自动建「未命名画布」。
+  // 判定抽到 `resolveDesignAutoCanvas`（纯函数 + 单测），这里只做副作用。
+  /** 自动建画布只试一次：项目列表拉取失败时避免每次渲染都重发创建请求。 */
+  const autoCanvasTriedRef = useRef(false);
   useEffect(() => {
-    if (mode !== "design" || activeTaskId || creatingProject) return;
-    if (selectedProjectId) return;
-    if (projects.length > 0) {
-      setSelectedProjectId(projects[0]!.id);
+    const decision = resolveDesignAutoCanvas({
+      mode,
+      activeTaskId,
+      creatingProject,
+      projectsLoaded,
+      designProjectIds: projects.map((p) => p.id),
+      selectedProjectId,
+      autoCreateTried: autoCanvasTriedRef.current,
+    });
+    if (decision.kind === "select") {
+      setSelectedProjectId(decision.projectId);
       return;
     }
-    void createProjectNamed("未命名画布").then((project) => {
-      if (project) setSelectedProjectId(project.id);
-    });
+    if (decision.kind === "create") {
+      autoCanvasTriedRef.current = true;
+      void createProjectNamed("未命名画布").then((project) => {
+        if (project) setSelectedProjectId(project.id);
+      });
+    }
   }, [
     mode,
     activeTaskId,
-    selectedProjectId,
-    projects,
     creatingProject,
+    projectsLoaded,
+    projects,
+    selectedProjectId,
     createProjectNamed,
   ]);
 
@@ -682,18 +975,43 @@ export function Workbench() {
       .then((r) => (r.ok ? r.json() : { models: [] }))
       .then((data: { models: WorkbenchModelOption[] }) => {
         setModels(data.models);
-        setModel((current) => current || data.models[0]?.id || "");
+        /**
+         * 默认取「上次选的」（`workbench:model`），失效才回落目录第一条。
+         *
+         * 只取第一条会踩到：目录顺序取决于实例创建序，工作区里常同时挂着多个实例
+         * （自带的、替身、平台池），刷新后默认模型可能变成用户没要的那个实例——
+         * 实测因此拿着一个失效实例的 Key 每轮 401。
+         */
+        setModel((current) =>
+          current && data.models.some((m) => m.id === current)
+            ? current
+            : (data.models[0]?.id ?? ""),
+        );
       })
       .catch(() => {});
   }, [session]);
 
+  /** 模型选择：记住到 localStorage（与 thinking 同一口径）。 */
+  const handleModelChange = useCallback((next: string) => {
+    setModel(next);
+    try {
+      window.localStorage.setItem("workbench:model", next);
+    } catch {
+      // 存储失败不阻塞
+    }
+  }, []);
+
   // 流事件 → 任务消息
   useEffect(() => {
     const off = ws.onEvent((evt) => {
-      const runId = (evt as { runId?: string }).runId;
-      if (!runId || runId !== activeRunIdRef.current) return;
       const type = (evt as { type?: string }).type;
-      const taskId = activeTaskIdRef.current;
+      const runId = (evt as { runId?: string }).runId;
+      /**
+       * 事件归属：run 起跑时记下的那个会话，而不是「此刻打开的会话」——
+       * 用户在运行中切到别的对话时，delta/工具/终态都还该落在原来那条对话上
+       * （否则串到当前打开的会话里），且终态要能把后台那条对话标成未读。
+       */
+      const taskId = runTaskIdRef.current ?? activeTaskIdRef.current;
       if (!taskId) return;
       const apply = (mutate: (task: WorkbenchTask) => WorkbenchTask) => {
         setTasksByMode((prev) => {
@@ -704,42 +1022,46 @@ export function Workbench() {
           return nextAll;
         });
       };
+      /** 终态：不在前台就标未读（侧栏图标转实心），并把转圈收掉。 */
+      const markUnreadIfBackground = () => {
+        setRunningTaskId(null);
+        if (taskId !== activeTaskIdRef.current) {
+          setTaskUnreadRef.current(taskId, true);
+        }
+      };
+      /**
+       * 重试：服务端整段重跑并**换一个新 runId**（事件里带的就是新 id）。
+       * 这条必须在 runId 过滤**之前**处理——新 id 与跟踪值不相等，按常规过滤会被丢掉，
+       * 紧接着这一轮所有事件（含终态）一起丢，任务永远停在「运行中」。
+       */
+      if (type === "run.retrying") {
+        if (!runId || !activeRunIdRef.current) return;
+        activeRunIdRef.current = runId;
+        // 整段重来：丢掉上一轮已流出的半截回复，避免新旧内容接在一起
+        apply((task) => ({
+          ...task,
+          messages: dropPartialAssistantTail(task.messages),
+        }));
+        return;
+      }
+      if (!runId || runId !== activeRunIdRef.current) return;
       if (type === "run.started") {
         // 服务端权威起表时刻（覆盖提交时的本地乐观值）
         const ts = (evt as { timestamp?: string }).timestamp;
         if (ts) apply((task) => ({ ...task, runStartedAt: ts }));
-      } else if (type === "tool.started") {
-        const toolName = (evt as { toolName?: string }).toolName ?? "";
-        if (!isSubagentTool(toolName)) return;
-        const toolCallId = (evt as { toolCallId?: string }).toolCallId ?? "";
-        if (!toolCallId) return;
-        const timestamp = (evt as { timestamp?: string }).timestamp ?? "";
-        const input = (evt as { input?: Record<string, unknown> }).input;
-        apply((task) => ({
-          ...task,
-          subagents: upsertSubagentStarted(task.subagents ?? [], {
-            toolCallId,
-            toolName,
-            ...(input ? { input } : {}),
-            timestamp,
-          }),
-        }));
-      } else if (type === "tool.completed") {
-        const toolCallId = (evt as { toolCallId?: string }).toolCallId ?? "";
-        const timestamp = (evt as { timestamp?: string }).timestamp;
-        if (!toolCallId || !timestamp) return;
+      } else if (type === "tool.started" || type === "tool.completed") {
+        // 工具轨迹对所有工具都记（含被工具门拒绝的合成事件），子代理工具另进目录。
+        // 曾经这里写成「先处理子代理、非子代理直接 return」，把通用分支变成死代码。
         apply((task) =>
-          task.subagents
-            ? {
-                ...task,
-                subagents: completeSubagent(
-                  task.subagents,
-                  toolCallId,
-                  timestamp,
-                ),
-              }
-            : task,
+          applyTaskToolEvent(
+            task,
+            evt as Parameters<typeof applyTaskToolEvent>[1],
+          ),
         );
+      } else if (type === "run.usage") {
+        // 本轮最后一次模型调用的累计用量（上下文容量 / 缓存命中浮层）
+        const usage = usageFromEvent(evt);
+        if (usage) apply((task) => ({ ...task, usage }));
       } else if (type === "message.delta") {
         const delta = (evt as { delta?: string }).delta ?? "";
         if (!delta) return;
@@ -756,14 +1078,6 @@ export function Workbench() {
           }
           return { ...task, messages };
         });
-      } else if (type === "tool.started" || type === "tool.completed") {
-        apply((task) => ({
-          ...task,
-          tools: applyToolEvent(
-            task.tools ?? [],
-            evt as Parameters<typeof applyToolEvent>[1],
-          ),
-        }));
       } else if (type === "run.completed") {
         const ts = (evt as { timestamp?: string }).timestamp;
         apply((task) => ({
@@ -774,6 +1088,11 @@ export function Workbench() {
             ? { subagents: closeAllSubagents(task.subagents, ts) }
             : {}),
         }));
+        // 每轮成功结束自动提交一次（Code 模式 + 已绑项目），让对话在 git 里有迹可循
+        if (mode === "code") {
+          void autoCommitTurn(taskId);
+        }
+        markUnreadIfBackground();
       } else if (type === "billing.error") {
         // 平台池额度/套餐拦截（FORM-10）：服务端给的是可读原因，
         // 直接透出，别让用户只看到「运行失败，请重试」。
@@ -784,6 +1103,7 @@ export function Workbench() {
           status: "failed",
           messages: [...task.messages, { role: "assistant", text: message }],
         }));
+        markUnreadIfBackground();
       } else if (type === "run.failed") {
         // 服务端在 error.message 里给的是可读原因（如「模型流已 180 秒没有任何
         // 输出（上游停滞）」「run 未绑定项目」）。此前一律丢弃、只显示固定文案，
@@ -803,6 +1123,7 @@ export function Workbench() {
             { role: "assistant", text: failureText },
           ],
         }));
+        markUnreadIfBackground();
       } else if (type === "run.canceled") {
         const canceledTs = (evt as { timestamp?: string }).timestamp;
         apply((task) => ({
@@ -813,6 +1134,8 @@ export function Workbench() {
             ? { subagents: closeAllSubagents(task.subagents, canceledTs) }
             : {}),
         }));
+        // 用户自己按的停止：算已读，但转圈要收掉
+        setRunningTaskId(null);
       }
     });
     return off;
@@ -1030,6 +1353,9 @@ export function Workbench() {
           const payload = ack.payload as { runId?: string } | undefined;
           if (payload?.runId) {
             activeRunIdRef.current = payload.runId;
+            // 事件归属：本轮 run 属于哪个会话（用户中途切走也不会串台）
+            runTaskIdRef.current = task.id;
+            setRunningTaskId(task.id);
           }
           setSubmitting(false);
         },
@@ -1053,6 +1379,44 @@ export function Workbench() {
     void signOut();
     router.push("/login");
   }, [signOut, router]);
+
+  /**
+   * 本轮结束自动提交（「每次对话用 git 跟踪」）：Code 模式 + 已绑工作目录项目时，
+   * 把这一轮的改动提交到工作目录的仓库里，便于回滚。
+   *
+   * 静默失败：不是 git 仓库 / 改动的就是没东西可提交 / git 不可用——都不打扰用户
+   * （分支 chip 上本来就写着「非 Git 仓库」）。
+   */
+  /** 事件回调注册在挂载期（deps 只有 ws/mode），必须经 ref 读最新值——否则拿到的是
+      首轮的 null（实测：自动提交静默不触发，就是因为闭包里的 token/项目是 null）。 */
+  const autoCommitContextRef = useRef<{ token: string | null; canvasId: string | null }>({
+    token: null,
+    canvasId: null,
+  });
+  autoCommitContextRef.current = {
+    token: session?.access_token ?? null,
+    canvasId: selectedProject?.primaryCanvas?.id ?? null,
+  };
+
+  const autoCommitTurn = useCallback(
+    async (taskId: string | null) => {
+      const { token, canvasId } = autoCommitContextRef.current;
+      if (!token || !canvasId || !taskId) return;
+      const task = tasksByModeRef.current.code.find((t) => t.id === taskId);
+      if (!task) return;
+      const round = Math.max(
+        1,
+        task.messages.filter((m) => m.role === "assistant").length,
+      );
+      try {
+        await commitGitAll(token, canvasId, `${task.title}（第 ${round} 轮）`);
+        setLastAutoCommitAt(new Date().toISOString());
+      } catch {
+        // 没有仓库 / 无改动可提交：跳过
+      }
+    },
+    [],
+  );
 
   /** 任务视图内继续追问：追加 user 消息并复用同一会话发起新 run。 */
   const continueTask = useCallback(
@@ -1112,6 +1476,8 @@ export function Workbench() {
           const payload = ack.payload as { runId?: string } | undefined;
           if (payload?.runId) {
             activeRunIdRef.current = payload.runId;
+            runTaskIdRef.current = taskId;
+            setRunningTaskId(taskId);
           }
           setSubmitting(false);
         },
@@ -1153,11 +1519,20 @@ export function Workbench() {
   }));
 
   return (
-    <div className="flex h-screen bg-background text-foreground">
+    <div
+      className="flex h-screen bg-background text-foreground"
+      style={
+        {
+          "--workbench-sidebar": `${
+            sidebarCollapsed ? SIDEBAR_RAIL_WIDTH : sidebarWidth
+          }px`,
+        } as React.CSSProperties
+      }
+    >
       {sidebarCollapsed ? (
         /* 收起态：图标栏（模式切换 + 插件市场 + 底部头像） */
         <aside className="flex w-12 shrink-0 flex-col items-center gap-1 border-r bg-card py-2">
-          <LoomicLogo className="mb-1 size-7 shrink-0" />
+          <KenFutWorkLogo className="mb-1 size-7 shrink-0" />
           <button
             type="button"
             aria-label="展开侧栏"
@@ -1202,11 +1577,23 @@ export function Workbench() {
         </aside>
       ) : (
         /* 展开态：logo + 模式切换 + 插件市场 + 项目(design) + 任务列表 + 底部个人中心 */
-        <aside className="flex w-64 shrink-0 flex-col border-r bg-card">
+        <aside
+          style={{ width: sidebarWidth }}
+          className="relative flex shrink-0 flex-col border-r bg-card"
+        >
+          {/* 拖拽把手：贴侧栏右边缘；向右拖 = 变宽 */}
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="调整侧栏宽度"
+            onMouseDown={startSidebarResize}
+            className="absolute top-0 -right-0.5 z-10 h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-foreground/20"
+          />
           <div className="flex items-center justify-between px-3 pt-3 pb-2">
             <span className="flex items-center gap-2">
-              <LoomicLogo className="size-7 text-foreground" />
-              <span className="text-base font-semibold tracking-tight">
+              <KenFutWorkLogo className="size-7 text-foreground" />
+              {/* 字标：加粗放大 + 品牌「岚」渐变（低饱和双色，深浅色各一套） */}
+              <span className="bg-gradient-to-r from-[#2F3459] to-[#575E96] bg-clip-text text-lg font-bold tracking-tight text-transparent dark:from-[#A6ACD8] dark:to-[#C3C8E6]">
                 KenFutWork
               </span>
             </span>
@@ -1268,6 +1655,22 @@ export function Workbench() {
             >
               <Plug className="h-4 w-4 shrink-0" /> MCP
             </button>
+            {/* 插件面板（能力 `ui`）：侧栏槽位 */}
+            <PluginPanelButtons
+              accessToken={session?.access_token ?? null}
+              slot="sidebar"
+              renderButton={(panel, open) => (
+                <button
+                  key={panel.id}
+                  type="button"
+                  onClick={open}
+                  title={`插件 ${panel.pluginId} 提供的面板`}
+                  className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <PanelsTopLeft className="h-4 w-4 shrink-0" /> {panel.title}
+                </button>
+              )}
+            />
           </nav>
 
           <div className="mx-3 my-2 border-t" />
@@ -1374,20 +1777,75 @@ export function Workbench() {
                         !knownProjectIds.has(t.projectId)),
                   );
                   const archived = tasks.filter((t) => t.archived);
-                  const taskRow = (t: WorkbenchTask) => (
-                    <SidebarRow
-                      key={t.id}
-                      label={t.title}
-                      active={activeTaskId === t.id}
-                      icon={
-                        <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      }
-                      onOpen={() => setActiveTaskId(t.id)}
-                      onRename={(next) => renameTask(t.id, next)}
-                      onArchive={() => setTaskArchived(t.id, true)}
-                      onDelete={() => deleteTask(t.id)}
-                    />
-                  );
+                  const taskRow = (t: WorkbenchTask) => {
+                    const indicator = resolveTaskIndicator(
+                      t.status === "running" && runningTaskId === t.id,
+                      unreadTaskIds.includes(t.id),
+                    );
+                    return (
+                      <SidebarRow
+                        key={t.id}
+                        label={t.title}
+                        active={activeTaskId === t.id}
+                        icon={
+                          indicator === "running" ? (
+                            /* 与对话图标同色（不再用琥珀色：侧栏一排转圈太抢眼） */
+                            <Loader2
+                              aria-label="运行中"
+                              className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground"
+                            />
+                          ) : (
+                            <MessageSquare
+                              className={`h-3.5 w-3.5 shrink-0 ${
+                                indicator === "unread"
+                                  ? "fill-current text-foreground"
+                                  : "text-muted-foreground"
+                              }`}
+                            />
+                          )
+                        }
+                        onOpen={() => setActiveTaskId(t.id)}
+                        onRename={(next) => renameTask(t.id, next)}
+                        onArchive={() => setTaskArchived(t.id, true)}
+                        onDelete={() => deleteTask(t.id)}
+                      />
+                    );
+                  };
+                  /**
+                   * 分组内的对话列表：默认只露前 `SESSION_PREVIEW_LIMIT` 条，
+                   * 其余收进「显示更多」——一个工作目录下几十条对话时，侧栏不该被单个
+                   * 工作目录撑满（展开状态按分组持久化）。
+                   */
+                  const taskGroup = (groupKey: string, items: WorkbenchTask[]) => {
+                    const { visible, hiddenCount } = previewGroup(
+                      items,
+                      expandedGroups.includes(groupKey),
+                    );
+                    return (
+                      <div className="ml-4 space-y-0.5 border-l pl-1">
+                        {visible.map(taskRow)}
+                        {hiddenCount > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => toggleGroupExpanded(groupKey)}
+                            className="w-full rounded-md px-2 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                          >
+                            显示更多
+                          </button>
+                        ) : null}
+                        {items.length > SESSION_PREVIEW_LIMIT &&
+                        expandedGroups.includes(groupKey) ? (
+                          <button
+                            type="button"
+                            onClick={() => toggleGroupExpanded(groupKey)}
+                            className="w-full rounded-md px-2 py-1 text-left text-xs text-muted-foreground/70 transition-colors hover:bg-muted hover:text-muted-foreground"
+                          >
+                            收起
+                          </button>
+                        ) : null}
+                      </div>
+                    );
+                  };
                   return (
                     <>
                       {codeProjects.map((p) => {
@@ -1402,6 +1860,23 @@ export function Workbench() {
                               icon={
                                 <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                               }
+                              expanded={!collapsedProjects.includes(p.id)}
+                              onToggleExpanded={() =>
+                                setCollapsedProjects((prev) => {
+                                  const next = prev.includes(p.id)
+                                    ? prev.filter((id) => id !== p.id)
+                                    : [...prev, p.id];
+                                  try {
+                                    window.localStorage.setItem(
+                                      "workbench:collapsed-projects",
+                                      JSON.stringify(next),
+                                    );
+                                  } catch {
+                                    // 存储失败不影响使用
+                                  }
+                                  return next;
+                                })
+                              }
                               onOpen={() => {
                                 setSelectedProjectId(p.id);
                                 setWorkDirName(p.name);
@@ -1412,15 +1887,17 @@ export function Workbench() {
                               }
                               onDelete={() => void removeCodeProject(p.id)}
                             />
-                            <div className="ml-4 space-y-0.5 border-l pl-1">
-                              {items.length === 0 ? (
-                                <p className="px-2 py-1 text-xs text-muted-foreground/70">
-                                  暂无对话
-                                </p>
+                            {collapsedProjects.includes(p.id) ? null : (
+                              items.length === 0 ? (
+                                <div className="ml-4 space-y-0.5 border-l pl-1">
+                                  <p className="px-2 py-1 text-xs text-muted-foreground/70">
+                                    暂无对话
+                                  </p>
+                                </div>
                               ) : (
-                                items.map(taskRow)
-                              )}
-                            </div>
+                                taskGroup(p.id, items)
+                              )
+                            )}
                           </div>
                         );
                       })}
@@ -1429,9 +1906,7 @@ export function Workbench() {
                           <p className="px-2 py-1 text-xs text-muted-foreground">
                             未分组
                           </p>
-                          <div className="ml-4 space-y-0.5 border-l pl-1">
-                            {ungrouped.map(taskRow)}
-                          </div>
+                          {taskGroup(UNGROUPED_KEY, ungrouped)}
                         </div>
                       ) : null}
                       {archived.length > 0 ? (
@@ -1480,7 +1955,7 @@ export function Workbench() {
       {/* 主区：Design＝画布（恒为画布，见 resolveWorkbenchSurface）/ Code＝任务视图 或 居中编排器 */}
       <main className="min-w-0 flex-1 overflow-hidden bg-card">
         {surface === "canvas" ? (
-          /* Design：选中项目后画布自动打开（原版 Loomic 画布，对话在画布内助手里） */
+          /* Design：选中项目后画布自动打开（原版 KenFutWork 画布，对话在画布内助手里） */
           <iframe
             key={`${selectedProject?.primaryCanvas.id}:${canvasPrompt ?? ""}`}
             src={`/canvas?id=${selectedProject?.primaryCanvas.id}${
@@ -1490,17 +1965,106 @@ export function Workbench() {
             className="h-full w-full border-0"
           />
         ) : activeTask ? (
-          <div className="mx-auto flex h-full max-w-3xl flex-col p-6">
-            <h1 className="mb-4 text-lg font-medium">{activeTask.title}</h1>
+          /* 转录列 + 右栏停靠面板（面板收起时返回 null，不占宽）。 */
+          <div className="flex h-full">
+          <div
+            className="flex h-full min-w-0 flex-1 flex-col"
+            style={
+              { "--scrollbar-lane": `${scrollbarLane}px` } as React.CSSProperties
+            }
+          >
+            {/* 标题行：会话标题 + 本轮回执 + 插件面板入口；右端贴住工作目录与分支。
+                这两个 chip 取**对话自己绑定的项目**（run 的作用域就是它），
+                不依赖侧栏选中态——否则打开历史对话时它们会消失（用户反馈）。 */}
+            <div className="shrink-0 pr-[var(--scrollbar-lane,0px)]">
+              <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-6 pt-6 pb-4">
+              <h1 className="min-w-0 truncate text-lg font-medium">
+                {activeTask.title}
+              </h1>
+              {lastAutoCommitAt ? (
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  已自动提交本轮
+                </span>
+              ) : null}
+              {/* 插件面板（能力 `ui`）：对话槽位 */}
+              <PluginPanelButtons
+                accessToken={session?.access_token ?? null}
+                slot="conversation"
+                renderButton={(panel, open) => (
+                  <button
+                    key={panel.id}
+                    type="button"
+                    onClick={open}
+                    title={`插件 ${panel.pluginId} 提供的面板`}
+                    className="flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+                  >
+                    <PanelsTopLeft className="h-3.5 w-3.5" />
+                    {panel.title}
+                  </button>
+                )}
+              />
+              {mode === "code" ? (
+                <div className="ml-auto flex shrink-0 items-center gap-2">
+                  <WorkDirectorySelect
+                    projects={codeProjects}
+                    selectedProjectId={conversationProject?.id ?? null}
+                    lockedHint={
+                      conversationProject
+                        ? `本次对话已绑定工作目录「${conversationProject.name}」`
+                        : "本次对话没有绑定工作目录"
+                    }
+                    busy={creatingProject}
+                    onSelect={() => undefined}
+                    onOpenFolder={() => undefined}
+                    onClear={() => undefined}
+                  />
+                  <GitBranchSelect
+                    accessToken={session?.access_token ?? null}
+                    canvasId={conversationProject?.primaryCanvas.id ?? null}
+                    /* 自动提交后 key 变化 → 重新拉取更改统计 */
+                    key={`${conversationProject?.primaryCanvas.id ?? ""}:${lastAutoCommitAt ?? ""}`}
+                  />
+                  {/* 面板开关：与参考图一致，右栏由这个键开合 */}
+                  <button
+                    type="button"
+                    aria-label="面板"
+                    aria-expanded={panelOpen}
+                    title={panelOpen ? "收起面板" : "打开面板（变更 / 文档 / 子智能体）"}
+                    onClick={() => setPanelOpen((current) => !current)}
+                    className="rounded-md border p-1.5 text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground data-[active=true]:border-foreground/30 data-[active=true]:text-foreground"
+                    data-active={panelOpen}
+                  >
+                    <PanelRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : null}
+              </div>
+            </div>
             <div
               ref={codeMessagesRef}
-              className="min-h-0 flex-1 space-y-4 overflow-y-auto"
+              className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
               onContextMenu={chatMenu.open}
             >
+              <div className="mx-auto w-full max-w-3xl space-y-4 px-6 pb-2">
               {activeTask.runStartedAt ? (
                 <ElapsedEntry
                   startedAt={activeTask.runStartedAt}
                   endedAt={activeTask.runEndedAt}
+                  running={activeTask.status === "running"}
+                />
+              ) : null}
+              {/* 目标 + 进度（R1-2）：模型用了 write_todos 才出现，条数从事件流推导 */}
+              {activeTask.todos && activeTask.todos.length > 0 ? (
+                <TodoProgressPanel
+                  /* 目标 = 本轮的用户诉求（最后一条用户消息），不是首条——
+                     首条是这条对话最初问的，跟当前这轮的待办不是一回事 */
+                  goal={
+                    [...activeTask.messages]
+                      .reverse()
+                      .find((message) => message.role === "user")?.text ??
+                    activeTask.title
+                  }
+                  items={activeTask.todos}
                   running={activeTask.status === "running"}
                 />
               ) : null}
@@ -1560,10 +2124,14 @@ export function Workbench() {
                   </span>
                 </div>
               ) : null}
+              </div>
             </div>
-            {/* 底部：继续对话（完整版工具行 + 多轮，复用同一会话） */}
+            {/* 底部：继续对话（完整版工具行 + 多轮，复用同一会话）。
+                工作目录与分支已移到标题行右端，输入框不再背标签条。 */}
+
+            <div className="shrink-0 pr-[var(--scrollbar-lane,0px)]">
             <form
-              className="mt-4 rounded-xl border bg-background p-3"
+              className="mx-auto w-full max-w-3xl px-6 pt-3 pb-4"
               onSubmit={(e) => {
                 e.preventDefault();
                 const value = followUp;
@@ -1571,88 +2139,55 @@ export function Workbench() {
                 continueTask(value);
               }}
             >
-              <textarea
-                ref={composerRef}
-                aria-label="继续对话"
-                value={followUp}
-                onChange={(e) => {
-                  setFollowUp(e.target.value);
-                  // 自动长高（并隐藏滚动条：对话框右侧不出现滚动条）
-                  const el = e.currentTarget;
-                  el.style.height = "auto";
-                  el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-                }}
-                onContextMenu={composerMenu.open}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    const value = followUp;
-                    setFollowUp("");
-                    continueTask(value);
-                  }
-                }}
-                rows={2}
-                placeholder="继续追问…"
-                style={{ scrollbarWidth: "none" }}
-                className="max-h-40 min-h-[24px] w-full resize-none overflow-hidden bg-transparent text-sm outline-none placeholder:text-muted-foreground [&::-webkit-scrollbar]:hidden"
-              />
-              {workDirNotice ? (
-                <p className="mt-2 text-xs text-destructive">{workDirNotice}</p>
-              ) : null}
-              <div className="mt-2 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    title="附件（即将上线）"
-                    className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </button>
-                  <GitBranchSelect
-                    accessToken={session?.access_token ?? null}
-                    canvasId={selectedProject?.primaryCanvas.id ?? null}
-                  />
-                  <WorkDirectorySelect
-                    projects={codeProjects}
-                    selectedProjectId={selectedProjectId}
-                    busy={creatingProject}
-                    onSelect={(projectId) => {
-                      const project = codeProjects.find(
-                        (p) => p.id === projectId,
-                      );
-                      setSelectedProjectId(projectId);
-                      setWorkDirName(project?.name ?? null);
-                      setWorkDirNotice(null);
-                    }}
-                    onOpenFolder={() => void pickWorkDirectory()}
-                    onClear={clearWorkDirectory}
-                  />
-                  <Select
-                    aria-label="权限档位"
-                    value={tier}
-                    onValueChange={(next) => {
-                      const tierValue = typeof next === "string" ? next : tier;
-                      if (tierValue !== tier) void handleTierChange(tierValue);
-                    }}
-                    items={[
-                      { value: "default", label: "默认" },
-                      { value: "auto-approve", label: "自动放行" },
-                      { value: "full-access", label: "完全访问" },
-                    ]}
-                  >
-                    <SelectTrigger
-                      className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
-                      aria-label="权限档位"
+              <div className="@container/composer rounded-xl border bg-background p-3">
+                <textarea
+                  ref={composerRef}
+                  aria-label="继续对话"
+                  value={followUp}
+                  onChange={(e) => {
+                    setFollowUp(e.target.value);
+                    // 自动长高（并隐藏滚动条：对话框右侧不出现滚动条）
+                    const el = e.currentTarget;
+                    el.style.height = "auto";
+                    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+                  }}
+                  onContextMenu={composerMenu.open}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      const value = followUp;
+                      setFollowUp("");
+                      continueTask(value);
+                    }
+                  }}
+                  rows={2}
+                  placeholder="继续追问…"
+                  style={{ scrollbarWidth: "none" }}
+                  className="max-h-40 min-h-[24px] w-full resize-none overflow-hidden bg-transparent text-sm outline-none placeholder:text-muted-foreground [&::-webkit-scrollbar]:hidden"
+                />
+                {workDirNotice ? (
+                  <p className="mt-2 text-xs text-destructive">
+                    {workDirNotice}
+                  </p>
+                ) : null}
+                <div className="mt-1.5 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      title="附件（即将上线）"
+                      className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
                     >
-                      <ShieldCheck className="h-3.5 w-3.5" />
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="min-w-28">
-                      <SelectItem value="default">默认</SelectItem>
-                      <SelectItem value="auto-approve">自动放行</SelectItem>
-                      <SelectItem value="full-access">完全访问</SelectItem>
-                    </SelectContent>
-                  </Select>
+                      <Plus className="h-4 w-4" />
+                    </button>
+                  <ComposerCompactSelect
+                    ariaLabel="权限档位"
+                    icon={<ShieldCheck className="h-3.5 w-3.5" />}
+                    options={TIER_OPTIONS}
+                    value={tier}
+                    onChange={(next) => {
+                      void handleTierChange(next);
+                    }}
+                  />
                   <Select
                     aria-label="执行模式"
                     value={executionMode}
@@ -1683,7 +2218,7 @@ export function Workbench() {
                     aria-label="模型"
                     value={model}
                     onValueChange={(next) => {
-                      if (typeof next === "string") setModel(next);
+                      if (typeof next === "string") handleModelChange(next);
                     }}
                     items={
                       models.length === 0
@@ -1716,35 +2251,21 @@ export function Workbench() {
                       )}
                     </SelectContent>
                   </Select>
-                  <Select
-                    aria-label="思考强度"
+                  {/* 上下文容量 / 缓存命中（R4-1）：模型旁一个圆形入口 */}
+                  <ContextUsageButton
+                    usage={activeTask.usage ?? null}
+                    contextWindow={
+                      models.find((m) => m.id === model)?.contextWindow ?? null
+                    }
+                  />
+                  <ComposerCompactSelect
+                    ariaLabel="思考强度"
+                    icon={<Brain className="h-3.5 w-3.5" />}
+                    options={THINKING_OPTIONS}
                     value={thinking}
-                    onValueChange={(next) => {
-                      if (typeof next === "string") handleThinkingChange(next);
-                    }}
-                    items={[
-                      { value: "default", label: "默认" },
-                      { value: "低", label: "低" },
-                      { value: "中", label: "中" },
-                      { value: "高", label: "高" },
-                      { value: "最高", label: "最高" },
-                    ]}
-                  >
-                    <SelectTrigger
-                      className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
-                      aria-label="思考强度"
-                    >
-                      <Brain className="h-3.5 w-3.5" />
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="min-w-24">
-                      <SelectItem value="default">默认</SelectItem>
-                      <SelectItem value="低">低</SelectItem>
-                      <SelectItem value="中">中</SelectItem>
-                      <SelectItem value="高">高</SelectItem>
-                      <SelectItem value="最高">最高</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    onChange={handleThinkingChange}
+                    contentClassName="min-w-24"
+                  />
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -1755,13 +2276,11 @@ export function Workbench() {
                     <Mic className="h-4 w-4" />
                   </button>
                   {activeTask.status === "running" && activeRunIdRef.current ? (
-                    <button
-                      type="button"
-                      className="rounded-md border px-3 py-1.5 text-sm text-destructive hover:bg-muted"
-                      onClick={() => ws.cancelRun(activeRunIdRef.current!)}
-                    >
-                      停止
-                    </button>
+                    /* 停止 = 暂停图标（与发送按钮同一个图标位，不再是一枚突兀的文字按钮）；
+                       与 Design 画布助手共用同一个组件，免得两处图标/文案漂移 */
+                    <RunStopButton
+                      onStop={() => ws.cancelRun(activeRunIdRef.current!)}
+                    />
                   ) : (
                     <button
                       type="submit"
@@ -1774,11 +2293,31 @@ export function Workbench() {
                   )}
                 </div>
               </div>
+              </div>
             </form>
+            </div>
+          </div>
+          {/* 右栏停靠面板：变更 / 文档 / 子智能体（参考图 R3-1 的多标签面板） */}
+          <WorkbenchSidePanel
+            open={panelOpen}
+            onClose={() => setPanelOpen(false)}
+            tab={panelTab}
+            onTabChange={setPanelTab}
+            accessToken={session?.access_token ?? null}
+            canvasId={conversationProject?.primaryCanvas.id ?? null}
+            subagents={activeTask.subagents ?? []}
+            running={activeTask.status === "running"}
+            widthLimits={panelLimits}
+            /* CSS 兜底：宿主不派发 resize 事件时 JS 的 limits 会陈旧，这条由排版保证
+               对话列 ≥ MIN_CONVERSATION_WIDTH（数值与 lib/panel-layout 同一口径） */
+            maxWidthExpression={`calc(100vw - var(--workbench-sidebar, 256px) - ${MIN_CONVERSATION_WIDTH}px)`}
+            /* 拖到上限还往里拖 → 收起左栏腾地方（用户口径：再往左边拉，侧栏自动收起来） */
+            onGrowBlocked={() => setSidebarCollapsed(true)}
+          />
           </div>
         ) : (
-          <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-6">
-            <div className="mb-6 flex items-center gap-3">
+            <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-6">
+            <div className="mb-9 flex items-center gap-3">
               {mode === "code" ? (
                 <Code2 className="h-8 w-8" />
               ) : (
@@ -1789,7 +2328,31 @@ export function Workbench() {
               </h1>
             </div>
 
-            <div className="w-full rounded-2xl border bg-background p-4 shadow-sm">
+            <div className="w-full">
+              {/* 工作目录 + 分支：贴住输入框上沿的标签条（文件夹标签的读法），
+                  不再挤进输入框底部那排小控件 */}
+              <div className="flex items-center gap-3 rounded-t-2xl border border-b-0 bg-muted/50 px-3 py-1.5">
+                <WorkDirectorySelect
+                  projects={codeProjects}
+                  selectedProjectId={selectedProjectId}
+                  busy={creatingProject}
+                  onSelect={(projectId) => {
+                    const project = codeProjects.find(
+                      (p) => p.id === projectId,
+                    );
+                    setSelectedProjectId(projectId);
+                    setWorkDirName(project?.name ?? null);
+                    setWorkDirNotice(null);
+                  }}
+                  onOpenFolder={() => void pickWorkDirectory()}
+                  onClear={clearWorkDirectory}
+                />
+                <GitBranchSelect
+                  accessToken={session?.access_token ?? null}
+                  canvasId={selectedProject?.primaryCanvas.id ?? null}
+                />
+              </div>
+              <div className="@container/composer rounded-b-2xl border bg-background p-4 shadow-sm">
               <textarea
                 aria-label="任务描述"
                 value={prompt}
@@ -1811,7 +2374,7 @@ export function Workbench() {
               {workDirNotice ? (
                 <p className="mt-2 text-xs text-destructive">{workDirNotice}</p>
               ) : null}
-              <div className="mt-3 flex items-center justify-between">
+              <div className="mt-2 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -1820,51 +2383,15 @@ export function Workbench() {
                   >
                     <Plus className="h-4 w-4" />
                   </button>
-                  <GitBranchSelect
-                    accessToken={session?.access_token ?? null}
-                    canvasId={selectedProject?.primaryCanvas.id ?? null}
-                  />
-                  <WorkDirectorySelect
-                    projects={codeProjects}
-                    selectedProjectId={selectedProjectId}
-                    busy={creatingProject}
-                    onSelect={(projectId) => {
-                      const project = codeProjects.find(
-                        (p) => p.id === projectId,
-                      );
-                      setSelectedProjectId(projectId);
-                      setWorkDirName(project?.name ?? null);
-                      setWorkDirNotice(null);
-                    }}
-                    onOpenFolder={() => void pickWorkDirectory()}
-                    onClear={clearWorkDirectory}
-                  />
-                  <Select
-                    aria-label="权限档位"
+                  <ComposerCompactSelect
+                    ariaLabel="权限档位"
+                    icon={<ShieldCheck className="h-3.5 w-3.5" />}
+                    options={TIER_OPTIONS}
                     value={tier}
-                    onValueChange={(next) => {
-                      const tierValue = typeof next === "string" ? next : tier;
-                      if (tierValue !== tier) void handleTierChange(tierValue);
+                    onChange={(next) => {
+                      void handleTierChange(next);
                     }}
-                    items={[
-                      { value: "default", label: "默认" },
-                      { value: "auto-approve", label: "自动放行" },
-                      { value: "full-access", label: "完全访问" },
-                    ]}
-                  >
-                    <SelectTrigger
-                      className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
-                      aria-label="权限档位"
-                    >
-                      <ShieldCheck className="h-3.5 w-3.5" />
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="min-w-28">
-                      <SelectItem value="default">默认</SelectItem>
-                      <SelectItem value="auto-approve">自动放行</SelectItem>
-                      <SelectItem value="full-access">完全访问</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  />
                   <Select
                     aria-label="执行模式"
                     value={executionMode}
@@ -1895,7 +2422,7 @@ export function Workbench() {
                     aria-label="模型"
                     value={model}
                     onValueChange={(next) => {
-                      if (typeof next === "string") setModel(next);
+                      if (typeof next === "string") handleModelChange(next);
                     }}
                     items={
                       models.length === 0
@@ -1981,35 +2508,21 @@ export function Workbench() {
                       )}
                     </SelectContent>
                   </Select>
-                  <Select
-                    aria-label="思考强度"
+                  {/* 上下文容量 / 缓存命中（R4-1）：模型旁一个圆形入口 */}
+                  <ContextUsageButton
+                    usage={null}
+                    contextWindow={
+                      models.find((m) => m.id === model)?.contextWindow ?? null
+                    }
+                  />
+                  <ComposerCompactSelect
+                    ariaLabel="思考强度"
+                    icon={<Brain className="h-3.5 w-3.5" />}
+                    options={THINKING_OPTIONS}
                     value={thinking}
-                    onValueChange={(next) => {
-                      if (typeof next === "string") handleThinkingChange(next);
-                    }}
-                    items={[
-                      { value: "default", label: "默认" },
-                      { value: "低", label: "低" },
-                      { value: "中", label: "中" },
-                      { value: "高", label: "高" },
-                      { value: "最高", label: "最高" },
-                    ]}
-                  >
-                    <SelectTrigger
-                      className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
-                      aria-label="思考强度"
-                    >
-                      <Brain className="h-3.5 w-3.5" />
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="min-w-24">
-                      <SelectItem value="default">默认</SelectItem>
-                      <SelectItem value="低">低</SelectItem>
-                      <SelectItem value="中">中</SelectItem>
-                      <SelectItem value="高">高</SelectItem>
-                      <SelectItem value="最高">最高</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    onChange={handleThinkingChange}
+                    contentClassName="min-w-24"
+                  />
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -2029,6 +2542,7 @@ export function Workbench() {
                     <Send className="h-4 w-4" />
                   </button>
                 </div>
+              </div>
               </div>
             </div>
 
@@ -2052,12 +2566,16 @@ export function Workbench() {
         open={settingsTab !== null}
         initialTab={settingsTab === null ? undefined : settingsTab}
         onClose={() => setSettingsTab(null)}
+        accessToken={session?.access_token ?? null}
       />
       {pluginsOpen ? (
         <PluginMarketModal
           open={pluginsOpen}
           onClose={() => setPluginsOpen(false)}
           accessToken={session?.access_token ?? null}
+          // 「从工作目录安装」用：服务端据此解析沙箱目录
+          canvasId={selectedProject?.primaryCanvas?.id ?? null}
+          isAdmin={isPlatformAdmin}
         />
       ) : null}
       {skillsOpen ? (
@@ -2065,6 +2583,8 @@ export function Workbench() {
           open={skillsOpen}
           onClose={() => setSkillsOpen(false)}
           accessToken={session?.access_token ?? null}
+          // 「从工作目录导入」用：两类项目都有主画布，服务端据此解析沙箱目录
+          canvasId={selectedProject?.primaryCanvas?.id ?? null}
         />
       ) : null}
       {/* MCP 管理：从「设置」挪到侧栏（与技能并列），页面带精选目录与官方注册表 */}

@@ -1,4 +1,4 @@
-import type { ProjectKind } from "@loomic/shared";
+import type { ProjectKind } from "@kenfutwork/shared";
 
 import type { PersistenceService } from "../persistence/types.js";
 

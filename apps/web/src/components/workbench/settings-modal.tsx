@@ -1,5 +1,6 @@
 "use client";
 
+import { PanelsTopLeft } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AgentSection } from "@/components/agent-section";
@@ -8,10 +9,12 @@ import { ProfileSection } from "@/components/profile-section";
 import { ProviderSettings } from "@/components/provider-settings";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { BrowserSettingsSection } from "@/components/workbench/browser-settings-section";
+import { TerminalSettingsSection } from "@/components/workbench/terminal-settings-section";
 import { ListLoading } from "@/components/workbench/list-state";
 import { RulesMemorySection } from "@/components/workbench/rules-memory-section";
 import { UsageStatsSection } from "@/components/workbench/usage-stats-section";
 import { useAuth } from "@/lib/auth-context";
+import { PluginPanelButtons } from "@/lib/plugin-panels";
 import {
   fetchModels,
   fetchViewer,
@@ -21,6 +24,7 @@ import {
 } from "@/lib/server-api";
 
 export type SettingsTab =
+  | "pluginPanels"
   | "general"
   | "model"
   | "providers"
@@ -56,7 +60,11 @@ const TAB_GROUPS: Array<{
   },
   {
     label: "数据与统计",
-    tabs: [{ id: "usage", label: "使用统计" }],
+    tabs: [
+      { id: "usage", label: "使用统计" },
+      // 插件面板（能力 `ui` 的 settings 槽位）：装了带面板的插件才出现内容
+      { id: "pluginPanels", label: "插件面板" },
+    ],
   },
 ];
 
@@ -69,10 +77,13 @@ export function SettingsModal({
   open,
   initialTab,
   onClose,
+  accessToken = null,
 }: {
   open: boolean;
   /** 打开时定位的分类（如「管理模型」直达供应商页）。 */
   initialTab?: SettingsTab | undefined;
+  /** 插件面板需要它取 `/api/plugins`（未登录时为空 → 面板列表为空）。 */
+  accessToken?: string | null;
   onClose: () => void;
 }) {
   const { session } = useAuth();
@@ -190,13 +201,16 @@ export function SettingsModal({
             {loading && !profile ? (
               <ListLoading label="正在加载设置…" rows={2} />
             ) : activeTab === "general" ? (
-              profile ? (
-                <ProfileSection
-                  displayName={profile.displayName}
-                  email={profile.email}
-                  onSave={handleProfileSave}
-                />
-              ) : null
+              <div className="space-y-8">
+                {profile ? (
+                  <ProfileSection
+                    displayName={profile.displayName}
+                    email={profile.email}
+                    onSave={handleProfileSave}
+                  />
+                ) : null}
+                {token ? <TerminalSettingsSection accessToken={token} /> : null}
+              </div>
             ) : activeTab === "model" ? (
               <AgentSection
                 agentMaxRetries={agentMaxRetries}
@@ -214,6 +228,8 @@ export function SettingsModal({
               ) : null
             ) : activeTab === "browser" ? (
               <BrowserSettingsSection />
+            ) : activeTab === "pluginPanels" ? (
+              <PluginPanelsSettings accessToken={accessToken} />
             ) : activeTab === "usage" ? (
               <UsageStatsSection />
             ) : (
@@ -223,5 +239,41 @@ export function SettingsModal({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * 「插件面板」设置页：列出 settings 槽位的插件面板。
+ * 没有插件声明该槽位时，明确说明「当前没有插件提供设置面板」——不放空壳。
+ */
+function PluginPanelsSettings({
+  accessToken,
+}: {
+  accessToken: string | null;
+}) {
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">
+        插件可以在这里加自己的设置面板（在插件清单或代码里声明 settings 槽位）。
+        下面列出当前已启用插件提供的设置面板；一个都没有，说明没有插件声明这个槽位。
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <PluginPanelButtons
+          accessToken={accessToken}
+          slot="settings"
+          renderButton={(panel, open) => (
+            <button
+              key={panel.id}
+              type="button"
+              onClick={open}
+              className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+            >
+              <PanelsTopLeft className="h-4 w-4" />
+              {panel.title}
+            </button>
+          )}
+        />
+      </div>
+    </div>
   );
 }

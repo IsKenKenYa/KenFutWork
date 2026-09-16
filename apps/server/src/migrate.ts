@@ -245,7 +245,7 @@ async function main(): Promise<void> {
 
   if (!databaseUrl) {
     console.error(
-      "缺少数据库连接串：请设置 LOOMIC_DATABASE_URL 或 DATABASE_URL（见 .env.example）。",
+      "缺少数据库连接串：请设置 KENFUTWORK_DATABASE_URL 或 DATABASE_URL（见 .env.example）。",
     );
     process.exit(1);
   }

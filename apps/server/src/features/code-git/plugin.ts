@@ -17,7 +17,7 @@ import { createProcessGitExec } from "./git-exec.js";
 export function createCodeGitPlugin(): PluginDefinition {
   return {
     name: "code-git",
-    inject: ["auth", "persistence", "viewer"],
+    inject: ["auth", "persistence", "settings", "viewer"],
     apply(ctx) {
       const gitBinDir = ctx.env.gitBinDir;
       ctx.register("codeGit", () =>
@@ -32,6 +32,8 @@ export function createCodeGitPlugin(): PluginDefinition {
           canvasWorkDirs: ctx.env.canvasWorkDirs,
           sandboxRoot: ctx.env.sandboxRoot,
           viewerService: ctx.get("viewer"),
+          /* 终端默认 shell 来自工作区设置（/api/settings 的 terminalShell） */
+          settingsService: ctx.get("settings"),
         }),
       );
     },

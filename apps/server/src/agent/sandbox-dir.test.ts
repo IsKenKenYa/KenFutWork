@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SANDBOX_ROOT,
   resolveSandboxDir,
+  resolveSandboxScopeId,
   sanitizeCanvasIdForPath,
 } from "./sandbox-dir.js";
 
@@ -58,5 +59,44 @@ describe("画布 → 沙箱目录解析", () => {
     expect(resolveSandboxDir(CANVAS_ID, undefined, "   ")).toBe(
       resolveSandboxDir(CANVAS_ID),
     );
+  });
+});
+
+/**
+ * 沙箱目录名必须落在**画布 UUID** 上。
+ *
+ * 回归背景（2026-09-16 实测）：无工作目录的 Code 会话，客户端只有会话 UUID，
+ * 会把 canvasId 发成会话 id → 沙箱落到 `tmp/sandbox/<会话UUID>`，
+ * 而用户要求的是 `tmp/sandbox/<画布UUID|项目UUID>`。
+ */
+describe("resolveSandboxScopeId（沙箱作用域 = 画布 UUID）", () => {
+  it("客户端给的是会话作用域：换成会话的真实画布", () => {
+    expect(
+      resolveSandboxScopeId({
+        conversationId: "conv-1",
+        requestedCanvasId: "conv-1",
+        sessionCanvasId: "canvas-9",
+      }),
+    ).toBe("canvas-9");
+  });
+
+  it("客户端给的是项目主画布：一律不动（正常项目作用域）", () => {
+    expect(
+      resolveSandboxScopeId({
+        conversationId: "conv-1",
+        requestedCanvasId: "canvas-project",
+        sessionCanvasId: "canvas-9",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("解析不出会话画布：不覆盖（宁可保持原状也别乱指）", () => {
+    expect(
+      resolveSandboxScopeId({
+        conversationId: "conv-1",
+        requestedCanvasId: "conv-1",
+        sessionCanvasId: null,
+      }),
+    ).toBeUndefined();
   });
 });

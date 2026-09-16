@@ -1,6 +1,6 @@
 "use client";
 
-import type { ImageArtifact } from "@loomic/shared";
+import type { ImageArtifact } from "@kenfutwork/shared";
 import { useCallback, useRef, useState } from "react";
 import { useGenerationErrorHandler } from "../hooks/use-generation-error-handler";
 import { insertImageOnCanvas } from "../lib/canvas-elements";

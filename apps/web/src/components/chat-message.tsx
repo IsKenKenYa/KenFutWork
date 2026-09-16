@@ -1,6 +1,6 @@
 "use client";
 
-import type { ContentBlock, ToolArtifact, ToolBlock } from "@loomic/shared";
+import type { ContentBlock, ToolArtifact, ToolBlock } from "@kenfutwork/shared";
 import { motion } from "framer-motion";
 import React, { useMemo } from "react";
 import { ImagePill } from "./chat/image-lightbox";
@@ -12,7 +12,7 @@ import { ToolBlockView } from "./chat/tool-block-view";
 // Re-export types for backward compatibility with existing consumers
 export type { ContentBlock, ToolArtifact };
 
-/** @deprecated Use ToolBlock from @loomic/shared instead */
+/** @deprecated Use ToolBlock from @kenfutwork/shared instead */
 export type ToolActivity = ToolBlock;
 
 /* ------------------------------------------------------------------ */

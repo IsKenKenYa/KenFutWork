@@ -37,6 +37,20 @@ export interface UsageRepository {
   insert(record: NewUsageRecord): Promise<void>;
   /** 最近记录（按发生时间倒序），供汇总聚合。 */
   listRecent(workspaceId: string, limit: number): Promise<UsageRecordRow[]>;
+  /**
+   * 最长聊天时长（R4-2 剩下的那张卡）：**单会话首尾消息的时间跨度**（秒）。
+   *
+   * 口径说明（不造数据的底线）：
+   * - 取的是 `chat_messages` 里该会话第一条与最后一条 `created_at` 之差，即「这轮对话聊了多久」；
+   *   不是「agent 跑了多久」（那要看 `agent_runs` 的 completed-created），也不是「在线时长」。
+   * - 逐会话取跨度后再取最大值——不是「所有消息的首尾差」（后者会把跨天的多轮对话算成一条）。
+   * - 只有一条消息的会话跨度为 0（真实含义就是「没来回」），照实计入。
+   *
+   * 为什么这条查询在 usage 域：它属于「使用统计」的口径派生。表在 chat 侧，
+   * 隔离谓词照 FORM-9 走父链 JOIN（`chat_sessions → canvases → projects.workspace_id`），
+   * 与 chat 仓储里同一条链一致。
+   */
+  longestSessionSeconds(workspaceId: string): Promise<number>;
 }
 
 type RawUsageRow = {
@@ -74,6 +88,27 @@ export function createUsageRepository(
           record.costUsd ?? null,
         ],
       );
+    },
+
+    async longestSessionSeconds(workspaceId) {
+      const rows = await persistence
+        .forWorkspace(workspaceId)
+        .query<{ seconds: string | number | null }>(
+          `select coalesce(max(span_seconds), 0) as seconds
+             from (
+               select extract(epoch from (max(m.created_at) - min(m.created_at))) as span_seconds
+                 from public.chat_sessions s
+                 join public.canvases c on c.id = s.canvas_id
+                 join public.projects p on p.id = c.project_id
+                 join public.chat_messages m on m.session_id = s.id
+                where p.workspace_id = :workspace
+                group by s.id
+             ) spans`,
+          [],
+        );
+      const seconds = rows[0]?.seconds ?? 0;
+      const parsed = Number(seconds);
+      return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 0;
     },
 
     async listRecent(workspaceId, limit) {

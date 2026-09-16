@@ -21,6 +21,12 @@ const STATS_7D = {
   peakDayTokens: 1560,
   currentStreakDays: 3,
   longestStreakDays: 4,
+  longestSessionSeconds: 42_300,
+  // 热力图是近一年逐日（组件按周分列渲染）
+  heatmap: [
+    { date: "2026-09-15", tokens: 400 },
+    { date: "2026-09-14", tokens: 0 },
+  ],
   daily: [
     { date: "2026-09-09", tokens: 0 },
     { date: "2026-09-10", tokens: 0 },
@@ -68,6 +74,8 @@ describe("UsageStatsSection（R4-2 用户侧使用统计）", () => {
     expect(screen.getByText("1560")).toBeInTheDocument();
     expect(screen.getByText("3 天")).toBeInTheDocument();
     expect(screen.getByText("4 天")).toBeInTheDocument();
+    // 最长聊天时长（R4-2 剩下的那张卡）：42300 秒 = 11 小时 45 分钟
+    expect(screen.getByText("11 小时 45 分钟")).toBeInTheDocument();
   });
 
   it("请求带 days=7 且默认展示近 7 日", async () => {

@@ -1,4 +1,4 @@
-import type { PermissionTier } from "@loomic/shared";
+import type { PermissionTier } from "@kenfutwork/shared";
 
 /**
  * permissions 策略缝（DEC-4，P6）：

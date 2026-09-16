@@ -2,7 +2,7 @@
 > 本文件是所有 coding Agent（Codex CLI / Claude Code / Trae IDE 等）的统一操作指南，是仓库的**唯一权威**。各 Agent 专用配置文件（`.codex/AGENTS.md`、`.claude/CLAUDE.md` 等）只保留各自的独占内容（如浏览器操作规范、框架文档索引），主体规范一律以本文件为准。
 
 ## 项目结构与模块组织
-本仓库是 **pnpm@10 workspace + Turborepo 的 monorepo**（Loomic：BYOK Work 平台——用户自定义供应商/模型的 AI 工作台，**design（画布创作）/ code（编码 agent）双模式**；多端形态：Tauri 桌面端（内嵌服务端 + 沙箱）为主，服务端 Docker 自托管，Web 与移动端为客户端；GPL-3.0 系开源）。产品与架构计划见 `docs/tech/改造计划.md`（服务端插件内核 + BYOK 供应商缝 + design/code 双模式）与 `docs/tech/多端产品设计.md`（桌面/自托管/Web/移动形态，**已去云托管**）。主要模块如下：
+本仓库是 **pnpm@10 workspace + Turborepo 的 monorepo**（KenFutWork：BYOK Work 平台——用户自定义供应商/模型的 AI 工作台，**design（画布创作）/ code（编码 agent）双模式**；多端形态：Tauri 桌面端（内嵌服务端 + 沙箱）为主，服务端 Docker 自托管，Web 与移动端为客户端；GPL-3.0 系开源）。产品与架构计划见 `docs/tech/改造计划.md`（服务端插件内核 + BYOK 供应商缝 + design/code 双模式）与 `docs/tech/多端产品设计.md`（桌面/自托管/Web/移动形态，**已去云托管**）。主要模块如下：
 - `apps/web` — 前端：Next.js 16（App Router，Turbopack）+ React 19 + Tailwind 4 + Base UI + Excalidraw 画布。路由在 `src/app/`，组件在 `src/components/`，客户端纯逻辑在 `src/lib/`；测试在 `test/*.test.ts(x)`。
 - `apps/server` — 后端：Fastify 5 + LangChain 1.x / deepagents agent 运行时 + PGMQ 队列 worker。装配层在 `src/app.ts` 与 `src/worker.ts`；agent 相关在 `src/agent/`（backends / tools / prompts / persistence / sub-agents）；领域服务在 `src/features/`；生成 provider 在 `src/generation/providers/`；HTTP 路由在 `src/http/`；WS 在 `src/ws/`；队列在 `src/queue/`；环境变量解析在 `src/config/env.ts`。
 - `packages/shared` — 跨端 zod 契约（HTTP API、WS 协议、job 事件、credits、skills 等），构建到 `dist/` 后被前后端引用；改契约先改这里，两端跟着编译器走。
@@ -38,13 +38,13 @@
 ## 构建、测试与开发命令
 - `pnpm install`：安装 workspace 依赖（CI 环境加 `CI=true`）。
 - `pnpm dev`：turbo 并行启动全部包的 dev（web 在 3000 端口，server API 在 3001，worker 同时拉起）。
-- `pnpm --filter @loomic/server dev:server`：只启动 API 进程（需要根 `.env.local`）。
-- `pnpm --filter @loomic/server dev:worker`：只启动队列 worker。
+- `pnpm --filter @kenfutwork/server dev:server`：只启动 API 进程（需要根 `.env.local`）。
+- `pnpm --filter @kenfutwork/server dev:worker`：只启动队列 worker。
 - `pnpm build`：turbo 全量构建（shared/ui/config 出 `dist/`，web 出静态产物，server 走 `scripts/validate-foundation-app.mjs` 门禁）。
 - `pnpm test`：= `test:workspace`（`node --test tests/workspace.test.mjs`）+ `test:packages`（`turbo run test`，vitest）。
 - `pnpm typecheck`：turbo 全包 `tsc --noEmit`（web 先跑 `next typegen`）。
 - `pnpm lint`：`biome check .`（格式 + lint，Biome 2）。
-- `pnpm seed`：`pnpm --filter @loomic/server seed:accounts` 经自管 Postgres 灌测试账号（幂等；账号与口令见 README「测试账号」表）。
+- `pnpm seed`：`pnpm --filter @kenfutwork/server seed:accounts` 经自管 Postgres 灌测试账号（幂等；账号与口令见 README「测试账号」表）。
 
 命令必须是可直接复制执行的完整调用，包含 flags——「运行测试」这类模糊表述留给 Agent 自由发挥，是常见失败模式。
 

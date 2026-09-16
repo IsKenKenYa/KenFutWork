@@ -3,12 +3,12 @@ import { z } from "zod";
 /**
  * 插件互操作契约（HTTP + bundle 产物）。
  *
- * 设计前提：Loomic kernel 与 deepseek-harness（dsh）的插件接口形状同源——
+ * 设计前提：KenFutWork kernel 与 deepseek-harness（dsh）的插件接口形状同源——
  * 都是 `{ name, inject, apply(ctx) }`，差异只在**能力命名**与**组合文件**。
  * 因此一份 bundle 可以同时被两端加载，本文件即该产物的规范化定义：
  *
  * - `dshBundle`：dsh 原生格式（`package.json` 的 `dsh.bundle.patch` + `cordis.patch.yml`）
- * - `loomicBundle`：本项目格式（同名字段 + 能力绑定表）
+ * - `kenfutworkBundle`：本项目格式（同名字段 + 能力绑定表）
  *
  * 兼容性判定见 `compatReportSchema`：**门禁是产品的一部分**，未通过即拒绝安装。
  */
@@ -32,11 +32,15 @@ export const CANONICAL_CAPABILITIES = [
   "subprocess",
   "sandbox",
   "agents",
+  /** 本项目扩展：插件自带 HTTP 路由（`/api/plugins/<id>/…`，默认要求登录）。 */
+  "routes",
+  /** 本项目扩展：插件贡献 UI 面板入口（侧栏条目 + 面板渲染其 URL）。 */
+  "ui",
 ] as const;
 export const canonicalCapabilitySchema = z.enum(CANONICAL_CAPABILITIES);
 export type CanonicalCapability = z.infer<typeof canonicalCapabilitySchema>;
 
-export const BUNDLE_FORMATS = ["loomic", "dsh"] as const;
+export const BUNDLE_FORMATS = ["kenfutwork", "dsh"] as const;
 export const bundleFormatSchema = z.enum(BUNDLE_FORMATS);
 export type BundleFormat = z.infer<typeof bundleFormatSchema>;
 
@@ -46,6 +50,34 @@ export type BundleFormat = z.infer<typeof bundleFormatSchema>;
  * 由 `package.json` + `cordis.patch.yml` 归一化得到的清单。
  * 两种来源格式都收敛到这里，后续校验/安装只看本结构。
  */
+/**
+ * 插件 UI 面板槽位——四个槽位各对应一处渲染位置：
+ * - `sidebar`：工作台左侧栏条目（Code / Design 共用同一条侧栏）；
+ * - `conversation`：对话界面（Code 的工作台对话标题行 / Design 的画布内对话面板）；
+ * - `canvas`：画布页顶部栏；
+ * - `settings`：设置弹窗里的「插件面板」页。
+ */
+export const PLUGIN_UI_SLOTS = [
+  "sidebar",
+  "conversation",
+  "canvas",
+  "settings",
+] as const;
+export const pluginUiSlotSchema = z.enum(PLUGIN_UI_SLOTS);
+export type PluginUiSlot = z.infer<typeof pluginUiSlotSchema>;
+
+/**
+ * 插件 UI 面板入口：清单 `kenfutwork.ui` 与运行时 `ctx.ui.register` **同一形状**
+ * （两处都映射到这个 schema，避免槽位集合各写一份）。
+ */
+export const pluginUiEntrySchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  slot: pluginUiSlotSchema.default("sidebar"),
+  url: z.string().min(1),
+});
+export type PluginUiEntry = z.infer<typeof pluginUiEntrySchema>;
+
 export const pluginBundleManifestSchema = z.object({
   /** 包名（npm 语义；也可作为插件稳定 id） */
   name: z.string().min(1),
@@ -70,6 +102,17 @@ export const pluginBundleManifestSchema = z.object({
   enginesNode: z.string().nullable().default(null),
   /** 是否携带 dsh web 客户端 UI（`dsh.client`） */
   hasClientUi: z.boolean().default(false),
+  /**
+   * 是否把 bundle 目录（除 node_modules）当作**静态资源**托管在
+   * `/api/plugins/<id>/assets/…`（只读、限体积）。开了插件就能自带页面/样式，
+   * 不必自己起 HTTP 服务。
+   */
+  assets: z.boolean().default(false),
+  /**
+   * 本项目 UI 面板入口（`kenfutwork.ui`，与 bundle 同级）：按 `slot` 出现在四处之一，
+   * 点开在面板里以 iframe 渲染 `url`（通常是插件自己的路由或由本项目托管的资源）。
+   */
+  ui: z.array(pluginUiEntrySchema).default([]),
   /** 安装期会执行的包生命周期脚本（危险面） */
   lifecycleScripts: z.array(z.string()).default([]),
   /** 依赖的 in-box dsh bundle（`@deepseek-ai/dsh-*`），需要 dsh 运行时 */
@@ -163,6 +206,17 @@ export const pluginMarketEntrySchema = z.object({
   /** 内核必需插件，不可卸载 */
   system: z.boolean().default(false),
   installed: z.boolean().default(false),
+  /** 插件贡献的 UI 面板入口（仅已安装且启用时非空）。 */
+  ui: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        title: z.string().min(1),
+        slot: z.string().default("sidebar"),
+        url: z.string().min(1),
+      }),
+    )
+    .default([]),
 });
 export type PluginMarketEntry = z.infer<typeof pluginMarketEntrySchema>;
 
@@ -191,6 +245,38 @@ export const pluginInstallRequestSchema = z.object({
   allowLifecycleScripts: z.boolean().default(false),
 });
 export type PluginInstallRequest = z.infer<typeof pluginInstallRequestSchema>;
+
+/**
+ * 从**沙箱工作目录**安装插件 bundle（创造模式产物的人工入口）。
+ *
+ * `canvasId` 决定沙箱目录（与技能/agent 同一处解析）；`path` 是相对沙箱根的
+ * bundle 目录（其 package.json 需声明 kenfutwork.bundle / dsh.bundle；旧名
+ * loomic.bundle 仍被接受）。服务端校验
+ * 画布归属与路径不越界，不信任前端传来的路径。
+ */
+export const sandboxPluginInstallRequestSchema = z.object({
+  canvasId: z.string().min(1),
+  path: z.string().min(1),
+});
+export type SandboxPluginInstallRequest = z.infer<
+  typeof sandboxPluginInstallRequestSchema
+>;
+
+/** 工作目录里扫到的插件 bundle 候选。 */
+export const sandboxPluginBundleSchema = z.object({
+  path: z.string(),
+  name: z.string(),
+  version: z.string(),
+  declaredBy: z.enum(["kenfutwork", "dsh"]),
+});
+export type SandboxPluginBundle = z.infer<typeof sandboxPluginBundleSchema>;
+
+export const sandboxPluginBundleListResponseSchema = z.object({
+  bundles: z.array(sandboxPluginBundleSchema),
+});
+export type SandboxPluginBundleListResponse = z.infer<
+  typeof sandboxPluginBundleListResponseSchema
+>;
 
 /** 导入本地/远端 bundle 目录（不安装，仅校验并返回报告）。 */
 export const pluginInspectRequestSchema = z.object({
@@ -230,6 +316,18 @@ export const pluginInspectResponseSchema = z.object({
   report: compatReportSchema,
 });
 export type PluginInspectResponse = z.infer<typeof pluginInspectResponseSchema>;
+
+/** 插件路由声明（`ctx.routes.register`；服务端据此把请求派发给插件）。 */
+export const pluginRouteSpecSchema = z.object({
+  method: z.enum(["GET", "POST"]).default("GET"),
+  path: z.string().min(1),
+  /**
+   * 是否公开（默认 false = 需要登录）。UI 面板 iframe 无法带 Authorization 头，
+   * 面板页面本身通常声明 public: true，数据接口仍保持登录门。
+   */
+  public: z.boolean().default(false),
+});
+export type PluginRouteSpec = z.infer<typeof pluginRouteSpecSchema>;
 
 export const pluginInstallResponseSchema = z.object({
   installed: installedPluginSchema,

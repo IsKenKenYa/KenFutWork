@@ -11,7 +11,7 @@ import { createModelProviderRepository } from "./repository.js";
  * models/compat 的 jsonb 往返、以及跨工作区不可读写。
  *
  * 运行：DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
- *       pnpm --filter @loomic/server exec vitest run model-providers.integration
+ *       pnpm --filter @kenfutwork/server exec vitest run model-providers.integration
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 const FOREIGN_WORKSPACE = "00000000-0000-0000-0000-000000000000";

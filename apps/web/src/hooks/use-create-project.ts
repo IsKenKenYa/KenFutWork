@@ -3,7 +3,7 @@
 import type {
   ImageGenerationPreference,
   VideoGenerationPreference,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
 import { useToast } from "@/components/toast";
@@ -12,12 +12,12 @@ import { useAuth } from "@/lib/auth-context";
 import { ApiAuthError, createProject } from "@/lib/server-api";
 
 /** sessionStorage key used to pass attachments from Home → Canvas auto-send. */
-export const INITIAL_ATTACHMENTS_KEY = "loomic:initial-attachments";
+export const INITIAL_ATTACHMENTS_KEY = "kenfutwork:initial-attachments";
 export const INITIAL_IMAGE_GENERATION_PREFERENCE_KEY =
-  "loomic:initial-image-generation-preference";
+  "kenfutwork:initial-image-generation-preference";
 export const INITIAL_VIDEO_GENERATION_PREFERENCE_KEY =
-  "loomic:initial-video-generation-preference";
-export const INITIAL_AGENT_MODEL_KEY = "loomic:initial-agent-model";
+  "kenfutwork:initial-video-generation-preference";
+export const INITIAL_AGENT_MODEL_KEY = "kenfutwork:initial-agent-model";
 
 /**
  * Shared hook for creating an Untitled project and navigating to its canvas.

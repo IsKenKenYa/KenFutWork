@@ -31,8 +31,8 @@ pnpm desktop          # 仓库根执行；等价于 bash apps/desktop/dev.sh
 手动分步（需要单独验证某一层时）：
 
 ```sh
-pnpm --filter @loomic/server dev:server   # 桌面形态：LOOMIC_EMBEDDED_PG=1 …（见仓库根 .env.local 样例）
-pnpm --filter @loomic/web dev             # web UI（3000）
+pnpm --filter @kenfutwork/server dev:server   # 桌面形态：KENFUTWORK_EMBEDDED_PG=1 …（见仓库根 .env.local 样例）
+pnpm --filter @kenfutwork/web dev             # web UI（3000）
 cd apps/desktop/src-tauri && cargo tauri dev
 ```
 
@@ -41,7 +41,7 @@ cd apps/desktop/src-tauri && cargo tauri dev
 1. **本壳可开**（当前提交）：窗口加载 web dev server。
 2. **sidecar**：Node SEA 打包 `apps/server` → Tauri `externalBin`；Rust 侧管理生命周期
    （启动/健康探活/退出停库——`desktop/runtime.ts` 的 `shutdown()` 已就位）。
-3. **本地数据目录**：`LOOMIC_DATA_DIR` 指向用户数据目录（Rust `app_data_dir` 注入）；
+3. **本地数据目录**：`KENFUTWORK_DATA_DIR` 指向用户数据目录（Rust `app_data_dir` 注入）；
    内嵌 Postgres + 同源迁移已在服务端跑通（46 条迁移全过）。
 4. 之后才是托盘/自更新/深链与 Windows 打包（NSIS）。
 

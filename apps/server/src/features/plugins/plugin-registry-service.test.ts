@@ -67,7 +67,7 @@ async function exists(target: string): Promise<boolean> {
 
 /** 造一个注定被门禁拦下的 bundle（依赖 llm 能力）。 */
 async function writeIncompatibleBundle(): Promise<string> {
-  const dir = await mkdtemp(path.join(tmpdir(), "loomic-bad-"));
+  const dir = await mkdtemp(path.join(tmpdir(), "kenfutwork-bad-"));
   await writeFile(
     path.join(dir, "package.json"),
     JSON.stringify({
@@ -93,7 +93,7 @@ async function writeIncompatibleBundle(): Promise<string> {
 }
 
 beforeEach(async () => {
-  pluginsDir = await mkdtemp(path.join(tmpdir(), "loomic-plugins-"));
+  pluginsDir = await mkdtemp(path.join(tmpdir(), "kenfutwork-plugins-"));
 });
 
 afterEach(async () => {
@@ -113,7 +113,7 @@ describe("plugin-registry：安装并真的能用", () => {
 
     expect(report.compatible).toBe(true);
     expect(report.supportedCapabilities).toEqual(["tools"]);
-    expect(installed.name).toBe("loomic-example-clock");
+    expect(installed.name).toBe("kenfutwork-example-clock");
 
     const tool = kernel.get("tools").require("clock_now");
     expect(tool.scope).toBe("shared");
@@ -135,7 +135,7 @@ describe("plugin-registry：安装并真的能用", () => {
     });
 
     const entries = await service.list();
-    const mine = entries.find((entry) => entry.name === "loomic-example-clock");
+    const mine = entries.find((entry) => entry.name === "kenfutwork-example-clock");
     expect(mine).toBeDefined();
     expect(mine?.installed).toBe(true);
     expect(mine?.system).toBe(false);
@@ -154,7 +154,7 @@ describe("plugin-registry：安装并真的能用", () => {
     expect(kernel.get("tools").get("clock_now")).toBeUndefined();
     expect(await exists(path.join(pluginsDir, installed.id))).toBe(false);
     const entries = await service.list();
-    expect(entries.some((entry) => entry.name === "loomic-example-clock")).toBe(
+    expect(entries.some((entry) => entry.name === "kenfutwork-example-clock")).toBe(
       false,
     );
   });
@@ -203,7 +203,7 @@ describe("plugin-registry：安装并真的能用", () => {
     expect(kernel.get("tools").get("clock_now")).toBeDefined();
     const entries = await service.list();
     expect(
-      entries.filter((entry) => entry.name === "loomic-example-clock"),
+      entries.filter((entry) => entry.name === "kenfutwork-example-clock"),
     ).toHaveLength(1);
   });
 });
@@ -240,11 +240,11 @@ describe("plugin-registry：门禁拦截", () => {
     const { kernel, service } = makeService();
     const { manifest, report } = await service.inspect({ url: EXAMPLE_PLUGIN });
     expect(report.compatible).toBe(true);
-    expect(manifest.name).toBe("loomic-example-clock");
+    expect(manifest.name).toBe("kenfutwork-example-clock");
     // 没有装载，也没有落盘
     expect(kernel.get("tools").get("clock_now")).toBeUndefined();
     const entries = await service.list();
-    expect(entries.some((entry) => entry.name === "loomic-example-clock")).toBe(
+    expect(entries.some((entry) => entry.name === "kenfutwork-example-clock")).toBe(
       false,
     );
   });
@@ -280,10 +280,10 @@ describe("plugin-registry：导出", () => {
     const artifact = service.exportPlugin("skills", "dsh");
     const pkg = JSON.parse(artifact.files["package.json"]!) as {
       dsh?: unknown;
-      loomic?: unknown;
+      kenfutwork?: unknown;
     };
     expect(pkg.dsh).toBeDefined();
-    expect(pkg.loomic).toBeDefined();
+    expect(pkg.kenfutwork).toBeDefined();
     expect(artifact.files["index.js"]).toBeDefined();
   });
 
@@ -293,7 +293,7 @@ describe("plugin-registry：导出", () => {
       url: EXAMPLE_PLUGIN,
       allowLifecycleScripts: false,
     });
-    const artifact = service.exportPlugin("loomic-example-clock", "dsh");
+    const artifact = service.exportPlugin("kenfutwork-example-clock", "dsh");
     const indexJs = artifact.files["index.js"]!;
     expect(indexJs).toContain("clock_now");
   });
@@ -304,10 +304,10 @@ describe("plugin-registry：导出", () => {
       url: EXAMPLE_PLUGIN,
       allowLifecycleScripts: false,
     });
-    const artifact = service.exportPlugin("loomic-example-clock", "dsh");
+    const artifact = service.exportPlugin("kenfutwork-example-clock", "dsh");
 
     // 落盘为独立 bundle 后再走一次真实安装
-    const dir = await mkdtemp(path.join(tmpdir(), "loomic-roundtrip-"));
+    const dir = await mkdtemp(path.join(tmpdir(), "kenfutwork-roundtrip-"));
     try {
       await mkdir(dir, { recursive: true });
       for (const [relative, content] of Object.entries(artifact.files)) {
@@ -322,5 +322,172 @@ describe("plugin-registry：导出", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * 插件能力面 v1（用户拍板「插件拥有所有能力」后落地的一部分）：
+ * 提示段（systemPrompt）/ 自带路由（routes）/ UI 入口（ui）都要能注册、能派发、能收回。
+ */
+describe("插件贡献物：提示段 / 路由 / UI 入口", () => {
+  const CONTRIBUTOR = "loomic-contributor";
+
+  async function writeContributor(): Promise<string> {
+    const dir = await mkdtemp(path.join(tmpdir(), "kfw-contributor-"));
+    await writeFile(
+      path.join(dir, "package.json"),
+      JSON.stringify({
+        name: CONTRIBUTOR,
+        version: "1.0.0",
+        type: "module",
+        main: "index.js",
+        kenfutwork: { bundle: { patch: "./cordis.patch.yml" } },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      path.join(dir, "cordis.patch.yml"),
+      `- insert:
+    - id: ${CONTRIBUTOR}
+      name: ${CONTRIBUTOR}
+      inject: [tools, systemPrompt, routes, ui]
+`,
+      "utf8",
+    );
+    await writeFile(
+      path.join(dir, "index.js"),
+      `export const name = "${CONTRIBUTOR}";
+export const inject = ["tools", "systemPrompt", "routes", "ui"];
+export function apply(ctx) {
+  ctx.promptFragments.register({ id: "tone", text: "回答一律先给结论。" });
+  ctx.routes.register({
+    path: "panel",
+    public: true,
+    handler: async () => ({ status: 200, body: "<h1>panel</h1>" }),
+  });
+  ctx.routes.register({
+    path: "data",
+    handler: async (request) => ({ ok: true, query: request.query }),
+  });
+  ctx.ui.register({ id: "panel", title: "插件面板", url: "/api/plugins/${CONTRIBUTOR}/panel" });
+  ctx.ui.register({ id: "talk", title: "对话面板", slot: "conversation", url: "assets/talk.html" });
+  ctx.ui.register({ id: "cv", title: "画布面板", slot: "canvas", url: "assets/cv.html" });
+  ctx.ui.register({ id: "cfg", title: "设置面板", slot: "settings", url: "assets/cfg.html" });
+  ctx.ui.register({ id: "bad", title: "非法槽位", slot: "nope", url: "assets/bad.html" });
+}
+`,
+      "utf8",
+    );
+    return dir;
+  }
+
+  it("注册后：提示段可见、公开路由可匿名访问、私有路由要登录、UI 入口带出", async () => {
+    const { service } = makeService();
+    const source = await writeContributor();
+    const installed = await service.install({
+      allowLifecycleScripts: false,
+      url: source,
+    });
+    // 本机目录安装的 id 形如 local__<包名>：派发与卸载都用它
+    const pluginId = installed.installed.id;
+
+    expect(service.listPromptFragments()).toEqual(["回答一律先给结论。"]);
+    // 四个槽位各自带出（缺省 sidebar）；非法槽位落回 sidebar，不静默丢失面板
+    expect(
+      service.listUiEntries().map((item) => `${item.id}:${item.slot}`),
+    ).toEqual([
+      "panel:sidebar",
+      "talk:conversation",
+      "cv:canvas",
+      "cfg:settings",
+      "bad:sidebar",
+    ]);
+
+    // 公开路由：匿名可访问
+    const publicResult = await service.dispatchRoute({
+      pluginId,
+      method: "GET",
+      path: "panel",
+      query: {},
+      body: undefined,
+      headers: {},
+      isAuthenticated: false,
+    });
+    expect(publicResult?.status).toBe(200);
+    expect(publicResult?.body).toContain("panel");
+
+    // 私有路由：未登录 401，登录后带参派发
+    expect(
+      await service.dispatchRoute({
+        pluginId,
+        method: "GET",
+        path: "data",
+        query: {},
+        body: undefined,
+        headers: {},
+        isAuthenticated: false,
+      }),
+    ).toMatchObject({ status: 401 });
+
+    const authed = await service.dispatchRoute({
+      pluginId,
+      method: "GET",
+      path: "data",
+      query: { q: "1" },
+      body: undefined,
+      headers: { authorization: "Bearer t" },
+      isAuthenticated: true,
+    });
+    expect(authed).toMatchObject({ status: 200, body: { ok: true } });
+
+    // 未注册路径 → undefined（路由层转 404）
+    expect(
+      await service.dispatchRoute({
+        pluginId,
+        method: "GET",
+        path: "nope",
+        query: {},
+        body: undefined,
+        headers: {},
+        isAuthenticated: true,
+      }),
+    ).toBeUndefined();
+
+    // 卸载后贡献物一并收回
+    await service.uninstall(pluginId);
+    expect(service.listPromptFragments()).toEqual([]);
+    expect(service.listUiEntries()).toEqual([]);
+    expect(
+      service.routeVisibility({
+        pluginId,
+        method: "GET",
+        path: "panel",
+      }),
+    ).toBeUndefined();
+  });
+});
+
+/**
+ * 云端护栏：部署形态禁止第三方插件时，安装必须**显式拒绝**（不是 UI 隐藏）。
+ */
+describe("部署形态禁止第三方插件", () => {
+  it("allowThirdParty=false：install 拒绝并给出可读原因", async () => {
+    const kernel = composePlugins(makeEnv(), []);
+    kernels.push(kernel);
+    const service = createPluginRegistryService({
+      allowThirdParty: false,
+      pluginsDir,
+      tools: kernel.get("tools"),
+      subscribe: () => () => {},
+      hostNodeMajor: 22,
+      builtinCatalog: [],
+    });
+
+    await expect(
+      service.install({
+        allowLifecycleScripts: false,
+        url: EXAMPLE_PLUGIN,
+      }),
+    ).rejects.toThrow(/不允许安装第三方插件/);
   });
 });

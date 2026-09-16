@@ -1,6 +1,7 @@
 "use client";
 
-import type { ImageArtifact, VideoArtifact } from "@loomic/shared";
+import { PanelsTopLeft } from "lucide-react";
+import type { ImageArtifact, VideoArtifact } from "@kenfutwork/shared";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { BrandKitSelector } from "../../components/brand-kit-selector";
@@ -13,6 +14,7 @@ import type { CanvasImageItem } from "../../components/canvas-image-picker";
 import { BrandKitModal } from "../../components/brand-kit-modal";
 import { CanvasLayersPanel } from "../../components/canvas-layers-panel";
 import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
+import { PluginPanelButtons } from "@/lib/plugin-panels";
 import { type SidePanelTab, ChatSidebar } from "../../components/chat-sidebar";
 import { EditableProjectName } from "../../components/editable-project-name";
 import { LoadingScreen } from "../../components/loading-screen";
@@ -62,6 +64,10 @@ function CanvasPageContent() {
    * 一个右侧面板，三者是它的三个标签。
    */
   const [panelTab, setPanelTab] = useState<SidePanelTab>("chat");
+  /** 当前画布会话：由聊天侧栏回调更新（URL 只作初始值），供生成类工具渲染自定义头占位符。 */
+  const [activeSessionId, setActiveSessionId] = useState<string | undefined>(
+    initialSessionId,
+  );
   const [brandKitId, setBrandKitId] = useState<string | null>(null);
   /** 品牌套件管理浮窗（90%×85%）——此前是导航到 /brand-kit，会把整页换掉。 */
   const [brandKitOpen, setBrandKitOpen] = useState(false);
@@ -157,6 +163,9 @@ function CanvasPageContent() {
   const handleSessionChange = useCallback(
     (sessionId: string) => {
       if (!canvasId) return;
+      // 会话 id 同时留在状态里：生成类工具（图片/视频）要用它渲染实例自定义头的
+      // {{sessionId}} 占位符（§4.8）——只改 URL 的话面板取不到（此前正是如此）。
+      setActiveSessionId(sessionId);
       // Update URL: set session param, remove prompt param to prevent re-send on refresh
       routerRef.current.replace(`/canvas?id=${canvasId}&session=${sessionId}`);
     },
@@ -287,6 +296,23 @@ function CanvasPageContent() {
           onBrandKitChange={(kitId) => setBrandKitId(kitId)}
           onManage={() => setBrandKitOpen(true)}
         />
+        {/* 插件面板（能力 `ui`）：画布槽位 */}
+        <PluginPanelButtons
+          accessToken={accessToken}
+          slot="canvas"
+          renderButton={(panel, open) => (
+            <button
+              key={panel.id}
+              type="button"
+              onClick={open}
+              title={`插件 ${panel.pluginId} 提供的面板`}
+              className="flex items-center gap-1.5 rounded-lg border-[0.5px] border-border bg-card px-2.5 py-1.5 text-xs text-muted-foreground shadow-sm transition-colors hover:text-foreground"
+            >
+              <PanelsTopLeft className="h-3.5 w-3.5" />
+              {panel.title}
+            </button>
+          )}
+        />
       </div>
       {/* Canvas always takes full width; on mobile/tablet, ChatSidebar overlays instead of side-by-side */}
       <div className="flex-1 relative min-w-0 overflow-hidden">
@@ -309,8 +335,10 @@ function CanvasPageContent() {
           <CanvasToolMenu
             accessToken={accessToken}
             excalidrawApi={excalidrawApi}
+            sessionId={activeSessionId}
           />
-        )}      </div>
+        )}
+      </div>
       <ChatSidebar
         accessToken={accessToken}
         canvasId={canvasData.id}

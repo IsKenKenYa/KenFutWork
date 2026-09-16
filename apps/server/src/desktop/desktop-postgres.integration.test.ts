@@ -6,14 +6,14 @@ import { resolvePgBinDir, startEmbeddedPostgres } from "./postgres.js";
 /**
  * 内嵌 Postgres 真实集成测试（桌面供给，FORM-2）。默认 skipped：需要显式开启。
  *
- *   LOOMIC_DESKTOP_PG_IT=1 pnpm --filter @loomic/server exec vitest run desktop-postgres.integration
+ *   KENFUTWORK_DESKTOP_PG_IT=1 pnpm --filter @kenfutwork/server exec vitest run desktop-postgres.integration
  *
  * 为什么必须真跑一次：单元测试用假 run，只能证明「参数拼对了」。这里证明的是
  * ① 二进制目录解析在当前平台成立；② 我们直接 spawn 的 initdb/pg_ctl 参数在真实二进制上
  * 可用（`-o "-p N -c listen_addresses=127.0.0.1"` 这种带空格的转发参数最容易翻车）；
  * ③ 真库上跑通完整迁移集（桌面首启动「同源迁移」口径）；④ 二次启动复用同一集群。
  */
-const ENABLED = process.env.LOOMIC_DESKTOP_PG_IT === "1";
+const ENABLED = process.env.KENFUTWORK_DESKTOP_PG_IT === "1";
 
 describe.skipIf(!ENABLED)("内嵌 Postgres 真实启动（桌面供给）", () => {
   it("首启动 initdb → start → 迁移 40+ → stop → 复用集群重启", async () => {
@@ -31,7 +31,7 @@ describe.skipIf(!ENABLED)("内嵌 Postgres 真实启动（桌面供给）", () =
     });
     expect(migrationSet.length).toBeGreaterThanOrEqual(40);
 
-    const root = await mkdtemp(join(tmpdir(), "loomic-desktop-pg-"));
+    const root = await mkdtemp(join(tmpdir(), "kenfutwork-desktop-pg-"));
     const dataDir = join(root, "postgres");
     const binDir = resolvePgBinDir({ env: {}, exeDir: join(root, "nope") });
     const logs: string[] = [];

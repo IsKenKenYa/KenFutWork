@@ -6,7 +6,7 @@ import type {
   BrandKitDetailResponse,
   BrandKitListResponse,
   BrandKitUpdateRequest,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import { dedupeRequest } from "./dedupe-request";
 import { getServerBaseUrl } from "./env";
 import { ApiApplicationError, ApiAuthError } from "./server-api";

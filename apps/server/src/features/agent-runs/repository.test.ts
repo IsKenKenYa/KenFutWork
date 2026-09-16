@@ -143,3 +143,52 @@ describe("agent_runs 启动期孤儿对账", () => {
     ).resolves.toBe(0);
   });
 });
+
+/**
+ * 运行活动（Git 弹层的「智能体 N 秒 · M 运行」）。
+ *
+ * 口径定义在仓储方法上：近 7 天、各轮 `completed_at - created_at` 求和、
+ * 仍在跑的按「到现在」计、隔离走 `chat_sessions → canvases → projects` 父链。
+ */
+describe("workspaceActivity（运行活动）", () => {
+  it("按工作区统计次数与累计秒数，谓词走父链并带时间窗", async () => {
+    const { calls, runner } = createRunner(() => ({
+      rowCount: 1,
+      rows: [{ runs: 4, seconds: "123.6" }],
+    }));
+    const activity = await createAgentRunRepository(
+      createPersistenceFromRunner(runner),
+    ).workspaceActivity({
+      workspaceId: "ws-1",
+      since: new Date("2026-09-09T00:00:00.000Z"),
+    });
+
+    expect(activity).toEqual({ runs: 4, totalSeconds: 124 });
+    const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
+    expect(sql).toContain("join public.chat_sessions s on s.id = r.session_id");
+    expect(sql).toContain("join public.canvases c on c.id = s.canvas_id");
+    expect(sql).toContain("join public.projects p on p.id = c.project_id");
+    // 时间窗是位置参数 $1；`:workspace` 由 persistence 层追加到参数表末尾
+    expect(sql).toContain("r.created_at >= $1");
+    expect(sql).toContain("p.workspace_id = $2");
+    // 仍在跑的轮按「到现在」计，数字不会冻住
+    expect(sql).toContain("coalesce(r.completed_at, now())");
+    expect(calls[0]?.values).toEqual([
+      "2026-09-09T00:00:00.000Z",
+      "ws-1",
+    ]);
+  });
+
+  it("没有记录 / 脏值：一律归 0（不显示 NaN 秒）", async () => {
+    for (const rows of [[], [{ runs: null, seconds: null }], [{ runs: "x", seconds: "y" }]]) {
+      const { runner } = createRunner(() => ({ rowCount: 1, rows }));
+      const activity = await createAgentRunRepository(
+        createPersistenceFromRunner(runner),
+      ).workspaceActivity({
+        workspaceId: "ws-1",
+        since: new Date(),
+      });
+      expect(activity).toEqual({ runs: 0, totalSeconds: 0 });
+    }
+  });
+});

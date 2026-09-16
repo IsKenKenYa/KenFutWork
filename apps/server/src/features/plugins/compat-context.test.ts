@@ -24,6 +24,9 @@ function makeHost() {
   return {
     tools: kernel.get("tools"),
     subscribe: () => () => {},
+    promptFragments: () => () => {},
+    routes: () => () => {},
+    ui: () => () => {},
     label: "demo",
   };
 }
@@ -357,5 +360,42 @@ describe("compat-context：拒绝路径", () => {
     expect(host.tools.require("demo_keep")).toBeDefined();
     expect(await host.tools.require("demo_keep").execute({}, {})).toBe("ok");
     first.dispose();
+  });
+});
+
+/**
+ * 安全锁：插件拿到的 ctx **只有**四面能力（tools / promptFragments / routes / ui）
+ * 加框架方法（effect/on/inject/logger）——没有内核服务访问口，因此碰不到 admin 配置、
+ * 供应商凭证、设置项这些"管理员的东西"（用户红线：云端尤其不能改）。
+ */
+describe("插件上下文的权限边界", () => {
+  it("不暴露 ctx.get / set / provide / consume 等服务访问口", async () => {
+    let seen: Record<string, unknown> = {};
+    const namespace = {
+      name: "boundary-probe",
+      inject: [],
+      apply(ctx: Record<string, unknown>) {
+        seen = ctx;
+      },
+    };
+    await loadCompatPlugin(namespace, {
+      ...makeHost(),
+      label: "boundary-probe",
+    } as never);
+
+    for (const forbidden of ["get", "set", "provide", "consume", "services"]) {
+      expect(seen[forbidden]).toBeUndefined();
+    }
+    // 允许面（四条能力 + 框架方法）确实在
+    expect(Object.keys(seen).sort()).toEqual([
+      "effect",
+      "inject",
+      "logger",
+      "on",
+      "promptFragments",
+      "routes",
+      "tools",
+      "ui",
+    ]);
   });
 });

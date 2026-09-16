@@ -1,5 +1,5 @@
 {
-  "name": "@loomic/shared",
+  "name": "@kenfutwork/shared",
   "version": "0.0.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -18,7 +18,7 @@
   },
   "scripts": {
     "build": "tsc --build tsconfig.json --force",
-    "test": "vitest run src/contracts.test.ts src/credits.test.ts",
+    "test": "vitest run src/",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   }
 }

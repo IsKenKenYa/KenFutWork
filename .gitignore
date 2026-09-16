@@ -76,11 +76,14 @@ apps/web/tmp/
 /data/
 
 # 已安装插件（机器本地，含第三方代码，禁止提交）
-.loomic/
+.kenfutwork/
 
 # 本机临时目录（如 .tmp-mcp：E2E 测试用 MCP server 夹具，由 .env.local 的 LOOMIC_MCP_SERVERS 挂载）
 .tmp-*/
 
 # 随包分发的语言运行时（Node/Python/JDK，scripts/fetch-runtimes.mjs 拉取）
 /runtime/
-.loomic-data/
+.kenfutwork-data/
+
+# logo 字标字体样张（非商免/第三方字体，仅本机预览，禁止入库）
+docs/design/logo/字体/

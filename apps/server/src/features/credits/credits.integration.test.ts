@@ -15,7 +15,7 @@ import { createCreditRepository } from "./repository.js";
  * 单测断言）。
  *
  * 运行：DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
- *       pnpm --filter @loomic/server exec vitest run credits.integration
+ *       pnpm --filter @kenfutwork/server exec vitest run credits.integration
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 

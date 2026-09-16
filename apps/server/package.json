@@ -1,5 +1,5 @@
 {
-  "name": "@loomic/server",
+  "name": "@kenfutwork/server",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -15,7 +15,7 @@
     "@langchain/langgraph-checkpoint": "^1.1.5",
     "@langchain/langgraph-checkpoint-postgres": "^1.0.5",
     "@langchain/openai": "^1.5.13",
-    "@loomic/shared": "workspace:*",
+    "@kenfutwork/shared": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "deepagents": "^1.13.4",
     "embedded-postgres": "17.10.0-beta.17",
@@ -32,7 +32,7 @@
     "zod": "^4.5.2"
   },
   "devDependencies": {
-    "@loomic/config": "workspace:*",
+    "@kenfutwork/config": "workspace:*",
     "@types/node": "^24.13.3",
     "@types/pg": "^8.23.1",
     "@types/ws": "^8.18.1",
@@ -42,7 +42,7 @@
   },
   "scripts": {
     "build": "node ../../scripts/validate-foundation-app.mjs build",
-    "predev": "pnpm --filter @loomic/shared build",
+    "predev": "pnpm --filter @kenfutwork/shared build",
     "dev": "node --watch --env-file=../../.env.local --import tsx ./src/server.ts & WORKER_ID=w1 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & wait",
     "dev:server": "node --watch --env-file=../../.env.local --import tsx ./src/server.ts",
     "dev:worker": "node --watch --env-file=../../.env.local --import tsx ./src/worker.ts",

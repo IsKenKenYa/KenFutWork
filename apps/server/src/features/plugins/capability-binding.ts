@@ -1,13 +1,23 @@
-import type { CanonicalCapability } from "@loomic/shared";
+import type { CanonicalCapability } from "@kenfutwork/shared";
 
 import type { ServiceKey } from "../../kernel/types.js";
 
 /**
  * 能力绑定表（互操作缝的 Service Definition）：规范能力名 → 我方 kernel 服务。
  *
- * 这是**唯一**的 dsh/Loomic 能力映射属主。新增可被第三方插件使用的 kernel 能力，
+ * 这是**唯一**的 dsh/KenFutWork 能力映射属主。新增可被第三方插件使用的 kernel 能力，
  * 只改本表一行；不支持的能力必须显式列出并给出面向用户的理由——门禁据此拒绝安装，
  * 禁止静默降级（会得到「装上了但行为不确定」的插件）。
+ *
+ * **支持面的语义**（用户 2026-09-15 拍板「插件拥有所有能力」后逐项落地的结果）：
+ * - `tools`：注册工具（进 `ctx.tools`，模型可调用）；
+ * - `systemPrompt`：注册提示段（`ctx.promptFragments`，追加进 system prompt——插件的
+ *   「工作模式/行为引导」就是这么给的）；
+ * - `routes`：注册 HTTP 路由（`ctx.routes` → `/api/plugins/<id>/…`，默认要求登录）；
+ * - `ui`：贡献界面入口（`ctx.ui` 或清单里的 `kenfutwork.bundle.ui`，侧栏条目 + 面板）。
+ * 其余（settings/llm/sessions/fs/subprocess/sandbox/agents/jobs/commands）是**结构性
+ * 不匹配**而非缺管道：它们要么需要 request 级上下文，要么由运行时独占，硬接会让语义
+ * 失真——保持显式拒绝并给出理由。
  */
 export interface CapabilityBinding {
   /** 规范能力名（dsh ctx key 语义） */
@@ -60,10 +70,18 @@ export const CAPABILITY_BINDINGS: readonly CapabilityBinding[] = [
   },
   {
     capability: "systemPrompt",
-    serviceKey: null,
-    supported: false,
-    reason:
-      "提示段装配在本项目 agent 运行时的 system prompt 组装内，未开放注册。",
+    serviceKey: "capabilities",
+    supported: true,
+  },
+  {
+    capability: "routes",
+    serviceKey: "plugins",
+    supported: true,
+  },
+  {
+    capability: "ui",
+    serviceKey: "plugins",
+    supported: true,
   },
   {
     capability: "fs",

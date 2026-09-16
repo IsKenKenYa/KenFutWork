@@ -8,10 +8,12 @@ import type {
   StreamEvent,
   VideoArtifact,
   VideoGenerationPreference,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { toChatMenuMessages } from "@/lib/chat-menu";
+import { PanelsTopLeft } from "lucide-react";
+import { PluginPanelButtons } from "@/lib/plugin-panels";
 import { useAgentModel } from "../hooks/use-agent-model";
 import { useBreakpoint } from "../hooks/use-breakpoint";
 import { mapServerMessages, useChatSessions } from "../hooks/use-chat-sessions";
@@ -340,6 +342,13 @@ export function ChatSidebar({
   /** 对话内容容器（右键菜单「全选对话」用）。 */
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef(false);
+  /**
+   * 当前在跑的 run id（提成状态是为了给「停止本轮」按钮用）。
+   *
+   * 事件回调里那个 `runIdRef` 是闭包内的临时变量，渲染层读不到，所以此前只有
+   * 「等整轮跑完」一条路；重试换 id（run.retrying）时要同步更新，否则停的是旧 id。
+   */
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const messageMentionsRef = useRef(messageMentions);
   messageMentionsRef.current = messageMentions;
   const selectedCanvasElementsRef = useRef(selectedCanvasElements);
@@ -697,6 +706,12 @@ export function ChatSidebar({
         const runIdRef = { current: "" };
 
         const cleanup = ws.onEvent((event) => {
+          // 重试会换一个新 runId（服务端 run.retrying 带着新 id）：先认领再过滤，
+          // 否则这一轮后续事件（含终态）全被丢掉，助手永远停在「正在生成」。
+          if (event.type === "run.retrying" && runIdRef.current) {
+            runIdRef.current = event.runId;
+            setActiveRunId(event.runId);
+          }
           if (!runIdRef.current || event.runId !== runIdRef.current) return;
           if (abortRef.current) {
             resolveStream();
@@ -824,6 +839,7 @@ export function ChatSidebar({
               );
               const id = ack.payload.runId as string;
               runIdRef.current = id;
+              setActiveRunId(id);
               resolve(id);
             },
           );
@@ -850,6 +866,7 @@ export function ChatSidebar({
         );
       } finally {
         setStreaming(false);
+        setActiveRunId(null);
       }
     },
     [
@@ -1028,8 +1045,22 @@ export function ChatSidebar({
       ws.resumeCanvas(canvasId, (ack) => {
         const activeRunId = (ack.payload as Record<string, unknown>)
           .activeRunId;
-        if (activeRunId && typeof activeRunId === "string") {
+        /**
+         * 服务端说「没有在跑的 run」时要把本地的「生成中」收掉。
+         *
+         * GUI 实测踩到：进程重启（含 dev 的 --watch 重建）会把在飞的 run 收敛成 failed，
+         * 但客户端不知道——`streaming` 停在 true ⇒ 停止键常驻、输入框一直禁用，而那颗键
+         * 指向一个已经不存在的 run（点了没反应）。这里是「run 失踪」的唯一兜底信号。
+         */
+        if (!activeRunId || typeof activeRunId !== "string") {
+          setStreaming(false);
+          setActiveRunId(null);
+          return;
+        }
+        {
           setStreaming(true);
+          // 断线重连接上的这一轮同样要能停（否则重连后按钮消失，只能干等）
+          setActiveRunId(activeRunId);
 
           const assistantId = `resumed_${activeRunId}`;
           // Must use updateSessionMessages (not setMessages) so the placeholder
@@ -1089,6 +1120,7 @@ export function ChatSidebar({
               evt.type === "run.canceled"
             ) {
               setStreaming(false);
+              setActiveRunId(null);
               unsub();
             }
           });
@@ -1222,6 +1254,23 @@ export function ChatSidebar({
                 );
               })}
             </div>
+            {/* 插件面板（能力 `ui`）：对话槽位——Design 模式的对话界面就是这块画布内面板 */}
+            <PluginPanelButtons
+              accessToken={accessToken}
+              slot="conversation"
+              renderButton={(panel, open) => (
+                <button
+                  key={panel.id}
+                  type="button"
+                  onClick={open}
+                  title={`插件 ${panel.pluginId} 提供的面板`}
+                  className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                >
+                  <PanelsTopLeft className="h-3.5 w-3.5" />
+                  <span className="max-w-[96px] truncate">{panel.title}</span>
+                </button>
+              )}
+            />
         </>
       </div>
       {/* 第二行：模式 + 历史/新建 + 视图切换（对话/图层/文件）+ 收起（间距收紧，别留空档） */}
@@ -1373,6 +1422,12 @@ export function ChatSidebar({
               ref={chatInputRef}
               onSend={handleSend}
               disabled={streaming || sessionsLoading}
+              // 有活跃 run 才给停止键：没有 runId 时的「停止」是假按钮（点了不生效）
+              onStop={
+                streaming && activeRunId
+                  ? () => ws.cancelRun(activeRunId)
+                  : undefined
+              }
               attachments={imageAttachments}
               onAddFiles={addFiles}
               onRemoveAttachment={removeAttachment}

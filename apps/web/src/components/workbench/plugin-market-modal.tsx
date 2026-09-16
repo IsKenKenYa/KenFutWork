@@ -1,6 +1,6 @@
 "use client";
 
-import type { PluginMarketEntry } from "@loomic/shared";
+import type { PluginMarketEntry } from "@kenfutwork/shared";
 import {
   BarChart3,
   Bot,
@@ -20,6 +20,7 @@ import { getServerBaseUrl } from "@/lib/env";
 import { ListEmpty, ListLoading } from "./list-state";
 import { PluginExportDialog } from "./plugin-export-dialog";
 import { PluginInstallByUrl } from "./plugin-install-by-url";
+import { PluginInstallFromWorkdir } from "./plugin-install-from-workdir";
 
 const ICONS: Record<
   string,
@@ -47,10 +48,16 @@ export function PluginMarketModal({
   open,
   onClose,
   accessToken,
+  canvasId = null,
+  isAdmin = false,
 }: {
   open: boolean;
   onClose: () => void;
   accessToken: string | null;
+  /** 当前工作目录的画布 id（「从工作目录安装」用）。 */
+  canvasId?: string | null;
+  /** 安装端点要管理员：非管理员时两个安装入口都前置说明并禁用。 */
+  isAdmin?: boolean;
 }) {
   const [tab, setTab] = useState<MarketTab>("discover");
   const [query, setQuery] = useState("");
@@ -127,11 +134,11 @@ export function PluginMarketModal({
           className="flex h-[78vh] max-h-[88vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl"
           aria-describedby={undefined}
         >
-          <div className="flex items-center gap-3 border-b px-5 py-3 pr-12">
-            <DialogTitle className="flex items-center gap-2 text-base font-medium">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-5 py-3 pr-12">
+            <DialogTitle className="flex shrink-0 items-center gap-2 text-base font-medium">
               <Layers className="h-4 w-4" /> 插件市场
             </DialogTitle>
-            <div className="flex items-center gap-1 rounded-lg bg-muted p-1">
+            <div className="flex shrink-0 items-center gap-1 rounded-lg bg-muted p-1">
               {(
                 [
                   { id: "discover", label: "发现" },
@@ -143,7 +150,7 @@ export function PluginMarketModal({
                   type="button"
                   data-active={tab === item.id}
                   onClick={() => setTab(item.id)}
-                  className="rounded-md px-3 py-1 text-sm transition-colors data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:shadow-sm"
+                  className="whitespace-nowrap rounded-md px-3 py-1 text-sm transition-colors data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:shadow-sm"
                 >
                   {item.label}
                 </button>
@@ -163,10 +170,19 @@ export function PluginMarketModal({
 
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
             {tab === "discover" ? (
-              <PluginInstallByUrl
-                accessToken={accessToken}
-                onInstalled={refresh}
-              />
+              <>
+                <PluginInstallByUrl
+                  accessToken={accessToken}
+                  isAdmin={isAdmin}
+                  onInstalled={refresh}
+                />
+                <PluginInstallFromWorkdir
+                  accessToken={accessToken}
+                  canvasId={canvasId}
+                  isAdmin={isAdmin}
+                  onInstalled={refresh}
+                />
+              </>
             ) : null}
 
             {notice ? (

@@ -30,11 +30,11 @@ describe("SecretStore（DEC-7 服务端加密落库）", () => {
   it("缺 credentialSecret 时加密/解密都 fail loud", () => {
     const noSecret: { credentialSecret?: string } = {};
     expect(() => encryptSecret(noSecret, "k")).toThrow(
-      /LOOMIC_CREDENTIAL_SECRET 未配置/,
+      /KENFUTWORK_CREDENTIAL_SECRET 未配置/,
     );
     const ciphertext = encryptSecret(env, "k");
     expect(() => decryptSecret(noSecret, ciphertext)).toThrow(
-      /LOOMIC_CREDENTIAL_SECRET 未配置/,
+      /KENFUTWORK_CREDENTIAL_SECRET 未配置/,
     );
   });
 

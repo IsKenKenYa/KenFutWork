@@ -12,7 +12,7 @@ import {
 const STARTED = "2026-09-15T10:00:00Z";
 const ENDED = "2026-09-15T10:01:30Z";
 
-describe("subagent-directory（R1-3 子代理目录推导）", () => {
+describe("子代理目录（R1-3 子代理目录推导）", () => {
   it("识别子代理父工具（task 与 video_generate），普通工具不识别", () => {
     expect(isSubagentTool("task")).toBe(true);
     expect(isSubagentTool("video_generate")).toBe(true);
@@ -87,5 +87,32 @@ describe("subagent-directory（R1-3 子代理目录推导）", () => {
     });
     expect(list).toHaveLength(1);
     expect(summarizeSubagents(list)).toEqual({ running: 1, finished: 0 });
+  });
+});
+
+describe("子代理入参归一化（真实载荷是 {input: '<json>'} 包装）", () => {
+  it("从包装后的入参里取到 name 与 description", () => {
+    const wrapped = {
+      input:
+        '{"description":"审查 server 其余模块","name":"Explore","subagent_type":"Explore"}',
+    };
+    const list = upsertSubagentStarted([], {
+      toolCallId: "t1",
+      toolName: "task",
+      input: wrapped,
+      timestamp: STARTED,
+    });
+    expect(list[0]).toMatchObject({ name: "Explore", description: "审查 server 其余模块" });
+  });
+
+  it("取不到名字时回落成工具名（行为不变）", () => {
+    const list = upsertSubagentStarted([], {
+      toolCallId: "t2",
+      toolName: "task",
+      input: { input: "not-json" },
+      timestamp: STARTED,
+    });
+    expect(list[0]?.name).toBe("task");
+    expect(list[0]?.description).toBeUndefined();
   });
 });

@@ -77,7 +77,7 @@ describe("内嵌 Postgres：参数构造", () => {
     const args = buildInitdbArgs({
       dataDir: DATA_DIR,
       passwordFile: PASSWORD_FILE,
-      user: "loomic",
+      user: "kenfutwork",
     });
     expect(args).toContain("--pwfile");
     expect(args[args.indexOf("--pwfile") + 1]).toBe(PASSWORD_FILE);
@@ -112,20 +112,20 @@ describe("内嵌 Postgres：参数构造", () => {
   it("连接串对用户名/口令做 URL 编码", () => {
     expect(
       buildConnectionString({
-        database: "loomic",
+        database: "kenfutwork",
         password: "a b/c",
         port: 55432,
         user: "lo omic",
       }),
-    ).toBe("postgres://lo%20omic:a%20b%2Fc@127.0.0.1:55432/loomic");
+    ).toBe("postgres://lo%20omic:a%20b%2Fc@127.0.0.1:55432/kenfutwork");
   });
 });
 
 describe("内嵌 Postgres：二进制目录解析", () => {
-  it("LOOMIC_PG_BIN_DIR 显式覆盖优先", () => {
+  it("KENFUTWORK_PG_BIN_DIR 显式覆盖优先", () => {
     expect(
       resolvePgBinDir({
-        env: { LOOMIC_PG_BIN_DIR: join("D:/", "pg", "bin") },
+        env: { KENFUTWORK_PG_BIN_DIR: join("D:/", "pg", "bin") },
         exists: () => true,
         platform: "win32",
       }),
@@ -135,11 +135,11 @@ describe("内嵌 Postgres：二进制目录解析", () => {
   it("显式目录不存在时 fail loud（不静默回退到依赖包）", () => {
     expect(() =>
       resolvePgBinDir({
-        env: { LOOMIC_PG_BIN_DIR: "D:/nope" },
+        env: { KENFUTWORK_PG_BIN_DIR: "D:/nope" },
         exists: () => false,
         platform: "win32",
       }),
-    ).toThrow(/LOOMIC_PG_BIN_DIR 指向的目录不存在/);
+    ).toThrow(/KENFUTWORK_PG_BIN_DIR 指向的目录不存在/);
   });
 
   it("发布包内 <exe>/pg/bin 优先于依赖包", () => {
@@ -192,7 +192,7 @@ describe("内嵌 Postgres：生命周期", () => {
     expect(commands[1]?.args).toContain("start");
     expect(files.get(PASSWORD_FILE)).toBe("generated-password");
     expect(handle.connectionString).toBe(
-      "postgres://loomic:generated-password@127.0.0.1:55432/loomic",
+      "postgres://kenfutwork:generated-password@127.0.0.1:55432/kenfutwork",
     );
   });
 

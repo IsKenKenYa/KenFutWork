@@ -4,7 +4,7 @@ import type {
   BrandKitAssetType,
   BrandKitDetail,
   BrandKitSummary,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../../lib/auth-context";

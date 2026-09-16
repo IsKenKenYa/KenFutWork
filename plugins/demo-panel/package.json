@@ -1,0 +1,50 @@
+{
+  "name": "kenfutwork-demo-panel",
+  "version": "1.0.0",
+  "description": "KenFutWork 参考插件：演示全部能力面（tools / systemPrompt / routes / ui 四个槽位 + 静态资源托管）。",
+  "type": "module",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "license": "GPL-3.0",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "kenfutwork": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "assets": true,
+    "ui": [
+      {
+        "id": "sidebar",
+        "title": "示例面板",
+        "slot": "sidebar",
+        "url": "assets/panel.html"
+      },
+      {
+        "id": "conversation",
+        "title": "对话面板",
+        "slot": "conversation",
+        "url": "assets/panel.html?slot=conversation"
+      },
+      {
+        "id": "canvas",
+        "title": "画布面板",
+        "slot": "canvas",
+        "url": "assets/panel.html?slot=canvas"
+      },
+      {
+        "id": "settings",
+        "title": "示例插件设置",
+        "slot": "settings",
+        "url": "assets/panel.html?slot=settings"
+      }
+    ]
+  }
+}

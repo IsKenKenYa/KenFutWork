@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <title>示例面板</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 0; padding: 20px; color: #2F3459; }
+      h1 { font-size: 18px; margin: 0 0 8px; }
+      code { background: #eef0f7; padding: 1px 4px; border-radius: 4px; }
+      .slot { font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <h1>示例面板</h1>
+    <p>这个页面是插件 <b>自带静态资源</b>（<code>panel.html</code>，由 KenFutWork 托管在
+      <code>/api/plugins/&lt;id&gt;/assets/panel.html</code>），不是插件自己起的服务。</p>
+    <p>当前槽位：<span class="slot" id="slot">（未知）</span></p>
+    <p>四种槽位（侧栏 / 对话 / 画布 / 设置）共用这一个页面，用 <code>?slot=</code> 区分。</p>
+    <script>
+      document.getElementById("slot").textContent =
+        new URLSearchParams(location.search).get("slot") ?? "sidebar";
+    </script>
+  </body>
+</html>

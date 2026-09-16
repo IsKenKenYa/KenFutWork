@@ -77,7 +77,7 @@ describe("运行时目录解析", () => {
     const portable = join("D:", "portable-node");
     const app = join("C:", "app");
     const root = resolveRuntime("node", {
-      env: { LOOMIC_NODE_BIN_DIR: portable },
+      env: { KENFUTWORK_NODE_BIN_DIR: portable },
       exeDir: app,
       exists: fakeFs([
         join(portable, "node.exe"),
@@ -91,17 +91,17 @@ describe("运行时目录解析", () => {
   it("显式环境变量指向错误目录：fail loud（不静默回落宿主运行时）", () => {
     expect(() =>
       resolveRuntime("java", {
-        env: { LOOMIC_JAVA_BIN_DIR: join("D:", "empty") },
+        env: { KENFUTWORK_JAVA_BIN_DIR: join("D:", "empty") },
         exeDir: "C:/app",
         exists: () => false,
       }),
-    ).toThrow(/LOOMIC_JAVA_BIN_DIR/);
+    ).toThrow(/KENFUTWORK_JAVA_BIN_DIR/);
   });
 
   it("JAVA_HOME 推导：bin 目录覆盖式显式配置时回到运行时根", () => {
     const jdkBin = join("D:", "jdk-21", "bin");
     const root = resolveRuntime("java", {
-      env: { LOOMIC_JAVA_BIN_DIR: jdkBin },
+      env: { KENFUTWORK_JAVA_BIN_DIR: jdkBin },
       exeDir: join("C:", "app"),
       exists: fakeFs([join(jdkBin, "java.exe")]),
     });
@@ -213,10 +213,10 @@ describe("git 运行时的优先级（本地优先，打包兜底）", () => {
     );
   });
 
-  it("显式 LOOMIC_GIT_BIN_DIR 时不受「本地有 git」影响（显式覆盖优先）", () => {
+  it("显式 KENFUTWORK_GIT_BIN_DIR 时不受「本地有 git」影响（显式覆盖优先）", () => {
     const explicit = join("D:", "portable-git");
     const resolved = resolveRuntimes({
-      env: { LOOMIC_GIT_BIN_DIR: explicit },
+      env: { KENFUTWORK_GIT_BIN_DIR: explicit },
       exeDir: app,
       exists: fakeFs([join(explicit, "git.exe")]),
       systemPath: "C:/Program Files/Git/cmd",

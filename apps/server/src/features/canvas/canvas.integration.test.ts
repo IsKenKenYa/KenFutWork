@@ -11,7 +11,7 @@ import { createCanvasRepository } from "./repository.js";
  * 且 jsonb 的读回与 $n::jsonb 写入形状一致。
  *
  * 运行：DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
- *       pnpm --filter @loomic/server exec vitest run canvas.integration
+ *       pnpm --filter @kenfutwork/server exec vitest run canvas.integration
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 const FOREIGN_WORKSPACE = "00000000-0000-0000-0000-000000000000";

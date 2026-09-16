@@ -5,14 +5,22 @@ import {
   pluginInspectResponseSchema,
   pluginInstallRequestSchema,
   pluginInstallResponseSchema,
+  sandboxPluginBundleListResponseSchema,
+  sandboxPluginInstallRequestSchema,
   unauthenticatedErrorResponseSchema,
-} from "@loomic/shared";
-import type { FastifyInstance, FastifyReply } from "fastify";
+} from "@kenfutwork/shared";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import type { AdminService } from "../features/admin/admin-service.js";
+import type { AuthenticatedUser } from "../features/auth/types.js";
 import type { RequestAuthenticator } from "../features/auth/types.js";
+import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
+import type { CanvasRepository } from "../features/canvas/repository.js";
 import type { PluginRegistryService } from "../features/plugins/plugin-registry-service.js";
 import { PluginRegistryError } from "../features/plugins/plugin-registry-service.js";
+import { listSandboxPluginBundles } from "../features/plugins/sandbox-plugin-bundles.js";
+import { resolveInsideRoot } from "../utils/inside-root.js";
+import { resolveSandboxForCanvas } from "./sandbox-scope.js";
 
 /**
  * 插件市场与安装路由。
@@ -26,6 +34,11 @@ export interface PluginRoutesDeps {
   auth: RequestAuthenticator;
   admin: AdminService;
   registry: PluginRegistryService;
+  /** 「从工作目录安装」需要：画布归属校验 + 沙箱目录解析（与技能/agent 同一处）。 */
+  canvasRepository: CanvasRepository;
+  viewerService: ViewerService;
+  sandboxRoot?: string | undefined;
+  canvasWorkDirs?: Record<string, string> | undefined;
 }
 
 function sendUnauthenticated(reply: FastifyReply) {
@@ -126,6 +139,186 @@ export async function registerPluginRoutes(
       return sendError(reply, "install_failed", "安装失败。", 500);
     }
   });
+
+  // GET /api/plugins/sandbox-bundles?canvasId=… — 列出工作目录里的插件 bundle 候选
+  // （「从工作目录安装」用：agent/创造模式在工作目录里写出来的 bundle 在这里被发现）
+  app.get<{ Querystring: { canvasId?: string } }>(
+    "/api/plugins/sandbox-bundles",
+    async (request, reply) => {
+      const user = await options.auth.authenticate(request);
+      if (!user) return sendUnauthenticated(reply);
+      const canvasId = request.query.canvasId ?? "";
+      if (!canvasId) {
+        return sendError(reply, "invalid_request", "缺少 canvasId。", 400);
+      }
+      const sandboxDir = await resolveSandboxForCanvas(
+        {
+          viewerService: options.viewerService,
+          canvasRepository: options.canvasRepository,
+          sandboxRoot: options.sandboxRoot,
+          canvasWorkDirs: options.canvasWorkDirs,
+        },
+        user,
+        canvasId,
+      );
+      if (!sandboxDir) {
+        return sendError(
+          reply,
+          "not_found",
+          "画布不存在或不属于当前工作区。",
+          404,
+        );
+      }
+      return reply.code(200).send(
+        sandboxPluginBundleListResponseSchema.parse({
+          bundles: listSandboxPluginBundles(sandboxDir),
+        }),
+      );
+    },
+  );
+
+  // POST /api/plugins/sandbox-install — 把工作目录里的 bundle 目录安装到本实例
+  // 与 /api/plugins/install 同一道 admin 门：插件会加载执行第三方代码（本机目录也不例外）
+  app.post("/api/plugins/sandbox-install", async (request, reply) => {
+    if (!(await requireAdmin(request, reply))) return reply;
+
+    const parsed = sandboxPluginInstallRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return sendError(reply, "invalid_request", "请求参数不合法。", 400);
+    }
+    const user = await options.auth.authenticate(request);
+    if (!user) return sendUnauthenticated(reply);
+
+    const sandboxDir = await resolveSandboxForCanvas(
+      {
+        viewerService: options.viewerService,
+        canvasRepository: options.canvasRepository,
+        sandboxRoot: options.sandboxRoot,
+        canvasWorkDirs: options.canvasWorkDirs,
+      },
+      user as AuthenticatedUser,
+      parsed.data.canvasId,
+    );
+    if (!sandboxDir) {
+      return sendError(
+        reply,
+        "not_found",
+        "画布不存在或不属于当前工作区。",
+        404,
+      );
+    }
+
+    let bundleDir: string;
+    try {
+      bundleDir = resolveInsideRoot(sandboxDir, parsed.data.path);
+    } catch (error) {
+      return sendError(
+        reply,
+        "invalid_request",
+        error instanceof Error ? error.message : "路径不合法。",
+        400,
+      );
+    }
+
+    try {
+      // 本机目录安装：url 传绝对路径（bundle-source 认本地路径），生命周期脚本默认拒绝
+      const result = await options.registry.install({
+        allowLifecycleScripts: false,
+        url: bundleDir,
+      });
+      // 响应形状与 /api/plugins/install 一致：{installed, report}
+      return reply.code(201).send(pluginInstallResponseSchema.parse(result));
+    } catch (error) {
+      if (error instanceof PluginRegistryError) {
+        if (error.report) {
+          return reply.code(422).send({
+            error: { code: "plugin_incompatible", message: error.message },
+            report: error.report,
+          });
+        }
+        const status = error.code === "system_plugin" ? 403 : 400;
+        return sendError(reply, error.code, error.message, status);
+      }
+      request.log.error({ err: error }, "sandbox plugin install failed");
+      return sendError(reply, "install_failed", "安装失败。", 500);
+    }
+  });
+
+  /**
+   * 插件自带路由：`/api/plugins/<pluginId>/<path>`。
+   *
+   * 派发而不是注册到 Fastify：插件可以在运行时装卸，Fastify 的路由表注册后不可撤——
+   * 一张每次都现查的派发表才能做到「卸载即失效」。默认要求登录，插件可用
+   * `public: true` 显式开放（UI 面板 iframe 带不上 Authorization 头）。
+   */
+  const dispatchPluginRoute = async (
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ) => {
+    const params = request.params as { pluginId?: string; "*"?: string };
+    const pluginId = params.pluginId ?? "";
+    const routePath = params["*"] ?? "";
+    const query = (request.query ?? {}) as Record<string, string>;
+    if (!pluginId) {
+      return sendError(reply, "not_found", "缺少插件 id。", 404);
+    }
+    const user = await options.auth.authenticate(request);
+    const result = await options.registry.dispatchRoute({
+      pluginId,
+      method: request.method,
+      path: routePath,
+      query,
+      body: request.body,
+      headers: request.headers as Record<string, string | undefined>,
+      isAuthenticated: Boolean(user),
+    });
+    if (!result) {
+      return sendError(
+        reply,
+        "not_found",
+        "插件路由不存在（插件可能未安装或未启用）。",
+        404,
+      );
+    }
+    for (const [name, value] of Object.entries(result.headers ?? {})) {
+      reply.header(name, value);
+    }
+    if (typeof result.body === "string") {
+      // HTML/文本（面板页面）原样下发；plugin 自管的 content-type
+      return reply
+        .code(result.status)
+        .type(result.headers?.["content-type"] ?? "text/html; charset=utf-8")
+        .send(result.body);
+    }
+    return reply.code(result.status).send(result.body);
+  };
+
+  /**
+   * 插件静态资源：`/api/plugins/<id>/assets/<path>`（只读、公开）。
+   *
+   * 面板页面若由插件自带，iframe 可以直接加载这里（无需鉴权头）。仅在清单声明
+   * `kenfutwork.assets: true` 时开放；越界/点文件/node_modules/超限一律 404。
+   */
+  app.get<{ Params: { pluginId: string; "*": string } }>(
+    "/api/plugins/:pluginId/assets/*",
+    async (request, reply) => {
+      const asset = await options.registry.readAsset({
+        pluginId: request.params.pluginId,
+        relativePath: request.params["*"] ?? "",
+      });
+      if (!asset) {
+        return sendError(reply, "not_found", "资源不存在。", 404);
+      }
+      return reply
+        .code(200)
+        .header("cache-control", "no-cache")
+        .type(asset.contentType)
+        .send(asset.content);
+    },
+  );
+
+  app.get("/api/plugins/:pluginId/*", dispatchPluginRoute);
+  app.post("/api/plugins/:pluginId/*", dispatchPluginRoute);
 
   app.post("/api/plugins/:id/uninstall", async (request, reply) => {
     if (!(await requireAdmin(request, reply))) return reply;

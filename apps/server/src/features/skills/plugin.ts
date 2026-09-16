@@ -5,6 +5,8 @@ import type {
   ToolDefinition,
   ToolExecutionContext,
 } from "../../kernel/types.js";
+import { createCanvasRepository } from "../canvas/repository.js";
+import { createCreateSkillTool } from "./create-skill-tool.js";
 import {
   createSkillCatalogRepository,
   type SkillCatalogRepository,
@@ -83,14 +85,24 @@ export function createSkillsPlugin(): PluginDefinition {
         },
       };
 
+      // 创造模式的收尾动作：把技能包发布到当前工作区技能库（工厂在 create-skill-tool.ts）
+      const createSkillTool: ToolDefinition = createCreateSkillTool({
+        repository: skillsRepository,
+        auth: ctx.get("auth"),
+      });
+
       ctx.get("tools").register(listSkillsTool);
       ctx.get("tools").register(useSkillTool);
+      ctx.get("tools").register(createSkillTool);
     },
     mounted(ctx) {
       void registerSkillRoutes(ctx.app, {
         auth: ctx.get("auth"),
         skillsRepository,
         viewerService: ctx.get("viewer"),
+        canvasRepository: createCanvasRepository(ctx.get("persistence")),
+        sandboxRoot: ctx.env.sandboxRoot,
+        canvasWorkDirs: ctx.env.canvasWorkDirs,
       });
       void registerMarketplaceRoutes(ctx.app, {
         auth: ctx.get("auth"),

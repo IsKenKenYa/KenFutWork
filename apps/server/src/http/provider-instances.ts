@@ -6,19 +6,36 @@ import {
   providerInstanceResponseSchema,
   providerInstanceUpdateRequestSchema,
   unauthenticatedErrorResponseSchema,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { RequestAuthenticator } from "../features/auth/types.js";
 import {
   type ModelProviderService,
   ModelProviderServiceError,
 } from "../features/model-providers/model-provider-service.js";
+import { describeZodIssues, isZodError } from "./zod-error.js";
 
+/**
+ * 请求体校验失败 → 400（而非 500）：契约层把「非法头名 / 保留头 / CRLF / 白名单外占位符」
+ * 都做成了写入时拒绝（§4.8 fail loud），若落入 500 兜底，用户只会看到
+ * 「Internal provider error.」——既误导（把客户端错误报成服务端故障），又丢掉原因。
+ * 消息由 `describeZodIssues` 生成：只回字段路径与规则，不回显收到的值。
+ */
 function sendError(
   error: unknown,
   reply: FastifyReply,
   fallbackCode: string,
 ): FastifyReply {
+  if (isZodError(error)) {
+    return reply.code(400).send(
+      applicationErrorResponseSchema.parse({
+        error: {
+          code: "invalid_request",
+          message: describeZodIssues(error.issues),
+        },
+      }),
+    );
+  }
   if (error instanceof ModelProviderServiceError) {
     return reply.code(error.statusCode).send(
       applicationErrorResponseSchema.parse({

@@ -53,7 +53,7 @@ describe("auth repository：账号读取", () => {
       rows: [
         {
           display_name: "Pro Tester",
-          email: "pro@test.loomic.com",
+          email: "pro@test.kenfutwork.com",
           password_hash: "scrypt$...",
           user_id: "user-1",
         },
@@ -62,7 +62,7 @@ describe("auth repository：账号读取", () => {
 
     const account = await createAccountRepository(
       createPersistenceFromRunner(runner),
-    ).findAccountByEmail("Pro@Test.Loomic.com");
+    ).findAccountByEmail("Pro@Test.KenFutWork.com");
 
     const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
     expect(sql).toContain("from public.accounts u");
@@ -71,7 +71,7 @@ describe("auth repository：账号读取", () => {
     );
     expect(sql).toContain("where lower(u.email::text) = lower($1)");
     expect(sql).not.toContain("select *");
-    expect(calls[0]?.values).toEqual(["Pro@Test.Loomic.com"]);
+    expect(calls[0]?.values).toEqual(["Pro@Test.KenFutWork.com"]);
     expect(account?.user_id).toBe("user-1");
   });
 
@@ -80,7 +80,7 @@ describe("auth repository：账号读取", () => {
     await expect(
       createAccountRepository(
         createPersistenceFromRunner(runner),
-      ).findAccountByEmail("nobody@test.loomic.com"),
+      ).findAccountByEmail("nobody@test.kenfutwork.com"),
     ).resolves.toBeNull();
   });
 });
@@ -101,7 +101,7 @@ describe("auth repository：建账号（同一事务）", () => {
       createPersistenceFromRunner(runner),
     ).createAccount({
       displayName: "New User",
-      email: "new@test.loomic.com",
+      email: "new@test.kenfutwork.com",
       passwordHash: "scrypt$hash",
     });
 
@@ -136,7 +136,7 @@ describe("auth repository：建账号（同一事务）", () => {
         createPersistenceFromRunner(runner),
       ).createAccount({
         displayName: null,
-        email: "taken@test.loomic.com",
+        email: "taken@test.kenfutwork.com",
         passwordHash: "scrypt$hash",
       }),
     ).rejects.toBeInstanceOf(EmailTakenError);
@@ -156,7 +156,7 @@ describe("auth repository：会话", () => {
       rowCount: 1,
       rows: [
         {
-          email: "pro@test.loomic.com",
+          email: "pro@test.kenfutwork.com",
           expires_at: "2026-10-13T00:00:00.000Z",
           raw_user_meta_data: {},
           user_id: "user-1",

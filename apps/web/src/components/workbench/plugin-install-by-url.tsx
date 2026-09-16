@@ -1,6 +1,6 @@
 "use client";
 
-import type { CompatReport, PluginBundleManifest } from "@loomic/shared";
+import type { CompatReport, PluginBundleManifest } from "@kenfutwork/shared";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 
@@ -15,9 +15,12 @@ import { CompatReportView, hasLifecycleIssue } from "./plugin-compat-report";
  */
 export function PluginInstallByUrl({
   accessToken,
+  isAdmin = false,
   onInstalled,
 }: {
   accessToken: string | null;
+  /** 安装要过管理员门：非管理员直接说清（校验兼容性仍然可用）。 */
+  isAdmin?: boolean;
   onInstalled: () => void;
 }) {
   const [source, setSource] = useState("");
@@ -118,6 +121,12 @@ export function PluginInstallByUrl({
         未通过则不能安装。
       </p>
 
+      {!isAdmin ? (
+        <p className="mt-1 text-xs text-amber-600">
+          安装需要管理员权限；「校验兼容性」不受影响，可以先看门禁报告。
+        </p>
+      ) : null}
+
       <div className="mt-3 flex gap-2">
         <input
           aria-label="插件来源"
@@ -148,7 +157,7 @@ export function PluginInstallByUrl({
           onClick={() => {
             void install();
           }}
-          disabled={busy !== null || !report?.compatible}
+          disabled={!isAdmin || busy !== null || !report?.compatible}
           data-testid="install-button"
           className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-40"
         >

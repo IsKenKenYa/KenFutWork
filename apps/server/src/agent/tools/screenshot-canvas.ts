@@ -1,5 +1,5 @@
 import { DynamicStructuredTool } from "@langchain/core/tools";
-import type { ScreenshotResult } from "@loomic/shared";
+import type { ScreenshotResult } from "@kenfutwork/shared";
 import { z } from "zod";
 import type { ConnectionManager } from "../../ws/connection-manager.js";
 import type { PersistImageFn } from "./image-generate.js";

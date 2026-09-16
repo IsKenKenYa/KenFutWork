@@ -1,4 +1,4 @@
-import type { BrandKitDetail } from "@loomic/shared";
+import type { BrandKitDetail } from "@kenfutwork/shared";
 import { describe, expect, it, vi } from "vitest";
 
 import type { BrandKitService } from "../../features/brand-kit/brand-kit-service.js";

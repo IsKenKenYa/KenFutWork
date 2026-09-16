@@ -1,5 +1,6 @@
 "use client";
 
+import { Palette } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 type CanvasEmptyHintProps = {
@@ -82,8 +83,17 @@ export function CanvasEmptyHint({
     <div
       // z-[3]：夹在 Excalidraw 的层之间——画布 z=1/2，右键菜单弹层 z=10，
       // 这样提示浮在画布之上、又被菜单正常盖住（不靠隐藏提示来躲遮挡）
-      className="canvas-empty-hint pointer-events-none absolute inset-0 z-[3] flex items-center justify-center"
+      className="canvas-empty-hint pointer-events-none absolute inset-0 z-[3] flex flex-col items-center justify-center gap-2"
     >
+      {/* Design 模式的问候语画在**画布上**（不是 Code 那种居中编排器）。
+          排版对齐 Code 问候语（图标 + 大号粗体），只把颜色压成 muted；
+          图标用「画板」而不是 Code 的 `</>`。 */}
+      <div className="flex items-center gap-3 text-muted-foreground/50">
+        <Palette className="h-8 w-8" />
+        <h1 className="text-4xl font-semibold tracking-tight">
+          Design with KenFutWork
+        </h1>
+      </div>
       <p className="text-base text-muted-foreground/50">
         {"输入你的想法开始创作"}
       </p>

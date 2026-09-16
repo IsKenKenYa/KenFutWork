@@ -7,13 +7,13 @@ import { prepareDesktopRuntime } from "./runtime.js";
 /**
  * 桌面运行时真实启动测试（FORM-2）。默认 skipped：需要显式开启。
  *
- *   LOOMIC_DESKTOP_PG_IT=1 pnpm --filter @loomic/server exec vitest run desktop-runtime.integration
+ *   KENFUTWORK_DESKTOP_PG_IT=1 pnpm --filter @kenfutwork/server exec vitest run desktop-runtime.integration
  *
  * 这条用例是 M2.3 的「开箱即用」验收：一个空数据目录 → 拉起内嵌 Postgres →
  * 跑完 40 条迁移 → 起 HTTP → **不带任何令牌**访问受保护接口成功（local-trust）→
  * 认证路由不存在（免登录形态不保留口令攻击面）→ 关停后停库。
  */
-const ENABLED = process.env.LOOMIC_DESKTOP_PG_IT === "1";
+const ENABLED = process.env.KENFUTWORK_DESKTOP_PG_IT === "1";
 
 describe.skipIf(!ENABLED)("桌面运行时（内嵌 PG + local-trust）", () => {
   it("空目录首启动即建成完整 schema，且免登录可用", async () => {
@@ -22,7 +22,7 @@ describe.skipIf(!ENABLED)("桌面运行时（内嵌 PG + local-trust）", () => 
     const { tmpdir } = await import("node:os");
 
     const repoRoot = join(process.cwd(), "..", "..");
-    const dataDir = await mkdtemp(join(tmpdir(), "loomic-desktop-runtime-"));
+    const dataDir = await mkdtemp(join(tmpdir(), "kenfutwork-desktop-runtime-"));
     const logs: string[] = [];
 
     const runtime = await prepareDesktopRuntime({

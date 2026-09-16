@@ -12,7 +12,7 @@ import { createChatRepository } from "./repository.js";
  * 上成立，且缺省标题走列默认值、消息 jsonb 往返一致。
  *
  * 运行：DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
- *       pnpm --filter @loomic/server exec vitest run chat.integration
+ *       pnpm --filter @kenfutwork/server exec vitest run chat.integration
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 const FOREIGN_WORKSPACE = "00000000-0000-0000-0000-000000000000";

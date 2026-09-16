@@ -1,14 +1,9 @@
 "use client";
 
-import type { ProjectSummary } from "@loomic/shared";
-import {
-  Check,
-  ChevronDown,
-  Folder,
-  FolderOpen,
-  MessageSquare,
-} from "lucide-react";
+import type { ProjectSummary } from "@kenfutwork/shared";
+import { Check, ChevronDown, Folder, FolderOpen, MessageSquare } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+
 
 /**
  * 工作目录选择器（Code 模式 composer 底部）。
@@ -23,6 +18,13 @@ export interface WorkDirectorySelectProps {
   /** 工作目录项目（kind='code'），已按 updated_at 倒序。 */
   projects: ProjectSummary[];
   selectedProjectId: string | null;
+  /**
+   * 只读展示：已有对话绑定工作目录时传入提示文案。
+   *
+   * 转录里的追问沿用对话自己的项目（换目录会让上一轮写的文件留在旧沙箱里
+   * 「消失」），所以这里把 chip 锁成展示态，而不是给一个按了不生效的下拉。
+   */
+  lockedHint?: string | undefined;
   /** 正在创建项目（新建/自动补建）时为 true，禁用以避免并发重复建。 */
   busy?: boolean;
   onSelect: (projectId: string) => void;
@@ -35,6 +37,7 @@ export interface WorkDirectorySelectProps {
 export function WorkDirectorySelect({
   projects,
   selectedProjectId,
+  lockedHint,
   busy = false,
   onSelect,
   onOpenFolder,
@@ -75,26 +78,33 @@ export function WorkDirectorySelect({
   const visible = keyword
     ? projects.filter((project) => project.name.toLowerCase().includes(keyword))
     : projects;
+  /** 只读（已绑定对话）：chip 仍然显示目录名，但不给下拉——按了不生效才是坑。 */
+  const locked = lockedHint !== undefined;
 
   return (
     <div ref={containerRef} className="relative">
       <button
         type="button"
         aria-label="工作目录"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        disabled={busy}
+        aria-haspopup={locked ? undefined : "listbox"}
+        aria-expanded={locked ? undefined : open}
+        title={lockedHint}
+        disabled={busy || locked}
         onClick={() => setOpen((current) => !current)}
-        className="flex max-w-[12rem] items-center gap-1.5 rounded-lg border px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
+        className="flex max-w-[12rem] items-center gap-1.5 rounded-lg border px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-60"
       >
         <Folder className="h-3.5 w-3.5 shrink-0" />
         <span className="truncate">
-          {selected ? selected.name : "选择工作目录"}
+          {selected
+            ? selected.name
+            : locked
+              ? "未绑定工作目录"
+              : "选择工作目录"}
         </span>
-        <ChevronDown className="h-3 w-3 shrink-0" />
+        {locked ? null : <ChevronDown className="h-3 w-3 shrink-0" />}
       </button>
 
-      {open ? (
+      {open && !locked ? (
         <div
           role="listbox"
           aria-label="工作目录列表"
@@ -142,6 +152,7 @@ export function WorkDirectorySelect({
             )}
           </div>
 
+
           <div className="border-t p-1">
             <button
               type="button"
@@ -168,6 +179,7 @@ export function WorkDirectorySelect({
           </div>
         </div>
       ) : null}
+
     </div>
   );
 }

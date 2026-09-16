@@ -1,4 +1,4 @@
-import { computeChatCreditCost } from "@loomic/shared";
+import { computeChatCreditCost } from "@kenfutwork/shared";
 
 import { registerUsageRoutes } from "../../http/usage.js";
 import type { PluginContext, PluginDefinition } from "../../kernel/types.js";

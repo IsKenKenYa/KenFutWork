@@ -277,9 +277,11 @@ export class ReplicateImageProvider implements ImageProvider {
   readonly name = "replicate";
   readonly models = REPLICATE_IMAGE_MODELS;
   private apiToken: string;
+  private headers: Record<string, string> | undefined;
 
-  constructor(apiToken: string) {
+  constructor(apiToken: string, headers?: Record<string, string>) {
     this.apiToken = apiToken;
+    this.headers = headers;
   }
 
   async generate(params: ImageGenerateParams): Promise<GeneratedImage> {
@@ -318,6 +320,8 @@ export class ReplicateImageProvider implements ImageProvider {
       {
         method: "POST",
         headers: {
+          // 自定义头（§4.8）在前，凭证与内容类型随后——保留头永远由适配器说了算
+          ...this.headers,
           Authorization: `Bearer ${this.apiToken}`,
           "Content-Type": "application/json",
           Prefer: "wait",

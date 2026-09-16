@@ -72,7 +72,7 @@ export interface VideoProvider {
 }
 
 export interface VideoPriceRate {
-  /** Loomic's resolution value sent through the public generation API. */
+  /** KenFutWork's resolution value sent through the public generation API. */
   resolution: "720p" | "1080p";
   /** Provider-native label shown to users, for example 768P or 2K. */
   displayResolution: string;
@@ -105,6 +105,6 @@ export interface VideoModelInfo extends ModelInfo {
     maxResolution: "480p" | "720p" | "1080p" | "2160p";
     maxInputImages: number;
   };
-  /** Verified provider pricing, separate from Loomic's own credit balance. */
+  /** Verified provider pricing, separate from KenFutWork's own credit balance. */
   pricing?: VideoPricingInfo;
 }

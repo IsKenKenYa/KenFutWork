@@ -9,7 +9,7 @@ import { resolve } from "node:path";
  * 文件系统割裂的历史事故）。故判定只有一处，两边共用。
  *
  * 目录名的判定优先级：
- * 1. **真实目录映射**（`LOOMIC_CANVAS_WORK_DIRS`，画布 → 本机绝对路径）：
+ * 1. **真实目录映射**（`KENFUTWORK_CANVAS_WORK_DIRS`，画布 → 本机绝对路径）：
  *    本地/桌面形态把工作目录映射到真实电脑环境时用（产品决策 2026-09-14：
  *    「工作目录和真实电脑环境做映射，暂时不用沙箱，高风险命令才用沙箱」）。
  *    映射存在时直接落该目录，不走根目录拼接。
@@ -40,4 +40,26 @@ export function resolveSandboxDir(
   }
   const root = resolve(sandboxRoot ?? DEFAULT_SANDBOX_ROOT);
   return resolve(root, sanitizeCanvasIdForPath(canvasId));
+}
+
+/**
+ * 运行入口的沙箱作用域判定：**沙箱目录名要落在画布 UUID 上**。
+ *
+ * 背景：无工作目录的 Code 会话，客户端手里只有会话 UUID，会把 `canvasId` 发成
+ * 会话 id（`payload.canvasId ?? payload.conversationId` 就是会话作用域）。直接用它会得到
+ * `tmp/sandbox/<会话UUID>`，与服务端懒供给的「Code 工作台」画布对不上（用户要求的是
+ * `tmp/sandbox/<画布UUID>`）。
+ *
+ * 规则：**只有当客户端发的就是会话作用域、且服务端确实解析出了会话的真实画布时**，
+ * 才把沙箱作用域换成画布 UUID；正常项目作用域（客户端给了项目主画布）一律不动。
+ */
+export function resolveSandboxScopeId(input: {
+  requestedCanvasId: string;
+  conversationId: string;
+  sessionCanvasId?: string | null | undefined;
+}): string | undefined {
+  if (!input.sessionCanvasId) return undefined;
+  return input.requestedCanvasId === input.conversationId
+    ? input.sessionCanvasId
+    : undefined;
 }

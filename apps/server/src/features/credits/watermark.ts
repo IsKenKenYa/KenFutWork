@@ -2,7 +2,7 @@
 import sharp from "sharp";
 
 /**
- * Apply a "Made with Loomic" watermark to an image buffer.
+ * Apply a "Made with KenFutWork" watermark to an image buffer.
  *
  * Uses an SVG text overlay composited onto the image via sharp.
  * The watermark is positioned in the bottom-right corner with white text
@@ -40,7 +40,7 @@ export async function applyWatermark(
     fill-opacity="0.4"
     text-anchor="end"
     filter="url(#shadow)"
-  >Made with Loomic</text>
+  >Made with KenFutWork</text>
 </svg>`,
   );
 

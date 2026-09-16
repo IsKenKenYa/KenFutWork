@@ -39,6 +39,22 @@ export interface AgentRunRepository {
    * api、桌面单进程），故不引入心跳/租约那套机制。
    */
   reconcileInterrupted(before: Date, message: string): Promise<number>;
+  /**
+   * 工作区在给定时间窗内的 agent 运行次数与**累计运行时长**
+   * （参考图 Git 弹层的「智能体 26 秒 · 4 运行」）。**口径定义在这里**：
+   * - 时间范围 = 近 7 天（`since` 由服务层算好传入）；
+   * - **范围 = 整个工作区**：不按会话/画布切。实测两条「更细」的路都不可靠——
+   *   客户端任务 id 与服务端会话 id 不保证一致（同一轮对话两边 id 不同），
+   *   run 挂的又是会话的载体画布而非项目画布（按项目画布查恒为 0）；
+   * - 时长 = 各轮 `completed_at - created_at` 求和；仍在跑的按「到现在」计
+   *   （`coalesce(completed_at, now())`），数字不会在运行中冻住；
+   * - 隔离：`agent_runs` 无 workspace_id，谓词走 `chat_sessions → canvases → projects`
+   *   父链（与 chat 仓储同一条链）。
+   */
+  workspaceActivity(input: {
+    workspaceId: string;
+    since: Date;
+  }): Promise<{ runs: number; totalSeconds: number }>;
 }
 
 export function createAgentRunRepository(
@@ -81,6 +97,29 @@ export function createAgentRunRepository(
           where id = $1`,
         values,
       );
+    },
+
+    async workspaceActivity(input) {
+      const rows = await persistence
+        .forWorkspace(input.workspaceId)
+        .query<{ seconds: string | number | null; runs: string | number }>(
+          `select count(*)::int as runs,
+                  coalesce(sum(extract(epoch from (coalesce(r.completed_at, now()) - r.created_at))), 0) as seconds
+             from public.agent_runs r
+             join public.chat_sessions s on s.id = r.session_id
+             join public.canvases c on c.id = s.canvas_id
+             join public.projects p on p.id = c.project_id
+            where p.workspace_id = :workspace
+              and r.created_at >= $1`,
+          [input.since.toISOString()],
+        );
+      const runs = Number(rows[0]?.runs ?? 0);
+      const seconds = Number(rows[0]?.seconds ?? 0);
+      return {
+        runs: Number.isFinite(runs) && runs > 0 ? runs : 0,
+        totalSeconds:
+          Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds) : 0,
+      };
     },
 
     async reconcileInterrupted(before, message) {

@@ -1,4 +1,4 @@
-import type { BackgroundJob } from "@loomic/shared";
+import type { BackgroundJob } from "@kenfutwork/shared";
 
 import { resolveVideoProviderName } from "../../../generation/providers/registry.js";
 import { generateVideo } from "../../../generation/video-generation.js";
@@ -47,6 +47,11 @@ registerExecutor(
     const instanceProvider = await resolveInstanceVideoProviderFromPayload(
       (payload as { provider_instance_id?: string }).provider_instance_id,
       ctx,
+      // 自定义头（§4.8）的会话占位符按本条 job 的会话取值
+      {
+        ...(jobRow.session_id ? { sessionId: jobRow.session_id } : {}),
+        ...(jobRow.thread_id ? { threadId: jobRow.thread_id } : {}),
+      },
     );
     const providerName = instanceProvider
       ? instanceProvider.name

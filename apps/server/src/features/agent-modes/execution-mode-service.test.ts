@@ -1,4 +1,4 @@
-import type { ExecutionMode } from "@loomic/shared";
+import type { ExecutionMode } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
 
 import {

@@ -12,7 +12,7 @@ import {
 import { runtimeEnvAdditions } from "../../desktop/runtimes.js";
 import { resolveSandboxDir } from "../sandbox-dir.js";
 
-const DEFAULT_SKILLS_ROOT = "/opt/loomic/skills";
+const DEFAULT_SKILLS_ROOT = "/opt/kenfutwork/skills";
 
 /**
  * Create a production backend with a per-project persistent workspace.
@@ -38,7 +38,7 @@ export function createProductionBackendFactory(
   canvasId: string,
   options?: {
     sandboxRoot?: string;
-    /** 画布 → 真实目录映射（`LOOMIC_CANVAS_WORK_DIRS`）；命中时直接落该目录。 */
+    /** 画布 → 真实目录映射（`KENFUTWORK_CANVAS_WORK_DIRS`）；命中时直接落该目录。 */
     workDir?: string;
     skillsRoot?: string;
     hasWorkspaceSkills?: boolean;

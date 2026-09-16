@@ -2,7 +2,7 @@ import {
   applicationErrorResponseSchema,
   modelCatalogResponseSchema,
   unauthenticatedErrorResponseSchema,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { ModelCatalogService } from "../features/model-providers/model-catalog-service.js";

@@ -8,7 +8,7 @@ import { join } from "node:path";
  * 也可能是只读目录，故一切可变状态必须落在**平台惯例的应用数据目录**，不能用
  * `process.cwd()`（现状缺陷：blob 与插件目录都按 cwd 解析）。
  *
- * 解析链：`LOOMIC_DATA_DIR`（显式覆盖，测试与自托管用）→ 平台惯例目录。
+ * 解析链：`KENFUTWORK_DATA_DIR`（显式覆盖，测试与自托管用）→ 平台惯例目录。
  */
 
 export type DesktopPathInput = {
@@ -21,7 +21,7 @@ export type DesktopPathInput = {
 
 /** 应用数据根目录（不含 `data` 子目录）。 */
 export function resolveDesktopDataDir(input: DesktopPathInput): string {
-  const explicit = input.env.LOOMIC_DATA_DIR?.trim();
+  const explicit = input.env.KENFUTWORK_DATA_DIR?.trim();
   if (explicit) {
     return explicit;
   }

@@ -1,6 +1,6 @@
 # Agent设计最佳实践研究报告
 
-> 基于 Anthropic、LangChain、OpenAI 三大顶级 AI 公司的工程博客、官方文档和实战经验，对比 Loomic 现有 Agent 架构，提炼关键设计原则和改进方向。
+> 基于 Anthropic、LangChain、OpenAI 三大顶级 AI 公司的工程博客、官方文档和实战经验，对比 KenFutWork 现有 Agent 架构，提炼关键设计原则和改进方向。
 >
 > 日期：2026-03-27
 
@@ -19,7 +19,7 @@
   - [8. 流式输出与异步处理](#8-流式输出与异步处理)
   - [9. 安全与 Guardrails](#9-安全与-guardrails)
   - [10. Agent 评估体系](#10-agent-评估体系)
-- [第二部分：Loomic 现有架构深度分析](#第二部分loomic-现有架构深度分析)
+- [第二部分：KenFutWork 现有架构深度分析](#第二部分kenfutwork-现有架构深度分析)
 - [第三部分：Gap 分析与改进建议](#第三部分gap-分析与改进建议)
 - [附录：关键文章索引](#附录关键文章索引)
 
@@ -738,11 +738,11 @@ The company's revenue grew by 3% over the previous quarter."
 
 ---
 
-## 第二部分：Loomic 现有架构深度分析
+## 第二部分：KenFutWork 现有架构深度分析
 
 ### 架构总览
 
-Loomic 的 Agent 系统基于 **deepagents 框架**（而非原始 LangGraph），围绕 canvas 操作构建：
+KenFutWork 的 Agent 系统基于 **deepagents 框架**（而非原始 LangGraph），围绕 canvas 操作构建：
 
 ```
 Frontend (WebSocket)
@@ -776,7 +776,7 @@ adaptDeepAgentStream() → StreamEvent → WS → Frontend
 
 ### System Prompt 分析
 
-位于 `apps/server/src/agent/prompts/loomic-main.ts`（约 107 行，中文）：
+位于 `apps/server/src/agent/prompts/kenfutwork-main.ts`（约 107 行，中文）：
 
 **优点**：
 - 角色定义清晰（可爱活泼的 AI 设计助手）
@@ -828,7 +828,7 @@ adaptDeepAgentStream() → StreamEvent → WS → Frontend
 
 **行业实践**：Anthropic 的 Think Tool 在策略密集型场景中提供 **54% 相对提升**。
 
-**建议**：为 Loomic Agent 添加 think 工具，特别是在以下场景触发：
+**建议**：为 KenFutWork Agent 添加 think 工具，特别是在以下场景触发：
 - 处理 inspect_canvas 返回的大量元素数据后
 - 执行多步画布操作前的规划阶段
 - screenshot 验证后的分析阶段
@@ -1001,7 +1001,7 @@ tools/
 - Anthropic Tool Search：token 减少 85%，准确率提升 25 个百分点
 - OpenAI：初始函数控制在 20 个以内，大量工具使用 tool_search
 
-**建议**：当前 Loomic 工具数量较少（5-6 个），暂不紧迫。但随着功能扩展（如添加文本编辑、动画、导出等工具），应提前规划按需加载机制。
+**建议**：当前 KenFutWork 工具数量较少（5-6 个），暂不紧迫。但随着功能扩展（如添加文本编辑、动画、导出等工具），应提前规划按需加载机制。
 
 **实现复杂度**：低（当前）/ 中（未来）。
 
@@ -1075,4 +1075,4 @@ tools/
 
 ---
 
-> **核心结论**：Loomic 的 Agent 架构在核心编排模式（Supervisor + Sub-agent）、工具设计（canvas 操作）和异步处理（PGMQ）方面已经建立了良好的基础。最大的提升空间在于**提示词工程的精细化**（Few-Shot Examples、Think Tool、错误处理指导）和**自动验证环节**（Reflection Loop）——这些都是低成本高回报的改进。中长期应关注 Guardrails 体系和系统化评估 pipeline 的建设。
+> **核心结论**：KenFutWork 的 Agent 架构在核心编排模式（Supervisor + Sub-agent）、工具设计（canvas 操作）和异步处理（PGMQ）方面已经建立了良好的基础。最大的提升空间在于**提示词工程的精细化**（Few-Shot Examples、Think Tool、错误处理指导）和**自动验证环节**（Reflection Loop）——这些都是低成本高回报的改进。中长期应关注 Guardrails 体系和系统化评估 pipeline 的建设。

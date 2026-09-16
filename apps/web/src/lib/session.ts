@@ -1,6 +1,7 @@
 "use client";
 
 import { getServerBaseUrl } from "./env";
+import { migrateLegacyStorageKeys } from "./legacy-storage";
 
 /**
  * 自管认证的浏览器客户端（M1.4 / M1.5）。
@@ -11,8 +12,8 @@ import { getServerBaseUrl } from "./env";
  * 表单 / 模型选择器）直接依赖它。
  */
 
-const TOKEN_STORAGE_KEY = "loomic.session.token";
-const EXPIRES_STORAGE_KEY = "loomic.session.expiresAt";
+const TOKEN_STORAGE_KEY = "kenfutwork.session.token";
+const EXPIRES_STORAGE_KEY = "kenfutwork.session.expiresAt";
 
 export type AuthUser = {
   displayName: string | null;
@@ -42,6 +43,7 @@ function notify(session: AuthSession | null): void {
 
 function persist(session: AuthSession | null): void {
   if (typeof window === "undefined") return;
+  migrateLegacyStorageKeys();
   if (session) {
     window.localStorage.setItem(TOKEN_STORAGE_KEY, session.access_token);
     window.localStorage.setItem(EXPIRES_STORAGE_KEY, session.expiresAt ?? "");
@@ -55,6 +57,8 @@ function persist(session: AuthSession | null): void {
 /** 读本地令牌；已过期则视为无会话（过期判断在服务端也会再做一次）。 */
 export function readStoredSession(): { token: string } | null {
   if (typeof window === "undefined") return null;
+  // 旧前缀（loomic.*）里的会话令牌先搬到新键，否则老用户会被静默登出
+  migrateLegacyStorageKeys();
   const token = window.localStorage.getItem(TOKEN_STORAGE_KEY);
   if (!token) return null;
 
@@ -184,8 +188,14 @@ export async function loadSession(): Promise<AuthSession | null> {
     // 网络不可达：不武断清令牌（可能是服务还没起来），但也不声称已登录
     return null;
   }
-  if (!response.ok) {
+  if (response.status === 401) {
+    // 令牌确实无效/过期：清掉，别每次进页面都白跑一趟
     persist(null);
+    return null;
+  }
+  if (!response.ok) {
+    // 服务端暂时不可用（重启 / 编译中 / 5xx）：**不动令牌**——否则重启一次就把人踢到登录页
+    // （实测：dev 热重载窗口里刷新页面 = 被登出；用户也报过「会话失效被踢到登录页」）
     return null;
   }
 

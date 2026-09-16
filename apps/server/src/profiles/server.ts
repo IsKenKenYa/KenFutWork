@@ -1,5 +1,5 @@
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
-import type { LoomicAgentFactory } from "../agent/deep-agent.js";
+import type { KenFutWorkAgentFactory } from "../agent/deep-agent.js";
 import type { ServerEnv } from "../config/env.js";
 import { createAdminPlugin } from "../features/admin/plugin.js";
 import { createAgentModesPlugin } from "../features/agent-modes/plugin.js";
@@ -46,7 +46,7 @@ export interface ServerProfileDeps {
   events: KernelEvents;
   credentialEnv: { credentialSecret?: string };
   env: ServerEnv;
-  agentFactory?: LoomicAgentFactory;
+  agentFactory?: KenFutWorkAgentFactory;
   agentModel?: BaseLanguageModel | string;
   mockEventDelayMs?: number;
   /** overrides 直填的条件装配插件需感知注入实例（enabled 判定，保持历史行为）。 */

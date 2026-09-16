@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
 import { resolveSandboxDir } from "../../agent/sandbox-dir.js";
 import type { AuthenticatedUser } from "../auth/types.js";
@@ -8,6 +11,10 @@ import {
   type GitSource,
 } from "./code-git-service.js";
 import type { GitClient, GitRepoView } from "./git-client.js";
+import type {
+  TerminalShellId,
+  TerminalShellOption,
+} from "./terminal-runner.js";
 
 const USER = {
   accessToken: "t",
@@ -33,9 +40,21 @@ function build(options: {
   git?: Partial<GitClient>;
   source?: GitSource;
   canvasWorkDirs?: Record<string, string>;
+  settingsService?: {
+    getWorkspaceSettings: (
+      user: AuthenticatedUser,
+      workspaceId: string,
+    ) => Promise<{
+      defaultModel: string;
+      agentMaxRetries: number;
+      terminalShell: TerminalShellId;
+    }>;
+  };
+  availableShells?: TerminalShellOption[];
 }) {
   const git: GitClient = {
     checkout: vi.fn(async () => {}),
+    init: vi.fn(async () => {}),
     describe: vi.fn(async () => REPO_VIEW),
     diffStat: vi.fn(async () => ({
       files: 0,
@@ -46,6 +65,11 @@ function build(options: {
     commitAll: vi.fn(async () => {}),
     push: vi.fn(async () => {}),
     createBranch: vi.fn(async () => {}),
+    graph: vi.fn(async () => ({ entries: [], truncated: false })),
+    changedFiles: vi.fn(async () => ({ files: [], truncated: false })),
+    fileDiff: vi.fn(async () => ""),
+    stageFile: vi.fn(async () => {}),
+    applyHunk: vi.fn(async () => {}),
     ...options.git,
   };
   const findById = vi.fn(async () =>
@@ -60,6 +84,12 @@ function build(options: {
       ? { canvasWorkDirs: options.canvasWorkDirs }
       : {}),
     viewerService: { resolveWorkspace },
+    ...(options.settingsService
+      ? { settingsService: options.settingsService }
+      : {}),
+    ...(options.availableShells
+      ? { availableShells: options.availableShells }
+      : {}),
   });
   return { findById, git, resolveWorkspace, service };
 }
@@ -164,5 +194,328 @@ describe("Code git 服务", () => {
     expect(error).toBeInstanceOf(CodeGitError);
     expect((error as CodeGitError).statusCode).toBe(409);
     expect((error as CodeGitError).message).toMatch(/local changes/);
+  });
+});
+
+/**
+ * 「每次对话用 git 跟踪」的前置：非仓库目录要能一键初始化，且**幂等**
+ * （已是仓库时不重复 init）。
+ */
+describe("git init（工作目录初始化仓库）", () => {
+  it("非仓库时调用 git init；已是仓库时跳过", async () => {
+    const notRepo = build({
+      git: { describe: vi.fn(async () => ({ ...REPO_VIEW, isRepo: false })) },
+    });
+    await notRepo.service.init(USER, CANVAS_ID);
+    expect(notRepo.git.init).toHaveBeenCalledTimes(1);
+
+    const repo = build({});
+    await repo.service.init(USER, CANVAS_ID);
+    expect(repo.git.init).not.toHaveBeenCalled();
+  });
+
+  it("git 不可用时如实拒绝（不静默）", async () => {
+    const { service } = build({ source: "unavailable" });
+    await expect(service.init(USER, CANVAS_ID)).rejects.toThrow(/git/i);
+  });
+});
+
+/**
+ * Git 图谱（R2-1 条目 6）。
+ *
+ * 关键是**把「状态」与「故障」分开**：非仓库、仓库还没有提交都不是错误，
+ * 界面要拿到 isRepo 去显示初始化引导 / 「还没有提交」；抛错会把状态说成故障。
+ */
+describe("Git 图谱", () => {
+  const GRAPH = {
+    entries: [{
+      rail: "* ",
+      sha: "abc1234full",
+      shortSha: "abc1234",
+      subject: "第一轮",
+      author: "t",
+      date: "2026-09-16T00:00:00+08:00",
+      refs: ["HEAD -> main"],
+      parents: [],
+    }],
+    truncated: false,
+  };
+
+  it("仓库：转发图形行与截断标记", async () => {
+    const graphFn = vi.fn(async () => GRAPH);
+    const { service } = build({ git: { graph: graphFn } });
+    const graph = await service.graph(USER, CANVAS_ID, 30);
+    expect(graph).toEqual({ isRepo: true, ...GRAPH });
+    expect(graphFn).toHaveBeenCalledWith(resolveSandboxDir(CANVAS_ID), 30);
+  });
+
+  it("非仓库：返回 isRepo=false 且不下发 log 命令", async () => {
+    const graphFn = vi.fn(async () => GRAPH);
+    const { service } = build({
+      git: {
+        describe: vi.fn(async () => ({ ...REPO_VIEW, isRepo: false })),
+        graph: graphFn,
+      },
+    });
+    expect(await service.graph(USER, CANVAS_ID, 30)).toEqual({
+      isRepo: false,
+      entries: [],
+      truncated: false,
+    });
+    expect(graphFn).not.toHaveBeenCalled();
+  });
+
+  it("越权：画布不属于当前工作区 → 404，且不下发任何 git 命令", async () => {
+    const graphFn = vi.fn(async () => GRAPH);
+    const { service, git } = build({ canvasFound: false, git: { graph: graphFn } });
+    await expect(service.graph(USER, CANVAS_ID, 30)).rejects.toMatchObject({
+      statusCode: 404,
+    });
+    expect(graphFn).not.toHaveBeenCalled();
+    expect(git.describe).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * 变更清单 / 单文件差异 / 单文件内容（R3-2，文件读取同时服务 R3-3 的文档入口）。
+ */
+describe("变更清单与文件查看", () => {
+  const root = mkdtempSync(join(tmpdir(), "kfw-code-git-"));
+  afterAll(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const CHANGED = {
+    files: [
+      {
+        path: "app.ts",
+        additions: 3,
+        deletions: 1,
+        binary: false,
+        status: "modified" as const,
+        staged: true,
+      },
+      {
+        path: "draft.md",
+        additions: 0,
+        deletions: 0,
+        binary: false,
+        status: "untracked" as const,
+        staged: false,
+      },
+    ],
+    truncated: false,
+  };
+
+  it("变更清单：仓库给逐文件清单，非仓库给空清单 + isRepo=false（状态不是故障）", async () => {
+    const repo = build({
+      git: { changedFiles: vi.fn(async () => CHANGED) },
+      canvasWorkDirs: { [CANVAS_ID]: root },
+    });
+    expect(await repo.service.changes(USER, CANVAS_ID, 200)).toEqual({
+      isRepo: true,
+      ...CHANGED,
+    });
+
+    const notRepo = build({
+      git: { describe: vi.fn(async () => ({ ...REPO_VIEW, isRepo: false })) },
+    });
+    expect(await notRepo.service.changes(USER, CANVAS_ID, 200)).toEqual({
+      isRepo: false,
+      files: [],
+      truncated: false,
+    });
+  });
+
+  it("未跟踪文件的「审查」：合成「按新增行」视图并标 untracked（diff HEAD 对它是空的）", async () => {
+    writeFileSync(join(root, "draft.md"), "第一行\n第二行\n", "utf8");
+    const { service } = build({
+      git: { changedFiles: vi.fn(async () => CHANGED) },
+      canvasWorkDirs: { [CANVAS_ID]: root },
+    });
+
+    const diff = await service.fileDiff(USER, CANVAS_ID, "draft.md");
+    expect(diff.untracked).toBe(true);
+    // 文件尾的换行不该画成一行孤零零的 `+`
+    expect(diff.text).toBe("+第一行\n+第二行");
+  });
+
+  it("已跟踪文件的「审查」：透传 git 的 diff", async () => {
+    const { service } = build({
+      git: {
+        changedFiles: vi.fn(async () => CHANGED),
+        fileDiff: vi.fn(async () => "diff --git a/app.ts b/app.ts\n+1"),
+      },
+      canvasWorkDirs: { [CANVAS_ID]: root },
+    });
+    const diff = await service.fileDiff(USER, CANVAS_ID, "app.ts");
+    expect(diff.untracked).toBe(false);
+    expect(diff.text).toContain("diff --git");
+  });
+
+  it("「打开」：读到文件内容；越界路径折成 400 可读原因", async () => {
+    writeFileSync(join(root, "AGENTS.md"), "# 指南\n", "utf8");
+    const { service } = build({ canvasWorkDirs: { [CANVAS_ID]: root } });
+
+    const file = await service.readFile(USER, CANVAS_ID, "AGENTS.md");
+    expect(file.content).toBe("# 指南\n");
+
+    await expect(
+      service.readFile(USER, CANVAS_ID, "../secret.txt"),
+    ).rejects.toMatchObject({ statusCode: 400 });
+  });
+});
+
+/** 项目文档清单（R3-3「文档入口」）：候选里存在的列出来，不读内容。 */
+describe("项目文档清单", () => {
+  const root = mkdtempSync(join(tmpdir(), "kfw-code-docs-"));
+  afterAll(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("只列存在的候选文档，并给字节数（按候选顺序：AGENTS.md 在前）", async () => {
+    writeFileSync(join(root, "README.md"), "# readme\n", "utf8");
+    writeFileSync(join(root, "AGENTS.md"), "# 指南\n", "utf8");
+    const { service } = build({ canvasWorkDirs: { [CANVAS_ID]: root } });
+
+    const docs = await service.listDocs(USER, CANVAS_ID);
+    expect(docs.map((doc) => doc.path)).toEqual(["AGENTS.md", "README.md"]);
+    expect(docs[0]?.bytes).toBe(Buffer.byteLength("# 指南\n"));
+  });
+
+  it("目录里没有候选文档时给空数组（不是错误）", async () => {
+    const empty = mkdtempSync(join(tmpdir(), "kfw-code-docs-empty-"));
+    try {
+      const { service } = build({ canvasWorkDirs: { [CANVAS_ID]: empty } });
+      expect(await service.listDocs(USER, CANVAS_ID)).toEqual([]);
+    } finally {
+      rmSync(empty, { recursive: true, force: true });
+    }
+  });
+
+  it("越权：画布不属于当前工作区 → 404，不碰文件系统", async () => {
+    const { service } = build({ canvasFound: false });
+    await expect(service.listDocs(USER, CANVAS_ID)).rejects.toMatchObject({
+      statusCode: 404,
+    });
+  });
+});
+
+/**
+ * 终端 shell（用户口径：「终端应该是直连 cmd 或者 powershell、git-bash 等等，可以在设置里
+ * 配置默认的」）：默认值来自工作区设置，本次显式选的优先；命令行实际交给选中的 shell。
+ */
+describe("终端 shell 解析", () => {
+  const shells: TerminalShellOption[] = [
+    { id: "cmd", label: "cmd", executable: "cmd.exe" },
+    { id: "powershell", label: "Windows PowerShell", executable: "powershell.exe" },
+  ];
+
+  it("清单与默认值：读工作区设置，读不到落 auto", async () => {
+    const { service } = build({
+      availableShells: shells,
+      settingsService: {
+        getWorkspaceSettings: async () => ({
+          agentMaxRetries: 10,
+          defaultModel: "inst-1:glm-5.3-flash",
+          terminalShell: "powershell",
+        }),
+      },
+    });
+    await expect(service.listTerminalShells(USER)).resolves.toEqual({
+      shells,
+      defaultShell: "powershell",
+      resolvedShell: "powershell",
+    });
+
+    const { service: noSettings } = build({ availableShells: shells });
+    // auto：解析成本机平台默认（测试机是 Windows → cmd）
+    await expect(noSettings.listTerminalShells(USER)).resolves.toEqual({
+      shells,
+      defaultShell: "auto",
+      resolvedShell: process.platform === "win32" ? "cmd" : shells[0]?.id,
+    });
+  });
+
+  it("设置读取失败不打断：落 auto，而不是把终端整个打不开", async () => {
+    const { service } = build({
+      availableShells: shells,
+      settingsService: {
+        getWorkspaceSettings: async () => {
+          throw new Error("boom");
+        },
+      },
+    });
+    await expect(service.listTerminalShells(USER)).resolves.toEqual({
+      shells,
+      defaultShell: "auto",
+      resolvedShell: process.platform === "win32" ? "cmd" : shells[0]?.id,
+    });
+  });
+
+  it("本次显式选的 shell 优先于设置默认（命令确实在那条 shell 里跑）", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kfw-cg-shell-"));
+    try {
+      const { service } = build({
+        canvasWorkDirs: { [CANVAS_ID]: dir },
+      });
+      const result = await service.runTerminal(
+        USER,
+        CANVAS_ID,
+        "echo kfw-shell",
+        "auto",
+      );
+      expect(result.shell).toBe(process.platform === "win32" ? "cmd" : "sh");
+      expect(result.exitCode).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * 暂存 / 取消暂存（参考图审查视图的「暂存」）：路径必须先过「落在工作目录内」这道门。
+ */
+describe("暂存单个文件", () => {
+  const root = mkdtempSync(join(tmpdir(), "kfw-stage-"));
+  afterAll(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("在工作目录内：转交 git，并把 path/staged 原样回给客户端", async () => {
+    const stageFile = vi.fn(async () => {});
+    const { service } = build({
+      git: { stageFile },
+      canvasWorkDirs: { [CANVAS_ID]: root },
+    });
+    await expect(
+      service.setFileStaged(USER, CANVAS_ID, "src/app.ts", true),
+    ).resolves.toEqual({ path: "src/app.ts", staged: true });
+    expect(stageFile).toHaveBeenCalledWith(root, "src/app.ts", true);
+  });
+
+  it("路径越界（../ 逃逸）：400 且不碰 git", async () => {
+    const stageFile = vi.fn(async () => {});
+    const { service } = build({
+      git: { stageFile },
+      canvasWorkDirs: { [CANVAS_ID]: root },
+    });
+    await expect(
+      service.setFileStaged(USER, CANVAS_ID, "../outside.ts", true),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(stageFile).not.toHaveBeenCalled();
+  });
+
+  it("画布不属于本工作区：一轮 404（与其它端点同一口径）", async () => {
+    const stageFile = vi.fn(async () => {});
+    const { service } = build({
+      git: { stageFile },
+      canvasFound: false,
+      canvasWorkDirs: { [CANVAS_ID]: root },
+    });
+    await expect(
+      service.setFileStaged(USER, CANVAS_ID, "src/app.ts", true),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    expect(stageFile).not.toHaveBeenCalled();
   });
 });

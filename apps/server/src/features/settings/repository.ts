@@ -1,3 +1,5 @@
+import type { TerminalShellId } from "@kenfutwork/shared";
+
 import type { PersistenceService } from "../persistence/types.js";
 
 /**
@@ -9,16 +11,23 @@ export interface SettingsRepository {
   findDefaultModel(workspaceId: string): Promise<string | null>;
   /** 读 run 重试上限；无行返回 null（由服务落缺省 10）。 */
   findAgentMaxRetries(workspaceId: string): Promise<number | null>;
+  /** 读终端默认 shell；无行返回 null（由服务落 `auto`）。 */
+  findTerminalShell(workspaceId: string): Promise<TerminalShellId | null>;
   /** 一工作区一行，冲突即更新。 */
   upsertDefaultModel(workspaceId: string, defaultModel: string): Promise<void>;
   upsertAgentMaxRetries(
     workspaceId: string,
     agentMaxRetries: number,
   ): Promise<void>;
+  upsertTerminalShell(
+    workspaceId: string,
+    terminalShell: TerminalShellId,
+  ): Promise<void>;
 }
 
 type DefaultModelRow = { default_model: string };
 type AgentMaxRetriesRow = { agent_max_retries: number };
+type TerminalShellRow = { terminal_shell: TerminalShellId };
 
 export function createSettingsRepository(
   persistence: PersistenceService,
@@ -46,6 +55,17 @@ export function createSettingsRepository(
       return row?.agent_max_retries ?? null;
     },
 
+    async findTerminalShell(workspaceId) {
+      const row = await persistence
+        .forWorkspace(workspaceId)
+        .queryOne<TerminalShellRow>(
+          `select terminal_shell
+             from public.workspace_settings
+            where workspace_id = :workspace`,
+        );
+      return row?.terminal_shell ?? null;
+    },
+
     async upsertDefaultModel(workspaceId, defaultModel) {
       await persistence.forWorkspace(workspaceId).query(
         `insert into public.workspace_settings (workspace_id, default_model)
@@ -53,6 +73,17 @@ export function createSettingsRepository(
          on conflict (workspace_id)
          do update set default_model = excluded.default_model`,
         [defaultModel],
+      );
+    },
+
+    /** 终端默认 shell：同样逐列 upsert（三个设置各写各的列）。 */
+    async upsertTerminalShell(workspaceId, terminalShell) {
+      await persistence.forWorkspace(workspaceId).query(
+        `insert into public.workspace_settings (workspace_id, terminal_shell)
+         values (:workspace, $1)
+         on conflict (workspace_id)
+         do update set terminal_shell = excluded.terminal_shell`,
+        [terminalShell],
       );
     },
 

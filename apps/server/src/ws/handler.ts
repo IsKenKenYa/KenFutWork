@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
-import type { ContentBlock, ToolBlock, WsCommand } from "@loomic/shared";
+import type { ContentBlock, ToolBlock, WsCommand } from "@kenfutwork/shared";
 import {
   type RunCreateRequest,
   wsCommandSchema,
   wsRpcResponseSchema,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { WebSocket } from "ws";
 import {
@@ -14,6 +14,7 @@ import {
 } from "../agent/run-retry.js";
 import type { AgentRunService } from "../agent/runtime.js";
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
+import { resolveSandboxScopeId } from "../agent/sandbox-dir.js";
 import { isPlanApprovalInput } from "../features/agent-modes/execution-mode-service.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type {
@@ -355,8 +356,8 @@ async function handleRunCommand(
   })();
 
   // Resolve thread + model in parallel
-  const [threadId, viewer, model] = await Promise.all([
-    (async (): Promise<string | undefined> => {
+  const [sessionBinding, viewer, model] = await Promise.all([
+    (async (): Promise<{ canvasId: string; threadId: string } | undefined> => {
       if (!services.threadService) return undefined;
       try {
         const sessionThread =
@@ -364,7 +365,10 @@ async function handleRunCommand(
             authenticatedUser,
             payload.sessionId,
           );
-        return sessionThread.threadId;
+        return {
+          canvasId: sessionThread.canvasId,
+          threadId: sessionThread.threadId,
+        };
       } catch (error) {
         log.warn("thread_resolve_failed", {
           error: error instanceof Error ? error.message : String(error),
@@ -391,6 +395,21 @@ async function handleRunCommand(
       }
     })(),
   ]);
+  const threadId = sessionBinding?.threadId;
+
+  /**
+   * 沙箱目录名必须是**画布 UUID**（用户要求 `tmp/sandbox/<画布UUID>`）。
+   *
+   * 无工作目录的 Code 会话，客户端手里只有会话 UUID，会把 `canvasId` 发成会话 id ——
+   * 直接落盘就是 `tmp/sandbox/<会话UUID>`，与服务端懒供给的「Code 工作台」画布对不上。
+   * 这里只在「客户端发的就是会话作用域」时改用会话的真实画布；正常项目作用域不动。
+   */
+  const sandboxScopeId = resolveSandboxScopeId({
+    conversationId: payload.conversationId,
+    requestedCanvasId: payload.canvasId ?? payload.conversationId,
+    sessionCanvasId: sessionBinding?.canvasId,
+  });
+
   // Client-provided model takes priority over workspace default
   const resolvedModel = payload.model ?? model;
   log.lap("resolve", {
@@ -463,6 +482,7 @@ async function handleRunCommand(
       accessToken: authenticatedUser.accessToken,
       userId: authenticatedUser.id,
       ...(resolvedModel ? { model: resolvedModel } : {}),
+      ...(sandboxScopeId ? { sandboxScopeId } : {}),
       ...(threadId ? { threadId } : {}),
     });
     const runId = response.runId;
@@ -553,7 +573,20 @@ async function handleRunCommand(
         if (event.type === "tool.started" || event.type === "tool.completed") {
           sawToolExecution = true;
         }
-        if (event.type === "run.failed") failureMessage = event.error.message;
+        if (event.type === "run.failed") {
+          failureMessage = event.error.message;
+          /**
+           * 失败原因进**结构化日志**（pipeline-*.log）。
+           * 此前原始错误只 `console.error` 到 stderr（终端一关就没了），实测「每轮 run
+           * 都失败」时既回溯不了上游返回了什么、也贴不给上游排查。message 里已含脱敏后的
+           * 原始错误（见 error-sanitizer 的 withRawDetail），与 agent_runs.error_message 同源。
+           */
+          log.error("run_failed", {
+            runId,
+            code: event.error.code,
+            error: event.error.message,
+          });
+        }
 
         // Accumulate content for server-side persistence
         if (event.type === "message.delta") {

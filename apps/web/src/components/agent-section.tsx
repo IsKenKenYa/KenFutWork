@@ -1,6 +1,6 @@
 "use client";
 
-import type { ModelInfo } from "@loomic/shared";
+import type { ModelInfo } from "@kenfutwork/shared";
 import { useEffect, useState } from "react";
 import {
   Select,

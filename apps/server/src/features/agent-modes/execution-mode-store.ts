@@ -1,4 +1,4 @@
-import { type ExecutionMode, executionModeSchema } from "@loomic/shared";
+import { type ExecutionMode, executionModeSchema } from "@kenfutwork/shared";
 
 import type { PersistenceService } from "../persistence/types.js";
 
@@ -6,6 +6,11 @@ import type { PersistenceService } from "../persistence/types.js";
  * 执行模式持久化（chat_sessions.execution_mode，按线程）。
  * chat_sessions 是工作区归属数据（经 画布→项目 链），读写都走 `forWorkspace`
  * 客户端——DB 层已无 RLS 兜底，隔离谓词必须显式出现在语句里（FORM-9）。
+ *
+ * **入参同时接受 thread_id 与会话 id**：run 路径（WS）用服务端内部 thread_id，
+ * 而画布助手面板的选择器只有会话 id（会话列表仅回 id/title/updatedAt，见 contracts.ts）。
+ * 此前只匹配 thread_id，面板切换必然落空——接口回 400「Invalid mode.」（catch-all 盖住了
+ * 真实原因），实际是「该线程不存在」。
  */
 
 /** 模式持久化的工作区作用域。 */
@@ -44,7 +49,7 @@ export function createExecutionModeStore(
              from public.chat_sessions s
              join public.canvases c on c.id = s.canvas_id
              join public.projects p on p.id = c.project_id
-            where s.thread_id = $1
+            where (s.thread_id = $1 or s.id::text = $1)
               and p.workspace_id = :workspace`,
           [threadId],
         );
@@ -63,7 +68,7 @@ export function createExecutionModeStore(
       await persistence.forWorkspace(workspaceId).execute(
         `update public.chat_sessions s
             set execution_mode = $2
-          where s.thread_id = $1
+          where (s.thread_id = $1 or s.id::text = $1)
             and exists (
               select 1
                 from public.canvases c

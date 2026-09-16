@@ -14,12 +14,12 @@ import type {
   RunCreateResponse,
   StreamEvent,
   VideoGenerationPreference,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import {
   type BillingErrorCode,
   getPlanConfig,
   type ImageQualityLevel,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { ServerEnv } from "../config/env.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type { AuthenticatedUser } from "../features/auth/types.js";
@@ -38,17 +38,23 @@ import { parseInstanceSpecifier } from "../features/model-providers/model-catalo
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type { RunUsageAccumulator } from "../features/usage/run-usage-accumulator.js";
 import type { ToolExecutionContext, ToolRegistry } from "../kernel/types.js";
+import { instanceHeadersOption } from "../providers/instance-headers.js";
 import { resolveInstanceChatModel } from "../providers/resolve.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createPipelineLogger } from "../ws/logger.js";
 import { createAgentBackend } from "./backends/index.js";
-import type { ToolGate } from "./deep-agent.js";
+import { measureTools } from "./prompt-composition.js";
+import type { ToolGate, ToolGateHooks } from "./deep-agent.js";
+import {
+  createToolDenialTracker,
+  type ToolDenialRecord,
+} from "./tool-denial.js";
 import {
   createDefaultModelSpecifier,
-  createLoomicDeepAgent,
-  type LoomicAgent,
-  type LoomicAgentFactory,
+  createKenFutWorkDeepAgent,
+  type KenFutWorkAgent,
+  type KenFutWorkAgentFactory,
 } from "./deep-agent.js";
 import type { AgentPersistenceService } from "./persistence/index.js";
 import { adaptDeepAgentStream } from "./stream-adapter.js";
@@ -274,6 +280,14 @@ type RuntimeRunRecord = RunCreateRequest & {
   controller: AbortController;
   modelOverride?: string;
   runId: string;
+  /**
+   * 沙箱目录名用的 id（画布 UUID）。
+   *
+   * 无工作目录的 Code 会话，客户端只能把**会话 UUID** 当 canvasId 发上来，
+   * 直接落盘会得到 `tmp/sandbox/<会话UUID>`——与服务端懒供给的「Code 工作台」画布对不上。
+   * 运行入口解析出真实画布后放这里；事件路由仍用 `canvasId`（客户端认的是它）。
+   */
+  sandboxScopeId?: string;
   status: RuntimeRunStatus;
   threadId?: string;
   userId?: string;
@@ -287,7 +301,7 @@ type RuntimeRunRecord = RunCreateRequest & {
 
 type CreateAgentRuntimeOptions = {
   agentPersistenceService?: AgentPersistenceService;
-  agentFactory?: LoomicAgentFactory;
+  agentFactory?: KenFutWorkAgentFactory;
   agentRunMetadataService?: AgentRunMetadataService;
   /** 品牌套件服务（brand-kit 插件提供）：get_brand_kit 工具经它取数。 */
   brandKitService?: BrandKitService;
@@ -327,6 +341,8 @@ type CreateAgentRuntimeOptions = {
    * solo/plan 的工具拦截判定；返回 undefined 表示全放行（agent 等模式）。
    */
   toolGateFor?: (threadId: string) => ToolGate | undefined;
+  /** 插件贡献的提示段（能力 systemPrompt）；每次 run 调用一次。 */
+  pluginPromptFragments?: () => string[];
   now?: () => string;
   runIdFactory?: () => string;
   tierGuard?: TierGuard;
@@ -356,12 +372,21 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     return typeof result.input === "string" ? result.input : input;
   };
 
-  const resolvedAgentFactory: LoomicAgentFactory =
+  /**
+   * 最近一次装配回吐的工具清单（R4-1 分类占比要按 schema 分「系统工具 / MCP 工具」）。
+   * 每次 run 装配一次 agent，装配期内赋值、随后立刻读取，故不存在跨 run 串用。
+   */
+  let lastToolInventory: readonly unknown[] = [];
+
+  const resolvedAgentFactory: KenFutWorkAgentFactory =
     options.agentFactory ??
     ((agentOptions) =>
-      createLoomicDeepAgent({
+      createKenFutWorkDeepAgent({
         ...agentOptions,
         blob: options.blob,
+        onToolInventory: (tools) => {
+          lastToolInventory = tools;
+        },
       }));
 
   // ── Billing error helper: push WS event + abort run ──────────
@@ -430,6 +455,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       runOptions?: {
         accessToken?: string;
         model?: string;
+        /** 沙箱目录名用的 id（画布 UUID）；缺省回落到 canvasId。 */
+        sandboxScopeId?: string;
         threadId?: string;
         userId?: string;
       },
@@ -445,6 +472,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         consumed: false,
         controller: new AbortController(),
         ...(runOptions?.model ? { modelOverride: runOptions.model } : {}),
+        ...(runOptions?.sandboxScopeId
+          ? { sandboxScopeId: runOptions.sandboxScopeId }
+          : {}),
         ...(runOptions?.threadId ? { threadId: runOptions.threadId } : {}),
         ...(runOptions?.userId ? { userId: runOptions.userId } : {}),
         runId,
@@ -522,7 +552,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           runId,
           now,
           new Error(
-            "LOOMIC_DATABASE_URL（或 DATABASE_URL）是持久化 agent 线程的必需项。",
+            "KENFUTWORK_DATABASE_URL（或 DATABASE_URL）是持久化 agent 线程的必需项。",
           ),
         );
         run.status = "failed";
@@ -531,7 +561,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           run,
           now,
           new Error(
-            "LOOMIC_DATABASE_URL（或 DATABASE_URL）是持久化 agent 线程的必需项。",
+            "KENFUTWORK_DATABASE_URL（或 DATABASE_URL）是持久化 agent 线程的必需项。",
           ),
         );
         yield failedEvent;
@@ -1051,12 +1081,18 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       }
 
       // Create backend — production uses StateBackend (no local shell).
-      const backendResult = createAgentBackend(options.env, run.canvasId, {
-        hasWorkspaceSkills: workspaceSkills.length > 0,
-      });
+      const backendResult = createAgentBackend(
+        options.env,
+        run.sandboxScopeId ?? run.canvasId,
+        {
+          hasWorkspaceSkills: workspaceSkills.length > 0,
+        },
+      );
 
       try {
-        let agent: LoomicAgent;
+        /** 被拒工具调用的记账（含连续拒绝计数）；门存在时才有值。 */
+        let denialTracker: ReturnType<typeof createToolDenialTracker> | undefined;
+        let agent: KenFutWorkAgent;
         try {
           let resolvedModel: BaseLanguageModel | string | undefined =
             run.modelOverride
@@ -1099,6 +1135,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   ...(credentials.baseUrl
                     ? { baseUrl: credentials.baseUrl }
                     : {}),
+                  // 自定义头逐会话取值（§4.8）：亲和类头写死固定值会把所有会话钉到同一分片
+                  ...instanceHeadersOption(credentials.headers, {
+                    sessionId: run.sessionId,
+                    threadId: run.threadId,
+                  }),
                 },
               );
               run.usageMeta = {
@@ -1281,6 +1322,22 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             run.threadId && options.toolGateFor
               ? options.toolGateFor(run.threadId)
               : undefined;
+          // 被拒调用的可见性与有界失败：门只做判定，记账与中止由运行时负责
+          // （只有它拿得到 runId/时间戳/abort 控制器）
+          denialTracker = toolGate ? createToolDenialTracker() : undefined;
+          const toolGateHooks: ToolGateHooks | undefined = denialTracker
+            ? {
+                onAllowed: (toolName) => denialTracker?.recordAllowed(toolName),
+                onDenied: (entry) => {
+                  denialTracker?.recordDenied(entry);
+                  // 达上限立即中止：模型「只发工具调用」的回合不产生任何适配器事件，
+                  // 光靠事件循环里的检查会漏（实测替身连调 5 次仍停在 running）
+                  if (denialTracker?.fatalReason()) {
+                    run.controller.abort();
+                  }
+                },
+              }
+            : undefined;
 
           // 工具执行上下文的工作区：工具侧（skill 目录等）按工作区取数，
           // 否则只能拿到 runId/accessToken，无法解析工作区（曾致技能工具恒空）。
@@ -1319,8 +1376,14 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               : {}),
             // 执行模式工具门（solo/plan 硬约束）：拦截内置与桥接工具的全部调用
             ...(toolGate ? { toolGate } : {}),
+            ...(toolGateHooks ? { toolGateHooks } : {}),
+            // 插件提示段每次 run 取一次：新装/卸载插件下一轮即生效
+            ...(options.pluginPromptFragments
+              ? { systemPromptExtras: options.pluginPromptFragments() }
+              : {}),
             runToolContext: {
               runId,
+              ...(run.canvasId ? { canvasId: run.canvasId } : {}),
               ...(run.threadId ? { threadId: run.threadId } : {}),
               ...(run.accessToken ? { accessToken: run.accessToken } : {}),
               ...(toolWorkspaceId ? { workspaceId: toolWorkspaceId } : {}),
@@ -1535,6 +1598,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               : {}),
             runId,
             sessionId: run.sessionId,
+            // 分类占比（R4-1）：工具 schema 在这里量（装配刚回吐），消息侧由适配器在
+            // on_chat_model_start 里量；两边在适配器里合并成一条 composition 随 run.usage 下发。
+            toolComposition: measureTools(lastToolInventory),
             signal: run.controller.signal,
             ...(options.env.agentStreamIdleTimeoutMs
               ? { idleTimeoutMs: options.env.agentStreamIdleTimeoutMs }
@@ -1543,6 +1609,37 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             abortRun: () => run.controller.abort(),
             stream,
           })) {
+            // 被拒的工具调用先合成 tool.* 事件下发（否则界面上「谁被拦了、为什么」
+            // 完全没有记录——门在中间件里直接回了 ToolMessage，不产生任何工具事件）
+            for (const denied of denialTracker?.drain() ?? []) {
+              for (const synthetic of denialEvents(denied, runId, now())) {
+                yield synthetic;
+              }
+            }
+            // 有界失败：同一工具连续被拒达上限就中止本轮，不再让它空转
+            const fatalDenial = denialTracker?.fatalReason() ?? null;
+            if (fatalDenial) {
+              run.controller.abort();
+              run.status = "failed";
+              await updatePersistedRunFailure(
+                options.agentRunMetadataService,
+                run,
+                now,
+                new Error(fatalDenial),
+              ).catch((persistErr) =>
+                console.error(
+                  "[agent-runtime] Failed to persist tool-denial abort:",
+                  persistErr,
+                ),
+              );
+              yield {
+                error: { code: "run_failed", message: fatalDenial },
+                runId,
+                timestamp: now(),
+                type: "run.failed",
+              };
+              return;
+            }
             run.status = mapEventToStatus(event);
             if (isTerminalEvent(event)) {
               sawTerminalEvent = true;
@@ -1550,6 +1647,35 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             // billing 门中止（如图片生成的额度/tier 拒绝）会把异常误报成「用户取消」
             // ——中止信号先于错误到达适配器。有 billingFailure 在身却报取消的，
             // 一律改判 run.failed，文案给可读的 billing 原因。
+            // 被拒工具触发的有界失败：abort 后适配器报「用户取消」，但这是系统
+            // 主动中止——改判 run.failed 并把可读原因带给客户端（同 billing 口径）
+            if (
+              event.type === "run.canceled" &&
+              !run.billingFailure &&
+              denialTracker?.fatalReason()
+            ) {
+              const message = denialTracker.fatalReason() ?? "工具连续被拒，已中止本轮。";
+              const failedEvent: StreamEvent = {
+                error: { code: "run_failed", message },
+                runId,
+                timestamp: now(),
+                type: "run.failed",
+              };
+              run.status = "failed";
+              await updatePersistedRunFailure(
+                options.agentRunMetadataService,
+                run,
+                now,
+                new Error(message),
+              ).catch((persistErr) =>
+                console.error(
+                  "[agent-runtime] Failed to persist tool-denial abort:",
+                  persistErr,
+                ),
+              );
+              yield failedEvent;
+              return;
+            }
             if (event.type === "run.canceled" && run.billingFailure) {
               const failedEvent: StreamEvent = {
                 error: {
@@ -1685,6 +1811,43 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
   };
 }
 
+/**
+ * 把一次被拒的工具调用合成成 `tool.started` + `tool.completed` 事件。
+ *
+ * 形状与真实工具事件一致（客户端 `applyToolEvent` 直接可用），差别只在结果：
+ * `output.denied === true` 且 summary 是拒绝原因——界面因此能显示「被拦」而不只是
+ * 模型的转述。
+ */
+function denialEvents(
+  denied: ToolDenialRecord,
+  runId: string,
+  timestamp: string,
+): StreamEvent[] {
+  return [
+    {
+      ...(denied.input ? { input: denied.input } : {}),
+      runId,
+      timestamp,
+      toolCallId: denied.toolCallId,
+      toolName: denied.toolName,
+      type: "tool.started",
+    },
+    {
+      output: {
+        denied: true,
+        reason: denied.reason,
+        count: denied.count,
+      },
+      outputSummary: `工具被拒绝（第 ${denied.count} 次）：${denied.reason}`,
+      runId,
+      timestamp,
+      toolCallId: denied.toolCallId,
+      toolName: denied.toolName,
+      type: "tool.completed",
+    },
+  ] as StreamEvent[];
+}
+
 function isTerminalEvent(event: StreamEvent) {
   return (
     event.type === "run.canceled" ||
@@ -1728,7 +1891,7 @@ function toFailedEvent(
 async function updatePersistedRunStatus(
   agentRunMetadataService: AgentRunMetadataService | undefined,
   run: RuntimeRunRecord,
-  status: "running" | "completed",
+  status: "running" | "completed" | "canceled",
   options?: {
     completedAt?: string;
   },
@@ -1784,5 +1947,17 @@ async function syncPersistedRunFromEvent(
       now,
       new Error(event.error.message),
     );
+    return;
+  }
+
+  /**
+   * 用户取消也要落终态。此前漏了这一支（只认 completed/failed），实测后果：点「停止本轮」
+   * 后流确实停了（`stream_done`），但行永远停在 `running`——只能等下次进程启动的孤儿对账
+   * 收敛成 `failed`，那一轮明明是用户主动取消却被记成失败。
+   */
+  if (event.type === "run.canceled") {
+    await updatePersistedRunStatus(agentRunMetadataService, run, "canceled", {
+      completedAt: now(),
+    });
   }
 }

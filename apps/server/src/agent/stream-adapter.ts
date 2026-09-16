@@ -8,10 +8,15 @@ import {
   AIMessage as AIMessageClass,
   ToolMessage as ToolMessageClass,
 } from "@langchain/core/messages";
-import type { StreamEvent, ToolArtifact } from "@loomic/shared";
-import { imageArtifactSchema, videoArtifactSchema } from "@loomic/shared";
+import type { StreamEvent, ToolArtifact } from "@kenfutwork/shared";
+import { imageArtifactSchema, videoArtifactSchema } from "@kenfutwork/shared";
 
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
+import {
+  type CompositionPart,
+  measureMessages,
+  mergeComposition,
+} from "./prompt-composition.js";
 import {
   StreamIdleTimeoutError,
   withStreamIdleGuard,
@@ -33,10 +38,20 @@ type AdaptDeepAgentStreamOptions = {
   conversationId: string;
   now?: () => string;
   /** 用量采集点（§4.5）：chunk 携带 usage_metadata（cumulative）时回调最新累计值。 */
-  onUsage?: (usage: { inputTokens: number; outputTokens: number }) => void;
+  onUsage?: (usage: {
+    inputTokens: number;
+    outputTokens: number;
+    /** 上游上报的「命中缓存的输入 token」；上游不报时为 undefined。 */
+    cachedInputTokens?: number | undefined;
+  }) => void;
   runId: string;
   sessionId: string;
   signal?: AbortSignal;
+  /**
+   * 工具 schema 的分段量（runtime 在装配后量好传入）：MCP 工具 / 系统工具。
+   * 消息侧分段由本适配器在 `on_chat_model_start` 时量，两边合并成一条 composition。
+   */
+  toolComposition?: readonly CompositionPart[] | undefined;
   stream: AsyncIterable<LangChainStreamEvent | unknown>;
   /**
    * 空闲看门狗阈值（毫秒，见 `stream-idle-guard.ts`）：上游停滞超过该时长即
@@ -64,6 +79,40 @@ export async function* adaptDeepAgentStream(
   const seenStartedToolCalls = new Set<string>();
   /** Tracks active sub-agent parent runs so we can detect nested inner tools. */
   const activeSubAgentRuns = new Set<string>();
+  /** 上一次下发 run.usage 时的 input token 数（同一提示词大小不重复发）。 */
+  let lastUsageInputTokens = -1;
+  /**
+   * 本轮 run 的累计用量（跨模型调用求和），用于「平均缓存命中率」。
+   *
+   * 口径：命中率 = 累计命中缓存输入 ÷ 累计输入（**按 token 加权**），而不是各次百分比的
+   * 算术平均——一轮里短调用多时后者会虚高。每次模型调用的用量在 chunk 上会反复出现同一
+   * 份（调用内累计值），故只在「输入侧变化 = 新调用开始」时把上一轮调用结算进累计。
+   */
+  /**
+   * 分类占比（R4-1）：在 on_chat_model_start 时按模型**实际输入**量一次，
+   * 与 runtime 传来的工具分段合并，随 run.usage 下发。**字符数口径**（不是 token 拆分）。
+   */
+  let composition: CompositionPart[] | undefined;
+
+  let completedCallsInput = 0;
+  let completedCallsCached = 0;
+  let sawCachedFromUpstream = false;
+  let lastCallInput: number | null = null;
+  let lastCallCached: number | undefined;
+
+  /** 当前累计（含正在进行的那次调用），供 run.usage 下发。 */
+  const runTotals = (currentInput: number, currentCached?: number) => {
+    const runInputTokens = completedCallsInput + currentInput;
+    const cachedKnown = sawCachedFromUpstream || currentCached !== undefined;
+    if (!cachedKnown) {
+      return { runInputTokens };
+    }
+    return {
+      runInputTokens,
+      runCachedInputTokens:
+        completedCallsCached + (currentCached ?? 0),
+    };
+  };
 
   yield {
     conversationId: options.conversationId,
@@ -98,6 +147,24 @@ export async function* adaptDeepAgentStream(
 
       const evt = rawEvent;
 
+      // 模型输入就绪：量一次分类占比（系统提示词 / 消息 / 技能 …）
+      if (evt.event === "on_chat_model_start") {
+        const data = (evt as { data?: unknown }).data as
+          | { input?: { messages?: unknown } }
+          | undefined;
+        const raw = data?.input?.messages;
+        const groups = Array.isArray(raw) ? raw : [];
+        // 有的版本给 [[messages]]（批量），有的给 [messages]——两种都摊平
+        const flat = groups.flatMap((group) =>
+          Array.isArray(group) ? group : [group],
+        );
+        composition = mergeComposition([
+          ...measureMessages(flat),
+          ...(options.toolComposition ?? []),
+        ]);
+        continue;
+      }
+
       // Per-token streaming from the chat model
       if (evt.event === "on_chat_model_stream") {
         const chunk = evt.data?.chunk;
@@ -115,14 +182,53 @@ export async function* adaptDeepAgentStream(
               usage_metadata?: {
                 input_tokens?: number;
                 output_tokens?: number;
+                input_token_details?: { cache_read?: number };
               };
             }
           ).usage_metadata;
-          if (usageMeta && options.onUsage) {
-            options.onUsage({
-              inputTokens: usageMeta.input_tokens ?? 0,
-              outputTokens: usageMeta.output_tokens ?? 0,
+          if (usageMeta) {
+            const inputTokens = usageMeta.input_tokens ?? 0;
+            const outputTokens = usageMeta.output_tokens ?? 0;
+            const cachedRaw = usageMeta.input_token_details?.cache_read;
+            const cachedInputTokens =
+              typeof cachedRaw === "number" && cachedRaw >= 0
+                ? cachedRaw
+                : undefined;
+            options.onUsage?.({
+              inputTokens,
+              outputTokens,
+              ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
             });
+            // 用量快照发给前端（上下文容量/缓存命中浮层）。**只在输入侧变化时发**：
+            // input_tokens 是每次模型调用的提示词大小（一轮里随工具结果增长），
+            // output_tokens 则每个 chunk 都在涨——逐 chunk 下发会把 WS 灌满。
+            if (inputTokens !== lastUsageInputTokens) {
+              // 输入侧变了 = 这是一次新的模型调用：把上一次调用结算进累计
+              if (lastCallInput !== null) {
+                completedCallsInput += lastCallInput;
+                if (lastCallCached !== undefined) {
+                  completedCallsCached += lastCallCached;
+                  sawCachedFromUpstream = true;
+                }
+              }
+              lastCallInput = inputTokens;
+              lastCallCached = cachedInputTokens;
+              lastUsageInputTokens = inputTokens;
+              yield {
+                type: "run.usage" as const,
+                runId: options.runId,
+                inputTokens,
+                outputTokens,
+                ...(cachedInputTokens === undefined
+                  ? {}
+                  : { cachedInputTokens }),
+                ...runTotals(inputTokens, cachedInputTokens),
+                ...(composition && composition.length > 0
+                  ? { composition }
+                  : {}),
+                timestamp: now(),
+              };
+            }
           }
         }
 

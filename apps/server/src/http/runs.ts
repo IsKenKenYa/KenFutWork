@@ -1,12 +1,14 @@
 import {
+  agentRunActivityResponseSchema,
   applicationErrorResponseSchema,
   runCancelResponseSchema,
   runCreateRequestSchema,
   runCreateResponseSchema,
   unauthenticatedErrorResponseSchema,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
+import { resolveSandboxScopeId } from "../agent/sandbox-dir.js";
 import type { AgentRunService } from "../agent/runtime.js";
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import { isPlanApprovalInput } from "../features/agent-modes/execution-mode-service.js";
@@ -26,11 +28,16 @@ import type { CreditService } from "../features/credits/credit-service.js";
 import { parseInstanceSpecifier } from "../features/model-providers/model-catalog-service.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
+import { isZodError } from "./zod-error.js";
 
 export async function registerRunRoutes(
   app: FastifyInstance,
   agentRuns: AgentRunService,
   options: {
+    /** 运行活动查询（Git 弹层的「智能体 N 秒 · M 运行」；口径见仓储 workspaceActivity）。 */
+    activityQuery?: (input: {
+      workspaceId: string;
+    }) => Promise<{ runs: number; totalSeconds: number; windowDays: number }>;
     agentModes?: ExecutionModeService;
     agentRunMetadataService?: AgentRunMetadataService;
     auth?: RequestAuthenticator;
@@ -44,6 +51,42 @@ export async function registerRunRoutes(
     modelProviders?: ModelProviderService;
   } = {},
 ) {
+  // GET /api/agent/runs/activity — 该**工作区**近 7 天的运行次数与累计时长。
+  // 范围取工作区而不是会话/画布：客户端任务 id 与服务端会话 id 不保证一致，
+  // run 挂的又是会话的载体画布而非项目画布——两条更细的路实测都不可靠（详见仓储注释）。
+  // 归属校验：先解析工作区（拿不到就返回全 0——不区分「不存在」与「不属于你」，
+  // 与其它只读端点同一口径，不给账号/资源枚举留信号）。
+  app.get(
+    "/api/agent/runs/activity",
+    async (request, reply) => {
+      const authenticatedUser = options.auth
+        ? await options.auth.authenticate(request)
+        : null;
+      if (!authenticatedUser) {
+        return reply.code(401).send(
+          applicationErrorResponseSchema.parse({
+            error: {
+              code: "unauthorized",
+              message: "Missing or invalid bearer token.",
+            },
+          }),
+        );
+      }
+      const workspace = options.viewerService
+        ? await options.viewerService
+            .resolveWorkspace(authenticatedUser)
+            .catch(() => null)
+        : null;
+      const activity =
+        workspace && options.activityQuery
+          ? await options.activityQuery({ workspaceId: workspace.id })
+          : { runs: 0, totalSeconds: 0, windowDays: 7 };
+      return reply
+        .code(200)
+        .send(agentRunActivityResponseSchema.parse({ activity }));
+    },
+  );
+
   app.post("/api/agent/runs", async (request, reply) => {
     try {
       const payload = runCreateRequestSchema.parse(request.body);
@@ -186,6 +229,15 @@ export async function registerRunRoutes(
               }
             : {}),
           ...(model ? { model } : {}),
+          // 与 WS 路径同口径：客户端只能给会话 UUID 时，沙箱目录名改用会话的真实画布
+          ...(() => {
+            const sandboxScopeId = resolveSandboxScopeId({
+              conversationId: payload.conversationId,
+              requestedCanvasId: payload.canvasId ?? payload.conversationId,
+              sessionCanvasId: sessionThread?.canvasId,
+            });
+            return sandboxScopeId ? { sandboxScopeId } : {};
+          })(),
           ...(sessionThread ? { threadId: sessionThread.threadId } : {}),
         }),
       );
@@ -270,15 +322,4 @@ function handleZodError(error: unknown, reply: FastifyReply) {
   }
 
   throw error;
-}
-
-function isZodError(
-  error: unknown,
-): error is { issues: unknown[]; name: string } {
-  return (
-    error instanceof Error &&
-    error.name === "ZodError" &&
-    "issues" in error &&
-    Array.isArray(error.issues)
-  );
 }

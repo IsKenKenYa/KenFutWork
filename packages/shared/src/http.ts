@@ -10,6 +10,7 @@ import {
   projectKindSchema,
   projectSummarySchema,
   runIdSchema,
+  terminalShellSchema,
   viewerProfileSchema,
   workspaceMembershipSchema,
   workspaceSettingsSchema,
@@ -18,7 +19,7 @@ import {
 
 export const healthResponseSchema = z.object({
   ok: z.literal(true),
-  service: z.literal("loomic-server"),
+  service: z.literal("kenfutwork-server"),
   version: z.string().min(1),
 });
 
@@ -122,8 +123,199 @@ export const codeGitBranchCreateRequestSchema = z.object({
   name: z.string().trim().min(1).max(200),
 });
 
+/**
+ * git 图谱（R2-1 条目 6）：`git log --graph --oneline --decorate --all` 的图形行。
+ *
+ * 服务端**不解析**图形（`*` / `|` / `\` 这些字符本身就是画法），原样给前端用等宽字体渲染；
+ * 只额外给两个判断：`isRepo`（非仓库时前端显示初始化引导）与 `truncated`（历史比条数上限更长）。
+ */
+/**
+ * git 图谱（参考图 `git图谱.png`）：独立窗口里的 图/描述/日期/作者/提交 表格。
+ * 服务端**不解析图形语义**，只把每行的图形字符与结构化字段分行给出（连接线行也保留，
+ * 否则分支图形会缺笔画）。
+ */
+export const codeGitGraphEntrySchema = z.object({
+  /** 该行的图形字符（`*`、`|`、`|\`…），界面按等宽渲染成「图」列。 */
+  rail: z.string(),
+  /** 提交行才有；连接线行为 null。 */
+  sha: z.string().nullable(),
+  shortSha: z.string().nullable(),
+  subject: z.string(),
+  author: z.string(),
+  date: z.string(),
+  /** ref 装饰（HEAD / main / origin/main…）。 */
+  refs: z.array(z.string()),
+  /** 父提交短 sha（详情面板用）。 */
+  parents: z.array(z.string()),
+});
+
+export const codeGitGraphResponseSchema = z.object({
+  graph: z.object({
+    isRepo: z.boolean(),
+    /** 逐行数据；无提交时为空数组（不是错误）。 */
+    entries: z.array(codeGitGraphEntrySchema),
+    truncated: z.boolean(),
+  }),
+});
+
+// --- Code 模式变更清单 / 单文件差异 / 单文件内容（R3-2、R3-3 共用） ---
+
+export const codeGitChangedFileSchema = z.object({
+  path: z.string().min(1),
+  additions: z.number().int().nonnegative(),
+  deletions: z.number().int().nonnegative(),
+  /** 二进制文件没有行数概念：`additions`/`deletions` 恒为 0。 */
+  binary: z.boolean(),
+  status: z.enum(["modified", "added", "deleted", "renamed", "untracked"]),
+  /** 已进索引（审查视图据此标「已暂存」并决定按钮文案）。 */
+  staged: z.boolean(),
+});
+
+/** 「审查」里的暂存/取消暂存（参考图审查视图的「暂存」）。 */
+export const codeGitStageRequestSchema = z.object({
+  canvasId: z.string().min(1),
+  path: z.string().min(1).max(1000),
+  staged: z.boolean(),
+});
+
+/** 暂存 / 取消暂存**一个块**（参考图审查视图的「暂存块」）。 */
+export const codeGitStageHunkRequestSchema = z.object({
+  canvasId: z.string().min(1),
+  /** 这个块属于哪个文件（服务端会核对 patch 里改的确实只有它）。 */
+  path: z.string().min(1).max(1000),
+  /** 「文件头 + 这一块」的 patch 文本（由审查视图从 diff 里切出来）。 */
+  patch: z.string().min(1).max(200_000),
+  /** true = 反向应用（取消暂存这一块）。 */
+  reverse: z.boolean().optional(),
+});
+
+export const codeGitStageResponseSchema = z.object({
+  path: z.string(),
+  staged: z.boolean(),
+});
+
+export const codeGitChangesResponseSchema = z.object({
+  changes: z.object({
+    isRepo: z.boolean(),
+    files: z.array(codeGitChangedFileSchema),
+    /** 变更文件数超过上限（只列前 N 个）。 */
+    truncated: z.boolean(),
+  }),
+});
+
+export const codeGitDiffResponseSchema = z.object({
+  diff: z.object({
+    path: z.string().min(1),
+    /** 统一 diff 文本；未跟踪文件是「按新增行」的合成视图，界面要如实标注。 */
+    text: z.string(),
+    truncated: z.boolean(),
+    untracked: z.boolean(),
+  }),
+});
+
+// --- 工作目录的文件目录（R3-1「文件目录」标签） ---
+
+export const codeFileEntrySchema = z.object({
+  name: z.string().min(1),
+  /** 相对工作目录的路径（点进去时原样回传）。 */
+  path: z.string(),
+  type: z.enum(["file", "dir"]),
+  /** 目录为 null。 */
+  bytes: z.number().int().nonnegative().nullable(),
+});
+
+export const codeFilesResponseSchema = z.object({
+  files: z.object({
+    /** 列的是哪个目录（相对工作目录；根目录是空串）。 */
+    path: z.string(),
+    entries: z.array(codeFileEntrySchema),
+    /** 条目数超上限（只列前 N 项）。 */
+    truncated: z.boolean(),
+  }),
+});
+
+// --- 右栏终端（R3-1「终端」标签）：在画布工作目录里跑用户命令 ---
+
+export const codeTerminalRequestSchema = z.object({
+  canvasId: z.string().min(1),
+  command: z.string().trim().min(1).max(4000),
+  /** 本次用的 shell；缺省用工作区设置的默认（设置里没配就是 `auto`）。 */
+  shell: terminalShellSchema.optional(),
+});
+
+/** `GET /api/code/shells`：本机可用的 shell + 工作区设置的默认值（设置页与终端下拉共用）。 */
+export const codeShellsResponseSchema = z.object({
+  shells: z.array(
+    z.object({
+      id: terminalShellSchema,
+      label: z.string(),
+      /** 解析到的可执行文件路径（同名 shell 用它分辨）。 */
+      executable: z.string(),
+    }),
+  ),
+  defaultShell: terminalShellSchema,
+  /** `defaultShell` 是 `auto` 时，这台机器上实际会用的那个 shell（界面据此说清「auto → cmd」）。 */
+  resolvedShell: terminalShellSchema,
+});
+
+export const codeTerminalResponseSchema = z.object({
+  result: z.object({
+    command: z.string(),
+    /** 实际执行这条命令的 shell（`auto` 也会解析成具体的那个）。 */
+    shell: terminalShellSchema,
+    /** 被超时杀掉时为 null。 */
+    exitCode: z.number().int().nullable(),
+    timedOut: z.boolean(),
+    stdout: z.string(),
+    stderr: z.string(),
+    /** 任一流被截断（超出每次执行的输出上限）。 */
+    truncated: z.boolean(),
+    durationMs: z.number().int().nonnegative(),
+  }),
+});
+
+// --- agent 运行活动（Git 弹层的「智能体 N 秒 · M 运行」；口径：近 7 天） ---
+
+export const agentRunActivityResponseSchema = z.object({
+  activity: z.object({
+    /** 统计窗口（天）。 */
+    windowDays: z.number().int().min(1).max(90),
+    /** 窗口内该工作目录的 agent 运行次数。 */
+    runs: z.number().int().nonnegative(),
+    /** 窗口内各轮运行时长之和（秒）；仍在跑的轮按「到现在」计。 */
+    totalSeconds: z.number().int().nonnegative(),
+  }),
+});
+
+/** 工作目录里的项目文档（R3-3「文档入口」）。 */
+export const codeDocsResponseSchema = z.object({
+  docs: z.array(
+    z.object({
+      path: z.string().min(1),
+      bytes: z.number().int().nonnegative(),
+    }),
+  ),
+});
+
+export const codeGitFileResponseSchema = z.object({
+  file: z.object({
+    path: z.string().min(1),
+    bytes: z.number().int().nonnegative(),
+    truncated: z.boolean(),
+    binary: z.boolean(),
+    /** 二进制文件不回内容（空串）。 */
+    content: z.string(),
+  }),
+});
+
 export const applicationErrorCodeSchema = z.enum([
   "application_error",
+  /**
+   * 依赖的服务/能力未装配或不可用（HTTP 503）。
+   * 真机踩过：直连视频生成路由的 `jobService` 从未装配，而该分支写的错误码不在本枚举里
+   * ——`parse` 抛错后响应体变成 ZodError 转储，前端只看到一段乱码 JSON。
+   */
+  "service_unavailable",
   // 自管认证（M1.4）：与 auth-contracts.ts 的 authErrorResponseSchema 同一组码
   "auth_unavailable",
   "email_taken",
@@ -249,7 +441,15 @@ export const workspaceSettingsResponseSchema = z.object({
   settings: workspaceSettingsSchema,
 });
 
-export const workspaceSettingsUpdateRequestSchema = workspaceSettingsSchema;
+/**
+ * PUT 的入参是**部分更新**：只写送来的字段，没送的保持库里现值。
+ *
+ * 用整对象会踩坑：`terminalShell` 这类字段带 zod 默认值，客户端只想改模型时不会带它，
+ * 服务端按「整对象写入」就会把它顺手重置成默认——这正违反「逐列 upsert，两个设置各自保存
+ * 不互相覆盖」的既有口径。
+ */
+export const workspaceSettingsUpdateRequestSchema =
+  workspaceSettingsSchema.partial();
 
 export const modelListResponseSchema = z.object({
   models: z.array(modelInfoSchema),

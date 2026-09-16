@@ -11,7 +11,7 @@ import {
 } from "./local-fs.js";
 
 function tempRoot(): string {
-  return mkdtempSync(join(tmpdir(), "loomic-blob-"));
+  return mkdtempSync(join(tmpdir(), "kenfutwork-blob-"));
 }
 
 function localStore(root = tempRoot()) {

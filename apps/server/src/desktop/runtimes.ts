@@ -12,7 +12,7 @@ import { join } from "node:path";
  * 而 CPython 发行版不自带 uv。
  *
  * 解析链（每个运行时独立）：
- *   `LOOMIC_{NODE,PYTHON,UV,JAVA}_BIN_DIR`（显式覆盖）→ 发布包内 `<exeDir>/runtime/<x>/…`
+ *   `KENFUTWORK_{NODE,PYTHON,UV,JAVA}_BIN_DIR`（显式覆盖）→ 发布包内 `<exeDir>/runtime/<x>/…`
  * 显式覆盖但目录不存在 = 配置错，**fail loud**；未捆绑则返回 undefined（属增强项，
  * 不阻断启动——宿主自带的 node/python/java 仍可用）。
  */
@@ -54,28 +54,28 @@ const RUNTIME_LAYOUT: Record<
     dir: "node",
     bin: "",
     probe: "node.exe",
-    envKey: "LOOMIC_NODE_BIN_DIR",
+    envKey: "KENFUTWORK_NODE_BIN_DIR",
   },
   python: {
     dir: "python",
     bin: "",
     probe: "python.exe",
-    envKey: "LOOMIC_PYTHON_BIN_DIR",
+    envKey: "KENFUTWORK_PYTHON_BIN_DIR",
   },
   // uv 发布 zip 顶层是 uv.exe / uvx.exe（fetch 脚本拍平到 runtime/uv）
-  uv: { dir: "uv", bin: "", probe: "uvx.exe", envKey: "LOOMIC_UV_BIN_DIR" },
+  uv: { dir: "uv", bin: "", probe: "uvx.exe", envKey: "KENFUTWORK_UV_BIN_DIR" },
   java: {
     dir: "jdk",
     bin: "bin",
     probe: "java.exe",
-    envKey: "LOOMIC_JAVA_BIN_DIR",
+    envKey: "KENFUTWORK_JAVA_BIN_DIR",
   },
   // MinGit 的可执行体在 cmd/ 下（另有 mingw64/bin，二者都含 git.exe；取 cmd 更稳）
   git: {
     dir: "git",
     bin: "cmd",
     probe: "git.exe",
-    envKey: "LOOMIC_GIT_BIN_DIR",
+    envKey: "KENFUTWORK_GIT_BIN_DIR",
   },
 };
 
@@ -159,7 +159,7 @@ export function resolveRuntimes(
 ): ResolvedRuntimes {
   const roots: RuntimeRoot[] = [];
   const names: RuntimeName[] = ["node", "python", "uv", "java"];
-  // git 优先本地：宿主已有 git 就不注入打包的（显式 LOOMIC_GIT_BIN_DIR 仍优先，走同一解析）
+  // git 优先本地：宿主已有 git 就不注入打包的（显式 KENFUTWORK_GIT_BIN_DIR 仍优先，走同一解析）
   const gitExplicit = input.env[RUNTIME_LAYOUT.git.envKey]?.trim();
   if (
     gitExplicit ||

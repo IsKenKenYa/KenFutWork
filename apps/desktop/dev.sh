@@ -4,7 +4,7 @@
 # 已在跑的进程直接复用（按端口探测）；退出时只清理本脚本自己拉起的进程。
 #
 # 用法：bash apps/desktop/dev.sh
-# 前置：Rust（rustup）+ Postgres 二进制（LOOMIC_PG_BIN_DIR 或 npm 依赖包）+ 根 .env.local
+# 前置：Rust（rustup）+ Postgres 二进制（KENFUTWORK_PG_BIN_DIR 或 npm 依赖包）+ 根 .env.local
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -27,13 +27,13 @@ if port_up 3000; then
   echo "[dev] web 已在运行（3000），复用"
 else
   echo "[dev] 启动 web dev server…"
-  (cd apps/web && ./node_modules/.bin/next dev -p 3000 > "$ROOT/.loomic-data/web-dev.log" 2>&1) &
+  (cd apps/web && ./node_modules/.bin/next dev -p 3000 > "$ROOT/.kenfutwork-data/web-dev.log" 2>&1) &
   PIDS+=($!)
   for _ in $(seq 1 45); do
     port_up 3000 && break
     sleep 2
   done
-  port_up 3000 || { echo "[dev] web 未能就绪，看 .loomic-data/web-dev.log"; exit 1; }
+  port_up 3000 || { echo "[dev] web 未能就绪，看 .kenfutwork-data/web-dev.log"; exit 1; }
   echo "[dev] web 就绪（3000）"
 fi
 

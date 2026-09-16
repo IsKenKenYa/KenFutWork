@@ -10,7 +10,7 @@ import { createBrandKitRepository } from "./repository.js";
  * 挂到别人的套件上。
  *
  * 运行：DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
- *       pnpm --filter @loomic/server exec vitest run brand-kit.integration
+ *       pnpm --filter @kenfutwork/server exec vitest run brand-kit.integration
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 const OTHER_USER = "11111111-1111-1111-1111-111111111111";

@@ -1,6 +1,6 @@
 "use client";
 
-import type { CompatReport } from "@loomic/shared";
+import type { CompatReport } from "@kenfutwork/shared";
 import { AlertTriangle, CheckCircle2, ShieldX } from "lucide-react";
 
 /**

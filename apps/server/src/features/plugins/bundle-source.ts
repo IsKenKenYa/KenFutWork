@@ -58,6 +58,12 @@ const TEXT_EXTENSIONS = new Set([
   ".yaml",
   ".md",
   ".txt",
+  // 插件自带的 UI 面板资源（能力 `ui` + `kenfutwork.assets`）：允许纯文本类静态文件；
+  // 二进制（png/woff 等）不进 bundle——面板页面用内联样式/SVG 即可
+  ".html",
+  ".htm",
+  ".css",
+  ".svg",
 ]);
 
 const SKIP_DIRECTORIES = new Set([

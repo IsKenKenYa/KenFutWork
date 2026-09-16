@@ -27,6 +27,11 @@ const PERMANENT_FAILURE_PATTERNS: readonly RegExp[] = [
   /unauthorized/i,
   /forbidden/i,
   /额度|余额不足|plan|tier/i,
+  // 认证/凭据类：令牌失效、凭证解不开——重试必然同样失败（实测：改名换掉 scrypt 盐后，
+  // 每轮失败被重试 10 次，全是「认证失败」）
+  /认证失败/,
+  /credential|decrypt/i,
+  /令牌|token 无效|invalid token/i,
 ];
 
 /** 把设置里的值收敛到 [0, 上限]；非法值回落缺省。0 表示不重试。 */

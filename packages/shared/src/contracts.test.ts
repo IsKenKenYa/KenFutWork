@@ -10,16 +10,16 @@ import {
   streamEventSchema,
 } from "./index.js";
 
-describe("@loomic/shared contracts", () => {
+describe("@kenfutwork/shared contracts", () => {
   it("shares the health response schema for server and web", () => {
     const parsed = healthResponseSchema.parse({
       ok: true,
-      service: "loomic-server",
+      service: "kenfutwork-server",
       version: "0.1.0",
     });
 
     expect(parsed.ok).toBe(true);
-    expect(parsed.service).toBe("loomic-server");
+    expect(parsed.service).toBe("kenfutwork-server");
   });
 
   it("accepts canvasId as optional field", () => {
@@ -126,7 +126,7 @@ describe("@loomic/shared contracts", () => {
         {
           mentionType: "brand-kit-asset",
           id: "brand-logo-1",
-          label: "Loomic 主 Logo",
+          label: "KenFutWork 主 Logo",
           assetType: "logo",
           fileUrl: "https://example.com/logo.png",
         },
@@ -184,13 +184,13 @@ describe("@loomic/shared contracts", () => {
     const parsed = viewerResponseSchema.parse({
       profile: {
         id: "user_123",
-        email: "maker@loomic.test",
-        displayName: "Loomic Maker",
+        email: "maker@kenfutwork.test",
+        displayName: "KenFutWork Maker",
         avatarUrl: "https://example.com/avatar.png",
       },
       workspace: {
         id: "workspace_123",
-        name: "Loomic Maker",
+        name: "KenFutWork Maker",
         type: "personal",
         ownerUserId: "user_123",
       },
@@ -240,7 +240,7 @@ describe("@loomic/shared contracts", () => {
           description: createRequest.description,
           workspace: {
             id: "workspace_123",
-            name: "Loomic Maker",
+            name: "KenFutWork Maker",
             type: "personal",
             ownerUserId: "user_123",
           },
@@ -345,7 +345,7 @@ describe("@loomic/shared contracts", () => {
             description: "Primary workspace project",
             workspace: {
               id: "workspace_123",
-              name: "Loomic Maker",
+              name: "KenFutWork Maker",
               type: "personal",
               ownerUserId: "user_123",
             },
@@ -597,3 +597,42 @@ function getExportedSchema(name: string): ZodType {
 
   return candidate as ZodType;
 }
+
+describe("run.usage 事件（上下文容量 / 缓存命中）", () => {
+  it("接受带缓存字段的用量快照", () => {
+    const event = streamEventSchema.parse({
+      type: "run.usage",
+      runId: "run_123",
+      inputTokens: 614000,
+      outputTokens: 1200,
+      cachedInputTokens: 610000,
+      timestamp: "2026-03-23T12:00:00.000Z",
+    });
+    expect(event.type).toBe("run.usage");
+  });
+
+  it("cachedInputTokens 可缺省（上游不上报缓存时不许编 0）", () => {
+    const event = streamEventSchema.parse({
+      type: "run.usage",
+      runId: "run_123",
+      inputTokens: 100,
+      outputTokens: 1,
+      timestamp: "2026-03-23T12:00:00.000Z",
+    });
+    expect(event).not.toHaveProperty("cachedInputTokens");
+  });
+
+  it("token 数必须是非负整数", () => {
+    for (const bad of [-1, 1.5]) {
+      expect(() =>
+        streamEventSchema.parse({
+          type: "run.usage",
+          runId: "run_123",
+          inputTokens: bad,
+          outputTokens: 1,
+          timestamp: "2026-03-23T12:00:00.000Z",
+        }),
+      ).toThrow();
+    }
+  });
+});

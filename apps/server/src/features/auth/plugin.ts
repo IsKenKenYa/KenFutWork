@@ -10,7 +10,7 @@ import { type AuthService, createAuthService } from "./service.js";
 import type { RequestAuthenticator } from "./types.js";
 
 /**
- * auth 插件（M1.4 / M2.3.2）：认证 Provider 两种形态，由 `LOOMIC_AUTH_DRIVER` 选择。
+ * auth 插件（M1.4 / M2.3.2）：认证 Provider 两种形态，由 `KENFUTWORK_AUTH_DRIVER` 选择。
  *
  * - `managed`（默认：服务端 / 自托管）：本服务签发并校验**不透明会话令牌**
  *   （`account_sessions` 只存 SHA-256），并挂 `/api/auth/*`。原 Supabase Auth（GoTrue）
@@ -49,7 +49,7 @@ export function createAuthPlugin(): PluginDefinition {
 
       if (driver !== "managed") {
         throw new Error(
-          `未知 LOOMIC_AUTH_DRIVER：${driver}（可选 managed | local-trust）`,
+          `未知 KENFUTWORK_AUTH_DRIVER：${driver}（可选 managed | local-trust）`,
         );
       }
 

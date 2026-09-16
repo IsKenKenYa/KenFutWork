@@ -1,18 +1,32 @@
 import {
   type BundleFormat,
+  PLUGIN_UI_SLOTS,
   type PluginBundleManifest,
+  type PluginUiSlot,
   pluginBundleManifestSchema,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 
 import { type ModuleScan, scanPluginModule } from "./module-scan.js";
 import { parsePatch } from "./patch-parser.js";
+
+/**
+ * `ctx.<成员>` → 规范能力名的别名表（其余成员与能力名同名）。
+ *
+ * 例：插件写 `ctx.promptFragments.register(...)`，对应能力名是 `systemPrompt`
+ * （提示段能力）——不映射的话门禁会把它当成一项未识别能力而拒绝安装。
+ */
+const CTX_MEMBER_CAPABILITY_ALIASES: Record<string, string> = {
+  promptFragments: "systemPrompt",
+};
+
 
 /**
  * bundle 清单归一化：把「一个插件的文件集合」收敛为 `PluginBundleManifest`。
  *
  * 同时支持两种声明（互操作的前提）：
  * - dsh 原生：`package.json` 的 `dsh.bundle.patch` → `cordis.patch.yml`
- * - 本项目：`package.json` 的 `loomic.bundle`（同形状，便于同一产物两端加载）
+ * - 本项目：`package.json` 的 `kenfutwork.bundle`（同形状，便于同一产物两端加载；
+ *   旧名 `loomic.bundle` 仍接受）
  *
  * 只有 `profile` 声明、没有 `bundle` 声明的包不是插件（dsh 的 profile 是组合清单，
  * 本项目不支持从上游导入 profile），按 `bundle_declaration_missing` 拒绝。
@@ -84,7 +98,7 @@ function resolveEntry(
 }
 
 /**
- * 识别 bundle 声明。产物通常**双声明**（同时带 `dsh.bundle` 与 `loomic.bundle`），
+ * 识别 bundle 声明。产物通常**双声明**（同时带 `dsh.bundle` 与 `kenfutwork.bundle`），
  * 此时按 dsh 识别——dsh 生态更大，约定以它为主格式；两条声明指向同一配置层，
  * 功能上等价，故顺序不影响判定结果。
  */
@@ -99,13 +113,24 @@ function detectBundleDeclaration(pkg: Record<string, unknown>): {
     return { format: "dsh", patchPath: dshPatchPath.replace(/^\.\//, "") };
   }
 
-  const loomic = pkg.loomic as Record<string, unknown> | undefined;
-  const loomicPatch = loomic?.bundle as Record<string, unknown> | undefined;
-  const loomicPatchPath = loomicPatch?.patch;
-  if (typeof loomicPatchPath === "string" && loomicPatchPath.trim()) {
+  // 旧名兼容：品牌统一前发布过的 bundle 用 `loomic.bundle`，安装端继续认
+  const legacy = pkg.loomic as Record<string, unknown> | undefined;
+  const legacyPatch = legacy?.bundle as Record<string, unknown> | undefined;
+  const legacyPatchPath = legacyPatch?.patch;
+  if (typeof legacyPatchPath === "string" && legacyPatchPath.trim()) {
     return {
-      format: "loomic",
-      patchPath: loomicPatchPath.replace(/^\.\//, ""),
+      format: "kenfutwork",
+      patchPath: legacyPatchPath.replace(/^\.\//, ""),
+    };
+  }
+
+  const kenfutwork = pkg.kenfutwork as Record<string, unknown> | undefined;
+  const kenfutworkPatch = kenfutwork?.bundle as Record<string, unknown> | undefined;
+  const kenfutworkPatchPath = kenfutworkPatch?.patch;
+  if (typeof kenfutworkPatchPath === "string" && kenfutworkPatchPath.trim()) {
+    return {
+      format: "kenfutwork",
+      patchPath: kenfutworkPatchPath.replace(/^\.\//, ""),
     };
   }
   return null;
@@ -121,6 +146,13 @@ function asStringRecord(value: unknown): Record<string, string> {
 }
 
 /** 从文件集合构建归一化清单；并返回模块扫描结果供门禁复用（避免重复解析）。 */
+/** 只把对象当对象看（清单里的第三方字段可能是任意类型）。 */
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
 export function buildBundleManifest(files: BundleFiles): {
   manifest: PluginBundleManifest;
   scan: ModuleScan;
@@ -154,7 +186,7 @@ export function buildBundleManifest(files: BundleFiles): {
   const declaration = detectBundleDeclaration(pkg);
   if (!declaration) {
     throw new BundleManifestError(
-      "包未声明 `dsh.bundle.patch`（dsh 原生）或 `loomic.bundle`（本项目），不是可安装的插件 bundle。",
+      "包未声明 `dsh.bundle.patch`（dsh 原生）或 `kenfutwork.bundle`（本项目；旧名 `loomic.bundle` 仍认），不是可安装的插件 bundle。",
       "bundle_declaration_missing",
     );
   }
@@ -185,10 +217,36 @@ export function buildBundleManifest(files: BundleFiles): {
     ...patch.rows.flatMap((row) => row.inject),
     ...patch.overrides.flatMap((row) => row.inject),
     ...scan.declaredInject,
-    ...scan.accessedMembers,
+    // ctx 成员名 → 规范能力名：多数同名（tools/routes/ui），例外在此列一行
+    ...scan.accessedMembers.map(
+      (member) => CTX_MEMBER_CAPABILITY_ALIASES[member] ?? member,
+    ),
   ]);
 
   const engines = pkg.engines as Record<string, unknown> | undefined;
+
+  // UI 面板入口：`kenfutwork.ui`（本项目扩展；dsh 侧没有对应声明）。
+  // 刻意放在厂商键下一级而不是 bundle 里：UI 不属于「配置层 patch」的概念。
+  const kenfutworkBlock = asRecord(pkg.kenfutwork) ?? {};
+  /** 是否托管 bundle 目录为静态资源（`kenfutwork.assets`）。 */
+  const serveAssets = kenfutworkBlock.assets === true;
+  const declaredUi = Array.isArray(kenfutworkBlock.ui)
+    ? (kenfutworkBlock.ui as unknown[])
+        .map((item) => asRecord(item))
+        .filter((item): item is Record<string, unknown> => Boolean(item))
+        .map((item) => {
+          const slot = String(item.slot ?? "sidebar");
+          return {
+            id: typeof item.id === "string" ? item.id : "",
+            title: typeof item.title === "string" ? item.title : "",
+            slot: (PLUGIN_UI_SLOTS as readonly string[]).includes(slot)
+              ? (slot as PluginUiSlot)
+              : "sidebar",
+            url: typeof item.url === "string" ? item.url : "",
+          };
+        })
+        .filter((item) => item.id && item.title && item.url)
+    : [];
 
   const manifest = pluginBundleManifestSchema.parse({
     name,
@@ -205,6 +263,8 @@ export function buildBundleManifest(files: BundleFiles): {
     scope: null,
     enginesNode:
       engines && typeof engines.node === "string" ? engines.node : null,
+    ui: declaredUi,
+    assets: serveAssets,
     hasClientUi:
       typeof pkg.dsh === "object" &&
       pkg.dsh !== null &&

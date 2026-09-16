@@ -6,13 +6,14 @@ import {
   sessionCreateResponseSchema,
   sessionListResponseSchema,
   unauthenticatedErrorResponseSchema,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { RequestAuthenticator } from "../features/auth/types.js";
 import {
   type ChatService,
   ChatServiceError,
 } from "../features/chat/chat-service.js";
+import { isZodError } from "./zod-error.js";
 
 export async function registerChatRoutes(
   app: FastifyInstance,
@@ -213,16 +214,5 @@ function sendChatError(error: unknown, reply: FastifyReply) {
         message: "Internal server error.",
       },
     }),
-  );
-}
-
-function isZodError(
-  error: unknown,
-): error is { issues: unknown[]; name: string } {
-  return (
-    error instanceof Error &&
-    error.name === "ZodError" &&
-    "issues" in error &&
-    Array.isArray(error.issues)
   );
 }

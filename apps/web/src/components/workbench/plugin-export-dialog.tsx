@@ -1,6 +1,6 @@
 "use client";
 
-import type { PluginExportArtifact } from "@loomic/shared";
+import type { PluginExportArtifact } from "@kenfutwork/shared";
 import { Check, Copy, Download, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { getServerBaseUrl } from "@/lib/env";
 
 /**
- * 导出插件为 bundle：产物**双声明**（`dsh.bundle` + `loomic.bundle`），
+ * 导出插件为 bundle：产物**双声明**（`dsh.bundle` + `kenfutwork.bundle`），
  * 同一份文件既能被 dsh 装，也能回灌本项目安装流程。
  */
 export function PluginExportDialog({
@@ -87,7 +87,7 @@ export function PluginExportDialog({
         className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
         aria-describedby={undefined}
       >
-        <div className="flex items-center gap-3 border-b px-5 py-3 pr-12">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-5 py-3 pr-12">
           <DialogTitle className="text-base font-medium">
             导出插件 bundle
           </DialogTitle>

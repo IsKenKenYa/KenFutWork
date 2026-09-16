@@ -66,6 +66,8 @@ export interface MetasoVideoProviderOptions {
   maxWaitMs?: number;
   sleep?: (milliseconds: number) => Promise<void>;
   now?: () => number;
+  /** 实例自定义请求头（§4.8，已渲染）；保留头 authorization 不受其影响。 */
+  headers?: Record<string, string>;
 }
 
 type ApiErrorEnvelope = {
@@ -99,6 +101,7 @@ export class MetasoVideoProvider implements VideoProvider {
   private readonly maxWaitMs: number;
   private readonly sleep: (milliseconds: number) => Promise<void>;
   private readonly now: () => number;
+  private readonly headers: Record<string, string> | undefined;
 
   constructor(
     apiKey: string,
@@ -132,6 +135,7 @@ export class MetasoVideoProvider implements VideoProvider {
           setTimeout(resolve, milliseconds);
         }));
     this.now = options.now ?? Date.now;
+    this.headers = options.headers;
   }
 
   async generate(params: VideoGenerateParams): Promise<GeneratedVideo> {
@@ -262,6 +266,8 @@ export class MetasoVideoProvider implements VideoProvider {
         ...init,
         headers: {
           Accept: "application/json",
+          // 自定义头（§4.8）在前，凭证与内容类型随后——保留头永远由适配器说了算
+          ...this.headers,
           Authorization: `Bearer ${this.apiKey}`,
           ...(init.method === "POST"
             ? { "Content-Type": "application/json" }

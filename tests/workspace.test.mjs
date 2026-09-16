@@ -94,7 +94,7 @@ for (const appName of appNames) {
   });
 }
 
-test("@loomic/config exports a single low-drift package contract", async () => {
+test("@kenfutwork/config exports a single low-drift package contract", async () => {
   const source = await readText("packages/config/src/index.ts");
 
   assert.doesNotMatch(source, /apps\/\*/);
@@ -104,7 +104,7 @@ test("@loomic/config exports a single low-drift package contract", async () => {
 test("shared package placeholder exists for the upcoming contract task", async () => {
   const manifest = await readJson("packages/shared/package.json");
 
-  assert.equal(manifest.name, "@loomic/shared");
+  assert.equal(manifest.name, "@kenfutwork/shared");
   assert.equal(manifest.type, "module");
 });
 
@@ -180,7 +180,7 @@ const FIXTURE_OK = [
 ].join("\n");
 
 async function withDocsFixture(run) {
-  const fixtureRoot = await mkdtemp(path.join(tmpdir(), "loomic-docs-"));
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), "kenfutwork-docs-"));
   try {
     await mkdir(path.join(fixtureRoot, "docs", "sub"), { recursive: true });
     await mkdir(path.join(fixtureRoot, "docs", "tech"), { recursive: true });

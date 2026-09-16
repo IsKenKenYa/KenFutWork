@@ -9,7 +9,7 @@ import { createPostgresPersistence } from "./providers/postgres.js";
  * 残留（auth.uid() 78 处、auth.users 外键 15 表…… 都在历史迁移里）。**权威口径是
  * 「迁移序列执行完后的库内状态」**——这里把它写成断言，中性化一旦被回退就立刻红灯。
  *
- * 运行：DATABASE_URL=postgres://... pnpm --filter @loomic/server exec vitest run schema-neutralization.integration
+ * 运行：DATABASE_URL=postgres://... pnpm --filter @kenfutwork/server exec vitest run schema-neutralization.integration
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 

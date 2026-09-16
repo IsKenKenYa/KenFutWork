@@ -10,7 +10,7 @@ import { createUsageRepository } from "./repository.js";
  * number——这两种列在 node-postgres 下都返回字符串，是静默破坏契约的高危点。
  *
  * 运行：DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
- *       pnpm --filter @loomic/server exec vitest run usage.integration
+ *       pnpm --filter @kenfutwork/server exec vitest run usage.integration
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 const FOREIGN_WORKSPACE = "00000000-0000-0000-0000-000000000000";

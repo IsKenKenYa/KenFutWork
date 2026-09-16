@@ -1,5 +1,5 @@
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
-import type { LoomicAgentFactory, ToolGate } from "../../agent/deep-agent.js";
+import type { KenFutWorkAgentFactory, ToolGate } from "../../agent/deep-agent.js";
 import { createAgentPersistenceService } from "../../agent/persistence/index.js";
 import { createAgentRunService } from "../../agent/runtime.js";
 import { composeToolGate } from "../../agent/tool-gate.js";
@@ -10,7 +10,10 @@ import type { ConnectionManager } from "../../ws/connection-manager.js";
 import { evaluateToolPolicy } from "../agent-modes/execution-mode-service.js";
 import { createCanvasRepository } from "../canvas/repository.js";
 import { createSkillCatalogRepository } from "../skills/repository.js";
-import { createAgentRunMetadataService } from "./agent-run-service.js";
+import {
+  createAgentActivityQuery,
+  createAgentRunMetadataService,
+} from "./agent-run-service.js";
 import { createAgentRunRepository } from "./repository.js";
 
 export interface AgentRunsPluginDeps {
@@ -23,7 +26,7 @@ export interface AgentRunsPluginDeps {
     runId: string;
     threadId?: string | undefined;
   }) => Promise<{ input: unknown }>;
-  agentFactory?: LoomicAgentFactory;
+  agentFactory?: KenFutWorkAgentFactory;
   agentModel?: BaseLanguageModel | string;
   mockEventDelayMs?: number;
 }
@@ -115,6 +118,9 @@ export function createAgentRunsPlugin(
           emitTurnStopping: (payload) => deps.events.emitTurnStopping(payload),
           ...(deps.emitPreStep ? { emitPreStep: deps.emitPreStep } : {}),
           toolGateFor,
+          // 插件提示段（能力 systemPrompt）：plugins 是可选依赖（部分装配/测试里没有）
+          pluginPromptFragments: () =>
+            ctx.tryGet("plugins")?.listPromptFragments() ?? [],
           creditService: d.get("credits"),
           tierGuard: d.get("tierGuard"),
           viewerService: d.get("viewer"),
@@ -125,6 +131,11 @@ export function createAgentRunsPlugin(
       // chat 是可选依赖：缺席时（部分装配/测试）路由照常，只是不做 Code 会话供给
       const chatService = ctx.tryGet("chat");
       void registerRunRoutes(ctx.app, ctx.get("agentRuns"), {
+        // 活动查询：mounted 与 apply 是两段作用域，这里按需新建一个仓储包装
+        // （仓储是无状态包装，重建不引入额外连接/状态）
+        activityQuery: createAgentActivityQuery({
+          repository: createAgentRunRepository(ctx.get("persistence")),
+        }),
         agentModes: ctx.get("agentModes"),
         agentRunMetadataService: ctx.get("agentRunMetadata"),
         auth: ctx.get("auth"),

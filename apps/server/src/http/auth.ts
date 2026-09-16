@@ -5,14 +5,14 @@ import {
   authRegisterRequestSchema,
   authSessionResponseSchema,
   unauthenticatedErrorResponseSchema,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import type { AuthError, AuthService } from "../features/auth/service.js";
 import { parseBearerToken } from "../features/auth/service.js";
 
 /**
- * 自管认证路由（M1.4；仅 `LOOMIC_AUTH_DRIVER=local` 时挂载）。
+ * 自管认证路由（M1.4；仅 `KENFUTWORK_AUTH_DRIVER=local` 时挂载）。
  *
  *   POST /api/auth/register  注册并直接签发会话
  *   POST /api/auth/login     口令登录

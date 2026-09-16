@@ -14,9 +14,9 @@ import type { McpServerStore, StoredMcpServer } from "./server-store.js";
  * 单测（mcp-service.test.ts）用假 store 覆盖来源合并与失败态，覆盖不到真实
  * 握手与注销——那正是本次新增能力的核心。
  *
- * 运行：LOOMIC_MCP_LIFECYCLE=1 pnpm --filter @loomic/server exec vitest run mcp-service.lifecycle
+ * 运行：KENFUTWORK_MCP_LIFECYCLE=1 pnpm --filter @kenfutwork/server exec vitest run mcp-service.lifecycle
  */
-const ENABLED = process.env.LOOMIC_MCP_LIFECYCLE === "1";
+const ENABLED = process.env.KENFUTWORK_MCP_LIFECYCLE === "1";
 const FIXTURE = fileURLToPath(
   new URL("../../../scripts/mcp-test-server.mjs", import.meta.url),
 );

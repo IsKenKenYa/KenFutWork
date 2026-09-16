@@ -6,7 +6,7 @@ import type {
   BrandKitDetail,
   BrandKitSummary,
   BrandKitUpdateRequest,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { BlobStore } from "../blob/types.js";

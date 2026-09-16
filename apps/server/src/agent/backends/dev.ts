@@ -42,7 +42,7 @@ export function createDevelopmentBackend(
 ): AgentBackendResult {
   if (!env.agentFilesRoot) {
     throw new Error(
-      "LOOMIC_AGENT_FILES_ROOT must be set when filesystem backend mode is enabled.",
+      "KENFUTWORK_AGENT_FILES_ROOT must be set when filesystem backend mode is enabled.",
     );
   }
 

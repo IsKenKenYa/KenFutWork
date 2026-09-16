@@ -1,6 +1,6 @@
 "use client";
 
-import type { ToolBlock } from "@loomic/shared";
+import type { ToolBlock } from "@kenfutwork/shared";
 import { motion } from "framer-motion";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";

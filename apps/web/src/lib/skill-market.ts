@@ -1,4 +1,4 @@
-import type { MarketplaceSkill } from "@loomic/shared";
+import type { MarketplaceSkill } from "@kenfutwork/shared";
 
 /**
  * 技能市场的纯视图逻辑（搜索/安装面板用）。

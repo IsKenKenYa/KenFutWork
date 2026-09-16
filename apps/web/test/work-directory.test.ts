@@ -84,6 +84,20 @@ describe("工作目录选择", () => {
   });
 
   /**
+   * 回归：提示必须点明「工作区根目录就是它」。
+   *
+   * 只写「目录名称：X」时，真实模型会把 X 当成工作区下的子目录——实测两次
+   * （GLM-5.3-Flash 把 kfw-py-demo 建到了 `test/kfw-py-demo/`），用户看到的是
+   * 「文件没落在工作目录里」。所以提示里必须有「根目录就是它」+「不要再套同名子目录」。
+   */
+  it("prompt 明确工作区根目录即该目录，禁止再套一层同名子目录", () => {
+    const hint = workDirectoryPromptHint("test");
+    expect(hint).toContain("根目录就是它");
+    expect(hint).toContain("不要在工作区下再建一个叫「test」的子目录");
+    expect(hint).toContain("相对工作区根");
+  });
+
+  /**
    * 回归：Code 模式「工作目录=项目」。run 的生产后端要求绑定项目
    * （不绑定会整轮失败：canvasId is required for production backend mode），
    * 选定目录后必须落到一个真实项目上——同名项目复用，没有才新建。

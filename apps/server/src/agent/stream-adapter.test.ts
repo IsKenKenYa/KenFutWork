@@ -1,4 +1,9 @@
-import type { StreamEvent } from "@loomic/shared";
+import {
+  AIMessageChunk,
+  HumanMessage,
+  SystemMessage,
+} from "@langchain/core/messages";
+import type { StreamEvent } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
 
 import { adaptDeepAgentStream } from "./stream-adapter.js";
@@ -268,5 +273,290 @@ describe("工具抛错：以终态事件收尾并带可读原因", () => {
       | { outputSummary?: string }
       | undefined;
     expect(completed?.outputSummary).toContain("失败：");
+  });
+});
+
+/**
+ * 用量快照事件（R4-1 上下文容量 / 缓存命中浮层的唯一数据源）。
+ * 关键约束：只在**输入侧**变化时下发——output_tokens 每个 chunk 都在涨，
+ * 逐 chunk 下发会把 WS 灌满；缓存字段上游不报时不许编 0。
+ */
+describe("stream-adapter 用量快照", () => {
+  function usageChunk(inputTokens: number, cacheRead?: number) {
+    // usage_metadata 在 AIMessageChunk 的构造类型里不开放，构造后再挂（真实流也是
+    // 在 chunk 上带这个字段的）
+    const chunk = new AIMessageChunk({ content: "" });
+    (chunk as { usage_metadata?: unknown }).usage_metadata = {
+      input_tokens: inputTokens,
+      output_tokens: 3,
+      total_tokens: inputTokens + 3,
+      ...(cacheRead === undefined
+        ? {}
+        : { input_token_details: { cache_read: cacheRead } }),
+    };
+    return chunk;
+  }
+
+  function chunkStream(chunks: unknown[]): AsyncIterable<unknown> {
+    return {
+      async *[Symbol.asyncIterator]() {
+        for (const chunk of chunks) {
+          yield { event: "on_chat_model_stream", data: { chunk } };
+        }
+      },
+    };
+  }
+
+  it("带缓存字段的用量下发一次 run.usage（含 cachedInputTokens）", async () => {
+    const seen: Array<{
+      inputTokens: number;
+      cachedInputTokens?: number | undefined;
+    }> = [];
+    const events: StreamEvent[] = [];
+    for await (const event of adaptDeepAgentStream({
+      conversationId: "conv-1",
+      runId: "run-1",
+      sessionId: "sess-1",
+      stream: chunkStream([usageChunk(1200, 1000)]),
+      onUsage: (usage) => seen.push(usage),
+    })) {
+      events.push(event);
+    }
+
+    const usageEvents = events.filter((event) => event.type === "run.usage");
+    expect(usageEvents).toHaveLength(1);
+    expect(usageEvents[0]).toMatchObject({
+      type: "run.usage",
+      runId: "run-1",
+      inputTokens: 1200,
+      cachedInputTokens: 1000,
+    });
+    expect(seen[0]).toMatchObject({
+      inputTokens: 1200,
+      outputTokens: 3,
+      cachedInputTokens: 1000,
+    });
+  });
+
+  it("同一提示词大小的多次 chunk 只下发一次（不逐 chunk 灌 WS）", async () => {
+    const events: StreamEvent[] = [];
+    for await (const event of adaptDeepAgentStream({
+      conversationId: "conv-1",
+      runId: "run-1",
+      sessionId: "sess-1",
+      stream: chunkStream([
+        usageChunk(500),
+        usageChunk(500),
+        usageChunk(500),
+      ]),
+    })) {
+      events.push(event);
+    }
+    expect(events.filter((event) => event.type === "run.usage")).toHaveLength(1);
+  });
+
+  it("工具轮次之间提示词变大：按新的大小再下发一次", async () => {
+    const events: StreamEvent[] = [];
+    for await (const event of adaptDeepAgentStream({
+      conversationId: "conv-1",
+      runId: "run-1",
+      sessionId: "sess-1",
+      stream: chunkStream([usageChunk(500), usageChunk(1500, 1200)]),
+    })) {
+      events.push(event);
+    }
+    const usageEvents = events.filter((event) => event.type === "run.usage");
+    expect(usageEvents).toHaveLength(2);
+    expect(usageEvents[1]).toMatchObject({
+      inputTokens: 1500,
+      cachedInputTokens: 1200,
+    });
+  });
+
+  it("上游不报缓存：事件里没有 cachedInputTokens 字段（不编 0）", async () => {
+    const events: StreamEvent[] = [];
+    for await (const event of adaptDeepAgentStream({
+      conversationId: "conv-1",
+      runId: "run-1",
+      sessionId: "sess-1",
+      stream: chunkStream([usageChunk(800)]),
+    })) {
+      events.push(event);
+    }
+    const usage = events.find((event) => event.type === "run.usage");
+    expect(usage).toBeDefined();
+    expect(usage).not.toHaveProperty("cachedInputTokens");
+  });
+});
+
+/**
+ * 平均缓存命中率的口径：**跨模型调用累计**（按 token 加权）。
+ *
+ * 一轮里工具调用会让提示词逐次变大（input 100 → 900），各次命中率差异很大；
+ * 客户端要拿「累计命中 ÷ 累计输入」才能算出正确的平均命中率，故服务端把累计值
+ * 一并下发。这里用两次调用（100/90 与 900/0）锁住：runInputTokens=1000、
+ * runCachedInputTokens=90（加权 9%），而不是两份单次读数的算术平均。
+ */
+describe("stream-adapter 累计用量（平均缓存命中率的分母）", () => {
+  function usageChunk(inputTokens: number, cacheRead?: number) {
+    const chunk = new AIMessageChunk({ content: "" });
+    (chunk as { usage_metadata?: unknown }).usage_metadata = {
+      input_tokens: inputTokens,
+      output_tokens: 1,
+      total_tokens: inputTokens + 1,
+      ...(cacheRead === undefined
+        ? {}
+        : { input_token_details: { cache_read: cacheRead } }),
+    };
+    return chunk;
+  }
+
+  it("两次调用的累计值随最后一次 run.usage 下发", async () => {
+    const stream: AsyncIterable<unknown> = {
+      async *[Symbol.asyncIterator]() {
+        // 第一次调用：同一输入会随多个 chunk 反复出现，只应算一次
+        yield {
+          event: "on_chat_model_stream",
+          data: { chunk: usageChunk(100, 90) },
+        };
+        yield {
+          event: "on_chat_model_stream",
+          data: { chunk: usageChunk(100, 90) },
+        };
+        // 第二次调用：提示词变长（工具结果进了上下文），这次没命中缓存
+        yield {
+          event: "on_chat_model_stream",
+          data: { chunk: usageChunk(900, 0) },
+        };
+      },
+    };
+
+    const events: StreamEvent[] = [];
+    for await (const event of adaptDeepAgentStream({
+      conversationId: "conv-1",
+      runId: "run-1",
+      sessionId: "sess-1",
+      stream,
+    })) {
+      events.push(event);
+    }
+
+    const usageEvents = events.filter((event) => event.type === "run.usage");
+    expect(usageEvents).toHaveLength(2);
+    expect(usageEvents[0]).toMatchObject({
+      inputTokens: 100,
+      runInputTokens: 100,
+      runCachedInputTokens: 90,
+    });
+    expect(usageEvents[1]).toMatchObject({
+      inputTokens: 900,
+      runInputTokens: 1000,
+      runCachedInputTokens: 90,
+    });
+  });
+
+  it("上游一次都没报缓存：不下发累计缓存字段（不拿 0 冒充）", async () => {
+    const stream: AsyncIterable<unknown> = {
+      async *[Symbol.asyncIterator]() {
+        yield {
+          event: "on_chat_model_stream",
+          data: { chunk: usageChunk(500) },
+        };
+      },
+    };
+    const events: StreamEvent[] = [];
+    for await (const event of adaptDeepAgentStream({
+      conversationId: "conv-1",
+      runId: "run-1",
+      sessionId: "sess-1",
+      stream,
+    })) {
+      events.push(event);
+    }
+    const usage = events.find((event) => event.type === "run.usage");
+    expect(usage).toMatchObject({ runInputTokens: 500 });
+    expect(usage).not.toHaveProperty("runCachedInputTokens");
+  });
+});
+
+/**
+ * 分类占比随 run.usage 下发（R4-1 浮层那一栏）。
+ *
+ * 消息侧在 `on_chat_model_start` 量、工具侧由 runtime 传入，两边合并成一条
+ * composition；**没有 on_chat_model_start（老上游/非 chat 模型）时不下发该字段**，
+ * 而不是编一段空的。
+ */
+describe("stream-adapter 分类占比", () => {
+  it("on_chat_model_start 的 messages + 传入的工具分段 → 合并后随 run.usage 下发", async () => {
+    const stream: AsyncIterable<unknown> = {
+      async *[Symbol.asyncIterator]() {
+        yield {
+          event: "on_chat_model_start",
+          data: {
+            input: {
+              messages: [
+                [
+                  new SystemMessage("sys"),
+                  new HumanMessage("用户消息"),
+                ],
+              ],
+            },
+          },
+        };
+        const chunk = new AIMessageChunk({ content: "" });
+        (chunk as { usage_metadata?: unknown }).usage_metadata = {
+          input_tokens: 100,
+          output_tokens: 1,
+          total_tokens: 101,
+        };
+        yield { event: "on_chat_model_stream", data: { chunk } };
+      },
+    };
+
+    const events: StreamEvent[] = [];
+    for await (const event of adaptDeepAgentStream({
+      conversationId: "conv-1",
+      runId: "run-1",
+      sessionId: "sess-1",
+      stream,
+      toolComposition: [{ label: "系统工具", chars: 300 }],
+    })) {
+      events.push(event);
+    }
+
+    const usage = events.find((event) => event.type === "run.usage");
+    expect(usage).toMatchObject({
+      composition: [
+        { label: "系统工具", chars: 300 },
+        { label: "消息", chars: "用户消息".length },
+        { label: "系统提示词", chars: "sys".length },
+      ],
+    });
+  });
+
+  it("没有模型输入事件：不下发 composition（不编空段）", async () => {
+    const stream: AsyncIterable<unknown> = {
+      async *[Symbol.asyncIterator]() {
+        const chunk = new AIMessageChunk({ content: "" });
+        (chunk as { usage_metadata?: unknown }).usage_metadata = {
+          input_tokens: 10,
+          output_tokens: 1,
+          total_tokens: 11,
+        };
+        yield { event: "on_chat_model_stream", data: { chunk } };
+      },
+    };
+    const events: StreamEvent[] = [];
+    for await (const event of adaptDeepAgentStream({
+      conversationId: "conv-1",
+      runId: "run-1",
+      sessionId: "sess-1",
+      stream,
+      toolComposition: [{ label: "系统工具", chars: 300 }],
+    })) {
+      events.push(event);
+    }
+    const usage = events.find((event) => event.type === "run.usage");
+    expect(usage).not.toHaveProperty("composition");
   });
 });

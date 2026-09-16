@@ -392,7 +392,7 @@ describe("credit service", () => {
     });
 
     await service.updatePlan(WORKSPACE_ID, "ultra");
-    const { PLAN_CONFIGS } = await import("@loomic/shared");
+    const { PLAN_CONFIGS } = await import("@kenfutwork/shared");
     expect(calls).toEqual([
       [WORKSPACE_ID, "ultra", PLAN_CONFIGS.ultra.monthlyCredits],
     ]);
@@ -410,7 +410,7 @@ describe("credit service", () => {
 
 describe("tier guard（并发上限）", () => {
   it("未达上限放行，达到上限抛 429 concurrency_limit", async () => {
-    const { PLAN_CONFIGS } = await import("@loomic/shared");
+    const { PLAN_CONFIGS } = await import("@kenfutwork/shared");
     const max = PLAN_CONFIGS.free.maxConcurrentJobs;
 
     await expect(

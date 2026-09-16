@@ -1,3 +1,11 @@
+import {
+  completeSubagent,
+  isSubagentTool,
+  type SubagentEntry,
+  upsertSubagentStarted,
+} from "./subagent-directory";
+import { parseTodos, type TodoItem } from "./todo-progress";
+
 /**
  * 工作台的工具调用轨迹（`tool.started` / `tool.completed` 事件 → 任务状态）。
  *
@@ -66,4 +74,59 @@ export function applyToolEvent(
     };
   });
   return matched ? capTools(next) : tools;
+}
+
+
+/** 任务里与工具事件相关的状态（工具轨迹 + 子代理目录 + 目标进度）；都可缺省。 */
+export interface TaskToolState {
+  tools?: TaskToolEntry[];
+  subagents?: SubagentEntry[];
+  /** agent 自己维护的待办表（`write_todos` 整表替换语义，见 lib/todo-progress）。 */
+  todos?: TodoItem[];
+}
+
+/**
+ * 一条工具事件并入任务状态：**工具轨迹对所有工具都记**，子代理工具额外进目录。
+ *
+ * 回归背景（2026-09-15 实测）：workbench 的事件分支写成
+ * `if (tool.started) { if (!isSubagentTool(name)) return; … }` ——非子代理工具在
+ * 第一个分支就被 `return` 掉，永远到不了下面的通用分支（那段成了死代码），于是
+ * **界面上从来没有工具调用记录**（被工具门拒绝的调用更是如此）。合并成一个函数、
+ * 由测试锁住「普通工具也要进轨迹」。
+ */
+export function applyTaskToolEvent<T extends TaskToolState>(
+  task: T,
+  event: ToolEventLike & { input?: Record<string, unknown>; timestamp?: string },
+): T {
+  const toolCallId = event.toolCallId ?? "";
+  if (!toolCallId) return task;
+  const toolName = event.toolName ?? "tool";
+  const tools = applyToolEvent(task.tools ?? [], event);
+  // 目标进度：只在 write_todos 的入参可解析时覆盖（解析失败保持原状，
+  // 不让一次坏参数把用户看到的进度清空）。
+  const todos = toolName === "write_todos" ? parseTodos(event.input) : null;
+  const base = { ...task, tools, ...(todos ? { todos } : {}) };
+
+  if (event.type === "tool.started") {
+    if (!isSubagentTool(toolName)) return base;
+    return {
+      ...base,
+      subagents: upsertSubagentStarted(task.subagents ?? [], {
+        toolCallId,
+        toolName,
+        ...(event.input ? { input: event.input } : {}),
+        timestamp: event.timestamp ?? "",
+      }),
+    };
+  }
+
+  if (!task.subagents) return base;
+  return {
+    ...base,
+    subagents: completeSubagent(
+      task.subagents,
+      toolCallId,
+      event.timestamp ?? "",
+    ),
+  };
 }

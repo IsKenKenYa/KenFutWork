@@ -2,7 +2,7 @@ import {
   applicationErrorResponseSchema,
   executionModeSchema,
   unauthenticatedErrorResponseSchema,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { FastifyInstance } from "fastify";
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import type { RequestAuthenticator } from "../features/auth/types.js";
@@ -118,10 +118,19 @@ export async function registerExecutionModeRoutes(
         workspace ? { workspaceId: workspace.id } : undefined,
       );
       return reply.code(200).send({ mode });
-    } catch {
+    } catch (error) {
+      // 别把「服务端异常」说成「模式非法」：此前 catch-all 一律回 Invalid mode.，
+      // 排查时完全看不出真实原因（画布面板传会话 id 时就是这样被误导的）。
+      request.log.error(
+        { threadId, err: error },
+        "execution-mode.activate FAILED",
+      );
       return reply.code(400).send(
         applicationErrorResponseSchema.parse({
-          error: { code: "invalid_request", message: "Invalid mode." },
+          error: {
+            code: "invalid_request",
+            message: "切换执行模式失败（模式非法或会话不存在）。",
+          },
         }),
       );
     }

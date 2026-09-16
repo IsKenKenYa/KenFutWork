@@ -24,7 +24,7 @@ import { registerAllProviders } from "./generation/providers/register-all.js";
 /**
  * HTTP 进程入口。
  *
- * 桌面形态（`LOOMIC_EMBEDDED_PG=1`，FORM-2）下：先就位本机 Postgres + 同源迁移，
+ * 桌面形态（`KENFUTWORK_EMBEDDED_PG=1`，FORM-2）下：先就位本机 Postgres + 同源迁移，
  * 再起 HTTP，并在**同进程**跑任务消费循环——桌面用进程内队列，生产者与消费者必须
  * 是同一个队列实例（M3.2），故循环在 server 进程内起，而不是另开 worker。
  */
@@ -116,7 +116,7 @@ async function main() {
       port: env.port,
     });
 
-    console.log(`@loomic/server listening on http://${host}:${env.port}`);
+    console.log(`@kenfutwork/server listening on http://${host}:${env.port}`);
 
     /**
      * 孤儿 run 对账：**绑上端口之后**才做（见 reconcile.ts 的说明——抢不到端口的
@@ -153,13 +153,13 @@ function resolveExeDir(): string {
 }
 
 /**
- * 沙箱根目录：`LOOMIC_SANDBOX_ROOT`（可为相对路径，按入口目录解析）优先；
+ * 沙箱根目录：`KENFUTWORK_SANDBOX_ROOT`（可为相对路径，按入口目录解析）优先；
  * 缺省 `<项目根（dev）/ exe 安装目录（打包）>/tmp/sandbox`。
  * 画布工作目录 = `<sandboxRoot>/<画布UUID>`（真实目录映射命中时走映射，见
- * `LOOMIC_CANVAS_WORK_DIRS` — 产品决策 2026-09-14）。
+ * `KENFUTWORK_CANVAS_WORK_DIRS` — 产品决策 2026-09-14）。
  */
 function resolveSandboxRoot(exeDir: string): string {
-  const explicit = process.env.LOOMIC_SANDBOX_ROOT?.trim();
+  const explicit = process.env.KENFUTWORK_SANDBOX_ROOT?.trim();
   if (explicit) {
     return isAbsolute(explicit) ? explicit : resolve(exeDir, explicit);
   }

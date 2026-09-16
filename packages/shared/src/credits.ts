@@ -306,7 +306,7 @@ export const VIDEO_MODEL_COSTS: Record<string, VideoModelCost> = {
   "google/veo-3.1-fast": basePlusDuration(40),
   // Replicate — MiniMax
   "minimax/hailuo-2.3": basePlusDuration(20, 4),
-  // Metaso — provider H3 points are the Loomic credit meter for this model.
+  // Metaso — provider H3 points are the KenFutWork credit meter for this model.
   "metaso/minimax-h3": {
     calculation: "per_second",
     rates: { "720p": 10.2, "1080p": 17 },

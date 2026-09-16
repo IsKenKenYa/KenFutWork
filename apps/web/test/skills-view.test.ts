@@ -1,4 +1,4 @@
-import type { SkillListItem } from "@loomic/shared";
+import type { SkillListItem } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
 
 import {

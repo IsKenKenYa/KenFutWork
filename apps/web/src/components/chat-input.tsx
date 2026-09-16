@@ -1,6 +1,6 @@
 "use client";
 
-import type { MessageMention } from "@loomic/shared";
+import type { MessageMention } from "@kenfutwork/shared";
 import {
   forwardRef,
   useCallback,
@@ -19,12 +19,15 @@ import {
   ComposerContextMenu,
   useComposerContextMenu,
 } from "./chat/composer-context-menu";
+import { RunStopButton } from "./chat/run-stop-button";
 import { ImageAttachmentBar } from "./image-attachment-bar";
 import { ImageModelPreferencePopover } from "./image-model-preference";
 
 type ChatInputProps = {
   onSend: (message: string) => void;
   disabled?: boolean;
+  /** 本轮正在跑时的停止回调；提供时发送键位换成「停止本轮」。 */
+  onStop?: (() => void) | undefined;
   attachments?: ImageAttachmentState[];
   onAddFiles?: (files: File[]) => void;
   onRemoveAttachment?: (id: string) => void;
@@ -48,6 +51,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     {
       onSend,
       disabled,
+      onStop,
       attachments,
       onAddFiles,
       onRemoveAttachment,
@@ -392,24 +396,30 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                 />
               </div>
             </div>
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={disabled || !hasContent || isUploading}
-              className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/80 active:bg-primary/90 disabled:opacity-20 disabled:cursor-not-allowed"
-            >
-              <svg
-                className="h-[14px] w-[14px]"
-                viewBox="0 0 14 14"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={1.6}
-                strokeLinecap="round"
+            {/* 本轮正在跑：发送键位换成「停止本轮」（与 Code 工作台同一个组件）；
+                没有 onStop（如未拿到 runId）时退回禁用态发送键，不给假按钮。 */}
+            {onStop ? (
+              <RunStopButton onStop={onStop} className="h-8 w-8 p-0" />
+            ) : (
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={disabled || !hasContent || isUploading}
+                className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/80 active:bg-primary/90 disabled:opacity-20 disabled:cursor-not-allowed"
               >
-                <path d="M7 11.5V2.5" />
-                <path d="M3 6.5L7 2.5L11 6.5" />
-              </svg>
-            </button>
+                <svg
+                  className="h-[14px] w-[14px]"
+                  viewBox="0 0 14 14"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.6}
+                  strokeLinecap="round"
+                >
+                  <path d="M7 11.5V2.5" />
+                  <path d="M3 6.5L7 2.5L11 6.5" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
       </div>

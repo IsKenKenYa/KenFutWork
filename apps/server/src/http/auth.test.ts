@@ -6,7 +6,7 @@ import { registerAuthRoutes } from "./auth.js";
 
 const USER: AuthenticatedUser = {
   accessToken: "token-1",
-  email: "pro@test.loomic.com",
+  email: "pro@test.kenfutwork.com",
   id: "user-1",
   userMetadata: { display_name: "Pro Tester" },
 };
@@ -65,7 +65,7 @@ describe("POST /api/auth/register", () => {
       url: "/api/auth/register",
       payload: {
         displayName: "Pro Tester",
-        email: "pro@test.loomic.com",
+        email: "pro@test.kenfutwork.com",
         password: "long-enough-1",
       },
     });
@@ -78,14 +78,14 @@ describe("POST /api/auth/register", () => {
       },
       user: {
         displayName: "Pro Tester",
-        email: "pro@test.loomic.com",
+        email: "pro@test.kenfutwork.com",
         id: "user-1",
       },
     });
     expect(seen).toEqual([
       {
         displayName: "Pro Tester",
-        email: "pro@test.loomic.com",
+        email: "pro@test.kenfutwork.com",
         password: "long-enough-1",
       },
     ]);
@@ -167,7 +167,7 @@ describe("POST /api/auth/login", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/auth/login",
-      payload: { email: "pro@test.loomic.com", password: "whatever" },
+      payload: { email: "pro@test.kenfutwork.com", password: "whatever" },
     });
 
     expect(response.statusCode).toBe(200);
@@ -186,7 +186,7 @@ describe("POST /api/auth/login", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/auth/login",
-      payload: { email: "pro@test.loomic.com", password: "wrong" },
+      payload: { email: "pro@test.kenfutwork.com", password: "wrong" },
     });
 
     expect(response.statusCode).toBe(401);
@@ -246,7 +246,7 @@ describe("GET /api/auth/session", () => {
     expect(response.json()).toEqual({
       user: {
         displayName: "Pro Tester",
-        email: "pro@test.loomic.com",
+        email: "pro@test.kenfutwork.com",
         id: "user-1",
       },
     });

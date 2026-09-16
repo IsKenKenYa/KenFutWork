@@ -6,7 +6,7 @@ import type {
   ProviderInstanceResponse,
   ProviderProtocol,
   SubscriptionPlan,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
@@ -33,6 +33,7 @@ import {
   updateAdminProvider,
 } from "@/lib/admin-api";
 import { useAuth } from "@/lib/auth-context";
+import { parseHeadersJson, providerHeadersHint } from "@/lib/provider-headers";
 
 const PLANS: SubscriptionPlan[] = [
   "free",
@@ -80,6 +81,7 @@ export default function AdminPage() {
     baseUrl: "",
     apiKey: "",
     modelsJson: DEFAULT_MODELS_JSON,
+    headersJson: "",
   });
 
   const refresh = useCallback(async (accessToken: string) => {
@@ -339,6 +341,11 @@ export default function AdminPage() {
                   {instance.protocol} · {instance.models.length} 个模型 ·{" "}
                   {instance.enabled ? "已启用" : "已停用"}
                 </div>
+                {instance.headerKeys.length > 0 ? (
+                  <div className="text-xs text-muted-foreground">
+                    自定义请求头：{instance.headerKeys.join("、")}（值不回显）
+                  </div>
+                ) : null}
               </div>
               <div className="flex items-center gap-2">
                 <Button
@@ -392,6 +399,11 @@ export default function AdminPage() {
               setError("模型清单需为非空数组");
               return;
             }
+            const headers = parseHeadersJson(form.headersJson);
+            if (headers instanceof Error) {
+              setError(headers.message);
+              return;
+            }
             void run((accessToken) =>
               createAdminProvider(accessToken, {
                 name: form.name,
@@ -399,9 +411,15 @@ export default function AdminPage() {
                 ...(form.baseUrl ? { baseUrl: form.baseUrl } : {}),
                 apiKey: form.apiKey,
                 models: models as ProviderInstanceResponse["models"],
+                ...(headers ? { headers } : {}),
               }),
             ).then(() =>
-              setForm((prev) => ({ ...prev, name: "", apiKey: "" })),
+              setForm((prev) => ({
+                ...prev,
+                name: "",
+                apiKey: "",
+                headersJson: "",
+              })),
             );
           }}
         >
@@ -478,6 +496,23 @@ export default function AdminPage() {
                 setForm((prev) => ({ ...prev, modelsJson: event.target.value }))
               }
             />
+          </div>
+          <div className="space-y-1 sm:col-span-2">
+            <Label htmlFor="provider-headers">自定义请求头（JSON，可选）</Label>
+            <textarea
+              id="provider-headers"
+              rows={2}
+              className="w-full rounded-lg border bg-transparent p-2 font-mono text-xs outline-none"
+              value={form.headersJson}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, headersJson: event.target.value }))
+              }
+              placeholder='{"x-opencode-session":"{{sessionId}}"}'
+            />
+            <p className="text-xs text-muted-foreground">
+              {providerHeadersHint}
+              平台池实例的头同样只作用于该实例，不会渗到用户自带实例。
+            </p>
           </div>
           <div className="sm:col-span-2">
             <Button type="submit" disabled={busy}>

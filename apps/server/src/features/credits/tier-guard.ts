@@ -5,7 +5,7 @@ import type {
   ImageQualityLevel,
   SubscriptionPlan,
   VideoResolution,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import {
   canAccessModel,
   canUseResolution,
@@ -13,7 +13,7 @@ import {
   getImageCreditCost,
   getVideoCreditCost,
   PLAN_CONFIGS,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 
 // ── Error ────────────────────────────────────────────────────
 

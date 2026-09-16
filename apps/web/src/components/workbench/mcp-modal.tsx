@@ -4,7 +4,7 @@ import type {
   McpCuratedServer,
   McpRegistryServer,
   McpServerView,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import { Loader2, Plug, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
@@ -122,11 +122,11 @@ export function McpModal({
         className="flex h-[80vh] max-h-[88vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl"
         aria-describedby={undefined}
       >
-        <div className="flex items-center gap-3 border-b px-5 py-3 pr-12">
-          <DialogTitle className="flex items-center gap-2 text-base font-medium">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-5 py-3 pr-12">
+          <DialogTitle className="flex shrink-0 items-center gap-2 text-base font-medium">
             <Plug className="h-4 w-4" /> MCP
           </DialogTitle>
-          <div className="flex items-center gap-1 rounded-lg bg-muted p-1">
+          <div className="flex shrink-0 items-center gap-1 rounded-lg bg-muted p-1">
             {(
               [
                 { id: "configured", label: "已配置" },
@@ -139,7 +139,7 @@ export function McpModal({
                 type="button"
                 data-active={tab === item.id}
                 onClick={() => setTab(item.id)}
-                className="rounded-md px-3 py-1 text-sm transition-colors data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:shadow-sm"
+                className="whitespace-nowrap rounded-md px-3 py-1 text-sm transition-colors data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:shadow-sm"
               >
                 {item.label}
               </button>
@@ -662,13 +662,25 @@ function RegistryTab({
   const [error, setError] = useState<string | null>(null);
 
   const search = useCallback(
-    (rawQuery: string) => {
+    (rawQuery: string, isRetry = false) => {
       setLoading(true);
       setError(null);
       const params = new URLSearchParams({
         q: rawQuery.trim(),
         limit: "20",
       });
+      /**
+       * 注册表是外部服务，服务端首次取（冷启动）或上游瞬时会失败——一次失败就直接
+       * 报「检索失败」会让人以为功能坏了（用户已反馈过）。这里**自动重试一次**，
+       * 再失败才把错误摆出来；用户手动改检索词时重新计时。
+       */
+      const fail = (message: string) => {
+        if (!isRetry) {
+          window.setTimeout(() => search(rawQuery, true), 1500);
+          return;
+        }
+        setError(message);
+      };
       void fetch(`${getServerBaseUrl()}/api/mcp/registry?${params}`, {
         headers: authHeaders(),
       })
@@ -677,7 +689,7 @@ function RegistryTab({
             const payload = (await response.json().catch(() => ({}))) as {
               error?: { message?: string };
             };
-            setError(payload.error?.message ?? "注册表检索失败。");
+            fail(payload.error?.message ?? "注册表检索失败。");
             return;
           }
           const payload = (await response.json()) as {
@@ -687,7 +699,7 @@ function RegistryTab({
           setServers(payload.servers);
           setCount(payload.count);
         })
-        .catch(() => setError("注册表请求失败（需要网络）。"))
+        .catch(() => fail("注册表请求失败（需要网络）。"))
         .finally(() => setLoading(false));
     },
     [authHeaders],

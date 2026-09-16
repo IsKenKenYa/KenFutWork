@@ -1,6 +1,14 @@
 "use client";
 
-import { Archive, MoreHorizontal, Pencil, Trash2, Undo2 } from "lucide-react";
+import {
+  Archive,
+  ChevronDown,
+  ChevronRight,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  Undo2,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -22,6 +30,9 @@ export interface SidebarRowProps {
   /** 归档行的恢复动作；提供时菜单第一项为「恢复」 */
   onRestore?: () => void;
   onDelete: () => void;
+  /** 有子项时提供：显示折叠箭头（行本身仍是「选中」，箭头才是展开/收缩）。 */
+  expanded?: boolean;
+  onToggleExpanded?: () => void;
 }
 
 export function SidebarRow({
@@ -33,6 +44,8 @@ export function SidebarRow({
   onArchive,
   onRestore,
   onDelete,
+  expanded,
+  onToggleExpanded,
 }: SidebarRowProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(label);
@@ -77,6 +90,21 @@ export function SidebarRow({
       className="group/row relative flex items-center"
       data-active={active ? "true" : undefined}
     >
+      {onToggleExpanded ? (
+        <button
+          type="button"
+          aria-label={expanded ? `收起 ${label}` : `展开 ${label}`}
+          aria-expanded={expanded ? "true" : "false"}
+          onClick={onToggleExpanded}
+          className="ml-0.5 shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          {expanded ? (
+            <ChevronDown className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5" />
+          )}
+        </button>
+      ) : null}
       <button
         type="button"
         onClick={onOpen}

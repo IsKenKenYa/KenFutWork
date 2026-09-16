@@ -2,7 +2,7 @@ import {
   applicationErrorResponseSchema,
   permissionTierSchema,
   unauthenticatedErrorResponseSchema,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { FastifyInstance } from "fastify";
 import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { PermissionService } from "../features/permissions/permission-service.js";
@@ -48,7 +48,7 @@ export async function registerPermissionRoutes(
         }),
       );
     }
-    let tier: import("@loomic/shared").PermissionTier;
+    let tier: import("@kenfutwork/shared").PermissionTier;
     try {
       tier = permissionTierSchema.parse(
         (request.body as { tier?: unknown }).tier,

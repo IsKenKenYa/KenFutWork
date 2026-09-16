@@ -90,10 +90,10 @@ describe("kernelToolToStructuredTool（模型可调用桥）", () => {
       execute,
     };
     const structured = kernelToolToStructuredTool(def, { runId: "run-1" });
-    const result = (await structured.invoke({ q: "loomic" })) as string;
-    expect(JSON.stringify(result)).toContain("loomic");
+    const result = (await structured.invoke({ q: "kenfutwork" })) as string;
+    expect(JSON.stringify(result)).toContain("kenfutwork");
     expect(execute).toHaveBeenCalledWith(
-      { q: "loomic" },
+      { q: "kenfutwork" },
       expect.objectContaining({ runId: "run-1" }),
     );
   });

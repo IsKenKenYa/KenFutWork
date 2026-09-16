@@ -1,4 +1,4 @@
-import { type ModelInfo, modelListResponseSchema } from "@loomic/shared";
+import { type ModelInfo, modelListResponseSchema } from "@kenfutwork/shared";
 import type { FastifyInstance } from "fastify";
 
 import type { ServerEnv } from "../config/env.js";

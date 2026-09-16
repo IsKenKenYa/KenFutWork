@@ -10,7 +10,7 @@ import { createProjectRepository } from "./repository.js";
  * 占位符错位这类缺陷单测看不出来。
  *
  * 运行：DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
- *       pnpm --filter @loomic/server exec vitest run projects.integration
+ *       pnpm --filter @kenfutwork/server exec vitest run projects.integration
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 

@@ -3,8 +3,8 @@ import type {
   BillingPeriod,
   CreditTransaction,
   SubscriptionPlan,
-} from "@loomic/shared";
-import { PLAN_CONFIGS } from "@loomic/shared";
+} from "@kenfutwork/shared";
+import { PLAN_CONFIGS } from "@kenfutwork/shared";
 
 import type { CreditRepository } from "./repository.js";
 

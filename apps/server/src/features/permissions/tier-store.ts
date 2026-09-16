@@ -1,5 +1,5 @@
-import type { PermissionTier } from "@loomic/shared";
-import { permissionTierSchema } from "@loomic/shared";
+import type { PermissionTier } from "@kenfutwork/shared";
+import { permissionTierSchema } from "@kenfutwork/shared";
 
 import type { PersistenceService } from "../persistence/types.js";
 

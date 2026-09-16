@@ -11,7 +11,7 @@ import {
   providerInstanceResponseSchema,
   setPlanRequestSchema,
   unauthenticatedErrorResponseSchema,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import {

@@ -31,7 +31,7 @@ async function main() {
 
   if (!env.databaseUrl) {
     console.error(
-      "LOOMIC_DATABASE_URL（或 DATABASE_URL）是 worker 进程的必需项。",
+      "KENFUTWORK_DATABASE_URL（或 DATABASE_URL）是 worker 进程的必需项。",
     );
     process.exit(1);
   }

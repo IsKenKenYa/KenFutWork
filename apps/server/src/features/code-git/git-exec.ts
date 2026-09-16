@@ -6,7 +6,7 @@ import type { ExecGit, GitCommandResult } from "./git-client.js";
  * 真实 git 执行：把定稿的 `args` 交给 git 二进制，在沙箱目录里跑。
  *
  * 二进制来源（顺序与「git 优先本地、打包兜底」一致）：
- *   1. 显式 `LOOMIC_GIT_BIN_DIR`；
+ *   1. 显式 `KENFUTWORK_GIT_BIN_DIR`；
  *   2. 随包 git（`<exeDir>/runtime/git/cmd`，仅当宿主没有 git 时才由 runtimes 解析出来）；
  *   3. 兜底用 PATH 上的 `git`（宿主的本地 git）。
  *
@@ -19,9 +19,13 @@ export function createProcessGitExec(options: {
   timeoutMs?: number;
 }): ExecGit {
   const timeout = options.timeoutMs ?? 15_000;
-  return (args: readonly string[], cwd: string): Promise<GitCommandResult> =>
+  return (
+    args: readonly string[],
+    cwd: string,
+    input?: string,
+  ): Promise<GitCommandResult> =>
     new Promise((resolve) => {
-      execFile(
+      const child = execFile(
         options.binary,
         [...args],
         { cwd, timeout, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
@@ -40,5 +44,9 @@ export function createProcessGitExec(options: {
           });
         },
       );
+      if (input !== undefined) {
+        // `git apply` 从 stdin 读 patch；写完就关，否则 git 会一直等
+        child.stdin?.end(input);
+      }
     });
 }

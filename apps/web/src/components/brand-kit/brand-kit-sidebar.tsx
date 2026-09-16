@@ -1,6 +1,6 @@
 "use client";
 
-import type { BrandKitSummary } from "@loomic/shared";
+import type { BrandKitSummary } from "@kenfutwork/shared";
 import { Plus, Trash2 } from "lucide-react";
 
 import { cn } from "../../lib/utils";

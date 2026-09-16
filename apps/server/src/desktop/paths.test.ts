@@ -9,11 +9,11 @@ const winLocal = join("C:/Users/x", "AppData", "Local");
 const winApp = join(winLocal, "KenFutWork", "data");
 
 describe("桌面数据目录解析（FORM-2）", () => {
-  it("LOOMIC_DATA_DIR 显式覆盖优先于平台惯例", () => {
+  it("KENFUTWORK_DATA_DIR 显式覆盖优先于平台惯例", () => {
     expect(
       resolveDesktopDataDir({
         env: {
-          LOOMIC_DATA_DIR: "D:/custom/data",
+          KENFUTWORK_DATA_DIR: "D:/custom/data",
           LOCALAPPDATA: winLocal,
         },
         home: "C:/Users/x",
@@ -56,10 +56,10 @@ describe("桌面数据目录解析（FORM-2）", () => {
     ).toBe(join("/home/x", ".local", "share", "KenFutWork"));
   });
 
-  it("空串覆盖不生效（`LOOMIC_DATA_DIR=` 等同于未设置）", () => {
+  it("空串覆盖不生效（`KENFUTWORK_DATA_DIR=` 等同于未设置）", () => {
     expect(
       resolveDesktopDataDir({
-        env: { LOOMIC_DATA_DIR: "   ", LOCALAPPDATA: "C:/L" },
+        env: { KENFUTWORK_DATA_DIR: "   ", LOCALAPPDATA: "C:/L" },
         home: "C:/Users/x",
         platform: "win32",
       }),

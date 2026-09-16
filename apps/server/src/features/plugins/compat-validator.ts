@@ -2,7 +2,7 @@ import type {
   CompatIssue,
   CompatReport,
   PluginBundleManifest,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 
 import {
   type BundleFiles,
