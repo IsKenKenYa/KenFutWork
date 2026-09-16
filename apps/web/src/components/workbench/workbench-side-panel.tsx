@@ -8,6 +8,7 @@ import { DiffPane, FilePane } from "@/components/workbench/panel-reading-view";
 import { PanelTabStrip } from "@/components/workbench/panel-tab-strip";
 import { TerminalPane } from "@/components/workbench/panel-terminal-view";
 import { SubagentDirectoryView } from "@/components/workbench/subagent-directory-view";
+import type { WebSocketHandle } from "@/hooks/use-websocket";
 import {
   canGoBack,
   canGoForward,
@@ -52,6 +53,7 @@ export function WorkbenchSidePanel({
   canvasId,
   subagents,
   running,
+  ws,
   widthLimits,
   onGrowBlocked,
   maxWidthExpression,
@@ -64,6 +66,8 @@ export function WorkbenchSidePanel({
   canvasId: string | null;
   subagents: SubagentEntry[];
   running: boolean;
+  /** WS 句柄：终端标签的会话就挂在这条连接上（见 hooks/use-websocket 的终端通道）。 */
+  ws: WebSocketHandle;
   /** 宽度上下限（工作台按视口与左栏现算，见 lib/panel-layout）。 */
   widthLimits?: PanelWidthLimits;
   /** 拖到上限还继续往里拖：工作台据此把左栏收起来腾地方。 */
@@ -251,6 +255,7 @@ export function WorkbenchSidePanel({
               canvasId={canvasId}
               subagents={subagents}
               running={running}
+              ws={ws}
               changesVersion={changesVersion}
               onChanged={bumpChanges}
               onOpenView={openView}
@@ -296,6 +301,7 @@ function PaneContent({
   canvasId,
   subagents,
   running,
+  ws,
   changesVersion,
   onChanged,
   onOpenView,
@@ -306,6 +312,7 @@ function PaneContent({
   canvasId: string | null;
   subagents: SubagentEntry[];
   running: boolean;
+  ws: WebSocketHandle;
   changesVersion: number;
   onChanged: () => void;
   onOpenView: (view: PanelView) => void;
@@ -352,7 +359,13 @@ function PaneContent({
         />
       );
     case "terminal":
-      return <TerminalPane accessToken={accessToken} canvasId={canvasId} />;
+      return (
+        <TerminalPane
+          accessToken={accessToken}
+          canvasId={canvasId}
+          ws={ws}
+        />
+      );
     case "browser":
       return <BrowserPane {...browser} />;
     case "subagents":

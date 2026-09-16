@@ -2384,6 +2384,7 @@ export function Workbench() {
             canvasId={conversationProject?.primaryCanvas.id ?? null}
             subagents={activeTask.subagents ?? []}
             running={activeTask.status === "running"}
+            ws={ws}
             widthLimits={panelLimits}
             /* CSS 兜底：宿主不派发 resize 事件时 JS 的 limits 会陈旧，这条由排版保证
                对话列 ≥ MIN_CONVERSATION_WIDTH（数值与 lib/panel-layout 同一口径） */

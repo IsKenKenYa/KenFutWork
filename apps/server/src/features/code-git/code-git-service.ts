@@ -128,6 +128,12 @@ export type CodeGitService = {
     defaultShell: TerminalShellId;
     resolvedShell: TerminalShellId;
   }>;
+  /**
+   * 交互式终端会话的落点：**已校验归属**的工作目录（WS 那条路用它起常驻 shell）。
+   * 与一次性执行同一处解析（`resolveSandboxDir`）——会话里的命令和 agent 读写的
+   * 是同一个目录。
+   */
+  terminalWorkDir(user: AuthenticatedUser, canvasId: string): Promise<string>;
   /** 列一层目录（R3-1「文件目录」标签）：只列一层，子目录由界面点进去。 */
   listFiles(
     user: AuthenticatedUser,
@@ -412,6 +418,11 @@ export function createCodeGitService(options: {
         defaultShell,
         resolvedShell: resolveTerminalShell(defaultShell, shells)?.id ?? "auto",
       };
+    },
+
+    /** 交互式会话的 cwd：与一次性执行同一处归属校验（越权即 404）。 */
+    async terminalWorkDir(user, canvasId) {
+      return sandboxDirFor(user, canvasId);
     },
 
     /** 暂存单个文件：路径先过「必须落在工作目录内」这道门（与读文件同一处判定）。 */

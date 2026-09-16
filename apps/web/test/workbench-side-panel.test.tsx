@@ -12,6 +12,23 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkbenchSidePanel } from "../src/components/workbench/workbench-side-panel";
+import type { WebSocketHandle } from "../src/hooks/use-websocket";
+
+/** 终端标签需要的 WS 句柄替身：只实现面板真正用到的那几个方法。 */
+function fakeWs(): WebSocketHandle {
+  return {
+    connected: true,
+    startRun: vi.fn(),
+    cancelRun: vi.fn(),
+    onEvent: () => () => {},
+    registerRPC: () => () => {},
+    resumeCanvas: vi.fn(),
+    startTerminal: vi.fn(),
+    sendTerminalInput: vi.fn(),
+    stopTerminal: vi.fn(),
+    onTerminal: () => () => {},
+  } as unknown as WebSocketHandle;
+}
 
 const {
   fetchCodeFilesMock,
@@ -110,6 +127,7 @@ describe("WorkbenchSidePanel（多标签）", () => {
         canvasId="canvas-1"
         subagents={[]}
         running={false}
+        ws={fakeWs()}
       />
     );
   }
@@ -237,6 +255,7 @@ describe("WorkbenchSidePanel（多标签）", () => {
         canvasId={null}
         subagents={[]}
         running={false}
+        ws={fakeWs()}
       />,
     );
     expect(
@@ -394,6 +413,7 @@ describe("面板宽度受对话列最小宽度约束", () => {
         canvasId="canvas-1"
         subagents={[]}
         running={false}
+        ws={fakeWs()}
         {...(widthLimits ? { widthLimits } : {})}
         {...(onGrowBlocked ? { onGrowBlocked } : {})}
       />
@@ -465,6 +485,7 @@ describe("右栏浏览器（点链接自动打开）", () => {
         canvasId="canvas-1"
         subagents={[]}
         running={false}
+        ws={fakeWs()}
       />
     );
   }

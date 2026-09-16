@@ -79,6 +79,7 @@ export function buildApp(
       agentRunMetadataService: kernel.get("agentRunMetadata"),
       auth: kernel.get("auth"),
       chatService: kernel.get("chat"),
+      codeGitService: kernel.get("codeGit"),
       connectionManager,
       eventBuffer,
       settingsService: kernel.get("settings"),
