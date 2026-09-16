@@ -342,6 +342,13 @@ export function ChatSidebar({
   /** 对话内容容器（右键菜单「全选对话」用）。 */
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef(false);
+  /**
+   * 当前在跑的 run id（提成状态是为了给「停止本轮」按钮用）。
+   *
+   * 事件回调里那个 `runIdRef` 是闭包内的临时变量，渲染层读不到，所以此前只有
+   * 「等整轮跑完」一条路；重试换 id（run.retrying）时要同步更新，否则停的是旧 id。
+   */
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const messageMentionsRef = useRef(messageMentions);
   messageMentionsRef.current = messageMentions;
   const selectedCanvasElementsRef = useRef(selectedCanvasElements);
@@ -703,6 +710,7 @@ export function ChatSidebar({
           // 否则这一轮后续事件（含终态）全被丢掉，助手永远停在「正在生成」。
           if (event.type === "run.retrying" && runIdRef.current) {
             runIdRef.current = event.runId;
+            setActiveRunId(event.runId);
           }
           if (!runIdRef.current || event.runId !== runIdRef.current) return;
           if (abortRef.current) {
@@ -831,6 +839,7 @@ export function ChatSidebar({
               );
               const id = ack.payload.runId as string;
               runIdRef.current = id;
+              setActiveRunId(id);
               resolve(id);
             },
           );
@@ -857,6 +866,7 @@ export function ChatSidebar({
         );
       } finally {
         setStreaming(false);
+        setActiveRunId(null);
       }
     },
     [
@@ -1037,6 +1047,8 @@ export function ChatSidebar({
           .activeRunId;
         if (activeRunId && typeof activeRunId === "string") {
           setStreaming(true);
+          // 断线重连接上的这一轮同样要能停（否则重连后按钮消失，只能干等）
+          setActiveRunId(activeRunId);
 
           const assistantId = `resumed_${activeRunId}`;
           // Must use updateSessionMessages (not setMessages) so the placeholder
@@ -1096,6 +1108,7 @@ export function ChatSidebar({
               evt.type === "run.canceled"
             ) {
               setStreaming(false);
+              setActiveRunId(null);
               unsub();
             }
           });
@@ -1397,6 +1410,12 @@ export function ChatSidebar({
               ref={chatInputRef}
               onSend={handleSend}
               disabled={streaming || sessionsLoading}
+              // 有活跃 run 才给停止键：没有 runId 时的「停止」是假按钮（点了不生效）
+              onStop={
+                streaming && activeRunId
+                  ? () => ws.cancelRun(activeRunId)
+                  : undefined
+              }
               attachments={imageAttachments}
               onAddFiles={addFiles}
               onRemoveAttachment={removeAttachment}

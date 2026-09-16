@@ -175,6 +175,33 @@ describe("ChatSidebar", () => {
     );
   });
 
+  it("本轮正在跑时给出「停止本轮」入口，点了 cancelRun 的是这一轮的 runId", async () => {
+    render(
+      <ToastProvider>
+        <TierLimitToastProvider>
+          <ChatSidebar
+            accessToken="token_abc"
+            canvasId="canvas-1"
+            open
+            onToggle={() => {}}
+            ws={mockWs}
+          />
+        </TierLimitToastProvider>
+      </ToastProvider>,
+    );
+
+    // 未发消息前没有停止键（没有 runId 时的「停止」是假按钮）
+    const input = await screen.findByPlaceholderText(/输入你的想法/);
+    expect(screen.queryByRole("button", { name: "停止本轮" })).toBeNull();
+
+    await userEvent.type(input, "画画{Enter}");
+    await waitFor(() => expect(mockWs.startRun).toHaveBeenCalled());
+
+    const stop = await screen.findByRole("button", { name: "停止本轮" });
+    await userEvent.click(stop);
+    expect(mockWs.cancelRun).toHaveBeenCalledWith("run_123");
+  });
+
   it("图层/文件是另两个视图（图标切换），且切过去不顶掉对话标签行", async () => {
     function Harness() {
       const [tab, setTab] = useState<SidePanelTab>("layers");

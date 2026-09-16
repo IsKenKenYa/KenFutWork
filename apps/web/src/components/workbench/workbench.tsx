@@ -16,7 +16,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   PanelsTopLeft,
-  Pause,
   Plug,
   Plus,
   Send,
@@ -34,6 +33,7 @@ import {
   useComposerContextMenu,
 } from "@/components/chat/composer-context-menu";
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
+import { RunStopButton } from "@/components/chat/run-stop-button";
 import { ToolOutputRenderer } from "@/components/chat/tool-block-view";
 import { KenFutWorkLogo } from "@/components/icons/kenfutwork-logo";
 import {
@@ -2166,16 +2166,11 @@ export function Workbench() {
                     <Mic className="h-4 w-4" />
                   </button>
                   {activeTask.status === "running" && activeRunIdRef.current ? (
-                    /* 停止 = 暂停图标（与发送按钮同一个图标位，不再是一枚突兀的文字按钮） */
-                    <button
-                      type="button"
-                      aria-label="停止本轮"
-                      title="停止本轮"
-                      className="rounded-lg border p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                      onClick={() => ws.cancelRun(activeRunIdRef.current!)}
-                    >
-                      <Pause className="h-4 w-4" />
-                    </button>
+                    /* 停止 = 暂停图标（与发送按钮同一个图标位，不再是一枚突兀的文字按钮）；
+                       与 Design 画布助手共用同一个组件，免得两处图标/文案漂移 */
+                    <RunStopButton
+                      onStop={() => ws.cancelRun(activeRunIdRef.current!)}
+                    />
                   ) : (
                     <button
                       type="submit"
