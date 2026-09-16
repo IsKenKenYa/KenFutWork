@@ -125,4 +125,28 @@ describe("ComposerCompactSelect", () => {
     expect(panel).toHaveTextContent("危险 / 不可逆操作需人工审批");
     expect(panel).toHaveTextContent("命中已批准策略的调用自动通过");
   });
+
+  it("思考强度是「图标 + 进度条」：档位越高条越满，缩小时箭头也藏起来", () => {
+    render(
+      <ComposerCompactSelect
+        ariaLabel="思考强度"
+        icon={icon}
+        options={THINKING_OPTIONS}
+        value="最高"
+        onChange={() => {}}
+        progress={1}
+      />,
+    );
+    const trigger = screen.getByLabelText("思考强度");
+    // 进度条：满格（100%）
+    const bar = [...trigger.querySelectorAll("span")].find((el) =>
+      /width:/.test(el.getAttribute("style") ?? ""),
+    );
+    expect(bar?.getAttribute("style")).toContain("100%");
+    // 箭头在窄列收起（用户口径：缩小时除模型外别的箭头都不要显示）
+    const chevron = trigger.querySelector("svg.lucide-chevron-down");
+    expect(chevron?.parentElement?.className).toContain(
+      "@max-xl/composer:hidden",
+    );
+  });
 });

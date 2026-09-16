@@ -55,6 +55,7 @@ import { ContextUsageButton } from "@/components/workbench/context-usage-button"
 import {
   ComposerCompactSelect,
   THINKING_OPTIONS,
+  THINKING_PROGRESS,
   TIER_OPTIONS,
 } from "@/components/workbench/composer-compact-select";
 import { ElapsedEntry } from "@/components/workbench/elapsed-entry";
@@ -2316,6 +2317,7 @@ export function Workbench() {
                   {/* 上下文容量 / 缓存命中（R4-1）：模型旁一个圆形入口 */}
                   <ContextUsageButton
                     usage={activeTask.usage ?? null}
+                    modelId={model}
                     contextWindow={
                       models.find((m) => m.id === model)?.contextWindow ?? null
                     }
@@ -2327,6 +2329,7 @@ export function Workbench() {
                     value={thinking}
                     onChange={handleThinkingChange}
                     contentClassName="min-w-24"
+                    progress={THINKING_PROGRESS[thinking] ?? 0}
                   />
                 </div>
                 <div className="flex items-center gap-2">
@@ -2573,6 +2576,7 @@ export function Workbench() {
                   {/* 上下文容量 / 缓存命中（R4-1）：模型旁一个圆形入口 */}
                   <ContextUsageButton
                     usage={null}
+                    modelId={model}
                     contextWindow={
                       models.find((m) => m.id === model)?.contextWindow ?? null
                     }
@@ -2584,6 +2588,7 @@ export function Workbench() {
                     value={thinking}
                     onChange={handleThinkingChange}
                     contentClassName="min-w-24"
+                    progress={THINKING_PROGRESS[thinking] ?? 0}
                   />
                 </div>
                 <div className="flex items-center gap-2">
