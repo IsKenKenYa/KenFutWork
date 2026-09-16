@@ -26,15 +26,19 @@ export class SettingsServiceError extends Error {
   }
 }
 
+/** 部分更新：只带要改的字段。 */
+export type WorkspaceSettingsPatch = Partial<WorkspaceSettings>;
+
 export type SettingsService = {
   getWorkspaceSettings(
     user: AuthenticatedUser,
     workspaceId: string,
   ): Promise<WorkspaceSettings>;
+  /** 部分更新：只写送来的字段（未送的一律不动），返回更新后的完整设置。 */
   updateWorkspaceSettings(
     user: AuthenticatedUser,
     workspaceId: string,
-    settings: WorkspaceSettings,
+    patch: WorkspaceSettingsPatch,
   ): Promise<WorkspaceSettings>;
 };
 
@@ -57,40 +61,62 @@ export function createSettingsService(options: {
   const defaultModel = options.defaultModel ?? FALLBACK_MODEL;
   const { repository } = options;
 
+  const getSettings = async (
+    user: AuthenticatedUser,
+    workspaceId: string,
+  ): Promise<WorkspaceSettings> => {
+    const [storedModel, storedRetries, storedShell] = await Promise.all([
+      repository.findDefaultModel(workspaceId),
+      repository.findAgentMaxRetries(workspaceId),
+      repository.findTerminalShell(workspaceId),
+    ]).catch(() => {
+      throw new SettingsServiceError(
+        "settings_read_failed",
+        "Unable to load workspace settings.",
+        500,
+      );
+    });
+
+    // 只在无库值时问目录：已显式设置过的工作区不额外付一次目录读
+    const resolvedFallback =
+      storedModel === null
+        ? await options.resolveFallbackModel?.(user)
+        : undefined;
+
+    return {
+      agentMaxRetries: clampMaxRunRetries(
+        storedRetries ?? DEFAULT_MAX_RUN_RETRIES,
+      ),
+      defaultModel: storedModel ?? resolvedFallback ?? defaultModel,
+      terminalShell: storedShell ?? "auto",
+    };
+  };
+
   return {
-    async getWorkspaceSettings(user, workspaceId) {
-      const [storedModel, storedRetries] = await Promise.all([
-        repository.findDefaultModel(workspaceId),
-        repository.findAgentMaxRetries(workspaceId),
-      ]).catch(() => {
-        throw new SettingsServiceError(
-          "settings_read_failed",
-          "Unable to load workspace settings.",
-          500,
+    getWorkspaceSettings: getSettings,
+
+    async updateWorkspaceSettings(user, workspaceId, patch) {
+      // 逐列 upsert（各写各的列）：没送来的字段一个字都不动
+      const writes: Array<Promise<void>> = [];
+      if (patch.defaultModel !== undefined) {
+        writes.push(
+          repository.upsertDefaultModel(workspaceId, patch.defaultModel),
         );
-      });
-
-      // 只在无库值时问目录：已显式设置过的工作区不额外付一次目录读
-      const resolvedFallback =
-        storedModel === null
-          ? await options.resolveFallbackModel?.(user)
-          : undefined;
-
-      return {
-        agentMaxRetries: clampMaxRunRetries(
-          storedRetries ?? DEFAULT_MAX_RUN_RETRIES,
-        ),
-        defaultModel: storedModel ?? resolvedFallback ?? defaultModel,
-      };
-    },
-
-    async updateWorkspaceSettings(_user, workspaceId, settings) {
-      const retries = clampMaxRunRetries(settings.agentMaxRetries);
-      // 逐列 upsert（各写各的列）——两个设置之间不会互相覆盖
-      await Promise.all([
-        repository.upsertDefaultModel(workspaceId, settings.defaultModel),
-        repository.upsertAgentMaxRetries(workspaceId, retries),
-      ]).catch(() => {
+      }
+      if (patch.agentMaxRetries !== undefined) {
+        writes.push(
+          repository.upsertAgentMaxRetries(
+            workspaceId,
+            clampMaxRunRetries(patch.agentMaxRetries),
+          ),
+        );
+      }
+      if (patch.terminalShell !== undefined) {
+        writes.push(
+          repository.upsertTerminalShell(workspaceId, patch.terminalShell),
+        );
+      }
+      await Promise.all(writes).catch(() => {
         throw new SettingsServiceError(
           "settings_update_failed",
           "Unable to update workspace settings.",
@@ -98,7 +124,8 @@ export function createSettingsService(options: {
         );
       });
 
-      return { ...settings, agentMaxRetries: retries };
+      // 回读真值：客户端拿到的是库里现在的事实，不是「我以为写成了什么」
+      return getSettings(user, workspaceId);
     },
   };
 }

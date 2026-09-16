@@ -2,6 +2,7 @@ import { resolveSandboxDir } from "../../agent/sandbox-dir.js";
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import type { CanvasRepository } from "../canvas/repository.js";
+import type { SettingsService } from "../settings/settings-service.js";
 import type {
   GitChangedFiles,
   GitClient,
@@ -10,16 +11,20 @@ import type {
   GitRepoView,
 } from "./git-client.js";
 import {
-  type TerminalResult,
-  runTerminalCommand,
-} from "./terminal-runner.js";
-import {
   existingSandboxFiles,
   listSandboxDir,
   readSandboxTextFile,
   type SandboxDirListing,
   type SandboxFileView,
 } from "./sandbox-file.js";
+import {
+  detectTerminalShells,
+  resolveTerminalShell,
+  runTerminalCommand,
+  type TerminalResult,
+  type TerminalShellId,
+  type TerminalShellOption,
+} from "./terminal-runner.js";
 
 /**
  * 「文档入口」（R3-3）的候选清单：约定俗成的项目文档名。
@@ -123,7 +128,17 @@ export type CodeGitService = {
     user: AuthenticatedUser,
     canvasId: string,
     command: string,
+    shell?: TerminalShellId,
   ): Promise<TerminalResult>;
+  /**
+   * 本机可用的 shell + 工作区默认（终端下拉与设置页共用）。
+   * `resolvedShell` 是默认值在这台机器上实际会用的那个（`auto` 时尤其需要说清）。
+   */
+  listTerminalShells(user: AuthenticatedUser): Promise<{
+    shells: TerminalShellOption[];
+    defaultShell: TerminalShellId;
+    resolvedShell: TerminalShellId;
+  }>;
   /** 列一层目录（R3-1「文件目录」标签）：只列一层，子目录由界面点进去。 */
   listFiles(
     user: AuthenticatedUser,
@@ -178,8 +193,36 @@ export function createCodeGitService(options: {
   sandboxRoot?: string | undefined;
   /** 画布 → 真实目录映射（与 agent 后端同一张表，保证 git 操作的就是 agent 读写的目录）。 */
   canvasWorkDirs?: Record<string, string> | undefined;
+  /**
+   * 读工作区的默认终端 shell（设置页配的那个）。缺省时用 `auto`（按平台取默认）。
+   * 只依赖 `getWorkspaceSettings` 一个方法，避免把整个 settings 服务拖进这个 feature。
+   */
+  settingsService?: Pick<SettingsService, "getWorkspaceSettings"> | undefined;
+  /** 测试注入：本机可用 shell 清单（真实环境由 detectTerminalShells 探测）。 */
+  availableShells?: readonly TerminalShellOption[] | undefined;
 }): CodeGitService {
   const { canvasRepository, git, source, viewerService } = options;
+
+  /**
+   * 工作区设置的默认终端 shell（读不到就当没配：落 `auto`）。
+   * 设置是跨机器同步的，本机没有所选 shell 时由 resolveTerminalShell 落回平台默认。
+   */
+  const workspaceShell = async (
+    user: AuthenticatedUser,
+  ): Promise<TerminalShellId | undefined> => {
+    if (!options.settingsService) return undefined;
+    try {
+      const workspace = await viewerService.resolveWorkspace(user);
+      if (!workspace) return undefined;
+      const settings = await options.settingsService.getWorkspaceSettings(
+        user,
+        workspace.id,
+      );
+      return settings.terminalShell;
+    } catch {
+      return undefined;
+    }
+  };
 
   /**
    * canvasId → 已校验归属的沙箱目录。不可见即 404（不区分「不存在」与「不属于你」，
@@ -332,13 +375,32 @@ export function createCodeGitService(options: {
       };
     },
 
-    async runTerminal(user, canvasId, command) {
+    async runTerminal(user, canvasId, command, shell) {
       const trimmed = command.trim();
       if (!trimmed) {
         throw new CodeGitError("git_write_failed", "命令不能为空。", 400);
       }
       const dir = await sandboxDirFor(user, canvasId);
-      return runTerminalCommand({ command: trimmed, cwd: dir });
+      // 本次显式选了就用它；否则用工作区设置里的默认（读不到就 auto）
+      const requested = shell ?? (await workspaceShell(user));
+      return runTerminalCommand({
+        command: trimmed,
+        cwd: dir,
+        ...(requested ? { shell: requested } : {}),
+        ...(options.availableShells
+          ? { availableShells: options.availableShells }
+          : {}),
+      });
+    },
+
+    async listTerminalShells(user) {
+      const shells = [...(options.availableShells ?? detectTerminalShells())];
+      const defaultShell = (await workspaceShell(user)) ?? "auto";
+      return {
+        shells,
+        defaultShell,
+        resolvedShell: resolveTerminalShell(defaultShell, shells)?.id ?? "auto",
+      };
     },
 
     /** 列一层目录：路径越界/不存在/不是目录都折成 400 可读原因。 */

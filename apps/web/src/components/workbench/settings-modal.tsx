@@ -9,6 +9,7 @@ import { ProfileSection } from "@/components/profile-section";
 import { ProviderSettings } from "@/components/provider-settings";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { BrowserSettingsSection } from "@/components/workbench/browser-settings-section";
+import { TerminalSettingsSection } from "@/components/workbench/terminal-settings-section";
 import { ListLoading } from "@/components/workbench/list-state";
 import { RulesMemorySection } from "@/components/workbench/rules-memory-section";
 import { UsageStatsSection } from "@/components/workbench/usage-stats-section";
@@ -200,13 +201,16 @@ export function SettingsModal({
             {loading && !profile ? (
               <ListLoading label="正在加载设置…" rows={2} />
             ) : activeTab === "general" ? (
-              profile ? (
-                <ProfileSection
-                  displayName={profile.displayName}
-                  email={profile.email}
-                  onSave={handleProfileSave}
-                />
-              ) : null
+              <div className="space-y-8">
+                {profile ? (
+                  <ProfileSection
+                    displayName={profile.displayName}
+                    email={profile.email}
+                    onSave={handleProfileSave}
+                  />
+                ) : null}
+                {token ? <TerminalSettingsSection accessToken={token} /> : null}
+              </div>
             ) : activeTab === "model" ? (
               <AgentSection
                 agentMaxRetries={agentMaxRetries}

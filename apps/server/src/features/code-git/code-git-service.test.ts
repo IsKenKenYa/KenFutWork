@@ -11,6 +11,10 @@ import {
   type GitSource,
 } from "./code-git-service.js";
 import type { GitClient, GitRepoView } from "./git-client.js";
+import type {
+  TerminalShellId,
+  TerminalShellOption,
+} from "./terminal-runner.js";
 
 const USER = {
   accessToken: "t",
@@ -36,6 +40,17 @@ function build(options: {
   git?: Partial<GitClient>;
   source?: GitSource;
   canvasWorkDirs?: Record<string, string>;
+  settingsService?: {
+    getWorkspaceSettings: (
+      user: AuthenticatedUser,
+      workspaceId: string,
+    ) => Promise<{
+      defaultModel: string;
+      agentMaxRetries: number;
+      terminalShell: TerminalShellId;
+    }>;
+  };
+  availableShells?: TerminalShellOption[];
 }) {
   const git: GitClient = {
     checkout: vi.fn(async () => {}),
@@ -67,6 +82,12 @@ function build(options: {
       ? { canvasWorkDirs: options.canvasWorkDirs }
       : {}),
     viewerService: { resolveWorkspace },
+    ...(options.settingsService
+      ? { settingsService: options.settingsService }
+      : {}),
+    ...(options.availableShells
+      ? { availableShells: options.availableShells }
+      : {}),
   });
   return { findById, git, resolveWorkspace, service };
 }
@@ -373,5 +394,77 @@ describe("项目文档清单", () => {
     await expect(service.listDocs(USER, CANVAS_ID)).rejects.toMatchObject({
       statusCode: 404,
     });
+  });
+});
+
+/**
+ * 终端 shell（用户口径：「终端应该是直连 cmd 或者 powershell、git-bash 等等，可以在设置里
+ * 配置默认的」）：默认值来自工作区设置，本次显式选的优先；命令行实际交给选中的 shell。
+ */
+describe("终端 shell 解析", () => {
+  const shells: TerminalShellOption[] = [
+    { id: "cmd", label: "cmd", executable: "cmd.exe" },
+    { id: "powershell", label: "Windows PowerShell", executable: "powershell.exe" },
+  ];
+
+  it("清单与默认值：读工作区设置，读不到落 auto", async () => {
+    const { service } = build({
+      availableShells: shells,
+      settingsService: {
+        getWorkspaceSettings: async () => ({
+          agentMaxRetries: 10,
+          defaultModel: "inst-1:glm-5.3-flash",
+          terminalShell: "powershell",
+        }),
+      },
+    });
+    await expect(service.listTerminalShells(USER)).resolves.toEqual({
+      shells,
+      defaultShell: "powershell",
+      resolvedShell: "powershell",
+    });
+
+    const { service: noSettings } = build({ availableShells: shells });
+    // auto：解析成本机平台默认（测试机是 Windows → cmd）
+    await expect(noSettings.listTerminalShells(USER)).resolves.toEqual({
+      shells,
+      defaultShell: "auto",
+      resolvedShell: process.platform === "win32" ? "cmd" : shells[0]?.id,
+    });
+  });
+
+  it("设置读取失败不打断：落 auto，而不是把终端整个打不开", async () => {
+    const { service } = build({
+      availableShells: shells,
+      settingsService: {
+        getWorkspaceSettings: async () => {
+          throw new Error("boom");
+        },
+      },
+    });
+    await expect(service.listTerminalShells(USER)).resolves.toEqual({
+      shells,
+      defaultShell: "auto",
+      resolvedShell: process.platform === "win32" ? "cmd" : shells[0]?.id,
+    });
+  });
+
+  it("本次显式选的 shell 优先于设置默认（命令确实在那条 shell 里跑）", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kfw-cg-shell-"));
+    try {
+      const { service } = build({
+        canvasWorkDirs: { [CANVAS_ID]: dir },
+      });
+      const result = await service.runTerminal(
+        USER,
+        CANVAS_ID,
+        "echo kfw-shell",
+        "auto",
+      );
+      expect(result.shell).toBe(process.platform === "win32" ? "cmd" : "sh");
+      expect(result.exitCode).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

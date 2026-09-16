@@ -1,3 +1,5 @@
+import type { TerminalShellId } from "@kenfutwork/shared";
+
 import { getServerBaseUrl } from "./env";
 import { ApiApplicationError, ApiAuthError } from "./server-api";
 
@@ -245,6 +247,8 @@ export async function fetchAgentActivity(
 
 export interface TerminalResult {
   command: string;
+  /** 实际执行这条命令的 shell（`cmd` / `powershell` / `git-bash` / …）。 */
+  shell: TerminalShellId;
   exitCode: number | null;
   timedOut: boolean;
   stdout: string;
@@ -257,17 +261,41 @@ export async function runTerminalCommand(
   accessToken: string,
   canvasId: string,
   command: string,
+  shell?: TerminalShellId,
 ): Promise<TerminalResult> {
   const response = await fetch(`${getServerBaseUrl()}/api/code/terminal`, {
     method: "POST",
     headers: authJsonHeaders(accessToken),
-    body: JSON.stringify({ canvasId, command }),
+    body: JSON.stringify({ canvasId, command, ...(shell ? { shell } : {}) }),
   });
   if (!response.ok) return handleErrorResponse(response);
   const payload = (await response.json()) as { result: TerminalResult };
   return payload.result;
 }
 
+/** 本机可用的 shell（右栏终端下拉与设置页共用）。`auto` 只是设置里的值，不在清单里。 */
+export interface TerminalShellOption {
+  id: TerminalShellId;
+  label: string;
+  executable: string;
+}
+
+export async function fetchTerminalShells(accessToken: string): Promise<{
+  shells: TerminalShellOption[];
+  defaultShell: TerminalShellId;
+  /** 默认值是 `auto` 时，这台机器上实际会用的那个（界面据此说清「auto → cmd」）。 */
+  resolvedShell: TerminalShellId;
+}> {
+  const response = await fetch(`${getServerBaseUrl()}/api/code/shells`, {
+    headers: authHeaders(accessToken),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as {
+    shells: TerminalShellOption[];
+    defaultShell: TerminalShellId;
+    resolvedShell: TerminalShellId;
+  };
+}
 
 /** git 图谱（参考图 `git图谱.png`）：独立窗口里的 图/描述/日期/作者/提交 表格。 */
 export interface GitGraphEntry {

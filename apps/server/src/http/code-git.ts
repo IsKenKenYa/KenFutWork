@@ -4,6 +4,7 @@ import {
   codeGitCheckoutRequestSchema,
   codeDocsResponseSchema,
   codeFilesResponseSchema,
+  codeShellsResponseSchema,
   codeTerminalRequestSchema,
   codeTerminalResponseSchema,
   codeGitChangesResponseSchema,
@@ -246,8 +247,23 @@ export async function registerCodeGitRoutes(
         user,
         payload.canvasId,
         payload.command,
+        payload.shell,
       );
       return reply.code(200).send(codeTerminalResponseSchema.parse({ result }));
+    } catch (error) {
+      return sendCodeGitError(error, reply);
+    }
+  });
+
+  // GET /api/code/shells — 本机可用的 shell + 工作区默认（终端下拉与设置页共用）。
+  // 只要求登录：清单里带可执行文件路径，而能开这个终端的人本来就能 `where bash` 问出来，
+  // 多藏一层只会让界面说不清「为什么这个选项不可用」。
+  app.get("/api/code/shells", async (request, reply) => {
+    const user = await options.auth.authenticate(request);
+    if (!user) return sendUnauthorized(reply);
+    try {
+      const shells = await options.codeGitService.listTerminalShells(user);
+      return reply.code(200).send(codeShellsResponseSchema.parse(shells));
     } catch (error) {
       return sendCodeGitError(error, reply);
     }

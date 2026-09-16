@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { runTerminalCommand } from "./terminal-runner.js";
+import {
+  detectTerminalShells,
+  resolveTerminalShell,
+  runTerminalCommand,
+} from "./terminal-runner.js";
 
 /**
  * 终端执行（R3-1「终端」标签）：cwd 固定在工作目录、有超时、有输出上限。
@@ -72,5 +76,75 @@ describe("终端命令执行", () => {
     });
     expect(result.exitCode).not.toBe(0);
     expect(`${result.stdout}${result.stderr}`.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * 直连 shell（用户口径：「终端应该是直连 cmd 或者 powershell、git-bash 等等，可以在设置里
+ * 配置默认的」）。这里锁三件事：探测可用清单、默认解析（auto/不可用值都落平台默认）、
+ * **命令真的交给选中的 shell 执行**（用只有该 shell 认的语法验证，而不是看参数拼得对不对）。
+ */
+describe("终端 shell 选择", () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("探测本机可用 shell：至少一个，且不含 auto", () => {
+    const shells = detectTerminalShells();
+    expect(shells.length).toBeGreaterThan(0);
+    expect(shells.every((shell) => shell.id !== "auto")).toBe(true);
+    expect(shells.every((shell) => shell.executable.length > 0)).toBe(true);
+  });
+
+  it("auto 落平台默认（Windows → cmd，POSIX → sh）", () => {
+    const shells = detectTerminalShells();
+    const resolved = resolveTerminalShell("auto", shells);
+    const expected = process.platform === "win32" ? "cmd" : "sh";
+    expect(resolved?.id).toBe(
+      shells.some((shell) => shell.id === expected) ? expected : shells[0]?.id,
+    );
+  });
+
+  it("设置里选了这台机器没有的 shell → 落回平台默认，而不是报错", () => {
+    const shells = detectTerminalShells();
+    const resolved = resolveTerminalShell("pwsh", [
+      { id: "cmd", label: "cmd", executable: "cmd.exe" },
+    ]);
+    expect(resolved?.id).toBe("cmd");
+    expect(shells.length).toBeGreaterThan(0);
+  });
+
+  it("命令真交给选中的 shell：PowerShell 语法在 cmd 下跑不出这个结果", async () => {
+    const shells = detectTerminalShells();
+    const powershell = shells.find((shell) => shell.id === "powershell");
+    if (!powershell) return; // 本机没有 PowerShell：跳过（不假装验证过）
+    const dir = mkdtempSync(join(tmpdir(), "kfw-terminal-shell-"));
+    dirs.push(dir);
+    const result = await runTerminalCommand({
+      command: "Write-Output KFW-SHELL-OK",
+      cwd: dir,
+      shell: "powershell",
+      availableShells: shells,
+    });
+    expect(result.shell).toBe("powershell");
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("KFW-SHELL-OK");
+  });
+
+  it("结果里带上实际用的 shell（auto 时也解析到具体那个）", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kfw-terminal-shell-"));
+    dirs.push(dir);
+    const result = await runTerminalCommand({
+      command: process.platform === "win32" ? "echo ok" : "echo ok",
+      cwd: dir,
+      shell: "auto",
+    });
+    expect(process.platform === "win32" ? result.shell === "cmd" : true).toBe(
+      true,
+    );
+    expect(result.exitCode).toBe(0);
   });
 });

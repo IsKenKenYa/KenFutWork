@@ -165,8 +165,28 @@ export const profileUpdateRequestSchema = z.object({
   displayName: z.string().trim().min(1).max(100),
 });
 
+/**
+ * 右栏「终端」用的 shell（`auto` = 按平台取默认：Windows → cmd，POSIX → sh）。
+ *
+ * **封闭集合**：服务端只认这些 id，写错在写入时就被拦下；本机有没有某个 shell 由服务端
+ * 探测（换台机器可能没有 PowerShell 7），设置的默认值落回平台默认而不是报错。
+ */
+export const terminalShellSchema = z.enum([
+  "auto",
+  "cmd",
+  "powershell",
+  "pwsh",
+  "git-bash",
+  "bash",
+  "sh",
+]);
+
+export type TerminalShellId = z.infer<typeof terminalShellSchema>;
+
 export const workspaceSettingsSchema = z.object({
   defaultModel: z.string().min(1),
+  /** 终端默认 shell（用户口径：「可以在设置里配置默认的」）。 */
+  terminalShell: terminalShellSchema.default("auto"),
   /**
    * run 失败自动重试上限（含首次尝试；0 = 不重试）。
    * 缺省 10；服务端对「已执行工具」的轮次一律不重试（副作用安全），见 agent/run-retry.ts。

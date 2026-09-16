@@ -24,6 +24,7 @@ import type {
   SessionListResponse,
   UploadResponse,
   ViewerResponse,
+  WorkspaceSettings,
   WorkspaceSettingsResponse,
   WorkspaceSkillListResponse,
 } from "@kenfutwork/shared";
@@ -257,9 +258,10 @@ export async function fetchWorkspaceSettings(
   return (await response.json()) as WorkspaceSettingsResponse;
 }
 
+/** 部分更新：只送要改的字段（服务端逐列 upsert，未送的不动）。 */
 export async function updateWorkspaceSettings(
   accessToken: string,
-  data: { defaultModel: string },
+  data: Partial<WorkspaceSettings>,
 ): Promise<WorkspaceSettingsResponse> {
   const response = await fetch(`${getServerBaseUrl()}/api/workspace/settings`, {
     method: "PUT",

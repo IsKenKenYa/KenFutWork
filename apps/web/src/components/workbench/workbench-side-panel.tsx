@@ -1,5 +1,6 @@
 "use client";
 
+import type { TerminalShellId } from "@kenfutwork/shared";
 import {
   ArrowLeft,
   FileDiff as FileDiffIcon,
@@ -7,14 +8,34 @@ import {
   Folder,
   GitBranch,
   Globe,
-  SquareTerminal,
   MousePointerSquareDashed,
+  SquareTerminal,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { SubagentDirectoryView } from "@/components/workbench/subagent-directory-view";
 import { onBrowserOpen } from "@/lib/browser-panel";
+import {
+  type CodeFileListing,
+  fetchCodeDocs,
+  fetchCodeFiles,
+  fetchGitChanges,
+  fetchGitFileDiff,
+  fetchSandboxFile,
+  fetchTerminalShells,
+  type GitChanges,
+  runTerminalCommand,
+  type SandboxFileView,
+  type TerminalResult,
+  type TerminalShellOption,
+} from "@/lib/code-git-api";
 import {
   clampPanelWidth,
   DEFAULT_PANEL_WIDTH,
@@ -23,18 +44,6 @@ import {
   PANEL_WIDTH_KEY,
   type PanelWidthLimits,
 } from "@/lib/panel-layout";
-import {
-  fetchCodeDocs,
-  fetchCodeFiles,
-  fetchGitChanges,
-  runTerminalCommand,
-  fetchGitFileDiff,
-  fetchSandboxFile,
-  type CodeFileListing,
-  type GitChanges,
-  type TerminalResult,
-  type SandboxFileView,
-} from "@/lib/code-git-api";
 import type { SubagentEntry } from "@/lib/subagent-directory";
 
 /**
@@ -109,9 +118,10 @@ export function WorkbenchSidePanel({
   maxWidthExpression?: string;
 }) {
   const [changes, setChanges] = useState<GitChanges | null>(null);
-  const [docs, setDocs] = useState<Array<{ path: string; bytes: number }> | null>(
-    null,
-  );
+  const [docs, setDocs] = useState<Array<{
+    path: string;
+    bytes: number;
+  }> | null>(null);
   const [reading, setReading] = useState<Reading | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** 右栏浏览器（R3-1）：地址栏当前 URL（空 = 还没打开过）。 */
@@ -137,7 +147,9 @@ export function WorkbenchSidePanel({
     if (typeof window === "undefined") return DEFAULT_PANEL_WIDTH;
     const saved = Number(window.localStorage.getItem(PANEL_WIDTH_KEY));
     const fallback =
-      Number.isFinite(saved) && saved >= MIN_PANEL_WIDTH && saved <= MAX_PANEL_WIDTH
+      Number.isFinite(saved) &&
+      saved >= MIN_PANEL_WIDTH &&
+      saved <= MAX_PANEL_WIDTH
         ? saved
         : DEFAULT_PANEL_WIDTH;
     return widthLimits ? clampPanelWidth(fallback, widthLimits) : fallback;
@@ -477,14 +489,13 @@ function ChangesView({
   if (!changes.isRepo) {
     return (
       <p className="text-xs text-muted-foreground">
-        该工作目录还不是 git 仓库；初始化后每轮对话会自动提交，改动也会列在这里。
+        该工作目录还不是 git
+        仓库；初始化后每轮对话会自动提交，改动也会列在这里。
       </p>
     );
   }
   if (changes.files.length === 0) {
-    return (
-      <p className="text-xs text-muted-foreground">没有未提交的更改。</p>
-    );
+    return <p className="text-xs text-muted-foreground">没有未提交的更改。</p>;
   }
 
   return (
@@ -492,11 +503,15 @@ function ChangesView({
       <div className="flex items-center gap-2 border-b px-2.5 py-2 text-xs">
         <FileDiffIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <span>
-          <span className="font-medium">{changes.files.length}</span> 个文件已更改
+          <span className="font-medium">{changes.files.length}</span>{" "}
+          个文件已更改
         </span>
         {/* 合计与逐行统计对齐同一列：按两个行内按钮的实际占宽留白（同一套标签与内边距，
             写死像素会在字体/本地化变化时错位） */}
-        <span aria-hidden className="invisible ml-auto flex shrink-0 items-center gap-2">
+        <span
+          aria-hidden
+          className="invisible ml-auto flex shrink-0 items-center gap-2"
+        >
           <span className="rounded border px-1.5 py-0.5 text-[10px]">审查</span>
           <span className="rounded border px-1.5 py-0.5 text-[10px]">打开</span>
         </span>
@@ -509,7 +524,10 @@ function ChangesView({
         {changes.files.map((file) => {
           const { name, dir } = splitPath(file.path);
           return (
-            <li key={file.path} className="flex items-center gap-2 px-2.5 py-1.5">
+            <li
+              key={file.path}
+              className="flex items-center gap-2 px-2.5 py-1.5"
+            >
               <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-xs">{name}</span>
@@ -520,7 +538,9 @@ function ChangesView({
                 ) : null}
               </span>
               {file.binary ? (
-                <span className={`${CHANGE_STAT_CELL} text-[10px] text-muted-foreground`}>
+                <span
+                  className={`${CHANGE_STAT_CELL} text-[10px] text-muted-foreground`}
+                >
                   二进制
                 </span>
               ) : (
@@ -833,6 +853,31 @@ export function normalizeUrl(value: string): string | null {
  * 口径写在界面上：cwd = 工作目录、每次执行有超时（服务端 20s）与输出上限；
  * 这是「用户操作自己的机器」（不套 agent 的工具门），但没有 stdin——交互式命令会被超时掐掉。
  */
+/**
+ * 终端下拉的选项：`auto（→ 本机实际用的那个）` 在前，其后是探测到的 shell。
+ * `auto` 单列出来是因为它**不是某个具体 shell**——不写清解析成谁，用户看不出实际用的是什么。
+ */
+function SHELL_CHOICES(
+  shells: TerminalShellOption[],
+  autoShell: TerminalShellId | null,
+): Array<{ value: TerminalShellId; label: string; title: string }> {
+  const resolved = shells.find((option) => option.id === autoShell);
+  return [
+    {
+      value: "auto",
+      label: autoShell ? `auto（→ ${autoShell}）` : "auto（按平台默认）",
+      title: resolved
+        ? `跟随设置：${resolved.executable}`
+        : "跟随平台默认 shell",
+    },
+    ...shells.map((option) => ({
+      value: option.id,
+      label: option.label,
+      title: option.executable,
+    })),
+  ];
+}
+
 function TerminalView({
   accessToken,
   canvasId,
@@ -844,6 +889,32 @@ function TerminalView({
   const [history, setHistory] = useState<TerminalResult[]>([]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * shell 选择（用户口径：「终端应该是直连 cmd 或者 powershell、git-bash 等等」）。
+   * 清单由服务端探测本机有什么；初值取**工作区设置的默认**（设置页里配的那个）。
+   */
+  const [shells, setShells] = useState<TerminalShellOption[]>([]);
+  const [shell, setShell] = useState<TerminalShellId | null>(null);
+  /** `auto` 在本机解析成谁（下拉里写「auto（→ cmd）」，免得看不出实际用的是哪个）。 */
+  const [autoShell, setAutoShell] = useState<TerminalShellId | null>(null);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    let cancelled = false;
+    fetchTerminalShells(accessToken)
+      .then((next) => {
+        if (cancelled) return;
+        setShells(next.shells);
+        setAutoShell(next.resolvedShell);
+        setShell((current) => current ?? next.defaultShell);
+      })
+      .catch(() => {
+        // 拿不到清单就不摆下拉：命令仍可执行（服务端按工作区默认解析）
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken]);
 
   const run = useCallback(async () => {
     const trimmed = command.trim();
@@ -851,7 +922,12 @@ function TerminalView({
     setRunning(true);
     setError(null);
     try {
-      const result = await runTerminalCommand(accessToken, canvasId, trimmed);
+      const result = await runTerminalCommand(
+        accessToken,
+        canvasId,
+        trimmed,
+        shell ?? undefined,
+      );
       setHistory((prev) => [...prev, result]);
       setCommand("");
     } catch (err) {
@@ -859,7 +935,7 @@ function TerminalView({
     } finally {
       setRunning(false);
     }
-  }, [accessToken, canvasId, command, running]);
+  }, [accessToken, canvasId, command, running, shell]);
 
   if (!canvasId) {
     return (
@@ -879,6 +955,38 @@ function TerminalView({
         }}
       >
         <SquareTerminal className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        {shells.length > 0 ? (
+          <Select
+            aria-label="终端 shell"
+            value={shell ?? shells[0]!.id}
+            onValueChange={(next) => {
+              if (typeof next === "string") setShell(next as TerminalShellId);
+            }}
+            items={SHELL_CHOICES(shells, autoShell).map((option) => ({
+              value: option.value,
+              label: option.label,
+            }))}
+          >
+            <SelectTrigger
+              className="shrink-0 gap-1 border-transparent bg-muted/60 px-2 py-1 font-mono text-[11px]"
+              aria-label="终端 shell"
+              title={
+                SHELL_CHOICES(shells, autoShell).find(
+                  (option) => option.value === shell,
+                )?.title ?? ""
+              }
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="min-w-44">
+              {SHELL_CHOICES(shells, autoShell).map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
         <input
           aria-label="终端命令"
           value={command}
@@ -913,14 +1021,18 @@ function TerminalView({
           history.map((entry, index) => (
             <div key={`${entry.command}-${index}`} className="mb-2 last:mb-0">
               <div className="text-muted-foreground">$ {entry.command}</div>
-              {entry.stdout ? <pre className="m-0 whitespace-pre-wrap">{entry.stdout}</pre> : null}
+              {entry.stdout ? (
+                <pre className="m-0 whitespace-pre-wrap">{entry.stdout}</pre>
+              ) : null}
               {entry.stderr ? (
-                <pre className="m-0 whitespace-pre-wrap text-destructive">{entry.stderr}</pre>
+                <pre className="m-0 whitespace-pre-wrap text-destructive">
+                  {entry.stderr}
+                </pre>
               ) : null}
               <div className="text-muted-foreground">
                 {entry.timedOut
                   ? `超时终止（${entry.durationMs}ms）`
-                  : `退出码 ${entry.exitCode ?? "未知"} · ${entry.durationMs}ms`}
+                  : `${entry.shell} · 退出码 ${entry.exitCode ?? "未知"} · ${entry.durationMs}ms`}
                 {entry.truncated ? " · 输出已截断" : ""}
               </div>
             </div>
@@ -928,7 +1040,9 @@ function TerminalView({
         )}
       </div>
       <p className="text-[10px] text-muted-foreground">
-        工作目录内执行；单次上限 20 秒、输出各 64 KB；不支持交互式命令（没有 stdin）。
+        命令交给上面选中的 shell 本体执行（默认值在「设置 → 通用 →
+        终端」里配）； 工作目录内执行，单次上限 20 秒、输出各 64
+        KB；不支持交互式命令（没有 stdin）。
       </p>
     </div>
   );

@@ -10,6 +10,7 @@ import {
   projectKindSchema,
   projectSummarySchema,
   runIdSchema,
+  terminalShellSchema,
   viewerProfileSchema,
   workspaceMembershipSchema,
   workspaceSettingsSchema,
@@ -213,11 +214,30 @@ export const codeFilesResponseSchema = z.object({
 export const codeTerminalRequestSchema = z.object({
   canvasId: z.string().min(1),
   command: z.string().trim().min(1).max(4000),
+  /** 本次用的 shell；缺省用工作区设置的默认（设置里没配就是 `auto`）。 */
+  shell: terminalShellSchema.optional(),
+});
+
+/** `GET /api/code/shells`：本机可用的 shell + 工作区设置的默认值（设置页与终端下拉共用）。 */
+export const codeShellsResponseSchema = z.object({
+  shells: z.array(
+    z.object({
+      id: terminalShellSchema,
+      label: z.string(),
+      /** 解析到的可执行文件路径（同名 shell 用它分辨）。 */
+      executable: z.string(),
+    }),
+  ),
+  defaultShell: terminalShellSchema,
+  /** `defaultShell` 是 `auto` 时，这台机器上实际会用的那个 shell（界面据此说清「auto → cmd」）。 */
+  resolvedShell: terminalShellSchema,
 });
 
 export const codeTerminalResponseSchema = z.object({
   result: z.object({
     command: z.string(),
+    /** 实际执行这条命令的 shell（`auto` 也会解析成具体的那个）。 */
+    shell: terminalShellSchema,
     /** 被超时杀掉时为 null。 */
     exitCode: z.number().int().nullable(),
     timedOut: z.boolean(),
@@ -396,7 +416,15 @@ export const workspaceSettingsResponseSchema = z.object({
   settings: workspaceSettingsSchema,
 });
 
-export const workspaceSettingsUpdateRequestSchema = workspaceSettingsSchema;
+/**
+ * PUT 的入参是**部分更新**：只写送来的字段，没送的保持库里现值。
+ *
+ * 用整对象会踩坑：`terminalShell` 这类字段带 zod 默认值，客户端只想改模型时不会带它，
+ * 服务端按「整对象写入」就会把它顺手重置成默认——这正违反「逐列 upsert，两个设置各自保存
+ * 不互相覆盖」的既有口径。
+ */
+export const workspaceSettingsUpdateRequestSchema =
+  workspaceSettingsSchema.partial();
 
 export const modelListResponseSchema = z.object({
   models: z.array(modelInfoSchema),

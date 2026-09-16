@@ -1,3 +1,4 @@
+import type { WorkspaceSettings } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
 
 import type { AuthenticatedUser } from "../auth/types.js";
@@ -101,27 +102,39 @@ describe("settings service", () => {
       repository: {
         findDefaultModel: async () => null,
         findAgentMaxRetries: async () => null,
+        findTerminalShell: async () => null,
         upsertDefaultModel: async () => {},
         upsertAgentMaxRetries: async () => {},
+        upsertTerminalShell: async () => {},
       },
       defaultModel: "fallback-model",
     });
     await expect(
       fallback.getWorkspaceSettings(USER, WORKSPACE_ID),
-    ).resolves.toEqual({ agentMaxRetries: 10, defaultModel: "fallback-model" });
+    ).resolves.toEqual({
+        agentMaxRetries: 10,
+        defaultModel: "fallback-model",
+        terminalShell: "auto",
+      });
 
     const stored = createSettingsService({
       repository: {
         findDefaultModel: async () => "stored-model",
         findAgentMaxRetries: async () => null,
+        findTerminalShell: async () => null,
         upsertDefaultModel: async () => {},
         upsertAgentMaxRetries: async () => {},
+        upsertTerminalShell: async () => {},
       },
       defaultModel: "fallback-model",
     });
     await expect(
       stored.getWorkspaceSettings(USER, WORKSPACE_ID),
-    ).resolves.toEqual({ agentMaxRetries: 10, defaultModel: "stored-model" });
+    ).resolves.toEqual({
+        agentMaxRetries: 10,
+        defaultModel: "stored-model",
+        terminalShell: "auto",
+      });
   });
 
   /**
@@ -134,8 +147,10 @@ describe("settings service", () => {
     const noStore = {
       findDefaultModel: async () => null,
       findAgentMaxRetries: async () => null,
+      findTerminalShell: async () => null,
       upsertDefaultModel: async () => {},
       upsertAgentMaxRetries: async () => {},
+      upsertTerminalShell: async () => {},
     };
 
     const withCatalog = createSettingsService({
@@ -148,6 +163,7 @@ describe("settings service", () => {
     ).resolves.toEqual({
       agentMaxRetries: 10,
       defaultModel: "inst-1:glm-5.3-flash",
+      terminalShell: "auto",
     });
 
     const emptyCatalog = createSettingsService({
@@ -157,7 +173,11 @@ describe("settings service", () => {
     });
     await expect(
       emptyCatalog.getWorkspaceSettings(USER, WORKSPACE_ID),
-    ).resolves.toEqual({ agentMaxRetries: 10, defaultModel: "gpt-4.1" });
+    ).resolves.toEqual({
+        agentMaxRetries: 10,
+        defaultModel: "gpt-4.1",
+        terminalShell: "auto",
+      });
 
     let catalogCalls = 0;
     const stored = createSettingsService({
@@ -170,7 +190,11 @@ describe("settings service", () => {
     });
     await expect(
       stored.getWorkspaceSettings(USER, WORKSPACE_ID),
-    ).resolves.toEqual({ agentMaxRetries: 10, defaultModel: "stored-model" });
+    ).resolves.toEqual({
+        agentMaxRetries: 10,
+        defaultModel: "stored-model",
+        terminalShell: "auto",
+      });
     expect(catalogCalls).toBe(0);
   });
 
@@ -181,8 +205,10 @@ describe("settings service", () => {
           throw new SqlError("connection reset");
         },
         findAgentMaxRetries: async () => null,
+        findTerminalShell: async () => null,
         upsertDefaultModel: async () => {},
         upsertAgentMaxRetries: async () => {},
+        upsertTerminalShell: async () => {},
       },
     });
     await expect(
@@ -196,16 +222,19 @@ describe("settings service", () => {
       repository: {
         findDefaultModel: async () => null,
         findAgentMaxRetries: async () => null,
+        findTerminalShell: async () => null,
         upsertDefaultModel: async () => {
           throw new SqlError("permission denied", { code: "42501" });
         },
         upsertAgentMaxRetries: async () => {},
+        upsertTerminalShell: async () => {},
       },
     });
     const error = await writeFailure
       .updateWorkspaceSettings(USER, WORKSPACE_ID, {
         agentMaxRetries: 10,
         defaultModel: "x",
+        terminalShell: "auto",
       })
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(SettingsServiceError);
@@ -215,28 +244,54 @@ describe("settings service", () => {
     });
   });
 
-  it("更新成功返回写入的设置", async () => {
-    let written: string | undefined;
+  /**
+   * 更新是**部分更新**：只写送来的字段，返回的也是回读真值（不是「我以为写成了什么」）。
+   * 这里用一个小内存仓储当真相，锁住三件事：写入的字段生效、没送的字段一个字不动、
+   * 返回的是库里的完整设置。
+   */
+  it("部分更新：只写送来的字段，返回回读真值", async () => {
+    let stored = {
+      defaultModel: "inst-1:glm-5.3-flash" as string | null,
+      agentMaxRetries: 3 as number | null,
+      terminalShell: "git-bash" as WorkspaceSettings["terminalShell"] | null,
+    };
     const service = createSettingsService({
       repository: {
-        findDefaultModel: async () => null,
-        findAgentMaxRetries: async () => null,
+        findDefaultModel: async () => stored.defaultModel,
+        findAgentMaxRetries: async () => stored.agentMaxRetries,
+        findTerminalShell: async () => stored.terminalShell,
         upsertDefaultModel: async (_workspaceId, defaultModel) => {
-          written = defaultModel;
+          stored = { ...stored, defaultModel };
         },
-        upsertAgentMaxRetries: async () => {},
+        upsertAgentMaxRetries: async (_workspaceId, agentMaxRetries) => {
+          stored = { ...stored, agentMaxRetries };
+        },
+        upsertTerminalShell: async (_workspaceId, terminalShell) => {
+          stored = { ...stored, terminalShell };
+        },
       },
     });
 
+    // 只改模型：重试上限与终端 shell 必须原样保留（整对象写入会把它俩重置成默认）
     await expect(
       service.updateWorkspaceSettings(USER, WORKSPACE_ID, {
-        agentMaxRetries: 10,
         defaultModel: "gemini-2.5-flash",
       }),
     ).resolves.toEqual({
-      agentMaxRetries: 10,
+      agentMaxRetries: 3,
       defaultModel: "gemini-2.5-flash",
+      terminalShell: "git-bash",
     });
-    expect(written).toBe("gemini-2.5-flash");
+
+    // 只改终端 shell：模型与重试上限不动
+    await expect(
+      service.updateWorkspaceSettings(USER, WORKSPACE_ID, {
+        terminalShell: "powershell",
+      }),
+    ).resolves.toEqual({
+      agentMaxRetries: 3,
+      defaultModel: "gemini-2.5-flash",
+      terminalShell: "powershell",
+    });
   });
 });
