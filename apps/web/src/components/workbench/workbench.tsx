@@ -69,10 +69,7 @@ import {
 import { SidebarRow } from "@/components/workbench/sidebar-row";
 import { SkillsModal } from "@/components/workbench/skills-modal";
 import { SubagentDirectoryView } from "@/components/workbench/subagent-directory-view";
-import {
-  WorkbenchSidePanel,
-  type WorkbenchPanelTab,
-} from "@/components/workbench/workbench-side-panel";
+import { WorkbenchSidePanel } from "@/components/workbench/workbench-side-panel";
 import { onBrowserOpen } from "@/lib/browser-panel";
 import { TodoProgressPanel } from "@/components/workbench/todo-progress-panel";
 import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
@@ -461,11 +458,9 @@ export function Workbench() {
   const [lastAutoCommitAt, setLastAutoCommitAt] = useState<string | null>(null);
 
   /**
-   * 右栏停靠面板（R3-1）：变更 / 文档 / 子智能体 三个视图。
-   *
-   * 形态取自参考图（`扩展插件-添加终端、浏览器、变更等功能.png`：右栏是多标签面板；
-   * `子代理和git显示位置.png`：右侧面板带标签）。此前把「变更列表 / 文档」塞在分支下拉与
-   * 工作目录下拉里——那是**形态做错**：这些是「边看边改」的长驻视图，不是一次性弹层内容。
+   * 右栏停靠面板（R3-1）：编辑器式多标签（变更 / 文件目录 / 终端 / 浏览器 / 子智能体，
+   * 以及逐个文件的「审查」「打开」）。标签的开关与顺序在面板内部（见 lib/panel-tabs），
+   * 工作台只管开合——链接点击那一条经 `onRequestOpen` 把面板叫开。
    */
   /** 左侧栏宽度（可拖拽，持久化：与右栏面板同样，宽度是用户偏好）。 */
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -518,17 +513,15 @@ export function Workbench() {
   );
 
   const [panelOpen, setPanelOpen] = useState(false);
-  const [panelTab, setPanelTab] = useState<WorkbenchPanelTab>("changes");
 
   /**
    * 转录里点链接 → 自动打开右栏「浏览器」标签（用户口径：点对话里的 URL 就在右边打开）。
-   * 订阅放工作台：面板只渲染，开合与切标签由这里决定。
+   * 面板自己订阅了同一个通道（它常驻挂载，标签状态在里面）；这里只在它收着时把它叫开。
    */
   useEffect(
     () =>
       onBrowserOpen(() => {
         setPanelOpen(true);
-        setPanelTab("browser");
       }),
     [],
   );
@@ -2086,7 +2079,7 @@ export function Workbench() {
                     type="button"
                     aria-label="面板"
                     aria-expanded={panelOpen}
-                    title={panelOpen ? "收起面板" : "打开面板（变更 / 文档 / 子智能体）"}
+                    title={panelOpen ? "收起面板" : "打开面板（变更 / 文件 / 终端 / 浏览器 / 子智能体）"}
                     onClick={() => setPanelOpen((current) => !current)}
                     className="rounded-md border p-1.5 text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground data-[active=true]:border-foreground/30 data-[active=true]:text-foreground"
                     data-active={panelOpen}
@@ -2362,12 +2355,11 @@ export function Workbench() {
             </form>
             </div>
           </div>
-          {/* 右栏停靠面板：变更 / 文档 / 子智能体（参考图 R3-1 的多标签面板） */}
+          {/* 右栏停靠面板：编辑器式多标签（参考图 R3-1 的标签面板） */}
           <WorkbenchSidePanel
             open={panelOpen}
             onClose={() => setPanelOpen(false)}
-            tab={panelTab}
-            onTabChange={setPanelTab}
+            onRequestOpen={() => setPanelOpen(true)}
             accessToken={session?.access_token ?? null}
             canvasId={conversationProject?.primaryCanvas.id ?? null}
             subagents={activeTask.subagents ?? []}
