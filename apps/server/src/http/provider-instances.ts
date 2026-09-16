@@ -13,35 +13,14 @@ import {
   type ModelProviderService,
   ModelProviderServiceError,
 } from "../features/model-providers/model-provider-service.js";
+import { describeZodIssues, isZodError } from "./zod-error.js";
 
 /**
  * 请求体校验失败 → 400（而非 500）：契约层把「非法头名 / 保留头 / CRLF / 白名单外占位符」
  * 都做成了写入时拒绝（§4.8 fail loud），若落入 500 兜底，用户只会看到
  * 「Internal provider error.」——既误导（把客户端错误报成服务端故障），又丢掉原因。
- * 只回**字段路径 + 规则说明**，绝不回显收到的值（自定义头值属只写通道）。
+ * 消息由 `describeZodIssues` 生成：只回字段路径与规则，不回显收到的值。
  */
-type ZodIssueLike = { message: string; path: Array<string | number> };
-
-/** 与其余路由同款鸭子类型判定（zod 4 的 class 在多实例下 `instanceof` 不可靠）。 */
-function isZodError(
-  error: unknown,
-): error is { issues: ZodIssueLike[]; name: string } {
-  return (
-    error instanceof Error &&
-    error.name === "ZodError" &&
-    "issues" in error &&
-    Array.isArray((error as { issues: unknown }).issues)
-  );
-}
-
-function describeIssues(issues: ZodIssueLike[]): string {
-  const parts = issues.slice(0, 5).map((issue) => {
-    const path = issue.path.join(".");
-    return path ? `${path}：${issue.message}` : issue.message;
-  });
-  return parts.join("；") || "请求体不符合契约。";
-}
-
 function sendError(
   error: unknown,
   reply: FastifyReply,
@@ -50,7 +29,10 @@ function sendError(
   if (isZodError(error)) {
     return reply.code(400).send(
       applicationErrorResponseSchema.parse({
-        error: { code: "invalid_request", message: describeIssues(error.issues) },
+        error: {
+          code: "invalid_request",
+          message: describeZodIssues(error.issues),
+        },
       }),
     );
   }

@@ -16,6 +16,7 @@ import {
   type CreditService,
   CreditServiceError,
 } from "../features/credits/credit-service.js";
+import { isZodError } from "./zod-error.js";
 
 export async function registerCreditRoutes(
   app: FastifyInstance,
@@ -190,16 +191,5 @@ function sendCreditError(
         message: "An unexpected error occurred.",
       },
     }),
-  );
-}
-
-function isZodError(
-  error: unknown,
-): error is { issues: unknown[]; name: string } {
-  return (
-    error instanceof Error &&
-    error.name === "ZodError" &&
-    "issues" in error &&
-    Array.isArray(error.issues)
   );
 }

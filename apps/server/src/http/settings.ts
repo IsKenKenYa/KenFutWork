@@ -11,6 +11,7 @@ import {
   type SettingsService,
   SettingsServiceError,
 } from "../features/settings/settings-service.js";
+import { isZodError } from "./zod-error.js";
 
 export async function registerSettingsRoutes(
   app: FastifyInstance,
@@ -98,16 +99,5 @@ function sendSettingsError(error: unknown, reply: FastifyReply) {
         message: "Internal server error.",
       },
     }),
-  );
-}
-
-function isZodError(
-  error: unknown,
-): error is { issues: unknown[]; name: string } {
-  return (
-    error instanceof Error &&
-    error.name === "ZodError" &&
-    "issues" in error &&
-    Array.isArray(error.issues)
   );
 }

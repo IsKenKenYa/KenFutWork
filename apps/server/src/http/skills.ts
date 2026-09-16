@@ -21,6 +21,7 @@ import {
   importSkillFromUrl,
   SkillImportError,
 } from "../features/skills/skill-import-service.js";
+import { isZodError } from "./zod-error.js";
 
 type SkillErrorCode =
   | "skill_not_found"
@@ -852,16 +853,5 @@ function sendSkillError(
     applicationErrorResponseSchema.parse({
       error: { code, message },
     }),
-  );
-}
-
-function isZodError(
-  error: unknown,
-): error is { issues: unknown[]; name: string } {
-  return (
-    error instanceof Error &&
-    error.name === "ZodError" &&
-    "issues" in error &&
-    Array.isArray(error.issues)
   );
 }
