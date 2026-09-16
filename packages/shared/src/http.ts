@@ -137,6 +137,47 @@ export const codeGitGraphResponseSchema = z.object({
   }),
 });
 
+// --- Code 模式变更清单 / 单文件差异 / 单文件内容（R3-2、R3-3 共用） ---
+
+export const codeGitChangedFileSchema = z.object({
+  path: z.string().min(1),
+  additions: z.number().int().nonnegative(),
+  deletions: z.number().int().nonnegative(),
+  /** 二进制文件没有行数概念：`additions`/`deletions` 恒为 0。 */
+  binary: z.boolean(),
+  status: z.enum(["modified", "added", "deleted", "renamed", "untracked"]),
+});
+
+export const codeGitChangesResponseSchema = z.object({
+  changes: z.object({
+    isRepo: z.boolean(),
+    files: z.array(codeGitChangedFileSchema),
+    /** 变更文件数超过上限（只列前 N 个）。 */
+    truncated: z.boolean(),
+  }),
+});
+
+export const codeGitDiffResponseSchema = z.object({
+  diff: z.object({
+    path: z.string().min(1),
+    /** 统一 diff 文本；未跟踪文件是「按新增行」的合成视图，界面要如实标注。 */
+    text: z.string(),
+    truncated: z.boolean(),
+    untracked: z.boolean(),
+  }),
+});
+
+export const codeGitFileResponseSchema = z.object({
+  file: z.object({
+    path: z.string().min(1),
+    bytes: z.number().int().nonnegative(),
+    truncated: z.boolean(),
+    binary: z.boolean(),
+    /** 二进制文件不回内容（空串）。 */
+    content: z.string(),
+  }),
+});
+
 export const applicationErrorCodeSchema = z.enum([
   "application_error",
   /**

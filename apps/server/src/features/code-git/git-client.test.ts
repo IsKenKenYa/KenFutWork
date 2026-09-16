@@ -5,6 +5,7 @@ import {
   type GitCommandResult,
   isSafeBranchName,
   parseBranchList,
+  toChangedFiles,
   toDiffStat,
   toGraph,
   toRepoView,
@@ -335,6 +336,121 @@ describe("git 图谱（纯解析）", () => {
         "-n",
         "31",
       ],
+      "/sandbox/x",
+    );
+  });
+});
+
+/**
+ * 变更清单（R3-2）。
+ *
+ * 两份输入各讲一半事实：numstat 给行数但看不到未跟踪文件，porcelain 给状态但不给行数。
+ * 合并口径（骨架取 numstat、状态查表、未跟踪补末尾）与「二进制不伪造行数」在这里锁死。
+ */
+describe("变更清单（纯解析）", () => {
+  it("合并 numstat 与 porcelain：行数来自前者、状态来自后者，未跟踪补在末尾", () => {
+    const numstat = ok(
+      ["12\t3\tsrc/app.ts", "-\t-\tpublic/logo.png", "7\t7\tsrc/new-name.ts"].join(
+        "\n",
+      ),
+    );
+    const status = ok(
+      [
+        " M src/app.ts",
+        " M public/logo.png",
+        "R  src/old-name.ts -> src/new-name.ts",
+        "?? notes.md",
+      ].join("\n"),
+    );
+
+    expect(toChangedFiles({ numstat, status, maxFiles: 50 })).toEqual({
+      files: [
+        {
+          path: "notes.md",
+          additions: 0,
+          deletions: 0,
+          binary: false,
+          status: "untracked",
+        },
+        {
+          path: "public/logo.png",
+          additions: 0,
+          deletions: 0,
+          binary: true,
+          status: "modified",
+        },
+        {
+          path: "src/app.ts",
+          additions: 12,
+          deletions: 3,
+          binary: false,
+          status: "modified",
+        },
+        {
+          path: "src/new-name.ts",
+          additions: 7,
+          deletions: 7,
+          binary: false,
+          status: "renamed",
+        },
+      ],
+      truncated: false,
+    });
+  });
+
+  it("大括号形式的重命名路径归约成新路径", () => {
+    const numstat = ok("3\t1\tsrc/{old => new}/index.ts");
+    const status = ok("");
+    const files = toChangedFiles({ numstat, status, maxFiles: 10 }).files;
+    expect(files.map((file) => file.path)).toEqual(["src/new/index.ts"]);
+  });
+
+  it("仓库还没有提交（numstat 非零退出）：未跟踪文件仍要列出来", () => {
+    const files = toChangedFiles({
+      numstat: fail("fatal: ambiguous argument 'HEAD'"),
+      status: ok("?? first.md\n?? src/draft.ts"),
+      maxFiles: 10,
+    }).files;
+    expect(files.map((file) => file.path)).toEqual(["first.md", "src/draft.ts"]);
+    expect(files.every((file) => file.status === "untracked")).toBe(true);
+  });
+
+  it("超过上限：截断并标注（列表按路径排序，分页口径稳定）", () => {
+    const numstat = ok(
+      ["1\t1\tc.ts", "1\t1\ta.ts", "1\t1\tb.ts"].join("\n"),
+    );
+    const result = toChangedFiles({ numstat, status: ok(""), maxFiles: 2 });
+    expect(result.truncated).toBe(true);
+    expect(result.files.map((file) => file.path)).toEqual(["a.ts", "b.ts"]);
+  });
+
+  it("客户端：changedFiles 同时拉 status 与 numstat；fileDiff 对空 diff 给可读原因", async () => {
+    // `ExecGit` 的 args 是 `readonly string[]`：mock 的形参得同宽，否则不可赋值
+    const exec = vi.fn(async (args: readonly string[], _cwd: string) =>
+      args[0] === "status" ? ok("?? a.md") : ok(""),
+    );
+    const client = createGitClient({ exec });
+    const changes = await client.changedFiles("/sandbox/x", 50);
+    expect(changes.files.map((f) => f.path)).toEqual(["a.md"]);
+    expect(exec).toHaveBeenCalledWith(["status", "--porcelain"], "/sandbox/x");
+    expect(exec).toHaveBeenCalledWith(
+      ["diff", "--numstat", "HEAD"],
+      "/sandbox/x",
+    );
+
+    // 未跟踪文件在 diff HEAD 里是空的：不能返回空字符串假装「没变化」
+    await expect(client.fileDiff("/sandbox/x", "a.md", 4096)).rejects.toThrow(
+      /没有可显示的差异/,
+    );
+  });
+
+  it("客户端：fileDiff 超上限截断并标注", async () => {
+    const exec = vi.fn(async () => ok("x".repeat(100)));
+    const client = createGitClient({ exec });
+    const text = await client.fileDiff("/sandbox/x", "a.ts", 10);
+    expect(text).toContain("…（已截断）");
+    expect(exec).toHaveBeenCalledWith(
+      ["diff", "--no-color", "HEAD", "--", "a.ts"],
       "/sandbox/x",
     );
   });

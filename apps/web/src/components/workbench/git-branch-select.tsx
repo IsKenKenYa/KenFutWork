@@ -3,6 +3,7 @@
 import {
   Check,
   ChevronDown,
+  FileDiff as FileDiffIcon,
   GitBranch,
   GitGraph as GitGraphIcon,
   Plus,
@@ -14,9 +15,13 @@ import {
   checkoutGitBranch,
   commitGitAll,
   createGitBranch,
+  fetchGitChanges,
   fetchGitDiffStat,
+  fetchGitFileDiff,
   fetchGitGraph,
   fetchGitStatus,
+  fetchSandboxFile,
+  type GitChanges,
   type GitGraph,
   type GitDiffStat,
   type GitStatus,
@@ -60,6 +65,13 @@ export function GitBranchSelect({
    */
   const [graph, setGraph] = useState<GitGraph | null>(null);
   const [graphOpen, setGraphOpen] = useState(false);
+  /** 变更列表（R3-2）：与图谱同样按需加载（`null` = 还没加载过）。 */
+  const [changes, setChanges] = useState<GitChanges | null>(null);
+  const [changesOpen, setChangesOpen] = useState(false);
+  /** 审查/打开的查看面板：`null` = 关着；同一文件再看一次不重复请求。 */
+  const [viewer, setViewer] = useState<
+    { title: string; text: string; note?: string } | null
+  >(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
@@ -120,6 +132,70 @@ export function GitBranchSelect({
     setDiffStat(stat);
   }, [accessToken, canvasId]);
 
+  /** 展开/收起变更列表：首次展开时加载（提交/初始化后缓存失效重拉）。 */
+  const toggleChanges = useCallback(async () => {
+    if (changesOpen) {
+      setChangesOpen(false);
+      return;
+    }
+    setChangesOpen(true);
+    if (changes || !accessToken || !canvasId) return;
+    try {
+      setChanges(await fetchGitChanges(accessToken, canvasId));
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "读取变更列表失败。");
+      setChangesOpen(false);
+    }
+  }, [accessToken, canvasId, changes, changesOpen]);
+
+  /** 「审查」：拉该文件的统一 diff（未跟踪文件服务端会给合成视图并标注）。 */
+  const openDiff = useCallback(
+    async (path: string) => {
+      if (!accessToken || !canvasId) return;
+      if (viewer?.title === `差异 · ${path}`) {
+        setViewer(null);
+        return;
+      }
+      try {
+        const diff = await fetchGitFileDiff(accessToken, canvasId, path);
+        setViewer({
+          title: `差异 · ${path}`,
+          text: diff.text,
+          ...(diff.untracked
+            ? { note: "未跟踪文件（按新增展示）" }
+            : diff.truncated
+              ? { note: "已截断" }
+              : {}),
+        });
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : "读取差异失败。");
+      }
+    },
+    [accessToken, canvasId, viewer],
+  );
+
+  /** 「打开」：读文件内容（路径限于工作目录内、只读 256 KB、二进制只回元信息）。 */
+  const openFile = useCallback(
+    async (path: string) => {
+      if (!accessToken || !canvasId) return;
+      if (viewer?.title === `文件 · ${path}`) {
+        setViewer(null);
+        return;
+      }
+      try {
+        const file = await fetchSandboxFile(accessToken, canvasId, path);
+        setViewer({
+          title: `文件 · ${file.path}`,
+          text: file.binary ? "（二进制文件，无法按文本显示）" : file.content,
+          ...(file.truncated ? { note: "已截断（只显示前 256 KB）" } : {}),
+        });
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : "读取文件失败。");
+      }
+    },
+    [accessToken, canvasId, viewer],
+  );
+
   /** 展开/收起 Git 图谱：首次展开时加载；收起后再展开用缓存（提交后 refresh 会清掉）。 */
   const toggleGraph = useCallback(async () => {
     if (graphOpen) {
@@ -166,8 +242,9 @@ export function GitBranchSelect({
       setStatus(await commitGitAll(accessToken, canvasId, commitMessage));
       setCommitMessage("");
       setNotice(null);
-      // 提交改了历史：缓存里的图谱已经过期，下次展开重新拉
+      // 提交改了历史与工作区状态：图谱与变更列表的缓存都过期了，下次展开重新拉
       setGraph(null);
+      setChanges(null);
       await refresh();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "提交失败。");
@@ -198,6 +275,7 @@ export function GitBranchSelect({
       setStatus(await initGitRepo(accessToken, canvasId));
       setNotice("已初始化仓库，后续每轮对话会自动提交。");
       setGraph(null);
+      setChanges(null);
       await refresh();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "初始化仓库失败。");
@@ -375,6 +453,114 @@ export function GitBranchSelect({
               aria-label="新分支名"
               className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60"
             />
+          </div>
+
+          {/* 变更列表（R3-2）：逐文件 +/− 与「审查 / 打开」；按需展开 */}
+          <div className="border-t px-2 py-2">
+            <button
+              type="button"
+              aria-expanded={changesOpen}
+              aria-label="变更列表"
+              onClick={() => void toggleChanges()}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <FileDiffIcon className="h-3.5 w-3.5 shrink-0" />
+              变更列表
+              <ChevronDown
+                className={`ml-auto h-3 w-3 transition-transform ${
+                  changesOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+            {changesOpen ? (
+              <div className="mt-1 rounded-md border bg-muted/40 p-1">
+                {changes && changes.files.length > 0 ? (
+                  <>
+                    <ul aria-label="变更文件" className="max-h-56 overflow-y-auto">
+                      {changes.files.map((file) => (
+                        <li
+                          key={file.path}
+                          className="flex items-center gap-2 rounded px-1.5 py-1 text-[11px] hover:bg-muted"
+                        >
+                          <span className="min-w-0 flex-1 truncate font-mono">
+                            {file.path}
+                          </span>
+                          {file.binary ? (
+                            <span className="shrink-0 text-muted-foreground">
+                              二进制
+                            </span>
+                          ) : (
+                            <span className="shrink-0 font-mono">
+                              <span className="text-emerald-600">
+                                +{file.additions}
+                              </span>{" "}
+                              <span className="text-rose-500">
+                                −{file.deletions}
+                              </span>
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            aria-label={`审查 ${file.path}`}
+                            onClick={() => void openDiff(file.path)}
+                            className="shrink-0 rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+                          >
+                            审查
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`打开 ${file.path}`}
+                            onClick={() => void openFile(file.path)}
+                            className="shrink-0 rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+                          >
+                            打开
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    {changes.truncated ? (
+                      <p className="px-1.5 py-1 text-[10px] text-muted-foreground">
+                        只列出前 200 个文件。
+                      </p>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="px-1.5 py-1 text-[11px] text-muted-foreground">
+                    {changes ? "没有未提交的更改。" : "读取中…"}
+                  </p>
+                )}
+              </div>
+            ) : null}
+
+            {/* 审查 / 打开的结果面板：等宽原样显示，再点一次同一按钮收起 */}
+            {viewer ? (
+              <div className="mt-1 rounded-md border bg-muted/40 p-2">
+                <div className="mb-1 flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate font-mono text-[11px]">
+                    {viewer.title}
+                  </span>
+                  {viewer.note ? (
+                    <span className="shrink-0 text-[10px] text-muted-foreground">
+                      {viewer.note}
+                    </span>
+                  ) : null}
+                  <button
+                    type="button"
+                    aria-label="关闭查看面板"
+                    onClick={() => setViewer(null)}
+                    className="shrink-0 rounded px-1 text-[10px] text-muted-foreground hover:text-foreground"
+                  >
+                    关闭
+                  </button>
+                </div>
+                <pre
+                  aria-label="文件内容"
+                  className="max-h-56 overflow-auto font-mono text-[11px] leading-5 whitespace-pre"
+                >
+                  {viewer.text}
+                </pre>
+              </div>
+            ) : null}
           </div>
 
           {/* Git 图谱（R2-1 条目 6）：按需展开，图形行原样等宽渲染 */}

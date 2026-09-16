@@ -3,11 +3,13 @@ import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import type { CanvasRepository } from "../canvas/repository.js";
 import type {
+  GitChangedFiles,
   GitClient,
   GitDiffStat,
   GitGraph,
   GitRepoView,
 } from "./git-client.js";
+import { readSandboxTextFile, type SandboxFileView } from "./sandbox-file.js";
 
 /**
  * git 分支视图服务（Code 模式）。
@@ -19,6 +21,10 @@ import type {
  * 目录一律经 `resolveSandboxDir` 解析——与 agent 后端**同一处**判定，保证「git 操作的分支
  * 目录」就是「agent 读写文件的目录」，不会各算各的。
  */
+/** 差异文本与清单的响应上限：界面是给人看的，超出的部分截断并如实标注。 */
+const MAX_DIFF_BYTES = 400 * 1024;
+const MAX_DIFF_SCAN_FILES = 500;
+
 export type GitSource = "system" | "bundled" | "unavailable";
 
 export interface CodeGitStatus {
@@ -33,6 +39,22 @@ export type CodeGitDiffStat = GitDiffStat;
 
 /** 图谱视图：多一个 `isRepo`，非仓库时前端显示初始化引导而不是空图。 */
 export type CodeGitGraph = GitGraph & { isRepo: boolean };
+
+/** 变更清单（R3-2）：非仓库时给空清单，界面显示的是「不是仓库」而不是「没有改动」。 */
+export type CodeGitChanges = GitChangedFiles & { isRepo: boolean };
+
+/** 单文件差异（R3-2「审查」）。 */
+export interface CodeGitFileDiff {
+  path: string;
+  /** 统一 diff 文本；未跟踪文件是「按新增行」的合成视图。 */
+  text: string;
+  truncated: boolean;
+  /** 合成视图（未跟踪文件不在 `git diff HEAD` 里，是读文件内容拼的）。 */
+  untracked: boolean;
+}
+
+/** 单文件内容（R3-2「打开」/ R3-3「文档入口」）。 */
+export type CodeGitFileView = SandboxFileView;
 
 export type CodeGitService = {
   status(user: AuthenticatedUser, canvasId: string): Promise<CodeGitStatus>;
@@ -49,6 +71,24 @@ export type CodeGitService = {
     canvasId: string,
     limit: number,
   ): Promise<CodeGitGraph>;
+  /** 变更文件清单（R3-2）：逐文件增删行数与状态；非仓库给空清单。 */
+  changes(
+    user: AuthenticatedUser,
+    canvasId: string,
+    maxFiles: number,
+  ): Promise<CodeGitChanges>;
+  /** 单文件差异（R3-2「审查」）：未跟踪文件合成「按新增行」的视图。 */
+  fileDiff(
+    user: AuthenticatedUser,
+    canvasId: string,
+    path: string,
+  ): Promise<CodeGitFileDiff>;
+  /** 单文件内容（R3-2「打开」/ R3-3「文档入口」）：只读、有字节上限、二进制只回元信息。 */
+  readFile(
+    user: AuthenticatedUser,
+    canvasId: string,
+    path: string,
+  ): Promise<CodeGitFileView>;
   /** 提交全部改动（写操作：git 不可用即 503，未仓库/空改动 409）。 */
   /** 初始化仓库（幂等）。 */
   init(user: AuthenticatedUser, canvasId: string): Promise<CodeGitStatus>;
@@ -194,6 +234,70 @@ export function createCodeGitService(options: {
       }
       const graph = await git.graph(dir, limit);
       return { isRepo: true, ...graph };
+    },
+
+    /** 变更清单：与图谱同样「状态不是故障」——非仓库给空清单。 */
+    async changes(user, canvasId, maxFiles) {
+      const dir = await sandboxDirFor(user, canvasId);
+      const view = await git.describe(dir);
+      if (!view.isRepo) {
+        return { isRepo: false, files: [], truncated: false };
+      }
+      const changes = await git.changedFiles(dir, maxFiles);
+      return { isRepo: true, ...changes };
+    },
+
+    /**
+     * 单文件差异。未跟踪文件走**合成视图**：`git diff HEAD` 对它们本来就是空的，
+     * 直接抛「没有差异」会让用户以为文件没改过；这里改为读内容、每行前加 `+`，
+     * 并在响应里标 `untracked: true`，界面上要如实写「未跟踪文件（按新增展示）」。
+     */
+    async fileDiff(user, canvasId, path) {
+      const dir = await sandboxDirFor(user, canvasId);
+      const changes = await git.changedFiles(dir, MAX_DIFF_SCAN_FILES);
+      const entry = changes.files.find((file) => file.path === path);
+      if (entry?.status === "untracked") {
+        const view = readSandboxTextFile(dir, path);
+        if (view.binary) {
+          return {
+            path,
+            text: "（二进制文件，无法按文本显示差异）",
+            truncated: false,
+            untracked: true,
+          };
+        }
+        // 文件通常以换行结尾：那个空尾元素不该被画成一行孤零零的 `+`
+        const lines = view.content.split("\n");
+        if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+        const body = lines.map((line) => `+${line}`).join("\n");
+        return {
+          path,
+          text: `${view.truncated ? "…（文件过大，仅显示前 256 KB）\n" : ""}${body}`,
+          truncated: view.truncated,
+          untracked: true,
+        };
+      }
+      const text = await git.fileDiff(dir, path, MAX_DIFF_BYTES);
+      return {
+        path,
+        text,
+        truncated: text.includes("…（已截断）"),
+        untracked: false,
+      };
+    },
+
+    /** 文件内容：路径越界/不存在/是目录都折成 400 的可读原因（`sendCodeGitError` 兜底 500）。 */
+    async readFile(user, canvasId, path) {
+      const dir = await sandboxDirFor(user, canvasId);
+      try {
+        return readSandboxTextFile(dir, path);
+      } catch (error) {
+        throw new CodeGitError(
+          "git_write_failed",
+          error instanceof Error ? error.message : String(error),
+          400,
+        );
+      }
     },
 
     /**

@@ -96,6 +96,82 @@ export async function fetchGitDiffStat(
   return payload.stat;
 }
 
+// --- R3-2：变更清单 / 单文件差异 / 单文件内容（R3-3 的文档入口共用文件读取） ---
+
+export interface GitChangedFile {
+  path: string;
+  additions: number;
+  deletions: number;
+  binary: boolean;
+  status: "modified" | "added" | "deleted" | "renamed" | "untracked";
+}
+
+export interface GitChanges {
+  isRepo: boolean;
+  files: GitChangedFile[];
+  truncated: boolean;
+}
+
+export async function fetchGitChanges(
+  accessToken: string,
+  canvasId: string,
+): Promise<GitChanges> {
+  const query = new URLSearchParams({ canvasId });
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/code/git/changes?${query.toString()}`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  const payload = (await response.json()) as { changes: GitChanges };
+  return payload.changes;
+}
+
+export interface GitFileDiff {
+  path: string;
+  text: string;
+  truncated: boolean;
+  /** 未跟踪文件：文本是「按新增行」的合成视图，不是 git 给的 diff。 */
+  untracked: boolean;
+}
+
+export async function fetchGitFileDiff(
+  accessToken: string,
+  canvasId: string,
+  path: string,
+): Promise<GitFileDiff> {
+  const query = new URLSearchParams({ canvasId, path });
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/code/git/diff?${query.toString()}`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  const payload = (await response.json()) as { diff: GitFileDiff };
+  return payload.diff;
+}
+
+export interface SandboxFileView {
+  path: string;
+  bytes: number;
+  truncated: boolean;
+  binary: boolean;
+  content: string;
+}
+
+export async function fetchSandboxFile(
+  accessToken: string,
+  canvasId: string,
+  path: string,
+): Promise<SandboxFileView> {
+  const query = new URLSearchParams({ canvasId, path });
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/code/file?${query.toString()}`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  const payload = (await response.json()) as { file: SandboxFileView };
+  return payload.file;
+}
+
 /** git 图谱（R2-1 条目 6）：图形行原样给界面用等宽字体渲染（服务端不解析画法）。 */
 export interface GitGraph {
   isRepo: boolean;

@@ -98,6 +98,27 @@ export interface GitClient {
   init(cwd: string): Promise<void>;
   /** git 图谱（R2-1 条目 6）：最近 N 条提交的图形行。 */
   graph(cwd: string, limit: number): Promise<GitGraph>;
+  /** 变更文件清单（R3-2）：逐文件增删行数与状态。 */
+  changedFiles(cwd: string, maxFiles: number): Promise<GitChangedFiles>;
+  /** 单个文件的统一 diff（R3-2「审查」）。 */
+  fileDiff(cwd: string, path: string, maxBytes: number): Promise<string>;
+}
+
+/** 变更清单（R3-2 参考图「24 个文件已更改 +1022 −396」的逐行形态）。 */
+export interface GitChangedFiles {
+  files: GitChangedFile[];
+  /** 变更文件数超过上限（只列出前 maxFiles 个）。 */
+  truncated: boolean;
+}
+
+export interface GitChangedFile {
+  /** 相对仓库根的路径（仓库根 = 沙箱工作目录）。 */
+  path: string;
+  /** 新增行数；二进制文件没有行数概念，恒为 0 且 `binary=true`。 */
+  additions: number;
+  deletions: number;
+  binary: boolean;
+  status: "modified" | "added" | "deleted" | "renamed" | "untracked";
 }
 
 /** git 图谱（R2-1 参考图的「Git 图谱」）。 */
@@ -140,6 +161,98 @@ export function toGraph(input: {
     lines: truncated ? dropOldestCommitLine(lines) : lines,
     truncated,
   };
+}
+
+/**
+ * 由 `diff --numstat HEAD` + `status --porcelain` 拼逐文件清单（纯函数）。
+ *
+ * 两份输入各自只讲一半事实，必须合并：
+ * - numstat 给「改了多少行」，但它**看不到未跟踪文件**（没进索引就没 diff）；
+ * - porcelain 给「是什么状态」（新增/删除/重命名/未跟踪），但不给行数。
+ *
+ * 合并口径：以 numstat 的顺序为骨架（它就是「有内容变化的文件」），状态从 porcelain
+ * 查表（查不到按修改算），再把 porcelain 里**只在未跟踪一侧出现**的文件补到末尾。
+ * 二进制文件的 numstat 行是 `-\t-\t路径`——行数记 0 并打 `binary`，不要伪造数值。
+ */
+export function toChangedFiles(input: {
+  numstat: GitCommandResult;
+  status: GitCommandResult;
+  maxFiles: number;
+}): GitChangedFiles {
+  /** porcelain 的 XY 码 → 我们的状态。`??` 是未跟踪，`R` 重命名，`A`/`D` 新增/删除。 */
+  const statusByPath = new Map<string, GitChangedFile["status"]>();
+  for (const line of input.status.stdout.split("\n")) {
+    const trimmed = line.replace(/\s+$/, "");
+    if (trimmed.length < 4) continue;
+    const code = trimmed.slice(0, 2);
+    const rest = trimmed.slice(3);
+    // 重命名是 `R  old -> new`：认新路径（旧的在新提交里已经不存在）
+    const path = rest.includes(" -> ")
+      ? (rest.split(" -> ").pop() ?? rest)
+      : rest;
+    statusByPath.set(path, porcelainStatus(code));
+  }
+
+  const files: GitChangedFile[] = [];
+  const seen = new Set<string>();
+
+  if (input.numstat.code === 0) {
+    for (const line of input.numstat.stdout.split("\n")) {
+      const trimmed = line.replace(/\s+$/, "");
+      if (!trimmed) continue;
+      const parts = trimmed.split("\t");
+      if (parts.length < 3) continue;
+      const [add = "", del = ""] = parts;
+      const rawPath = parts.slice(2).join("\t");
+      const path = rawPath.includes(" => ")
+        ? unfoldRenamePath(rawPath)
+        : rawPath;
+      seen.add(path);
+      const binary = add === "-" || del === "-";
+      files.push({
+        path,
+        additions: binary ? 0 : Number(add) || 0,
+        deletions: binary ? 0 : Number(del) || 0,
+        binary,
+        status: statusByPath.get(path) ?? "modified",
+      });
+    }
+  }
+
+  // 未跟踪文件只在 porcelain 里出现：补到末尾（新增 0 行是诚实的——还没进索引，无从统计）
+  for (const [path, status] of statusByPath) {
+    if (seen.has(path) || status !== "untracked") continue;
+    files.push({ path, additions: 0, deletions: 0, binary: false, status });
+  }
+
+  files.sort((a, b) => a.path.localeCompare(b.path));
+  const truncated = files.length > input.maxFiles;
+  return {
+    files: truncated ? files.slice(0, input.maxFiles) : files,
+    truncated,
+  };
+}
+
+function porcelainStatus(code: string): GitChangedFile["status"] {
+  const marker = code.trim();
+  if (code === "??") return "untracked";
+  if (marker.startsWith("R")) return "renamed";
+  if (marker.startsWith("A")) return "added";
+  if (marker.startsWith("D")) return "deleted";
+  return "modified";
+}
+
+/**
+ * numstat 里的重命名路径有两种写法：`old => new` 与 `dir/{old => new}/file`。
+ * 两种都归约成**新路径**（旧路径在新提交里已经不存在）。
+ */
+function unfoldRenamePath(raw: string): string {
+  const braced = raw.match(/^(.*)\{([^{}]*) => ([^{}]*)\}(.*)$/);
+  if (braced) {
+    return `${braced[1]}${braced[3]}${braced[4]}`.replace(/\/{2,}/g, "/");
+  }
+  const parts = raw.split(" => ");
+  return parts[parts.length - 1] ?? raw;
 }
 
 /**
@@ -317,6 +430,38 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
     return toGraph({ result, limit });
   };
 
+  const changedFiles = async (
+    cwd: string,
+    maxFiles: number,
+  ): Promise<GitChangedFiles> => {
+    const status = await exec(["status", "--porcelain"], cwd);
+    const numstat = await exec(["diff", "--numstat", "HEAD"], cwd);
+    return toChangedFiles({ numstat, status, maxFiles });
+  };
+
+  /**
+   * 单文件统一 diff。未跟踪文件在 `git diff HEAD` 里是**空的**（没进索引），
+   * 故显式报错让上层去走「按新增文件读内容」那条路，而不是给用户一片空白。
+   */
+  const fileDiff = async (
+    cwd: string,
+    path: string,
+    maxBytes: number,
+  ): Promise<string> => {
+    const result = await exec(["diff", "--no-color", "HEAD", "--", path], cwd);
+    if (result.code !== 0) {
+      const reason = result.stderr.trim() || result.stdout.trim();
+      throw new Error(reason || `读取 ${path} 的差异失败。`);
+    }
+    const text = result.stdout;
+    if (!text.trim()) {
+      throw new Error(
+        `${path} 没有可显示的差异（未跟踪文件请用「打开」查看内容）。`,
+      );
+    }
+    return text.length > maxBytes ? `${text.slice(0, maxBytes)}\n…（已截断）` : text;
+  };
+
   return {
     checkout,
     describe,
@@ -326,5 +471,7 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
     createBranch,
     init,
     graph,
+    changedFiles,
+    fileDiff,
   };
 }

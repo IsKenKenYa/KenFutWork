@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
 import { resolveSandboxDir } from "../../agent/sandbox-dir.js";
 import type { AuthenticatedUser } from "../auth/types.js";
@@ -48,6 +51,8 @@ function build(options: {
     push: vi.fn(async () => {}),
     createBranch: vi.fn(async () => {}),
     graph: vi.fn(async () => ({ lines: [], truncated: false })),
+    changedFiles: vi.fn(async () => ({ files: [], truncated: false })),
+    fileDiff: vi.fn(async () => ""),
     ...options.git,
   };
   const findById = vi.fn(async () =>
@@ -233,5 +238,93 @@ describe("Git 图谱", () => {
     });
     expect(graphFn).not.toHaveBeenCalled();
     expect(git.describe).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * 变更清单 / 单文件差异 / 单文件内容（R3-2，文件读取同时服务 R3-3 的文档入口）。
+ */
+describe("变更清单与文件查看", () => {
+  const root = mkdtempSync(join(tmpdir(), "kfw-code-git-"));
+  afterAll(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const CHANGED = {
+    files: [
+      {
+        path: "app.ts",
+        additions: 3,
+        deletions: 1,
+        binary: false,
+        status: "modified" as const,
+      },
+      {
+        path: "draft.md",
+        additions: 0,
+        deletions: 0,
+        binary: false,
+        status: "untracked" as const,
+      },
+    ],
+    truncated: false,
+  };
+
+  it("变更清单：仓库给逐文件清单，非仓库给空清单 + isRepo=false（状态不是故障）", async () => {
+    const repo = build({
+      git: { changedFiles: vi.fn(async () => CHANGED) },
+      canvasWorkDirs: { [CANVAS_ID]: root },
+    });
+    expect(await repo.service.changes(USER, CANVAS_ID, 200)).toEqual({
+      isRepo: true,
+      ...CHANGED,
+    });
+
+    const notRepo = build({
+      git: { describe: vi.fn(async () => ({ ...REPO_VIEW, isRepo: false })) },
+    });
+    expect(await notRepo.service.changes(USER, CANVAS_ID, 200)).toEqual({
+      isRepo: false,
+      files: [],
+      truncated: false,
+    });
+  });
+
+  it("未跟踪文件的「审查」：合成「按新增行」视图并标 untracked（diff HEAD 对它是空的）", async () => {
+    writeFileSync(join(root, "draft.md"), "第一行\n第二行\n", "utf8");
+    const { service } = build({
+      git: { changedFiles: vi.fn(async () => CHANGED) },
+      canvasWorkDirs: { [CANVAS_ID]: root },
+    });
+
+    const diff = await service.fileDiff(USER, CANVAS_ID, "draft.md");
+    expect(diff.untracked).toBe(true);
+    // 文件尾的换行不该画成一行孤零零的 `+`
+    expect(diff.text).toBe("+第一行\n+第二行");
+  });
+
+  it("已跟踪文件的「审查」：透传 git 的 diff", async () => {
+    const { service } = build({
+      git: {
+        changedFiles: vi.fn(async () => CHANGED),
+        fileDiff: vi.fn(async () => "diff --git a/app.ts b/app.ts\n+1"),
+      },
+      canvasWorkDirs: { [CANVAS_ID]: root },
+    });
+    const diff = await service.fileDiff(USER, CANVAS_ID, "app.ts");
+    expect(diff.untracked).toBe(false);
+    expect(diff.text).toContain("diff --git");
+  });
+
+  it("「打开」：读到文件内容；越界路径折成 400 可读原因", async () => {
+    writeFileSync(join(root, "AGENTS.md"), "# 指南\n", "utf8");
+    const { service } = build({ canvasWorkDirs: { [CANVAS_ID]: root } });
+
+    const file = await service.readFile(USER, CANVAS_ID, "AGENTS.md");
+    expect(file.content).toBe("# 指南\n");
+
+    await expect(
+      service.readFile(USER, CANVAS_ID, "../secret.txt"),
+    ).rejects.toMatchObject({ statusCode: 400 });
   });
 });

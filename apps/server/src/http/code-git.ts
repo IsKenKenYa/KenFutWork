@@ -2,7 +2,10 @@ import {
   applicationErrorResponseSchema,
   codeGitBranchCreateRequestSchema,
   codeGitCheckoutRequestSchema,
+  codeGitChangesResponseSchema,
   codeGitCommitRequestSchema,
+  codeGitDiffResponseSchema,
+  codeGitFileResponseSchema,
   codeGitDiffStatResponseSchema,
   codeGitGraphResponseSchema,
   codeGitStatusResponseSchema,
@@ -115,6 +118,91 @@ export async function registerCodeGitRoutes(
     },
   );
 
+  // GET /api/code/git/changes — 变更文件清单（R3-2）：逐文件增删行数与状态
+  app.get<{ Querystring: { canvasId?: string } }>(
+    "/api/code/git/changes",
+    async (request, reply) => {
+      const user = await options.auth.authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      const canvasId = request.query.canvasId ?? "";
+      if (!canvasId) {
+        return reply.code(400).send(
+          applicationErrorResponseSchema.parse({
+            error: { code: "invalid_input", message: "缺少 canvasId。" },
+          }),
+        );
+      }
+      try {
+        const changes = await options.codeGitService.changes(
+          user,
+          canvasId,
+          MAX_CHANGED_FILES,
+        );
+        return reply
+          .code(200)
+          .send(codeGitChangesResponseSchema.parse({ changes }));
+      } catch (error) {
+        return sendCodeGitError(error, reply);
+      }
+    },
+  );
+
+  // GET /api/code/git/diff?path= — 单文件差异（R3-2「审查」）
+  app.get<{ Querystring: { canvasId?: string; path?: string } }>(
+    "/api/code/git/diff",
+    async (request, reply) => {
+      const user = await options.auth.authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      const canvasId = request.query.canvasId ?? "";
+      const path = request.query.path ?? "";
+      if (!canvasId || !path) {
+        return reply.code(400).send(
+          applicationErrorResponseSchema.parse({
+            error: {
+              code: "invalid_input",
+              message: "缺少 canvasId 或 path。",
+            },
+          }),
+        );
+      }
+      try {
+        const diff = await options.codeGitService.fileDiff(user, canvasId, path);
+        return reply.code(200).send(codeGitDiffResponseSchema.parse({ diff }));
+      } catch (error) {
+        return sendCodeGitError(error, reply);
+      }
+    },
+  );
+
+  // GET /api/code/file?path= — 工作目录里的单文件内容（R3-2「打开」/ R3-3「文档入口」）。
+  // 与 git 同一作用域（沙箱工作目录）+ 同一套归属校验，故并在这里注册；读取本身只是
+  // 受限的只读文本预览（路径必须落在工作目录内、只读前 256 KB、二进制只回元信息）。
+  app.get<{ Querystring: { canvasId?: string; path?: string } }>(
+    "/api/code/file",
+    async (request, reply) => {
+      const user = await options.auth.authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      const canvasId = request.query.canvasId ?? "";
+      const path = request.query.path ?? "";
+      if (!canvasId || !path) {
+        return reply.code(400).send(
+          applicationErrorResponseSchema.parse({
+            error: {
+              code: "invalid_input",
+              message: "缺少 canvasId 或 path。",
+            },
+          }),
+        );
+      }
+      try {
+        const file = await options.codeGitService.readFile(user, canvasId, path);
+        return reply.code(200).send(codeGitFileResponseSchema.parse({ file }));
+      } catch (error) {
+        return sendCodeGitError(error, reply);
+      }
+    },
+  );
+
   // POST /api/code/git/init — 初始化仓库（幂等）：让「每次对话用 git 跟踪」在
   // 非仓库目录上也能开始（分支 chip 里「非 Git 仓库」时提供入口）
   app.post("/api/code/git/init", async (request, reply) => {
@@ -189,6 +277,9 @@ function clampGraphLimit(raw: string | undefined): number {
   if (!Number.isFinite(parsed)) return 30;
   return Math.min(Math.max(parsed, 1), 200);
 }
+
+/** 变更清单一次最多列多少个文件（超出的截断并标注）。 */
+const MAX_CHANGED_FILES = 200;
 
 function sendUnauthorized(reply: FastifyReply) {
   return reply.code(401).send(
