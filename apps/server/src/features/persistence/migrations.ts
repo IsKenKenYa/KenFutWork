@@ -71,8 +71,18 @@ export function parseMigrationFileName(fileName: string): {
   return { name: matched[2] as string, version: matched[1] as string };
 }
 
+/**
+ * 迁移内容摘要。
+ *
+ * **先归一行尾再算**：同一份迁移文件在不同平台上工作区的换行可能是 CRLF（Windows
+ * 的 `core.autocrlf=true`、或桌面包里被拷成 CRLF）或 LF。不归一就会出现「文件内容
+ * 没变、校验和却变了」的假漂移——`migrate status` 在 Windows 上会直接判一条已执行
+ * 迁移被改动，而它其实一字未改（实测踩到：`20260916021900_provider_instance_headers`）。
+ * 归一到 LF 也让历史账本（当年按 LF 记的）继续成立。
+ */
 export function checksumSql(sql: string): string {
-  return createHash("sha256").update(sql, "utf8").digest("hex");
+  const normalized = sql.replace(/\r\n/g, "\n");
+  return createHash("sha256").update(normalized, "utf8").digest("hex");
 }
 
 export function loadMigrationFiles(dir: string): MigrationFile[] {

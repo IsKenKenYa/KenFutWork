@@ -314,3 +314,32 @@ describe("执行迁移", () => {
     );
   });
 });
+
+/**
+ * 校验和与行尾风格（Windows 假漂移回归）。
+ *
+ * 同一份迁移，在 `core.autocrlf=true` 的工作区里是 CRLF、在仓库与 CI 上是 LF；
+ * 若按原样取摘要，Windows 上跑 `migrate status` 会把一条**一字未改**的已执行迁移
+ * 判成「被改动」并拒绝继续（实测踩到 `20260916021900_provider_instance_headers`）。
+ */
+describe("迁移校验和的行尾归一", () => {
+  it("CRLF 与 LF 的同内容迁移摘要一致", () => {
+    const lf = "create table t (id int);\ninsert into t values (1);\n";
+    const crlf = lf.replace(/\n/g, "\r\n");
+    expect(checksumSql(crlf)).toBe(checksumSql(lf));
+  });
+
+  it("内容真的变了，摘要仍然不同（归一不等于放过改动）", () => {
+    expect(checksumSql("select 1\n")).not.toBe(checksumSql("select 2\n"));
+  });
+
+  it("装载时按归一后的内容算校验和（CRLF 文件也能与历史账本对上）", () => {
+    const dir = writeMigrations([
+      ["20260323000001_a.sql", "create table t (id int);\r\n"],
+    ]);
+    const files = loadMigrationFiles(dir);
+    expect(files[0]?.checksum).toBe(
+      checksumSql("create table t (id int);\n"),
+    );
+  });
+});
