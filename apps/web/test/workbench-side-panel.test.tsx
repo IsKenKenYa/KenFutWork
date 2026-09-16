@@ -375,6 +375,9 @@ describe("WorkbenchSidePanel（多标签）", () => {
     expect(
       screen.getAllByRole("button", { name: /撤销第 \d 块/ }),
     ).toHaveLength(2);
+    // 用户口径「暂存块和撤销块要做在左边」：它们在这一行**最左**的 gutter 里
+    const line = buttons[0]!.closest("div");
+    expect(line?.firstElementChild?.contains(buttons[0]!)).toBe(true);
 
     await userEvent.click(buttons[1]!);
 
