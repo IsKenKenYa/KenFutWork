@@ -9,6 +9,7 @@ import {
   CodeGitError,
   createCodeGitService,
   type GitSource,
+  validateWorktreePath,
 } from "./code-git-service.js";
 import type { GitClient, GitRepoView } from "./git-client.js";
 import type {
@@ -54,6 +55,8 @@ function build(options: {
       codeIndexAutoNewFolder: boolean;
       /** 上下文自动压缩（同上：常量）。 */
       autoCompactEnabled: boolean;
+      /** 自定义命令（同上：空表）。 */
+      commands: Array<{ name: string; description: string; prompt: string }>;
       /** 用户规则（同上：桩里给空值）。 */
       userRules: string;
       ruleEntries: string[];
@@ -64,6 +67,9 @@ function build(options: {
   boundWorkDirs?: Record<string, string>;
 }) {
   const git: GitClient = {
+    listWorktrees: vi.fn(async () => []),
+    addWorktree: vi.fn(async () => {}),
+    removeWorktree: vi.fn(async () => {}),
     checkout: vi.fn(async () => {}),
     init: vi.fn(async () => {}),
     describe: vi.fn(async () => REPO_VIEW),
@@ -450,6 +456,7 @@ describe("终端 shell 解析", () => {
           codeIndexEnabled: false,
           codeIndexAutoNewFolder: false,
           autoCompactEnabled: false,
+          commands: [],
           userRules: "",
           ruleEntries: [],
         }),
@@ -550,5 +557,37 @@ describe("暂存单个文件", () => {
       service.setFileStaged(USER, CANVAS_ID, "src/app.ts", true),
     ).rejects.toMatchObject({ statusCode: 404 });
     expect(stageFile).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * 工作树的服务端校验（R5-2「工作树」条目）：路径必须绝对、不能在仓库里、父目录存在、
+ * 目标不存在——这几条**只有服务端知道**（自托管形态下服务端可能不是用户手边那台机器）。
+ */
+describe("工作树路径校验", () => {
+  it("非绝对路径 / 仓库本体 / 仓库内部：都给出可读原因", () => {
+    const repo = process.platform === "win32" ? "D:\\repo" : "/repo";
+    const sepChar = process.platform === "win32" ? "\\" : "/";
+    expect(validateWorktreePath("wt", repo)).toContain("绝对路径");
+    expect(validateWorktreePath(repo, repo)).toContain("不能就是仓库本体");
+    expect(validateWorktreePath(`${repo}${sepChar}wt-inside`, repo)).toContain(
+      "不能放在仓库里面",
+    );
+  });
+
+  it("父目录不存在 / 目标已存在：报出来（git 只会在那里报一句更含糊的错）", () => {
+    const missingParent = join(tmpdir(), "kfw-no-such-parent", "wt");
+    expect(validateWorktreePath(missingParent, process.cwd())).toContain(
+      "上级目录不存在",
+    );
+    const existing = mkdtempSync(join(tmpdir(), "kfw-wt-exists-"));
+    expect(validateWorktreePath(existing, process.cwd())).toContain("已经存在");
+    rmSync(existing, { recursive: true, force: true });
+  });
+
+  it("合法路径：通过（父目录存在、目标不存在）", () => {
+    const parent = mkdtempSync(join(tmpdir(), "kfw-wt-ok-"));
+    expect(validateWorktreePath(join(parent, "wt"), process.cwd())).toBeNull();
+    rmSync(parent, { recursive: true, force: true });
   });
 });

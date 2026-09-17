@@ -971,3 +971,54 @@ export async function fetchSubagents(
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as AgentSubagentListResponse;
 }
+
+// --- 工作树（R5-2「工作树」条目）：一个仓库同时检出多份工作副本 ---
+
+export interface CodeWorktree {
+  path: string;
+  branch: string | null;
+  main: boolean;
+  detached: boolean;
+}
+
+export async function fetchWorktrees(
+  accessToken: string,
+  canvasId: string,
+): Promise<{ worktrees: CodeWorktree[] }> {
+  const query = new URLSearchParams({ canvasId });
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/code/git/worktrees?${query.toString()}`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as { worktrees: CodeWorktree[] };
+}
+
+export async function createWorktree(
+  accessToken: string,
+  input: { canvasId: string; path: string; branch: string; create: boolean },
+): Promise<{ worktrees: CodeWorktree[] }> {
+  const response = await fetch(`${getServerBaseUrl()}/api/code/git/worktrees`, {
+    method: "POST",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as { worktrees: CodeWorktree[] };
+}
+
+export async function removeWorktree(
+  accessToken: string,
+  input: { canvasId: string; path: string; force: boolean },
+): Promise<{ worktrees: CodeWorktree[] }> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/code/git/worktrees/remove`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(input),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as { worktrees: CodeWorktree[] };
+}

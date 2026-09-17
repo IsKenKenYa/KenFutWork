@@ -1,9 +1,13 @@
+import { existsSync } from "node:fs";
+import { dirname, resolve as resolvePath, sep } from "node:path";
+
 import { resolveSandboxDir } from "../../agent/sandbox-dir.js";
 import { resolveInsideRoot } from "../../utils/inside-root.js";
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import type { CanvasRepository } from "../canvas/repository.js";
 import type { ProjectRepository } from "../projects/repository.js";
+import { isAbsoluteWorkDir } from "../projects/work-dir.js";
 import type { SettingsService } from "../settings/settings-service.js";
 import type {
   GitChangedFiles,
@@ -11,6 +15,7 @@ import type {
   GitDiffStat,
   GitGraph,
   GitRepoView,
+  GitWorktree,
 } from "./git-client.js";
 import { patchTargetsOnly } from "./hunk-patch.js";
 import {
@@ -192,7 +197,56 @@ export type CodeGitService = {
     canvasId: string,
     name: string,
   ): Promise<CodeGitStatus>;
+  /**
+   * 工作树（R5-2「工作树」条目）：列出 / 新建 / 删除。
+   * 目录解析与其它 git 操作**同一处**（`sandboxDirFor` → `resolveSandboxDir`），
+   * 否则会出现「界面上看的是这份、git 操作的是另一份」。
+   */
+  listWorktrees(
+    user: AuthenticatedUser,
+    canvasId: string,
+  ): Promise<{ worktrees: GitWorktree[] }>;
+  createWorktree(
+    user: AuthenticatedUser,
+    canvasId: string,
+    input: { path: string; branch: string; create: boolean },
+  ): Promise<{ worktrees: GitWorktree[] }>;
+  removeWorktree(
+    user: AuthenticatedUser,
+    canvasId: string,
+    input: { path: string; force: boolean },
+  ): Promise<{ worktrees: GitWorktree[] }>;
 };
+
+/**
+ * 工作树目标路径的**服务端唯一校验**：绝对路径、不在仓库里面、父目录存在。
+ *
+ * 为什么不在客户端校验：路径最终由服务端这台机器上的 git 执行（自托管形态下可能不是
+ * 用户手边那台），客户端给的相对路径含义完全不同——所以只认绝对路径，并在这里一次说清。
+ */
+export function validateWorktreePath(
+  raw: string,
+  repoDir: string,
+): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return "请填写工作树目录（绝对路径）。";
+  if (!isAbsoluteWorkDir(trimmed)) {
+    return `工作树目录要写绝对路径（当前填的是「${trimmed}」）。`;
+  }
+  const target = resolvePath(trimmed);
+  const repo = resolvePath(repoDir);
+  if (target === repo) return "工作树目录不能就是仓库本体。";
+  if (target.startsWith(repo.endsWith(sep) ? repo : repo + sep)) {
+    return "工作树目录不能放在仓库里面（git 会把它当成仓库内容）。";
+  }
+  if (!existsSync(dirname(target))) {
+    return `上级目录不存在：${dirname(target)}`;
+  }
+  if (existsSync(target)) {
+    return `目标目录已经存在：${target}（git 需要它不存在或为空）。`;
+  }
+  return null;
+}
 
 export class CodeGitError extends Error {
   readonly code:
@@ -324,6 +378,59 @@ export function createCodeGitService(options: {
   return {
     async status(user, canvasId) {
       return read(await sandboxDirFor(user, canvasId));
+    },
+
+    async listWorktrees(user, canvasId) {
+      const dir = await sandboxDirFor(user, canvasId);
+      try {
+        return { worktrees: await git.listWorktrees(dir) };
+      } catch (error) {
+        throw new CodeGitError(
+          "git_write_failed",
+          error instanceof Error ? error.message : String(error),
+          409,
+        );
+      }
+    },
+
+    async createWorktree(user, canvasId, input) {
+      const dir = await sandboxDirFor(user, canvasId);
+      requireGitForWrite();
+      const invalid = validateWorktreePath(input.path, dir);
+      if (invalid) throw new CodeGitError("git_write_failed", invalid, 400);
+      try {
+        await git.addWorktree(dir, input);
+      } catch (error) {
+        throw new CodeGitError(
+          "git_write_failed",
+          error instanceof Error ? error.message : String(error),
+          409,
+        );
+      }
+      return { worktrees: await git.listWorktrees(dir) };
+    },
+
+    async removeWorktree(user, canvasId, input) {
+      const dir = await sandboxDirFor(user, canvasId);
+      requireGitForWrite();
+      // 仓库本体不能删（删了等于删仓库）
+      if (resolvePath(input.path) === resolvePath(dir)) {
+        throw new CodeGitError(
+          "git_write_failed",
+          "仓库本体不是工作树，不能这样删。",
+          400,
+        );
+      }
+      try {
+        await git.removeWorktree(dir, input);
+      } catch (error) {
+        throw new CodeGitError(
+          "git_write_failed",
+          error instanceof Error ? error.message : String(error),
+          409,
+        );
+      }
+      return { worktrees: await git.listWorktrees(dir) };
     },
 
     async checkout(user, canvasId, branch) {

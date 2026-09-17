@@ -171,3 +171,90 @@ describe("设置 → 模型：上下文自动压缩开关", () => {
     expect(onToggleAutoCompact).toHaveBeenCalledWith(false);
   });
 });
+
+/**
+ * 插件市场「使用」态（R3-5 参考图：已装插件显示「使用」而不是「安装」）。
+ *
+ * 锁两条：① 只有**装了、且有真实消费界面**的插件才给「使用」（不在显式表里的不给，
+ * 免得点了没反应）；② 点它把插件名交给上层去跳（上层负责打开 MCP/技能/设置对应页）。
+ */
+/**
+ * 市场弹窗**直接用 fetch('/api/plugins')**（不经 server-api 封装），所以这里桩 fetch 而不是桩模块。
+ */
+const mockFetch = vi.fn();
+globalThis.fetch = mockFetch as never;
+
+describe("插件市场：使用态", () => {
+  it("已装且有消费界面 → 出现「使用」，点了把插件名交给上层", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        plugins: [
+          {
+            id: "mcp",
+            name: "mcp",
+            title: "MCP 接入",
+            description: "连接 MCP server",
+            source: "builtin",
+            installed: true,
+            enabled: true,
+            system: false,
+            category: "工具与集成",
+          },
+        ],
+      }),
+    });
+    const onUse = vi.fn();
+    const { PluginMarketModal } = await import(
+      "../src/components/workbench/plugin-market-modal"
+    );
+    render(
+      <PluginMarketModal
+        open
+        onClose={() => {}}
+        accessToken="tok"
+        isAdmin
+        onUse={onUse}
+      />,
+    );
+    const use = await screen.findByRole("button", { name: "使用" });
+    await userEvent.click(use);
+    expect(onUse).toHaveBeenCalledWith("mcp");
+  });
+
+  it("已装但没有消费界面（不在显式表里）→ 不给「使用」", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        plugins: [
+          {
+            id: "local__x",
+            name: "some-third-party",
+            title: "第三方插件",
+            description: "x",
+            source: "local",
+            installed: true,
+            enabled: true,
+            system: false,
+          },
+        ],
+      }),
+    });
+    const { PluginMarketModal } = await import(
+      "../src/components/workbench/plugin-market-modal"
+    );
+    render(
+      <PluginMarketModal
+        open
+        onClose={() => {}}
+        accessToken="tok"
+        isAdmin
+        onUse={() => {}}
+      />,
+    );
+    expect(await screen.findByText("第三方插件")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "使用" })).toBeNull();
+  });
+});

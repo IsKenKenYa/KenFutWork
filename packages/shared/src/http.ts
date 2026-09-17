@@ -369,6 +369,38 @@ export const agentRunActivityResponseSchema = z.object({
   }),
 });
 
+// --- 工作树（R5-2「工作树」条目）：一个仓库同时检出多份工作副本 ---
+
+export const codeWorktreeSchema = z.object({
+  /** 绝对路径。 */
+  path: z.string().min(1),
+  /** 检出的分支；detached 时为 null。 */
+  branch: z.string().nullable(),
+  /** 仓库本体（`git worktree list` 的第一条）。 */
+  main: z.boolean(),
+  detached: z.boolean(),
+});
+
+export const codeWorktreeListResponseSchema = z.object({
+  worktrees: z.array(codeWorktreeSchema),
+});
+
+export const codeWorktreeCreateRequestSchema = z.object({
+  canvasId: z.string().min(1),
+  /** 工作树目录（**绝对路径**；服务端校验：绝对、不在仓库里、父目录存在、目标不存在）。 */
+  path: z.string().trim().min(1),
+  branch: z.string().trim().min(1).max(200),
+  /** true = 建新分支；false = 检出已有分支。 */
+  create: z.boolean().default(true),
+});
+
+export const codeWorktreeRemoveRequestSchema = z.object({
+  canvasId: z.string().min(1),
+  path: z.string().trim().min(1),
+  /** 丢掉里面未提交的改动（界面二次确认后才带 true）。 */
+  force: z.boolean().default(false),
+});
+
 export const codeGitFileResponseSchema = z.object({
   file: z.object({
     path: z.string().min(1),

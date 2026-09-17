@@ -1466,6 +1466,62 @@ export function Workbench() {
     bindWorkDirectory,
   ]);
 
+  /**
+   * 插件「使用」：跳到**真正消费这个插件的界面**（市场里已装条目就是这个键）。
+   * 表在 plugin-market-modal 里（显式列表），这里只负责跳。
+   */
+  const handlePluginUse = useCallback((pluginName: string) => {
+    setPluginsOpen(false);
+    if (pluginName === "mcp") {
+      setMcpOpen(true);
+      return;
+    }
+    if (pluginName === "skills") {
+      setSkillsOpen(true);
+      return;
+    }
+    if (pluginName === "canvas") {
+      // 画布的消费界面就是 Design 模式主区（与 switchMode 同一动作）
+      setMode("design");
+      setActiveTaskId(null);
+      return;
+    }
+    if (pluginName === "model-providers") {
+      setSettingsTab("providers");
+      return;
+    }
+    if (pluginName === "search") {
+      // 默认搜索引擎在「浏览器 → 通用」里（联网检索用的就是它）
+      setSettingsTab("browser");
+      return;
+    }
+    // plugin-registry：插件面板
+    setSettingsTab("pluginPanels");
+  }, []);
+
+  /**
+   * 把一份工作树路径绑成**当前项目**的工作目录（工作树对话框里的「绑为工作目录」）。
+   *
+   * 与「填本机路径」的区别：那条会按目录名去找/建项目，这条**不动项目身份**——
+   * 工作树就是这个项目的另一份检出，绑完下一轮 run 起在那一份里干活。
+   */
+  const bindWorktreeToProject = useCallback(
+    async (path: string) => {
+      const token = session?.access_token;
+      const project = selectedProject;
+      if (!token) throw new Error("尚未登录，无法绑定工作目录。");
+      if (!project) throw new Error("先选中一个工作目录项目。");
+      await updateProject(token, project.id, { work_dir: path });
+      setCodeProjects((prev) =>
+        prev.map((item) =>
+          item.id === project.id ? { ...item, workDir: path } : item,
+        ),
+      );
+      setWorkDirNotice(`工作目录已绑到工作树：${path}`);
+    },
+    [session, selectedProject],
+  );
+
   const switchMode = useCallback((next: WorkbenchMode) => {
     setMode(next);
     setActiveTaskId(null);
@@ -2684,6 +2740,10 @@ ${formatElementReference(picked)}`
                 <GitBranchSelect
                   accessToken={session?.access_token ?? null}
                   canvasId={selectedProject?.primaryCanvas.id ?? null}
+                  /* 工作树里「绑为工作目录」：把这份工作树绑成当前项目的工作目录。
+                     之后 agent/终端/git 都在那一份检出里跑——与「填本机路径」同一条
+                     projects.work_dir 链，只是路径由工作树挑 */
+                  onBindWorkDir={bindWorktreeToProject}
                 />
               </div>
               <div className="@container/composer rounded-b-2xl border bg-background px-3 pt-3 pb-2.5 shadow-sm">
@@ -2952,6 +3012,7 @@ ${formatElementReference(picked)}`
       {pluginsOpen ? (
         <PluginMarketModal
           open={pluginsOpen}
+          onUse={handlePluginUse}
           onClose={() => setPluginsOpen(false)}
           accessToken={session?.access_token ?? null}
           // 「从工作目录安装」用：服务端据此解析沙箱目录
