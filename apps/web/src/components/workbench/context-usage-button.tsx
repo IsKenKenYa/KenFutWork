@@ -225,7 +225,7 @@ function ContextRing({
 }) {
   // 尺寸与粗细照参考图的比例（环的粗细约等于半径的 1/4，比常见的 2.5px 明显厚）
   const size = 22;
-  const stroke = 5;
+  const stroke = 2.5;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   // 画「剩余」：缺口大小 = 已用比例；留一个最小缺口，避免 0% 时缺口消失、看不出是环
@@ -257,6 +257,8 @@ function ContextRing({
         fill="none"
         strokeWidth={stroke}
         strokeDasharray={`${circumference * remaining} ${circumference}`}
+        /* 让缺口**骑在正上方**（参考图那个口就在 12 点附近）：弧向后挪半个缺口 */
+        strokeDashoffset={-((circumference * gap) / 2)}
         className={
           overThreshold ? "stroke-amber-500" : "stroke-muted-foreground"
         }

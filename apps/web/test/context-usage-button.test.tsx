@@ -133,7 +133,9 @@ describe("ContextUsageButton：预留输出与阈值", () => {
  */
 describe("ContextUsageButton：圆环形态（1:1 复刻）", () => {
   const dashOf = (container: HTMLElement): [number, number] => {
-    const circles = Array.from(container.querySelectorAll("button[aria-label='上下文容量'] circle"));
+    const circles = Array.from(
+      container.querySelectorAll("button[aria-label='上下文容量'] circle"),
+    );
     const arc = circles.at(-1);
     const dash = (arc?.getAttribute("stroke-dasharray") ?? "0 0").split(" ");
     return [Number(dash[0]), Number(dash[1])];
@@ -160,8 +162,8 @@ describe("ContextUsageButton：圆环形态（1:1 复刻）", () => {
       />,
     );
     const [lowArc, lowTotal] = dashOf(low.container);
-    // 环周长 C = 2πr，r = (22-5)/2 = 8.5 → C ≈ 53.4
-    expect(lowTotal).toBeCloseTo(53.4, 0);
+    // 环周长 C = 2πr，r = (22-2.5)/2 = 9.75 → C ≈ 61.3（细环：描边 2.5，参考图口径）
+    expect(lowTotal).toBeCloseTo(61.3, 0);
     // 用途极小 → 缺口被夹到 6%（至少看得出是个「C」）
     expect(lowArc / lowTotal).toBeCloseTo(0.94, 2);
     cleanup();
@@ -177,7 +179,9 @@ describe("ContextUsageButton：圆环形态（1:1 复刻）", () => {
   });
 
   it("没有用量数据：画一圈闭合的灰环（不编缺口）", () => {
-    const { container } = render(<ContextUsageButton usage={null} contextWindow={1_000_000} />);
+    const { container } = render(
+      <ContextUsageButton usage={null} contextWindow={1_000_000} />,
+    );
     const [arc, total] = dashOf(container);
     expect(arc).toBeCloseTo(total, 1);
   });
