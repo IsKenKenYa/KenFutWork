@@ -187,6 +187,8 @@ export const workspaceSettingsSchema = z.object({
   defaultModel: z.string().min(1),
   /** 终端默认 shell（用户口径：「可以在设置里配置默认的」）。 */
   terminalShell: terminalShellSchema.default("auto"),
+  /** 代码库索引开关（R4-3；索引文件是本机缓存，不进库表）。 */
+  codeIndexEnabled: z.boolean().default(false),
   /**
    * run 失败自动重试上限（含首次尝试；0 = 不重试）。
    * 缺省 10；服务端对「已执行工具」的轮次一律不重试（副作用安全），见 agent/run-retry.ts。

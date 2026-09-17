@@ -5,6 +5,7 @@ import type { AgentPersistenceService } from "../agent/persistence/index.js";
 import type { AgentRunService } from "../agent/runtime.js";
 import type { ServerEnv } from "../config/env.js";
 import type { AdminService } from "../features/admin/admin-service.js";
+import type { BrowserService } from "../features/browser/fetch-page.js";
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type { RequestAuthenticator } from "../features/auth/types.js";
@@ -113,6 +114,8 @@ export interface ServiceMap {
   capabilities: CapabilityRegistry;
   /** 统一工具注册表（schema + 作用域 + guarded 执行） */
   tools: ToolRegistry;
+  /** 浏览器能力缝（R3-4/R5-4）：受控网页抓取与元素提取（人用快照端点、agent 用 browser_open） */
+  browser: BrowserService;
   /** ConnectionManager + EventBuffer */
   ws: WsServices;
 }

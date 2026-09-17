@@ -8,7 +8,9 @@ import { PermissionSection } from "@/components/permission-section";
 import { ProfileSection } from "@/components/profile-section";
 import { ProviderSettings } from "@/components/provider-settings";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { AboutSection } from "@/components/workbench/about-section";
 import { BrowserSettingsSection } from "@/components/workbench/browser-settings-section";
+import { IndexLibrarySection } from "@/components/workbench/index-library-section";
 import { TerminalSettingsSection } from "@/components/workbench/terminal-settings-section";
 import { ListLoading } from "@/components/workbench/list-state";
 import { RulesMemorySection } from "@/components/workbench/rules-memory-section";
@@ -31,7 +33,9 @@ export type SettingsTab =
   | "permissions"
   | "browser"
   | "rules"
-  | "usage";
+  | "usage"
+  | "index"
+  | "about";
 
 /**
  * 侧栏分组（R5-1）：基础设置 / Agent 能力 / 数据与统计。
@@ -62,8 +66,10 @@ const TAB_GROUPS: Array<{
     label: "数据与统计",
     tabs: [
       { id: "usage", label: "使用统计" },
+      { id: "index", label: "索引库" },
       // 插件面板（能力 `ui` 的 settings 槽位）：装了带面板的插件才出现内容
       { id: "pluginPanels", label: "插件面板" },
+      { id: "about", label: "关于" },
     ],
   },
 ];
@@ -78,12 +84,15 @@ export function SettingsModal({
   initialTab,
   onClose,
   accessToken = null,
+  activeCanvasId = null,
 }: {
   open: boolean;
   /** 打开时定位的分类（如「管理模型」直达供应商页）。 */
   initialTab?: SettingsTab | undefined;
   /** 插件面板需要它取 `/api/plugins`（未登录时为空 → 面板列表为空）。 */
   accessToken?: string | null;
+  /** 当前项目主画布（索引库按画布=工作目录建；没有项目时为 null）。 */
+  activeCanvasId?: string | null;
   onClose: () => void;
 }) {
   const { session } = useAuth();
@@ -101,6 +110,7 @@ export function SettingsModal({
   } | null>(null);
   const [defaultModel, setDefaultModel] = useState("");
   const [agentMaxRetries, setAgentMaxRetries] = useState(10);
+  const [codeIndexEnabled, setCodeIndexEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const accessTokenRef = useRef(session?.access_token);
@@ -122,6 +132,7 @@ export function SettingsModal({
       });
       setDefaultModel(settings.settings.defaultModel);
       setAgentMaxRetries(settings.settings.agentMaxRetries);
+      setCodeIndexEnabled(settings.settings.codeIndexEnabled);
     } catch {
       // 加载失败时保留空态，各分区自行提示
     } finally {
@@ -142,6 +153,24 @@ export function SettingsModal({
         displayName: result.profile.displayName,
         email: result.profile.email,
       });
+    },
+    [getToken],
+  );
+
+  /** 索引库开关写工作区设置（部分更新：只送这一个字段）。 */
+  const handleIndexToggle = useCallback(
+    async (next: boolean) => {
+      const token = getToken();
+      if (!token) return;
+      setCodeIndexEnabled(next);
+      try {
+        const result = await updateWorkspaceSettings(token, {
+          codeIndexEnabled: next,
+        });
+        setCodeIndexEnabled(result.settings.codeIndexEnabled);
+      } catch {
+        setCodeIndexEnabled(!next);
+      }
     },
     [getToken],
   );
@@ -227,11 +256,22 @@ export function SettingsModal({
                 <PermissionSection accessToken={token} />
               ) : null
             ) : activeTab === "browser" ? (
-              <BrowserSettingsSection />
+              <BrowserSettingsSection accessToken={accessToken} />
             ) : activeTab === "pluginPanels" ? (
               <PluginPanelsSettings accessToken={accessToken} />
             ) : activeTab === "usage" ? (
               <UsageStatsSection />
+            ) : activeTab === "index" ? (
+              token ? (
+                <IndexLibrarySection
+                  accessToken={token}
+                  canvasId={activeCanvasId}
+                  enabled={codeIndexEnabled}
+                  onToggle={handleIndexToggle}
+                />
+              ) : null
+            ) : activeTab === "about" ? (
+              <AboutSection />
             ) : (
               <RulesMemorySection />
             )}

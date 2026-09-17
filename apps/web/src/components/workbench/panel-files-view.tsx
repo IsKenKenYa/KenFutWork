@@ -1,8 +1,12 @@
 "use client";
 
-import { Folder } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Folder, Search } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { type CodeFileListing, fetchCodeFiles } from "@/lib/code-git-api";
+import {
+  type CodeIndexSearchHit,
+  searchCodeIndex,
+} from "@/lib/server-api";
 
 /**
  * 文件目录（R3-1「文件目录」标签）：**只列一层**，子目录点进去、面包屑回退。
@@ -24,6 +28,36 @@ export function FilesPane({
   const [dir, setDir] = useState("");
   const [listing, setListing] = useState<CodeFileListing | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * 索引库搜索（R4-3 的消费方）：按文件名 / 路径 / 内容摘要找文件，不必一层层翻目录。
+   * 索引库没开时服务端回 409 并指路，这里把原话显示出来。
+   */
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [hits, setHits] = useState<CodeIndexSearchHit[] | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
+
+  const runSearch = useCallback(
+    async (query: string) => {
+      if (!accessToken || !canvasId || !query.trim()) {
+        setHits(null);
+        setSearchError(null);
+        return;
+      }
+      setSearching(true);
+      setSearchError(null);
+      try {
+        const result = await searchCodeIndex(accessToken, canvasId, query);
+        setHits(result.hits);
+      } catch (err) {
+        setHits(null);
+        setSearchError(err instanceof Error ? err.message : "搜索失败。");
+      } finally {
+        setSearching(false);
+      }
+    },
+    [accessToken, canvasId],
+  );
 
   useEffect(() => {
     if (!accessToken || !canvasId) return;
@@ -54,6 +88,78 @@ export function FilesPane({
 
   return (
     <div className="space-y-2">
+      <form
+        className="flex items-center gap-1.5 rounded-md border px-2 py-1"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void runSearch(searchQuery);
+        }}
+      >
+        <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <input
+          aria-label="搜索文件"
+          value={searchQuery}
+          onChange={(event) => {
+            setSearchQuery(event.target.value);
+            if (!event.target.value.trim()) {
+              setHits(null);
+              setSearchError(null);
+            }
+          }}
+          placeholder="按文件名 / 路径 / 内容摘要搜索（索引库）"
+          className="min-w-0 flex-1 bg-transparent text-xs outline-none"
+        />
+        <button
+          type="submit"
+          disabled={searching}
+          className="shrink-0 rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
+        >
+          {searching ? "搜索中…" : "搜索"}
+        </button>
+      </form>
+
+      {searchError ? (
+        <p className="rounded-md border border-destructive/40 bg-destructive/5 px-2 py-1.5 text-[11px] text-destructive">
+          {searchError}
+        </p>
+      ) : null}
+
+      {hits ? (
+        <div className="rounded-xl border">
+          <p className="border-b px-2.5 py-1.5 text-[10px] text-muted-foreground">
+            {hits.length === 0 ? "没有匹配的文件" : `命中 ${hits.length} 个文件`}
+            {hits.length > 0 ? "（点了打开预览）" : ""}
+          </p>
+          <ul aria-label="搜索命中" className="divide-y">
+            {hits.map((hit) => (
+              <li key={hit.path} className="px-2.5 py-1.5">
+                <button
+                  type="button"
+                  onClick={() => onOpenFile(hit.path)}
+                  className="min-w-0 w-full text-left"
+                >
+                  <span className="flex items-center gap-1.5">
+                    {hit.language ? (
+                      <span className="shrink-0 rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
+                        {hit.language}
+                      </span>
+                    ) : null}
+                    <span className="truncate font-mono text-xs hover:underline">
+                      {hit.path}
+                    </span>
+                  </span>
+                  {hit.summary ? (
+                    <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
+                      {hit.summary}
+                    </span>
+                  ) : null}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {error ? (
         <p className="rounded-md border border-destructive/40 bg-destructive/5 px-2 py-1.5 text-[11px] text-destructive">
           {error}

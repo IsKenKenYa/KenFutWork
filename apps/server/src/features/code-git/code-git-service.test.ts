@@ -48,6 +48,8 @@ function build(options: {
       defaultModel: string;
       agentMaxRetries: number;
       terminalShell: TerminalShellId;
+      /** R4-3 索引库开关（这个桩只关心终端 shell，给它一个常量即可）。 */
+      codeIndexEnabled: boolean;
     }>;
   };
   availableShells?: TerminalShellOption[];
@@ -387,6 +389,7 @@ describe("终端 shell 解析", () => {
           agentMaxRetries: 10,
           defaultModel: "inst-1:glm-5.3-flash",
           terminalShell: "powershell",
+              codeIndexEnabled: false,
         }),
       },
     });

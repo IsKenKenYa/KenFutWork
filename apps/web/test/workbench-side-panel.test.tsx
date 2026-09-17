@@ -585,9 +585,16 @@ describe("右栏浏览器（点链接自动打开）", () => {
     await userEvent.click(screen.getByRole("button", { name: "退出自由尺寸" }));
     expect(screen.queryByLabelText("视口宽度")).not.toBeInTheDocument();
 
-    // 元素拾取需要 CDP，不给假按钮：按钮存在但禁用
-    expect(
-      screen.getByRole("button", { name: /选择网页元素加入聊天/ }),
-    ).toBeDisabled();
+    // 元素拾取（R3-4）：开着页面 + 有 token 时可用；点它会去服务端抓静态快照
+    const pickButton = screen.getByRole("button", {
+      name: /选择网页元素加入聊天/,
+    });
+    expect(pickButton).toBeEnabled();
+    await userEvent.click(pickButton);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("dialog", { name: "选择网页元素加入聊天" }),
+      ).toBeInTheDocument(),
+    );
   }, 20_000);
 });

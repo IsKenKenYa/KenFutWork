@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 
 import {
   canOpenInBrowserPanel,
+  getBrowserOpenTarget,
   requestBrowserOpen,
 } from "@/lib/browser-panel";
 import { ChatImage } from "./image-lightbox";
@@ -41,6 +42,8 @@ const markdownComponents: Components = {
           // 用户在对话里点链接的意图通常是「看看这个」，不是「开一堆系统标签页」。
           // Ctrl/Cmd+点击仍走系统新标签（保留逃逸口）；没有面板时不拦截。
           if (!href || event.metaKey || event.ctrlKey || event.shiftKey) return;
+          // 设置 → 浏览器 → 通用：默认在「系统浏览器」打开时不抢链接
+          if (getBrowserOpenTarget() === "system") return;
           if (!canOpenInBrowserPanel()) return;
           if (!/^https?:/i.test(href)) return;
           if (requestBrowserOpen(href)) event.preventDefault();

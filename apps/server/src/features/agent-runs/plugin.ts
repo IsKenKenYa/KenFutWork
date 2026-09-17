@@ -1,3 +1,4 @@
+import { isAutomationExecutionMode } from "@kenfutwork/shared";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import type { KenFutWorkAgentFactory, ToolGate } from "../../agent/deep-agent.js";
 import { createAgentPersistenceService } from "../../agent/persistence/index.js";
@@ -70,6 +71,10 @@ export function createAgentRunsPlugin(
         const permissions = ctx.tryGet("permissions");
         const toolGateFor = (threadId: string): ToolGate => {
           const policy = agentModes.resolveToolPolicy(threadId);
+          // 分场景（R5-3）：目标/循环这类无人值守轮次走「自动化任务」那一档
+          const scenario = isAutomationExecutionMode(agentModes.getMode(threadId))
+            ? ("automation" as const)
+            : ("interactive" as const);
           return composeToolGate({
             modeVerdict: (toolName) => evaluateToolPolicy(policy, toolName),
             ...(permissions
@@ -78,6 +83,7 @@ export function createAgentRunsPlugin(
                     const decision = permissions.evaluate({
                       toolName,
                       threadId,
+                      scenario,
                     });
                     if (decision.decision !== "deny") {
                       return { allowed: true } as const;

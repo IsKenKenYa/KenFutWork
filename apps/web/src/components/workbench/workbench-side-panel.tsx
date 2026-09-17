@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChangesPane } from "@/components/workbench/panel-changes-view";
 import { FilesPane } from "@/components/workbench/panel-files-view";
-import { BrowserPane } from "@/components/workbench/panel-browser-view";
+import {
+  BrowserPane,
+  type PickedElement,
+} from "@/components/workbench/panel-browser-view";
 import { DiffPane, FilePane } from "@/components/workbench/panel-reading-view";
 import { PanelTabStrip } from "@/components/workbench/panel-tab-strip";
 import { TerminalPane } from "@/components/workbench/panel-terminal-view";
@@ -58,6 +61,7 @@ export function WorkbenchSidePanel({
   onGrowBlocked,
   maxWidthExpression,
   onRequestOpen,
+  onPickElement,
 }: {
   open: boolean;
   onClose: () => void;
@@ -80,6 +84,8 @@ export function WorkbenchSidePanel({
   maxWidthExpression?: string;
   /** 转录里点了链接而面板收着时：请工作台把面板打开（浏览器标签已经就位）。 */
   onRequestOpen?: () => void;
+  /** 浏览器标签里拾取到的页面元素：交给工作台写进输入框（R3-4）。 */
+  onPickElement?: ((picked: PickedElement) => void) | undefined;
 }) {
   const [state, setState] = useState<{
     tabs: PanelTab[];
@@ -259,6 +265,7 @@ export function WorkbenchSidePanel({
               changesVersion={changesVersion}
               onChanged={bumpChanges}
               onOpenView={openView}
+              onPickElement={onPickElement}
               browser={{
                 url: browserUrl,
                 draft: urlDraft,
@@ -305,6 +312,7 @@ function PaneContent({
   changesVersion,
   onChanged,
   onOpenView,
+  onPickElement,
   browser,
 }: {
   tab: PanelTab;
@@ -316,6 +324,7 @@ function PaneContent({
   changesVersion: number;
   onChanged: () => void;
   onOpenView: (view: PanelView) => void;
+  onPickElement?: ((picked: PickedElement) => void) | undefined;
   browser: React.ComponentProps<typeof BrowserPane>;
 }) {
   const view = tab.view;
@@ -367,7 +376,13 @@ function PaneContent({
         />
       );
     case "browser":
-      return <BrowserPane {...browser} />;
+      return (
+        <BrowserPane
+          {...browser}
+          accessToken={accessToken}
+          onPickElement={onPickElement}
+        />
+      );
     case "subagents":
       return subagents.length > 0 ? (
         <SubagentDirectoryView entries={subagents} running={running} />

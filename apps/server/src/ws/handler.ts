@@ -684,7 +684,7 @@ async function handleRunCommand(
       let sawToolExecution = false;
       let failureMessage: string | undefined;
       // 显式终态：成功与「用户取消」都不是失败，绝不能被重试判定当成「无原因可重试」
-      let terminal: "completed" | "canceled" | undefined;
+      let terminal: "completed" | "canceled" | "failed" | undefined;
       let firstEvent = true;
       for await (const event of agentRuns.streamRun(runId)) {
         if (firstEvent) {
@@ -755,6 +755,33 @@ async function handleRunCommand(
         }
       }
       log.lap("stream_done", { runId });
+
+      /**
+       * 「空轮次」判据（实测 2026-09-17，aiping GLM-5.3-Flash 可复现）：
+       * 推理模型有时**只输出内部思考**（reasoning）而没有正文、也没调工具——协议上算
+       * completed，但界面上一个字都没有。这种轮次按**失败**报，并给出可读原因：否则
+       * 用户对着一个「成功但空白」的对话只能猜，也拿不到任何重试信号。
+       */
+      if (
+        terminal === "completed" &&
+        assistantText.length === 0 &&
+        assistantBlocks.length === 0 &&
+        !sawToolExecution
+      ) {
+        const reason =
+          "模型本轮没有返回任何内容（可能只输出了内部思考或触发内容过滤）。请重试一次，或换个说法。";
+        log.error("run_empty_output", { runId });
+        const emptyEvent = {
+          error: { code: "run_failed" as const, message: reason },
+          runId,
+          timestamp: new Date().toISOString(),
+          type: "run.failed" as const,
+        };
+        services.eventBuffer?.push(canvasId, emptyEvent);
+        connectionManager.pushToCanvas(canvasId, emptyEvent);
+        failureMessage = reason;
+        terminal = "failed";
+      }
 
       const decision = decideRunRetry({
         attempt,

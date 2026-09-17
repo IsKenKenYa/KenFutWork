@@ -134,6 +134,14 @@ export type CodeGitService = {
    * 是同一个目录。
    */
   terminalWorkDir(user: AuthenticatedUser, canvasId: string): Promise<string>;
+  /**
+   * 索引库（R4-3）的作用域：已校验归属的工作目录 + 工作区 id（开关按工作区读）。
+   * 与 terminalWorkDir 同一处解析，保证「索引里的路径」与 agent 写的是同一个目录。
+   */
+  indexScope(
+    user: AuthenticatedUser,
+    canvasId: string,
+  ): Promise<{ workspaceId: string; dir: string }>;
   /** 列一层目录（R3-1「文件目录」标签）：只列一层，子目录由界面点进去。 */
   listFiles(
     user: AuthenticatedUser,
@@ -423,6 +431,18 @@ export function createCodeGitService(options: {
     /** 交互式会话的 cwd：与一次性执行同一处归属校验（越权即 404）。 */
     async terminalWorkDir(user, canvasId) {
       return sandboxDirFor(user, canvasId);
+    },
+
+    /** 索引库作用域：目录 + 工作区（开关在工作区设置里）。 */
+    async indexScope(user, canvasId) {
+      const workspace = await viewerService
+        .resolveWorkspace(user)
+        .catch(() => null);
+      if (!workspace) {
+        throw new CodeGitError("not_found", "找不到工作区。", 404);
+      }
+      const dir = await sandboxDirFor(user, canvasId);
+      return { workspaceId: workspace.id, dir };
     },
 
     /** 暂存单个文件：路径先过「必须落在工作目录内」这道门（与读文件同一处判定）。 */

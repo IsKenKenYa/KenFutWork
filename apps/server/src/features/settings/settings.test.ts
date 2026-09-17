@@ -103,9 +103,11 @@ describe("settings service", () => {
         findDefaultModel: async () => null,
         findAgentMaxRetries: async () => null,
         findTerminalShell: async () => null,
+        findCodeIndexEnabled: async () => null,
         upsertDefaultModel: async () => {},
         upsertAgentMaxRetries: async () => {},
         upsertTerminalShell: async () => {},
+        upsertCodeIndexEnabled: async () => {},
       },
       defaultModel: "fallback-model",
     });
@@ -115,6 +117,7 @@ describe("settings service", () => {
         agentMaxRetries: 10,
         defaultModel: "fallback-model",
         terminalShell: "auto",
+        codeIndexEnabled: false,
       });
 
     const stored = createSettingsService({
@@ -122,9 +125,11 @@ describe("settings service", () => {
         findDefaultModel: async () => "stored-model",
         findAgentMaxRetries: async () => null,
         findTerminalShell: async () => null,
+        findCodeIndexEnabled: async () => null,
         upsertDefaultModel: async () => {},
         upsertAgentMaxRetries: async () => {},
         upsertTerminalShell: async () => {},
+        upsertCodeIndexEnabled: async () => {},
       },
       defaultModel: "fallback-model",
     });
@@ -134,6 +139,7 @@ describe("settings service", () => {
         agentMaxRetries: 10,
         defaultModel: "stored-model",
         terminalShell: "auto",
+        codeIndexEnabled: false,
       });
   });
 
@@ -148,9 +154,11 @@ describe("settings service", () => {
       findDefaultModel: async () => null,
       findAgentMaxRetries: async () => null,
       findTerminalShell: async () => null,
+      findCodeIndexEnabled: async () => null,
       upsertDefaultModel: async () => {},
       upsertAgentMaxRetries: async () => {},
       upsertTerminalShell: async () => {},
+      upsertCodeIndexEnabled: async () => {},
     };
 
     const withCatalog = createSettingsService({
@@ -164,6 +172,7 @@ describe("settings service", () => {
       agentMaxRetries: 10,
       defaultModel: "inst-1:glm-5.3-flash",
       terminalShell: "auto",
+      codeIndexEnabled: false,
     });
 
     const emptyCatalog = createSettingsService({
@@ -177,6 +186,7 @@ describe("settings service", () => {
         agentMaxRetries: 10,
         defaultModel: "gpt-4.1",
         terminalShell: "auto",
+        codeIndexEnabled: false,
       });
 
     let catalogCalls = 0;
@@ -194,6 +204,7 @@ describe("settings service", () => {
         agentMaxRetries: 10,
         defaultModel: "stored-model",
         terminalShell: "auto",
+        codeIndexEnabled: false,
       });
     expect(catalogCalls).toBe(0);
   });
@@ -206,9 +217,11 @@ describe("settings service", () => {
         },
         findAgentMaxRetries: async () => null,
         findTerminalShell: async () => null,
+        findCodeIndexEnabled: async () => null,
         upsertDefaultModel: async () => {},
         upsertAgentMaxRetries: async () => {},
         upsertTerminalShell: async () => {},
+        upsertCodeIndexEnabled: async () => {},
       },
     });
     await expect(
@@ -223,11 +236,13 @@ describe("settings service", () => {
         findDefaultModel: async () => null,
         findAgentMaxRetries: async () => null,
         findTerminalShell: async () => null,
+        findCodeIndexEnabled: async () => null,
         upsertDefaultModel: async () => {
           throw new SqlError("permission denied", { code: "42501" });
         },
         upsertAgentMaxRetries: async () => {},
         upsertTerminalShell: async () => {},
+        upsertCodeIndexEnabled: async () => {},
       },
     });
     const error = await writeFailure
@@ -235,6 +250,7 @@ describe("settings service", () => {
         agentMaxRetries: 10,
         defaultModel: "x",
         terminalShell: "auto",
+        codeIndexEnabled: false,
       })
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(SettingsServiceError);
@@ -254,12 +270,14 @@ describe("settings service", () => {
       defaultModel: "inst-1:glm-5.3-flash" as string | null,
       agentMaxRetries: 3 as number | null,
       terminalShell: "git-bash" as WorkspaceSettings["terminalShell"] | null,
+      codeIndexEnabled: null as boolean | null,
     };
     const service = createSettingsService({
       repository: {
         findDefaultModel: async () => stored.defaultModel,
         findAgentMaxRetries: async () => stored.agentMaxRetries,
         findTerminalShell: async () => stored.terminalShell,
+        findCodeIndexEnabled: async () => null,
         upsertDefaultModel: async (_workspaceId, defaultModel) => {
           stored = { ...stored, defaultModel };
         },
@@ -268,6 +286,9 @@ describe("settings service", () => {
         },
         upsertTerminalShell: async (_workspaceId, terminalShell) => {
           stored = { ...stored, terminalShell };
+        },
+        upsertCodeIndexEnabled: async (_workspaceId, codeIndexEnabled) => {
+          stored = { ...stored, codeIndexEnabled };
         },
       },
     });
@@ -281,6 +302,7 @@ describe("settings service", () => {
       agentMaxRetries: 3,
       defaultModel: "gemini-2.5-flash",
       terminalShell: "git-bash",
+      codeIndexEnabled: false,
     });
 
     // 只改终端 shell：模型与重试上限不动
@@ -290,6 +312,7 @@ describe("settings service", () => {
       }),
     ).resolves.toEqual({
       agentMaxRetries: 3,
+      codeIndexEnabled: false,
       defaultModel: "gemini-2.5-flash",
       terminalShell: "powershell",
     });

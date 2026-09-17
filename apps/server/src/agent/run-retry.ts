@@ -75,13 +75,16 @@ export function decideRunRetry(input: {
   failureMessage?: string | undefined;
   sawToolExecution: boolean;
   /**
-   * 显式终态。事故背景：早期实现只在 `run.failed` 上记失败原因，于是「成功收场但没跑
+   * 显式终态：completed / canceled 都不是失败；`failed` = 服务端已判定失败（如空输出），
+   * 不再自动重试。
+   *
+   * 事故背景：早期实现只在 `run.failed` 上记失败原因，于是「成功收场但没跑
    * 工具」的轮次里 `failureMessage` 仍是 undefined，而 `isRetryableRunFailure(undefined)`
    * 按「可重试」处理——**每轮纯对话都被重跑满 10 次**（实测：solo 与画布助手一次消息
    * 产出 10 个 run、10 倍 token，而用户看到的回复第一次就已经成功了）；用户取消同理，
    * 重试会把刚取消的轮次顶回去。
    */
-  terminal?: "completed" | "canceled" | undefined;
+  terminal?: "completed" | "canceled" | "failed" | undefined;
 }): RunRetryDecision {
   const maxAttempts = clampMaxRunRetries(input.maxAttempts);
   if (input.terminal === "completed") {
@@ -89,6 +92,13 @@ export function decideRunRetry(input: {
   }
   if (input.terminal === "canceled") {
     return { retry: false, reason: "本轮已被取消，不重试" };
+  }
+  if (input.terminal === "failed") {
+    /**
+     * 服务端**已判定**的失败（不是上游抖动）：典型是「模型只出思考、没有正文也没有工具」
+     * ——再跑一遍大概率还是空的，自动重试只会白烧额度；用户可以自己点重试。
+     */
+    return { retry: false, reason: "服务端已判定为失败（空输出），不自动重试" };
   }
   if (maxAttempts <= 1) {
     return { retry: false, reason: "重试上限为 1（即不重试）" };

@@ -13,6 +13,8 @@ export interface SettingsRepository {
   findAgentMaxRetries(workspaceId: string): Promise<number | null>;
   /** 读终端默认 shell；无行返回 null（由服务落 `auto`）。 */
   findTerminalShell(workspaceId: string): Promise<TerminalShellId | null>;
+  /** 读代码库索引开关；无行返回 null（由服务落 false）。 */
+  findCodeIndexEnabled(workspaceId: string): Promise<boolean | null>;
   /** 一工作区一行，冲突即更新。 */
   upsertDefaultModel(workspaceId: string, defaultModel: string): Promise<void>;
   upsertAgentMaxRetries(
@@ -23,11 +25,16 @@ export interface SettingsRepository {
     workspaceId: string,
     terminalShell: TerminalShellId,
   ): Promise<void>;
+  upsertCodeIndexEnabled(
+    workspaceId: string,
+    enabled: boolean,
+  ): Promise<void>;
 }
 
 type DefaultModelRow = { default_model: string };
 type AgentMaxRetriesRow = { agent_max_retries: number };
 type TerminalShellRow = { terminal_shell: TerminalShellId };
+type CodeIndexEnabledRow = { code_index_enabled: boolean };
 
 export function createSettingsRepository(
   persistence: PersistenceService,
@@ -66,6 +73,17 @@ export function createSettingsRepository(
       return row?.terminal_shell ?? null;
     },
 
+    async findCodeIndexEnabled(workspaceId) {
+      const row = await persistence
+        .forWorkspace(workspaceId)
+        .queryOne<CodeIndexEnabledRow>(
+          `select code_index_enabled
+             from public.workspace_settings
+            where workspace_id = :workspace`,
+        );
+      return row?.code_index_enabled ?? null;
+    },
+
     async upsertDefaultModel(workspaceId, defaultModel) {
       await persistence.forWorkspace(workspaceId).query(
         `insert into public.workspace_settings (workspace_id, default_model)
@@ -84,6 +102,17 @@ export function createSettingsRepository(
          on conflict (workspace_id)
          do update set terminal_shell = excluded.terminal_shell`,
         [terminalShell],
+      );
+    },
+
+    /** 代码库索引开关（R4-3）：同样逐列 upsert。 */
+    async upsertCodeIndexEnabled(workspaceId, enabled) {
+      await persistence.forWorkspace(workspaceId).query(
+        `insert into public.workspace_settings (workspace_id, code_index_enabled)
+         values (:workspace, $1)
+         on conflict (workspace_id)
+         do update set code_index_enabled = excluded.code_index_enabled`,
+        [enabled],
       );
     },
 

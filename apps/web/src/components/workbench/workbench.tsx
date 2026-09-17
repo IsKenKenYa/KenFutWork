@@ -70,6 +70,7 @@ import { SidebarRow } from "@/components/workbench/sidebar-row";
 import { SkillsModal } from "@/components/workbench/skills-modal";
 import { SubagentDirectoryView } from "@/components/workbench/subagent-directory-view";
 import { WorkbenchSidePanel } from "@/components/workbench/workbench-side-panel";
+import { formatElementReference } from "@/components/workbench/panel-browser-view";
 import { onBrowserOpen } from "@/lib/browser-panel";
 import { TodoProgressPanel } from "@/components/workbench/todo-progress-panel";
 import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
@@ -2403,8 +2404,18 @@ export function Workbench() {
             /* CSS 兜底：宿主不派发 resize 事件时 JS 的 limits 会陈旧，这条由排版保证
                对话列 ≥ MIN_CONVERSATION_WIDTH（数值与 lib/panel-layout 同一口径） */
             maxWidthExpression={`calc(100vw - var(--workbench-sidebar, 256px) - ${MIN_CONVERSATION_WIDTH}px)`}
-            /* 拖到上限还往里拖 → 收起左栏腾地方（用户口径：再往左边拉，侧栏自动收起来） */
+            /* 拖到上限还往里拉 → 收起左栏腾地方（用户口径：再往左边拉，侧栏自动收起来） */
             onGrowBlocked={() => setSidebarCollapsed(true)}
+            /* 右栏浏览器里拾取到的元素（R3-4）：写进追问输入框，用户补一句话就能发 */
+            onPickElement={(picked) => {
+              setFollowUp((current) =>
+                current.trim()
+                  ? `${current}
+${formatElementReference(picked)}`
+                  : formatElementReference(picked),
+              );
+              composerRef.current?.focus();
+            }}
           />
           </div>
         ) : (
@@ -2661,6 +2672,11 @@ export function Workbench() {
         initialTab={settingsTab === null ? undefined : settingsTab}
         onClose={() => setSettingsTab(null)}
         accessToken={session?.access_token ?? null}
+        /* 索引库按「画布 = 工作目录」建：Code 模式取对话绑定的项目，Design 取选中项目 */
+        activeCanvasId={
+          (mode === "code" ? (conversationProject ?? selectedProject) : selectedProject)
+            ?.primaryCanvas?.id ?? null
+        }
       />
       {pluginsOpen ? (
         <PluginMarketModal

@@ -36,6 +36,7 @@ export type WorkspaceSettingsPatch = {
   defaultModel?: string | undefined;
   agentMaxRetries?: number | undefined;
   terminalShell?: TerminalShellId | undefined;
+  codeIndexEnabled?: boolean | undefined;
 };
 
 export type SettingsService = {
@@ -74,10 +75,12 @@ export function createSettingsService(options: {
     user: AuthenticatedUser,
     workspaceId: string,
   ): Promise<WorkspaceSettings> => {
-    const [storedModel, storedRetries, storedShell] = await Promise.all([
+    const [storedModel, storedRetries, storedShell, storedIndexEnabled] =
+      await Promise.all([
       repository.findDefaultModel(workspaceId),
       repository.findAgentMaxRetries(workspaceId),
       repository.findTerminalShell(workspaceId),
+      repository.findCodeIndexEnabled(workspaceId),
     ]).catch(() => {
       throw new SettingsServiceError(
         "settings_read_failed",
@@ -98,6 +101,7 @@ export function createSettingsService(options: {
       ),
       defaultModel: storedModel ?? resolvedFallback ?? defaultModel,
       terminalShell: storedShell ?? "auto",
+      codeIndexEnabled: storedIndexEnabled ?? false,
     };
   };
 
@@ -123,6 +127,11 @@ export function createSettingsService(options: {
       if (patch.terminalShell !== undefined) {
         writes.push(
           repository.upsertTerminalShell(workspaceId, patch.terminalShell),
+        );
+      }
+      if (patch.codeIndexEnabled !== undefined) {
+        writes.push(
+          repository.upsertCodeIndexEnabled(workspaceId, patch.codeIndexEnabled),
         );
       }
       await Promise.all(writes).catch(() => {

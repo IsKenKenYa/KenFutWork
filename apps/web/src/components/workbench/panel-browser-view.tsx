@@ -8,8 +8,10 @@ import {
   Monitor,
   MousePointerSquareDashed,
   RotateCw,
+  X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { getServerBaseUrl } from "@/lib/env";
 import {
   Select,
   SelectContent,
@@ -31,12 +33,34 @@ import {
  * - 「选择网页元素加入聊天」需要浏览器调试接口（CDP / 扩展），内嵌 iframe 拿不到跨源 DOM，
  *   所以按钮**禁用**并写明原因——不做假开关。
  */
+/** 拾取到的元素（R3-4）：交给对话，作为「用户指着这个元素」的引用。 */
+export interface PickedElement {
+  pageUrl: string;
+  pageTitle: string;
+  tag: string;
+  text: string;
+  hint: string;
+}
+
+/**
+ * 元素引用转成消息里的一行（纯函数，便于单测）。
+ * 口径：让人和模型都能对上——元素是什么、在哪一页。
+ */
+export function formatElementReference(picked: PickedElement): string {
+  const where = picked.pageTitle
+    ? `${picked.pageTitle}（${picked.pageUrl}）`
+    : picked.pageUrl;
+  return `【页面元素】<${picked.tag}> ${picked.text || "(无文字)"} ｜ 定位提示：${picked.hint} ｜ 来自：${where}`;
+}
+
 export function BrowserPane({
   url,
   draft,
   reloadToken,
   canBack,
   canForward,
+  accessToken = null,
+  onPickElement,
   onDraftChange,
   onNavigate,
   onBack,
@@ -48,6 +72,10 @@ export function BrowserPane({
   reloadToken: number;
   canBack: boolean;
   canForward: boolean;
+  /** 读取页面快照（元素拾取）用；缺省时拾取入口禁用。 */
+  accessToken?: string | null;
+  /** 拾取到元素后交给对话（工作台把它写进输入框）。 */
+  onPickElement?: ((picked: PickedElement) => void) | undefined;
   onDraftChange: (value: string) => void;
   onNavigate: (url: string) => void;
   onBack: () => void;
@@ -62,6 +90,54 @@ export function BrowserPane({
    */
   const [freeSize, setFreeSize] = useState({ width: 1280, height: 720 });
   const [zoom, setZoom] = useState<ZoomPresetId>("fit");
+  /**
+   * 元素拾取（R3-4）：服务端静态快照 → 列出可交互元素 → 点一条插入对话。
+   * 跨源 iframe 读不到 DOM，所以走服务端抓取；脚本渲染出的内容与登录态页面读不到，
+   * 这条边界写在浮层里（不写就只能靠猜为什么元素不全）。
+   */
+  const [picking, setPicking] = useState<"idle" | "loading" | "error" | "ready">("idle");
+  const [pickError, setPickError] = useState<string | null>(null);
+  const [picked, setPicked] = useState<{
+    pageTitle: string;
+    elements: Array<{ tag: string; text: string; hint: string }>;
+  } | null>(null);
+
+  const startPicking = async () => {
+    if (!url) return;
+    setPicking("loading");
+    setPickError(null);
+    setPicked(null);
+    try {
+      const response = await fetch(`${getServerBaseUrl()}/api/browser/snapshot`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+        body: JSON.stringify({ url }),
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        snapshot?: {
+          title: string;
+          elements: Array<{ tag: string; text: string; hint: string }>;
+        };
+        error?: { message?: string };
+      } | null;
+      if (!response.ok || !payload?.snapshot) {
+        setPicking("error");
+        setPickError(payload?.error?.message ?? "读取页面结构失败。");
+        return;
+      }
+      setPicked({
+        pageTitle: payload.snapshot.title,
+        elements: payload.snapshot.elements,
+      });
+      setPicking("ready");
+    } catch (error) {
+      setPicking("error");
+      setPickError(error instanceof Error ? error.message : "读取页面结构失败。");
+    }
+  };
   /** 面板里这块预览区有多大（「适应面板」时的视口尺寸 = 它）。 */
   const frameRef = useRef<HTMLDivElement>(null);
   const [paneWidth, setPaneWidth] = useState(0);
@@ -156,9 +232,10 @@ export function BrowserPane({
         <button
           type="button"
           aria-label="选择网页元素加入聊天"
-          disabled
-          title="需要浏览器调试接口（CDP / 扩展）才能读到跨源页面的 DOM，内嵌 iframe 做不到——未实现能力，不做假开关"
-          className="shrink-0 rounded-md p-1 text-muted-foreground opacity-40"
+          disabled={!url || !accessToken || picking === "loading"}
+          title="拾取页面元素加入对话：按服务端抓取的静态 HTML 列出链接/按钮/输入等元素（脚本渲染与登录态内容读不到）"
+          onClick={() => void startPicking()}
+          className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
         >
           <MousePointerSquareDashed className="h-3.5 w-3.5" />
         </button>
@@ -292,6 +369,67 @@ export function BrowserPane({
           </SelectContent>
         </Select>
       </div>
+
+      {picking !== "idle" ? (
+        <div
+          role="dialog"
+          aria-label="选择网页元素加入聊天"
+          className="max-h-56 overflow-y-auto rounded-lg border bg-popover p-2 text-xs"
+        >
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="font-medium">
+              选择元素加入对话
+              {picked?.pageTitle ? ` · ${picked.pageTitle}` : ""}
+            </span>
+            <button
+              type="button"
+              aria-label="关闭元素拾取"
+              onClick={() => setPicking("idle")}
+              className="rounded p-0.5 text-muted-foreground hover:bg-muted"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+          <p className="mb-2 text-[10px] text-muted-foreground">
+            按服务端抓取的静态 HTML 列出；脚本渲染出的元素与登录态内容看不到。
+          </p>
+          {picking === "loading" ? (
+            <p className="text-muted-foreground">正在读取页面结构…</p>
+          ) : picking === "error" ? (
+            <p className="text-destructive">{pickError}</p>
+          ) : picked && picked.elements.length > 0 ? (
+            <ul className="space-y-0.5">
+              {picked.elements.map((element, index) => (
+                <li key={`${element.hint}-${index}`}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onPickElement?.({
+                        pageUrl: url,
+                        pageTitle: picked.pageTitle,
+                        tag: element.tag,
+                        text: element.text,
+                        hint: element.hint,
+                      });
+                      setPicking("idle");
+                    }}
+                    className="w-full rounded px-1.5 py-1 text-left hover:bg-muted"
+                  >
+                    <span className="mr-1.5 rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
+                      {element.tag}
+                    </span>
+                    <span className="truncate">{element.text}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-muted-foreground">
+              这一页没提取到可交互元素（可能是脚本渲染的页面）。
+            </p>
+          )}
+        </div>
+      ) : null}
 
       {url ? (
         <div

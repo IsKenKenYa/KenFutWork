@@ -31,3 +31,20 @@ export function onBrowserOpen(listener: (url: string) => void): () => void {
     listeners.delete(listener);
   };
 }
+
+/** 「AI 任务里的链接默认在哪儿打开」偏好（设置 → 浏览器 → 通用）。 */
+export type BrowserOpenTarget = "panel" | "system";
+
+const OPEN_TARGET_KEY = "workbench:browser-open-target";
+
+export function getBrowserOpenTarget(): BrowserOpenTarget {
+  if (typeof window === "undefined") return "panel";
+  return window.localStorage.getItem(OPEN_TARGET_KEY) === "system"
+    ? "system"
+    : "panel";
+}
+
+export function setBrowserOpenTarget(target: BrowserOpenTarget): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(OPEN_TARGET_KEY, target);
+}

@@ -223,7 +223,8 @@ describe("终端会话（WS 通道）", () => {
       async sendAndWait(
         payload: Record<string, unknown>,
         match: (msg: Record<string, unknown>) => boolean,
-        timeoutMs = 15_000,
+        // 真实 shell 启动在并行跑全仓时可能明显变慢（turbo 同时拉多个包），给足预算
+        timeoutMs = 25_000,
       ): Promise<Record<string, unknown>> {
         const pending = new Promise<Record<string, unknown>>((resolve, reject) => {
           const timer = setTimeout(
@@ -322,7 +323,7 @@ describe("终端会话（WS 通道）", () => {
       await new Promise((resolve) => setTimeout(resolve, 1500));
       rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
     }
-  }, 30_000);
+  }, 45_000);
 
   it("画布不属于这个工作区：起会话被拒并给出可读原因（不摆一个空终端）", async () => {
     const { app, port, stubs } = await startServer();

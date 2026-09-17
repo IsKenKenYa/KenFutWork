@@ -37,13 +37,63 @@ export const executionModeSchema = z.enum([
 ]);
 export type ExecutionMode = z.infer<typeof executionModeSchema>;
 
-// --- 权限档位（DEC-4：code 模式默认 default 档） ---
+// --- 权限档位（DEC-4：code 模式默认 default 档；R5-3 补第 4 档「自定义配置」） ---
 
 export const permissionTierSchema = z.enum([
   "default",
   "auto-approve",
   "full-access",
+  /**
+   * 第 4 档「自定义配置」（参考图 `agent-设置-权限.png`）：按下面的 `permissionRules`
+   * 逐条判——`deny` 命中即拒、`allow` 命中即放，都没命中回落 default 档的规则。
+   */
+  "custom",
 ]);
+
+/**
+ * 自定义配置的规则表。名字支持两种写法：
+ * - 精确名（`execute`、`mcp__py-helper__echo`）；
+ * - 前缀通配（`mcp__*` = 所有 MCP 工具、`write_*`）。
+ * 判定顺序固定为 **deny → allow → default 档兜底**（拒绝优先，避免「放行表写宽了」把危险工具带出去）。
+ */
+export const permissionRuleSchema = z
+  .string()
+  .min(1)
+  .max(120)
+  .refine((rule) => !rule.includes("**"), "通配只支持一个 * 且只能在末尾");
+
+export const permissionRulesSchema = z.object({
+  deny: z.array(permissionRuleSchema).max(200).default([]),
+  allow: z.array(permissionRuleSchema).max(200).default([]),
+});
+export type PermissionRules = z.infer<typeof permissionRulesSchema>;
+
+/** 规则是否命中工具名（精确或「前缀 *」）。 */
+export function matchesPermissionRule(rule: string, toolName: string): boolean {
+  if (rule.endsWith("*")) {
+    return toolName.startsWith(rule.slice(0, -1));
+  }
+  return rule === toolName;
+}
+
+export function anyPermissionRuleMatches(
+  rules: readonly string[],
+  toolName: string,
+): boolean {
+  return rules.some((rule) => matchesPermissionRule(rule, toolName));
+}
+
+/**
+ * 权限场景（R5-3 分场景）：`interactive` = 你盯着跑的普通轮次；`automation` = 目标/循环
+ * 这类「无人值守的自动化轮次」——它们各设一档，自动化档可以把标准放得更严。
+ */
+export const permissionScenarioSchema = z.enum(["interactive", "automation"]);
+export type PermissionScenario = z.infer<typeof permissionScenarioSchema>;
+
+/** 哪些执行模式算「自动化任务」（判据只有这一处，服务端与界面共用）。 */
+export function isAutomationExecutionMode(mode: string): boolean {
+  return mode === "goal" || mode === "loop";
+}
 export type PermissionTier = z.infer<typeof permissionTierSchema>;
 
 export const toolPreExecuteDecisionSchema = z.enum(["allow", "deny"]);

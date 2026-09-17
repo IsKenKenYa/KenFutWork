@@ -1,6 +1,8 @@
 import { join } from "node:path";
 
 import { registerCodeGitRoutes } from "../../http/code-git.js";
+import { registerCodeIndexRoutes } from "../../http/code-index.js";
+import { createCodeIndexStore } from "../code-index/index-store.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import { createCanvasRepository } from "../canvas/repository.js";
 import { createCodeGitService } from "./code-git-service.js";
@@ -41,6 +43,13 @@ export function createCodeGitPlugin(): PluginDefinition {
       void registerCodeGitRoutes(ctx.app, {
         auth: ctx.get("auth"),
         codeGitService: ctx.get("codeGit"),
+      });
+      // 索引库（R4-3）：数据落本机 `<cwd>/.kenfutwork/index`，不进库表
+      void registerCodeIndexRoutes(ctx.app, {
+        auth: ctx.get("auth"),
+        codeGitService: ctx.get("codeGit"),
+        settingsService: ctx.get("settings"),
+        indexStore: createCodeIndexStore({}),
       });
     },
   };
