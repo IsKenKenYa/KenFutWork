@@ -1,10 +1,6 @@
 import type { StreamEvent, ToolArtifact } from "@kenfutwork/shared";
 import { imageArtifactSchema, videoArtifactSchema } from "@kenfutwork/shared";
-import type {
-  AIMessage,
-  AIMessageChunk,
-  ToolMessage,
-} from "@langchain/core/messages";
+import type { AIMessage, AIMessageChunk } from "@langchain/core/messages";
 import {
   AIMessageChunk as AIMessageChunkClass,
   AIMessage as AIMessageClass,
@@ -496,7 +492,7 @@ function unwrapCommandOutput(
 ): Record<string, unknown> {
   if (record.lg_name !== "Command") return record;
   try {
-    const messages = (record.update as any)?.messages;
+    const messages = (record.update as { messages?: unknown })?.messages;
     if (!Array.isArray(messages) || messages.length === 0) return record;
     const content = messages[0]?.kwargs?.content ?? messages[0]?.content;
     if (typeof content !== "string") return record;
@@ -584,8 +580,9 @@ function extractArtifacts(output: unknown): ToolArtifact[] | undefined {
       type: "image" as const,
       url: record.url,
       mimeType: (record.mimeType as string) ?? "image/png",
-      width: (record.placement as any)?.width ?? 512,
-      height: (record.placement as any)?.height ?? 512,
+      width: (record.placement as { width?: number } | undefined)?.width ?? 512,
+      height:
+        (record.placement as { height?: number } | undefined)?.height ?? 512,
     };
     if (typeof record.title === "string" && record.title.length > 0) {
       candidate.title = record.title;

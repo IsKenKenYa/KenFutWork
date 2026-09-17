@@ -14,6 +14,7 @@ type SessionSelectorProps = {
 function HistoryIcon({ className }: { className?: string }) {
   return (
     <svg
+      aria-hidden="true"
       className={className}
       viewBox="0 0 24 24"
       fill="none"
@@ -32,6 +33,7 @@ function HistoryIcon({ className }: { className?: string }) {
 function NewChatIcon({ className }: { className?: string }) {
   return (
     <svg
+      aria-hidden="true"
       className={className}
       viewBox="0 0 24 24"
       fill="none"
@@ -47,7 +49,12 @@ function NewChatIcon({ className }: { className?: string }) {
 }
 function TrashIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 16 16" fill="currentColor">
+    <svg
+      className={className}
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      aria-hidden="true"
+    >
       <path d="M5.75 2.5a.75.75 0 0 0-.75.75V4H2.5a.5.5 0 0 0 0 1h.614l.573 7.454A1.75 1.75 0 0 0 5.435 14h5.13a1.75 1.75 0 0 0 1.748-1.546L12.886 5h.614a.5.5 0 0 0 0-1H11v-.75a.75.75 0 0 0-.75-.75h-4.5ZM10 4H6v-.75a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25V4Z" />
     </svg>
   );
@@ -56,6 +63,7 @@ function TrashIcon({ className }: { className?: string }) {
 function SearchIcon({ className }: { className?: string }) {
   return (
     <svg
+      aria-hidden="true"
       className={className}
       viewBox="0 0 16 16"
       fill="none"
@@ -165,6 +173,7 @@ export function SessionSelector({
                 </p>
               )}
               {filtered.map((s) => (
+                // biome-ignore lint/a11y/useSemanticElements: 行内有嵌套的删除按钮，<button> 套 <button> 非法；键盘等价已用 Enter/Space 补
                 <div
                   key={s.id}
                   role="button"

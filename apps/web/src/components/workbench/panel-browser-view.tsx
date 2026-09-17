@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getServerBaseUrl } from "@/lib/env";
+import { keyed } from "../list-keys";
 
 /**
  * 右栏浏览器（R3-1 / R3-4 的可用形态）。工具栏按参考图的浏览器面板排：
@@ -211,6 +212,7 @@ export function BrowserPane({
   const frameRef = useRef<HTMLDivElement>(null);
   const [paneWidth, setPaneWidth] = useState(0);
   const [paneHeight, setPaneHeight] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: url 只当触发器（量的是 DOM 尺寸）；换页后布局变化需要重新量
   useEffect(() => {
     const measure = () => {
       const el = frameRef.current;
@@ -223,21 +225,21 @@ export function BrowserPane({
     return () => window.removeEventListener("resize", measure);
   }, [url]);
 
-  const sizePreset = VIEWPORT_PRESETS.find((p) => p.id === viewportPreset)!;
+  const sizePreset = VIEWPORT_PRESETS.find((p) => p.id === viewportPreset);
   const viewportWidth =
     viewportPreset === "free"
       ? freeSize.width
-      : (sizePreset.width ?? paneWidth);
+      : (sizePreset?.width ?? paneWidth);
   const viewportHeight =
     viewportPreset === "free"
       ? freeSize.height
-      : (sizePreset.height ?? paneHeight);
+      : (sizePreset?.height ?? paneHeight);
   const fitScale =
     viewportWidth > 0 && viewportHeight > 0
       ? Math.min(1, paneWidth / viewportWidth, paneHeight / viewportHeight)
       : 1;
-  const zoomPreset = ZOOM_PRESETS.find((p) => p.id === zoom)!;
-  const scale = zoomPreset.scale ?? fitScale;
+  const zoomPreset = ZOOM_PRESETS.find((p) => p.id === zoom);
+  const scale = zoomPreset?.scale ?? fitScale;
 
   const navButtonClass =
     "shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40";
@@ -478,77 +480,81 @@ export function BrowserPane({
                   换算成百分比后与截图（同一视口尺寸）严丝合缝 */}
               {overlay && picked.screenshotUrl ? (
                 <div className="relative mb-2 overflow-hidden rounded border">
+                  {/* biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用 */}
                   <img
                     src={picked.screenshotUrl}
                     alt={`${picked.pageTitle || url} 的视口截图`}
                     className="block w-full"
                   />
-                  {overlay.elements.map((element, index) =>
-                    element.box ? (
-                      <button
-                        key={`${element.hint}-${index}`}
-                        type="button"
-                        aria-label={`拾取元素 ${index + 1}：${element.tag} ${element.text}`}
-                        title={`<${element.tag}> ${element.text || "(无文字)"}`}
-                        onMouseEnter={() => setHoveredElement(index)}
-                        onMouseLeave={() => setHoveredElement(null)}
-                        onClick={() => pickElement(element)}
-                        style={{
-                          left: `${(element.box.x / overlay.viewport.width) * 100}%`,
-                          top: `${(element.box.y / overlay.viewport.height) * 100}%`,
-                          width: `${(element.box.width / overlay.viewport.width) * 100}%`,
-                          height: `${(element.box.height / overlay.viewport.height) * 100}%`,
-                        }}
-                        className={`absolute rounded-sm border transition-colors ${
-                          hoveredElement === index
-                            ? "border-info bg-info/30"
-                            : "border-info/70 bg-info/10 hover:bg-info/30"
-                        }`}
-                      >
-                        <span className="absolute -top-3 -left-px rounded-sm bg-info px-1 text-[9px] leading-3 text-white">
-                          {index + 1}
-                        </span>
-                      </button>
-                    ) : null,
+                  {keyed(overlay.elements, (element) => element.hint).map(
+                    ({ key, item: element }, index) =>
+                      element.box ? (
+                        <button
+                          key={key}
+                          type="button"
+                          aria-label={`拾取元素 ${index + 1}：${element.tag} ${element.text}`}
+                          title={`<${element.tag}> ${element.text || "(无文字)"}`}
+                          onMouseEnter={() => setHoveredElement(index)}
+                          onMouseLeave={() => setHoveredElement(null)}
+                          onClick={() => pickElement(element)}
+                          style={{
+                            left: `${(element.box.x / overlay.viewport.width) * 100}%`,
+                            top: `${(element.box.y / overlay.viewport.height) * 100}%`,
+                            width: `${(element.box.width / overlay.viewport.width) * 100}%`,
+                            height: `${(element.box.height / overlay.viewport.height) * 100}%`,
+                          }}
+                          className={`absolute rounded-sm border transition-colors ${
+                            hoveredElement === index
+                              ? "border-info bg-info/30"
+                              : "border-info/70 bg-info/10 hover:bg-info/30"
+                          }`}
+                        >
+                          <span className="absolute -top-3 -left-px rounded-sm bg-info px-1 text-[9px] leading-3 text-white">
+                            {index + 1}
+                          </span>
+                        </button>
+                      ) : null,
                   )}
                 </div>
               ) : null}
 
               {picked.elements.length > 0 ? (
                 <ul className="space-y-0.5">
-                  {picked.elements.map((element, index) => (
-                    <li key={`${element.hint}-${index}`}>
-                      <button
-                        type="button"
-                        onMouseEnter={() => setHoveredElement(index)}
-                        onMouseLeave={() => setHoveredElement(null)}
-                        onClick={() => pickElement(element)}
-                        className={`w-full rounded px-1.5 py-1 text-left ${
-                          hoveredElement === index
-                            ? "bg-muted"
-                            : "hover:bg-muted"
-                        }`}
-                      >
-                        {overlay && element.box ? (
-                          <span className="mr-1.5 rounded bg-info/15 px-1 py-0.5 font-mono text-[10px] text-info">
-                            {index + 1}
+                  {keyed(picked.elements, (element) => element.hint).map(
+                    ({ key, item: element }, index) => (
+                      <li key={key}>
+                        <button
+                          type="button"
+                          onMouseEnter={() => setHoveredElement(index)}
+                          onMouseLeave={() => setHoveredElement(null)}
+                          onClick={() => pickElement(element)}
+                          className={`w-full rounded px-1.5 py-1 text-left ${
+                            hoveredElement === index
+                              ? "bg-muted"
+                              : "hover:bg-muted"
+                          }`}
+                        >
+                          {overlay && element.box ? (
+                            <span className="mr-1.5 rounded bg-info/15 px-1 py-0.5 font-mono text-[10px] text-info">
+                              {index + 1}
+                            </span>
+                          ) : null}
+                          <span className="mr-1.5 rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
+                            {element.tag}
                           </span>
-                        ) : null}
-                        <span className="mr-1.5 rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
-                          {element.tag}
-                        </span>
-                        <span className="truncate">
-                          {element.text || "(无文字)"}
-                        </span>
-                        {element.box ? (
-                          <span className="ml-1.5 text-[10px] text-muted-foreground">
-                            {Math.round(element.box.x)},
-                            {Math.round(element.box.y)}
+                          <span className="truncate">
+                            {element.text || "(无文字)"}
                           </span>
-                        ) : null}
-                      </button>
-                    </li>
-                  ))}
+                          {element.box ? (
+                            <span className="ml-1.5 text-[10px] text-muted-foreground">
+                              {Math.round(element.box.x)},
+                              {Math.round(element.box.y)}
+                            </span>
+                          ) : null}
+                        </button>
+                      </li>
+                    ),
+                  )}
                 </ul>
               ) : (
                 <p className="text-muted-foreground">

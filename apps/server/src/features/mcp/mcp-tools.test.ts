@@ -25,11 +25,11 @@ describe("MCP 工具注册（P4d）", () => {
       }),
       callTool,
     };
-    const tool = toKernelTool(
-      "fs",
-      (await client.listTools()).tools[0]!,
-      client,
-    );
+    const readFileTool = (await client.listTools()).tools[0];
+    if (!readFileTool) {
+      throw new Error("桩客户端未返回工具定义");
+    }
+    const tool = toKernelTool("fs", readFileTool, client);
     expect(tool.name).toBe("mcp__fs__read_file");
     expect(tool.scope).toBe("shared");
     const result = await tool.execute({ path: "/tmp/a" }, {});
@@ -41,8 +41,7 @@ describe("MCP 工具注册（P4d）", () => {
   });
 
   it("registerMcpServerTools 把全部工具注册进内核注册表，disposer 注销", () => {
-    let kernelHandle: ReturnType<typeof composePlugins> | undefined;
-    kernelHandle = composePlugins(
+    const kernelHandle: ReturnType<typeof composePlugins> = composePlugins(
       {
         agentBackendMode: "state",
         agentModel: "m",

@@ -93,6 +93,6 @@ describe("面板标签页", () => {
     let tabs: ChatTab[] = [];
     for (let i = 0; i < 16; i += 1) tabs = upsertTab(tabs, chat(`s${i}`));
     expect(tabs).toHaveLength(12);
-    expect(tabs[0]!.id).toBe("s4");
+    expect(tabs[0]?.id).toBe("s4");
   });
 });

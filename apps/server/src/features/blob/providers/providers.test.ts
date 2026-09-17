@@ -1,12 +1,11 @@
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { BlobError } from "../types.js";
 import {
   createLocalFsBlobStore,
   resolveBlobPath,
-  signBlobUrl,
   verifyBlobUrlSignature,
 } from "./local-fs.js";
 

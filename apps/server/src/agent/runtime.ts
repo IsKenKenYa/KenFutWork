@@ -3,19 +3,17 @@ import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import type {
+  BillingErrorCode,
   ImageAttachment,
   ImageGenerationPreference,
+  ImageQualityLevel,
   MessageMention,
   RunCancelResponse,
   RunCreateRequest,
   RunCreateResponse,
   StreamEvent,
   VideoGenerationPreference,
-} from "@kenfutwork/shared";
-import {
-  type BillingErrorCode,
-  getPlanConfig,
-  type ImageQualityLevel,
+  VideoResolution,
 } from "@kenfutwork/shared";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { HumanMessage } from "@langchain/core/messages";
@@ -737,13 +735,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               if (canvasId && result.object_path && options.canvasService) {
                 try {
                   const explicitPlacement =
-                    (input as any).placementX != null &&
-                    (input as any).placementY != null
+                    input.placementX != null && input.placementY != null
                       ? {
-                          x: (input as any).placementX,
-                          y: (input as any).placementY,
-                          width: (input as any).placementWidth ?? 512,
-                          height: (input as any).placementHeight ?? 512,
+                          x: input.placementX,
+                          y: input.placementY,
+                          width: input.placementWidth ?? 512,
+                          height: input.placementHeight ?? 512,
                         }
                       : undefined;
 
@@ -854,9 +851,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             try {
               options.tierGuard.checkModelAccess(sub.plan, input.model);
               if (input.resolution) {
+                // 工具分辨率还含 "480p"（不在 VideoResolution 枚举内，计费守卫按最低档放行）
                 options.tierGuard.checkVideoResolution(
                   sub.plan,
-                  input.resolution as any,
+                  input.resolution as VideoResolution,
                 );
               }
               await options.tierGuard.checkConcurrency(workspaceId, sub.plan);
@@ -879,7 +877,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               {
                 ...(input.duration != null ? { duration: input.duration } : {}),
                 ...(input.resolution
-                  ? { resolution: input.resolution as any }
+                  ? { resolution: input.resolution as VideoResolution }
                   : {}),
               },
             );
@@ -981,13 +979,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               if (canvasId && result.signed_url && options.canvasService) {
                 try {
                   const explicitPlacement =
-                    (input as any).placementX != null &&
-                    (input as any).placementY != null
+                    input.placementX != null && input.placementY != null
                       ? {
-                          x: (input as any).placementX,
-                          y: (input as any).placementY,
-                          width: (input as any).placementWidth ?? 640,
-                          height: (input as any).placementHeight ?? 360,
+                          x: input.placementX,
+                          y: input.placementY,
+                          width: input.placementWidth ?? 640,
+                          height: input.placementHeight ?? 360,
                         }
                       : undefined;
 
@@ -1003,9 +1000,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                         ...(result.duration_seconds != null
                           ? { durationSeconds: result.duration_seconds }
                           : {}),
-                        ...((input as any).title
-                          ? { title: (input as any).title }
-                          : {}),
+                        ...(input.title ? { title: input.title } : {}),
                         ...(input.prompt ? { prompt: input.prompt } : {}),
                         ...(explicitPlacement
                           ? { placement: explicitPlacement }
@@ -1501,7 +1496,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             }
           }
 
-          const hasAttachments = run.attachments && run.attachments.length > 0;
+          // 附件在下载与提示词构建两处消费：收窄成局部 const（缺省空数组，分支内不再判空）
+          const attachments = run.attachments ?? [];
+          const hasAttachments = attachments.length > 0;
           let userMessage: HumanMessage;
           let attachmentDataMap: Record<string, string> = {};
 
@@ -1515,7 +1512,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               base64: string;
             }> = [];
             const imageBlocks = await Promise.all(
-              run.attachments!.map(async (a) => {
+              attachments.map(async (a) => {
                 try {
                   let b64: string;
                   let mime: string;
@@ -1524,9 +1521,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   const dataUriMatch = a.url.match(
                     /^data:([^;]+);base64,(.+)$/,
                   );
-                  if (dataUriMatch) {
-                    mime = dataUriMatch[1]!;
-                    b64 = dataUriMatch[2]!;
+                  const inlineMime = dataUriMatch?.[1];
+                  const inlineBase64 = dataUriMatch?.[2];
+                  if (inlineMime && inlineBase64) {
+                    mime = inlineMime;
+                    b64 = inlineBase64;
                   } else {
                     const res = await fetch(a.url);
                     const buf = Buffer.from(await res.arrayBuffer());
@@ -1563,7 +1562,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             // Build XML text tags for LLM to reference by assetId
             let { text: enrichedPrompt } = buildUserMessage(
               run.prompt,
-              run.attachments!,
+              attachments,
               run.imageGenerationPreference,
               run.mentions,
               run.videoGenerationPreference,

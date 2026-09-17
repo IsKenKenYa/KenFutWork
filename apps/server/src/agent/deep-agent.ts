@@ -443,10 +443,11 @@ function createStreamingChatModel(specifier: string): BaseLanguageModel {
   let provider = colonIdx > 0 ? specifier.slice(0, colonIdx) : "openai";
   let modelName = colonIdx > 0 ? specifier.slice(colonIdx + 1) : specifier;
 
-  const hasGoogleApiKey = !!process.env.GOOGLE_API_KEY;
-  const hasVertexAI = !!(
-    process.env.GOOGLE_VERTEX_PROJECT && process.env.GOOGLE_VERTEX_LOCATION
-  );
+  const googleApiKey = process.env.GOOGLE_API_KEY;
+  const vertexProject = process.env.GOOGLE_VERTEX_PROJECT;
+  const vertexLocation = process.env.GOOGLE_VERTEX_LOCATION;
+  const hasGoogleApiKey = !!googleApiKey;
+  const hasVertexAI = !!(vertexProject && vertexLocation);
   const hasGoogle = hasGoogleApiKey || hasVertexAI;
 
   // Provider availability fallback
@@ -468,9 +469,7 @@ function createStreamingChatModel(specifier: string): BaseLanguageModel {
   switch (provider) {
     case "google":
       // Prefer Vertex AI (service account) when configured; fall back to Developer API key
-      if (hasVertexAI) {
-        const vertexProject = process.env.GOOGLE_VERTEX_PROJECT!;
-        const vertexLocation = process.env.GOOGLE_VERTEX_LOCATION!;
+      if (vertexProject && vertexLocation) {
         console.log(
           `[model] Using Vertex AI for: ${modelName} (project=${vertexProject}, location=${vertexLocation})`,
         );
@@ -481,16 +480,21 @@ function createStreamingChatModel(specifier: string): BaseLanguageModel {
           streaming: true,
         });
       }
+      if (!googleApiKey) {
+        // 上方可用性回退已排除「两套 Google 配置都缺失」；走到这里说明配置不全，fail loud
+        throw new Error(
+          "[model] Google 供应商缺少 GOOGLE_API_KEY，且 Vertex AI 的 project/location 不全。",
+        );
+      }
       return new ChatGoogleGenerativeAI({
         model: modelName,
-        apiKey: process.env.GOOGLE_API_KEY!,
+        apiKey: googleApiKey,
         streaming: true,
         thinkingConfig: {
           includeThoughts: true,
           thinkingBudget: -1, // dynamic — let the model decide
         },
       });
-    case "openai":
     default:
       return new ChatOpenAI({
         model: modelName,

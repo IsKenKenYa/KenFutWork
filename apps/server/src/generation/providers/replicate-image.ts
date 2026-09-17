@@ -240,7 +240,10 @@ function normalizeAspectRatio(model: string, ratio: string): string {
   if (!supported || supported.includes(ratio)) return ratio;
 
   const target = parseRatio(ratio);
-  let best = supported[0]!;
+  // 支持列表均为硬编码非空数组；空表时无从比较，原样返回请求比例
+  const initial = supported.at(0);
+  if (initial === undefined) return ratio;
+  let best = initial;
   let bestDiff = Math.abs(parseRatio(best) - target);
 
   for (const candidate of supported) {

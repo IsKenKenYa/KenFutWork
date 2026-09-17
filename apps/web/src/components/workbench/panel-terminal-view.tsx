@@ -149,6 +149,7 @@ export function TerminalPane({
   }, [ws]);
 
   // 输出滚动到底
+  // biome-ignore lint/correctness/useExhaustiveDependencies: buffer 只当触发器（滚动位置按 DOM 现算）；去掉后新输出不再跟随滚动
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
@@ -178,7 +179,7 @@ export function TerminalPane({
         {shells.length > 0 ? (
           <Select
             aria-label="终端 shell"
-            value={shell ?? shells[0]!.id}
+            value={shell ?? shells.at(0)?.id}
             onValueChange={(next) => {
               if (typeof next !== "string") return;
               // 换 shell = 关掉旧会话、开一条新的（会话是进程，不能原地换壳）

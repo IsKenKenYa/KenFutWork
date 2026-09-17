@@ -129,8 +129,11 @@ export type ServiceKey = keyof ServiceMap;
 
 export type ServiceOf<K extends ServiceKey> = ServiceMap[K];
 
-/** 插件工厂拿到的依赖解析器；只能解析 ServiceKey，未注册即 fail loud。 */
-export type DepsOf<K extends ServiceKey> = {
+/**
+ * 插件工厂拿到的依赖解析器；只能解析 ServiceKey，未注册即 fail loud。
+ * `_K` 是「本工厂提供哪个服务」的幻影标记：解析器可解析任意 key，故类型参数不参与结构。
+ */
+export type DepsOf<_K extends ServiceKey> = {
   get: <D extends ServiceKey>(key: D) => ServiceMap[D];
 };
 
@@ -257,7 +260,7 @@ export interface PluginDefinition {
   name: string;
   inject: readonly ServiceKey[];
   enabled?: (env: ServerEnv) => boolean;
-  apply(ctx: PluginContext): void | (() => void);
+  apply(ctx: PluginContext): undefined | (() => void);
   /**
    * 全部插件 apply 完成、服务定例化就绪后按声明顺序调用。
    * 路由注册等「消费其他插件服务」的跨服务接线放这里，apply 只注册自己的服务。
@@ -276,7 +279,7 @@ export interface PluginContext {
   /** 可选解析：key 无人提供时返回 undefined（jobs 等条件装配服务用）。 */
   tryGet<K extends ServiceKey>(key: K): ServiceMap[K] | undefined;
   /** 登记可逆副作用，kernel dispose 时 LIFO 执行。 */
-  effect(fn: () => void | (() => void)): void;
+  effect(fn: () => undefined | (() => void)): void;
   /** 订阅 agent-run 事件，返回取消订阅函数。 */
   on<E extends AgentRunEvent>(event: E, listener: ListenerOf<E>): () => void;
   /** Fastify 实例；worker 进程 compose 时不可用（访问即抛错）。 */

@@ -109,10 +109,7 @@ export function createCanvasService(options: {
   };
 
   /** 绑定工作区的画布内容读写缝（元素写入器据此访问）。 */
-  const createContentStore = (
-    actor: CanvasActor,
-    workspaceId: string,
-  ): CanvasContentStore => {
+  const createContentStore = (workspaceId: string): CanvasContentStore => {
     const blobBucket = options.blob.bucket(CANVAS_FILES_BUCKET);
 
     return {
@@ -211,7 +208,7 @@ export function createCanvasService(options: {
       const workspaceId = await resolveWorkspaceId(actor);
 
       return insertImageElement(
-        createContentStore(actor, workspaceId),
+        createContentStore(workspaceId),
         {
           canvasId: request.canvasId,
           mimeType: request.mimeType,
@@ -228,7 +225,7 @@ export function createCanvasService(options: {
       const workspaceId = await resolveWorkspaceId(actor);
 
       return insertVideoElement(
-        createContentStore(actor, workspaceId),
+        createContentStore(workspaceId),
         {
           canvasId: request.canvasId,
           mimeType: request.mimeType,
@@ -384,9 +381,14 @@ function parseDataURL(dataURL: string): { buffer: Buffer; mimeType: string } {
   if (!match) {
     throw new Error("Invalid data URL");
   }
+  const mimeType = match[1];
+  const base64 = match[2];
+  if (mimeType === undefined || base64 === undefined) {
+    throw new Error("Invalid data URL");
+  }
   return {
-    mimeType: match[1]!,
-    buffer: Buffer.from(match[2]!, "base64"),
+    mimeType,
+    buffer: Buffer.from(base64, "base64"),
   };
 }
 

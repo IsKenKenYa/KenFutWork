@@ -49,7 +49,12 @@ export function BrandKitModal({
             aria-label="关闭"
             className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
-            <svg viewBox="0 0 16 16" fill="none" className="h-4 w-4">
+            <svg
+              viewBox="0 0 16 16"
+              fill="none"
+              className="h-4 w-4"
+              aria-hidden="true"
+            >
               <path
                 d="M4.5 4.5l7 7M11.5 4.5l-7 7"
                 stroke="currentColor"

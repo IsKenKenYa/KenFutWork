@@ -128,10 +128,13 @@ export function createElementBase(): CanvasElement {
 // Element lookup and labelling
 // ---------------------------------------------------------------------------
 
-/** Find an active (non-deleted) element by ID. */
+/**
+ * Find an active (non-deleted) element by ID.
+ * `id` 允许 undefined：工具入参的 `element_id` 是可选项，缺省时按「找不到」处理。
+ */
 export function findElement(
   elements: CanvasElement[],
-  id: string,
+  id: string | undefined,
 ): CanvasElement | undefined {
   return elements.find((el) => el.id === id && !el.isDeleted);
 }
@@ -139,7 +142,7 @@ export function findElement(
 /** Return a short human-readable label for log / result messages. */
 export function shortLabel(el: CanvasElement): string {
   if (el.type === "text" && typeof el.text === "string") {
-    const short = el.text.length > 20 ? el.text.slice(0, 17) + "..." : el.text;
+    const short = el.text.length > 20 ? `${el.text.slice(0, 17)}...` : el.text;
     return `text '${short}'`;
   }
   return `${el.type ?? "element"}(${el.id})`;

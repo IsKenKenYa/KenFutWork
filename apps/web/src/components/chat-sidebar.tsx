@@ -7,7 +7,6 @@ import type {
   MessageMention,
   StreamEvent,
   VideoArtifact,
-  VideoGenerationPreference,
 } from "@kenfutwork/shared";
 import { PanelsTopLeft } from "lucide-react";
 import type { ReactNode } from "react";
@@ -16,7 +15,7 @@ import { toChatMenuMessages } from "@/lib/chat-menu";
 import { PluginPanelButtons } from "@/lib/plugin-panels";
 import { useAgentModel } from "../hooks/use-agent-model";
 import { useBreakpoint } from "../hooks/use-breakpoint";
-import { mapServerMessages, useChatSessions } from "../hooks/use-chat-sessions";
+import { useChatSessions } from "../hooks/use-chat-sessions";
 import { useChatStream } from "../hooks/use-chat-stream";
 import {
   INITIAL_AGENT_MODEL_KEY,
@@ -69,6 +68,7 @@ import { useToast } from "./toast";
 function ChatBubbleIcon({ className }: { className?: string }) {
   return (
     <svg
+      aria-hidden="true"
       className={className}
       viewBox="0 0 24 24"
       fill="none"
@@ -86,6 +86,7 @@ function ChatBubbleIcon({ className }: { className?: string }) {
 function LayersStackIcon({ className }: { className?: string }) {
   return (
     <svg
+      aria-hidden="true"
       className={className}
       viewBox="0 0 24 24"
       fill="none"
@@ -105,6 +106,7 @@ function LayersStackIcon({ className }: { className?: string }) {
 function GeneratedFileIcon({ className }: { className?: string }) {
   return (
     <svg
+      aria-hidden="true"
       className={className}
       viewBox="0 0 24 24"
       fill="none"
@@ -177,8 +179,6 @@ export function ChatSidebar({
     activeSessionId,
     activeSessionIdRef,
     messages,
-    messagesRef,
-    setMessages,
     sessionsLoading,
     messagesLoading,
     streaming,
@@ -475,6 +475,7 @@ export function ChatSidebar({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: messages 只当触发器（滚动本身不读它）；去掉后新消息到达不再自动滚到底
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
@@ -597,7 +598,7 @@ export function ChatSidebar({
           .filter((el) => !existingIds.has(el.id))
           .map((el) => ({
             assetId: el.id,
-            url: el.storageUrl ?? el.dataUrl!,
+            url: el.storageUrl ?? el.dataUrl ?? "",
             mimeType: "image/png",
             source: "canvas-ref" as const,
             name: `Canvas selection ${el.id.slice(0, 6)}`,
@@ -798,7 +799,7 @@ export function ChatSidebar({
         });
 
         // Start run via WebSocket
-        const runId = await new Promise<string>((resolve, reject) => {
+        await new Promise<string>((resolve, reject) => {
           const timeout = setTimeout(() => {
             cleanup();
             reject(new Error("WebSocket ack timeout — connection may be down"));
@@ -873,6 +874,9 @@ export function ChatSidebar({
       streaming,
       canvasId,
       applyStreamEvent,
+      setStreaming,
+      showTierLimit,
+      showToast,
       updateSessionMessages,
       onImageGenerated,
       onVideoGenerated,
@@ -1153,7 +1157,12 @@ export function ChatSidebar({
           type="button"
           className="group inline-flex items-center gap-1 rounded-xl bg-card border border-border px-2.5 py-1.5 text-xs text-foreground/60 shadow-sm hover:bg-card hover:text-foreground transition-colors cursor-pointer md:px-2.5 md:py-1.5 min-h-[36px] md:min-h-0"
         >
-          <svg className="size-4 md:size-3.5" viewBox="0 0 24 24" fill="none">
+          <svg
+            className="size-4 md:size-3.5"
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+          >
             <path
               fill="currentColor"
               fillOpacity={0.9}
@@ -1189,89 +1198,92 @@ export function ChatSidebar({
       */}
       {/* 第一行：对话标签页——任何视图下都在（切图层/文件不会把它顶掉） */}
       <div className="flex min-h-[40px] shrink-0 items-center gap-1.5 border-b border-border pl-2 pr-2">
-        <>
-          {/* 标签区：横向可滚但**不显示滚动条**（标签多了滚动条会盖住标签，
+        {/* 标签区：横向可滚但**不显示滚动条**（标签多了滚动条会盖住标签，
                 「历史记录/新建对话」也被卷进去看不见——它们改放到右侧固定区） */}
-          <div
-            role="tablist"
-            aria-label="打开的对话"
-            style={{ scrollbarWidth: "none" }}
-            className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto py-1.5 [&::-webkit-scrollbar]:hidden"
-          >
-            {openTabs.map((tab) => {
-              const active =
-                tab.kind === "chat"
-                  ? panelTab === "chat" && tab.id === activeSessionId
-                  : panelTab === tab.kind;
-              return (
-                <div
-                  key={`${tab.kind}:${tab.id}`}
-                  className={`group flex max-w-[160px] shrink-0 items-center gap-1 rounded-md px-2 py-1 transition-colors ${
+        <div
+          role="tablist"
+          aria-label="打开的对话"
+          style={{ scrollbarWidth: "none" }}
+          className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto py-1.5 [&::-webkit-scrollbar]:hidden"
+        >
+          {openTabs.map((tab) => {
+            const active =
+              tab.kind === "chat"
+                ? panelTab === "chat" && tab.id === activeSessionId
+                : panelTab === tab.kind;
+            return (
+              <div
+                key={`${tab.kind}:${tab.id}`}
+                className={`group flex max-w-[160px] shrink-0 items-center gap-1 rounded-md px-2 py-1 transition-colors ${
+                  active
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                }`}
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  title={tab.title}
+                  onClick={() => {
+                    if (tab.kind === "chat") {
+                      handleOpenSessionTab(tab.id);
+                    } else {
+                      onPanelTabChange?.(tab.kind);
+                    }
+                  }}
+                  className="min-w-0 flex-1 truncate text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {tab.title}
+                </button>
+                <button
+                  type="button"
+                  aria-label={`关闭 ${tab.title}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleCloseSessionTab(tab.id, tab.kind);
+                  }}
+                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded transition-colors ${
                     active
-                      ? "bg-muted text-foreground"
-                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                      ? "text-muted-foreground hover:bg-card hover:text-foreground"
+                      : "text-transparent group-hover:text-muted-foreground hover:bg-card hover:text-foreground"
                   }`}
                 >
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={active}
-                    title={tab.title}
-                    onClick={() => {
-                      if (tab.kind === "chat") {
-                        handleOpenSessionTab(tab.id);
-                      } else {
-                        onPanelTabChange?.(tab.kind);
-                      }
-                    }}
-                    className="min-w-0 flex-1 truncate text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  <svg
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    className="h-3 w-3"
+                    aria-hidden="true"
                   >
-                    {tab.title}
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`关闭 ${tab.title}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleCloseSessionTab(tab.id, tab.kind);
-                    }}
-                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded transition-colors ${
-                      active
-                        ? "text-muted-foreground hover:bg-card hover:text-foreground"
-                        : "text-transparent group-hover:text-muted-foreground hover:bg-card hover:text-foreground"
-                    }`}
-                  >
-                    <svg viewBox="0 0 16 16" fill="none" className="h-3 w-3">
-                      <path
-                        d="M4.5 4.5l7 7M11.5 4.5l-7 7"
-                        stroke="currentColor"
-                        strokeWidth="1.3"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-          {/* 插件面板（能力 `ui`）：对话槽位——Design 模式的对话界面就是这块画布内面板 */}
-          <PluginPanelButtons
-            accessToken={accessToken}
-            slot="conversation"
-            renderButton={(panel, open) => (
-              <button
-                key={panel.id}
-                type="button"
-                onClick={open}
-                title={`插件 ${panel.pluginId} 提供的面板`}
-                className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-              >
-                <PanelsTopLeft className="h-3.5 w-3.5" />
-                <span className="max-w-[96px] truncate">{panel.title}</span>
-              </button>
-            )}
-          />
-        </>
+                    <path
+                      d="M4.5 4.5l7 7M11.5 4.5l-7 7"
+                      stroke="currentColor"
+                      strokeWidth="1.3"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        {/* 插件面板（能力 `ui`）：对话槽位——Design 模式的对话界面就是这块画布内面板 */}
+        <PluginPanelButtons
+          accessToken={accessToken}
+          slot="conversation"
+          renderButton={(panel, open) => (
+            <button
+              key={panel.id}
+              type="button"
+              onClick={open}
+              title={`插件 ${panel.pluginId} 提供的面板`}
+              className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+            >
+              <PanelsTopLeft className="h-3.5 w-3.5" />
+              <span className="max-w-[96px] truncate">{panel.title}</span>
+            </button>
+          )}
+        />
       </div>
       {/* 第二行：模式 + 历史/新建 + 视图切换（对话/图层/文件）+ 收起（间距收紧，别留空档） */}
       <div className="flex min-h-[40px] shrink-0 items-center gap-1 border-b border-border pl-3 pr-2">
@@ -1346,7 +1358,12 @@ export function ChatSidebar({
           className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
           title="收起面板"
         >
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+          <svg
+            className="h-4 w-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+          >
             <path
               d="M4 3.25a.75.75 0 0 1 .75.75v16a.75.75 0 0 1-1.5 0V4A.75.75 0 0 1 4 3.25m9.47 2.22a.75.75 0 0 1 1.06 0l6 6a.75.75 0 0 1 0 1.06l-6 6a.75.75 0 1 1-1.06-1.06l4.72-4.72H8a.75.75 0 0 1 0-1.5h10.19l-4.72-4.72a.75.75 0 0 1 0-1.06"
               fill="currentColor"
@@ -1375,6 +1392,7 @@ export function ChatSidebar({
           >
             <div
               ref={messagesContainerRef}
+              role="log"
               className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col gap-6 px-4 py-4"
               aria-live="polite"
               aria-relevant="additions"
@@ -1467,8 +1485,8 @@ export function ChatSidebar({
     return (
       <>
         {/* Semi-transparent backdrop — click to close */}
-        {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- backdrop is a non-interactive dismissal layer, keyboard close is handled via Escape */}
         <div
+          aria-hidden="true"
           className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px] animate-in fade-in duration-200"
           onClick={onToggle}
         />
@@ -1496,6 +1514,7 @@ export function ChatSidebar({
       {...eventIsolationProps}
     >
       {/* Resize handle -- supports mouse, touch, and keyboard (ArrowLeft/ArrowRight) */}
+      {/* biome-ignore lint/a11y/useSemanticElements: 可聚焦的 ARIA separator（带 aria-valuenow 与方向键支持），不是 <hr> 这类内容分隔线 */}
       <div
         role="separator"
         aria-orientation="vertical"

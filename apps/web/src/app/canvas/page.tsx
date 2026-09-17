@@ -1,5 +1,10 @@
 "use client";
 
+import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
+import type {
+  BinaryFileData,
+  ExcalidrawImperativeAPI,
+} from "@excalidraw/excalidraw/types";
 import type { ImageArtifact, VideoArtifact } from "@kenfutwork/shared";
 import { PanelsTopLeft } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -76,8 +81,9 @@ function CanvasPageContent() {
     CanvasSelectedElement[]
   >([]);
 
-  const excalidrawApiRef = useRef<any>(null);
-  const [excalidrawApi, setExcalidrawApi] = useState<any>(null);
+  const excalidrawApiRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  const [excalidrawApi, setExcalidrawApi] =
+    useState<ExcalidrawImperativeAPI | null>(null);
 
   const signOutRef = useRef(signOut);
   signOutRef.current = signOut;
@@ -98,7 +104,7 @@ function CanvasPageContent() {
   const getToken = useCallback(() => accessTokenRef.current ?? null, []);
   const ws = useWebSocket(getToken);
 
-  const handleApiReady = useCallback((api: any) => {
+  const handleApiReady = useCallback((api: ExcalidrawImperativeAPI) => {
     excalidrawApiRef.current = api;
     setExcalidrawApi(api);
   }, []);
@@ -127,19 +133,20 @@ function CanvasPageContent() {
     try {
       const { canvas } = await fetchCanvas(token, canvasData.id);
       const elements = canvas.content.elements ?? [];
-      const files = (canvas.content as Record<string, unknown>).files as
-        | Record<
-            string,
-            { id: string; dataURL: string; mimeType: string; created: number }
-          >
-        | undefined;
+      const files = canvas.content.files ?? {};
 
       // Sync files (base64 dataURLs from backend-inserted images) into Excalidraw
-      if (files && Object.keys(files).length > 0) {
-        api.addFiles(Object.values(files));
+      if (Object.keys(files).length > 0) {
+        // 服务端契约里的 files/elements 是宽松 JSON，与 Excalidraw 官方类型在入参位
+        // 互不可比（官方口径见 canvas-editor 的 initialData 同款收窄），故在这两处
+        // 边界调用上收窄，运行时不改数据。
+        api.addFiles(Object.values(files) as unknown as BinaryFileData[]);
       }
 
-      api.updateScene({ elements, captureUpdate: "IMMEDIATELY" });
+      api.updateScene({
+        elements: elements as unknown as readonly ExcalidrawElement[],
+        captureUpdate: "IMMEDIATELY",
+      });
     } catch (err) {
       console.warn("Failed to sync canvas:", err);
     }
@@ -175,27 +182,28 @@ function CanvasPageContent() {
   const handleRequestCanvasImages = useCallback((): CanvasImageItem[] => {
     const api = excalidrawApiRef.current;
     if (!api) return [];
-    const elements: any[] = api.getSceneElements() ?? [];
-    const files: Record<string, any> = api.getFiles() ?? {};
+    const files = api.getFiles() ?? {};
+    const images: CanvasImageItem[] = [];
     let idx = 0;
-    return elements
-      .filter((el: any) => el.type === "image" && !el.isDeleted && el.fileId)
-      .map((el: any) => {
-        idx++;
-        const file = files[el.fileId];
-        const dataURL = file?.dataURL ?? "";
-        const title =
-          el.customData?.title || el.customData?.label || `Image ${idx}`;
-        return {
-          kind: "canvas-image",
-          id: el.id,
-          name: title,
-          thumbnailUrl: dataURL,
-          assetId: el.id,
-          url: dataURL,
-          mimeType: file?.mimeType ?? "image/png",
-        };
+    for (const el of api.getSceneElements() ?? []) {
+      // 只有带 fileId 的 image 元素才是「画布图片」：fileId 是取 files 的键
+      if (el.type !== "image" || el.isDeleted || !el.fileId) continue;
+      idx++;
+      const file = files[el.fileId];
+      const dataURL = file?.dataURL ?? "";
+      const title =
+        el.customData?.title || el.customData?.label || `Image ${idx}`;
+      images.push({
+        kind: "canvas-image",
+        id: el.id,
+        name: title,
+        thumbnailUrl: dataURL,
+        assetId: el.id,
+        url: dataURL,
+        mimeType: file?.mimeType ?? "image/png",
       });
+    }
+    return images;
   }, []);
 
   // Only re-fetch when canvasId changes or on initial auth resolution.
@@ -223,7 +231,7 @@ function CanvasPageContent() {
           content: {
             elements: c.content.elements ?? [],
             appState: c.content.appState ?? {},
-            files: (c.content as any).files ?? {},
+            files: c.content.files ?? {},
           },
         });
         setPageLoading(false);

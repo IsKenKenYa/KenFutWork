@@ -242,7 +242,7 @@ describe("manipulate_canvas：读写经 canvas repository", () => {
     expect(output.success).toBe(true);
     expect(output.applied).toBe(1);
     expect(saved).toHaveLength(1);
-    const [workspaceId, canvasId, content] = saved[0]!;
+    const [workspaceId, canvasId, content] = saved.at(0) ?? [];
     expect(workspaceId).toBe(WORKSPACE_ID);
     expect(canvasId).toBe(CANVAS_ID);
     // 写回内容保留原 appState，仅替换 elements

@@ -15,12 +15,18 @@ const DEFAULT_MODEL = "wan-video/wan-2.6";
 export type SubmitVideoJobFn = (input: {
   prompt: string;
   model: string;
+  title?: string;
   duration?: number;
   resolution?: string;
   aspectRatio?: string;
   inputImages?: string[];
   inputVideo?: string;
   enableAudio?: boolean;
+  /** 画布落点（可选）：运行时的作业回调据此显式指定插入位置。 */
+  placementX?: number;
+  placementY?: number;
+  placementWidth?: number;
+  placementHeight?: number;
 }) => Promise<{
   jobId: string;
   elementId?: string;

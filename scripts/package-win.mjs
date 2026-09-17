@@ -6,7 +6,7 @@
  * 用法：pnpm package:win
  */
 
-import { execSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import {
   copyFileSync,
   cpSync,
@@ -65,7 +65,7 @@ function resolvePgNativeDir() {
   }
   const nativeDir = join(entry, "..", "..", "native");
   if (!existsSync(join(nativeDir, "bin"))) {
-    console.error("[package] 二进制包结构不符（缺 native/bin）：" + nativeDir);
+    console.error(`[package] 二进制包结构不符（缺 native/bin）：${nativeDir}`);
     process.exit(1);
   }
   return nativeDir;

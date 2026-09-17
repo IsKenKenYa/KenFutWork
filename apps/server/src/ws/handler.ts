@@ -118,10 +118,16 @@ async function authenticateAndBind(
 
   let authenticatedUser: AuthenticatedUser;
   try {
+    // 路由入口已校验 options.auth 存在；函数边界丢失该收窄，这里重新收窄为局部 const
+    const auth = options.auth;
+    if (!auth) {
+      socket.close(4001, "Unauthorized");
+      return;
+    }
     const fakeRequest = {
       headers: { authorization: `Bearer ${token}` },
     } as unknown as FastifyRequest;
-    const user = await options.auth!.authenticate(fakeRequest);
+    const user = await auth.authenticate(fakeRequest);
     if (!user) {
       log.warn("auth_rejected", { reason: "invalid_token" });
       socket.close(4001, "Unauthorized");

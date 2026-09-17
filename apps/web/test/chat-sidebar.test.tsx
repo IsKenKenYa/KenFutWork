@@ -54,7 +54,7 @@ function createMockWs(): WebSocketHandle {
   return {
     connected: true,
     resumeCanvas: vi.fn(),
-    startRun: vi.fn((payload, onAck) => {
+    startRun: vi.fn((_payload, onAck) => {
       // Simulate server ack
       onAck?.({
         type: "command.ack",

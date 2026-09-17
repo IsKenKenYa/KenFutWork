@@ -56,12 +56,15 @@ export interface ModuleScan {
   unsafeModules: string[];
 }
 
+// 各正则的捕获组在整体匹配成功时必然存在，解构默认值只是把 string | undefined 收窄。
 function extractInjectArrays(source: string): string[] {
   const found: string[] = [];
   const pattern = /inject\s*[:(=]\s*\[([^\]]*)\]/g;
   for (const match of source.matchAll(pattern)) {
-    for (const literal of match[1]!.matchAll(/["'`]([^"'`]+)["'`]/g)) {
-      found.push(literal[1]!.trim());
+    const [, body = ""] = match;
+    for (const literal of body.matchAll(/["'`]([^"'`]+)["'`]/g)) {
+      const [, name = ""] = literal;
+      found.push(name.trim());
     }
   }
   return found;
@@ -70,7 +73,7 @@ function extractInjectArrays(source: string): string[] {
 function extractCtxMembers(source: string): string[] {
   const found = new Set<string>();
   for (const match of source.matchAll(/ctx\s*\.\s*([A-Za-z_$][\w$]*)/g)) {
-    const member = match[1]!;
+    const [, member = ""] = match;
     if (!FRAMEWORK_MEMBERS.has(member)) {
       found.add(member);
     }
@@ -83,7 +86,8 @@ function extractUnsafeModules(source: string): string[] {
   for (const match of source.matchAll(
     /(?:require\s*\(\s*|from\s+)["'`]([^"'`]+)["'`]/g,
   )) {
-    const specifier = match[1]!.trim();
+    const [, rawSpecifier = ""] = match;
+    const specifier = rawSpecifier.trim();
     if (UNSAFE_MODULES.includes(specifier)) {
       found.add(specifier);
     }
@@ -102,7 +106,8 @@ function extractUnsafeModules(source: string): string[] {
 function extractSubscribedEvents(source: string): string[] {
   const found = new Set<string>();
   for (const match of source.matchAll(/\bon\s*\(\s*["'`]([^"'`]+)["'`]/g)) {
-    found.add(match[1]!.trim());
+    const [, event = ""] = match;
+    found.add(event.trim());
   }
   return [...found];
 }

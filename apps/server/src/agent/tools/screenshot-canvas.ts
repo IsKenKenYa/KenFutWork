@@ -40,9 +40,12 @@ export function createScreenshotCanvasTool(deps: {
       "Take a visual screenshot of the canvas to inspect layout, design quality, color harmony, and spatial relationships. Use this to visually verify your changes or understand the current canvas state. Supports full canvas, specific region, or current viewport capture.",
     schema: screenshotCanvasSchema,
     func: async (input, _runManager, config): Promise<string> => {
-      const userId = (config as any)?.configurable?.user_id;
+      const configurable = (
+        config as { configurable?: Record<string, unknown> }
+      )?.configurable;
+      const userId = configurable?.user_id;
 
-      if (!userId) {
+      if (typeof userId !== "string" || !userId) {
         return JSON.stringify({
           error: "no_user_context",
           message:

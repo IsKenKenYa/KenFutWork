@@ -174,6 +174,7 @@ export function ImageModelPreferencePopover({
                 }`}
               >
                 {m.iconUrl && (
+                  // biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用
                   <img
                     src={m.iconUrl}
                     alt={m.displayName}
@@ -202,6 +203,7 @@ export function ImageModelPreferencePopover({
                 </div>
                 {selected && (
                   <svg
+                    aria-hidden="true"
                     className="h-3.5 w-3.5 shrink-0 text-accent-foreground"
                     viewBox="0 0 14 14"
                     fill="currentColor"

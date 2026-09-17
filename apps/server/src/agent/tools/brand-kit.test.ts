@@ -108,9 +108,9 @@ describe("get_brand_kit 工具（身份取自运行上下文）", () => {
 
   it("字体缺 weight 时落回 400", async () => {
     const detail = kitDetail();
-    detail.assets = [
-      { ...detail.assets[1]!, metadata: {} },
-    ] as BrandKitDetail["assets"];
+    const font = detail.assets[1];
+    if (!font) throw new Error("测试夹具缺少第二个资产（字体）");
+    detail.assets = [{ ...font, metadata: {} }] as BrandKitDetail["assets"];
     const tool = buildTool({ getKit: async () => detail });
 
     const output = await invoke(tool, {

@@ -3,8 +3,12 @@ import type { StreamEvent } from "@kenfutwork/shared";
 import type { WebSocket } from "ws";
 
 type PendingRPC = {
-  resolve: (value: any) => void;
-  reject: (error: Error) => void;
+  /**
+   * RPC 返回值经 JSON 往返只剩 unknown，故存储侧按 unknown 收下（方法签名而非函数属性，
+   * 使 Promise<T> 的 resolver 能直接存入）；类型收窄由 `rpc<T>` 的调用方声明负责。
+   */
+  resolve(value: unknown): void;
+  reject(error: Error): void;
   timer: NodeJS.Timeout;
 };
 
@@ -184,7 +188,7 @@ export class ConnectionManager {
   /** Send a raw JSON message to a specific connection. */
   sendTo(connectionId: string, message: Record<string, unknown>): boolean {
     const entry = this.connections.get(connectionId);
-    if (!entry || entry.ws.readyState !== 1) return false;
+    if (entry?.ws.readyState !== 1) return false;
     entry.ws.send(JSON.stringify(message));
     return true;
   }
@@ -238,7 +242,7 @@ export class ConnectionManager {
       ws = this.getByUser(connectionId);
     }
 
-    if (!ws || ws.readyState !== 1) {
+    if (ws?.readyState !== 1) {
       throw new Error(`Connection ${connectionId} not available`);
     }
 

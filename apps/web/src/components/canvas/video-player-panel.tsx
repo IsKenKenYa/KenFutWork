@@ -15,7 +15,6 @@ type VideoPlayerPanelProps = {
 };
 
 export function VideoPlayerPanel({
-  elementId,
   elementBounds,
   videoUrl,
   mimeType,
@@ -60,6 +59,7 @@ export function VideoPlayerPanel({
   return createPortal(
     <div
       ref={panelRef}
+      role="none"
       style={{ left: screenX, top: screenY }}
       className="fixed z-[100] w-[480px] rounded-2xl border border-border bg-card shadow-card overflow-hidden"
       onKeyDown={(e) => e.stopPropagation()}
@@ -69,6 +69,7 @@ export function VideoPlayerPanel({
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/50">
         <div className="flex items-center gap-2 text-sm font-medium text-foreground truncate">
           <svg
+            aria-hidden="true"
             className="h-4 w-4 shrink-0 text-muted-foreground"
             viewBox="0 0 24 24"
             fill="none"
@@ -90,6 +91,7 @@ export function VideoPlayerPanel({
           className="rounded-full p-1 hover:bg-muted/80 transition-colors"
         >
           <svg
+            aria-hidden="true"
             className="h-4 w-4 text-muted-foreground"
             viewBox="0 0 24 24"
             fill="none"
@@ -127,6 +129,7 @@ export function VideoPlayerPanel({
           className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted/80 transition-colors"
         >
           <svg
+            aria-hidden="true"
             className="h-3.5 w-3.5"
             viewBox="0 0 24 24"
             fill="none"

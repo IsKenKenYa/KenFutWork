@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { fetchGitGraph, type GitGraphEntry } from "@/lib/code-git-api";
+import { keyed } from "../list-keys";
 
 /**
  * Git 图谱（参考图 `git图谱.png`）：**独立窗口**里的提交表格。
@@ -109,12 +110,15 @@ export function GitGraphDialog({
                   </tr>
                 </thead>
                 <tbody>
-                  {entries.map((entry, index) => {
+                  {keyed(
+                    entries,
+                    (entry) => `${entry.sha ?? "rail"}-${entry.rail}`,
+                  ).map(({ key, item: entry }) => {
                     const isSelected =
                       entry.sha !== null && entry.sha === selected;
                     return (
                       <tr
-                        key={`${entry.sha ?? "rail"}-${index}`}
+                        key={key}
                         // 连接线行不可选：它没有提交可看
                         onClick={() =>
                           entry.sha ? setSelected(entry.sha) : undefined

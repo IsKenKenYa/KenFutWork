@@ -77,6 +77,17 @@ const VIEWER_STUB: ViewerService = {
   },
 };
 
+/** 未知值的对象收窄：repository 的 content 参数与 elements 元素都是 unknown。 */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** 从 saveContent 收到的内容里取 files 表（取不到时返回空表，断言照常失败）。 */
+function filesOf(content: unknown): Record<string, unknown> {
+  const files = isRecord(content) ? content.files : undefined;
+  return isRecord(files) ? files : {};
+}
+
 function createStorageStub(
   options: {
     downloadBytes?: Buffer | null;
@@ -280,7 +291,7 @@ describe("canvas service", () => {
 
     expect(detail.id).toBe(CANVAS_ID);
     expect(detail.projectId).toBe("project-1");
-    const files = (detail.content as { files: Record<string, any> }).files;
+    const files = detail.content.files;
     expect(files["f-inline"]?.dataURL).toBe("data:image/png;base64,AA");
     expect(files["f-oss"]?.storageUrl).toBe(
       "https://blob.test/project-assets/canvas-files/c1/f-oss.png",
@@ -328,10 +339,9 @@ describe("canvas service", () => {
         call.startsWith("upload:project-assets:canvas-files/"),
       ),
     ).toBe(true);
-    const files = (writtenContent as { files: Record<string, any> }).files;
-    expect(files["f-1"]?.dataURL).toBe(
-      "oss://project-assets/canvas-files/canvas-1/f-1.webp",
-    );
+    expect(filesOf(writtenContent)["f-1"]).toMatchObject({
+      dataURL: "oss://project-assets/canvas-files/canvas-1/f-1.webp",
+    });
   });
 
   it("上传失败时保留原始 base64（优雅降级，不阻断保存）", async () => {
@@ -354,8 +364,9 @@ describe("canvas service", () => {
       files: { "f-1": { id: "f-1", dataURL: "data:image/png;base64,AAAA" } },
     } as never);
 
-    const files = (writtenContent as { files: Record<string, any> }).files;
-    expect(files["f-1"]?.dataURL).toBe("data:image/png;base64,AAAA");
+    expect(filesOf(writtenContent)["f-1"]).toMatchObject({
+      dataURL: "data:image/png;base64,AAAA",
+    });
   });
 
   it("保存未命中（0 行）返回 404；仓库异常返回 500 canvas_save_failed", async () => {
@@ -413,7 +424,7 @@ describe("canvas service", () => {
   });
 
   it("插入图片元素：下载对象→内联 dataURL→**原子追加**元素与 files 条目", async () => {
-    let appended: any;
+    let appended: Parameters<CanvasRepository["appendContent"]>[2] | undefined;
     const { service, storage } = buildService({
       repository: {
         findById: async () => ({
@@ -444,18 +455,28 @@ describe("canvas service", () => {
     );
 
     expect(storage.calls[0]).toBe("download:project-assets:gen/shot.png");
+    if (!appended) {
+      throw new Error("未记录到 appendContent 调用");
+    }
     // 只追加新元素（不是整份元素表）——覆盖写会在并发落图时丢元素
     expect(appended.elements).toHaveLength(1);
     const element = appended.elements[0];
+    if (!isRecord(element)) {
+      throw new Error("追加的元素不是对象");
+    }
     expect(element).toMatchObject({ type: "image", id: elementId, angle: 0 });
     expect(element.customData).toEqual({
       title: "生成图",
       source: "generated",
     });
+    const { fileId } = element;
+    if (typeof fileId !== "string") {
+      throw new Error("追加的元素未带 fileId");
+    }
     // 图片以 base64 内联进 files，Excalidraw 才能原生渲染
-    expect(appended.files[element.fileId].dataURL).toBe(
-      `data:image/png;base64,${Buffer.from("img").toString("base64")}`,
-    );
+    expect(appended.files?.[fileId]).toMatchObject({
+      dataURL: `data:image/png;base64,${Buffer.from("img").toString("base64")}`,
+    });
     // 新元素排在原有元素右侧（读回的元素表参与落点计算）
     expect(element.x).toBeGreaterThan(0);
   });
@@ -488,7 +509,7 @@ describe("canvas service", () => {
   });
 
   it("插入视频元素：embeddable 类型 + link 指向签名 URL，无 files 条目", async () => {
-    let written: any;
+    let written: Parameters<CanvasRepository["appendContent"]>[2] | undefined;
     const { service } = buildService({
       repository: {
         findById: async () => CANVAS_ROW,
@@ -512,8 +533,14 @@ describe("canvas service", () => {
       },
     );
 
+    if (!written) {
+      throw new Error("未记录到 appendContent 调用");
+    }
     expect(written.elements).toHaveLength(1);
     const element = written.elements[0];
+    if (!isRecord(element)) {
+      throw new Error("追加的元素不是对象");
+    }
     expect(element).toMatchObject({
       type: "embeddable",
       id: elementId,

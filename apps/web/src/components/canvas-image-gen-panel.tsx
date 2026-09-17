@@ -1,5 +1,6 @@
 "use client";
 
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { ImageArtifact } from "@kenfutwork/shared";
 import { useCallback, useRef, useState } from "react";
 import { useGenerationErrorHandler } from "../hooks/use-generation-error-handler";
@@ -8,7 +9,7 @@ import { generateImageDirect } from "../lib/server-api";
 
 type CanvasImageGenPanelProps = {
   accessToken: string;
-  excalidrawApi: any;
+  excalidrawApi: ExcalidrawImperativeAPI | null;
   onClose: () => void;
 };
 
@@ -44,7 +45,12 @@ export function CanvasImageGenPanel({
           width: result.width,
           height: result.height,
         };
-        await insertImageOnCanvas(excalidrawApi, artifact);
+        // lib 助手的入参是宽松的结构化接口（captureUpdate?: string 等），与 Excalidraw
+        // 官方类型在函数参数上互不可比；运行时是同一个 API 对象，故按助手的入参口径断言。
+        await insertImageOnCanvas(
+          excalidrawApi as Parameters<typeof insertImageOnCanvas>[0],
+          artifact,
+        );
       }
 
       setPrompt("");
@@ -67,7 +73,12 @@ export function CanvasImageGenPanel({
           onClick={onClose}
           className="text-muted-foreground hover:text-foreground transition-colors"
         >
-          <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor">
+          <svg
+            className="h-4 w-4"
+            viewBox="0 0 16 16"
+            fill="currentColor"
+            aria-hidden="true"
+          >
             <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z" />
           </svg>
         </button>

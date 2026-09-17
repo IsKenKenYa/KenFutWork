@@ -24,6 +24,17 @@ interface UsageStats {
   byModel: Array<{ provider: string; model: string; tokens: number }>;
 }
 
+/** 热力图每列的 7 个格子：补位格（没有日期）没有业务键，用固定星期键标记位置 */
+const WEEKDAY_CELL_KEYS = [
+  "sun",
+  "mon",
+  "tue",
+  "wed",
+  "thu",
+  "fri",
+  "sat",
+] as const;
+
 const MODEL_COLORS = [
   "#22c55e",
   "#3b82f6",
@@ -149,10 +160,10 @@ function Heatmap({
               key={week[0]?.date ?? `lead-${weekIndex}`}
               className="flex flex-col gap-[3px]"
             >
-              {Array.from({ length: 7 }, (_, dayIndex) => {
+              {WEEKDAY_CELL_KEYS.map((dayKey, dayIndex) => {
                 const cell = week[dayIndex] ?? null;
                 if (!cell) {
-                  return <div key={dayIndex} className="h-[13px] w-[13px]" />;
+                  return <div key={dayKey} className="h-[13px] w-[13px]" />;
                 }
                 return (
                   <div
@@ -240,39 +251,46 @@ function TrendChart({ daily }: { daily: UsageStats["daily"] }) {
  *
  * 输入按 x 升序、等距与否都行。切线先按相邻斜率取平均，再按「不过冲」条件限幅，
  * 最后把每段写成三次贝塞尔 —— 曲线不会在峰值附近甩出去。
+ *
+ * 下标一律走 `at()`：noUncheckedIndexedAccess 下它带 undefined；循环边界已保证 `?? 0`
+ * 的兜底分支不可达，只是给类型收窄用。
  */
 export function monotonePath(points: Array<{ x: number; y: number }>): string {
-  if (points.length === 0) return "";
-  if (points.length === 1) return `M ${points[0]!.x} ${points[0]!.y}`;
+  const first = points.at(0);
+  if (!first) return "";
+  if (points.length === 1) return `M ${first.x} ${first.y}`;
 
   const n = points.length;
   const dx: number[] = [];
   const slope: number[] = [];
   for (let i = 0; i < n - 1; i += 1) {
-    const deltaX = points[i + 1]!.x - points[i]!.x;
+    const start = points.at(i);
+    const end = points.at(i + 1);
+    if (!start || !end) continue;
+    const deltaX = end.x - start.x;
     dx.push(deltaX);
-    slope.push((points[i + 1]!.y - points[i]!.y) / (deltaX || 1));
+    slope.push((end.y - start.y) / (deltaX || 1));
   }
 
   const tangent: number[] = new Array(n).fill(0);
-  tangent[0] = slope[0]!;
-  tangent[n - 1] = slope[n - 2]!;
+  tangent[0] = slope.at(0) ?? 0;
+  tangent[n - 1] = slope.at(n - 2) ?? 0;
   for (let i = 1; i < n - 1; i += 1) {
-    const previous = slope[i - 1]!;
-    const next = slope[i]!;
+    const previous = slope.at(i - 1) ?? 0;
+    const next = slope.at(i) ?? 0;
     tangent[i] = previous * next <= 0 ? 0 : (previous + next) / 2;
   }
 
   // 限幅：保证每段的切线不把曲线拉过相邻数据点（否则峰值处会过冲）
   for (let i = 0; i < n - 1; i += 1) {
-    const s = slope[i]!;
+    const s = slope.at(i) ?? 0;
     if (s === 0) {
       tangent[i] = 0;
       tangent[i + 1] = 0;
       continue;
     }
-    const a = tangent[i]! / s;
-    const b = tangent[i + 1]! / s;
+    const a = (tangent.at(i) ?? 0) / s;
+    const b = (tangent.at(i + 1) ?? 0) / s;
     const magnitude = Math.hypot(a, b);
     if (magnitude > 3) {
       const scale = 3 / magnitude;
@@ -281,14 +299,17 @@ export function monotonePath(points: Array<{ x: number; y: number }>): string {
     }
   }
 
-  let path = `M ${points[0]!.x} ${points[0]!.y}`;
+  let path = `M ${first.x} ${first.y}`;
   for (let i = 0; i < n - 1; i += 1) {
-    const third = dx[i]! / 3;
-    const c1x = points[i]!.x + third;
-    const c1y = points[i]!.y + tangent[i]! * third;
-    const c2x = points[i + 1]!.x - third;
-    const c2y = points[i + 1]!.y - tangent[i + 1]! * third;
-    path += ` C ${c1x} ${c1y}, ${c2x} ${c2y}, ${points[i + 1]!.x} ${points[i + 1]!.y}`;
+    const start = points.at(i);
+    const end = points.at(i + 1);
+    if (!start || !end) continue;
+    const third = (dx.at(i) ?? 0) / 3;
+    const c1x = start.x + third;
+    const c1y = start.y + (tangent.at(i) ?? 0) * third;
+    const c2x = end.x - third;
+    const c2y = end.y - (tangent.at(i + 1) ?? 0) * third;
+    path += ` C ${c1x} ${c1y}, ${c2x} ${c2y}, ${end.x} ${end.y}`;
   }
   return path;
 }

@@ -128,6 +128,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     );
 
     // Auto-resize textarea when value changes
+    // biome-ignore lint/correctness/useExhaustiveDependencies: value 只当触发器（高度按 DOM 现量，不读值）；去掉后输入不再自动长高
     useEffect(() => {
       const textarea = textareaRef.current;
       if (!textarea) return;
@@ -243,6 +244,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           onClose={composerMenu.close}
         />
         <div
+          role="none"
           className="flex min-h-[120px] flex-col justify-between gap-2 rounded-xl border-[0.5px] border-border bg-card p-2 transition-[border] focus-within:border-border"
           onDrop={handleDrop}
           onDragOver={handleDragOver}
@@ -253,6 +255,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                 {selectionImageCount > 0 && (
                   <span className="flex items-center gap-1">
                     <svg
+                      aria-hidden="true"
                       className="h-3 w-3 shrink-0"
                       viewBox="0 0 24 24"
                       fill="none"
@@ -272,6 +275,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                 {selectionShapeCount > 0 && (
                   <span className="flex items-center gap-1">
                     <svg
+                      aria-hidden="true"
                       className="h-3 w-3 shrink-0"
                       viewBox="0 0 24 24"
                       fill="none"
@@ -311,6 +315,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                     {mention.label}
                   </span>
                   <svg
+                    aria-hidden="true"
                     className="h-3 w-3 text-muted-foreground"
                     viewBox="0 0 24 24"
                     fill="none"
@@ -356,6 +361,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                     title="添加图片"
                   >
                     <svg
+                      aria-hidden="true"
                       className="h-[14px] w-[14px]"
                       viewBox="0 0 24 24"
                       fill="currentColor"
@@ -382,6 +388,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                   }`}
                 >
                   <svg
+                    aria-hidden="true"
                     className="h-[14px] w-[14px]"
                     viewBox="0 0 24 24"
                     fill="currentColor"
@@ -408,6 +415,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                 className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/80 active:bg-primary/90 disabled:opacity-20 disabled:cursor-not-allowed"
               >
                 <svg
+                  aria-hidden="true"
                   className="h-[14px] w-[14px]"
                   viewBox="0 0 14 14"
                   fill="none"

@@ -66,20 +66,26 @@ describe("画布元素写入器：原子追加", () => {
 
     expect(recorder.writeContentCalls).toBe(0);
     expect(recorder.calls).toHaveLength(1);
-    const appended = recorder.calls[0]!;
+    const appended = recorder.calls[0];
+    if (!appended) {
+      throw new Error("未记录到追加写调用");
+    }
     // 只带新增的一个元素（不是整份元素表）
     expect(appended.elements).toHaveLength(1);
     expect((appended.elements[0] as { id: string }).id).toBe(result.elementId);
     // 只带新增的一个文件项，且是 base64 dataURL（Excalidraw 原生渲染需要）
     const fileKeys = Object.keys(appended.files ?? {});
     expect(fileKeys).toHaveLength(1);
-    expect(appended.files?.[fileKeys[0]!]).toMatchObject({
-      id: fileKeys[0],
+    const fileKey = fileKeys[0];
+    if (fileKey === undefined) {
+      throw new Error("未记录到文件项");
+    }
+    expect(appended.files?.[fileKey]).toMatchObject({
+      id: fileKey,
       mimeType: "image/png",
     });
     expect(
-      (appended.files?.[fileKeys[0]!] as { dataURL: string } | undefined)
-        ?.dataURL,
+      (appended.files?.[fileKey] as { dataURL: string } | undefined)?.dataURL,
     ).toBe(
       `data:image/png;base64,${Buffer.from("image-bytes").toString("base64")}`,
     );

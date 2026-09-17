@@ -9,7 +9,12 @@ type Skill = {
 const PRESET_SKILLS: Skill[] = [
   {
     icon: (
-      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+      <svg
+        className="h-4 w-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        aria-hidden="true"
+      >
         <rect
           x="2"
           y="2"
@@ -53,7 +58,12 @@ const PRESET_SKILLS: Skill[] = [
   },
   {
     icon: (
-      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+      <svg
+        className="h-4 w-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        aria-hidden="true"
+      >
         <circle
           cx="12"
           cy="12"
@@ -73,7 +83,12 @@ const PRESET_SKILLS: Skill[] = [
   },
   {
     icon: (
-      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+      <svg
+        className="h-4 w-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        aria-hidden="true"
+      >
         <path
           d="M12 2L2 7l10 5 10-5-10-5z"
           stroke="currentColor"
@@ -101,7 +116,12 @@ const PRESET_SKILLS: Skill[] = [
   },
   {
     icon: (
-      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+      <svg
+        className="h-4 w-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        aria-hidden="true"
+      >
         <rect
           x="3"
           y="3"
@@ -145,7 +165,12 @@ const PRESET_SKILLS: Skill[] = [
   },
   {
     icon: (
-      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+      <svg
+        className="h-4 w-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        aria-hidden="true"
+      >
         <path
           d="M4 4h16v16H4z"
           stroke="currentColor"
@@ -160,7 +185,12 @@ const PRESET_SKILLS: Skill[] = [
   },
   {
     icon: (
-      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+      <svg
+        className="h-4 w-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        aria-hidden="true"
+      >
         <path
           d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"
           stroke="currentColor"

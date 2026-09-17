@@ -12,6 +12,11 @@
  * 上游给的两个参数只在拿不到 API 时兜底。
  */
 
+import type {
+  AppState,
+  ExcalidrawImperativeAPI,
+} from "@excalidraw/excalidraw/types";
+
 type AnyElement = {
   isDeleted?: boolean;
   type?: string;
@@ -35,18 +40,15 @@ export function CanvasStatsPanel({
   appState,
   excalidrawApi,
 }: {
-  elements?: AnyElement[] | undefined;
-  appState?: Record<string, any> | undefined;
-  // biome-ignore lint/suspicious/noExplicitAny: Excalidraw API 无公开类型
-  excalidrawApi?: any;
+  elements?: readonly AnyElement[] | undefined;
+  appState?: Partial<AppState> | undefined;
+  excalidrawApi?: ExcalidrawImperativeAPI | null | undefined;
 }) {
-  let all: AnyElement[] = [];
+  let all: readonly AnyElement[] = [];
   try {
-    all = (excalidrawApi?.getSceneElements?.() ??
-      elements ??
-      []) as AnyElement[];
+    all = excalidrawApi?.getSceneElements?.() ?? elements ?? [];
   } catch {
-    all = (elements ?? []) as AnyElement[];
+    all = elements ?? [];
   }
   const live = all.filter((el) => !el.isDeleted);
 
@@ -82,7 +84,7 @@ export function CanvasStatsPanel({
   const gridSize = state.gridSize ?? 20;
   const zoom = Math.round((state.zoom?.value ?? 1) * 100);
   const selected = Object.keys(state.selectedElementIds ?? {}).filter(
-    (id) => (state.selectedElementIds ?? {})[id],
+    (id) => state.selectedElementIds?.[id],
   ).length;
 
   return (

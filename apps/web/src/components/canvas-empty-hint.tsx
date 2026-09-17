@@ -1,10 +1,11 @@
 "use client";
 
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { Palette } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 type CanvasEmptyHintProps = {
-  excalidrawApi: any;
+  excalidrawApi: ExcalidrawImperativeAPI | null;
   onOpenChat: () => void;
 };
 
@@ -29,8 +30,8 @@ export function CanvasEmptyHint({
         setHasElements(false);
         return;
       }
-      const elements: any[] = excalidrawApi.getSceneElements?.() ?? [];
-      setHasElements(elements.some((el: any) => !el.isDeleted));
+      const elements = excalidrawApi.getSceneElements?.() ?? [];
+      setHasElements(elements.some((el) => !el.isDeleted));
     }
 
     check();

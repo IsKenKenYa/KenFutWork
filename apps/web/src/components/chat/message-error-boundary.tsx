@@ -55,6 +55,7 @@ export class MessageErrorBoundary extends React.Component<
     return (
       <div className="flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-muted-foreground">
         <svg
+          aria-hidden="true"
           className="h-3.5 w-3.5 shrink-0 text-destructive/60"
           viewBox="0 0 20 20"
           fill="currentColor"

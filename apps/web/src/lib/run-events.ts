@@ -15,6 +15,6 @@ export function dropPartialAssistantTail<T extends { role: string }>(
   messages: readonly T[],
 ): T[] {
   const last = messages[messages.length - 1];
-  if (!last || last.role !== "assistant") return [...messages];
+  if (last?.role !== "assistant") return [...messages];
   return messages.slice(0, -1);
 }

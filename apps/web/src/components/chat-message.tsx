@@ -1,6 +1,12 @@
 "use client";
 
-import type { ContentBlock, ToolArtifact, ToolBlock } from "@kenfutwork/shared";
+import type {
+  ContentBlock,
+  ImageBlock,
+  MentionBlock,
+  ToolArtifact,
+  ToolBlock,
+} from "@kenfutwork/shared";
 import { motion } from "framer-motion";
 import React, { useMemo } from "react";
 import { ImagePill } from "./chat/image-lightbox";
@@ -8,6 +14,7 @@ import { MarkdownRenderer } from "./chat/markdown-renderer";
 import { MentionPill } from "./chat/mention-pill";
 import { ThinkingBlockView } from "./chat/thinking-block-view";
 import { ToolBlockView } from "./chat/tool-block-view";
+import { keyed } from "./list-keys";
 
 // Re-export types for backward compatibility with existing consumers
 export type { ContentBlock, ToolArtifact };
@@ -74,8 +81,8 @@ const UserMessage = React.memo(function UserMessage({
   // Categorize blocks once per render
   const { text, imageBlocks, mentionBlocks } = useMemo(() => {
     const textParts: string[] = [];
-    const images: ContentBlock[] = [];
-    const mentions: ContentBlock[] = [];
+    const images: ImageBlock[] = [];
+    const mentions: MentionBlock[] = [];
 
     for (const block of contentBlocks) {
       if (block.type === "text") {
@@ -108,56 +115,60 @@ const UserMessage = React.memo(function UserMessage({
           </span>
           {mentionBlocks.length > 0 && (
             <span className="inline">
-              {mentionBlocks.map((block, idx) => (
-                <MentionPill
-                  key={idx}
-                  label={(block as { label: string }).label}
-                  kind={
-                    (
-                      block as {
-                        mentionType: "image-model" | "brand-kit-asset";
-                      }
-                    ).mentionType
-                  }
-                />
-              ))}
+              {keyed(mentionBlocks, (mention) => mention.id).map(
+                ({ key, item: mention }) => (
+                  <MentionPill
+                    key={key}
+                    label={mention.label}
+                    kind={
+                      mention.mentionType === "image-model"
+                        ? "image-model"
+                        : "brand-kit-asset"
+                    }
+                  />
+                ),
+              )}
             </span>
           )}
           {imageBlocks.length > 0 && (
             <span className="inline">
-              {imageBlocks.map((block, idx) => (
-                <ImagePill
-                  key={idx}
-                  src={(block as { url: string }).url}
-                  name={(block as { name?: string }).name ?? `image-${idx + 1}`}
-                />
-              ))}
+              {keyed(imageBlocks, (image) => image.assetId).map(
+                ({ key, item: image }, idx) => (
+                  <ImagePill
+                    key={key}
+                    src={image.url}
+                    name={image.name ?? `image-${idx + 1}`}
+                  />
+                ),
+              )}
             </span>
           )}
         </div>
       )}
       {!text && (imageBlocks.length > 0 || mentionBlocks.length > 0) && (
         <div className="inline-block rounded-xl bg-muted px-3 py-2.5">
-          {mentionBlocks.map((block, idx) => (
-            <MentionPill
-              key={`mention-${idx}`}
-              label={(block as { label: string }).label}
-              kind={
-                (
-                  block as {
-                    mentionType: "image-model" | "brand-kit-asset";
-                  }
-                ).mentionType
-              }
-            />
-          ))}
-          {imageBlocks.map((block, idx) => (
-            <ImagePill
-              key={idx}
-              src={(block as { url: string }).url}
-              name={(block as { name?: string }).name ?? `image-${idx + 1}`}
-            />
-          ))}
+          {keyed(mentionBlocks, (mention) => mention.id).map(
+            ({ key, item: mention }) => (
+              <MentionPill
+                key={key}
+                label={mention.label}
+                kind={
+                  mention.mentionType === "image-model"
+                    ? "image-model"
+                    : "brand-kit-asset"
+                }
+              />
+            ),
+          )}
+          {keyed(imageBlocks, (image) => image.assetId).map(
+            ({ key, item: image }, idx) => (
+              <ImagePill
+                key={key}
+                src={image.url}
+                name={image.name ?? `image-${idx + 1}`}
+              />
+            ),
+          )}
         </div>
       )}
     </motion.div>
@@ -178,7 +189,8 @@ const AssistantMessage = React.memo(function AssistantMessage({
   // Find the last text block index for streaming cursor placement
   const lastTextIdx = useMemo(() => {
     for (let i = contentBlocks.length - 1; i >= 0; i--) {
-      if (contentBlocks[i]!.type === "text") return i;
+      const block = contentBlocks.at(i);
+      if (block?.type === "text") return i;
     }
     return -1;
   }, [contentBlocks]);
@@ -225,6 +237,7 @@ const AssistantMessage = React.memo(function AssistantMessage({
         if (block.type === "thinking") {
           return (
             <ThinkingBlockView
+              // biome-ignore lint/suspicious/noArrayIndexKey: 流式追加列表里块的身份就是位置；内容键会每个 token 换 key，把整块重挂载（动画/状态被重置）
               key={`thinking-${idx}`}
               thinking={block.thinking}
               isStreaming={isStreaming && idx === contentBlocks.length - 1}
@@ -236,6 +249,7 @@ const AssistantMessage = React.memo(function AssistantMessage({
           const showCursor = isStreaming && idx === lastTextIdx;
           return (
             <MarkdownRenderer
+              // biome-ignore lint/suspicious/noArrayIndexKey: 同上：正文逐 token 增长，位置才是稳定身份
               key={idx}
               text={block.text}
               showCursor={showCursor}

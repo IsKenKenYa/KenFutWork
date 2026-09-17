@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, type Variants } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
@@ -10,15 +10,15 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 
-const stagger = {
+const stagger: Variants = {
   hidden: {},
   visible: { transition: { staggerChildren: 0.08, delayChildren: 0.1 } },
-} as any;
+};
 
-const fadeIn = {
+const fadeIn: Variants = {
   hidden: { opacity: 0, y: 12 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" } },
-} as any;
+};
 
 export function RegisterForm() {
   const router = useRouter();
@@ -95,6 +95,7 @@ export function RegisterForm() {
               className="flex h-14 w-14 items-center justify-center rounded-full bg-foreground"
             >
               <svg
+                aria-hidden="true"
                 viewBox="0 0 24 24"
                 className="h-6 w-6 text-background"
                 fill="none"

@@ -30,7 +30,7 @@ function plugin(
   hooks: {
     inject?: ReadonlyArray<keyof ServiceMap>;
     enabled?: (env: ServerEnv) => boolean;
-    onApply?: (ctx: Ctx) => void | (() => void);
+    onApply?: (ctx: Ctx) => undefined | (() => void);
     onMounted?: (ctx: Ctx) => void;
   } = {},
 ): PluginDefinition {

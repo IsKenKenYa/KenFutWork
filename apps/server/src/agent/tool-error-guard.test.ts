@@ -13,15 +13,32 @@ describe("工具失败兜底中间件", () => {
     toolCall: { args: {}, id, name },
   });
 
+  /**
+   * 调用中间件的 wrapToolCall：注册中间件即应提供该方法，
+   * 缺失时显式抛错（而不是靠非空断言把编译期假设带进运行时）。
+   */
+  async function wrapToolCall(
+    middleware: ReturnType<typeof createToolErrorGuardMiddleware>,
+    req: unknown,
+    handler: unknown,
+  ): Promise<{ content?: unknown; status?: string; tool_call_id?: string }> {
+    const wrap = middleware.wrapToolCall;
+    if (!wrap) {
+      throw new Error("工具失败兜底中间件未提供 wrapToolCall");
+    }
+    return (await wrap(req as never, handler as never)) as {
+      content?: unknown;
+      status?: string;
+      tool_call_id?: string;
+    };
+  }
+
   it("工具抛错 → 回带原因的 ToolMessage，而不是让异常冒出去", async () => {
     const mw = createToolErrorGuardMiddleware();
     const handler = async () => {
       throw new Error("web_search 请求失败（上游 5002）");
     };
-    const result = (await mw.wrapToolCall!(
-      request("web_search") as never,
-      handler as never,
-    )) as { content?: unknown; status?: string; tool_call_id?: string };
+    const result = await wrapToolCall(mw, request("web_search"), handler);
 
     expect(String(result.content)).toContain("web_search 执行失败");
     expect(String(result.content)).toContain("5002");
@@ -34,15 +51,9 @@ describe("工具失败兜底中间件", () => {
     const fail = async () => {
       throw new Error("boom");
     };
-    await mw.wrapToolCall!(request("web_search") as never, fail as never);
-    await mw.wrapToolCall!(
-      request("web_search") as never,
-      (async () => "ok") as never,
-    );
-    const again = (await mw.wrapToolCall!(
-      request("web_search") as never,
-      fail as never,
-    )) as { content?: unknown };
+    await wrapToolCall(mw, request("web_search"), fail);
+    await wrapToolCall(mw, request("web_search"), async () => "ok");
+    const again = await wrapToolCall(mw, request("web_search"), fail);
     // 计数已清零，所以这句是「第一次失败」的措辞，而不是连续失败上限的劝阻
     expect(String(again.content)).toContain("工具级失败");
     expect(String(again.content)).not.toContain("不要再重试");
@@ -53,11 +64,8 @@ describe("工具失败兜底中间件", () => {
     const fail = async () => {
       throw new Error("boom");
     };
-    await mw.wrapToolCall!(request("web_search") as never, fail as never);
-    const second = (await mw.wrapToolCall!(
-      request("web_search") as never,
-      fail as never,
-    )) as { content?: unknown };
+    await wrapToolCall(mw, request("web_search"), fail);
+    const second = await wrapToolCall(mw, request("web_search"), fail);
     expect(String(second.content)).toContain("不要再重试");
   });
 
@@ -66,12 +74,13 @@ describe("工具失败兜底中间件", () => {
     const fail = async () => {
       throw new Error("boom");
     };
-    await mw.wrapToolCall!(request("web_search") as never, fail as never);
-    await mw.wrapToolCall!(request("web_search") as never, fail as never);
-    const other = (await mw.wrapToolCall!(
-      request("mcp__py-helper__add_numbers") as never,
-      fail as never,
-    )) as { content?: unknown };
+    await wrapToolCall(mw, request("web_search"), fail);
+    await wrapToolCall(mw, request("web_search"), fail);
+    const other = await wrapToolCall(
+      mw,
+      request("mcp__py-helper__add_numbers"),
+      fail,
+    );
     expect(String(other.content)).not.toContain("不要再重试");
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, type Variants } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
@@ -10,15 +10,15 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 
-const stagger = {
+const stagger: Variants = {
   hidden: {},
   visible: { transition: { staggerChildren: 0.08, delayChildren: 0.1 } },
-} as any;
+};
 
-const fadeIn = {
+const fadeIn: Variants = {
   hidden: { opacity: 0, y: 12 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" } },
-} as any;
+};
 
 interface LoginFormProps {
   initialErrorMessage?: string | null;
@@ -30,7 +30,7 @@ export function LoginForm({ initialErrorMessage = null }: LoginFormProps) {
   const [password, setPassword] = useState("");
   // 邮箱链接登录（magic link）代码保留但暂不暴露入口，当前只出账密登录
   const [loading, setLoading] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [sent, _setSent] = useState(false);
   const [error, setError] = useState<string | null>(initialErrorMessage);
 
   async function bootstrapWorkspace(accessToken: string) {
@@ -88,6 +88,7 @@ export function LoginForm({ initialErrorMessage = null }: LoginFormProps) {
               className="flex h-14 w-14 items-center justify-center rounded-full bg-foreground"
             >
               <svg
+                aria-hidden="true"
                 viewBox="0 0 24 24"
                 className="h-6 w-6 text-background"
                 fill="none"

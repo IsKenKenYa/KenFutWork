@@ -21,7 +21,6 @@ import {
   Plus,
   Send,
   ShieldCheck,
-  Sparkles,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -37,12 +36,6 @@ import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
 import { RunStopButton } from "@/components/chat/run-stop-button";
 import { ToolOutputRenderer } from "@/components/chat/tool-block-view";
 import { KenFutWorkLogo } from "@/components/icons/kenfutwork-logo";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -103,10 +96,7 @@ import {
 } from "@/lib/server-api";
 import {
   closeAllSubagents,
-  completeSubagent,
-  isSubagentTool,
   type SubagentEntry,
-  upsertSubagentStarted,
 } from "@/lib/subagent-directory";
 import type { TodoItem } from "@/lib/todo-progress";
 import {
@@ -168,7 +158,7 @@ type WorkbenchModelOption = {
 function settleAssistantElapsed(task: WorkbenchTask): WorkbenchTask {
   const messages = [...task.messages];
   const last = messages[messages.length - 1];
-  if (!last || last.role !== "assistant" || last.startedAt === undefined) {
+  if (last?.role !== "assistant" || last.startedAt === undefined) {
     return task;
   }
   const elapsedMs = Math.max(0, Date.now() - last.startedAt);
@@ -367,6 +357,11 @@ export function Workbench() {
    * （实测窄列差 10px、居中时中心差 5px）。宽度与平台/缩放有关，故量一次写进 CSS 变量。
    */
   const [scrollbarLane, setScrollbarLane] = useState(0);
+  /** 流事件回调在挂载期注册（deps 只有 ws/mode），自动提交的实现经 ref 取最新值。 */
+  const autoCommitTurnRef = useRef<(taskId: string | null) => Promise<void>>(
+    async () => {},
+  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activeTaskId 只当触发器（量的是 DOM 宽度）；换任务后滚动条出现/消失要重新量
   useEffect(() => {
     const measure = () => {
       const el = codeMessagesRef.current;
@@ -1203,7 +1198,7 @@ export function Workbench() {
         );
         // 每轮成功结束自动提交一次（Code 模式 + 已绑项目），让对话在 git 里有迹可循
         if (mode === "code") {
-          void autoCommitTurn(taskId);
+          void autoCommitTurnRef.current(taskId);
         }
         markUnreadIfBackground();
       } else if (type === "billing.error") {
@@ -1625,6 +1620,7 @@ export function Workbench() {
       // 没有仓库 / 无改动可提交：跳过
     }
   }, []);
+  autoCommitTurnRef.current = autoCommitTurn;
 
   /** 任务视图内继续追问：追加 user 消息并复用同一会话发起新 run。 */
   const continueTask = useCallback(
@@ -1790,6 +1786,7 @@ export function Workbench() {
           className="relative flex shrink-0 flex-col border-r bg-card"
         >
           {/* 拖拽把手：贴侧栏右边缘；向右拖 = 变宽 */}
+          {/* biome-ignore lint/a11y/useSemanticElements: 拖拽改宽的把手，不是 <hr>（内容分隔线） */}
           <div
             role="separator"
             aria-orientation="vertical"
@@ -1823,6 +1820,7 @@ export function Workbench() {
               className="flex items-center gap-1 rounded-lg bg-muted p-1"
             >
               {modeItems.map((item) => (
+                // biome-ignore lint/a11y/useSemanticElements: 分段控件用的是 radiogroup/radio 模式（原生 radio 无法承载这套样式与布局）
                 <button
                   key={item.id}
                   type="button"
@@ -2259,6 +2257,7 @@ export function Workbench() {
               </div>
               <div
                 ref={codeMessagesRef}
+                role="none"
                 className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
                 onContextMenu={chatMenu.open}
               >
@@ -2303,6 +2302,7 @@ export function Workbench() {
                       Boolean(activeTask.runEndedAt) &&
                       lastAssistantIdx >= 0;
                     return activeTask.messages.map((msg, i) => (
+                      // biome-ignore lint/suspicious/noArrayIndexKey: 流式为追加列表，消息的稳定身份就是位置；内容键会每个 token 换 key，把整条消息重挂载
                       <div key={i} className="space-y-1">
                         {showSummary && i === lastAssistantIdx ? (
                           <div className="text-xs font-medium text-muted-foreground">
@@ -2512,7 +2512,10 @@ export function Workbench() {
                           /* 停止 = 暂停图标（与发送按钮同一个图标位，不再是一枚突兀的文字按钮）；
                        与 Design 画布助手共用同一个组件，免得两处图标/文案漂移 */
                           <RunStopButton
-                            onStop={() => ws.cancelRun(activeRunIdRef.current!)}
+                            onStop={() => {
+                              const runId = activeRunIdRef.current;
+                              if (runId) ws.cancelRun(runId);
+                            }}
                           />
                         ) : (
                           <button
@@ -2714,7 +2717,7 @@ ${formatElementReference(picked)}`
                                   {byok.length > 0 ? (
                                     <>
                                       <SelectLabel>
-                                        {byok[0]!.providerName?.trim() ??
+                                        {byok.at(0)?.providerName?.trim() ??
                                           "我的供应商"}
                                       </SelectLabel>
                                       {byok.map((m) => (

@@ -76,10 +76,19 @@ function gate(files: Record<string, string>) {
   });
 }
 
+/** 取导出产物里的文件正文：缺文件时直接失败，省掉每处的非空断言。 */
+function fileOf(files: Record<string, string>, name: string): string {
+  const content = files[name];
+  if (content === undefined) {
+    throw new Error(`导出产物缺少文件：${name}`);
+  }
+  return content;
+}
+
 describe("plugin-exporter：dsh 形状契约", () => {
   it("导出的 package.json 是 dsh 认的 bundle 声明", () => {
     const artifact = exportPluginBundle(SPEC, "dsh");
-    const pkg = JSON.parse(artifact.files["package.json"]!) as {
+    const pkg = JSON.parse(fileOf(artifact.files, "package.json")) as {
       name: string;
       dsh?: { bundle?: { patch?: string } };
       kenfutwork?: { bundle?: { patch?: string } };
@@ -95,10 +104,10 @@ describe("plugin-exporter：dsh 形状契约", () => {
 
   it("patch 行的 name 指向包名（dsh 靠 Node 解析该名）", () => {
     const artifact = exportPluginBundle(SPEC, "dsh");
-    const pkg = JSON.parse(artifact.files["package.json"]!) as {
+    const pkg = JSON.parse(fileOf(artifact.files, "package.json")) as {
       name: string;
     };
-    const patch = artifact.files["cordis.patch.yml"]!;
+    const patch = fileOf(artifact.files, "cordis.patch.yml");
     expect(patch).toContain(`name: ${pkg.name}`);
     expect(patch).toContain("inject: [tools]");
   });
@@ -147,7 +156,7 @@ describe("plugin-exporter：回灌往返", () => {
 
   it("双声明的产物两端都能装（format 只影响安装指引）", () => {
     const artifact = exportPluginBundle(SPEC, "kenfutwork");
-    const pkg = JSON.parse(artifact.files["package.json"]!) as {
+    const pkg = JSON.parse(fileOf(artifact.files, "package.json")) as {
       dsh?: unknown;
       kenfutwork?: unknown;
     };
@@ -168,9 +177,9 @@ describe("plugin-exporter：回灌往返", () => {
       { ...SPEC, tools: [], capabilities: [] },
       "dsh",
     );
-    const patch = artifact.files["cordis.patch.yml"]!;
+    const patch = fileOf(artifact.files, "cordis.patch.yml");
     expect(patch).toContain("inject: [tools]");
-    const indexJs = artifact.files["index.js"]!;
+    const indexJs = fileOf(artifact.files, "index.js");
     expect(indexJs).toContain('export const inject = ["tools"]');
   });
 
@@ -214,7 +223,7 @@ describe("plugin-exporter：工具名与包名规范化", () => {
       { ...SPEC, name: "  Demo Clock!! " },
       "dsh",
     );
-    const pkg = JSON.parse(artifact.files["package.json"]!) as {
+    const pkg = JSON.parse(fileOf(artifact.files, "package.json")) as {
       name: string;
     };
     expect(pkg.name).toBe("demo-clock");

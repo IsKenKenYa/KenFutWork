@@ -6,11 +6,6 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ExecutionModeSelect } from "../src/components/execution-mode-select";
-import {
-  fetchExecutionMode,
-  fetchExecutionModes,
-  updateExecutionMode,
-} from "../src/lib/server-api";
 
 const {
   fetchExecutionModesMock,

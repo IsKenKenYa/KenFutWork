@@ -75,10 +75,12 @@ export function makePanelTab(view: PanelView, openedAt: number): PanelTab {
 /**
  * 打开一个视图：已经在标签里就**激活**它（不新开、也不挪动位置——位置是用户肌肉记忆的一部分）；
  * 否则追加到最右并激活。返回新的标签数组与激活 id。
+ *
+ * 第二个参数（当前激活 id）只为与 `closePanelTab` 同形便于调用方透传，打开逻辑不读它。
  */
 export function openPanelTab(
   tabs: PanelTab[],
-  activeId: string | null,
+  _activeId: string | null,
   view: PanelView,
   openedAt: number,
   newTab: PanelTab = makePanelTab(view, openedAt),

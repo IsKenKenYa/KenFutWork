@@ -48,6 +48,7 @@ export function AgentSection({
     selectedModel !== initialModel ||
     (retriesValid && parsedRetries !== initialRetries);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: selectedModel 只用于首次拿到目录后的兜底选择；补进依赖会随每次切换模型重拉目录
   useEffect(() => {
     fetchModels()
       .then((data) => {

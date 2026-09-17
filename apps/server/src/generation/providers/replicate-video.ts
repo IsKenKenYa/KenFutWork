@@ -257,10 +257,10 @@ function resolveWanEndpoint(hasImage: boolean): string {
   return hasImage ? "wan-video/wan-2.6-i2v" : "wan-video/wan-2.6-t2v";
 }
 
-function buildModelInput(
-  params: VideoGenerateParams,
-  model: VideoModelInfo,
-): { endpoint: string; input: Record<string, unknown> } {
+function buildModelInput(params: VideoGenerateParams): {
+  endpoint: string;
+  input: Record<string, unknown>;
+} {
   const input: Record<string, unknown> = { prompt: params.prompt };
   let endpoint = params.model;
 
@@ -274,7 +274,7 @@ function buildModelInput(
     case "kwaivgi/kling-v2.6": {
       input.duration = String(duration);
       input.aspect_ratio = aspectRatio;
-      if (hasImage) input.image_url = params.inputImages![0];
+      if (hasImage) input.image_url = params.inputImages?.[0];
       if (params.enableAudio !== false) input.audio = true;
       break;
     }
@@ -295,7 +295,7 @@ function buildModelInput(
     case "bytedance/seedance-1.5-pro": {
       input.duration = duration;
       input.aspect_ratio = aspectRatio;
-      if (hasImage) input.image = params.inputImages![0];
+      if (hasImage) input.image = params.inputImages?.[0];
       if (params.enableAudio !== false) input.audio = true;
       break;
     }
@@ -305,7 +305,7 @@ function buildModelInput(
       input.duration = duration;
       input.aspect_ratio = aspectRatio;
       if (params.resolution) input.resolution = params.resolution;
-      if (hasImage) input.image = params.inputImages![0];
+      if (hasImage) input.image = params.inputImages?.[0];
       if (params.enableAudio !== false) input.enable_audio = true;
       break;
     }
@@ -315,7 +315,7 @@ function buildModelInput(
       input.duration = duration;
       input.resolution = params.resolution ?? "720p";
       input.aspect_ratio = aspectRatio;
-      if (hasImage) input.image_url = params.inputImages![0];
+      if (hasImage) input.image_url = params.inputImages?.[0];
       break;
     }
 
@@ -330,7 +330,7 @@ function buildModelInput(
     case "google/veo-3.1-fast": {
       input.duration = duration;
       input.aspect_ratio = aspectRatio;
-      if (hasImage) input.image = params.inputImages![0];
+      if (hasImage) input.image = params.inputImages?.[0];
       if (params.enableAudio !== false) input.generate_audio = true;
       break;
     }
@@ -338,7 +338,7 @@ function buildModelInput(
     case "minimax/hailuo-2.3": {
       input.duration = duration;
       input.aspect_ratio = aspectRatio;
-      if (hasImage) input.image_url = params.inputImages![0];
+      if (hasImage) input.image_url = params.inputImages?.[0];
       break;
     }
 
@@ -355,10 +355,16 @@ function buildModelInput(
 
 // ── Resolution helpers ─────────────────────────────────────────────────────
 
+/** 720p 条目同时充当未知分辨率的兜底（两处引用同一对象，避免两份数值）。 */
+const DEFAULT_VIDEO_DIMENSIONS: { width: number; height: number } = {
+  width: 1280,
+  height: 720,
+};
+
 const RESOLUTION_DIMENSIONS: Record<string, { width: number; height: number }> =
   {
     "480p": { width: 854, height: 480 },
-    "720p": { width: 1280, height: 720 },
+    "720p": DEFAULT_VIDEO_DIMENSIONS,
     "1080p": { width: 1920, height: 1080 },
     "2160p": { width: 3840, height: 2160 },
   };
@@ -367,13 +373,12 @@ function getVideoDimensions(
   resolution: string,
   aspectRatio: string,
 ): { width: number; height: number } {
-  const base =
-    RESOLUTION_DIMENSIONS[resolution] ?? RESOLUTION_DIMENSIONS["720p"]!;
+  const base = RESOLUTION_DIMENSIONS[resolution] ?? DEFAULT_VIDEO_DIMENSIONS;
   // For portrait ratios, swap width/height
   if (aspectRatio === "9:16" || aspectRatio === "3:4") {
-    return { width: base!.height, height: base!.width };
+    return { width: base.height, height: base.width };
   }
-  return base!;
+  return base;
 }
 
 // ── Provider implementation ────────────────────────────────────────────────
@@ -399,7 +404,7 @@ export class ReplicateVideoProvider implements VideoProvider {
       );
     }
 
-    const { endpoint, input } = buildModelInput(params, modelInfo);
+    const { endpoint, input } = buildModelInput(params);
     const resolution = params.resolution ?? "720p";
     const { width, height } = getVideoDimensions(
       resolution,

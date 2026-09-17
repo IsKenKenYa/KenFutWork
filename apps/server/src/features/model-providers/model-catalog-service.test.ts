@@ -82,8 +82,8 @@ describe("modelCatalog（目录推导）", () => {
     });
     const entries = await catalog.listCatalog(user);
     expect(entries).toHaveLength(1);
-    expect(entries[0]!.provider.scope).toBe("system");
-    expect(entries[0]!.provider.name).toBe("平台池");
+    expect(entries[0]?.provider.scope).toBe("system");
+    expect(entries[0]?.provider.name).toBe("平台池");
   });
 
   it("平台池读取失败不拖垮用户自有目录（降级）", async () => {
@@ -103,7 +103,10 @@ describe("modelCatalog（目录推导）", () => {
 
 describe("实例 specifier 约定", () => {
   it("目录条目生成 `<instanceId>:<modelId>`", () => {
-    const entry = instance().models[0]!;
+    const entry = instance().models[0];
+    if (!entry) {
+      throw new Error("桩实例未定义模型");
+    }
     expect(
       toInstanceSpecifier({
         provider: { instanceId: instance().id },

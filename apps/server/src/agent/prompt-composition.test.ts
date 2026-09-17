@@ -32,11 +32,11 @@ describe("提示词分段（分类占比的采集口径）", () => {
     ]);
 
     const byLabel = Object.fromEntries(parts.map((p) => [p.label, p.chars]));
-    expect(byLabel["系统提示词"]).toBe("system-prompt".length);
-    expect(byLabel["消息"]).toBe(
+    expect(byLabel.系统提示词).toBe("system-prompt".length);
+    expect(byLabel.消息).toBe(
       "hello".length + "hi there".length + "tool result".length,
     );
-    expect(byLabel["技能"]).toBeUndefined();
+    expect(byLabel.技能).toBeUndefined();
   });
 
   it("技能工具的**结果**归「技能」（技能文档就是这么进上下文的）", () => {

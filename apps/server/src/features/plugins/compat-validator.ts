@@ -70,8 +70,9 @@ function emptyReport(
 export function parseRequiredNodeMajor(range: string | null): number | null {
   if (!range) return null;
   const match = range.match(/(\d+)/);
-  if (!match) return null;
-  return Number.parseInt(match[1]!, 10);
+  const major = match?.[1];
+  if (!major) return null;
+  return Number.parseInt(major, 10);
 }
 
 /**

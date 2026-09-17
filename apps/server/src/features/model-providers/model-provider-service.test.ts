@@ -111,7 +111,7 @@ function buildService(options: {
   viewerService?: ViewerService | null | undefined;
   credentialSecret?: string | undefined;
 }) {
-  const runner = createRunner((text) => ({
+  const runner = createRunner(() => ({
     rowCount: options.rowCount ?? options.rows?.length ?? 0,
     rows: options.rows ?? [],
   }));

@@ -7,7 +7,6 @@ import {
   adoptLegacyLedger,
   applyMigrations,
   assertNoDrift,
-  loadMigrationFiles,
   loadMigrationSet,
   MigrationError,
   planMigrations,
@@ -72,10 +71,6 @@ function withDatabase(url: string, database: string): string {
   const parsed = new URL(url);
   parsed.pathname = `/${database}`;
   return parsed.toString();
-}
-
-function databaseNameOf(url: string): string {
-  return new URL(url).pathname.replace(/^\//, "") || "postgres";
 }
 
 async function runStatus(databaseUrl: string): Promise<void> {

@@ -1,12 +1,13 @@
 "use client";
 
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useCallback, useState } from "react";
 import { createVideoGeneratorElement } from "../lib/canvas-video-generator";
 import { CanvasImageGenPanel } from "./canvas-image-gen-panel";
 
 type CanvasAIToolbarProps = {
   accessToken: string;
-  excalidrawApi: any;
+  excalidrawApi: ExcalidrawImperativeAPI | null;
 };
 
 export function CanvasAIToolbar({
@@ -17,9 +18,14 @@ export function CanvasAIToolbar({
 
   const handleCreateVideoGenerator = useCallback(() => {
     if (!excalidrawApi) return;
-    const videoId = createVideoGeneratorElement(excalidrawApi, {
-      aspectRatio: "16:9",
-    });
+    const videoId = createVideoGeneratorElement(
+      // lib 助手的入参是宽松的结构化接口（captureUpdate?: string 等），与 Excalidraw
+      // 官方类型在函数参数上互不可比；运行时是同一个 API 对象，故按助手的入参口径断言。
+      excalidrawApi as Parameters<typeof createVideoGeneratorElement>[0],
+      {
+        aspectRatio: "16:9",
+      },
+    );
     excalidrawApi.updateScene({
       appState: { selectedElementIds: { [videoId]: true } },
     });
@@ -42,7 +48,12 @@ export function CanvasAIToolbar({
           }`}
           title="AI 生成图片"
         >
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+          <svg
+            className="h-4 w-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+          >
             <path
               fill="currentColor"
               fillOpacity="0.9"
@@ -56,7 +67,12 @@ export function CanvasAIToolbar({
           className="flex items-center justify-center h-8 w-8 rounded-lg text-sm transition-colors cursor-pointer text-foreground/60 hover:bg-muted hover:text-foreground"
           title="AI 生成视频"
         >
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+          <svg
+            className="h-4 w-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+          >
             <path
               fill="currentColor"
               fillOpacity="0.9"

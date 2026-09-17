@@ -200,6 +200,7 @@ export function MessageMentionPicker({
 function PickerLeadingVisual({ item }: { item: MessageMentionPickerItem }) {
   if (item.kind === "canvas-image") {
     return (
+      // biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用
       <img
         src={item.thumbnailUrl}
         alt={item.name}
@@ -210,6 +211,7 @@ function PickerLeadingVisual({ item }: { item: MessageMentionPickerItem }) {
 
   if (item.kind === "brand-kit-asset" && item.thumbnailUrl) {
     return (
+      // biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用
       <img
         src={item.thumbnailUrl}
         alt={item.label}
@@ -220,6 +222,7 @@ function PickerLeadingVisual({ item }: { item: MessageMentionPickerItem }) {
 
   if (item.kind === "image-model" && item.iconUrl) {
     return (
+      // biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用
       <img
         src={item.iconUrl}
         alt={item.label}

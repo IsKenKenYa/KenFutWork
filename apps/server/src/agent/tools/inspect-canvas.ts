@@ -45,7 +45,7 @@ function summarizeElement(el: CanvasElement) {
   };
 
   if (el.type === "text" && typeof el.text === "string") {
-    base.text = el.text.length > 50 ? el.text.slice(0, 47) + "..." : el.text;
+    base.text = el.text.length > 50 ? `${el.text.slice(0, 47)}...` : el.text;
     base.fontSize = el.fontSize;
   }
 
@@ -166,9 +166,12 @@ export function createInspectCanvasTool(deps: {
 }) {
   return tool(
     async (input, config) => {
-      const canvasId = (config as any)?.configurable?.canvas_id;
+      const configurable = (
+        config as { configurable?: Record<string, unknown> }
+      )?.configurable;
+      const canvasId = configurable?.canvas_id;
 
-      if (!canvasId) {
+      if (typeof canvasId !== "string" || !canvasId) {
         return JSON.stringify({
           error: "no_canvas_context",
           message:
@@ -226,6 +229,7 @@ export function createInspectCanvasTool(deps: {
       let filtered = elements;
 
       if (input.filter_type && input.filter_type.length > 0) {
+        const filterTypes = input.filter_type;
         filtered = filtered.filter((el) => {
           // Resolve logical type: image/embeddable elements with customData.isVideo are treated as "video"
           const customData = el.customData as
@@ -235,7 +239,7 @@ export function createInspectCanvasTool(deps: {
             (el.type === "image" || el.type === "embeddable") &&
             customData?.isVideo === true;
           const logicalType = isVideoElement ? "video" : (el.type as string);
-          return input.filter_type!.includes(logicalType);
+          return filterTypes.includes(logicalType);
         });
       }
 
@@ -268,7 +272,8 @@ export function createInspectCanvasTool(deps: {
         boundingBox: computeBoundingBox(filtered),
         viewport: {
           backgroundColor:
-            (content.appState as any)?.viewBackgroundColor ?? "#ffffff",
+            (content.appState as { viewBackgroundColor?: string })
+              ?.viewBackgroundColor ?? "#ffffff",
         },
         elements: summaryElements,
       });

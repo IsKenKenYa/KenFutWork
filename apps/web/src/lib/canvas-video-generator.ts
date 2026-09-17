@@ -1,3 +1,5 @@
+import type { ExcalidrawRectangleElement } from "@excalidraw/excalidraw/element/types";
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { getViewportCenter } from "./canvas-elements";
 
 // Aspect ratio to pixel dimensions mapping (video ratios only)
@@ -5,6 +7,9 @@ const RATIO_DIMENSIONS: Record<string, { w: number; h: number }> = {
   "16:9": { w: 1024, h: 576 },
   "9:16": { w: 576, h: 1024 },
 };
+
+/** 未收录比例的回退尺寸（16:9）。 */
+const DEFAULT_RATIO_DIMENSIONS = { w: 1024, h: 576 };
 
 export type VideoGeneratorStatus =
   | "idle"
@@ -38,7 +43,7 @@ export function getDisplayDimensions(
   aspectRatio: string,
   displayMaxSize = 400,
 ): { width: number; height: number } {
-  const dims = RATIO_DIMENSIONS[aspectRatio] ?? RATIO_DIMENSIONS["16:9"]!;
+  const dims = RATIO_DIMENSIONS[aspectRatio] ?? DEFAULT_RATIO_DIMENSIONS;
   const scale = Math.min(displayMaxSize / dims.w, displayMaxSize / dims.h);
   return {
     width: Math.round(dims.w * scale),
@@ -50,11 +55,7 @@ export function getDisplayDimensions(
  * Create an Excalidraw rectangle element that serves as a video generator placeholder.
  */
 export function createVideoGeneratorElement(
-  api: {
-    getAppState: () => any;
-    getSceneElements: () => readonly any[];
-    updateScene: (scene: { elements: any[]; captureUpdate?: string }) => void;
-  },
+  api: ExcalidrawImperativeAPI,
   options?: {
     aspectRatio?: string;
     model?: string;
@@ -77,7 +78,7 @@ export function createVideoGeneratorElement(
   };
 
   const id = generateId();
-  const element: Record<string, unknown> = {
+  const element: ExcalidrawRectangleElement = {
     type: "rectangle",
     id,
     x: center.x - width / 2,
@@ -119,36 +120,43 @@ export function createVideoGeneratorElement(
  * Check if an Excalidraw element is a video-generator placeholder.
  */
 export function isVideoGeneratorElement(
-  element: any,
+  element: unknown,
 ): element is { customData: VideoGeneratorData } & Record<string, unknown> {
-  return element?.customData?.type === "video-generator";
+  if (element === null || typeof element !== "object") return false;
+  if (!("customData" in element)) return false;
+  const customData = element.customData;
+  return (
+    customData !== null &&
+    typeof customData === "object" &&
+    "type" in customData &&
+    customData.type === "video-generator"
+  );
 }
 
 /**
  * Get the video-generator data from an element, or null if not a video-generator.
  */
-export function getVideoGeneratorData(element: any): VideoGeneratorData | null {
+export function getVideoGeneratorData(
+  element: unknown,
+): VideoGeneratorData | null {
   if (!isVideoGeneratorElement(element)) return null;
-  return element.customData as VideoGeneratorData;
+  return element.customData;
 }
 
 /**
  * Update the customData of a video-generator element.
  */
 export function updateVideoGeneratorElement(
-  api: {
-    getSceneElements: () => readonly any[];
-    updateScene: (scene: { elements: any[]; captureUpdate?: string }) => void;
-  },
+  api: ExcalidrawImperativeAPI,
   elementId: string,
   updates: Partial<VideoGeneratorData>,
 ): void {
-  const elements = api.getSceneElements().map((el: any) => {
+  const elements = api.getSceneElements().map((el) => {
     if (el.id !== elementId || !isVideoGeneratorElement(el)) return el;
     return {
       ...el,
       customData: { ...el.customData, ...updates },
-      version: ((el.version as number | undefined) ?? 1) + 1,
+      version: (el.version ?? 1) + 1,
       versionNonce: Math.floor(Math.random() * 2_000_000_000),
       updated: Date.now(),
     };
@@ -160,15 +168,12 @@ export function updateVideoGeneratorElement(
  * Resize a video-generator element when aspect ratio changes.
  */
 export function resizeVideoGeneratorElement(
-  api: {
-    getSceneElements: () => readonly any[];
-    updateScene: (scene: { elements: any[]; captureUpdate?: string }) => void;
-  },
+  api: ExcalidrawImperativeAPI,
   elementId: string,
   aspectRatio: string,
 ): void {
   const { width, height } = getDisplayDimensions(aspectRatio);
-  const elements = api.getSceneElements().map((el: any) => {
+  const elements = api.getSceneElements().map((el) => {
     if (el.id !== elementId) return el;
     // Keep center position, adjust size
     const cx = el.x + el.width / 2;
@@ -192,13 +197,10 @@ export function resizeVideoGeneratorElement(
  * Delete a video-generator element from the canvas (soft delete).
  */
 export function deleteVideoGeneratorElement(
-  api: {
-    getSceneElements: () => readonly any[];
-    updateScene: (scene: { elements: any[]; captureUpdate?: string }) => void;
-  },
+  api: ExcalidrawImperativeAPI,
   elementId: string,
 ): void {
-  const elements = api.getSceneElements().map((el: any) => {
+  const elements = api.getSceneElements().map((el) => {
     if (el.id !== elementId) return el;
     return { ...el, isDeleted: true };
   });

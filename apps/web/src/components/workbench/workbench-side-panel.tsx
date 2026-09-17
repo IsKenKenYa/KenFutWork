@@ -233,6 +233,7 @@ export function WorkbenchSidePanel({
       className="relative flex shrink-0 flex-col border-l bg-card"
     >
       {/* 拖拽把手：贴面板左边缘（按住拖动改宽） */}
+      {/* biome-ignore lint/a11y/useSemanticElements: 拖拽改宽的把手（无 aria-valuenow 的可聚焦分隔条语义），<hr> 是内容分隔线，替换会丢拖拽语义 */}
       <div
         role="separator"
         aria-orientation="vertical"

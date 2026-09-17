@@ -16,6 +16,7 @@ import {
   splitHunks,
   toDiffLines,
 } from "@/lib/git-hunks";
+import { keyed } from "../list-keys";
 
 /**
  * 「审查」（差异）与「打开」（文件内容）两个标签的正文。
@@ -49,6 +50,7 @@ export function DiffPane({
   /** 读差异的次数：块动作后 +1，重新拉正文。 */
   const [reload, setReload] = useState(0);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: version/reload 是刷新信号（值不参与请求）；去掉后块动作或外部改动不再重拉
   useEffect(() => {
     if (!accessToken || !canvasId) return;
     let cancelled = false;
@@ -181,14 +183,16 @@ export function DiffPane({
         {text === null ? (
           <p className="p-2 text-xs text-muted-foreground">读取中…</p>
         ) : (
-          <div
-            role="region"
+          <section
             aria-label="文件差异"
             className="max-h-[70vh] overflow-auto p-2 font-mono text-[11px] leading-5"
           >
-            {markHunkStarts(toDiffLines(text)).map((line, index) => (
+            {keyed(
+              markHunkStarts(toDiffLines(text)),
+              (line) => `${line.kind}-${line.text}`,
+            ).map(({ key, item: line }) => (
               <div
-                key={`${index}-${line.text.slice(0, 12)}`}
+                key={key}
                 className={`flex items-start gap-1 whitespace-pre ${
                   line.kind === "add"
                     ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
@@ -210,9 +214,10 @@ export function DiffPane({
                         aria-label={`暂存第 ${line.hunkIndex + 1} 块`}
                         disabled={hunkBusy !== null}
                         title="暂存块：只把这一块加进索引（其余块留在工作区）"
-                        onClick={() =>
-                          void applyHunkAction(line.hunkIndex!, "stage")
-                        }
+                        onClick={() => {
+                          if (line.hunkIndex === undefined) return;
+                          void applyHunkAction(line.hunkIndex, "stage");
+                        }}
                         className="rounded border border-emerald-600/40 px-1 text-[10px] leading-4 text-emerald-700 transition-colors hover:bg-emerald-500/10 disabled:opacity-40 dark:text-emerald-400"
                       >
                         ＋
@@ -222,9 +227,10 @@ export function DiffPane({
                         aria-label={`撤销第 ${line.hunkIndex + 1} 块`}
                         disabled={hunkBusy !== null}
                         title="撤销块：丢掉这一块的工作区改动（会丢内容，需确认）"
-                        onClick={() =>
-                          void applyHunkAction(line.hunkIndex!, "discard")
-                        }
+                        onClick={() => {
+                          if (line.hunkIndex === undefined) return;
+                          void applyHunkAction(line.hunkIndex, "discard");
+                        }}
                         className="rounded border border-rose-600/40 px-1 text-[10px] leading-4 text-rose-700 transition-colors hover:bg-rose-500/10 disabled:opacity-40 dark:text-rose-400"
                       >
                         ⟲
@@ -240,7 +246,7 @@ export function DiffPane({
                 ) : null}
               </div>
             ))}
-          </div>
+          </section>
         )}
       </div>
     </div>
@@ -309,6 +315,7 @@ export function FilePane({
         {text === null ? (
           <p className="p-2 text-xs text-muted-foreground">读取中…</p>
         ) : highlighted ? (
+          // biome-ignore lint/a11y/useSemanticElements: 要 <pre> 的预格式语义（代码原文）；带 aria-label 的 section 会丢格式，role=region 只补地标
           <pre
             role="region"
             aria-label="文件内容"
@@ -317,6 +324,7 @@ export function FilePane({
             dangerouslySetInnerHTML={{ __html: highlighted }}
           />
         ) : (
+          // biome-ignore lint/a11y/useSemanticElements: 同上：<pre> 的预格式语义优先
           <pre
             role="region"
             aria-label="文件内容"

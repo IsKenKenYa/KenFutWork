@@ -36,6 +36,7 @@ export function ChangesPane({
   const [error, setError] = useState<string | null>(null);
   const [discarding, setDiscarding] = useState(false);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: version 是刷新信号（值不参与请求）；去掉后外部改动不再触发重拉
   useEffect(() => {
     if (!accessToken || !canvasId) return;
     let cancelled = false;

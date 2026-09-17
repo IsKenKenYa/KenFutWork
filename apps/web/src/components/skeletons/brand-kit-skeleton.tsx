@@ -1,5 +1,13 @@
 import { Skeleton } from "@/components/ui/skeleton";
 
+/* 骨架占位块的 key：内容是写死的静态占位，用命名常量给它们稳定身份（keyed 不适用：
+   这里没有业务内容可作基键；骨架也不需要跨渲染复用状态）。 */
+const KIT_ROW_KEYS = ["kit-1", "kit-2", "kit-3"] as const;
+const LOGO_TILE_KEYS = ["logo-1", "logo-2", "logo-3"] as const;
+const COLOR_TILE_KEYS = ["color-1", "color-2", "color-3", "color-4"] as const;
+const FONT_TILE_KEYS = ["font-1", "font-2", "font-3"] as const;
+const IMAGE_TILE_KEYS = ["image-1", "image-2"] as const;
+
 /** Skeleton placeholder matching the BrandKit sidebar + editor layout. */
 export function BrandKitSkeleton() {
   return (
@@ -22,9 +30,9 @@ export function BrandKitSkeleton() {
 
         {/* Kit list items -- horizontal on mobile, vertical on desktop */}
         <div className="flex gap-1 overflow-x-auto px-2 pb-3 md:flex-col md:flex-1 md:overflow-y-auto md:overflow-x-hidden md:pb-4 md:space-y-1">
-          {Array.from({ length: 3 }, (_, i) => (
+          {KIT_ROW_KEYS.map((key) => (
             <div
-              key={i}
+              key={key}
               className="flex w-auto shrink-0 items-center gap-2.5 rounded-lg px-2.5 py-2 md:w-full"
             >
               <Skeleton className="h-8 w-8 shrink-0 rounded-md" />
@@ -63,9 +71,9 @@ export function BrandKitSkeleton() {
             <div className="space-y-3">
               <Skeleton className="h-5 w-10" />
               <div className="flex flex-wrap gap-4">
-                {Array.from({ length: 3 }, (_, i) => (
+                {LOGO_TILE_KEYS.map((key) => (
                   <Skeleton
-                    key={i}
+                    key={key}
                     className="h-20 w-24 rounded-lg sm:h-24 sm:w-32"
                   />
                 ))}
@@ -79,8 +87,8 @@ export function BrandKitSkeleton() {
             <div className="space-y-3">
               <Skeleton className="h-5 w-10" />
               <div className="flex flex-wrap gap-3">
-                {Array.from({ length: 4 }, (_, i) => (
-                  <div key={i} className="space-y-1.5">
+                {COLOR_TILE_KEYS.map((key) => (
+                  <div key={key} className="space-y-1.5">
                     <Skeleton className="h-12 w-12 rounded-lg sm:h-16 sm:w-16" />
                     <Skeleton className="h-3 w-10 sm:w-12" />
                   </div>
@@ -92,9 +100,9 @@ export function BrandKitSkeleton() {
             <div className="space-y-3">
               <Skeleton className="h-5 w-10" />
               <div className="flex flex-wrap gap-4">
-                {Array.from({ length: 3 }, (_, i) => (
+                {FONT_TILE_KEYS.map((key) => (
                   <Skeleton
-                    key={i}
+                    key={key}
                     className="h-16 w-24 rounded-lg sm:h-20 sm:w-32"
                   />
                 ))}
@@ -105,9 +113,9 @@ export function BrandKitSkeleton() {
             <div className="space-y-3">
               <Skeleton className="h-5 w-10" />
               <div className="flex flex-wrap gap-4">
-                {Array.from({ length: 2 }, (_, i) => (
+                {IMAGE_TILE_KEYS.map((key) => (
                   <Skeleton
-                    key={i}
+                    key={key}
                     className="h-20 w-24 rounded-lg sm:h-24 sm:w-32"
                   />
                 ))}

@@ -77,7 +77,7 @@ export interface CompatContext {
   readonly ui: {
     register(entry: CompatUiEntry): () => void;
   };
-  effect(fn: () => void | (() => void)): void;
+  effect(fn: () => undefined | (() => void)): void;
   on(
     event: string,
     listener: (payload: unknown, next?: unknown) => unknown,

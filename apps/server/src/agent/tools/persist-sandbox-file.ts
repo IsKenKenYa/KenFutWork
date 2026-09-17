@@ -41,9 +41,13 @@ export type PersistSandboxFileDeps = {
 export function createPersistSandboxFileTool(deps: PersistSandboxFileDeps) {
   return tool(
     async (input, config) => {
-      const canvasId = (config as any)?.configurable?.canvas_id as
-        | string
-        | undefined;
+      const configurable = (
+        config as { configurable?: Record<string, unknown> }
+      )?.configurable;
+      const canvasId =
+        typeof configurable?.canvas_id === "string"
+          ? configurable.canvas_id
+          : undefined;
 
       // Path traversal guard: restrict reads to sandbox directory.
       // Use realpathSync to resolve symlinks (macOS /tmp → /private/tmp).
@@ -104,8 +108,8 @@ export function createPersistSandboxFileTool(deps: PersistSandboxFileDeps) {
           mimeType,
           size: fileBuffer.length,
         });
-      } catch (err: any) {
-        return `Error reading or uploading file: ${err.message}`;
+      } catch (err) {
+        return `Error reading or uploading file: ${err instanceof Error ? err.message : String(err)}`;
       }
     },
     {

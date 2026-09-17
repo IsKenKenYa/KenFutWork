@@ -315,8 +315,8 @@ function parseGitHubUrl(url: string): GitHubUrlInfo {
     );
   }
 
-  const owner = segments[0]!;
-  const repo = segments[1]!.replace(/\.git$/, "");
+  const [owner = "", repoPart = ""] = segments;
+  const repo = repoPart.replace(/\.git$/, "");
 
   // Default: root of the repo, no specific ref
   let ref: string | null = null;
@@ -327,7 +327,7 @@ function parseGitHubUrl(url: string): GitHubUrlInfo {
     segments.length >= 4 &&
     (segments[2] === "tree" || segments[2] === "blob")
   ) {
-    ref = segments[3]!;
+    ref = segments[3] ?? null;
     path = segments.slice(4).join("/");
   } else if (segments.length > 2) {
     // Fallback: treat remaining segments as a path
@@ -689,6 +689,21 @@ export async function importFromTarballUrl(
 }
 
 /**
+ * package.json 的 author 有两种合法写法：字符串，或 `{ name }` 对象。
+ * 取不出名字时返回 null（调用方据此决定要不要写 manifest.author）。
+ */
+function readPackageAuthorName(author: unknown): string | null {
+  if (typeof author === "string") {
+    return author;
+  }
+  if (typeof author === "object" && author !== null && "name" in author) {
+    const { name } = author;
+    return typeof name === "string" ? name : null;
+  }
+  return null;
+}
+
+/**
  * 从压缩包条目构建技能（tarball 与 zip 共用）。
  *
  * 两个来源的差异只在「怎么拿到条目」，之后完全同构：
@@ -740,13 +755,8 @@ function buildSkillFromArchiveEntries(
     };
     if (pkgJson.version) manifest.version = pkgJson.version as string;
     if (pkgJson.license) manifest.license = pkgJson.license as string;
-    if (typeof pkgJson.author === "string") manifest.author = pkgJson.author;
-    else if (
-      pkgJson.author &&
-      typeof (pkgJson.author as any).name === "string"
-    ) {
-      manifest.author = (pkgJson.author as any).name;
-    }
+    const authorName = readPackageAuthorName(pkgJson.author);
+    if (authorName !== null) manifest.author = authorName;
 
     // Use README.md as skill content, or a minimal placeholder
     skillContent =

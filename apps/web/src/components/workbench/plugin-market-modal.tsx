@@ -213,10 +213,9 @@ export function PluginMarketModal({
           </div>
 
           {categories.length > 0 ? (
-            <div
-              role="group"
+            <fieldset
               aria-label="插件分类"
-              className="flex flex-wrap items-center gap-1.5 border-b px-5 py-2"
+              className="flex min-w-0 flex-wrap items-center gap-1.5 border-b px-5 py-2"
             >
               {[null, ...categories].map((item) => (
                 <button
@@ -229,7 +228,7 @@ export function PluginMarketModal({
                   {item ?? "全部"}
                 </button>
               ))}
-            </div>
+            </fieldset>
           ) : null}
 
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">

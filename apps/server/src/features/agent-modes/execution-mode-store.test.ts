@@ -42,9 +42,9 @@ describe("执行模式持久化：入参兼容 thread_id 与会话 id", () => {
     await store.lookup("ws-1", "session-或-thread-id");
 
     expect(statements).toHaveLength(1);
-    expect(statements[0]!.sql).toContain("s.thread_id = $1");
-    expect(statements[0]!.sql).toContain("s.id::text = $1");
-    expect(statements[0]!.sql).toContain(":workspace");
+    expect(statements[0]?.sql).toContain("s.thread_id = $1");
+    expect(statements[0]?.sql).toContain("s.id::text = $1");
+    expect(statements[0]?.sql).toContain(":workspace");
   });
 
   it("save 的语句同样按两者匹配，且仍带工作区归属校验", async () => {
@@ -54,11 +54,11 @@ describe("执行模式持久化：入参兼容 thread_id 与会话 id", () => {
     await store.save("ws-1", "session-或-thread-id", "plan");
 
     expect(statements).toHaveLength(1);
-    const sql = statements[0]!.sql;
+    const sql = statements[0]?.sql;
     expect(sql).toContain("s.thread_id = $1");
     expect(sql).toContain("s.id::text = $1");
     expect(sql).toContain(":workspace");
-    expect(statements[0]!.params).toEqual(["session-或-thread-id", "plan"]);
+    expect(statements[0]?.params).toEqual(["session-或-thread-id", "plan"]);
   });
 
   it("行存在时把持久化模式读回（未知/空值回落 null，由上层落 agent）", async () => {

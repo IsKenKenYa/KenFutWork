@@ -15,8 +15,10 @@ import { createPermissionSettingsStore } from "./tier-store.js";
  *
  * 全局档位持久化（app_config 单行表）：启动期读回（读失败只记日志，回落 default
  * ——fail-safe：权限档宁严勿松），PUT 路由写穿。
+ *
+ * 形参 `_deps` 目前未被消费（事件经 ctx.on 订阅），保留以维持 profiles 装配契约。
  */
-export function createPermissionsPlugin(deps: {
+export function createPermissionsPlugin(_deps: {
   events?: KernelEvents;
 }): PluginDefinition {
   return {

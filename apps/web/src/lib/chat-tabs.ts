@@ -72,7 +72,7 @@ export function saveTabs(canvasId: string, tabs: ChatTab[]): void {
 export function upsertTab(tabs: ChatTab[], tab: ChatTab): ChatTab[] {
   const idx = tabs.findIndex((t) => t.id === tab.id && t.kind === tab.kind);
   if (idx < 0) return [...tabs, tab].slice(-MAX_TABS);
-  if (tabs[idx]!.title === tab.title) return tabs;
+  if (tabs[idx]?.title === tab.title) return tabs;
   const next = [...tabs];
   next[idx] = tab;
   return next;

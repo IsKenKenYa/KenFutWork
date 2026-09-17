@@ -91,7 +91,9 @@ export function startJobLoop(
       // `queueName` 是队列名，`queue` 是队列缝客户端——两者都用，故名字必须区分
       for (const queueName of queues) {
         try {
-          const inFlight = inFlightByQueue.get(queueName)!;
+          // 在建集合在启动期按 queues 建全，缺失分支不可达（仅用于类型收窄）
+          const inFlight = inFlightByQueue.get(queueName);
+          if (!inFlight) continue;
           const cap = concurrencyByQueue[queueName] ?? 1;
           const available = cap - inFlight.size;
           if (available <= 0) continue;

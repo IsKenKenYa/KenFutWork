@@ -1,19 +1,19 @@
 "use client";
 
-import { memo, useCallback, useEffect, useRef, useState } from "react";
-
-// biome-ignore lint/suspicious/noExplicitAny: Excalidraw API/element has no public type
-type ExcalidrawEl = any;
+import type {
+  BinaryFiles,
+  ExcalidrawImperativeAPI,
+} from "@excalidraw/excalidraw/types";
+import { memo, useCallback, useEffect, useState } from "react";
 
 export type CanvasFilesPanelProps = {
-  // biome-ignore lint/suspicious/noExplicitAny: Excalidraw API has no public type definition
-  excalidrawApi: any;
+  excalidrawApi: ExcalidrawImperativeAPI | null;
   /** 面板是否可见：不可见时退订画布变更（隐藏的列表没必要跟着重算）。 */
   active: boolean;
 };
 
 /* -- Throttle utility -- */
-function throttle<T extends (...args: any[]) => void>(
+function throttle<T extends (...args: never[]) => void>(
   fn: T,
   ms: number,
 ): T & { cancel: () => void } {
@@ -40,6 +40,7 @@ function throttle<T extends (...args: any[]) => void>(
 
 const DownloadIcon = ({ className }: { className?: string }) => (
   <svg
+    aria-hidden="true"
     viewBox="0 0 24 24"
     fill="currentColor"
     fillOpacity={0.9}
@@ -71,6 +72,7 @@ const FileRow = memo(function FileRow({
     >
       <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg shadow-subtle">
         {file.dataURL ? (
+          // biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用
           <img
             alt={file.name}
             className="h-full w-full object-cover"
@@ -110,8 +112,8 @@ export function CanvasFilesPanel({
 
   const refreshFiles = useCallback(() => {
     if (!excalidrawApi) return;
-    const allElements = excalidrawApi.getSceneElements() as ExcalidrawEl[];
-    const files: Record<string, any> = excalidrawApi.getFiles() ?? {};
+    const allElements = excalidrawApi.getSceneElements();
+    const files: BinaryFiles = excalidrawApi.getFiles() ?? {};
     const images: ImageFile[] = [];
     let idx = 0;
     for (const el of allElements) {
@@ -152,6 +154,7 @@ export function CanvasFilesPanel({
 
   return (
     <div
+      role="none"
       className="flex-1 overflow-y-auto px-2 pb-4"
       style={{ contain: "layout style" }}
       onKeyDown={(e) => e.stopPropagation()}

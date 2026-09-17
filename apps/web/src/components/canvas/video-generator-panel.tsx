@@ -1,5 +1,7 @@
 "use client";
 
+import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/transform";
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { getVideoCreditCost, type VideoResolution } from "@kenfutwork/shared";
 import { Lock, Plus, Zap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -16,11 +18,18 @@ import { fetchVideoModels, generateVideoDirect } from "../../lib/server-api";
 
 // No longer needs poster frame extraction -- videos use embeddable elements
 
+/**
+ * lib 生成器助手（canvas-video-generator）的入参是宽松的结构化接口
+ * （`captureUpdate?: string` 等），与 Excalidraw 官方类型在函数参数上互不可比；
+ * 运行时传的是同一个 API 对象，故按助手的入参口径断言。
+ */
+type GeneratorLibApi = Parameters<typeof updateVideoGeneratorElement>[0];
+
 type VideoGeneratorPanelProps = {
   elementId: string;
   elementBounds: { x: number; y: number; width: number; height: number };
   data: VideoGeneratorData;
-  excalidrawApi: any;
+  excalidrawApi: ExcalidrawImperativeAPI;
   accessToken: string;
   /** 当前画布会话（§4.8）：实例自定义头的 `{{sessionId}}` 按它渲染；无会话时缺省。 */
   sessionId?: string | undefined;
@@ -94,9 +103,13 @@ export function VideoGeneratorPanel({
           const fallback = r.models[0];
           if (!fallback) return current;
           const fallbackId = fallback.id;
-          updateVideoGeneratorElement(excalidrawApi, elementId, {
-            model: fallbackId,
-          });
+          updateVideoGeneratorElement(
+            excalidrawApi as GeneratorLibApi,
+            elementId,
+            {
+              model: fallbackId,
+            },
+          );
           return fallbackId;
         });
       })
@@ -128,6 +141,7 @@ export function VideoGeneratorPanel({
   }, []);
 
   // Auto-resize textarea
+  // biome-ignore lint/correctness/useExhaustiveDependencies: prompt 只当触发器（高度按 DOM 现量，不读值）；去掉后输入不再自动长高
   useEffect(() => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -157,8 +171,12 @@ export function VideoGeneratorPanel({
   const handleAspectRatioChange = useCallback(
     (ratio: string) => {
       setAspectRatio(ratio);
-      resizeVideoGeneratorElement(excalidrawApi, elementId, ratio);
-      updateVideoGeneratorElement(excalidrawApi, elementId, {
+      resizeVideoGeneratorElement(
+        excalidrawApi as GeneratorLibApi,
+        elementId,
+        ratio,
+      );
+      updateVideoGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
         aspectRatio: ratio,
       });
     },
@@ -168,7 +186,9 @@ export function VideoGeneratorPanel({
   const handleDurationChange = useCallback(
     (d: number) => {
       setDuration(d);
-      updateVideoGeneratorElement(excalidrawApi, elementId, { duration: d });
+      updateVideoGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
+        duration: d,
+      });
     },
     [excalidrawApi, elementId],
   );
@@ -176,7 +196,7 @@ export function VideoGeneratorPanel({
   const handleResolutionChange = useCallback(
     (value: VideoResolution) => {
       setResolution(value);
-      updateVideoGeneratorElement(excalidrawApi, elementId, {
+      updateVideoGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
         resolution: value,
       });
     },
@@ -201,7 +221,7 @@ export function VideoGeneratorPanel({
       setDuration(nextDuration);
       setResolution(nextResolution);
       setShowModelDropdown(false);
-      updateVideoGeneratorElement(excalidrawApi, elementId, {
+      updateVideoGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
         model: m,
         duration: nextDuration,
         resolution: nextResolution,
@@ -241,7 +261,7 @@ export function VideoGeneratorPanel({
 
     setLoading(true);
     setError(null);
-    updateVideoGeneratorElement(excalidrawApi, elementId, {
+    updateVideoGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
       status: "generating",
       prompt: prompt.trim(),
       model,
@@ -279,6 +299,8 @@ export function VideoGeneratorPanel({
       if (controller.signal.aborted) return;
 
       const newElements = convertToExcalidrawElements([
+        // 只给必要字段，其余（id/颜色/版本号…）由 convertToExcalidrawElements 补全；
+        // 骨架类型是「完整元素」口径，装不下这种部分元素，故双重断言到骨架类型。
         {
           type: "embeddable",
           link: result.url,
@@ -293,15 +315,13 @@ export function VideoGeneratorPanel({
             title: prompt.trim().slice(0, 60),
             prompt: prompt.trim(),
           },
-        } as any,
+        } as unknown as ExcalidrawElementSkeleton,
       ]);
 
       // Replace generator placeholder with video embeddable element
       const elements = excalidrawApi
         .getSceneElements()
-        .map((el: any) =>
-          el.id === elementId ? { ...el, isDeleted: true } : el,
-        );
+        .map((el) => (el.id === elementId ? { ...el, isDeleted: true } : el));
       excalidrawApi.updateScene({
         elements: [...elements, ...newElements],
         captureUpdate: "IMMEDIATELY",
@@ -318,7 +338,7 @@ export function VideoGeneratorPanel({
         setError("视频生成失败，请重试或更换模型。");
       }
       setLoading(false);
-      updateVideoGeneratorElement(excalidrawApi, elementId, {
+      updateVideoGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
         status: "error",
         errorMessage: "生成失败",
       });
@@ -346,6 +366,7 @@ export function VideoGeneratorPanel({
   return createPortal(
     <div
       ref={panelRef}
+      role="none"
       style={{ left: screenX, top: screenY }}
       className="fixed z-[100] w-[520px] rounded-[24px] border border-border bg-card shadow-card"
       onKeyDown={(e) => e.stopPropagation()}
@@ -367,6 +388,7 @@ export function VideoGeneratorPanel({
           className="flex h-[68px] w-[56px] flex-col items-center justify-center gap-1 rounded-2xl bg-muted/60 transition-colors hover:bg-muted"
         >
           {firstFrame ? (
+            // biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用
             <img
               src={firstFrame.dataUrl}
               alt="首帧"
@@ -394,6 +416,7 @@ export function VideoGeneratorPanel({
           className="flex h-[68px] w-[56px] flex-col items-center justify-center gap-1 rounded-2xl bg-muted/60 transition-colors hover:bg-muted"
         >
           {lastFrame ? (
+            // biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用
             <img
               src={lastFrame.dataUrl}
               alt="尾帧"
@@ -454,6 +477,7 @@ export function VideoGeneratorPanel({
           >
             <span className="text-foreground">{paramsLabel}</span>
             <svg
+              aria-hidden="true"
               className="h-3 w-3 text-muted-foreground"
               viewBox="0 0 12 24"
               fill="currentColor"
@@ -548,6 +572,7 @@ export function VideoGeneratorPanel({
               className="flex h-8 items-center gap-1 rounded-lg px-2 text-xs text-muted-foreground transition-colors hover:bg-muted"
             >
               {currentModel?.iconUrl && (
+                // biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用
                 <img
                   src={currentModel.iconUrl}
                   alt=""
@@ -558,6 +583,7 @@ export function VideoGeneratorPanel({
                 {currentModel?.displayName ?? model.split("/").pop()}
               </span>
               <svg
+                aria-hidden="true"
                 className="h-3 w-3 text-muted-foreground"
                 viewBox="0 0 12 24"
                 fill="currentColor"
@@ -575,6 +601,7 @@ export function VideoGeneratorPanel({
                     className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-muted ${m.id === model ? "bg-muted" : ""} ${m.accessible === false ? "opacity-60" : ""}`}
                   >
                     {m.iconUrl && (
+                      // biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用
                       <img
                         src={m.iconUrl}
                         alt=""
@@ -595,6 +622,7 @@ export function VideoGeneratorPanel({
                     )}
                     {m.id === model && (
                       <svg
+                        aria-hidden="true"
                         className="h-3 w-3 text-foreground"
                         viewBox="0 0 14 14"
                         fill="currentColor"
@@ -624,6 +652,7 @@ export function VideoGeneratorPanel({
             ) : (
               <>
                 <svg
+                  aria-hidden="true"
                   className="h-3.5 w-[9.3px] shrink-0"
                   viewBox="0 0 8 10"
                   fill="currentColor"

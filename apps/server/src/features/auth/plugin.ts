@@ -53,10 +53,12 @@ export function createAuthPlugin(): PluginDefinition {
         );
       }
 
-      authService = createAuthService({ repository });
+      // 局部 const 供闭包捕获：闭包内读不到上面那处赋值的类型收窄
+      const service = createAuthService({ repository });
+      authService = service;
       // RequestAuthenticator 就是本服务（令牌来自 account_sessions）
       const authenticator: RequestAuthenticator = {
-        authenticate: (request) => authService!.resolveRequestUser(request),
+        authenticate: (request) => service.resolveRequestUser(request),
       };
       ctx.register("auth", () => authenticator);
     },

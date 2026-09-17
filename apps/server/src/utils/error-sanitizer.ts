@@ -105,29 +105,33 @@ export function sanitizeErrorForClient(error: unknown): string {
   console.error("[error-sanitizer] Raw error:", raw);
   if (error instanceof Error) {
     // Log nested cause chain (LangChain wraps errors multiple levels deep)
-    let cause = (error as any).cause;
+    // cause 非标准字段，按 unknown 逐层收窄读取
+    let cause: unknown = (error as { cause?: unknown }).cause;
     while (cause) {
-      console.error("[error-sanitizer] Caused by:", cause.message ?? cause);
-      cause = cause.cause;
+      const causeMessage = (cause as { message?: unknown }).message;
+      console.error("[error-sanitizer] Caused by:", causeMessage ?? cause);
+      cause = (cause as { cause?: unknown }).cause;
     }
     // Log response details if present (Google API errors attach response/details)
-    const errAny = error as any;
-    if (errAny.response) {
-      console.error(
-        "[error-sanitizer] Response status:",
-        errAny.response.status,
-      );
+    const response = (
+      error as {
+        response?: { status?: unknown; data?: unknown; body?: unknown };
+      }
+    ).response;
+    if (response) {
+      console.error("[error-sanitizer] Response status:", response.status);
       console.error(
         "[error-sanitizer] Response data:",
-        JSON.stringify(
-          errAny.response.data ?? errAny.response.body ?? "",
-        ).substring(0, 2000),
+        JSON.stringify(response.data ?? response.body ?? "").substring(0, 2000),
       );
     }
-    if (errAny.details) {
+    if ((error as { details?: unknown }).details) {
       console.error(
         "[error-sanitizer] Details:",
-        JSON.stringify(errAny.details).substring(0, 2000),
+        JSON.stringify((error as { details?: unknown }).details).substring(
+          0,
+          2000,
+        ),
       );
     }
     if (error.stack) {
