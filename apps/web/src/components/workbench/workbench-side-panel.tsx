@@ -52,7 +52,6 @@ import type { SubagentEntry } from "@/lib/subagent-directory";
  */
 export function WorkbenchSidePanel({
   open,
-  onClose,
   accessToken,
   canvasId,
   subagents,
@@ -65,7 +64,6 @@ export function WorkbenchSidePanel({
   onPickElement,
 }: {
   open: boolean;
-  onClose: () => void;
   accessToken: string | null;
   /** 作用域画布 = 会话自己绑定的项目主画布（与 run 同一口径）。 */
   canvasId: string | null;
@@ -263,7 +261,6 @@ export function WorkbenchSidePanel({
         onActivate={activateTab}
         onCloseTab={closeTab}
         onOpenView={openView}
-        onClosePanel={onClose}
       />
 
       {state.tabs.length === 0 ? (

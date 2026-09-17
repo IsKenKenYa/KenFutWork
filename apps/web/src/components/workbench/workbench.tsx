@@ -2747,7 +2747,6 @@ export function Workbench() {
             {/* 右栏停靠面板：编辑器式多标签（参考图 R3-1 的标签面板） */}
             <WorkbenchSidePanel
               open={panelOpen}
-              onClose={() => setPanelOpen(false)}
               onRequestOpen={() => setPanelOpen(true)}
               accessToken={session?.access_token ?? null}
               canvasId={conversationProject?.primaryCanvas.id ?? null}

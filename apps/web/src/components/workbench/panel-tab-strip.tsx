@@ -2,11 +2,11 @@
 
 import {
   Bot,
-  ChevronDown,
   FileCode2,
   FileDiff as FileDiffIcon,
   Folder,
   Globe,
+  Plus,
   Search,
   SquareTerminal,
   X,
@@ -21,8 +21,9 @@ import {
 } from "@/lib/panel-tabs";
 
 /**
- * 右栏面板的标签条（参考图的编辑器式多标签）：**左侧标签列表（带搜索）→ 各标签（可关）→
- * 新建（+）→ 收起面板**。
+ * 右栏面板的标签条（参考图的编辑器式多标签）：**左侧加号（打开的标签页 + 新建视图）→ 各标签（可关）**。
+ *
+ * 用户口径：左边的箭头改加号、右边的叉去掉（收起面板走会话头部那个「面板」开关）。
  *
  * 标签是**视图实例**（每个文件/每个视图一个），关掉时右邻接替（顺序判定在 lib/panel-tabs，
  * 有单测）。标签溢出时横向滚动，而不是换行堆成两层。
@@ -33,14 +34,12 @@ export function PanelTabStrip({
   onActivate,
   onCloseTab,
   onOpenView,
-  onClosePanel,
 }: {
   tabs: PanelTab[];
   activeId: string | null;
   onActivate: (id: string) => void;
   onCloseTab: (id: string) => void;
   onOpenView: (view: PanelView) => void;
-  onClosePanel: () => void;
 }) {
   const [listOpen, setListOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -83,11 +82,13 @@ export function PanelTabStrip({
           type="button"
           aria-label="标签列表"
           aria-expanded={listOpen}
-          title="标签页与新建视图（可搜索）"
+          title="新建视图 / 标签页（可搜索）"
           onClick={() => setListOpen((current) => !current)}
           className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
-          <ChevronDown className="h-3.5 w-3.5" />
+          {/* 左侧是**加号**（用户口径「左边的箭头改成加号」）：点开就是「打开的标签页 +
+              新建视图」这一个菜单，不再是一个看不出用途的下拉箭头 */}
+          <Plus className="h-3.5 w-3.5" />
         </button>
         {listOpen ? (
           <div
@@ -223,15 +224,6 @@ export function PanelTabStrip({
           );
         })}
       </div>
-
-      <button
-        type="button"
-        aria-label="收起面板"
-        onClick={onClosePanel}
-        className="ml-auto shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-      >
-        <X className="h-4 w-4" />
-      </button>
     </div>
   );
 }

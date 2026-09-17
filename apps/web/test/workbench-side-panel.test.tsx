@@ -14,6 +14,36 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkbenchSidePanel } from "../src/components/workbench/workbench-side-panel";
 import type { WebSocketHandle } from "../src/hooks/use-websocket";
 
+/**
+ * xterm 的替身：终端视图会在面板里挂载终端模拟器，而 xterm 依赖 canvas / matchMedia
+ * （jsdom 里跑不了真的）。这里只要有实例能建出来就行——终端自己的行为在
+ * `panel-terminal-view.test.tsx` 里锁。
+ */
+vi.mock("@xterm/xterm", () => ({
+  Terminal: class {
+    cols = 80;
+    rows = 24;
+    loadAddon() {}
+    open() {}
+    write() {}
+    clear() {}
+    dispose() {}
+    focus() {}
+    onData() {
+      return { dispose: () => {} };
+    }
+    onResize() {
+      return { dispose: () => {} };
+    }
+  },
+}));
+vi.mock("@xterm/addon-fit", () => ({
+  FitAddon: class {
+    fit() {}
+  },
+}));
+vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
+
 /** 终端标签需要的 WS 句柄替身：只实现面板真正用到的那几个方法。 */
 function fakeWs(): WebSocketHandle {
   return {
@@ -24,6 +54,7 @@ function fakeWs(): WebSocketHandle {
     registerRPC: () => () => {},
     resumeCanvas: vi.fn(),
     startTerminal: vi.fn(),
+    resizeTerminal: vi.fn(),
     sendTerminalInput: vi.fn(),
     stopTerminal: vi.fn(),
     onTerminal: () => () => {},
@@ -122,7 +153,6 @@ describe("WorkbenchSidePanel（多标签）", () => {
     return (
       <WorkbenchSidePanel
         open={open}
-        onClose={() => {}}
         accessToken="token"
         canvasId="canvas-1"
         subagents={[]}
@@ -262,7 +292,6 @@ describe("WorkbenchSidePanel（多标签）", () => {
     render(
       <WorkbenchSidePanel
         open
-        onClose={() => {}}
         accessToken="token"
         canvasId={null}
         subagents={[]}
@@ -438,7 +467,6 @@ describe("面板宽度受对话列最小宽度约束", () => {
     return (
       <WorkbenchSidePanel
         open
-        onClose={() => {}}
         accessToken="token"
         canvasId="canvas-1"
         subagents={[]}
@@ -516,7 +544,6 @@ describe("右栏浏览器（点链接自动打开）", () => {
     return (
       <WorkbenchSidePanel
         open
-        onClose={() => {}}
         accessToken="token"
         canvasId="canvas-1"
         subagents={[]}
