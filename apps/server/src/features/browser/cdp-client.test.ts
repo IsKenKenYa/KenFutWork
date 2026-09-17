@@ -5,6 +5,7 @@ import {
   CdpError,
   connectCdpClient,
   findBrowserExecutable,
+  readPickables,
   waitForDevtools,
 } from "./cdp-client.js";
 
@@ -181,5 +182,243 @@ describe("浏览器可执行文件与调试端口探测", () => {
           new Response(JSON.stringify({ Browser: "x" }), { status: 200 }),
       }),
     ).rejects.toMatchObject({ code: "connect_failed" });
+  });
+});
+
+/**
+ * 可拾取元素（R3-4 的浮层底座）：几何必须走 **DOM 域**（`DOM.getBoxModel`），
+ * 而不是页面里现算的矩形——浮层要叠在截图上，和 DevTools 的元素盒同源才对齐。
+ *
+ * 这里用一个替身 CDP 端点验协议与装配：盒模型 → 视口坐标、`display:none`（盒模型报错）
+ * 不丢元素、去重、排序、条数上限。真实几何与截图的像素对齐走真机验收。
+ */
+describe("可拾取元素（DOM.getBoxModel）", () => {
+  const servers: WebSocketServer[] = [];
+  afterEach(async () => {
+    for (const server of servers.splice(0)) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+
+  function startFakeCdp(
+    handler: (message: {
+      id: number;
+      method: string;
+      params?: Record<string, unknown>;
+    }) => { result?: unknown; error?: { message: string } } | null,
+  ) {
+    const server = new WebSocketServer({ port: 0 });
+    servers.push(server);
+    server.on("connection", (socket) => {
+      socket.on("message", (raw) => {
+        const message = JSON.parse(String(raw)) as {
+          id: number;
+          method: string;
+          params?: Record<string, unknown>;
+        };
+        const reply = handler(message);
+        if (!reply) return;
+        socket.send(
+          JSON.stringify(
+            reply.error
+              ? { id: message.id, error: reply.error }
+              : { id: message.id, result: reply.result ?? {} },
+          ),
+        );
+      });
+    });
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    return `ws://127.0.0.1:${port}`;
+  }
+
+  /** 三个元素：链接（在下方）、按钮（在上方）、隐藏的按钮（盒模型报错）。 */
+  function pickableFake(record?: string[]) {
+    const boxes: Record<number, unknown> = {
+      11: {
+        model: {
+          border: [10, 300, 90, 300, 90, 320, 10, 320],
+          width: 80,
+          height: 20,
+        },
+      },
+      12: {
+        model: {
+          border: [100, 40, 220, 40, 220, 70, 100, 70],
+          width: 120,
+          height: 30,
+        },
+      },
+    };
+    const texts: Record<number, unknown> = {
+      11: {
+        tag: "a",
+        text: "Learn more",
+        hint: 'a[href^="https://example.com"]',
+      },
+      12: { tag: "button", text: "立即开始", hint: "button#start" },
+      13: { tag: "button", text: "隐藏的", hint: "button#hidden" },
+    };
+    return startFakeCdp((message) => {
+      record?.push(
+        `${message.method}${
+          message.params?.expression
+            ? `:${String(message.params.expression)}`
+            : ""
+        }`,
+      );
+      switch (message.method) {
+        case "DOM.getDocument":
+          return { result: { root: { nodeId: 1 } } };
+        case "DOM.querySelectorAll":
+          return message.params?.selector === "a"
+            ? { result: { nodeIds: [11] } }
+            : { result: { nodeIds: [12, 13] } };
+        case "DOM.getBoxModel": {
+          const nodeId = Number(message.params?.nodeId);
+          const model = boxes[nodeId];
+          return model
+            ? { result: model }
+            : { error: { message: "Could not compute box model." } };
+        }
+        case "DOM.resolveNode":
+          return {
+            result: { object: { objectId: `obj-${message.params?.nodeId}` } },
+          };
+        // Runtime.* 的信封是两层（Chrome 原样：`{result:{result:{value}}}`）——
+        // 替身必须照抄这一层，否则「取 value」的代码在替身上永远读到 undefined
+        case "Runtime.callFunctionOn": {
+          const objectId = String(message.params?.objectId ?? "");
+          const nodeId = Number(objectId.replace("obj-", ""));
+          return { result: { result: { value: texts[nodeId] ?? null } } };
+        }
+        case "Runtime.evaluate": {
+          const expression = String(message.params?.expression ?? "");
+          return expression.includes("location.href")
+            ? {
+                result: {
+                  result: {
+                    value: JSON.stringify({
+                      url: "https://example.com/",
+                      title: "Example",
+                    }),
+                  },
+                },
+              }
+            : { result: { result: { value: null } } };
+        }
+        case "Page.getLayoutMetrics":
+          return {
+            result: {
+              cssVisualViewport: { clientWidth: 1280, clientHeight: 720 },
+            },
+          };
+        default:
+          return { result: {} };
+      }
+    });
+  }
+
+  it("几何取 DOM.getBoxModel 的边框盒，坐标按阅读顺序（先上后下）排序", async () => {
+    const client = connectCdpClient(pickableFake());
+    const page = await readPickables(client, "S1");
+    expect(page.url).toBe("https://example.com/");
+    expect(page.title).toBe("Example");
+    expect(page.viewport).toEqual({ width: 1280, height: 720 });
+    // 按钮 y=40 在链接 y=300 之前（DOM 里 a 先出现，阅读顺序里按钮在前）
+    expect(page.elements.map((element) => element.hint)).toEqual([
+      "button#start",
+      'a[href^="https://example.com"]',
+      "button#hidden",
+    ]);
+    expect(page.elements[0]?.box).toEqual({
+      x: 100,
+      y: 40,
+      width: 120,
+      height: 30,
+    });
+    // 拿不到盒模型的元素不丢：box 为 null，仍在列表里（浮层只给它列表行）
+    expect(page.elements[2]).toMatchObject({ tag: "button", box: null });
+    client.close();
+  });
+
+  it("先滚到顶再取几何（getBoxModel 是文档坐标，滚到顶才与视口截图对齐）", async () => {
+    const record: string[] = [];
+    const client = connectCdpClient(pickableFake(record));
+    await readPickables(client, "S1");
+
+    const scrollAt = record.findIndex((entry) =>
+      entry.includes("window.scrollTo(0, 0)"),
+    );
+    const documentAt = record.findIndex((entry) =>
+      entry.startsWith("DOM.getDocument"),
+    );
+    const firstBoxAt = record.findIndex((entry) =>
+      entry.startsWith("DOM.getBoxModel"),
+    );
+    expect(scrollAt).toBeGreaterThanOrEqual(0);
+    expect(scrollAt).toBeLessThan(documentAt);
+    expect(documentAt).toBeLessThan(firstBoxAt);
+    client.close();
+  });
+
+  it("条数上限：limit 生效，不会把整页元素都读一遍", async () => {
+    const url = startFakeCdp((message) => {
+      switch (message.method) {
+        case "DOM.getDocument":
+          return { result: { root: { nodeId: 1 } } };
+        case "DOM.querySelectorAll":
+          return {
+            result: { nodeIds: Array.from({ length: 20 }, (_, i) => 100 + i) },
+          };
+        case "DOM.getBoxModel":
+          return {
+            result: {
+              model: {
+                border: [
+                  0,
+                  Number(message.params?.nodeId),
+                  10,
+                  0,
+                  10,
+                  10,
+                  0,
+                  10,
+                ],
+                width: 10,
+                height: 10,
+              },
+            },
+          };
+        case "DOM.resolveNode":
+          return {
+            result: { object: { objectId: `obj-${message.params?.nodeId}` } },
+          };
+        case "Runtime.callFunctionOn":
+          return {
+            result: {
+              result: {
+                value: {
+                  tag: "a",
+                  text: `第 ${message.params?.objectId} 条`,
+                  hint: "a",
+                },
+              },
+            },
+          };
+        case "Runtime.evaluate":
+          return {
+            result: {
+              result: { value: JSON.stringify({ url: "u", title: "t" }) },
+            },
+          };
+        default:
+          return { result: {} };
+      }
+    });
+    const client = connectCdpClient(url);
+    const page = await readPickables(client, "S1", { limit: 3 });
+    expect(page.elements).toHaveLength(3);
+    client.close();
   });
 });

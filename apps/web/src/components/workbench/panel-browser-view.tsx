@@ -30,8 +30,10 @@ import { getServerBaseUrl } from "@/lib/env";
  * - 后退/前进走**面板内历史栈**（跨源 iframe 读不到页面自己的 history）；
  * - 视口预设与缩放是**真的**（iframe 按预设尺寸排版、再按比例缩放到面板里），
  *   不是拿宽度假装；
- * - 「选择网页元素加入聊天」需要浏览器调试接口（CDP / 扩展），内嵌 iframe 拿不到跨源 DOM，
- *   所以按钮**禁用**并写明原因——不做假开关。
+ * - 「选择网页元素加入聊天」有两条路：**受控浏览器（CDP）连着**时走真实渲染页——
+ *   服务端用 `DOM.getBoxModel` 取每个元素的盒模型并附一张视口截图，浮层在截图上叠框点选
+ *   （点框即引用，含中心坐标，agent 可直接 `browser_act` 点它）；没连时回落服务端静态
+ *   抓取的 HTML 元素列表（脚本渲染内容与登录态页面看不到，这条边界写在浮层里）。
  */
 /** 拾取到的元素（R3-4）：交给对话，作为「用户指着这个元素」的引用。 */
 export interface PickedElement {
@@ -40,17 +42,47 @@ export interface PickedElement {
   tag: string;
   text: string;
   hint: string;
+  /** CDP 路径才有：元素边框盒（视口坐标，CSS px）。 */
+  box?: { x: number; y: number; width: number; height: number } | undefined;
 }
 
 /**
  * 元素引用转成消息里的一行（纯函数，便于单测）。
  * 口径：让人和模型都能对上——元素是什么、在哪一页。
+ * 有几何时补一个**中心坐标**：它就在受控浏览器视口里，agent 可以直接用
+ * `browser_act` 的 x/y 点它（不用再去猜选择器）。
  */
 export function formatElementReference(picked: PickedElement): string {
   const where = picked.pageTitle
     ? `${picked.pageTitle}（${picked.pageUrl}）`
     : picked.pageUrl;
-  return `【页面元素】<${picked.tag}> ${picked.text || "(无文字)"} ｜ 定位提示：${picked.hint} ｜ 来自：${where}`;
+  const position = picked.box
+    ? ` ｜ 中心坐标：${Math.round(picked.box.x + picked.box.width / 2)},${Math.round(
+        picked.box.y + picked.box.height / 2,
+      )}（受控浏览器视口内，可直接用 browser_act 的 x/y 点它）`
+    : "";
+  return `【页面元素】<${picked.tag}> ${picked.text || "(无文字)"} ｜ 定位提示：${picked.hint}${position} ｜ 来自：${where}`;
+}
+
+/** 浮层里的一个可拾取元素（与服务端 `/api/browser/snapshot` 的元素形状一致）。 */
+interface PickableEntry {
+  tag: string;
+  text: string;
+  hint: string;
+  box?:
+    | { x: number; y: number; width: number; height: number }
+    | null
+    | undefined;
+}
+
+interface PickResult {
+  pageTitle: string;
+  elements: PickableEntry[];
+  /** 受控浏览器的视口尺寸（把 box 的 px 换算成百分比要用它）。 */
+  viewport?: { width: number; height: number } | undefined;
+  /** 受控浏览器的视口截图（签了名的 URL）；缺省时浮层只列元素、不叠框。 */
+  screenshotUrl?: string | undefined;
+  source: "cdp" | "static";
 }
 
 export function BrowserPane({
@@ -91,24 +123,24 @@ export function BrowserPane({
   const [freeSize, setFreeSize] = useState({ width: 1280, height: 720 });
   const [zoom, setZoom] = useState<ZoomPresetId>("fit");
   /**
-   * 元素拾取（R3-4）：服务端静态快照 → 列出可交互元素 → 点一条插入对话。
-   * 跨源 iframe 读不到 DOM，所以走服务端抓取；脚本渲染出的内容与登录态页面读不到，
-   * 这条边界写在浮层里（不写就只能靠猜为什么元素不全）。
+   * 元素拾取（R3-4）：服务端在**受控浏览器（CDP）连着**时给真实渲染页的元素盒模型 +
+   * 视口截图 → 浮层在截图上叠框点选；没连时回落到服务端静态抓取的 HTML 元素列表。
+   * 静态那条读不到脚本渲染内容与登录态页面，这条边界写在浮层里（不写就只能靠猜）。
    */
   const [picking, setPicking] = useState<
     "idle" | "loading" | "error" | "ready"
   >("idle");
   const [pickError, setPickError] = useState<string | null>(null);
-  const [picked, setPicked] = useState<{
-    pageTitle: string;
-    elements: Array<{ tag: string; text: string; hint: string }>;
-  } | null>(null);
+  const [picked, setPicked] = useState<PickResult | null>(null);
+  /** 悬停高亮：列表行与截图上的框互相对照（索引一致）。 */
+  const [hoveredElement, setHoveredElement] = useState<number | null>(null);
 
   const startPicking = async () => {
     if (!url) return;
     setPicking("loading");
     setPickError(null);
     setPicked(null);
+    setHoveredElement(null);
     try {
       const response = await fetch(
         `${getServerBaseUrl()}/api/browser/snapshot`,
@@ -124,8 +156,11 @@ export function BrowserPane({
       const payload = (await response.json().catch(() => null)) as {
         snapshot?: {
           title: string;
-          elements: Array<{ tag: string; text: string; hint: string }>;
+          elements: PickableEntry[];
+          viewport?: { width: number; height: number };
         };
+        screenshotUrl?: string;
+        source?: "cdp" | "static";
         error?: { message?: string };
       } | null;
       if (!response.ok || !payload?.snapshot) {
@@ -136,6 +171,9 @@ export function BrowserPane({
       setPicked({
         pageTitle: payload.snapshot.title,
         elements: payload.snapshot.elements,
+        viewport: payload.snapshot.viewport,
+        screenshotUrl: payload.screenshotUrl,
+        source: payload.source === "cdp" ? "cdp" : "static",
       });
       setPicking("ready");
     } catch (error) {
@@ -145,6 +183,30 @@ export function BrowserPane({
       );
     }
   };
+  /** 点中一个元素（列表行与截图上的框共用）：交给对话并收起浮层。 */
+  const pickElement = (element: PickableEntry) => {
+    onPickElement?.({
+      pageUrl: url,
+      pageTitle: picked?.pageTitle ?? "",
+      tag: element.tag,
+      text: element.text,
+      hint: element.hint,
+      ...(element.box ? { box: element.box } : {}),
+    });
+    setPicking("idle");
+    setHoveredElement(null);
+  };
+  /** 截图叠框要三个数都对得上：视口尺寸（换算比例）+ 截图 + 至少一个盒子。 */
+  const overlay =
+    picked?.viewport &&
+    picked.viewport.width > 0 &&
+    picked.viewport.height > 0 &&
+    picked.elements.some((element) => element.box)
+      ? {
+          viewport: picked.viewport,
+          elements: picked.elements,
+        }
+      : null;
   /** 面板里这块预览区有多大（「适应面板」时的视口尺寸 = 它）。 */
   const frameRef = useRef<HTMLDivElement>(null);
   const [paneWidth, setPaneWidth] = useState(0);
@@ -240,7 +302,7 @@ export function BrowserPane({
           type="button"
           aria-label="选择网页元素加入聊天"
           disabled={!url || !accessToken || picking === "loading"}
-          title="拾取页面元素加入对话：按服务端抓取的静态 HTML 列出链接/按钮/输入等元素（脚本渲染与登录态内容读不到）"
+          title="拾取页面元素加入对话：连接受控浏览器（设置 → 浏览器 → 外部浏览器）后是真实渲染页 + 元素框点选；没连时按服务端静态抓取的 HTML 列元素（脚本渲染与登录态内容读不到）"
           onClick={() => void startPicking()}
           className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
         >
@@ -384,7 +446,7 @@ export function BrowserPane({
         <div
           role="dialog"
           aria-label="选择网页元素加入聊天"
-          className="max-h-56 overflow-y-auto rounded-lg border bg-popover p-2 text-xs"
+          className="max-h-72 overflow-y-auto rounded-lg border bg-popover p-2 text-xs"
         >
           <div className="mb-1 flex items-center justify-between gap-2">
             <span className="font-medium">
@@ -400,44 +462,101 @@ export function BrowserPane({
               <X className="h-3 w-3" />
             </button>
           </div>
-          <p className="mb-2 text-[10px] text-muted-foreground">
-            按服务端抓取的静态 HTML 列出；脚本渲染出的元素与登录态内容看不到。
-          </p>
           {picking === "loading" ? (
             <p className="text-muted-foreground">正在读取页面结构…</p>
           ) : picking === "error" ? (
             <p className="text-destructive">{pickError}</p>
-          ) : picked && picked.elements.length > 0 ? (
-            <ul className="space-y-0.5">
-              {picked.elements.map((element, index) => (
-                <li key={`${element.hint}-${index}`}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onPickElement?.({
-                        pageUrl: url,
-                        pageTitle: picked.pageTitle,
-                        tag: element.tag,
-                        text: element.text,
-                        hint: element.hint,
-                      });
-                      setPicking("idle");
-                    }}
-                    className="w-full rounded px-1.5 py-1 text-left hover:bg-muted"
-                  >
-                    <span className="mr-1.5 rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
-                      {element.tag}
-                    </span>
-                    <span className="truncate">{element.text}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-muted-foreground">
-              这一页没提取到可交互元素（可能是脚本渲染的页面）。
-            </p>
-          )}
+          ) : picked ? (
+            <>
+              <p className="mb-2 text-[10px] text-muted-foreground">
+                {picked.source === "cdp"
+                  ? "受控浏览器（CDP）里的真实渲染页：框来自元素盒模型，点框或点下面的条目都会把该元素引用进对话（带中心坐标，可直接让 AI 去点它）。"
+                  : "按服务端抓取的静态 HTML 列出；脚本渲染出的元素与登录态内容看不到。连上「设置 → 浏览器 → 外部浏览器」的受控浏览器后，这里会换成真实渲染页 + 叠框点选。"}
+              </p>
+
+              {/* 截图叠框：几何来自 DOM.getBoxModel，坐标是视口 CSS px，
+                  换算成百分比后与截图（同一视口尺寸）严丝合缝 */}
+              {overlay && picked.screenshotUrl ? (
+                <div className="relative mb-2 overflow-hidden rounded border">
+                  <img
+                    src={picked.screenshotUrl}
+                    alt={`${picked.pageTitle || url} 的视口截图`}
+                    className="block w-full"
+                  />
+                  {overlay.elements.map((element, index) =>
+                    element.box ? (
+                      <button
+                        key={`${element.hint}-${index}`}
+                        type="button"
+                        aria-label={`拾取元素 ${index + 1}：${element.tag} ${element.text}`}
+                        title={`<${element.tag}> ${element.text || "(无文字)"}`}
+                        onMouseEnter={() => setHoveredElement(index)}
+                        onMouseLeave={() => setHoveredElement(null)}
+                        onClick={() => pickElement(element)}
+                        style={{
+                          left: `${(element.box.x / overlay.viewport.width) * 100}%`,
+                          top: `${(element.box.y / overlay.viewport.height) * 100}%`,
+                          width: `${(element.box.width / overlay.viewport.width) * 100}%`,
+                          height: `${(element.box.height / overlay.viewport.height) * 100}%`,
+                        }}
+                        className={`absolute rounded-sm border transition-colors ${
+                          hoveredElement === index
+                            ? "border-info bg-info/30"
+                            : "border-info/70 bg-info/10 hover:bg-info/30"
+                        }`}
+                      >
+                        <span className="absolute -top-3 -left-px rounded-sm bg-info px-1 text-[9px] leading-3 text-white">
+                          {index + 1}
+                        </span>
+                      </button>
+                    ) : null,
+                  )}
+                </div>
+              ) : null}
+
+              {picked.elements.length > 0 ? (
+                <ul className="space-y-0.5">
+                  {picked.elements.map((element, index) => (
+                    <li key={`${element.hint}-${index}`}>
+                      <button
+                        type="button"
+                        onMouseEnter={() => setHoveredElement(index)}
+                        onMouseLeave={() => setHoveredElement(null)}
+                        onClick={() => pickElement(element)}
+                        className={`w-full rounded px-1.5 py-1 text-left ${
+                          hoveredElement === index
+                            ? "bg-muted"
+                            : "hover:bg-muted"
+                        }`}
+                      >
+                        {overlay && element.box ? (
+                          <span className="mr-1.5 rounded bg-info/15 px-1 py-0.5 font-mono text-[10px] text-info">
+                            {index + 1}
+                          </span>
+                        ) : null}
+                        <span className="mr-1.5 rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
+                          {element.tag}
+                        </span>
+                        <span className="truncate">
+                          {element.text || "(无文字)"}
+                        </span>
+                        {element.box ? (
+                          <span className="ml-1.5 text-[10px] text-muted-foreground">
+                            {Math.round(element.box.x)},
+                            {Math.round(element.box.y)}
+                          </span>
+                        ) : null}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-muted-foreground">
+                  这一页没提取到可交互元素（可能是脚本渲染的页面）。
+                </p>
+              )}
+            </>
+          ) : null}
         </div>
       ) : null}
 

@@ -15,7 +15,9 @@ import {
  * browser 插件（R3-4 / R5-4）：静态快照 + **CDP 浏览器通道**。
  *
  * 三条消费路径：
- * - **人（静态）**：`POST /api/browser/snapshot` —— 右栏「选择网页元素加入聊天」；
+ * - **人（静态/CDP）**：`POST /api/browser/snapshot` —— 右栏「选择网页元素加入聊天」；
+ *   CDP 连着时回来的是**真实渲染页 + 盒模型几何 + 视口截图**（右栏浮层据此叠框点选），
+ *   没连时才回落静态抓取的 HTML 元素列表；
  * - **人（CDP）**：`/api/browser/cdp/*` —— 设置页的「连接到 Chrome / 断开 / 状态」；
  * - **agent**：`browser_open`（静态读页，受「允许 AI 控制浏览器」门控）+ 连接后的
  *   `browser_navigate` / `browser_snapshot` / `browser_screenshot` / `browser_act`
@@ -238,13 +240,33 @@ export function registerBrowserRoutes(
         error: { code: "invalid_request", message: "缺少 url。" },
       });
     }
-    // CDP 已连接时优先用它（真实渲染后 DOM，跨源/登录态都能拿到）；否则回落静态快照
+    // CDP 已连接时优先用它（真实渲染后 DOM + **真实盒模型**，跨源/登录态都能拿到，
+    // 浮层因此能在截图上叠框点选）；否则回落静态快照
     if (options.browser.cdp.isConnected()) {
       try {
         const dom = await options.browser.cdp.navigate(url);
-        return reply.code(200).send({ snapshot: dom, source: "cdp" });
-      } catch {
-        // 回落静态抓取：CDP 偶发失败（页面忙/权限）时，静态快照仍能给点东西
+        const picked = await options.browser.cdp.pickables();
+        return reply.code(200).send({
+          snapshot: {
+            url: dom.url,
+            title: dom.title,
+            text: dom.text,
+            viewport: picked.viewport,
+            // 元素取带几何的那一份（含 box）；静态那路的元素没有 box
+            elements: picked.elements,
+          },
+          ...(picked.screenshotUrl
+            ? { screenshotUrl: picked.screenshotUrl }
+            : {}),
+          source: "cdp",
+        });
+      } catch (error) {
+        // 回落静态抓取：CDP 偶发失败（页面忙/权限）时，静态快照仍能给点东西。
+        // 但原因必须留痕——否则界面只显示「静态」而无从判断 CDP 为什么没接上。
+        console.warn(
+          "[browser] CDP 拾取失败，回落静态抓取：",
+          error instanceof Error ? error.message : error,
+        );
       }
     }
     try {
