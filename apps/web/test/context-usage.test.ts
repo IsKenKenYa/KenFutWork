@@ -306,3 +306,42 @@ describe("预留输出与输出预留线", () => {
     expect(view.overThreshold).toBe(false);
   });
 });
+
+/**
+ * 环里的读数（用户口径）：**两位小数**，满格写 `100`（不留 `100.00` 挤爆圆环）。
+ *
+ * 与浮层的一位数读数是两件事：浮层按参考图写 `61.4%`，环里要更精确。
+ */
+describe("环里的百分比读数", () => {
+  it("两位小数：4.53 不会被四舍五入成 5", () => {
+    const view = contextUsageView(
+      { inputTokens: 45_300, outputTokens: 1 },
+      1_000_000,
+    );
+    expect(view.percentFineLabel).toBe("4.53");
+    // 浮层仍是一位小数（参考图口径）
+    expect(view.percentLabel).toBe("4.5%");
+  });
+
+  it("大数同样两位；满格不写 100.00", () => {
+    expect(
+      contextUsageView({ inputTokens: 999_700, outputTokens: 1 }, 1_000_000)
+        .percentFineLabel,
+    ).toBe("99.97");
+    expect(
+      contextUsageView({ inputTokens: 2_000_000, outputTokens: 1 }, 1_000_000)
+        .percentFineLabel,
+    ).toBe("100");
+  });
+
+  it("窗口未知 / 无用量：不给读数（环里退回绝对量或 —）", () => {
+    expect(
+      contextUsageView(
+        { inputTokens: 1000, outputTokens: 1 },
+        null,
+        "unknown-x",
+      ).percentFineLabel,
+    ).toBeNull();
+    expect(contextUsageView(null, 1_000_000).percentFineLabel).toBeNull();
+  });
+});

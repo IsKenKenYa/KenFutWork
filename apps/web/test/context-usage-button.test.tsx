@@ -124,3 +124,61 @@ describe("ContextUsageButton：预留输出与阈值", () => {
     expect(container.querySelector('[style*="left: 87.2%"]')).toBeNull();
   });
 });
+
+/**
+ * 容量圆环按参考图 1:1 复刻（用户口径）：**环里不写数字**，读法靠弧长——
+ * 弧画的是「还剩多少」，缺口是已用掉的那一小段（还给一个最小缺口，免得看着像个实心点）。
+ *
+ * 锁四件事：没有数字文本、缺口随用量变化、0% 也留一个最小缺口、没有数据时画闭合环。
+ */
+describe("ContextUsageButton：圆环形态（1:1 复刻）", () => {
+  const dashOf = (container: HTMLElement): [number, number] => {
+    const circles = Array.from(container.querySelectorAll("button[aria-label='上下文容量'] circle"));
+    const arc = circles.at(-1);
+    const dash = (arc?.getAttribute("stroke-dasharray") ?? "0 0").split(" ");
+    return [Number(dash[0]), Number(dash[1])];
+  };
+
+  it("环里不写百分比（用户口径：算了，不显示在环上了）", async () => {
+    render(
+      <ContextUsageButton
+        usage={{ inputTokens: 45_300, outputTokens: 1 }}
+        contextWindow={1_000_000}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "上下文容量" });
+    expect(button.textContent?.trim()).toBe("");
+    // 精确读数仍在 title 里（环不带数字，但信息不能丢）
+    expect(button.getAttribute("title")).toContain("4.5万/100万（4.5%）");
+  });
+
+  it("弧长 = 剩余空间：4.5% 用量几乎满环（缺口取最小值），61.4% 用量缺口明显", () => {
+    const low = render(
+      <ContextUsageButton
+        usage={{ inputTokens: 45_300, outputTokens: 1 }}
+        contextWindow={1_000_000}
+      />,
+    );
+    const [lowArc, lowTotal] = dashOf(low.container);
+    // 环周长 C = 2πr，r = (22-5)/2 = 8.5 → C ≈ 53.4
+    expect(lowTotal).toBeCloseTo(53.4, 0);
+    // 用途极小 → 缺口被夹到 6%（至少看得出是个「C」）
+    expect(lowArc / lowTotal).toBeCloseTo(0.94, 2);
+    cleanup();
+
+    const high = render(
+      <ContextUsageButton
+        usage={{ inputTokens: 614_000, outputTokens: 1 }}
+        contextWindow={1_000_000}
+      />,
+    );
+    const [highArc, highTotal] = dashOf(high.container);
+    expect(highArc / highTotal).toBeCloseTo(0.386, 2);
+  });
+
+  it("没有用量数据：画一圈闭合的灰环（不编缺口）", () => {
+    const { container } = render(<ContextUsageButton usage={null} contextWindow={1_000_000} />);
+    const [arc, total] = dashOf(container);
+    expect(arc).toBeCloseTo(total, 1);
+  });
+});

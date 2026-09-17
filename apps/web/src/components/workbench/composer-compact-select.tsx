@@ -116,19 +116,25 @@ export function ComposerCompactSelect({
             <SelectValue className="@max-xl/composer:hidden" />
           ) : (
             <>
-              {/* 思考强度：一根**竖条**（参考图口径：图标 + 竖条，满格 = 最高） */}
+              {/*
+                思考强度：一根**竖条**（参考图口径：图标 + 竖条，满格 = 最高）。
+                **默认态不显示进度**（用户口径）——只留一根空的浅灰轨道；
+                选了具体档位（低/中/高/最高）才填，填充用绿色（参考图里就是绿的）。
+              */}
               <span
                 aria-hidden
                 className="flex h-3.5 w-1 flex-col justify-end overflow-hidden rounded-full bg-foreground/15"
               >
-                <span
-                  className="w-full rounded-full bg-foreground/70"
-                  style={{
-                    height: `${Math.round(
-                      Math.min(1, Math.max(0, progress)) * 100,
-                    )}%`,
-                  }}
-                />
+                {progress > 0 ? (
+                  <span
+                    className="w-full rounded-full bg-emerald-600"
+                    style={{
+                      height: `${Math.round(
+                        Math.min(1, Math.max(0, progress)) * 100,
+                      )}%`,
+                    }}
+                  />
+                ) : null}
               </span>
               <SelectValue className="@max-xl/composer:hidden" />
             </>

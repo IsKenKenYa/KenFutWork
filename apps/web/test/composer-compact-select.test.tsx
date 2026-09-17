@@ -9,6 +9,7 @@ import {
   ComposerCompactSelect,
   optionLabel,
   THINKING_OPTIONS,
+  THINKING_PROGRESS,
   TIER_OPTIONS,
 } from "../src/components/workbench/composer-compact-select";
 
@@ -150,6 +151,8 @@ describe("ComposerCompactSelect", () => {
       /height:/.test(el.getAttribute("style") ?? ""),
     );
     expect(fill?.getAttribute("style")).toContain("100%");
+    // 填充是绿色（参考图里就是绿的）
+    expect(fill?.getAttribute("class")).toContain("bg-emerald-600");
     // 除模型外一律不给下拉箭头（用户口径：自主/权限/思考强度的箭头都去掉）
     expect(trigger.querySelector("svg.lucide-chevron-down")).toBeNull();
   });
@@ -174,5 +177,45 @@ describe("权限档位选项", () => {
 
   it("按值查中文名：custom → 自定义配置（不再回落成原始值）", () => {
     expect(optionLabel(TIER_OPTIONS, "custom")).toBe("自定义配置");
+  });
+});
+
+/**
+ * 「默认」档不显示进度（用户口径）：只留一根空的浅灰轨道；选了档位才填。
+ */
+describe("思考强度：默认态不显示进度", () => {
+  afterEach(cleanup);
+
+  const renderWith = (value: string) =>
+    render(
+      <ComposerCompactSelect
+        ariaLabel="思考强度"
+        icon={<span data-testid="brain-icon" />}
+        options={THINKING_OPTIONS}
+        value={value}
+        onChange={() => {}}
+        progress={THINKING_PROGRESS[value] ?? 0}
+      />,
+    );
+
+  it("默认：轨道在、填充不在", () => {
+    renderWith("默认");
+    const trigger = screen.getByLabelText("思考强度");
+    const track = [...trigger.querySelectorAll("span")].find((el) =>
+      (el.getAttribute("class") ?? "").includes("flex-col"),
+    );
+    expect(track).toBeTruthy();
+    expect(track?.querySelector("span")).toBeNull();
+  });
+
+  it("低：有填充且为绿色（25%）", () => {
+    renderWith("低");
+    const trigger = screen.getByLabelText("思考强度");
+    const track = [...trigger.querySelectorAll("span")].find((el) =>
+      (el.getAttribute("class") ?? "").includes("flex-col"),
+    );
+    const fill = track?.querySelector("span");
+    expect(fill?.getAttribute("style")).toContain("25%");
+    expect(fill?.getAttribute("class")).toContain("bg-emerald-600");
   });
 });

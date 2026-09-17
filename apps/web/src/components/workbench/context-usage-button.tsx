@@ -72,12 +72,12 @@ export function ContextUsageButton({
         aria-expanded={open}
         title={view.usageLine ?? "上下文容量与缓存命中"}
         onClick={() => setOpen((current) => !current)}
-        /* 与相邻图标按钮**同一个命中盒**（h-7 w-7 + 居中）：圈才不会跟图标错开半个像素 */
-        className="inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        /* 与相邻图标按钮同心中线（h-8 w-8 + 居中，环本身 30）：圈才不会跟图标错开半个像素；
+           hover 只给底色，**文字颜色保持前景色**（否则悬停时环的数字会被 muted 冲淡） */
+        className="inline-flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-muted"
       >
         <ContextRing
           percent={view.percent}
-          fallbackLabel={view.hasUsage ? view.inputLabel : null}
           overThreshold={view.overThreshold}
         />
       </button>
@@ -206,61 +206,61 @@ export function ContextUsageButton({
 }
 
 /**
- * 容量圆环：一圈轨道 + 一段进度弧，中心写**实际百分比**（参考图口径：一眼看出占了多少）。
+ * 容量圆环（用户口径：**按参考图 1:1 复刻**——粗环、浅灰、顶部一个小缺口，**环里不写数字**）。
  *
- * 窗口未知（既没声明、兜底表也认不出）时不编百分比：环里写**绝对量**（如 `51万`），
- * 不写问号——问号等于什么都没给。
- * 越过输出预留线时弧变琥珀色：那是「该收尾了」的信号，不是错误。
+ * 读法：环画的是**剩余空间**（还剩多少），缺口是已用掉的那一小段——
+ * 参考图里那个「基本闭合、顶部留一点口」的样子，对应的正是「上下文还很空」。
+ * 用量涨上去，缺口就跟着变大（环被吃掉）。精确读数不放环里（环太小，两位数字挤不下），
+ * 在 `title` 与浮层里给（`4.5万/100万（4.5%）`）。
+ *
+ * 越线（吃掉为输出预留的空间）时整圈转琥珀色：那是「该收尾了」的信号，不是错误。
+ * 没有用量数据时画一圈闭合的灰环（还不知道占了多少，不做假缺口）。
  */
 function ContextRing({
   percent,
-  fallbackLabel,
   overThreshold = false,
 }: {
   percent: number | null;
-  fallbackLabel: string | null;
   overThreshold?: boolean;
 }) {
+  // 尺寸与粗细照参考图的比例（环的粗细约等于半径的 1/4，比常见的 2.5px 明显厚）
   const size = 22;
-  const stroke = 2.5;
+  const stroke = 5;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
-  const ratio =
-    percent === null ? 0 : Math.min(100, Math.max(0, percent)) / 100;
+  // 画「剩余」：缺口大小 = 已用比例；留一个最小缺口，避免 0% 时缺口消失、看不出是环
+  const used = percent === null ? 0 : Math.min(100, Math.max(0, percent)) / 100;
+  const gap = percent === null ? 0 : Math.max(0.06, used);
+  const remaining = Math.max(0, 1 - gap);
 
   return (
-    <span className="relative inline-flex items-center justify-center">
-      <svg
-        width={size}
-        height={size}
-        viewBox={`0 0 ${size} ${size}`}
-        aria-hidden
-        className="-rotate-90"
-      >
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          strokeWidth={stroke}
-          className="stroke-border"
-        />
-        {percent !== null ? (
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            fill="none"
-            strokeWidth={stroke}
-            strokeLinecap="round"
-            strokeDasharray={`${circumference * ratio} ${circumference}`}
-            className={overThreshold ? "stroke-amber-500" : "stroke-info"}
-          />
-        ) : null}
-      </svg>
-      <span className="absolute text-[7px] leading-none tabular-nums">
-        {percent !== null ? Math.round(percent) : (fallbackLabel ?? "—")}
-      </span>
-    </span>
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      aria-hidden
+      className="-rotate-90"
+    >
+      {/* 缺口当作轨道（浅灰）：比整圈都画深色更像参考图里那个「C」 */}
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        strokeWidth={stroke}
+        className="stroke-border"
+      />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        strokeWidth={stroke}
+        strokeDasharray={`${circumference * remaining} ${circumference}`}
+        className={
+          overThreshold ? "stroke-amber-500" : "stroke-muted-foreground"
+        }
+      />
+    </svg>
   );
 }
