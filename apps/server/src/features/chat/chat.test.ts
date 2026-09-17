@@ -503,10 +503,10 @@ describe("thread service（会话线程绑定）", () => {
     const { threadService } = buildService({
       repository: {
         findSessionThread: async () => ({
-        canvas_id: CANVAS_ID,
-        id: SESSION_ID,
-        thread_id: null,
-      }),
+          canvas_id: CANVAS_ID,
+          id: SESSION_ID,
+          thread_id: null,
+        }),
       },
     });
 

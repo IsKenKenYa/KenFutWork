@@ -1,18 +1,18 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   BROWSER_HISTORY_STORAGE_KEY,
-  clearHistory,
-  loadHistory,
-  parseImportedHistory,
-  saveHistory,
   canGoBack,
   canGoForward,
+  clearHistory,
   createHistory,
   currentUrl,
   goBack,
   goForward,
+  loadHistory,
   MAX_HISTORY_ENTRIES,
   openUrl,
+  parseImportedHistory,
+  saveHistory,
 } from "../src/lib/browser-history";
 
 /**
@@ -86,7 +86,9 @@ describe("浏览器面板历史栈", () => {
       state = openUrl(state, `http://site-${i}.com/`);
     }
     expect(state.entries.length).toBe(MAX_HISTORY_ENTRIES);
-    expect(state.entries[0]).toBe(`http://site-${total - MAX_HISTORY_ENTRIES}.com/`);
+    expect(state.entries[0]).toBe(
+      `http://site-${total - MAX_HISTORY_ENTRIES}.com/`,
+    );
     expect(currentUrl(state)).toBe(`http://site-${total - 1}.com/`);
     expect(canGoBack(state)).toBe(true);
   });
@@ -103,7 +105,10 @@ describe("面板历史的持久化与导入", () => {
 
   it("save/load 往返：坏数据回落空历史，index 夹到合法范围", () => {
     saveHistory(openUrl(openUrl(createHistory(), "https://a"), "https://b"));
-    expect(loadHistory()).toEqual({ entries: ["https://a", "https://b"], index: 1 });
+    expect(loadHistory()).toEqual({
+      entries: ["https://a", "https://b"],
+      index: 1,
+    });
 
     window.localStorage.setItem(BROWSER_HISTORY_STORAGE_KEY, "{not json");
     expect(loadHistory()).toEqual(createHistory());
@@ -124,7 +129,9 @@ describe("面板历史的持久化与导入", () => {
       parseImportedHistory(JSON.stringify(["https://x", "https://y"])),
     ).toEqual({ entries: ["https://x", "https://y"], index: 1 });
     expect(
-      parseImportedHistory(JSON.stringify({ entries: ["https://z"], index: 0 })),
+      parseImportedHistory(
+        JSON.stringify({ entries: ["https://z"], index: 0 }),
+      ),
     ).toEqual({ entries: ["https://z"], index: 0 });
     expect(parseImportedHistory("不是 JSON")).toBeNull();
     expect(parseImportedHistory("[]")).toBeNull();

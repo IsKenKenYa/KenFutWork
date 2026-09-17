@@ -117,7 +117,10 @@ function normalizeHistory(value: unknown): BrowserHistoryState {
   const rawEntries = (value as { entries?: unknown }).entries;
   if (!Array.isArray(rawEntries)) return createHistory();
   const entries = rawEntries
-    .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    .filter(
+      (entry): entry is string =>
+        typeof entry === "string" && entry.trim().length > 0,
+    )
     .map((entry) => entry.trim())
     .slice(-MAX_HISTORY_ENTRIES);
   if (entries.length === 0) return createHistory();

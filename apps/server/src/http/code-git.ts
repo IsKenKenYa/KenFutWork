@@ -1,23 +1,23 @@
 import {
   applicationErrorResponseSchema,
-  codeGitBranchCreateRequestSchema,
-  codeGitCheckoutRequestSchema,
   codeFilesResponseSchema,
+  codeGitBranchCreateRequestSchema,
+  codeGitChangesResponseSchema,
+  codeGitCheckoutRequestSchema,
+  codeGitCommitRequestSchema,
+  codeGitDiffResponseSchema,
+  codeGitDiffStatResponseSchema,
   codeGitDiscardRequestSchema,
   codeGitDiscardResponseSchema,
+  codeGitFileResponseSchema,
+  codeGitGraphResponseSchema,
   codeGitStageHunkRequestSchema,
   codeGitStageRequestSchema,
   codeGitStageResponseSchema,
+  codeGitStatusResponseSchema,
   codeShellsResponseSchema,
   codeTerminalRequestSchema,
   codeTerminalResponseSchema,
-  codeGitChangesResponseSchema,
-  codeGitCommitRequestSchema,
-  codeGitDiffResponseSchema,
-  codeGitFileResponseSchema,
-  codeGitDiffStatResponseSchema,
-  codeGitGraphResponseSchema,
-  codeGitStatusResponseSchema,
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
@@ -175,7 +175,11 @@ export async function registerCodeGitRoutes(
         );
       }
       try {
-        const diff = await options.codeGitService.fileDiff(user, canvasId, path);
+        const diff = await options.codeGitService.fileDiff(
+          user,
+          canvasId,
+          path,
+        );
         return reply.code(200).send(codeGitDiffResponseSchema.parse({ diff }));
       } catch (error) {
         return sendCodeGitError(error, reply);
@@ -204,7 +208,11 @@ export async function registerCodeGitRoutes(
         );
       }
       try {
-        const file = await options.codeGitService.readFile(user, canvasId, path);
+        const file = await options.codeGitService.readFile(
+          user,
+          canvasId,
+          path,
+        );
         return reply.code(200).send(codeGitFileResponseSchema.parse({ file }));
       } catch (error) {
         return sendCodeGitError(error, reply);
@@ -289,13 +297,17 @@ export async function registerCodeGitRoutes(
         payload.path,
         payload.patch,
         {
-          ...(payload.reverse !== undefined ? { reverse: payload.reverse } : {}),
+          ...(payload.reverse !== undefined
+            ? { reverse: payload.reverse }
+            : {}),
           ...(payload.target ? { target: payload.target } : {}),
         },
       );
-      return reply.code(200).send(
-        codeGitStageResponseSchema.parse({ path: result.path, staged: true }),
-      );
+      return reply
+        .code(200)
+        .send(
+          codeGitStageResponseSchema.parse({ path: result.path, staged: true }),
+        );
     } catch (error) {
       return sendCodeGitError(error, reply);
     }

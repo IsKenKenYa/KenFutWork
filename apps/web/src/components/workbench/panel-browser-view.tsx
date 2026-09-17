@@ -11,7 +11,6 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { getServerBaseUrl } from "@/lib/env";
 import {
   Select,
   SelectContent,
@@ -19,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { getServerBaseUrl } from "@/lib/env";
 
 /**
  * 右栏浏览器（R3-1 / R3-4 的可用形态）。工具栏按参考图的浏览器面板排：
@@ -95,7 +95,9 @@ export function BrowserPane({
    * 跨源 iframe 读不到 DOM，所以走服务端抓取；脚本渲染出的内容与登录态页面读不到，
    * 这条边界写在浮层里（不写就只能靠猜为什么元素不全）。
    */
-  const [picking, setPicking] = useState<"idle" | "loading" | "error" | "ready">("idle");
+  const [picking, setPicking] = useState<
+    "idle" | "loading" | "error" | "ready"
+  >("idle");
   const [pickError, setPickError] = useState<string | null>(null);
   const [picked, setPicked] = useState<{
     pageTitle: string;
@@ -108,14 +110,17 @@ export function BrowserPane({
     setPickError(null);
     setPicked(null);
     try {
-      const response = await fetch(`${getServerBaseUrl()}/api/browser/snapshot`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      const response = await fetch(
+        `${getServerBaseUrl()}/api/browser/snapshot`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          },
+          body: JSON.stringify({ url }),
         },
-        body: JSON.stringify({ url }),
-      });
+      );
       const payload = (await response.json().catch(() => null)) as {
         snapshot?: {
           title: string;
@@ -135,7 +140,9 @@ export function BrowserPane({
       setPicking("ready");
     } catch (error) {
       setPicking("error");
-      setPickError(error instanceof Error ? error.message : "读取页面结构失败。");
+      setPickError(
+        error instanceof Error ? error.message : "读取页面结构失败。",
+      );
     }
   };
   /** 面板里这块预览区有多大（「适应面板」时的视口尺寸 = 它）。 */
@@ -271,7 +278,7 @@ export function BrowserPane({
       </form>
 
       {/* 第二行：视口预设 + 缩放预设（用户口径：预设不做在地址栏右边）。
-          **都是真的**——iframe 按预设尺寸排版，再按比例缩放到面板里 */}
+       **都是真的**——iframe 按预设尺寸排版，再按比例缩放到面板里 */}
       <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-2 py-1 text-[11px]">
         <span className="font-mono text-muted-foreground">
           {viewportWidth > 0 ? `${viewportWidth} × ${viewportHeight}` : "—"}
@@ -290,7 +297,9 @@ export function BrowserPane({
               value={freeSize.width}
               min={320}
               max={3840}
-              onCommit={(width) => setFreeSize((current) => ({ ...current, width }))}
+              onCommit={(width) =>
+                setFreeSize((current) => ({ ...current, width }))
+              }
             />
             <span aria-hidden className="text-muted-foreground">
               ×
@@ -319,7 +328,8 @@ export function BrowserPane({
           aria-label="视口预设"
           value={viewportPreset}
           onValueChange={(next) => {
-            if (typeof next === "string") setViewportPreset(next as ViewportPresetId);
+            if (typeof next === "string")
+              setViewportPreset(next as ViewportPresetId);
           }}
           items={VIEWPORT_PRESETS.map((preset) => ({
             value: preset.id,
@@ -494,7 +504,8 @@ export function BrowserPane({
       )}
       <p className="text-[10px] text-muted-foreground">
         内嵌页面能否显示取决于目标站点是否允许被嵌入；被拒绝时会是一片空白，用「在系统浏览器
-        打开」兜底。后退 / 前进记的是本面板打开过的地址（跨源页面自己的历史读不到）。
+        打开」兜底。后退 /
+        前进记的是本面板打开过的地址（跨源页面自己的历史读不到）。
       </p>
     </div>
   );
@@ -541,7 +552,12 @@ function ViewportSizeInput({
         const next = event.target.value;
         setText(next);
         const parsed = Number(next);
-        if (next.trim() !== "" && Number.isFinite(parsed) && parsed >= min && parsed <= max) {
+        if (
+          next.trim() !== "" &&
+          Number.isFinite(parsed) &&
+          parsed >= min &&
+          parsed <= max
+        ) {
           onCommit(Math.round(parsed));
         }
       }}

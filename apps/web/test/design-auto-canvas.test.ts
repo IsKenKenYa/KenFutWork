@@ -53,26 +53,26 @@ describe("resolveDesignAutoCanvas", () => {
   });
 
   it("列表为空但已尝试过：不再重试（避免反复发创建请求）", () => {
-    expect(
-      resolveDesignAutoCanvas({ ...base, autoCreateTried: true }),
-    ).toEqual({ kind: "give-up" });
+    expect(resolveDesignAutoCanvas({ ...base, autoCreateTried: true })).toEqual(
+      { kind: "give-up" },
+    );
   });
 
   it("列表尚未返回时不动作（否则会误建画布）", () => {
-    expect(
-      resolveDesignAutoCanvas({ ...base, projectsLoaded: false }),
-    ).toEqual({ kind: "idle" });
+    expect(resolveDesignAutoCanvas({ ...base, projectsLoaded: false })).toEqual(
+      { kind: "idle" },
+    );
   });
 
   it("有激活任务 / 正在建项目 / 非 Design 模式都不动作", () => {
-    expect(
-      resolveDesignAutoCanvas({ ...base, activeTaskId: "t1" }),
-    ).toEqual({ kind: "idle" });
-    expect(
-      resolveDesignAutoCanvas({ ...base, creatingProject: true }),
-    ).toEqual({ kind: "idle" });
-    expect(
-      resolveDesignAutoCanvas({ ...base, mode: "code" }),
-    ).toEqual({ kind: "idle" });
+    expect(resolveDesignAutoCanvas({ ...base, activeTaskId: "t1" })).toEqual({
+      kind: "idle",
+    });
+    expect(resolveDesignAutoCanvas({ ...base, creatingProject: true })).toEqual(
+      { kind: "idle" },
+    );
+    expect(resolveDesignAutoCanvas({ ...base, mode: "code" })).toEqual({
+      kind: "idle",
+    });
   });
 });

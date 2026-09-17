@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-
-import { formatDuration } from "../src/lib/usage-format";
 import { monotonePath } from "../src/components/workbench/usage-stats-section";
+import { formatDuration } from "../src/lib/usage-format";
 
 describe("使用统计的时长格式化（R4-2「最长聊天时长」卡）", () => {
   it("按天/小时/分钟组合，零值段不出现", () => {

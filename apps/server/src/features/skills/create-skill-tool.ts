@@ -1,5 +1,8 @@
+import type {
+  ToolDefinition,
+  ToolExecutionContext,
+} from "../../kernel/types.js";
 import type { RequestAuthenticator } from "../auth/types.js";
-import type { ToolDefinition, ToolExecutionContext } from "../../kernel/types.js";
 import type { SkillCatalogRepository } from "./repository.js";
 import { buildSkillFromFiles } from "./skill-import-service.js";
 import { generateSlug } from "./slug.js";

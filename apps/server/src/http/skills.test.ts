@@ -763,10 +763,7 @@ describe("工作目录里的技能包（从工作目录导入）", () => {
 
   it("列出候选：只列含 SKILL.md 的目录，带解析出的名字与说明", async () => {
     const sandboxRoot = makeSandbox();
-    const app = await buildApp(
-      {},
-      { canvas: { id: CANVAS_ID }, sandboxRoot },
-    );
+    const app = await buildApp({}, { canvas: { id: CANVAS_ID }, sandboxRoot });
 
     const res = await app.inject({
       method: "GET",

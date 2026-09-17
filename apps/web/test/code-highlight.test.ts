@@ -22,7 +22,10 @@ describe("文件预览高亮", () => {
   });
 
   it("高亮输出是已转义的 HTML：喂 <script> 出来的是 &lt;script&gt;", () => {
-    const html = highlightCode('const a = "<script>alert(1)</script>";', "a.ts");
+    const html = highlightCode(
+      'const a = "<script>alert(1)</script>";',
+      "a.ts",
+    );
     expect(html).not.toBeNull();
     expect(html).toContain("&lt;script&gt;");
     expect(html).not.toContain("<script>");

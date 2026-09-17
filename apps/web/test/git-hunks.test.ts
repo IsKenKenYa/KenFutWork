@@ -45,7 +45,9 @@ describe("暂存块的 diff 切分", () => {
   it("拼出的 patch = 文件头 + 这一块（可直接喂给 git apply）", () => {
     const { fileHeader, hunks } = splitHunks(DIFF);
     const patch = hunkPatch(fileHeader, hunks[1]!);
-    expect(patch.startsWith("diff --git a/src/app.ts b/src/app.ts\n")).toBe(true);
+    expect(patch.startsWith("diff --git a/src/app.ts b/src/app.ts\n")).toBe(
+      true,
+    );
     expect(patch).toContain("+++ b/src/app.ts\n@@ -20,3 +20,4 @@");
     expect(patch).toContain("+extra");
     // 第二块的 patch 不该带第一块的改动
@@ -54,9 +56,7 @@ describe("暂存块的 diff 切分", () => {
   });
 
   it("末行没有换行也补上（否则 git 认为 patch 被截断）", () => {
-    const { fileHeader, hunks } = splitHunks(
-      `${DIFF.trimEnd()}`,
-    );
+    const { fileHeader, hunks } = splitHunks(`${DIFF.trimEnd()}`);
     const patch = hunkPatch(fileHeader, hunks[0]!);
     expect(patch.endsWith("\n")).toBe(true);
   });

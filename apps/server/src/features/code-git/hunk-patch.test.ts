@@ -56,9 +56,9 @@ describe("暂存块的 patch 校验", () => {
   });
 
   it("声明的路径与 patch 不一致 → 拒绝", () => {
-    expect(patchTargetsOnly(`${HEADER}\n@@ -1 +1 @@\n-a\n+b\n`, "other.ts")).toBe(
-      false,
-    );
+    expect(
+      patchTargetsOnly(`${HEADER}\n@@ -1 +1 @@\n-a\n+b\n`, "other.ts"),
+    ).toBe(false);
   });
 
   it("空 patch / 认不出路径 → 拒绝（不放看不懂的东西进 git）", () => {

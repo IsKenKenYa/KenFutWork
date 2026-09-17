@@ -22,7 +22,9 @@ describe.skipIf(!ENABLED)("桌面运行时（内嵌 PG + local-trust）", () => 
     const { tmpdir } = await import("node:os");
 
     const repoRoot = join(process.cwd(), "..", "..");
-    const dataDir = await mkdtemp(join(tmpdir(), "kenfutwork-desktop-runtime-"));
+    const dataDir = await mkdtemp(
+      join(tmpdir(), "kenfutwork-desktop-runtime-"),
+    );
     const logs: string[] = [];
 
     const runtime = await prepareDesktopRuntime({

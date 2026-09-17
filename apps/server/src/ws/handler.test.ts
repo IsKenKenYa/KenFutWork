@@ -1,8 +1,8 @@
-import websocket from "@fastify/websocket";
-import Fastify from "fastify";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import websocket from "@fastify/websocket";
+import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 
@@ -187,7 +187,6 @@ describe("WS 早期消息不丢失（回归）", () => {
   });
 });
 
-
 /**
  * 终端会话这条 WS 通道的端到端（真 shell + 真 socket）：起会话 → 输入 → 收到输出 → 结束。
  *
@@ -226,19 +225,26 @@ describe("终端会话（WS 通道）", () => {
         // 真实 shell 启动在并行跑全仓时可能明显变慢（turbo 同时拉多个包），给足预算
         timeoutMs = 25_000,
       ): Promise<Record<string, unknown>> {
-        const pending = new Promise<Record<string, unknown>>((resolve, reject) => {
-          const timer = setTimeout(
-            () => reject(new Error(`等待回传超时；已收到：${JSON.stringify(received)}`)),
-            timeoutMs,
-          );
-          waiters.push({
-            match,
-            resolve: (msg) => {
-              clearTimeout(timer);
-              resolve(msg);
-            },
-          });
-        });
+        const pending = new Promise<Record<string, unknown>>(
+          (resolve, reject) => {
+            const timer = setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    `等待回传超时；已收到：${JSON.stringify(received)}`,
+                  ),
+                ),
+              timeoutMs,
+            );
+            waiters.push({
+              match,
+              resolve: (msg) => {
+                clearTimeout(timer);
+                resolve(msg);
+              },
+            });
+          },
+        );
         client.send(JSON.stringify(payload));
         return pending;
       },
@@ -289,7 +295,12 @@ describe("终端会话（WS 通道）", () => {
     } finally {
       session.client.close();
       await app.close();
-      rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+      rmSync(dir, {
+        recursive: true,
+        force: true,
+        maxRetries: 10,
+        retryDelay: 200,
+      });
     }
   }, 30_000);
 
@@ -321,7 +332,12 @@ describe("终端会话（WS 通道）", () => {
       await app.close();
       // 断开后服务端异步收会话：等进程退干净再删目录（否则 EBUSY）
       await new Promise((resolve) => setTimeout(resolve, 1500));
-      rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+      rmSync(dir, {
+        recursive: true,
+        force: true,
+        maxRetries: 20,
+        retryDelay: 250,
+      });
     }
   }, 45_000);
 
@@ -362,7 +378,12 @@ describe("终端会话（WS 通道）", () => {
       session.client.close();
       // 断开后服务端收会话：等一小会儿再删目录，删得掉即说明进程退了
       await new Promise((resolve) => setTimeout(resolve, 1500));
-      rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+      rmSync(dir, {
+        recursive: true,
+        force: true,
+        maxRetries: 20,
+        retryDelay: 250,
+      });
     } finally {
       await app.close();
     }

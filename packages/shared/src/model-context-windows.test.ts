@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { knownContextWindow, resolveContextWindow } from "./model-context-windows.js";
+import {
+  knownContextWindow,
+  resolveContextWindow,
+} from "./model-context-windows.js";
 
 /**
  * 上下文窗口兜底表：**声明优先**，没声明按常见族给公开值，认不出返回 null（不编数字）。

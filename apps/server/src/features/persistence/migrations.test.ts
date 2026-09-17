@@ -338,8 +338,6 @@ describe("迁移校验和的行尾归一", () => {
       ["20260323000001_a.sql", "create table t (id int);\r\n"],
     ]);
     const files = loadMigrationFiles(dir);
-    expect(files[0]?.checksum).toBe(
-      checksumSql("create table t (id int);\n"),
-    );
+    expect(files[0]?.checksum).toBe(checksumSql("create table t (id int);\n"));
   });
 });

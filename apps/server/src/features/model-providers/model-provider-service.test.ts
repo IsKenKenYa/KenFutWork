@@ -502,10 +502,7 @@ describe("model-providers 自定义请求头（§4.8，R6-1）", () => {
       "admin-1",
     );
 
-    expect(created.headerKeys).toEqual([
-      "x-opencode-session",
-      "x-tenant-id",
-    ]);
+    expect(created.headerKeys).toEqual(["x-opencode-session", "x-tenant-id"]);
     expect(JSON.stringify(created)).not.toContain("ws-42");
 
     const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
@@ -517,7 +514,8 @@ describe("model-providers 自定义请求头（§4.8，R6-1）", () => {
     expect(JSON.parse(String(stored))).toEqual(HEADERS);
   });
 
-  it("未设置 headers 的实例：凭证不含 headers 字段，响应 headerKeys 为空", async () => {    const { encryptSecret } = await import("./secret-store.js");
+  it("未设置 headers 的实例：凭证不含 headers 字段，响应 headerKeys 为空", async () => {
+    const { encryptSecret } = await import("./secret-store.js");
     const { service } = buildService({
       rows: [
         {

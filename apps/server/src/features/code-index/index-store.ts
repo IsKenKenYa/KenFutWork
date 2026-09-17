@@ -1,5 +1,12 @@
-import { existsSync, type Dirent, type Stats } from "node:fs";
-import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { type Dirent, existsSync, type Stats } from "node:fs";
+import {
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 /**
@@ -122,7 +129,9 @@ export interface CodeIndexSearchHit {
 
 function languageOf(path: string): string {
   const dot = path.lastIndexOf(".");
-  return dot >= 0 ? (LANGUAGE_BY_EXTENSION[path.slice(dot).toLowerCase()] ?? "") : "";
+  return dot >= 0
+    ? (LANGUAGE_BY_EXTENSION[path.slice(dot).toLowerCase()] ?? "")
+    : "";
 }
 
 /** 二进制判定：前 8KB 里出现 NUL 即当二进制（与沙箱文件读取同一口径）。 */
@@ -131,10 +140,7 @@ function looksBinary(buffer: Buffer): boolean {
 }
 
 function summarize(text: string): string {
-  return text
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, INDEX_SUMMARY_CHARS);
+  return text.replace(/\s+/g, " ").trim().slice(0, INDEX_SUMMARY_CHARS);
 }
 
 export interface CodeIndexStoreOptions {
@@ -143,7 +149,9 @@ export interface CodeIndexStoreOptions {
 }
 
 export function createCodeIndexStore(options: CodeIndexStoreOptions = {}) {
-  const indexDir = resolve(options.indexDir ?? join(process.cwd(), ".kenfutwork", "index"));
+  const indexDir = resolve(
+    options.indexDir ?? join(process.cwd(), ".kenfutwork", "index"),
+  );
 
   const fileFor = (canvasId: string) =>
     join(indexDir, `${canvasId.replace(/[^a-zA-Z0-9_-]/g, "-")}.json`);
@@ -192,7 +200,9 @@ export function createCodeIndexStore(options: CodeIndexStoreOptions = {}) {
           return;
         }
         if (child.name.startsWith(".") && child.isDirectory()) continue;
-        const childRelative = relative ? `${relative}/${child.name}` : child.name;
+        const childRelative = relative
+          ? `${relative}/${child.name}`
+          : child.name;
         const absolute = join(dir, child.name);
         if (child.isDirectory()) {
           if (SKIP_DIRS.has(child.name)) continue;
@@ -208,7 +218,11 @@ export function createCodeIndexStore(options: CodeIndexStoreOptions = {}) {
           continue;
         }
         const prior = priorByPath.get(childRelative);
-        if (prior && prior.mtimeMs === info.mtimeMs && prior.bytes === info.size) {
+        if (
+          prior &&
+          prior.mtimeMs === info.mtimeMs &&
+          prior.bytes === info.size
+        ) {
           entries.push(prior);
           continue;
         }
@@ -260,8 +274,10 @@ export function createCodeIndexStore(options: CodeIndexStoreOptions = {}) {
   };
 
   /** 拿索引：有就直接用；没有就懒建一份（并把 previous 传进去做增量）。 */
-  const ensure = async (canvasId: string, root: string): Promise<CodeIndexFile> =>
-    (await load(canvasId)) ?? build(canvasId, root);
+  const ensure = async (
+    canvasId: string,
+    root: string,
+  ): Promise<CodeIndexFile> => (await load(canvasId)) ?? build(canvasId, root);
 
   const rebuild = async (canvasId: string, root: string) =>
     build(canvasId, root, await load(canvasId));
@@ -270,7 +286,9 @@ export function createCodeIndexStore(options: CodeIndexStoreOptions = {}) {
     await rm(fileFor(canvasId), { force: true });
   };
 
-  const stats = async (index: CodeIndexFile | null): Promise<CodeIndexStats | null> => {
+  const stats = async (
+    index: CodeIndexFile | null,
+  ): Promise<CodeIndexStats | null> => {
     if (!index) return null;
     let indexBytes = 0;
     try {
@@ -303,7 +321,9 @@ export function createCodeIndexStore(options: CodeIndexStoreOptions = {}) {
     for (const entry of index.entries) {
       const path = entry.path.toLowerCase();
       const name = path.slice(path.lastIndexOf("/") + 1);
-      const matched: CodeIndexSearchHit["matched"] | null = name.includes(needle)
+      const matched: CodeIndexSearchHit["matched"] | null = name.includes(
+        needle,
+      )
         ? "name"
         : path.includes(needle)
           ? "path"
@@ -325,7 +345,10 @@ export function createCodeIndexStore(options: CodeIndexStoreOptions = {}) {
       content: 2,
     };
     return hits
-      .sort((a, b) => rank[a.matched] - rank[b.matched] || a.path.localeCompare(b.path))
+      .sort(
+        (a, b) =>
+          rank[a.matched] - rank[b.matched] || a.path.localeCompare(b.path),
+      )
       .slice(0, limit);
   };
 

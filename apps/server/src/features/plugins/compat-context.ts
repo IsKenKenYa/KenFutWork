@@ -302,7 +302,8 @@ export async function loadCompatPlugin(
     },
     routes: {
       register(spec) {
-        const routePath = typeof spec?.path === "string" ? spec.path.trim() : "";
+        const routePath =
+          typeof spec?.path === "string" ? spec.path.trim() : "";
         if (!routePath || typeof spec?.handler !== "function") {
           throw new CompatLoadError(
             `${deps.label}：ctx.routes.register 需要 path 与 handler。`,
@@ -316,7 +317,8 @@ export async function loadCompatPlugin(
     },
     ui: {
       register(entry) {
-        const title = typeof entry?.title === "string" ? entry.title.trim() : "";
+        const title =
+          typeof entry?.title === "string" ? entry.title.trim() : "";
         const url = typeof entry?.url === "string" ? entry.url.trim() : "";
         if (!title || !url) {
           throw new CompatLoadError(

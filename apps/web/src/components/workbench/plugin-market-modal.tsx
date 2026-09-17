@@ -119,9 +119,18 @@ export function PluginMarketModal({
    * 表外的分类排在后面并按名称排序——第三方插件自带分类时也是这个规则。
    */
   const categories = useMemo(() => {
-    const preferred = ["模型与供应商", "Agent 能力", "工具与集成", "创作与画布", "数据与统计", "系统"];
+    const preferred = [
+      "模型与供应商",
+      "Agent 能力",
+      "工具与集成",
+      "创作与画布",
+      "数据与统计",
+      "系统",
+    ];
     const present = new Set(
-      plugins.map((entry) => entry.category).filter((c): c is string => Boolean(c)),
+      plugins
+        .map((entry) => entry.category)
+        .filter((c): c is string => Boolean(c)),
     );
     return [
       ...preferred.filter((c) => present.has(c)),

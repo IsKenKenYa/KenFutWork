@@ -97,8 +97,8 @@ export function PluginInstallFromWorkdir({
         </button>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        「创造」模式在工作目录里写好的插件 bundle（package.json 声明 kenfutwork.bundle /
-        dsh.bundle）会出现在这里；安装前同样会过兼容性门禁。
+        「创造」模式在工作目录里写好的插件 bundle（package.json 声明
+        kenfutwork.bundle / dsh.bundle）会出现在这里；安装前同样会过兼容性门禁。
       </p>
       {!isAdmin ? (
         <p className="mt-1 text-xs text-amber-600">

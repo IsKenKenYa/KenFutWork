@@ -206,18 +206,21 @@ export function loadServerEnv(
   const webDist =
     overrides.webDist ?? normalizeOptionalString(source.KENFUTWORK_WEB_DIST);
   const authDriver =
-    overrides.authDriver ?? normalizeOptionalString(source.KENFUTWORK_AUTH_DRIVER);
+    overrides.authDriver ??
+    normalizeOptionalString(source.KENFUTWORK_AUTH_DRIVER);
   const queueDriver =
     overrides.queueDriver ??
     normalizeOptionalString(source.KENFUTWORK_QUEUE_DRIVER);
   const blobDir =
     overrides.blobDir ?? normalizeOptionalString(source.KENFUTWORK_BLOB_DIR);
   const desktopDataDir =
-    overrides.desktopDataDir ?? normalizeOptionalString(source.KENFUTWORK_DATA_DIR);
+    overrides.desktopDataDir ??
+    normalizeOptionalString(source.KENFUTWORK_DATA_DIR);
   const pgBinDir =
     overrides.pgBinDir ?? normalizeOptionalString(source.KENFUTWORK_PG_BIN_DIR);
   const embeddedPostgres =
-    overrides.embeddedPostgres ?? parseBooleanFlag(source.KENFUTWORK_EMBEDDED_PG);
+    overrides.embeddedPostgres ??
+    parseBooleanFlag(source.KENFUTWORK_EMBEDDED_PG);
   const embeddedPostgresPort =
     overrides.embeddedPostgresPort ??
     parseOptionalPort(
@@ -295,7 +298,8 @@ export function loadServerEnv(
     overrides.lemonSqueezyVariantBusinessYearly ??
     normalizeOptionalString(source.LEMONSQUEEZY_VARIANT_BUSINESS_YEARLY);
   const skillsRoot =
-    overrides.skillsRoot ?? normalizeOptionalString(source.KENFUTWORK_SKILLS_ROOT);
+    overrides.skillsRoot ??
+    normalizeOptionalString(source.KENFUTWORK_SKILLS_ROOT);
   const workerConcurrency =
     overrides.workerConcurrency ??
     (source.WORKER_CONCURRENCY
@@ -348,7 +352,8 @@ export function loadServerEnv(
       parseAgentBackendMode(source.KENFUTWORK_AGENT_BACKEND_MODE),
     agentModel: resolvedAgentModel,
     ...(agentStreamIdleTimeoutMs ? { agentStreamIdleTimeoutMs } : {}),
-    port: overrides.port ?? parsePort(source.KENFUTWORK_SERVER_PORT ?? source.PORT),
+    port:
+      overrides.port ?? parsePort(source.KENFUTWORK_SERVER_PORT ?? source.PORT),
     serverHost: overrides.serverHost ?? source.HOST ?? DEFAULT_SERVER_HOST,
     version: overrides.version ?? readServerVersion(),
     webOrigin:
@@ -488,7 +493,9 @@ export function parseMcpServers(
   }
   const parsed: unknown = JSON.parse(raw);
   if (!Array.isArray(parsed)) {
-    throw new Error("Invalid KENFUTWORK_MCP_SERVERS value: must be a JSON array.");
+    throw new Error(
+      "Invalid KENFUTWORK_MCP_SERVERS value: must be a JSON array.",
+    );
   }
   return parsed.map((entry) => {
     const config = entry as Partial<McpServerConfig>;
@@ -609,7 +616,9 @@ function resolveAllowThirdPartyPlugins(
   source: NodeJS.ProcessEnv,
   deployment: "local" | "self-hosted" | "cloud",
 ): boolean {
-  const raw = normalizeOptionalString(source.KENFUTWORK_ALLOW_THIRD_PARTY_PLUGINS);
+  const raw = normalizeOptionalString(
+    source.KENFUTWORK_ALLOW_THIRD_PARTY_PLUGINS,
+  );
   if (raw === "true") return true;
   if (raw === "false") return false;
   return deployment !== "cloud";

@@ -64,7 +64,11 @@ function readBundleDeclaration(
   }
   const kenfutwork = parsed.kenfutwork as { bundle?: unknown } | undefined;
   const dsh = parsed.dsh as { bundle?: unknown } | undefined;
-  const declaredBy = kenfutwork?.bundle ? "kenfutwork" : dsh?.bundle ? "dsh" : null;
+  const declaredBy = kenfutwork?.bundle
+    ? "kenfutwork"
+    : dsh?.bundle
+      ? "dsh"
+      : null;
   if (!declaredBy) return null;
   return {
     name: typeof parsed.name === "string" ? parsed.name : dir.split(sep).pop()!,

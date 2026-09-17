@@ -42,7 +42,9 @@ export function CanvasStatsPanel({
 }) {
   let all: AnyElement[] = [];
   try {
-    all = (excalidrawApi?.getSceneElements?.() ?? elements ?? []) as AnyElement[];
+    all = (excalidrawApi?.getSceneElements?.() ??
+      elements ??
+      []) as AnyElement[];
   } catch {
     all = (elements ?? []) as AnyElement[];
   }

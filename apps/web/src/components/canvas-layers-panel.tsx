@@ -1,7 +1,7 @@
 "use client";
 
-import { memo, useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 /* -- Types -- */
 // biome-ignore lint/suspicious/noExplicitAny: Excalidraw element has no public type

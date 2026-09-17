@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -118,17 +124,23 @@ describe("ProviderSettings（BYOK 供应商设置）", () => {
     await user.type(screen.getByLabelText("API Key"), "k");
 
     // 非法 JSON：拦在提交前（含 `[`/`{` 的值用 change 直填，避开 userEvent 的按键转义语法）
-    await fireEvent.change(screen.getByLabelText("自定义请求头（JSON，可选）"), {
-      target: { value: "[1,2]" },
-    });
+    await fireEvent.change(
+      screen.getByLabelText("自定义请求头（JSON，可选）"),
+      {
+        target: { value: "[1,2]" },
+      },
+    );
     await user.click(screen.getByRole("button", { name: "保存实例" }));
     expect(await screen.findByText(/必须是 JSON 对象/)).toBeDefined();
     expect(mockedCreate).not.toHaveBeenCalled();
 
     // 合法对象：值原样提交（只写通道）
-    await fireEvent.change(screen.getByLabelText("自定义请求头（JSON，可选）"), {
-      target: { value: '{"x-opencode-session":"{{sessionId}}"}' },
-    });
+    await fireEvent.change(
+      screen.getByLabelText("自定义请求头（JSON，可选）"),
+      {
+        target: { value: '{"x-opencode-session":"{{sessionId}}"}' },
+      },
+    );
     await user.click(screen.getByRole("button", { name: "保存实例" }));
     await waitFor(() => {
       expect(mockedCreate).toHaveBeenCalledWith(
@@ -234,9 +246,12 @@ describe("ProviderSettings（BYOK 供应商设置）", () => {
     expect(mockedUpdate).not.toHaveBeenCalled();
 
     // 填 {} → 清空（而不是「无 headers 字段」）
-    await fireEvent.change(screen.getByLabelText("自定义请求头（JSON，可选）"), {
-      target: { value: "{}" },
-    });
+    await fireEvent.change(
+      screen.getByLabelText("自定义请求头（JSON，可选）"),
+      {
+        target: { value: "{}" },
+      },
+    );
     await user.click(screen.getByRole("button", { name: "保存修改" }));
     await waitFor(() => {
       expect(mockedUpdate).toHaveBeenCalledWith("token", "inst-1", {

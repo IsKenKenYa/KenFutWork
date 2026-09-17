@@ -63,19 +63,25 @@ export function decodeHtmlEntities(text: string): string {
     rsquo: "’",
     middot: "·",
   };
-  return text.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (match, body: string) => {
-    if (body.startsWith("#")) {
-      const isHex = body[1] === "x" || body[1] === "X";
-      const code = Number.parseInt(body.slice(isHex ? 2 : 1), isHex ? 16 : 10);
-      if (!Number.isFinite(code) || code < 0 || code > 0x10ffff) return match;
-      try {
-        return String.fromCodePoint(code);
-      } catch {
-        return match;
+  return text.replace(
+    /&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g,
+    (match, body: string) => {
+      if (body.startsWith("#")) {
+        const isHex = body[1] === "x" || body[1] === "X";
+        const code = Number.parseInt(
+          body.slice(isHex ? 2 : 1),
+          isHex ? 16 : 10,
+        );
+        if (!Number.isFinite(code) || code < 0 || code > 0x10ffff) return match;
+        try {
+          return String.fromCodePoint(code);
+        } catch {
+          return match;
+        }
       }
-    }
-    return named[body.toLowerCase()] ?? match;
-  });
+      return named[body.toLowerCase()] ?? match;
+    },
+  );
 }
 
 export function sourceHost(url: string): string {

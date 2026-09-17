@@ -36,7 +36,9 @@ export async function listSandboxPluginBundles(input: {
   try {
     const response = await fetch(
       `${input.baseUrl}/api/plugins/sandbox-bundles?canvasId=${encodeURIComponent(input.canvasId)}`,
-      { headers: input.token ? { Authorization: `Bearer ${input.token}` } : {} },
+      {
+        headers: input.token ? { Authorization: `Bearer ${input.token}` } : {},
+      },
     );
     if (!response.ok) {
       const { reason } = await readError(response, "扫描工作目录失败。");

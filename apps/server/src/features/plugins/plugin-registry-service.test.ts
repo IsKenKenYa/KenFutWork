@@ -135,7 +135,9 @@ describe("plugin-registry：安装并真的能用", () => {
     });
 
     const entries = await service.list();
-    const mine = entries.find((entry) => entry.name === "kenfutwork-example-clock");
+    const mine = entries.find(
+      (entry) => entry.name === "kenfutwork-example-clock",
+    );
     expect(mine).toBeDefined();
     expect(mine?.installed).toBe(true);
     expect(mine?.system).toBe(false);
@@ -154,9 +156,9 @@ describe("plugin-registry：安装并真的能用", () => {
     expect(kernel.get("tools").get("clock_now")).toBeUndefined();
     expect(await exists(path.join(pluginsDir, installed.id))).toBe(false);
     const entries = await service.list();
-    expect(entries.some((entry) => entry.name === "kenfutwork-example-clock")).toBe(
-      false,
-    );
+    expect(
+      entries.some((entry) => entry.name === "kenfutwork-example-clock"),
+    ).toBe(false);
   });
 
   it("禁用注销工具，重新启用再注册（同一实例）", async () => {
@@ -244,9 +246,9 @@ describe("plugin-registry：门禁拦截", () => {
     // 没有装载，也没有落盘
     expect(kernel.get("tools").get("clock_now")).toBeUndefined();
     const entries = await service.list();
-    expect(entries.some((entry) => entry.name === "kenfutwork-example-clock")).toBe(
-      false,
-    );
+    expect(
+      entries.some((entry) => entry.name === "kenfutwork-example-clock"),
+    ).toBe(false);
   });
 
   it("来源不可识别时报错而不是静默成功", async () => {

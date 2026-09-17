@@ -17,7 +17,6 @@ import {
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { isVideoUrl } from "../lib/canvas-elements";
-import { CanvasViewControls } from "./canvas-bottom-bar";
 import {
   createImageGeneratorElement,
   getImageGeneratorData,
@@ -33,6 +32,7 @@ import {
 import { ImageGeneratorPanel } from "./canvas/image-generator-panel";
 import { VideoGeneratorPanel } from "./canvas/video-generator-panel";
 import { VideoPlayerPanel } from "./canvas/video-player-panel";
+import { CanvasViewControls } from "./canvas-bottom-bar";
 
 type ToolType =
   | "hand"

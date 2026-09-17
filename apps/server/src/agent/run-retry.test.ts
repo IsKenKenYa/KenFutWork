@@ -164,7 +164,8 @@ describe("空输出（服务端判定失败）不自动重试", () => {
     const decision = decideRunRetry({
       attempt: 1,
       maxAttempts: 10,
-      failureMessage: "模型本轮没有返回任何内容（可能只输出了内部思考或触发内容过滤）。",
+      failureMessage:
+        "模型本轮没有返回任何内容（可能只输出了内部思考或触发内容过滤）。",
       sawToolExecution: false,
       terminal: "failed",
     });

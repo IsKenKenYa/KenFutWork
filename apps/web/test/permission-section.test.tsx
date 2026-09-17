@@ -82,7 +82,9 @@ describe("PermissionSection（权限设置 UI）", () => {
     const regularGroup = await screen.findByRole("group", {
       name: "常规任务档位",
     });
-    await user.click(within(regularGroup).getByRole("radio", { name: /自动放行/ }));
+    await user.click(
+      within(regularGroup).getByRole("radio", { name: /自动放行/ }),
+    );
     await waitFor(() => {
       expect(updatePermissionSettingsMock).toHaveBeenCalledWith("token", {
         tier: "auto-approve",
@@ -97,7 +99,9 @@ describe("PermissionSection（权限设置 UI）", () => {
     const autoGroup = await screen.findByRole("group", {
       name: "自动化任务档位",
     });
-    await user.click(within(autoGroup).getByRole("radio", { name: /完全访问/ }));
+    await user.click(
+      within(autoGroup).getByRole("radio", { name: /完全访问/ }),
+    );
     await waitFor(() => {
       expect(updatePermissionSettingsMock).toHaveBeenCalledWith("token", {
         automationTier: "full-access",
@@ -118,8 +122,12 @@ describe("PermissionSection（权限设置 UI）", () => {
     const user = userEvent.setup();
     render(<PermissionSection accessToken="token" />);
 
-    const deny = (await screen.findByLabelText("拒绝规则")) as HTMLTextAreaElement;
-    const allow = (await screen.findByLabelText("放行规则")) as HTMLTextAreaElement;
+    const deny = (await screen.findByLabelText(
+      "拒绝规则",
+    )) as HTMLTextAreaElement;
+    const allow = (await screen.findByLabelText(
+      "放行规则",
+    )) as HTMLTextAreaElement;
     // 读回值铺进文本域（一行一条）
     expect(deny.value).toBe("mcp__*");
     expect(allow.value).toBe("write_file");
@@ -174,7 +182,9 @@ describe("PermissionSection（权限设置 UI）", () => {
     const regularGroup = await screen.findByRole("group", {
       name: "常规任务档位",
     });
-    await user.click(within(regularGroup).getByRole("radio", { name: /自动放行/ }));
+    await user.click(
+      within(regularGroup).getByRole("radio", { name: /自动放行/ }),
+    );
     // 不崩，且旧的「已永久批准」还在
     expect(
       await screen.findByText(/已永久批准：write_file/),

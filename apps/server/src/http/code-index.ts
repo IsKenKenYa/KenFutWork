@@ -3,11 +3,12 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
-
-import type { AuthenticatedUser } from "../features/auth/types.js";
+import type {
+  AuthenticatedUser,
+  RequestAuthenticator,
+} from "../features/auth/types.js";
 import type { CodeGitService } from "../features/code-git/code-git-service.js";
 import type { CodeIndexStore } from "../features/code-index/index-store.js";
-import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 
 /**

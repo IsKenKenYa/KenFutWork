@@ -32,10 +32,11 @@ async function startRejectingStub(): Promise<{
     res.writeHead(400, { "content-type": "application/json" });
     res.end(JSON.stringify({ error: { message: "stub" } }));
   });
+  const stub = server;
   await new Promise<void>((resolve) => {
-    server?.listen(0, "127.0.0.1", () => resolve());
+    stub.listen(0, "127.0.0.1", () => resolve());
   });
-  const { port } = server?.address() as AddressInfo;
+  const { port } = stub.address() as AddressInfo;
   return { baseUrl: `http://127.0.0.1:${port}`, requests };
 }
 

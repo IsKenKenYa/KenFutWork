@@ -2,7 +2,6 @@
 
 import { FileCode2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { highlightCode } from "@/lib/code-highlight";
 import {
   fetchGitChanges,
   fetchGitFileDiff,
@@ -10,7 +9,13 @@ import {
   setGitFileStaged,
   stageGitHunk,
 } from "@/lib/code-git-api";
-import { hunkPatch, markHunkStarts, splitHunks, toDiffLines } from "@/lib/git-hunks";
+import { highlightCode } from "@/lib/code-highlight";
+import {
+  hunkPatch,
+  markHunkStarts,
+  splitHunks,
+  toDiffLines,
+} from "@/lib/git-hunks";
 
 /**
  * 「审查」（差异）与「打开」（文件内容）两个标签的正文。
@@ -177,6 +182,7 @@ export function DiffPane({
           <p className="p-2 text-xs text-muted-foreground">读取中…</p>
         ) : (
           <div
+            role="region"
             aria-label="文件差异"
             className="max-h-[70vh] overflow-auto p-2 font-mono text-[11px] leading-5"
           >
@@ -204,7 +210,9 @@ export function DiffPane({
                         aria-label={`暂存第 ${line.hunkIndex + 1} 块`}
                         disabled={hunkBusy !== null}
                         title="暂存块：只把这一块加进索引（其余块留在工作区）"
-                        onClick={() => void applyHunkAction(line.hunkIndex!, "stage")}
+                        onClick={() =>
+                          void applyHunkAction(line.hunkIndex!, "stage")
+                        }
                         className="rounded border border-emerald-600/40 px-1 text-[10px] leading-4 text-emerald-700 transition-colors hover:bg-emerald-500/10 disabled:opacity-40 dark:text-emerald-400"
                       >
                         ＋
@@ -302,6 +310,7 @@ export function FilePane({
           <p className="p-2 text-xs text-muted-foreground">读取中…</p>
         ) : highlighted ? (
           <pre
+            role="region"
             aria-label="文件内容"
             className="hljs max-h-[70vh] overflow-auto p-2 font-mono text-[11px] leading-5 whitespace-pre"
             // biome-ignore lint/security/noDangerouslySetInnerHtml: highlight.js 的输出自己转义（见 lib/code-highlight 的单测）
@@ -309,6 +318,7 @@ export function FilePane({
           />
         ) : (
           <pre
+            role="region"
             aria-label="文件内容"
             className="max-h-[70vh] overflow-auto p-2 font-mono text-[11px] leading-5 whitespace-pre"
           >

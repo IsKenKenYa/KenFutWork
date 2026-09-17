@@ -167,7 +167,9 @@ describe("WorkbenchSidePanel（多标签）", () => {
     render(<Harness />);
     await screen.findByRole("list", { name: "变更文件" });
 
-    await userEvent.click(screen.getByRole("button", { name: "审查 notes.md" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "审查 notes.md" }),
+    );
     await waitFor(() =>
       expect(fetchGitFileDiffMock).toHaveBeenCalledWith(
         "token",
@@ -180,7 +182,9 @@ describe("WorkbenchSidePanel（多标签）", () => {
 
     // 切回变更标签再开另一个文件 → 新的只读预览标签（差异标签仍在标签条上）
     await userEvent.click(screen.getByRole("tab", { name: /变更/ }));
-    await userEvent.click(screen.getByRole("button", { name: "打开 src/app.ts" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "打开 src/app.ts" }),
+    );
     expect((await screen.findByLabelText("文件内容")).textContent).toContain(
       "export const app = 1;",
     );
@@ -230,10 +234,7 @@ describe("WorkbenchSidePanel（多标签）", () => {
     const dialog = await screen.findByRole("dialog", { name: "打开的标签页" });
     expect(within(dialog).getByText("文件目录")).toBeInTheDocument();
 
-    await userEvent.type(
-      within(dialog).getByLabelText("搜索标签页"),
-      "文件",
-    );
+    await userEvent.type(within(dialog).getByLabelText("搜索标签页"), "文件");
     expect(within(dialog).queryByText("变更")).not.toBeInTheDocument();
 
     // 列表项的可访问名是「文件目录 刚刚」（关闭键是「关闭 文件目录」，这里要选前者）
@@ -274,7 +275,9 @@ describe("WorkbenchSidePanel（多标签）", () => {
     expect(within(list).getByText("src")).toBeInTheDocument();
     expect(within(list).getByText("AGENTS.md")).toBeInTheDocument();
 
-    await userEvent.click(within(list).getByRole("button", { name: "进入 src" }));
+    await userEvent.click(
+      within(list).getByRole("button", { name: "进入 src" }),
+    );
     await waitFor(() =>
       expect(fetchCodeFilesMock).toHaveBeenLastCalledWith(
         "token",
@@ -305,9 +308,14 @@ describe("WorkbenchSidePanel（多标签）", () => {
     render(<Harness />);
     await screen.findByRole("list", { name: "变更文件" });
 
-    await userEvent.click(screen.getByRole("button", { name: "审查 src/app.ts" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "审查 src/app.ts" }),
+    );
     const stage = await screen.findByRole("button", { name: "暂存此文件" });
-    setGitFileStagedMock.mockResolvedValue({ path: "src/app.ts", staged: true });
+    setGitFileStagedMock.mockResolvedValue({
+      path: "src/app.ts",
+      staged: true,
+    });
     fetchGitChangesMock.mockResolvedValue({
       isRepo: true,
       truncated: false,
@@ -368,9 +376,13 @@ describe("WorkbenchSidePanel（多标签）", () => {
     stageGitHunkMock.mockResolvedValue({ path: "src/app.ts", staged: true });
     render(<Harness />);
     await screen.findByRole("list", { name: "变更文件" });
-    await userEvent.click(screen.getByRole("button", { name: "审查 src/app.ts" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "审查 src/app.ts" }),
+    );
 
-    const buttons = await screen.findAllByRole("button", { name: /暂存第 \d 块/ });
+    const buttons = await screen.findAllByRole("button", {
+      name: /暂存第 \d 块/,
+    });
     expect(buttons).toHaveLength(2);
     expect(
       screen.getAllByRole("button", { name: /撤销第 \d 块/ }),
@@ -445,7 +457,10 @@ describe("面板宽度受对话列最小宽度约束", () => {
     window.localStorage.setItem("workbench:panel-width", "360");
     const onGrowBlocked = vi.fn();
     render(
-      <Harness widthLimits={{ min: 280, max: 400 }} onGrowBlocked={onGrowBlocked} />,
+      <Harness
+        widthLimits={{ min: 280, max: 400 }}
+        onGrowBlocked={onGrowBlocked}
+      />,
     );
 
     const handle = screen.getByLabelText("调整面板宽度");
@@ -462,7 +477,10 @@ describe("面板宽度受对话列最小宽度约束", () => {
     window.localStorage.setItem("workbench:panel-width", "360");
     const onGrowBlocked = vi.fn();
     render(
-      <Harness widthLimits={{ min: 280, max: 900 }} onGrowBlocked={onGrowBlocked} />,
+      <Harness
+        widthLimits={{ min: 280, max: 900 }}
+        onGrowBlocked={onGrowBlocked}
+      />,
     );
     drag(120);
     expect(onGrowBlocked).not.toHaveBeenCalled();
@@ -495,7 +513,9 @@ describe("右栏浏览器（点链接自动打开）", () => {
 
   async function openBrowserTab() {
     await userEvent.click(screen.getByLabelText("打开视图"));
-    await userEvent.click(await screen.findByRole("option", { name: "浏览器" }));
+    await userEvent.click(
+      await screen.findByRole("option", { name: "浏览器" }),
+    );
   }
 
   it("请求通道：没有面板时返回 false（调用方不拦截点击）", async () => {
@@ -517,7 +537,9 @@ describe("右栏浏览器（点链接自动打开）", () => {
     const { normalizeUrl } = await import(
       "../src/components/workbench/workbench-side-panel"
     );
-    expect(normalizeUrl("localhost:8000/demo")).toBe("http://localhost:8000/demo");
+    expect(normalizeUrl("localhost:8000/demo")).toBe(
+      "http://localhost:8000/demo",
+    );
     expect(normalizeUrl("https://example.com")).toBe("https://example.com");
     expect(normalizeUrl("   ")).toBeNull();
   });
@@ -575,9 +597,9 @@ describe("右栏浏览器（点链接自动打开）", () => {
     await userEvent.clear(widthInput);
     await userEvent.type(widthInput, "900");
     await waitFor(() =>
-      expect(screen.getByTitle("右栏浏览器：http://localhost:8000").style.width).toBe(
-        "900px",
-      ),
+      expect(
+        screen.getByTitle("右栏浏览器：http://localhost:8000").style.width,
+      ).toBe("900px"),
     );
     expect(
       screen.getByRole("button", { name: "拖动调整视口尺寸" }),

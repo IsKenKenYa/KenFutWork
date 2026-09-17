@@ -1,12 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import {
-  cleanup,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TerminalPane } from "../src/components/workbench/panel-terminal-view";
@@ -69,7 +64,9 @@ describe("TerminalPane（交互式会话）", () => {
       sessionId(): string {
         const call = (handle.startTerminal as ReturnType<typeof vi.fn>).mock
           .calls[0];
-        return String((call?.[0] as { sessionId: string }).sessionId);
+        const arg = call?.[0] as { sessionId: string } | undefined;
+        if (!arg) throw new Error("startTerminal 还没被调用过。");
+        return String(arg.sessionId);
       },
     };
   }
@@ -122,7 +119,9 @@ describe("TerminalPane（交互式会话）", () => {
       "cd apps",
     );
     // 回显上屏（管道下的 shell 不会回显）
-    expect(screen.getByLabelText("终端输出").textContent).toContain("❯ cd apps");
+    expect(screen.getByLabelText("终端输出").textContent).toContain(
+      "❯ cd apps",
+    );
   });
 
   it("服务端输出实时上屏；会话结束如实说明退出码", async () => {
@@ -142,7 +141,9 @@ describe("TerminalPane（交互式会话）", () => {
     await waitFor(() =>
       expect(screen.getByLabelText("终端命令")).toBeDisabled(),
     );
-    expect(screen.getByRole("button", { name: "重新开会话" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "重新开会话" }),
+    ).toBeInTheDocument();
   });
 
   it("别的会话的输出不会串到这一条（按 sessionId 过滤）", async () => {
@@ -165,7 +166,11 @@ describe("TerminalPane（交互式会话）", () => {
 
     const disconnected = { ...ws.handle, connected: false } as WebSocketHandle;
     rerender(
-      <TerminalPane accessToken="token" canvasId="canvas-1" ws={disconnected} />,
+      <TerminalPane
+        accessToken="token"
+        canvasId="canvas-1"
+        ws={disconnected}
+      />,
     );
     expect(
       await screen.findByText(/连接断开，重连后会自动重开会话/),

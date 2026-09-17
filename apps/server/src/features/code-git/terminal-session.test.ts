@@ -3,13 +3,12 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-
+import type { TerminalShellOption } from "./terminal-runner.js";
 import {
   chunkForFrames,
   startTerminalSession,
   TERMINAL_OUTPUT_FRAME_BYTES,
 } from "./terminal-session.js";
-import type { TerminalShellOption } from "./terminal-runner.js";
 
 /**
  * 交互式终端会话（R3-1 的可用形态）：一条常驻 shell，cd 保留、REPL 能连续对话。
@@ -198,7 +197,6 @@ describe("输出分帧（WS 帧不因一条大输出变成几 MB）", () => {
   });
 });
 
-
 /**
  * 真机行为：常驻 shell 的核心性质是**会话状态保留**（cd 保留、变量保留）——
  * 这正是「一条命令一个进程」做不到、而参考图的终端能做到的事。用真 shell 验一遍。
@@ -218,7 +216,11 @@ describe("终端会话：真机（常驻 shell 的会话状态）", () => {
   });
 
   /** 起会话并返回「退出信号」的触发器（收尾时要等进程真的没了再删临时目录）。 */
-  function startReal(shell: "cmd" | "bash", cwd: string, onData: (c: string) => void) {
+  function startReal(
+    shell: "cmd" | "bash",
+    cwd: string,
+    onData: (c: string) => void,
+  ) {
     let resolveExit: () => void = () => {};
     const exited = new Promise<void>((resolve) => {
       resolveExit = resolve;

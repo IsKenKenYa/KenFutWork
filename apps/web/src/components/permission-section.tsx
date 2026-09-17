@@ -24,7 +24,11 @@ import {
  * 自动化档通常设得更严（批一次就一路跑，不会每一步都等人）。
  */
 const TIERS: Array<{ value: PermissionTier; label: string; hint: string }> = [
-  { value: "default", label: "默认（推荐）", hint: "危险/不可逆操作需人工审批" },
+  {
+    value: "default",
+    label: "默认（推荐）",
+    hint: "危险/不可逆操作需人工审批",
+  },
   {
     value: "auto-approve",
     label: "自动放行",
@@ -100,7 +104,8 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
         applyView({
           ...(settings ?? view),
           ...view,
-          approvedForever: view.approvedForever ?? settings?.approvedForever ?? [],
+          approvedForever:
+            view.approvedForever ?? settings?.approvedForever ?? [],
         });
         setMessage(okMessage);
       } catch (err) {
@@ -142,11 +147,7 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
       <p className="mb-3 text-sm text-muted-foreground">
         危险工具（shell/MCP/写类）在默认档下必须审批；审批只能由你发起。
       </p>
-      <div
-        role="group"
-        aria-label="常规任务档位"
-        className="mb-4 space-y-2"
-      >
+      <div role="group" aria-label="常规任务档位" className="mb-4 space-y-2">
         {TIERS.map((t) => (
           <label
             key={t.value}
@@ -164,7 +165,9 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
             />
             <span>
               {t.label}
-              <span className="ml-2 text-xs text-muted-foreground">{t.hint}</span>
+              <span className="ml-2 text-xs text-muted-foreground">
+                {t.hint}
+              </span>
             </span>
           </label>
         ))}
@@ -172,6 +175,7 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
 
       {current === "custom" ? (
         <div
+          role="group"
           aria-label="自定义配置规则"
           className="mb-5 space-y-3 rounded-lg border border-dashed p-3"
         >
@@ -224,13 +228,10 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
 
       <h3 className="mb-1 text-base font-medium">自动化任务</h3>
       <p className="mb-3 text-sm text-muted-foreground">
-        目标 / 循环这类无人值守轮次用这一档（通常设得更严：批一次就一路跑，不会每步等人）。
+        目标 /
+        循环这类无人值守轮次用这一档（通常设得更严：批一次就一路跑，不会每步等人）。
       </p>
-      <div
-        role="group"
-        aria-label="自动化任务档位"
-        className="mb-5 space-y-2"
-      >
+      <div role="group" aria-label="自动化任务档位" className="mb-5 space-y-2">
         {TIERS.map((t) => (
           <label
             key={`auto-${t.value}`}
@@ -251,7 +252,9 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
             />
             <span>
               {t.label}
-              <span className="ml-2 text-xs text-muted-foreground">{t.hint}</span>
+              <span className="ml-2 text-xs text-muted-foreground">
+                {t.hint}
+              </span>
             </span>
           </label>
         ))}

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  decodeHtmlEntities,
   parseSearchResultView,
   sourceHost,
-  decodeHtmlEntities,
 } from "../src/lib/search-results.js";
 
 /**
@@ -104,7 +104,9 @@ describe("搜索结果的 HTML 实体还原", () => {
     expect(decoded).not.toContain("&");
     expect(decoded).toContain("abc");
     expect(decoded).toContain("def");
-    expect(decodeHtmlEntities("&不是实体; &lt;tag&gt;")).toBe("&不是实体; <tag>");
+    expect(decodeHtmlEntities("&不是实体; &lt;tag&gt;")).toBe(
+      "&不是实体; <tag>",
+    );
     expect(decodeHtmlEntities("没有实体")).toBe("没有实体");
   });
 

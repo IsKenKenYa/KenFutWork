@@ -43,10 +43,7 @@ export function AboutSection() {
           : "读取中…",
     ],
     ["服务端地址", base || "（同源）"],
-    [
-      "客户端",
-      typeof navigator === "undefined" ? "—" : navigator.userAgent,
-    ],
+    ["客户端", typeof navigator === "undefined" ? "—" : navigator.userAgent],
     [
       "界面",
       typeof window === "undefined"
@@ -70,7 +67,8 @@ export function AboutSection() {
         ))}
       </dl>
       <p className="mt-4 text-xs text-muted-foreground">
-        数据都在你自己的机器上：模型 Key 加密存在本地库、索引是本机文件、日志不落密钥。
+        数据都在你自己的机器上：模型 Key
+        加密存在本地库、索引是本机文件、日志不落密钥。
       </p>
     </section>
   );

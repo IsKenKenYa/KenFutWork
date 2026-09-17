@@ -14,7 +14,9 @@
  * 保守规则：只有当外层对象**除了 `input` 之外没有别的键**时才解包——工具真的有个
  * 叫 `input` 的参数时（外层还会带别的键）不会被误剥。
  */
-export function normalizeToolArgs(input: unknown): Record<string, unknown> | null {
+export function normalizeToolArgs(
+  input: unknown,
+): Record<string, unknown> | null {
   if (!isPlainObject(input)) return null;
 
   const keys = Object.keys(input);

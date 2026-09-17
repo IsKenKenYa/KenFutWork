@@ -96,7 +96,15 @@ function initialise(bin) {
 function start(bin) {
   const started = run(
     join(bin, "pg_ctl.exe"),
-    ["-D", DATA_DIR, "-o", `-p ${PORT} -c listen_addresses=127.0.0.1`, "-l", LOG_FILE, "start"],
+    [
+      "-D",
+      DATA_DIR,
+      "-o",
+      `-p ${PORT} -c listen_addresses=127.0.0.1`,
+      "-l",
+      LOG_FILE,
+      "start",
+    ],
     { allowFailure: true },
   );
   if (started.status !== 0) {
@@ -121,7 +129,9 @@ if (command === "start") {
   const fresh = initialise(bin);
   installPgmqShim(bin);
   start(bin);
-  console.log(`[开发库] ${fresh ? "已初始化并启动" : "已启动"}（数据目录 ${DATA_DIR}）`);
+  console.log(
+    `[开发库] ${fresh ? "已初始化并启动" : "已启动"}（数据目录 ${DATA_DIR}）`,
+  );
   console.log("[开发库] 连接串：");
   console.log(`  postgres://${DB_USER}@127.0.0.1:${PORT}/${DB_NAME}`);
   console.log("[开发库] 下一步：");

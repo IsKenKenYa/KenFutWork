@@ -19,7 +19,8 @@ import {
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes < 1024 * 1024 * 1024)
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
@@ -93,7 +94,8 @@ export function IndexLibrarySection({
     <section aria-label="索引库设置">
       <h3 className="mb-1 text-base font-medium">索引库</h3>
       <p className="mb-3 text-sm text-muted-foreground">
-        给工作目录里的文件建一份**本机索引**（路径 / 大小 / 语言 / 摘要前 200 字），
+        给工作目录里的文件建一份**本机索引**（路径 / 大小 / 语言 / 摘要前 200
+        字），
         右栏「文件目录」的搜索用它按文件名、路径和内容摘要找文件。索引文件存在服务端
         `/.kenfutwork/index/`，不进数据库，也不会写进你的工作目录。
       </p>
@@ -121,13 +123,17 @@ export function IndexLibrarySection({
         ) : stats ? (
           <ul className="space-y-1 text-xs text-muted-foreground">
             <li>
-              已索引 <span className="text-foreground">{stats.files}</span> 个文件 ·{" "}
-              {formatBytes(stats.bytes)}
+              已索引 <span className="text-foreground">{stats.files}</span>{" "}
+              个文件 · {formatBytes(stats.bytes)}
             </li>
             <li>索引文件 {formatBytes(stats.indexBytes)}</li>
             <li>上次构建 {formatBuiltAt(stats.builtAt)}</li>
-            {stats.skipped > 0 ? <li>读不出来的文件 {stats.skipped} 个（已跳过）</li> : null}
-            {stats.truncated ? <li>已达到条数/体积上限，只索引了前一部分</li> : null}
+            {stats.skipped > 0 ? (
+              <li>读不出来的文件 {stats.skipped} 个（已跳过）</li>
+            ) : null}
+            {stats.truncated ? (
+              <li>已达到条数/体积上限，只索引了前一部分</li>
+            ) : null}
           </ul>
         ) : (
           <p className="text-muted-foreground">

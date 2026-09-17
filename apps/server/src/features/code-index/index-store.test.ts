@@ -17,7 +17,8 @@ describe("代码库索引", () => {
     return dir;
   };
   afterEach(() => {
-    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+    for (const dir of dirs.splice(0))
+      rmSync(dir, { recursive: true, force: true });
   });
 
   it("建索引：列出文件与文本摘要；跳过 node_modules；二进制只记元数据（无摘要）", async () => {
@@ -36,14 +37,18 @@ describe("代码库索引", () => {
     // 二进制也在（可按文件名搜到），但没有摘要
     expect(paths).toEqual(["app.py", "blob.bin", "src/lib.ts"]);
     expect(index.entries.find((e) => e.path === "blob.bin")?.summary).toBe("");
-    expect(index.entries.find((e) => e.path === "app.py")?.language).toBe("python");
-    expect(index.entries.find((e) => e.path === "src/lib.ts")?.summary).toContain(
-      "export const a = 1;",
+    expect(index.entries.find((e) => e.path === "app.py")?.language).toBe(
+      "python",
     );
+    expect(
+      index.entries.find((e) => e.path === "src/lib.ts")?.summary,
+    ).toContain("export const a = 1;");
     // skipped 只统计「读不出来」的文件；node_modules 里的依赖不进索引
     expect(paths.some((p) => p.includes("node_modules"))).toBe(false);
     // 落盘后能读回
-    expect((await store.load("c1"))?.entries.map((e) => e.path).sort()).toEqual(paths);
+    expect((await store.load("c1"))?.entries.map((e) => e.path).sort()).toEqual(
+      paths,
+    );
     // 统计
     const stats = await store.stats(await store.load("c1"));
     expect(stats?.files).toBe(3);
@@ -58,17 +63,23 @@ describe("代码库索引", () => {
 
     const store = createCodeIndexStore({ indexDir });
     const first = await store.build("c1", root);
-    expect(first.entries.map((e) => e.path).sort()).toEqual(["gone.txt", "keep.txt"]);
+    expect(first.entries.map((e) => e.path).sort()).toEqual([
+      "gone.txt",
+      "keep.txt",
+    ]);
 
     // 改一个、删一个、加一个
     rmSync(join(root, "gone.txt"));
     writeFileSync(join(root, "keep.txt"), "keep-v2\n", "utf8");
     writeFileSync(join(root, "new.txt"), "new\n", "utf8");
     const second = await store.rebuild("c1", root);
-    expect(second.entries.map((e) => e.path).sort()).toEqual(["keep.txt", "new.txt"]);
-    expect(second.entries.find((e) => e.path === "keep.txt")?.summary).toContain(
-      "keep-v2",
-    );
+    expect(second.entries.map((e) => e.path).sort()).toEqual([
+      "keep.txt",
+      "new.txt",
+    ]);
+    expect(
+      second.entries.find((e) => e.path === "keep.txt")?.summary,
+    ).toContain("keep-v2");
   });
 
   it("搜索：文件名 > 路径 > 摘要 分档排序，空查询返回空", async () => {

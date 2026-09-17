@@ -3,9 +3,9 @@
 import { FileDiff as FileDiffIcon, FileText } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
-  type GitChanges,
-  fetchGitChanges,
   discardGitChanges,
+  fetchGitChanges,
+  type GitChanges,
 } from "@/lib/code-git-api";
 
 /**
@@ -145,8 +145,12 @@ export function ChangesPane({
               aria-hidden
               className="invisible ml-auto flex shrink-0 items-center gap-2"
             >
-              <span className="rounded border px-1.5 py-0.5 text-[10px]">审查</span>
-              <span className="rounded border px-1.5 py-0.5 text-[10px]">打开</span>
+              <span className="rounded border px-1.5 py-0.5 text-[10px]">
+                审查
+              </span>
+              <span className="rounded border px-1.5 py-0.5 text-[10px]">
+                打开
+              </span>
             </span>
             <span className={CHANGE_STAT_CELL}>
               <span className="text-emerald-600">+{totals.additions}</span>{" "}
@@ -167,7 +171,10 @@ export function ChangesPane({
             {changes.files.map((file) => {
               const { name, dir } = splitPath(file.path);
               return (
-                <li key={file.path} className="flex items-center gap-2 px-2.5 py-1.5">
+                <li
+                  key={file.path}
+                  className="flex items-center gap-2 px-2.5 py-1.5"
+                >
                   <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   {/* 文件名本身就是「打开预览」的入口（用户口径：点文件名可以打开预览文件） */}
                   <button
@@ -198,7 +205,9 @@ export function ChangesPane({
                     </span>
                   ) : (
                     <span className={CHANGE_STAT_CELL}>
-                      <span className="text-emerald-600">+{file.additions}</span>{" "}
+                      <span className="text-emerald-600">
+                        +{file.additions}
+                      </span>{" "}
                       <span className="text-rose-500">−{file.deletions}</span>
                     </span>
                   )}
@@ -224,7 +233,9 @@ export function ChangesPane({
                     type="button"
                     aria-label={`撤销 ${file.path}`}
                     disabled={discarding}
-                    onClick={() => void discardFile(file.path, file.status === "untracked")}
+                    onClick={() =>
+                      void discardFile(file.path, file.status === "untracked")
+                    }
                     title={
                       file.status === "untracked"
                         ? "撤销：删除这个未跟踪文件"

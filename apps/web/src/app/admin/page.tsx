@@ -505,7 +505,10 @@ export default function AdminPage() {
               className="w-full rounded-lg border bg-transparent p-2 font-mono text-xs outline-none"
               value={form.headersJson}
               onChange={(event) =>
-                setForm((prev) => ({ ...prev, headersJson: event.target.value }))
+                setForm((prev) => ({
+                  ...prev,
+                  headersJson: event.target.value,
+                }))
               }
               placeholder='{"x-opencode-session":"{{sessionId}}"}'
             />

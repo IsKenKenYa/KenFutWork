@@ -3,10 +3,7 @@
 import { Folder, Search } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { type CodeFileListing, fetchCodeFiles } from "@/lib/code-git-api";
-import {
-  type CodeIndexSearchHit,
-  searchCodeIndex,
-} from "@/lib/server-api";
+import { type CodeIndexSearchHit, searchCodeIndex } from "@/lib/server-api";
 
 /**
  * 文件目录（R3-1「文件目录」标签）：**只列一层**，子目录点进去、面包屑回退。
@@ -80,7 +77,9 @@ export function FilesPane({
 
   if (!canvasId) {
     return (
-      <p className="text-xs text-muted-foreground">这个会话没有绑定工作目录。</p>
+      <p className="text-xs text-muted-foreground">
+        这个会话没有绑定工作目录。
+      </p>
     );
   }
 
@@ -127,7 +126,9 @@ export function FilesPane({
       {hits ? (
         <div className="rounded-xl border">
           <p className="border-b px-2.5 py-1.5 text-[10px] text-muted-foreground">
-            {hits.length === 0 ? "没有匹配的文件" : `命中 ${hits.length} 个文件`}
+            {hits.length === 0
+              ? "没有匹配的文件"
+              : `命中 ${hits.length} 个文件`}
             {hits.length > 0 ? "（点了打开预览）" : ""}
           </p>
           <ul aria-label="搜索命中" className="divide-y">
@@ -195,12 +196,17 @@ export function FilesPane({
       ) : (
         <ul aria-label="目录内容" className="divide-y rounded-xl border">
           {listing.entries.map((entry) => (
-            <li key={entry.path} className="flex items-center gap-2 px-2.5 py-1.5">
+            <li
+              key={entry.path}
+              className="flex items-center gap-2 px-2.5 py-1.5"
+            >
               <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               <button
                 type="button"
                 onClick={() =>
-                  entry.type === "dir" ? setDir(entry.path) : onOpenFile(entry.path)
+                  entry.type === "dir"
+                    ? setDir(entry.path)
+                    : onOpenFile(entry.path)
                 }
                 aria-label={
                   entry.type === "dir"

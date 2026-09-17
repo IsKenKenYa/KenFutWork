@@ -11,7 +11,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { WebSocketHandle } from "@/hooks/use-websocket";
-import { fetchTerminalShells, type TerminalShellOption } from "@/lib/code-git-api";
+import {
+  fetchTerminalShells,
+  type TerminalShellOption,
+} from "@/lib/code-git-api";
 
 /**
  * 终端（R3-1「终端」标签）：**交互式会话**——一条常驻 shell，cd 保留、REPL 能连续对话
@@ -249,6 +252,7 @@ export function TerminalPane({
 
       <div
         ref={scrollRef}
+        role="log"
         aria-label="终端输出"
         className="min-h-0 flex-1 overflow-y-auto rounded-xl border bg-muted/30 p-2 font-mono text-[11px] leading-5 whitespace-pre-wrap"
       >
@@ -270,7 +274,10 @@ export function TerminalPane({
           send();
         }}
       >
-        <span aria-hidden className="shrink-0 font-mono text-xs text-muted-foreground">
+        <span
+          aria-hidden
+          className="shrink-0 font-mono text-xs text-muted-foreground"
+        >
           ❯
         </span>
         <input
@@ -294,8 +301,9 @@ export function TerminalPane({
         </button>
       </form>
       <p className="text-[10px] text-muted-foreground">
-        命令在**工作目录**里执行，走上面选中的 shell 本体（默认值在「设置 → 通用 →
-        终端」里配）； 这是常驻会话（cd 保留、REPL 可用），没有 TTY——行内编辑与回显由这里补。
+        命令在**工作目录**里执行，走上面选中的 shell 本体（默认值在「设置 → 通用
+        → 终端」里配）； 这是常驻会话（cd 保留、REPL 可用），没有
+        TTY——行内编辑与回显由这里补。
       </p>
     </div>
   );

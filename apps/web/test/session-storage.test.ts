@@ -58,7 +58,11 @@ describe("loadSession 的令牌保留口径", () => {
         async () =>
           new Response(
             JSON.stringify({
-              user: { id: "u1", email: "pro@test.kenfutwork.com", displayName: null },
+              user: {
+                id: "u1",
+                email: "pro@test.kenfutwork.com",
+                displayName: null,
+              },
             }),
             { status: 200, headers: { "content-type": "application/json" } },
           ),

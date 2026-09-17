@@ -42,7 +42,9 @@ export function GitGraphDialog({
       setIsRepo(graph.isRepo);
       setTruncated(graph.truncated);
       setSelected((current) =>
-        current && graph.entries.some((e) => e.sha === current) ? current : null,
+        current && graph.entries.some((e) => e.sha === current)
+          ? current
+          : null,
       );
     } catch (err) {
       setEntries([]);
@@ -90,7 +92,9 @@ export function GitGraphDialog({
         ) : entries === null ? (
           <p className="px-5 py-6 text-sm text-muted-foreground">读取中…</p>
         ) : entries.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-muted-foreground">还没有提交。</p>
+          <p className="px-5 py-6 text-sm text-muted-foreground">
+            还没有提交。
+          </p>
         ) : (
           <>
             <div className="min-h-0 flex-1 overflow-y-auto">

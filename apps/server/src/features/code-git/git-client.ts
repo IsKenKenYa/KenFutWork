@@ -126,11 +126,7 @@ export interface GitClient {
     options?: { reverse?: boolean; target?: "index" | "worktree" },
   ): Promise<void>;
   /** 撤销单个文件的改动（未跟踪的走 `clean -f` 删除，其余 `restore` 回工作区）。 */
-  discardFile(
-    cwd: string,
-    path: string,
-    untracked: boolean,
-  ): Promise<void>;
+  discardFile(cwd: string, path: string, untracked: boolean): Promise<void>;
   /** 撤销全部未提交改动（`restore` + `clean -fd`）。 */
   discardAll(cwd: string): Promise<void>;
 }
@@ -593,15 +589,7 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
    * `--date=iso-strict` 让日期是机器可读的 ISO，界面自己决定怎么显示。
    */
   const graph = async (cwd: string, limit: number): Promise<GitGraph> => {
-    const format = [
-      "%H",
-      "%h",
-      "%an",
-      "%aI",
-      "%s",
-      "%D",
-      "%P",
-    ].join("%x1f");
+    const format = ["%H", "%h", "%an", "%aI", "%s", "%D", "%P"].join("%x1f");
     const result = await exec(
       [
         "log",
@@ -647,7 +635,9 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
         `${path} 没有可显示的差异（未跟踪文件请用「打开」查看内容）。`,
       );
     }
-    return text.length > maxBytes ? `${text.slice(0, maxBytes)}\n…（已截断）` : text;
+    return text.length > maxBytes
+      ? `${text.slice(0, maxBytes)}\n…（已截断）`
+      : text;
   };
 
   return {

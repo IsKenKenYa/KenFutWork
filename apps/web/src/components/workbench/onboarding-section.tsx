@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import {
+  fetchPermissionSettings,
   fetchProviderInstances,
   fetchWorkspaceSettings,
   type PermissionSettingsView,
-  fetchPermissionSettings,
 } from "@/lib/server-api";
 
 /**
@@ -143,7 +143,11 @@ export function OnboardingSection({
               ) : step.tab ? (
                 <button
                   type="button"
-                  onClick={() => onGoToTab(step.tab as "providers" | "general" | "permissions")}
+                  onClick={() =>
+                    onGoToTab(
+                      step.tab as "providers" | "general" | "permissions",
+                    )
+                  }
                   className="shrink-0 rounded-md border px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
                 >
                   去处理

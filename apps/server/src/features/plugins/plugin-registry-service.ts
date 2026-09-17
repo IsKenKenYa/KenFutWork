@@ -113,7 +113,13 @@ interface PluginContributions {
       headers: Record<string, string | undefined>;
     }) => unknown | Promise<unknown>;
   }>;
-  ui: Array<{ pluginId: string; id: string; title: string; slot: string; url: string }>;
+  ui: Array<{
+    pluginId: string;
+    id: string;
+    title: string;
+    slot: string;
+    url: string;
+  }>;
 }
 
 export interface PluginRouteDispatchResult {
@@ -172,7 +178,10 @@ export interface PluginRegistryService {
     path: string;
   }): "public" | "private" | undefined;
   setEnabled(id: string, enabled: boolean): Promise<InstalledPlugin>;
-  exportPlugin(name: string, format: "dsh" | "kenfutwork"): PluginExportArtifact;
+  exportPlugin(
+    name: string,
+    format: "dsh" | "kenfutwork",
+  ): PluginExportArtifact;
   /** 启动时装载全部 enabled 的已安装插件（单个失败不阻断启动）。 */
   restore(): Promise<void>;
   /** kernel 关闭时卸载全部已装载插件（释放工具与副作用）。 */
@@ -341,7 +350,8 @@ export function createPluginRegistryService(
         // 贡献物统一记账：提示段进 system prompt、路由挂 /api/plugins/<id>/、UI 入口给前端
         promptFragments: (fragment) => {
           const fragmentId =
-            fragment.id ?? `${record.id}:${contributions.promptFragments.length + 1}`;
+            fragment.id ??
+            `${record.id}:${contributions.promptFragments.length + 1}`;
           const entry = {
             pluginId: record.id,
             id: fragmentId,
@@ -595,13 +605,13 @@ export function createPluginRegistryService(
         return undefined;
       }
       const bundleDir = bundleDirOf(pluginId);
-      const normalized = relativePath
-        .replace(/\\/g, "/")
-        .replace(/^\/+/, "");
+      const normalized = relativePath.replace(/\\/g, "/").replace(/^\/+/, "");
       if (
         !normalized ||
         normalized.includes("..") ||
-        normalized.split("/").some((part) => part.startsWith(".") || part === "node_modules")
+        normalized
+          .split("/")
+          .some((part) => part.startsWith(".") || part === "node_modules")
       ) {
         return undefined;
       }
@@ -684,7 +694,8 @@ export function createPluginRegistryService(
         return {
           status: 500,
           body: {
-            error: error instanceof Error ? error.message : "插件路由处理失败。",
+            error:
+              error instanceof Error ? error.message : "插件路由处理失败。",
           },
         };
       }

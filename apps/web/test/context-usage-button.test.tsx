@@ -20,7 +20,11 @@ describe("ContextUsageButton", () => {
   it("点开显示容量、百分比与缓存命中率", async () => {
     render(
       <ContextUsageButton
-        usage={{ inputTokens: 614_000, outputTokens: 1200, cachedInputTokens: 613_000 }}
+        usage={{
+          inputTokens: 614_000,
+          outputTokens: 1200,
+          cachedInputTokens: 613_000,
+        }}
         contextWindow={1_000_000}
       />,
     );

@@ -7,9 +7,8 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
-
-import { resolveSandboxScopeId } from "../agent/sandbox-dir.js";
 import type { AgentRunService } from "../agent/runtime.js";
+import { resolveSandboxScopeId } from "../agent/sandbox-dir.js";
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import { isPlanApprovalInput } from "../features/agent-modes/execution-mode-service.js";
 import {
@@ -56,36 +55,33 @@ export async function registerRunRoutes(
   // run 挂的又是会话的载体画布而非项目画布——两条更细的路实测都不可靠（详见仓储注释）。
   // 归属校验：先解析工作区（拿不到就返回全 0——不区分「不存在」与「不属于你」，
   // 与其它只读端点同一口径，不给账号/资源枚举留信号）。
-  app.get(
-    "/api/agent/runs/activity",
-    async (request, reply) => {
-      const authenticatedUser = options.auth
-        ? await options.auth.authenticate(request)
-        : null;
-      if (!authenticatedUser) {
-        return reply.code(401).send(
-          applicationErrorResponseSchema.parse({
-            error: {
-              code: "unauthorized",
-              message: "Missing or invalid bearer token.",
-            },
-          }),
-        );
-      }
-      const workspace = options.viewerService
-        ? await options.viewerService
-            .resolveWorkspace(authenticatedUser)
-            .catch(() => null)
-        : null;
-      const activity =
-        workspace && options.activityQuery
-          ? await options.activityQuery({ workspaceId: workspace.id })
-          : { runs: 0, totalSeconds: 0, windowDays: 7 };
-      return reply
-        .code(200)
-        .send(agentRunActivityResponseSchema.parse({ activity }));
-    },
-  );
+  app.get("/api/agent/runs/activity", async (request, reply) => {
+    const authenticatedUser = options.auth
+      ? await options.auth.authenticate(request)
+      : null;
+    if (!authenticatedUser) {
+      return reply.code(401).send(
+        applicationErrorResponseSchema.parse({
+          error: {
+            code: "unauthorized",
+            message: "Missing or invalid bearer token.",
+          },
+        }),
+      );
+    }
+    const workspace = options.viewerService
+      ? await options.viewerService
+          .resolveWorkspace(authenticatedUser)
+          .catch(() => null)
+      : null;
+    const activity =
+      workspace && options.activityQuery
+        ? await options.activityQuery({ workspaceId: workspace.id })
+        : { runs: 0, totalSeconds: 0, windowDays: 7 };
+    return reply
+      .code(200)
+      .send(agentRunActivityResponseSchema.parse({ activity }));
+  });
 
   app.post("/api/agent/runs", async (request, reply) => {
     try {

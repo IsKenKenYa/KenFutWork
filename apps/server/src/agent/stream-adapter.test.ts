@@ -1,9 +1,9 @@
+import type { StreamEvent } from "@kenfutwork/shared";
 import {
   AIMessageChunk,
   HumanMessage,
   SystemMessage,
 } from "@langchain/core/messages";
-import type { StreamEvent } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
 
 import { adaptDeepAgentStream } from "./stream-adapter.js";
@@ -344,15 +344,13 @@ describe("stream-adapter 用量快照", () => {
       conversationId: "conv-1",
       runId: "run-1",
       sessionId: "sess-1",
-      stream: chunkStream([
-        usageChunk(500),
-        usageChunk(500),
-        usageChunk(500),
-      ]),
+      stream: chunkStream([usageChunk(500), usageChunk(500), usageChunk(500)]),
     })) {
       events.push(event);
     }
-    expect(events.filter((event) => event.type === "run.usage")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "run.usage")).toHaveLength(
+      1,
+    );
   });
 
   it("工具轮次之间提示词变大：按新的大小再下发一次", async () => {
@@ -495,10 +493,7 @@ describe("stream-adapter 分类占比", () => {
           data: {
             input: {
               messages: [
-                [
-                  new SystemMessage("sys"),
-                  new HumanMessage("用户消息"),
-                ],
+                [new SystemMessage("sys"), new HumanMessage("用户消息")],
               ],
             },
           },

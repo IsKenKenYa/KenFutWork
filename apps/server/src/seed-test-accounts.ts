@@ -44,8 +44,7 @@ export function readAdminSeed(env: NodeJS.ProcessEnv = process.env): {
 } | null {
   const password = env.KENFUTWORK_ADMIN_PASSWORD?.trim();
   if (!password) return null;
-  const email =
-    env.KENFUTWORK_ADMIN_EMAIL?.trim() || "admin@kenfutwork.local";
+  const email = env.KENFUTWORK_ADMIN_EMAIL?.trim() || "admin@kenfutwork.local";
   return { email, password };
 }
 
@@ -95,7 +94,9 @@ async function main(): Promise<void> {
   const env = loadServerEnv();
   const databaseUrl = env.databaseUrl;
   if (!databaseUrl) {
-    console.error("缺少数据库连接串（KENFUTWORK_DATABASE_URL 或 DATABASE_URL）。");
+    console.error(
+      "缺少数据库连接串（KENFUTWORK_DATABASE_URL 或 DATABASE_URL）。",
+    );
     process.exit(1);
   }
 
@@ -113,7 +114,10 @@ async function main(): Promise<void> {
   const adminSeed = readAdminSeed();
   if (
     adminSeed &&
-    !accounts.some((account) => account.email.toLowerCase() === adminSeed.email.toLowerCase())
+    !accounts.some(
+      (account) =>
+        account.email.toLowerCase() === adminSeed.email.toLowerCase(),
+    )
   ) {
     accounts.push({ credits: 0, email: adminSeed.email, plan: "ultra" });
     passwords.set(adminSeed.email.toLowerCase(), adminSeed.password);

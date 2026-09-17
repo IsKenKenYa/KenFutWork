@@ -64,8 +64,9 @@ export function redactSecrets(text: string): string {
       /((?:api[_-]?key|apikey|access[_-]?token|token|secret|password)["'\s:=]{1,4})[A-Za-z0-9._~+/=-]{8,}/gi,
       "$1***",
     )
-    .replace(/\b(sk|pk|rk|ghp|xox[baprs]|QC)-[A-Za-z0-9_-]{12,}/g, (match) =>
-      `${match.slice(0, 5)}***`,
+    .replace(
+      /\b(sk|pk|rk|ghp|xox[baprs]|QC)-[A-Za-z0-9_-]{12,}/g,
+      (match) => `${match.slice(0, 5)}***`,
     );
 }
 

@@ -82,7 +82,6 @@ export function applyToolEvent(
   return matched ? capTools(next) : tools;
 }
 
-
 /** 任务里与工具事件相关的状态（工具轨迹 + 子代理目录 + 目标进度）；都可缺省。 */
 export interface TaskToolState {
   tools?: TaskToolEntry[];
@@ -102,7 +101,10 @@ export interface TaskToolState {
  */
 export function applyTaskToolEvent<T extends TaskToolState>(
   task: T,
-  event: ToolEventLike & { input?: Record<string, unknown>; timestamp?: string },
+  event: ToolEventLike & {
+    input?: Record<string, unknown>;
+    timestamp?: string;
+  },
 ): T {
   const toolCallId = event.toolCallId ?? "";
   if (!toolCallId) return task;

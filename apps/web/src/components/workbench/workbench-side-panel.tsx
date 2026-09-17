@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChangesPane } from "@/components/workbench/panel-changes-view";
-import { FilesPane } from "@/components/workbench/panel-files-view";
 import {
   BrowserPane,
   type PickedElement,
 } from "@/components/workbench/panel-browser-view";
+import { ChangesPane } from "@/components/workbench/panel-changes-view";
+import { FilesPane } from "@/components/workbench/panel-files-view";
 import { DiffPane, FilePane } from "@/components/workbench/panel-reading-view";
 import { PanelTabStrip } from "@/components/workbench/panel-tab-strip";
 import { TerminalPane } from "@/components/workbench/panel-terminal-view";
@@ -135,7 +135,12 @@ export function WorkbenchSidePanel({
     () =>
       onBrowserOpen((url) => {
         setState((current) =>
-          openPanelTab(current.tabs, current.activeId, { kind: "browser" }, Date.now()),
+          openPanelTab(
+            current.tabs,
+            current.activeId,
+            { kind: "browser" },
+            Date.now(),
+          ),
         );
         setBrowserHistory((current) => openUrl(current, url));
         setUrlDraft(url);
@@ -369,11 +374,7 @@ function PaneContent({
       );
     case "terminal":
       return (
-        <TerminalPane
-          accessToken={accessToken}
-          canvasId={canvasId}
-          ws={ws}
-        />
+        <TerminalPane accessToken={accessToken} canvasId={canvasId} ws={ws} />
       );
     case "browser":
       return (

@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 
 import {
   detectTerminalShells,
@@ -201,10 +201,7 @@ export function startTerminalSession(
   if (!shell) {
     // 一个 shell 都探测不到：如实说，而不是让 node 兜底跑一个谁也不知道是什么的东西
     queueMicrotask(() =>
-      finish(
-        null,
-        "这台机器上找不到可用的 shell（cmd / sh 都不在 PATH 上）。",
-      ),
+      finish(null, "这台机器上找不到可用的 shell（cmd / sh 都不在 PATH 上）。"),
     );
     return {
       id: input.id,

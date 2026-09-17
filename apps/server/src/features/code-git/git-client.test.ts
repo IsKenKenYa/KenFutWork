@@ -328,16 +328,43 @@ describe("git 图谱（纯解析）", () => {
     });
     // 连接线行保留（否则分支图形缺笔画）：rail-only，无提交字段
     expect(graph.entries[1]).toMatchObject({ sha: null, subject: "" });
-    expect(graph.entries[2]).toMatchObject({ rail: "| * ", sha: "bbb2222full" });
+    expect(graph.entries[2]).toMatchObject({
+      rail: "| * ",
+      sha: "bbb2222full",
+    });
     expect(graph.entries[2]?.refs).toEqual([]);
   });
 
   it("超过上限：丢掉行序末尾的那条提交（含它前面的图形行），标 truncated", () => {
     const stdout = [
-      row("* ", ["aaa", "aaa1111", "a", "2026-09-16T00:00:00+08:00", "新", "", ""]),
+      row("* ", [
+        "aaa",
+        "aaa1111",
+        "a",
+        "2026-09-16T00:00:00+08:00",
+        "新",
+        "",
+        "",
+      ]),
       "|\\",
-      row("| * ", ["bbb", "bbb2222", "a", "2026-09-15T00:00:00+08:00", "旧", "", ""]),
-      row("* ", ["ccc", "ccc3333", "a", "2026-09-14T00:00:00+08:00", "更旧", "", ""]),
+      row("| * ", [
+        "bbb",
+        "bbb2222",
+        "a",
+        "2026-09-15T00:00:00+08:00",
+        "旧",
+        "",
+        "",
+      ]),
+      row("* ", [
+        "ccc",
+        "ccc3333",
+        "a",
+        "2026-09-14T00:00:00+08:00",
+        "更旧",
+        "",
+        "",
+      ]),
     ].join("\n");
 
     const graph = toGraph({ result: ok(stdout), limit: 2 });
@@ -361,7 +388,17 @@ describe("git 图谱（纯解析）", () => {
   it("客户端：结构化 format + --no-color，且多取一条用于判截断", async () => {
     // 形参要写全（`ExecGit` 的 args 是 readonly string[]），否则 mock 的调用记录类型为 []
     const exec = vi.fn(async (_args: readonly string[], _cwd: string) =>
-      ok(row("* ", ["abc", "abc1234", "a", "2026-09-16T00:00:00+08:00", "x", "", ""])),
+      ok(
+        row("* ", [
+          "abc",
+          "abc1234",
+          "a",
+          "2026-09-16T00:00:00+08:00",
+          "x",
+          "",
+          "",
+        ]),
+      ),
     );
     const client = createGitClient({ exec });
     await client.graph("/sandbox/x", 30);
@@ -384,9 +421,11 @@ describe("git 图谱（纯解析）", () => {
 describe("变更清单（纯解析）", () => {
   it("合并 numstat 与 porcelain：行数来自前者、状态来自后者，未跟踪补在末尾", () => {
     const numstat = ok(
-      ["12\t3\tsrc/app.ts", "-\t-\tpublic/logo.png", "7\t7\tsrc/new-name.ts"].join(
-        "\n",
-      ),
+      [
+        "12\t3\tsrc/app.ts",
+        "-\t-\tpublic/logo.png",
+        "7\t7\tsrc/new-name.ts",
+      ].join("\n"),
     );
     const status = ok(
       [
@@ -451,14 +490,15 @@ describe("变更清单（纯解析）", () => {
       status: ok("?? first.md\n?? src/draft.ts"),
       maxFiles: 10,
     }).files;
-    expect(files.map((file) => file.path)).toEqual(["first.md", "src/draft.ts"]);
+    expect(files.map((file) => file.path)).toEqual([
+      "first.md",
+      "src/draft.ts",
+    ]);
     expect(files.every((file) => file.status === "untracked")).toBe(true);
   });
 
   it("超过上限：截断并标注（列表按路径排序，分页口径稳定）", () => {
-    const numstat = ok(
-      ["1\t1\tc.ts", "1\t1\ta.ts", "1\t1\tb.ts"].join("\n"),
-    );
+    const numstat = ok(["1\t1\tc.ts", "1\t1\ta.ts", "1\t1\tb.ts"].join("\n"));
     const result = toChangedFiles({ numstat, status: ok(""), maxFiles: 2 });
     expect(result.truncated).toBe(true);
     expect(result.files.map((file) => file.path)).toEqual(["a.ts", "b.ts"]);
@@ -489,11 +529,16 @@ describe("变更清单（纯解析）", () => {
    * 取消暂存用 `restore --staged`（新版 git 对「新增文件的反向暂存」也能正确处理）。
    */
   it("客户端：暂存走 git add，取消暂存走 git restore --staged", async () => {
-    const exec = vi.fn(async (_args: readonly string[], _cwd: string) => ok(""));
+    const exec = vi.fn(async (_args: readonly string[], _cwd: string) =>
+      ok(""),
+    );
     const client = createGitClient({ exec });
 
     await client.stageFile("/sandbox/x", "src/app.ts", true);
-    expect(exec).toHaveBeenCalledWith(["add", "--", "src/app.ts"], "/sandbox/x");
+    expect(exec).toHaveBeenCalledWith(
+      ["add", "--", "src/app.ts"],
+      "/sandbox/x",
+    );
 
     await client.stageFile("/sandbox/x", "src/app.ts", false);
     expect(exec).toHaveBeenCalledWith(
@@ -507,9 +552,9 @@ describe("变更清单（纯解析）", () => {
       fail("fatal: pathspec 'nope' did not match any files"),
     );
     const client = createGitClient({ exec });
-    await expect(
-      client.stageFile("/sandbox/x", "nope", true),
-    ).rejects.toThrow(/pathspec/);
+    await expect(client.stageFile("/sandbox/x", "nope", true)).rejects.toThrow(
+      /pathspec/,
+    );
   });
 
   it("客户端：fileDiff 超上限截断并标注", async () => {

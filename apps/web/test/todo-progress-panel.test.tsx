@@ -19,7 +19,9 @@ const items = [
 
 describe("TodoProgressPanel（目标 + 进度）", () => {
   it("显示目标、进度分子/分母与逐条状态", () => {
-    render(<TodoProgressPanel goal="把参考图未做项补齐" items={items} running />);
+    render(
+      <TodoProgressPanel goal="把参考图未做项补齐" items={items} running />,
+    );
     expect(screen.getByText("目标")).toBeInTheDocument();
     expect(screen.getByText("把参考图未做项补齐")).toBeInTheDocument();
     expect(screen.getByText("1/3")).toBeInTheDocument();

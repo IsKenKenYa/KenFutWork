@@ -54,7 +54,10 @@ describe("沙箱文件预览", () => {
 
   it("二进制文件：不回内容（避免把 png 当文本塞进界面）", () => {
     const root = makeRoot();
-    writeFileSync(join(root, "logo.png"), Buffer.from([0x89, 0x50, 0x00, 0x0a]));
+    writeFileSync(
+      join(root, "logo.png"),
+      Buffer.from([0x89, 0x50, 0x00, 0x0a]),
+    );
 
     const view = readSandboxTextFile(root, "logo.png");
     expect(view.binary).toBe(true);
@@ -65,9 +68,13 @@ describe("沙箱文件预览", () => {
     const root = makeRoot();
     writeFileSync(join(root, "ok.txt"), "x", "utf8");
 
-    expect(() => readSandboxTextFile(root, "../outside.txt")).toThrow(/越出工作目录/);
+    expect(() => readSandboxTextFile(root, "../outside.txt")).toThrow(
+      /越出工作目录/,
+    );
     expect(() => readSandboxTextFile(root, "")).toThrow(/是目录/);
-    expect(() => readSandboxTextFile(root, "missing.txt")).toThrow(/文件不存在/);
+    expect(() => readSandboxTextFile(root, "missing.txt")).toThrow(
+      /文件不存在/,
+    );
   });
 });
 

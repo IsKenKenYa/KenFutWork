@@ -6,10 +6,10 @@ import {
   filterPanelTabs,
   makePanelTab,
   openPanelTab,
+  type PanelTab,
   panelViewId,
   panelViewLabel,
   relativeOpenedLabel,
-  type PanelTab,
 } from "@/lib/panel-tabs";
 
 function tab(view: Parameters<typeof makePanelTab>[0], at = 0): PanelTab {
@@ -32,7 +32,12 @@ describe("panel-tabs：编辑器式多标签的顺序与身份", () => {
   it("同一文件开两个标签只有路径相同才合并（diff 与 file 是两个视图）", () => {
     const base: PanelTab[] = [];
     const a = openPanelTab(base, null, { kind: "file", path: "src/a.ts" }, 1);
-    const b = openPanelTab(a.tabs, a.activeId, { kind: "diff", path: "src/a.ts" }, 2);
+    const b = openPanelTab(
+      a.tabs,
+      a.activeId,
+      { kind: "diff", path: "src/a.ts" },
+      2,
+    );
     expect(b.tabs.map((t) => t.id)).toEqual(["file:src/a.ts", "diff:src/a.ts"]);
     expect(b.tabs.map((t) => t.label)).toEqual(["a.ts", "a.ts"]);
   });
@@ -66,7 +71,11 @@ describe("panel-tabs：编辑器式多标签的顺序与身份", () => {
   });
 
   it("关掉最后一个标签后没有激活标签（面板给空态，而不是崩）", () => {
-    const closed = closePanelTab([tab({ kind: "changes" })], "changes", "changes");
+    const closed = closePanelTab(
+      [tab({ kind: "changes" })],
+      "changes",
+      "changes",
+    );
     expect(closed.tabs).toEqual([]);
     expect(closed.activeId).toBeNull();
   });

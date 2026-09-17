@@ -1,9 +1,13 @@
 "use client";
 
-import { CheckCircle2, ChevronRight, CircleDot, Circle } from "lucide-react";
+import { CheckCircle2, ChevronRight, Circle, CircleDot } from "lucide-react";
 import { useState } from "react";
 
-import { sortTodosForDisplay, todoProgress, type TodoItem } from "@/lib/todo-progress";
+import {
+  sortTodosForDisplay,
+  type TodoItem,
+  todoProgress,
+} from "@/lib/todo-progress";
 
 /**
  * 转录顶部的「目标 + 进度」面板（参考图 R1-2，源自 `write_todos` 工具事件）。

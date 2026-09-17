@@ -8,7 +8,9 @@ describe("重试时丢弃半截回复", () => {
       { role: "user", text: "问题" },
       { role: "assistant", text: "半截…" },
     ];
-    expect(dropPartialAssistantTail(messages)).toEqual([{ role: "user", text: "问题" }]);
+    expect(dropPartialAssistantTail(messages)).toEqual([
+      { role: "user", text: "问题" },
+    ]);
   });
 
   it("末尾是 user（本轮还没流出任何内容）：原样返回", () => {

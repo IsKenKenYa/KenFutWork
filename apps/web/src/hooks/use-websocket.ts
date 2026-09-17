@@ -151,7 +151,10 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
             console.error("[ws] event listener threw:", listenerErr);
           }
         }
-      } else if (msg.type === "terminal.output" || msg.type === "terminal.exit") {
+      } else if (
+        msg.type === "terminal.output" ||
+        msg.type === "terminal.exit"
+      ) {
         const terminalEvent: TerminalChannelEvent =
           msg.type === "terminal.output"
             ? {
@@ -164,7 +167,9 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
                 sessionId: String(msg.sessionId ?? ""),
                 exitCode:
                   typeof msg.exitCode === "number" ? msg.exitCode : null,
-                ...(typeof msg.reason === "string" ? { reason: msg.reason } : {}),
+                ...(typeof msg.reason === "string"
+                  ? { reason: msg.reason }
+                  : {}),
               };
         for (const cb of terminalListeners.current) {
           try {
@@ -347,7 +352,10 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
       canvasId: string;
       shell?: TerminalShellId;
     }) => {
-      sendCommand("terminal.start", payload as unknown as Record<string, unknown>);
+      sendCommand(
+        "terminal.start",
+        payload as unknown as Record<string, unknown>,
+      );
     },
     [sendCommand],
   );

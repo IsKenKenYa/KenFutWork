@@ -38,10 +38,10 @@ export const THINKING_OPTIONS = [
 /** 思考强度的档位 → 进度条比例（满格 = 最高）。 */
 export const THINKING_PROGRESS: Record<string, number> = {
   default: 0,
-  "低": 0.25,
-  "中": 0.5,
-  "高": 0.75,
-  "最高": 1,
+  低: 0.25,
+  中: 0.5,
+  高: 0.75,
+  最高: 1,
 };
 
 export function optionLabel(

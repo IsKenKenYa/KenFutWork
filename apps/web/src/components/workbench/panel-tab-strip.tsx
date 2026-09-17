@@ -134,7 +134,9 @@ export function PanelTabStrip({
                       <span className="shrink-0 text-muted-foreground">
                         {tabIcon(tab.view.kind)}
                       </span>
-                      <span className="min-w-0 flex-1 truncate">{tab.label}</span>
+                      <span className="min-w-0 flex-1 truncate">
+                        {tab.label}
+                      </span>
                       <span className="shrink-0 text-[10px] text-muted-foreground">
                         {relativeOpenedLabel(tab.openedAt, now)}
                       </span>

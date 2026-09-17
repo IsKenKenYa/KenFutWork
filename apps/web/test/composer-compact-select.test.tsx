@@ -50,9 +50,9 @@ describe("ComposerCompactSelect", () => {
     );
     // SelectValue 渲染出的值节点必须带 `@max-xl/composer:hidden`：
     // 少了它，面板拉宽挤窄对话列时文字不会收起（本轮用户反馈的原始问题）
-    const value = screen.getByLabelText("权限档位").querySelector(
-      '[data-slot="select-value"]',
-    );
+    const value = screen
+      .getByLabelText("权限档位")
+      .querySelector('[data-slot="select-value"]');
     expect(value).not.toBeNull();
     expect(value?.className).toContain("@max-xl/composer:hidden");
   });

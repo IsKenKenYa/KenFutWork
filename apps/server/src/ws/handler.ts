@@ -18,14 +18,8 @@ import {
   decideRunRetry,
 } from "../agent/run-retry.js";
 import type { AgentRunService } from "../agent/runtime.js";
-import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import { resolveSandboxScopeId } from "../agent/sandbox-dir.js";
-import type { CodeGitService } from "../features/code-git/code-git-service.js";
-import {
-  chunkForFrames,
-  startTerminalSession,
-  type TerminalSession,
-} from "../features/code-git/terminal-session.js";
+import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import { isPlanApprovalInput } from "../features/agent-modes/execution-mode-service.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type {
@@ -36,6 +30,12 @@ import type { ViewerService } from "../features/bootstrap/ensure-user-foundation
 import type { ChatService } from "../features/chat/chat-service.js";
 import { deriveSessionTitle } from "../features/chat/session-title.js";
 import type { ThreadService } from "../features/chat/thread-service.js";
+import type { CodeGitService } from "../features/code-git/code-git-service.js";
+import {
+  chunkForFrames,
+  startTerminalSession,
+  type TerminalSession,
+} from "../features/code-git/terminal-session.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import type { ConnectionManager } from "./connection-manager.js";
 import type { CanvasEventBuffer } from "./event-buffer.js";

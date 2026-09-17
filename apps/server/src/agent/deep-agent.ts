@@ -383,7 +383,10 @@ export function createKenFutWorkDeepAgent(options: {
         ? { submitVideoJob: options.submitVideoJob }
         : {}),
     }),
-    ...bridgeKernelTools(options.kernelTools ?? [], options.runToolContext ?? {}),
+    ...bridgeKernelTools(
+      options.kernelTools ?? [],
+      options.runToolContext ?? {},
+    ),
   ];
 
   options.onToolInventory?.(tools);

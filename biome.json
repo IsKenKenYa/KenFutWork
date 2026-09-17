@@ -17,12 +17,18 @@
       "!**/out",
       "!**/.pnpm-store",
       "!**/tmp",
-      "!**/references"
+      "!**/references",
+      "!**/.kenfutwork",
+      "!**/.scratch",
+      "!**/release",
+      "!**/data",
+      "!**/logs"
     ]
   },
   "formatter": {
     "enabled": true,
-    "indentStyle": "space"
+    "indentStyle": "space",
+    "lineEnding": "lf"
   },
   "linter": {
     "enabled": true,

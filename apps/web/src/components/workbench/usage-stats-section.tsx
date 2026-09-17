@@ -74,7 +74,8 @@ function Heatmap({
   heatmap?: UsageStats["heatmap"];
 }) {
   const weeks = useMemo(() => {
-    if (heatmap.length === 0) return [] as Array<Array<{ date: string; tokens: number } | null>>;
+    if (heatmap.length === 0)
+      return [] as Array<Array<{ date: string; tokens: number } | null>>;
     // 首列对齐到周一：把第一周之前的日子补成空格子
     const first = new Date(`${heatmap[0]?.date}T00:00:00Z`);
     const lead = (first.getUTCDay() + 6) % 7;
@@ -166,7 +167,8 @@ function Heatmap({
         </div>
       </div>
       <p className="mt-2 text-[10px] text-muted-foreground">
-        近一年每日 token（格子深浅按峰值分档）；数据来自用量记录，只覆盖最近 2 万条。
+        近一年每日 token（格子深浅按峰值分档）；数据来自用量记录，只覆盖最近 2
+        万条。
       </p>
     </div>
   );
@@ -211,7 +213,12 @@ function TrendChart({ daily }: { daily: UsageStats["daily"] }) {
         strokeLinecap="round"
       />
       {points.map((point, index) => (
-        <circle key={daily[index]?.date ?? index} cx={point.x} cy={point.y} r="2">
+        <circle
+          key={daily[index]?.date ?? index}
+          cx={point.x}
+          cy={point.y}
+          r="2"
+        >
           <title>{`${shortDate(daily[index]?.date ?? "")} · ${formatTokens(daily[index]?.tokens ?? 0)}`}</title>
         </circle>
       ))}
@@ -253,8 +260,7 @@ export function monotonePath(points: Array<{ x: number; y: number }>): string {
   for (let i = 1; i < n - 1; i += 1) {
     const previous = slope[i - 1]!;
     const next = slope[i]!;
-    tangent[i] =
-      previous * next <= 0 ? 0 : (previous + next) / 2;
+    tangent[i] = previous * next <= 0 ? 0 : (previous + next) / 2;
   }
 
   // 限幅：保证每段的切线不把曲线拉过相邻数据点（否则峰值处会过冲）

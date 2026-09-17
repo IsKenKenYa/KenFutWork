@@ -1,7 +1,4 @@
 import { describe, expect, it } from "vitest";
-
-import { buildOnboardingSteps } from "../src/components/workbench/onboarding-section";
-import { formatElementReference } from "../src/components/workbench/panel-browser-view";
 import {
   linesToRules,
   rulesToLines,
@@ -10,6 +7,8 @@ import {
   formatBuiltAt,
   formatBytes,
 } from "../src/components/workbench/index-library-section";
+import { buildOnboardingSteps } from "../src/components/workbench/onboarding-section";
+import { formatElementReference } from "../src/components/workbench/panel-browser-view";
 import {
   getBrowserOpenTarget,
   setBrowserOpenTarget,

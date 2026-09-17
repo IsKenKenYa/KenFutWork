@@ -11,20 +11,20 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { GitGraphDialog } from "@/components/workbench/git-graph-dialog";
-import { formatDuration } from "@/lib/usage-format";
 import {
+  type AgentActivity,
   checkoutGitBranch,
   commitGitAll,
   createGitBranch,
   fetchAgentActivity,
   fetchGitDiffStat,
   fetchGitStatus,
-  initGitRepo,
-  pushGit,
-  type AgentActivity,
   type GitDiffStat,
   type GitStatus,
+  initGitRepo,
+  pushGit,
 } from "@/lib/code-git-api";
+import { formatDuration } from "@/lib/usage-format";
 
 /**
  * 分支 chip（Code 模式 composer 底部，紧邻工作目录 chip）。
@@ -280,7 +280,8 @@ export function GitBranchSelect({
           className="absolute top-full left-0 z-50 mt-2 w-72 overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-md"
         >
           <p className="px-3 py-2 text-xs text-muted-foreground">
-            该工作目录还不是 git 仓库。初始化后，每一轮对话结束都会自动提交一次，便于回滚。
+            该工作目录还不是 git
+            仓库。初始化后，每一轮对话结束都会自动提交一次，便于回滚。
           </p>
           <div className="border-t px-2 py-2">
             <button
@@ -389,7 +390,8 @@ export function GitBranchSelect({
                   activity.totalSeconds,
                 )}`}
               >
-                智能体 {formatDuration(activity.totalSeconds)} · {activity.runs} 运行
+                智能体 {formatDuration(activity.totalSeconds)} · {activity.runs}{" "}
+                运行
               </span>
             </div>
           ) : null}

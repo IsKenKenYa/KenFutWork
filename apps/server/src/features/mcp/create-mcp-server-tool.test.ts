@@ -16,10 +16,12 @@ const USER = {
 };
 const CANVAS_ID = "canvas-1";
 
-function makeDeps(overrides: {
-  requireAdmin?: () => Promise<void>;
-  create?: (input: unknown) => Promise<unknown>;
-} = {}) {
+function makeDeps(
+  overrides: {
+    requireAdmin?: () => Promise<void>;
+    create?: (input: unknown) => Promise<unknown>;
+  } = {},
+) {
   const create =
     overrides.create ??
     (async (input: unknown) => ({
@@ -83,7 +85,11 @@ describe("create_mcp_server 工具（创造模式的 MCP 产物）", () => {
   });
 
   it("非管理员 / 缺画布 / 越界路径都如实拒绝，且不注册任何 server", async () => {
-    const create = vi.fn(async () => ({ id: "s", name: "s", command: "python" }));
+    const create = vi.fn(async () => ({
+      id: "s",
+      name: "s",
+      command: "python",
+    }));
 
     const denied = createCreateMcpServerTool(
       makeDeps({
