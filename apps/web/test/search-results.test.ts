@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseSearchResultView,
   sourceHost,
+  decodeHtmlEntities,
 } from "../src/lib/search-results.js";
 
 /**
@@ -88,5 +89,40 @@ describe("web_search 来源解析", () => {
   it("host 解析：去 www 前缀，非法 URL 原样返回", () => {
     expect(sourceHost("https://www.example.com/p")).toBe("example.com");
     expect(sourceHost("not-a-url")).toBe("not-a-url");
+  });
+});
+
+/**
+ * 搜索摘要里的 HTML 实体要还原成文本（实测：必应抓取的摘要原样上屏会显示
+ * 字面量 "&ensp;&#0183;&ensp;"）。只做文本还原，不解析标签。
+ */
+describe("搜索结果的 HTML 实体还原", () => {
+  it("常见命名实体与数字实体都还原，未知实体原样保留", () => {
+    // &#0183; 是十进制 183 → U+00B7「·」（上游把间隔点写成这个数字实体）
+    expect(decodeHtmlEntities("a&ensp;b&#0183;c&amp;d")).toBe("a b·c&d");
+    const decoded = decodeHtmlEntities("&ensp;&#8195;&#x3000;abc&nbsp;def");
+    expect(decoded).not.toContain("&");
+    expect(decoded).toContain("abc");
+    expect(decoded).toContain("def");
+    expect(decodeHtmlEntities("&不是实体; &lt;tag&gt;")).toBe("&不是实体; <tag>");
+    expect(decodeHtmlEntities("没有实体")).toBe("没有实体");
+  });
+
+  it("标题与摘要都过一遍还原（不止摘要）", () => {
+    const view = parseSearchResultView(
+      "web_search",
+      JSON.stringify({
+        query: "x&amp;y",
+        results: [
+          {
+            title: "A&amp;B",
+            link: "https://example.com/a",
+            content: "1&ensp;2",
+          },
+        ],
+      }),
+    );
+    expect(view?.sources[0]?.title).toBe("A&B");
+    expect(view?.sources[0]?.snippet).toBe("1 2");
   });
 });

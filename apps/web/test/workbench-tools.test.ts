@@ -15,6 +15,37 @@ import {
  * 出现过。这组用例把「按 toolCallId 归并、正常/失败都收尾、事件乱序不造孤儿行」钉住。
  */
 describe("工作台工具轨迹", () => {
+  it("被工具门拒绝：状态是 denied（不是「已完成」），原因留在 summary/output 上", () => {
+    let tools: TaskToolEntry[] = [];
+    tools = applyToolEvent(tools, {
+      type: "tool.started",
+      toolCallId: "d1",
+      toolName: "write_file",
+    });
+    tools = applyToolEvent(tools, {
+      type: "tool.completed",
+      toolCallId: "d1",
+      toolName: "write_file",
+      outputSummary: "工具被拒绝（第 1 次）：工具 write_file 属危险操作，等待用户审批（default 档）。",
+      output: { denied: true, reason: "等待用户审批（default 档）", count: 1 },
+    });
+    expect(tools[0]).toMatchObject({ status: "denied", toolCallId: "d1" });
+    expect(tools[0]?.output?.denied).toBe(true);
+    // 正常完成的工具仍然是 completed（回归：别把两种收尾混成一种）
+    tools = applyToolEvent(tools, {
+      type: "tool.started",
+      toolCallId: "d2",
+      toolName: "execute",
+    });
+    tools = applyToolEvent(tools, {
+      type: "tool.completed",
+      toolCallId: "d2",
+      toolName: "execute",
+      outputSummary: "退出码 0",
+    });
+    expect(tools[1]?.status).toBe("completed");
+  });
+
   it("tool.started → 新增执行中行；tool.completed → 就地收尾并带上结论与输出", () => {
     let tools: TaskToolEntry[] = [];
     tools = applyToolEvent(tools, {
@@ -150,8 +181,9 @@ describe("applyTaskToolEvent（工具事件 → 任务状态）", () => {
       output: { denied: true, reason: "plan 计划模式：计划批准前仅允许只读工具" },
     });
 
+    // 状态与「已完成」分开（用户口径：界面上写「已完成」而实际没执行会骗人）
     expect(state.tools?.[0]).toMatchObject({
-      status: "completed",
+      status: "denied",
       summary: expect.stringContaining("工具被拒绝"),
       output: { denied: true },
     });

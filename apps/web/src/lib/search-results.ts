@@ -35,6 +35,49 @@ function readString(value: unknown): string {
 }
 
 /** host 展示：去掉 www. 前缀，失败原样返回。 */
+/**
+ * 搜索上游（必应抓取一类）给的是 HTML 片段：`&ensp;` `&#0183;` `&amp;` 这类实体原样上屏
+ * 就是乱码（实测：摘要里出现字面量 "&ensp;&#0183;&ensp;"）。这里解掉常见实体——
+ * 只做「文本还原」，不解析标签（标签由渲染层当纯文本处理，不做富文本）。
+ */
+export function decodeHtmlEntities(text: string): string {
+  if (!text.includes("&")) return text;
+  const named: Record<string, string> = {
+    amp: "&",
+    lt: "<",
+    gt: ">",
+    quot: '"',
+    apos: "'",
+    nbsp: " ",
+    ensp: " ",
+    emsp: " ",
+    thinsp: " ",
+    hellip: "…",
+    mdash: "—",
+    ndash: "–",
+    laquo: "«",
+    raquo: "»",
+    ldquo: "“",
+    rdquo: "”",
+    lsquo: "‘",
+    rsquo: "’",
+    middot: "·",
+  };
+  return text.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (match, body: string) => {
+    if (body.startsWith("#")) {
+      const isHex = body[1] === "x" || body[1] === "X";
+      const code = Number.parseInt(body.slice(isHex ? 2 : 1), isHex ? 16 : 10);
+      if (!Number.isFinite(code) || code < 0 || code > 0x10ffff) return match;
+      try {
+        return String.fromCodePoint(code);
+      } catch {
+        return match;
+      }
+    }
+    return named[body.toLowerCase()] ?? match;
+  });
+}
+
 export function sourceHost(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, "");
@@ -80,9 +123,9 @@ export function parseSearchResultView(
     const url = readString(entry.link) || readString(entry.url);
     if (!url) continue;
     sources.push({
-      title: readString(entry.title) || url,
+      title: decodeHtmlEntities(readString(entry.title)) || url,
       url,
-      snippet: readString(entry.content),
+      snippet: decodeHtmlEntities(readString(entry.content)),
       host: sourceHost(url),
     });
   }

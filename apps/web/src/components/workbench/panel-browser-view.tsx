@@ -199,7 +199,9 @@ export function BrowserPane({
         <span className="font-mono text-muted-foreground">
           {viewportWidth > 0 ? `${viewportWidth} × ${viewportHeight}` : "—"}
         </span>
-        {viewportWidth !== paneWidth && scale !== 1 ? (
+        {/* 缩放读数只在**真的有一页在看**时出现：没开页面时面板还没量到尺寸，
+            fitScale 会算出 0%（实测显示「1280 × 720 0%」这种没意义的读数） */}
+        {url && viewportWidth !== paneWidth && scale !== 1 ? (
           <span className="text-muted-foreground">
             {Math.round(scale * 100)}%
           </span>

@@ -223,7 +223,19 @@ interface WorkbenchTask {
 function WorkbenchToolRow({ tool }: { tool: TaskToolEntry }) {
   const [expanded, setExpanded] = useState(false);
   const hasDetail = Boolean(tool.output) || Boolean(tool.summary);
-  const statusText = tool.status === "running" ? "执行中…" : "已完成";
+  const statusText =
+    tool.status === "running"
+      ? "执行中…"
+      : tool.status === "denied"
+        ? "被拒绝"
+        : "已完成";
+  /** 被拒的原因写在 title 上（不点开也能看到为什么没执行）。 */
+  const deniedReason =
+    tool.status === "denied"
+      ? ((tool.output?.reason as string | undefined) ??
+        tool.summary ??
+        "被工具门拦下")
+      : null;
   return (
     <div className="w-fit max-w-full rounded-xl border border-border/60 bg-card px-3 py-2">
       <button
@@ -239,11 +251,13 @@ function WorkbenchToolRow({ tool }: { tool: TaskToolEntry }) {
           className={`h-1.5 w-1.5 shrink-0 rounded-full ${
             tool.status === "running"
               ? "animate-pulse bg-amber-500"
-              : "bg-emerald-500"
+              : tool.status === "denied"
+                ? "bg-rose-500"
+                : "bg-emerald-500"
           }`}
         />
         <span className="font-mono">{tool.toolName}</span>
-        <span>{statusText}</span>
+        <span title={deniedReason ?? undefined}>{statusText}</span>
         {hasDetail && (
           <svg
             aria-hidden
