@@ -49,6 +49,8 @@
 [submodule "references/cherry-studio"]
 	path = references/cherry-studio
 	url = https://github.com/CherryHQ/cherry-studio.git
+	shallow = true
 [submodule "references/kimi-code"]
 	path = references/kimi-code
 	url = https://github.com/MoonshotAI/kimi-code.git
+	shallow = true
