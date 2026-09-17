@@ -38,20 +38,48 @@ export const TIER_OPTIONS = [
 
 export const THINKING_OPTIONS = [
   { value: "default", label: "默认", hint: "不额外要求，用模型自己的默认" },
+  {
+    value: "关闭",
+    label: "关闭",
+    hint: "不展开推理，直接给结论（更快、更省 token）",
+  },
   { value: "低", label: "低", hint: "想得少、回得快" },
   { value: "中", label: "中", hint: "常规推理" },
   { value: "高", label: "高", hint: "多想一步再答" },
   { value: "最高", label: "最高", hint: "尽量深想（更慢、更费 token）" },
 ] as const;
 
-/** 思考强度的档位 → 进度条比例（满格 = 最高）。 */
+/**
+ * 思考强度的档位 → 竖条比例（满格 = 最高）。
+ * `关闭` 是**明确的 0%**（用户口径：「关闭才是进度条 0%」）；`默认` 在界面上**不画条**。
+ */
 export const THINKING_PROGRESS: Record<string, number> = {
   default: 0,
+  关闭: 0,
   低: 0.25,
   中: 0.5,
   高: 0.75,
   最高: 1,
 };
+
+/** 界面上该不该画那根竖条：`默认` 不画（用户口径），其余档位都画（含「关闭」= 0%）。 */
+export function showsThinkingProgress(value: string): boolean {
+  return value !== "default";
+}
+
+/**
+ * 思考强度 → 拼进用户消息的提示词片段（**这是它唯一的执行面**：模型收到的一句要求）。
+ *
+ * 与界面文案分开写：「关闭」在提示词里必须说清是「不要展开推理」，否则模型只会看到一个
+ * 不知道什么意思的「关闭」。
+ */
+export function thinkingPromptHint(value: string): string {
+  if (!value || value === "default") return "";
+  if (value === "关闭") {
+    return "【思考强度：关闭——不要展开推理过程，直接给结论】\n";
+  }
+  return `【思考强度：${value}】\n`;
+}
 
 export function optionLabel(
   options: readonly { value: string; label: string }[],
@@ -112,7 +140,7 @@ export function ComposerCompactSelect({
           hideChevron
         >
           {icon}
-          {progress === undefined ? (
+          {progress === undefined || !showsThinkingProgress(value) ? (
             <SelectValue className="@max-xl/composer:hidden" />
           ) : (
             <>

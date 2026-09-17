@@ -8,9 +8,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ComposerCompactSelect,
   optionLabel,
+  showsThinkingProgress,
   THINKING_OPTIONS,
   THINKING_PROGRESS,
   TIER_OPTIONS,
+  thinkingPromptHint,
 } from "../src/components/workbench/composer-compact-select";
 
 /**
@@ -217,5 +219,59 @@ describe("思考强度：默认态不显示进度", () => {
     const fill = track?.querySelector("span");
     expect(fill?.getAttribute("style")).toContain("25%");
     expect(fill?.getAttribute("class")).toContain("bg-emerald-600");
+  });
+});
+
+/**
+ * 「关闭」档（用户口径：加一个思考强度关闭，用现在的进度条样式——也就是 0%）。
+ *
+ * 它是**有执行面的**档位：提示词里说清「不要展开推理，直接给结论」，
+ * 而不是只多一个看不懂的选项。
+ */
+describe("思考强度：关闭档", () => {
+  afterEach(cleanup);
+
+  it("选项表里有「关闭」，且它是 0%（默认不画条、关闭才画 0% 的条）", () => {
+    expect(THINKING_OPTIONS.map((option) => option.value)).toEqual([
+      "default",
+      "关闭",
+      "低",
+      "中",
+      "高",
+      "最高",
+    ]);
+    expect(THINKING_PROGRESS.关闭).toBe(0);
+    // 注意：`默认` 是**文本**，值是 `default`
+    expect(showsThinkingProgress("default")).toBe(false);
+    expect(showsThinkingProgress("关闭")).toBe(true);
+  });
+
+  it("选了「关闭」：轨道在、填充是 0%（用现在的进度条样式）", () => {
+    render(
+      <ComposerCompactSelect
+        ariaLabel="思考强度"
+        icon={<span data-testid="brain-icon" />}
+        options={THINKING_OPTIONS}
+        value="关闭"
+        onChange={() => {}}
+        progress={THINKING_PROGRESS.关闭 ?? 0}
+      />,
+    );
+    const trigger = screen.getByLabelText("思考强度");
+    const track = [...trigger.querySelectorAll("span")].find((el) =>
+      (el.getAttribute("class") ?? "").includes("flex-col"),
+    );
+    expect(track).toBeTruthy();
+    // 0% → 没有填充（0 高度画不出来），但轨道要留着（区别于「默认」：那边连轨道都不画）
+    expect(track?.querySelector("span")).toBeNull();
+    // 触发器上是「关闭」这个当前值（下拉没打开时只有这一处）
+    expect(screen.getByLabelText("思考强度").textContent).toContain("关闭");
+  });
+
+  it("提示词：关闭说清「不要展开推理」；默认不注入；档位照旧", () => {
+    expect(thinkingPromptHint("default")).toBe("");
+    expect(thinkingPromptHint("关闭")).toContain("不要展开推理过程");
+    expect(thinkingPromptHint("关闭")).toContain("直接给结论");
+    expect(thinkingPromptHint("最高")).toBe("【思考强度：最高】\n");
   });
 });

@@ -49,6 +49,7 @@ import {
   THINKING_OPTIONS,
   THINKING_PROGRESS,
   TIER_OPTIONS,
+  thinkingPromptHint,
 } from "@/components/workbench/composer-compact-select";
 import { ContextUsageButton } from "@/components/workbench/context-usage-button";
 import { ElapsedEntry } from "@/components/workbench/elapsed-entry";
@@ -1696,12 +1697,7 @@ export function Workbench() {
 `
                   : ""
               : ""
-          }${
-            thinking === "default"
-              ? ""
-              : `【思考强度：${thinking}】
-`
-          }${text.trim()}`,
+          }${thinkingPromptHint(thinking)}${text.trim()}`,
           ...(model ? { model } : {}),
           executionMode,
         },

@@ -72,9 +72,9 @@ export function ContextUsageButton({
         aria-expanded={open}
         title={view.usageLine ?? "上下文容量与缓存命中"}
         onClick={() => setOpen((current) => !current)}
-        /* 与相邻图标按钮同心中线（h-8 w-8 + 居中，环本身 30）：圈才不会跟图标错开半个像素；
-           hover 只给底色，**文字颜色保持前景色**（否则悬停时环的数字会被 muted 冲淡） */
-        className="inline-flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-muted"
+        /* 与相邻图标按钮同心中线（h-6 w-6 命中盒 + 居中，环本身 18）：
+           圈不会跟图标错开半个像素；hover 只给底色（环的颜色不受悬停影响） */
+        className="inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors hover:bg-muted"
       >
         <ContextRing
           percent={view.percent}
@@ -223,9 +223,12 @@ function ContextRing({
   percent: number | null;
   overThreshold?: boolean;
 }) {
-  // 尺寸与粗细照参考图的比例（环的粗细约等于半径的 1/4，比常见的 2.5px 明显厚）
-  const size = 22;
-  const stroke = 2.5;
+  /**
+   * 尺寸与粗细：细环（2.2px 描边 / **18px 外径**）。两次按参考图收敛的结果——
+   * 第一版 5px 厚环被指「太粗了」，第二版 22px 外径被指「太大了」。
+   */
+  const size = 18;
+  const stroke = 2.2;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   // 画「剩余」：缺口大小 = 已用比例；留一个最小缺口，避免 0% 时缺口消失、看不出是环

@@ -162,8 +162,8 @@ describe("ContextUsageButton：圆环形态（1:1 复刻）", () => {
       />,
     );
     const [lowArc, lowTotal] = dashOf(low.container);
-    // 环周长 C = 2πr，r = (22-2.5)/2 = 9.75 → C ≈ 61.3（细环：描边 2.5，参考图口径）
-    expect(lowTotal).toBeCloseTo(61.3, 0);
+    // 环周长 C = 2πr，r = (18-2.2)/2 = 7.9 → C ≈ 49.6（细环 18px / 2.2px，参考图口径）
+    expect(lowTotal).toBeCloseTo(49.6, 0);
     // 用途极小 → 缺口被夹到 6%（至少看得出是个「C」）
     expect(lowArc / lowTotal).toBeCloseTo(0.94, 2);
     cleanup();
