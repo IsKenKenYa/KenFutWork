@@ -8,7 +8,7 @@
 - 承载体是合作方作者的 futureFlow，三层架构：FlowGram 画布（React 18 + Semi UI + Rsbuild，`/canvas/:id` 为无侧边栏自包含视图）→ 自研 NestJS 网关（TypeORM + PostgreSQL：双模鉴权/扣费三段事务/DSL 转换 3286 行/Dify Console 集成 1732 行）→ 本地 Dify 0.15.3 容器栈（必需依赖、不降级）。
 - 完成度：代码卫生好（模块边界清晰、迁移体系完整），但处于 MVP——SQL/Python 节点仅本地试运行、定时触发是进程内 `setInterval`、多轮会话/审批等待缺失、测试是自写脚本体系（不进主仓 CI）。
 - 愿景关系：work = flow + agent（但不完全等于）。三引擎并列（design/code/flow），work 是未来超集；**本期不合引擎**，用引擎 SPI 保住未来可组合性（见 §4）。
-- **合规前置（阻塞项）**：上游仓库目前**没有 LICENSE 文件**（仅 README/package.json 声明 MIT）。无 LICENSE 文件的仓库默认保留所有权利——按本方案收编其代码前，必须由作者提交标准 MIT LICENSE 文件。
+- **版权地位（已澄清）**：futureFlow 作者 future73807 即本仓协作者（git 历史 377 提交），其自有代码并入本仓没有版权障碍；上游仓库补一个标准 MIT LICENSE 文件属对外规范动作（面向未来外部贡献者与第三方审计），随上游节奏补即可，**不阻塞任何阶段**。
 
 ## 2. 已拍板决策（2026-09-17，flow 作者提案 + KenKen 确认；结论与理由见《改造计划》§6.2）
 
@@ -48,7 +48,7 @@
 | 阶段 | 内容 | 验证 |
 | --- | --- | --- |
 | P0 | 子模块挂载 + 本方案 + 决策登记 | `pnpm test:docs` + `node --test tests/workspace.test.mjs` |
-| P0.5 | 阻塞项：作者补 MIT LICENSE；AGENTS.md references 章程更新（本提交已含） | 人工核对 |
+| P0.5 | 章程与决策登记（已完成：AGENTS.md references 例外 + `DEC-10`…`DEC-13`）；上游补 MIT LICENSE 文件为对外规范建议，不阻塞 | 人工核对 |
 | P1 | 主仓模式骨架（不碰上游）：kind 枚举 + DB 前向迁移 + `workbench-surface` flow 分支 + 穷举不变量测试 + AGENTS.md 不变量登记 + `/flow` 占位路由 | `apps/web` vitest（`workbench-surface.test.ts` 扩 flow 穷举）+ `pnpm typecheck` |
 | P2 | 身份桥与内嵌：token 交换/postMessage 注入、按主仓 sub get-or-create 用户、关 bootstrap/开放注册、CORS 加外壳域名、去品牌 4 点、`--ff-*` 视觉令牌对齐 | 双栈本地联调（futureFlow `pnpm start`：3000/3001/8080/5001）+ GUI 冒烟 |
 | P3 | 凭证缝（`DEC-12`）：内嵌态 BYOK 实例下发（`resolveCredentials` → Dify Provider 同步，独立 feature 服务）；独立态保留 `.env` 全局 key | 服务端单测（凭证不回显、脱敏）+ 联调 |
@@ -74,11 +74,10 @@
 | 3 | 前端巨型单文件组件（最大 2654 行）维护成本 | B 形态下作为子系统隔离；不鼓励主仓侧改其内部 |
 | 4 | 网关进程内定时器/内存态限流，多副本会重复触发 | 自托管文档标注单副本约束；后续再评估分布式锁 |
 | 5 | 测试体系非标准（自写脚本 + 真 Docker 栈），进不了主仓 CI | 保留为上游自检；主仓侧为集成缝写自己的回归测试 |
-| 6 | LICENSE 文件缺失（阻塞收编） | P0.5：作者补标准 MIT LICENSE 后才进入 P2+ |
+| 6 | 上游仓库无独立 LICENSE 文件（仅 README/package.json 声明 MIT） | 版权人即本仓协作者，并入无障碍；建议上游顺手补标准 MIT LICENSE 文件，便于未来外部贡献与第三方审计 |
 
 ## 8. 开放问题
 
 1. **桌面 flow 引擎承载**：Dify 全家桶实测压缩镜像 ~1.7GB、磁盘 4–6GB、空载内存 1.5–3GB，与桌面预算（安装包 <150MB、内存 ≤900MB）差一个数量级，且 Tauri 壳是单子进程模型。候选：远程 Dify（用户自填地址 + Service API Key，对齐 BYON 原则）vs FlowGram runtime-js 轻量引擎（零 Docker、节点子集、官方自认早期）。需另立 FORM 决策，P6 前拍板。
 2. **NestJS 网关长期去留**：B 形态下作为独立子系统长期存在，还是以 C 为目标提前做 Fastify 适配层？影响 P3/P4 缝的实现位置。
-3. **上游协作模式**：作者继续在原仓开发、主仓子模块指针跟随；何时转入主仓直接开发（届时 LICENSE 问题自然消解）。
-4. **LICENSE 文件**：见 §7.6，P2+ 的硬前置。
+3. **上游协作模式**：作者继续在原仓开发、主仓子模块指针跟随；何时转入主仓直接开发（作者已是本仓协作者，随时可转）。
