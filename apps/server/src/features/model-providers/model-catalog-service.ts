@@ -15,6 +15,25 @@ import type { ModelProviderService } from "./model-provider-service.js";
 
 export interface ModelCatalogService {
   listCatalog(user: AuthenticatedUser): Promise<ModelCatalogEntry[]>;
+  /**
+   * 校验「实例:模型」是否真的在这个用户的目录里（R5-2/E：模型名不在目录时 fail loud）。
+   * 返回可读原因 + 可用清单摘要，供保存期与 run 起始期直接透出。
+   */
+  validateSpecifier(
+    user: AuthenticatedUser,
+    specifier: string,
+  ): Promise<{ ok: true } | { ok: false; message: string }>;
+}
+
+/** 可用清单摘要（最多 8 条，避免把整目录塞进错误文案）。 */
+function describeAvailable(entries: ModelCatalogEntry[]): string {
+  if (entries.length === 0)
+    return "（当前没有任何可用模型——先到「设置 → 供应商」添加实例）";
+  const sample = entries
+    .slice(0, 8)
+    .map((entry) => `${entry.provider.instanceId}:${entry.id}`)
+    .join("、");
+  return entries.length > 8 ? `${sample} …（共 ${entries.length} 个）` : sample;
 }
 
 export function createModelCatalogService(options: {
@@ -73,6 +92,36 @@ export function createModelCatalogService(options: {
       }
 
       return entries;
+    },
+
+    async validateSpecifier(user, specifier) {
+      const parsed = parseInstanceSpecifier(specifier);
+      const entries = await this.listCatalog(user);
+      if (!parsed) {
+        // 不带实例前缀：按 id 同名匹配（平台池/内置协议词走这条）
+        const match = entries.find((entry) => entry.id === specifier);
+        if (match) return { ok: true };
+        return {
+          ok: false,
+          message: `模型「${specifier}」不在你的模型目录里。可用：${describeAvailable(entries)}`,
+        };
+      }
+      const match = entries.find(
+        (entry) =>
+          entry.provider.instanceId === parsed.instanceId &&
+          entry.id === parsed.model,
+      );
+      if (match) return { ok: true };
+      // 实例在但模型不在 / 实例整个不在：分别给可读原因
+      const instanceKnown = entries.some(
+        (entry) => entry.provider.instanceId === parsed.instanceId,
+      );
+      return {
+        ok: false,
+        message: instanceKnown
+          ? `实例里没有模型「${parsed.model}」（instanceId=${parsed.instanceId}）。可用：${describeAvailable(entries)}`
+          : `找不到供应商实例 ${parsed.instanceId}（可能已被删除或停用）。可用：${describeAvailable(entries)}`,
+      };
     },
   };
 }

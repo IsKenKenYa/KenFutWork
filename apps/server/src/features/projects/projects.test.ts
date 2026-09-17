@@ -1,3 +1,7 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import type { AuthenticatedUser } from "../auth/types.js";
@@ -13,7 +17,12 @@ import {
   createProjectService,
   ProjectServiceError,
 } from "./project-service.js";
-import { CODE_WORKBENCH_SLUG, createProjectRepository } from "./repository.js";
+import {
+  CODE_WORKBENCH_SLUG,
+  type CreateProjectInput,
+  createProjectRepository,
+  type ProjectUpdatePatch,
+} from "./repository.js";
 
 const USER_ID = "user-1";
 const WORKSPACE_ID = "ws-1";
@@ -188,6 +197,7 @@ describe("projects repository（SQL 与隔离谓词）", () => {
       "kenfutwork-ab12cd",
       "code",
       null,
+      null,
       USER_ID,
       WORKSPACE_ID,
     ]);
@@ -324,12 +334,13 @@ describe("projects repository（SQL 与隔离谓词）", () => {
     const [projectInsert, canvasInsert] = dataCalls(calls);
     expect(projectInsert?.sql).toContain("insert into public.projects");
     // :workspace 由缝追加为末位参数，故列位序里工作区落在 $6
-    expect(projectInsert?.sql).toContain("values ($6, $1, $2, $3, $4, $5)");
+    expect(projectInsert?.sql).toContain("values ($7, $1, $2, $3, $4, $5, $6)");
     // 缺省 kind 落 design：存量调用方（Design 建项目）语义不变
     expect(projectInsert?.values).toEqual([
       "新项目",
       "xin-xiangmu-ab12cd",
       "design",
+      null,
       null,
       USER_ID,
       WORKSPACE_ID,
@@ -417,6 +428,7 @@ describe("project service（错误映射与行为保持不变）", () => {
             updated_at: "2026-09-13T01:00:00+00:00",
             workspace_id: WORKSPACE_ID,
             thumbnail_path: null,
+            work_dir: null,
           },
         ],
         listPrimaryCanvases: async () => [
@@ -444,6 +456,7 @@ describe("project service（错误映射与行为保持不变）", () => {
         },
         slug: "xiangmu",
         updatedAt: "2026-09-13T01:00:00+00:00",
+        workDir: null,
         workspace: {
           id: WORKSPACE_ID,
           name: "Personal Workspace",
@@ -468,6 +481,7 @@ describe("project service（错误映射与行为保持不变）", () => {
             updated_at: "2026-09-13T00:00:00+00:00",
             workspace_id: WORKSPACE_ID,
             thumbnail_path: null,
+            work_dir: null,
           },
         ],
         listPrimaryCanvases: async () => [],
@@ -593,6 +607,7 @@ describe("project service（错误映射与行为保持不变）", () => {
           description: null,
           workspace_id: WORKSPACE_ID,
           brand_kit_id: null,
+          work_dir: null,
           created_at: "2026-09-13T00:00:00+00:00",
           updated_at: "2026-09-13T00:00:00+00:00",
         }),
@@ -621,6 +636,7 @@ describe("project service（错误映射与行为保持不变）", () => {
           description: null,
           workspace_id: WORKSPACE_ID,
           brand_kit_id: null,
+          work_dir: null,
           created_at: "2026-09-13T00:00:00+00:00",
           updated_at: "2026-09-13T00:00:00+00:00",
         }),
@@ -642,5 +658,93 @@ describe("project service（错误映射与行为保持不变）", () => {
     expect(result.thumbnailUrl).toBe(
       `https://blob.test/${WORKSPACE_ID}/${PROJECT_ID}/thumbnail.webp`,
     );
+  });
+  it("建项目带工作目录：校验通过后按归一化路径落库", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kfw-projdir-"));
+    let captured: CreateProjectInput | undefined;
+    const service = buildService({
+      repository: {
+        createWithCanvas: async (input) => {
+          captured = input;
+          return {
+            canvas: { id: "canvas-1", name: "Main Canvas", is_primary: true },
+            project: {
+              id: PROJECT_ID,
+              kind: "code",
+              name: input.name,
+              slug: input.slug,
+              description: null,
+              created_at: "2026-09-17T00:00:00+00:00",
+              updated_at: "2026-09-17T00:00:00+00:00",
+              workspace_id: WORKSPACE_ID,
+              work_dir: input.workDir ?? null,
+            },
+          };
+        },
+      },
+    });
+
+    const summary = await service.createProject(USER, {
+      kind: "code",
+      name: "test",
+      work_dir: dir,
+    });
+
+    expect(captured?.workDir).toBe(resolve(dir));
+    expect(summary.workDir).toBe(resolve(dir));
+  });
+
+  it("建项目带工作目录：不合格路径 400 invalid_work_dir，且不落库", async () => {
+    let created = 0;
+    const service = buildService({
+      repository: {
+        createWithCanvas: async () => {
+          created += 1;
+          throw new Error("not used");
+        },
+      },
+    });
+
+    await expect(
+      service.createProject(USER, {
+        kind: "code",
+        name: "test",
+        work_dir: "相对路径",
+      }),
+    ).rejects.toMatchObject({ code: "invalid_work_dir", statusCode: 400 });
+
+    await expect(
+      service.createProject(USER, {
+        kind: "code",
+        name: "test",
+        work_dir: join(tmpdir(), "kfw-definitely-missing-dir"),
+      }),
+    ).rejects.toMatchObject({ code: "invalid_work_dir", statusCode: 400 });
+
+    expect(created).toBe(0);
+  });
+
+  it("更新工作目录：null 解绑走显式 null，字符串重绑先校验", async () => {
+    const patches: ProjectUpdatePatch[] = [];
+    const service = buildService({
+      repository: {
+        update: async (_workspaceId, _projectId, patch) => {
+          patches.push(patch);
+          return 1;
+        },
+      },
+    });
+
+    await service.updateProject(USER, PROJECT_ID, { work_dir: null });
+    expect(patches[0]?.workDir).toBeNull();
+
+    const dir = mkdtempSync(join(tmpdir(), "kfw-projdir2-"));
+    await service.updateProject(USER, PROJECT_ID, { work_dir: dir });
+    expect(patches[1]?.workDir).toBe(resolve(dir));
+
+    await expect(
+      service.updateProject(USER, PROJECT_ID, { work_dir: "nope/relative" }),
+    ).rejects.toMatchObject({ code: "invalid_work_dir" });
+    expect(patches).toHaveLength(2);
   });
 });

@@ -13,6 +13,12 @@ export interface SettingsRepository {
   findAgentMaxRetries(workspaceId: string): Promise<number | null>;
   /** 读终端默认 shell；无行返回 null（由服务落 `auto`）。 */
   findTerminalShell(workspaceId: string): Promise<TerminalShellId | null>;
+  /** 读代码库索引开关；无行返回 null（由服务落 false）。 */
+  findCodeIndexEnabled(workspaceId: string): Promise<boolean | null>;
+  /** 读用户规则与规则条目；无行返回 null。 */
+  findUserRules(
+    workspaceId: string,
+  ): Promise<{ userRules: string; ruleEntries: string[] } | null>;
   /** 一工作区一行，冲突即更新。 */
   upsertDefaultModel(workspaceId: string, defaultModel: string): Promise<void>;
   upsertAgentMaxRetries(
@@ -23,11 +29,16 @@ export interface SettingsRepository {
     workspaceId: string,
     terminalShell: TerminalShellId,
   ): Promise<void>;
+  upsertCodeIndexEnabled(workspaceId: string, enabled: boolean): Promise<void>;
+  upsertUserRules(workspaceId: string, userRules: string): Promise<void>;
+  upsertRuleEntries(workspaceId: string, entries: string[]): Promise<void>;
 }
 
 type DefaultModelRow = { default_model: string };
 type AgentMaxRetriesRow = { agent_max_retries: number };
 type TerminalShellRow = { terminal_shell: TerminalShellId };
+type CodeIndexEnabledRow = { code_index_enabled: boolean };
+type UserRulesRow = { user_rules: string; rule_entries: unknown };
 
 export function createSettingsRepository(
   persistence: PersistenceService,
@@ -66,6 +77,17 @@ export function createSettingsRepository(
       return row?.terminal_shell ?? null;
     },
 
+    async findCodeIndexEnabled(workspaceId) {
+      const row = await persistence
+        .forWorkspace(workspaceId)
+        .queryOne<CodeIndexEnabledRow>(
+          `select code_index_enabled
+             from public.workspace_settings
+            where workspace_id = :workspace`,
+        );
+      return row?.code_index_enabled ?? null;
+    },
+
     async upsertDefaultModel(workspaceId, defaultModel) {
       await persistence.forWorkspace(workspaceId).query(
         `insert into public.workspace_settings (workspace_id, default_model)
@@ -84,6 +106,55 @@ export function createSettingsRepository(
          on conflict (workspace_id)
          do update set terminal_shell = excluded.terminal_shell`,
         [terminalShell],
+      );
+    },
+
+    async findUserRules(workspaceId) {
+      const row = await persistence
+        .forWorkspace(workspaceId)
+        .queryOne<UserRulesRow>(
+          `select user_rules, rule_entries
+             from public.workspace_settings
+            where workspace_id = :workspace`,
+        );
+      if (!row) return null;
+      const entries = Array.isArray(row.rule_entries)
+        ? row.rule_entries.filter(
+            (item): item is string =>
+              typeof item === "string" && item.length > 0,
+          )
+        : [];
+      return { userRules: row.user_rules ?? "", ruleEntries: entries };
+    },
+
+    async upsertUserRules(workspaceId, userRules) {
+      await persistence.forWorkspace(workspaceId).query(
+        `insert into public.workspace_settings (workspace_id, user_rules)
+         values (:workspace, $1)
+         on conflict (workspace_id)
+         do update set user_rules = excluded.user_rules`,
+        [userRules],
+      );
+    },
+
+    async upsertRuleEntries(workspaceId, entries) {
+      await persistence.forWorkspace(workspaceId).query(
+        `insert into public.workspace_settings (workspace_id, rule_entries)
+         values (:workspace, $1::jsonb)
+         on conflict (workspace_id)
+         do update set rule_entries = excluded.rule_entries`,
+        [JSON.stringify(entries)],
+      );
+    },
+
+    /** 代码库索引开关（R4-3）：同样逐列 upsert。 */
+    async upsertCodeIndexEnabled(workspaceId, enabled) {
+      await persistence.forWorkspace(workspaceId).query(
+        `insert into public.workspace_settings (workspace_id, code_index_enabled)
+         values (:workspace, $1)
+         on conflict (workspace_id)
+         do update set code_index_enabled = excluded.code_index_enabled`,
+        [enabled],
       );
     },
 

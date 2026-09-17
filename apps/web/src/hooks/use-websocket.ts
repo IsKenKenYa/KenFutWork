@@ -3,6 +3,7 @@
 import type {
   RunCreateRequest,
   StreamEvent,
+  TerminalShellId,
   WsCommandAck,
   WsRpcRequest,
 } from "@kenfutwork/shared";
@@ -10,6 +11,27 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getServerBaseUrl } from "../lib/env";
 
 type EventCallback = (event: StreamEvent) => void;
+
+/**
+ * 终端会话通道（右栏「终端」标签的交互式形态）的事件：起好了 / 有输出 / 结束了。
+ * 与 run 事件分开：run 事件的消费方按 runId 过滤，把终端输出塞进去会让它们误判。
+ */
+export type TerminalChannelEvent =
+  | {
+      type: "started";
+      sessionId: string;
+      shell: TerminalShellId;
+      executable: string;
+    }
+  | { type: "output"; sessionId: string; data: string }
+  | {
+      type: "exit";
+      sessionId: string;
+      exitCode: number | null;
+      reason?: string;
+    };
+
+type TerminalCallback = (event: TerminalChannelEvent) => void;
 type RPCHandler = (
   params: Record<string, unknown>,
 ) => Promise<Record<string, unknown>>;
@@ -22,6 +44,17 @@ export type WebSocketHandle = {
   ) => void;
   cancelRun: (runId: string) => void;
   onEvent: (cb: EventCallback) => () => void;
+  /** 起一个持久 shell 会话（同一个 id 重复起时服务端复用已有会话）。 */
+  startTerminal: (payload: {
+    sessionId: string;
+    canvasId: string;
+    shell?: TerminalShellId;
+  }) => void;
+  /** 送一行输入（换行由服务端按 shell 补）。 */
+  sendTerminalInput: (sessionId: string, data: string) => void;
+  /** 结束会话（服务端杀整棵进程树）。 */
+  stopTerminal: (sessionId: string) => void;
+  onTerminal: (cb: TerminalCallback) => () => void;
   registerRPC: (method: string, handler: RPCHandler) => () => void;
   resumeCanvas: (canvasId: string, onAck?: (ack: WsCommandAck) => void) => void;
 };
@@ -51,6 +84,7 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
   const disposed = useRef(false);
 
   const eventListeners = useRef<Set<EventCallback>>(new Set());
+  const terminalListeners = useRef<Set<TerminalCallback>>(new Set());
   const ackListeners = useRef<Map<string, (ack: WsCommandAck) => void>>(
     new Map(),
   );
@@ -115,6 +149,51 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
           } catch (listenerErr) {
             // Prevent one listener's error from breaking others
             console.error("[ws] event listener threw:", listenerErr);
+          }
+        }
+      } else if (
+        msg.type === "terminal.output" ||
+        msg.type === "terminal.exit"
+      ) {
+        const terminalEvent: TerminalChannelEvent =
+          msg.type === "terminal.output"
+            ? {
+                type: "output",
+                sessionId: String(msg.sessionId ?? ""),
+                data: String(msg.data ?? ""),
+              }
+            : {
+                type: "exit",
+                sessionId: String(msg.sessionId ?? ""),
+                exitCode:
+                  typeof msg.exitCode === "number" ? msg.exitCode : null,
+                ...(typeof msg.reason === "string"
+                  ? { reason: msg.reason }
+                  : {}),
+              };
+        for (const cb of terminalListeners.current) {
+          try {
+            cb(terminalEvent);
+          } catch (listenerErr) {
+            console.error("[ws] terminal listener threw:", listenerErr);
+          }
+        }
+      } else if (
+        msg.type === "command.ack" &&
+        msg.action === "terminal.start"
+      ) {
+        const payload = (msg.payload ?? {}) as Record<string, unknown>;
+        const started: TerminalChannelEvent = {
+          type: "started",
+          sessionId: String(payload.sessionId ?? ""),
+          shell: (payload.shell ?? "auto") as TerminalShellId,
+          executable: String(payload.executable ?? ""),
+        };
+        for (const cb of terminalListeners.current) {
+          try {
+            cb(started);
+          } catch (listenerErr) {
+            console.error("[ws] terminal listener threw:", listenerErr);
           }
         }
       } else if (msg.type === "command.ack") {
@@ -267,6 +346,41 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
     [sendCommand],
   );
 
+  const startTerminal = useCallback(
+    (payload: {
+      sessionId: string;
+      canvasId: string;
+      shell?: TerminalShellId;
+    }) => {
+      sendCommand(
+        "terminal.start",
+        payload as unknown as Record<string, unknown>,
+      );
+    },
+    [sendCommand],
+  );
+
+  const sendTerminalInput = useCallback(
+    (sessionId: string, data: string) => {
+      sendCommand("terminal.input", { sessionId, data });
+    },
+    [sendCommand],
+  );
+
+  const stopTerminal = useCallback(
+    (sessionId: string) => {
+      sendCommand("terminal.stop", { sessionId });
+    },
+    [sendCommand],
+  );
+
+  const onTerminal = useCallback((cb: TerminalCallback) => {
+    terminalListeners.current.add(cb);
+    return () => {
+      terminalListeners.current.delete(cb);
+    };
+  }, []);
+
   const onEvent = useCallback((cb: EventCallback) => {
     eventListeners.current.add(cb);
     return () => {
@@ -281,5 +395,16 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
     };
   }, []);
 
-  return { connected, startRun, cancelRun, onEvent, registerRPC, resumeCanvas };
+  return {
+    connected,
+    startRun,
+    cancelRun,
+    onEvent,
+    registerRPC,
+    resumeCanvas,
+    startTerminal,
+    sendTerminalInput,
+    stopTerminal,
+    onTerminal,
+  };
 }

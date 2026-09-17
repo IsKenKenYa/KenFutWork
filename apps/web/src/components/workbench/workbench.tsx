@@ -54,12 +54,14 @@ import {
 import {
   ComposerCompactSelect,
   THINKING_OPTIONS,
+  THINKING_PROGRESS,
   TIER_OPTIONS,
 } from "@/components/workbench/composer-compact-select";
 import { ContextUsageButton } from "@/components/workbench/context-usage-button";
 import { ElapsedEntry } from "@/components/workbench/elapsed-entry";
 import { GitBranchSelect } from "@/components/workbench/git-branch-select";
 import { McpModal } from "@/components/workbench/mcp-modal";
+import { formatElementReference } from "@/components/workbench/panel-browser-view";
 import { PluginMarketModal } from "@/components/workbench/plugin-market-modal";
 import {
   SettingsModal,
@@ -71,16 +73,14 @@ import { SubagentDirectoryView } from "@/components/workbench/subagent-directory
 import { TodoProgressPanel } from "@/components/workbench/todo-progress-panel";
 import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
 import { WorkDirectorySelect } from "@/components/workbench/work-directory-select";
-import {
-  type WorkbenchPanelTab,
-  WorkbenchSidePanel,
-} from "@/components/workbench/workbench-side-panel";
+import { WorkbenchSidePanel } from "@/components/workbench/workbench-side-panel";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useAuth } from "@/lib/auth-context";
 import { onBrowserOpen } from "@/lib/browser-panel";
 import { commitGitAll } from "@/lib/code-git-api";
 import { type RunUsageSnapshot, usageFromEvent } from "@/lib/context-usage";
 import { resolveDesignAutoCanvas } from "@/lib/design-auto-canvas";
+import { formatElapsedSeconds, parseTimestampMs } from "@/lib/elapsed";
 import { getServerBaseUrl } from "@/lib/env";
 import {
   MAX_SIDEBAR_WIDTH,
@@ -108,8 +108,10 @@ import {
 } from "@/lib/subagent-directory";
 import type { TodoItem } from "@/lib/todo-progress";
 import {
+  boundWorkDirPromptHint,
   resolveWorkDirProject,
   workDirectoryPromptHint,
+  workDirNameFromPath,
   pickWorkDirectory as workDirPick,
 } from "@/lib/work-directory";
 import {
@@ -133,6 +135,14 @@ import { applyTaskToolEvent, type TaskToolEntry } from "@/lib/workbench-tools";
 interface TaskMessage {
   role: "user" | "assistant";
   text: string;
+  /**
+   * 这条消息「工作了多久」（毫秒）：从这条消息的第一个字到本轮终态。
+   * 用户口径：「工作时间每个 AI 对话消息都要显示，而不是只显示一部分」——
+   * 所以是**每条**助手消息各自记一份，而不是只在会话头显示一个总时长。
+   */
+  elapsedMs?: number;
+  /** 这条消息开始的时间（内部用：终态时据此算 elapsedMs）。 */
+  startedAt?: number;
 }
 
 type WorkbenchModelOption = {
@@ -142,6 +152,30 @@ type WorkbenchModelOption = {
   vision?: boolean | undefined;
   contextWindow?: number | undefined;
 };
+
+/**
+ * 结算最后一条助手消息的耗时（终态时调用）。
+ *
+ * 口径：**这一条消息到上一条之间**的整段时间（含中间的思考与工具调用）——
+ * 只算它自己「从第一个字到这一刻」会恒等于 0（实测：模型把回复一口气吐完，
+ * 第一个字与最后一个字相差几十毫秒，界面上就成了「已工作 0 秒」）。
+ */
+function settleAssistantElapsed(task: WorkbenchTask): WorkbenchTask {
+  const messages = [...task.messages];
+  const last = messages[messages.length - 1];
+  if (!last || last.role !== "assistant" || last.startedAt === undefined) {
+    return task;
+  }
+  const elapsedMs = Math.max(0, Date.now() - last.startedAt);
+  messages[messages.length - 1] = {
+    role: "assistant",
+    text: last.text,
+    elapsedMs,
+    // **保留起点**：下一条消息要拿「上一条的起点 + 它的耗时」推算自己从哪一刻开始
+    startedAt: last.startedAt,
+  };
+  return { ...task, messages };
+}
 
 interface WorkbenchTask {
   id: string; // conversationId
@@ -186,7 +220,19 @@ interface WorkbenchTask {
 function WorkbenchToolRow({ tool }: { tool: TaskToolEntry }) {
   const [expanded, setExpanded] = useState(false);
   const hasDetail = Boolean(tool.output) || Boolean(tool.summary);
-  const statusText = tool.status === "running" ? "执行中…" : "已完成";
+  const statusText =
+    tool.status === "running"
+      ? "执行中…"
+      : tool.status === "denied"
+        ? "被拒绝"
+        : "已完成";
+  /** 被拒的原因写在 title 上（不点开也能看到为什么没执行）。 */
+  const deniedReason =
+    tool.status === "denied"
+      ? ((tool.output?.reason as string | undefined) ??
+        tool.summary ??
+        "被工具门拦下")
+      : null;
   return (
     <div className="w-fit max-w-full rounded-xl border border-border/60 bg-card px-3 py-2">
       <button
@@ -202,11 +248,13 @@ function WorkbenchToolRow({ tool }: { tool: TaskToolEntry }) {
           className={`h-1.5 w-1.5 shrink-0 rounded-full ${
             tool.status === "running"
               ? "animate-pulse bg-amber-500"
-              : "bg-emerald-500"
+              : tool.status === "denied"
+                ? "bg-rose-500"
+                : "bg-emerald-500"
           }`}
         />
         <span className="font-mono">{tool.toolName}</span>
-        <span>{statusText}</span>
+        <span title={deniedReason ?? undefined}>{statusText}</span>
         {hasDetail && (
           <svg
             aria-hidden
@@ -422,11 +470,9 @@ export function Workbench() {
   const [lastAutoCommitAt, setLastAutoCommitAt] = useState<string | null>(null);
 
   /**
-   * 右栏停靠面板（R3-1）：变更 / 文档 / 子智能体 三个视图。
-   *
-   * 形态取自参考图（`扩展插件-添加终端、浏览器、变更等功能.png`：右栏是多标签面板；
-   * `子代理和git显示位置.png`：右侧面板带标签）。此前把「变更列表 / 文档」塞在分支下拉与
-   * 工作目录下拉里——那是**形态做错**：这些是「边看边改」的长驻视图，不是一次性弹层内容。
+   * 右栏停靠面板（R3-1）：编辑器式多标签（变更 / 文件目录 / 终端 / 浏览器 / 子智能体，
+   * 以及逐个文件的「审查」「打开」）。标签的开关与顺序在面板内部（见 lib/panel-tabs），
+   * 工作台只管开合——链接点击那一条经 `onRequestOpen` 把面板叫开。
    */
   /** 左侧栏宽度（可拖拽，持久化：与右栏面板同样，宽度是用户偏好）。 */
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -484,17 +530,15 @@ export function Workbench() {
   );
 
   const [panelOpen, setPanelOpen] = useState(false);
-  const [panelTab, setPanelTab] = useState<WorkbenchPanelTab>("changes");
 
   /**
    * 转录里点链接 → 自动打开右栏「浏览器」标签（用户口径：点对话里的 URL 就在右边打开）。
-   * 订阅放工作台：面板只渲染，开合与切标签由这里决定。
+   * 面板自己订阅了同一个通道（它常驻挂载，标签状态在里面）；这里只在它收着时把它叫开。
    */
   useEffect(
     () =>
       onBrowserOpen(() => {
         setPanelOpen(true);
-        setPanelTab("browser");
       }),
     [],
   );
@@ -1074,20 +1118,61 @@ export function Workbench() {
               text: last.text + delta,
             };
           } else {
-            messages.push({ role: "assistant", text: delta });
+            // 新的一条助手消息：起点取「上一条结束的时刻」，没有就退到本轮起点——
+            // 这样它记的是这一段的整段时间（含中间的思考与工具调用）
+            const previousEnd = [...messages]
+              .reverse()
+              .find((m) => m.role === "assistant" && m.elapsedMs !== undefined);
+            // 只有上一条**同时有起点与耗时**时才能链式推——老数据（只有耗时没有起点）
+            // 直接相加会得到「0 + 耗时」这种荒唐的绝对时刻（实测显示成 49 万小时）
+            const previousEndMs =
+              previousEnd?.startedAt !== undefined &&
+              previousEnd.elapsedMs !== undefined
+                ? previousEnd.startedAt + previousEnd.elapsedMs
+                : null;
+            const runStart = task.runStartedAt
+              ? parseTimestampMs(task.runStartedAt)
+              : null;
+            const nextStartMs = previousEndMs ?? runStart ?? Date.now();
+            /*
+              上一条助手消息到此定稿（模型已经开了下一轮）：把它的耗时结算掉。
+              只在终态结算最后一条时，中间那些消息永远没有 elapsedMs，界面上就
+              「只显示一部分」——用户口径是每条 AI 消息都要显示工作时间。
+            */
+            for (let i = messages.length - 1; i >= 0; i -= 1) {
+              const candidate = messages[i];
+              if (
+                candidate?.role === "assistant" &&
+                candidate.elapsedMs === undefined &&
+                candidate.startedAt !== undefined
+              ) {
+                messages[i] = {
+                  ...candidate,
+                  elapsedMs: Math.max(0, nextStartMs - candidate.startedAt),
+                };
+                break;
+              }
+            }
+            messages.push({
+              role: "assistant",
+              text: delta,
+              startedAt: nextStartMs,
+            });
           }
           return { ...task, messages };
         });
       } else if (type === "run.completed") {
         const ts = (evt as { timestamp?: string }).timestamp;
-        apply((task) => ({
-          ...task,
-          status: "completed",
-          ...(ts ? { runEndedAt: ts } : {}),
-          ...(task.subagents && ts
-            ? { subagents: closeAllSubagents(task.subagents, ts) }
-            : {}),
-        }));
+        apply((task) =>
+          settleAssistantElapsed({
+            ...task,
+            status: "completed",
+            ...(ts ? { runEndedAt: ts } : {}),
+            ...(task.subagents && ts
+              ? { subagents: closeAllSubagents(task.subagents, ts) }
+              : {}),
+          }),
+        );
         // 每轮成功结束自动提交一次（Code 模式 + 已绑项目），让对话在 git 里有迹可循
         if (mode === "code") {
           void autoCommitTurn(taskId);
@@ -1126,14 +1211,16 @@ export function Workbench() {
         markUnreadIfBackground();
       } else if (type === "run.canceled") {
         const canceledTs = (evt as { timestamp?: string }).timestamp;
-        apply((task) => ({
-          ...task,
-          status: "completed",
-          ...(canceledTs ? { runEndedAt: canceledTs } : {}),
-          ...(task.subagents && canceledTs
-            ? { subagents: closeAllSubagents(task.subagents, canceledTs) }
-            : {}),
-        }));
+        apply((task) =>
+          settleAssistantElapsed({
+            ...task,
+            status: "completed",
+            ...(canceledTs ? { runEndedAt: canceledTs } : {}),
+            ...(task.subagents && canceledTs
+              ? { subagents: closeAllSubagents(task.subagents, canceledTs) }
+              : {}),
+          }),
+        );
         // 用户自己按的停止：算已读，但转圈要收掉
         setRunningTaskId(null);
       }
@@ -1204,6 +1291,48 @@ export function Workbench() {
     setWorkDirNotice(null);
     setSelectedProjectId(null);
   }, []);
+
+  /**
+   * 「填本机路径」：把用户填的绝对路径绑成工作目录项目的 `projects.work_dir`。
+   *
+   * 这是 Web 形态唯一能真正绑定本机目录的路子：`showDirectoryPicker` 只给得到目录名，
+   * 而服务端要的是绝对路径。校验在服务端做（绝对路径 + 存在 + 是目录），不合格时
+   * 抛出的可读原因由选择器表单显示——不吞成「失败」。
+   */
+  const bindWorkDirectory = useCallback(
+    async (path: string) => {
+      const token = session?.access_token;
+      if (!token) throw new Error("尚未登录，无法绑定工作目录。");
+      const name = workDirNameFromPath(path) || path.trim();
+      const plan = resolveWorkDirProject(name, codeProjects);
+
+      if (plan.kind === "reuse") {
+        await updateProject(token, plan.projectId, { work_dir: path });
+        setCodeProjects((prev) =>
+          prev.map((project) =>
+            project.id === plan.projectId
+              ? { ...project, workDir: path }
+              : project,
+          ),
+        );
+        setSelectedProjectId(plan.projectId);
+        setWorkDirName(name);
+        setWorkDirNotice(null);
+        return;
+      }
+
+      const result = await createProject(token, {
+        kind: "code",
+        name,
+        work_dir: path,
+      });
+      setCodeProjects((prev) => [result.project, ...prev]);
+      setSelectedProjectId(result.project.id);
+      setWorkDirName(result.project.name);
+      setWorkDirNotice(null);
+    },
+    [session, codeProjects],
+  );
 
   const switchMode = useCallback((next: WorkbenchMode) => {
     setMode(next);
@@ -1333,10 +1462,17 @@ export function Workbench() {
           canvasId: runCanvasId,
           // 模式指令（inputDirective）由服务端 pre-step 事件缝注入，客户端不再拼接
           prompt: `${
-            mode === "code" && workDirName
-              ? `${workDirectoryPromptHint(workDirName)}
+            mode === "code"
+              ? resolvedProject?.workDir
+                ? // 已绑定真实目录（projects.work_dir）：可以说出工作区根，路径仍相对书写
+                  `${boundWorkDirPromptHint(resolvedProject.workDir)}
 
 `
+                : workDirName
+                  ? `${workDirectoryPromptHint(workDirName)}
+
+`
+                  : ""
               : ""
           }${
             thinking === "default"
@@ -2037,7 +2173,7 @@ export function Workbench() {
                         title={
                           panelOpen
                             ? "收起面板"
-                            : "打开面板（变更 / 文档 / 子智能体）"
+                            : "打开面板（变更 / 文件 / 终端 / 浏览器 / 子智能体）"
                         }
                         onClick={() => setPanelOpen((current) => !current)}
                         className="rounded-md border p-1.5 text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground data-[active=true]:border-foreground/30 data-[active=true]:text-foreground"
@@ -2101,6 +2237,13 @@ export function Workbench() {
                             最终总结
                           </div>
                         ) : null}
+                        {/* 每条助手消息都带上「工作了多久」（用户口径：不能只显示一部分） */}
+                        {msg.role === "assistant" &&
+                        msg.elapsedMs !== undefined ? (
+                          <div className="text-[11px] text-muted-foreground">
+                            已工作 {formatElapsedSeconds(msg.elapsedMs / 1000)}
+                          </div>
+                        ) : null}
                         {msg.role === "user" ? (
                           <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground whitespace-pre-wrap">
                             {msg.text}
@@ -2149,7 +2292,7 @@ export function Workbench() {
                     continueTask(value);
                   }}
                 >
-                  <div className="@container/composer rounded-xl border bg-background p-3">
+                  <div className="@container/composer rounded-xl border bg-background px-3 pt-2.5 pb-2">
                     <textarea
                       ref={composerRef}
                       aria-label="继续对话"
@@ -2170,7 +2313,7 @@ export function Workbench() {
                           continueTask(value);
                         }
                       }}
-                      rows={2}
+                      rows={1}
                       placeholder="继续追问…"
                       style={{ scrollbarWidth: "none" }}
                       className="max-h-40 min-h-[24px] w-full resize-none overflow-hidden bg-transparent text-sm outline-none placeholder:text-muted-foreground [&::-webkit-scrollbar]:hidden"
@@ -2180,8 +2323,8 @@ export function Workbench() {
                         {workDirNotice}
                       </p>
                     ) : null}
-                    <div className="mt-1.5 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
+                    <div className="mt-1 flex items-center justify-between">
+                      <div className="flex min-w-0 items-center gap-1.5">
                         <button
                           type="button"
                           title="附件（即将上线）"
@@ -2268,6 +2411,7 @@ export function Workbench() {
                         {/* 上下文容量 / 缓存命中（R4-1）：模型旁一个圆形入口 */}
                         <ContextUsageButton
                           usage={activeTask.usage ?? null}
+                          modelId={model}
                           contextWindow={
                             models.find((m) => m.id === model)?.contextWindow ??
                             null
@@ -2280,6 +2424,7 @@ export function Workbench() {
                           value={thinking}
                           onChange={handleThinkingChange}
                           contentClassName="min-w-24"
+                          progress={THINKING_PROGRESS[thinking] ?? 0}
                         />
                       </div>
                       <div className="flex items-center gap-2">
@@ -2313,22 +2458,32 @@ export function Workbench() {
                 </form>
               </div>
             </div>
-            {/* 右栏停靠面板：变更 / 文档 / 子智能体（参考图 R3-1 的多标签面板） */}
+            {/* 右栏停靠面板：编辑器式多标签（参考图 R3-1 的标签面板） */}
             <WorkbenchSidePanel
               open={panelOpen}
               onClose={() => setPanelOpen(false)}
-              tab={panelTab}
-              onTabChange={setPanelTab}
+              onRequestOpen={() => setPanelOpen(true)}
               accessToken={session?.access_token ?? null}
               canvasId={conversationProject?.primaryCanvas.id ?? null}
               subagents={activeTask.subagents ?? []}
               running={activeTask.status === "running"}
+              ws={ws}
               widthLimits={panelLimits}
               /* CSS 兜底：宿主不派发 resize 事件时 JS 的 limits 会陈旧，这条由排版保证
                对话列 ≥ MIN_CONVERSATION_WIDTH（数值与 lib/panel-layout 同一口径） */
               maxWidthExpression={`calc(100vw - var(--workbench-sidebar, 256px) - ${MIN_CONVERSATION_WIDTH}px)`}
-              /* 拖到上限还往里拖 → 收起左栏腾地方（用户口径：再往左边拉，侧栏自动收起来） */
+              /* 拖到上限还往里拉 → 收起左栏腾地方（用户口径：再往左边拉，侧栏自动收起来） */
               onGrowBlocked={() => setSidebarCollapsed(true)}
+              /* 右栏浏览器里拾取到的元素（R3-4）：写进追问输入框，用户补一句话就能发 */
+              onPickElement={(picked) => {
+                setFollowUp((current) =>
+                  current.trim()
+                    ? `${current}
+${formatElementReference(picked)}`
+                    : formatElementReference(picked),
+                );
+                composerRef.current?.focus();
+              }}
             />
           </div>
         ) : (
@@ -2361,6 +2516,7 @@ export function Workbench() {
                     setWorkDirNotice(null);
                   }}
                   onOpenFolder={() => void pickWorkDirectory()}
+                  onBindPath={bindWorkDirectory}
                   onClear={clearWorkDirectory}
                 />
                 <GitBranchSelect
@@ -2368,7 +2524,7 @@ export function Workbench() {
                   canvasId={selectedProject?.primaryCanvas.id ?? null}
                 />
               </div>
-              <div className="@container/composer rounded-b-2xl border bg-background p-4 shadow-sm">
+              <div className="@container/composer rounded-b-2xl border bg-background px-3 pt-3 pb-2.5 shadow-sm">
                 <textarea
                   aria-label="任务描述"
                   value={prompt}
@@ -2392,8 +2548,8 @@ export function Workbench() {
                     {workDirNotice}
                   </p>
                 ) : null}
-                <div className="mt-2 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
+                <div className="mt-1.5 flex items-center justify-between">
+                  <div className="flex min-w-0 items-center gap-1.5">
                     <button
                       type="button"
                       title="附件（即将上线）"
@@ -2529,6 +2685,7 @@ export function Workbench() {
                     {/* 上下文容量 / 缓存命中（R4-1）：模型旁一个圆形入口 */}
                     <ContextUsageButton
                       usage={null}
+                      modelId={model}
                       contextWindow={
                         models.find((m) => m.id === model)?.contextWindow ??
                         null
@@ -2541,6 +2698,7 @@ export function Workbench() {
                       value={thinking}
                       onChange={handleThinkingChange}
                       contentClassName="min-w-24"
+                      progress={THINKING_PROGRESS[thinking] ?? 0}
                     />
                   </div>
                   <div className="flex items-center gap-2">
@@ -2586,6 +2744,17 @@ export function Workbench() {
         initialTab={settingsTab === null ? undefined : settingsTab}
         onClose={() => setSettingsTab(null)}
         accessToken={session?.access_token ?? null}
+        /* 索引库按「画布 = 工作目录」建：Code 模式取对话绑定的项目，Design 取选中项目 */
+        activeCanvasId={
+          (mode === "code"
+            ? (conversationProject ?? selectedProject)
+            : selectedProject
+          )?.primaryCanvas?.id ?? null
+        }
+        /* 引导页的状态来自真实数据：有没有工作目录项目、已有多少会话 */
+        hasWorkDir={codeProjects.length > 0}
+        conversationCount={tasks.length}
+        key={mode}
       />
       {pluginsOpen ? (
         <PluginMarketModal

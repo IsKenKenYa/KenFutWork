@@ -3,6 +3,7 @@ import path from "node:path";
 import { registerPluginRoutes } from "../../http/plugins.js";
 import type { PluginContext, PluginDefinition } from "../../kernel/types.js";
 import { createCanvasRepository } from "../canvas/repository.js";
+import { projectWorkDirLoaderFor } from "../projects/work-dir.js";
 import { CompatLoadError } from "./compat-context.js";
 import { createInstallPluginTool } from "./install-plugin-tool.js";
 import {
@@ -132,6 +133,7 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
           admin: ctx.get("admin"),
           sandboxRoot: ctx.env.sandboxRoot,
           canvasWorkDirs: ctx.env.canvasWorkDirs,
+          projectWorkDirLoader: projectWorkDirLoaderFor(ctx.get("persistence")),
         }),
       );
       void registerPluginRoutes(ctx.app, {
@@ -142,6 +144,7 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
         viewerService: ctx.get("viewer"),
         sandboxRoot: ctx.env.sandboxRoot,
         canvasWorkDirs: ctx.env.canvasWorkDirs,
+        projectWorkDirLoader: projectWorkDirLoaderFor(ctx.get("persistence")),
       });
       // 启动装载已启用插件：单个失败只记日志，不阻断进程启动
       void registry.restore();

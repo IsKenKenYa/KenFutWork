@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import type { ContentBlock, ToolBlock, WsCommand } from "@kenfutwork/shared";
+import type {
+  ContentBlock,
+  ToolBlock,
+  WsCommand,
+  WsTerminalStartCommand,
+} from "@kenfutwork/shared";
 import {
   type RunCreateRequest,
   wsCommandSchema,
@@ -25,10 +30,19 @@ import type { ViewerService } from "../features/bootstrap/ensure-user-foundation
 import type { ChatService } from "../features/chat/chat-service.js";
 import { deriveSessionTitle } from "../features/chat/session-title.js";
 import type { ThreadService } from "../features/chat/thread-service.js";
+import type { CodeGitService } from "../features/code-git/code-git-service.js";
+import {
+  chunkForFrames,
+  startTerminalSession,
+  type TerminalSession,
+} from "../features/code-git/terminal-session.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import type { ConnectionManager } from "./connection-manager.js";
 import type { CanvasEventBuffer } from "./event-buffer.js";
 import { createPipelineLogger } from "./logger.js";
+
+/** 一条 WS 连接上最多几个终端会话（终端标签一个就够，给一点余量）。 */
+const MAX_TERMINAL_SESSIONS = 4;
 
 type RegisterWsOptions = {
   agentRuns: AgentRunService;
@@ -36,6 +50,8 @@ type RegisterWsOptions = {
   agentRunMetadataService?: AgentRunMetadataService;
   auth?: RequestAuthenticator;
   chatService?: ChatService;
+  /** 交互式终端会话：取已校验归属的工作目录（`terminalWorkDir`）。 */
+  codeGitService?: CodeGitService;
   connectionManager: ConnectionManager;
   eventBuffer?: CanvasEventBuffer;
   settingsService?: SettingsService;
@@ -145,6 +161,105 @@ async function authenticateAndBind(
       socket.ping();
     }
   }, 30_000);
+
+  /**
+   * 这个 WS 连接上的终端会话（key = 客户端给的 sessionId）。
+   *
+   * 会话绑在**连接**上：连接断了就没人能再给它输入输出，留着只会漏进程——close 时一律收掉。
+   * 上限 {@link MAX_TERMINAL_SESSIONS}：一条连接不该能无限堆 shell 进程。
+   */
+  const terminalSessions = new Map<string, TerminalSession>();
+
+  const sendToClient = (message: Record<string, unknown>) => {
+    if (socket.readyState === 1) socket.send(JSON.stringify(message));
+  };
+
+  /**
+   * 起一个常驻 shell。同一个 sessionId 重复 start（客户端重连后重放）时**复用**已有会话，
+   * 而不是再起一个——否则界面上一个终端标签会对应两条 shell，输出还会串台。
+   */
+  const startTerminal = async (payload: WsTerminalStartCommand["payload"]) => {
+    const existing = terminalSessions.get(payload.sessionId);
+    if (existing && !existing.exited) {
+      sendToClient({
+        type: "command.ack",
+        action: "terminal.start",
+        payload: {
+          sessionId: payload.sessionId,
+          shell: existing.shell,
+          executable: existing.executable,
+          reused: true,
+        },
+      });
+      return;
+    }
+    if (terminalSessions.size >= MAX_TERMINAL_SESSIONS) {
+      sendToClient({
+        type: "terminal.exit",
+        sessionId: payload.sessionId,
+        exitCode: null,
+        reason: `同时最多 ${MAX_TERMINAL_SESSIONS} 个终端会话，先关掉一个再开。`,
+      });
+      return;
+    }
+    const codeGit = options.codeGitService;
+    if (!codeGit) {
+      sendToClient({
+        type: "terminal.exit",
+        sessionId: payload.sessionId,
+        exitCode: null,
+        reason: "服务端没有装配终端能力。",
+      });
+      return;
+    }
+    let cwd: string;
+    try {
+      // 与其它端点同一处校验：登录 + 画布归属（越权即 404，不给枚举信号）
+      cwd = await codeGit.terminalWorkDir(authenticatedUser, payload.canvasId);
+    } catch (error) {
+      sendToClient({
+        type: "terminal.exit",
+        sessionId: payload.sessionId,
+        exitCode: null,
+        reason: error instanceof Error ? error.message : "打不开工作目录。",
+      });
+      return;
+    }
+
+    const session = startTerminalSession({
+      id: payload.sessionId,
+      cwd,
+      ...(payload.shell ? { shell: payload.shell } : {}),
+      onData: (chunk) => {
+        for (const frame of chunkForFrames(chunk)) {
+          sendToClient({
+            type: "terminal.output",
+            sessionId: payload.sessionId,
+            data: frame,
+          });
+        }
+      },
+      onExit: (exitCode, reason) => {
+        terminalSessions.delete(payload.sessionId);
+        sendToClient({
+          type: "terminal.exit",
+          sessionId: payload.sessionId,
+          exitCode,
+          ...(reason ? { reason } : {}),
+        });
+      },
+    });
+    terminalSessions.set(payload.sessionId, session);
+    sendToClient({
+      type: "command.ack",
+      action: "terminal.start",
+      payload: {
+        sessionId: payload.sessionId,
+        shell: session.shell,
+        executable: session.executable,
+      },
+    });
+  };
 
   const onMessage = (raw: Buffer | string) => {
     let parsed: unknown;
@@ -272,6 +387,16 @@ async function authenticateAndBind(
             event: entry.event,
           });
         }
+      } else if (msg.action === "terminal.start") {
+        void startTerminal(msg.payload);
+      } else if (msg.action === "terminal.input") {
+        terminalSessions.get(msg.payload.sessionId)?.write(msg.payload.data);
+      } else if (msg.action === "terminal.stop") {
+        const session = terminalSessions.get(msg.payload.sessionId);
+        if (session) {
+          terminalSessions.delete(msg.payload.sessionId);
+          session.stop("客户端关闭了终端。");
+        }
       }
     }
   };
@@ -293,6 +418,11 @@ async function authenticateAndBind(
   socket.on("close", () => {
     log.info("disconnected", { userId: authenticatedUser.id, connectionId });
     clearInterval(pingInterval);
+    // 终端会话绑在连接上：连接没了就没人能再读写它，收掉免得漏进程
+    for (const session of terminalSessions.values()) {
+      session.stop("连接已断开。");
+    }
+    terminalSessions.clear();
     // 带 socket 身份：客户端重连复用 connectionId，迟到的旧 socket close 不得删掉新注册
     connectionManager.remove(connectionId, socket);
   });
@@ -554,7 +684,7 @@ async function handleRunCommand(
       let sawToolExecution = false;
       let failureMessage: string | undefined;
       // 显式终态：成功与「用户取消」都不是失败，绝不能被重试判定当成「无原因可重试」
-      let terminal: "completed" | "canceled" | undefined;
+      let terminal: "completed" | "canceled" | "failed" | undefined;
       let firstEvent = true;
       for await (const event of agentRuns.streamRun(runId)) {
         if (firstEvent) {
@@ -625,6 +755,33 @@ async function handleRunCommand(
         }
       }
       log.lap("stream_done", { runId });
+
+      /**
+       * 「空轮次」判据（实测 2026-09-17，aiping GLM-5.3-Flash 可复现）：
+       * 推理模型有时**只输出内部思考**（reasoning）而没有正文、也没调工具——协议上算
+       * completed，但界面上一个字都没有。这种轮次按**失败**报，并给出可读原因：否则
+       * 用户对着一个「成功但空白」的对话只能猜，也拿不到任何重试信号。
+       */
+      if (
+        terminal === "completed" &&
+        assistantText.length === 0 &&
+        assistantBlocks.length === 0 &&
+        !sawToolExecution
+      ) {
+        const reason =
+          "模型本轮没有返回任何内容（可能只输出了内部思考或触发内容过滤）。请重试一次，或换个说法。";
+        log.error("run_empty_output", { runId });
+        const emptyEvent = {
+          error: { code: "run_failed" as const, message: reason },
+          runId,
+          timestamp: new Date().toISOString(),
+          type: "run.failed" as const,
+        };
+        services.eventBuffer?.push(canvasId, emptyEvent);
+        connectionManager.pushToCanvas(canvasId, emptyEvent);
+        failureMessage = reason;
+        terminal = "failed";
+      }
 
       const decision = decideRunRetry({
         attempt,

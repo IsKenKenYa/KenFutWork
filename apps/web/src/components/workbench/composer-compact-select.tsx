@@ -35,6 +35,15 @@ export const THINKING_OPTIONS = [
   { value: "最高", label: "最高", hint: "尽量深想（更慢、更费 token）" },
 ] as const;
 
+/** 思考强度的档位 → 进度条比例（满格 = 最高）。 */
+export const THINKING_PROGRESS: Record<string, number> = {
+  default: 0,
+  低: 0.25,
+  中: 0.5,
+  高: 0.75,
+  最高: 1,
+};
+
 export function optionLabel(
   options: readonly { value: string; label: string }[],
   value: string,
@@ -61,6 +70,7 @@ export function ComposerCompactSelect({
   value,
   onChange,
   contentClassName = "min-w-28",
+  progress,
 }: {
   ariaLabel: string;
   icon: ReactNode;
@@ -68,6 +78,11 @@ export function ComposerCompactSelect({
   value: string;
   onChange: (next: string) => void;
   contentClassName?: string;
+  /**
+   * 进度条档位（0..1）：值是一组有顺序的档时用（思考强度：低/中/高/最高）。
+   * 传了就按它画一条小进度条——参考图里思考强度就是一个「图标 + 条」而不是文字。
+   */
+  progress?: number | undefined;
 }) {
   const current = options.find((option) => option.value === value);
   return (
@@ -84,9 +99,31 @@ export function ComposerCompactSelect({
           className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
           aria-label={ariaLabel}
           title={`${ariaLabel}：${optionLabel(options, value)}`}
+          /* 缩小时只剩图标：除模型外别的控件都不要那个下拉箭头（用户口径） */
+          chevronClassName="@max-xl/composer:hidden"
         >
           {icon}
-          <SelectValue className="@max-xl/composer:hidden" />
+          {progress === undefined ? (
+            <SelectValue className="@max-xl/composer:hidden" />
+          ) : (
+            <>
+              {/* 思考强度：一条小进度条表示档位（满格 = 最高）；文字只在宽时显示 */}
+              <span
+                aria-hidden
+                className="flex h-1 w-6 items-center overflow-hidden rounded-full bg-foreground/15"
+              >
+                <span
+                  className="h-full rounded-full bg-foreground/70"
+                  style={{
+                    width: `${Math.round(
+                      Math.min(1, Math.max(0, progress)) * 100,
+                    )}%`,
+                  }}
+                />
+              </span>
+              <SelectValue className="@max-xl/composer:hidden" />
+            </>
+          )}
         </SelectTrigger>
         <SelectContent className={contentClassName}>
           {options.map((option) => (
@@ -104,7 +141,7 @@ export function ComposerCompactSelect({
       <span
         role="tooltip"
         aria-label={`${ariaLabel}说明`}
-        className="pointer-events-none absolute top-full left-0 z-50 mt-1 hidden w-56 rounded-lg border bg-popover p-2 text-xs shadow-md group-hover:block"
+        className="pointer-events-none absolute top-full left-0 z-50 mt-1 hidden w-56 rounded-lg border bg-popover p-2 text-xs shadow-md @max-xl/composer:group-hover:block"
       >
         <span className="mb-1 block font-medium">
           {ariaLabel}

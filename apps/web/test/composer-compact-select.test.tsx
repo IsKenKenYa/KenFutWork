@@ -118,11 +118,36 @@ describe("ComposerCompactSelect", () => {
       />,
     );
     const panel = screen.getByRole("tooltip", { name: "权限档位说明" });
-    // 面板靠 group-hover 显示（容器变窄时文字藏起来，得有个地方说明每一档是什么意思）
-    expect(panel.className).toContain("group-hover:block");
+    // 面板靠 group-hover 显示（容器变窄时文字藏起来，得有个地方说明每一档是什么意思）；
+    // **只在图标态（容器 < 36rem）出现**——宽列下文字都在，悬停再弹一个面板是多余的
+    expect(panel.className).toContain("@max-xl/composer:group-hover:block");
     expect(panel.className).toContain("hidden");
     expect(panel).toHaveTextContent("当前：完全访问");
     expect(panel).toHaveTextContent("危险 / 不可逆操作需人工审批");
     expect(panel).toHaveTextContent("命中已批准策略的调用自动通过");
+  });
+
+  it("思考强度是「图标 + 进度条」：档位越高条越满，缩小时箭头也藏起来", () => {
+    render(
+      <ComposerCompactSelect
+        ariaLabel="思考强度"
+        icon={icon}
+        options={THINKING_OPTIONS}
+        value="最高"
+        onChange={() => {}}
+        progress={1}
+      />,
+    );
+    const trigger = screen.getByLabelText("思考强度");
+    // 进度条：满格（100%）
+    const bar = [...trigger.querySelectorAll("span")].find((el) =>
+      /width:/.test(el.getAttribute("style") ?? ""),
+    );
+    expect(bar?.getAttribute("style")).toContain("100%");
+    // 箭头在窄列收起（用户口径：缩小时除模型外别的箭头都不要显示）
+    const chevron = trigger.querySelector("svg.lucide-chevron-down");
+    expect(chevron?.parentElement?.className).toContain(
+      "@max-xl/composer:hidden",
+    );
   });
 });

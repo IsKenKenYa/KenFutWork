@@ -9,6 +9,8 @@
  * ② 上游没报缓存字段时不能拿 0 冒充命中率；③ 窗口未知时不能编一个分母。
  */
 
+import { resolveContextWindow } from "@kenfutwork/shared";
+
 export interface RunUsageSnapshot {
   inputTokens: number;
   outputTokens: number;
@@ -92,8 +94,20 @@ export interface ContextUsageView {
    * 不是各次调用百分比的算术平均——那样短调用权重过大，会把命中率算虚高。
    * 上游一次都没报缓存字段时为 null（显示「上游未上报」，不拿 0 冒充）。
    * 服务端没带累计字段（老版本）时退回「本次调用」的单次命中率并标注。
+   *
+   * **与各家上游字段的对照**（2026-09-17 联网核对，源见《改造计划》§4.13 用户第七批）：
+   * - OpenAI `usage.prompt_tokens_details.cached_tokens`：**含在** prompt_tokens 里的命中量
+   *   （文档只当命中指示，不给公式）——`cached ÷ prompt_tokens` 就是这里的算法；
+   * - Anthropic `cache_read_input_tokens`（缓存里取到的输入）与 `input_tokens`（**未命中**
+   *   的那部分）互斥，故其分母应是 input + cache_read + cache_creation；
+   * - Google `usage.total_cached_tokens` = 命中缓存服务的 token 数；
+   * - Langfuse 把各桶归一成互斥（`input` 排除 `input_cached_tokens`，`total` = 各桶之和）；
+   * - LangChain（我们的采集处，见 `agent/stream-adapter.ts`）归一后 `input_tokens` 是**总**
+   *   提示词、`input_token_details.cache_read` 是其中命中部分——分母即总量，无需按上游分叉。
    */
   cacheHitLabel: string | null;
+  /** 命中率数值（0-100，供进度条用）；上游未上报时为 null。 */
+  cacheHitPercent: number | null;
   /** 「平均」还是「本次调用」（老服务端只有单次数据时如实标注）。 */
   cacheHitScope: "run" | "call" | null;
   /**
@@ -102,6 +116,8 @@ export interface ContextUsageView {
    */
   composition: Array<{ label: string; percent: number }>;
   outputLabel: string | null;
+  /** 参考图那种「50.7万/100万（50.7%）」的整行读数。 */
+  usageLine: string | null;
 }
 
 /** token 数的中文习惯缩写（参考图口径：61.4万 / 100万）。 */
@@ -112,7 +128,14 @@ export function formatTokens(value: number): string {
   return String(Math.round(value));
 }
 
-/** 分类占比：字符数 → 百分比（一位小数），降序；无数据返回空数组。 */
+/**
+ * 分类占比：按各段的**字符数占比**分摊本轮的**实际输入 token**。
+ *
+ * 口径（对齐参考图「消息 96.9% / 系统工具 2.2% …」的读法）：分母是模型这一次真正收到的
+ * input tokens（上游给的数），各分类按自己那段字符数占的比例去分——所以各分类加起来正好
+ * 是 100%，与「当前占用」那个百分比可以互相对照。上游不按分类给 token，故只能按字符分摊；
+ * 这是估算，但分母是真的（不是「字符数占比」这种与窗口无关的数）。
+ */
 function compositionView(
   parts: Array<{ label: string; chars: number }> | undefined,
 ): Array<{ label: string; percent: number }> {
@@ -134,11 +157,10 @@ function trimZero(value: number): string {
 export function contextUsageView(
   usage: RunUsageSnapshot | null | undefined,
   contextWindow: number | null | undefined,
+  /** 模型 id：窗口没声明时用它查常见模型兜底表（见 @kenfutwork/shared）。 */
+  modelId = "",
 ): ContextUsageView {
-  const window =
-    typeof contextWindow === "number" && contextWindow > 0
-      ? contextWindow
-      : null;
+  const window = resolveContextWindow(contextWindow, modelId);
   const empty: ContextUsageView = {
     hasUsage: false,
     inputLabel: null,
@@ -147,9 +169,11 @@ export function contextUsageView(
     percent: null,
     percentLabel: null,
     cacheHitLabel: null,
+    cacheHitPercent: null,
     cacheHitScope: null,
     outputLabel: null,
     composition: [],
+    usageLine: null,
   };
   if (!usage || usage.inputTokens <= 0) return empty;
 
@@ -184,8 +208,16 @@ export function contextUsageView(
     // 上游没报缓存字段 → 不显示命中率（0% 会被读成「缓存全失效」）
     cacheHitLabel:
       hitRate === null ? null : `${Math.round(hitRate * 10) / 10}%`,
+    cacheHitPercent: hitRate === null ? null : Math.min(100, hitRate),
     cacheHitScope: hitRate === null ? null : useRunTotals ? "run" : "call",
     outputLabel: formatTokens(usage.outputTokens),
     composition: compositionView(usage.composition),
+    // 参考图的读数：当前 / 窗口（百分比）。窗口未知时只给绝对量，不编百分比
+    usageLine:
+      window === null
+        ? `${formatTokens(usage.inputTokens)}（窗口未知）`
+        : `${formatTokens(usage.inputTokens)}/${formatTokens(window)}（${
+            percent ?? 0
+          }%）`,
   };
 }

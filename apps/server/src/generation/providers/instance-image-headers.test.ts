@@ -229,10 +229,11 @@ describe("openai-compatible 图像适配器自定义头", () => {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ data: [{ url: "https://cdn.example/i.png" }] }));
     });
+    const stub = server;
     await new Promise<void>((resolve) => {
-      server?.listen(0, "127.0.0.1", () => resolve());
+      stub.listen(0, "127.0.0.1", () => resolve());
     });
-    const { port } = server.address() as AddressInfo;
+    const { port } = stub.address() as AddressInfo;
 
     const { OpenAIImageProvider } = await import("./openai-image.js");
     const provider = new OpenAIImageProvider(

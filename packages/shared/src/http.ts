@@ -64,6 +64,11 @@ export const projectCreateRequestSchema = z.object({
    * 两端各自按 kind 取列表，避免画布项目与工作目录项目互相串味。
    */
   kind: projectKindSchema.optional(),
+  /**
+   * 本机工作目录绝对路径（Code 项目）。服务端校验「绝对路径 + 存在 + 是目录」，
+   * 不合格返回 400 `invalid_work_dir` 并给出可读原因。
+   */
+  work_dir: z.string().trim().min(1).optional(),
 });
 
 export const projectCreateResponseSchema = z.object({
@@ -185,8 +190,23 @@ export const codeGitStageHunkRequestSchema = z.object({
   path: z.string().min(1).max(1000),
   /** 「文件头 + 这一块」的 patch 文本（由审查视图从 diff 里切出来）。 */
   patch: z.string().min(1).max(200_000),
-  /** true = 反向应用（取消暂存这一块）。 */
+  /** true = 反向应用（索引里撤下 / 工作区里撤销）。 */
   reverse: z.boolean().optional(),
+  /** `index` = 动索引（暂存/取消暂存）；`worktree` = 动工作区（撤销这一块的改动）。 */
+  target: z.enum(["index", "worktree"]).optional(),
+});
+
+/** 撤销：单个文件（未跟踪的会被删掉）或全部未提交改动。 */
+export const codeGitDiscardRequestSchema = z.object({
+  canvasId: z.string().min(1),
+  /** 缺省 = 撤销全部。 */
+  path: z.string().min(1).max(1000).optional(),
+  /** 该文件是否未跟踪（未跟踪的撤销 = 删除文件）。 */
+  untracked: z.boolean().optional(),
+});
+
+export const codeGitDiscardResponseSchema = z.object({
+  ok: z.literal(true),
 });
 
 export const codeGitStageResponseSchema = z.object({
@@ -287,16 +307,6 @@ export const agentRunActivityResponseSchema = z.object({
   }),
 });
 
-/** 工作目录里的项目文档（R3-3「文档入口」）。 */
-export const codeDocsResponseSchema = z.object({
-  docs: z.array(
-    z.object({
-      path: z.string().min(1),
-      bytes: z.number().int().nonnegative(),
-    }),
-  ),
-});
-
 export const codeGitFileResponseSchema = z.object({
   file: z.object({
     path: z.string().min(1),
@@ -345,9 +355,17 @@ export const applicationErrorCodeSchema = z.enum([
   "project_not_found",
   "project_slug_taken",
   "project_update_failed",
+  /**
+   * 项目工作目录（`projects.work_dir`，web 形态「填本机路径」）校验失败（400）。
+   * 同一个坑第二次踩到（见上面 `service_unavailable` 的注释）：码不在本枚举里，
+   * `parse` 抛错后响应体变成 ZodError 转储、可读原因丢失——真机验收实测。
+   */
+  "invalid_work_dir",
   "session_not_found",
   "settings_not_found",
   "settings_update_failed",
+  /** 默认模型不在目录里（保存设置时 fail loud，400；见 modelCatalog.validateSpecifier）。 */
+  "invalid_model",
   "upload_failed",
   "asset_not_found",
   "job_not_found",
@@ -504,5 +522,7 @@ export type AssetSignedUrlResponse = z.infer<
 export const projectUpdateRequestSchema = z.object({
   brand_kit_id: z.uuid().nullable().optional(),
   name: z.string().min(1).max(100).optional(),
+  /** 本机工作目录绝对路径；显式 `null` = 解绑（回落到沙箱目录）。 */
+  work_dir: z.string().trim().min(1).nullable().optional(),
 });
 export type ProjectUpdateRequest = z.infer<typeof projectUpdateRequestSchema>;

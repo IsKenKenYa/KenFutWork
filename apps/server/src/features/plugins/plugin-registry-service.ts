@@ -67,6 +67,8 @@ export interface PluginCatalogEntry {
   name: string;
   title: string;
   description: string;
+  /** 市场分类（chips 用它分组；缺省归「其他」）。 */
+  category?: string;
   /** 该内置插件需要的能力（导出为 bundle 时写入能力声明） */
   capabilities?: readonly string[];
 }
@@ -244,6 +246,7 @@ function manifestOrPlaceholder(
       name: fallbackName,
       version: "0.0.0",
       description: "",
+      category: null,
       license: null,
       repositoryUrl: null,
       homepage: null,
@@ -458,7 +461,7 @@ export function createPluginRegistryService(
         repositoryUrl: null,
         headSha: null,
         installability: null,
-        category: null,
+        category: entry.category ?? null,
         system: SYSTEM_PLUGIN_NAMES.has(entry.name),
         installed: true,
         // 系统插件不带 UI 入口（它们本来就有专门的界面）
@@ -475,7 +478,7 @@ export function createPluginRegistryService(
           repositoryUrl: record.repositoryUrl,
           headSha: record.headSha,
           installability: record.report.compatible ? "verified" : "failed",
-          category: null,
+          category: record.manifest.category ?? null,
           system: false,
           installed: record.enabled,
           // 停用即收回入口（侧栏不该出现点不开的插件）

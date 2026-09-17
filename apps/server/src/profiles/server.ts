@@ -8,6 +8,7 @@ import { createAuthPlugin } from "../features/auth/plugin.js";
 import { createBlobPlugin } from "../features/blob/plugin.js";
 import { createViewerPlugin } from "../features/bootstrap/plugin.js";
 import { brandKitPlugin } from "../features/brand-kit/plugin.js";
+import { createBrowserPlugin } from "../features/browser/plugin.js";
 import { createCanvasPlugin } from "../features/canvas/plugin.js";
 import { createChatPlugin } from "../features/chat/plugin.js";
 import { createCodeGitPlugin } from "../features/code-git/plugin.js";
@@ -61,6 +62,7 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
   {
     name: "model-providers",
     title: "BYOK 供应商",
+    category: "模型与供应商",
     description:
       "添加你自己的模型实例（OpenAI 兼容 / Anthropic / Gemini / 图像 / 视频协议），Key 加密保存。",
     capabilities: ["llm"],
@@ -68,54 +70,63 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
   {
     name: "agent-runs",
     title: "Agent 运行时",
+    category: "Agent 能力",
     description: "任务编排、流式输出、子代理与工具调用。",
     capabilities: ["agents", "tools"],
   },
   {
     name: "permissions",
     title: "权限策略",
+    category: "Agent 能力",
     description: "危险工具三档审批（默认 / 自动放行 / 完全访问）。",
     capabilities: ["tools"],
   },
   {
     name: "agent-modes",
     title: "执行模式",
+    category: "Agent 能力",
     description: "会话级 Code / Design 与 agent / plan 模式。",
     capabilities: [],
   },
   {
     name: "search",
     title: "联网搜索",
+    category: "工具与集成",
     description: "web_search 工具，为 Agent 接入实时信息。",
     capabilities: ["tools"],
   },
   {
     name: "mcp",
     title: "MCP 接入",
+    category: "工具与集成",
     description: "连接 MCP server，工具自动进入统一注册表。",
     capabilities: ["tools"],
   },
   {
     name: "usage",
     title: "用量统计",
+    category: "数据与统计",
     description: "Agent 与直连生成的 token/成本计量。",
     capabilities: [],
   },
   {
     name: "canvas",
     title: "画布（Design）",
+    category: "创作与画布",
     description: "无限画布创作、品牌套件与图像/视频生成。",
     capabilities: ["tools"],
   },
   {
     name: "skills",
     title: "技能",
+    category: "创作与画布",
     description: "SKILL.md 技能发现与市场。",
     capabilities: ["tools"],
   },
   {
     name: "plugin-registry",
     title: "插件市场",
+    category: "系统",
     description:
       "安装第三方插件（dsh bundle / 本项目 bundle），安装前过兼容性门禁，支持导入导出。",
     capabilities: [],
@@ -153,6 +164,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createModelProvidersPlugin({ credentialEnv: deps.credentialEnv }),
     createGenerationPlugin({ env: deps.env }),
     createAdminPlugin(),
+    createBrowserPlugin(),
     createPluginsPlugin({
       builtinCatalog: PLUGIN_CATALOG,
       ...(deps.githubToken ? { githubToken: deps.githubToken } : {}),

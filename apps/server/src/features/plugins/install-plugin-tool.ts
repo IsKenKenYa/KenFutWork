@@ -26,6 +26,10 @@ export function createInstallPluginTool(options: {
   admin: AdminService;
   sandboxRoot?: string | undefined;
   canvasWorkDirs?: Record<string, string> | undefined;
+  /** 项目绑定的本机工作目录（`projects.work_dir`）；界面绑定优先于环境变量映射。 */
+  projectWorkDirLoader?:
+    | ((canvasId: string) => Promise<string | null>)
+    | undefined;
   /** 安装期生命周期脚本：默认拒绝（与 HTTP 路由同口径），工具不给模型开这个口子。 */
   allowLifecycleScripts?: boolean;
 }): ToolDefinition {
@@ -74,10 +78,13 @@ export function createInstallPluginTool(options: {
         );
       }
 
+      const boundWorkDir = options.projectWorkDirLoader
+        ? await options.projectWorkDirLoader(execCtx.canvasId).catch(() => null)
+        : null;
       const sandboxDir = resolveSandboxDir(
         execCtx.canvasId,
         options.sandboxRoot,
-        options.canvasWorkDirs?.[execCtx.canvasId],
+        boundWorkDir ?? options.canvasWorkDirs?.[execCtx.canvasId],
       );
       const bundleDir = resolveInsideRoot(sandboxDir, relativePath);
 

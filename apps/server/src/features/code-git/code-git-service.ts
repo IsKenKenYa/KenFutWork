@@ -3,6 +3,7 @@ import { resolveInsideRoot } from "../../utils/inside-root.js";
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import type { CanvasRepository } from "../canvas/repository.js";
+import type { ProjectRepository } from "../projects/repository.js";
 import type { SettingsService } from "../settings/settings-service.js";
 import type {
   GitChangedFiles,
@@ -13,7 +14,6 @@ import type {
 } from "./git-client.js";
 import { patchTargetsOnly } from "./hunk-patch.js";
 import {
-  existingSandboxFiles,
   listSandboxDir,
   readSandboxTextFile,
   type SandboxDirListing,
@@ -27,18 +27,6 @@ import {
   type TerminalShellId,
   type TerminalShellOption,
 } from "./terminal-runner.js";
-
-/**
- * 「文档入口」（R3-3）的候选清单：约定俗成的项目文档名。
- * 顺序即展示顺序——AGENTS.md 在最前（它才是给 Agent 的规则书）。
- */
-const DOC_CANDIDATES = [
-  "AGENTS.md",
-  "CLAUDE.md",
-  "README.md",
-  "CONTRIBUTING.md",
-  "docs/README.md",
-] as const;
 
 /**
  * git 分支视图服务（Code 模式）。
@@ -141,6 +129,20 @@ export type CodeGitService = {
     defaultShell: TerminalShellId;
     resolvedShell: TerminalShellId;
   }>;
+  /**
+   * 交互式终端会话的落点：**已校验归属**的工作目录（WS 那条路用它起常驻 shell）。
+   * 与一次性执行同一处解析（`resolveSandboxDir`）——会话里的命令和 agent 读写的
+   * 是同一个目录。
+   */
+  terminalWorkDir(user: AuthenticatedUser, canvasId: string): Promise<string>;
+  /**
+   * 索引库（R4-3）的作用域：已校验归属的工作目录 + 工作区 id（开关按工作区读）。
+   * 与 terminalWorkDir 同一处解析，保证「索引里的路径」与 agent 写的是同一个目录。
+   */
+  indexScope(
+    user: AuthenticatedUser,
+    canvasId: string,
+  ): Promise<{ workspaceId: string; dir: string }>;
   /** 列一层目录（R3-1「文件目录」标签）：只列一层，子目录由界面点进去。 */
   listFiles(
     user: AuthenticatedUser,
@@ -154,19 +156,26 @@ export type CodeGitService = {
     path: string,
     staged: boolean,
   ): Promise<{ path: string; staged: boolean }>;
-  /** 暂存 / 取消暂存**一个块**（参考图审查视图的「暂存块」）。 */
+  /** 应用 / 反向应用**一个块**（参考图审查视图的「暂存块 / 撤销块」）。 */
   applyFileHunk(
     user: AuthenticatedUser,
     canvasId: string,
     path: string,
     patch: string,
-    reverse?: boolean,
+    options?: { reverse?: boolean; target?: "index" | "worktree" },
   ): Promise<{ path: string; applied: true }>;
-  /** 工作目录里的项目文档（R3-3）：候选清单里存在的那些，附字节数。 */
-  listDocs(
+  /** 撤销单个文件的改动（二次确认在界面）；未跟踪 = 删除该文件。 */
+  discardFile(
     user: AuthenticatedUser,
     canvasId: string,
-  ): Promise<Array<{ path: string; bytes: number }>>;
+    path: string,
+    untracked: boolean,
+  ): Promise<{ path: string }>;
+  /** 撤销全部未提交改动（二次确认在界面）。 */
+  discardAllChanges(
+    user: AuthenticatedUser,
+    canvasId: string,
+  ): Promise<{ ok: true }>;
   /** 提交全部改动（写操作：git 不可用即 503，未仓库/空改动 409）。 */
   /** 初始化仓库（幂等）。 */
   init(user: AuthenticatedUser, canvasId: string): Promise<CodeGitStatus>;
@@ -210,6 +219,13 @@ export function createCodeGitService(options: {
   sandboxRoot?: string | undefined;
   /** 画布 → 真实目录映射（与 agent 后端同一张表，保证 git 操作的就是 agent 读写的目录）。 */
   canvasWorkDirs?: Record<string, string> | undefined;
+  /**
+   * 项目绑定的本机工作目录（`projects.work_dir`，web 形态「填本机路径」）。
+   * 优先于 `canvasWorkDirs`：界面里绑的目录比运维的环境变量映射更具体。
+   */
+  projectRepository?:
+    | Pick<ProjectRepository, "findWorkDirByCanvas">
+    | undefined;
   /**
    * 读工作区的默认终端 shell（设置页配的那个）。缺省时用 `auto`（按平台取默认）。
    * 只依赖 `getWorkspaceSettings` 一个方法，避免把整个 settings 服务拖进这个 feature。
@@ -265,7 +281,10 @@ export function createCodeGitService(options: {
     return resolveSandboxDir(
       canvasId,
       options.sandboxRoot,
-      options.canvasWorkDirs?.[canvasId],
+      // 项目绑定优先（读不到就当没绑：绑定是增强，不是前置条件）
+      (await options.projectRepository
+        ?.findWorkDirByCanvas(workspace.id, canvasId)
+        .catch(() => null)) ?? options.canvasWorkDirs?.[canvasId],
     );
   };
 
@@ -420,6 +439,23 @@ export function createCodeGitService(options: {
       };
     },
 
+    /** 交互式会话的 cwd：与一次性执行同一处归属校验（越权即 404）。 */
+    async terminalWorkDir(user, canvasId) {
+      return sandboxDirFor(user, canvasId);
+    },
+
+    /** 索引库作用域：目录 + 工作区（开关在工作区设置里）。 */
+    async indexScope(user, canvasId) {
+      const workspace = await viewerService
+        .resolveWorkspace(user)
+        .catch(() => null);
+      if (!workspace) {
+        throw new CodeGitError("not_found", "找不到工作区。", 404);
+      }
+      const dir = await sandboxDirFor(user, canvasId);
+      return { workspaceId: workspace.id, dir };
+    },
+
     /** 暂存单个文件：路径先过「必须落在工作目录内」这道门（与读文件同一处判定）。 */
     async setFileStaged(user, canvasId, path, staged) {
       const dir = await sandboxDirFor(user, canvasId);
@@ -449,7 +485,7 @@ export function createCodeGitService(options: {
      * 暂存单个块：先过「路径落在工作目录内」，再**核对 patch 里改的确实只有这个文件**，
      * 最后才交给 git apply（见 hunk-patch.ts 的注释：patch 里的路径才是 git 真会动的路径）。
      */
-    async applyFileHunk(user, canvasId, path, patch, reverse) {
+    async applyFileHunk(user, canvasId, path, patch, options = {}) {
       const dir = await sandboxDirFor(user, canvasId);
       try {
         resolveInsideRoot(dir, path);
@@ -469,7 +505,7 @@ export function createCodeGitService(options: {
       }
       await requireRepo(dir);
       try {
-        await git.applyHunk(dir, patch, reverse ?? false);
+        await git.applyHunk(dir, patch, options);
       } catch (error) {
         throw new CodeGitError(
           "git_write_failed",
@@ -478,6 +514,47 @@ export function createCodeGitService(options: {
         );
       }
       return { path, applied: true };
+    },
+
+    /** 撤销单个文件：与暂存同一道门（路径在工作目录内 + 是仓库）。 */
+    async discardFile(user, canvasId, path, untracked) {
+      const dir = await sandboxDirFor(user, canvasId);
+      try {
+        resolveInsideRoot(dir, path);
+      } catch (error) {
+        throw new CodeGitError(
+          "git_write_failed",
+          error instanceof Error ? error.message : "路径越出工作目录。",
+          400,
+        );
+      }
+      await requireRepo(dir);
+      try {
+        await git.discardFile(dir, path, untracked);
+      } catch (error) {
+        throw new CodeGitError(
+          "git_write_failed",
+          error instanceof Error ? error.message : "撤销失败。",
+          400,
+        );
+      }
+      return { path };
+    },
+
+    /** 撤销全部未提交改动。 */
+    async discardAllChanges(user, canvasId) {
+      const dir = await sandboxDirFor(user, canvasId);
+      await requireRepo(dir);
+      try {
+        await git.discardAll(dir);
+      } catch (error) {
+        throw new CodeGitError(
+          "git_write_failed",
+          error instanceof Error ? error.message : "撤销失败。",
+          400,
+        );
+      }
+      return { ok: true };
     },
 
     /** 列一层目录：路径越界/不存在/不是目录都折成 400 可读原因。 */
@@ -492,12 +569,6 @@ export function createCodeGitService(options: {
           400,
         );
       }
-    },
-
-    /** 项目文档清单：只 stat 候选文件，不读内容（列表要轻）。 */
-    async listDocs(user, canvasId) {
-      const dir = await sandboxDirFor(user, canvasId);
-      return existingSandboxFiles(dir, DOC_CANDIDATES);
     },
 
     /** 文件内容：路径越界/不存在/是目录都折成 400 的可读原因（`sendCodeGitError` 兜底 500）。 */

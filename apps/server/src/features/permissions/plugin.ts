@@ -4,7 +4,7 @@ import {
   createPermissionService,
   type PermissionService,
 } from "./permission-service.js";
-import { createPermissionTierStore } from "./tier-store.js";
+import { createPermissionSettingsStore } from "./tier-store.js";
 
 /**
  * permissions 插件（DEC-4，P6）：
@@ -41,18 +41,20 @@ export function createPermissionsPlugin(deps: {
     },
     mounted(ctx) {
       const service = ctx.get("permissions");
-      const tierStore = createPermissionTierStore(ctx.get("persistence"));
+      const tierStore = createPermissionSettingsStore(ctx.get("persistence"));
       void tierStore
         .load()
-        .then((tier) => {
-          if (tier) {
-            service.setTier(undefined, tier);
-            console.log(`[permissions] 已读回持久化权限档位：${tier}`);
-          }
+        .then((settings) => {
+          service.applySettings(settings);
+          console.log(
+            `[permissions] 已读回持久化权限设置：常规=${settings.tier} 自动化=${settings.automationTier}` +
+              ` 自定义规则=${settings.rules.allow.length}+${settings.rules.deny.length}` +
+              ` 浏览器控制=${settings.browserControlEnabled ? "on" : "off"}`,
+          );
         })
         .catch((error: unknown) => {
           console.warn(
-            "[permissions] 权限档位读回失败（使用默认 default）：",
+            "[permissions] 权限设置读回失败（使用默认 default）：",
             error instanceof Error ? error.message : String(error),
           );
         });

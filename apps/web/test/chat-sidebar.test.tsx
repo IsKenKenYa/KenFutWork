@@ -65,6 +65,10 @@ function createMockWs(): WebSocketHandle {
     cancelRun: vi.fn(),
     onEvent: vi.fn(() => () => {}),
     registerRPC: vi.fn(() => () => {}),
+    startTerminal: vi.fn(),
+    sendTerminalInput: vi.fn(),
+    stopTerminal: vi.fn(),
+    onTerminal: vi.fn(() => () => {}),
   };
 }
 

@@ -22,7 +22,38 @@ export type WorkDirectoryPickResult =
   | { status: "failed"; notice: string };
 
 export const UNSUPPORTED_DIRECTORY_PICKER_NOTICE =
-  "当前环境不支持选择工作目录（需要 Chromium 内核，且页面未被 iframe 策略禁用）。智能体在沙箱工作区中执行，本机目录暂不能直接绑定。";
+  "当前环境不支持目录选择器（需要 Chromium 内核，且页面未被 iframe 策略禁用）。请改用「填本机路径」手动输入绝对路径——服务端校验通过后会把它绑成这个项目的工作目录。";
+
+/**
+ * 从填写的绝对路径里取目录名（作为项目名）。
+ * 两端分隔符都认（`D:\Desktop\test` 与 `/home/me/app`），末尾分隔符忽略；
+ * 取不出来（如 `D:\` 或 `/`）时返回空串，由调用方决定提示。
+ */
+export function workDirNameFromPath(path: string): string {
+  const trimmed = path.trim().replace(/[\\/]+$/, "");
+  if (!trimmed) return "";
+  // 盘符根（`D:`）与 POSIX 根（已在上一步变空）都不算目录名
+  if (/^[a-zA-Z]:$/.test(trimmed)) return "";
+  const segments = trimmed.split(/[\\/]/);
+  return segments[segments.length - 1] ?? "";
+}
+
+/**
+ * 拼进 prompt 的工作目录说明（**已绑定真实目录**时用这一份）。
+ *
+ * 与只拿到目录名的 {@link workDirectoryPromptHint} 的区别：这次本机绝对路径是真的——
+ * 服务端把 `projects.work_dir` 解析成了工作区根目录，文件确实落在用户填的那个目录里。
+ * 所以这里可以说出真实路径，但**仍然要求相对工作区根写路径**：绝对路径会让模型把
+ * 路径当字符串拼接（实测套出一层同名目录），而且工作区之外的绝对路径会被沙箱边界拒。
+ */
+export function boundWorkDirPromptHint(path: string): string {
+  return (
+    `【工作目录：${path}（用户已绑定的本机真实目录，就是本轮工作区的**根目录**）——` +
+    `所有文件路径**相对工作区根书写**（如 \`main.py\`、\`src/app.ts\`），` +
+    `**不要**写绝对路径、也不要在工作区下再建一层同名目录；` +
+    `工作区之外的路径（\`/tmp/…\`、其它盘符目录）会被沙箱边界拒绝】`
+  );
+}
 
 /** 从 window 形态对象里取目录选择器；缺失返回 undefined。 */
 export function resolveDirectoryPicker(
@@ -92,7 +123,13 @@ export async function pickWorkDirectory(
  * 相对工作区根写路径、不要再套一层同名目录。
  */
 export function workDirectoryPromptHint(name: string): string {
-  return `【工作目录：${name}（用户选择的目录名，仅作标识；本机路径对服务端不可达）——沙箱工作区的**根目录就是它**，不要在工作区下再建一个叫「${name}」的子目录；所有文件路径相对工作区根书写（如 \`kfw-demo/main.py\`），实际落点以工具返回为准】`;
+  return (
+    `【工作目录：${name}（用户选择的目录名，仅作标识）——沙箱工作区的**根目录就是它**，` +
+    `不要在工作区下再建一个叫「${name}」的子目录；所有文件路径**必须相对工作区根书写**` +
+    `（如 \`kfw-demo/main.py\`），**禁止任何绝对路径**（\`/tmp/…\`、\`/test/…\`、\`D:…\` 都不行：` +
+    `它们在真实机器上不存在，会落到工作区里多出一层同名目录）；` +
+    `本机真实路径对服务端不可达，所以也不要 chdir 到工作目录之外。实际落点以工具返回为准】`
+  );
 }
 
 /**

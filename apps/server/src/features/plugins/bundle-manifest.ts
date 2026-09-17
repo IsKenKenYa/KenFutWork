@@ -262,6 +262,10 @@ export function buildBundleManifest(files: BundleFiles): {
     entry,
     requiredCapabilities: [...requirementNames],
     scope: null,
+    category:
+      typeof kenfutworkBlock.category === "string" && kenfutworkBlock.category
+        ? kenfutworkBlock.category
+        : null,
     enginesNode:
       engines && typeof engines.node === "string" ? engines.node : null,
     ui: declaredUi,

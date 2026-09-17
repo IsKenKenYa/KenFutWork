@@ -1,0 +1,23 @@
+# 行尾口径：仓库内一律 LF（与 biome 的 formatter.lineEnding=lf 一致）。
+#
+# 背景：本机 git 配置是 core.autocrlf=true，检出时会把文本文件转成 CRLF，而 biome
+# 默认只接受 LF —— 于是 `pnpm lint` 会报 500+ 条「CRLF ↔ LF」格式错误（都是假错误，
+# 内容没变）。显式钉死 eol=lf 之后：检出、提交、格式化三者口径一致，lint 不再刷屏。
+* text=auto eol=lf
+
+# 二进制/产物不做行尾转换（避免 git 把它们当文本处理）
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.node binary
+
+# 锁文件与快照不参与 diff 噪音优化（只声明文本属性，保持可读 diff）
+pnpm-lock.yaml text

@@ -1,23 +1,24 @@
 import {
   applicationErrorResponseSchema,
+  permissionRulesSchema,
   permissionTierSchema,
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance } from "fastify";
 import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { PermissionService } from "../features/permissions/permission-service.js";
-import type { PermissionTierStore } from "../features/permissions/tier-store.js";
+import type { PermissionSettingsStore } from "../features/permissions/tier-store.js";
 
 export async function registerPermissionRoutes(
   app: FastifyInstance,
   options: {
     auth: RequestAuthenticator;
     permissions: PermissionService;
-    /** 全局档位写穿（app_config）；缺省时仅内存生效（部分装配/单测）。 */
-    tierStore?: PermissionTierStore;
+    /** 设置写穿（app_config）；缺省时仅内存生效（部分装配/单测）。 */
+    tierStore?: PermissionSettingsStore;
   },
 ) {
-  // GET /api/permissions/tier — 当前权限档
+  // GET /api/permissions/tier — 当前权限设置（档位 / 自动化档位 / 自定义规则 / 浏览器控制）
   app.get("/api/permissions/tier", async (request, reply) => {
     const user = await options.auth.authenticate(request);
     if (!user) {
@@ -30,12 +31,19 @@ export async function registerPermissionRoutes(
         }),
       );
     }
+    const settings = options.permissions.getSettings();
     return reply.code(200).send({
-      tier: permissionTierSchema.parse(options.permissions.getTier()),
+      tier: permissionTierSchema.parse(settings.tier),
+      automationTier: permissionTierSchema.parse(settings.automationTier),
+      rules: permissionRulesSchema.parse(settings.rules),
+      browserControlEnabled: settings.browserControlEnabled,
+      browserAutoScreenshot: settings.browserAutoScreenshot,
+      browserHeadless: settings.browserHeadless,
+      approvedForever: options.permissions.listApprovedForever(),
     });
   });
 
-  // PUT /api/permissions/tier — 设置档位（full-access 属明示开启；写穿持久化）
+  // PUT /api/permissions/tier — 部分更新（只改送来的字段；写库失败即不改内存）
   app.put("/api/permissions/tier", async (request, reply) => {
     const user = await options.auth.authenticate(request);
     if (!user) {
@@ -48,15 +56,51 @@ export async function registerPermissionRoutes(
         }),
       );
     }
-    let tier: import("@kenfutwork/shared").PermissionTier;
+    const body = (request.body ?? {}) as {
+      tier?: unknown;
+      automationTier?: unknown;
+      rules?: unknown;
+      browserControlEnabled?: unknown;
+      browserAutoScreenshot?: unknown;
+      browserHeadless?: unknown;
+    };
+    const current = options.permissions.getSettings();
+    let next = { ...current };
     try {
-      tier = permissionTierSchema.parse(
-        (request.body as { tier?: unknown }).tier,
-      );
+      if (body.tier !== undefined) {
+        next = { ...next, tier: permissionTierSchema.parse(body.tier) };
+      }
+      if (body.automationTier !== undefined) {
+        next = {
+          ...next,
+          automationTier: permissionTierSchema.parse(body.automationTier),
+        };
+      }
+      if (body.rules !== undefined) {
+        next = { ...next, rules: permissionRulesSchema.parse(body.rules) };
+      }
+      if (body.browserControlEnabled !== undefined) {
+        next = {
+          ...next,
+          browserControlEnabled: body.browserControlEnabled === true,
+        };
+      }
+      if (body.browserAutoScreenshot !== undefined) {
+        next = {
+          ...next,
+          browserAutoScreenshot: body.browserAutoScreenshot === true,
+        };
+      }
+      if (body.browserHeadless !== undefined) {
+        next = { ...next, browserHeadless: body.browserHeadless === true };
+      }
     } catch {
       return reply.code(400).send(
         applicationErrorResponseSchema.parse({
-          error: { code: "invalid_request", message: "Invalid tier." },
+          error: {
+            code: "invalid_request",
+            message: "Invalid permission settings.",
+          },
         }),
       );
     }
@@ -64,13 +108,13 @@ export async function registerPermissionRoutes(
     // 内存保持旧档，UI 与服务端不会出现「显示已放行、实际 default」的分裂）
     if (options.tierStore) {
       try {
-        await options.tierStore.save(tier);
+        await options.tierStore.save(next);
       } catch (error) {
         return reply.code(500).send(
           applicationErrorResponseSchema.parse({
             error: {
               code: "internal_error",
-              message: `权限档位保存失败，档位未变更：${
+              message: `权限设置保存失败，档位未变更：${
                 error instanceof Error ? error.message : String(error)
               }`,
             },
@@ -78,8 +122,17 @@ export async function registerPermissionRoutes(
         );
       }
     }
-    options.permissions.setTier(undefined, tier);
-    return reply.code(200).send({ tier });
+    options.permissions.applySettings(next);
+    // 与 GET 同一形状（缺字段会让客户端把整个设置对象覆盖成缺键的——实测把权限页打崩过）
+    return reply.code(200).send({
+      tier: next.tier,
+      automationTier: next.automationTier,
+      rules: next.rules,
+      browserControlEnabled: next.browserControlEnabled,
+      browserAutoScreenshot: next.browserAutoScreenshot,
+      browserHeadless: next.browserHeadless,
+      approvedForever: options.permissions.listApprovedForever(),
+    });
   });
 
   // POST /api/permissions/approve — 人审放行（agent 无自我授权路径）

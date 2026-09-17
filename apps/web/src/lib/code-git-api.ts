@@ -154,20 +154,38 @@ export async function setGitFileStaged(
   return (await response.json()) as { path: string; staged: boolean };
 }
 
-/** 暂存一个块（参考图审查视图的「暂存块」）：patch = 文件头 + 这一块。 */
+/**
+ * 撤销更改：给了 path 就撤销这个文件，否则撤销全部未提交改动。
+ * **会丢内容**，二次确认由界面负责。
+ */
+export async function discardGitChanges(
+  accessToken: string,
+  canvasId: string,
+  options: { path?: string; untracked?: boolean } = {},
+): Promise<{ ok: true }> {
+  const response = await fetch(`${getServerBaseUrl()}/api/code/git/discard`, {
+    method: "POST",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify({ canvasId, ...options }),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as { ok: true };
+}
+
+/** 应用一个块：target=index 暂存/取消暂存，=worktree 撤销这一块的改动。 */
 export async function stageGitHunk(
   accessToken: string,
   canvasId: string,
   path: string,
   patch: string,
-  reverse = false,
+  options: { reverse?: boolean; target?: "index" | "worktree" } = {},
 ): Promise<{ path: string; staged: boolean }> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/code/git/stage-hunk`,
     {
       method: "POST",
       headers: authJsonHeaders(accessToken),
-      body: JSON.stringify({ canvasId, path, patch, reverse }),
+      body: JSON.stringify({ canvasId, path, patch, ...options }),
     },
   );
   if (!response.ok) return handleErrorResponse(response);
@@ -225,23 +243,6 @@ export async function fetchCodeFiles(
   if (!response.ok) return handleErrorResponse(response);
   const payload = (await response.json()) as { files: CodeFileListing };
   return payload.files;
-}
-
-/** 工作目录里的项目文档（R3-3「文档入口」）。 */
-export async function fetchCodeDocs(
-  accessToken: string,
-  canvasId: string,
-): Promise<Array<{ path: string; bytes: number }>> {
-  const query = new URLSearchParams({ canvasId });
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/code/docs?${query.toString()}`,
-    { headers: authHeaders(accessToken) },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-  const payload = (await response.json()) as {
-    docs: Array<{ path: string; bytes: number }>;
-  };
-  return payload.docs;
 }
 
 export async function fetchSandboxFile(

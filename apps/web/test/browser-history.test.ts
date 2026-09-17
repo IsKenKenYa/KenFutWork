@@ -1,13 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
+  BROWSER_HISTORY_STORAGE_KEY,
   canGoBack,
   canGoForward,
+  clearHistory,
   createHistory,
   currentUrl,
   goBack,
   goForward,
+  loadHistory,
   MAX_HISTORY_ENTRIES,
   openUrl,
+  parseImportedHistory,
+  saveHistory,
 } from "../src/lib/browser-history";
 
 /**
@@ -86,5 +91,49 @@ describe("浏览器面板历史栈", () => {
     );
     expect(currentUrl(state)).toBe(`http://site-${total - 1}.com/`);
     expect(canGoBack(state)).toBe(true);
+  });
+});
+
+/**
+ * 面板历史的持久化与导入（R5-4「浏览器数据：清除 / 导入」的真对象）。
+ * 它只包含**本面板打开过的地址**——目标站点的 cookie/缓存在跨源 iframe 里，拿不到。
+ */
+describe("面板历史的持久化与导入", () => {
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("save/load 往返：坏数据回落空历史，index 夹到合法范围", () => {
+    saveHistory(openUrl(openUrl(createHistory(), "https://a"), "https://b"));
+    expect(loadHistory()).toEqual({
+      entries: ["https://a", "https://b"],
+      index: 1,
+    });
+
+    window.localStorage.setItem(BROWSER_HISTORY_STORAGE_KEY, "{not json");
+    expect(loadHistory()).toEqual(createHistory());
+
+    window.localStorage.setItem(
+      BROWSER_HISTORY_STORAGE_KEY,
+      JSON.stringify({ entries: ["https://a", "", 42], index: 99 }),
+    );
+    expect(loadHistory()).toEqual({ entries: ["https://a"], index: 0 });
+  });
+
+  it("clear 真删；import 同时吃 {entries,index} 与纯地址数组，非法输入返回 null", () => {
+    saveHistory(openUrl(createHistory(), "https://a"));
+    clearHistory();
+    expect(loadHistory()).toEqual(createHistory());
+
+    expect(
+      parseImportedHistory(JSON.stringify(["https://x", "https://y"])),
+    ).toEqual({ entries: ["https://x", "https://y"], index: 1 });
+    expect(
+      parseImportedHistory(
+        JSON.stringify({ entries: ["https://z"], index: 0 }),
+      ),
+    ).toEqual({ entries: ["https://z"], index: 0 });
+    expect(parseImportedHistory("不是 JSON")).toBeNull();
+    expect(parseImportedHistory("[]")).toBeNull();
   });
 });

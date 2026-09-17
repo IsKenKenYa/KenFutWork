@@ -1,11 +1,24 @@
-import type { PermissionTier } from "@kenfutwork/shared";
+import type {
+  PermissionRules,
+  PermissionScenario,
+  PermissionTier,
+} from "@kenfutwork/shared";
+import { anyPermissionRuleMatches } from "@kenfutwork/shared";
+
+import {
+  DEFAULT_PERMISSION_SETTINGS,
+  type PermissionSettings,
+} from "./tier-store.js";
 
 /**
- * permissions 策略缝（DEC-4，P6）：
- * - 三档：default（危险操作 ask）/ auto-approve（命中已批准策略自动放行）/ full-access；
+ * permissions 策略缝（DEC-4，P6；R5-3 扩展）：
+ * - 四档：default（危险操作 ask）/ auto-approve（命中已批准策略自动放行）/
+ *   full-access / **custom**（按 `permissionRules` 逐条判）；
+ * - **分场景**：常规任务与自动化任务（目标/循环）各设一档；
  * - 审批记忆粒度：本次（单次放行）/ 会话（thread 级）/ 永久（工具级）；
  * - agent 无「自我授权为永久」路径：approve 只能由外部（审批 UI）调用。
- * 拦截挂在 kernel 的 tool-pre-execute 事件上（permissions 插件订阅）。
+ * 拦截挂在 kernel 的 tool-pre-execute 事件上（permissions 插件订阅），
+ * 以及 agent-runs 的工具门（内置工具不经过 ctx.tools，见 features/agent-runs/plugin.ts）。
  */
 
 /**
@@ -43,34 +56,76 @@ export interface PermissionDecision {
 export interface PermissionService {
   getTier(threadId?: string): PermissionTier;
   setTier(threadId: string | undefined, tier: PermissionTier): void;
-  /** 单次决策：default 档危险工具在无审批记忆时要求 ask（返回 deny，等待人审后 approve）。 */
-  evaluate(input: { toolName: string; threadId?: string }): PermissionDecision;
+  /** 当前完整设置（档位 / 自动化档位 / 自定义规则 / 浏览器控制）。 */
+  getSettings(): PermissionSettings;
+  /** 读回持久化设置后覆盖内存（启动期用；不写库）。 */
+  applySettings(settings: PermissionSettings): void;
+  /**
+   * 单次决策。`scenario` 决定用哪一档（缺省 interactive）：
+   * 自动化任务（目标/循环）走 `automationTier`。
+   */
+  evaluate(input: {
+    toolName: string;
+    threadId?: string;
+    scenario?: PermissionScenario;
+  }): PermissionDecision;
   /** 审批（只能由人审 UI 触发，agent 无路径自我授权）。 */
   approve(toolName: string, approval: ToolApproval): void;
   listApprovedForever(): string[];
 }
 
 export function createPermissionService(): PermissionService {
-  let globalTier: PermissionTier = "default";
+  let settings: PermissionSettings = { ...DEFAULT_PERMISSION_SETTINGS };
   const threadTiers = new Map<string, PermissionTier>();
   const foreverApproved = new Set<string>();
   const threadApproved = new Set<string>();
 
-  return {
+  /** 场景对应的档位：自动化任务用 automationTier（线程显式设过档的优先）。 */
+  const tierFor = (
+    threadId: string | undefined,
+    scenario: PermissionScenario,
+  ): PermissionTier => {
+    if (threadId && threadTiers.get(threadId)) {
+      return threadTiers.get(threadId) as PermissionTier;
+    }
+    return scenario === "automation" ? settings.automationTier : settings.tier;
+  };
+
+  const service: PermissionService = {
     getTier(threadId) {
-      return (threadId && threadTiers.get(threadId)) || globalTier;
+      return (threadId && threadTiers.get(threadId)) || settings.tier;
     },
     setTier(threadId, tier) {
       if (threadId) {
         threadTiers.set(threadId, tier);
       } else {
-        globalTier = tier;
+        settings = { ...settings, tier };
       }
     },
-    evaluate({ toolName, threadId }) {
-      const tier = this.getTier(threadId);
+    getSettings() {
+      return settings;
+    },
+    applySettings(next) {
+      settings = next;
+    },
+    evaluate({ toolName, threadId, scenario = "interactive" }) {
+      const tier = tierFor(threadId, scenario);
       if (tier === "full-access") {
         return { decision: "allow" };
+      }
+      // 第 4 档：自定义规则优先，且**拒绝优先**（放行表写宽了也不至于把危险工具带出去）
+      if (tier === "custom") {
+        const rules: PermissionRules = settings.rules;
+        if (anyPermissionRuleMatches(rules.deny, toolName)) {
+          return {
+            decision: "deny",
+            reason: `工具 ${toolName} 命中自定义规则里的拒绝项（设置 → 权限 → 自定义配置）`,
+          };
+        }
+        if (anyPermissionRuleMatches(rules.allow, toolName)) {
+          return { decision: "allow" };
+        }
+        // 都没命中 → 回落 default 档的判定
       }
       if (!isDangerousTool(toolName)) {
         return { decision: "allow" };
@@ -78,7 +133,7 @@ export function createPermissionService(): PermissionService {
       if (tier === "auto-approve") {
         return { decision: "allow" };
       }
-      // default 档：危险工具需要审批记忆
+      // default（或 custom 未命中规则）：危险工具需要审批记忆
       if (foreverApproved.has(toolName)) {
         return { decision: "allow" };
       }
@@ -87,7 +142,7 @@ export function createPermissionService(): PermissionService {
       }
       return {
         decision: "deny",
-        reason: `工具 ${toolName} 属危险操作，等待用户审批（default 档）`,
+        reason: `工具 ${toolName} 属危险操作，等待用户审批（${tier === "custom" ? "自定义配置" : `${tier} 档`}）`,
       };
     },
     approve(toolName, approval) {
@@ -102,4 +157,5 @@ export function createPermissionService(): PermissionService {
       return [...foreverApproved];
     },
   };
+  return service;
 }

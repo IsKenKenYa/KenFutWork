@@ -6,6 +6,7 @@ import {
   resolveSandboxDir,
   resolveSandboxScopeId,
   sanitizeCanvasIdForPath,
+  withBoundWorkDir,
 } from "./sandbox-dir.js";
 
 const CANVAS_ID = "beb5095b-de61-4b3e-a376-501b9905344c";
@@ -98,5 +99,40 @@ describe("resolveSandboxScopeId（沙箱作用域 = 画布 UUID）", () => {
         sessionCanvasId: null,
       }),
     ).toBeUndefined();
+  });
+});
+
+describe("withBoundWorkDir（项目绑定目录 → env 画布映射）", () => {
+  it("绑定存在时并进画布映射，并覆盖同名环境变量映射", () => {
+    const env = { canvasWorkDirs: { c1: "/env/c1", c2: "/env/c2" } };
+    const merged = withBoundWorkDir(env, "c1", "/bound/c1");
+    expect(merged.canvasWorkDirs).toEqual({
+      c1: "/bound/c1",
+      c2: "/env/c2",
+    });
+    // 不改原对象（env 在进程内共享，就地改写会污染其它画布）
+    expect(env.canvasWorkDirs.c1).toBe("/env/c1");
+  });
+
+  it("没有绑定 / 没有画布时原样返回", () => {
+    const env = { canvasWorkDirs: { c1: "/env/c1" } };
+    expect(withBoundWorkDir(env, "c1", null)).toBe(env);
+    expect(withBoundWorkDir(env, undefined, "/bound/c1")).toBe(env);
+  });
+
+  it("原来没有映射时也能建立（env.canvasWorkDirs 缺省 undefined）", () => {
+    const merged = withBoundWorkDir(
+      { sandboxRoot: "/root" },
+      "c1",
+      "/bound/c1",
+    );
+    expect(merged).toEqual({
+      sandboxRoot: "/root",
+      canvasWorkDirs: { c1: "/bound/c1" },
+    });
+    // 结果仍然能被 resolveSandboxDir 消费（绑定目录优先于根目录拼接）
+    expect(
+      resolveSandboxDir("c1", merged.sandboxRoot, merged.canvasWorkDirs?.c1),
+    ).toBe(resolve("/bound/c1"));
   });
 });

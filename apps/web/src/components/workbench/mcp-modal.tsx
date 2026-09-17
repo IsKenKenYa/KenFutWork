@@ -365,8 +365,14 @@ function ConfiguredTab({
                     <button
                       type="button"
                       onClick={() => void act(server, "reconnect")}
-                      disabled={busy === key}
-                      className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                      /* 环境变量提供的条目是只读的：重连会打到需要管理员 id 的端点上（点了必失败） */
+                      disabled={busy === key || !server.id}
+                      title={
+                        server.id
+                          ? "重连这个 MCP server"
+                          : "环境变量提供的条目由服务端启动时连接，界面不提供重连"
+                      }
+                      className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent"
                     >
                       重连
                     </button>

@@ -33,8 +33,11 @@ import {
   TierGuardError,
 } from "../features/credits/tier-guard.js";
 import type { JobService } from "../features/jobs/job-service.js";
+import type { ModelCatalogService } from "../features/model-providers/model-catalog-service.js";
 import { parseInstanceSpecifier } from "../features/model-providers/model-catalog-service.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
+import type { SettingsService } from "../features/settings/settings-service.js";
+import { formatUserRulesFragment } from "../features/settings/user-rules.js";
 import type { RunUsageAccumulator } from "../features/usage/run-usage-accumulator.js";
 import type { ToolExecutionContext, ToolRegistry } from "../kernel/types.js";
 import { instanceHeadersOption } from "../providers/instance-headers.js";
@@ -52,6 +55,7 @@ import {
 } from "./deep-agent.js";
 import type { AgentPersistenceService } from "./persistence/index.js";
 import { measureTools } from "./prompt-composition.js";
+import { withBoundWorkDir } from "./sandbox-dir.js";
 import { adaptDeepAgentStream } from "./stream-adapter.js";
 import {
   createToolDenialTracker,
@@ -310,6 +314,12 @@ type CreateAgentRuntimeOptions = {
   canvasService?: CanvasService;
   /** 工作区技能加载（skills/canvas 聚合的数据访问提供）：运行时不再直连 SDK。 */
   workspaceSkillsLoader?: WorkspaceSkillsLoader;
+  /**
+   * 画布 → 项目绑定的本机工作目录（`projects.work_dir`，判定见
+   * features/projects/work-dir.ts）。命中时覆盖 `env.canvasWorkDirs`：
+   * 用户在界面上绑定的目录优先于运维的环境变量映射。
+   */
+  projectWorkDirLoader?: (canvasId: string) => Promise<string | null>;
   connectionManager?: ConnectionManager;
   /** 对象存储（blob 缝）：生成物落盘与 URL（M3.1 起不再直连 Supabase Storage）。 */
   blob: BlobStore;
@@ -320,6 +330,10 @@ type CreateAgentRuntimeOptions = {
   model?: BaseLanguageModel | string;
   /** BYOK：实例 specifier（<instanceId>:<model>）经此解析为协议适配器模型。 */
   modelProviders?: ModelProviderService;
+  /** 模型目录（run 起始期校验「实例:模型」是否存在；缺省跳过校验）。 */
+  modelCatalog?: Pick<ModelCatalogService, "validateSpecifier"> | undefined;
+  /** 工作区设置（读「用户规则」拼进系统提示词；缺省不注入）。 */
+  settingsService?: Pick<SettingsService, "getWorkspaceSettings"> | undefined;
   /** agent 链路用量累积器（turn-stopping 结算，DEC-6）。 */
   runUsage?: RunUsageAccumulator;
   /** 内核统一工具注册表：按 run 的 preset 过滤后桥接进模型工具列表（§4.5）。 */
@@ -1080,12 +1094,19 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       }
 
       // Create backend — production uses StateBackend (no local shell).
+      const backendCanvasId = run.sandboxScopeId ?? run.canvasId;
+      // 项目绑定的本机工作目录（Code 模式「工作目录=项目」）：覆盖环境变量映射。
+      // 读不到就照旧回沙箱目录——绑定是增强，不是 run 的前置条件。
+      const boundWorkDir =
+        backendCanvasId && options.projectWorkDirLoader
+          ? await options
+              .projectWorkDirLoader(backendCanvasId)
+              .catch(() => null)
+          : null;
       const backendResult = createAgentBackend(
-        options.env,
-        run.sandboxScopeId ?? run.canvasId,
-        {
-          hasWorkspaceSkills: workspaceSkills.length > 0,
-        },
+        withBoundWorkDir(options.env, backendCanvasId, boundWorkDir),
+        backendCanvasId,
+        { hasWorkspaceSkills: workspaceSkills.length > 0 },
       );
 
       try {
@@ -1118,6 +1139,26 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           ) {
             const instanceSpec = parseInstanceSpecifier(resolvedModel);
             if (instanceSpec) {
+              /**
+               * 起始期 fail loud（E）：带实例前缀的模型必须能在这个用户的目录里找到。
+               * 不做这一步时，模型被改名/停用后要等上游回 4xx 才暴露，且界面只有通用文案。
+               */
+              if (options.modelCatalog) {
+                const verdict = await options.modelCatalog
+                  .validateSpecifier(
+                    {
+                      accessToken: run.accessToken,
+                      email: "",
+                      id: run.userId,
+                      userMetadata: {},
+                    },
+                    resolvedModel,
+                  )
+                  .catch(() => ({ ok: true as const }));
+                if (!verdict.ok) {
+                  throw new Error(verdict.message);
+                }
+              }
               const credentials =
                 await options.modelProviders.resolveCredentials(
                   {
@@ -1350,6 +1391,29 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             toolWorkspaceId = workspace?.id;
           }
 
+          /**
+           * 用户规则（设置 → 规则与记忆）拼进系统提示词：这是那段 UI 的**真实消费方**
+           * （此前只写 localStorage，服务端没人读）。读失败不阻断 run（规则是增强，不是前置）。
+           */
+          let userRulesFragment: string[] = [];
+          if (toolWorkspaceId && options.settingsService) {
+            const workspaceSettings = await options.settingsService
+              .getWorkspaceSettings(
+                {
+                  accessToken: run.accessToken ?? "",
+                  email: "",
+                  id: run.userId ?? "",
+                  userMetadata: {},
+                },
+                toolWorkspaceId,
+              )
+              .catch(() => null);
+            userRulesFragment = formatUserRulesFragment({
+              userRules: workspaceSettings?.userRules,
+              ruleEntries: workspaceSettings?.ruleEntries,
+            });
+          }
+
           agent = resolvedAgentFactory({
             backendResult,
             ...(brandKitId ? { brandKitId } : {}),
@@ -1378,9 +1442,14 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             // 执行模式工具门（solo/plan 硬约束）：拦截内置与桥接工具的全部调用
             ...(toolGate ? { toolGate } : {}),
             ...(toolGateHooks ? { toolGateHooks } : {}),
-            // 插件提示段每次 run 取一次：新装/卸载插件下一轮即生效
-            ...(options.pluginPromptFragments
-              ? { systemPromptExtras: options.pluginPromptFragments() }
+            // 插件提示段每次 run 取一次：新装/卸载插件下一轮即生效；用户规则拼在它之后
+            ...(options.pluginPromptFragments || userRulesFragment.length > 0
+              ? {
+                  systemPromptExtras: [
+                    ...(options.pluginPromptFragments?.() ?? []),
+                    ...userRulesFragment,
+                  ],
+                }
               : {}),
             runToolContext: {
               runId,

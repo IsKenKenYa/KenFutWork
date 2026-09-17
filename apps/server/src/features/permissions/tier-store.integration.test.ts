@@ -1,37 +1,51 @@
 import { describe, expect, it } from "vitest";
 
 import { createPostgresPersistence } from "../persistence/providers/postgres.js";
-import { createPermissionTierStore } from "./tier-store.js";
+import {
+  createPermissionSettingsStore,
+  DEFAULT_PERMISSION_SETTINGS,
+} from "./tier-store.js";
 
 /**
- * 权限档位持久化真实库集成测试（默认 skipped：需要 DATABASE_URL）。
- * 目的：证明全局档位写穿 app_config 后跨连接读回一致（重启漂移的回归锁）。
+ * 权限设置持久化真实库集成测试（默认 skipped：需要 DATABASE_URL）。
+ * 目的：证明四件事（常规档 / 自动化档 / 自定义规则 / 浏览器控制）写穿 app_config
+ * 后跨连接读回一致（重启漂移的回归锁）。
  *
- * 运行：DATABASE_URL=postgresql://... pnpm --filter @kenfutwork/server exec vitest run permission-tier-store.integration
+ * 运行：DATABASE_URL=postgresql://... pnpm --filter @kenfutwork/server exec vitest run tier-store.integration
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 
-describe.skipIf(!DATABASE_URL)("权限档位持久化真实库集成", () => {
-  it("save 写穿 + load 读回一致；未设置时 load 返回 null；重复 save 覆盖", async () => {
+describe.skipIf(!DATABASE_URL)("权限设置持久化真实库集成", () => {
+  it("save 写穿 + load 读回一致；重复 save 覆盖；收尾恢复缺省", async () => {
     const persistence = createPostgresPersistence({
       databaseUrl: DATABASE_URL as string,
     });
     try {
-      const store = createPermissionTierStore(persistence);
+      const store = createPermissionSettingsStore(persistence);
 
-      // 起始态：读出 null 或上次遗留值——先归位到 default 再断言写穿
-      await store.save("default");
-      expect(await store.load()).toBe("default");
+      await store.save(DEFAULT_PERMISSION_SETTINGS);
+      expect(await store.load()).toEqual(DEFAULT_PERMISSION_SETTINGS);
 
-      await store.save("auto-approve");
-      expect(await store.load()).toBe("auto-approve");
+      await store.save({
+        tier: "custom",
+        automationTier: "default",
+        rules: { allow: ["write_file"], deny: ["mcp__*"] },
+        browserControlEnabled: true,
+        browserAutoScreenshot: true,
+        browserHeadless: true,
+      });
+      expect(await store.load()).toEqual({
+        tier: "custom",
+        automationTier: "default",
+        rules: { allow: ["write_file"], deny: ["mcp__*"] },
+        browserControlEnabled: true,
+        browserAutoScreenshot: true,
+        browserHeadless: true,
+      });
 
-      await store.save("full-access");
-      expect(await store.load()).toBe("full-access");
-
-      // 收尾：恢复 default，不给其它测试/本地开发留 full-access（安全）
-      await store.save("default");
-      expect(await store.load()).toBe("default");
+      // 收尾：恢复缺省，不给其它测试/本地开发留 full-access 或放行规则（安全）
+      await store.save(DEFAULT_PERMISSION_SETTINGS);
+      expect(await store.load()).toEqual(DEFAULT_PERMISSION_SETTINGS);
     } finally {
       await persistence.close();
     }

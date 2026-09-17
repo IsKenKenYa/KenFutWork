@@ -2,120 +2,174 @@
 
 import { Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import {
+  fetchWorkspaceSettings,
+  updateWorkspaceSettings,
+} from "@/lib/server-api";
 
-/** 规则与记忆：用户规则（附加到每次请求）+ 规则条目（本机持久化）。 */
-const RULES_STORAGE_KEY = "workbench:user-rules";
-const ENTRIES_STORAGE_KEY = "workbench:rule-entries";
-
-function loadText(key: string): string {
-  try {
-    return window.localStorage.getItem(key) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-function loadEntries(): string[] {
-  try {
-    const raw = window.localStorage.getItem(ENTRIES_STORAGE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
-    return Array.isArray(parsed)
-      ? parsed.filter((item): item is string => typeof item === "string")
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveText(key: string, value: string) {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    // 存储失败不阻塞设置
-  }
-}
-
-export function RulesMemorySection() {
+/**
+ * 规则与记忆（B：**真的接进提示词**）。
+ *
+ * 此前这里只写浏览器 localStorage——页面写着「这些指令会附加到 Agent 的每次请求中」，
+ * 而服务端零消费方（`grep userRules` 无命中），是一段纯粹的摆设 UI。现在规则落
+ * **工作区设置**，由 run 起始期拼进系统提示词（`formatUserRulesFragment`）。
+ */
+export function RulesMemorySection({
+  accessToken = null,
+}: {
+  accessToken?: string | null | undefined;
+}) {
   const [rules, setRules] = useState("");
   const [savedRules, setSavedRules] = useState("");
   const [entries, setEntries] = useState<string[]>([]);
   const [newEntry, setNewEntry] = useState("");
   const [status, setStatus] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const initial = loadText(RULES_STORAGE_KEY);
-    setRules(initial);
-    setSavedRules(initial);
-    setEntries(loadEntries());
-  }, []);
+    if (!accessToken) return;
+    let cancelled = false;
+    setLoading(true);
+    fetchWorkspaceSettings(accessToken)
+      .then((payload) => {
+        if (cancelled) return;
+        const view = payload.settings;
+        setRules(view.userRules ?? "");
+        setSavedRules(view.userRules ?? "");
+        setEntries(view.ruleEntries ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("读取规则失败（设置接口不可达）");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken]);
 
-  const handleSaveRules = () => {
-    saveText(RULES_STORAGE_KEY, rules);
-    setSavedRules(rules);
-    setStatus("用户规则已保存");
+  const handleSaveRules = async () => {
+    if (!accessToken) return;
+    setStatus(null);
+    try {
+      const payload = await updateWorkspaceSettings(accessToken, {
+        userRules: rules,
+      });
+      const saved = payload.settings.userRules ?? "";
+      setRules(saved);
+      setSavedRules(saved);
+      setStatus(
+        saved.trim()
+          ? "用户规则已保存——下一轮对话会拼进系统提示词"
+          : "用户规则已清空",
+      );
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "保存失败");
+    }
   };
 
-  const handleAddEntry = () => {
+  const persistEntries = async (next: string[], message: string) => {
+    if (!accessToken) return;
+    const previous = entries;
+    setEntries(next);
+    setStatus(null);
+    try {
+      const payload = await updateWorkspaceSettings(accessToken, {
+        ruleEntries: next,
+      });
+      setEntries(payload.settings.ruleEntries ?? []);
+      setStatus(message);
+    } catch (error) {
+      setEntries(previous);
+      setStatus(error instanceof Error ? error.message : "保存失败");
+    }
+  };
+
+  const handleAddEntry = async () => {
     const trimmed = newEntry.trim();
-    if (!trimmed) return;
-    const next = [...entries, trimmed];
-    setEntries(next);
-    saveText(ENTRIES_STORAGE_KEY, JSON.stringify(next));
+    if (!trimmed || entries.includes(trimmed)) return;
     setNewEntry("");
-  };
-
-  const handleRemoveEntry = (index: number) => {
-    const next = entries.filter((_, i) => i !== index);
-    setEntries(next);
-    saveText(ENTRIES_STORAGE_KEY, JSON.stringify(next));
+    await persistEntries([...entries, trimmed], "规则条目已添加");
   };
 
   return (
-    <section aria-label="规则与记忆">
+    <section aria-label="规则与记忆设置">
       <h3 className="mb-1 text-base font-medium">用户规则</h3>
       <p className="mb-2 text-sm text-muted-foreground">
-        这些指令会附加到 Agent 的每次请求中。
+        这些指令会附加到 Agent 的**每次请求**（存工作区设置，服务端在每轮 run
+        起始时拼进系统提示词）。
       </p>
       <textarea
         aria-label="用户规则"
-        rows={4}
-        placeholder="例如：回复请用中文；代码注释保留关键约束说明…"
         value={rules}
-        onChange={(e) => setRules(e.target.value)}
-        className="w-full resize-none rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        onChange={(event) => setRules(event.target.value)}
+        rows={5}
+        placeholder={"例如：回答先给结论；不要用 emoji；改代码前先跑测试。"}
+        className="w-full rounded-md border px-3 py-2 text-sm"
+        disabled={loading || !accessToken}
       />
-      <div className="mt-2 flex items-center justify-end gap-3">
-        {status ? (
-          <span role="status" className="text-xs text-muted-foreground">
-            {status}
-          </span>
-        ) : null}
+      <div className="mt-2 flex items-center gap-2">
         <button
           type="button"
-          disabled={rules === savedRules}
-          onClick={handleSaveRules}
+          onClick={() => void handleSaveRules()}
+          disabled={loading || !accessToken || rules === savedRules}
           className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
         >
           保存
         </button>
+        {!accessToken ? (
+          <span className="text-xs text-muted-foreground">
+            未登录，无法保存
+          </span>
+        ) : null}
       </div>
 
       <h3 className="mt-6 mb-1 text-base font-medium">规则条目</h3>
       <p className="mb-2 text-sm text-muted-foreground">
-        逐条管理的补充规则，与用户规则一同生效。
+        一条一句的短规则（逐条列在提示词里，比一大段自然语言更容易被遵守）。
       </p>
+      <div className="mb-2 flex items-center gap-2">
+        <input
+          aria-label="新规则条目"
+          value={newEntry}
+          onChange={(event) => setNewEntry(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void handleAddEntry();
+            }
+          }}
+          placeholder="输入一条规则，回车添加"
+          className="min-w-0 flex-1 rounded-md border px-3 py-1.5 text-sm"
+          disabled={!accessToken}
+        />
+        <button
+          type="button"
+          onClick={() => void handleAddEntry()}
+          disabled={!accessToken || !newEntry.trim()}
+          className="flex shrink-0 items-center gap-1 rounded-md border px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
+        >
+          <Plus className="h-3.5 w-3.5" /> 添加
+        </button>
+      </div>
       {entries.length === 0 ? (
-        <p className="py-2 text-sm text-muted-foreground">暂无规则条目</p>
+        <p className="text-xs text-muted-foreground">还没有规则条目。</p>
       ) : (
-        <ul className="mb-2 divide-y rounded-md border">
-          {entries.map((entry, index) => (
-            <li key={entry} className="flex items-center gap-2 px-3 py-2">
-              <span className="min-w-0 flex-1 truncate text-sm">{entry}</span>
+        <ul aria-label="规则条目列表" className="divide-y rounded-md border">
+          {entries.map((entry) => (
+            <li key={entry} className="flex items-center gap-2 px-3 py-1.5">
+              <span className="min-w-0 flex-1 text-sm">{entry}</span>
               <button
                 type="button"
                 aria-label={`删除规则 ${entry}`}
-                onClick={() => handleRemoveEntry(index)}
-                className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                onClick={() =>
+                  void persistEntries(
+                    entries.filter((item) => item !== entry),
+                    "规则条目已删除",
+                  )
+                }
+                className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -123,26 +177,12 @@ export function RulesMemorySection() {
           ))}
         </ul>
       )}
-      <div className="flex items-center gap-2">
-        <input
-          aria-label="新规则条目"
-          placeholder="添加一条规则，如「提交信息用中文」"
-          value={newEntry}
-          onChange={(e) => setNewEntry(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") handleAddEntry();
-          }}
-          className="min-w-0 flex-1 rounded-md border bg-background px-3 py-1.5 text-sm"
-        />
-        <button
-          type="button"
-          disabled={!newEntry.trim()}
-          onClick={handleAddEntry}
-          className="flex items-center gap-1 rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
-        >
-          <Plus className="h-3.5 w-3.5" /> 添加
-        </button>
-      </div>
+
+      {status ? (
+        <p role="status" className="mt-2 text-sm text-muted-foreground">
+          {status}
+        </p>
+      ) : null}
     </section>
   );
 }

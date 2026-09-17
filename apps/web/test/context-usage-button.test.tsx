@@ -67,6 +67,8 @@ describe("ContextUsageButton", () => {
       />,
     );
     const dialog = await openPopover();
-    expect(dialog).toHaveTextContent("无法计算容量占比");
+    // 窗口未知时不编百分比：读数里如实写「窗口未知」，也不写问号占位
+    expect(dialog).toHaveTextContent("窗口未知");
+    expect(dialog).not.toHaveTextContent("?");
   });
 });

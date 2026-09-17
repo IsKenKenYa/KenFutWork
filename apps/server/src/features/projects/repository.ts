@@ -12,6 +12,7 @@ export type ProjectListRow = {
   updated_at: string;
   workspace_id: string;
   thumbnail_path: string | null;
+  work_dir: string | null;
 };
 
 export type ProjectDetailRow = {
@@ -23,6 +24,7 @@ export type ProjectDetailRow = {
   brand_kit_id: string | null;
   created_at: string;
   updated_at: string;
+  work_dir: string | null;
 };
 
 export type PrimaryCanvasRow = {
@@ -41,6 +43,7 @@ export type CreatedProjectRow = {
   created_at: string;
   updated_at: string;
   workspace_id: string;
+  work_dir: string | null;
 };
 
 export type CreatedCanvasRow = {
@@ -53,6 +56,8 @@ export type CreatedCanvasRow = {
 export type ProjectUpdatePatch = {
   name?: string | undefined;
   brandKitId?: string | null | undefined;
+  /** 绑定的本机工作目录；`null` = 解绑（回落沙箱目录）。 */
+  workDir?: string | null | undefined;
 };
 
 export type CreateProjectInput = {
@@ -62,6 +67,8 @@ export type CreateProjectInput = {
   slug: string;
   /** 缺省 design（画布项目）；Code 模式传 code（工作目录项目）。 */
   kind?: ProjectKind;
+  /** 已校验的本机工作目录绝对路径（缺省不绑定）。 */
+  workDir?: string | undefined;
   userId: string;
   workspaceId: string;
 };
@@ -114,6 +121,16 @@ export interface ProjectRepository {
     projectId: string,
     thumbnailPath: string,
   ): Promise<number>;
+  /**
+   * 画布 → 所属项目绑定的工作目录（Code 模式绑定本机目录）。
+   *
+   * 谓词经 `projects.workspace_id` 施加（canvases 无该列），因此「画布不属于本工作区」
+   * 与「未绑定」都回 null，不泄露其它工作区的绑定情况。
+   */
+  findWorkDirByCanvas(
+    workspaceId: string,
+    canvasId: string,
+  ): Promise<string | null>;
   update(
     workspaceId: string,
     projectId: string,
@@ -122,11 +139,11 @@ export interface ProjectRepository {
 }
 
 const PROJECT_LIST_COLUMNS =
-  "id, name, slug, kind, description, created_at, updated_at, workspace_id, thumbnail_path";
+  "id, name, slug, kind, description, created_at, updated_at, workspace_id, thumbnail_path, work_dir";
 const PROJECT_DETAIL_COLUMNS =
-  "id, name, slug, kind, description, workspace_id, brand_kit_id, created_at, updated_at";
+  "id, name, slug, kind, description, workspace_id, brand_kit_id, created_at, updated_at, work_dir";
 const PROJECT_CREATED_COLUMNS =
-  "id, name, slug, kind, description, created_at, updated_at, workspace_id";
+  "id, name, slug, kind, description, created_at, updated_at, workspace_id, work_dir";
 
 /**
  * Code 模式会话载体项目的保留 slug（`projects_workspace_slug_key` 唯一）。
@@ -262,6 +279,10 @@ export function createProjectRepository(
         values.push(patch.brandKitId);
         assignments.push(`brand_kit_id = $${values.length}`);
       }
+      if (patch.workDir !== undefined) {
+        values.push(patch.workDir);
+        assignments.push(`work_dir = $${values.length}`);
+      }
 
       if (assignments.length === 0) {
         return 0;
@@ -282,14 +303,15 @@ export function createProjectRepository(
 
         const project = await scoped.queryOne<CreatedProjectRow>(
           `insert into public.projects
-                  (workspace_id, name, slug, kind, description, created_by)
-           values (:workspace, $1, $2, $3, $4, $5)
+                  (workspace_id, name, slug, kind, description, work_dir, created_by)
+           values (:workspace, $1, $2, $3, $4, $5, $6)
            returning ${PROJECT_CREATED_COLUMNS}`,
           [
             input.name,
             input.slug,
             input.kind ?? "design",
             input.description,
+            input.workDir ?? null,
             input.userId,
           ],
         );
@@ -326,6 +348,21 @@ export function createProjectRepository(
             and id = $2`,
         [thumbnailPath, projectId],
       );
+    },
+
+    async findWorkDirByCanvas(workspaceId, canvasId) {
+      const row = await persistence.forWorkspace(workspaceId).queryOne<{
+        work_dir: string | null;
+      }>(
+        `select p.work_dir
+           from public.canvases c
+           join public.projects p on p.id = c.project_id
+          where p.workspace_id = :workspace
+            and c.id = $1
+            and p.archived_at is null`,
+        [canvasId],
+      );
+      return row?.work_dir ?? null;
     },
   };
 }

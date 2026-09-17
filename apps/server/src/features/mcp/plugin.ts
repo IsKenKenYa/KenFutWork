@@ -1,6 +1,7 @@
 import type { ServerEnv } from "../../config/env.js";
 import { registerMcpRoutes } from "../../http/mcp.js";
 import type { PluginDefinition } from "../../kernel/types.js";
+import { projectWorkDirLoaderFor } from "../projects/work-dir.js";
 import { createCreateMcpServerTool } from "./create-mcp-server-tool.js";
 import { createMcpService, type McpService } from "./mcp-service.js";
 import { createMcpServerStore } from "./server-store.js";
@@ -89,6 +90,7 @@ export function createMcpPlugin(): PluginDefinition {
           admin: ctx.get("admin"),
           sandboxRoot: ctx.env.sandboxRoot,
           canvasWorkDirs: ctx.env.canvasWorkDirs,
+          projectWorkDirLoader: projectWorkDirLoaderFor(ctx.get("persistence")),
         }),
       );
       void registerMcpRoutes(ctx.app, {

@@ -99,6 +99,11 @@ export const pluginBundleManifestSchema = z.object({
   requiredCapabilities: z.array(z.string()).default([]),
   /** 声明的作用域（仅本项目格式有意义） */
   scope: z.enum(["design", "code", "shared"]).nullable().default(null),
+  /**
+   * 市场分类（第三方插件在 package.json 的 `kenfutwork.category` 里声明；缺省归「其他」）。
+   * 它只影响市场里的分组筛选，不参与能力门禁。
+   */
+  category: z.string().nullable().default(null),
   enginesNode: z.string().nullable().default(null),
   /** 是否携带 dsh web 客户端 UI（`dsh.client`） */
   hasClientUi: z.boolean().default(false),

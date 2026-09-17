@@ -1,6 +1,5 @@
 import {
   applicationErrorResponseSchema,
-  codeDocsResponseSchema,
   codeFilesResponseSchema,
   codeGitBranchCreateRequestSchema,
   codeGitChangesResponseSchema,
@@ -8,6 +7,8 @@ import {
   codeGitCommitRequestSchema,
   codeGitDiffResponseSchema,
   codeGitDiffStatResponseSchema,
+  codeGitDiscardRequestSchema,
+  codeGitDiscardResponseSchema,
   codeGitFileResponseSchema,
   codeGitGraphResponseSchema,
   codeGitStageHunkRequestSchema,
@@ -295,13 +296,42 @@ export async function registerCodeGitRoutes(
         payload.canvasId,
         payload.path,
         payload.patch,
-        payload.reverse,
+        {
+          ...(payload.reverse !== undefined
+            ? { reverse: payload.reverse }
+            : {}),
+          ...(payload.target ? { target: payload.target } : {}),
+        },
       );
       return reply
         .code(200)
         .send(
           codeGitStageResponseSchema.parse({ path: result.path, staged: true }),
         );
+    } catch (error) {
+      return sendCodeGitError(error, reply);
+    }
+  });
+
+  // POST /api/code/git/discard — 撤销更改（单文件或全部）。**丢内容**，界面负责二次确认。
+  app.post("/api/code/git/discard", async (request, reply) => {
+    const user = await options.auth.authenticate(request);
+    if (!user) return sendUnauthorized(reply);
+    try {
+      const payload = codeGitDiscardRequestSchema.parse(request.body);
+      if (payload.path) {
+        await options.codeGitService.discardFile(
+          user,
+          payload.canvasId,
+          payload.path,
+          payload.untracked ?? false,
+        );
+      } else {
+        await options.codeGitService.discardAllChanges(user, payload.canvasId);
+      }
+      return reply
+        .code(200)
+        .send(codeGitDiscardResponseSchema.parse({ ok: true }));
     } catch (error) {
       return sendCodeGitError(error, reply);
     }
@@ -320,29 +350,6 @@ export async function registerCodeGitRoutes(
       return sendCodeGitError(error, reply);
     }
   });
-
-  // GET /api/code/docs — 工作目录里的项目文档清单（R3-3「文档入口」）
-  app.get<{ Querystring: { canvasId?: string } }>(
-    "/api/code/docs",
-    async (request, reply) => {
-      const user = await options.auth.authenticate(request);
-      if (!user) return sendUnauthorized(reply);
-      const canvasId = request.query.canvasId ?? "";
-      if (!canvasId) {
-        return reply.code(400).send(
-          applicationErrorResponseSchema.parse({
-            error: { code: "invalid_input", message: "缺少 canvasId。" },
-          }),
-        );
-      }
-      try {
-        const docs = await options.codeGitService.listDocs(user, canvasId);
-        return reply.code(200).send(codeDocsResponseSchema.parse({ docs }));
-      } catch (error) {
-        return sendCodeGitError(error, reply);
-      }
-    },
-  );
 
   // POST /api/code/git/init — 初始化仓库（幂等）：让「每次对话用 git 跟踪」在
   // 非仓库目录上也能开始（分支 chip 里「非 Git 仓库」时提供入口）

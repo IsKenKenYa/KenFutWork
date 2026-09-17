@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
 import { resolveSandboxDir } from "../../agent/sandbox-dir.js";
@@ -48,9 +48,16 @@ function build(options: {
       defaultModel: string;
       agentMaxRetries: number;
       terminalShell: TerminalShellId;
+      /** R4-3 索引库开关（这个桩只关心终端 shell，给它一个常量即可）。 */
+      codeIndexEnabled: boolean;
+      /** 用户规则（同上：桩里给空值）。 */
+      userRules: string;
+      ruleEntries: string[];
     }>;
   };
   availableShells?: TerminalShellOption[];
+  /** 项目绑定的本机工作目录（`projects.work_dir`）桩：按画布返回路径。 */
+  boundWorkDirs?: Record<string, string>;
 }) {
   const git: GitClient = {
     checkout: vi.fn(async () => {}),
@@ -70,6 +77,8 @@ function build(options: {
     fileDiff: vi.fn(async () => ""),
     stageFile: vi.fn(async () => {}),
     applyHunk: vi.fn(async () => {}),
+    discardFile: vi.fn(async () => {}),
+    discardAll: vi.fn(async () => {}),
     ...options.git,
   };
   const findById = vi.fn(async () =>
@@ -82,6 +91,16 @@ function build(options: {
     source: options.source ?? "system",
     ...(options.canvasWorkDirs
       ? { canvasWorkDirs: options.canvasWorkDirs }
+      : {}),
+    ...(options.boundWorkDirs
+      ? {
+          projectRepository: {
+            findWorkDirByCanvas: async (
+              _workspaceId: string,
+              canvasId: string,
+            ) => options.boundWorkDirs?.[canvasId] ?? null,
+          },
+        }
       : {}),
     viewerService: { resolveWorkspace },
     ...(options.settingsService
@@ -312,6 +331,37 @@ describe("变更清单与文件查看", () => {
     truncated: false,
   };
 
+  it("项目绑定本机工作目录（projects.work_dir）：终端/git 落点跟着走，且优先于环境变量映射", async () => {
+    const bound = mkdtempSync(join(tmpdir(), "kfw-bound-"));
+    const envMapped = mkdtempSync(join(tmpdir(), "kfw-envmapped-"));
+    const { service } = build({
+      boundWorkDirs: { [CANVAS_ID]: bound },
+      canvasWorkDirs: { [CANVAS_ID]: envMapped },
+    });
+
+    expect(await service.terminalWorkDir(USER, CANVAS_ID)).toBe(resolve(bound));
+    expect((await service.indexScope(USER, CANVAS_ID)).dir).toBe(
+      resolve(bound),
+    );
+
+    const unbound = build({ canvasWorkDirs: { [CANVAS_ID]: envMapped } });
+    expect(await unbound.service.terminalWorkDir(USER, CANVAS_ID)).toBe(
+      resolve(envMapped),
+    );
+  });
+
+  it("绑定目录读取失败时回落环境变量映射（绑定是增强，不是前置条件）", async () => {
+    const envMapped = mkdtempSync(join(tmpdir(), "kfw-fallback-"));
+    const { service } = build({
+      canvasWorkDirs: { [CANVAS_ID]: envMapped },
+      boundWorkDirs: {},
+    });
+    // 桩里空表返回 null（等价于未绑定），不该抛错
+    expect(await service.terminalWorkDir(USER, CANVAS_ID)).toBe(
+      resolve(envMapped),
+    );
+  });
+
   it("变更清单：仓库给逐文件清单，非仓库给空清单 + isRepo=false（状态不是故障）", async () => {
     const repo = build({
       git: { changedFiles: vi.fn(async () => CHANGED) },
@@ -371,41 +421,6 @@ describe("变更清单与文件查看", () => {
   });
 });
 
-/** 项目文档清单（R3-3「文档入口」）：候选里存在的列出来，不读内容。 */
-describe("项目文档清单", () => {
-  const root = mkdtempSync(join(tmpdir(), "kfw-code-docs-"));
-  afterAll(() => {
-    rmSync(root, { recursive: true, force: true });
-  });
-
-  it("只列存在的候选文档，并给字节数（按候选顺序：AGENTS.md 在前）", async () => {
-    writeFileSync(join(root, "README.md"), "# readme\n", "utf8");
-    writeFileSync(join(root, "AGENTS.md"), "# 指南\n", "utf8");
-    const { service } = build({ canvasWorkDirs: { [CANVAS_ID]: root } });
-
-    const docs = await service.listDocs(USER, CANVAS_ID);
-    expect(docs.map((doc) => doc.path)).toEqual(["AGENTS.md", "README.md"]);
-    expect(docs[0]?.bytes).toBe(Buffer.byteLength("# 指南\n"));
-  });
-
-  it("目录里没有候选文档时给空数组（不是错误）", async () => {
-    const empty = mkdtempSync(join(tmpdir(), "kfw-code-docs-empty-"));
-    try {
-      const { service } = build({ canvasWorkDirs: { [CANVAS_ID]: empty } });
-      expect(await service.listDocs(USER, CANVAS_ID)).toEqual([]);
-    } finally {
-      rmSync(empty, { recursive: true, force: true });
-    }
-  });
-
-  it("越权：画布不属于当前工作区 → 404，不碰文件系统", async () => {
-    const { service } = build({ canvasFound: false });
-    await expect(service.listDocs(USER, CANVAS_ID)).rejects.toMatchObject({
-      statusCode: 404,
-    });
-  });
-});
-
 /**
  * 终端 shell（用户口径：「终端应该是直连 cmd 或者 powershell、git-bash 等等，可以在设置里
  * 配置默认的」）：默认值来自工作区设置，本次显式选的优先；命令行实际交给选中的 shell。
@@ -428,6 +443,9 @@ describe("终端 shell 解析", () => {
           agentMaxRetries: 10,
           defaultModel: "inst-1:glm-5.3-flash",
           terminalShell: "powershell",
+          codeIndexEnabled: false,
+          userRules: "",
+          ruleEntries: [],
         }),
       },
     });

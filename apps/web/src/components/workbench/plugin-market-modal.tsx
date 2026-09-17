@@ -61,6 +61,8 @@ export function PluginMarketModal({
 }) {
   const [tab, setTab] = useState<MarketTab>("discover");
   const [query, setQuery] = useState("");
+  /** 分类筛选（null = 全部）。分类来自清单的 `category`（第三方在 package.json 声明）。 */
+  const [category, setCategory] = useState<string | null>(null);
   const [plugins, setPlugins] = useState<PluginMarketEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [exportName, setExportName] = useState<string | null>(null);
@@ -112,20 +114,51 @@ export function PluginMarketModal({
     refresh();
   }
 
+  /**
+   * 分类 chips 的取值：**只列清单里真有的分类**（不摆空 chip），顺序按下面这张偏好表，
+   * 表外的分类排在后面并按名称排序——第三方插件自带分类时也是这个规则。
+   */
+  const categories = useMemo(() => {
+    const preferred = [
+      "模型与供应商",
+      "Agent 能力",
+      "工具与集成",
+      "创作与画布",
+      "数据与统计",
+      "系统",
+    ];
+    const present = new Set(
+      plugins
+        .map((entry) => entry.category)
+        .filter((c): c is string => Boolean(c)),
+    );
+    return [
+      ...preferred.filter((c) => present.has(c)),
+      ...[...present].filter((c) => !preferred.includes(c)).sort(),
+      ...(plugins.some((entry) => !entry.category) ? ["其他"] : []),
+    ];
+  }, [plugins]);
+
   const visible = useMemo(() => {
     const keyword = query.trim().toLowerCase();
     // 发现 = 全部可发现项；已安装 = 已装 + 系统项（内置插件恒为已装）
     const byTab = plugins.filter((entry) =>
       tab === "installed" ? entry.installed || entry.system : true,
     );
-    if (!keyword) return byTab;
-    return byTab.filter(
+    const byCategory =
+      category === null
+        ? byTab
+        : byTab.filter((entry) =>
+            category === "其他" ? !entry.category : entry.category === category,
+          );
+    if (!keyword) return byCategory;
+    return byCategory.filter(
       (entry) =>
         entry.title.toLowerCase().includes(keyword) ||
         entry.name.toLowerCase().includes(keyword) ||
         entry.description.toLowerCase().includes(keyword),
     );
-  }, [plugins, query, tab]);
+  }, [plugins, query, tab, category]);
 
   return (
     <>
@@ -156,7 +189,18 @@ export function PluginMarketModal({
                 </button>
               ))}
             </div>
-            <div className="ml-auto flex items-center gap-2 rounded-md border px-2 py-1">
+            {/* 「管理」入口：装完的插件在这里启停/卸载/导出（参考图右上角那个键） */}
+            <button
+              type="button"
+              onClick={() => {
+                setTab("installed");
+                setNotice("在这里启停、卸载或导出已安装的插件。");
+              }}
+              className="ml-auto shrink-0 rounded-md border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+            >
+              管理
+            </button>
+            <div className="flex shrink-0 items-center gap-2 rounded-md border px-2 py-1">
               <Search className="h-3.5 w-3.5 text-muted-foreground" />
               <input
                 aria-label="搜索插件"
@@ -167,6 +211,26 @@ export function PluginMarketModal({
               />
             </div>
           </div>
+
+          {categories.length > 0 ? (
+            <div
+              role="group"
+              aria-label="插件分类"
+              className="flex flex-wrap items-center gap-1.5 border-b px-5 py-2"
+            >
+              {[null, ...categories].map((item) => (
+                <button
+                  key={item ?? "全部"}
+                  type="button"
+                  data-active={category === item}
+                  onClick={() => setCategory(item)}
+                  className="rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground data-[active=true]:border-foreground/40 data-[active=true]:bg-muted data-[active=true]:font-medium data-[active=true]:text-foreground"
+                >
+                  {item ?? "全部"}
+                </button>
+              ))}
+            </div>
+          ) : null}
 
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
             {tab === "discover" ? (
@@ -220,6 +284,11 @@ export function PluginMarketModal({
                         <code className="mt-1 inline-block rounded bg-muted px-1.5 py-0.5 text-[10px]">
                           {entry.source === "builtin" ? entry.name : entry.id}
                         </code>
+                        {entry.category ? (
+                          <span className="ml-1 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                            {entry.category}
+                          </span>
+                        ) : null}
                         {entry.headSha ? (
                           <span className="ml-1 text-[10px] text-muted-foreground">
                             @{entry.headSha.slice(0, 7)}

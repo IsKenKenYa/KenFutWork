@@ -153,3 +153,23 @@ describe("重试决策", () => {
     expect(decision.retry).toBe(true);
   });
 });
+
+/**
+ * 服务端已判定的失败（terminal="failed"）：**不自动重试**。
+ * 场景：模型只输出内部思考、没有正文也没有工具调用（实测 aiping GLM-5.3-Flash 可复现）——
+ * 再跑一遍大概率还是空的，自动重试只会白烧额度。
+ */
+describe("空输出（服务端判定失败）不自动重试", () => {
+  it("terminal=failed 时不重试，即使还没到上限、也没跑过工具", () => {
+    const decision = decideRunRetry({
+      attempt: 1,
+      maxAttempts: 10,
+      failureMessage:
+        "模型本轮没有返回任何内容（可能只输出了内部思考或触发内容过滤）。",
+      sawToolExecution: false,
+      terminal: "failed",
+    });
+    expect(decision.retry).toBe(false);
+    expect(decision.reason).toMatch(/空输出|已判定/);
+  });
+});

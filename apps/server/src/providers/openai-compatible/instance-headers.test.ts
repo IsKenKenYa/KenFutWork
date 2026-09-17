@@ -47,11 +47,12 @@ async function startStub(): Promise<{
     res.write("data: [DONE]\n\n");
     res.end();
   });
+  const stub = server;
 
   await new Promise<void>((resolve) => {
-    server?.listen(0, "127.0.0.1", () => resolve());
+    stub.listen(0, "127.0.0.1", () => resolve());
   });
-  const { port } = server.address() as AddressInfo;
+  const { port } = stub.address() as AddressInfo;
   return { baseUrl: `http://127.0.0.1:${port}/v1`, requests };
 }
 

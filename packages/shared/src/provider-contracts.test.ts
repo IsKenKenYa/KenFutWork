@@ -70,10 +70,10 @@ describe("provider-contracts（BYOK 供应商缝）", () => {
   it("凭证红线：响应 schema 不含 apiKey/apiKeyRef 字段（多余的 key 会被剥掉）", () => {
     const parsed = providerInstanceResponseSchema.parse({
       id: "inst-1",
-      scope: "workspace",
       name: "网关",
       protocol: "gemini",
       // scope 是契约必填（6a3155c 平台管理后台引入：workspace=BYOK / system=平台池）
+      scope: "workspace",
       hasCredential: true,
       models: [{ id: "m1", name: "M1", capability: "image" }],
       headerKeys: [],

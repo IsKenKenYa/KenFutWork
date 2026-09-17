@@ -11,6 +11,7 @@ import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { BlobStore } from "../features/blob/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
+import type { BrowserService } from "../features/browser/fetch-page.js";
 import type { CanvasService } from "../features/canvas/canvas-service.js";
 import type { ChatService } from "../features/chat/chat-service.js";
 import type { ThreadService } from "../features/chat/thread-service.js";
@@ -113,6 +114,8 @@ export interface ServiceMap {
   capabilities: CapabilityRegistry;
   /** 统一工具注册表（schema + 作用域 + guarded 执行） */
   tools: ToolRegistry;
+  /** 浏览器能力缝（R3-4/R5-4）：受控网页抓取与元素提取（人用快照端点、agent 用 browser_open） */
+  browser: BrowserService;
   /** ConnectionManager + EventBuffer */
   ws: WsServices;
 }

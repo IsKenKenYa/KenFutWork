@@ -18,7 +18,12 @@ import { parseTodos, type TodoItem } from "./todo-progress";
 export type TaskToolEntry = {
   toolCallId: string;
   toolName: string;
-  status: "running" | "completed";
+  /**
+   * `denied` = 被工具门/权限档拦下（服务端合成的 tool.completed 带 `output.denied`）。
+   * 与「已完成」分开：界面上写「已完成」而实际没执行，会让人以为文件/命令真的跑了
+   * （实测：默认档下 write_file 被拦 3 次，工具行却全是「已完成」）。
+   */
+  status: "running" | "completed" | "denied";
   /** 完成时的一句话结论（失败时形如「失败：…」）。 */
   summary?: string;
   /** 结构化输出：交回既有渲染器（web_search 会渲染成可点击来源）。 */
@@ -63,12 +68,13 @@ export function applyToolEvent(
   }
 
   let matched = false;
+  const denied = event.output?.denied === true;
   const next = tools.map((entry) => {
     if (entry.toolCallId !== toolCallId) return entry;
     matched = true;
     return {
       ...entry,
-      status: "completed" as const,
+      status: denied ? ("denied" as const) : ("completed" as const),
       ...(event.outputSummary ? { summary: event.outputSummary } : {}),
       ...(event.output ? { output: event.output } : {}),
     };

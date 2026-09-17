@@ -60,6 +60,10 @@ export async function registerSkillRoutes(
     canvasRepository: CanvasRepository;
     sandboxRoot?: string | undefined;
     canvasWorkDirs?: Record<string, string> | undefined;
+    /** 项目绑定的本机工作目录（`projects.work_dir`）；界面绑定优先于环境变量映射。 */
+    projectWorkDirLoader?:
+      | ((canvasId: string) => Promise<string | null>)
+      | undefined;
   },
 ) {
   /**
@@ -132,6 +136,7 @@ export async function registerSkillRoutes(
         canvasRepository: options.canvasRepository,
         sandboxRoot: options.sandboxRoot,
         canvasWorkDirs: options.canvasWorkDirs,
+        projectWorkDirLoader: options.projectWorkDirLoader,
       },
       user,
       canvasId,

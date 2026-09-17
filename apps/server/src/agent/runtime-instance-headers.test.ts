@@ -32,7 +32,7 @@ async function startStub(): Promise<{
   requests: Array<Record<string, string | string[] | undefined>>;
 }> {
   const requests: Array<Record<string, string | string[] | undefined>> = [];
-  server = createServer((req, res) => {
+  const stub = createServer((req, res) => {
     requests.push({ ...req.headers });
     res.writeHead(200, { "content-type": "text/event-stream" });
     res.write(
@@ -53,10 +53,12 @@ async function startStub(): Promise<{
     res.write("data: [DONE]\n\n");
     res.end();
   });
+  // afterEach 负责关停：登记到模块级变量（stub 是它的非空别名）
+  server = stub;
   await new Promise<void>((resolve) => {
-    server?.listen(0, "127.0.0.1", () => resolve());
+    stub.listen(0, "127.0.0.1", () => resolve());
   });
-  const { port } = server.address() as AddressInfo;
+  const { port } = stub.address() as AddressInfo;
   return { baseUrl: `http://127.0.0.1:${port}/v1`, requests };
 }
 
