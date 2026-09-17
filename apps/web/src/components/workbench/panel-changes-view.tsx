@@ -101,11 +101,7 @@ export function ChangesPane({
   };
 
   if (!canvasId) {
-    return (
-      <p className="text-xs text-muted-foreground">
-        这个会话没有绑定工作目录——绑定后这里会列出它的改动。
-      </p>
-    );
+    return <p className="text-xs text-muted-foreground">未绑定工作目录</p>;
   }
 
   const totals = (changes?.files ?? []).reduce(
@@ -126,10 +122,7 @@ export function ChangesPane({
       {changes === null ? (
         <p className="text-xs text-muted-foreground">读取中…</p>
       ) : !changes.isRepo ? (
-        <p className="text-xs text-muted-foreground">
-          该工作目录还不是 git
-          仓库；初始化后每轮对话会自动提交，改动也会列在这里。
-        </p>
+        <p className="text-xs text-muted-foreground">还不是 git 仓库</p>
       ) : changes.files.length === 0 ? (
         <p className="text-xs text-muted-foreground">没有未提交的更改。</p>
       ) : (

@@ -470,8 +470,8 @@ export function BrowserPane({
             <>
               <p className="mb-2 text-[10px] text-muted-foreground">
                 {picked.source === "cdp"
-                  ? "受控浏览器（CDP）里的真实渲染页：框来自元素盒模型，点框或点下面的条目都会把该元素引用进对话（带中心坐标，可直接让 AI 去点它）。"
-                  : "按服务端抓取的静态 HTML 列出；脚本渲染出的元素与登录态内容看不到。连上「设置 → 浏览器 → 外部浏览器」的受控浏览器后，这里会换成真实渲染页 + 叠框点选。"}
+                  ? "来源：受控浏览器（CDP）真实渲染页"
+                  : "来源：服务端静态抓取（脚本渲染与登录态内容看不到）"}
               </p>
 
               {/* 截图叠框：几何来自 DOM.getBoxModel，坐标是视口 CSS px，
@@ -621,15 +621,8 @@ export function BrowserPane({
           ) : null}
         </div>
       ) : (
-        <p className="text-xs text-muted-foreground">
-          还没有打开页面。对话里点链接会自动在这里打开，也可以在地址栏输入。
-        </p>
+        <p className="text-xs text-muted-foreground">还没有打开页面</p>
       )}
-      <p className="text-[10px] text-muted-foreground">
-        内嵌页面能否显示取决于目标站点是否允许被嵌入；被拒绝时会是一片空白，用「在系统浏览器
-        打开」兜底。后退 /
-        前进记的是本面板打开过的地址（跨源页面自己的历史读不到）。
-      </p>
     </div>
   );
 }

@@ -76,11 +76,7 @@ export function FilesPane({
   }, [accessToken, canvasId, dir]);
 
   if (!canvasId) {
-    return (
-      <p className="text-xs text-muted-foreground">
-        这个会话没有绑定工作目录。
-      </p>
-    );
+    return <p className="text-xs text-muted-foreground">未绑定工作目录</p>;
   }
 
   const segments = dir ? dir.split("/") : [];

@@ -111,9 +111,7 @@ describe("元素拾取浮层", () => {
       height: "10%",
     });
     // 静态那条路的说明不该出现在 CDP 路径里
-    expect(
-      screen.queryByText(/按服务端抓取的静态 HTML 列出/),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/来源：服务端静态抓取/)).not.toBeInTheDocument();
   });
 
   it("点截图上的框 = 点列表行：交给对话的元素带 box（浮层收起）", async () => {
@@ -161,7 +159,7 @@ describe("元素拾取浮层", () => {
     await openPicking();
 
     expect(screen.queryByAltText("Example 的视口截图")).not.toBeInTheDocument();
-    expect(screen.getByText(/按服务端抓取的静态 HTML 列出/)).toBeVisible();
+    expect(screen.getByText(/来源：服务端静态抓取/)).toBeVisible();
 
     await userEvent.click(screen.getByRole("button", { name: /Learn more/ }));
     expect(onPickElement).toHaveBeenCalledWith({

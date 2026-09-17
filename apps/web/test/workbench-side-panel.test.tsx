@@ -270,9 +270,7 @@ describe("WorkbenchSidePanel（多标签）", () => {
         ws={fakeWs()}
       />,
     );
-    expect(
-      await screen.findByText(/这个会话没有绑定工作目录/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/未绑定工作目录/)).toBeInTheDocument();
     expect(fetchGitChangesMock).not.toHaveBeenCalled();
   });
 
