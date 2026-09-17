@@ -9,11 +9,13 @@ import { ProfileSection } from "@/components/profile-section";
 import { ProviderSettings } from "@/components/provider-settings";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { AboutSection } from "@/components/workbench/about-section";
+import { AccountSection } from "@/components/workbench/account-section";
 import { BrowserSettingsSection } from "@/components/workbench/browser-settings-section";
 import { IndexLibrarySection } from "@/components/workbench/index-library-section";
 import { ListLoading } from "@/components/workbench/list-state";
 import { OnboardingSection } from "@/components/workbench/onboarding-section";
 import { RulesMemorySection } from "@/components/workbench/rules-memory-section";
+import { SubagentsSection } from "@/components/workbench/subagents-section";
 import { TerminalSettingsSection } from "@/components/workbench/terminal-settings-section";
 import { UsageStatsSection } from "@/components/workbench/usage-stats-section";
 import { useAuth } from "@/lib/auth-context";
@@ -34,15 +36,21 @@ export type SettingsTab =
   | "permissions"
   | "browser"
   | "rules"
+  | "subagents"
   | "usage"
   | "index"
   | "onboarding"
+  | "account"
   | "about";
 
 /**
  * 侧栏分组（R5-1）：基础设置 / Agent 能力 / 数据与统计。
- * 参考图中的其余条目（外观、电脑控制、子智能体、索引库等）暂无实现，
- * 不放空壳入口——落地一个登记一个。
+ *
+ * 参考图（`agent-设置-权限.png` / `设置添加使用统计以及索引相关内容.png`）里点名、
+ * 且本产品**真有对应页面**的条目，作为**别名行**列在对应分组下（点击跳到那一页）——
+ * 用户按参考图的名字能找得到，又不复制出第二份内容。
+ * 没做的那几条（外观/命令/钩子/工作树/对话流/外部应用授权/Beta/云端运行环境）在
+ * `docs/参考图/未做需求.md` §二十二里逐条写明不做的原因。
  */
 const TAB_GROUPS: Array<{
   label: string;
@@ -62,6 +70,7 @@ const TAB_GROUPS: Array<{
     tabs: [
       { id: "permissions", label: "权限" },
       { id: "rules", label: "规则与记忆" },
+      { id: "subagents", label: "子智能体" },
     ],
   },
   {
@@ -72,8 +81,39 @@ const TAB_GROUPS: Array<{
       { id: "onboarding", label: "引导" },
       // 插件面板（能力 `ui` 的 settings 槽位）：装了带面板的插件才出现内容
       { id: "pluginPanels", label: "插件面板" },
+      { id: "account", label: "账号" },
       { id: "about", label: "关于" },
     ],
+  },
+];
+
+/**
+ * 参考图里点名、且我们已经**有同一个页面**的条目：作为别名行显示（点它跳到目标页）。
+ * 不新造页面、也不隐藏——用户按参考图的名字能找到，界面里也不会出现两份一样的开关。
+ */
+const ALIAS_TABS: Array<{
+  group: string;
+  label: string;
+  target: SettingsTab;
+  targetLabel: string;
+}> = [
+  {
+    group: "基础设置",
+    label: "电脑控制",
+    target: "browser",
+    targetLabel: "浏览器",
+  },
+  {
+    group: "Agent 能力",
+    label: "记忆",
+    target: "rules",
+    targetLabel: "规则与记忆",
+  },
+  {
+    group: "数据与统计",
+    label: "用量管理",
+    target: "usage",
+    targetLabel: "使用统计",
   },
 ];
 
@@ -90,6 +130,8 @@ export function SettingsModal({
   activeCanvasId = null,
   hasWorkDir = false,
   conversationCount = 0,
+  isAdmin = false,
+  onOpenAdmin,
 }: {
   open: boolean;
   /** 打开时定位的分类（如「管理模型」直达供应商页）。 */
@@ -101,6 +143,9 @@ export function SettingsModal({
   /** 「引导」页用：是否已有工作目录项目、已有多少会话。 */
   hasWorkDir?: boolean;
   conversationCount?: number;
+  /** 「账号」页用：管理员才给「管理后台」入口（服务端仍独立鉴权）。 */
+  isAdmin?: boolean;
+  onOpenAdmin?: (() => void) | undefined;
   onClose: () => void;
 }) {
   const { session } = useAuth();
@@ -116,6 +161,11 @@ export function SettingsModal({
     displayName: string;
     email: string;
   } | null>(null);
+  /** 「账号」页用：套餐与额度（未装配计费时为 null）。 */
+  const [account, setAccount] = useState<{
+    plan: string | null;
+    balance: number | null;
+  }>({ plan: null, balance: null });
   const [defaultModel, setDefaultModel] = useState("");
   const [agentMaxRetries, setAgentMaxRetries] = useState(10);
   const [codeIndexEnabled, setCodeIndexEnabled] = useState(false);
@@ -138,6 +188,10 @@ export function SettingsModal({
       setProfile({
         displayName: viewer.profile.displayName,
         email: viewer.profile.email,
+      });
+      setAccount({
+        plan: viewer.credits?.plan ?? null,
+        balance: viewer.credits?.balance ?? null,
       });
       setDefaultModel(settings.settings.defaultModel);
       setAgentMaxRetries(settings.settings.agentMaxRetries);
@@ -251,6 +305,20 @@ export function SettingsModal({
                     {tab.label}
                   </button>
                 ))}
+                {ALIAS_TABS.filter((alias) => alias.group === group.label).map(
+                  (alias) => (
+                    <button
+                      key={alias.label}
+                      type="button"
+                      title={`同「${alias.targetLabel}」页`}
+                      onClick={() => setActiveTab(alias.target)}
+                      className="flex w-full items-center gap-1 rounded-md px-3 py-1.5 text-left text-sm text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                      <span>{alias.label}</span>
+                      <span className="text-[10px]">→ {alias.targetLabel}</span>
+                    </button>
+                  ),
+                )}
               </div>
             ))}
           </nav>
@@ -307,6 +375,21 @@ export function SettingsModal({
                   hasWorkDir={hasWorkDir}
                   conversationCount={conversationCount}
                   onGoToTab={(next) => setActiveTab(next)}
+                />
+              ) : null
+            ) : activeTab === "subagents" ? (
+              token ? (
+                <SubagentsSection accessToken={token} />
+              ) : null
+            ) : activeTab === "account" ? (
+              profile ? (
+                <AccountSection
+                  displayName={profile.displayName}
+                  email={profile.email}
+                  plan={account.plan}
+                  balance={account.balance}
+                  isAdmin={isAdmin}
+                  {...(onOpenAdmin ? { onOpenAdmin } : {})}
                 />
               ) : null
             ) : activeTab === "about" ? (

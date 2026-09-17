@@ -26,7 +26,7 @@ import {
 } from "./backends/index.js";
 import { bridgeKernelTools } from "./kernel-tools-bridge.js";
 import { KENFUTWORK_SYSTEM_PROMPT } from "./prompts/kenfutwork-main.js";
-import { createVideoSubAgent } from "./sub-agents.js";
+import { declaredSubAgentSpecs } from "./sub-agents.js";
 import type {
   PersistImageFn,
   SubmitImageJobFn,
@@ -397,7 +397,8 @@ export function createKenFutWorkDeepAgent(options: {
     model: resolvedModel,
     name: "kenfutwork",
     ...(options.store ? { store: options.store } : {}),
-    subagents: [createVideoSubAgent()],
+    // 与设置页「子智能体」同一份清单（见 sub-agents.ts），界面与装配不允许漂移
+    subagents: declaredSubAgentSpecs(),
     systemPrompt,
     // 待办表（`write_todos`）：deepagents 只在它的 Codex profile 里挂 todoListMiddleware，
     // 非 Codex 模型默认**没有这个工具**——不挂的话「目标 + 进度」面板永远没有数据源，

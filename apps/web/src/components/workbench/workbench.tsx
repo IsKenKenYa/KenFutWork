@@ -2834,6 +2834,8 @@ ${formatElementReference(picked)}`
         /* 引导页的状态来自真实数据：有没有工作目录项目、已有多少会话 */
         hasWorkDir={codeProjects.length > 0}
         conversationCount={tasks.length}
+        isAdmin={isPlatformAdmin}
+        onOpenAdmin={() => router.push("/admin")}
         key={mode}
       />
       {pluginsOpen ? (

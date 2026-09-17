@@ -294,6 +294,38 @@ export const codeTerminalResponseSchema = z.object({
   }),
 });
 
+// --- 子智能体（R1-3 目录 + 设置 →「子智能体」页） ---
+
+/**
+ * `GET /api/agent/subagents`：这份清单**由 agent 装配处同一份数据导出**
+ * （`apps/server/src/agent/sub-agents.ts`），不是另写一遍的说明文字——
+ * 界面列出来的，就是真跑起来会用的那些。
+ */
+export const agentSubagentListResponseSchema = z.object({
+  /** 我们声明的子代理（name 即模型分发时用的名字）。 */
+  subagents: z.array(
+    z.object({
+      name: z.string().min(1),
+      /** 中文短名（界面用；英文 description 是给模型看的）。 */
+      label: z.string().min(1),
+      description: z.string(),
+      tools: z.array(z.string()),
+    }),
+  ),
+  /** 框架内置的分发工具（不在我们的声明清单里，但会出现在工具表与事件流里）。 */
+  builtin: z.array(
+    z.object({
+      name: z.string().min(1),
+      label: z.string().min(1),
+      description: z.string(),
+    }),
+  ),
+});
+
+export type AgentSubagentListResponse = z.infer<
+  typeof agentSubagentListResponseSchema
+>;
+
 // --- 原生目录对话框（桌面形态：服务端在跑，对话框开在用户这台机器上） ---
 
 /**

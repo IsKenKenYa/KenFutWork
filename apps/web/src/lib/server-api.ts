@@ -949,3 +949,25 @@ export async function pickDirectory(
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as PickDirectoryResponse;
 }
+
+// --- 子智能体（设置 →「子智能体」；清单与 agent 装配同源） ---
+
+export type AgentSubagentListResponse = {
+  subagents: Array<{
+    name: string;
+    label: string;
+    description: string;
+    tools: string[];
+  }>;
+  builtin: Array<{ name: string; label: string; description: string }>;
+};
+
+export async function fetchSubagents(
+  accessToken: string,
+): Promise<AgentSubagentListResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/agent/subagents`, {
+    headers: authHeaders(accessToken),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as AgentSubagentListResponse;
+}

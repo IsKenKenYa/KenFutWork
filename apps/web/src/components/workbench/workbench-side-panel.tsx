@@ -30,6 +30,7 @@ import {
   PANEL_WIDTH_KEY,
   type PanelWidthLimits,
 } from "@/lib/panel-layout";
+import { onPanelViewRequest } from "@/lib/panel-open";
 import {
   closePanelTab,
   makePanelTab,
@@ -144,6 +145,21 @@ export function WorkbenchSidePanel({
         );
         setBrowserHistory((current) => openUrl(current, url));
         setUrlDraft(url);
+        if (!openRef.current) requestOpenRef.current?.();
+      }),
+    [],
+  );
+
+  /**
+   * 别处（设置 →「子智能体」）请求打开某个右栏视图：开标签并展开面板。
+   * 与浏览器那条通道同一形状，但按**视图**而不是 URL。
+   */
+  useEffect(
+    () =>
+      onPanelViewRequest((kind) => {
+        setState((current) =>
+          openPanelTab(current.tabs, current.activeId, { kind }, Date.now()),
+        );
         if (!openRef.current) requestOpenRef.current?.();
       }),
     [],
