@@ -73,6 +73,7 @@ import { useAuth } from "@/lib/auth-context";
 import { onBrowserOpen } from "@/lib/browser-panel";
 import { commitGitAll } from "@/lib/code-git-api";
 import {
+  contextUsageModelMeta,
   formatTokens,
   type RunUsageSnapshot,
   usageFromEvent,
@@ -510,6 +511,17 @@ export function Workbench() {
   const activeTask = useMemo(
     () => tasks.find((t) => t.id === activeTaskId) ?? null,
     [tasks, activeTaskId],
+  );
+
+  /**
+   * 选中模型的容量元数据（窗口 / 最大输出），两处编排器共用一份。
+   *
+   * 此前它们各写各的 `models.find(...)`，**带真实用量的那个漏传 `maxOutputTokens`**——
+   * 上下文浮层「预留输出 / 剩余」两段与阈值刻度因此任何模式下都不出现（真机实测才发现）。
+   */
+  const modelMeta = useMemo(
+    () => contextUsageModelMeta(models, model),
+    [models, model],
   );
 
   /**
@@ -2683,10 +2695,8 @@ export function Workbench() {
                         <ContextUsageButton
                           usage={activeTask.usage ?? null}
                           modelId={model}
-                          contextWindow={
-                            models.find((m) => m.id === model)?.contextWindow ??
-                            null
-                          }
+                          contextWindow={modelMeta.contextWindow}
+                          maxOutputTokens={modelMeta.maxOutputTokens}
                         />
                         <ComposerCompactSelect
                           ariaLabel="思考强度"
@@ -2991,14 +3001,8 @@ ${formatElementReference(picked)}`
                     <ContextUsageButton
                       usage={null}
                       modelId={model}
-                      contextWindow={
-                        models.find((m) => m.id === model)?.contextWindow ??
-                        null
-                      }
-                      maxOutputTokens={
-                        models.find((m) => m.id === model)?.maxOutputTokens ??
-                        null
-                      }
+                      contextWindow={modelMeta.contextWindow}
+                      maxOutputTokens={modelMeta.maxOutputTokens}
                     />
                     <ComposerCompactSelect
                       ariaLabel="思考强度"

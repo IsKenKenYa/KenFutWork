@@ -1,10 +1,55 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  contextUsageModelMeta,
   contextUsageView,
   formatTokens,
   usageFromEvent,
 } from "../src/lib/context-usage";
+
+/**
+ * 选中模型的容量元数据：两处编排器共用一份。
+ *
+ * **回归背景**（真机实测抓到接线漏项）：Code 与 Design 两处编排器此前各写各的
+ * `models.find((m) => m.id === model)`，带真实用量的那处漏传 `maxOutputTokens`，
+ * 于是「预留输出 / 剩余」两段与阈值刻度在任何模式下都不出现。组件单测直接渲染按钮，
+ * 抓不到这种漏项——所以这里锁住「一个 id 解析出**两个**字段」这件事。
+ */
+describe("contextUsageModelMeta", () => {
+  const catalog = [
+    {
+      id: "inst-a:GLM-5.3-Flash",
+      contextWindow: 1_000_000,
+      maxOutputTokens: 128_000,
+    },
+  ];
+
+  it("一次拿到窗口与最大输出（调用方不必各自 find）", () => {
+    expect(contextUsageModelMeta(catalog, "inst-a:GLM-5.3-Flash")).toEqual({
+      contextWindow: 1_000_000,
+      maxOutputTokens: 128_000,
+    });
+  });
+
+  it("实例被删 / localStorage 里留着旧 specifier：两个字段都给 null（不拿别的实例顶替）", () => {
+    expect(
+      contextUsageModelMeta(catalog, "inst-deleted:GLM-5.3-Flash"),
+    ).toEqual({
+      contextWindow: null,
+      maxOutputTokens: null,
+    });
+  });
+
+  it("模型没声明这两项：同样是 null（浮层就少画那两段，不编数字）", () => {
+    expect(
+      contextUsageModelMeta([{ id: "inst-b:bare" }], "inst-b:bare"),
+    ).toEqual({ contextWindow: null, maxOutputTokens: null });
+    expect(contextUsageModelMeta([], "anything")).toEqual({
+      contextWindow: null,
+      maxOutputTokens: null,
+    });
+  });
+});
 
 describe("formatTokens", () => {
   it("按中文习惯缩写万/亿，并去掉多余的 .0", () => {

@@ -182,6 +182,32 @@ function trimZero(value: number): string {
   return value.toFixed(1).replace(/\.0$/, "");
 }
 
+/**
+ * 选中模型的容量元数据（窗口 / 最大输出）：两处编排器（Code 与 Design）都从这里取。
+ *
+ * **为什么单独抽出来**：这两处此前各写各的 `models.find((m) => m.id === model)`，结果
+ * **带真实用量的那个编排器漏传 `maxOutputTokens`**——上下文浮层的「预留输出 / 剩余」两段
+ * 与阈值刻度于是在任何模式下都画不出来；组件单测直接渲染按钮，抓不到这种接线漏项
+ * （真机跑一轮才发现，见《改造计划》§4.13 第十五轮）。
+ *
+ * 认不出 id 时两个字段都给 `null`（实例被删、`workbench:model` 里留着已失效的 specifier）：
+ * 宁可少画一段，也不拿别的实例的元数据顶替。
+ */
+export function contextUsageModelMeta(
+  models: readonly {
+    id: string;
+    contextWindow?: number | undefined;
+    maxOutputTokens?: number | undefined;
+  }[],
+  modelId: string,
+): { contextWindow: number | null; maxOutputTokens: number | null } {
+  const found = models.find((m) => m.id === modelId);
+  return {
+    contextWindow: found?.contextWindow ?? null,
+    maxOutputTokens: found?.maxOutputTokens ?? null,
+  };
+}
+
 export function contextUsageView(
   usage: RunUsageSnapshot | null | undefined,
   contextWindow: number | null | undefined,
