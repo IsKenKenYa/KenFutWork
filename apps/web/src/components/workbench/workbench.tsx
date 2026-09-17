@@ -154,6 +154,8 @@ type WorkbenchModelOption = {
   providerName?: string | undefined;
   vision?: boolean | undefined;
   contextWindow?: number | undefined;
+  /** 单次最大输出（供应商实例声明）；上下文条「预留输出」段的来源。 */
+  maxOutputTokens?: number | undefined;
 };
 
 /**
@@ -2759,6 +2761,10 @@ ${formatElementReference(picked)}`
                       modelId={model}
                       contextWindow={
                         models.find((m) => m.id === model)?.contextWindow ??
+                        null
+                      }
+                      maxOutputTokens={
+                        models.find((m) => m.id === model)?.maxOutputTokens ??
                         null
                       }
                     />

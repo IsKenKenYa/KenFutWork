@@ -5,12 +5,14 @@ import {
   permissionTierSchema,
   usageRecordSchema,
 } from "./capability-contracts.js";
+import { modelInfoSchema } from "./contracts.js";
 import {
   modelCapabilitySchema,
   providerInstanceConfigSchema,
   providerInstanceCreateRequestSchema,
   providerInstanceHeadersSchema,
   providerInstanceListResponseSchema,
+  providerInstanceModelSchema,
   providerInstanceResponseSchema,
   providerInstanceUpdateRequestSchema,
   providerProtocolSchema,
@@ -257,5 +259,67 @@ describe("capability-contracts（能力层共享契约）", () => {
         costUsd: 0.01,
       }).success,
     ).toBe(true);
+  });
+});
+
+/**
+ * 模型声明的限额必须**原样留存**（回归）。
+ *
+ * 真机踩过：`maxOutputTokens` 不在 schema 里 —— 用户在供应商设置里写的
+ * `{"id":"GLM-5.3-Flash","maxOutputTokens":128000}` 被 `z.object` 静默剥掉，
+ * 前端拿到的模型永远没有这个数，于是上下文条里「预留输出」段算不出来。
+ * zod 的默认行为是**丢弃未知键**，不会报错——所以这条得靠回归测试钉住。
+ */
+describe("供应商实例模型的限额字段", () => {
+  it("maxOutputTokens 与 contextWindow 一起留存；非法值被拒", () => {
+    const parsed = providerInstanceCreateRequestSchema.parse({
+      name: "实例",
+      protocol: "openai-compatible",
+      apiKey: "sk-x",
+      models: [
+        {
+          id: "GLM-5.3-Flash",
+          name: "GLM-5.3-Flash",
+          capability: "chat",
+          contextWindow: 1_000_000,
+          maxOutputTokens: 128_000,
+        },
+      ],
+    });
+    expect(parsed.models[0]).toEqual({
+      id: "GLM-5.3-Flash",
+      name: "GLM-5.3-Flash",
+      capability: "chat",
+      contextWindow: 1_000_000,
+      maxOutputTokens: 128_000,
+    });
+
+    expect(
+      providerInstanceModelSchema.safeParse({
+        id: "m",
+        name: "M",
+        capability: "chat",
+        maxOutputTokens: 0,
+      }).success,
+    ).toBe(false);
+    expect(
+      providerInstanceModelSchema.safeParse({
+        id: "m",
+        name: "M",
+        capability: "chat",
+        maxOutputTokens: 1.5,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("模型目录条目（modelInfo）也带得上（上下文条要读它）", () => {
+    const parsed = modelInfoSchema.parse({
+      id: "inst-1:GLM-5.3-Flash",
+      name: "GLM-5.3-Flash",
+      provider: "inst-1",
+      contextWindow: 1_000_000,
+      maxOutputTokens: 128_000,
+    });
+    expect(parsed.maxOutputTokens).toBe(128_000);
   });
 });

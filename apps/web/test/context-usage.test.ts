@@ -225,3 +225,84 @@ describe("上下文分类占比", () => {
     expect(snapshot?.composition).toEqual([{ label: "消息", chars: 100 }]);
   });
 });
+
+/**
+ * 「预留输出」段与输出预留线（Roo Code 三段条口径）。
+ *
+ * 口径必须钉住三件事：① 预留只在**模型声明了最大输出**时成立（不编数字）；
+ * ② 阈值 = 窗口 − 预留，越线即「已经吃掉为回复留的空间」；③ 剩余不为负读数。
+ */
+describe("预留输出与输出预留线", () => {
+  it("声明了最大输出：三段齐全，阈值 = 窗口 − 预留", () => {
+    const view = contextUsageView(
+      { inputTokens: 500_000, outputTokens: 1000 },
+      1_000_000,
+      "glm-5.3-flash",
+      128_000,
+    );
+    expect(view.reserveLabel).toBe("12.8万");
+    expect(view.thresholdPercent).toBe(87.2);
+    expect(view.overThreshold).toBe(false);
+    // 剩余 = 100万 − 50万 − 12.8万 = 37.2万
+    expect(view.remainingLabel).toBe("37.2万");
+  });
+
+  it("吃掉预留空间：overThreshold 为真，剩余读成 0 而不是负数", () => {
+    const view = contextUsageView(
+      { inputTokens: 900_000, outputTokens: 10 },
+      1_000_000,
+      "glm-5.3-flash",
+      128_000,
+    );
+    expect(view.overThreshold).toBe(true);
+    expect(view.remainingLabel).toBe("0");
+    // 阈值本身仍是窗口 − 预留（90万 > 87.2万）
+    expect(view.thresholdPercent).toBe(87.2);
+  });
+
+  it("没声明最大输出：那一段与阈值都不画（不编数字）", () => {
+    const view = contextUsageView(
+      { inputTokens: 500_000, outputTokens: 1 },
+      1_000_000,
+      "glm-5.3-flash",
+    );
+    expect(view.reserveLabel).toBeNull();
+    expect(view.reserveTokens).toBeNull();
+    expect(view.thresholdPercent).toBeNull();
+    expect(view.remainingLabel).toBeNull();
+    expect(view.overThreshold).toBe(false);
+    // 但「已用/窗口」的读数照旧
+    expect(view.usageLine).toBe("50万/100万（50%）");
+  });
+
+  it("声明的最大输出大于窗口（配置写错）：预留封顶到窗口，阈值退到 0", () => {
+    const view = contextUsageView(
+      { inputTokens: 10, outputTokens: 1 },
+      1000,
+      "",
+      5000,
+    );
+    expect(view.reserveTokens).toBe(1000);
+    expect(view.thresholdPercent).toBe(0);
+    expect(view.overThreshold).toBe(true);
+  });
+
+  it("窗口未知：有声明也不画预留（没有分母就没有百分比）", () => {
+    const view = contextUsageView(
+      { inputTokens: 10_000, outputTokens: 1 },
+      null,
+      "unknown-model-x",
+      128_000,
+    );
+    expect(view.windowKnown).toBe(false);
+    expect(view.reserveTokens).toBeNull();
+    expect(view.thresholdPercent).toBeNull();
+  });
+
+  it("本轮无用量：预留与阈值一并缺省（空态不显示任何估算）", () => {
+    const view = contextUsageView(null, 1_000_000, "glm-5.3-flash", 128_000);
+    expect(view.hasUsage).toBe(false);
+    expect(view.reserveLabel).toBeNull();
+    expect(view.overThreshold).toBe(false);
+  });
+});

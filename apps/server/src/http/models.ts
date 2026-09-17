@@ -84,6 +84,9 @@ export async function registerModelRoutes(
                 ...(entry.model.contextWindow
                   ? { contextWindow: entry.model.contextWindow }
                   : {}),
+                ...(entry.model.maxOutputTokens
+                  ? { maxOutputTokens: entry.model.maxOutputTokens }
+                  : {}),
               })),
           );
         }

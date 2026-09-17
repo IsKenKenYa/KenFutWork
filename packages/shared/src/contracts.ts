@@ -220,6 +220,8 @@ export const modelInfoSchema = z.object({
   vision: z.boolean().optional(),
   /** 上下文窗口 token 数（前端量级徽标）。 */
   contextWindow: z.number().int().positive().optional(),
+  /** 单次回复最大输出 token 数（上下文条「预留输出」段的来源，见 provider-contracts）。 */
+  maxOutputTokens: z.number().int().positive().optional(),
 });
 
 export const chatSessionIdSchema = identifierSchema;

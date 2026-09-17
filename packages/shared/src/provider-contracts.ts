@@ -136,6 +136,14 @@ export const providerInstanceModelSchema = z.object({
   vision: z.boolean().optional(),
   /** 上下文窗口 token 数（前端按量级显示徽标，如 1M）。 */
   contextWindow: z.number().int().positive().optional(),
+  /**
+   * 单次回复的最大输出 token 数（模型声明的上限）。
+   *
+   * 用途：上下文条里「预留输出」段的**唯一真实来源**——为输出留出的窗口空间。
+   * 我们不编这个数（没声明就不画那一段），因为它决定「还剩多少可用」的读数。
+   * 此前该字段会被 schema 静默丢弃（用户写了也传不到前端）。
+   */
+  maxOutputTokens: z.number().int().positive().optional(),
 });
 export type ProviderInstanceModel = z.infer<typeof providerInstanceModelSchema>;
 

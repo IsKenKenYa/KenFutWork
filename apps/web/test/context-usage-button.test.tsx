@@ -72,3 +72,55 @@ describe("ContextUsageButton", () => {
     expect(dialog).not.toHaveTextContent("?");
   });
 });
+
+/**
+ * 三段条与阈值刻度（上下文容量的可见形态）：已用 + 预留输出 + 剩余，
+ * 越线时给琥珀色警示并写明「本产品不做自动压缩」——不摆「到时自动处理」的假承诺。
+ */
+describe("ContextUsageButton：预留输出与阈值", () => {
+  it("模型声明了最大输出：显示三段读数与阈值刻度", async () => {
+    const { container } = render(
+      <ContextUsageButton
+        usage={{ inputTokens: 500_000, outputTokens: 1200 }}
+        contextWindow={1_000_000}
+        maxOutputTokens={128_000}
+      />,
+    );
+    const dialog = await openPopover();
+    expect(dialog).toHaveTextContent("已用 50万");
+    expect(dialog).toHaveTextContent("预留输出 12.8万");
+    expect(dialog).toHaveTextContent("剩余 37.2万");
+    // 阈值刻度（87.2% 处的细线）+ 预留段（琥珀）
+    const threshold = container.querySelector('[style*="left: 87.2%"]');
+    expect(threshold).not.toBeNull();
+    // 未越线：没有警示文案
+    expect(dialog).not.toHaveTextContent("已越过输出预留线");
+  });
+
+  it("越过预留线：琥珀警示 + 明确写「不做自动压缩」并给出行动", async () => {
+    render(
+      <ContextUsageButton
+        usage={{ inputTokens: 950_000, outputTokens: 1200 }}
+        contextWindow={1_000_000}
+        maxOutputTokens={128_000}
+      />,
+    );
+    const dialog = await openPopover();
+    expect(dialog).toHaveTextContent("已越过输出预留线");
+    expect(dialog).toHaveTextContent("不做自动压缩");
+    expect(dialog).toHaveTextContent("新建一个对话");
+  });
+
+  it("没声明最大输出：不显示预留段与阈值（少画而不是编一个数）", async () => {
+    const { container } = render(
+      <ContextUsageButton
+        usage={{ inputTokens: 500_000, outputTokens: 1200 }}
+        contextWindow={1_000_000}
+      />,
+    );
+    const dialog = await openPopover();
+    expect(dialog).not.toHaveTextContent("预留输出");
+    expect(dialog).not.toHaveTextContent("剩余");
+    expect(container.querySelector('[style*="left: 87.2%"]')).toBeNull();
+  });
+});

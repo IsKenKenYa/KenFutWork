@@ -14,6 +14,7 @@ export type ProviderInstanceRecord = {
     capability: string;
     vision?: boolean;
     contextWindow?: number;
+    maxOutputTokens?: number;
   }> | null;
   compat: Record<string, unknown> | null;
   headers: Record<string, string> | null;

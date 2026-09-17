@@ -66,6 +66,7 @@ type InstanceModel = {
   capability: string;
   vision?: boolean;
   contextWindow?: number;
+  maxOutputTokens?: number;
 };
 
 function mapModels(models: InstanceModel[] | null) {
@@ -75,6 +76,7 @@ function mapModels(models: InstanceModel[] | null) {
     capability: m.capability as ModelCapability,
     ...(m.vision ? { vision: true } : {}),
     ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
+    ...(m.maxOutputTokens ? { maxOutputTokens: m.maxOutputTokens } : {}),
   }));
 }
 

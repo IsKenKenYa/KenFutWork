@@ -23,15 +23,23 @@ export function ContextUsageButton({
   usage,
   contextWindow,
   modelId,
+  maxOutputTokens,
 }: {
   usage: RunUsageSnapshot | null | undefined;
   contextWindow: number | null | undefined;
   /** 当前模型 id（用于兜底表查窗口；BYOK 的 `<实例>:<模型>` 写法也认）。 */
   modelId?: string | undefined;
+  /** 模型声明的单次最大输出（上下文条「预留输出」段的来源）；缺省即不画那一段。 */
+  maxOutputTokens?: number | null | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const view = contextUsageView(usage, contextWindow, modelId ?? "");
+  const view = contextUsageView(
+    usage,
+    contextWindow,
+    modelId ?? "",
+    maxOutputTokens,
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -68,6 +76,7 @@ export function ContextUsageButton({
         <ContextRing
           percent={view.percent}
           fallbackLabel={view.hasUsage ? view.inputLabel : null}
+          overThreshold={view.overThreshold}
         />
       </button>
 
@@ -85,12 +94,70 @@ export function ContextUsageButton({
             </span>
           </div>
 
-          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+          {/* 三段条（Roo Code 口径）：已用 + 预留输出 + 剩余；接缝即「输出预留线」。
+              预留输出段只在模型**声明了最大输出**时画——不编这个数 */}
+          <div className="relative mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
             <div
-              className="h-full rounded-full bg-info"
+              className={`h-full rounded-l-full ${
+                view.overThreshold ? "bg-amber-500" : "bg-info"
+              }`}
               style={{ width: `${view.percent ?? 0}%` }}
             />
+            {view.reserveTokens !== null && view.thresholdPercent !== null ? (
+              <div
+                className="absolute top-0 h-full bg-amber-400/50"
+                style={{
+                  left: `${view.thresholdPercent}%`,
+                  width: `${Math.max(
+                    0,
+                    (view.percent ?? 0) > view.thresholdPercent
+                      ? 100 - (view.percent ?? 0)
+                      : Math.min(100, 100 - view.thresholdPercent),
+                  )}%`,
+                }}
+                title="预留输出（为模型回复留出的窗口空间）"
+              />
+            ) : null}
+            {view.thresholdPercent !== null ? (
+              <div
+                aria-hidden
+                className="absolute top-0 h-full w-px bg-amber-600"
+                style={{ left: `${view.thresholdPercent}%` }}
+              />
+            ) : null}
           </div>
+
+          {view.reserveTokens !== null ? (
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+              <span className="inline-flex items-center gap-1">
+                <span
+                  aria-hidden
+                  className="h-1.5 w-1.5 rounded-full bg-info"
+                />
+                已用 {view.inputLabel}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span
+                  aria-hidden
+                  className="h-1.5 w-1.5 rounded-full bg-amber-400/70"
+                />
+                预留输出 {view.reserveLabel}
+              </span>
+              <span>剩余 {view.remainingLabel}</span>
+            </div>
+          ) : null}
+
+          {view.overThreshold ? (
+            <p className="mt-2 rounded-md bg-amber-500/10 px-2 py-1 text-[10px] text-amber-700 dark:text-amber-400">
+              已越过输出预留线（
+              {view.thresholdPercent !== null
+                ? `窗口的 ${view.thresholdPercent}%`
+                : ""}
+              ）：为回复留的空间已被吃掉，再追一轮更容易被上游截断或拒绝。
+              <strong className="font-medium">本产品不做自动压缩</strong>
+              ——需要继续长任务请新建一个对话（或换成窗口更大的模型）。
+            </p>
+          ) : null}
 
           {view.composition.length > 0 ? (
             <ul aria-label="上下文分类占比" className="mt-3 space-y-1 text-xs">
@@ -141,13 +208,16 @@ export function ContextUsageButton({
  *
  * 窗口未知（既没声明、兜底表也认不出）时不编百分比：环里写**绝对量**（如 `51万`），
  * 不写问号——问号等于什么都没给。
+ * 越过输出预留线时弧变琥珀色：那是「该收尾了」的信号，不是错误。
  */
 function ContextRing({
   percent,
   fallbackLabel,
+  overThreshold = false,
 }: {
   percent: number | null;
   fallbackLabel: string | null;
+  overThreshold?: boolean;
 }) {
   const size = 22;
   const stroke = 2.5;
@@ -182,7 +252,7 @@ function ContextRing({
             strokeWidth={stroke}
             strokeLinecap="round"
             strokeDasharray={`${circumference * ratio} ${circumference}`}
-            className="stroke-info"
+            className={overThreshold ? "stroke-amber-500" : "stroke-info"}
           />
         ) : null}
       </svg>
