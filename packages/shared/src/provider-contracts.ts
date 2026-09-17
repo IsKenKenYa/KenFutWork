@@ -277,12 +277,33 @@ export type ProviderInstanceListResponse = z.infer<
 
 // --- 模型目录（modelCatalog 从用户实例推导） ---
 
+/**
+ * 目录条目的能力 hints（models.dev 快照，docs/future/05 §4）。
+ * 非权威 UI 提示：**只携带用户模型行上未声明的字段**（声明过的绝不进 hints，
+ * 避免「同一字段两个来源」的歧义）；条目上缺 hints = 快照未收录该模型——
+ * 语义是「未知」，不是「不支持」，消费方不得据此降级。
+ */
+export const modelCatalogHintsSchema = z.object({
+  source: z.literal("models-dev"),
+  /** 快照内的 provider 键（同 id 多 provider 时按协议偏好命中，出处透出便于复核）。 */
+  snapshotProvider: z.string().min(1),
+  contextWindow: z.number().int().positive().optional(),
+  maxOutputTokens: z.number().int().positive().optional(),
+  /** 快照输入模态含 image（vision 徽标的补缺来源）。 */
+  imageInput: z.boolean().optional(),
+  toolCall: z.boolean().optional(),
+  reasoning: z.boolean().optional(),
+});
+export type ModelCatalogHints = z.infer<typeof modelCatalogHintsSchema>;
+
 export const modelCatalogEntrySchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   capability: modelCapabilitySchema,
   /** 原始实例模型（vision / contextWindow 透传用）。 */
   model: providerInstanceModelSchema,
+  /** models.dev 快照补缺（可选；用户声明永远优先，见 modelCatalogHintsSchema）。 */
+  hints: modelCatalogHintsSchema.optional(),
   provider: z.object({
     instanceId: identifier,
     name: z.string().min(1),

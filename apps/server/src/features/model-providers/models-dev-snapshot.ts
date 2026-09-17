@@ -114,10 +114,14 @@ function trimModel(id: string, raw: unknown): ModelsDevModel | null {
   if (typeof source.modalities === "object" && source.modalities !== null) {
     const modalities = source.modalities as Record<string, unknown>;
     const input = Array.isArray(modalities.input)
-      ? modalities.input.filter((item): item is string => typeof item === "string")
+      ? modalities.input.filter(
+          (item): item is string => typeof item === "string",
+        )
       : undefined;
     const output = Array.isArray(modalities.output)
-      ? modalities.output.filter((item): item is string => typeof item === "string")
+      ? modalities.output.filter(
+          (item): item is string => typeof item === "string",
+        )
       : undefined;
     if (input?.length || output?.length) {
       model.modalities = {
@@ -128,7 +132,8 @@ function trimModel(id: string, raw: unknown): ModelsDevModel | null {
   }
   if (typeof source.limit === "object" && source.limit !== null) {
     const limit = source.limit as Record<string, unknown>;
-    const context = typeof limit.context === "number" ? limit.context : undefined;
+    const context =
+      typeof limit.context === "number" ? limit.context : undefined;
     const output = typeof limit.output === "number" ? limit.output : undefined;
     if (context !== undefined || output !== undefined) {
       model.limit = {
@@ -209,4 +214,49 @@ export function buildModelsDevSnapshot(
   // 写盘前自检：裁剪产物必须能通过自身契约（结构性回归立刻炸在刷新时刻）。
   modelsDevSnapshotSchema.parse(snapshot);
   return { snapshot, stats };
+}
+
+/** 快照里命中一个模型 id 的查找结果（provider 键 + 模型条目）。 */
+export interface ModelsDevModelHit {
+  provider: string;
+  model: ModelsDevModel;
+}
+
+/**
+ * 按模型 id 在快照里查找（BYOK 实例没有 models.dev 的 provider 键，只能按 id 匹配）。
+ * 同一 id 出现在多个 provider 时：preferredProvider 命中优先（如 anthropic 协议实例
+ * 偏好 anthropic 快照），否则按快照键序（= 生成时的白名单序）取第一个——查找确定性
+ * 由键序保证。快照是 hints 而非权威，匹配歧义的代价可接受；出处随结果透出。
+ */
+export function findModelsDevModel(
+  snapshot: ModelsDevSnapshot,
+  modelId: string,
+  preferredProvider?: string,
+): ModelsDevModelHit | undefined {
+  let first: ModelsDevModelHit | undefined;
+  for (const [provider, entry] of Object.entries(snapshot)) {
+    const model = entry.models[modelId];
+    if (!model) continue;
+    if (preferredProvider && provider === preferredProvider) {
+      return { provider, model };
+    }
+    first ??= { provider, model };
+  }
+  return first;
+}
+
+/** 校验快照工件（生成物或外部数据）；结构损坏返回 undefined（fail-open，快照非权威）。 */
+export function parseSnapshotArtifact(
+  raw: unknown,
+): ModelsDevSnapshot | undefined {
+  const parsed = modelsDevSnapshotSchema.safeParse(raw);
+  return parsed.success ? parsed.data : undefined;
+}
+
+/** 生成 .ts 数据模块文本（刷新脚本写盘用；被 import 前提是文本可被 JSON.parse 还原）。 */
+export function renderSnapshotModule(snapshot: ModelsDevSnapshot): string {
+  const header =
+    "// 由 scripts/刷新模型能力快照.ts 生成（勿手改）。数据源 models.dev api.json（MIT），\n" +
+    "// 白名单裁剪 + 字段投影见 ./models-dev-snapshot.ts；定位是非权威 UI 提示（docs/future/05 §4）。\n";
+  return `${header}export const MODELS_DEV_SNAPSHOT = ${JSON.stringify(snapshot, null, 2)};\n`;
 }

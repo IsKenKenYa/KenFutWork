@@ -15,6 +15,7 @@
       "!**/.next",
       "!**/dist",
       "!**/out",
+      "!apps/server/src/features/model-providers/models-dev.snapshot.ts",
       "!**/.pnpm-store",
       "!**/tmp",
       "!**/references",

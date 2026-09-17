@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import {
   buildModelsDevSnapshot,
   modelsDevSnapshotSchema,
+  renderSnapshotModule,
 } from "../src/features/model-providers/models-dev-snapshot.js";
 
 const args = process.argv.slice(2);
@@ -27,8 +28,7 @@ const from = argValue("--from") ?? "https://models.dev/api.json";
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const out = resolve(
   scriptDir,
-  argValue("--out") ??
-    "../src/features/model-providers/models-dev.snapshot.json",
+  argValue("--out") ?? "../src/features/model-providers/models-dev.snapshot.ts",
 );
 
 async function loadRaw(): Promise<unknown> {
@@ -46,7 +46,7 @@ try {
   const raw = await loadRaw();
   const { snapshot, stats } = buildModelsDevSnapshot(raw);
   modelsDevSnapshotSchema.parse(snapshot);
-  writeFileSync(out, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
+  writeFileSync(out, renderSnapshotModule(snapshot), "utf8");
   console.log(`快照已写入 ${out}`);
   console.log(
     `providers：保留 ${stats.providersKept}（白名单外/缺席跳过，原始数据 ${stats.providersKept + stats.providersDropped} 个）；models：${stats.modelsKept} 个；体积：${(stats.bytes / 1024).toFixed(0)} KB（目标 < 500 KB）`,

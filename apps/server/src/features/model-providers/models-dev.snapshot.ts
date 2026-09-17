@@ -1,4 +1,6 @@
-{
+// 由 scripts/刷新模型能力快照.ts 生成（勿手改）。数据源 models.dev api.json（MIT），
+// 白名单裁剪 + 字段投影见 ./models-dev-snapshot.ts；定位是非权威 UI 提示（docs/future/05 §4）。
+export const MODELS_DEV_SNAPSHOT = {
   "openai": {
     "name": "OpenAI",
     "models": {
@@ -24420,4 +24422,4 @@
       }
     }
   }
-}
+};

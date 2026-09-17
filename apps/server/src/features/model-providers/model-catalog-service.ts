@@ -1,11 +1,17 @@
 import type {
   ModelCapability,
   ModelCatalogEntry,
+  ModelCatalogHints,
+  ProviderInstanceModel,
   ProviderProtocol,
 } from "@kenfutwork/shared";
 
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { ModelProviderService } from "./model-provider-service.js";
+import {
+  findModelsDevModel,
+  type ModelsDevSnapshot,
+} from "./models-dev-snapshot.js";
 
 /**
  * modelCatalog 缝（§4.8）：从用户供应商实例 + capability 推导可选模型目录。
@@ -36,10 +42,98 @@ function describeAvailable(entries: ModelCatalogEntry[]): string {
   return entries.length > 8 ? `${sample} …（共 ${entries.length} 个）` : sample;
 }
 
+/**
+ * 实例协议 → 快照 provider 偏好：BYOK 实例没有 models.dev 的 provider 键，
+ * 只能按模型 id 匹配；同 id 多 provider 命中时该偏好决定取哪份（其余按快照键序）。
+ */
+const PROTOCOL_PREFERRED_SNAPSHOT_PROVIDER: Partial<
+  Record<ProviderProtocol, string>
+> = {
+  anthropic: "anthropic",
+  gemini: "google",
+  "google-image": "google",
+  "openai-compatible": "openai",
+};
+
+/**
+ * 快照 hints（三层合并的「补缺」层，docs/future/05 §4.2）：只填用户模型行上
+ * **未声明**的字段，声明过的绝不进 hints（用户声明优先，无双源歧义）；
+ * 快照未收录 → undefined（未知 ≠ 不支持）。toolCall/reasoning 无用户声明
+ * 对应字段，恒为快照值。
+ */
+function buildHints(
+  model: ProviderInstanceModel,
+  protocol: ProviderProtocol,
+  snapshot: ModelsDevSnapshot | undefined,
+): ModelCatalogHints | undefined {
+  if (!snapshot) return undefined;
+  const hit = findModelsDevModel(
+    snapshot,
+    model.id,
+    PROTOCOL_PREFERRED_SNAPSHOT_PROVIDER[protocol],
+  );
+  if (!hit) return undefined;
+  const hints: ModelCatalogHints = {
+    source: "models-dev",
+    snapshotProvider: hit.provider,
+  };
+  if (model.contextWindow === undefined && hit.model.limit?.context) {
+    hints.contextWindow = hit.model.limit.context;
+  }
+  if (model.maxOutputTokens === undefined && hit.model.limit?.output) {
+    hints.maxOutputTokens = hit.model.limit.output;
+  }
+  if (
+    model.vision === undefined &&
+    hit.model.modalities?.input?.includes("image")
+  ) {
+    hints.imageInput = true;
+  }
+  if (hit.model.toolCall !== undefined) {
+    hints.toolCall = hit.model.toolCall;
+  }
+  if (hit.model.reasoning !== undefined) {
+    hints.reasoning = hit.model.reasoning;
+  }
+  return hints;
+}
+
+interface CatalogInstance {
+  id: string;
+  name: string;
+  protocol: string;
+  models: ProviderInstanceModel[];
+}
+
+function toCatalogEntry(
+  model: ProviderInstanceModel,
+  instance: CatalogInstance,
+  scope: "workspace" | "system",
+  snapshot: ModelsDevSnapshot | undefined,
+): ModelCatalogEntry {
+  const protocol = instance.protocol as ProviderProtocol;
+  const hints = buildHints(model, protocol, snapshot);
+  return {
+    id: model.id,
+    name: model.name,
+    capability: model.capability,
+    model,
+    ...(hints ? { hints } : {}),
+    provider: {
+      instanceId: instance.id,
+      name: instance.name,
+      protocol,
+      scope,
+    },
+  };
+}
+
 export function createModelCatalogService(options: {
   modelProviders: ModelProviderService;
+  /** models.dev 快照（可选）：缺席 = 无 hints，目录照常（fail-open）。 */
+  snapshot?: ModelsDevSnapshot;
 }): ModelCatalogService {
-  const { modelProviders } = options;
+  const { modelProviders, snapshot } = options;
   return {
     async listCatalog(user) {
       const instances = await modelProviders.listInstances(user);
@@ -49,18 +143,7 @@ export function createModelCatalogService(options: {
           continue;
         }
         for (const model of instance.models) {
-          entries.push({
-            id: model.id,
-            name: model.name,
-            capability: model.capability,
-            model,
-            provider: {
-              instanceId: instance.id,
-              name: instance.name,
-              protocol: instance.protocol as ProviderProtocol,
-              scope: "workspace",
-            },
-          });
+          entries.push(toCatalogEntry(model, instance, "workspace", snapshot));
         }
       }
 
@@ -73,18 +156,7 @@ export function createModelCatalogService(options: {
             continue;
           }
           for (const model of instance.models) {
-            entries.push({
-              id: model.id,
-              name: model.name,
-              capability: model.capability,
-              model,
-              provider: {
-                instanceId: instance.id,
-                name: instance.name,
-                protocol: instance.protocol as ProviderProtocol,
-                scope: "system",
-              },
-            });
+            entries.push(toCatalogEntry(model, instance, "system", snapshot));
           }
         }
       } catch (error) {

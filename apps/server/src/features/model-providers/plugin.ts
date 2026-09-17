@@ -3,6 +3,7 @@ import { registerProviderInstanceRoutes } from "../../http/provider-instances.js
 import type { PluginDefinition } from "../../kernel/types.js";
 import { createModelCatalogService } from "./model-catalog-service.js";
 import { createModelProviderService } from "./model-provider-service.js";
+import { loadBundledModelsDevSnapshot } from "./models-dev-bundled.js";
 import { createModelProviderRepository } from "./repository.js";
 
 /**
@@ -36,11 +37,14 @@ export function createModelProvidersPlugin(deps: {
           ...(viewerService ? { viewerService } : {}),
         }),
       );
-      ctx.register("modelCatalog", () =>
-        createModelCatalogService({
+      ctx.register("modelCatalog", () => {
+        // 快照损坏/漂移时 fail-open 为 undefined（无 hints，目录照常）。
+        const snapshot = loadBundledModelsDevSnapshot();
+        return createModelCatalogService({
           modelProviders: ctx.get("modelProviders"),
-        }),
-      );
+          ...(snapshot ? { snapshot } : {}),
+        });
+      });
     },
     mounted(ctx) {
       if (!withRoutes) {
