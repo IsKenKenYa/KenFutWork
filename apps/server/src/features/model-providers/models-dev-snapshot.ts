@@ -1,0 +1,212 @@
+import { z } from "zod";
+
+/**
+ * models.dev 能力快照（docs/future/05 §4/§11）：上游 api.json → 白名单裁剪 →
+ * camelCase 投影 → zod 校验。快照是**非权威 UI 提示**——用户实例声明优先，
+ * 不进协议层；字段缺省 = 未知，不是不支持（与 provider-contracts 的语义红线同源）。
+ */
+
+/** 单模型裁剪条目：models.dev 的 snake_case 投影为本仓 camelCase，只留核心字段。 */
+export const modelsDevModelSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  attachment: z.boolean().optional(),
+  reasoning: z.boolean().optional(),
+  toolCall: z.boolean().optional(),
+  structuredOutput: z.boolean().optional(),
+  temperature: z.boolean().optional(),
+  releaseDate: z.string().optional(),
+  openWeights: z.boolean().optional(),
+  modalities: z
+    .object({
+      input: z.array(z.string()).optional(),
+      output: z.array(z.string()).optional(),
+    })
+    .optional(),
+  limit: z
+    .object({
+      context: z.number().optional(),
+      output: z.number().optional(),
+    })
+    .optional(),
+  cost: z.record(z.string(), z.number()).optional(),
+});
+export type ModelsDevModel = z.infer<typeof modelsDevModelSchema>;
+
+export const modelsDevProviderSchema = z.object({
+  name: z.string().optional(),
+  models: z.record(z.string(), modelsDevModelSchema),
+});
+export type ModelsDevProvider = z.infer<typeof modelsDevProviderSchema>;
+
+export const modelsDevSnapshotSchema = z.record(
+  z.string(),
+  modelsDevProviderSchema,
+);
+export type ModelsDevSnapshot = z.infer<typeof modelsDevSnapshotSchema>;
+
+/**
+ * 白名单：只保留本仓协议与 BYOK 常用相关的 provider（实测 models.dev 全部存在；
+ * 白名单里多列几个无害——上游缺席即跳过）。裁剪目标 < 500KB（原始 4.7MB）。
+ */
+export const modelsDevProviderWhitelist = [
+  // 御三家 + 常用国际
+  "openai",
+  "anthropic",
+  "google",
+  "xai",
+  "mistral",
+  "groq",
+  "cohere",
+  "perplexity",
+  "openrouter",
+  "together",
+  "fireworks",
+  "deepinfra",
+  // 国产（含中转 / 订阅计划变体）
+  "deepseek",
+  "moonshotai",
+  "moonshotai-cn",
+  "kimi-for-coding",
+  "zhipuai",
+  "zhipuai-coding-plan",
+  "zai",
+  "zai-coding-plan",
+  "siliconflow",
+  "siliconflow-cn",
+  "minimax",
+  "minimax-cn",
+  "minimax-coding-plan",
+  "minimax-cn-coding-plan",
+  "volcengine",
+  "volcengine-coding-plan",
+  "stepfun",
+  "stepfun-ai",
+  "stepfun-step-plan",
+  "stepfun-ai-step-plan",
+] as const;
+
+/** 布尔字段投影表：[models.dev 原始键, 快照键]。 */
+const BOOLEAN_MODEL_FIELDS = [
+  ["attachment", "attachment"],
+  ["reasoning", "reasoning"],
+  ["tool_call", "toolCall"],
+  ["structured_output", "structuredOutput"],
+  ["temperature", "temperature"],
+  ["open_weights", "openWeights"],
+] as const;
+
+function trimModel(id: string, raw: unknown): ModelsDevModel | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const source = raw as Record<string, unknown>;
+  const model: ModelsDevModel = {
+    id,
+    name: typeof source.name === "string" && source.name ? source.name : id,
+  };
+  for (const [from, to] of BOOLEAN_MODEL_FIELDS) {
+    if (typeof source[from] === "boolean") {
+      model[to] = source[from] as boolean;
+    }
+  }
+  if (typeof source.release_date === "string") {
+    model.releaseDate = source.release_date;
+  }
+  if (typeof source.modalities === "object" && source.modalities !== null) {
+    const modalities = source.modalities as Record<string, unknown>;
+    const input = Array.isArray(modalities.input)
+      ? modalities.input.filter((item): item is string => typeof item === "string")
+      : undefined;
+    const output = Array.isArray(modalities.output)
+      ? modalities.output.filter((item): item is string => typeof item === "string")
+      : undefined;
+    if (input?.length || output?.length) {
+      model.modalities = {
+        ...(input?.length ? { input } : {}),
+        ...(output?.length ? { output } : {}),
+      };
+    }
+  }
+  if (typeof source.limit === "object" && source.limit !== null) {
+    const limit = source.limit as Record<string, unknown>;
+    const context = typeof limit.context === "number" ? limit.context : undefined;
+    const output = typeof limit.output === "number" ? limit.output : undefined;
+    if (context !== undefined || output !== undefined) {
+      model.limit = {
+        ...(context !== undefined ? { context } : {}),
+        ...(output !== undefined ? { output } : {}),
+      };
+    }
+  }
+  if (typeof source.cost === "object" && source.cost !== null) {
+    const cost: Record<string, number> = {};
+    for (const [key, value] of Object.entries(
+      source.cost as Record<string, unknown>,
+    )) {
+      if (typeof value === "number") {
+        cost[key] = value;
+      }
+    }
+    if (Object.keys(cost).length > 0) {
+      model.cost = cost;
+    }
+  }
+  return model;
+}
+
+export interface SnapshotStats {
+  providersKept: number;
+  /** 原始数据里被白名单排除的 provider 数。 */
+  providersDropped: number;
+  modelsKept: number;
+  /** 裁剪产物 JSON 的 UTF-8 字节数（写盘体积的准确预估值）。 */
+  bytes: number;
+}
+
+/**
+ * 白名单裁剪 + 字段投影 + 改名，产物先过自身 zod 校验（写盘前自检）。
+ * 任何非对象条目（模型级 / provider 级）一律跳过而非抛错——上游脏数据
+ * 不该让整份快照刷不出来；结构性错误（根非对象）才 fail loud。
+ */
+export function buildModelsDevSnapshot(
+  raw: unknown,
+  whitelist: readonly string[] = modelsDevProviderWhitelist,
+): { snapshot: ModelsDevSnapshot; stats: SnapshotStats } {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    throw new TypeError("models.dev 数据根必须是 JSON 对象");
+  }
+  const source = raw as Record<string, unknown>;
+  const snapshot: ModelsDevSnapshot = {};
+  let modelsKept = 0;
+  for (const key of whitelist) {
+    const entry = source[key];
+    if (typeof entry !== "object" || entry === null) continue;
+    const modelsRaw = (entry as Record<string, unknown>).models;
+    if (typeof modelsRaw !== "object" || modelsRaw === null) continue;
+    const models: Record<string, ModelsDevModel> = {};
+    for (const [modelId, modelRaw] of Object.entries(
+      modelsRaw as Record<string, unknown>,
+    )) {
+      const trimmed = trimModel(modelId, modelRaw);
+      if (trimmed) {
+        models[modelId] = trimmed;
+        modelsKept += 1;
+      }
+    }
+    const name = (entry as Record<string, unknown>).name;
+    snapshot[key] = {
+      ...(typeof name === "string" ? { name } : {}),
+      models,
+    };
+  }
+  const providersKept = Object.keys(snapshot).length;
+  const providersDropped = Object.keys(source).length - providersKept;
+  const stats: SnapshotStats = {
+    providersKept,
+    providersDropped,
+    modelsKept,
+    bytes: Buffer.byteLength(JSON.stringify(snapshot), "utf8"),
+  };
+  // 写盘前自检：裁剪产物必须能通过自身契约（结构性回归立刻炸在刷新时刻）。
+  modelsDevSnapshotSchema.parse(snapshot);
+  return { snapshot, stats };
+}

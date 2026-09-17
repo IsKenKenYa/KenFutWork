@@ -20,6 +20,43 @@ export type ProviderProtocol = z.infer<typeof providerProtocolSchema>;
 export const modelCapabilitySchema = z.enum(["chat", "image", "video"]);
 export type ModelCapability = z.infer<typeof modelCapabilitySchema>;
 
+/**
+ * 模型级任务能力声明（BYOK 用户/管理员对单个模型的可选细化，docs/future/05 §6）。
+ * 语义红线：**字段缺省 = 未知，不是不支持**——目录与 UI 不得把「没声明」当「肯定不行」
+ * 处理（kimi-code 的 UNKNOWN 语义）；只有显式声明的取值才可参与运行期裁剪。
+ */
+export const imageGenerationCapsSchema = z.object({
+  /** 支持的生成模式（cherry 词表收窄版；缺省视为仅 generate）。 */
+  modes: z
+    .array(z.enum(["generate", "edit", "upscale", "remix", "merge"]))
+    .min(1)
+    .optional(),
+  /** false = 该模型不需要提示词（超分/去背景/图像翻译类），管线不得强制非空 prompt。 */
+  requirePrompt: z.boolean().optional(),
+  /** 单次调用允许的输入参考图上限。 */
+  maxInputImages: z.number().int().nonnegative().optional(),
+});
+export type ImageGenerationCaps = z.infer<typeof imageGenerationCapsSchema>;
+
+/** 视频任务能力（fal per-model input schema 收窄版）。缺省字段同样 = 未知。 */
+export const videoGenerationCapsSchema = z.object({
+  /** 允许的时长取值（秒）。 */
+  durations: z.array(z.number().positive()).min(1).optional(),
+  /** 允许的画幅比取值（如 "16:9"）。 */
+  aspectRatios: z.array(z.string().min(1)).min(1).optional(),
+  /** 允许的分辨率取值（如 "720p"）。 */
+  resolutions: z.array(z.string().min(1)).min(1).optional(),
+  /** 是否支持首尾帧控制。 */
+  firstLastFrame: z.boolean().optional(),
+  /** 参考图数量上限。 */
+  referenceImages: z.number().int().nonnegative().optional(),
+  /** 是否支持负向提示词。 */
+  negativePrompt: z.boolean().optional(),
+  /** 是否支持生成/保留音频。 */
+  audio: z.boolean().optional(),
+});
+export type VideoGenerationCaps = z.infer<typeof videoGenerationCapsSchema>;
+
 /** OpenAI 兼容网关的兼容性开关（按实例覆盖默认行为）。 */
 export const providerCompatSchema = z.object({
   supportsToolCalling: z.boolean().optional(),
@@ -144,6 +181,10 @@ export const providerInstanceModelSchema = z.object({
    * 此前该字段会被 schema 静默丢弃（用户写了也传不到前端）。
    */
   maxOutputTokens: z.number().int().positive().optional(),
+  /** 图像生成任务级能力（可选；缺省 = 未知，见上方语义红线）。 */
+  imageGeneration: imageGenerationCapsSchema.optional(),
+  /** 视频生成任务级能力（可选；缺省 = 未知）。 */
+  videoGeneration: videoGenerationCapsSchema.optional(),
 });
 export type ProviderInstanceModel = z.infer<typeof providerInstanceModelSchema>;
 
