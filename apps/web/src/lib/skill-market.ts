@@ -55,7 +55,7 @@ export function describeInstallFailure(
   if (status === 409) {
     return "该技能已安装过（可在「技能库」里启用）。";
   }
-  if (message && message.trim()) {
+  if (message?.trim()) {
     return message;
   }
   return "安装失败，请稍后重试。";

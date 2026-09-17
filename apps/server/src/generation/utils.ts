@@ -41,14 +41,16 @@ export async function fetchAsBase64(
   // Already a data URI — extract inline.
   if (url.startsWith("data:")) {
     const match = url.match(/^data:([^;]+);base64,(.+)$/);
-    if (!match) {
+    const mimeType = match?.[1];
+    const data = match?.[2];
+    if (!mimeType || !data) {
       throw new GenerationError(
         providerName,
         "input_fetch_error",
         `Invalid data URI format: ${url.slice(0, 80)}`,
       );
     }
-    return { mimeType: match[1]!, data: match[2]! };
+    return { mimeType, data };
   }
 
   // HTTP(S) URL — fetch and convert.

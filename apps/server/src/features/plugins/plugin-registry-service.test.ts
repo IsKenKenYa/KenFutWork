@@ -280,7 +280,11 @@ describe("plugin-registry：导出", () => {
   it("内置插件可导出为双声明 bundle", async () => {
     const { service } = makeService();
     const artifact = service.exportPlugin("skills", "dsh");
-    const pkg = JSON.parse(artifact.files["package.json"]!) as {
+    const pkgJson = artifact.files["package.json"];
+    if (pkgJson === undefined) {
+      throw new Error("导出产物缺少 package.json");
+    }
+    const pkg = JSON.parse(pkgJson) as {
       dsh?: unknown;
       kenfutwork?: unknown;
     };
@@ -296,7 +300,7 @@ describe("plugin-registry：导出", () => {
       allowLifecycleScripts: false,
     });
     const artifact = service.exportPlugin("kenfutwork-example-clock", "dsh");
-    const indexJs = artifact.files["index.js"]!;
+    const indexJs = artifact.files["index.js"];
     expect(indexJs).toContain("clock_now");
   });
 

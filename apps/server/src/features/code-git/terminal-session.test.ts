@@ -73,7 +73,11 @@ function start(options: {
     killTreeFn,
     idleMs: options.idleMs ?? 60_000,
   });
-  return { session, onData, onExit, killTreeFn, child: children[0]! };
+  const child = children[0];
+  if (!child) {
+    throw new Error("替身进程未创建");
+  }
+  return { session, onData, onExit, killTreeFn, child };
 }
 
 describe("终端会话：常驻 shell 的协议与边界", () => {
@@ -133,7 +137,7 @@ describe("终端会话：常驻 shell 的协议与边界", () => {
       });
       session.stop("手动关闭");
       expect(killTreeFn).toHaveBeenCalledTimes(1);
-      expect(killTreeFn.mock.calls[0]![0]).toBe(child);
+      expect(killTreeFn.mock.calls[0]?.[0]).toBe(child);
       // 进程没在 1.5s 内收掉：兜底结束，会话不会永远停在「退出中」
       vi.advanceTimersByTime(1600);
       expect(onExit).toHaveBeenCalledWith(null, "手动关闭");
@@ -153,7 +157,7 @@ describe("终端会话：常驻 shell 的协议与边界", () => {
       vi.advanceTimersByTime(51);
       vi.advanceTimersByTime(50 + 60_000);
       expect(onExit).toHaveBeenCalled();
-      const [, reason] = onExit.mock.calls[0]!;
+      const [, reason] = onExit.mock.calls[0] ?? [];
       expect(reason).toMatch(/闲置/);
     } finally {
       vi.useRealTimers();
@@ -173,7 +177,7 @@ describe("终端会话：常驻 shell 的协议与边界", () => {
     await Promise.resolve();
     expect(session.exited).toBe(true);
     expect(onExit).toHaveBeenCalled();
-    expect(String(onExit.mock.calls[0]![1])).toMatch(/找不到可用的 shell/);
+    expect(String(onExit.mock.calls[0]?.[1])).toMatch(/找不到可用的 shell/);
   });
 });
 
@@ -237,7 +241,6 @@ describe("终端会话：真机（常驻 shell 的会话状态）", () => {
 
   /** 等输出里出现哨兵（命令回显与结果都到齐）。 */
   function waitForOutput(
-    session: { write: (line: string) => void },
     sentinel: string,
     getOutput: () => string,
     timeoutMs = 10_000,
@@ -273,7 +276,7 @@ describe("终端会话：真机（常驻 shell 的会话状态）", () => {
         session.write("cd sub");
         session.write("set KFW_PROBE=kept");
         session.write("echo PROBE:%CD%:%KFW_PROBE%:END");
-        await waitForOutput(session, "PROBE:", () => output);
+        await waitForOutput("PROBE:", () => output);
         // cd 到了 sub、变量还在：说明这两条命令跑在同一个 shell 进程里
         expect(output).toContain("PROBE:");
         expect(output.toLowerCase()).toContain("sub");
@@ -303,7 +306,7 @@ describe("终端会话：真机（常驻 shell 的会话状态）", () => {
       try {
         session.write("cd sub");
         session.write("echo PROBE:$(pwd):END");
-        await waitForOutput(session, "END", () => output);
+        await waitForOutput("END", () => output);
         expect(output).toContain("/sub");
       } finally {
         session.stop("测试结束");
@@ -327,14 +330,14 @@ describe("终端会话：真机（常驻 shell 的会话状态）", () => {
       });
       try {
         session.write("where python");
-        await waitForOutput(session, "python", () => output, 8_000);
+        await waitForOutput("python", () => output, 8_000);
         // 有 python 才有 REPL 可测；没有就只验「探查命令能跑」（不把环境缺失当失败）
         if (!output.toLowerCase().includes("python")) return;
         session.write("python -i");
         session.write("print(6*7)");
         session.write("print('KFW_REPL_OK')");
         session.write("exit()");
-        await waitForOutput(session, "KFW_REPL_OK", () => output, 15_000);
+        await waitForOutput("KFW_REPL_OK", () => output, 15_000);
         expect(output).toContain("42");
       } finally {
         session.stop("测试结束");

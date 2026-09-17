@@ -25,6 +25,7 @@ function LightboxBtn({
       className="flex h-8 w-8 items-center justify-center rounded-full text-white/80 transition-colors hover:bg-white/15 hover:text-white"
     >
       <svg
+        aria-hidden="true"
         className="h-[18px] w-[18px]"
         viewBox="0 0 24 24"
         fill="none"
@@ -178,9 +179,11 @@ export function ImageLightbox({
     >
       {/* Image */}
       <div
+        role="none"
         className="flex flex-1 w-full items-center justify-center overflow-hidden"
         onClick={onClose}
       >
+        {/* biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用 */}
         <img
           draggable
           src={src}
@@ -194,6 +197,8 @@ export function ImageLightbox({
             cursor: scale > 1 ? "grab" : "default",
           }}
           onClick={(e) => e.stopPropagation()}
+          // 与上面的 onClick 同为「事件拦截」：键盘同等拦一道，语义与鼠标一致
+          onKeyDown={(e) => e.stopPropagation()}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
@@ -208,6 +213,7 @@ export function ImageLightbox({
         className="absolute top-4 right-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/40 text-white/80 backdrop-blur-md transition-colors hover:bg-black/60 hover:text-white"
       >
         <svg
+          aria-hidden="true"
           className="h-5 w-5"
           viewBox="0 0 24 24"
           fill="none"
@@ -222,6 +228,7 @@ export function ImageLightbox({
 
       {/* Toolbar */}
       <div
+        role="none"
         className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-full bg-black/50 px-2 py-1.5 backdrop-blur-md"
         onClick={(e) => e.stopPropagation()}
       >
@@ -297,6 +304,7 @@ export const ChatImage = React.memo(function ChatImage({
         title="Image failed to load"
       >
         <svg
+          aria-hidden="true"
           className="h-5 w-5 opacity-40"
           viewBox="0 0 24 24"
           fill="none"
@@ -311,14 +319,28 @@ export const ChatImage = React.memo(function ChatImage({
 
   return (
     <>
-      <img
-        src={src}
-        alt={alt}
-        className={`${className} cursor-zoom-in`}
-        loading="lazy"
+      {/* biome-ignore lint/a11y/useSemanticElements: 图层尺寸/边距类由调用方给（markdown 内联布局），img 不能直接挂按钮语义，故用 span + 键盘等价承载 */}
+      <span
+        role="button"
+        tabIndex={0}
+        className="inline-block cursor-zoom-in"
         onClick={() => setOpen(true)}
-        onError={() => setLoadError(true)}
-      />
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setOpen(true);
+          }
+        }}
+      >
+        {/* biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用 */}
+        <img
+          src={src}
+          alt={alt}
+          className={className}
+          loading="lazy"
+          onError={() => setLoadError(true)}
+        />
+      </span>
       {open && (
         <ImageLightbox src={src} alt={alt} onClose={() => setOpen(false)} />
       )}
@@ -343,7 +365,7 @@ export const ImagePill = React.memo(function ImagePill({
     y: number;
     above: boolean;
   } | null>(null);
-  const pillRef = useRef<HTMLSpanElement>(null);
+  const pillRef = useRef<HTMLButtonElement>(null);
 
   const handleMouseEnter = useCallback(() => {
     if (!pillRef.current) return;
@@ -360,22 +382,16 @@ export const ImagePill = React.memo(function ImagePill({
 
   return (
     <>
-      <span
+      <button
         ref={pillRef}
+        type="button"
         onClick={() => setLightbox(true)}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
         className="inline-flex h-[22px] items-center gap-1 rounded-md px-1 mx-0.5 border-[0.5px] border-muted-foreground text-foreground hover:bg-muted cursor-pointer align-middle"
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            setLightbox(true);
-          }
-        }}
       >
         <span className="inline-block relative h-3.5 w-3.5 shrink-0 overflow-hidden rounded-sm">
+          {/* biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用 */}
           <img
             src={src}
             alt={name}
@@ -386,7 +402,7 @@ export const ImagePill = React.memo(function ImagePill({
         <span className="max-w-[100px] truncate text-[11px] leading-none text-foreground">
           {name}
         </span>
-      </span>
+      </button>
 
       {/* Hover preview portal */}
       {preview &&
@@ -404,6 +420,7 @@ export const ImagePill = React.memo(function ImagePill({
                 : "translate(-50%, 0)",
             }}
           >
+            {/* biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用 */}
             <img
               src={src}
               alt={name}

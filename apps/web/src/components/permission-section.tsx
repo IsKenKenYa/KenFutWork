@@ -147,7 +147,7 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
       <p className="mb-3 text-sm text-muted-foreground">
         危险工具（shell/MCP/写类）在默认档下必须审批；审批只能由你发起。
       </p>
-      <div role="group" aria-label="常规任务档位" className="mb-4 space-y-2">
+      <fieldset aria-label="常规任务档位" className="mb-4 min-w-0 space-y-2">
         {TIERS.map((t) => (
           <label
             key={t.value}
@@ -171,13 +171,12 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
             </span>
           </label>
         ))}
-      </div>
+      </fieldset>
 
       {current === "custom" ? (
-        <div
-          role="group"
+        <fieldset
           aria-label="自定义配置规则"
-          className="mb-5 space-y-3 rounded-lg border border-dashed p-3"
+          className="mb-5 min-w-0 space-y-3 rounded-lg border border-dashed p-3"
         >
           <p className="text-xs text-muted-foreground">
             一行一条，支持末尾通配（如 <code>mcp__*</code>）。判定顺序固定为
@@ -223,7 +222,7 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
           >
             保存规则
           </button>
-        </div>
+        </fieldset>
       ) : null}
 
       <h3 className="mb-1 text-base font-medium">自动化任务</h3>
@@ -231,7 +230,7 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
         目标 /
         循环这类无人值守轮次用这一档（通常设得更严：批一次就一路跑，不会每步等人）。
       </p>
-      <div role="group" aria-label="自动化任务档位" className="mb-5 space-y-2">
+      <fieldset aria-label="自动化任务档位" className="mb-5 min-w-0 space-y-2">
         {TIERS.map((t) => (
           <label
             key={`auto-${t.value}`}
@@ -258,7 +257,7 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
             </span>
           </label>
         ))}
-      </div>
+      </fieldset>
 
       <h3 className="mb-1 text-base font-medium">工具审批</h3>
       <div className="flex flex-wrap items-center gap-2">

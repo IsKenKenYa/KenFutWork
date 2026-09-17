@@ -91,7 +91,7 @@ describe("@kenfutwork/shared contracts", () => {
       ],
     });
     expect(result.attachments).toHaveLength(1);
-    expect(result.attachments![0].assetId).toBe("asset-123");
+    expect(result.attachments?.[0]?.assetId).toBe("asset-123");
   });
 
   it("accepts optional image generation preference in run creation", () => {

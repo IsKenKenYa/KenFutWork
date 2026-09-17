@@ -19,17 +19,25 @@ import { join, resolve } from "node:path";
  *   比如找一张图），只是 `summary` 为空。
  * - **存哪**：`<cwd>/.kenfutwork/index/<canvasId>.json`（与插件目录同一处 `.kenfutwork/`，
  *   属服务端本机缓存，**不写进用户的工作目录**，也不进库表）。
- * - **增量时机**：① 手动「重建」；② 搜索时若索引缺失就按需建一份（懒建）。
+ * - **增量时机**：① 手动「重建」（不受资格线限制，超限只截断）；② 设置「索引新文件夹」开着
+ *   时，搜索若发现索引缺失就**自动建一份**——但目录文件数达到 50,000 时**不建**，抛
+ *   {@link IndexTooLargeError} 让端点如实说明（`autoOnly` 决定是哪条路径）。
  *   已存在时按 `mtimeMs + bytes` 比对：**只有变化的文件重读**，删除的文件从索引里摘掉。
  * - **失效**：目录不存在 → 报可读错误；单个文件读失败（权限/IO）→ 跳过，计入 `skipped`
  *   （`skipped` 是「读不出来的文件数」，不含二进制/超限——那两类只是没有摘要）。
- * - **上限**：条目 ≤ 20000；单文件 ≤ 2MB 才读摘要（更大的只记元数据）；索引文件 ≤ 30MB；
+ * - **上限**：条目 ≤ {@link INDEX_MAX_ENTRIES}（= 50000，与参考图「文件数少于 50,000」同一个数：
+ *   它既是**自动索引的资格线**，也是索引自身的条目上限，避免出现「够资格却必然被截断」的
+ *   两套数字）；单文件 ≤ 2MB 才读摘要（更大的只记元数据）；索引文件 ≤ 30MB；
  *   跳过 `.git`、`node_modules`、`dist`、`.next`、`.venv` 等目录。
  * - **谁在用**：右栏「文件目录」的搜索框（按文件名/路径/摘要匹配）。**agent 不用它**——
  *   agent 有自己的 glob/grep 工具，索引只是给人找文件用的本机缓存。
  */
 
-export const INDEX_MAX_ENTRIES = 20_000;
+/**
+ * 条目上限 = 自动索引资格线（参考图：`自动索引文件数少于 50,000 的新文件夹`）。
+ * 两个数**故意同一个**：若资格线高于条目上限，就会出现「够资格但必然被截断」的假承诺。
+ */
+export const INDEX_MAX_ENTRIES = 50_000;
 export const INDEX_MAX_FILE_BYTES = 2 * 1024 * 1024;
 export const INDEX_MAX_INDEX_BYTES = 30 * 1024 * 1024;
 export const INDEX_SUMMARY_CHARS = 200;
@@ -143,9 +151,27 @@ function summarize(text: string): string {
   return text.replace(/\s+/g, " ").trim().slice(0, INDEX_SUMMARY_CHARS);
 }
 
+/** 自动索引装不下这个目录：文件数达到 {@link INDEX_MAX_ENTRIES}（= 参考图的 50,000）。 */
+export class IndexTooLargeError extends Error {
+  readonly files = INDEX_MAX_ENTRIES;
+  constructor(readonly root: string) {
+    super(
+      `这个工作目录的文件数达到 ${INDEX_MAX_ENTRIES.toLocaleString("en-US")} 上限，` +
+        "按「索引新文件夹」的设置没有自动建索引。要建的话请到「设置 → 索引库」点「重建索引」" +
+        "（超大目录只索引前一部分，界面会标注已截断）。",
+    );
+    this.name = "IndexTooLargeError";
+  }
+}
+
 export interface CodeIndexStoreOptions {
   /** 索引根目录（默认 `<cwd>/.kenfutwork/index`）。测试注入临时目录。 */
   indexDir?: string;
+  /**
+   * 条目上限（默认 {@link INDEX_MAX_ENTRIES}）。**仅测试注入**：造 50,000 个文件不现实，
+   * 用一个小数字才能验到「自动建超限拒绝」与「手动重建超限截断」两条分支。
+   */
+  entryLimit?: number;
 }
 
 export function createCodeIndexStore(options: CodeIndexStoreOptions = {}) {
@@ -172,12 +198,19 @@ export function createCodeIndexStore(options: CodeIndexStoreOptions = {}) {
   /**
    * 建（或增量刷新）索引。
    * `previous` 存在时按 mtime+bytes 复用摘要，只有变化的条目重读内容。
+   *
+   * `autoOnly` = 这是「索引新文件夹」的**自动**路径：条目数达到上限时抛
+   * {@link IndexTooLargeError} 并**不落盘**（不给用户留一份假装完整的索引）；
+   * 手动「重建」不带这个标记，超限只截断（`truncated` 已在界面上标注）。
    */
   const build = async (
     canvasId: string,
     root: string,
     previous?: CodeIndexFile | null,
+    buildOptions: { autoOnly?: boolean; entryLimit?: number } = {},
   ): Promise<CodeIndexFile> => {
+    const entryLimit =
+      buildOptions.entryLimit ?? options.entryLimit ?? INDEX_MAX_ENTRIES;
     const startedAt = Date.now();
     const priorByPath = new Map(
       (previous?.entries ?? []).map((entry) => [entry.path, entry]),
@@ -195,7 +228,9 @@ export function createCodeIndexStore(options: CodeIndexStoreOptions = {}) {
         return;
       }
       for (const child of children) {
-        if (entries.length >= INDEX_MAX_ENTRIES) {
+        if (entries.length >= entryLimit) {
+          // 自动路径：超限即拒绝（调用方转成可读说明），不写半截索引
+          if (buildOptions.autoOnly) throw new IndexTooLargeError(root);
           truncated = true;
           return;
         }
@@ -273,11 +308,22 @@ export function createCodeIndexStore(options: CodeIndexStoreOptions = {}) {
     return index;
   };
 
-  /** 拿索引：有就直接用；没有就懒建一份（并把 previous 传进去做增量）。 */
+  /**
+   * 拿索引：有就直接用；没有就按「索引新文件夹」的设置建一份。
+   *
+   * `auto` = 允许自动建（设置里那一行开着）。关着时**不建**，返回 null 让调用方
+   * 如实告诉用户「没有索引，请手动重建」——不偷偷建，也不假装搜过。
+   */
   const ensure = async (
     canvasId: string,
     root: string,
-  ): Promise<CodeIndexFile> => (await load(canvasId)) ?? build(canvasId, root);
+    ensureOptions: { auto?: boolean } = {},
+  ): Promise<CodeIndexFile | null> => {
+    const existing = await load(canvasId);
+    if (existing) return existing;
+    if (!ensureOptions.auto) return null;
+    return build(canvasId, root, null, { autoOnly: true });
+  };
 
   const rebuild = async (canvasId: string, root: string) =>
     build(canvasId, root, await load(canvasId));

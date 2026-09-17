@@ -71,7 +71,10 @@ function readBundleDeclaration(
       : null;
   if (!declaredBy) return null;
   return {
-    name: typeof parsed.name === "string" ? parsed.name : dir.split(sep).pop()!,
+    name:
+      typeof parsed.name === "string"
+        ? parsed.name
+        : (dir.split(sep).pop() ?? dir),
     version: typeof parsed.version === "string" ? parsed.version : "",
     declaredBy,
   };

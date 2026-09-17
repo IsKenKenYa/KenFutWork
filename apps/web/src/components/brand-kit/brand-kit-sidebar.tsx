@@ -49,6 +49,7 @@ export function BrandKitSidebar({
         {kits.map((kit) => {
           const isSelected = kit.id === selectedKitId;
           return (
+            // biome-ignore lint/a11y/useSemanticElements: 行内有嵌套的删除按钮，<button> 套 <button> 非法；role + Enter/Space 已补键盘等价
             <div
               role="button"
               tabIndex={0}

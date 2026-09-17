@@ -88,6 +88,11 @@ export type ServerEnv = {
   googleVertexProject?: string;
   googleVertexVideoLocation?: string;
   metasoApiBase?: string;
+  /**
+   * 上下文自动压缩的**阈值覆盖**（token，整数；缺省按「窗口 − 预留输出」算）。
+   * 用途：窗口认不出的模型想自己定阈值、真机验证压缩机制时把阈值压到很小。
+   */
+  autoCompactTriggerTokens?: number;
   /** 认证形态：`managed`（服务端/自托管，默认，自管令牌）/ `local-trust`（桌面免登录）。 */
   authDriver?: string;
   /** HTTP 监听地址（`HOST`）；local-trust 形态必须是回环地址。缺省回环。 */
@@ -208,6 +213,12 @@ export function loadServerEnv(
   const authDriver =
     overrides.authDriver ??
     normalizeOptionalString(source.KENFUTWORK_AUTH_DRIVER);
+  const autoCompactTriggerTokens =
+    overrides.autoCompactTriggerTokens ??
+    parseOptionalPositiveInt(
+      source.KENFUTWORK_AUTO_COMPACT_TRIGGER_TOKENS,
+      "KENFUTWORK_AUTO_COMPACT_TRIGGER_TOKENS",
+    );
   const queueDriver =
     overrides.queueDriver ??
     normalizeOptionalString(source.KENFUTWORK_QUEUE_DRIVER);
@@ -363,6 +374,7 @@ export function loadServerEnv(
     ...(sandboxRoot ? { sandboxRoot } : {}),
     ...(credentialSecret ? { credentialSecret } : {}),
     ...(authDriver ? { authDriver } : {}),
+    ...(autoCompactTriggerTokens ? { autoCompactTriggerTokens } : {}),
     ...(databaseUrl ? { databaseUrl } : {}),
     ...(queueDriver ? { queueDriver } : {}),
     ...(blobDir ? { blobDir } : {}),
@@ -560,6 +572,19 @@ function parseBooleanFlag(rawValue: string | undefined) {
     return undefined;
   }
   return ["1", "true", "yes", "on"].includes(normalized) ? true : undefined;
+}
+
+/** 可选正整数（token 数一类）：缺省 `undefined`，非法值 fail loud（与端口区分开）。 */
+function parseOptionalPositiveInt(rawValue: string | undefined, name: string) {
+  const normalized = normalizeOptionalString(rawValue);
+  if (!normalized) {
+    return undefined;
+  }
+  const value = Number.parseInt(normalized, 10);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`Invalid ${name} value: ${rawValue}`);
+  }
+  return value;
 }
 
 /** 可选端口：缺省 `undefined`（由内核自动挑空闲端口），非法值 fail loud。 */

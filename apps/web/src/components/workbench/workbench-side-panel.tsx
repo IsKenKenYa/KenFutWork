@@ -30,6 +30,7 @@ import {
   PANEL_WIDTH_KEY,
   type PanelWidthLimits,
 } from "@/lib/panel-layout";
+import { onPanelViewRequest } from "@/lib/panel-open";
 import {
   closePanelTab,
   makePanelTab,
@@ -149,6 +150,21 @@ export function WorkbenchSidePanel({
     [],
   );
 
+  /**
+   * 别处（设置 →「子智能体」）请求打开某个右栏视图：开标签并展开面板。
+   * 与浏览器那条通道同一形状，但按**视图**而不是 URL。
+   */
+  useEffect(
+    () =>
+      onPanelViewRequest((kind) => {
+        setState((current) =>
+          openPanelTab(current.tabs, current.activeId, { kind }, Date.now()),
+        );
+        if (!openRef.current) requestOpenRef.current?.();
+      }),
+    [],
+  );
+
   /** 面板宽度（可拖拽，持久化到 localStorage：宽度是用户偏好）。 */
   const [width, setWidth] = useState(() => {
     if (typeof window === "undefined") return DEFAULT_PANEL_WIDTH;
@@ -233,6 +249,7 @@ export function WorkbenchSidePanel({
       className="relative flex shrink-0 flex-col border-l bg-card"
     >
       {/* 拖拽把手：贴面板左边缘（按住拖动改宽） */}
+      {/* biome-ignore lint/a11y/useSemanticElements: 拖拽改宽的把手（无 aria-valuenow 的可聚焦分隔条语义），<hr> 是内容分隔线，替换会丢拖拽语义 */}
       <div
         role="separator"
         aria-orientation="vertical"

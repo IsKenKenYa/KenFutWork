@@ -96,11 +96,10 @@ describe("TerminalPane（交互式会话）", () => {
     await waitFor(() =>
       expect(ws.handle.startTerminal).toHaveBeenCalledTimes(1),
     );
-    const payload = (ws.handle.startTerminal as ReturnType<typeof vi.fn>).mock
-      .calls[0]![0] as { canvasId: string; shell: string; sessionId: string };
-    expect(payload.canvasId).toBe("canvas-1");
-    expect(payload.shell).toBe("cmd");
-    expect(payload.sessionId).toMatch(/^term-/);
+    const payload = vi.mocked(ws.handle.startTerminal).mock.calls[0]?.[0];
+    expect(payload?.canvasId).toBe("canvas-1");
+    expect(payload?.shell).toBe("cmd");
+    expect(payload?.sessionId).toMatch(/^term-/);
   });
 
   it("输入一行：本地补回显（没有 TTY），再把内容送给服务端（sessionId 对齐）", async () => {

@@ -118,6 +118,25 @@ export interface ContextUsageView {
   outputLabel: string | null;
   /** 参考图那种「50.7万/100万（50.7%）」的整行读数。 */
   usageLine: string | null;
+  /**
+   * 预留输出段（为模型回复留出的窗口空间）：`min(模型声明的最大输出, 窗口)`。
+   *
+   * **模型没声明最大输出时为 null，那一段不画**（不编数字：这个数决定「还剩多少」的
+   * 读数，编出来的余量比不显示更糟）。
+   */
+  reserveTokens: number | null;
+  reserveLabel: string | null;
+  /** 剩余可用 = 窗口 − 已用 − 预留；预留未知或窗口未知时为 null（读数会误导）。 */
+  remainingLabel: string | null;
+  /**
+   * 「输出预留线」：`窗口 − 预留` 对应的百分比位置（进度条上那根刻度）。
+   *
+   * 口径：**超过这条线意味着已经吃掉为回复预留的空间**——再追一轮更容易被上游
+   * 截断/拒绝。我们**不做自动压缩**，所以这条线是给人看的行动提示，不是「到时自动处理」的开关。
+   */
+  thresholdPercent: number | null;
+  /** 是否已越线（已用 > 阈值）。预留未知时恒为 false。 */
+  overThreshold: boolean;
 }
 
 /** token 数的中文习惯缩写（参考图口径：61.4万 / 100万）。 */
@@ -159,6 +178,8 @@ export function contextUsageView(
   contextWindow: number | null | undefined,
   /** 模型 id：窗口没声明时用它查常见模型兜底表（见 @kenfutwork/shared）。 */
   modelId = "",
+  /** 模型声明的单次最大输出 token；缺省/非法时「预留输出」段不画（不编数字）。 */
+  maxOutputTokens: number | null | undefined = null,
 ): ContextUsageView {
   const window = resolveContextWindow(contextWindow, modelId);
   const empty: ContextUsageView = {
@@ -174,6 +195,11 @@ export function contextUsageView(
     outputLabel: null,
     composition: [],
     usageLine: null,
+    reserveTokens: null,
+    reserveLabel: null,
+    remainingLabel: null,
+    thresholdPercent: null,
+    overThreshold: false,
   };
   if (!usage || usage.inputTokens <= 0) return empty;
 
@@ -198,6 +224,26 @@ export function contextUsageView(
       ? (cached / usage.inputTokens) * 100
       : null;
 
+  // 预留输出：只在「模型声明了最大输出」且「窗口已知」时成立。
+  // 上限取 min(声明值, 窗口)——声明值大于窗口时（配置写错）不能把预留算成整窗。
+  const reserve =
+    window !== null &&
+    typeof maxOutputTokens === "number" &&
+    Number.isFinite(maxOutputTokens) &&
+    maxOutputTokens > 0
+      ? Math.min(Math.floor(maxOutputTokens), window)
+      : null;
+  const thresholdTokens =
+    reserve === null || window === null ? null : window - reserve;
+  const thresholdPercent =
+    thresholdTokens === null || window === null || window <= 0
+      ? null
+      : Math.round((thresholdTokens / window) * 1000) / 10;
+  const remainingTokens =
+    window === null || reserve === null
+      ? null
+      : window - usage.inputTokens - reserve;
+
   return {
     hasUsage: true,
     inputLabel: formatTokens(usage.inputTokens),
@@ -219,5 +265,15 @@ export function contextUsageView(
         : `${formatTokens(usage.inputTokens)}/${formatTokens(window)}（${
             percent ?? 0
           }%）`,
+    reserveTokens: reserve,
+    reserveLabel: reserve === null ? null : formatTokens(reserve),
+    // 剩余为负时不写负数：越线读数由 overThreshold 表达（「已经吃掉预留」比「负剩余」清楚）
+    remainingLabel:
+      remainingTokens === null
+        ? null
+        : formatTokens(Math.max(0, remainingTokens)),
+    thresholdPercent,
+    overThreshold:
+      thresholdTokens !== null && usage.inputTokens > thresholdTokens,
   };
 }

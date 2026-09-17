@@ -36,6 +36,8 @@ export interface WorkDirectorySelectProps {
   lockedHint?: string | undefined;
   /** 正在创建项目（新建/自动补建）时为 true，禁用以避免并发重复建。 */
   busy?: boolean;
+  /** 「打开文件夹」的副标题：说清会开系统对话框还是浏览器选择器（见 folderPickerHint）。 */
+  folderHint?: string | undefined;
   onSelect: (projectId: string) => void;
   /** 打开文件夹：调浏览器目录选择器，按目录名复用/新建工作目录。 */
   onOpenFolder: () => void;
@@ -53,6 +55,7 @@ export function WorkDirectorySelect({
   selectedProjectId,
   lockedHint,
   busy = false,
+  folderHint,
   onSelect,
   onOpenFolder,
   onBindPath,
@@ -272,10 +275,17 @@ export function WorkDirectorySelect({
                     setOpen(false);
                     onOpenFolder();
                   }}
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                  className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
                 >
-                  <FolderOpen className="h-4 w-4 shrink-0" />
-                  打开文件夹
+                  <FolderOpen className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span className="min-w-0">
+                    <span className="block">打开文件夹</span>
+                    {folderHint ? (
+                      <span className="block text-[11px] text-muted-foreground/80">
+                        {folderHint}
+                      </span>
+                    ) : null}
+                  </span>
                 </button>
                 {onBindPath ? (
                   <button

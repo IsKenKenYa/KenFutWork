@@ -90,6 +90,44 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
   );
   const rpcHandlers = useRef<Map<string, RPCHandler>>(new Map());
 
+  // 只读 rpcHandlers ref，故空依赖数组即稳定引用；connect 依赖它才不违反 exhaustive-deps。
+  const handleRpcRequest = useCallback(
+    async (ws: WebSocket, req: WsRpcRequest) => {
+      const handler = rpcHandlers.current.get(req.method);
+      if (!handler) {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(
+            JSON.stringify({
+              type: "rpc.response",
+              id: req.id,
+              error: `No handler for method: ${req.method}`,
+            }),
+          );
+        }
+        return;
+      }
+
+      try {
+        const result = await handler(req.params);
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "rpc.response", id: req.id, result }));
+        }
+      } catch (error) {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(
+            JSON.stringify({
+              type: "rpc.response",
+              id: req.id,
+              error:
+                error instanceof Error ? error.message : "RPC handler failed",
+            }),
+          );
+        }
+      }
+    },
+    [],
+  );
+
   const connect = useCallback(() => {
     const token = getToken();
     if (disposed.current) return;
@@ -240,41 +278,7 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
     ws.onerror = () => {
       ws.close();
     };
-  }, [getToken]);
-
-  async function handleRpcRequest(ws: WebSocket, req: WsRpcRequest) {
-    const handler = rpcHandlers.current.get(req.method);
-    if (!handler) {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(
-          JSON.stringify({
-            type: "rpc.response",
-            id: req.id,
-            error: `No handler for method: ${req.method}`,
-          }),
-        );
-      }
-      return;
-    }
-
-    try {
-      const result = await handler(req.params);
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "rpc.response", id: req.id, result }));
-      }
-    } catch (error) {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(
-          JSON.stringify({
-            type: "rpc.response",
-            id: req.id,
-            error:
-              error instanceof Error ? error.message : "RPC handler failed",
-          }),
-        );
-      }
-    }
-  }
+  }, [getToken, handleRpcRequest]);
 
   useEffect(() => {
     disposed.current = false;

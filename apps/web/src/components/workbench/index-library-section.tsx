@@ -11,9 +11,14 @@ import {
 /**
  * 设置 → 索引库（R4-3）。
  *
+ * 形态照参考图（`docs/参考图/索引库-代码库索引开关.png`）：「代码库」分组下**两行开关**，
+ * 两行都是真行为（不是排版）：
+ * 1. **索引新文件夹**：搜到还没有索引的工作目录时自动建一份（文件数 < 50,000 才建）；
+ * 2. **索引存储库以实现即时搜索（测试版）**：右栏「文件目录」的搜索走索引。
+ *
  * 索引是**本机缓存**（`<cwd>/.kenfutwork/index/<canvasId>.json`），进库表的东西一件没有：
- * 开关记在工作区设置里，索引文件在磁盘上。开关关着时右栏「文件目录」的搜索会如实报
- * 「索引库未开启」，而不是回一个空列表。
+ * 开关记在工作区设置里，索引文件在磁盘上。「所有数据均存储在本地」这句是承诺，所以
+ * 界面上照写并说明落点。
  */
 
 export function formatBytes(bytes: number): string {
@@ -40,14 +45,20 @@ export function IndexLibrarySection({
   accessToken,
   canvasId,
   enabled,
+  autoNewFolder,
   onToggle,
+  onToggleAuto,
 }: {
   accessToken: string;
   /** 当前会话/项目的主画布（索引按画布即工作目录建）。 */
   canvasId: string | null;
-  /** 工作区设置里的开关值（由设置模态统一读写，避免两处真相）。 */
+  /** ② 「索引存储库以实现即时搜索」：搜索走索引。 */
   enabled: boolean;
+  /** ① 「索引新文件夹」：自动为尚无索引的工作目录建索引。 */
+  autoNewFolder: boolean;
+  /** 由设置模态统一读写，避免两处真相。 */
   onToggle: (next: boolean) => Promise<void>;
+  onToggleAuto: (next: boolean) => Promise<void>;
 }) {
   const [stats, setStats] = useState<CodeIndexStats | null>(null);
   const [busy, setBusy] = useState(false);
@@ -94,26 +105,31 @@ export function IndexLibrarySection({
     <section aria-label="索引库设置">
       <h3 className="mb-1 text-base font-medium">索引库</h3>
       <p className="mb-3 text-sm text-muted-foreground">
-        给工作目录里的文件建一份**本机索引**（路径 / 大小 / 语言 / 摘要前 200
-        字），
-        右栏「文件目录」的搜索用它按文件名、路径和内容摘要找文件。索引文件存在服务端
-        `/.kenfutwork/index/`，不进数据库，也不会写进你的工作目录。
+        索引针对工作目录（Code 模式的项目目录）：记下每个文件的路径 / 大小 /
+        语言 / 摘要前 200
+        字，右栏「文件目录」的搜索用它按文件名、路径和内容摘要找文件。
       </p>
 
-      <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
-        <input
-          type="checkbox"
-          checked={enabled}
-          onChange={(event) => void onToggle(event.target.checked)}
-          className="h-4 w-4"
+      <p className="mb-1 text-xs text-muted-foreground">代码库</p>
+      <div className="divide-y rounded-lg border">
+        <IndexToggle
+          title="索引新文件夹"
+          hint="自动索引文件数少于 50,000 的新文件夹。"
+          checked={autoNewFolder}
+          onChange={(next) => void onToggleAuto(next)}
         />
-        <span>
-          启用索引库
-          <span className="ml-2 text-xs text-muted-foreground">
-            关掉后「文件目录」搜索会提示未开启，其余功能不受影响
-          </span>
-        </span>
-      </label>
+        <IndexToggle
+          title="索引存储库以实现即时搜索（测试版）"
+          hint="自动对仓库进行索引，以加快 Grep 搜索速度。所有数据均存储在本地。"
+          checked={enabled}
+          onChange={(next) => void onToggle(next)}
+        />
+      </div>
+      <p className="mt-1.5 text-xs text-muted-foreground">
+        索引文件存在服务端的
+        .kenfutwork/index/（本机缓存），不进数据库、也不会写进你的
+        工作目录；「索引新文件夹」只在「即时搜索」开着时才起作用。
+      </p>
 
       <div className="mt-3 rounded-lg border p-3 text-sm">
         {canvasId === null ? (
@@ -137,7 +153,10 @@ export function IndexLibrarySection({
           </ul>
         ) : (
           <p className="text-muted-foreground">
-            还没有索引——点「重建索引」建一份（或在「文件目录」里搜一次，会按需自动建）。
+            还没有索引——
+            {autoNewFolder && enabled
+              ? "在「文件目录」里搜一次会自动建一份，也可以点下面的「重建索引」。"
+              : "点下面的「重建索引」建一份（「索引新文件夹」关着时不会自动建）。"}
           </p>
         )}
         <div className="mt-3 flex items-center gap-2">
@@ -166,5 +185,36 @@ export function IndexLibrarySection({
         </p>
       ) : null}
     </section>
+  );
+}
+
+/** 一行参考图式开关：整行可点，标题 + 说明在左、开关在右。 */
+function IndexToggle({
+  title,
+  hint,
+  checked,
+  onChange,
+}: {
+  title: string;
+  hint: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <label className="flex cursor-pointer items-center justify-between gap-4 px-3 py-2.5">
+      <span className="min-w-0">
+        <span className="block text-sm">{title}</span>
+        <span className="block text-xs text-muted-foreground">{hint}</span>
+      </span>
+      <input
+        type="checkbox"
+        role="switch"
+        aria-label={title}
+        aria-checked={checked}
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="h-4 w-8 shrink-0 appearance-none rounded-full bg-muted transition-colors checked:bg-foreground/80 before:block before:h-3.5 before:w-3.5 before:translate-x-0.5 before:rounded-full before:bg-background before:transition-transform checked:before:translate-x-4"
+      />
+    </label>
   );
 }

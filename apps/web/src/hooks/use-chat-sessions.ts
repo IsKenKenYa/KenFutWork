@@ -135,6 +135,8 @@ export function useChatSessions({
   messagesRef.current = messages;
   const onSessionChangeRef = useRef(onSessionChange);
   onSessionChangeRef.current = onSessionChange;
+  const initialSessionIdRef = useRef(initialSessionId);
+  initialSessionIdRef.current = initialSessionId;
 
   // LRU message cache (replaces unbounded Record)
   const msgCacheRef = useRef<LRUMessageCache>(createLRUMessageCache());
@@ -159,18 +161,20 @@ export function useChatSessions({
 
     async function init() {
       const token = accessTokenRef.current;
+      const initialId = initialSessionIdRef.current;
       setSessionsLoading(true);
       try {
         const res = await fetchSessions(token, canvasId);
         if (cancelled) return;
 
-        if (res.sessions.length > 0) {
+        const first = res.sessions[0];
+        if (first) {
           setSessions(res.sessions);
-          const target = initialSessionId
+          const target = initialId
             ? (res.sessions.find(
-                (s: ChatSessionSummary) => s.id === initialSessionId,
-              ) ?? res.sessions[0]!)
-            : res.sessions[0]!;
+                (s: ChatSessionSummary) => s.id === initialId,
+              ) ?? first)
+            : first;
           setActiveSessionId(target.id);
           onSessionChangeRef.current?.(target.id);
           const msgRes = await fetchMessages(token, target.id);
@@ -198,7 +202,7 @@ export function useChatSessions({
       cancelled = true;
     };
     // Intentionally depends only on canvasId — accessTokenRef, onSessionChangeRef,
-    // initialSessionId, and msgCacheRef are stable refs that never trigger re-runs.
+    // initialSessionIdRef, and msgCacheRef are stable refs that never trigger re-runs.
     // This effect is a one-time init per canvas, not a token-refresh handler.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canvasId]);
@@ -265,8 +269,8 @@ export function useChatSessions({
         }
       } else {
         setSessions(remaining);
-        if (sessionId === activeSessionIdRef.current) {
-          const next = remaining[0]!;
+        const next = remaining[0];
+        if (next && sessionId === activeSessionIdRef.current) {
           setActiveSessionId(next.id);
           onSessionChangeRef.current?.(next.id);
           setMessagesLoading(true);

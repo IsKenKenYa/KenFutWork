@@ -9,6 +9,7 @@ import { useId } from "react";
  * 白字形与旧骨架同一结构：竖笔 + 顶横（F）+ 上臂 + 下腿（K），F 与 K 共用同一根竖笔；
  * 笔画取自 Chakra Petch Italic（SIL OFL），生成过程见同目录 方案对比.html。
  * 渐变/裁剪 id 用 useId 生成，避免同页多实例冲突。
+ * 默认 aria-hidden（调用处旁边必有「KenFutWork」字标）；需要独立可访问名的调用方自行传入覆盖。
  *
  * @example
  * <KenFutWorkLogo className="size-7" />
@@ -24,6 +25,7 @@ export function KenFutWorkLogo(props: SVGProps<SVGSVGElement>) {
       viewBox="0 0 512 512"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
       {...props}
     >
       <defs>

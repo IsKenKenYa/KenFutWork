@@ -1,9 +1,38 @@
+import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/transform";
+import type {
+  ExcalidrawImageElement,
+  FileId,
+} from "@excalidraw/excalidraw/element/types";
+import type {
+  BinaryFileData,
+  ExcalidrawImperativeAPI,
+} from "@excalidraw/excalidraw/types";
 import type { ImageArtifact, VideoArtifact } from "@kenfutwork/shared";
 
 import { getServerBaseUrl } from "./env";
 
 /** Video file extensions recognized for inline playback on canvas. */
 const VIDEO_EXTENSIONS = [".mp4", ".webm", ".ogg", ".mov"];
+
+/**
+ * 传给 `convertToExcalidrawElements` 的视频嵌入骨架：只声明本处提供的字段，
+ * 其余（id/颜色/版本号…）由它补全。
+ */
+type VideoEmbeddableSkeleton = {
+  type: "embeddable";
+  link: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  customData: {
+    isVideo: true;
+    mimeType: string;
+    durationSeconds: number | undefined;
+    title: string | undefined;
+    prompt: string | undefined;
+  };
+};
 
 /**
  * Check if a URL points to a video file based on extension or customData hint.
@@ -69,8 +98,17 @@ export function createExcalidrawImageElement(opts: {
   title?: string;
   source?: "generated" | "uploaded";
   storageUrl?: string;
-}): Record<string, unknown> {
-  const element: Record<string, unknown> = {
+}): ExcalidrawImageElement {
+  const customData =
+    opts.title || opts.source || opts.storageUrl
+      ? {
+          ...(opts.title ? { title: opts.title } : {}),
+          ...(opts.source ? { source: opts.source } : {}),
+          ...(opts.storageUrl ? { storageUrl: opts.storageUrl } : {}),
+        }
+      : null;
+
+  return {
     type: "image",
     id: generateId(),
     x: opts.x,
@@ -78,7 +116,8 @@ export function createExcalidrawImageElement(opts: {
     width: opts.width,
     height: opts.height,
     angle: 0,
-    fileId: opts.fileId,
+    // fileId 在 Excalidraw 类型里是品牌字符串，来源是本函数调用方的自有 id，故在边界处断言。
+    fileId: opts.fileId as FileId,
     strokeColor: "#000000",
     backgroundColor: "transparent",
     fillStyle: "solid",
@@ -101,15 +140,8 @@ export function createExcalidrawImageElement(opts: {
     status: "saved",
     scale: [1, 1],
     crop: null,
+    ...(customData ? { customData } : {}),
   };
-  if (opts.title || opts.source || opts.storageUrl) {
-    element.customData = {
-      ...(opts.title ? { title: opts.title } : {}),
-      ...(opts.source ? { source: opts.source } : {}),
-      ...(opts.storageUrl ? { storageUrl: opts.storageUrl } : {}),
-    };
-  }
-  return element;
 }
 
 /**
@@ -137,14 +169,7 @@ export async function fetchAsDataURL(url: string): Promise<string> {
  * Insert an image artifact onto the Excalidraw canvas.
  */
 export async function insertImageOnCanvas(
-  api: {
-    addFiles: (
-      files: { id: any; dataURL: any; mimeType: string; created: number }[],
-    ) => void;
-    getSceneElements: () => readonly any[];
-    getAppState: () => any;
-    updateScene: (scene: { elements: any[]; captureUpdate?: string }) => void;
-  },
+  api: ExcalidrawImperativeAPI,
   artifact: ImageArtifact,
 ): Promise<void> {
   const dataURL = await fetchAsDataURL(artifact.url);
@@ -152,9 +177,11 @@ export async function insertImageOnCanvas(
 
   api.addFiles([
     {
-      id: fileId as any,
-      dataURL: dataURL as any,
-      mimeType: artifact.mimeType,
+      // id/dataURL/mimeType 在 Excalidraw 类型里是品牌字符串，这里的数据是生成结果与
+      // 服务端代理产物，与组件侧的 addFiles 同口径：在边界处断言。
+      id: fileId as BinaryFileData["id"],
+      dataURL: dataURL as BinaryFileData["dataURL"],
+      mimeType: artifact.mimeType as BinaryFileData["mimeType"],
       created: Date.now(),
     },
   ]);
@@ -176,7 +203,7 @@ export async function insertImageOnCanvas(
     width = scaled.width;
     height = scaled.height;
 
-    const elements = api.getSceneElements().filter((el: any) => !el.isDeleted);
+    const elements = api.getSceneElements().filter((el) => !el.isDeleted);
 
     if (elements.length === 0) {
       // Empty canvas → viewport center
@@ -226,11 +253,7 @@ export async function insertImageOnCanvas(
  * No poster frame extraction needed -- the video plays directly on canvas.
  */
 export async function insertVideoOnCanvas(
-  api: {
-    getSceneElements: () => readonly any[];
-    getAppState: () => any;
-    updateScene: (scene: { elements: any[]; captureUpdate?: string }) => void;
-  },
+  api: ExcalidrawImperativeAPI,
   artifact: VideoArtifact,
 ): Promise<void> {
   // Dynamic import — excalidraw is client-only and cannot be imported at module level
@@ -254,7 +277,7 @@ export async function insertVideoOnCanvas(
     width = scaled.width;
     height = scaled.height;
 
-    const elements = api.getSceneElements().filter((el: any) => !el.isDeleted);
+    const elements = api.getSceneElements().filter((el) => !el.isDeleted);
 
     if (elements.length === 0) {
       // Empty canvas -- place at viewport center
@@ -278,22 +301,28 @@ export async function insertVideoOnCanvas(
     }
   }
 
+  // 视频嵌入元素的部分骨架：只给必要字段，其余（id/颜色/版本号…）由
+  // convertToExcalidrawElements 补全。
+  const skeleton: VideoEmbeddableSkeleton = {
+    type: "embeddable",
+    link: artifact.url,
+    x,
+    y,
+    width,
+    height,
+    customData: {
+      isVideo: true,
+      mimeType: artifact.mimeType,
+      durationSeconds: artifact.durationSeconds,
+      title: artifact.title?.slice(0, 60),
+      prompt: artifact.title,
+    },
+  };
+
   const newElements = convertToExcalidrawElements([
-    {
-      type: "embeddable",
-      link: artifact.url,
-      x,
-      y,
-      width,
-      height,
-      customData: {
-        isVideo: true,
-        mimeType: artifact.mimeType,
-        durationSeconds: artifact.durationSeconds,
-        title: artifact.title?.slice(0, 60),
-        prompt: artifact.title,
-      },
-    } as any, // ExcalidrawElementSkeleton includes IframeLikeElement but TS needs a nudge
+    // ExcalidrawElementSkeleton 是「完整元素」口径，装不下只给部分字段的骨架
+    // （缺失字段由它补全），故在这一处官方边界上收窄。
+    skeleton as unknown as ExcalidrawElementSkeleton,
   ]);
 
   const existing = api.getSceneElements();

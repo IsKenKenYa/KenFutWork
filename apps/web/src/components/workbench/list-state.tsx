@@ -1,5 +1,5 @@
 import { Loader2 } from "lucide-react";
-
+import { keyed } from "@/components/list-keys";
 import { Skeleton } from "@/components/ui/skeleton";
 
 /**
@@ -30,8 +30,11 @@ export function ListLoading({
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
         {label}
       </p>
-      {Array.from({ length: rows }, (_, index) => (
-        <div key={index} className="rounded-xl border p-3">
+      {keyed(
+        Array.from({ length: rows }, () => "skeleton-row"),
+        (rowKey) => rowKey,
+      ).map(({ key }) => (
+        <div key={key} className="rounded-xl border p-3">
           <Skeleton className="h-4 w-1/3" />
           <Skeleton className="mt-2 h-3 w-full" />
           <Skeleton className="mt-1.5 h-3 w-2/3" />

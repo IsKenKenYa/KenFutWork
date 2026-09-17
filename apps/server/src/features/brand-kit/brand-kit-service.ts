@@ -143,9 +143,13 @@ export function createBrandKitService(options: {
     const mappedAssets = assetRows.map(mapAssetRow);
 
     // Resolve signed URLs for file-based assets (logo/image)
-    const fileAssets = mappedAssets.filter((a) => a.file_url);
+    // 谓词形式让 file_url 在后续循环里保持非空收窄（普通 filter 不收窄）
+    const fileAssets = mappedAssets.filter(
+      (asset): asset is BrandKitAsset & { file_url: string } =>
+        Boolean(asset.file_url),
+    );
     if (fileAssets.length > 0) {
-      const paths = fileAssets.map((a) => a.file_url!);
+      const paths = fileAssets.map((a) => a.file_url);
       const signedEntries = await options.blob
         .bucket(BRAND_KIT_BUCKET)
         .createSignedUrls(paths, SIGNED_URL_EXPIRY_SECONDS);
@@ -157,7 +161,7 @@ export function createBrandKitService(options: {
           ),
         );
         for (const asset of fileAssets) {
-          const url = urlByPath.get(asset.file_url!);
+          const url = urlByPath.get(asset.file_url);
           if (url) asset.file_url = url;
         }
       }

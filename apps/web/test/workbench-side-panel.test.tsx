@@ -388,13 +388,19 @@ describe("WorkbenchSidePanel（多标签）", () => {
       screen.getAllByRole("button", { name: /撤销第 \d 块/ }),
     ).toHaveLength(2);
     // 用户口径「暂存块和撤销块要做在左边」：它们在这一行**最左**的 gutter 里
-    const line = buttons[0]!.closest("div");
-    expect(line?.firstElementChild?.contains(buttons[0]!)).toBe(true);
+    const [firstStageButton, secondStageButton] = buttons;
+    if (!firstStageButton || !secondStageButton) {
+      throw new Error("src/app.ts 应有两个暂存块按钮");
+    }
+    const line = firstStageButton.closest("div");
+    expect(line?.firstElementChild?.contains(firstStageButton)).toBe(true);
 
-    await userEvent.click(buttons[1]!);
+    await userEvent.click(secondStageButton);
 
     await waitFor(() => expect(stageGitHunkMock).toHaveBeenCalledTimes(1));
-    const [, , path, patch] = stageGitHunkMock.mock.calls[0]!;
+    const stageCall = stageGitHunkMock.mock.calls[0];
+    if (!stageCall) throw new Error("stageGitHunk 应被调用一次");
+    const [, , path, patch] = stageCall;
     expect(path).toBe("src/app.ts");
     expect(patch).toContain("diff --git a/src/app.ts b/src/app.ts");
     expect(patch).toContain("@@ -20,3 +20,4 @@");

@@ -7,6 +7,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { WorkDirectorySelect } from "../src/components/workbench/work-directory-select";
+import { folderPickerHint } from "../src/lib/work-directory.js";
 
 /**
  * 对话标题行里的工作目录 chip。
@@ -167,5 +168,23 @@ describe("WorkDirectorySelect：填本机路径", () => {
     expect(
       screen.queryByRole("button", { name: "填本机路径" }),
     ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * 「打开文件夹」的副标题：桌面形态走服务端系统对话框（真绑定），其它形态是浏览器选择器
+ * （只有目录名）。说清差别，用户才知道选的目录有没有被用上。
+ */
+describe("WorkDirectorySelect：打开文件夹的形态说明", () => {
+  it("原生对话框可用：副标题写明系统对话框 + 直接绑定", async () => {
+    renderSelect({ folderHint: folderPickerHint({ available: true }) });
+    await userEvent.click(screen.getByRole("button", { name: "工作目录" }));
+    expect(screen.getByText(/系统文件夹对话框/)).toBeVisible();
+  });
+
+  it("不可用：副标题写明只有目录名，并指向「填本机路径」", async () => {
+    renderSelect({ folderHint: folderPickerHint(null) });
+    await userEvent.click(screen.getByRole("button", { name: "工作目录" }));
+    expect(screen.getByText(/只拿得到目录名/)).toBeVisible();
   });
 });

@@ -18,11 +18,13 @@ export function diffLines(before: string, after: string): DiffLine[] {
     new Array<number>(cols + 1).fill(0),
   );
   for (let i = rows - 1; i >= 0; i--) {
+    const row = lcs[i];
+    if (!row) continue;
     for (let j = cols - 1; j >= 0; j--) {
-      lcs[i]![j] =
+      row[j] =
         a[i] === b[j]
-          ? (lcs[i + 1]![j + 1] ?? 0) + 1
-          : Math.max(lcs[i + 1]![j] ?? 0, lcs[i]![j + 1] ?? 0);
+          ? (lcs[i + 1]?.[j + 1] ?? 0) + 1
+          : Math.max(lcs[i + 1]?.[j] ?? 0, row[j + 1] ?? 0);
     }
   }
   // 回溯出差异序列
@@ -30,25 +32,25 @@ export function diffLines(before: string, after: string): DiffLine[] {
   let i = 0;
   let j = 0;
   while (i < rows && j < cols) {
-    if (a[i] === b[j]) {
-      result.push({ type: "context", text: a[i]! });
+    const beforeLine = a[i] ?? "";
+    const afterLine = b[j] ?? "";
+    if (beforeLine === afterLine) {
+      result.push({ type: "context", text: beforeLine });
       i++;
       j++;
-    } else if ((lcs[i + 1]![j] ?? 0) >= (lcs[i]![j + 1] ?? 0)) {
-      result.push({ type: "removed", text: a[i]! });
+    } else if ((lcs[i + 1]?.[j] ?? 0) >= (lcs[i]?.[j + 1] ?? 0)) {
+      result.push({ type: "removed", text: beforeLine });
       i++;
     } else {
-      result.push({ type: "added", text: b[j]! });
+      result.push({ type: "added", text: afterLine });
       j++;
     }
   }
-  while (i < rows) {
-    result.push({ type: "removed", text: a[i]! });
-    i++;
+  for (const line of a.slice(i)) {
+    result.push({ type: "removed", text: line });
   }
-  while (j < cols) {
-    result.push({ type: "added", text: b[j]! });
-    j++;
+  for (const line of b.slice(j)) {
+    result.push({ type: "added", text: line });
   }
   return result;
 }

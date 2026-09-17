@@ -101,10 +101,12 @@ export function parseGitHubUrl(input: string): {
   if (!/^https?:/i.test(trimmed)) {
     const shorthand = trimmed.match(/^([\w.-]+)\/([\w.-]+?)(?:#(.+))?$/);
     if (!shorthand) return null;
+    // 捕获组在整体匹配成功时必然存在，默认值只为把 string | undefined 收窄
+    const [, owner = "", repo = "", ref] = shorthand;
     return {
-      owner: shorthand[1]!,
-      repo: shorthand[2]!,
-      ...(shorthand[3] ? { ref: shorthand[3] } : {}),
+      owner,
+      repo,
+      ...(ref ? { ref } : {}),
     };
   }
 

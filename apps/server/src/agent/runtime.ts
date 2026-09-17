@@ -2,20 +2,19 @@
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
-import type {
-  ImageAttachment,
-  ImageGenerationPreference,
-  MessageMention,
-  RunCancelResponse,
-  RunCreateRequest,
-  RunCreateResponse,
-  StreamEvent,
-  VideoGenerationPreference,
-} from "@kenfutwork/shared";
 import {
   type BillingErrorCode,
-  getPlanConfig,
+  type ImageAttachment,
+  type ImageGenerationPreference,
   type ImageQualityLevel,
+  type MessageMention,
+  type RunCancelResponse,
+  type RunCreateRequest,
+  type RunCreateResponse,
+  resolveContextWindow,
+  type StreamEvent,
+  type VideoGenerationPreference,
+  type VideoResolution,
 } from "@kenfutwork/shared";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { HumanMessage } from "@langchain/core/messages";
@@ -45,6 +44,7 @@ import { resolveInstanceChatModel } from "../providers/resolve.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createPipelineLogger } from "../ws/logger.js";
+import { type CompactionPlan, resolveCompactionPlan } from "./auto-compact.js";
 import { createAgentBackend } from "./backends/index.js";
 import type { ToolGate, ToolGateHooks } from "./deep-agent.js";
 import {
@@ -331,7 +331,9 @@ type CreateAgentRuntimeOptions = {
   /** BYOK：实例 specifier（<instanceId>:<model>）经此解析为协议适配器模型。 */
   modelProviders?: ModelProviderService;
   /** 模型目录（run 起始期校验「实例:模型」是否存在；缺省跳过校验）。 */
-  modelCatalog?: Pick<ModelCatalogService, "validateSpecifier"> | undefined;
+  modelCatalog?:
+    | Pick<ModelCatalogService, "validateSpecifier" | "listCatalog">
+    | undefined;
   /** 工作区设置（读「用户规则」拼进系统提示词；缺省不注入）。 */
   settingsService?: Pick<SettingsService, "getWorkspaceSettings"> | undefined;
   /** agent 链路用量累积器（turn-stopping 结算，DEC-6）。 */
@@ -737,13 +739,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               if (canvasId && result.object_path && options.canvasService) {
                 try {
                   const explicitPlacement =
-                    (input as any).placementX != null &&
-                    (input as any).placementY != null
+                    input.placementX != null && input.placementY != null
                       ? {
-                          x: (input as any).placementX,
-                          y: (input as any).placementY,
-                          width: (input as any).placementWidth ?? 512,
-                          height: (input as any).placementHeight ?? 512,
+                          x: input.placementX,
+                          y: input.placementY,
+                          width: input.placementWidth ?? 512,
+                          height: input.placementHeight ?? 512,
                         }
                       : undefined;
 
@@ -854,9 +855,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             try {
               options.tierGuard.checkModelAccess(sub.plan, input.model);
               if (input.resolution) {
+                // 工具分辨率还含 "480p"（不在 VideoResolution 枚举内，计费守卫按最低档放行）
                 options.tierGuard.checkVideoResolution(
                   sub.plan,
-                  input.resolution as any,
+                  input.resolution as VideoResolution,
                 );
               }
               await options.tierGuard.checkConcurrency(workspaceId, sub.plan);
@@ -879,7 +881,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               {
                 ...(input.duration != null ? { duration: input.duration } : {}),
                 ...(input.resolution
-                  ? { resolution: input.resolution as any }
+                  ? { resolution: input.resolution as VideoResolution }
                   : {}),
               },
             );
@@ -981,13 +983,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               if (canvasId && result.signed_url && options.canvasService) {
                 try {
                   const explicitPlacement =
-                    (input as any).placementX != null &&
-                    (input as any).placementY != null
+                    input.placementX != null && input.placementY != null
                       ? {
-                          x: (input as any).placementX,
-                          y: (input as any).placementY,
-                          width: (input as any).placementWidth ?? 640,
-                          height: (input as any).placementHeight ?? 360,
+                          x: input.placementX,
+                          y: input.placementY,
+                          width: input.placementWidth ?? 640,
+                          height: input.placementHeight ?? 360,
                         }
                       : undefined;
 
@@ -1003,9 +1004,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                         ...(result.duration_seconds != null
                           ? { durationSeconds: result.duration_seconds }
                           : {}),
-                        ...((input as any).title
-                          ? { title: (input as any).title }
-                          : {}),
+                        ...(input.title ? { title: input.title } : {}),
                         ...(input.prompt ? { prompt: input.prompt } : {}),
                         ...(explicitPlacement
                           ? { placement: explicitPlacement }
@@ -1108,6 +1107,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         backendCanvasId,
         { hasWorkspaceSkills: workspaceSkills.length > 0 },
       );
+
+      /**
+       * 自动压缩的两个运行期值，声明在**装配块之外**：触发线在装配期算（要读模型目录与设置），
+       * 事件检测在流式适配期用（同一个口径）——两个块是兄弟，必须看到同一份。
+       */
+      let autoCompactEnabled = true;
+      let autoCompact: CompactionPlan | undefined;
 
       try {
         /** 被拒工具调用的记账（含连续拒绝计数）；门存在时才有值。 */
@@ -1412,6 +1418,61 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               userRules: workspaceSettings?.userRules,
               ruleEntries: workspaceSettings?.ruleEntries,
             });
+            // 同一个设置对象顺带读压缩开关（少一次库往返）
+            autoCompactEnabled = workspaceSettings?.autoCompactEnabled ?? true;
+          }
+
+          /**
+           * 上下文自动压缩的触发线（口径见 agent/auto-compact.ts）：
+           * 「模型声明的窗口 / 最大输出」优先，没声明就用共享兜底表认模型族；
+           * 两边都没有（认不出的 BYOK 模型）→ 中间件按框架回退值走，这里如实记来源。
+           */
+          if (autoCompactEnabled) {
+            const specifier =
+              typeof run.modelOverride === "string"
+                ? run.modelOverride
+                : typeof options.model === "string"
+                  ? options.model
+                  : "";
+            let declaredWindow: number | null = null;
+            let declaredMaxOutput: number | null = null;
+            if (specifier && options.modelCatalog && run.accessToken) {
+              const entries = await options.modelCatalog
+                .listCatalog({
+                  accessToken: run.accessToken,
+                  email: "",
+                  id: run.userId ?? "",
+                  userMetadata: {},
+                })
+                .catch(() => []);
+              const entry = entries.find(
+                (candidate) => candidate.id === specifier,
+              );
+              declaredWindow = entry?.model.contextWindow ?? null;
+              declaredMaxOutput = entry?.model.maxOutputTokens ?? null;
+            }
+            const plan = resolveCompactionPlan({
+              contextWindow: resolveContextWindow(declaredWindow, specifier),
+              maxOutputTokens: declaredMaxOutput,
+            });
+            /**
+             * 逃生口：窗口认不出的模型想自己定阈值、或要**真机验证压缩真的会发生**时，
+             * 用 `KENFUTWORK_AUTO_COMPACT_TRIGGER_TOKENS` 直接指定（整数 token）。
+             * 覆盖值只改阈值，保留条数与来源口径不变。
+             */
+            const override = Number(
+              options.env.autoCompactTriggerTokens ?? Number.NaN,
+            );
+            autoCompact =
+              Number.isFinite(override) && override > 0
+                ? {
+                    ...plan,
+                    trigger: { type: "tokens", value: Math.floor(override) },
+                  }
+                : plan;
+            console.log(
+              `[agent] 自动压缩触发线 ${plan.trigger.value} tokens（来源 ${plan.source}，保留 ${plan.keep.value} 条）`,
+            );
           }
 
           agent = resolvedAgentFactory({
@@ -1431,6 +1492,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             env: options.env,
             ...(resolvedModel ? { model: resolvedModel } : {}),
             ...(persistImage ? { persistImage } : {}),
+            ...(autoCompact ? { autoCompact } : {}),
             // execute 工具由 LocalShellBackend 自动提供，无需手动传递
             ...(submitImageJob ? { submitImageJob } : {}),
             ...(submitVideoJob ? { submitVideoJob } : {}),
@@ -1501,7 +1563,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             }
           }
 
-          const hasAttachments = run.attachments && run.attachments.length > 0;
+          // 附件在下载与提示词构建两处消费：收窄成局部 const（缺省空数组，分支内不再判空）
+          const attachments = run.attachments ?? [];
+          const hasAttachments = attachments.length > 0;
           let userMessage: HumanMessage;
           let attachmentDataMap: Record<string, string> = {};
 
@@ -1515,7 +1579,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               base64: string;
             }> = [];
             const imageBlocks = await Promise.all(
-              run.attachments!.map(async (a) => {
+              attachments.map(async (a) => {
                 try {
                   let b64: string;
                   let mime: string;
@@ -1524,9 +1588,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   const dataUriMatch = a.url.match(
                     /^data:([^;]+);base64,(.+)$/,
                   );
-                  if (dataUriMatch) {
-                    mime = dataUriMatch[1]!;
-                    b64 = dataUriMatch[2]!;
+                  const inlineMime = dataUriMatch?.[1];
+                  const inlineBase64 = dataUriMatch?.[2];
+                  if (inlineMime && inlineBase64) {
+                    mime = inlineMime;
+                    b64 = inlineBase64;
                   } else {
                     const res = await fetch(a.url);
                     const buf = Buffer.from(await res.arrayBuffer());
@@ -1563,7 +1629,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             // Build XML text tags for LLM to reference by assetId
             let { text: enrichedPrompt } = buildUserMessage(
               run.prompt,
-              run.attachments!,
+              attachments,
               run.imageGenerationPreference,
               run.mentions,
               run.videoGenerationPreference,
@@ -1671,6 +1737,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             // 分类占比（R4-1）：工具 schema 在这里量（装配刚回吐），消息侧由适配器在
             // on_chat_model_start 里量；两边在适配器里合并成一条 composition 随 run.usage 下发。
             toolComposition: measureTools(lastToolInventory),
+            // 压缩口径与装配同一份：适配器据此检测摘要消息并发 run.compacted
+            ...(autoCompact ? { autoCompact } : {}),
             signal: run.controller.signal,
             ...(options.env.agentStreamIdleTimeoutMs
               ? { idleTimeoutMs: options.env.agentStreamIdleTimeoutMs }

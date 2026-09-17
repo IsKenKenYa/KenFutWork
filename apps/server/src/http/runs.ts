@@ -1,5 +1,6 @@
 import {
   agentRunActivityResponseSchema,
+  agentSubagentListResponseSchema,
   applicationErrorResponseSchema,
   runCancelResponseSchema,
   runCreateRequestSchema,
@@ -9,6 +10,10 @@ import {
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { AgentRunService } from "../agent/runtime.js";
 import { resolveSandboxScopeId } from "../agent/sandbox-dir.js";
+import {
+  BUILTIN_SUBAGENT_DISPATCHER,
+  listDeclaredSubAgents,
+} from "../agent/sub-agents.js";
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import { isPlanApprovalInput } from "../features/agent-modes/execution-mode-service.js";
 import {
@@ -50,6 +55,42 @@ export async function registerRunRoutes(
     modelProviders?: ModelProviderService;
   } = {},
 ) {
+  /**
+   * GET /api/agent/subagents — 子智能体清单（设置 →「子智能体」）。
+   *
+   * 清单由 agent 装配处导出（`agent/sub-agents.ts`），与真跑起来用的是**同一个来源**；
+   * 界面因此不会出现「写着有、跑起来没有」。不依赖工作区，登录即可读。
+   */
+  app.get("/api/agent/subagents", async (request, reply) => {
+    if (!options.auth) {
+      return reply.code(503).send(
+        applicationErrorResponseSchema.parse({
+          error: {
+            code: "service_unavailable",
+            message: "认证未装配，无法列出子智能体。",
+          },
+        }),
+      );
+    }
+    const user = await options.auth.authenticate(request);
+    if (!user) {
+      return reply.code(401).send(
+        unauthenticatedErrorResponseSchema.parse({
+          error: {
+            code: "unauthorized",
+            message: "Missing or invalid bearer token.",
+          },
+        }),
+      );
+    }
+    return reply.code(200).send(
+      agentSubagentListResponseSchema.parse({
+        subagents: listDeclaredSubAgents(),
+        builtin: [BUILTIN_SUBAGENT_DISPATCHER],
+      }),
+    );
+  });
+
   // GET /api/agent/runs/activity — 该**工作区**近 7 天的运行次数与累计时长。
   // 范围取工作区而不是会话/画布：客户端任务 id 与服务端会话 id 不保证一致，
   // run 挂的又是会话的载体画布而非项目画布——两条更细的路实测都不可靠（详见仓储注释）。

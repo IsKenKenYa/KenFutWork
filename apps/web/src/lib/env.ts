@@ -20,13 +20,3 @@ export function loadWebEnv(overrides: Partial<WebEnv> = {}): WebEnv {
     serverBaseUrl: overrides.serverBaseUrl ?? getServerBaseUrl(),
   };
 }
-
-function requireEnv(name: string, value: string | undefined) {
-  const normalizedValue = value?.trim();
-
-  if (!normalizedValue) {
-    throw new Error(`Missing required browser env: ${name}`);
-  }
-
-  return normalizedValue;
-}

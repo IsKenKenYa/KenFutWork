@@ -2,6 +2,16 @@
 
 import "@excalidraw/excalidraw/index.css";
 
+import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
+import type { CaptureUpdateActionType } from "@excalidraw/excalidraw/store";
+import type {
+  AppState,
+  BinaryFileData,
+  BinaryFiles,
+  ExcalidrawImperativeAPI,
+  ExcalidrawInitialDataState,
+  ExcalidrawProps,
+} from "@excalidraw/excalidraw/types";
 import dynamic from "next/dynamic";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -58,7 +68,7 @@ type CanvasEditorProps = {
     appState: Record<string, unknown>;
     files: Record<string, Record<string, unknown>>;
   };
-  onApiReady?: (api: any) => void;
+  onApiReady?: (api: ExcalidrawImperativeAPI) => void;
   /** 画布内覆盖层（渲染在 Excalidraw 内部：位于画布之上、其浮层之下）。 */
   overlay?: React.ReactNode;
   ws?: WebSocketHandle;
@@ -86,7 +96,8 @@ export function CanvasEditor({
   accessTokenRef.current = accessToken;
   const canvasIdRef = useRef(canvasId);
   canvasIdRef.current = canvasId;
-  const [excalidrawApi, setExcalidrawApi] = useState<any>(null);
+  const [excalidrawApi, setExcalidrawApi] =
+    useState<ExcalidrawImperativeAPI | null>(null);
   const prevSelectedIdsRef = useRef<string>("");
   const onSelectionChangeRef = useRef(onSelectionChange);
   onSelectionChangeRef.current = onSelectionChange;
@@ -134,7 +145,7 @@ export function CanvasEditor({
     let cancelled = false;
 
     async function resolveFiles() {
-      const resolved: Record<string, any> = {};
+      const resolved: Record<string, BinaryFileData> = {};
       await Promise.all(
         pendingUrls.map(async ({ fileId, url, meta }) => {
           try {
@@ -152,11 +163,19 @@ export function CanvasEditor({
               reader.onerror = reject;
               reader.readAsDataURL(blob);
             });
+            // id/mimeType/dataURL 在 Excalidraw 类型里是品牌字符串，这里的数据源是服务端
+            // 文件元数据、真实 blob 与 FileReader 产物，字符串本身就是该品牌想约束的东西，
+            // 故在边界处断言。
             resolved[fileId] = {
-              id: meta.id ?? fileId,
-              mimeType: meta.mimeType ?? blob.type,
-              created: meta.created ?? Date.now(),
-              dataURL,
+              id: (typeof meta.id === "string"
+                ? meta.id
+                : fileId) as BinaryFileData["id"],
+              mimeType: (typeof meta.mimeType === "string"
+                ? meta.mimeType
+                : blob.type) as BinaryFileData["mimeType"],
+              created:
+                typeof meta.created === "number" ? meta.created : Date.now(),
+              dataURL: dataURL as BinaryFileData["dataURL"],
             };
           } catch (err) {
             console.warn(
@@ -166,7 +185,7 @@ export function CanvasEditor({
           }
         }),
       );
-      if (!cancelled && Object.keys(resolved).length > 0) {
+      if (!cancelled && Object.keys(resolved).length > 0 && excalidrawApi) {
         excalidrawApi.addFiles(Object.values(resolved));
         console.log(
           `[canvas-editor] Resolved ${Object.keys(resolved).length} storage files`,
@@ -181,7 +200,7 @@ export function CanvasEditor({
   }, [excalidrawApi, pendingUrls]);
 
   const handleExcalidrawApi = useCallback(
-    (api: any) => {
+    (api: ExcalidrawImperativeAPI) => {
       setExcalidrawApi(api);
       onApiReady?.(api);
     },
@@ -200,18 +219,20 @@ export function CanvasEditor({
       try {
         const sceneElements = excalidrawApi.getSceneElements();
         // Create mutable copies for normalization
-        const mutableElements = sceneElements.map((el: any) => ({ ...el }));
+        const mutableElements = sceneElements.map((el) => ({ ...el }));
         const { changed } = normalizeCanvasElements(mutableElements);
 
         if (changed) {
           console.log("[canvas-editor] normalized agent-created elements");
           excalidrawApi.updateScene({
             elements: mutableElements,
-            captureUpdate: "NONE",
+            // 旧写法 "NONE" 不在 0.18 的捕获枚举（NEVER/IMMEDIATELY/EVENTUALLY）里，
+            // 运行时不匹配任何分支、等价 EVENTUALLY；这里保持原值以免改变撤销栈行为。
+            captureUpdate: "NONE" as CaptureUpdateActionType,
           });
           // Persist normalized elements to DB
           const files: Record<string, Record<string, unknown>> = {};
-          const rawFiles = excalidrawApi.getFiles() as Record<string, any>;
+          const rawFiles = excalidrawApi.getFiles();
           for (const [id, file] of Object.entries(rawFiles)) {
             files[id] = {
               id: file.id,
@@ -222,7 +243,7 @@ export function CanvasEditor({
           }
           const appState = excalidrawApi.getAppState();
           saveCanvas(accessTokenRef.current, canvasIdRef.current, {
-            elements: mutableElements.filter((el: any) => !el.isDeleted),
+            elements: mutableElements.filter((el) => !el.isDeleted),
             appState: {
               viewBackgroundColor: appState.viewBackgroundColor,
               gridModeEnabled: appState.gridModeEnabled,
@@ -246,7 +267,7 @@ export function CanvasEditor({
   }, [excalidrawApi]);
 
   const handleChange = useCallback(
-    (elements: readonly any[], appState: any) => {
+    (elements: readonly ExcalidrawElement[], appState: AppState) => {
       // Skip auto-save until Excalidraw has fully hydrated with initial data.
       // During initialization, onChange may fire with empty/partial elements
       // which would wipe the persisted canvas via FULL REPLACE.
@@ -257,13 +278,13 @@ export function CanvasEditor({
 
       // Mark that a save is pending. The full payload is built lazily inside
       // the timeout to avoid constructing the files map on every drag frame.
-      pendingSaveRef.current = { elements: [] as any, appState: {}, files: {} };
+      pendingSaveRef.current = { elements: [], appState: {}, files: {} };
 
       saveTimerRef.current = setTimeout(() => {
         // Build the full payload only when the debounce fires
         const files: Record<string, Record<string, unknown>> = {};
         if (excalidrawApi) {
-          const rawFiles = excalidrawApi.getFiles() as Record<string, any>;
+          const rawFiles = excalidrawApi.getFiles();
           for (const [id, file] of Object.entries(rawFiles)) {
             files[id] = {
               id: file.id,
@@ -274,10 +295,7 @@ export function CanvasEditor({
           }
         }
         const content = {
-          elements: elements.filter((el: any) => !el.isDeleted) as Record<
-            string,
-            unknown
-          >[],
+          elements: elements.filter((el) => !el.isDeleted),
           appState: {
             viewBackgroundColor: appState.viewBackgroundColor,
             gridModeEnabled: appState.gridModeEnabled,
@@ -341,11 +359,8 @@ export function CanvasEditor({
       // --- 3. Selection change detection ---
       // Cheap string comparison avoids unnecessary downstream re-renders.
       const selectedIds = appState.selectedElementIds
-        ? Object.keys(appState.selectedElementIds as Record<string, boolean>)
-            .filter(
-              (id) =>
-                (appState.selectedElementIds as Record<string, boolean>)[id],
-            )
+        ? Object.keys(appState.selectedElementIds)
+            .filter((id) => appState.selectedElementIds[id])
             .sort()
             .join(",")
         : "";
@@ -357,11 +372,10 @@ export function CanvasEditor({
             onSelectionChangeRef.current([]);
           } else {
             const idSet = new Set(selectedIds.split(","));
-            const selFiles: Record<string, any> =
-              excalidrawApi?.getFiles() ?? {};
+            const selFiles: BinaryFiles = excalidrawApi?.getFiles() ?? {};
             const selected: CanvasSelectedElement[] = elements
-              .filter((el: any) => idSet.has(el.id) && !el.isDeleted)
-              .map((el: any) => {
+              .filter((el) => idSet.has(el.id) && !el.isDeleted)
+              .map((el) => {
                 const base: CanvasSelectedElement = {
                   id: el.id,
                   type: el.type,
@@ -416,18 +430,18 @@ export function CanvasEditor({
 
       const allElements = excalidrawApi
         .getSceneElements()
-        .filter((e: any) => !e.isDeleted);
+        .filter((e) => !e.isDeleted);
       const appState = excalidrawApi.getAppState();
       const files = excalidrawApi.getFiles();
 
       let elements = allElements;
 
       if (mode === "region" && region) {
-        elements = allElements.filter((el: any) => {
-          const ex = (el.x as number) ?? 0;
-          const ey = (el.y as number) ?? 0;
-          const ew = (el.width as number) ?? 0;
-          const eh = (el.height as number) ?? 0;
+        elements = allElements.filter((el) => {
+          const ex = el.x;
+          const ey = el.y;
+          const ew = el.width;
+          const eh = el.height;
           return !(
             ex + ew < region.x ||
             ex > region.x + region.width ||
@@ -436,16 +450,16 @@ export function CanvasEditor({
           );
         });
       } else if (mode === "viewport") {
-        const zoom = (appState.zoom?.value as number) ?? 1;
-        const sx = -((appState.scrollX as number) ?? 0);
-        const sy = -((appState.scrollY as number) ?? 0);
-        const vw = ((appState.width as number) ?? 1920) / zoom;
-        const vh = ((appState.height as number) ?? 1080) / zoom;
-        elements = allElements.filter((el: any) => {
-          const ex = (el.x as number) ?? 0;
-          const ey = (el.y as number) ?? 0;
-          const ew = (el.width as number) ?? 0;
-          const eh = (el.height as number) ?? 0;
+        const zoom = appState.zoom?.value ?? 1;
+        const sx = -appState.scrollX;
+        const sy = -appState.scrollY;
+        const vw = appState.width / zoom;
+        const vh = appState.height / zoom;
+        elements = allElements.filter((el) => {
+          const ex = el.x;
+          const ey = el.y;
+          const ew = el.width;
+          const eh = el.height;
           return !(
             ex + ew < sx ||
             ex > sx + vw ||
@@ -483,7 +497,7 @@ export function CanvasEditor({
     });
 
     return cleanup;
-  }, [ws, excalidrawApi, canvasId]);
+  }, [ws, excalidrawApi]);
 
   // Build a full save payload from current Excalidraw state.
   // Used by both beforeunload and unmount to flush pending changes.
@@ -493,11 +507,11 @@ export function CanvasEditor({
     if (!hydratedRef.current) return null;
     try {
       const sceneElements = excalidrawApi.getSceneElements();
-      const rawFiles = excalidrawApi.getFiles() as Record<string, any>;
+      const rawFiles = excalidrawApi.getFiles();
       const appState = excalidrawApi.getAppState();
 
       // 与防抖自动保存共用同一判定（canvas-save-guard），两条路径不再各写一份。
-      const liveCount = sceneElements.filter((el: any) => !el.isDeleted).length;
+      const liveCount = sceneElements.filter((el) => !el.isDeleted).length;
       if (shouldRefuseEmptySave({ incomingCount: liveCount })) {
         console.warn("[canvas-editor] skipping save: 空场景不写库");
         return null;
@@ -512,7 +526,7 @@ export function CanvasEditor({
         };
       }
       return {
-        elements: sceneElements.filter((el: any) => !el.isDeleted),
+        elements: sceneElements.filter((el) => !el.isDeleted),
         appState: {
           viewBackgroundColor: appState.viewBackgroundColor,
           gridModeEnabled: appState.gridModeEnabled,
@@ -688,20 +702,21 @@ export function CanvasEditor({
   // Render custom embeddable content for video elements on canvas.
   // Excalidraw calls this for every embeddable element; we intercept video URLs
   // and render an inline player, falling back to default for everything else.
-  const renderEmbeddable = useCallback((element: any, _appState: any) => {
-    const link = element?.link;
-    if (typeof link === "string" && isVideoUrl(link)) {
-      return (
-        <VideoCanvasElement
-          src={link}
-          width={element.width ?? 640}
-          height={element.height ?? 360}
-        />
-      );
-    }
-    // Return null to let Excalidraw handle non-video embeddables with default behavior
-    return null;
-  }, []);
+  const renderEmbeddable: NonNullable<ExcalidrawProps["renderEmbeddable"]> =
+    useCallback((element, _appState) => {
+      const link = element.link;
+      if (typeof link === "string" && isVideoUrl(link)) {
+        return (
+          <VideoCanvasElement
+            src={link}
+            width={element.width ?? 640}
+            height={element.height ?? 360}
+          />
+        );
+      }
+      // Return null to let Excalidraw handle non-video embeddables with default behavior
+      return null;
+    }, []);
 
   // Allow any URL as a valid embeddable so our video links are accepted
   const validateEmbeddable = useCallback(() => true, []);
@@ -729,13 +744,21 @@ export function CanvasEditor({
           langCode="zh-CN"
           theme={resolvedTheme === "dark" ? "dark" : "light"}
           initialData={{
-            elements: initialContent.elements as any,
-            appState: initialContent.appState as any,
-            files: inlineFiles as any,
+            // 服务端契约把画布内容存成不透明 JSON（Record<string, unknown>），
+            // 进画布时才按 Excalidraw 场景类型收窄；形状由写端（本组件）保证。
+            elements: initialContent.elements as unknown as NonNullable<
+              ExcalidrawInitialDataState["elements"]
+            >,
+            appState: initialContent.appState as unknown as NonNullable<
+              ExcalidrawInitialDataState["appState"]
+            >,
+            files: inlineFiles as unknown as NonNullable<
+              ExcalidrawInitialDataState["files"]
+            >,
           }}
           onChange={handleChange}
           excalidrawAPI={handleExcalidrawApi}
-          renderCustomStats={(elements: any, appState: any) => (
+          renderCustomStats={(elements, appState) => (
             <CanvasStatsPanel
               elements={elements}
               appState={appState}

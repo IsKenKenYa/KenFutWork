@@ -39,6 +39,22 @@ export function workDirNameFromPath(path: string): string {
 }
 
 /**
+ * 「打开文件夹」这一项的副标题：说清这次会开哪种选择器、选完会发生什么。
+ *
+ * 两种形态差别很大，不写清就只能靠猜：
+ * - 桌面形态：服务端弹**系统对话框**，拿回绝对路径 → 直接绑成 `projects.work_dir`（真绑定）；
+ * - 其它形态：浏览器选择器只给得到目录名 → 只能按目录名复用/新建项目，要真绑定得手填路径。
+ */
+export function folderPickerHint(
+  native: { available: boolean } | null | undefined,
+): string {
+  if (native?.available) {
+    return "系统文件夹对话框（开在运行服务端的那台机器上）· 选中的绝对路径直接绑成工作目录";
+  }
+  return "浏览器选择器 · 只拿得到目录名；要绑真实目录请用「填本机路径」";
+}
+
+/**
  * 拼进 prompt 的工作目录说明（**已绑定真实目录**时用这一份）。
  *
  * 与只拿到目录名的 {@link workDirectoryPromptHint} 的区别：这次本机绝对路径是真的——

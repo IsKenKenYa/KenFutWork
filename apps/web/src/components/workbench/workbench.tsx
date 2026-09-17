@@ -21,7 +21,6 @@ import {
   Plus,
   Send,
   ShieldCheck,
-  Sparkles,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -37,12 +36,6 @@ import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
 import { RunStopButton } from "@/components/chat/run-stop-button";
 import { ToolOutputRenderer } from "@/components/chat/tool-block-view";
 import { KenFutWorkLogo } from "@/components/icons/kenfutwork-logo";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -78,7 +71,11 @@ import { useWebSocket } from "@/hooks/use-websocket";
 import { useAuth } from "@/lib/auth-context";
 import { onBrowserOpen } from "@/lib/browser-panel";
 import { commitGitAll } from "@/lib/code-git-api";
-import { type RunUsageSnapshot, usageFromEvent } from "@/lib/context-usage";
+import {
+  formatTokens,
+  type RunUsageSnapshot,
+  usageFromEvent,
+} from "@/lib/context-usage";
 import { resolveDesignAutoCanvas } from "@/lib/design-auto-canvas";
 import { formatElapsedSeconds, parseTimestampMs } from "@/lib/elapsed";
 import { getServerBaseUrl } from "@/lib/env";
@@ -95,20 +92,26 @@ import { describeRunFailure } from "@/lib/run-failure";
 import {
   createProject,
   deleteProject,
+  fetchDirectoryPickerStatus,
   fetchProjects,
   fetchViewer,
+  fetchWorkspaceSettings,
+  pickDirectory,
   updateProject,
 } from "@/lib/server-api";
 import {
+  expandCommand,
+  shouldSuggestCommands,
+  type WorkspaceCommand,
+} from "@/lib/slash-commands";
+import {
   closeAllSubagents,
-  completeSubagent,
-  isSubagentTool,
   type SubagentEntry,
-  upsertSubagentStarted,
 } from "@/lib/subagent-directory";
 import type { TodoItem } from "@/lib/todo-progress";
 import {
   boundWorkDirPromptHint,
+  folderPickerHint,
   resolveWorkDirProject,
   workDirectoryPromptHint,
   workDirNameFromPath,
@@ -132,6 +135,16 @@ import { applyTaskToolEvent, type TaskToolEntry } from "@/lib/workbench-tools";
  * 仅作为 design 模式及其依赖能力的承载）。
  */
 
+/** 压缩阈值来源 → 人话（阈值怎么来的要能一眼看懂，否则「为什么这么早就压了」无从判断）。 */
+const COMPACT_SOURCE_LABELS: Record<
+  "reserved-output" | "fraction" | "fallback",
+  string
+> = {
+  "reserved-output": "窗口 − 预留输出",
+  fraction: "窗口的 85%",
+  fallback: "框架回退值",
+};
+
 interface TaskMessage {
   role: "user" | "assistant";
   text: string;
@@ -151,6 +164,8 @@ type WorkbenchModelOption = {
   providerName?: string | undefined;
   vision?: boolean | undefined;
   contextWindow?: number | undefined;
+  /** 单次最大输出（供应商实例声明）；上下文条「预留输出」段的来源。 */
+  maxOutputTokens?: number | undefined;
 };
 
 /**
@@ -163,7 +178,7 @@ type WorkbenchModelOption = {
 function settleAssistantElapsed(task: WorkbenchTask): WorkbenchTask {
   const messages = [...task.messages];
   const last = messages[messages.length - 1];
-  if (!last || last.role !== "assistant" || last.startedAt === undefined) {
+  if (last?.role !== "assistant" || last.startedAt === undefined) {
     return task;
   }
   const elapsedMs = Math.max(0, Date.now() - last.startedAt);
@@ -204,6 +219,17 @@ interface WorkbenchTask {
   todos?: TodoItem[];
   /** 本轮用量快照（R4-1：服务端 run.usage 事件，上下文容量/缓存命中浮层的数据源） */
   usage?: RunUsageSnapshot;
+  /**
+   * 本轮发生过上下文自动压缩（R4-1 输出预留线的执行面）。
+   *
+   * 为什么要显示：压缩改的是**模型看到的上下文**，库里的转录保持完整——不给信号的话，
+   * 用户只会觉得「模型突然忘了前面的事」。事件由服务端在检测到摘要消息时下发（每轮一条）。
+   */
+  compacted?: {
+    triggerTokens: number;
+    triggerSource: "reserved-output" | "fraction" | "fallback";
+    keepMessages: number;
+  };
 }
 
 /**
@@ -362,6 +388,11 @@ export function Workbench() {
    * （实测窄列差 10px、居中时中心差 5px）。宽度与平台/缩放有关，故量一次写进 CSS 变量。
    */
   const [scrollbarLane, setScrollbarLane] = useState(0);
+  /** 流事件回调在挂载期注册（deps 只有 ws/mode），自动提交的实现经 ref 取最新值。 */
+  const autoCommitTurnRef = useRef<(taskId: string | null) => Promise<void>>(
+    async () => {},
+  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activeTaskId 只当触发器（量的是 DOM 宽度）；换任务后滚动条出现/消失要重新量
   useEffect(() => {
     const measure = () => {
       const el = codeMessagesRef.current;
@@ -417,6 +448,21 @@ export function Workbench() {
   const [workDirName, setWorkDirName] = useState<string | null>(null);
   /** 目录选择的反馈（不支持/失败）；成功或取消时清空。 */
   const [workDirNotice, setWorkDirNotice] = useState<string | null>(null);
+  /**
+   * 服务端能不能弹**系统文件夹对话框**（桌面形态）。null = 还没探到。
+   * 探到可用时「打开文件夹」走它（拿回绝对路径，真正绑定工作目录）；
+   * 不可用则回落浏览器选择器（只有目录名）。
+   */
+  const [nativeDirPicker, setNativeDirPicker] = useState<{
+    available: boolean;
+    reason?: string | undefined;
+  } | null>(null);
+  /**
+   * 自定义斜杠命令（设置 →「命令」）：输入框里 `/名字 参数` 在**提交前**展开成提示词。
+   * 存在工作区设置里、这里读一份（改完设置下次拉取生效）；展开逻辑是纯函数
+   * （`lib/slash-commands.ts`），工作台只负责调用。
+   */
+  const [commands, setCommands] = useState<WorkspaceCommand[]>([]);
   const [creatingProject, setCreatingProject] = useState(false);
   // 侧栏底部个人中心 + 模态（设置 / 插件市场）
   const [workbenchUser, setWorkbenchUser] = useState<WorkbenchUser | null>(
@@ -728,6 +774,29 @@ export function Workbench() {
   useEffect(() => {
     if (session?.access_token) refreshProjects();
   }, [session, refreshProjects]);
+
+  /**
+   * 探测服务端的原生目录对话框能力（桌面形态才有）。
+   *
+   * 只探一次：形态在进程生命周期里不会变。探测失败按「不可用」处理——回落浏览器
+   * 选择器仍是一条能用的路，不必为探测失败弹错。
+   */
+  useEffect(() => {
+    const token = session?.access_token;
+    if (!token) return;
+    fetchDirectoryPickerStatus(token)
+      .then((status) => setNativeDirPicker(status))
+      .catch(() => setNativeDirPicker({ available: false }));
+  }, [session]);
+
+  // 自定义命令（需 token）：只在登录后拉一次，失败不阻断（没有命令就只是不展开）
+  useEffect(() => {
+    const token = session?.access_token;
+    if (!token) return;
+    fetchWorkspaceSettings(token)
+      .then((data) => setCommands(data.settings.commands))
+      .catch(() => {});
+  }, [session]);
 
   // 执行模式词汇表（需 token）
   useEffect(() => {
@@ -1102,6 +1171,25 @@ export function Workbench() {
             evt as Parameters<typeof applyTaskToolEvent>[1],
           ),
         );
+      } else if (type === "run.compacted") {
+        const evt2 = evt as {
+          triggerTokens?: number;
+          triggerSource?: "reserved-output" | "fraction" | "fallback";
+          keepMessages?: number;
+        };
+        if (
+          typeof evt2.triggerTokens === "number" &&
+          typeof evt2.keepMessages === "number"
+        ) {
+          apply((task) => ({
+            ...task,
+            compacted: {
+              triggerTokens: evt2.triggerTokens as number,
+              triggerSource: evt2.triggerSource ?? "fallback",
+              keepMessages: evt2.keepMessages as number,
+            },
+          }));
+        }
       } else if (type === "run.usage") {
         // 本轮最后一次模型调用的累计用量（上下文容量 / 缓存命中浮层）
         const usage = usageFromEvent(evt);
@@ -1175,7 +1263,7 @@ export function Workbench() {
         );
         // 每轮成功结束自动提交一次（Code 模式 + 已绑项目），让对话在 git 里有迹可循
         if (mode === "code") {
-          void autoCommitTurn(taskId);
+          void autoCommitTurnRef.current(taskId);
         }
         markUnreadIfBackground();
       } else if (type === "billing.error") {
@@ -1248,40 +1336,6 @@ export function Workbench() {
     [session],
   );
 
-  const pickWorkDirectory = useCallback(async () => {
-    const result = await workDirPick(window);
-    if (result.status === "picked") {
-      setWorkDirName(result.name);
-      setWorkDirNotice(null);
-      // Code 模式：**工作目录即项目**。run 的生产后端要求绑定项目
-      // （缺 canvasId 会立刻失败），而浏览器只拿得到目录名——所以这里按目录名
-      // 建同名项目并选中，run 以该项目的主画布为作用域，文件落在项目的沙箱目录里。
-      if (mode === "code") {
-        // 目录名 → 工作目录项目：同名复用，没有就自动建（服务端 kind='code'）
-        const plan = resolveWorkDirProject(result.name, codeProjects);
-        if (plan.kind === "reuse") {
-          setSelectedProjectId(plan.projectId);
-          return;
-        }
-        const created = await createCodeProject(plan.name);
-        if (created) {
-          setSelectedProjectId(created.id);
-          return;
-        }
-        setWorkDirNotice(
-          "已选定目录名，但项目创建失败，本次运行可能无法开始。",
-        );
-      }
-      return;
-    }
-    if (result.status === "cancelled") {
-      // 用户主动取消：不打扰
-      return;
-    }
-    // 不支持/失败都必须说出来（曾经是静默 return + 空 catch）
-    setWorkDirNotice(result.notice);
-  }, [mode, codeProjects, createCodeProject]);
-
   /**
    * 「不在项目中工作」：清掉工作目录与项目选择。
    * run 会退回会话自身的作用域（服务端懒供给的 Code 载体），不再绑定工作目录项目。
@@ -1333,6 +1387,84 @@ export function Workbench() {
     },
     [session, codeProjects],
   );
+
+  const pickWorkDirectory = useCallback(async () => {
+    const token = session?.access_token;
+    /**
+     * 桌面形态先走**服务端系统对话框**：只有那一条能拿回绝对路径、真正绑定工作目录
+     * （浏览器侧 `showDirectoryPicker` 只给得到目录名）。分流口径：
+     * - 选中 → 走「填本机路径」同一条绑定链（`bindWorkDirectory`）；
+     * - 取消 → 静默（用户主动取消不是错误）；
+     * - 不可用 → **回落浏览器选择器**，并把原因一并说出来；
+     * - 失败 → 只报原因，不静默换选择器（否则用户会以为「系统对话框怎么变成了浏览器弹窗」）。
+     */
+    let fallbackReason = nativeDirPicker?.reason ?? null;
+    if (token && nativeDirPicker?.available) {
+      try {
+        const native = await pickDirectory(token);
+        if (native.status === "picked") {
+          await bindWorkDirectory(native.path);
+          return;
+        }
+        if (native.status === "cancelled") return;
+        if (native.status === "failed") {
+          setWorkDirNotice(native.reason);
+          return;
+        }
+        fallbackReason = native.reason;
+      } catch (error) {
+        setWorkDirNotice(
+          `系统文件夹对话框不可用：${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return;
+      }
+    }
+
+    const result = await workDirPick(window);
+    if (result.status === "picked") {
+      setWorkDirName(result.name);
+      setWorkDirNotice(null);
+      // Code 模式：**工作目录即项目**。run 的生产后端要求绑定项目
+      // （缺 canvasId 会立刻失败），而浏览器只拿得到目录名——所以这里按目录名
+      // 建同名项目并选中，run 以该项目的主画布为作用域，文件落在项目的沙箱目录里。
+      if (mode === "code") {
+        // 目录名 → 工作目录项目：同名复用，没有就自动建（服务端 kind='code'）
+        const plan = resolveWorkDirProject(result.name, codeProjects);
+        if (plan.kind === "reuse") {
+          setSelectedProjectId(plan.projectId);
+          return;
+        }
+        const created = await createCodeProject(plan.name);
+        if (created) {
+          setSelectedProjectId(created.id);
+          return;
+        }
+        setWorkDirNotice(
+          "已选定目录名，但项目创建失败，本次运行可能无法开始。",
+        );
+      }
+      return;
+    }
+    if (result.status === "cancelled") {
+      // 用户主动取消：不打扰
+      return;
+    }
+    // 不支持/失败都必须说出来（曾经是静默 return + 空 catch），并附上「为什么没用系统对话框」
+    setWorkDirNotice(
+      fallbackReason
+        ? `${result.notice}（未用系统对话框：${fallbackReason}）`
+        : result.notice,
+    );
+  }, [
+    mode,
+    codeProjects,
+    createCodeProject,
+    session,
+    nativeDirPicker,
+    bindWorkDirectory,
+  ]);
 
   const switchMode = useCallback((next: WorkbenchMode) => {
     setMode(next);
@@ -1553,6 +1685,7 @@ export function Workbench() {
       // 没有仓库 / 无改动可提交：跳过
     }
   }, []);
+  autoCommitTurnRef.current = autoCommitTurn;
 
   /** 任务视图内继续追问：追加 user 消息并复用同一会话发起新 run。 */
   const continueTask = useCallback(
@@ -1718,6 +1851,7 @@ export function Workbench() {
           className="relative flex shrink-0 flex-col border-r bg-card"
         >
           {/* 拖拽把手：贴侧栏右边缘；向右拖 = 变宽 */}
+          {/* biome-ignore lint/a11y/useSemanticElements: 拖拽改宽的把手，不是 <hr>（内容分隔线） */}
           <div
             role="separator"
             aria-orientation="vertical"
@@ -1751,6 +1885,7 @@ export function Workbench() {
               className="flex items-center gap-1 rounded-lg bg-muted p-1"
             >
               {modeItems.map((item) => (
+                // biome-ignore lint/a11y/useSemanticElements: 分段控件用的是 radiogroup/radio 模式（原生 radio 无法承载这套样式与布局）
                 <button
                   key={item.id}
                   type="button"
@@ -2187,6 +2322,7 @@ export function Workbench() {
               </div>
               <div
                 ref={codeMessagesRef}
+                role="none"
                 className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
                 onContextMenu={chatMenu.open}
               >
@@ -2197,6 +2333,27 @@ export function Workbench() {
                       endedAt={activeTask.runEndedAt}
                       running={activeTask.status === "running"}
                     />
+                  ) : null}
+                  {/*
+                    上下文已自动压缩（R4-1 输出预留线的执行面）：说明「模型看到的历史被摘要过」，
+                    而库里的转录仍然完整——不说这一句，用户会以为模型突然忘了前面的事。
+                  */}
+                  {activeTask.compacted ? (
+                    <p
+                      role="status"
+                      className="rounded-md border bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground"
+                    >
+                      上下文已自动压缩：模型上下文超过{" "}
+                      {formatTokens(activeTask.compacted.triggerTokens)}（
+                      {
+                        COMPACT_SOURCE_LABELS[
+                          activeTask.compacted.triggerSource
+                        ]
+                      }
+                      ）后，较早的消息被摘要成一条，只保留最近{" "}
+                      {activeTask.compacted.keepMessages} 条；原文存在工作区的
+                      /conversation_history/，这条对话的完整记录不受影响。
+                    </p>
                   ) : null}
                   {/* 目标 + 进度（R1-2）：模型用了 write_todos 才出现，条数从事件流推导 */}
                   {activeTask.todos && activeTask.todos.length > 0 ? (
@@ -2231,6 +2388,7 @@ export function Workbench() {
                       Boolean(activeTask.runEndedAt) &&
                       lastAssistantIdx >= 0;
                     return activeTask.messages.map((msg, i) => (
+                      // biome-ignore lint/suspicious/noArrayIndexKey: 流式为追加列表，消息的稳定身份就是位置；内容键会每个 token 换 key，把整条消息重挂载
                       <div key={i} className="space-y-1">
                         {showSummary && i === lastAssistantIdx ? (
                           <div className="text-xs font-medium text-muted-foreground">
@@ -2287,7 +2445,7 @@ export function Workbench() {
                   className="mx-auto w-full max-w-3xl px-6 pt-3 pb-4"
                   onSubmit={(e) => {
                     e.preventDefault();
-                    const value = followUp;
+                    const value = expandCommand(followUp, commands).text;
                     setFollowUp("");
                     continueTask(value);
                   }}
@@ -2440,7 +2598,10 @@ export function Workbench() {
                           /* 停止 = 暂停图标（与发送按钮同一个图标位，不再是一枚突兀的文字按钮）；
                        与 Design 画布助手共用同一个组件，免得两处图标/文案漂移 */
                           <RunStopButton
-                            onStop={() => ws.cancelRun(activeRunIdRef.current!)}
+                            onStop={() => {
+                              const runId = activeRunIdRef.current;
+                              if (runId) ws.cancelRun(runId);
+                            }}
                           />
                         ) : (
                           <button
@@ -2517,6 +2678,7 @@ ${formatElementReference(picked)}`
                   }}
                   onOpenFolder={() => void pickWorkDirectory()}
                   onBindPath={bindWorkDirectory}
+                  folderHint={folderPickerHint(nativeDirPicker)}
                   onClear={clearWorkDirectory}
                 />
                 <GitBranchSelect
@@ -2532,7 +2694,8 @@ ${formatElementReference(picked)}`
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
-                      startTask(prompt);
+                      // 斜杠命令在提交前展开（转录里看到的就是实际发出去的）
+                      startTask(expandCommand(prompt, commands).text);
                     }
                   }}
                   rows={2}
@@ -2543,6 +2706,28 @@ ${formatElementReference(picked)}`
                   }
                   className="w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                 />
+                {/* 正在敲 `/` 时的可用命令提示（有命令才出现；点一条即补全成 `/名字 `） */}
+                {shouldSuggestCommands(prompt) && commands.length > 0 ? (
+                  <p
+                    role="status"
+                    className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground"
+                  >
+                    <span>可用命令：</span>
+                    {commands.map((command) => (
+                      <button
+                        key={command.name}
+                        type="button"
+                        title={
+                          command.description || command.prompt.slice(0, 80)
+                        }
+                        onClick={() => setPrompt(`/${command.name} `)}
+                        className="rounded bg-muted px-1.5 py-0.5 font-mono hover:text-foreground"
+                      >
+                        /{command.name}
+                      </button>
+                    ))}
+                  </p>
+                ) : null}
                 {workDirNotice ? (
                   <p className="mt-2 text-xs text-destructive">
                     {workDirNotice}
@@ -2641,7 +2826,7 @@ ${formatElementReference(picked)}`
                                   {byok.length > 0 ? (
                                     <>
                                       <SelectLabel>
-                                        {byok[0]!.providerName?.trim() ??
+                                        {byok.at(0)?.providerName?.trim() ??
                                           "我的供应商"}
                                       </SelectLabel>
                                       {byok.map((m) => (
@@ -2690,6 +2875,10 @@ ${formatElementReference(picked)}`
                         models.find((m) => m.id === model)?.contextWindow ??
                         null
                       }
+                      maxOutputTokens={
+                        models.find((m) => m.id === model)?.maxOutputTokens ??
+                        null
+                      }
                     />
                     <ComposerCompactSelect
                       ariaLabel="思考强度"
@@ -2713,7 +2902,9 @@ ${formatElementReference(picked)}`
                       type="button"
                       aria-label="发送"
                       disabled={submitting || !prompt.trim()}
-                      onClick={() => startTask(prompt)}
+                      onClick={() =>
+                        startTask(expandCommand(prompt, commands).text)
+                      }
                       className="rounded-lg bg-primary p-2 text-primary-foreground disabled:opacity-50"
                     >
                       <Send className="h-4 w-4" />
@@ -2754,6 +2945,8 @@ ${formatElementReference(picked)}`
         /* 引导页的状态来自真实数据：有没有工作目录项目、已有多少会话 */
         hasWorkDir={codeProjects.length > 0}
         conversationCount={tasks.length}
+        isAdmin={isPlatformAdmin}
+        onOpenAdmin={() => router.push("/admin")}
         key={mode}
       />
       {pluginsOpen ? (

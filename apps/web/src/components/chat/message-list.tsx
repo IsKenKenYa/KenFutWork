@@ -46,6 +46,7 @@ export const MessageList = React.memo(function MessageList({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: messages 只当触发器（滚动不读它）；去掉后新消息不再自动滚到底
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);

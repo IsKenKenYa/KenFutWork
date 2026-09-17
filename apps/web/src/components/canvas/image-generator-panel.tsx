@@ -1,5 +1,10 @@
 "use client";
 
+import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
+import type {
+  BinaryFileData,
+  ExcalidrawImperativeAPI,
+} from "@excalidraw/excalidraw/types";
 import { ImageUp, Lock, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -20,13 +25,20 @@ type ImageGeneratorPanelProps = {
   elementId: string;
   elementBounds: { x: number; y: number; width: number; height: number };
   data: ImageGeneratorData;
-  excalidrawApi: any;
+  excalidrawApi: ExcalidrawImperativeAPI;
   accessToken: string;
   /** 当前画布会话（§4.8）：实例自定义头的 `{{sessionId}}` 按它渲染；无会话时缺省。 */
   sessionId?: string | undefined;
   canvasScrollZoom: { scrollX: number; scrollY: number; zoom: number };
   onClose: () => void;
 };
+
+/**
+ * lib 生成器助手（canvas-image-generator）的入参是宽松的结构化接口
+ * （`captureUpdate?: string` 等），与 Excalidraw 官方类型在函数参数上互不可比；
+ * 运行时传的是同一个 API 对象，故按助手的入参口径断言。
+ */
+type GeneratorLibApi = Parameters<typeof updateImageGeneratorElement>[0];
 
 const ASPECT_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"] as const;
 const QUALITIES = [
@@ -109,6 +121,7 @@ export function ImageGeneratorPanel({
   }, []);
 
   // Auto-resize textarea
+  // biome-ignore lint/correctness/useExhaustiveDependencies: prompt 只当触发器（高度按 DOM 现量，不读值）；去掉后输入不再自动长高
   useEffect(() => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -127,8 +140,12 @@ export function ImageGeneratorPanel({
     (ratio: string) => {
       setAspectRatio(ratio);
       setShowRatioDropdown(false);
-      resizeImageGeneratorElement(excalidrawApi, elementId, ratio);
-      updateImageGeneratorElement(excalidrawApi, elementId, {
+      resizeImageGeneratorElement(
+        excalidrawApi as GeneratorLibApi,
+        elementId,
+        ratio,
+      );
+      updateImageGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
         aspectRatio: ratio,
       });
     },
@@ -139,7 +156,9 @@ export function ImageGeneratorPanel({
     (q: string) => {
       setQuality(q);
       setShowQualityDropdown(false);
-      updateImageGeneratorElement(excalidrawApi, elementId, { quality: q });
+      updateImageGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
+        quality: q,
+      });
     },
     [excalidrawApi, elementId],
   );
@@ -148,7 +167,9 @@ export function ImageGeneratorPanel({
     (m: string) => {
       setModel(m);
       setShowModelDropdown(false);
-      updateImageGeneratorElement(excalidrawApi, elementId, { model: m });
+      updateImageGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
+        model: m,
+      });
     },
     [excalidrawApi, elementId],
   );
@@ -163,7 +184,7 @@ export function ImageGeneratorPanel({
 
     setLoading(true);
     setError(null);
-    updateImageGeneratorElement(excalidrawApi, elementId, {
+    updateImageGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
       status: "generating",
       prompt: prompt.trim(),
       model,
@@ -188,9 +209,11 @@ export function ImageGeneratorPanel({
       const fileId = generateId();
       excalidrawApi.addFiles([
         {
-          id: fileId,
-          dataURL,
-          mimeType: result.mimeType,
+          // id/dataURL/mimeType 在 Excalidraw 类型里是品牌字符串（数据源是生成结果），
+          // 故在边界处断言。
+          id: fileId as BinaryFileData["id"],
+          dataURL: dataURL as BinaryFileData["dataURL"],
+          mimeType: result.mimeType as BinaryFileData["mimeType"],
           created: Date.now(),
         },
       ]);
@@ -205,12 +228,16 @@ export function ImageGeneratorPanel({
       });
 
       // Replace: delete placeholder, add image
-      const elements = excalidrawApi.getSceneElements().map((el: any) => {
+      const elements = excalidrawApi.getSceneElements().map((el) => {
         if (el.id === elementId) return { ...el, isDeleted: true };
         return el;
       });
       excalidrawApi.updateScene({
-        elements: [...elements, imageElement],
+        elements: [
+          ...elements,
+          // lib 生成器产出的是不透明记录（服务端契约口径），入场景时按官方元素类型收窄
+          imageElement as unknown as ExcalidrawElement,
+        ],
         captureUpdate: "IMMEDIATELY",
       });
 
@@ -225,7 +252,7 @@ export function ImageGeneratorPanel({
         setError("图片生成失败，请重试或更换模型。");
       }
       setLoading(false);
-      updateImageGeneratorElement(excalidrawApi, elementId, {
+      updateImageGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
         status: "error",
         errorMessage: "生成失败",
       });
@@ -247,6 +274,7 @@ export function ImageGeneratorPanel({
   return createPortal(
     <div
       ref={panelRef}
+      role="none"
       style={{ left: screenX, top: screenY }}
       className="fixed z-[100] w-[450px] rounded-xl border-[0.5px] border-border bg-card p-2 shadow-card"
       onKeyDown={(e) => e.stopPropagation()}
@@ -287,6 +315,7 @@ export function ImageGeneratorPanel({
               className="flex h-8 items-center gap-1 rounded-lg px-2 text-xs text-muted-foreground transition-colors hover:bg-muted"
             >
               {currentModel?.iconUrl && (
+                // biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用
                 <img
                   src={currentModel.iconUrl}
                   alt=""
@@ -297,6 +326,7 @@ export function ImageGeneratorPanel({
                 {currentModel?.displayName ?? model.split("/").pop()}
               </span>
               <svg
+                aria-hidden="true"
                 className="h-3 w-3 text-muted-foreground"
                 viewBox="0 0 12 24"
                 fill="currentColor"
@@ -314,6 +344,7 @@ export function ImageGeneratorPanel({
                     className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-muted ${m.id === model ? "bg-muted" : ""} ${m.accessible === false ? "opacity-60" : ""}`}
                   >
                     {m.iconUrl && (
+                      // biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用
                       <img
                         src={m.iconUrl}
                         alt=""
@@ -334,6 +365,7 @@ export function ImageGeneratorPanel({
                     )}
                     {m.id === model && (
                       <svg
+                        aria-hidden="true"
                         className="h-3 w-3 text-foreground"
                         viewBox="0 0 14 14"
                         fill="currentColor"
@@ -395,6 +427,7 @@ export function ImageGeneratorPanel({
             <div className="flex items-center gap-1 ml-1">
               {refImages.map((img) => (
                 <div key={img.id} className="relative group">
+                  {/* biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用 */}
                   <img
                     src={img.dataUrl}
                     alt="ref"
@@ -430,6 +463,7 @@ export function ImageGeneratorPanel({
                 {QUALITIES.find((q) => q.value === quality)?.label ?? "2K"}
               </span>
               <svg
+                aria-hidden="true"
                 className="h-3 w-3 text-muted-foreground"
                 viewBox="0 0 12 24"
                 fill="currentColor"
@@ -462,6 +496,7 @@ export function ImageGeneratorPanel({
             >
               <span className="text-foreground">{aspectRatio}</span>
               <svg
+                aria-hidden="true"
                 className="h-3 w-3 text-muted-foreground"
                 viewBox="0 0 12 24"
                 fill="currentColor"
@@ -496,6 +531,7 @@ export function ImageGeneratorPanel({
               <div className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-white/30 border-t-white" />
             ) : (
               <svg
+                aria-hidden="true"
                 className="h-3.5 w-[9.3px] shrink-0"
                 viewBox="0 0 8 10"
                 fill="currentColor"

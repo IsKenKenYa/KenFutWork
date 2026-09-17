@@ -103,6 +103,7 @@ const variantStyles: Record<ToastVariant, { bg: string; icon: ReactNode }> = {
     bg: "bg-foreground text-background",
     icon: (
       <svg
+        aria-hidden="true"
         viewBox="0 0 16 16"
         fill="currentColor"
         className="h-4 w-4 shrink-0 text-success"
@@ -115,6 +116,7 @@ const variantStyles: Record<ToastVariant, { bg: string; icon: ReactNode }> = {
     bg: "bg-foreground text-background",
     icon: (
       <svg
+        aria-hidden="true"
         viewBox="0 0 16 16"
         fill="currentColor"
         className="h-4 w-4 shrink-0 text-destructive"
@@ -127,6 +129,7 @@ const variantStyles: Record<ToastVariant, { bg: string; icon: ReactNode }> = {
     bg: "bg-foreground text-background",
     icon: (
       <svg
+        aria-hidden="true"
         viewBox="0 0 16 16"
         fill="currentColor"
         className="h-4 w-4 shrink-0 text-info"

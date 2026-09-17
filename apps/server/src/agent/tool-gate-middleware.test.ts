@@ -37,15 +37,29 @@ describe("工具门中间件的旁路钩子", () => {
     },
   });
 
+  /** 调用中间件：注册即应提供 wrapToolCall，缺失时显式抛错（不用非空断言）。 */
+  async function wrapToolCall(
+    verdict: "allow" | "deny",
+    req: unknown,
+    handler: unknown,
+  ): Promise<unknown> {
+    const wrap = middleware(verdict).wrapToolCall;
+    if (!wrap) {
+      throw new Error("工具门中间件未提供 wrapToolCall");
+    }
+    return await wrap(req as never, handler as never);
+  }
+
   it("拒绝时记下工具名/调用 id/参数，并回 ToolMessage 给模型", async () => {
     denied.length = 0;
     const handler = async () => {
       throw new Error("不该执行到真正的工具");
     };
 
-    const result = (await middleware("deny").wrapToolCall!(
-      request({ file_path: "a.txt" }) as never,
-      handler as never,
+    const result = (await wrapToolCall(
+      "deny",
+      request({ file_path: "a.txt" }),
+      handler,
     )) as { content?: unknown };
 
     expect(denied).toHaveLength(1);
@@ -59,9 +73,10 @@ describe("工具门中间件的旁路钩子", () => {
 
   it("放行时通知 onAllowed（用于把连续计数清零）并执行真正的工具", async () => {
     allowed.length = 0;
-    const result = await middleware("allow").wrapToolCall!(
-      request({}) as never,
-      (async () => "tool-output") as never,
+    const result = await wrapToolCall(
+      "allow",
+      request({}),
+      async () => "tool-output",
     );
 
     expect(allowed).toEqual(["write_file"]);

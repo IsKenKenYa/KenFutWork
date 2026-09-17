@@ -1,6 +1,5 @@
 import {
   applicationErrorResponseSchema,
-  modelCatalogResponseSchema,
   providerInstanceCreateRequestSchema,
   providerInstanceListResponseSchema,
   providerInstanceResponseSchema,

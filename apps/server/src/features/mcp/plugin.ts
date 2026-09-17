@@ -25,7 +25,7 @@ export interface McpServerConfig {
 }
 
 export function parseMcpServers(raw: string | undefined): McpServerConfig[] {
-  if (!raw || !raw.trim()) {
+  if (!raw?.trim()) {
     return [];
   }
   const parsed: unknown = JSON.parse(raw);

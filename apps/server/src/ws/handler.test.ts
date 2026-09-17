@@ -48,7 +48,7 @@ function makeStubs() {
         if (prop === "sendTo") {
           return (connectionId: string, message: unknown) => {
             const socket = sockets.get(connectionId);
-            if (!socket || socket.readyState !== 1) return false;
+            if (socket?.readyState !== 1) return false;
             socket.send(JSON.stringify(message));
             return true;
           };
@@ -177,8 +177,9 @@ describe("WS 早期消息不丢失（回归）", () => {
         }),
       );
       expect(got).not.toBeNull();
+      if (got === null) throw new Error("未在超时前收到任何 WS 消息");
       // 受理即回 ack；若后续构建失败则回 run.failed 事件——两者都证明消息没被丢弃
-      expect(got!.includes("command.ack") || got!.includes("run.failed")).toBe(
+      expect(got.includes("command.ack") || got.includes("run.failed")).toBe(
         true,
       );
     } finally {

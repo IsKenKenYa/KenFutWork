@@ -333,12 +333,14 @@ export function createChatService(options: {
 
       // Deduplicate consecutive messages with same role + content
       // (caused by dual client+server save in earlier versions)
-      return messages.filter(
-        (msg, i) =>
-          i === 0 ||
-          msg.role !== messages[i - 1]!.role ||
-          msg.content !== messages[i - 1]!.content,
-      );
+      return messages.filter((msg, i) => {
+        const prev = i > 0 ? messages[i - 1] : undefined;
+        return (
+          prev === undefined ||
+          msg.role !== prev.role ||
+          msg.content !== prev.content
+        );
+      });
     },
 
     async createMessage(user, sessionId, input) {

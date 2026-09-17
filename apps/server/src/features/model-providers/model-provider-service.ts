@@ -66,6 +66,7 @@ type InstanceModel = {
   capability: string;
   vision?: boolean;
   contextWindow?: number;
+  maxOutputTokens?: number;
 };
 
 function mapModels(models: InstanceModel[] | null) {
@@ -75,6 +76,7 @@ function mapModels(models: InstanceModel[] | null) {
     capability: m.capability as ModelCapability,
     ...(m.vision ? { vision: true } : {}),
     ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
+    ...(m.maxOutputTokens ? { maxOutputTokens: m.maxOutputTokens } : {}),
   }));
 }
 
@@ -379,7 +381,7 @@ export function createModelProviderService(options: {
       // 模型目录里就包含这些实例，故凭证解析必须覆盖它们——否则选中平台池模型必然 404。
       // **只接受 system 作用域**：工作区实例拿不到别人的（隔离性不因此放宽）。
       const systemRow = await repository.findById(instanceId).catch(() => null);
-      if (!systemRow || systemRow.scope !== "system") {
+      if (systemRow?.scope !== "system") {
         throw new ModelProviderServiceError(
           "instance_not_found",
           "Provider instance not found.",

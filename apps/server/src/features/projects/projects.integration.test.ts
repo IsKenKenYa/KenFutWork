@@ -76,7 +76,6 @@ describe.skipIf(!DATABASE_URL)("projects 真实库集成", () => {
   it("建项目 + 主画布在同一事务内落库，且画布归属本项目", async () => {
     await withProjectFixture(
       async ({ persistence, projectId, workspaceId }) => {
-        const projects = createProjectRepository(persistence);
         const canvases = await persistence
           .forWorkspace(workspaceId)
           .query<{ is_primary: boolean; name: string; project_id: string }>(

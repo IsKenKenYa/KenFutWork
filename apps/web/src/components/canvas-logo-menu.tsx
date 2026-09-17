@@ -1,5 +1,10 @@
 "use client";
 
+import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
+import type {
+  BinaryFileData,
+  ExcalidrawImperativeAPI,
+} from "@excalidraw/excalidraw/types";
 import {
   Copy,
   Download,
@@ -36,8 +41,7 @@ interface CanvasLogoMenuProps {
   canvasId: string;
   /** 项目名——导出画布时用作文件名（缺省回落到 canvas）。 */
   projectName?: string | undefined;
-  // biome-ignore lint/suspicious/noExplicitAny: Excalidraw API has no public type definition
-  excalidrawApi: any | null;
+  excalidrawApi: ExcalidrawImperativeAPI | null;
 }
 
 function dispatchKeyToExcalidraw(
@@ -84,21 +88,22 @@ export function CanvasLogoMenu({
       appState.selectedElementIds ?? {};
     const allElements = excalidrawApi.getSceneElements();
     const selected = allElements.filter(
-      (el: any) => selectedIds[el.id] && !el.isDeleted,
+      (el) => selectedIds[el.id] && !el.isDeleted,
     );
 
     if (!selected.length) return;
 
     const OFFSET = 10;
-    const newSelectedIds: Record<string, boolean> = {};
-    const clones = selected.map((el: any) => {
+    const newSelectedIds: Record<string, true> = {};
+    const clones = selected.map((el) => {
       const newId = generateFileId();
       newSelectedIds[newId] = true;
       return { ...el, id: newId, x: el.x + OFFSET, y: el.y + OFFSET };
     });
 
     excalidrawApi.updateScene({
-      elements: [...allElements, ...clones],
+      // 克隆体由原场景元素展开而来，仍是同一批元素类型，故按元素类型收窄。
+      elements: [...allElements, ...clones] as ExcalidrawElement[],
       appState: { selectedElementIds: newSelectedIds },
       captureUpdate: "IMMEDIATELY",
     });
@@ -173,9 +178,12 @@ export function CanvasLogoMenu({
 
           excalidrawApi.addFiles([
             {
-              id: fileId,
-              dataURL,
-              mimeType: file.type || "image/png",
+              // id/dataURL/mimeType 在 Excalidraw 类型里是品牌字符串，这里的数据源是
+              // 本地文件与 FileReader 产物，故在边界处断言。
+              id: fileId as BinaryFileData["id"],
+              dataURL: dataURL as BinaryFileData["dataURL"],
+              mimeType: (file.type ||
+                "image/png") as BinaryFileData["mimeType"],
               created: Date.now(),
             },
           ]);
@@ -195,7 +203,11 @@ export function CanvasLogoMenu({
           });
 
           excalidrawApi.updateScene({
-            elements: [...excalidrawApi.getSceneElements(), element],
+            // lib 生成器产出的是不透明记录（服务端契约口径），入场景时按官方元素类型收窄
+            elements: [
+              ...excalidrawApi.getSceneElements(),
+              element as unknown as ExcalidrawElement,
+            ],
             captureUpdate: "IMMEDIATELY",
           });
         };

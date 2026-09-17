@@ -132,7 +132,7 @@ export function chunkForFrames(
   while (start < buffer.byteLength) {
     let end = Math.min(start + maxBytes, buffer.byteLength);
     // 不要切在多字节字符中间：UTF-8 续字节形如 10xxxxxx
-    while (end < buffer.byteLength && (buffer[end]! & 0xc0) === 0x80) {
+    while (end < buffer.byteLength && ((buffer[end] ?? 0) & 0xc0) === 0x80) {
       end -= 1;
     }
     frames.push(buffer.subarray(start, end).toString("utf8"));

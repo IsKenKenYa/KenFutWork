@@ -3,7 +3,7 @@ import {
   modelCatalogResponseSchema,
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance } from "fastify";
 import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { ModelCatalogService } from "../features/model-providers/model-catalog-service.js";
 
@@ -30,7 +30,7 @@ export async function registerModelCatalogRoutes(
       }
       const models = await options.modelCatalog.listCatalog(user);
       return reply.code(200).send(modelCatalogResponseSchema.parse({ models }));
-    } catch (error) {
+    } catch {
       return reply.code(500).send(
         applicationErrorResponseSchema.parse({
           error: {

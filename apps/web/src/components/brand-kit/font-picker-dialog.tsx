@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Select,
   SelectContent,
@@ -72,9 +72,10 @@ export function FontPickerDialog({
   }, [open, search, category]);
 
   // Load Google Fonts CSS for visible items (side-effect in useEffect, not during render)
-  const visibleFamilies = open
-    ? fonts.slice(0, visibleCount).map((f) => f.family)
-    : [];
+  const visibleFamilies = useMemo(
+    () => (open ? fonts.slice(0, visibleCount).map((f) => f.family) : []),
+    [open, fonts, visibleCount],
+  );
   useEffect(() => {
     for (const family of visibleFamilies) {
       if (loadedRef.current.has(family)) continue;
@@ -84,7 +85,7 @@ export function FontPickerDialog({
       link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}&display=swap`;
       document.head.appendChild(link);
     }
-  }, [visibleFamilies.join(",")]);
+  }, [visibleFamilies]);
 
   // Scroll handler for loading more
   const handleScroll = useCallback(() => {
@@ -114,10 +115,12 @@ export function FontPickerDialog({
 
   return (
     <div
+      aria-hidden="true"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
       onClick={onClose}
     >
       <div
+        role="none"
         className="w-[420px] max-h-[520px] bg-popover rounded-xl shadow-lg border flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >

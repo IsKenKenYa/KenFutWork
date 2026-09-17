@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   boundWorkDirPromptHint,
+  folderPickerHint,
   pickWorkDirectory,
   resolveDirectoryPicker,
   resolveWorkDirProject,
@@ -190,5 +191,30 @@ describe("手填本机路径（Web 形态绑定真实目录）", () => {
     // 不能反过来鼓励绝对路径（工作区外的绝对路径会被沙箱边界拒）
     expect(hint).toContain("不要");
     expect(hint).not.toContain("不可达");
+  });
+});
+
+/**
+ * 「打开文件夹」会开哪种选择器：桌面形态是服务端系统对话框（能拿回绝对路径、真绑定），
+ * 其它形态是浏览器选择器（只有目录名）。副标题必须把这件事说清，否则用户无从得知
+ * 自己选的目录到底有没有被用上。
+ */
+describe("打开文件夹的副标题", () => {
+  it("原生对话框可用：说明会开系统对话框、且选中的绝对路径直接绑成工作目录", () => {
+    const hint = folderPickerHint({ available: true });
+    expect(hint).toContain("系统文件夹对话框");
+    expect(hint).toContain("绑成工作目录");
+  });
+
+  it("不可用或还没探到：说明只拿得到目录名，并指向「填本机路径」", () => {
+    for (const value of [
+      { available: false, reason: "服务端在另一台机器上。" },
+      null,
+      undefined,
+    ]) {
+      const hint = folderPickerHint(value);
+      expect(hint).toContain("只拿得到目录名");
+      expect(hint).toContain("填本机路径");
+    }
   });
 });

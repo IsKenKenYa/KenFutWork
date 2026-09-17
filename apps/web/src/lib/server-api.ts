@@ -2,12 +2,14 @@ import type {
   AssetSignedUrlResponse,
   CanvasDetail,
   ChatMessageCreateRequest,
+  DirectoryPickerStatus,
   ExecutionMode,
   JobResponse,
   MessageCreateResponse,
   MessageListResponse,
   ModelListResponse,
   PermissionTier,
+  PickDirectoryResponse,
   ProfileUpdateResponse,
   ProjectCreateRequest,
   ProjectCreateResponse,
@@ -789,7 +791,10 @@ export interface CodeIndexStats {
 }
 
 export interface CodeIndexStatus {
+  /** ② 「索引存储库以实现即时搜索」：搜索走索引。 */
   enabled: boolean;
+  /** ① 「索引新文件夹」：自动为尚无索引的工作目录建索引。 */
+  autoNewFolder: boolean;
   stats: CodeIndexStats | null;
 }
 
@@ -919,4 +924,50 @@ export async function disconnectCdp(
   if (!response.ok) return handleErrorResponse(response);
   const payload = (await response.json()) as { cdp: CdpStatusView };
   return payload.cdp;
+}
+
+// --- 原生目录对话框（桌面形态：服务端与用户同机时由服务端弹系统对话框） ---
+
+export async function fetchDirectoryPickerStatus(
+  accessToken: string,
+): Promise<DirectoryPickerStatus> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/system/directory-picker`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as DirectoryPickerStatus;
+}
+
+export async function pickDirectory(
+  accessToken: string,
+): Promise<PickDirectoryResponse> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/system/pick-directory`,
+    { method: "POST", headers: authJsonHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as PickDirectoryResponse;
+}
+
+// --- 子智能体（设置 →「子智能体」；清单与 agent 装配同源） ---
+
+export type AgentSubagentListResponse = {
+  subagents: Array<{
+    name: string;
+    label: string;
+    description: string;
+    tools: string[];
+  }>;
+  builtin: Array<{ name: string; label: string; description: string }>;
+};
+
+export async function fetchSubagents(
+  accessToken: string,
+): Promise<AgentSubagentListResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/agent/subagents`, {
+    headers: authHeaders(accessToken),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as AgentSubagentListResponse;
 }

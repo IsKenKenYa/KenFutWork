@@ -74,12 +74,15 @@ export function McpModal({
     if (open) refresh();
   }, [open, refresh]);
 
-  const readError = async (response: Response, fallback: string) => {
-    const payload = (await response.json().catch(() => ({}))) as {
-      error?: { message?: string };
-    };
-    return payload.error?.message ?? fallback;
-  };
+  const readError = useCallback(
+    async (response: Response, fallback: string) => {
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: { message?: string };
+      };
+      return payload.error?.message ?? fallback;
+    },
+    [],
+  );
 
   /** 直接创建配置（推荐/注册表两个页签共用）。 */
   const createServer = useCallback(

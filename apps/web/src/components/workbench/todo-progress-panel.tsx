@@ -2,12 +2,12 @@
 
 import { CheckCircle2, ChevronRight, Circle, CircleDot } from "lucide-react";
 import { useState } from "react";
-
 import {
   sortTodosForDisplay,
   type TodoItem,
   todoProgress,
 } from "@/lib/todo-progress";
+import { keyed } from "../list-keys";
 
 /**
  * 转录顶部的「目标 + 进度」面板（参考图 R1-2，源自 `write_todos` 工具事件）。
@@ -60,22 +60,24 @@ export function TodoProgressPanel({
       </div>
 
       <ul className="mt-1.5 space-y-0.5">
-        {others.map((item, index) => (
-          <li
-            key={`${item.status}-${index}-${item.content}`}
-            className="flex items-start gap-1.5 px-1 py-0.5 text-xs"
-          >
-            {item.status === "in_progress" ? (
-              <CircleDot className="mt-0.5 h-3 w-3 shrink-0 text-foreground" />
-            ) : (
-              <Circle className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground/60" />
-            )}
-            <span className="min-w-0 flex-1">{item.content}</span>
-            <span className="shrink-0 text-muted-foreground/70">
-              {item.status === "in_progress" ? "进行中" : "待办"}
-            </span>
-          </li>
-        ))}
+        {keyed(others, (item) => `${item.status}-${item.content}`).map(
+          ({ key, item }) => (
+            <li
+              key={key}
+              className="flex items-start gap-1.5 px-1 py-0.5 text-xs"
+            >
+              {item.status === "in_progress" ? (
+                <CircleDot className="mt-0.5 h-3 w-3 shrink-0 text-foreground" />
+              ) : (
+                <Circle className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground/60" />
+              )}
+              <span className="min-w-0 flex-1">{item.content}</span>
+              <span className="shrink-0 text-muted-foreground/70">
+                {item.status === "in_progress" ? "进行中" : "待办"}
+              </span>
+            </li>
+          ),
+        )}
       </ul>
 
       {completedItems.length > 0 ? (
@@ -93,15 +95,17 @@ export function TodoProgressPanel({
           </button>
           {completedOpen ? (
             <ul className="space-y-0.5">
-              {completedItems.map((item, index) => (
-                <li
-                  key={`completed-${index}-${item.content}`}
-                  className="flex items-start gap-1.5 px-1 py-0.5 text-xs text-muted-foreground line-through"
-                >
-                  <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-emerald-600" />
-                  <span className="min-w-0 flex-1">{item.content}</span>
-                </li>
-              ))}
+              {keyed(completedItems, (item) => item.content).map(
+                ({ key, item }) => (
+                  <li
+                    key={key}
+                    className="flex items-start gap-1.5 px-1 py-0.5 text-xs text-muted-foreground line-through"
+                  >
+                    <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-emerald-600" />
+                    <span className="min-w-0 flex-1">{item.content}</span>
+                  </li>
+                ),
+              )}
             </ul>
           ) : null}
         </>

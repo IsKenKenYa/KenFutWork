@@ -216,7 +216,7 @@ async function main() {
       });
     });
     if (!exited) {
-      fail("进程未在 20s 内退出；日志尾部：\n" + output.join("").slice(-2000));
+      fail(`进程未在 20s 内退出；日志尾部：\n${output.join("").slice(-2000)}`);
     }
     log("✓ 进程已退出");
 

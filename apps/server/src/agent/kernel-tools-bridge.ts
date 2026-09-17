@@ -43,7 +43,6 @@ export function jsonSchemaToZod(
         ),
       );
     }
-    case "object":
     default: {
       // 递归深度封顶：超过 4 层的嵌套对象降级为 record（防恶意/失控 schema）
       if (depth > 4) {

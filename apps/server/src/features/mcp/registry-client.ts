@@ -57,8 +57,6 @@ export function registryNameToServerName(registryName: string): string {
   return sanitized || "mcp-server";
 }
 
-const STDIO_SUPPORTED_REGISTRIES = new Set(["npm", "pypi"]);
-
 /** 由包信息推导可执行命令（npx / uvx）。 */
 export function packageToCommand(
   pkg: RegistryPackage,

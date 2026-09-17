@@ -1,10 +1,6 @@
 import type { StreamEvent, ToolArtifact } from "@kenfutwork/shared";
 import { imageArtifactSchema, videoArtifactSchema } from "@kenfutwork/shared";
-import type {
-  AIMessage,
-  AIMessageChunk,
-  ToolMessage,
-} from "@langchain/core/messages";
+import type { AIMessage, AIMessageChunk } from "@langchain/core/messages";
 import {
   AIMessageChunk as AIMessageChunkClass,
   AIMessage as AIMessageClass,
@@ -12,6 +8,7 @@ import {
 } from "@langchain/core/messages";
 
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
+import type { CompactionPlan } from "./auto-compact.js";
 import {
   type CompositionPart,
   measureMessages,
@@ -60,6 +57,11 @@ type AdaptDeepAgentStreamOptions = {
   idleTimeoutMs?: number;
   /** 空闲超时触发时调用（中止底层请求、释放上游连接）。 */
   abortRun?: () => void;
+  /**
+   * 自动压缩口径（传了才检测压缩、才可能发 `run.compacted`）：
+   * 与 agent 装配用的是同一份（见 agent/auto-compact.ts）。
+   */
+  autoCompact?: CompactionPlan | undefined;
 };
 
 /**
@@ -81,6 +83,8 @@ export async function* adaptDeepAgentStream(
   const activeSubAgentRuns = new Set<string>();
   /** 上一次下发 run.usage 时的 input token 数（同一提示词大小不重复发）。 */
   let lastUsageInputTokens = -1;
+  /** 本轮是否已报过「上下文已压缩」（每轮最多一条）。 */
+  let compactionReported = false;
   /**
    * 本轮 run 的累计用量（跨模型调用求和），用于「平均缓存命中率」。
    *
@@ -161,6 +165,35 @@ export async function* adaptDeepAgentStream(
           ...measureMessages(flat),
           ...(options.toolComposition ?? []),
         ]);
+
+        /**
+         * 自动压缩发生了？中间件把被压掉的旧消息换成一条摘要消息
+         * （HumanMessage + `additional_kwargs.lc_source === "summarization"`），
+         * 它一定出现在**下一次模型调用的输入里**——这是唯一可靠、又不依赖私有 state 通道的观测点。
+         * 每轮最多报一次（用户知道「刚才压过一次」就够了）。
+         */
+        if (!compactionReported && options.autoCompact) {
+          const compacted = flat.some((message) => {
+            const kwargs = (message as { additional_kwargs?: unknown })
+              ?.additional_kwargs;
+            return (
+              typeof kwargs === "object" &&
+              kwargs !== null &&
+              (kwargs as { lc_source?: unknown }).lc_source === "summarization"
+            );
+          });
+          if (compacted) {
+            compactionReported = true;
+            yield {
+              type: "run.compacted" as const,
+              runId: options.runId,
+              triggerTokens: options.autoCompact.trigger.value,
+              triggerSource: options.autoCompact.source,
+              keepMessages: options.autoCompact.keep.value,
+              timestamp: now(),
+            };
+          }
+        }
         continue;
       }
 
@@ -496,7 +529,7 @@ function unwrapCommandOutput(
 ): Record<string, unknown> {
   if (record.lg_name !== "Command") return record;
   try {
-    const messages = (record.update as any)?.messages;
+    const messages = (record.update as { messages?: unknown })?.messages;
     if (!Array.isArray(messages) || messages.length === 0) return record;
     const content = messages[0]?.kwargs?.content ?? messages[0]?.content;
     if (typeof content !== "string") return record;
@@ -584,8 +617,9 @@ function extractArtifacts(output: unknown): ToolArtifact[] | undefined {
       type: "image" as const,
       url: record.url,
       mimeType: (record.mimeType as string) ?? "image/png",
-      width: (record.placement as any)?.width ?? 512,
-      height: (record.placement as any)?.height ?? 512,
+      width: (record.placement as { width?: number } | undefined)?.width ?? 512,
+      height:
+        (record.placement as { height?: number } | undefined)?.height ?? 512,
     };
     if (typeof record.title === "string" && record.title.length > 0) {
       candidate.title = record.title;

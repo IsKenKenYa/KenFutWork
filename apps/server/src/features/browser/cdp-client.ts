@@ -373,6 +373,30 @@ export async function waitForLoad(
     .catch(() => undefined);
 }
 
+/**
+ * 页面里跑的元素描述片段（`readDom` 与 `readPickables` 共用）。
+ *
+ * 为什么要共用：两处都要「标签 + 可读文字 + 定位提示」，各写一份必然漂移——
+ * 实测踩过两次文案/字段不一致。这里是唯一实现，两处都把它注入页面上下文执行。
+ */
+const PAGE_ELEMENT_HELPERS = `
+  const clean = (value) => (value || "").replace(/\\s+/g, " ").trim().slice(0, 120);
+  const hitHint = (el) => {
+    if (el.id) return el.tagName.toLowerCase() + "#" + el.id;
+    const tag = el.tagName.toLowerCase();
+    if (el.getAttribute && el.getAttribute("name")) return tag + '[name="' + el.getAttribute("name") + '"]';
+    if (el.getAttribute && el.getAttribute("href")) return tag + '[href^="' + String(el.getAttribute("href")).slice(0, 60) + '"]';
+    return tag;
+  };
+  const describeElement = (el) => {
+    const tag = el.tagName.toLowerCase();
+    let text = clean(el.innerText || el.textContent);
+    if (!text && tag === "input") text = el.placeholder || el.name || "(" + (el.type || "text") + ")";
+    if (!text && tag === "img") text = el.alt || "(图片)";
+    return { tag, text, hint: hitHint(el) };
+  };
+`;
+
 /** 真实 DOM 读取：标题 / 正文 / 可交互元素（跨源、登录态页面都能拿到）。 */
 export async function readDom(
   client: CdpClient,
@@ -387,23 +411,13 @@ export async function readDom(
     "Runtime.evaluate",
     {
       expression: `(() => {
-        const clean = (value) => (value || "").replace(/\\s+/g, " ").trim().slice(0, 120);
-        const hintFor = (el) => {
-          if (el.id) return el.tagName.toLowerCase() + "#" + el.id;
-          const tag = el.tagName.toLowerCase();
-          if (el.getAttribute && el.getAttribute("name")) return tag + '[name="' + el.getAttribute("name") + '"]';
-          if (el.getAttribute && el.getAttribute("href")) return tag + '[href^="' + String(el.getAttribute("href")).slice(0, 60) + '"]';
-          return tag;
-        };
+        ${PAGE_ELEMENT_HELPERS}
         const elements = [];
         const push = (el) => {
           if (elements.length >= 60) return;
-          const tag = el.tagName.toLowerCase();
-          let text = clean(el.innerText || el.textContent);
-          if (!text && tag === "input") text = el.placeholder || el.name || "(" + (el.type || "text") + ")";
-          if (!text && tag === "img") text = el.alt || "(图片)";
-          if (!text) return;
-          elements.push({ tag, text, hint: hintFor(el) });
+          const described = describeElement(el);
+          if (!described.text) return;
+          elements.push(described);
         };
         document.querySelectorAll("h1,h2,h3,a,button,input,textarea,select,img[alt]").forEach(push);
         return JSON.stringify({
@@ -426,6 +440,202 @@ export async function readDom(
     title: string;
     text: string;
     elements: Array<{ tag: string; text: string; hint: string }>;
+  };
+}
+
+/** 拾取候选（带真实几何）：元素盒 + 它在视口里的位置。 */
+export interface PickableElement {
+  tag: string;
+  text: string;
+  hint: string;
+  /** 边框盒在**视口坐标**里的位置（CSS px，左上角 + 宽高）；拿不到几何时为 null。 */
+  box: { x: number; y: number; width: number; height: number } | null;
+}
+
+export interface PickablePage {
+  url: string;
+  title: string;
+  /** 视口尺寸（截图与 box 都用这套坐标，客户端据此把 px 换算成百分比）。 */
+  viewport: { width: number; height: number };
+  elements: PickableElement[];
+}
+
+/** 拾取候选的选择器（顺序即优先级，按同页里的出现位置排序后再出）。 */
+const PICKABLE_SELECTORS = [
+  "a",
+  "button",
+  "input",
+  "textarea",
+  "select",
+  "h1",
+  "h2",
+  "h3",
+  "img[alt]",
+];
+
+/**
+ * 读「可拾取元素」：几何走 **DOM 域**（`DOM.getBoxModel`），不是页面里算出来的矩形。
+ *
+ * 与 {@link readDom} 的分工：那份给 agent 读内容（`browser_navigate` / `browser_snapshot`），
+ * 这份给「选择网页元素加入聊天」的浮层——它要在**页面上叠框点选**，所以需要每个元素的
+ * 真实盒模型。用 DOM 域而不是 `getBoundingClientRect`：拿到的是布局后的边框盒
+ * （含滚动后的文档坐标），与 DevTools 的「元素盒」同一来源。
+ *
+ * 坐标对齐：先把页面滚到顶（`window.scrollTo(0, 0)`）再取几何——`getBoxModel` 给的是
+ * 文档坐标，滚到顶时与**视口坐标**一致，于是可以和视口截图叠在同一套坐标里。
+ *
+ * 拿不到盒模型的元素（`display:none`、零尺寸）不丢：`box: null` 保留在列表里，
+ * 浮层只给它列表行、不给热点框。
+ */
+export async function readPickables(
+  client: CdpClient,
+  sessionId: string,
+  options: { limit?: number } = {},
+): Promise<PickablePage> {
+  const limit = options.limit ?? 40;
+  await client.send("DOM.enable", {}, sessionId).catch(() => undefined);
+  await client
+    .send(
+      "Runtime.evaluate",
+      { expression: "window.scrollTo(0, 0)", returnByValue: true },
+      sessionId,
+    )
+    .catch(() => undefined);
+
+  const root = (await client.send(
+    "DOM.getDocument",
+    { depth: 0 },
+    sessionId,
+  )) as {
+    root?: { nodeId?: number };
+  };
+  const rootId = root.root?.nodeId;
+  if (typeof rootId !== "number") {
+    throw new CdpError("command_failed", "读取页面 DOM 失败（拿不到根节点）");
+  }
+
+  const nodeIds: number[] = [];
+  for (const selector of PICKABLE_SELECTORS) {
+    if (nodeIds.length >= limit * 2) break;
+    const found = (await client
+      .send("DOM.querySelectorAll", { nodeId: rootId, selector }, sessionId)
+      .catch(() => ({ nodeIds: [] }))) as { nodeIds?: number[] };
+    for (const nodeId of found.nodeIds ?? []) {
+      if (nodeId) nodeIds.push(nodeId);
+    }
+  }
+
+  const elements: PickableElement[] = [];
+  const seen = new Set<string>();
+  for (const nodeId of nodeIds) {
+    if (elements.length >= limit) break;
+    const described = await describeNode(client, sessionId, nodeId);
+    if (!described) continue;
+    // 同一元素命中多个选择器（如 `a > img[alt]`）时按「标签+文字+盒」去重
+    const box = await boxOf(client, sessionId, nodeId);
+    const key = `${described.tag}|${described.text}|${box ? `${box.x},${box.y}` : "-"}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    elements.push({ ...described, box });
+  }
+
+  // 阅读顺序：先上后下、同一行先左后右（拿不到几何的排最后，保持 DOM 顺序）
+  elements.sort((a, b) => {
+    if (!a.box || !b.box) return a.box ? -1 : b.box ? 1 : 0;
+    const rowDelta = a.box.y - b.box.y;
+    return Math.abs(rowDelta) > 8 ? rowDelta : a.box.x - b.box.x;
+  });
+
+  const meta = (await client.send(
+    "Runtime.evaluate",
+    {
+      expression:
+        "JSON.stringify({ url: location.href, title: document.title })",
+      returnByValue: true,
+    },
+    sessionId,
+  )) as { result?: { value?: string } };
+  const page = meta.result?.value
+    ? (JSON.parse(meta.result.value) as { url: string; title: string })
+    : { url: "", title: "" };
+
+  const metrics = (await client
+    .send("Page.getLayoutMetrics", {}, sessionId)
+    .catch(() => ({}))) as {
+    cssVisualViewport?: { clientWidth: number; clientHeight: number };
+  };
+
+  return {
+    url: page.url,
+    title: page.title,
+    viewport: {
+      width: Math.round(metrics.cssVisualViewport?.clientWidth ?? 0),
+      height: Math.round(metrics.cssVisualViewport?.clientHeight ?? 0),
+    },
+    elements,
+  };
+}
+
+/** 单个节点的标签/文字/定位提示（走 DOM → 远程对象 → 页面上下文里 describeElement）。 */
+async function describeNode(
+  client: CdpClient,
+  sessionId: string,
+  nodeId: number,
+): Promise<{ tag: string; text: string; hint: string } | null> {
+  const resolved = (await client
+    .send("DOM.resolveNode", { nodeId }, sessionId)
+    .catch(() => null)) as { object?: { objectId?: string } } | null;
+  const objectId = resolved?.object?.objectId;
+  if (!objectId) return null;
+  try {
+    const called = (await client.send(
+      "Runtime.callFunctionOn",
+      {
+        objectId,
+        functionDeclaration: `function () { ${PAGE_ELEMENT_HELPERS} return describeElement(this); }`,
+        returnByValue: true,
+      },
+      sessionId,
+    )) as {
+      result?: { value?: { tag?: string; text?: string; hint?: string } };
+    };
+    const value = called.result?.value;
+    if (!value?.tag) return null;
+    return {
+      tag: value.tag,
+      text: value.text ?? "",
+      hint: value.hint ?? value.tag,
+    };
+  } catch {
+    return null;
+  } finally {
+    await client
+      .send("Runtime.releaseObject", { objectId }, sessionId)
+      .catch(() => undefined);
+  }
+}
+
+/** 元素的边框盒（`DOM.getBoxModel`）；拿不到几何（无布局盒）时返回 null。 */
+async function boxOf(
+  client: CdpClient,
+  sessionId: string,
+  nodeId: number,
+): Promise<{ x: number; y: number; width: number; height: number } | null> {
+  const model = (await client
+    .send("DOM.getBoxModel", { nodeId }, sessionId)
+    .catch(() => null)) as {
+    model?: { border?: number[]; width?: number; height?: number };
+  } | null;
+  const border = model?.model?.border;
+  if (!border || border.length < 2) return null;
+  const width = model?.model?.width ?? 0;
+  const height = model?.model?.height ?? 0;
+  if (width <= 0 || height <= 0) return null;
+  return {
+    x: Math.round((border[0] ?? 0) * 10) / 10,
+    y: Math.round((border[1] ?? 0) * 10) / 10,
+    width: Math.round(width * 10) / 10,
+    height: Math.round(height * 10) / 10,
   };
 }
 

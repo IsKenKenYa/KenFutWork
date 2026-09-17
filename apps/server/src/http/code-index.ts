@@ -8,15 +8,21 @@ import type {
   RequestAuthenticator,
 } from "../features/auth/types.js";
 import type { CodeGitService } from "../features/code-git/code-git-service.js";
-import type { CodeIndexStore } from "../features/code-index/index-store.js";
+import {
+  type CodeIndexStore,
+  IndexTooLargeError,
+} from "../features/code-index/index-store.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 
 /**
  * 索引库路由（R4-3）：状态 / 重建 / 清空 / 搜索。
  *
- * 开关在**工作区设置**（`codeIndexEnabled`）；关着的时候搜索端点**如实拒绝并指路**
- * （不是静默回空列表——那会让人以为「搜不到」是内容问题）。索引数据是本机缓存
- * （`<cwd>/.kenfutwork/index/<canvasId>.json`），所以「清空」是真删文件。
+ * 两个开关都在**工作区设置**，对应参考图的两行（`docs/参考图/索引库-代码库索引开关.png`）：
+ * - `codeIndexEnabled` =「索引存储库以实现即时搜索」：右栏「文件目录」的搜索走索引；
+ *   关着时搜索端点**如实拒绝并指路**（不是静默回空列表——那会让人以为「搜不到」是内容问题）。
+ * - `codeIndexAutoNewFolder` =「索引新文件夹」：搜到还没有索引的目录时自动建一份；
+ *   关着时如实说「没有索引，请手动重建」；文件数达 50,000 时不自动建（可读原因）。
+ * 索引数据是本机缓存（`<cwd>/.kenfutwork/index/<canvasId>.json`），所以「清空」是真删文件。
  */
 export async function registerCodeIndexRoutes(
   app: FastifyInstance,
@@ -43,17 +49,21 @@ export async function registerCodeIndexRoutes(
       }),
     );
 
-  /** 画布 → 工作目录（越权 404，与其它 code 端点同一处校验）+ 该工作区的索引开关。 */
+  /** 画布 → 工作目录（越权 404，与其它 code 端点同一处校验）+ 该工作区的两个索引开关。 */
   const scopeFor = async (
     user: AuthenticatedUser,
     canvasId: string,
-  ): Promise<{ enabled: boolean; dir: string }> => {
+  ): Promise<{ enabled: boolean; autoNewFolder: boolean; dir: string }> => {
     const scope = await options.codeGitService.indexScope(user, canvasId);
     const settings = await options.settingsService.getWorkspaceSettings(
       user,
       scope.workspaceId,
     );
-    return { enabled: settings.codeIndexEnabled, dir: scope.dir };
+    return {
+      enabled: settings.codeIndexEnabled,
+      autoNewFolder: settings.codeIndexAutoNewFolder,
+      dir: scope.dir,
+    };
   };
 
   app.get<{ Querystring: { canvasId?: string } }>(
@@ -64,10 +74,11 @@ export async function registerCodeIndexRoutes(
       const canvasId = request.query.canvasId ?? "";
       if (!canvasId) return sendBadInput(reply, "缺少 canvasId。");
       try {
-        const { enabled } = await scopeFor(user, canvasId);
+        const { enabled, autoNewFolder } = await scopeFor(user, canvasId);
         const index = await options.indexStore.load(canvasId);
         return reply.code(200).send({
           enabled,
+          autoNewFolder,
           stats: await options.indexStore.stats(index),
         });
       } catch (error) {
@@ -123,23 +134,44 @@ export async function registerCodeIndexRoutes(
         return sendBadInput(reply, "缺少 canvasId 或 q。");
       }
       try {
-        const { enabled, dir } = await scopeFor(user, canvasId);
+        const { enabled, autoNewFolder, dir } = await scopeFor(user, canvasId);
         if (!enabled) {
           return reply.code(409).send(
             applicationErrorResponseSchema.parse({
               error: {
                 code: "index_disabled",
-                message: "索引库未开启：请到「设置 → 索引库」打开后再搜索。",
+                message:
+                  "「索引存储库以实现即时搜索」没开：请到「设置 → 索引库」打开后再搜索。",
               },
             }),
           );
         }
-        const index = await options.indexStore.ensure(canvasId, dir);
+        const index = await options.indexStore.ensure(canvasId, dir, {
+          auto: autoNewFolder,
+        });
+        if (!index) {
+          return reply.code(409).send(
+            applicationErrorResponseSchema.parse({
+              error: {
+                code: "index_not_built",
+                message:
+                  "这个工作目录还没有索引，而「索引新文件夹」是关着的：请到「设置 → 索引库」点「重建索引」，或打开「索引新文件夹」。",
+              },
+            }),
+          );
+        }
         return reply.code(200).send({
           hits: options.indexStore.search(index, query),
           builtAt: index.builtAt,
         });
       } catch (error) {
+        if (error instanceof IndexTooLargeError) {
+          return reply.code(413).send(
+            applicationErrorResponseSchema.parse({
+              error: { code: "index_too_large", message: error.message },
+            }),
+          );
+        }
         return sendIndexError(reply, error);
       }
     },

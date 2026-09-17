@@ -54,7 +54,7 @@ TypeScript 严格类型 + React 函数组件；lint 与格式化统一走 Biome 
 ## 测试指南
 vitest 按 app 配置（`apps/web/vitest.config.mjs`、`apps/server/vitest.config.mjs`、`packages/shared/vitest.config.mjs`）：web 用 jsdom + Testing Library，server/shared 用 Node 环境。服务端测试 `*.test.ts`，组件测试 `*.test.tsx`，放各自包的 `test/`（web）或与源码同目录（server/shared）。根 `tests/workspace.test.mjs` 用 `node --test` 校验仓库级门禁。bug 修复需附带针对性回归测试，交付前运行 `pnpm test` 与 `pnpm typecheck`。
 
-**测试资源护栏（硬约束）**：turbo 默认并行调度各包测试；禁止同时运行多个测试实例（多 Agent 并行会话尤其注意），确需串行用 `pnpm run test:packages -- --concurrency=1`，确需调大并发先评估本机内存且只改一处。
+**测试资源护栏（硬约束）**：turbo 默认并行调度各包测试；禁止同时运行多个测试实例（多 Agent 并行会话尤其注意），确需串行用 `pnpm exec turbo run test --concurrency=1`（**不要**写 `pnpm run test:packages -- --concurrency=1`：`--` 之后的参数会被透传给各包任务，实测 vitest 与 `tsc` 会因不认识该选项直接报错），确需调大并发先评估本机内存且只改一处。
 
 ### 测试哲学
 - **测试不能止于你以为刚好够**：必须主动越界、折返并回绕多次。覆盖正常路径后，还要覆盖边界、异常、并发、幂等重放、删除后迟到请求、空输入、超长输入、并发同键等场景。

@@ -37,6 +37,9 @@ export type WorkspaceSettingsPatch = {
   agentMaxRetries?: number | undefined;
   terminalShell?: TerminalShellId | undefined;
   codeIndexEnabled?: boolean | undefined;
+  codeIndexAutoNewFolder?: boolean | undefined;
+  autoCompactEnabled?: boolean | undefined;
+  commands?: WorkspaceSettings["commands"] | undefined;
   userRules?: string | undefined;
   ruleEntries?: string[] | undefined;
 };
@@ -53,6 +56,36 @@ export type SettingsService = {
     patch: WorkspaceSettingsPatch,
   ): Promise<WorkspaceSettings>;
 };
+
+/**
+ * 读命令表：库里的 jsonb 只信形状对的那部分（旧数据/手改过的行不该让整页崩）。
+ * 名字重复时**保留先出现的**——命令按名字触发，重名只会有一个生效。
+ */
+function parseCommands(raw: unknown): WorkspaceSettings["commands"] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: WorkspaceSettings["commands"] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const { name, prompt } = entry as { name?: unknown; prompt?: unknown };
+    const description = (entry as { description?: unknown }).description;
+    if (typeof name !== "string" || typeof prompt !== "string") continue;
+    const trimmedName = name.trim();
+    const trimmedPrompt = prompt.trim();
+    if (!trimmedName || !trimmedPrompt) continue;
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9-]*$/.test(trimmedName)) continue;
+    if (seen.has(trimmedName.toLowerCase())) continue;
+    seen.add(trimmedName.toLowerCase());
+    out.push({
+      name: trimmedName,
+      description:
+        typeof description === "string" ? description.slice(0, 200) : "",
+      prompt: trimmedPrompt.slice(0, 4_000),
+    });
+    if (out.length >= 50) break;
+  }
+  return out;
+}
 
 export function createSettingsService(options: {
   repository: SettingsRepository;
@@ -82,13 +115,19 @@ export function createSettingsService(options: {
       storedRetries,
       storedShell,
       storedIndexEnabled,
+      storedIndexAutoNewFolder,
+      storedAutoCompact,
       storedRules,
+      storedCommands,
     ] = await Promise.all([
       repository.findDefaultModel(workspaceId),
       repository.findAgentMaxRetries(workspaceId),
       repository.findTerminalShell(workspaceId),
       repository.findCodeIndexEnabled(workspaceId),
+      repository.findCodeIndexAutoNewFolder(workspaceId),
+      repository.findAutoCompactEnabled(workspaceId),
       repository.findUserRules(workspaceId),
+      repository.findCommands(workspaceId),
     ]).catch(() => {
       throw new SettingsServiceError(
         "settings_read_failed",
@@ -110,6 +149,11 @@ export function createSettingsService(options: {
       defaultModel: storedModel ?? resolvedFallback ?? defaultModel,
       terminalShell: storedShell ?? "auto",
       codeIndexEnabled: storedIndexEnabled ?? false,
+      // 缺省 true：只在上面那个总开关开着时才生效，所以不会「悄悄建索引」
+      codeIndexAutoNewFolder: storedIndexAutoNewFolder ?? true,
+      // 缺省 true：不压缩时超长会话直接撞上游上限失败，用户只能看到通用报错
+      autoCompactEnabled: storedAutoCompact ?? true,
+      commands: parseCommands(storedCommands),
       userRules: storedRules?.userRules ?? "",
       ruleEntries: storedRules?.ruleEntries ?? [],
     };
@@ -146,6 +190,25 @@ export function createSettingsService(options: {
             patch.codeIndexEnabled,
           ),
         );
+      }
+      if (patch.codeIndexAutoNewFolder !== undefined) {
+        writes.push(
+          repository.upsertCodeIndexAutoNewFolder(
+            workspaceId,
+            patch.codeIndexAutoNewFolder,
+          ),
+        );
+      }
+      if (patch.autoCompactEnabled !== undefined) {
+        writes.push(
+          repository.upsertAutoCompactEnabled(
+            workspaceId,
+            patch.autoCompactEnabled,
+          ),
+        );
+      }
+      if (patch.commands !== undefined) {
+        writes.push(repository.upsertCommands(workspaceId, patch.commands));
       }
       if (patch.userRules !== undefined) {
         writes.push(repository.upsertUserRules(workspaceId, patch.userRules));

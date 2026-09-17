@@ -186,159 +186,155 @@ export function SkillsModal({
   const visible = useMemo(() => filterSkillViews(rows, query), [rows, query]);
 
   return (
-    <>
-      <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-        <DialogContent
-          className="flex h-[78vh] max-h-[88vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl"
-          aria-describedby={undefined}
-        >
-          {/* 头部要能收窄：窄窗口下原来不换行，标题与「技能库/市场/导入」被挤成竖排、
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent
+        className="flex h-[78vh] max-h-[88vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl"
+        aria-describedby={undefined}
+      >
+        {/* 头部要能收窄：窄窗口下原来不换行，标题与「技能库/市场/导入」被挤成竖排、
               搜索框还溢出到卡片外（用户看到的「透明框 + 内容跑出框外」就是这个）。
               → 允许换行 + 各段 shrink-0 + 搜索框在自己的行里占满。 */}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-5 py-3 pr-12">
-            <DialogTitle className="flex shrink-0 items-center gap-2 text-base font-medium">
-              <Blocks className="h-4 w-4" /> 技能
-            </DialogTitle>
-            <div className="flex shrink-0 items-center gap-1 rounded-lg bg-muted p-1">
-              {(
-                [
-                  { id: "mine", label: "技能库" },
-                  { id: "market", label: "市场" },
-                  { id: "create", label: "导入 / 新建" },
-                ] as const
-              ).map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  data-active={tab === item.id}
-                  onClick={() => setTab(item.id)}
-                  className="whitespace-nowrap rounded-md px-3 py-1 text-sm transition-colors data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:shadow-sm"
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-            {tab === "mine" ? (
-              <div className="ml-auto flex min-w-0 flex-1 items-center gap-2 rounded-md border px-2 py-1 sm:flex-none">
-                <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <input
-                  aria-label="搜索技能"
-                  placeholder="搜索技能…"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  className="min-w-0 flex-1 bg-transparent text-sm outline-none sm:w-40 sm:flex-none"
-                />
-              </div>
-            ) : null}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-5 py-3 pr-12">
+          <DialogTitle className="flex shrink-0 items-center gap-2 text-base font-medium">
+            <Blocks className="h-4 w-4" /> 技能
+          </DialogTitle>
+          <div className="flex shrink-0 items-center gap-1 rounded-lg bg-muted p-1">
+            {(
+              [
+                { id: "mine", label: "技能库" },
+                { id: "market", label: "市场" },
+                { id: "create", label: "导入 / 新建" },
+              ] as const
+            ).map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                data-active={tab === item.id}
+                onClick={() => setTab(item.id)}
+                className="whitespace-nowrap rounded-md px-3 py-1 text-sm transition-colors data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:shadow-sm"
+              >
+                {item.label}
+              </button>
+            ))}
           </div>
-
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
-            {tab === "market" ? (
-              <SkillsMarketPanel
-                accessToken={accessToken}
-                onInstalled={(name) => {
-                  setNotice(`已安装「${name}」，可在「技能库」启用。`);
-                  refresh();
-                }}
+          {tab === "mine" ? (
+            <div className="ml-auto flex min-w-0 flex-1 items-center gap-2 rounded-md border px-2 py-1 sm:flex-none">
+              <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <input
+                aria-label="搜索技能"
+                placeholder="搜索技能…"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                className="min-w-0 flex-1 bg-transparent text-sm outline-none sm:w-40 sm:flex-none"
               />
-            ) : null}
+            </div>
+          ) : null}
+        </div>
 
-            {tab === "create" ? (
-              <SkillsCreatePanel
-                accessToken={accessToken}
-                canvasId={canvasId}
-                onCreated={() => {
-                  setTab("mine");
-                  refresh();
-                }}
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+          {tab === "market" ? (
+            <SkillsMarketPanel
+              accessToken={accessToken}
+              onInstalled={(name) => {
+                setNotice(`已安装「${name}」，可在「技能库」启用。`);
+                refresh();
+              }}
+            />
+          ) : null}
+
+          {tab === "create" ? (
+            <SkillsCreatePanel
+              accessToken={accessToken}
+              canvasId={canvasId}
+              onCreated={() => {
+                setTab("mine");
+                refresh();
+              }}
+            />
+          ) : null}
+
+          {notice ? <p className="text-xs text-emerald-600">{notice}</p> : null}
+          {error ? <p className="text-xs text-destructive">{error}</p> : null}
+
+          {tab === "mine" ? (
+            loading ? (
+              <ListLoading label="正在加载技能…" rows={3} />
+            ) : visible.length === 0 ? (
+              <ListEmpty
+                title={query ? "未找到匹配的技能" : "暂无技能"}
+                {...(query ? {} : { hint: "去「导入 / 新建」添加" })}
               />
-            ) : null}
-
-            {notice ? (
-              <p className="text-xs text-emerald-600">{notice}</p>
-            ) : null}
-            {error ? <p className="text-xs text-destructive">{error}</p> : null}
-
-            {tab === "mine" ? (
-              loading ? (
-                <ListLoading label="正在加载技能…" rows={3} />
-              ) : visible.length === 0 ? (
-                <ListEmpty
-                  title={query ? "未找到匹配的技能" : "暂无技能"}
-                  {...(query ? {} : { hint: "去「导入 / 新建」添加" })}
-                />
-              ) : (
-                <ul className="space-y-2">
-                  {visible.map((row) => (
-                    <li
-                      key={row.id}
-                      className="rounded-xl border p-3 transition-colors hover:border-foreground/30"
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="text-sm font-medium">
-                              {row.name}
-                            </span>
-                            <Badge>{skillSourceLabel(row.source)}</Badge>
-                            <Badge>{skillCategoryLabel(row.category)}</Badge>
-                            <Badge>v{row.version}</Badge>
-                            <Badge tone={row.enabled ? "on" : "off"}>
-                              {skillStateLabel(row)}
-                            </Badge>
-                          </div>
-                          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                            {row.description}
-                          </p>
+            ) : (
+              <ul className="space-y-2">
+                {visible.map((row) => (
+                  <li
+                    key={row.id}
+                    className="rounded-xl border p-3 transition-colors hover:border-foreground/30"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-sm font-medium">
+                            {row.name}
+                          </span>
+                          <Badge>{skillSourceLabel(row.source)}</Badge>
+                          <Badge>{skillCategoryLabel(row.category)}</Badge>
+                          <Badge>v{row.version}</Badge>
+                          <Badge tone={row.enabled ? "on" : "off"}>
+                            {skillStateLabel(row)}
+                          </Badge>
                         </div>
-                        <div className="flex shrink-0 items-center gap-1">
+                        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                          {row.description}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => void openDetail(row)}
+                          disabled={busyId === row.id}
+                          className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                        >
+                          详情
+                        </button>
+                        {row.toggleable ? (
                           <button
                             type="button"
-                            onClick={() => void openDetail(row)}
+                            onClick={() => void toggle(row)}
                             disabled={busyId === row.id}
                             className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
                           >
-                            详情
+                            {row.enabled ? "停用" : "启用"}
                           </button>
-                          {row.toggleable ? (
-                            <button
-                              type="button"
-                              onClick={() => void toggle(row)}
-                              disabled={busyId === row.id}
-                              className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-                            >
-                              {row.enabled ? "停用" : "启用"}
-                            </button>
-                          ) : null}
-                          {row.deletable ? (
-                            <button
-                              type="button"
-                              aria-label={`删除 ${row.name}`}
-                              onClick={() => void remove(row)}
-                              disabled={busyId === row.id}
-                              className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          ) : null}
-                          {busyId === row.id ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                          ) : null}
-                        </div>
+                        ) : null}
+                        {row.deletable ? (
+                          <button
+                            type="button"
+                            aria-label={`删除 ${row.name}`}
+                            onClick={() => void remove(row)}
+                            disabled={busyId === row.id}
+                            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        ) : null}
+                        {busyId === row.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                        ) : null}
                       </div>
-                    </li>
-                  ))}
-                </ul>
-              )
-            ) : null}
-          </div>
-
-          {detail ? (
-            <SkillDetailPanel detail={detail} onClose={() => setDetail(null)} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )
           ) : null}
-        </DialogContent>
-      </Dialog>
-    </>
+        </div>
+
+        {detail ? (
+          <SkillDetailPanel detail={detail} onClose={() => setDetail(null)} />
+        ) : null}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -437,8 +433,11 @@ function SkillsCreatePanel({
   const [packagesLoading, setPackagesLoading] = useState(false);
   const [importingPath, setImportingPath] = useState<string | null>(null);
 
-  const authHeaders = (): Record<string, string> =>
-    accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+  const authHeaders = useCallback(
+    (): Record<string, string> =>
+      accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+    [accessToken],
+  );
 
   const scanSandbox = useCallback(() => {
     setPackagesLoading(true);
@@ -698,8 +697,11 @@ function SkillsMarketPanel({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  const authHeaders = (): Record<string, string> =>
-    accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+  const authHeaders = useCallback(
+    (): Record<string, string> =>
+      accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+    [accessToken],
+  );
 
   const search = useCallback(
     (rawQuery: string) => {
@@ -728,8 +730,7 @@ function SkillsMarketPanel({
         .catch(() => setError("市场检索请求失败（检查网络）。"))
         .finally(() => setLoading(false));
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [accessToken],
+    [authHeaders],
   );
 
   // 打开面板先给一屏「全部」结果，避免空白让人误以为市场为空

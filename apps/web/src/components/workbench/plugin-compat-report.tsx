@@ -2,6 +2,7 @@
 
 import type { CompatReport } from "@kenfutwork/shared";
 import { AlertTriangle, CheckCircle2, ShieldX } from "lucide-react";
+import { keyed } from "../list-keys";
 
 /**
  * 兼容性报告展示：门禁结论 + 每条判定与理由。
@@ -54,37 +55,41 @@ export function CompatReportView({ report }: { report: CompatReport }) {
 
       {blockers.length > 0 ? (
         <ul className="mt-2 space-y-1.5">
-          {blockers.map((item, index) => (
-            <li key={`b-${item.code}-${index}`} className="flex gap-2">
-              <ShieldX className="mt-0.5 h-3 w-3 shrink-0 text-destructive" />
-              <div>
-                <p>{item.message}</p>
-                {item.detail ? (
-                  <p className="mt-0.5 whitespace-pre-wrap text-muted-foreground">
-                    {item.detail}
-                  </p>
-                ) : null}
-              </div>
-            </li>
-          ))}
+          {keyed(blockers, (item) => `${item.code}-${item.message}`).map(
+            ({ key, item }) => (
+              <li key={key} className="flex gap-2">
+                <ShieldX className="mt-0.5 h-3 w-3 shrink-0 text-destructive" />
+                <div>
+                  <p>{item.message}</p>
+                  {item.detail ? (
+                    <p className="mt-0.5 whitespace-pre-wrap text-muted-foreground">
+                      {item.detail}
+                    </p>
+                  ) : null}
+                </div>
+              </li>
+            ),
+          )}
         </ul>
       ) : null}
 
       {warnings.length > 0 ? (
         <ul className="mt-2 space-y-1.5">
-          {warnings.map((item, index) => (
-            <li key={`w-${item.code}-${index}`} className="flex gap-2">
-              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-600" />
-              <div>
-                <p>{item.message}</p>
-                {item.detail ? (
-                  <p className="mt-0.5 whitespace-pre-wrap text-muted-foreground">
-                    {item.detail}
-                  </p>
-                ) : null}
-              </div>
-            </li>
-          ))}
+          {keyed(warnings, (item) => `${item.code}-${item.message}`).map(
+            ({ key, item }) => (
+              <li key={key} className="flex gap-2">
+                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-600" />
+                <div>
+                  <p>{item.message}</p>
+                  {item.detail ? (
+                    <p className="mt-0.5 whitespace-pre-wrap text-muted-foreground">
+                      {item.detail}
+                    </p>
+                  ) : null}
+                </div>
+              </li>
+            ),
+          )}
         </ul>
       ) : null}
     </div>

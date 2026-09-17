@@ -8,7 +8,7 @@ import type {
   BaseStore,
 } from "@langchain/langgraph-checkpoint";
 import { ChatOpenAI } from "@langchain/openai";
-import { createDeepAgent } from "deepagents";
+import { createDeepAgent, createSummarizationMiddleware } from "deepagents";
 import { type AgentMiddleware, todoListMiddleware } from "langchain";
 import {
   DEFAULT_AGENT_MODEL,
@@ -20,13 +20,14 @@ import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js
 import type { CanvasRepository } from "../features/canvas/repository.js";
 import type { ToolDefinition, ToolExecutionContext } from "../kernel/types.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
+import type { CompactionPlan } from "./auto-compact.js";
 import {
   type AgentBackendResult,
   createAgentBackend,
 } from "./backends/index.js";
 import { bridgeKernelTools } from "./kernel-tools-bridge.js";
 import { KENFUTWORK_SYSTEM_PROMPT } from "./prompts/kenfutwork-main.js";
-import { createVideoSubAgent } from "./sub-agents.js";
+import { declaredSubAgentSpecs } from "./sub-agents.js";
 import type {
   PersistImageFn,
   SubmitImageJobFn,
@@ -267,6 +268,11 @@ export type KenFutWorkAgentFactory = (options: {
   /** 插件贡献的提示段（能力 `systemPrompt`）：追加在系统提示之后。 */
   systemPromptExtras?: readonly string[];
   /**
+   * 上下文自动压缩的口径（阈值/保留条数，见 agent/auto-compact.ts）。
+   * 传了才挂中间件——设置里关掉时**一个字都不挂**，不是挂上再短路。
+   */
+  autoCompact?: CompactionPlan;
+  /**
    * 装配完成时回吐工具清单（R4-1 分类占比要按 schema 量「系统工具 / MCP 工具」）。
    * 用回调而不是返回值：调用方（runtime）拿的是 agent 对象，工具清单只在装配期有。
    */
@@ -301,6 +307,8 @@ export function createKenFutWorkDeepAgent(options: {
   toolGateHooks?: ToolGateHooks;
   /** 插件贡献的提示段（能力 `systemPrompt`）：追加在系统提示之后。 */
   systemPromptExtras?: readonly string[];
+  /** 上下文自动压缩的口径（见 agent/auto-compact.ts）。 */
+  autoCompact?: CompactionPlan;
   /**
    * 装配完成时回吐工具清单（R4-1 分类占比要按 schema 量「系统工具 / MCP 工具」）。
    * 用回调而不是返回值：调用方（runtime）拿到的是 agent 对象，工具清单只在装配期有。
@@ -391,13 +399,34 @@ export function createKenFutWorkDeepAgent(options: {
 
   options.onToolInventory?.(tools);
 
+  /**
+   * 上下文自动压缩（R4-1 输出预留线的执行面）：只在设置开着、且算得出触发线时挂。
+   *
+   * - **摘要模型**：不传 `model` → 中间件用本轮 run 的模型（BYOK 就是用户那把 Key，
+   *   不引入第二个模型配置）；
+   * - **历史对齐**：被压掉的消息 offload 到工作区 `/conversation_history/`，模型上下文里
+   *   换成一条摘要（`lc_source="summarization"`）。库里的转录不动——界面上用一条提示说明
+   *   （见 stream-adapter 的 `run.compacted`）；
+   * - **backend**：与 agent 同一个后端工厂（offload 落到用户自己的工作目录，可追溯）。
+   */
+  const summarizationMiddleware: AgentMiddleware[] = options.autoCompact
+    ? [
+        createSummarizationMiddleware({
+          backend: backendResult.factory,
+          trigger: options.autoCompact.trigger,
+          keep: options.autoCompact.keep,
+        }) as unknown as AgentMiddleware,
+      ]
+    : [];
+
   return createDeepAgent({
     backend: backendResult.factory,
     ...(options.checkpointer ? { checkpointer: options.checkpointer } : {}),
     model: resolvedModel,
     name: "kenfutwork",
     ...(options.store ? { store: options.store } : {}),
-    subagents: [createVideoSubAgent()],
+    // 与设置页「子智能体」同一份清单（见 sub-agents.ts），界面与装配不允许漂移
+    subagents: declaredSubAgentSpecs(),
     systemPrompt,
     // 待办表（`write_todos`）：deepagents 只在它的 Codex profile 里挂 todoListMiddleware，
     // 非 Codex 模型默认**没有这个工具**——不挂的话「目标 + 进度」面板永远没有数据源，
@@ -410,6 +439,7 @@ export function createKenFutWorkDeepAgent(options: {
     ...(options.toolGate
       ? {
           middleware: [
+            ...summarizationMiddleware,
             todoListMiddleware() as unknown as AgentMiddleware,
             createToolErrorGuardMiddleware(),
             createModelResponseGuardMiddleware(),
@@ -419,6 +449,7 @@ export function createKenFutWorkDeepAgent(options: {
         }
       : {
           middleware: [
+            ...summarizationMiddleware,
             todoListMiddleware() as unknown as AgentMiddleware,
             createToolErrorGuardMiddleware(),
             createModelResponseGuardMiddleware(),
@@ -443,10 +474,11 @@ function createStreamingChatModel(specifier: string): BaseLanguageModel {
   let provider = colonIdx > 0 ? specifier.slice(0, colonIdx) : "openai";
   let modelName = colonIdx > 0 ? specifier.slice(colonIdx + 1) : specifier;
 
-  const hasGoogleApiKey = !!process.env.GOOGLE_API_KEY;
-  const hasVertexAI = !!(
-    process.env.GOOGLE_VERTEX_PROJECT && process.env.GOOGLE_VERTEX_LOCATION
-  );
+  const googleApiKey = process.env.GOOGLE_API_KEY;
+  const vertexProject = process.env.GOOGLE_VERTEX_PROJECT;
+  const vertexLocation = process.env.GOOGLE_VERTEX_LOCATION;
+  const hasGoogleApiKey = !!googleApiKey;
+  const hasVertexAI = !!(vertexProject && vertexLocation);
   const hasGoogle = hasGoogleApiKey || hasVertexAI;
 
   // Provider availability fallback
@@ -468,9 +500,7 @@ function createStreamingChatModel(specifier: string): BaseLanguageModel {
   switch (provider) {
     case "google":
       // Prefer Vertex AI (service account) when configured; fall back to Developer API key
-      if (hasVertexAI) {
-        const vertexProject = process.env.GOOGLE_VERTEX_PROJECT!;
-        const vertexLocation = process.env.GOOGLE_VERTEX_LOCATION!;
+      if (vertexProject && vertexLocation) {
         console.log(
           `[model] Using Vertex AI for: ${modelName} (project=${vertexProject}, location=${vertexLocation})`,
         );
@@ -481,16 +511,21 @@ function createStreamingChatModel(specifier: string): BaseLanguageModel {
           streaming: true,
         });
       }
+      if (!googleApiKey) {
+        // 上方可用性回退已排除「两套 Google 配置都缺失」；走到这里说明配置不全，fail loud
+        throw new Error(
+          "[model] Google 供应商缺少 GOOGLE_API_KEY，且 Vertex AI 的 project/location 不全。",
+        );
+      }
       return new ChatGoogleGenerativeAI({
         model: modelName,
-        apiKey: process.env.GOOGLE_API_KEY!,
+        apiKey: googleApiKey,
         streaming: true,
         thinkingConfig: {
           includeThoughts: true,
           thinkingBudget: -1, // dynamic — let the model decide
         },
       });
-    case "openai":
     default:
       return new ChatOpenAI({
         model: modelName,

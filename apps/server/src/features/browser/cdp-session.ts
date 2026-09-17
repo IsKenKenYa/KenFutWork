@@ -13,6 +13,7 @@ import {
   launchBrowserWithDebugPort,
   pressKey,
   readDom,
+  readPickables,
   typeText,
   waitForDevtools,
   waitForLoad,
@@ -76,6 +77,22 @@ export interface CdpBrowserSession {
     text: string;
     elements: Array<{ tag: string; text: string; hint: string }>;
   }>;
+  /**
+   * 可拾取元素（带真实几何，见 cdp-client 的 readPickables）+ 一张当前视口截图。
+   * 截图落 blob 后给签名 URL；blob 不可用或截图失败时只少 `screenshotUrl`，几何照给。
+   */
+  pickables(): Promise<{
+    url: string;
+    title: string;
+    viewport: { width: number; height: number };
+    elements: Array<{
+      tag: string;
+      text: string;
+      hint: string;
+      box: { x: number; y: number; width: number; height: number } | null;
+    }>;
+    screenshotUrl?: string;
+  }>;
   screenshot(): Promise<{
     screenshotUrl: string;
     width: number;
@@ -132,6 +149,28 @@ export function createCdpBrowserSession(deps: {
     if (url) await waitForLoad(target, opened.sessionId);
     sessionId = opened.sessionId;
     return sessionId;
+  };
+
+  /** 截一张当前视口并落到 blob（`screenshot()` 与 `pickables()` 共用）。 */
+  const captureAndUpload = async (
+    cdp: CdpClient,
+    id: string,
+  ): Promise<{ screenshotUrl: string; width: number; height: number }> => {
+    const bytes = await captureScreenshot(cdp, id);
+    if (!deps.blob) {
+      throw new CdpError(
+        "command_failed",
+        "服务端没有装配 blob 存储，截图无法落盘。",
+      );
+    }
+    const objectPath = `browser/${Date.now()}-${Math.round(portrait.width)}x${Math.round(portrait.height)}.png`;
+    const bucket = deps.blob.bucket("project-assets");
+    await bucket.upload(objectPath, bytes, {
+      contentType: "image/png",
+      upsert: true,
+    });
+    const screenshotUrl = await bucket.resolveUrl(objectPath, 3600);
+    return { screenshotUrl, width: portrait.width, height: portrait.height };
   };
 
   const session: CdpBrowserSession = {
@@ -256,23 +295,20 @@ export function createCdpBrowserSession(deps: {
       const { client: cdp, sessionId: id } = requireConnected();
       return readDom(cdp, id);
     },
+    async pickables() {
+      const { client: cdp, sessionId: id } = requireConnected();
+      const page = await readPickables(cdp, id);
+      // 截图与几何用同一套视口坐标（readPickables 已把页面滚到顶）：
+      // 截图的宽高直接取 CDP 的视口尺寸，不靠 portrait 缓存，避免两者错位
+      const shot = await captureAndUpload(cdp, id).catch(() => null);
+      return {
+        ...page,
+        ...(shot ? { screenshotUrl: shot.screenshotUrl } : {}),
+      };
+    },
     async screenshot() {
       const { client: cdp, sessionId: id } = requireConnected();
-      const bytes = await captureScreenshot(cdp, id);
-      if (!deps.blob) {
-        throw new CdpError(
-          "command_failed",
-          "服务端没有装配 blob 存储，截图无法落盘。",
-        );
-      }
-      const objectPath = `browser/${Date.now()}-${Math.round(portrait.width)}x${portrait.height}.png`;
-      const bucket = deps.blob.bucket("project-assets");
-      await bucket.upload(objectPath, bytes, {
-        contentType: "image/png",
-        upsert: true,
-      });
-      const screenshotUrl = await bucket.resolveUrl(objectPath, 3600);
-      return { screenshotUrl, width: portrait.width, height: portrait.height };
+      return captureAndUpload(cdp, id);
     },
     async click(target) {
       const { client: cdp, sessionId: id } = requireConnected();

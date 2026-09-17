@@ -20,6 +20,7 @@ export function AssetCard({ asset, onDelete, onUpdateLabel }: AssetCardProps) {
       <div className="relative group">
         <div className="w-[150px] h-[113px] rounded-xl border bg-muted/30 flex items-center justify-center overflow-hidden">
           {asset.file_url ? (
+            // biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用
             <img
               src={asset.file_url}
               alt={asset.display_name}

@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { tool } from "langchain";
 import { z } from "zod";
 
@@ -8,6 +7,7 @@ import {
   getAvailableImageModels,
   resolveImageProviderName,
 } from "../../generation/providers/registry.js";
+import type { ImageQuality, OutputFormat } from "../../generation/types.js";
 
 const DEFAULT_MODEL = "black-forest-labs/flux-kontext-pro";
 
@@ -99,8 +99,8 @@ type ImageGenerateInput = {
   prompt: string;
   model: string;
   aspectRatio?: string;
-  quality?: string;
-  outputFormat?: string;
+  quality?: ImageQuality;
+  outputFormat?: OutputFormat;
   inputImages?: string[];
   placementX?: number;
   placementY?: number;
@@ -143,6 +143,11 @@ export type SubmitImageJobFn = (input: {
   aspectRatio: string;
   inputImages?: string[];
   quality?: string;
+  /** 画布落点（可选）：运行时的作业回调据此显式指定插入位置。 */
+  placementX?: number;
+  placementY?: number;
+  placementWidth?: number;
+  placementHeight?: number;
 }) => Promise<{
   jobId: string;
   elementId?: string;
@@ -268,10 +273,8 @@ export async function runImageGenerate(
       prompt: input.prompt,
       model: input.model,
       ...(input.aspectRatio ? { aspectRatio: input.aspectRatio } : {}),
-      ...(input.quality ? { quality: input.quality as any } : {}),
-      ...(input.outputFormat
-        ? { outputFormat: input.outputFormat as any }
-        : {}),
+      ...(input.quality ? { quality: input.quality } : {}),
+      ...(input.outputFormat ? { outputFormat: input.outputFormat } : {}),
       ...(input.inputImages?.length ? { inputImages: input.inputImages } : {}),
     });
     lap("direct_generate_done", { width: result.width, height: result.height });
@@ -330,8 +333,12 @@ export function createImageGenerateTool(deps?: {
 
   return tool(
     async (input: ImageGenerateInput, config) => {
-      const attachmentMap = (config as any)?.configurable
-        ?.user_attachment_map as Record<string, string> | undefined;
+      const configurable = (
+        config as { configurable?: Record<string, unknown> }
+      )?.configurable;
+      const attachmentMap = configurable?.user_attachment_map as
+        | Record<string, string>
+        | undefined;
       return await runImageGenerate(
         input,
         deps?.persistImage,

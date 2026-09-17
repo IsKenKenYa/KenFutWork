@@ -62,15 +62,6 @@ function isSkillMd(fileName: string): boolean {
   return fileName.toLowerCase() === "skill.md";
 }
 
-/** 目录是否直接含 SKILL.md。 */
-function hasSkillMd(dir: string): boolean {
-  try {
-    return readdirSync(dir).some(isSkillMd);
-  } catch {
-    return false;
-  }
-}
-
 /**
  * 在沙箱工作目录里列出技能包候选（含 SKILL.md 的目录，深度 ≤ MAX_DEPTH）。
  *

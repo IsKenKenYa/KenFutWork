@@ -24,6 +24,7 @@ export function GuidanceSection({ value, onSave }: GuidanceSectionProps) {
   }, [value]);
 
   // Auto-resize textarea
+  // biome-ignore lint/correctness/useExhaustiveDependencies: draft 只当触发器（高度按 DOM 现量，不读值）；去掉后输入不再自动长高
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;

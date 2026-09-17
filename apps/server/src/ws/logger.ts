@@ -65,7 +65,7 @@ export function createPipelineLogger(
       ...baseCtx,
       ...ctx,
     };
-    const line = JSON.stringify(entry) + "\n";
+    const line = `${JSON.stringify(entry)}\n`;
 
     // stdout: human-friendly one-liner
     const ts = new Date(now).toISOString().slice(11, 23);

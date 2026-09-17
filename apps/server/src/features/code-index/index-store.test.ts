@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createCodeIndexStore } from "./index-store.js";
+import { createCodeIndexStore, IndexTooLargeError } from "./index-store.js";
 
 /**
  * 代码库索引（R4-3）：规格里那几条——建/增量/失效/上限/搜索排序——逐条锁住。
@@ -116,13 +116,49 @@ describe("代码库索引", () => {
     expect(await store.stats(null)).toBeNull();
   });
 
-  it("ensure：没有索引就懒建一份（搜索路径不必先手工重建）", async () => {
+  it("ensure：允许自动建时懒建一份（搜索路径不必先手工重建）", async () => {
     const root = makeDir();
     const indexDir = makeDir();
     writeFileSync(join(root, "lazy.txt"), "lazy\n", "utf8");
     const store = createCodeIndexStore({ indexDir });
-    const index = await store.ensure("c1", root);
-    expect(index.entries.map((e) => e.path)).toEqual(["lazy.txt"]);
+    const index = await store.ensure("c1", root, { auto: true });
+    expect(index?.entries.map((e) => e.path)).toEqual(["lazy.txt"]);
+    expect(await store.load("c1")).not.toBeNull();
+  });
+
+  it("ensure：开关关着（不允许自动建）时**不建**，返回 null 让界面如实说", async () => {
+    const root = makeDir();
+    const indexDir = makeDir();
+    writeFileSync(join(root, "lazy.txt"), "lazy\n", "utf8");
+    const store = createCodeIndexStore({ indexDir });
+    expect(await store.ensure("c1", root, { auto: false })).toBeNull();
+    expect(await store.load("c1")).toBeNull();
+  });
+
+  it("自动建达到资格线（50,000）→ 抛 IndexTooLargeError 且**不落盘**半截索引", async () => {
+    const root = makeDir();
+    const indexDir = makeDir();
+    for (let i = 0; i < 5; i += 1) {
+      writeFileSync(join(root, `f${i}.ts`), `// ${i}\n`, "utf8");
+    }
+    // 注入小上限（造 50,000 个文件不现实）：语义与真实上限完全一致
+    const store = createCodeIndexStore({ indexDir, entryLimit: 3 });
+    await expect(
+      store.ensure("c1", root, { auto: true }),
+    ).rejects.toBeInstanceOf(IndexTooLargeError);
+    expect(await store.load("c1")).toBeNull();
+  });
+
+  it("手动重建不受资格线限制：超限只截断（并标注 truncated），不会拒", async () => {
+    const root = makeDir();
+    const indexDir = makeDir();
+    for (let i = 0; i < 5; i += 1) {
+      writeFileSync(join(root, `g${i}.ts`), `// ${i}\n`, "utf8");
+    }
+    const store = createCodeIndexStore({ indexDir, entryLimit: 3 });
+    const index = await store.rebuild("c1", root);
+    expect(index.truncated).toBe(true);
+    expect(index.entries.length).toBeLessThanOrEqual(3);
     expect(await store.load("c1")).not.toBeNull();
   });
 });

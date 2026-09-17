@@ -32,7 +32,11 @@ export function createPgmqQueue(options: {
         "SELECT * FROM pgmq.send($1::text, $2::jsonb, $3::integer)",
         [queue, JSON.stringify(payload), delaySeconds],
       );
-      return rows[0]!.send;
+      const [row] = rows;
+      if (!row) {
+        throw new Error("[queue:pgmq] pgmq.send 未返回消息 id（fail loud）");
+      }
+      return row.send;
     },
 
     async read<T>(

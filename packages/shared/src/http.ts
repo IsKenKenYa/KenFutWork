@@ -294,6 +294,68 @@ export const codeTerminalResponseSchema = z.object({
   }),
 });
 
+// --- 子智能体（R1-3 目录 + 设置 →「子智能体」页） ---
+
+/**
+ * `GET /api/agent/subagents`：这份清单**由 agent 装配处同一份数据导出**
+ * （`apps/server/src/agent/sub-agents.ts`），不是另写一遍的说明文字——
+ * 界面列出来的，就是真跑起来会用的那些。
+ */
+export const agentSubagentListResponseSchema = z.object({
+  /** 我们声明的子代理（name 即模型分发时用的名字）。 */
+  subagents: z.array(
+    z.object({
+      name: z.string().min(1),
+      /** 中文短名（界面用；英文 description 是给模型看的）。 */
+      label: z.string().min(1),
+      description: z.string(),
+      tools: z.array(z.string()),
+    }),
+  ),
+  /** 框架内置的分发工具（不在我们的声明清单里，但会出现在工具表与事件流里）。 */
+  builtin: z.array(
+    z.object({
+      name: z.string().min(1),
+      label: z.string().min(1),
+      description: z.string(),
+    }),
+  ),
+});
+
+export type AgentSubagentListResponse = z.infer<
+  typeof agentSubagentListResponseSchema
+>;
+
+// --- 原生目录对话框（桌面形态：服务端在跑，对话框开在用户这台机器上） ---
+
+/**
+ * `GET /api/system/directory-picker`：这台服务端能不能弹系统文件夹对话框。
+ *
+ * 只有**桌面形态**可用（服务端与用户同一台机器）。自托管/Web 形态下对话框会开在
+ * 服务器那台机器上、对用户毫无意义，故如实报不可用并给原因——客户端据此决定
+ * 「打开文件夹」是走系统对话框，还是回落到浏览器目录选择器。
+ */
+export const directoryPickerStatusSchema = z.object({
+  available: z.boolean(),
+  reason: z.string().optional(),
+});
+
+/**
+ * `POST /api/system/pick-directory`：弹对话框并把选中的**绝对路径**带回来。
+ *
+ * 四种结果都在 200 里按 `status` 分流（HTTP 状态码表达不了「取消」与「不可用」的差别）：
+ * 取消要静默、不可用要回落另一种选择器、失败要如实报原因。
+ */
+export const pickDirectoryResponseSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("picked"), path: z.string().min(1) }),
+  z.object({ status: z.literal("cancelled") }),
+  z.object({ status: z.literal("unavailable"), reason: z.string() }),
+  z.object({ status: z.literal("failed"), reason: z.string() }),
+]);
+
+export type DirectoryPickerStatus = z.infer<typeof directoryPickerStatusSchema>;
+export type PickDirectoryResponse = z.infer<typeof pickDirectoryResponseSchema>;
+
 // --- agent 运行活动（Git 弹层的「智能体 N 秒 · M 运行」；口径：近 7 天） ---
 
 export const agentRunActivityResponseSchema = z.object({
@@ -355,6 +417,11 @@ export const applicationErrorCodeSchema = z.enum([
   "project_not_found",
   "project_slug_taken",
   "project_update_failed",
+  // 索引库（R4-3）：两个开关各自的可读拒绝（不在枚举里 → 响应会退化成 ZodError 转储）
+  "index_disabled",
+  "index_not_built",
+  "index_too_large",
+  "index_failed",
   /**
    * 项目工作目录（`projects.work_dir`，web 形态「填本机路径」）校验失败（400）。
    * 同一个坑第二次踩到（见上面 `service_unavailable` 的注释）：码不在本枚举里，
@@ -460,14 +527,37 @@ export const workspaceSettingsResponseSchema = z.object({
 });
 
 /**
+ * 去掉字段上的 `.default(...)`。
+ *
+ * `.partial()` **不会**去掉默认值：`z.boolean().default(false)` 在缺省时依然产出 `false`，
+ * 于是「部分更新」的 payload 会带上一堆没送来的键（实测 `parse({codeIndexAutoNewFolder:false})`
+ * 回来 6 个键）。真机复现过后果：改一个索引开关，另一个索引开关被打回默认、终端 shell 回到
+ * `auto`、用户规则被清空——**一次保存静默重置其它所有设置**。
+ */
+/** 字段带 `.default(...)` 时取它**包着的那层**，否则原样返回。 */
+type StripDefault<T> =
+  T extends z.ZodDefault<infer Inner extends z.ZodTypeAny> ? Inner : T;
+
+function withoutDefaults<T extends z.ZodRawShape>(
+  shape: T,
+): { [K in keyof T]: StripDefault<T[K]> } {
+  return Object.fromEntries(
+    Object.entries(shape).map(([key, field]) => [
+      key,
+      field instanceof z.ZodDefault ? field.removeDefault() : field,
+    ]),
+  ) as { [K in keyof T]: StripDefault<T[K]> };
+}
+
+/**
  * PUT 的入参是**部分更新**：只写送来的字段，没送的保持库里现值。
  *
- * 用整对象会踩坑：`terminalShell` 这类字段带 zod 默认值，客户端只想改模型时不会带它，
- * 服务端按「整对象写入」就会把它顺手重置成默认——这正违反「逐列 upsert，两个设置各自保存
- * 不互相覆盖」的既有口径。
+ * 两个都不能省：① 每个字段先剥掉默认值（见 {@link withoutDefaults}）；② 再 `.partial()`
+ * 让键本身可缺。少任何一个，客户端的单字段保存都会把其余设置重置成默认。
  */
-export const workspaceSettingsUpdateRequestSchema =
-  workspaceSettingsSchema.partial();
+export const workspaceSettingsUpdateRequestSchema = z
+  .object(withoutDefaults(workspaceSettingsSchema.shape))
+  .partial();
 
 export const modelListResponseSchema = z.object({
   models: z.array(modelInfoSchema),

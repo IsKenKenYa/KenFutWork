@@ -145,7 +145,7 @@ type Operation = z.infer<typeof operationSchema>;
 // ---------------------------------------------------------------------------
 
 function applyMove(elements: CanvasElement[], op: Operation): HandlerResult {
-  const el = findElement(elements, op.element_id!);
+  const el = findElement(elements, op.element_id);
   if (!el) return { description: `[skip] element ${op.element_id} not found` };
   el.x = op.x;
   el.y = op.y;
@@ -154,7 +154,7 @@ function applyMove(elements: CanvasElement[], op: Operation): HandlerResult {
 }
 
 function applyResize(elements: CanvasElement[], op: Operation): HandlerResult {
-  const el = findElement(elements, op.element_id!);
+  const el = findElement(elements, op.element_id);
   if (!el) return { description: `[skip] element ${op.element_id} not found` };
   el.width = op.width;
   el.height = op.height;
@@ -171,7 +171,7 @@ function applyResize(elements: CanvasElement[], op: Operation): HandlerResult {
  * - Clears startBinding / endBinding on arrows pointing to deleted element
  */
 function applyDelete(elements: CanvasElement[], op: Operation): HandlerResult {
-  const el = findElement(elements, op.element_id!);
+  const el = findElement(elements, op.element_id);
   if (!el) return { description: `[skip] element ${op.element_id} not found` };
   el.isDeleted = true;
   bumpVersion(el);
@@ -219,7 +219,7 @@ function applyUpdateStyle(
   elements: CanvasElement[],
   op: Operation,
 ): HandlerResult {
-  const el = findElement(elements, op.element_id!);
+  const el = findElement(elements, op.element_id);
   if (!el) return { description: `[skip] element ${op.element_id} not found` };
 
   const applied: string[] = [];
@@ -243,15 +243,20 @@ function applyUpdateStyle(
 }
 
 function applyAddText(elements: CanvasElement[], op: Operation): HandlerResult {
+  // add_text 没有 element_id 那样的查找失败兜底：缺 text 时直接跳过，不落残缺元素
+  const text = op.text;
+  if (typeof text !== "string") {
+    return { description: "[skip] add_text requires text" };
+  }
   const id = generateId();
   const el: CanvasElement = {
     ...createElementBase(),
     id,
     type: "text",
-    text: op.text!,
+    text,
     x: op.x,
     y: op.y,
-    width: measureTextWidth(op.text!, op.fontSize ?? 20),
+    width: measureTextWidth(text, op.fontSize ?? 20),
     height: (op.fontSize ?? 20) * 1.25,
     fontSize: op.fontSize ?? 20,
     fontFamily: 1,
@@ -259,12 +264,12 @@ function applyAddText(elements: CanvasElement[], op: Operation): HandlerResult {
     verticalAlign: "top",
     strokeColor: op.strokeColor ?? "#000000",
     containerId: null,
-    originalText: op.text!,
+    originalText: text,
     autoResize: true,
     lineHeight: 1.25,
   };
   elements.push(el);
-  const short = op.text!.length > 20 ? op.text!.slice(0, 17) + "..." : op.text!;
+  const short = text.length > 20 ? `${text.slice(0, 17)}...` : text;
   return {
     description: `added text '${short}' at (${op.x}, ${op.y}) [id=${id}]`,
     createdId: id,
@@ -279,7 +284,7 @@ function applyUpdateText(
   elements: CanvasElement[],
   op: Operation,
 ): HandlerResult {
-  const el = findElement(elements, op.element_id!);
+  const el = findElement(elements, op.element_id);
   if (!el) return { description: `[skip] element ${op.element_id} not found` };
 
   let textEl: CanvasElement | undefined;
@@ -295,7 +300,12 @@ function applyUpdateText(
   if (!textEl)
     return { description: `[skip] no text found for element ${op.element_id}` };
 
-  const newText = op.text!;
+  const newText = op.text;
+  if (typeof newText !== "string") {
+    return {
+      description: `[skip] update_text requires text for element ${op.element_id}`,
+    };
+  }
   const fontSize = (op.fontSize ?? textEl.fontSize ?? 20) as number;
   textEl.text = newText;
   textEl.originalText = newText;
@@ -340,7 +350,7 @@ function applyUpdateText(
     }
   }
 
-  const short = newText.length > 20 ? newText.slice(0, 17) + "..." : newText;
+  const short = newText.length > 20 ? `${newText.slice(0, 17)}...` : newText;
   return { description: `updated text to '${short}' on ${op.element_id}` };
 }
 
@@ -416,7 +426,7 @@ function applyAddShape(
 
     const short =
       op.label.text.length > 20
-        ? op.label.text.slice(0, 17) + "..."
+        ? `${op.label.text.slice(0, 17)}...`
         : op.label.text;
     return {
       description: `added ${op.shape} ${el.width}x${el.height} with label '${short}' at (${op.x}, ${op.y}) [id=${shapeId}]`,
@@ -449,7 +459,9 @@ function applyAddLine(elements: CanvasElement[], op: Operation): HandlerResult {
   }
 
   // Non-binding path: points are required
-  if (!op.points || op.points.length < 2) {
+  const points = op.points;
+  const firstPoint = points?.at(0);
+  if (!points || !firstPoint || points.length < 2) {
     return {
       description: "[skip] add_line without bindings requires points (>= 2)",
     };
@@ -457,12 +469,16 @@ function applyAddLine(elements: CanvasElement[], op: Operation): HandlerResult {
 
   // Auto-derive origin from first point if x/y not provided.
   // Excalidraw stores points relative to the element's x/y origin.
-  const originX = op.x ?? op.points[0]!.x;
-  const originY = op.y ?? op.points[0]!.y;
-  const excalidrawPoints = op.points.map((p) => [p.x - originX, p.y - originY]);
+  const originX = op.x ?? firstPoint.x;
+  const originY = op.y ?? firstPoint.y;
+  // 二元组形状使后续 relX/relY 读取无需下标断言
+  const excalidrawPoints: Array<[number, number]> = points.map((p) => [
+    p.x - originX,
+    p.y - originY,
+  ]);
 
-  const relXs = excalidrawPoints.map((p) => p[0]!);
-  const relYs = excalidrawPoints.map((p) => p[1]!);
+  const relXs = excalidrawPoints.map((p) => p[0]);
+  const relYs = excalidrawPoints.map((p) => p[1]);
   const width = Math.abs(Math.max(...relXs) - Math.min(...relXs));
   const height = Math.abs(Math.max(...relYs) - Math.min(...relYs));
 
@@ -486,7 +502,7 @@ function applyAddLine(elements: CanvasElement[], op: Operation): HandlerResult {
   };
   elements.push(el);
   return {
-    description: `added ${op.line_type} with ${op.points.length} points at (${originX}, ${originY}) [id=${arrowId}]`,
+    description: `added ${op.line_type} with ${points.length} points at (${originX}, ${originY}) [id=${arrowId}]`,
     createdId: arrowId,
   };
 }
@@ -607,8 +623,8 @@ function applyReorder(elements: CanvasElement[], op: Operation): HandlerResult {
   if (idx === -1)
     return { description: `[skip] element ${op.element_id} not found` };
 
-  const removed = elements.splice(idx, 1);
-  const el = removed[0]!;
+  const el = elements.splice(idx, 1).at(0);
+  if (!el) return { description: `[skip] element ${op.element_id} not found` };
   if (op.position === "front") {
     elements.push(el);
   } else {
@@ -709,10 +725,22 @@ function applyDistribute(
     };
   }
 
-  if (op.direction === "horizontal") {
-    targets.sort((a, b) => (Number(a.x) || 0) - (Number(b.x) || 0));
-    const first = targets[0]!;
-    const last = targets[targets.length - 1]!;
+  // 排序后取首尾（两分支共用，比较键按方向选轴）；length >= 3 已保证首尾存在，判空仅为收窄类型
+  const horizontal = op.direction === "horizontal";
+  targets.sort((a, b) =>
+    horizontal
+      ? (Number(a.x) || 0) - (Number(b.x) || 0)
+      : (Number(a.y) || 0) - (Number(b.y) || 0),
+  );
+  const first = targets[0];
+  const last = targets.at(-1);
+  if (!first || !last) {
+    return {
+      description: `[skip] need >= 3 valid elements to distribute, found ${targets.length}`,
+    };
+  }
+
+  if (horizontal) {
     const totalSpan =
       (Number(last.x) || 0) +
       (Number(last.width) || 0) -
@@ -730,9 +758,6 @@ function applyDistribute(
       currentX += (Number(el.width) || 0) + gap;
     }
   } else {
-    targets.sort((a, b) => (Number(a.y) || 0) - (Number(b.y) || 0));
-    const first = targets[0]!;
-    const last = targets[targets.length - 1]!;
     const totalSpan =
       (Number(last.y) || 0) +
       (Number(last.height) || 0) -
@@ -762,7 +787,7 @@ function applyDistribute(
 
 const handlers: Record<
   Operation["action"],
-  (elements: CanvasElement[], op: any) => HandlerResult
+  (elements: CanvasElement[], op: Operation) => HandlerResult
 > = {
   move: applyMove,
   resize: applyResize,
@@ -787,9 +812,12 @@ export function createManipulateCanvasTool(deps: {
 }) {
   return tool(
     async (input, config) => {
-      const canvasId = (config as any)?.configurable?.canvas_id;
+      const configurable = (
+        config as { configurable?: Record<string, unknown> }
+      )?.configurable;
+      const canvasId = configurable?.canvas_id;
 
-      if (!canvasId) {
+      if (typeof canvasId !== "string" || !canvasId) {
         return JSON.stringify({
           error: "no_canvas_context",
           message:
@@ -828,8 +856,7 @@ export function createManipulateCanvasTool(deps: {
       const errors: string[] = [];
       const createdIds: Record<string, string> = {};
 
-      for (let i = 0; i < input.operations.length; i++) {
-        const op = input.operations[i]!;
+      for (const [i, op] of input.operations.entries()) {
         try {
           const handler = handlers[op.action];
           const result = handler(elements, op);

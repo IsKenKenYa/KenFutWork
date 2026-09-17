@@ -1,5 +1,18 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "//": "globalEnv：仓库脚本读取的环境变量（biome 的 noUndeclaredEnvVars 要求声明，否则 turbo 缓存会漏掉这些输入）。SUPABASE_* 随 debug-session 脚本删除一起移除（去 Supabase 主线已完成）。",
+  "globalEnv": [
+    "KENFUTWORK_AGENT_MODEL",
+    "KENFUTWORK_DEV_PG_PORT",
+    "KENFUTWORK_SEARCH_API_KEY",
+    "KENFUTWORK_SEARCH_PORT",
+    "KENFUTWORK_SEARCH_UPSTREAM",
+    "MOCK_MODEL_ID",
+    "MOCK_MODEL_PORT",
+    "MOCK_SEARCH_PORT",
+    "MOCK_SEARCH_QUERY",
+    "SystemRoot"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

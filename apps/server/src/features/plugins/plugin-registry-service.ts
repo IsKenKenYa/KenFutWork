@@ -601,7 +601,7 @@ export function createPluginRegistryService(
     async readAsset({ pluginId, relativePath }) {
       const state = await readState();
       const record = state.installed.find((item) => item.id === pluginId);
-      if (!record || !record.enabled || record.manifest.assets !== true) {
+      if (!record?.enabled || record.manifest.assets !== true) {
         return undefined;
       }
       const bundleDir = bundleDirOf(pluginId);

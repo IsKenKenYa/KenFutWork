@@ -192,8 +192,17 @@ export const workspaceSettingsSchema = z.object({
   defaultModel: z.string().min(1),
   /** 终端默认 shell（用户口径：「可以在设置里配置默认的」）。 */
   terminalShell: terminalShellSchema.default("auto"),
-  /** 代码库索引开关（R4-3；索引文件是本机缓存，不进库表）。 */
+  /**
+   * R4-3「索引存储库以实现即时搜索」（索引文件是本机缓存，不进库表）。
+   * 关掉时右栏「文件目录」的搜索**如实拒绝并指路**，不是回空列表。
+   */
   codeIndexEnabled: z.boolean().default(false),
+  /**
+   * R4-3「索引新文件夹」：搜到还没有索引的工作目录时**自动建一份**，
+   * 目录文件数达到 50,000 就不自动建（如实说明并指路「手动重建」）。
+   * 只在 {@link codeIndexEnabled} 开着时起作用——两行开关对应参考图的真实行为。
+   */
+  codeIndexAutoNewFolder: z.boolean().default(true),
   /**
    * 用户规则（设置 → 规则与记忆）：**每轮 run 都会拼进系统提示词**（服务端有消费方）。
    * 此前只存在浏览器 localStorage，页面文案承诺了「附加到每次请求」却没人读。
@@ -201,6 +210,35 @@ export const workspaceSettingsSchema = z.object({
   userRules: z.string().max(20_000).default(""),
   /** 逐条规则（短句，最多 100 条）。 */
   ruleEntries: z.array(z.string().min(1).max(2_000)).max(100).default([]),
+  /**
+   * 自定义斜杠命令（设置 →「命令」）：输入框里 `/name 参数` 触发，提交前展开成 prompt。
+   *
+   * 名字限字母数字与连字符（避免与内置 `/` 行为/路径冲突），最多 50 条。
+   */
+  commands: z
+    .array(
+      z.object({
+        name: z
+          .string()
+          .trim()
+          .min(1)
+          .max(32)
+          .regex(/^[a-zA-Z0-9][a-zA-Z0-9-]*$/, {
+            message: "命令名只能用字母、数字与连字符，且以字母或数字开头。",
+          }),
+        /** 说明（在设置页与输入框提示里显示）。 */
+        description: z.string().trim().max(200).default(""),
+        /** 提示词模板；`{{args}}` 会被替换成命令后面的参数（没有占位符则把参数追加到末尾）。 */
+        prompt: z.string().trim().min(1).max(4_000),
+      }),
+    )
+    .max(50)
+    .default([]),
+  /**
+   * 上下文自动压缩：超阈值时把较早的消息摘要掉（阈值 = 窗口 − 预留输出，摘要用本轮模型，
+   * 用户转录不变、原文 offload 到工作区 /conversation_history/）。关掉时中间件不挂。
+   */
+  autoCompactEnabled: z.boolean().default(true),
   /**
    * run 失败自动重试上限（含首次尝试；0 = 不重试）。
    * 缺省 10；服务端对「已执行工具」的轮次一律不重试（副作用安全），见 agent/run-retry.ts。
@@ -220,6 +258,8 @@ export const modelInfoSchema = z.object({
   vision: z.boolean().optional(),
   /** 上下文窗口 token 数（前端量级徽标）。 */
   contextWindow: z.number().int().positive().optional(),
+  /** 单次回复最大输出 token 数（上下文条「预留输出」段的来源，见 provider-contracts）。 */
+  maxOutputTokens: z.number().int().positive().optional(),
 });
 
 export const chatSessionIdSchema = identifierSchema;

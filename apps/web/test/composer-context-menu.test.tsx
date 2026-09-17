@@ -48,8 +48,11 @@ function useHarness(
   return { value, setValue, textareaRef, menu };
 }
 
-const item = (id: string) =>
-  COMPOSER_MENU_ITEMS.find((entry) => entry.id === id)!;
+const item = (id: string) => {
+  const found = COMPOSER_MENU_ITEMS.find((entry) => entry.id === id);
+  if (!found) throw new Error(`菜单项不存在：${id}`);
+  return found;
+};
 
 describe("输入框右键菜单动作", () => {
   it("全选：把选区设为整段文本", async () => {
