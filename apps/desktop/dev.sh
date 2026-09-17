@@ -11,6 +11,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
 PIDS=()
+export LOOMIC_DESKTOP_SERVER_CWD="$ROOT"
 cleanup() {
   for pid in "${PIDS[@]:-}"; do
     kill "$pid" 2>/dev/null || true
@@ -20,22 +21,8 @@ trap cleanup EXIT
 
 port_up() { curl -s -o /dev/null -m 3 "http://127.0.0.1:$1" 2>/dev/null; }
 
-# 1. 服务端（桌面形态：KENFUTWORK_EMBEDDED_PG 读根 .env.local）
-if port_up 3001; then
-  echo "[dev] 服务端已在运行（3001），复用"
-else
-  echo "[dev] 启动服务端（桌面形态，内嵌 Postgres）…"
-  (cd apps/server && pnpm dev:server > "$ROOT/.kenfutwork-data/server-dev.log" 2>&1) &
-  PIDS+=($!)
-  for _ in $(seq 1 30); do
-    port_up 3001 && break
-    sleep 2
-  done
-  port_up 3001 || { echo "[dev] 服务端未能就绪，看 .kenfutwork-data/server-dev.log"; exit 1; }
-  echo "[dev] 服务端就绪（3001）"
-fi
-
-# 2. web dev server（Tauri devUrl 指向它）
+# 服务端生命周期归 Tauri 壳（ensure_server_running：不健康才 spawn，关窗优雅停库）。
+# 这里只负责 web dev server（Tauri devUrl 指向它）。
 if port_up 3000; then
   echo "[dev] web 已在运行（3000），复用"
 else
