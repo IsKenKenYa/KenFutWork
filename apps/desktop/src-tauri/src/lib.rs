@@ -29,17 +29,18 @@ const SHUTDOWN_GRACE: Duration = std::time::Duration::from_secs(10);
 struct ServerState(std::sync::Mutex<Option<server_handle::ServerHandle>>);
 
 fn spawn_config(data_dir: std::path::PathBuf) -> ServerSpawnConfig {
-    // 命令与 cwd 可用 env 覆盖（dev.sh 会注入 LOOMIC_DESKTOP_SERVER_CWD=仓库根）；
+    // 命令与 cwd 可用 env 覆盖（dev.sh 会注入 KENFUTWORK_DESKTOP_SERVER_CWD=仓库根）；
     // 打包态（sidecar）落地时改为二进制路径注入，接口不变。
     let command =
-        std::env::var("LOOMIC_DESKTOP_SERVER_CMD").unwrap_or_else(|_| "pnpm".into());
-    let args = std::env::var("LOOMIC_DESKTOP_SERVER_ARGS")
-        .unwrap_or_else(|_| "--filter @loomic/server dev:server".into())
+        std::env::var("KENFUTWORK_DESKTOP_SERVER_CMD").unwrap_or_else(|_| "pnpm".into());
+    let args = std::env::var("KENFUTWORK_DESKTOP_SERVER_ARGS")
+        // 包名以 apps/server/package.json 为准（2026-09-15 品牌迁移 @loomic→@kenfutwork）
+        .unwrap_or_else(|_| "--filter @kenfutwork/server dev:server".into())
         .split_whitespace()
         .map(str::to_string)
         .collect();
     let mut config = ServerSpawnConfig::new(&command, args, data_dir, SERVER_PORT);
-    if let Ok(cwd) = std::env::var("LOOMIC_DESKTOP_SERVER_CWD") {
+    if let Ok(cwd) = std::env::var("KENFUTWORK_DESKTOP_SERVER_CWD") {
         config.cwd = cwd.into();
     }
     config
@@ -69,6 +70,13 @@ fn register_signal_shutdown(app: tauri::AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // 单实例：第二个启动实例立即退出并唤起已有窗口——否则两个壳会竞态
+        // initdb 同一个内嵌集群（密码文件错位 → auth 必败，2026-09-17 实测事故）
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_focus();
+            }
+        }))
         .invoke_handler(tauri::generate_handler![ping])
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;

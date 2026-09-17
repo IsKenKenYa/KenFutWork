@@ -150,3 +150,10 @@ Code / Design 双模式的界面承载（侧栏分段开关）与 logo 的对角
   `preview-字标字体.html` → `字体风格对比.html`；两张渲染快照（`logo字形对照.png`／`字标字体对照.png`）已删除，要重出照上文命令走。
   更早的三概念提案 A/B/C、方案 C 配色变体 V1–V4、K+F 融合提案的对照页与 `concept-*.svg` 源文件亦已删除，
   需要时从 git 历史取回（`git checkout <删除提交>^ -- docs/design/logo`）。
+
+## 变更登记（2026-09-15）
+
+- **桌面应用图标换版**：`docs/design/logo/GPT生成.png`（用户定稿）经 `cargo tauri icon` 生成 Tauri 全套
+  （icns/ico/png + 移动端），落地于 `apps/desktop/src-tauri/icons/`；`tauri.conf.json` bundle.icon 已指该套。
+  本变更仅覆盖**桌面应用图标**；web 端 favicon/logo.svg/apple-touch-icon 与 og-image 的同步换版为后续项
+  （涉及 `layout.tsx` metadata，注意并行编辑）。
