@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { contextUsageView, type RunUsageSnapshot } from "@/lib/context-usage";
 
 /**
  * 模型选择器旁的「上下文容量 / 缓存命中」浮层（R4-1）。
+ *
+ * **悬停即展开**（用户口径：「鼠标放上去悬浮显示，而不是点击才出来」），移开收起；
+ * 面板里没有可聚焦控件，所以 Tab 聚焦到环也展开、移开即收（键盘可达）。
  *
  * 形态照参考图：按钮是一个小圆环（**不写数字**，弧长 = 已用百分比），浮层第一行给
  * 「当前 / 窗口（两位小数百分比）」的读数，下面一条横向进度条，再下面是各分类占比，
@@ -34,6 +37,12 @@ export function ContextUsageButton({
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  /**
+   * 关面板的防抖定时器：面板与环之间有 8px 空隙（`mb-2`），鼠标从环挪到面板时会**穿过
+   * 空隙**、触发一次 `mouseleave`——不防抖就会「一挪进面板就自己关掉」。120ms 足够穿过
+   * 空隙，又短到不会被读成「卡住不关」。
+   */
+  const closeTimer = useRef<number | null>(null);
   const view = contextUsageView(
     usage,
     contextWindow,
@@ -41,37 +50,57 @@ export function ContextUsageButton({
     maxOutputTokens,
   );
 
+  const cancelClose = useCallback(() => {
+    if (closeTimer.current !== null) {
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  }, []);
+
+  const scheduleClose = useCallback(() => {
+    cancelClose();
+    closeTimer.current = window.setTimeout(() => setOpen(false), 120);
+  }, [cancelClose]);
+
+  // 卸载时清掉待触发的关闭（否则可能对已卸载组件 setState）
+  useEffect(() => cancelClose, [cancelClose]);
+
+  // 键盘可达：Tab 聚焦到环也展开，移开即收（面板里没有可聚焦控件，不需要额外处理）
   useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (event: MouseEvent) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(event.target as Node)
-      ) {
-        setOpen(false);
-      }
-    };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOpen(false);
     };
-    document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   return (
     /* `inline-flex` 不能少：普通 div 会带上父级行高，环就比相邻图标**高 2px**（实测 cy 483 vs 485） */
-    <div ref={containerRef} className="relative inline-flex items-center">
+    /* biome-ignore lint/a11y/noStaticElementInteractions: 这个 div 只是环与浮层的**命中盒**（悬停区域要跨过两者之间的空隙）；语义由里面的 button 承担，给它补一个 role 只会多一个说不出意义的节点、并和按钮的 `aria-label` 重复 */
+    <div
+      ref={containerRef}
+      className="relative inline-flex items-center"
+      /* 悬停展开（用户口径：「鼠标放上去悬浮显示，而不是点击才出来」）：
+         环与面板都在这个容器里，指针移进面板仍算「没离开」，只有真的离开才排关闭 */
+      onMouseEnter={() => {
+        cancelClose();
+        setOpen(true);
+      }}
+      onMouseLeave={scheduleClose}
+      onFocus={() => {
+        cancelClose();
+        setOpen(true);
+      }}
+      onBlur={scheduleClose}
+    >
       <button
         type="button"
         aria-label="上下文容量"
         aria-haspopup="dialog"
         aria-expanded={open}
         title={view.usageFineLine ?? view.usageLine ?? "上下文容量与缓存命中"}
-        onClick={() => setOpen((current) => !current)}
+        /* 悬停即展开，所以按下不再切换开合（点击时面板本来就是开的，再 toggle 会立刻关掉）。
+           保留 button 是为了 Tab 可达与 aria-expanded 的语义 */
         /* 与相邻图标按钮同心中线（h-6 w-6 命中盒 + 居中，环本身 16）：
            圈不会跟图标错开半个像素；hover 只给底色（环的颜色不受悬停影响） */
         className="inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors hover:bg-muted"

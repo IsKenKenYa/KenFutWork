@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -11,13 +11,51 @@ afterEach(() => {
   cleanup();
 });
 
+/** 面板是**悬停**展开的（用户口径：「鼠标放上去悬浮显示，而不是点击才出来」）。 */
 async function openPopover() {
-  await userEvent.click(screen.getByRole("button", { name: "上下文容量" }));
+  await userEvent.hover(screen.getByRole("button", { name: "上下文容量" }));
   return screen.getByRole("dialog", { name: "上下文容量与缓存命中" });
 }
 
 describe("ContextUsageButton", () => {
-  it("点开显示容量、百分比与缓存命中率", async () => {
+  it("悬停即展开，移开才收起（不是点击才出来）", async () => {
+    render(
+      <ContextUsageButton
+        usage={{ inputTokens: 45_300, outputTokens: 1 }}
+        contextWindow={1_000_000}
+      />,
+    );
+    const trigger = screen.getByRole("button", { name: "上下文容量" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    await userEvent.hover(trigger);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    // 点击不该把它关掉（悬停时面板本来就开着，toggle 会立刻关＝用户点不到）
+    await userEvent.click(trigger);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    await userEvent.unhover(trigger);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("从环挪进面板时不收起（环与面板之间那 8px 空隙有防抖）", async () => {
+    render(
+      <ContextUsageButton
+        usage={{ inputTokens: 45_300, outputTokens: 1 }}
+        contextWindow={1_000_000}
+      />,
+    );
+    const trigger = screen.getByRole("button", { name: "上下文容量" });
+    await userEvent.hover(trigger);
+    const dialog = screen.getByRole("dialog");
+    // 指针移到面板上（面板是容器的子节点，不算「离开」）
+    await userEvent.hover(dialog);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("展开后显示容量、百分比与缓存命中率", async () => {
     render(
       <ContextUsageButton
         usage={{
