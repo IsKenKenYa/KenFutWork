@@ -559,7 +559,7 @@ describe("右栏浏览器（点链接自动打开）", () => {
     expect(normalizeUrl("   ")).toBeNull();
   });
 
-  it("地址栏回车后渲染 iframe；工具栏给后退/前进/刷新、视口预设与「在系统浏览器打开」出口", async () => {
+  it("地址栏回车后渲染 iframe；工具栏给后退/前进/刷新、视口预设与「在默认浏览器中打开」出口", async () => {
     render(<Harness />);
     await openBrowserTab();
     expect(screen.getByRole("button", { name: "后退" })).toBeDisabled();
@@ -596,11 +596,11 @@ describe("右栏浏览器（点链接自动打开）", () => {
     // 预设按比例缩放到面板里，指针坐标仍然对得上（不是拿宽度假装）
     expect(frame.style.transform).toMatch(/scale\(/);
 
-    // 「在系统浏览器打开」在 ⋯ 菜单里（地址栏右侧，不带箭头）
+    // 「在默认浏览器中打开」在 ⋯ 菜单里（地址栏右侧，不带箭头）
     const menu = screen.getByLabelText("浏览器菜单");
     await userEvent.click(menu);
     expect(
-      await screen.findByRole("option", { name: "在系统浏览器打开" }),
+      await screen.findByRole("option", { name: "在默认浏览器中打开" }),
     ).toBeInTheDocument();
 
     // 自由尺寸（参考图的「退出自由尺寸」）：尺寸可改、可拖，退出即回到跟随面板

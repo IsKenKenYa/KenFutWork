@@ -320,21 +320,36 @@ export function BrowserPane({
             }
           }}
           items={[
-            { value: "open-system", label: "在系统浏览器打开" },
+            { value: "open-system", label: "在默认浏览器中打开" },
             { value: "copy", label: "复制地址" },
+            { value: "devtools", label: "打开调试工具" },
           ]}
         >
           <SelectTrigger
             className="shrink-0 gap-0 border-transparent px-1.5 py-1"
             aria-label="浏览器菜单"
             hideChevron
-            title="更多（在系统浏览器打开 / 复制地址）"
+            title="更多（在默认浏览器中打开 / 复制地址 / 打开调试工具）"
           >
             <Ellipsis className="h-3.5 w-3.5" />
           </SelectTrigger>
-          <SelectContent className="min-w-40">
-            <SelectItem value="open-system">在系统浏览器打开</SelectItem>
+          <SelectContent className="min-w-44">
+            <SelectItem value="open-system">在默认浏览器中打开</SelectItem>
             <SelectItem value="copy">复制地址</SelectItem>
+            {/*
+              调试工具：**参考图里有，但我们这条 iframe 路径给不了**——内嵌页挂在 iframe 里，
+              浏览器不允许给 iframe 单独开 devtools（只能从外层页面的 devtools 里选 frame）。
+              按「不摆假开关」的规矩：**置灰 + 写明为什么 + 给替代路径**，不做点了没反应的键。
+            */}
+            <SelectItem
+              value="devtools"
+              disabled
+              title="内嵌页在 iframe 里，浏览器不允许给 iframe 单独开调试工具；先在「在默认浏览器中打开」里按 F12 调试"
+            >
+              <span className="text-muted-foreground">
+                打开调试工具（iframe 不给挂，需外部浏览器）
+              </span>
+            </SelectItem>
           </SelectContent>
         </Select>
       </form>
