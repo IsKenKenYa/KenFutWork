@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { buildOnboardingSteps } from "../src/components/workbench/onboarding-section";
 import { formatElementReference } from "../src/components/workbench/panel-browser-view";
 import {
   linesToRules,
@@ -76,5 +77,34 @@ describe("AI 任务默认浏览器偏好（R5-4）", () => {
     expect(getBrowserOpenTarget()).toBe("system");
     window.localStorage.setItem("workbench:browser-open-target", "乱写的值");
     expect(getBrowserOpenTarget()).toBe("panel");
+  });
+});
+
+describe("引导页的状态判定（R5-2）", () => {
+  it("四步都按真实数据判定，不是写死的清单", () => {
+    const empty = buildOnboardingSteps({
+      providerCount: 0,
+      hasWorkDir: false,
+      permissionTier: "default",
+      conversationCount: 0,
+    });
+    expect(empty.map((s) => s.done)).toEqual([false, false, false, false]);
+    expect(empty.find((s) => s.id === "provider")?.tab).toBe("providers");
+
+    const ready = buildOnboardingSteps({
+      providerCount: 1,
+      hasWorkDir: true,
+      permissionTier: "auto-approve",
+      conversationCount: 3,
+    });
+    expect(ready.every((s) => s.done)).toBe(true);
+    // 默认档被视为「还没定过」（提示去想清楚），显式设过才算完成
+    const defaultTier = buildOnboardingSteps({
+      providerCount: 1,
+      hasWorkDir: true,
+      permissionTier: "default",
+      conversationCount: 1,
+    });
+    expect(defaultTier.find((s) => s.id === "permission")?.done).toBe(false);
   });
 });

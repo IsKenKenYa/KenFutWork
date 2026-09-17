@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { AboutSection } from "@/components/workbench/about-section";
 import { BrowserSettingsSection } from "@/components/workbench/browser-settings-section";
 import { IndexLibrarySection } from "@/components/workbench/index-library-section";
+import { OnboardingSection } from "@/components/workbench/onboarding-section";
 import { TerminalSettingsSection } from "@/components/workbench/terminal-settings-section";
 import { ListLoading } from "@/components/workbench/list-state";
 import { RulesMemorySection } from "@/components/workbench/rules-memory-section";
@@ -35,6 +36,7 @@ export type SettingsTab =
   | "rules"
   | "usage"
   | "index"
+  | "onboarding"
   | "about";
 
 /**
@@ -67,6 +69,7 @@ const TAB_GROUPS: Array<{
     tabs: [
       { id: "usage", label: "使用统计" },
       { id: "index", label: "索引库" },
+      { id: "onboarding", label: "引导" },
       // 插件面板（能力 `ui` 的 settings 槽位）：装了带面板的插件才出现内容
       { id: "pluginPanels", label: "插件面板" },
       { id: "about", label: "关于" },
@@ -85,6 +88,8 @@ export function SettingsModal({
   onClose,
   accessToken = null,
   activeCanvasId = null,
+  hasWorkDir = false,
+  conversationCount = 0,
 }: {
   open: boolean;
   /** 打开时定位的分类（如「管理模型」直达供应商页）。 */
@@ -93,6 +98,9 @@ export function SettingsModal({
   accessToken?: string | null;
   /** 当前项目主画布（索引库按画布=工作目录建；没有项目时为 null）。 */
   activeCanvasId?: string | null;
+  /** 「引导」页用：是否已有工作目录项目、已有多少会话。 */
+  hasWorkDir?: boolean;
+  conversationCount?: number;
   onClose: () => void;
 }) {
   const { session } = useAuth();
@@ -268,6 +276,15 @@ export function SettingsModal({
                   canvasId={activeCanvasId}
                   enabled={codeIndexEnabled}
                   onToggle={handleIndexToggle}
+                />
+              ) : null
+            ) : activeTab === "onboarding" ? (
+              token ? (
+                <OnboardingSection
+                  accessToken={token}
+                  hasWorkDir={hasWorkDir}
+                  conversationCount={conversationCount}
+                  onGoToTab={(next) => setActiveTab(next)}
                 />
               ) : null
             ) : activeTab === "about" ? (
