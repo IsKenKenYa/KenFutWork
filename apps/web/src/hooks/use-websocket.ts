@@ -47,7 +47,8 @@ export type WebSocketHandle = {
   /** 起一个持久 shell 会话（同一个 id 重复起时服务端复用已有会话）。 */
   startTerminal: (payload: {
     sessionId: string;
-    canvasId: string;
+    /** 省略即不绑工作目录（cwd 落到服务端启动目录）。 */
+    canvasId?: string;
     shell?: TerminalShellId;
   }) => void;
   /** 送一行输入（换行由服务端按 shell 补）。 */
@@ -353,7 +354,7 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
   const startTerminal = useCallback(
     (payload: {
       sessionId: string;
-      canvasId: string;
+      canvasId?: string;
       shell?: TerminalShellId;
     }) => {
       sendCommand(

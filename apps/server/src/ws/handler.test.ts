@@ -255,6 +255,25 @@ describe("终端会话（WS 通道）", () => {
   const isAck = (msg: Record<string, unknown>) =>
     msg.type === "command.ack" && msg.action === "terminal.start";
 
+  it("不带 canvasId 也能起会话：cwd 落到服务端启动目录（终端不被工作目录限制）", async () => {
+    const { app, port } = await startServer();
+    void app;
+    const session = await connect(port);
+    try {
+      const ack = await session.sendAndWait(
+        {
+          type: "command",
+          action: "terminal.start",
+          payload: { sessionId: "t-no-dir" },
+        },
+        isAck,
+      );
+      expect((ack.payload as { sessionId: string }).sessionId).toBe("t-no-dir");
+    } finally {
+      session.client.close();
+    }
+  });
+
   it("起会话拿到 ack；输入的命令原样回到输出；stop 后回 exit", async () => {
     const { app, port, stubs } = await startServer();
     const dir = mkdtempSync(join(tmpdir(), "kfw-ws-term-"));

@@ -99,13 +99,40 @@ describe("终端 shell 选择", () => {
     expect(shells.every((shell) => shell.executable.length > 0)).toBe(true);
   });
 
-  it("auto 落平台默认（Windows → cmd，POSIX → sh）", () => {
+  it("auto 落**系统默认终端**（Windows → PowerShell 优先，POSIX → $SHELL/bash）", () => {
     const shells = detectTerminalShells();
     const resolved = resolveTerminalShell("auto", shells);
-    const expected = process.platform === "win32" ? "cmd" : "sh";
-    expect(resolved?.id).toBe(
-      shells.some((shell) => shell.id === expected) ? expected : shells[0]?.id,
+    const expected =
+      process.platform === "win32"
+        ? ["pwsh", "powershell", "cmd"]
+        : ["bash", "sh"];
+    const wanted = expected.find((id) => shells.some((s) => s.id === id));
+    expect(resolved?.id).toBe(wanted ?? shells[0]?.id);
+    // Windows 上有 PowerShell 就不该落 cmd（用户口径：自动进系统默认配置的终端）
+    if (
+      process.platform === "win32" &&
+      shells.some((s) => s.id === "powershell")
+    ) {
+      expect(resolved?.id).not.toBe("cmd");
+    }
+  });
+
+  it("auto 的候选顺序：有 pwsh 先用 pwsh，其次 Windows PowerShell，最后才是 cmd", () => {
+    const available = [
+      { id: "cmd" as const, label: "cmd", executable: "cmd.exe" },
+      {
+        id: "powershell" as const,
+        label: "Windows PowerShell",
+        executable: "powershell.exe",
+      },
+      { id: "pwsh" as const, label: "PowerShell 7", executable: "pwsh.exe" },
+    ];
+    if (process.platform !== "win32") return; // 顺序只在 Windows 上是这套
+    expect(resolveTerminalShell("auto", available)?.id).toBe("pwsh");
+    expect(resolveTerminalShell("auto", available.slice(0, 2))?.id).toBe(
+      "powershell",
     );
+    expect(resolveTerminalShell("auto", available.slice(0, 1))?.id).toBe("cmd");
   });
 
   it("设置里选了这台机器没有的 shell → 落回平台默认，而不是报错", () => {
@@ -143,9 +170,8 @@ describe("终端 shell 选择", () => {
       cwd: dir,
       shell: "auto",
     });
-    expect(process.platform === "win32" ? result.shell === "cmd" : true).toBe(
-      true,
-    );
+    // auto 解析到的是**系统默认终端**（Windows 上不再是 cmd——见 defaultShellOrder）
+    expect(result.shell).not.toBe("auto");
     expect(result.exitCode).toBe(0);
   });
 });

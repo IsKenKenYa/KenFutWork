@@ -12,9 +12,10 @@ import {
   validateWorktreePath,
 } from "./code-git-service.js";
 import type { GitClient, GitRepoView } from "./git-client.js";
-import type {
-  TerminalShellId,
-  TerminalShellOption,
+import {
+  detectTerminalShells,
+  type TerminalShellId,
+  type TerminalShellOption,
 } from "./terminal-runner.js";
 
 const USER = {
@@ -472,11 +473,14 @@ describe("终端 shell 解析", () => {
     });
 
     const { service: noSettings } = build({ availableShells: shells });
-    // auto：解析成本机平台默认（测试机是 Windows → cmd）
+    // auto：解析成**系统默认终端**（Windows 上有 PowerShell 就用它，不再落 cmd）
     await expect(noSettings.listTerminalShells(USER)).resolves.toEqual({
       shells,
       defaultShell: "auto",
-      resolvedShell: process.platform === "win32" ? "cmd" : shells[0]?.id,
+      resolvedShell:
+        process.platform === "win32"
+          ? shells.find((s) => s.id === "powershell")?.id
+          : shells[0]?.id,
     });
   });
 
@@ -492,7 +496,10 @@ describe("终端 shell 解析", () => {
     await expect(service.listTerminalShells(USER)).resolves.toEqual({
       shells,
       defaultShell: "auto",
-      resolvedShell: process.platform === "win32" ? "cmd" : shells[0]?.id,
+      resolvedShell:
+        process.platform === "win32"
+          ? shells.find((s) => s.id === "powershell")?.id
+          : shells[0]?.id,
     });
   });
 
@@ -508,7 +515,11 @@ describe("终端 shell 解析", () => {
         "echo kfw-shell",
         "auto",
       );
-      expect(result.shell).toBe(process.platform === "win32" ? "cmd" : "sh");
+      // auto 解析到的是系统默认终端（本机探测结果），不再是写死的 cmd / sh
+      expect(result.shell).not.toBe("auto");
+      expect(detectTerminalShells().some((s) => s.id === result.shell)).toBe(
+        true,
+      );
       expect(result.exitCode).toBe(0);
     } finally {
       rmSync(dir, { recursive: true, force: true });

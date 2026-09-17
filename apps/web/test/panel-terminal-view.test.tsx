@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TerminalPane } from "../src/components/workbench/panel-terminal-view";
@@ -21,8 +27,8 @@ vi.mock("../src/lib/code-git-api", () => ({
 /**
  * 交互式终端（R3-1 的可用形态）：一条常驻 shell，cd 保留、REPL 可连续对话。
  *
- * 这里锁三件事：起会话（带 canvasId 与 shell）、输入带上 sessionId 送出去、
- * 输出与退出如实上屏（含「连接断了要重开」这条）。
+ * 这里锁四件事：起会话（**不挑 shell**——由服务端解析系统默认）、输入带上 sessionId 送出去、
+ * 输出与退出如实上屏（含「连接断了要重开」）、**不绑工作目录也能开**。
  */
 describe("TerminalPane（交互式会话）", () => {
   /** 收集订阅与调用记录的 WS 替身。 */
@@ -87,7 +93,7 @@ describe("TerminalPane（交互式会话）", () => {
     vi.clearAllMocks();
   });
 
-  it("挂载即开会话：带上 canvasId 与设置里的默认 shell", async () => {
+  it("挂载即开会话：带 canvasId，但**不带 shell**（系统默认由服务端解析）", async () => {
     const ws = makeWs();
     render(
       <TerminalPane accessToken="token" canvasId="canvas-1" ws={ws.handle} />,
@@ -98,8 +104,71 @@ describe("TerminalPane（交互式会话）", () => {
     );
     const payload = vi.mocked(ws.handle.startTerminal).mock.calls[0]?.[0];
     expect(payload?.canvasId).toBe("canvas-1");
-    expect(payload?.shell).toBe("cmd");
+    // 用户口径「不要选择，自动进入系统默认配置的终端」：客户端不挑壳
+    expect(payload?.shell).toBeUndefined();
     expect(payload?.sessionId).toMatch(/^term-/);
+    // 标签上显示的是服务端 ack 回来的**实际** shell
+    expect(
+      await screen.findByRole("button", { name: /^终端标签：cmd$/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("标签页右键：列出可切换的终端，切过去 = 换一条新会话", async () => {
+    const ws = makeWs();
+    render(
+      <TerminalPane accessToken="token" canvasId="canvas-1" ws={ws.handle} />,
+    );
+    await waitFor(() =>
+      expect(ws.handle.startTerminal).toHaveBeenCalledTimes(1),
+    );
+    const tab = await screen.findByRole("button", { name: /^终端标签：cmd$/ });
+
+    await userEvent.pointer({ target: tab, keys: "[MouseRight]" });
+
+    const menu = await screen.findByRole("menu", { name: "终端标签菜单" });
+    expect(menu).toBeInTheDocument();
+    const item = within(menu).getByRole("menuitemradio", {
+      name: /Windows PowerShell/,
+    });
+    await userEvent.click(item);
+
+    // 换 shell = 新会话（进程不能原地换壳），且这次**显式**带上了选中的壳
+    await waitFor(() =>
+      expect(ws.handle.startTerminal).toHaveBeenCalledTimes(2),
+    );
+    const payload = vi.mocked(ws.handle.startTerminal).mock.calls[1]?.[0];
+    expect(payload?.shell).toBe("powershell");
+    expect(payload?.canvasId).toBe("canvas-1");
+  });
+
+  it("新建 / 关闭标签：多开互不干扰，关掉当前标签由邻居接替", async () => {
+    const ws = makeWs();
+    render(
+      <TerminalPane accessToken="token" canvasId="canvas-1" ws={ws.handle} />,
+    );
+    await waitFor(() =>
+      expect(ws.handle.startTerminal).toHaveBeenCalledTimes(1),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "新建终端" }));
+    await waitFor(() =>
+      expect(ws.handle.startTerminal).toHaveBeenCalledTimes(2),
+    );
+    expect(
+      screen.getAllByRole("button", { name: /关闭终端标签：/ }),
+    ).toHaveLength(2);
+
+    const [firstClose] = screen.getAllByRole("button", {
+      name: /关闭终端标签：/,
+    });
+    await userEvent.click(firstClose as HTMLElement);
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole("button", { name: /关闭终端标签：/ }),
+      ).toHaveLength(1),
+    );
+    // 关掉的是哪个会话就停哪个（不留孤儿 shell）
+    expect(ws.handle.stopTerminal).toHaveBeenCalledTimes(1);
   });
 
   it("输入一行：本地补回显（没有 TTY），再把内容送给服务端（sessionId 对齐）", async () => {
@@ -184,12 +253,35 @@ describe("TerminalPane（交互式会话）", () => {
     );
   });
 
-  it("没绑工作目录：说清楚，而不是起一个没有 cwd 的会话", async () => {
+  it("StrictMode 下也只开一个标签（effect 跑两遍不许开出两个 shell）", async () => {
+    const ws = makeWs();
+    const { StrictMode } = await import("react");
+    render(
+      <StrictMode>
+        <TerminalPane accessToken="token" canvasId="canvas-1" ws={ws.handle} />
+      </StrictMode>,
+    );
+    await waitFor(() =>
+      expect(ws.handle.startTerminal).toHaveBeenCalledTimes(1),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.getAllByRole("button", { name: /^终端标签：/ })).toHaveLength(
+      1,
+    );
+    // StrictMode 的「假卸载」不许把刚起的会话杀掉（真机实测过：会显示「客户端关闭了终端」）
+    expect(ws.handle.stopTerminal).not.toHaveBeenCalled();
+    expect(await screen.findByLabelText("终端命令")).toBeEnabled();
+  });
+
+  it("没绑工作目录也能开：不带 canvasId 起会话（cwd 由服务端兜底）", async () => {
     const ws = makeWs();
     render(<TerminalPane accessToken="token" canvasId={null} ws={ws.handle} />);
-    expect(
-      await screen.findByText(/这个会话没有绑定工作目录/),
-    ).toBeInTheDocument();
-    expect(ws.handle.startTerminal).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(ws.handle.startTerminal).toHaveBeenCalledTimes(1),
+    );
+    const payload = vi.mocked(ws.handle.startTerminal).mock.calls[0]?.[0];
+    // 用户口径「终端不应该限制绑定文件目录」：不再拦在这里
+    expect(payload?.canvasId).toBeUndefined();
+    expect(screen.getByLabelText("终端命令")).toBeInTheDocument();
   });
 });

@@ -151,24 +151,41 @@ export function detectTerminalShells(): TerminalShellOption[] {
 }
 
 /**
- * 把设置里的值解析成**本机真有的** shell：`auto` 取平台默认（Windows → cmd，POSIX → sh）；
- * 设置选了这台机器上没有的 shell（设置跟着工作区跨机器）时同样落回平台默认。
+ * `auto` 的候选顺序 = **这台机器上的默认终端**（用户口径「不要选择，自动进入系统默认配置的终端」）：
+ *
+ * - Windows：`pwsh` → `powershell` → `cmd`——以前落 `cmd` 是「平台兜底」，可它并不是用户机器上
+ *   打开的那个终端（Windows 的默认终端早就是 PowerShell）；
+ * - POSIX：先认 `$SHELL` 指到的那个（用户自己配的默认 shell），再 `bash` → `sh` → `pwsh`。
+ */
+function defaultShellOrder(): TerminalShellId[] {
+  if (process.platform === "win32") return ["pwsh", "powershell", "cmd"];
+  const fromEnv = (process.env.SHELL ?? "")
+    .split(/[\\/]/)
+    .pop()
+    ?.replace(/\.exe$/i, "");
+  const posix: TerminalShellId[] = ["bash", "sh", "pwsh"];
+  return fromEnv === "bash" || fromEnv === "sh" || fromEnv === "pwsh"
+    ? [fromEnv, ...posix.filter((id) => id !== fromEnv)]
+    : posix;
+}
+
+/**
+ * 把设置里的值解析成**本机真有的** shell：`auto` 走 {@link defaultShellOrder}；
+ * 设置选了这台机器上没有的 shell（设置跟着工作区跨机器）时同样落回那一串默认。
  */
 export function resolveTerminalShell(
   requested: TerminalShellId | undefined,
   available: readonly TerminalShellOption[] = detectTerminalShells(),
 ): TerminalShellOption | null {
-  const platformDefault: TerminalShellId =
-    process.platform === "win32" ? "cmd" : "sh";
   if (requested && requested !== "auto") {
     const match = available.find((option) => option.id === requested);
     if (match) return match;
   }
-  return (
-    available.find((option) => option.id === platformDefault) ??
-    available[0] ??
-    null
-  );
+  for (const id of defaultShellOrder()) {
+    const match = available.find((option) => option.id === id);
+    if (match) return match;
+  }
+  return available[0] ?? null;
 }
 
 /** shell 本体 + 参数：「执行一条命令」的开关各家不同，`shell: true` 表达不了。 */

@@ -220,8 +220,14 @@ async function authenticateAndBind(
     }
     let cwd: string;
     try {
-      // 与其它端点同一处校验：登录 + 画布归属（越权即 404，不给枚举信号）
-      cwd = await codeGit.terminalWorkDir(authenticatedUser, payload.canvasId);
+      /**
+       * 带 canvasId 就按画布解析工作目录（与其它端点同一处校验：登录 + 画布归属，
+       * 越权即 404，不给枚举信号）；**不带就落到服务端自己的启动目录**——终端不该被
+       * 工作目录限制住（用户口径「终端不应该限制绑定文件目录」），开着就能用。
+       */
+      cwd = payload.canvasId
+        ? await codeGit.terminalWorkDir(authenticatedUser, payload.canvasId)
+        : process.cwd();
     } catch (error) {
       sendToClient({
         type: "terminal.exit",
