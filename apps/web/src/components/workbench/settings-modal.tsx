@@ -10,6 +10,7 @@ import { ProviderSettings } from "@/components/provider-settings";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { AboutSection } from "@/components/workbench/about-section";
 import { AccountSection } from "@/components/workbench/account-section";
+import { AppearanceSection } from "@/components/workbench/appearance-section";
 import { BrowserSettingsSection } from "@/components/workbench/browser-settings-section";
 import { IndexLibrarySection } from "@/components/workbench/index-library-section";
 import { ListLoading } from "@/components/workbench/list-state";
@@ -31,6 +32,7 @@ import {
 export type SettingsTab =
   | "pluginPanels"
   | "general"
+  | "appearance"
   | "model"
   | "providers"
   | "permissions"
@@ -60,6 +62,7 @@ const TAB_GROUPS: Array<{
     label: "基础设置",
     tabs: [
       { id: "general", label: "通用" },
+      { id: "appearance", label: "外观" },
       { id: "model", label: "模型" },
       { id: "providers", label: "供应商" },
       { id: "browser", label: "浏览器" },
@@ -332,10 +335,13 @@ export function SettingsModal({
                       type="button"
                       title={`同「${alias.targetLabel}」页`}
                       onClick={() => setActiveTab(alias.target)}
-                      className="flex w-full items-center gap-1 rounded-md px-3 py-1.5 text-left text-sm text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+                      className="w-full rounded-md px-3 py-1.5 text-left text-sm text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
                     >
-                      <span>{alias.label}</span>
-                      <span className="text-[10px]">→ {alias.targetLabel}</span>
+                      <span className="block truncate">{alias.label}</span>
+                      {/* 侧栏只有 9rem：提示另起一行，否则「电脑控制 → 浏览器」会被折断成两截 */}
+                      <span className="block truncate text-[10px] opacity-80">
+                        → {alias.targetLabel}
+                      </span>
                     </button>
                   ),
                 )}
@@ -356,6 +362,8 @@ export function SettingsModal({
                 ) : null}
                 {token ? <TerminalSettingsSection accessToken={token} /> : null}
               </div>
+            ) : activeTab === "appearance" ? (
+              <AppearanceSection />
             ) : activeTab === "model" ? (
               <AgentSection
                 agentMaxRetries={agentMaxRetries}
