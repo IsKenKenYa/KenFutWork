@@ -88,11 +88,14 @@ export interface ContextUsageView {
   /** 形如「61.4%」。 */
   percentLabel: string | null;
   /**
-   * 环里那个数字的读数（**两位小数**，用户口径）。
-   * 与 {@link percentLabel} 分开：浮层按参考图给一位小数（`61.4%`），
-   * 环里空间小但要求更精确（`4.53`）；满格时写 `100`（不留 `100.00` 挤爆圆环）。
+   * 两位小数的整行读数（用户口径「需要到小数点后两位」），形如 `4.5万/100万（4.53%）`
+   * ——两位小数只加在百分比上，token 量词仍是一位小数。
+   *
+   * **用处**：浮层首行与环的悬停读数都用它——圆环里不写数字后（用户口径
+   * 「百分比不显示在圆环上」），这里就是唯一看得见精确值的地方；满格写 `100`
+   * （不留 `100.00`）。窗口未知时为 null（那时没有百分比可精确，退回 {@link usageLine}）。
    */
-  percentFineLabel: string | null;
+  usageFineLine: string | null;
   /**
    * 平均缓存命中率（形如「99.9%」）。
    *
@@ -195,7 +198,7 @@ export function contextUsageView(
     windowLabel: window === null ? null : formatTokens(window),
     percent: null,
     percentLabel: null,
-    percentFineLabel: null,
+    usageFineLine: null,
     cacheHitLabel: null,
     cacheHitPercent: null,
     cacheHitScope: null,
@@ -210,13 +213,23 @@ export function contextUsageView(
   };
   if (!usage || usage.inputTokens <= 0) return empty;
 
-  // 原始比例先留着：环里的两位小数要用**未取整**的值（拿一位小数的 percent 再 toFixed 会得到 4.50）
+  // 原始比例先留着：两位小数的读数要用**未取整**的值（拿一位小数的 percent 再 toFixed 会得到 4.50）
   const rawPercent =
     window === null ? null : (usage.inputTokens / window) * 100;
   const percent =
     rawPercent === null
       ? null
       : Math.min(100, Math.round(rawPercent * 10) / 10);
+  /**
+   * 最多两位小数（`4.53`；整数百分比就是 `61.4` 而不是 `61.40`——补零不是精度）。
+   * 满格写 `100`：`100.00` 没有信息量。
+   */
+  const finePercent =
+    rawPercent === null
+      ? null
+      : rawPercent >= 100
+        ? "100"
+        : rawPercent.toFixed(2).replace(/\.?0+$/, "");
   const cached = usage.cachedInputTokens;
   const runInput = usage.runInputTokens;
   const runCached = usage.runCachedInputTokens;
@@ -261,12 +274,10 @@ export function contextUsageView(
     windowLabel: empty.windowLabel,
     percent,
     percentLabel: percent === null ? null : `${percent}%`,
-    percentFineLabel:
-      rawPercent === null
+    usageFineLine:
+      finePercent === null || window === null
         ? null
-        : rawPercent >= 100
-          ? "100"
-          : rawPercent.toFixed(2),
+        : `${formatTokens(usage.inputTokens)}/${formatTokens(window)}（${finePercent}%）`,
     // 上游没报缓存字段 → 不显示命中率（0% 会被读成「缓存全失效」）
     cacheHitLabel:
       hitRate === null ? null : `${Math.round(hitRate * 10) / 10}%`,
@@ -274,7 +285,7 @@ export function contextUsageView(
     cacheHitScope: hitRate === null ? null : useRunTotals ? "run" : "call",
     outputLabel: formatTokens(usage.outputTokens),
     composition: compositionView(usage.composition),
-    // 参考图的读数：当前 / 窗口（百分比）。窗口未知时只给绝对量，不编百分比
+    // 参考图的读数：当前 / 窗口（一位小数百分比）。窗口未知时只给绝对量，不编百分比
     usageLine:
       window === null
         ? `${formatTokens(usage.inputTokens)}（窗口未知）`

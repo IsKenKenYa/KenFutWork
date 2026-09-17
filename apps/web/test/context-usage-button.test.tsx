@@ -30,6 +30,8 @@ describe("ContextUsageButton", () => {
     );
     const dialog = await openPopover();
     expect(dialog).toHaveTextContent("61.4万/100万（61.4%）");
+    // 不补零：61.4% 不写成 61.40%（两位小数是精度，不是噪声）
+    expect(dialog).not.toHaveTextContent("61.40%");
     expect(dialog).toHaveTextContent("99.8%");
     expect(dialog).toHaveTextContent("61.4%");
   });
@@ -126,22 +128,56 @@ describe("ContextUsageButton：预留输出与阈值", () => {
 });
 
 /**
- * 容量圆环按参考图 1:1 复刻（用户口径）：**环里不写数字**，读法靠弧长——
- * 弧画的是「还剩多少」，缺口是已用掉的那一小段（还给一个最小缺口，免得看着像个实心点）。
+ * 容量圆环的读法（用户口径：「圆圈要和百分比对应」「不是随便展示的」）。
  *
- * 锁四件事：没有数字文本、缺口随用量变化、0% 也留一个最小缺口、没有数据时画闭合环。
+ * 三轮纠偏的结论：弧 = **已用百分比**（与浮层里那个百分比同一个数，4.5% 就是一小段弧），
+ * **没有数据时只画空环**（不编圆弧）；环 16px / 2px 描边，环里不写数字。
  */
-describe("ContextUsageButton：圆环形态（1:1 复刻）", () => {
-  const dashOf = (container: HTMLElement): [number, number] => {
-    const circles = Array.from(
+describe("ContextUsageButton：圆环读法", () => {
+  const arcs = (container: HTMLElement) =>
+    Array.from(
       container.querySelectorAll("button[aria-label='上下文容量'] circle"),
     );
-    const arc = circles.at(-1);
-    const dash = (arc?.getAttribute("stroke-dasharray") ?? "0 0").split(" ");
-    return [Number(dash[0]), Number(dash[1])];
-  };
 
-  it("环里不写百分比（用户口径：算了，不显示在环上了）", async () => {
+  it("弧长 = 已用百分比（4.5% 就是一小段，不是「几乎满环」）", () => {
+    const { container } = render(
+      <ContextUsageButton
+        usage={{ inputTokens: 45_300, outputTokens: 1 }}
+        contextWindow={1_000_000}
+      />,
+    );
+    const circles = arcs(container);
+    // 两个圆：轨道 + 弧（r = (16-2)/2 = 7 → C ≈ 44）
+    expect(circles).toHaveLength(2);
+    const [arcLen, total] = (
+      circles[1]?.getAttribute("stroke-dasharray") ?? ""
+    ).split(" ");
+    expect(Number(total)).toBeCloseTo(44, 0);
+    expect(Number(arcLen) / Number(total)).toBeCloseTo(0.045, 2);
+  });
+
+  it("61.4% 用量：弧占六成多（与浮层读数同一口径）", () => {
+    const { container } = render(
+      <ContextUsageButton
+        usage={{ inputTokens: 614_000, outputTokens: 1 }}
+        contextWindow={1_000_000}
+      />,
+    );
+    const circles = arcs(container);
+    const [arcLen, total] = (
+      circles[1]?.getAttribute("stroke-dasharray") ?? ""
+    ).split(" ");
+    expect(Number(arcLen) / Number(total)).toBeCloseTo(0.614, 2);
+  });
+
+  it("没有用量数据：只画空环（不编圆弧）", () => {
+    const { container } = render(
+      <ContextUsageButton usage={null} contextWindow={1_000_000} />,
+    );
+    expect(arcs(container)).toHaveLength(1);
+  });
+
+  it("环里不写百分比（读数留在 title 与浮层，且是两位精度的那份）", () => {
     render(
       <ContextUsageButton
         usage={{ inputTokens: 45_300, outputTokens: 1 }}
@@ -150,39 +186,6 @@ describe("ContextUsageButton：圆环形态（1:1 复刻）", () => {
     );
     const button = screen.getByRole("button", { name: "上下文容量" });
     expect(button.textContent?.trim()).toBe("");
-    // 精确读数仍在 title 里（环不带数字，但信息不能丢）
-    expect(button.getAttribute("title")).toContain("4.5万/100万（4.5%）");
-  });
-
-  it("弧长 = 剩余空间：4.5% 用量几乎满环（缺口取最小值），61.4% 用量缺口明显", () => {
-    const low = render(
-      <ContextUsageButton
-        usage={{ inputTokens: 45_300, outputTokens: 1 }}
-        contextWindow={1_000_000}
-      />,
-    );
-    const [lowArc, lowTotal] = dashOf(low.container);
-    // 环周长 C = 2πr，r = (18-2.2)/2 = 7.9 → C ≈ 49.6（细环 18px / 2.2px，参考图口径）
-    expect(lowTotal).toBeCloseTo(49.6, 0);
-    // 用途极小 → 缺口被夹到 6%（至少看得出是个「C」）
-    expect(lowArc / lowTotal).toBeCloseTo(0.94, 2);
-    cleanup();
-
-    const high = render(
-      <ContextUsageButton
-        usage={{ inputTokens: 614_000, outputTokens: 1 }}
-        contextWindow={1_000_000}
-      />,
-    );
-    const [highArc, highTotal] = dashOf(high.container);
-    expect(highArc / highTotal).toBeCloseTo(0.386, 2);
-  });
-
-  it("没有用量数据：画一圈闭合的灰环（不编缺口）", () => {
-    const { container } = render(
-      <ContextUsageButton usage={null} contextWindow={1_000_000} />,
-    );
-    const [arc, total] = dashOf(container);
-    expect(arc).toBeCloseTo(total, 1);
+    expect(button.getAttribute("title")).toContain("4.5万/100万（4.53%）");
   });
 });

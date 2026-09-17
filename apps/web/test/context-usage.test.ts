@@ -308,40 +308,43 @@ describe("预留输出与输出预留线", () => {
 });
 
 /**
- * 环里的读数（用户口径）：**两位小数**，满格写 `100`（不留 `100.00` 挤爆圆环）。
+ * 两位小数的精确读数（用户口径「需要到小数点后两位」）：`usageFineLine`。
  *
- * 与浮层的一位数读数是两件事：浮层按参考图写 `61.4%`，环里要更精确。
+ * 去处是浮层首行与环的悬停读数（圆环里不写数字了，这里是唯一看得见精确值的地方）；
+ * 满格写 `100`（不留 `100.00`）。一位小数的 `percentLabel` 仍按参考图口径保留。
  */
-describe("环里的百分比读数", () => {
-  it("两位小数：4.53 不会被四舍五入成 5", () => {
+describe("两位小数的读数", () => {
+  it("4.53 不会被四舍五入成 4.5", () => {
     const view = contextUsageView(
       { inputTokens: 45_300, outputTokens: 1 },
       1_000_000,
     );
-    expect(view.percentFineLabel).toBe("4.53");
-    // 浮层仍是一位小数（参考图口径）
+    // token 量词仍是一位小数（`4.5万`），两位小数只加在百分比上
+    expect(view.usageFineLine).toBe("4.5万/100万（4.53%）");
+    // 一位小数的那份仍在（参考图口径）
     expect(view.percentLabel).toBe("4.5%");
+    expect(view.usageLine).toBe("4.5万/100万（4.5%）");
   });
 
   it("大数同样两位；满格不写 100.00", () => {
     expect(
       contextUsageView({ inputTokens: 999_700, outputTokens: 1 }, 1_000_000)
-        .percentFineLabel,
-    ).toBe("99.97");
+        .usageFineLine,
+    ).toBe("100万/100万（99.97%）");
     expect(
       contextUsageView({ inputTokens: 2_000_000, outputTokens: 1 }, 1_000_000)
-        .percentFineLabel,
-    ).toBe("100");
+        .usageFineLine,
+    ).toBe("200万/100万（100%）");
   });
 
-  it("窗口未知 / 无用量：不给读数（环里退回绝对量或 —）", () => {
+  it("窗口未知 / 无用量：不给精确读数（调用方退回 usageLine 或占位文案）", () => {
     expect(
       contextUsageView(
         { inputTokens: 1000, outputTokens: 1 },
         null,
         "unknown-x",
-      ).percentFineLabel,
+      ).usageFineLine,
     ).toBeNull();
-    expect(contextUsageView(null, 1_000_000).percentFineLabel).toBeNull();
+    expect(contextUsageView(null, 1_000_000).usageFineLine).toBeNull();
   });
 });
