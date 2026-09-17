@@ -36,6 +36,23 @@ describe("ContextUsageButton", () => {
     expect(dialog).toHaveTextContent("61.4%");
   });
 
+  it("缓存命中率的条与上下文「已用」同色（用户口径：也要一样的蓝）", async () => {
+    render(
+      <ContextUsageButton
+        usage={{
+          inputTokens: 614_000,
+          outputTokens: 1200,
+          cachedInputTokens: 613_000,
+        }}
+        contextWindow={1_000_000}
+      />,
+    );
+    const dialog = await openPopover();
+    const cacheBar = dialog.querySelector('[style*="width: 99.8"]');
+    expect(cacheBar?.className).toContain("bg-info");
+    expect(cacheBar?.className).not.toContain("emerald");
+  });
+
   it("上游没报缓存时显示「上游未上报」，不显示 0%", async () => {
     render(
       <ContextUsageButton
@@ -130,8 +147,9 @@ describe("ContextUsageButton：预留输出与阈值", () => {
 /**
  * 容量圆环的读法（用户口径：「圆圈要和百分比对应」「不是随便展示的」）。
  *
- * 三轮纠偏的结论：弧 = **已用百分比**（与浮层里那个百分比同一个数，4.5% 就是一小段弧），
- * **没有数据时只画空环**（不编圆弧）；环 16px / 2px 描边，环里不写数字。
+ * 四轮纠偏的结论：弧 = **已用百分比**（与浮层里那个百分比同一个数，4.5% 就是一小段弧），
+ * **没有数据时只画空环**（不编圆弧）；环 16px 外径 / 3px 描边（**加粗只往里长**，外沿不动），
+ * 环里不写数字。
  */
 describe("ContextUsageButton：圆环读法", () => {
   const arcs = (container: HTMLElement) =>
@@ -147,13 +165,28 @@ describe("ContextUsageButton：圆环读法", () => {
       />,
     );
     const circles = arcs(container);
-    // 两个圆：轨道 + 弧（r = (16-2)/2 = 7 → C ≈ 44）
     expect(circles).toHaveLength(2);
+    // 周长按半径推导（**别写死数字**：改粗细会一起变，写死只会挡住改版）
+    const radius = Number(circles[0]?.getAttribute("r"));
     const [arcLen, total] = (
       circles[1]?.getAttribute("stroke-dasharray") ?? ""
     ).split(" ");
-    expect(Number(total)).toBeCloseTo(44, 0);
+    expect(Number(total)).toBeCloseTo(2 * Math.PI * radius, 3);
     expect(Number(arcLen) / Number(total)).toBeCloseTo(0.045, 2);
+  });
+
+  it("加粗只往里长：外沿恒在 16px 盒边（r + stroke/2 = 8）", () => {
+    const { container } = render(
+      <ContextUsageButton
+        usage={{ inputTokens: 45_300, outputTokens: 1 }}
+        contextWindow={1_000_000}
+      />,
+    );
+    const [track] = arcs(container);
+    const radius = Number(track?.getAttribute("r"));
+    const stroke = Number(track?.getAttribute("stroke-width"));
+    expect(stroke).toBe(3);
+    expect(radius + stroke / 2).toBeCloseTo(8, 5);
   });
 
   it("61.4% 用量：弧占六成多（与浮层读数同一口径）", () => {

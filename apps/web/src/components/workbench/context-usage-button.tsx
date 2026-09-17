@@ -191,10 +191,11 @@ export function ContextUsageButton({
                 {view.cacheHitLabel ?? "上游未上报"}
               </span>
             </div>
-            {/* 命中率也画成进度条（用户口径：思考强度与缓存都要有进度条） */}
+            {/* 命中率也画成进度条（用户口径：思考强度与缓存都要有进度条），
+                颜色与上下文「已用」同一支蓝（用户口径：缓存条也要和上下文一样的蓝） */}
             <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
               <div
-                className="h-full rounded-full bg-emerald-500"
+                className="h-full rounded-full bg-info"
                 style={{ width: `${view.cacheHitPercent ?? 0}%` }}
               />
             </div>
@@ -226,11 +227,15 @@ function ContextRing({
   overThreshold?: boolean;
 }) {
   /**
-   * 尺寸与粗细：细环（2px 描边 / **16px 外径**）——三轮收敛的结果：5px 厚环 → 2.5px/22px
-   * → 2.2px/18px → 现在这一版（用户口径：还要再小一点）。
+   * 尺寸与粗细（用户口径收敛史：5px 厚环 → 2.5px/22px → 2.2px/18px → 16px/2px
+   * → 现在 3px）：
+   *
+   * **加粗一律往里长**——半径取 `(size - stroke) / 2`，外沿因此恒在 16px 盒子的边上，
+   * 环占地不变、只是内孔变小（`radius + stroke/2 = size/2`）。这也让它与相邻图标同心中线
+   * 的判定不受粗细影响（改粗细不用重测对齐）。
    */
   const size = 16;
-  const stroke = 2;
+  const stroke = 3;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   /**
