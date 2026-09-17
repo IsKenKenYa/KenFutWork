@@ -211,6 +211,30 @@ export const workspaceSettingsSchema = z.object({
   /** 逐条规则（短句，最多 100 条）。 */
   ruleEntries: z.array(z.string().min(1).max(2_000)).max(100).default([]),
   /**
+   * 自定义斜杠命令（设置 →「命令」）：输入框里 `/name 参数` 触发，提交前展开成 prompt。
+   *
+   * 名字限字母数字与连字符（避免与内置 `/` 行为/路径冲突），最多 50 条。
+   */
+  commands: z
+    .array(
+      z.object({
+        name: z
+          .string()
+          .trim()
+          .min(1)
+          .max(32)
+          .regex(/^[a-zA-Z0-9][a-zA-Z0-9-]*$/, {
+            message: "命令名只能用字母、数字与连字符，且以字母或数字开头。",
+          }),
+        /** 说明（在设置页与输入框提示里显示）。 */
+        description: z.string().trim().max(200).default(""),
+        /** 提示词模板；`{{args}}` 会被替换成命令后面的参数（没有占位符则把参数追加到末尾）。 */
+        prompt: z.string().trim().min(1).max(4_000),
+      }),
+    )
+    .max(50)
+    .default([]),
+  /**
    * 上下文自动压缩：超阈值时把较早的消息摘要掉（阈值 = 窗口 − 预留输出，摘要用本轮模型，
    * 用户转录不变、原文 offload 到工作区 /conversation_history/）。关掉时中间件不挂。
    */

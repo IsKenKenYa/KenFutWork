@@ -95,9 +95,15 @@ import {
   fetchDirectoryPickerStatus,
   fetchProjects,
   fetchViewer,
+  fetchWorkspaceSettings,
   pickDirectory,
   updateProject,
 } from "@/lib/server-api";
+import {
+  expandCommand,
+  shouldSuggestCommands,
+  type WorkspaceCommand,
+} from "@/lib/slash-commands";
 import {
   closeAllSubagents,
   type SubagentEntry,
@@ -451,6 +457,12 @@ export function Workbench() {
     available: boolean;
     reason?: string | undefined;
   } | null>(null);
+  /**
+   * 自定义斜杠命令（设置 →「命令」）：输入框里 `/名字 参数` 在**提交前**展开成提示词。
+   * 存在工作区设置里、这里读一份（改完设置下次拉取生效）；展开逻辑是纯函数
+   * （`lib/slash-commands.ts`），工作台只负责调用。
+   */
+  const [commands, setCommands] = useState<WorkspaceCommand[]>([]);
   const [creatingProject, setCreatingProject] = useState(false);
   // 侧栏底部个人中心 + 模态（设置 / 插件市场）
   const [workbenchUser, setWorkbenchUser] = useState<WorkbenchUser | null>(
@@ -775,6 +787,15 @@ export function Workbench() {
     fetchDirectoryPickerStatus(token)
       .then((status) => setNativeDirPicker(status))
       .catch(() => setNativeDirPicker({ available: false }));
+  }, [session]);
+
+  // 自定义命令（需 token）：只在登录后拉一次，失败不阻断（没有命令就只是不展开）
+  useEffect(() => {
+    const token = session?.access_token;
+    if (!token) return;
+    fetchWorkspaceSettings(token)
+      .then((data) => setCommands(data.settings.commands))
+      .catch(() => {});
   }, [session]);
 
   // 执行模式词汇表（需 token）
@@ -2424,7 +2445,7 @@ export function Workbench() {
                   className="mx-auto w-full max-w-3xl px-6 pt-3 pb-4"
                   onSubmit={(e) => {
                     e.preventDefault();
-                    const value = followUp;
+                    const value = expandCommand(followUp, commands).text;
                     setFollowUp("");
                     continueTask(value);
                   }}
@@ -2673,7 +2694,8 @@ ${formatElementReference(picked)}`
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
-                      startTask(prompt);
+                      // 斜杠命令在提交前展开（转录里看到的就是实际发出去的）
+                      startTask(expandCommand(prompt, commands).text);
                     }
                   }}
                   rows={2}
@@ -2684,6 +2706,28 @@ ${formatElementReference(picked)}`
                   }
                   className="w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                 />
+                {/* 正在敲 `/` 时的可用命令提示（有命令才出现；点一条即补全成 `/名字 `） */}
+                {shouldSuggestCommands(prompt) && commands.length > 0 ? (
+                  <p
+                    role="status"
+                    className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground"
+                  >
+                    <span>可用命令：</span>
+                    {commands.map((command) => (
+                      <button
+                        key={command.name}
+                        type="button"
+                        title={
+                          command.description || command.prompt.slice(0, 80)
+                        }
+                        onClick={() => setPrompt(`/${command.name} `)}
+                        className="rounded bg-muted px-1.5 py-0.5 font-mono hover:text-foreground"
+                      >
+                        /{command.name}
+                      </button>
+                    ))}
+                  </p>
+                ) : null}
                 {workDirNotice ? (
                   <p className="mt-2 text-xs text-destructive">
                     {workDirNotice}
@@ -2858,7 +2902,9 @@ ${formatElementReference(picked)}`
                       type="button"
                       aria-label="发送"
                       disabled={submitting || !prompt.trim()}
-                      onClick={() => startTask(prompt)}
+                      onClick={() =>
+                        startTask(expandCommand(prompt, commands).text)
+                      }
                       className="rounded-lg bg-primary p-2 text-primary-foreground disabled:opacity-50"
                     >
                       <Send className="h-4 w-4" />

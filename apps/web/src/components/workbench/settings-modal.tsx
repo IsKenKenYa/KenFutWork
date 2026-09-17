@@ -1,5 +1,6 @@
 "use client";
 
+import type { WorkspaceSettings } from "@kenfutwork/shared";
 import { PanelsTopLeft } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -12,6 +13,7 @@ import { AboutSection } from "@/components/workbench/about-section";
 import { AccountSection } from "@/components/workbench/account-section";
 import { AppearanceSection } from "@/components/workbench/appearance-section";
 import { BrowserSettingsSection } from "@/components/workbench/browser-settings-section";
+import { CommandsSection } from "@/components/workbench/commands-section";
 import { IndexLibrarySection } from "@/components/workbench/index-library-section";
 import { ListLoading } from "@/components/workbench/list-state";
 import { OnboardingSection } from "@/components/workbench/onboarding-section";
@@ -33,6 +35,7 @@ export type SettingsTab =
   | "pluginPanels"
   | "general"
   | "appearance"
+  | "commands"
   | "model"
   | "providers"
   | "permissions"
@@ -73,6 +76,7 @@ const TAB_GROUPS: Array<{
     tabs: [
       { id: "permissions", label: "权限" },
       { id: "rules", label: "规则与记忆" },
+      { id: "commands", label: "命令" },
       { id: "subagents", label: "子智能体" },
     ],
   },
@@ -174,6 +178,7 @@ export function SettingsModal({
   const [codeIndexEnabled, setCodeIndexEnabled] = useState(false);
   const [codeIndexAutoNewFolder, setCodeIndexAutoNewFolder] = useState(true);
   const [autoCompactEnabled, setAutoCompactEnabled] = useState(true);
+  const [commands, setCommands] = useState<WorkspaceSettings["commands"]>([]);
   const [loading, setLoading] = useState(false);
 
   const accessTokenRef = useRef(session?.access_token);
@@ -202,6 +207,7 @@ export function SettingsModal({
       setCodeIndexEnabled(settings.settings.codeIndexEnabled);
       setCodeIndexAutoNewFolder(settings.settings.codeIndexAutoNewFolder);
       setAutoCompactEnabled(settings.settings.autoCompactEnabled);
+      setCommands(settings.settings.commands);
     } catch {
       // 加载失败时保留空态，各分区自行提示
     } finally {
@@ -405,6 +411,14 @@ export function SettingsModal({
                   hasWorkDir={hasWorkDir}
                   conversationCount={conversationCount}
                   onGoToTab={(next) => setActiveTab(next)}
+                />
+              ) : null
+            ) : activeTab === "commands" ? (
+              token ? (
+                <CommandsSection
+                  accessToken={token}
+                  commands={commands}
+                  onSaved={setCommands}
                 />
               ) : null
             ) : activeTab === "subagents" ? (
