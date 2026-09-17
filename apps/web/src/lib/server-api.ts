@@ -323,6 +323,10 @@ export interface PermissionSettingsView {
   automationTier: PermissionTier;
   rules: { allow: string[]; deny: string[] };
   browserControlEnabled: boolean;
+  /** 浏览器动作后自动附截图（R5-4）。 */
+  browserAutoScreenshot: boolean;
+  /** CDP 托管浏览器无头运行。 */
+  browserHeadless: boolean;
   approvedForever: string[];
 }
 
@@ -344,6 +348,8 @@ export async function updatePermissionSettings(
     automationTier: PermissionTier;
     rules: { allow: string[]; deny: string[] };
     browserControlEnabled: boolean;
+    browserAutoScreenshot: boolean;
+    browserHeadless: boolean;
   }>,
 ): Promise<PermissionSettingsView> {
   const response = await fetch(`${getServerBaseUrl()}/api/permissions/tier`, {
@@ -792,9 +798,12 @@ export async function fetchCodeIndex(
   canvasId: string,
 ): Promise<CodeIndexStatus> {
   const query = new URLSearchParams({ canvasId });
-  const response = await fetch(`${getServerBaseUrl()}/api/code/index?${query}`, {
-    headers: authHeaders(accessToken),
-  });
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/code/index?${query}`,
+    {
+      headers: authHeaders(accessToken),
+    },
+  );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as CodeIndexStatus;
 }
@@ -817,10 +826,13 @@ export async function clearCodeIndex(
   canvasId: string,
 ): Promise<void> {
   const query = new URLSearchParams({ canvasId });
-  const response = await fetch(`${getServerBaseUrl()}/api/code/index?${query}`, {
-    method: "DELETE",
-    headers: authHeaders(accessToken),
-  });
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/code/index?${query}`,
+    {
+      method: "DELETE",
+      headers: authHeaders(accessToken),
+    },
+  );
   if (!response.ok) return handleErrorResponse(response);
 }
 
@@ -847,4 +859,64 @@ export async function searchCodeIndex(
     hits: CodeIndexSearchHit[];
     builtAt: string;
   };
+}
+
+// --- CDP 浏览器通道（R5-4「连接到 Chrome」/「自动截图」）---
+
+export type CdpStatusView =
+  | { status: "disconnected" }
+  | { status: "connecting" }
+  | {
+      status: "connected";
+      browser: string;
+      port: number;
+      tabs: number;
+      currentUrl: string;
+      owned: boolean;
+      headless: boolean;
+    }
+  | { status: "error"; message: string };
+
+export async function fetchCdpStatus(
+  accessToken: string,
+): Promise<CdpStatusView> {
+  const response = await fetch(`${getServerBaseUrl()}/api/browser/cdp/status`, {
+    headers: authHeaders(accessToken),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  const payload = (await response.json()) as { cdp: CdpStatusView };
+  return payload.cdp;
+}
+
+export async function connectCdp(accessToken: string): Promise<CdpStatusView> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/browser/cdp/connect`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+    },
+  );
+  const payload = (await response.json().catch(() => null)) as {
+    cdp?: CdpStatusView;
+    error?: { message?: string };
+  } | null;
+  if (!response.ok || !payload?.cdp) {
+    throw new ApiApplicationError(
+      "cdp_connect_failed",
+      payload?.error?.message ?? "连接浏览器失败。",
+    );
+  }
+  return payload.cdp;
+}
+
+export async function disconnectCdp(
+  accessToken: string,
+): Promise<CdpStatusView> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/browser/cdp/disconnect`,
+    { method: "POST", headers: authJsonHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  const payload = (await response.json()) as { cdp: CdpStatusView };
+  return payload.cdp;
 }

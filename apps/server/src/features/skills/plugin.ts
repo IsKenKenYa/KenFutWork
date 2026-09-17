@@ -6,6 +6,7 @@ import type {
   ToolExecutionContext,
 } from "../../kernel/types.js";
 import { createCanvasRepository } from "../canvas/repository.js";
+import { projectWorkDirLoaderFor } from "../projects/work-dir.js";
 import { createCreateSkillTool } from "./create-skill-tool.js";
 import {
   createSkillCatalogRepository,
@@ -103,6 +104,7 @@ export function createSkillsPlugin(): PluginDefinition {
         canvasRepository: createCanvasRepository(ctx.get("persistence")),
         sandboxRoot: ctx.env.sandboxRoot,
         canvasWorkDirs: ctx.env.canvasWorkDirs,
+        projectWorkDirLoader: projectWorkDirLoaderFor(ctx.get("persistence")),
       });
       void registerMarketplaceRoutes(ctx.app, {
         auth: ctx.get("auth"),

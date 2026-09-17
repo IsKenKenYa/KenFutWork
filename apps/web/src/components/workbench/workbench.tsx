@@ -51,16 +51,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ContextUsageButton } from "@/components/workbench/context-usage-button";
 import {
   ComposerCompactSelect,
   THINKING_OPTIONS,
   THINKING_PROGRESS,
   TIER_OPTIONS,
 } from "@/components/workbench/composer-compact-select";
+import { ContextUsageButton } from "@/components/workbench/context-usage-button";
 import { ElapsedEntry } from "@/components/workbench/elapsed-entry";
 import { GitBranchSelect } from "@/components/workbench/git-branch-select";
 import { McpModal } from "@/components/workbench/mcp-modal";
+import { formatElementReference } from "@/components/workbench/panel-browser-view";
 import { PluginMarketModal } from "@/components/workbench/plugin-market-modal";
 import {
   SettingsModal,
@@ -69,31 +70,27 @@ import {
 import { SidebarRow } from "@/components/workbench/sidebar-row";
 import { SkillsModal } from "@/components/workbench/skills-modal";
 import { SubagentDirectoryView } from "@/components/workbench/subagent-directory-view";
-import { WorkbenchSidePanel } from "@/components/workbench/workbench-side-panel";
-import { formatElementReference } from "@/components/workbench/panel-browser-view";
-import { onBrowserOpen } from "@/lib/browser-panel";
 import { TodoProgressPanel } from "@/components/workbench/todo-progress-panel";
 import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
 import { WorkDirectorySelect } from "@/components/workbench/work-directory-select";
+import { WorkbenchSidePanel } from "@/components/workbench/workbench-side-panel";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useAuth } from "@/lib/auth-context";
+import { onBrowserOpen } from "@/lib/browser-panel";
 import { commitGitAll } from "@/lib/code-git-api";
-import {
-  usageFromEvent,
-  type RunUsageSnapshot,
-} from "@/lib/context-usage";
+import { type RunUsageSnapshot, usageFromEvent } from "@/lib/context-usage";
 import { resolveDesignAutoCanvas } from "@/lib/design-auto-canvas";
+import { formatElapsedSeconds, parseTimestampMs } from "@/lib/elapsed";
 import { getServerBaseUrl } from "@/lib/env";
 import {
   MAX_SIDEBAR_WIDTH,
   MIN_CONVERSATION_WIDTH,
   MIN_SIDEBAR_WIDTH,
-  SIDEBAR_RAIL_WIDTH,
   panelWidthLimits,
+  SIDEBAR_RAIL_WIDTH,
 } from "@/lib/panel-layout";
 import { PluginPanelButtons } from "@/lib/plugin-panels";
 import { dropPartialAssistantTail } from "@/lib/run-events";
-import { formatElapsedSeconds, parseTimestampMs } from "@/lib/elapsed";
 import { describeRunFailure } from "@/lib/run-failure";
 import {
   createProject,
@@ -109,9 +106,12 @@ import {
   type SubagentEntry,
   upsertSubagentStarted,
 } from "@/lib/subagent-directory";
+import type { TodoItem } from "@/lib/todo-progress";
 import {
+  boundWorkDirPromptHint,
   resolveWorkDirProject,
   workDirectoryPromptHint,
+  workDirNameFromPath,
   pickWorkDirectory as workDirPick,
 } from "@/lib/work-directory";
 import {
@@ -123,11 +123,7 @@ import {
   resolveTaskIndicator,
   SESSION_PREVIEW_LIMIT,
 } from "@/lib/workbench-task-list";
-import type { TodoItem } from "@/lib/todo-progress";
-import {
-  applyTaskToolEvent,
-  type TaskToolEntry,
-} from "@/lib/workbench-tools";
+import { applyTaskToolEvent, type TaskToolEntry } from "@/lib/workbench-tools";
 
 /**
  * Agent 工作台（产品主入口）：Code / Design 双模式（DEC-2）。
@@ -285,7 +281,8 @@ function WorkbenchToolRow({ tool }: { tool: TaskToolEntry }) {
   );
 }
 
-const MODE_META: Record<  WorkbenchMode,
+const MODE_META: Record<
+  WorkbenchMode,
   {
     label: string;
     title: string;
@@ -480,7 +477,9 @@ export function Workbench() {
   /** 左侧栏宽度（可拖拽，持久化：与右栏面板同样，宽度是用户偏好）。 */
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     if (typeof window === "undefined") return 256;
-    const saved = Number(window.localStorage.getItem("workbench:sidebar-width"));
+    const saved = Number(
+      window.localStorage.getItem("workbench:sidebar-width"),
+    );
     return Number.isFinite(saved) &&
       saved >= MIN_SIDEBAR_WIDTH &&
       saved <= MAX_SIDEBAR_WIDTH
@@ -488,26 +487,29 @@ export function Workbench() {
       : 256;
   });
 
-  const startSidebarResize = useCallback((event: React.MouseEvent) => {
-    event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = sidebarWidth;
-    const clamp = (next: number) =>
-      Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, next));
-    const onMove = (moveEvent: MouseEvent) => {
-      setSidebarWidth(clamp(startWidth + (moveEvent.clientX - startX)));
-    };
-    const onUp = (upEvent: MouseEvent) => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      window.localStorage.setItem(
-        "workbench:sidebar-width",
-        String(clamp(startWidth + (upEvent.clientX - startX))),
-      );
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  }, [sidebarWidth]);
+  const startSidebarResize = useCallback(
+    (event: React.MouseEvent) => {
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = sidebarWidth;
+      const clamp = (next: number) =>
+        Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, next));
+      const onMove = (moveEvent: MouseEvent) => {
+        setSidebarWidth(clamp(startWidth + (moveEvent.clientX - startX)));
+      };
+      const onUp = (upEvent: MouseEvent) => {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+        window.localStorage.setItem(
+          "workbench:sidebar-width",
+          String(clamp(startWidth + (upEvent.clientX - startX))),
+        );
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    },
+    [sidebarWidth],
+  );
 
   /**
    * 视口宽度（面板上限要按它现算：视口 − 左栏 − 对话列最小宽度）。
@@ -1290,6 +1292,48 @@ export function Workbench() {
     setSelectedProjectId(null);
   }, []);
 
+  /**
+   * 「填本机路径」：把用户填的绝对路径绑成工作目录项目的 `projects.work_dir`。
+   *
+   * 这是 Web 形态唯一能真正绑定本机目录的路子：`showDirectoryPicker` 只给得到目录名，
+   * 而服务端要的是绝对路径。校验在服务端做（绝对路径 + 存在 + 是目录），不合格时
+   * 抛出的可读原因由选择器表单显示——不吞成「失败」。
+   */
+  const bindWorkDirectory = useCallback(
+    async (path: string) => {
+      const token = session?.access_token;
+      if (!token) throw new Error("尚未登录，无法绑定工作目录。");
+      const name = workDirNameFromPath(path) || path.trim();
+      const plan = resolveWorkDirProject(name, codeProjects);
+
+      if (plan.kind === "reuse") {
+        await updateProject(token, plan.projectId, { work_dir: path });
+        setCodeProjects((prev) =>
+          prev.map((project) =>
+            project.id === plan.projectId
+              ? { ...project, workDir: path }
+              : project,
+          ),
+        );
+        setSelectedProjectId(plan.projectId);
+        setWorkDirName(name);
+        setWorkDirNotice(null);
+        return;
+      }
+
+      const result = await createProject(token, {
+        kind: "code",
+        name,
+        work_dir: path,
+      });
+      setCodeProjects((prev) => [result.project, ...prev]);
+      setSelectedProjectId(result.project.id);
+      setWorkDirName(result.project.name);
+      setWorkDirNotice(null);
+    },
+    [session, codeProjects],
+  );
+
   const switchMode = useCallback((next: WorkbenchMode) => {
     setMode(next);
     setActiveTaskId(null);
@@ -1418,10 +1462,17 @@ export function Workbench() {
           canvasId: runCanvasId,
           // 模式指令（inputDirective）由服务端 pre-step 事件缝注入，客户端不再拼接
           prompt: `${
-            mode === "code" && workDirName
-              ? `${workDirectoryPromptHint(workDirName)}
+            mode === "code"
+              ? resolvedProject?.workDir
+                ? // 已绑定真实目录（projects.work_dir）：可以说出工作区根，路径仍相对书写
+                  `${boundWorkDirPromptHint(resolvedProject.workDir)}
 
 `
+                : workDirName
+                  ? `${workDirectoryPromptHint(workDirName)}
+
+`
+                  : ""
               : ""
           }${
             thinking === "default"
@@ -1474,7 +1525,10 @@ export function Workbench() {
    */
   /** 事件回调注册在挂载期（deps 只有 ws/mode），必须经 ref 读最新值——否则拿到的是
       首轮的 null（实测：自动提交静默不触发，就是因为闭包里的 token/项目是 null）。 */
-  const autoCommitContextRef = useRef<{ token: string | null; canvasId: string | null }>({
+  const autoCommitContextRef = useRef<{
+    token: string | null;
+    canvasId: string | null;
+  }>({
     token: null,
     canvasId: null,
   });
@@ -1483,25 +1537,22 @@ export function Workbench() {
     canvasId: selectedProject?.primaryCanvas?.id ?? null,
   };
 
-  const autoCommitTurn = useCallback(
-    async (taskId: string | null) => {
-      const { token, canvasId } = autoCommitContextRef.current;
-      if (!token || !canvasId || !taskId) return;
-      const task = tasksByModeRef.current.code.find((t) => t.id === taskId);
-      if (!task) return;
-      const round = Math.max(
-        1,
-        task.messages.filter((m) => m.role === "assistant").length,
-      );
-      try {
-        await commitGitAll(token, canvasId, `${task.title}（第 ${round} 轮）`);
-        setLastAutoCommitAt(new Date().toISOString());
-      } catch {
-        // 没有仓库 / 无改动可提交：跳过
-      }
-    },
-    [],
-  );
+  const autoCommitTurn = useCallback(async (taskId: string | null) => {
+    const { token, canvasId } = autoCommitContextRef.current;
+    if (!token || !canvasId || !taskId) return;
+    const task = tasksByModeRef.current.code.find((t) => t.id === taskId);
+    if (!task) return;
+    const round = Math.max(
+      1,
+      task.messages.filter((m) => m.role === "assistant").length,
+    );
+    try {
+      await commitGitAll(token, canvasId, `${task.title}（第 ${round} 轮）`);
+      setLastAutoCommitAt(new Date().toISOString());
+    } catch {
+      // 没有仓库 / 无改动可提交：跳过
+    }
+  }, []);
 
   /** 任务视图内继续追问：追加 user 消息并复用同一会话发起新 run。 */
   const continueTask = useCallback(
@@ -1901,7 +1952,10 @@ export function Workbench() {
                    * 其余收进「显示更多」——一个工作目录下几十条对话时，侧栏不该被单个
                    * 工作目录撑满（展开状态按分组持久化）。
                    */
-                  const taskGroup = (groupKey: string, items: WorkbenchTask[]) => {
+                  const taskGroup = (
+                    groupKey: string,
+                    items: WorkbenchTask[],
+                  ) => {
                     const { visible, hiddenCount } = previewGroup(
                       items,
                       expandedGroups.includes(groupKey),
@@ -1972,16 +2026,16 @@ export function Workbench() {
                               }
                               onDelete={() => void removeCodeProject(p.id)}
                             />
-                            {collapsedProjects.includes(p.id) ? null : (
-                              items.length === 0 ? (
-                                <div className="ml-4 space-y-0.5 border-l pl-1">
-                                  <p className="px-2 py-1 text-xs text-muted-foreground/70">
-                                    暂无对话
-                                  </p>
-                                </div>
-                              ) : (
-                                taskGroup(p.id, items)
-                              )
+                            {collapsedProjects.includes(
+                              p.id,
+                            ) ? null : items.length === 0 ? (
+                              <div className="ml-4 space-y-0.5 border-l pl-1">
+                                <p className="px-2 py-1 text-xs text-muted-foreground/70">
+                                  暂无对话
+                                </p>
+                              </div>
+                            ) : (
+                              taskGroup(p.id, items)
                             )}
                           </div>
                         );
@@ -2052,374 +2106,388 @@ export function Workbench() {
         ) : activeTask ? (
           /* 转录列 + 右栏停靠面板（面板收起时返回 null，不占宽）。 */
           <div className="flex h-full">
-          <div
-            className="flex h-full min-w-0 flex-1 flex-col"
-            style={
-              { "--scrollbar-lane": `${scrollbarLane}px` } as React.CSSProperties
-            }
-          >
-            {/* 标题行：会话标题 + 本轮回执 + 插件面板入口；右端贴住工作目录与分支。
+            <div
+              className="flex h-full min-w-0 flex-1 flex-col"
+              style={
+                {
+                  "--scrollbar-lane": `${scrollbarLane}px`,
+                } as React.CSSProperties
+              }
+            >
+              {/* 标题行：会话标题 + 本轮回执 + 插件面板入口；右端贴住工作目录与分支。
                 这两个 chip 取**对话自己绑定的项目**（run 的作用域就是它），
                 不依赖侧栏选中态——否则打开历史对话时它们会消失（用户反馈）。 */}
-            <div className="shrink-0 pr-[var(--scrollbar-lane,0px)]">
-              <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-6 pt-6 pb-4">
-              <h1 className="min-w-0 truncate text-lg font-medium">
-                {activeTask.title}
-              </h1>
-              {lastAutoCommitAt ? (
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  已自动提交本轮
-                </span>
-              ) : null}
-              {/* 插件面板（能力 `ui`）：对话槽位 */}
-              <PluginPanelButtons
-                accessToken={session?.access_token ?? null}
-                slot="conversation"
-                renderButton={(panel, open) => (
-                  <button
-                    key={panel.id}
-                    type="button"
-                    onClick={open}
-                    title={`插件 ${panel.pluginId} 提供的面板`}
-                    className="flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
-                  >
-                    <PanelsTopLeft className="h-3.5 w-3.5" />
-                    {panel.title}
-                  </button>
-                )}
-              />
-              {mode === "code" ? (
-                <div className="ml-auto flex shrink-0 items-center gap-2">
-                  <WorkDirectorySelect
-                    projects={codeProjects}
-                    selectedProjectId={conversationProject?.id ?? null}
-                    lockedHint={
-                      conversationProject
-                        ? `本次对话已绑定工作目录「${conversationProject.name}」`
-                        : "本次对话没有绑定工作目录"
-                    }
-                    busy={creatingProject}
-                    onSelect={() => undefined}
-                    onOpenFolder={() => undefined}
-                    onClear={() => undefined}
-                  />
-                  <GitBranchSelect
+              <div className="shrink-0 pr-[var(--scrollbar-lane,0px)]">
+                <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-6 pt-6 pb-4">
+                  <h1 className="min-w-0 truncate text-lg font-medium">
+                    {activeTask.title}
+                  </h1>
+                  {lastAutoCommitAt ? (
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      已自动提交本轮
+                    </span>
+                  ) : null}
+                  {/* 插件面板（能力 `ui`）：对话槽位 */}
+                  <PluginPanelButtons
                     accessToken={session?.access_token ?? null}
-                    canvasId={conversationProject?.primaryCanvas.id ?? null}
-                    /* 自动提交后 key 变化 → 重新拉取更改统计 */
-                    key={`${conversationProject?.primaryCanvas.id ?? ""}:${lastAutoCommitAt ?? ""}`}
-                  />
-                  {/* 面板开关：与参考图一致，右栏由这个键开合 */}
-                  <button
-                    type="button"
-                    aria-label="面板"
-                    aria-expanded={panelOpen}
-                    title={panelOpen ? "收起面板" : "打开面板（变更 / 文件 / 终端 / 浏览器 / 子智能体）"}
-                    onClick={() => setPanelOpen((current) => !current)}
-                    className="rounded-md border p-1.5 text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground data-[active=true]:border-foreground/30 data-[active=true]:text-foreground"
-                    data-active={panelOpen}
-                  >
-                    <PanelRight className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ) : null}
-              </div>
-            </div>
-            <div
-              ref={codeMessagesRef}
-              className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
-              onContextMenu={chatMenu.open}
-            >
-              <div className="mx-auto w-full max-w-3xl space-y-4 px-6 pb-2">
-              {activeTask.runStartedAt ? (
-                <ElapsedEntry
-                  startedAt={activeTask.runStartedAt}
-                  endedAt={activeTask.runEndedAt}
-                  running={activeTask.status === "running"}
-                />
-              ) : null}
-              {/* 目标 + 进度（R1-2）：模型用了 write_todos 才出现，条数从事件流推导 */}
-              {activeTask.todos && activeTask.todos.length > 0 ? (
-                <TodoProgressPanel
-                  /* 目标 = 本轮的用户诉求（最后一条用户消息），不是首条——
-                     首条是这条对话最初问的，跟当前这轮的待办不是一回事 */
-                  goal={
-                    [...activeTask.messages]
-                      .reverse()
-                      .find((message) => message.role === "user")?.text ??
-                    activeTask.title
-                  }
-                  items={activeTask.todos}
-                  running={activeTask.status === "running"}
-                />
-              ) : null}
-              {activeTask.subagents && activeTask.subagents.length > 0 ? (
-                <SubagentDirectoryView
-                  entries={activeTask.subagents}
-                  running={activeTask.status === "running"}
-                />
-              ) : null}
-              {(() => {
-                // 「最终总结」标题挂在本轮最后一个 assistant 消息上方（R1-1 收尾总结）
-                const lastAssistantIdx = activeTask.messages.reduce(
-                  (last, msg, idx) => (msg.role === "assistant" ? idx : last),
-                  -1,
-                );
-                const showSummary =
-                  activeTask.status === "completed" &&
-                  Boolean(activeTask.runEndedAt) &&
-                  lastAssistantIdx >= 0;
-                return activeTask.messages.map((msg, i) => (
-                  <div key={i} className="space-y-1">
-                    {showSummary && i === lastAssistantIdx ? (
-                      <div className="text-xs font-medium text-muted-foreground">
-                        最终总结
-                      </div>
-                    ) : null}
-                    {/* 每条助手消息都带上「工作了多久」（用户口径：不能只显示一部分） */}
-                    {msg.role === "assistant" && msg.elapsedMs !== undefined ? (
-                      <div className="text-[11px] text-muted-foreground">
-                        已工作 {formatElapsedSeconds(msg.elapsedMs / 1000)}
-                      </div>
-                    ) : null}
-                    {msg.role === "user" ? (
-                      <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground whitespace-pre-wrap">
-                        {msg.text}
-                      </div>
-                    ) : (
-                      <div className="w-fit max-w-full rounded-2xl rounded-bl-md bg-muted px-4 py-2.5">
-                        <MarkdownRenderer text={msg.text} />
-                      </div>
+                    slot="conversation"
+                    renderButton={(panel, open) => (
+                      <button
+                        key={panel.id}
+                        type="button"
+                        onClick={open}
+                        title={`插件 ${panel.pluginId} 提供的面板`}
+                        className="flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+                      >
+                        <PanelsTopLeft className="h-3.5 w-3.5" />
+                        {panel.title}
+                      </button>
                     )}
-                  </div>
-                ));
-              })()}
-              {(activeTask.tools ?? []).map((tool) => (
-                <WorkbenchToolRow key={tool.toolCallId} tool={tool} />
-              ))}
-              {activeTask.status === "running" ? (
-                <div
-                  role="status"
-                  className="flex w-fit items-center gap-1.5 rounded-2xl rounded-bl-md bg-muted px-4 py-3"
-                  aria-label="生成中"
-                >
-                  {[0, 1, 2].map((dot) => (
-                    <span
-                      key={dot}
-                      className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/70"
-                      style={{ animationDelay: `${dot * 150}ms` }}
-                    />
-                  ))}
-                  <span className="ml-1 text-xs text-muted-foreground">
-                    生成中…
-                  </span>
+                  />
+                  {mode === "code" ? (
+                    <div className="ml-auto flex shrink-0 items-center gap-2">
+                      <WorkDirectorySelect
+                        projects={codeProjects}
+                        selectedProjectId={conversationProject?.id ?? null}
+                        lockedHint={
+                          conversationProject
+                            ? `本次对话已绑定工作目录「${conversationProject.name}」`
+                            : "本次对话没有绑定工作目录"
+                        }
+                        busy={creatingProject}
+                        onSelect={() => undefined}
+                        onOpenFolder={() => undefined}
+                        onClear={() => undefined}
+                      />
+                      <GitBranchSelect
+                        accessToken={session?.access_token ?? null}
+                        canvasId={conversationProject?.primaryCanvas.id ?? null}
+                        /* 自动提交后 key 变化 → 重新拉取更改统计 */
+                        key={`${conversationProject?.primaryCanvas.id ?? ""}:${lastAutoCommitAt ?? ""}`}
+                      />
+                      {/* 面板开关：与参考图一致，右栏由这个键开合 */}
+                      <button
+                        type="button"
+                        aria-label="面板"
+                        aria-expanded={panelOpen}
+                        title={
+                          panelOpen
+                            ? "收起面板"
+                            : "打开面板（变更 / 文件 / 终端 / 浏览器 / 子智能体）"
+                        }
+                        onClick={() => setPanelOpen((current) => !current)}
+                        className="rounded-md border p-1.5 text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground data-[active=true]:border-foreground/30 data-[active=true]:text-foreground"
+                        data-active={panelOpen}
+                      >
+                        <PanelRight className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
-              ) : null}
               </div>
-            </div>
-            {/* 底部：继续对话（完整版工具行 + 多轮，复用同一会话）。
+              <div
+                ref={codeMessagesRef}
+                className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
+                onContextMenu={chatMenu.open}
+              >
+                <div className="mx-auto w-full max-w-3xl space-y-4 px-6 pb-2">
+                  {activeTask.runStartedAt ? (
+                    <ElapsedEntry
+                      startedAt={activeTask.runStartedAt}
+                      endedAt={activeTask.runEndedAt}
+                      running={activeTask.status === "running"}
+                    />
+                  ) : null}
+                  {/* 目标 + 进度（R1-2）：模型用了 write_todos 才出现，条数从事件流推导 */}
+                  {activeTask.todos && activeTask.todos.length > 0 ? (
+                    <TodoProgressPanel
+                      /* 目标 = 本轮的用户诉求（最后一条用户消息），不是首条——
+                     首条是这条对话最初问的，跟当前这轮的待办不是一回事 */
+                      goal={
+                        [...activeTask.messages]
+                          .reverse()
+                          .find((message) => message.role === "user")?.text ??
+                        activeTask.title
+                      }
+                      items={activeTask.todos}
+                      running={activeTask.status === "running"}
+                    />
+                  ) : null}
+                  {activeTask.subagents && activeTask.subagents.length > 0 ? (
+                    <SubagentDirectoryView
+                      entries={activeTask.subagents}
+                      running={activeTask.status === "running"}
+                    />
+                  ) : null}
+                  {(() => {
+                    // 「最终总结」标题挂在本轮最后一个 assistant 消息上方（R1-1 收尾总结）
+                    const lastAssistantIdx = activeTask.messages.reduce(
+                      (last, msg, idx) =>
+                        msg.role === "assistant" ? idx : last,
+                      -1,
+                    );
+                    const showSummary =
+                      activeTask.status === "completed" &&
+                      Boolean(activeTask.runEndedAt) &&
+                      lastAssistantIdx >= 0;
+                    return activeTask.messages.map((msg, i) => (
+                      <div key={i} className="space-y-1">
+                        {showSummary && i === lastAssistantIdx ? (
+                          <div className="text-xs font-medium text-muted-foreground">
+                            最终总结
+                          </div>
+                        ) : null}
+                        {/* 每条助手消息都带上「工作了多久」（用户口径：不能只显示一部分） */}
+                        {msg.role === "assistant" &&
+                        msg.elapsedMs !== undefined ? (
+                          <div className="text-[11px] text-muted-foreground">
+                            已工作 {formatElapsedSeconds(msg.elapsedMs / 1000)}
+                          </div>
+                        ) : null}
+                        {msg.role === "user" ? (
+                          <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground whitespace-pre-wrap">
+                            {msg.text}
+                          </div>
+                        ) : (
+                          <div className="w-fit max-w-full rounded-2xl rounded-bl-md bg-muted px-4 py-2.5">
+                            <MarkdownRenderer text={msg.text} />
+                          </div>
+                        )}
+                      </div>
+                    ));
+                  })()}
+                  {(activeTask.tools ?? []).map((tool) => (
+                    <WorkbenchToolRow key={tool.toolCallId} tool={tool} />
+                  ))}
+                  {activeTask.status === "running" ? (
+                    <div
+                      role="status"
+                      className="flex w-fit items-center gap-1.5 rounded-2xl rounded-bl-md bg-muted px-4 py-3"
+                      aria-label="生成中"
+                    >
+                      {[0, 1, 2].map((dot) => (
+                        <span
+                          key={dot}
+                          className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/70"
+                          style={{ animationDelay: `${dot * 150}ms` }}
+                        />
+                      ))}
+                      <span className="ml-1 text-xs text-muted-foreground">
+                        生成中…
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+              {/* 底部：继续对话（完整版工具行 + 多轮，复用同一会话）。
                 工作目录与分支已移到标题行右端，输入框不再背标签条。 */}
 
-            <div className="shrink-0 pr-[var(--scrollbar-lane,0px)]">
-            <form
-              className="mx-auto w-full max-w-3xl px-6 pt-3 pb-4"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const value = followUp;
-                setFollowUp("");
-                continueTask(value);
-              }}
-            >
-              <div className="@container/composer rounded-xl border bg-background px-3 pt-2.5 pb-2">
-                <textarea
-                  ref={composerRef}
-                  aria-label="继续对话"
-                  value={followUp}
-                  onChange={(e) => {
-                    setFollowUp(e.target.value);
-                    // 自动长高（并隐藏滚动条：对话框右侧不出现滚动条）
-                    const el = e.currentTarget;
-                    el.style.height = "auto";
-                    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+              <div className="shrink-0 pr-[var(--scrollbar-lane,0px)]">
+                <form
+                  className="mx-auto w-full max-w-3xl px-6 pt-3 pb-4"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const value = followUp;
+                    setFollowUp("");
+                    continueTask(value);
                   }}
-                  onContextMenu={composerMenu.open}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      const value = followUp;
-                      setFollowUp("");
-                      continueTask(value);
-                    }
-                  }}
-                  rows={1}
-                  placeholder="继续追问…"
-                  style={{ scrollbarWidth: "none" }}
-                  className="max-h-40 min-h-[24px] w-full resize-none overflow-hidden bg-transparent text-sm outline-none placeholder:text-muted-foreground [&::-webkit-scrollbar]:hidden"
-                />
-                {workDirNotice ? (
-                  <p className="mt-2 text-xs text-destructive">
-                    {workDirNotice}
-                  </p>
-                ) : null}
-                <div className="mt-1 flex items-center justify-between">
-                  <div className="flex min-w-0 items-center gap-1.5">
-                    <button
-                      type="button"
-                      title="附件（即将上线）"
-                      className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </button>
-                  <ComposerCompactSelect
-                    ariaLabel="权限档位"
-                    icon={<ShieldCheck className="h-3.5 w-3.5" />}
-                    options={TIER_OPTIONS}
-                    value={tier}
-                    onChange={(next) => {
-                      void handleTierChange(next);
-                    }}
-                  />
-                  <Select
-                    aria-label="执行模式"
-                    value={executionMode}
-                    onValueChange={(next) => {
-                      if (typeof next === "string")
-                        setExecutionMode(next as ExecutionMode);
-                    }}
-                    items={executionModes.map((m) => ({
-                      value: m.id,
-                      label: m.label,
-                    }))}
-                  >
-                    <SelectTrigger
-                      className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
-                      aria-label="执行模式"
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="min-w-28">
-                      {executionModes.map((m) => (
-                        <SelectItem key={m.id} value={m.id}>
-                          {m.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select
-                    aria-label="模型"
-                    value={model}
-                    onValueChange={(next) => {
-                      if (typeof next === "string") handleModelChange(next);
-                    }}
-                    items={
-                      models.length === 0
-                        ? [{ value: "", label: "默认模型" }]
-                        : models.map((m) => ({ value: m.id, label: m.name }))
-                    }
-                  >
-                    <SelectTrigger
-                      className="max-w-[200px] gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
-                      aria-label="模型"
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="max-w-[300px]">
-                      {models.length === 0 ? (
-                        <SelectItem value="">默认模型</SelectItem>
-                      ) : (
-                        models.map((m) => (
-                          <SelectItem key={m.id} value={m.id}>
-                            <span className="flex items-center gap-1.5">
-                              <span>{m.name}</span>
-                              {m.vision ? (
-                                <span className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
-                                  视觉
-                                </span>
-                              ) : null}
-                            </span>
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
-                  {/* 上下文容量 / 缓存命中（R4-1）：模型旁一个圆形入口 */}
-                  <ContextUsageButton
-                    usage={activeTask.usage ?? null}
-                    modelId={model}
-                    contextWindow={
-                      models.find((m) => m.id === model)?.contextWindow ?? null
-                    }
-                  />
-                  <ComposerCompactSelect
-                    ariaLabel="思考强度"
-                    icon={<Brain className="h-3.5 w-3.5" />}
-                    options={THINKING_OPTIONS}
-                    value={thinking}
-                    onChange={handleThinkingChange}
-                    contentClassName="min-w-24"
-                    progress={THINKING_PROGRESS[thinking] ?? 0}
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    title="语音（即将上线）"
-                    className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
-                  >
-                    <Mic className="h-4 w-4" />
-                  </button>
-                  {activeTask.status === "running" && activeRunIdRef.current ? (
-                    /* 停止 = 暂停图标（与发送按钮同一个图标位，不再是一枚突兀的文字按钮）；
-                       与 Design 画布助手共用同一个组件，免得两处图标/文案漂移 */
-                    <RunStopButton
-                      onStop={() => ws.cancelRun(activeRunIdRef.current!)}
+                >
+                  <div className="@container/composer rounded-xl border bg-background px-3 pt-2.5 pb-2">
+                    <textarea
+                      ref={composerRef}
+                      aria-label="继续对话"
+                      value={followUp}
+                      onChange={(e) => {
+                        setFollowUp(e.target.value);
+                        // 自动长高（并隐藏滚动条：对话框右侧不出现滚动条）
+                        const el = e.currentTarget;
+                        el.style.height = "auto";
+                        el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+                      }}
+                      onContextMenu={composerMenu.open}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          const value = followUp;
+                          setFollowUp("");
+                          continueTask(value);
+                        }
+                      }}
+                      rows={1}
+                      placeholder="继续追问…"
+                      style={{ scrollbarWidth: "none" }}
+                      className="max-h-40 min-h-[24px] w-full resize-none overflow-hidden bg-transparent text-sm outline-none placeholder:text-muted-foreground [&::-webkit-scrollbar]:hidden"
                     />
-                  ) : (
-                    <button
-                      type="submit"
-                      aria-label="发送"
-                      disabled={!followUp.trim()}
-                      className="rounded-lg bg-primary p-2 text-primary-foreground disabled:opacity-50"
-                    >
-                      <Send className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
+                    {workDirNotice ? (
+                      <p className="mt-2 text-xs text-destructive">
+                        {workDirNotice}
+                      </p>
+                    ) : null}
+                    <div className="mt-1 flex items-center justify-between">
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <button
+                          type="button"
+                          title="附件（即将上线）"
+                          className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
+                        <ComposerCompactSelect
+                          ariaLabel="权限档位"
+                          icon={<ShieldCheck className="h-3.5 w-3.5" />}
+                          options={TIER_OPTIONS}
+                          value={tier}
+                          onChange={(next) => {
+                            void handleTierChange(next);
+                          }}
+                        />
+                        <Select
+                          aria-label="执行模式"
+                          value={executionMode}
+                          onValueChange={(next) => {
+                            if (typeof next === "string")
+                              setExecutionMode(next as ExecutionMode);
+                          }}
+                          items={executionModes.map((m) => ({
+                            value: m.id,
+                            label: m.label,
+                          }))}
+                        >
+                          <SelectTrigger
+                            className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
+                            aria-label="执行模式"
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="min-w-28">
+                            {executionModes.map((m) => (
+                              <SelectItem key={m.id} value={m.id}>
+                                {m.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Select
+                          aria-label="模型"
+                          value={model}
+                          onValueChange={(next) => {
+                            if (typeof next === "string")
+                              handleModelChange(next);
+                          }}
+                          items={
+                            models.length === 0
+                              ? [{ value: "", label: "默认模型" }]
+                              : models.map((m) => ({
+                                  value: m.id,
+                                  label: m.name,
+                                }))
+                          }
+                        >
+                          <SelectTrigger
+                            className="max-w-[200px] gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
+                            aria-label="模型"
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="max-w-[300px]">
+                            {models.length === 0 ? (
+                              <SelectItem value="">默认模型</SelectItem>
+                            ) : (
+                              models.map((m) => (
+                                <SelectItem key={m.id} value={m.id}>
+                                  <span className="flex items-center gap-1.5">
+                                    <span>{m.name}</span>
+                                    {m.vision ? (
+                                      <span className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+                                        视觉
+                                      </span>
+                                    ) : null}
+                                  </span>
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                        {/* 上下文容量 / 缓存命中（R4-1）：模型旁一个圆形入口 */}
+                        <ContextUsageButton
+                          usage={activeTask.usage ?? null}
+                          modelId={model}
+                          contextWindow={
+                            models.find((m) => m.id === model)?.contextWindow ??
+                            null
+                          }
+                        />
+                        <ComposerCompactSelect
+                          ariaLabel="思考强度"
+                          icon={<Brain className="h-3.5 w-3.5" />}
+                          options={THINKING_OPTIONS}
+                          value={thinking}
+                          onChange={handleThinkingChange}
+                          contentClassName="min-w-24"
+                          progress={THINKING_PROGRESS[thinking] ?? 0}
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          title="语音（即将上线）"
+                          className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
+                        >
+                          <Mic className="h-4 w-4" />
+                        </button>
+                        {activeTask.status === "running" &&
+                        activeRunIdRef.current ? (
+                          /* 停止 = 暂停图标（与发送按钮同一个图标位，不再是一枚突兀的文字按钮）；
+                       与 Design 画布助手共用同一个组件，免得两处图标/文案漂移 */
+                          <RunStopButton
+                            onStop={() => ws.cancelRun(activeRunIdRef.current!)}
+                          />
+                        ) : (
+                          <button
+                            type="submit"
+                            aria-label="发送"
+                            disabled={!followUp.trim()}
+                            className="rounded-lg bg-primary p-2 text-primary-foreground disabled:opacity-50"
+                          >
+                            <Send className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </form>
               </div>
-              </div>
-            </form>
             </div>
-          </div>
-          {/* 右栏停靠面板：编辑器式多标签（参考图 R3-1 的标签面板） */}
-          <WorkbenchSidePanel
-            open={panelOpen}
-            onClose={() => setPanelOpen(false)}
-            onRequestOpen={() => setPanelOpen(true)}
-            accessToken={session?.access_token ?? null}
-            canvasId={conversationProject?.primaryCanvas.id ?? null}
-            subagents={activeTask.subagents ?? []}
-            running={activeTask.status === "running"}
-            ws={ws}
-            widthLimits={panelLimits}
-            /* CSS 兜底：宿主不派发 resize 事件时 JS 的 limits 会陈旧，这条由排版保证
+            {/* 右栏停靠面板：编辑器式多标签（参考图 R3-1 的标签面板） */}
+            <WorkbenchSidePanel
+              open={panelOpen}
+              onClose={() => setPanelOpen(false)}
+              onRequestOpen={() => setPanelOpen(true)}
+              accessToken={session?.access_token ?? null}
+              canvasId={conversationProject?.primaryCanvas.id ?? null}
+              subagents={activeTask.subagents ?? []}
+              running={activeTask.status === "running"}
+              ws={ws}
+              widthLimits={panelLimits}
+              /* CSS 兜底：宿主不派发 resize 事件时 JS 的 limits 会陈旧，这条由排版保证
                对话列 ≥ MIN_CONVERSATION_WIDTH（数值与 lib/panel-layout 同一口径） */
-            maxWidthExpression={`calc(100vw - var(--workbench-sidebar, 256px) - ${MIN_CONVERSATION_WIDTH}px)`}
-            /* 拖到上限还往里拉 → 收起左栏腾地方（用户口径：再往左边拉，侧栏自动收起来） */
-            onGrowBlocked={() => setSidebarCollapsed(true)}
-            /* 右栏浏览器里拾取到的元素（R3-4）：写进追问输入框，用户补一句话就能发 */
-            onPickElement={(picked) => {
-              setFollowUp((current) =>
-                current.trim()
-                  ? `${current}
+              maxWidthExpression={`calc(100vw - var(--workbench-sidebar, 256px) - ${MIN_CONVERSATION_WIDTH}px)`}
+              /* 拖到上限还往里拉 → 收起左栏腾地方（用户口径：再往左边拉，侧栏自动收起来） */
+              onGrowBlocked={() => setSidebarCollapsed(true)}
+              /* 右栏浏览器里拾取到的元素（R3-4）：写进追问输入框，用户补一句话就能发 */
+              onPickElement={(picked) => {
+                setFollowUp((current) =>
+                  current.trim()
+                    ? `${current}
 ${formatElementReference(picked)}`
-                  : formatElementReference(picked),
-              );
-              composerRef.current?.focus();
-            }}
-          />
+                    : formatElementReference(picked),
+                );
+                composerRef.current?.focus();
+              }}
+            />
           </div>
         ) : (
-            <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-6">
+          <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-6">
             <div className="mb-9 flex items-center gap-3">
               {mode === "code" ? (
                 <Code2 className="h-8 w-8" />
@@ -2448,6 +2516,7 @@ ${formatElementReference(picked)}`
                     setWorkDirNotice(null);
                   }}
                   onOpenFolder={() => void pickWorkDirectory()}
+                  onBindPath={bindWorkDirectory}
                   onClear={clearWorkDirectory}
                 />
                 <GitBranchSelect
@@ -2456,198 +2525,201 @@ ${formatElementReference(picked)}`
                 />
               </div>
               <div className="@container/composer rounded-b-2xl border bg-background px-3 pt-3 pb-2.5 shadow-sm">
-              <textarea
-                aria-label="任务描述"
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    startTask(prompt);
+                <textarea
+                  aria-label="任务描述"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      startTask(prompt);
+                    }
+                  }}
+                  rows={2}
+                  placeholder={
+                    mode === "design"
+                      ? "从想法到设计，生成可交付的页面原型。先在左侧创建一个项目。"
+                      : meta.placeholder
                   }
-                }}
-                rows={2}
-                placeholder={
-                  mode === "design"
-                    ? "从想法到设计，生成可交付的页面原型。先在左侧创建一个项目。"
-                    : meta.placeholder
-                }
-                className="w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-              />
-              {workDirNotice ? (
-                <p className="mt-2 text-xs text-destructive">{workDirNotice}</p>
-              ) : null}
-              <div className="mt-1.5 flex items-center justify-between">
-                <div className="flex min-w-0 items-center gap-1.5">
-                  <button
-                    type="button"
-                    title="附件（即将上线）"
-                    className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </button>
-                  <ComposerCompactSelect
-                    ariaLabel="权限档位"
-                    icon={<ShieldCheck className="h-3.5 w-3.5" />}
-                    options={TIER_OPTIONS}
-                    value={tier}
-                    onChange={(next) => {
-                      void handleTierChange(next);
-                    }}
-                  />
-                  <Select
-                    aria-label="执行模式"
-                    value={executionMode}
-                    onValueChange={(next) => {
-                      if (typeof next === "string")
-                        setExecutionMode(next as ExecutionMode);
-                    }}
-                    items={executionModes.map((m) => ({
-                      value: m.id,
-                      label: m.label,
-                    }))}
-                  >
-                    <SelectTrigger
-                      className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
+                  className="w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                />
+                {workDirNotice ? (
+                  <p className="mt-2 text-xs text-destructive">
+                    {workDirNotice}
+                  </p>
+                ) : null}
+                <div className="mt-1.5 flex items-center justify-between">
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <button
+                      type="button"
+                      title="附件（即将上线）"
+                      className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </button>
+                    <ComposerCompactSelect
+                      ariaLabel="权限档位"
+                      icon={<ShieldCheck className="h-3.5 w-3.5" />}
+                      options={TIER_OPTIONS}
+                      value={tier}
+                      onChange={(next) => {
+                        void handleTierChange(next);
+                      }}
+                    />
+                    <Select
                       aria-label="执行模式"
+                      value={executionMode}
+                      onValueChange={(next) => {
+                        if (typeof next === "string")
+                          setExecutionMode(next as ExecutionMode);
+                      }}
+                      items={executionModes.map((m) => ({
+                        value: m.id,
+                        label: m.label,
+                      }))}
                     >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="min-w-28">
-                      {executionModes.map((m) => (
-                        <SelectItem key={m.id} value={m.id}>
-                          {m.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select
-                    aria-label="模型"
-                    value={model}
-                    onValueChange={(next) => {
-                      if (typeof next === "string") handleModelChange(next);
-                    }}
-                    items={
-                      models.length === 0
-                        ? [{ value: "", label: "默认模型" }]
-                        : models.map((m) => ({ value: m.id, label: m.name }))
-                    }
-                  >
-                    <SelectTrigger
-                      className="max-w-[200px] gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
+                      <SelectTrigger
+                        className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
+                        aria-label="执行模式"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="min-w-28">
+                        {executionModes.map((m) => (
+                          <SelectItem key={m.id} value={m.id}>
+                            {m.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select
                       aria-label="模型"
+                      value={model}
+                      onValueChange={(next) => {
+                        if (typeof next === "string") handleModelChange(next);
+                      }}
+                      items={
+                        models.length === 0
+                          ? [{ value: "", label: "默认模型" }]
+                          : models.map((m) => ({ value: m.id, label: m.name }))
+                      }
                     >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="max-w-[300px]">
-                      {models.length === 0 ? (
-                        <SelectItem value="">默认模型</SelectItem>
-                      ) : (
-                        <>
-                          {(() => {
-                            // BYOK（providerName 存在）分组在前，内置目录在后
-                            const byok = models.filter((m) => m.providerName);
-                            const builtin = models.filter(
-                              (m) => !m.providerName,
-                            );
-                            const badge = (m: (typeof models)[number]) => (
-                              <>
-                                {m.vision ? (
-                                  <span className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
-                                    视觉
-                                  </span>
-                                ) : null}
-                                {m.contextWindow &&
-                                m.contextWindow >= 1_000_000 ? (
-                                  <span className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
-                                    1M
-                                  </span>
-                                ) : null}
-                              </>
-                            );
-                            return (
-                              <>
-                                {byok.length > 0 ? (
-                                  <>
-                                    <SelectLabel>
-                                      {byok[0]!.providerName?.trim() ??
-                                        "我的供应商"}
-                                    </SelectLabel>
-                                    {byok.map((m) => (
-                                      <SelectItem key={m.id} value={m.id}>
-                                        <span className="flex items-center gap-1.5">
-                                          <span>{m.name}</span>
-                                          {badge(m)}
-                                        </span>
-                                      </SelectItem>
-                                    ))}
-                                  </>
-                                ) : null}
-                                {builtin.length > 0 ? (
-                                  <>
-                                    <SelectLabel>内置模型</SelectLabel>
-                                    {builtin.map((m) => (
-                                      <SelectItem key={m.id} value={m.id}>
-                                        <span className="flex items-center gap-1.5">
-                                          <span>{m.name}</span>
-                                          {badge(m)}
-                                        </span>
-                                      </SelectItem>
-                                    ))}
-                                  </>
-                                ) : null}
-                              </>
-                            );
-                          })()}
-                          <div className="-mx-1 my-1 border-t" />
-                          <button
-                            type="button"
-                            onClick={() => setSettingsTab("providers")}
-                            className="w-full rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-                          >
-                            管理模型…
-                          </button>
-                        </>
-                      )}
-                    </SelectContent>
-                  </Select>
-                  {/* 上下文容量 / 缓存命中（R4-1）：模型旁一个圆形入口 */}
-                  <ContextUsageButton
-                    usage={null}
-                    modelId={model}
-                    contextWindow={
-                      models.find((m) => m.id === model)?.contextWindow ?? null
-                    }
-                  />
-                  <ComposerCompactSelect
-                    ariaLabel="思考强度"
-                    icon={<Brain className="h-3.5 w-3.5" />}
-                    options={THINKING_OPTIONS}
-                    value={thinking}
-                    onChange={handleThinkingChange}
-                    contentClassName="min-w-24"
-                    progress={THINKING_PROGRESS[thinking] ?? 0}
-                  />
+                      <SelectTrigger
+                        className="max-w-[200px] gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
+                        aria-label="模型"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="max-w-[300px]">
+                        {models.length === 0 ? (
+                          <SelectItem value="">默认模型</SelectItem>
+                        ) : (
+                          <>
+                            {(() => {
+                              // BYOK（providerName 存在）分组在前，内置目录在后
+                              const byok = models.filter((m) => m.providerName);
+                              const builtin = models.filter(
+                                (m) => !m.providerName,
+                              );
+                              const badge = (m: (typeof models)[number]) => (
+                                <>
+                                  {m.vision ? (
+                                    <span className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+                                      视觉
+                                    </span>
+                                  ) : null}
+                                  {m.contextWindow &&
+                                  m.contextWindow >= 1_000_000 ? (
+                                    <span className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+                                      1M
+                                    </span>
+                                  ) : null}
+                                </>
+                              );
+                              return (
+                                <>
+                                  {byok.length > 0 ? (
+                                    <>
+                                      <SelectLabel>
+                                        {byok[0]!.providerName?.trim() ??
+                                          "我的供应商"}
+                                      </SelectLabel>
+                                      {byok.map((m) => (
+                                        <SelectItem key={m.id} value={m.id}>
+                                          <span className="flex items-center gap-1.5">
+                                            <span>{m.name}</span>
+                                            {badge(m)}
+                                          </span>
+                                        </SelectItem>
+                                      ))}
+                                    </>
+                                  ) : null}
+                                  {builtin.length > 0 ? (
+                                    <>
+                                      <SelectLabel>内置模型</SelectLabel>
+                                      {builtin.map((m) => (
+                                        <SelectItem key={m.id} value={m.id}>
+                                          <span className="flex items-center gap-1.5">
+                                            <span>{m.name}</span>
+                                            {badge(m)}
+                                          </span>
+                                        </SelectItem>
+                                      ))}
+                                    </>
+                                  ) : null}
+                                </>
+                              );
+                            })()}
+                            <div className="-mx-1 my-1 border-t" />
+                            <button
+                              type="button"
+                              onClick={() => setSettingsTab("providers")}
+                              className="w-full rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                            >
+                              管理模型…
+                            </button>
+                          </>
+                        )}
+                      </SelectContent>
+                    </Select>
+                    {/* 上下文容量 / 缓存命中（R4-1）：模型旁一个圆形入口 */}
+                    <ContextUsageButton
+                      usage={null}
+                      modelId={model}
+                      contextWindow={
+                        models.find((m) => m.id === model)?.contextWindow ??
+                        null
+                      }
+                    />
+                    <ComposerCompactSelect
+                      ariaLabel="思考强度"
+                      icon={<Brain className="h-3.5 w-3.5" />}
+                      options={THINKING_OPTIONS}
+                      value={thinking}
+                      onChange={handleThinkingChange}
+                      contentClassName="min-w-24"
+                      progress={THINKING_PROGRESS[thinking] ?? 0}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      title="语音（即将上线）"
+                      className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
+                    >
+                      <Mic className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="发送"
+                      disabled={submitting || !prompt.trim()}
+                      onClick={() => startTask(prompt)}
+                      className="rounded-lg bg-primary p-2 text-primary-foreground disabled:opacity-50"
+                    >
+                      <Send className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    title="语音（即将上线）"
-                    className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
-                  >
-                    <Mic className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="发送"
-                    disabled={submitting || !prompt.trim()}
-                    onClick={() => startTask(prompt)}
-                    className="rounded-lg bg-primary p-2 text-primary-foreground disabled:opacity-50"
-                  >
-                    <Send className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
               </div>
             </div>
 
@@ -2674,8 +2746,10 @@ ${formatElementReference(picked)}`
         accessToken={session?.access_token ?? null}
         /* 索引库按「画布 = 工作目录」建：Code 模式取对话绑定的项目，Design 取选中项目 */
         activeCanvasId={
-          (mode === "code" ? (conversationProject ?? selectedProject) : selectedProject)
-            ?.primaryCanvas?.id ?? null
+          (mode === "code"
+            ? (conversationProject ?? selectedProject)
+            : selectedProject
+          )?.primaryCanvas?.id ?? null
         }
         /* 引导页的状态来自真实数据：有没有工作目录项目、已有多少会话 */
         hasWorkDir={codeProjects.length > 0}

@@ -31,12 +31,16 @@ describe.skipIf(!DATABASE_URL)("权限设置持久化真实库集成", () => {
         automationTier: "default",
         rules: { allow: ["write_file"], deny: ["mcp__*"] },
         browserControlEnabled: true,
+        browserAutoScreenshot: true,
+        browserHeadless: true,
       });
       expect(await store.load()).toEqual({
         tier: "custom",
         automationTier: "default",
         rules: { allow: ["write_file"], deny: ["mcp__*"] },
         browserControlEnabled: true,
+        browserAutoScreenshot: true,
+        browserHeadless: true,
       });
 
       // 收尾：恢复缺省，不给其它测试/本地开发留 full-access 或放行规则（安全）

@@ -37,6 +37,8 @@ export async function registerPermissionRoutes(
       automationTier: permissionTierSchema.parse(settings.automationTier),
       rules: permissionRulesSchema.parse(settings.rules),
       browserControlEnabled: settings.browserControlEnabled,
+      browserAutoScreenshot: settings.browserAutoScreenshot,
+      browserHeadless: settings.browserHeadless,
       approvedForever: options.permissions.listApprovedForever(),
     });
   });
@@ -59,6 +61,8 @@ export async function registerPermissionRoutes(
       automationTier?: unknown;
       rules?: unknown;
       browserControlEnabled?: unknown;
+      browserAutoScreenshot?: unknown;
+      browserHeadless?: unknown;
     };
     const current = options.permissions.getSettings();
     let next = { ...current };
@@ -81,10 +85,22 @@ export async function registerPermissionRoutes(
           browserControlEnabled: body.browserControlEnabled === true,
         };
       }
+      if (body.browserAutoScreenshot !== undefined) {
+        next = {
+          ...next,
+          browserAutoScreenshot: body.browserAutoScreenshot === true,
+        };
+      }
+      if (body.browserHeadless !== undefined) {
+        next = { ...next, browserHeadless: body.browserHeadless === true };
+      }
     } catch {
       return reply.code(400).send(
         applicationErrorResponseSchema.parse({
-          error: { code: "invalid_request", message: "Invalid permission settings." },
+          error: {
+            code: "invalid_request",
+            message: "Invalid permission settings.",
+          },
         }),
       );
     }
@@ -113,6 +129,8 @@ export async function registerPermissionRoutes(
       automationTier: next.automationTier,
       rules: next.rules,
       browserControlEnabled: next.browserControlEnabled,
+      browserAutoScreenshot: next.browserAutoScreenshot,
+      browserHeadless: next.browserHeadless,
       approvedForever: options.permissions.listApprovedForever(),
     });
   });

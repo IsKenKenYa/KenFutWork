@@ -1,6 +1,9 @@
 import { isAutomationExecutionMode } from "@kenfutwork/shared";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
-import type { KenFutWorkAgentFactory, ToolGate } from "../../agent/deep-agent.js";
+import type {
+  KenFutWorkAgentFactory,
+  ToolGate,
+} from "../../agent/deep-agent.js";
 import { createAgentPersistenceService } from "../../agent/persistence/index.js";
 import { createAgentRunService } from "../../agent/runtime.js";
 import { composeToolGate } from "../../agent/tool-gate.js";
@@ -10,6 +13,8 @@ import type { KernelEvents, PluginDefinition } from "../../kernel/types.js";
 import type { ConnectionManager } from "../../ws/connection-manager.js";
 import { evaluateToolPolicy } from "../agent-modes/execution-mode-service.js";
 import { createCanvasRepository } from "../canvas/repository.js";
+import { createProjectRepository } from "../projects/repository.js";
+import { createProjectWorkDirLoader } from "../projects/work-dir.js";
 import { createSkillCatalogRepository } from "../skills/repository.js";
 import {
   createAgentActivityQuery,
@@ -72,7 +77,9 @@ export function createAgentRunsPlugin(
         const toolGateFor = (threadId: string): ToolGate => {
           const policy = agentModes.resolveToolPolicy(threadId);
           // 分场景（R5-3）：目标/循环这类无人值守轮次走「自动化任务」那一档
-          const scenario = isAutomationExecutionMode(agentModes.getMode(threadId))
+          const scenario = isAutomationExecutionMode(
+            agentModes.getMode(threadId),
+          )
             ? ("automation" as const)
             : ("interactive" as const);
           return composeToolGate({
@@ -110,6 +117,11 @@ export function createAgentRunsPlugin(
             canvases: canvasRepository,
             skills: createSkillCatalogRepository(ctx.get("persistence")),
           }),
+          // 项目绑定的本机工作目录（web 形态「填本机路径」）→ run 的沙箱作用域
+          projectWorkDirLoader: createProjectWorkDirLoader({
+            canvases: canvasRepository,
+            projects: createProjectRepository(ctx.get("persistence")),
+          }),
           connectionManager: deps.connectionManager,
           ...(deps.agentModel ? { model: deps.agentModel } : {}),
           ...(deps.mockEventDelayMs === undefined
@@ -119,6 +131,12 @@ export function createAgentRunsPlugin(
           env: ctx.env,
           ...(jobService ? { jobService } : {}),
           modelProviders: ctx.get("modelProviders"),
+          // run 起始期校验模型是否在目录里（E）：可选用依赖，没有就跳过
+          ...(ctx.tryGet("modelCatalog")
+            ? { modelCatalog: ctx.get("modelCatalog") as never }
+            : {}),
+          // 用户规则拼进系统提示词（B）：settings 已是本插件的依赖
+          settingsService: ctx.get("settings"),
           runUsage: ctx.get("runUsage"),
           tools: ctx.get("tools"),
           emitTurnStopping: (payload) => deps.events.emitTurnStopping(payload),

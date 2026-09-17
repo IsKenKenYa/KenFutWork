@@ -78,8 +78,13 @@ describe("permissions 缝（R5-3 自定义配置与分场景）", () => {
     svc.applySettings({
       tier: "custom",
       automationTier: "default",
-      rules: { allow: ["write_file", "mcp__py-helper__echo"], deny: ["mcp__py-helper__add"] },
+      rules: {
+        allow: ["write_file", "mcp__py-helper__echo"],
+        deny: ["mcp__py-helper__add"],
+      },
       browserControlEnabled: false,
+      browserAutoScreenshot: false,
+      browserHeadless: false,
     });
     // 放行项：危险工具（write_file）也放行
     expect(svc.evaluate({ toolName: "write_file" }).decision).toBe("allow");
@@ -100,11 +105,17 @@ describe("permissions 缝（R5-3 自定义配置与分场景）", () => {
       automationTier: "default",
       rules: { allow: [], deny: ["mcp__*"] },
       browserControlEnabled: false,
+      browserAutoScreenshot: false,
+      browserHeadless: false,
     });
     expect(svc.evaluate({ toolName: "mcp__fs__write" }).decision).toBe("deny");
-    expect(svc.evaluate({ toolName: "mcp__py-helper__echo" }).decision).toBe("deny");
+    expect(svc.evaluate({ toolName: "mcp__py-helper__echo" }).decision).toBe(
+      "deny",
+    );
     // 普通工具不受这条规则影响（execute 仍走 default 的审批要求）
-    expect(svc.evaluate({ toolName: "execute" }).reason).toMatch(/等待用户审批/);
+    expect(svc.evaluate({ toolName: "execute" }).reason).toMatch(
+      /等待用户审批/,
+    );
   });
 
   it("分场景：自动化任务（目标/循环）用 automationTier，不受常规档影响", () => {
@@ -114,10 +125,13 @@ describe("permissions 缝（R5-3 自定义配置与分场景）", () => {
       automationTier: "default",
       rules: { allow: [], deny: [] },
       browserControlEnabled: false,
+      browserAutoScreenshot: false,
+      browserHeadless: false,
     });
     // 常规：全放行
     expect(
-      svc.evaluate({ toolName: "write_file", scenario: "interactive" }).decision,
+      svc.evaluate({ toolName: "write_file", scenario: "interactive" })
+        .decision,
     ).toBe("allow");
     // 自动化：仍按 default 要求审批（无人值守时更严）
     expect(
@@ -129,12 +143,15 @@ describe("permissions 缝（R5-3 自定义配置与分场景）", () => {
       automationTier: "auto-approve",
       rules: { allow: [], deny: [] },
       browserControlEnabled: false,
+      browserAutoScreenshot: false,
+      browserHeadless: false,
     });
     expect(
       svc.evaluate({ toolName: "write_file", scenario: "automation" }).decision,
     ).toBe("allow");
     expect(
-      svc.evaluate({ toolName: "write_file", scenario: "interactive" }).decision,
+      svc.evaluate({ toolName: "write_file", scenario: "interactive" })
+        .decision,
     ).toBe("deny");
   });
 
@@ -145,11 +162,16 @@ describe("permissions 缝（R5-3 自定义配置与分场景）", () => {
       automationTier: "default",
       rules: { allow: [], deny: [] },
       browserControlEnabled: false,
+      browserAutoScreenshot: false,
+      browserHeadless: false,
     });
     svc.setTier("t1", "full-access");
     expect(
-      svc.evaluate({ toolName: "execute", threadId: "t1", scenario: "automation" })
-        .decision,
+      svc.evaluate({
+        toolName: "execute",
+        threadId: "t1",
+        scenario: "automation",
+      }).decision,
     ).toBe("allow");
   });
 });

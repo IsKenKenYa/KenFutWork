@@ -1,7 +1,9 @@
 import { resolveSandboxDir } from "../../agent/sandbox-dir.js";
+import { resolveInsideRoot } from "../../utils/inside-root.js";
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import type { CanvasRepository } from "../canvas/repository.js";
+import type { ProjectRepository } from "../projects/repository.js";
 import type { SettingsService } from "../settings/settings-service.js";
 import type {
   GitChangedFiles,
@@ -10,7 +12,6 @@ import type {
   GitGraph,
   GitRepoView,
 } from "./git-client.js";
-import { resolveInsideRoot } from "../../utils/inside-root.js";
 import { patchTargetsOnly } from "./hunk-patch.js";
 import {
   listSandboxDir,
@@ -219,6 +220,13 @@ export function createCodeGitService(options: {
   /** 画布 → 真实目录映射（与 agent 后端同一张表，保证 git 操作的就是 agent 读写的目录）。 */
   canvasWorkDirs?: Record<string, string> | undefined;
   /**
+   * 项目绑定的本机工作目录（`projects.work_dir`，web 形态「填本机路径」）。
+   * 优先于 `canvasWorkDirs`：界面里绑的目录比运维的环境变量映射更具体。
+   */
+  projectRepository?:
+    | Pick<ProjectRepository, "findWorkDirByCanvas">
+    | undefined;
+  /**
    * 读工作区的默认终端 shell（设置页配的那个）。缺省时用 `auto`（按平台取默认）。
    * 只依赖 `getWorkspaceSettings` 一个方法，避免把整个 settings 服务拖进这个 feature。
    */
@@ -273,7 +281,10 @@ export function createCodeGitService(options: {
     return resolveSandboxDir(
       canvasId,
       options.sandboxRoot,
-      options.canvasWorkDirs?.[canvasId],
+      // 项目绑定优先（读不到就当没绑：绑定是增强，不是前置条件）
+      (await options.projectRepository
+        ?.findWorkDirByCanvas(workspace.id, canvasId)
+        .catch(() => null)) ?? options.canvasWorkDirs?.[canvasId],
     );
   };
 

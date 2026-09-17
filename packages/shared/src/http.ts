@@ -64,6 +64,11 @@ export const projectCreateRequestSchema = z.object({
    * 两端各自按 kind 取列表，避免画布项目与工作目录项目互相串味。
    */
   kind: projectKindSchema.optional(),
+  /**
+   * 本机工作目录绝对路径（Code 项目）。服务端校验「绝对路径 + 存在 + 是目录」，
+   * 不合格返回 400 `invalid_work_dir` 并给出可读原因。
+   */
+  work_dir: z.string().trim().min(1).optional(),
 });
 
 export const projectCreateResponseSchema = z.object({
@@ -350,9 +355,17 @@ export const applicationErrorCodeSchema = z.enum([
   "project_not_found",
   "project_slug_taken",
   "project_update_failed",
+  /**
+   * 项目工作目录（`projects.work_dir`，web 形态「填本机路径」）校验失败（400）。
+   * 同一个坑第二次踩到（见上面 `service_unavailable` 的注释）：码不在本枚举里，
+   * `parse` 抛错后响应体变成 ZodError 转储、可读原因丢失——真机验收实测。
+   */
+  "invalid_work_dir",
   "session_not_found",
   "settings_not_found",
   "settings_update_failed",
+  /** 默认模型不在目录里（保存设置时 fail loud，400；见 modelCatalog.validateSpecifier）。 */
+  "invalid_model",
   "upload_failed",
   "asset_not_found",
   "job_not_found",
@@ -509,5 +522,7 @@ export type AssetSignedUrlResponse = z.infer<
 export const projectUpdateRequestSchema = z.object({
   brand_kit_id: z.uuid().nullable().optional(),
   name: z.string().min(1).max(100).optional(),
+  /** 本机工作目录绝对路径；显式 `null` = 解绑（回落到沙箱目录）。 */
+  work_dir: z.string().trim().min(1).nullable().optional(),
 });
 export type ProjectUpdateRequest = z.infer<typeof projectUpdateRequestSchema>;

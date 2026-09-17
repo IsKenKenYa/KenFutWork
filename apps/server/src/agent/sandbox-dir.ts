@@ -43,6 +43,28 @@ export function resolveSandboxDir(
 }
 
 /**
+ * 把「项目绑定的工作目录」（`projects.work_dir`，界面里手填/选的）并进 env 的画布映射。
+ *
+ * 优先级：**界面绑定 > 环境变量映射**（`KENFUTWORK_CANVAS_WORK_DIRS` 是本地/运维的批量
+ * 钉法，用户在某个项目上显式绑定的目录更具体）。两者都没有时返回原 env，解析照旧回落
+ * `<sandboxRoot>/<canvasId>`。
+ */
+export function withBoundWorkDir<T extends object>(
+  env: T,
+  canvasId: string | undefined,
+  workDir: string | null,
+): T & { canvasWorkDirs?: Record<string, string> } {
+  if (!canvasId || !workDir) return env;
+  return {
+    ...env,
+    canvasWorkDirs: {
+      ...(env as { canvasWorkDirs?: Record<string, string> }).canvasWorkDirs,
+      [canvasId]: workDir,
+    },
+  };
+}
+
+/**
  * 运行入口的沙箱作用域判定：**沙箱目录名要落在画布 UUID 上**。
  *
  * 背景：无工作目录的 Code 会话，客户端手里只有会话 UUID，会把 `canvasId` 发成

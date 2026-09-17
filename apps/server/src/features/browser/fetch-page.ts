@@ -18,7 +18,11 @@ export const BROWSER_FETCH_MAX_BYTES = 512 * 1024;
 export const BROWSER_FETCH_MAX_REDIRECTS = 3;
 
 /** 云元数据地址：抓它没有任何产品价值，只有 SSRF 风险。 */
-const BLOCKED_HOSTS = new Set(["169.254.169.254", "100.100.100.200", "metadata.google.internal"]);
+const BLOCKED_HOSTS = new Set([
+  "169.254.169.254",
+  "100.100.100.200",
+  "metadata.google.internal",
+]);
 
 export interface PageElement {
   tag: string;
@@ -40,11 +44,16 @@ export interface PageSnapshot {
  * 消费方有两处：右栏面板的快照端点（人）与 `browser_open` 工具（agent）。
  */
 export interface BrowserService {
+  /** 静态快照（无需浏览器）：抓 HTML 提元素。 */
   snapshot(url: string): Promise<PageSnapshot>;
+  /** CDP 会话（「连接到 Chrome」/「自动截图」的执行面；未连接时各方法抛可读错误）。 */
+  cdp: import("./cdp-session.js").CdpBrowserSession;
 }
 
-export function createBrowserService(): BrowserService {
-  return { snapshot: (url) => fetchPageSnapshot(url) };
+export function createBrowserService(
+  cdp: import("./cdp-session.js").CdpBrowserSession,
+): BrowserService {
+  return { snapshot: (url) => fetchPageSnapshot(url), cdp };
 }
 
 export class BrowserFetchError extends Error {
@@ -78,19 +87,25 @@ const ENTITIES: Record<string, string> = {
 /** HTML 实体还原（与前端 search-results 同一套常见实体；未知实体原样保留）。 */
 export function decodeEntities(text: string): string {
   if (!text.includes("&")) return text;
-  return text.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (match, body: string) => {
-    if (body.startsWith("#")) {
-      const isHex = body[1] === "x" || body[1] === "X";
-      const code = Number.parseInt(body.slice(isHex ? 2 : 1), isHex ? 16 : 10);
-      if (!Number.isFinite(code) || code < 0 || code > 0x10ffff) return match;
-      try {
-        return String.fromCodePoint(code);
-      } catch {
-        return match;
+  return text.replace(
+    /&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g,
+    (match, body: string) => {
+      if (body.startsWith("#")) {
+        const isHex = body[1] === "x" || body[1] === "X";
+        const code = Number.parseInt(
+          body.slice(isHex ? 2 : 1),
+          isHex ? 16 : 10,
+        );
+        if (!Number.isFinite(code) || code < 0 || code > 0x10ffff) return match;
+        try {
+          return String.fromCodePoint(code);
+        } catch {
+          return match;
+        }
       }
-    }
-    return ENTITIES[body.toLowerCase()] ?? match;
-  });
+      return ENTITIES[body.toLowerCase()] ?? match;
+    },
+  );
 }
 
 /**
@@ -174,7 +189,11 @@ export function extractElements(html: string, limit = 40): PageElement[] {
   for (const match of cleaned.matchAll(/<img\b[^>]*\/?>/gi)) {
     const tag = match[0];
     const alt = attr(tag, "alt");
-    push({ tag: "img", text: alt ?? "(图片)", hint: attr(tag, "src") ? "img" : "img" });
+    push({
+      tag: "img",
+      text: alt ?? "(图片)",
+      hint: attr(tag, "src") ? "img" : "img",
+    });
   }
   for (const match of cleaned.matchAll(/<h([1-6])\b[^>]*>[\s\S]*?<\/h\1>/gi)) {
     const level = match[1];

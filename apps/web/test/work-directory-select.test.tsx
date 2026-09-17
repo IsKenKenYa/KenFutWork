@@ -36,6 +36,7 @@ function renderSelect(
   const onSelect = vi.fn();
   const onOpenFolder = vi.fn();
   const onClear = vi.fn();
+  const onBindPath = vi.fn(async () => {});
   render(
     <WorkDirectorySelect
       projects={projects}
@@ -43,10 +44,11 @@ function renderSelect(
       onSelect={onSelect}
       onOpenFolder={onOpenFolder}
       onClear={onClear}
+      onBindPath={onBindPath}
       {...props}
     />,
   );
-  return { onSelect, onOpenFolder, onClear };
+  return { onSelect, onOpenFolder, onClear, onBindPath };
 }
 
 afterEach(() => {
@@ -100,5 +102,70 @@ describe("WorkDirectorySelect", () => {
     await userEvent.click(trigger);
     await userEvent.click(screen.getByRole("option", { name: /notes/ }));
     expect(onSelect).toHaveBeenCalledWith("p2");
+  });
+});
+
+/**
+ * 「填本机路径」：Web 形态唯一能真正绑定本机目录的入口（选择器只给得到目录名）。
+ * 服务端校验失败的原因必须显示出来——禁用/静默失败是这一块的既有教训。
+ */
+describe("WorkDirectorySelect：填本机路径", () => {
+  it("填路径 → 调 onBindPath(原文) 并关闭下拉", async () => {
+    const { onBindPath } = renderSelect();
+    await userEvent.click(screen.getByRole("button", { name: "工作目录" }));
+    await userEvent.click(screen.getByRole("button", { name: "填本机路径" }));
+
+    const input = screen.getByLabelText("本机工作目录路径");
+    await userEvent.type(input, "D:\\Desktop\\test");
+    await userEvent.click(screen.getByRole("button", { name: "绑定" }));
+
+    expect(onBindPath).toHaveBeenCalledWith("D:\\Desktop\\test");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+
+  it("校验失败：显示服务端给的可读原因，表单留着让人改", async () => {
+    const onBindPath = vi.fn(async () => {
+      throw new Error("目录不存在：D:\\nope（服务端读的是本机文件系统）。");
+    });
+    renderSelect({ onBindPath });
+
+    await userEvent.click(screen.getByRole("button", { name: "工作目录" }));
+    await userEvent.click(screen.getByRole("button", { name: "填本机路径" }));
+    await userEvent.type(screen.getByLabelText("本机工作目录路径"), "D:\\nope");
+    await userEvent.click(screen.getByRole("button", { name: "绑定" }));
+
+    expect(await screen.findByText(/目录不存在/)).toBeVisible();
+    expect(screen.getByLabelText("本机工作目录路径")).toBeInTheDocument();
+  });
+
+  it("空路径不发请求，就地提示", async () => {
+    const { onBindPath } = renderSelect();
+    await userEvent.click(screen.getByRole("button", { name: "工作目录" }));
+    await userEvent.click(screen.getByRole("button", { name: "填本机路径" }));
+    await userEvent.click(screen.getByRole("button", { name: "绑定" }));
+
+    expect(onBindPath).not.toHaveBeenCalled();
+    expect(screen.getByText("请填写绝对路径。")).toBeVisible();
+  });
+
+  it("列表里显示已绑定的真实路径（绑定状态可见）", async () => {
+    renderSelect({
+      projects: [
+        {
+          ...projects[0],
+          workDir: "D:\\Desktop\\test",
+        } as ProjectSummary,
+      ],
+    });
+    await userEvent.click(screen.getByRole("button", { name: "工作目录" }));
+    expect(screen.getByText("D:\\Desktop\\test")).toBeVisible();
+  });
+
+  it("只读展示（不传 onBindPath）：没有「填本机路径」入口", async () => {
+    renderSelect({ onBindPath: undefined });
+    await userEvent.click(screen.getByRole("button", { name: "工作目录" }));
+    expect(
+      screen.queryByRole("button", { name: "填本机路径" }),
+    ).not.toBeInTheDocument();
   });
 });

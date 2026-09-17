@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  boundWorkDirPromptHint,
   pickWorkDirectory,
   resolveDirectoryPicker,
   resolveWorkDirProject,
   UNSUPPORTED_DIRECTORY_PICKER_NOTICE,
   workDirectoryPromptHint,
+  workDirNameFromPath,
 } from "../src/lib/work-directory.js";
 
 /**
@@ -154,5 +156,39 @@ describe("工作目录选择", () => {
         name: "TEST",
       });
     });
+  });
+});
+
+/**
+ * 回归（web 形态没法绑定本机目录）：选择器只给得到**目录名**，服务端要的是绝对路径。
+ * 现在补上「填本机路径」：路径 → 目录名（项目名）与「已绑定真实目录」的提示词。
+ */
+describe("手填本机路径（Web 形态绑定真实目录）", () => {
+  it("从路径取目录名：两种分隔符都认，末尾分隔符忽略", () => {
+    expect(workDirNameFromPath("D:\\Desktop\\test")).toBe("test");
+    expect(workDirNameFromPath("D:/Desktop/test")).toBe("test");
+    expect(workDirNameFromPath("/home/me/app/")).toBe("app");
+    expect(workDirNameFromPath("  /srv/data  ")).toBe("data");
+  });
+
+  it("取不出目录名（根路径/空串）返回空串，由调用方兜底", () => {
+    expect(workDirNameFromPath("D:\\")).toBe("");
+    expect(workDirNameFromPath("/")).toBe("");
+    expect(workDirNameFromPath("   ")).toBe("");
+  });
+
+  it("不支持目录选择器的说明指向「填本机路径」（不再说做不到）", () => {
+    expect(UNSUPPORTED_DIRECTORY_PICKER_NOTICE).toContain("填本机路径");
+    expect(UNSUPPORTED_DIRECTORY_PICKER_NOTICE).not.toContain("暂不能直接绑定");
+  });
+
+  it("已绑定真实目录的提示词：说出真实路径，但仍要求相对工作区根书写", () => {
+    const hint = boundWorkDirPromptHint("D:\\Desktop\\test");
+    expect(hint).toContain("D:\\Desktop\\test");
+    expect(hint).toContain("根目录");
+    expect(hint).toContain("相对工作区根");
+    // 不能反过来鼓励绝对路径（工作区外的绝对路径会被沙箱边界拒）
+    expect(hint).toContain("不要");
+    expect(hint).not.toContain("不可达");
   });
 });

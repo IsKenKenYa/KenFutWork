@@ -12,8 +12,10 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import type { AdminService } from "../features/admin/admin-service.js";
-import type { AuthenticatedUser } from "../features/auth/types.js";
-import type { RequestAuthenticator } from "../features/auth/types.js";
+import type {
+  AuthenticatedUser,
+  RequestAuthenticator,
+} from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { CanvasRepository } from "../features/canvas/repository.js";
 import type { PluginRegistryService } from "../features/plugins/plugin-registry-service.js";
@@ -39,6 +41,10 @@ export interface PluginRoutesDeps {
   viewerService: ViewerService;
   sandboxRoot?: string | undefined;
   canvasWorkDirs?: Record<string, string> | undefined;
+  /** 项目绑定的本机工作目录（`projects.work_dir`）；界面绑定优先于环境变量映射。 */
+  projectWorkDirLoader?:
+    | ((canvasId: string) => Promise<string | null>)
+    | undefined;
 }
 
 function sendUnauthenticated(reply: FastifyReply) {
@@ -157,6 +163,7 @@ export async function registerPluginRoutes(
           canvasRepository: options.canvasRepository,
           sandboxRoot: options.sandboxRoot,
           canvasWorkDirs: options.canvasWorkDirs,
+          projectWorkDirLoader: options.projectWorkDirLoader,
         },
         user,
         canvasId,

@@ -10,6 +10,7 @@ import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import { BootstrapError } from "../bootstrap/errors.js";
 import { SQLSTATE_UNIQUE_VIOLATION } from "../persistence/errors.js";
 import type { ProjectRepository, ProjectUpdatePatch } from "./repository.js";
+import { validateWorkDir } from "./work-dir.js";
 
 const THUMBNAIL_BUCKET = "project-assets";
 const PROJECT_QUERY_FAILED_MESSAGE = "Unable to load projects.";
@@ -21,6 +22,7 @@ const PROJECT_SLUG_TAKEN_MESSAGE =
   "Project slug is already taken in this workspace.";
 
 type ProjectErrorCode =
+  | "invalid_work_dir"
   | "project_create_failed"
   | "project_delete_failed"
   | "project_not_found"
@@ -46,6 +48,7 @@ export type ProjectService = {
     brand_kit_id: string | null;
     created_at: string;
     updated_at: string;
+    work_dir: string | null;
   }>;
   listProjects(
     user: AuthenticatedUser,
@@ -151,6 +154,11 @@ export function createProjectService(options: {
       await ensureFoundation(viewerService, user, "project_create_failed");
       const workspace = await resolveWorkspace(user, "project_create_failed");
       const normalizedName = input.name.trim();
+      // 手填的本机工作目录先校验（绝对路径 + 存在 + 是目录）：不合格直接 400，
+      // 不留到 run 时才发现「目录不存在」——那时用户已经等了一轮。
+      const workDir = input.work_dir
+        ? requireWorkDir(input.work_dir)
+        : undefined;
 
       const created = await repository
         .createWithCanvas({
@@ -162,6 +170,7 @@ export function createProjectService(options: {
           slug: slugify(normalizedName),
           userId: user.id,
           workspaceId: workspace.id,
+          ...(workDir ? { workDir } : {}),
         })
         .catch((error: unknown) => {
           throw mapProjectCreateError(error);
@@ -297,8 +306,17 @@ export function createProjectService(options: {
       if (input.name !== undefined) {
         patch.name = input.name;
       }
+      if (input.work_dir !== undefined) {
+        // `null` = 解绑；字符串 = 重绑（同样先校验）。
+        patch.workDir =
+          input.work_dir === null ? null : requireWorkDir(input.work_dir);
+      }
 
-      if (patch.name === undefined && patch.brandKitId === undefined) {
+      if (
+        patch.name === undefined &&
+        patch.brandKitId === undefined &&
+        patch.workDir === undefined
+      ) {
         return;
       }
 
@@ -327,10 +345,23 @@ export function createProjectService(options: {
 
 /** 工作区解析失败时的错误码 → 用户可见消息（按调用场景选择错误码）。 */
 const WORKSPACE_FAILURE_MESSAGES = {
+  invalid_work_dir: "工作目录不可用。",
   project_create_failed: PROJECT_CREATE_FAILED_MESSAGE,
   project_query_failed: PROJECT_QUERY_FAILED_MESSAGE,
   project_update_failed: PROJECT_UPDATE_FAILED_MESSAGE,
 } as const;
+
+/**
+ * 用户填的工作目录：不合格抛 400（可读原因直接给界面）。
+ * 校验口径集中在 `work-dir.ts`（与 agent/git/索引三处的消费点同一份判定）。
+ */
+function requireWorkDir(raw: string): string {
+  const verdict = validateWorkDir(raw);
+  if (!verdict.ok) {
+    throw new ProjectServiceError("invalid_work_dir", verdict.reason, 400);
+  }
+  return verdict.path;
+}
 
 async function ensureFoundation(
   viewerService: ViewerService,
@@ -385,6 +416,7 @@ function mapProjectSummary(options: {
     name: string;
     slug: string;
     updated_at: string;
+    work_dir?: string | null;
   };
   thumbnailUrl?: string | null;
   workspace: {
@@ -406,6 +438,8 @@ function mapProjectSummary(options: {
       name: options.canvas.name,
     },
     slug: options.project.slug,
+    // 显式 null 也回传：界面要能区分「未绑定」与「字段缺省」（列表里显示绑定状态）
+    workDir: options.project.work_dir ?? null,
     ...(options.thumbnailUrl ? { thumbnailUrl: options.thumbnailUrl } : {}),
     updatedAt: options.project.updated_at,
     workspace: {

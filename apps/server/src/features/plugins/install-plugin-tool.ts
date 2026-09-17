@@ -1,8 +1,11 @@
+import { resolveSandboxDir } from "../../agent/sandbox-dir.js";
+import type {
+  ToolDefinition,
+  ToolExecutionContext,
+} from "../../kernel/types.js";
+import { resolveInsideRoot } from "../../utils/inside-root.js";
 import type { AdminService } from "../admin/admin-service.js";
 import type { RequestAuthenticator } from "../auth/types.js";
-import type { ToolDefinition, ToolExecutionContext } from "../../kernel/types.js";
-import { resolveInsideRoot } from "../../utils/inside-root.js";
-import { resolveSandboxDir } from "../../agent/sandbox-dir.js";
 import type { PluginRegistryService } from "./plugin-registry-service.js";
 
 /**
@@ -23,6 +26,10 @@ export function createInstallPluginTool(options: {
   admin: AdminService;
   sandboxRoot?: string | undefined;
   canvasWorkDirs?: Record<string, string> | undefined;
+  /** 项目绑定的本机工作目录（`projects.work_dir`）；界面绑定优先于环境变量映射。 */
+  projectWorkDirLoader?:
+    | ((canvasId: string) => Promise<string | null>)
+    | undefined;
   /** 安装期生命周期脚本：默认拒绝（与 HTTP 路由同口径），工具不给模型开这个口子。 */
   allowLifecycleScripts?: boolean;
 }): ToolDefinition {
@@ -44,7 +51,9 @@ export function createInstallPluginTool(options: {
     execute: async (args, execCtx: ToolExecutionContext) => {
       const relativePath = String(args.path ?? "").trim();
       if (!relativePath) {
-        throw new Error("install_plugin 需要 path（相对工作目录的 bundle 目录）。");
+        throw new Error(
+          "install_plugin 需要 path（相对工作目录的 bundle 目录）。",
+        );
       }
       if (!execCtx.canvasId) {
         throw new Error(
@@ -69,10 +78,13 @@ export function createInstallPluginTool(options: {
         );
       }
 
+      const boundWorkDir = options.projectWorkDirLoader
+        ? await options.projectWorkDirLoader(execCtx.canvasId).catch(() => null)
+        : null;
       const sandboxDir = resolveSandboxDir(
         execCtx.canvasId,
         options.sandboxRoot,
-        options.canvasWorkDirs?.[execCtx.canvasId],
+        boundWorkDir ?? options.canvasWorkDirs?.[execCtx.canvasId],
       );
       const bundleDir = resolveInsideRoot(sandboxDir, relativePath);
 
@@ -93,7 +105,9 @@ export function createInstallPluginTool(options: {
         const report = (error as { report?: unknown }).report;
         throw new Error(
           `安装失败：${error instanceof Error ? error.message : String(error)}${
-            report ? `（门禁报告：${JSON.stringify(report).slice(0, 500)}）` : ""
+            report
+              ? `（门禁报告：${JSON.stringify(report).slice(0, 500)}）`
+              : ""
           }`,
         );
       }

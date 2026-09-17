@@ -141,6 +141,11 @@ export const projectSummarySchema = z.object({
   slug: z.string().min(1),
   kind: projectKindSchema,
   description: z.string().nullable(),
+  /**
+   * 绑定的本机工作目录绝对路径（Code 项目）。桌面端由系统文件夹选择器给出，
+   * Web 端由「填本机路径」手填；为空表示走沙箱目录 `<sandboxRoot>/<canvasId>`。
+   */
+  workDir: z.string().min(1).nullable().optional(),
   thumbnailUrl: z.string().nullable().optional(),
   workspace: workspaceSummarySchema,
   primaryCanvas: canvasSummarySchema,
@@ -189,6 +194,13 @@ export const workspaceSettingsSchema = z.object({
   terminalShell: terminalShellSchema.default("auto"),
   /** 代码库索引开关（R4-3；索引文件是本机缓存，不进库表）。 */
   codeIndexEnabled: z.boolean().default(false),
+  /**
+   * 用户规则（设置 → 规则与记忆）：**每轮 run 都会拼进系统提示词**（服务端有消费方）。
+   * 此前只存在浏览器 localStorage，页面文案承诺了「附加到每次请求」却没人读。
+   */
+  userRules: z.string().max(20_000).default(""),
+  /** 逐条规则（短句，最多 100 条）。 */
+  ruleEntries: z.array(z.string().min(1).max(2_000)).max(100).default([]),
   /**
    * run 失败自动重试上限（含首次尝试；0 = 不重试）。
    * 缺省 10；服务端对「已执行工具」的轮次一律不重试（副作用安全），见 agent/run-retry.ts。

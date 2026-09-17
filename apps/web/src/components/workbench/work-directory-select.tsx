@@ -1,9 +1,15 @@
 "use client";
 
 import type { ProjectSummary } from "@kenfutwork/shared";
-import { Check, ChevronDown, Folder, FolderOpen, MessageSquare } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Folder,
+  FolderOpen,
+  MessageSquare,
+  PencilLine,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-
 
 /**
  * 工作目录选择器（Code 模式 composer 底部）。
@@ -12,7 +18,10 @@ import { useEffect, useRef, useState } from "react";
  * 选中即把后续对话挂到它下面、run 以它的主画布为作用域。
  *
  * 交互按设计稿：顶部搜索框 + 目录列表（选中项打勾）+ 分隔线 + 「打开文件夹」
- * 「不在项目中工作」。**远程连接暂不做**（需要远程环境接入，未定方案）。
+ * 「填本机路径」「不在项目中工作」。后两条覆盖两种形态：
+ * - 桌面 / 支持目录选择器的浏览器：系统选择器只给得到**目录名**，绑定靠项目名；
+ * - 不支持选择器（Web 形态、非 Chromium）或想要精确目录：**手填绝对路径**，
+ *   服务端校验后落 `projects.work_dir`，agent/终端/git 都落在这个目录里。
  */
 export interface WorkDirectorySelectProps {
   /** 工作目录项目（kind='code'），已按 updated_at 倒序。 */
@@ -30,6 +39,11 @@ export interface WorkDirectorySelectProps {
   onSelect: (projectId: string) => void;
   /** 打开文件夹：调浏览器目录选择器，按目录名复用/新建工作目录。 */
   onOpenFolder: () => void;
+  /**
+   * 手填本机绝对路径绑定工作目录（服务端校验绝对路径 + 存在 + 是目录）。
+   * reject 时把原因显示在表单里（服务端给的是可读中文）。只读展示的场景不传 = 不提供入口。
+   */
+  onBindPath?: ((path: string) => Promise<void>) | undefined;
   /** 不在项目中工作：清空工作目录，run 退回会话自身作用域。 */
   onClear: () => void;
 }
@@ -41,11 +55,19 @@ export function WorkDirectorySelect({
   busy = false,
   onSelect,
   onOpenFolder,
+  onBindPath,
   onClear,
 }: WorkDirectorySelectProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  /** 手填路径表单：null = 未展开 */
+  const [pathForm, setPathForm] = useState<{
+    value: string;
+    error: string | null;
+    busy: boolean;
+  } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const pathInputRef = useRef<HTMLInputElement>(null);
 
   // 点外面 / Esc 关闭（与 brand-kit-selector 同一套交互）
   useEffect(() => {
@@ -70,8 +92,22 @@ export function WorkDirectorySelect({
   }, [open]);
 
   useEffect(() => {
-    if (!open) setQuery("");
+    if (!open) {
+      setQuery("");
+      setPathForm(null);
+    }
   }, [open]);
+
+  /**
+   * 表单展开就把光标放进输入框。
+   *
+   * 用 ref 而不是 `autoFocus` 属性：`autoFocus` 在挂载/重新渲染时会抢焦点
+   * （a11y 规则也禁它）；这里只在用户**显式点击**「填本机路径」之后才聚焦。
+   */
+  const pathFormOpen = pathForm !== null;
+  useEffect(() => {
+    if (pathFormOpen) pathInputRef.current?.focus();
+  }, [pathFormOpen]);
 
   const selected = projects.find((project) => project.id === selectedProjectId);
   const keyword = query.trim().toLowerCase();
@@ -81,6 +117,26 @@ export function WorkDirectorySelect({
   /** 只读（已绑定对话）：chip 仍然显示目录名，但不给下拉——按了不生效才是坑。 */
   const locked = lockedHint !== undefined;
 
+  const submitPath = async () => {
+    if (!pathForm || pathForm.busy || !onBindPath) return;
+    const value = pathForm.value.trim();
+    if (!value) {
+      setPathForm({ ...pathForm, error: "请填写绝对路径。" });
+      return;
+    }
+    setPathForm({ ...pathForm, busy: true, error: null });
+    try {
+      await onBindPath(value);
+      setOpen(false);
+    } catch (error) {
+      setPathForm({
+        busy: false,
+        error: error instanceof Error ? error.message : String(error),
+        value,
+      });
+    }
+  };
+
   return (
     <div ref={containerRef} className="relative">
       <button
@@ -88,7 +144,7 @@ export function WorkDirectorySelect({
         aria-label="工作目录"
         aria-haspopup={locked ? undefined : "listbox"}
         aria-expanded={locked ? undefined : open}
-        title={lockedHint}
+        title={lockedHint ?? selected?.workDir ?? undefined}
         disabled={busy || locked}
         onClick={() => setOpen((current) => !current)}
         className="flex max-w-[12rem] items-center gap-1.5 rounded-lg border px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-60"
@@ -124,7 +180,7 @@ export function WorkDirectorySelect({
             {visible.length === 0 ? (
               <p className="px-2 py-3 text-center text-xs text-muted-foreground">
                 {projects.length === 0
-                  ? "还没有工作目录——用下方「打开文件夹」选择"
+                  ? "还没有工作目录——用下方「打开文件夹」或「填本机路径」"
                   : "没有匹配的工作目录"}
               </p>
             ) : (
@@ -141,8 +197,13 @@ export function WorkDirectorySelect({
                   className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
                 >
                   <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate">
-                    {project.name}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{project.name}</span>
+                    {project.workDir ? (
+                      <span className="block truncate text-[11px] text-muted-foreground">
+                        {project.workDir}
+                      </span>
+                    ) : null}
                   </span>
                   {project.id === selectedProjectId ? (
                     <Check className="h-4 w-4 shrink-0" />
@@ -152,34 +213,98 @@ export function WorkDirectorySelect({
             )}
           </div>
 
-
           <div className="border-t p-1">
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                onOpenFolder();
-              }}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <FolderOpen className="h-4 w-4 shrink-0" />
-              打开文件夹
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                onClear();
-              }}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <MessageSquare className="h-4 w-4 shrink-0" />
-              不在项目中工作
-            </button>
+            {pathForm ? (
+              <div className="space-y-1.5 p-1">
+                <label
+                  htmlFor="work-dir-path"
+                  className="block text-xs text-muted-foreground"
+                >
+                  本机绝对路径（在运行服务端的那台机器上）
+                </label>
+                <input
+                  id="work-dir-path"
+                  ref={pathInputRef}
+                  aria-label="本机工作目录路径"
+                  placeholder={"D:\\Desktop\\test 或 /home/me/app"}
+                  value={pathForm.value}
+                  onChange={(event) =>
+                    setPathForm({
+                      ...pathForm,
+                      value: event.target.value,
+                      error: null,
+                    })
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void submitPath();
+                    }
+                  }}
+                  className="w-full rounded-md border bg-transparent px-2 py-1 text-sm outline-none"
+                />
+                {pathForm.error ? (
+                  <p className="text-xs text-rose-600">{pathForm.error}</p>
+                ) : null}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={pathForm.busy}
+                    onClick={() => void submitPath()}
+                    className="rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60"
+                  >
+                    {pathForm.busy ? "校验中…" : "绑定"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPathForm(null)}
+                    className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    onOpenFolder();
+                  }}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <FolderOpen className="h-4 w-4 shrink-0" />
+                  打开文件夹
+                </button>
+                {onBindPath ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPathForm({ busy: false, error: null, value: "" })
+                    }
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <PencilLine className="h-4 w-4 shrink-0" />
+                    填本机路径
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    onClear();
+                  }}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <MessageSquare className="h-4 w-4 shrink-0" />
+                  不在项目中工作
+                </button>
+              </>
+            )}
           </div>
         </div>
       ) : null}
-
     </div>
   );
 }

@@ -24,6 +24,10 @@ export interface PermissionSettings {
   automationTier: PermissionTier;
   rules: PermissionRules;
   browserControlEnabled: boolean;
+  /** 浏览器动作后自动附截图（R5-4「自动截图」）。 */
+  browserAutoScreenshot: boolean;
+  /** CDP 托管浏览器是否无头（默认有窗口，便于用户看着它干活）。 */
+  browserHeadless: boolean;
 }
 
 export const DEFAULT_PERMISSION_SETTINGS: PermissionSettings = {
@@ -31,6 +35,8 @@ export const DEFAULT_PERMISSION_SETTINGS: PermissionSettings = {
   automationTier: "default",
   rules: { allow: [], deny: [] },
   browserControlEnabled: false,
+  browserAutoScreenshot: false,
+  browserHeadless: false,
 };
 
 export interface PermissionSettingsStore {
@@ -45,6 +51,8 @@ type AppConfigRow = {
   automation_permission_tier: unknown;
   permission_rules: unknown;
   browser_control_enabled: unknown;
+  browser_auto_screenshot: unknown;
+  browser_headless: unknown;
 };
 
 export function createPermissionSettingsStore(
@@ -54,7 +62,7 @@ export function createPermissionSettingsStore(
     async load() {
       const row = await persistence.queryOne<AppConfigRow>(
         `select permission_tier, automation_permission_tier, permission_rules,
-                browser_control_enabled
+                browser_control_enabled, browser_auto_screenshot, browser_headless
            from public.app_config where id = 1`,
       );
       if (!row) return { ...DEFAULT_PERMISSION_SETTINGS };
@@ -71,6 +79,8 @@ export function createPermissionSettingsStore(
           : DEFAULT_PERMISSION_SETTINGS.automationTier,
         rules: rules.success ? rules.data : DEFAULT_PERMISSION_SETTINGS.rules,
         browserControlEnabled: row.browser_control_enabled === true,
+        browserAutoScreenshot: row.browser_auto_screenshot === true,
+        browserHeadless: row.browser_headless === true,
       };
     },
 
@@ -78,19 +88,23 @@ export function createPermissionSettingsStore(
       await persistence.execute(
         `insert into public.app_config
            (id, permission_tier, automation_permission_tier, permission_rules,
-            browser_control_enabled)
-         values (1, $1, $2, $3::jsonb, $4)
+            browser_control_enabled, browser_auto_screenshot, browser_headless)
+         values (1, $1, $2, $3::jsonb, $4, $5, $6)
          on conflict (id) do update
            set permission_tier = excluded.permission_tier,
                automation_permission_tier = excluded.automation_permission_tier,
                permission_rules = excluded.permission_rules,
                browser_control_enabled = excluded.browser_control_enabled,
+               browser_auto_screenshot = excluded.browser_auto_screenshot,
+               browser_headless = excluded.browser_headless,
                updated_at = now()`,
         [
           settings.tier,
           settings.automationTier,
           JSON.stringify(settings.rules),
           settings.browserControlEnabled,
+          settings.browserAutoScreenshot,
+          settings.browserHeadless,
         ],
       );
     },

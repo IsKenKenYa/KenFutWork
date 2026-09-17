@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
 import { resolveSandboxDir } from "../../agent/sandbox-dir.js";
@@ -50,9 +50,14 @@ function build(options: {
       terminalShell: TerminalShellId;
       /** R4-3 索引库开关（这个桩只关心终端 shell，给它一个常量即可）。 */
       codeIndexEnabled: boolean;
+      /** 用户规则（同上：桩里给空值）。 */
+      userRules: string;
+      ruleEntries: string[];
     }>;
   };
   availableShells?: TerminalShellOption[];
+  /** 项目绑定的本机工作目录（`projects.work_dir`）桩：按画布返回路径。 */
+  boundWorkDirs?: Record<string, string>;
 }) {
   const git: GitClient = {
     checkout: vi.fn(async () => {}),
@@ -86,6 +91,16 @@ function build(options: {
     source: options.source ?? "system",
     ...(options.canvasWorkDirs
       ? { canvasWorkDirs: options.canvasWorkDirs }
+      : {}),
+    ...(options.boundWorkDirs
+      ? {
+          projectRepository: {
+            findWorkDirByCanvas: async (
+              _workspaceId: string,
+              canvasId: string,
+            ) => options.boundWorkDirs?.[canvasId] ?? null,
+          },
+        }
       : {}),
     viewerService: { resolveWorkspace },
     ...(options.settingsService
@@ -232,16 +247,18 @@ describe("git init（工作目录初始化仓库）", () => {
  */
 describe("Git 图谱", () => {
   const GRAPH = {
-    entries: [{
-      rail: "* ",
-      sha: "abc1234full",
-      shortSha: "abc1234",
-      subject: "第一轮",
-      author: "t",
-      date: "2026-09-16T00:00:00+08:00",
-      refs: ["HEAD -> main"],
-      parents: [],
-    }],
+    entries: [
+      {
+        rail: "* ",
+        sha: "abc1234full",
+        shortSha: "abc1234",
+        subject: "第一轮",
+        author: "t",
+        date: "2026-09-16T00:00:00+08:00",
+        refs: ["HEAD -> main"],
+        parents: [],
+      },
+    ],
     truncated: false,
   };
 
@@ -271,7 +288,10 @@ describe("Git 图谱", () => {
 
   it("越权：画布不属于当前工作区 → 404，且不下发任何 git 命令", async () => {
     const graphFn = vi.fn(async () => GRAPH);
-    const { service, git } = build({ canvasFound: false, git: { graph: graphFn } });
+    const { service, git } = build({
+      canvasFound: false,
+      git: { graph: graphFn },
+    });
     await expect(service.graph(USER, CANVAS_ID, 30)).rejects.toMatchObject({
       statusCode: 404,
     });
@@ -310,6 +330,37 @@ describe("变更清单与文件查看", () => {
     ],
     truncated: false,
   };
+
+  it("项目绑定本机工作目录（projects.work_dir）：终端/git 落点跟着走，且优先于环境变量映射", async () => {
+    const bound = mkdtempSync(join(tmpdir(), "kfw-bound-"));
+    const envMapped = mkdtempSync(join(tmpdir(), "kfw-envmapped-"));
+    const { service } = build({
+      boundWorkDirs: { [CANVAS_ID]: bound },
+      canvasWorkDirs: { [CANVAS_ID]: envMapped },
+    });
+
+    expect(await service.terminalWorkDir(USER, CANVAS_ID)).toBe(resolve(bound));
+    expect((await service.indexScope(USER, CANVAS_ID)).dir).toBe(
+      resolve(bound),
+    );
+
+    const unbound = build({ canvasWorkDirs: { [CANVAS_ID]: envMapped } });
+    expect(await unbound.service.terminalWorkDir(USER, CANVAS_ID)).toBe(
+      resolve(envMapped),
+    );
+  });
+
+  it("绑定目录读取失败时回落环境变量映射（绑定是增强，不是前置条件）", async () => {
+    const envMapped = mkdtempSync(join(tmpdir(), "kfw-fallback-"));
+    const { service } = build({
+      canvasWorkDirs: { [CANVAS_ID]: envMapped },
+      boundWorkDirs: {},
+    });
+    // 桩里空表返回 null（等价于未绑定），不该抛错
+    expect(await service.terminalWorkDir(USER, CANVAS_ID)).toBe(
+      resolve(envMapped),
+    );
+  });
 
   it("变更清单：仓库给逐文件清单，非仓库给空清单 + isRepo=false（状态不是故障）", async () => {
     const repo = build({
@@ -370,7 +421,6 @@ describe("变更清单与文件查看", () => {
   });
 });
 
-
 /**
  * 终端 shell（用户口径：「终端应该是直连 cmd 或者 powershell、git-bash 等等，可以在设置里
  * 配置默认的」）：默认值来自工作区设置，本次显式选的优先；命令行实际交给选中的 shell。
@@ -378,7 +428,11 @@ describe("变更清单与文件查看", () => {
 describe("终端 shell 解析", () => {
   const shells: TerminalShellOption[] = [
     { id: "cmd", label: "cmd", executable: "cmd.exe" },
-    { id: "powershell", label: "Windows PowerShell", executable: "powershell.exe" },
+    {
+      id: "powershell",
+      label: "Windows PowerShell",
+      executable: "powershell.exe",
+    },
   ];
 
   it("清单与默认值：读工作区设置，读不到落 auto", async () => {
@@ -389,7 +443,9 @@ describe("终端 shell 解析", () => {
           agentMaxRetries: 10,
           defaultModel: "inst-1:glm-5.3-flash",
           terminalShell: "powershell",
-              codeIndexEnabled: false,
+          codeIndexEnabled: false,
+          userRules: "",
+          ruleEntries: [],
         }),
       },
     });

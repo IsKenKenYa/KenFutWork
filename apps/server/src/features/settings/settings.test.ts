@@ -104,21 +104,26 @@ describe("settings service", () => {
         findAgentMaxRetries: async () => null,
         findTerminalShell: async () => null,
         findCodeIndexEnabled: async () => null,
+        findUserRules: async () => null,
         upsertDefaultModel: async () => {},
         upsertAgentMaxRetries: async () => {},
         upsertTerminalShell: async () => {},
         upsertCodeIndexEnabled: async () => {},
+        upsertUserRules: async () => {},
+        upsertRuleEntries: async () => {},
       },
       defaultModel: "fallback-model",
     });
     await expect(
       fallback.getWorkspaceSettings(USER, WORKSPACE_ID),
     ).resolves.toEqual({
-        agentMaxRetries: 10,
-        defaultModel: "fallback-model",
-        terminalShell: "auto",
-        codeIndexEnabled: false,
-      });
+      agentMaxRetries: 10,
+      defaultModel: "fallback-model",
+      terminalShell: "auto",
+      codeIndexEnabled: false,
+      ruleEntries: [],
+      userRules: "",
+    });
 
     const stored = createSettingsService({
       repository: {
@@ -126,21 +131,26 @@ describe("settings service", () => {
         findAgentMaxRetries: async () => null,
         findTerminalShell: async () => null,
         findCodeIndexEnabled: async () => null,
+        findUserRules: async () => null,
         upsertDefaultModel: async () => {},
         upsertAgentMaxRetries: async () => {},
         upsertTerminalShell: async () => {},
         upsertCodeIndexEnabled: async () => {},
+        upsertUserRules: async () => {},
+        upsertRuleEntries: async () => {},
       },
       defaultModel: "fallback-model",
     });
     await expect(
       stored.getWorkspaceSettings(USER, WORKSPACE_ID),
     ).resolves.toEqual({
-        agentMaxRetries: 10,
-        defaultModel: "stored-model",
-        terminalShell: "auto",
-        codeIndexEnabled: false,
-      });
+      agentMaxRetries: 10,
+      defaultModel: "stored-model",
+      terminalShell: "auto",
+      codeIndexEnabled: false,
+      ruleEntries: [],
+      userRules: "",
+    });
   });
 
   /**
@@ -155,10 +165,13 @@ describe("settings service", () => {
       findAgentMaxRetries: async () => null,
       findTerminalShell: async () => null,
       findCodeIndexEnabled: async () => null,
+      findUserRules: async () => null,
       upsertDefaultModel: async () => {},
       upsertAgentMaxRetries: async () => {},
       upsertTerminalShell: async () => {},
       upsertCodeIndexEnabled: async () => {},
+      upsertUserRules: async () => {},
+      upsertRuleEntries: async () => {},
     };
 
     const withCatalog = createSettingsService({
@@ -173,6 +186,8 @@ describe("settings service", () => {
       defaultModel: "inst-1:glm-5.3-flash",
       terminalShell: "auto",
       codeIndexEnabled: false,
+      ruleEntries: [],
+      userRules: "",
     });
 
     const emptyCatalog = createSettingsService({
@@ -183,11 +198,13 @@ describe("settings service", () => {
     await expect(
       emptyCatalog.getWorkspaceSettings(USER, WORKSPACE_ID),
     ).resolves.toEqual({
-        agentMaxRetries: 10,
-        defaultModel: "gpt-4.1",
-        terminalShell: "auto",
-        codeIndexEnabled: false,
-      });
+      agentMaxRetries: 10,
+      defaultModel: "gpt-4.1",
+      terminalShell: "auto",
+      codeIndexEnabled: false,
+      ruleEntries: [],
+      userRules: "",
+    });
 
     let catalogCalls = 0;
     const stored = createSettingsService({
@@ -201,11 +218,13 @@ describe("settings service", () => {
     await expect(
       stored.getWorkspaceSettings(USER, WORKSPACE_ID),
     ).resolves.toEqual({
-        agentMaxRetries: 10,
-        defaultModel: "stored-model",
-        terminalShell: "auto",
-        codeIndexEnabled: false,
-      });
+      agentMaxRetries: 10,
+      defaultModel: "stored-model",
+      terminalShell: "auto",
+      codeIndexEnabled: false,
+      ruleEntries: [],
+      userRules: "",
+    });
     expect(catalogCalls).toBe(0);
   });
 
@@ -218,10 +237,13 @@ describe("settings service", () => {
         findAgentMaxRetries: async () => null,
         findTerminalShell: async () => null,
         findCodeIndexEnabled: async () => null,
+        findUserRules: async () => null,
         upsertDefaultModel: async () => {},
         upsertAgentMaxRetries: async () => {},
         upsertTerminalShell: async () => {},
         upsertCodeIndexEnabled: async () => {},
+        upsertUserRules: async () => {},
+        upsertRuleEntries: async () => {},
       },
     });
     await expect(
@@ -237,12 +259,15 @@ describe("settings service", () => {
         findAgentMaxRetries: async () => null,
         findTerminalShell: async () => null,
         findCodeIndexEnabled: async () => null,
+        findUserRules: async () => null,
         upsertDefaultModel: async () => {
           throw new SqlError("permission denied", { code: "42501" });
         },
         upsertAgentMaxRetries: async () => {},
         upsertTerminalShell: async () => {},
         upsertCodeIndexEnabled: async () => {},
+        upsertUserRules: async () => {},
+        upsertRuleEntries: async () => {},
       },
     });
     const error = await writeFailure
@@ -271,6 +296,8 @@ describe("settings service", () => {
       agentMaxRetries: 3 as number | null,
       terminalShell: "git-bash" as WorkspaceSettings["terminalShell"] | null,
       codeIndexEnabled: null as boolean | null,
+      userRules: null as string | null,
+      ruleEntries: null as string[] | null,
     };
     const service = createSettingsService({
       repository: {
@@ -278,6 +305,7 @@ describe("settings service", () => {
         findAgentMaxRetries: async () => stored.agentMaxRetries,
         findTerminalShell: async () => stored.terminalShell,
         findCodeIndexEnabled: async () => null,
+        findUserRules: async () => null,
         upsertDefaultModel: async (_workspaceId, defaultModel) => {
           stored = { ...stored, defaultModel };
         },
@@ -289,6 +317,12 @@ describe("settings service", () => {
         },
         upsertCodeIndexEnabled: async (_workspaceId, codeIndexEnabled) => {
           stored = { ...stored, codeIndexEnabled };
+        },
+        upsertUserRules: async (_workspaceId, userRules) => {
+          stored = { ...stored, userRules };
+        },
+        upsertRuleEntries: async (_workspaceId, ruleEntries) => {
+          stored = { ...stored, ruleEntries };
         },
       },
     });
@@ -303,6 +337,8 @@ describe("settings service", () => {
       defaultModel: "gemini-2.5-flash",
       terminalShell: "git-bash",
       codeIndexEnabled: false,
+      ruleEntries: [],
+      userRules: "",
     });
 
     // 只改终端 shell：模型与重试上限不动
@@ -313,6 +349,8 @@ describe("settings service", () => {
     ).resolves.toEqual({
       agentMaxRetries: 3,
       codeIndexEnabled: false,
+      ruleEntries: [],
+      userRules: "",
       defaultModel: "gemini-2.5-flash",
       terminalShell: "powershell",
     });

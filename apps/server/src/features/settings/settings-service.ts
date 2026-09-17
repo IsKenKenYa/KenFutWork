@@ -37,6 +37,8 @@ export type WorkspaceSettingsPatch = {
   agentMaxRetries?: number | undefined;
   terminalShell?: TerminalShellId | undefined;
   codeIndexEnabled?: boolean | undefined;
+  userRules?: string | undefined;
+  ruleEntries?: string[] | undefined;
 };
 
 export type SettingsService = {
@@ -75,12 +77,18 @@ export function createSettingsService(options: {
     user: AuthenticatedUser,
     workspaceId: string,
   ): Promise<WorkspaceSettings> => {
-    const [storedModel, storedRetries, storedShell, storedIndexEnabled] =
-      await Promise.all([
+    const [
+      storedModel,
+      storedRetries,
+      storedShell,
+      storedIndexEnabled,
+      storedRules,
+    ] = await Promise.all([
       repository.findDefaultModel(workspaceId),
       repository.findAgentMaxRetries(workspaceId),
       repository.findTerminalShell(workspaceId),
       repository.findCodeIndexEnabled(workspaceId),
+      repository.findUserRules(workspaceId),
     ]).catch(() => {
       throw new SettingsServiceError(
         "settings_read_failed",
@@ -102,6 +110,8 @@ export function createSettingsService(options: {
       defaultModel: storedModel ?? resolvedFallback ?? defaultModel,
       terminalShell: storedShell ?? "auto",
       codeIndexEnabled: storedIndexEnabled ?? false,
+      userRules: storedRules?.userRules ?? "",
+      ruleEntries: storedRules?.ruleEntries ?? [],
     };
   };
 
@@ -131,7 +141,18 @@ export function createSettingsService(options: {
       }
       if (patch.codeIndexEnabled !== undefined) {
         writes.push(
-          repository.upsertCodeIndexEnabled(workspaceId, patch.codeIndexEnabled),
+          repository.upsertCodeIndexEnabled(
+            workspaceId,
+            patch.codeIndexEnabled,
+          ),
+        );
+      }
+      if (patch.userRules !== undefined) {
+        writes.push(repository.upsertUserRules(workspaceId, patch.userRules));
+      }
+      if (patch.ruleEntries !== undefined) {
+        writes.push(
+          repository.upsertRuleEntries(workspaceId, patch.ruleEntries),
         );
       }
       await Promise.all(writes).catch(() => {

@@ -2,9 +2,10 @@ import { join } from "node:path";
 
 import { registerCodeGitRoutes } from "../../http/code-git.js";
 import { registerCodeIndexRoutes } from "../../http/code-index.js";
-import { createCodeIndexStore } from "../code-index/index-store.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import { createCanvasRepository } from "../canvas/repository.js";
+import { createCodeIndexStore } from "../code-index/index-store.js";
+import { createProjectRepository } from "../projects/repository.js";
 import { createCodeGitService } from "./code-git-service.js";
 import { createGitClient } from "./git-client.js";
 import { createProcessGitExec } from "./git-exec.js";
@@ -34,6 +35,8 @@ export function createCodeGitPlugin(): PluginDefinition {
           canvasWorkDirs: ctx.env.canvasWorkDirs,
           sandboxRoot: ctx.env.sandboxRoot,
           viewerService: ctx.get("viewer"),
+          /* 项目绑定的本机工作目录（web 形态「填本机路径」）优先于环境变量映射 */
+          projectRepository: createProjectRepository(ctx.get("persistence")),
           /* 终端默认 shell 来自工作区设置（/api/settings 的 terminalShell） */
           settingsService: ctx.get("settings"),
         }),
