@@ -35,6 +35,11 @@ const generateImageRequestSchema = z.object({
   aspectRatio: z.enum(["1:1", "16:9", "9:16", "4:3", "3:4"]).optional(),
   quality: z.enum(["standard", "hd", "ultra"]).optional(),
   /**
+   * 参考图（URL / data URL / 裸 base64）：非空时适配器走 `/images/edits`
+   * （参考图编辑/inpainting），空缺省仍走 `/images/generations`。
+   */
+  inputImages: z.array(z.string().min(1)).max(4).optional(),
+  /**
    * 会话标识（§4.8 自定义头占位符的渲染上下文）：画布助手发起时带上当前会话，
    * 使 `{{sessionId}}` 能取到值；确无会话的调用方可缺省（实例若配了占位符会 fail loud）。
    * **口径与 run 路径一致**（`sessionIdSchema` = 非空字符串）——Code 模式的会话 id 是
@@ -149,7 +154,10 @@ export async function registerGenerateRoutes(
             }),
           },
           models: credentials.models
-            .filter((m) => m.capability === "image")
+            .filter(
+              (m) =>
+                m.capability === "image" || m.capability === "image-edit",
+            )
             .map((m) => ({ id: m.id, name: m.name })),
         });
         result = await provider.generate({
@@ -157,6 +165,9 @@ export async function registerGenerateRoutes(
           model,
           aspectRatio: payload.aspectRatio ?? "1:1",
           ...(payload.quality ? { quality: payload.quality } : {}),
+          ...(payload.inputImages?.length
+            ? { inputImages: payload.inputImages }
+            : {}),
         });
       } else {
         const providerName = resolveImageProviderName(model);

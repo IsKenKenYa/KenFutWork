@@ -17,7 +17,12 @@ export const providerProtocolSchema = z.enum([
 ]);
 export type ProviderProtocol = z.infer<typeof providerProtocolSchema>;
 
-export const modelCapabilitySchema = z.enum(["chat", "image", "video"]);
+export const modelCapabilitySchema = z.enum([
+  "chat",
+  "image",
+  "image-edit",
+  "video",
+]);
 export type ModelCapability = z.infer<typeof modelCapabilitySchema>;
 
 /**

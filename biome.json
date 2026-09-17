@@ -18,6 +18,8 @@
       "!apps/server/src/features/model-providers/models-dev.snapshot.ts",
       "!**/.pnpm-store",
       "!**/tmp",
+      "!**/target",
+      "!**/gen",
       "!**/references",
       "!**/.kenfutwork",
       "!**/.scratch",

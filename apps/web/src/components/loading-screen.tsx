@@ -10,8 +10,12 @@ export function LoadingScreen() {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background">
       <div className="flex flex-col items-center gap-5">
         <div className="animate-logo-float">
-          {/* biome-ignore lint/performance/noImgElement: /logo.svg 尺寸固定，但 output: "export" 未开 images.unoptimized，next/image 会构建失败 */}
-          <img src="/logo.svg" alt="KenFutWork" className="size-14" />
+          {/* biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败 */}
+          <img
+            src="/logo.png"
+            alt="KenFutWork"
+            className="size-14 rounded-xl"
+          />
         </div>
         <div className="flex items-center gap-1">
           <span className="h-1 w-1 rounded-full bg-foreground/30 animate-loading-dot [animation-delay:0ms]" />

@@ -155,5 +155,6 @@ Code / Design 双模式的界面承载（侧栏分段开关）与 logo 的对角
 
 - **桌面应用图标换版**：`docs/design/logo/GPT生成.png`（用户定稿）经 `cargo tauri icon` 生成 Tauri 全套
   （icns/ico/png + 移动端），落地于 `apps/desktop/src-tauri/icons/`；`tauri.conf.json` bundle.icon 已指该套。
-  本变更仅覆盖**桌面应用图标**；web 端 favicon/logo.svg/apple-touch-icon 与 og-image 的同步换版为后续项
-  （涉及 `layout.tsx` metadata，注意并行编辑）。
+  ~~本变更仅覆盖**桌面应用图标**~~ → **web 端已于同日完成同步**：`KenFutWorkLogo` 组件改为图片落地
+  （`/logo.png`，调用方 API 不变）、`layout.tsx` metadata 指向 `/favicon.png` + `/apple-touch-icon.png`、
+  loading 页换 `/logo.png`；旧 `favicon.svg`/`logo.svg` 已删除。og-image（社交卡）仍为旧视觉，未重做。

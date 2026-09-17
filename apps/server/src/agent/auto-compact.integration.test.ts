@@ -164,7 +164,9 @@ describe("自动压缩机制（deepagents summarization middleware）", () => {
  * 两者缺一，功能都可能只是看起来存在。
  */
 describe("自动压缩的装配接线", () => {
-  async function buildAgent(autoCompact?: ReturnType<typeof resolveCompactionPlan>) {
+  async function buildAgent(
+    autoCompact?: ReturnType<typeof resolveCompactionPlan>,
+  ) {
     const { createKenFutWorkDeepAgent } = await import("./deep-agent.js");
     const { loadServerEnv } = await import("../config/env.js");
     const { createAgentBackend } = await import("./backends/index.js");
@@ -201,7 +203,10 @@ describe("自动压缩的装配接线", () => {
 
   it("给了口径：长历史触发压缩，模型看到摘要消息", async () => {
     const { agent, model } = await buildAgent(plan);
-    await agent.invoke({ messages: longHistory(30, 900) }, { configurable: { thread_id: "t-compact" } });
+    await agent.invoke(
+      { messages: longHistory(30, 900) },
+      { configurable: { thread_id: "t-compact" } },
+    );
     const sawSummary = model.seen.some((messages) =>
       messages.some(
         (message) =>
@@ -214,7 +219,10 @@ describe("自动压缩的装配接线", () => {
 
   it("没给口径（设置里关掉）：不挂中间件，长历史也不压缩", async () => {
     const { agent, model } = await buildAgent();
-    await agent.invoke({ messages: longHistory(30, 900) }, { configurable: { thread_id: "t-nocompact" } });
+    await agent.invoke(
+      { messages: longHistory(30, 900) },
+      { configurable: { thread_id: "t-nocompact" } },
+    );
     const sawSummary = model.seen.some((messages) =>
       messages.some(
         (message) =>
