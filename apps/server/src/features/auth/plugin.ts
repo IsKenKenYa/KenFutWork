@@ -58,7 +58,20 @@ export function createAuthPlugin(): PluginDefinition {
       authService = service;
       // RequestAuthenticator 就是本服务（令牌来自 account_sessions）
       const authenticator: RequestAuthenticator = {
-        authenticate: (request) => service.resolveRequestUser(request),
+        /**
+         * 两条令牌路径合成：**会话令牌**（登录）优先，其次**API 令牌**（外部应用）。
+         * 第二条走 `apiTokens`（tryGet：worker/未装配时跳过），拿不到就与「没有令牌」同解。
+         */
+        authenticate: async (request) => {
+          const viaSession = await service.resolveRequestUser(request);
+          if (viaSession) return viaSession;
+          const apiTokens = ctx.tryGet("apiTokens");
+          if (!apiTokens) return null;
+          const header = request.headers?.authorization;
+          return apiTokens.resolveUser(
+            typeof header === "string" ? header : undefined,
+          );
+        },
       };
       ctx.register("auth", () => authenticator);
     },

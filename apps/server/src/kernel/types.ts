@@ -7,6 +7,7 @@ import type { ServerEnv } from "../config/env.js";
 import type { AdminService } from "../features/admin/admin-service.js";
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
+import type { ApiTokenService } from "../features/api-tokens/token-service.js";
 import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { BlobStore } from "../features/blob/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
@@ -86,6 +87,11 @@ export interface ServiceMap {
   persistence: PersistenceService;
   /** 认证缝（目标 local-trust / 自管 auth） */
   auth: RequestAuthenticator;
+  /**
+   * 外部应用访问令牌（R5-2「外部应用授权」）：给外部应用/脚本/CI 用的 API 凭据。
+   * 认证缝的第二条路径由 auth 插件合成消费（见 auth/plugin.ts）。
+   */
+  apiTokens: ApiTokenService;
   /** JobService（PGMQ，Postgres 扩展） */
   jobs: JobService;
   /**

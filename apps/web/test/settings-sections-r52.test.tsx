@@ -281,9 +281,7 @@ describe("设置 → 钩子", () => {
     const { HooksSection } = await import(
       "../src/components/workbench/hooks-section"
     );
-    render(
-      <HooksSection accessToken="tok" hooks={[]} onSaved={onSaved} />,
-    );
+    render(<HooksSection accessToken="tok" hooks={[]} onSaved={onSaved} />);
     expect(screen.getByText(/还没有钩子/)).toBeVisible();
 
     await userEvent.click(screen.getByRole("button", { name: /新增钩子/ }));
@@ -318,5 +316,75 @@ describe("设置 → 钩子", () => {
     expect(screen.getByText(/模型无法新增或触发钩子/)).toBeVisible();
     expect(screen.getByText(/项目工作目录/)).toBeVisible();
     expect(screen.getByText(/不影响本轮/)).toBeVisible();
+  });
+});
+
+/**
+ * 设置 → 外部应用授权（R5-2「外部应用授权」）。
+ *
+ * 锁三条：① 明文只显示一次（创建响应里拿到的那个串出现在醒目块里）；② 列表只显示前缀
+ * 与最近使用时间（**不显示明文**）；③ 四条红线写在页面上（尤其「令牌不能签发令牌」）。
+ */
+const fetchApiTokens = vi.fn();
+const createApiToken = vi.fn();
+const revokeApiToken = vi.fn();
+vi.mock("../src/lib/server-api.js", () => ({
+  fetchSubagents: (...args: unknown[]) => fetchSubagents(...args),
+  updateWorkspaceSettings: (...args: unknown[]) =>
+    updateWorkspaceSettings(...args),
+  fetchApiTokens: (...args: unknown[]) => fetchApiTokens(...args),
+  createApiToken: (...args: unknown[]) => createApiToken(...args),
+  revokeApiToken: (...args: unknown[]) => revokeApiToken(...args),
+}));
+
+describe("设置 → 外部应用授权", () => {
+  it("创建后明文只出现一次，列表只给前缀与最近使用", async () => {
+    fetchApiTokens.mockResolvedValue({
+      tokens: [
+        {
+          id: "tok-1",
+          name: "CI 部署",
+          tokenPrefix: "kfw_abcd1234",
+          createdAt: "2026-09-17T00:00:00.000Z",
+          lastUsedAt: null,
+          revokedAt: null,
+        },
+      ],
+    });
+    createApiToken.mockResolvedValue({
+      token: "kfw_plaintext_once",
+      record: {
+        id: "tok-2",
+        name: "新令牌",
+        tokenPrefix: "kfw_plainte",
+        createdAt: "2026-09-17T01:00:00.000Z",
+        lastUsedAt: null,
+        revokedAt: null,
+      },
+    });
+    const { ApiTokensSection } = await import(
+      "../src/components/workbench/api-tokens-section"
+    );
+    render(<ApiTokensSection accessToken="tok" />);
+
+    // 列表：前缀 + 从未使用（没有明文）
+    expect(await screen.findByText(/kfw_abcd1234…/)).toBeVisible();
+    expect(screen.queryByText("kfw_plaintext_once")).toBeNull();
+
+    await userEvent.type(screen.getByLabelText("令牌名字"), "新令牌");
+    await userEvent.click(screen.getByRole("button", { name: /创建令牌/ }));
+    expect(await screen.findByText("kfw_plaintext_once")).toBeVisible();
+    expect(screen.getByText(/唯一一次明文显示/)).toBeVisible();
+  });
+
+  it("红线写在页面上：只显示一次 / 可吊销 / 令牌不能签发令牌", async () => {
+    fetchApiTokens.mockResolvedValue({ tokens: [] });
+    const { ApiTokensSection } = await import(
+      "../src/components/workbench/api-tokens-section"
+    );
+    render(<ApiTokensSection accessToken="tok" />);
+    expect(await screen.findByText(/只存哈希/)).toBeVisible();
+    expect(screen.getByText(/立刻失效/)).toBeVisible();
+    expect(screen.getByText(/不能创建或吊销令牌/)).toBeVisible();
   });
 });

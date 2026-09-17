@@ -4,6 +4,7 @@ import type { ServerEnv } from "../config/env.js";
 import { createAdminPlugin } from "../features/admin/plugin.js";
 import { createAgentModesPlugin } from "../features/agent-modes/plugin.js";
 import { createAgentRunsPlugin } from "../features/agent-runs/plugin.js";
+import { createApiTokensPlugin } from "../features/api-tokens/plugin.js";
 import { createAuthPlugin } from "../features/auth/plugin.js";
 import { createBlobPlugin } from "../features/blob/plugin.js";
 import { createViewerPlugin } from "../features/bootstrap/plugin.js";
@@ -140,6 +141,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createQueuePlugin(),
     createBlobPlugin(),
     createAuthPlugin(),
+    createApiTokensPlugin(),
     brandKitPlugin,
     createCreditsPlugin(),
     createViewerPlugin(),

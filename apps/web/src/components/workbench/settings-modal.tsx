@@ -11,6 +11,7 @@ import { ProviderSettings } from "@/components/provider-settings";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { AboutSection } from "@/components/workbench/about-section";
 import { AccountSection } from "@/components/workbench/account-section";
+import { ApiTokensSection } from "@/components/workbench/api-tokens-section";
 import { AppearanceSection } from "@/components/workbench/appearance-section";
 import { BrowserSettingsSection } from "@/components/workbench/browser-settings-section";
 import { CommandsSection } from "@/components/workbench/commands-section";
@@ -38,6 +39,7 @@ export type SettingsTab =
   | "appearance"
   | "commands"
   | "hooks"
+  | "apiTokens"
   | "model"
   | "providers"
   | "permissions"
@@ -80,6 +82,7 @@ const TAB_GROUPS: Array<{
       { id: "rules", label: "规则与记忆" },
       { id: "commands", label: "命令" },
       { id: "hooks", label: "钩子" },
+      { id: "apiTokens", label: "外部应用授权" },
       { id: "subagents", label: "子智能体" },
     ],
   },
@@ -433,6 +436,10 @@ export function SettingsModal({
                   hooks={hooks}
                   onSaved={setHooks}
                 />
+              ) : null
+            ) : activeTab === "apiTokens" ? (
+              token ? (
+                <ApiTokensSection accessToken={token} />
               ) : null
             ) : activeTab === "subagents" ? (
               token ? (

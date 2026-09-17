@@ -294,6 +294,41 @@ export const codeTerminalResponseSchema = z.object({
   }),
 });
 
+// --- 外部应用访问令牌（R5-2「外部应用授权」） ---
+
+/**
+ * 一条令牌的**可读**形状：**没有明文**（明文只在创建响应里回一次）。
+ * `tokenPrefix` 是明文前 12 位，仅供界面辨认。
+ */
+export const apiTokenRecordSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  tokenPrefix: z.string().min(1),
+  createdAt: z.string().min(1),
+  lastUsedAt: z.string().min(1).nullable(),
+  revokedAt: z.string().min(1).nullable(),
+});
+
+export const apiTokenListResponseSchema = z.object({
+  tokens: z.array(apiTokenRecordSchema),
+});
+
+export const apiTokenCreateRequestSchema = z.object({
+  name: z.string().trim().min(1).max(60),
+});
+
+export const apiTokenCreateResponseSchema = z.object({
+  /** 明文，**只在这里出现一次**（库里只有 sha256）。 */
+  token: z.string().min(1),
+  record: apiTokenRecordSchema,
+});
+
+export type ApiTokenRecord = z.infer<typeof apiTokenRecordSchema>;
+export type ApiTokenListResponse = z.infer<typeof apiTokenListResponseSchema>;
+export type ApiTokenCreateResponse = z.infer<
+  typeof apiTokenCreateResponseSchema
+>;
+
 // --- 子智能体（R1-3 目录 + 设置 →「子智能体」页） ---
 
 /**

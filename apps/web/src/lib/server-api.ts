@@ -1,4 +1,6 @@
 import type {
+  ApiTokenCreateResponse,
+  ApiTokenListResponse,
   AssetSignedUrlResponse,
   CanvasDetail,
   ChatMessageCreateRequest,
@@ -1021,4 +1023,40 @@ export async function removeWorktree(
   );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as { worktrees: CodeWorktree[] };
+}
+
+// --- 外部应用访问令牌（R5-2「外部应用授权」） ---
+
+export async function fetchApiTokens(
+  accessToken: string,
+): Promise<ApiTokenListResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/tokens`, {
+    headers: authHeaders(accessToken),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as ApiTokenListResponse;
+}
+
+export async function createApiToken(
+  accessToken: string,
+  name: string,
+): Promise<ApiTokenCreateResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/tokens`, {
+    method: "POST",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify({ name }),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as ApiTokenCreateResponse;
+}
+
+export async function revokeApiToken(
+  accessToken: string,
+  id: string,
+): Promise<void> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/tokens/${encodeURIComponent(id)}`,
+    { method: "DELETE", headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
 }
