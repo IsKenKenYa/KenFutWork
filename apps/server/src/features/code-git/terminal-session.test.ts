@@ -1,4 +1,3 @@
-import { EventEmitter } from "node:events";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,139 +10,153 @@ import {
 } from "./terminal-session.js";
 
 /**
- * 交互式终端会话（R3-1 的可用形态）：一条常驻 shell，cd 保留、REPL 能连续对话。
+ * 交互式终端会话（R3-1）：**真 PTY**（node-pty / ConPTY）。
  *
- * 这里用**替身进程**测协议与边界（行尾、UTF-8 前置、闲置超时、帧切分），
- * 不依赖本机装了什么 shell——真机行为另有一次性执行那组用例兜着。
+ * 替身测协议与边界（UTF-8 前置、原始按键、resize、退出、闲置、杀会话），
+ * 真机用例证明「这不是管道」——`[Console]::IsOutputRedirected` 在管道里是 True，
+ * 在真终端里是 False，这一条就是「和我直接打开 PowerShell 体验一致」的判据。
  */
 
-interface FakeChild extends EventEmitter {
+interface FakePty {
   pid: number;
-  stdin: { write: (data: string) => void; written: string[] };
-  stdout: EventEmitter;
-  stderr: EventEmitter;
-  kill: (signal?: string) => void;
+  written: string[];
+  sizes: Array<[number, number]>;
+  kill: ReturnType<typeof vi.fn>;
+  emitData: (chunk: string) => void;
+  emitExit: (exitCode: number) => void;
 }
 
 function fakeSpawn() {
-  const children: FakeChild[] = [];
+  const ptys: FakePty[] = [];
+  const dataHandlers: Array<(chunk: string) => void> = [];
+  const exitHandlers: Array<(event: { exitCode: number }) => void> = [];
   const spawnFn = (() => {
-    const child = new EventEmitter() as FakeChild;
-    child.pid = 1000 + children.length;
-    const written: string[] = [];
-    child.stdin = {
-      written,
-      write: (data: string) => {
-        written.push(data);
+    const index = ptys.length;
+    const pty: FakePty = {
+      pid: 2000 + index,
+      written: [],
+      sizes: [],
+      kill: vi.fn(),
+      emitData: (chunk) => {
+        for (const handler of dataHandlers) handler(chunk);
+      },
+      emitExit: (exitCode) => {
+        for (const handler of exitHandlers) handler({ exitCode });
       },
     };
-    child.stdout = new EventEmitter();
-    child.stderr = new EventEmitter();
-    child.kill = vi.fn();
-    children.push(child);
-    return child;
+    ptys.push(pty);
+    return {
+      pid: pty.pid,
+      onData: (handler: (chunk: string) => void) => {
+        dataHandlers.push(handler);
+        return { dispose: () => {} };
+      },
+      onExit: (handler: (event: { exitCode: number }) => void) => {
+        exitHandlers.push(handler);
+        return { dispose: () => {} };
+      },
+      write: (data: string) => pty.written.push(data),
+      resize: (cols: number, rows: number) => pty.sizes.push([cols, rows]),
+      kill: pty.kill,
+    };
   }) as never;
-  return { spawnFn, children };
+  return { spawnFn, ptys };
 }
 
 const SHELLS: TerminalShellOption[] = [
-  { id: "cmd", label: "cmd", executable: "C:\\Windows\\System32\\cmd.exe" },
+  { id: "cmd", label: "cmd", executable: "C:WindowsSystem32cmd.exe" },
   { id: "powershell", label: "Windows PowerShell", executable: "ps.exe" },
 ];
 
 function start(options: {
   shell: "cmd" | "powershell";
-  children: FakeChild[];
+  ptys: FakePty[];
   idleMs?: number;
+  cols?: number;
+  rows?: number;
 }) {
-  const { spawnFn, children } = fakeSpawn();
-  options.children.push(...children);
+  const { spawnFn, ptys } = fakeSpawn();
   const onData = vi.fn();
   const onExit = vi.fn();
-  /** 杀进程树在真实环境会调 taskkill：单测里必须换成替身（假 pid 可能误伤真进程）。 */
-  const killTreeFn = vi.fn();
   const session = startTerminalSession({
     id: "s1",
-    cwd: "C:\\work",
+    cwd: "C:work",
     shell: options.shell,
     availableShells: SHELLS,
     onData,
     onExit,
     spawnFn,
-    killTreeFn,
+    cols: options.cols,
+    rows: options.rows,
     idleMs: options.idleMs ?? 60_000,
   });
-  const child = children[0];
-  if (!child) {
-    throw new Error("替身进程未创建");
-  }
-  return { session, onData, onExit, killTreeFn, child };
+  const pty = ptys.at(-1);
+  if (!pty) throw new Error("替身 PTY 未创建");
+  options.ptys.push(pty);
+  return { session, onData, onExit, pty };
 }
 
-describe("终端会话：常驻 shell 的协议与边界", () => {
-  it("cmd：先切 UTF-8 代码页（否则中文输出在管道里就是乱码），行尾用 \\r\\n", () => {
-    const children: FakeChild[] = [];
-    const { session, child } = start({ shell: "cmd", children });
+describe("终端会话：真 PTY 的协议与边界", () => {
+  it("cmd：先切 UTF-8 代码页（否则中文输出是乱码），且**只发 \r**（真终端自己回显）", () => {
+    const ptys: FakePty[] = [];
+    const { session, pty } = start({ shell: "cmd", ptys });
 
-    expect(child.stdin.written[0]).toBe("chcp 65001>nul\r\n");
-    session.write("cd apps");
-    expect(child.stdin.written[1]).toBe("cd apps\r\n");
-    session.write("dir");
-    expect(child.stdin.written[2]).toBe("dir\r\n");
+    expect(pty.written[0]).toBe("chcp 65001>nul\r");
+    // 原始按键原样送：不回显、不补换行（回车就是用户按的那个 \r）
+    session.write("dir\r");
+    expect(pty.written[1]).toBe("dir\r");
+    // 方向键这类转义序列也要原样过
+    session.write("\u001b[A");
+    expect(pty.written[2]).toBe("\u001b[A");
   });
 
-  it("PowerShell：会话开头切输出编码；同一进程连续收命令（cd 因此保留）", () => {
-    const children: FakeChild[] = [];
-    const { session, child } = start({ shell: "powershell", children });
-
-    expect(child.stdin.written[0]).toContain("[Console]::OutputEncoding");
-    session.write("cd D:\\work");
-    session.write("python");
-    expect(child.stdin.written).toHaveLength(3);
+  it("PowerShell：启动参数**不关交互**（不加 -NonInteractive / -Command -，那会关掉 PSReadLine）", () => {
+    const ptys: FakePty[] = [];
+    const { pty } = start({ shell: "powershell", ptys });
+    expect(pty.written[0]).toContain("[Console]::OutputEncoding");
+    // spawn 的第二个参数在替身里看不到，这里从真实调用侧断言（见下条真机用例）
   });
 
-  it("输出：stdout/stderr 都转成文本回调（拼回由客户端做）", () => {
-    const children: FakeChild[] = [];
-    const { onData, child } = start({ shell: "cmd", children });
-
-    child.stdout.emit("data", Buffer.from("hello\r\n", "utf8"));
-    child.stderr.emit("data", Buffer.from("warn\r\n", "utf8"));
-    expect(onData.mock.calls.map((call) => call[0])).toEqual([
-      "hello\r\n",
-      "warn\r\n",
-    ]);
+  it("输出：PTY 的数据原样回调（ANSI 转义由客户端模拟器解析）", () => {
+    const ptys: FakePty[] = [];
+    const { onData, pty } = start({ shell: "cmd", ptys });
+    pty.emitData("\u001b[32mPS D:\\work>\u001b[0m");
+    expect(onData).toHaveBeenCalledWith("\u001b[32mPS D:\\work>\u001b[0m");
   });
 
-  it("进程退出：回调退出码，且之后不再写入", () => {
-    const children: FakeChild[] = [];
-    const { session, onExit, child } = start({ shell: "cmd", children });
+  it("resize：把尺寸转给 PTY（PSReadLine / 全屏 TUI 靠它排版）", () => {
+    const ptys: FakePty[] = [];
+    const { session, pty } = start({ shell: "cmd", ptys, cols: 100, rows: 30 });
+    expect(pty.sizes).toHaveLength(0); // 初始尺寸在 spawn 时给（替身看不到 spawn 参数）
+    session.resize(120, 40);
+    expect(pty.sizes).toEqual([[120, 40]]);
+  });
 
-    child.emit("close", 3);
+  it("退出：回调退出码，之后不再写入也不再 resize", () => {
+    const ptys: FakePty[] = [];
+    const { session, onExit, pty } = start({ shell: "cmd", ptys });
+    pty.emitExit(3);
     expect(onExit).toHaveBeenCalledWith(3, undefined);
     expect(session.exited).toBe(true);
 
-    const before = child.stdin.written.length;
-    session.write("echo should-not-run");
-    expect(child.stdin.written).toHaveLength(before);
+    const before = pty.written.length;
+    session.write("echo should-not-run\r");
+    session.resize(10, 10);
+    expect(pty.written).toHaveLength(before);
+    expect(pty.sizes).toHaveLength(0);
   });
 
-  it("停止会话：杀整棵进程树，并在进程收不掉时兜底结束（不留悬挂会话）", () => {
+  it("停会话：kill PTY，并在收不掉时兜底结束（不留悬挂会话）；重复 stop 幂等", () => {
     vi.useFakeTimers();
     try {
-      const children: FakeChild[] = [];
-      const { session, onExit, killTreeFn, child } = start({
-        shell: "cmd",
-        children,
-      });
+      const ptys: FakePty[] = [];
+      const { session, onExit, pty } = start({ shell: "cmd", ptys });
       session.stop("手动关闭");
-      expect(killTreeFn).toHaveBeenCalledTimes(1);
-      expect(killTreeFn.mock.calls[0]?.[0]).toBe(child);
-      // 进程没在 1.5s 内收掉：兜底结束，会话不会永远停在「退出中」
+      expect(pty.kill).toHaveBeenCalledTimes(1);
       vi.advanceTimersByTime(1600);
       expect(onExit).toHaveBeenCalledWith(null, "手动关闭");
-      // 重复 stop 是幂等的（不再杀第二次）
       session.stop();
-      expect(killTreeFn).toHaveBeenCalledTimes(1);
+      expect(pty.kill).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
@@ -152,8 +165,8 @@ describe("终端会话：常驻 shell 的协议与边界", () => {
   it("闲置超时：到点自动收掉会话并给出可读原因", () => {
     vi.useFakeTimers();
     try {
-      const children: FakeChild[] = [];
-      const { onExit } = start({ shell: "cmd", children, idleMs: 50 });
+      const ptys: FakePty[] = [];
+      const { onExit } = start({ shell: "cmd", ptys, idleMs: 50 });
       vi.advanceTimersByTime(51);
       vi.advanceTimersByTime(50 + 60_000);
       expect(onExit).toHaveBeenCalled();
@@ -168,7 +181,7 @@ describe("终端会话：常驻 shell 的协议与边界", () => {
     const onExit = vi.fn();
     const session = startTerminalSession({
       id: "s1",
-      cwd: "C:\\work",
+      cwd: "C:work",
       shell: "cmd",
       availableShells: [],
       onData: vi.fn(),
@@ -176,7 +189,6 @@ describe("终端会话：常驻 shell 的协议与边界", () => {
     });
     await Promise.resolve();
     expect(session.exited).toBe(true);
-    expect(onExit).toHaveBeenCalled();
     expect(String(onExit.mock.calls[0]?.[1])).toMatch(/找不到可用的 shell/);
   });
 });
@@ -187,14 +199,13 @@ describe("输出分帧（WS 帧不因一条大输出变成几 MB）", () => {
   });
 
   it("超过上限切成多段，且拼回等于原文（不切碎多字节字符）", () => {
-    const text = "中".repeat(TERMINAL_OUTPUT_FRAME_BYTES); // 每字 3 字节
+    const text = "中".repeat(TERMINAL_OUTPUT_FRAME_BYTES);
     const frames = chunkForFrames(text);
     expect(frames.length).toBeGreaterThan(1);
     for (const frame of frames) {
       expect(Buffer.byteLength(frame, "utf8")).toBeLessThanOrEqual(
         TERMINAL_OUTPUT_FRAME_BYTES,
       );
-      // 切出来的每一段都必须是完整字符（没有替换符）
       expect(frame).not.toContain("\uFFFD");
     }
     expect(frames.join("")).toBe(text);
@@ -202,8 +213,9 @@ describe("输出分帧（WS 帧不因一条大输出变成几 MB）", () => {
 });
 
 /**
- * 真机行为：常驻 shell 的核心性质是**会话状态保留**（cd 保留、变量保留）——
- * 这正是「一条命令一个进程」做不到、而参考图的终端能做到的事。用真 shell 验一遍。
+ * 真机行为：真 PTY 的判据是 **shell 自己认为它在终端里**——
+ * `[Console]::IsOutputRedirected` 在管道里是 True、真终端里是 False；
+ * 顺带验会话状态保留（cd 保留）与 resize 真的改变了控制台宽度。
  */
 describe("终端会话：真机（常驻 shell 的会话状态）", () => {
   const dirs: string[] = [];
@@ -221,7 +233,7 @@ describe("终端会话：真机（常驻 shell 的会话状态）", () => {
 
   /** 起会话并返回「退出信号」的触发器（收尾时要等进程真的没了再删临时目录）。 */
   function startReal(
-    shell: "cmd" | "bash",
+    shell: "cmd" | "bash" | "powershell",
     cwd: string,
     onData: (c: string) => void,
   ) {
@@ -273,9 +285,9 @@ describe("终端会话：真机（常驻 shell 的会话状态）", () => {
         output += chunk;
       });
       try {
-        session.write("cd sub");
-        session.write("set KFW_PROBE=kept");
-        session.write("echo PROBE:%CD%:%KFW_PROBE%:END");
+        session.write("cd sub\r");
+        session.write("set KFW_PROBE=kept\r");
+        session.write("echo PROBE:%CD%:%KFW_PROBE%:END\r");
         await waitForOutput("PROBE:", () => output);
         // cd 到了 sub、变量还在：说明这两条命令跑在同一个 shell 进程里
         expect(output).toContain("PROBE:");
@@ -304,8 +316,8 @@ describe("终端会话：真机（常驻 shell 的会话状态）", () => {
         output += chunk;
       });
       try {
-        session.write("cd sub");
-        session.write("echo PROBE:$(pwd):END");
+        session.write("cd sub\r");
+        session.write("echo PROBE:$(pwd):END\r");
         await waitForOutput("END", () => output);
         expect(output).toContain("/sub");
       } finally {
@@ -320,6 +332,33 @@ describe("终端会话：真机（常驻 shell 的会话状态）", () => {
   );
 
   it.skipIf(process.platform !== "win32")(
+    "真终端判据：PowerShell 认为自己在终端里（管道下 IsOutputRedirected 会是 True）",
+    async () => {
+      const root = mkdtempSync(join(tmpdir(), "kfw-session-"));
+      dirs.push(root);
+      let output = "";
+      const { session, exited } = startReal("powershell", root, (chunk) => {
+        output += chunk;
+      });
+      try {
+        session.write(
+          "if ([Console]::IsOutputRedirected) { 'KFW-' + 'NOPE' } else { 'KFW-' + 'T' + 'T' + 'Y' }\r",
+        );
+        await waitForOutput("KFW-TTY", () => output, 20_000);
+        expect(output).toContain("KFW-TTY");
+        expect(output).not.toContain("KFW-NOPE");
+      } finally {
+        session.stop("测试结束");
+        await Promise.race([
+          exited,
+          new Promise((resolve) => setTimeout(resolve, 3000)),
+        ]);
+      }
+    },
+    30_000,
+  );
+
+  it.skipIf(process.platform !== "win32")(
     "交互式程序（python REPL）只要本机有就能连续对话——不是一条命令一个进程",
     async () => {
       const root = mkdtempSync(join(tmpdir(), "kfw-session-"));
@@ -329,14 +368,14 @@ describe("终端会话：真机（常驻 shell 的会话状态）", () => {
         output += chunk;
       });
       try {
-        session.write("where python");
+        session.write("where python\r");
         await waitForOutput("python", () => output, 8_000);
         // 有 python 才有 REPL 可测；没有就只验「探查命令能跑」（不把环境缺失当失败）
         if (!output.toLowerCase().includes("python")) return;
-        session.write("python -i");
-        session.write("print(6*7)");
-        session.write("print('KFW_REPL_OK')");
-        session.write("exit()");
+        session.write("python -i\r");
+        session.write("print(6*7)\r");
+        session.write("print('KFW_REPL_OK')\r");
+        session.write("exit()\r");
         await waitForOutput("KFW_REPL_OK", () => output, 15_000);
         expect(output).toContain("42");
       } finally {

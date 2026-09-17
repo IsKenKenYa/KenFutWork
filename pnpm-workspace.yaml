@@ -11,3 +11,5 @@ ignoredBuiltDependencies:
 onlyBuiltDependencies:
   - esbuild
   - sharp
+  # 真实交互终端要的是 PTY（conpty），必须让它跑 native 构建/预编译下载
+  - node-pty

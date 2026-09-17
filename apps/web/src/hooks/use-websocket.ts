@@ -50,7 +50,12 @@ export type WebSocketHandle = {
     /** 省略即不绑工作目录（cwd 落到服务端启动目录）。 */
     canvasId?: string;
     shell?: TerminalShellId;
+    /** PTY 的初始尺寸（列 × 行）；终端模拟器量出来后会再 resize 一次。 */
+    cols?: number;
+    rows?: number;
   }) => void;
+  /** 终端尺寸变化（PSReadLine / 全屏 TUI 靠它排版）。 */
+  resizeTerminal: (sessionId: string, cols: number, rows: number) => void;
   /** 送一行输入（换行由服务端按 shell 补）。 */
   sendTerminalInput: (sessionId: string, data: string) => void;
   /** 结束会话（服务端杀整棵进程树）。 */
@@ -356,11 +361,20 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
       sessionId: string;
       canvasId?: string;
       shell?: TerminalShellId;
+      cols?: number;
+      rows?: number;
     }) => {
       sendCommand(
         "terminal.start",
         payload as unknown as Record<string, unknown>,
       );
+    },
+    [sendCommand],
+  );
+
+  const resizeTerminal = useCallback(
+    (sessionId: string, cols: number, rows: number) => {
+      sendCommand("terminal.resize", { sessionId, cols, rows });
     },
     [sendCommand],
   );
@@ -408,6 +422,7 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
     registerRPC,
     resumeCanvas,
     startTerminal,
+    resizeTerminal,
     sendTerminalInput,
     stopTerminal,
     onTerminal,

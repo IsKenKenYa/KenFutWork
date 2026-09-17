@@ -3,6 +3,8 @@
 import type { TerminalShellId } from "@kenfutwork/shared";
 import { Check, Eraser, Plus, RotateCw, SquareTerminal, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { TerminalScreen } from "@/components/workbench/panel-terminal-screen";
 import type { WebSocketHandle } from "@/hooks/use-websocket";
 import {
   fetchTerminalShells,
@@ -21,12 +23,10 @@ import {
  *    换 shell = 换一条新会话（进程不能原地换壳）。
  * 3. **不要求绑工作目录**：没有 canvasId 时 cwd 落到服务端的启动目录——终端不该被目录限制住。
  *
- * 边界（不写进界面说明，写在这里）：没有 TTY，行内编辑与回显由前端补；会话绑 WS 连接，
- * 断了会自动重开；闲置由服务端收掉。
+ * 终端本体是**真 PTY**（服务端 node-pty / ConPTY）+ **xterm.js**（见 panel-terminal-screen）：
+ * 提示符、行编辑、历史、Tab 补全、颜色、方向键、Ctrl+C 全由 shell 自己做，客户端只做
+ * 「渲染 + 采集按键 + 报尺寸」。会话绑 WS 连接，断了会自动重开；闲置由服务端收掉。
  */
-
-/** 前端缓冲上限：终端是「看最近的输出」，无限追加会把这个标签页吃光。 */
-const MAX_BUFFER_CHARS = 200_000;
 
 type TabStatus = "idle" | "starting" | "running" | "exited";
 
@@ -39,9 +39,10 @@ interface TerminalTab {
   resolved: TerminalShellId | null;
   /** 会话 id：每次开新会话都换一个（旧会话的 exit 事件不能误伤新会话）。 */
   sessionId: string;
-  buffer: string;
   status: TabStatus;
   exitReason: string | null;
+  /** 清屏信号：每次 +1 让这个标签的模拟器清缓冲（会话不动）。 */
+  clearSignal: number;
 }
 
 let tabSeq = 0;
@@ -64,9 +65,9 @@ function newTab(shell: TerminalShellId | null = null): TerminalTab {
     shell,
     resolved: null,
     sessionId: makeSessionId(),
-    buffer: "",
     status: "starting",
     exitReason: null,
+    clearSignal: 0,
   };
 }
 
@@ -93,7 +94,6 @@ export function TerminalPane({
 }) {
   const [tabs, setTabs] = useState<TerminalTab[]>([]);
   const [activeKey, setActiveKey] = useState<string | null>(null);
-  const [command, setCommand] = useState("");
   const [shells, setShells] = useState<TerminalShellOption[]>([]);
   /** 右键菜单：位置 + 属于哪个标签（null = 关着）。 */
   const [menu, setMenu] = useState<{
@@ -108,7 +108,6 @@ export function TerminalPane({
   useEffect(() => {
     tabsRef.current = tabs;
   }, [tabs]);
-  const scrollRef = useRef<HTMLDivElement>(null);
   /** 卸载时「收会话」的待触发句柄（见下面的清理 effect：要能取消）。 */
   const unmountTimer = useRef<number | null>(null);
   const { connected } = ws;
@@ -126,21 +125,6 @@ export function TerminalPane({
     [],
   );
 
-  const appendTo = useCallback(
-    (key: string, text: string) => {
-      patchTab(key, (tab) => {
-        const next = tab.buffer + text;
-        return {
-          buffer:
-            next.length > MAX_BUFFER_CHARS
-              ? next.slice(next.length - MAX_BUFFER_CHARS)
-              : next,
-        };
-      });
-    },
-    [patchTab],
-  );
-
   /** 起一条会话（换 shell / 重开都走它：进程不能原地换壳，一律新会话）。 */
   const startSession = useCallback(
     (key: string, shell: TerminalShellId | null) => {
@@ -156,9 +140,10 @@ export function TerminalPane({
                 sessionId,
                 shell,
                 resolved: null,
-                buffer: "",
                 status: "starting",
                 exitReason: null,
+                // 换会话 = 换屏：清屏信号 +1 让新会话从干净屏幕开始
+                clearSignal: tab.clearSignal + 1,
               }
             : tab,
         ),
@@ -242,12 +227,12 @@ export function TerminalPane({
     openTab();
   }, [connected, openTab]);
 
-  // 会话事件（输出 / 起好 / 结束）按会话路由到标签
+  // 会话事件（起好 / 结束）按会话路由到标签；**输出不在这里**——它由 TerminalScreen
+  // 直接写进 xterm 模拟器（ANSI 由模拟器解析，这边只维护标签状态）
   useEffect(() => {
     return ws.onTerminal((event) => {
       const key = sessionToTab.current.get(event.sessionId);
       if (!key) return;
-      if (event.type === "output") appendTo(key, event.data);
       if (event.type === "started") {
         patchTab(key, () => ({ status: "running", resolved: event.shell }));
       }
@@ -256,13 +241,9 @@ export function TerminalPane({
           status: "exited",
           exitReason: event.reason ?? null,
         }));
-        appendTo(
-          key,
-          `\r\n[会话结束${event.exitCode === null ? "" : ` · 退出码 ${event.exitCode}`}]\r\n`,
-        );
       }
     });
-  }, [ws, appendTo, patchTab]);
+  }, [ws, patchTab]);
 
   // 断线：服务端会话已被收掉，重连后自动重开（不留一个不响应的界面）
   useEffect(() => {
@@ -273,7 +254,8 @@ export function TerminalPane({
         return {
           ...tab,
           status: "idle",
-          buffer: `${tab.buffer}\r\n[连接断开，重连后会自动重开会话]\r\n`,
+          // 重开时换会话，屏幕上也要换个干净的
+          clearSignal: tab.clearSignal + 1,
         };
       }),
     );
@@ -326,22 +308,6 @@ export function TerminalPane({
       }, 0);
     };
   }, [ws]);
-
-  // 输出滚动到底（换标签也要到底）
-  // biome-ignore lint/correctness/useExhaustiveDependencies: buffer / activeKey 只当触发器（位置按 DOM 现算）
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [active?.buffer, activeKey]);
-
-  const send = useCallback(() => {
-    const line = command;
-    if (active?.status !== "running") return;
-    // 没有 TTY：回显由这里补（shell 自己不会回显管道里的输入）
-    appendTo(active.key, `❯ ${line}\r\n`);
-    ws.sendTerminalInput(active.sessionId, line);
-    setCommand("");
-  }, [active, appendTo, command, ws]);
 
   const switching = useMemo(
     () => (menu ? (tabs.find((tab) => tab.key === menu.key) ?? null) : null),
@@ -425,7 +391,12 @@ export function TerminalPane({
           type="button"
           aria-label="清屏"
           title="清掉这个标签页里的输出（不影响会话）"
-          onClick={() => active && patchTab(active.key, () => ({ buffer: "" }))}
+          onClick={() =>
+            active &&
+            patchTab(active.key, (tab) => ({
+              clearSignal: tab.clearSignal + 1,
+            }))
+          }
           className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <Eraser className="h-3.5 w-3.5" />
@@ -449,52 +420,19 @@ export function TerminalPane({
         </p>
       ) : null}
 
-      <div
-        ref={scrollRef}
-        role="log"
-        aria-label="终端输出"
-        className="min-h-0 flex-1 overflow-y-auto rounded-xl border bg-muted/30 p-2 font-mono text-[11px] leading-5 whitespace-pre-wrap"
-      >
-        {active && active.buffer.length > 0 ? (
-          active.buffer
-        ) : active?.status === "starting" ? (
-          <span className="text-muted-foreground">正在准备终端会话…</span>
-        ) : null}
+      {/* 每个标签一个 xterm 模拟器：隐藏的保持挂载（切回来滚动缓冲还在），
+          键盘直接进终端——不再有「输入框 + 执行按钮」那一层 */}
+      <div className="min-h-0 flex-1 overflow-hidden rounded-xl border bg-muted/30 p-1">
+        {tabs.map((tab) => (
+          <TerminalScreen
+            key={`${tab.key}:${tab.sessionId}`}
+            sessionId={tab.sessionId}
+            ws={ws}
+            active={tab.key === activeKey}
+            clearSignal={tab.clearSignal}
+          />
+        ))}
       </div>
-
-      <form
-        className="flex items-center gap-1.5"
-        onSubmit={(event) => {
-          event.preventDefault();
-          send();
-        }}
-      >
-        <span
-          aria-hidden
-          className="shrink-0 font-mono text-xs text-muted-foreground"
-        >
-          ❯
-        </span>
-        <input
-          aria-label="终端命令"
-          value={command}
-          disabled={active?.status !== "running"}
-          onChange={(event) => setCommand(event.target.value)}
-          placeholder={
-            active?.status === "running" ? "输入命令，回车执行" : "会话未就绪"
-          }
-          /* 终端是「一条命令一行」：不进历史、不做输入法之外的处理 */
-          autoComplete="off"
-          className="min-w-0 flex-1 rounded-md border bg-transparent px-2 py-1 font-mono text-xs outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
-        />
-        <button
-          type="submit"
-          disabled={active?.status !== "running"}
-          className="shrink-0 rounded-md border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
-        >
-          执行
-        </button>
-      </form>
 
       {menu && switching ? (
         <div

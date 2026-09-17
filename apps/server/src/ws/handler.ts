@@ -194,6 +194,7 @@ async function authenticateAndBind(
           sessionId: payload.sessionId,
           shell: existing.shell,
           executable: existing.executable,
+          tty: existing.tty,
           reused: true,
         },
       });
@@ -242,6 +243,8 @@ async function authenticateAndBind(
       id: payload.sessionId,
       cwd,
       ...(payload.shell ? { shell: payload.shell } : {}),
+      ...(payload.cols ? { cols: payload.cols } : {}),
+      ...(payload.rows ? { rows: payload.rows } : {}),
       onData: (chunk) => {
         for (const frame of chunkForFrames(chunk)) {
           sendToClient({
@@ -269,6 +272,8 @@ async function authenticateAndBind(
         sessionId: payload.sessionId,
         shell: session.shell,
         executable: session.executable,
+        /** 真终端（PTY）= true：客户端据此上终端模拟器（行编辑/颜色由 shell 出）。 */
+        tty: session.tty,
       },
     });
   };
@@ -403,6 +408,10 @@ async function authenticateAndBind(
         void startTerminal(msg.payload);
       } else if (msg.action === "terminal.input") {
         terminalSessions.get(msg.payload.sessionId)?.write(msg.payload.data);
+      } else if (msg.action === "terminal.resize") {
+        terminalSessions
+          .get(msg.payload.sessionId)
+          ?.resize(msg.payload.cols, msg.payload.rows);
       } else if (msg.action === "terminal.stop") {
         const session = terminalSessions.get(msg.payload.sessionId);
         if (session) {
