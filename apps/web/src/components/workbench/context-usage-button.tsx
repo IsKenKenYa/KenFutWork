@@ -63,7 +63,8 @@ export function ContextUsageButton({
   }, [open]);
 
   return (
-    <div ref={containerRef} className="relative">
+    /* `inline-flex` 不能少：普通 div 会带上父级行高，环就比相邻图标**高 2px**（实测 cy 483 vs 485） */
+    <div ref={containerRef} className="relative inline-flex items-center">
       <button
         type="button"
         aria-label="上下文容量"
@@ -71,7 +72,8 @@ export function ContextUsageButton({
         aria-expanded={open}
         title={view.usageLine ?? "上下文容量与缓存命中"}
         onClick={() => setOpen((current) => !current)}
-        className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        /* 与相邻图标按钮**同一个命中盒**（h-7 w-7 + 居中）：圈才不会跟图标错开半个像素 */
+        className="inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       >
         <ContextRing
           percent={view.percent}

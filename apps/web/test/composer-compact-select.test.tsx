@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   ComposerCompactSelect,
+  optionLabel,
   THINKING_OPTIONS,
   TIER_OPTIONS,
 } from "../src/components/workbench/composer-compact-select";
@@ -127,7 +128,7 @@ describe("ComposerCompactSelect", () => {
     expect(panel).toHaveTextContent("命中已批准策略的调用自动通过");
   });
 
-  it("思考强度是「图标 + 进度条」：档位越高条越满，缩小时箭头也藏起来", () => {
+  it("思考强度是「图标 + **竖条**」：档位越高条越满，且不再显示下拉箭头", () => {
     render(
       <ComposerCompactSelect
         ariaLabel="思考强度"
@@ -139,15 +140,39 @@ describe("ComposerCompactSelect", () => {
       />,
     );
     const trigger = screen.getByLabelText("思考强度");
-    // 进度条：满格（100%）
-    const bar = [...trigger.querySelectorAll("span")].find((el) =>
-      /width:/.test(el.getAttribute("style") ?? ""),
+    // 竖条：外层是纵向 flex 的轨道，填充按**高度**百分比（用户口径：思考强度改成竖着的）
+    const track = [...trigger.querySelectorAll("span")].find((el) =>
+      (el.getAttribute("class") ?? "").includes("flex-col"),
     );
-    expect(bar?.getAttribute("style")).toContain("100%");
-    // 箭头在窄列收起（用户口径：缩小时除模型外别的箭头都不要显示）
-    const chevron = trigger.querySelector("svg.lucide-chevron-down");
-    expect(chevron?.parentElement?.className).toContain(
-      "@max-xl/composer:hidden",
+    expect(track?.className).toContain("h-3.5");
+    expect(track?.className).toContain("w-1");
+    const fill = [...(track?.querySelectorAll("span") ?? [])].find((el) =>
+      /height:/.test(el.getAttribute("style") ?? ""),
     );
+    expect(fill?.getAttribute("style")).toContain("100%");
+    // 除模型外一律不给下拉箭头（用户口径：自主/权限/思考强度的箭头都去掉）
+    expect(trigger.querySelector("svg.lucide-chevron-down")).toBeNull();
+  });
+});
+
+/**
+ * 权限四档在编排器里要齐（第四档「自定义配置」是后加的，曾经漏在这一处：
+ * 结果编排器显示原始值 `custom`、下拉里也选不到它）。
+ */
+describe("权限档位选项", () => {
+  it("四档齐全，第四档有中文名（不是原始值 custom）", () => {
+    expect(TIER_OPTIONS.map((option) => option.value)).toEqual([
+      "default",
+      "auto-approve",
+      "full-access",
+      "custom",
+    ]);
+    expect(
+      TIER_OPTIONS.find((option) => option.value === "custom")?.label,
+    ).toBe("自定义配置");
+  });
+
+  it("按值查中文名：custom → 自定义配置（不再回落成原始值）", () => {
+    expect(optionLabel(TIER_OPTIONS, "custom")).toBe("自定义配置");
   });
 });

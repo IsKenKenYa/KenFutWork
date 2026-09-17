@@ -132,10 +132,15 @@ describe("WorkbenchSidePanel（多标签）", () => {
     );
   }
 
-  /** 从「+」菜单打开一个视图（与真实操作同一条路）。 */
+  /**
+   * 打开一个视图（与真实操作同一条路）：现在**只有一个菜单**——
+   * 「标签列表」下拉里既有打开的标签页，也有「新建视图」段（用户口径：不要单独一个菜单）。
+   */
   async function openView(label: string) {
-    await userEvent.click(screen.getByLabelText("打开视图"));
-    await userEvent.click(await screen.findByRole("option", { name: label }));
+    await userEvent.click(screen.getByLabelText("标签列表"));
+    await userEvent.click(
+      await screen.findByRole("button", { name: `新建视图：${label}` }),
+    );
   }
 
   it("默认开「变更」标签：头部给总数与增删、逐行给「审查 / 打开 / 撤销」", async () => {
@@ -232,10 +237,16 @@ describe("WorkbenchSidePanel（多标签）", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "标签列表" }));
     const dialog = await screen.findByRole("dialog", { name: "打开的标签页" });
-    expect(within(dialog).getByText("文件目录")).toBeInTheDocument();
+    // 同一个菜单里现在还有「新建视图」段（用户口径：不要单独一个菜单）——
+    // 断言按组寻址，免得两组的同名文本互相干扰
+    const tabGroup = within(dialog).getByRole("list", { name: "打开的标签页" });
+    expect(within(tabGroup).getByText("文件目录")).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("list", { name: "新建视图" }),
+    ).toBeInTheDocument();
 
     await userEvent.type(within(dialog).getByLabelText("搜索标签页"), "文件");
-    expect(within(dialog).queryByText("变更")).not.toBeInTheDocument();
+    expect(within(tabGroup).queryByText("变更")).not.toBeInTheDocument();
 
     // 列表项的可访问名是「文件目录 刚刚」（关闭键是「关闭 文件目录」，这里要选前者）
     await userEvent.click(
@@ -518,9 +529,9 @@ describe("右栏浏览器（点链接自动打开）", () => {
   }
 
   async function openBrowserTab() {
-    await userEvent.click(screen.getByLabelText("打开视图"));
+    await userEvent.click(screen.getByLabelText("标签列表"));
     await userEvent.click(
-      await screen.findByRole("option", { name: "浏览器" }),
+      await screen.findByRole("button", { name: "新建视图：浏览器" }),
     );
   }
 

@@ -2628,8 +2628,9 @@ export function Workbench() {
                           }))}
                         >
                           <SelectTrigger
-                            className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
+                            className="h-7 gap-1 border-transparent bg-muted/60 px-2 text-xs"
                             aria-label="执行模式"
+                            hideChevron
                           >
                             <SelectValue />
                           </SelectTrigger>
@@ -2658,7 +2659,7 @@ export function Workbench() {
                           }
                         >
                           <SelectTrigger
-                            className="max-w-[200px] gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
+                            className="h-7 max-w-[200px] gap-1 border-transparent bg-muted/60 px-2 text-xs"
                             aria-label="模型"
                           >
                             <SelectValue />
@@ -2701,11 +2702,12 @@ export function Workbench() {
                           progress={THINKING_PROGRESS[thinking] ?? 0}
                         />
                       </div>
-                      <div className="flex items-center gap-2">
+                      {/* 右簇：麦克风 / 发送 —— 与左簇同一个 h-7 口径 */}
+                      <div className="flex items-center gap-1.5">
                         <button
                           type="button"
                           title="语音（即将上线）"
-                          className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
                         >
                           <Mic className="h-4 w-4" />
                         </button>
@@ -2724,7 +2726,7 @@ export function Workbench() {
                             type="submit"
                             aria-label="发送"
                             disabled={!followUp.trim()}
-                            className="rounded-lg bg-primary p-2 text-primary-foreground disabled:opacity-50"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground disabled:opacity-50"
                           >
                             <Send className="h-4 w-4" />
                           </button>
@@ -2854,11 +2856,12 @@ ${formatElementReference(picked)}`
                   </p>
                 ) : null}
                 <div className="mt-1.5 flex items-center justify-between">
+                  {/* 左簇：附件 / 权限 / 执行模式 / 模型 / 上下文环 / 思考强度 —— 统一 h-7 与 gap-1.5 */}
                   <div className="flex min-w-0 items-center gap-1.5">
                     <button
                       type="button"
                       title="附件（即将上线）"
-                      className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
                     >
                       <Plus className="h-4 w-4" />
                     </button>
@@ -2884,8 +2887,9 @@ ${formatElementReference(picked)}`
                       }))}
                     >
                       <SelectTrigger
-                        className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
+                        className="h-7 gap-1 border-transparent bg-muted/60 px-2 text-xs"
                         aria-label="执行模式"
+                        hideChevron
                       >
                         <SelectValue />
                       </SelectTrigger>
@@ -2910,7 +2914,7 @@ ${formatElementReference(picked)}`
                       }
                     >
                       <SelectTrigger
-                        className="max-w-[200px] gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
+                        className="h-7 max-w-[200px] gap-1 border-transparent bg-muted/60 px-2 text-xs"
                         aria-label="模型"
                       >
                         <SelectValue />
@@ -3010,25 +3014,32 @@ ${formatElementReference(picked)}`
                       progress={THINKING_PROGRESS[thinking] ?? 0}
                     />
                   </div>
-                  <div className="flex items-center gap-2">
+                  {/* 右簇：麦克风 / 发送 —— 与左簇同一个 h-7 口径 */}
+                  <div className="flex items-center gap-1.5">
                     <button
                       type="button"
                       title="语音（即将上线）"
-                      className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
                     >
                       <Mic className="h-4 w-4" />
                     </button>
-                    <button
-                      type="button"
-                      aria-label="发送"
-                      disabled={submitting || !prompt.trim()}
-                      onClick={() =>
-                        startTask(expandCommand(prompt, commands).text)
-                      }
-                      className="rounded-lg bg-primary p-2 text-primary-foreground disabled:opacity-50"
-                    >
-                      <Send className="h-4 w-4" />
-                    </button>
+                    {submitting ? (
+                      <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        aria-label="发送"
+                        disabled={!prompt.trim()}
+                        onClick={() =>
+                          startTask(expandCommand(prompt, commands).text)
+                        }
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground disabled:opacity-50"
+                      >
+                        <Send className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

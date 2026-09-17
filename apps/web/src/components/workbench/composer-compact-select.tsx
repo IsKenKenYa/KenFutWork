@@ -25,6 +25,15 @@ export const TIER_OPTIONS = [
     label: "完全访问",
     hint: "不限制（明示开启，风险自担）",
   },
+  /**
+   * 第四档（自定义配置）：**少了这一条**时编排器只能显示原始值 `custom`，
+   * 而且在下拉里根本选不到它——四档已经在权限页落地了，这里必须跟着齐（实测发现）。
+   */
+  {
+    value: "custom",
+    label: "自定义配置",
+    hint: "按设置里的规则逐条判（拒绝优先，都没命中回落默认档）",
+  },
 ] as const;
 
 export const THINKING_OPTIONS = [
@@ -96,26 +105,26 @@ export function ComposerCompactSelect({
         items={options.map((option) => ({ ...option }))}
       >
         <SelectTrigger
-          className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
+          className="h-7 gap-1 border-transparent bg-muted/60 px-2 text-xs"
           aria-label={ariaLabel}
           title={`${ariaLabel}：${optionLabel(options, value)}`}
-          /* 缩小时只剩图标：除模型外别的控件都不要那个下拉箭头（用户口径） */
-          chevronClassName="@max-xl/composer:hidden"
+          /* 除模型外一律不要下拉箭头（用户口径；缩小时更只剩图标）——触发器本身仍可点开 */
+          hideChevron
         >
           {icon}
           {progress === undefined ? (
             <SelectValue className="@max-xl/composer:hidden" />
           ) : (
             <>
-              {/* 思考强度：一条小进度条表示档位（满格 = 最高）；文字只在宽时显示 */}
+              {/* 思考强度：一根**竖条**（参考图口径：图标 + 竖条，满格 = 最高） */}
               <span
                 aria-hidden
-                className="flex h-1 w-6 items-center overflow-hidden rounded-full bg-foreground/15"
+                className="flex h-3.5 w-1 flex-col justify-end overflow-hidden rounded-full bg-foreground/15"
               >
                 <span
-                  className="h-full rounded-full bg-foreground/70"
+                  className="w-full rounded-full bg-foreground/70"
                   style={{
-                    width: `${Math.round(
+                    height: `${Math.round(
                       Math.min(1, Math.max(0, progress)) * 100,
                     )}%`,
                   }}

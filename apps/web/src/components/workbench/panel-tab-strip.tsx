@@ -2,23 +2,16 @@
 
 import {
   Bot,
-  ChevronsDownUp,
+  ChevronDown,
   FileCode2,
   FileDiff as FileDiffIcon,
   Folder,
   Globe,
-  Plus,
   Search,
   SquareTerminal,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from "@/components/ui/select";
 import {
   filterPanelTabs,
   type PanelTab,
@@ -90,11 +83,11 @@ export function PanelTabStrip({
           type="button"
           aria-label="标签列表"
           aria-expanded={listOpen}
-          title="打开的标签页（可搜索）"
+          title="标签页与新建视图（可搜索）"
           onClick={() => setListOpen((current) => !current)}
           className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
-          <ChevronsDownUp className="h-3.5 w-3.5" />
+          <ChevronDown className="h-3.5 w-3.5" />
         </button>
         {listOpen ? (
           <div
@@ -120,7 +113,7 @@ export function PanelTabStrip({
                 没有匹配的标签页。
               </p>
             ) : (
-              <ul className="space-y-0.5">
+              <ul aria-label="打开的标签页" className="space-y-0.5">
                 {visible.map((tab) => (
                   <li key={tab.id} className="flex items-center gap-1">
                     <button
@@ -153,6 +146,38 @@ export function PanelTabStrip({
                 ))}
               </ul>
             )}
+
+            {/*
+              「新建视图」并进**同一个菜单**（用户口径：不要单独一个菜单）：
+              原来是「标签列表」与「＋」两个下拉并排，看着就是两套菜单做同一件事。
+            */}
+            <div className="mt-1 border-t pt-1">
+              <p className="px-1.5 py-1 text-[10px] text-muted-foreground">
+                新建视图
+              </p>
+              <ul aria-label="新建视图" className="space-y-0.5">
+                {NEW_TAB_VIEWS.map((view) => (
+                  <li key={view.kind}>
+                    <button
+                      type="button"
+                      aria-label={`新建视图：${view.label}`}
+                      onClick={() => {
+                        onOpenView({ kind: view.kind });
+                        setListOpen(false);
+                      }}
+                      className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs hover:bg-muted"
+                    >
+                      <span className="shrink-0 text-muted-foreground">
+                        {tabIcon(view.kind)}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">
+                        {view.label}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         ) : null}
       </div>
@@ -199,37 +224,6 @@ export function PanelTabStrip({
         })}
       </div>
 
-      {/* 新建标签：挑一个视图打开（变更 / 文件目录 / 终端 / 浏览器 / 子智能体） */}
-      <Select
-        aria-label="打开视图"
-        value=""
-        onValueChange={(next) => {
-          if (typeof next === "string" && isPanelViewKind(next)) {
-            onOpenView({ kind: next });
-          }
-        }}
-        items={NEW_TAB_VIEWS.map((view) => ({
-          value: view.kind,
-          label: view.label,
-        }))}
-      >
-        <SelectTrigger
-          className="shrink-0 gap-0 border-transparent px-1.5 py-1"
-          aria-label="打开视图"
-          hideChevron
-          title="打开视图"
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </SelectTrigger>
-        <SelectContent className="min-w-36">
-          {NEW_TAB_VIEWS.map((view) => (
-            <SelectItem key={view.kind} value={view.kind}>
-              {view.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
       <button
         type="button"
         aria-label="收起面板"
@@ -249,10 +243,6 @@ const NEW_TAB_VIEWS: Array<{ kind: PanelViewKind; label: string }> = [
   { kind: "browser", label: "浏览器" },
   { kind: "subagents", label: "子智能体" },
 ];
-
-function isPanelViewKind(value: string): value is PanelViewKind {
-  return NEW_TAB_VIEWS.some((view) => view.kind === value);
-}
 
 /** 标签左侧的小图标（视图种类一眼可辨）。 */
 function tabIcon(kind: PanelViewKind) {

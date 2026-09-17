@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   ArrowRight,
   Ellipsis,
-  Globe,
   Monitor,
   MousePointerSquareDashed,
   RotateCw,
@@ -284,7 +283,6 @@ export function BrowserPane({
         >
           <RotateCw className="h-3.5 w-3.5" />
         </button>
-        <Globe className="ml-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <input
           aria-label="地址"
           value={draft}
