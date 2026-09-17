@@ -69,10 +69,10 @@ describe("permissions 缝（DEC-4）", () => {
 });
 
 /**
- * R5-3：第 4 档「自定义配置」与分场景档位（常规 / 自动化）。
+ * R5-3：第 4 档「自定义」与分场景档位（常规 / 自动化）。
  * 规则判定顺序固定为 **deny → allow → default 兜底**，且这几条是安全边界，逐条锁死。
  */
-describe("permissions 缝（R5-3 自定义配置与分场景）", () => {
+describe("permissions 缝（R5-3 自定义档与分场景）", () => {
   it("custom 档：拒绝项命中即拒（拒绝优先于放行），放行项命中即放", () => {
     const svc = createPermissionService();
     svc.applySettings({

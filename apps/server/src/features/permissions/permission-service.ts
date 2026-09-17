@@ -43,6 +43,19 @@ export function isDangerousTool(toolName: string): boolean {
   return DANGEROUS_TOOL_PATTERNS.some((pattern) => pattern.test(toolName));
 }
 
+/**
+ * 档位 → 用户可见名（与界面同一套词：默认 / 自动审批 / 完全访问 / 自定义）。
+ *
+ * 审批原因会直接展示给用户，**别把原始枚举值写进去**（此前非自定义档渲染成
+ * 「auto-approve 档」这种半中半英的串）。
+ */
+const TIER_LABELS: Record<PermissionTier, string> = {
+  default: "默认档",
+  "auto-approve": "自动审批档",
+  "full-access": "完全访问档",
+  custom: "自定义档",
+};
+
 export interface ToolApproval {
   scope: "once" | "thread" | "forever";
   threadId?: string;
@@ -119,7 +132,7 @@ export function createPermissionService(): PermissionService {
         if (anyPermissionRuleMatches(rules.deny, toolName)) {
           return {
             decision: "deny",
-            reason: `工具 ${toolName} 命中自定义规则里的拒绝项（设置 → 权限 → 自定义配置）`,
+            reason: `工具 ${toolName} 命中自定义规则里的拒绝项（设置 → 权限 → 自定义）`,
           };
         }
         if (anyPermissionRuleMatches(rules.allow, toolName)) {
@@ -142,7 +155,7 @@ export function createPermissionService(): PermissionService {
       }
       return {
         decision: "deny",
-        reason: `工具 ${toolName} 属危险操作，等待用户审批（${tier === "custom" ? "自定义配置" : `${tier} 档`}）`,
+        reason: `工具 ${toolName} 属危险操作，等待用户审批（${TIER_LABELS[tier]}）`,
       };
     },
     approve(toolName, approval) {

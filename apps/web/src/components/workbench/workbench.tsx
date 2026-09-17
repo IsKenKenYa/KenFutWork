@@ -20,7 +20,6 @@ import {
   Plug,
   Plus,
   Send,
-  ShieldCheck,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -50,6 +49,7 @@ import {
   THINKING_PROGRESS,
   TIER_OPTIONS,
   thinkingPromptHint,
+  tierIcon,
 } from "@/components/workbench/composer-compact-select";
 import { ContextUsageButton } from "@/components/workbench/context-usage-button";
 import { ElapsedEntry } from "@/components/workbench/elapsed-entry";
@@ -2616,7 +2616,8 @@ export function Workbench() {
                         </button>
                         <ComposerCompactSelect
                           ariaLabel="权限档位"
-                          icon={<ShieldCheck className="h-3.5 w-3.5" />}
+                          /* 图标随当前档位（四档各不相同），别再写死一个通用盾牌 */
+                          icon={tierIcon(tier)}
                           options={TIER_OPTIONS}
                           value={tier}
                           onChange={(next) => {
@@ -2873,7 +2874,7 @@ ${formatElementReference(picked)}`
                     </button>
                     <ComposerCompactSelect
                       ariaLabel="权限档位"
-                      icon={<ShieldCheck className="h-3.5 w-3.5" />}
+                      icon={tierIcon(tier)}
                       options={TIER_OPTIONS}
                       value={tier}
                       onChange={(next) => {

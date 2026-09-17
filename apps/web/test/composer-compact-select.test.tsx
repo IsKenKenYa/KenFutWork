@@ -13,6 +13,7 @@ import {
   THINKING_PROGRESS,
   TIER_OPTIONS,
   thinkingPromptHint,
+  tierIcon,
 } from "../src/components/workbench/composer-compact-select";
 
 /**
@@ -127,8 +128,8 @@ describe("ComposerCompactSelect", () => {
     expect(panel.className).toContain("@max-xl/composer:group-hover:block");
     expect(panel.className).toContain("hidden");
     expect(panel).toHaveTextContent("当前：完全访问");
-    expect(panel).toHaveTextContent("危险 / 不可逆操作需人工审批");
-    expect(panel).toHaveTextContent("命中已批准策略的调用自动通过");
+    expect(panel).toHaveTextContent("改文件 / 跑命令前先问我");
+    expect(panel).toHaveTextContent("已批准的调用自动通过，不再逐条问");
   });
 
   it("思考强度是「图标 + **竖条**」：档位越高条越满，且不再显示下拉箭头", () => {
@@ -161,24 +162,67 @@ describe("ComposerCompactSelect", () => {
 });
 
 /**
- * 权限四档在编排器里要齐（第四档「自定义配置」是后加的，曾经漏在这一处：
+ * 权限四档在编排器里要齐（第四档「自定义」是后加的，曾经漏在这一处：
  * 结果编排器显示原始值 `custom`、下拉里也选不到它）。
+ *
+ * 档名与图标都是用户口径：「描述也改一下：默认、自动审批、完全访问、自定义」
+ * 「图标可以参考一下，不要全部都一样」。
  */
 describe("权限档位选项", () => {
-  it("四档齐全，第四档有中文名（不是原始值 custom）", () => {
+  it("四档齐全，档名就是那四个词", () => {
     expect(TIER_OPTIONS.map((option) => option.value)).toEqual([
       "default",
       "auto-approve",
       "full-access",
       "custom",
     ]);
-    expect(
-      TIER_OPTIONS.find((option) => option.value === "custom")?.label,
-    ).toBe("自定义配置");
+    expect(TIER_OPTIONS.map((option) => option.label)).toEqual([
+      "默认",
+      "自动审批",
+      "完全访问",
+      "自定义",
+    ]);
   });
 
-  it("按值查中文名：custom → 自定义配置（不再回落成原始值）", () => {
-    expect(optionLabel(TIER_OPTIONS, "custom")).toBe("自定义配置");
+  it("按值查中文名：custom → 自定义（不再回落成原始值）", () => {
+    expect(optionLabel(TIER_OPTIONS, "custom")).toBe("自定义");
+  });
+
+  it("每档一个图标、四个都不一样（别退回一个通用盾牌）", () => {
+    const shapes = TIER_OPTIONS.map((option) => {
+      const { container, unmount } = render(
+        <ComposerCompactSelect
+          ariaLabel="权限档位"
+          icon={tierIcon(option.value)}
+          options={TIER_OPTIONS}
+          value={option.value}
+          onChange={() => {}}
+        />,
+      );
+      const markup = container.querySelector("svg")?.innerHTML ?? "";
+      unmount();
+      return markup;
+    });
+    expect(shapes.every((markup) => markup.length > 0)).toBe(true);
+    expect(new Set(shapes).size).toBe(TIER_OPTIONS.length);
+  });
+
+  it("触发器图标随当前档位变（不是写死一个）", () => {
+    const shapeFor = (value: string) => {
+      const { container, unmount } = render(
+        <ComposerCompactSelect
+          ariaLabel="权限档位"
+          icon={tierIcon(value)}
+          options={TIER_OPTIONS}
+          value={value}
+          onChange={() => {}}
+        />,
+      );
+      const markup = container.querySelector("svg")?.innerHTML ?? "";
+      unmount();
+      return markup;
+    };
+    expect(shapeFor("default")).not.toBe(shapeFor("full-access"));
   });
 });
 

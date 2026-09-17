@@ -80,7 +80,7 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     name: "permissions",
     title: "权限策略",
     category: "Agent 能力",
-    description: "危险工具三档审批（默认 / 自动放行 / 完全访问）。",
+    description: "危险工具四档审批（默认 / 自动审批 / 完全访问 / 自定义）。",
     capabilities: ["tools"],
   },
   {

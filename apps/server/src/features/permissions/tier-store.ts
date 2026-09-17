@@ -13,7 +13,7 @@ import type { PersistenceService } from "../persistence/types.js";
  * 一张表里现在放四件事（都是「本安装实例的信任级别」）：
  * - `permission_tier`：常规任务档位；
  * - `automation_permission_tier`：自动化任务（目标/循环）档位；
- * - `permission_rules`：第 4 档「自定义配置」的 allow / deny 规则；
+ * - `permission_rules`：第 4 档「自定义」的 allow / deny 规则；
  * - `browser_control_enabled`：agent 能不能用 `browser_open` 打网页。
  */
 

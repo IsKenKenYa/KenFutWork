@@ -23,15 +23,20 @@ import {
  * 分场景：**常规任务**与**自动化任务**（目标/循环这类无人值守轮次）各设一档——
  * 自动化档通常设得更严（批一次就一路跑，不会每一步都等人）。
  */
+/**
+ * 四档的**档名与编排器那份完全一致**（默认 / 自动审批 / 完全访问 / 自定义）：
+ * 同一个东西在设置页叫「自动放行」、在编排器叫「自动审批」会让人以为是两回事。
+ * 定义在 `composer-compact-select.tsx` 的 `TIER_OPTIONS`（那里还带图标），这里只取文案。
+ */
 const TIERS: Array<{ value: PermissionTier; label: string; hint: string }> = [
   {
     value: "default",
-    label: "默认（推荐）",
-    hint: "危险/不可逆操作需人工审批",
+    label: "默认",
+    hint: "改文件 / 跑命令前先问我（危险与不可逆操作需人工审批）",
   },
   {
     value: "auto-approve",
-    label: "自动放行",
+    label: "自动审批",
     hint: "命中已批准策略的调用自动通过",
   },
   {
@@ -41,7 +46,7 @@ const TIERS: Array<{ value: PermissionTier; label: string; hint: string }> = [
   },
   {
     value: "custom",
-    label: "自定义配置",
+    label: "自定义",
     hint: "按下面的规则逐条判：拒绝优先，都没命中回落默认档",
   },
 ];

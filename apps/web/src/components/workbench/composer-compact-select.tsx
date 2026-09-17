@@ -1,5 +1,11 @@
 "use client";
 
+import {
+  Hand,
+  ShieldAlert,
+  ShieldCheck,
+  SlidersHorizontal,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import {
   Select,
@@ -13,28 +19,56 @@ import {
  * composer 里的两个小下拉的选项表（落地页与会话内共用一份，免得标签漂移）。
  * 它们也负责「值 → 中文名」的查表：窄列下控件只剩图标，当前值要靠 `title` 交代。
  */
+/** 档位图标的统一尺寸（触发器与下拉项共用一份，免得两处漂移）。 */
+const TIER_ICON_CLASS = "h-3.5 w-3.5 shrink-0";
+
+/**
+ * 权限四档：**档名与图标都不许重样**（用户口径「图标可以参考一下，不要全部都一样」，
+ * 参考图里就是每档一个图标 + 一句说明）。
+ *
+ * 档名用产品口径的四个词：**默认 / 自动审批 / 完全访问 / 自定义**——其中「默认」的语义
+ * 就是「改文件前先问我」：写类与命令类工具（`write_file` / `edit_file` / `execute` / `shell*`
+ * / `mcp__*` / `diff_patch`，见服务端 `DANGEROUS_TOOL_PATTERNS`）在默认档下都要审批，
+ * 所以说明可以照实这么写，不是承诺更多。
+ */
 export const TIER_OPTIONS = [
-  { value: "default", label: "默认", hint: "危险 / 不可逆操作需人工审批" },
+  {
+    value: "default",
+    label: "默认",
+    hint: "改文件 / 跑命令前先问我",
+    icon: <Hand className={TIER_ICON_CLASS} />,
+  },
   {
     value: "auto-approve",
-    label: "自动放行",
-    hint: "命中已批准策略的调用自动通过",
+    label: "自动审批",
+    hint: "已批准的调用自动通过，不再逐条问",
+    icon: <ShieldCheck className={TIER_ICON_CLASS} />,
   },
   {
     value: "full-access",
     label: "完全访问",
     hint: "不限制（明示开启，风险自担）",
+    icon: <ShieldAlert className={TIER_ICON_CLASS} />,
   },
   /**
-   * 第四档（自定义配置）：**少了这一条**时编排器只能显示原始值 `custom`，
+   * 第四档（自定义）：**少了这一条**时编排器只能显示原始值 `custom`，
    * 而且在下拉里根本选不到它——四档已经在权限页落地了，这里必须跟着齐（实测发现）。
    */
   {
     value: "custom",
-    label: "自定义配置",
-    hint: "按设置里的规则逐条判（拒绝优先，都没命中回落默认档）",
+    label: "自定义",
+    hint: "按设置里的规则逐条判（拒绝优先，没命中回落默认档）",
+    icon: <SlidersHorizontal className={TIER_ICON_CLASS} />,
   },
 ] as const;
+
+/** 档位 → 图标：触发器显示的是**当前档位**的图标（四档各不相同，别退回一个通用盾牌）。 */
+export function tierIcon(value: string): ReactNode {
+  return (
+    TIER_OPTIONS.find((option) => option.value === value)?.icon ??
+    TIER_OPTIONS[0].icon
+  );
+}
 
 export const THINKING_OPTIONS = [
   { value: "default", label: "默认", hint: "不额外要求，用模型自己的默认" },
@@ -111,7 +145,12 @@ export function ComposerCompactSelect({
 }: {
   ariaLabel: string;
   icon: ReactNode;
-  options: readonly { value: string; label: string; hint?: string }[];
+  options: readonly {
+    value: string;
+    label: string;
+    hint?: string;
+    icon?: ReactNode;
+  }[];
   value: string;
   onChange: (next: string) => void;
   contentClassName?: string;
@@ -130,7 +169,10 @@ export function ComposerCompactSelect({
         onValueChange={(next) => {
           if (typeof next === "string" && next !== value) onChange(next);
         }}
-        items={options.map((option) => ({ ...option }))}
+        items={options.map((option) => ({
+          value: option.value,
+          label: option.label,
+        }))}
       >
         <SelectTrigger
           className="h-7 gap-1 border-transparent bg-muted/60 px-2 text-xs"
@@ -171,7 +213,25 @@ export function ComposerCompactSelect({
         <SelectContent className={contentClassName}>
           {options.map((option) => (
             <SelectItem key={option.value} value={option.value}>
-              {option.label}
+              {/*
+                带图标的档位（权限四档）拉成两行：图标 + 档名 + 一句说明（参考图口径）；
+                没图标的（思考强度）保持单行——那里六档都是「哪一个更想得多」，加说明只是噪声。
+              */}
+              {option.icon ? (
+                <span className="flex items-center gap-2 py-0.5">
+                  <span className="text-muted-foreground">{option.icon}</span>
+                  <span className="flex min-w-0 flex-col">
+                    <span>{option.label}</span>
+                    {option.hint ? (
+                      <span className="text-[10px] text-muted-foreground">
+                        {option.hint}
+                      </span>
+                    ) : null}
+                  </span>
+                </span>
+              ) : (
+                option.label
+              )}
             </SelectItem>
           ))}
         </SelectContent>
