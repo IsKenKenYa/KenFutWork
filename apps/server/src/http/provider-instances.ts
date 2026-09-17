@@ -4,6 +4,7 @@ import {
   providerInstanceListResponseSchema,
   providerInstanceResponseSchema,
   providerInstanceUpdateRequestSchema,
+  providerProbeResultSchema,
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
@@ -131,6 +132,35 @@ export async function registerProviderInstanceRoutes(
       return sendError(error, reply, "instance_update_failed");
     }
   });
+
+  // POST /api/provider-instances/:instanceId/probe — 能力探测（阶段 E）：
+  // 连通性 + 中转方言四探测项，结果缓存到实例（运行期据此裁剪请求，fail open）。
+  app.post(
+    "/api/provider-instances/:instanceId/probe",
+    async (request, reply) => {
+      try {
+        const user = await options.auth.authenticate(request);
+        if (!user) {
+          return reply.code(401).send(
+            unauthenticatedErrorResponseSchema.parse({
+              error: {
+                code: "unauthorized",
+                message: "Missing or invalid bearer token.",
+              },
+            }),
+          );
+        }
+        const { instanceId } = request.params as { instanceId: string };
+        const result = await options.modelProviders.probeInstance(
+          user,
+          instanceId,
+        );
+        return reply.code(200).send(providerProbeResultSchema.parse(result));
+      } catch (error) {
+        return sendError(error, reply, "instance_probe_failed");
+      }
+    },
+  );
 
   // DELETE /api/provider-instances/:instanceId
   app.delete("/api/provider-instances/:instanceId", async (request, reply) => {

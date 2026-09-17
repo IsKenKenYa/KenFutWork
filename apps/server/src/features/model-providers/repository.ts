@@ -21,6 +21,8 @@ export type ProviderInstanceRecord = {
   enabled: boolean;
   /** 配置修订号（bigint 经 pg 返回字符串）：任何实例更新自增，跨修订防护用。 */
   config_revision: string;
+  probe_result: Record<string, unknown> | null;
+  probed_at: string | null;
 };
 
 /** 更新补丁：`undefined` = 不改；显式 null = 清空（如移除 base_url）。 */
@@ -75,6 +77,12 @@ export interface ModelProviderRepository {
     workspaceId: string,
     instanceId: string,
   ): Promise<number>;
+  /** 探测结果缓存（用户工作区作用域）。 */
+  setProbeResult(
+    workspaceId: string,
+    instanceId: string,
+    result: Record<string, unknown>,
+  ): Promise<ProviderInstanceRecord | null>;
   /** 按 id 取任意实例（平台池/worker 路径；不做工作区限定）。 */
   findById(instanceId: string): Promise<ProviderInstanceRecord | null>;
   findWorkspaceInstance(
@@ -103,7 +111,7 @@ export interface ModelProviderRepository {
 }
 
 const INSTANCE_COLUMNS =
-  "id, scope, workspace_id, name, protocol, base_url, encrypted_api_key, models, compat, headers, enabled, config_revision";
+  "id, scope, workspace_id, name, protocol, base_url, encrypted_api_key, models, compat, headers, enabled, config_revision, probe_result, probed_at";
 
 /** 把补丁翻成 SET 片段；`$1` 固定留作目标 id，故列从 `$2` 起编号。 */
 function buildPatch(
@@ -206,6 +214,21 @@ export function createModelProviderRepository(
         returning ${INSTANCE_COLUMNS}`,
           // $1 是目标 id；工作区由 :workspace 追加为末位参数，保持 SET 片段引用不漂移。
           built.values,
+        );
+    },
+
+    async setProbeResult(workspaceId, instanceId, result) {
+      return persistence
+        .forWorkspace(workspaceId)
+        .queryOne<ProviderInstanceRecord>(
+          `update public.provider_instances
+            set probe_result = $1::jsonb,
+                probed_at = now()
+          where workspace_id = :workspace
+            and id = $2
+            and scope = 'workspace'
+        returning ${INSTANCE_COLUMNS}`,
+          [JSON.stringify(result), instanceId],
         );
     },
 

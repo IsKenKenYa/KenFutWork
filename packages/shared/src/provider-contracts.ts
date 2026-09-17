@@ -257,6 +257,27 @@ export type ProviderScope = z.infer<typeof providerScopeSchema>;
  * 实例响应：只有 apiKeyRef 语义的 hasCredential 标记，绝无 key 本体。
  * `headerKeys` 同理——自定义头的**键名**可见，值一律不回显（与 MCP `env`/`envKeys` 同口径）。
  */
+/**
+ * 实例能力探测结果（阶段 E，docs/future/05 §6.2）。
+ * 三态语义：true = 探测到支持 / false = 探测到不支持 / 缺席 = 未探测该项。
+ * 消费方按 false 裁剪请求；true 与缺席都按全能力尝试（fail open）。
+ */
+export const providerProbeResultSchema = z.object({
+  /** 流式响应带 usage 统计（`stream_options.include_usage`）。P0：缺失则用量盲区。 */
+  streamUsage: z.boolean().optional(),
+  /** 工具 function.parameters 接受 strict JSON Schema（additionalProperties 等）。 */
+  strictToolSchema: z.boolean().optional(),
+  /** OpenAI Responses API（`POST /responses`）可用。 */
+  responsesApi: z.boolean().optional(),
+  /** Anthropic `cache_control` 提示词缓存可透传（anthropic 协议实例）。 */
+  cacheControl: z.boolean().optional(),
+  /** 探测时间（ISO 字符串）。 */
+  probedAt: z.string().min(1),
+  /** 未通过/未探测项的原因摘要（脱敏，不含 key）。 */
+  notes: z.array(z.string()).optional(),
+});
+export type ProviderProbeResult = z.infer<typeof providerProbeResultSchema>;
+
 export const providerInstanceResponseSchema = z.object({
   id: identifier,
   scope: providerScopeSchema,
@@ -268,6 +289,8 @@ export const providerInstanceResponseSchema = z.object({
   compat: providerCompatSchema.optional(),
   headerKeys: z.array(z.string()),
   enabled: z.boolean(),
+  /** 最近一次能力探测结果（显式触发探测后才有；字段缺省 = 未探测 = 不裁剪）。 */
+  probe: providerProbeResultSchema.optional(),
 });
 export type ProviderInstanceResponse = z.infer<
   typeof providerInstanceResponseSchema

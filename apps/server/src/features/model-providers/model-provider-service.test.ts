@@ -95,6 +95,8 @@ const INSTANCE_ROW: ProviderInstanceRecord = {
   headers: null,
   enabled: true,
   config_revision: "1",
+  probe_result: null,
+  probed_at: null,
 };
 
 const SYSTEM_ROW: ProviderInstanceRecord = {
