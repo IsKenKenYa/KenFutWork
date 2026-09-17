@@ -42,6 +42,9 @@ importers:
       '@ai-sdk/openai-compatible':
         specifier: ^3.0.51
         version: 3.0.51(zod@4.5.2)
+      '@ai-sdk/provider':
+        specifier: ^4.0.17
+        version: 4.0.17
       '@fastify/multipart':
         specifier: ^10.1.1
         version: 10.1.1

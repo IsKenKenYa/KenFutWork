@@ -3,7 +3,6 @@ import {
   createOpenAICompatible,
   type OpenAICompatibleProvider,
 } from "@ai-sdk/openai-compatible";
-import type { FetchFunction } from "@ai-sdk/provider";
 import type { ProviderProtocol } from "@kenfutwork/shared";
 
 /**
@@ -25,7 +24,7 @@ export interface AisdkInstanceCredentials {
   /** 自定义请求头（占位符已按发送时刻上下文渲染为运行期值）。 */
   headers?: Record<string, string>;
   /** fetch 注入口（诊断代理 / 抓包测试用；生产不传，走全局 fetch）。 */
-  fetch?: FetchFunction;
+  fetch?: typeof globalThis.fetch;
 }
 
 export type AisdkFactoryErrorCode =
@@ -69,7 +68,7 @@ export function createOpenCompatibleProvider(
     name: "kenfutwork",
     baseURL: credentials.baseUrl,
     apiKey: credentials.apiKey,
-    headers: credentials.headers,
+    ...(credentials.headers ? { headers: credentials.headers } : {}),
     ...(credentials.fetch ? { fetch: credentials.fetch } : {}),
   });
 }
@@ -79,7 +78,7 @@ export function createVolcesProvider(credentials: AisdkInstanceCredentials) {
   return createByteDance({
     apiKey: credentials.apiKey,
     baseURL: credentials.baseUrl ?? VOLCES_AISDK_DEFAULT_BASE_URL,
-    headers: credentials.headers,
+    ...(credentials.headers ? { headers: credentials.headers } : {}),
     ...(credentials.fetch ? { fetch: credentials.fetch } : {}),
   });
 }

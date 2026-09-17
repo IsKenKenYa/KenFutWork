@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   AisdkFactoryError,
-  VOLCES_AISDK_DEFAULT_BASE_URL,
   createAisdkGenerationModel,
   createOpenCompatibleProvider,
   createVolcesProvider,
+  VOLCES_AISDK_DEFAULT_BASE_URL,
 } from "./factory.js";
 
 /** 抓包口径的 canned OpenAI 图像响应（公开稳定形状）。 */
@@ -46,14 +46,21 @@ describe("createOpenCompatibleProvider", () => {
       headers: { "x-test": "v" },
       fetch: recording as unknown as typeof fetch,
     });
-    const result = await provider
-      .imageModel("img-1")
-      .doGenerate({ prompt: "画一只猫", n: 1, providerOptions: {} });
+    const result = await provider.imageModel("img-1").doGenerate({
+      prompt: "画一只猫",
+      n: 1,
+      providerOptions: {},
+      size: undefined,
+      aspectRatio: undefined,
+      seed: undefined,
+      files: undefined,
+      mask: undefined,
+    });
 
     expect(recording).toHaveBeenCalledTimes(1);
     const [url, init] = recording.mock.calls[0] as unknown as [
       string,
-      { headers: HeadersInit; body: string },
+      { headers: Record<string, string>; body: string },
     ];
     expect(url).toBe("https://gw.example/v1/images/generations");
     const headers = new Headers(init.headers);

@@ -1,8 +1,5 @@
-import {
-  experimental_getVideoStatus,
-  experimental_startVideo,
-  type VideoModel,
-} from "ai";
+import type { Experimental_VideoModelV4, JSONValue } from "@ai-sdk/provider";
+import { experimental_getVideoStatus, experimental_startVideo } from "ai";
 
 /**
  * 视频任务防腐缝（docs/future/05 §5.3 / §11，阶段 A）。
@@ -63,7 +60,7 @@ export interface VideoJobSubmitParams {
   inputReferences?: Array<string | Uint8Array>;
   generateAudio?: boolean;
   /** 厂商专有参数（`{ [providerKey]: {...} }`，原样透传）。 */
-  providerOptions?: Record<string, Record<string, unknown>>;
+  providerOptions?: Record<string, Record<string, JSONValue>>;
   headers?: Record<string, string>;
   abortSignal?: AbortSignal;
   /** start 调用的重试上限（SDK 内建重试；默认 2，0 关闭）。 */
@@ -163,7 +160,7 @@ function warningsToMessages(warnings: readonly unknown[]): string[] {
 }
 
 /** 模型是否实现异步任务面（spec 级 `doStart`）；纯同步模型只能走阻塞式生成。 */
-function supportsAsyncStart(model: VideoModel): boolean {
+function supportsAsyncStart(model: Experimental_VideoModelV4): boolean {
   return (
     "doStart" in model &&
     typeof (model as { doStart?: unknown }).doStart === "function"
@@ -175,7 +172,7 @@ function supportsAsyncStart(model: VideoModel): boolean {
  * §5.2）。
  */
 export async function submitVideoJob(
-  model: VideoModel,
+  model: Experimental_VideoModelV4,
   params: VideoJobSubmitParams,
 ): Promise<VideoJobHandle> {
   if (!supportsAsyncStart(model)) {
@@ -188,8 +185,12 @@ export async function submitVideoJob(
     model,
     prompt: params.prompt,
     ...(params.n === undefined ? {} : { n: params.n }),
-    ...(params.aspectRatio === undefined ? {} : { aspectRatio: params.aspectRatio }),
-    ...(params.resolution === undefined ? {} : { resolution: params.resolution }),
+    ...(params.aspectRatio === undefined
+      ? {}
+      : { aspectRatio: params.aspectRatio }),
+    ...(params.resolution === undefined
+      ? {}
+      : { resolution: params.resolution }),
     ...(params.duration === undefined ? {} : { duration: params.duration }),
     ...(params.fps === undefined ? {} : { fps: params.fps }),
     ...(params.seed === undefined ? {} : { seed: params.seed }),
@@ -210,8 +211,12 @@ export async function submitVideoJob(
     ...(params.providerOptions === undefined
       ? {}
       : { providerOptions: params.providerOptions }),
-    ...(params.maxRetries === undefined ? {} : { maxRetries: params.maxRetries }),
-    ...(params.abortSignal === undefined ? {} : { abortSignal: params.abortSignal }),
+    ...(params.maxRetries === undefined
+      ? {}
+      : { maxRetries: params.maxRetries }),
+    ...(params.abortSignal === undefined
+      ? {}
+      : { abortSignal: params.abortSignal }),
     ...(params.headers === undefined ? {} : { headers: params.headers }),
   });
   assertOperationSerializable(result.operation);
@@ -223,12 +228,14 @@ export async function submitVideoJob(
 
 /** 单次状态查询（不循环；返回「pending | completed | error」的三态归一）。 */
 export async function pollVideoJob(
-  model: VideoModel,
+  model: Experimental_VideoModelV4,
   operation: unknown,
   options?: VideoJobPollOptions,
 ): Promise<VideoJobPollResult> {
   const result = await experimental_getVideoStatus(model, {
-    operation: operation as Parameters<typeof experimental_getVideoStatus>[1]["operation"],
+    operation: operation as Parameters<
+      typeof experimental_getVideoStatus
+    >[1]["operation"],
     ...(options?.headers === undefined ? {} : { headers: options.headers }),
     ...(options?.abortSignal === undefined
       ? {}
@@ -247,8 +254,16 @@ export async function pollVideoJob(
         video.type === "url"
           ? { type: "url" as const, url: video.url, mediaType: video.mediaType }
           : video.type === "base64"
-            ? { type: "base64" as const, data: video.data, mediaType: video.mediaType }
-            : { type: "binary" as const, data: video.data, mediaType: video.mediaType },
+            ? {
+                type: "base64" as const,
+                data: video.data,
+                mediaType: video.mediaType,
+              }
+            : {
+                type: "binary" as const,
+                data: video.data,
+                mediaType: video.mediaType,
+              },
       ),
       warnings: warningsToMessages(result.warnings),
     };
@@ -262,7 +277,7 @@ export async function pollVideoJob(
  * 未注入时 `cancel` 抛 `video_cancel_unsupported`，引擎据此做本地软取消。
  */
 export function createVideoJobDriver(options: {
-  model: VideoModel;
+  model: Experimental_VideoModelV4;
   cancelProviderJob?: VideoJobCancelProvider;
 }): VideoJobDriver {
   return {

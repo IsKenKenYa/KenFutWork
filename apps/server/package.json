@@ -6,6 +6,7 @@
   "dependencies": {
     "@ai-sdk/bytedance": "^2.0.46",
     "@ai-sdk/openai-compatible": "^3.0.51",
+    "@ai-sdk/provider": "^4.0.17",
     "@fastify/multipart": "^10.1.1",
     "@fastify/websocket": "^11.3.0",
     "@google/genai": "^2.22.0",

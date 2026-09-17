@@ -1,18 +1,20 @@
-import type { VideoModel } from "ai";
+import type { Experimental_VideoModelV4 } from "@ai-sdk/provider";
 import { describe, expect, it, vi } from "vitest";
 import {
-  VideoJobError,
   assertOperationSerializable,
   createVideoJobDriver,
   pollVideoJob,
   submitVideoJob,
+  VideoJobError,
 } from "./video-job.js";
 
 /**
  * stub 模型（spec v4 形状）：在 ACL ↔ SDK 的边界上做契约断言——
  * ACL 必须把参数原样透传给 spec API、不传 webhookUrl、结果三态归一。
  */
-function stubModel(overrides: Record<string, unknown> = {}): VideoModel {
+function stubModel(
+  overrides: Record<string, unknown> = {},
+): Experimental_VideoModelV4 {
   return {
     specificationVersion: "v4",
     provider: "stub",
@@ -22,7 +24,7 @@ function stubModel(overrides: Record<string, unknown> = {}): VideoModel {
     doStart: vi.fn(),
     doStatus: vi.fn(),
     ...overrides,
-  } as unknown as VideoModel;
+  } as unknown as Experimental_VideoModelV4;
 }
 
 describe("submitVideoJob", () => {
@@ -72,9 +74,9 @@ describe("submitVideoJob", () => {
 
   it("未实现 doStart 的模型 fail loud（video_async_unsupported），不触达 SDK", async () => {
     const model = stubModel({ doStart: undefined });
-    await expect(
-      submitVideoJob(model, { prompt: "p" }),
-    ).rejects.toMatchObject({ code: "video_async_unsupported" });
+    await expect(submitVideoJob(model, { prompt: "p" })).rejects.toMatchObject({
+      code: "video_async_unsupported",
+    });
   });
 
   it("operation 不可 JSON 序列化（含 BigInt）→ video_operation_unserializable", async () => {
@@ -107,11 +109,15 @@ describe("pollVideoJob（三态归一）", () => {
     });
     const model = stubModel({ doStatus });
     const abortSignal = AbortSignal.abort();
-    const result = await pollVideoJob(model, { id: "t" }, {
-      headers: { "x-poll": "1" },
-      abortSignal,
-      maxRetries: 0,
-    });
+    const result = await pollVideoJob(
+      model,
+      { id: "t" },
+      {
+        headers: { "x-poll": "1" },
+        abortSignal,
+        maxRetries: 0,
+      },
+    );
     expect(result).toEqual({ state: "in_progress" });
     expect(doStatus.mock.calls[0]?.[0]).toMatchObject({
       operation: { id: "t" },
@@ -125,7 +131,11 @@ describe("pollVideoJob（三态归一）", () => {
       doStatus: vi.fn().mockResolvedValue({
         status: "completed",
         videos: [
-          { type: "url", url: "https://cdn.example/v.mp4", mediaType: "video/mp4" },
+          {
+            type: "url",
+            url: "https://cdn.example/v.mp4",
+            mediaType: "video/mp4",
+          },
           { type: "base64", data: "AAAA", mediaType: "video/webm" },
           { type: "binary", data: new Uint8Array([1]), mediaType: "video/mp4" },
         ],
@@ -137,7 +147,11 @@ describe("pollVideoJob（三态归一）", () => {
     expect(result).toEqual({
       state: "succeeded",
       videos: [
-        { type: "url", url: "https://cdn.example/v.mp4", mediaType: "video/mp4" },
+        {
+          type: "url",
+          url: "https://cdn.example/v.mp4",
+          mediaType: "video/mp4",
+        },
         { type: "base64", data: "AAAA", mediaType: "video/webm" },
         { type: "binary", data: new Uint8Array([1]), mediaType: "video/mp4" },
       ],
