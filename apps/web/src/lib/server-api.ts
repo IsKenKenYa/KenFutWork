@@ -791,7 +791,10 @@ export interface CodeIndexStats {
 }
 
 export interface CodeIndexStatus {
+  /** ② 「索引存储库以实现即时搜索」：搜索走索引。 */
   enabled: boolean;
+  /** ① 「索引新文件夹」：自动为尚无索引的工作目录建索引。 */
+  autoNewFolder: boolean;
   stats: CodeIndexStats | null;
 }
 

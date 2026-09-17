@@ -50,6 +50,8 @@ function build(options: {
       terminalShell: TerminalShellId;
       /** R4-3 索引库开关（这个桩只关心终端 shell，给它一个常量即可）。 */
       codeIndexEnabled: boolean;
+      /** R4-3「索引新文件夹」（同上：常量）。 */
+      codeIndexAutoNewFolder: boolean;
       /** 用户规则（同上：桩里给空值）。 */
       userRules: string;
       ruleEntries: string[];
@@ -444,6 +446,7 @@ describe("终端 shell 解析", () => {
           defaultModel: "inst-1:glm-5.3-flash",
           terminalShell: "powershell",
           codeIndexEnabled: false,
+          codeIndexAutoNewFolder: false,
           userRules: "",
           ruleEntries: [],
         }),

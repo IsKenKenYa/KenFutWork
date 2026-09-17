@@ -192,8 +192,17 @@ export const workspaceSettingsSchema = z.object({
   defaultModel: z.string().min(1),
   /** 终端默认 shell（用户口径：「可以在设置里配置默认的」）。 */
   terminalShell: terminalShellSchema.default("auto"),
-  /** 代码库索引开关（R4-3；索引文件是本机缓存，不进库表）。 */
+  /**
+   * R4-3「索引存储库以实现即时搜索」（索引文件是本机缓存，不进库表）。
+   * 关掉时右栏「文件目录」的搜索**如实拒绝并指路**，不是回空列表。
+   */
   codeIndexEnabled: z.boolean().default(false),
+  /**
+   * R4-3「索引新文件夹」：搜到还没有索引的工作目录时**自动建一份**，
+   * 目录文件数达到 50,000 就不自动建（如实说明并指路「手动重建」）。
+   * 只在 {@link codeIndexEnabled} 开着时起作用——两行开关对应参考图的真实行为。
+   */
+  codeIndexAutoNewFolder: z.boolean().default(true),
   /**
    * 用户规则（设置 → 规则与记忆）：**每轮 run 都会拼进系统提示词**（服务端有消费方）。
    * 此前只存在浏览器 localStorage，页面文案承诺了「附加到每次请求」却没人读。

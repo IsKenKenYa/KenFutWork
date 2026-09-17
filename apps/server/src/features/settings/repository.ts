@@ -30,6 +30,11 @@ export interface SettingsRepository {
     terminalShell: TerminalShellId,
   ): Promise<void>;
   upsertCodeIndexEnabled(workspaceId: string, enabled: boolean): Promise<void>;
+  findCodeIndexAutoNewFolder(workspaceId: string): Promise<boolean | null>;
+  upsertCodeIndexAutoNewFolder(
+    workspaceId: string,
+    enabled: boolean,
+  ): Promise<void>;
   upsertUserRules(workspaceId: string, userRules: string): Promise<void>;
   upsertRuleEntries(workspaceId: string, entries: string[]): Promise<void>;
 }
@@ -38,6 +43,7 @@ type DefaultModelRow = { default_model: string };
 type AgentMaxRetriesRow = { agent_max_retries: number };
 type TerminalShellRow = { terminal_shell: TerminalShellId };
 type CodeIndexEnabledRow = { code_index_enabled: boolean };
+type CodeIndexAutoNewFolderRow = { code_index_auto_new_folder: boolean };
 type UserRulesRow = { user_rules: string; rule_entries: unknown };
 
 export function createSettingsRepository(
@@ -86,6 +92,17 @@ export function createSettingsRepository(
             where workspace_id = :workspace`,
         );
       return row?.code_index_enabled ?? null;
+    },
+
+    async findCodeIndexAutoNewFolder(workspaceId) {
+      const row = await persistence
+        .forWorkspace(workspaceId)
+        .queryOne<CodeIndexAutoNewFolderRow>(
+          `select code_index_auto_new_folder
+             from public.workspace_settings
+            where workspace_id = :workspace`,
+        );
+      return row?.code_index_auto_new_folder ?? null;
     },
 
     async upsertDefaultModel(workspaceId, defaultModel) {
@@ -154,6 +171,17 @@ export function createSettingsRepository(
          values (:workspace, $1)
          on conflict (workspace_id)
          do update set code_index_enabled = excluded.code_index_enabled`,
+        [enabled],
+      );
+    },
+
+    /** 「索引新文件夹」开关（R4-3 第二行）：同样逐列 upsert。 */
+    async upsertCodeIndexAutoNewFolder(workspaceId, enabled) {
+      await persistence.forWorkspace(workspaceId).query(
+        `insert into public.workspace_settings (workspace_id, code_index_auto_new_folder)
+         values (:workspace, $1)
+         on conflict (workspace_id)
+         do update set code_index_auto_new_folder = excluded.code_index_auto_new_folder`,
         [enabled],
       );
     },

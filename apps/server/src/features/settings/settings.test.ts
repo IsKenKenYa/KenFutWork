@@ -104,11 +104,13 @@ describe("settings service", () => {
         findAgentMaxRetries: async () => null,
         findTerminalShell: async () => null,
         findCodeIndexEnabled: async () => null,
+        findCodeIndexAutoNewFolder: async () => null,
         findUserRules: async () => null,
         upsertDefaultModel: async () => {},
         upsertAgentMaxRetries: async () => {},
         upsertTerminalShell: async () => {},
         upsertCodeIndexEnabled: async () => {},
+        upsertCodeIndexAutoNewFolder: async () => {},
         upsertUserRules: async () => {},
         upsertRuleEntries: async () => {},
       },
@@ -121,6 +123,7 @@ describe("settings service", () => {
       defaultModel: "fallback-model",
       terminalShell: "auto",
       codeIndexEnabled: false,
+      codeIndexAutoNewFolder: true,
       ruleEntries: [],
       userRules: "",
     });
@@ -131,11 +134,13 @@ describe("settings service", () => {
         findAgentMaxRetries: async () => null,
         findTerminalShell: async () => null,
         findCodeIndexEnabled: async () => null,
+        findCodeIndexAutoNewFolder: async () => null,
         findUserRules: async () => null,
         upsertDefaultModel: async () => {},
         upsertAgentMaxRetries: async () => {},
         upsertTerminalShell: async () => {},
         upsertCodeIndexEnabled: async () => {},
+        upsertCodeIndexAutoNewFolder: async () => {},
         upsertUserRules: async () => {},
         upsertRuleEntries: async () => {},
       },
@@ -148,6 +153,7 @@ describe("settings service", () => {
       defaultModel: "stored-model",
       terminalShell: "auto",
       codeIndexEnabled: false,
+      codeIndexAutoNewFolder: true,
       ruleEntries: [],
       userRules: "",
     });
@@ -165,11 +171,13 @@ describe("settings service", () => {
       findAgentMaxRetries: async () => null,
       findTerminalShell: async () => null,
       findCodeIndexEnabled: async () => null,
+      findCodeIndexAutoNewFolder: async () => null,
       findUserRules: async () => null,
       upsertDefaultModel: async () => {},
       upsertAgentMaxRetries: async () => {},
       upsertTerminalShell: async () => {},
       upsertCodeIndexEnabled: async () => {},
+      upsertCodeIndexAutoNewFolder: async () => {},
       upsertUserRules: async () => {},
       upsertRuleEntries: async () => {},
     };
@@ -186,6 +194,7 @@ describe("settings service", () => {
       defaultModel: "inst-1:glm-5.3-flash",
       terminalShell: "auto",
       codeIndexEnabled: false,
+      codeIndexAutoNewFolder: true,
       ruleEntries: [],
       userRules: "",
     });
@@ -202,6 +211,7 @@ describe("settings service", () => {
       defaultModel: "gpt-4.1",
       terminalShell: "auto",
       codeIndexEnabled: false,
+      codeIndexAutoNewFolder: true,
       ruleEntries: [],
       userRules: "",
     });
@@ -222,6 +232,7 @@ describe("settings service", () => {
       defaultModel: "stored-model",
       terminalShell: "auto",
       codeIndexEnabled: false,
+      codeIndexAutoNewFolder: true,
       ruleEntries: [],
       userRules: "",
     });
@@ -237,11 +248,13 @@ describe("settings service", () => {
         findAgentMaxRetries: async () => null,
         findTerminalShell: async () => null,
         findCodeIndexEnabled: async () => null,
+        findCodeIndexAutoNewFolder: async () => null,
         findUserRules: async () => null,
         upsertDefaultModel: async () => {},
         upsertAgentMaxRetries: async () => {},
         upsertTerminalShell: async () => {},
         upsertCodeIndexEnabled: async () => {},
+        upsertCodeIndexAutoNewFolder: async () => {},
         upsertUserRules: async () => {},
         upsertRuleEntries: async () => {},
       },
@@ -259,6 +272,7 @@ describe("settings service", () => {
         findAgentMaxRetries: async () => null,
         findTerminalShell: async () => null,
         findCodeIndexEnabled: async () => null,
+        findCodeIndexAutoNewFolder: async () => null,
         findUserRules: async () => null,
         upsertDefaultModel: async () => {
           throw new SqlError("permission denied", { code: "42501" });
@@ -266,6 +280,7 @@ describe("settings service", () => {
         upsertAgentMaxRetries: async () => {},
         upsertTerminalShell: async () => {},
         upsertCodeIndexEnabled: async () => {},
+        upsertCodeIndexAutoNewFolder: async () => {},
         upsertUserRules: async () => {},
         upsertRuleEntries: async () => {},
       },
@@ -276,6 +291,7 @@ describe("settings service", () => {
         defaultModel: "x",
         terminalShell: "auto",
         codeIndexEnabled: false,
+        codeIndexAutoNewFolder: true,
       })
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(SettingsServiceError);
@@ -296,6 +312,7 @@ describe("settings service", () => {
       agentMaxRetries: 3 as number | null,
       terminalShell: "git-bash" as WorkspaceSettings["terminalShell"] | null,
       codeIndexEnabled: null as boolean | null,
+      codeIndexAutoNewFolder: null as boolean | null,
       userRules: null as string | null,
       ruleEntries: null as string[] | null,
     };
@@ -305,6 +322,7 @@ describe("settings service", () => {
         findAgentMaxRetries: async () => stored.agentMaxRetries,
         findTerminalShell: async () => stored.terminalShell,
         findCodeIndexEnabled: async () => null,
+        findCodeIndexAutoNewFolder: async () => null,
         findUserRules: async () => null,
         upsertDefaultModel: async (_workspaceId, defaultModel) => {
           stored = { ...stored, defaultModel };
@@ -317,6 +335,12 @@ describe("settings service", () => {
         },
         upsertCodeIndexEnabled: async (_workspaceId, codeIndexEnabled) => {
           stored = { ...stored, codeIndexEnabled };
+        },
+        upsertCodeIndexAutoNewFolder: async (
+          _workspaceId,
+          codeIndexAutoNewFolder,
+        ) => {
+          stored = { ...stored, codeIndexAutoNewFolder };
         },
         upsertUserRules: async (_workspaceId, userRules) => {
           stored = { ...stored, userRules };
@@ -337,6 +361,7 @@ describe("settings service", () => {
       defaultModel: "gemini-2.5-flash",
       terminalShell: "git-bash",
       codeIndexEnabled: false,
+      codeIndexAutoNewFolder: true,
       ruleEntries: [],
       userRules: "",
     });
@@ -349,6 +374,7 @@ describe("settings service", () => {
     ).resolves.toEqual({
       agentMaxRetries: 3,
       codeIndexEnabled: false,
+      codeIndexAutoNewFolder: true,
       ruleEntries: [],
       userRules: "",
       defaultModel: "gemini-2.5-flash",

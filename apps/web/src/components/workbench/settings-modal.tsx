@@ -119,6 +119,7 @@ export function SettingsModal({
   const [defaultModel, setDefaultModel] = useState("");
   const [agentMaxRetries, setAgentMaxRetries] = useState(10);
   const [codeIndexEnabled, setCodeIndexEnabled] = useState(false);
+  const [codeIndexAutoNewFolder, setCodeIndexAutoNewFolder] = useState(true);
   const [loading, setLoading] = useState(false);
 
   const accessTokenRef = useRef(session?.access_token);
@@ -141,6 +142,7 @@ export function SettingsModal({
       setDefaultModel(settings.settings.defaultModel);
       setAgentMaxRetries(settings.settings.agentMaxRetries);
       setCodeIndexEnabled(settings.settings.codeIndexEnabled);
+      setCodeIndexAutoNewFolder(settings.settings.codeIndexAutoNewFolder);
     } catch {
       // 加载失败时保留空态，各分区自行提示
     } finally {
@@ -178,6 +180,24 @@ export function SettingsModal({
         setCodeIndexEnabled(result.settings.codeIndexEnabled);
       } catch {
         setCodeIndexEnabled(!next);
+      }
+    },
+    [getToken],
+  );
+
+  /** 「索引新文件夹」开关：同样部分更新，只送这一个字段。 */
+  const handleIndexAutoToggle = useCallback(
+    async (next: boolean) => {
+      const token = getToken();
+      if (!token) return;
+      setCodeIndexAutoNewFolder(next);
+      try {
+        const result = await updateWorkspaceSettings(token, {
+          codeIndexAutoNewFolder: next,
+        });
+        setCodeIndexAutoNewFolder(result.settings.codeIndexAutoNewFolder);
+      } catch {
+        setCodeIndexAutoNewFolder(!next);
       }
     },
     [getToken],
@@ -275,7 +295,9 @@ export function SettingsModal({
                   accessToken={token}
                   canvasId={activeCanvasId}
                   enabled={codeIndexEnabled}
+                  autoNewFolder={codeIndexAutoNewFolder}
                   onToggle={handleIndexToggle}
+                  onToggleAuto={handleIndexAutoToggle}
                 />
               ) : null
             ) : activeTab === "onboarding" ? (

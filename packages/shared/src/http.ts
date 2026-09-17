@@ -385,6 +385,11 @@ export const applicationErrorCodeSchema = z.enum([
   "project_not_found",
   "project_slug_taken",
   "project_update_failed",
+  // 索引库（R4-3）：两个开关各自的可读拒绝（不在枚举里 → 响应会退化成 ZodError 转储）
+  "index_disabled",
+  "index_not_built",
+  "index_too_large",
+  "index_failed",
   /**
    * 项目工作目录（`projects.work_dir`，web 形态「填本机路径」）校验失败（400）。
    * 同一个坑第二次踩到（见上面 `service_unavailable` 的注释）：码不在本枚举里，
@@ -490,14 +495,37 @@ export const workspaceSettingsResponseSchema = z.object({
 });
 
 /**
+ * 去掉字段上的 `.default(...)`。
+ *
+ * `.partial()` **不会**去掉默认值：`z.boolean().default(false)` 在缺省时依然产出 `false`，
+ * 于是「部分更新」的 payload 会带上一堆没送来的键（实测 `parse({codeIndexAutoNewFolder:false})`
+ * 回来 6 个键）。真机复现过后果：改一个索引开关，另一个索引开关被打回默认、终端 shell 回到
+ * `auto`、用户规则被清空——**一次保存静默重置其它所有设置**。
+ */
+/** 字段带 `.default(...)` 时取它**包着的那层**，否则原样返回。 */
+type StripDefault<T> =
+  T extends z.ZodDefault<infer Inner extends z.ZodTypeAny> ? Inner : T;
+
+function withoutDefaults<T extends z.ZodRawShape>(
+  shape: T,
+): { [K in keyof T]: StripDefault<T[K]> } {
+  return Object.fromEntries(
+    Object.entries(shape).map(([key, field]) => [
+      key,
+      field instanceof z.ZodDefault ? field.removeDefault() : field,
+    ]),
+  ) as { [K in keyof T]: StripDefault<T[K]> };
+}
+
+/**
  * PUT 的入参是**部分更新**：只写送来的字段，没送的保持库里现值。
  *
- * 用整对象会踩坑：`terminalShell` 这类字段带 zod 默认值，客户端只想改模型时不会带它，
- * 服务端按「整对象写入」就会把它顺手重置成默认——这正违反「逐列 upsert，两个设置各自保存
- * 不互相覆盖」的既有口径。
+ * 两个都不能省：① 每个字段先剥掉默认值（见 {@link withoutDefaults}）；② 再 `.partial()`
+ * 让键本身可缺。少任何一个，客户端的单字段保存都会把其余设置重置成默认。
  */
-export const workspaceSettingsUpdateRequestSchema =
-  workspaceSettingsSchema.partial();
+export const workspaceSettingsUpdateRequestSchema = z
+  .object(withoutDefaults(workspaceSettingsSchema.shape))
+  .partial();
 
 export const modelListResponseSchema = z.object({
   models: z.array(modelInfoSchema),

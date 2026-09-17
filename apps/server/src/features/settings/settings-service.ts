@@ -37,6 +37,7 @@ export type WorkspaceSettingsPatch = {
   agentMaxRetries?: number | undefined;
   terminalShell?: TerminalShellId | undefined;
   codeIndexEnabled?: boolean | undefined;
+  codeIndexAutoNewFolder?: boolean | undefined;
   userRules?: string | undefined;
   ruleEntries?: string[] | undefined;
 };
@@ -82,12 +83,14 @@ export function createSettingsService(options: {
       storedRetries,
       storedShell,
       storedIndexEnabled,
+      storedIndexAutoNewFolder,
       storedRules,
     ] = await Promise.all([
       repository.findDefaultModel(workspaceId),
       repository.findAgentMaxRetries(workspaceId),
       repository.findTerminalShell(workspaceId),
       repository.findCodeIndexEnabled(workspaceId),
+      repository.findCodeIndexAutoNewFolder(workspaceId),
       repository.findUserRules(workspaceId),
     ]).catch(() => {
       throw new SettingsServiceError(
@@ -110,6 +113,8 @@ export function createSettingsService(options: {
       defaultModel: storedModel ?? resolvedFallback ?? defaultModel,
       terminalShell: storedShell ?? "auto",
       codeIndexEnabled: storedIndexEnabled ?? false,
+      // 缺省 true：只在上面那个总开关开着时才生效，所以不会「悄悄建索引」
+      codeIndexAutoNewFolder: storedIndexAutoNewFolder ?? true,
       userRules: storedRules?.userRules ?? "",
       ruleEntries: storedRules?.ruleEntries ?? [],
     };
@@ -144,6 +149,14 @@ export function createSettingsService(options: {
           repository.upsertCodeIndexEnabled(
             workspaceId,
             patch.codeIndexEnabled,
+          ),
+        );
+      }
+      if (patch.codeIndexAutoNewFolder !== undefined) {
+        writes.push(
+          repository.upsertCodeIndexAutoNewFolder(
+            workspaceId,
+            patch.codeIndexAutoNewFolder,
           ),
         );
       }
