@@ -344,36 +344,13 @@ export async function registerGenerateRoutes(
         }
       }
 
-      // ── Poll until terminal state ──
-      const POLL_INTERVAL = 3_000;
-      const MAX_WAIT = 300_000; // 5 minutes
-
-      const result = await pollJobUntilDone(
-        options.jobService,
-        job.id,
-        POLL_INTERVAL,
-        MAX_WAIT,
-      );
-
-      if ("error" in result) {
-        return reply.code(502).send(
-          applicationErrorResponseSchema.parse({
-            error: {
-              code: "generation_failed",
-              message: result.error,
-            },
-          }),
-        );
-      }
-
-      return reply.code(200).send({
-        url: result.signed_url,
-        assetId: result.asset_id,
+      // ── 异步受理（S6）：任务由 worker 执行（异步任务面 submit + 队列轮询），
+      // HTTP 请求不在请求内挂起等结果（台账遗留：5 分钟内联轮询退役）。
+      // 进度经 GET /api/jobs/:id 轮询。
+      return reply.code(202).send({
+        job_id: job.id,
+        status: "queued",
         prompt: payload.prompt,
-        mimeType: result.mime_type,
-        width: result.width,
-        height: result.height,
-        durationSeconds: result.duration_seconds,
       });
     } catch (error) {
       if (error instanceof TierGuardError) {
@@ -411,65 +388,6 @@ export async function registerGenerateRoutes(
       );
     }
   });
-}
-
-// ── Job polling helper ──────────────────────────────────────
-
-type VideoJobResult = {
-  signed_url: string;
-  asset_id: string;
-  width: number;
-  height: number;
-  duration_seconds: number;
-  mime_type: string;
-};
-
-type PollResult = VideoJobResult | { error: string };
-
-async function pollJobUntilDone(
-  jobService: JobService,
-  jobId: string,
-  pollInterval: number,
-  maxWait: number,
-): Promise<PollResult> {
-  const start = Date.now();
-
-  while (Date.now() - start < maxWait) {
-    await delay(pollInterval);
-
-    const current = await jobService.getJobAdmin(jobId);
-
-    if (current.status === "succeeded" && current.result) {
-      const r = current.result as Record<string, unknown>;
-      return {
-        signed_url: (r.signed_url as string) ?? "",
-        asset_id: (r.asset_id as string) ?? "",
-        width: (r.width as number) ?? 0,
-        height: (r.height as number) ?? 0,
-        duration_seconds: (r.duration_seconds as number) ?? 0,
-        mime_type: (r.mime_type as string) ?? "video/mp4",
-      };
-    }
-
-    if (current.status === "dead_letter" || current.status === "canceled") {
-      return { error: current.error_message ?? `Job ${current.status}` };
-    }
-
-    if (
-      current.status === "failed" &&
-      current.attempt_count >= current.max_attempts
-    ) {
-      return {
-        error: current.error_message ?? "Job failed after max retries",
-      };
-    }
-  }
-
-  return { error: `Job timed out after ${maxWait / 1000}s` };
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // ── Image download + upload helper ──────────────────────────

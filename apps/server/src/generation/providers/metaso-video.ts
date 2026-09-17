@@ -1,5 +1,6 @@
 import type {
   GeneratedVideo,
+  VideoAsyncPollResult,
   VideoGenerateParams,
   VideoModelInfo,
   VideoProvider,
@@ -136,6 +137,61 @@ export class MetasoVideoProvider implements VideoProvider {
         }));
     this.now = options.now ?? Date.now;
     this.headers = options.headers;
+  }
+
+  /**
+   * 异步任务面（S6）：create 立即返回 task_id 交由 executor 落库；查询节奏由
+   * 队列延迟消息承载，本方法只做单次查询。
+   */
+  async startAsync(
+    params: VideoGenerateParams,
+  ): Promise<{ providerJobId: string }> {
+    const request = buildCreateRequest(params);
+    const createResponse = await this.requestJson("v2/video_generation", {
+      method: "POST",
+      body: JSON.stringify(request),
+    });
+    const taskId = readRequiredString(createResponse, "task_id");
+    return { providerJobId: taskId };
+  }
+
+  async pollAsync(providerJobId: string): Promise<VideoAsyncPollResult> {
+    const response = await this.requestJson(
+      `v2/query/video_generation/${encodeURIComponent(providerJobId)}`,
+      { method: "GET" },
+    );
+    const task = readTask(response);
+    const status = readRequiredString(task, "status");
+
+    if (status === "succeeded") {
+      if (task.modality != null && task.modality !== "video") {
+        return {
+          state: "failed",
+          errorMessage:
+            "Metaso returned a non-video result for video generation",
+        };
+      }
+      const outputUrl = readRequiredString(task.content, "url");
+      validateOutputUrl(outputUrl);
+      return { state: "succeeded", videoUrl: outputUrl };
+    }
+
+    if (status === "failed") {
+      const code =
+        typeof task.error?.code === "string"
+          ? sanitizeMessage(task.error.code)
+          : "task_failed";
+      const detail =
+        typeof task.error?.message === "string"
+          ? redactSensitiveValue(
+              sanitizeMessage(task.error.message),
+              this.apiKey,
+            )
+          : "Metaso video generation failed";
+      return { state: "failed", errorMessage: `${code}: ${detail}` };
+    }
+
+    return { state: "in_progress" };
   }
 
   async generate(params: VideoGenerateParams): Promise<GeneratedVideo> {

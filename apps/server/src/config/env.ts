@@ -152,6 +152,10 @@ export type ServerEnv = {
   workerImageConcurrency?: number;
   workerVideoConcurrency?: number;
   workerId?: string;
+  /** 视频任务绝对超时（ms）：超时强制 failed，防厂商假死堵死并发位（默认 30 分钟）。 */
+  videoJobTimeoutMs?: number;
+  /** 异步视频 poll 的延迟消息间隔（秒，默认 10）。 */
+  videoPollDelaySeconds?: number;
   workerPollIntervalMs?: number;
   workerMaxBatchSize?: number;
 };
@@ -321,6 +325,16 @@ export function loadServerEnv(
     (source.WORKER_IMAGE_CONCURRENCY
       ? Number.parseInt(source.WORKER_IMAGE_CONCURRENCY, 10)
       : undefined);
+  const videoJobTimeoutMs =
+    overrides.videoJobTimeoutMs ??
+    (source.VIDEO_JOB_TIMEOUT_MS
+      ? Number.parseInt(source.VIDEO_JOB_TIMEOUT_MS, 10)
+      : undefined);
+  const videoPollDelaySeconds =
+    overrides.videoPollDelaySeconds ??
+    (source.VIDEO_POLL_DELAY_SECONDS
+      ? Number.parseInt(source.VIDEO_POLL_DELAY_SECONDS, 10)
+      : undefined);
   const workerVideoConcurrency =
     overrides.workerVideoConcurrency ??
     (source.WORKER_VIDEO_CONCURRENCY
@@ -436,6 +450,8 @@ export function loadServerEnv(
     ...(workerConcurrency ? { workerConcurrency } : {}),
     ...(workerImageConcurrency ? { workerImageConcurrency } : {}),
     ...(workerVideoConcurrency ? { workerVideoConcurrency } : {}),
+    ...(videoJobTimeoutMs ? { videoJobTimeoutMs } : {}),
+    ...(videoPollDelaySeconds ? { videoPollDelaySeconds } : {}),
     ...(workerId ? { workerId } : {}),
     ...(workerPollIntervalMs ? { workerPollIntervalMs } : {}),
     ...(workerMaxBatchSize ? { workerMaxBatchSize } : {}),

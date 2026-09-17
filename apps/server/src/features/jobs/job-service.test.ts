@@ -75,6 +75,7 @@ const JOB_ROW = {
   error_message: null,
   attempt_count: 0,
   max_attempts: 3,
+  provider_job_id: null,
   created_by: USER_ID,
   created_at: "2026-09-13T00:00:00+00:00",
   updated_at: "2026-09-13T00:00:00+00:00",
@@ -307,6 +308,8 @@ function createFakeRepository(
     markRunning: async () => 1,
     markSucceeded: async () => 1,
     setCreditsInfo: async () => 1,
+    setProviderJobId: async () => 1,
+    appendJobPayload: async () => 1,
     ...overrides,
   };
 }

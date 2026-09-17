@@ -217,12 +217,26 @@ async function processMessage(
     const errorMessage = err instanceof Error ? err.message : String(err);
     const errorCode = (err as { code?: string })?.code ?? "executor_error";
 
+    // 异步任务面（S6）：executor 已投下一条延迟 poll 消息——本次消费到此为止，
+    // job 行保持 running（轮询状态不在行上推进），当前消息直接归档。
+    if (errorCode === "provider_poll_scheduled") {
+      await ctx.queue.archive(queue, msg.msg_id);
+      console.log(
+        `${tag} Job ${jobId} poll scheduled +${Date.now() - startTime}ms`,
+      );
+      return;
+    }
+
     // 不可重试的错误：同输入重试必然再失败，直接死信，让调用方快速拿到反馈
     const NON_RETRYABLE_CODES = new Set([
       "invalid_input",
       "model_not_found",
       "provider_not_found",
       "safety_filter",
+      // 厂商明确失败 / 绝对超时 / 跨修订拒绝：同输入重试必然再失败
+      "provider_task_failed",
+      "video_job_timeout",
+      "provider_config_stale",
     ]);
     const shouldDeadLetter =
       attempt_count >= max_attempts || NON_RETRYABLE_CODES.has(errorCode);

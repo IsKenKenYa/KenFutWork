@@ -52,6 +52,7 @@ const VIDEO_ADAPTERS: Partial<
 > = {
   replicate: replicate.createInstanceVideoProvider,
   metaso: metaso.createInstanceVideoProvider,
+  volces: volces.createInstanceVideoProvider,
 };
 
 /** 按用户实例实例化聊天模型；协议不支持聊天即 fail loud。 */

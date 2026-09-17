@@ -1,5 +1,6 @@
 import type {
   GeneratedVideo,
+  VideoAsyncPollResult,
   VideoGenerateParams,
   VideoModelInfo,
   VideoProvider,
@@ -392,6 +393,101 @@ export class ReplicateVideoProvider implements VideoProvider {
   constructor(apiToken: string, headers?: Record<string, string>) {
     this.apiToken = apiToken;
     this.headers = headers;
+  }
+
+  /**
+   * 异步任务面（S6）：直接异步提交（不带 `Prefer: wait=300`），返回 prediction id
+   * 交由 executor 落库；轮询节奏由队列延迟消息承载。
+   */
+  async startAsync(
+    params: VideoGenerateParams,
+  ): Promise<{ providerJobId: string }> {
+    const modelInfo = REPLICATE_VIDEO_MODELS.find((m) => m.id === params.model);
+    if (!modelInfo) {
+      throw new GenerationError(
+        "replicate",
+        "unknown_model",
+        `Unknown video model: ${params.model}`,
+      );
+    }
+    const { endpoint, input } = buildModelInput(params);
+    const response = await fetch(
+      `${REPLICATE_API_BASE}/models/${endpoint}/predictions`,
+      {
+        method: "POST",
+        headers: {
+          // 自定义头（§4.8）在前，凭证与内容类型随后——保留头永远由适配器说了算
+          ...this.headers,
+          Authorization: `Bearer ${this.apiToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ input }),
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => null);
+      throw new GenerationError(
+        "replicate",
+        "api_error",
+        `Replicate API error ${response.status}: ${(errorBody as { detail?: string })?.detail ?? "Unknown error"}`,
+      );
+    }
+    const data = (await response.json()) as { id: string };
+    if (!data.id) {
+      throw new GenerationError(
+        "replicate",
+        "malformed_response",
+        "Replicate submit response missing prediction id",
+      );
+    }
+    return { providerJobId: data.id };
+  }
+
+  async pollAsync(providerJobId: string): Promise<VideoAsyncPollResult> {
+    const res = await fetch(
+      `${REPLICATE_API_BASE}/predictions/${providerJobId}`,
+      {
+        // 自定义头（§4.8）随每次轮询一并带上，凭证头在后
+        headers: {
+          ...this.headers,
+          Authorization: `Bearer ${this.apiToken}`,
+        },
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+    if (!res.ok) {
+      // 轮询单次网络/HTTP 故障 ≠ 任务失败：交回引擎按瞬态重试（消息重投）
+      throw new GenerationError(
+        "replicate",
+        "api_error",
+        `Replicate poll error ${res.status}`,
+      );
+    }
+    const pred = (await res.json()) as {
+      status: string;
+      output: string | string[] | null;
+      error?: string;
+    };
+    if (pred.status === "succeeded") {
+      const outputUrl = Array.isArray(pred.output)
+        ? pred.output[0]
+        : pred.output;
+      if (!outputUrl) {
+        return {
+          state: "failed",
+          errorMessage: "Replicate returned no video output URL",
+        };
+      }
+      return { state: "succeeded", videoUrl: outputUrl };
+    }
+    if (pred.status === "failed" || pred.status === "canceled") {
+      return {
+        state: "failed",
+        errorMessage: `Video prediction failed: ${pred.error ?? pred.status}`,
+      };
+    }
+    return { state: "in_progress" };
   }
 
   async generate(params: VideoGenerateParams): Promise<GeneratedVideo> {

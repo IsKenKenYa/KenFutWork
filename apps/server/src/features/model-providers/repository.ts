@@ -19,6 +19,8 @@ export type ProviderInstanceRecord = {
   compat: Record<string, unknown> | null;
   headers: Record<string, string> | null;
   enabled: boolean;
+  /** 配置修订号（bigint 经 pg 返回字符串）：任何实例更新自增，跨修订防护用。 */
+  config_revision: string;
 };
 
 /** 更新补丁：`undefined` = 不改；显式 null = 清空（如移除 base_url）。 */
@@ -101,7 +103,7 @@ export interface ModelProviderRepository {
 }
 
 const INSTANCE_COLUMNS =
-  "id, scope, workspace_id, name, protocol, base_url, encrypted_api_key, models, compat, headers, enabled";
+  "id, scope, workspace_id, name, protocol, base_url, encrypted_api_key, models, compat, headers, enabled, config_revision";
 
 /** 把补丁翻成 SET 片段；`$1` 固定留作目标 id，故列从 `$2` 起编号。 */
 function buildPatch(
@@ -196,7 +198,8 @@ export function createModelProviderRepository(
         .forWorkspace(workspaceId)
         .queryOne<ProviderInstanceRecord>(
           `update public.provider_instances
-            set ${built.assignments.join(", ")}
+            set config_revision = config_revision + 1,
+                ${built.assignments.join(", ")}
           where workspace_id = :workspace
             and id = $1
             and scope = 'workspace'
@@ -262,7 +265,8 @@ export function createModelProviderRepository(
       }
       return persistence.queryOne<ProviderInstanceRecord>(
         `update public.provider_instances
-            set ${built.assignments.join(", ")}
+            set config_revision = config_revision + 1,
+                ${built.assignments.join(", ")}
           where id = $1
             and scope = 'system'
         returning ${INSTANCE_COLUMNS}`,

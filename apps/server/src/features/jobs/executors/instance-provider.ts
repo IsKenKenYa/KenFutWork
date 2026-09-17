@@ -52,16 +52,20 @@ export async function resolveInstanceImageProviderFromPayload(
   });
 }
 
+/**
+ * 视频版额外透出实例的 `configRevision`——异步任务 submit 时把修订号落进
+ * job payload，poll 执行时比对不一致即拒（跨修订不复活旧任务，S6 老化治理）。
+ */
 export async function resolveInstanceVideoProviderFromPayload(
   instanceId: string | undefined,
   ctx: ExecutorCtx,
   headerContext: HeaderRenderContext = {},
-): Promise<VideoProvider | undefined> {
+): Promise<{ provider: VideoProvider; configRevision: number } | undefined> {
   if (!instanceId) {
     return undefined;
   }
   const credentials = await resolveCredentials(instanceId, ctx);
-  return resolveInstanceVideoProvider(credentials.protocol, {
+  const provider = resolveInstanceVideoProvider(credentials.protocol, {
     credentials: {
       apiKey: credentials.apiKey,
       ...(credentials.baseUrl ? { baseUrl: credentials.baseUrl } : {}),
@@ -71,4 +75,5 @@ export async function resolveInstanceVideoProviderFromPayload(
       .filter((m) => m.capability === "video")
       .map((m) => ({ id: m.id, name: m.name })),
   });
+  return { provider, configRevision: credentials.configRevision };
 }

@@ -49,6 +49,7 @@ describe("resolveInstance*ProviderFromPayload（capability 过滤）", () => {
           apiKey: "r8-key",
           baseUrl: "https://api.replicate.com",
           headers: undefined,
+          configRevision: 1,
           models: [
             { id: "img-1", capability: "image" },
             { id: "edit-1", capability: "image-edit" },
@@ -57,12 +58,13 @@ describe("resolveInstance*ProviderFromPayload（capability 过滤）", () => {
         })),
       },
     };
-    const provider = await resolveInstanceVideoProviderFromPayload(
+    const result = await resolveInstanceVideoProviderFromPayload(
       "11111111-1111-1111-1111-111111111111",
       ctx as never,
     );
-    expect(provider).toBeDefined();
-    expect(provider?.models.map((m) => m.id)).toEqual(["vid-1"]);
+    expect(result).toBeDefined();
+    expect(result?.configRevision).toBe(1);
+    expect(result?.provider.models.map((m) => m.id)).toEqual(["vid-1"]);
   });
 
   it("无实例 id 返回 undefined（内置目录路径不受影响）", async () => {

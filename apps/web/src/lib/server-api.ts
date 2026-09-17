@@ -709,14 +709,14 @@ export async function generateImageDirect(
   return (await response.json()) as GenerateImageResponse;
 }
 
-export type GenerateVideoResponse = {
-  url: string;
-  assetId: string;
+/**
+ * 视频生成受理（202）：任务由 worker 异步执行（异步任务面 submit + 队列轮询），
+ * 进度经 fetchJob 轮询到终态。S6 之前是 HTTP 内挂起等 5 分钟，已退役。
+ */
+export type GenerateVideoSubmission = {
+  job_id: string;
+  status: string;
   prompt: string;
-  mimeType: string;
-  width: number;
-  height: number;
-  durationSeconds: number;
 };
 
 export async function generateVideoDirect(
@@ -731,7 +731,7 @@ export async function generateVideoDirect(
     /** 会话标识（§4.8）：随任务落库，worker 侧按它渲染自定义头占位符。 */
     sessionId?: string;
   },
-): Promise<GenerateVideoResponse> {
+): Promise<GenerateVideoSubmission> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/agent/generate-video`,
     {
@@ -751,7 +751,7 @@ export async function generateVideoDirect(
     },
   );
   if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as GenerateVideoResponse;
+  return (await response.json()) as GenerateVideoSubmission;
 }
 
 // --- Jobs API ---

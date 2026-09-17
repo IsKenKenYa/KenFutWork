@@ -58,6 +58,8 @@ export interface ResolvedInstanceCredentials {
   /** 自定义请求头（原值，含占位符）：调用方按会话上下文渲染后再交给适配器。 */
   headers?: Record<string, string>;
   models: Array<{ id: string; name: string; capability: ModelCapability }>;
+  /** 实例配置修订号：异步任务落盘修订与当前不一致即拒（跨修订防护）。 */
+  configRevision: number;
 }
 
 type InstanceModel = {
@@ -106,6 +108,7 @@ function toCredentials(row: ProviderInstanceRecord, apiKey: string) {
     ...(row.compat ? { compat: row.compat } : {}),
     ...(row.headers ? { headers: row.headers } : {}),
     models: mapModels(row.models),
+    configRevision: Number(row.config_revision),
   };
 }
 

@@ -94,6 +94,7 @@ const INSTANCE_ROW: ProviderInstanceRecord = {
   compat: { streamUsage: true },
   headers: null,
   enabled: true,
+  config_revision: "1",
 };
 
 const SYSTEM_ROW: ProviderInstanceRecord = {
@@ -218,7 +219,8 @@ describe("model-providers 服务（BYOK 凭证红线）", () => {
     const hit = buildService({ rows: [{ ...INSTANCE_ROW, name: "新名" }] });
     await hit.service.updateInstance(USER, INSTANCE_ID, { name: "新名" });
     const sql = hit.calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
-    expect(sql).toContain("set name = $2");
+    expect(sql).toContain("config_revision = config_revision + 1");
+    expect(sql).toContain("name = $2");
     expect(sql).toContain(
       "where workspace_id = $3 and id = $1 and scope = 'workspace'",
     );
