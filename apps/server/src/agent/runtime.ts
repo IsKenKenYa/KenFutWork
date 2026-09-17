@@ -15,6 +15,7 @@ import {
   type StreamEvent,
   type VideoGenerationPreference,
   type VideoResolution,
+  type WorkspaceSettings,
 } from "@kenfutwork/shared";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { HumanMessage } from "@langchain/core/messages";
@@ -35,6 +36,7 @@ import type { JobService } from "../features/jobs/job-service.js";
 import type { ModelCatalogService } from "../features/model-providers/model-catalog-service.js";
 import { parseInstanceSpecifier } from "../features/model-providers/model-catalog-service.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
+import { hooksFor, runHooks } from "../features/settings/hooks.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import { formatUserRulesFragment } from "../features/settings/user-rules.js";
 import type { RunUsageAccumulator } from "../features/usage/run-usage-accumulator.js";
@@ -1114,6 +1116,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
        */
       let autoCompactEnabled = true;
       let autoCompact: CompactionPlan | undefined;
+      /** 用户钩子（R5-2）：起点在装配前跑，终点在本轮收尾时跑；都是旁路。 */
+      let hookCommands: { start: string[]; end: string[] } = {
+        start: [],
+        end: [],
+      };
+      let hookShell: WorkspaceSettings["terminalShell"] | undefined;
 
       try {
         /** 被拒工具调用的记账（含连续拒绝计数）；门存在时才有值。 */
@@ -1420,6 +1428,28 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             });
             // 同一个设置对象顺带读压缩开关（少一次库往返）
             autoCompactEnabled = workspaceSettings?.autoCompactEnabled ?? true;
+            // 钩子也从这个对象读（同一趟）：起点钩子在装配 agent 之前跑
+            hookCommands = {
+              start: hooksFor(workspaceSettings?.hooks, "turn-start"),
+              end: hooksFor(workspaceSettings?.hooks, "turn-end"),
+            };
+            hookShell = workspaceSettings?.terminalShell;
+          }
+
+          if (hookCommands.start.length > 0 && backendResult.sandboxDir) {
+            for (const hook of await runHooks({
+              event: "turn-start",
+              commands: hookCommands.start,
+              cwd: backendResult.sandboxDir,
+              ...(hookShell ? { shell: hookShell } : {}),
+            })) {
+              yield {
+                type: "run.hook" as const,
+                runId,
+                ...hook,
+                timestamp: now(),
+              };
+            }
           }
 
           /**
@@ -1940,6 +1970,31 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         }
         // 仅临时沙箱随 run 清理（dev per-run 目录）；prod 的工作区按画布持久，
         // 清掉它等于删用户项目文件（文件系统统一后 /workspace 即此目录）
+        /**
+         * 用户钩子（R5-2）的**终点**：本轮收尾（成功/失败/取消都算）时在项目工作目录里跑。
+         * 放在 finally 里是为了「取消/失败也跑得到」——用户配的是「每轮结束」而不是「成功结束」。
+         * 事件在此之后才发（客户端按 runId 收，不依赖终态先后）。
+         */
+        if (hookCommands.end.length > 0 && backendResult.sandboxDir) {
+          try {
+            for (const hook of await runHooks({
+              event: "turn-end",
+              commands: hookCommands.end,
+              cwd: backendResult.sandboxDir,
+              ...(hookShell ? { shell: hookShell } : {}),
+            })) {
+              yield {
+                type: "run.hook" as const,
+                runId,
+                ...hook,
+                timestamp: now(),
+              };
+            }
+          } catch (hookError) {
+            // 钩子是旁路：这里再兜一层，绝不让它把收尾流程带崩
+            console.warn("[agent-runtime] turn-end hooks failed:", hookError);
+          }
+        }
         if (backendResult.sandboxDir && backendResult.ephemeral) {
           rm(backendResult.sandboxDir, { recursive: true, force: true }).catch(
             (err) => console.warn("[sandbox] cleanup failed:", err.message),

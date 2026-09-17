@@ -57,6 +57,8 @@ function build(options: {
       autoCompactEnabled: boolean;
       /** 自定义命令（同上：空表）。 */
       commands: Array<{ name: string; description: string; prompt: string }>;
+      /** 用户钩子（同上：空表）。 */
+      hooks: Array<{ event: "turn-start" | "turn-end"; command: string }>;
       /** 用户规则（同上：桩里给空值）。 */
       userRules: string;
       ruleEntries: string[];
@@ -457,6 +459,7 @@ describe("终端 shell 解析", () => {
           codeIndexAutoNewFolder: false,
           autoCompactEnabled: false,
           commands: [],
+          hooks: [],
           userRules: "",
           ruleEntries: [],
         }),

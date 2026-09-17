@@ -14,6 +14,7 @@ import { AccountSection } from "@/components/workbench/account-section";
 import { AppearanceSection } from "@/components/workbench/appearance-section";
 import { BrowserSettingsSection } from "@/components/workbench/browser-settings-section";
 import { CommandsSection } from "@/components/workbench/commands-section";
+import { HooksSection } from "@/components/workbench/hooks-section";
 import { IndexLibrarySection } from "@/components/workbench/index-library-section";
 import { ListLoading } from "@/components/workbench/list-state";
 import { OnboardingSection } from "@/components/workbench/onboarding-section";
@@ -36,6 +37,7 @@ export type SettingsTab =
   | "general"
   | "appearance"
   | "commands"
+  | "hooks"
   | "model"
   | "providers"
   | "permissions"
@@ -77,6 +79,7 @@ const TAB_GROUPS: Array<{
       { id: "permissions", label: "权限" },
       { id: "rules", label: "规则与记忆" },
       { id: "commands", label: "命令" },
+      { id: "hooks", label: "钩子" },
       { id: "subagents", label: "子智能体" },
     ],
   },
@@ -179,6 +182,7 @@ export function SettingsModal({
   const [codeIndexAutoNewFolder, setCodeIndexAutoNewFolder] = useState(true);
   const [autoCompactEnabled, setAutoCompactEnabled] = useState(true);
   const [commands, setCommands] = useState<WorkspaceSettings["commands"]>([]);
+  const [hooks, setHooks] = useState<WorkspaceSettings["hooks"]>([]);
   const [loading, setLoading] = useState(false);
 
   const accessTokenRef = useRef(session?.access_token);
@@ -208,6 +212,7 @@ export function SettingsModal({
       setCodeIndexAutoNewFolder(settings.settings.codeIndexAutoNewFolder);
       setAutoCompactEnabled(settings.settings.autoCompactEnabled);
       setCommands(settings.settings.commands);
+      setHooks(settings.settings.hooks);
     } catch {
       // 加载失败时保留空态，各分区自行提示
     } finally {
@@ -419,6 +424,14 @@ export function SettingsModal({
                   accessToken={token}
                   commands={commands}
                   onSaved={setCommands}
+                />
+              ) : null
+            ) : activeTab === "hooks" ? (
+              token ? (
+                <HooksSection
+                  accessToken={token}
+                  hooks={hooks}
+                  onSaved={setHooks}
                 />
               ) : null
             ) : activeTab === "subagents" ? (

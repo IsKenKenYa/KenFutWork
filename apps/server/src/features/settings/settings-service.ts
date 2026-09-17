@@ -40,6 +40,7 @@ export type WorkspaceSettingsPatch = {
   codeIndexAutoNewFolder?: boolean | undefined;
   autoCompactEnabled?: boolean | undefined;
   commands?: WorkspaceSettings["commands"] | undefined;
+  hooks?: WorkspaceSettings["hooks"] | undefined;
   userRules?: string | undefined;
   ruleEntries?: string[] | undefined;
 };
@@ -87,6 +88,24 @@ function parseCommands(raw: unknown): WorkspaceSettings["commands"] {
   return out;
 }
 
+/**
+ * 读钩子表：只信形状对的那部分（旧行/手改过的行不该让整页崩），最多 10 条。
+ * 事件名认不出就丢——一个「不知道什么时候跑」的钩子比不跑更糟。
+ */
+function parseHooks(raw: unknown): WorkspaceSettings["hooks"] {
+  if (!Array.isArray(raw)) return [];
+  const out: WorkspaceSettings["hooks"] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const { event, command } = entry as { event?: unknown; command?: unknown };
+    if (event !== "turn-start" && event !== "turn-end") continue;
+    if (typeof command !== "string" || !command.trim()) continue;
+    out.push({ event, command: command.trim().slice(0, 2_000) });
+    if (out.length >= 10) break;
+  }
+  return out;
+}
+
 export function createSettingsService(options: {
   repository: SettingsRepository;
   /** Override the fallback model when no workspace setting exists. */
@@ -119,6 +138,7 @@ export function createSettingsService(options: {
       storedAutoCompact,
       storedRules,
       storedCommands,
+      storedHooks,
     ] = await Promise.all([
       repository.findDefaultModel(workspaceId),
       repository.findAgentMaxRetries(workspaceId),
@@ -128,6 +148,7 @@ export function createSettingsService(options: {
       repository.findAutoCompactEnabled(workspaceId),
       repository.findUserRules(workspaceId),
       repository.findCommands(workspaceId),
+      repository.findHooks(workspaceId),
     ]).catch(() => {
       throw new SettingsServiceError(
         "settings_read_failed",
@@ -154,6 +175,7 @@ export function createSettingsService(options: {
       // 缺省 true：不压缩时超长会话直接撞上游上限失败，用户只能看到通用报错
       autoCompactEnabled: storedAutoCompact ?? true,
       commands: parseCommands(storedCommands),
+      hooks: parseHooks(storedHooks),
       userRules: storedRules?.userRules ?? "",
       ruleEntries: storedRules?.ruleEntries ?? [],
     };
@@ -206,6 +228,9 @@ export function createSettingsService(options: {
             patch.autoCompactEnabled,
           ),
         );
+      }
+      if (patch.hooks !== undefined) {
+        writes.push(repository.upsertHooks(workspaceId, patch.hooks));
       }
       if (patch.commands !== undefined) {
         writes.push(repository.upsertCommands(workspaceId, patch.commands));

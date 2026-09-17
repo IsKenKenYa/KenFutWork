@@ -230,6 +230,15 @@ interface WorkbenchTask {
     triggerSource: "reserved-output" | "fraction" | "fallback";
     keepMessages: number;
   };
+  /** 用户钩子（R5-2「钩子」）：本轮跑过的钩子命令与结果（旁路，失败也不影响本轮）。 */
+  hookResults?: Array<{
+    event: "turn-start" | "turn-end";
+    command: string;
+    exitCode: number | null;
+    timedOut: boolean;
+    output: string;
+    durationMs: number;
+  }>;
 }
 
 /**
@@ -1171,6 +1180,31 @@ export function Workbench() {
             evt as Parameters<typeof applyTaskToolEvent>[1],
           ),
         );
+      } else if (type === "run.hook") {
+        const hook = evt as {
+          event?: "turn-start" | "turn-end";
+          command?: string;
+          exitCode?: number | null;
+          timedOut?: boolean;
+          output?: string;
+          durationMs?: number;
+        };
+        if (typeof hook.command === "string" && hook.event) {
+          apply((task) => ({
+            ...task,
+            hookResults: [
+              ...(task.hookResults ?? []),
+              {
+                event: hook.event as "turn-start" | "turn-end",
+                command: hook.command as string,
+                exitCode: hook.exitCode ?? null,
+                timedOut: hook.timedOut ?? false,
+                output: hook.output ?? "",
+                durationMs: hook.durationMs ?? 0,
+              },
+            ],
+          }));
+        }
       } else if (type === "run.compacted") {
         const evt2 = evt as {
           triggerTokens?: number;
@@ -2411,6 +2445,32 @@ export function Workbench() {
                       /conversation_history/，这条对话的完整记录不受影响。
                     </p>
                   ) : null}
+                  {/*
+                    用户钩子（R5-2「钩子」）：在项目工作目录里跑的命令，成败都如实列出——
+                    配了钩子却看不到结果，等于不知道它跑没跑。失败不影响本轮。
+                  */}
+                  {(activeTask.hookResults ?? []).map((hook) => (
+                    <p
+                      /* 同一条命令在起点/终点各配一次时事件不同，键按「事件+命令+耗时」取；
+                         同一轮里同事件同命令只会出现一次（钩子表本身按事件+命令去重执行） */
+                      key={`${hook.event}::${hook.command}::${hook.durationMs}`}
+                      role="status"
+                      className="rounded-md border bg-muted/40 px-3 py-1.5 font-mono text-[11px] text-muted-foreground"
+                    >
+                      {hook.event === "turn-start"
+                        ? "本轮开始钩子"
+                        : "本轮结束钩子"}
+                      ：{hook.command}
+                      {" · "}
+                      {hook.timedOut
+                        ? "超时被杀"
+                        : hook.exitCode === 0
+                          ? "成功"
+                          : `退出码 ${hook.exitCode ?? "?"}`}
+                      {hook.output ? ` · ${hook.output}` : ""}
+                      {` · ${Math.max(1, Math.round(hook.durationMs / 1000))}s`}
+                    </p>
+                  ))}
                   {/* 目标 + 进度（R1-2）：模型用了 write_todos 才出现，条数从事件流推导 */}
                   {activeTask.todos && activeTask.todos.length > 0 ? (
                     <TodoProgressPanel

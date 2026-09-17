@@ -18,8 +18,13 @@ import { onPanelViewRequest } from "../src/lib/panel-open";
  * （有订阅者时转交，没有时**如实说明**而不是假装打开了）；③ 账号页没启用计费时不编数字。
  */
 const fetchSubagents = vi.fn();
+const updateWorkspaceSettings = vi.fn();
+
 vi.mock("../src/lib/server-api.js", () => ({
   fetchSubagents: (...args: unknown[]) => fetchSubagents(...args),
+  // 钩子/命令等页面都用它写工作区设置（同一文件只能有一个 mock 工厂，所以放一起）
+  updateWorkspaceSettings: (...args: unknown[]) =>
+    updateWorkspaceSettings(...args),
 }));
 
 afterEach(() => {
@@ -256,5 +261,62 @@ describe("插件市场：使用态", () => {
     );
     expect(await screen.findByText("第三方插件")).toBeVisible();
     expect(screen.queryByRole("button", { name: "使用" })).toBeNull();
+  });
+});
+
+/**
+ * 设置 → 钩子（R5-2「钩子」条目）。
+ *
+ * 这一页最重要的不是控件，而是**边界写清楚**：模型不能触发钩子、钩子在项目工作目录里跑、
+ * 失败不影响本轮。少写一句，用户就会以为它是「给模型的执行面」。
+ */
+describe("设置 → 钩子", () => {
+  it("空表：给示例；新增后可写时机与命令并整表保存", async () => {
+    updateWorkspaceSettings.mockResolvedValue({
+      settings: {
+        hooks: [{ event: "turn-end", command: "npx biome check ." }],
+      },
+    });
+    const onSaved = vi.fn();
+    const { HooksSection } = await import(
+      "../src/components/workbench/hooks-section"
+    );
+    render(
+      <HooksSection accessToken="tok" hooks={[]} onSaved={onSaved} />,
+    );
+    expect(screen.getByText(/还没有钩子/)).toBeVisible();
+
+    await userEvent.click(screen.getByRole("button", { name: /新增钩子/ }));
+    await userEvent.type(
+      screen.getByLabelText("钩子命令 1"),
+      "npx biome check .",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "保存钩子" }));
+
+    expect(updateWorkspaceSettings).toHaveBeenCalledWith("tok", {
+      hooks: [{ event: "turn-end", command: "npx biome check ." }],
+    });
+    expect(onSaved).toHaveBeenCalled();
+  });
+
+  it("空命令：就地报错，不发请求", async () => {
+    const { HooksSection } = await import(
+      "../src/components/workbench/hooks-section"
+    );
+    render(<HooksSection accessToken="tok" hooks={[]} onSaved={() => {}} />);
+    await userEvent.click(screen.getByRole("button", { name: /新增钩子/ }));
+    await userEvent.click(screen.getByRole("button", { name: "保存钩子" }));
+    expect(screen.getByText(/还没写命令/)).toBeVisible();
+    expect(updateWorkspaceSettings).not.toHaveBeenCalled();
+  });
+
+  it("边界写在页面上：模型不能触发 / 在工作目录里跑 / 失败不影响本轮", async () => {
+    const { HooksSection } = await import(
+      "../src/components/workbench/hooks-section"
+    );
+    render(<HooksSection accessToken="tok" hooks={[]} onSaved={() => {}} />);
+    expect(screen.getByText(/模型无法新增或触发钩子/)).toBeVisible();
+    expect(screen.getByText(/项目工作目录/)).toBeVisible();
+    expect(screen.getByText(/不影响本轮/)).toBeVisible();
   });
 });

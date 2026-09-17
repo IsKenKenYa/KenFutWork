@@ -34,6 +34,8 @@ export interface SettingsRepository {
   findAutoCompactEnabled(workspaceId: string): Promise<boolean | null>;
   findCommands(workspaceId: string): Promise<unknown>;
   upsertCommands(workspaceId: string, commands: unknown): Promise<void>;
+  findHooks(workspaceId: string): Promise<unknown>;
+  upsertHooks(workspaceId: string, hooks: unknown): Promise<void>;
   upsertAutoCompactEnabled(
     workspaceId: string,
     enabled: boolean,
@@ -53,6 +55,7 @@ type CodeIndexEnabledRow = { code_index_enabled: boolean };
 type CodeIndexAutoNewFolderRow = { code_index_auto_new_folder: boolean };
 type AutoCompactEnabledRow = { auto_compact_enabled: boolean };
 type CommandsRow = { commands: unknown };
+type HooksRow = { hooks: unknown };
 type UserRulesRow = { user_rules: string; rule_entries: unknown };
 
 export function createSettingsRepository(
@@ -143,6 +146,27 @@ export function createSettingsRepository(
          on conflict (workspace_id)
          do update set commands = excluded.commands`,
         [JSON.stringify(commands)],
+      );
+    },
+
+    async findHooks(workspaceId) {
+      const row = await persistence
+        .forWorkspace(workspaceId)
+        .queryOne<HooksRow>(
+          `select hooks
+             from public.workspace_settings
+            where workspace_id = :workspace`,
+        );
+      return row?.hooks ?? null;
+    },
+
+    async upsertHooks(workspaceId, hooks) {
+      await persistence.forWorkspace(workspaceId).query(
+        `insert into public.workspace_settings (workspace_id, hooks)
+         values (:workspace, $1::jsonb)
+         on conflict (workspace_id)
+         do update set hooks = excluded.hooks`,
+        [JSON.stringify(hooks)],
       );
     },
 
