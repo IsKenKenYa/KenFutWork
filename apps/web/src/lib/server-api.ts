@@ -2,12 +2,14 @@ import type {
   AssetSignedUrlResponse,
   CanvasDetail,
   ChatMessageCreateRequest,
+  DirectoryPickerStatus,
   ExecutionMode,
   JobResponse,
   MessageCreateResponse,
   MessageListResponse,
   ModelListResponse,
   PermissionTier,
+  PickDirectoryResponse,
   ProfileUpdateResponse,
   ProjectCreateRequest,
   ProjectCreateResponse,
@@ -919,4 +921,28 @@ export async function disconnectCdp(
   if (!response.ok) return handleErrorResponse(response);
   const payload = (await response.json()) as { cdp: CdpStatusView };
   return payload.cdp;
+}
+
+// --- 原生目录对话框（桌面形态：服务端与用户同机时由服务端弹系统对话框） ---
+
+export async function fetchDirectoryPickerStatus(
+  accessToken: string,
+): Promise<DirectoryPickerStatus> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/system/directory-picker`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as DirectoryPickerStatus;
+}
+
+export async function pickDirectory(
+  accessToken: string,
+): Promise<PickDirectoryResponse> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/system/pick-directory`,
+    { method: "POST", headers: authJsonHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as PickDirectoryResponse;
 }

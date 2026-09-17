@@ -2,11 +2,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  ApiAuthError,
   createProject,
   createRun,
+  fetchDirectoryPickerStatus,
   fetchProjects,
   fetchVideoModels,
   fetchViewer,
+  pickDirectory,
 } from "../src/lib/server-api";
 
 const mockFetch = vi.fn();
@@ -273,5 +276,63 @@ describe("authenticated server API", () => {
     });
 
     await expect(fetchProjects("expired")).rejects.toThrow("unauthorized");
+  });
+});
+
+/**
+ * 原生目录对话框（桌面形态）：能力探测与「弹一次对话框」两个端点。
+ *
+ * 客户端按 `status` 分流：picked 走绑定、cancelled 静默、unavailable 回落浏览器
+ * 选择器、failed 报原因——四种都不能被客户端改写成别的意思。
+ */
+describe("原生目录对话框端点", () => {
+  it("探测：带 bearer、返回 available 与原因", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        available: false,
+        reason: "服务端在另一台机器上。",
+      }),
+    });
+    const status = await fetchDirectoryPickerStatus("token_abc");
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:3001/api/system/directory-picker",
+      expect.objectContaining({
+        headers: { Authorization: "Bearer token_abc" },
+      }),
+    );
+    expect(status.available).toBe(false);
+    expect(status.reason).toContain("另一台机器");
+  });
+
+  it("选择：POST，四种状态原样回给调用方", async () => {
+    const cases = [
+      { status: "picked", path: "D:Desktop\test" },
+      { status: "cancelled" },
+      { status: "unavailable", reason: "没装 zenity。" },
+      { status: "failed", reason: "退出码 3。" },
+    ] as const;
+    for (const payload of cases) {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => payload,
+      });
+      await expect(pickDirectory("token_abc")).resolves.toEqual(payload);
+      expect(mockFetch).toHaveBeenLastCalledWith(
+        "http://localhost:3001/api/system/pick-directory",
+        expect.objectContaining({ method: "POST" }),
+      );
+    }
+  });
+
+  it("未登录：抛 ApiAuthError（401 不落成普通应用错误）", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({}),
+    });
+    await expect(pickDirectory("expired")).rejects.toBeInstanceOf(ApiAuthError);
   });
 });

@@ -95,8 +95,10 @@ import { describeRunFailure } from "@/lib/run-failure";
 import {
   createProject,
   deleteProject,
+  fetchDirectoryPickerStatus,
   fetchProjects,
   fetchViewer,
+  pickDirectory,
   updateProject,
 } from "@/lib/server-api";
 import {
@@ -109,6 +111,7 @@ import {
 import type { TodoItem } from "@/lib/todo-progress";
 import {
   boundWorkDirPromptHint,
+  folderPickerHint,
   resolveWorkDirProject,
   workDirectoryPromptHint,
   workDirNameFromPath,
@@ -417,6 +420,15 @@ export function Workbench() {
   const [workDirName, setWorkDirName] = useState<string | null>(null);
   /** 目录选择的反馈（不支持/失败）；成功或取消时清空。 */
   const [workDirNotice, setWorkDirNotice] = useState<string | null>(null);
+  /**
+   * 服务端能不能弹**系统文件夹对话框**（桌面形态）。null = 还没探到。
+   * 探到可用时「打开文件夹」走它（拿回绝对路径，真正绑定工作目录）；
+   * 不可用则回落浏览器选择器（只有目录名）。
+   */
+  const [nativeDirPicker, setNativeDirPicker] = useState<{
+    available: boolean;
+    reason?: string | undefined;
+  } | null>(null);
   const [creatingProject, setCreatingProject] = useState(false);
   // 侧栏底部个人中心 + 模态（设置 / 插件市场）
   const [workbenchUser, setWorkbenchUser] = useState<WorkbenchUser | null>(
@@ -728,6 +740,20 @@ export function Workbench() {
   useEffect(() => {
     if (session?.access_token) refreshProjects();
   }, [session, refreshProjects]);
+
+  /**
+   * 探测服务端的原生目录对话框能力（桌面形态才有）。
+   *
+   * 只探一次：形态在进程生命周期里不会变。探测失败按「不可用」处理——回落浏览器
+   * 选择器仍是一条能用的路，不必为探测失败弹错。
+   */
+  useEffect(() => {
+    const token = session?.access_token;
+    if (!token) return;
+    fetchDirectoryPickerStatus(token)
+      .then((status) => setNativeDirPicker(status))
+      .catch(() => setNativeDirPicker({ available: false }));
+  }, [session]);
 
   // 执行模式词汇表（需 token）
   useEffect(() => {
@@ -1248,40 +1274,6 @@ export function Workbench() {
     [session],
   );
 
-  const pickWorkDirectory = useCallback(async () => {
-    const result = await workDirPick(window);
-    if (result.status === "picked") {
-      setWorkDirName(result.name);
-      setWorkDirNotice(null);
-      // Code 模式：**工作目录即项目**。run 的生产后端要求绑定项目
-      // （缺 canvasId 会立刻失败），而浏览器只拿得到目录名——所以这里按目录名
-      // 建同名项目并选中，run 以该项目的主画布为作用域，文件落在项目的沙箱目录里。
-      if (mode === "code") {
-        // 目录名 → 工作目录项目：同名复用，没有就自动建（服务端 kind='code'）
-        const plan = resolveWorkDirProject(result.name, codeProjects);
-        if (plan.kind === "reuse") {
-          setSelectedProjectId(plan.projectId);
-          return;
-        }
-        const created = await createCodeProject(plan.name);
-        if (created) {
-          setSelectedProjectId(created.id);
-          return;
-        }
-        setWorkDirNotice(
-          "已选定目录名，但项目创建失败，本次运行可能无法开始。",
-        );
-      }
-      return;
-    }
-    if (result.status === "cancelled") {
-      // 用户主动取消：不打扰
-      return;
-    }
-    // 不支持/失败都必须说出来（曾经是静默 return + 空 catch）
-    setWorkDirNotice(result.notice);
-  }, [mode, codeProjects, createCodeProject]);
-
   /**
    * 「不在项目中工作」：清掉工作目录与项目选择。
    * run 会退回会话自身的作用域（服务端懒供给的 Code 载体），不再绑定工作目录项目。
@@ -1333,6 +1325,84 @@ export function Workbench() {
     },
     [session, codeProjects],
   );
+
+  const pickWorkDirectory = useCallback(async () => {
+    const token = session?.access_token;
+    /**
+     * 桌面形态先走**服务端系统对话框**：只有那一条能拿回绝对路径、真正绑定工作目录
+     * （浏览器侧 `showDirectoryPicker` 只给得到目录名）。分流口径：
+     * - 选中 → 走「填本机路径」同一条绑定链（`bindWorkDirectory`）；
+     * - 取消 → 静默（用户主动取消不是错误）；
+     * - 不可用 → **回落浏览器选择器**，并把原因一并说出来；
+     * - 失败 → 只报原因，不静默换选择器（否则用户会以为「系统对话框怎么变成了浏览器弹窗」）。
+     */
+    let fallbackReason = nativeDirPicker?.reason ?? null;
+    if (token && nativeDirPicker?.available) {
+      try {
+        const native = await pickDirectory(token);
+        if (native.status === "picked") {
+          await bindWorkDirectory(native.path);
+          return;
+        }
+        if (native.status === "cancelled") return;
+        if (native.status === "failed") {
+          setWorkDirNotice(native.reason);
+          return;
+        }
+        fallbackReason = native.reason;
+      } catch (error) {
+        setWorkDirNotice(
+          `系统文件夹对话框不可用：${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return;
+      }
+    }
+
+    const result = await workDirPick(window);
+    if (result.status === "picked") {
+      setWorkDirName(result.name);
+      setWorkDirNotice(null);
+      // Code 模式：**工作目录即项目**。run 的生产后端要求绑定项目
+      // （缺 canvasId 会立刻失败），而浏览器只拿得到目录名——所以这里按目录名
+      // 建同名项目并选中，run 以该项目的主画布为作用域，文件落在项目的沙箱目录里。
+      if (mode === "code") {
+        // 目录名 → 工作目录项目：同名复用，没有就自动建（服务端 kind='code'）
+        const plan = resolveWorkDirProject(result.name, codeProjects);
+        if (plan.kind === "reuse") {
+          setSelectedProjectId(plan.projectId);
+          return;
+        }
+        const created = await createCodeProject(plan.name);
+        if (created) {
+          setSelectedProjectId(created.id);
+          return;
+        }
+        setWorkDirNotice(
+          "已选定目录名，但项目创建失败，本次运行可能无法开始。",
+        );
+      }
+      return;
+    }
+    if (result.status === "cancelled") {
+      // 用户主动取消：不打扰
+      return;
+    }
+    // 不支持/失败都必须说出来（曾经是静默 return + 空 catch），并附上「为什么没用系统对话框」
+    setWorkDirNotice(
+      fallbackReason
+        ? `${result.notice}（未用系统对话框：${fallbackReason}）`
+        : result.notice,
+    );
+  }, [
+    mode,
+    codeProjects,
+    createCodeProject,
+    session,
+    nativeDirPicker,
+    bindWorkDirectory,
+  ]);
 
   const switchMode = useCallback((next: WorkbenchMode) => {
     setMode(next);
@@ -2517,6 +2587,7 @@ ${formatElementReference(picked)}`
                   }}
                   onOpenFolder={() => void pickWorkDirectory()}
                   onBindPath={bindWorkDirectory}
+                  folderHint={folderPickerHint(nativeDirPicker)}
                   onClear={clearWorkDirectory}
                 />
                 <GitBranchSelect

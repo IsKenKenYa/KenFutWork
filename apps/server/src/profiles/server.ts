@@ -32,6 +32,7 @@ import { createQueuePlugin } from "../features/queue/plugin.js";
 import { createSearchPlugin } from "../features/search/plugin.js";
 import { createSettingsPlugin } from "../features/settings/plugin.js";
 import { createSkillsPlugin } from "../features/skills/plugin.js";
+import { createSystemPlugin } from "../features/system/plugin.js";
 import { createUploadsPlugin } from "../features/uploads/plugin.js";
 import { createUsagePlugin } from "../features/usage/plugin.js";
 import type { KernelEvents, PluginDefinition } from "../kernel/types.js";
@@ -161,6 +162,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createCodeToolsPlugin(),
     createMcpPlugin(),
     createSearchPlugin(),
+    createSystemPlugin(),
     createModelProvidersPlugin({ credentialEnv: deps.credentialEnv }),
     createGenerationPlugin({ env: deps.env }),
     createAdminPlugin(),

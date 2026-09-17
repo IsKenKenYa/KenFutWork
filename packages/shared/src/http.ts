@@ -294,6 +294,36 @@ export const codeTerminalResponseSchema = z.object({
   }),
 });
 
+// --- 原生目录对话框（桌面形态：服务端在跑，对话框开在用户这台机器上） ---
+
+/**
+ * `GET /api/system/directory-picker`：这台服务端能不能弹系统文件夹对话框。
+ *
+ * 只有**桌面形态**可用（服务端与用户同一台机器）。自托管/Web 形态下对话框会开在
+ * 服务器那台机器上、对用户毫无意义，故如实报不可用并给原因——客户端据此决定
+ * 「打开文件夹」是走系统对话框，还是回落到浏览器目录选择器。
+ */
+export const directoryPickerStatusSchema = z.object({
+  available: z.boolean(),
+  reason: z.string().optional(),
+});
+
+/**
+ * `POST /api/system/pick-directory`：弹对话框并把选中的**绝对路径**带回来。
+ *
+ * 四种结果都在 200 里按 `status` 分流（HTTP 状态码表达不了「取消」与「不可用」的差别）：
+ * 取消要静默、不可用要回落另一种选择器、失败要如实报原因。
+ */
+export const pickDirectoryResponseSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("picked"), path: z.string().min(1) }),
+  z.object({ status: z.literal("cancelled") }),
+  z.object({ status: z.literal("unavailable"), reason: z.string() }),
+  z.object({ status: z.literal("failed"), reason: z.string() }),
+]);
+
+export type DirectoryPickerStatus = z.infer<typeof directoryPickerStatusSchema>;
+export type PickDirectoryResponse = z.infer<typeof pickDirectoryResponseSchema>;
+
 // --- agent 运行活动（Git 弹层的「智能体 N 秒 · M 运行」；口径：近 7 天） ---
 
 export const agentRunActivityResponseSchema = z.object({
