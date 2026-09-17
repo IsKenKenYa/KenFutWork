@@ -20,6 +20,7 @@ graph LR
 | `tech/多端产品设计.md` | 桌面/自托管/Web/移动形态与存储迁移设计 | **权威**：存储/认证/blob/队列/凭证/toolsGateway 缝（§5）、沙箱执行后端（§7）；多端阶段编号 D1–D7 + Spike S1–S4 + OS-0 的属主（§13）。§5 缝表是落地清单，其中的 key 落地时写入《改造计划》§4.2（key 表只此一份） |
 | `future/02-当前项目实现状态.md` | 代码现状快照（组件/路由/features/迁移盘点） | **权威**：全部现状数字（行数/import/路由/组件/迁移计数/provider 数量）；允许滞后于代码，刷新规则见下 |
 | `future/01-deepseek-harness插件调研.md` | dsh 插件架构调研记录 | 调研：结论已被权威文档吸收，只读 |
+| `future/04-模型Provider调研.md` | 参考项目（cherry-studio / kimi-code / nomifun / dsh / jaaz / jellyfish / futureFlow）的模型 Provider 调研：LLM / IGM（图像生成）/ VGM（视频生成 + 视觉输入）三维度对比与本项目可学习点 | 调研：只作方向参考，落地结论写入《改造计划》§4.8/§4.10 与 §4.13 台账 |
 | `future/03-改造建议与路线.md` | 双模式改造建议稿（v3） | **收口中**：§0–§7 为冻结区（`<!-- frozen:start/end -->` + `docs/frozen-lock.json` 校验，禁改）；**仅 §8 可编辑**；P0 定稿后整篇归档 |
 | `Agent设计最佳实践研究报告.md` | agent 质量最佳实践 | 参考 |
 | `产品需求规格.md` | 需求访谈沉淀：产品定位、领域模型（统一 Task 模型/双层权限）、北极星场景、各缝行为测试清单与验收标准 | 参考：架构决策、ctx key 表、阶段编号以《改造计划》《多端产品设计》为准 |

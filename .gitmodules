@@ -46,3 +46,9 @@
 	path = references/futureFlow
 	url = https://github.com/future73807/futureFlow.git
 	shallow = true
+[submodule "references/cherry-studio"]
+	path = references/cherry-studio
+	url = https://github.com/CherryHQ/cherry-studio.git
+[submodule "references/kimi-code"]
+	path = references/kimi-code
+	url = https://github.com/MoonshotAI/kimi-code.git
