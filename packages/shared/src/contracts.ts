@@ -211,6 +211,11 @@ export const workspaceSettingsSchema = z.object({
   /** 逐条规则（短句，最多 100 条）。 */
   ruleEntries: z.array(z.string().min(1).max(2_000)).max(100).default([]),
   /**
+   * 上下文自动压缩：超阈值时把较早的消息摘要掉（阈值 = 窗口 − 预留输出，摘要用本轮模型，
+   * 用户转录不变、原文 offload 到工作区 /conversation_history/）。关掉时中间件不挂。
+   */
+  autoCompactEnabled: z.boolean().default(true),
+  /**
    * run 失败自动重试上限（含首次尝试；0 = 不重试）。
    * 缺省 10；服务端对「已执行工具」的轮次一律不重试（副作用安全），见 agent/run-retry.ts。
    */

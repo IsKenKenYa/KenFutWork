@@ -170,6 +170,7 @@ export function SettingsModal({
   const [agentMaxRetries, setAgentMaxRetries] = useState(10);
   const [codeIndexEnabled, setCodeIndexEnabled] = useState(false);
   const [codeIndexAutoNewFolder, setCodeIndexAutoNewFolder] = useState(true);
+  const [autoCompactEnabled, setAutoCompactEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
 
   const accessTokenRef = useRef(session?.access_token);
@@ -197,6 +198,7 @@ export function SettingsModal({
       setAgentMaxRetries(settings.settings.agentMaxRetries);
       setCodeIndexEnabled(settings.settings.codeIndexEnabled);
       setCodeIndexAutoNewFolder(settings.settings.codeIndexAutoNewFolder);
+      setAutoCompactEnabled(settings.settings.autoCompactEnabled);
     } catch {
       // 加载失败时保留空态，各分区自行提示
     } finally {
@@ -252,6 +254,24 @@ export function SettingsModal({
         setCodeIndexAutoNewFolder(result.settings.codeIndexAutoNewFolder);
       } catch {
         setCodeIndexAutoNewFolder(!next);
+      }
+    },
+    [getToken],
+  );
+
+  /** 上下文自动压缩开关：立即写（部分更新），失败回滚。 */
+  const handleAutoCompactToggle = useCallback(
+    async (next: boolean) => {
+      const token = getToken();
+      if (!token) return;
+      setAutoCompactEnabled(next);
+      try {
+        const result = await updateWorkspaceSettings(token, {
+          autoCompactEnabled: next,
+        });
+        setAutoCompactEnabled(result.settings.autoCompactEnabled);
+      } catch {
+        setAutoCompactEnabled(!next);
       }
     },
     [getToken],
@@ -342,6 +362,8 @@ export function SettingsModal({
                 defaultModel={defaultModel}
                 fetchModels={stableFetchModels}
                 onSave={handleModelSave}
+                autoCompactEnabled={autoCompactEnabled}
+                onToggleAutoCompact={handleAutoCompactToggle}
               />
             ) : activeTab === "providers" ? (
               token ? (

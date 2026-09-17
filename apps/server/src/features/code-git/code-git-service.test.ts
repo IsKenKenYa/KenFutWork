@@ -52,6 +52,8 @@ function build(options: {
       codeIndexEnabled: boolean;
       /** R4-3「索引新文件夹」（同上：常量）。 */
       codeIndexAutoNewFolder: boolean;
+      /** 上下文自动压缩（同上：常量）。 */
+      autoCompactEnabled: boolean;
       /** 用户规则（同上：桩里给空值）。 */
       userRules: string;
       ruleEntries: string[];
@@ -447,6 +449,7 @@ describe("终端 shell 解析", () => {
           terminalShell: "powershell",
           codeIndexEnabled: false,
           codeIndexAutoNewFolder: false,
+          autoCompactEnabled: false,
           userRules: "",
           ruleEntries: [],
         }),

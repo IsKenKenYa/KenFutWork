@@ -71,7 +71,11 @@ import { useWebSocket } from "@/hooks/use-websocket";
 import { useAuth } from "@/lib/auth-context";
 import { onBrowserOpen } from "@/lib/browser-panel";
 import { commitGitAll } from "@/lib/code-git-api";
-import { type RunUsageSnapshot, usageFromEvent } from "@/lib/context-usage";
+import {
+  formatTokens,
+  type RunUsageSnapshot,
+  usageFromEvent,
+} from "@/lib/context-usage";
 import { resolveDesignAutoCanvas } from "@/lib/design-auto-canvas";
 import { formatElapsedSeconds, parseTimestampMs } from "@/lib/elapsed";
 import { getServerBaseUrl } from "@/lib/env";
@@ -124,6 +128,16 @@ import { applyTaskToolEvent, type TaskToolEntry } from "@/lib/workbench-tools";
  * 设置与插件市场为居中模态；design 模式的画布经项目面板自动打开（KenFutWork
  * 仅作为 design 模式及其依赖能力的承载）。
  */
+
+/** 压缩阈值来源 → 人话（阈值怎么来的要能一眼看懂，否则「为什么这么早就压了」无从判断）。 */
+const COMPACT_SOURCE_LABELS: Record<
+  "reserved-output" | "fraction" | "fallback",
+  string
+> = {
+  "reserved-output": "窗口 − 预留输出",
+  fraction: "窗口的 85%",
+  fallback: "框架回退值",
+};
 
 interface TaskMessage {
   role: "user" | "assistant";
@@ -199,6 +213,17 @@ interface WorkbenchTask {
   todos?: TodoItem[];
   /** 本轮用量快照（R4-1：服务端 run.usage 事件，上下文容量/缓存命中浮层的数据源） */
   usage?: RunUsageSnapshot;
+  /**
+   * 本轮发生过上下文自动压缩（R4-1 输出预留线的执行面）。
+   *
+   * 为什么要显示：压缩改的是**模型看到的上下文**，库里的转录保持完整——不给信号的话，
+   * 用户只会觉得「模型突然忘了前面的事」。事件由服务端在检测到摘要消息时下发（每轮一条）。
+   */
+  compacted?: {
+    triggerTokens: number;
+    triggerSource: "reserved-output" | "fraction" | "fallback";
+    keepMessages: number;
+  };
 }
 
 /**
@@ -1125,6 +1150,25 @@ export function Workbench() {
             evt as Parameters<typeof applyTaskToolEvent>[1],
           ),
         );
+      } else if (type === "run.compacted") {
+        const evt2 = evt as {
+          triggerTokens?: number;
+          triggerSource?: "reserved-output" | "fraction" | "fallback";
+          keepMessages?: number;
+        };
+        if (
+          typeof evt2.triggerTokens === "number" &&
+          typeof evt2.keepMessages === "number"
+        ) {
+          apply((task) => ({
+            ...task,
+            compacted: {
+              triggerTokens: evt2.triggerTokens as number,
+              triggerSource: evt2.triggerSource ?? "fallback",
+              keepMessages: evt2.keepMessages as number,
+            },
+          }));
+        }
       } else if (type === "run.usage") {
         // 本轮最后一次模型调用的累计用量（上下文容量 / 缓存命中浮层）
         const usage = usageFromEvent(evt);
@@ -2268,6 +2312,27 @@ export function Workbench() {
                       endedAt={activeTask.runEndedAt}
                       running={activeTask.status === "running"}
                     />
+                  ) : null}
+                  {/*
+                    上下文已自动压缩（R4-1 输出预留线的执行面）：说明「模型看到的历史被摘要过」，
+                    而库里的转录仍然完整——不说这一句，用户会以为模型突然忘了前面的事。
+                  */}
+                  {activeTask.compacted ? (
+                    <p
+                      role="status"
+                      className="rounded-md border bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground"
+                    >
+                      上下文已自动压缩：模型上下文超过{" "}
+                      {formatTokens(activeTask.compacted.triggerTokens)}（
+                      {
+                        COMPACT_SOURCE_LABELS[
+                          activeTask.compacted.triggerSource
+                        ]
+                      }
+                      ）后，较早的消息被摘要成一条，只保留最近{" "}
+                      {activeTask.compacted.keepMessages} 条；原文存在工作区的
+                      /conversation_history/，这条对话的完整记录不受影响。
+                    </p>
                   ) : null}
                   {/* 目标 + 进度（R1-2）：模型用了 write_todos 才出现，条数从事件流推导 */}
                   {activeTask.todos && activeTask.todos.length > 0 ? (

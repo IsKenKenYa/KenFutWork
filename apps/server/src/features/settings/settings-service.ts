@@ -38,6 +38,7 @@ export type WorkspaceSettingsPatch = {
   terminalShell?: TerminalShellId | undefined;
   codeIndexEnabled?: boolean | undefined;
   codeIndexAutoNewFolder?: boolean | undefined;
+  autoCompactEnabled?: boolean | undefined;
   userRules?: string | undefined;
   ruleEntries?: string[] | undefined;
 };
@@ -84,6 +85,7 @@ export function createSettingsService(options: {
       storedShell,
       storedIndexEnabled,
       storedIndexAutoNewFolder,
+      storedAutoCompact,
       storedRules,
     ] = await Promise.all([
       repository.findDefaultModel(workspaceId),
@@ -91,6 +93,7 @@ export function createSettingsService(options: {
       repository.findTerminalShell(workspaceId),
       repository.findCodeIndexEnabled(workspaceId),
       repository.findCodeIndexAutoNewFolder(workspaceId),
+      repository.findAutoCompactEnabled(workspaceId),
       repository.findUserRules(workspaceId),
     ]).catch(() => {
       throw new SettingsServiceError(
@@ -115,6 +118,8 @@ export function createSettingsService(options: {
       codeIndexEnabled: storedIndexEnabled ?? false,
       // 缺省 true：只在上面那个总开关开着时才生效，所以不会「悄悄建索引」
       codeIndexAutoNewFolder: storedIndexAutoNewFolder ?? true,
+      // 缺省 true：不压缩时超长会话直接撞上游上限失败，用户只能看到通用报错
+      autoCompactEnabled: storedAutoCompact ?? true,
       userRules: storedRules?.userRules ?? "",
       ruleEntries: storedRules?.ruleEntries ?? [],
     };
@@ -157,6 +162,14 @@ export function createSettingsService(options: {
           repository.upsertCodeIndexAutoNewFolder(
             workspaceId,
             patch.codeIndexAutoNewFolder,
+          ),
+        );
+      }
+      if (patch.autoCompactEnabled !== undefined) {
+        writes.push(
+          repository.upsertAutoCompactEnabled(
+            workspaceId,
+            patch.autoCompactEnabled,
           ),
         );
       }

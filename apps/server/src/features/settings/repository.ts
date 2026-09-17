@@ -31,6 +31,11 @@ export interface SettingsRepository {
   ): Promise<void>;
   upsertCodeIndexEnabled(workspaceId: string, enabled: boolean): Promise<void>;
   findCodeIndexAutoNewFolder(workspaceId: string): Promise<boolean | null>;
+  findAutoCompactEnabled(workspaceId: string): Promise<boolean | null>;
+  upsertAutoCompactEnabled(
+    workspaceId: string,
+    enabled: boolean,
+  ): Promise<void>;
   upsertCodeIndexAutoNewFolder(
     workspaceId: string,
     enabled: boolean,
@@ -44,6 +49,7 @@ type AgentMaxRetriesRow = { agent_max_retries: number };
 type TerminalShellRow = { terminal_shell: TerminalShellId };
 type CodeIndexEnabledRow = { code_index_enabled: boolean };
 type CodeIndexAutoNewFolderRow = { code_index_auto_new_folder: boolean };
+type AutoCompactEnabledRow = { auto_compact_enabled: boolean };
 type UserRulesRow = { user_rules: string; rule_entries: unknown };
 
 export function createSettingsRepository(
@@ -103,6 +109,17 @@ export function createSettingsRepository(
             where workspace_id = :workspace`,
         );
       return row?.code_index_auto_new_folder ?? null;
+    },
+
+    async findAutoCompactEnabled(workspaceId) {
+      const row = await persistence
+        .forWorkspace(workspaceId)
+        .queryOne<AutoCompactEnabledRow>(
+          `select auto_compact_enabled
+             from public.workspace_settings
+            where workspace_id = :workspace`,
+        );
+      return row?.auto_compact_enabled ?? null;
     },
 
     async upsertDefaultModel(workspaceId, defaultModel) {
@@ -171,6 +188,17 @@ export function createSettingsRepository(
          values (:workspace, $1)
          on conflict (workspace_id)
          do update set code_index_enabled = excluded.code_index_enabled`,
+        [enabled],
+      );
+    },
+
+    /** 上下文自动压缩开关（与索引那两个开关同一套逐列 upsert）。 */
+    async upsertAutoCompactEnabled(workspaceId, enabled) {
+      await persistence.forWorkspace(workspaceId).query(
+        `insert into public.workspace_settings (workspace_id, auto_compact_enabled)
+         values (:workspace, $1)
+         on conflict (workspace_id)
+         do update set auto_compact_enabled = excluded.auto_compact_enabled`,
         [enabled],
       );
     },

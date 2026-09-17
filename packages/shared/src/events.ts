@@ -108,6 +108,24 @@ export const runUsageEventSchema = z.object({
   timestamp: timestampSchema,
 });
 
+/**
+ * 上下文**自动压缩**发生了（R4-1「输出预留线」的执行面，见 server `agent/auto-compact.ts`）。
+ *
+ * 为什么要有这个事件：压缩改变的是**模型看到的上下文**，而用户转录（库里）保持完整——
+ * 两者本来就会不一致。不给信号的话，用户只会觉得「模型突然忘了前面的事」。事件每轮最多发一次，
+ * 客户端据此在转录里插一行说明（被压掉的消息原文在 `historyPath`）。
+ */
+export const runCompactedEventSchema = z.object({
+  type: z.literal("run.compacted"),
+  runId: runIdSchema,
+  /** 触发线（token）与它的来源：reserved-output / fraction / fallback。 */
+  triggerTokens: z.number().int().positive(),
+  triggerSource: z.enum(["reserved-output", "fraction", "fallback"]),
+  /** 保留下来的最近消息条数。 */
+  keepMessages: z.number().int().positive(),
+  timestamp: timestampSchema,
+});
+
 export const runCanceledEventSchema = z.object({
   type: z.literal("run.canceled"),
   runId: runIdSchema,
@@ -182,6 +200,7 @@ export const streamEventSchema = z.discriminatedUnion("type", [
   runCanceledEventSchema,
   runCompletedEventSchema,
   runUsageEventSchema,
+  runCompactedEventSchema,
   runFailedEventSchema,
   runRetryingEventSchema,
   canvasSyncEventSchema,

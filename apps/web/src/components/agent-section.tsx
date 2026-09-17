@@ -20,6 +20,9 @@ interface AgentSectionProps {
     agentMaxRetries: number;
     defaultModel: string;
   }) => Promise<void>;
+  /** 上下文自动压缩（缺省 true）；开关**立即生效**（部分更新，不等「保存」）。 */
+  autoCompactEnabled?: boolean;
+  onToggleAutoCompact?: ((next: boolean) => Promise<void>) | undefined;
 }
 
 export function AgentSection({
@@ -27,6 +30,8 @@ export function AgentSection({
   defaultModel: initialModel,
   fetchModels,
   onSave,
+  autoCompactEnabled = true,
+  onToggleAutoCompact,
 }: AgentSectionProps) {
   const [selectedModel, setSelectedModel] = useState(initialModel);
   const [maxRetries, setMaxRetries] = useState(String(initialRetries));
@@ -139,6 +144,31 @@ export function AgentSection({
             表示不重试。**已执行工具的那一轮不会重试**—— 重试会重复施加副作用。
           </p>
         </div>
+
+        {onToggleAutoCompact ? (
+          <div className="space-y-1 rounded-lg border p-3">
+            <label className="flex items-center justify-between gap-3">
+              <span className="text-sm">上下文自动压缩</span>
+              <input
+                type="checkbox"
+                role="switch"
+                aria-label="上下文自动压缩"
+                aria-checked={autoCompactEnabled}
+                checked={autoCompactEnabled}
+                onChange={(event) =>
+                  void onToggleAutoCompact(event.target.checked)
+                }
+                className="h-4 w-8 shrink-0 appearance-none rounded-full bg-muted transition-colors checked:bg-foreground/80 before:block before:h-3.5 before:w-3.5 before:translate-x-0.5 before:rounded-full before:background before:bg-background before:transition-transform checked:before:translate-x-4"
+              />
+            </label>
+            <p className="text-xs text-muted-foreground">
+              模型上下文超过「窗口 −
+              预留输出」（即上下文条上那根线）时，把较早的消息摘要成一条，
+              只保留最近 20 条；**摘要用本轮这个模型**，被压掉的原文存到工作区
+              /conversation_history/，这条对话的完整记录不受影响。关掉后不压缩，超长会话会直接撞上游上限。
+            </p>
+          </div>
+        ) : null}
 
         {feedback && (
           <p

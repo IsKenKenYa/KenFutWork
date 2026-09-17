@@ -105,12 +105,14 @@ describe("settings service", () => {
         findTerminalShell: async () => null,
         findCodeIndexEnabled: async () => null,
         findCodeIndexAutoNewFolder: async () => null,
+        findAutoCompactEnabled: async () => null,
         findUserRules: async () => null,
         upsertDefaultModel: async () => {},
         upsertAgentMaxRetries: async () => {},
         upsertTerminalShell: async () => {},
         upsertCodeIndexEnabled: async () => {},
         upsertCodeIndexAutoNewFolder: async () => {},
+        upsertAutoCompactEnabled: async () => {},
         upsertUserRules: async () => {},
         upsertRuleEntries: async () => {},
       },
@@ -124,6 +126,7 @@ describe("settings service", () => {
       terminalShell: "auto",
       codeIndexEnabled: false,
       codeIndexAutoNewFolder: true,
+      autoCompactEnabled: true,
       ruleEntries: [],
       userRules: "",
     });
@@ -135,12 +138,14 @@ describe("settings service", () => {
         findTerminalShell: async () => null,
         findCodeIndexEnabled: async () => null,
         findCodeIndexAutoNewFolder: async () => null,
+        findAutoCompactEnabled: async () => null,
         findUserRules: async () => null,
         upsertDefaultModel: async () => {},
         upsertAgentMaxRetries: async () => {},
         upsertTerminalShell: async () => {},
         upsertCodeIndexEnabled: async () => {},
         upsertCodeIndexAutoNewFolder: async () => {},
+        upsertAutoCompactEnabled: async () => {},
         upsertUserRules: async () => {},
         upsertRuleEntries: async () => {},
       },
@@ -154,6 +159,7 @@ describe("settings service", () => {
       terminalShell: "auto",
       codeIndexEnabled: false,
       codeIndexAutoNewFolder: true,
+      autoCompactEnabled: true,
       ruleEntries: [],
       userRules: "",
     });
@@ -172,12 +178,14 @@ describe("settings service", () => {
       findTerminalShell: async () => null,
       findCodeIndexEnabled: async () => null,
       findCodeIndexAutoNewFolder: async () => null,
+      findAutoCompactEnabled: async () => null,
       findUserRules: async () => null,
       upsertDefaultModel: async () => {},
       upsertAgentMaxRetries: async () => {},
       upsertTerminalShell: async () => {},
       upsertCodeIndexEnabled: async () => {},
       upsertCodeIndexAutoNewFolder: async () => {},
+      upsertAutoCompactEnabled: async () => {},
       upsertUserRules: async () => {},
       upsertRuleEntries: async () => {},
     };
@@ -195,6 +203,7 @@ describe("settings service", () => {
       terminalShell: "auto",
       codeIndexEnabled: false,
       codeIndexAutoNewFolder: true,
+      autoCompactEnabled: true,
       ruleEntries: [],
       userRules: "",
     });
@@ -212,6 +221,7 @@ describe("settings service", () => {
       terminalShell: "auto",
       codeIndexEnabled: false,
       codeIndexAutoNewFolder: true,
+      autoCompactEnabled: true,
       ruleEntries: [],
       userRules: "",
     });
@@ -233,6 +243,7 @@ describe("settings service", () => {
       terminalShell: "auto",
       codeIndexEnabled: false,
       codeIndexAutoNewFolder: true,
+      autoCompactEnabled: true,
       ruleEntries: [],
       userRules: "",
     });
@@ -249,12 +260,14 @@ describe("settings service", () => {
         findTerminalShell: async () => null,
         findCodeIndexEnabled: async () => null,
         findCodeIndexAutoNewFolder: async () => null,
+        findAutoCompactEnabled: async () => null,
         findUserRules: async () => null,
         upsertDefaultModel: async () => {},
         upsertAgentMaxRetries: async () => {},
         upsertTerminalShell: async () => {},
         upsertCodeIndexEnabled: async () => {},
         upsertCodeIndexAutoNewFolder: async () => {},
+        upsertAutoCompactEnabled: async () => {},
         upsertUserRules: async () => {},
         upsertRuleEntries: async () => {},
       },
@@ -273,6 +286,7 @@ describe("settings service", () => {
         findTerminalShell: async () => null,
         findCodeIndexEnabled: async () => null,
         findCodeIndexAutoNewFolder: async () => null,
+        findAutoCompactEnabled: async () => null,
         findUserRules: async () => null,
         upsertDefaultModel: async () => {
           throw new SqlError("permission denied", { code: "42501" });
@@ -281,6 +295,7 @@ describe("settings service", () => {
         upsertTerminalShell: async () => {},
         upsertCodeIndexEnabled: async () => {},
         upsertCodeIndexAutoNewFolder: async () => {},
+        upsertAutoCompactEnabled: async () => {},
         upsertUserRules: async () => {},
         upsertRuleEntries: async () => {},
       },
@@ -292,6 +307,7 @@ describe("settings service", () => {
         terminalShell: "auto",
         codeIndexEnabled: false,
         codeIndexAutoNewFolder: true,
+        autoCompactEnabled: true,
       })
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(SettingsServiceError);
@@ -313,6 +329,7 @@ describe("settings service", () => {
       terminalShell: "git-bash" as WorkspaceSettings["terminalShell"] | null,
       codeIndexEnabled: null as boolean | null,
       codeIndexAutoNewFolder: null as boolean | null,
+      autoCompactEnabled: null as boolean | null,
       userRules: null as string | null,
       ruleEntries: null as string[] | null,
     };
@@ -323,6 +340,7 @@ describe("settings service", () => {
         findTerminalShell: async () => stored.terminalShell,
         findCodeIndexEnabled: async () => null,
         findCodeIndexAutoNewFolder: async () => null,
+        findAutoCompactEnabled: async () => null,
         findUserRules: async () => null,
         upsertDefaultModel: async (_workspaceId, defaultModel) => {
           stored = { ...stored, defaultModel };
@@ -341,6 +359,9 @@ describe("settings service", () => {
           codeIndexAutoNewFolder,
         ) => {
           stored = { ...stored, codeIndexAutoNewFolder };
+        },
+        upsertAutoCompactEnabled: async (_workspaceId, autoCompactEnabled) => {
+          stored = { ...stored, autoCompactEnabled };
         },
         upsertUserRules: async (_workspaceId, userRules) => {
           stored = { ...stored, userRules };
@@ -362,6 +383,7 @@ describe("settings service", () => {
       terminalShell: "git-bash",
       codeIndexEnabled: false,
       codeIndexAutoNewFolder: true,
+      autoCompactEnabled: true,
       ruleEntries: [],
       userRules: "",
     });
@@ -375,6 +397,7 @@ describe("settings service", () => {
       agentMaxRetries: 3,
       codeIndexEnabled: false,
       codeIndexAutoNewFolder: true,
+      autoCompactEnabled: true,
       ruleEntries: [],
       userRules: "",
       defaultModel: "gemini-2.5-flash",

@@ -124,3 +124,50 @@ describe("设置 → 账号", () => {
     expect(onOpenAdmin).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * 「上下文自动压缩」开关（R4-1 输出预留线的执行面）。
+ *
+ * 锁两件事：① 口径必须写在界面上（阈值 = 窗口 − 预留输出、摘要用本轮模型、转录不变），
+ * 用户才知道打开它意味着什么；② 开关**立即写**（部分更新），不是等「保存」按钮。
+ */
+describe("设置 → 模型：上下文自动压缩开关", () => {
+  it("文案写清口径（阈值/摘要模型/转录不变）", async () => {
+    const { AgentSection } = await import("../src/components/agent-section");
+    render(
+      <AgentSection
+        agentMaxRetries={10}
+        defaultModel="inst-1:glm-5.3-flash"
+        fetchModels={async () => ({ models: [] })}
+        onSave={async () => {}}
+        autoCompactEnabled
+        onToggleAutoCompact={async () => {}}
+      />,
+    );
+    expect(
+      screen.getByRole("switch", { name: "上下文自动压缩" }),
+    ).toBeChecked();
+    expect(screen.getByText(/窗口 − 预留输出/)).toBeVisible();
+    expect(screen.getByText(/摘要用本轮这个模型/)).toBeVisible();
+    expect(screen.getByText(/完整记录不受影响/)).toBeVisible();
+  });
+
+  it("关掉时立即回调（部分更新），不依赖「保存」按钮", async () => {
+    const { AgentSection } = await import("../src/components/agent-section");
+    const onToggleAutoCompact = vi.fn(async () => {});
+    render(
+      <AgentSection
+        agentMaxRetries={10}
+        defaultModel="inst-1:glm-5.3-flash"
+        fetchModels={async () => ({ models: [] })}
+        onSave={async () => {}}
+        autoCompactEnabled
+        onToggleAutoCompact={onToggleAutoCompact}
+      />,
+    );
+    await userEvent.click(
+      screen.getByRole("switch", { name: "上下文自动压缩" }),
+    );
+    expect(onToggleAutoCompact).toHaveBeenCalledWith(false);
+  });
+});
