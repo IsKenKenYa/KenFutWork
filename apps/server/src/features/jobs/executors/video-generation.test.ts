@@ -48,7 +48,7 @@ function jobRow(overrides: Partial<BackgroundJob> = {}): BackgroundJob {
 }
 
 function makeCtx(job: BackgroundJob) {
-  const sent: Array<{ payload: Record<string, unknown>; delay?: number }> = [];
+  const sent: Array<{ payload: Record<string, unknown>; delay: number | undefined }> = [];
   const ctx = {
     jobService: {
       getJobAdmin: vi.fn(async () => job),
@@ -63,7 +63,10 @@ function makeCtx(job: BackgroundJob) {
           payload: Record<string, unknown>,
           delaySeconds?: number,
         ) => {
-          sent.push({ payload, delay: delaySeconds });
+          sent.push({
+      payload: payload as Record<string, unknown>,
+      delay: delaySeconds,
+    });
           return 1;
         },
       ),
@@ -83,7 +86,10 @@ function makeCtx(job: BackgroundJob) {
     usageService: undefined,
     sent,
   } as unknown as ExecutorContext & {
-    sent: Array<{ payload: Record<string, unknown>; delay?: number }>;
+    sent: Array<{
+      payload: Record<string, unknown>;
+      delay: number | undefined;
+    }>;
   };
   return ctx;
 }
