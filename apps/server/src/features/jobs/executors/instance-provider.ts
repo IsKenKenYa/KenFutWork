@@ -47,11 +47,7 @@ export async function resolveInstanceImageProviderFromPayload(
       ...instanceHeadersOption(credentials.headers, headerContext),
     },
     models: credentials.models
-      .filter(
-        (m) =>
-          m.capability === "image" ||
-          m.capability === "image-edit",
-      )
+      .filter((m) => m.capability === "image" || m.capability === "image-edit")
       .map((m) => ({ id: m.id, name: m.name })),
   });
 }

@@ -11,7 +11,8 @@ import { OpenAIImageProvider } from "./openai-image.js";
 type Captured = {
   url: string;
   contentType: string;
-  body: FormData | string | undefined;
+  authorization: string | null;
+  body: FormData | undefined;
 };
 
 function captureFetch(responds: Array<unknown>) {
@@ -19,17 +20,12 @@ function captureFetch(responds: Array<unknown>) {
   let index = 0;
   const stub = vi.fn(async (_input: unknown, init?: RequestInit) => {
     const rawBody = init?.body;
+    const headers = new Headers(init?.headers);
     const request: Captured = {
       url: String(_input),
-      contentType: String(
-        new Headers(init?.headers).get("content-type") ?? "",
-      ),
-      body:
-        rawBody instanceof FormData
-          ? rawBody
-          : typeof rawBody === "string"
-            ? rawBody
-            : undefined,
+      contentType: String(headers.get("content-type") ?? ""),
+      authorization: headers.get("authorization"),
+      body: rawBody instanceof FormData ? rawBody : undefined,
     };
     requests.push(request);
     const payload = responds[Math.min(index, responds.length - 1)];
@@ -82,8 +78,7 @@ describe("OpenAIImageProvider（编辑路径 S5）", () => {
       { data: [{ url: "https://cdn.example/edited.png" }] },
     ]);
     const provider = new OpenAIImageProvider("sk-key", "https://gw.example/v1");
-    const dataUrl =
-      "data:image/png;base64,aGVsbG8=";
+    const dataUrl = "data:image/png;base64,aGVsbG8=";
     const image = await provider.generate({
       model: "gpt-image-1",
       prompt: "把背景改成雪地",
@@ -93,7 +88,9 @@ describe("OpenAIImageProvider（编辑路径 S5）", () => {
     expect(image.url).toBe("https://cdn.example/edited.png");
     const request = requests[0];
     expect(request?.url).toBe("https://gw.example/v1/images/edits");
-    expect(request?.contentType.startsWith("multipart/form-data")).toBe(true);
+    // content-type 由 fetch 运行时按 FormData 自动补（带 boundary），不在显式头里；
+    // 凭证头必须显式在（自定义头在前、凭证在后的合并语义由 body 实例承担分界）
+    expect(request?.authorization).toBe("Bearer sk-key");
     const form = request?.body;
     expect(form).toBeInstanceOf(FormData);
     expect(form?.get("model")).toBe("gpt-image-1");
@@ -104,11 +101,11 @@ describe("OpenAIImageProvider（编辑路径 S5）", () => {
   it("多张参考图逐张入 multipart；http URL 参考图先下载再上传", async () => {
     const requests: Captured[] = [];
     const download = vi.fn(
-      async () =>
+      async (_url: string) =>
         new Response(new Uint8Array([137, 80, 78, 71]), { status: 200 }),
     );
     const upload = vi.fn(
-      async () =>
+      async (_url: string) =>
         new Response(
           JSON.stringify({ data: [{ url: "https://cdn.example/e.png" }] }),
           { status: 200, headers: { "content-type": "application/json" } },
@@ -121,17 +118,12 @@ describe("OpenAIImageProvider（编辑路径 S5）", () => {
         if (url.startsWith("https://img.example/")) {
           return download(url);
         }
+        const headers = new Headers(init?.headers);
         const request: Captured = {
           url,
-          contentType: String(
-            new Headers(init?.headers).get("content-type") ?? "",
-          ),
-          body:
-            init?.body instanceof FormData
-              ? init.body
-              : typeof init?.body === "string"
-                ? init.body
-                : undefined,
+          contentType: String(headers.get("content-type") ?? ""),
+          authorization: headers.get("authorization"),
+          body: init?.body instanceof FormData ? init.body : undefined,
         };
         requests.push(request);
         return upload(url);
@@ -143,10 +135,7 @@ describe("OpenAIImageProvider（编辑路径 S5）", () => {
       model: "gpt-image-1",
       prompt: "融合两张图",
       aspectRatio: "1:1",
-      inputImages: [
-        "https://img.example/a.png",
-        "data:image/jpeg;base64,QQ==",
-      ],
+      inputImages: ["https://img.example/a.png", "data:image/jpeg;base64,QQ=="],
     });
     expect(download).toHaveBeenCalledTimes(1);
     expect(requests).toHaveLength(1);

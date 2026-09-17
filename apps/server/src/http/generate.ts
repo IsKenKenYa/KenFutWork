@@ -155,8 +155,7 @@ export async function registerGenerateRoutes(
           },
           models: credentials.models
             .filter(
-              (m) =>
-                m.capability === "image" || m.capability === "image-edit",
+              (m) => m.capability === "image" || m.capability === "image-edit",
             )
             .map((m) => ({ id: m.id, name: m.name })),
         });
