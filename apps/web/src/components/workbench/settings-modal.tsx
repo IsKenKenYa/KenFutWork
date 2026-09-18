@@ -303,11 +303,17 @@ export function SettingsModal({
   );
 
   const token = getToken();
+  /** 内容滚动容器引用：切 tab 时重置滚动位置（旧位置残留是明显的交互脏感）。 */
+  const contentScrollRef = useRef<HTMLDivElement | null>(null);
+  const handleTabChange = useCallback((next: SettingsTab) => {
+    setActiveTab(next);
+    if (contentScrollRef.current) contentScrollRef.current.scrollTop = 0;
+  }, []);
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent
-        className="flex h-[70vh] max-h-[80vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
+        className="flex h-[85vh] max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl"
         aria-describedby={undefined}
       >
         <DialogTitle className="border-b px-5 py-3 text-base font-medium">
@@ -316,7 +322,7 @@ export function SettingsModal({
         <div className="flex min-h-0 flex-1">
           <nav
             aria-label="设置分类"
-            className="w-36 shrink-0 space-y-3 overflow-y-auto border-r p-2"
+            className="w-44 shrink-0 space-y-3 overflow-y-auto border-r p-2"
           >
             {TAB_GROUPS.map((group) => (
               <div key={group.label}>
@@ -328,8 +334,8 @@ export function SettingsModal({
                     key={tab.id}
                     type="button"
                     data-active={activeTab === tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className="w-full rounded-md px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[active=true]:bg-muted data-[active=true]:font-medium data-[active=true]:text-foreground"
+                    onClick={() => handleTabChange(tab.id)}
+                    className="w-full rounded-md border-l-2 px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[active=true]:border-l-primary data-[active=true]:bg-muted data-[active=true]:font-medium data-[active=true]:text-foreground"
                   >
                     {tab.label}
                   </button>
@@ -340,7 +346,7 @@ export function SettingsModal({
                       key={alias.label}
                       type="button"
                       title={`同「${alias.targetLabel}」页`}
-                      onClick={() => setActiveTab(alias.target)}
+                      onClick={() => handleTabChange(alias.target)}
                       className="w-full rounded-md px-3 py-1.5 text-left text-sm text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
                     >
                       <span className="block truncate">{alias.label}</span>
@@ -354,7 +360,10 @@ export function SettingsModal({
               </div>
             ))}
           </nav>
-          <div className="min-w-0 flex-1 overflow-y-auto px-6 py-4">
+          <div
+            ref={contentScrollRef}
+            className="min-w-0 flex-1 overflow-y-auto px-6 py-4"
+          >
             {loading && !profile ? (
               <ListLoading label="正在加载设置…" rows={2} />
             ) : activeTab === "general" ? (

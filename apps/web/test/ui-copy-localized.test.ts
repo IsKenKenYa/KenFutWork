@@ -17,10 +17,10 @@ const ROOT = join(import.meta.dirname, "..", "src", "components");
 
 const FILES = [
   "canvas-editor.tsx",
-  "canvas-ai-toolbar.tsx",
+
   "canvas-bottom-bar.tsx",
   "canvas-files-panel.tsx",
-  "canvas-image-gen-panel.tsx",
+
   "canvas-layers-panel.tsx",
   "canvas-empty-hint.tsx",
   "canvas-tool-menu.tsx",
