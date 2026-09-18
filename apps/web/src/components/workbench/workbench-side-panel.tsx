@@ -244,7 +244,11 @@ export function WorkbenchSidePanel({
           ? { width, minWidth: MIN_PANEL_WIDTH, maxWidth: maxWidthExpression }
           : { width }
       }
-      className="relative flex shrink-0 flex-col border-l bg-card"
+      /**
+       * **不画左边框**（用户口径：终端不要四周边框，指向的就是面板这条竖线）：
+       * 面板与对话列的分界靠底色差异（bg-card vs 页面底）已经看得清，再加一条线只是噪声。
+       */
+      className="relative flex shrink-0 flex-col bg-card"
     >
       {/* 拖拽把手：贴面板左边缘（按住拖动改宽） */}
       {/* biome-ignore lint/a11y/useSemanticElements: 拖拽改宽的把手（无 aria-valuenow 的可聚焦分隔条语义），<hr> 是内容分隔线，替换会丢拖拽语义 */}

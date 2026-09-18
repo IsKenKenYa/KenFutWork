@@ -74,8 +74,9 @@ export function PanelTabStrip({
 
   const visible = filterPanelTabs(tabs, query);
 
+  // 标签条下沿也不画线（同上：终端/文件这些视图顶部那条横线就是它）
   return (
-    <div className="flex min-h-[40px] items-center gap-1 border-b px-1">
+    <div className="flex min-h-[40px] items-center gap-1 px-1">
       {/* 标签列表：搜索 + 打开的标签页（参考图的下拉形态） */}
       <div ref={listRef} className="relative shrink-0">
         <button
