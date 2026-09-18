@@ -356,7 +356,7 @@ export function BrowserPane({
 
       {/* 第二行：视口预设 + 缩放预设（用户口径：预设不做在地址栏右边）。
        **都是真的**——iframe 按预设尺寸排版，再按比例缩放到面板里 */}
-      <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-2 py-1 text-[11px]">
+      <div className="flex items-center gap-2 border bg-muted/30 px-2 py-1 text-[11px]">
         <span className="font-mono text-muted-foreground">
           {viewportWidth > 0 ? `${viewportWidth} × ${viewportHeight}` : "—"}
         </span>

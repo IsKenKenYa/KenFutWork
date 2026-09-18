@@ -126,7 +126,7 @@ export function ChangesPane({
       ) : changes.files.length === 0 ? (
         <p className="text-xs text-muted-foreground">没有未提交的更改。</p>
       ) : (
-        <div className="rounded-xl border">
+        <div className="border">
           <div className="flex items-center gap-2 border-b px-2.5 py-2 text-xs">
             <FileDiffIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <span>

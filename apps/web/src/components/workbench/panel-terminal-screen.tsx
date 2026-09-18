@@ -43,33 +43,33 @@ export function TerminalScreen({
     if (!host) return;
     const term = new Terminal({
       /**
-       * 终端外观 = **真终端的样子**（用户口径：现在「背景白色、字体黑色」不对）。
+       * 终端外观 = **白底黑字**（用户口径，两轮确认：「终端背景白色，字体黑色」——
+       * 我上一轮读成了抱怨、改成了深色，是错的，别再翻回去）。
        *
-       * 固定深色，不跟应用的浅/深主题走：终端有自己的约定（黑底浅字 + 标准 ANSI 调色板），
-       * 跟着 UI 主题变会让 `ls` / `git status` 的颜色在浅底上不可读。参考的 Windows Terminal
-       * 也是深色。要跟主题走的话改这一个 theme 对象即可。
+       * 调色板按**浅底**选（VS Code 的 light 终端那套）：黑/红/绿/黄/蓝/紫/青各自压暗，
+       * 深色终端用的亮色在白色背景上根本看不清。
        */
       theme: {
-        background: "#0c0c0c",
-        foreground: "#cccccc",
-        cursor: "#ffffff",
-        selectionBackground: "#264f78",
-        black: "#0c0c0c",
-        red: "#c50f1f",
-        green: "#13a10e",
-        yellow: "#c19c00",
-        blue: "#3b78ff",
-        magenta: "#881798",
-        cyan: "#3a96dd",
-        white: "#cccccc",
-        brightBlack: "#767676",
-        brightRed: "#e74856",
-        brightGreen: "#16c60c",
-        brightYellow: "#f9f1a5",
-        brightBlue: "#3b78ff",
-        brightMagenta: "#b4009e",
-        brightCyan: "#61d6d6",
-        brightWhite: "#f2f2f2",
+        background: "#ffffff",
+        foreground: "#1f1f1f",
+        cursor: "#000000",
+        selectionBackground: "#add6ff",
+        black: "#000000",
+        red: "#cd3131",
+        green: "#00bc00",
+        yellow: "#949800",
+        blue: "#0451a5",
+        magenta: "#bc05bc",
+        cyan: "#0598bc",
+        white: "#555555",
+        brightBlack: "#666666",
+        brightRed: "#cd3131",
+        brightGreen: "#14ce14",
+        brightYellow: "#b5ba00",
+        brightBlue: "#0451a5",
+        brightMagenta: "#bc05bc",
+        brightCyan: "#0598bc",
+        brightWhite: "#a5a5a5",
       },
       fontFamily:
         'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',

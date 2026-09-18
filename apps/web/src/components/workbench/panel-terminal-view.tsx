@@ -422,7 +422,7 @@ export function TerminalPane({
 
       {/* 每个标签一个 xterm 模拟器：隐藏的保持挂载（切回来滚动缓冲还在），
           键盘直接进终端——不再有「输入框 + 执行按钮」那一层 */}
-      <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-neutral-800 bg-[#0c0c0c] p-1">
+      <div className="min-h-0 flex-1 overflow-hidden border bg-white p-1">
         {tabs.map((tab) => (
           <TerminalScreen
             key={`${tab.key}:${tab.sessionId}`}

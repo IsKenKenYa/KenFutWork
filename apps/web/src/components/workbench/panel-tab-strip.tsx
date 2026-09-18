@@ -194,7 +194,7 @@ export function PanelTabStrip({
           return (
             <span
               key={tab.id}
-              className={`group flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors ${
+              className={`group flex shrink-0 items-center gap-1 border px-2 py-1 text-xs transition-colors ${
                 active
                   ? "border-border bg-muted font-medium text-foreground"
                   : "border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground"

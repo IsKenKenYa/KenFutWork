@@ -146,7 +146,7 @@ export function DiffPane({
           {error}
         </p>
       ) : null}
-      <div className="rounded-xl border">
+      <div className="border">
         <div className="flex items-center gap-2 border-b px-2 py-1.5">
           <span className="min-w-0 flex-1 truncate font-mono text-[11px]">
             {path}
@@ -300,7 +300,7 @@ export function FilePane({
           {error}
         </p>
       ) : null}
-      <div className="rounded-xl border">
+      <div className="border">
         <div className="flex items-center gap-2 border-b px-2 py-1.5">
           <FileCode2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate font-mono text-[11px]">

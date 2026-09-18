@@ -120,7 +120,7 @@ export function FilesPane({
       ) : null}
 
       {hits ? (
-        <div className="rounded-xl border">
+        <div className="border">
           <p className="border-b px-2.5 py-1.5 text-[10px] text-muted-foreground">
             {hits.length === 0
               ? "没有匹配的文件"
@@ -190,7 +190,7 @@ export function FilesPane({
       ) : listing.entries.length === 0 ? (
         <p className="text-xs text-muted-foreground">这个目录是空的。</p>
       ) : (
-        <ul aria-label="目录内容" className="divide-y rounded-xl border">
+        <ul aria-label="目录内容" className="divide-y border">
           {listing.entries.map((entry) => (
             <li
               key={entry.path}
