@@ -29,9 +29,59 @@ const SHUTDOWN_GRACE: Duration = std::time::Duration::from_secs(10);
 /// 持有服务端句柄的托管状态；`Reused`（复用用户自己的 dev）时为 None。
 struct ServerState(std::sync::Mutex<Option<server_handle::ServerHandle>>);
 
-fn spawn_config(data_dir: std::path::PathBuf) -> ServerSpawnConfig {
-    // 命令与 cwd 可用 env 覆盖（dev.sh 会注入 LOOMIC_DESKTOP_SERVER_CWD=仓库根）；
-    // 打包态（sidecar）落地时改为二进制路径注入，接口不变。
+/**
+ * 打包态（安装包装出来的形态）里那套「桌面形态」环境变量。
+ *
+ * 与 `release/启动.bat` 同一套：内嵌 PG、本机免登录、进程内队列、静态 UI 由服务端托管。
+ * **为什么要把窗口指向 `http://127.0.0.1:<port>` 而不是加载打包进壳里的 UI**：local-trust 的
+ * 可信来源只认**回环页面**（见 `features/auth/local-trust.ts`）——壳自带的 `tauri://localhost`
+ * 不是回环，会被 401/403；服务端自己托管的那份 UI 才是它认的来源。
+ */
+fn desktop_env(app: &tauri::AppHandle, web_dir: &std::path::Path) -> Vec<(String, String)> {
+    let _ = app;
+    vec![
+        ("KENFUTWORK_EMBEDDED_PG".into(), "1".into()),
+        ("KENFUTWORK_AUTH_DRIVER".into(), "local-trust".into()),
+        ("KENFUTWORK_QUEUE_DRIVER".into(), "in-process".into()),
+        (
+            "KENFUTWORK_WEB_ORIGIN".into(),
+            format!("http://127.0.0.1:{SERVER_PORT}"),
+        ),
+        (
+            "KENFUTWORK_WEB_DIST".into(),
+            web_dir.to_string_lossy().to_string(),
+        ),
+    ]
+}
+
+/** 安装包随带的那个服务端 exe（`<resource>/app/KenFutWork-server.exe`）；仓库里跑时为 None。 */
+fn bundled_server_exe(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    use tauri::Manager;
+    let dir = app.path().resource_dir().ok()?.join("app");
+    let exe = dir.join("KenFutWork-server.exe");
+    exe.exists().then_some(exe)
+}
+
+fn spawn_config(app: &tauri::AppHandle, data_dir: std::path::PathBuf) -> ServerSpawnConfig {
+    // ① 打包态优先：随包的服务端 exe（安装包把 release/ 拷进 <resource>/app/）
+    if std::env::var("LOOMIC_DESKTOP_SERVER_CMD").is_err() {
+        if let Some(exe) = bundled_server_exe(app) {
+            let dir = exe
+                .parent()
+                .map(|parent| parent.to_path_buf())
+                .unwrap_or_else(|| data_dir.clone());
+            let mut config = ServerSpawnConfig::new(
+                exe.to_string_lossy().as_ref(),
+                Vec::new(),
+                data_dir,
+                SERVER_PORT,
+            );
+            config.cwd = dir.clone();
+            config.env = desktop_env(app, &dir.join("web"));
+            return config;
+        }
+    }
+    // ② 开发形态：命令与 cwd 可用 env 覆盖（dev.sh 会注入 LOOMIC_DESKTOP_SERVER_CWD=仓库根）
     let command =
         std::env::var("LOOMIC_DESKTOP_SERVER_CMD").unwrap_or_else(|_| "pnpm".into());
     let args = std::env::var("LOOMIC_DESKTOP_SERVER_ARGS")
@@ -83,7 +133,8 @@ pub fn run() {
     browser_embed::register_embed_commands(builder)
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
-            let mut config = spawn_config(data_dir);
+            let bundled = bundled_server_exe(app.handle());
+            let mut config = spawn_config(app.handle(), data_dir);
             if let Ok(cwd) = std::env::var("LOOMIC_DESKTOP_SERVER_CWD") {
                 config.cwd = cwd.into();
             }
@@ -97,6 +148,18 @@ pub fn run() {
                     app.manage(ServerState(std::sync::Mutex::new(None)));
                 }
                 Err(error) => return Err(Box::new(error)),
+            }
+            // 打包态：**等服务端健康之后把窗口指向它托管的 UI**（`ensure_server_running` 已经
+            // 探活过，这一步是即时的）。指向回环 http 而不是壳自带的 `tauri://`，是因为
+            // local-trust 只认回环来源（见 `desktop_env` 的说明）。
+            if bundled.is_some() {
+                use tauri::Manager;
+                if let Some(window) = app.get_webview_window("main") {
+                    let url = format!("http://127.0.0.1:{SERVER_PORT}/");
+                    if let Ok(parsed) = url.parse() {
+                        let _ = window.navigate(parsed);
+                    }
+                }
             }
             #[cfg(unix)]
             register_signal_shutdown(app.handle().clone());

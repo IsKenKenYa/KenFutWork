@@ -176,8 +176,39 @@ export async function signOut(): Promise<void> {
  */
 export async function loadSession(): Promise<AuthSession | null> {
   const stored = readStoredSession();
+  /**
+   * **没有本地令牌时问 `/api/viewer`**（用户口径：桌面端「一键启动」就该直接进去）。
+   *
+   * 本机免登录形态（桌面壳 / 自托管 `KENFUTWORK_AUTH_DRIVER=local-trust`）是**按连接来源认人**的，
+   * 从来没有令牌；而且**认证路由在这种形态下压根没挂载**（`/api/auth/session` 回 404，真机打包验过），
+   * 所以只能问 `/api/viewer`——它两种形态都在：免登录时直接给出本机用户，口令形态下没令牌就 401。
+   * 以前这里一看没有令牌就返回 null，界面于是永远停在登录页。
+   */
   if (!stored) {
-    return null;
+    const viewer = await fetch(`${getServerBaseUrl()}/api/viewer`).catch(
+      () => null,
+    );
+    if (!viewer?.ok) return null;
+    const payload = (await viewer.json().catch(() => null)) as {
+      profile?: { id?: unknown; email?: unknown; displayName?: unknown };
+    } | null;
+    const profile = payload?.profile;
+    if (typeof profile?.id !== "string" || typeof profile.email !== "string") {
+      return null;
+    }
+    const session: AuthSession = {
+      // 免登录形态没有令牌（消费方按「无令牌」处理，服务端也不需要它）
+      access_token: "",
+      expiresAt: null,
+      user: {
+        id: profile.id,
+        email: profile.email,
+        displayName:
+          typeof profile.displayName === "string" ? profile.displayName : null,
+      },
+    };
+    notify(session);
+    return session;
   }
 
   const response = await fetch(`${getServerBaseUrl()}/api/auth/session`, {

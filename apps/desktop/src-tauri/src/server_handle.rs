@@ -26,6 +26,11 @@ pub struct ServerSpawnConfig {
     /// 注入子进程 `LOOMIC_DATA_DIR`（桌面数据与开发目录彻底分离）。
     pub data_dir: PathBuf,
     pub port: u16,
+    /**
+     * 额外注入子进程的环境变量（打包态用：内嵌 PG / 免登录 / 静态 UI 目录…）。
+     * dev 形态留空——那时服务端读仓库的 `.env.local`。
+     */
+    pub env: Vec<(String, String)>,
     /// 健康探活超时（dev 首次 tsx 编译慢，默认 90 秒）。
     pub health_timeout: Duration,
 }
@@ -38,6 +43,7 @@ impl ServerSpawnConfig {
             cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
             data_dir,
             port,
+            env: Vec::new(),
             health_timeout: Duration::from_secs(90),
         }
     }
@@ -144,6 +150,7 @@ pub fn ensure_server_running(
         .args(&config.args)
         .current_dir(&config.cwd)
         .env("LOOMIC_DATA_DIR", &config.data_dir)
+        .envs(config.env.iter().map(|(key, value)| (key, value)))
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()

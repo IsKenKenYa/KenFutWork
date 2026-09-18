@@ -22,6 +22,40 @@ describe("loadSession 的令牌保留口径", () => {
     vi.restoreAllMocks();
   });
 
+  it("没有本地令牌：问 /api/viewer 拿本机身份（免登录形态直接进）", async () => {
+    window.localStorage.clear();
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(
+          JSON.stringify({
+            profile: {
+              id: "u1",
+              email: "local@kenfutwork.local",
+              displayName: "本机用户",
+            },
+          }),
+          { status: 200 },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const session = await loadSession();
+    expect(session?.user.email).toBe("local@kenfutwork.local");
+    // 免登录形态没有令牌：空串（不是 null，消费方按「无令牌」处理）
+    expect(session?.access_token).toBe("");
+    // 走的是 viewer（认证路由在免登录形态下没挂载）
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/api/viewer");
+  });
+
+  it("没有本地令牌且 viewer 也 401（口令形态）：未登录，不写任何东西", async () => {
+    window.localStorage.clear();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("{}", { status: 401 })),
+    );
+    await expect(loadSession()).resolves.toBeNull();
+    expect(readStoredSession()).toBeNull();
+  });
+
   it("401（令牌无效）：清令牌", async () => {
     vi.stubGlobal(
       "fetch",
