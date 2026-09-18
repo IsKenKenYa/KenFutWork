@@ -275,6 +275,29 @@ export function createCdpBrowserSession(deps: {
           "拿不到这块页面的调试地址（浏览器可能不允许远程调试）。",
         );
       }
+      /**
+       * **开之前先探一下**：这台受控实例到底能不能接调试前端（Origin 白名单）。
+       * 不行就如实报原因 + 给可执行的做法——别开一个注定「连接已关闭」的标签，
+       * 用户只会看到 DevTools 里那句英文报错，还以为功能坏了（真机就是这么被问到的）。
+       */
+      const acceptable = await cdp.probeDebuggerUrl(page.webSocketDebuggerUrl);
+      if (!acceptable) {
+        throw new CdpError(
+          "cdp_devtools_blocked",
+          "这台受控浏览器不接受调试前端连接（缺 --remote-allow-origins，多为外部启动的 Chrome）。" +
+            "先在「设置 → 浏览器 → 外部浏览器」断开，再用这里的「打开调试工具」——" +
+            "那会由产品启动一个带该参数的实例，调试工具即可正常连接。",
+        );
+      }
+      /**
+       * 顺手清掉**之前开的调试标签**：同一块页面重复开会让用户盯着一堆
+       * 连不上/过期的 DevTools 标签（真机截图里就是这种情况）。
+       */
+      for (const target of await cdp.listTargets()) {
+        if (target.url.startsWith("devtools://")) {
+          await cdp.closeTab(target.targetId).catch(() => undefined);
+        }
+      }
       const url = `devtools://devtools/bundled/inspector.html?ws=${encodeURIComponent(
         page.webSocketDebuggerUrl,
       )}`;

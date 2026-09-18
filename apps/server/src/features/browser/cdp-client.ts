@@ -29,9 +29,10 @@ export class CdpError extends Error {
     | "launch_failed"
     | "connect_failed"
     | "command_failed"
-    /** 「打开调试工具」用：受控浏览器里没有可调页面 / 拿不到调试地址。 */
+    /** 「打开调试工具」用：受控浏览器里没有可调页面 / 拿不到调试地址 / 不接受调试前端。 */
     | "cdp_no_page"
-    | "cdp_no_debug_url";
+    | "cdp_no_debug_url"
+    | "cdp_devtools_blocked";
   constructor(code: CdpError["code"], message: string) {
     super(message);
     this.name = "CdpError";
@@ -216,6 +217,14 @@ export interface CdpClient {
     }>
   >;
   closeTab(targetId: string): Promise<void>;
+  /**
+   * 用**带 Origin 的 WebSocket** 探一下这个调试地址能不能连（DevTools 前端就是这么连的）。
+   *
+   * 判据来自真机：Chrome 111+ 默认拒掉带 Origin 的调试连接，只有启动时带了
+   * `--remote-allow-origins` 才放行——外部启动的 Chrome 多半没带，于是前端打开后立刻断
+   * （界面显示「调试连接已关闭 / WebSocket 已断开」）。开调试工具前先探一下，才能如实报原因。
+   */
+  probeDebuggerUrl(wsUrl: string): Promise<boolean>;
   close(): void;
 }
 
@@ -411,6 +420,29 @@ export function connectCdpClient(
         title: info.title,
         webSocketDebuggerUrl: byId.get(info.targetId) ?? null,
       }));
+    },
+
+    async probeDebuggerUrl(wsUrl) {
+      return await new Promise<boolean>((resolve) => {
+        let settled = false;
+        const done = (ok: boolean) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          try {
+            probe.close();
+          } catch {
+            // 已经关了：忽略
+          }
+          resolve(ok);
+        };
+        const timer = setTimeout(() => done(false), 3000);
+        // Origin 用 DevTools 前端自己的（`devtools://devtools`）——被拒就是这个问题
+        const probe = new WebSocket(wsUrl, { origin: "devtools://devtools" });
+        probe.on("open", () => done(true));
+        probe.on("error", () => done(false));
+        probe.on("unexpected-response", () => done(false));
+      });
     },
 
     async closeTab(targetId) {
