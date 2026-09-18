@@ -460,7 +460,12 @@ export function TerminalPane({
 
       {/* 每个标签一个 xterm 模拟器：隐藏的保持挂载（切回来滚动缓冲还在），
           键盘直接进终端——不再有「输入框 + 执行按钮」那一层 */}
-      <div className="min-h-0 flex-1 overflow-hidden border bg-white p-1">
+      {/*
+        终端面板：**不要边框**（用户口径），左边留一点点缩进——缩进加在**外壳**上、
+        不加在 xterm 宿主上：FitAddon 按宿主的 clientWidth 算列数，宿主自带 padding 会把
+        列数算多、文字被裁（真机踩过这类「最后几列看不见」）。
+      */}
+      <div className="min-h-0 flex-1 overflow-hidden bg-white pl-2">
         {tabs.map((tab) => (
           <TerminalScreen
             key={`${tab.key}:${tab.sessionId}`}
