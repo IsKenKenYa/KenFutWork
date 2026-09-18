@@ -3,6 +3,7 @@ import type {
   ProviderInstanceCreateRequest,
   ProviderInstanceResponse,
   ProviderInstanceUpdateRequest,
+  ProviderPreset,
   ProviderProbeResult,
   ProviderProtocol,
   ProviderScope,
@@ -10,6 +11,8 @@ import type {
 
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
+import { loadBundledModelsDevSnapshot } from "./models-dev-bundled.js";
+import { listProviderPresets } from "./models-dev-snapshot.js";
 import { type ProbeFetch, type ProbeTarget, probeInstance } from "./probe.js";
 import type {
   ModelProviderRepository,
@@ -116,7 +119,8 @@ function toCredentials(row: ProviderInstanceRecord, apiKey: string) {
     models: mapModels(row.models),
     configRevision: Number(row.config_revision),
     // 探测纠偏消费面：仅 true 带出（false/缺席=未支持或不详，默认 completions）
-    ...((row.probe_result as { responsesApi?: boolean } | null)?.responsesApi === true
+    ...((row.probe_result as { responsesApi?: boolean } | null)
+      ?.responsesApi === true
       ? { responsesApi: true }
       : {}),
   };
@@ -168,6 +172,8 @@ export interface ModelProviderService {
     instanceId: string,
     fetchFn?: ProbeFetch,
   ): Promise<ProviderProbeResult>;
+  /** models.dev 供应商预设清单（供应商设置的「从预设选择」）。 */
+  listProviderPresets(): ProviderPreset[];
   /**
    * 平台池（scope='system'）：管理员配置一份 Key，分发给全体用户使用。
    */
@@ -412,6 +418,10 @@ export function createModelProviderService(options: {
       }
 
       return decryptRow(systemRow);
+    },
+
+    listProviderPresets() {
+      return listProviderPresets(loadBundledModelsDevSnapshot() ?? {});
     },
 
     async probeInstance(user, instanceId, fetchFn) {

@@ -3,6 +3,10 @@
 export const MODELS_DEV_SNAPSHOT = {
   "openai": {
     "name": "OpenAI",
+    "doc": "https://platform.openai.com/docs/models",
+    "env": [
+      "OPENAI_API_KEY"
+    ],
     "models": {
       "gpt-5-nano": {
         "id": "gpt-5-nano",
@@ -1382,6 +1386,10 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "anthropic": {
     "name": "Anthropic",
+    "doc": "https://docs.anthropic.com/en/docs/about-claude/models",
+    "env": [
+      "ANTHROPIC_API_KEY"
+    ],
     "models": {
       "claude-sonnet-4-6": {
         "id": "claude-sonnet-4-6",
@@ -1821,6 +1829,12 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "google": {
     "name": "Google",
+    "doc": "https://ai.google.dev/gemini-api/docs/models",
+    "env": [
+      "GOOGLE_API_KEY",
+      "GOOGLE_GENERATIVE_AI_API_KEY",
+      "GEMINI_API_KEY"
+    ],
     "models": {
       "gemma-4-26b-a4b-it": {
         "id": "gemma-4-26b-a4b-it",
@@ -2981,6 +2995,10 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "xai": {
     "name": "xAI",
+    "doc": "https://docs.x.ai/docs/models",
+    "env": [
+      "XAI_API_KEY"
+    ],
     "models": {
       "grok-4.3": {
         "id": "grok-4.3",
@@ -3321,6 +3339,10 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "mistral": {
     "name": "Mistral",
+    "doc": "https://docs.mistral.ai/getting-started/models/",
+    "env": [
+      "MISTRAL_API_KEY"
+    ],
     "models": {
       "pixtral-12b": {
         "id": "pixtral-12b",
@@ -4219,6 +4241,10 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "groq": {
     "name": "Groq",
+    "doc": "https://console.groq.com/docs/models",
+    "env": [
+      "GROQ_API_KEY"
+    ],
     "models": {
       "whisper-large-v3": {
         "id": "whisper-large-v3",
@@ -4626,6 +4652,10 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "cohere": {
     "name": "Cohere",
+    "doc": "https://docs.cohere.com/docs/models",
+    "env": [
+      "COHERE_API_KEY"
+    ],
     "models": {
       "command-r7b-arabic-02-2025": {
         "id": "command-r7b-arabic-02-2025",
@@ -4985,6 +5015,10 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "perplexity": {
     "name": "Perplexity",
+    "doc": "https://docs.perplexity.ai",
+    "env": [
+      "PERPLEXITY_API_KEY"
+    ],
     "models": {
       "sonar": {
         "id": "sonar",
@@ -5097,6 +5131,11 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "openrouter": {
     "name": "OpenRouter",
+    "api": "https://openrouter.ai/api/v1",
+    "doc": "https://openrouter.ai/models",
+    "env": [
+      "OPENROUTER_API_KEY"
+    ],
     "models": {
       "qwen/qwen3.7-max": {
         "id": "qwen/qwen3.7-max",
@@ -15768,6 +15807,10 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "deepinfra": {
     "name": "Deep Infra",
+    "doc": "https://deepinfra.com/models",
+    "env": [
+      "DEEPINFRA_API_KEY"
+    ],
     "models": {
       "ByteDance/Seed-2.0-mini": {
         "id": "ByteDance/Seed-2.0-mini",
@@ -17710,6 +17753,11 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "deepseek": {
     "name": "DeepSeek",
+    "api": "https://api.deepseek.com",
+    "doc": "https://api-docs.deepseek.com/quick_start/pricing",
+    "env": [
+      "DEEPSEEK_API_KEY"
+    ],
     "models": {
       "deepseek-v4-flash-vision-exp": {
         "id": "deepseek-v4-flash-vision-exp",
@@ -17834,6 +17882,11 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "moonshotai": {
     "name": "Moonshot AI",
+    "api": "https://api.moonshot.ai/v1",
+    "doc": "https://platform.moonshot.ai/docs/api/chat",
+    "env": [
+      "MOONSHOT_API_KEY"
+    ],
     "models": {
       "kimi-k2.7-code-highspeed": {
         "id": "kimi-k2.7-code-highspeed",
@@ -17959,6 +18012,11 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "moonshotai-cn": {
     "name": "Moonshot AI (China)",
+    "api": "https://api.moonshot.cn/v1",
+    "doc": "https://platform.moonshot.cn/docs/api/chat",
+    "env": [
+      "MOONSHOT_API_KEY"
+    ],
     "models": {
       "kimi-k3": {
         "id": "kimi-k3",
@@ -18084,6 +18142,11 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "kimi-for-coding": {
     "name": "Kimi For Coding",
+    "api": "https://api.kimi.com/coding/v1",
+    "doc": "https://www.kimi.com/code/docs/en/kimi-code/models.html",
+    "env": [
+      "KIMI_API_KEY"
+    ],
     "models": {
       "kimi-for-coding-highspeed": {
         "id": "kimi-for-coding-highspeed",
@@ -18210,6 +18273,11 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "zhipuai": {
     "name": "Zhipu AI",
+    "api": "https://open.bigmodel.cn/api/paas/v4",
+    "doc": "https://docs.z.ai/guides/overview/pricing",
+    "env": [
+      "ZHIPU_API_KEY"
+    ],
     "models": {
       "glm-5.2": {
         "id": "glm-5.2",
@@ -18645,6 +18713,11 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "zhipuai-coding-plan": {
     "name": "Zhipu AI Coding Plan",
+    "api": "https://open.bigmodel.cn/api/coding/paas/v4",
+    "doc": "https://docs.bigmodel.cn/cn/coding-plan/overview",
+    "env": [
+      "ZHIPU_API_KEY"
+    ],
     "models": {
       "glm-5.3-highspeed": {
         "id": "glm-5.3-highspeed",
@@ -18943,6 +19016,11 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "zai": {
     "name": "Z.AI",
+    "api": "https://api.z.ai/api/paas/v4",
+    "doc": "https://docs.z.ai/guides/overview/pricing",
+    "env": [
+      "ZHIPU_API_KEY"
+    ],
     "models": {
       "glm-4.7": {
         "id": "glm-4.7",
@@ -19407,6 +19485,11 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "zai-coding-plan": {
     "name": "Z.AI Coding Plan",
+    "api": "https://api.z.ai/api/coding/paas/v4",
+    "doc": "https://docs.z.ai/devpack/overview",
+    "env": [
+      "ZHIPU_API_KEY"
+    ],
     "models": {
       "glm-5.2-highspeed": {
         "id": "glm-5.2-highspeed",
@@ -19617,6 +19700,11 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "siliconflow": {
     "name": "SiliconFlow",
+    "api": "https://api.siliconflow.com/v1",
+    "doc": "https://cloud.siliconflow.com/models",
+    "env": [
+      "SILICONFLOW_API_KEY"
+    ],
     "models": {
       "baidu/ERNIE-4.5-300B-A47B": {
         "id": "baidu/ERNIE-4.5-300B-A47B",
@@ -20966,6 +21054,11 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "siliconflow-cn": {
     "name": "SiliconFlow (China)",
+    "api": "https://api.siliconflow.cn/v1",
+    "doc": "https://cloud.siliconflow.com/models",
+    "env": [
+      "SILICONFLOW_CN_API_KEY"
+    ],
     "models": {
       "baidu/ERNIE-4.5-300B-A47B": {
         "id": "baidu/ERNIE-4.5-300B-A47B",
@@ -22264,6 +22357,11 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "minimax": {
     "name": "MiniMax (minimax.io)",
+    "api": "https://api.minimax.io/anthropic/v1",
+    "doc": "https://platform.minimax.io/docs/guides/quickstart",
+    "env": [
+      "MINIMAX_API_KEY"
+    ],
     "models": {
       "MiniMax-M2": {
         "id": "MiniMax-M2",
@@ -22464,6 +22562,11 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "minimax-cn": {
     "name": "MiniMax (minimaxi.com)",
+    "api": "https://api.minimaxi.com/anthropic/v1",
+    "doc": "https://platform.minimaxi.com/docs/guides/quickstart",
+    "env": [
+      "MINIMAX_API_KEY"
+    ],
     "models": {
       "MiniMax-M2": {
         "id": "MiniMax-M2",
@@ -22664,6 +22767,11 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "minimax-coding-plan": {
     "name": "MiniMax Token Plan (minimax.io)",
+    "api": "https://api.minimax.io/anthropic/v1",
+    "doc": "https://platform.minimax.io/docs/token-plan/intro",
+    "env": [
+      "MINIMAX_API_KEY"
+    ],
     "models": {
       "MiniMax-M2": {
         "id": "MiniMax-M2",
@@ -22865,6 +22973,11 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "minimax-cn-coding-plan": {
     "name": "MiniMax Token Plan (minimaxi.com)",
+    "api": "https://api.minimaxi.com/anthropic/v1",
+    "doc": "https://platform.minimaxi.com/docs/token-plan/intro",
+    "env": [
+      "MINIMAX_API_KEY"
+    ],
     "models": {
       "MiniMax-M2": {
         "id": "MiniMax-M2",
@@ -23066,6 +23179,11 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "volcengine": {
     "name": "Volcengine Ark",
+    "api": "https://ark.cn-beijing.volces.com/api/v3",
+    "doc": "https://www.volcengine.com/docs/82379/1330310",
+    "env": [
+      "ARK_API_KEY"
+    ],
     "models": {
       "doubao-seed-2-0-lite-260428": {
         "id": "doubao-seed-2-0-lite-260428",
@@ -23541,6 +23659,11 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "volcengine-coding-plan": {
     "name": "Volcengine Ark Coding Plan",
+    "api": "https://ark.cn-beijing.volces.com/api/coding/v3",
+    "doc": "https://www.volcengine.com/docs/82379/1928261",
+    "env": [
+      "ARK_CODING_PLAN_API_KEY"
+    ],
     "models": {
       "doubao-seed-2.1-turbo": {
         "id": "doubao-seed-2.1-turbo",
@@ -23840,6 +23963,11 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "stepfun": {
     "name": "StepFun (China)",
+    "api": "https://api.stepfun.com/v1",
+    "doc": "https://platform.stepfun.com/docs/zh/overview/concept",
+    "env": [
+      "STEPFUN_API_KEY"
+    ],
     "models": {
       "step-3.7-flash": {
         "id": "step-3.7-flash",
@@ -24048,6 +24176,11 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "stepfun-ai": {
     "name": "StepFun (Global)",
+    "api": "https://api.stepfun.ai/v1",
+    "doc": "https://platform.stepfun.ai/docs/en/overview/concept",
+    "env": [
+      "STEPFUN_API_KEY"
+    ],
     "models": {
       "step-1-32k": {
         "id": "step-1-32k",
@@ -24256,6 +24389,11 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "stepfun-step-plan": {
     "name": "StepFun Step Plan (China)",
+    "api": "https://api.stepfun.com/step_plan/v1",
+    "doc": "https://platform.stepfun.com/docs/zh/step-plan/integrations/reasoning-api",
+    "env": [
+      "STEPFUN_API_KEY"
+    ],
     "models": {
       "step-3.7-flash": {
         "id": "step-3.7-flash",
@@ -24351,6 +24489,11 @@ export const MODELS_DEV_SNAPSHOT = {
   },
   "stepfun-ai-step-plan": {
     "name": "StepFun Step Plan (Global)",
+    "api": "https://api.stepfun.ai/step_plan/v1",
+    "doc": "https://platform.stepfun.ai/docs/en/step-plan/integrations/reasoning-api",
+    "env": [
+      "STEPFUN_API_KEY"
+    ],
     "models": {
       "step-3.7-flash": {
         "id": "step-3.7-flash",

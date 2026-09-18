@@ -670,6 +670,35 @@ export type VideoModelInfo = {
   };
 };
 
+export type ProviderPresetModel = {
+  id: string;
+  name: string;
+  capability: "chat" | "image" | "video";
+};
+
+export type ProviderPreset = {
+  id: string;
+  name: string;
+  api?: string;
+  doc?: string;
+  env: string[];
+  models: ProviderPresetModel[];
+};
+
+/** models.dev 供应商预设（供应商设置「从预设选择」；需登录）。 */
+export async function fetchProviderPresets(
+  accessToken: string,
+): Promise<{ presets: ProviderPreset[] }> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/provider-instances/presets`,
+    { headers: authJsonHeaders(accessToken) },
+  );
+  if (!response.ok) {
+    throw new Error(`Failed to fetch provider presets: ${response.status}`);
+  }
+  return (await response.json()) as { presets: ProviderPreset[] };
+}
+
 export async function fetchVideoModels(): Promise<{
   models: VideoModelInfo[];
 }> {

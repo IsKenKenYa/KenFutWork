@@ -35,6 +35,12 @@ export type ModelsDevModel = z.infer<typeof modelsDevModelSchema>;
 
 export const modelsDevProviderSchema = z.object({
   name: z.string().optional(),
+  /** 官方 API 网关（预设选择时预填 Base URL；openai 等缺省网关可能缺席）。 */
+  api: z.string().optional(),
+  /** 文档链接（预设选择器展示）。 */
+  doc: z.string().optional(),
+  /** Key 的环境变量名（展示用，BYOK 仍手填 Key）。 */
+  env: z.array(z.string()).optional(),
   models: z.record(z.string(), modelsDevModelSchema),
 });
 export type ModelsDevProvider = z.infer<typeof modelsDevProviderSchema>;
@@ -198,8 +204,16 @@ export function buildModelsDevSnapshot(
       }
     }
     const name = (entry as Record<string, unknown>).name;
+    const api = (entry as Record<string, unknown>).api;
+    const doc = (entry as Record<string, unknown>).doc;
+    const env = (entry as Record<string, unknown>).env;
     snapshot[key] = {
       ...(typeof name === "string" ? { name } : {}),
+      ...(typeof api === "string" && api ? { api } : {}),
+      ...(typeof doc === "string" && doc ? { doc } : {}),
+      ...(Array.isArray(env)
+        ? { env: env.filter((e): e is string => typeof e === "string") }
+        : {}),
       models,
     };
   }
@@ -243,6 +257,60 @@ export function findModelsDevModel(
     first ??= { provider, model };
   }
   return first;
+}
+
+/** 预设条目（供应商设置「从预设选择」用，阶段：BYOK 预设选择器）。 */
+export interface ProviderPresetModel {
+  id: string;
+  name: string;
+  capability: "chat" | "image" | "video";
+}
+
+export interface ProviderPreset {
+  id: string;
+  name: string;
+  /** 官方 API 网关（预填 Base URL；缺席 = 用户手填）。 */
+  api?: string;
+  /** 文档链接。 */
+  doc?: string;
+  /** Key 环境变量名（展示，BYOK 仍手填 Key）。 */
+  env: string[];
+  models: ProviderPresetModel[];
+}
+
+/** 模型模态 → 任务 capability（output 决定；image-edit 留给用户在行编辑器调）。 */
+function deriveCapability(
+  model: ModelsDevModel,
+): ProviderPresetModel["capability"] {
+  const output = model.modalities?.output ?? [];
+  if (output.includes("image")) return "image";
+  if (output.includes("video")) return "video";
+  return "chat";
+}
+
+/** 快照 → 供应商预设清单（非权威 UI 数据；BYOK 用户仍可完全手填）。 */
+export function listProviderPresets(
+  snapshot: ModelsDevSnapshot,
+): ProviderPreset[] {
+  const presets: ProviderPreset[] = [];
+  for (const [id, entry] of Object.entries(snapshot)) {
+    const models = Object.values(entry.models)
+      .map((model) => ({
+        id: model.id,
+        name: model.name,
+        capability: deriveCapability(model),
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    presets.push({
+      id,
+      name: entry.name ?? id,
+      ...(entry.api ? { api: entry.api } : {}),
+      ...(entry.doc ? { doc: entry.doc } : {}),
+      env: entry.env ?? [],
+      models,
+    });
+  }
+  return presets.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** 校验快照工件（生成物或外部数据）；结构损坏返回 undefined（fail-open，快照非权威）。 */

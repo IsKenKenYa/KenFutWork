@@ -258,6 +258,35 @@ export type ProviderScope = z.infer<typeof providerScopeSchema>;
  * `headerKeys` 同理——自定义头的**键名**可见，值一律不回显（与 MCP `env`/`envKeys` 同口径）。
  */
 /**
+ * models.dev 供应商预设（供应商设置的「从预设选择」，阶段：BYOK 预设选择器）。
+ * 非权威 UI 数据：capability 由模态推导，用户可在结构化编辑器里改。
+ */
+export const providerPresetSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  /** 官方 API 网关（预填 Base URL；缺席 = 用户手填）。 */
+  api: z.string().optional(),
+  doc: z.string().optional(),
+  /** Key 环境变量名（展示用，BYOK 仍手填 Key）。 */
+  env: z.array(z.string()),
+  models: z.array(
+    z.object({
+      id: z.string().min(1),
+      name: z.string().min(1),
+      capability: z.enum(["chat", "image", "video"]),
+    }),
+  ),
+});
+export type ProviderPreset = z.infer<typeof providerPresetSchema>;
+
+export const providerPresetListResponseSchema = z.object({
+  presets: z.array(providerPresetSchema),
+});
+export type ProviderPresetListResponse = z.infer<
+  typeof providerPresetListResponseSchema
+>;
+
+/**
  * 实例能力探测结果（阶段 E，docs/future/05 §6.2）。
  * 三态语义：true = 探测到支持 / false = 探测到不支持 / 缺席 = 未探测该项。
  * 消费方按 false 裁剪请求；true 与缺席都按全能力尝试（fail open）。

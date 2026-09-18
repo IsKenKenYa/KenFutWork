@@ -4,6 +4,7 @@ import {
   providerInstanceListResponseSchema,
   providerInstanceResponseSchema,
   providerInstanceUpdateRequestSchema,
+  providerPresetListResponseSchema,
   providerProbeResultSchema,
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
@@ -131,6 +132,18 @@ export async function registerProviderInstanceRoutes(
     } catch (error) {
       return sendError(error, reply, "instance_update_failed");
     }
+  });
+
+  // GET /api/provider-instances/presets — models.dev 供应商预设（供应商设置
+  // 「从预设选择」）：非权威 UI 数据，capability 由模态推导，用户可改。
+  app.get("/api/provider-instances/presets", async (_request, reply) => {
+    return reply
+      .code(200)
+      .send(
+        providerPresetListResponseSchema.parse({
+          presets: options.modelProviders.listProviderPresets(),
+        }),
+      );
   });
 
   // POST /api/provider-instances/:instanceId/probe — 能力探测（阶段 E）：

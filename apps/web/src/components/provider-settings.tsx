@@ -99,6 +99,7 @@ export function ProviderSettings({ accessToken }: { accessToken: string }) {
         <ProviderInstanceForm
           key={formTarget === "create" ? "create" : formTarget.id}
           editing={formTarget === "create" ? undefined : formTarget}
+          accessToken={accessToken}
           submitting={submitting}
           onCancel={() => setFormTarget(null)}
           onError={setError}
