@@ -444,7 +444,7 @@ export function BrowserPane({
                   }
                   // 只留「正在打开」这一条（用户口径：toast 不要那么多）；
                   // 成败由那个 Chrome 窗口自己体现，失败才额外报错
-                  await openCdpDevtools(token);
+                  await openCdpDevtools(token, url ?? undefined);
                 } catch (error: unknown) {
                   toast(
                     error instanceof Error
@@ -831,9 +831,38 @@ const ZOOM_PRESETS = [
 type ZoomPresetId = (typeof ZOOM_PRESETS)[number]["id"];
 
 /** 补全协议：裸地址（如 localhost:3000）按 http 处理；空串返回 null。 */
+/**
+ * 地址栏归一化（用户口径：「自动识别 https 还是 http，先请求 https，访问不到再 http」）。
+ *
+ * 与浏览器一致的做法：**裸主机名默认 https**；只有这些情况用 http——
+ * - 用户显式写了 `http://`（尊重输入）；
+ * - 本地/内网地址（`localhost` / `127.0.0.1` / `*.local` / 私有网段 / 带端口）：这些地址
+ *   基本没有证书，默认 https 只会失败一次再回落，白等一个超时。
+ *
+ * 「https 打不开再 http」真正能可靠检测的是 **CDP 那条路**（受控浏览器导航失败有明确错误），
+ * 已在服务端 `navigate` 里实现回落；iframe 那条路拿不到可靠的失败信号（被 X-Frame-Options
+ * 拦下也会触发 load 事件），故只做**一次**默认选择，不假装能回退。
+ */
 export function normalizeUrl(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return `http://${trimmed}`;
+  const scheme = looksLocal(trimmed) ? "http" : "https";
+  return `${scheme}://${trimmed}`;
+}
+
+/** 本地/内网地址判定（含带端口写法）：这些默认走 http。 */
+export function looksLocal(value: string): boolean {
+  const host = value.split("/")[0]?.split(":")[0]?.toLowerCase() ?? "";
+  if (host === "localhost" || host.endsWith(".local")) return true;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
+    // 回环 / 私有网段（10.0.0.0/8、172.16/12、192.168/16）
+    return (
+      host.startsWith("127.") ||
+      host.startsWith("10.") ||
+      host.startsWith("192.168.") ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+    );
+  }
+  return false;
 }

@@ -577,14 +577,25 @@ describe("右栏浏览器（点链接自动打开）", () => {
     expect(requestBrowserOpen("http://localhost:3001/")).toBe(false);
   });
 
-  it("地址栏补协议：裸地址按 http；空串不可打开", async () => {
+  it("地址栏补协议：裸域名默认 https，本地/内网走 http，显式协议照输入（用户口径）", async () => {
     const { normalizeUrl } = await import(
       "../src/components/workbench/workbench-side-panel"
     );
+    // 裸域名：与浏览器一致，先按 https 试
+    expect(normalizeUrl("baidu.com")).toBe("https://baidu.com");
+    expect(normalizeUrl("www.example.com/a/b")).toBe(
+      "https://www.example.com/a/b",
+    );
+    // 本地/内网：没有证书，默认 http（否则白等一个超时再回落）
     expect(normalizeUrl("localhost:8000/demo")).toBe(
       "http://localhost:8000/demo",
     );
+    expect(normalizeUrl("127.0.0.1:3000")).toBe("http://127.0.0.1:3000");
+    expect(normalizeUrl("192.168.1.20")).toBe("http://192.168.1.20");
+    expect(normalizeUrl("nas.local")).toBe("http://nas.local");
+    // 显式写的协议一律尊重
     expect(normalizeUrl("https://example.com")).toBe("https://example.com");
+    expect(normalizeUrl("http://baidu.com")).toBe("http://baidu.com");
     expect(normalizeUrl("   ")).toBeNull();
   });
 

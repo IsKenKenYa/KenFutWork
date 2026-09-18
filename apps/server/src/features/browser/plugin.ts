@@ -317,7 +317,10 @@ export function registerBrowserRoutes(
     const user = await authenticate(request, reply);
     if (!user) return;
     try {
-      const opened = await options.browser.cdp.openDevtools();
+      const url = (request.body as { url?: unknown } | undefined)?.url;
+      const opened = await options.browser.cdp.openDevtools(
+        typeof url === "string" && url.trim() ? url : undefined,
+      );
       return reply.code(200).send({ opened });
     } catch (error) {
       const message =

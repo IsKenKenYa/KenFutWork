@@ -107,6 +107,9 @@ export async function launchBrowserWithDebugPort(options: {
     `--user-data-dir=${options.profileDir}`,
     "--no-first-run",
     "--no-default-browser-check",
+    // 我们收残留实例是**强杀**（Chrome 对同一 profile 只许一个进程），下次启动会弹
+    //「要恢复页面吗？Chrome 未正确关闭」——这条把它压掉（真机截图里就是那个弹窗）
+    "--hide-crash-restore-bubble",
     "--disable-features=Translate",
     /**
      * **必须开**：Chrome 111+ 对带 Origin 的调试 WebSocket 做白名单校验，而 DevTools 前端

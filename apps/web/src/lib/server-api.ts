@@ -899,7 +899,11 @@ export async function fetchCdpStatus(
  * 「打开调试工具」：让服务端在**受控浏览器**里开一个调试前端标签（真 DevTools）。
  * 没连接受控浏览器时服务端回 502 + 可读原因。
  */
-export async function openCdpDevtools(accessToken: string): Promise<void> {
+export async function openCdpDevtools(
+  accessToken: string,
+  /** 面板当前打开的地址：受控浏览器会先导航到它，调试工具才对得准「你看的那一页」。 */
+  url?: string,
+): Promise<void> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/browser/cdp/devtools`,
     /**
@@ -907,7 +911,11 @@ export async function openCdpDevtools(accessToken: string): Promise<void> {
      * Fastify 直接回 `FST_ERR_CTP_EMPTY_JSON_BODY`（400）——真机踩过：设置页的
      * 「连接到 Chrome」与右栏的「打开调试工具」都是这么失败的。
      */
-    { method: "POST", headers: authJsonHeaders(accessToken), body: "{}" },
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(url ? { url } : {}),
+    },
   );
   if (response.ok) return;
   const payload = (await response.json().catch(() => null)) as {

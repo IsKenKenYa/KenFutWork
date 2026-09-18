@@ -72,7 +72,7 @@ export interface CdpBrowserSession {
    * 受控浏览器那边是**真标签**，`devtools://devtools/bundled/inspector.html?ws=<页面调试地址>`
    * 就是 Chrome 认的调试前端地址——开出来就是能用的 DOM/网络/控制台面板。
    */
-  openDevtools(): Promise<{ targetId: string; url: string }>;
+  openDevtools(url?: string): Promise<{ targetId: string; url: string }>;
   /** 导航（复用受控标签，没有就开一个）。 */
   navigate(url: string): Promise<{
     url: string;
@@ -264,8 +264,16 @@ export function createCdpBrowserSession(deps: {
         return state;
       }
     },
-    async openDevtools() {
+    async openDevtools(url?: string) {
       const { client: cdp } = requireConnected();
+      /**
+       * 用户口径是「调试我看的那一页」。面板里的页面走的是 iframe，**受控浏览器不会跟着走**——
+       * 不先把受控浏览器导航过去，就会去调试一个停在 about:blank 的空白页（真机截图里正是如此：
+       * 那条 about:blank 一旦被替换，调试前端立刻「连接已关闭」）。所以先导航，再开调试标签。
+       */
+      if (url) {
+        await session.navigate(url);
+      }
       const targets = await cdp.listPageTargetsWithDebugUrl();
       /**
        * 挑哪一块页面：优先与**当前页面**同址的那块；否则第一块非空白的普通页。
@@ -311,10 +319,12 @@ export function createCdpBrowserSession(deps: {
           await cdp.closeTab(target.targetId).catch(() => undefined);
         }
       }
-      const url = `devtools://devtools/bundled/inspector.html?ws=${encodeURIComponent(
+      const devtoolsUrl = `devtools://devtools/bundled/inspector.html?ws=${encodeURIComponent(
         page.webSocketDebuggerUrl,
       )}`;
-      const created = (await cdp.send("Target.createTarget", { url })) as {
+      const created = (await cdp.send("Target.createTarget", {
+        url: devtoolsUrl,
+      })) as {
         targetId?: string;
       };
       return { targetId: created.targetId ?? "", url: page.url };
