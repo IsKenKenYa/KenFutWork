@@ -928,18 +928,33 @@ export async function openCdpDevtools(
 }
 
 export async function connectCdp(accessToken: string): Promise<CdpStatusView> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/browser/cdp/connect`,
-    { method: "POST", headers: authJsonHeaders(accessToken), body: "{}" },
-  );
+  let response: Response;
+  try {
+    response = await fetch(`${getServerBaseUrl()}/api/browser/cdp/connect`, {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: "{}",
+    });
+  } catch {
+    // fetch 抛错 = 服务端根本没应答（重启中/挂了），与「浏览器连不上」是两回事，要分开说
+    throw new ApiApplicationError(
+      "cdp_connect_failed",
+      "服务端没有应答（可能正在重启）——稍后重试。",
+    );
+  }
   const payload = (await response.json().catch(() => null)) as {
     cdp?: CdpStatusView;
     error?: { message?: string };
   } | null;
   if (!response.ok || !payload?.cdp) {
+    /**
+     * **别把真实原因吞掉**（真机踩到）：以前无论后端说什么都只显示「连接浏览器失败。」，
+     * 用户拿到一句没法行动的话。现在带上服务端原话；连原话都没有时至少给出状态码。
+     */
     throw new ApiApplicationError(
       "cdp_connect_failed",
-      payload?.error?.message ?? "连接浏览器失败。",
+      payload?.error?.message ??
+        `连接浏览器失败（服务端返回 ${response.status}）。`,
     );
   }
   return payload.cdp;
