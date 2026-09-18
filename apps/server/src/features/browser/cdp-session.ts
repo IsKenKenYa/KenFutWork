@@ -41,6 +41,7 @@ import {
   type DebugConsoleSource,
   parseDebugConsoleProbe,
 } from "./debug-console.js";
+import { createNetworkBuffer, type NetworkRequest } from "./network-log.js";
 import { samePageUrl } from "./view-stream.js";
 
 /**
@@ -162,6 +163,13 @@ export interface CdpBrowserSession {
   evaluate(expression: string): Promise<ConsoleMessage>;
   /** 清空控制台缓存（界面上的「清空」）。 */
   clearMessages(): Promise<void>;
+  /**
+   * 面板采集到的**网络请求**（增量，同 `messages`）——agent 用它判断「点了那个按钮有没有真的发请求、
+   * 回来多少」。数据面见 network-log。
+   */
+  requests(
+    since: number,
+  ): Promise<{ requests: NetworkRequest[]; nextSeq: number }>;
   /** 视口 CSS 尺寸（面板里把鼠标坐标换算成视口坐标要用它）。 */
   viewport(): Promise<{ width: number; height: number; scale: number }>;
   /** 面板内的交互回填（鼠标 / 滚轮 / 键盘 / 文本）。 */
@@ -263,6 +271,8 @@ export function createCdpBrowserSession(deps: {
   let pageListeners: Array<() => void> = [];
   /** 悬浮控制台的消息缓存（环形，见 console-log）。 */
   const consoleLog = createConsoleBuffer();
+  /** 网络请求缓存（环形，见 network-log）。 */
+  const networkLog = createNetworkBuffer();
   /** 时间戳来源（测试注入，默认 Date）。 */
   const now = deps.now ?? (() => new Date());
 
@@ -278,7 +288,7 @@ export function createCdpBrowserSession(deps: {
    */
   const attachPageTracking = (target: CdpClient, id: string): void => {
     if (pageListeners.length > 0) return;
-    for (const domain of ["Page", "Runtime", "Log"]) {
+    for (const domain of ["Page", "Runtime", "Log", "Network"]) {
       void target.send(`${domain}.enable`, {}, id).catch(() => undefined);
     }
     /** 只认我们这个会话的事件（别的标签的不要）。 */
@@ -312,6 +322,45 @@ export function createCdpBrowserSession(deps: {
       target.on("Log.entryAdded", (params, eventSessionId) => {
         if (!mine(eventSessionId)) return;
         consoleLog.push(formatLogEntry(params as never, now().toISOString()));
+      }),
+      // 网络：发出 → 响应 / 失败（同一条记录就地补状态，seq 在「发出」时定）
+      target.on("Network.requestWillBeSent", (params, eventSessionId) => {
+        if (!mine(eventSessionId)) return;
+        const requestId =
+          typeof params.requestId === "string" ? params.requestId : "";
+        const request = params.request as
+          | { url?: unknown; method?: unknown }
+          | undefined;
+        if (!requestId) return;
+        networkLog.started(requestId, {
+          method: typeof request?.method === "string" ? request.method : "GET",
+          url: typeof request?.url === "string" ? request.url : "",
+          ...(typeof params.type === "string" ? { type: params.type } : {}),
+          at: now().toISOString(),
+        });
+      }),
+      target.on("Network.responseReceived", (params, eventSessionId) => {
+        if (!mine(eventSessionId)) return;
+        const requestId =
+          typeof params.requestId === "string" ? params.requestId : "";
+        const response = params.response as { status?: unknown } | undefined;
+        const status =
+          typeof response?.status === "number" ? response.status : 0;
+        if (requestId && status > 0) networkLog.responded(requestId, status);
+      }),
+      target.on("Network.loadingFailed", (params, eventSessionId) => {
+        if (!mine(eventSessionId)) return;
+        const requestId =
+          typeof params.requestId === "string" ? params.requestId : "";
+        if (!requestId) return;
+        const reason =
+          typeof params.errorText === "string" ? params.errorText : "请求失败";
+        networkLog.failed(
+          requestId,
+          typeof params.blockedReason === "string"
+            ? `${reason}（被拦：${params.blockedReason}）`
+            : reason,
+        );
       }),
     ];
   };
@@ -454,6 +503,13 @@ export function createCdpBrowserSession(deps: {
     },
     async clearMessages() {
       consoleLog.clear();
+      networkLog.clear();
+    },
+    async requests(since) {
+      return {
+        requests: networkLog.since(since),
+        nextSeq: networkLog.latestSeq(),
+      };
     },
     async evaluate(expression) {
       const { client: cdp, sessionId: id } = requireConnected();

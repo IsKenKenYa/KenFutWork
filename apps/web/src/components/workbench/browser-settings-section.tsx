@@ -142,6 +142,11 @@ export function BrowserSettingsSection({
   const [cdp, setCdp] = useState<CdpStatusView | null>(null);
   const [cdpBusy, setCdpBusy] = useState(false);
   const [browserAutoScreenshot, setBrowserAutoScreenshot] = useState(false);
+  /**
+   * 「允许 AI 读取开发者工具数据」：面板里的悬浮控制台采集到的控制台日志 / 页面报错 /
+   * 网络请求，agent 能不能读（默认开，见迁移 20260918100000）。
+   */
+  const [browserDevtoolsRead, setBrowserDevtoolsRead] = useState(true);
   const [browserHeadless, setBrowserHeadless] = useState(false);
 
   useEffect(() => {
@@ -159,6 +164,7 @@ export function BrowserSettingsSection({
         if (cancelled) return;
         setAgentControl(view.browserControlEnabled);
         setBrowserAutoScreenshot(view.browserAutoScreenshot ?? false);
+        setBrowserDevtoolsRead(view.browserDevtoolsReadEnabled ?? true);
         setBrowserHeadless(view.browserHeadless ?? false);
       })
       .catch(() => {
@@ -210,29 +216,39 @@ export function BrowserSettingsSection({
     }
   };
 
-  /** 服务端开关（自动截图 / 无头）：先写库再改界面，失败回滚。 */
+  /** 服务端开关（自动截图 / 无头 / 开发者工具数据）：先写库再改界面，失败回滚。 */
   const toggleServerFlag = async (
-    key: "browserAutoScreenshot" | "browserHeadless",
+    key:
+      | "browserAutoScreenshot"
+      | "browserHeadless"
+      | "browserDevtoolsReadEnabled",
     next: boolean,
   ) => {
     if (!accessToken) return;
     const setter =
       key === "browserAutoScreenshot"
         ? setBrowserAutoScreenshot
-        : setBrowserHeadless;
+        : key === "browserHeadless"
+          ? setBrowserHeadless
+          : setBrowserDevtoolsRead;
     setter(next);
     try {
       const view = await updatePermissionSettings(accessToken, { [key]: next });
       setBrowserAutoScreenshot(view.browserAutoScreenshot ?? false);
       setBrowserHeadless(view.browserHeadless ?? false);
+      setBrowserDevtoolsRead(view.browserDevtoolsReadEnabled ?? true);
       setMessage(
         key === "browserAutoScreenshot"
           ? next
             ? "已开启自动截图"
             : "已关闭自动截图"
-          : next
-            ? "已设为无头（下次连接生效）"
-            : "已设为有窗口（下次连接生效）",
+          : key === "browserHeadless"
+            ? next
+              ? "已设为无头（下次连接生效）"
+              : "已设为有窗口（下次连接生效）"
+            : next
+              ? "已允许 AI 读取开发者工具数据"
+              : "已禁止 AI 读取开发者工具数据（browser_console / browser_network 会如实拒绝）",
       );
     } catch (error) {
       setter(!next);
@@ -466,6 +482,14 @@ export function BrowserSettingsSection({
           checked={browserAutoScreenshot}
           onChange={(next) =>
             void toggleServerFlag("browserAutoScreenshot", next)
+          }
+        />
+        <Toggle
+          label="允许 AI 读取开发者工具数据"
+          hint="面板里的控制台采集到的日志 / 页面报错 / 网络请求，agent 可通过 browser_console、browser_network 读取；关掉后这些工具如实拒绝"
+          checked={browserDevtoolsRead}
+          onChange={(next) =>
+            void toggleServerFlag("browserDevtoolsReadEnabled", next)
           }
         />
       </div>

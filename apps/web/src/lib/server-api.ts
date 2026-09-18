@@ -331,6 +331,8 @@ export interface PermissionSettingsView {
   browserAutoScreenshot: boolean;
   /** CDP 托管浏览器无头运行。 */
   browserHeadless: boolean;
+  /** 允许 AI 读取开发者工具数据（控制台日志 / 页面报错 / 网络请求）。 */
+  browserDevtoolsReadEnabled: boolean;
   approvedForever: string[];
 }
 
@@ -354,6 +356,8 @@ export async function updatePermissionSettings(
     browserControlEnabled: boolean;
     browserAutoScreenshot: boolean;
     browserHeadless: boolean;
+    /** 允许 AI 读取开发者工具数据（控制台日志 / 页面报错 / 网络请求）。 */
+    browserDevtoolsReadEnabled: boolean;
   }>,
 ): Promise<PermissionSettingsView> {
   const response = await fetch(`${getServerBaseUrl()}/api/permissions/tier`, {

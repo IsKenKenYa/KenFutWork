@@ -85,6 +85,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       browserControlEnabled: false,
       browserAutoScreenshot: false,
       browserHeadless: false,
+      browserDevtoolsReadEnabled: false,
     });
     // 放行项：危险工具（write_file）也放行
     expect(svc.evaluate({ toolName: "write_file" }).decision).toBe("allow");
@@ -107,6 +108,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       browserControlEnabled: false,
       browserAutoScreenshot: false,
       browserHeadless: false,
+      browserDevtoolsReadEnabled: false,
     });
     expect(svc.evaluate({ toolName: "mcp__fs__write" }).decision).toBe("deny");
     expect(svc.evaluate({ toolName: "mcp__py-helper__echo" }).decision).toBe(
@@ -127,6 +129,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       browserControlEnabled: false,
       browserAutoScreenshot: false,
       browserHeadless: false,
+      browserDevtoolsReadEnabled: false,
     });
     // 常规：全放行
     expect(
@@ -145,6 +148,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       browserControlEnabled: false,
       browserAutoScreenshot: false,
       browserHeadless: false,
+      browserDevtoolsReadEnabled: false,
     });
     expect(
       svc.evaluate({ toolName: "write_file", scenario: "automation" }).decision,
@@ -164,6 +168,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       browserControlEnabled: false,
       browserAutoScreenshot: false,
       browserHeadless: false,
+      browserDevtoolsReadEnabled: false,
     });
     svc.setTier("t1", "full-access");
     expect(

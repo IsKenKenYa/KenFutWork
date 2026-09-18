@@ -52,6 +52,18 @@ export function createBrowserPlugin(): PluginDefinition {
           );
         }
       };
+      /**
+       * 「允许 AI 读取开发者工具数据」门控（默认开，设置 → 浏览器）。
+       * 关掉时工具**如实拒绝**并指路，不静默返回空结果——空结果会被模型当「页面没问题」。
+       */
+      const requireDevtoolsRead = (toolName: string): void => {
+        const settings = kernelCtx.tryGet("permissions")?.getSettings();
+        if (settings && !settings.browserDevtoolsReadEnabled) {
+          throw new Error(
+            `开发者工具数据读取未开启：请到「设置 → 浏览器」里打开「允许 AI 读取开发者工具数据」后重试（${toolName}）。`,
+          );
+        }
+      };
       const autoScreenshot = (): boolean =>
         kernelCtx.tryGet("permissions")?.getSettings().browserAutoScreenshot ??
         false;
@@ -152,6 +164,132 @@ export function createBrowserPlugin(): PluginDefinition {
           requireBrowserControl("browser_screenshot");
           const shot = await cdp.screenshot();
           return { ...shot, title: "浏览器截图" };
+        },
+      });
+
+      tools.register({
+        name: "browser_console",
+        description:
+          "读取受控浏览器**当前页面**的控制台输出：页面里的 console.log/warn/error、未捕获异常、浏览器错误（网络失败 / CSP 违规）。调试网页时先用它看「这页报了什么错」。传 since 只看新增（上一次结果里的 nextSeq）。",
+        scope: "shared",
+        parameters: {
+          type: "object",
+          properties: {
+            level: {
+              type: "string",
+              description: "all（默认）/ error / warn：只看某一档",
+            },
+            since: {
+              type: "number",
+              description:
+                "只看 seq 大于它的新消息（用上一次返回的 nextSeq；不传给全部）",
+            },
+            limit: { type: "number", description: "最多返回多少条（默认 50）" },
+          },
+        },
+        execute: async (args) => {
+          requireBrowserControl("browser_console");
+          requireDevtoolsRead("browser_console");
+          const sinceRaw = Number(args.since ?? 0);
+          const since =
+            Number.isFinite(sinceRaw) && sinceRaw > 0 ? sinceRaw : 0;
+          const limitRaw = Number(args.limit ?? 50);
+          const limit =
+            Number.isFinite(limitRaw) && limitRaw > 0
+              ? Math.min(Math.floor(limitRaw), 200)
+              : 50;
+          const level = String(args.level ?? "all");
+          const result = await kernelCtx.get("browser").cdp.messages(since);
+          const filtered = result.messages
+            .filter((message) =>
+              level === "error"
+                ? message.level === "error"
+                : level === "warn"
+                  ? message.level === "warn" || message.level === "error"
+                  : true,
+            )
+            .slice(-limit)
+            .map((message) => ({
+              level: message.level,
+              source: message.source,
+              text: message.text,
+              at: message.at,
+            }));
+          return {
+            messages: filtered,
+            nextSeq: result.nextSeq,
+            ...(filtered.length === 0
+              ? {
+                  note:
+                    since > 0
+                      ? "自上次以来没有新的控制台输出。"
+                      : "这一页还没有控制台输出（页面里的 console.* 与报错都会出现在这里）。",
+                }
+              : {}),
+          };
+        },
+      });
+
+      tools.register({
+        name: "browser_network",
+        description:
+          "列出受控浏览器**当前页面**发出的网络请求（方法、URL、状态码、失败原因）。用来确认「点了按钮有没有真的发请求 / 哪个请求失败了」。",
+        scope: "shared",
+        parameters: {
+          type: "object",
+          properties: {
+            filter: {
+              type: "string",
+              description: "all（默认）/ failed：只看失败或 4xx/5xx",
+            },
+            since: {
+              type: "number",
+              description: "只看 seq 大于它的新请求（用上一次返回的 nextSeq）",
+            },
+            limit: { type: "number", description: "最多返回多少条（默认 50）" },
+          },
+        },
+        execute: async (args) => {
+          requireBrowserControl("browser_network");
+          requireDevtoolsRead("browser_network");
+          const sinceRaw = Number(args.since ?? 0);
+          const since =
+            Number.isFinite(sinceRaw) && sinceRaw > 0 ? sinceRaw : 0;
+          const limitRaw = Number(args.limit ?? 50);
+          const limit =
+            Number.isFinite(limitRaw) && limitRaw > 0
+              ? Math.min(Math.floor(limitRaw), 200)
+              : 50;
+          const onlyFailed = String(args.filter ?? "all") === "failed";
+          const result = await kernelCtx.get("browser").cdp.requests(since);
+          const requests = result.requests
+            .filter((request) =>
+              onlyFailed
+                ? Boolean(request.failed) ||
+                  (request.status !== undefined && request.status >= 400)
+                : true,
+            )
+            .slice(-limit)
+            .map((request) => ({
+              method: request.method,
+              url: request.url,
+              ...(request.status === undefined
+                ? {}
+                : { status: request.status }),
+              ...(request.failed ? { failed: request.failed } : {}),
+              ...(request.type ? { type: request.type } : {}),
+            }));
+          return {
+            requests,
+            nextSeq: result.nextSeq,
+            ...(requests.length === 0
+              ? {
+                  note: onlyFailed
+                    ? "没有失败或 4xx/5xx 的请求。"
+                    : "还没有捕获到请求（先 browser_navigate 打开页面，再操作）。",
+                }
+              : {}),
+          };
         },
       });
 
