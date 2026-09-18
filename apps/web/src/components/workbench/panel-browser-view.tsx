@@ -7,6 +7,7 @@ import {
   ExternalLink,
   Monitor,
   MousePointerSquareDashed,
+  PictureInPicture2,
   RotateCw,
   SquareTerminal,
   X,
@@ -328,6 +329,25 @@ export function BrowserPane({
           placeholder="输入网址，回车打开"
           className="min-w-0 flex-1 rounded-md border border-transparent bg-muted/60 px-2 py-1 text-xs outline-none focus:border-ring focus:bg-transparent"
         />
+        {/*
+          「尺寸」按钮照参考放在**地址栏这一行**（地址框与元素拾取之间），且是**图标按钮**：
+          用户口径「按钮加这边，长这样」。点开才出现分辨率与比例（见下一行）。
+        */}
+        <button
+          type="button"
+          aria-label="尺寸"
+          aria-expanded={sizeOpen}
+          title="尺寸与比例"
+          onClick={() => setSizeOpen((current) => !current)}
+          className={`shrink-0 rounded-md p-1 transition-colors hover:bg-muted ${
+            sizeOpen
+              ? "bg-muted text-foreground"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+          data-active={sizeOpen}
+        >
+          <PictureInPicture2 className="h-3.5 w-3.5" />
+        </button>
         <button
           type="button"
           aria-label="选择网页元素加入聊天"
@@ -393,27 +413,12 @@ export function BrowserPane({
       */}
       {/* data-size-panel 标在**整行**上：展开区是这个容器的兄弟，只标按钮外层的活
           「点分辨率下拉」会被判成点了外面、整块收起来（实测踩到） */}
-      <div
-        ref={sizePanelRef}
-        data-size-panel
-        className="flex items-center gap-2 px-1 py-0.5 text-[11px]"
-      >
-        <div className="relative">
-          <button
-            type="button"
-            aria-label="尺寸"
-            aria-expanded={sizeOpen}
-            title="尺寸与比例"
-            onClick={() => setSizeOpen((current) => !current)}
-            className={`flex items-center gap-1 px-1 py-0.5 transition-colors hover:text-foreground ${
-              sizeOpen ? "text-foreground" : "text-muted-foreground"
-            }`}
-          >
-            <Monitor className="h-3.5 w-3.5" />
-            尺寸
-          </button>
-        </div>
-        {sizeOpen ? (
+      {sizeOpen ? (
+        <div
+          ref={sizePanelRef}
+          data-size-panel
+          className="flex items-center gap-2 px-1 py-0.5 text-[11px]"
+        >
           <div className="flex items-center gap-2">
             <span className="font-mono text-muted-foreground">
               {viewportWidth > 0 ? `${viewportWidth} × ${viewportHeight}` : "—"}
@@ -514,8 +519,8 @@ export function BrowserPane({
               </SelectContent>
             </Select>
           </div>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       {picking !== "idle" ? (
         <div
