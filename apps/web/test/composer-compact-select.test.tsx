@@ -129,7 +129,7 @@ describe("ComposerCompactSelect", () => {
     expect(panel.className).toContain("hidden");
     expect(panel).toHaveTextContent("当前：完全访问");
     expect(panel).toHaveTextContent("改文件 / 跑命令前先问我");
-    expect(panel).toHaveTextContent("已批准的调用自动通过，不再逐条问");
+    expect(panel).toHaveTextContent("已批准的调用自动通过");
   });
 
   it("思考强度是「图标 + **竖条**」：档位越高条越满，且不再显示下拉箭头", () => {

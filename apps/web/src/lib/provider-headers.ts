@@ -31,4 +31,4 @@ export function parseHeadersJson(
 
 /** 表单里的输入提示（用户与管理员两处表单共用同一句，避免两处口径漂移）。 */
 export const providerHeadersHint =
-  "值可写占位符 {{sessionId}} / {{threadId}}（按会话取值）；保存后只显示头名，值不再回显。";
+  "值可用 {{sessionId}} / {{threadId}} 占位符；保存后不再显示值。";

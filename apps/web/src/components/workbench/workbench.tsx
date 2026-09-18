@@ -1654,7 +1654,7 @@ export function Workbench() {
       };
 
       if (!ws.connected) {
-        markFailed("与服务端的连接未就绪（正在重连），请稍后重试。");
+        markFailed("连接未就绪，正在重连，请稍后重试。");
         return;
       }
 
@@ -1681,8 +1681,8 @@ export function Workbench() {
         }
         markFailed(
           ws.connected
-            ? "运行请求未被服务端确认（连接正常但未收到确认），请重试。"
-            : "与服务端的连接长时间未恢复，本轮未能确认；重连后会自动同步，若一直无输出再重试。",
+            ? "请求未被确认，请重试。"
+            : "连接长时间未恢复，本轮未确认；重连后会自动同步，仍无输出再重试。",
         );
       };
       ackTimer = window.setTimeout(checkAck, ACK_TIMEOUT_MS);

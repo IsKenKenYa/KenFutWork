@@ -30,7 +30,7 @@ export function AccountSection({
     <section aria-label="账号设置">
       <h3 className="mb-1 text-base font-medium">账号</h3>
       <p className="mb-3 text-sm text-muted-foreground">
-        当前登录账号。头像上的「个人中心」有同样的信息，以及「退出登录」。
+        当前登录账号。头像菜单里也有这些信息与「退出登录」。
       </p>
 
       <dl className="divide-y rounded-lg border text-sm">
@@ -53,7 +53,7 @@ export function AccountSection({
       </dl>
 
       <p className="mt-2 text-xs text-muted-foreground">
-        BYOK 用自己的 Key 不计平台额度；额度只在走系统供应商时消耗。
+        用自己的 API Key 不消耗平台额度，额度只在用平台提供的模型时扣除。
       </p>
 
       {isAdmin && onOpenAdmin ? (

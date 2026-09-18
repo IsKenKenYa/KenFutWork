@@ -41,7 +41,7 @@ export const TIER_OPTIONS = [
   {
     value: "auto-approve",
     label: "自动审批",
-    hint: "已批准的调用自动通过，不再逐条问",
+    hint: "已批准的调用自动通过",
     icon: <ShieldCheck className={TIER_ICON_CLASS} />,
   },
   {
@@ -57,7 +57,7 @@ export const TIER_OPTIONS = [
   {
     value: "custom",
     label: "自定义",
-    hint: "按设置里的规则逐条判（拒绝优先，没命中回落默认档）",
+    hint: "按设置里的规则逐条判断",
     icon: <SlidersHorizontal className={TIER_ICON_CLASS} />,
   },
 ] as const;
@@ -75,12 +75,12 @@ export const THINKING_OPTIONS = [
   {
     value: "关闭",
     label: "关闭",
-    hint: "不展开推理，直接给结论（更快、更省 token）",
+    hint: "不展开推理，直接给结论（更快、更省）",
   },
   { value: "低", label: "低", hint: "想得少、回得快" },
   { value: "中", label: "中", hint: "常规推理" },
   { value: "高", label: "高", hint: "多想一步再答" },
-  { value: "最高", label: "最高", hint: "尽量深想（更慢、更费 token）" },
+  { value: "最高", label: "最高", hint: "尽量深想（更慢）" },
 ] as const;
 
 /**

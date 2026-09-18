@@ -43,9 +43,8 @@ export function ApiTokensSection({ accessToken }: { accessToken: string }) {
     <section aria-label="外部应用授权设置">
       <h3 className="mb-1 text-base font-medium">外部应用授权</h3>
       <p className="mb-3 text-sm text-muted-foreground">
-        给外部应用、脚本或 CI 用的访问令牌：拿它调本服务的
-        API，权限与你登录时相同（同一个工作区）。明文只显示一次（库里只存哈希，
-        忘了就吊销重发）；可以随时吊销，吊销后立刻失效。
+        给外部应用、脚本或 CI
+        使用的访问令牌，权限与你登录时相同。令牌只显示一次，可随时吊销。
       </p>
 
       <div className="flex items-center gap-2">
@@ -87,7 +86,7 @@ export function ApiTokensSection({ accessToken }: { accessToken: string }) {
       {created ? (
         <div className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
           <p className="mb-1 text-xs text-amber-700 dark:text-amber-400">
-            这是这把令牌唯一一次明文显示——复制走，关掉就看不到了。
+            令牌只显示这一次，复制保存好；关闭后需要重新生成。
           </p>
           <code className="block break-all font-mono text-xs">{created}</code>
           <button
@@ -165,7 +164,7 @@ export function ApiTokensSection({ accessToken }: { accessToken: string }) {
       </ul>
 
       <p className="mt-2 text-xs text-muted-foreground">
-        令牌不能创建或吊销令牌（这一页要登录会话才能用）——一把泄漏的令牌不能给自己续命。
+        创建与吊销令牌需要登录会话。
       </p>
 
       {notice ? (

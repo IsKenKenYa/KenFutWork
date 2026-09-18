@@ -64,7 +64,7 @@ describe("设置 → 子智能体", () => {
     const seen: string[] = [];
     const unsubscribe = onPanelViewRequest((kind) => seen.push(kind));
     render(<SubagentsSection accessToken="tok" />);
-    await screen.findByText(/运行中的子代理/);
+    await screen.findByText(/主 Agent 可以把子任务/);
 
     await userEvent.click(
       screen.getByRole("button", { name: /打开右栏「子智能体」/ }),
@@ -76,7 +76,7 @@ describe("设置 → 子智能体", () => {
   it("没有面板在监听（如 Design 模式）：如实说明，不假装打开", async () => {
     fetchSubagents.mockResolvedValue({ subagents: [], builtin: [] });
     render(<SubagentsSection accessToken="tok" />);
-    await screen.findByText(/运行中的子代理/);
+    await screen.findByText(/主 Agent 可以把子任务/);
 
     await userEvent.click(
       screen.getByRole("button", { name: /打开右栏「子智能体」/ }),
@@ -137,7 +137,7 @@ describe("设置 → 账号", () => {
  * 用户才知道打开它意味着什么；② 开关**立即写**（部分更新），不是等「保存」按钮。
  */
 describe("设置 → 模型：上下文自动压缩开关", () => {
-  it("文案写清口径（阈值/摘要模型/转录不变）", async () => {
+  it("文案写清行为（何时压缩 / 关掉后的后果）", async () => {
     const { AgentSection } = await import("../src/components/agent-section");
     render(
       <AgentSection
@@ -152,9 +152,9 @@ describe("设置 → 模型：上下文自动压缩开关", () => {
     expect(
       screen.getByRole("switch", { name: "上下文自动压缩" }),
     ).toBeChecked();
-    expect(screen.getByText(/窗口 − 预留输出/)).toBeVisible();
-    expect(screen.getByText(/摘要用本轮这个模型/)).toBeVisible();
-    expect(screen.getByText(/完整记录不受影响/)).toBeVisible();
+    expect(screen.getByText(/接近模型上下文上限/)).toBeVisible();
+    expect(screen.getByText(/压缩成摘要/)).toBeVisible();
+    expect(screen.getByText(/超长对话会被模型拒绝/)).toBeVisible();
   });
 
   it("关掉时立即回调（部分更新），不依赖「保存」按钮", async () => {
@@ -308,14 +308,14 @@ describe("设置 → 钩子", () => {
     expect(updateWorkspaceSettings).not.toHaveBeenCalled();
   });
 
-  it("边界写在页面上：模型不能触发 / 在工作目录里跑 / 失败不影响本轮", async () => {
+  it("边界写在页面上：只有你能配置 / 在工作目录里跑 / 失败不影响本轮", async () => {
     const { HooksSection } = await import(
       "../src/components/workbench/hooks-section"
     );
     render(<HooksSection accessToken="tok" hooks={[]} onSaved={() => {}} />);
-    expect(screen.getByText(/模型无法新增或触发钩子/)).toBeVisible();
-    expect(screen.getByText(/项目工作目录/)).toBeVisible();
-    expect(screen.getByText(/不影响本轮/)).toBeVisible();
+    expect(screen.getByText(/只有你能配置/)).toBeVisible();
+    expect(screen.getByText(/工作目录/)).toBeVisible();
+    expect(screen.getByText(/失败也不影响本轮对话/)).toBeVisible();
   });
 });
 
@@ -374,17 +374,17 @@ describe("设置 → 外部应用授权", () => {
     await userEvent.type(screen.getByLabelText("令牌名字"), "新令牌");
     await userEvent.click(screen.getByRole("button", { name: /创建令牌/ }));
     expect(await screen.findByText("kfw_plaintext_once")).toBeVisible();
-    expect(screen.getByText(/唯一一次明文显示/)).toBeVisible();
+    expect(screen.getByText(/令牌只显示这一次/)).toBeVisible();
   });
 
-  it("红线写在页面上：只显示一次 / 可吊销 / 令牌不能签发令牌", async () => {
+  it("红线写在页面上：只显示一次 / 可吊销 / 需要登录会话", async () => {
     fetchApiTokens.mockResolvedValue({ tokens: [] });
     const { ApiTokensSection } = await import(
       "../src/components/workbench/api-tokens-section"
     );
     render(<ApiTokensSection accessToken="tok" />);
-    expect(await screen.findByText(/只存哈希/)).toBeVisible();
-    expect(screen.getByText(/立刻失效/)).toBeVisible();
-    expect(screen.getByText(/不能创建或吊销令牌/)).toBeVisible();
+    expect(await screen.findByText(/只显示一次/)).toBeVisible();
+    expect(screen.getByText(/可随时吊销/)).toBeVisible();
+    expect(screen.getByText(/创建与吊销令牌需要登录会话/)).toBeVisible();
   });
 });

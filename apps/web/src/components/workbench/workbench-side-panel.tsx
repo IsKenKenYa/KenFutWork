@@ -265,7 +265,7 @@ export function WorkbenchSidePanel({
 
       {state.tabs.length === 0 ? (
         <div className="flex min-h-0 flex-1 items-center justify-center p-4 text-center text-xs text-muted-foreground">
-          没有打开的视图。点上面的 ＋ 打开变更、文件目录、终端或浏览器。
+          点上面的 ＋ 打开变更、文件目录、终端或浏览器。
         </div>
       ) : (
         state.tabs.map((tab) => (

@@ -99,7 +99,7 @@ export function PluginInstallByUrl({
         setError(payload.error?.message ?? "安装失败。");
         return;
       }
-      setMessage("安装完成，工具已进入统一注册表。");
+      setMessage("安装完成。");
       onInstalled();
     } catch {
       setError("安装请求失败。");
@@ -116,14 +116,12 @@ export function PluginInstallByUrl({
         <ShieldCheck className="h-4 w-4" /> 从链接安装
       </h3>
       <p className="mt-1 text-xs text-muted-foreground">
-        填 GitHub
-        仓库链接（github.com/owner/repo）或本机目录路径。安装前会先做兼容性校验，
-        未通过则不能安装。
+        填 GitHub 仓库链接或本机目录路径，安装前会先校验兼容性。
       </p>
 
       {!isAdmin ? (
         <p className="mt-1 text-xs text-amber-600">
-          安装需要管理员权限；「校验兼容性」不受影响，可以先看门禁报告。
+          安装需要管理员权限；「校验兼容性」不受影响。
         </p>
       ) : null}
 
@@ -191,8 +189,7 @@ export function PluginInstallByUrl({
                 data-testid="allow-lifecycle"
               />
               <span>
-                我了解该插件会在<b>安装时执行任意代码</b>
-                （生命周期脚本），并授权执行。
+                我了解该插件会在<b>安装时执行任意代码</b>，并授权执行。
               </span>
             </label>
           ) : null}

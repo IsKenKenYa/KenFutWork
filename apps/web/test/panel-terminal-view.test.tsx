@@ -377,7 +377,7 @@ describe("TerminalPane（PTY + 模拟器）", () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(10_100);
       });
-      expect(screen.getByText(/会话没能起来/)).toBeInTheDocument();
+      expect(screen.getByText(/会话启动失败/)).toBeInTheDocument();
       expect(
         screen.getByRole("button", { name: "重新开会话" }),
       ).toBeInTheDocument();

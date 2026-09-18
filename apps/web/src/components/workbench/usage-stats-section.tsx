@@ -178,8 +178,7 @@ function Heatmap({
         </div>
       </div>
       <p className="mt-2 text-[10px] text-muted-foreground">
-        近一年每日 token（格子深浅按峰值分档）；数据来自用量记录，只覆盖最近 2
-        万条。
+        近一年每日 token 用量（颜色越深用量越高，按最近 2 万条记录统计）。
       </p>
     </div>
   );

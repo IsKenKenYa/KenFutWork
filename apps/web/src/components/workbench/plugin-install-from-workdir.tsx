@@ -97,13 +97,11 @@ export function PluginInstallFromWorkdir({
         </button>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        「创造」模式在工作目录里写好的插件 bundle（package.json 声明
-        kenfutwork.bundle / dsh.bundle）会出现在这里；安装前同样会过兼容性门禁。
+        工作目录里的插件会出现在这里，安装前同样会先校验兼容性。
       </p>
       {!isAdmin ? (
         <p className="mt-1 text-xs text-amber-600">
-          安装需要管理员权限（插件会在本机加载并执行第三方代码）；你可以照常浏览扫描结果，
-          或复制目录路径交给管理员安装。
+          安装需要管理员权限；你可以照常浏览扫描结果，或复制目录路径交给管理员安装。
         </p>
       ) : null}
 
@@ -112,7 +110,7 @@ export function PluginInstallFromWorkdir({
       ) : null}
       {!scanError && !scanning && bundles.length === 0 ? (
         <p className="mt-2 text-xs text-muted-foreground">
-          当前工作目录里还没有插件 bundle。
+          当前工作目录里没有插件。
         </p>
       ) : null}
 
@@ -133,7 +131,7 @@ export function PluginInstallFromWorkdir({
                   ) : null}
                 </div>
                 <div className="truncate text-xs text-muted-foreground">
-                  {item.path} · 声明：{item.declaredBy}
+                  {item.path}
                 </div>
               </div>
               <button

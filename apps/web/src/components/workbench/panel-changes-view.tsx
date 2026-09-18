@@ -237,7 +237,7 @@ export function ChangesPane({
           </ul>
           {changes.truncated ? (
             <p className="border-t px-2.5 py-1.5 text-[10px] text-muted-foreground">
-              只列出前 200 个文件。
+              只显示前 200 个文件。
             </p>
           ) : null}
         </div>

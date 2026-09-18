@@ -159,7 +159,7 @@ describe("ProviderSettings（BYOK 供应商设置）", () => {
     });
     render(<ProviderSettings accessToken="token" />);
     expect(
-      await screen.findByText(/自定义请求头：x-opencode-session（值不回显）/),
+      await screen.findByText("自定义请求头：x-opencode-session"),
     ).toBeDefined();
   });
 
@@ -204,7 +204,7 @@ describe("ProviderSettings（BYOK 供应商设置）", () => {
       "我的网关",
     );
     expect(screen.queryByLabelText("协议")).toBeNull();
-    expect(screen.getByText(/协议不可改/)).toBeDefined();
+    expect(screen.getByText(/协议不可修改/)).toBeDefined();
     expect(screen.getByLabelText("API Key（留空则不改）")).toHaveProperty(
       "value",
       "",

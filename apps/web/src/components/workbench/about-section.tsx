@@ -6,8 +6,8 @@ import { getServerBaseUrl } from "@/lib/env";
 /**
  * 设置 → 关于（R5-2 里能落到实处的条目之一）。
  *
- * 只显示**真的拿得到**的信息：服务端版本（`/api/health` 的 version 字段）、服务端地址、
- * 当前界面形态与浏览器。没有数据源的条目（云端运行环境之类）不列——不放空壳。
+ * 只显示**用户看得懂、且真的拿得到**的信息：版本与服务端地址。没有数据源的条目
+ * （云端运行环境之类）不列——不放空壳；浏览器 UA、窗口尺寸这类排查用的技术字段也不列。
  */
 export function AboutSection() {
   const [health, setHealth] = useState<{
@@ -37,19 +37,12 @@ export function AboutSection() {
     [
       "服务端",
       failed
-        ? "连不上（检查服务端是否在运行）"
+        ? "未连接"
         : health
           ? `${health.service} · v${health.version}`
           : "读取中…",
     ],
     ["服务端地址", base || "（同源）"],
-    ["客户端", typeof navigator === "undefined" ? "—" : navigator.userAgent],
-    [
-      "界面",
-      typeof window === "undefined"
-        ? "—"
-        : `${window.innerWidth} × ${window.innerHeight}`,
-    ],
   ];
 
   return (
@@ -67,8 +60,7 @@ export function AboutSection() {
         ))}
       </dl>
       <p className="mt-4 text-xs text-muted-foreground">
-        数据都在你自己的机器上：模型 Key
-        加密存在本地库、索引是本机文件、日志不落密钥。
+        模型 Key 加密保存在本机，索引与对话数据都在本地。
       </p>
     </section>
   );

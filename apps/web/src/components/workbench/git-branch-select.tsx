@@ -252,10 +252,7 @@ export function GitBranchSelect({
         aria-expanded={open}
         disabled={status.source === "unavailable" || busy}
         title={
-          notice ??
-          (status.isRepo
-            ? undefined
-            : "该工作目录还不是 git 仓库（点开可一键初始化）")
+          notice ?? (status.isRepo ? undefined : "该工作目录还不是 git 仓库")
         }
         onClick={() => setOpen((current) => !current)}
         className="flex max-w-[10rem] items-center gap-1.5 rounded-lg border px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
@@ -287,7 +284,7 @@ export function GitBranchSelect({
         >
           <p className="px-3 py-2 text-xs text-muted-foreground">
             该工作目录还不是 git
-            仓库。初始化后，每一轮对话结束都会自动提交一次，便于回滚。
+            仓库。初始化后每轮对话结束会自动提交，便于回滚。
           </p>
           <div className="border-t px-2 py-2">
             <button

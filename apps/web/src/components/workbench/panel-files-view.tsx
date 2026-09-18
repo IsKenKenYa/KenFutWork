@@ -101,7 +101,7 @@ export function FilesPane({
               setSearchError(null);
             }
           }}
-          placeholder="按文件名 / 路径 / 内容摘要搜索（索引库）"
+          placeholder="搜索文件（文件名 / 路径 / 内容）"
           className="min-w-0 flex-1 bg-transparent text-xs outline-none"
         />
         <button
@@ -125,7 +125,6 @@ export function FilesPane({
             {hits.length === 0
               ? "没有匹配的文件"
               : `命中 ${hits.length} 个文件`}
-            {hits.length > 0 ? "（点了打开预览）" : ""}
           </p>
           <ul aria-label="搜索命中" className="divide-y">
             {hits.map((hit) => (
@@ -223,7 +222,7 @@ export function FilesPane({
         </ul>
       )}
       {listing?.truncated ? (
-        <p className="text-[10px] text-muted-foreground">只列出前 500 项。</p>
+        <p className="text-[10px] text-muted-foreground">只显示前 500 项。</p>
       ) : null}
     </div>
   );

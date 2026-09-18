@@ -146,7 +146,7 @@ export function ContextUsageButton({
                       : Math.min(100, 100 - view.thresholdPercent),
                   )}%`,
                 }}
-                title="预留输出（为模型回复留出的窗口空间）"
+                title="预留输出（留给模型回复的空间）"
               />
             ) : null}
             {view.thresholdPercent !== null ? (
@@ -184,9 +184,7 @@ export function ContextUsageButton({
               {view.thresholdPercent !== null
                 ? `窗口的 ${view.thresholdPercent}%`
                 : ""}
-              ）：为回复留的空间已被吃掉，再追一轮更容易被上游截断或拒绝。
-              <strong className="font-medium">本产品不做自动压缩</strong>
-              ——需要继续长任务请新建一个对话（或换成窗口更大的模型）。
+              ）：留给回复的空间已被占用，继续追问可能超出模型上限。建议新建对话，或换用窗口更大的模型。
             </p>
           ) : null}
 
@@ -217,7 +215,7 @@ export function ContextUsageButton({
                 {view.cacheHitScope === "call" ? "（本次调用）" : ""}
               </span>
               <span className="tabular-nums">
-                {view.cacheHitLabel ?? "上游未上报"}
+                {view.cacheHitLabel ?? "模型未提供"}
               </span>
             </div>
             {/* 命中率也画成进度条（用户口径：思考强度与缓存都要有进度条），

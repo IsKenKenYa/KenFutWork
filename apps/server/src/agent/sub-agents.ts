@@ -39,7 +39,9 @@ export function listDeclaredSubAgents(): Array<{
     {
       name: spec.name,
       label: "视频生成",
-      description: spec.description,
+      // 界面文案与 `spec.description` 分开：那一份是**写给模型看的**（派活依据），
+      // 这一份是写给用户看的——同一句话当两用会逼用户读英文原文。
+      description: "按描述生成视频；是否可用取决于有没有配置视频供应商。",
       tools: (spec.tools ?? []).map((tool) => tool.name),
     },
   ];

@@ -39,7 +39,7 @@ export function RulesMemorySection({
         setEntries(view.ruleEntries ?? []);
       })
       .catch(() => {
-        if (!cancelled) setStatus("读取规则失败（设置接口不可达）");
+        if (!cancelled) setStatus("读取规则失败，请稍后重试。");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -59,11 +59,7 @@ export function RulesMemorySection({
       const saved = payload.settings.userRules ?? "";
       setRules(saved);
       setSavedRules(saved);
-      setStatus(
-        saved.trim()
-          ? "用户规则已保存——下一轮对话会拼进系统提示词"
-          : "用户规则已清空",
-      );
+      setStatus(saved.trim() ? "用户规则已保存" : "用户规则已清空");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "保存失败");
     }
@@ -97,8 +93,7 @@ export function RulesMemorySection({
     <section aria-label="规则与记忆设置">
       <h3 className="mb-1 text-base font-medium">用户规则</h3>
       <p className="mb-2 text-sm text-muted-foreground">
-        这些指令会附加到 Agent 的**每次请求**（存工作区设置，服务端在每轮 run
-        起始时拼进系统提示词）。
+        这些指令会附加到每次对话中，工作区内所有会话生效。
       </p>
       <textarea
         aria-label="用户规则"
@@ -127,7 +122,7 @@ export function RulesMemorySection({
 
       <h3 className="mt-6 mb-1 text-base font-medium">规则条目</h3>
       <p className="mb-2 text-sm text-muted-foreground">
-        一条一句的短规则（逐条列在提示词里，比一大段自然语言更容易被遵守）。
+        一条一句，比一大段话更容易被遵守。
       </p>
       <div className="mb-2 flex items-center gap-2">
         <input

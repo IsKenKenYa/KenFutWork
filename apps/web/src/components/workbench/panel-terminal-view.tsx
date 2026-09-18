@@ -270,7 +270,7 @@ export function TerminalPane({
         if (Date.now() - tab.startedAt < STARTING_TIMEOUT_MS) continue;
         patchTab(tab.key, () => ({
           status: "exited",
-          exitReason: "会话没能起来（服务端没有回应）——点右边的重开再试。",
+          exitReason: "会话启动失败，点右边的「重开」再试。",
         }));
       }
     }, STARTING_TIMEOUT_MS);
@@ -404,7 +404,7 @@ export function TerminalPane({
         <button
           type="button"
           aria-label="新建终端"
-          title="新建终端（用系统默认 shell）"
+          title="新建终端"
           onClick={() => openTab()}
           className="shrink-0 p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
@@ -422,7 +422,7 @@ export function TerminalPane({
         <button
           type="button"
           aria-label="清屏"
-          title="清掉这个标签页里的输出（不影响会话）"
+          title="清屏"
           onClick={() =>
             active &&
             patchTab(active.key, (tab) => ({
@@ -437,7 +437,7 @@ export function TerminalPane({
           <button
             type="button"
             aria-label="重新开会话"
-            title="用同一个 shell 重开一条会话"
+            title="重开会话"
             onClick={() => active && startSession(active.key, active.shell)}
             className="shrink-0 p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >

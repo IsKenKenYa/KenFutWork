@@ -82,7 +82,7 @@ export function PanelTabStrip({
           type="button"
           aria-label="标签列表"
           aria-expanded={listOpen}
-          title="新建视图 / 标签页（可搜索）"
+          title="新建标签页"
           onClick={() => setListOpen((current) => !current)}
           className="p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >

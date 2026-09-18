@@ -25,6 +25,11 @@ const PROTOCOLS = [
   { value: "metaso", label: "Metaso 视频" },
 ] as const;
 
+/** 协议 → 界面名（列表与下拉同一处来源；认不出的值原样显示）。 */
+export function protocolLabel(value: string): string {
+  return PROTOCOLS.find((option) => option.value === value)?.label ?? value;
+}
+
 const DEFAULT_MODELS_JSON =
   '[{"id":"gpt-4.1","name":"GPT-4.1","capability":"chat"}]';
 
@@ -103,7 +108,7 @@ export function ProviderInstanceForm({
     }
 
     if (!apiKey.trim()) {
-      onError("请填写 API Key（只写不读，保存后不可查看）");
+      onError("请填写 API Key（保存后不可查看）");
       return;
     }
     await onSubmitCreate({
@@ -143,7 +148,7 @@ export function ProviderInstanceForm({
         </label>
         {isEditing ? (
           <p className="mt-1 text-sm text-muted-foreground">
-            {protocol}（协议不可改；换协议请新建实例）
+            {protocolLabel(protocol)}（协议不可修改）
           </p>
         ) : (
           <Select

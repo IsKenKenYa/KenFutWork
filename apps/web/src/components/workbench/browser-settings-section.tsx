@@ -191,7 +191,7 @@ export function BrowserSettingsSection({
       setCdp(status);
       setMessage(
         status.status === "connected"
-          ? "已连接（独立实例，专用 profile）"
+          ? "已连接"
           : status.status === "error"
             ? status.message
             : "连接中…",
@@ -208,7 +208,7 @@ export function BrowserSettingsSection({
     setCdpBusy(true);
     try {
       setCdp(await disconnectCdp(accessToken));
-      setMessage("已断开（实例已关闭）");
+      setMessage("已断开");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "断开失败");
     } finally {
@@ -244,11 +244,11 @@ export function BrowserSettingsSection({
             : "已关闭自动截图"
           : key === "browserHeadless"
             ? next
-              ? "已设为无头（下次连接生效）"
+              ? "已设为后台运行（下次连接生效）"
               : "已设为有窗口（下次连接生效）"
             : next
               ? "已允许 AI 读取开发者工具数据"
-              : "已禁止 AI 读取开发者工具数据（browser_console / browser_network 会如实拒绝）",
+              : "已禁止 AI 读取开发者工具数据",
       );
     } catch (error) {
       setter(!next);
@@ -284,9 +284,7 @@ export function BrowserSettingsSection({
     const text = await file.text();
     const parsed = parseImportedHistory(text);
     if (!parsed) {
-      setMessage(
-        "导入失败：文件不是本面板导出的历史（JSON），或里面没有地址。",
-      );
+      setMessage("导入失败：文件不是本面板导出的历史。");
       return;
     }
     saveHistory(parsed);
@@ -298,7 +296,7 @@ export function BrowserSettingsSection({
     cdp === null
       ? "状态：读取中…"
       : cdp.status === "connected"
-        ? `状态：已连接（${cdp.headless ? "无头" : "有窗口"}）`
+        ? `状态：已连接（${cdp.headless ? "后台" : "有窗口"}）`
         : cdp.status === "connecting"
           ? "状态：连接中…"
           : cdp.status === "error"
@@ -312,7 +310,7 @@ export function BrowserSettingsSection({
       <div className="divide-y">
         <Toggle
           label="允许 AI 控制浏览器"
-          hint="让 Agent 能读网页、点页面"
+          hint="让 Agent 能读网页并操作页面"
           checked={agentControl}
           onChange={(next) => void toggleAgentControl(next)}
         />
@@ -355,9 +353,7 @@ export function BrowserSettingsSection({
 
       <h3 className="mt-5 mb-1 text-base font-medium">外部浏览器</h3>
       <p className="mb-2 text-sm text-muted-foreground">
-        用调试协议（CDP）连一个**独立实例**：Agent 因此能读取真实渲染后的
-        DOM、截图、 点击与输入。连的是新开的窗口（专用
-        profile），不动你日常那个浏览器，也拿不到你 已登录的会话。
+        连接一个独立的浏览器实例，Agent 可以读页面、截图、点击与输入。
       </p>
       <div className="rounded-md border px-3 py-2 text-xs">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -386,7 +382,7 @@ export function BrowserSettingsSection({
         </div>
         {cdp?.status === "connected" ? (
           <div className="mt-1 text-[11px] text-muted-foreground">
-            {cdp.browser} · 端口 {cdp.port} · {cdp.tabs} 个标签
+            {cdp.browser} · {cdp.tabs} 个标签
             {cdp.currentUrl && cdp.currentUrl !== "about:blank"
               ? ` · 当前 ${cdp.currentUrl}`
               : ""}
@@ -404,7 +400,7 @@ export function BrowserSettingsSection({
           <span>
             <span className="block text-sm">默认搜索引擎</span>
             <span className="block text-xs text-muted-foreground">
-              Agent 联网检索时使用的搜索引擎
+              Agent 联网搜索使用的引擎
             </span>
           </span>
           <Select

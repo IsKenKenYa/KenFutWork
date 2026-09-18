@@ -103,8 +103,8 @@ export function GitWorktreeDialog({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <p className="mb-3 text-xs text-muted-foreground">
-            一个仓库可以同时检出多份工作副本（各自在不同分支上）。绑成工作目录后，
-            agent、终端与 git 都在那一份里跑。
+            同一个仓库可以同时检出多份工作副本（各自在不同分支）。绑定为工作目录后，Agent、终端与
+            Git 都在那一份里工作。
           </p>
 
           {!canvasId ? (
@@ -147,9 +147,7 @@ export function GitWorktreeDialog({
                             setNotice(null);
                             try {
                               await onBindWorkDir(tree.path);
-                              setNotice(
-                                `已把工作目录绑到 ${tree.path}（下一轮 run 起生效）`,
-                              );
+                              setNotice(`已绑定工作目录：${tree.path}`);
                             } catch (error) {
                               setNotice(
                                 error instanceof Error

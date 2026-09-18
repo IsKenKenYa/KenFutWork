@@ -27,7 +27,7 @@ export function AppearanceSection() {
     {
       value: "system",
       label: "跟随系统",
-      hint: "随操作系统的深浅色设置切换",
+      hint: "跟随系统设置",
       Icon: Monitor,
     },
   ] as const;
@@ -36,8 +36,7 @@ export function AppearanceSection() {
     <section aria-label="外观设置">
       <h3 className="mb-1 text-base font-medium">外观</h3>
       <p className="mb-3 text-sm text-muted-foreground">
-        主题存在**本机**（同一账号在不同设备上可以不一样）。画布（Design
-        模式）会跟着切换，代码预览的语法高亮也有深浅两套配色。
+        主题保存在本机，画布与代码预览会跟着切换。
       </p>
 
       <fieldset className="grid gap-2 sm:grid-cols-3">

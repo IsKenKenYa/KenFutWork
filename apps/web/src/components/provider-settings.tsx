@@ -2,7 +2,10 @@
 
 import type { ProviderInstanceResponse } from "@kenfutwork/shared";
 import { useCallback, useEffect, useState } from "react";
-import { ProviderInstanceForm } from "@/components/provider-instance-form";
+import {
+  ProviderInstanceForm,
+  protocolLabel,
+} from "@/components/provider-instance-form";
 import {
   createProviderInstance,
   deleteProviderInstance,
@@ -75,7 +78,7 @@ export function ProviderSettings({ accessToken }: { accessToken: string }) {
         <div>
           <h3 className="text-base font-medium">供应商设置</h3>
           <p className="text-sm text-muted-foreground">
-            使用你自己的 API Key（BYOK）。Key 加密保存，永不回显。
+            使用你自己的 API Key，Key 加密保存、不回显。
           </p>
         </div>
         <button
@@ -131,12 +134,12 @@ export function ProviderSettings({ accessToken }: { accessToken: string }) {
               <div>
                 <p className="text-sm font-medium">{instance.name}</p>
                 <p className="text-xs text-muted-foreground">
-                  {instance.protocol} · {instance.models.length} 个模型 ·{" "}
-                  {instance.enabled ? "已启用" : "已停用"}
+                  {protocolLabel(instance.protocol)} · {instance.models.length}{" "}
+                  个模型 · {instance.enabled ? "已启用" : "已停用"}
                 </p>
                 {instance.headerKeys.length > 0 ? (
                   <p className="text-xs text-muted-foreground">
-                    自定义请求头：{instance.headerKeys.join("、")}（值不回显）
+                    自定义请求头：{instance.headerKeys.join("、")}
                   </p>
                 ) : null}
               </div>

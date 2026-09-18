@@ -76,10 +76,8 @@ export function HooksSection({
     <section aria-label="钩子设置">
       <h3 className="mb-1 text-base font-medium">钩子</h3>
       <p className="mb-3 text-sm text-muted-foreground">
-        在每一轮的起点 / 终点跑一条命令（在项目工作目录里执行，与终端同一套
-        shell）。典型用途：每轮结束自动格式化、跑一遍
-        lint。模型无法新增或触发钩子
-        （它不进工具注册表）；失败不影响本轮，退出码与输出会作为一行出现在转录里。
+        在每轮对话开始或结束时，于工作目录里执行一条命令（例如自动格式化）。
+        只有你能配置，失败也不影响本轮对话。
       </p>
 
       <div className="space-y-2">

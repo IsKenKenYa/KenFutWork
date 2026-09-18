@@ -105,9 +105,7 @@ export function IndexLibrarySection({
     <section aria-label="索引库设置">
       <h3 className="mb-1 text-base font-medium">索引库</h3>
       <p className="mb-3 text-sm text-muted-foreground">
-        索引针对工作目录（Code 模式的项目目录）：记下每个文件的路径 / 大小 /
-        语言 / 摘要前 200
-        字，右栏「文件目录」的搜索用它按文件名、路径和内容摘要找文件。
+        为工作目录建立本地索引，右栏「文件目录」的搜索靠它按文件名、路径和内容找文件。
       </p>
 
       <p className="mb-1 text-xs text-muted-foreground">代码库</p>
@@ -120,15 +118,13 @@ export function IndexLibrarySection({
         />
         <IndexToggle
           title="索引存储库以实现即时搜索（测试版）"
-          hint="自动对仓库进行索引，以加快 Grep 搜索速度。所有数据均存储在本地。"
+          hint="自动为仓库建索引，加快文件搜索。数据保存在本地。"
           checked={enabled}
           onChange={(next) => void onToggle(next)}
         />
       </div>
       <p className="mt-1.5 text-xs text-muted-foreground">
-        索引文件存在服务端的
-        .kenfutwork/index/（本机缓存），不进数据库、也不会写进你的
-        工作目录；「索引新文件夹」只在「即时搜索」开着时才起作用。
+        索引保存在本机，不会写进你的工作目录。
       </p>
 
       <div className="mt-3 rounded-lg border p-3 text-sm">
@@ -145,7 +141,7 @@ export function IndexLibrarySection({
             <li>索引文件 {formatBytes(stats.indexBytes)}</li>
             <li>上次构建 {formatBuiltAt(stats.builtAt)}</li>
             {stats.skipped > 0 ? (
-              <li>读不出来的文件 {stats.skipped} 个（已跳过）</li>
+              <li>已跳过 {stats.skipped} 个无法读取的文件</li>
             ) : null}
             {stats.truncated ? (
               <li>已达到条数/体积上限，只索引了前一部分</li>
@@ -155,8 +151,8 @@ export function IndexLibrarySection({
           <p className="text-muted-foreground">
             还没有索引——
             {autoNewFolder && enabled
-              ? "在「文件目录」里搜一次会自动建一份，也可以点下面的「重建索引」。"
-              : "点下面的「重建索引」建一份（「索引新文件夹」关着时不会自动建）。"}
+              ? "在「文件目录」里搜一次会自动建立。"
+              : "点下面的「重建索引」建立一份。"}
           </p>
         )}
         <div className="mt-3 flex items-center gap-2">

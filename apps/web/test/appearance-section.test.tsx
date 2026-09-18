@@ -52,7 +52,7 @@ describe("设置 → 外观", () => {
 
   it("说明里点明「本机存储」与画布跟随", () => {
     render(<AppearanceSection />);
-    expect(screen.getByText(/存在\*\*本机\*\*/)).toBeVisible();
-    expect(screen.getByText(/画布（Design/)).toBeVisible();
+    expect(screen.getByText(/主题保存在本机/)).toBeVisible();
+    expect(screen.getByText(/画布与代码预览/)).toBeVisible();
   });
 });

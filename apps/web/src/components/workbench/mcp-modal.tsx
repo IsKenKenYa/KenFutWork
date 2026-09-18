@@ -308,16 +308,15 @@ function ConfiguredTab({
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        MCP server 以本机子进程运行，其工具以
-        <code className="mx-1">mcp__&lt;server&gt;__&lt;tool&gt;</code>
-        进入工具注册表；变更需要管理员。
+        MCP 服务在本机运行，它的工具会提供给 Agent
+        使用；添加、修改与删除需要管理员权限。
       </p>
 
       {loading ? (
-        <ListLoading label="正在加载已配置的 MCP server…" rows={2} />
+        <ListLoading label="正在加载已配置的 MCP 服务…" rows={2} />
       ) : servers.length === 0 ? (
         <ListEmpty
-          title="尚未配置 MCP server"
+          title="尚未配置 MCP 服务"
           hint="去「推荐」一键添加，或在下方手动添加。"
         />
       ) : (
@@ -371,9 +370,7 @@ function ConfiguredTab({
                       /* 环境变量提供的条目是只读的：重连会打到需要管理员 id 的端点上（点了必失败） */
                       disabled={busy === key || !server.id}
                       title={
-                        server.id
-                          ? "重连这个 MCP server"
-                          : "环境变量提供的条目由服务端启动时连接，界面不提供重连"
+                        server.id ? "重连" : "由环境变量配置，在这里无法重连"
                       }
                       className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent"
                     >
@@ -418,7 +415,7 @@ function ConfiguredTab({
                       </>
                     ) : (
                       <span className="px-1 text-xs text-muted-foreground">
-                        由环境变量提供，界面只读
+                        由环境变量提供
                       </span>
                     )}
                     {busy === key ? (
@@ -471,7 +468,7 @@ function ConfiguredTab({
           aria-label="MCP 环境变量"
           placeholder={
             editing && editing.envKeys.length > 0
-              ? `环境变量（一行 KEY=VALUE；留空则保留已存的：${editing.envKeys.join(", ")}）`
+              ? `环境变量（一行 KEY=VALUE；留空则保留已存的 ${editing.envKeys.join(", ")}）`
               : "环境变量（一行 KEY=VALUE，可留空）"
           }
           value={form.envText}
@@ -561,10 +558,8 @@ function CuratedTab({
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        内置常用
-        server（离线可用）。添加后会在本机以子进程运行——请确认命令与参数。
-        <code className="mx-1">requires=node</code> 需本机有 npx，
-        <code className="mx-1">python</code> 需有 uv/uvx。
+        内置的常用服务，离线可用。添加后在本机运行，需要本机已安装 Node（npx）或
+        Python（uv/uvx）。
       </p>
       {localError ? (
         <p className="text-xs text-destructive">{localError}</p>
@@ -698,7 +693,7 @@ function RegistryTab({
             const payload = (await response.json().catch(() => ({}))) as {
               error?: { message?: string };
             };
-            fail(payload.error?.message ?? "注册表检索失败。");
+            fail(payload.error?.message ?? "市场检索失败。");
             return;
           }
           const payload = (await response.json()) as {
@@ -708,7 +703,7 @@ function RegistryTab({
           setServers(payload.servers);
           setCount(payload.count);
         })
-        .catch(() => fail("注册表请求失败（需要网络）。"))
+        .catch(() => fail("市场请求失败，请检查网络。"))
         .finally(() => setLoading(false));
     },
     [authHeaders],
@@ -721,11 +716,8 @@ function RegistryTab({
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        官方 MCP 市场：
-        <code className="mx-1">registry.modelcontextprotocol.io</code>
-        只做名称子串匹配，故检索词越短结果越多。当前只支持**本地 stdio**
-        且包生态为 npm / pypi
-        的条目；远程（HTTP/SSE）条目暂不支持，已在列表里标注。
+        官方 MCP 市场。目前支持本地运行的 npm / Python
+        包，远程服务暂不支持，已在列表里标注。
       </p>
 
       <div className="flex items-center gap-2">
@@ -733,7 +725,7 @@ function RegistryTab({
           <Search className="h-3.5 w-3.5 text-muted-foreground" />
           <input
             aria-label="搜索官方注册表"
-            placeholder="搜索 server 名称（如 filesystem / github / fetch）"
+            placeholder="搜索 MCP 服务名称（如 filesystem / github / fetch）"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
@@ -754,24 +746,19 @@ function RegistryTab({
       </div>
 
       {loading ? (
-        <ListLoading label="正在检索官方 MCP 注册表…" rows={3} />
+        <ListLoading label="正在检索 MCP 市场…" rows={3} />
       ) : error ? (
         <ListError
           message={error}
-          hint="注册表是外部服务；网络不可达时可在「推荐」里添加内置的常用 server。"
+          hint="网络不可用时，可在「推荐」里添加内置的常用服务。"
         />
       ) : (
         <>
           {count > 0 ? (
-            <p className="text-xs text-muted-foreground">
-              共 {count} 条（按官方接口返回计）
-            </p>
+            <p className="text-xs text-muted-foreground">共 {count} 条</p>
           ) : null}
           {servers.length === 0 ? (
-            <ListEmpty
-              title="没有匹配的 server"
-              hint="检索词越短结果越多（官方只做名称子串匹配）。"
-            />
+            <ListEmpty title="没有匹配的服务" hint="换个更短的关键词再试。" />
           ) : (
             <ul className="space-y-2">
               {servers.map((server) => (
@@ -806,7 +793,7 @@ function RegistryTab({
                       disabled={!server.installable || busy !== null}
                       title={
                         server.installable
-                          ? "添加为本机 MCP server"
+                          ? "添加这个 MCP 服务"
                           : (server.unsupportedReason ?? "")
                       }
                       onClick={() => {

@@ -91,7 +91,7 @@ describe("ContextUsageButton", () => {
     expect(cacheBar?.className).not.toContain("emerald");
   });
 
-  it("上游没报缓存时显示「上游未上报」，不显示 0%", async () => {
+  it("模型没报缓存时显示「模型未提供」，不显示 0%", async () => {
     render(
       <ContextUsageButton
         usage={{ inputTokens: 1000, outputTokens: 10 }}
@@ -99,7 +99,7 @@ describe("ContextUsageButton", () => {
       />,
     );
     const dialog = await openPopover();
-    expect(dialog).toHaveTextContent("上游未上报");
+    expect(dialog).toHaveTextContent("模型未提供");
   });
 
   it("本轮没有用量（例如刚打开历史对话）时是空态而不是 0%", async () => {
@@ -132,7 +132,7 @@ describe("ContextUsageButton", () => {
 
 /**
  * 三段条与阈值刻度（上下文容量的可见形态）：已用 + 预留输出 + 剩余，
- * 越线时给琥珀色警示并写明「本产品不做自动压缩」——不摆「到时自动处理」的假承诺。
+ * 越线时给琥珀色警示并给出行动（新建对话 / 换更大窗口的模型）。
  */
 describe("ContextUsageButton：预留输出与阈值", () => {
   it("模型声明了最大输出：显示三段读数与阈值刻度", async () => {
@@ -154,7 +154,7 @@ describe("ContextUsageButton：预留输出与阈值", () => {
     expect(dialog).not.toHaveTextContent("已越过输出预留线");
   });
 
-  it("越过预留线：琥珀警示 + 明确写「不做自动压缩」并给出行动", async () => {
+  it("越过预留线：琥珀警示 + 给出行动（新建对话 / 换更大窗口的模型）", async () => {
     render(
       <ContextUsageButton
         usage={{ inputTokens: 950_000, outputTokens: 1200 }}
@@ -164,8 +164,8 @@ describe("ContextUsageButton：预留输出与阈值", () => {
     );
     const dialog = await openPopover();
     expect(dialog).toHaveTextContent("已越过输出预留线");
-    expect(dialog).toHaveTextContent("不做自动压缩");
-    expect(dialog).toHaveTextContent("新建一个对话");
+    expect(dialog).toHaveTextContent("新建对话");
+    expect(dialog).toHaveTextContent("窗口更大的模型");
   });
 
   it("没声明最大输出：不显示预留段与阈值（少画而不是编一个数）", async () => {

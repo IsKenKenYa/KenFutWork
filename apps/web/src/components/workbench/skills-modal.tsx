@@ -557,16 +557,14 @@ function SkillsCreatePanel({
           </button>
         </div>
         <p className="text-xs text-muted-foreground">
-          agent 在沙箱里写好的技能包（含 SKILL.md
-          的目录）会出现在这里——「创造」模式的产出 可一键装进当前工作区。
+          工作目录里的技能包会出现在这里，可一键导入当前工作区。
         </p>
         {packagesError ? (
           <p className="text-xs text-destructive">{packagesError}</p>
         ) : null}
         {!packagesError && !packagesLoading && packages.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            当前工作目录里还没有技能包。用「创造」模式生成一个，或把 SKILL.md
-            写进工作目录。
+            当前工作目录里没有技能包。
           </p>
         ) : null}
         {packages.length > 0 ? (
@@ -648,14 +646,14 @@ function SkillsCreatePanel({
         </div>
         <input
           aria-label="技能描述"
-          placeholder="描述（写清什么时候该用它）"
+          placeholder="描述（说明什么时候用它）"
           value={description}
           onChange={(event) => setDescription(event.target.value)}
           className="w-full rounded-md border px-2 py-1.5 text-sm outline-none"
         />
         <textarea
           aria-label="技能内容"
-          placeholder="SKILL.md 正文（frontmatter 可省略，服务端按 name/description 补）"
+          placeholder="技能内容（SKILL.md 正文）"
           value={content}
           onChange={(event) => setContent(event.target.value)}
           rows={6}
@@ -794,8 +792,8 @@ function SkillsMarketPanel({
       </div>
 
       <p className="text-xs text-muted-foreground">
-        来源：npm 上标记 <code>agent-skill</code> 的包（经由 skills.sh 拉取）。
-        {total > 0 ? ` 共 ${total} 个，显示前 ${items.length} 个。` : ""}
+        来自 npm 技能市场
+        {total > 0 ? `，共 ${total} 个（显示前 ${items.length} 个）` : ""}。
       </p>
 
       {message ? <p className="text-xs text-emerald-600">{message}</p> : null}
@@ -805,7 +803,7 @@ function SkillsMarketPanel({
       ) : error ? (
         <ListError
           message={error}
-          hint="市场数据来自 npm / skills.sh 外部服务；也可以用「导入 / 新建」从链接或本地包安装。"
+          hint="也可以跳过市场，用「导入 / 新建」从链接安装。"
         />
       ) : items.length === 0 ? (
         <ListEmpty
