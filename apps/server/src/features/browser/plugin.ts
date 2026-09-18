@@ -331,6 +331,28 @@ export function registerBrowserRoutes(
     }
   });
 
+  /** 「打开调试工具」：注入 Eruda 到受控页面（用户口径：直接打开调试面板，不转接）。 */
+  app.post("/api/browser/cdp/console", async (request, reply) => {
+    const user = await authenticate(request, reply);
+    if (!user) return;
+    const url = (request.body as { url?: unknown } | undefined)?.url;
+    if (typeof url !== "string" || !url.trim()) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "缺少 url。" },
+      });
+    }
+    try {
+      const result = await options.browser.cdp.injectDebugConsole(url);
+      return reply.code(200).send(result);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "注入调试控制台失败。";
+      return reply.code(502).send({
+        error: { code: "cdp_console_failed", message },
+      });
+    }
+  });
+
   app.post("/api/browser/cdp/disconnect", async (request, reply) => {
     const user = await authenticate(request, reply);
     if (!user) return;

@@ -927,6 +927,32 @@ export async function openCdpDevtools(
   );
 }
 
+/**
+ * 「打开调试工具」→ 注入 Eruda 调试控制台到受控页面（用户口径「直接打开调试面板，不转接」）。
+ */
+export async function injectDebugConsole(
+  accessToken: string,
+  url: string,
+): Promise<void> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/browser/cdp/console`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify({ url }),
+    },
+  );
+  if (response.ok) return;
+  const payload = (await response.json().catch(() => null)) as {
+    error?: { message?: string };
+  } | null;
+  throw new ApiApplicationError(
+    "cdp_console_failed",
+    payload?.error?.message ??
+      `注入调试控制台失败（服务端返回 ${response.status}）。`,
+  );
+}
+
 export async function connectCdp(accessToken: string): Promise<CdpStatusView> {
   let response: Response;
   try {

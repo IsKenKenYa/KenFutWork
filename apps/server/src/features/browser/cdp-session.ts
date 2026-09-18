@@ -73,6 +73,14 @@ export interface CdpBrowserSession {
    * 就是 Chrome 认的调试前端地址——开出来就是能用的 DOM/网络/控制台面板。
    */
   openDevtools(url?: string): Promise<{ targetId: string; url: string }>;
+  /**
+   * **注入调试控制台**（Eruda）到受控页面——用户口径「直接打开的就是调试面板，不要转接一层」。
+   *
+   * 这是移动端 H5 调试的标准做法：Console / Network / Elements / Storage 全都有，
+   * 浮在页面底部，点一下就出来，不需要另开窗口。注入通过 CDP `Runtime.evaluate`
+   * 在页面里插一个 `<script>` 标签（从 CDN 加载 Eruda）。
+   */
+  injectDebugConsole(url: string): Promise<{ url: string }>;
   /** 导航（复用受控标签，没有就开一个）。 */
   navigate(url: string): Promise<{
     url: string;
@@ -419,6 +427,41 @@ export function createCdpBrowserSession(deps: {
         );
       }
       return { targetId, url: page.url };
+    },
+
+    async injectDebugConsole(url: string) {
+      const { client: cdp } = requireConnected();
+      await session.navigate(url);
+      await closeIdleBlanks(cdp);
+      const sessionId = requireConnected().sessionId;
+      /**
+       * 注入 Eruda（开源的页面内调试控制台）：Console / Elements / Network / Storage / Info。
+       * 先移除旧的（重复点按钮不叠加），再注入 + 打开。
+       */
+      await cdp
+        .send(
+          "Runtime.evaluate",
+          {
+            expression: `
+            (function() {
+              var existing = document.getElementById('eruda-loader');
+              if (existing) existing.remove();
+              var eruda = window.eruda;
+              if (eruda) { eruda.show(); return 'eruda already loaded, shown'; }
+              var s = document.createElement('script');
+              s.id = 'eruda-loader';
+              s.src = 'https://cdn.jsdelivr.net/npm/eruda@3.4.1/eruda.min.js';
+              s.onload = function() { window.eruda.init(); window.eruda.show(); };
+              document.head.appendChild(s);
+              return 'eruda loading';
+            })();
+          `,
+            awaitPromise: false,
+          },
+          sessionId,
+        )
+        .catch(() => undefined);
+      return { url };
     },
 
     async disconnect() {
