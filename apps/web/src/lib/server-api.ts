@@ -363,23 +363,6 @@ export async function updatePermissionSettings(
   return (await response.json()) as PermissionSettingsView;
 }
 
-/** @deprecated 用 fetchPermissionSettings（这里只回旧形状里的 tier）。 */
-export async function fetchPermissionTier(
-  accessToken: string,
-): Promise<{ tier: PermissionTier }> {
-  const settings = await fetchPermissionSettings(accessToken);
-  return { tier: settings.tier };
-}
-
-/** @deprecated 用 updatePermissionSettings。 */
-export async function updatePermissionTier(
-  accessToken: string,
-  tier: PermissionTier,
-): Promise<{ tier: PermissionTier }> {
-  const settings = await updatePermissionSettings(accessToken, { tier });
-  return { tier: settings.tier };
-}
-
 export async function approveToolPermission(
   accessToken: string,
   input: {
