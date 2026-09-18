@@ -442,9 +442,16 @@ export function BrowserPane({
                     }
                     setCdpConnected(true);
                   }
-                  // 只留「正在打开」这一条（用户口径：toast 不要那么多）；
-                  // 成败由那个 Chrome 窗口自己体现，失败才额外报错
                   await openCdpDevtools(token, url ?? undefined);
+                  /**
+                   * **Chrome 平台限制**（真机截屏确认）：以标签形式打开的 DevTools，
+                   * 元素拾取器（十字准星）的覆盖层**跨不过标签边界**——DOM / Console /
+                   * Network 都能用，但「点准星再去页面上选元素」做不了。到受控浏览器的
+                   * 页面标签上按 F12 才有完整的 DevTools；桌面形态没有这条限制。
+                   */
+                  toast(
+                    "DevTools 已打开（DOM/Console/Network 可用；元素拾取请到受控浏览器的页面标签上按 F12）",
+                  );
                 } catch (error: unknown) {
                   toast(
                     error instanceof Error
