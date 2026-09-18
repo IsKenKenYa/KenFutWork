@@ -28,7 +28,10 @@ export class CdpError extends Error {
     | "chrome_not_found"
     | "launch_failed"
     | "connect_failed"
-    | "command_failed";
+    | "command_failed"
+    /** 「打开调试工具」用：受控浏览器里没有可调页面 / 拿不到调试地址。 */
+    | "cdp_no_page"
+    | "cdp_no_debug_url";
   constructor(code: CdpError["code"], message: string) {
     super(message);
     this.name = "CdpError";
@@ -191,6 +194,20 @@ export interface CdpClient {
   listTargets(): Promise<
     Array<{ targetId: string; url: string; title: string }>
   >;
+  /**
+   * 页面目标 + **它的调试地址**（`/json/list` 里的 `webSocketDebuggerUrl`）。
+   *
+   * 给 devtools 用：`devtools://devtools/bundled/inspector.html?ws=<该地址>` 是 Chrome 认的
+   * 「调试前端地址」，在受控浏览器里开成标签就等于给那块页面挂上了真 DevTools。
+   */
+  listPageTargetsWithDebugUrl(): Promise<
+    Array<{
+      targetId: string;
+      url: string;
+      title: string;
+      webSocketDebuggerUrl: string | null;
+    }>
+  >;
   closeTab(targetId: string): Promise<void>;
   close(): void;
 }
@@ -207,6 +224,18 @@ export function connectCdpClient(
   options: { commandTimeoutMs?: number } = {},
 ): CdpClient {
   const commandTimeoutMs = options.commandTimeoutMs ?? 15_000;
+  /**
+   * 调试端的 HTTP 基址（`/json/list` 在这里）：从 WebSocket 地址推导——
+   * `ws://127.0.0.1:9333/devtools/browser/<id>` → `http://127.0.0.1:9333`。
+   */
+  const debugHttpBase = (() => {
+    try {
+      const url = new URL(wsUrl.replace(/^ws/, "http"));
+      return `${url.protocol}//${url.host}`;
+    } catch {
+      return null;
+    }
+  })();
   const socket = new WebSocket(wsUrl);
   const pending = new Map<number, Pending>();
   let nextId = 1;
@@ -334,6 +363,49 @@ export function connectCdpClient(
           title: info.title,
         }));
     },
+    async listPageTargetsWithDebugUrl() {
+      const result = (await send("Target.getTargets")) as {
+        targetInfos?: Array<{
+          targetId: string;
+          type: string;
+          url: string;
+          title: string;
+        }>;
+      };
+      const pages = (result.targetInfos ?? []).filter(
+        (info) => info.type === "page",
+      );
+      // `Target.getTargets` 不带调试地址，得回 HTTP 端点拿（按 targetId 对上）
+      let byId = new Map<string, string>();
+      try {
+        const response = debugHttpBase
+          ? await fetch(`${debugHttpBase}/json/list`)
+          : null;
+        if (response?.ok) {
+          const list = (await response.json()) as Array<{
+            id?: string;
+            webSocketDebuggerUrl?: string;
+          }>;
+          byId = new Map(
+            list
+              .filter((entry) => entry.id && entry.webSocketDebuggerUrl)
+              .map((entry) => [
+                String(entry.id),
+                String(entry.webSocketDebuggerUrl),
+              ]),
+          );
+        }
+      } catch {
+        // 拿不到就返回 null（调用方如实报「拿不到调试地址」）
+      }
+      return pages.map((info) => ({
+        targetId: info.targetId,
+        url: info.url,
+        title: info.title,
+        webSocketDebuggerUrl: byId.get(info.targetId) ?? null,
+      }));
+    },
+
     async closeTab(targetId) {
       await send("Target.closeTarget", { targetId });
     },

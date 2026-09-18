@@ -895,6 +895,25 @@ export async function fetchCdpStatus(
   return payload.cdp;
 }
 
+/**
+ * 「打开调试工具」：让服务端在**受控浏览器**里开一个调试前端标签（真 DevTools）。
+ * 没连接受控浏览器时服务端回 502 + 可读原因。
+ */
+export async function openCdpDevtools(accessToken: string): Promise<void> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/browser/cdp/devtools`,
+    { method: "POST", headers: authJsonHeaders(accessToken) },
+  );
+  if (response.ok) return;
+  const payload = (await response.json().catch(() => null)) as {
+    error?: { message?: string };
+  } | null;
+  throw new ApiApplicationError(
+    "cdp_devtools_failed",
+    payload?.error?.message ?? "打开调试工具失败。",
+  );
+}
+
 export async function connectCdp(accessToken: string): Promise<CdpStatusView> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/browser/cdp/connect`,

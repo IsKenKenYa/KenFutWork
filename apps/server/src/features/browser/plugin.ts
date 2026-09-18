@@ -309,6 +309,25 @@ export function registerBrowserRoutes(
       .send({ cdp: status });
   });
 
+  /**
+   * 「打开调试工具」（右栏浏览器 ⋯ 菜单）：给**受控浏览器的当前页面**开真 DevTools。
+   * 没连接受控浏览器时如实回错误（客户端据此置灰这一项）。
+   */
+  app.post("/api/browser/cdp/devtools", async (request, reply) => {
+    const user = await authenticate(request, reply);
+    if (!user) return;
+    try {
+      const opened = await options.browser.cdp.openDevtools();
+      return reply.code(200).send({ opened });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "打开调试工具失败。";
+      return reply.code(502).send({
+        error: { code: "cdp_devtools_failed", message },
+      });
+    }
+  });
+
   app.post("/api/browser/cdp/disconnect", async (request, reply) => {
     const user = await authenticate(request, reply);
     if (!user) return;

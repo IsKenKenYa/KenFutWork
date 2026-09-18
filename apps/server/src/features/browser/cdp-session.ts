@@ -64,6 +64,14 @@ export interface CdpBrowserSession {
     executable?: string;
   }): Promise<CdpStatus>;
   disconnect(): Promise<CdpStatus>;
+  /**
+   * 给**受控浏览器的当前页面**打开真 DevTools（在受控浏览器里开一个调试前端标签）。
+   *
+   * 为什么是这条路：面板里的页面挂在 iframe 上，浏览器不允许给 iframe 单独挂调试器；
+   * 受控浏览器那边是**真标签**，`devtools://devtools/bundled/inspector.html?ws=<页面调试地址>`
+   * 就是 Chrome 认的调试前端地址——开出来就是能用的 DOM/网络/控制台面板。
+   */
+  openDevtools(): Promise<{ targetId: string; url: string }>;
   /** 导航（复用受控标签，没有就开一个）。 */
   navigate(url: string): Promise<{
     url: string;
@@ -243,6 +251,39 @@ export function createCdpBrowserSession(deps: {
         return state;
       }
     },
+    async openDevtools() {
+      const { client: cdp } = requireConnected();
+      const targets = await cdp.listPageTargetsWithDebugUrl();
+      /**
+       * 挑哪一块页面：优先与**当前页面**同址的那块；否则第一块非空白的普通页。
+       * （受控浏览器里可能还开着别的标签，挑错就等于调试另一个页面。）
+       */
+      const current = state.status === "connected" ? state.currentUrl : "";
+      const page =
+        targets.find((entry) => entry.url === current) ??
+        targets.find((entry) => entry.url.startsWith("http")) ??
+        targets[0];
+      if (!page) {
+        throw new CdpError(
+          "cdp_no_page",
+          "受控浏览器里没有可调试的页面：先在右栏浏览器打开一个网址。",
+        );
+      }
+      if (!page.webSocketDebuggerUrl) {
+        throw new CdpError(
+          "cdp_no_debug_url",
+          "拿不到这块页面的调试地址（浏览器可能不允许远程调试）。",
+        );
+      }
+      const url = `devtools://devtools/bundled/inspector.html?ws=${encodeURIComponent(
+        page.webSocketDebuggerUrl,
+      )}`;
+      const created = (await cdp.send("Target.createTarget", { url })) as {
+        targetId?: string;
+      };
+      return { targetId: created.targetId ?? "", url: page.url };
+    },
+
     async disconnect() {
       client?.close();
       client = null;

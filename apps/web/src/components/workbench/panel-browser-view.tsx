@@ -5,7 +5,6 @@ import {
   ArrowRight,
   Ellipsis,
   ExternalLink,
-  Monitor,
   MousePointerSquareDashed,
   PictureInPicture2,
   RotateCw,
@@ -21,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getServerBaseUrl } from "@/lib/env";
+import { fetchCdpStatus, openCdpDevtools } from "@/lib/server-api";
 import { keyed } from "../list-keys";
 
 /**
@@ -118,13 +118,11 @@ export function BrowserPane({
   onReload: () => void;
 }) {
   const normalized = normalizeUrl(draft);
-  const [viewportPreset, setViewportPreset] = useState<ViewportPresetId>("fit");
   /**
-   * 第二行的「尺寸」按钮（用户口径：「点击只有尺寸按钮才出现分辨率和比例」）——
-   * 常态只留这一个按钮，分辨率读数与两个预设**点开才出现**（展开态照参考）。
+   * **自由尺寸开关**（用户口径：按钮点一下打开、再点一下取消，名字就叫「自由尺寸 / 退出自由尺寸」）。
+   * 打开后第二行**不管有没有页面都显示**，内容只有「分辨率（可编辑输入框）+ 窗口比例」。
    */
-  const [sizeOpen, setSizeOpen] = useState(false);
-  const sizePanelRef = useRef<HTMLDivElement>(null);
+  const [freeSizeOn, setFreeSizeOn] = useState(false);
   /**
    * 自由尺寸（参考图的「退出自由尺寸」）：视口尺寸由用户自己拖/填——
    * 预设给常用档，自由尺寸给「就想看看 900px 宽什么样子」。
@@ -136,6 +134,12 @@ export function BrowserPane({
    * 视口截图 → 浮层在截图上叠框点选；没连时回落到服务端静态抓取的 HTML 元素列表。
    * 静态那条读不到脚本渲染内容与登录态页面，这条边界写在浮层里（不写就只能靠猜）。
    */
+  /**
+   * 受控浏览器在不在（决定「打开调试工具」这一项**真的能不能点**）。
+   * 只有连上时才亮：没连时点它没有任何意义，亮着就是假开关。
+   */
+  const [cdpConnected, setCdpConnected] = useState(false);
+  const [devtoolsNotice, setDevtoolsNotice] = useState<string | null>(null);
   const [picking, setPicking] = useState<
     "idle" | "loading" | "error" | "ready"
   >("idle");
@@ -233,40 +237,32 @@ export function BrowserPane({
     return () => window.removeEventListener("resize", measure);
   }, [url]);
 
-  const sizePreset = VIEWPORT_PRESETS.find((p) => p.id === viewportPreset);
-  const viewportWidth =
-    viewportPreset === "free"
-      ? freeSize.width
-      : (sizePreset?.width ?? paneWidth);
-  const viewportHeight =
-    viewportPreset === "free"
-      ? freeSize.height
-      : (sizePreset?.height ?? paneHeight);
+  const viewportWidth = freeSizeOn ? freeSize.width : paneWidth;
+  const viewportHeight = freeSizeOn ? freeSize.height : paneHeight;
   const fitScale =
     viewportWidth > 0 && viewportHeight > 0
       ? Math.min(1, paneWidth / viewportWidth, paneHeight / viewportHeight)
       : 1;
-  // 「尺寸」面板：点外面或按 Esc 收起（与面板里其它浮层同一套约定）
+  // 受控浏览器状态：「打开调试工具」是否可用由它决定（每 20 秒刷新一次足够）
   useEffect(() => {
-    if (!sizeOpen) return;
-    const onDown = (event: MouseEvent) => {
-      const el = event.target as HTMLElement | null;
-      // 点在展开区里不算外面；**Select 的弹层是 portal**（挂在 document 上），
-      // 不一起放行的话「点开分辨率下拉 → 一点选项整块就收了」（实测踩到）
-      if (el?.closest("[data-size-panel], [data-slot='select-content']"))
-        return;
-      setSizeOpen(false);
+    if (!accessToken) return;
+    let cancelled = false;
+    const load = () => {
+      fetchCdpStatus(accessToken)
+        .then((status) => {
+          if (!cancelled) setCdpConnected(status.status === "connected");
+        })
+        .catch(() => {
+          if (!cancelled) setCdpConnected(false);
+        });
     };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSizeOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
+    load();
+    const timer = window.setInterval(load, 20_000);
     return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
+      cancelled = true;
+      window.clearInterval(timer);
     };
-  }, [sizeOpen]);
+  }, [accessToken]);
 
   const zoomPreset = ZOOM_PRESETS.find((p) => p.id === zoom);
   const scale = zoomPreset?.scale ?? fitScale;
@@ -330,21 +326,21 @@ export function BrowserPane({
           className="min-w-0 flex-1 rounded-md border border-transparent bg-muted/60 px-2 py-1 text-xs outline-none focus:border-ring focus:bg-transparent"
         />
         {/*
-          「尺寸」按钮照参考放在**地址栏这一行**（地址框与元素拾取之间），且是**图标按钮**：
-          用户口径「按钮加这边，长这样」。点开才出现分辨率与比例（见下一行）。
+          「尺寸」按钮照参考放在**地址栏这一行**（地址框与元素拾取之间），是**图标按钮**；
+          用户口径：**点一下打开、再点一下取消**，名字就叫「自由尺寸 / 退出自由尺寸」。
         */}
         <button
           type="button"
-          aria-label="尺寸"
-          aria-expanded={sizeOpen}
-          title="尺寸与比例"
-          onClick={() => setSizeOpen((current) => !current)}
+          aria-label={freeSizeOn ? "退出自由尺寸" : "自由尺寸"}
+          aria-pressed={freeSizeOn}
+          title={freeSizeOn ? "退出自由尺寸" : "自由尺寸"}
+          onClick={() => setFreeSizeOn((current) => !current)}
           className={`shrink-0 rounded-md p-1 transition-colors hover:bg-muted ${
-            sizeOpen
+            freeSizeOn
               ? "bg-muted text-foreground"
               : "text-muted-foreground hover:text-foreground"
           }`}
-          data-active={sizeOpen}
+          data-active={freeSizeOn}
         >
           <PictureInPicture2 className="h-3.5 w-3.5" />
         </button>
@@ -364,6 +360,18 @@ export function BrowserPane({
           onValueChange={(next) => {
             if (next === "open-system" && url) {
               window.open(url, "_blank", "noopener");
+            }
+            if (next === "devtools" && accessToken) {
+              // 真动作：让服务端在**受控浏览器**里开一个调试前端标签
+              openCdpDevtools(accessToken)
+                .then(() => setDevtoolsNotice("已在受控浏览器里打开调试工具。"))
+                .catch((error: unknown) =>
+                  setDevtoolsNotice(
+                    error instanceof Error
+                      ? error.message
+                      : "打开调试工具失败。",
+                  ),
+                );
             }
           }}
           items={[
@@ -394,8 +402,12 @@ export function BrowserPane({
             */}
             <SelectItem
               value="devtools"
-              disabled
-              title="内嵌页在 iframe 里，没法单独挂调试工具；先用「在默认浏览器中打开」再按 F12"
+              disabled={!cdpConnected}
+              title={
+                cdpConnected
+                  ? "在受控浏览器里打开调试工具"
+                  : "先到「设置 → 浏览器 → 外部浏览器」连接受控浏览器"
+              }
             >
               <span className="flex items-center gap-2">
                 <SquareTerminal className="h-3.5 w-3.5 shrink-0" />
@@ -407,119 +419,65 @@ export function BrowserPane({
       </form>
 
       {/*
-        第二行照参考：**只有一个「尺寸」按钮**；分辨率（视口预设）与比例（缩放预设）
-        **点开才出现**（用户口径：「点击只有尺寸按钮才出现分辨率和比例」）。
-        **预设都是真的**——iframe 按预设尺寸排版，再按比例缩放到面板里。
+        自由尺寸打开后**只放两样**（用户口径：「只要分辨率（可编辑，输入框）+ 窗口比例」），
+        而且**不管有没有页面都显示**——所以这里不再看 url 有没有值。
       */}
-      {/* data-size-panel 标在**整行**上：展开区是这个容器的兄弟，只标按钮外层的活
-          「点分辨率下拉」会被判成点了外面、整块收起来（实测踩到） */}
-      {sizeOpen ? (
-        <div
-          ref={sizePanelRef}
-          data-size-panel
-          className="flex items-center gap-2 px-1 py-0.5 text-[11px]"
-        >
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-muted-foreground">
-              {viewportWidth > 0 ? `${viewportWidth} × ${viewportHeight}` : "—"}
-            </span>
-            {/* 缩放读数只在**真的有一页在看**时出现：没开页面时面板还没量到尺寸，
-            fitScale 会算出 0%（实测显示「1280 × 720 0%」这种没意义的读数） */}
-            {url && viewportWidth !== paneWidth && scale !== 1 ? (
-              <span className="text-muted-foreground">
-                {Math.round(scale * 100)}%
-              </span>
-            ) : null}
-            {viewportPreset === "free" ? (
-              <span className="flex items-center gap-1">
-                <ViewportSizeInput
-                  ariaLabel="视口宽度"
-                  value={freeSize.width}
-                  min={320}
-                  max={3840}
-                  onCommit={(width) =>
-                    setFreeSize((current) => ({ ...current, width }))
-                  }
-                />
-                <span aria-hidden className="text-muted-foreground">
-                  ×
-                </span>
-                <ViewportSizeInput
-                  ariaLabel="视口高度"
-                  value={freeSize.height}
-                  min={240}
-                  max={2160}
-                  onCommit={(height) =>
-                    setFreeSize((current) => ({ ...current, height }))
-                  }
-                />
-                <button
-                  type="button"
-                  aria-label="退出自由尺寸"
-                  title="退出自由尺寸（回到跟随面板）"
-                  onClick={() => setViewportPreset("fit")}
-                  className="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
-                >
-                  退出自由尺寸
-                </button>
-              </span>
-            ) : null}
-            <Select
-              aria-label="视口预设"
-              value={viewportPreset}
-              onValueChange={(next) => {
-                if (typeof next === "string")
-                  setViewportPreset(next as ViewportPresetId);
-              }}
-              items={VIEWPORT_PRESETS.map((preset) => ({
-                value: preset.id,
-                label: preset.label,
-              }))}
+      {freeSizeOn ? (
+        <div className="flex items-center gap-2 px-1 py-0.5 text-[11px]">
+          <ViewportSizeInput
+            ariaLabel="视口宽度"
+            value={freeSize.width}
+            min={320}
+            max={3840}
+            onCommit={(width) =>
+              setFreeSize((current) => ({ ...current, width }))
+            }
+          />
+          <span aria-hidden className="text-muted-foreground">
+            ×
+          </span>
+          <ViewportSizeInput
+            ariaLabel="视口高度"
+            value={freeSize.height}
+            min={240}
+            max={2160}
+            onCommit={(height) =>
+              setFreeSize((current) => ({ ...current, height }))
+            }
+          />
+          <Select
+            aria-label="窗口比例"
+            value={zoom}
+            onValueChange={(next) => {
+              if (typeof next === "string") setZoom(next as ZoomPresetId);
+            }}
+            items={ZOOM_PRESETS.map((preset) => ({
+              value: preset.id,
+              label: preset.label,
+            }))}
+          >
+            <SelectTrigger
+              className="ml-auto shrink-0 gap-1 border-transparent bg-transparent px-1.5 py-0.5 text-[11px]"
+              aria-label="窗口比例"
+              title="窗口比例（页面按这个比例缩放到面板里）"
             >
-              <SelectTrigger
-                className="ml-auto shrink-0 gap-1 border-transparent bg-transparent px-1.5 py-0.5 text-[11px]"
-                aria-label="视口预设"
-                title="视口预设（页面按这个尺寸排版）"
-              >
-                <Monitor className="h-3.5 w-3.5" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="min-w-32">
-                {VIEWPORT_PRESETS.map((preset) => (
-                  <SelectItem key={preset.id} value={preset.id}>
-                    {preset.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              aria-label="预览缩放"
-              value={zoom}
-              onValueChange={(next) => {
-                if (typeof next === "string") setZoom(next as ZoomPresetId);
-              }}
-              items={ZOOM_PRESETS.map((preset) => ({
-                value: preset.id,
-                label: preset.label,
-              }))}
-            >
-              <SelectTrigger
-                className="shrink-0 gap-1 border-transparent bg-transparent px-1.5 py-0.5 text-[11px]"
-                aria-label="预览缩放"
-                title="预览缩放（只影响这个面板里的显示）"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="min-w-28">
-                {ZOOM_PRESETS.map((preset) => (
-                  <SelectItem key={preset.id} value={preset.id}>
-                    {preset.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="min-w-28">
+              {ZOOM_PRESETS.map((preset) => (
+                <SelectItem key={preset.id} value={preset.id}>
+                  {preset.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
+      ) : null}
+
+      {devtoolsNotice ? (
+        <p className="px-1 text-[10px] text-muted-foreground">
+          {devtoolsNotice}
+        </p>
       ) : null}
 
       {picking !== "idle" ? (
@@ -661,7 +619,7 @@ export function BrowserPane({
             }}
             className="absolute top-0 left-0"
           />
-          {viewportPreset === "free" ? (
+          {freeSizeOn ? (
             <button
               type="button"
               aria-label="拖动调整视口尺寸"
@@ -708,13 +666,6 @@ export function BrowserPane({
 }
 
 /** 视口预设（参考图：`1280 × 720` 这类设备尺寸；`适应面板` = 跟面板一样大）。 */
-const VIEWPORT_PRESETS = [
-  { id: "fit", label: "适应面板", width: null, height: null },
-  { id: "laptop", label: "1280 × 720", width: 1280, height: 720 },
-  { id: "tablet", label: "1024 × 768", width: 1024, height: 768 },
-  { id: "phone", label: "375 × 812", width: 375, height: 812 },
-  { id: "free", label: "自由尺寸", width: null, height: null },
-] as const;
 
 /**
  * 自由尺寸的数字输入：**边打字边夹取是错的**（第一次按「9」，空值被夹成 320，接着变成 3209…）。
@@ -773,8 +724,6 @@ function clampViewport(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, Math.round(value)));
 }
-
-type ViewportPresetId = (typeof VIEWPORT_PRESETS)[number]["id"];
 
 /** 缩放预设（参考图：适应窗口 / 50% / 75% / 100%）。`scale: null` = 适应视口。 */
 const ZOOM_PRESETS = [

@@ -614,20 +614,42 @@ describe("右栏浏览器（点链接自动打开）", () => {
     ).toBeInTheDocument();
 
     /**
-     * 第二行常态只有「尺寸」按钮：分辨率与比例**点开才出现**
-     * （用户口径：「点击只有尺寸按钮才出现分辨率和比例」）。
+     * 自由尺寸（用户口径：「点一下打开，再点一下取消，名字叫做自由尺寸 / 退出自由尺寸」）：
+     * 关着时**只有按钮**，打开后第二行**不管有没有页面都显示**，内容只有
+     * 「分辨率（可编辑输入框）+ 窗口比例」。
      */
-    expect(screen.queryByLabelText("视口预设")).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "尺寸" }));
-    // 视口预设（用户口径：预设不做在地址栏右边，改在工具栏第二行）
-    const viewport = screen.getByLabelText("视口预设");
-    await userEvent.click(viewport);
-    const preset = await screen.findByRole("option", { name: "1280 × 720" });
-    await userEvent.click(preset);
+    expect(screen.queryByLabelText("视口宽度")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "自由尺寸" }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "自由尺寸" }));
+    const widthInput = await screen.findByLabelText("视口宽度");
+    const heightInput = screen.getByLabelText("视口高度");
+    expect(heightInput).toBeInTheDocument();
+    // 分辨率是**可编辑输入框**：改宽度 → iframe 立刻按新尺寸排版（并按比例缩放）
+    expect(screen.getByLabelText("窗口比例")).toBeInTheDocument();
     const frame = screen.getByTitle("右栏浏览器：http://localhost:8000");
-    expect(frame.style.width).toBe("1280px");
-    // 预设按比例缩放到面板里，指针坐标仍然对得上（不是拿宽度假装）
+    await userEvent.clear(widthInput);
+    await userEvent.type(widthInput, "900");
+    await waitFor(() => expect(frame.style.width).toBe("900px"));
+    await userEvent.clear(heightInput);
+    await userEvent.type(heightInput, "600");
+    await waitFor(() => expect(frame.style.height).toBe("600px"));
+    // 比例按窗口比例缩放（不是拿宽度假装）
     expect(frame.style.transform).toMatch(/scale\(/);
+    expect(
+      screen.getByRole("button", { name: "拖动调整视口尺寸" }),
+    ).toBeInTheDocument();
+
+    // 再点一下 = 取消（按钮名与状态一起变），输入框随之收走
+    const exit = screen.getByRole("button", { name: "退出自由尺寸" });
+    expect(exit).toHaveAttribute("aria-pressed", "true");
+    await userEvent.click(exit);
+    expect(screen.queryByLabelText("视口宽度")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "自由尺寸" }),
+    ).toBeInTheDocument();
 
     // 「在默认浏览器中打开」在 ⋯ 菜单里（地址栏右侧，不带箭头）
     const menu = screen.getByLabelText("浏览器菜单");
@@ -635,28 +657,6 @@ describe("右栏浏览器（点链接自动打开）", () => {
     expect(
       await screen.findByRole("option", { name: "在默认浏览器中打开" }),
     ).toBeInTheDocument();
-
-    // 自由尺寸（参考图的「退出自由尺寸」）：尺寸可改、可拖，退出即回到跟随面板
-    if (!screen.queryByLabelText("视口预设")) {
-      await userEvent.click(screen.getByRole("button", { name: "尺寸" }));
-    }
-    await userEvent.click(screen.getByLabelText("视口预设"));
-    await userEvent.click(
-      await screen.findByRole("option", { name: "自由尺寸" }),
-    );
-    const widthInput = screen.getByLabelText("视口宽度");
-    await userEvent.clear(widthInput);
-    await userEvent.type(widthInput, "900");
-    await waitFor(() =>
-      expect(
-        screen.getByTitle("右栏浏览器：http://localhost:8000").style.width,
-      ).toBe("900px"),
-    );
-    expect(
-      screen.getByRole("button", { name: "拖动调整视口尺寸" }),
-    ).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "退出自由尺寸" }));
-    expect(screen.queryByLabelText("视口宽度")).not.toBeInTheDocument();
 
     // 元素拾取（R3-4）：开着页面 + 有 token 时可用；点它会去服务端抓静态快照
     const pickButton = screen.getByRole("button", {

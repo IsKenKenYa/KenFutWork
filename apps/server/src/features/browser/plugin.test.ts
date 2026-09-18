@@ -34,6 +34,61 @@ function buildBrowserApp(browser: Record<string, unknown>) {
   });
 }
 
+/**
+ * 「打开调试工具」（右栏浏览器 ⋯ 菜单）：**给受控浏览器的页面开真 DevTools**。
+ *
+ * 这条是路线 1 的验收面：真机上验过受控 Chrome 里会多出一个 `devtools://devtools/bundled/
+ * inspector.html?ws=…` 标签；这里锁路由的两种结果（成功透出 / 没连接受控浏览器时 502 + 可读原因）。
+ */
+describe("POST /api/browser/cdp/devtools", () => {
+  it("受控浏览器连着：透出打开的调试目标", async () => {
+    const app = buildBrowserApp({
+      cdp: {
+        isConnected: () => true,
+        openDevtools: async () => ({
+          targetId: "DEVTOOLS-1",
+          url: "https://example.com/",
+        }),
+      },
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/browser/cdp/devtools",
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({
+        opened: { targetId: "DEVTOOLS-1", url: "https://example.com/" },
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("没连接受控浏览器：502 + 可读原因（客户端据此把菜单项置灰）", async () => {
+    const app = buildBrowserApp({
+      cdp: {
+        isConnected: () => false,
+        openDevtools: async () => {
+          throw new Error(
+            "浏览器未连接：请到「设置 → 浏览器 → 外部浏览器」点『连接到 Chrome』。",
+          );
+        },
+      },
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/browser/cdp/devtools",
+      });
+      expect(response.statusCode).toBe(502);
+      expect(String(response.json().error?.message)).toContain("浏览器未连接");
+    } finally {
+      await app.close();
+    }
+  });
+});
+
 describe("POST /api/browser/snapshot", () => {
   it("CDP 连着：回来真实渲染页 + 盒模型几何 + 视口 + 截图，source=cdp", async () => {
     const app = buildBrowserApp({
