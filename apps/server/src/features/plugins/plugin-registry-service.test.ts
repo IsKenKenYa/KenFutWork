@@ -33,12 +33,65 @@ function makeEnv(): ServerEnv {
 
 let pluginsDir: string;
 const kernels: Array<{ dispose(): void }> = [];
+const tempDirs: string[] = [];
+
+/**
+ * 假插件存储：记录型内存实现，用来断言**内核侧绑定**（插件 id 由内核填、工作区由调用方传）
+ * 与卸载清理。真实加密与 SQL 形状见 `plugin-storage.test.ts`。
+ */
+function fakePluginStorage() {
+  const rows = new Map<string, string>();
+  const purged: string[] = [];
+  const rowKey = (workspaceId: string, pluginId: string, key: string) =>
+    JSON.stringify([workspaceId, pluginId, key]);
+  return {
+    rows,
+    purged,
+    storage: {
+      async get(workspaceId: string, pluginId: string, key: string) {
+        return rows.get(rowKey(workspaceId, pluginId, key)) ?? null;
+      },
+      async set(
+        workspaceId: string,
+        pluginId: string,
+        key: string,
+        value: string,
+      ) {
+        rows.set(rowKey(workspaceId, pluginId, key), value);
+      },
+      async remove(workspaceId: string, pluginId: string, key: string) {
+        return rows.delete(rowKey(workspaceId, pluginId, key));
+      },
+      async keys(workspaceId: string, pluginId: string) {
+        return [...rows.keys()]
+          .map((raw) => JSON.parse(raw) as [string, string, string])
+          .filter(([ws, id]) => ws === workspaceId && id === pluginId)
+          .map(([, , key]) => key)
+          .sort();
+      },
+      async purgePlugin(pluginId: string) {
+        purged.push(pluginId);
+        let removed = 0;
+        for (const raw of [...rows.keys()]) {
+          const [, id] = JSON.parse(raw) as [string, string, string];
+          if (id === pluginId) {
+            rows.delete(raw);
+            removed += 1;
+          }
+        }
+        return removed;
+      },
+    },
+  };
+}
 
 function makeService() {
   const kernel = composePlugins(makeEnv(), []);
   kernels.push(kernel);
+  const fake = fakePluginStorage();
   return {
     kernel,
+    fake,
     service: createPluginRegistryService({
       pluginsDir,
       tools: kernel.get("tools"),
@@ -52,6 +105,7 @@ function makeService() {
           capabilities: ["tools"],
         },
       ],
+      storage: fake.storage,
     }),
   };
 }
@@ -92,6 +146,57 @@ async function writeIncompatibleBundle(): Promise<string> {
   return dir;
 }
 
+/**
+ * 造一个用 `ctx.storage` 的 bundle：用来验证内核侧的绑定——
+ * 插件 id 由内核填（插件无法读写别人的数据），工作区由调用方（工具执行上下文）传入。
+ */
+async function writeStorageBundle(): Promise<string> {
+  const dir = await mkdtemp(path.join(tmpdir(), "kenfutwork-storage-"));
+  tempDirs.push(dir);
+  await writeFile(
+    path.join(dir, "package.json"),
+    JSON.stringify({
+      name: "storage-probe-plugin",
+      version: "1.0.0",
+      type: "module",
+      main: "index.js",
+      dsh: { bundle: { patch: "./cordis.patch.yml" } },
+    }),
+    "utf8",
+  );
+  await writeFile(
+    path.join(dir, "cordis.patch.yml"),
+    "- insert:\n    - id: storage-probe\n      name: storage-probe-plugin\n      inject: [tools, storage]\n",
+    "utf8",
+  );
+  await writeFile(
+    path.join(dir, "index.js"),
+    [
+      'export const name = "storage-probe-plugin";',
+      'export const inject = ["tools", "storage"];',
+      "export function apply(ctx) {",
+      "  ctx.tools.register({",
+      '    name: "storage_probe",',
+      '    description: "读写插件存储（工作区取自执行上下文）",',
+      '    parameters: { type: "object", properties: {} },',
+      "    async execute(_args, exec) {",
+      '      const before = await ctx.storage.get(exec.workspaceId, "session");',
+      '      await ctx.storage.set(exec.workspaceId, "session", "v:" + (before ?? "none"));',
+      "      return {",
+      "        before,",
+      '        after: await ctx.storage.get(exec.workspaceId, "session"),',
+      "        keys: await ctx.storage.keys(exec.workspaceId),",
+      "      };",
+      "    },",
+      "  });",
+      "}",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  return dir;
+}
+
 beforeEach(async () => {
   pluginsDir = await mkdtemp(path.join(tmpdir(), "kenfutwork-plugins-"));
 });
@@ -99,6 +204,9 @@ beforeEach(async () => {
 afterEach(async () => {
   for (const kernel of kernels.splice(0)) {
     kernel.dispose();
+  }
+  for (const dir of tempDirs.splice(0)) {
+    await rm(dir, { recursive: true, force: true });
   }
   await rm(pluginsDir, { recursive: true, force: true });
 });
@@ -175,6 +283,40 @@ describe("plugin-registry：安装并真的能用", () => {
     expect(kernel.get("tools").get("clock_now")).toBeDefined();
   });
 
+  it("插件经 ctx.storage 读写：插件 id 由内核绑定、工作区由调用方传入，卸载清空数据", async () => {
+    const { kernel, service, fake } = makeService();
+    const dir = await writeStorageBundle();
+    const { installed, report } = await service.install({
+      url: dir,
+      allowLifecycleScripts: false,
+    });
+
+    expect(report.compatible).toBe(true);
+    expect(report.supportedCapabilities).toEqual(["tools", "storage"]);
+
+    const tool = kernel.get("tools").require("storage_probe");
+    const first = await tool.execute({}, { workspaceId: "ws-1" });
+    expect(first).toEqual({ before: null, after: "v:none", keys: ["session"] });
+
+    // 同一工作区第二次读得到上次写的值
+    const second = await tool.execute({}, { workspaceId: "ws-1" });
+    expect(second).toMatchObject({ before: "v:none" });
+
+    // 另一个工作区读不到（隔离），且数据各自落在「该插件 + 该工作区」名下
+    const other = await tool.execute({}, { workspaceId: "ws-2" });
+    expect(other).toMatchObject({ before: null });
+    expect([...fake.rows.keys()].sort()).toEqual(
+      [
+        JSON.stringify(["ws-2", installed.id, "session"]),
+        JSON.stringify(["ws-1", installed.id, "session"]),
+      ].sort(),
+    );
+
+    // 卸载：数据一并清空（停用则保留，见上一个用例）
+    await service.uninstall(installed.id);
+    expect(fake.purged).toEqual([installed.id]);
+    expect(fake.rows.size).toBe(0);
+  });
   it("重启后 restore() 从落盘状态恢复装载（持久化生效）", async () => {
     const first = makeService();
     const { installed } = await first.service.install({
@@ -487,6 +629,7 @@ describe("部署形态禁止第三方插件", () => {
       subscribe: () => () => {},
       hostNodeMajor: 22,
       builtinCatalog: [],
+      storage: fakePluginStorage().storage,
     });
 
     await expect(

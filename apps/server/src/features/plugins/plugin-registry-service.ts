@@ -25,6 +25,7 @@ import {
   exportPluginBundle,
   type PluginExportSpec,
 } from "./plugin-exporter.js";
+import type { PluginStorage } from "./plugin-storage.js";
 
 /**
  * 插件注册表服务：安装 / 卸载 / 启停 / 导入校验 / 导出。
@@ -89,6 +90,13 @@ export interface PluginRegistryDeps {
   hostNodeMajor: number;
   /** 内置插件目录（市场展示 + 导出用） */
   builtinCatalog: readonly PluginCatalogEntry[];
+  /**
+   * 插件存储（能力 `storage`）：插件**数据**的唯一落点。
+   *
+   * 与「插件代码/安装态落在 pluginsDir」是两回事——代码和安装态是机器本地的
+   * （见文件头注释），而插件数据挂在「工作区」上，必须走 DB 与工作区隔离缝。
+   */
+  storage: PluginStorage;
   /** GitHub token（可选，提升匿名速率上限） */
   githubToken?: string;
   logger?: {
@@ -111,6 +119,7 @@ interface PluginContributions {
       query: Record<string, string>;
       body: unknown;
       headers: Record<string, string | undefined>;
+      workspaceId?: string | undefined;
     }) => unknown | Promise<unknown>;
   }>;
   ui: Array<{
@@ -160,6 +169,8 @@ export interface PluginRegistryService {
     body: unknown;
     headers: Record<string, string | undefined>;
     isAuthenticated: boolean;
+    /** 调用者所属工作区（未登录时为 undefined）：插件 `ctx.storage` 的显式入参。 */
+    workspaceId?: string | undefined;
   }): Promise<PluginRouteDispatchResult | undefined>;
   /**
    * 读插件 bundle 里的静态资源（`/api/plugins/<id>/assets/…`）。
@@ -399,6 +410,17 @@ export function createPluginRegistryService(
           return () => {
             contributions.ui = contributions.ui.filter((row) => row !== item);
           };
+        },
+        // 存储：调用方（插件的路由/工具）显式传工作区，这里只把 pluginId 绑上，
+        // 插件拿不到「换个插件 id 读写别人数据」的口子。
+        storage: {
+          get: (workspaceId, key) =>
+            deps.storage.get(workspaceId, record.id, key),
+          set: (workspaceId, key, value) =>
+            deps.storage.set(workspaceId, record.id, key, value),
+          remove: (workspaceId, key) =>
+            deps.storage.remove(workspaceId, record.id, key),
+          keys: (workspaceId) => deps.storage.keys(workspaceId, record.id),
         },
       });
       loaded.set(record.id, result);
@@ -649,6 +671,7 @@ export function createPluginRegistryService(
       body,
       headers,
       isAuthenticated,
+      workspaceId,
     }) {
       const normalized = routePath.replace(/^\/+/, "");
       const route = contributions.routes.find(
@@ -668,6 +691,7 @@ export function createPluginRegistryService(
           query,
           body,
           headers,
+          ...(workspaceId ? { workspaceId } : {}),
         });
         if (
           result &&
@@ -716,6 +740,9 @@ export function createPluginRegistryService(
         version: 1,
         installed: state.installed.filter((record) => record.id !== id),
       });
+      // 卸载要卸干净：插件存过的键（含加密凭证）一并清掉。
+      // 「停用」不走这里——停用只收贡献物，数据留着，重新启用即恢复。
+      await deps.storage.purgePlugin(id);
     },
 
     async setEnabled(id, enabled) {

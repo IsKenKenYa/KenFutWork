@@ -48,6 +48,11 @@ export interface CompatRouteSpec {
     query: Record<string, string>;
     body: unknown;
     headers: Record<string, string | undefined>;
+    /**
+     * 调用者所属工作区（未登录的公共路由为 undefined）。
+     * `ctx.storage` 需要它——工作区是插件的**显式**入参，内核不代选默认值。
+     */
+    workspaceId?: string | undefined;
   }) => unknown | Promise<unknown>;
 }
 
@@ -76,6 +81,19 @@ export interface CompatContext {
   /** UI 入口贡献（能力名 `ui`；清单里声明亦可）。 */
   readonly ui: {
     register(entry: CompatUiEntry): () => void;
+  };
+  /**
+   * 存储贡献（能力名 `storage`）：按工作区隔离的键值存取，值加密落库、HTTP 永不回显。
+   *
+   * 工作区由插件**显式传入**：路由 handler 从 `request.workspaceId` 取，
+   * 工具从执行上下文（`exec.workspaceId`）取。加载期没有该上下文，故不设默认值——
+   * 缺工作区时内核直接报错（fail loud），不静默落到某个「默认工作区」。
+   */
+  readonly storage: {
+    get(workspaceId: string, key: string): Promise<string | null>;
+    set(workspaceId: string, key: string, value: string): Promise<void>;
+    remove(workspaceId: string, key: string): Promise<boolean>;
+    keys(workspaceId: string): Promise<string[]>;
   };
   effect(fn: () => undefined | (() => void)): void;
   on(
@@ -121,6 +139,17 @@ export interface CompatHostDeps {
   routes: (spec: CompatRouteSpec) => () => void;
   /** UI 入口 sink（返回注销函数）。 */
   ui: (entry: CompatUiEntry) => () => void;
+  /**
+   * 存储 sink（调用方实现时已绑定插件 id）；工作区由插件显式传入。
+   * 与其它 sink 不同，这里返回的是**数据通道**而不是注销函数——存储归插件生命周期管，
+   * 由 registry 在卸载时 purge。
+   */
+  storage: {
+    get(workspaceId: string, key: string): Promise<string | null>;
+    set(workspaceId: string, key: string, value: string): Promise<void>;
+    remove(workspaceId: string, key: string): Promise<boolean>;
+    keys(workspaceId: string): Promise<string[]>;
+  };
   /** 插件标识，用于日志前缀与错误信息。 */
   label: string;
 }
@@ -330,6 +359,13 @@ export async function loadCompatPlugin(
         contributionDisposers.push(dispose);
         return dispose;
       },
+    },
+    storage: {
+      get: (workspaceId, key) => deps.storage.get(workspaceId, key),
+      set: (workspaceId, key, value) =>
+        deps.storage.set(workspaceId, key, value),
+      remove: (workspaceId, key) => deps.storage.remove(workspaceId, key),
+      keys: (workspaceId) => deps.storage.keys(workspaceId),
     },
     // 副作用由本适配层自己调用并登记：不能同时委托给 kernel 的 effect，
     // 否则 fn 会被执行两次（kernel 的 effect 也会调用它）。

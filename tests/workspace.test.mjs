@@ -381,11 +381,18 @@ async function collectSupabaseResiduals() {
         /(?<!storage)(?<!Buffer)(?<!Array)(?<!Uint8Array)(?<!String)\.from\(/g,
       ) ?? []
     ).length;
-    // 口径（2026-09-14 三次修正）：只数**存储客户端成员访问**（`.storage.` / `.storage(`），
-    // 不数产品数据字段 `storageUrl`。原口径把 `el.storageUrl` 也算成存储耦合，
-    // 实测让服务端清零后指标仍卡在 11 处（全在 web 且全是字段名）——
+    // 口径（2026-09-14 三次修正 + 2026-09-19 第四次修正）：只数**存储客户端成员访问**
+    // （`.storage.` / `.storage(`），不数产品数据字段 `storageUrl`。原口径把 `el.storageUrl`
+    // 也算成存储耦合，实测让服务端清零后指标仍卡在 11 处（全在 web 且全是字段名）——
     // 那样的指标永远到不了 0，M1.5 的「全清」门禁也就永远过不去。
-    code.storageRefs += countOccurrences(flat, /\.storage(?=[.(])/g);
+    // 第四次修正：新增的插件存储能力（能力名 `storage`，访问面固定是 `ctx.storage` /
+    // `deps.storage`）与 Supabase 的 storage 客户端同名，属指标**误报**。按本文件自己的
+    // 原则（不为了让指标好看而绕开正常命名），把这两个接收者排除；真正的存储客户端调用
+    // （其它接收者的 `.storage.from(` / `.storage.upload(` 等）照旧计入。
+    code.storageRefs += countOccurrences(
+      flat,
+      /(?<!ctx)(?<!deps)\.storage(?=[.(])/g,
+    );
   }
 
   const { stdout } = await execFileAsync(

@@ -38,12 +38,21 @@ describe("SecretStore（DEC-7 服务端加密落库）", () => {
     );
   });
 
+  it("空明文可以往返（回归：曾写成读不回来的密文）", () => {
+    // 实测踩到：空字符串加密后密文尾段为空串，早前的格式校验把它判成非法，
+    // 于是「写入成功、读取报格式非法」——静默数据损坏。
+    const ciphertext = encryptSecret(env, "");
+    expect(ciphertext.startsWith("v1:")).toBe(true);
+    expect(decryptSecret(env, ciphertext)).toBe("");
+  });
+
   it("篡改密文与非法格式被拒绝", () => {
     const ciphertext = encryptSecret(env, "k");
     const tampered = `${ciphertext.slice(0, -2)}xy`;
     expect(() => decryptSecret(env, tampered)).toThrow();
     expect(() => decryptSecret(env, "plaintext")).toThrow(/版本无法识别/);
     expect(() => decryptSecret(env, "v1:broken")).toThrow(/格式非法/);
+    expect(() => decryptSecret(env, "v1:onlyiv:")).toThrow(/格式非法/);
   });
 
   it("maskSecret 脱敏不泄露中间段", () => {

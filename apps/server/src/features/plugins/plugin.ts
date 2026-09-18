@@ -3,6 +3,10 @@ import path from "node:path";
 import { registerPluginRoutes } from "../../http/plugins.js";
 import type { PluginContext, PluginDefinition } from "../../kernel/types.js";
 import { createCanvasRepository } from "../canvas/repository.js";
+import {
+  decryptSecret,
+  encryptSecret,
+} from "../model-providers/secret-store.js";
 import { projectWorkDirLoaderFor } from "../projects/work-dir.js";
 import { CompatLoadError } from "./compat-context.js";
 import { createInstallPluginTool } from "./install-plugin-tool.js";
@@ -11,6 +15,7 @@ import {
   type PluginCatalogEntry,
   type PluginRegistryService,
 } from "./plugin-registry-service.js";
+import { createPluginStorage } from "./plugin-storage.js";
 
 /**
  * plugin-registry 插件：插件市场的服务端（目录 / 安装 / 卸载 / 启停 / 导入校验 / 导出）。
@@ -103,6 +108,11 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
     inject: ["auth", "admin", "persistence", "viewer"],
     apply(ctx) {
       const pluginsDir = resolvePluginsDir(deps.pluginsDir);
+      // 插件存储复用凭证缝的加解密（同一把 KENFUTWORK_CREDENTIAL_SECRET）：
+      // 缺密钥时在**调用期** fail loud，而不是启动期——不用存储的插件照常可用。
+      const credentialEnv = ctx.env.credentialSecret
+        ? { credentialSecret: ctx.env.credentialSecret }
+        : {};
       ctx.register("plugins", () => {
         service = createPluginRegistryService({
           // 部署形态决定能不能跑第三方插件（云端默认禁止；见 env.resolveAllowThirdPartyPlugins）
@@ -112,6 +122,13 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
           subscribe: bridgeSubscribe(ctx),
           hostNodeMajor: resolveHostNodeMajor(deps.hostNodeMajor),
           builtinCatalog: deps.builtinCatalog,
+          storage: createPluginStorage({
+            persistence: ctx.get("persistence"),
+            cipher: {
+              encrypt: (plaintext) => encryptSecret(credentialEnv, plaintext),
+              decrypt: (ciphertext) => decryptSecret(credentialEnv, ciphertext),
+            },
+          }),
           ...(deps.githubToken ? { githubToken: deps.githubToken } : {}),
         });
         return service;

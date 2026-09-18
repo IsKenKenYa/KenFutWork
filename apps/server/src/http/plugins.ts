@@ -55,6 +55,24 @@ function sendUnauthenticated(reply: FastifyReply) {
   );
 }
 
+/**
+ * 插件路由的工作区上下文：与其它聚合同一口径（viewer 解析当前用户的工作区）。
+ *
+ * 解析失败（例如身份已建但个人工作区缺失）**不在这里 500**：公共面板路由本就没有身份，
+ * 而插件真的读写存储时，存储层会因缺工作区 fail loud——报错点离出错点更近，更好排查。
+ */
+async function resolveWorkspaceId(
+  viewerService: ViewerService,
+  user: AuthenticatedUser,
+): Promise<string | undefined> {
+  try {
+    const workspace = await viewerService.resolveWorkspace(user);
+    return workspace.id;
+  } catch {
+    return undefined;
+  }
+}
+
 function sendError(
   reply: FastifyReply,
   code: string,
@@ -270,6 +288,9 @@ export async function registerPluginRoutes(
       return sendError(reply, "not_found", "缺少插件 id。", 404);
     }
     const user = await options.auth.authenticate(request);
+    const workspaceId = user
+      ? await resolveWorkspaceId(options.viewerService, user)
+      : undefined;
     const result = await options.registry.dispatchRoute({
       pluginId,
       method: request.method,
@@ -278,6 +299,7 @@ export async function registerPluginRoutes(
       body: request.body,
       headers: request.headers as Record<string, string | undefined>,
       isAuthenticated: Boolean(user),
+      ...(workspaceId ? { workspaceId } : {}),
     });
     if (!result) {
       return sendError(

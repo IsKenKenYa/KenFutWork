@@ -73,7 +73,10 @@ export function decryptSecret(env: CredentialEnv, stored: string): string {
   const [ivB64, tagB64, dataB64] = stored
     .slice(VERSION_PREFIX.length)
     .split(":");
-  if (!ivB64 || !tagB64 || !dataB64) {
+  // 空明文是合法值（GCM 密文尾段为空串），只有 iv/tag 缺失或尾段不存在才是格式错误。
+  // 早前用 `!dataB64` 判定，导致 `encryptSecret(env, "")` 写出的密文**读不回来**
+  // （写入成功、读取报「格式非法」）——静默数据损坏，插件存储把它暴露了出来。
+  if (!ivB64 || !tagB64 || dataB64 === undefined) {
     throw new Error("[secret-store] 凭证密文格式非法（fail loud）。");
   }
   const tryDecrypt = (key: Buffer): string => {

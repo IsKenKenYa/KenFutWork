@@ -14,7 +14,8 @@ import type { ServiceKey } from "../../kernel/types.js";
  * - `systemPrompt`：注册提示段（`ctx.promptFragments`，追加进 system prompt——插件的
  *   「工作模式/行为引导」就是这么给的）；
  * - `routes`：注册 HTTP 路由（`ctx.routes` → `/api/plugins/<id>/…`，默认要求登录）；
- * - `ui`：贡献界面入口（`ctx.ui` 或清单里的 `kenfutwork.bundle.ui`，侧栏条目 + 面板）。
+ * - `ui`：贡献界面入口（`ctx.ui` 或清单里的 `kenfutwork.bundle.ui`，侧栏条目 + 面板）；
+ * - `storage`：插件键值存储（`ctx.storage`；按工作区隔离、值加密落库，见 plugin-storage.ts）。
  * 其余（settings/llm/sessions/fs/subprocess/sandbox/agents/jobs/commands）是**结构性
  * 不匹配**而非缺管道：它们要么需要 request 级上下文，要么由运行时独占，硬接会让语义
  * 失真——保持显式拒绝并给出理由。
@@ -80,6 +81,11 @@ export const CAPABILITY_BINDINGS: readonly CapabilityBinding[] = [
   },
   {
     capability: "ui",
+    serviceKey: "plugins",
+    supported: true,
+  },
+  {
+    capability: "storage",
     serviceKey: "plugins",
     supported: true,
   },

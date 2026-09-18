@@ -36,6 +36,14 @@ export const CANONICAL_CAPABILITIES = [
   "routes",
   /** 本项目扩展：插件贡献 UI 面板入口（侧栏条目 + 面板渲染其 URL）。 */
   "ui",
+  /**
+   * 本项目扩展：插件键值存储（按工作区隔离、值加密落库）。
+   *
+   * 补齐「插件没有任何持久化手段」这块空白：需要跨重启存活状态的插件（第三方集成的
+   * 会话凭证等）此前无路可走——门禁禁止插件直连文件系统，也不给 DB 面。
+   * 工作区由调用方显式传入（路由取请求上下文、工具取执行上下文）。
+   */
+  "storage",
 ] as const;
 export const canonicalCapabilitySchema = z.enum(CANONICAL_CAPABILITIES);
 export type CanonicalCapability = z.infer<typeof canonicalCapabilitySchema>;

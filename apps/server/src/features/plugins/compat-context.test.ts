@@ -21,12 +21,32 @@ function makeEnv(): ServerEnv {
 
 function makeHost() {
   const kernel = composePlugins(makeEnv(), []);
+  const storageCalls: Array<{ op: string; workspaceId: string; key: string }> =
+    [];
   return {
     tools: kernel.get("tools"),
     subscribe: () => () => {},
     promptFragments: () => () => {},
     routes: () => () => {},
     ui: () => () => {},
+    storage: {
+      async get(workspaceId: string, key: string) {
+        storageCalls.push({ op: "get", workspaceId, key });
+        return null;
+      },
+      async set(workspaceId: string, key: string) {
+        storageCalls.push({ op: "set", workspaceId, key });
+      },
+      async remove(workspaceId: string, key: string) {
+        storageCalls.push({ op: "remove", workspaceId, key });
+        return true;
+      },
+      async keys(workspaceId: string) {
+        storageCalls.push({ op: "keys", workspaceId, key: "" });
+        return [];
+      },
+    },
+    storageCalls,
     label: "demo",
   };
 }
@@ -386,7 +406,7 @@ describe("插件上下文的权限边界", () => {
     for (const forbidden of ["get", "set", "provide", "consume", "services"]) {
       expect(seen[forbidden]).toBeUndefined();
     }
-    // 允许面（四条能力 + 框架方法）确实在
+    // 允许面（五条能力 + 框架方法）确实在
     expect(Object.keys(seen).sort()).toEqual([
       "effect",
       "inject",
@@ -394,8 +414,48 @@ describe("插件上下文的权限边界", () => {
       "on",
       "promptFragments",
       "routes",
+      "storage",
       "tools",
       "ui",
     ]);
+  });
+});
+
+describe("插件上下文的存储通道（能力 storage）", () => {
+  it("ctx.storage 把工作区与键原样透传到内核 sink（不做默认值兜底）", async () => {
+    let seen: Record<string, unknown> = {};
+    const namespace = {
+      name: "storage-probe",
+      inject: ["storage"],
+      async apply(ctx: {
+        storage: {
+          get: (workspaceId: string, key: string) => Promise<string | null>;
+          set: (
+            workspaceId: string,
+            key: string,
+            value: string,
+          ) => Promise<void>;
+          remove: (workspaceId: string, key: string) => Promise<boolean>;
+          keys: (workspaceId: string) => Promise<string[]>;
+        };
+      }) {
+        await ctx.storage.set("ws-1", "session", "v1");
+        await ctx.storage.get("ws-1", "session");
+        await ctx.storage.remove("ws-2", "gone");
+        await ctx.storage.keys("ws-3");
+        seen = ctx as unknown as Record<string, unknown>;
+      },
+    };
+    const host = makeHost();
+    await loadCompatPlugin(namespace, host as never);
+
+    expect(host.storageCalls).toEqual([
+      { op: "set", workspaceId: "ws-1", key: "session" },
+      { op: "get", workspaceId: "ws-1", key: "session" },
+      { op: "remove", workspaceId: "ws-2", key: "gone" },
+      { op: "keys", workspaceId: "ws-3", key: "" },
+    ]);
+    // 存储是数据通道，不参与贡献物注销（不返回 disposer）
+    expect(typeof (seen.storage as { get: unknown }).get).toBe("function");
   });
 });

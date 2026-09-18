@@ -134,6 +134,12 @@ describe("plugin-exporter：回灌往返", () => {
           promptFragments: () => () => {},
           routes: () => () => {},
           ui: () => () => {},
+          storage: {
+            get: async () => null,
+            set: async () => {},
+            remove: async () => false,
+            keys: async () => [],
+          },
           label: artifact.name,
         },
       );
