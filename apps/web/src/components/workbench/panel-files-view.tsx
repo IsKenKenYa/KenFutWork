@@ -78,13 +78,7 @@ export function FilesPane({
   }, [accessToken, canvasId, dir]);
 
   if (!canvasId) {
-    return (
-      <PanelEmptyState
-        kind="files"
-        title="未绑定工作目录"
-        hint="在「工作目录」里选一个文件夹，这个项目就有落地目录了。"
-      />
-    );
+    return <PanelEmptyState kind="files" title="未绑定工作目录" />;
   }
 
   const segments = dir ? dir.split("/") : [];

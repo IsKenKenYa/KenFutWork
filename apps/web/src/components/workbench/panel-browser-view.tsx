@@ -767,11 +767,7 @@ export function BrowserPane({
           </div>
         </div>
       ) : (
-        <PanelEmptyState
-          kind="browser"
-          title="还没有打开页面"
-          hint="在上面的地址栏输入网址回车，或在对话里点链接直接开到这里。"
-        />
+        <PanelEmptyState kind="browser" title="还没有打开页面" />
       )}
     </div>
   );

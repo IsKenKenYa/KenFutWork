@@ -407,11 +407,7 @@ function PaneContent({
       return subagents.length > 0 ? (
         <SubagentDirectoryView entries={subagents} running={running} />
       ) : (
-        <PanelEmptyState
-          kind="subagents"
-          title="这个会话还没有派过子智能体"
-          hint="让 agent 用子智能体分工后，这里会按目录列出来。"
-        />
+        <PanelEmptyState kind="subagents" title="这个会话还没有派过子智能体" />
       );
   }
 }

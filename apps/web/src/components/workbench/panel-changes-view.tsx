@@ -103,13 +103,7 @@ export function ChangesPane({
   };
 
   if (!canvasId) {
-    return (
-      <PanelEmptyState
-        kind="changes"
-        title="未绑定工作目录"
-        hint="变更按工作目录统计——先绑定目录再看改动。"
-      />
-    );
+    return <PanelEmptyState kind="changes" title="未绑定工作目录" />;
   }
 
   const totals = (changes?.files ?? []).reduce(

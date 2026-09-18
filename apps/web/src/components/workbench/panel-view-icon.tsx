@@ -50,19 +50,15 @@ export function PanelViewIcon({
 export function PanelEmptyState({
   kind,
   title,
-  hint,
 }: {
   kind: PanelViewKind;
   title: string;
-  hint?: string;
 }) {
   return (
     <div className="flex h-full w-full flex-col items-center justify-center gap-2 p-4 text-center">
       <PanelViewIcon kind={kind} className="size-7 text-muted-foreground/60" />
+      {/* 只留一行：**不加描述性小字**（用户口径「这些描述文字不要」） */}
       <p className="text-sm text-muted-foreground">{title}</p>
-      {hint ? (
-        <p className="max-w-56 text-xs text-muted-foreground/80">{hint}</p>
-      ) : null}
     </div>
   );
 }
