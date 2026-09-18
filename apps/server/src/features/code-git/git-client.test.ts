@@ -485,6 +485,18 @@ describe("变更清单（纯解析）", () => {
     expect(files.map((file) => file.path)).toEqual(["src/new/index.ts"]);
   });
 
+  it("未跟踪目录不进列表（git 把目录折叠成带尾斜杠的一条，列出来只会让人点开报错）", () => {
+    const files = toChangedFiles({
+      numstat: fail("fatal: ambiguous argument 'HEAD'"),
+      // `?? hello-kfw/modes/` 是**目录**；同目录下的文件才会被 git 单独列出
+      status: ok("?? hello-kfw/modes/\n?? hello-kfw/README.md\n M src/a.ts\n"),
+      maxFiles: 10,
+    }).files;
+    // numstat 失败（无提交）时只补未跟踪条目：文件照旧列出，目录被丢掉
+    expect(files.map((file) => file.path)).toEqual(["hello-kfw/README.md"]);
+    expect(files.some((file) => file.path.endsWith("/"))).toBe(false);
+  });
+
   it("仓库还没有提交（numstat 非零退出）：未跟踪文件仍要列出来", () => {
     const files = toChangedFiles({
       numstat: fail("fatal: ambiguous argument 'HEAD'"),

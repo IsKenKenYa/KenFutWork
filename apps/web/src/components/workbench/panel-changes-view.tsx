@@ -150,7 +150,7 @@ export function ChangesPane({
               type="button"
               aria-label="撤销全部更改"
               disabled={discarding || changes.files.length === 0}
-              title="撤销全部未提交改动（未跟踪的新文件会被删除）"
+              title="撤销全部更改"
               onClick={() => void discardEverything()}
               className="shrink-0 border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive disabled:opacity-40"
             >
@@ -204,7 +204,7 @@ export function ChangesPane({
                   <button
                     type="button"
                     aria-label={`审查 ${file.path}`}
-                    title="审查：看差异并逐块/整文件暂存（决定哪些改动进索引）"
+                    title="审查"
                     onClick={() => onOpenDiff(file.path)}
                     className="shrink-0 border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
                   >
@@ -213,7 +213,7 @@ export function ChangesPane({
                   <button
                     type="button"
                     aria-label={`打开 ${file.path}`}
-                    title="打开：只看文件内容（不改动任何东西）"
+                    title="打开"
                     onClick={() => onOpenFile(file.path)}
                     className="shrink-0 border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
                   >
@@ -226,11 +226,7 @@ export function ChangesPane({
                     onClick={() =>
                       void discardFile(file.path, file.status === "untracked")
                     }
-                    title={
-                      file.status === "untracked"
-                        ? "撤销：删除这个未跟踪文件"
-                        : "撤销：把这个文件恢复成仓库里的样子"
-                    }
+                    title="撤销"
                     className="shrink-0 border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive disabled:opacity-40"
                   >
                     撤销

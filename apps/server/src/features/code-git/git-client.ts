@@ -349,6 +349,14 @@ export function toChangedFiles(input: {
     const path = rest.includes(" -> ")
       ? (rest.split(" -> ").pop() ?? rest)
       : rest;
+    /**
+     * **目录不进变更列表**（用户口径：「hello-kfw/modes/ 是目录，不能按文件打开——目录就不要显示在变更」）。
+     *
+     * 来源：git 对**未跟踪目录**会把里面所有文件折叠成一条，路径**带尾斜杠**（`?? dir/`）。
+     * 那种条目既没有 diff、也不能当文件打开（点了就是报错），所以在这里就丢掉；
+     * 已跟踪的条目一定是文件（git 不跟踪目录），不受影响。
+     */
+    if (path.endsWith("/")) continue;
     statusByPath.set(path, {
       status: porcelainStatus(code),
       staged: code[0] !== " " && code[0] !== "?",
