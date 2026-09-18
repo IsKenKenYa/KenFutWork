@@ -260,6 +260,8 @@ export const modelInfoSchema = z.object({
   contextWindow: z.number().int().positive().optional(),
   /** 单次回复最大输出 token 数（上下文条「预留输出」段的来源，见 provider-contracts）。 */
   maxOutputTokens: z.number().int().positive().optional(),
+  /** 思考档位声明（实例模型行的 reasoningEfforts；缺席 = 全档位可选）。 */
+  reasoningEfforts: z.array(z.string().min(1)).optional(),
 });
 
 export const chatSessionIdSchema = identifierSchema;

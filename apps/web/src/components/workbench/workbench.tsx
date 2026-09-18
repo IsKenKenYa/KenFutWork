@@ -49,6 +49,7 @@ import {
   THINKING_OPTIONS,
   THINKING_PROGRESS,
   TIER_OPTIONS,
+  thinkingOptionsFor,
 } from "@/components/workbench/composer-compact-select";
 import { ContextUsageButton } from "@/components/workbench/context-usage-button";
 import { ElapsedEntry } from "@/components/workbench/elapsed-entry";
@@ -166,6 +167,8 @@ type WorkbenchModelOption = {
   contextWindow?: number | undefined;
   /** 单次最大输出（供应商实例声明）；上下文条「预留输出」段的来源。 */
   maxOutputTokens?: number | undefined;
+  /** 思考档位声明（供应商模型行）；声明后思考选择器只显示这些档位。 */
+  reasoningEfforts?: string[] | undefined;
 };
 
 /**
@@ -2578,7 +2581,10 @@ export function Workbench() {
                         <ComposerCompactSelect
                           ariaLabel="思考强度"
                           icon={<Brain className="h-3.5 w-3.5" />}
-                          options={THINKING_OPTIONS}
+                          options={thinkingOptionsFor(
+                            models.find((m) => m.id === model),
+                            THINKING_OPTIONS,
+                          )}
                           value={thinking}
                           onChange={handleThinkingChange}
                           contentClassName="min-w-24"

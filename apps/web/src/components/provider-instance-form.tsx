@@ -5,7 +5,7 @@ import type {
   ProviderInstanceResponse,
   ProviderInstanceUpdateRequest,
 } from "@kenfutwork/shared";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import {
   Select,
   SelectContent,
@@ -43,13 +43,22 @@ type ModelRow = {
   uid: string;
   id: string;
   name: string;
-  capability: (typeof CAPABILITIES)[number]["value"];
+  capability: "chat" | "image" | "image-edit" | "video";
+  /** 详情（可选声明，缺省 = 未知）：字符串态便于输入框直填。 */
+  contextWindow?: string;
+  maxOutputTokens?: string;
+  vision?: boolean;
+  /** 逗号分隔思考档位（如「低,中,高,最高」）；空 = 全档位。 */
+  reasoningEfforts?: string;
 };
 
 type HeaderRow = { uid: string; key: string; value: string };
 
 let rowUidCounter = 0;
-const nextRowUid = () => `row-${(rowUidCounter += 1)}`;
+const nextRowUid = (): string => {
+  rowUidCounter += 1;
+  return `row-${rowUidCounter}`;
+};
 
 const emptyModelRow = (): ModelRow => ({
   uid: nextRowUid(),
@@ -105,6 +114,16 @@ export function ProviderInstanceForm({
           id: m.id,
           name: m.name,
           capability: (m.capability as ModelRow["capability"]) ?? "chat",
+          ...(m.contextWindow != null
+            ? { contextWindow: String(m.contextWindow) }
+            : {}),
+          ...(m.maxOutputTokens != null
+            ? { maxOutputTokens: String(m.maxOutputTokens) }
+            : {}),
+          ...(m.vision ? { vision: true } : {}),
+          ...(m.reasoningEfforts
+            ? { reasoningEfforts: m.reasoningEfforts.join(",") }
+            : {}),
         }))
       : [emptyModelRow()],
   );
@@ -118,6 +137,8 @@ export function ProviderInstanceForm({
       : [],
   );
   const [showAdvanced, setShowAdvanced] = useState(false);
+  /** 展开详情编辑的行（uid 集合）。 */
+  const [detailOpen, setDetailOpen] = useState<Set<string>>(new Set());
   const [modelsJson, setModelsJson] = useState("");
   const [headersJson, setHeadersJson] = useState("");
   const [presets, setPresets] = useState<ProviderPreset[]>([]);
@@ -156,22 +177,51 @@ export function ProviderInstanceForm({
     );
   };
 
-  const updateModelRow = (index: number, patch: Partial<ModelRow>) => {
+  // patch 值显式允许 undefined（exactOptionalPropertyTypes 下 Partial 不含），
+  // 供「取消勾选/清空输入」场景把字段写回缺省态
+  const updateModelRow = (
+    index: number,
+    update: (row: ModelRow) => ModelRow,
+  ) => {
     setModelRows((rows) =>
-      rows.map((row, i) => (i === index ? { ...row, ...patch } : row)),
+      rows.map((row, i) => (i === index ? update(row) : row)),
     );
   };
 
+  const toModelDeclaration = (row: ModelRow) => {
+    // 声明面序列化：uid 是内部行键，绝不外发；详情字段缺省即「未知」，不填不发
+    const contextWindow = Number.parseInt(row.contextWindow ?? "", 10);
+    const maxOutputTokens = Number.parseInt(row.maxOutputTokens ?? "", 10);
+    const efforts = (row.reasoningEfforts ?? "")
+      .split(/[,，]/)
+      .map((level) => level.trim())
+      .filter((level) => level.length > 0);
+    return {
+      id: row.id.trim(),
+      name: row.name.trim(),
+      capability: row.capability,
+      ...(Number.isFinite(contextWindow) && contextWindow > 0
+        ? { contextWindow }
+        : {}),
+      ...(Number.isFinite(maxOutputTokens) && maxOutputTokens > 0
+        ? { maxOutputTokens }
+        : {}),
+      ...(row.vision ? { vision: true } : {}),
+      ...(efforts.length > 0 ? { reasoningEfforts: efforts } : {}),
+    };
+  };
+
   const resolveModels = (): unknown => {
-    // 高级 JSON 编辑过则以 JSON 为准；否则用结构化行
-    if (showAdvanced && modelsJson.trim()) return JSON.parse(modelsJson);
+    // 高级 JSON 编辑过则以 JSON 为准；否则用结构化行（uid 不外发）
+    if (showAdvanced && modelsJson.trim()) {
+      const parsed = JSON.parse(modelsJson) as Array<Record<string, unknown>>;
+      return Array.isArray(parsed)
+        ? parsed.map(({ uid: _uid, ...rest }) => rest)
+        : parsed;
+    }
     return modelRows
       .filter((row) => row.id.trim() && row.name.trim())
-      .map((row) => ({
-        id: row.id.trim(),
-        name: row.name.trim(),
-        capability: row.capability,
-      }));
+      .map(toModelDeclaration);
   };
 
   const resolveHeaders = (): Record<string, string> | undefined => {
@@ -353,69 +403,166 @@ export function ProviderInstanceForm({
         <span className="text-sm">模型清单</span>
         <div className="mt-1 space-y-2">
           {modelRows.map((row, index) => (
-            <div key={row.uid} className="flex items-start gap-2">
-              <div className="flex-1">
-                <input
-                  aria-label={`模型 ${index + 1} ID`}
-                  placeholder="模型 ID（如 gpt-4.1）"
-                  value={row.id}
-                  onChange={(e) =>
-                    updateModelRow(index, { id: e.target.value })
-                  }
-                  className="w-full rounded-md border px-2 py-1.5 font-mono text-xs"
-                />
-              </div>
-              <div className="flex-1">
-                <input
-                  aria-label={`模型 ${index + 1} 显示名`}
-                  placeholder="显示名"
-                  value={row.name}
-                  onChange={(e) =>
-                    updateModelRow(index, { name: e.target.value })
-                  }
-                  className="w-full rounded-md border px-2 py-1.5 text-xs"
-                />
-              </div>
-              <div className="w-28">
-                <Select
-                  value={row.capability}
-                  onValueChange={(next) => {
-                    if (typeof next === "string")
-                      updateModelRow(index, {
-                        capability: next as ModelRow["capability"],
-                      });
-                  }}
-                  items={CAPABILITIES.map((c) => ({
-                    value: c.value,
-                    label: c.label,
-                  }))}
-                >
-                  <SelectTrigger
-                    aria-label={`模型 ${index + 1} 能力`}
-                    className="w-full"
+            <Fragment key={row.uid}>
+              <div className="flex items-start gap-2">
+                <div className="flex-1">
+                  <input
+                    aria-label={`模型 ${index + 1} ID`}
+                    placeholder="模型 ID（如 gpt-4.1）"
+                    value={row.id}
+                    onChange={(e) =>
+                      updateModelRow(index, (row) => ({
+                        ...row,
+                        id: e.target.value,
+                      }))
+                    }
+                    className="w-full rounded-md border px-2 py-1.5 font-mono text-xs"
+                  />
+                </div>
+                <div className="flex-1">
+                  <input
+                    aria-label={`模型 ${index + 1} 显示名`}
+                    placeholder="显示名"
+                    value={row.name}
+                    onChange={(e) =>
+                      updateModelRow(index, (row) => ({
+                        ...row,
+                        name: e.target.value,
+                      }))
+                    }
+                    className="w-full rounded-md border px-2 py-1.5 text-xs"
+                  />
+                </div>
+                <div className="w-28">
+                  <Select
+                    value={row.capability}
+                    onValueChange={(next) => {
+                      if (typeof next === "string")
+                        updateModelRow(index, (row) => ({
+                          ...row,
+                          capability: next as ModelRow["capability"],
+                        }));
+                    }}
+                    items={CAPABILITIES.map((c) => ({
+                      value: c.value,
+                      label: c.label,
+                    }))}
                   >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CAPABILITIES.map((c) => (
-                      <SelectItem key={c.value} value={c.value}>
-                        {c.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                    <SelectTrigger
+                      aria-label={`模型 ${index + 1} 能力`}
+                      className="w-full"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CAPABILITIES.map((c) => (
+                        <SelectItem key={c.value} value={c.value}>
+                          {c.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <button
+                  type="button"
+                  aria-label={`模型 ${row.id || index + 1} 详情`}
+                  onClick={() =>
+                    setDetailOpen((open) => {
+                      const next = new Set(open);
+                      if (next.has(row.uid)) {
+                        next.delete(row.uid);
+                      } else {
+                        next.add(row.uid);
+                      }
+                      return next;
+                    })
+                  }
+                  className={
+                    detailOpen.has(row.uid)
+                      ? "rounded-md border px-2 py-1.5 text-xs text-primary"
+                      : "rounded-md border px-2 py-1.5 text-xs text-muted-foreground"
+                  }
+                >
+                  详情
+                </button>
+                <button
+                  type="button"
+                  aria-label={`删除模型 ${row.id || index + 1}`}
+                  onClick={() =>
+                    setModelRows((rows) => rows.filter((_, i) => i !== index))
+                  }
+                  className="rounded-md border px-2 py-1.5 text-xs text-muted-foreground"
+                >
+                  删除
+                </button>
               </div>
-              <button
-                type="button"
-                aria-label={`删除模型 ${row.id || index + 1}`}
-                onClick={() =>
-                  setModelRows((rows) => rows.filter((_, i) => i !== index))
-                }
-                className="rounded-md border px-2 py-1.5 text-xs text-muted-foreground"
-              >
-                删除
-              </button>
-            </div>
+              {detailOpen.has(row.uid) ? (
+                <div className="ml-2 grid grid-cols-2 gap-2 rounded-md border border-dashed p-2 md:grid-cols-4">
+                  <label className="text-xs text-muted-foreground">
+                    上下文窗口（token）
+                    <input
+                      inputMode="numeric"
+                      placeholder="如 128000"
+                      value={row.contextWindow ?? ""}
+                      onChange={(e) =>
+                        updateModelRow(index, (row) => ({
+                          ...row,
+                          contextWindow: e.target.value.replace(/[^0-9]/g, ""),
+                        }))
+                      }
+                      className="mt-0.5 w-full rounded-md border px-2 py-1.5 font-mono text-xs"
+                    />
+                  </label>
+                  <label className="text-xs text-muted-foreground">
+                    最大输出（token）
+                    <input
+                      inputMode="numeric"
+                      placeholder="如 32000"
+                      value={row.maxOutputTokens ?? ""}
+                      onChange={(e) =>
+                        updateModelRow(index, (row) => ({
+                          ...row,
+                          maxOutputTokens: e.target.value.replace(
+                            /[^0-9]/g,
+                            "",
+                          ),
+                        }))
+                      }
+                      className="mt-0.5 w-full rounded-md border px-2 py-1.5 font-mono text-xs"
+                    />
+                  </label>
+                  <label className="flex items-end gap-2 pb-1.5 text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={row.vision ?? false}
+                      onChange={(e) =>
+                        updateModelRow(index, (row) => {
+                          const { vision: _vision, ...rest } = row;
+                          return e.target.checked
+                            ? { ...rest, vision: true }
+                            : rest;
+                        })
+                      }
+                    />
+                    支持图像输入（视觉）
+                  </label>
+                  <label className="text-xs text-muted-foreground">
+                    思考档位（逗号分隔）
+                    <input
+                      placeholder="低,中,高,最高"
+                      value={row.reasoningEfforts ?? ""}
+                      onChange={(e) =>
+                        updateModelRow(index, (row) => ({
+                          ...row,
+                          reasoningEfforts: e.target.value,
+                        }))
+                      }
+                      className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-xs"
+                    />
+                  </label>
+                </div>
+              ) : null}
+            </Fragment>
           ))}
         </div>
         <button
@@ -483,7 +630,10 @@ export function ProviderInstanceForm({
         <button
           type="button"
           onClick={() =>
-            setHeaderRows((rows) => [...rows, { uid: nextRowUid(), key: "", value: "" }])
+            setHeaderRows((rows) => [
+              ...rows,
+              { uid: nextRowUid(), key: "", value: "" },
+            ])
           }
           className="mt-2 rounded-md border px-3 py-1.5 text-xs"
         >

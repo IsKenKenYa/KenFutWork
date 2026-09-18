@@ -83,6 +83,7 @@ export async function registerModelRoutes(
                   entry.model.contextWindow ?? entry.hints?.contextWindow;
                 const maxOutputTokens =
                   entry.model.maxOutputTokens ?? entry.hints?.maxOutputTokens;
+                const reasoningEfforts = entry.model.reasoningEfforts;
                 return {
                   id: toInstanceSpecifier(entry),
                   name: entry.name,
@@ -91,6 +92,7 @@ export async function registerModelRoutes(
                   ...(vision ? { vision: true } : {}),
                   ...(contextWindow ? { contextWindow } : {}),
                   ...(maxOutputTokens ? { maxOutputTokens } : {}),
+                  ...(reasoningEfforts ? { reasoningEfforts } : {}),
                 };
               }),
           );

@@ -186,6 +186,13 @@ export const providerInstanceModelSchema = z.object({
    * 此前该字段会被 schema 静默丢弃（用户写了也传不到前端）。
    */
   maxOutputTokens: z.number().int().positive().optional(),
+  /**
+   * 思考档位声明（deepseek-harness 的 reasoningEfforts 收窄版：键=档位名）。
+   * 声明后「思考强度」选择器只显示这些档位（+恒在的「默认」）；缺席 = 全档位。
+   * 档位到线上拼写的映射（如 max: ultra）随线上参数化（reasoning_effort 真传）
+   * 一并落地，当前消费面是提示词注入与 UI 过滤。
+   */
+  reasoningEfforts: z.array(z.string().min(1)).optional(),
   /** 图像生成任务级能力（可选；缺省 = 未知，见上方语义红线）。 */
   imageGeneration: imageGenerationCapsSchema.optional(),
   /** 视频生成任务级能力（可选；缺省 = 未知）。 */
