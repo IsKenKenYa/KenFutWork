@@ -6,7 +6,11 @@ export interface InstanceCredentials {
    * 实例自定义请求头（§4.8）——**已按会话上下文渲染**（`renderInstanceHeaders`），
    * 不含占位符；保留头（authorization/content-type/host 等）不在其中。
    */
-  headers?: Record<string, string> | undefined;
+  headers?: Record<string, string> | undefined;  /**
+   * 探测结论：网关支持 OpenAI Responses API（probe.responsesApi=true 时带出）。
+   * 缺省 = 未探测或探测为不支持 → 聊天走 chat/completions（fail open）。
+   */
+  responsesApi?: boolean;
 }
 
 export interface InstanceImageAdapterOptions {

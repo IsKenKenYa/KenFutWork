@@ -115,6 +115,10 @@ function toCredentials(row: ProviderInstanceRecord, apiKey: string) {
     ...(row.headers ? { headers: row.headers } : {}),
     models: mapModels(row.models),
     configRevision: Number(row.config_revision),
+    // 探测纠偏消费面：仅 true 带出（false/缺席=未支持或不详，默认 completions）
+    ...((row.probe_result as { responsesApi?: boolean } | null)?.responsesApi === true
+      ? { responsesApi: true }
+      : {}),
   };
 }
 
