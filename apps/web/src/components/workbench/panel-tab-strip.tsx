@@ -1,16 +1,7 @@
 "use client";
 
-import {
-  Bot,
-  FileCode2,
-  FileDiff as FileDiffIcon,
-  Folder,
-  Globe,
-  Plus,
-  Search,
-  SquareTerminal,
-  X,
-} from "lucide-react";
+import { Plus, Search, X } from "lucide-react";
+
 import { useEffect, useRef, useState } from "react";
 import {
   filterPanelTabs,
@@ -19,6 +10,7 @@ import {
   type PanelViewKind,
   relativeOpenedLabel,
 } from "@/lib/panel-tabs";
+import { PanelViewIcon } from "./panel-view-icon";
 
 /**
  * 右栏面板的标签条（参考图的编辑器式多标签）：**左侧加号（打开的标签页 + 新建视图）→ 各标签（可关）**。
@@ -127,7 +119,7 @@ export function PanelTabStrip({
                       className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 py-1 text-left text-xs hover:bg-muted"
                     >
                       <span className="shrink-0 text-muted-foreground">
-                        {tabIcon(tab.view.kind)}
+                        <PanelViewIcon kind={tab.view.kind} />
                       </span>
                       <span className="min-w-0 flex-1 truncate">
                         {tab.label}
@@ -170,7 +162,7 @@ export function PanelTabStrip({
                       className="flex w-full items-center gap-1.5 px-1.5 py-1 text-left text-xs hover:bg-muted"
                     >
                       <span className="shrink-0 text-muted-foreground">
-                        {tabIcon(view.kind)}
+                        <PanelViewIcon kind={view.kind} />
                       </span>
                       <span className="min-w-0 flex-1 truncate">
                         {view.label}
@@ -208,7 +200,9 @@ export function PanelTabStrip({
                 onClick={() => onActivate(tab.id)}
                 className="flex max-w-40 min-w-0 items-center gap-1.5"
               >
-                <span className="shrink-0">{tabIcon(tab.view.kind)}</span>
+                <span className="shrink-0">
+                  <PanelViewIcon kind={tab.view.kind} />
+                </span>
                 <span className="truncate">{tab.label}</span>
               </button>
               <button
@@ -236,24 +230,3 @@ const NEW_TAB_VIEWS: Array<{ kind: PanelViewKind; label: string }> = [
   { kind: "browser", label: "浏览器" },
   { kind: "subagents", label: "子智能体" },
 ];
-
-/** 标签左侧的小图标（视图种类一眼可辨）。 */
-function tabIcon(kind: PanelViewKind) {
-  const className = "h-3.5 w-3.5";
-  switch (kind) {
-    case "changes":
-      return <FileDiffIcon className={className} />;
-    case "files":
-      return <Folder className={className} />;
-    case "terminal":
-      return <SquareTerminal className={className} />;
-    case "browser":
-      return <Globe className={className} />;
-    case "subagents":
-      return <Bot className={className} />;
-    case "diff":
-      return <FileDiffIcon className={className} />;
-    case "file":
-      return <FileCode2 className={className} />;
-  }
-}

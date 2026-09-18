@@ -36,6 +36,7 @@ import {
 } from "@/lib/server-api";
 import { keyed } from "../list-keys";
 import { BrowserLiveView } from "./panel-browser-live";
+import { PanelEmptyState } from "./panel-view-icon";
 
 /**
  * 右栏浏览器（R3-1 / R3-4 的可用形态）。工具栏按参考图的浏览器面板排：
@@ -766,7 +767,11 @@ export function BrowserPane({
           </div>
         </div>
       ) : (
-        <p className="text-xs text-muted-foreground">还没有打开页面</p>
+        <PanelEmptyState
+          kind="browser"
+          title="还没有打开页面"
+          hint="在上面的地址栏输入网址回车，或在对话里点链接直接开到这里。"
+        />
       )}
     </div>
   );

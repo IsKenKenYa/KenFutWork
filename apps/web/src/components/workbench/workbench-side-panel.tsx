@@ -10,6 +10,7 @@ import { FilesPane } from "@/components/workbench/panel-files-view";
 import { DiffPane, FilePane } from "@/components/workbench/panel-reading-view";
 import { PanelTabStrip } from "@/components/workbench/panel-tab-strip";
 import { TerminalPane } from "@/components/workbench/panel-terminal-view";
+import { PanelEmptyState } from "@/components/workbench/panel-view-icon";
 import { SubagentDirectoryView } from "@/components/workbench/subagent-directory-view";
 import type { WebSocketHandle } from "@/hooks/use-websocket";
 import {
@@ -406,9 +407,11 @@ function PaneContent({
       return subagents.length > 0 ? (
         <SubagentDirectoryView entries={subagents} running={running} />
       ) : (
-        <p className="text-xs text-muted-foreground">
-          这个会话还没有派过子智能体。
-        </p>
+        <PanelEmptyState
+          kind="subagents"
+          title="这个会话还没有派过子智能体"
+          hint="让 agent 用子智能体分工后，这里会按目录列出来。"
+        />
       );
   }
 }

@@ -8,6 +8,8 @@ import {
   type GitChanges,
 } from "@/lib/code-git-api";
 
+import { PanelEmptyState } from "./panel-view-icon";
+
 /**
  * 变更列表（参考图：N 个文件已更改 +a −d，逐行 图标/名称/路径/统计/审查/打开/撤销）。
  *
@@ -101,7 +103,13 @@ export function ChangesPane({
   };
 
   if (!canvasId) {
-    return <p className="text-xs text-muted-foreground">未绑定工作目录</p>;
+    return (
+      <PanelEmptyState
+        kind="changes"
+        title="未绑定工作目录"
+        hint="变更按工作目录统计——先绑定目录再看改动。"
+      />
+    );
   }
 
   const totals = (changes?.files ?? []).reduce(

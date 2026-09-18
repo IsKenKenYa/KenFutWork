@@ -5,6 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 import { type CodeFileListing, fetchCodeFiles } from "@/lib/code-git-api";
 import { type CodeIndexSearchHit, searchCodeIndex } from "@/lib/server-api";
 
+import { PanelEmptyState } from "./panel-view-icon";
+
 /**
  * 文件目录（R3-1「文件目录」标签）：**只列一层**，子目录点进去、面包屑回退。
  *
@@ -76,7 +78,13 @@ export function FilesPane({
   }, [accessToken, canvasId, dir]);
 
   if (!canvasId) {
-    return <p className="text-xs text-muted-foreground">未绑定工作目录</p>;
+    return (
+      <PanelEmptyState
+        kind="files"
+        title="未绑定工作目录"
+        hint="在「工作目录」里选一个文件夹，这个项目就有落地目录了。"
+      />
+    );
   }
 
   const segments = dir ? dir.split("/") : [];
