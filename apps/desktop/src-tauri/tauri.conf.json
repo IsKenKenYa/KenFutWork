@@ -45,6 +45,8 @@
         "languages": ["SimpChinese", "English"],
         "displayLanguageSelector": false,
         "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "installerHooks": "installer-hooks.nsh",
         "startMenuFolder": "KenFutWork"
       }
     }

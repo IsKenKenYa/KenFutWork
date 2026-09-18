@@ -86,10 +86,23 @@ function main() {
     "@kenfutwork/shared",
     "build",
   ]);
-  run("构建静态 UI", "pnpm", ["--filter", "@kenfutwork/web", "build"]);
+  // 静态 UI 必须按**同源**构建（`NEXT_PUBLIC_SERVER_BASE_URL` 置空 → API base 用相对路径）：
+  // 随包 UI 永远由随包服务端自己托管，而仓库根 `.env.local` 里通常写着开发值
+  // （`http://localhost:3001`）——那会被 Next 的 DefinePlugin **烘进产物**，装到别人机器上
+  // 就成了「界面从自己的服务端加载、API 却打 3001」的半死状态（2026-09-19 真机实测：
+  // 侧栏「未登录」、项目列表空、Design 模式的画布永远起不来）。
+  run("构建静态 UI（同源）", "pnpm", ["--filter", "@kenfutwork/web", "build"], {
+    env: { ...process.env, NEXT_PUBLIC_SERVER_BASE_URL: "" },
+  });
   const webOut = join(ROOT, "apps", "web", "out");
   if (!existsSync(join(webOut, "index.html"))) {
     console.error("[package] 静态导出缺失（apps/web/out）");
+    process.exit(1);
+  }
+  if (!existsSync(join(webOut, "canvas.html"))) {
+    console.error(
+      "[package] 静态导出里没有 canvas.html：Design 模式的画布要它兜底",
+    );
     process.exit(1);
   }
 

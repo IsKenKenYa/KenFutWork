@@ -36,18 +36,34 @@ pnpm --filter @kenfutwork/desktop build                   # 2) 出安装包
 ```
 
 产物：`apps/desktop/src-tauri/target/release/bundle/nsis/KenFutWork_<版本>_x64-setup.exe`（约 72 MB，
-压缩自约 300 MB 资源）。安装包做的是原生那套：**可选安装目录**（向导页）、**开始菜单快捷方式**、
-**注册表卸载项 + 卸载器**、**中英双语**（默认跟系统，简体优先）。装完点快捷方式即用：壳会拉起随包的
-`app/KenFutWork-server.exe`（内嵌 Postgres + 免登录 + 进程内队列），并把窗口指向服务端托管的 UI。
+压缩自约 300 MB 资源）。安装包做的是原生那套向导：**选安装模式**（所有用户 / 仅我）→
+**选安装目录** → **开始菜单目录** → 安装 → 完成页（勾选创建桌面快捷方式、直接启动），
+另写**注册表卸载项 + 卸载器**、**环境变量**（见下）、**中英双语**（默认跟系统，简体优先）。
+装完点快捷方式即用：壳拉起随包的 `app/KenFutWork-server.exe`（内嵌 Postgres + 免登录 + 进程内队列），
+并把窗口指向**服务端托管的 UI**。
 
+- **环境变量与注册表**（`src-tauri/installer-hooks.nsh`，走 Tauri 的 `installerHooks` 缝）：
+  装完写 `KENFUTWORK_HOME=<安装目录>`、把安装目录挂到 PATH（命令行可直接敲 `kenfutwork-desktop`），
+  并广播 `WM_SETTINGCHANGE`；`HKCU|HKLM\Software\KenFutWork` 另记 `InstallDir`/`Version`。
+  **卸载时逐项撤掉**（PATH 只删自己那一段），再广播一次；按安装模式自动选 HKCU / HKLM 的 `Environment`。
+- **图标**：`node scripts/icons.mjs`（在 `apps/desktop` 下跑）从品牌 logo 唯一权威源
+  `docs/design/logo/最终定稿.svg` 生成 `src-tauri/icons/`（多尺寸 `icon.ico` 16→256 + `icon.png`）。
+  exe 资源图标、安装包图标、开始菜单与任务栏图标都吃这一份，换标只需重跑这条命令。
+- **窗口指向 `http://127.0.0.1:<端口>` 而不是加载壳自带的 UI**：本机免登录的可信来源只认回环
+  （`server/src/features/auth/local-trust.ts`），而且壳自带的 `tauri://localhost` 的资源协议
+  **解析不了 `/canvas` 这种无扩展名路由**（服务端托管那份走 `canvas.html` 回退，见
+  `server/src/http/static-web.ts`）——Design 模式的画布 iframe 正好是 `/canvas?id=…`，
+  在壳自带 UI 上**画布必然空白**（2026-09-17 用户报的「design 模式改坏了」就是这个）。
+- **端口不是死守 3001**：壳按 `3001…3010` 找「探活 200 **且首页是 HTML**」的服务端；撞上别人的服务
+  （例如你自己跑的 dev API：探活 200 但 `/` 是 404 JSON）就换下一个端口，都不行才在窗口里如实报错。
+  换端口能成立的前提是前端按**同源**解析 API base（`apps/web/src/lib/env.ts`）。
 - **静默装/卸（CI 或脚本用）**：`setup.exe /S /currentuser`；卸载
   `"%LOCALAPPDATA%\Programs\KenFutWork\uninstall.exe" /S`
 - **`tauri build` 需要 PATH 里有 `cargo`**：rustup 装在 `~/.cargo/bin`，Git Bash 里先
   `export PATH="$HOME/.cargo/bin:$PATH"`，否则报 `failed to run 'cargo metadata' … program not found`
-- **为什么窗口指向 `http://127.0.0.1:3001` 而不是加载壳自带的 UI**：本机免登录的可信来源只认回环
-  （`server/src/features/auth/local-trust.ts`），壳自带的 `tauri://localhost` 不是回环会被 401/403
-- **已知瑕疵**：`src-tauri/src/bin/loomic-test-fake-server.rs`（集成测试夹具）会被一起打进安装目录
-  （Tauri 会打包同一 crate 的所有 bin 目标）；无害但属噪音，待清理。
+- **安装目录里不该有测试夹具**：`src/bin/loomic-test-fake-server.rs` 是生命周期测试的子进程替身，
+  挂在 `test-fixture` feature 下（`pnpm --filter @kenfutwork/desktop test` 自动带上），
+  默认构建不编，于是不会被打进安装包。
 
 ## 形态与职责
 
