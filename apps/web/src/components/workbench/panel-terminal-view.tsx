@@ -270,7 +270,13 @@ export function TerminalPane({
         if (Date.now() - tab.startedAt < STARTING_TIMEOUT_MS) continue;
         patchTab(tab.key, () => ({
           status: "exited",
-          exitReason: "会话启动失败，点右边的「重开」再试。",
+          /**
+           * 这里只能报「服务端没在 10 秒内回应」——**不要说成「终端起不来」**：最常见的原因
+           * 其实是服务端正在重启（开发形态是 watcher，改服务端文件就会重启并杀掉在跑的会话），
+           * 真机就是这么被问到的。写清可能的原因，用户才知道该等一等还是该查日志。
+           */
+          exitReason:
+            "服务端没有回应（可能正在重启）——点右边的「重开」再试；若一直这样，检查服务端日志。",
         }));
       }
     }, STARTING_TIMEOUT_MS);
