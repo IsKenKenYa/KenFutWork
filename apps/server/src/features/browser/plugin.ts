@@ -90,7 +90,7 @@ export function createBrowserPlugin(): PluginDefinition {
       tools.register({
         name: "browser_open",
         description:
-          "打开一个 http/https 网页并读取它的静态内容（标题、正文文本、链接/按钮/输入等元素）。适合读文档、抓页面结构；脚本渲染出来的内容与登录态页面读不到（那两种用 browser_navigate 走 CDP）。",
+          "打开一个 http/https 网页并读取它的静态内容（标题、正文文本、链接/按钮/输入等元素）。适合读文档、抓页面结构；**没有配 web_search 时，用它打开搜索引擎结果页（如 https://www.bing.com/search?q=关键词）就是「搜索+抓取」那条路**。脚本渲染出来的内容与登录态页面读不到（那两种用 browser_navigate 走 CDP）。",
         scope: "shared",
         parameters: {
           type: "object",
