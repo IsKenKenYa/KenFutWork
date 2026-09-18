@@ -127,19 +127,22 @@ fn browser_embed_visible(
   Ok(())
 }
 
-/// **打开调试工具**——WebView2 自带的完整 DevTools（独立窗口，浮动、可移动）。
+/// **打开调试工具**——往嵌入的页面里注入调试控制台（Eruda + 悬浮窗改造）。
 ///
-/// 为什么桌面这边用自带 DevTools 而不是受控浏览器那套：桌面面板里的页面就在**我们自己的
-/// WebView2** 里，它的 DevTools 是同一个内核的真身（Elements / Network / Sources 全都有），
-/// 也是独立窗口、可以拖到面板外面——正是用户要的「完整开发者工具，可以浮动」。
+/// 脚本由前端传来（服务端 `/api/browser/debug-console.js`，与 Web 形态同一份）：
+/// 桌面面板里的页面就在我们自己的 WebView2 里，注入进去就**浮在页面上**、可拖可关。
 #[tauri::command]
-fn browser_embed_devtools(state: tauri::State<'_, EmbedState>) -> Result<(), String> {
+fn browser_embed_console(
+  state: tauri::State<'_, EmbedState>,
+  script: String,
+) -> Result<(), String> {
   let guard = state.0.lock().map_err(|_| "嵌入状态锁失败".to_string())?;
   let webview = guard
     .as_ref()
     .ok_or_else(|| "还没有嵌入页面：先在右栏浏览器打开一个网址。".to_string())?;
-  webview.open_devtools();
-  Ok(())
+  webview
+    .eval(script)
+    .map_err(|error| format!("注入调试控制台失败：{error}"))
 }
 
 /// 关掉嵌入实例（离开面板/换会话时调，别让页面在后台一直跑）。
@@ -164,7 +167,7 @@ pub fn register_embed_commands(
       browser_embed_open,
       browser_embed_bounds,
       browser_embed_visible,
-      browser_embed_devtools,
+      browser_embed_console,
       browser_embed_close
     ])
 }

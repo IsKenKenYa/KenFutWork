@@ -6,7 +6,7 @@ import {
   boundsOf,
   embedBounds,
   embedClose,
-  embedDevtools,
+  embedDebugConsole,
   embedOpen,
   embedVisible,
   isDesktopShell,
@@ -40,7 +40,7 @@ describe("desktop-embed（桌面壳桥）", () => {
     await expect(
       embedOpen("https://example.com", { x: 0, y: 0, width: 10, height: 10 }),
     ).resolves.toBeUndefined();
-    await expect(embedDevtools()).resolves.toBeUndefined();
+    await expect(embedDebugConsole("/* eruda */")).resolves.toBeUndefined();
     await expect(embedClose()).resolves.toBeUndefined();
   });
 
@@ -52,14 +52,14 @@ describe("desktop-embed（桌面壳桥）", () => {
     await embedOpen("https://example.com", bounds);
     await embedBounds(bounds);
     await embedVisible(false);
-    await embedDevtools();
+    await embedDebugConsole("/* eruda */");
     await embedClose();
 
     expect(invoke.mock.calls.map((call) => call[0])).toEqual([
       "browser_embed_open",
       "browser_embed_bounds",
       "browser_embed_visible",
-      "browser_embed_devtools",
+      "browser_embed_console",
       "browser_embed_close",
     ]);
     expect(invoke.mock.calls[0]?.[1]).toEqual({
@@ -68,8 +68,8 @@ describe("desktop-embed（桌面壳桥）", () => {
     });
     expect(invoke.mock.calls[1]?.[1]).toEqual({ bounds });
     expect(invoke.mock.calls[2]?.[1]).toEqual({ visible: false });
-    // 桌面形态开的是 WebView2 自带的完整 DevTools（独立窗口），不带参数
-    expect(invoke.mock.calls[3]?.[1]).toBeUndefined();
+    // 桌面形态把同一份源码 eval 进子 webview（Web 形态是 CDP 注入）
+    expect(invoke.mock.calls[3]?.[1]).toEqual({ script: "/* eruda */" });
   });
 
   it("边界取自占位块的 getBoundingClientRect（四舍五入成逻辑像素）", () => {

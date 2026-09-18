@@ -102,17 +102,15 @@ const {
   connectCdpMock,
   openCdpViewMock,
   sendCdpInputMock,
+  injectDebugConsoleMock,
   openCdpDevtoolsMock,
-  fetchConsoleMessagesMock,
-  evaluateInPageMock,
 } = vi.hoisted(() => ({
   fetchCdpStatusMock: vi.fn(),
   connectCdpMock: vi.fn(),
   openCdpViewMock: vi.fn(),
   sendCdpInputMock: vi.fn(),
+  injectDebugConsoleMock: vi.fn(),
   openCdpDevtoolsMock: vi.fn(),
-  fetchConsoleMessagesMock: vi.fn(),
-  evaluateInPageMock: vi.fn(),
 }));
 
 vi.mock("../src/lib/server-api", async (importOriginal) => ({
@@ -121,10 +119,8 @@ vi.mock("../src/lib/server-api", async (importOriginal) => ({
   connectCdp: connectCdpMock,
   openCdpView: openCdpViewMock,
   sendCdpInput: sendCdpInputMock,
+  injectDebugConsole: injectDebugConsoleMock,
   openCdpDevtools: openCdpDevtoolsMock,
-  fetchConsoleMessages: fetchConsoleMessagesMock,
-  evaluateInPage: evaluateInPageMock,
-  clearConsoleMessages: vi.fn().mockResolvedValue(undefined),
 }));
 
 /**
@@ -586,10 +582,7 @@ describe("右栏浏览器（点链接自动打开）", () => {
     "clientHeight",
   );
 
-  const onOpenDevtools = vi.fn();
-
   beforeEach(() => {
-    onOpenDevtools.mockClear();
     Object.defineProperty(Element.prototype, "clientWidth", {
       configurable: true,
       get: () => 800,
@@ -612,15 +605,17 @@ describe("右栏浏览器（点链接自动打开）", () => {
       viewport: { width: 800, height: 600, scale: 1 },
     });
     sendCdpInputMock.mockResolvedValue(undefined);
-    openCdpDevtoolsMock.mockResolvedValue({ windowId: 1 });
-    fetchConsoleMessagesMock.mockResolvedValue({ messages: [], nextSeq: 0 });
-    evaluateInPageMock.mockResolvedValue({
-      seq: 1,
-      level: "log",
-      text: "Example Domain",
-      at: "2026-09-18T00:00:00.000Z",
-      source: "input",
+    connectCdpMock.mockResolvedValue({
+      status: "connected",
+      browser: "Chrome",
+      port: 9333,
+      tabs: 1,
+      currentUrl: "",
+      owned: true,
+      headless: true,
     });
+    openCdpDevtoolsMock.mockResolvedValue({ windowId: 1 });
+    injectDebugConsoleMock.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -654,7 +649,6 @@ describe("右栏浏览器（点链接自动打开）", () => {
         subagents={[]}
         running={false}
         ws={fakeWs()}
-        onOpenDevtools={onOpenDevtools}
       />,
     );
   }
@@ -804,11 +798,25 @@ describe("右栏浏览器（点链接自动打开）", () => {
     ).toBeInTheDocument();
 
     /**
-     * 「打开调试工具」= 请工作台开**内嵌悬浮开发者工具**（浮得出右栏，见 devtools-window）。
-     * 这条锁接线：面板自己不画那个窗口，只负责「确保受控浏览器在」+ 回调工作台。
+     * 「打开调试工具」= 往面板显示的这一页**注入第三方调试控制台**（Eruda，摆成悬浮窗）。
+     * 用户口径：「之前用的不是参考别人的控制台吗」——所以锁的是「注入那一页」，
+     * 而不是我们另画的窗口。
      */
-    await userEvent.click(screen.getByRole("option", { name: "打开调试工具" }));
-    await waitFor(() => expect(onOpenDevtools).toHaveBeenCalledTimes(1));
+    // Base UI 的选项按「高亮项」提交（jsdom 里不 hover 就会落到最后一项）：先悬浮再点
+    const devtoolsOption = screen.getByRole("option", { name: "打开调试工具" });
+    await userEvent.hover(devtoolsOption);
+    await userEvent.click(devtoolsOption);
+    await waitFor(() =>
+      expect(injectDebugConsoleMock).toHaveBeenCalledWith(
+        "token",
+        "http://localhost:8000",
+      ),
+    );
+    expect(
+      await screen.findByText(
+        "调试控制台已打开（面板页面里的悬浮窗，可拖可关）",
+      ),
+    ).toBeInTheDocument();
 
     // 元素拾取（R3-4）：开着页面 + 有 token 时可用；点它会去服务端抓静态快照
     const pickButton = screen.getByRole("button", {

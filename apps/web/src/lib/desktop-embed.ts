@@ -75,15 +75,13 @@ export async function embedVisible(visible: boolean): Promise<void> {
 }
 
 /**
- * 打开嵌入页面的**完整开发者工具**（WebView2 自带；独立窗口，浮动、可移动）。
- *
- * Web 形态够不到这个（浏览器不允许给 iframe 挂调试器），那边走受控浏览器那条路
- * （见 `openCdpDevtools`）。
+ * 往嵌入页面里**注入调试控制台**（Eruda + 悬浮窗改造）：与 Web 形态同一份源码
+ * （`/api/browser/debug-console.js`），把它 `eval` 进面板里的子 WebView2。
  */
-export async function embedDevtools(): Promise<void> {
+export async function embedDebugConsole(script: string): Promise<void> {
   const invoke = tauriInvoke();
   if (!invoke) return;
-  await invoke("browser_embed_devtools");
+  await invoke("browser_embed_console", { script });
 }
 
 /** 关掉嵌入实例（离开面板/换会话时调，别让页面在后台一直跑）。 */

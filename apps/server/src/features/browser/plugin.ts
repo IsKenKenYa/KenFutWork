@@ -630,90 +630,56 @@ export function registerBrowserRoutes(
   });
 
   /**
-   * 悬浮控制台的**网络数据**（与 `messages` 同一口径：`since` 增量取）。
+   * 「打开调试工具」：把**页面内调试控制台**（Eruda，现成第三方）注入到面板显示的这一页，
+   * 并摆成悬浮窗（可拖动 / 可关闭）。用户口径：「之前用的不是参考别人的控制台吗」。
    */
-  app.get("/api/browser/cdp/requests", async (request, reply) => {
+  app.post("/api/browser/cdp/console", async (request, reply) => {
     const user = await authenticate(request, reply);
     if (!user) return;
-    const sinceRaw = (request.query as { since?: string } | undefined)?.since;
-    const since = Number(sinceRaw);
-    try {
-      const result = await options.browser.cdp.requests(
-        Number.isFinite(since) && since > 0 ? Math.floor(since) : 0,
-      );
-      return reply.code(200).send(result);
-    } catch (error) {
-      return reply.code(502).send({
-        error: {
-          code: "cdp_requests_failed",
-          message:
-            error instanceof Error ? error.message : "读取网络请求失败。",
-        },
-      });
-    }
-  });
-
-  /**
-   * 悬浮控制台的**消息拉取**（面板里的悬浮窗轮询它；`since` = 已拿到的最大 seq）。
-   *
-   * 为什么是轮询而不是长连接：本地回环上一次几十字节的请求成本可忽略，而长连接要往
-   * WS 协议里加一套浏览器消息——为这点流量不划算。
-   */
-  app.get("/api/browser/cdp/messages", async (request, reply) => {
-    const user = await authenticate(request, reply);
-    if (!user) return;
-    const sinceRaw = (request.query as { since?: string } | undefined)?.since;
-    const since = Number(sinceRaw);
-    try {
-      const result = await options.browser.cdp.messages(
-        Number.isFinite(since) && since > 0 ? Math.floor(since) : 0,
-      );
-      return reply.code(200).send(result);
-    } catch (error) {
-      return reply.code(502).send({
-        error: {
-          code: "cdp_messages_failed",
-          message:
-            error instanceof Error ? error.message : "读取控制台消息失败。",
-        },
-      });
-    }
-  });
-
-  /** 悬浮控制台里敲的表达式：在页面里执行并回一行结果。 */
-  app.post("/api/browser/cdp/eval", async (request, reply) => {
-    const user = await authenticate(request, reply);
-    if (!user) return;
-    const expression = (request.body as { expression?: unknown } | undefined)
-      ?.expression;
-    if (typeof expression !== "string" || !expression.trim()) {
+    const url = (request.body as { url?: unknown } | undefined)?.url;
+    if (typeof url !== "string" || !url.trim()) {
       return reply.code(400).send({
-        error: { code: "invalid_request", message: "缺少表达式。" },
+        error: { code: "invalid_request", message: "缺少 url。" },
       });
     }
     try {
-      const message = await options.browser.cdp.evaluate(expression);
-      return reply.code(200).send({ message });
+      const result = await options.browser.cdp.injectDebugConsole(url);
+      return reply.code(200).send(result);
     } catch (error) {
       return reply.code(502).send({
         error: {
-          code: "cdp_eval_failed",
-          message: error instanceof Error ? error.message : "执行表达式失败。",
+          code: "cdp_console_failed",
+          message:
+            error instanceof Error ? error.message : "注入调试控制台失败。",
         },
       });
     }
   });
 
-  /** 清空控制台缓存（界面上的「清空」按钮）。 */
-  app.post("/api/browser/cdp/messages/clear", async (request, reply) => {
+  /** 调试控制台脚本源码：桌面形态取它去 `eval` 进面板里的子 WebView2（同一份）。 */
+  app.get("/api/browser/debug-console.js", async (request, reply) => {
     const user = await authenticate(request, reply);
     if (!user) return;
-    await options.browser.cdp.clearMessages();
-    return reply.code(200).send({ ok: true });
+    try {
+      const script = await options.browser.cdp.debugConsoleScript();
+      return reply
+        .code(200)
+        .type("application/javascript; charset=utf-8")
+        .header("cache-control", "no-store")
+        .send(script);
+    } catch (error) {
+      return reply.code(502).send({
+        error: {
+          code: "debug_console_unavailable",
+          message:
+            error instanceof Error ? error.message : "拿不到调试控制台脚本。",
+        },
+      });
+    }
   });
 
   /**
-   * 「打开调试工具」：在受控浏览器里开**完整开发者工具**，并取消停靠成独立窗口。
+   * 「完整开发者工具」：在受控浏览器里开真 DevTools 并取消停靠成独立窗口，并取消停靠成独立窗口。
    *
    * 为什么是「激活窗口 + F12」这条路（见 devtools-keys 的头注）：CDP 开出来的 devtools://
    * 窗口没有前端桥，连不上页面；只有浏览器自己开的 DevTools 才是真的。

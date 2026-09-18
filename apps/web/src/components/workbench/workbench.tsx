@@ -52,7 +52,6 @@ import {
   tierIcon,
 } from "@/components/workbench/composer-compact-select";
 import { ContextUsageButton } from "@/components/workbench/context-usage-button";
-import { DevtoolsWindow } from "@/components/workbench/devtools-window";
 import { ElapsedEntry } from "@/components/workbench/elapsed-entry";
 import { GitBranchSelect } from "@/components/workbench/git-branch-select";
 import { McpModal } from "@/components/workbench/mcp-modal";
@@ -599,11 +598,6 @@ export function Workbench() {
   );
 
   const [panelOpen, setPanelOpen] = useState(false);
-  /**
-   * 开发者工具（内嵌悬浮窗：可拖动、可关闭、能浮在任意位置，不局限于右栏）。
-   * 挂在工作台这一层才浮得出去；右栏的「打开调试工具」是它的入口。
-   */
-  const [devtoolsOpen, setDevtoolsOpen] = useState(false);
 
   /**
    * 转录里点链接 → 自动打开右栏「浏览器」标签（用户口径：点对话里的 URL 就在右边打开）。
@@ -2754,7 +2748,6 @@ export function Workbench() {
             <WorkbenchSidePanel
               open={panelOpen}
               onRequestOpen={() => setPanelOpen(true)}
-              onOpenDevtools={() => setDevtoolsOpen(true)}
               accessToken={session?.access_token ?? null}
               canvasId={conversationProject?.primaryCanvas.id ?? null}
               subagents={activeTask.subagents ?? []}
@@ -2777,12 +2770,6 @@ ${formatElementReference(picked)}`
                 composerRef.current?.focus();
               }}
             />
-            {devtoolsOpen ? (
-              <DevtoolsWindow
-                accessToken={session?.access_token ?? null}
-                onClose={() => setDevtoolsOpen(false)}
-              />
-            ) : null}
           </div>
         ) : (
           <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-6">

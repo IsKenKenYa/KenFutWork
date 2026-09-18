@@ -35,8 +35,15 @@ import {
   formatExceptionThrown,
   formatLogEntry,
 } from "./console-log.js";
+import {
+  createDebugConsoleSource,
+  DEBUG_CONSOLE_PROBE,
+  type DebugConsoleSource,
+  parseDebugConsoleProbe,
+} from "./debug-console.js";
 import { sendDevToolsKey } from "./devtools-keys.js";
 import { createNetworkBuffer, type NetworkRequest } from "./network-log.js";
+import { samePageUrl } from "./view-stream.js";
 
 /**
  * CDP 浏览器会话（R5-4「连接到 Chrome」/「自动截图」的执行面）。
@@ -83,6 +90,15 @@ export interface CdpBrowserSession {
     executable?: string;
   }): Promise<CdpStatus>;
   disconnect(): Promise<CdpStatus>;
+  /**
+   * **注入页面内调试控制台**（Eruda，现成第三方）到受控页面，并把它摆成**悬浮窗**
+   * （可拖动 / 可关闭；形态改造见 debug-console 的 FLOAT_SCRIPT）。
+   *
+   * 用户口径：「之前用的不是参考别人的控制台吗」——所以这里就是那个 Eruda，不自己重写。
+   */
+  injectDebugConsole(url: string): Promise<{ url: string }>;
+  /** 调试控制台脚本源码（桌面形态 eval 进子 webview 用同一份）。 */
+  debugConsoleScript(): Promise<string>;
   /**
    * 在**受控浏览器**里打开完整开发者工具，并取消停靠成**独立窗口**（浮动、可移动）。
    *
@@ -218,6 +234,8 @@ export function createCdpBrowserSession(deps: {
   now?: () => Date;
   /** 测试注入：在受控窗口里按 F12（默认走平台脚本）。 */
   sendKeys?: typeof sendDevToolsKey;
+  /** 测试注入：页面内调试控制台（Eruda）脚本来源（默认从 CDN 取一次并缓存）。 */
+  debugConsole?: DebugConsoleSource;
 }): CdpBrowserSession {
   const dataDir = deps.dataDir ?? join(tmpdir(), "kenfutwork-chrome-profile");
 
@@ -273,6 +291,7 @@ export function createCdpBrowserSession(deps: {
   /** 时间戳来源（测试注入，默认 Date）。 */
   const now = deps.now ?? (() => new Date());
   const sendKeys = deps.sendKeys ?? sendDevToolsKey;
+  const debugConsole = deps.debugConsole ?? createDebugConsoleSource();
 
   /**
    * 挂上页面级事件：**导航跟踪** + **控制台消息**。
@@ -524,6 +543,68 @@ export function createCdpBrowserSession(deps: {
       )) as never;
       // 自己敲的也进同一条时间线（下次增量拉取时顺序一致）
       return consoleLog.push(formatEvalResult(evaluated, now().toISOString()));
+    },
+    async injectDebugConsole(url: string) {
+      const { client: cdp } = requireConnected();
+      /**
+       * 已经在那一页就别再导航一次：面板里显示的就是这一页，重来一次 `Page.navigate`
+       * 会整页重载——页面里已经填的东西、控制台里敲过的东西全没了。
+       */
+      const current = state.status === "connected" ? state.currentUrl : "";
+      if (!samePageUrl(current, url)) {
+        await session.navigate(url);
+      }
+      await closeIdleBlanks(cdp);
+      const sessionId = requireConnected().sessionId;
+      const script = await debugConsole.script();
+      // 整段源码直投（含 UMD 分支修正与悬浮窗改造），见 debug-console 头注
+      const evaluated = (await cdp.send(
+        "Runtime.evaluate",
+        { expression: script, awaitPromise: false },
+        sessionId,
+      )) as {
+        exceptionDetails?: {
+          text?: string;
+          exception?: { description?: string };
+        };
+      };
+      if (evaluated.exceptionDetails) {
+        throw new CdpError(
+          "command_failed",
+          `注入调试控制台时页面报错：${
+            evaluated.exceptionDetails.exception?.description ??
+            evaluated.exceptionDetails.text ??
+            "未知错误"
+          }`,
+        );
+      }
+      // 自检：脚本真的生效了吗（否则界面说成功、用户看着「点了没反应」）
+      const probe = (await cdp.send(
+        "Runtime.evaluate",
+        { expression: DEBUG_CONSOLE_PROBE, returnByValue: true },
+        sessionId,
+      )) as { result?: { value?: unknown } };
+      const probed = parseDebugConsoleProbe(probe.result?.value);
+      if (!probed.initialized) {
+        console.warn(
+          "[browser] 调试控制台自检没通过：",
+          JSON.stringify(probed).slice(0, 400),
+        );
+        throw new CdpError(
+          "command_failed",
+          `调试控制台没能在这个页面里生效${
+            probed.error
+              ? `：${probed.error}`
+              : probed.loaded
+                ? "（脚本注进去了但启动失败）。"
+                : "（页面里拿不到 eruda，可能被这一页拦住了）。"
+          }`,
+        );
+      }
+      return { url };
+    },
+    async debugConsoleScript() {
+      return debugConsole.script();
     },
     async openDevToolsWindow(options = {}) {
       const { client: cdp, sessionId: id } = requireConnected();

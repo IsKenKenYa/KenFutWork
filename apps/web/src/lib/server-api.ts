@@ -900,7 +900,55 @@ export async function fetchCdpStatus(
 }
 
 /**
- * 「打开调试工具」：在受控浏览器里开**完整开发者工具**，并取消停靠成独立窗口。
+ * 「打开调试工具」：把**页面内调试控制台**（Eruda，现成第三方）注入面板显示的这一页，
+ * 并摆成悬浮窗（可拖动 / 可关闭）。
+ */
+export async function injectDebugConsole(
+  accessToken: string,
+  url: string,
+): Promise<void> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/browser/cdp/console`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify({ url }),
+    },
+  );
+  if (response.ok) return;
+  const payload = (await response.json().catch(() => null)) as {
+    error?: { message?: string };
+  } | null;
+  throw new ApiApplicationError(
+    "cdp_console_failed",
+    payload?.error?.message ??
+      `注入调试控制台失败（服务端返回 ${response.status}）。`,
+  );
+}
+
+/** 调试控制台脚本源码（桌面形态取同一份，eval 进面板里的子 WebView2）。 */
+export async function fetchDebugConsoleScript(
+  accessToken: string,
+): Promise<string> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/browser/debug-console.js`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as {
+      error?: { message?: string };
+    } | null;
+    throw new ApiApplicationError(
+      "debug_console_unavailable",
+      payload?.error?.message ??
+        `拿不到调试控制台脚本（服务端返回 ${response.status}）。`,
+    );
+  }
+  return await response.text();
+}
+
+/**
+ * 「完整开发者工具」：在受控浏览器里开真 DevTools 并取消停靠成独立窗口。
  *
  * 服务端「像人一样」唤起它（激活受控窗口 + F12 → DevTools 前端的 setIsDocked(false)）——
  * 真 DevTools 只有浏览器自己开得出来，CDP 开出来的 devtools:// 窗口连不上页面。
@@ -929,90 +977,6 @@ export async function openCdpDevtools(
     );
   }
   return { windowId: payload.windowId };
-}
-
-export interface ConsoleMessageView {
-  seq: number;
-  level: "log" | "info" | "warn" | "error";
-  text: string;
-  at: string;
-  source: "console" | "exception" | "log" | "input";
-}
-
-/** 网络请求（形状与服务端 network-log 的 NetworkRequest 一致）。 */
-export interface BrowserRequestView {
-  seq: number;
-  method: string;
-  url: string;
-  type?: string;
-  status?: number;
-  failed?: string;
-  at: string;
-}
-
-/** 悬浮控制台的增量网络请求。 */
-export async function fetchBrowserRequests(
-  accessToken: string,
-  since: number,
-): Promise<{ requests: BrowserRequestView[]; nextSeq: number }> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/browser/cdp/requests?since=${Math.max(0, Math.floor(since))}`,
-    { headers: authHeaders(accessToken) },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as {
-    requests: BrowserRequestView[];
-    nextSeq: number;
-  };
-}
-
-/** 悬浮控制台的增量消息（`since` = 已经拿到的最大 seq）。 */
-export async function fetchConsoleMessages(
-  accessToken: string,
-  since: number,
-): Promise<{ messages: ConsoleMessageView[]; nextSeq: number }> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/browser/cdp/messages?since=${Math.max(0, Math.floor(since))}`,
-    { headers: authHeaders(accessToken) },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as {
-    messages: ConsoleMessageView[];
-    nextSeq: number;
-  };
-}
-
-/** 在页面里执行一段表达式（悬浮控制台的输入行）。 */
-export async function evaluateInPage(
-  accessToken: string,
-  expression: string,
-): Promise<ConsoleMessageView> {
-  const response = await fetch(`${getServerBaseUrl()}/api/browser/cdp/eval`, {
-    method: "POST",
-    headers: authJsonHeaders(accessToken),
-    body: JSON.stringify({ expression }),
-  });
-  const payload = (await response.json().catch(() => null)) as {
-    message?: ConsoleMessageView;
-    error?: { message?: string };
-  } | null;
-  if (!response.ok || !payload?.message) {
-    throw new ApiApplicationError(
-      "cdp_eval_failed",
-      payload?.error?.message ?? `执行失败（服务端返回 ${response.status}）。`,
-    );
-  }
-  return payload.message;
-}
-
-/** 清空服务端那边的控制台缓存。 */
-export async function clearConsoleMessages(accessToken: string): Promise<void> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/browser/cdp/messages/clear`,
-    { method: "POST", headers: authJsonHeaders(accessToken), body: "{}" },
-  );
-  if (response.ok) return;
-  return handleErrorResponse(response);
 }
 
 export async function connectCdp(

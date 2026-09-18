@@ -8,6 +8,7 @@ import {
   MousePointerSquareDashed,
   PictureInPicture2,
   RotateCw,
+  SquareArrowOutUpRight,
   SquareTerminal,
   X,
 } from "lucide-react";
@@ -28,7 +29,12 @@ import {
   isDesktopShell,
 } from "@/lib/desktop-embed";
 import { getServerBaseUrl } from "@/lib/env";
-import { connectCdp, fetchCdpStatus } from "@/lib/server-api";
+import {
+  connectCdp,
+  fetchCdpStatus,
+  injectDebugConsole,
+  openCdpDevtools,
+} from "@/lib/server-api";
 import { keyed } from "../list-keys";
 import { BrowserLiveView } from "./panel-browser-live";
 
@@ -105,7 +111,6 @@ export function BrowserPane({
   canForward,
   accessToken = null,
   onPickElement,
-  onOpenDevtools,
   onDraftChange,
   onNavigate,
   onBack,
@@ -121,8 +126,6 @@ export function BrowserPane({
   accessToken?: string | null;
   /** 拾取到元素后交给对话（工作台把它写进输入框）。 */
   onPickElement?: ((picked: PickedElement) => void) | undefined;
-  /** 「打开调试工具」：开发者工具是工作台级的悬浮窗（浮得出右栏）。 */
-  onOpenDevtools?: (() => void) | undefined;
   onDraftChange: (value: string) => void;
   onNavigate: (url: string) => void;
   onBack: () => void;
@@ -416,13 +419,14 @@ export function BrowserPane({
             }
             if (next === "devtools" && accessToken) {
               /**
-               * 「打开调试工具」= 工作台里的**内嵌悬浮开发者工具**（可拖动 / 可关闭 /
-               * 不局限于右栏，见 devtools-window）。
+               * 「打开调试工具」= 把**页面内调试控制台**（Eruda，现成第三方）注入到面板显示的这一页，
+               * 并摆成**悬浮窗**（可拖动 / 可关闭）。用户口径：「之前用的不是参考别人的控制台吗」。
                *
                * 受控浏览器没连上时先连（无头——面板显示的就是它的画面，不该再弹窗口），
-               * 因为控制台与网络数据都是从那条 CDP 连接上来的。
+               * 注入还得先把这一页导航过去。
                */
               const token = accessToken;
+              const target = url || normalized || "about:blank";
               const run = async () => {
                 try {
                   if (!cdpConnected) {
@@ -436,10 +440,8 @@ export function BrowserPane({
                     }
                     setCdpConnected(true);
                   }
-                  if (!onOpenDevtools) {
-                    throw new Error("开发者工具要挂在工作台上才能打开。");
-                  }
-                  onOpenDevtools();
+                  await injectDebugConsole(token, target);
+                  toast("调试控制台已打开（面板页面里的悬浮窗，可拖可关）");
                 } catch (error: unknown) {
                   toast(
                     error instanceof Error
@@ -450,6 +452,37 @@ export function BrowserPane({
                 }
               };
               void run();
+            }
+            if (next === "full-devtools" && accessToken) {
+              /**
+               * 「完整开发者工具」：真 DevTools（Elements / 性能 / 应用）开在受控浏览器窗口里，
+               * 由服务端唤起并取消停靠成独立窗口——Eruda 那套面板给不了这些。
+               */
+              const token = accessToken;
+              void (async () => {
+                try {
+                  await openCdpDevtools(token, {
+                    left: 60,
+                    top: 60,
+                    width: Math.min(
+                      1280,
+                      Math.round(window.screen.availWidth * 0.7),
+                    ),
+                    height: Math.min(
+                      860,
+                      Math.round(window.screen.availHeight * 0.8),
+                    ),
+                  });
+                  toast("完整开发者工具已打开（独立窗口）");
+                } catch (error: unknown) {
+                  toast(
+                    error instanceof Error
+                      ? error.message
+                      : "打开完整开发者工具失败。",
+                    "error",
+                  );
+                }
+              })();
             }
           }}
           items={[
@@ -483,8 +516,8 @@ export function BrowserPane({
               className="rounded-none"
               title={
                 cdpConnected
-                  ? "打开调试工具"
-                  : "会先连接受控浏览器，再打开调试工具"
+                  ? "在面板页面里打开调试控制台（悬浮窗）"
+                  : "会先连接受控浏览器，再注入调试控制台"
               }
             >
               <span className="flex items-center gap-2">
@@ -492,6 +525,16 @@ export function BrowserPane({
                 打开调试工具
               </span>
             </SelectItem>
+            <SelectItem
+              value="full-devtools"
+              className="rounded-none"
+              title="真 DevTools（Elements / 性能 / 应用）开成独立窗口，需要先连接受控浏览器"
+            >
+              <span className="flex items-center gap-2">
+                <SquareArrowOutUpRight className="h-3.5 w-3.5 shrink-0" />
+                完整开发者工具
+              </span>
+            </SelectItem>{" "}
           </SelectContent>
         </Select>
       </form>
