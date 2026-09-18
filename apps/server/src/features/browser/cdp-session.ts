@@ -189,6 +189,32 @@ export function createCdpBrowserSession(deps: {
     return { client, sessionId };
   };
 
+  /**
+   * 关掉**空闲的空白页**（保留我们正在用的那块）。
+   *
+   * 为什么需要：连接时为了拿一块会话标签开过一个 `about:blank`，新 profile 自己也会带一个空白页——
+   * 导航之后它们就成了窗口里的「多余标签」（用户口径：不该出现「空白页 + 页面本身 + 调试工具」三连）。
+   * 只动 `about:blank`：那上面不可能有用户内容；用户自己开的页面一律不碰。
+   */
+  const closeIdleBlanks = async (target: CdpClient): Promise<void> => {
+    try {
+      const targets = await target.listTargets();
+      const current = sessionId
+        ? targets.find((entry) => entry.targetId === currentTargetId)
+        : undefined;
+      for (const entry of targets) {
+        if (entry.url !== "about:blank") continue;
+        if (current && entry.targetId === current.targetId) continue;
+        await target.closeTab(entry.targetId).catch(() => undefined);
+      }
+    } catch {
+      // 清理是尽力而为：失败不影响主流程
+    }
+  };
+
+  /** 我们正在用的那块页面 target（清理空白页时要放过它）。 */
+  let currentTargetId: string | null = null;
+
   const ensureTab = async (
     target: CdpClient,
     url?: string,
@@ -203,6 +229,7 @@ export function createCdpBrowserSession(deps: {
     const opened = await target.openTab(url ?? "about:blank");
     if (url) await waitForLoad(target, opened.sessionId);
     sessionId = opened.sessionId;
+    currentTargetId = opened.targetId;
     return sessionId;
   };
 
@@ -274,6 +301,7 @@ export function createCdpBrowserSession(deps: {
           version.webSocketDebuggerUrl,
         );
         sessionId = null;
+        currentTargetId = null;
         await ensureTab(client);
         const tabs = await client.listTargets();
         state = {
@@ -318,6 +346,7 @@ export function createCdpBrowserSession(deps: {
       if (url) {
         await session.navigate(url);
       }
+      await closeIdleBlanks(cdp);
       const targets = await cdp.listPageTargetsWithDebugUrl();
       /**
        * 挑哪一块页面：优先与**当前页面**同址的那块；否则第一块非空白的普通页。
@@ -420,6 +449,8 @@ export function createCdpBrowserSession(deps: {
     async navigate(url) {
       const { client: cdp } = requireConnected();
       const id = await ensureTab(cdp, url);
+      // 已经导航到目标页了：顺手把连接时留下的空白标签收掉（否则窗口里会多一个 about:blank）
+      await closeIdleBlanks(cdp);
       const dom = await readDom(cdp, id);
       // 视口尺寸用于截图元信息（拿不到就用默认）
       try {
