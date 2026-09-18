@@ -153,8 +153,11 @@ export function TerminalScreen({
       role="log"
       aria-label="终端输出"
       data-session={sessionId}
+      /* overflow-hidden 不能少：xterm 自己按 rows 定高，容器小时不许它把面板撑出滚动条 */
       className={
-        active ? "h-full min-h-0 w-full" : "hidden h-full min-h-0 w-full"
+        active
+          ? "h-full min-h-0 w-full overflow-hidden"
+          : "hidden h-full min-h-0 w-full overflow-hidden"
       }
     />
   );

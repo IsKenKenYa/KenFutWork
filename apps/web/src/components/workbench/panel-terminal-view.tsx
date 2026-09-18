@@ -30,6 +30,15 @@ import {
 
 type TabStatus = "idle" | "starting" | "running" | "exited";
 
+/**
+ * 「正在开…」的兜底时限：超过它还没有 ack 就**如实说会话没起来**并给重开入口。
+ *
+ * 真机踩过：服务端被一个未处理拒绝（node-pty 的 kill 路径）带走时，界面就停在这句
+ * 「正在开…」上不动——用户看到的是「卡住」，而且没有任何出口。宁可标成失败
+ * （可读原因 + 重开），也不要留一个永远转圈的假状态。
+ */
+const STARTING_TIMEOUT_MS = 10_000;
+
 interface TerminalTab {
   /** 标签自己的标识（稳定，切 shell / 重开都沿用），也是 React key。 */
   key: string;
@@ -43,6 +52,8 @@ interface TerminalTab {
   exitReason: string | null;
   /** 清屏信号：每次 +1 让这个标签的模拟器清缓冲（会话不动）。 */
   clearSignal: number;
+  /** 这一轮 start 发出去的时刻：超时兜底用（见 STARTING_TIMEOUT_MS）。 */
+  startedAt: number;
 }
 
 let tabSeq = 0;
@@ -68,6 +79,7 @@ function newTab(shell: TerminalShellId | null = null): TerminalTab {
     status: "starting",
     exitReason: null,
     clearSignal: 0,
+    startedAt: Date.now(),
   };
 }
 
@@ -142,6 +154,7 @@ export function TerminalPane({
                 resolved: null,
                 status: "starting",
                 exitReason: null,
+                startedAt: Date.now(),
                 // 换会话 = 换屏：清屏信号 +1 让新会话从干净屏幕开始
                 clearSignal: tab.clearSignal + 1,
               }
@@ -244,6 +257,25 @@ export function TerminalPane({
       }
     });
   }, [ws, patchTab]);
+
+  /**
+   * 「起不来」的兜底：start 发出去 10 秒还没有 ack（服务端没回应 / 被未处理拒绝带走），
+   * 就把这一档标成已结束并写明原因——不留一个永远「正在开…」的假状态。
+   */
+  useEffect(() => {
+    if (!tabs.some((tab) => tab.status === "starting")) return;
+    const timer = window.setTimeout(() => {
+      for (const tab of tabsRef.current) {
+        if (tab.status !== "starting") continue;
+        if (Date.now() - tab.startedAt < STARTING_TIMEOUT_MS) continue;
+        patchTab(tab.key, () => ({
+          status: "exited",
+          exitReason: "会话没能起来（服务端没有回应）——点右边的重开再试。",
+        }));
+      }
+    }, STARTING_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [tabs, patchTab]);
 
   // 断线：服务端会话已被收掉，重连后自动重开（不留一个不响应的界面）
   useEffect(() => {

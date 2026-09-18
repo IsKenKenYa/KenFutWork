@@ -242,6 +242,14 @@ export function startTerminalSession(
     cols: input.cols ?? TERMINAL_DEFAULT_COLS,
     rows: input.rows ?? TERMINAL_DEFAULT_ROWS,
     cwd: input.cwd,
+    /**
+     * **必须走 conpty.dll 这条路**（真机踩过）：node-pty 的 `kill()` 在「不用 DLL」的分支里
+     * 会等 `_getConsoleProcessList()`，而它可能解析出 `undefined` → `.forEach` 抛**未处理拒绝**
+     * → Node 22 默认据此终止进程——**整个服务端被一个终端会话带走**（表现：终端永远停在
+     * 「正在开…」、随后全站接口 401/500、客户端跳登录页）。DLL 分支只关掉输入句柄，没有这条坑；
+     * 而且 conpty.dll / OpenConsole.exe 本来就随包分发（见 package-win.mjs）。
+     */
+    useConptyDll: true,
     // 与环境一致：终端就是「在这个目录里开一个本机 shell」
     env: process.env as Record<string, string>,
   });

@@ -29,6 +29,19 @@ import { registerAllProviders } from "./generation/providers/register-all.js";
  * 再起 HTTP，并在**同进程**跑任务消费循环——桌面用进程内队列，生产者与消费者必须
  * 是同一个队列实例（M3.2），故循环在 server 进程内起，而不是另开 worker。
  */
+/**
+ * 未处理的 promise 拒绝**不允许带走整个服务端**。
+ *
+ * 真机踩过：node-pty 的 `kill()` 内部有一条 `consoleProcessList` 为 undefined 的路径会抛未处理
+ * 拒绝，Node 22 默认据此终止进程——一个终端会话把 API 一起干掉（全站 401/500、客户端跳登录页）。
+ * 这里的策略是**记录（带栈）+ 继续服务**：第三方库的异步异常不该等于全站下线；
+ * 同步的 `uncaughtException` 仍按默认行为退出（那种更可能是状态已损坏）。
+ */
+process.on("unhandledRejection", (reason) => {
+  const stack = reason instanceof Error ? reason.stack : String(reason);
+  console.error("[unhandledRejection] 已记录，进程继续服务：", stack);
+});
+
 async function main() {
   await setupProxy();
 

@@ -2,6 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import {
+  act,
   cleanup,
   render,
   screen,
@@ -362,6 +363,27 @@ describe("TerminalPane（PTY + 模拟器）", () => {
     );
     // StrictMode 的「假卸载」不许把刚起的会话杀掉（真机实测过：会显示「客户端关闭了终端」）
     expect(ws.handle.stopTerminal).not.toHaveBeenCalled();
+  });
+
+  it("起不来时不无限转圈：10 秒没有 ack → 标成已结束 + 可重开（真机见过「卡在正在开…」）", async () => {
+    vi.useFakeTimers();
+    try {
+      const ws = makeWs();
+      // 让 startTerminal 不回 started：模拟服务端没回应（真机那次是被未处理拒绝带走）
+      vi.mocked(ws.handle.startTerminal).mockImplementation(() => {});
+      render(
+        <TerminalPane accessToken="token" canvasId="canvas-1" ws={ws.handle} />,
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_100);
+      });
+      expect(screen.getByText(/会话没能起来/)).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "重新开会话" }),
+      ).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("没绑工作目录也能开：不带 canvasId 起会话（cwd 由服务端兜底）", async () => {
