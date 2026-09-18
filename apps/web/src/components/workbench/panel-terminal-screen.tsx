@@ -42,9 +42,35 @@ export function TerminalScreen({
     const host = hostRef.current;
     if (!host) return;
     const term = new Terminal({
-      // 让终端背景跟面板走（xterm 默认黑底，在浅色主题里像块补丁）
-      allowTransparency: true,
-      theme: { background: "rgba(0,0,0,0)" },
+      /**
+       * 终端外观 = **真终端的样子**（用户口径：现在「背景白色、字体黑色」不对）。
+       *
+       * 固定深色，不跟应用的浅/深主题走：终端有自己的约定（黑底浅字 + 标准 ANSI 调色板），
+       * 跟着 UI 主题变会让 `ls` / `git status` 的颜色在浅底上不可读。参考的 Windows Terminal
+       * 也是深色。要跟主题走的话改这一个 theme 对象即可。
+       */
+      theme: {
+        background: "#0c0c0c",
+        foreground: "#cccccc",
+        cursor: "#ffffff",
+        selectionBackground: "#264f78",
+        black: "#0c0c0c",
+        red: "#c50f1f",
+        green: "#13a10e",
+        yellow: "#c19c00",
+        blue: "#3b78ff",
+        magenta: "#881798",
+        cyan: "#3a96dd",
+        white: "#cccccc",
+        brightBlack: "#767676",
+        brightRed: "#e74856",
+        brightGreen: "#16c60c",
+        brightYellow: "#f9f1a5",
+        brightBlue: "#3b78ff",
+        brightMagenta: "#b4009e",
+        brightCyan: "#61d6d6",
+        brightWhite: "#f2f2f2",
+      },
       fontFamily:
         'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
       fontSize: 11,

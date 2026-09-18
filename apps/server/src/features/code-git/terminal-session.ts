@@ -81,20 +81,16 @@ function interactiveInvocation(shell: TerminalShellOption): string[] {
 }
 
 /**
- * 启动时先切 UTF-8（Windows 上 cmd / PowerShell 默认按本地代码页写控制台，中文会乱码）。
+ * 启动前置命令：**现在不需要了**。
  *
- * 这是**发给 shell 的一行命令**（会显示在终端里），PTY 之后一切照旧。
+ * 管道时代必须发 `chcp 65001` / `[Console]::OutputEncoding=…`，否则中文按本地代码页出来
+ * 就是乱码；换成 ConPTY 之后这条不用了——实测（真 PTY 起 PowerShell 与 cmd，各打一行
+ * `Write-Output 中文测试` / `echo 中文测试`）中文原样到达、无替换符，而且**前置命令本身会
+ * 被 shell 回显在屏幕最上面**，白占一行。故返回 null；将来若发现某种 shell 真的需要，
+ * 在这里按 shell 加回来。
  */
-function utf8Prelude(shell: TerminalShellId): string | null {
-  switch (shell) {
-    case "cmd":
-      return "chcp 65001>nul";
-    case "powershell":
-    case "pwsh":
-      return "[Console]::OutputEncoding=[Text.Encoding]::UTF8";
-    default:
-      return null;
-  }
+function startupPrelude(_shell: TerminalShellId): string | null {
+  return null;
 }
 
 /** 帧切分：把一段输出切成 ≤ maxBytes 的片（按字节，不切碎多字节字符）。 */
@@ -244,7 +240,7 @@ export function startTerminalSession(
   });
   pty.onExit(({ exitCode }) => finish(exitCode));
 
-  const prelude = utf8Prelude(shell.id);
+  const prelude = startupPrelude(shell.id);
   if (prelude) pty.write(`${prelude}\r`);
   scheduleIdleCheck();
 

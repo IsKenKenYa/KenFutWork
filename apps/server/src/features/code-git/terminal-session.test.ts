@@ -97,24 +97,26 @@ function start(options: {
 }
 
 describe("终端会话：真 PTY 的协议与边界", () => {
-  it("cmd：先切 UTF-8 代码页（否则中文输出是乱码），且**只发 \r**（真终端自己回显）", () => {
+  it("**没有启动前置**（ConPTY 下中文不需要 chcp / OutputEncoding），按键原样送", () => {
     const ptys: FakePty[] = [];
     const { session, pty } = start({ shell: "cmd", ptys });
 
-    expect(pty.written[0]).toBe("chcp 65001>nul\r");
+    // 以前那行 `chcp 65001` 会被 shell 回显在屏幕最上面（白占一行），ConPTY 下不需要它
+    expect(pty.written).toHaveLength(0);
     // 原始按键原样送：不回显、不补换行（回车就是用户按的那个 \r）
     session.write("dir\r");
-    expect(pty.written[1]).toBe("dir\r");
+    expect(pty.written[0]).toBe("dir\r");
     // 方向键这类转义序列也要原样过
     session.write("\u001b[A");
-    expect(pty.written[2]).toBe("\u001b[A");
+    expect(pty.written[1]).toBe("\u001b[A");
   });
 
   it("PowerShell：启动参数**不关交互**（不加 -NonInteractive / -Command -，那会关掉 PSReadLine）", () => {
     const ptys: FakePty[] = [];
     const { pty } = start({ shell: "powershell", ptys });
-    expect(pty.written[0]).toContain("[Console]::OutputEncoding");
-    // spawn 的第二个参数在替身里看不到，这里从真实调用侧断言（见下条真机用例）
+    // 启动时不写任何东西（见 startupPrelude 的注释）
+    expect(pty.written).toHaveLength(0);
+    // spawn 的第二个参数在替身里看不到，这里从真实调用侧断言（见真机用例）
   });
 
   it("输出：PTY 的数据原样回调（ANSI 转义由客户端模拟器解析）", () => {
