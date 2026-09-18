@@ -446,7 +446,10 @@ export function BrowserPane({
                     }
                     setCdpConnected(true);
                   }
-                  await injectDebugConsole(token, url || normalized || "about:blank");
+                  await injectDebugConsole(
+                    token,
+                    url || normalized || "about:blank",
+                  );
                   toast("调试控制台已打开（在受控浏览器那个窗口的页面底部）");
                 } catch (error: unknown) {
                   toast(
