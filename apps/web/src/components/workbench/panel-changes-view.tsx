@@ -115,7 +115,7 @@ export function ChangesPane({
   return (
     <div className="space-y-2">
       {error ? (
-        <p className="rounded-md border border-destructive/40 bg-destructive/5 px-2 py-1.5 text-[11px] text-destructive">
+        <p className="border border-destructive/40 bg-destructive/5 px-2 py-1.5 text-[11px] text-destructive">
           {error}
         </p>
       ) : null}
@@ -139,12 +139,8 @@ export function ChangesPane({
               aria-hidden
               className="invisible ml-auto flex shrink-0 items-center gap-2"
             >
-              <span className="rounded border px-1.5 py-0.5 text-[10px]">
-                审查
-              </span>
-              <span className="rounded border px-1.5 py-0.5 text-[10px]">
-                打开
-              </span>
+              <span className="border px-1.5 py-0.5 text-[10px]">审查</span>
+              <span className="border px-1.5 py-0.5 text-[10px]">打开</span>
             </span>
             <span className={CHANGE_STAT_CELL}>
               <span className="text-emerald-600">+{totals.additions}</span>{" "}
@@ -156,7 +152,7 @@ export function ChangesPane({
               disabled={discarding || changes.files.length === 0}
               title="撤销全部未提交改动（未跟踪的新文件会被删除）"
               onClick={() => void discardEverything()}
-              className="shrink-0 rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive disabled:opacity-40"
+              className="shrink-0 border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive disabled:opacity-40"
             >
               撤销
             </button>
@@ -187,7 +183,7 @@ export function ChangesPane({
                     ) : null}
                   </button>
                   {file.staged ? (
-                    <span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+                    <span className="shrink-0 bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
                       已暂存
                     </span>
                   ) : null}
@@ -210,7 +206,7 @@ export function ChangesPane({
                     aria-label={`审查 ${file.path}`}
                     title="审查：看差异并逐块/整文件暂存（决定哪些改动进索引）"
                     onClick={() => onOpenDiff(file.path)}
-                    className="shrink-0 rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+                    className="shrink-0 border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
                   >
                     审查
                   </button>
@@ -219,7 +215,7 @@ export function ChangesPane({
                     aria-label={`打开 ${file.path}`}
                     title="打开：只看文件内容（不改动任何东西）"
                     onClick={() => onOpenFile(file.path)}
-                    className="shrink-0 rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+                    className="shrink-0 border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
                   >
                     打开
                   </button>
@@ -235,7 +231,7 @@ export function ChangesPane({
                         ? "撤销：删除这个未跟踪文件"
                         : "撤销：把这个文件恢复成仓库里的样子"
                     }
-                    className="shrink-0 rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive disabled:opacity-40"
+                    className="shrink-0 border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive disabled:opacity-40"
                   >
                     撤销
                   </button>

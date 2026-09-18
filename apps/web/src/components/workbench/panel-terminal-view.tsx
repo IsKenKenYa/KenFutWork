@@ -367,7 +367,7 @@ export function TerminalPane({
         {tabs.map((tab) => (
           <span
             key={tab.key}
-            className={`group inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] ${
+            className={`group inline-flex shrink-0 items-center gap-1 px-1.5 py-1 text-[11px] ${
               tab.key === activeKey
                 ? "bg-muted text-foreground"
                 : "text-muted-foreground hover:bg-muted/60"
@@ -395,7 +395,7 @@ export function TerminalPane({
               type="button"
               aria-label={`关闭终端标签：${labelOf(tab)}`}
               onClick={() => closeTab(tab.key)}
-              className="rounded p-0.5 text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-background hover:text-foreground"
+              className="p-0.5 text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-background hover:text-foreground"
             >
               <X className="h-3 w-3" />
             </button>
@@ -406,7 +406,7 @@ export function TerminalPane({
           aria-label="新建终端"
           title="新建终端（用系统默认 shell）"
           onClick={() => openTab()}
-          className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="shrink-0 p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <Plus className="h-3.5 w-3.5" />
         </button>
@@ -429,7 +429,7 @@ export function TerminalPane({
               clearSignal: tab.clearSignal + 1,
             }))
           }
-          className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="shrink-0 p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <Eraser className="h-3.5 w-3.5" />
         </button>
@@ -439,7 +439,7 @@ export function TerminalPane({
             aria-label="重新开会话"
             title="用同一个 shell 重开一条会话"
             onClick={() => active && startSession(active.key, active.shell)}
-            className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="shrink-0 p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <RotateCw className="h-3.5 w-3.5" />
           </button>
@@ -447,7 +447,7 @@ export function TerminalPane({
       </div>
 
       {active?.exitReason ? (
-        <p className="rounded-md border border-destructive/40 bg-destructive/5 px-2 py-1 text-[11px] text-destructive">
+        <p className="border border-destructive/40 bg-destructive/5 px-2 py-1 text-[11px] text-destructive">
           {active.exitReason}
         </p>
       ) : null}
@@ -472,7 +472,7 @@ export function TerminalPane({
           role="menu"
           aria-label="终端标签菜单"
           style={{ top: menu.y, left: menu.x }}
-          className="fixed z-50 w-52 rounded-lg border bg-popover p-1 text-xs shadow-md"
+          className="fixed z-50 w-52 border bg-popover p-1 text-xs shadow-md"
         >
           <p className="px-2 py-1 text-[10px] text-muted-foreground">
             切换终端（{labelOf(switching)}）
@@ -490,7 +490,7 @@ export function TerminalPane({
                   startSession(switching.key, option.id);
                   setMenu(null);
                 }}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-muted"
+                className="flex w-full items-center gap-2 px-2 py-1 text-left hover:bg-muted"
               >
                 <Check
                   className={`h-3 w-3 shrink-0 ${current ? "" : "opacity-0"}`}
@@ -507,7 +507,7 @@ export function TerminalPane({
               openTab();
               setMenu(null);
             }}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-muted"
+            className="flex w-full items-center gap-2 px-2 py-1 text-left hover:bg-muted"
           >
             <Plus className="h-3 w-3 shrink-0" />
             新建终端
@@ -516,7 +516,7 @@ export function TerminalPane({
             type="button"
             role="menuitem"
             onClick={() => closeTab(switching.key)}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-muted"
+            className="flex w-full items-center gap-2 px-2 py-1 text-left hover:bg-muted"
           >
             <X className="h-3 w-3 shrink-0" />
             关闭此终端

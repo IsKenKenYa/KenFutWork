@@ -84,7 +84,7 @@ export function PanelTabStrip({
           aria-expanded={listOpen}
           title="新建视图 / 标签页（可搜索）"
           onClick={() => setListOpen((current) => !current)}
-          className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           {/* 左侧是**加号**（用户口径「左边的箭头改成加号」）：点开就是「打开的标签页 +
               新建视图」这一个菜单，不再是一个看不出用途的下拉箭头 */}
@@ -94,9 +94,9 @@ export function PanelTabStrip({
           <div
             role="dialog"
             aria-label="打开的标签页"
-            className="absolute top-full left-0 z-50 mt-1 w-64 rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-md"
+            className="absolute top-full left-0 z-50 mt-1 w-64 border bg-popover p-1.5 text-popover-foreground shadow-md"
           >
-            <div className="flex items-center gap-1.5 rounded-md border px-2 py-1">
+            <div className="flex items-center gap-1.5 border px-2 py-1">
               <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               <input
                 aria-label="搜索标签页"
@@ -123,7 +123,7 @@ export function PanelTabStrip({
                         onActivate(tab.id);
                         setListOpen(false);
                       }}
-                      className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs hover:bg-muted"
+                      className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 py-1 text-left text-xs hover:bg-muted"
                     >
                       <span className="shrink-0 text-muted-foreground">
                         {tabIcon(tab.view.kind)}
@@ -139,7 +139,7 @@ export function PanelTabStrip({
                       type="button"
                       aria-label={`关闭 ${tab.label}`}
                       onClick={() => onCloseTab(tab.id)}
-                      className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      className="shrink-0 p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
                     >
                       <X className="h-3 w-3" />
                     </button>
@@ -166,7 +166,7 @@ export function PanelTabStrip({
                         onOpenView({ kind: view.kind });
                         setListOpen(false);
                       }}
-                      className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs hover:bg-muted"
+                      className="flex w-full items-center gap-1.5 px-1.5 py-1 text-left text-xs hover:bg-muted"
                     >
                       <span className="shrink-0 text-muted-foreground">
                         {tabIcon(view.kind)}
@@ -214,7 +214,7 @@ export function PanelTabStrip({
                 type="button"
                 aria-label={`关闭 ${tab.label}`}
                 onClick={() => onCloseTab(tab.id)}
-                className={`shrink-0 rounded p-0.5 transition-opacity hover:bg-background ${
+                className={`shrink-0 p-0.5 transition-opacity hover:bg-background ${
                   active ? "" : "opacity-0 group-hover:opacity-100"
                 }`}
               >

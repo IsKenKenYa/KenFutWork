@@ -84,7 +84,7 @@ export function FilesPane({
   return (
     <div className="space-y-2">
       <form
-        className="flex items-center gap-1.5 rounded-md border px-2 py-1"
+        className="flex items-center gap-1.5 border px-2 py-1"
         onSubmit={(event) => {
           event.preventDefault();
           void runSearch(searchQuery);
@@ -107,14 +107,14 @@ export function FilesPane({
         <button
           type="submit"
           disabled={searching}
-          className="shrink-0 rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
+          className="shrink-0 border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
         >
           {searching ? "搜索中…" : "搜索"}
         </button>
       </form>
 
       {searchError ? (
-        <p className="rounded-md border border-destructive/40 bg-destructive/5 px-2 py-1.5 text-[11px] text-destructive">
+        <p className="border border-destructive/40 bg-destructive/5 px-2 py-1.5 text-[11px] text-destructive">
           {searchError}
         </p>
       ) : null}
@@ -137,7 +137,7 @@ export function FilesPane({
                 >
                   <span className="flex items-center gap-1.5">
                     {hit.language ? (
-                      <span className="shrink-0 rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
+                      <span className="shrink-0 bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
                         {hit.language}
                       </span>
                     ) : null}
@@ -158,7 +158,7 @@ export function FilesPane({
       ) : null}
 
       {error ? (
-        <p className="rounded-md border border-destructive/40 bg-destructive/5 px-2 py-1.5 text-[11px] text-destructive">
+        <p className="border border-destructive/40 bg-destructive/5 px-2 py-1.5 text-[11px] text-destructive">
           {error}
         </p>
       ) : null}
@@ -167,7 +167,7 @@ export function FilesPane({
         <button
           type="button"
           onClick={() => setDir("")}
-          className="rounded px-1 hover:bg-muted hover:text-foreground"
+          className="px-1 hover:bg-muted hover:text-foreground"
         >
           工作目录
         </button>
@@ -177,7 +177,7 @@ export function FilesPane({
             <button
               type="button"
               onClick={() => setDir(segments.slice(0, index + 1).join("/"))}
-              className="rounded px-1 hover:bg-muted hover:text-foreground"
+              className="px-1 hover:bg-muted hover:text-foreground"
             >
               {segment}
             </button>

@@ -268,7 +268,7 @@ export function BrowserPane({
   const scale = zoomPreset?.scale ?? fitScale;
 
   const navButtonClass =
-    "shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40";
+    "shrink-0 p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40";
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
@@ -323,7 +323,7 @@ export function BrowserPane({
             }
           }}
           placeholder="输入网址，回车打开"
-          className="min-w-0 flex-1 rounded-md border border-transparent bg-muted/60 px-2 py-1 text-xs outline-none focus:border-ring focus:bg-transparent"
+          className="min-w-0 flex-1 border border-transparent bg-muted/60 px-2 py-1 text-xs outline-none focus:border-ring focus:bg-transparent"
         />
         {/*
           「尺寸」按钮照参考放在**地址栏这一行**（地址框与元素拾取之间），是**图标按钮**；
@@ -335,7 +335,7 @@ export function BrowserPane({
           aria-pressed={freeSizeOn}
           title={freeSizeOn ? "退出自由尺寸" : "自由尺寸"}
           onClick={() => setFreeSizeOn((current) => !current)}
-          className={`shrink-0 rounded-md p-1 transition-colors hover:bg-muted ${
+          className={`shrink-0 p-1 transition-colors hover:bg-muted ${
             freeSizeOn
               ? "bg-muted text-foreground"
               : "text-muted-foreground hover:text-foreground"
@@ -350,7 +350,7 @@ export function BrowserPane({
           disabled={!url || !accessToken || picking === "loading"}
           title="拾取页面元素加入对话：连接受控浏览器（设置 → 浏览器 → 外部浏览器）后是真实渲染页 + 元素框点选；没连时按服务端静态抓取的 HTML 列元素（脚本渲染与登录态内容读不到）"
           onClick={() => void startPicking()}
-          className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+          className="shrink-0 p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
         >
           <MousePointerSquareDashed className="h-3.5 w-3.5" />
         </button>
@@ -380,16 +380,16 @@ export function BrowserPane({
           ]}
         >
           <SelectTrigger
-            className="shrink-0 gap-0 border-transparent px-1.5 py-1"
+            className="shrink-0 gap-0 rounded-none border-transparent px-1.5 py-1"
             aria-label="浏览器菜单"
             hideChevron
             title="更多"
           >
             <Ellipsis className="h-3.5 w-3.5" />
           </SelectTrigger>
-          <SelectContent className="min-w-52">
+          <SelectContent className="min-w-52 rounded-none">
             {/* 菜单形态照参考：**两项、各带图标、不写任何括号说明**（用户口径「这一块的说明不要」） */}
-            <SelectItem value="open-system">
+            <SelectItem value="open-system" className="rounded-none">
               <span className="flex items-center gap-2">
                 <ExternalLink className="h-3.5 w-3.5 shrink-0" />
                 在默认浏览器中打开
@@ -402,6 +402,7 @@ export function BrowserPane({
             */}
             <SelectItem
               value="devtools"
+              className="rounded-none"
               disabled={!cdpConnected}
               title={
                 cdpConnected
@@ -423,7 +424,8 @@ export function BrowserPane({
         而且**不管有没有页面都显示**——所以这里不再看 url 有没有值。
       */}
       {freeSizeOn ? (
-        <div className="flex items-center gap-2 px-1 py-0.5 text-[11px]">
+        /* 用户口径「这个居中」：分辨率 + 比例**整组水平居中**（比例不再被顶到最右） */
+        <div className="flex items-center justify-center gap-2 px-1 py-0.5 text-[11px]">
           <ViewportSizeInput
             ariaLabel="视口宽度"
             value={freeSize.width}
@@ -457,13 +459,13 @@ export function BrowserPane({
             }))}
           >
             <SelectTrigger
-              className="ml-auto shrink-0 gap-1 border-transparent bg-transparent px-1.5 py-0.5 text-[11px]"
+              className="shrink-0 gap-1 rounded-none border-transparent bg-transparent px-1.5 py-0.5 text-[11px]"
               aria-label="窗口比例"
               title="窗口比例（页面按这个比例缩放到面板里）"
             >
               <SelectValue />
             </SelectTrigger>
-            <SelectContent className="min-w-28">
+            <SelectContent className="min-w-28 rounded-none">
               {ZOOM_PRESETS.map((preset) => (
                 <SelectItem key={preset.id} value={preset.id}>
                   {preset.label}
@@ -484,7 +486,7 @@ export function BrowserPane({
         <div
           role="dialog"
           aria-label="选择网页元素加入聊天"
-          className="max-h-72 overflow-y-auto rounded-lg border bg-popover p-2 text-xs"
+          className="max-h-72 overflow-y-auto border bg-popover p-2 text-xs"
         >
           <div className="mb-1 flex items-center justify-between gap-2">
             <span className="font-medium">
@@ -495,7 +497,7 @@ export function BrowserPane({
               type="button"
               aria-label="关闭元素拾取"
               onClick={() => setPicking("idle")}
-              className="rounded p-0.5 text-muted-foreground hover:bg-muted"
+              className="p-0.5 text-muted-foreground hover:bg-muted"
             >
               <X className="h-3 w-3" />
             </button>
@@ -515,7 +517,7 @@ export function BrowserPane({
               {/* 截图叠框：几何来自 DOM.getBoxModel，坐标是视口 CSS px，
                   换算成百分比后与截图（同一视口尺寸）严丝合缝 */}
               {overlay && picked.screenshotUrl ? (
-                <div className="relative mb-2 overflow-hidden rounded border">
+                <div className="relative mb-2 overflow-hidden border">
                   {/* biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用 */}
                   <img
                     src={picked.screenshotUrl}
@@ -539,13 +541,13 @@ export function BrowserPane({
                             width: `${(element.box.width / overlay.viewport.width) * 100}%`,
                             height: `${(element.box.height / overlay.viewport.height) * 100}%`,
                           }}
-                          className={`absolute rounded-sm border transition-colors ${
+                          className={`absolute border transition-colors ${
                             hoveredElement === index
                               ? "border-info bg-info/30"
                               : "border-info/70 bg-info/10 hover:bg-info/30"
                           }`}
                         >
-                          <span className="absolute -top-3 -left-px rounded-sm bg-info px-1 text-[9px] leading-3 text-white">
+                          <span className="absolute -top-3 -left-px bg-info px-1 text-[9px] leading-3 text-white">
                             {index + 1}
                           </span>
                         </button>
@@ -564,18 +566,18 @@ export function BrowserPane({
                           onMouseEnter={() => setHoveredElement(index)}
                           onMouseLeave={() => setHoveredElement(null)}
                           onClick={() => pickElement(element)}
-                          className={`w-full rounded px-1.5 py-1 text-left ${
+                          className={`w-full px-1.5 py-1 text-left ${
                             hoveredElement === index
                               ? "bg-muted"
                               : "hover:bg-muted"
                           }`}
                         >
                           {overlay && element.box ? (
-                            <span className="mr-1.5 rounded bg-info/15 px-1 py-0.5 font-mono text-[10px] text-info">
+                            <span className="mr-1.5 bg-info/15 px-1 py-0.5 font-mono text-[10px] text-info">
                               {index + 1}
                             </span>
                           ) : null}
-                          <span className="mr-1.5 rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
+                          <span className="mr-1.5 bg-muted px-1 py-0.5 font-mono text-[10px]">
                             {element.tag}
                           </span>
                           <span className="truncate">
@@ -605,7 +607,7 @@ export function BrowserPane({
       {url ? (
         <div
           ref={frameRef}
-          className="relative min-h-0 flex-1 overflow-auto rounded-xl border bg-background"
+          className="relative min-h-0 flex-1 overflow-auto border bg-background"
         >
           <iframe
             key={`${url}#${reloadToken}`}
@@ -654,7 +656,7 @@ export function BrowserPane({
                 left: `${viewportWidth * scale - 10}px`,
                 top: `${viewportHeight * scale - 10}px`,
               }}
-              className="absolute h-3 w-3 cursor-nwse-resize rounded-sm border border-foreground/40 bg-background"
+              className="absolute h-3 w-3 cursor-nwse-resize border border-foreground/40 bg-background"
             />
           ) : null}
         </div>
@@ -714,7 +716,7 @@ function ViewportSizeInput({
         setText(String(clamped));
         onCommit(clamped);
       }}
-      className="w-16 rounded border bg-transparent px-1 py-0.5 font-mono text-[11px] tabular-nums outline-none focus:ring-1 focus:ring-ring"
+      className="w-16 border bg-transparent px-1 py-0.5 font-mono text-[11px] tabular-nums outline-none focus:ring-1 focus:ring-ring"
     />
   );
 }

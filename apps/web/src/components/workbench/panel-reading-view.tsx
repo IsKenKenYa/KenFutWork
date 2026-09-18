@@ -142,7 +142,7 @@ export function DiffPane({
   return (
     <div className="space-y-2">
       {error ? (
-        <p className="rounded-md border border-destructive/40 bg-destructive/5 px-2 py-1.5 text-[11px] text-destructive">
+        <p className="border border-destructive/40 bg-destructive/5 px-2 py-1.5 text-[11px] text-destructive">
           {error}
         </p>
       ) : null}
@@ -161,7 +161,7 @@ export function DiffPane({
             aria-label={`打开 ${path}`}
             title="打开：只看文件内容（不改动任何东西）"
             onClick={() => onOpenFile(path)}
-            className="shrink-0 rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+            className="shrink-0 border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
           >
             打开
           </button>
@@ -175,7 +175,7 @@ export function DiffPane({
                 : "把这个文件加入索引（下次提交会带上它）"
             }
             onClick={() => void toggleStaged()}
-            className="shrink-0 rounded-md border px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
+            className="shrink-0 border px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
           >
             {busy ? "处理中…" : staged ? "取消暂存" : "暂存此文件"}
           </button>
@@ -218,7 +218,7 @@ export function DiffPane({
                           if (line.hunkIndex === undefined) return;
                           void applyHunkAction(line.hunkIndex, "stage");
                         }}
-                        className="rounded border border-emerald-600/40 px-1 text-[10px] leading-4 text-emerald-700 transition-colors hover:bg-emerald-500/10 disabled:opacity-40 dark:text-emerald-400"
+                        className="border border-emerald-600/40 px-1 text-[10px] leading-4 text-emerald-700 transition-colors hover:bg-emerald-500/10 disabled:opacity-40 dark:text-emerald-400"
                       >
                         ＋
                       </button>
@@ -231,7 +231,7 @@ export function DiffPane({
                           if (line.hunkIndex === undefined) return;
                           void applyHunkAction(line.hunkIndex, "discard");
                         }}
-                        className="rounded border border-rose-600/40 px-1 text-[10px] leading-4 text-rose-700 transition-colors hover:bg-rose-500/10 disabled:opacity-40 dark:text-rose-400"
+                        className="border border-rose-600/40 px-1 text-[10px] leading-4 text-rose-700 transition-colors hover:bg-rose-500/10 disabled:opacity-40 dark:text-rose-400"
                       >
                         ⟲
                       </button>
@@ -296,7 +296,7 @@ export function FilePane({
   return (
     <div className="space-y-2">
       {error ? (
-        <p className="rounded-md border border-destructive/40 bg-destructive/5 px-2 py-1.5 text-[11px] text-destructive">
+        <p className="border border-destructive/40 bg-destructive/5 px-2 py-1.5 text-[11px] text-destructive">
           {error}
         </p>
       ) : null}
