@@ -4,21 +4,36 @@ import { join } from "node:path";
 
 import type { BlobStore } from "../blob/types.js";
 import {
+  ackScreencastFrame,
   type CdpClient,
   CdpError,
   captureScreenshot,
   clickOn,
   connectCdpClient,
+  dispatchKey,
+  dispatchMouse,
+  dispatchWheel,
   findBrowserExecutable,
   killStaleProfileInstance,
   launchBrowserWithDebugPort,
   pressKey,
   readDom,
   readPickables,
+  readViewport,
+  setViewportOverride,
+  startScreencast,
+  stopScreencast,
   typeText,
   waitForDevtools,
   waitForLoad,
 } from "./cdp-client.js";
+import {
+  createDebugConsoleSource,
+  DEBUG_CONSOLE_PROBE,
+  type DebugConsoleSource,
+  parseDebugConsoleProbe,
+} from "./debug-console.js";
+import { samePageUrl } from "./view-stream.js";
 
 /**
  * CDP 浏览器会话（R5-4「连接到 Chrome」/「自动截图」的执行面）。
@@ -66,14 +81,6 @@ export interface CdpBrowserSession {
   }): Promise<CdpStatus>;
   disconnect(): Promise<CdpStatus>;
   /**
-   * 给**受控浏览器的当前页面**打开真 DevTools（在受控浏览器里开一个调试前端标签）。
-   *
-   * 为什么是这条路：面板里的页面挂在 iframe 上，浏览器不允许给 iframe 单独挂调试器；
-   * 受控浏览器那边是**真标签**，`devtools://devtools/bundled/inspector.html?ws=<页面调试地址>`
-   * 就是 Chrome 认的调试前端地址——开出来就是能用的 DOM/网络/控制台面板。
-   */
-  openDevtools(url?: string): Promise<{ targetId: string; url: string }>;
-  /**
    * **注入调试控制台**（Eruda）到受控页面——用户口径「直接打开的就是调试面板，不要转接一层」。
    *
    * 这是移动端 H5 调试的标准做法：Console / Network / Elements / Storage 全都有，
@@ -81,6 +88,11 @@ export interface CdpBrowserSession {
    * 在页面里插一个 `<script>` 标签（从 CDN 加载 Eruda）。
    */
   injectDebugConsole(url: string): Promise<{ url: string }>;
+  /**
+   * 调试控制台脚本源码（含启动尾巴）——桌面形态从 `/api/browser/debug-console.js`
+   * 取**同一份**，`eval` 进面板里的子 WebView2（两端不各存一份脚本）。
+   */
+  debugConsoleScript(): Promise<string>;
   /** 导航（复用受控标签，没有就开一个）。 */
   navigate(url: string): Promise<{
     url: string;
@@ -118,54 +130,51 @@ export interface CdpBrowserSession {
   click(target: { selector?: string; x?: number; y?: number }): Promise<void>;
   type(text: string): Promise<void>;
   key(key: string): Promise<void>;
+  /**
+   * **右栏面板的画面上屏**：把受控标签的画面以 JPEG 帧推给调用方，返回停止函数。
+   *
+   * 为什么要这条路（而不是继续用 iframe）：面板里的 iframe 是**跨源**的，既挂不上调试工具
+   * 也注不进任何脚本——用户口径「调试面板要在内嵌页面里出来」在 iframe 上不可能实现。
+   * 把面板显示成受控浏览器自己的画面后，注入到页面的调试控制台就**出现在面板里**。
+   */
+  watch(
+    options: { width?: number; height?: number; quality?: number },
+    onFrame: (jpeg: Buffer) => Promise<void> | void,
+  ): Promise<() => Promise<void>>;
+  /** 视口 CSS 尺寸（面板里把鼠标坐标换算成视口坐标要用它）。 */
+  viewport(): Promise<{ width: number; height: number; scale: number }>;
+  /** 面板内的交互回填（鼠标 / 滚轮 / 键盘 / 文本）。 */
+  input(event: CdpInputEvent): Promise<void>;
+  /**
+   * 「自由尺寸」：真实改变页面视口（`null` = 还原）。传 `null` 之外的值时返回新的视口尺寸。
+   */
+  resize(size: { width: number; height: number } | null): Promise<void>;
   listTabs(): Promise<Array<{ url: string; title: string }>>;
   /** 会话是否可用（工具与端点在调用前判）。 */
   isConnected(): boolean;
 }
 
-/**
- * 等调试前端连上（返回 `connected` / `disconnected` / `unknown`）。
- *
- * 「连接已关闭」这句是前端在断线时自己渲染的文案（中英都要认）；`unknown` 表示读不到
- * 前端 DOM（例如浏览器不允许附着到 devtools 目标）——那种情况不武断判失败，交给用户看。
- */
-async function waitForDevtoolsFrontend(
-  cdp: CdpClient,
-  targetId: string,
-): Promise<"connected" | "disconnected" | "unknown"> {
-  if (!targetId) return "unknown";
-  let sessionId: string | undefined;
-  try {
-    const attached = (await cdp.send("Target.attachToTarget", {
-      targetId,
-      flatten: true,
-    })) as { sessionId?: string };
-    sessionId = attached.sessionId;
-  } catch {
-    return "unknown";
-  }
-  if (!sessionId) return "unknown";
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    try {
-      const evaluated = (await cdp.send(
-        "Runtime.evaluate",
-        {
-          expression: "document.body ? document.body.innerText : ''",
-          returnByValue: true,
-        },
-        sessionId,
-      )) as { result?: { value?: unknown } };
-      const text = String(evaluated.result?.value ?? "");
-      if (!text.trim()) continue; // 前端还没渲染出来：再等一轮
-      if (/连接已关闭|connection was closed/i.test(text)) {
-        return "disconnected";
-      }
-      return "connected";
-    } catch {}
-  }
-  return "unknown";
-}
+/** 面板内交互事件（坐标是**视口 CSS px**，由客户端按显示尺寸换算好）。 */
+export type CdpInputEvent =
+  | {
+      type: "mouse";
+      action: "pressed" | "released" | "moved";
+      x: number;
+      y: number;
+      /** `none` = 只是移动（没有按着任何键）。 */
+      button?: "left" | "right" | "middle" | "none";
+      buttons?: number;
+      modifiers?: number;
+    }
+  | {
+      type: "wheel";
+      x: number;
+      y: number;
+      deltaX?: number;
+      deltaY?: number;
+    }
+  | { type: "key"; key: string; code?: string; modifiers?: number }
+  | { type: "text"; text: string };
 
 export function createCdpBrowserSession(deps: {
   /** 截图落 blob 用；缺省时截图只返回 base64 长度（测试/无 blob 装配）。 */
@@ -179,8 +188,11 @@ export function createCdpBrowserSession(deps: {
   connectClient?: typeof connectCdpClient;
   /** 测试注入：收掉「用着我们 profile 的残留实例」（默认按命令行匹配后 taskkill/pkill）。 */
   killStaleProfile?: typeof killStaleProfileInstance;
+  /** 测试注入：调试控制台脚本来源（默认从 CDN 取一次并缓存）。 */
+  debugConsole?: DebugConsoleSource;
 }): CdpBrowserSession {
   const dataDir = deps.dataDir ?? join(tmpdir(), "kenfutwork-chrome-profile");
+  const debugConsole = deps.debugConsole ?? createDebugConsoleSource();
   let state: CdpStatus = { status: "disconnected" };
   let client: CdpClient | null = null;
   let child: ChildProcess | null = null;
@@ -222,6 +234,37 @@ export function createCdpBrowserSession(deps: {
 
   /** 我们正在用的那块页面 target（清理空白页时要放过它）。 */
   let currentTargetId: string | null = null;
+  /** 当前画面流订阅（同时只留一个，见 `watch`）。 */
+  let activeWatcher: (() => Promise<void>) | null = null;
+  /** 导航事件订阅（退订用，见 `trackNavigation`）。 */
+  let offNavigation: (() => void) | null = null;
+
+  /**
+   * 跟踪**页面自己发起的导航**（点链接、表单提交、JS 跳转）。
+   *
+   * `currentUrl` 原先只在 `navigate()` 里更新，于是页面自己跳走之后状态停在旧地址——真机实测
+   * 撞上了：点链接后画面已经是新页，`status()` 还报旧页，面板的「是不是同一页」判断跟着错
+   * （地址栏与画面各说一套）。
+   */
+  const trackNavigation = (target: CdpClient, id: string): void => {
+    if (offNavigation) return;
+    void target.send("Page.enable", {}, id).catch(() => undefined);
+    offNavigation = target.on(
+      "Page.frameNavigated",
+      (params, eventSessionId) => {
+        if (eventSessionId && eventSessionId !== id) return;
+        const frame = params.frame as
+          | { url?: unknown; parentId?: unknown }
+          | undefined;
+        const url = typeof frame?.url === "string" ? frame.url : "";
+        // 只认主框架：子框架（iframe）自己跳走不该改「当前页」
+        if (!url || typeof frame?.parentId === "string") return;
+        if (state.status === "connected") {
+          state = { ...state, currentUrl: url };
+        }
+      },
+    );
+  };
 
   const ensureTab = async (
     target: CdpClient,
@@ -238,6 +281,7 @@ export function createCdpBrowserSession(deps: {
     if (url) await waitForLoad(target, opened.sessionId);
     sessionId = opened.sessionId;
     currentTargetId = opened.targetId;
+    trackNavigation(target, opened.sessionId);
     return sessionId;
   };
 
@@ -310,6 +354,8 @@ export function createCdpBrowserSession(deps: {
         );
         sessionId = null;
         currentTargetId = null;
+        // 新客户端：旧的退订句柄作废（否则 trackNavigation 会以为已经订阅过）
+        offNavigation = null;
         await ensureTab(client);
         const tabs = await client.listTargets();
         state = {
@@ -344,127 +390,76 @@ export function createCdpBrowserSession(deps: {
         return state;
       }
     },
-    async openDevtools(url?: string) {
+    async debugConsoleScript() {
+      return debugConsole.script();
+    },
+    async injectDebugConsole(url: string) {
       const { client: cdp } = requireConnected();
       /**
-       * 用户口径是「调试我看的那一页」。面板里的页面走的是 iframe，**受控浏览器不会跟着走**——
-       * 不先把受控浏览器导航过去，就会去调试一个停在 about:blank 的空白页（真机截图里正是如此：
-       * 那条 about:blank 一旦被替换，调试前端立刻「连接已关闭」）。所以先导航，再开调试标签。
+       * 已经在那一页就别再导航一次：面板里显示的就是这一页，重来一次 `Page.navigate`
+       * 会整页重载——页面里已经填的东西、控制台里敲过的东西全没了。
        */
-      if (url) {
+      const current = state.status === "connected" ? state.currentUrl : "";
+      if (!samePageUrl(current, url)) {
         await session.navigate(url);
       }
       await closeIdleBlanks(cdp);
-      const targets = await cdp.listPageTargetsWithDebugUrl();
-      /**
-       * 挑哪一块页面：优先与**当前页面**同址的那块；否则第一块非空白的普通页。
-       * （受控浏览器里可能还开着别的标签，挑错就等于调试另一个页面。）
-       */
-      const current = state.status === "connected" ? state.currentUrl : "";
-      const page =
-        targets.find((entry) => entry.url === current) ??
-        targets.find((entry) => entry.url.startsWith("http")) ??
-        targets[0];
-      if (!page) {
-        throw new CdpError(
-          "cdp_no_page",
-          "受控浏览器里没有可调试的页面：先在右栏浏览器打开一个网址。",
-        );
-      }
-      if (!page.webSocketDebuggerUrl) {
-        throw new CdpError(
-          "cdp_no_debug_url",
-          "拿不到这块页面的调试地址（浏览器可能不允许远程调试）。",
-        );
-      }
-      /**
-       * **开之前先探一下**：这台受控实例到底能不能接调试前端（Origin 白名单）。
-       * 不行就如实报原因 + 给可执行的做法——别开一个注定「连接已关闭」的标签，
-       * 用户只会看到 DevTools 里那句英文报错，还以为功能坏了（真机就是这么被问到的）。
-       */
-      const acceptable = await cdp.probeDebuggerUrl(page.webSocketDebuggerUrl);
-      if (!acceptable) {
-        throw new CdpError(
-          "cdp_devtools_blocked",
-          "这台受控浏览器不接受调试前端连接（缺 --remote-allow-origins，多为外部启动的 Chrome）。" +
-            "先在「设置 → 浏览器 → 外部浏览器」断开，再用这里的「打开调试工具」——" +
-            "那会由产品启动一个带该参数的实例，调试工具即可正常连接。",
-        );
-      }
-      /**
-       * 顺手清掉**之前开的调试标签**：同一块页面重复开会让用户盯着一堆
-       * 连不上/过期的 DevTools 标签（真机截图里就是这种情况）。
-       */
-      for (const target of await cdp.listTargets()) {
-        if (target.url.startsWith("devtools://")) {
-          await cdp.closeTab(target.targetId).catch(() => undefined);
-        }
-      }
-      const devtoolsUrl = `devtools://devtools/bundled/inspector.html?ws=${encodeURIComponent(
-        page.webSocketDebuggerUrl,
-      )}`;
-      const created = (await cdp.send("Target.createTarget", {
-        url: devtoolsUrl,
-      })) as {
-        targetId?: string;
-      };
-      const targetId = created.targetId ?? "";
-
-      /**
-       * **开完自检**：连进刚开的调试前端，读它的 DOM 里有没有「连接已关闭」。
-       *
-       * 为什么值得这一步：调试前端自己连不上时只会显示一句英文/中文提示，用户看到的
-       * 就是一个「像坏了」的窗口（这一整轮就是这么被反复问的）。这里替用户确认一次，
-       * 没连上就如实报错、并把这个废标签关掉——绝不留一个看起来正常实则断开的标签。
-       */
-      const frontend = await waitForDevtoolsFrontend(cdp, targetId);
-      if (frontend === "disconnected") {
-        await cdp.closeTab(targetId).catch(() => undefined);
-        throw new CdpError(
-          "cdp_devtools_blocked",
-          "调试前端没能连上这块页面（已把那个标签关掉）。多半是受控实例缺少 --remote-allow-origins——" +
-            "先在「设置 → 浏览器 → 外部浏览器」断开，再用这里的「打开调试工具」重开一个实例。",
-        );
-      }
-      return { targetId, url: page.url };
-    },
-
-    async injectDebugConsole(url: string) {
-      const { client: cdp } = requireConnected();
-      await session.navigate(url);
-      await closeIdleBlanks(cdp);
       const sessionId = requireConnected().sessionId;
+      const script = await debugConsole.script();
       /**
-       * 注入 Eruda（开源的页面内调试控制台）：Console / Elements / Network / Storage / Info。
-       * 先移除旧的（重复点按钮不叠加），再注入 + 打开。
+       * 注入 Eruda（页面内调试控制台：Console / Elements / Network / Storage / Info）。
+       * **整段源码直投**，而不是往页面里插 `<script src=…>`——页面侧加载会静默失败
+       * （真机撞到过：注入报成功、页面上什么都没有），原因与取舍见 debug-console 模块头注。
        */
-      await cdp
-        .send(
-          "Runtime.evaluate",
-          {
-            expression: `
-            (function() {
-              var existing = document.getElementById('eruda-loader');
-              if (existing) existing.remove();
-              var eruda = window.eruda;
-              if (eruda) { eruda.show(); return 'eruda already loaded, shown'; }
-              var s = document.createElement('script');
-              s.id = 'eruda-loader';
-              s.src = 'https://cdn.jsdelivr.net/npm/eruda@3.4.1/eruda.min.js';
-              s.onload = function() { window.eruda.init(); window.eruda.show(); };
-              document.head.appendChild(s);
-              return 'eruda loading';
-            })();
-          `,
-            awaitPromise: false,
-          },
-          sessionId,
-        )
-        .catch(() => undefined);
+      const evaluated = (await cdp.send(
+        "Runtime.evaluate",
+        { expression: script, awaitPromise: false },
+        sessionId,
+      )) as {
+        exceptionDetails?: {
+          text?: string;
+          exception?: { description?: string };
+        };
+      };
+      if (evaluated.exceptionDetails) {
+        throw new CdpError(
+          "command_failed",
+          `注入调试控制台时页面报错：${
+            evaluated.exceptionDetails.exception?.description ??
+            evaluated.exceptionDetails.text ??
+            "未知错误"
+          }`,
+        );
+      }
+      // 自检：脚本真的生效了吗（否则界面说成功、用户看着「点了没反应」）
+      const probe = (await cdp.send(
+        "Runtime.evaluate",
+        { expression: DEBUG_CONSOLE_PROBE, returnByValue: true },
+        sessionId,
+      )) as { result?: { value?: unknown } };
+      const probed = parseDebugConsoleProbe(probe.result?.value);
+      if (!probed.initialized) {
+        console.warn(
+          "[browser] 调试控制台自检没通过：",
+          JSON.stringify(probed).slice(0, 400),
+        );
+        throw new CdpError(
+          "command_failed",
+          `调试控制台没能在这个页面里生效${
+            probed.error
+              ? `：${probed.error}`
+              : probed.loaded
+                ? "（脚本注进去了但启动失败）。"
+                : "（页面里拿不到 eruda，可能被这一页拦住了）。"
+          }`,
+        );
+      }
       return { url };
     },
 
     async disconnect() {
+      offNavigation?.();
+      offNavigation = null;
       client?.close();
       client = null;
       sessionId = null;
@@ -544,6 +539,88 @@ export function createCdpBrowserSession(deps: {
     async key(key) {
       const { client: cdp, sessionId: id } = requireConnected();
       await pressKey(cdp, id, key);
+    },
+    async viewport() {
+      const { client: cdp, sessionId: id } = requireConnected();
+      return readViewport(cdp, id);
+    },
+    async resize(size) {
+      const { client: cdp, sessionId: id } = requireConnected();
+      await setViewportOverride(cdp, id, size);
+    },
+    async input(event) {
+      const { client: cdp, sessionId: id } = requireConnected();
+      if (event.type === "mouse") {
+        await dispatchMouse(cdp, id, {
+          type:
+            event.action === "pressed"
+              ? "mousePressed"
+              : event.action === "released"
+                ? "mouseReleased"
+                : "mouseMoved",
+          x: event.x,
+          y: event.y,
+          ...(event.button ? { button: event.button } : {}),
+          ...(typeof event.buttons === "number"
+            ? { buttons: event.buttons }
+            : {}),
+          ...(typeof event.modifiers === "number"
+            ? { modifiers: event.modifiers }
+            : {}),
+        });
+        return;
+      }
+      if (event.type === "wheel") {
+        await dispatchWheel(cdp, id, event);
+        return;
+      }
+      if (event.type === "key") {
+        await dispatchKey(cdp, id, event);
+        return;
+      }
+      await typeText(cdp, id, event.text);
+    },
+    async watch(options, onFrame) {
+      const { client: cdp, sessionId: id } = requireConnected();
+      // 同时只留一个画面订阅者：面板重连时旧响应可能还没断干净，
+      // 两个订阅者会把每帧都发两遍（流量翻倍），也会多 ack 一次。
+      await activeWatcher?.().catch(() => undefined);
+      // 「自由尺寸」= 真的改视口（不是把图缩小），关掉时还原窗口尺寸
+      const size =
+        options.width && options.height
+          ? { width: options.width, height: options.height }
+          : null;
+      await setViewportOverride(cdp, id, size);
+      await startScreencast(cdp, id, {
+        ...(options.width ? { maxWidth: options.width } : {}),
+        ...(options.height ? { maxHeight: options.height } : {}),
+        ...(options.quality ? { quality: options.quality } : {}),
+      });
+      const off = cdp.on("Page.screencastFrame", (params, eventSessionId) => {
+        // 别的标签的帧不要（事件按 CDP 会话分发，我们的页面是当前会话）
+        if (eventSessionId && eventSessionId !== id) return;
+        const data = typeof params.data === "string" ? params.data : "";
+        const frameId = Number(params.sessionId);
+        void (async () => {
+          if (data) {
+            // 写完（发出去）再 ack：Chrome 以 ack 做背压，先 ack 会堆帧
+            await Promise.resolve(onFrame(Buffer.from(data, "base64"))).catch(
+              () => undefined,
+            );
+          }
+          if (Number.isFinite(frameId)) {
+            await ackScreencastFrame(cdp, id, frameId);
+          }
+        })();
+      });
+      const stop = async () => {
+        off();
+        if (activeWatcher === stop) activeWatcher = null;
+        await stopScreencast(cdp, id).catch(() => undefined);
+        await setViewportOverride(cdp, id, null).catch(() => undefined);
+      };
+      activeWatcher = stop;
+      return stop;
     },
     async listTabs() {
       const { client: cdp } = requireConnected();

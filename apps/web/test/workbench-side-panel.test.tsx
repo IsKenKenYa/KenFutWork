@@ -94,6 +94,34 @@ vi.mock("../src/lib/code-git-api", () => ({
 }));
 
 /**
+ * 浏览器面板的实时画面要跟服务端换票据开流：这里把那条通道换成替身
+ * （真行为由 `cdp-view.test.ts` / `panel-browser-live` 相关的用例锁）。
+ */
+const {
+  fetchCdpStatusMock,
+  connectCdpMock,
+  openCdpViewMock,
+  sendCdpInputMock,
+  injectDebugConsoleMock,
+} = vi.hoisted(() => ({
+  fetchCdpStatusMock: vi.fn(),
+  connectCdpMock: vi.fn(),
+  openCdpViewMock: vi.fn(),
+  sendCdpInputMock: vi.fn(),
+  injectDebugConsoleMock: vi.fn(),
+}));
+
+vi.mock("../src/lib/server-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/lib/server-api")>()),
+  fetchCdpStatus: fetchCdpStatusMock,
+  connectCdp: connectCdpMock,
+  openCdpView: openCdpViewMock,
+  sendCdpInput: sendCdpInputMock,
+  injectDebugConsole: injectDebugConsoleMock,
+  fetchDebugConsoleScript: vi.fn().mockResolvedValue("/* eruda */"),
+}));
+
+/**
  * 右栏停靠面板（R3-1）：**编辑器式多标签**——标签是视图实例（每个文件/每个视图一个），
  * 可关，关掉后右邻接替；「+」打开新视图，左侧下拉给出全部标签（带搜索）。
  */
@@ -536,10 +564,66 @@ describe("面板宽度受对话列最小宽度约束", () => {
  * 「点对话里的 URL → 右栏浏览器打开」（用户口径）。
  *
  * 两个层面：模块级请求通道（有订阅者才拦截点击，没订阅者不吞掉链接默认行为），
- * 以及浏览器标签本身（地址栏补协议、iframe 渲染、系统浏览器兜底）。
+ * 以及浏览器标签本身（地址栏补协议、**面板里的实时画面**、系统浏览器兜底）。
  */
 describe("右栏浏览器（点链接自动打开）", () => {
-  afterEach(cleanup);
+  /**
+   * jsdom 不做布局：元素量出来恒为 0，而实时画面要按面板尺寸开流（0 尺寸会先摆着不开）。
+   * 这里给整棵 DOM 一个 800×600 的可用尺寸——面板正是按这个尺寸跟服务端要画面的。
+   */
+  const originalClientWidth = Object.getOwnPropertyDescriptor(
+    Element.prototype,
+    "clientWidth",
+  );
+  const originalClientHeight = Object.getOwnPropertyDescriptor(
+    Element.prototype,
+    "clientHeight",
+  );
+
+  beforeEach(() => {
+    Object.defineProperty(Element.prototype, "clientWidth", {
+      configurable: true,
+      get: () => 800,
+    });
+    Object.defineProperty(Element.prototype, "clientHeight", {
+      configurable: true,
+      get: () => 600,
+    });
+    fetchCdpStatusMock.mockResolvedValue({
+      status: "connected",
+      browser: "Chrome",
+      port: 9333,
+      tabs: 1,
+      currentUrl: "",
+      owned: true,
+      headless: true,
+    });
+    openCdpViewMock.mockResolvedValue({
+      ticket: "ticket-1",
+      viewport: { width: 800, height: 600, scale: 1 },
+    });
+    sendCdpInputMock.mockResolvedValue(undefined);
+    injectDebugConsoleMock.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+    if (originalClientWidth) {
+      Object.defineProperty(
+        Element.prototype,
+        "clientWidth",
+        originalClientWidth,
+      );
+    }
+    if (originalClientHeight) {
+      Object.defineProperty(
+        Element.prototype,
+        "clientHeight",
+        originalClientHeight,
+      );
+    }
+  });
 
   function Harness() {
     // 同上：面板的动作结果走全站 toast，测试按真实结构包一层 provider
@@ -599,7 +683,7 @@ describe("右栏浏览器（点链接自动打开）", () => {
     expect(normalizeUrl("   ")).toBeNull();
   });
 
-  it("地址栏回车后渲染 iframe；工具栏给后退/前进/刷新、视口预设与「在默认浏览器中打开」出口", async () => {
+  it("地址栏回车后面板显示受控浏览器的实时画面；工具栏给后退/前进/刷新与「在默认浏览器中打开」出口", async () => {
     render(<Harness />);
     await openBrowserTab();
     expect(screen.getByRole("button", { name: "后退" })).toBeDisabled();
@@ -608,22 +692,37 @@ describe("右栏浏览器（点链接自动打开）", () => {
 
     const input = screen.getByLabelText("地址");
     await userEvent.type(input, "localhost:8000{Enter}");
+    /**
+     * **面板里是受控浏览器的画面，不是 iframe**（用户口径：调试面板要在内嵌页面里出来；
+     * iframe 跨源，注不进脚本也挂不上调试工具）。面板的尺寸就是要给浏览器的视口尺寸。
+     */
     expect(
-      await screen.findByTitle("右栏浏览器：http://localhost:8000"),
+      await screen.findByRole("img", {
+        name: "受控浏览器画面：http://localhost:8000",
+      }),
     ).toBeInTheDocument();
+    expect(openCdpViewMock).toHaveBeenCalledWith("token", {
+      url: "http://localhost:8000",
+      width: 800,
+      height: 600,
+    });
 
     expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "前进" })).toBeDisabled();
     await userEvent.clear(input);
     await userEvent.type(input, "localhost:8001{Enter}");
     expect(
-      await screen.findByTitle("右栏浏览器：http://localhost:8001"),
+      await screen.findByRole("img", {
+        name: "受控浏览器画面：http://localhost:8001",
+      }),
     ).toBeInTheDocument();
     const back = screen.getByRole("button", { name: "后退" });
     expect(back).toBeEnabled();
     await userEvent.click(back);
     expect(
-      await screen.findByTitle("右栏浏览器：http://localhost:8000"),
+      await screen.findByRole("img", {
+        name: "受控浏览器画面：http://localhost:8000",
+      }),
     ).toBeInTheDocument();
 
     /**
@@ -640,17 +739,30 @@ describe("右栏浏览器（点链接自动打开）", () => {
     const widthInput = await screen.findByLabelText("视口宽度");
     const heightInput = screen.getByLabelText("视口高度");
     expect(heightInput).toBeInTheDocument();
-    // 分辨率是**可编辑输入框**：改宽度 → iframe 立刻按新尺寸排版（并按比例缩放）
     expect(screen.getByLabelText("窗口比例")).toBeInTheDocument();
-    const frame = screen.getByTitle("右栏浏览器：http://localhost:8000");
+
+    // 分辨率是**可编辑输入框**：改宽度 → 显示盒按新尺寸排版（并按比例缩放）
+    const frame = screen
+      .getByRole("img", { name: "受控浏览器画面：http://localhost:8000" })
+      .closest('[data-role="live-browser-frame"]') as HTMLElement | null;
     await userEvent.clear(widthInput);
     await userEvent.type(widthInput, "900");
-    await waitFor(() => expect(frame.style.width).toBe("900px"));
+    await waitFor(() => expect(frame?.style.width).toBe("900px"));
     await userEvent.clear(heightInput);
     await userEvent.type(heightInput, "600");
-    await waitFor(() => expect(frame.style.height).toBe("600px"));
-    // 比例按窗口比例缩放（不是拿宽度假装）
-    expect(frame.style.transform).toMatch(/scale\(/);
+    await waitFor(() => expect(frame?.style.height).toBe("600px"));
+    /**
+     * 自由尺寸是**真视口**：不是把画面缩放一下，而是让受控浏览器真的按 900×600 排版
+     * （服务端走 `Emulation.setDeviceMetricsOverride`），所以这里断言的是「按新尺寸重开了流」。
+     */
+    await waitFor(() =>
+      expect(openCdpViewMock).toHaveBeenLastCalledWith("token", {
+        url: "http://localhost:8000",
+        width: 900,
+        height: 600,
+      }),
+    );
+    expect(frame?.style.transform).toMatch(/scale\(/);
     expect(
       screen.getByRole("button", { name: "拖动调整视口尺寸" }),
     ).toBeInTheDocument();
@@ -669,6 +781,21 @@ describe("右栏浏览器（点链接自动打开）", () => {
     await userEvent.click(menu);
     expect(
       await screen.findByRole("option", { name: "在默认浏览器中打开" }),
+    ).toBeInTheDocument();
+
+    /**
+     * 「打开调试工具」：**注入到面板显示的这一页**（调试控制台出现在面板画面里），
+     * 不是另开一层窗口/标签——这条断言把口径钉住（用户口径：不要跳转外部）。
+     */
+    await userEvent.click(screen.getByRole("option", { name: "打开调试工具" }));
+    await waitFor(() =>
+      expect(injectDebugConsoleMock).toHaveBeenCalledWith(
+        "token",
+        "http://localhost:8000",
+      ),
+    );
+    expect(
+      await screen.findByText("调试控制台已打开（在面板页面底部）"),
     ).toBeInTheDocument();
 
     // 元素拾取（R3-4）：开着页面 + 有 token 时可用；点它会去服务端抓静态快照

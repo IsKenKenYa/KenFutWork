@@ -24,7 +24,7 @@ import {
   boundsOf,
   embedBounds,
   embedClose,
-  embedDevtools,
+  embedDebugConsole,
   embedOpen,
   isDesktopShell,
 } from "@/lib/desktop-embed";
@@ -32,9 +32,11 @@ import { getServerBaseUrl } from "@/lib/env";
 import {
   connectCdp,
   fetchCdpStatus,
+  fetchDebugConsoleScript,
   injectDebugConsole,
 } from "@/lib/server-api";
 import { keyed } from "../list-keys";
+import { BrowserLiveView } from "./panel-browser-live";
 
 /**
  * 右栏浏览器（R3-1 / R3-4 的可用形态）。工具栏按参考图的浏览器面板排：
@@ -417,31 +419,33 @@ export function BrowserPane({
             }
             if (next === "devtools" && accessToken) {
               /**
-               * 真动作：**没连接受控浏览器就先连**（否则用户得先去设置页点一次，点完还会以为
-               * 这个功能坏了——本轮就是这么被问到的），连上后在受控浏览器里开调试前端标签。
+               * 真动作：**没连接受控浏览器就先连**（无头——面板显示的就是它的画面，
+               * 不该再弹一个窗口出来），连上后把调试控制台**注入到面板显示的这一页**。
                * 每一步都写进提示行，不静默。
                */
               const token = accessToken;
               const run = async () => {
                 try {
-                  // 一条 toast 走完全程（连接 → 打开），失败才换成错误文案
+                  // 一条 toast 走完全程（连接 → 注入），失败才换成错误文案
                   toast("正在打开调试工具…");
                   /**
-                   * 桌面形态：页面就在**我们自己的 WebView2** 里，直接开它的 DevTools
-                   * （参考视频里那一项的真身）；Web 形态才需要 CDP 那条路。
+                   * 桌面形态：页面就在**我们自己的 WebView2** 里，直接把调试控制台注进去
+                   * （用户口径：调试面板要在内嵌页面里出来，不是另开一层）。
                    */
                   if (desktopShell) {
-                    toast("正在打开调试工具…");
-                    await embedDevtools();
+                    // 桌面：脚本从服务端取（与 Web 形态同一份），eval 进面板里的子 webview
+                    const script = await fetchDebugConsoleScript(token);
+                    await embedDebugConsole(script);
+                    toast("调试控制台已打开（在面板页面底部）");
                     return;
                   }
                   if (!cdpConnected) {
-                    const status = await connectCdp(token);
+                    const status = await connectCdp(token, { headless: true });
                     if (status.status !== "connected") {
                       throw new Error(
                         status.status === "error"
                           ? status.message
-                          : "连接受控浏览器失败。",
+                          : "内嵌浏览器没能启动起来。",
                       );
                     }
                     setCdpConnected(true);
@@ -450,7 +454,7 @@ export function BrowserPane({
                     token,
                     url || normalized || "about:blank",
                   );
-                  toast("调试控制台已打开（在受控浏览器那个窗口的页面底部）");
+                  toast("调试控制台已打开（在面板页面底部）");
                 } catch (error: unknown) {
                   toast(
                     error instanceof Error
@@ -695,6 +699,10 @@ export function BrowserPane({
             桌面形态（路线 2）：页面由 Rust 侧的**真 WebView2 子 webview** 渲染，
             这里只留一个占位块——它的位置会同步给原生层（见上面的同步 effect）。
             占位块保持透明但要占位，否则面板布局会塌。
+
+            其余形态：面板显示的是**受控浏览器的实时画面**（不是 iframe）——
+            跨源 iframe 读不到 DOM、挂不上调试工具、注不进脚本；画面流这条路
+            才让「注入到页面的调试控制台出现在面板里」成立（见 panel-browser-live）。
           */}
           {desktopShell ? (
             <div
@@ -707,18 +715,25 @@ export function BrowserPane({
               }}
             />
           ) : (
-            <iframe
-              key={`${url}#${reloadToken}`}
-              src={url}
-              title={`右栏浏览器：${url}`}
+            <div
+              data-role="live-browser-frame"
+              className="absolute top-0 left-0"
               style={{
                 width: viewportWidth > 0 ? `${viewportWidth}px` : "100%",
                 height: viewportHeight > 0 ? `${viewportHeight}px` : "100%",
                 transform: `scale(${scale})`,
                 transformOrigin: "top left",
               }}
-              className="absolute top-0 left-0"
-            />
+            >
+              <BrowserLiveView
+                accessToken={accessToken}
+                url={url}
+                frameWidth={viewportWidth}
+                frameHeight={viewportHeight}
+                reloadToken={reloadToken}
+                onReload={onReload}
+              />
+            </div>
           )}
           {freeSizeOn ? (
             <button

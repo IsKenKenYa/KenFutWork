@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { buildApp } from "../../app.js";
 
@@ -34,66 +34,13 @@ function buildBrowserApp(browser: Record<string, unknown>) {
   });
 }
 
-/**
- * 「打开调试工具」（右栏浏览器 ⋯ 菜单）：**给受控浏览器的页面开真 DevTools**。
- *
- * 这条是路线 1 的验收面：真机上验过受控 Chrome 里会多出一个 `devtools://devtools/bundled/
- * inspector.html?ws=…` 标签；这里锁路由的两种结果（成功透出 / 没连接受控浏览器时 502 + 可读原因）。
- */
-describe("POST /api/browser/cdp/devtools", () => {
-  it("受控浏览器连着：透出打开的调试目标", async () => {
-    const app = buildBrowserApp({
-      cdp: {
-        isConnected: () => true,
-        openDevtools: async () => ({
-          targetId: "DEVTOOLS-1",
-          url: "https://example.com/",
-        }),
-      },
-    });
-    try {
-      const response = await app.inject({
-        method: "POST",
-        url: "/api/browser/cdp/devtools",
-      });
-      expect(response.statusCode).toBe(200);
-      expect(response.json()).toEqual({
-        opened: { targetId: "DEVTOOLS-1", url: "https://example.com/" },
-      });
-    } finally {
-      await app.close();
-    }
-  });
-
-  it("没连接受控浏览器：502 + 可读原因（客户端据此把菜单项置灰）", async () => {
-    const app = buildBrowserApp({
-      cdp: {
-        isConnected: () => false,
-        openDevtools: async () => {
-          throw new Error(
-            "浏览器未连接：请到「设置 → 浏览器 → 外部浏览器」点『连接到 Chrome』。",
-          );
-        },
-      },
-    });
-    try {
-      const response = await app.inject({
-        method: "POST",
-        url: "/api/browser/cdp/devtools",
-      });
-      expect(response.statusCode).toBe(502);
-      expect(String(response.json().error?.message)).toContain("浏览器未连接");
-    } finally {
-      await app.close();
-    }
-  });
-});
-
 describe("POST /api/browser/snapshot", () => {
   it("CDP 连着：回来真实渲染页 + 盒模型几何 + 视口 + 截图，source=cdp", async () => {
     const app = buildBrowserApp({
       cdp: {
         isConnected: () => true,
+        // 受控浏览器停在别处：这一页要真的导航过去
+        status: () => ({ status: "connected", currentUrl: "about:blank" }),
         navigate: async () => ({
           url: "https://example.com/",
           title: "Example",
@@ -215,6 +162,283 @@ describe("POST /api/browser/snapshot", () => {
       });
       expect(response.json().source).toBe("static");
       expect(cdpCalled).toBe(false);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("受控浏览器已经在这一页：只读、不重复导航（面板里的一切不该被刷掉）", async () => {
+    let navigated = false;
+    const app = buildBrowserApp({
+      cdp: {
+        isConnected: () => true,
+        status: () => ({
+          status: "connected",
+          currentUrl: "https://example.com/",
+        }),
+        navigate: async () => {
+          navigated = true;
+          return { url: "", title: "", text: "", elements: [] };
+        },
+        snapshot: async () => ({
+          url: "https://example.com/",
+          title: "Example",
+          text: "正文",
+          elements: [],
+        }),
+        pickables: async () => ({
+          url: "https://example.com/",
+          title: "Example",
+          viewport: { width: 800, height: 600 },
+          elements: [],
+        }),
+      },
+      snapshot: async () => {
+        throw new Error("CDP 可用时不该走静态抓取");
+      },
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/browser/snapshot",
+        payload: { url: "https://example.com" },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(navigated).toBe(false);
+      expect(response.json().source).toBe("cdp");
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+/**
+ * 右栏面板的画面流（`/api/browser/cdp/view` + `/stream` + `/input`）。
+ *
+ * 这三条是「面板里显示受控浏览器画面」的接口：换票（`<img>` 发不了登录头）、开流
+ * （MJPEG，浏览器拿 `<img>` 就能渲染）、回填输入。真机实测在 GUI 走查里，这里锁形状与
+ * 分流（没连接受控浏览器 → 409 而不是静默空白）。
+ */
+describe("面板画面流接口", () => {
+  it("/view：没连接受控浏览器 → 409 + 可读原因（不给半截票据）", async () => {
+    const app = buildBrowserApp({
+      cdp: { isConnected: () => false },
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/browser/cdp/view",
+        payload: { url: "https://example.com" },
+      });
+      expect(response.statusCode).toBe(409);
+      expect(String(response.json().error?.message)).toContain("受控浏览器");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("/view：换票顺带设视口；同一页不重复导航（换地址才导航）", async () => {
+    const navigated: string[] = [];
+    const resized: Array<{ width: number; height: number } | null> = [];
+    const app = buildBrowserApp({
+      cdp: {
+        isConnected: () => true,
+        status: () => ({
+          status: "connected",
+          currentUrl: "https://example.com/",
+        }),
+        navigate: async (url: string) => {
+          navigated.push(url);
+          return { url, title: "", text: "", elements: [] };
+        },
+        resize: async (size: { width: number; height: number } | null) => {
+          resized.push(size);
+        },
+        viewport: async () => ({ width: 900, height: 600, scale: 1 }),
+      },
+    });
+    try {
+      const same = await app.inject({
+        method: "POST",
+        url: "/api/browser/cdp/view",
+        payload: { url: "https://example.com", width: 900, height: 600 },
+      });
+      expect(same.statusCode).toBe(200);
+      expect(navigated).toEqual([]);
+      expect(resized).toEqual([{ width: 900, height: 600 }]);
+      const body = same.json() as {
+        ticket: string;
+        viewport: { width: number; height: number };
+      };
+      expect(body.ticket.length).toBeGreaterThan(8);
+      expect(body.viewport).toEqual({ width: 900, height: 600, scale: 1 });
+
+      const moved = await app.inject({
+        method: "POST",
+        url: "/api/browser/cdp/view",
+        payload: { url: "https://example.com/other" },
+      });
+      expect(moved.statusCode).toBe(200);
+      expect(navigated).toEqual(["https://example.com/other"]);
+      // 没给尺寸 → 还原窗口尺寸（自由尺寸关掉时）
+      expect(resized.at(-1)).toBeNull();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("/debug-console.js：透出脚本源码（桌面形态 eval 用同一份）；取不到时 502 带原因", async () => {
+    const app = buildBrowserApp({
+      cdp: { debugConsoleScript: async () => "/* eruda 源码 */" },
+    });
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/browser/debug-console.js",
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["content-type"]).toContain("javascript");
+      expect(response.body).toBe("/* eruda 源码 */");
+    } finally {
+      await app.close();
+    }
+
+    const failing = buildBrowserApp({
+      cdp: {
+        debugConsoleScript: async () => {
+          throw new Error("拿不到脚本（网络不通）");
+        },
+      },
+    });
+    try {
+      const response = await failing.inject({
+        method: "GET",
+        url: "/api/browser/debug-console.js",
+      });
+      expect(response.statusCode).toBe(502);
+      expect(String(response.json().error?.message)).toContain("网络不通");
+    } finally {
+      await failing.close();
+    }
+  });
+
+  it("/view：reload=true 时同一页也要重新导航（否则面板上的「刷新」在实时画面下是死的）", async () => {
+    const navigated: string[] = [];
+    const app = buildBrowserApp({
+      cdp: {
+        isConnected: () => true,
+        status: () => ({
+          status: "connected",
+          currentUrl: "https://example.com/",
+        }),
+        navigate: async (url: string) => {
+          navigated.push(url);
+          return { url, title: "", text: "", elements: [] };
+        },
+        resize: async () => {},
+        viewport: async () => ({ width: 800, height: 600, scale: 1 }),
+      },
+    });
+    try {
+      await app.inject({
+        method: "POST",
+        url: "/api/browser/cdp/view",
+        payload: { url: "https://example.com", reload: true },
+      });
+      expect(navigated).toEqual(["https://example.com"]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("/input：形状不对 → 400；对的形状原样转给会话", async () => {
+    const events: unknown[] = [];
+    const app = buildBrowserApp({
+      cdp: {
+        isConnected: () => true,
+        input: async (event: unknown) => {
+          events.push(event);
+        },
+      },
+    });
+    try {
+      const bad = await app.inject({
+        method: "POST",
+        url: "/api/browser/cdp/input",
+        payload: { type: "mouse", action: "pressed" },
+      });
+      expect(bad.statusCode).toBe(400);
+
+      const ok = await app.inject({
+        method: "POST",
+        url: "/api/browser/cdp/input",
+        payload: { type: "key", key: "Enter" },
+      });
+      expect(ok.statusCode).toBe(200);
+      expect(events).toEqual([{ type: "key", key: "Enter" }]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("/stream：真推 MJPEG 分帧（`<img>` 直接能渲染）；票据一次性；坏票据 401", async () => {
+    let stopped = false;
+    const frame = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
+    const app = buildBrowserApp({
+      cdp: {
+        isConnected: () => true,
+        status: () => ({ status: "connected", currentUrl: "about:blank" }),
+        navigate: async () => ({
+          url: "https://example.com/",
+          title: "",
+          text: "",
+          elements: [],
+        }),
+        resize: async () => {},
+        viewport: async () => ({ width: 800, height: 600, scale: 1 }),
+        watch: async (
+          _options: unknown,
+          onFrame: (jpeg: Buffer) => Promise<void>,
+        ) => {
+          await onFrame(frame);
+          return async () => {
+            stopped = true;
+          };
+        },
+      },
+    });
+    await app.listen({ port: 0, host: "127.0.0.1" });
+    const address = app.server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    try {
+      const minted = await app.inject({
+        method: "POST",
+        url: "/api/browser/cdp/view",
+        payload: { url: "https://example.com", width: 800, height: 600 },
+      });
+      const ticket = (minted.json() as { ticket: string }).ticket;
+
+      const response = await fetch(
+        `http://127.0.0.1:${port}/api/browser/cdp/stream?ticket=${ticket}`,
+      );
+      expect(response.headers.get("content-type")).toContain(
+        "multipart/x-mixed-replace",
+      );
+      const reader = response.body?.getReader();
+      const chunk = await reader?.read();
+      const head = Buffer.from(chunk?.value ?? []).toString("latin1");
+      expect(head).toContain("--kfwframe");
+      expect(head).toContain("Content-Type: image/jpeg");
+      expect(head).toContain(`Content-Length: ${frame.length}`);
+      // 断开 → 服务端收尾（停掉 CDP 那边的画面推送）
+      await reader?.cancel();
+      await vi.waitFor(() => expect(stopped).toBe(true));
+
+      // 票据一次性：同一张再开一次就是 401
+      const again = await fetch(
+        `http://127.0.0.1:${port}/api/browser/cdp/stream?ticket=${ticket}`,
+      );
+      expect(again.status).toBe(401);
     } finally {
       await app.close();
     }

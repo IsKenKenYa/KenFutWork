@@ -10,7 +10,6 @@ import {
   fetchProjects,
   fetchVideoModels,
   fetchViewer,
-  openCdpDevtools,
   pickDirectory,
 } from "../src/lib/server-api";
 
@@ -351,7 +350,7 @@ describe("CDP 动作的请求形状", () => {
     vi.clearAllMocks();
   });
 
-  it("connectCdp / openCdpDevtools 都是 POST + JSON 头 + **非空 body**", async () => {
+  it("connectCdp 是 POST + JSON 头 + **非空 body**", async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
@@ -362,12 +361,11 @@ describe("CDP 动作的请求形状", () => {
     });
 
     await connectCdp("token");
-    await openCdpDevtools("token");
 
     const calls = mockFetch.mock.calls.map(
       (call) => call[1] as { method?: string; body?: string },
     );
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(1);
     for (const init of calls) {
       expect(init.method).toBe("POST");
       // 空 body + JSON 头 = 400（FST_ERR_CTP_EMPTY_JSON_BODY）

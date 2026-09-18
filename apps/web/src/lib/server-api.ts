@@ -896,38 +896,6 @@ export async function fetchCdpStatus(
 }
 
 /**
- * 「打开调试工具」：让服务端在**受控浏览器**里开一个调试前端标签（真 DevTools）。
- * 没连接受控浏览器时服务端回 502 + 可读原因。
- */
-export async function openCdpDevtools(
-  accessToken: string,
-  /** 面板当前打开的地址：受控浏览器会先导航到它，调试工具才对得准「你看的那一页」。 */
-  url?: string,
-): Promise<void> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/browser/cdp/devtools`,
-    /**
-     * **body 不能省**：带了 `Content-Type: application/json` 却发空 body，
-     * Fastify 直接回 `FST_ERR_CTP_EMPTY_JSON_BODY`（400）——真机踩过：设置页的
-     * 「连接到 Chrome」与右栏的「打开调试工具」都是这么失败的。
-     */
-    {
-      method: "POST",
-      headers: authJsonHeaders(accessToken),
-      body: JSON.stringify(url ? { url } : {}),
-    },
-  );
-  if (response.ok) return;
-  const payload = (await response.json().catch(() => null)) as {
-    error?: { message?: string };
-  } | null;
-  throw new ApiApplicationError(
-    "cdp_devtools_failed",
-    payload?.error?.message ?? "打开调试工具失败。",
-  );
-}
-
-/**
  * 「打开调试工具」→ 注入 Eruda 调试控制台到受控页面（用户口径「直接打开调试面板，不转接」）。
  */
 export async function injectDebugConsole(
@@ -953,13 +921,49 @@ export async function injectDebugConsole(
   );
 }
 
-export async function connectCdp(accessToken: string): Promise<CdpStatusView> {
+/**
+ * 调试控制台脚本源码（桌面形态要用它 `eval` 进面板里的子 WebView2）。
+ *
+ * 与 Web 形态的 CDP 注入是**同一份**源码：服务端取一次并缓存。
+ */
+export async function fetchDebugConsoleScript(
+  accessToken: string,
+): Promise<string> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/browser/debug-console.js`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as {
+      error?: { message?: string };
+    } | null;
+    throw new ApiApplicationError(
+      "debug_console_unavailable",
+      payload?.error?.message ??
+        `拿不到调试控制台脚本（服务端返回 ${response.status}）。`,
+    );
+  }
+  return await response.text();
+}
+
+export async function connectCdp(
+  accessToken: string,
+  /**
+   * 无头（不弹窗口）。右栏面板显式传 `true`：面板里看的就是这个浏览器的画面，
+   * 再弹一个窗口出来纯属多余（用户口径：「不要跳转外部」）。不传则按设置。
+   */
+  options: { headless?: boolean } = {},
+): Promise<CdpStatusView> {
   let response: Response;
   try {
     response = await fetch(`${getServerBaseUrl()}/api/browser/cdp/connect`, {
       method: "POST",
       headers: authJsonHeaders(accessToken),
-      body: "{}",
+      body: JSON.stringify(
+        typeof options.headless === "boolean"
+          ? { headless: options.headless }
+          : {},
+      ),
     });
   } catch {
     // fetch 抛错 = 服务端根本没应答（重启中/挂了），与「浏览器连不上」是两回事，要分开说
@@ -984,6 +988,93 @@ export async function connectCdp(accessToken: string): Promise<CdpStatusView> {
     );
   }
   return payload.cdp;
+}
+
+/** 面板画面流的视口尺寸（CSS px；客户端按它把鼠标坐标换算成视口坐标）。 */
+export interface CdpViewportView {
+  width: number;
+  height: number;
+  scale: number;
+}
+
+/**
+ * 面板画面流的**开流手续**：确认受控浏览器在 + 导航到目标地址 + 换一张票据。
+ *
+ * 分两步是因为真正开流的请求由浏览器替我们发（`<img src=…>`），发不了登录头——
+ * 票据短时且一次性（见服务端 view-stream）。
+ */
+export async function openCdpView(
+  accessToken: string,
+  input: {
+    url?: string;
+    /** 自由尺寸：真视口尺寸（不给 = 跟窗口一样大）。 */
+    width?: number;
+    height?: number;
+    /** 「刷新」：同一页也重新导航一次。 */
+    reload?: boolean;
+  },
+): Promise<{ ticket: string; viewport: CdpViewportView }> {
+  const response = await fetch(`${getServerBaseUrl()}/api/browser/cdp/view`, {
+    method: "POST",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify(input),
+  });
+  const payload = (await response.json().catch(() => null)) as {
+    ticket?: string;
+    viewport?: CdpViewportView;
+    error?: { message?: string };
+  } | null;
+  if (!response.ok || !payload?.ticket || !payload.viewport) {
+    throw new ApiApplicationError(
+      "cdp_view_failed",
+      payload?.error?.message ??
+        `打开面板画面失败（服务端返回 ${response.status}）。`,
+    );
+  }
+  return { ticket: payload.ticket, viewport: payload.viewport };
+}
+
+/** 面板内交互回填的线形状（坐标是**视口 CSS px**，服务端不缩放）。 */
+export type CdpInputWireEvent =
+  | {
+      type: "mouse";
+      action: "pressed" | "released" | "moved";
+      x: number;
+      y: number;
+      /** `none` = 只是移动（没有按着任何键）。 */
+      button?: "left" | "right" | "middle" | "none";
+      buttons?: number;
+      modifiers?: number;
+    }
+  | {
+      type: "wheel";
+      x: number;
+      y: number;
+      deltaX?: number;
+      deltaY?: number;
+    }
+  | { type: "key"; key: string; code?: string; modifiers?: number }
+  | { type: "text"; text: string };
+
+/** 面板内的交互回填（鼠标 / 滚轮 / 键盘 / 文本）。 */
+export async function sendCdpInput(
+  accessToken: string,
+  event: CdpInputWireEvent,
+): Promise<void> {
+  const response = await fetch(`${getServerBaseUrl()}/api/browser/cdp/input`, {
+    method: "POST",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify(event),
+  });
+  if (response.ok) return;
+  const payload = (await response.json().catch(() => null)) as {
+    error?: { message?: string };
+  } | null;
+  throw new ApiApplicationError(
+    "cdp_input_failed",
+    payload?.error?.message ??
+      `面板操作没能转给浏览器（服务端返回 ${response.status}）。`,
+  );
 }
 
 export async function disconnectCdp(
