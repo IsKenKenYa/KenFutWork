@@ -287,6 +287,85 @@ describe("面板画面流接口", () => {
     }
   });
 
+  it("控制台接口：消息按 since 增量取、执行表达式、清空", async () => {
+    const messages: Array<{ method: string; args: unknown[] }> = [];
+    const cleared: string[] = [];
+    const app = buildBrowserApp({
+      cdp: {
+        messages: async (since: number) => {
+          messages.push({ method: "messages", args: [since] });
+          return {
+            messages: [
+              {
+                seq: 7,
+                level: "error",
+                text: "404",
+                at: "2026-09-18T00:00:00.000Z",
+                source: "log",
+              },
+            ],
+            nextSeq: 7,
+          };
+        },
+        evaluate: async (expression: string) => {
+          messages.push({ method: "evaluate", args: [expression] });
+          return {
+            seq: 8,
+            level: "log",
+            text: "Example",
+            at: "2026-09-18T00:00:00.000Z",
+            source: "input",
+          };
+        },
+        clearMessages: async () => {
+          cleared.push("yes");
+        },
+      },
+    });
+    try {
+      const list = await app.inject({
+        method: "GET",
+        url: "/api/browser/cdp/messages?since=6",
+      });
+      expect(list.statusCode).toBe(200);
+      expect(messages[0]).toEqual({ method: "messages", args: [6] });
+      expect(list.json()).toMatchObject({ nextSeq: 7 });
+
+      // since 非法（空/负数/非数字）一律当 0：客户端不必自己兜
+      await app.inject({ method: "GET", url: "/api/browser/cdp/messages" });
+      await app.inject({
+        method: "GET",
+        url: "/api/browser/cdp/messages?since=-5",
+      });
+      expect(messages[1]).toEqual({ method: "messages", args: [0] });
+      expect(messages[2]).toEqual({ method: "messages", args: [0] });
+
+      const evaluated = await app.inject({
+        method: "POST",
+        url: "/api/browser/cdp/eval",
+        payload: { expression: "document.title" },
+      });
+      expect(evaluated.statusCode).toBe(200);
+      expect(evaluated.json().message).toMatchObject({ text: "Example" });
+
+      const empty = await app.inject({
+        method: "POST",
+        url: "/api/browser/cdp/eval",
+        payload: { expression: "   " },
+      });
+      expect(empty.statusCode).toBe(400);
+
+      const clear = await app.inject({
+        method: "POST",
+        url: "/api/browser/cdp/messages/clear",
+      });
+      expect(clear.statusCode).toBe(200);
+      expect(cleared).toEqual(["yes"]);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("/debug-console.js：透出脚本源码（桌面形态 eval 用同一份）；取不到时 502 带原因", async () => {
     const app = buildBrowserApp({
       cdp: { debugConsoleScript: async () => "/* eruda 源码 */" },

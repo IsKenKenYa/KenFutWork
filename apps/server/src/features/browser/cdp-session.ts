@@ -28,6 +28,14 @@ import {
   waitForLoad,
 } from "./cdp-client.js";
 import {
+  type ConsoleMessage,
+  createConsoleBuffer,
+  formatConsoleCall,
+  formatEvalResult,
+  formatExceptionThrown,
+  formatLogEntry,
+} from "./console-log.js";
+import {
   createDebugConsoleSource,
   DEBUG_CONSOLE_PROBE,
   type DebugConsoleSource,
@@ -141,6 +149,19 @@ export interface CdpBrowserSession {
     options: { width?: number; height?: number; quality?: number },
     onFrame: (jpeg: Buffer) => Promise<void> | void,
   ): Promise<() => Promise<void>>;
+  /**
+   * 悬浮控制台的消息（增量）：`since` = 客户端已经拿到的最大 seq。
+   *
+   * 消息来自页面里的 `console.*`、未捕获异常、浏览器日志——在**打标签时就订阅**了，
+   * 所以「打开控制台之前就报的错」也在（否则用户先看到页面报错、再开控制台却什么都没有）。
+   */
+  messages(
+    since: number,
+  ): Promise<{ messages: ConsoleMessage[]; nextSeq: number }>;
+  /** 悬浮控制台里敲的表达式：在页面里执行并回一行结果（对象给一行预览）。 */
+  evaluate(expression: string): Promise<ConsoleMessage>;
+  /** 清空控制台缓存（界面上的「清空」）。 */
+  clearMessages(): Promise<void>;
   /** 视口 CSS 尺寸（面板里把鼠标坐标换算成视口坐标要用它）。 */
   viewport(): Promise<{ width: number; height: number; scale: number }>;
   /** 面板内的交互回填（鼠标 / 滚轮 / 键盘 / 文本）。 */
@@ -190,6 +211,8 @@ export function createCdpBrowserSession(deps: {
   killStaleProfile?: typeof killStaleProfileInstance;
   /** 测试注入：调试控制台脚本来源（默认从 CDN 取一次并缓存）。 */
   debugConsole?: DebugConsoleSource;
+  /** 测试注入：时间来源（控制台消息的时间戳）。 */
+  now?: () => Date;
 }): CdpBrowserSession {
   const dataDir = deps.dataDir ?? join(tmpdir(), "kenfutwork-chrome-profile");
   const debugConsole = deps.debugConsole ?? createDebugConsoleSource();
@@ -236,23 +259,34 @@ export function createCdpBrowserSession(deps: {
   let currentTargetId: string | null = null;
   /** 当前画面流订阅（同时只留一个，见 `watch`）。 */
   let activeWatcher: (() => Promise<void>) | null = null;
-  /** 导航事件订阅（退订用，见 `trackNavigation`）。 */
-  let offNavigation: (() => void) | null = null;
+  /** 页面事件订阅（导航 + 控制台；退订用，见 `attachPageTracking`）。 */
+  let pageListeners: Array<() => void> = [];
+  /** 悬浮控制台的消息缓存（环形，见 console-log）。 */
+  const consoleLog = createConsoleBuffer();
+  /** 时间戳来源（测试注入，默认 Date）。 */
+  const now = deps.now ?? (() => new Date());
 
   /**
-   * 跟踪**页面自己发起的导航**（点链接、表单提交、JS 跳转）。
+   * 挂上页面级事件：**导航跟踪** + **控制台消息**。
    *
-   * `currentUrl` 原先只在 `navigate()` 里更新，于是页面自己跳走之后状态停在旧地址——真机实测
-   * 撞上了：点链接后画面已经是新页，`status()` 还报旧页，面板的「是不是同一页」判断跟着错
-   * （地址栏与画面各说一套）。
+   * - 导航：`currentUrl` 原先只在 `navigate()` 里更新，页面自己跳走（点链接）后状态会停在旧地址
+   *   （真机实测撞上：画面已是新页、`status()` 还报旧页，「是不是同一页」的判断跟着错）；
+   * - 控制台：在**打标签时就订阅**，所以「打开控制台之前页面就报的错」也在——
+   *   不然用户先看到页面报错、再打开控制台却什么都没有。
+   *
+   * 三个域 enable 失败不影响主流程（有些页面会拦），订阅照挂。
    */
-  const trackNavigation = (target: CdpClient, id: string): void => {
-    if (offNavigation) return;
-    void target.send("Page.enable", {}, id).catch(() => undefined);
-    offNavigation = target.on(
-      "Page.frameNavigated",
-      (params, eventSessionId) => {
-        if (eventSessionId && eventSessionId !== id) return;
+  const attachPageTracking = (target: CdpClient, id: string): void => {
+    if (pageListeners.length > 0) return;
+    for (const domain of ["Page", "Runtime", "Log"]) {
+      void target.send(`${domain}.enable`, {}, id).catch(() => undefined);
+    }
+    /** 只认我们这个会话的事件（别的标签的不要）。 */
+    const mine = (eventSessionId: string | undefined): boolean =>
+      !eventSessionId || eventSessionId === id;
+    pageListeners = [
+      target.on("Page.frameNavigated", (params, eventSessionId) => {
+        if (!mine(eventSessionId)) return;
         const frame = params.frame as
           | { url?: unknown; parentId?: unknown }
           | undefined;
@@ -262,8 +296,30 @@ export function createCdpBrowserSession(deps: {
         if (state.status === "connected") {
           state = { ...state, currentUrl: url };
         }
-      },
-    );
+      }),
+      target.on("Runtime.consoleAPICalled", (params, eventSessionId) => {
+        if (!mine(eventSessionId)) return;
+        consoleLog.push(
+          formatConsoleCall(params as never, now().toISOString()),
+        );
+      }),
+      target.on("Runtime.exceptionThrown", (params, eventSessionId) => {
+        if (!mine(eventSessionId)) return;
+        consoleLog.push(
+          formatExceptionThrown(params as never, now().toISOString()),
+        );
+      }),
+      target.on("Log.entryAdded", (params, eventSessionId) => {
+        if (!mine(eventSessionId)) return;
+        consoleLog.push(formatLogEntry(params as never, now().toISOString()));
+      }),
+    ];
+  };
+
+  /** 退订页面事件（换标签 / 断开时）。 */
+  const detachPageTracking = (): void => {
+    for (const off of pageListeners) off();
+    pageListeners = [];
   };
 
   const ensureTab = async (
@@ -281,7 +337,7 @@ export function createCdpBrowserSession(deps: {
     if (url) await waitForLoad(target, opened.sessionId);
     sessionId = opened.sessionId;
     currentTargetId = opened.targetId;
-    trackNavigation(target, opened.sessionId);
+    attachPageTracking(target, opened.sessionId);
     return sessionId;
   };
 
@@ -354,8 +410,8 @@ export function createCdpBrowserSession(deps: {
         );
         sessionId = null;
         currentTargetId = null;
-        // 新客户端：旧的退订句柄作废（否则 trackNavigation 会以为已经订阅过）
-        offNavigation = null;
+        // 新客户端：旧的订阅句柄作废（否则 attachPageTracking 会以为已经订阅过）
+        detachPageTracking();
         await ensureTab(client);
         const tabs = await client.listTargets();
         state = {
@@ -389,6 +445,31 @@ export function createCdpBrowserSession(deps: {
         };
         return state;
       }
+    },
+    async messages(since) {
+      return {
+        messages: consoleLog.since(since),
+        nextSeq: consoleLog.latestSeq(),
+      };
+    },
+    async clearMessages() {
+      consoleLog.clear();
+    },
+    async evaluate(expression) {
+      const { client: cdp, sessionId: id } = requireConnected();
+      const evaluated = (await cdp.send(
+        "Runtime.evaluate",
+        {
+          expression,
+          // 对象也给点信息：一行预览（否则只能看到 "Object"）
+          generatePreview: true,
+          awaitPromise: true,
+          userGesture: true,
+        },
+        id,
+      )) as never;
+      // 自己敲的也进同一条时间线（下次增量拉取时顺序一致）
+      return consoleLog.push(formatEvalResult(evaluated, now().toISOString()));
     },
     async debugConsoleScript() {
       return debugConsole.script();
@@ -458,8 +539,7 @@ export function createCdpBrowserSession(deps: {
     },
 
     async disconnect() {
-      offNavigation?.();
-      offNavigation = null;
+      detachPageTracking();
       client?.close();
       client = null;
       sessionId = null;

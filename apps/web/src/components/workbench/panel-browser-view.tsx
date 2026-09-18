@@ -36,6 +36,7 @@ import {
   injectDebugConsole,
 } from "@/lib/server-api";
 import { keyed } from "../list-keys";
+import { BrowserConsoleWindow } from "./panel-browser-console";
 import { BrowserLiveView } from "./panel-browser-live";
 
 /**
@@ -158,6 +159,11 @@ export function BrowserPane({
    * 取值只在挂载后定（SSR 里没有 window）。
    */
   const [desktopShell, setDesktopShell] = useState(false);
+  /**
+   * 悬浮控制台（用户口径：内嵌的控制台要做成**悬浮窗**，可拖动、可关闭）。
+   * 是**我们自己的 DOM**，不是页面里的 Eruda——Eruda 在页面的 shadow root 里、拖不动也关不掉。
+   */
+  const [consoleOpen, setConsoleOpen] = useState(false);
   const embedSlotRef = useRef<HTMLDivElement>(null);
   const [cdpConnected, setCdpConnected] = useState(false);
   /** 结果用**全站既有的 toast** 呈现（用户口径：这类提示不要贴在面板里）。 */
@@ -419,26 +425,14 @@ export function BrowserPane({
             }
             if (next === "devtools" && accessToken) {
               /**
-               * 真动作：**没连接受控浏览器就先连**（无头——面板显示的就是它的画面，
-               * 不该再弹一个窗口出来），连上后把调试控制台**注入到面板显示的这一页**。
-               * 每一步都写进提示行，不静默。
+               * 「打开调试工具」= 在面板里开**悬浮控制台**（可拖动 / 可关闭）。
+               *
+               * 受控浏览器没连上时先连（无头——面板显示的就是它的画面，不该再弹窗口），
+               * 因为控制台的消息就是从那条 CDP 连接上来的。
                */
               const token = accessToken;
               const run = async () => {
                 try {
-                  // 一条 toast 走完全程（连接 → 注入），失败才换成错误文案
-                  toast("正在打开调试工具…");
-                  /**
-                   * 桌面形态：页面就在**我们自己的 WebView2** 里，直接把调试控制台注进去
-                   * （用户口径：调试面板要在内嵌页面里出来，不是另开一层）。
-                   */
-                  if (desktopShell) {
-                    // 桌面：脚本从服务端取（与 Web 形态同一份），eval 进面板里的子 webview
-                    const script = await fetchDebugConsoleScript(token);
-                    await embedDebugConsole(script);
-                    toast("调试控制台已打开（在面板页面底部）");
-                    return;
-                  }
                   if (!cdpConnected) {
                     const status = await connectCdp(token, { headless: true });
                     if (status.status !== "connected") {
@@ -450,11 +444,7 @@ export function BrowserPane({
                     }
                     setCdpConnected(true);
                   }
-                  await injectDebugConsole(
-                    token,
-                    url || normalized || "about:blank",
-                  );
-                  toast("调试控制台已打开（在面板页面底部）");
+                  setConsoleOpen(true);
                 } catch (error: unknown) {
                   toast(
                     error instanceof Error
@@ -691,11 +681,12 @@ export function BrowserPane({
       ) : null}
 
       {url ? (
-        <div
-          ref={frameRef}
-          className="relative min-h-0 flex-1 overflow-auto border bg-background"
-        >
-          {/*
+        <div className="relative min-h-0 flex-1">
+          <div
+            ref={frameRef}
+            className="absolute inset-0 overflow-auto border bg-background"
+          >
+            {/*
             桌面形态（路线 2）：页面由 Rust 侧的**真 WebView2 子 webview** 渲染，
             这里只留一个占位块——它的位置会同步给原生层（见上面的同步 effect）。
             占位块保持透明但要占位，否则面板布局会塌。
@@ -704,73 +695,107 @@ export function BrowserPane({
             跨源 iframe 读不到 DOM、挂不上调试工具、注不进脚本；画面流这条路
             才让「注入到页面的调试控制台出现在面板里」成立（见 panel-browser-live）。
           */}
-          {desktopShell ? (
-            <div
-              ref={embedSlotRef}
-              data-role="native-browser-slot"
-              className="absolute top-0 left-0"
-              style={{
-                width: viewportWidth > 0 ? `${viewportWidth}px` : "100%",
-                height: viewportHeight > 0 ? `${viewportHeight}px` : "100%",
-              }}
-            />
-          ) : (
-            <div
-              data-role="live-browser-frame"
-              className="absolute top-0 left-0"
-              style={{
-                width: viewportWidth > 0 ? `${viewportWidth}px` : "100%",
-                height: viewportHeight > 0 ? `${viewportHeight}px` : "100%",
-                transform: `scale(${scale})`,
-                transformOrigin: "top left",
-              }}
-            >
-              <BrowserLiveView
-                accessToken={accessToken}
-                url={url}
-                frameWidth={viewportWidth}
-                frameHeight={viewportHeight}
-                reloadToken={reloadToken}
-                onReload={onReload}
+            {desktopShell ? (
+              <div
+                ref={embedSlotRef}
+                data-role="native-browser-slot"
+                className="absolute top-0 left-0"
+                style={{
+                  width: viewportWidth > 0 ? `${viewportWidth}px` : "100%",
+                  height: viewportHeight > 0 ? `${viewportHeight}px` : "100%",
+                }}
               />
-            </div>
-          )}
-          {freeSizeOn ? (
-            <button
-              type="button"
-              aria-label="拖动调整视口尺寸"
-              title="拖动调整视口尺寸"
-              onMouseDown={(event) => {
-                event.preventDefault();
-                const startX = event.clientX;
-                const startY = event.clientY;
-                const start = freeSize;
-                const onMove = (moveEvent: MouseEvent) => {
-                  setFreeSize({
-                    width: clampViewport(
-                      Math.round(start.width + (moveEvent.clientX - startX)),
-                      320,
-                      3840,
-                    ),
-                    height: clampViewport(
-                      Math.round(start.height + (moveEvent.clientY - startY)),
-                      240,
-                      2160,
-                    ),
-                  });
-                };
-                const onUp = () => {
-                  window.removeEventListener("mousemove", onMove);
-                  window.removeEventListener("mouseup", onUp);
-                };
-                window.addEventListener("mousemove", onMove);
-                window.addEventListener("mouseup", onUp);
+            ) : (
+              <div
+                data-role="live-browser-frame"
+                className="absolute top-0 left-0"
+                style={{
+                  width: viewportWidth > 0 ? `${viewportWidth}px` : "100%",
+                  height: viewportHeight > 0 ? `${viewportHeight}px` : "100%",
+                  transform: `scale(${scale})`,
+                  transformOrigin: "top left",
+                }}
+              >
+                <BrowserLiveView
+                  accessToken={accessToken}
+                  url={url}
+                  frameWidth={viewportWidth}
+                  frameHeight={viewportHeight}
+                  reloadToken={reloadToken}
+                  onReload={onReload}
+                />
+              </div>
+            )}
+            {freeSizeOn ? (
+              <button
+                type="button"
+                aria-label="拖动调整视口尺寸"
+                title="拖动调整视口尺寸"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  const startX = event.clientX;
+                  const startY = event.clientY;
+                  const start = freeSize;
+                  const onMove = (moveEvent: MouseEvent) => {
+                    setFreeSize({
+                      width: clampViewport(
+                        Math.round(start.width + (moveEvent.clientX - startX)),
+                        320,
+                        3840,
+                      ),
+                      height: clampViewport(
+                        Math.round(start.height + (moveEvent.clientY - startY)),
+                        240,
+                        2160,
+                      ),
+                    });
+                  };
+                  const onUp = () => {
+                    window.removeEventListener("mousemove", onMove);
+                    window.removeEventListener("mouseup", onUp);
+                  };
+                  window.addEventListener("mousemove", onMove);
+                  window.addEventListener("mouseup", onUp);
+                }}
+                style={{
+                  left: `${viewportWidth * scale - 10}px`,
+                  top: `${viewportHeight * scale - 10}px`,
+                }}
+                className="absolute h-3 w-3 cursor-nwse-resize border border-foreground/40 bg-background"
+              />
+            ) : null}
+          </div>
+          {consoleOpen && accessToken ? (
+            <BrowserConsoleWindow
+              accessToken={accessToken}
+              bounds={{ width: paneWidth, height: paneHeight }}
+              onClose={() => setConsoleOpen(false)}
+              onOpenPagePanel={() => {
+                /**
+                 * 「完整面板」：把 Eruda 注入面板显示的这一页（Elements / Network / Storage）。
+                 * 桌面形态是 eval 进我们自己的子 webview，Web 形态是 CDP 注入。
+                 */
+                const token = accessToken;
+                const target = url || normalized || "about:blank";
+                void (async () => {
+                  try {
+                    if (desktopShell) {
+                      const script = await fetchDebugConsoleScript(token);
+                      await embedDebugConsole(script);
+                    } else {
+                      await injectDebugConsole(token, target);
+                    }
+                    toast("完整面板已打开（在页面里）");
+                  } catch (error: unknown) {
+                    toast(
+                      error instanceof Error
+                        ? error.message
+                        : "打开完整面板失败。",
+                      "error",
+                    );
+                  }
+                })();
               }}
-              style={{
-                left: `${viewportWidth * scale - 10}px`,
-                top: `${viewportHeight * scale - 10}px`,
-              }}
-              className="absolute h-3 w-3 cursor-nwse-resize border border-foreground/40 bg-background"
             />
           ) : null}
         </div>

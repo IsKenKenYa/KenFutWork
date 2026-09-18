@@ -300,6 +300,97 @@ describe("CDP 会话：面板画面流", () => {
     );
   });
 
+  it("控制台消息：打标签时就订阅，console/异常/浏览器日志都进缓冲（按 seq 增量取）", async () => {
+    const fake = fakeClient();
+    fake.setEvalResult({ result: { value: "Example" } });
+    const session = sessionWith(fake);
+    await session.connect();
+
+    fake.emit(
+      "Runtime.consoleAPICalled",
+      { type: "log", args: [{ type: "string", value: "hello" }] },
+      "S1",
+    );
+    fake.emit(
+      "Runtime.exceptionThrown",
+      { exceptionDetails: { exception: { description: "Error: boom" } } },
+      "S1",
+    );
+    fake.emit(
+      "Log.entryAdded",
+      { entry: { level: "error", text: "404", url: "https://a.com/x" } },
+      "S1",
+    );
+    // 别的会话的事件不要
+    fake.emit(
+      "Runtime.consoleAPICalled",
+      { type: "log", args: [{ type: "string", value: "别人的" }] },
+      "别的会话",
+    );
+
+    const first = await session.messages(0);
+    expect(first.messages.map((m) => [m.seq, m.source, m.text])).toEqual([
+      [1, "console", "hello"],
+      [2, "exception", "Error: boom"],
+      [3, "log", "404 (https://a.com/x)"],
+    ]);
+    expect(first.nextSeq).toBe(3);
+    // 增量：只说「我已经拿到 2」就只给 3
+    expect((await session.messages(2)).messages.map((m) => m.seq)).toEqual([3]);
+  });
+
+  it("控制台里执行表达式：进同一条时间线，能按增量取回", async () => {
+    const fake = fakeClient();
+    fake.setEvalResult({ result: { type: "string", value: "Example Domain" } });
+    const session = sessionWith(fake);
+    await session.connect();
+    const message = await session.evaluate("document.title");
+    expect(message).toMatchObject({
+      level: "log",
+      source: "input",
+      text: "Example Domain",
+    });
+    expect(message.seq).toBe(1);
+    // generatePreview 要开（对象才有预览）；awaitPromise 让 Promise 也回结果
+    const params = fake.sent.at(-1)?.params as Record<string, unknown>;
+    expect(params).toMatchObject({
+      expression: "document.title",
+      generatePreview: true,
+      awaitPromise: true,
+    });
+    expect((await session.messages(0)).messages).toHaveLength(1);
+  });
+
+  it("清空控制台：消息没了，但 seq 继续涨（客户端游标不回退）", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    fake.emit(
+      "Runtime.consoleAPICalled",
+      { type: "log", args: [{ type: "number", value: 1 }] },
+      "S1",
+    );
+    await session.clearMessages();
+    expect((await session.messages(0)).messages).toEqual([]);
+    fake.emit(
+      "Runtime.consoleAPICalled",
+      { type: "log", args: [{ type: "number", value: 2 }] },
+      "S1",
+    );
+    expect((await session.messages(0)).messages.map((m) => m.seq)).toEqual([2]);
+  });
+
+  it("断开时退订控制台事件（不留悬空监听）", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    expect(fake.listenerCount("Runtime.consoleAPICalled")).toBe(1);
+    await session.disconnect();
+    expect(fake.listenerCount("Runtime.consoleAPICalled")).toBe(0);
+    expect(fake.listenerCount("Runtime.exceptionThrown")).toBe(0);
+    expect(fake.listenerCount("Log.entryAdded")).toBe(0);
+  });
+
   it("debugConsoleScript() 透出源码（桌面形态取同一份）", async () => {
     const fake = fakeClient();
     const session = sessionWith(fake, {

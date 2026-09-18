@@ -491,7 +491,66 @@ export function registerBrowserRoutes(
     }
   });
 
-  /** 「打开调试工具」：注入 Eruda 到受控页面（用户口径：直接打开调试面板，不转接）。 */
+  /**
+   * 悬浮控制台的**消息拉取**（面板里的悬浮窗轮询它；`since` = 已拿到的最大 seq）。
+   *
+   * 为什么是轮询而不是长连接：本地回环上一次几十字节的请求成本可忽略，而长连接要往
+   * WS 协议里加一套浏览器消息——为这点流量不划算。
+   */
+  app.get("/api/browser/cdp/messages", async (request, reply) => {
+    const user = await authenticate(request, reply);
+    if (!user) return;
+    const sinceRaw = (request.query as { since?: string } | undefined)?.since;
+    const since = Number(sinceRaw);
+    try {
+      const result = await options.browser.cdp.messages(
+        Number.isFinite(since) && since > 0 ? Math.floor(since) : 0,
+      );
+      return reply.code(200).send(result);
+    } catch (error) {
+      return reply.code(502).send({
+        error: {
+          code: "cdp_messages_failed",
+          message:
+            error instanceof Error ? error.message : "读取控制台消息失败。",
+        },
+      });
+    }
+  });
+
+  /** 悬浮控制台里敲的表达式：在页面里执行并回一行结果。 */
+  app.post("/api/browser/cdp/eval", async (request, reply) => {
+    const user = await authenticate(request, reply);
+    if (!user) return;
+    const expression = (request.body as { expression?: unknown } | undefined)
+      ?.expression;
+    if (typeof expression !== "string" || !expression.trim()) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "缺少表达式。" },
+      });
+    }
+    try {
+      const message = await options.browser.cdp.evaluate(expression);
+      return reply.code(200).send({ message });
+    } catch (error) {
+      return reply.code(502).send({
+        error: {
+          code: "cdp_eval_failed",
+          message: error instanceof Error ? error.message : "执行表达式失败。",
+        },
+      });
+    }
+  });
+
+  /** 清空控制台缓存（界面上的「清空」按钮）。 */
+  app.post("/api/browser/cdp/messages/clear", async (request, reply) => {
+    const user = await authenticate(request, reply);
+    if (!user) return;
+    await options.browser.cdp.clearMessages();
+    return reply.code(200).send({ ok: true });
+  });
+
+  /** 「完整面板」：注入 Eruda 到受控页面（Elements / Network / Storage 那些页内面板）。 */
   app.post("/api/browser/cdp/console", async (request, reply) => {
     const user = await authenticate(request, reply);
     if (!user) return;

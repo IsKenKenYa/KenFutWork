@@ -921,6 +921,64 @@ export async function injectDebugConsole(
   );
 }
 
+/** 悬浮控制台里的一条消息（形状与服务端 console-log 的 ConsoleMessage 一致）。 */
+export interface ConsoleMessageView {
+  seq: number;
+  level: "log" | "info" | "warn" | "error";
+  text: string;
+  at: string;
+  source: "console" | "exception" | "log" | "input";
+}
+
+/** 悬浮控制台的增量消息（`since` = 已经拿到的最大 seq）。 */
+export async function fetchConsoleMessages(
+  accessToken: string,
+  since: number,
+): Promise<{ messages: ConsoleMessageView[]; nextSeq: number }> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/browser/cdp/messages?since=${Math.max(0, Math.floor(since))}`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as {
+    messages: ConsoleMessageView[];
+    nextSeq: number;
+  };
+}
+
+/** 在页面里执行一段表达式（悬浮控制台的输入行）。 */
+export async function evaluateInPage(
+  accessToken: string,
+  expression: string,
+): Promise<ConsoleMessageView> {
+  const response = await fetch(`${getServerBaseUrl()}/api/browser/cdp/eval`, {
+    method: "POST",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify({ expression }),
+  });
+  const payload = (await response.json().catch(() => null)) as {
+    message?: ConsoleMessageView;
+    error?: { message?: string };
+  } | null;
+  if (!response.ok || !payload?.message) {
+    throw new ApiApplicationError(
+      "cdp_eval_failed",
+      payload?.error?.message ?? `执行失败（服务端返回 ${response.status}）。`,
+    );
+  }
+  return payload.message;
+}
+
+/** 清空服务端那边的控制台缓存。 */
+export async function clearConsoleMessages(accessToken: string): Promise<void> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/browser/cdp/messages/clear`,
+    { method: "POST", headers: authJsonHeaders(accessToken), body: "{}" },
+  );
+  if (response.ok) return;
+  return handleErrorResponse(response);
+}
+
 /**
  * 调试控制台脚本源码（桌面形态要用它 `eval` 进面板里的子 WebView2）。
  *
