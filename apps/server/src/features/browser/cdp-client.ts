@@ -139,6 +139,64 @@ export async function launchBrowserWithDebugPort(options: {
 }
 
 /** 等 DevTools 端口就绪（Chrome 起进程到监听有一点延迟）。 */
+/**
+ * 收掉「用着我们自己 profile 的残留实例」。
+ *
+ * **真机踩到的坑**：修复（给启动参数加 `--remote-allow-origins`）之后用户那边仍然连不上——
+ * 因为**旧的 Chrome 进程还活着**（用着同一个 `--user-data-dir`），新的一次启动会「交棒」给
+ * 它并立刻退出，于是**参数永远加不上**，调试前端打开后立刻断（界面显示「调试连接已关闭」）。
+ *
+ * 只动**命令行里带我们 profile 目录**的进程：用户自己日常开的 Chrome 用的不是这个 profile，
+ * 不会被碰到。收完等端口空出来（最多 5 秒）再让调用方启动新的。
+ */
+export async function killStaleProfileInstance(
+  profileDir: string,
+  port: number,
+): Promise<boolean> {
+  const answering = await fetch(`http://127.0.0.1:${port}/json/version`)
+    .then((response) => response.ok)
+    .catch(() => false);
+  if (!answering) return false;
+
+  if (process.platform === "win32") {
+    /**
+     * 按命令行匹配（我们自己的 profile 路径唯一）→ 收掉整棵进程树。
+     * 注意：这一段是嵌在 PowerShell **单引号字符串**里的，反斜杠在那里就是字面量，
+     * **不能**再重复转义——真机踩过：重复转义后 `-like` 匹配不上，残留实例纹丝不动。
+     */
+    const pattern = profileDir;
+    await new Promise<void>((resolve) => {
+      const killer = spawn(
+        "powershell",
+        [
+          "-NoProfile",
+          "-Command",
+          `Get-CimInstance Win32_Process -Filter "Name='chrome.exe' or Name='msedge.exe'" | Where-Object { $_.CommandLine -like '*${pattern}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`,
+        ],
+        { stdio: "ignore", windowsHide: true },
+      );
+      killer.on("exit", () => resolve());
+      killer.on("error", () => resolve());
+    });
+  } else {
+    await new Promise<void>((resolve) => {
+      const killer = spawn("pkill", ["-f", profileDir], { stdio: "ignore" });
+      killer.on("exit", () => resolve());
+      killer.on("error", () => resolve());
+    });
+  }
+
+  // 等端口释放（最多 5 秒），免得紧接着的启动又交棒给还没退干净的旧进程
+  for (let i = 0; i < 20; i += 1) {
+    const stillAlive = await fetch(`http://127.0.0.1:${port}/json/version`)
+      .then((response) => response.ok)
+      .catch(() => false);
+    if (!stillAlive) return true;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return false;
+}
+
 export async function waitForDevtools(
   port: number,
   options: { timeoutMs?: number; fetchImpl?: typeof fetch } = {},

@@ -420,6 +420,8 @@ export function BrowserPane({
               const token = accessToken;
               const run = async () => {
                 try {
+                  // 一条 toast 走完全程（连接 → 打开），失败才换成错误文案
+                  toast("正在打开调试工具…");
                   /**
                    * 桌面形态：页面就在**我们自己的 WebView2** 里，直接开它的 DevTools
                    * （参考视频里那一项的真身）；Web 形态才需要 CDP 那条路。
@@ -427,11 +429,9 @@ export function BrowserPane({
                   if (desktopShell) {
                     toast("正在打开调试工具…");
                     await embedDevtools();
-                    toast("已打开调试工具（WebView2 自带）。", "success");
                     return;
                   }
                   if (!cdpConnected) {
-                    toast("正在连接受控浏览器…");
                     const status = await connectCdp(token);
                     if (status.status !== "connected") {
                       throw new Error(
@@ -442,12 +442,9 @@ export function BrowserPane({
                     }
                     setCdpConnected(true);
                   }
-                  toast("正在打开调试工具…");
+                  // 只留「正在打开」这一条（用户口径：toast 不要那么多）；
+                  // 成败由那个 Chrome 窗口自己体现，失败才额外报错
                   await openCdpDevtools(token);
-                  toast(
-                    "已在受控浏览器里打开调试工具（那个窗口里新开了一个调试标签）。",
-                    "success",
-                  );
                 } catch (error: unknown) {
                   toast(
                     error instanceof Error

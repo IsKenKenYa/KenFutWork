@@ -10,6 +10,7 @@ import {
   clickOn,
   connectCdpClient,
   findBrowserExecutable,
+  killStaleProfileInstance,
   launchBrowserWithDebugPort,
   pressKey,
   readDom,
@@ -124,6 +125,8 @@ export function createCdpBrowserSession(deps: {
   launch?: typeof launchBrowserWithDebugPort;
   waitDevtools?: typeof waitForDevtools;
   connectClient?: typeof connectCdpClient;
+  /** 测试注入：收掉「用着我们 profile 的残留实例」（默认按命令行匹配后 taskkill/pkill）。 */
+  killStaleProfile?: typeof killStaleProfileInstance;
 }): CdpBrowserSession {
   const dataDir = deps.dataDir ?? join(tmpdir(), "kenfutwork-chrome-profile");
   let state: CdpStatus = { status: "disconnected" };
@@ -205,6 +208,16 @@ export function createCdpBrowserSession(deps: {
         const port = options.port ?? CDP_DEFAULT_PORT;
         const profileDir =
           options.profileDir ?? join(dataDir, "chrome-profile");
+        /**
+         * **先收掉用着我们 profile 的残留实例**：Chrome 对同一个 `--user-data-dir` 只允许一个
+         * 进程，新的一次启动会「交棒」给旧进程并立刻退出——于是「启动参数」永远加不上
+         * （典型后果：`--remote-allow-origins` 缺失，调试前端打开即断；用户真机就这么卡住的）。
+         * 只匹配我们自己的 profile 路径，用户日常的 Chrome 不受影响。
+         */
+        await (deps.killStaleProfile ?? killStaleProfileInstance)(
+          profileDir,
+          port,
+        );
         const launched = await (deps.launch ?? launchBrowserWithDebugPort)({
           executable,
           port,
