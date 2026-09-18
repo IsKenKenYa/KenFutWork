@@ -22,6 +22,7 @@ graph LR
 | `future/01-deepseek-harness插件调研.md` | dsh 插件架构调研记录 | 调研：结论已被权威文档吸收，只读 |
 | `future/04-模型Provider调研.md` | 参考项目（cherry-studio / kimi-code / nomifun / dsh / jaaz / jellyfish / futureFlow）的模型 Provider 调研：LLM / IGM（图像生成）/ VGM（视频生成 + 视觉输入）三维度对比与本项目可学习点 | 调研：只作方向参考，落地结论写入《改造计划》§4.8/§4.10 与 §4.13 台账 |
 | `future/03-改造建议与路线.md` | 双模式改造建议稿（v3） | **收口中**：§0–§7 为冻结区（`<!-- frozen:start/end -->` + `docs/frozen-lock.json` 校验，禁改）；**仅 §8 可编辑**；P0 定稿后整篇归档 |
+| `future/05-Ruflo调研与可借鉴点.md` | Ruflo（原 claude-flow）形态核对与取舍：不引入依赖；可借鉴项（编排原语 / 记忆检索模式 / 角色清单）与落点、开工前待拍板口径 | 调研：结论按现有缝落地，落点以《改造计划》§4.2/§4.10 为准 |
 | `Agent设计最佳实践研究报告.md` | agent 质量最佳实践 | 参考 |
 | `产品需求规格.md` | 需求访谈沉淀：产品定位、领域模型（统一 Task 模型/双层权限）、北极星场景、各缝行为测试清单与验收标准 | 参考：架构决策、ctx key 表、阶段编号以《改造计划》《多端产品设计》为准 |
 | `KenFutWork原版文档/` | 原版产品文档 | 历史参考 |
