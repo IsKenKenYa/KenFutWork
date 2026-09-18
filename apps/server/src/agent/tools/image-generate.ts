@@ -1,15 +1,10 @@
 import { tool } from "langchain";
 import { z } from "zod";
-
-import { generateImage } from "../../generation/image-generation.js";
-import {
-  type AvailableModel,
-  getAvailableImageModels,
-  resolveImageProviderName,
-} from "../../generation/providers/registry.js";
-import type { ImageQuality, OutputFormat } from "../../generation/types.js";
-
-const DEFAULT_MODEL = "black-forest-labs/flux-kontext-pro";
+import type {
+  AvailableModel,
+  ImageQuality,
+  OutputFormat,
+} from "../../generation/types.js";
 
 /**
  * Build the zod schema dynamically from the models available in the registry.
@@ -17,9 +12,7 @@ const DEFAULT_MODEL = "black-forest-labs/flux-kontext-pro";
  */
 function buildImageGenerateSchema(models: AvailableModel[]) {
   const modelIds = models.map((m) => m.id);
-  const defaultModel = modelIds.includes(DEFAULT_MODEL)
-    ? DEFAULT_MODEL
-    : (modelIds[0] ?? DEFAULT_MODEL);
+  const defaultModel = modelIds[0];
 
   const modelDescription = models.length
     ? `Model to use. Available:\n${models.map((m) => `- ${m.id}: ${m.displayName} — ${m.description}`).join("\n")}`
@@ -30,9 +23,13 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
     modelIds.length >= 1
       ? z
           .enum(modelIds as [string, ...string[]])
-          .default(defaultModel as (typeof modelIds)[number])
+          .default(defaultModel as string)
           .describe(modelDescription)
-      : z.string().default(DEFAULT_MODEL).describe(modelDescription);
+      : z
+          .string()
+          .describe(
+            "Model identifier（当前未配置任何供应商实例——请先在设置 → 供应商添加）",
+          );
 
   return z.object({
     title: z
@@ -265,67 +262,22 @@ export async function runImageGenerate(
     }
   }
 
-  // Direct generation: resolve provider from model ID via registry
-  try {
-    lap("direct_generate_start", { model: input.model });
-    const providerName = resolveImageProviderName(input.model);
-    const result = await generateImage(providerName, {
-      prompt: input.prompt,
-      model: input.model,
-      ...(input.aspectRatio ? { aspectRatio: input.aspectRatio } : {}),
-      ...(input.quality ? { quality: input.quality } : {}),
-      ...(input.outputFormat ? { outputFormat: input.outputFormat } : {}),
-      ...(input.inputImages?.length ? { inputImages: input.inputImages } : {}),
-    });
-    lap("direct_generate_done", { width: result.width, height: result.height });
-
-    let imageUrl = result.url;
-    if (persistImage) {
-      try {
-        imageUrl = await persistImage(
-          result.url,
-          result.mimeType,
-          input.prompt,
-        );
-        lap("persist_image_done");
-      } catch {
-        // Fall back to ephemeral URL if upload fails
-      }
-    }
-
-    const directResult: ImageGenerateResult = {
-      summary: `Generated image (${result.width}x${result.height}) via ${input.model}`,
-      title: input.title,
-      imageUrl,
-      mimeType: result.mimeType,
-      width: result.width,
-      height: result.height,
-    };
-    if (input.placementX != null && input.placementY != null) {
-      directResult.placement = {
-        x: input.placementX,
-        y: input.placementY,
-        width: input.placementWidth ?? 512,
-        height: input.placementHeight ?? 512,
-      };
-    }
-    return directResult;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return {
-      summary: `Image generation failed: ${message}`,
-      error: message,
-    };
-  }
+  // BYOK-only：直接生成路径已随内置目录/遗留 env 注册退役——生成一律走
+  // submitImageJob（PGMQ job → worker 按供应商实例执行）。
+  return {
+    summary:
+      "Image generation service is not configured on this deployment. Add a provider instance in Settings → Providers first.",
+    error: "image_generation_unconfigured",
+  };
 }
 
 export function createImageGenerateTool(deps?: {
   persistImage?: PersistImageFn;
   submitImageJob?: SubmitImageJobFn;
-  /** Override for testing — defaults to querying the provider registry. */
+  /** 工作区实例的模型清单（BYOK 目录 specifier）；缺省 = 未配置任何实例。 */
   availableModels?: AvailableModel[];
 }) {
-  const models = deps?.availableModels ?? getAvailableImageModels();
+  const models = deps?.availableModels ?? [];
 
   const modelSummary = models.length
     ? models.map((m) => `${m.displayName} (${m.id})`).join(", ")

@@ -38,6 +38,10 @@ import type { ModelProviderService } from "../features/model-providers/model-pro
 import type { SettingsService } from "../features/settings/settings-service.js";
 import { formatUserRulesFragment } from "../features/settings/user-rules.js";
 import type { RunUsageAccumulator } from "../features/usage/run-usage-accumulator.js";
+import type {
+  AvailableModel,
+  AvailableVideoModel,
+} from "../generation/types.js";
 import type { ToolExecutionContext, ToolRegistry } from "../kernel/types.js";
 import { instanceHeadersOption } from "../providers/instance-headers.js";
 import { resolveInstanceChatModel } from "../providers/resolve.js";
@@ -1475,9 +1479,65 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             );
           }
 
+          // BYOK：工作区实例模型清单——生成工具（generate_image/generate_video）
+          // 的 schema 枚举与模型校验来源；无实例时空清单（工具如实报未配置）。
+          let availableImageModels: AvailableModel[] = [];
+          let availableVideoModels: AvailableVideoModel[] = [];
+          if (options.modelCatalog && run.userId) {
+            try {
+              const catalogUser: AuthenticatedUser = {
+                id: run.userId,
+                accessToken: run.accessToken ?? "",
+                email: "",
+                userMetadata: {},
+              };
+              const entries =
+                await options.modelCatalog.listCatalog(catalogUser);
+              const toListItem = (entry: (typeof entries)[number]) => ({
+                id: `${entry.provider.instanceId}:${entry.id}`,
+                displayName: entry.name,
+                description: `${entry.name}（实例：${entry.provider.name}）`,
+                provider: entry.provider.name,
+              });
+              availableImageModels = entries
+                .filter(
+                  (e) =>
+                    e.capability === "image" || e.capability === "image-edit",
+                )
+                .map(toListItem);
+              availableVideoModels = entries
+                .filter((e) => e.capability === "video")
+                .map((entry) => ({
+                  id: `${entry.provider.instanceId}:${entry.id}`,
+                  displayName: entry.name,
+                  description: `${entry.name}（实例：${entry.provider.name}）`,
+                  provider: entry.provider.name,
+                  // 任务级能力未在实例模型行声明（缺省=未知），工具面用保守占位
+                  capabilities: {
+                    textToVideo: true,
+                    imageToVideo: false,
+                    videoToVideo: false,
+                    audio: false,
+                  },
+                  limits: {
+                    maxDuration: 15,
+                    maxResolution: "1080p" as const,
+                    maxInputImages: 4,
+                  },
+                }));
+            } catch (catalogError) {
+              console.warn(
+                "[runtime] 实例模型清单拉取失败（生成工具将报告未配置）:",
+                catalogError,
+              );
+            }
+          }
+
           agent = resolvedAgentFactory({
             backendResult,
             ...(brandKitId ? { brandKitId } : {}),
+            ...(availableImageModels.length ? { availableImageModels } : {}),
+            ...(availableVideoModels.length ? { availableVideoModels } : {}),
             ...(options.brandKitService
               ? { brandKitService: options.brandKitService }
               : {}),

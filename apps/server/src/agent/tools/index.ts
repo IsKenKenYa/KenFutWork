@@ -3,6 +3,10 @@ import type { AnyBackendProtocol, BackendRuntime } from "deepagents";
 import type { BlobStore } from "../../features/blob/types.js";
 import type { BrandKitService } from "../../features/brand-kit/brand-kit-service.js";
 import type { CanvasRepository } from "../../features/canvas/repository.js";
+import type {
+  AvailableModel,
+  AvailableVideoModel,
+} from "../../generation/types.js";
 import type { ConnectionManager } from "../../ws/connection-manager.js";
 import { createBrandKitTool } from "./brand-kit.js";
 import {
@@ -69,6 +73,10 @@ export function createMainAgentTools(
     sandboxDir?: string;
     submitImageJob?: SubmitImageJobFn;
     submitVideoJob?: SubmitVideoJobFn;
+    /** 工作区实例的模型清单（BYOK 目录 specifier，image/image-edit）。 */
+    availableImageModels?: AvailableModel[];
+    /** 工作区实例的视频模型清单（BYOK 目录 specifier）。 */
+    availableVideoModels?: AvailableVideoModel[];
   },
 ) {
   const tools: StructuredTool[] = [
@@ -78,9 +86,15 @@ export function createMainAgentTools(
     createImageGenerateTool({
       ...(deps.persistImage ? { persistImage: deps.persistImage } : {}),
       ...(deps.submitImageJob ? { submitImageJob: deps.submitImageJob } : {}),
+      ...(deps.availableImageModels
+        ? { availableModels: deps.availableImageModels }
+        : {}),
     }),
     createVideoGenerateTool({
       ...(deps.submitVideoJob ? { submitVideoJob: deps.submitVideoJob } : {}),
+      ...(deps.availableVideoModels
+        ? { availableModels: deps.availableVideoModels }
+        : {}),
     }),
     createPersistSandboxFileTool({
       blob: deps.blob,

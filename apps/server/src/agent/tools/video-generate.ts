@@ -1,14 +1,7 @@
 import { tool } from "langchain";
 import { z } from "zod";
 
-import {
-  type AvailableVideoModel,
-  getAvailableVideoModels,
-  resolveVideoProviderName,
-} from "../../generation/providers/registry.js";
-import { generateVideo } from "../../generation/video-generation.js";
-
-const DEFAULT_MODEL = "wan-video/wan-2.6";
+import type { AvailableVideoModel } from "../../generation/types.js";
 
 // ── Submit function type ───────────────────────────────────────────────────
 
@@ -42,9 +35,7 @@ export type SubmitVideoJobFn = (input: {
 
 function buildVideoGenerateSchema(models: AvailableVideoModel[]) {
   const modelIds = models.map((m) => m.id);
-  const defaultModel = modelIds.includes(DEFAULT_MODEL)
-    ? DEFAULT_MODEL
-    : (modelIds[0] ?? DEFAULT_MODEL);
+  const defaultModel = modelIds[0];
 
   const modelDescription = models.length
     ? `Video model to use. Available:\n${models.map((m) => `- ${m.id}: ${m.description}`).join("\n")}`
@@ -56,7 +47,11 @@ function buildVideoGenerateSchema(models: AvailableVideoModel[]) {
           .enum(modelIds as [string, ...string[]])
           .default(defaultModel as (typeof modelIds)[number])
           .describe(modelDescription)
-      : z.string().default(DEFAULT_MODEL).describe(modelDescription);
+      : z
+          .string()
+          .describe(
+            "Model identifier（当前未配置任何供应商实例——请先在设置 → 供应商添加）",
+          );
 
   return z.object({
     title: z
@@ -164,8 +159,8 @@ type VideoGenerateResult = {
 
 export async function runVideoGenerate(
   rawInput: VideoGenerateInput,
+  availableModels: AvailableVideoModel[],
   submitVideoJob?: SubmitVideoJobFn,
-  availableModels = getAvailableVideoModels(),
 ): Promise<VideoGenerateResult> {
   let input = rawInput;
   const t0 = Date.now();
@@ -276,59 +271,23 @@ export async function runVideoGenerate(
     }
   }
 
-  // Direct mode: call provider directly
-  try {
-    lap("direct_generate_start", { model: input.model });
-    const providerName = resolveVideoProviderName(input.model);
-    const result = await generateVideo(providerName, {
-      prompt: input.prompt,
-      model: input.model,
-      duration: input.duration,
-      aspectRatio: input.aspectRatio,
-      ...(input.resolution
-        ? { resolution: input.resolution as "480p" | "720p" | "1080p" }
-        : {}),
-      ...(input.inputImages ? { inputImages: input.inputImages } : {}),
-      ...(input.inputVideo ? { inputVideo: input.inputVideo } : {}),
-      ...(enableAudio != null ? { enableAudio } : {}),
-    });
-    lap("direct_generate_done");
-
-    const directResult: VideoGenerateResult = {
-      summary: `Generated ${result.durationSeconds}s video (${result.width}x${result.height}) via ${input.model}`,
-      title: input.title,
-      prompt: input.prompt,
-      videoUrl: result.url,
-      mimeType: result.mimeType,
-      width: result.width,
-      height: result.height,
-      durationSeconds: result.durationSeconds,
-    };
-    if (input.placementX != null && input.placementY != null) {
-      directResult.placement = {
-        x: input.placementX,
-        y: input.placementY,
-        width: input.placementWidth ?? 640,
-        height: input.placementHeight ?? 360,
-      };
-    }
-    return directResult;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return {
-      summary: `Video generation failed: ${message}`,
-      error: message,
-    };
-  }
+  // BYOK-only：直接生成路径已随内置目录/遗留 env 注册退役——生成一律走
+  // submitVideoJob（PGMQ job → worker 按供应商实例异步执行）。
+  return {
+    summary:
+      "Video generation service is not configured on this deployment. Add a provider instance in Settings → Providers first.",
+    error: "video_generation_unconfigured",
+  };
 }
 
 // ── Tool factory ───────────────────────────────────────────────────────────
 
 export function createVideoGenerateTool(deps?: {
   submitVideoJob?: SubmitVideoJobFn;
+  /** 工作区实例的模型清单（BYOK 目录 specifier）；缺省 = 未配置任何实例。 */
   availableModels?: AvailableVideoModel[];
 }) {
-  const models = deps?.availableModels ?? getAvailableVideoModels();
+  const models = deps?.availableModels ?? [];
 
   const modelSummary = models.length
     ? models.map((m) => `${m.displayName} (${m.id})`).join(", ")
@@ -336,7 +295,7 @@ export function createVideoGenerateTool(deps?: {
 
   return tool(
     async (input: VideoGenerateInput) => {
-      return await runVideoGenerate(input, deps?.submitVideoJob, models);
+      return await runVideoGenerate(input, models, deps?.submitVideoJob);
     },
     {
       name: "generate_video",

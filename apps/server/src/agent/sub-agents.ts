@@ -1,5 +1,6 @@
 import type { SubAgent } from "deepagents";
 
+import type { AvailableVideoModel } from "../generation/types.js";
 import { createVideoGenerateTool } from "./tools/video-generate.js";
 
 /**
@@ -15,7 +16,9 @@ import { createVideoGenerateTool } from "./tools/video-generate.js";
  */
 
 /** 视频生成子代理：可用性取决于有没有配视频供应商（描述里如实写）。 */
-export function createVideoSubAgent(): SubAgent {
+export function createVideoSubAgent(
+  availableVideoModels: AvailableVideoModel[] = [],
+): SubAgent {
   return {
     name: "video_generate",
     description:
@@ -23,7 +26,7 @@ export function createVideoSubAgent(): SubAgent {
     systemPrompt: `You are a video generation specialist. Given a description, generate a video using the generate_video tool and return the result.
 
 If video generation is not available or fails, clearly explain the limitation.`,
-    tools: [createVideoGenerateTool()],
+    tools: [createVideoGenerateTool({ availableModels: availableVideoModels })],
   };
 }
 
@@ -46,8 +49,10 @@ export function listDeclaredSubAgents(): Array<{
 }
 
 /** 装配用：直接给 deepagents 的 `subagents:` 数组（与上面同一份）。 */
-export function declaredSubAgentSpecs(): SubAgent[] {
-  return [createVideoSubAgent()];
+export function declaredSubAgentSpecs(
+  availableVideoModels: AvailableVideoModel[] = [],
+): SubAgent[] {
+  return [createVideoSubAgent(availableVideoModels)];
 }
 
 /** 内置的子任务分发工具（不由我们声明，但会出现在工具表与事件流里）。 */

@@ -1,7 +1,5 @@
 import type { BackgroundJob } from "@kenfutwork/shared";
 
-import { resolveVideoProviderName } from "../../../generation/providers/registry.js";
-import { generateVideo } from "../../../generation/video-generation.js";
 import { type ExecutorContext, registerExecutor } from "../job-executor.js";
 import { resolveInstanceVideoProviderFromPayload } from "./instance-provider.js";
 
@@ -77,8 +75,14 @@ registerExecutor(
     const createdBy: string | null = jobRow.created_by ?? null;
     const workspaceId: string = jobRow.workspace_id ?? jobId;
 
-    const model = payload.model ?? "wan-video/wan-2.6";
-    // BYOK：任务携带 provider_instance_id 时按用户供应商实例实例化协议适配器（P4）
+    // BYOK-only：生成任务必须携带供应商实例（内置目录/遗留 env 注册已退役）。
+    if (!payload.provider_instance_id || !payload.model) {
+      throw fatal(
+        "invalid_input",
+        "生成任务缺少 provider_instance_id 或 model（请先在设置 → 供应商添加实例后再发起生成）",
+      );
+    }
+    const model = payload.model;
     const instance = await resolveInstanceVideoProviderFromPayload(
       payload.provider_instance_id,
       ctx,
@@ -88,14 +92,17 @@ registerExecutor(
         ...(jobRow.thread_id ? { threadId: jobRow.thread_id } : {}),
       },
     );
-    const providerName = instance
-      ? instance.provider.name
-      : resolveVideoProviderName(model);
+    if (!instance) {
+      throw fatal(
+        "invalid_input",
+        `供应商实例 ${payload.provider_instance_id} 无法解析为视频适配器`,
+      );
+    }
+    const providerName = instance.provider.name;
 
-    const startAsync = instance?.provider.startAsync;
-    const pollAsync = instance?.provider.pollAsync;
-    const canPollAsync =
-      instance != null && startAsync != null && pollAsync != null;
+    const startAsync = instance.provider.startAsync;
+    const pollAsync = instance.provider.pollAsync;
+    const canPollAsync = startAsync != null && pollAsync != null;
 
     // ── 跨修订防护：实例配置在任务落盘后变更过 → 旧句柄不得复用 ──
     if (instance && jobRow.provider_job_id) {
@@ -220,9 +227,7 @@ registerExecutor(
           : {}),
       };
       lap(`${providerName}_call_start`);
-      return instance
-        ? await instance.provider.generate(generateParams)
-        : await generateVideo(providerName, generateParams);
+      return instance.provider.generate(generateParams);
     })();
 
     try {
@@ -247,7 +252,7 @@ registerExecutor(
         ctx.usageService
           ?.record({
             workspaceId,
-            provider: instance ? "instance" : providerName,
+            provider: providerName,
             model,
             capability: "video",
             ...(payload.provider_instance_id

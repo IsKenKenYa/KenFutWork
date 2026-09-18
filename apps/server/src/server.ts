@@ -20,7 +20,6 @@ import { isDesktopRuntime, prepareDesktopRuntime } from "./desktop/runtime.js";
 import { hasSystemGit, resolveRuntimes } from "./desktop/runtimes.js";
 import { reconcileInterruptedRuns } from "./features/agent-runs/reconcile.js";
 import { startJobLoop } from "./features/jobs/job-loop.js";
-import { registerAllProviders } from "./generation/providers/register-all.js";
 
 /**
  * HTTP 进程入口。
@@ -70,8 +69,6 @@ async function main() {
     }),
   });
   const env = desktop.env;
-
-  registerAllProviders(env);
 
   const app = buildApp({ env });
 

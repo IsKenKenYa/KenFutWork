@@ -37,9 +37,9 @@ function jobRow(overrides: Partial<BackgroundJob> = {}): BackgroundJob {
     max_attempts: 3,
     provider_job_id: null,
     created_by: "user-1",
-    created_at: "2026-09-18T00:00:00+00:00",
-    updated_at: "2026-09-18T00:00:00+00:00",
-    started_at: "2026-09-18T00:00:00+00:00",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    started_at: new Date().toISOString(),
     completed_at: null,
     failed_at: null,
     canceled_at: null,
@@ -48,7 +48,10 @@ function jobRow(overrides: Partial<BackgroundJob> = {}): BackgroundJob {
 }
 
 function makeCtx(job: BackgroundJob) {
-  const sent: Array<{ payload: Record<string, unknown>; delay: number | undefined }> = [];
+  const sent: Array<{
+    payload: Record<string, unknown>;
+    delay: number | undefined;
+  }> = [];
   const ctx = {
     jobService: {
       getJobAdmin: vi.fn(async () => job),
@@ -64,9 +67,9 @@ function makeCtx(job: BackgroundJob) {
           delaySeconds?: number,
         ) => {
           sent.push({
-      payload: payload as Record<string, unknown>,
-      delay: delaySeconds,
-    });
+            payload: payload as Record<string, unknown>,
+            delay: delaySeconds,
+          });
           return 1;
         },
       ),

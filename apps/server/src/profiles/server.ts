@@ -18,6 +18,7 @@ import { createGenerationPlugin } from "../features/generation/plugin.js";
 import type { JobService } from "../features/jobs/job-service.js";
 import { createJobsPlugin } from "../features/jobs/plugin.js";
 import { createMcpPlugin } from "../features/mcp/plugin.js";
+import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import { createModelProvidersPlugin } from "../features/model-providers/plugin.js";
 import type { PaymentService } from "../features/payments/payment-service.js";
 import { createPaymentsPlugin } from "../features/payments/plugin.js";
@@ -54,6 +55,8 @@ export interface ServerProfileDeps {
   /** overrides 直填的条件装配插件需感知注入实例（enabled 判定，保持历史行为）。 */
   overrideJobs?: JobService;
   overridePayments?: PaymentService;
+  /** 测试替身：modelProviders 缝的注入实例（app.test/generate.test 用）。 */
+  overrideModelProviders?: ModelProviderService;
   /** GitHub token（可选）：插件从仓库安装时提升匿名速率上限。 */
   githubToken?: string;
 }
@@ -163,7 +166,12 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createMcpPlugin(),
     createSearchPlugin(),
     createSystemPlugin(),
-    createModelProvidersPlugin({ credentialEnv: deps.credentialEnv }),
+    createModelProvidersPlugin({
+      credentialEnv: deps.credentialEnv,
+      ...(deps.overrideModelProviders
+        ? { injectedModelProviders: deps.overrideModelProviders }
+        : {}),
+    }),
     createGenerationPlugin({ env: deps.env }),
     createAdminPlugin(),
     createBrowserPlugin(),

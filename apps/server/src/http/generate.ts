@@ -21,8 +21,6 @@ import type { JobService } from "../features/jobs/job-service.js";
 import { JobServiceError } from "../features/jobs/job-service.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type { UploadService } from "../features/uploads/upload-service.js";
-import { generateImage } from "../generation/image-generation.js";
-import { resolveImageProviderName } from "../generation/providers/registry.js";
 import type { GeneratedImage } from "../generation/types.js";
 import { instanceHeadersOption } from "../providers/instance-headers.js";
 import { resolveInstanceImageProvider } from "../providers/resolve.js";
@@ -103,7 +101,29 @@ export async function registerGenerateRoutes(
       );
     }
 
-    const model = payload.model ?? "black-forest-labs/flux-kontext-pro";
+    // BYOK-only（2026-09-18 用户拍板删除内置目录/遗留 env 注册）：必须指定供应商实例。
+    if (!payload.providerInstanceId || !options.modelProviders) {
+      return reply.code(400).send(
+        applicationErrorResponseSchema.parse({
+          error: {
+            code: "invalid_request",
+            message:
+              "缺少 providerInstanceId——请先在「设置 → 供应商」添加供应商实例后再发起生成。",
+          },
+        }),
+      );
+    }
+    const model = payload.model;
+    if (!model) {
+      return reply.code(400).send(
+        applicationErrorResponseSchema.parse({
+          error: {
+            code: "invalid_request",
+            message: "缺少 model（从实例模型清单中选择）。",
+          },
+        }),
+      );
+    }
 
     try {
       // ── Tier guard + credit checks ──
@@ -138,7 +158,7 @@ export async function registerGenerateRoutes(
       }
 
       let result: GeneratedImage;
-      if (payload.providerInstanceId && options.modelProviders) {
+      {
         const credentials = await options.modelProviders.resolveCredentialsById(
           payload.providerInstanceId,
         );
@@ -167,14 +187,6 @@ export async function registerGenerateRoutes(
           ...(payload.inputImages?.length
             ? { inputImages: payload.inputImages }
             : {}),
-        });
-      } else {
-        const providerName = resolveImageProviderName(model);
-        result = await generateImage(providerName, {
-          prompt: payload.prompt,
-          model,
-          aspectRatio: payload.aspectRatio ?? "1:1",
-          ...(payload.quality ? { quality: payload.quality } : {}),
         });
       }
 
@@ -277,7 +289,33 @@ export async function registerGenerateRoutes(
       );
     }
 
-    const model = payload.model ?? "google-official/veo-3.1-generate-preview";
+    // BYOK-only（2026-09-18 用户拍板）：必须指定供应商实例与模型。
+    if (
+      !payload.providerInstanceId ||
+      !options.modelProviders ||
+      !options.jobService
+    ) {
+      return reply.code(400).send(
+        applicationErrorResponseSchema.parse({
+          error: {
+            code: "invalid_request",
+            message:
+              "缺少 providerInstanceId——请先在「设置 → 供应商」添加供应商实例后再发起生成。",
+          },
+        }),
+      );
+    }
+    if (!payload.model) {
+      return reply.code(400).send(
+        applicationErrorResponseSchema.parse({
+          error: {
+            code: "invalid_request",
+            message: "缺少 model（从实例模型清单中选择）。",
+          },
+        }),
+      );
+    }
+    const model = payload.model;
 
     try {
       // ── Tier guard + credit checks ──

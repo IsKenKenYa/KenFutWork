@@ -1,54 +1,46 @@
-// @credits-system — Image model list with tier annotations, credit costs, and accessibility flags
+// BYOK — Image model list from the user's provider instances（2026-09-18 起内置
+// 目录/遗留 env 注册退役，模型清单来自用户实例目录；specifier = <instanceId>:<model>）。
 
-import {
-  canAccessModel,
-  getImageCreditCost,
-  MODEL_MIN_TIER,
-  type SubscriptionPlan,
-} from "@kenfutwork/shared";
 import type { FastifyInstance } from "fastify";
 import type { RequestAuthenticator } from "../features/auth/types.js";
-import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
-import type { CreditService } from "../features/credits/credit-service.js";
-import { getAvailableImageModels } from "../generation/providers/registry.js";
+import type { ModelCatalogService } from "../features/model-providers/model-catalog-service.js";
+import { toInstanceSpecifier } from "../features/model-providers/model-catalog-service.js";
 
 export async function registerImageModelRoutes(
   app: FastifyInstance,
   options: {
     auth: RequestAuthenticator;
-    creditService: CreditService;
-    viewerService: ViewerService;
+    modelCatalog: ModelCatalogService;
   },
 ) {
   app.get("/api/image-models", async (request, reply) => {
-    const models = getAvailableImageModels();
-
-    // Try to authenticate — unauthenticated users still see models
-    let userPlan: SubscriptionPlan | null = null;
-    try {
-      const user = await options.auth.authenticate(request);
-      if (user) {
-        const viewer = await options.viewerService.ensureViewer(user);
-        const balance = await options.creditService.getBalance(
-          viewer.workspace.id,
-        );
-        userPlan = balance.plan;
-      }
-    } catch {
-      // Auth failure is non-fatal — just show models as inaccessible
+    const user = await options.auth.authenticate(request);
+    if (!user) {
+      return reply.code(401).send({
+        error: {
+          code: "unauthorized",
+          message: "Missing or invalid bearer token.",
+        },
+      });
     }
 
-    const annotated = models.map((m) => ({
-      id: m.id,
-      displayName: m.displayName,
-      description: m.description,
-      iconUrl: m.iconUrl,
-      provider: m.provider,
-      accessible: userPlan !== null && canAccessModel(userPlan, m.id),
-      creditCost: getImageCreditCost(m.id, "hd"),
-      minTier: MODEL_MIN_TIER[m.id] ?? "pro",
-    }));
+    const models = (await options.modelCatalog.listCatalog(user))
+      .filter(
+        (entry) =>
+          entry.capability === "image" || entry.capability === "image-edit",
+      )
+      .map((entry) => ({
+        id: toInstanceSpecifier(entry),
+        displayName: entry.name,
+        description: `${entry.name}（实例：${entry.provider.name}）`,
+        iconUrl: undefined,
+        provider: entry.provider.name,
+        // 平台池（scope=system）的计费在生成路径按套餐结算；自带实例不进注解表
+        accessible: true,
+        creditCost: 0,
+        minTier: "free" as const,
+      }));
 
-    return reply.code(200).send({ models: annotated });
+    return reply.code(200).send({ models });
   });
 }

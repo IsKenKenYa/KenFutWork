@@ -109,6 +109,15 @@ export interface VideoPricingInfo {
   rates: readonly VideoPriceRate[];
 }
 
+/** Model info enriched with its owning provider name（生成工具清单条目）。 */
+export interface AvailableModel extends ModelInfo {
+  provider: string;
+}
+
+export interface AvailableVideoModel extends VideoModelInfo {
+  provider: string;
+}
+
 /** Extended model info with video-specific capabilities metadata. */
 export interface VideoModelInfo extends ModelInfo {
   capabilities: {

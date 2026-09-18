@@ -1,8 +1,6 @@
 // @credits-system — Image generation executor: applies watermark for free-tier users
 
 import type { BackgroundJob, SubscriptionPlan } from "@kenfutwork/shared";
-import { generateImage } from "../../../generation/image-generation.js";
-import { resolveImageProviderName } from "../../../generation/providers/registry.js";
 import type { GeneratedImage } from "../../../generation/types.js";
 import { applyWatermark } from "../../credits/watermark.js";
 import { type ExecutorContext, registerExecutor } from "../job-executor.js";
@@ -46,9 +44,15 @@ registerExecutor(
     const createdBy: string | null = jobRow.created_by ?? null;
     const workspaceId: string = jobRow.workspace_id ?? jobId;
 
-    // Resolve provider dynamically from model ID via registry
-    const model = payload.model ?? "black-forest-labs/flux-kontext-pro";
-    // BYOK：任务携带 provider_instance_id 时按用户实例实例化协议适配器（P4）
+    // BYOK-only：生成任务必须携带供应商实例（内置目录/遗留 env 注册已退役）。
+    const model = payload.model;
+    if (!payload.provider_instance_id || !model) {
+      const wrapped = new Error(
+        "生成任务缺少 provider_instance_id 或 model（请先在设置 → 供应商添加实例后再发起生成）",
+      );
+      (wrapped as Error & { code?: string }).code = "invalid_input";
+      throw wrapped;
+    }
     const instanceProvider = await resolveInstanceImageProviderFromPayload(
       payload.provider_instance_id,
       ctx,
@@ -58,9 +62,14 @@ registerExecutor(
         ...(jobRow.thread_id ? { threadId: jobRow.thread_id } : {}),
       },
     );
-    const providerName = instanceProvider
-      ? instanceProvider.name
-      : resolveImageProviderName(model);
+    if (!instanceProvider) {
+      const wrapped = new Error(
+        `供应商实例 ${payload.provider_instance_id} 无法解析为图像适配器`,
+      );
+      (wrapped as Error & { code?: string }).code = "invalid_input";
+      throw wrapped;
+    }
+    const providerName = instanceProvider.name;
 
     // Renew VT every 60s (half of the 120s image queue VT) to prevent
     // the message from becoming visible while we are still processing.
@@ -84,30 +93,17 @@ registerExecutor(
       lap(`${providerName}_call_start`);
       let generated: GeneratedImage;
       try {
-        if (instanceProvider) {
-          lap("instance_provider_call");
-          generated = await instanceProvider.generate({
-            prompt: payload.prompt,
-            model,
-            ...(payload.aspect_ratio !== undefined
-              ? { aspectRatio: payload.aspect_ratio }
-              : {}),
-            ...(payload.input_images?.length
-              ? { inputImages: payload.input_images }
-              : {}),
-          });
-        } else {
-          generated = await generateImage(providerName, {
-            prompt: payload.prompt,
-            model,
-            ...(payload.aspect_ratio !== undefined
-              ? { aspectRatio: payload.aspect_ratio }
-              : {}),
-            ...(payload.input_images?.length
-              ? { inputImages: payload.input_images }
-              : {}),
-          });
-        }
+        lap("instance_provider_call");
+        generated = await instanceProvider.generate({
+          prompt: payload.prompt,
+          model,
+          ...(payload.aspect_ratio !== undefined
+            ? { aspectRatio: payload.aspect_ratio }
+            : {}),
+          ...(payload.input_images?.length
+            ? { inputImages: payload.input_images }
+            : {}),
+        });
       } catch (genError) {
         const detail =
           genError instanceof Error ? genError.message : String(genError);
