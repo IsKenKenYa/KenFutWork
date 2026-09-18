@@ -6,7 +6,7 @@ import type {
   McpServerView,
 } from "@kenfutwork/shared";
 import { Loader2, Plug, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { getServerBaseUrl } from "@/lib/env";
@@ -47,6 +47,8 @@ export function McpModal({
   accessToken: string | null;
 }) {
   const [tab, setTab] = useState<McpTab>("configured");
+  /** 切页签重置滚动位置（残留滚动是明显的交互脏感）。 */
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const [servers, setServers] = useState<McpServerView[]>([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -141,7 +143,10 @@ export function McpModal({
                 key={item.id}
                 type="button"
                 data-active={tab === item.id}
-                onClick={() => setTab(item.id)}
+                onClick={() => {
+                  setTab(item.id);
+                  if (contentRef.current) contentRef.current.scrollTop = 0;
+                }}
                 className="whitespace-nowrap rounded-md px-3 py-1 text-sm transition-colors data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:shadow-sm"
               >
                 {item.label}
@@ -150,7 +155,10 @@ export function McpModal({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
+        <div
+          ref={contentRef}
+          className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5"
+        >
           {notice ? <p className="text-xs text-emerald-600">{notice}</p> : null}
           {error ? <p className="text-xs text-destructive">{error}</p> : null}
 

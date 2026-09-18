@@ -126,16 +126,3 @@ export function createMainAgentTools(
   }
   return tools;
 }
-
-/** @deprecated Use createMainAgentTools + sub-agents instead */
-export function createPhaseATools(
-  backend:
-    | AnyBackendProtocol
-    | ((runtime: BackendRuntime) => AnyBackendProtocol),
-) {
-  return [
-    createProjectSearchTool(backend),
-    createImageGenerateTool(),
-    createVideoGenerateTool(),
-  ] as const;
-}
