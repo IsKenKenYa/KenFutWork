@@ -102,7 +102,7 @@ const {
   connectCdpMock,
   openCdpViewMock,
   sendCdpInputMock,
-  injectDebugConsoleMock,
+  openCdpDevtoolsMock,
   fetchConsoleMessagesMock,
   evaluateInPageMock,
 } = vi.hoisted(() => ({
@@ -110,7 +110,7 @@ const {
   connectCdpMock: vi.fn(),
   openCdpViewMock: vi.fn(),
   sendCdpInputMock: vi.fn(),
-  injectDebugConsoleMock: vi.fn(),
+  openCdpDevtoolsMock: vi.fn(),
   fetchConsoleMessagesMock: vi.fn(),
   evaluateInPageMock: vi.fn(),
 }));
@@ -121,8 +121,7 @@ vi.mock("../src/lib/server-api", async (importOriginal) => ({
   connectCdp: connectCdpMock,
   openCdpView: openCdpViewMock,
   sendCdpInput: sendCdpInputMock,
-  injectDebugConsole: injectDebugConsoleMock,
-  fetchDebugConsoleScript: vi.fn().mockResolvedValue("/* eruda */"),
+  openCdpDevtools: openCdpDevtoolsMock,
   fetchConsoleMessages: fetchConsoleMessagesMock,
   evaluateInPage: evaluateInPageMock,
   clearConsoleMessages: vi.fn().mockResolvedValue(undefined),
@@ -292,7 +291,7 @@ describe("WorkbenchSidePanel（多标签）", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "关闭 变更" }));
     expect(screen.queryAllByRole("tab")).toHaveLength(0);
-    expect(screen.getByText(/没有打开的视图/)).toBeInTheDocument();
+    expect(screen.getByText(/点上面的 ＋/)).toBeInTheDocument();
   });
 
   it("标签列表下拉：可搜索、可切换、可关闭", async () => {
@@ -610,7 +609,7 @@ describe("右栏浏览器（点链接自动打开）", () => {
       viewport: { width: 800, height: 600, scale: 1 },
     });
     sendCdpInputMock.mockResolvedValue(undefined);
-    injectDebugConsoleMock.mockResolvedValue(undefined);
+    openCdpDevtoolsMock.mockResolvedValue({ windowId: 1 });
     fetchConsoleMessagesMock.mockResolvedValue({ messages: [], nextSeq: 0 });
     evaluateInPageMock.mockResolvedValue({
       seq: 1,
@@ -715,7 +714,7 @@ describe("右栏浏览器（点链接自动打开）", () => {
      */
     expect(
       await screen.findByRole("img", {
-        name: "受控浏览器画面：http://localhost:8000",
+        name: "浏览器画面：http://localhost:8000",
       }),
     ).toBeInTheDocument();
     expect(openCdpViewMock).toHaveBeenCalledWith("token", {
@@ -730,7 +729,7 @@ describe("右栏浏览器（点链接自动打开）", () => {
     await userEvent.type(input, "localhost:8001{Enter}");
     expect(
       await screen.findByRole("img", {
-        name: "受控浏览器画面：http://localhost:8001",
+        name: "浏览器画面：http://localhost:8001",
       }),
     ).toBeInTheDocument();
     const back = screen.getByRole("button", { name: "后退" });
@@ -738,7 +737,7 @@ describe("右栏浏览器（点链接自动打开）", () => {
     await userEvent.click(back);
     expect(
       await screen.findByRole("img", {
-        name: "受控浏览器画面：http://localhost:8000",
+        name: "浏览器画面：http://localhost:8000",
       }),
     ).toBeInTheDocument();
 
@@ -760,7 +759,7 @@ describe("右栏浏览器（点链接自动打开）", () => {
 
     // 分辨率是**可编辑输入框**：改宽度 → 显示盒按新尺寸排版（并按比例缩放）
     const frame = screen
-      .getByRole("img", { name: "受控浏览器画面：http://localhost:8000" })
+      .getByRole("img", { name: "浏览器画面：http://localhost:8000" })
       .closest('[data-role="live-browser-frame"]') as HTMLElement | null;
     await userEvent.clear(widthInput);
     await userEvent.type(widthInput, "900");
@@ -781,7 +780,7 @@ describe("右栏浏览器（点链接自动打开）", () => {
     );
     expect(frame?.style.transform).toMatch(/scale\(/);
     expect(
-      screen.getByRole("button", { name: "拖动调整视口尺寸" }),
+      screen.getByRole("button", { name: "拖动调整尺寸" }),
     ).toBeInTheDocument();
 
     // 再点一下 = 取消（按钮名与状态一起变），输入框随之收走
@@ -811,7 +810,8 @@ describe("右栏浏览器（点链接自动打开）", () => {
 
     // 拖动：标题栏按下 → 移动 → 松手，位置跟着指针走（位移一致，不是跳到指针位置）
     const initialTop = Number.parseFloat(consoleWindow.style.top);
-    const handle = screen.getByText("（可拖动）");
+    // 标题栏整体是拖动把手，标题文字在把手内（点它即按下把手）
+    const handle = screen.getByText("控制台");
     fireEvent.pointerDown(handle, { pointerId: 1, clientX: 100, clientY: 100 });
     fireEvent.pointerMove(handle, { pointerId: 1, clientX: 220, clientY: 160 });
     fireEvent.pointerUp(handle, { pointerId: 1 });

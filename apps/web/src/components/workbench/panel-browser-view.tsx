@@ -24,17 +24,12 @@ import {
   boundsOf,
   embedBounds,
   embedClose,
-  embedDebugConsole,
+  embedDevtools,
   embedOpen,
   isDesktopShell,
 } from "@/lib/desktop-embed";
 import { getServerBaseUrl } from "@/lib/env";
-import {
-  connectCdp,
-  fetchCdpStatus,
-  fetchDebugConsoleScript,
-  injectDebugConsole,
-} from "@/lib/server-api";
+import { connectCdp, fetchCdpStatus, openCdpDevtools } from "@/lib/server-api";
 import { keyed } from "../list-keys";
 import { BrowserConsoleWindow } from "./panel-browser-console";
 import { BrowserLiveView } from "./panel-browser-live";
@@ -343,7 +338,7 @@ export function BrowserPane({
           type="button"
           aria-label="后退"
           disabled={!canBack}
-          title="后退（本面板打开过的上一个地址）"
+          title="后退"
           onClick={onBack}
           className={navButtonClass}
         >
@@ -353,7 +348,7 @@ export function BrowserPane({
           type="button"
           aria-label="前进"
           disabled={!canForward}
-          title="前进（本面板打开过的下一个地址）"
+          title="前进"
           onClick={onForward}
           className={navButtonClass}
         >
@@ -407,7 +402,7 @@ export function BrowserPane({
           type="button"
           aria-label="选择网页元素加入聊天"
           disabled={!url || !accessToken || picking === "loading"}
-          title="拾取页面元素加入对话：连接受控浏览器（设置 → 浏览器 → 外部浏览器）后是真实渲染页 + 元素框点选；没连时按服务端静态抓取的 HTML 列元素（脚本渲染与登录态内容读不到）"
+          title="选择页面元素加入对话"
           onClick={() => void startPicking()}
           className="shrink-0 p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
         >
@@ -439,7 +434,7 @@ export function BrowserPane({
                       throw new Error(
                         status.status === "error"
                           ? status.message
-                          : "内嵌浏览器没能启动起来。",
+                          : "浏览器启动失败。",
                       );
                     }
                     setCdpConnected(true);
@@ -488,8 +483,8 @@ export function BrowserPane({
               className="rounded-none"
               title={
                 cdpConnected
-                  ? "在受控浏览器里打开调试工具"
-                  : "点它会先连接受控浏览器，再打开调试工具"
+                  ? "打开调试工具"
+                  : "会先连接受控浏览器，再打开调试工具"
               }
             >
               <span className="flex items-center gap-2">
@@ -543,7 +538,7 @@ export function BrowserPane({
             <SelectTrigger
               className="shrink-0 gap-1 rounded-none border-transparent bg-transparent px-1.5 py-0.5 text-[11px]"
               aria-label="窗口比例"
-              title="窗口比例（页面按这个比例缩放到面板里）"
+              title="窗口比例"
             >
               <SelectValue />
             </SelectTrigger>
@@ -586,8 +581,8 @@ export function BrowserPane({
             <>
               <p className="mb-2 text-[10px] text-muted-foreground">
                 {picked.source === "cdp"
-                  ? "来源：受控浏览器（CDP）真实渲染页"
-                  : "来源：服务端静态抓取（脚本渲染与登录态内容看不到）"}
+                  ? "来源：实时页面"
+                  : "来源：页面快照（可能缺少动态内容）"}
               </p>
 
               {/* 截图叠框：几何来自 DOM.getBoxModel，坐标是视口 CSS px，
@@ -671,9 +666,7 @@ export function BrowserPane({
                   )}
                 </ul>
               ) : (
-                <p className="text-muted-foreground">
-                  这一页没提取到可交互元素（可能是脚本渲染的页面）。
-                </p>
+                <p className="text-muted-foreground">这一页没有可选的元素。</p>
               )}
             </>
           ) : null}
@@ -729,8 +722,8 @@ export function BrowserPane({
             {freeSizeOn ? (
               <button
                 type="button"
-                aria-label="拖动调整视口尺寸"
-                title="拖动调整视口尺寸"
+                aria-label="拖动调整尺寸"
+                title="拖动调整尺寸"
                 onMouseDown={(event) => {
                   event.preventDefault();
                   const startX = event.clientX;
@@ -772,25 +765,35 @@ export function BrowserPane({
               onClose={() => setConsoleOpen(false)}
               onOpenPagePanel={() => {
                 /**
-                 * 「完整面板」：把 Eruda 注入面板显示的这一页（Elements / Network / Storage）。
-                 * 桌面形态是 eval 进我们自己的子 webview，Web 形态是 CDP 注入。
+                 * 「完整开发者工具」：**独立窗口**（浮动、可移动，不局限在右侧面板里）。
+                 * 桌面形态 = 面板里那个 WebView2 自带的 DevTools；Web 形态 = 受控浏览器里
+                 * 由服务端唤起并取消停靠（见 server 侧 devtools-keys 头注）。
                  */
                 const token = accessToken;
-                const target = url || normalized || "about:blank";
                 void (async () => {
                   try {
                     if (desktopShell) {
-                      const script = await fetchDebugConsoleScript(token);
-                      await embedDebugConsole(script);
+                      await embedDevtools();
                     } else {
-                      await injectDebugConsole(token, target);
+                      await openCdpDevtools(token, {
+                        left: 60,
+                        top: 60,
+                        width: Math.min(
+                          1280,
+                          Math.round(window.screen.availWidth * 0.7),
+                        ),
+                        height: Math.min(
+                          860,
+                          Math.round(window.screen.availHeight * 0.8),
+                        ),
+                      });
                     }
-                    toast("完整面板已打开（在页面里）");
+                    toast("开发者工具已打开（独立窗口，可拖到任何地方）");
                   } catch (error: unknown) {
                     toast(
                       error instanceof Error
                         ? error.message
-                        : "打开完整面板失败。",
+                        : "打开开发者工具失败。",
                       "error",
                     );
                   }

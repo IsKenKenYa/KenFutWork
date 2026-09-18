@@ -900,32 +900,37 @@ export async function fetchCdpStatus(
 }
 
 /**
- * 「打开调试工具」→ 注入 Eruda 调试控制台到受控页面（用户口径「直接打开调试面板，不转接」）。
+ * 「打开调试工具」：在受控浏览器里开**完整开发者工具**，并取消停靠成独立窗口。
+ *
+ * 服务端「像人一样」唤起它（激活受控窗口 + F12 → DevTools 前端的 setIsDocked(false)）——
+ * 真 DevTools 只有浏览器自己开得出来，CDP 开出来的 devtools:// 窗口连不上页面。
  */
-export async function injectDebugConsole(
+export async function openCdpDevtools(
   accessToken: string,
-  url: string,
-): Promise<void> {
+  bounds?: { left?: number; top?: number; width?: number; height?: number },
+): Promise<{ windowId: number }> {
   const response = await fetch(
-    `${getServerBaseUrl()}/api/browser/cdp/console`,
+    `${getServerBaseUrl()}/api/browser/cdp/devtools`,
     {
       method: "POST",
       headers: authJsonHeaders(accessToken),
-      body: JSON.stringify({ url }),
+      body: JSON.stringify(bounds ?? {}),
     },
   );
-  if (response.ok) return;
   const payload = (await response.json().catch(() => null)) as {
+    windowId?: number;
     error?: { message?: string };
   } | null;
-  throw new ApiApplicationError(
-    "cdp_console_failed",
-    payload?.error?.message ??
-      `注入调试控制台失败（服务端返回 ${response.status}）。`,
-  );
+  if (!response.ok || typeof payload?.windowId !== "number") {
+    throw new ApiApplicationError(
+      "cdp_devtools_failed",
+      payload?.error?.message ??
+        `打开开发者工具失败（服务端返回 ${response.status}）。`,
+    );
+  }
+  return { windowId: payload.windowId };
 }
 
-/** 悬浮控制台里的一条消息（形状与服务端 console-log 的 ConsoleMessage 一致）。 */
 export interface ConsoleMessageView {
   seq: number;
   level: "log" | "info" | "warn" | "error";
@@ -981,31 +986,6 @@ export async function clearConsoleMessages(accessToken: string): Promise<void> {
   );
   if (response.ok) return;
   return handleErrorResponse(response);
-}
-
-/**
- * 调试控制台脚本源码（桌面形态要用它 `eval` 进面板里的子 WebView2）。
- *
- * 与 Web 形态的 CDP 注入是**同一份**源码：服务端取一次并缓存。
- */
-export async function fetchDebugConsoleScript(
-  accessToken: string,
-): Promise<string> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/browser/debug-console.js`,
-    { headers: authHeaders(accessToken) },
-  );
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as {
-      error?: { message?: string };
-    } | null;
-    throw new ApiApplicationError(
-      "debug_console_unavailable",
-      payload?.error?.message ??
-        `拿不到调试控制台脚本（服务端返回 ${response.status}）。`,
-    );
-  }
-  return await response.text();
 }
 
 export async function connectCdp(

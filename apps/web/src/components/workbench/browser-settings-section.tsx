@@ -59,8 +59,8 @@ const SEARCH_ENGINES: Array<{
 ];
 
 const OPEN_TARGETS: Array<{ value: BrowserOpenTarget; label: string }> = [
-  { value: "panel", label: "右栏浏览器面板" },
-  { value: "system", label: "系统浏览器（新标签页）" },
+  { value: "panel", label: "内置浏览器" },
+  { value: "system", label: "外部浏览器" },
 ];
 
 function loadSettings(): BrowserSettings {
@@ -308,13 +308,11 @@ export function BrowserSettingsSection({
   return (
     <section aria-label="浏览器设置">
       <h3 className="mb-1 text-base font-medium">内置浏览器</h3>
-      <p className="mb-2 text-sm text-muted-foreground">
-        右栏「浏览器」标签里那个面板（对话里点链接会开在这里）。
-      </p>
+      <p className="mb-2 text-sm text-muted-foreground">右栏面板里的浏览器。</p>
       <div className="divide-y">
         <Toggle
           label="允许 AI 控制浏览器"
-          hint="开启后 Agent 可以用 browser_open 读网页内容（静态快照：脚本渲染与登录态页面读不到）"
+          hint="让 Agent 能读网页、点页面"
           checked={agentControl}
           onChange={(next) => void toggleAgentControl(next)}
         />
@@ -322,8 +320,7 @@ export function BrowserSettingsSection({
           <span>
             <span className="block text-sm">浏览器数据</span>
             <span className="block text-xs text-muted-foreground">
-              面板历史（本机保存，共 {historyCount} 条）。站点 cookie /
-              缓存属于跨源 iframe，读不到也清不掉——这里只清本面板自己的记录。
+              面板历史（本机保存，共 {historyCount} 条）
             </span>
           </span>
           <span className="flex shrink-0 items-center gap-2">
@@ -442,7 +439,7 @@ export function BrowserSettingsSection({
           <span>
             <span className="block text-sm">AI 任务默认浏览器</span>
             <span className="block text-xs text-muted-foreground">
-              对话里的链接默认在哪里打开
+              对话里的链接在哪打开
             </span>
           </span>
           <Select
@@ -472,13 +469,13 @@ export function BrowserSettingsSection({
 
         <Toggle
           label="无头浏览器"
-          hint="连接时用无界面实例（后台跑，不打断你当前操作）；改完下次连接生效"
+          hint="后台运行，不弹窗口（下次连接生效）"
           checked={browserHeadless}
           onChange={(next) => void toggleServerFlag("browserHeadless", next)}
         />
         <Toggle
           label="自动截图"
-          hint="每次浏览器动作（导航/点击/输入）后自动截一张图，作为图片附件出现在对话里"
+          hint="每次动作后自动截图，作为附件进对话"
           checked={browserAutoScreenshot}
           onChange={(next) =>
             void toggleServerFlag("browserAutoScreenshot", next)
@@ -486,7 +483,7 @@ export function BrowserSettingsSection({
         />
         <Toggle
           label="允许 AI 读取开发者工具数据"
-          hint="面板里的控制台采集到的日志 / 页面报错 / 网络请求，agent 可通过 browser_console、browser_network 读取；关掉后这些工具如实拒绝"
+          hint="Agent 可读控制台日志与网络请求"
           checked={browserDevtoolsRead}
           onChange={(next) =>
             void toggleServerFlag("browserDevtoolsReadEnabled", next)

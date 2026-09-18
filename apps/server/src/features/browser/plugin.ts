@@ -688,49 +688,43 @@ export function registerBrowserRoutes(
     return reply.code(200).send({ ok: true });
   });
 
-  /** 「完整面板」：注入 Eruda 到受控页面（Elements / Network / Storage 那些页内面板）。 */
-  app.post("/api/browser/cdp/console", async (request, reply) => {
-    const user = await authenticate(request, reply);
-    if (!user) return;
-    const url = (request.body as { url?: unknown } | undefined)?.url;
-    if (typeof url !== "string" || !url.trim()) {
-      return reply.code(400).send({
-        error: { code: "invalid_request", message: "缺少 url。" },
-      });
-    }
-    try {
-      const result = await options.browser.cdp.injectDebugConsole(url);
-      return reply.code(200).send(result);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "注入调试控制台失败。";
-      return reply.code(502).send({
-        error: { code: "cdp_console_failed", message },
-      });
-    }
-  });
-
   /**
-   * 调试控制台脚本源码：桌面形态取它去 `eval` 进面板里的子 WebView2。
+   * 「打开调试工具」：在受控浏览器里开**完整开发者工具**，并取消停靠成独立窗口。
    *
-   * 与 Web 形态（CDP 注入）**同一份**源码——两边各存一份迟早漂移。
+   * 为什么是「激活窗口 + F12」这条路（见 devtools-keys 的头注）：CDP 开出来的 devtools://
+   * 窗口没有前端桥，连不上页面；只有浏览器自己开的 DevTools 才是真的。
    */
-  app.get("/api/browser/debug-console.js", async (request, reply) => {
+  app.post("/api/browser/cdp/devtools", async (request, reply) => {
     const user = await authenticate(request, reply);
     if (!user) return;
+    const body = (request.body ?? {}) as {
+      left?: unknown;
+      top?: unknown;
+      width?: unknown;
+      height?: unknown;
+    };
+    const size = (value: unknown): number | undefined =>
+      typeof value === "number" && Number.isFinite(value) && value > 0
+        ? Math.round(value)
+        : undefined;
     try {
-      const script = await options.browser.cdp.debugConsoleScript();
-      return reply
-        .code(200)
-        .type("application/javascript; charset=utf-8")
-        .header("cache-control", "no-store")
-        .send(script);
+      const left = size(body.left);
+      const top = size(body.top);
+      const width = size(body.width);
+      const height = size(body.height);
+      const opened = await options.browser.cdp.openDevToolsWindow({
+        ...(left === undefined ? {} : { left }),
+        ...(top === undefined ? {} : { top }),
+        ...(width === undefined ? {} : { width }),
+        ...(height === undefined ? {} : { height }),
+      });
+      return reply.code(200).send(opened);
     } catch (error) {
       return reply.code(502).send({
         error: {
-          code: "debug_console_unavailable",
+          code: "cdp_devtools_failed",
           message:
-            error instanceof Error ? error.message : "拿不到调试控制台脚本。",
+            error instanceof Error ? error.message : "打开开发者工具失败。",
         },
       });
     }

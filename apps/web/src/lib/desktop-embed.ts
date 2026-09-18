@@ -3,7 +3,7 @@
  *
  * Web 形态下面板里的页面只能挂 iframe：站点不让嵌就白屏，而且**浏览器不允许给 iframe 挂调试器**。
  * 桌面形态由 Rust 侧（`apps/desktop/src-tauri/src/browser_embed.rs`）嵌一个真 WebView2
- * （Chromium 内核）——嵌入限制不存在，调试控制台直接注入进页面（`browser_embed_console`）。
+ * （Chromium 内核）——嵌入限制不存在，完整开发者工具（`browser_embed_devtools`）就是一个独立窗口。
  *
  * 这一层的三个细节：
  * - **子 webview 不随网页滚动/裁剪**，是独立的一层：所以要在面板里留一个占位块，把它的
@@ -75,17 +75,15 @@ export async function embedVisible(visible: boolean): Promise<void> {
 }
 
 /**
- * 往嵌入页面里**注入调试控制台**（Eruda）：面板页面底部直接出现 Console / Elements /
- * Network 面板——与 Web 形态同一条口径（用户口径：调试面板要在内嵌页面里出来，
- * 而不是另开一层窗口）。
+ * 打开嵌入页面的**完整开发者工具**（WebView2 自带；独立窗口，浮动、可移动）。
  *
- * `script` 由调用方从服务端取（`/api/browser/debug-console.js`）：两端共用同一份源码，
- * 各自存一份迟早漂移。
+ * Web 形态够不到这个（浏览器不允许给 iframe 挂调试器），那边走受控浏览器那条路
+ * （见 `openCdpDevtools`）。
  */
-export async function embedDebugConsole(script: string): Promise<void> {
+export async function embedDevtools(): Promise<void> {
   const invoke = tauriInvoke();
   if (!invoke) return;
-  await invoke("browser_embed_console", { script });
+  await invoke("browser_embed_devtools");
 }
 
 /** 关掉嵌入实例（离开面板/换会话时调，别让页面在后台一直跑）。 */

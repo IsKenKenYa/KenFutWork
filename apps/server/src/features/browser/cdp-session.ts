@@ -35,14 +35,8 @@ import {
   formatExceptionThrown,
   formatLogEntry,
 } from "./console-log.js";
-import {
-  createDebugConsoleSource,
-  DEBUG_CONSOLE_PROBE,
-  type DebugConsoleSource,
-  parseDebugConsoleProbe,
-} from "./debug-console.js";
+import { sendDevToolsKey } from "./devtools-keys.js";
 import { createNetworkBuffer, type NetworkRequest } from "./network-log.js";
-import { samePageUrl } from "./view-stream.js";
 
 /**
  * CDP 浏览器会话（R5-4「连接到 Chrome」/「自动截图」的执行面）。
@@ -90,18 +84,21 @@ export interface CdpBrowserSession {
   }): Promise<CdpStatus>;
   disconnect(): Promise<CdpStatus>;
   /**
-   * **注入调试控制台**（Eruda）到受控页面——用户口径「直接打开的就是调试面板，不要转接一层」。
+   * 在**受控浏览器**里打开完整开发者工具，并取消停靠成**独立窗口**（浮动、可移动）。
    *
-   * 这是移动端 H5 调试的标准做法：Console / Network / Elements / Storage 全都有，
-   * 浮在页面底部，点一下就出来，不需要另开窗口。注入通过 CDP `Runtime.evaluate`
-   * 在页面里插一个 `<script>` 标签（从 CDN 加载 Eruda）。
+   * 做法与取舍见 `devtools-keys` 头注：真 DevTools 只有浏览器自己开得出来（CDP 开出来的
+   * devtools:// 窗口没有前端桥，只会显示「调试连接已关闭」）。所以这里「像人一样」：
+   * 激活受控窗口 → F12 → 给刚开出来的 DevTools 发 `setIsDocked(false)` → 摆位置。
    */
-  injectDebugConsole(url: string): Promise<{ url: string }>;
-  /**
-   * 调试控制台脚本源码（含启动尾巴）——桌面形态从 `/api/browser/debug-console.js`
-   * 取**同一份**，`eval` 进面板里的子 WebView2（两端不各存一份脚本）。
-   */
-  debugConsoleScript(): Promise<string>;
+  openDevToolsWindow(options?: {
+    left?: number;
+    top?: number;
+    width?: number;
+    height?: number;
+  }): Promise<{
+    windowId: number;
+    bounds: { left: number; top: number; width: number; height: number };
+  }>;
   /** 导航（复用受控标签，没有就开一个）。 */
   navigate(url: string): Promise<{
     url: string;
@@ -217,13 +214,13 @@ export function createCdpBrowserSession(deps: {
   connectClient?: typeof connectCdpClient;
   /** 测试注入：收掉「用着我们 profile 的残留实例」（默认按命令行匹配后 taskkill/pkill）。 */
   killStaleProfile?: typeof killStaleProfileInstance;
-  /** 测试注入：调试控制台脚本来源（默认从 CDN 取一次并缓存）。 */
-  debugConsole?: DebugConsoleSource;
   /** 测试注入：时间来源（控制台消息的时间戳）。 */
   now?: () => Date;
+  /** 测试注入：在受控窗口里按 F12（默认走平台脚本）。 */
+  sendKeys?: typeof sendDevToolsKey;
 }): CdpBrowserSession {
   const dataDir = deps.dataDir ?? join(tmpdir(), "kenfutwork-chrome-profile");
-  const debugConsole = deps.debugConsole ?? createDebugConsoleSource();
+
   let state: CdpStatus = { status: "disconnected" };
   let client: CdpClient | null = null;
   let child: ChildProcess | null = null;
@@ -275,6 +272,7 @@ export function createCdpBrowserSession(deps: {
   const networkLog = createNetworkBuffer();
   /** 时间戳来源（测试注入，默认 Date）。 */
   const now = deps.now ?? (() => new Date());
+  const sendKeys = deps.sendKeys ?? sendDevToolsKey;
 
   /**
    * 挂上页面级事件：**导航跟踪** + **控制台消息**。
@@ -527,73 +525,90 @@ export function createCdpBrowserSession(deps: {
       // 自己敲的也进同一条时间线（下次增量拉取时顺序一致）
       return consoleLog.push(formatEvalResult(evaluated, now().toISOString()));
     },
-    async debugConsoleScript() {
-      return debugConsole.script();
-    },
-    async injectDebugConsole(url: string) {
-      const { client: cdp } = requireConnected();
-      /**
-       * 已经在那一页就别再导航一次：面板里显示的就是这一页，重来一次 `Page.navigate`
-       * 会整页重载——页面里已经填的东西、控制台里敲过的东西全没了。
-       */
-      const current = state.status === "connected" ? state.currentUrl : "";
-      if (!samePageUrl(current, url)) {
-        await session.navigate(url);
+    async openDevToolsWindow(options = {}) {
+      const { client: cdp, sessionId: id } = requireConnected();
+      if (state.status === "connected" && state.headless) {
+        throw new CdpError(
+          "command_failed",
+          "开发者工具需要一个可见的浏览器窗口：当前连的是无头实例。到「设置 → 浏览器」关掉「无头浏览器」并重新连接后再试。",
+        );
       }
-      await closeIdleBlanks(cdp);
-      const sessionId = requireConnected().sessionId;
-      const script = await debugConsole.script();
-      /**
-       * 注入 Eruda（页面内调试控制台：Console / Elements / Network / Storage / Info）。
-       * **整段源码直投**，而不是往页面里插 `<script src=…>`——页面侧加载会静默失败
-       * （真机撞到过：注入报成功、页面上什么都没有），原因与取舍见 debug-console 模块头注。
-       */
-      const evaluated = (await cdp.send(
-        "Runtime.evaluate",
-        { expression: script, awaitPromise: false },
-        sessionId,
-      )) as {
-        exceptionDetails?: {
-          text?: string;
-          exception?: { description?: string };
-        };
+      // 受控窗口的标题就是当前页面标题：按键脚本按它找窗口
+      const dom = await readDom(cdp, id).catch(() => null);
+      const title = (dom?.title ?? "").trim();
+      if (!title) {
+        throw new CdpError(
+          "command_failed",
+          "拿不到受控浏览器当前页面的标题，没法定位它的窗口——先在面板里打开一个网址再试。",
+        );
+      }
+      const findDevTools = async (): Promise<
+        { targetId: string; url: string; title: string } | undefined
+      > => {
+        const targets = await cdp.listTargets();
+        return targets.find((target) =>
+          target.url.includes("devtools_app.html"),
+        );
       };
-      if (evaluated.exceptionDetails) {
+      let devtools = await findDevTools();
+      if (!devtools) {
+        await sendKeys(title);
+        // 等浏览器把它开出来（最多 10 秒）
+        for (let attempt = 0; attempt < 20 && !devtools; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          devtools = await findDevTools();
+        }
+      }
+      if (!devtools) {
         throw new CdpError(
           "command_failed",
-          `注入调试控制台时页面报错：${
-            evaluated.exceptionDetails.exception?.description ??
-            evaluated.exceptionDetails.text ??
-            "未知错误"
-          }`,
+          "没能在受控浏览器窗口里唤起开发者工具：请在那个窗口里按 F12（或右键 → 检查），再点一次这个按钮。",
         );
       }
-      // 自检：脚本真的生效了吗（否则界面说成功、用户看着「点了没反应」）
-      const probe = (await cdp.send(
-        "Runtime.evaluate",
-        { expression: DEBUG_CONSOLE_PROBE, returnByValue: true },
-        sessionId,
-      )) as { result?: { value?: unknown } };
-      const probed = parseDebugConsoleProbe(probe.result?.value);
-      if (!probed.initialized) {
-        console.warn(
-          "[browser] 调试控制台自检没通过：",
-          JSON.stringify(probed).slice(0, 400),
-        );
-        throw new CdpError(
-          "command_failed",
-          `调试控制台没能在这个页面里生效${
-            probed.error
-              ? `：${probed.error}`
-              : probed.loaded
-                ? "（脚本注进去了但启动失败）。"
-                : "（页面里拿不到 eruda，可能被这一页拦住了）。"
-          }`,
-        );
+      // 取消停靠 → 独立窗口（走 DevTools 前端的桥，只有浏览器自己开的实例才有）
+      const attached = (await cdp.send("Target.attachToTarget", {
+        targetId: devtools.targetId,
+        flatten: true,
+      })) as { sessionId?: string };
+      if (attached.sessionId) {
+        await cdp
+          .send(
+            "Runtime.evaluate",
+            {
+              expression:
+                "typeof InspectorFrontendHost !== 'undefined' && InspectorFrontendHost.setIsDocked(false)",
+            },
+            attached.sessionId,
+          )
+          .catch(() => undefined);
       }
-      return { url };
+      // 等它真的独立出去（窗口宽度变成 DevTools 自己的），再摆位置
+      let windowId = 0;
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        const fresh = (await cdp.send("Browser.getWindowForTarget", {
+          targetId: devtools.targetId,
+        })) as { windowId?: number; bounds?: { width?: number } };
+        windowId = fresh.windowId ?? windowId;
+        const width = fresh.bounds?.width ?? 0;
+        if (windowId && width > 0 && width < 1100) break;
+      }
+      const bounds = {
+        left: options.left ?? 60,
+        top: options.top ?? 60,
+        width: options.width ?? 1280,
+        height: options.height ?? 860,
+      };
+      if (windowId) {
+        await cdp
+          .send("Browser.setWindowBounds", {
+            windowId,
+            bounds: { ...bounds, windowState: "normal" },
+          })
+          .catch(() => undefined);
+      }
+      return { windowId, bounds };
     },
-
     async disconnect() {
       detachPageTracking();
       client?.close();

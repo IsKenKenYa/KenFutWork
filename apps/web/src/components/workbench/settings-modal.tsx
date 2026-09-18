@@ -103,6 +103,9 @@ const TAB_GROUPS: Array<{
 /**
  * 参考图里点名、且我们已经**有同一个页面**的条目：作为别名行显示（点它跳到目标页）。
  * 不新造页面、也不隐藏——用户按参考图的名字能找到，界面里也不会出现两份一样的开关。
+ *
+ * 「电脑控制」原来也在这张表里（→ 浏览器），用户口径「这两个合并为一个菜单」后删掉了：
+ * 那个页的内容本来就全在浏览器页，留一行别名只是把菜单撑长。
  */
 const ALIAS_TABS: Array<{
   group: string;
@@ -110,12 +113,6 @@ const ALIAS_TABS: Array<{
   target: SettingsTab;
   targetLabel: string;
 }> = [
-  {
-    group: "基础设置",
-    label: "电脑控制",
-    target: "browser",
-    targetLabel: "浏览器",
-  },
   {
     group: "Agent 能力",
     label: "记忆",
@@ -352,7 +349,7 @@ export function SettingsModal({
                       className="w-full rounded-md px-3 py-1.5 text-left text-sm text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
                     >
                       <span className="block truncate">{alias.label}</span>
-                      {/* 侧栏只有 9rem：提示另起一行，否则「电脑控制 → 浏览器」会被折断成两截 */}
+                      {/* 侧栏只有 9rem：提示另起一行，否则「记忆 → 规则与记忆」会被折断成两截 */}
                       <span className="block truncate text-[10px] opacity-80">
                         → {alias.targetLabel}
                       </span>
@@ -476,8 +473,7 @@ function PluginPanelsSettings({ accessToken }: { accessToken: string | null }) {
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        插件可以在这里加自己的设置面板（在插件清单或代码里声明 settings 槽位）。
-        下面列出当前已启用插件提供的设置面板；一个都没有，说明没有插件声明这个槽位。
+        已启用插件提供的设置面板会显示在这里。
       </p>
       <div className="flex flex-wrap gap-2">
         <PluginPanelButtons

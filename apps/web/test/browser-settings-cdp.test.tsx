@@ -80,7 +80,7 @@ describe("浏览器设置：连接到 Chrome（CDP）", () => {
 
     expect(connectCdp).toHaveBeenCalledWith("tok");
     expect(await screen.findByText("状态：已连接（有窗口）")).toBeVisible();
-    expect(screen.getByText("已连接（独立实例，专用 profile）")).toBeVisible();
+    expect(screen.getByText("已连接")).toBeVisible();
     expect(await screen.findByRole("button", { name: "断开" })).toBeVisible();
   });
 
@@ -100,7 +100,7 @@ describe("浏览器设置：连接到 Chrome（CDP）", () => {
     disconnectCdp.mockResolvedValue({ status: "disconnected" });
     const user = await renderSection();
 
-    expect(await screen.findByText("状态：已连接（无头）")).toBeVisible();
+    expect(await screen.findByText("状态：已连接（后台）")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "断开" }));
 
     expect(disconnectCdp).toHaveBeenCalledWith("tok");

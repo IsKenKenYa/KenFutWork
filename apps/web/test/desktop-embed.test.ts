@@ -6,7 +6,7 @@ import {
   boundsOf,
   embedBounds,
   embedClose,
-  embedDebugConsole,
+  embedDevtools,
   embedOpen,
   embedVisible,
   isDesktopShell,
@@ -40,7 +40,7 @@ describe("desktop-embed（桌面壳桥）", () => {
     await expect(
       embedOpen("https://example.com", { x: 0, y: 0, width: 10, height: 10 }),
     ).resolves.toBeUndefined();
-    await expect(embedDebugConsole("/* eruda */")).resolves.toBeUndefined();
+    await expect(embedDevtools()).resolves.toBeUndefined();
     await expect(embedClose()).resolves.toBeUndefined();
   });
 
@@ -52,14 +52,14 @@ describe("desktop-embed（桌面壳桥）", () => {
     await embedOpen("https://example.com", bounds);
     await embedBounds(bounds);
     await embedVisible(false);
-    await embedDebugConsole("/* eruda */");
+    await embedDevtools();
     await embedClose();
 
     expect(invoke.mock.calls.map((call) => call[0])).toEqual([
       "browser_embed_open",
       "browser_embed_bounds",
       "browser_embed_visible",
-      "browser_embed_console",
+      "browser_embed_devtools",
       "browser_embed_close",
     ]);
     expect(invoke.mock.calls[0]?.[1]).toEqual({
@@ -68,14 +68,8 @@ describe("desktop-embed（桌面壳桥）", () => {
     });
     expect(invoke.mock.calls[1]?.[1]).toEqual({ bounds });
     expect(invoke.mock.calls[2]?.[1]).toEqual({ visible: false });
-    /**
-     * 注入的脚本由**服务端**给（`/api/browser/debug-console.js`，与 Web 形态的 CDP 注入同一份）；
-     * 这一层只负责原样透传——各写一份脚本迟早漂移，所以这里断言的就是「传进去什么、发出什么」。
-     */
-    const consoleArgs = invoke.mock.calls[3]?.[1] as
-      | { script?: string }
-      | undefined;
-    expect(consoleArgs?.script).toBe("/* eruda */");
+    // 桌面形态开的是 WebView2 自带的完整 DevTools（独立窗口），不带参数
+    expect(invoke.mock.calls[3]?.[1]).toBeUndefined();
   });
 
   it("边界取自占位块的 getBoundingClientRect（四舍五入成逻辑像素）", () => {

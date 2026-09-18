@@ -62,7 +62,7 @@ export function BrowserConsoleWindow({
 }: {
   accessToken: string | null;
   onClose: () => void;
-  /** 「完整面板」：注入 Eruda（Elements / Network / Storage 那些）。 */
+  /** 「完整开发者工具」：独立窗口（浮动、可移动）。 */
   onOpenPagePanel: () => void;
   /** 可拖范围（面板里的画面区尺寸）——窗口不许拖出这块地方。 */
   bounds: { width: number; height: number };
@@ -213,12 +213,11 @@ export function BrowserConsoleWindow({
         className="flex cursor-move items-center gap-1 border-b bg-muted px-2 py-1 text-[11px] select-none"
       >
         <span className="font-medium">控制台</span>
-        <span className="text-muted-foreground">（可拖动）</span>
         <div className="ml-auto flex items-center gap-0.5">
           <button
             type="button"
             aria-label="完整面板"
-            title="在页面里打开完整面板（Elements / Network / Storage）"
+            title="打开完整面板"
             onClick={onOpenPagePanel}
             className="p-1 text-muted-foreground hover:bg-background hover:text-foreground"
           >
@@ -252,9 +251,7 @@ export function BrowserConsoleWindow({
         className="min-h-0 flex-1 overflow-y-auto px-2 py-1 font-mono text-[11px] leading-relaxed"
       >
         {messages.length === 0 ? (
-          <p className="text-muted-foreground">
-            这一页还没有控制台输出（页面里的 console.log / 报错会出现在这里）。
-          </p>
+          <p className="text-muted-foreground">还没有输出。</p>
         ) : (
           messages.map((message) => (
             <div
@@ -296,7 +293,7 @@ export function BrowserConsoleWindow({
           value={input}
           disabled={busy}
           onChange={(event) => setInput(event.target.value)}
-          placeholder="在页面里执行表达式，回车运行"
+          placeholder="输入表达式，回车执行"
           className="min-w-0 flex-1 bg-transparent font-mono text-[11px] outline-none"
         />
       </form>

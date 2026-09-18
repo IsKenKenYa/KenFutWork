@@ -366,67 +366,49 @@ describe("面板画面流接口", () => {
     }
   });
 
-  it("/debug-console.js：透出脚本源码（桌面形态 eval 用同一份）；取不到时 502 带原因", async () => {
-    const app = buildBrowserApp({
-      cdp: { debugConsoleScript: async () => "/* eruda 源码 */" },
+  it("/devtools：透出窗口信息；打不开时 502 带可读原因", async () => {
+    const opened = buildBrowserApp({
+      cdp: {
+        openDevToolsWindow: async (options: { left?: number }) => ({
+          windowId: 4242,
+          bounds: {
+            left: options.left ?? 60,
+            top: 60,
+            width: 1280,
+            height: 860,
+          },
+        }),
+      },
     });
     try {
-      const response = await app.inject({
-        method: "GET",
-        url: "/api/browser/debug-console.js",
+      const response = await opened.inject({
+        method: "POST",
+        url: "/api/browser/cdp/devtools",
+        payload: { left: 20 },
       });
       expect(response.statusCode).toBe(200);
-      expect(response.headers["content-type"]).toContain("javascript");
-      expect(response.body).toBe("/* eruda 源码 */");
+      expect(response.json()).toMatchObject({ windowId: 4242 });
     } finally {
-      await app.close();
+      await opened.close();
     }
 
     const failing = buildBrowserApp({
       cdp: {
-        debugConsoleScript: async () => {
-          throw new Error("拿不到脚本（网络不通）");
+        openDevToolsWindow: async () => {
+          throw new Error("没能在受控浏览器窗口里唤起开发者工具");
         },
       },
     });
     try {
       const response = await failing.inject({
-        method: "GET",
-        url: "/api/browser/debug-console.js",
+        method: "POST",
+        url: "/api/browser/cdp/devtools",
+        payload: {},
       });
       expect(response.statusCode).toBe(502);
-      expect(String(response.json().error?.message)).toContain("网络不通");
+      expect(String(response.json().error?.message)).toContain("唤起");
     } finally {
       await failing.close();
-    }
-  });
-
-  it("/view：reload=true 时同一页也要重新导航（否则面板上的「刷新」在实时画面下是死的）", async () => {
-    const navigated: string[] = [];
-    const app = buildBrowserApp({
-      cdp: {
-        isConnected: () => true,
-        status: () => ({
-          status: "connected",
-          currentUrl: "https://example.com/",
-        }),
-        navigate: async (url: string) => {
-          navigated.push(url);
-          return { url, title: "", text: "", elements: [] };
-        },
-        resize: async () => {},
-        viewport: async () => ({ width: 800, height: 600, scale: 1 }),
-      },
-    });
-    try {
-      await app.inject({
-        method: "POST",
-        url: "/api/browser/cdp/view",
-        payload: { url: "https://example.com", reload: true },
-      });
-      expect(navigated).toEqual(["https://example.com"]);
-    } finally {
-      await app.close();
     }
   });
 

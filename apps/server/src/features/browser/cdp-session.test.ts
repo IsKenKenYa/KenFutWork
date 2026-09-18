@@ -24,6 +24,11 @@ function fakeClient() {
   }> = [];
   /** `Runtime.evaluate` 的返回（默认空对象 = 自检探针拿不到 true）。 */
   let evalResult: Record<string, unknown> = {};
+  /** 受控浏览器里“已经开着的” DevTools 目标（缺省没有 → 会走按 F12 那条路）。 */
+  let devtoolsTarget: { targetId: string; url: string; title: string } | null =
+    null;
+  /** 连上时报告的实例状态（无头用例要它）。 */
+  let headless = false;
   const client: CdpClient = {
     async send(method, params = {}, sessionId) {
       sent.push({ method, params, ...(sessionId ? { sessionId } : {}) });
@@ -33,6 +38,12 @@ function fakeClient() {
         };
       }
       if (method === "Runtime.evaluate") return evalResult;
+      if (method === "Browser.getWindowForTarget") {
+        return {
+          windowId: 4242,
+          bounds: { left: 0, top: 0, width: 640, height: 640 },
+        };
+      }
       return {};
     },
     on(method, handler) {
@@ -45,7 +56,10 @@ function fakeClient() {
       return { targetId: "T1", sessionId: "S1" };
     },
     async listTargets() {
-      return [{ targetId: "T1", url: "about:blank", title: "" }];
+      return [
+        { targetId: "T1", url: "about:blank", title: "" },
+        ...(devtoolsTarget ? [devtoolsTarget] : []),
+      ];
     },
     async closeTab() {},
     close() {},
@@ -56,6 +70,17 @@ function fakeClient() {
     setEvalResult(value: Record<string, unknown>) {
       evalResult = value;
     },
+    setDevToolsTarget(target: {
+      targetId: string;
+      url: string;
+      title: string;
+    }) {
+      devtoolsTarget = target;
+    },
+    setState(next: "headless" | "headed") {
+      headless = next === "headless";
+    },
+    headless: () => headless,
     emit(method: string, params: Record<string, unknown>, sessionId?: string) {
       for (const handler of listeners.get(method) ?? []) {
         handler(params, sessionId);
@@ -69,13 +94,15 @@ function fakeClient() {
 
 function sessionWith(
   fake: { client: CdpClient },
-  debugConsole: { script: () => Promise<string> } = {
-    script: async () => "/* eruda 源码 */",
-  },
+  extra: { sendKeys?: (title: string) => Promise<void> } = {},
 ) {
   return createCdpBrowserSession({
     dataDir: "D:/tmp/kfw-cdp-session-test",
-    debugConsole,
+    ...(extra.sendKeys
+      ? {
+          sendKeys: extra.sendKeys as never,
+        }
+      : {}),
     findExecutable: () => "C:/fake/chrome.exe",
     launch: async () => ({
       // 会话会给子进程挂 exit 监听（进程自己退了就收回状态）
@@ -240,66 +267,6 @@ describe("CDP 会话：面板画面流", () => {
     await session.disconnect();
   });
 
-  it("注入调试控制台：整段源码直投（不是插 script 标签）+ 自检通过才报成功", async () => {
-    const fake = fakeClient();
-    fake.setEvalResult({
-      result: {
-        value: JSON.stringify({
-          loaded: true,
-          initialized: true,
-          containers: 1,
-        }),
-      },
-    });
-    const session = sessionWith(fake, {
-      script: async () => "window.eruda = { _isInit: true };",
-    });
-    await session.connect();
-    await session.injectDebugConsole("about:blank");
-    const evaluates = fake.sent.filter(
-      (entry) => entry.method === "Runtime.evaluate",
-    );
-    // 第一条是被注入的源码，第二条是自检探针
-    expect(evaluates[0]?.params.expression).toContain("window.eruda");
-    expect(String(evaluates[1]?.params.expression)).toContain("_isInit");
-    expect(evaluates[1]?.params.returnByValue).toBe(true);
-  });
-
-  it("注入后自检没过：如实抛错（不假报「已打开」，用户看到的「点了没反应」就是这么来的）", async () => {
-    const fake = fakeClient();
-    // 页面侧自报：脚本注进去了但启动失败（探针把原因带出来）
-    fake.setEvalResult({
-      result: {
-        value: JSON.stringify({
-          loaded: true,
-          initialized: false,
-          containers: 0,
-          error: "TypeError: eruda is not a function",
-        }),
-      },
-    });
-    const session = sessionWith(fake);
-    await session.connect();
-    await expect(session.injectDebugConsole("about:blank")).rejects.toThrow(
-      /eruda is not a function/,
-    );
-  });
-
-  it("注入的表达式在页面上抛错：把页面的报错原样带出来", async () => {
-    const fake = fakeClient();
-    fake.setEvalResult({
-      exceptionDetails: {
-        text: "Uncaught",
-        exception: { description: "boom" },
-      },
-    });
-    const session = sessionWith(fake);
-    await session.connect();
-    await expect(session.injectDebugConsole("about:blank")).rejects.toThrow(
-      /boom/,
-    );
-  });
-
   it("控制台消息：打标签时就订阅，console/异常/浏览器日志都进缓冲（按 seq 增量取）", async () => {
     const fake = fakeClient();
     fake.setEvalResult({ result: { value: "Example" } });
@@ -391,13 +358,106 @@ describe("CDP 会话：面板画面流", () => {
     expect(fake.listenerCount("Log.entryAdded")).toBe(0);
   });
 
-  it("debugConsoleScript() 透出源码（桌面形态取同一份）", async () => {
+  it("打开开发者工具：无头实例如实拒绝（要有可见窗口）", async () => {
     const fake = fakeClient();
+    fake.setState("headless");
+    const session = sessionWith(fake);
+    await session.connect({ headless: true });
+    await expect(session.openDevToolsWindow()).rejects.toThrow(/可见/);
+  });
+
+  it("打开开发者工具：按页面标题唤起（F12 之后浏览器把它开出来），再取消停靠并摆位置", async () => {
+    const fake = fakeClient();
+    // 会话要先读页面 DOM 拿标题（替身给一份）
+    fake.setEvalResult({
+      result: {
+        value: JSON.stringify({
+          url: "https://a.com/",
+          title: "Example Domain",
+          text: "",
+          elements: [],
+        }),
+      },
+    });
+    const keys: string[] = [];
     const session = sessionWith(fake, {
-      script: async () => "/* 同一份 eruda 源码 */",
+      // 替身模拟「被按了 F12 的浏览器」：按键之后 DevTools 目标才出现
+      sendKeys: async (title: string) => {
+        keys.push(title);
+        fake.setDevToolsTarget({
+          targetId: "DT1",
+          url: "devtools://devtools/bundled/devtools_app.html",
+          title: "DevTools",
+        });
+      },
     });
     await session.connect();
-    expect(await session.debugConsoleScript()).toBe("/* 同一份 eruda 源码 */");
+    const opened = await session.openDevToolsWindow({
+      left: 10,
+      top: 20,
+      width: 800,
+      height: 600,
+    });
+    // 按键脚本拿到的就是当前页面标题（它按标题找窗口）
+    expect(keys).toEqual(["Example Domain"]);
+    // 取消停靠 + 摆位置都发了命令
+    const methods = fake.sent.map((entry) => entry.method);
+    expect(methods).toContain("Target.attachToTarget");
+    expect(methods).toContain("Browser.setWindowBounds");
+    expect(opened.bounds).toEqual({
+      left: 10,
+      top: 20,
+      width: 800,
+      height: 600,
+    });
+  });
+
+  it("开发者工具已经开着：直接复用（不再按 F12）", async () => {
+    const fake = fakeClient();
+    fake.setDevToolsTarget({
+      targetId: "DT1",
+      url: "devtools://devtools/bundled/devtools_app.html",
+      title: "DevTools",
+    });
+    fake.setEvalResult({
+      result: {
+        value: JSON.stringify({
+          url: "https://a.com/",
+          title: "Example Domain",
+          text: "",
+          elements: [],
+        }),
+      },
+    });
+    const keys: string[] = [];
+    const session = sessionWith(fake, {
+      sendKeys: async (title: string) => {
+        keys.push(title);
+      },
+    });
+    await session.connect();
+    await session.openDevToolsWindow();
+    expect(keys).toEqual([]);
+    expect(fake.sent.map((entry) => entry.method)).toContain(
+      "Browser.setWindowBounds",
+    );
+  });
+
+  it("打开开发者工具：唤起失败时如实报错（并告诉用户自己去按 F12）", async () => {
+    const fake = fakeClient();
+    fake.setEvalResult({
+      result: {
+        value: JSON.stringify({
+          url: "https://a.com/",
+          title: "Example Domain",
+          text: "",
+          elements: [],
+        }),
+      },
+    });
+    const session = sessionWith(fake, { sendKeys: async () => {} });
+    await session.connect();
+    await expect(session.openDevToolsWindow()).rejects.toThrow(/按 F12/);
   });
 
   it("断开时收掉导航订阅（不留悬空监听）", async () => {

@@ -95,7 +95,7 @@ export function BrowserLiveView({
           throw new Error(
             connected.status === "error"
               ? connected.message
-              : "内嵌浏览器没能启动起来。",
+              : "浏览器启动失败。",
           );
         }
       }
@@ -113,7 +113,7 @@ export function BrowserLiveView({
     } catch (error: unknown) {
       setState({
         status: "error",
-        message: error instanceof Error ? error.message : "打开面板画面失败。",
+        message: error instanceof Error ? error.message : "画面打开失败。",
       });
     }
   }, [accessToken, url, frameWidth, frameHeight, reloadToken]);
@@ -128,7 +128,7 @@ export function BrowserLiveView({
     if (retriesRef.current >= 2) {
       setState({
         status: "error",
-        message: "画面流断了（受控浏览器可能被关掉或断开了）。",
+        message: "画面已断开（浏览器可能被关闭）。",
       });
       return;
     }
@@ -141,7 +141,7 @@ export function BrowserLiveView({
       if (!accessToken) return;
       sendCdpInput(accessToken, event).catch((error: unknown) => {
         toast(
-          error instanceof Error ? error.message : "面板操作没能转给浏览器。",
+          error instanceof Error ? error.message : "操作没能送达浏览器。",
           "error",
         );
       });
@@ -306,7 +306,7 @@ export function BrowserLiveView({
           <img
             ref={imgRef}
             src={state.src}
-            alt={`受控浏览器画面：${url}`}
+            alt={`浏览器画面：${url}`}
             draggable={false}
             onError={handleFrameError}
             className="absolute top-0 left-0 h-full w-full select-none"
@@ -336,7 +336,7 @@ export function BrowserLiveView({
       */}
       <textarea
         ref={sinkRef}
-        aria-label="内嵌浏览器键盘输入"
+        aria-label="浏览器键盘输入"
         autoComplete="off"
         spellCheck={false}
         onKeyDown={handleKeyDown}
