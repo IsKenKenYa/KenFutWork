@@ -1179,6 +1179,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   },
                   instanceSpec.instanceId,
                 );
+              // 模型级推理参数映射（extraBody）随模型行带入请求体
+              const modelRow = credentials.models?.find(
+                (m) => m.id === instanceSpec.model,
+              );
               resolvedModel = resolveInstanceChatModel(
                 credentials.protocol,
                 instanceSpec.model,
@@ -1193,6 +1197,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     threadId: run.threadId,
                   }),
                 },
+                modelRow?.extraBody,
               );
               run.usageMeta = {
                 provider: "instance",

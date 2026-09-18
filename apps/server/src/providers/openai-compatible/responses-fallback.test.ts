@@ -1,13 +1,10 @@
-import { HumanMessage } from "@langchain/core/messages";
-import { ChatOpenAI } from "@langchain/openai";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { HumanMessage } from "@langchain/core/messages";
+import { ChatOpenAI } from "@langchain/openai";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-import {
-  createInstanceChatModel,
-  isResponsesUnavailable,
-} from "./index.js";
+import { createInstanceChatModel, isResponsesUnavailable } from "./index.js";
 
 /**
  * Responses 自动回落（阶段 E 收尾，②决议）：probe.responsesApi=true 的实例
@@ -30,9 +27,9 @@ describe("isResponsesUnavailable（判定分类）", () => {
     expect(isResponsesUnavailable(new Error("429 Too Many Requests"))).toBe(
       false,
     );
-    expect(
-      isResponsesUnavailable(new Error("402 insufficient balance")),
-    ).toBe(false);
+    expect(isResponsesUnavailable(new Error("402 insufficient balance"))).toBe(
+      false,
+    );
     expect(isResponsesUnavailable(new Error("content policy violation"))).toBe(
       false,
     );
@@ -50,7 +47,9 @@ describe("createInstanceChatModel（Responses 自动回落，真实 HTTP 桩）"
       if (url === "/v1/responses") {
         response.writeHead(404, { "content-type": "application/json" });
         response.end(
-          JSON.stringify({ error: { message: "Unknown request URL: /v1/responses" } }),
+          JSON.stringify({
+            error: { message: "Unknown request URL: /v1/responses" },
+          }),
         );
         return;
       }
@@ -87,6 +86,7 @@ describe("createInstanceChatModel（Responses 自动回落，真实 HTTP 桩）"
         baseUrl,
         responsesApi: true,
       },
+      undefined,
       onResponsesFallback,
     );
 
@@ -99,14 +99,10 @@ describe("createInstanceChatModel（Responses 自动回落，真实 HTTP 桩）"
   it("probe 缺省（未探测）→ 直接走 completions，不碰 Responses", async () => {
     chatCompletionsHits.length = 0;
     const onResponsesFallback = vi.fn();
-    const model = createInstanceChatModel(
-      "gpt-x",
-      {
-        apiKey: "sk-probe",
-        baseUrl,
-      },
-      onResponsesFallback,
-    );
+    const model = createInstanceChatModel("gpt-x", {
+      apiKey: "sk-probe",
+      baseUrl,
+    });
 
     const result = await model.invoke([new HumanMessage("ping")]);
     expect(String(result.content)).toContain("回落成功");

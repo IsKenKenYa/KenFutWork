@@ -63,7 +63,14 @@ export interface ResolvedInstanceCredentials {
   compat?: Record<string, unknown>;
   /** 自定义请求头（原值，含占位符）：调用方按会话上下文渲染后再交给适配器。 */
   headers?: Record<string, string>;
-  models: Array<{ id: string; name: string; capability: ModelCapability }>;
+  models: Array<{
+    id: string;
+    name: string;
+    capability: ModelCapability;
+    enabled?: boolean;
+    reasoningEfforts?: string[];
+    extraBody?: Record<string, unknown>;
+  }>;
   /** 实例配置修订号：异步任务落盘修订与当前不一致即拒（跨修订防护）。 */
   configRevision: number;
 }
@@ -72,9 +79,12 @@ type InstanceModel = {
   id: string;
   name: string;
   capability: string;
+  enabled?: boolean;
   vision?: boolean;
   contextWindow?: number;
   maxOutputTokens?: number;
+  reasoningEfforts?: string[];
+  extraBody?: Record<string, unknown>;
 };
 
 function mapModels(models: InstanceModel[] | null) {
@@ -82,9 +92,12 @@ function mapModels(models: InstanceModel[] | null) {
     id: m.id,
     name: m.name,
     capability: m.capability as ModelCapability,
+    ...(m.enabled === false ? { enabled: false } : {}),
     ...(m.vision ? { vision: true } : {}),
     ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
     ...(m.maxOutputTokens ? { maxOutputTokens: m.maxOutputTokens } : {}),
+    ...(m.reasoningEfforts ? { reasoningEfforts: m.reasoningEfforts } : {}),
+    ...(m.extraBody ? { extraBody: m.extraBody } : {}),
   }));
 }
 

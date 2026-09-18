@@ -189,10 +189,27 @@ export const providerInstanceModelSchema = z.object({
   /**
    * 思考档位声明（deepseek-harness 的 reasoningEfforts 收窄版：键=档位名）。
    * 声明后「思考强度」选择器只显示这些档位（+恒在的「默认」）；缺席 = 全档位。
-   * 档位到线上拼写的映射（如 max: ultra）随线上参数化（reasoning_effort 真传）
-   * 一并落地，当前消费面是提示词注入与 UI 过滤。
    */
   reasoningEfforts: z.array(z.string().min(1)).optional(),
+  /**
+   * 模型级开关（供应商详情里的行开关）：false = 从目录与选择器隐藏。
+   * 缺省 = 启用（存量模型行无此字段照常可用）。
+   */
+  enabled: z.boolean().optional(),
+  /** 输入模态（参考系：text / image / video / pdf）；缺省 = 未知不展示。 */
+  inputModalities: z.array(z.string().min(1)).optional(),
+  /** 支持 JSON Schema 结构化输出。 */
+  structuredOutput: z.boolean().optional(),
+  /** 支持模型端口的原生联网搜索。 */
+  nativeWebSearch: z.boolean().optional(),
+  /** 支持对话中注入系统消息。 */
+  systemMessage: z.boolean().optional(),
+  /**
+   * 推理参数映射（模型级请求体注入，deepseek-harness 的「档位→线上参数」通用解）：
+   * 键值原样并入请求体顶层（如 {"thinking":{"type":"enabled"}}）。
+   * BYOK 红线不适用——这是模型行为参数，不是凭证。
+   */
+  extraBody: z.record(z.string(), z.unknown()).optional(),
   /** 图像生成任务级能力（可选；缺省 = 未知，见上方语义红线）。 */
   imageGeneration: imageGenerationCapsSchema.optional(),
   /** 视频生成任务级能力（可选；缺省 = 未知）。 */

@@ -23,9 +23,8 @@ export type OnResponsesFallback = () => void;
 export function isResponsesUnavailable(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   const mentionsResponses = /\/responses\b|responses[_ ]?api/i.test(message);
-  const isMissingEndpoint = /\b40[45]\b|not[_ ]found|not[_ ]supported|unknown[_ ]url/i.test(
-    message,
-  );
+  const isMissingEndpoint =
+    /\b40[45]\b|not[_ ]found|not[_ ]supported|unknown[_ ]url/i.test(message);
   return mentionsResponses && isMissingEndpoint;
 }
 
@@ -109,6 +108,8 @@ class ResponsesFallbackChatModel extends ChatOpenAI {
 export function createInstanceChatModel(
   model: string,
   credentials: InstanceCredentials,
+  /** 模型级请求体注入（推理参数映射 extraBody，原样并入请求体顶层）。 */
+  extraBody?: Record<string, unknown>,
   onResponsesFallback?: OnResponsesFallback,
 ): BaseLanguageModel {
   // 自定义头经 `configuration.defaultHeaders` 交给 OpenAI 客户端（§4.8）；
@@ -123,6 +124,7 @@ export function createInstanceChatModel(
     model,
     apiKey: credentials.apiKey,
     useResponsesApi,
+    ...(extraBody ? { modelKwargs: extraBody } : {}),
     ...(Object.keys(clientOptions).length > 0
       ? { configuration: clientOptions }
       : {}),
@@ -139,6 +141,7 @@ export function createInstanceChatModel(
   const completionsModel = new ChatOpenAI({
     model,
     apiKey: credentials.apiKey,
+    ...(extraBody ? { modelKwargs: extraBody } : {}),
     ...(Object.keys(clientOptions).length > 0
       ? { configuration: clientOptions }
       : {}),
@@ -151,6 +154,7 @@ export function createInstanceChatModel(
       model,
       apiKey: credentials.apiKey,
       useResponsesApi: true,
+      ...(extraBody ? { modelKwargs: extraBody } : {}),
       ...(Object.keys(clientOptions).length > 0
         ? { configuration: clientOptions }
         : {}),

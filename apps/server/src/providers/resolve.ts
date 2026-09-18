@@ -24,6 +24,8 @@ import * as volces from "./volces/index.js";
 type ChatAdapterFactory = (
   model: string,
   credentials: InstanceCredentials,
+  /** 模型级请求体注入（extraBody）；仅 openai-compatible 消费，其余忽略。 */
+  extraBody?: Record<string, unknown>,
 ) => BaseLanguageModel;
 
 const CHAT_ADAPTERS: Partial<Record<ProviderProtocol, ChatAdapterFactory>> = {
@@ -60,6 +62,8 @@ export function resolveInstanceChatModel(
   protocol: ProviderProtocol,
   model: string,
   credentials: InstanceCredentials,
+  /** 模型级请求体注入（推理参数映射 extraBody）；仅 openai-compatible 消费。 */
+  extraBody?: Record<string, unknown>,
 ): BaseLanguageModel {
   const factory = CHAT_ADAPTERS[protocol];
   if (!factory) {
@@ -67,7 +71,7 @@ export function resolveInstanceChatModel(
       `[providers] 协议 ${protocol} 不支持聊天模型实例化（fail loud）。`,
     );
   }
-  return factory(model, credentials);
+  return factory(model, credentials, extraBody);
 }
 
 export function resolveInstanceImageProvider(

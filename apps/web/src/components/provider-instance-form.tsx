@@ -230,11 +230,15 @@ export function ProviderInstanceForm({
       if (parsed instanceof Error) throw parsed;
       return parsed;
     }
-    // 结构化行：键非空即提交；已存键留空 = 不提交该键（服务端保留语义由
-    // 「行值留空且键已存」跳过近似——值不回显是红线，用户重填即覆盖）
+    // 结构化行：键非空即提交；**已存键且值留空 = 保留原值（跳过，值不回显是红线）**；
+    // 新行空键跳过。清空全部自定义头走高级 JSON 的 {}。
+    const existingKeys = new Set(editing?.headerKeys ?? []);
     const headers: Record<string, string> = {};
     for (const row of headerRows) {
-      if (row.key.trim()) headers[row.key.trim()] = row.value;
+      const key = row.key.trim();
+      if (!key) continue;
+      if (existingKeys.has(key) && row.value === "") continue;
+      headers[key] = row.value;
     }
     return Object.keys(headers).length > 0 ? headers : undefined;
   };
@@ -256,6 +260,10 @@ export function ProviderInstanceForm({
     }
     if (!name.trim()) {
       onError("请填写实例名称");
+      return;
+    }
+    if (!editing && !apiKey.trim()) {
+      onError("请填写 API Key（只写不读，保存后不可查看）");
       return;
     }
     if (!Array.isArray(models) || models.length === 0) {
@@ -282,10 +290,6 @@ export function ProviderInstanceForm({
       return;
     }
 
-    if (!apiKey.trim()) {
-      onError("请填写 API Key（只写不读，保存后不可查看）");
-      return;
-    }
     await onSubmitCreate({
       name: name.trim(),
       protocol: protocol as (typeof PROTOCOLS)[number]["value"],

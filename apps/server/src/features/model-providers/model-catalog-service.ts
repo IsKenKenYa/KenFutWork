@@ -143,6 +143,8 @@ export function createModelCatalogService(options: {
           continue;
         }
         for (const model of instance.models) {
+          // 模型级开关：false = 用户在供应商详情里隐藏（缺省启用）
+          if (model.enabled === false) continue;
           entries.push(toCatalogEntry(model, instance, "workspace", snapshot));
         }
       }
@@ -156,6 +158,7 @@ export function createModelCatalogService(options: {
             continue;
           }
           for (const model of instance.models) {
+            if (model.enabled === false) continue;
             entries.push(toCatalogEntry(model, instance, "system", snapshot));
           }
         }
