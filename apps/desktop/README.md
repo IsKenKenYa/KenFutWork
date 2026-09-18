@@ -25,6 +25,29 @@ pnpm --filter @kenfutwork/desktop exec tauri build        # 出安装包；加 -
 
 > 踩过的坑：`tauri.conf.json` 的 `frontendDist` 是**相对 `src-tauri/`** 解析的——原来写
 > `../web/out` 会指到 `apps/desktop/web/out`（永远找不到），已改成 `../../web/out`。
+> 同理 `bundle.resources` 里引 `release/` 要写**三级** `../../../release/...`
+> （src-tauri → apps/desktop → apps → 仓库根；少一级会报「resource path 不存在」）。
+
+## 出 Windows 安装包（NSIS，一键装）
+
+```sh
+pnpm package:win                                          # 1) 先出 release/（服务端 exe + web + pg + runtime）
+pnpm --filter @kenfutwork/desktop build                   # 2) 出安装包
+```
+
+产物：`apps/desktop/src-tauri/target/release/bundle/nsis/KenFutWork_<版本>_x64-setup.exe`（约 72 MB，
+压缩自约 300 MB 资源）。安装包做的是原生那套：**可选安装目录**（向导页）、**开始菜单快捷方式**、
+**注册表卸载项 + 卸载器**、**中英双语**（默认跟系统，简体优先）。装完点快捷方式即用：壳会拉起随包的
+`app/KenFutWork-server.exe`（内嵌 Postgres + 免登录 + 进程内队列），并把窗口指向服务端托管的 UI。
+
+- **静默装/卸（CI 或脚本用）**：`setup.exe /S /currentuser`；卸载
+  `"%LOCALAPPDATA%\Programs\KenFutWork\uninstall.exe" /S`
+- **`tauri build` 需要 PATH 里有 `cargo`**：rustup 装在 `~/.cargo/bin`，Git Bash 里先
+  `export PATH="$HOME/.cargo/bin:$PATH"`，否则报 `failed to run 'cargo metadata' … program not found`
+- **为什么窗口指向 `http://127.0.0.1:3001` 而不是加载壳自带的 UI**：本机免登录的可信来源只认回环
+  （`server/src/features/auth/local-trust.ts`），壳自带的 `tauri://localhost` 不是回环会被 401/403
+- **已知瑕疵**：`src-tauri/src/bin/loomic-test-fake-server.rs`（集成测试夹具）会被一起打进安装目录
+  （Tauri 会打包同一 crate 的所有 bin 目标）；无害但属噪音，待清理。
 
 ## 形态与职责
 
