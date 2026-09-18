@@ -106,6 +106,9 @@ function main() {
     // CJS 里 __filename/__dirname 恒可用，把 import.meta 的这两个字段指过去。
     "--define:import.meta.url=__filename",
     "--define:import.meta.dirname=__dirname",
+    // node-pty 是原生模块（conpty.node + conpty.dll/OpenConsole.exe）：**不能打进单文件**，
+    // 运行时从 <exe>/node_modules/node-pty 解析（同 sharp 的办法）。
+    "--external:node-pty",
     `--outfile=${join(BUILD, "server.cjs")}`,
     "--log-level=warning",
   ]);
@@ -196,6 +199,30 @@ function main() {
   );
   console.log(
     "[package] 捆绑 sharp 原生扩展（node_modules/@img/sharp-win32-x64）",
+  );
+
+  // 4c-2) node-pty（终端的真 PTY）：只拷运行时用得上的子集——
+  //   lib/（JS）+ prebuilds/win32-x64/*.node + build/Release/conpty/{conpty.dll,OpenConsole.exe}
+  //   + package.json；third_party / src / deps / 其它平台的 prebuilds 都不进包。
+  const nodePtyDir = dirname(serverRequire.resolve("node-pty/package.json"));
+  const nodePtyOut = join(RELEASE, "node_modules", "node-pty");
+  for (const rel of ["lib", "build", "typings"]) {
+    const from = join(nodePtyDir, rel);
+    if (existsSync(from)) {
+      cpSync(from, join(nodePtyOut, rel), { recursive: true });
+    }
+  }
+  const prebuilds = join(nodePtyDir, "prebuilds", "win32-x64");
+  if (existsSync(prebuilds)) {
+    cpSync(prebuilds, join(nodePtyOut, "prebuilds", "win32-x64"), {
+      recursive: true,
+      // 调试符号（*.pdb）占了这份 prebuild 的一多半，运行时用不到
+      filter: (source) => !source.endsWith(".pdb"),
+    });
+  }
+  cpSync(join(nodePtyDir, "package.json"), join(nodePtyOut, "package.json"));
+  console.log(
+    "[package] 捆绑 node-pty（lib/ + prebuilds/win32-x64 + conpty.dll/OpenConsole.exe）",
   );
 
   // 4d) 随包语言运行时（Node / Python / JRE）：agent 的 execute 跑在**宿主机**上，

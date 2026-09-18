@@ -87,14 +87,16 @@ function makeStubs() {
   };
 }
 
-async function startServer() {
+async function startServer(overrides?: {
+  auth?: { authenticate: (request: unknown) => Promise<unknown> };
+}) {
   const app = Fastify();
   await app.register(websocket);
   const stubs = makeStubs();
   registerWsRoute(app, {
     connectionManager: stubs.connectionManager as never,
     agentRuns: stubs.agentRuns as never,
-    auth: stubs.auth as never,
+    auth: (overrides?.auth ?? stubs.auth) as never,
     codeGitService: stubs.codeGitService as never,
   });
   await app.listen({ port: 0, host: "127.0.0.1" });
@@ -254,6 +256,81 @@ describe("终端会话（WS 通道）", () => {
 
   const isAck = (msg: Record<string, unknown>) =>
     msg.type === "command.ack" && msg.action === "terminal.start";
+
+  it("免登录形态（桌面）：没有 token 也能连——鉴权按 ip + Origin 判", async () => {
+    /**
+     * 回归背景：WS 入口以前写死「没有 token 就 4001」，而桌面 local-trust 形态本来就没有
+     * token；伪造给鉴权器的请求又只带了 authorization、没带 Origin，于是打包后的桌面端
+     * **run / 终端全都连不上**。这条按 local-trust 的判据（回环 + 可信 Origin）造替身来锁。
+     */
+    const seenOrigins: Array<string | undefined> = [];
+    const { app, port } = await startServer({
+      auth: {
+        authenticate: async (request: unknown) => {
+          const req = request as { headers: { origin?: string } };
+          seenOrigins.push(req.headers.origin);
+          return req.headers.origin === "http://localhost:3000"
+            ? { id: "local-user", accessToken: "local" }
+            : null;
+        },
+      },
+    });
+    const client = new WebSocket(
+      `ws://127.0.0.1:${port}/api/ws?connectionId=no-token-${Date.now()}`,
+      { headers: { Origin: "http://localhost:3000" } } as never,
+    );
+    try {
+      const opened = await new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => resolve(false), 6000);
+        client.on("open", () => {
+          clearTimeout(timer);
+          resolve(true);
+        });
+        client.on("close", () => {
+          clearTimeout(timer);
+          resolve(false);
+        });
+      });
+      // 连上之后等一会儿：确认不是「连上就被 4001 踢掉」
+      await new Promise((r) => setTimeout(r, 500));
+      expect(opened).toBe(true);
+      expect(client.readyState).toBe(1);
+      // Origin 真的传到了鉴权器（不是被伪造请求吞掉）
+      expect(seenOrigins).toContain("http://localhost:3000");
+    } finally {
+      client.close();
+      await app.close();
+    }
+  });
+
+  it("没有可信 Origin：仍然拒绝（免登录不等于不鉴权）", async () => {
+    const { app, port } = await startServer({
+      auth: {
+        authenticate: async (request: unknown) => {
+          const req = request as { headers: { origin?: string } };
+          return req.headers.origin === "http://localhost:3000"
+            ? { id: "local-user", accessToken: "local" }
+            : null;
+        },
+      },
+    });
+    const client = new WebSocket(
+      `ws://127.0.0.1:${port}/api/ws?connectionId=bad-origin-${Date.now()}`,
+    );
+    try {
+      const code = await new Promise<number>((resolve) => {
+        const timer = setTimeout(() => resolve(-1), 6000);
+        client.on("close", (closeCode) => {
+          clearTimeout(timer);
+          resolve(closeCode);
+        });
+      });
+      expect(code).toBe(4001);
+    } finally {
+      client.close();
+      await app.close();
+    }
+  });
 
   it("不带 canvasId 也能起会话：cwd 落到服务端启动目录（终端不被工作目录限制）", async () => {
     const { app, port } = await startServer();

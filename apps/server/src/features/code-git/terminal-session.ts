@@ -1,5 +1,6 @@
+import { createRequire } from "node:module";
+import type * as NodePty from "node-pty";
 import type { IPty } from "node-pty";
-import * as nodePty from "node-pty";
 
 import {
   detectTerminalShells,
@@ -60,7 +61,7 @@ export interface StartTerminalSessionInput {
   idleMs?: number;
   now?: () => number;
   /** 测试注入：替换 `node-pty` 的 spawn（默认真的开一个 PTY）。 */
-  spawnFn?: typeof nodePty.spawn;
+  spawnFn?: typeof NodePty.spawn;
 }
 
 /**
@@ -114,13 +115,24 @@ export function chunkForFrames(
   return frames;
 }
 
-/** node-pty 能不能用（加载失败时给一句人话，而不是抛一个模块加载栈）。 */
-export function loadNodePty(): typeof nodePty | null {
+/**
+ * 懒加载 node-pty（**不能在模块顶层静态 import**）。
+ *
+ * 桌面随包分发时它是 external——原生模块打不进单文件 SEA，走 `<exe>/node_modules/node-pty`
+ * 在运行时解析（与 sharp 同一套办法）。静态 import 在加载期就抛，整个服务端起不来；
+ * 懒加载则只影响终端本身，并在界面上如实说明原因。
+ */
+let cachedNodePty: typeof NodePty | null | undefined;
+export function loadNodePty(): typeof NodePty | null {
+  if (cachedNodePty !== undefined) return cachedNodePty;
   try {
-    return typeof nodePty.spawn === "function" ? nodePty : null;
+    const requireFrom = createRequire(import.meta.url);
+    const mod = requireFrom("node-pty") as typeof NodePty;
+    cachedNodePty = typeof mod.spawn === "function" ? mod : null;
   } catch {
-    return null;
+    cachedNodePty = null;
   }
+  return cachedNodePty;
 }
 
 export function startTerminalSession(
