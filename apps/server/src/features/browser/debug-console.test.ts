@@ -134,6 +134,10 @@ describe("可注入脚本：UMD 分支修正", () => {
     const script = buildInjectableScript("var x = 1;");
     expect(script).toContain("getRootNode");
     expect(script).toContain(".eruda-container{position:fixed");
+    // 正文面板拉满：Eruda 自己留的顶部空档在悬窗形态下是**透明死区**（用户圈过）
+    expect(script).toContain(
+      ".eruda-dev-tools{top:0!important;height:100%!important}",
+    );
     expect(script).toContain('setProperty("left"');
     expect(script).toContain("eruda.hide()");
     expect(script).toContain("__kfwFloating = true");

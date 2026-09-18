@@ -84,6 +84,13 @@ export async function embedDebugConsole(script: string): Promise<void> {
   await invoke("browser_embed_console", { script });
 }
 
+/** 桌面形态的「打开调试工具」：WebView2 自带的完整 DevTools（独立窗口）。 */
+export async function embedDevtools(): Promise<void> {
+  const invoke = tauriInvoke();
+  if (!invoke) return;
+  await invoke("browser_embed_devtools");
+}
+
 /** 关掉嵌入实例（离开面板/换会话时调，别让页面在后台一直跑）。 */
 export async function embedClose(): Promise<void> {
   const invoke = tauriInvoke();

@@ -145,6 +145,20 @@ fn browser_embed_console(
     .map_err(|error| format!("注入调试控制台失败：{error}"))
 }
 
+/// **桌面形态的「打开调试工具」**——WebView2 自带的完整 DevTools（独立窗口）。
+///
+/// 面板里的页面就在**我们自己的 WebView2** 里，这个 DevTools 是同一个内核的真身；
+/// Web 形态走不了（浏览器不给 iframe 挂调试器），那边用注入的页面内控制台（Eruda）。
+#[tauri::command]
+fn browser_embed_devtools(state: tauri::State<'_, EmbedState>) -> Result<(), String> {
+  let guard = state.0.lock().map_err(|_| "嵌入状态锁失败".to_string())?;
+  let webview = guard
+    .as_ref()
+    .ok_or_else(|| "还没有嵌入页面：先在右栏浏览器打开一个网址。".to_string())?;
+  webview.open_devtools();
+  Ok(())
+}
+
 /// 关掉嵌入实例（离开面板/换会话时调，别让页面在后台一直跑）。
 #[tauri::command]
 fn browser_embed_close(state: tauri::State<'_, EmbedState>) -> Result<(), String> {
@@ -168,6 +182,7 @@ pub fn register_embed_commands(
       browser_embed_bounds,
       browser_embed_visible,
       browser_embed_console,
+      browser_embed_devtools,
       browser_embed_close
     ])
 }

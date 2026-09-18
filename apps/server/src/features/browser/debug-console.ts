@@ -94,6 +94,9 @@ const FLOAT_SCRIPT = `
     "max-width:none!important;max-height:none!important;border-radius:6px!important;" +
     "box-shadow:0 10px 28px rgba(0,0,0,.35)!important;z-index:2147483646!important;" +
     "overflow:hidden!important;" +
+    // Eruda 的正文面板自己留了一条顶部空档（原来是放标题的）：悬窗形态下那条是**透明死区**
+    // （用户截图圈出来的就是它），把它拉满整块，同时让可见的标签栏正好落在拖动条里。
+    ".eruda-dev-tools{top:0!important;height:100%!important}" +
     // Eruda 把容器设成 pointer-events:none（只有内层面板收事件）：悬窗形态下整块都要收
     // ——否则顶部那一条拖动区点不到（真机实测：拖不动就是栽在这里）。
     "pointer-events:auto!important;" +
@@ -128,7 +131,8 @@ const FLOAT_SCRIPT = `
       if (event.target === close) return;
       var box = container.getBoundingClientRect();
       // 只认顶部那一条（标签栏），下面的正文照常交互
-      if (event.clientY - box.top > 32) return;
+      // 40px ≈ 可见标签栏那一条（面板拉满后它就贴着容器顶）
+      if (event.clientY - box.top > 40) return;
       dragging = { x: event.clientX, y: event.clientY, left: box.left, top: box.top };
       event.preventDefault();
     },
