@@ -4,9 +4,11 @@ import {
   ArrowLeft,
   ArrowRight,
   Ellipsis,
+  ExternalLink,
   Monitor,
   MousePointerSquareDashed,
   RotateCw,
+  SquareTerminal,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -296,7 +298,7 @@ export function BrowserPane({
             }
           }}
           placeholder="输入网址，回车打开"
-          className="min-w-0 flex-1 rounded-md border bg-transparent px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
+          className="min-w-0 flex-1 rounded-md border border-transparent bg-muted/60 px-2 py-1 text-xs outline-none focus:border-ring focus:bg-transparent"
         />
         <button
           type="button"
@@ -315,13 +317,9 @@ export function BrowserPane({
             if (next === "open-system" && url) {
               window.open(url, "_blank", "noopener");
             }
-            if (next === "copy" && url) {
-              void navigator.clipboard?.writeText(url);
-            }
           }}
           items={[
             { value: "open-system", label: "在默认浏览器中打开" },
-            { value: "copy", label: "复制地址" },
             { value: "devtools", label: "打开调试工具" },
           ]}
         >
@@ -329,25 +327,31 @@ export function BrowserPane({
             className="shrink-0 gap-0 border-transparent px-1.5 py-1"
             aria-label="浏览器菜单"
             hideChevron
-            title="更多（在默认浏览器中打开 / 复制地址 / 打开调试工具）"
+            title="更多"
           >
             <Ellipsis className="h-3.5 w-3.5" />
           </SelectTrigger>
-          <SelectContent className="min-w-44">
-            <SelectItem value="open-system">在默认浏览器中打开</SelectItem>
-            <SelectItem value="copy">复制地址</SelectItem>
+          <SelectContent className="min-w-52">
+            {/* 菜单形态照参考：**两项、各带图标、不写任何括号说明**（用户口径「这一块的说明不要」） */}
+            <SelectItem value="open-system">
+              <span className="flex items-center gap-2">
+                <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                在默认浏览器中打开
+              </span>
+            </SelectItem>
             {/*
-              调试工具：**参考图里有，但我们这条 iframe 路径给不了**——内嵌页挂在 iframe 里，
-              浏览器不允许给 iframe 单独开 devtools（只能从外层页面的 devtools 里选 frame）。
-              按「不摆假开关」的规矩：**置灰 + 写明为什么 + 给替代路径**，不做点了没反应的键。
+              调试工具：参考里有，但**iframe 路径给不了**——浏览器不允许给 iframe 单独开 devtools
+              （只能从外层页面的 devtools 里选 frame）。按「不摆假开关」的规矩置灰；原因只放在
+              悬停提示里，不进列表正文（用户口径：列表里的说明不要）。
             */}
             <SelectItem
               value="devtools"
               disabled
-              title="内嵌页在 iframe 里，浏览器不允许给 iframe 单独开调试工具；先在「在默认浏览器中打开」里按 F12 调试"
+              title="内嵌页在 iframe 里，没法单独挂调试工具；先用「在默认浏览器中打开」再按 F12"
             >
-              <span className="text-muted-foreground">
-                打开调试工具（iframe 不给挂，需外部浏览器）
+              <span className="flex items-center gap-2">
+                <SquareTerminal className="h-3.5 w-3.5 shrink-0" />
+                打开调试工具
               </span>
             </SelectItem>
           </SelectContent>
@@ -356,7 +360,8 @@ export function BrowserPane({
 
       {/* 第二行：视口预设 + 缩放预设（用户口径：预设不做在地址栏右边）。
        **都是真的**——iframe 按预设尺寸排版，再按比例缩放到面板里 */}
-      <div className="flex items-center gap-2 border bg-muted/30 px-2 py-1 text-[11px]">
+      {/* 第二行照参考：**纯文字 + 箭头，不套边框/底色**（用户口径「1:1 复刻」） */}
+      <div className="flex items-center gap-2 px-1 py-0.5 text-[11px]">
         <span className="font-mono text-muted-foreground">
           {viewportWidth > 0 ? `${viewportWidth} × ${viewportHeight}` : "—"}
         </span>
