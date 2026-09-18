@@ -115,6 +115,50 @@ export interface CdpBrowserSession {
   isConnected(): boolean;
 }
 
+/**
+ * 等调试前端连上（返回 `connected` / `disconnected` / `unknown`）。
+ *
+ * 「连接已关闭」这句是前端在断线时自己渲染的文案（中英都要认）；`unknown` 表示读不到
+ * 前端 DOM（例如浏览器不允许附着到 devtools 目标）——那种情况不武断判失败，交给用户看。
+ */
+async function waitForDevtoolsFrontend(
+  cdp: CdpClient,
+  targetId: string,
+): Promise<"connected" | "disconnected" | "unknown"> {
+  if (!targetId) return "unknown";
+  let sessionId: string | undefined;
+  try {
+    const attached = (await cdp.send("Target.attachToTarget", {
+      targetId,
+      flatten: true,
+    })) as { sessionId?: string };
+    sessionId = attached.sessionId;
+  } catch {
+    return "unknown";
+  }
+  if (!sessionId) return "unknown";
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      const evaluated = (await cdp.send(
+        "Runtime.evaluate",
+        {
+          expression: "document.body ? document.body.innerText : ''",
+          returnByValue: true,
+        },
+        sessionId,
+      )) as { result?: { value?: unknown } };
+      const text = String(evaluated.result?.value ?? "");
+      if (!text.trim()) continue; // 前端还没渲染出来：再等一轮
+      if (/连接已关闭|connection was closed/i.test(text)) {
+        return "disconnected";
+      }
+      return "connected";
+    } catch {}
+  }
+  return "unknown";
+}
+
 export function createCdpBrowserSession(deps: {
   /** 截图落 blob 用；缺省时截图只返回 base64 长度（测试/无 blob 装配）。 */
   blob?: BlobStore | undefined;
@@ -327,7 +371,25 @@ export function createCdpBrowserSession(deps: {
       })) as {
         targetId?: string;
       };
-      return { targetId: created.targetId ?? "", url: page.url };
+      const targetId = created.targetId ?? "";
+
+      /**
+       * **开完自检**：连进刚开的调试前端，读它的 DOM 里有没有「连接已关闭」。
+       *
+       * 为什么值得这一步：调试前端自己连不上时只会显示一句英文/中文提示，用户看到的
+       * 就是一个「像坏了」的窗口（这一整轮就是这么被反复问的）。这里替用户确认一次，
+       * 没连上就如实报错、并把这个废标签关掉——绝不留一个看起来正常实则断开的标签。
+       */
+      const frontend = await waitForDevtoolsFrontend(cdp, targetId);
+      if (frontend === "disconnected") {
+        await cdp.closeTab(targetId).catch(() => undefined);
+        throw new CdpError(
+          "cdp_devtools_blocked",
+          "调试前端没能连上这块页面（已把那个标签关掉）。多半是受控实例缺少 --remote-allow-origins——" +
+            "先在「设置 → 浏览器 → 外部浏览器」断开，再用这里的「打开调试工具」重开一个实例。",
+        );
+      }
+      return { targetId, url: page.url };
     },
 
     async disconnect() {
