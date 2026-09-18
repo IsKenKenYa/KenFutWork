@@ -613,6 +613,12 @@ describe("右栏浏览器（点链接自动打开）", () => {
       await screen.findByTitle("右栏浏览器：http://localhost:8000"),
     ).toBeInTheDocument();
 
+    /**
+     * 第二行常态只有「尺寸」按钮：分辨率与比例**点开才出现**
+     * （用户口径：「点击只有尺寸按钮才出现分辨率和比例」）。
+     */
+    expect(screen.queryByLabelText("视口预设")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "尺寸" }));
     // 视口预设（用户口径：预设不做在地址栏右边，改在工具栏第二行）
     const viewport = screen.getByLabelText("视口预设");
     await userEvent.click(viewport);
@@ -631,7 +637,10 @@ describe("右栏浏览器（点链接自动打开）", () => {
     ).toBeInTheDocument();
 
     // 自由尺寸（参考图的「退出自由尺寸」）：尺寸可改、可拖，退出即回到跟随面板
-    await userEvent.click(viewport);
+    if (!screen.queryByLabelText("视口预设")) {
+      await userEvent.click(screen.getByRole("button", { name: "尺寸" }));
+    }
+    await userEvent.click(screen.getByLabelText("视口预设"));
     await userEvent.click(
       await screen.findByRole("option", { name: "自由尺寸" }),
     );

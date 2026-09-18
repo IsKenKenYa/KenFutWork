@@ -119,6 +119,12 @@ export function BrowserPane({
   const normalized = normalizeUrl(draft);
   const [viewportPreset, setViewportPreset] = useState<ViewportPresetId>("fit");
   /**
+   * 第二行的「尺寸」按钮（用户口径：「点击只有尺寸按钮才出现分辨率和比例」）——
+   * 常态只留这一个按钮，分辨率读数与两个预设**点开才出现**（展开态照参考）。
+   */
+  const [sizeOpen, setSizeOpen] = useState(false);
+  const sizePanelRef = useRef<HTMLDivElement>(null);
+  /**
    * 自由尺寸（参考图的「退出自由尺寸」）：视口尺寸由用户自己拖/填——
    * 预设给常用档，自由尺寸给「就想看看 900px 宽什么样子」。
    */
@@ -239,6 +245,28 @@ export function BrowserPane({
     viewportWidth > 0 && viewportHeight > 0
       ? Math.min(1, paneWidth / viewportWidth, paneHeight / viewportHeight)
       : 1;
+  // 「尺寸」面板：点外面或按 Esc 收起（与面板里其它浮层同一套约定）
+  useEffect(() => {
+    if (!sizeOpen) return;
+    const onDown = (event: MouseEvent) => {
+      const el = event.target as HTMLElement | null;
+      // 点在展开区里不算外面；**Select 的弹层是 portal**（挂在 document 上），
+      // 不一起放行的话「点开分辨率下拉 → 一点选项整块就收了」（实测踩到）
+      if (el?.closest("[data-size-panel], [data-slot='select-content']"))
+        return;
+      setSizeOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSizeOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [sizeOpen]);
+
   const zoomPreset = ZOOM_PRESETS.find((p) => p.id === zoom);
   const scale = zoomPreset?.scale ?? fitScale;
 
@@ -358,108 +386,135 @@ export function BrowserPane({
         </Select>
       </form>
 
-      {/* 第二行：视口预设 + 缩放预设（用户口径：预设不做在地址栏右边）。
-       **都是真的**——iframe 按预设尺寸排版，再按比例缩放到面板里 */}
-      {/* 第二行照参考：**纯文字 + 箭头，不套边框/底色**（用户口径「1:1 复刻」） */}
-      <div className="flex items-center gap-2 px-1 py-0.5 text-[11px]">
-        <span className="font-mono text-muted-foreground">
-          {viewportWidth > 0 ? `${viewportWidth} × ${viewportHeight}` : "—"}
-        </span>
-        {/* 缩放读数只在**真的有一页在看**时出现：没开页面时面板还没量到尺寸，
-            fitScale 会算出 0%（实测显示「1280 × 720 0%」这种没意义的读数） */}
-        {url && viewportWidth !== paneWidth && scale !== 1 ? (
-          <span className="text-muted-foreground">
-            {Math.round(scale * 100)}%
-          </span>
-        ) : null}
-        {viewportPreset === "free" ? (
-          <span className="flex items-center gap-1">
-            <ViewportSizeInput
-              ariaLabel="视口宽度"
-              value={freeSize.width}
-              min={320}
-              max={3840}
-              onCommit={(width) =>
-                setFreeSize((current) => ({ ...current, width }))
-              }
-            />
-            <span aria-hidden className="text-muted-foreground">
-              ×
-            </span>
-            <ViewportSizeInput
-              ariaLabel="视口高度"
-              value={freeSize.height}
-              min={240}
-              max={2160}
-              onCommit={(height) =>
-                setFreeSize((current) => ({ ...current, height }))
-              }
-            />
-            <button
-              type="button"
-              aria-label="退出自由尺寸"
-              title="退出自由尺寸（回到跟随面板）"
-              onClick={() => setViewportPreset("fit")}
-              className="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
-            >
-              退出自由尺寸
-            </button>
-          </span>
-        ) : null}
-        <Select
-          aria-label="视口预设"
-          value={viewportPreset}
-          onValueChange={(next) => {
-            if (typeof next === "string")
-              setViewportPreset(next as ViewportPresetId);
-          }}
-          items={VIEWPORT_PRESETS.map((preset) => ({
-            value: preset.id,
-            label: preset.label,
-          }))}
-        >
-          <SelectTrigger
-            className="ml-auto shrink-0 gap-1 border-transparent bg-transparent px-1.5 py-0.5 text-[11px]"
-            aria-label="视口预设"
-            title="视口预设（页面按这个尺寸排版）"
+      {/*
+        第二行照参考：**只有一个「尺寸」按钮**；分辨率（视口预设）与比例（缩放预设）
+        **点开才出现**（用户口径：「点击只有尺寸按钮才出现分辨率和比例」）。
+        **预设都是真的**——iframe 按预设尺寸排版，再按比例缩放到面板里。
+      */}
+      {/* data-size-panel 标在**整行**上：展开区是这个容器的兄弟，只标按钮外层的活
+          「点分辨率下拉」会被判成点了外面、整块收起来（实测踩到） */}
+      <div
+        ref={sizePanelRef}
+        data-size-panel
+        className="flex items-center gap-2 px-1 py-0.5 text-[11px]"
+      >
+        <div className="relative">
+          <button
+            type="button"
+            aria-label="尺寸"
+            aria-expanded={sizeOpen}
+            title="尺寸与比例"
+            onClick={() => setSizeOpen((current) => !current)}
+            className={`flex items-center gap-1 px-1 py-0.5 transition-colors hover:text-foreground ${
+              sizeOpen ? "text-foreground" : "text-muted-foreground"
+            }`}
           >
             <Monitor className="h-3.5 w-3.5" />
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="min-w-32">
-            {VIEWPORT_PRESETS.map((preset) => (
-              <SelectItem key={preset.id} value={preset.id}>
-                {preset.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          aria-label="预览缩放"
-          value={zoom}
-          onValueChange={(next) => {
-            if (typeof next === "string") setZoom(next as ZoomPresetId);
-          }}
-          items={ZOOM_PRESETS.map((preset) => ({
-            value: preset.id,
-            label: preset.label,
-          }))}
-        >
-          <SelectTrigger
-            className="shrink-0 gap-1 border-transparent bg-transparent px-1.5 py-0.5 text-[11px]"
-            aria-label="预览缩放"
-            title="预览缩放（只影响这个面板里的显示）"
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="min-w-28">
-            {ZOOM_PRESETS.map((preset) => (
-              <SelectItem key={preset.id} value={preset.id}>
-                {preset.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+            尺寸
+          </button>
+        </div>
+        {sizeOpen ? (
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-muted-foreground">
+              {viewportWidth > 0 ? `${viewportWidth} × ${viewportHeight}` : "—"}
+            </span>
+            {/* 缩放读数只在**真的有一页在看**时出现：没开页面时面板还没量到尺寸，
+            fitScale 会算出 0%（实测显示「1280 × 720 0%」这种没意义的读数） */}
+            {url && viewportWidth !== paneWidth && scale !== 1 ? (
+              <span className="text-muted-foreground">
+                {Math.round(scale * 100)}%
+              </span>
+            ) : null}
+            {viewportPreset === "free" ? (
+              <span className="flex items-center gap-1">
+                <ViewportSizeInput
+                  ariaLabel="视口宽度"
+                  value={freeSize.width}
+                  min={320}
+                  max={3840}
+                  onCommit={(width) =>
+                    setFreeSize((current) => ({ ...current, width }))
+                  }
+                />
+                <span aria-hidden className="text-muted-foreground">
+                  ×
+                </span>
+                <ViewportSizeInput
+                  ariaLabel="视口高度"
+                  value={freeSize.height}
+                  min={240}
+                  max={2160}
+                  onCommit={(height) =>
+                    setFreeSize((current) => ({ ...current, height }))
+                  }
+                />
+                <button
+                  type="button"
+                  aria-label="退出自由尺寸"
+                  title="退出自由尺寸（回到跟随面板）"
+                  onClick={() => setViewportPreset("fit")}
+                  className="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+                >
+                  退出自由尺寸
+                </button>
+              </span>
+            ) : null}
+            <Select
+              aria-label="视口预设"
+              value={viewportPreset}
+              onValueChange={(next) => {
+                if (typeof next === "string")
+                  setViewportPreset(next as ViewportPresetId);
+              }}
+              items={VIEWPORT_PRESETS.map((preset) => ({
+                value: preset.id,
+                label: preset.label,
+              }))}
+            >
+              <SelectTrigger
+                className="ml-auto shrink-0 gap-1 border-transparent bg-transparent px-1.5 py-0.5 text-[11px]"
+                aria-label="视口预设"
+                title="视口预设（页面按这个尺寸排版）"
+              >
+                <Monitor className="h-3.5 w-3.5" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="min-w-32">
+                {VIEWPORT_PRESETS.map((preset) => (
+                  <SelectItem key={preset.id} value={preset.id}>
+                    {preset.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              aria-label="预览缩放"
+              value={zoom}
+              onValueChange={(next) => {
+                if (typeof next === "string") setZoom(next as ZoomPresetId);
+              }}
+              items={ZOOM_PRESETS.map((preset) => ({
+                value: preset.id,
+                label: preset.label,
+              }))}
+            >
+              <SelectTrigger
+                className="shrink-0 gap-1 border-transparent bg-transparent px-1.5 py-0.5 text-[11px]"
+                aria-label="预览缩放"
+                title="预览缩放（只影响这个面板里的显示）"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="min-w-28">
+                {ZOOM_PRESETS.map((preset) => (
+                  <SelectItem key={preset.id} value={preset.id}>
+                    {preset.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
       </div>
 
       {picking !== "idle" ? (
