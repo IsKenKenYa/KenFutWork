@@ -11,7 +11,7 @@ import {
   SquareTerminal,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Select,
   SelectContent,
@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getServerBaseUrl } from "@/lib/env";
-import { fetchCdpStatus, openCdpDevtools } from "@/lib/server-api";
+import { connectCdp, fetchCdpStatus, openCdpDevtools } from "@/lib/server-api";
 import { keyed } from "../list-keys";
 
 /**
@@ -243,26 +243,23 @@ export function BrowserPane({
     viewportWidth > 0 && viewportHeight > 0
       ? Math.min(1, paneWidth / viewportWidth, paneHeight / viewportHeight)
       : 1;
-  // 受控浏览器状态：「打开调试工具」是否可用由它决定（每 20 秒刷新一次足够）
-  useEffect(() => {
+  /**
+   * 受控浏览器状态：只影响菜单里那行提示文案（这一项**不再置灰**——没连时点它就先连上再开
+   * 调试工具，用户口径是「点一下就该能用」）。每 20 秒刷新一次，另外**菜单一打开也刷一次**，
+   * 免得刚在设置页连上却要等轮询。
+   */
+  const refreshCdp = useCallback(() => {
     if (!accessToken) return;
-    let cancelled = false;
-    const load = () => {
-      fetchCdpStatus(accessToken)
-        .then((status) => {
-          if (!cancelled) setCdpConnected(status.status === "connected");
-        })
-        .catch(() => {
-          if (!cancelled) setCdpConnected(false);
-        });
-    };
-    load();
-    const timer = window.setInterval(load, 20_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
+    fetchCdpStatus(accessToken)
+      .then((status) => setCdpConnected(status.status === "connected"))
+      .catch(() => setCdpConnected(false));
   }, [accessToken]);
+
+  useEffect(() => {
+    refreshCdp();
+    const timer = window.setInterval(refreshCdp, 20_000);
+    return () => window.clearInterval(timer);
+  }, [refreshCdp]);
 
   const zoomPreset = ZOOM_PRESETS.find((p) => p.id === zoom);
   const scale = zoomPreset?.scale ?? fitScale;
@@ -357,21 +354,48 @@ export function BrowserPane({
         <Select
           aria-label="浏览器菜单"
           value=""
+          onOpenChange={(open: boolean) => {
+            if (open) refreshCdp();
+          }}
           onValueChange={(next) => {
             if (next === "open-system" && url) {
               window.open(url, "_blank", "noopener");
             }
             if (next === "devtools" && accessToken) {
-              // 真动作：让服务端在**受控浏览器**里开一个调试前端标签
-              openCdpDevtools(accessToken)
-                .then(() => setDevtoolsNotice("已在受控浏览器里打开调试工具。"))
-                .catch((error: unknown) =>
+              /**
+               * 真动作：**没连接受控浏览器就先连**（否则用户得先去设置页点一次，点完还会以为
+               * 这个功能坏了——本轮就是这么被问到的），连上后在受控浏览器里开调试前端标签。
+               * 每一步都写进提示行，不静默。
+               */
+              const token = accessToken;
+              const run = async () => {
+                try {
+                  if (!cdpConnected) {
+                    setDevtoolsNotice("正在连接受控浏览器…");
+                    const status = await connectCdp(token);
+                    if (status.status !== "connected") {
+                      throw new Error(
+                        status.status === "error"
+                          ? status.message
+                          : "连接受控浏览器失败。",
+                      );
+                    }
+                    setCdpConnected(true);
+                  }
+                  setDevtoolsNotice("正在打开调试工具…");
+                  await openCdpDevtools(token);
+                  setDevtoolsNotice(
+                    "已在受控浏览器里打开调试工具（那个窗口里新开了一个调试标签）。",
+                  );
+                } catch (error: unknown) {
                   setDevtoolsNotice(
                     error instanceof Error
                       ? error.message
                       : "打开调试工具失败。",
-                  ),
-                );
+                  );
+                }
+              };
+              void run();
             }
           }}
           items={[
@@ -403,11 +427,10 @@ export function BrowserPane({
             <SelectItem
               value="devtools"
               className="rounded-none"
-              disabled={!cdpConnected}
               title={
                 cdpConnected
                   ? "在受控浏览器里打开调试工具"
-                  : "先到「设置 → 浏览器 → 外部浏览器」连接受控浏览器"
+                  : "点它会先连接受控浏览器，再打开调试工具"
               }
             >
               <span className="flex items-center gap-2">

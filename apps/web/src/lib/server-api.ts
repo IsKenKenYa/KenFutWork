@@ -902,7 +902,12 @@ export async function fetchCdpStatus(
 export async function openCdpDevtools(accessToken: string): Promise<void> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/browser/cdp/devtools`,
-    { method: "POST", headers: authJsonHeaders(accessToken) },
+    /**
+     * **body 不能省**：带了 `Content-Type: application/json` 却发空 body，
+     * Fastify 直接回 `FST_ERR_CTP_EMPTY_JSON_BODY`（400）——真机踩过：设置页的
+     * 「连接到 Chrome」与右栏的「打开调试工具」都是这么失败的。
+     */
+    { method: "POST", headers: authJsonHeaders(accessToken), body: "{}" },
   );
   if (response.ok) return;
   const payload = (await response.json().catch(() => null)) as {
@@ -917,10 +922,7 @@ export async function openCdpDevtools(accessToken: string): Promise<void> {
 export async function connectCdp(accessToken: string): Promise<CdpStatusView> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/browser/cdp/connect`,
-    {
-      method: "POST",
-      headers: authJsonHeaders(accessToken),
-    },
+    { method: "POST", headers: authJsonHeaders(accessToken), body: "{}" },
   );
   const payload = (await response.json().catch(() => null)) as {
     cdp?: CdpStatusView;
@@ -940,7 +942,8 @@ export async function disconnectCdp(
 ): Promise<CdpStatusView> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/browser/cdp/disconnect`,
-    { method: "POST", headers: authJsonHeaders(accessToken) },
+    // 同上：JSON 头就必须带 body
+    { method: "POST", headers: authJsonHeaders(accessToken), body: "{}" },
   );
   if (!response.ok) return handleErrorResponse(response);
   const payload = (await response.json()) as { cdp: CdpStatusView };
