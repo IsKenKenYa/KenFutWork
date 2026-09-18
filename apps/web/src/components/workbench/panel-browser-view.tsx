@@ -19,6 +19,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  boundsOf,
+  embedBounds,
+  embedClose,
+  embedDevtools,
+  embedOpen,
+  isDesktopShell,
+} from "@/lib/desktop-embed";
 import { getServerBaseUrl } from "@/lib/env";
 import { connectCdp, fetchCdpStatus, openCdpDevtools } from "@/lib/server-api";
 import { keyed } from "../list-keys";
@@ -138,6 +146,12 @@ export function BrowserPane({
    * 受控浏览器在不在（决定「打开调试工具」这一项**真的能不能点**）。
    * 只有连上时才亮：没连时点它没有任何意义，亮着就是假开关。
    */
+  /**
+   * 是否跑在桌面外壳里：桌面用**真内核嵌入**（路线 2），Web 用 iframe。
+   * 取值只在挂载后定（SSR 里没有 window）。
+   */
+  const [desktopShell, setDesktopShell] = useState(false);
+  const embedSlotRef = useRef<HTMLDivElement>(null);
   const [cdpConnected, setCdpConnected] = useState(false);
   const [devtoolsNotice, setDevtoolsNotice] = useState<string | null>(null);
   const [picking, setPicking] = useState<
@@ -261,6 +275,40 @@ export function BrowserPane({
     return () => window.clearInterval(timer);
   }, [refreshCdp]);
 
+  // 挂载后再判断形态（SSR 无 window）
+  useEffect(() => {
+    setDesktopShell(isDesktopShell());
+  }, []);
+
+  /**
+   * 桌面形态：把面板里的占位块位置同步给原生子 webview。
+   * 子 webview 不随网页滚动/裁剪，所以**滚轮、拖面板、切标签、面板开合都要重算**；
+   * 面板不可见时隐藏它（比销毁便宜），离开时再关（effect 收尾）。
+   */
+  useEffect(() => {
+    if (!desktopShell || !url) return;
+    const slot = embedSlotRef.current;
+    if (!slot) return;
+    const push = () => {
+      void embedBounds(boundsOf(slot));
+    };
+    void embedOpen(url, boundsOf(slot));
+    push();
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => push());
+    observer?.observe(slot);
+    window.addEventListener("resize", push);
+    window.addEventListener("scroll", push, true);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", push);
+      window.removeEventListener("scroll", push, true);
+      void embedClose();
+    };
+  }, [desktopShell, url]);
+
   const zoomPreset = ZOOM_PRESETS.find((p) => p.id === zoom);
   const scale = zoomPreset?.scale ?? fitScale;
 
@@ -370,6 +418,16 @@ export function BrowserPane({
               const token = accessToken;
               const run = async () => {
                 try {
+                  /**
+                   * 桌面形态：页面就在**我们自己的 WebView2** 里，直接开它的 DevTools
+                   * （参考视频里那一项的真身）；Web 形态才需要 CDP 那条路。
+                   */
+                  if (desktopShell) {
+                    setDevtoolsNotice("正在打开调试工具…");
+                    await embedDevtools();
+                    setDevtoolsNotice("已打开调试工具（WebView2 自带）。");
+                    return;
+                  }
                   if (!cdpConnected) {
                     setDevtoolsNotice("正在连接受控浏览器…");
                     const status = await connectCdp(token);
@@ -632,18 +690,35 @@ export function BrowserPane({
           ref={frameRef}
           className="relative min-h-0 flex-1 overflow-auto border bg-background"
         >
-          <iframe
-            key={`${url}#${reloadToken}`}
-            src={url}
-            title={`右栏浏览器：${url}`}
-            style={{
-              width: viewportWidth > 0 ? `${viewportWidth}px` : "100%",
-              height: viewportHeight > 0 ? `${viewportHeight}px` : "100%",
-              transform: `scale(${scale})`,
-              transformOrigin: "top left",
-            }}
-            className="absolute top-0 left-0"
-          />
+          {/*
+            桌面形态（路线 2）：页面由 Rust 侧的**真 WebView2 子 webview** 渲染，
+            这里只留一个占位块——它的位置会同步给原生层（见上面的同步 effect）。
+            占位块保持透明但要占位，否则面板布局会塌。
+          */}
+          {desktopShell ? (
+            <div
+              ref={embedSlotRef}
+              data-role="native-browser-slot"
+              className="absolute top-0 left-0"
+              style={{
+                width: viewportWidth > 0 ? `${viewportWidth}px` : "100%",
+                height: viewportHeight > 0 ? `${viewportHeight}px` : "100%",
+              }}
+            />
+          ) : (
+            <iframe
+              key={`${url}#${reloadToken}`}
+              src={url}
+              title={`右栏浏览器：${url}`}
+              style={{
+                width: viewportWidth > 0 ? `${viewportWidth}px` : "100%",
+                height: viewportHeight > 0 ? `${viewportHeight}px` : "100%",
+                transform: `scale(${scale})`,
+                transformOrigin: "top left",
+              }}
+              className="absolute top-0 left-0"
+            />
+          )}
           {freeSizeOn ? (
             <button
               type="button"

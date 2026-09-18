@@ -4,6 +4,7 @@
 //! （同一份 apps/server 代码，桌面数据落本地数据目录）。
 //! 服务端生命周期管理见 `server_handle`（spawn / 探活 / 复用 / 优雅退出）。
 
+pub mod browser_embed;
 pub mod server_handle;
 
 pub use server_handle::{
@@ -34,7 +35,9 @@ fn spawn_config(data_dir: std::path::PathBuf) -> ServerSpawnConfig {
     let command =
         std::env::var("LOOMIC_DESKTOP_SERVER_CMD").unwrap_or_else(|_| "pnpm".into());
     let args = std::env::var("LOOMIC_DESKTOP_SERVER_ARGS")
-        .unwrap_or_else(|_| "--filter @loomic/server dev:server".into())
+        // 包名按品牌改过（`@kenfutwork/*`）：这里以前还写着旧作用域 `@loomic/server`，
+        // 真机 `cargo check` 顺带发现——照旧名拉起会直接「找不到包」，桌面端起不来服务端。
+        .unwrap_or_else(|_| "--filter @kenfutwork/server dev:server".into())
         .split_whitespace()
         .map(str::to_string)
         .collect();
@@ -45,8 +48,14 @@ fn spawn_config(data_dir: std::path::PathBuf) -> ServerSpawnConfig {
     config
 }
 
-/// 外部终止信号（pkill/系统注销/ctrl-c）→ 同样走优雅停服，避免孤儿化服务端。
+/// 外部终止信号（pkill / 系统注销 / ctrl-c）→ 同样走优雅停服，避免孤儿化服务端。
 /// 窗口关闭按钮走下面的 RunEvent::Exit，两条路径共用同一份句柄状态。
+///
+/// **只在类 Unix 上注册**：`signal_hook::iterator` 在 Windows 上不存在
+/// （上游是 `#[cfg(all(not(windows), feature = "iterator"))]`），此前这里没加门控，
+/// 结果是**这个桌面壳在 Windows 上根本编不过**（真机 `cargo check` 才发现）。Windows 侧的
+/// 正常退出由窗口关闭的 `RunEvent::Exit` 覆盖。
+#[cfg(unix)]
 fn register_signal_shutdown(app: tauri::AppHandle) {
     use signal_hook::consts::{SIGINT, SIGTERM};
     std::thread::spawn(move || {
@@ -68,8 +77,10 @@ fn register_signal_shutdown(app: tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![ping])
+    let builder = tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![ping]);
+    // 右栏浏览器的真内核嵌入（子 webview + WebView2 DevTools）——见 browser_embed.rs
+    browser_embed::register_embed_commands(builder)
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let mut config = spawn_config(data_dir);
@@ -87,6 +98,7 @@ pub fn run() {
                 }
                 Err(error) => return Err(Box::new(error)),
             }
+            #[cfg(unix)]
             register_signal_shutdown(app.handle().clone());
             Ok(())
         })

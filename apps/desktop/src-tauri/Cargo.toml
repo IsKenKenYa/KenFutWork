@@ -8,10 +8,13 @@ default-run = "kenfutwork-desktop"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# unstable：右栏浏览器的**子 webview**（真内核嵌入）要用 Tauri 的多 webview API；
+# devtools：release 里也能开 WebView2 的调试工具（参考视频里「打开调试工具」那一项）
+tauri = { version = "2", features = ["unstable", "devtools"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-signal-hook = "0.3"
+# 登出/外部终止信号：`iterator` 是 lib.rs 里 Signals 迭代器要用的 feature
+signal-hook = { version = "0.3", features = ["iterator"] }
 
 [lib]
 name = "kenfutwork_desktop_lib"

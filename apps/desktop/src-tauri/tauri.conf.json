@@ -8,6 +8,7 @@
     "frontendDist": "../web/out"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "KenFutWork 工作台",
