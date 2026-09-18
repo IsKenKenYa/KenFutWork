@@ -107,6 +107,13 @@ export async function launchBrowserWithDebugPort(options: {
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-features=Translate",
+    /**
+     * **必须开**：Chrome 111+ 对带 Origin 的调试 WebSocket 做白名单校验，而 DevTools 前端
+     * （`devtools://devtools/...`）正是这么连的——不开的话前端打开后会立刻
+     * 「Debugging connection was closed / WebSocket disconnected」（真机踩到，截图就是这句）。
+     * 这个实例是我们用**独立 profile** 起的本地调试实例，放开 Origin 的影响面仅限它。
+     */
+    "--remote-allow-origins=*",
     ...(options.headless ? ["--headless=new"] : []),
     options.initialUrl ?? "about:blank",
   ];

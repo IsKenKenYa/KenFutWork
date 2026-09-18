@@ -4,11 +4,11 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
 import {
   BrowserPane,
   formatElementReference,
 } from "../src/components/workbench/panel-browser-view";
+import { withAppProviders } from "./test-providers";
 
 /**
  * 元素拾取浮层（R3-4）：受控浏览器（CDP）连着时，服务端回来的元素带**真实几何**
@@ -52,21 +52,23 @@ function renderPane(
 ) {
   const onPickElement = vi.fn();
   render(
-    <BrowserPane
-      url="https://example.com/"
-      draft="https://example.com/"
-      reloadToken={0}
-      canBack={false}
-      canForward={false}
-      accessToken="tok"
-      onPickElement={onPickElement}
-      onDraftChange={() => {}}
-      onNavigate={() => {}}
-      onBack={() => {}}
-      onForward={() => {}}
-      onReload={() => {}}
-      {...props}
-    />,
+    withAppProviders(
+      <BrowserPane
+        url="https://example.com/"
+        draft="https://example.com/"
+        reloadToken={0}
+        canBack={false}
+        canForward={false}
+        accessToken="tok"
+        onPickElement={onPickElement}
+        onDraftChange={() => {}}
+        onNavigate={() => {}}
+        onBack={() => {}}
+        onForward={() => {}}
+        onReload={() => {}}
+        {...props}
+      />,
+    ),
   );
   return { onPickElement };
 }

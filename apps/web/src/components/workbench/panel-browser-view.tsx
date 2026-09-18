@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useToast } from "@/components/toast";
 import {
   Select,
   SelectContent,
@@ -153,7 +154,8 @@ export function BrowserPane({
   const [desktopShell, setDesktopShell] = useState(false);
   const embedSlotRef = useRef<HTMLDivElement>(null);
   const [cdpConnected, setCdpConnected] = useState(false);
-  const [devtoolsNotice, setDevtoolsNotice] = useState<string | null>(null);
+  /** 结果用**全站既有的 toast** 呈现（用户口径：这类提示不要贴在面板里）。 */
+  const { toast } = useToast();
   const [picking, setPicking] = useState<
     "idle" | "loading" | "error" | "ready"
   >("idle");
@@ -423,13 +425,13 @@ export function BrowserPane({
                    * （参考视频里那一项的真身）；Web 形态才需要 CDP 那条路。
                    */
                   if (desktopShell) {
-                    setDevtoolsNotice("正在打开调试工具…");
+                    toast("正在打开调试工具…");
                     await embedDevtools();
-                    setDevtoolsNotice("已打开调试工具（WebView2 自带）。");
+                    toast("已打开调试工具（WebView2 自带）。", "success");
                     return;
                   }
                   if (!cdpConnected) {
-                    setDevtoolsNotice("正在连接受控浏览器…");
+                    toast("正在连接受控浏览器…");
                     const status = await connectCdp(token);
                     if (status.status !== "connected") {
                       throw new Error(
@@ -440,16 +442,18 @@ export function BrowserPane({
                     }
                     setCdpConnected(true);
                   }
-                  setDevtoolsNotice("正在打开调试工具…");
+                  toast("正在打开调试工具…");
                   await openCdpDevtools(token);
-                  setDevtoolsNotice(
+                  toast(
                     "已在受控浏览器里打开调试工具（那个窗口里新开了一个调试标签）。",
+                    "success",
                   );
                 } catch (error: unknown) {
-                  setDevtoolsNotice(
+                  toast(
                     error instanceof Error
                       ? error.message
                       : "打开调试工具失败。",
+                    "error",
                   );
                 }
               };
@@ -555,12 +559,6 @@ export function BrowserPane({
             </SelectContent>
           </Select>
         </div>
-      ) : null}
-
-      {devtoolsNotice ? (
-        <p className="px-1 text-[10px] text-muted-foreground">
-          {devtoolsNotice}
-        </p>
       ) : null}
 
       {picking !== "idle" ? (

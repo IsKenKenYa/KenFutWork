@@ -13,6 +13,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkbenchSidePanel } from "../src/components/workbench/workbench-side-panel";
 import type { WebSocketHandle } from "../src/hooks/use-websocket";
+import { withAppProviders } from "./test-providers";
 
 /**
  * xterm 的替身：终端视图会在面板里挂载终端模拟器，而 xterm 依赖 canvas / matchMedia
@@ -150,7 +151,7 @@ describe("WorkbenchSidePanel（多标签）", () => {
   });
 
   function Harness({ open = true }: { open?: boolean } = {}) {
-    return (
+    return withAppProviders(
       <WorkbenchSidePanel
         open={open}
         accessToken="token"
@@ -158,7 +159,7 @@ describe("WorkbenchSidePanel（多标签）", () => {
         subagents={[]}
         running={false}
         ws={fakeWs()}
-      />
+      />,
     );
   }
 
@@ -541,7 +542,8 @@ describe("右栏浏览器（点链接自动打开）", () => {
   afterEach(cleanup);
 
   function Harness() {
-    return (
+    // 同上：面板的动作结果走全站 toast，测试按真实结构包一层 provider
+    return withAppProviders(
       <WorkbenchSidePanel
         open
         accessToken="token"
@@ -549,7 +551,7 @@ describe("右栏浏览器（点链接自动打开）", () => {
         subagents={[]}
         running={false}
         ws={fakeWs()}
-      />
+      />,
     );
   }
 
