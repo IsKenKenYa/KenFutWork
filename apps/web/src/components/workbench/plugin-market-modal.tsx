@@ -13,7 +13,7 @@ import {
   Search,
   ShieldCheck,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { getServerBaseUrl } from "@/lib/env";
@@ -60,6 +60,8 @@ export function PluginMarketModal({
   isAdmin?: boolean;
 }) {
   const [tab, setTab] = useState<MarketTab>("discover");
+  /** 切页签重置滚动位置（与设置/MCP/技能弹窗同款交互修正）。 */
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = useState("");
   /** 分类筛选（null = 全部）。分类来自清单的 `category`（第三方在 package.json 声明）。 */
   const [category, setCategory] = useState<string | null>(null);
@@ -182,7 +184,10 @@ export function PluginMarketModal({
                   key={item.id}
                   type="button"
                   data-active={tab === item.id}
-                  onClick={() => setTab(item.id)}
+                  onClick={() => {
+                    setTab(item.id);
+                    if (contentRef.current) contentRef.current.scrollTop = 0;
+                  }}
                   className="whitespace-nowrap rounded-md px-3 py-1 text-sm transition-colors data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:shadow-sm"
                 >
                   {item.label}
@@ -231,7 +236,10 @@ export function PluginMarketModal({
             </fieldset>
           ) : null}
 
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+          <div
+            ref={contentRef}
+            className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5"
+          >
             {tab === "discover" ? (
               <>
                 <PluginInstallByUrl
