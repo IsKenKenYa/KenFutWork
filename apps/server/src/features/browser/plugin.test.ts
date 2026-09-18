@@ -412,6 +412,56 @@ describe("面板画面流接口", () => {
     }
   });
 
+  it("/requests：网络请求按 since 增量取；没连接如实 502", async () => {
+    const app = buildBrowserApp({
+      cdp: {
+        requests: async (since: number) => ({
+          requests: [
+            {
+              seq: since + 1,
+              method: "GET",
+              url: "https://a.com/x",
+              status: 200,
+              at: "2026-09-18T00:00:00.000Z",
+            },
+          ],
+          nextSeq: since + 1,
+        }),
+      },
+    });
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/browser/cdp/requests?since=4",
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ nextSeq: 5 });
+      expect(response.json().requests[0]).toMatchObject({
+        url: "https://a.com/x",
+      });
+    } finally {
+      await app.close();
+    }
+
+    const failing = buildBrowserApp({
+      cdp: {
+        requests: async () => {
+          throw new Error("浏览器未连接");
+        },
+      },
+    });
+    try {
+      const response = await failing.inject({
+        method: "GET",
+        url: "/api/browser/cdp/requests",
+      });
+      expect(response.statusCode).toBe(502);
+      expect(String(response.json().error?.message)).toContain("未连接");
+    } finally {
+      await failing.close();
+    }
+  });
+
   it("/input：形状不对 → 400；对的形状原样转给会话", async () => {
     const events: unknown[] = [];
     const app = buildBrowserApp({

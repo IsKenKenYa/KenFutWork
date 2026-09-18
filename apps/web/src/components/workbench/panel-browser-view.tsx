@@ -24,14 +24,12 @@ import {
   boundsOf,
   embedBounds,
   embedClose,
-  embedDevtools,
   embedOpen,
   isDesktopShell,
 } from "@/lib/desktop-embed";
 import { getServerBaseUrl } from "@/lib/env";
-import { connectCdp, fetchCdpStatus, openCdpDevtools } from "@/lib/server-api";
+import { connectCdp, fetchCdpStatus } from "@/lib/server-api";
 import { keyed } from "../list-keys";
-import { BrowserConsoleWindow } from "./panel-browser-console";
 import { BrowserLiveView } from "./panel-browser-live";
 
 /**
@@ -107,6 +105,7 @@ export function BrowserPane({
   canForward,
   accessToken = null,
   onPickElement,
+  onOpenDevtools,
   onDraftChange,
   onNavigate,
   onBack,
@@ -122,6 +121,8 @@ export function BrowserPane({
   accessToken?: string | null;
   /** 拾取到元素后交给对话（工作台把它写进输入框）。 */
   onPickElement?: ((picked: PickedElement) => void) | undefined;
+  /** 「打开调试工具」：开发者工具是工作台级的悬浮窗（浮得出右栏）。 */
+  onOpenDevtools?: (() => void) | undefined;
   onDraftChange: (value: string) => void;
   onNavigate: (url: string) => void;
   onBack: () => void;
@@ -154,11 +155,6 @@ export function BrowserPane({
    * 取值只在挂载后定（SSR 里没有 window）。
    */
   const [desktopShell, setDesktopShell] = useState(false);
-  /**
-   * 悬浮控制台（用户口径：内嵌的控制台要做成**悬浮窗**，可拖动、可关闭）。
-   * 是**我们自己的 DOM**，不是页面里的 Eruda——Eruda 在页面的 shadow root 里、拖不动也关不掉。
-   */
-  const [consoleOpen, setConsoleOpen] = useState(false);
   const embedSlotRef = useRef<HTMLDivElement>(null);
   const [cdpConnected, setCdpConnected] = useState(false);
   /** 结果用**全站既有的 toast** 呈现（用户口径：这类提示不要贴在面板里）。 */
@@ -420,10 +416,11 @@ export function BrowserPane({
             }
             if (next === "devtools" && accessToken) {
               /**
-               * 「打开调试工具」= 在面板里开**悬浮控制台**（可拖动 / 可关闭）。
+               * 「打开调试工具」= 工作台里的**内嵌悬浮开发者工具**（可拖动 / 可关闭 /
+               * 不局限于右栏，见 devtools-window）。
                *
                * 受控浏览器没连上时先连（无头——面板显示的就是它的画面，不该再弹窗口），
-               * 因为控制台的消息就是从那条 CDP 连接上来的。
+               * 因为控制台与网络数据都是从那条 CDP 连接上来的。
                */
               const token = accessToken;
               const run = async () => {
@@ -439,7 +436,10 @@ export function BrowserPane({
                     }
                     setCdpConnected(true);
                   }
-                  setConsoleOpen(true);
+                  if (!onOpenDevtools) {
+                    throw new Error("开发者工具要挂在工作台上才能打开。");
+                  }
+                  onOpenDevtools();
                 } catch (error: unknown) {
                   toast(
                     error instanceof Error
@@ -758,49 +758,6 @@ export function BrowserPane({
               />
             ) : null}
           </div>
-          {consoleOpen && accessToken ? (
-            <BrowserConsoleWindow
-              accessToken={accessToken}
-              bounds={{ width: paneWidth, height: paneHeight }}
-              onClose={() => setConsoleOpen(false)}
-              onOpenPagePanel={() => {
-                /**
-                 * 「完整开发者工具」：**独立窗口**（浮动、可移动，不局限在右侧面板里）。
-                 * 桌面形态 = 面板里那个 WebView2 自带的 DevTools；Web 形态 = 受控浏览器里
-                 * 由服务端唤起并取消停靠（见 server 侧 devtools-keys 头注）。
-                 */
-                const token = accessToken;
-                void (async () => {
-                  try {
-                    if (desktopShell) {
-                      await embedDevtools();
-                    } else {
-                      await openCdpDevtools(token, {
-                        left: 60,
-                        top: 60,
-                        width: Math.min(
-                          1280,
-                          Math.round(window.screen.availWidth * 0.7),
-                        ),
-                        height: Math.min(
-                          860,
-                          Math.round(window.screen.availHeight * 0.8),
-                        ),
-                      });
-                    }
-                    toast("开发者工具已打开（独立窗口，可拖到任何地方）");
-                  } catch (error: unknown) {
-                    toast(
-                      error instanceof Error
-                        ? error.message
-                        : "打开开发者工具失败。",
-                      "error",
-                    );
-                  }
-                })();
-              }}
-            />
-          ) : null}
         </div>
       ) : (
         <p className="text-xs text-muted-foreground">还没有打开页面</p>

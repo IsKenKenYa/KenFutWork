@@ -939,6 +939,33 @@ export interface ConsoleMessageView {
   source: "console" | "exception" | "log" | "input";
 }
 
+/** 网络请求（形状与服务端 network-log 的 NetworkRequest 一致）。 */
+export interface BrowserRequestView {
+  seq: number;
+  method: string;
+  url: string;
+  type?: string;
+  status?: number;
+  failed?: string;
+  at: string;
+}
+
+/** 悬浮控制台的增量网络请求。 */
+export async function fetchBrowserRequests(
+  accessToken: string,
+  since: number,
+): Promise<{ requests: BrowserRequestView[]; nextSeq: number }> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/browser/cdp/requests?since=${Math.max(0, Math.floor(since))}`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as {
+    requests: BrowserRequestView[];
+    nextSeq: number;
+  };
+}
+
 /** 悬浮控制台的增量消息（`since` = 已经拿到的最大 seq）。 */
 export async function fetchConsoleMessages(
   accessToken: string,

@@ -630,6 +630,30 @@ export function registerBrowserRoutes(
   });
 
   /**
+   * 悬浮控制台的**网络数据**（与 `messages` 同一口径：`since` 增量取）。
+   */
+  app.get("/api/browser/cdp/requests", async (request, reply) => {
+    const user = await authenticate(request, reply);
+    if (!user) return;
+    const sinceRaw = (request.query as { since?: string } | undefined)?.since;
+    const since = Number(sinceRaw);
+    try {
+      const result = await options.browser.cdp.requests(
+        Number.isFinite(since) && since > 0 ? Math.floor(since) : 0,
+      );
+      return reply.code(200).send(result);
+    } catch (error) {
+      return reply.code(502).send({
+        error: {
+          code: "cdp_requests_failed",
+          message:
+            error instanceof Error ? error.message : "读取网络请求失败。",
+        },
+      });
+    }
+  });
+
+  /**
    * 悬浮控制台的**消息拉取**（面板里的悬浮窗轮询它；`since` = 已拿到的最大 seq）。
    *
    * 为什么是轮询而不是长连接：本地回环上一次几十字节的请求成本可忽略，而长连接要往

@@ -62,6 +62,7 @@ export function WorkbenchSidePanel({
   maxWidthExpression,
   onRequestOpen,
   onPickElement,
+  onOpenDevtools,
 }: {
   open: boolean;
   accessToken: string | null;
@@ -83,6 +84,8 @@ export function WorkbenchSidePanel({
   maxWidthExpression?: string;
   /** 转录里点了链接而面板收着时：请工作台把面板打开（浏览器标签已经就位）。 */
   onRequestOpen?: () => void;
+  /** 「打开调试工具」：开发者工具是工作台级的悬浮窗（浮得出右栏），由工作台挂载。 */
+  onOpenDevtools?: (() => void) | undefined;
   /** 浏览器标签里拾取到的页面元素：交给工作台写进输入框（R3-4）。 */
   onPickElement?: ((picked: PickedElement) => void) | undefined;
 }) {
@@ -285,6 +288,7 @@ export function WorkbenchSidePanel({
               onChanged={bumpChanges}
               onOpenView={openView}
               onPickElement={onPickElement}
+              onOpenDevtools={onOpenDevtools}
               browser={{
                 url: browserUrl,
                 draft: urlDraft,
@@ -332,6 +336,7 @@ function PaneContent({
   onChanged,
   onOpenView,
   onPickElement,
+  onOpenDevtools,
   browser,
 }: {
   tab: PanelTab;
@@ -344,6 +349,7 @@ function PaneContent({
   onChanged: () => void;
   onOpenView: (view: PanelView) => void;
   onPickElement?: ((picked: PickedElement) => void) | undefined;
+  onOpenDevtools?: (() => void) | undefined;
   browser: React.ComponentProps<typeof BrowserPane>;
 }) {
   const view = tab.view;
@@ -396,6 +402,7 @@ function PaneContent({
           {...browser}
           accessToken={accessToken}
           onPickElement={onPickElement}
+          onOpenDevtools={onOpenDevtools}
         />
       );
     case "subagents":

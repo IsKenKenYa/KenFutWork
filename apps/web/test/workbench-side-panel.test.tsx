@@ -586,7 +586,10 @@ describe("右栏浏览器（点链接自动打开）", () => {
     "clientHeight",
   );
 
+  const onOpenDevtools = vi.fn();
+
   beforeEach(() => {
+    onOpenDevtools.mockClear();
     Object.defineProperty(Element.prototype, "clientWidth", {
       configurable: true,
       get: () => 800,
@@ -651,6 +654,7 @@ describe("右栏浏览器（点链接自动打开）", () => {
         subagents={[]}
         running={false}
         ws={fakeWs()}
+        onOpenDevtools={onOpenDevtools}
       />,
     );
   }
@@ -800,49 +804,11 @@ describe("右栏浏览器（点链接自动打开）", () => {
     ).toBeInTheDocument();
 
     /**
-     * 「打开调试工具」= 面板里开**悬浮控制台**（用户口径：内嵌的控制台要做成悬浮窗，
-     * 可拖动、可关闭）。这里锁：窗口开得出来、能拖动、能关、能在页面里执行表达式。
+     * 「打开调试工具」= 请工作台开**内嵌悬浮开发者工具**（浮得出右栏，见 devtools-window）。
+     * 这条锁接线：面板自己不画那个窗口，只负责「确保受控浏览器在」+ 回调工作台。
      */
     await userEvent.click(screen.getByRole("option", { name: "打开调试工具" }));
-    const consoleWindow = await screen.findByRole("dialog", { name: "控制台" });
-    expect(consoleWindow).toBeInTheDocument();
-    expect(consoleWindow.style.left).toBe("16px");
-
-    // 拖动：标题栏按下 → 移动 → 松手，位置跟着指针走（位移一致，不是跳到指针位置）
-    const initialTop = Number.parseFloat(consoleWindow.style.top);
-    // 标题栏整体是拖动把手，标题文字在把手内（点它即按下把手）
-    const handle = screen.getByText("控制台");
-    fireEvent.pointerDown(handle, { pointerId: 1, clientX: 100, clientY: 100 });
-    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 220, clientY: 160 });
-    fireEvent.pointerUp(handle, { pointerId: 1 });
-    expect(consoleWindow.style.left).toBe("136px");
-    expect(Number.parseFloat(consoleWindow.style.top)).toBe(initialTop + 60);
-
-    // 执行表达式：输入框回车 → 打到服务端 → 结果进列表
-    const consoleInput = screen.getByLabelText("执行表达式");
-    await userEvent.type(consoleInput, "document.title{Enter}");
-    await waitFor(() =>
-      expect(evaluateInPageMock).toHaveBeenCalledWith(
-        "token",
-        "document.title",
-      ),
-    );
-    expect(await screen.findByText("Example Domain")).toBeInTheDocument();
-
-    // 位置记下来了（关了再开还在原地）——与面板宽度同一条口径
-    expect(
-      JSON.parse(
-        window.localStorage.getItem("workbench:browser-console-pos") ?? "{}",
-      ),
-    ).toEqual({ x: 136, y: initialTop + 60 });
-
-    // 关闭：窗口消失（不留在 DOM 里）
-    await userEvent.click(screen.getByRole("button", { name: "关闭控制台" }));
-    await waitFor(() =>
-      expect(
-        screen.queryByRole("dialog", { name: "控制台" }),
-      ).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(onOpenDevtools).toHaveBeenCalledTimes(1));
 
     // 元素拾取（R3-4）：开着页面 + 有 token 时可用；点它会去服务端抓静态快照
     const pickButton = screen.getByRole("button", {
