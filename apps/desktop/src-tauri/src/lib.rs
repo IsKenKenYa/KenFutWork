@@ -8,10 +8,11 @@ pub mod browser_embed;
 pub mod server_handle;
 
 pub use server_handle::{
-  ensure_server_running, probe_health, HealthStatus, LifecycleError, ProbeError,
-  ServerLaunch, ServerSpawnConfig,
+    ensure_server_running, port_is_free, probe_health, probe_serves_ui, HealthStatus,
+    LifecycleError, ProbeError, ServerLaunch, ServerSpawnConfig,
 };
 
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tauri::Manager;
 
@@ -23,6 +24,15 @@ fn ping() -> String {
 
 /// 服务端默认端口（与 web 端 `NEXT_PUBLIC_SERVER_BASE_URL` 缺省值一致）。
 const SERVER_PORT: u16 = 3001;
+/**
+ * 打包态端口候选个数：3001 起往后找（3001…3010），全被占才报错。
+ *
+ * 为什么要往后找而不是死守 3001：探活 200 只说明「有东西在听」。用户自己的 dev API、
+ * 别的软件占着 3001 时，窗口指向它只能拿到 404（2026-09-17 真机截图即
+ * `{"message":"Route GET:/ not found"}`）——**Design 模式因此整块失效**（画布没了）。
+ * 换端口的前提是前端按「同源」解析 API base（见 apps/web/src/lib/env.ts）。
+ */
+const PORT_CANDIDATES: u16 = 10;
 /// 退出宽限：SIGTERM 后等这么久，超时升级 SIGKILL（服务端 SIGTERM 会停 jobLoop 并停库）。
 const SHUTDOWN_GRACE: Duration = std::time::Duration::from_secs(10);
 
@@ -35,17 +45,22 @@ struct ServerState(std::sync::Mutex<Option<server_handle::ServerHandle>>);
  * 与 `release/启动.bat` 同一套：内嵌 PG、本机免登录、进程内队列、静态 UI 由服务端托管。
  * **为什么要把窗口指向 `http://127.0.0.1:<port>` 而不是加载打包进壳里的 UI**：local-trust 的
  * 可信来源只认**回环页面**（见 `features/auth/local-trust.ts`）——壳自带的 `tauri://localhost`
- * 不是回环，会被 401/403；服务端自己托管的那份 UI 才是它认的来源。
+ * 不是回环，会被 401/403；而且 Tauri 的资源协议**不认 `/canvas` 这种无扩展名路由**
+ * （服务端托管那份走 `canvas.html` 回退，见 `http/static-web.ts`）——Design 模式的画布 iframe
+ * 正是 `/canvas?id=…`，所以在壳自带 UI 上**画布永远是空白**（用户 2026-09-17 报的
+ * 「design 模式是画布啊，怎么又给我改坏了」就是这个）。
  */
-fn desktop_env(app: &tauri::AppHandle, web_dir: &std::path::Path) -> Vec<(String, String)> {
+fn desktop_env(app: &tauri::AppHandle, web_dir: &Path, port: u16) -> Vec<(String, String)> {
     let _ = app;
     vec![
         ("KENFUTWORK_EMBEDDED_PG".into(), "1".into()),
         ("KENFUTWORK_AUTH_DRIVER".into(), "local-trust".into()),
         ("KENFUTWORK_QUEUE_DRIVER".into(), "in-process".into()),
+        // 监听端口必须与壳挑中的一致：不改它，服务端仍去抢 3001
+        ("KENFUTWORK_SERVER_PORT".into(), port.to_string()),
         (
             "KENFUTWORK_WEB_ORIGIN".into(),
-            format!("http://127.0.0.1:{SERVER_PORT}"),
+            format!("http://127.0.0.1:{port}"),
         ),
         (
             "KENFUTWORK_WEB_DIST".into(),
@@ -55,35 +70,38 @@ fn desktop_env(app: &tauri::AppHandle, web_dir: &std::path::Path) -> Vec<(String
 }
 
 /** 安装包随带的那个服务端 exe（`<resource>/app/KenFutWork-server.exe`）；仓库里跑时为 None。 */
-fn bundled_server_exe(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+fn bundled_server_exe(app: &tauri::AppHandle) -> Option<PathBuf> {
     use tauri::Manager;
     let dir = app.path().resource_dir().ok()?.join("app");
     let exe = dir.join("KenFutWork-server.exe");
     exe.exists().then_some(exe)
 }
 
-fn spawn_config(app: &tauri::AppHandle, data_dir: std::path::PathBuf) -> ServerSpawnConfig {
-    // ① 打包态优先：随包的服务端 exe（安装包把 release/ 拷进 <resource>/app/）
-    if std::env::var("LOOMIC_DESKTOP_SERVER_CMD").is_err() {
-        if let Some(exe) = bundled_server_exe(app) {
-            let dir = exe
-                .parent()
-                .map(|parent| parent.to_path_buf())
-                .unwrap_or_else(|| data_dir.clone());
-            let mut config = ServerSpawnConfig::new(
-                exe.to_string_lossy().as_ref(),
-                Vec::new(),
-                data_dir,
-                SERVER_PORT,
-            );
-            config.cwd = dir.clone();
-            config.env = desktop_env(app, &dir.join("web"));
-            return config;
-        }
-    }
-    // ② 开发形态：命令与 cwd 可用 env 覆盖（dev.sh 会注入 LOOMIC_DESKTOP_SERVER_CWD=仓库根）
-    let command =
-        std::env::var("LOOMIC_DESKTOP_SERVER_CMD").unwrap_or_else(|_| "pnpm".into());
+/// 打包态的拉起配置：随包服务端 exe + 桌面环境变量 + 指定端口。
+fn packaged_spawn_config(
+    app: &tauri::AppHandle,
+    exe: &Path,
+    data_dir: PathBuf,
+    port: u16,
+) -> ServerSpawnConfig {
+    let dir = exe
+        .parent()
+        .map(|parent| parent.to_path_buf())
+        .unwrap_or_else(|| data_dir.clone());
+    let mut config = ServerSpawnConfig::new(
+        exe.to_string_lossy().as_ref(),
+        Vec::new(),
+        data_dir,
+        port,
+    );
+    config.cwd = dir.clone();
+    config.env = desktop_env(app, &dir.join("web"), port);
+    config
+}
+
+/// 开发形态的拉起配置：命令与 cwd 可用 env 覆盖（dev.sh 注入 `LOOMIC_DESKTOP_SERVER_CWD`）。
+fn dev_spawn_config(data_dir: PathBuf) -> ServerSpawnConfig {
+    let command = std::env::var("LOOMIC_DESKTOP_SERVER_CMD").unwrap_or_else(|_| "pnpm".into());
     let args = std::env::var("LOOMIC_DESKTOP_SERVER_ARGS")
         // 包名按品牌改过（`@kenfutwork/*`）：这里以前还写着旧作用域 `@loomic/server`，
         // 真机 `cargo check` 顺带发现——照旧名拉起会直接「找不到包」，桌面端起不来服务端。
@@ -96,6 +114,147 @@ fn spawn_config(app: &tauri::AppHandle, data_dir: std::path::PathBuf) -> ServerS
         config.cwd = cwd.into();
     }
     config
+}
+
+/// 壳日志文件：GUI 进程没有控制台，启动决策与失败原因必须落盘才可排障。
+fn log_line(data_dir: &Path, message: &str) {
+    use std::io::Write as _;
+    let path = data_dir.join("desktop-shell.log");
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or_default();
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = writeln!(file, "[{stamp}] {message}");
+    }
+}
+
+/**
+ * 打包态：挑一个「确实托管着我们 UI」的端口——自己人已健康就复用，撞车就往后挑端口。
+ *
+ * 顺序（每个候选端口）：探活 → 有东西在听时再验它托管的首页是不是 HTML。
+ * 是 → 复用；不是（别人的服务/dev API）→ 换下一个端口；没人听且可绑 → 拉自己的服务端。
+ */
+fn launch_packaged_server(
+    app: &tauri::AppHandle,
+    data_dir: &Path,
+    exe: &Path,
+) -> Result<(u16, ServerLaunch), String> {
+    for offset in 0..PORT_CANDIDATES {
+        let port = SERVER_PORT + offset;
+        if probe_health(port, Duration::from_millis(300)).is_ok() {
+            if probe_serves_ui(port, Duration::from_secs(2)) {
+                log_line(data_dir, &format!("端口 {port} 已有本工作台服务端，复用"));
+                return Ok((port, ServerLaunch::Reused));
+            }
+            log_line(
+                data_dir,
+                &format!("端口 {port} 被别的服务占用（没有托管界面），换端口"),
+            );
+            continue;
+        }
+        if !port_is_free(port) {
+            // 在听但还没健康：可能正在启动，给一小段宽限
+            if probe_health(port, Duration::from_secs(3)).is_ok()
+                && probe_serves_ui(port, Duration::from_secs(2))
+            {
+                log_line(data_dir, &format!("端口 {port} 稍后健康，复用"));
+                return Ok((port, ServerLaunch::Reused));
+            }
+            log_line(data_dir, &format!("端口 {port} 不可用，换端口"));
+            continue;
+        }
+        let config = packaged_spawn_config(app, exe, data_dir.to_path_buf(), port);
+        log_line(
+            data_dir,
+            &format!(
+                "拉起随包服务端：{}（端口 {port}，UI 目录 {}）",
+                exe.display(),
+                exe.parent()
+                    .map(|dir| dir.join("web").display().to_string())
+                    .unwrap_or_default()
+            ),
+        );
+        match ensure_server_running(config) {
+            Ok(launch) => {
+                if !probe_serves_ui(port, Duration::from_secs(10)) {
+                    return Err(format!(
+                        "本机服务在端口 {port} 起来了，但它没有托管界面（KENFUTWORK_WEB_DIST 无效）。"
+                    ));
+                }
+                return Ok((port, launch));
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    Err(format!(
+        "端口 {SERVER_PORT}–{} 都被占用，起不了本机服务。请关掉占用端口的程序后重开。",
+        SERVER_PORT + PORT_CANDIDATES - 1
+    ))
+}
+
+/// 启动服务端；返回窗口该指向的端口（dev 形态返回 None：窗口交给 devUrl / 壳自带 UI）。
+fn start_server(
+    app: &tauri::AppHandle,
+    data_dir: &Path,
+) -> Result<(ServerLaunch, Option<u16>), String> {
+    if let Some(exe) = bundled_server_exe(app) {
+        let (port, launch) = launch_packaged_server(app, data_dir, &exe)?;
+        return Ok((launch, Some(port)));
+    }
+    ensure_server_running(dev_spawn_config(data_dir.to_path_buf()))
+        .map(|launch| (launch, None))
+        .map_err(|error| error.to_string())
+}
+
+/// 把窗口指向服务端托管的 UI（回环 http）。
+fn navigate_main_window(app: &tauri::AppHandle, url: &str) {
+    if let Some(window) = app.get_webview_window("main") {
+        match url.parse() {
+            Ok(parsed) => {
+                let _ = window.navigate(parsed);
+            }
+            Err(error) => log_line(
+                &app.path().app_data_dir().unwrap_or_default(),
+                &format!("窗口跳转失败（{url}）：{error}"),
+            ),
+        }
+    }
+}
+
+/**
+ * 起不来时在窗口里如实说明原因（而不是停在壳自带 UI 上假装没事）。
+ *
+ * 用 `eval` 而不是换 URL：换 URL 要经过 WebView2 的导航策略，而 `eval` 一定作用在
+ * 当前文档上。脚本串经 `serde_json` 转义，避免原因文本里的引号/换行破坏 JS。
+ */
+fn show_startup_error(app: &tauri::AppHandle, data_dir: &Path, reason: &str) {
+    log_line(data_dir, &format!("启动失败：{reason}"));
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let html = format!(
+        "<div style=\"font:14px/1.7 system-ui;padding:32px;color:#222\">\
+<h2 style=\"margin:0 0 12px;font-size:18px\">KenFutWork 启动失败</h2>\
+<p style=\"margin:0 0 12px\">{reason}</p>\
+<p style=\"margin:0;color:#666\">日志：{log}</p></div>",
+        reason = reason.replace('<', "&lt;"),
+        log = data_dir.join("desktop-shell.log").display()
+    );
+    let literal = serde_json::to_string(&html).unwrap_or_else(|_| "\"\"".into());
+    let script = format!(
+        "document.title='KenFutWork 启动失败';document.body.innerHTML={literal};"
+    );
+    for _ in 0..5 {
+        if window.eval(&script).is_ok() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(400));
+    }
 }
 
 /// 外部终止信号（pkill / 系统注销 / ctrl-c）→ 同样走优雅停服，避免孤儿化服务端。
@@ -133,32 +292,23 @@ pub fn run() {
     browser_embed::register_embed_commands(builder)
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
-            let bundled = bundled_server_exe(app.handle());
-            let mut config = spawn_config(app.handle(), data_dir);
-            if let Ok(cwd) = std::env::var("LOOMIC_DESKTOP_SERVER_CWD") {
-                config.cwd = cwd.into();
-            }
-            match ensure_server_running(config) {
-                Ok(ServerLaunch::Spawned(handle)) => {
-                    println!("[desktop] 服务端已拉起（pid {}）", handle.pid());
+            match start_server(app.handle(), &data_dir) {
+                Ok((ServerLaunch::Spawned(handle), port)) => {
+                    log_line(&data_dir, &format!("服务端已拉起（pid {}）", handle.pid()));
                     app.manage(ServerState(std::sync::Mutex::new(Some(handle))));
-                }
-                Ok(ServerLaunch::Reused) => {
-                    println!("[desktop] 端口 {SERVER_PORT} 已有健康服务端，复用");
-                    app.manage(ServerState(std::sync::Mutex::new(None)));
-                }
-                Err(error) => return Err(Box::new(error)),
-            }
-            // 打包态：**等服务端健康之后把窗口指向它托管的 UI**（`ensure_server_running` 已经
-            // 探活过，这一步是即时的）。指向回环 http 而不是壳自带的 `tauri://`，是因为
-            // local-trust 只认回环来源（见 `desktop_env` 的说明）。
-            if bundled.is_some() {
-                use tauri::Manager;
-                if let Some(window) = app.get_webview_window("main") {
-                    let url = format!("http://127.0.0.1:{SERVER_PORT}/");
-                    if let Ok(parsed) = url.parse() {
-                        let _ = window.navigate(parsed);
+                    if let Some(port) = port {
+                        navigate_main_window(app.handle(), &format!("http://127.0.0.1:{port}/"));
                     }
+                }
+                Ok((ServerLaunch::Reused, port)) => {
+                    app.manage(ServerState(std::sync::Mutex::new(None)));
+                    if let Some(port) = port {
+                        navigate_main_window(app.handle(), &format!("http://127.0.0.1:{port}/"));
+                    }
+                }
+                Err(reason) => {
+                    app.manage(ServerState(std::sync::Mutex::new(None)));
+                    show_startup_error(app.handle(), &data_dir, &reason);
                 }
             }
             #[cfg(unix)]

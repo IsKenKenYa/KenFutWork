@@ -39,7 +39,15 @@ if (!cargo) {
   process.exit(1);
 }
 
-const result = spawnSync(cargo, [task, "--manifest-path", manifest], {
-  stdio: "inherit",
-});
+const result = spawnSync(
+  cargo,
+  [
+    task,
+    "--manifest-path",
+    manifest,
+    // 生命周期测试要的子进程替身只在 test-fixture 下编（默认不编，免得进安装包）
+    ...(task === "test" ? ["--features", "test-fixture"] : []),
+  ],
+  { stdio: "inherit" },
+);
 process.exit(result.status ?? 1);
