@@ -1,7 +1,30 @@
-# KenFutWork 桌面壳（Tauri 2，探索期脚手架）
+# KenFutWork 桌面壳（Tauri 2）
 
-> 状态：**脚手架已就位、本机未构建**（本机无 Rust 工具链）。设计依据：`docs/tech/多端产品设计.md` §4
-> （Tauri 2 + 系统 WebView + 服务端 sidecar，拒 Electron）。Windows 侧（朋友的 exe 环境）可直接构建。
+> 状态（2026-09-18 更新）：**本机已能构建**——Rust（rustup，cargo 1.98.1）+ MSVC（VS 2022 生成工具）
+> + **Windows SDK 10.0.26100（装在 `D:\Windows Kits\10`，非默认盘）** + WebView2 运行时 153。
+> 实测 `pnpm --filter @kenfutwork/desktop exec tauri build --debug --no-bundle` 通过，产物
+> `src-tauri/target/debug/kenfutwork-desktop.exe`。设计依据：`docs/tech/多端产品设计.md` §4
+> （Tauri 2 + 系统 WebView + 服务端 sidecar，拒 Electron）。
+
+## 构建前置（逐项自查，2026-09-18 实测）
+
+| 项 | 状态 | 说明 |
+| --- | --- | --- |
+| MSVC（C++ 桌面开发） | ✅ VS 2022 生成工具 17.14.37628.2 | `link.exe` 在 `BuildTools/VC/Tools/MSVC/…/bin/Hostx64/x64` |
+| Windows SDK | ✅ 10.0.26100，装在 **`D:\Windows Kits\10`** | 装在非默认盘也算数：链接器按注册表 `InstallationFolder` 找它 |
+| WebView2 运行时 | ✅ 153.0.4234.32 | Win10 1803+ 自带；LTSC/精简版需另行安装 |
+| Rust 工具链 | ✅ rustup + `stable-x86_64-pc-windows-msvc` | **新装的 rustup 只对新终端生效**：老 shell 里要给 PATH 加 `~/.cargo/bin`（Git Bash 用 `/c/Users/<你>/.cargo/bin`） |
+| Tauri CLI | ✅ `@tauri-apps/cli ^2`（本包 devDependency） | `pnpm install` 即得；也可 `cargo install tauri-cli --version "^2" --locked` |
+
+**构建两步**（缺一不可——Rust 侧要把 web 静态产物嵌进去）：
+
+```sh
+pnpm --filter @kenfutwork/web build                       # 产出 apps/web/out（静态导出）
+pnpm --filter @kenfutwork/desktop exec tauri build        # 出安装包；加 --debug --no-bundle 只出 exe
+```
+
+> 踩过的坑：`tauri.conf.json` 的 `frontendDist` 是**相对 `src-tauri/`** 解析的——原来写
+> `../web/out` 会指到 `apps/desktop/web/out`（永远找不到），已改成 `../../web/out`。
 
 ## 形态与职责
 
@@ -18,7 +41,7 @@
 任何终端直接可用）+ tauri-cli：
 
 ```sh
-cargo install tauri-cli --version "^2" --locked   # 已装可跳过
+pnpm install   # 本包已把 @tauri-apps/cli 列为 devDependency（等价：cargo install tauri-cli --version "^2" --locked）
 ```
 
 **一键桌面形态**（推荐——自动拉起服务端内嵌 PG + web + Tauri 窗口，已在跑的自动复用，

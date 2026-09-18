@@ -5,7 +5,7 @@
   "identifier": "com.kenfutwork.desktop",
   "build": {
     "devUrl": "http://localhost:3000",
-    "frontendDist": "../web/out"
+    "frontendDist": "../../web/out"
   },
   "app": {
     "withGlobalTauri": true,
