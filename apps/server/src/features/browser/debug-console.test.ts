@@ -141,6 +141,11 @@ describe("可注入脚本：UMD 分支修正", () => {
     expect(script).toContain('setProperty("left"');
     expect(script).toContain("eruda.hide()");
     expect(script).toContain("__kfwFloating = true");
+    // ✕ 的层级必须高过 Eruda 正文面板（它是 500）——低了就被盖住、点不到
+    expect(script).toContain("z-index:2147483647");
+    // 右下角缩放手柄：改 CSS 变量（容器宽高由 --kfw-w/--kfw-h 驱动）
+    expect(script).toContain("--kfw-w");
+    expect(script).toContain("nwse-resize");
     // 关闭要连**容器**一起收（光 eruda.hide() 会留个空框：我们的样式钉死了宽高）
     expect(script).toContain('setProperty("display", "none", "important")');
     // 重新打开要放回来（幂等分支里）

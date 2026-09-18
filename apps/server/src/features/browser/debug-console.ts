@@ -90,7 +90,7 @@ const FLOAT_SCRIPT = `
   var style = document.createElement("style");
   style.textContent =
     ".eruda-container{position:fixed!important;left:24px;top:24px;right:auto!important;" +
-    "bottom:auto!important;width:460px!important;height:340px!important;" +
+    "bottom:auto!important;width:var(--kfw-w,460px)!important;height:var(--kfw-h,340px)!important;" +
     "max-width:none!important;max-height:none!important;border-radius:6px!important;" +
     "box-shadow:0 10px 28px rgba(0,0,0,.35)!important;z-index:2147483646!important;" +
     "overflow:hidden!important;" +
@@ -110,7 +110,8 @@ const FLOAT_SCRIPT = `
   close.title = "关闭调试控制台";
   close.setAttribute("aria-label", "关闭调试控制台");
   close.style.cssText =
-    "position:absolute;right:2px;top:2px;z-index:10;width:20px;height:20px;" +
+    // z-index 必须高过 Eruda 正文面板（它是 500）：低了就被盖住、点不到（真机踩过）
+    "position:absolute;right:2px;top:2px;z-index:2147483647;width:20px;height:20px;" +
     "line-height:18px;font-size:14px;border:1px solid rgba(0,0,0,.15);border-radius:4px;" +
     "background:#fff;color:#333;cursor:pointer;padding:0";
   close.onclick = function (event) {
@@ -123,6 +124,36 @@ const FLOAT_SCRIPT = `
   };
   container.appendChild(close);
   container.title = "调试控制台：拖顶部可移动，点右上角关闭";
+
+  // 右下角缩放手柄：改 CSS 变量（容器宽高由它驱动），夹在可用范围内
+  var handle = document.createElement("div");
+  handle.title = "拖动调整大小";
+  handle.setAttribute("aria-label", "拖动调整调试控制台大小");
+  handle.style.cssText =
+    "position:absolute;right:0;bottom:0;z-index:2147483647;width:14px;height:14px;" +
+    "cursor:nwse-resize;background:linear-gradient(135deg,transparent 45%,#999 45%,#999 55%,transparent 55%)";
+  var resizing = null;
+  handle.addEventListener("mousedown", function (event) {
+    event.preventDefault();
+    event.stopPropagation();
+    resizing = {
+      x: event.clientX,
+      y: event.clientY,
+      w: container.getBoundingClientRect().width,
+      h: container.getBoundingClientRect().height,
+    };
+  });
+  window.addEventListener("mousemove", function (event) {
+    if (!resizing) return;
+    var w = Math.min(900, Math.max(260, resizing.w + (event.clientX - resizing.x)));
+    var h = Math.min(700, Math.max(200, resizing.h + (event.clientY - resizing.y)));
+    container.style.setProperty("--kfw-w", w + "px");
+    container.style.setProperty("--kfw-h", h + "px");
+  });
+  window.addEventListener("mouseup", function () {
+    resizing = null;
+  });
+  container.appendChild(handle);
 
   var dragging = null;
   container.addEventListener(
