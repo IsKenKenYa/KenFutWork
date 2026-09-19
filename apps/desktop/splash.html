@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>KenFutWork 正在启动</title>
+    <!--
+      启动中页面（打包态第一屏）。
+
+      为什么需要它：壳起来时要先拉起随包服务端（内嵌 Postgres 首启动要 initdb、服务端 SEA
+      冷启动也要几秒到几十秒）。这段时间窗口里没有别的东西可显示——以前用户看到的是一大片白屏
+      （2026-09-19 反馈「启动很久 + 白屏」）。这一页由 `package-win.mjs` 拷进静态导出目录，
+      作为窗口的初始 URL（`tauri.conf.json` 的 `windows[].url`），服务端健康后壳再导航到
+      它托管的 UI。
+
+      这一页**不引任何脚本依赖**（纯 HTML/CSS + 几行内联计时提示），因为它要能在
+      「什么都还没起来」的时候把画面撑住。
+    -->
+    <style>
+      :root {
+        --kfw-ink: #2f3459;
+        --kfw-muted: #6b6f85;
+        --kfw-track: #e6e7ef;
+        --kfw-accent: #575e96;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        background: #fff;
+        color: var(--kfw-ink);
+        font:
+          14px/1.6 system-ui,
+          -apple-system,
+          "Segoe UI",
+          "Microsoft YaHei",
+          sans-serif;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .brand span {
+        font-size: 20px;
+        font-weight: 600;
+        letter-spacing: 0.2px;
+      }
+      .track {
+        width: 180px;
+        height: 3px;
+        border-radius: 999px;
+        background: var(--kfw-track);
+        overflow: hidden;
+      }
+      .bar {
+        width: 40%;
+        height: 100%;
+        border-radius: 999px;
+        background: var(--kfw-accent);
+        animation: kfw-slide 1.2s ease-in-out infinite;
+      }
+      @keyframes kfw-slide {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(250%);
+        }
+      }
+      .note {
+        color: var(--kfw-muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="brand">
+      <svg viewBox="0 0 512 512" width="56" height="56" aria-hidden="true">
+        <defs>
+          <linearGradient id="design" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#444B7E" />
+            <stop offset="1" stop-color="#575E96" />
+          </linearGradient>
+          <linearGradient id="code" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#2F3459" />
+            <stop offset="1" stop-color="#3C4272" />
+          </linearGradient>
+          <clipPath id="round">
+            <rect width="512" height="512" rx="112" />
+          </clipPath>
+        </defs>
+        <g clip-path="url(#round)">
+          <rect width="512" height="512" fill="url(#design)" />
+          <path d="M512 0 L512 512 L0 512 Z" fill="url(#code)" />
+        </g>
+        <path
+          fill="#FFFFFF"
+          d="M157.9 90.0 103.1 402.0H163.7L186.5 272.3H237.7L297.0 402.0H361.6L290.3 245.6L408.9 90.0H337.1L239.1 220.6H195.8L208.5 147.6L209.6 141.3H296.1V90.0Z"
+        />
+      </svg>
+      <span>KenFutWork</span>
+    </div>
+    <div class="track"><div class="bar"></div></div>
+    <div class="note" id="note">正在启动本机服务…</div>
+    <script>
+      // 8 秒后换一句话：首次启动要 initdb，用户需要知道「慢是正常的、不是卡死」
+      setTimeout(() => {
+        const note = document.getElementById("note");
+        if (note) {
+          note.textContent = "首次启动要在本机初始化数据库，可能要几十秒，请稍候…";
+        }
+      }, 8000);
+    </script>
+  </body>
+</html>

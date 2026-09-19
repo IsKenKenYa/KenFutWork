@@ -285,9 +285,12 @@ mod ensure_server_running {
         assert!(process_alive(grandchild), "后代进程 {grandchild} 应先活着");
 
         handle.shutdown(Duration::from_millis(400));
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        // 容差给足：收树走的是内核（作业对象），但机器忙的时候（并行跑整个仓库测试、
+        // 同时还有别的进程在起服务端）taskkill/进程回收会慢一拍——5 秒太紧会误报，
+        // 实测在 turbo 并行那轮出现过一次假失败。
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
         while std::time::Instant::now() < deadline && process_alive(grandchild) {
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(Duration::from_millis(150));
         }
         assert!(
             !process_alive(grandchild),
@@ -298,7 +301,7 @@ mod ensure_server_running {
 
     /// 等替身把后代 pid 写进文件（替身先写文件再监听，正常是即时的）。
     fn wait_for_pid(path: &std::path::Path) -> u32 {
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let deadline = std::time::Instant::now() + Duration::from_secs(15);
         while std::time::Instant::now() < deadline {
             if let Ok(text) = std::fs::read_to_string(path) {
                 if let Ok(pid) = text.trim().parse() {

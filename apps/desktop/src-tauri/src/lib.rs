@@ -227,11 +227,70 @@ fn navigate_main_window(app: &tauri::AppHandle, url: &str) {
 }
 
 /**
- * 起不来时在窗口里如实说明原因（而不是停在壳自带 UI 上假装没事）。
+ * 启动中页面（打包态第一屏）。
  *
- * 用 `eval` 而不是换 URL：换 URL 要经过 WebView2 的导航策略，而 `eval` 一定作用在
- * 当前文档上。脚本串经 `serde_json` 转义，避免原因文本里的引号/换行破坏 JS。
+ * **为什么必须有**：服务端起来要时间（内嵌 Postgres 首启动要 initdb，慢的时候几十秒）。
+ * 以前 `setup` 里**同步**等健康检查（最多 90 秒）——主线程被占住，窗口连重绘都轮不上，
+ * 用户看到的就是长时间白屏（2026-09-19 用户报「启动很久 + 白屏」）。现在服务端改到后台
+ * 线程去起，窗口先画这一页，起来了再跳转到服务端托管的 UI。
+ *
+ * 用 `eval` 注入而不是另做 HTML 资源：壳自带的 UI 是 `frontendDist`（web 静态导出），
+ * 往里塞文件会被下一次前端构建覆盖；注入在这里与前端构建解耦，也不会漏发布。
  */
+const SPLASH_SCRIPT: &str = r##"(() => {
+  const paint = () => {
+    if (!document.body) return false;
+    if (window.__kfwSplash) return true;
+    window.__kfwSplash = true;
+    document.title = "KenFutWork 正在启动";
+    const logo = '<svg viewBox="0 0 512 512" width="56" height="56" aria-hidden="true">'
+      + '<defs><linearGradient id="s1" x1="0" y1="0" x2="1" y2="1">'
+      + '<stop offset="0" stop-color="#444B7E"/><stop offset="1" stop-color="#575E96"/></linearGradient>'
+      + '<linearGradient id="s2" x1="0" y1="0" x2="1" y2="1">'
+      + '<stop offset="0" stop-color="#2F3459"/><stop offset="1" stop-color="#3C4272"/></linearGradient>'
+      + '<clipPath id="s3"><rect width="512" height="512" rx="112"/></clipPath></defs>'
+      + '<g clip-path="url(#s3)"><rect width="512" height="512" fill="url(#s1)"/>'
+      + '<path d="M512 0 L512 512 L0 512 Z" fill="url(#s2)"/></g>'
+      + '<path fill="#FFFFFF" d="M157.9 90.0 103.1 402.0H163.7L186.5 272.3H237.7L297.0 402.0H361.6'
+      + 'L290.3 245.6L408.9 90.0H337.1L239.1 220.6H195.8L208.5 147.6L209.6 141.3H296.1V90.0Z"/></svg>';
+    document.body.innerHTML =
+      '<div style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;'
+      + 'justify-content:center;gap:16px;background:#fff;color:#2f3459;'
+      + 'font:14px/1.6 system-ui,-apple-system,\'Segoe UI\',sans-serif">'
+      + '<div style="display:flex;align-items:center;gap:10px">' + logo
+      + '<span style="font-size:20px;font-weight:600;letter-spacing:.2px">KenFutWork</span></div>'
+      + '<div style="width:180px;height:3px;border-radius:999px;background:#e6e7ef;overflow:hidden">'
+      + '<div style="width:40%;height:100%;border-radius:999px;background:#575E96;'
+      + 'animation:kfwSlide 1.2s ease-in-out infinite"></div></div>'
+      + '<div id="kfw-splash-note" style="color:#6b6f85">正在启动本机服务…</div>'
+      + '</div>'
+      + '<style>@keyframes kfwSlide{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}</style>';
+    setTimeout(() => {
+      const note = document.getElementById("kfw-splash-note");
+      if (note) note.textContent = "首次启动要在本机初始化数据库，可能要几十秒，请稍候…";
+    }, 8000);
+    return true;
+  };
+  if (!paint()) document.addEventListener("DOMContentLoaded", paint, { once: true });
+})();"##;
+
+/// 在窗口里画启动中页面（失败就算了：这不是主流程，起来了照样会跳转）。
+fn show_startup_splash(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        // 窗口文档可能还没就绪：脚本自己带 DOMContentLoaded 兜底，这里多重试几次
+        for _ in 0..5 {
+            if window.eval(SPLASH_SCRIPT).is_ok() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
+    }
+}
+
+/// 起不来时在窗口里如实说明原因（而不是停在壳自带 UI 上假装没事）。
+///
+/// 用 `eval` 而不是换 URL：换 URL 要经过 WebView2 的导航策略，而 `eval` 一定作用在
+/// 当前文档上。脚本串经 `serde_json` 转义，避免原因文本里的引号/换行破坏 JS。
 fn show_startup_error(app: &tauri::AppHandle, data_dir: &Path, reason: &str) {
     log_line(data_dir, &format!("启动失败：{reason}"));
     let Some(window) = app.get_webview_window("main") else {
@@ -292,25 +351,44 @@ pub fn run() {
     browser_embed::register_embed_commands(builder)
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
-            match start_server(app.handle(), &data_dir) {
-                Ok((ServerLaunch::Spawned(handle), port)) => {
-                    log_line(&data_dir, &format!("服务端已拉起（pid {}）", handle.pid()));
-                    app.manage(ServerState(std::sync::Mutex::new(Some(handle))));
-                    if let Some(port) = port {
-                        navigate_main_window(app.handle(), &format!("http://127.0.0.1:{port}/"));
-                    }
-                }
-                Ok((ServerLaunch::Reused, port)) => {
-                    app.manage(ServerState(std::sync::Mutex::new(None)));
-                    if let Some(port) = port {
-                        navigate_main_window(app.handle(), &format!("http://127.0.0.1:{port}/"));
-                    }
-                }
-                Err(reason) => {
-                    app.manage(ServerState(std::sync::Mutex::new(None)));
-                    show_startup_error(app.handle(), &data_dir, &reason);
-                }
+            // **服务端在后台线程里起**：这条路径上有两段慢活——内嵌 Postgres 首启动要
+            // `initdb`、服务端 SEA 冷启动要几秒到几十秒。以前 `setup` 里同步等健康检查，
+            // 主线程被占住，窗口连重绘都不做 → 用户看到的是一大片白屏。
+            // 现在：先画启动中页面（打包态才画，dev 形态窗口归 devUrl），后台起服务，
+            // 起来了再把它叫到主线程跳转。
+            let packaged = bundled_server_exe(app.handle()).is_some();
+            if packaged {
+                show_startup_splash(app.handle());
             }
+            let handle = app.handle().clone();
+            let thread_data_dir = data_dir.clone();
+            std::thread::spawn(move || {
+                let outcome = start_server(&handle, &thread_data_dir);
+                // 窗口操作要在主线程上做
+                let ui_handle = handle.clone();
+                let _ = handle.run_on_main_thread(move || match outcome {
+                    Ok((launch, port)) => {
+                        let owned = match launch {
+                            ServerLaunch::Spawned(handle) => Some(handle),
+                            ServerLaunch::Reused => None,
+                        };
+                        if let Some(ref handle) = owned {
+                            log_line(
+                                &thread_data_dir,
+                                &format!("服务端已拉起（pid {}）", handle.pid()),
+                            );
+                        }
+                        ui_handle.manage(ServerState(std::sync::Mutex::new(owned)));
+                        if let Some(port) = port {
+                            navigate_main_window(&ui_handle, &format!("http://127.0.0.1:{port}/"));
+                        }
+                    }
+                    Err(reason) => {
+                        ui_handle.manage(ServerState(std::sync::Mutex::new(None)));
+                        show_startup_error(&ui_handle, &thread_data_dir, &reason);
+                    }
+                });
+            });
             #[cfg(unix)]
             register_signal_shutdown(app.handle().clone());
             Ok(())

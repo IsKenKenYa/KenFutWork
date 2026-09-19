@@ -105,6 +105,22 @@ function main() {
     );
     process.exit(1);
   }
+  /**
+   * 启动中页面：写成 `_splash.html` 放进静态导出目录，作为**窗口的初始 URL**
+   * （`tauri.conf.json` 的 `windows[].url`）。
+   *
+   * 为什么要落到这里而不是让壳自己画：壳起来时要先拉起随包服务端（内嵌 Postgres 首启动
+   * 要 initdb，可能几十秒），这段时间窗口需要一个**没有脚本依赖**的页面顶着——否则就是
+   * 白屏（2026-09-19 用户反馈）。放静态导出目录是因为 Tauri 的 `frontendDist` 就是它，
+   * 壳自带的资源协议只认这里；同时 `release/web` 也放一份，方便自托管形态照抄。
+   */
+  const splashSource = join(ROOT, "apps", "desktop", "splash.html");
+  if (!existsSync(splashSource)) {
+    console.error("[package] 缺少启动页 apps/desktop/splash.html");
+    process.exit(1);
+  }
+  copyFileSync(splashSource, join(webOut, "_splash.html"));
+  console.log("[package] 启动页已写入静态导出：_splash.html");
 
   // 2) esbuild 打包服务端为单文件 CJS（SEA 要求 CommonJS）
   run("打包服务端（esbuild）", "pnpm", [
