@@ -16,6 +16,7 @@ import type { BrowserService } from "../features/browser/fetch-page.js";
 import type { CanvasService } from "../features/canvas/canvas-service.js";
 import type { ChatService } from "../features/chat/chat-service.js";
 import type { ThreadService } from "../features/chat/thread-service.js";
+import type { CheckpointService } from "../features/checkpoints/checkpoint-service.js";
 import type { CodeGitService } from "../features/code-git/code-git-service.js";
 import type { CreditService } from "../features/credits/credit-service.js";
 import type { TierGuard } from "../features/credits/tier-guard.js";
@@ -64,6 +65,12 @@ export interface ServiceMap {
    * 目录经 `resolveSandboxDir` 解析（与 agent 后端同一处），归属校验在服务内。
    */
   codeGit: CodeGitService;
+  /**
+   * Code 模式检查点（影子 git 快照/预览/恢复）：runtime 轮次钩子与恢复路由消费。
+   * 影子仓库在服务端数据目录（GIT_DIR），work-tree 指向沙箱工作目录
+   * （经 `resolveSandboxDir` 同一处解析）。
+   */
+  checkpoints: CheckpointService;
   projects: ProjectService;
   settings: SettingsService;
   threads: ThreadService;

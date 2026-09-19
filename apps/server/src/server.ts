@@ -65,6 +65,7 @@ async function main() {
   }
   const baseEnv = loadServerEnv({
     sandboxRoot: resolveSandboxRoot(exeDir),
+    checkpointRoot: resolveCheckpointRoot(exeDir),
     runtimePathAdditions: runtimes.pathAdditions,
     ...(runtimes.javaHome ? { javaHome: runtimes.javaHome } : {}),
     ...(bundledGit ? { gitBinDir: bundledGit.binDir } : {}),
@@ -177,6 +178,20 @@ function resolveSandboxRoot(exeDir: string): string {
     return isAbsolute(explicit) ? explicit : resolve(exeDir, explicit);
   }
   return join(exeDir, "tmp", "sandbox");
+}
+
+/**
+ * 检查点影子仓库根：`KENFUTWORK_CHECKPOINT_ROOT`（可为相对路径，按入口目录解析）
+ * 优先；缺省 `<项目根（dev）/ exe 安装目录（打包）>/data/checkpoints`。
+ * 画布影子仓库 = `<checkpointRoot>/<画布UUID>.git`（GIT_DIR），work-tree 指向
+ * 沙箱工作目录（与 resolveSandboxRoot 同一套入口注入方式）。
+ */
+function resolveCheckpointRoot(exeDir: string): string {
+  const explicit = process.env.KENFUTWORK_CHECKPOINT_ROOT?.trim();
+  if (explicit) {
+    return isAbsolute(explicit) ? explicit : resolve(exeDir, explicit);
+  }
+  return join(exeDir, "data", "checkpoints");
 }
 
 void main();
