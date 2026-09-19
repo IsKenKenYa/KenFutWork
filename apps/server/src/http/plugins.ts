@@ -1,4 +1,5 @@
 import {
+  type ApplicationErrorCode,
   applicationErrorResponseSchema,
   pluginExportRequestSchema,
   pluginInspectRequestSchema,
@@ -73,9 +74,13 @@ async function resolveWorkspaceId(
   }
 }
 
+/**
+ * 统一错误响应。`code` 收窄成契约里的封闭枚举——写一个不在枚举里的码（历史上是 `not_found`）
+ * 会让 `parse` 抛错、响应退化成 ZodError 转储，可读原因当场丢失。
+ */
 function sendError(
   reply: FastifyReply,
-  code: string,
+  code: ApplicationErrorCode,
   message: string,
   status: number,
 ) {
@@ -189,7 +194,7 @@ export async function registerPluginRoutes(
       if (!sandboxDir) {
         return sendError(
           reply,
-          "not_found",
+          "canvas_not_found",
           "画布不存在或不属于当前工作区。",
           404,
         );
@@ -227,7 +232,7 @@ export async function registerPluginRoutes(
     if (!sandboxDir) {
       return sendError(
         reply,
-        "not_found",
+        "canvas_not_found",
         "画布不存在或不属于当前工作区。",
         404,
       );
@@ -285,7 +290,7 @@ export async function registerPluginRoutes(
     const routePath = params["*"] ?? "";
     const query = (request.query ?? {}) as Record<string, string>;
     if (!pluginId) {
-      return sendError(reply, "not_found", "缺少插件 id。", 404);
+      return sendError(reply, "invalid_request", "缺少插件 id。", 404);
     }
     const user = await options.auth.authenticate(request);
     const workspaceId = user
@@ -304,7 +309,7 @@ export async function registerPluginRoutes(
     if (!result) {
       return sendError(
         reply,
-        "not_found",
+        "plugin_not_found",
         "插件路由不存在（插件可能未安装或未启用）。",
         404,
       );
@@ -336,7 +341,7 @@ export async function registerPluginRoutes(
         relativePath: request.params["*"] ?? "",
       });
       if (!asset) {
-        return sendError(reply, "not_found", "资源不存在。", 404);
+        return sendError(reply, "plugin_asset_not_found", "资源不存在。", 404);
       }
       return reply
         .code(200)

@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>米家</title>
+    <style>
+      :root {
+        color-scheme: dark light;
+        --bg: #12141c;
+        --panel: #1b1e29;
+        --line: #2b3040;
+        --text: #e7e9f2;
+        --muted: #9aa1b5;
+        --accent: #7f9cf5;
+        --danger: #f08a8a;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f7f8fb;
+          --panel: #ffffff;
+          --line: #e3e6ef;
+          --text: #22262f;
+          --muted: #6b7280;
+          --accent: #4c63b6;
+          --danger: #b4453f;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+        background: var(--bg);
+        color: var(--text);
+        font: 13px/1.55 system-ui, -apple-system, "Segoe UI", "Microsoft YaHei",
+          sans-serif;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+      header h1 {
+        font-size: 15px;
+        font-weight: 600;
+        margin: 0;
+      }
+      header .grow {
+        flex: 1;
+      }
+      button {
+        font: inherit;
+        color: var(--text);
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 5px 10px;
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: var(--accent);
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+      .hint {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .error {
+        color: var(--danger);
+        font-size: 12px;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 12px 14px;
+      }
+      .login {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        padding: 20px;
+      }
+      .login img {
+        width: 200px;
+        height: 200px;
+        image-rendering: pixelated;
+        background: #fff;
+        border-radius: 8px;
+        padding: 6px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        gap: 10px;
+      }
+      .device {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 12px;
+      }
+      .device.offline {
+        opacity: 0.6;
+      }
+      .device h2 {
+        font-size: 13px;
+        font-weight: 600;
+        margin: 0 0 2px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .badge {
+        font-size: 11px;
+        color: var(--muted);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0 6px;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .row .label {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .row .value {
+        font-variant-numeric: tabular-nums;
+        color: var(--muted);
+      }
+      .switch {
+        width: 40px;
+        height: 22px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--bg);
+        position: relative;
+        cursor: pointer;
+        flex: none;
+      }
+      .switch[data-on="1"] {
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+      .switch i {
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: #fff;
+        transition: left 0.12s ease;
+      }
+      .switch[data-on="1"] i {
+        left: 20px;
+      }
+      input[type="range"] {
+        flex: 1;
+        accent-color: var(--accent);
+      }
+      select {
+        font: inherit;
+        color: var(--text);
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 2px 6px;
+        max-width: 55%;
+      }
+      footer {
+        margin-top: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>米家</h1>
+      <span id="state" class="hint"></span>
+      <span class="grow"></span>
+      <button id="refresh" type="button" hidden>刷新</button>
+      <button id="disconnect" type="button" hidden>断开</button>
+    </header>
+    <main id="body">
+      <div class="card hint">正在获取登录态…</div>
+    </main>
+    <footer id="footer"></footer>
+    <script src="./panel.js"></script>
+  </body>
+</html>

@@ -538,6 +538,15 @@ export const applicationErrorCodeSchema = z.enum([
   // 插件市场（安装前兼容性门禁 + 启停）
   "invalid_request",
   "plugin_not_found",
+  /**
+   * 插件静态资源（`/api/plugins/<id>/assets/*`）里没有这个文件（404）。
+   *
+   * 为什么单独一个码：这个位置此前用的是 `not_found`——**不在本枚举里**（同一个坑第四次踩到，
+   * 见上面 `service_unavailable` / `invalid_work_dir` 的注释）：响应体退化成 ZodError 转储，
+   * 「资源不存在」被一段乱码 JSON 顶掉，真机排查时完全看不出原因（米家插件面板 404 就是这么暴露的）。
+   * 服务端 `sendError` 的入参已收窄成本类型：写错码现在是编译错误。
+   */
+  "plugin_asset_not_found",
   "plugin_source_failed",
   "plugin_incompatible",
   "install_failed",

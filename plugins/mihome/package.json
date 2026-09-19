@@ -1,0 +1,31 @@
+{
+  "name": "kenfutwork-mihome",
+  "version": "1.0.0",
+  "description": "米家设备插件：侧栏面板查看与控制米家设备，agent 也能直接操作；扫码登录一次，会话加密落库（服务端重启免扫）。",
+  "type": "module",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "lib",
+    "panel.html",
+    "panel.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "license": "GPL-3.0",
+  "kenfutwork": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "category": "工具与集成",
+    "assets": true,
+    "ui": [
+      {
+        "id": "mihome",
+        "title": "米家",
+        "slot": "sidebar",
+        "url": "assets/panel.html"
+      }
+    ]
+  }
+}
