@@ -1963,8 +1963,12 @@ export function Workbench() {
                 logo 与字标之间留 5px（用户口径） */}
             <span className="flex items-center gap-[5px] pl-1">
               <KenFutWorkLogo className="h-[15px] w-auto text-foreground" />
-              {/* 字标：Momo Trust Display + 与图标同色系渐变，**左深右浅**（用户口径） */}
-              <span className="font-wordmark bg-gradient-to-r from-[#25439E] to-[#7FA3FF] bg-clip-text text-xl tracking-tight text-transparent dark:from-[#9AB0F5] dark:to-[#D3E0FF]">
+              {/* 字标：Momo Trust Display + **三色**渐变（左深右浅；变量见 globals.css，
+                  显式 sRGB 插值——oklab 中段会发灰显脏） */}
+              <span
+                className="font-wordmark bg-clip-text text-xl tracking-tight text-transparent"
+                style={{ backgroundImage: "var(--wordmark-gradient)" }}
+              >
                 KenFutWork
               </span>
             </span>
