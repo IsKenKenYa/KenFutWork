@@ -1,6 +1,10 @@
 "use client";
 
-import type { ExecutionMode, ProjectSummary } from "@kenfutwork/shared";
+import type {
+  CheckpointSummary,
+  ExecutionMode,
+  ProjectSummary,
+} from "@kenfutwork/shared";
 import {
   Blocks,
   Brain,
@@ -53,6 +57,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { CheckpointChip } from "@/components/workbench/checkpoint-chip";
 import {
   ComposerCompactSelect,
   THINKING_OPTIONS,
@@ -81,6 +86,8 @@ import { WorkbenchSidePanel } from "@/components/workbench/workbench-side-panel"
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useAuth } from "@/lib/auth-context";
 import { onBrowserOpen } from "@/lib/browser-panel";
+import { pickCheckpointForRun } from "@/lib/checkpoint-select";
+import { fetchCheckpoints } from "@/lib/code-checkpoints-api";
 import { commitGitAll } from "@/lib/code-git-api";
 import {
   contextUsageModelMeta,
@@ -252,6 +259,11 @@ interface WorkbenchTask {
     output: string;
     durationMs: number;
   }>;
+  /**
+   * 本轮结束的检查点（Code 模式影子 git，终态时拉取）：chip 展示这轮改了什么，
+   * 并提供「查看改动 / 回滚」入口。同一对话的下一轮终态会覆盖成最新 run 的检查点。
+   */
+  checkpoint?: CheckpointSummary;
 }
 
 /**
@@ -414,6 +426,10 @@ export function Workbench() {
   const autoCommitTurnRef = useRef<(taskId: string | null) => Promise<void>>(
     async () => {},
   );
+  /** 同 autoCommitTurnRef：终态拉检查点的实现也经 ref 取最新值（闭包会陈旧）。 */
+  const fetchTurnCheckpointRef = useRef<
+    (taskId: string, runId: string) => Promise<void>
+  >(async () => {});
   // biome-ignore lint/correctness/useExhaustiveDependencies: activeTaskId 只当触发器（量的是 DOM 宽度）；换任务后滚动条出现/消失要重新量
   useEffect(() => {
     const measure = () => {
@@ -1325,6 +1341,10 @@ export function Workbench() {
         if (mode === "code") {
           void autoCommitTurnRef.current(taskId);
         }
+        // 本轮结束拉取该 run 的检查点（Code 模式），任务卡上出现检查点条
+        if (mode === "code" && runId) {
+          void fetchTurnCheckpointRef.current(taskId, runId);
+        }
         markUnreadIfBackground();
       } else if (type === "billing.error") {
         // 平台池额度/套餐拦截（FORM-10）：服务端给的是可读原因，
@@ -1356,6 +1376,10 @@ export function Workbench() {
             { role: "assistant", text: failureText },
           ],
         }));
+        // 失败的轮也可能已写文件（服务端收尾 finally 里照打结束快照）：同样补检查点条
+        if (mode === "code" && runId) {
+          void fetchTurnCheckpointRef.current(taskId, runId);
+        }
         markUnreadIfBackground();
       } else if (type === "run.canceled") {
         const canceledTs = (evt as { timestamp?: string }).timestamp;
@@ -1813,6 +1837,46 @@ export function Workbench() {
     }
   }, []);
   autoCommitTurnRef.current = autoCommitTurn;
+
+  /**
+   * 本轮终态后拉取该 run 的检查点并写回任务（Code 模式）。
+   *
+   * 时序：服务端的**结束快照在终态事件之后**才落行（runtime 的 afterTurn 挂在收尾
+   * finally 里，而终态事件从流内 yield）——立刻拉会抢空，所以拉不到该 run 的行时
+   * 退避重试几次，拉到即停。拉取失败一律静默：检查点条是附赠视图，不打扰用户
+   * （该轮就是没有条）。
+   */
+  const fetchTurnCheckpoint = useCallback(
+    async (taskId: string, runId: string) => {
+      const { token, canvasId } = autoCommitContextRef.current;
+      if (!token || !canvasId) return;
+      for (const wait of [0, 1000, 2000, 4000]) {
+        if (wait > 0) {
+          await new Promise((resolve) => setTimeout(resolve, wait));
+        }
+        try {
+          const picked = pickCheckpointForRun(
+            await fetchCheckpoints(token, canvasId),
+            runId,
+          );
+          if (!picked) continue;
+          // 写死 code 列表：检查点只在 Code 模式任务上，此刻用户可能已切到 Design
+          setTasksByMode((prev) => {
+            const list = prev.code.map((t) =>
+              t.id === taskId ? { ...t, checkpoint: picked } : t,
+            );
+            saveTasks("code", list);
+            return { ...prev, code: list };
+          });
+          return;
+        } catch {
+          return; // 网络/鉴权失败：该轮没有检查点条
+        }
+      }
+    },
+    [],
+  );
+  fetchTurnCheckpointRef.current = fetchTurnCheckpoint;
 
   /** 任务视图内继续追问：追加 user 消息并复用同一会话发起新 run。 */
   const continueTask = useCallback(
@@ -2576,6 +2640,18 @@ export function Workbench() {
                   {(activeTask.tools ?? []).map((tool) => (
                     <WorkbenchToolRow key={tool.toolCallId} tool={tool} />
                   ))}
+                  {/*
+                    检查点条（Code 模式）：本轮终态后拉到的影子快照——改了什么、可回滚。
+                    仍在本轮运行中时禁用回滚（工作目录正被写入）。
+                  */}
+                  {activeTask.checkpoint ? (
+                    <CheckpointChip
+                      checkpoint={activeTask.checkpoint}
+                      accessToken={session?.access_token ?? null}
+                      canvasId={conversationProject?.primaryCanvas.id ?? null}
+                      restoreDisabled={activeTask.status === "running"}
+                    />
+                  ) : null}
                   {activeTask.status === "running" ? (
                     <div
                       role="status"
