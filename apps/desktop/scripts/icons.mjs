@@ -48,7 +48,13 @@ const tile = Buffer.from(
      <rect width="${CANVAS}" height="${CANVAS}" rx="${RADIUS}" ry="${RADIUS}" fill="#FFFFFF"/>
    </svg>`,
 );
-const mark = await sharp(source)
+/**
+ * 源图自带**透明边距**（GPT 生成的 1254×1254 里字形只占中间一块）。不裁掉它，字形在白底块里
+ * 只占 ~60%，桌面上看着就"小一圈"（用户口径：桌面显示的和预览的不一样）。
+ * 先 trim 再缩放，字形才真正顶满。
+ */
+const trimmedSource = await sharp(source).trim({ threshold: 1 }).png().toBuffer();
+const mark = await sharp(trimmedSource)
   .resize(MARK, MARK, {
     fit: "contain",
     background: { r: 0, g: 0, b: 0, alpha: 0 },
