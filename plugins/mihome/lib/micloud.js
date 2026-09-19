@@ -28,9 +28,28 @@ const LOGIN_URL_PATH = "/longPolling/loginUrl";
 /** 米家 App 的 service id（登录授权对象）。 */
 const SID = "xiaomiio";
 const DEFAULT_API_HOST = "https://api.io.mi.com";
+/**
+ * 确诊用基址（第三方实现 @zythum02/mijia-api 的基址，2026-09 在线）。
+ * 它**严格校验会话**：会话无效时明确回 `code=2 auth error`；而 `api.io.mi.com`
+ * 对无效会话静默返回空列表。**不参与正常链路**，只在空结果时问一次用于读数归因。
+ */
+const DIAGNOSTIC_API_HOST = "https://api.mijia.tech";
 /** 常见于各家实现的 UA：服务端按它判定「客户端是 App」而非浏览器。 */
 const USER_AGENT =
   "Android-7.1.1-1.0.0-ONEPLUS A3010-136-6C3D5A0D1D1C APP/com.xiaomi.mihome APPV/6.0.103 ios_webview";
+
+/** deviceId 的字符集（参考实现口径：16 位随机串，无固定前缀）。 */
+const DEVICE_ID_CHARS =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
+
+/** 生成设备标识：登录时作为 `deviceId`，会话 cookie 里同时作为 `PassportDeviceId`。 */
+export function generateDeviceId(random = Math.random, length = 16) {
+  let out = "";
+  for (let index = 0; index < length; index += 1) {
+    out += DEVICE_ID_CHARS[Math.floor(random() * DEVICE_ID_CHARS.length)];
+  }
+  return out;
+}
 
 function b64encode(bytes) {
   return Buffer.from(bytes).toString("base64");
@@ -142,13 +161,56 @@ function encodeParamValue(value) {
   return String(value);
 }
 
+/**
+ * 区域 API 主机归一：登录响应给的 `location` 是 **STS** 主机
+ * （`https://sts.api.io.mi.com/sts?...`），而 `/app/*` 只在区域 API 主机上存在
+ * （CN = `https://api.io.mi.com`，其它区 = `de.`/`i2.`/`ru.`/`sg.`/`us.` 前缀）。
+ * 不去掉 `sts.` 会**稳定 404**（真机实测：面板报「米家云响应无法解密（HTTP 404…）」）。
+ * 解析不出主机时回落到默认 CN 入口，不把坏地址带进后续请求。
+ */
+export function normalizeApiHost(host) {
+  try {
+    const url = new URL(host);
+    if (!url.hostname) return DEFAULT_API_HOST;
+    url.hostname = url.hostname.replace(/^sts\./, "");
+    return url.origin;
+  } catch {
+    return DEFAULT_API_HOST;
+  }
+}
+
+/**
+ * 会话 cookie 罐：登录时把 STS 响应的整罐 cookie 存下来，这里再补齐必需项。
+ *
+ * 为什么不能只挑几个字段：云端按**整罐**识别会话（`serviceToken` 之外还要
+ * `PassportDeviceId`/`yetAnotherServiceToken` 等）。只送四个字段时云端不报错、
+ * 只是**认不出账号**——`device_list` 稳定返回空列表（真机踩到：能通、0 设备）。
+ * 老会话（只有 `serviceToken`/`userId`/`cUserId`）在这里就地补齐，免得重新扫码。
+ */
+export function sessionCookies(session) {
+  const jar = { ...(session.cookies ?? {}) };
+  if (session.userId) jar.userId = session.userId;
+  if (session.serviceToken) jar.serviceToken = session.serviceToken;
+  if (session.cUserId) jar.cUserId = session.cUserId;
+  if (session.passToken) jar.passToken = session.passToken;
+  const deviceId = session.deviceId || jar.deviceId;
+  if (deviceId) {
+    jar.deviceId = deviceId;
+    jar.PassportDeviceId = jar.PassportDeviceId ?? deviceId;
+  }
+  jar.locale = jar.locale ?? "zh_CN";
+  return jar;
+}
+
 export function createMihomeClient(options = {}) {
   const fetchImpl = options.fetchImpl ?? fetch;
   const accountHost = options.accountHost ?? ACCOUNT_HOST;
   const logger = options.logger ?? { warn: () => {}, info: () => {} };
 
   async function request(session, uri, params, method = "POST") {
-    const apiHost = session.apiHost ?? DEFAULT_API_HOST;
+    // 存量会话里可能存着 STS 主机（登录响应给的就是它）——读取时同样归一，
+    // 免得修完还要用户重新扫码。
+    const apiHost = normalizeApiHost(session.apiHost ?? DEFAULT_API_HOST);
     const nonce = generateNonce();
     const signedNonce = computeSignedNonce(session.ssecurity, nonce);
 
@@ -186,8 +248,10 @@ export function createMihomeClient(options = {}) {
       method,
       headers: {
         "content-type": "application/x-www-form-urlencoded",
+        "accept-encoding": "gzip",
         "user-agent": USER_AGENT,
         "x-xiaomi-protocal-flag-cli": "1",
+        "miot-accept-encoding": "gzip",
         "miot-encrypt-algorithm": "ENCRYPT-RC4",
         cookie: cookieHeader(session),
       },
@@ -240,14 +304,9 @@ export function createMihomeClient(options = {}) {
   }
 
   function cookieHeader(session) {
-    const parts = [
-      `userId=${session.userId ?? ""}`,
-      `serviceToken=${session.serviceToken ?? ""}`,
-      `cUserId=${session.cUserId ?? ""}`,
-      "locale=zh_CN",
-    ];
-    if (session.passToken) parts.push(`passToken=${session.passToken}`);
-    return parts.join("; ");
+    return Object.entries(sessionCookies(session))
+      .map(([key, value]) => `${key}=${value}`)
+      .join("; ");
   }
 
   /** 第三步：用 `location` 换 serviceToken（cookie）并确定区域 API 主机。 */
@@ -263,11 +322,16 @@ export function createMihomeClient(options = {}) {
     }
     return {
       userId: jar.userId ?? String(payload.userId ?? ""),
-      cUserId: jar.cUserId ?? "",
-      passToken: jar.passToken ?? "",
+      cUserId: jar.cUserId ?? String(payload.cUserId ?? ""),
+      // passToken 有时只出现在轮询响应里（不在 cookie 里）——两边都认，别丢
+      passToken: jar.passToken ?? String(payload.passToken ?? ""),
       serviceToken: jar.serviceToken,
       ssecurity: String(payload.ssecurity),
-      apiHost: new URL(location).origin,
+      // 区域 API 主机（`location` 给的是 STS 主机，必须归一）
+      apiHost: normalizeApiHost(location),
+      // 整罐 cookie 与设备标识：云端按整罐识别会话，只挑字段会「认不出账号」
+      cookies: jar,
+      deviceId: generateDeviceId(),
     };
   }
 
@@ -291,7 +355,61 @@ export function createMihomeClient(options = {}) {
     return { status: "ok", session: await completeQrLogin(payload) };
   }
 
+  /** 单个家庭下的设备（分页，最多 5 页，够日常家庭规模）。 */
+  async function listHomeDevices(session, home) {
+    const devices = [];
+    let startDid = "";
+    for (let page = 0; page < 5; page += 1) {
+      const result = await request(session, "/home/home_device_list", {
+        home_owner: Number(home?.uid ?? 0),
+        home_id: Number(home?.id ?? 0),
+        limit: 200,
+        start_did: startDid,
+        get_split_device: true,
+        support_smart_home: true,
+        get_cariot_device: true,
+        get_third_device: true,
+      });
+      const list = Array.isArray(result?.device_info) ? result.device_info : [];
+      for (const item of list) {
+        devices.push({ ...item, home_id: home?.id, home_name: home?.name });
+      }
+      if (!result?.has_more || !result?.max_did) break;
+      startDid = String(result.max_did);
+    }
+    return devices;
+  }
+
+  /** 家庭列表（新接口的先导调用）。 */
+  async function listHomes(session) {
+    const result = await request(session, "/v2/homeroom/gethome_merged", {
+      fg: true,
+      fetch_share: true,
+      fetch_share_dev: true,
+      fetch_cariot: true,
+      limit: 300,
+      app_ver: 7,
+      plat_form: 0,
+    });
+    return Array.isArray(result?.homelist) ? result.homelist : [];
+  }
+
+  /**
+   * 会话确诊：换一个**严格校验会话**的基址再问一次家庭列表。
+   *
+   * 为什么需要它：`api.io.mi.com` 对无效会话**静默返回空列表**（code 0 + 空数组），
+   * 与「账号确实没有设备」长得一模一样；而第三方实现使用的 `api.mijia.tech` 会明确回
+   * `code=2 auth error`（本机实测：半罐 cookie 的存量会话在这里被判无效）。
+   * 只在正常链路拿到空列表时调用一次，把「静默空」翻译成人能读的原因。
+   */
+  async function probeSessionAuth(session) {
+    const homes = await listHomes({ ...session, apiHost: DIAGNOSTIC_API_HOST });
+    return homes.length;
+  }
+
   return {
+    listHomes,
+    probeSessionAuth,
     /** 第一步：拿二维码与长轮询地址（`qr` 是小米托管的图片 URL，可直接 <img>）。 */
     async createQrLogin() {
       const url = `${accountHost}${LOGIN_URL_PATH}?sid=${SID}&_locale=zh_CN&_snsNone=true&_qrsize=480&callback=https%3A%2F%2Fsts.api.io.mi.com%2Fsts`;
@@ -312,13 +430,30 @@ export function createMihomeClient(options = {}) {
     pollQrLogin,
     completeQrLogin,
 
-    /** 设备列表（家庭与房间信息在同一个响应里）。 */
+    /**
+     * 设备列表：走**家庭维度**的新接口（米家 App 现用的口径）。
+     *
+     * 先去家庭列表（`/v2/homeroom/gethome_merged`）拿 home_id/home_owner，再逐家庭
+     * `/home/home_device_list`（带 `home_owner`/`home_id` 等参数，分页靠 `max_did`/`has_more`）。
+     * 老账号（没有「家庭」模型）在新接口下会拿到 0 台，此时**兜底**用经典
+     * `/home/device_list` 再拉一次——两条路都失败才如实报错。
+     */
     async listDevices(session) {
-      const result = await request(session, "/home/device_list", {
+      const homes = await listHomes(session);
+      const devices = [];
+      for (const home of homes) {
+        devices.push(...(await listHomeDevices(session, home)));
+      }
+      if (devices.length > 0) return { devices, homeCount: homes.length };
+
+      const classic = await request(session, "/home/device_list", {
         getVirtualModel: true,
         getHuamiDevices: 1,
       });
-      return Array.isArray(result?.list) ? result.list : [];
+      return {
+        devices: Array.isArray(classic?.list) ? classic.list : [],
+        homeCount: homes.length,
+      };
     },
 
     /** 读属性（MIoT-Spec 的 siid/piid）。 */

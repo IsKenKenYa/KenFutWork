@@ -19,7 +19,7 @@ import {
   propertyKey,
   selectProperties,
 } from "./lib/device-model.js";
-import { createMihomeClient } from "./lib/micloud.js";
+import { createMihomeClient, generateDeviceId } from "./lib/micloud.js";
 
 export const name = "kenfutwork-mihome";
 
@@ -72,6 +72,12 @@ export function apply(ctx) {
     const raw = await ctx.storage.get(workspaceId, SESSION_KEY);
     if (!raw) return null;
     const session = JSON.parse(raw);
+    // 存量会话（本次修复前扫的码）没有设备标识：就地补一个并落库——云端按整罐 cookie
+    // 认账号，缺它会「认不出」，不能让用户为此重扫一次。
+    if (!session.deviceId) {
+      session.deviceId = generateDeviceId();
+      await ctx.storage.set(workspaceId, SESSION_KEY, JSON.stringify(session));
+    }
     sessions.set(workspaceId, session);
     return session;
   }
@@ -95,11 +101,31 @@ export function apply(ctx) {
   async function loadDevices(workspaceId, session, { refresh = false } = {}) {
     const cached = deviceCache.get(workspaceId);
     if (!refresh && cached && Date.now() - cached.at < DEVICE_CACHE_TTL_MS) {
-      return cached.list;
+      return cached;
     }
-    const list = await client.listDevices(session);
-    deviceCache.set(workspaceId, { at: Date.now(), list });
-    return list;
+    const { devices, homeCount } = await client.listDevices(session);
+    const entry = { at: Date.now(), list: devices, homeCount };
+    deviceCache.set(workspaceId, entry);
+    return entry;
+  }
+
+  /**
+   * 空设备列表时的确诊：是「真的没有设备」，还是「会话没被云端认出来」。
+   *
+   * 两种情形在正常基址上长得一模一样（`api.io.mi.com` 对无效会话静默回空列表），
+   * 所以换一个严格校验会话的基址问一次，把「静默空」翻译成用户能照着做的一句话。
+   */
+  async function diagnoseEmptySession(session) {
+    try {
+      const homes = await client.probeSessionAuth(session);
+      return homes > 0 ? "云端认得这次会话，但该账号下没有设备。" : null;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // 确诊本身不可用（网络/DNS）时不误导用户
+      if (/fetch failed|ENOTFOUND|EAI_AGAIN|timeout/i.test(message))
+        return null;
+      return `云端没有认出这次会话（${message}）——请点「断开」后重新扫码，让整段会话重新落库。`;
+    }
   }
 
   /**
@@ -241,13 +267,20 @@ export function apply(ctx) {
       const workspaceId = requireWorkspace(request.workspaceId, "列设备");
       const session = await readSession(workspaceId);
       if (!session) return notConnectedError();
-      const list = await loadDevices(workspaceId, session, {
+      const { list, homeCount } = await loadDevices(workspaceId, session, {
         refresh: request.query.refresh === "1",
       });
       const view = await buildDeviceView(session, list);
+      const authHint =
+        view.devices.length === 0 ? await diagnoseEmptySession(session) : null;
       return {
         status: 200,
-        body: { ...view, updatedAt: new Date().toISOString() },
+        body: {
+          ...view,
+          homeCount,
+          authHint,
+          updatedAt: new Date().toISOString(),
+        },
       };
     },
   });
@@ -337,7 +370,7 @@ export function apply(ctx) {
           "尚未连接米家账号：请在工作台侧栏打开「米家」面板扫码连接一次（之后服务端重启也无需重扫）。",
         );
       }
-      const list = await loadDevices(workspaceId, session, {
+      const { list, homeCount } = await loadDevices(workspaceId, session, {
         refresh: args?.refresh === true,
       });
       const view = await buildDeviceView(session, list);
@@ -359,6 +392,11 @@ export function apply(ctx) {
         })),
         specErrors: view.specErrors,
         total: view.total,
+        homeCount,
+        // 空列表时把「是真的没设备，还是会话没被认出来」这条信息一并给模型
+        ...(view.devices.length === 0
+          ? { note: await diagnoseEmptySession(session) }
+          : {}),
       };
     },
   });
