@@ -94,3 +94,6 @@ docs/design/logo/字体/
 # Rust / Tauri 构建产物（桌面壳）
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/
+
+# 安装包产物（默认落在仓库根，见 apps/desktop/scripts/collect-bundle.mjs）
+/KenFutWork_*-setup.exe

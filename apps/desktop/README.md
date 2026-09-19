@@ -35,8 +35,9 @@ pnpm package:win                                          # 1) 先出 release/�
 pnpm --filter @kenfutwork/desktop build                   # 2) 出安装包
 ```
 
-产物：`apps/desktop/src-tauri/target/release/bundle/nsis/KenFutWork_<版本>_x64-setup.exe`（约 72 MB，
-压缩自约 300 MB 资源）。安装包做的是原生那套向导：**选安装模式**（所有用户 / 仅我）→
+产物：**仓库根目录** `KenFutWork_<版本>_x64-setup.exe`（约 69 MB，压缩自约 300 MB 资源）——
+`tauri build` 之后由 `scripts/collect-bundle.mjs` 自动收过去（根目录只留最新一份）；原始产物仍在
+`apps/desktop/src-tauri/target/release/bundle/nsis/` 下（发布流水线要它就在那）。安装包做的是原生那套向导：**选安装模式**（所有用户 / 仅我）→
 **选安装目录** → **开始菜单目录** → 安装 → 完成页（勾选创建桌面快捷方式、直接启动），
 另写**注册表卸载项 + 卸载器**、**环境变量**（见下）、**中英双语**（默认跟系统，简体优先）。
 装完点快捷方式即用：壳拉起随包的 `app/KenFutWork-server.exe`（内嵌 Postgres + 免登录 + 进程内队列），
