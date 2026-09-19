@@ -101,36 +101,14 @@ const TAB_GROUPS: Array<{
 ];
 
 /**
- * 参考图里点名、且我们已经**有同一个页面**的条目：作为别名行显示（点它跳到目标页）。
- * 不新造页面、也不隐藏——用户按参考图的名字能找到，界面里也不会出现两份一样的开关。
- *
- * 「电脑控制」原来也在这张表里（→ 浏览器），用户口径「这两个合并为一个菜单」后删掉了：
- * 那个页的内容本来就全在浏览器页，留一行别名只是把菜单撑长。
- */
-const ALIAS_TABS: Array<{
-  group: string;
-  label: string;
-  target: SettingsTab;
-  targetLabel: string;
-}> = [
-  {
-    group: "Agent 能力",
-    label: "记忆",
-    target: "rules",
-    targetLabel: "规则与记忆",
-  },
-  {
-    group: "数据与统计",
-    label: "用量管理",
-    target: "usage",
-    targetLabel: "使用统计",
-  },
-];
-
-/**
  * 设置（居中大模态，左侧分类导航 + 右侧内容）：
  * 通用/模型/供应商/权限走真实后端，浏览器/规则与记忆为本机偏好。
  * MCP 管理不在设置内——见侧栏「MCP」（含精选目录与官方注册表）。
+ *
+ * 导航里**一个页面只出现一次**：早前为了「参考图里点名的名字也能找到」加过跳转别名行
+ * （「记忆 → 规则与记忆」「用量管理 → 使用统计」「电脑控制 → 浏览器」），用户口径
+ * 「这两个合并为一个菜单」「这个让你合并的东西怎么又出来了」——别名行整体下线，
+ * 要合并就合并页面本身，不再往导航里塞跳转行。
  */
 export function SettingsModal({
   open,
@@ -345,23 +323,6 @@ export function SettingsModal({
                     {tab.label}
                   </button>
                 ))}
-                {ALIAS_TABS.filter((alias) => alias.group === group.label).map(
-                  (alias) => (
-                    <button
-                      key={alias.label}
-                      type="button"
-                      title={`同「${alias.targetLabel}」页`}
-                      onClick={() => handleTabChange(alias.target)}
-                      className="w-full rounded-md px-3 py-1.5 text-left text-sm text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
-                    >
-                      <span className="block truncate">{alias.label}</span>
-                      {/* 侧栏只有 9rem：提示另起一行，否则「记忆 → 规则与记忆」会被折断成两截 */}
-                      <span className="block truncate text-[10px] opacity-80">
-                        → {alias.targetLabel}
-                      </span>
-                    </button>
-                  ),
-                )}
               </div>
             ))}
           </nav>
