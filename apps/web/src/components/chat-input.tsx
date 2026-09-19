@@ -387,13 +387,20 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                       : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
                   }`}
                 >
+                  {/* 线性「图片」图标（用户口径：不要实心的，要贴合工具条） */}
                   <svg
                     aria-hidden="true"
                     className="h-[14px] w-[14px]"
                     viewBox="0 0 24 24"
-                    fill="currentColor"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
                   >
-                    <path d="M10.8 1.307a2.33 2.33 0 0 1 2.4 0l7.67 4.602A2.33 2.33 0 0 1 22 7.907v8.361a2.33 2.33 0 0 1-1.13 1.998l-7.67 4.602-.141.078a2.33 2.33 0 0 1-2.258-.078l-7.67-4.602A2.33 2.33 0 0 1 2 16.268V7.907a2.33 2.33 0 0 1 1.003-1.915l.128-.083z" />
+                    <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+                    <circle cx="9" cy="9" r="2" />
+                    <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
                   </svg>
                 </button>
                 <ImageModelPreferencePopover
