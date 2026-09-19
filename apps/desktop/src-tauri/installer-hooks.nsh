@@ -33,7 +33,7 @@
 !macro KFW_KILL_INSTALL_DIR_PROCESSES
   ; 用**绝对路径**调 PowerShell：机器级 PATH 一旦被别的软件改坏（真机发生过：System32 不在 PATH 里），
   ; 靠名字 `powershell` 就找不到，这一步会静默失效。
-  nsExec::ExecToLog "$SYSDIR\WindowsPowerShell1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $\"Get-CimInstance Win32_Process | Where-Object { $$_.ExecutablePath -like '$INSTDIR\*' -and $$_.Name -notlike 'uninstall.exe' } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }$\""
+  nsExec::ExecToLog "$SYSDIR\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $\"Get-CimInstance Win32_Process | Where-Object { $$_.ExecutablePath -like '$INSTDIR\*' -and $$_.Name -notlike 'uninstall.exe' } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }$\""
   Pop $0
 !macroend
 
