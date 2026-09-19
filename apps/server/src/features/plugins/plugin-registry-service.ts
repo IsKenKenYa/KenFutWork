@@ -128,6 +128,7 @@ interface PluginContributions {
     title: string;
     slot: string;
     url: string;
+    icon: string | null;
   }>;
 }
 
@@ -405,6 +406,8 @@ export function createPluginRegistryService(
             title: entry.title,
             slot,
             url: entry.url,
+            icon:
+              typeof entry.icon === "string" && entry.icon ? entry.icon : null,
           };
           contributions.ui.push(item);
           return () => {

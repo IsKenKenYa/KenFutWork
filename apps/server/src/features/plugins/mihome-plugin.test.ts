@@ -934,6 +934,7 @@ describe("米家插件：安装与门禁", () => {
         title: "米家",
         slot: "sidebar",
         url: "assets/panel.html",
+        icon: "assets/icon.svg",
       },
     ]);
   });

@@ -365,6 +365,8 @@ function deviceCard(device) {
 
 function renderDevices() {
   setHeaderButtons(true);
+  // 网格每 5 秒整格重建：先记住滚动位置，重建后还原（否则滚动条每次都跳回顶部/抖动）
+  const scrollTop = els.body.scrollTop;
   clear(els.body);
   const truncated =
     state.total > state.devices.length
@@ -382,12 +384,21 @@ function renderDevices() {
     grid.appendChild(deviceCard(device));
   }
   els.body.appendChild(grid);
+  els.body.scrollTop = scrollTop;
   if (state.specErrors.length > 0) {
     const list = el("div", "card");
-    list.appendChild(el("p", "hint", "规格解析失败："));
-    for (const item of state.specErrors.slice(0, 5)) {
+    list.appendChild(
+      el("p", "hint", "规格解析失败（这些设备只显示在线状态）："),
+    );
+    // 同一型号失败原因相同，按原因合并计数（5 台同名空调各报一条是纯噪音）
+    const byMessage = new Map();
+    for (const item of state.specErrors) {
+      const message = String(item.error ?? "未知原因");
+      byMessage.set(message, (byMessage.get(message) ?? 0) + 1);
+    }
+    for (const [message, count] of byMessage) {
       list.appendChild(
-        el("p", "error", `${item.name || item.did}：${item.error}`),
+        el("p", "error", count > 1 ? `${message}（${count} 台）` : message),
       );
     }
     els.footer.appendChild(list);

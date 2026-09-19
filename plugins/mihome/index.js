@@ -338,12 +338,13 @@ export function apply(ctx) {
     },
   });
 
-  // === UI：侧栏入口（面板页由本插件自带，见 assets/panel.html）===
+  // === UI：侧栏入口（面板页由本插件自带，见 assets/panel.html；icon 是米家 logo）===
   ctx.ui.register({
     id: "mihome",
     title: "米家",
     slot: "sidebar",
     url: "assets/panel.html",
+    icon: "assets/icon.svg",
   });
 
   // === agent 工具：与面板共用同一份会话与规格解析 ===

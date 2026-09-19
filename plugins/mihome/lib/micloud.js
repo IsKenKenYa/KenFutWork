@@ -489,6 +489,8 @@ export function createMihomeClient(options = {}) {
 
   return {
     listHomes,
+    /** 原始加密请求（诊断/特殊接口用；常规功能请走下面的具名方法）。 */
+    request,
     /**
      * 第一步：现代米家登录必须先 `serviceLogin?sid=mijia`，再把它返回的 location query
      * 带进 longPolling/loginUrl。旧版直接 `sid=xiaomiio` 出码会扫出「云端不认」的半会话。

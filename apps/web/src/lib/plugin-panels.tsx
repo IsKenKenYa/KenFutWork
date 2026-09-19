@@ -31,6 +31,8 @@ export interface PluginPanelEntry {
   title: string;
   slot: string;
   url: string;
+  /** 入口图标（相对插件根的资源路径）；null 用宿主通用图标。 */
+  icon: string | null;
 }
 
 /** 取「某槽位」的插件面板入口；token 变化自动重取。 */
@@ -63,6 +65,7 @@ export function usePluginPanels(
                   title: entry.title,
                   slot: entry.slot ?? "sidebar",
                   url: entry.url,
+                  icon: entry.icon ?? null,
                 })),
             ),
         );
