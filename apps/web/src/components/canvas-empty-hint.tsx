@@ -90,7 +90,7 @@ export function CanvasEmptyHint({
           排版对齐 Code 问候语（图标 + 大号粗体），只把颜色压成 muted；
           图标用「画板」而不是 Code 的 `</>`。 */}
       <div className="flex items-center gap-3 text-muted-foreground/50">
-        <Palette className="h-8 w-8" />
+        <Palette className="h-8 w-8" strokeWidth={3} />
         <h1 className="font-wordmark text-4xl tracking-tight">
           Design with KenFutWork
         </h1>

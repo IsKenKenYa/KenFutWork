@@ -11,11 +11,7 @@ export function LoadingScreen() {
       <div className="flex flex-col items-center gap-5">
         <div className="animate-logo-float">
           {/* biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败 */}
-          <img
-            src="/logo.png"
-            alt="KenFutWork"
-            className="size-14 rounded-xl"
-          />
+          <img src="/logo-mark.png" alt="KenFutWork" className="h-24 w-auto" />
         </div>
         <div className="flex items-center gap-1">
           <span className="h-1 w-1 rounded-full bg-foreground/30 animate-loading-dot [animation-delay:0ms]" />
