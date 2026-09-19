@@ -33,7 +33,7 @@ const headerSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="150" height="5
     </linearGradient>
   </defs>
   <rect width="150" height="57" fill="#ffffff"/>
-  <rect x="8" y="12" width="32" height="32" rx="8" ry="8" fill="#ffffff" stroke="#e2e9f7"/>
+  <rect x="8" y="12" width="32" height="32" rx="8" ry="8" fill="#ffffff" stroke="#dbe4f5"/>
   <image href="mark" x="13" y="17" width="22" height="22" preserveAspectRatio="xMidYMid meet"/>
   <text x="45" y="36" font-family="${FONT}, sans-serif" font-size="17" font-weight="600" fill="${INK}">KenFutWork</text>
   <rect x="0" y="55" width="150" height="2" fill="url(#line)"/>
@@ -51,12 +51,12 @@ const sidebarSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="164" height="
   </defs>
   <rect width="164" height="314" fill="#ffffff"/>
   <!-- 圆角卡片：一点点圆角（用户口径） -->
-  <rect x="10" y="58" width="144" height="198" rx="12" ry="12" fill="url(#card)" stroke="#e2e9f7"/>
+  <rect x="10" y="58" width="144" height="198" rx="12" ry="12" fill="url(#card)" stroke="#dbe4f5"/>
   <!-- 图标：白底圆角块（22% 圆角，与桌面图标同一套） -->
-  <rect x="54" y="96" width="56" height="56" rx="13" ry="13" fill="#ffffff" stroke="#e2e9f7"/>
+  <rect x="54" y="96" width="56" height="56" rx="13" ry="13" fill="#ffffff" stroke="#dbe4f5"/>
   <image href="mark" x="63" y="105" width="38" height="38" preserveAspectRatio="xMidYMid meet"/>
-  <text x="82" y="184" text-anchor="middle" font-family="${FONT}, sans-serif" font-size="18" font-weight="600" fill="${BLUE}">KenFutWork</text>
-  <text x="82" y="206" text-anchor="middle" font-family="${FONT}, sans-serif" font-size="11" fill="#7b87a8">BYOK 本地 AI 工作台</text>
+  <text x="82" y="184" text-anchor="middle" font-family="${FONT}, sans-serif" font-size="19" font-weight="600" fill="${BLUE}">KenFutWork</text>
+  <text x="82" y="208" text-anchor="middle" font-family="${FONT}, sans-serif" font-size="12" font-weight="500" fill="#5c6b8f">BYOK 本地 AI 工作台</text>
   <rect x="0" y="311" width="164" height="3" fill="url(#line)"/>
 </svg>`;
 
@@ -69,10 +69,10 @@ const markUri = `data:image/png;base64,${(
  * 出图尺寸：**侧边图按 1.5× 出**。
  *
  * 为什么：向导（ManifestPerMonitorV2）在 150% 缩放的屏幕上会把侧边图**放大 1.5 倍**再画，
- * 拿 164×314 的原图上去就是糊的（用户口径「分辨率太低」）。按 4× 出后
+ * 拿 164×314 的原图上去就是糊的（用户口径「分辨率太低」）。按 10× 出后
  * MUI 会把它缩到侧边栏区域（超采样，任何 DPI 都清晰）；页头图 MUI **不缩放**，仍按 150×57 出（给大了会被裁）。
  */
-const SIDEBAR_SCALE = 4;
+const SIDEBAR_SCALE = 10;
 
 for (const [name, svg, width, height] of [
   ["installer-header.bmp", headerSvg, 150, 57],
