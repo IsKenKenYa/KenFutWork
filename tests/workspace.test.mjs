@@ -459,3 +459,31 @@ test("去 Supabase 残留只许减不许增（棘轮门禁）", async () => {
     `残留已下降，请在本 PR 同步下调 tests/supabase-cleanup-baseline.json：\n    ${improvements.join("\n    ")}`,
   );
 });
+
+// 安装向导的品牌图必须**超采样**出图，不能按名义尺寸（页头 150×57 / 侧边 164×314）出：
+// 向导带 `ManifestDPIAwareness PerMonitorV2`，控件随 DPI 放大（150% 屏上 1.5 倍），而
+// `MUI_HEADERIMAGE_BITMAP_STRETCH` 默认 `FitControl` —— NSIS 会把位图 StretchBlt 到控件大小。
+// 按名义尺寸出图 = 上线就被放大 1.5 倍，用户看到的就是糊图（2026-09-19 实测，见
+// docs/参考图/未做需求.md §三十八）。这条守门禁只拦「退回名义尺寸」这种改法。
+test("安装向导品牌图按 DPI 超采样出图（退回名义尺寸即被拉伸成糊图）", async () => {
+  for (const [file, nominal] of [
+    ["installer-header.bmp", [150, 57]],
+    ["installer-sidebar.bmp", [164, 314]],
+  ]) {
+    const filePath = path.join(rootDir, "apps/desktop/src-tauri", file);
+    const bmp = await readFile(filePath);
+    assert.equal(bmp.toString("ascii", 0, 2), "BM", `${file} 不是 BMP`);
+    assert.equal(
+      bmp.readUInt16LE(28),
+      24,
+      `${file} 必须是 24 位 BMP（MUI 只吃这个）`,
+    );
+    const width = bmp.readInt32LE(18);
+    const height = Math.abs(bmp.readInt32LE(22));
+    assert.ok(
+      width >= nominal[0] * 2 && height >= nominal[1] * 2,
+      `${file} 是 ${width}×${height}，低于 2× 下限（名义 ${nominal[0]}×${nominal[1]}）——` +
+        "MUI 会把它拉伸到 DPI 缩放后的控件大小，按名义尺寸出图在 150% 屏上就是糊的",
+    );
+  }
+});

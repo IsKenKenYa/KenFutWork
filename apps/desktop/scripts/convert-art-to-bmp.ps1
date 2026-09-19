@@ -13,7 +13,6 @@ foreach ($name in @('installer-header', 'installer-sidebar')) {
   $g.DrawImage($src, 0, 0, $src.Width, $src.Height)
   $g.Dispose(); $src.Dispose()
   $canvas.Save($bmp, [System.Drawing.Imaging.ImageFormat]::Bmp)
-  $canvas.Save((Join-Path $dir "$name.preview.png"), [System.Drawing.Imaging.ImageFormat]::Png)
   $canvas.Dispose()
   $check = [System.Drawing.Image]::FromFile($bmp)
   Write-Output ("$name.bmp  " + $check.Width + "x" + $check.Height + "  " + $check.PixelFormat)
