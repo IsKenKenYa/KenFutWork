@@ -10,9 +10,6 @@
 ; 变量约定：`$INSTDIR` = 安装目录；`SHCTX` = 模板 SetContext 的结果（AllUsers→HKLM，CurrentUser→HKCU）。
 
 !include "WinMessages.nsh"
-!include "StrFunc.nsh"
-${StrStr}
-${UnStrStr}
 
 !define KFW_MACHINE_ENV_KEY "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
 
@@ -34,52 +31,29 @@ ${UnStrStr}
  * 排除 `uninstall.exe`：重装流程里旧卸载器是从 $INSTDIR 里跑的（`_?=` 不复制），杀了它等于自杀。
  */
 !macro KFW_KILL_INSTALL_DIR_PROCESSES
-  nsExec::ExecToLog "powershell -NoProfile -ExecutionPolicy Bypass -Command $\"Get-CimInstance Win32_Process | Where-Object { $$_.ExecutablePath -like '$INSTDIR\*' -and $$_.Name -notlike 'uninstall.exe' } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }$\""
+  ; 用**绝对路径**调 PowerShell：机器级 PATH 一旦被别的软件改坏（真机发生过：System32 不在 PATH 里），
+  ; 靠名字 `powershell` 就找不到，这一步会静默失效。
+  nsExec::ExecToLog "$SYSDIR\WindowsPowerShell1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $\"Get-CimInstance Win32_Process | Where-Object { $$_.ExecutablePath -like '$INSTDIR\*' -and $$_.Name -notlike 'uninstall.exe' } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }$\""
   Pop $0
 !macroend
 
-; ── 写入：KENFUTWORK_HOME + 安装目录挂 PATH（PATH 是 REG_EXPAND_SZ，读写都要 Expand 版） ──
+; ── 写入：只写 KENFUTWORK_HOME ──
+;
+; **不再改动 PATH**（2026-09-19 摘除）。原来的做法是「读出旧 PATH → 追加安装目录 → 写回」，
+; 看着无害，但有一个致命的失败态：`ReadRegStr` 在值超长（NSIS 字符串上限 1024）或读失败时返回空串，
+; 而当时的兜底写的是 `$INSTDIR` —— **一旦发生，机器级 PATH 就只剩安装目录**，
+; 用户那边表现为 `where` / `powershell` / `cmd` 这些系统命令全部找不到（System32 不在 PATH 里了）。
+; 同一天真机上确实发生了机器级 PATH 被清空（值只剩 `C:\Program Files\AskLink`）——
+; 虽然形态与我们的写入不符（我们只会写成 `旧值;安装目录` 或 `安装目录`），但这类「装个软件动全机 PATH」
+; 的写法本身就不该出现在安装器里：**收益（命令行少敲几个字）远小于风险（整机环境被毁）**。
+; 需要命令行入口的用户，可以用 KENFUTWORK_HOME 自己拼，或手动把安装目录加进 PATH。
 !macro KFW_ENV_WRITE ROOT SUBKEY
   WriteRegExpandStr ${ROOT} "${SUBKEY}" "KENFUTWORK_HOME" "$INSTDIR"
-  ReadRegStr $R0 ${ROOT} "${SUBKEY}" "PATH"
-  ${StrStr} $R1 "$R0" "$INSTDIR"
-  ${If} $R1 == ""
-    ${If} $R0 == ""
-      StrCpy $R0 "$INSTDIR"
-    ${Else}
-      StrCpy $R0 "$R0;$INSTDIR"
-    ${EndIf}
-    WriteRegExpandStr ${ROOT} "${SUBKEY}" "PATH" "$R0"
-  ${EndIf}
 !macroend
 
-; ── 清理：只删自己那一段 PATH，不整键覆盖 ──
+; ── 清理：只删自己写的那一项（PATH 一律不碰，理由见上面的写入宏） ──
 !macro KFW_ENV_REMOVE ROOT SUBKEY
   DeleteRegValue ${ROOT} "${SUBKEY}" "KENFUTWORK_HOME"
-  ReadRegStr $R0 ${ROOT} "${SUBKEY}" "PATH"
-  ${If} $R0 != ""
-    StrLen $R5 "$INSTDIR"
-    ${UnStrStr} $R1 "$R0" ";$INSTDIR"
-    ${If} $R1 != ""
-      ; 形态 A：<别人>;$INSTDIR[;…]——去掉分隔符与目录本身（IntOp 只吃一个操作数，分两步算）
-      IntOp $R4 $R1 + $R5
-      IntOp $R4 $R4 + 1
-      StrCpy $R2 "$R0" $R1
-      StrCpy $R3 "$R0" "" $R4
-      StrCpy $R0 "$R2$R3"
-    ${Else}
-      ; 形态 B：$INSTDIR 就在开头——去掉目录本身与紧随的分号
-      StrCpy $R7 "$R0" $R5
-      ${If} $R7 == "$INSTDIR"
-        StrCpy $R0 "$R0" "" $R5
-        StrCpy $R7 "$R0" 1
-        ${If} $R7 == ";"
-          StrCpy $R0 "$R0" "" 1
-        ${EndIf}
-      ${EndIf}
-    ${EndIf}
-    WriteRegExpandStr ${ROOT} "${SUBKEY}" "PATH" "$R0"
-  ${EndIf}
 !macroend
 
 !macro NSIS_HOOK_PREINSTALL

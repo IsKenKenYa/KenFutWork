@@ -2797,7 +2797,8 @@ ${formatElementReference(picked)}`
               ) : (
                 <Palette className="h-8 w-8" />
               )}
-              <h1 className="font-wordmark bg-gradient-to-r from-[#6C86E8] to-[#4F6BD0] bg-clip-text text-4xl text-transparent dark:from-[#9AB0F5] dark:to-[#7A95F0]">
+              {/* 标题颜色**不动**（用户口径：这句的蓝色还原回去）——只保留字标字体 */}
+              <h1 className="font-wordmark text-4xl tracking-tight">
                 {meta.title}
               </h1>
             </div>
