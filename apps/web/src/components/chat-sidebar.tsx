@@ -8,7 +8,7 @@ import type {
   StreamEvent,
   VideoArtifact,
 } from "@kenfutwork/shared";
-import { PanelsTopLeft } from "lucide-react";
+import { PanelRight as PanelRightIcon, PanelsTopLeft } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toChatMenuMessages } from "@/lib/chat-menu";
@@ -1321,7 +1321,7 @@ export function ChatSidebar({
                 : "text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
           >
-            <ChatBubbleIcon className="h-4 w-4" />
+            <PanelRightIcon className="h-4 w-4" />
           </button>
           <button
             type="button"

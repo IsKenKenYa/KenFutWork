@@ -128,9 +128,9 @@
      */
     --wordmark-gradient: linear-gradient(
         90deg,
-        #243f9c 0%,
-        #2f5be8 45%,
-        #7fa3ff 100%
+        #1c2f74 0%,
+        #2c4fcb 45%,
+        #5c82ec 100%
     );
 }
 
@@ -176,9 +176,9 @@
     --brand: #7ea2ff;
     --wordmark-gradient: linear-gradient(
         90deg,
-        #9ab0f5 0%,
-        #b9cbff 45%,
-        #e0e9ff 100%
+        #7f96ea 0%,
+        #9db3f7 45%,
+        #bccfff 100%
     );
 }
 
