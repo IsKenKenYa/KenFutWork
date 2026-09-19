@@ -1959,7 +1959,7 @@ export function Workbench() {
             className="absolute top-0 -right-0.5 z-10 h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-foreground/20"
           />
           <div className="flex items-center justify-between px-3 pt-3 pb-2">
-            <span className="flex items-center gap-2">
+            <span className="flex items-center gap-0">
               <KenFutWorkLogo className="size-9 text-foreground" />
               {/* 字标：Momo Trust Display（`--font-wordmark`）+ 与图标同色系的**淡蓝**渐变
                   （纯图标蓝在文字上太扎眼，用户口径「太妖艳了」→ 调淡一档） */}

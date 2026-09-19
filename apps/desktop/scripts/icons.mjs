@@ -38,10 +38,10 @@ if (!source) {
   process.exit(1);
 }
 
-/** 白底圆角贴片参数：1024 画布、圆角 22%（≈上一版方块图标）、标占 68%（留出呼吸边距）。 */
+/** 白底圆角贴片参数：1024 画布、圆角 22%（≈上一版方块图标）、标占 84%（用户口径：之前只占中间一点点，太小）。 */
 const CANVAS = 1024;
 const RADIUS = Math.round(CANVAS * 0.22);
-const MARK = Math.round(CANVAS * 0.68);
+const MARK = Math.round(CANVAS * 0.84);
 
 const tile = Buffer.from(
   `<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS}" height="${CANVAS}">
@@ -70,14 +70,12 @@ console.log(
 );
 
 console.log(`再用 tauri icon 出整套平台图标 → ${iconsDir}`);
+// 直接用 node 跑 Tauri CLI：不经过 pnpm / PATH（2026-09-19 真机上机器级 PATH 被别的软件改坏过，
+// 那会儿 `pnpm`、`powershell` 这些靠 PATH 解析的启动器全都失灵，脚本得能扛住）
 const result = spawnSync(
-  "pnpm",
-  ["exec", "tauri", "icon", composedPath, "-o", iconsDir],
-  {
-    cwd: join(repoRoot, "apps", "desktop"),
-    shell: process.platform === "win32",
-    stdio: "inherit",
-  },
+  process.execPath,
+  [join(repoRoot, "apps", "desktop", "node_modules", "@tauri-apps", "cli", "tauri.js"), "icon", composedPath, "-o", iconsDir],
+  { cwd: join(repoRoot, "apps", "desktop"), stdio: "inherit" },
 );
 if (result.status !== 0) {
   console.error(
