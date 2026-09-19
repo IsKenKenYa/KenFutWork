@@ -238,6 +238,51 @@ const shot = await send("Page.captureScreenshot", { format: "png" }, sessionId);
 mkdirSync(dirname(SHOT), { recursive: true });
 writeFileSync(SHOT, Buffer.from(shot.data, "base64"));
 console.log(`截图：${SHOT}`);
+
+/**
+ * ⑤ 模型目录为空时，模型选择器必须给得出路。
+ *
+ * 打包版首启动没有任何供应商（BYOK 没填过、也没有 `.env.local`），`/api/models` 是空数组。
+ * 此前选择器只渲染一个「默认模型」单项，用户点开也没路可走（2026-09-19 用户问「为什么
+ * 桌面版这个不显示」）；现在应显示「未配置模型」+「添加供应商…」。目录非空时这条不适用。
+ */
+const modelCount = await evaluate(
+  `fetch("/api/models").then((r) => r.json()).then((d) => (d.models ?? []).length)`,
+);
+if (modelCount === 0) {
+  await evaluate(
+    `(() => {
+       const code = [...document.querySelectorAll("button,[role=tab],[role=button]")].find((n) => (n.textContent ?? "").trim() === "Code");
+       if (code) code.click();
+       return true;
+     })()`,
+  );
+  await sleep(2500);
+  const opened = await evaluate(
+    `(() => {
+       const trigger = [...document.querySelectorAll("[role=combobox],button")].find((el) => (el.textContent ?? "").trim().startsWith("未配置模型"));
+       if (!trigger) return false;
+       trigger.click();
+       return true;
+     })()`,
+  );
+  await sleep(1200);
+  const emptyState = await evaluate(
+    `(() => ({
+       options: [...document.querySelectorAll("[role=option],[role=menuitem]")].map((el) => (el.textContent ?? "").trim()),
+       hasAdd: [...document.querySelectorAll("button")].some((el) => (el.textContent ?? "").trim().startsWith("添加供应商")),
+     }))()`,
+  );
+  check(opened === true, "空模型目录时模型选择器可点开");
+  check(
+    (emptyState?.options ?? []).some((text) => text.includes("未配置模型")) &&
+      emptyState?.hasAdd === true,
+    `空模型目录时给出「添加供应商…」出口（下拉项：${(emptyState?.options ?? []).join(" / ")}）`,
+  );
+} else {
+  console.log(`· 模型目录非空（${modelCount} 条），跳过「空目录出口」检查`);
+}
+
 socket.close();
 
 if (failures.length > 0) {

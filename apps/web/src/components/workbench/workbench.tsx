@@ -2660,7 +2660,7 @@ export function Workbench() {
                           }}
                           items={
                             models.length === 0
-                              ? [{ value: "", label: "默认模型" }]
+                              ? [{ value: "", label: "未配置模型" }]
                               : models.map((m) => ({
                                   value: m.id,
                                   label: m.name,
@@ -2675,7 +2675,19 @@ export function Workbench() {
                           </SelectTrigger>
                           <SelectContent className="max-w-[300px]">
                             {models.length === 0 ? (
-                              <SelectItem value="">默认模型</SelectItem>
+                              <>
+                                {/* 目录为空 = 没配过供应商（打包版首启动就是这个状态）：
+                                    只显示「未配置模型」等于把用户留在死胡同，给一条直达设置的路 */}
+                                <SelectItem value="">未配置模型</SelectItem>
+                                <div className="-mx-1 my-1 border-t" />
+                                <button
+                                  type="button"
+                                  onClick={() => setSettingsTab("providers")}
+                                  className="w-full rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                                >
+                                  添加供应商…
+                                </button>
+                              </>
                             ) : (
                               models.map((m) => (
                                 <SelectItem key={m.id} value={m.id}>
@@ -2915,7 +2927,7 @@ ${formatElementReference(picked)}`
                       }}
                       items={
                         models.length === 0
-                          ? [{ value: "", label: "默认模型" }]
+                          ? [{ value: "", label: "未配置模型" }]
                           : models.map((m) => ({ value: m.id, label: m.name }))
                       }
                     >
@@ -2927,7 +2939,19 @@ ${formatElementReference(picked)}`
                       </SelectTrigger>
                       <SelectContent className="max-w-[300px]">
                         {models.length === 0 ? (
-                          <SelectItem value="">默认模型</SelectItem>
+                          <>
+                            {/* 目录为空就是「没配过供应商」：只显示「未配置模型」等于把用户
+                                留在死胡同里（打包版首启动就是这个状态），给一条直达设置的路 */}
+                            <SelectItem value="">未配置模型</SelectItem>
+                            <div className="-mx-1 my-1 border-t" />
+                            <button
+                              type="button"
+                              onClick={() => setSettingsTab("providers")}
+                              className="w-full rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                            >
+                              添加供应商…
+                            </button>
+                          </>
                         ) : (
                           <>
                             {(() => {
