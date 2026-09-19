@@ -5,7 +5,6 @@ import type {
   ImageBlock,
   MentionBlock,
   ToolArtifact,
-  ToolBlock,
 } from "@kenfutwork/shared";
 import { motion } from "framer-motion";
 import React, { useMemo } from "react";
@@ -18,9 +17,6 @@ import { keyed } from "./list-keys";
 
 // Re-export types for backward compatibility with existing consumers
 export type { ContentBlock, ToolArtifact };
-
-/** @deprecated Use ToolBlock from @kenfutwork/shared instead */
-export type ToolActivity = ToolBlock;
 
 /* ------------------------------------------------------------------ */
 /*  ChatMessage                                                        */

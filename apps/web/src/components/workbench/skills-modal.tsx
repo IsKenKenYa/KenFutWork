@@ -8,7 +8,7 @@ import type {
   SkillListItem,
 } from "@kenfutwork/shared";
 import { Blocks, Loader2, Plus, Search, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { getServerBaseUrl } from "@/lib/env";
 import {
@@ -64,6 +64,8 @@ export function SkillsModal({
   canvasId?: string | null;
 }) {
   const [tab, setTab] = useState<SkillsTab>("mine");
+  /** 切页签重置滚动位置。 */
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = useState("");
   const [rows, setRows] = useState<SkillView[]>([]);
   const [loading, setLoading] = useState(false);
@@ -210,7 +212,10 @@ export function SkillsModal({
                 key={item.id}
                 type="button"
                 data-active={tab === item.id}
-                onClick={() => setTab(item.id)}
+                onClick={() => {
+                  setTab(item.id);
+                  if (contentRef.current) contentRef.current.scrollTop = 0;
+                }}
                 className="whitespace-nowrap rounded-md px-3 py-1 text-sm transition-colors data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:shadow-sm"
               >
                 {item.label}
@@ -231,7 +236,10 @@ export function SkillsModal({
           ) : null}
         </div>
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+        <div
+          ref={contentRef}
+          className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5"
+        >
           {tab === "market" ? (
             <SkillsMarketPanel
               accessToken={accessToken}

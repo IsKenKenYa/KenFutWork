@@ -21,8 +21,6 @@ import type { JobService } from "../features/jobs/job-service.js";
 import { JobServiceError } from "../features/jobs/job-service.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type { UploadService } from "../features/uploads/upload-service.js";
-import { generateImage } from "../generation/image-generation.js";
-import { resolveImageProviderName } from "../generation/providers/registry.js";
 import type { GeneratedImage } from "../generation/types.js";
 import { instanceHeadersOption } from "../providers/instance-headers.js";
 import { resolveInstanceImageProvider } from "../providers/resolve.js";
@@ -34,6 +32,11 @@ const generateImageRequestSchema = z.object({
   providerInstanceId: z.string().uuid().optional(),
   aspectRatio: z.enum(["1:1", "16:9", "9:16", "4:3", "3:4"]).optional(),
   quality: z.enum(["standard", "hd", "ultra"]).optional(),
+  /**
+   * 参考图（URL / data URL / 裸 base64）：非空时适配器走 `/images/edits`
+   * （参考图编辑/inpainting），空缺省仍走 `/images/generations`。
+   */
+  inputImages: z.array(z.string().min(1)).max(4).optional(),
   /**
    * 会话标识（§4.8 自定义头占位符的渲染上下文）：画布助手发起时带上当前会话，
    * 使 `{{sessionId}}` 能取到值；确无会话的调用方可缺省（实例若配了占位符会 fail loud）。
@@ -98,7 +101,29 @@ export async function registerGenerateRoutes(
       );
     }
 
-    const model = payload.model ?? "black-forest-labs/flux-kontext-pro";
+    // BYOK-only（2026-09-18 用户拍板删除内置目录/遗留 env 注册）：必须指定供应商实例。
+    if (!payload.providerInstanceId || !options.modelProviders) {
+      return reply.code(400).send(
+        applicationErrorResponseSchema.parse({
+          error: {
+            code: "invalid_request",
+            message:
+              "缺少 providerInstanceId——请先在「设置 → 供应商」添加供应商实例后再发起生成。",
+          },
+        }),
+      );
+    }
+    const model = payload.model;
+    if (!model) {
+      return reply.code(400).send(
+        applicationErrorResponseSchema.parse({
+          error: {
+            code: "invalid_request",
+            message: "缺少 model（从实例模型清单中选择）。",
+          },
+        }),
+      );
+    }
 
     try {
       // ── Tier guard + credit checks ──
@@ -133,7 +158,7 @@ export async function registerGenerateRoutes(
       }
 
       let result: GeneratedImage;
-      if (payload.providerInstanceId && options.modelProviders) {
+      {
         const credentials = await options.modelProviders.resolveCredentialsById(
           payload.providerInstanceId,
         );
@@ -149,7 +174,9 @@ export async function registerGenerateRoutes(
             }),
           },
           models: credentials.models
-            .filter((m) => m.capability === "image")
+            .filter(
+              (m) => m.capability === "image" || m.capability === "image-edit",
+            )
             .map((m) => ({ id: m.id, name: m.name })),
         });
         result = await provider.generate({
@@ -157,14 +184,9 @@ export async function registerGenerateRoutes(
           model,
           aspectRatio: payload.aspectRatio ?? "1:1",
           ...(payload.quality ? { quality: payload.quality } : {}),
-        });
-      } else {
-        const providerName = resolveImageProviderName(model);
-        result = await generateImage(providerName, {
-          prompt: payload.prompt,
-          model,
-          aspectRatio: payload.aspectRatio ?? "1:1",
-          ...(payload.quality ? { quality: payload.quality } : {}),
+          ...(payload.inputImages?.length
+            ? { inputImages: payload.inputImages }
+            : {}),
         });
       }
 
@@ -267,7 +289,33 @@ export async function registerGenerateRoutes(
       );
     }
 
-    const model = payload.model ?? "google-official/veo-3.1-generate-preview";
+    // BYOK-only（2026-09-18 用户拍板）：必须指定供应商实例与模型。
+    if (
+      !payload.providerInstanceId ||
+      !options.modelProviders ||
+      !options.jobService
+    ) {
+      return reply.code(400).send(
+        applicationErrorResponseSchema.parse({
+          error: {
+            code: "invalid_request",
+            message:
+              "缺少 providerInstanceId——请先在「设置 → 供应商」添加供应商实例后再发起生成。",
+          },
+        }),
+      );
+    }
+    if (!payload.model) {
+      return reply.code(400).send(
+        applicationErrorResponseSchema.parse({
+          error: {
+            code: "invalid_request",
+            message: "缺少 model（从实例模型清单中选择）。",
+          },
+        }),
+      );
+    }
+    const model = payload.model;
 
     try {
       // ── Tier guard + credit checks ──
@@ -334,36 +382,13 @@ export async function registerGenerateRoutes(
         }
       }
 
-      // ── Poll until terminal state ──
-      const POLL_INTERVAL = 3_000;
-      const MAX_WAIT = 300_000; // 5 minutes
-
-      const result = await pollJobUntilDone(
-        options.jobService,
-        job.id,
-        POLL_INTERVAL,
-        MAX_WAIT,
-      );
-
-      if ("error" in result) {
-        return reply.code(502).send(
-          applicationErrorResponseSchema.parse({
-            error: {
-              code: "generation_failed",
-              message: result.error,
-            },
-          }),
-        );
-      }
-
-      return reply.code(200).send({
-        url: result.signed_url,
-        assetId: result.asset_id,
+      // ── 异步受理（S6）：任务由 worker 执行（异步任务面 submit + 队列轮询），
+      // HTTP 请求不在请求内挂起等结果（台账遗留：5 分钟内联轮询退役）。
+      // 进度经 GET /api/jobs/:id 轮询。
+      return reply.code(202).send({
+        job_id: job.id,
+        status: "queued",
         prompt: payload.prompt,
-        mimeType: result.mime_type,
-        width: result.width,
-        height: result.height,
-        durationSeconds: result.duration_seconds,
       });
     } catch (error) {
       if (error instanceof TierGuardError) {
@@ -401,65 +426,6 @@ export async function registerGenerateRoutes(
       );
     }
   });
-}
-
-// ── Job polling helper ──────────────────────────────────────
-
-type VideoJobResult = {
-  signed_url: string;
-  asset_id: string;
-  width: number;
-  height: number;
-  duration_seconds: number;
-  mime_type: string;
-};
-
-type PollResult = VideoJobResult | { error: string };
-
-async function pollJobUntilDone(
-  jobService: JobService,
-  jobId: string,
-  pollInterval: number,
-  maxWait: number,
-): Promise<PollResult> {
-  const start = Date.now();
-
-  while (Date.now() - start < maxWait) {
-    await delay(pollInterval);
-
-    const current = await jobService.getJobAdmin(jobId);
-
-    if (current.status === "succeeded" && current.result) {
-      const r = current.result as Record<string, unknown>;
-      return {
-        signed_url: (r.signed_url as string) ?? "",
-        asset_id: (r.asset_id as string) ?? "",
-        width: (r.width as number) ?? 0,
-        height: (r.height as number) ?? 0,
-        duration_seconds: (r.duration_seconds as number) ?? 0,
-        mime_type: (r.mime_type as string) ?? "video/mp4",
-      };
-    }
-
-    if (current.status === "dead_letter" || current.status === "canceled") {
-      return { error: current.error_message ?? `Job ${current.status}` };
-    }
-
-    if (
-      current.status === "failed" &&
-      current.attempt_count >= current.max_attempts
-    ) {
-      return {
-        error: current.error_message ?? "Job failed after max retries",
-      };
-    }
-  }
-
-  return { error: `Job timed out after ${maxWait / 1000}s` };
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // ── Image download + upload helper ──────────────────────────

@@ -5,6 +5,7 @@ import {
   parseInstanceSpecifier,
   toInstanceSpecifier,
 } from "./model-catalog-service.js";
+import { buildModelsDevSnapshot } from "./models-dev-snapshot.js";
 
 const user = {
   accessToken: "token",
@@ -98,6 +99,139 @@ describe("modelCatalog（目录推导）", () => {
     const entries = await catalog.listCatalog(user);
     expect(entries).toHaveLength(2);
     expect(entries.every((e) => e.provider.scope === "workspace")).toBe(true);
+  });
+});
+
+describe("modelCatalog 快照 hints（三层合并）", () => {
+  // 快照 fixture：openai 下有 gpt-x（上下文/工具/图像输入）、img-1（输出 video 的生成模型）；
+  // anthropic 下同 id gpt-x 用于验证协议偏好。
+  const snapshot = buildModelsDevSnapshot(
+    {
+      openai: {
+        models: {
+          "gpt-x": {
+            id: "gpt-x",
+            name: "GPT X",
+            tool_call: true,
+            reasoning: false,
+            modalities: { input: ["text", "image"], output: ["text"] },
+            limit: { context: 400000, output: 32000 },
+          },
+          "img-1": {
+            id: "img-1",
+            name: "IMG 1",
+            modalities: { input: ["text"], output: ["image"] },
+          },
+        },
+      },
+      anthropic: {
+        models: {
+          "gpt-x": {
+            id: "gpt-x",
+            name: "同名不同家",
+            tool_call: false,
+            limit: { context: 1000 },
+          },
+        },
+      },
+    },
+    ["openai", "anthropic"],
+  ).snapshot;
+
+  function catalogWith(models: ProviderInstanceResponse["models"]) {
+    return createModelCatalogService({
+      modelProviders: {
+        listInstances: async () => [instance({ models })],
+        listSystemInstances: async () => [],
+      } as never,
+      snapshot,
+    });
+  }
+
+  it("未声明字段由快照补缺，出处（snapshotProvider）透出", async () => {
+    const catalog = catalogWith([
+      { id: "gpt-x", name: "GPT X", capability: "chat" },
+    ]);
+    const [entry] = await catalog.listCatalog(user);
+    expect(entry?.hints).toEqual({
+      source: "models-dev",
+      snapshotProvider: "openai",
+      contextWindow: 400000,
+      maxOutputTokens: 32000,
+      imageInput: true,
+      toolCall: true,
+      reasoning: false,
+    });
+    // 模型行保持原样（原始实例声明，不被快照污染）
+    expect(entry?.model.contextWindow).toBeUndefined();
+    expect(entry?.model.vision).toBeUndefined();
+  });
+
+  it("用户声明优先：声明过的字段绝不进 hints（无双源）", async () => {
+    const catalog = catalogWith([
+      {
+        id: "gpt-x",
+        name: "GPT X",
+        capability: "chat",
+        vision: false,
+        contextWindow: 8000,
+      },
+    ]);
+    const [entry] = await catalog.listCatalog(user);
+    expect(entry?.hints).toEqual({
+      source: "models-dev",
+      snapshotProvider: "openai",
+      maxOutputTokens: 32000,
+      toolCall: true,
+      reasoning: false,
+    });
+    expect(entry?.model.contextWindow).toBe(8000);
+    expect(entry?.model.vision).toBe(false);
+  });
+
+  it("快照未收录的模型 → 无 hints（未知 ≠ 不支持）", async () => {
+    const catalog = catalogWith([
+      { id: "my-private-model", name: "私有模型", capability: "chat" },
+    ]);
+    const [entry] = await catalog.listCatalog(user);
+    expect(entry?.hints).toBeUndefined();
+  });
+
+  it("openai-compatible 实例的同名模型偏好 openai 快照，anthropic 实例偏好 anthropic", async () => {
+    const openaiCatalog = catalogWith([
+      { id: "gpt-x", name: "G", capability: "chat" },
+    ]);
+    const [openaiEntry] = await openaiCatalog.listCatalog(user);
+    expect(openaiEntry?.hints?.snapshotProvider).toBe("openai");
+    expect(openaiEntry?.hints?.contextWindow).toBe(400000);
+
+    const anthropicCatalog = createModelCatalogService({
+      modelProviders: {
+        listInstances: async () => [
+          instance({
+            models: [{ id: "gpt-x", name: "G", capability: "chat" }],
+            protocol: "anthropic",
+          }),
+        ],
+        listSystemInstances: async () => [],
+      } as never,
+      snapshot,
+    });
+    const [anthropicEntry] = await anthropicCatalog.listCatalog(user);
+    expect(anthropicEntry?.hints?.snapshotProvider).toBe("anthropic");
+    expect(anthropicEntry?.hints?.contextWindow).toBe(1000);
+  });
+
+  it("不传快照 → 全部条目无 hints，目录照常（fail-open）", async () => {
+    const catalog = createModelCatalogService({
+      modelProviders: {
+        listInstances: async () => [instance()],
+        listSystemInstances: async () => [],
+      } as never,
+    });
+    const entries = await catalog.listCatalog(user);
+    expect(entries).toHaveLength(2);
+    expect(entries.every((e) => e.hints === undefined)).toBe(true);
   });
 });
 

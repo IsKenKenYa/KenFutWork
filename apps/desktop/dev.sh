@@ -11,7 +11,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
 PIDS=()
-export LOOMIC_DESKTOP_SERVER_CWD="$ROOT"
+export KENFUTWORK_DESKTOP_SERVER_CWD="$ROOT"
 cleanup() {
   for pid in "${PIDS[@]:-}"; do
     kill "$pid" 2>/dev/null || true

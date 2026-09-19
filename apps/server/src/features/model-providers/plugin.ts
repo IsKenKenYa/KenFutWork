@@ -2,7 +2,9 @@ import { registerModelCatalogRoutes } from "../../http/model-catalog.js";
 import { registerProviderInstanceRoutes } from "../../http/provider-instances.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import { createModelCatalogService } from "./model-catalog-service.js";
+import type { ModelProviderService } from "./model-provider-service.js";
 import { createModelProviderService } from "./model-provider-service.js";
+import { loadBundledModelsDevSnapshot } from "./models-dev-bundled.js";
 import { createModelProviderRepository } from "./repository.js";
 
 /**
@@ -20,6 +22,8 @@ export function createModelProvidersPlugin(deps: {
   credentialEnv: { credentialSecret?: string };
   /** HTTP 进程挂路由（需 auth）；worker 传 false。 */
   withRoutes?: boolean;
+  /** 测试替身：直接作为 modelProviders 缝实例（跳过真实仓储装配）。 */
+  injectedModelProviders?: ModelProviderService;
 }): PluginDefinition {
   const withRoutes = deps.withRoutes ?? true;
   return {
@@ -29,18 +33,28 @@ export function createModelProvidersPlugin(deps: {
     inject: withRoutes ? ["auth", "persistence", "viewer"] : ["persistence"],
     apply(ctx) {
       const viewerService = ctx.tryGet("viewer");
-      ctx.register("modelProviders", () =>
-        createModelProviderService({
+      const injected = deps.injectedModelProviders as
+        | ModelProviderService
+        | undefined;
+      ctx.register("modelProviders", () => {
+        // 测试替身直通（app.test 的 overrides 注入）；生产走真实服务
+        if (injected) {
+          return injected;
+        }
+        return createModelProviderService({
           credentialEnv: deps.credentialEnv,
           repository: createModelProviderRepository(ctx.get("persistence")),
           ...(viewerService ? { viewerService } : {}),
-        }),
-      );
-      ctx.register("modelCatalog", () =>
-        createModelCatalogService({
+        });
+      });
+      ctx.register("modelCatalog", () => {
+        // 快照损坏/漂移时 fail-open 为 undefined（无 hints，目录照常）。
+        const snapshot = loadBundledModelsDevSnapshot();
+        return createModelCatalogService({
           modelProviders: ctx.get("modelProviders"),
-        }),
-      );
+          ...(snapshot ? { snapshot } : {}),
+        });
+      });
     },
     mounted(ctx) {
       if (!withRoutes) {

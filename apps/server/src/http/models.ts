@@ -75,19 +75,26 @@ export async function registerModelRoutes(
           models.push(
             ...entries
               .filter((entry) => entry.capability === "chat")
-              .map((entry) => ({
-                id: toInstanceSpecifier(entry),
-                name: entry.name,
-                provider: entry.provider.instanceId,
-                providerName: entry.provider.name,
-                ...(entry.model.vision ? { vision: true } : {}),
-                ...(entry.model.contextWindow
-                  ? { contextWindow: entry.model.contextWindow }
-                  : {}),
-                ...(entry.model.maxOutputTokens
-                  ? { maxOutputTokens: entry.model.maxOutputTokens }
-                  : {}),
-              })),
+              .map((entry) => {
+                // hints 是快照对未声明字段的补缺（声明优先已在目录层保证：
+                // hints 里只会有模型行上没有的字段），此处 ?? 只是兜底合并。
+                const vision = entry.model.vision ?? entry.hints?.imageInput;
+                const contextWindow =
+                  entry.model.contextWindow ?? entry.hints?.contextWindow;
+                const maxOutputTokens =
+                  entry.model.maxOutputTokens ?? entry.hints?.maxOutputTokens;
+                const reasoningEfforts = entry.model.reasoningEfforts;
+                return {
+                  id: toInstanceSpecifier(entry),
+                  name: entry.name,
+                  provider: entry.provider.instanceId,
+                  providerName: entry.provider.name,
+                  ...(vision ? { vision: true } : {}),
+                  ...(contextWindow ? { contextWindow } : {}),
+                  ...(maxOutputTokens ? { maxOutputTokens } : {}),
+                  ...(reasoningEfforts ? { reasoningEfforts } : {}),
+                };
+              }),
           );
         }
       } catch (error) {

@@ -1,4 +1,3 @@
-import { createRequire } from "node:module";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -154,18 +153,13 @@ describe("内嵌 Postgres：二进制目录解析", () => {
     ).toBe(bundled);
   });
 
-  // 平台二进制包是 pnpm 可选依赖，只在对应平台安装；未安装的机器上跳过本用例
-  // （依赖缺失时的 fail loud 行为由「二进制缺失时 fail loud」用例覆盖）。
-  const win32DependencyInstalled = (() => {
-    try {
-      createRequire(import.meta.url).resolve("@embedded-postgres/windows-x64");
-      return true;
-    } catch {
-      return false;
-    }
-  })();
+  // 本用例 mock 了 win32 路径解析，但 resolvePgBinDir 内部用真实 process.arch 拼
+  // 平台 key（win32-x64），且 windows-x64 可选依赖只在 x64 Windows 上安装——
+  // 非 x64-Windows 机器直接跳过（依赖缺失的 fail loud 另有专测覆盖）。
+  const canRunWin32Resolution =
+    process.platform === "win32" && process.arch === "x64";
 
-  it.skipIf(!win32DependencyInstalled)(
+  it.skipIf(!canRunWin32Resolution)(
     "开发态回落到已安装的平台依赖包 native/bin",
     () => {
       const binDir = resolvePgBinDir({

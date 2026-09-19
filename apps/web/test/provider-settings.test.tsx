@@ -18,6 +18,7 @@ import {
 
 vi.mock("@/lib/server-api", () => ({
   fetchProviderInstances: vi.fn(),
+  fetchProviderPresets: vi.fn().mockResolvedValue({ presets: [] }),
   createProviderInstance: vi.fn(),
   updateProviderInstance: vi.fn(),
   deleteProviderInstance: vi.fn(),
@@ -54,7 +55,7 @@ describe("ProviderSettings（BYOK 供应商设置）", () => {
     mockedFetch.mockResolvedValue({ instances: [instance] });
     render(<ProviderSettings accessToken="token" />);
     await waitFor(() => {
-      expect(screen.getByText("我的网关")).toBeDefined();
+      expect(screen.getAllByText("我的网关").length).toBeGreaterThan(0);
     });
     expect(screen.getByText(/1 个模型/)).toBeDefined();
     expect(screen.queryByText("sk-secret")).toBeNull();
@@ -64,7 +65,7 @@ describe("ProviderSettings（BYOK 供应商设置）", () => {
     mockedFetch.mockResolvedValue({ instances: [] });
     render(<ProviderSettings accessToken="token" />);
     await waitFor(() => {
-      expect(screen.getByText("暂无供应商实例")).toBeDefined();
+      expect(screen.getByText(/暂无供应商实例/)).toBeDefined();
     });
   });
 
@@ -88,13 +89,20 @@ describe("ProviderSettings（BYOK 供应商设置）", () => {
     expect(await screen.findByText(/请填写 API Key/)).toBeDefined();
     expect(mockedCreate).not.toHaveBeenCalled();
 
-    // 填写后提交
+    // 填写后提交（BYOK-only：必须至少一个模型）
     await user.type(screen.getByLabelText("API Key"), "sk-secret");
+    await fireEvent.change(screen.getByLabelText("模型清单（JSON）"), {
+      target: { value: '[{"id":"gpt-x","name":"GPT X","capability":"chat"}]' },
+    });
     await user.click(screen.getByRole("button", { name: "保存实例" }));
     await waitFor(() => {
       expect(mockedCreate).toHaveBeenCalledWith(
         "token",
-        expect.objectContaining({ name: "我的网关", apiKey: "sk-secret" }),
+        expect.objectContaining({
+          name: "我的网关",
+          apiKey: "sk-secret",
+          models: [{ id: "gpt-x", name: "GPT X", capability: "chat" }],
+        }),
       );
     });
     expect(mockedFetch).toHaveBeenCalledTimes(2);
@@ -122,7 +130,6 @@ describe("ProviderSettings（BYOK 供应商设置）", () => {
     await user.click(screen.getByRole("button", { name: "添加供应商" }));
     await user.type(screen.getByLabelText("实例名称"), "opencode");
     await user.type(screen.getByLabelText("API Key"), "k");
-
     // 非法 JSON：拦在提交前（含 `[`/`{` 的值用 change 直填，避开 userEvent 的按键转义语法）
     await fireEvent.change(
       screen.getByLabelText("自定义请求头（JSON，可选）"),
@@ -171,14 +178,14 @@ describe("ProviderSettings（BYOK 供应商设置）", () => {
     mockedDelete.mockResolvedValue(undefined);
     render(<ProviderSettings accessToken="token" />);
     await waitFor(() => {
-      expect(screen.getByText("我的网关")).toBeDefined();
+      expect(screen.getAllByText("我的网关").length).toBeGreaterThan(0);
     });
     await user.click(screen.getByRole("button", { name: "删除" }));
     await waitFor(() => {
       expect(mockedDelete).toHaveBeenCalledWith("token", "inst-1");
     });
     await waitFor(() => {
-      expect(screen.getByText("暂无供应商实例")).toBeDefined();
+      expect(screen.getByText(/暂无供应商实例/)).toBeDefined();
     });
   });
 
@@ -193,7 +200,7 @@ describe("ProviderSettings（BYOK 供应商设置）", () => {
     mockedUpdate.mockResolvedValue(editing);
     render(<ProviderSettings accessToken="token" />);
     await waitFor(() => {
-      expect(screen.getByText("我的网关")).toBeDefined();
+      expect(screen.getAllByText("我的网关").length).toBeGreaterThan(0);
     });
 
     await user.click(screen.getByRole("button", { name: "编辑" }));
@@ -209,9 +216,7 @@ describe("ProviderSettings（BYOK 供应商设置）", () => {
       "value",
       "",
     );
-    expect(
-      screen.getByText(/已存：x-opencode-session（留空则保留；填 \{\} 清空）/),
-    ).toBeDefined();
+    expect(screen.getByText(/已存：x-opencode-session/)).toBeDefined();
 
     // 只改名字：patch 里不该出现 apiKey / headers / models
     await user.clear(screen.getByLabelText("实例名称"));
@@ -236,7 +241,7 @@ describe("ProviderSettings（BYOK 供应商设置）", () => {
     mockedUpdate.mockResolvedValue(editing);
     render(<ProviderSettings accessToken="token" />);
     await waitFor(() => {
-      expect(screen.getByText("我的网关")).toBeDefined();
+      expect(screen.getAllByText("我的网关").length).toBeGreaterThan(0);
     });
     await user.click(screen.getByRole("button", { name: "编辑" }));
 

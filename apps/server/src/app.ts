@@ -3,7 +3,6 @@ import websocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { KenFutWorkAgentFactory } from "./agent/deep-agent.js";
 import { loadServerEnv, type ServerEnv } from "./config/env.js";
-import { registerAllProviders } from "./generation/providers/register-all.js";
 import { registerCorsHook } from "./http/cors.js";
 import { registerInfraRoutes } from "./http/infra.js";
 import { registerStaticWebRoutes } from "./http/static-web.js";
@@ -30,7 +29,6 @@ export function buildApp(
   options: AppOptions = {},
 ): FastifyInstance & { kernel: KernelHandle } {
   const env = loadServerEnv(options.env);
-  registerAllProviders(env);
 
   const app = Fastify({ logger: { level: "info" } });
   void app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
@@ -56,6 +54,9 @@ export function buildApp(
         : { mockEventDelayMs: options.mockEventDelayMs }),
       ...(options.overrides?.jobs
         ? { overrideJobs: options.overrides.jobs }
+        : {}),
+      ...(options.overrides?.modelProviders
+        ? { overrideModelProviders: options.overrides.modelProviders }
         : {}),
       ...(options.overrides?.payments
         ? { overridePayments: options.overrides.payments }

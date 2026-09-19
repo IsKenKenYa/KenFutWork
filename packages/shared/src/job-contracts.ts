@@ -76,6 +76,8 @@ export const backgroundJobSchema = z.object({
   job_type: backgroundJobTypeSchema,
   status: backgroundJobStatusSchema,
   payload: z.record(z.string(), z.unknown()),
+  /** 外部厂商任务引用（submit 成功落库；崩溃恢复据此续 poll）。 */
+  provider_job_id: z.string().nullable(),
   result: z.record(z.string(), z.unknown()).nullable(),
   error_code: z.string().nullable(),
   error_message: z.string().nullable(),

@@ -346,6 +346,13 @@ fn register_signal_shutdown(app: tauri::AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
+        // 单实例：第二个启动实例立即退出并唤起已有窗口——否则两个壳会竞态
+        // initdb 同一个内嵌集群（密码文件错位 → auth 必败，2026-09-17 实测事故）
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_focus();
+            }
+        }))
         .invoke_handler(tauri::generate_handler![ping]);
     // 右栏浏览器的真内核嵌入（子 webview + WebView2 DevTools）——见 browser_embed.rs
     browser_embed::register_embed_commands(builder)

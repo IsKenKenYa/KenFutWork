@@ -252,6 +252,13 @@ pub enum ServerLaunch {
 #[derive(Debug)]
 pub enum LifecycleError {
     Probe(ProbeError),
+    /// 探活超时，且已取得子进程退出状态——这是「spawn 后立刻死」的可诊断信号
+    /// （包名拼错、依赖未构建等），与「还在启动中」的超时区分开（2026-09-17 事故）。
+    ProbeChildExited {
+        probe: ProbeError,
+        child_status: String,
+        log_path: PathBuf,
+    },
     Spawn(std::io::Error),
 }
 
@@ -259,6 +266,14 @@ impl std::fmt::Display for LifecycleError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LifecycleError::Probe(error) => write!(f, "{error}"),
+            LifecycleError::ProbeChildExited {
+                probe,
+                child_status,
+                log_path,
+            } => write!(
+                f,
+                "{probe}；子进程已提前退出（{child_status}）——服务端启动即失败，日志见 {log_path:?}"
+            ),
             LifecycleError::Spawn(error) => {
                 write!(f, "服务端进程拉起失败：{error}")
             }
@@ -267,6 +282,18 @@ impl std::fmt::Display for LifecycleError {
 }
 
 impl std::error::Error for LifecycleError {}
+
+/// 子进程 stdout/stderr 落盘（不吞）：`<data_dir>/logs/server-spawn.log`，
+/// 打包态与 dev 态同一位置，是「spawn 即死」类故障的唯一诊断面。
+fn open_spawn_log(data_dir: &std::path::Path) -> Option<std::fs::File> {
+    let log_dir = data_dir.join("logs");
+    std::fs::create_dir_all(&log_dir).ok()?;
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_dir.join("server-spawn.log"))
+        .ok()
+}
 
 /**
  * 确保服务端在 `config.port` 上健康：已健康 → 复用不 spawn；
@@ -279,14 +306,31 @@ pub fn ensure_server_running(
         return Ok(ServerLaunch::Reused);
     }
 
+    let spawn_log = open_spawn_log(&config.data_dir);
+    let stderr = match &spawn_log {
+        Some(file) => Stdio::from(file.try_clone().map_err(LifecycleError::Spawn)?),
+        None => Stdio::null(),
+    };
+    let stdout = match spawn_log {
+        Some(file) => Stdio::from(file.try_clone().map_err(LifecycleError::Spawn)?),
+        None => Stdio::null(),
+    };
+
     let mut command = Command::new(&config.command);
     command
         .args(&config.args)
         .current_dir(&config.cwd)
         .env("LOOMIC_DATA_DIR", &config.data_dir)
         .envs(config.env.iter().map(|(key, value)| (key, value)))
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stdout(stdout)
+        .stderr(stderr);
+    // Unix 收树的前提：子进程必须是**进程组组长**（pgid = 自己的 pid），
+    // 否则 `kill -KILL -{pid}` 报「No such process」、后代（内嵌 Postgres）全部变孤儿。
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
     // 桌面壳是 GUI 进程（`windows_subsystem = "windows"`，本身没有控制台）；不给子进程
     // 加这个标志，Windows 会**为子进程新开一个控制台窗口**——用户看到的就是那个一闪而过
     // 或常驻的黑框 cmd 提示符（2026-09-17 用户明确要求去掉）。
@@ -323,10 +367,19 @@ pub fn ensure_server_running(
             job,
         })),
         Err(probe) => {
-            // 探活失败不留半启动态：立刻回收子进程再报错
+            // 探活失败不留半启动态：回收子进程；若子进程早已退出，把退出状态
+            // 写进错误（「包名拼错/依赖没建」这类秒死故障一眼可诊，不再干等盲猜）
+            let child_status = child
+                .try_wait()
+                .map(|status| status.map_or("仍在运行".to_string(), |s| s.to_string()))
+                .unwrap_or_else(|_| "未知（wait 失败）".to_string());
             let _ = child.kill();
             let _ = child.wait();
-            Err(LifecycleError::Probe(probe))
+            Err(LifecycleError::ProbeChildExited {
+                probe,
+                child_status,
+                log_path: config.data_dir.join("logs").join("server-spawn.log"),
+            })
         }
     }
 }

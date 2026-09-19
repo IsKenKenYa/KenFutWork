@@ -8,6 +8,17 @@ import { WebSocket } from "ws";
 
 import { registerWsRoute } from "./handler.js";
 
+// 环境预检：node-pty 在沙箱/部分 CI 里无法创建 pty（posix_spawnp failed）——
+// 不可用即跳过终端会话用例（真机/正常终端不受影响）。
+let ptyAvailable = true;
+try {
+  const { spawn } = await import("node-pty");
+  const probe = spawn("/bin/true", [], { name: "xterm-256color" });
+  probe.kill();
+} catch {
+  ptyAvailable = false;
+}
+
 /**
  * WS 早期消息回归测试。
  *
@@ -196,7 +207,7 @@ describe("WS 早期消息不丢失（回归）", () => {
  * 单元层面 `terminal-session` 已经验过常驻 shell 的性质（cd 保留、REPL）；这里验的是
  * **接线**：命令解析、归属校验、ack 与 output/exit 的投递、以及连接断开时收掉会话。
  */
-describe("终端会话（WS 通道）", () => {
+describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
   /** 连上并返回一个「发命令 + 等消息」的小客户端。 */
   async function connect(port: number) {
     const client = new WebSocket(

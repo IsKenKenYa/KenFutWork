@@ -65,6 +65,7 @@ function buildGenerateApp() {
         checkVideoResolution: () => {},
       } as never,
       jobs: jobService as never,
+      modelProviders: {} as never,
       viewer: {
         ensureViewer: async () => ({ workspace: { id: "ws-1" } }),
       } as never,
@@ -81,10 +82,16 @@ describe("直连生成：会话上下文落进 job 行（§4.8 占位符渲染�
       const response = await app.inject({
         method: "POST",
         url: "/api/agent/generate-video",
-        payload: { prompt: "一只猫在跑", sessionId: SESSION_ID },
+        payload: {
+          prompt: "一只猫在跑",
+          model: "seedance-1-0-pro-250528",
+          providerInstanceId: "11111111-2222-3333-8444-555555555555",
+          sessionId: SESSION_ID,
+        },
       });
 
-      expect(response.statusCode).toBe(200);
+      expect(response.statusCode).toBe(202);
+      expect(response.json().job_id).toBeTruthy();
       expect(createdJobs).toHaveLength(1);
       expect(createdJobs[0]?.sessionId).toBe(SESSION_ID);
     } finally {
@@ -98,10 +105,14 @@ describe("直连生成：会话上下文落进 job 行（§4.8 占位符渲染�
       const response = await app.inject({
         method: "POST",
         url: "/api/agent/generate-video",
-        payload: { prompt: "一只猫在跑" },
+        payload: {
+          prompt: "一只猫在跑",
+          model: "seedance-1-0-pro-250528",
+          providerInstanceId: "11111111-2222-3333-8444-555555555555",
+        },
       });
 
-      expect(response.statusCode).toBe(200);
+      expect(response.statusCode).toBe(202);
       expect(createdJobs[0]).not.toHaveProperty("sessionId");
       expect(createdJobs[0]).not.toHaveProperty("threadId");
     } finally {
@@ -116,9 +127,14 @@ describe("直连生成：会话上下文落进 job 行（§4.8 占位符渲染�
       const accepted = await app.inject({
         method: "POST",
         url: "/api/agent/generate-video",
-        payload: { prompt: "一只猫在跑", sessionId: "client-made-session" },
+        payload: {
+          prompt: "一只猫在跑",
+          model: "seedance-1-0-pro-250528",
+          providerInstanceId: "11111111-2222-3333-8444-555555555555",
+          sessionId: "client-made-session",
+        },
       });
-      expect(accepted.statusCode).toBe(200);
+      expect(accepted.statusCode).toBe(202);
       expect(createdJobs[0]?.sessionId).toBe("client-made-session");
 
       const rejected = await app.inject({

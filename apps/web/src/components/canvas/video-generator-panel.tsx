@@ -14,7 +14,11 @@ import {
   type VideoGeneratorData,
 } from "../../lib/canvas-video-generator";
 import type { VideoModelInfo } from "../../lib/server-api";
-import { fetchVideoModels, generateVideoDirect } from "../../lib/server-api";
+import {
+  fetchJob,
+  fetchVideoModels,
+  generateVideoDirect,
+} from "../../lib/server-api";
 
 // No longer needs poster frame extraction -- videos use embeddable elements
 
@@ -275,7 +279,8 @@ export function VideoGeneratorPanel({
       if (firstFrame) inputImages.push(firstFrame.dataUrl);
       if (lastFrame) inputImages.push(lastFrame.dataUrl);
 
-      const result = await generateVideoDirect(
+      // S6：受理即返回（202），任务由 worker 异步执行——前端轮询 job 到终态
+      const submission = await generateVideoDirect(
         accessTokenRef.current,
         prompt.trim(),
         {
@@ -290,6 +295,65 @@ export function VideoGeneratorPanel({
 
       // Check if this generation was cancelled while awaiting
       if (controller.signal.aborted) return;
+
+      const POLL_INTERVAL_MS = 3000;
+      const MAX_WAIT_MS = 10 * 60 * 1000;
+      const pollStartedAt = Date.now();
+      let terminal: {
+        url: string;
+        assetId: string;
+        mimeType: string;
+        durationSeconds: number;
+      } | null = null;
+      let terminalError: string | null = null;
+      while (Date.now() - pollStartedAt < MAX_WAIT_MS) {
+        if (controller.signal.aborted) return;
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+        if (controller.signal.aborted) return;
+        const response = await fetchJob(
+          accessTokenRef.current,
+          submission.job_id,
+        );
+        const current = response.job;
+        if (
+          current.status === "succeeded" &&
+          current.result &&
+          typeof current.result.signed_url === "string"
+        ) {
+          terminal = {
+            url: current.result.signed_url as string,
+            assetId: current.result.asset_id as string,
+            mimeType:
+              typeof current.result.mime_type === "string"
+                ? current.result.mime_type
+                : "video/mp4",
+            durationSeconds:
+              typeof current.result.duration_seconds === "number"
+                ? current.result.duration_seconds
+                : 0,
+          };
+          break;
+        }
+        if (
+          current.status === "failed" ||
+          current.status === "dead_letter" ||
+          current.status === "canceled"
+        ) {
+          terminalError =
+            typeof current.error_message === "string"
+              ? current.error_message
+              : `任务终态：${current.status}`;
+          break;
+        }
+      }
+      if (controller.signal.aborted) return;
+      if (!terminal) {
+        throw new Error(
+          terminalError ??
+            "视频生成超时（10 分钟）仍未完成，请稍后在任务列表查看",
+        );
+      }
+      const result = terminal;
 
       // Create embeddable element for inline video playback on canvas.
       // Dynamic import -- excalidraw is client-only.

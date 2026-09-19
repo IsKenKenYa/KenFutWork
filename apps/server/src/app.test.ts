@@ -30,12 +30,7 @@ const AUTH_GATED_PROBES = [
 ] as const;
 
 /** 无认证门但必须装配的路由（注册完整性用 200 探针）。 */
-const PUBLIC_GET_ROUTES = [
-  "/api/health",
-  "/api/models",
-  "/api/image-models",
-  "/api/video-models",
-] as const;
+const PUBLIC_GET_ROUTES = ["/api/health", "/api/models"] as const;
 
 function buildProbeApp() {
   return buildApp({

@@ -15,7 +15,6 @@ async function setupProxy() {
 import { loadServerEnv } from "./config/env.js";
 import { startJobLoop } from "./features/jobs/job-loop.js";
 // Register all image/video providers via shared helper (keeps parity with app.ts)
-import { registerAllProviders } from "./generation/providers/register-all.js";
 import { composePlugins } from "./kernel/compose.js";
 import { workerProfile } from "./profiles/worker.js";
 
@@ -35,8 +34,6 @@ async function main() {
     );
     process.exit(1);
   }
-
-  registerAllProviders(env);
 
   // P7：worker 走内核装配（profiles/worker.ts 唯一插件清单）
   const kernel = composePlugins(env, workerProfile({ credentialEnv: env }));

@@ -65,10 +65,28 @@ export interface GeneratedVideo {
   durationSeconds: number;
 }
 
+/**
+ * 异步任务面的单次查询结果（五态归一到引擎关心的三态：
+ * queued/cancelled 由引擎与取消路径持有，provider 不产出）。
+ * `videoUrl` 为厂商产物 URL（mime 恒 video/mp4，与既有实现一致）。
+ */
+export type VideoAsyncPollResult =
+  | { state: "in_progress" }
+  | { state: "succeeded"; videoUrl: string }
+  | { state: "failed"; errorMessage: string };
+
 export interface VideoProvider {
   readonly name: string;
   readonly models: readonly VideoModelInfo[];
   generate(params: VideoGenerateParams): Promise<GeneratedVideo>;
+  /**
+   * 异步任务面（可选，S6）：submit 立即返回外部任务引用，由 executor 落库
+   * （`background_jobs.provider_job_id`）并经队列延迟消息承载轮询节奏——
+   * 实现里**禁止** while 轮询/自管重试。未实现时 executor 回落阻塞式
+   * `generate()`（遗留注册路径与 google 系 provider 保持不变）。
+   */
+  startAsync?(params: VideoGenerateParams): Promise<{ providerJobId: string }>;
+  pollAsync?(providerJobId: string): Promise<VideoAsyncPollResult>;
 }
 
 export interface VideoPriceRate {
@@ -89,6 +107,15 @@ export interface VideoPricingInfo {
   providerPointsName: string;
   evidenceDate: string;
   rates: readonly VideoPriceRate[];
+}
+
+/** Model info enriched with its owning provider name（生成工具清单条目）。 */
+export interface AvailableModel extends ModelInfo {
+  provider: string;
+}
+
+export interface AvailableVideoModel extends VideoModelInfo {
+  provider: string;
 }
 
 /** Extended model info with video-specific capabilities metadata. */

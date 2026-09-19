@@ -17,8 +17,50 @@ export const providerProtocolSchema = z.enum([
 ]);
 export type ProviderProtocol = z.infer<typeof providerProtocolSchema>;
 
-export const modelCapabilitySchema = z.enum(["chat", "image", "video"]);
+export const modelCapabilitySchema = z.enum([
+  "chat",
+  "image",
+  "image-edit",
+  "video",
+]);
 export type ModelCapability = z.infer<typeof modelCapabilitySchema>;
+
+/**
+ * 模型级任务能力声明（BYOK 用户/管理员对单个模型的可选细化，docs/future/05 §6）。
+ * 语义红线：**字段缺省 = 未知，不是不支持**——目录与 UI 不得把「没声明」当「肯定不行」
+ * 处理（kimi-code 的 UNKNOWN 语义）；只有显式声明的取值才可参与运行期裁剪。
+ */
+export const imageGenerationCapsSchema = z.object({
+  /** 支持的生成模式（cherry 词表收窄版；缺省视为仅 generate）。 */
+  modes: z
+    .array(z.enum(["generate", "edit", "upscale", "remix", "merge"]))
+    .min(1)
+    .optional(),
+  /** false = 该模型不需要提示词（超分/去背景/图像翻译类），管线不得强制非空 prompt。 */
+  requirePrompt: z.boolean().optional(),
+  /** 单次调用允许的输入参考图上限。 */
+  maxInputImages: z.number().int().nonnegative().optional(),
+});
+export type ImageGenerationCaps = z.infer<typeof imageGenerationCapsSchema>;
+
+/** 视频任务能力（fal per-model input schema 收窄版）。缺省字段同样 = 未知。 */
+export const videoGenerationCapsSchema = z.object({
+  /** 允许的时长取值（秒）。 */
+  durations: z.array(z.number().positive()).min(1).optional(),
+  /** 允许的画幅比取值（如 "16:9"）。 */
+  aspectRatios: z.array(z.string().min(1)).min(1).optional(),
+  /** 允许的分辨率取值（如 "720p"）。 */
+  resolutions: z.array(z.string().min(1)).min(1).optional(),
+  /** 是否支持首尾帧控制。 */
+  firstLastFrame: z.boolean().optional(),
+  /** 参考图数量上限。 */
+  referenceImages: z.number().int().nonnegative().optional(),
+  /** 是否支持负向提示词。 */
+  negativePrompt: z.boolean().optional(),
+  /** 是否支持生成/保留音频。 */
+  audio: z.boolean().optional(),
+});
+export type VideoGenerationCaps = z.infer<typeof videoGenerationCapsSchema>;
 
 /** OpenAI 兼容网关的兼容性开关（按实例覆盖默认行为）。 */
 export const providerCompatSchema = z.object({
@@ -144,6 +186,34 @@ export const providerInstanceModelSchema = z.object({
    * 此前该字段会被 schema 静默丢弃（用户写了也传不到前端）。
    */
   maxOutputTokens: z.number().int().positive().optional(),
+  /**
+   * 思考档位声明（deepseek-harness 的 reasoningEfforts 收窄版：键=档位名）。
+   * 声明后「思考强度」选择器只显示这些档位（+恒在的「默认」）；缺席 = 全档位。
+   */
+  reasoningEfforts: z.array(z.string().min(1)).optional(),
+  /**
+   * 模型级开关（供应商详情里的行开关）：false = 从目录与选择器隐藏。
+   * 缺省 = 启用（存量模型行无此字段照常可用）。
+   */
+  enabled: z.boolean().optional(),
+  /** 输入模态（参考系：text / image / video / pdf）；缺省 = 未知不展示。 */
+  inputModalities: z.array(z.string().min(1)).optional(),
+  /** 支持 JSON Schema 结构化输出。 */
+  structuredOutput: z.boolean().optional(),
+  /** 支持模型端口的原生联网搜索。 */
+  nativeWebSearch: z.boolean().optional(),
+  /** 支持对话中注入系统消息。 */
+  systemMessage: z.boolean().optional(),
+  /**
+   * 推理参数映射（模型级请求体注入，deepseek-harness 的「档位→线上参数」通用解）：
+   * 键值原样并入请求体顶层（如 {"thinking":{"type":"enabled"}}）。
+   * BYOK 红线不适用——这是模型行为参数，不是凭证。
+   */
+  extraBody: z.record(z.string(), z.unknown()).optional(),
+  /** 图像生成任务级能力（可选；缺省 = 未知，见上方语义红线）。 */
+  imageGeneration: imageGenerationCapsSchema.optional(),
+  /** 视频生成任务级能力（可选；缺省 = 未知）。 */
+  videoGeneration: videoGenerationCapsSchema.optional(),
 });
 export type ProviderInstanceModel = z.infer<typeof providerInstanceModelSchema>;
 
@@ -211,6 +281,56 @@ export type ProviderScope = z.infer<typeof providerScopeSchema>;
  * 实例响应：只有 apiKeyRef 语义的 hasCredential 标记，绝无 key 本体。
  * `headerKeys` 同理——自定义头的**键名**可见，值一律不回显（与 MCP `env`/`envKeys` 同口径）。
  */
+/**
+ * models.dev 供应商预设（供应商设置的「从预设选择」，阶段：BYOK 预设选择器）。
+ * 非权威 UI 数据：capability 由模态推导，用户可在结构化编辑器里改。
+ */
+export const providerPresetSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  /** 官方 API 网关（预填 Base URL；缺席 = 用户手填）。 */
+  api: z.string().optional(),
+  doc: z.string().optional(),
+  /** Key 环境变量名（展示用，BYOK 仍手填 Key）。 */
+  env: z.array(z.string()),
+  models: z.array(
+    z.object({
+      id: z.string().min(1),
+      name: z.string().min(1),
+      capability: z.enum(["chat", "image", "video"]),
+    }),
+  ),
+});
+export type ProviderPreset = z.infer<typeof providerPresetSchema>;
+
+export const providerPresetListResponseSchema = z.object({
+  presets: z.array(providerPresetSchema),
+});
+export type ProviderPresetListResponse = z.infer<
+  typeof providerPresetListResponseSchema
+>;
+
+/**
+ * 实例能力探测结果（阶段 E，docs/future/05 §6.2）。
+ * 三态语义：true = 探测到支持 / false = 探测到不支持 / 缺席 = 未探测该项。
+ * 消费方按 false 裁剪请求；true 与缺席都按全能力尝试（fail open）。
+ */
+export const providerProbeResultSchema = z.object({
+  /** 流式响应带 usage 统计（`stream_options.include_usage`）。P0：缺失则用量盲区。 */
+  streamUsage: z.boolean().optional(),
+  /** 工具 function.parameters 接受 strict JSON Schema（additionalProperties 等）。 */
+  strictToolSchema: z.boolean().optional(),
+  /** OpenAI Responses API（`POST /responses`）可用。 */
+  responsesApi: z.boolean().optional(),
+  /** Anthropic `cache_control` 提示词缓存可透传（anthropic 协议实例）。 */
+  cacheControl: z.boolean().optional(),
+  /** 探测时间（ISO 字符串）。 */
+  probedAt: z.string().min(1),
+  /** 未通过/未探测项的原因摘要（脱敏，不含 key）。 */
+  notes: z.array(z.string()).optional(),
+});
+export type ProviderProbeResult = z.infer<typeof providerProbeResultSchema>;
+
 export const providerInstanceResponseSchema = z.object({
   id: identifier,
   scope: providerScopeSchema,
@@ -222,6 +342,8 @@ export const providerInstanceResponseSchema = z.object({
   compat: providerCompatSchema.optional(),
   headerKeys: z.array(z.string()),
   enabled: z.boolean(),
+  /** 最近一次能力探测结果（显式触发探测后才有；字段缺省 = 未探测 = 不裁剪）。 */
+  probe: providerProbeResultSchema.optional(),
 });
 export type ProviderInstanceResponse = z.infer<
   typeof providerInstanceResponseSchema
@@ -236,12 +358,33 @@ export type ProviderInstanceListResponse = z.infer<
 
 // --- 模型目录（modelCatalog 从用户实例推导） ---
 
+/**
+ * 目录条目的能力 hints（models.dev 快照，docs/future/05 §4）。
+ * 非权威 UI 提示：**只携带用户模型行上未声明的字段**（声明过的绝不进 hints，
+ * 避免「同一字段两个来源」的歧义）；条目上缺 hints = 快照未收录该模型——
+ * 语义是「未知」，不是「不支持」，消费方不得据此降级。
+ */
+export const modelCatalogHintsSchema = z.object({
+  source: z.literal("models-dev"),
+  /** 快照内的 provider 键（同 id 多 provider 时按协议偏好命中，出处透出便于复核）。 */
+  snapshotProvider: z.string().min(1),
+  contextWindow: z.number().int().positive().optional(),
+  maxOutputTokens: z.number().int().positive().optional(),
+  /** 快照输入模态含 image（vision 徽标的补缺来源）。 */
+  imageInput: z.boolean().optional(),
+  toolCall: z.boolean().optional(),
+  reasoning: z.boolean().optional(),
+});
+export type ModelCatalogHints = z.infer<typeof modelCatalogHintsSchema>;
+
 export const modelCatalogEntrySchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   capability: modelCapabilitySchema,
   /** 原始实例模型（vision / contextWindow 透传用）。 */
   model: providerInstanceModelSchema,
+  /** models.dev 快照补缺（可选；用户声明永远优先，见 modelCatalogHintsSchema）。 */
+  hints: modelCatalogHintsSchema.optional(),
   provider: z.object({
     instanceId: identifier,
     name: z.string().min(1),

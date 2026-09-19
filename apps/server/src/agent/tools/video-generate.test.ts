@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { AvailableVideoModel } from "../../generation/providers/registry.js";
+import type { AvailableVideoModel } from "../../generation/types.js";
 import { runVideoGenerate, type SubmitVideoJobFn } from "./video-generate.js";
 
 const metasoModel: AvailableVideoModel = {
@@ -48,7 +48,7 @@ describe("runVideoGenerate capability enforcement", () => {
       mimeType: "video/mp4",
     });
 
-    await runVideoGenerate(input(), submit, [metasoModel]);
+    await runVideoGenerate(input(), [metasoModel], submit);
 
     expect(submit).toHaveBeenCalledOnce();
     expect(submit.mock.calls[0]?.[0]).not.toHaveProperty("enableAudio");
@@ -59,8 +59,8 @@ describe("runVideoGenerate capability enforcement", () => {
 
     const videoResult = await runVideoGenerate(
       input({ inputVideo: "https://cdn.example/source.mp4" }),
-      submit,
       [metasoModel],
+      submit,
     );
     const imageResult = await runVideoGenerate(
       input({
@@ -70,8 +70,8 @@ describe("runVideoGenerate capability enforcement", () => {
           "https://cdn.example/3.png",
         ],
       }),
-      submit,
       [metasoModel],
+      submit,
     );
 
     expect(videoResult.error).toContain("reference-video");

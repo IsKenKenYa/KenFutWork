@@ -18,6 +18,10 @@ import {
 import type { BlobStore } from "../features/blob/types.js";
 import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
 import type { CanvasRepository } from "../features/canvas/repository.js";
+import type {
+  AvailableModel,
+  AvailableVideoModel,
+} from "../generation/types.js";
 import type { ToolDefinition, ToolExecutionContext } from "../kernel/types.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import type { CompactionPlan } from "./auto-compact.js";
@@ -255,6 +259,9 @@ export type KenFutWorkAgentFactory = (options: {
 
   submitImageJob?: SubmitImageJobFn;
   submitVideoJob?: SubmitVideoJobFn;
+  /** 工作区实例模型清单（BYOK specifier）：生成工具的 schema 与校验来源。 */
+  availableImageModels?: AvailableModel[];
+  availableVideoModels?: AvailableVideoModel[];
   store?: BaseStore;
   workspaceSkills?: WorkspaceSkillEntry[];
   /** 内核 ctx.tools 贡献的工具（按 preset 过滤后），桥接为模型可调用工具。 */
@@ -297,6 +304,9 @@ export function createKenFutWorkDeepAgent(options: {
 
   submitImageJob?: SubmitImageJobFn;
   submitVideoJob?: SubmitVideoJobFn;
+  /** 工作区实例模型清单（BYOK specifier）：生成工具的 schema 与校验来源。 */
+  availableImageModels?: AvailableModel[];
+  availableVideoModels?: AvailableVideoModel[];
   store?: BaseStore;
   workspaceSkills?: WorkspaceSkillEntry[];
   kernelTools?: ToolDefinition[];
@@ -390,6 +400,12 @@ export function createKenFutWorkDeepAgent(options: {
       ...(options.submitVideoJob
         ? { submitVideoJob: options.submitVideoJob }
         : {}),
+      ...(options.availableImageModels
+        ? { availableImageModels: options.availableImageModels }
+        : {}),
+      ...(options.availableVideoModels
+        ? { availableVideoModels: options.availableVideoModels }
+        : {}),
     }),
     ...bridgeKernelTools(
       options.kernelTools ?? [],
@@ -426,7 +442,7 @@ export function createKenFutWorkDeepAgent(options: {
     name: "kenfutwork",
     ...(options.store ? { store: options.store } : {}),
     // 与设置页「子智能体」同一份清单（见 sub-agents.ts），界面与装配不允许漂移
-    subagents: declaredSubAgentSpecs(),
+    subagents: declaredSubAgentSpecs(options.availableVideoModels ?? []),
     systemPrompt,
     // 待办表（`write_todos`）：deepagents 只在它的 Codex profile 里挂 todoListMiddleware，
     // 非 Codex 模型默认**没有这个工具**——不挂的话「目标 + 进度」面板永远没有数据源，

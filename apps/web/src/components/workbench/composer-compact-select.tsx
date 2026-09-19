@@ -274,3 +274,21 @@ export function ComposerCompactSelect({
     </span>
   );
 }
+
+/**
+ * 思考档位过滤：模型声明了 reasoningEfforts（供应商模型行）时只显示这些
+ * 档位（「默认」恒在）；未声明 = 全档位。声明值与档位 value 精确匹配。
+ */
+export function thinkingOptionsFor(
+  model: { reasoningEfforts?: string[] | undefined } | undefined,
+  allOptions: readonly { value: string; label: string; hint?: string }[],
+): { value: string; label: string; hint?: string }[] {
+  const declared = model?.reasoningEfforts;
+  if (!declared || declared.length === 0) {
+    return [...allOptions];
+  }
+  const declaredSet = new Set(declared);
+  return allOptions.filter(
+    (option) => option.value === "default" || declaredSet.has(option.value),
+  );
+}

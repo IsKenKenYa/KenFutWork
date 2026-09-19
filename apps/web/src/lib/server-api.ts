@@ -369,23 +369,6 @@ export async function updatePermissionSettings(
   return (await response.json()) as PermissionSettingsView;
 }
 
-/** @deprecated 用 fetchPermissionSettings（这里只回旧形状里的 tier）。 */
-export async function fetchPermissionTier(
-  accessToken: string,
-): Promise<{ tier: PermissionTier }> {
-  const settings = await fetchPermissionSettings(accessToken);
-  return { tier: settings.tier };
-}
-
-/** @deprecated 用 updatePermissionSettings。 */
-export async function updatePermissionTier(
-  accessToken: string,
-  tier: PermissionTier,
-): Promise<{ tier: PermissionTier }> {
-  const settings = await updatePermissionSettings(accessToken, { tier });
-  return { tier: settings.tier };
-}
-
 export async function approveToolPermission(
   accessToken: string,
   input: {
@@ -676,6 +659,35 @@ export type VideoModelInfo = {
   };
 };
 
+export type ProviderPresetModel = {
+  id: string;
+  name: string;
+  capability: "chat" | "image" | "video";
+};
+
+export type ProviderPreset = {
+  id: string;
+  name: string;
+  api?: string;
+  doc?: string;
+  env: string[];
+  models: ProviderPresetModel[];
+};
+
+/** models.dev 供应商预设（供应商设置「从预设选择」；需登录）。 */
+export async function fetchProviderPresets(
+  accessToken: string,
+): Promise<{ presets: ProviderPreset[] }> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/provider-instances/presets`,
+    { headers: authJsonHeaders(accessToken) },
+  );
+  if (!response.ok) {
+    throw new Error(`Failed to fetch provider presets: ${response.status}`);
+  }
+  return (await response.json()) as { presets: ProviderPreset[] };
+}
+
 export async function fetchVideoModels(): Promise<{
   models: VideoModelInfo[];
 }> {
@@ -715,14 +727,14 @@ export async function generateImageDirect(
   return (await response.json()) as GenerateImageResponse;
 }
 
-export type GenerateVideoResponse = {
-  url: string;
-  assetId: string;
+/**
+ * 视频生成受理（202）：任务由 worker 异步执行（异步任务面 submit + 队列轮询），
+ * 进度经 fetchJob 轮询到终态。S6 之前是 HTTP 内挂起等 5 分钟，已退役。
+ */
+export type GenerateVideoSubmission = {
+  job_id: string;
+  status: string;
   prompt: string;
-  mimeType: string;
-  width: number;
-  height: number;
-  durationSeconds: number;
 };
 
 export async function generateVideoDirect(
@@ -737,7 +749,7 @@ export async function generateVideoDirect(
     /** 会话标识（§4.8）：随任务落库，worker 侧按它渲染自定义头占位符。 */
     sessionId?: string;
   },
-): Promise<GenerateVideoResponse> {
+): Promise<GenerateVideoSubmission> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/agent/generate-video`,
     {
@@ -757,7 +769,7 @@ export async function generateVideoDirect(
     },
   );
   if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as GenerateVideoResponse;
+  return (await response.json()) as GenerateVideoSubmission;
 }
 
 // --- Jobs API ---

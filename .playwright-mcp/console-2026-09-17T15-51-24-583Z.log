@@ -1,0 +1,69 @@
+[     133ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[     180ms] [LOG] [HMR] connected @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[     461ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[    1062ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/auth/session:0
+[    1187ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/auth/session:0
+[    1188ms] [LOG] [Fast Refresh] done in 918ms @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[    1340ms] [WARNING] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[    1441ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3000/login:0
+[   32997ms] [WARNING] WebSocket connection to 'ws://localhost:3001/api/ws?token=Hc-_jYui0KgxmORdhEVGYh49X3EFf2GEqNSUdX7S-98&connectionId=0df0aec4-d80c-4743-96ba-ae4e3a641e4b' failed: WebSocket is closed before the connection is established. @ http://localhost:3000/_next/static/chunks/apps_web_src_14fjz5b._.js:243
+[   33053ms] [LOG] [ws] connected, connectionId: 0df0aec4-d80c-4743-96ba-ae4e3a641e4b @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  246934ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  247016ms] [LOG] [ws] scheduling reconnect attempt 1 in 1000ms (code: 1005) @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  247893ms] [LOG] [Fast Refresh] done in 1061ms @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  248019ms] [ERROR] WebSocket connection to 'ws://localhost:3001/api/ws?token=Hc-_jYui0KgxmORdhEVGYh49X3EFf2GEqNSUdX7S-98&connectionId=0df0aec4-d80c-4743-96ba-ae4e3a641e4b' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/apps_web_src_14fjz5b._.js:120
+[  248020ms] [LOG] [ws] scheduling reconnect attempt 2 in 2000ms (code: 1006) @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  250060ms] [ERROR] WebSocket connection to 'ws://localhost:3001/api/ws?token=Hc-_jYui0KgxmORdhEVGYh49X3EFf2GEqNSUdX7S-98&connectionId=0df0aec4-d80c-4743-96ba-ae4e3a641e4b' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/apps_web_src_14fjz5b._.js:120
+[  250060ms] [LOG] [ws] scheduling reconnect attempt 3 in 4000ms (code: 1006) @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  250291ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  250330ms] [LOG] [HMR] connected @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  250430ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/auth/session:0
+[  250433ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/auth/session:0
+[  250530ms] [WARNING] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  250628ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3000/login:0
+[  310499ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  310517ms] [LOG] [HMR] connected @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  310745ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  310786ms] [WARNING] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  310814ms] [WARNING] WebSocket connection to 'ws://localhost:3001/api/ws?token=Hc-_jYui0KgxmORdhEVGYh49X3EFf2GEqNSUdX7S-98&connectionId=0df0aec4-d80c-4743-96ba-ae4e3a641e4b' failed: WebSocket is closed before the connection is established. @ http://localhost:3000/_next/static/chunks/apps_web_src_14fjz5b._.js:243
+[  310879ms] [LOG] [ws] connected, connectionId: 0df0aec4-d80c-4743-96ba-ae4e3a641e4b @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  311031ms] [LOG] [Fast Refresh] done in 398ms @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  381782ms] [LOG] [ws] scheduling reconnect attempt 1 in 1000ms (code: 1005) @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  382784ms] [ERROR] WebSocket connection to 'ws://localhost:3001/api/ws?token=Hc-_jYui0KgxmORdhEVGYh49X3EFf2GEqNSUdX7S-98&connectionId=0df0aec4-d80c-4743-96ba-ae4e3a641e4b' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/apps_web_src_14fjz5b._.js:120
+[  382785ms] [LOG] [ws] scheduling reconnect attempt 2 in 2000ms (code: 1006) @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  384791ms] [LOG] [ws] connected, connectionId: 0df0aec4-d80c-4743-96ba-ae4e3a641e4b @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  463773ms] [LOG] [ws] scheduling reconnect attempt 1 in 1000ms (code: 1005) @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  464776ms] [ERROR] WebSocket connection to 'ws://localhost:3001/api/ws?token=Hc-_jYui0KgxmORdhEVGYh49X3EFf2GEqNSUdX7S-98&connectionId=0df0aec4-d80c-4743-96ba-ae4e3a641e4b' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/apps_web_src_14fjz5b._.js:120
+[  464776ms] [LOG] [ws] scheduling reconnect attempt 2 in 2000ms (code: 1006) @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  466783ms] [LOG] [ws] connected, connectionId: 0df0aec4-d80c-4743-96ba-ae4e3a641e4b @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  569983ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  570017ms] [LOG] [ws] scheduling reconnect attempt 1 in 1000ms (code: 1005) @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  570301ms] [LOG] [Fast Refresh] done in 343ms @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  571018ms] [ERROR] WebSocket connection to 'ws://localhost:3001/api/ws?token=Hc-_jYui0KgxmORdhEVGYh49X3EFf2GEqNSUdX7S-98&connectionId=0df0aec4-d80c-4743-96ba-ae4e3a641e4b' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/apps_web_src_14fjz5b._.js:120
+[  571018ms] [LOG] [ws] scheduling reconnect attempt 2 in 2000ms (code: 1006) @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  573023ms] [LOG] [ws] connected, connectionId: 0df0aec4-d80c-4743-96ba-ae4e3a641e4b @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  727757ms] [LOG] [ws] scheduling reconnect attempt 1 in 1000ms (code: 1005) @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  728807ms] [ERROR] WebSocket connection to 'ws://localhost:3001/api/ws?token=Hc-_jYui0KgxmORdhEVGYh49X3EFf2GEqNSUdX7S-98&connectionId=0df0aec4-d80c-4743-96ba-ae4e3a641e4b' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/apps_web_src_14fjz5b._.js:120
+[  728808ms] [LOG] [ws] scheduling reconnect attempt 2 in 2000ms (code: 1006) @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  730818ms] [LOG] [ws] connected, connectionId: 0df0aec4-d80c-4743-96ba-ae4e3a641e4b @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[  889712ms] [LOG] [Fast Refresh] done in 343ms @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[ 1364992ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[ 1365038ms] [LOG] [ws] scheduling reconnect attempt 1 in 1000ms (code: 1005) @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[ 1365107ms] [LOG] [Fast Refresh] done in 218ms @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[ 1366080ms] [ERROR] WebSocket connection to 'ws://localhost:3001/api/ws?token=Hc-_jYui0KgxmORdhEVGYh49X3EFf2GEqNSUdX7S-98&connectionId=0df0aec4-d80c-4743-96ba-ae4e3a641e4b' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/apps_web_src_14fjz5b._.js:120
+[ 1366080ms] [LOG] [ws] scheduling reconnect attempt 2 in 2000ms (code: 1006) @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[ 1368095ms] [LOG] [ws] connected, connectionId: 0df0aec4-d80c-4743-96ba-ae4e3a641e4b @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[ 1394440ms] [LOG] [ws] scheduling reconnect attempt 1 in 1000ms (code: 1005) @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[ 1395449ms] [ERROR] WebSocket connection to 'ws://localhost:3001/api/ws?token=Hc-_jYui0KgxmORdhEVGYh49X3EFf2GEqNSUdX7S-98&connectionId=0df0aec4-d80c-4743-96ba-ae4e3a641e4b' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/apps_web_src_14fjz5b._.js:120
+[ 1395449ms] [LOG] [ws] scheduling reconnect attempt 2 in 2000ms (code: 1006) @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[ 1397460ms] [LOG] [ws] connected, connectionId: 0df0aec4-d80c-4743-96ba-ae4e3a641e4b @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[ 1427517ms] [LOG] [ws] scheduling reconnect attempt 1 in 1000ms (code: 1005) @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[ 1428520ms] [ERROR] WebSocket connection to 'ws://localhost:3001/api/ws?token=Hc-_jYui0KgxmORdhEVGYh49X3EFf2GEqNSUdX7S-98&connectionId=0df0aec4-d80c-4743-96ba-ae4e3a641e4b' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/apps_web_src_14fjz5b._.js:120
+[ 1428520ms] [LOG] [ws] scheduling reconnect attempt 2 in 2000ms (code: 1006) @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[ 1430531ms] [LOG] [ws] connected, connectionId: 0df0aec4-d80c-4743-96ba-ae4e3a641e4b @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[ 1513657ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[ 1513774ms] [LOG] [Fast Refresh] done in 51ms @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[ 1513866ms] [LOG] [ws] scheduling reconnect attempt 1 in 1000ms (code: 1005) @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[ 1514869ms] [ERROR] WebSocket connection to 'ws://localhost:3001/api/ws?token=Hc-_jYui0KgxmORdhEVGYh49X3EFf2GEqNSUdX7S-98&connectionId=0df0aec4-d80c-4743-96ba-ae4e3a641e4b' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/apps_web_src_14fjz5b._.js:120
+[ 1514869ms] [LOG] [ws] scheduling reconnect attempt 2 in 2000ms (code: 1006) @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776
+[ 1516880ms] [LOG] [ws] connected, connectionId: 0df0aec4-d80c-4743-96ba-ae4e3a641e4b @ http://localhost:3000/_next/static/chunks/18mx_next_dist_0yiq1rl._.js:776

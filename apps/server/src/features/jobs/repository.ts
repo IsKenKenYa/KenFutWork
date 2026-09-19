@@ -16,6 +16,7 @@ export type BackgroundJobRecord = {
   error_message: string | null;
   attempt_count: number;
   max_attempts: number;
+  provider_job_id: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -105,10 +106,17 @@ export interface JobRepository {
     creditsCost: number,
     transactionId: string,
   ): Promise<number>;
+  /** submit 成功后落外部厂商任务引用（崩溃恢复：重启后据此续 poll）。 */
+  setProviderJobId(jobId: string, providerJobId: string): Promise<number>;
+  /** 任务执行上下文补充（如 provider_config_revision）：浅合并进 payload。 */
+  appendJobPayload(
+    jobId: string,
+    fields: Record<string, unknown>,
+  ): Promise<number>;
 }
 
 const JOB_COLUMNS =
-  "id, workspace_id, project_id, canvas_id, session_id, thread_id, queue_name, job_type, status, payload, result, error_code, error_message, attempt_count, max_attempts, created_by, created_at, updated_at, started_at, completed_at, failed_at, canceled_at";
+  "id, workspace_id, project_id, canvas_id, session_id, thread_id, queue_name, job_type, status, payload, result, error_code, error_message, attempt_count, max_attempts, provider_job_id, created_by, created_at, updated_at, started_at, completed_at, failed_at, canceled_at";
 
 const LIST_LIMIT = 50;
 
@@ -241,6 +249,25 @@ export function createJobRepository(
         creditsCost: row.credits_cost ?? 0,
         workspaceId: row.workspace_id,
       };
+    },
+
+    async setProviderJobId(jobId, providerJobId) {
+      return persistence.execute(
+        `update public.background_jobs
+            set provider_job_id = $2
+          where id = $1`,
+        [jobId, providerJobId],
+      );
+    },
+
+    async appendJobPayload(jobId, fields) {
+      // jsonb || 浅合并：与既有 payload 字段并存，不整体替换
+      return persistence.execute(
+        `update public.background_jobs
+            set payload = payload || $2::jsonb
+          where id = $1`,
+        [jobId, JSON.stringify(fields)],
+      );
     },
 
     async setCreditsInfo(jobId, creditsCost, transactionId) {

@@ -52,5 +52,7 @@ export function createInstanceVideoProvider(
       },
     })),
     generate: (params) => delegate.generate(params),
+    startAsync: (params) => delegate.startAsync(params),
+    pollAsync: (providerJobId) => delegate.pollAsync(providerJobId),
   };
 }

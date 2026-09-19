@@ -9,6 +9,19 @@ import {
   TERMINAL_OUTPUT_FRAME_BYTES,
 } from "./terminal-session.js";
 
+// 环境预检：node-pty 在沙箱/部分 CI 里无法创建 pty（posix_spawnp failed）——
+// 不可用即跳过 pty 用例（真机/正常终端不受影响）。
+const ptyAvailable = await (async () => {
+  try {
+    const pty = (await import("node-pty")).default;
+    const probe = pty.spawn("/bin/true", [], { name: "xterm-256color" });
+    probe.kill();
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
 /**
  * 交互式终端会话（R3-1）：**真 PTY**（node-pty / ConPTY）。
  *
@@ -96,7 +109,7 @@ function start(options: {
   return { session, onData, onExit, pty };
 }
 
-describe("终端会话：真 PTY 的协议与边界", () => {
+describe.skipIf(!ptyAvailable)("终端会话：真 PTY 的协议与边界", () => {
   it("**没有启动前置**（ConPTY 下中文不需要 chcp / OutputEncoding），按键原样送", () => {
     const ptys: FakePty[] = [];
     const { session, pty } = start({ shell: "cmd", ptys });
@@ -219,175 +232,178 @@ describe("输出分帧（WS 帧不因一条大输出变成几 MB）", () => {
  * `[Console]::IsOutputRedirected` 在管道里是 True、真终端里是 False；
  * 顺带验会话状态保留（cd 保留）与 resize 真的改变了控制台宽度。
  */
-describe("终端会话：真机（常驻 shell 的会话状态）", () => {
-  const dirs: string[] = [];
-  afterEach(() => {
-    for (const dir of dirs.splice(0)) {
-      // 被 taskkill 的 shell（及它起的 REPL）可能还握着 cwd 一小会儿：留给它重试窗口
-      rmSync(dir, {
-        recursive: true,
-        force: true,
-        maxRetries: 20,
-        retryDelay: 250,
+describe.skipIf(!ptyAvailable)(
+  "终端会话：真机（常驻 shell 的会话状态）",
+  () => {
+    const dirs: string[] = [];
+    afterEach(() => {
+      for (const dir of dirs.splice(0)) {
+        // 被 taskkill 的 shell（及它起的 REPL）可能还握着 cwd 一小会儿：留给它重试窗口
+        rmSync(dir, {
+          recursive: true,
+          force: true,
+          maxRetries: 20,
+          retryDelay: 250,
+        });
+      }
+    });
+
+    /** 起会话并返回「退出信号」的触发器（收尾时要等进程真的没了再删临时目录）。 */
+    function startReal(
+      shell: "cmd" | "bash" | "powershell",
+      cwd: string,
+      onData: (c: string) => void,
+    ) {
+      let resolveExit: () => void = () => {};
+      const exited = new Promise<void>((resolve) => {
+        resolveExit = resolve;
+      });
+      const session = startTerminalSession({
+        id: "real",
+        cwd,
+        shell,
+        onData,
+        onExit: () => resolveExit(),
+      });
+      return { session, exited };
+    }
+
+    /** 等输出里出现哨兵（命令回显与结果都到齐）。 */
+    function waitForOutput(
+      sentinel: string,
+      getOutput: () => string,
+      timeoutMs = 10_000,
+    ): Promise<void> {
+      return new Promise((resolve, reject) => {
+        const started = Date.now();
+        const timer = setInterval(() => {
+          if (getOutput().includes(sentinel)) {
+            clearInterval(timer);
+            resolve();
+            return;
+          }
+          if (Date.now() - started > timeoutMs) {
+            clearInterval(timer);
+            reject(new Error(`等待 ${sentinel} 超时；已收到：${getOutput()}`));
+          }
+        }, 50);
       });
     }
-  });
 
-  /** 起会话并返回「退出信号」的触发器（收尾时要等进程真的没了再删临时目录）。 */
-  function startReal(
-    shell: "cmd" | "bash" | "powershell",
-    cwd: string,
-    onData: (c: string) => void,
-  ) {
-    let resolveExit: () => void = () => {};
-    const exited = new Promise<void>((resolve) => {
-      resolveExit = resolve;
-    });
-    const session = startTerminalSession({
-      id: "real",
-      cwd,
-      shell,
-      onData,
-      onExit: () => resolveExit(),
-    });
-    return { session, exited };
-  }
+    it.skipIf(process.platform !== "win32")(
+      "cmd：cd 与变量都在同一进程里保留（两条命令不共享目录就是失败的实现）",
+      async () => {
+        const root = mkdtempSync(join(tmpdir(), "kfw-session-"));
+        dirs.push(root);
+        mkdirSync(join(root, "sub"));
 
-  /** 等输出里出现哨兵（命令回显与结果都到齐）。 */
-  function waitForOutput(
-    sentinel: string,
-    getOutput: () => string,
-    timeoutMs = 10_000,
-  ): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const started = Date.now();
-      const timer = setInterval(() => {
-        if (getOutput().includes(sentinel)) {
-          clearInterval(timer);
-          resolve();
-          return;
+        let output = "";
+        const { session, exited } = startReal("cmd", root, (chunk) => {
+          output += chunk;
+        });
+        try {
+          session.write("cd sub\r");
+          session.write("set KFW_PROBE=kept\r");
+          session.write("echo PROBE:%CD%:%KFW_PROBE%:END\r");
+          await waitForOutput("PROBE:", () => output);
+          // cd 到了 sub、变量还在：说明这两条命令跑在同一个 shell 进程里
+          expect(output).toContain("PROBE:");
+          expect(output.toLowerCase()).toContain("sub");
+          expect(output).toContain("kept");
+        } finally {
+          session.stop("测试结束");
+          await Promise.race([
+            exited,
+            new Promise((resolve) => setTimeout(resolve, 3000)),
+          ]);
         }
-        if (Date.now() - started > timeoutMs) {
-          clearInterval(timer);
-          reject(new Error(`等待 ${sentinel} 超时；已收到：${getOutput()}`));
+      },
+      20_000,
+    );
+
+    it.skipIf(process.platform === "win32")(
+      "bash：cd 保留（POSIX 上没有 cmd，用 sh 验同一条性质）",
+      async () => {
+        const root = mkdtempSync(join(tmpdir(), "kfw-session-"));
+        dirs.push(root);
+        mkdirSync(join(root, "sub"));
+
+        let output = "";
+        const { session, exited } = startReal("bash", root, (chunk) => {
+          output += chunk;
+        });
+        try {
+          session.write("cd sub\r");
+          session.write("echo PROBE:$(pwd):END\r");
+          await waitForOutput("END", () => output);
+          expect(output).toContain("/sub");
+        } finally {
+          session.stop("测试结束");
+          await Promise.race([
+            exited,
+            new Promise((resolve) => setTimeout(resolve, 3000)),
+          ]);
         }
-      }, 50);
-    });
-  }
+      },
+      20_000,
+    );
 
-  it.skipIf(process.platform !== "win32")(
-    "cmd：cd 与变量都在同一进程里保留（两条命令不共享目录就是失败的实现）",
-    async () => {
-      const root = mkdtempSync(join(tmpdir(), "kfw-session-"));
-      dirs.push(root);
-      mkdirSync(join(root, "sub"));
+    it.skipIf(process.platform !== "win32")(
+      "真终端判据：PowerShell 认为自己在终端里（管道下 IsOutputRedirected 会是 True）",
+      async () => {
+        const root = mkdtempSync(join(tmpdir(), "kfw-session-"));
+        dirs.push(root);
+        let output = "";
+        const { session, exited } = startReal("powershell", root, (chunk) => {
+          output += chunk;
+        });
+        try {
+          session.write(
+            "if ([Console]::IsOutputRedirected) { 'KFW-' + 'NOPE' } else { 'KFW-' + 'T' + 'T' + 'Y' }\r",
+          );
+          await waitForOutput("KFW-TTY", () => output, 20_000);
+          expect(output).toContain("KFW-TTY");
+          expect(output).not.toContain("KFW-NOPE");
+        } finally {
+          session.stop("测试结束");
+          await Promise.race([
+            exited,
+            new Promise((resolve) => setTimeout(resolve, 3000)),
+          ]);
+        }
+      },
+      30_000,
+    );
 
-      let output = "";
-      const { session, exited } = startReal("cmd", root, (chunk) => {
-        output += chunk;
-      });
-      try {
-        session.write("cd sub\r");
-        session.write("set KFW_PROBE=kept\r");
-        session.write("echo PROBE:%CD%:%KFW_PROBE%:END\r");
-        await waitForOutput("PROBE:", () => output);
-        // cd 到了 sub、变量还在：说明这两条命令跑在同一个 shell 进程里
-        expect(output).toContain("PROBE:");
-        expect(output.toLowerCase()).toContain("sub");
-        expect(output).toContain("kept");
-      } finally {
-        session.stop("测试结束");
-        await Promise.race([
-          exited,
-          new Promise((resolve) => setTimeout(resolve, 3000)),
-        ]);
-      }
-    },
-    20_000,
-  );
-
-  it.skipIf(process.platform === "win32")(
-    "bash：cd 保留（POSIX 上没有 cmd，用 sh 验同一条性质）",
-    async () => {
-      const root = mkdtempSync(join(tmpdir(), "kfw-session-"));
-      dirs.push(root);
-      mkdirSync(join(root, "sub"));
-
-      let output = "";
-      const { session, exited } = startReal("bash", root, (chunk) => {
-        output += chunk;
-      });
-      try {
-        session.write("cd sub\r");
-        session.write("echo PROBE:$(pwd):END\r");
-        await waitForOutput("END", () => output);
-        expect(output).toContain("/sub");
-      } finally {
-        session.stop("测试结束");
-        await Promise.race([
-          exited,
-          new Promise((resolve) => setTimeout(resolve, 3000)),
-        ]);
-      }
-    },
-    20_000,
-  );
-
-  it.skipIf(process.platform !== "win32")(
-    "真终端判据：PowerShell 认为自己在终端里（管道下 IsOutputRedirected 会是 True）",
-    async () => {
-      const root = mkdtempSync(join(tmpdir(), "kfw-session-"));
-      dirs.push(root);
-      let output = "";
-      const { session, exited } = startReal("powershell", root, (chunk) => {
-        output += chunk;
-      });
-      try {
-        session.write(
-          "if ([Console]::IsOutputRedirected) { 'KFW-' + 'NOPE' } else { 'KFW-' + 'T' + 'T' + 'Y' }\r",
-        );
-        await waitForOutput("KFW-TTY", () => output, 20_000);
-        expect(output).toContain("KFW-TTY");
-        expect(output).not.toContain("KFW-NOPE");
-      } finally {
-        session.stop("测试结束");
-        await Promise.race([
-          exited,
-          new Promise((resolve) => setTimeout(resolve, 3000)),
-        ]);
-      }
-    },
-    30_000,
-  );
-
-  it.skipIf(process.platform !== "win32")(
-    "交互式程序（python REPL）只要本机有就能连续对话——不是一条命令一个进程",
-    async () => {
-      const root = mkdtempSync(join(tmpdir(), "kfw-session-"));
-      dirs.push(root);
-      let output = "";
-      const { session, exited } = startReal("cmd", root, (chunk) => {
-        output += chunk;
-      });
-      try {
-        session.write("where python\r");
-        await waitForOutput("python", () => output, 8_000);
-        // 有 python 才有 REPL 可测；没有就只验「探查命令能跑」（不把环境缺失当失败）
-        if (!output.toLowerCase().includes("python")) return;
-        session.write("python -i\r");
-        session.write("print(6*7)\r");
-        session.write("print('KFW_REPL_OK')\r");
-        session.write("exit()\r");
-        await waitForOutput("KFW_REPL_OK", () => output, 15_000);
-        expect(output).toContain("42");
-      } finally {
-        session.stop("测试结束");
-        await Promise.race([
-          exited,
-          new Promise((resolve) => setTimeout(resolve, 3000)),
-        ]);
-      }
-    },
-    30_000,
-  );
-});
+    it.skipIf(process.platform !== "win32")(
+      "交互式程序（python REPL）只要本机有就能连续对话——不是一条命令一个进程",
+      async () => {
+        const root = mkdtempSync(join(tmpdir(), "kfw-session-"));
+        dirs.push(root);
+        let output = "";
+        const { session, exited } = startReal("cmd", root, (chunk) => {
+          output += chunk;
+        });
+        try {
+          session.write("where python\r");
+          await waitForOutput("python", () => output, 8_000);
+          // 有 python 才有 REPL 可测；没有就只验「探查命令能跑」（不把环境缺失当失败）
+          if (!output.toLowerCase().includes("python")) return;
+          session.write("python -i\r");
+          session.write("print(6*7)\r");
+          session.write("print('KFW_REPL_OK')\r");
+          session.write("exit()\r");
+          await waitForOutput("KFW_REPL_OK", () => output, 15_000);
+          expect(output).toContain("42");
+        } finally {
+          session.stop("测试结束");
+          await Promise.race([
+            exited,
+            new Promise((resolve) => setTimeout(resolve, 3000)),
+          ]);
+        }
+      },
+      30_000,
+    );
+  },
+);

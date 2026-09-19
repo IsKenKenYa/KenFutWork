@@ -79,6 +79,13 @@ export type JobService = {
     errorCode: string,
     errorMessage: string,
   ): Promise<void>;
+  /** submit 成功后落外部厂商任务引用（崩溃恢复：重启后据此续 poll）。 */
+  setProviderJobId(jobId: string, providerJobId: string): Promise<void>;
+  /** 任务执行上下文补充（浅合并进 payload），如 submit 时的实例修订号。 */
+  appendJobPayload(
+    jobId: string,
+    fields: Record<string, unknown>,
+  ): Promise<void>;
   incrementAttempt(
     jobId: string,
   ): Promise<{ attempt_count: number; max_attempts: number }>;
@@ -106,6 +113,7 @@ function mapJobRow(row: BackgroundJobRecord): BackgroundJob {
     error_message: row.error_message ?? null,
     attempt_count: row.attempt_count,
     max_attempts: row.max_attempts,
+    provider_job_id: row.provider_job_id ?? null,
     created_by: row.created_by,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -318,6 +326,14 @@ export function createJobService(options: {
       await repository
         .markDeadLetter(jobId, errorCode, errorMessage)
         .catch(() => 0);
+    },
+
+    async setProviderJobId(jobId, providerJobId) {
+      await repository.setProviderJobId(jobId, providerJobId);
+    },
+
+    async appendJobPayload(jobId, fields) {
+      await repository.appendJobPayload(jobId, fields);
     },
 
     async incrementAttempt(jobId) {

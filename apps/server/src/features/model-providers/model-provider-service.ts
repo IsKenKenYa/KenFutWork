@@ -3,12 +3,17 @@ import type {
   ProviderInstanceCreateRequest,
   ProviderInstanceResponse,
   ProviderInstanceUpdateRequest,
+  ProviderPreset,
+  ProviderProbeResult,
   ProviderProtocol,
   ProviderScope,
 } from "@kenfutwork/shared";
 
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
+import { loadBundledModelsDevSnapshot } from "./models-dev-bundled.js";
+import { listProviderPresets } from "./models-dev-snapshot.js";
+import { type ProbeFetch, type ProbeTarget, probeInstance } from "./probe.js";
 import type {
   ModelProviderRepository,
   ProviderInstancePatch,
@@ -33,6 +38,7 @@ export class ModelProviderServiceError extends Error {
     | "instance_update_failed"
     | "instance_delete_failed"
     | "instance_query_failed"
+    | "instance_probe_failed"
     | "credential_unavailable";
 
   constructor(
@@ -57,16 +63,28 @@ export interface ResolvedInstanceCredentials {
   compat?: Record<string, unknown>;
   /** 自定义请求头（原值，含占位符）：调用方按会话上下文渲染后再交给适配器。 */
   headers?: Record<string, string>;
-  models: Array<{ id: string; name: string; capability: ModelCapability }>;
+  models: Array<{
+    id: string;
+    name: string;
+    capability: ModelCapability;
+    enabled?: boolean;
+    reasoningEfforts?: string[];
+    extraBody?: Record<string, unknown>;
+  }>;
+  /** 实例配置修订号：异步任务落盘修订与当前不一致即拒（跨修订防护）。 */
+  configRevision: number;
 }
 
 type InstanceModel = {
   id: string;
   name: string;
   capability: string;
+  enabled?: boolean;
   vision?: boolean;
   contextWindow?: number;
   maxOutputTokens?: number;
+  reasoningEfforts?: string[];
+  extraBody?: Record<string, unknown>;
 };
 
 function mapModels(models: InstanceModel[] | null) {
@@ -74,9 +92,12 @@ function mapModels(models: InstanceModel[] | null) {
     id: m.id,
     name: m.name,
     capability: m.capability as ModelCapability,
+    ...(m.enabled === false ? { enabled: false } : {}),
     ...(m.vision ? { vision: true } : {}),
     ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
     ...(m.maxOutputTokens ? { maxOutputTokens: m.maxOutputTokens } : {}),
+    ...(m.reasoningEfforts ? { reasoningEfforts: m.reasoningEfforts } : {}),
+    ...(m.extraBody ? { extraBody: m.extraBody } : {}),
   }));
 }
 
@@ -93,6 +114,9 @@ function toResponse(row: ProviderInstanceRecord): ProviderInstanceResponse {
     // 自定义头只回键名，值不回显（与 MCP env/envKeys 同口径）。
     headerKeys: Object.keys(row.headers ?? {}),
     enabled: row.enabled,
+    ...(row.probe_result
+      ? { probe: row.probe_result as ProviderProbeResult }
+      : {}),
   };
 }
 
@@ -106,6 +130,12 @@ function toCredentials(row: ProviderInstanceRecord, apiKey: string) {
     ...(row.compat ? { compat: row.compat } : {}),
     ...(row.headers ? { headers: row.headers } : {}),
     models: mapModels(row.models),
+    configRevision: Number(row.config_revision),
+    // 探测纠偏消费面：仅 true 带出（false/缺席=未支持或不详，默认 completions）
+    ...((row.probe_result as { responsesApi?: boolean } | null)
+      ?.responsesApi === true
+      ? { responsesApi: true }
+      : {}),
   };
 }
 
@@ -146,6 +176,17 @@ export interface ModelProviderService {
   resolveCredentialsById(
     instanceId: string,
   ): Promise<ResolvedInstanceCredentials>;
+  /**
+   * 实例能力探测（阶段 E）：连通性 + 中转方言四探测项，结果缓存到实例。
+   * 仅限用户自己的工作区实例；每次探测都会覆盖上一次结果。
+   */
+  probeInstance(
+    user: AuthenticatedUser,
+    instanceId: string,
+    fetchFn?: ProbeFetch,
+  ): Promise<ProviderProbeResult>;
+  /** models.dev 供应商预设清单（供应商设置的「从预设选择」）。 */
+  listProviderPresets(): ProviderPreset[];
   /**
    * 平台池（scope='system'）：管理员配置一份 Key，分发给全体用户使用。
    */
@@ -390,6 +431,59 @@ export function createModelProviderService(options: {
       }
 
       return decryptRow(systemRow);
+    },
+
+    listProviderPresets() {
+      return listProviderPresets(loadBundledModelsDevSnapshot() ?? {});
+    },
+
+    async probeInstance(user, instanceId, fetchFn) {
+      const workspaceId = await requireWorkspaceId(
+        user,
+        "instance_probe_failed",
+      );
+
+      const rows = await repository
+        .listWorkspaceInstances(workspaceId)
+        .catch(() => {
+          throw new ModelProviderServiceError(
+            "instance_probe_failed",
+            "Unable to load provider instances.",
+          );
+        });
+      const row = rows.find((candidate) => candidate.id === instanceId);
+      if (!row) {
+        throw new ModelProviderServiceError(
+          "instance_not_found",
+          "Provider instance not found.",
+          404,
+        );
+      }
+      const credentials = decryptRow(row);
+
+      const chatModel = credentials.models.find(
+        (m) => m.capability === "chat",
+      )?.id;
+      const baseUrl =
+        credentials.baseUrl ??
+        (credentials.protocol === "anthropic"
+          ? "https://api.anthropic.com/v1"
+          : null);
+      if (!baseUrl) {
+        throw new ModelProviderServiceError(
+          "instance_probe_failed",
+          "该实例未声明 baseUrl，无法探测（openai-compatible 协议必须显式配置）",
+        );
+      }
+      const target: ProbeTarget = {
+        protocol: credentials.protocol,
+        baseUrl,
+        apiKey: credentials.apiKey,
+        ...(chatModel ? { model: chatModel } : {}),
+      };
+      const result = await probeInstance(fetchFn ?? fetch, target);
+      await repository.setProbeResult(workspaceId, instanceId, result);
+      return result;
     },
 
     async resolveCredentialsById(instanceId) {
