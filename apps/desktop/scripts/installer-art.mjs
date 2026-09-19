@@ -69,10 +69,10 @@ const markUri = `data:image/png;base64,${(
  * 出图尺寸：**侧边图按 1.5× 出**。
  *
  * 为什么：向导（ManifestPerMonitorV2）在 150% 缩放的屏幕上会把侧边图**放大 1.5 倍**再画，
- * 拿 164×314 的原图上去就是糊的（用户口径「分辨率太低」）。按 1.5× 出（246×471）后
- * 正好 1:1 落屏；页头图 MUI 不缩放，仍按 150×57 出。
+ * 拿 164×314 的原图上去就是糊的（用户口径「分辨率太低」）。按 4× 出后
+ * MUI 会把它缩到侧边栏区域（超采样，任何 DPI 都清晰）；页头图 MUI **不缩放**，仍按 150×57 出（给大了会被裁）。
  */
-const SIDEBAR_SCALE = 1.5;
+const SIDEBAR_SCALE = 4;
 
 for (const [name, svg, width, height] of [
   ["installer-header.bmp", headerSvg, 150, 57],
