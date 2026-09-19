@@ -20,6 +20,7 @@ import {
   Plug,
   Plus,
   Send,
+  ShieldAlert,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -35,6 +36,7 @@ import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
 import { RunStopButton } from "@/components/chat/run-stop-button";
 import { ToolOutputRenderer } from "@/components/chat/tool-block-view";
 import { KenFutWorkLogo } from "@/components/icons/kenfutwork-logo";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -2823,13 +2825,12 @@ ${formatElementReference(picked)}`
         ) : (
           <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-6">
             <div className="mb-9 flex items-center gap-3">
-              {/* `</>` 图标加粗 + 光学对齐（用户口径「这都不一样大」）：lucide 在 24 视图框里
-                  墨高只有 12/24，32px 盒子墨高才 16px，比标题大写字高（28px）小一截；
-                  放大到 56px 盒子后墨高 28px，与字视觉等高 */}
+              {/* 图标与标题等高但**不抢戏**（用户口径：之前的 h-14 + stroke 3 太粗太大）：
+                  h-9（36px 盒 → 墨高 18px）+ strokeWidth 2，比标题大写字高略小、笔画更轻 */}
               {mode === "code" ? (
-                <Code2 className="h-14 w-14" strokeWidth={3} />
+                <Code2 className="h-9 w-9" strokeWidth={2} />
               ) : (
-                <Palette className="h-14 w-14" strokeWidth={3} />
+                <Palette className="h-9 w-9" strokeWidth={2} />
               )}
               {/* 标题颜色**不动**（用户口径：这句的蓝色还原回去）——只保留字标字体 */}
               <h1 className="font-wordmark text-4xl tracking-tight">
@@ -3128,35 +3129,39 @@ ${formatElementReference(picked)}`
 
       {/**
        * 「完全访问」的风险确认（用户口径：别用括号交代风险，改成弹窗 + 确定）。
-       * 取消＝什么也不做（档位保持原值）；确定才写库生效。
+       * 文案不用 markdown 语法（`**…**` 会原样显示出来）；按钮用仓库统一的 Button。
        */}
       <Dialog open={pendingFullAccess} onOpenChange={setPendingFullAccess}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>开启「完全访问」？</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldAlert className="h-4 w-4 text-destructive" />
+              开启「完全访问」？
+            </DialogTitle>
             <DialogDescription>
-              这一档**不再逐条询问**：改文件、跑命令、调用外部工具都会直接执行，
-              出问题无法回滚。只有在你看得懂风险、且任务确实需要时才开启。
+              这一档不再逐条询问：改文件、跑命令、调用外部工具都会直接执行，出问题无法回滚。
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2">
-            <button
+          <DialogFooter>
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={() => setPendingFullAccess(false)}
-              className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
             >
               取消
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="destructive"
+              size="sm"
               onClick={() => {
                 setPendingFullAccess(false);
                 void applyTier("full-access");
               }}
-              className="rounded-md bg-destructive px-3 py-1.5 text-sm font-medium text-white hover:bg-destructive/90"
             >
-              我明白，仍要开启
-            </button>
+              仍要开启
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
