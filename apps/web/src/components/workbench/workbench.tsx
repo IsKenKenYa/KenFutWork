@@ -36,6 +36,14 @@ import { RunStopButton } from "@/components/chat/run-stop-button";
 import { ToolOutputRenderer } from "@/components/chat/tool-block-view";
 import { KenFutWorkLogo } from "@/components/icons/kenfutwork-logo";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -430,6 +438,8 @@ export function Workbench() {
     return () => window.clearTimeout(timer);
   }, [chatNotice]);
   const [tier, setTier] = useState("default");
+  /** 「完全访问」的风险确认弹窗（确认后才写库与生效）。 */
+  const [pendingFullAccess, setPendingFullAccess] = useState(false);
   /**
    * Code 模式的「工作目录项目」（服务端 projects, kind='code'）。
    * 「工作目录=项目」：用户选的每个工作目录就是一个项目，对话挂在它下面。
@@ -1364,7 +1374,8 @@ export function Workbench() {
     return off;
   }, [ws, mode]);
 
-  const handleTierChange = useCallback(
+  /** 真正落库并生效（确认弹窗与其余三档都走它）。 */
+  const applyTier = useCallback(
     async (next: string) => {
       setTier(next);
       if (!session?.access_token) return;
@@ -1382,6 +1393,21 @@ export function Workbench() {
       }
     },
     [session],
+  );
+
+  /**
+   * 切档：**「完全访问」先过一道风险确认**（用户口径：不要用括号交代风险，改成弹窗提示并确认）。
+   * 其余三档直接生效。
+   */
+  const handleTierChange = useCallback(
+    async (next: string) => {
+      if (next === "full-access" && tier !== "full-access") {
+        setPendingFullAccess(true);
+        return;
+      }
+      await applyTier(next);
+    },
+    [applyTier, tier],
   );
 
   /**
@@ -3099,6 +3125,41 @@ ${formatElementReference(picked)}`
           </div>
         )}
       </main>
+
+      {/**
+       * 「完全访问」的风险确认（用户口径：别用括号交代风险，改成弹窗 + 确定）。
+       * 取消＝什么也不做（档位保持原值）；确定才写库生效。
+       */}
+      <Dialog open={pendingFullAccess} onOpenChange={setPendingFullAccess}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>开启「完全访问」？</DialogTitle>
+            <DialogDescription>
+              这一档**不再逐条询问**：改文件、跑命令、调用外部工具都会直接执行，
+              出问题无法回滚。只有在你看得懂风险、且任务确实需要时才开启。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <button
+              type="button"
+              onClick={() => setPendingFullAccess(false)}
+              className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPendingFullAccess(false);
+                void applyTier("full-access");
+              }}
+              className="rounded-md bg-destructive px-3 py-1.5 text-sm font-medium text-white hover:bg-destructive/90"
+            >
+              我明白，仍要开启
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <SettingsModal
         open={settingsTab !== null}

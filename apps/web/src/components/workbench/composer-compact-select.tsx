@@ -47,7 +47,8 @@ export const TIER_OPTIONS = [
   {
     value: "full-access",
     label: "完全访问",
-    hint: "不限制（明示开启，风险自担）",
+    // 括号里那半句（「明示开启，风险自担」）挪成了**选中时的风险确认弹窗**（用户口径）
+    hint: "不限制",
     icon: <ShieldAlert className={TIER_ICON_CLASS} />,
   },
   /**
