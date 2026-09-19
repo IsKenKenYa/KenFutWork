@@ -74,7 +74,21 @@ console.log(`再用 tauri icon 出整套平台图标 → ${iconsDir}`);
 // 那会儿 `pnpm`、`powershell` 这些靠 PATH 解析的启动器全都失灵，脚本得能扛住）
 const result = spawnSync(
   process.execPath,
-  [join(repoRoot, "apps", "desktop", "node_modules", "@tauri-apps", "cli", "tauri.js"), "icon", composedPath, "-o", iconsDir],
+  [
+    join(
+      repoRoot,
+      "apps",
+      "desktop",
+      "node_modules",
+      "@tauri-apps",
+      "cli",
+      "tauri.js",
+    ),
+    "icon",
+    composedPath,
+    "-o",
+    iconsDir,
+  ],
   { cwd: join(repoRoot, "apps", "desktop"), stdio: "inherit" },
 );
 if (result.status !== 0) {
