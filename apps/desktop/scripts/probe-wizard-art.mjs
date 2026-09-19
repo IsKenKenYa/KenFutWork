@@ -57,13 +57,18 @@ for (const bmp of [headerBmp, sidebarBmp]) {
 }
 mkdirSync(outDir, { recursive: true });
 
-/** 最小向导：页头页（目录页）+ 可选的欢迎页（侧边图）。ASCII-only，避开 NSIS 的 UTF-8 BOM 坑。 */
+/** 最小向导：页头页（目录页）+ 可选的欢迎页（侧边图）。
+ *
+ * 脚本里除标题外全 ASCII；标题用中文，所以落盘时要给 `.nsi` 写 **UTF-8 BOM**
+ * （`Unicode true` 的 NSIS 没有 BOM 会把非 ASCII 读坏，实测直接编译失败）。
+ * 标题写成「探针·自动关闭」，免得这个一闪而过的窗口被当成「应用名变了」。
+ */
 function probeScript({ outExe, withWelcome }) {
   return [
     "Unicode true",
     "ManifestDPIAware true",
     "ManifestDPIAwareness PerMonitorV2",
-    'Name "KFW Wizard Probe"',
+    'Name "KenFutWork 向导探针（自动关闭）"',
     `OutFile "${outExe}"`,
     'InstallDir "$TEMP\\kfwprobe"',
     "RequestExecutionLevel user",
@@ -97,7 +102,7 @@ for (const [label, slug, withWelcome] of [
   const nsi = join(outDir, `probe-${slug}.nsi`);
   const exe = join(outDir, `probe-${slug}.exe`);
   const png = join(outDir, `${slug}.png`);
-  writeFileSync(nsi, probeScript({ outExe: exe, withWelcome }));
+  writeFileSync(nsi, `\uFEFF${probeScript({ outExe: exe, withWelcome })}`);
   try {
     execFileSync(makensis, ["/V2", nsi], { stdio: "pipe" });
   } catch (error) {

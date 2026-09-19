@@ -38,10 +38,17 @@ if (!source) {
   process.exit(1);
 }
 
-/** 白底圆角贴片参数：1024 画布、圆角 22%（≈上一版方块图标）、标占 86%（trim 掉透明边距后再留一圈白边——用户口径「还是要留点边距」）。 */
+/**
+ * 白底圆角贴片参数：1024 画布、圆角 22%（≈上一版方块图标）、标占 **79%**。
+ *
+ * 79% 的来历：标占 86% 时左右各留 7%（trim 掉源图透明边距之后再留的白边——用户口径
+ * 「还是要留点边距」）；再「边距改为现在的 150%」→ 7% × 1.5 = 10.5% → 标占 1 − 2×10.5%
+ * = **79%**。注意 `fit: contain` 下**左右**是受限边（标 805×721 比高宽），所以这里的百分比
+ * 说的是左右留白；上下留白按比例自然更大（0.79 时约 14.6%）。
+ */
 const CANVAS = 1024;
 const RADIUS = Math.round(CANVAS * 0.22);
-const MARK = Math.round(CANVAS * 0.86);
+const MARK = Math.round(CANVAS * 0.79);
 
 const tile = Buffer.from(
   `<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS}" height="${CANVAS}">
@@ -53,7 +60,10 @@ const tile = Buffer.from(
  * 只占 ~60%，桌面上看着就"小一圈"（用户口径：桌面显示的和预览的不一样）。
  * 先 trim 再缩放，字形才真正顶满。
  */
-const trimmedSource = await sharp(source).trim({ threshold: 1 }).png().toBuffer();
+const trimmedSource = await sharp(source)
+  .trim({ threshold: 1 })
+  .png()
+  .toBuffer();
 const mark = await sharp(trimmedSource)
   .resize(MARK, MARK, {
     fit: "contain",
