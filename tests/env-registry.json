@@ -137,6 +137,13 @@
       "status": "active",
       "note": "沙箱根目录"
     },
+    "KENFUTWORK_CHECKPOINT_ROOT": {
+      "surface": "server",
+      "readers": ["apps/server/src/config/env.ts", "apps/server/src/server.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "检查点影子仓库根目录"
+    },
     "KENFUTWORK_CANVAS_WORK_DIRS": {
       "surface": "server",
       "readers": ["apps/server/src/config/env.ts"],
