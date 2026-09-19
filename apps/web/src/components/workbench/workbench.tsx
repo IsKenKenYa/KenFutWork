@@ -1961,8 +1961,8 @@ export function Workbench() {
           <div className="flex items-center justify-between px-3 pt-3 pb-2">
             <span className="flex items-center gap-2">
               <KenFutWorkLogo className="size-7 text-foreground" />
-              {/* 字标：加粗放大 + 品牌「岚」渐变（低饱和双色，深浅色各一套） */}
-              <span className="bg-gradient-to-r from-[#2F3459] to-[#575E96] bg-clip-text text-lg font-bold tracking-tight text-transparent dark:from-[#A6ACD8] dark:to-[#C3C8E6]">
+              {/* 字标：Momo Trust Display（`--font-wordmark`）+ 与**应用图标**一致的蓝渐变 */}
+              <span className="font-wordmark bg-gradient-to-r from-[#2E63FA] to-[#214ADA] bg-clip-text text-xl tracking-tight text-transparent dark:from-[#7EA2FF] dark:to-[#4C7BFF]">
                 KenFutWork
               </span>
             </span>
@@ -2796,7 +2796,7 @@ ${formatElementReference(picked)}`
               ) : (
                 <Palette className="h-8 w-8" />
               )}
-              <h1 className="text-4xl font-semibold tracking-tight">
+              <h1 className="font-wordmark bg-gradient-to-r from-[#2E63FA] to-[#214ADA] bg-clip-text text-4xl text-transparent dark:from-[#7EA2FF] dark:to-[#4C7BFF]">
                 {meta.title}
               </h1>
             </div>

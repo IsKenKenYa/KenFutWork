@@ -1,74 +1,55 @@
 #!/usr/bin/env node
 /**
- * 生成桌面端图标集（`src-tauri/icons/`）：多尺寸 `icon.ico` + `icon.png`。
+ * 生成桌面端图标集（`src-tauri/icons/`）——**换标只跑这一条命令**。
  *
- * 源是品牌 logo 的**唯一权威源** `docs/design/logo/最终定稿.svg`——图标不该是
- * 另画一份的贴图（此前这里是占位绿方块，安装包/任务栏/开始菜单全是它，
- * 用户 2026-09-17 要求换上正式标）。
+ * 用法：`node scripts/icons.mjs`（在 apps/desktop 下）
  *
- * 用法：`node scripts/icons.mjs`（在 apps/desktop 下）。
+ * 源是品牌标的当前定稿：`docs/design/logo/` 里最新的那张（2026-09-19 换成了
+ * `GPT生成.png` 的蓝色 KF 标）。生成交给 Tauri 自带的 `tauri icon`——它会出整套
+ * （`icon.ico` 多尺寸给 Windows、`icon.icns`、`icon.png`、`Square*.png`、android/ios），
+ * 比手写 ICO 打包器可靠，也保证与框架约定一致（此前那份手写的只出 ico + 几个 png）。
+ *
+ * 历史：更早的定稿是 `最终定稿.svg`（岚配色 + 白字形 K），当时用 sharp 栅格化；
+ * 换成位图标之后 sharp 那条路不再适用（PNG 不需要栅格化）。
  */
-import { readFileSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
+
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 const repoRoot = join(import.meta.dirname, "..", "..", "..");
-const sourceSvg = join(repoRoot, "docs", "design", "logo", "最终定稿.svg");
-const iconsDir = join(import.meta.dirname, "..", "src-tauri", "icons");
+const outDir = join(import.meta.dirname, "..", "src-tauri", "icons");
 
-// sharp 是 apps/server 的依赖（图片生成 provider 用它）。按它的包位置解析，
-// 免得给桌面壳再加一个原生依赖——打包脚本只在构建期跑一次。
-const require = createRequire(join(repoRoot, "apps", "server", "package.json"));
-const sharp = require("sharp");
+/** 品牌标候选源（按优先级）：当前定稿在前。 */
+const SOURCES = ["GPT生成.png", "最终定稿.svg"].map((name) =>
+  join(repoRoot, "docs", "design", "logo", name),
+);
 
-/** ICO 里的尺寸：小尺寸给向导/标题栏，大尺寸给资源管理器与任务栏。 */
-const ICO_SIZES = [16, 24, 32, 48, 64, 128, 256];
-
-/** 打成 PNG-in-ICO（Vista 起支持，NSIS 3 与 tauri-build 都吃这种）。 */
-function packIco(entries) {
-  const header = Buffer.alloc(6);
-  header.writeUInt16LE(0, 0); // reserved
-  header.writeUInt16LE(1, 2); // type: icon
-  header.writeUInt16LE(entries.length, 4);
-  const directory = Buffer.alloc(16 * entries.length);
-  let offset = header.length + directory.length;
-  entries.forEach((entry, index) => {
-    const at = index * 16;
-    directory.writeUInt8(entry.size >= 256 ? 0 : entry.size, at); // 256 记作 0
-    directory.writeUInt8(entry.size >= 256 ? 0 : entry.size, at + 1);
-    directory.writeUInt8(0, at + 2); // 调色板
-    directory.writeUInt8(0, at + 3); // reserved
-    directory.writeUInt16LE(1, at + 4); // color planes
-    directory.writeUInt16LE(32, at + 6); // bits per pixel
-    directory.writeUInt32LE(entry.data.length, at + 8);
-    directory.writeUInt32LE(offset, at + 12);
-    offset += entry.data.length;
-  });
-  return Buffer.concat([header, directory, ...entries.map((e) => e.data)]);
+const source = SOURCES.find((path) => existsSync(path));
+if (!source) {
+  console.error(
+    `找不到品牌标源文件，试过：\n${SOURCES.map((p) => `  ${p}`).join("\n")}`,
+  );
+  process.exit(1);
 }
 
-const svg = readFileSync(sourceSvg);
-/** 栅格化：先按高 DPI 渲染再由 sharp 缩到目标尺寸，小尺寸下比直接渲染更锐。 */
-const render = (size) =>
-  sharp(svg, { density: 512 })
-    .resize(size, size, { fit: "contain" })
-    .png({ compressionLevel: 9 })
-    .toBuffer();
-
-const entries = [];
-for (const size of ICO_SIZES) {
-  entries.push({ size, data: await render(size) });
+console.log(`用 ${source} 生成图标集 → ${outDir}`);
+const result = spawnSync(
+  "pnpm",
+  ["exec", "tauri", "icon", source, "-o", outDir],
+  {
+    cwd: join(repoRoot, "apps", "desktop"),
+    shell: process.platform === "win32",
+    stdio: "inherit",
+  },
+);
+if (result.status !== 0) {
+  console.error(
+    "tauri icon 失败（需要 tauri CLI：pnpm --filter @kenfutwork/desktop exec tauri --version）",
+  );
+  process.exit(result.status ?? 1);
 }
-writeFileSync(join(iconsDir, "icon.ico"), packIco(entries));
-writeFileSync(join(iconsDir, "icon.png"), await render(512));
-for (const [size, name] of [
-  [32, "32x32.png"],
-  [128, "128x128.png"],
-  [256, "128x128@2x.png"],
-]) {
-  writeFileSync(join(iconsDir, name), await render(size));
-}
-
 console.log(
-  `已生成图标：icon.ico（${ICO_SIZES.join("/")}）+ icon.png(512) + 32x32/128x128/128x128@2x，源 ${sourceSvg}`,
+  "图标已更新：exe 资源图标 / 安装包向导图标 / 开始菜单与任务栏图标都吃这一份；" +
+    "接着重跑 pnpm --filter @kenfutwork/desktop build 让安装包带上新图标。",
 );

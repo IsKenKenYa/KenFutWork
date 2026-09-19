@@ -240,27 +240,23 @@ fn navigate_main_window(app: &tauri::AppHandle, url: &str) {
 const SPLASH_SCRIPT: &str = r##"(() => {
   const paint = () => {
     if (!document.body) return false;
+    // 静态启动页（`_splash.html`）已经在位：它是主路径，别再盖一层
+    if (document.body.dataset.kfwSplash === "1") return true;
     if (window.__kfwSplash) return true;
     window.__kfwSplash = true;
     document.title = "KenFutWork 正在启动";
-    const logo = '<svg viewBox="0 0 512 512" width="56" height="56" aria-hidden="true">'
-      + '<defs><linearGradient id="s1" x1="0" y1="0" x2="1" y2="1">'
-      + '<stop offset="0" stop-color="#444B7E"/><stop offset="1" stop-color="#575E96"/></linearGradient>'
-      + '<linearGradient id="s2" x1="0" y1="0" x2="1" y2="1">'
-      + '<stop offset="0" stop-color="#2F3459"/><stop offset="1" stop-color="#3C4272"/></linearGradient>'
-      + '<clipPath id="s3"><rect width="512" height="512" rx="112"/></clipPath></defs>'
-      + '<g clip-path="url(#s3)"><rect width="512" height="512" fill="url(#s1)"/>'
-      + '<path d="M512 0 L512 512 L0 512 Z" fill="url(#s2)"/></g>'
-      + '<path fill="#FFFFFF" d="M157.9 90.0 103.1 402.0H163.7L186.5 272.3H237.7L297.0 402.0H361.6'
-      + 'L290.3 245.6L408.9 90.0H337.1L239.1 220.6H195.8L208.5 147.6L209.6 141.3H296.1V90.0Z"/></svg>';
+    // 用应用图标本身（静态导出里的 /app-icon.png）：换标时这里跟着换，不内联旧 logo
+    const logo = '<img src="/app-icon.png" width="52" height="52" alt="" />';
     document.body.innerHTML =
       '<div style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;'
       + 'justify-content:center;gap:16px;background:#fff;color:#2f3459;'
       + 'font:14px/1.6 system-ui,-apple-system,\'Segoe UI\',sans-serif">'
       + '<div style="display:flex;align-items:center;gap:10px">' + logo
-      + '<span style="font-size:20px;font-weight:600;letter-spacing:.2px">KenFutWork</span></div>'
+      + '<span style="font-family:'Momo Trust Display',system-ui,sans-serif;font-size:24px;'
+      + 'background:linear-gradient(90deg,#2e63fa,#214ada);-webkit-background-clip:text;'
+      + 'background-clip:text;color:transparent">KenFutWork</span></div>'
       + '<div style="width:180px;height:3px;border-radius:999px;background:#e6e7ef;overflow:hidden">'
-      + '<div style="width:40%;height:100%;border-radius:999px;background:#575E96;'
+      + '<div style="width:40%;height:100%;border-radius:999px;background:#2e63fa;'
       + 'animation:kfwSlide 1.2s ease-in-out infinite"></div></div>'
       + '<div id="kfw-splash-note" style="color:#6b6f85">正在启动本机服务…</div>'
       + '</div>'

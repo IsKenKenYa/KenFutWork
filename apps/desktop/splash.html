@@ -16,11 +16,19 @@
       「什么都还没起来」的时候把画面撑住。
     -->
     <style>
+      /* 字标字体：Momo Trust Display（OFL），自托管一份（桌面端离线也要能显示） */
+      @font-face {
+        font-family: "Momo Trust Display";
+        font-style: normal;
+        font-weight: 400;
+        font-display: swap;
+        src: url("/fonts/momo-trust-display.woff2") format("woff2");
+      }
       :root {
         --kfw-ink: #2f3459;
         --kfw-muted: #6b6f85;
         --kfw-track: #e6e7ef;
-        --kfw-accent: #575e96;
+        --kfw-accent: #2e63fa;
       }
       html,
       body {
@@ -48,8 +56,14 @@
         gap: 10px;
       }
       .brand span {
-        font-size: 20px;
-        font-weight: 600;
+        /* 与图标同一套蓝（图标 #2e63fa → #214ada） */
+        background: linear-gradient(90deg, #2e63fa, #214ada);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        font-family: "Momo Trust Display", system-ui, -apple-system, "Segoe UI",
+          "Microsoft YaHei", sans-serif;
+        font-size: 24px;
         letter-spacing: 0.2px;
       }
       .track {
@@ -79,31 +93,11 @@
       }
     </style>
   </head>
-  <body>
+  <body data-kfw-splash="1">
     <div class="brand">
-      <svg viewBox="0 0 512 512" width="56" height="56" aria-hidden="true">
-        <defs>
-          <linearGradient id="design" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="#444B7E" />
-            <stop offset="1" stop-color="#575E96" />
-          </linearGradient>
-          <linearGradient id="code" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="#2F3459" />
-            <stop offset="1" stop-color="#3C4272" />
-          </linearGradient>
-          <clipPath id="round">
-            <rect width="512" height="512" rx="112" />
-          </clipPath>
-        </defs>
-        <g clip-path="url(#round)">
-          <rect width="512" height="512" fill="url(#design)" />
-          <path d="M512 0 L512 512 L0 512 Z" fill="url(#code)" />
-        </g>
-        <path
-          fill="#FFFFFF"
-          d="M157.9 90.0 103.1 402.0H163.7L186.5 272.3H237.7L297.0 402.0H361.6L290.3 245.6L408.9 90.0H337.1L239.1 220.6H195.8L208.5 147.6L209.6 141.3H296.1V90.0Z"
-        />
-      </svg>
+      <!-- 用**应用图标**本身（打包时随静态导出一起走），不再内联旧版 logo 的 SVG：
+           图标换了、启动页跟着换，不会两处打架 -->
+      <img src="/app-icon.png" width="52" height="52" alt="" />
       <span>KenFutWork</span>
     </div>
     <div class="track"><div class="bar"></div></div>

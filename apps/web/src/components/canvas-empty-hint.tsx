@@ -91,7 +91,7 @@ export function CanvasEmptyHint({
           图标用「画板」而不是 Code 的 `</>`。 */}
       <div className="flex items-center gap-3 text-muted-foreground/50">
         <Palette className="h-8 w-8" />
-        <h1 className="text-4xl font-semibold tracking-tight">
+        <h1 className="font-wordmark text-4xl tracking-tight">
           Design with KenFutWork
         </h1>
       </div>
