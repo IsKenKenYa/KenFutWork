@@ -243,6 +243,24 @@ fn ui_once(port: u16) -> bool {
 
 // ── 生命周期：拉起 / 复用 / 优雅退出（契约 2/3/4） ──────────────────────────
 
+/**
+ * 起一个**不弹控制台**的辅助命令。
+ *
+ * 桌面壳是 GUI 进程（`windows_subsystem = "windows"`，自己没有控制台），
+ * 这种进程 spawn 一个控制台程序时 Windows 会**新开一个控制台窗口**——
+ * 用户看到的「关闭应用时闪一个 cmd 黑框」就是退出路径上的 `taskkill` 干的
+ * （2026-09-19 反馈）。所有辅助命令一律走这里。
+ */
+fn hidden_command(program: &str) -> Command {
+    let mut command = Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command
+}
+
 /// 拉起结果：端口已健康 → `Reused`（尊重用户自己起的 dev）；否则 `Spawned` 持有句柄。
 pub enum ServerLaunch {
     Reused,
@@ -434,7 +452,10 @@ impl ServerHandle {
         #[cfg(windows)]
         {
             // taskkill 不带 /F = 温和请求关闭（对控制台程序常常无效，兜底见 reap_descendants）
-            let _ = Command::new("taskkill").args(["/PID", &pid.to_string()]).status();
+            // 走 hidden_command：GUI 壳里直接 spawn taskkill 会弹一个 cmd 黑框（关闭应用时可见）
+            let _ = hidden_command("taskkill")
+                .args(["/PID", &pid.to_string()])
+                .status();
         }
     }
 
@@ -454,7 +475,7 @@ impl ServerHandle {
                 Some(job) => job.terminate(),
                 None => {
                     let pid = self.child.id();
-                    let _ = Command::new("taskkill")
+                    let _ = hidden_command("taskkill")
                         .args(["/PID", &pid.to_string(), "/T", "/F"])
                         .status();
                 }

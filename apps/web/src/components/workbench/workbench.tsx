@@ -1960,10 +1960,9 @@ export function Workbench() {
           />
           <div className="flex items-center justify-between px-3 pt-3 pb-2">
             <span className="flex items-center gap-0">
-              <KenFutWorkLogo className="size-9 text-foreground" />
-              {/* 字标：Momo Trust Display（`--font-wordmark`）+ 与图标同色系的**淡蓝**渐变
-                  （纯图标蓝在文字上太扎眼，用户口径「太妖艳了」→ 调淡一档） */}
-              <span className="font-wordmark bg-gradient-to-r from-[#6C86E8] to-[#4F6BD0] bg-clip-text text-xl tracking-tight text-transparent dark:from-[#9AB0F5] dark:to-[#7A95F0]">
+              <KenFutWorkLogo className="size-10 text-foreground" />
+              {/* 字标：Momo Trust Display + 与图标同色系渐变，**左深右浅**（用户口径） */}
+              <span className="font-wordmark bg-gradient-to-r from-[#25439E] to-[#7FA3FF] bg-clip-text text-xl tracking-tight text-transparent dark:from-[#9AB0F5] dark:to-[#D3E0FF]">
                 KenFutWork
               </span>
             </span>
@@ -2792,8 +2791,9 @@ ${formatElementReference(picked)}`
         ) : (
           <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-6">
             <div className="mb-9 flex items-center gap-3">
+              {/* `</>` 图标加粗（用户口径）：lucide 默认 strokeWidth=2，这里提到 3 */}
               {mode === "code" ? (
-                <Code2 className="h-8 w-8" />
+                <Code2 className="h-8 w-8" strokeWidth={3} />
               ) : (
                 <Palette className="h-8 w-8" />
               )}

@@ -36,6 +36,8 @@
         margin: 0;
       }
       body {
+        /* 淡入：从「窗口一出就是白底」的硬切换变成柔和过渡，减轻启动时的闪烁感 */
+        animation: kfw-fade-in 260ms ease-out both;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -56,14 +58,14 @@
         gap: 10px;
       }
       .brand span {
-        /* 与图标同色系但调淡一档（纯图标蓝在文字上太扎眼） */
-        background: linear-gradient(90deg, #6c86e8, #4f6bd0);
+        /* 左深右浅（用户口径），与侧栏字标同一套色 */
+        background: linear-gradient(90deg, #25439e, #7fa3ff);
         -webkit-background-clip: text;
         background-clip: text;
         color: transparent;
         font-family: "Momo Trust Display", system-ui, -apple-system, "Segoe UI",
           "Microsoft YaHei", sans-serif;
-        font-size: 24px;
+        font-size: 28px;
         letter-spacing: 0.2px;
       }
       .track {
@@ -79,6 +81,14 @@
         border-radius: 999px;
         background: var(--kfw-accent);
         animation: kfw-slide 1.2s ease-in-out infinite;
+      }
+      @keyframes kfw-fade-in {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
       }
       @keyframes kfw-slide {
         0% {
@@ -97,7 +107,7 @@
     <div class="brand">
       <!-- 用**应用图标**本身（打包时随静态导出一起走），不再内联旧版 logo 的 SVG：
            图标换了、启动页跟着换，不会两处打架 -->
-      <img src="/app-icon.png" width="52" height="52" alt="" />
+      <img src="/app-icon.png" width="96" height="96" alt="" />
       <span>KenFutWork</span>
     </div>
     <div class="track"><div class="bar"></div></div>
