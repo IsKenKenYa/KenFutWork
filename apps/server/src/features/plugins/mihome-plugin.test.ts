@@ -101,6 +101,8 @@ interface FakeCloudOptions {
   homes?: Array<Record<string, unknown>>;
   /** 空账号：新接口与经典接口都返回 0 台（覆盖「空列表确诊」分支）。 */
   emptyAccount?: boolean;
+  /** 长轮询直接抛错（真机口径：120s 没人扫时 AbortSignal 到期）。 */
+  pollThrows?: boolean;
 }
 
 function fakeXiaomiCloud(options: FakeCloudOptions) {
@@ -138,6 +140,8 @@ function fakeXiaomiCloud(options: FakeCloudOptions) {
     missingSessionCookie: 0,
     /** 最近一次 /app/ 请求实际使用的 cookie（锁兑换后的 jar）。 */
     lastApiCookie: "",
+    /** 设备 API 请求实际打到的主机（锁「sid=mijia 会话只打 mijia 主机」这条口径）。 */
+    apiHosts: [] as string[],
     /** 最近一次 /home/home_device_list 的参数（锁家庭维度口径）。 */
     lastHomeListParams: null as Record<string, string> | null,
     homes: options.homes ?? [{ id: 123, uid: 456, name: "我的家" }],
@@ -352,6 +356,9 @@ function fakeXiaomiCloud(options: FakeCloudOptions) {
       const pollHeaders = (init.headers ?? {}) as Record<string, string>;
       state.pollUserAgent = pollHeaders["user-agent"] ?? "";
       state.polls += 1;
+      if (options.pollThrows) {
+        throw new DOMException("The operation was aborted.", "AbortError");
+      }
       if (pollPendingFirst && state.polls < 2) {
         return accountJson({ code: 0 });
       }
@@ -442,6 +449,7 @@ function fakeXiaomiCloud(options: FakeCloudOptions) {
       );
     }
     if (url.pathname.startsWith("/app/")) {
+      state.apiHosts.push(url.origin);
       return handleAppRequest(url, init);
     }
     return new Response("not found", { status: 404 });
@@ -586,14 +594,14 @@ describe("米家插件：云客户端原语", () => {
       "https://i2.api.io.mi.com",
     );
     // 空/坏地址回落默认 CN 入口（不把坏地址带进后续请求）
-    expect(micloud.normalizeApiHost("")).toBe("https://api.io.mi.com");
-    expect(micloud.normalizeApiHost("不是地址")).toBe("https://api.io.mi.com");
+    expect(micloud.normalizeApiHost("")).toBe("https://api.mijia.tech");
+    expect(micloud.normalizeApiHost("不是地址")).toBe("https://api.mijia.tech");
   });
 
   it("现代米家登录与 API CookieJar：sid=mijia、设备身份稳定、两个 token cookie 同值", async () => {
     const micloud = await loadPluginModule<MicloudModule>("lib/micloud.js");
     expect(micloud.MIHOME_SID).toBe("mijia");
-    expect(micloud.MIHOME_AUTH_VERSION).toBe("mijia-v1");
+    expect(micloud.MIHOME_AUTH_VERSION).toBe("mijia-v2");
     expect(micloud.generateDeviceId(() => 0)).toBe("A".repeat(16));
     expect(micloud.generatePassO()).toMatch(/^[a-f0-9]{16}$/);
 
@@ -821,6 +829,7 @@ function installPlugin(
     pollPendingFirst?: boolean;
     homes?: Array<Record<string, unknown>>;
     emptyAccount?: boolean;
+    pollThrows?: boolean;
   } = {},
 ) {
   const kernel = composePlugins(makeEnv(), []);
@@ -830,6 +839,7 @@ function installPlugin(
     pollPendingFirst: options.pollPendingFirst ?? true,
     ...(options.homes ? { homes: options.homes } : {}),
     ...(options.emptyAccount ? { emptyAccount: options.emptyAccount } : {}),
+    ...(options.pollThrows ? { pollThrows: options.pollThrows } : {}),
   });
   globalThis.fetch = cloud.fetchImpl as typeof fetch;
   const storage = new Map<string, string>();
@@ -1219,7 +1229,7 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
     );
     const stored = JSON.parse(storedRaw ?? "{}") as Record<string, unknown>;
     expect(stored).toMatchObject({
-      authVersion: "mijia-v1",
+      authVersion: "mijia-v2",
       sid: "mijia",
       userId: "u-1",
       cUserId: "C-1",
@@ -1252,6 +1262,10 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
     expect(cloud.state.lastApiCookie).toContain("channel=MI_APP_STORE");
     expect(cloud.state.lastApiCookie).toContain("yetAnotherServiceToken=XIO-1");
     expect(cloud.state.missingSessionCookie).toBe(0);
+    // 设备 API 只打 mijia 主机：`sid=mijia` 的令牌发到 api.io.mi.com 一律 auth error（真机实测）
+    expect(new Set(cloud.state.apiHosts)).toEqual(
+      new Set(["https://api.mijia.tech"]),
+    );
     // 兑换结果落库：进程重启后不用再兑
     const storedApi = JSON.parse(
       storage.get(JSON.stringify(["ws-1", installed.id, "session"])) ?? "{}",
@@ -1310,7 +1324,7 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
         serviceToken: "st-legacy",
         ssecurity: FAKE_SSECURITY,
         apiHost: "https://sts.api.io.mi.com",
-        // 没有 authVersion=mijia-v1：这是旧 sid=xiaomiio 会话，不能迁移。
+        // 没有 authVersion：这是旧 sid=xiaomiio 会话，不能迁移。
       }),
     );
 
@@ -1323,7 +1337,67 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
     expect(storage.has(key)).toBe(false);
   });
 
-  it("空设备列表只给官方主机能证明的提示（不把凭据发到未验证域名）", async () => {
+  it("mijia-v1 会话同样失效清库（设备 API 主机已从 api.io.mi.com 改到 api.mijia.tech）", async () => {
+    const micloud = await loadPluginModule<MicloudModule>("lib/micloud.js");
+    const { service, storage } = installPlugin(micloud);
+    const { installed } = await service.install({
+      url: path.join(MIHOME_DIR),
+      allowLifecycleScripts: false,
+    });
+
+    const key = JSON.stringify(["ws-1", installed.id, "session"]);
+    storage.set(
+      key,
+      JSON.stringify({
+        authVersion: "mijia-v1",
+        sid: "mijia",
+        passToken: "P-1",
+        ssecurity: FAKE_SSECURITY,
+        apiHost: "https://api.io.mi.com",
+        // 存量会话里存着旧主机——改口径只发生在新登录上，所以这里必须作废而不是就地改道。
+      }),
+    );
+
+    const devices = await dispatch(service, installed.id, {
+      path: "devices",
+      workspaceId: "ws-1",
+    });
+    expect(devices?.status).toBe(401);
+    expect(devices?.body).toMatchObject({ code: "not_connected" });
+    expect(storage.has(key)).toBe(false);
+  });
+
+  it("长轮询超时/断线不算失败：回 expired 让面板自动换码（用户不用手点）", async () => {
+    const micloud = await loadPluginModule<MicloudModule>("lib/micloud.js");
+    const { service } = installPlugin(micloud, { pollThrows: true });
+    const { installed } = await service.install({
+      url: path.join(MIHOME_DIR),
+      allowLifecycleScripts: false,
+    });
+
+    const qr = await dispatch(service, installed.id, {
+      path: "login/qr",
+      workspaceId: "ws-1",
+    });
+    const sessionId = bodyOf<{ sessionId: string }>(qr).sessionId;
+    const poll = await dispatch(service, installed.id, {
+      path: "login/poll",
+      query: { sessionId },
+      workspaceId: "ws-1",
+    });
+    // 不抛 500、也不把面板卡在轮询上：状态是 expired，面板据此换新码
+    expect(poll?.status).toBe(200);
+    expect(poll?.body).toMatchObject({ status: "expired" });
+    // 该二维码会话已被丢弃：同一个 sessionId 再问一次是 410（面板不会复用过期码）
+    const again = await dispatch(service, installed.id, {
+      path: "login/poll",
+      query: { sessionId },
+      workspaceId: "ws-1",
+    });
+    expect(again?.status).toBe(410);
+  });
+
+  it("空设备列表如实解释（家庭在、设备为零，不猜设备也不假装已连接）", async () => {
     const micloud = await loadPluginModule<MicloudModule>("lib/micloud.js");
     const { service } = installPlugin(micloud, { emptyAccount: true });
     const { installed } = await service.install({

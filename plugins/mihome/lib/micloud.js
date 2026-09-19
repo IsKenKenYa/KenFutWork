@@ -29,7 +29,18 @@ const LOGIN_URL_PATH = "/longPolling/loginUrl";
 /** 米家 App 的 service id（现代米家登录；旧 `xiaomiio` 会拿到云端认不出的会话）。 */
 export const MIHOME_SID = "mijia";
 const LOCALE = "zh_CN";
-const DEFAULT_API_HOST = "https://api.io.mi.com";
+/**
+ * 现代 `sid=mijia` 会话的设备 API 主机。
+ *
+ * 真机实测：`sid=mijia` 的 serviceToken 发到 `api.io.mi.com` 一律回 auth error，设备一条也
+ * 列不出来；参考实现（Do1e/mijia-api、@zythum02/mijia-api）2025-11 起也已迁到这个主机。
+ *
+ * 归属证据（2026-09-19 本机可复核，改这个常量前先看《改造计划》§4.13 第十九轮（六））：
+ * ① 两个主机对同一个 `/app/*` 请求返回**逐字节相同**的响应（401 + `{"code":0,"message":"auth error"}`，
+ * `server: Tengine`）；② 证书同属 DigiCert 同一 DV CA 族；③ 小米官方项目 xiaomi-miloco 用同父域的
+ * `mico.api.mijia.tech` 做 OAuth。证据只到这一步——它不是小米公开文档里的端点。
+ */
+const DEFAULT_API_HOST = "https://api.mijia.tech";
 /** deviceId 的字符集（参考实现口径：16 位随机串，无固定前缀）。 */
 const DEVICE_ID_CHARS =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
@@ -230,10 +241,9 @@ export function normalizeApiHost(host) {
  * 设备 API 的 CookieJar：优先用 `sid=xiaomiio` 的 STS 会话（`apiCookies`），
  * 否则退回登录时直接带来的字段（老测试/老会话）。
  *
- * 为什么这样设计：二维码走现代 `sid=mijia` 登录（App 扫码的口径），但 `mijia` 的
- * serviceToken 在 `api.io.mi.com` 上会回 auth error（真机实测）；账号级的 `passToken`
- * 可以通过 `serviceLogin?sid=xiaomiio` 兑换成设备 API 认的 serviceToken——
- * 这条兑换链全程只在小米官方域名（account.xiaomi.com / sts.api.io.mi.com）上。
+ * 为什么这样设计：二维码走现代 `sid=mijia` 登录（App 扫码的口径），但设备 API 认的是
+ * `sid=xiaomiio` 的 serviceToken；账号级的 `passToken` 可以经 `serviceLogin?sid=xiaomiio`
+ * 兑换一次（`refreshApiSession`），兑换链全程只在 account.xiaomi.com 与 sts.api.io.mi.com 上。
  */
 export function apiCookieJar(session) {
   const locale = session.locale ?? LOCALE;
@@ -256,9 +266,15 @@ export function apiCookieJar(session) {
   return jar;
 }
 
-/** 现代米家登录会话版本：旧 `xiaomiio` 会话不能迁移成 `mijia`，读取时直接失效。 */
-export const MIHOME_AUTH_VERSION = "mijia-v1";
-/** 设备 API（api.io.mi.com）使用的 service id。 */
+/**
+ * 现代米家登录会话版本，读取时不匹配就清库并让用户重扫。
+ *
+ * `mijia-v1` → `mijia-v2`：设备 API 主机从 `api.io.mi.com` 改到 `api.mijia.tech`（见
+ * `DEFAULT_API_HOST`）。存量会话里存着旧主机，改口径只发生在**新登录**上，所以旧会话必须作废——
+ * 与其在读取时悄悄把凭据改道到另一个主机，不如让用户明确重扫一次。
+ */
+export const MIHOME_AUTH_VERSION = "mijia-v2";
+/** 设备 API 的 service id（兑换用；`sid=mijia` 的令牌设备 API 不认）。 */
 export const API_SID = "xiaomiio";
 
 export function createMihomeClient(options = {}) {
@@ -269,7 +285,7 @@ export function createMihomeClient(options = {}) {
   async function request(session, uri, params, method = "POST") {
     if (session.authVersion !== MIHOME_AUTH_VERSION) {
       throw new Error(
-        "米家会话版本过旧：请断开后重新扫码（需要 sid=mijia 登录）。",
+        "米家会话版本过旧（本轮换了设备 API 主机）：请断开后重新扫码。",
       );
     }
     if (!session.passToken || !session.ssecurity) {
@@ -387,10 +403,9 @@ export function createMihomeClient(options = {}) {
   /**
    * 用账号级 passToken 兑换设备 API（sid=xiaomiio）的 serviceToken。
    *
-   * 二维码走 sid=mijia（App 扫码口径），但 mijia 的 serviceToken 在 api.io.mi.com 上
-   * 会回 auth error（真机实测）。账号级 passToken 可以经官方 passport 流程
-   * `serviceLogin?sid=xiaomiio` → STS 兑换成设备 API 认的 serviceToken——
-   * 全程只在 account.xiaomi.com 与 sts.api.io.mi.com 上，不发未验证域名。
+   * 二维码走 sid=mijia（App 扫码口径），但设备 API 认的是 `sid=xiaomiio` 的 serviceToken。
+   * 账号级 passToken 可以经官方 passport 流程 `serviceLogin?sid=xiaomiio` → STS 兑换一次——
+   * 这条兑换链只在 account.xiaomi.com 与 sts.api.io.mi.com 上，不碰设备 API 主机。
    */
   async function refreshApiSession(session) {
     const auth = {
@@ -470,7 +485,7 @@ export function createMihomeClient(options = {}) {
       userId: String(payload.userId ?? jar.userId ?? ""),
       cUserId: String(payload.cUserId ?? jar.cUserId ?? ""),
       serviceToken: jar.serviceToken,
-      // serviceToken 私有协议只发到小米 api.io.mi.com 体系，不发未验证域名。
+      // 设备 API 只打 DEFAULT_API_HOST（`sid=mijia` 令牌在别的区域主机上会被拒，见该常量注释）。
       apiHost: DEFAULT_API_HOST,
       cookies: jar,
       deviceId: auth.deviceId,
@@ -480,27 +495,24 @@ export function createMihomeClient(options = {}) {
 
   /**
    * 第二步：对 loginUrl 返回的 lp 做长轮询。lp 自带完整 query，不能自行拼旧版 `_` 参数。
+   * 超时/断线不算失败——面板收到 expired 会自动换新码（用户不需要手点）。
    */
   async function pollQrLogin(lp, auth) {
-    const response = await fetchImpl(lp, {
-      headers: accountHeaders(auth.userAgent),
-      signal: AbortSignal.timeout(120_000),
-    });
+    let response;
+    try {
+      response = await fetchImpl(lp, {
+        headers: accountHeaders(auth.userAgent),
+        signal: AbortSignal.timeout(120_000),
+      });
+    } catch {
+      // 120s 内没人扫（AbortSignal 到期）或网络瞬断 → 换新码，不卡死面板
+      return { status: "expired", wait: 2000 };
+    }
     const payload = parseAccountPayload(await response.text());
     if (!payload.ssecurity || !payload.location) {
       return {
-        // 参考实现的长轮询通常只在成功/超时后返回；code=0 但字段未齐时保守继续等一轮。
         status: Number(payload.code) === 0 ? "pending" : "expired",
         wait: 2000,
-        error:
-          Number(payload.code) === 0
-            ? undefined
-            : String(
-                payload.description ??
-                  payload.message ??
-                  payload.code ??
-                  "扫码已失效",
-              ),
       };
     }
     return {

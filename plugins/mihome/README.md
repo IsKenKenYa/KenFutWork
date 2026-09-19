@@ -35,10 +35,12 @@
 2. **API CookieJar 不是「所有 callback cookie 全塞进去」**：按参考实现固定写
    `cUserId`、两份 `serviceToken`、时区/夏令时、`channel=MI_APP_STORE`、国家、`PassportDeviceId`、`locale`。
    `deviceId/pass_o/passToken/userId/cUserId/uLocale` 只属于 serviceLogin 请求；二维码 callback 不手工带旧 Cookie。
-3. **区域主机**：callback 的 STS URL 不是设备 API 主机；私有 RC4 API 只允许发往小米 `*.api.io.mi.com` 体系。
-   未验证归属/授权用途的裸 `api.mijia.tech` **绝不发送 serviceToken、cookie、ssecurity 或 passToken**。
-4. **空列表要如实解释**：现代 `mijia` 会话无效或账号/地区不对时，官方 API 可能只回空列表；面板显示
-   「米家云没有返回家庭数据：请确认扫描的是绑定设备的米家账号，并确认账号地区与米家 App 一致」，不再把凭据发给第三方诊断域名。
+3. **设备 API 主机是 `api.mijia.tech`**：`sid=mijia` 的 serviceToken 发到 `api.io.mi.com` 一律 auth error，
+   设备一条也列不出来（真机实测）；参考实现 2025-11 起也迁到了这个主机。callback 给的 STS URL 同样不是设备 API 主机
+   （`normalizeApiHost` 去 `sts.` 前缀，只对存量值兜底）。主机归属的证据与风险见 `lib/micloud.js` 的
+   `DEFAULT_API_HOST` 注释与《改造计划》§4.13 第十九轮（六）——**它不是小米公开文档里的端点**。
+4. **空列表要如实解释**：现代 `mijia` 会话无效或账号/地区不对时，云端可能只回空列表；面板显示
+   「米家云没有返回家庭数据：请确认扫描的是绑定设备的米家账号，并确认账号地区与米家 App 一致」。
 5. **设备列表走家庭维度**：`/v2/homeroom/gethome_merged` 取 home_id/home_owner → 逐家庭
    `/home/home_device_list`（`limit`/`start_did`/`has_more` 分页）。经典 `/home/device_list` 只作
    「没有家庭模型的老账号」兜底。
@@ -52,11 +54,12 @@
    参考实现复刻；**没有任何本地测试能替代真实账号的端到端验证**——首次接入请以「能否列出设备、开关是否真变」为准。
    本插件第一版就是在这里翻车：主机、cookie 罐、接口口径三处都错，靠真机逐步定位（详见《改造计划》§4.13 第十九轮）。
 3. **旧二维码必须重扫一次**：旧版本使用错误的 `sid=xiaomiio`，它不是字段不全能补的问题——serviceToken
-   绑定登录 service，不能迁移成 `mijia`。新版本读取到旧会话会自动清掉并回到未连接；请只扫新版本生成的码。
-4. **凭据安全提示**：调试旧会话时，早期版本曾把该旧会话发到裸 `api.mijia.tech` 做一次确诊；公开证据只能证明
-   同父域的特定子域被小米官方项目使用，不能证明该裸域获授权接收 serviceToken/cookies。当前代码已移除该路径，
-   凭据只发给 `account.xiaomi.com` 与 `*.api.io.mi.com`。使用过早期诊断版的用户应在米家 App / 小米账号安全页
-   撤销旧登录授权（若列表可见），并只扫描新 `sid=mijia` 二维码。
+   绑定登录 service，不能迁移成 `mijia`。**设备 API 主机改口径（`mijia-v1` → `mijia-v2`）时同样要重扫**：
+   存量会话里存着旧主机。两种情况插件都会把旧会话自动清掉并回到未连接，请只扫新版本生成的码。
+4. **凭据去向（如实说明）**：本插件会把小米会话凭据发给 `account.xiaomi.com`（登录与令牌兑换）和
+   `api.mijia.tech`（设备 API）。`api.mijia.tech` 的归属证据是「与 `api.io.mi.com` 对同一请求返回逐字节相同的响应
+   + 同 CA 族证书 + 小米官方项目用同父域子域」，**不是**小米公开文档里的端点；2026-09 曾一度按「未验证域名」禁用它，
+   但真机实测 `api.io.mi.com` 对 `sid=mijia` 会话一律 auth error，禁用它等于功能不可用。不接受这一点就别装这个插件。
 5. 面板是 `sidebar` 槽位的 iframe 弹层（插件 UI 缝的既有形态），不是常驻右栏标签。
 5. 一次最多读 40 台设备的属性（云端按条心跳），设备多时面板顶部会如实标注只读了前 N 台。
 6. 复杂品类（空调/扫地机等）按规格能力给控件：能给就给，给不了就只显示读数。
