@@ -1,42 +1,78 @@
 #!/usr/bin/env node
 /**
- * 生成桌面端图标集（`src-tauri/icons/`）——**换标只跑这一条命令**。
+ * 生成桌面端图标集 + 应用内品牌图（**换标只跑这一条命令**）。
  *
  * 用法：`node scripts/icons.mjs`（在 apps/desktop 下）
  *
- * 源是品牌标的当前定稿：`docs/design/logo/` 里最新的那张（2026-09-19 换成了
- * `GPT生成.png` 的蓝色 KF 标）。生成交给 Tauri 自带的 `tauri icon`——它会出整套
- * （`icon.ico` 多尺寸给 Windows、`icon.icns`、`icon.png`、`Square*.png`、android/ios），
- * 比手写 ICO 打包器可靠，也保证与框架约定一致（此前那份手写的只出 ico + 几个 png）。
- *
- * 历史：更早的定稿是 `最终定稿.svg`（岚配色 + 白字形 K），当时用 sharp 栅格化；
- * 换成位图标之后 sharp 那条路不再适用（PNG 不需要栅格化）。
+ * 两步：
+ * 1. **合成应用图标**：源标（`docs/design/logo/GPT生成.png`，蓝 KF）叠在**白色圆角贴片**上
+ *    —— 用户口径「图标后面加上白色背景，圆角还是之前的小米图标同版圆角」：圆角取 22%，
+ *    与上一版（岚配色圆角方块）的 clip 半径一致（112/512 ≈ 21.9%）。
+ *    合成结果同时落到 `docs/design/logo/应用图标-白底圆角.png`（可入库的定稿）、
+ *    `apps/web/public/logo.png`（应用内品牌图）与 `apps/web/public/app-icon.png`（启动页等）。
+ * 2. **出整套平台图标**：交给 Tauri 自带的 `tauri icon`（ico、icns、png、Square 系列、android、ios），
+ *    比手写 ICO 打包器可靠，也保证与框架约定一致。
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { copyFileSync, existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 
 const repoRoot = join(import.meta.dirname, "..", "..", "..");
-const outDir = join(import.meta.dirname, "..", "src-tauri", "icons");
+const iconsDir = join(import.meta.dirname, "..", "src-tauri", "icons");
+const publicDir = join(repoRoot, "apps", "web", "public");
+const designDir = join(repoRoot, "docs", "design", "logo");
+
+// sharp 是 apps/server 的依赖（图片生成 provider 用它）；按它的包位置解析，不给桌面壳加依赖
+const require = createRequire(join(repoRoot, "apps", "server", "package.json"));
+const sharp = require("sharp");
 
 /** 品牌标候选源（按优先级）：当前定稿在前。 */
 const SOURCES = ["GPT生成.png", "最终定稿.svg"].map((name) =>
-  join(repoRoot, "docs", "design", "logo", name),
+  join(designDir, name),
 );
-
 const source = SOURCES.find((path) => existsSync(path));
 if (!source) {
-  console.error(
-    `找不到品牌标源文件，试过：\n${SOURCES.map((p) => `  ${p}`).join("\n")}`,
-  );
+  console.error(`找不到品牌标源文件，试过：\n${SOURCES.join("\n")}`);
   process.exit(1);
 }
 
-console.log(`用 ${source} 生成图标集 → ${outDir}`);
+/** 白底圆角贴片参数：1024 画布、圆角 22%（≈上一版方块图标）、标占 68%（留出呼吸边距）。 */
+const CANVAS = 1024;
+const RADIUS = Math.round(CANVAS * 0.22);
+const MARK = Math.round(CANVAS * 0.68);
+
+const tile = Buffer.from(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS}" height="${CANVAS}">
+     <rect width="${CANVAS}" height="${CANVAS}" rx="${RADIUS}" ry="${RADIUS}" fill="#FFFFFF"/>
+   </svg>`,
+);
+const mark = await sharp(source)
+  .resize(MARK, MARK, {
+    fit: "contain",
+    background: { r: 0, g: 0, b: 0, alpha: 0 },
+  })
+  .png()
+  .toBuffer();
+const composed = await sharp(tile)
+  .composite([{ input: mark, gravity: "center" }])
+  .png({ compressionLevel: 9 })
+  .toBuffer();
+
+const composedPath = join(designDir, "应用图标-白底圆角.png");
+await sharp(composed).toFile(composedPath);
+copyFileSync(composedPath, join(publicDir, "logo.png"));
+copyFileSync(composedPath, join(publicDir, "app-icon.png"));
+console.log(
+  `应用图标已合成（白底圆角 ${RADIUS}/${CANVAS}）：${composedPath}\n` +
+    `  同时写入 apps/web/public/logo.png 与 app-icon.png`,
+);
+
+console.log(`再用 tauri icon 出整套平台图标 → ${iconsDir}`);
 const result = spawnSync(
   "pnpm",
-  ["exec", "tauri", "icon", source, "-o", outDir],
+  ["exec", "tauri", "icon", composedPath, "-o", iconsDir],
   {
     cwd: join(repoRoot, "apps", "desktop"),
     shell: process.platform === "win32",

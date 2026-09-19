@@ -1960,9 +1960,10 @@ export function Workbench() {
           />
           <div className="flex items-center justify-between px-3 pt-3 pb-2">
             <span className="flex items-center gap-2">
-              <KenFutWorkLogo className="size-7 text-foreground" />
-              {/* 字标：Momo Trust Display（`--font-wordmark`）+ 与**应用图标**一致的蓝渐变 */}
-              <span className="font-wordmark bg-gradient-to-r from-[#2E63FA] to-[#214ADA] bg-clip-text text-xl tracking-tight text-transparent dark:from-[#7EA2FF] dark:to-[#4C7BFF]">
+              <KenFutWorkLogo className="size-9 text-foreground" />
+              {/* 字标：Momo Trust Display（`--font-wordmark`）+ 与图标同色系的**淡蓝**渐变
+                  （纯图标蓝在文字上太扎眼，用户口径「太妖艳了」→ 调淡一档） */}
+              <span className="font-wordmark bg-gradient-to-r from-[#6C86E8] to-[#4F6BD0] bg-clip-text text-xl tracking-tight text-transparent dark:from-[#9AB0F5] dark:to-[#7A95F0]">
                 KenFutWork
               </span>
             </span>
@@ -2796,7 +2797,7 @@ ${formatElementReference(picked)}`
               ) : (
                 <Palette className="h-8 w-8" />
               )}
-              <h1 className="font-wordmark bg-gradient-to-r from-[#2E63FA] to-[#214ADA] bg-clip-text text-4xl text-transparent dark:from-[#7EA2FF] dark:to-[#4C7BFF]">
+              <h1 className="font-wordmark bg-gradient-to-r from-[#6C86E8] to-[#4F6BD0] bg-clip-text text-4xl text-transparent dark:from-[#9AB0F5] dark:to-[#7A95F0]">
                 {meta.title}
               </h1>
             </div>
