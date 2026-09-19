@@ -5,7 +5,6 @@ import {
   BarChart3,
   Bot,
   Code2,
-  Download,
   Folder,
   Layers,
   Palette,
@@ -357,9 +356,9 @@ export function PluginMarketModal({
                         <button
                           type="button"
                           onClick={() => setExportName(entry.name)}
-                          className="flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                          className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
                         >
-                          <Download className="h-3 w-3" /> 导出
+                          导出
                         </button>
                       </div>
                     </li>
