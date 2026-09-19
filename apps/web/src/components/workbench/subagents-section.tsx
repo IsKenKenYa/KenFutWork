@@ -53,10 +53,8 @@ export function SubagentsSection({ accessToken }: { accessToken: string }) {
     <section aria-label="子智能体设置">
       <h3 className="mb-1 text-base font-medium">子智能体</h3>
       <p className="mb-3 text-sm text-muted-foreground">
-        主 agent
-        可以把子任务派给专门的子智能体去跑，再把结果收回来。下面这份清单来自
-        agent
-        装配处——列出来的就是真能派活的那些；运行中的子代理在右栏「子智能体」目录里看。
+        主 Agent
+        可以把子任务交给下面这些子智能体执行，运行情况在右栏「子智能体」面板里看。
       </p>
 
       {error ? (
@@ -101,7 +99,7 @@ export function SubagentsSection({ accessToken }: { accessToken: string }) {
               setNotice(
                 requestPanelView("subagents")
                   ? null
-                  : "当前界面没有右栏面板可打开（Design 模式的主区是画布）——到 Code 模式的会话里看「子智能体」标签。",
+                  : "当前界面没有右栏面板可打开，请到 Code 模式里查看「子智能体」。",
               );
             }}
             className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"

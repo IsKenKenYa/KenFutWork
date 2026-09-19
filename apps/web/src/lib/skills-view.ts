@@ -103,4 +103,4 @@ export function skillStateLabel(row: SkillView): string {
 
 /** 导入来源说明（与后端 detectImportSource 支持的来源保持一致）。 */
 export const SKILL_IMPORT_HINT =
-  "支持 GitHub 仓库链接、npm tarball（.tgz/.tar.gz）与 ZIP 压缩包（.zip/.skill）；包内需含 SKILL.md（或 package.json + README.md 回落）。";
+  "支持 GitHub 仓库链接、npm 包与 ZIP 压缩包（.zip / .tgz）；包内需含 SKILL.md。";

@@ -13,6 +13,37 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkbenchSidePanel } from "../src/components/workbench/workbench-side-panel";
 import type { WebSocketHandle } from "../src/hooks/use-websocket";
+import { withAppProviders } from "./test-providers";
+
+/**
+ * xterm 的替身：终端视图会在面板里挂载终端模拟器，而 xterm 依赖 canvas / matchMedia
+ * （jsdom 里跑不了真的）。这里只要有实例能建出来就行——终端自己的行为在
+ * `panel-terminal-view.test.tsx` 里锁。
+ */
+vi.mock("@xterm/xterm", () => ({
+  Terminal: class {
+    cols = 80;
+    rows = 24;
+    loadAddon() {}
+    open() {}
+    write() {}
+    clear() {}
+    dispose() {}
+    focus() {}
+    onData() {
+      return { dispose: () => {} };
+    }
+    onResize() {
+      return { dispose: () => {} };
+    }
+  },
+}));
+vi.mock("@xterm/addon-fit", () => ({
+  FitAddon: class {
+    fit() {}
+  },
+}));
+vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 
 /** 终端标签需要的 WS 句柄替身：只实现面板真正用到的那几个方法。 */
 function fakeWs(): WebSocketHandle {
@@ -24,6 +55,7 @@ function fakeWs(): WebSocketHandle {
     registerRPC: () => () => {},
     resumeCanvas: vi.fn(),
     startTerminal: vi.fn(),
+    resizeTerminal: vi.fn(),
     sendTerminalInput: vi.fn(),
     stopTerminal: vi.fn(),
     onTerminal: () => () => {},
@@ -59,6 +91,36 @@ vi.mock("../src/lib/code-git-api", () => ({
     resolvedShell: "cmd",
   }),
   runTerminalCommand: vi.fn(),
+}));
+
+/**
+ * 浏览器面板的实时画面要跟服务端换票据开流：这里把那条通道换成替身
+ * （真行为由 `cdp-view.test.ts` / `panel-browser-live` 相关的用例锁）。
+ */
+const {
+  fetchCdpStatusMock,
+  connectCdpMock,
+  openCdpViewMock,
+  sendCdpInputMock,
+  injectDebugConsoleMock,
+  openCdpDevtoolsMock,
+} = vi.hoisted(() => ({
+  fetchCdpStatusMock: vi.fn(),
+  connectCdpMock: vi.fn(),
+  openCdpViewMock: vi.fn(),
+  sendCdpInputMock: vi.fn(),
+  injectDebugConsoleMock: vi.fn(),
+  openCdpDevtoolsMock: vi.fn(),
+}));
+
+vi.mock("../src/lib/server-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/lib/server-api")>()),
+  fetchCdpStatus: fetchCdpStatusMock,
+  connectCdp: connectCdpMock,
+  openCdpView: openCdpViewMock,
+  sendCdpInput: sendCdpInputMock,
+  injectDebugConsole: injectDebugConsoleMock,
+  openCdpDevtools: openCdpDevtoolsMock,
 }));
 
 /**
@@ -119,23 +181,27 @@ describe("WorkbenchSidePanel（多标签）", () => {
   });
 
   function Harness({ open = true }: { open?: boolean } = {}) {
-    return (
+    return withAppProviders(
       <WorkbenchSidePanel
         open={open}
-        onClose={() => {}}
         accessToken="token"
         canvasId="canvas-1"
         subagents={[]}
         running={false}
         ws={fakeWs()}
-      />
+      />,
     );
   }
 
-  /** 从「+」菜单打开一个视图（与真实操作同一条路）。 */
+  /**
+   * 打开一个视图（与真实操作同一条路）：现在**只有一个菜单**——
+   * 「标签列表」下拉里既有打开的标签页，也有「新建视图」段（用户口径：不要单独一个菜单）。
+   */
   async function openView(label: string) {
-    await userEvent.click(screen.getByLabelText("打开视图"));
-    await userEvent.click(await screen.findByRole("option", { name: label }));
+    await userEvent.click(screen.getByLabelText("标签列表"));
+    await userEvent.click(
+      await screen.findByRole("button", { name: `新建视图：${label}` }),
+    );
   }
 
   it("默认开「变更」标签：头部给总数与增删、逐行给「审查 / 打开 / 撤销」", async () => {
@@ -221,7 +287,7 @@ describe("WorkbenchSidePanel（多标签）", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "关闭 变更" }));
     expect(screen.queryAllByRole("tab")).toHaveLength(0);
-    expect(screen.getByText(/没有打开的视图/)).toBeInTheDocument();
+    expect(screen.getByText(/点上面的 ＋/)).toBeInTheDocument();
   });
 
   it("标签列表下拉：可搜索、可切换、可关闭", async () => {
@@ -232,10 +298,16 @@ describe("WorkbenchSidePanel（多标签）", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "标签列表" }));
     const dialog = await screen.findByRole("dialog", { name: "打开的标签页" });
-    expect(within(dialog).getByText("文件目录")).toBeInTheDocument();
+    // 同一个菜单里现在还有「新建视图」段（用户口径：不要单独一个菜单）——
+    // 断言按组寻址，免得两组的同名文本互相干扰
+    const tabGroup = within(dialog).getByRole("list", { name: "打开的标签页" });
+    expect(within(tabGroup).getByText("文件目录")).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("list", { name: "新建视图" }),
+    ).toBeInTheDocument();
 
     await userEvent.type(within(dialog).getByLabelText("搜索标签页"), "文件");
-    expect(within(dialog).queryByText("变更")).not.toBeInTheDocument();
+    expect(within(tabGroup).queryByText("变更")).not.toBeInTheDocument();
 
     // 列表项的可访问名是「文件目录 刚刚」（关闭键是「关闭 文件目录」，这里要选前者）
     await userEvent.click(
@@ -251,7 +323,6 @@ describe("WorkbenchSidePanel（多标签）", () => {
     render(
       <WorkbenchSidePanel
         open
-        onClose={() => {}}
         accessToken="token"
         canvasId={null}
         subagents={[]}
@@ -259,9 +330,7 @@ describe("WorkbenchSidePanel（多标签）", () => {
         ws={fakeWs()}
       />,
     );
-    expect(
-      await screen.findByText(/这个会话没有绑定工作目录/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/未绑定工作目录/)).toBeInTheDocument();
     expect(fetchGitChangesMock).not.toHaveBeenCalled();
   });
 
@@ -429,7 +498,6 @@ describe("面板宽度受对话列最小宽度约束", () => {
     return (
       <WorkbenchSidePanel
         open
-        onClose={() => {}}
         accessToken="token"
         canvasId="canvas-1"
         subagents={[]}
@@ -498,29 +566,97 @@ describe("面板宽度受对话列最小宽度约束", () => {
  * 「点对话里的 URL → 右栏浏览器打开」（用户口径）。
  *
  * 两个层面：模块级请求通道（有订阅者才拦截点击，没订阅者不吞掉链接默认行为），
- * 以及浏览器标签本身（地址栏补协议、iframe 渲染、系统浏览器兜底）。
+ * 以及浏览器标签本身（地址栏补协议、**面板里的实时画面**、系统浏览器兜底）。
  */
 describe("右栏浏览器（点链接自动打开）", () => {
-  afterEach(cleanup);
+  /**
+   * jsdom 不做布局：元素量出来恒为 0，而实时画面要按面板尺寸开流（0 尺寸会先摆着不开）。
+   * 这里给整棵 DOM 一个 800×600 的可用尺寸——面板正是按这个尺寸跟服务端要画面的。
+   */
+  const originalClientWidth = Object.getOwnPropertyDescriptor(
+    Element.prototype,
+    "clientWidth",
+  );
+  const originalClientHeight = Object.getOwnPropertyDescriptor(
+    Element.prototype,
+    "clientHeight",
+  );
+
+  beforeEach(() => {
+    Object.defineProperty(Element.prototype, "clientWidth", {
+      configurable: true,
+      get: () => 800,
+    });
+    Object.defineProperty(Element.prototype, "clientHeight", {
+      configurable: true,
+      get: () => 600,
+    });
+    fetchCdpStatusMock.mockResolvedValue({
+      status: "connected",
+      browser: "Chrome",
+      port: 9333,
+      tabs: 1,
+      currentUrl: "",
+      owned: true,
+      headless: true,
+    });
+    openCdpViewMock.mockResolvedValue({
+      ticket: "ticket-1",
+      viewport: { width: 800, height: 600, scale: 1 },
+    });
+    sendCdpInputMock.mockResolvedValue(undefined);
+    connectCdpMock.mockResolvedValue({
+      status: "connected",
+      browser: "Chrome",
+      port: 9333,
+      tabs: 1,
+      currentUrl: "",
+      owned: true,
+      headless: true,
+    });
+    openCdpDevtoolsMock.mockResolvedValue({ windowId: 1 });
+    injectDebugConsoleMock.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+    // 悬浮控制台的位置存在 localStorage：别串到下一个用例
+    window.localStorage.clear();
+    if (originalClientWidth) {
+      Object.defineProperty(
+        Element.prototype,
+        "clientWidth",
+        originalClientWidth,
+      );
+    }
+    if (originalClientHeight) {
+      Object.defineProperty(
+        Element.prototype,
+        "clientHeight",
+        originalClientHeight,
+      );
+    }
+  });
 
   function Harness() {
-    return (
+    // 同上：面板的动作结果走全站 toast，测试按真实结构包一层 provider
+    return withAppProviders(
       <WorkbenchSidePanel
         open
-        onClose={() => {}}
         accessToken="token"
         canvasId="canvas-1"
         subagents={[]}
         running={false}
         ws={fakeWs()}
-      />
+      />,
     );
   }
 
   async function openBrowserTab() {
-    await userEvent.click(screen.getByLabelText("打开视图"));
+    await userEvent.click(screen.getByLabelText("标签列表"));
     await userEvent.click(
-      await screen.findByRole("option", { name: "浏览器" }),
+      await screen.findByRole("button", { name: "新建视图：浏览器" }),
     );
   }
 
@@ -539,18 +675,29 @@ describe("右栏浏览器（点链接自动打开）", () => {
     expect(requestBrowserOpen("http://localhost:3001/")).toBe(false);
   });
 
-  it("地址栏补协议：裸地址按 http；空串不可打开", async () => {
+  it("地址栏补协议：裸域名默认 https，本地/内网走 http，显式协议照输入（用户口径）", async () => {
     const { normalizeUrl } = await import(
       "../src/components/workbench/workbench-side-panel"
     );
+    // 裸域名：与浏览器一致，先按 https 试
+    expect(normalizeUrl("baidu.com")).toBe("https://baidu.com");
+    expect(normalizeUrl("www.example.com/a/b")).toBe(
+      "https://www.example.com/a/b",
+    );
+    // 本地/内网：没有证书，默认 http（否则白等一个超时再回落）
     expect(normalizeUrl("localhost:8000/demo")).toBe(
       "http://localhost:8000/demo",
     );
+    expect(normalizeUrl("127.0.0.1:3000")).toBe("http://127.0.0.1:3000");
+    expect(normalizeUrl("192.168.1.20")).toBe("http://192.168.1.20");
+    expect(normalizeUrl("nas.local")).toBe("http://nas.local");
+    // 显式写的协议一律尊重
     expect(normalizeUrl("https://example.com")).toBe("https://example.com");
+    expect(normalizeUrl("http://baidu.com")).toBe("http://baidu.com");
     expect(normalizeUrl("   ")).toBeNull();
   });
 
-  it("地址栏回车后渲染 iframe；工具栏给后退/前进/刷新、视口预设与「在系统浏览器打开」出口", async () => {
+  it("地址栏回车后面板显示受控浏览器的实时画面；工具栏给后退/前进/刷新与「在默认浏览器中打开」出口", async () => {
     render(<Harness />);
     await openBrowserTab();
     expect(screen.getByRole("button", { name: "后退" })).toBeDisabled();
@@ -559,59 +706,117 @@ describe("右栏浏览器（点链接自动打开）", () => {
 
     const input = screen.getByLabelText("地址");
     await userEvent.type(input, "localhost:8000{Enter}");
+    /**
+     * **面板里是受控浏览器的画面，不是 iframe**（用户口径：调试面板要在内嵌页面里出来；
+     * iframe 跨源，注不进脚本也挂不上调试工具）。面板的尺寸就是要给浏览器的视口尺寸。
+     */
     expect(
-      await screen.findByTitle("右栏浏览器：http://localhost:8000"),
+      await screen.findByRole("img", {
+        name: "浏览器画面：http://localhost:8000",
+      }),
     ).toBeInTheDocument();
+    expect(openCdpViewMock).toHaveBeenCalledWith("token", {
+      url: "http://localhost:8000",
+      width: 800,
+      height: 600,
+    });
 
     expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "前进" })).toBeDisabled();
     await userEvent.clear(input);
     await userEvent.type(input, "localhost:8001{Enter}");
     expect(
-      await screen.findByTitle("右栏浏览器：http://localhost:8001"),
+      await screen.findByRole("img", {
+        name: "浏览器画面：http://localhost:8001",
+      }),
     ).toBeInTheDocument();
     const back = screen.getByRole("button", { name: "后退" });
     expect(back).toBeEnabled();
     await userEvent.click(back);
     expect(
-      await screen.findByTitle("右栏浏览器：http://localhost:8000"),
+      await screen.findByRole("img", {
+        name: "浏览器画面：http://localhost:8000",
+      }),
     ).toBeInTheDocument();
 
-    // 视口预设（用户口径：预设不做在地址栏右边，改在工具栏第二行）
-    const viewport = screen.getByLabelText("视口预设");
-    await userEvent.click(viewport);
-    const preset = await screen.findByRole("option", { name: "1280 × 720" });
-    await userEvent.click(preset);
-    const frame = screen.getByTitle("右栏浏览器：http://localhost:8000");
-    expect(frame.style.width).toBe("1280px");
-    // 预设按比例缩放到面板里，指针坐标仍然对得上（不是拿宽度假装）
-    expect(frame.style.transform).toMatch(/scale\(/);
+    /**
+     * 自由尺寸（用户口径：「点一下打开，再点一下取消，名字叫做自由尺寸 / 退出自由尺寸」）：
+     * 关着时**只有按钮**，打开后第二行**不管有没有页面都显示**，内容只有
+     * 「分辨率（可编辑输入框）+ 窗口比例」。
+     */
+    expect(screen.queryByLabelText("视口宽度")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "自由尺寸" }),
+    ).toBeInTheDocument();
 
-    // 「在系统浏览器打开」在 ⋯ 菜单里（地址栏右侧，不带箭头）
+    await userEvent.click(screen.getByRole("button", { name: "自由尺寸" }));
+    const widthInput = await screen.findByLabelText("视口宽度");
+    const heightInput = screen.getByLabelText("视口高度");
+    expect(heightInput).toBeInTheDocument();
+    expect(screen.getByLabelText("窗口比例")).toBeInTheDocument();
+
+    // 分辨率是**可编辑输入框**：改宽度 → 显示盒按新尺寸排版（并按比例缩放）
+    const frame = screen
+      .getByRole("img", { name: "浏览器画面：http://localhost:8000" })
+      .closest('[data-role="live-browser-frame"]') as HTMLElement | null;
+    await userEvent.clear(widthInput);
+    await userEvent.type(widthInput, "900");
+    await waitFor(() => expect(frame?.style.width).toBe("900px"));
+    await userEvent.clear(heightInput);
+    await userEvent.type(heightInput, "600");
+    await waitFor(() => expect(frame?.style.height).toBe("600px"));
+    /**
+     * 自由尺寸是**真视口**：不是把画面缩放一下，而是让受控浏览器真的按 900×600 排版
+     * （服务端走 `Emulation.setDeviceMetricsOverride`），所以这里断言的是「按新尺寸重开了流」。
+     */
+    await waitFor(() =>
+      expect(openCdpViewMock).toHaveBeenLastCalledWith("token", {
+        url: "http://localhost:8000",
+        width: 900,
+        height: 600,
+      }),
+    );
+    expect(frame?.style.transform).toMatch(/scale\(/);
+    expect(
+      screen.getByRole("button", { name: "拖动调整尺寸" }),
+    ).toBeInTheDocument();
+
+    // 再点一下 = 取消（按钮名与状态一起变），输入框随之收走
+    const exit = screen.getByRole("button", { name: "退出自由尺寸" });
+    expect(exit).toHaveAttribute("aria-pressed", "true");
+    await userEvent.click(exit);
+    expect(screen.queryByLabelText("视口宽度")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "自由尺寸" }),
+    ).toBeInTheDocument();
+
+    // 「在默认浏览器中打开」在 ⋯ 菜单里（地址栏右侧，不带箭头）
     const menu = screen.getByLabelText("浏览器菜单");
     await userEvent.click(menu);
     expect(
-      await screen.findByRole("option", { name: "在系统浏览器打开" }),
+      await screen.findByRole("option", { name: "在默认浏览器中打开" }),
     ).toBeInTheDocument();
 
-    // 自由尺寸（参考图的「退出自由尺寸」）：尺寸可改、可拖，退出即回到跟随面板
-    await userEvent.click(viewport);
-    await userEvent.click(
-      await screen.findByRole("option", { name: "自由尺寸" }),
-    );
-    const widthInput = screen.getByLabelText("视口宽度");
-    await userEvent.clear(widthInput);
-    await userEvent.type(widthInput, "900");
+    /**
+     * 「打开调试工具」= 往面板显示的这一页**注入第三方调试控制台**（Eruda，摆成悬浮窗）。
+     * 用户口径：「之前用的不是参考别人的控制台吗」——所以锁的是「注入那一页」，
+     * 而不是我们另画的窗口。
+     */
+    // Base UI 的选项按「高亮项」提交（jsdom 里不 hover 就会落到最后一项）：先悬浮再点
+    const devtoolsOption = screen.getByRole("option", { name: "打开调试工具" });
+    await userEvent.hover(devtoolsOption);
+    await userEvent.click(devtoolsOption);
     await waitFor(() =>
-      expect(
-        screen.getByTitle("右栏浏览器：http://localhost:8000").style.width,
-      ).toBe("900px"),
+      expect(injectDebugConsoleMock).toHaveBeenCalledWith(
+        "token",
+        "http://localhost:8000",
+      ),
     );
     expect(
-      screen.getByRole("button", { name: "拖动调整视口尺寸" }),
+      await screen.findByText(
+        "调试控制台已打开（面板页面里的悬浮窗，可拖可关）",
+      ),
     ).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "退出自由尺寸" }));
-    expect(screen.queryByLabelText("视口宽度")).not.toBeInTheDocument();
 
     // 元素拾取（R3-4）：开着页面 + 有 token 时可用；点它会去服务端抓静态快照
     const pickButton = screen.getByRole("button", {

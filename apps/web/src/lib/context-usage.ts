@@ -83,10 +83,19 @@ export interface ContextUsageView {
   windowKnown: boolean;
   /** 模型上下文窗口；未知时为 null（此时不显示百分比）。 */
   windowLabel: string | null;
-  /** 占用百分比（0-100 的整数）；窗口未知或无数据时为 null。 */
+  /** 占用百分比（0-100，保留一位小数）；窗口未知或无数据时为 null。 */
   percent: number | null;
   /** 形如「61.4%」。 */
   percentLabel: string | null;
+  /**
+   * 两位小数的整行读数（用户口径「需要到小数点后两位」），形如 `4.5万/100万（4.53%）`
+   * ——两位小数只加在百分比上，token 量词仍是一位小数。
+   *
+   * **用处**：浮层首行与环的悬停读数都用它——圆环里不写数字后（用户口径
+   * 「百分比不显示在圆环上」），这里就是唯一看得见精确值的地方；满格写 `100`
+   * （不留 `100.00`）。窗口未知时为 null（那时没有百分比可精确，退回 {@link usageLine}）。
+   */
+  usageFineLine: string | null;
   /**
    * 平均缓存命中率（形如「99.9%」）。
    *
@@ -132,7 +141,7 @@ export interface ContextUsageView {
    * 「输出预留线」：`窗口 − 预留` 对应的百分比位置（进度条上那根刻度）。
    *
    * 口径：**超过这条线意味着已经吃掉为回复预留的空间**——再追一轮更容易被上游
-   * 截断/拒绝。我们**不做自动压缩**，所以这条线是给人看的行动提示，不是「到时自动处理」的开关。
+   * 截断/拒绝。这条线是给人看的行动提示（窗格里的警示文案照它判断）。
    */
   thresholdPercent: number | null;
   /** 是否已越线（已用 > 阈值）。预留未知时恒为 false。 */
@@ -173,6 +182,32 @@ function trimZero(value: number): string {
   return value.toFixed(1).replace(/\.0$/, "");
 }
 
+/**
+ * 选中模型的容量元数据（窗口 / 最大输出）：两处编排器（Code 与 Design）都从这里取。
+ *
+ * **为什么单独抽出来**：这两处此前各写各的 `models.find((m) => m.id === model)`，结果
+ * **带真实用量的那个编排器漏传 `maxOutputTokens`**——上下文浮层的「预留输出 / 剩余」两段
+ * 与阈值刻度于是在任何模式下都画不出来；组件单测直接渲染按钮，抓不到这种接线漏项
+ * （真机跑一轮才发现，见《改造计划》§4.13 第十五轮）。
+ *
+ * 认不出 id 时两个字段都给 `null`（实例被删、`workbench:model` 里留着已失效的 specifier）：
+ * 宁可少画一段，也不拿别的实例的元数据顶替。
+ */
+export function contextUsageModelMeta(
+  models: readonly {
+    id: string;
+    contextWindow?: number | undefined;
+    maxOutputTokens?: number | undefined;
+  }[],
+  modelId: string,
+): { contextWindow: number | null; maxOutputTokens: number | null } {
+  const found = models.find((m) => m.id === modelId);
+  return {
+    contextWindow: found?.contextWindow ?? null,
+    maxOutputTokens: found?.maxOutputTokens ?? null,
+  };
+}
+
 export function contextUsageView(
   usage: RunUsageSnapshot | null | undefined,
   contextWindow: number | null | undefined,
@@ -189,6 +224,7 @@ export function contextUsageView(
     windowLabel: window === null ? null : formatTokens(window),
     percent: null,
     percentLabel: null,
+    usageFineLine: null,
     cacheHitLabel: null,
     cacheHitPercent: null,
     cacheHitScope: null,
@@ -203,10 +239,23 @@ export function contextUsageView(
   };
   if (!usage || usage.inputTokens <= 0) return empty;
 
+  // 原始比例先留着：两位小数的读数要用**未取整**的值（拿一位小数的 percent 再 toFixed 会得到 4.50）
+  const rawPercent =
+    window === null ? null : (usage.inputTokens / window) * 100;
   const percent =
-    window === null
+    rawPercent === null
       ? null
-      : Math.min(100, Math.round((usage.inputTokens / window) * 1000) / 10);
+      : Math.min(100, Math.round(rawPercent * 10) / 10);
+  /**
+   * 最多两位小数（`4.53`；整数百分比就是 `61.4` 而不是 `61.40`——补零不是精度）。
+   * 满格写 `100`：`100.00` 没有信息量。
+   */
+  const finePercent =
+    rawPercent === null
+      ? null
+      : rawPercent >= 100
+        ? "100"
+        : rawPercent.toFixed(2).replace(/\.?0+$/, "");
   const cached = usage.cachedInputTokens;
   const runInput = usage.runInputTokens;
   const runCached = usage.runCachedInputTokens;
@@ -251,6 +300,10 @@ export function contextUsageView(
     windowLabel: empty.windowLabel,
     percent,
     percentLabel: percent === null ? null : `${percent}%`,
+    usageFineLine:
+      finePercent === null || window === null
+        ? null
+        : `${formatTokens(usage.inputTokens)}/${formatTokens(window)}（${finePercent}%）`,
     // 上游没报缓存字段 → 不显示命中率（0% 会被读成「缓存全失效」）
     cacheHitLabel:
       hitRate === null ? null : `${Math.round(hitRate * 10) / 10}%`,
@@ -258,7 +311,7 @@ export function contextUsageView(
     cacheHitScope: hitRate === null ? null : useRunTotals ? "run" : "call",
     outputLabel: formatTokens(usage.outputTokens),
     composition: compositionView(usage.composition),
-    // 参考图的读数：当前 / 窗口（百分比）。窗口未知时只给绝对量，不编百分比
+    // 参考图的读数：当前 / 窗口（一位小数百分比）。窗口未知时只给绝对量，不编百分比
     usageLine:
       window === null
         ? `${formatTokens(usage.inputTokens)}（窗口未知）`

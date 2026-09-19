@@ -40,7 +40,7 @@ export function ProfileSection({
     } catch {
       setFeedback({
         type: "error",
-        message: "Failed to update profile. Please try again.",
+        message: "更新失败，请重试。",
       });
     } finally {
       setSaving(false);
@@ -78,7 +78,7 @@ export function ProfileSection({
         )}
 
         <Button type="submit" disabled={saving || !hasChanges} size="sm">
-          {saving ? "Saving..." : "保存"}
+          {saving ? "保存中…" : "保存"}
         </Button>
       </form>
     </div>

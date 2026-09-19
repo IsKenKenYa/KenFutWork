@@ -107,6 +107,7 @@ describe("settings service", () => {
         findCodeIndexAutoNewFolder: async () => null,
         findAutoCompactEnabled: async () => null,
         findCommands: async () => null,
+        findHooks: async () => null,
         findUserRules: async () => null,
         upsertDefaultModel: async () => {},
         upsertAgentMaxRetries: async () => {},
@@ -115,6 +116,7 @@ describe("settings service", () => {
         upsertCodeIndexAutoNewFolder: async () => {},
         upsertAutoCompactEnabled: async () => {},
         upsertCommands: async () => {},
+        upsertHooks: async () => {},
         upsertUserRules: async () => {},
         upsertRuleEntries: async () => {},
       },
@@ -130,6 +132,7 @@ describe("settings service", () => {
       codeIndexAutoNewFolder: true,
       autoCompactEnabled: true,
       commands: [],
+      hooks: [],
       ruleEntries: [],
       userRules: "",
     });
@@ -143,6 +146,7 @@ describe("settings service", () => {
         findCodeIndexAutoNewFolder: async () => null,
         findAutoCompactEnabled: async () => null,
         findCommands: async () => null,
+        findHooks: async () => null,
         findUserRules: async () => null,
         upsertDefaultModel: async () => {},
         upsertAgentMaxRetries: async () => {},
@@ -151,6 +155,7 @@ describe("settings service", () => {
         upsertCodeIndexAutoNewFolder: async () => {},
         upsertAutoCompactEnabled: async () => {},
         upsertCommands: async () => {},
+        upsertHooks: async () => {},
         upsertUserRules: async () => {},
         upsertRuleEntries: async () => {},
       },
@@ -166,6 +171,7 @@ describe("settings service", () => {
       codeIndexAutoNewFolder: true,
       autoCompactEnabled: true,
       commands: [],
+      hooks: [],
       ruleEntries: [],
       userRules: "",
     });
@@ -186,6 +192,7 @@ describe("settings service", () => {
       findCodeIndexAutoNewFolder: async () => null,
       findAutoCompactEnabled: async () => null,
       findCommands: async () => null,
+      findHooks: async () => null,
       findUserRules: async () => null,
       upsertDefaultModel: async () => {},
       upsertAgentMaxRetries: async () => {},
@@ -194,6 +201,7 @@ describe("settings service", () => {
       upsertCodeIndexAutoNewFolder: async () => {},
       upsertAutoCompactEnabled: async () => {},
       upsertCommands: async () => {},
+      upsertHooks: async () => {},
       upsertUserRules: async () => {},
       upsertRuleEntries: async () => {},
     };
@@ -213,6 +221,7 @@ describe("settings service", () => {
       codeIndexAutoNewFolder: true,
       autoCompactEnabled: true,
       commands: [],
+      hooks: [],
       ruleEntries: [],
       userRules: "",
     });
@@ -232,6 +241,7 @@ describe("settings service", () => {
       codeIndexAutoNewFolder: true,
       autoCompactEnabled: true,
       commands: [],
+      hooks: [],
       ruleEntries: [],
       userRules: "",
     });
@@ -255,6 +265,7 @@ describe("settings service", () => {
       codeIndexAutoNewFolder: true,
       autoCompactEnabled: true,
       commands: [],
+      hooks: [],
       ruleEntries: [],
       userRules: "",
     });
@@ -273,6 +284,7 @@ describe("settings service", () => {
         findCodeIndexAutoNewFolder: async () => null,
         findAutoCompactEnabled: async () => null,
         findCommands: async () => null,
+        findHooks: async () => null,
         findUserRules: async () => null,
         upsertDefaultModel: async () => {},
         upsertAgentMaxRetries: async () => {},
@@ -281,6 +293,7 @@ describe("settings service", () => {
         upsertCodeIndexAutoNewFolder: async () => {},
         upsertAutoCompactEnabled: async () => {},
         upsertCommands: async () => {},
+        upsertHooks: async () => {},
         upsertUserRules: async () => {},
         upsertRuleEntries: async () => {},
       },
@@ -301,6 +314,7 @@ describe("settings service", () => {
         findCodeIndexAutoNewFolder: async () => null,
         findAutoCompactEnabled: async () => null,
         findCommands: async () => null,
+        findHooks: async () => null,
         findUserRules: async () => null,
         upsertDefaultModel: async () => {
           throw new SqlError("permission denied", { code: "42501" });
@@ -311,6 +325,7 @@ describe("settings service", () => {
         upsertCodeIndexAutoNewFolder: async () => {},
         upsertAutoCompactEnabled: async () => {},
         upsertCommands: async () => {},
+        upsertHooks: async () => {},
         upsertUserRules: async () => {},
         upsertRuleEntries: async () => {},
       },
@@ -324,6 +339,7 @@ describe("settings service", () => {
         codeIndexAutoNewFolder: true,
         autoCompactEnabled: true,
         commands: [],
+        hooks: [],
       })
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(SettingsServiceError);
@@ -347,6 +363,7 @@ describe("settings service", () => {
       codeIndexAutoNewFolder: null as boolean | null,
       autoCompactEnabled: null as boolean | null,
       commands: null as unknown,
+      hooks: null as unknown,
       userRules: null as string | null,
       ruleEntries: null as string[] | null,
     };
@@ -359,6 +376,7 @@ describe("settings service", () => {
         findCodeIndexAutoNewFolder: async () => null,
         findAutoCompactEnabled: async () => null,
         findCommands: async () => null,
+        findHooks: async () => null,
         findUserRules: async () => null,
         upsertDefaultModel: async (_workspaceId, defaultModel) => {
           stored = { ...stored, defaultModel };
@@ -384,6 +402,9 @@ describe("settings service", () => {
         upsertCommands: async (_workspaceId, commands) => {
           stored = { ...stored, commands: commands as never };
         },
+        upsertHooks: async (_workspaceId, hooks) => {
+          stored = { ...stored, hooks: hooks as never };
+        },
         upsertUserRules: async (_workspaceId, userRules) => {
           stored = { ...stored, userRules };
         },
@@ -406,6 +427,7 @@ describe("settings service", () => {
       codeIndexAutoNewFolder: true,
       autoCompactEnabled: true,
       commands: [],
+      hooks: [],
       ruleEntries: [],
       userRules: "",
     });
@@ -421,6 +443,7 @@ describe("settings service", () => {
       codeIndexAutoNewFolder: true,
       autoCompactEnabled: true,
       commands: [],
+      hooks: [],
       ruleEntries: [],
       userRules: "",
       defaultModel: "gemini-2.5-flash",

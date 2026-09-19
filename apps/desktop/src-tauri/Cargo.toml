@@ -4,15 +4,44 @@ version = "0.1.0"
 edition = "2021"
 default-run = "kenfutwork-desktop"
 
+[features]
+# 生命周期集成测试用的替身服务端（占端口 + 全 200）。**默认不编**：Tauri 会把本包
+# 所有 bin 目标一并打进安装包，默认构建会让安装目录里躺一个测试替身 exe
+# （此前 `release/` 与安装目录里的 `loomic-test-fake-server.exe` 就是它）。
+# `pnpm --filter @kenfutwork/desktop test` 会带上这个 feature。
+test-fixture = []
+
+[[bin]]
+name = "kenfutwork-desktop"
+path = "src/main.rs"
+
+[[bin]]
+name = "loomic-test-fake-server"
+path = "src/bin/loomic-test-fake-server.rs"
+required-features = ["test-fixture"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# unstable：右栏浏览器的**子 webview**（真内核嵌入）要用 Tauri 的多 webview API；
+# devtools：release 里也能开 WebView2 的调试工具（参考视频里「打开调试工具」那一项）
+tauri = { version = "2", features = ["unstable", "devtools"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-single-instance = "2"
-signal-hook = "0.3"
+# 登出/外部终止信号：`iterator` 是 lib.rs 里 Signals 迭代器要用的 feature
+signal-hook = { version = "0.3", features = ["iterator"] }
+
+# Windows 作业对象（job object）：把服务端及其后代（内嵌 Postgres）绑进去，壳退出时
+# 由系统按 KILL_ON_JOB_CLOSE 收掉整棵树。版本取 tauri 依赖树里已有的 0.59，不引入新版本。
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_System_JobObjects",
+  "Win32_System_Threading",
+] }
 
 [lib]
 name = "kenfutwork_desktop_lib"

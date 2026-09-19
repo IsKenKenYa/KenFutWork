@@ -34,29 +34,29 @@ export function buildOnboardingSteps(input: {
   return [
     {
       id: "provider",
-      title: "接一个模型（BYOK）",
-      hint: "在「供应商」里添加你的 API Key 与模型清单——Key 加密保存、永不回显。",
+      title: "接入模型",
+      hint: "在「供应商」里填自己的 API Key 和模型。",
       done: input.providerCount > 0,
       tab: "providers",
     },
     {
       id: "workdir",
       title: "绑定工作目录",
-      hint: "Code 模式里选一个工作目录（目录即项目），agent 就在那里读写文件、跑命令。",
+      hint: "在 Code 模式里选一个目录，Agent 就在那里读写文件和执行命令。",
       done: input.hasWorkDir,
       tab: null,
     },
     {
       id: "permission",
-      title: "定权限档位",
-      hint: "默认档下危险操作要你批准；要无人值守跑自动化任务，先在「权限」里想清楚。",
+      title: "选权限档位",
+      hint: "危险操作需要你确认；无人值守的任务先在「权限」里设好档位。",
       done: input.permissionTier !== "default",
       tab: "permissions",
     },
     {
       id: "first-run",
       title: "发第一条消息",
-      hint: "在工作台里发一句试试——任务、计划、目标、循环都能用。",
+      hint: "在工作台里发一句试试。",
       done: input.conversationCount > 0,
       tab: null,
     },
@@ -88,7 +88,7 @@ export function OnboardingSection({
     ]).then(([providers, settings, permissions]) => {
       if (cancelled) return;
       if (!providers || !settings) {
-        setMessage("读取状态失败——服务端可能刚重启，稍后再打开这个页面。");
+        setMessage("读取状态失败，请稍后重试。");
         return;
       }
       const view = permissions as PermissionSettingsView | null;
@@ -109,9 +109,7 @@ export function OnboardingSection({
   return (
     <section aria-label="引导">
       <h3 className="mb-1 text-base font-medium">引导</h3>
-      <p className="mb-3 text-sm text-muted-foreground">
-        四步把工作台跑起来。下面的状态是**实时读出来的**（不是写死的清单）。
-      </p>
+      <p className="mb-3 text-sm text-muted-foreground">四步把工作台跑起来。</p>
       {message ? <p className="text-sm text-destructive">{message}</p> : null}
       {steps ? (
         <ol className="space-y-2">

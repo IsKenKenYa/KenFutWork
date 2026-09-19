@@ -1,7 +1,69 @@
-# KenFutWork 桌面壳（Tauri 2，探索期脚手架）
+# KenFutWork 桌面壳（Tauri 2）
 
-> 状态：**脚手架已就位、本机未构建**（本机无 Rust 工具链）。设计依据：`docs/tech/多端产品设计.md` §4
-> （Tauri 2 + 系统 WebView + 服务端 sidecar，拒 Electron）。Windows 侧（朋友的 exe 环境）可直接构建。
+> 状态（2026-09-18 更新）：**本机已能构建**——Rust（rustup，cargo 1.98.1）+ MSVC（VS 2022 生成工具）
+> + **Windows SDK 10.0.26100（装在 `D:\Windows Kits\10`，非默认盘）** + WebView2 运行时 153。
+> 实测 `pnpm --filter @kenfutwork/desktop exec tauri build --debug --no-bundle` 通过，产物
+> `src-tauri/target/debug/kenfutwork-desktop.exe`。设计依据：`docs/tech/多端产品设计.md` §4
+> （Tauri 2 + 系统 WebView + 服务端 sidecar，拒 Electron）。
+
+## 构建前置（逐项自查，2026-09-18 实测）
+
+| 项 | 状态 | 说明 |
+| --- | --- | --- |
+| MSVC（C++ 桌面开发） | ✅ VS 2022 生成工具 17.14.37628.2 | `link.exe` 在 `BuildTools/VC/Tools/MSVC/…/bin/Hostx64/x64` |
+| Windows SDK | ✅ 10.0.26100，装在 **`D:\Windows Kits\10`** | 装在非默认盘也算数：链接器按注册表 `InstallationFolder` 找它 |
+| WebView2 运行时 | ✅ 153.0.4234.32 | Win10 1803+ 自带；LTSC/精简版需另行安装 |
+| Rust 工具链 | ✅ rustup + `stable-x86_64-pc-windows-msvc` | **新装的 rustup 只对新终端生效**：老 shell 里要给 PATH 加 `~/.cargo/bin`（Git Bash 用 `/c/Users/<你>/.cargo/bin`） |
+| Tauri CLI | ✅ `@tauri-apps/cli ^2`（本包 devDependency） | `pnpm install` 即得；也可 `cargo install tauri-cli --version "^2" --locked` |
+
+**构建两步**（缺一不可——Rust 侧要把 web 静态产物嵌进去）：
+
+```sh
+pnpm --filter @kenfutwork/web build                       # 产出 apps/web/out（静态导出）
+pnpm --filter @kenfutwork/desktop exec tauri build        # 出安装包；加 --debug --no-bundle 只出 exe
+```
+
+> 踩过的坑：`tauri.conf.json` 的 `frontendDist` 是**相对 `src-tauri/`** 解析的——原来写
+> `../web/out` 会指到 `apps/desktop/web/out`（永远找不到），已改成 `../../web/out`。
+> 同理 `bundle.resources` 里引 `release/` 要写**三级** `../../../release/...`
+> （src-tauri → apps/desktop → apps → 仓库根；少一级会报「resource path 不存在」）。
+
+## 出 Windows 安装包（NSIS，一键装）
+
+```sh
+pnpm package:win                                          # 1) 先出 release/（服务端 exe + web + pg + runtime）
+pnpm --filter @kenfutwork/desktop build                   # 2) 出安装包
+```
+
+产物：`apps/desktop/src-tauri/target/release/bundle/nsis/KenFutWork_<版本>_x64-setup.exe`（约 72 MB，
+压缩自约 300 MB 资源）。安装包做的是原生那套向导：**选安装模式**（所有用户 / 仅我）→
+**选安装目录** → **开始菜单目录** → 安装 → 完成页（勾选创建桌面快捷方式、直接启动），
+另写**注册表卸载项 + 卸载器**、**环境变量**（见下）、**中英双语**（默认跟系统，简体优先）。
+装完点快捷方式即用：壳拉起随包的 `app/KenFutWork-server.exe`（内嵌 Postgres + 免登录 + 进程内队列），
+并把窗口指向**服务端托管的 UI**。
+
+- **环境变量与注册表**（`src-tauri/installer-hooks.nsh`，走 Tauri 的 `installerHooks` 缝）：
+  装完写 `KENFUTWORK_HOME=<安装目录>`、把安装目录挂到 PATH（命令行可直接敲 `kenfutwork-desktop`），
+  并广播 `WM_SETTINGCHANGE`；`HKCU|HKLM\Software\KenFutWork` 另记 `InstallDir`/`Version`。
+  **卸载时逐项撤掉**（PATH 只删自己那一段），再广播一次；按安装模式自动选 HKCU / HKLM 的 `Environment`。
+- **图标**：`node scripts/icons.mjs`（在 `apps/desktop` 下跑）从品牌 logo 唯一权威源
+  `docs/design/logo/最终定稿.svg` 生成 `src-tauri/icons/`（多尺寸 `icon.ico` 16→256 + `icon.png`）。
+  exe 资源图标、安装包图标、开始菜单与任务栏图标都吃这一份，换标只需重跑这条命令。
+- **窗口指向 `http://127.0.0.1:<端口>` 而不是加载壳自带的 UI**：本机免登录的可信来源只认回环
+  （`server/src/features/auth/local-trust.ts`），而且壳自带的 `tauri://localhost` 的资源协议
+  **解析不了 `/canvas` 这种无扩展名路由**（服务端托管那份走 `canvas.html` 回退，见
+  `server/src/http/static-web.ts`）——Design 模式的画布 iframe 正好是 `/canvas?id=…`，
+  在壳自带 UI 上**画布必然空白**（2026-09-17 用户报的「design 模式改坏了」就是这个）。
+- **端口不是死守 3001**：壳按 `3001…3010` 找「探活 200 **且首页是 HTML**」的服务端；撞上别人的服务
+  （例如你自己跑的 dev API：探活 200 但 `/` 是 404 JSON）就换下一个端口，都不行才在窗口里如实报错。
+  换端口能成立的前提是前端按**同源**解析 API base（`apps/web/src/lib/env.ts`）。
+- **静默装/卸（CI 或脚本用）**：`setup.exe /S /currentuser`；卸载
+  `"%LOCALAPPDATA%\Programs\KenFutWork\uninstall.exe" /S`
+- **`tauri build` 需要 PATH 里有 `cargo`**：rustup 装在 `~/.cargo/bin`，Git Bash 里先
+  `export PATH="$HOME/.cargo/bin:$PATH"`，否则报 `failed to run 'cargo metadata' … program not found`
+- **安装目录里不该有测试夹具**：`src/bin/loomic-test-fake-server.rs` 是生命周期测试的子进程替身，
+  挂在 `test-fixture` feature 下（`pnpm --filter @kenfutwork/desktop test` 自动带上），
+  默认构建不编，于是不会被打进安装包。
 
 ## 形态与职责
 
@@ -18,7 +80,7 @@
 任何终端直接可用）+ tauri-cli：
 
 ```sh
-cargo install tauri-cli --version "^2" --locked   # 已装可跳过
+pnpm install   # 本包已把 @tauri-apps/cli 列为 devDependency（等价：cargo install tauri-cli --version "^2" --locked）
 ```
 
 **一键桌面形态**（推荐——自动拉起服务端内嵌 PG + web + Tauri 窗口，已在跑的自动复用，

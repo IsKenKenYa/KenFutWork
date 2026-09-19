@@ -61,8 +61,16 @@ export const wsTerminalStartCommandSchema = z.object({
   action: z.literal("terminal.start"),
   payload: z.object({
     sessionId: z.string().min(1).max(64),
-    canvasId: z.string().min(1),
+    /**
+     * 绑定的画布（= 工作目录）。**可选**：终端不该被工作目录限制住
+     * （用户口径「终端不应该限制绑定文件目录」）——不带时服务端把 cwd 落到自己的启动目录。
+     */
+    canvasId: z.string().min(1).optional(),
+    /** 省略即用服务端解析的**系统默认** shell（用户口径「不要选择，自动进入系统默认配置的终端」）。 */
     shell: terminalShellSchema.optional(),
+    /** 终端尺寸（列 × 行）：PTY 的窗口大小，交互程序（PSReadLine / 全屏 TUI）靠它排版。 */
+    cols: z.number().int().min(2).max(1000).optional(),
+    rows: z.number().int().min(1).max(1000).optional(),
   }),
 });
 
@@ -71,8 +79,22 @@ export const wsTerminalInputCommandSchema = z.object({
   action: z.literal("terminal.input"),
   payload: z.object({
     sessionId: z.string().min(1).max(64),
-    /** 一行输入（换行由服务端补：客户端只发内容）。 */
+    /**
+     * **原始按键**（PTY 口径）：回车就是 `
+`，方向键是 `[A` 这类转义序列——
+     * 服务端**不再补换行、也不回显**（真终端里这两件事是 PTY 自己做的）。
+     */
     data: z.string().max(4096),
+  }),
+});
+
+export const wsTerminalResizeCommandSchema = z.object({
+  type: z.literal("command"),
+  action: z.literal("terminal.resize"),
+  payload: z.object({
+    sessionId: z.string().min(1).max(64),
+    cols: z.number().int().min(2).max(1000),
+    rows: z.number().int().min(1).max(1000),
   }),
 });
 
@@ -85,6 +107,7 @@ export const wsTerminalStopCommandSchema = z.object({
 export const wsTerminalCommandSchemas = [
   wsTerminalStartCommandSchema,
   wsTerminalInputCommandSchema,
+  wsTerminalResizeCommandSchema,
   wsTerminalStopCommandSchema,
 ] as const;
 
@@ -94,6 +117,7 @@ export const wsCommandSchema = z.discriminatedUnion("action", [
   wsResumeCommandSchema,
   wsTerminalStartCommandSchema,
   wsTerminalInputCommandSchema,
+  wsTerminalResizeCommandSchema,
   wsTerminalStopCommandSchema,
 ]);
 
@@ -117,6 +141,7 @@ export const wsClientMessageSchema = z.union([
   wsResumeCommandSchema,
   wsTerminalStartCommandSchema,
   wsTerminalInputCommandSchema,
+  wsTerminalResizeCommandSchema,
   wsTerminalStopCommandSchema,
   wsRpcResponseSchema,
 ]);
@@ -161,6 +186,9 @@ export type WsCommandAck = z.infer<typeof wsCommandAckSchema>;
 export type WsRunCommand = z.infer<typeof wsRunCommandSchema>;
 export type WsCancelCommand = z.infer<typeof wsCancelCommandSchema>;
 export type WsResumeCommand = z.infer<typeof wsResumeCommandSchema>;
+export type WsTerminalResizeCommand = z.infer<
+  typeof wsTerminalResizeCommandSchema
+>;
 export type WsTerminalStartCommand = z.infer<
   typeof wsTerminalStartCommandSchema
 >;

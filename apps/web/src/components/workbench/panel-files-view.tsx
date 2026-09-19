@@ -5,6 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 import { type CodeFileListing, fetchCodeFiles } from "@/lib/code-git-api";
 import { type CodeIndexSearchHit, searchCodeIndex } from "@/lib/server-api";
 
+import { PanelEmptyState } from "./panel-view-icon";
+
 /**
  * 文件目录（R3-1「文件目录」标签）：**只列一层**，子目录点进去、面包屑回退。
  *
@@ -76,11 +78,7 @@ export function FilesPane({
   }, [accessToken, canvasId, dir]);
 
   if (!canvasId) {
-    return (
-      <p className="text-xs text-muted-foreground">
-        这个会话没有绑定工作目录。
-      </p>
-    );
+    return <PanelEmptyState kind="files" title="未绑定工作目录" />;
   }
 
   const segments = dir ? dir.split("/") : [];
@@ -88,7 +86,7 @@ export function FilesPane({
   return (
     <div className="space-y-2">
       <form
-        className="flex items-center gap-1.5 rounded-md border px-2 py-1"
+        className="flex items-center gap-1.5 border px-2 py-1"
         onSubmit={(event) => {
           event.preventDefault();
           void runSearch(searchQuery);
@@ -105,31 +103,30 @@ export function FilesPane({
               setSearchError(null);
             }
           }}
-          placeholder="按文件名 / 路径 / 内容摘要搜索（索引库）"
+          placeholder="搜索文件（文件名 / 路径 / 内容）"
           className="min-w-0 flex-1 bg-transparent text-xs outline-none"
         />
         <button
           type="submit"
           disabled={searching}
-          className="shrink-0 rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
+          className="shrink-0 border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
         >
           {searching ? "搜索中…" : "搜索"}
         </button>
       </form>
 
       {searchError ? (
-        <p className="rounded-md border border-destructive/40 bg-destructive/5 px-2 py-1.5 text-[11px] text-destructive">
+        <p className="border border-destructive/40 bg-destructive/5 px-2 py-1.5 text-[11px] text-destructive">
           {searchError}
         </p>
       ) : null}
 
       {hits ? (
-        <div className="rounded-xl border">
+        <div className="border">
           <p className="border-b px-2.5 py-1.5 text-[10px] text-muted-foreground">
             {hits.length === 0
               ? "没有匹配的文件"
               : `命中 ${hits.length} 个文件`}
-            {hits.length > 0 ? "（点了打开预览）" : ""}
           </p>
           <ul aria-label="搜索命中" className="divide-y">
             {hits.map((hit) => (
@@ -141,7 +138,7 @@ export function FilesPane({
                 >
                   <span className="flex items-center gap-1.5">
                     {hit.language ? (
-                      <span className="shrink-0 rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
+                      <span className="shrink-0 bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
                         {hit.language}
                       </span>
                     ) : null}
@@ -162,7 +159,7 @@ export function FilesPane({
       ) : null}
 
       {error ? (
-        <p className="rounded-md border border-destructive/40 bg-destructive/5 px-2 py-1.5 text-[11px] text-destructive">
+        <p className="border border-destructive/40 bg-destructive/5 px-2 py-1.5 text-[11px] text-destructive">
           {error}
         </p>
       ) : null}
@@ -171,7 +168,7 @@ export function FilesPane({
         <button
           type="button"
           onClick={() => setDir("")}
-          className="rounded px-1 hover:bg-muted hover:text-foreground"
+          className="px-1 hover:bg-muted hover:text-foreground"
         >
           工作目录
         </button>
@@ -181,7 +178,7 @@ export function FilesPane({
             <button
               type="button"
               onClick={() => setDir(segments.slice(0, index + 1).join("/"))}
-              className="rounded px-1 hover:bg-muted hover:text-foreground"
+              className="px-1 hover:bg-muted hover:text-foreground"
             >
               {segment}
             </button>
@@ -194,7 +191,7 @@ export function FilesPane({
       ) : listing.entries.length === 0 ? (
         <p className="text-xs text-muted-foreground">这个目录是空的。</p>
       ) : (
-        <ul aria-label="目录内容" className="divide-y rounded-xl border">
+        <ul aria-label="目录内容" className="divide-y border">
           {listing.entries.map((entry) => (
             <li
               key={entry.path}
@@ -227,7 +224,7 @@ export function FilesPane({
         </ul>
       )}
       {listing?.truncated ? (
-        <p className="text-[10px] text-muted-foreground">只列出前 500 项。</p>
+        <p className="text-[10px] text-muted-foreground">只显示前 500 项。</p>
       ) : null}
     </div>
   );

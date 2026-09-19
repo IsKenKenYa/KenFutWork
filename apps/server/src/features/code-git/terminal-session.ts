@@ -1,4 +1,6 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { createRequire } from "node:module";
+import type * as NodePty from "node-pty";
+import type { IPty } from "node-pty";
 
 import {
   detectTerminalShells,
@@ -8,18 +10,17 @@ import {
 } from "./terminal-runner.js";
 
 /**
- * 交互式终端会话（R3-1「终端」标签的可用形态）：一条**常驻 shell**，cd 保留、
- * REPL（python / node / psql…）可以连续对话——不再是「一条命令一个进程」。
+ * 交互式终端会话（R3-1「终端」标签）：**真 PTY**（Windows 走 ConPTY，POSIX 走 pty），
+ * 与「直接打开一个 PowerShell 窗口」同一套机制——所以行编辑、历史、Tab 补全、颜色、
+ * 方向键、Ctrl+C、全屏 TUI 全部由 shell 自己做，服务端**不回显、不补换行、不解析 ANSI**。
  *
- * **为什么是「常驻进程 + 管道」而不是真 PTY**：真 PTY 要 node-pty（原生模块，要编译，
- * 桌面随包分发还要按 ABI 打包），而这一版只需要「会话不丢」这一个性质——
- * 常驻 shell 的 stdin/stdout 管道就够：cd 是进程内状态、REPL 读的是同一条 stdin。
- * 代价如实写在界面上：**没有 TTY**，所以 shell 自己不做行编辑与回显，
- * 提示符与输入回显由客户端补（与参考图里的 `PS D:\…>` 一致）。
+ * 为什么必须是 PTY（用户口径「powershell 是假的吧，我要真实的交互终端！！！！和我直接打开
+ * powershell 体验一致的那种」）：管道形态下 shell 检测不到终端，PSReadLine 直接关掉——
+ * 没有提示符、没有历史、没有补全，`vim` / `python -i` 这类程序也会降级成非交互。早期的
+ * 「常驻进程 + 管道」方案只能保证 `cd` 不丢，那是**半个终端**，故整体换成 node-pty。
  *
- * 安全口径与一次性执行同源（见 terminal-runner.ts 顶注）：登录 + 画布归属在服务层校验，
- * cwd 固定为该画布的工作目录，此外这里还有**闲置超时**与**每连接会话数上限**（在 ws 层），
- * 免得一个连接无限堆 shell 进程。
+ * 边界（写在这里，不写进界面）：随包分发要把 `node-pty` 的原生部分带上（Windows 还要
+ * `conpty.dll` / `OpenConsole.exe`），加载不到时**如实报错**，不退回管道假装能用。
  */
 
 /** 闲置多久自动收掉会话（无输入也无输出）。 */
@@ -28,14 +29,22 @@ export const TERMINAL_SESSION_IDLE_MS = 30 * 60_000;
 /** 单帧输出的上限：WS 帧不要因为一条 `dir /s` 变成几 MB。 */
 export const TERMINAL_OUTPUT_FRAME_BYTES = 8 * 1024;
 
+/** PTY 的默认尺寸（客户端挂载后会按实际格子数 resize）。 */
+export const TERMINAL_DEFAULT_COLS = 80;
+export const TERMINAL_DEFAULT_ROWS = 24;
+
 export interface TerminalSession {
   readonly id: string;
   readonly shell: TerminalShellId;
   readonly executable: string;
+  /** 是否真终端（PTY）。恒为 true——留着是为了在 ack 里把事实写清楚。 */
+  readonly tty: boolean;
   readonly exited: boolean;
-  /** 送一行输入（换行由这里补：各家的行尾不同，见 lineEndingFor）。 */
-  write(line: string): void;
-  /** 结束会话（杀整棵进程树）。 */
+  /** 送**原始按键**（回车是 `\r`，方向键是转义序列）：行编辑与回显由 PTY 那边负责。 */
+  write(data: string): void;
+  /** 终端尺寸变化（PSReadLine / 全屏程序靠它排版）。 */
+  resize(cols: number, rows: number): void;
+  /** 结束会话（连同进程树）。 */
   stop(reason?: string): void;
 }
 
@@ -45,79 +54,44 @@ export interface StartTerminalSessionInput {
   shell?: TerminalShellId | undefined;
   /** 可用 shell 清单（测试注入；真实环境探测本机）。 */
   availableShells?: readonly TerminalShellOption[] | undefined;
+  cols?: number | undefined;
+  rows?: number | undefined;
   onData: (chunk: string) => void;
   onExit: (exitCode: number | null, reason?: string) => void;
   idleMs?: number;
   now?: () => number;
-  /** 测试注入：替换 spawn（默认 node:child_process 的 spawn）。 */
-  spawnFn?: typeof spawn;
-  /**
-   * 测试注入：替换「杀进程树」。默认实现会在 Windows 上真的调 `taskkill`，
-   * 单测里拿假的 pid 去跑它可能误杀真实进程——所以这条必须可注入。
-   */
-  killTreeFn?: (child: ChildProcess | null) => void;
+  /** 测试注入：替换 `node-pty` 的 spawn（默认真的开一个 PTY）。 */
+  spawnFn?: typeof NodePty.spawn;
 }
 
 /**
- * 杀掉整棵进程树。
- *
- * **Windows 上 `child.kill` 只杀外壳 `cmd.exe`，孙进程照跑**（实测：`ping` 还在跑、
- * 管道被孙进程占住 → `close` 事件永不到达）。所以走 `taskkill /T /F` 连树一起收；
- * POSIX 先 SIGTERM 再 SIGKILL。
+ * shell 本体 + 参数（PTY 口径）：
+ * - PowerShell / pwsh：`-NoLogo` 只是不打印横幅，**不加** `-NonInteractive` / `-Command -`
+ *   （那两个会把 PSReadLine 关掉，等于又回到「假终端」）；
+ * - cmd：裸参就是交互式；
+ * - bash / sh：有 TTY 时自动进交互模式，不需要 `-i`。
  */
-function defaultKillTree(child: ChildProcess | null): void {
-  const pid = child?.pid;
-  if (!pid) return;
-  if (process.platform === "win32") {
-    spawn("taskkill", ["/pid", String(pid), "/T", "/F"], {
-      windowsHide: true,
-      stdio: "ignore",
-    });
-    return;
-  }
-  child?.kill("SIGTERM");
-  setTimeout(() => child?.kill("SIGKILL"), 2000).unref?.();
-}
-
-/** shell 本体 + 参数：常驻形态（`/K`、`-Command -`、裸 bash 都是「读 stdin 直到 EOF」）。 */
-function persistentInvocation(shell: TerminalShellOption): string[] {
+function interactiveInvocation(shell: TerminalShellOption): string[] {
   switch (shell.id) {
-    case "cmd":
-      // /Q 关掉 echo（管道下本来就无 echo，这里只是明确）；/K 执行完不退出
-      return ["/Q", "/K"];
     case "powershell":
     case "pwsh":
-      return ["-NoLogo", "-NoProfile", "-Command", "-"];
+      return ["-NoLogo"];
     default:
-      // bash / git-bash / sh：不带 -c 且 stdin 是管道 → 逐行读 stdin 执行
       return [];
   }
 }
 
 /**
- * 让输出按 UTF-8 出来。
+ * 启动前置命令：**现在不需要了**。
  *
- * Windows 上 cmd / PowerShell 默认按**本地代码页**（简中即 GBK）写管道，服务端按 UTF-8 解码
- * 就是乱码——中文输出全变成问号。这两家都能在会话开头切到 UTF-8：
- * cmd 是 `chcp 65001`，PowerShell 是改 `[Console]::OutputEncoding`。
+ * 管道时代必须发 `chcp 65001` / `[Console]::OutputEncoding=…`，否则中文按本地代码页出来
+ * 就是乱码；换成 ConPTY 之后这条不用了——实测（真 PTY 起 PowerShell 与 cmd，各打一行
+ * `Write-Output 中文测试` / `echo 中文测试`）中文原样到达、无替换符，而且**前置命令本身会
+ * 被 shell 回显在屏幕最上面**，白占一行。故返回 null；将来若发现某种 shell 真的需要，
+ * 在这里按 shell 加回来。
  */
-function utf8Prelude(shell: TerminalShellId): string | null {
-  switch (shell) {
-    case "cmd":
-      return "chcp 65001>nul";
-    case "powershell":
-    case "pwsh":
-      return "[Console]::OutputEncoding=[Text.Encoding]::UTF8";
-    default:
-      return null;
-  }
-}
-
-/** 行尾：cmd / PowerShell 认 \r\n，POSIX shell 收到 \r 会把它当成命令的一部分。 */
-function lineEndingFor(shell: TerminalShellId): string {
-  return shell === "cmd" || shell === "powershell" || shell === "pwsh"
-    ? "\r\n"
-    : "\n";
+function startupPrelude(_shell: TerminalShellId): string | null {
+  return null;
 }
 
 /** 帧切分：把一段输出切成 ≤ maxBytes 的片（按字节，不切碎多字节字符）。 */
@@ -141,6 +115,26 @@ export function chunkForFrames(
   return frames;
 }
 
+/**
+ * 懒加载 node-pty（**不能在模块顶层静态 import**）。
+ *
+ * 桌面随包分发时它是 external——原生模块打不进单文件 SEA，走 `<exe>/node_modules/node-pty`
+ * 在运行时解析（与 sharp 同一套办法）。静态 import 在加载期就抛，整个服务端起不来；
+ * 懒加载则只影响终端本身，并在界面上如实说明原因。
+ */
+let cachedNodePty: typeof NodePty | null | undefined;
+export function loadNodePty(): typeof NodePty | null {
+  if (cachedNodePty !== undefined) return cachedNodePty;
+  try {
+    const requireFrom = createRequire(import.meta.url);
+    const mod = requireFrom("node-pty") as typeof NodePty;
+    cachedNodePty = typeof mod.spawn === "function" ? mod : null;
+  } catch {
+    cachedNodePty = null;
+  }
+  return cachedNodePty;
+}
+
 export function startTerminalSession(
   input: StartTerminalSessionInput,
 ): TerminalSession {
@@ -152,7 +146,7 @@ export function startTerminalSession(
   );
 
   let exited = false;
-  let child: ChildProcess | null = null;
+  let pty: IPty | null = null;
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
   let lastActivity = now();
   let stopReason: string | undefined;
@@ -188,13 +182,16 @@ export function startTerminalSession(
     idleTimer.unref?.();
   };
 
-  const killTree = input.killTreeFn ?? defaultKillTree;
-
   function stop(reason?: string): void {
     if (reason) stopReason = reason;
     if (exited) return;
-    killTree(child);
-    // 进程可能杀不掉（权限/句柄）：给个兜底，别让会话永远停在“退出中”
+    try {
+      // PTY 的 kill 连着控制台进程树一起收（Windows 上是 ConPTY 的关闭语义）
+      pty?.kill();
+    } catch {
+      // 已经退了：忽略
+    }
+    // 收不掉的兜底：别让会话永远停在「退出中」
     setTimeout(() => finish(null), 1500).unref?.();
   }
 
@@ -207,52 +204,87 @@ export function startTerminalSession(
       id: input.id,
       shell: "auto",
       executable: "",
+      tty: true,
       get exited() {
         return true;
       },
       write() {},
+      resize() {},
       stop() {},
     };
   }
 
-  const spawnFn = input.spawnFn ?? spawn;
-  child = spawnFn(shell.executable, persistentInvocation(shell), {
+  const ptyModule = loadNodePty();
+  if (!ptyModule) {
+    queueMicrotask(() =>
+      finish(
+        null,
+        "服务端加载不到 node-pty（真终端需要它）——随包分发要带上原生部分与 conpty。",
+      ),
+    );
+    return {
+      id: input.id,
+      shell: shell.id,
+      executable: shell.executable,
+      tty: true,
+      get exited() {
+        return true;
+      },
+      write() {},
+      resize() {},
+      stop() {},
+    };
+  }
+
+  const spawnPty = input.spawnFn ?? ptyModule.spawn;
+  pty = spawnPty(shell.executable, interactiveInvocation(shell), {
+    name: "xterm-256color",
+    cols: input.cols ?? TERMINAL_DEFAULT_COLS,
+    rows: input.rows ?? TERMINAL_DEFAULT_ROWS,
     cwd: input.cwd,
-    windowsHide: true,
-    env: process.env,
-    stdio: ["pipe", "pipe", "pipe"],
+    /**
+     * **必须走 conpty.dll 这条路**（真机踩过）：node-pty 的 `kill()` 在「不用 DLL」的分支里
+     * 会等 `_getConsoleProcessList()`，而它可能解析出 `undefined` → `.forEach` 抛**未处理拒绝**
+     * → Node 22 默认据此终止进程——**整个服务端被一个终端会话带走**（表现：终端永远停在
+     * 「正在开…」、随后全站接口 401/500、客户端跳登录页）。DLL 分支只关掉输入句柄，没有这条坑；
+     * 而且 conpty.dll / OpenConsole.exe 本来就随包分发（见 package-win.mjs）。
+     */
+    useConptyDll: true,
+    // 与环境一致：终端就是「在这个目录里开一个本机 shell」
+    env: process.env as Record<string, string>,
   });
 
-  const writeRaw = (data: string) => {
+  pty.onData((chunk: string) => {
     lastActivity = now();
-    child?.stdin?.write(data);
-  };
+    input.onData(chunk);
+  });
+  pty.onExit(({ exitCode }) => finish(exitCode));
 
-  const prelude = utf8Prelude(shell.id);
-  if (prelude) writeRaw(`${prelude}${lineEndingFor(shell.id)}`);
+  const prelude = startupPrelude(shell.id);
+  if (prelude) pty.write(`${prelude}\r`);
   scheduleIdleCheck();
-
-  child.stdout?.on("data", (chunk: Buffer) => {
-    lastActivity = now();
-    input.onData(chunk.toString("utf8"));
-  });
-  child.stderr?.on("data", (chunk: Buffer) => {
-    lastActivity = now();
-    input.onData(chunk.toString("utf8"));
-  });
-  child.on("error", (error) => finish(null, error.message));
-  child.on("close", (code) => finish(code));
 
   return {
     id: input.id,
     shell: shell.id,
     executable: shell.executable,
+    tty: true,
     get exited() {
       return exited;
     },
-    write(line: string) {
+    write(data: string) {
       if (exited) return;
-      writeRaw(`${line}${lineEndingFor(shell.id)}`);
+      lastActivity = now();
+      pty?.write(data);
+    },
+    resize(cols: number, rows: number) {
+      if (exited) return;
+      lastActivity = now();
+      try {
+        pty?.resize(cols, rows);
+      } catch {
+        // 尺寸在退出竞态里改：忽略（下一次输出会把界面校正回来）
+      }
     },
     stop,
   };

@@ -4,13 +4,15 @@ import {
   ArrowLeft,
   ArrowRight,
   Ellipsis,
-  Globe,
-  Monitor,
+  ExternalLink,
   MousePointerSquareDashed,
+  PictureInPicture2,
   RotateCw,
+  SquareTerminal,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useToast } from "@/components/toast";
 import {
   Select,
   SelectContent,
@@ -18,8 +20,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  boundsOf,
+  embedBounds,
+  embedClose,
+  embedDevtools,
+  embedOpen,
+  isDesktopShell,
+} from "@/lib/desktop-embed";
 import { getServerBaseUrl } from "@/lib/env";
+import {
+  connectCdp,
+  fetchCdpStatus,
+  injectDebugConsole,
+} from "@/lib/server-api";
 import { keyed } from "../list-keys";
+import { BrowserLiveView } from "./panel-browser-live";
+import { PanelEmptyState } from "./panel-view-icon";
 
 /**
  * 右栏浏览器（R3-1 / R3-4 的可用形态）。工具栏按参考图的浏览器面板排：
@@ -116,7 +133,11 @@ export function BrowserPane({
   onReload: () => void;
 }) {
   const normalized = normalizeUrl(draft);
-  const [viewportPreset, setViewportPreset] = useState<ViewportPresetId>("fit");
+  /**
+   * **自由尺寸开关**（用户口径：按钮点一下打开、再点一下取消，名字就叫「自由尺寸 / 退出自由尺寸」）。
+   * 打开后第二行**不管有没有页面都显示**，内容只有「分辨率（可编辑输入框）+ 窗口比例」。
+   */
+  const [freeSizeOn, setFreeSizeOn] = useState(false);
   /**
    * 自由尺寸（参考图的「退出自由尺寸」）：视口尺寸由用户自己拖/填——
    * 预设给常用档，自由尺寸给「就想看看 900px 宽什么样子」。
@@ -128,6 +149,19 @@ export function BrowserPane({
    * 视口截图 → 浮层在截图上叠框点选；没连时回落到服务端静态抓取的 HTML 元素列表。
    * 静态那条读不到脚本渲染内容与登录态页面，这条边界写在浮层里（不写就只能靠猜）。
    */
+  /**
+   * 受控浏览器在不在（决定「打开调试工具」这一项**真的能不能点**）。
+   * 只有连上时才亮：没连时点它没有任何意义，亮着就是假开关。
+   */
+  /**
+   * 是否跑在桌面外壳里：桌面用**真内核嵌入**（路线 2），Web 用 iframe。
+   * 取值只在挂载后定（SSR 里没有 window）。
+   */
+  const [desktopShell, setDesktopShell] = useState(false);
+  const embedSlotRef = useRef<HTMLDivElement>(null);
+  const [cdpConnected, setCdpConnected] = useState(false);
+  /** 结果用**全站既有的 toast** 呈现（用户口径：这类提示不要贴在面板里）。 */
+  const { toast } = useToast();
   const [picking, setPicking] = useState<
     "idle" | "loading" | "error" | "ready"
   >("idle");
@@ -225,24 +259,69 @@ export function BrowserPane({
     return () => window.removeEventListener("resize", measure);
   }, [url]);
 
-  const sizePreset = VIEWPORT_PRESETS.find((p) => p.id === viewportPreset);
-  const viewportWidth =
-    viewportPreset === "free"
-      ? freeSize.width
-      : (sizePreset?.width ?? paneWidth);
-  const viewportHeight =
-    viewportPreset === "free"
-      ? freeSize.height
-      : (sizePreset?.height ?? paneHeight);
+  const viewportWidth = freeSizeOn ? freeSize.width : paneWidth;
+  const viewportHeight = freeSizeOn ? freeSize.height : paneHeight;
   const fitScale =
     viewportWidth > 0 && viewportHeight > 0
       ? Math.min(1, paneWidth / viewportWidth, paneHeight / viewportHeight)
       : 1;
+  /**
+   * 受控浏览器状态：只影响菜单里那行提示文案（这一项**不再置灰**——没连时点它就先连上再开
+   * 调试工具，用户口径是「点一下就该能用」）。每 20 秒刷新一次，另外**菜单一打开也刷一次**，
+   * 免得刚在设置页连上却要等轮询。
+   */
+  const refreshCdp = useCallback(() => {
+    if (!accessToken) return;
+    fetchCdpStatus(accessToken)
+      .then((status) => setCdpConnected(status.status === "connected"))
+      .catch(() => setCdpConnected(false));
+  }, [accessToken]);
+
+  useEffect(() => {
+    refreshCdp();
+    const timer = window.setInterval(refreshCdp, 20_000);
+    return () => window.clearInterval(timer);
+  }, [refreshCdp]);
+
+  // 挂载后再判断形态（SSR 无 window）
+  useEffect(() => {
+    setDesktopShell(isDesktopShell());
+  }, []);
+
+  /**
+   * 桌面形态：把面板里的占位块位置同步给原生子 webview。
+   * 子 webview 不随网页滚动/裁剪，所以**滚轮、拖面板、切标签、面板开合都要重算**；
+   * 面板不可见时隐藏它（比销毁便宜），离开时再关（effect 收尾）。
+   */
+  useEffect(() => {
+    if (!desktopShell || !url) return;
+    const slot = embedSlotRef.current;
+    if (!slot) return;
+    const push = () => {
+      void embedBounds(boundsOf(slot));
+    };
+    void embedOpen(url, boundsOf(slot));
+    push();
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => push());
+    observer?.observe(slot);
+    window.addEventListener("resize", push);
+    window.addEventListener("scroll", push, true);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", push);
+      window.removeEventListener("scroll", push, true);
+      void embedClose();
+    };
+  }, [desktopShell, url]);
+
   const zoomPreset = ZOOM_PRESETS.find((p) => p.id === zoom);
   const scale = zoomPreset?.scale ?? fitScale;
 
   const navButtonClass =
-    "shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40";
+    "shrink-0 p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40";
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
@@ -258,7 +337,7 @@ export function BrowserPane({
           type="button"
           aria-label="后退"
           disabled={!canBack}
-          title="后退（本面板打开过的上一个地址）"
+          title="后退"
           onClick={onBack}
           className={navButtonClass}
         >
@@ -268,7 +347,7 @@ export function BrowserPane({
           type="button"
           aria-label="前进"
           disabled={!canForward}
-          title="前进（本面板打开过的下一个地址）"
+          title="前进"
           onClick={onForward}
           className={navButtonClass}
         >
@@ -284,7 +363,6 @@ export function BrowserPane({
         >
           <RotateCw className="h-3.5 w-3.5" />
         </button>
-        <Globe className="ml-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <input
           aria-label="地址"
           value={draft}
@@ -298,157 +376,195 @@ export function BrowserPane({
             }
           }}
           placeholder="输入网址，回车打开"
-          className="min-w-0 flex-1 rounded-md border bg-transparent px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
+          className="min-w-0 flex-1 border border-transparent bg-muted/60 px-2 py-1 text-xs outline-none focus:border-ring focus:bg-transparent"
         />
+        {/*
+          「尺寸」按钮照参考放在**地址栏这一行**（地址框与元素拾取之间），是**图标按钮**；
+          用户口径：**点一下打开、再点一下取消**，名字就叫「自由尺寸 / 退出自由尺寸」。
+        */}
+        <button
+          type="button"
+          aria-label={freeSizeOn ? "退出自由尺寸" : "自由尺寸"}
+          aria-pressed={freeSizeOn}
+          title={freeSizeOn ? "退出自由尺寸" : "自由尺寸"}
+          onClick={() => setFreeSizeOn((current) => !current)}
+          className={`shrink-0 p-1 transition-colors hover:bg-muted ${
+            freeSizeOn
+              ? "bg-muted text-foreground"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+          data-active={freeSizeOn}
+        >
+          <PictureInPicture2 className="h-3.5 w-3.5" />
+        </button>
         <button
           type="button"
           aria-label="选择网页元素加入聊天"
           disabled={!url || !accessToken || picking === "loading"}
-          title="拾取页面元素加入对话：连接受控浏览器（设置 → 浏览器 → 外部浏览器）后是真实渲染页 + 元素框点选；没连时按服务端静态抓取的 HTML 列元素（脚本渲染与登录态内容读不到）"
+          title="选择页面元素加入对话"
           onClick={() => void startPicking()}
-          className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+          className="shrink-0 p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
         >
           <MousePointerSquareDashed className="h-3.5 w-3.5" />
         </button>
         <Select
           aria-label="浏览器菜单"
           value=""
+          onOpenChange={(open: boolean) => {
+            if (open) refreshCdp();
+          }}
           onValueChange={(next) => {
             if (next === "open-system" && url) {
               window.open(url, "_blank", "noopener");
             }
-            if (next === "copy" && url) {
-              void navigator.clipboard?.writeText(url);
+            if (next === "devtools" && accessToken) {
+              /**
+               * 「打开调试工具」**按环境自动分流**（用户口径：不要「完整调试工具」那一项）：
+               * - 桌面形态：页面就在我们自己的 WebView2 里 → 直接开它的 DevTools（同一内核的真身）；
+               * - Web 形态：把现成的页面内控制台（Eruda）注入面板显示的这一页，并摆成悬浮窗。
+               *
+               * 只有 Web 形态才需要受控浏览器（注入走 CDP）——桌面形态连它等于白起一个实例。
+               */
+              const token = accessToken;
+              const target = url || normalized || "about:blank";
+              const run = async () => {
+                try {
+                  if (desktopShell) {
+                    await embedDevtools();
+                    toast("调试工具已打开（WebView2 DevTools）");
+                    return;
+                  }
+                  if (!cdpConnected) {
+                    const status = await connectCdp(token, { headless: true });
+                    if (status.status !== "connected") {
+                      throw new Error(
+                        status.status === "error"
+                          ? status.message
+                          : "浏览器启动失败。",
+                      );
+                    }
+                    setCdpConnected(true);
+                  }
+                  await injectDebugConsole(token, target);
+                  toast("调试控制台已打开（面板页面里的悬浮窗，可拖可关）");
+                } catch (error: unknown) {
+                  toast(
+                    error instanceof Error
+                      ? error.message
+                      : "打开调试工具失败。",
+                    "error",
+                  );
+                }
+              };
+              void run();
             }
           }}
           items={[
-            { value: "open-system", label: "在系统浏览器打开" },
-            { value: "copy", label: "复制地址" },
+            { value: "open-system", label: "在默认浏览器中打开" },
+            { value: "devtools", label: "打开调试工具" },
           ]}
         >
           <SelectTrigger
-            className="shrink-0 gap-0 border-transparent px-1.5 py-1"
+            className="shrink-0 gap-0 rounded-none border-transparent px-1.5 py-1"
             aria-label="浏览器菜单"
             hideChevron
-            title="更多（在系统浏览器打开 / 复制地址）"
+            title="更多"
           >
             <Ellipsis className="h-3.5 w-3.5" />
           </SelectTrigger>
-          <SelectContent className="min-w-40">
-            <SelectItem value="open-system">在系统浏览器打开</SelectItem>
-            <SelectItem value="copy">复制地址</SelectItem>
+          <SelectContent className="min-w-52 rounded-none">
+            {/* 菜单形态照参考：**两项、各带图标、不写任何括号说明**（用户口径「这一块的说明不要」） */}
+            <SelectItem value="open-system" className="rounded-none">
+              <span className="flex items-center gap-2">
+                <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                在默认浏览器中打开
+              </span>
+            </SelectItem>
+            {/*
+              调试工具：参考里有，但**iframe 路径给不了**——浏览器不允许给 iframe 单独开 devtools
+              （只能从外层页面的 devtools 里选 frame）。按「不摆假开关」的规矩置灰；原因只放在
+              悬停提示里，不进列表正文（用户口径：列表里的说明不要）。
+            */}
+            <SelectItem
+              value="devtools"
+              className="rounded-none"
+              title={
+                cdpConnected
+                  ? "打开调试工具（桌面形态开 WebView2 DevTools，Web 形态注入页面内控制台）"
+                  : "会先连接受控浏览器，再打开调试工具"
+              }
+            >
+              <span className="flex items-center gap-2">
+                <SquareTerminal className="h-3.5 w-3.5 shrink-0" />
+                打开调试工具
+              </span>
+            </SelectItem>
           </SelectContent>
         </Select>
       </form>
 
-      {/* 第二行：视口预设 + 缩放预设（用户口径：预设不做在地址栏右边）。
-       **都是真的**——iframe 按预设尺寸排版，再按比例缩放到面板里 */}
-      <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-2 py-1 text-[11px]">
-        <span className="font-mono text-muted-foreground">
-          {viewportWidth > 0 ? `${viewportWidth} × ${viewportHeight}` : "—"}
-        </span>
-        {/* 缩放读数只在**真的有一页在看**时出现：没开页面时面板还没量到尺寸，
-            fitScale 会算出 0%（实测显示「1280 × 720 0%」这种没意义的读数） */}
-        {url && viewportWidth !== paneWidth && scale !== 1 ? (
-          <span className="text-muted-foreground">
-            {Math.round(scale * 100)}%
+      {/*
+        自由尺寸打开后**只放两样**（用户口径：「只要分辨率（可编辑，输入框）+ 窗口比例」），
+        而且**不管有没有页面都显示**——所以这里不再看 url 有没有值。
+      */}
+      {freeSizeOn ? (
+        /* 用户口径「这个居中」：分辨率 + 比例**整组水平居中**（比例不再被顶到最右） */
+        <div className="flex items-center justify-center gap-2 px-1 py-0.5 text-[11px]">
+          <ViewportSizeInput
+            ariaLabel="视口宽度"
+            value={freeSize.width}
+            min={320}
+            max={3840}
+            onCommit={(width) =>
+              setFreeSize((current) => ({ ...current, width }))
+            }
+          />
+          <span aria-hidden className="text-muted-foreground">
+            ×
           </span>
-        ) : null}
-        {viewportPreset === "free" ? (
-          <span className="flex items-center gap-1">
-            <ViewportSizeInput
-              ariaLabel="视口宽度"
-              value={freeSize.width}
-              min={320}
-              max={3840}
-              onCommit={(width) =>
-                setFreeSize((current) => ({ ...current, width }))
-              }
-            />
-            <span aria-hidden className="text-muted-foreground">
-              ×
-            </span>
-            <ViewportSizeInput
-              ariaLabel="视口高度"
-              value={freeSize.height}
-              min={240}
-              max={2160}
-              onCommit={(height) =>
-                setFreeSize((current) => ({ ...current, height }))
-              }
-            />
-            <button
-              type="button"
-              aria-label="退出自由尺寸"
-              title="退出自由尺寸（回到跟随面板）"
-              onClick={() => setViewportPreset("fit")}
-              className="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+          <ViewportSizeInput
+            ariaLabel="视口高度"
+            value={freeSize.height}
+            min={240}
+            max={2160}
+            onCommit={(height) =>
+              setFreeSize((current) => ({ ...current, height }))
+            }
+          />
+          <Select
+            aria-label="窗口比例"
+            value={zoom}
+            onValueChange={(next) => {
+              if (typeof next === "string") setZoom(next as ZoomPresetId);
+            }}
+            items={ZOOM_PRESETS.map((preset) => ({
+              value: preset.id,
+              label: preset.label,
+            }))}
+          >
+            <SelectTrigger
+              className="shrink-0 gap-1 rounded-none border-transparent bg-transparent px-1.5 py-0.5 text-[11px]"
+              aria-label="窗口比例"
+              title="窗口比例"
             >
-              退出自由尺寸
-            </button>
-          </span>
-        ) : null}
-        <Select
-          aria-label="视口预设"
-          value={viewportPreset}
-          onValueChange={(next) => {
-            if (typeof next === "string")
-              setViewportPreset(next as ViewportPresetId);
-          }}
-          items={VIEWPORT_PRESETS.map((preset) => ({
-            value: preset.id,
-            label: preset.label,
-          }))}
-        >
-          <SelectTrigger
-            className="ml-auto shrink-0 gap-1 border-transparent bg-transparent px-1.5 py-0.5 text-[11px]"
-            aria-label="视口预设"
-            title="视口预设（页面按这个尺寸排版）"
-          >
-            <Monitor className="h-3.5 w-3.5" />
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="min-w-32">
-            {VIEWPORT_PRESETS.map((preset) => (
-              <SelectItem key={preset.id} value={preset.id}>
-                {preset.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          aria-label="预览缩放"
-          value={zoom}
-          onValueChange={(next) => {
-            if (typeof next === "string") setZoom(next as ZoomPresetId);
-          }}
-          items={ZOOM_PRESETS.map((preset) => ({
-            value: preset.id,
-            label: preset.label,
-          }))}
-        >
-          <SelectTrigger
-            className="shrink-0 gap-1 border-transparent bg-transparent px-1.5 py-0.5 text-[11px]"
-            aria-label="预览缩放"
-            title="预览缩放（只影响这个面板里的显示）"
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="min-w-28">
-            {ZOOM_PRESETS.map((preset) => (
-              <SelectItem key={preset.id} value={preset.id}>
-                {preset.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="min-w-28 rounded-none">
+              {ZOOM_PRESETS.map((preset) => (
+                <SelectItem key={preset.id} value={preset.id}>
+                  {preset.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
 
       {picking !== "idle" ? (
         <div
           role="dialog"
           aria-label="选择网页元素加入聊天"
-          className="max-h-72 overflow-y-auto rounded-lg border bg-popover p-2 text-xs"
+          className="max-h-72 overflow-y-auto border bg-popover p-2 text-xs"
         >
           <div className="mb-1 flex items-center justify-between gap-2">
             <span className="font-medium">
@@ -459,7 +575,7 @@ export function BrowserPane({
               type="button"
               aria-label="关闭元素拾取"
               onClick={() => setPicking("idle")}
-              className="rounded p-0.5 text-muted-foreground hover:bg-muted"
+              className="p-0.5 text-muted-foreground hover:bg-muted"
             >
               <X className="h-3 w-3" />
             </button>
@@ -472,14 +588,14 @@ export function BrowserPane({
             <>
               <p className="mb-2 text-[10px] text-muted-foreground">
                 {picked.source === "cdp"
-                  ? "受控浏览器（CDP）里的真实渲染页：框来自元素盒模型，点框或点下面的条目都会把该元素引用进对话（带中心坐标，可直接让 AI 去点它）。"
-                  : "按服务端抓取的静态 HTML 列出；脚本渲染出的元素与登录态内容看不到。连上「设置 → 浏览器 → 外部浏览器」的受控浏览器后，这里会换成真实渲染页 + 叠框点选。"}
+                  ? "来源：实时页面"
+                  : "来源：页面快照（可能缺少动态内容）"}
               </p>
 
               {/* 截图叠框：几何来自 DOM.getBoxModel，坐标是视口 CSS px，
                   换算成百分比后与截图（同一视口尺寸）严丝合缝 */}
               {overlay && picked.screenshotUrl ? (
-                <div className="relative mb-2 overflow-hidden rounded border">
+                <div className="relative mb-2 overflow-hidden border">
                   {/* biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用 */}
                   <img
                     src={picked.screenshotUrl}
@@ -503,13 +619,13 @@ export function BrowserPane({
                             width: `${(element.box.width / overlay.viewport.width) * 100}%`,
                             height: `${(element.box.height / overlay.viewport.height) * 100}%`,
                           }}
-                          className={`absolute rounded-sm border transition-colors ${
+                          className={`absolute border transition-colors ${
                             hoveredElement === index
                               ? "border-info bg-info/30"
                               : "border-info/70 bg-info/10 hover:bg-info/30"
                           }`}
                         >
-                          <span className="absolute -top-3 -left-px rounded-sm bg-info px-1 text-[9px] leading-3 text-white">
+                          <span className="absolute -top-3 -left-px bg-info px-1 text-[9px] leading-3 text-white">
                             {index + 1}
                           </span>
                         </button>
@@ -528,18 +644,18 @@ export function BrowserPane({
                           onMouseEnter={() => setHoveredElement(index)}
                           onMouseLeave={() => setHoveredElement(null)}
                           onClick={() => pickElement(element)}
-                          className={`w-full rounded px-1.5 py-1 text-left ${
+                          className={`w-full px-1.5 py-1 text-left ${
                             hoveredElement === index
                               ? "bg-muted"
                               : "hover:bg-muted"
                           }`}
                         >
                           {overlay && element.box ? (
-                            <span className="mr-1.5 rounded bg-info/15 px-1 py-0.5 font-mono text-[10px] text-info">
+                            <span className="mr-1.5 bg-info/15 px-1 py-0.5 font-mono text-[10px] text-info">
                               {index + 1}
                             </span>
                           ) : null}
-                          <span className="mr-1.5 rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
+                          <span className="mr-1.5 bg-muted px-1 py-0.5 font-mono text-[10px]">
                             {element.tag}
                           </span>
                           <span className="truncate">
@@ -557,9 +673,7 @@ export function BrowserPane({
                   )}
                 </ul>
               ) : (
-                <p className="text-muted-foreground">
-                  这一页没提取到可交互元素（可能是脚本渲染的页面）。
-                </p>
+                <p className="text-muted-foreground">这一页没有可选的元素。</p>
               )}
             </>
           ) : null}
@@ -567,83 +681,99 @@ export function BrowserPane({
       ) : null}
 
       {url ? (
-        <div
-          ref={frameRef}
-          className="relative min-h-0 flex-1 overflow-auto rounded-xl border bg-background"
-        >
-          <iframe
-            key={`${url}#${reloadToken}`}
-            src={url}
-            title={`右栏浏览器：${url}`}
-            style={{
-              width: viewportWidth > 0 ? `${viewportWidth}px` : "100%",
-              height: viewportHeight > 0 ? `${viewportHeight}px` : "100%",
-              transform: `scale(${scale})`,
-              transformOrigin: "top left",
-            }}
-            className="absolute top-0 left-0"
-          />
-          {viewportPreset === "free" ? (
-            <button
-              type="button"
-              aria-label="拖动调整视口尺寸"
-              title="拖动调整视口尺寸"
-              onMouseDown={(event) => {
-                event.preventDefault();
-                const startX = event.clientX;
-                const startY = event.clientY;
-                const start = freeSize;
-                const onMove = (moveEvent: MouseEvent) => {
-                  setFreeSize({
-                    width: clampViewport(
-                      Math.round(start.width + (moveEvent.clientX - startX)),
-                      320,
-                      3840,
-                    ),
-                    height: clampViewport(
-                      Math.round(start.height + (moveEvent.clientY - startY)),
-                      240,
-                      2160,
-                    ),
-                  });
-                };
-                const onUp = () => {
-                  window.removeEventListener("mousemove", onMove);
-                  window.removeEventListener("mouseup", onUp);
-                };
-                window.addEventListener("mousemove", onMove);
-                window.addEventListener("mouseup", onUp);
-              }}
-              style={{
-                left: `${viewportWidth * scale - 10}px`,
-                top: `${viewportHeight * scale - 10}px`,
-              }}
-              className="absolute h-3 w-3 cursor-nwse-resize rounded-sm border border-foreground/40 bg-background"
-            />
-          ) : null}
+        <div className="relative min-h-0 flex-1">
+          <div
+            ref={frameRef}
+            className="absolute inset-0 overflow-auto border bg-background"
+          >
+            {/*
+            桌面形态（路线 2）：页面由 Rust 侧的**真 WebView2 子 webview** 渲染，
+            这里只留一个占位块——它的位置会同步给原生层（见上面的同步 effect）。
+            占位块保持透明但要占位，否则面板布局会塌。
+
+            其余形态：面板显示的是**受控浏览器的实时画面**（不是 iframe）——
+            跨源 iframe 读不到 DOM、挂不上调试工具、注不进脚本；画面流这条路
+            才让「注入到页面的调试控制台出现在面板里」成立（见 panel-browser-live）。
+          */}
+            {desktopShell ? (
+              <div
+                ref={embedSlotRef}
+                data-role="native-browser-slot"
+                className="absolute top-0 left-0"
+                style={{
+                  width: viewportWidth > 0 ? `${viewportWidth}px` : "100%",
+                  height: viewportHeight > 0 ? `${viewportHeight}px` : "100%",
+                }}
+              />
+            ) : (
+              <div
+                data-role="live-browser-frame"
+                className="absolute top-0 left-0"
+                style={{
+                  width: viewportWidth > 0 ? `${viewportWidth}px` : "100%",
+                  height: viewportHeight > 0 ? `${viewportHeight}px` : "100%",
+                  transform: `scale(${scale})`,
+                  transformOrigin: "top left",
+                }}
+              >
+                <BrowserLiveView
+                  accessToken={accessToken}
+                  url={url}
+                  frameWidth={viewportWidth}
+                  frameHeight={viewportHeight}
+                  reloadToken={reloadToken}
+                  onReload={onReload}
+                />
+              </div>
+            )}
+            {freeSizeOn ? (
+              <button
+                type="button"
+                aria-label="拖动调整尺寸"
+                title="拖动调整尺寸"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  const startX = event.clientX;
+                  const startY = event.clientY;
+                  const start = freeSize;
+                  const onMove = (moveEvent: MouseEvent) => {
+                    setFreeSize({
+                      width: clampViewport(
+                        Math.round(start.width + (moveEvent.clientX - startX)),
+                        320,
+                        3840,
+                      ),
+                      height: clampViewport(
+                        Math.round(start.height + (moveEvent.clientY - startY)),
+                        240,
+                        2160,
+                      ),
+                    });
+                  };
+                  const onUp = () => {
+                    window.removeEventListener("mousemove", onMove);
+                    window.removeEventListener("mouseup", onUp);
+                  };
+                  window.addEventListener("mousemove", onMove);
+                  window.addEventListener("mouseup", onUp);
+                }}
+                style={{
+                  left: `${viewportWidth * scale - 10}px`,
+                  top: `${viewportHeight * scale - 10}px`,
+                }}
+                className="absolute h-3 w-3 cursor-nwse-resize border border-foreground/40 bg-background"
+              />
+            ) : null}
+          </div>
         </div>
       ) : (
-        <p className="text-xs text-muted-foreground">
-          还没有打开页面。对话里点链接会自动在这里打开，也可以在地址栏输入。
-        </p>
+        <PanelEmptyState kind="browser" title="还没有打开页面" />
       )}
-      <p className="text-[10px] text-muted-foreground">
-        内嵌页面能否显示取决于目标站点是否允许被嵌入；被拒绝时会是一片空白，用「在系统浏览器
-        打开」兜底。后退 /
-        前进记的是本面板打开过的地址（跨源页面自己的历史读不到）。
-      </p>
     </div>
   );
 }
 
 /** 视口预设（参考图：`1280 × 720` 这类设备尺寸；`适应面板` = 跟面板一样大）。 */
-const VIEWPORT_PRESETS = [
-  { id: "fit", label: "适应面板", width: null, height: null },
-  { id: "laptop", label: "1280 × 720", width: 1280, height: 720 },
-  { id: "tablet", label: "1024 × 768", width: 1024, height: 768 },
-  { id: "phone", label: "375 × 812", width: 375, height: 812 },
-  { id: "free", label: "自由尺寸", width: null, height: null },
-] as const;
 
 /**
  * 自由尺寸的数字输入：**边打字边夹取是错的**（第一次按「9」，空值被夹成 320，接着变成 3209…）。
@@ -692,7 +822,7 @@ function ViewportSizeInput({
         setText(String(clamped));
         onCommit(clamped);
       }}
-      className="w-16 rounded border bg-transparent px-1 py-0.5 font-mono text-[11px] tabular-nums outline-none focus:ring-1 focus:ring-ring"
+      className="w-16 border bg-transparent px-1 py-0.5 font-mono text-[11px] tabular-nums outline-none focus:ring-1 focus:ring-ring"
     />
   );
 }
@@ -702,8 +832,6 @@ function clampViewport(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, Math.round(value)));
 }
-
-type ViewportPresetId = (typeof VIEWPORT_PRESETS)[number]["id"];
 
 /** 缩放预设（参考图：适应窗口 / 50% / 75% / 100%）。`scale: null` = 适应视口。 */
 const ZOOM_PRESETS = [
@@ -716,9 +844,38 @@ const ZOOM_PRESETS = [
 type ZoomPresetId = (typeof ZOOM_PRESETS)[number]["id"];
 
 /** 补全协议：裸地址（如 localhost:3000）按 http 处理；空串返回 null。 */
+/**
+ * 地址栏归一化（用户口径：「自动识别 https 还是 http，先请求 https，访问不到再 http」）。
+ *
+ * 与浏览器一致的做法：**裸主机名默认 https**；只有这些情况用 http——
+ * - 用户显式写了 `http://`（尊重输入）；
+ * - 本地/内网地址（`localhost` / `127.0.0.1` / `*.local` / 私有网段 / 带端口）：这些地址
+ *   基本没有证书，默认 https 只会失败一次再回落，白等一个超时。
+ *
+ * 「https 打不开再 http」真正能可靠检测的是 **CDP 那条路**（受控浏览器导航失败有明确错误），
+ * 已在服务端 `navigate` 里实现回落；iframe 那条路拿不到可靠的失败信号（被 X-Frame-Options
+ * 拦下也会触发 load 事件），故只做**一次**默认选择，不假装能回退。
+ */
 export function normalizeUrl(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return `http://${trimmed}`;
+  const scheme = looksLocal(trimmed) ? "http" : "https";
+  return `${scheme}://${trimmed}`;
+}
+
+/** 本地/内网地址判定（含带端口写法）：这些默认走 http。 */
+export function looksLocal(value: string): boolean {
+  const host = value.split("/")[0]?.split(":")[0]?.toLowerCase() ?? "";
+  if (host === "localhost" || host.endsWith(".local")) return true;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
+    // 回环 / 私有网段（10.0.0.0/8、172.16/12、192.168/16）
+    return (
+      host.startsWith("127.") ||
+      host.startsWith("10.") ||
+      host.startsWith("192.168.") ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+    );
+  }
+  return false;
 }

@@ -294,6 +294,41 @@ export const codeTerminalResponseSchema = z.object({
   }),
 });
 
+// --- 外部应用访问令牌（R5-2「外部应用授权」） ---
+
+/**
+ * 一条令牌的**可读**形状：**没有明文**（明文只在创建响应里回一次）。
+ * `tokenPrefix` 是明文前 12 位，仅供界面辨认。
+ */
+export const apiTokenRecordSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  tokenPrefix: z.string().min(1),
+  createdAt: z.string().min(1),
+  lastUsedAt: z.string().min(1).nullable(),
+  revokedAt: z.string().min(1).nullable(),
+});
+
+export const apiTokenListResponseSchema = z.object({
+  tokens: z.array(apiTokenRecordSchema),
+});
+
+export const apiTokenCreateRequestSchema = z.object({
+  name: z.string().trim().min(1).max(60),
+});
+
+export const apiTokenCreateResponseSchema = z.object({
+  /** 明文，**只在这里出现一次**（库里只有 sha256）。 */
+  token: z.string().min(1),
+  record: apiTokenRecordSchema,
+});
+
+export type ApiTokenRecord = z.infer<typeof apiTokenRecordSchema>;
+export type ApiTokenListResponse = z.infer<typeof apiTokenListResponseSchema>;
+export type ApiTokenCreateResponse = z.infer<
+  typeof apiTokenCreateResponseSchema
+>;
+
 // --- 子智能体（R1-3 目录 + 设置 →「子智能体」页） ---
 
 /**
@@ -367,6 +402,38 @@ export const agentRunActivityResponseSchema = z.object({
     /** 窗口内各轮运行时长之和（秒）；仍在跑的轮按「到现在」计。 */
     totalSeconds: z.number().int().nonnegative(),
   }),
+});
+
+// --- 工作树（R5-2「工作树」条目）：一个仓库同时检出多份工作副本 ---
+
+export const codeWorktreeSchema = z.object({
+  /** 绝对路径。 */
+  path: z.string().min(1),
+  /** 检出的分支；detached 时为 null。 */
+  branch: z.string().nullable(),
+  /** 仓库本体（`git worktree list` 的第一条）。 */
+  main: z.boolean(),
+  detached: z.boolean(),
+});
+
+export const codeWorktreeListResponseSchema = z.object({
+  worktrees: z.array(codeWorktreeSchema),
+});
+
+export const codeWorktreeCreateRequestSchema = z.object({
+  canvasId: z.string().min(1),
+  /** 工作树目录（**绝对路径**；服务端校验：绝对、不在仓库里、父目录存在、目标不存在）。 */
+  path: z.string().trim().min(1),
+  branch: z.string().trim().min(1).max(200),
+  /** true = 建新分支；false = 检出已有分支。 */
+  create: z.boolean().default(true),
+});
+
+export const codeWorktreeRemoveRequestSchema = z.object({
+  canvasId: z.string().min(1),
+  path: z.string().trim().min(1),
+  /** 丢掉里面未提交的改动（界面二次确认后才带 true）。 */
+  force: z.boolean().default(false),
 });
 
 export const codeGitFileResponseSchema = z.object({

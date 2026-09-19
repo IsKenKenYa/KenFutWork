@@ -20,7 +20,6 @@ import {
   Plug,
   Plus,
   Send,
-  ShieldCheck,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -49,7 +48,8 @@ import {
   THINKING_OPTIONS,
   THINKING_PROGRESS,
   TIER_OPTIONS,
-  thinkingOptionsFor,
+  thinkingPromptHint,
+  tierIcon,
 } from "@/components/workbench/composer-compact-select";
 import { ContextUsageButton } from "@/components/workbench/context-usage-button";
 import { ElapsedEntry } from "@/components/workbench/elapsed-entry";
@@ -73,6 +73,7 @@ import { useAuth } from "@/lib/auth-context";
 import { onBrowserOpen } from "@/lib/browser-panel";
 import { commitGitAll } from "@/lib/code-git-api";
 import {
+  contextUsageModelMeta,
   formatTokens,
   type RunUsageSnapshot,
   usageFromEvent,
@@ -167,8 +168,6 @@ type WorkbenchModelOption = {
   contextWindow?: number | undefined;
   /** 单次最大输出（供应商实例声明）；上下文条「预留输出」段的来源。 */
   maxOutputTokens?: number | undefined;
-  /** 思考档位声明（供应商模型行）；声明后思考选择器只显示这些档位。 */
-  reasoningEfforts?: string[] | undefined;
 };
 
 /**
@@ -233,6 +232,15 @@ interface WorkbenchTask {
     triggerSource: "reserved-output" | "fraction" | "fallback";
     keepMessages: number;
   };
+  /** 用户钩子（R5-2「钩子」）：本轮跑过的钩子命令与结果（旁路，失败也不影响本轮）。 */
+  hookResults?: Array<{
+    event: "turn-start" | "turn-end";
+    command: string;
+    exitCode: number | null;
+    timedOut: boolean;
+    output: string;
+    durationMs: number;
+  }>;
 }
 
 /**
@@ -503,6 +511,17 @@ export function Workbench() {
   const activeTask = useMemo(
     () => tasks.find((t) => t.id === activeTaskId) ?? null,
     [tasks, activeTaskId],
+  );
+
+  /**
+   * 选中模型的容量元数据（窗口 / 最大输出），两处编排器共用一份。
+   *
+   * 此前它们各写各的 `models.find(...)`，**带真实用量的那个漏传 `maxOutputTokens`**——
+   * 上下文浮层「预留输出 / 剩余」两段与阈值刻度因此任何模式下都不出现（真机实测才发现）。
+   */
+  const modelMeta = useMemo(
+    () => contextUsageModelMeta(models, model),
+    [models, model],
   );
 
   /**
@@ -1174,6 +1193,31 @@ export function Workbench() {
             evt as Parameters<typeof applyTaskToolEvent>[1],
           ),
         );
+      } else if (type === "run.hook") {
+        const hook = evt as {
+          event?: "turn-start" | "turn-end";
+          command?: string;
+          exitCode?: number | null;
+          timedOut?: boolean;
+          output?: string;
+          durationMs?: number;
+        };
+        if (typeof hook.command === "string" && hook.event) {
+          apply((task) => ({
+            ...task,
+            hookResults: [
+              ...(task.hookResults ?? []),
+              {
+                event: hook.event as "turn-start" | "turn-end",
+                command: hook.command as string,
+                exitCode: hook.exitCode ?? null,
+                timedOut: hook.timedOut ?? false,
+                output: hook.output ?? "",
+                durationMs: hook.durationMs ?? 0,
+              },
+            ],
+          }));
+        }
       } else if (type === "run.compacted") {
         const evt2 = evt as {
           triggerTokens?: number;
@@ -1469,6 +1513,62 @@ export function Workbench() {
     bindWorkDirectory,
   ]);
 
+  /**
+   * 插件「使用」：跳到**真正消费这个插件的界面**（市场里已装条目就是这个键）。
+   * 表在 plugin-market-modal 里（显式列表），这里只负责跳。
+   */
+  const handlePluginUse = useCallback((pluginName: string) => {
+    setPluginsOpen(false);
+    if (pluginName === "mcp") {
+      setMcpOpen(true);
+      return;
+    }
+    if (pluginName === "skills") {
+      setSkillsOpen(true);
+      return;
+    }
+    if (pluginName === "canvas") {
+      // 画布的消费界面就是 Design 模式主区（与 switchMode 同一动作）
+      setMode("design");
+      setActiveTaskId(null);
+      return;
+    }
+    if (pluginName === "model-providers") {
+      setSettingsTab("providers");
+      return;
+    }
+    if (pluginName === "search") {
+      // 默认搜索引擎在「浏览器 → 通用」里（联网检索用的就是它）
+      setSettingsTab("browser");
+      return;
+    }
+    // plugin-registry：插件面板
+    setSettingsTab("pluginPanels");
+  }, []);
+
+  /**
+   * 把一份工作树路径绑成**当前项目**的工作目录（工作树对话框里的「绑为工作目录」）。
+   *
+   * 与「填本机路径」的区别：那条会按目录名去找/建项目，这条**不动项目身份**——
+   * 工作树就是这个项目的另一份检出，绑完下一轮 run 起在那一份里干活。
+   */
+  const bindWorktreeToProject = useCallback(
+    async (path: string) => {
+      const token = session?.access_token;
+      const project = selectedProject;
+      if (!token) throw new Error("尚未登录，无法绑定工作目录。");
+      if (!project) throw new Error("先选中一个工作目录项目。");
+      await updateProject(token, project.id, { work_dir: path });
+      setCodeProjects((prev) =>
+        prev.map((item) =>
+          item.id === project.id ? { ...item, workDir: path } : item,
+        ),
+      );
+      setWorkDirNotice(`工作目录已绑到工作树：${path}`);
+    },
+    [session, selectedProject],
+  );
+
   const switchMode = useCallback((next: WorkbenchMode) => {
     setMode(next);
     setActiveTaskId(null);
@@ -1554,7 +1654,7 @@ export function Workbench() {
       };
 
       if (!ws.connected) {
-        markFailed("与服务端的连接未就绪（正在重连），请稍后重试。");
+        markFailed("连接未就绪，正在重连，请稍后重试。");
         return;
       }
 
@@ -1581,8 +1681,8 @@ export function Workbench() {
         }
         markFailed(
           ws.connected
-            ? "运行请求未被服务端确认（连接正常但未收到确认），请重试。"
-            : "与服务端的连接长时间未恢复，本轮未能确认；重连后会自动同步，若一直无输出再重试。",
+            ? "请求未被确认，请重试。"
+            : "连接长时间未恢复，本轮未确认；重连后会自动同步，仍无输出再重试。",
         );
       };
       ackTimer = window.setTimeout(checkAck, ACK_TIMEOUT_MS);
@@ -1609,12 +1709,7 @@ export function Workbench() {
 `
                   : ""
               : ""
-          }${
-            thinking === "default"
-              ? ""
-              : `【思考强度：${thinking}】
-`
-          }${text.trim()}`,
+          }${thinkingPromptHint(thinking)}${text.trim()}`,
           ...(model ? { model } : {}),
           executionMode,
         },
@@ -2358,6 +2453,32 @@ export function Workbench() {
                       /conversation_history/，这条对话的完整记录不受影响。
                     </p>
                   ) : null}
+                  {/*
+                    用户钩子（R5-2「钩子」）：在项目工作目录里跑的命令，成败都如实列出——
+                    配了钩子却看不到结果，等于不知道它跑没跑。失败不影响本轮。
+                  */}
+                  {(activeTask.hookResults ?? []).map((hook) => (
+                    <p
+                      /* 同一条命令在起点/终点各配一次时事件不同，键按「事件+命令+耗时」取；
+                         同一轮里同事件同命令只会出现一次（钩子表本身按事件+命令去重执行） */
+                      key={`${hook.event}::${hook.command}::${hook.durationMs}`}
+                      role="status"
+                      className="rounded-md border bg-muted/40 px-3 py-1.5 font-mono text-[11px] text-muted-foreground"
+                    >
+                      {hook.event === "turn-start"
+                        ? "本轮开始钩子"
+                        : "本轮结束钩子"}
+                      ：{hook.command}
+                      {" · "}
+                      {hook.timedOut
+                        ? "超时被杀"
+                        : hook.exitCode === 0
+                          ? "成功"
+                          : `退出码 ${hook.exitCode ?? "?"}`}
+                      {hook.output ? ` · ${hook.output}` : ""}
+                      {` · ${Math.max(1, Math.round(hook.durationMs / 1000))}s`}
+                    </p>
+                  ))}
                   {/* 目标 + 进度（R1-2）：模型用了 write_todos 才出现，条数从事件流推导 */}
                   {activeTask.todos && activeTask.todos.length > 0 ? (
                     <TodoProgressPanel
@@ -2495,7 +2616,8 @@ export function Workbench() {
                         </button>
                         <ComposerCompactSelect
                           ariaLabel="权限档位"
-                          icon={<ShieldCheck className="h-3.5 w-3.5" />}
+                          /* 图标随当前档位（四档各不相同），别再写死一个通用盾牌 */
+                          icon={tierIcon(tier)}
                           options={TIER_OPTIONS}
                           value={tier}
                           onChange={(next) => {
@@ -2515,8 +2637,9 @@ export function Workbench() {
                           }))}
                         >
                           <SelectTrigger
-                            className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
+                            className="h-7 gap-1 border-transparent bg-muted/60 px-2 text-xs"
                             aria-label="执行模式"
+                            hideChevron
                           >
                             <SelectValue />
                           </SelectTrigger>
@@ -2545,7 +2668,7 @@ export function Workbench() {
                           }
                         >
                           <SelectTrigger
-                            className="max-w-[200px] gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
+                            className="h-7 max-w-[200px] gap-1 border-transparent bg-muted/60 px-2 text-xs"
                             aria-label="模型"
                           >
                             <SelectValue />
@@ -2573,29 +2696,25 @@ export function Workbench() {
                         <ContextUsageButton
                           usage={activeTask.usage ?? null}
                           modelId={model}
-                          contextWindow={
-                            models.find((m) => m.id === model)?.contextWindow ??
-                            null
-                          }
+                          contextWindow={modelMeta.contextWindow}
+                          maxOutputTokens={modelMeta.maxOutputTokens}
                         />
                         <ComposerCompactSelect
                           ariaLabel="思考强度"
                           icon={<Brain className="h-3.5 w-3.5" />}
-                          options={thinkingOptionsFor(
-                            models.find((m) => m.id === model),
-                            THINKING_OPTIONS,
-                          )}
+                          options={THINKING_OPTIONS}
                           value={thinking}
                           onChange={handleThinkingChange}
                           contentClassName="min-w-24"
                           progress={THINKING_PROGRESS[thinking] ?? 0}
                         />
                       </div>
-                      <div className="flex items-center gap-2">
+                      {/* 右簇：麦克风 / 发送 —— 与左簇同一个 h-7 口径 */}
+                      <div className="flex items-center gap-1.5">
                         <button
                           type="button"
                           title="语音（即将上线）"
-                          className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
                         >
                           <Mic className="h-4 w-4" />
                         </button>
@@ -2614,7 +2733,7 @@ export function Workbench() {
                             type="submit"
                             aria-label="发送"
                             disabled={!followUp.trim()}
-                            className="rounded-lg bg-primary p-2 text-primary-foreground disabled:opacity-50"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground disabled:opacity-50"
                           >
                             <Send className="h-4 w-4" />
                           </button>
@@ -2628,7 +2747,6 @@ export function Workbench() {
             {/* 右栏停靠面板：编辑器式多标签（参考图 R3-1 的标签面板） */}
             <WorkbenchSidePanel
               open={panelOpen}
-              onClose={() => setPanelOpen(false)}
               onRequestOpen={() => setPanelOpen(true)}
               accessToken={session?.access_token ?? null}
               canvasId={conversationProject?.primaryCanvas.id ?? null}
@@ -2690,6 +2808,10 @@ ${formatElementReference(picked)}`
                 <GitBranchSelect
                   accessToken={session?.access_token ?? null}
                   canvasId={selectedProject?.primaryCanvas.id ?? null}
+                  /* 工作树里「绑为工作目录」：把这份工作树绑成当前项目的工作目录。
+                     之后 agent/终端/git 都在那一份检出里跑——与「填本机路径」同一条
+                     projects.work_dir 链，只是路径由工作树挑 */
+                  onBindWorkDir={bindWorktreeToProject}
                 />
               </div>
               <div className="@container/composer rounded-b-2xl border bg-background px-3 pt-3 pb-2.5 shadow-sm">
@@ -2740,17 +2862,18 @@ ${formatElementReference(picked)}`
                   </p>
                 ) : null}
                 <div className="mt-1.5 flex items-center justify-between">
+                  {/* 左簇：附件 / 权限 / 执行模式 / 模型 / 上下文环 / 思考强度 —— 统一 h-7 与 gap-1.5 */}
                   <div className="flex min-w-0 items-center gap-1.5">
                     <button
                       type="button"
                       title="附件（即将上线）"
-                      className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
                     >
                       <Plus className="h-4 w-4" />
                     </button>
                     <ComposerCompactSelect
                       ariaLabel="权限档位"
-                      icon={<ShieldCheck className="h-3.5 w-3.5" />}
+                      icon={tierIcon(tier)}
                       options={TIER_OPTIONS}
                       value={tier}
                       onChange={(next) => {
@@ -2770,8 +2893,9 @@ ${formatElementReference(picked)}`
                       }))}
                     >
                       <SelectTrigger
-                        className="gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
+                        className="h-7 gap-1 border-transparent bg-muted/60 px-2 text-xs"
                         aria-label="执行模式"
+                        hideChevron
                       >
                         <SelectValue />
                       </SelectTrigger>
@@ -2796,7 +2920,7 @@ ${formatElementReference(picked)}`
                       }
                     >
                       <SelectTrigger
-                        className="max-w-[200px] gap-1 border-transparent bg-muted/60 px-2 py-1 text-xs"
+                        className="h-7 max-w-[200px] gap-1 border-transparent bg-muted/60 px-2 text-xs"
                         aria-label="模型"
                       >
                         <SelectValue />
@@ -2877,14 +3001,8 @@ ${formatElementReference(picked)}`
                     <ContextUsageButton
                       usage={null}
                       modelId={model}
-                      contextWindow={
-                        models.find((m) => m.id === model)?.contextWindow ??
-                        null
-                      }
-                      maxOutputTokens={
-                        models.find((m) => m.id === model)?.maxOutputTokens ??
-                        null
-                      }
+                      contextWindow={modelMeta.contextWindow}
+                      maxOutputTokens={modelMeta.maxOutputTokens}
                     />
                     <ComposerCompactSelect
                       ariaLabel="思考强度"
@@ -2896,25 +3014,32 @@ ${formatElementReference(picked)}`
                       progress={THINKING_PROGRESS[thinking] ?? 0}
                     />
                   </div>
-                  <div className="flex items-center gap-2">
+                  {/* 右簇：麦克风 / 发送 —— 与左簇同一个 h-7 口径 */}
+                  <div className="flex items-center gap-1.5">
                     <button
                       type="button"
                       title="语音（即将上线）"
-                      className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
                     >
                       <Mic className="h-4 w-4" />
                     </button>
-                    <button
-                      type="button"
-                      aria-label="发送"
-                      disabled={submitting || !prompt.trim()}
-                      onClick={() =>
-                        startTask(expandCommand(prompt, commands).text)
-                      }
-                      className="rounded-lg bg-primary p-2 text-primary-foreground disabled:opacity-50"
-                    >
-                      <Send className="h-4 w-4" />
-                    </button>
+                    {submitting ? (
+                      <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        aria-label="发送"
+                        disabled={!prompt.trim()}
+                        onClick={() =>
+                          startTask(expandCommand(prompt, commands).text)
+                        }
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground disabled:opacity-50"
+                      >
+                        <Send className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2958,6 +3083,7 @@ ${formatElementReference(picked)}`
       {pluginsOpen ? (
         <PluginMarketModal
           open={pluginsOpen}
+          onUse={handlePluginUse}
           onClose={() => setPluginsOpen(false)}
           accessToken={session?.access_token ?? null}
           // 「从工作目录安装」用：服务端据此解析沙箱目录

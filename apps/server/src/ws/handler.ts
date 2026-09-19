@@ -70,9 +70,15 @@ export async function registerWsRoute(
     { websocket: true },
     (socket: WebSocket, request: FastifyRequest) => {
       const url = new URL(request.url, `http://${request.headers.host}`);
-      const token = url.searchParams.get("token");
+      const token = url.searchParams.get("token") ?? "";
 
-      if (!token || !options.auth) {
+      /**
+       * **不在这里要求 token**：桌面形态是 local-trust（回环 + 可信 Origin 免登录），
+       * 本来就没有 token——以前这道 `!token` 的门会把桌面端的 WS 全部关在门外
+       * （表现为打包后 run / 终端一律连不上）。要不要凭证由鉴权器决定：
+       * 会话档没有 Bearer 就返回 null，local-trust 只看 ip/Origin。
+       */
+      if (!options.auth) {
         socket.close(4001, "Unauthorized");
         return;
       }
@@ -92,7 +98,7 @@ export async function registerWsRoute(
 async function authenticateAndBind(
   socket: WebSocket,
   token: string,
-  _request: FastifyRequest,
+  request: FastifyRequest,
   options: RegisterWsOptions,
   agentRuns: AgentRunService,
   connectionManager: ConnectionManager,
@@ -124,10 +130,18 @@ async function authenticateAndBind(
       socket.close(4001, "Unauthorized");
       return;
     }
-    const fakeRequest = {
-      headers: { authorization: `Bearer ${token}` },
+    /**
+     * 交给鉴权器的请求**要带真实的连接上下文**：ip 与 Origin 都是鉴权依据
+     * （local-trust 就认这两样）。以前这里只塞了 authorization，于是桌面形态永远判 null。
+     */
+    const authRequest = {
+      ip: request.ip,
+      headers: {
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...(request.headers.origin ? { origin: request.headers.origin } : {}),
+      },
     } as unknown as FastifyRequest;
-    const user = await auth.authenticate(fakeRequest);
+    const user = await auth.authenticate(authRequest);
     if (!user) {
       log.warn("auth_rejected", { reason: "invalid_token" });
       socket.close(4001, "Unauthorized");
@@ -146,7 +160,7 @@ async function authenticateAndBind(
   if (socket.readyState !== 1) return;
 
   // Use client-provided connectionId for reconnect identity; fallback to server UUID
-  const urlForParams = new URL(_request.url, `http://${_request.headers.host}`);
+  const urlForParams = new URL(request.url, `http://${request.headers.host}`);
   const connectionId =
     urlForParams.searchParams.get("connectionId") || randomUUID();
   connectionManager.register(connectionId, authenticatedUser.id, socket);
@@ -194,6 +208,7 @@ async function authenticateAndBind(
           sessionId: payload.sessionId,
           shell: existing.shell,
           executable: existing.executable,
+          tty: existing.tty,
           reused: true,
         },
       });
@@ -220,8 +235,14 @@ async function authenticateAndBind(
     }
     let cwd: string;
     try {
-      // 与其它端点同一处校验：登录 + 画布归属（越权即 404，不给枚举信号）
-      cwd = await codeGit.terminalWorkDir(authenticatedUser, payload.canvasId);
+      /**
+       * 带 canvasId 就按画布解析工作目录（与其它端点同一处校验：登录 + 画布归属，
+       * 越权即 404，不给枚举信号）；**不带就落到服务端自己的启动目录**——终端不该被
+       * 工作目录限制住（用户口径「终端不应该限制绑定文件目录」），开着就能用。
+       */
+      cwd = payload.canvasId
+        ? await codeGit.terminalWorkDir(authenticatedUser, payload.canvasId)
+        : process.cwd();
     } catch (error) {
       sendToClient({
         type: "terminal.exit",
@@ -236,6 +257,8 @@ async function authenticateAndBind(
       id: payload.sessionId,
       cwd,
       ...(payload.shell ? { shell: payload.shell } : {}),
+      ...(payload.cols ? { cols: payload.cols } : {}),
+      ...(payload.rows ? { rows: payload.rows } : {}),
       onData: (chunk) => {
         for (const frame of chunkForFrames(chunk)) {
           sendToClient({
@@ -263,6 +286,8 @@ async function authenticateAndBind(
         sessionId: payload.sessionId,
         shell: session.shell,
         executable: session.executable,
+        /** 真终端（PTY）= true：客户端据此上终端模拟器（行编辑/颜色由 shell 出）。 */
+        tty: session.tty,
       },
     });
   };
@@ -397,6 +422,10 @@ async function authenticateAndBind(
         void startTerminal(msg.payload);
       } else if (msg.action === "terminal.input") {
         terminalSessions.get(msg.payload.sessionId)?.write(msg.payload.data);
+      } else if (msg.action === "terminal.resize") {
+        terminalSessions
+          .get(msg.payload.sessionId)
+          ?.resize(msg.payload.cols, msg.payload.rows);
       } else if (msg.action === "terminal.stop") {
         const session = terminalSessions.get(msg.payload.sessionId);
         if (session) {

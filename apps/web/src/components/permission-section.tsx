@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { TIER_OPTIONS } from "@/components/workbench/composer-compact-select";
 import {
   approveToolPermission,
   fetchPermissionSettings,
@@ -23,28 +24,13 @@ import {
  * 分场景：**常规任务**与**自动化任务**（目标/循环这类无人值守轮次）各设一档——
  * 自动化档通常设得更严（批一次就一路跑，不会每一步都等人）。
  */
-const TIERS: Array<{ value: PermissionTier; label: string; hint: string }> = [
-  {
-    value: "default",
-    label: "默认（推荐）",
-    hint: "危险/不可逆操作需人工审批",
-  },
-  {
-    value: "auto-approve",
-    label: "自动放行",
-    hint: "命中已批准策略的调用自动通过",
-  },
-  {
-    value: "full-access",
-    label: "完全访问",
-    hint: "不限制（明示开启，风险自担）",
-  },
-  {
-    value: "custom",
-    label: "自定义配置",
-    hint: "按下面的规则逐条判：拒绝优先，都没命中回落默认档",
-  },
-];
+/**
+ * 四档的**档名与说明与编排器那份完全一致**（默认 / 自动审批 / 完全访问 / 自定义）：
+ * 同一个东西在设置页叫「自动放行」、在编排器叫「自动审批」会让人以为是两回事。
+ * 文案只有 `composer-compact-select.tsx` 的 `TIER_OPTIONS` 一处来源，这里取来用。
+ */
+const TIERS: Array<{ value: PermissionTier; label: string; hint: string }> =
+  TIER_OPTIONS.map(({ value, label, hint }) => ({ value, label, hint }));
 
 const SCOPES = [
   { value: "once", label: "仅本次" },
@@ -129,7 +115,11 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
         toolName: toolName.trim(),
         scope,
       });
-      setMessage(`已批准 ${toolName.trim()}（${scope}）`);
+      setMessage(
+        `已批准 ${toolName.trim()}（${
+          SCOPES.find((item) => item.value === scope)?.label ?? scope
+        }）`,
+      );
       setToolName("");
       void load();
     } catch (err) {
@@ -145,7 +135,7 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
     <section aria-label="权限设置">
       <h3 className="mb-1 text-base font-medium">常规任务</h3>
       <p className="mb-3 text-sm text-muted-foreground">
-        危险工具（shell/MCP/写类）在默认档下必须审批；审批只能由你发起。
+        危险操作在默认档下需要你批准。
       </p>
       <fieldset aria-label="常规任务档位" className="mb-4 min-w-0 space-y-2">
         {TIERS.map((t) => (
@@ -179,8 +169,8 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
           className="mb-5 min-w-0 space-y-3 rounded-lg border border-dashed p-3"
         >
           <p className="text-xs text-muted-foreground">
-            一行一条，支持末尾通配（如 <code>mcp__*</code>）。判定顺序固定为
-            <strong> 拒绝 → 放行 → 默认档兜底</strong>。
+            一行一条，支持 <code>*</code>{" "}
+            通配。拒绝优先，未命中的按上面的档位处理。
           </p>
           <label className="block text-sm">
             拒绝这些工具
@@ -227,8 +217,7 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
 
       <h3 className="mb-1 text-base font-medium">自动化任务</h3>
       <p className="mb-3 text-sm text-muted-foreground">
-        目标 /
-        循环这类无人值守轮次用这一档（通常设得更严：批一次就一路跑，不会每步等人）。
+        无人值守的任务（如目标、循环）用这一档，建议比常规任务更严。
       </p>
       <fieldset aria-label="自动化任务档位" className="mb-5 min-w-0 space-y-2">
         {TIERS.map((t) => (

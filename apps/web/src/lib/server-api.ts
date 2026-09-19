@@ -1,4 +1,6 @@
 import type {
+  ApiTokenCreateResponse,
+  ApiTokenListResponse,
   AssetSignedUrlResponse,
   CanvasDetail,
   ChatMessageCreateRequest,
@@ -329,6 +331,8 @@ export interface PermissionSettingsView {
   browserAutoScreenshot: boolean;
   /** CDP 托管浏览器无头运行。 */
   browserHeadless: boolean;
+  /** 允许 AI 读取开发者工具数据（控制台日志 / 页面报错 / 网络请求）。 */
+  browserDevtoolsReadEnabled: boolean;
   approvedForever: string[];
 }
 
@@ -352,6 +356,8 @@ export async function updatePermissionSettings(
     browserControlEnabled: boolean;
     browserAutoScreenshot: boolean;
     browserHeadless: boolean;
+    /** 允许 AI 读取开发者工具数据（控制台日志 / 页面报错 / 网络请求）。 */
+    browserDevtoolsReadEnabled: boolean;
   }>,
 ): Promise<PermissionSettingsView> {
   const response = await fetch(`${getServerBaseUrl()}/api/permissions/tier`, {
@@ -905,25 +911,215 @@ export async function fetchCdpStatus(
   return payload.cdp;
 }
 
-export async function connectCdp(accessToken: string): Promise<CdpStatusView> {
+/**
+ * 「打开调试工具」：把**页面内调试控制台**（Eruda，现成第三方）注入面板显示的这一页，
+ * 并摆成悬浮窗（可拖动 / 可关闭）。
+ */
+export async function injectDebugConsole(
+  accessToken: string,
+  url: string,
+): Promise<void> {
   const response = await fetch(
-    `${getServerBaseUrl()}/api/browser/cdp/connect`,
+    `${getServerBaseUrl()}/api/browser/cdp/console`,
     {
       method: "POST",
       headers: authJsonHeaders(accessToken),
+      body: JSON.stringify({ url }),
     },
   );
+  if (response.ok) return;
+  const payload = (await response.json().catch(() => null)) as {
+    error?: { message?: string };
+  } | null;
+  throw new ApiApplicationError(
+    "cdp_console_failed",
+    payload?.error?.message ??
+      `注入调试控制台失败（服务端返回 ${response.status}）。`,
+  );
+}
+
+/** 调试控制台脚本源码（桌面形态取同一份，eval 进面板里的子 WebView2）。 */
+export async function fetchDebugConsoleScript(
+  accessToken: string,
+): Promise<string> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/browser/debug-console.js`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as {
+      error?: { message?: string };
+    } | null;
+    throw new ApiApplicationError(
+      "debug_console_unavailable",
+      payload?.error?.message ??
+        `拿不到调试控制台脚本（服务端返回 ${response.status}）。`,
+    );
+  }
+  return await response.text();
+}
+
+/**
+ * 「完整开发者工具」：在受控浏览器里开真 DevTools 并取消停靠成独立窗口。
+ *
+ * 服务端「像人一样」唤起它（激活受控窗口 + F12 → DevTools 前端的 setIsDocked(false)）——
+ * 真 DevTools 只有浏览器自己开得出来，CDP 开出来的 devtools:// 窗口连不上页面。
+ */
+export async function openCdpDevtools(
+  accessToken: string,
+  bounds?: { left?: number; top?: number; width?: number; height?: number },
+): Promise<{ windowId: number }> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/browser/cdp/devtools`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(bounds ?? {}),
+    },
+  );
+  const payload = (await response.json().catch(() => null)) as {
+    windowId?: number;
+    error?: { message?: string };
+  } | null;
+  if (!response.ok || typeof payload?.windowId !== "number") {
+    throw new ApiApplicationError(
+      "cdp_devtools_failed",
+      payload?.error?.message ??
+        `打开开发者工具失败（服务端返回 ${response.status}）。`,
+    );
+  }
+  return { windowId: payload.windowId };
+}
+
+export async function connectCdp(
+  accessToken: string,
+  /**
+   * 无头（不弹窗口）。右栏面板显式传 `true`：面板里看的就是这个浏览器的画面，
+   * 再弹一个窗口出来纯属多余（用户口径：「不要跳转外部」）。不传则按设置。
+   */
+  options: { headless?: boolean } = {},
+): Promise<CdpStatusView> {
+  let response: Response;
+  try {
+    response = await fetch(`${getServerBaseUrl()}/api/browser/cdp/connect`, {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(
+        typeof options.headless === "boolean"
+          ? { headless: options.headless }
+          : {},
+      ),
+    });
+  } catch {
+    // fetch 抛错 = 服务端根本没应答（重启中/挂了），与「浏览器连不上」是两回事，要分开说
+    throw new ApiApplicationError(
+      "cdp_connect_failed",
+      "服务端没有应答（可能正在重启）——稍后重试。",
+    );
+  }
   const payload = (await response.json().catch(() => null)) as {
     cdp?: CdpStatusView;
     error?: { message?: string };
   } | null;
   if (!response.ok || !payload?.cdp) {
+    /**
+     * **别把真实原因吞掉**（真机踩到）：以前无论后端说什么都只显示「连接浏览器失败。」，
+     * 用户拿到一句没法行动的话。现在带上服务端原话；连原话都没有时至少给出状态码。
+     */
     throw new ApiApplicationError(
       "cdp_connect_failed",
-      payload?.error?.message ?? "连接浏览器失败。",
+      payload?.error?.message ??
+        `连接浏览器失败（服务端返回 ${response.status}）。`,
     );
   }
   return payload.cdp;
+}
+
+/** 面板画面流的视口尺寸（CSS px；客户端按它把鼠标坐标换算成视口坐标）。 */
+export interface CdpViewportView {
+  width: number;
+  height: number;
+  scale: number;
+}
+
+/**
+ * 面板画面流的**开流手续**：确认受控浏览器在 + 导航到目标地址 + 换一张票据。
+ *
+ * 分两步是因为真正开流的请求由浏览器替我们发（`<img src=…>`），发不了登录头——
+ * 票据短时且一次性（见服务端 view-stream）。
+ */
+export async function openCdpView(
+  accessToken: string,
+  input: {
+    url?: string;
+    /** 自由尺寸：真视口尺寸（不给 = 跟窗口一样大）。 */
+    width?: number;
+    height?: number;
+    /** 「刷新」：同一页也重新导航一次。 */
+    reload?: boolean;
+  },
+): Promise<{ ticket: string; viewport: CdpViewportView }> {
+  const response = await fetch(`${getServerBaseUrl()}/api/browser/cdp/view`, {
+    method: "POST",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify(input),
+  });
+  const payload = (await response.json().catch(() => null)) as {
+    ticket?: string;
+    viewport?: CdpViewportView;
+    error?: { message?: string };
+  } | null;
+  if (!response.ok || !payload?.ticket || !payload.viewport) {
+    throw new ApiApplicationError(
+      "cdp_view_failed",
+      payload?.error?.message ??
+        `打开面板画面失败（服务端返回 ${response.status}）。`,
+    );
+  }
+  return { ticket: payload.ticket, viewport: payload.viewport };
+}
+
+/** 面板内交互回填的线形状（坐标是**视口 CSS px**，服务端不缩放）。 */
+export type CdpInputWireEvent =
+  | {
+      type: "mouse";
+      action: "pressed" | "released" | "moved";
+      x: number;
+      y: number;
+      /** `none` = 只是移动（没有按着任何键）。 */
+      button?: "left" | "right" | "middle" | "none";
+      buttons?: number;
+      modifiers?: number;
+    }
+  | {
+      type: "wheel";
+      x: number;
+      y: number;
+      deltaX?: number;
+      deltaY?: number;
+    }
+  | { type: "key"; key: string; code?: string; modifiers?: number }
+  | { type: "text"; text: string };
+
+/** 面板内的交互回填（鼠标 / 滚轮 / 键盘 / 文本）。 */
+export async function sendCdpInput(
+  accessToken: string,
+  event: CdpInputWireEvent,
+): Promise<void> {
+  const response = await fetch(`${getServerBaseUrl()}/api/browser/cdp/input`, {
+    method: "POST",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify(event),
+  });
+  if (response.ok) return;
+  const payload = (await response.json().catch(() => null)) as {
+    error?: { message?: string };
+  } | null;
+  throw new ApiApplicationError(
+    "cdp_input_failed",
+    payload?.error?.message ??
+      `面板操作没能转给浏览器（服务端返回 ${response.status}）。`,
+  );
 }
 
 export async function disconnectCdp(
@@ -931,7 +1127,8 @@ export async function disconnectCdp(
 ): Promise<CdpStatusView> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/browser/cdp/disconnect`,
-    { method: "POST", headers: authJsonHeaders(accessToken) },
+    // 同上：JSON 头就必须带 body
+    { method: "POST", headers: authJsonHeaders(accessToken), body: "{}" },
   );
   if (!response.ok) return handleErrorResponse(response);
   const payload = (await response.json()) as { cdp: CdpStatusView };
@@ -982,4 +1179,91 @@ export async function fetchSubagents(
   });
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as AgentSubagentListResponse;
+}
+
+// --- 工作树（R5-2「工作树」条目）：一个仓库同时检出多份工作副本 ---
+
+export interface CodeWorktree {
+  path: string;
+  branch: string | null;
+  main: boolean;
+  detached: boolean;
+}
+
+export async function fetchWorktrees(
+  accessToken: string,
+  canvasId: string,
+): Promise<{ worktrees: CodeWorktree[] }> {
+  const query = new URLSearchParams({ canvasId });
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/code/git/worktrees?${query.toString()}`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as { worktrees: CodeWorktree[] };
+}
+
+export async function createWorktree(
+  accessToken: string,
+  input: { canvasId: string; path: string; branch: string; create: boolean },
+): Promise<{ worktrees: CodeWorktree[] }> {
+  const response = await fetch(`${getServerBaseUrl()}/api/code/git/worktrees`, {
+    method: "POST",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as { worktrees: CodeWorktree[] };
+}
+
+export async function removeWorktree(
+  accessToken: string,
+  input: { canvasId: string; path: string; force: boolean },
+): Promise<{ worktrees: CodeWorktree[] }> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/code/git/worktrees/remove`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(input),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as { worktrees: CodeWorktree[] };
+}
+
+// --- 外部应用访问令牌（R5-2「外部应用授权」） ---
+
+export async function fetchApiTokens(
+  accessToken: string,
+): Promise<ApiTokenListResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/tokens`, {
+    headers: authHeaders(accessToken),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as ApiTokenListResponse;
+}
+
+export async function createApiToken(
+  accessToken: string,
+  name: string,
+): Promise<ApiTokenCreateResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/tokens`, {
+    method: "POST",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify({ name }),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as ApiTokenCreateResponse;
+}
+
+export async function revokeApiToken(
+  accessToken: string,
+  id: string,
+): Promise<void> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/tokens/${encodeURIComponent(id)}`,
+    { method: "DELETE", headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
 }

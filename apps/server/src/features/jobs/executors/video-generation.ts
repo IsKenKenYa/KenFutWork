@@ -102,7 +102,7 @@ registerExecutor(
 
     const startAsync = instance.provider.startAsync;
     const pollAsync = instance.provider.pollAsync;
-    const canPollAsync = startAsync != null && pollAsync != null;
+    const _canPollAsync = startAsync != null && pollAsync != null;
 
     // ── 跨修订防护：实例配置在任务落盘后变更过 → 旧句柄不得复用 ──
     if (instance && jobRow.provider_job_id) {
@@ -120,7 +120,7 @@ registerExecutor(
 
     // ── 异步任务面：恢复续查 / 首次提交 ──
     if (instance && startAsync && pollAsync) {
-      const provider = instance.provider;
+      const _provider = instance.provider;
       const pollDelaySeconds =
         ctx.env.videoPollDelaySeconds ?? DEFAULT_POLL_DELAY_SECONDS;
       const timeoutMs =

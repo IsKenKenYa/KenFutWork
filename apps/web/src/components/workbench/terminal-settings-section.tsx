@@ -66,7 +66,7 @@ export function TerminalSettingsSection({
     try {
       await updateWorkspaceSettings(accessToken, { terminalShell: next });
       setShell(next);
-      setMessage("已保存。右栏终端下次执行时生效。");
+      setMessage("已保存，下次执行时生效。");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "保存失败。");
     } finally {
@@ -81,8 +81,7 @@ export function TerminalSettingsSection({
       <div>
         <h3 className="text-sm font-medium">终端</h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          右栏「终端」标签里执行的命令交给哪个 shell 本体跑（不是让 node
-          自己挑外壳）。
+          终端与命令使用的 shell。
         </p>
       </div>
       <div className="flex items-center gap-2">
@@ -97,9 +96,7 @@ export function TerminalSettingsSection({
           items={[
             {
               value: "auto",
-              label: autoShell
-                ? `auto（本机 → ${autoShell}）`
-                : "auto（按平台默认）",
+              label: autoShell ? `自动（${autoShell}）` : "自动",
             },
             ...shells.map((option) => ({
               value: option.id,
@@ -112,7 +109,7 @@ export function TerminalSettingsSection({
           </SelectTrigger>
           <SelectContent className="min-w-56">
             <SelectItem value="auto">
-              {autoShell ? `auto（本机 → ${autoShell}）` : "auto（按平台默认）"}
+              {autoShell ? `自动（${autoShell}）` : "自动"}
             </SelectItem>
             {shells.map((option) => (
               <SelectItem key={option.id} value={option.id}>
@@ -125,13 +122,9 @@ export function TerminalSettingsSection({
           <span className="text-xs text-muted-foreground">保存中…</span>
         ) : null}
       </div>
-      <ul className="space-y-1 text-xs text-muted-foreground">
-        {shells.map((option) => (
-          <li key={option.id} className="truncate">
-            <span className="font-mono">{option.id}</span> · {option.executable}
-          </li>
-        ))}
-      </ul>
+      <p className="text-xs text-muted-foreground">
+        可用：{shells.map((option) => option.label).join("、")}
+      </p>
       {message ? (
         <p className="text-xs text-muted-foreground">{message}</p>
       ) : null}

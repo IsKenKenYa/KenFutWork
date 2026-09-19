@@ -15,6 +15,25 @@ import { migrateLegacyStorageKeys } from "./legacy-storage";
 const TOKEN_STORAGE_KEY = "kenfutwork.session.token";
 const EXPIRES_STORAGE_KEY = "kenfutwork.session.expiresAt";
 
+/**
+ * 本机免登录形态（桌面壳 / 自托管 `local-trust`）的**会话标记**——不是凭据。
+ *
+ * 为什么非要有它：客户端有几十处「没有令牌就当未登录、直接不发请求」的门
+ * （`if (!session?.access_token) return`）。免登录形态从来不签发令牌（认人靠**回环来源**），
+ * 于是这些门全部静默不放行：工作台拉不到项目列表 → Design 模式永久停在「暂无项目」、
+ * 画布起不来；设置里的 MCP/技能/浏览器面板同样一片空白。2026-09-19 真机（安装包）实测就是这个。
+ *
+ * 为什么无害：本形态下服务端**不看** Authorization 头（`local-trust.ts` 只认回环 IP + 可信 Origin），
+ * 标记串只是让前端各处「有会话」的判定成立；口令形态走的是真令牌，本分支根本不会执行。
+ * 它也**不落盘**（不走 `persist`），刷新页面重新问 `/api/viewer`。
+ */
+export const LOCAL_TRUST_SESSION_TOKEN = "local-trust";
+
+/** 会话是不是本机免登录形态（凭证是标记串而非真令牌）。 */
+export function isLocalTrustSession(session: AuthSession | null): boolean {
+  return session?.access_token === LOCAL_TRUST_SESSION_TOKEN;
+}
+
 export type AuthUser = {
   displayName: string | null;
   email: string;
@@ -176,8 +195,40 @@ export async function signOut(): Promise<void> {
  */
 export async function loadSession(): Promise<AuthSession | null> {
   const stored = readStoredSession();
+  /**
+   * **没有本地令牌时问 `/api/viewer`**（用户口径：桌面端「一键启动」就该直接进去）。
+   *
+   * 本机免登录形态（桌面壳 / 自托管 `KENFUTWORK_AUTH_DRIVER=local-trust`）是**按连接来源认人**的，
+   * 从来没有令牌；而且**认证路由在这种形态下压根没挂载**（`/api/auth/session` 回 404，真机打包验过），
+   * 所以只能问 `/api/viewer`——它两种形态都在：免登录时直接给出本机用户，口令形态下没令牌就 401。
+   * 以前这里一看没有令牌就返回 null，界面于是永远停在登录页。
+   */
   if (!stored) {
-    return null;
+    const viewer = await fetch(`${getServerBaseUrl()}/api/viewer`).catch(
+      () => null,
+    );
+    if (!viewer?.ok) return null;
+    const payload = (await viewer.json().catch(() => null)) as {
+      profile?: { id?: unknown; email?: unknown; displayName?: unknown };
+    } | null;
+    const profile = payload?.profile;
+    if (typeof profile?.id !== "string" || typeof profile.email !== "string") {
+      return null;
+    }
+    const session: AuthSession = {
+      // 免登录形态不发令牌，但**必须给个非空标记**：消费方以「有无 access_token」判定
+      // 是否已登录（见 LOCAL_TRUST_SESSION_TOKEN 的说明）
+      access_token: LOCAL_TRUST_SESSION_TOKEN,
+      expiresAt: null,
+      user: {
+        id: profile.id,
+        email: profile.email,
+        displayName:
+          typeof profile.displayName === "string" ? profile.displayName : null,
+      },
+    };
+    notify(session);
+    return session;
   }
 
   const response = await fetch(`${getServerBaseUrl()}/api/auth/session`, {

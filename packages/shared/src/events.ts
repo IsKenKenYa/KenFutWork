@@ -126,6 +126,26 @@ export const runCompactedEventSchema = z.object({
   timestamp: timestampSchema,
 });
 
+/**
+ * 用户钩子跑过了（R5-2「钩子」）。事件在每个钩子点**逐条**发，退出码与输出摘要如实带上。
+ *
+ * 为什么要有：钩子跑在服务端的工作目录里，用户看不到终端——不给信号就等于「配了不知道跑没跑」。
+ * 钩子失败**不影响本轮**（旁路），所以这个事件不是错误事件。
+ */
+export const runHookEventSchema = z.object({
+  type: z.literal("run.hook"),
+  runId: runIdSchema,
+  event: z.enum(["turn-start", "turn-end"]),
+  command: z.string().min(1),
+  /** 被超时杀掉时为 null。 */
+  exitCode: z.number().int().nullable(),
+  timedOut: z.boolean(),
+  /** 输出摘要（已截断）。 */
+  output: z.string(),
+  durationMs: z.number().int().nonnegative(),
+  timestamp: timestampSchema,
+});
+
 export const runCanceledEventSchema = z.object({
   type: z.literal("run.canceled"),
   runId: runIdSchema,
@@ -201,6 +221,7 @@ export const streamEventSchema = z.discriminatedUnion("type", [
   runCompletedEventSchema,
   runUsageEventSchema,
   runCompactedEventSchema,
+  runHookEventSchema,
   runFailedEventSchema,
   runRetryingEventSchema,
   canvasSyncEventSchema,

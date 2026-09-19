@@ -10,6 +10,7 @@ import { FilesPane } from "@/components/workbench/panel-files-view";
 import { DiffPane, FilePane } from "@/components/workbench/panel-reading-view";
 import { PanelTabStrip } from "@/components/workbench/panel-tab-strip";
 import { TerminalPane } from "@/components/workbench/panel-terminal-view";
+import { PanelEmptyState } from "@/components/workbench/panel-view-icon";
 import { SubagentDirectoryView } from "@/components/workbench/subagent-directory-view";
 import type { WebSocketHandle } from "@/hooks/use-websocket";
 import {
@@ -52,7 +53,6 @@ import type { SubagentEntry } from "@/lib/subagent-directory";
  */
 export function WorkbenchSidePanel({
   open,
-  onClose,
   accessToken,
   canvasId,
   subagents,
@@ -65,7 +65,6 @@ export function WorkbenchSidePanel({
   onPickElement,
 }: {
   open: boolean;
-  onClose: () => void;
   accessToken: string | null;
   /** 作用域画布 = 会话自己绑定的项目主画布（与 run 同一口径）。 */
   canvasId: string | null;
@@ -246,7 +245,11 @@ export function WorkbenchSidePanel({
           ? { width, minWidth: MIN_PANEL_WIDTH, maxWidth: maxWidthExpression }
           : { width }
       }
-      className="relative flex shrink-0 flex-col border-l bg-card"
+      /**
+       * **不画左边框**（用户口径：终端不要四周边框，指向的就是面板这条竖线）：
+       * 面板与对话列的分界靠底色差异（bg-card vs 页面底）已经看得清，再加一条线只是噪声。
+       */
+      className="relative flex shrink-0 flex-col bg-card"
     >
       {/* 拖拽把手：贴面板左边缘（按住拖动改宽） */}
       {/* biome-ignore lint/a11y/useSemanticElements: 拖拽改宽的把手（无 aria-valuenow 的可聚焦分隔条语义），<hr> 是内容分隔线，替换会丢拖拽语义 */}
@@ -263,12 +266,11 @@ export function WorkbenchSidePanel({
         onActivate={activateTab}
         onCloseTab={closeTab}
         onOpenView={openView}
-        onClosePanel={onClose}
       />
 
       {state.tabs.length === 0 ? (
         <div className="flex min-h-0 flex-1 items-center justify-center p-4 text-center text-xs text-muted-foreground">
-          没有打开的视图。点上面的 ＋ 打开变更、文件目录、终端或浏览器。
+          点上面的 ＋ 打开变更、文件目录、终端或浏览器。
         </div>
       ) : (
         state.tabs.map((tab) => (
@@ -405,9 +407,7 @@ function PaneContent({
       return subagents.length > 0 ? (
         <SubagentDirectoryView entries={subagents} running={running} />
       ) : (
-        <p className="text-xs text-muted-foreground">
-          这个会话还没有派过子智能体。
-        </p>
+        <PanelEmptyState kind="subagents" title="这个会话还没有派过子智能体" />
       );
   }
 }

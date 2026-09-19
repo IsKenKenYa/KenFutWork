@@ -33,6 +33,7 @@ describe.skipIf(!DATABASE_URL)("权限设置持久化真实库集成", () => {
         browserControlEnabled: true,
         browserAutoScreenshot: true,
         browserHeadless: true,
+        browserDevtoolsReadEnabled: true,
       });
       expect(await store.load()).toEqual({
         tier: "custom",
@@ -41,6 +42,7 @@ describe.skipIf(!DATABASE_URL)("权限设置持久化真实库集成", () => {
         browserControlEnabled: true,
         browserAutoScreenshot: true,
         browserHeadless: true,
+        browserDevtoolsReadEnabled: true,
       });
 
       // 收尾：恢复缺省，不给其它测试/本地开发留 full-access 或放行规则（安全）

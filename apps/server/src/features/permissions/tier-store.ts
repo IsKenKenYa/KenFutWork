@@ -13,8 +13,9 @@ import type { PersistenceService } from "../persistence/types.js";
  * 一张表里现在放四件事（都是「本安装实例的信任级别」）：
  * - `permission_tier`：常规任务档位；
  * - `automation_permission_tier`：自动化任务（目标/循环）档位；
- * - `permission_rules`：第 4 档「自定义配置」的 allow / deny 规则；
- * - `browser_control_enabled`：agent 能不能用 `browser_open` 打网页。
+ * - `permission_rules`：第 4 档「自定义」的 allow / deny 规则；
+ * - `browser_control_enabled`：agent 能不能用 `browser_open` 打网页；
+ * - `browser_devtools_read_enabled`：agent 能不能读面板控制台采集到的开发者工具数据。
  */
 
 export interface PermissionSettings {
@@ -28,6 +29,11 @@ export interface PermissionSettings {
   browserAutoScreenshot: boolean;
   /** CDP 托管浏览器是否无头（默认有窗口，便于用户看着它干活）。 */
   browserHeadless: boolean;
+  /**
+   * agent 能不能读**开发者工具数据**（控制台日志 / 页面报错 / 网络请求）。
+   * 默认开——这是 agent 调试网页的主要依据，且数据只来自本机受控浏览器会话。
+   */
+  browserDevtoolsReadEnabled: boolean;
 }
 
 export const DEFAULT_PERMISSION_SETTINGS: PermissionSettings = {
@@ -37,6 +43,7 @@ export const DEFAULT_PERMISSION_SETTINGS: PermissionSettings = {
   browserControlEnabled: false,
   browserAutoScreenshot: false,
   browserHeadless: false,
+  browserDevtoolsReadEnabled: true,
 };
 
 export interface PermissionSettingsStore {
@@ -53,6 +60,7 @@ type AppConfigRow = {
   browser_control_enabled: unknown;
   browser_auto_screenshot: unknown;
   browser_headless: unknown;
+  browser_devtools_read_enabled: unknown;
 };
 
 export function createPermissionSettingsStore(
@@ -62,7 +70,8 @@ export function createPermissionSettingsStore(
     async load() {
       const row = await persistence.queryOne<AppConfigRow>(
         `select permission_tier, automation_permission_tier, permission_rules,
-                browser_control_enabled, browser_auto_screenshot, browser_headless
+                browser_control_enabled, browser_auto_screenshot, browser_headless,
+                browser_devtools_read_enabled
            from public.app_config where id = 1`,
       );
       if (!row) return { ...DEFAULT_PERMISSION_SETTINGS };
@@ -81,6 +90,11 @@ export function createPermissionSettingsStore(
         browserControlEnabled: row.browser_control_enabled === true,
         browserAutoScreenshot: row.browser_auto_screenshot === true,
         browserHeadless: row.browser_headless === true,
+        // 缺列/坏值一律**当开**：与缺省一致（这一项是「读数」能力，不是放行动作）
+        browserDevtoolsReadEnabled:
+          row.browser_devtools_read_enabled === undefined
+            ? DEFAULT_PERMISSION_SETTINGS.browserDevtoolsReadEnabled
+            : row.browser_devtools_read_enabled === true,
       };
     },
 
@@ -88,8 +102,9 @@ export function createPermissionSettingsStore(
       await persistence.execute(
         `insert into public.app_config
            (id, permission_tier, automation_permission_tier, permission_rules,
-            browser_control_enabled, browser_auto_screenshot, browser_headless)
-         values (1, $1, $2, $3::jsonb, $4, $5, $6)
+            browser_control_enabled, browser_auto_screenshot, browser_headless,
+            browser_devtools_read_enabled)
+         values (1, $1, $2, $3::jsonb, $4, $5, $6, $7)
          on conflict (id) do update
            set permission_tier = excluded.permission_tier,
                automation_permission_tier = excluded.automation_permission_tier,
@@ -97,6 +112,7 @@ export function createPermissionSettingsStore(
                browser_control_enabled = excluded.browser_control_enabled,
                browser_auto_screenshot = excluded.browser_auto_screenshot,
                browser_headless = excluded.browser_headless,
+               browser_devtools_read_enabled = excluded.browser_devtools_read_enabled,
                updated_at = now()`,
         [
           settings.tier,
@@ -105,6 +121,7 @@ export function createPermissionSettingsStore(
           settings.browserControlEnabled,
           settings.browserAutoScreenshot,
           settings.browserHeadless,
+          settings.browserDevtoolsReadEnabled,
         ],
       );
     },

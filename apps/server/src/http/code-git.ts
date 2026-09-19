@@ -18,6 +18,9 @@ import {
   codeShellsResponseSchema,
   codeTerminalRequestSchema,
   codeTerminalResponseSchema,
+  codeWorktreeCreateRequestSchema,
+  codeWorktreeListResponseSchema,
+  codeWorktreeRemoveRequestSchema,
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
@@ -392,6 +395,71 @@ export async function registerCodeGitRoutes(
         .parse(request.body);
       const git = await options.codeGitService.push(user, payload.canvasId);
       return reply.code(200).send(codeGitStatusResponseSchema.parse({ git }));
+    } catch (error) {
+      return sendCodeGitError(error, reply);
+    }
+  });
+
+  // ── 工作树（R5-2）：列出 / 新建 / 删除 ──
+
+  app.get<{ Querystring: { canvasId?: string } }>(
+    "/api/code/git/worktrees",
+    async (request, reply) => {
+      const user = await options.auth.authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      const canvasId = request.query.canvasId ?? "";
+      if (!canvasId) {
+        return reply.code(400).send(
+          applicationErrorResponseSchema.parse({
+            error: { code: "invalid_input", message: "缺少 canvasId。" },
+          }),
+        );
+      }
+      try {
+        const result = await options.codeGitService.listWorktrees(
+          user,
+          canvasId,
+        );
+        return reply
+          .code(200)
+          .send(codeWorktreeListResponseSchema.parse(result));
+      } catch (error) {
+        return sendCodeGitError(error, reply);
+      }
+    },
+  );
+
+  app.post("/api/code/git/worktrees", async (request, reply) => {
+    const user = await options.auth.authenticate(request);
+    if (!user) return sendUnauthorized(reply);
+    try {
+      const payload = codeWorktreeCreateRequestSchema.parse(request.body);
+      const result = await options.codeGitService.createWorktree(
+        user,
+        payload.canvasId,
+        {
+          path: payload.path,
+          branch: payload.branch,
+          create: payload.create,
+        },
+      );
+      return reply.code(200).send(codeWorktreeListResponseSchema.parse(result));
+    } catch (error) {
+      return sendCodeGitError(error, reply);
+    }
+  });
+
+  app.post("/api/code/git/worktrees/remove", async (request, reply) => {
+    const user = await options.auth.authenticate(request);
+    if (!user) return sendUnauthorized(reply);
+    try {
+      const payload = codeWorktreeRemoveRequestSchema.parse(request.body);
+      const result = await options.codeGitService.removeWorktree(
+        user,
+        payload.canvasId,
+        { path: payload.path, force: payload.force },
+      );
+      return reply.code(200).send(codeWorktreeListResponseSchema.parse(result));
     } catch (error) {
       return sendCodeGitError(error, reply);
     }

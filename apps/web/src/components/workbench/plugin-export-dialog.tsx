@@ -88,9 +88,7 @@ export function PluginExportDialog({
         aria-describedby={undefined}
       >
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-5 py-3 pr-12">
-          <DialogTitle className="text-base font-medium">
-            导出插件 bundle
-          </DialogTitle>
+          <DialogTitle className="text-base font-medium">导出插件</DialogTitle>
           <span className="text-xs text-muted-foreground">{name}</span>
           {artifact ? (
             <button

@@ -11,9 +11,11 @@ import { ProviderSettings } from "@/components/provider-settings";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { AboutSection } from "@/components/workbench/about-section";
 import { AccountSection } from "@/components/workbench/account-section";
+import { ApiTokensSection } from "@/components/workbench/api-tokens-section";
 import { AppearanceSection } from "@/components/workbench/appearance-section";
 import { BrowserSettingsSection } from "@/components/workbench/browser-settings-section";
 import { CommandsSection } from "@/components/workbench/commands-section";
+import { HooksSection } from "@/components/workbench/hooks-section";
 import { IndexLibrarySection } from "@/components/workbench/index-library-section";
 import { ListLoading } from "@/components/workbench/list-state";
 import { OnboardingSection } from "@/components/workbench/onboarding-section";
@@ -36,6 +38,8 @@ export type SettingsTab =
   | "general"
   | "appearance"
   | "commands"
+  | "hooks"
+  | "apiTokens"
   | "model"
   | "providers"
   | "permissions"
@@ -77,6 +81,8 @@ const TAB_GROUPS: Array<{
       { id: "permissions", label: "权限" },
       { id: "rules", label: "规则与记忆" },
       { id: "commands", label: "命令" },
+      { id: "hooks", label: "钩子" },
+      { id: "apiTokens", label: "外部应用授权" },
       { id: "subagents", label: "子智能体" },
     ],
   },
@@ -97,6 +103,9 @@ const TAB_GROUPS: Array<{
 /**
  * 参考图里点名、且我们已经**有同一个页面**的条目：作为别名行显示（点它跳到目标页）。
  * 不新造页面、也不隐藏——用户按参考图的名字能找到，界面里也不会出现两份一样的开关。
+ *
+ * 「电脑控制」原来也在这张表里（→ 浏览器），用户口径「这两个合并为一个菜单」后删掉了：
+ * 那个页的内容本来就全在浏览器页，留一行别名只是把菜单撑长。
  */
 const ALIAS_TABS: Array<{
   group: string;
@@ -104,12 +113,6 @@ const ALIAS_TABS: Array<{
   target: SettingsTab;
   targetLabel: string;
 }> = [
-  {
-    group: "基础设置",
-    label: "电脑控制",
-    target: "browser",
-    targetLabel: "浏览器",
-  },
   {
     group: "Agent 能力",
     label: "记忆",
@@ -179,6 +182,7 @@ export function SettingsModal({
   const [codeIndexAutoNewFolder, setCodeIndexAutoNewFolder] = useState(true);
   const [autoCompactEnabled, setAutoCompactEnabled] = useState(true);
   const [commands, setCommands] = useState<WorkspaceSettings["commands"]>([]);
+  const [hooks, setHooks] = useState<WorkspaceSettings["hooks"]>([]);
   const [loading, setLoading] = useState(false);
 
   const accessTokenRef = useRef(session?.access_token);
@@ -208,6 +212,7 @@ export function SettingsModal({
       setCodeIndexAutoNewFolder(settings.settings.codeIndexAutoNewFolder);
       setAutoCompactEnabled(settings.settings.autoCompactEnabled);
       setCommands(settings.settings.commands);
+      setHooks(settings.settings.hooks);
     } catch {
       // 加载失败时保留空态，各分区自行提示
     } finally {
@@ -350,7 +355,7 @@ export function SettingsModal({
                       className="w-full rounded-md px-3 py-1.5 text-left text-sm text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
                     >
                       <span className="block truncate">{alias.label}</span>
-                      {/* 侧栏只有 9rem：提示另起一行，否则「电脑控制 → 浏览器」会被折断成两截 */}
+                      {/* 侧栏只有 9rem：提示另起一行，否则「记忆 → 规则与记忆」会被折断成两截 */}
                       <span className="block truncate text-[10px] opacity-80">
                         → {alias.targetLabel}
                       </span>
@@ -430,6 +435,18 @@ export function SettingsModal({
                   onSaved={setCommands}
                 />
               ) : null
+            ) : activeTab === "hooks" ? (
+              token ? (
+                <HooksSection
+                  accessToken={token}
+                  hooks={hooks}
+                  onSaved={setHooks}
+                />
+              ) : null
+            ) : activeTab === "apiTokens" ? (
+              token ? (
+                <ApiTokensSection accessToken={token} />
+              ) : null
             ) : activeTab === "subagents" ? (
               token ? (
                 <SubagentsSection accessToken={token} />
@@ -465,8 +482,7 @@ function PluginPanelsSettings({ accessToken }: { accessToken: string | null }) {
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        插件可以在这里加自己的设置面板（在插件清单或代码里声明 settings 槽位）。
-        下面列出当前已启用插件提供的设置面板；一个都没有，说明没有插件声明这个槽位。
+        已启用插件提供的设置面板会显示在这里。
       </p>
       <div className="flex flex-wrap gap-2">
         <PluginPanelButtons

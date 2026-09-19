@@ -1,7 +1,7 @@
 "use client";
 
 import type { ProviderInstanceModel } from "@kenfutwork/shared";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 /**
  * 模型详情编辑弹窗（参考 BYOK 产品形态：供应商详情 → 模型行 → 编辑）。
@@ -153,7 +153,7 @@ export function ModelEditDialog({
 
   const patch = toPatch(model, state);
 
-  const submit = () => {
+  const _submit = () => {
     if (!patch) {
       return;
     }

@@ -1910,6 +1910,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-single-instance",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

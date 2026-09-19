@@ -4,11 +4,11 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
 import {
   BrowserPane,
   formatElementReference,
 } from "../src/components/workbench/panel-browser-view";
+import { withAppProviders } from "./test-providers";
 
 /**
  * 元素拾取浮层（R3-4）：受控浏览器（CDP）连着时，服务端回来的元素带**真实几何**
@@ -52,21 +52,23 @@ function renderPane(
 ) {
   const onPickElement = vi.fn();
   render(
-    <BrowserPane
-      url="https://example.com/"
-      draft="https://example.com/"
-      reloadToken={0}
-      canBack={false}
-      canForward={false}
-      accessToken="tok"
-      onPickElement={onPickElement}
-      onDraftChange={() => {}}
-      onNavigate={() => {}}
-      onBack={() => {}}
-      onForward={() => {}}
-      onReload={() => {}}
-      {...props}
-    />,
+    withAppProviders(
+      <BrowserPane
+        url="https://example.com/"
+        draft="https://example.com/"
+        reloadToken={0}
+        canBack={false}
+        canForward={false}
+        accessToken="tok"
+        onPickElement={onPickElement}
+        onDraftChange={() => {}}
+        onNavigate={() => {}}
+        onBack={() => {}}
+        onForward={() => {}}
+        onReload={() => {}}
+        {...props}
+      />,
+    ),
   );
   return { onPickElement };
 }
@@ -111,9 +113,7 @@ describe("元素拾取浮层", () => {
       height: "10%",
     });
     // 静态那条路的说明不该出现在 CDP 路径里
-    expect(
-      screen.queryByText(/按服务端抓取的静态 HTML 列出/),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/来源：页面快照/)).not.toBeInTheDocument();
   });
 
   it("点截图上的框 = 点列表行：交给对话的元素带 box（浮层收起）", async () => {
@@ -161,7 +161,7 @@ describe("元素拾取浮层", () => {
     await openPicking();
 
     expect(screen.queryByAltText("Example 的视口截图")).not.toBeInTheDocument();
-    expect(screen.getByText(/按服务端抓取的静态 HTML 列出/)).toBeVisible();
+    expect(screen.getByText(/来源：页面快照/)).toBeVisible();
 
     await userEvent.click(screen.getByRole("button", { name: /Learn more/ }));
     expect(onPickElement).toHaveBeenCalledWith({

@@ -157,7 +157,7 @@ export type SubmitImageJobFn = (input: {
 
 export async function runImageGenerate(
   input: ImageGenerateInput,
-  persistImage?: PersistImageFn,
+  _persistImage?: PersistImageFn,
   submitImageJob?: SubmitImageJobFn,
   attachmentMap?: Record<string, string>,
 ): Promise<ImageGenerateResult> {

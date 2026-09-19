@@ -3,6 +3,7 @@
 import {
   Check,
   ChevronDown,
+  FolderTree,
   GitBranch,
   GitGraph as GitGraphIcon,
   Plus,
@@ -11,6 +12,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { GitGraphDialog } from "@/components/workbench/git-graph-dialog";
+import { GitWorktreeDialog } from "@/components/workbench/git-worktree-dialog";
 import {
   type AgentActivity,
   checkoutGitBranch,
@@ -44,10 +46,13 @@ export function GitBranchSelect({
   canvasId,
   /** 目录变了要重新取（工作目录项目的画布 id）。 */
   className,
+  /** 工作树里「绑为工作目录」用（把这份工作树绑成当前项目的工作目录）。 */
+  onBindWorkDir,
 }: {
   accessToken: string | null;
   canvasId: string | null;
   className?: string;
+  onBindWorkDir?: ((path: string) => Promise<void>) | undefined;
 }) {
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [diffStat, setDiffStat] = useState<GitDiffStat | null>(null);
@@ -64,6 +69,7 @@ export function GitBranchSelect({
   const [activity, setActivity] = useState<AgentActivity | null>(null);
   /** Git 图谱是**独立窗口**（参考图 `git图谱.png`）：弹层里只留入口。 */
   const [graphDialogOpen, setGraphDialogOpen] = useState(false);
+  const [worktreeDialogOpen, setWorktreeDialogOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
@@ -246,10 +252,7 @@ export function GitBranchSelect({
         aria-expanded={open}
         disabled={status.source === "unavailable" || busy}
         title={
-          notice ??
-          (status.isRepo
-            ? undefined
-            : "该工作目录还不是 git 仓库（点开可一键初始化）")
+          notice ?? (status.isRepo ? undefined : "该工作目录还不是 git 仓库")
         }
         onClick={() => setOpen((current) => !current)}
         className="flex max-w-[10rem] items-center gap-1.5 rounded-lg border px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
@@ -281,7 +284,7 @@ export function GitBranchSelect({
         >
           <p className="px-3 py-2 text-xs text-muted-foreground">
             该工作目录还不是 git
-            仓库。初始化后，每一轮对话结束都会自动提交一次，便于回滚。
+            仓库。初始化后每轮对话结束会自动提交，便于回滚。
           </p>
           <div className="border-t px-2 py-2">
             <button
@@ -396,6 +399,23 @@ export function GitBranchSelect({
             </div>
           ) : null}
 
+          {/* 工作树（R5-2）：独立窗口，弹层里只留入口 */}
+          <div className="border-t px-2 py-2">
+            <button
+              type="button"
+              aria-label="工作树"
+              onClick={() => {
+                setWorktreeDialogOpen(true);
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <FolderTree className="h-3.5 w-3.5 shrink-0" />
+              工作树
+              <ChevronDown className="ml-auto h-3 w-3 -rotate-90" />
+            </button>
+          </div>
+
           {/* Git 图谱：独立窗口（参考图 git图谱.png），弹层里只留入口 */}
           <div className="border-t px-2 py-2">
             <button
@@ -449,6 +469,13 @@ export function GitBranchSelect({
         onClose={() => setGraphDialogOpen(false)}
         accessToken={accessToken}
         canvasId={canvasId}
+      />
+      <GitWorktreeDialog
+        open={worktreeDialogOpen}
+        onClose={() => setWorktreeDialogOpen(false)}
+        accessToken={accessToken}
+        canvasId={canvasId}
+        {...(onBindWorkDir ? { onBindWorkDir } : {})}
       />
     </div>
   );

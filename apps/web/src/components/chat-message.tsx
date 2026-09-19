@@ -5,7 +5,6 @@ import type {
   ImageBlock,
   MentionBlock,
   ToolArtifact,
-  ToolBlock,
 } from "@kenfutwork/shared";
 import { motion } from "framer-motion";
 import React, { useMemo } from "react";

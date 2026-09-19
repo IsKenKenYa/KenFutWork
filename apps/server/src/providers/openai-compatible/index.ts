@@ -57,7 +57,7 @@ class ResponsesFallbackChatModel extends ChatOpenAI {
     runManager?: CallbackManagerForLLMRun,
   ): AsyncGenerator<ChatGenerationChunk> {
     if (!this.responsesActive) {
-      yield* this.completionsDelegate["_streamResponseChunks"](
+      yield* this.completionsDelegate._streamResponseChunks(
         messages,
         options,
         runManager,
@@ -70,7 +70,7 @@ class ResponsesFallbackChatModel extends ChatOpenAI {
       if (!isResponsesUnavailable(error)) throw error;
       this.responsesActive = false;
       this.onResponsesFallback?.();
-      yield* this.completionsDelegate["_streamResponseChunks"](
+      yield* this.completionsDelegate._streamResponseChunks(
         messages,
         options,
         runManager,
@@ -84,11 +84,7 @@ class ResponsesFallbackChatModel extends ChatOpenAI {
     runManager?: CallbackManagerForLLMRun,
   ): Promise<ChatResult> {
     if (!this.responsesActive) {
-      return this.completionsDelegate["_generate"](
-        messages,
-        options,
-        runManager,
-      );
+      return this.completionsDelegate._generate(messages, options, runManager);
     }
     try {
       return await super._generate(messages, options, runManager);
@@ -96,11 +92,7 @@ class ResponsesFallbackChatModel extends ChatOpenAI {
       if (!isResponsesUnavailable(error)) throw error;
       this.responsesActive = false;
       this.onResponsesFallback?.();
-      return this.completionsDelegate["_generate"](
-        messages,
-        options,
-        runManager,
-      );
+      return this.completionsDelegate._generate(messages, options, runManager);
     }
   }
 }

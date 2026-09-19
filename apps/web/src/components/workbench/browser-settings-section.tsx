@@ -59,8 +59,8 @@ const SEARCH_ENGINES: Array<{
 ];
 
 const OPEN_TARGETS: Array<{ value: BrowserOpenTarget; label: string }> = [
-  { value: "panel", label: "右栏浏览器面板" },
-  { value: "system", label: "系统浏览器（新标签页）" },
+  { value: "panel", label: "内置浏览器" },
+  { value: "system", label: "外部浏览器" },
 ];
 
 function loadSettings(): BrowserSettings {
@@ -142,6 +142,11 @@ export function BrowserSettingsSection({
   const [cdp, setCdp] = useState<CdpStatusView | null>(null);
   const [cdpBusy, setCdpBusy] = useState(false);
   const [browserAutoScreenshot, setBrowserAutoScreenshot] = useState(false);
+  /**
+   * 「允许 AI 读取开发者工具数据」：面板里的悬浮控制台采集到的控制台日志 / 页面报错 /
+   * 网络请求，agent 能不能读（默认开，见迁移 20260918100000）。
+   */
+  const [browserDevtoolsRead, setBrowserDevtoolsRead] = useState(true);
   const [browserHeadless, setBrowserHeadless] = useState(false);
 
   useEffect(() => {
@@ -159,6 +164,7 @@ export function BrowserSettingsSection({
         if (cancelled) return;
         setAgentControl(view.browserControlEnabled);
         setBrowserAutoScreenshot(view.browserAutoScreenshot ?? false);
+        setBrowserDevtoolsRead(view.browserDevtoolsReadEnabled ?? true);
         setBrowserHeadless(view.browserHeadless ?? false);
       })
       .catch(() => {
@@ -185,7 +191,7 @@ export function BrowserSettingsSection({
       setCdp(status);
       setMessage(
         status.status === "connected"
-          ? "已连接（独立实例，专用 profile）"
+          ? "已连接"
           : status.status === "error"
             ? status.message
             : "连接中…",
@@ -202,7 +208,7 @@ export function BrowserSettingsSection({
     setCdpBusy(true);
     try {
       setCdp(await disconnectCdp(accessToken));
-      setMessage("已断开（实例已关闭）");
+      setMessage("已断开");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "断开失败");
     } finally {
@@ -210,29 +216,39 @@ export function BrowserSettingsSection({
     }
   };
 
-  /** 服务端开关（自动截图 / 无头）：先写库再改界面，失败回滚。 */
+  /** 服务端开关（自动截图 / 无头 / 开发者工具数据）：先写库再改界面，失败回滚。 */
   const toggleServerFlag = async (
-    key: "browserAutoScreenshot" | "browserHeadless",
+    key:
+      | "browserAutoScreenshot"
+      | "browserHeadless"
+      | "browserDevtoolsReadEnabled",
     next: boolean,
   ) => {
     if (!accessToken) return;
     const setter =
       key === "browserAutoScreenshot"
         ? setBrowserAutoScreenshot
-        : setBrowserHeadless;
+        : key === "browserHeadless"
+          ? setBrowserHeadless
+          : setBrowserDevtoolsRead;
     setter(next);
     try {
       const view = await updatePermissionSettings(accessToken, { [key]: next });
       setBrowserAutoScreenshot(view.browserAutoScreenshot ?? false);
       setBrowserHeadless(view.browserHeadless ?? false);
+      setBrowserDevtoolsRead(view.browserDevtoolsReadEnabled ?? true);
       setMessage(
         key === "browserAutoScreenshot"
           ? next
             ? "已开启自动截图"
             : "已关闭自动截图"
-          : next
-            ? "已设为无头（下次连接生效）"
-            : "已设为有窗口（下次连接生效）",
+          : key === "browserHeadless"
+            ? next
+              ? "已设为后台运行（下次连接生效）"
+              : "已设为有窗口（下次连接生效）"
+            : next
+              ? "已允许 AI 读取开发者工具数据"
+              : "已禁止 AI 读取开发者工具数据",
       );
     } catch (error) {
       setter(!next);
@@ -268,9 +284,7 @@ export function BrowserSettingsSection({
     const text = await file.text();
     const parsed = parseImportedHistory(text);
     if (!parsed) {
-      setMessage(
-        "导入失败：文件不是本面板导出的历史（JSON），或里面没有地址。",
-      );
+      setMessage("导入失败：文件不是本面板导出的历史。");
       return;
     }
     saveHistory(parsed);
@@ -282,7 +296,7 @@ export function BrowserSettingsSection({
     cdp === null
       ? "状态：读取中…"
       : cdp.status === "connected"
-        ? `状态：已连接（${cdp.headless ? "无头" : "有窗口"}）`
+        ? `状态：已连接（${cdp.headless ? "后台" : "有窗口"}）`
         : cdp.status === "connecting"
           ? "状态：连接中…"
           : cdp.status === "error"
@@ -292,13 +306,11 @@ export function BrowserSettingsSection({
   return (
     <section aria-label="浏览器设置">
       <h3 className="mb-1 text-base font-medium">内置浏览器</h3>
-      <p className="mb-2 text-sm text-muted-foreground">
-        右栏「浏览器」标签里那个面板（对话里点链接会开在这里）。
-      </p>
+      <p className="mb-2 text-sm text-muted-foreground">右栏面板里的浏览器。</p>
       <div className="divide-y">
         <Toggle
           label="允许 AI 控制浏览器"
-          hint="开启后 Agent 可以用 browser_open 读网页内容（静态快照：脚本渲染与登录态页面读不到）"
+          hint="让 Agent 能读网页并操作页面"
           checked={agentControl}
           onChange={(next) => void toggleAgentControl(next)}
         />
@@ -306,8 +318,7 @@ export function BrowserSettingsSection({
           <span>
             <span className="block text-sm">浏览器数据</span>
             <span className="block text-xs text-muted-foreground">
-              面板历史（本机保存，共 {historyCount} 条）。站点 cookie /
-              缓存属于跨源 iframe，读不到也清不掉——这里只清本面板自己的记录。
+              面板历史（本机保存，共 {historyCount} 条）
             </span>
           </span>
           <span className="flex shrink-0 items-center gap-2">
@@ -342,9 +353,7 @@ export function BrowserSettingsSection({
 
       <h3 className="mt-5 mb-1 text-base font-medium">外部浏览器</h3>
       <p className="mb-2 text-sm text-muted-foreground">
-        用调试协议（CDP）连一个**独立实例**：Agent 因此能读取真实渲染后的
-        DOM、截图、 点击与输入。连的是新开的窗口（专用
-        profile），不动你日常那个浏览器，也拿不到你 已登录的会话。
+        连接一个独立的浏览器实例，Agent 可以读页面、截图、点击与输入。
       </p>
       <div className="rounded-md border px-3 py-2 text-xs">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -373,7 +382,7 @@ export function BrowserSettingsSection({
         </div>
         {cdp?.status === "connected" ? (
           <div className="mt-1 text-[11px] text-muted-foreground">
-            {cdp.browser} · 端口 {cdp.port} · {cdp.tabs} 个标签
+            {cdp.browser} · {cdp.tabs} 个标签
             {cdp.currentUrl && cdp.currentUrl !== "about:blank"
               ? ` · 当前 ${cdp.currentUrl}`
               : ""}
@@ -391,7 +400,7 @@ export function BrowserSettingsSection({
           <span>
             <span className="block text-sm">默认搜索引擎</span>
             <span className="block text-xs text-muted-foreground">
-              Agent 联网检索时使用的搜索引擎
+              Agent 联网搜索使用的引擎
             </span>
           </span>
           <Select
@@ -426,7 +435,7 @@ export function BrowserSettingsSection({
           <span>
             <span className="block text-sm">AI 任务默认浏览器</span>
             <span className="block text-xs text-muted-foreground">
-              对话里的链接默认在哪里打开
+              对话里的链接在哪打开
             </span>
           </span>
           <Select
@@ -456,16 +465,24 @@ export function BrowserSettingsSection({
 
         <Toggle
           label="无头浏览器"
-          hint="连接时用无界面实例（后台跑，不打断你当前操作）；改完下次连接生效"
+          hint="后台运行，不弹窗口（下次连接生效）"
           checked={browserHeadless}
           onChange={(next) => void toggleServerFlag("browserHeadless", next)}
         />
         <Toggle
           label="自动截图"
-          hint="每次浏览器动作（导航/点击/输入）后自动截一张图，作为图片附件出现在对话里"
+          hint="每次动作后自动截图，作为附件进对话"
           checked={browserAutoScreenshot}
           onChange={(next) =>
             void toggleServerFlag("browserAutoScreenshot", next)
+          }
+        />
+        <Toggle
+          label="允许 AI 读取开发者工具数据"
+          hint="Agent 可读控制台日志与网络请求"
+          checked={browserDevtoolsRead}
+          onChange={(next) =>
+            void toggleServerFlag("browserDevtoolsReadEnabled", next)
           }
         />
       </div>

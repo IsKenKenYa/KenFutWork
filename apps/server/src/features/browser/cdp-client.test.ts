@@ -1,11 +1,18 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer } from "ws";
 
 import {
+  ackScreencastFrame,
   CdpError,
   connectCdpClient,
+  dispatchKey,
+  dispatchMouse,
+  dispatchWheel,
   findBrowserExecutable,
   readPickables,
+  readViewport,
+  setViewportOverride,
+  startScreencast,
   waitForDevtools,
 } from "./cdp-client.js";
 
@@ -114,6 +121,207 @@ describe("CDP 客户端协议", () => {
     const pending = client.send("Page.captureScreenshot", {});
     client.close();
     await expect(pending).rejects.toBeInstanceOf(CdpError);
+  });
+});
+
+/**
+ * 面板画面流（`Page.startScreencast` + `Input.dispatch*`）。
+ *
+ * 这里锁的是**协议形状**：事件分发（画面帧不是命令的返回值，走事件）、ack 用的是帧自带的
+ * 数字 `sessionId`（不 ack 就没有下一帧，Chrome 靠它做背压）、以及输入回填的参数形状。
+ * 真实画面与真实点击走 GUI 实测。
+ */
+describe("面板画面流与输入回填", () => {
+  const servers: WebSocketServer[] = [];
+  afterEach(async () => {
+    for (const server of servers.splice(0)) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+
+  /** 替身端点：命令一律成功（结果可指定），收到的命令记下来，另外能**主动推事件**。 */
+  function startPushingCdp(results: Record<string, unknown> = {}) {
+    const server = new WebSocketServer({ port: 0 });
+    servers.push(server);
+    const commands: Array<{
+      method: string;
+      params: Record<string, unknown>;
+      sessionId?: string;
+    }> = [];
+    let push: (payload: unknown) => void = () => {};
+    server.on("connection", (socket) => {
+      push = (payload) => socket.send(JSON.stringify(payload));
+      socket.on("message", (raw) => {
+        const message = JSON.parse(String(raw)) as {
+          id?: number;
+          method?: string;
+          params?: Record<string, unknown>;
+          sessionId?: string;
+        };
+        if (typeof message.id !== "number" || !message.method) return;
+        commands.push({
+          method: message.method,
+          params: message.params ?? {},
+          ...(message.sessionId ? { sessionId: message.sessionId } : {}),
+        });
+        socket.send(
+          JSON.stringify({
+            id: message.id,
+            result: results[message.method] ?? {},
+          }),
+        );
+      });
+    });
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    return {
+      url: `ws://127.0.0.1:${port}`,
+      commands,
+      pushEvent: (payload: unknown) => push(payload),
+    };
+  }
+
+  it("画面帧事件按方法分发；退订后不再收；订阅者抛错不影响命令通道", async () => {
+    const fake = startPushingCdp();
+    const client = connectCdpClient(fake.url);
+    const frames: Array<{
+      data?: unknown;
+      eventSessionId?: string | undefined;
+    }> = [];
+    const off = client.on("Page.screencastFrame", (params, sessionId) => {
+      frames.push({ data: params.data, eventSessionId: sessionId });
+    });
+    const offBoom = client.on("Page.screencastFrame", () => {
+      throw new Error("订阅者自己炸了");
+    });
+    // 先发一条命令：有回应说明 socket 已经连上（后面的推事件才有地方送）
+    await client.send("Page.enable", {});
+    fake.pushEvent({
+      method: "Page.screencastFrame",
+      params: { data: "AAA", sessionId: 7 },
+      sessionId: "S1",
+    });
+    await vi.waitFor(() => expect(frames.length).toBe(1));
+    expect(frames[0]).toEqual({ data: "AAA", eventSessionId: "S1" });
+
+    off();
+    offBoom();
+    fake.pushEvent({
+      method: "Page.screencastFrame",
+      params: { data: "BBB", sessionId: 8 },
+      sessionId: "S1",
+    });
+    // 命令通道照旧可用（订阅者抛错没把它带崩）
+    await client.send("Runtime.evaluate", { expression: "1" });
+    expect(frames.length).toBe(1);
+    client.close();
+  });
+
+  it("startScreencast 走 jpeg + 指定尺寸；ack 用**帧自带的数字 sessionId**", async () => {
+    const fake = startPushingCdp();
+    const client = connectCdpClient(fake.url);
+    await startScreencast(client, "S1", {
+      maxWidth: 900,
+      maxHeight: 600,
+      quality: 70,
+    });
+    expect(fake.commands.at(-1)).toEqual({
+      method: "Page.startScreencast",
+      sessionId: "S1",
+      params: {
+        format: "jpeg",
+        quality: 70,
+        maxWidth: 900,
+        maxHeight: 600,
+        everyNthFrame: 1,
+      },
+    });
+    /**
+     * ack 的 `sessionId` 是**帧事件里的那个数字**（与 CDP 会话 id 同名不同物）：
+     * 传成字符串会话 id 就永远等不到下一帧——这是个静默失败，必须钉住。
+     */
+    await ackScreencastFrame(client, "S1", 42);
+    expect(fake.commands.at(-1)).toEqual({
+      method: "Page.screencastFrameAck",
+      sessionId: "S1",
+      params: { sessionId: 42 },
+    });
+    client.close();
+  });
+
+  it("输入回填：鼠标取整、滚轮、Enter 走虚拟键码 + \\r、单字符走 insertText", async () => {
+    const fake = startPushingCdp();
+    const client = connectCdpClient(fake.url);
+
+    await dispatchMouse(client, "S1", {
+      type: "mousePressed",
+      x: 10.6,
+      y: 20.2,
+    });
+    expect(fake.commands.at(-1)?.params).toMatchObject({
+      type: "mousePressed",
+      x: 11,
+      y: 20,
+      button: "left",
+      buttons: 1,
+      clickCount: 1,
+    });
+
+    await dispatchWheel(client, "S1", { x: 5, y: 6, deltaY: 120 });
+    expect(fake.commands.at(-1)?.params).toMatchObject({
+      type: "mouseWheel",
+      x: 5,
+      y: 6,
+      deltaY: 120,
+    });
+
+    await dispatchKey(client, "S1", { key: "Enter" });
+    const [down, up] = fake.commands.slice(-2);
+    expect(down?.params).toMatchObject({
+      type: "rawKeyDown",
+      key: "Enter",
+      code: "Enter",
+      windowsVirtualKeyCode: 13,
+      text: "\r",
+    });
+    expect(up?.params).toMatchObject({
+      type: "keyUp",
+      windowsVirtualKeyCode: 13,
+    });
+
+    // 可打印字符：走 insertText（中文输入法合成的结果也走这条）
+    await dispatchKey(client, "S1", { key: "a" });
+    expect(fake.commands.at(-1)).toEqual({
+      method: "Input.insertText",
+      sessionId: "S1",
+      params: { text: "a" },
+    });
+    client.close();
+  });
+
+  it("自由尺寸：真改视口（Emulation）与还原；viewport 读 cssVisualViewport", async () => {
+    const fake = startPushingCdp({
+      "Page.getLayoutMetrics": {
+        cssVisualViewport: { clientWidth: 900, clientHeight: 600, scale: 1 },
+      },
+    });
+    const client = connectCdpClient(fake.url);
+    await setViewportOverride(client, "S1", { width: 900, height: 600 });
+    expect(fake.commands.at(-1)).toMatchObject({
+      method: "Emulation.setDeviceMetricsOverride",
+      sessionId: "S1",
+      params: { width: 900, height: 600, mobile: false },
+    });
+    await setViewportOverride(client, "S1", null);
+    expect(fake.commands.at(-1)?.method).toBe(
+      "Emulation.clearDeviceMetricsOverride",
+    );
+    expect(await readViewport(client, "S1")).toEqual({
+      width: 900,
+      height: 600,
+      scale: 1,
+    });
+    client.close();
   });
 });
 

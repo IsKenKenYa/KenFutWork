@@ -2,6 +2,10 @@
 //!
 //! 替身服务 = `std::net::TcpListener` 手写 HTTP 200（零外部依赖，Windows/macOS 都能跑）；
 //! 端口用内核分配的空闲端口，避免与本机 3001/3000 冲突。
+//!
+//! 需要 `test-fixture` feature（提供 `loomic-test-fake-server` 子进程替身）：
+//! `pnpm --filter @kenfutwork/desktop test` 已带上；默认构建不带，安装包就不会夹带替身 exe。
+#![cfg(feature = "test-fixture")]
 
 use std::net::{TcpListener, TcpStream};
 use std::thread;
@@ -12,6 +16,11 @@ use kenfutwork_desktop_lib::{probe_health, ServerSpawnConfig};
 /// 在空闲端口上起一个「所有路径都回 200 OK」的假服务；返回 (端口, 守卫)。
 /// 守卫当前是占位（accept 循环随测试进程退出回收）。
 fn spawn_fake_server() -> (u16, FakeServerGuard) {
+    spawn_fake_server_with(200, "OK")
+}
+
+/// 起一个「固定回某个状态码与响应体」的假服务（用来分别扮演真 UI 与别人的服务）。
+fn spawn_fake_server_with(status: u16, body: &'static str) -> (u16, FakeServerGuard) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind 空闲端口");
     let port = listener.local_addr().expect("local_addr").port();
     thread::spawn(move || {
@@ -20,7 +29,7 @@ fn spawn_fake_server() -> (u16, FakeServerGuard) {
                 Ok(stream) => stream,
                 Err(_) => break,
             };
-            respond_ok(&mut stream);
+            respond(&mut stream, status, body);
         }
     });
     thread::sleep(Duration::from_millis(50)); // 监听就绪
@@ -28,9 +37,12 @@ fn spawn_fake_server() -> (u16, FakeServerGuard) {
 }
 
 fn respond_ok(stream: &mut TcpStream) {
-    let body = "OK";
+    respond(stream, 200, "OK");
+}
+
+fn respond(stream: &mut TcpStream, status: u16, body: &str) {
     let response = format!(
-        "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+        "HTTP/1.1 {status} X\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
         body.len(),
         body
     );
@@ -76,6 +88,57 @@ mod spawn_config {
         assert_eq!(config.port, 3001);
         // 默认健康超时 90 秒（dev 首次 tsx 编译慢）
         assert_eq!(config.health_timeout, Duration::from_secs(90));
+    }
+}
+
+/**
+ * 打包态窗口该指向谁：**只认托管着界面的自己人**。
+ *
+ * 实测事故（2026-09-17 真机安装包）：窗口跳到了 3001 上「探活 200 但没托管 UI」的
+ * 服务（用户自己的 dev API），停在 `{"message":"Route GET:/ not found"}` ——
+ * Design 模式的画布整块没了。这两条用例把它钉死。
+ */
+mod ui_probe {
+    use super::*;
+
+    use kenfutwork_desktop_lib::{port_is_free, probe_serves_ui};
+
+    #[test]
+    fn 托管界面的服务判为可用() {
+        let (port, _guard) = spawn_fake_server_with(200, "<!DOCTYPE html><html><body>UI</body></html>");
+        assert!(probe_serves_ui(port, Duration::from_secs(2)));
+    }
+
+    #[test]
+    fn 只回200但没界面的服务判为不可用() {
+        // 用户自己起的 dev API：健康检查过、首页是 404 JSON
+        let (port, _guard) =
+            spawn_fake_server_with(404, r#"{"message":"Route GET:/ not found","error":"Not Found"}"#);
+        assert!(
+            !probe_serves_ui(port, Duration::from_secs(1)),
+            "没托管界面的服务不该被当成可用的 UI 来源"
+        );
+    }
+
+    #[test]
+    fn 无人监听的端口判为不可用() {
+        let port = {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+            listener.local_addr().expect("local_addr").port()
+        };
+        assert!(!probe_serves_ui(port, Duration::from_millis(500)));
+    }
+
+    #[test]
+    fn 端口空闲判定区分有无监听() {
+        let (port, _guard) = spawn_fake_server();
+        assert!(!port_is_free(port), "有人在听的端口不算空闲");
+
+        let free = {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+            listener.local_addr().expect("local_addr").port()
+        };
+        assert!(port_is_free(free), "刚释放的端口应判为空闲");
     }
 }
 
@@ -187,5 +250,83 @@ mod ensure_server_running {
             .map(|out| out.status.success())
             .unwrap_or(false);
         assert!(!alive, "顽固子进程 {pid} 应在宽限超时后被强杀");
+    }
+
+    /**
+     * 收树：服务端自己会拉起内嵌 Postgres，壳只杀直接子进程就会留孤儿。
+     *
+     * 真机事故（2026-09-19）：卸载后安装目录残留 51 MB、`app\pg\bin` 下 12 个
+     * `postgres.exe` 还在跑（文件被占用删不掉）——因为 Windows 上 GUI 壳没法给控制台子进程
+     * 送优雅信号，宽限一到就 `TerminateProcess`，后代全留下来了。
+     */
+    #[test]
+    fn 宽限超时后连后代进程一起收掉() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("local_addr").port();
+        drop(listener);
+
+        let pid_file = std::env::temp_dir().join(format!("kfw-child-{port}.pid"));
+        let _ = std::fs::remove_file(&pid_file);
+
+        let mut config = config_for(port);
+        config.args = vec![
+            port.to_string(),
+            "--child-pid-file".into(),
+            pid_file.to_string_lossy().to_string(),
+        ];
+
+        let kenfutwork_desktop_lib::ServerLaunch::Spawned(mut handle) =
+            ensure_server_running(config).expect("拉起成功")
+        else {
+            panic!("应 spawn");
+        };
+
+        let grandchild = wait_for_pid(&pid_file);
+        assert!(process_alive(grandchild), "后代进程 {grandchild} 应先活着");
+
+        handle.shutdown(Duration::from_millis(400));
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while std::time::Instant::now() < deadline && process_alive(grandchild) {
+            thread::sleep(Duration::from_millis(100));
+        }
+        assert!(
+            !process_alive(grandchild),
+            "后代进程 {grandchild} 应随服务端一起收掉（否则内嵌 Postgres 会变成孤儿）"
+        );
+        let _ = std::fs::remove_file(&pid_file);
+    }
+
+    /// 等替身把后代 pid 写进文件（替身先写文件再监听，正常是即时的）。
+    fn wait_for_pid(path: &std::path::Path) -> u32 {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while std::time::Instant::now() < deadline {
+            if let Ok(text) = std::fs::read_to_string(path) {
+                if let Ok(pid) = text.trim().parse() {
+                    return pid;
+                }
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        panic!("等后代 pid 超时：{}", path.display());
+    }
+
+    fn process_alive(pid: u32) -> bool {
+        #[cfg(windows)]
+        {
+            // tasklist 的输出无匹配时是本地化文案，故只认「出现了这个 pid」
+            let output = std::process::Command::new("tasklist")
+                .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
+                .output()
+                .expect("tasklist");
+            String::from_utf8_lossy(&output.stdout).contains(&format!("\"{pid}\""))
+        }
+        #[cfg(unix)]
+        {
+            std::process::Command::new("kill")
+                .args(["-0", &pid.to_string()])
+                .output()
+                .map(|out| out.status.success())
+                .unwrap_or(false)
+        }
     }
 }

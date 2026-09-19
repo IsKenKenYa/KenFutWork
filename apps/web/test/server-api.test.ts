@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   ApiAuthError,
+  connectCdp,
   createProject,
   createRun,
   fetchDirectoryPickerStatus,
@@ -334,5 +335,41 @@ describe("原生目录对话框端点", () => {
       json: async () => ({}),
     });
     await expect(pickDirectory("expired")).rejects.toBeInstanceOf(ApiAuthError);
+  });
+});
+
+/**
+ * CDP 三个动作（连接 / 开调试工具 / 断开）都走 POST JSON。
+ *
+ * **回归背景（真机踩到）**：带了 `Content-Type: application/json` 却**不带 body** 时，
+ * Fastify 回 `FST_ERR_CTP_EMPTY_JSON_BODY`（400）——设置页的「连接到 Chrome」与右栏的
+ * 「打开调试工具」都因此失败，界面只显示一句泛泛的「连接浏览器失败」。这条锁住「必须带 body」。
+ */
+describe("CDP 动作的请求形状", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("connectCdp 是 POST + JSON 头 + **非空 body**", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        cdp: { status: "connected", browser: "Chrome", tabs: 1 },
+        opened: { targetId: "t", url: "https://example.com/" },
+      }),
+    });
+
+    await connectCdp("token");
+
+    const calls = mockFetch.mock.calls.map(
+      (call) => call[1] as { method?: string; body?: string },
+    );
+    expect(calls).toHaveLength(1);
+    for (const init of calls) {
+      expect(init.method).toBe("POST");
+      // 空 body + JSON 头 = 400（FST_ERR_CTP_EMPTY_JSON_BODY）
+      expect(init.body).toBe("{}");
+    }
   });
 });

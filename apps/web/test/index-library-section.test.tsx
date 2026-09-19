@@ -54,7 +54,7 @@ describe("索引库设置：两个开关", () => {
   });
   afterEach(cleanup);
 
-  it("两行按参考图文案渲染（含 50,000 与「所有数据均存储在本地」）", () => {
+  it("两行按参考图文案渲染（含 50,000 与本地索引说明）", () => {
     renderSection();
     expect(screen.getByText("代码库")).toBeVisible();
     expect(screen.getByRole("switch", { name: "索引新文件夹" })).toBeVisible();
@@ -67,9 +67,7 @@ describe("索引库设置：两个开关", () => {
       }),
     ).toBeVisible();
     expect(
-      screen.getByText(
-        "自动对仓库进行索引，以加快 Grep 搜索速度。所有数据均存储在本地。",
-      ),
+      screen.getByText("自动为仓库建索引，加快文件搜索。数据保存在本地。"),
     ).toBeVisible();
   });
 
@@ -108,6 +106,6 @@ describe("索引库设置：两个开关", () => {
 
   it("自动建关着时，空态文案指路「重建索引」而不是说会自动建", () => {
     renderSection({ autoNewFolder: false, enabled: true });
-    expect(screen.getByText(/不会自动建/)).toBeVisible();
+    expect(screen.getByText(/点下面的「重建索引」建立一份/)).toBeVisible();
   });
 });

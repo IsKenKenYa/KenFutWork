@@ -24,6 +24,8 @@
       "!**/.kenfutwork",
       "!**/.scratch",
       "!**/release",
+      "!**/target",
+      "!**/gen",
       "!**/data",
       "!**/logs"
     ]

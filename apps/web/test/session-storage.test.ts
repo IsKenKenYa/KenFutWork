@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-import { loadSession, readStoredSession } from "../src/lib/session";
+import {
+  LOCAL_TRUST_SESSION_TOKEN,
+  loadSession,
+  readStoredSession,
+} from "../src/lib/session";
 
 /**
  * 回归：**只在该清令牌的时候清**。
@@ -20,6 +23,46 @@ describe("loadSession 的令牌保留口径", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("没有本地令牌：问 /api/viewer 拿本机身份（免登录形态直接进）", async () => {
+    window.localStorage.clear();
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(
+          JSON.stringify({
+            profile: {
+              id: "u1",
+              email: "local@kenfutwork.local",
+              displayName: "本机用户",
+            },
+          }),
+          { status: 200 },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const session = await loadSession();
+    expect(session?.user.email).toBe("local@kenfutwork.local");
+    /**
+     * 免登录形态不发令牌，但**必须给非空标记**：客户端几十处「无令牌即未登录」的门
+     * （`if (!session?.access_token) return`）否则全部静默不放行——真机上表现为工作台
+     * 拉不到项目、Design 模式永远停在「暂无项目」、画布起不来（2026-09-19 安装包实测）。
+     */
+    expect(session?.access_token).toBe(LOCAL_TRUST_SESSION_TOKEN);
+    // 走的是 viewer（认证路由在免登录形态下没挂载）
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/api/viewer");
+    // 标记不落盘：刷新页面重新问 viewer，不把「标记」当令牌存起来
+    expect(readStoredSession()).toBeNull();
+  });
+
+  it("没有本地令牌且 viewer 也 401（口令形态）：未登录，不写任何东西", async () => {
+    window.localStorage.clear();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("{}", { status: 401 })),
+    );
+    await expect(loadSession()).resolves.toBeNull();
+    expect(readStoredSession()).toBeNull();
   });
 
   it("401（令牌无效）：清令牌", async () => {

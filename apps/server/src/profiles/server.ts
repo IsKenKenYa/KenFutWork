@@ -4,6 +4,7 @@ import type { ServerEnv } from "../config/env.js";
 import { createAdminPlugin } from "../features/admin/plugin.js";
 import { createAgentModesPlugin } from "../features/agent-modes/plugin.js";
 import { createAgentRunsPlugin } from "../features/agent-runs/plugin.js";
+import { createApiTokensPlugin } from "../features/api-tokens/plugin.js";
 import { createAuthPlugin } from "../features/auth/plugin.js";
 import { createBlobPlugin } from "../features/blob/plugin.js";
 import { createViewerPlugin } from "../features/bootstrap/plugin.js";
@@ -82,7 +83,7 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     name: "permissions",
     title: "权限策略",
     category: "Agent 能力",
-    description: "危险工具三档审批（默认 / 自动放行 / 完全访问）。",
+    description: "危险工具四档审批（默认 / 自动审批 / 完全访问 / 自定义）。",
     capabilities: ["tools"],
   },
   {
@@ -143,6 +144,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createQueuePlugin(),
     createBlobPlugin(),
     createAuthPlugin(),
+    createApiTokensPlugin(),
     brandKitPlugin,
     createCreditsPlugin(),
     createViewerPlugin(),

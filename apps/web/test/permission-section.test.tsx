@@ -52,7 +52,7 @@ afterEach(() => {
 });
 
 /**
- * 权限设置 UI（DEC-4 + R5-3）：四档（含「自定义配置」）、常规/自动化两组、
+ * 权限设置 UI（DEC-4 + R5-3）：四档（含「自定义」）、常规/自动化两组、
  * 自定义规则编辑、工具审批。这几条是「点了真的会写服务端」的界面契约。
  */
 describe("PermissionSection（权限设置 UI）", () => {
@@ -63,14 +63,14 @@ describe("PermissionSection（权限设置 UI）", () => {
     });
     const autoGroup = screen.getByRole("group", { name: "自动化任务档位" });
     const regular = (await within(regularGroup).findByRole("radio", {
-      name: /默认（推荐）/,
+      name: /^默认/,
     })) as HTMLInputElement;
     await waitFor(() => expect(regular.checked).toBe(true));
-    // 两组各四个档（含第 4 档「自定义配置」）
+    // 两组各四个档（含第 4 档「自定义」）
     expect(within(regularGroup).getAllByRole("radio")).toHaveLength(4);
     expect(within(autoGroup).getAllByRole("radio")).toHaveLength(4);
     expect(
-      within(autoGroup).getByRole("radio", { name: /自定义配置/ }),
+      within(autoGroup).getByRole("radio", { name: /^自定义/ }),
     ).toBeInTheDocument();
     // 未选自定义档时不显示规则编辑区
     expect(screen.queryByLabelText("拒绝规则")).not.toBeInTheDocument();
@@ -83,7 +83,7 @@ describe("PermissionSection（权限设置 UI）", () => {
       name: "常规任务档位",
     });
     await user.click(
-      within(regularGroup).getByRole("radio", { name: /自动放行/ }),
+      within(regularGroup).getByRole("radio", { name: /^自动审批/ }),
     );
     await waitFor(() => {
       expect(updatePermissionSettingsMock).toHaveBeenCalledWith("token", {
@@ -183,7 +183,7 @@ describe("PermissionSection（权限设置 UI）", () => {
       name: "常规任务档位",
     });
     await user.click(
-      within(regularGroup).getByRole("radio", { name: /自动放行/ }),
+      within(regularGroup).getByRole("radio", { name: /^自动审批/ }),
     );
     // 不崩，且旧的「已永久批准」还在
     expect(

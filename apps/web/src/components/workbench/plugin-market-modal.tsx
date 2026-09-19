@@ -44,12 +44,26 @@ type MarketTab = "discover" | "installed";
  * 插件市场（模态）：发现 / 已安装 + 搜索 + 从链接安装 + 导出。
  * 数据来自 GET /api/plugins（内置清单 + 已安装插件）；第三方插件的变更端点需管理员。
  */
+/**
+ * 「使用」能跳到哪儿：**显式表**，只列真有消费界面的插件。
+ * 不在表里的已装插件不给「使用」——宁可只显示安装态，也不放一个点了没反应的键。
+ */
+const USABLE_PLUGINS = new Set([
+  "search", // 联网搜索 → 设置 → 浏览器 → 默认搜索引擎（消费方在那里）
+  "mcp", // MCP 接入 → MCP 面板
+  "skills", // 技能 → 技能面板
+  "model-providers", // BYOK 供应商 → 设置 → 供应商
+  "plugin-registry", // 插件市场 → 设置 → 插件面板
+  "canvas", // 画布（Design）→ 切到 Design 模式
+]);
+
 export function PluginMarketModal({
   open,
   onClose,
   accessToken,
   canvasId = null,
   isAdmin = false,
+  onUse,
 }: {
   open: boolean;
   onClose: () => void;
@@ -58,6 +72,11 @@ export function PluginMarketModal({
   canvasId?: string | null;
   /** 安装端点要管理员：非管理员时两个安装入口都前置说明并禁用。 */
   isAdmin?: boolean;
+  /**
+   * 「使用」：已装的插件跳到**真正消费它的那个界面**（参考图里已装插件显示「使用」而不是「安装」）。
+   * 没给回调时按「这个插件没有可跳的界面」处理——不摆一个点了没反应的键。
+   */
+  onUse?: ((pluginName: string) => void) | undefined;
 }) {
   const [tab, setTab] = useState<MarketTab>("discover");
   /** 切页签重置滚动位置（与设置/MCP/技能弹窗同款交互修正）。 */
@@ -322,6 +341,19 @@ export function PluginMarketModal({
                             {entry.installed ? "卸载" : "安装"}
                           </button>
                         )}
+                        {/* 已装且有可跳界面 → 「使用」（参考图口径）；系统插件本身就在界面上，不给 */}
+                        {!entry.system &&
+                        entry.installed &&
+                        onUse &&
+                        USABLE_PLUGINS.has(entry.name) ? (
+                          <button
+                            type="button"
+                            onClick={() => onUse(entry.name)}
+                            className="rounded-full bg-primary px-2.5 py-0.5 text-xs text-primary-foreground"
+                          >
+                            使用
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => setExportName(entry.name)}

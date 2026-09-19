@@ -860,7 +860,7 @@ export function ChatSidebar({
               ...m,
               contentBlocks: [
                 ...m.contentBlocks,
-                { type: "text" as const, text: "Failed to get response." },
+                { type: "text" as const, text: "没有收到回复，请重试。" },
               ],
             };
           }),

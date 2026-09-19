@@ -86,10 +86,23 @@ function main() {
     "@kenfutwork/shared",
     "build",
   ]);
-  run("构建静态 UI", "pnpm", ["--filter", "@kenfutwork/web", "build"]);
+  // 静态 UI 必须按**同源**构建（`NEXT_PUBLIC_SERVER_BASE_URL` 置空 → API base 用相对路径）：
+  // 随包 UI 永远由随包服务端自己托管，而仓库根 `.env.local` 里通常写着开发值
+  // （`http://localhost:3001`）——那会被 Next 的 DefinePlugin **烘进产物**，装到别人机器上
+  // 就成了「界面从自己的服务端加载、API 却打 3001」的半死状态（2026-09-19 真机实测：
+  // 侧栏「未登录」、项目列表空、Design 模式的画布永远起不来）。
+  run("构建静态 UI（同源）", "pnpm", ["--filter", "@kenfutwork/web", "build"], {
+    env: { ...process.env, NEXT_PUBLIC_SERVER_BASE_URL: "" },
+  });
   const webOut = join(ROOT, "apps", "web", "out");
   if (!existsSync(join(webOut, "index.html"))) {
     console.error("[package] 静态导出缺失（apps/web/out）");
+    process.exit(1);
+  }
+  if (!existsSync(join(webOut, "canvas.html"))) {
+    console.error(
+      "[package] 静态导出里没有 canvas.html：Design 模式的画布要它兜底",
+    );
     process.exit(1);
   }
 
@@ -106,6 +119,9 @@ function main() {
     // CJS 里 __filename/__dirname 恒可用，把 import.meta 的这两个字段指过去。
     "--define:import.meta.url=__filename",
     "--define:import.meta.dirname=__dirname",
+    // node-pty 是原生模块（conpty.node + conpty.dll/OpenConsole.exe）：**不能打进单文件**，
+    // 运行时从 <exe>/node_modules/node-pty 解析（同 sharp 的办法）。
+    "--external:node-pty",
     `--outfile=${join(BUILD, "server.cjs")}`,
     "--log-level=warning",
   ]);
@@ -196,6 +212,30 @@ function main() {
   );
   console.log(
     "[package] 捆绑 sharp 原生扩展（node_modules/@img/sharp-win32-x64）",
+  );
+
+  // 4c-2) node-pty（终端的真 PTY）：只拷运行时用得上的子集——
+  //   lib/（JS）+ prebuilds/win32-x64/*.node + build/Release/conpty/{conpty.dll,OpenConsole.exe}
+  //   + package.json；third_party / src / deps / 其它平台的 prebuilds 都不进包。
+  const nodePtyDir = dirname(serverRequire.resolve("node-pty/package.json"));
+  const nodePtyOut = join(RELEASE, "node_modules", "node-pty");
+  for (const rel of ["lib", "build", "typings"]) {
+    const from = join(nodePtyDir, rel);
+    if (existsSync(from)) {
+      cpSync(from, join(nodePtyOut, rel), { recursive: true });
+    }
+  }
+  const prebuilds = join(nodePtyDir, "prebuilds", "win32-x64");
+  if (existsSync(prebuilds)) {
+    cpSync(prebuilds, join(nodePtyOut, "prebuilds", "win32-x64"), {
+      recursive: true,
+      // 调试符号（*.pdb）占了这份 prebuild 的一多半，运行时用不到
+      filter: (source) => !source.endsWith(".pdb"),
+    });
+  }
+  cpSync(join(nodePtyDir, "package.json"), join(nodePtyOut, "package.json"));
+  console.log(
+    "[package] 捆绑 node-pty（lib/ + prebuilds/win32-x64 + conpty.dll/OpenConsole.exe）",
   );
 
   // 4d) 随包语言运行时（Node / Python / JRE）：agent 的 execute 跑在**宿主机**上，

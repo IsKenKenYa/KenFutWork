@@ -1,10 +1,55 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  contextUsageModelMeta,
   contextUsageView,
   formatTokens,
   usageFromEvent,
 } from "../src/lib/context-usage";
+
+/**
+ * 选中模型的容量元数据：两处编排器共用一份。
+ *
+ * **回归背景**（真机实测抓到接线漏项）：Code 与 Design 两处编排器此前各写各的
+ * `models.find((m) => m.id === model)`，带真实用量的那处漏传 `maxOutputTokens`，
+ * 于是「预留输出 / 剩余」两段与阈值刻度在任何模式下都不出现。组件单测直接渲染按钮，
+ * 抓不到这种漏项——所以这里锁住「一个 id 解析出**两个**字段」这件事。
+ */
+describe("contextUsageModelMeta", () => {
+  const catalog = [
+    {
+      id: "inst-a:GLM-5.3-Flash",
+      contextWindow: 1_000_000,
+      maxOutputTokens: 128_000,
+    },
+  ];
+
+  it("一次拿到窗口与最大输出（调用方不必各自 find）", () => {
+    expect(contextUsageModelMeta(catalog, "inst-a:GLM-5.3-Flash")).toEqual({
+      contextWindow: 1_000_000,
+      maxOutputTokens: 128_000,
+    });
+  });
+
+  it("实例被删 / localStorage 里留着旧 specifier：两个字段都给 null（不拿别的实例顶替）", () => {
+    expect(
+      contextUsageModelMeta(catalog, "inst-deleted:GLM-5.3-Flash"),
+    ).toEqual({
+      contextWindow: null,
+      maxOutputTokens: null,
+    });
+  });
+
+  it("模型没声明这两项：同样是 null（浮层就少画那两段，不编数字）", () => {
+    expect(
+      contextUsageModelMeta([{ id: "inst-b:bare" }], "inst-b:bare"),
+    ).toEqual({ contextWindow: null, maxOutputTokens: null });
+    expect(contextUsageModelMeta([], "anything")).toEqual({
+      contextWindow: null,
+      maxOutputTokens: null,
+    });
+  });
+});
 
 describe("formatTokens", () => {
   it("按中文习惯缩写万/亿，并去掉多余的 .0", () => {
@@ -304,5 +349,47 @@ describe("预留输出与输出预留线", () => {
     expect(view.hasUsage).toBe(false);
     expect(view.reserveLabel).toBeNull();
     expect(view.overThreshold).toBe(false);
+  });
+});
+
+/**
+ * 两位小数的精确读数（用户口径「需要到小数点后两位」）：`usageFineLine`。
+ *
+ * 去处是浮层首行与环的悬停读数（圆环里不写数字了，这里是唯一看得见精确值的地方）；
+ * 满格写 `100`（不留 `100.00`）。一位小数的 `percentLabel` 仍按参考图口径保留。
+ */
+describe("两位小数的读数", () => {
+  it("4.53 不会被四舍五入成 4.5", () => {
+    const view = contextUsageView(
+      { inputTokens: 45_300, outputTokens: 1 },
+      1_000_000,
+    );
+    // token 量词仍是一位小数（`4.5万`），两位小数只加在百分比上
+    expect(view.usageFineLine).toBe("4.5万/100万（4.53%）");
+    // 一位小数的那份仍在（参考图口径）
+    expect(view.percentLabel).toBe("4.5%");
+    expect(view.usageLine).toBe("4.5万/100万（4.5%）");
+  });
+
+  it("大数同样两位；满格不写 100.00", () => {
+    expect(
+      contextUsageView({ inputTokens: 999_700, outputTokens: 1 }, 1_000_000)
+        .usageFineLine,
+    ).toBe("100万/100万（99.97%）");
+    expect(
+      contextUsageView({ inputTokens: 2_000_000, outputTokens: 1 }, 1_000_000)
+        .usageFineLine,
+    ).toBe("200万/100万（100%）");
+  });
+
+  it("窗口未知 / 无用量：不给精确读数（调用方退回 usageLine 或占位文案）", () => {
+    expect(
+      contextUsageView(
+        { inputTokens: 1000, outputTokens: 1 },
+        null,
+        "unknown-x",
+      ).usageFineLine,
+    ).toBeNull();
+    expect(contextUsageView(null, 1_000_000).usageFineLine).toBeNull();
   });
 });

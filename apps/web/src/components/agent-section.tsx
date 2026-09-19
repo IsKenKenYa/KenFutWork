@@ -123,7 +123,7 @@ export function AgentSection({
             </Select>
           )}
           <p className="text-xs text-muted-foreground">
-            该模型将用于工作区内所有新的 Agent 运行。
+            该模型用于工作区里所有新对话。
           </p>
         </div>
 
@@ -140,8 +140,7 @@ export function AgentSection({
             className="w-24 rounded-md border px-2 py-1 text-sm outline-none"
           />
           <p className="text-xs text-muted-foreground">
-            上限（含首次尝试），缺省 10；0
-            表示不重试。**已执行工具的那一轮不会重试**—— 重试会重复施加副作用。
+            失败后最多尝试几次（含首次），0 表示不重试。
           </p>
         </div>
 
@@ -162,10 +161,7 @@ export function AgentSection({
               />
             </label>
             <p className="text-xs text-muted-foreground">
-              模型上下文超过「窗口 −
-              预留输出」（即上下文条上那根线）时，把较早的消息摘要成一条，
-              只保留最近 20 条；**摘要用本轮这个模型**，被压掉的原文存到工作区
-              /conversation_history/，这条对话的完整记录不受影响。关掉后不压缩，超长会话会直接撞上游上限。
+              对话接近模型上下文上限时，自动把较早的消息压缩成摘要，长对话可以一直继续。关掉后超长对话会被模型拒绝。
             </p>
           </div>
         ) : null}
@@ -179,7 +175,7 @@ export function AgentSection({
         )}
 
         <Button type="submit" disabled={saving || !hasChanges} size="sm">
-          {saving ? "Saving..." : "保存"}
+          {saving ? "保存中…" : "保存"}
         </Button>
       </form>
     </div>

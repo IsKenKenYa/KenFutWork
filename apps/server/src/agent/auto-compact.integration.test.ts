@@ -203,7 +203,11 @@ describe("自动压缩的装配接线", () => {
 
   it("给了口径：长历史触发压缩，模型看到摘要消息", async () => {
     const { agent, model } = await buildAgent(plan);
-    await agent.invoke(
+    await (
+      agent as unknown as {
+        invoke: (input: unknown, config?: unknown) => Promise<unknown>;
+      }
+    ).invoke(
       { messages: longHistory(30, 900) },
       { configurable: { thread_id: "t-compact" } },
     );
@@ -219,7 +223,11 @@ describe("自动压缩的装配接线", () => {
 
   it("没给口径（设置里关掉）：不挂中间件，长历史也不压缩", async () => {
     const { agent, model } = await buildAgent();
-    await agent.invoke(
+    await (
+      agent as unknown as {
+        invoke: (input: unknown, config?: unknown) => Promise<unknown>;
+      }
+    ).invoke(
       { messages: longHistory(30, 900) },
       { configurable: { thread_id: "t-nocompact" } },
     );

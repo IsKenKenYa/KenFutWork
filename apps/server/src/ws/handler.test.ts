@@ -8,6 +8,17 @@ import { WebSocket } from "ws";
 
 import { registerWsRoute } from "./handler.js";
 
+// 环境预检：node-pty 在沙箱/部分 CI 里无法创建 pty（posix_spawnp failed）——
+// 不可用即跳过终端会话用例（真机/正常终端不受影响）。
+let ptyAvailable = true;
+try {
+  const { spawn } = await import("node-pty");
+  const probe = spawn("/bin/true", [], { name: "xterm-256color" });
+  probe.kill();
+} catch {
+  ptyAvailable = false;
+}
+
 /**
  * WS 早期消息回归测试。
  *
@@ -87,14 +98,16 @@ function makeStubs() {
   };
 }
 
-async function startServer() {
+async function startServer(overrides?: {
+  auth?: { authenticate: (request: unknown) => Promise<unknown> };
+}) {
   const app = Fastify();
   await app.register(websocket);
   const stubs = makeStubs();
   registerWsRoute(app, {
     connectionManager: stubs.connectionManager as never,
     agentRuns: stubs.agentRuns as never,
-    auth: stubs.auth as never,
+    auth: (overrides?.auth ?? stubs.auth) as never,
     codeGitService: stubs.codeGitService as never,
   });
   await app.listen({ port: 0, host: "127.0.0.1" });
@@ -194,7 +207,7 @@ describe("WS 早期消息不丢失（回归）", () => {
  * 单元层面 `terminal-session` 已经验过常驻 shell 的性质（cd 保留、REPL）；这里验的是
  * **接线**：命令解析、归属校验、ack 与 output/exit 的投递、以及连接断开时收掉会话。
  */
-describe("终端会话（WS 通道）", () => {
+describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
   /** 连上并返回一个「发命令 + 等消息」的小客户端。 */
   async function connect(port: number) {
     const client = new WebSocket(
@@ -254,6 +267,100 @@ describe("终端会话（WS 通道）", () => {
 
   const isAck = (msg: Record<string, unknown>) =>
     msg.type === "command.ack" && msg.action === "terminal.start";
+
+  it("免登录形态（桌面）：没有 token 也能连——鉴权按 ip + Origin 判", async () => {
+    /**
+     * 回归背景：WS 入口以前写死「没有 token 就 4001」，而桌面 local-trust 形态本来就没有
+     * token；伪造给鉴权器的请求又只带了 authorization、没带 Origin，于是打包后的桌面端
+     * **run / 终端全都连不上**。这条按 local-trust 的判据（回环 + 可信 Origin）造替身来锁。
+     */
+    const seenOrigins: Array<string | undefined> = [];
+    const { app, port } = await startServer({
+      auth: {
+        authenticate: async (request: unknown) => {
+          const req = request as { headers: { origin?: string } };
+          seenOrigins.push(req.headers.origin);
+          return req.headers.origin === "http://localhost:3000"
+            ? { id: "local-user", accessToken: "local" }
+            : null;
+        },
+      },
+    });
+    const client = new WebSocket(
+      `ws://127.0.0.1:${port}/api/ws?connectionId=no-token-${Date.now()}`,
+      { headers: { Origin: "http://localhost:3000" } } as never,
+    );
+    try {
+      const opened = await new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => resolve(false), 6000);
+        client.on("open", () => {
+          clearTimeout(timer);
+          resolve(true);
+        });
+        client.on("close", () => {
+          clearTimeout(timer);
+          resolve(false);
+        });
+      });
+      // 连上之后等一会儿：确认不是「连上就被 4001 踢掉」
+      await new Promise((r) => setTimeout(r, 500));
+      expect(opened).toBe(true);
+      expect(client.readyState).toBe(1);
+      // Origin 真的传到了鉴权器（不是被伪造请求吞掉）
+      expect(seenOrigins).toContain("http://localhost:3000");
+    } finally {
+      client.close();
+      await app.close();
+    }
+  });
+
+  it("没有可信 Origin：仍然拒绝（免登录不等于不鉴权）", async () => {
+    const { app, port } = await startServer({
+      auth: {
+        authenticate: async (request: unknown) => {
+          const req = request as { headers: { origin?: string } };
+          return req.headers.origin === "http://localhost:3000"
+            ? { id: "local-user", accessToken: "local" }
+            : null;
+        },
+      },
+    });
+    const client = new WebSocket(
+      `ws://127.0.0.1:${port}/api/ws?connectionId=bad-origin-${Date.now()}`,
+    );
+    try {
+      const code = await new Promise<number>((resolve) => {
+        const timer = setTimeout(() => resolve(-1), 6000);
+        client.on("close", (closeCode) => {
+          clearTimeout(timer);
+          resolve(closeCode);
+        });
+      });
+      expect(code).toBe(4001);
+    } finally {
+      client.close();
+      await app.close();
+    }
+  });
+
+  it("不带 canvasId 也能起会话：cwd 落到服务端启动目录（终端不被工作目录限制）", async () => {
+    const { app, port } = await startServer();
+    void app;
+    const session = await connect(port);
+    try {
+      const ack = await session.sendAndWait(
+        {
+          type: "command",
+          action: "terminal.start",
+          payload: { sessionId: "t-no-dir" },
+        },
+        isAck,
+      );
+      expect((ack.payload as { sessionId: string }).sessionId).toBe("t-no-dir");
+    } finally {
+      session.client.close();
+    }
+  });
 
   it("起会话拿到 ack；输入的命令原样回到输出；stop 后回 exit", async () => {
     const { app, port, stubs } = await startServer();

@@ -211,6 +211,22 @@ export const workspaceSettingsSchema = z.object({
   /** 逐条规则（短句，最多 100 条）。 */
   ruleEntries: z.array(z.string().min(1).max(2_000)).max(100).default([]),
   /**
+   * 用户钩子（设置 →「钩子」）：每一轮 run 的起点 / 终点在**项目工作目录**里跑一条命令。
+   *
+   * 三条口径：① 只有用户能配置，**模型无法新增或触发**（不进工具注册表、不受工具门管）；
+   * ② 执行身份与目录同终端/agent；③ 失败**不阻断**本轮，输出与退出码如实进转录。
+   */
+  hooks: z
+    .array(
+      z.object({
+        /** 钩子点：本轮开始 / 本轮结束。 */
+        event: z.enum(["turn-start", "turn-end"]),
+        command: z.string().trim().min(1).max(2_000),
+      }),
+    )
+    .max(10)
+    .default([]),
+  /**
    * 自定义斜杠命令（设置 →「命令」）：输入框里 `/name 参数` 触发，提交前展开成 prompt。
    *
    * 名字限字母数字与连字符（避免与内置 `/` 行为/路径冲突），最多 50 条。

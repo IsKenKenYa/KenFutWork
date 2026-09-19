@@ -103,7 +103,17 @@ export async function launchBrowserWithDebugPort(options: {
     `--user-data-dir=${options.profileDir}`,
     "--no-first-run",
     "--no-default-browser-check",
+    // 我们收残留实例是**强杀**（Chrome 对同一 profile 只许一个进程），下次启动会弹
+    //「要恢复页面吗？Chrome 未正确关闭」——这条把它压掉（真机截图里就是那个弹窗）
+    "--hide-crash-restore-bubble",
     "--disable-features=Translate",
+    /**
+     * **必须开**：Chrome 111+ 对带 Origin 的调试 WebSocket 做白名单校验，而 DevTools 前端
+     * （`devtools://devtools/...`）正是这么连的——不开的话前端打开后会立刻
+     * 「Debugging connection was closed / WebSocket disconnected」（真机踩到，截图就是这句）。
+     * 这个实例是我们用**独立 profile** 起的本地调试实例，放开 Origin 的影响面仅限它。
+     */
+    "--remote-allow-origins=*",
     ...(options.headless ? ["--headless=new"] : []),
     options.initialUrl ?? "about:blank",
   ];
@@ -128,6 +138,64 @@ export async function launchBrowserWithDebugPort(options: {
 }
 
 /** 等 DevTools 端口就绪（Chrome 起进程到监听有一点延迟）。 */
+/**
+ * 收掉「用着我们自己 profile 的残留实例」。
+ *
+ * **真机踩到的坑**：修复（给启动参数加 `--remote-allow-origins`）之后用户那边仍然连不上——
+ * 因为**旧的 Chrome 进程还活着**（用着同一个 `--user-data-dir`），新的一次启动会「交棒」给
+ * 它并立刻退出，于是**参数永远加不上**，调试前端打开后立刻断（界面显示「调试连接已关闭」）。
+ *
+ * 只动**命令行里带我们 profile 目录**的进程：用户自己日常开的 Chrome 用的不是这个 profile，
+ * 不会被碰到。收完等端口空出来（最多 5 秒）再让调用方启动新的。
+ */
+export async function killStaleProfileInstance(
+  profileDir: string,
+  port: number,
+): Promise<boolean> {
+  const answering = await fetch(`http://127.0.0.1:${port}/json/version`)
+    .then((response) => response.ok)
+    .catch(() => false);
+  if (!answering) return false;
+
+  if (process.platform === "win32") {
+    /**
+     * 按命令行匹配（我们自己的 profile 路径唯一）→ 收掉整棵进程树。
+     * 注意：这一段是嵌在 PowerShell **单引号字符串**里的，反斜杠在那里就是字面量，
+     * **不能**再重复转义——真机踩过：重复转义后 `-like` 匹配不上，残留实例纹丝不动。
+     */
+    const pattern = profileDir;
+    await new Promise<void>((resolve) => {
+      const killer = spawn(
+        "powershell",
+        [
+          "-NoProfile",
+          "-Command",
+          `Get-CimInstance Win32_Process -Filter "Name='chrome.exe' or Name='msedge.exe'" | Where-Object { $_.CommandLine -like '*${pattern}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`,
+        ],
+        { stdio: "ignore", windowsHide: true },
+      );
+      killer.on("exit", () => resolve());
+      killer.on("error", () => resolve());
+    });
+  } else {
+    await new Promise<void>((resolve) => {
+      const killer = spawn("pkill", ["-f", profileDir], { stdio: "ignore" });
+      killer.on("exit", () => resolve());
+      killer.on("error", () => resolve());
+    });
+  }
+
+  // 等端口释放（最多 5 秒），免得紧接着的启动又交棒给还没退干净的旧进程
+  for (let i = 0; i < 20; i += 1) {
+    const stillAlive = await fetch(`http://127.0.0.1:${port}/json/version`)
+      .then((response) => response.ok)
+      .catch(() => false);
+    if (!stillAlive) return true;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return false;
+}
+
 export async function waitForDevtools(
   port: number,
   options: { timeoutMs?: number; fetchImpl?: typeof fetch } = {},
@@ -186,6 +254,19 @@ export interface CdpClient {
     params?: Record<string, unknown>,
     sessionId?: string,
   ): Promise<Record<string, unknown>>;
+  /**
+   * 订阅 CDP **事件**（`method` 全名，如 `Page.screencastFrame`）；返回退订函数。
+   *
+   * 面板内实时视图要靠它：画面帧是事件推过来的（不是命令的返回值）。
+   * 订阅者抛错被吞掉——一个订阅者出错不该影响命令通道。
+   */
+  on(
+    method: string,
+    handler: (
+      params: Record<string, unknown>,
+      sessionId?: string | undefined,
+    ) => void,
+  ): () => void;
   /** 开一个标签并附着（返回可用的 sessionId）。 */
   openTab(url: string): Promise<CdpSessionTarget>;
   listTargets(): Promise<
@@ -209,12 +290,22 @@ export function connectCdpClient(
   const commandTimeoutMs = options.commandTimeoutMs ?? 15_000;
   const socket = new WebSocket(wsUrl);
   const pending = new Map<number, Pending>();
+  /** 事件订阅表（按 CDP 方法名分组）。 */
+  const listeners = new Map<
+    string,
+    Set<
+      (params: Record<string, unknown>, sessionId?: string | undefined) => void
+    >
+  >();
   let nextId = 1;
   let closed = false;
 
   socket.on("message", (raw) => {
     let message: {
       id?: number;
+      method?: string;
+      params?: unknown;
+      sessionId?: string;
       error?: { message?: string };
       result?: unknown;
     };
@@ -223,7 +314,24 @@ export function connectCdpClient(
     } catch {
       return;
     }
-    if (typeof message.id !== "number") return;
+    if (typeof message.id !== "number") {
+      // 没有 id = 事件（如 Page.screencastFrame）→ 分发给订阅者
+      const subscribers = message.method
+        ? listeners.get(message.method)
+        : undefined;
+      if (!subscribers) return;
+      for (const handler of subscribers) {
+        try {
+          handler(
+            (message.params ?? {}) as Record<string, unknown>,
+            message.sessionId,
+          );
+        } catch {
+          // 订阅者自己的异常不影响命令通道
+        }
+      }
+      return;
+    }
     const entry = pending.get(message.id);
     if (!entry) return;
     pending.delete(message.id);
@@ -301,6 +409,15 @@ export function connectCdpClient(
 
   return {
     send,
+    on(method, handler) {
+      const set = listeners.get(method) ?? new Set();
+      set.add(handler);
+      listeners.set(method, set);
+      return () => {
+        set.delete(handler);
+        if (set.size === 0) listeners.delete(method);
+      };
+    },
     async openTab(url) {
       const created = (await send("Target.createTarget", { url })) as {
         targetId?: string;
@@ -705,6 +822,36 @@ export async function typeText(
   await client.send("Input.insertText", { text }, sessionId);
 }
 
+/**
+ * 命名键表（虚拟键码 / `code` / 要顺带送的文本）。
+ *
+ * **只有一份**：agent 的 `pressKey`（按键名）与面板内的键盘转发（按 DOM 事件）共用它，
+ * 免得两处各写一张表又慢慢漂移。可打印字符不走这里——那条路用 `Input.insertText`
+ * （见 dispatchKey），中文输入法合成的结果也走它。
+ */
+const NAMED_KEYS: Record<string, { vk: number; code: string; text?: string }> =
+  {
+    Enter: { vk: 13, code: "Enter", text: "\r" },
+    NumpadEnter: { vk: 13, code: "NumpadEnter", text: "\r" },
+    Tab: { vk: 9, code: "Tab" },
+    Escape: { vk: 27, code: "Escape" },
+    Backspace: { vk: 8, code: "Backspace" },
+    Delete: { vk: 46, code: "Delete" },
+    Insert: { vk: 45, code: "Insert" },
+    ArrowUp: { vk: 38, code: "ArrowUp" },
+    ArrowDown: { vk: 40, code: "ArrowDown" },
+    ArrowLeft: { vk: 37, code: "ArrowLeft" },
+    ArrowRight: { vk: 39, code: "ArrowRight" },
+    Home: { vk: 36, code: "Home" },
+    End: { vk: 35, code: "End" },
+    PageUp: { vk: 33, code: "PageUp" },
+    PageDown: { vk: 34, code: "PageDown" },
+    F5: { vk: 116, code: "F5" },
+    F12: { vk: 123, code: "F12" },
+    " ": { vk: 32, code: "Space", text: " " },
+    Space: { vk: 32, code: "Space", text: " " },
+  };
+
 /** 按键（如 Enter / Tab / Escape，也接受单字符）。 */
 export async function pressKey(
   client: CdpClient,
@@ -733,16 +880,202 @@ export async function pressKey(
 }
 
 function keyCodeFor(key: string): number {
-  const map: Record<string, number> = {
-    Enter: 13,
-    Tab: 9,
-    Escape: 27,
-    Backspace: 8,
-    ArrowUp: 38,
-    ArrowDown: 40,
-    ArrowLeft: 37,
-    ArrowRight: 39,
-    " ": 32,
+  return NAMED_KEYS[key]?.vk ?? 0;
+}
+
+// ─────────────────────────── 面板内实时视图（画面流 + 交互转发）───────────────────────────
+//
+// 右栏浏览器面板显示的是**受控浏览器的画面**（而不是 iframe）：iframe 是跨源的，
+// 既挂不上调试工具也注不进脚本。画面流走 CDP 的 `Page.startScreencast`，交互回填走
+// `Input.dispatch*`——坐标一律是**视口 CSS px**（调用方按面板里的显示尺寸换算）。
+
+/** 开始推画面帧（jpeg）。 */
+export async function startScreencast(
+  client: CdpClient,
+  sessionId: string,
+  options: {
+    maxWidth?: number;
+    maxHeight?: number;
+    quality?: number;
+    everyNthFrame?: number;
+  } = {},
+): Promise<void> {
+  // 先 enable：不 enable 时部分版本一条帧都不发
+  await client.send("Page.enable", {}, sessionId).catch(() => undefined);
+  await client.send(
+    "Page.startScreencast",
+    {
+      format: "jpeg",
+      quality: options.quality ?? 70,
+      maxWidth: options.maxWidth ?? 1600,
+      maxHeight: options.maxHeight ?? 1200,
+      everyNthFrame: options.everyNthFrame ?? 1,
+    },
+    sessionId,
+  );
+}
+
+export async function stopScreencast(
+  client: CdpClient,
+  sessionId: string,
+): Promise<void> {
+  await client
+    .send("Page.stopScreencast", {}, sessionId)
+    .catch(() => undefined);
+}
+
+/**
+ * 确认收到一帧。
+ *
+ * **不 ack 就没有下一帧**（Chrome 的背压机制）：所以 ack 必须发生在**这一帧写完/发完之后**，
+ * 否则要么丢帧、要么把内存堆爆。参数 `frameSessionId` 是帧事件自带的数字 `sessionId`
+ * （与 CDP 会话 id 那个字符串同名不同物，别混）。
+ */
+export async function ackScreencastFrame(
+  client: CdpClient,
+  sessionId: string,
+  frameSessionId: number,
+): Promise<void> {
+  await client
+    .send("Page.screencastFrameAck", { sessionId: frameSessionId }, sessionId)
+    .catch(() => undefined);
+}
+
+/** 视口 CSS 尺寸（坐标映射与「自由尺寸」都用它）。 */
+export async function readViewport(
+  client: CdpClient,
+  sessionId: string,
+): Promise<{ width: number; height: number; scale: number }> {
+  const metrics = (await client.send(
+    "Page.getLayoutMetrics",
+    {},
+    sessionId,
+  )) as {
+    cssVisualViewport?: {
+      clientWidth: number;
+      clientHeight: number;
+      scale?: number;
+    };
+    cssLayoutViewport?: { clientWidth: number; clientHeight: number };
   };
-  return map[key] ?? 0;
+  const viewport = metrics.cssVisualViewport ?? metrics.cssLayoutViewport;
+  return {
+    width: Math.round(viewport?.clientWidth ?? 0),
+    height: Math.round(viewport?.clientHeight ?? 0),
+    scale: metrics.cssVisualViewport?.scale ?? 1,
+  };
+}
+
+/**
+ * 真实改变页面视口尺寸（「自由尺寸」用它：900px 宽就是真的按 900px 排版，不是把图缩一下）。
+ * 传 `null` 还原成窗口尺寸。
+ */
+export async function setViewportOverride(
+  client: CdpClient,
+  sessionId: string,
+  size: { width: number; height: number } | null,
+): Promise<void> {
+  if (!size) {
+    await client
+      .send("Emulation.clearDeviceMetricsOverride", {}, sessionId)
+      .catch(() => undefined);
+    return;
+  }
+  await client.send(
+    "Emulation.setDeviceMetricsOverride",
+    {
+      width: Math.round(size.width),
+      height: Math.round(size.height),
+      // 0 = 沿用当前缩放因子（不放大像素，画面仍是 1:1 CSS px）
+      deviceScaleFactor: 0,
+      mobile: false,
+      screenWidth: Math.round(size.width),
+      screenHeight: Math.round(size.height),
+    },
+    sessionId,
+  );
+}
+
+/** 面板内鼠标（坐标是视口 CSS px）。`buttons` 位掩码：拖拽中要带 1，否则页面收不到 drag。 */
+export async function dispatchMouse(
+  client: CdpClient,
+  sessionId: string,
+  event: {
+    type: "mousePressed" | "mouseReleased" | "mouseMoved";
+    x: number;
+    y: number;
+    button?: "left" | "right" | "middle" | "none";
+    buttons?: number;
+    clickCount?: number;
+    modifiers?: number;
+  },
+): Promise<void> {
+  await client.send(
+    "Input.dispatchMouseEvent",
+    {
+      type: event.type,
+      x: Math.round(event.x),
+      y: Math.round(event.y),
+      button: event.button ?? "left",
+      buttons: event.buttons ?? (event.type === "mouseReleased" ? 0 : 1),
+      clickCount: event.clickCount ?? 1,
+      modifiers: event.modifiers ?? 0,
+    },
+    sessionId,
+  );
+}
+
+/** 面板内滚轮（坐标是视口 CSS px；`deltaY > 0` = 向下滚）。 */
+export async function dispatchWheel(
+  client: CdpClient,
+  sessionId: string,
+  event: { x: number; y: number; deltaX?: number; deltaY?: number },
+): Promise<void> {
+  await client.send(
+    "Input.dispatchMouseEvent",
+    {
+      type: "mouseWheel",
+      x: Math.round(event.x),
+      y: Math.round(event.y),
+      deltaX: event.deltaX ?? 0,
+      deltaY: event.deltaY ?? 0,
+    },
+    sessionId,
+  );
+}
+
+/** 面板内按键：命名键走虚拟键码，可打印字符走 insertText（中文输入法合成的结果也走它）。 */
+export async function dispatchKey(
+  client: CdpClient,
+  sessionId: string,
+  event: { key: string; code?: string; modifiers?: number },
+): Promise<void> {
+  const named = NAMED_KEYS[event.key];
+  if (!named) {
+    if (event.key.length > 0) {
+      await typeText(client, sessionId, event.key);
+    }
+    return;
+  }
+  const base: Record<string, unknown> = {
+    key: event.key === "Space" ? " " : event.key,
+    code: event.code || named.code,
+    windowsVirtualKeyCode: named.vk,
+    nativeVirtualKeyCode: named.vk,
+    modifiers: event.modifiers ?? 0,
+  };
+  await client.send(
+    "Input.dispatchKeyEvent",
+    {
+      type: "rawKeyDown",
+      ...base,
+      ...(named.text ? { text: named.text } : {}),
+    },
+    sessionId,
+  );
+  await client.send(
+    "Input.dispatchKeyEvent",
+    { type: "keyUp", ...base },
+    sessionId,
+  );
 }
