@@ -38,11 +38,14 @@
       body {
         /* 淡入：从「窗口一出就是白底」的硬切换变成柔和过渡，减轻启动时的闪烁感 */
         animation: kfw-fade-in 260ms ease-out both;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
+        /* 居中用 grid + place-items（比 flex column 稳：内容宽度变化、出现滚动条都不会偏），
+           并显式锁住不滚动——启动页没有任何需要滚动的内容 */
+        display: grid;
+        place-items: center;
+        align-content: center;
         gap: 16px;
+        grid-auto-rows: min-content;
+        overflow: hidden;
         background: #fff;
         color: var(--kfw-ink);
         font:
@@ -55,7 +58,8 @@
       .brand {
         display: flex;
         align-items: center;
-        gap: 10px;
+        /* 不留缝：字标紧贴标记（用户口径「中间有缝隙…看过去很脏」） */
+        gap: 0;
       }
       .brand span {
         /* 左深右浅（用户口径），与侧栏字标同一套色 */
@@ -65,7 +69,8 @@
         color: transparent;
         font-family: "Momo Trust Display", system-ui, -apple-system, "Segoe UI",
           "Microsoft YaHei", sans-serif;
-        font-size: 28px;
+        /* 字号抬到与标记视觉等高（用户口径「字体和 logo 不一样大」） */
+        font-size: 40px;
         letter-spacing: 0.2px;
       }
       .track {
@@ -107,7 +112,7 @@
     <div class="brand">
       <!-- 用**应用图标**本身（打包时随静态导出一起走），不再内联旧版 logo 的 SVG：
            图标换了、启动页跟着换，不会两处打架 -->
-      <img src="/app-icon.png" width="96" height="96" alt="" />
+      <img src="/app-icon.png" width="84" height="84" alt="" />
       <span>KenFutWork</span>
     </div>
     <div class="track"><div class="bar"></div></div>

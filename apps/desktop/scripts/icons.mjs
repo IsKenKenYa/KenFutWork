@@ -38,10 +38,10 @@ if (!source) {
   process.exit(1);
 }
 
-/** 白底圆角贴片参数：1024 画布、圆角 22%（≈上一版方块图标）、标占 84%（用户口径：之前只占中间一点点，太小）。 */
+/** 白底圆角贴片参数：1024 画布、圆角 22%（≈上一版方块图标）、标占 92%（用户口径：图标还要再大一点）。 */
 const CANVAS = 1024;
 const RADIUS = Math.round(CANVAS * 0.22);
-const MARK = Math.round(CANVAS * 0.84);
+const MARK = Math.round(CANVAS * 0.92);
 
 const tile = Buffer.from(
   `<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS}" height="${CANVAS}">

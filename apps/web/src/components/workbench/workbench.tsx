@@ -1960,7 +1960,7 @@ export function Workbench() {
           />
           <div className="flex items-center justify-between px-3 pt-3 pb-2">
             <span className="flex items-center gap-0">
-              <KenFutWorkLogo className="size-10 text-foreground" />
+              <KenFutWorkLogo className="size-7 text-foreground" />
               {/* 字标：Momo Trust Display + 与图标同色系渐变，**左深右浅**（用户口径） */}
               <span className="font-wordmark bg-gradient-to-r from-[#25439E] to-[#7FA3FF] bg-clip-text text-xl tracking-tight text-transparent dark:from-[#9AB0F5] dark:to-[#D3E0FF]">
                 KenFutWork
