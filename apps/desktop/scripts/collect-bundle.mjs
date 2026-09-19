@@ -8,7 +8,13 @@
  * 原始产物仍在 tauri 的 bundle 目录里（发布流水线要它就在那），这里只是多放一份顺手的位置。
  */
 
-import { copyFileSync, existsSync, readdirSync, rmSync, statSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import { join } from "node:path";
 
 const repoRoot = join(import.meta.dirname, "..", "..", "..");
@@ -24,6 +30,14 @@ const bundleDir = join(
 );
 
 if (!existsSync(bundleDir)) {
+  // NSIS 安装包只在 Windows 上产出：macOS/Linux 的 `pnpm build` 走到这里是常态，
+  // 静默跳过收集（Rust 编译本身已成功），不是失败——失败口径保留给 Windows 打包机。
+  if (process.platform !== "win32") {
+    console.log(
+      "[collect] 非 Windows 环境无 NSIS 产物，跳过安装包收集（桌面 Rust 编译已完成）。",
+    );
+    process.exit(0);
+  }
   console.error(`[collect] 没找到安装包目录：${bundleDir}（先跑 tauri build）`);
   process.exit(1);
 }
