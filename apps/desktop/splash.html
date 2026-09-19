@@ -46,6 +46,9 @@
         gap: 16px;
         grid-auto-rows: min-content;
         overflow: hidden;
+        /* 整体（品牌块 + 进度条 + 提示）一起左移 24px：居中居中算的是内容盒，
+           右侧留 48px 就把整列的中心左移 24px——**不能只挪品牌块**（那样会和进度条错开） */
+        padding-right: 48px;
         background: #fff;
         color: var(--kfw-ink);
         font:
@@ -58,11 +61,8 @@
       .brand {
         display: flex;
         align-items: center;
-        /* 整体左移一点（用户口径「视觉上不居中，往左移动」）：实测品牌块几何中心
-           比视口中心右偏约 17px，再给一点视觉余量 */
-        transform: translateX(-24px);
-        /* 不留缝：字标紧贴标记（用户口径「中间有缝隙…看过去很脏」） */
-        gap: 0;
+        /* 标记与字标之间留 5px（与侧栏同一口径；之前去掉的是贴片图自带的内边距，不是这里的间距） */
+        gap: 5px;
       }
       .brand span {
         /* 左深右浅（用户口径），与侧栏字标同一套色 */
