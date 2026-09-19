@@ -16,6 +16,7 @@
     "seed": "pnpm --filter @kenfutwork/server seed:accounts",
     "typecheck": "turbo run typecheck",
     "smoke:desktop": "node scripts/desktop-offline-smoke.mjs",
+    "verify:desktop": "node scripts/验收打包桌面端.mjs",
     "fetch:runtimes": "node scripts/fetch-runtimes.mjs"
   },
   "devDependencies": {
