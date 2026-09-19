@@ -25,13 +25,8 @@
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "nsis"
-    ],
-    "icon": [
-      "icons/icon.png",
-      "icons/icon.ico"
-    ],
+    "targets": ["nsis"],
+    "icon": ["icons/icon.png", "icons/icon.ico"],
     "publisher": "KenFutWork",
     "copyright": "GPL-3.0",
     "category": "DeveloperTool",
@@ -48,10 +43,7 @@
     "windows": {
       "nsis": {
         "installMode": "both",
-        "languages": [
-          "SimpChinese",
-          "English"
-        ],
+        "languages": ["SimpChinese", "English"],
         "displayLanguageSelector": false,
         "installerIcon": "icons/icon.ico",
         "uninstallerIcon": "icons/icon.ico",

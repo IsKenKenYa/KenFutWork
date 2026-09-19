@@ -53,7 +53,10 @@ const tile = Buffer.from(
  * 只占 ~60%，桌面上看着就"小一圈"（用户口径：桌面显示的和预览的不一样）。
  * 先 trim 再缩放，字形才真正顶满。
  */
-const trimmedSource = await sharp(source).trim({ threshold: 1 }).png().toBuffer();
+const trimmedSource = await sharp(source)
+  .trim({ threshold: 1 })
+  .png()
+  .toBuffer();
 const mark = await sharp(trimmedSource)
   .resize(MARK, MARK, {
     fit: "contain",

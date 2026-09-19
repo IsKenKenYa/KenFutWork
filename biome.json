@@ -18,6 +18,7 @@
       "!apps/server/src/features/model-providers/models-dev.snapshot.ts",
       "!**/.pnpm-store",
       "!**/tmp",
+      "!**/.zcode",
       "!**/target",
       "!**/gen",
       "!**/references",
