@@ -24,20 +24,12 @@ import { createHash, randomBytes } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 
 const ACCOUNT_HOST = "https://account.xiaomi.com";
+const SERVICE_LOGIN_PATH = "/pass/serviceLogin";
 const LOGIN_URL_PATH = "/longPolling/loginUrl";
-/** 米家 App 的 service id（登录授权对象）。 */
-const SID = "xiaomiio";
+/** 米家 App 的 service id（现代米家登录；旧 `xiaomiio` 会拿到云端认不出的会话）。 */
+export const MIHOME_SID = "mijia";
+const LOCALE = "zh_CN";
 const DEFAULT_API_HOST = "https://api.io.mi.com";
-/**
- * 确诊用基址（第三方实现 @zythum02/mijia-api 的基址，2026-09 在线）。
- * 它**严格校验会话**：会话无效时明确回 `code=2 auth error`；而 `api.io.mi.com`
- * 对无效会话静默返回空列表。**不参与正常链路**，只在空结果时问一次用于读数归因。
- */
-const DIAGNOSTIC_API_HOST = "https://api.mijia.tech";
-/** 常见于各家实现的 UA：服务端按它判定「客户端是 App」而非浏览器。 */
-const USER_AGENT =
-  "Android-7.1.1-1.0.0-ONEPLUS A3010-136-6C3D5A0D1D1C APP/com.xiaomi.mihome APPV/6.0.103 ios_webview";
-
 /** deviceId 的字符集（参考实现口径：16 位随机串，无固定前缀）。 */
 const DEVICE_ID_CHARS =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
@@ -49,6 +41,61 @@ export function generateDeviceId(random = Math.random, length = 16) {
     out += DEVICE_ID_CHARS[Math.floor(random() * DEVICE_ID_CHARS.length)];
   }
   return out;
+}
+
+/** serviceLogin 需要的 `pass_o`：16 位小写十六进制。 */
+export function generatePassO() {
+  return randomBytes(8).toString("hex");
+}
+
+/**
+ * 米家登录风控不接受普通固定 UA：参考实现首登生成并在 serviceLogin / QR / lp / callback
+ * 四步复用一串 App 身份。这里生成同形态的随机值；它不是凭据，也不落库（会随 login auth 上下文传递）。
+ */
+export function generateAppUserAgent(locale = LOCALE, passO = generatePassO()) {
+  const country = locale.split("_")[1] ?? "CN";
+  const hex = (bytes) => randomBytes(bytes).toString("hex").toUpperCase();
+  return `Android-15-11.0.701-Xiaomi-23046RP50C-OS2.0.212.0.VMYCNXM-${hex(20)}-${country}-${hex(16)}-${hex(16)}-SmartHome-MI_APP_STORE-${hex(20)}|${hex(20)}|${passO}-64`;
+}
+
+function accountHeaders(userAgent) {
+  return {
+    "user-agent": userAgent,
+    "accept-encoding": "gzip",
+    "content-type": "application/x-www-form-urlencoded",
+    connection: "keep-alive",
+  };
+}
+
+function serviceLoginCookie(auth) {
+  return [
+    `deviceId=${auth.deviceId ?? ""}`,
+    `pass_o=${auth.passO ?? ""}`,
+    `passToken=${auth.passToken ?? ""}`,
+    `userId=${auth.userId ?? ""}`,
+    `cUserId=${auth.cUserId ?? ""}`,
+    `uLocale=${auth.locale ?? LOCALE}`,
+  ].join("; ");
+}
+
+function timezoneCookies(now = new Date()) {
+  const timezoneId =
+    Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai";
+  const currentOffset = -now.getTimezoneOffset();
+  const sign = currentOffset >= 0 ? "+" : "-";
+  const abs = Math.abs(currentOffset);
+  const hours = String(Math.floor(abs / 60)).padStart(2, "0");
+  const minutes = String(abs % 60).padStart(2, "0");
+  const year = now.getFullYear();
+  const january = new Date(year, 0, 1).getTimezoneOffset();
+  const july = new Date(year, 6, 1).getTimezoneOffset();
+  const standardOffset = Math.max(january, july);
+  return {
+    timezone_id: timezoneId,
+    timezone: `GMT${sign}${hours}:${minutes}`,
+    is_daylight: String(now.getTimezoneOffset() < standardOffset),
+    dst_offset: String(Math.abs(january - july) * 60_000),
+  };
 }
 
 function b64encode(bytes) {
@@ -180,27 +227,39 @@ export function normalizeApiHost(host) {
 }
 
 /**
- * 会话 cookie 罐：登录时把 STS 响应的整罐 cookie 存下来，这里再补齐必需项。
+ * 设备 API 的 CookieJar：优先用 `sid=xiaomiio` 的 STS 会话（`apiCookies`），
+ * 否则退回登录时直接带来的字段（老测试/老会话）。
  *
- * 为什么不能只挑几个字段：云端按**整罐**识别会话（`serviceToken` 之外还要
- * `PassportDeviceId`/`yetAnotherServiceToken` 等）。只送四个字段时云端不报错、
- * 只是**认不出账号**——`device_list` 稳定返回空列表（真机踩到：能通、0 设备）。
- * 老会话（只有 `serviceToken`/`userId`/`cUserId`）在这里就地补齐，免得重新扫码。
+ * 为什么这样设计：二维码走现代 `sid=mijia` 登录（App 扫码的口径），但 `mijia` 的
+ * serviceToken 在 `api.io.mi.com` 上会回 auth error（真机实测）；账号级的 `passToken`
+ * 可以通过 `serviceLogin?sid=xiaomiio` 兑换成设备 API 认的 serviceToken——
+ * 这条兑换链全程只在小米官方域名（account.xiaomi.com / sts.api.io.mi.com）上。
  */
-export function sessionCookies(session) {
-  const jar = { ...(session.cookies ?? {}) };
-  if (session.userId) jar.userId = session.userId;
-  if (session.serviceToken) jar.serviceToken = session.serviceToken;
-  if (session.cUserId) jar.cUserId = session.cUserId;
-  if (session.passToken) jar.passToken = session.passToken;
-  const deviceId = session.deviceId || jar.deviceId;
-  if (deviceId) {
-    jar.deviceId = deviceId;
-    jar.PassportDeviceId = jar.PassportDeviceId ?? deviceId;
+export function apiCookieJar(session) {
+  const locale = session.locale ?? LOCALE;
+  const jar = {
+    ...(session.apiCookies ?? {}),
+    ...timezoneCookies(),
+    channel: "MI_APP_STORE",
+    countryCode: locale.split("_")[1] ?? "CN",
+    locale,
+  };
+  if (session.deviceId) jar.PassportDeviceId = session.deviceId;
+  if (!session.apiCookies) {
+    // 回退：登录 callback 直接给的 serviceToken（老流程/老测试）
+    if (session.cUserId) jar.cUserId = session.cUserId;
+    if (session.serviceToken) {
+      jar.serviceToken = session.serviceToken;
+      jar.yetAnotherServiceToken = session.serviceToken;
+    }
   }
-  jar.locale = jar.locale ?? "zh_CN";
   return jar;
 }
+
+/** 现代米家登录会话版本：旧 `xiaomiio` 会话不能迁移成 `mijia`，读取时直接失效。 */
+export const MIHOME_AUTH_VERSION = "mijia-v1";
+/** 设备 API（api.io.mi.com）使用的 service id。 */
+export const API_SID = "xiaomiio";
 
 export function createMihomeClient(options = {}) {
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -208,8 +267,19 @@ export function createMihomeClient(options = {}) {
   const logger = options.logger ?? { warn: () => {}, info: () => {} };
 
   async function request(session, uri, params, method = "POST") {
-    // 存量会话里可能存着 STS 主机（登录响应给的就是它）——读取时同样归一，
-    // 免得修完还要用户重新扫码。
+    if (session.authVersion !== MIHOME_AUTH_VERSION) {
+      throw new Error(
+        "米家会话版本过旧：请断开后重新扫码（需要 sid=mijia 登录）。",
+      );
+    }
+    if (!session.passToken || !session.ssecurity) {
+      throw new Error("米家会话不完整：缺 passToken/ssecurity，请重新扫码。");
+    }
+    if (!apiCookieJar(session).serviceToken) {
+      throw new Error(
+        "米家会话还没有设备 API 令牌（serviceToken=xiaomiio）：请重新扫码一次完成兑换。",
+      );
+    }
     const apiHost = normalizeApiHost(session.apiHost ?? DEFAULT_API_HOST);
     const nonce = generateNonce();
     const signedNonce = computeSignedNonce(session.ssecurity, nonce);
@@ -249,7 +319,12 @@ export function createMihomeClient(options = {}) {
       headers: {
         "content-type": "application/x-www-form-urlencoded",
         "accept-encoding": "gzip",
-        "user-agent": USER_AGENT,
+        "user-agent":
+          session.userAgent ??
+          generateAppUserAgent(
+            session.locale ?? LOCALE,
+            session.passO ?? generatePassO(),
+          ),
         "x-xiaomi-protocal-flag-cli": "1",
         "miot-accept-encoding": "gzip",
         "miot-encrypt-algorithm": "ENCRYPT-RC4",
@@ -304,55 +379,134 @@ export function createMihomeClient(options = {}) {
   }
 
   function cookieHeader(session) {
-    return Object.entries(sessionCookies(session))
+    return Object.entries(apiCookieJar(session))
       .map(([key, value]) => `${key}=${value}`)
       .join("; ");
   }
 
-  /** 第三步：用 `location` 换 serviceToken（cookie）并确定区域 API 主机。 */
-  async function completeQrLogin(payload) {
-    const location = String(payload.location);
+  /**
+   * 用账号级 passToken 兑换设备 API（sid=xiaomiio）的 serviceToken。
+   *
+   * 二维码走 sid=mijia（App 扫码口径），但 mijia 的 serviceToken 在 api.io.mi.com 上
+   * 会回 auth error（真机实测）。账号级 passToken 可以经官方 passport 流程
+   * `serviceLogin?sid=xiaomiio` → STS 兑换成设备 API 认的 serviceToken——
+   * 全程只在 account.xiaomi.com 与 sts.api.io.mi.com 上，不发未验证域名。
+   */
+  async function refreshApiSession(session) {
+    const auth = {
+      deviceId: session.deviceId,
+      passO: session.passO,
+      passToken: session.passToken,
+      userId: session.userId,
+      cUserId: session.cUserId,
+      locale: session.locale ?? LOCALE,
+    };
+    if (!auth.passToken) {
+      throw new Error(
+        "米家会话缺 passToken，无法兑换设备 API 令牌：请重新扫码。",
+      );
+    }
+    const serviceUrl = new URL(SERVICE_LOGIN_PATH, accountHost);
+    serviceUrl.searchParams.set("_json", "true");
+    serviceUrl.searchParams.set("sid", API_SID);
+    serviceUrl.searchParams.set("_locale", auth.locale);
+    const serviceResponse = await fetchImpl(serviceUrl, {
+      headers: {
+        ...accountHeaders(auth.userAgent),
+        cookie: serviceLoginCookie(auth),
+      },
+    });
+    const serviceData = parseAccountPayload(await serviceResponse.text());
+    if (Number(serviceData.code) !== 0 || !serviceData.location) {
+      throw new Error(
+        `米家登录已失效（serviceLogin code=${serviceData.code ?? "?"}）——请点「断开」后重新扫码。`,
+      );
+    }
+    // 参考实现的刷新口径：location 请求 redirect: manual，200 + 正文 ok 才算换到
+    const stsResponse = await fetchImpl(serviceData.location, {
+      headers: accountHeaders(auth.userAgent),
+      redirect: "manual",
+    });
+    const body = (await stsResponse.text()).trim();
+    if (stsResponse.status !== 200 || body !== "ok") {
+      throw new Error(
+        `米家令牌兑换失败（HTTP ${stsResponse.status}）：${body.slice(0, 60) || "响应为空"}`,
+      );
+    }
+    const cookies = collectCookies(stsResponse);
+    // `yetAnotherServiceToken` 是参考实现 API CookieJar 的必需键，与 serviceToken 同值。
+    if (cookies.serviceToken)
+      cookies.yetAnotherServiceToken = cookies.serviceToken;
+    return cookies;
+  }
+
+  /** 第三步：二维码轮询成功后，用 callback location 换 `serviceToken`。 */
+  async function completeQrLogin(payload, auth) {
+    const location = String(payload.location ?? "");
+    if (!location) {
+      throw new Error("米家扫码响应缺少 location（登录流程可能已变更）。");
+    }
+    // 参考实现：二维码成功后的 callback **不手工拼 Cookie**，默认跟随跳转；
+    // serviceToken 来自最终响应的 Set-Cookie。
     const response = await fetchImpl(location, {
-      headers: { "user-agent": USER_AGENT },
+      headers: accountHeaders(auth.userAgent),
     });
     await response.text();
     const jar = collectCookies(response);
     if (!jar.serviceToken) {
-      throw new Error("米家登录未返回 serviceToken（登录流程可能已变更）。");
+      throw new Error("米家登录未返回 serviceToken（回调 Cookie 不完整）。");
     }
+    const locale = auth.locale ?? LOCALE;
     return {
-      userId: jar.userId ?? String(payload.userId ?? ""),
-      cUserId: jar.cUserId ?? String(payload.cUserId ?? ""),
-      // passToken 有时只出现在轮询响应里（不在 cookie 里）——两边都认，别丢
-      passToken: jar.passToken ?? String(payload.passToken ?? ""),
+      authVersion: MIHOME_AUTH_VERSION,
+      sid: MIHOME_SID,
+      userAgent: auth.userAgent,
+      passO: auth.passO,
+      locale,
+      psecurity: String(payload.psecurity ?? ""),
+      nonce: String(payload.nonce ?? ""),
+      ssecurity: String(payload.ssecurity ?? ""),
+      passToken: String(payload.passToken ?? jar.passToken ?? ""),
+      userId: String(payload.userId ?? jar.userId ?? ""),
+      cUserId: String(payload.cUserId ?? jar.cUserId ?? ""),
       serviceToken: jar.serviceToken,
-      ssecurity: String(payload.ssecurity),
-      // 区域 API 主机（`location` 给的是 STS 主机，必须归一）
-      apiHost: normalizeApiHost(location),
-      // 整罐 cookie 与设备标识：云端按整罐识别会话，只挑字段会「认不出账号」
+      // serviceToken 私有协议只发到小米 api.io.mi.com 体系，不发未验证域名。
+      apiHost: DEFAULT_API_HOST,
       cookies: jar,
-      deviceId: generateDeviceId(),
+      deviceId: auth.deviceId,
+      expireTime: Date.now() + 30 * 24 * 60 * 60 * 1000,
     };
   }
 
   /**
-   * 第二步：长轮询等待扫码确认。返回 `{ status, session?, wait }`：
-   * - `pending`：还没扫/还没确认，按 `wait` 毫秒后再轮询；
-   * - `ok`：拿到会话（已换到 serviceToken，落库即可跨重启复用）；
-   * - `expired`：二维码超时，需要重新出码。
+   * 第二步：对 loginUrl 返回的 lp 做长轮询。lp 自带完整 query，不能自行拼旧版 `_` 参数。
    */
-  async function pollQrLogin(lp) {
-    const response = await fetchImpl(`${lp}&_=${Date.now()}`, {
-      headers: { "user-agent": USER_AGENT },
+  async function pollQrLogin(lp, auth) {
+    const response = await fetchImpl(lp, {
+      headers: accountHeaders(auth.userAgent),
+      signal: AbortSignal.timeout(120_000),
     });
     const payload = parseAccountPayload(await response.text());
     if (!payload.ssecurity || !payload.location) {
       return {
-        status: payload.code === 70016 ? "expired" : "pending",
-        wait: Number(payload.timeInterval ?? 2) * 1000 || 2000,
+        // 参考实现的长轮询通常只在成功/超时后返回；code=0 但字段未齐时保守继续等一轮。
+        status: Number(payload.code) === 0 ? "pending" : "expired",
+        wait: 2000,
+        error:
+          Number(payload.code) === 0
+            ? undefined
+            : String(
+                payload.description ??
+                  payload.message ??
+                  payload.code ??
+                  "扫码已失效",
+              ),
       };
     }
-    return { status: "ok", session: await completeQrLogin(payload) };
+    return {
+      status: "ok",
+      session: await completeQrLogin(payload, auth),
+    };
   }
 
   /** 单个家庭下的设备（分页，最多 5 页，够日常家庭规模）。 */
@@ -394,36 +548,60 @@ export function createMihomeClient(options = {}) {
     return Array.isArray(result?.homelist) ? result.homelist : [];
   }
 
-  /**
-   * 会话确诊：换一个**严格校验会话**的基址再问一次家庭列表。
-   *
-   * 为什么需要它：`api.io.mi.com` 对无效会话**静默返回空列表**（code 0 + 空数组），
-   * 与「账号确实没有设备」长得一模一样；而第三方实现使用的 `api.mijia.tech` 会明确回
-   * `code=2 auth error`（本机实测：半罐 cookie 的存量会话在这里被判无效）。
-   * 只在正常链路拿到空列表时调用一次，把「静默空」翻译成人能读的原因。
-   */
-  async function probeSessionAuth(session) {
-    const homes = await listHomes({ ...session, apiHost: DIAGNOSTIC_API_HOST });
-    return homes.length;
-  }
-
   return {
     listHomes,
-    probeSessionAuth,
-    /** 第一步：拿二维码与长轮询地址（`qr` 是小米托管的图片 URL，可直接 <img>）。 */
+    refreshApiSession,
+    /**
+     * 第一步：现代米家登录必须先 `serviceLogin?sid=mijia`，再把它返回的 location query
+     * 带进 longPolling/loginUrl。旧版直接 `sid=xiaomiio` 出码会扫出「云端不认」的半会话。
+     */
     async createQrLogin() {
-      const url = `${accountHost}${LOGIN_URL_PATH}?sid=${SID}&_locale=zh_CN&_snsNone=true&_qrsize=480&callback=https%3A%2F%2Fsts.api.io.mi.com%2Fsts`;
+      const passO = generatePassO();
+      const auth = {
+        deviceId: generateDeviceId(),
+        passO,
+        locale: LOCALE,
+        userAgent: generateAppUserAgent(LOCALE, passO),
+      };
+      const serviceUrl = new URL(SERVICE_LOGIN_PATH, accountHost);
+      serviceUrl.searchParams.set("_json", "true");
+      serviceUrl.searchParams.set("sid", MIHOME_SID);
+      serviceUrl.searchParams.set("_locale", LOCALE);
+      const serviceResponse = await fetchImpl(serviceUrl, {
+        headers: {
+          ...accountHeaders(auth.userAgent),
+          cookie: serviceLoginCookie(auth),
+        },
+      });
+      const serviceData = parseAccountPayload(await serviceResponse.text());
+      if (!serviceData.location) {
+        throw new Error(
+          `米家 serviceLogin 没有返回 location（code=${serviceData.code ?? "?"}）。`,
+        );
+      }
+
+      const query = new URL(String(serviceData.location)).searchParams;
+      query.set("theme", "");
+      query.set("bizDeviceType", "");
+      query.set("_hasLogo", "false");
+      query.set("_qrsize", "480");
+      query.set("_dc", String(Date.now()));
+      const url = `${accountHost}${LOGIN_URL_PATH}?${query.toString()}`;
       const response = await fetchImpl(url, {
-        headers: { "user-agent": USER_AGENT },
+        headers: accountHeaders(auth.userAgent),
       });
       const payload = parseAccountPayload(await response.text());
-      if (!payload.qr || !payload.lp) {
-        throw new Error("米家登录接口没有返回二维码地址（接口可能已变更）。");
+      if (Number(payload.code) !== 0 || !payload.qr || !payload.lp) {
+        throw new Error(
+          `米家登录接口没有返回二维码（code=${payload.code ?? "?"}）：${payload.description ?? payload.message ?? "接口可能已变更"}`,
+        );
       }
       return {
         qrUrl: String(payload.qr),
+        loginUrl: String(payload.loginUrl ?? ""),
         lp: String(payload.lp),
-        timeout: Number(payload.timeout ?? 120),
+        timeout: 120,
+        auth,
       };
     },
 

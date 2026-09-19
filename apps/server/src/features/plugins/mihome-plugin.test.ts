@@ -26,6 +26,12 @@ const REPO_ROOT = path.resolve(process.cwd(), "..", "..");
 const MIHOME_DIR = path.join(REPO_ROOT, "plugins", "mihome");
 
 interface MicloudModule {
+  MIHOME_SID: string;
+  MIHOME_AUTH_VERSION: string;
+  generateDeviceId: (random?: () => number, length?: number) => string;
+  generatePassO: () => string;
+  sessionCookies: (session: Record<string, unknown>) => Record<string, string>;
+  apiCookieJar: (session: Record<string, unknown>) => Record<string, string>;
   generateNonce: (now?: number) => string;
   computeSignedNonce: (ssecurity: string, nonce: string) => string;
   rc4: (key: Uint8Array, data: Uint8Array) => Uint8Array;
@@ -116,8 +122,22 @@ function fakeXiaomiCloud(options: FakeCloudOptions) {
     polls: 0,
     signedRequests: 0,
     badSignature: 0,
-    /** 没带整罐会话 cookie（缺 PassportDeviceId/deviceId）的请求数——应恒为 0。 */
+    serviceSid: null as string | null,
+    serviceCookie: "",
+    serviceUserAgent: "",
+    callbackCookie: "",
+    callbackUserAgent: "",
+    /** sid=xiaomiio 兑换请求带的 cookie（锁 passToken 兑换链路）。 */
+    xiaomiioCallbackCookie: "",
+    loginSid: null as string | null,
+    loginUserAgent: "",
+    loginHasLogo: null as string | null,
+    loginQrSize: null as string | null,
+    pollUserAgent: "",
+    /** API CookieJar 缺关键项的请求数——应恒为 0。 */
     missingSessionCookie: 0,
+    /** 最近一次 /app/ 请求实际使用的 cookie（锁兑换后的 jar）。 */
+    lastApiCookie: "",
     /** 最近一次 /home/home_device_list 的参数（锁家庭维度口径）。 */
     lastHomeListParams: null as Record<string, string> | null,
     homes: options.homes ?? [{ id: 123, uid: 456, name: "我的家" }],
@@ -150,13 +170,19 @@ function fakeXiaomiCloud(options: FakeCloudOptions) {
 
   function handleAppRequest(url: URL, init: RequestInit): Response {
     const params = new URLSearchParams(String(init.body ?? ""));
-    // 云端按**整罐** cookie 识别会话：缺 PassportDeviceId/deviceId 会「认不出账号」
-    // （真机症状：接口 code 0 但设备列表恒空），这里把它记下来当断言依据。
+    // API CookieJar 必须匹配参考实现的完整键集，且用的是兑换出的 sid=xiaomiio 令牌；
+    // 缺一个就会「认不出账号」（真机症状：接口 code 0 但设备列表恒空）。
     const headers = (init.headers ?? {}) as Record<string, string>;
     const cookie = headers.cookie ?? "";
+    state.lastApiCookie = cookie;
     if (
       !cookie.includes("PassportDeviceId=") ||
-      !cookie.includes("deviceId=")
+      !cookie.includes("yetAnotherServiceToken=XIO-1") ||
+      !cookie.includes("serviceToken=XIO-1") ||
+      !cookie.includes("cUserId=C-1") ||
+      !cookie.includes("channel=MI_APP_STORE") ||
+      !cookie.includes("countryCode=CN") ||
+      !cookie.includes("locale=zh_CN")
     ) {
       state.missingSessionCookie += 1;
     }
@@ -291,32 +317,75 @@ function fakeXiaomiCloud(options: FakeCloudOptions) {
   ): Promise<Response> => {
     const url =
       typeof input === "string" ? new URL(input, "https://fake.local") : input;
-    if (url.pathname === "/longPolling/loginUrl") {
+    if (url.pathname === "/pass/serviceLogin") {
+      const headers = (init.headers ?? {}) as Record<string, string>;
+      state.serviceSid = url.searchParams.get("sid");
+      state.serviceCookie = headers.cookie ?? "";
+      state.serviceUserAgent = headers["user-agent"] ?? "";
+      // 出码（sid=mijia）：未扫码 → 引导二维码；兑换（sid=xiaomiio）：已有 passToken → 直接给 STS
+      if (state.serviceSid === "xiaomiio") {
+        return accountJson({
+          code: 0,
+          location: "https://sts.account.example/sts?sid=xiaomiio",
+        });
+      }
       return accountJson({
+        code: 70016,
+        location:
+          "https://account.example/sts?sid=mijia&callback=https%3A%2F%2Fsts.api.io.mi.com%2Fsts&_locale=zh_CN",
+      });
+    }
+    if (url.pathname === "/longPolling/loginUrl") {
+      const loginHeaders = (init.headers ?? {}) as Record<string, string>;
+      state.loginSid = url.searchParams.get("sid");
+      state.loginUserAgent = loginHeaders["user-agent"] ?? "";
+      state.loginHasLogo = url.searchParams.get("_hasLogo");
+      state.loginQrSize = url.searchParams.get("_qrsize");
+      return accountJson({
+        code: 0,
         qr: "https://account.example/qr.png",
+        loginUrl: "https://account.example/login/abc",
         lp: "https://account.example/lp/abc",
-        timeout: 120,
       });
     }
     if (url.pathname.startsWith("/lp/")) {
+      const pollHeaders = (init.headers ?? {}) as Record<string, string>;
+      state.pollUserAgent = pollHeaders["user-agent"] ?? "";
       state.polls += 1;
       if (pollPendingFirst && state.polls < 2) {
-        return accountJson({ code: 0, timeInterval: 1 });
+        return accountJson({ code: 0 });
       }
       return accountJson({
+        code: 0,
+        psecurity: "psecurity-1",
+        nonce: "nonce-1",
         ssecurity: FAKE_SSECURITY,
+        passToken: "P-1",
         userId: "u-1",
-        // 真实登录响应给的 location 是 **STS** 主机；假云照抄这一形态（含 sts. 前缀）
-        location: `https://sts.${url.hostname}/sts?sign=xyz`,
+        cUserId: "C-1",
+        location: "https://account.example/sts?sign=xyz",
       });
     }
-    if (url.pathname === "/sts") {
+    if (url.hostname === "account.example" && url.pathname === "/sts") {
+      // 二维码 callback（mijia 登录换 serviceToken）：参考实现不手工带旧 Cookie
+      const requestHeaders = (init.headers ?? {}) as Record<string, string>;
+      state.callbackCookie = requestHeaders.cookie ?? "";
+      state.callbackUserAgent = requestHeaders["user-agent"] ?? "";
       const headers = new Headers();
       headers.append("set-cookie", "serviceToken=TOKEN-1; Path=/");
+      headers.append("set-cookie", "auxiliaryToken=AUX-1; Path=/");
+      return new Response("ok", { status: 200, headers });
+    }
+    if (url.hostname === "sts.account.example") {
+      // 兑换（sid=xiaomiio）：设备 API 认的 serviceToken 与账号字段
+      const requestHeaders = (init.headers ?? {}) as Record<string, string>;
+      state.xiaomiioCallbackCookie = requestHeaders.cookie ?? "";
+      const headers = new Headers();
+      headers.append("set-cookie", "serviceToken=XIO-1; Path=/");
+      headers.append("set-cookie", "userId=u-1; Path=/");
       headers.append("set-cookie", "cUserId=C-1; Path=/");
       headers.append("set-cookie", "passToken=P-1; Path=/");
-      headers.append("set-cookie", "userId=u-1; Path=/");
-      return new Response("", { status: 200, headers });
+      return new Response("ok", { status: 200, headers });
     }
     if (url.hostname === "miot-spec.org") {
       if (url.pathname === "/miot-spec-v2/instances") {
@@ -373,10 +442,6 @@ function fakeXiaomiCloud(options: FakeCloudOptions) {
       );
     }
     if (url.pathname.startsWith("/app/")) {
-      // 确诊基址（严格校验会话）：真实服务在会话无效时回**明文** auth error
-      if (url.hostname === "api.mijia.tech") {
-        return json(JSON.stringify({ code: 2, message: "auth error" }));
-      }
       return handleAppRequest(url, init);
     }
     return new Response("not found", { status: 404 });
@@ -523,6 +588,35 @@ describe("米家插件：云客户端原语", () => {
     // 空/坏地址回落默认 CN 入口（不把坏地址带进后续请求）
     expect(micloud.normalizeApiHost("")).toBe("https://api.io.mi.com");
     expect(micloud.normalizeApiHost("不是地址")).toBe("https://api.io.mi.com");
+  });
+
+  it("现代米家登录与 API CookieJar：sid=mijia、设备身份稳定、两个 token cookie 同值", async () => {
+    const micloud = await loadPluginModule<MicloudModule>("lib/micloud.js");
+    expect(micloud.MIHOME_SID).toBe("mijia");
+    expect(micloud.MIHOME_AUTH_VERSION).toBe("mijia-v1");
+    expect(micloud.generateDeviceId(() => 0)).toBe("A".repeat(16));
+    expect(micloud.generatePassO()).toMatch(/^[a-f0-9]{16}$/);
+
+    const cookies = micloud.apiCookieJar({
+      cUserId: "C-1",
+      serviceToken: "TOKEN-1",
+      deviceId: "D123456789012345",
+      locale: "zh_CN",
+    });
+    expect(cookies).toMatchObject({
+      cUserId: "C-1",
+      serviceToken: "TOKEN-1",
+      yetAnotherServiceToken: "TOKEN-1",
+      PassportDeviceId: "D123456789012345",
+      channel: "MI_APP_STORE",
+      countryCode: "CN",
+      locale: "zh_CN",
+    });
+    expect(cookies.timezone_id).toEqual(expect.any(String));
+    expect(cookies.timezone).toMatch(/^GMT[+-]\d{2}:\d{2}$/);
+    expect(cookies).not.toHaveProperty("passToken");
+    expect(cookies).not.toHaveProperty("userId");
+    expect(cookies).not.toHaveProperty("deviceId");
   });
 });
 
@@ -1081,9 +1175,9 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
     expect(message).toContain("签名不符");
   });
 
-  it("设备列表走家庭维度接口，且每个请求都带整罐会话 cookie（真机踩到的两处）", async () => {
+  it("现代 mijia 登录 + 家庭维度设备接口 + 完整 API CookieJar", async () => {
     const micloud = await loadPluginModule<MicloudModule>("lib/micloud.js");
-    const { service, cloud } = installPlugin(micloud);
+    const { service, cloud, storage } = installPlugin(micloud);
     const { installed } = await service.install({
       url: path.join(MIHOME_DIR),
       allowLifecycleScripts: false,
@@ -1105,6 +1199,37 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
       workspaceId: "ws-1",
     });
 
+    // serviceLogin → longPolling 的现代米家登录口径（旧 xiaomiio 码不再允许）
+    expect(cloud.state.serviceSid).toBe("mijia");
+    expect(cloud.state.serviceCookie).toMatch(/deviceId=[A-Za-z0-9_-]{16}/);
+    expect(cloud.state.serviceCookie).toMatch(/pass_o=[a-f0-9]{16}/);
+    expect(cloud.state.serviceCookie).toContain("uLocale=zh_CN");
+    expect(cloud.state.loginSid).toBe("mijia");
+    expect(cloud.state.loginHasLogo).toBe("false");
+    expect(cloud.state.loginQrSize).toBe("480");
+    // 四步登录复用同一个动态 App UA；callback 不手工带旧 Cookie
+    expect(cloud.state.serviceUserAgent).toContain("SmartHome-MI_APP_STORE");
+    expect(cloud.state.serviceUserAgent).toBe(cloud.state.loginUserAgent);
+    expect(cloud.state.loginUserAgent).toBe(cloud.state.pollUserAgent);
+    expect(cloud.state.pollUserAgent).toBe(cloud.state.callbackUserAgent);
+    expect(cloud.state.callbackCookie).toBe("");
+
+    const storedRaw = [...storage.values()].find((value) =>
+      value.includes("serviceToken"),
+    );
+    const stored = JSON.parse(storedRaw ?? "{}") as Record<string, unknown>;
+    expect(stored).toMatchObject({
+      authVersion: "mijia-v1",
+      sid: "mijia",
+      userId: "u-1",
+      cUserId: "C-1",
+      passToken: "P-1",
+      serviceToken: "TOKEN-1",
+      psecurity: "psecurity-1",
+      nonce: "nonce-1",
+    });
+    expect(stored.deviceId).toEqual(expect.any(String));
+
     const devices = await dispatch(service, installed.id, {
       path: "devices",
       workspaceId: "ws-1",
@@ -1120,8 +1245,18 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
       limit: "200",
       support_smart_home: "true",
     });
-    // 整罐 cookie：每个 /app/ 请求都带 PassportDeviceId + deviceId（缺了云端就「认不出账号」）
+    // API CookieJar 用的是兑换出的 sid=xiaomiio 令牌，并按白名单齐全
+    expect(cloud.state.lastApiCookie).toContain("serviceToken=XIO-1");
+    expect(cloud.state.lastApiCookie).toContain("cUserId=C-1");
+    expect(cloud.state.lastApiCookie).toContain("PassportDeviceId=");
+    expect(cloud.state.lastApiCookie).toContain("channel=MI_APP_STORE");
+    expect(cloud.state.lastApiCookie).toContain("yetAnotherServiceToken=XIO-1");
     expect(cloud.state.missingSessionCookie).toBe(0);
+    // 兑换结果落库：进程重启后不用再兑
+    const storedApi = JSON.parse(
+      storage.get(JSON.stringify(["ws-1", installed.id, "session"])) ?? "{}",
+    ) as Record<string, { serviceToken?: string }>;
+    expect(storedApi.apiCookies?.serviceToken).toBe("XIO-1");
   });
 
   it("新接口拿不到设备时兜底走经典接口（没有家庭模型的老账号）", async () => {
@@ -1158,9 +1293,9 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
     expect(view.devices[0]).toMatchObject({ name: "老账号设备" });
   });
 
-  it("存量会话（修复前扫的码，没有 deviceId/cookies）读取时就地补齐，免重扫", async () => {
+  it("旧 xiaomiio 会话读取时自动失效并清库（不能伪装成已连接 + 0 设备）", async () => {
     const micloud = await loadPluginModule<MicloudModule>("lib/micloud.js");
-    const { service, cloud, storage } = installPlugin(micloud);
+    const { service, storage } = installPlugin(micloud);
     const { installed } = await service.install({
       url: path.join(MIHOME_DIR),
       allowLifecycleScripts: false,
@@ -1175,6 +1310,7 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
         serviceToken: "st-legacy",
         ssecurity: FAKE_SSECURITY,
         apiHost: "https://sts.api.io.mi.com",
+        // 没有 authVersion=mijia-v1：这是旧 sid=xiaomiio 会话，不能迁移。
       }),
     );
 
@@ -1182,18 +1318,12 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
       path: "devices",
       workspaceId: "ws-1",
     });
-    expect(devices?.status).toBe(200);
-    // 补齐后照样带整罐 cookie（deviceId/PassportDeviceId）
-    expect(cloud.state.missingSessionCookie).toBe(0);
-    // 补出来的设备标识落回存储：进程重启后仍是同一个（不飘）
-    const stored = JSON.parse(storage.get(key) ?? "{}") as Record<
-      string,
-      string
-    >;
-    expect(stored.deviceId).toMatch(/^[A-Za-z0-9_-]{16}$/);
+    expect(devices?.status).toBe(401);
+    expect(devices?.body).toMatchObject({ code: "not_connected" });
+    expect(storage.has(key)).toBe(false);
   });
 
-  it("空设备列表时给出可执行的确诊（会话没被云端认出来 vs 真没有设备）", async () => {
+  it("空设备列表只给官方主机能证明的提示（不把凭据发到未验证域名）", async () => {
     const micloud = await loadPluginModule<MicloudModule>("lib/micloud.js");
     const { service } = installPlugin(micloud, { emptyAccount: true });
     const { installed } = await service.install({
@@ -1228,11 +1358,8 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
       authHint: string | null;
     };
     expect(view.devices).toEqual([]);
-    // 家庭数是「真没有设备 / 没被认出」之外的另一条线索，面板与工具都拿得到
     expect(view.homeCount).toBe(1);
-    // 确诊基址回 auth error → 明确告诉用户「会话没被认出来，去重新扫码」
-    expect(view.authHint).toContain("没有认出这次会话");
-    expect(view.authHint).toContain("重新扫码");
+    expect(view.authHint).toBe("该米家账号的家庭下没有设备。");
   });
 
   it("控制写入把值传给云端并读回真值（离线/跨工作区另有隔离）", async () => {

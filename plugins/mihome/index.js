@@ -19,7 +19,7 @@ import {
   propertyKey,
   selectProperties,
 } from "./lib/device-model.js";
-import { createMihomeClient, generateDeviceId } from "./lib/micloud.js";
+import { createMihomeClient, MIHOME_AUTH_VERSION } from "./lib/micloud.js";
 
 export const name = "kenfutwork-mihome";
 
@@ -72,11 +72,11 @@ export function apply(ctx) {
     const raw = await ctx.storage.get(workspaceId, SESSION_KEY);
     if (!raw) return null;
     const session = JSON.parse(raw);
-    // 存量会话（本次修复前扫的码）没有设备标识：就地补一个并落库——云端按整罐 cookie
-    // 认账号，缺它会「认不出」，不能让用户为此重扫一次。
-    if (!session.deviceId) {
-      session.deviceId = generateDeviceId();
-      await ctx.storage.set(workspaceId, SESSION_KEY, JSON.stringify(session));
+    // 旧 `xiaomiio` 会话不能迁移成现代 `mijia` 会话（serviceToken 绑定 sid）。
+    // 与其显示「已连接 + 0 设备」这种假成功，不如自动清掉，让用户只重扫一次正确的码。
+    if (session.authVersion !== MIHOME_AUTH_VERSION) {
+      await ctx.storage.remove(workspaceId, SESSION_KEY);
+      return null;
     }
     sessions.set(workspaceId, session);
     return session;
@@ -98,34 +98,38 @@ export function apply(ctx) {
     await ctx.storage.remove(workspaceId, SESSION_KEY);
   }
 
+  /**
+   * 设备 API 令牌兑换（一次性）：二维码走 `sid=mijia`（App 扫码口径），但设备 API 认的是
+   * `sid=xiaomiio` 的 serviceToken。用账号级 passToken 经官方 passport 流程兑换一次并落库；
+   * 兑换结果跟会话一起加密存储，服务端重启后不用再兑。
+   */
+  async function ensureApiSession(workspaceId, session) {
+    if (session.apiCookies?.serviceToken) return session;
+    const cookies = await client.refreshApiSession(session);
+    if (!cookies.serviceToken) {
+      throw new Error("米家令牌兑换未返回 serviceToken：请重新扫码。");
+    }
+    session.apiCookies = cookies;
+    sessions.set(workspaceId, session);
+    await ctx.storage.set(
+      workspaceId,
+      SESSION_KEY,
+      JSON.stringify({ ...session, savedAt: new Date().toISOString() }),
+    );
+    ctx.logger.info("米家设备 API 令牌已兑换（sid=xiaomiio）。");
+    return session;
+  }
+
   async function loadDevices(workspaceId, session, { refresh = false } = {}) {
     const cached = deviceCache.get(workspaceId);
     if (!refresh && cached && Date.now() - cached.at < DEVICE_CACHE_TTL_MS) {
       return cached;
     }
+    await ensureApiSession(workspaceId, session);
     const { devices, homeCount } = await client.listDevices(session);
     const entry = { at: Date.now(), list: devices, homeCount };
     deviceCache.set(workspaceId, entry);
     return entry;
-  }
-
-  /**
-   * 空设备列表时的确诊：是「真的没有设备」，还是「会话没被云端认出来」。
-   *
-   * 两种情形在正常基址上长得一模一样（`api.io.mi.com` 对无效会话静默回空列表），
-   * 所以换一个严格校验会话的基址问一次，把「静默空」翻译成用户能照着做的一句话。
-   */
-  async function diagnoseEmptySession(session) {
-    try {
-      const homes = await client.probeSessionAuth(session);
-      return homes > 0 ? "云端认得这次会话，但该账号下没有设备。" : null;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      // 确诊本身不可用（网络/DNS）时不误导用户
-      if (/fetch failed|ENOTFOUND|EAI_AGAIN|timeout/i.test(message))
-        return null;
-      return `云端没有认出这次会话（${message}）——请点「断开」后重新扫码，让整段会话重新落库。`;
-    }
   }
 
   /**
@@ -207,12 +211,18 @@ export function apply(ctx) {
     path: "login/qr",
     handler: async (request) => {
       const workspaceId = requireWorkspace(request.workspaceId, "获取二维码");
-      const { qrUrl, lp, timeout } = await client.createQrLogin();
+      const { qrUrl, lp, timeout, auth } = await client.createQrLogin();
       const sessionId = `qr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
       for (const [id, item] of qrSessions) {
         if (Date.now() - item.at > QR_SESSION_TTL_MS) qrSessions.delete(id);
       }
-      qrSessions.set(sessionId, { lp, workspaceId, at: Date.now() });
+      // deviceId/pass_o/locale 与这张二维码绑定，只留服务端内存，不回前端。
+      qrSessions.set(sessionId, {
+        lp,
+        auth,
+        workspaceId,
+        at: Date.now(),
+      });
       return { status: 200, body: { sessionId, qrUrl, timeout } };
     },
   });
@@ -229,12 +239,16 @@ export function apply(ctx) {
           body: { error: "二维码会话已失效，请重新获取。", code: "qr_expired" },
         };
       }
-      const result = await client.pollQrLogin(entry.lp);
+      const result = await client.pollQrLogin(entry.lp, entry.auth);
       if (result.status !== "ok") {
         if (result.status === "expired") qrSessions.delete(sessionId);
         return {
           status: 200,
-          body: { status: result.status, wait: result.wait },
+          body: {
+            status: result.status,
+            wait: result.wait,
+            ...(result.error ? { error: result.error } : {}),
+          },
         };
       }
       await writeSession(workspaceId, result.session);
@@ -265,14 +279,19 @@ export function apply(ctx) {
     path: "devices",
     handler: async (request) => {
       const workspaceId = requireWorkspace(request.workspaceId, "列设备");
-      const session = await readSession(workspaceId);
+      let session = await readSession(workspaceId);
       if (!session) return notConnectedError();
+      session = await ensureApiSession(workspaceId, session);
       const { list, homeCount } = await loadDevices(workspaceId, session, {
         refresh: request.query.refresh === "1",
       });
       const view = await buildDeviceView(session, list);
       const authHint =
-        view.devices.length === 0 ? await diagnoseEmptySession(session) : null;
+        view.devices.length === 0
+          ? homeCount === 0
+            ? "米家云没有返回家庭数据：请确认扫描的是绑定设备的米家账号，并确认账号地区与米家 App 一致。"
+            : "该米家账号的家庭下没有设备。"
+          : null;
       return {
         status: 200,
         body: {
@@ -290,9 +309,10 @@ export function apply(ctx) {
     method: "POST",
     handler: async (request) => {
       const workspaceId = requireWorkspace(request.workspaceId, "控制设备");
-      const session = await readSession(workspaceId);
+      let session = await readSession(workspaceId);
       if (!session) return notConnectedError();
-      const body = request.body ?? {} ?? {};
+      session = await ensureApiSession(workspaceId, session);
+      const body = request.body ?? {};
       const did = typeof body.did === "string" ? body.did : "";
       const siid = Number(body.siid);
       const piid = Number(body.piid);
@@ -364,12 +384,13 @@ export function apply(ctx) {
     },
     execute: async (args, exec) => {
       const workspaceId = requireWorkspace(exec?.workspaceId, "工具调用");
-      const session = await readSession(workspaceId);
+      let session = await readSession(workspaceId);
       if (!session) {
         throw new Error(
           "尚未连接米家账号：请在工作台侧栏打开「米家」面板扫码连接一次（之后服务端重启也无需重扫）。",
         );
       }
+      session = await ensureApiSession(workspaceId, session);
       const { list, homeCount } = await loadDevices(workspaceId, session, {
         refresh: args?.refresh === true,
       });
@@ -393,9 +414,14 @@ export function apply(ctx) {
         specErrors: view.specErrors,
         total: view.total,
         homeCount,
-        // 空列表时把「是真的没设备，还是会话没被认出来」这条信息一并给模型
+        // 不向未验证域名发送凭据；只基于官方主机的家庭数给出诚实提示。
         ...(view.devices.length === 0
-          ? { note: await diagnoseEmptySession(session) }
+          ? {
+              note:
+                homeCount === 0
+                  ? "米家云没有返回家庭数据：请确认扫码账号与地区是否正确。"
+                  : "该米家账号的家庭下没有设备。",
+            }
           : {}),
       };
     },
@@ -423,12 +449,13 @@ export function apply(ctx) {
     },
     execute: async (args, exec) => {
       const workspaceId = requireWorkspace(exec?.workspaceId, "工具调用");
-      const session = await readSession(workspaceId);
+      let session = await readSession(workspaceId);
       if (!session) {
         throw new Error(
           "尚未连接米家账号：请在工作台侧栏打开「米家」面板扫码连接一次（之后服务端重启也无需重扫）。",
         );
       }
+      session = await ensureApiSession(workspaceId, session);
       const did = String(args?.did ?? "");
       const siid = Number(args?.siid);
       const piid = Number(args?.piid);
