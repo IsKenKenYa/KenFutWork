@@ -90,3 +90,4 @@ docs/design/logo/字体/
 
 # 本机草稿/一次性验证脚本（真机走查用；不进 CI、不入库）
 .scratch/
+.playwright-mcp/
