@@ -2825,12 +2825,12 @@ ${formatElementReference(picked)}`
         ) : (
           <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-6">
             <div className="mb-9 flex items-center gap-3">
-              {/* 图标与标题等高但**不抢戏**（用户口径：之前的 h-14 + stroke 3 太粗太大）：
-                  h-9（36px 盒 → 墨高 18px）+ strokeWidth 2，比标题大写字高略小、笔画更轻 */}
+              {/* 尺寸与笔画各调过一轮（用户口径：h-14 + stroke 3 太粗太大 → stroke 2 又太细）：
+                  现在 h-9（36px 盒 → 墨高 18px）+ strokeWidth 2.5，取中间 */}
               {mode === "code" ? (
-                <Code2 className="h-9 w-9" strokeWidth={2} />
+                <Code2 className="h-9 w-9" strokeWidth={2.5} />
               ) : (
-                <Palette className="h-9 w-9" strokeWidth={2} />
+                <Palette className="h-9 w-9" strokeWidth={2.5} />
               )}
               {/* 标题颜色**不动**（用户口径：这句的蓝色还原回去）——只保留字标字体 */}
               <h1 className="font-wordmark text-4xl tracking-tight">

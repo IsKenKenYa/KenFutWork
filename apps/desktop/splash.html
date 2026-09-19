@@ -58,6 +58,9 @@
       .brand {
         display: flex;
         align-items: center;
+        /* 整体左移一点（用户口径「视觉上不居中，往左移动」）：实测品牌块几何中心
+           比视口中心右偏约 17px，再给一点视觉余量 */
+        transform: translateX(-24px);
         /* 不留缝：字标紧贴标记（用户口径「中间有缝隙…看过去很脏」） */
         gap: 0;
       }
