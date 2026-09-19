@@ -1960,7 +1960,7 @@ export function Workbench() {
           />
           <div className="flex items-center justify-between px-3 pt-3 pb-2">
             <span className="flex items-center gap-0">
-              <KenFutWorkLogo className="size-7 text-foreground" />
+              <KenFutWorkLogo className="h-[15px] w-auto text-foreground" />
               {/* 字标：Momo Trust Display + 与图标同色系渐变，**左深右浅**（用户口径） */}
               <span className="font-wordmark bg-gradient-to-r from-[#25439E] to-[#7FA3FF] bg-clip-text text-xl tracking-tight text-transparent dark:from-[#9AB0F5] dark:to-[#D3E0FF]">
                 KenFutWork
@@ -2791,11 +2791,13 @@ ${formatElementReference(picked)}`
         ) : (
           <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-6">
             <div className="mb-9 flex items-center gap-3">
-              {/* `</>` 图标加粗（用户口径）：lucide 默认 strokeWidth=2，这里提到 3 */}
+              {/* `</>` 图标加粗 + 光学对齐（用户口径「这都不一样大」）：lucide 在 24 视图框里
+                  墨高只有 12/24，32px 盒子墨高才 16px，比标题大写字高（28px）小一截；
+                  放大到 56px 盒子后墨高 28px，与字视觉等高 */}
               {mode === "code" ? (
-                <Code2 className="h-8 w-8" strokeWidth={3} />
+                <Code2 className="h-14 w-14" strokeWidth={3} />
               ) : (
-                <Palette className="h-8 w-8" />
+                <Palette className="h-14 w-14" strokeWidth={3} />
               )}
               {/* 标题颜色**不动**（用户口径：这句的蓝色还原回去）——只保留字标字体 */}
               <h1 className="font-wordmark text-4xl tracking-tight">
