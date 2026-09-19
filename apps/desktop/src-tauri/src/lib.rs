@@ -69,12 +69,33 @@ fn desktop_env(app: &tauri::AppHandle, web_dir: &Path, port: u16) -> Vec<(String
     ]
 }
 
-/** 安装包随带的那个服务端 exe（`<resource>/app/KenFutWork-server.exe`）；仓库里跑时为 None。 */
+/** 安装包随带的那个服务端可执行（`<resource>/app/KenFutWork-server[.exe]`）；仓库里跑时为 None。
+ *
+ * 判定必须**严于 exists**：打包占位的零字节文件、tauri-build 残骸都算「存在但不可运行」，
+ * 误判会让 dev 形态永远走不到 dev 拉起路径（2026-09-19 实测事故：探活盲等 90s panic）。
+ */
 fn bundled_server_exe(app: &tauri::AppHandle) -> Option<PathBuf> {
     use tauri::Manager;
     let dir = app.path().resource_dir().ok()?.join("app");
+    #[cfg(windows)]
     let exe = dir.join("KenFutWork-server.exe");
-    exe.exists().then_some(exe)
+    #[cfg(not(windows))]
+    let exe = dir.join("KenFutWork-server");
+
+    let meta = std::fs::metadata(&exe).ok()?;
+    // 零字节 = tauri-build 的占位残骸，不是真服务端
+    if meta.len() == 0 {
+        return None;
+    }
+    // Unix 上还要求可执行位（占位文件通常没有）
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if meta.permissions().mode() & 0o111 == 0 {
+            return None;
+        }
+    }
+    Some(exe)
 }
 
 /// 打包态的拉起配置：随包服务端 exe + 桌面环境变量 + 指定端口。
@@ -99,10 +120,10 @@ fn packaged_spawn_config(
     config
 }
 
-/// 开发形态的拉起配置：命令与 cwd 可用 env 覆盖（dev.sh 注入 `LOOMIC_DESKTOP_SERVER_CWD`）。
+/// 开发形态的拉起配置：命令与 cwd 可用 env 覆盖（dev.sh 注入 `KENFUTWORK_DESKTOP_SERVER_CWD`）。
 fn dev_spawn_config(data_dir: PathBuf) -> ServerSpawnConfig {
-    let command = std::env::var("LOOMIC_DESKTOP_SERVER_CMD").unwrap_or_else(|_| "pnpm".into());
-    let args = std::env::var("LOOMIC_DESKTOP_SERVER_ARGS")
+    let command = std::env::var("KENFUTWORK_DESKTOP_SERVER_CMD").unwrap_or_else(|_| "pnpm".into());
+    let args = std::env::var("KENFUTWORK_DESKTOP_SERVER_ARGS")
         // 包名按品牌改过（`@kenfutwork/*`）：这里以前还写着旧作用域 `@loomic/server`，
         // 真机 `cargo check` 顺带发现——照旧名拉起会直接「找不到包」，桌面端起不来服务端。
         .unwrap_or_else(|_| "--filter @kenfutwork/server dev:server".into())
@@ -110,7 +131,7 @@ fn dev_spawn_config(data_dir: PathBuf) -> ServerSpawnConfig {
         .map(str::to_string)
         .collect();
     let mut config = ServerSpawnConfig::new(&command, args, data_dir, SERVER_PORT);
-    if let Ok(cwd) = std::env::var("LOOMIC_DESKTOP_SERVER_CWD") {
+    if let Ok(cwd) = std::env::var("KENFUTWORK_DESKTOP_SERVER_CWD") {
         config.cwd = cwd.into();
     }
     config

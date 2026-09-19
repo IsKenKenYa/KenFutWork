@@ -7,7 +7,7 @@
 //!   1. 健康探活：GET /api/health 轮询直到 200，默认 90s 超时 fail loud；
 //!   2. 端口占用复用：探活已健康则不 spawn，直接复用（尊重用户自己起的 dev）；
 //!   3. 退出：SIGTERM → 宽限 10s → SIGKILL；handle drop 同样触发回收；
-//!   4. 数据目录：由壳（tauri app_data_dir）解析后经 `LOOMIC_DATA_DIR` 注入子进程。
+//!   4. 数据目录：由壳（tauri app_data_dir）解析后经 `KENFUTWORK_DATA_DIR` 注入子进程。
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -99,7 +99,7 @@ pub struct ServerSpawnConfig {
     pub command: String,
     pub args: Vec<String>,
     pub cwd: PathBuf,
-    /// 注入子进程 `LOOMIC_DATA_DIR`（桌面数据与开发目录彻底分离）。
+    /// 注入子进程 `KENFUTWORK_DATA_DIR`（桌面数据与开发目录彻底分离）。
     pub data_dir: PathBuf,
     pub port: u16,
     /**
@@ -315,7 +315,7 @@ fn open_spawn_log(data_dir: &std::path::Path) -> Option<std::fs::File> {
 
 /**
  * 确保服务端在 `config.port` 上健康：已健康 → 复用不 spawn；
- * 未健康 → spawn 子进程（注入 `LOOMIC_DATA_DIR`）并探活等待，失败即回收子进程。
+ * 未健康 → spawn 子进程（注入 `KENFUTWORK_DATA_DIR`）并探活等待，失败即回收子进程。
  */
 pub fn ensure_server_running(
     config: ServerSpawnConfig,
@@ -338,7 +338,7 @@ pub fn ensure_server_running(
     command
         .args(&config.args)
         .current_dir(&config.cwd)
-        .env("LOOMIC_DATA_DIR", &config.data_dir)
+        .env("KENFUTWORK_DATA_DIR", &config.data_dir)
         .envs(config.env.iter().map(|(key, value)| (key, value)))
         .stdout(stdout)
         .stderr(stderr);
