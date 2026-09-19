@@ -65,9 +65,23 @@ const markUri = `data:image/png;base64,${(
   await import("node:fs")
 ).readFileSync(markPath).toString("base64")}`;
 
+/**
+ * 出图尺寸：**侧边图按 1.5× 出**。
+ *
+ * 为什么：向导（ManifestPerMonitorV2）在 150% 缩放的屏幕上会把侧边图**放大 1.5 倍**再画，
+ * 拿 164×314 的原图上去就是糊的（用户口径「分辨率太低」）。按 1.5× 出（246×471）后
+ * 正好 1:1 落屏；页头图 MUI 不缩放，仍按 150×57 出。
+ */
+const SIDEBAR_SCALE = 1.5;
+
 for (const [name, svg, width, height] of [
   ["installer-header.bmp", headerSvg, 150, 57],
-  ["installer-sidebar.bmp", sidebarSvg, 164, 314],
+  [
+    "installer-sidebar.bmp",
+    sidebarSvg,
+    Math.round(164 * SIDEBAR_SCALE),
+    Math.round(314 * SIDEBAR_SCALE),
+  ],
 ]) {
   // 4× 超采样：先按 4 倍画再降采样，文字与圆角边缘才不糊（用户口径「分辨率好低」）
   const SS = 4;
