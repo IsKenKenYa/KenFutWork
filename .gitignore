@@ -99,3 +99,5 @@ apps/desktop/src-tauri/gen/
 /KenFutWork_*-setup.exe
 .playwright-mcp/
 .zcode/
+.zcode/
+.zcodeignore
