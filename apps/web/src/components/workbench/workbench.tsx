@@ -81,6 +81,7 @@ import {
 import { resolveDesignAutoCanvas } from "@/lib/design-auto-canvas";
 import { formatElapsedSeconds, parseTimestampMs } from "@/lib/elapsed";
 import { getServerBaseUrl } from "@/lib/env";
+import { executionModeOptions } from "@/lib/execution-modes";
 import {
   MAX_SIDEBAR_WIDTH,
   MIN_CONVERSATION_WIDTH,
@@ -2631,10 +2632,14 @@ export function Workbench() {
                             if (typeof next === "string")
                               setExecutionMode(next as ExecutionMode);
                           }}
-                          items={executionModes.map((m) => ({
-                            value: m.id,
-                            label: m.label,
-                          }))}
+                          // 词表可能还没到（要等会话就绪）：用本地兜底补齐六档，
+                          // 否则这里会渲染原始 id（英文 agent），点开还是空列表
+                          items={executionModeOptions(executionModes).map(
+                            (m) => ({
+                              value: m.id,
+                              label: m.label,
+                            }),
+                          )}
                         >
                           <SelectTrigger
                             className="h-7 gap-1 border-transparent bg-muted/60 px-2 text-xs"
@@ -2644,7 +2649,7 @@ export function Workbench() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent className="min-w-28">
-                            {executionModes.map((m) => (
+                            {executionModeOptions(executionModes).map((m) => (
                               <SelectItem key={m.id} value={m.id}>
                                 {m.label}
                               </SelectItem>
@@ -2899,7 +2904,7 @@ ${formatElementReference(picked)}`
                         if (typeof next === "string")
                           setExecutionMode(next as ExecutionMode);
                       }}
-                      items={executionModes.map((m) => ({
+                      items={executionModeOptions(executionModes).map((m) => ({
                         value: m.id,
                         label: m.label,
                       }))}
@@ -2912,7 +2917,7 @@ ${formatElementReference(picked)}`
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent className="min-w-28">
-                        {executionModes.map((m) => (
+                        {executionModeOptions(executionModes).map((m) => (
                           <SelectItem key={m.id} value={m.id}>
                             {m.label}
                           </SelectItem>
