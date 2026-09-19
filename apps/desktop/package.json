@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build && node scripts/collect-bundle.mjs",
+    "verify:wizard-art": "node scripts/probe-wizard-art.mjs",
     "tauri": "tauri",
     "typecheck": "node scripts/cargo.mjs check",
     "test": "node scripts/cargo.mjs test"
