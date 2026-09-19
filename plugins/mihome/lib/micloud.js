@@ -172,8 +172,9 @@ export function rc4EncryptBase64(keyBase64, plaintext) {
 }
 
 /**
- * 签名字符串：`METHOD&uri[&k=v…]&signedNonce`（参数按**插入顺序**，不排序）。
- * 服务端按收到的表单顺序复算，故只要发送顺序与签名顺序一致即可对上。
+ * 签名字符串：`METHOD&uri[&k=v…]&signedNonce`（按传入的插入顺序拼接）。
+ * 服务端按「业务参数在前、`rc4_hash__` 收尾」的规范序复算——与参考实现的字段插入顺序
+ * 一致即可对上；顺序不对云端不报错、只静默回空数据（第十九轮（七）实测）。
  */
 export function buildSignature({ method, uri, params, signedNonce }) {
   const segments = [method.toUpperCase(), uri];
@@ -211,14 +212,6 @@ function collectCookies(response) {
   return jar;
 }
 
-/** 把参数值规整成「可加密的字符串」：对象/数组走 JSON，其余 String()。 */
-function encodeParamValue(value) {
-  if (typeof value === "string") return value;
-  if (value === null || value === undefined) return "";
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value);
-}
-
 /**
  * 区域 API 主机归一：登录响应给的 `location` 是 **STS** 主机
  * （`https://sts.api.io.mi.com/sts?...`），而 `/app/*` 只在区域 API 主机上存在
@@ -238,32 +231,24 @@ export function normalizeApiHost(host) {
 }
 
 /**
- * 设备 API 的 CookieJar：优先用 `sid=xiaomiio` 的 STS 会话（`apiCookies`），
- * 否则退回登录时直接带来的字段（老测试/老会话）。
- *
- * 为什么这样设计：二维码走现代 `sid=mijia` 登录（App 扫码的口径），但设备 API 认的是
- * `sid=xiaomiio` 的 serviceToken；账号级的 `passToken` 可以经 `serviceLogin?sid=xiaomiio`
- * 兑换一次（`refreshApiSession`），兑换链全程只在 account.xiaomi.com 与 sts.api.io.mi.com 上。
+ * 设备 API 的 CookieJar：**就是扫码登录 callback 给的那份会话**——
+ * `serviceToken`（mijia）+ `yetAnotherServiceToken` 同值 + `cUserId` + 时区/夏令时 +
+ * `channel=MI_APP_STORE` + 国家 + `PassportDeviceId` + `locale`，与参考实现的
+ * `_initSession` 逐一对应。任何「再兑换一步」的加工都是画蛇添足：拿兑换来的别的 sid
+ * 令牌打 `api.mijia.tech` 只会回 auth error（真机实测，第十九轮（七））。
  */
 export function apiCookieJar(session) {
   const locale = session.locale ?? LOCALE;
-  const jar = {
-    ...(session.apiCookies ?? {}),
+  return {
+    cUserId: session.cUserId ?? "",
+    yetAnotherServiceToken: session.serviceToken ?? "",
+    serviceToken: session.serviceToken ?? "",
     ...timezoneCookies(),
     channel: "MI_APP_STORE",
     countryCode: locale.split("_")[1] ?? "CN",
+    PassportDeviceId: session.deviceId ?? "",
     locale,
   };
-  if (session.deviceId) jar.PassportDeviceId = session.deviceId;
-  if (!session.apiCookies) {
-    // 回退：登录 callback 直接给的 serviceToken（老流程/老测试）
-    if (session.cUserId) jar.cUserId = session.cUserId;
-    if (session.serviceToken) {
-      jar.serviceToken = session.serviceToken;
-      jar.yetAnotherServiceToken = session.serviceToken;
-    }
-  }
-  return jar;
 }
 
 /**
@@ -274,8 +259,6 @@ export function apiCookieJar(session) {
  * 与其在读取时悄悄把凭据改道到另一个主机，不如让用户明确重扫一次。
  */
 export const MIHOME_AUTH_VERSION = "mijia-v2";
-/** 设备 API 的 service id（兑换用；`sid=mijia` 的令牌设备 API 不认）。 */
-export const API_SID = "xiaomiio";
 
 export function createMihomeClient(options = {}) {
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -291,28 +274,27 @@ export function createMihomeClient(options = {}) {
     if (!session.passToken || !session.ssecurity) {
       throw new Error("米家会话不完整：缺 passToken/ssecurity，请重新扫码。");
     }
-    if (!apiCookieJar(session).serviceToken) {
-      throw new Error(
-        "米家会话还没有设备 API 令牌（serviceToken=xiaomiio）：请重新扫码一次完成兑换。",
-      );
+    if (!session.serviceToken) {
+      throw new Error("米家会话缺 serviceToken：请断开后重新扫码。");
     }
     const apiHost = normalizeApiHost(session.apiHost ?? DEFAULT_API_HOST);
     const nonce = generateNonce();
     const signedNonce = computeSignedNonce(session.ssecurity, nonce);
 
-    // 1) 明文业务参数 → rc4_hash__ → 2) **连同 rc4_hash__ 一起**加密每个值
-    //    → 3) 用密文参数算 signature（顺序自始至终为 rc4_hash__ 在前）
-    const plainParams = {};
-    for (const [key, value] of Object.entries(params ?? {})) {
-      plainParams[key] = encodeParamValue(value);
-    }
+    // 1) 整包业务参数作为**单个 `data` 参数**（JSON 字符串）→ rc4_hash__ →
+    //    2) **连同 rc4_hash__ 一起**加密每个值 → 3) 用密文参数算 signature。
+    //    字段顺序必须与参考实现一致：**`data` 在前、`rc4_hash__` 在后**。服务端复算
+    //    签名按「业务参数在前、rc4_hash__ 收尾」的规范序，`rc4_hash__` 放最前面会算出
+    //    不匹配的签名——云端不报错，只**静默返回空数据**（真机实测：同一会话参考实现
+    //    列出 1 个家庭，我们回 0 个）。
+    const plainParams = { data: JSON.stringify(params ?? {}) };
     const rc4Hash = buildSignature({
       method,
       uri,
       params: plainParams,
       signedNonce,
     });
-    const withHash = { rc4_hash__: rc4Hash, ...plainParams };
+    const withHash = { ...plainParams, rc4_hash__: rc4Hash };
     const encrypted = {};
     for (const [key, value] of Object.entries(withHash)) {
       encrypted[key] = rc4EncryptBase64(signedNonce, value);
@@ -334,15 +316,15 @@ export function createMihomeClient(options = {}) {
       method,
       headers: {
         "content-type": "application/x-www-form-urlencoded",
-        "accept-encoding": "gzip",
+        "accept-encoding": "identity",
         "user-agent":
           session.userAgent ??
           generateAppUserAgent(
             session.locale ?? LOCALE,
             session.passO ?? generatePassO(),
           ),
-        "x-xiaomi-protocal-flag-cli": "1",
-        "miot-accept-encoding": "gzip",
+        "x-xiaomi-protocal-flag-cli": "PROTOCAL-HTTP2",
+        "miot-accept-encoding": "GZIP",
         "miot-encrypt-algorithm": "ENCRYPT-RC4",
         cookie: cookieHeader(session),
       },
@@ -398,61 +380,6 @@ export function createMihomeClient(options = {}) {
     return Object.entries(apiCookieJar(session))
       .map(([key, value]) => `${key}=${value}`)
       .join("; ");
-  }
-
-  /**
-   * 用账号级 passToken 兑换设备 API（sid=xiaomiio）的 serviceToken。
-   *
-   * 二维码走 sid=mijia（App 扫码口径），但设备 API 认的是 `sid=xiaomiio` 的 serviceToken。
-   * 账号级 passToken 可以经官方 passport 流程 `serviceLogin?sid=xiaomiio` → STS 兑换一次——
-   * 这条兑换链只在 account.xiaomi.com 与 sts.api.io.mi.com 上，不碰设备 API 主机。
-   */
-  async function refreshApiSession(session) {
-    const auth = {
-      deviceId: session.deviceId,
-      passO: session.passO,
-      passToken: session.passToken,
-      userId: session.userId,
-      cUserId: session.cUserId,
-      locale: session.locale ?? LOCALE,
-    };
-    if (!auth.passToken) {
-      throw new Error(
-        "米家会话缺 passToken，无法兑换设备 API 令牌：请重新扫码。",
-      );
-    }
-    const serviceUrl = new URL(SERVICE_LOGIN_PATH, accountHost);
-    serviceUrl.searchParams.set("_json", "true");
-    serviceUrl.searchParams.set("sid", API_SID);
-    serviceUrl.searchParams.set("_locale", auth.locale);
-    const serviceResponse = await fetchImpl(serviceUrl, {
-      headers: {
-        ...accountHeaders(auth.userAgent),
-        cookie: serviceLoginCookie(auth),
-      },
-    });
-    const serviceData = parseAccountPayload(await serviceResponse.text());
-    if (Number(serviceData.code) !== 0 || !serviceData.location) {
-      throw new Error(
-        `米家登录已失效（serviceLogin code=${serviceData.code ?? "?"}）——请点「断开」后重新扫码。`,
-      );
-    }
-    // 参考实现的刷新口径：location 请求 redirect: manual，200 + 正文 ok 才算换到
-    const stsResponse = await fetchImpl(serviceData.location, {
-      headers: accountHeaders(auth.userAgent),
-      redirect: "manual",
-    });
-    const body = (await stsResponse.text()).trim();
-    if (stsResponse.status !== 200 || body !== "ok") {
-      throw new Error(
-        `米家令牌兑换失败（HTTP ${stsResponse.status}）：${body.slice(0, 60) || "响应为空"}`,
-      );
-    }
-    const cookies = collectCookies(stsResponse);
-    // `yetAnotherServiceToken` 是参考实现 API CookieJar 的必需键，与 serviceToken 同值。
-    if (cookies.serviceToken)
-      cookies.yetAnotherServiceToken = cookies.serviceToken;
-    return cookies;
   }
 
   /** 第三步：二维码轮询成功后，用 callback location 换 `serviceToken`。 */
@@ -562,7 +489,6 @@ export function createMihomeClient(options = {}) {
 
   return {
     listHomes,
-    refreshApiSession,
     /**
      * 第一步：现代米家登录必须先 `serviceLogin?sid=mijia`，再把它返回的 location query
      * 带进 longPolling/loginUrl。旧版直接 `sid=xiaomiio` 出码会扫出「云端不认」的半会话。
@@ -648,7 +574,10 @@ export function createMihomeClient(options = {}) {
 
     /** 读属性（MIoT-Spec 的 siid/piid）。 */
     async getProps(session, params) {
-      const result = await request(session, "/miotspec/prop/get", { params });
+      const result = await request(session, "/miotspec/prop/get", {
+        params,
+        datasource: 1,
+      });
       return Array.isArray(result) ? result : [];
     },
 

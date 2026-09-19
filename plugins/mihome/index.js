@@ -99,33 +99,14 @@ export function apply(ctx) {
   }
 
   /**
-   * 设备 API 令牌兑换（一次性）：二维码走 `sid=mijia`（App 扫码口径），但设备 API 认的是
-   * `sid=xiaomiio` 的 serviceToken。用账号级 passToken 经官方 passport 流程兑换一次并落库；
-   * 兑换结果跟会话一起加密存储，服务端重启后不用再兑。
+   * 设备 API 用的就是扫码登录会话本身（CookieJar 见 `apiCookieJar`），无需任何兑换步骤；
+   * 这里只做读取与缓存。
    */
-  async function ensureApiSession(workspaceId, session) {
-    if (session.apiCookies?.serviceToken) return session;
-    const cookies = await client.refreshApiSession(session);
-    if (!cookies.serviceToken) {
-      throw new Error("米家令牌兑换未返回 serviceToken：请重新扫码。");
-    }
-    session.apiCookies = cookies;
-    sessions.set(workspaceId, session);
-    await ctx.storage.set(
-      workspaceId,
-      SESSION_KEY,
-      JSON.stringify({ ...session, savedAt: new Date().toISOString() }),
-    );
-    ctx.logger.info("米家设备 API 令牌已兑换（sid=xiaomiio）。");
-    return session;
-  }
-
   async function loadDevices(workspaceId, session, { refresh = false } = {}) {
     const cached = deviceCache.get(workspaceId);
     if (!refresh && cached && Date.now() - cached.at < DEVICE_CACHE_TTL_MS) {
       return cached;
     }
-    await ensureApiSession(workspaceId, session);
     const { devices, homeCount } = await client.listDevices(session);
     const entry = { at: Date.now(), list: devices, homeCount };
     deviceCache.set(workspaceId, entry);
@@ -279,9 +260,8 @@ export function apply(ctx) {
     path: "devices",
     handler: async (request) => {
       const workspaceId = requireWorkspace(request.workspaceId, "列设备");
-      let session = await readSession(workspaceId);
+      const session = await readSession(workspaceId);
       if (!session) return notConnectedError();
-      session = await ensureApiSession(workspaceId, session);
       const { list, homeCount } = await loadDevices(workspaceId, session, {
         refresh: request.query.refresh === "1",
       });
@@ -309,9 +289,8 @@ export function apply(ctx) {
     method: "POST",
     handler: async (request) => {
       const workspaceId = requireWorkspace(request.workspaceId, "控制设备");
-      let session = await readSession(workspaceId);
+      const session = await readSession(workspaceId);
       if (!session) return notConnectedError();
-      session = await ensureApiSession(workspaceId, session);
       const body = request.body ?? {};
       const did = typeof body.did === "string" ? body.did : "";
       const siid = Number(body.siid);
@@ -384,13 +363,12 @@ export function apply(ctx) {
     },
     execute: async (args, exec) => {
       const workspaceId = requireWorkspace(exec?.workspaceId, "工具调用");
-      let session = await readSession(workspaceId);
+      const session = await readSession(workspaceId);
       if (!session) {
         throw new Error(
           "尚未连接米家账号：请在工作台侧栏打开「米家」面板扫码连接一次（之后服务端重启也无需重扫）。",
         );
       }
-      session = await ensureApiSession(workspaceId, session);
       const { list, homeCount } = await loadDevices(workspaceId, session, {
         refresh: args?.refresh === true,
       });
@@ -449,13 +427,12 @@ export function apply(ctx) {
     },
     execute: async (args, exec) => {
       const workspaceId = requireWorkspace(exec?.workspaceId, "工具调用");
-      let session = await readSession(workspaceId);
+      const session = await readSession(workspaceId);
       if (!session) {
         throw new Error(
           "尚未连接米家账号：请在工作台侧栏打开「米家」面板扫码连接一次（之后服务端重启也无需重扫）。",
         );
       }
-      session = await ensureApiSession(workspaceId, session);
       const did = String(args?.did ?? "");
       const siid = Number(args?.siid);
       const piid = Number(args?.piid);
