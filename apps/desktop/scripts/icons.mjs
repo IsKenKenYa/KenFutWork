@@ -88,9 +88,26 @@ const composedPath = join(designDir, "应用图标-白底圆角.png");
 await sharp(composed).toFile(composedPath);
 copyFileSync(composedPath, join(publicDir, "logo.png"));
 copyFileSync(composedPath, join(publicDir, "app-icon.png"));
+/**
+ * favicon / apple-touch-icon 也吃这一份。
+ *
+ * 2026-09-20 踩过：这两个以前是手工放的一次性文件，所有图标重出都没动过它们 —— 而
+ * **WebView2 拿页面 favicon 当窗口图标**（任务栏那枚就是它），于是 exe 的图标换了好几轮，
+ * 任务栏一直是 15:42 那张老图，用户看到的「89→85 差了不止一点点」其实是两套图在打架。
+ * 并进这条命令，以后换图标不可能再漏。
+ */
+for (const [name, size] of [
+  ["favicon.png", 64],
+  ["apple-touch-icon.png", 180],
+]) {
+  await sharp(composed)
+    .resize(size, size)
+    .png({ compressionLevel: 9 })
+    .toFile(join(publicDir, name));
+}
 console.log(
   `应用图标已合成（白底圆角 ${RADIUS}/${CANVAS}）：${composedPath}\n` +
-    `  同时写入 apps/web/public/logo.png 与 app-icon.png`,
+    `  同时写入 apps/web/public/{logo.png, app-icon.png, favicon.png, apple-touch-icon.png}`,
 );
 
 console.log(`再用 tauri icon 出整套平台图标 → ${iconsDir}`);
