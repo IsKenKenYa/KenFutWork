@@ -301,11 +301,15 @@ export const chatSessionSummarySchema = z.object({
 export const textBlockSchema = z.object({
   type: z.literal("text"),
   text: z.string(),
+  /** 该段正文第一个字到达的时刻（ISO；服务端组装时打点，轨迹时间轴用）。 */
+  at: timestampSchema.optional(),
 });
 
 export const thinkingBlockSchema = z.object({
   type: z.literal("thinking"),
   thinking: z.string(),
+  /** 该段思考第一个字到达的时刻（ISO）。 */
+  at: timestampSchema.optional(),
 });
 
 export const toolBlockSchema = z.object({
@@ -317,6 +321,14 @@ export const toolBlockSchema = z.object({
   output: z.record(z.string(), z.unknown()).optional(),
   outputSummary: z.string().optional(),
   artifacts: z.array(toolArtifactSchema).optional(),
+  /**
+   * 归属的 run（一次请求）：对话历史落库后刷新，界面据此回答「这次调用属于哪轮
+   * 对话」并按轮折叠/分账本。旧数据无此字段（可选向前兼容）。
+   */
+  runId: z.string().min(1).optional(),
+  /** 起止时刻（ISO）：轨迹账本的时间列与耗时列的数据源；旧数据无此字段。 */
+  startedAt: timestampSchema.optional(),
+  endedAt: timestampSchema.optional(),
 });
 
 export const imageBlockSchema = z.object({
