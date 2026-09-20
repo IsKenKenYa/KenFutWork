@@ -3,73 +3,56 @@
   "vars": {
     "KENFUTWORK_DEPLOYMENT": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "部署形态 local/self-hosted/cloud"
     },
     "KENFUTWORK_ALLOW_THIRD_PARTY_PLUGINS": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "cloud 形态默认禁第三方插件，此项显式打开"
     },
     "KENFUTWORK_SERVER_PORT": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "兜底通用 PORT"
     },
     "KENFUTWORK_WEB_ORIGIN": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "CORS 允许来源"
     },
     "NEXT_PUBLIC_SERVER_BASE_URL": {
       "surface": "web",
-      "readers": [
-        "apps/web/src/lib/env.ts",
-        "apps/web/next.config.ts"
-      ],
+      "readers": ["apps/web/src/lib/env.ts", "apps/web/next.config.ts"],
       "inExamples": true,
       "status": "active",
       "note": "浏览器请求后端的唯一 env；空则 dev 代理 /api/* 到 3001"
     },
     "KENFUTWORK_DATABASE_URL": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "自管 Postgres 连接串；兜底通用 DATABASE_URL"
     },
     "KENFUTWORK_EMBEDDED_PG": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "桌面形态内嵌 PG 开关"
     },
     "KENFUTWORK_EMBEDDED_PG_PORT": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "内嵌 PG 端口覆盖"
@@ -96,36 +79,28 @@
     },
     "KENFUTWORK_TEST_ACCOUNT_PASSWORD": {
       "surface": "script",
-      "readers": [
-        "apps/server/src/seed-test-accounts.ts"
-      ],
+      "readers": ["apps/server/src/seed-test-accounts.ts"],
       "inExamples": true,
       "status": "active",
       "note": "pnpm seed 测试账号口令"
     },
     "KENFUTWORK_ADMIN_EMAIL": {
       "surface": "script",
-      "readers": [
-        "apps/server/src/seed-test-accounts.ts"
-      ],
+      "readers": ["apps/server/src/seed-test-accounts.ts"],
       "inExamples": true,
       "status": "active",
       "note": "管理员账号"
     },
     "KENFUTWORK_ADMIN_PASSWORD": {
       "surface": "script",
-      "readers": [
-        "apps/server/src/seed-test-accounts.ts"
-      ],
+      "readers": ["apps/server/src/seed-test-accounts.ts"],
       "inExamples": true,
       "status": "active",
       "note": "管理员口令"
     },
     "KENFUTWORK_CREDENTIAL_SECRET": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "BYOK 凭证加密主密钥（必填；桌面缺省自动生成）"
@@ -143,165 +118,126 @@
     },
     "KENFUTWORK_BLOB_DIR": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "对象存储根目录（必需能力）"
     },
     "KENFUTWORK_BLOB_PUBLIC_BASE_URL": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "blob 公网基址"
     },
     "KENFUTWORK_SANDBOX_ROOT": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts",
-        "apps/server/src/server.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts", "apps/server/src/server.ts"],
       "inExamples": true,
       "status": "active",
       "note": "沙箱根目录"
     },
     "KENFUTWORK_CHECKPOINT_ROOT": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts",
-        "apps/server/src/server.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts", "apps/server/src/server.ts"],
       "inExamples": true,
       "status": "active",
       "note": "检查点影子仓库根目录"
     },
     "KENFUTWORK_CANVAS_WORK_DIRS": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "画布→真实目录映射（工作目录=项目）"
     },
     "KENFUTWORK_AGENT_FILES_ROOT": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "agent 文件后端根目录"
     },
     "KENFUTWORK_SKILLS_ROOT": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "技能根目录"
     },
     "KENFUTWORK_PLUGINS_DIR": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/features/plugins/plugin.ts"
-      ],
+      "readers": ["apps/server/src/features/plugins/plugin.ts"],
       "inExamples": true,
       "status": "active",
       "note": "插件落盘目录（缺省 <cwd>/.kenfutwork/plugins）"
     },
     "KENFUTWORK_MCP_SERVERS": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "MCP server JSON 数组（stdio 命令型）"
     },
     "KENFUTWORK_MCP_LIFECYCLE": {
       "surface": "test",
-      "readers": [
-        "apps/server/src/features/mcp/mcp-service.lifecycle.test.ts"
-      ],
+      "readers": ["apps/server/src/features/mcp/mcp-service.lifecycle.test.ts"],
       "inExamples": true,
       "status": "test-gate",
       "note": "=1 启用 MCP 生命周期集成测试；生产无读者"
     },
     "KENFUTWORK_AGENT_MODEL": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "默认模型（<实例ID>:<模型ID>）"
     },
     "KENFUTWORK_SEARCH_API_KEY": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "联网搜索 API Key（v1 仅 metaso）"
     },
     "KENFUTWORK_SEARCH_PROVIDER": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "搜索供应商"
     },
     "KENFUTWORK_SEARCH_ENDPOINT": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts",
-        "scripts/诊断联网搜索.mjs"
-      ],
+      "readers": ["apps/server/src/config/env.ts", "scripts/诊断联网搜索.mjs"],
       "inExamples": true,
       "status": "active",
       "note": "搜索端点覆盖（镜像/替身）"
     },
     "KENFUTWORK_AGENT_BACKEND_MODE": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "state | filesystem"
     },
     "KENFUTWORK_AGENT_STREAM_IDLE_TIMEOUT_MS": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "上游停滞看门狗"
     },
     "KENFUTWORK_AUTO_COMPACT_TRIGGER_TOKENS": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "上下文自动压缩阈值覆盖"
     },
     "KENFUTWORK_QUEUE_DRIVER": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "pgmq | in-process（桌面）"
@@ -318,118 +254,91 @@
     },
     "KENFUTWORK_IMAGE_PROXY_ALLOWED_HOSTS": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/http/image-proxy.ts"
-      ],
+      "readers": ["apps/server/src/http/image-proxy.ts"],
       "inExamples": false,
       "status": "active",
       "note": "图片代理允许主机列表"
     },
     "KENFUTWORK_CHROME_PATH": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/features/browser/cdp-client.ts"
-      ],
+      "readers": ["apps/server/src/features/browser/cdp-client.ts"],
       "inExamples": false,
       "status": "active",
       "note": "Chrome 可执行路径覆盖"
     },
     "KENFUTWORK_DUMP_CONFIG": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/app.ts"
-      ],
+      "readers": ["apps/server/src/app.ts"],
       "inExamples": true,
       "status": "active",
       "note": "=1 启动期打印生效配置"
     },
     "KENFUTWORK_MIGRATIONS_ROOT": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/desktop/runtime.ts"
-      ],
+      "readers": ["apps/server/src/desktop/runtime.ts"],
       "inExamples": true,
       "status": "active",
       "note": "迁移集目录覆盖"
     },
     "KENFUTWORK_PGMQ_SHIM_DIR": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/desktop/pgmq-shim.ts"
-      ],
+      "readers": ["apps/server/src/desktop/pgmq-shim.ts"],
       "inExamples": false,
       "status": "active",
       "note": "pgmq 兼容 shim 目录覆盖（随包资源，由打包脚本注入；样例只列 NODE_BIN_DIR 代表）"
     },
     "KENFUTWORK_NODE_BIN_DIR": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/desktop/runtimes.ts"
-      ],
+      "readers": ["apps/server/src/desktop/runtimes.ts"],
       "inExamples": true,
       "status": "active",
       "note": "随包 node 二进制目录"
     },
     "KENFUTWORK_PYTHON_BIN_DIR": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/desktop/runtimes.ts"
-      ],
+      "readers": ["apps/server/src/desktop/runtimes.ts"],
       "inExamples": false,
       "status": "active",
       "note": "随包 python 二进制目录（随包资源，由打包脚本注入；样例只列 NODE_BIN_DIR 代表）"
     },
     "KENFUTWORK_UV_BIN_DIR": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/desktop/runtimes.ts"
-      ],
+      "readers": ["apps/server/src/desktop/runtimes.ts"],
       "inExamples": false,
       "status": "active",
       "note": "随包 uv 二进制目录（随包资源，由打包脚本注入；样例只列 NODE_BIN_DIR 代表）"
     },
     "KENFUTWORK_JAVA_BIN_DIR": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/desktop/runtimes.ts"
-      ],
+      "readers": ["apps/server/src/desktop/runtimes.ts"],
       "inExamples": false,
       "status": "active",
       "note": "随包 JDK 二进制目录（随包资源，由打包脚本注入；样例只列 NODE_BIN_DIR 代表）"
     },
     "KENFUTWORK_GIT_BIN_DIR": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/desktop/runtimes.ts"
-      ],
+      "readers": ["apps/server/src/desktop/runtimes.ts"],
       "inExamples": true,
       "status": "active",
       "note": "随包 git（宿主优先，随包兜底）"
     },
     "KENFUTWORK_DESKTOP_SERVER_CMD": {
       "surface": "shell",
-      "readers": [
-        "apps/desktop/src-tauri/src/lib.rs"
-      ],
+      "readers": ["apps/desktop/src-tauri/src/lib.rs"],
       "inExamples": true,
       "status": "active",
       "note": "壳 dev 态 spawn 服务端命令（缺省 pnpm）"
     },
     "KENFUTWORK_DESKTOP_SERVER_ARGS": {
       "surface": "shell",
-      "readers": [
-        "apps/desktop/src-tauri/src/lib.rs"
-      ],
+      "readers": ["apps/desktop/src-tauri/src/lib.rs"],
       "inExamples": true,
       "status": "active",
       "note": "壳 dev 态 spawn 参数（缺省 --filter @kenfutwork/server dev:server）"
     },
     "KENFUTWORK_DESKTOP_SERVER_CWD": {
       "surface": "shell",
-      "readers": [
-        "apps/desktop/src-tauri/src/lib.rs",
-        "apps/desktop/dev.sh"
-      ],
+      "readers": ["apps/desktop/src-tauri/src/lib.rs", "apps/desktop/dev.sh"],
       "inExamples": true,
       "status": "active",
       "note": "dev.sh 注入仓库根（pnpm --filter 需在 workspace 内）"
@@ -446,45 +355,35 @@
     },
     "KENFUTWORK_CDP_IT": {
       "surface": "test",
-      "readers": [
-        "apps/server/src/features/browser/cdp-client.test.ts"
-      ],
+      "readers": ["apps/server/src/features/browser/cdp-client.test.ts"],
       "inExamples": false,
       "status": "test-gate",
       "note": "=1 启用 CDP 集成测试"
     },
     "KENFUTWORK_NATIVE_DIALOG_IT": {
       "surface": "test",
-      "readers": [
-        "apps/server/src/features/browser/native-dialog.test.ts"
-      ],
+      "readers": ["apps/server/src/features/browser/native-dialog.test.ts"],
       "inExamples": false,
       "status": "test-gate",
       "note": "=1 启用原生对话框集成测试"
     },
     "KENFUTWORK_DEV_PG_PORT": {
       "surface": "script",
-      "readers": [
-        "scripts/开发库临时集群.mjs"
-      ],
+      "readers": ["scripts/开发库临时集群.mjs"],
       "inExamples": false,
       "status": "active",
       "note": "开发库临时集群端口（turbo globalEnv 已声明）"
     },
     "KENFUTWORK_SEARCH_PORT": {
       "surface": "script",
-      "readers": [
-        "scripts/本地搜索代理.mjs"
-      ],
+      "readers": ["scripts/本地搜索代理.mjs"],
       "inExamples": false,
       "status": "active",
       "note": "本机搜索替身端口（turbo globalEnv）"
     },
     "KENFUTWORK_SEARCH_UPSTREAM": {
       "surface": "script",
-      "readers": [
-        "scripts/本地搜索代理.mjs"
-      ],
+      "readers": ["scripts/本地搜索代理.mjs"],
       "inExamples": false,
       "status": "active",
       "note": "本机搜索替身上游（turbo globalEnv）"
@@ -501,37 +400,28 @@
     },
     "OPENAI_API_BASE": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "external",
       "note": "第三方既有约定"
     },
     "OPENAI_BASE_URL": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/agent/deep-agent.ts"
-      ],
+      "readers": ["apps/server/src/agent/deep-agent.ts"],
       "inExamples": false,
       "status": "external",
       "note": "applyOpenAICompatEnv 写入子调用环境"
     },
     "GOOGLE_API_KEY": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "external",
       "note": "第三方既有约定（Google AI）"
     },
     "GOOGLE_APPLICATION_CREDENTIALS": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts",
-        "apps/server/Dockerfile"
-      ],
+      "readers": ["apps/server/src/config/env.ts", "apps/server/Dockerfile"],
       "inExamples": true,
       "status": "external",
       "note": "Vertex 服务账号文件"
@@ -558,262 +448,203 @@
     },
     "GOOGLE_VERTEX_VIDEO_LOCATION": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": false,
       "status": "active",
       "note": "Vertex 视频区域（视频专用覆盖）"
     },
     "GOOGLE_FONTS_API_KEY": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "external",
       "note": "Google Fonts（品牌 kit 字体表）"
     },
     "GOOGLE_SERVICE_ACCOUNT_JSON": {
       "surface": "build",
-      "readers": [
-        "apps/server/Dockerfile"
-      ],
+      "readers": ["apps/server/Dockerfile"],
       "inExamples": false,
       "status": "external",
       "note": "容器运行期注入 Vertex 凭证 JSON"
     },
     "REPLICATE_API_TOKEN": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "external",
       "note": "Replicate 平台池"
     },
     "METASO_API_KEY": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "external",
       "note": "秘塔搜索（v1 唯一结构化供应商）"
     },
     "METASO_API_BASE": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": false,
       "status": "active",
       "note": "秘塔端点覆盖"
     },
     "VOLCES_API_KEY": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "external",
       "note": "火山 Seedance 视频"
     },
     "VOLCES_BASE_URL": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "external",
       "note": "火山端点覆盖"
     },
     "LEMONSQUEEZY_API_KEY": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": false,
       "status": "active",
       "note": "Lemon Squeezy 支付（配置齐全才建 PaymentService）"
     },
     "LEMONSQUEEZY_STORE_ID": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": false,
       "status": "active",
       "note": "店铺 ID"
     },
     "LEMONSQUEEZY_WEBHOOK_SECRET": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": false,
       "status": "active",
       "note": "webhook 签名"
     },
     "LEMONSQUEEZY_VARIANT_STARTER_MONTHLY": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": false,
       "status": "active",
       "note": "套餐变体映射"
     },
     "LEMONSQUEEZY_VARIANT_STARTER_YEARLY": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": false,
       "status": "active",
       "note": "套餐变体映射"
     },
     "LEMONSQUEEZY_VARIANT_PRO_MONTHLY": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": false,
       "status": "active",
       "note": "套餐变体映射"
     },
     "LEMONSQUEEZY_VARIANT_PRO_YEARLY": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": false,
       "status": "active",
       "note": "套餐变体映射"
     },
     "LEMONSQUEEZY_VARIANT_ULTRA_MONTHLY": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": false,
       "status": "active",
       "note": "套餐变体映射"
     },
     "LEMONSQUEEZY_VARIANT_ULTRA_YEARLY": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": false,
       "status": "active",
       "note": "套餐变体映射"
     },
     "WORKER_CONCURRENCY": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": false,
       "status": "active",
       "note": "worker 总并发"
     },
     "WORKER_IMAGE_CONCURRENCY": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": false,
       "status": "active",
       "note": "图像任务并发"
     },
     "WORKER_VIDEO_CONCURRENCY": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": false,
       "status": "active",
       "note": "视频任务并发"
     },
     "WORKER_ID": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": false,
       "status": "active",
       "note": "worker 实例标识"
     },
     "WORKER_POLL_INTERVAL_MS": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "队列轮询间隔"
     },
     "WORKER_MAX_BATCH_SIZE": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "队列批量大小"
     },
     "VIDEO_JOB_TIMEOUT_MS": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "视频任务绝对超时（无前缀，第三方风格的通用名）"
     },
     "VIDEO_POLL_DELAY_SECONDS": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "视频轮询延迟秒（无前缀）"
     },
     "PORT": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": false,
       "status": "external",
       "note": "平台注入的监听端口兜底"
     },
     "HOST": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts"
-      ],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": false,
       "status": "external",
       "note": "平台注入的监听地址兜底"
     },
     "GLOBAL_AGENT_HTTP_PROXY": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/server.ts",
-        "apps/server/src/worker.ts"
-      ],
+      "readers": ["apps/server/src/server.ts", "apps/server/src/worker.ts"],
       "inExamples": true,
       "status": "external",
       "note": "global-agent 出站代理"
     },
     "KENFUTWORK_MCP_LIFECYCLE_IT": {
       "surface": "test",
-      "readers": [
-        "apps/server/src/features/mcp/mcp-service.lifecycle.test.ts"
-      ],
+      "readers": ["apps/server/src/features/mcp/mcp-service.lifecycle.test.ts"],
       "inExamples": false,
       "status": "external",
       "note": "预留占位（当前门控读 KENFUTWORK_MCP_LIFECYCLE）"
@@ -837,9 +668,7 @@
     },
     "KENFUTWORK_BUILTIN_PLUGINS_DIR": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/features/plugins/plugin.ts"
-      ],
+      "readers": ["apps/server/src/features/plugins/plugin.ts"],
       "inExamples": false,
       "status": "active",
       "note": "自带插件目录覆盖（缺省仓库/安装目录内置位置；目录不存在时没有自带插件，不报错）"
@@ -847,15 +676,11 @@
   },
   "legacy": {
     "LOOMIC_DATABASE_URL": {
-      "allowedIn": [
-        "scripts/开发库临时集群.mjs"
-      ],
+      "allowedIn": ["scripts/开发库临时集群.mjs"],
       "reason": "漏改（2026-09-17 盘点 B3）；env.ts 兼容映射仍能跑，改为 KENFUTWORK_DATABASE_URL 属后续清理"
     },
     "LOOMIC_QUEUE_DRIVER": {
-      "allowedIn": [
-        "docker/pg-dev-shim/Dockerfile"
-      ],
+      "allowedIn": ["docker/pg-dev-shim/Dockerfile"],
       "reason": "注释漏改（盘点 B5）；现名 KENFUTWORK_QUEUE_DRIVER"
     },
     "LOOMIC_MCP_SERVERS": {

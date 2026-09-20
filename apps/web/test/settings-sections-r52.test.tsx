@@ -5,6 +5,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { ToastProvider } from "../src/components/toast";
 import { AccountSection } from "../src/components/workbench/account-section";
 import { SubagentsSection } from "../src/components/workbench/subagents-section";
 import { onPanelViewRequest } from "../src/lib/panel-open";
@@ -215,13 +216,16 @@ describe("插件市场：使用态", () => {
       "../src/components/workbench/plugin-market-modal"
     );
     render(
-      <PluginMarketModal
-        open
-        onClose={() => {}}
-        accessToken="tok"
-        isAdmin
-        onUse={onUse}
-      />,
+      <ToastProvider>
+        <PluginMarketModal
+          open
+          onClose={() => {}}
+          accessToken="tok"
+          isAdmin
+          onUse={onUse}
+        />
+        ,
+      </ToastProvider>,
     );
     const use = await screen.findByRole("button", { name: "使用" });
     await userEvent.click(use);
@@ -251,13 +255,16 @@ describe("插件市场：使用态", () => {
       "../src/components/workbench/plugin-market-modal"
     );
     render(
-      <PluginMarketModal
-        open
-        onClose={() => {}}
-        accessToken="tok"
-        isAdmin
-        onUse={() => {}}
-      />,
+      <ToastProvider>
+        <PluginMarketModal
+          open
+          onClose={() => {}}
+          accessToken="tok"
+          isAdmin
+          onUse={() => {}}
+        />
+        ,
+      </ToastProvider>,
     );
     expect(await screen.findByText("第三方插件")).toBeVisible();
     expect(screen.queryByRole("button", { name: "使用" })).toBeNull();
@@ -286,13 +293,16 @@ describe("插件市场：使用态", () => {
       "../src/components/workbench/plugin-market-modal"
     );
     render(
-      <PluginMarketModal
-        open
-        onClose={() => {}}
-        accessToken="tok"
-        isAdmin
-        onUse={() => {}}
-      />,
+      <ToastProvider>
+        <PluginMarketModal
+          open
+          onClose={() => {}}
+          accessToken="tok"
+          isAdmin
+          onUse={() => {}}
+        />
+        ,
+      </ToastProvider>,
     );
     // 与同排的「卸载」「使用」口径一致：只有文字，不带 ⬇ 之类的图标
     const exportButton = await screen.findByRole("button", { name: "导出" });
