@@ -13,9 +13,10 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
+import { useToast } from "@/components/toast";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { getServerBaseUrl } from "@/lib/env";
+import { resolvePanelUrl } from "@/lib/plugin-panels";
 import { ListEmpty, ListLoading } from "./list-state";
 import { PluginExportDialog } from "./plugin-export-dialog";
 import { PluginInstallByUrl } from "./plugin-install-by-url";
@@ -87,6 +88,7 @@ export function PluginMarketModal({
   const [loading, setLoading] = useState(false);
   const [exportName, setExportName] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const toast = useToast();
 
   const authHeaders = useCallback(
     (): Record<string, string> =>
@@ -111,26 +113,35 @@ export function PluginMarketModal({
 
   async function toggle(entry: PluginMarketEntry) {
     setNotice(null);
-    const action = entry.installed ? "uninstall" : "toggle";
-    const response = await fetch(
-      `${getServerBaseUrl()}/api/plugins/${encodeURIComponent(entry.id)}/${action}`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json", ...authHeaders() },
-        ...(action === "toggle"
-          ? { body: JSON.stringify({ enabled: true }) }
-          : {}),
-      },
-    );
+    // 自带而未装的插件：直接装（市场一键，无需找来源链接）；安装端点不带插件 id
+    const installingBuiltin = entry.source === "builtin" && !entry.installed;
+    const url = entry.installed
+      ? `${getServerBaseUrl()}/api/plugins/${encodeURIComponent(entry.id)}/uninstall`
+      : installingBuiltin
+        ? `${getServerBaseUrl()}/api/plugins/install`
+        : `${getServerBaseUrl()}/api/plugins/${encodeURIComponent(entry.id)}/toggle`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...authHeaders() },
+      body: JSON.stringify(
+        entry.installed
+          ? {}
+          : installingBuiltin
+            ? { builtin: entry.name }
+            : { enabled: true },
+      ),
+    });
     if (!response.ok) {
       const payload = (await response.json().catch(() => ({}))) as {
         error?: { message?: string };
       };
-      setNotice(
-        payload.error?.message ?? "操作失败（变更类操作需要管理员权限）。",
+      toast.error(
+        payload.error?.message ??
+          "操作失败（变更类操作需要管理员权限，可在设置 → 管理后台调整）。",
       );
       return;
     }
+    toast.success(entry.installed ? "已卸载。" : "已安装。");
     refresh();
   }
 
@@ -293,13 +304,28 @@ export function PluginMarketModal({
               <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {visible.map((entry) => {
                   const Icon = ICONS[entry.name] ?? Plug;
+                  // 插件自带图标（ui[].icon）：已装（资产路由可用）或自带未装（注册表兜底）时用真图标
+                  const iconPath =
+                    entry.ui?.find((item) => item.icon)?.icon ?? null;
+                  const showRealIcon =
+                    iconPath !== null &&
+                    (entry.installed || entry.source === "builtin");
                   return (
                     <li
                       key={`${entry.source}-${entry.id}`}
                       className="flex items-start gap-3 rounded-xl border p-4"
                     >
                       <span className="rounded-lg bg-muted p-2">
-                        <Icon className="h-4 w-4" />
+                        {showRealIcon && iconPath ? (
+                          // biome-ignore lint/performance/noImgElement: 插件图标的资源地址，静态导出下 next/image 不能用
+                          <img
+                            src={resolvePanelUrl(iconPath, entry.id)}
+                            alt=""
+                            className="h-4 w-4 rounded-[3px]"
+                          />
+                        ) : (
+                          <Icon className="h-4 w-4" />
+                        )}
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium">{entry.title}</p>

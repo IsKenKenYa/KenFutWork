@@ -1,5 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <!-- 米家品牌图标：绿底圆角方块 + 白色「米家」（侧栏 16px 下仍可辨色识形） -->
-  <rect width="64" height="64" rx="14" fill="#4CB750"/>
-  <text x="32" y="42" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif" font-size="27" font-weight="700" fill="#ffffff" text-anchor="middle">米家</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 540">
+  <!-- 米家 MIJIA 盾形标：白底圆角 + 黑色 M+J（照用户提供原图手绘矢量近似） -->
+  <rect width="660" height="540" rx="96" fill="#ffffff"/>
+  <g fill="#111111">
+    <path d="M140 115 H490 V225 L425 265 V180 L310 272 L205 180 V345 H140 Z"/>
+    <path d="M425 345 L490 305 V410 A175 175 0 0 1 172 448 L233 395 A120 120 0 0 0 425 378 Z"/>
+  </g>
 </svg>

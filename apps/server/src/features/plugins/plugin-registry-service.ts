@@ -74,6 +74,16 @@ export interface PluginCatalogEntry {
   capabilities?: readonly string[];
 }
 
+/** 随应用自带的 bundle（启动时从自带插件目录整体读入内存）。 */
+export interface BundledBundle {
+  /** 安装后的注册表 id（`local__<包名>`，与本地目录安装同 id，可无缝升级） */
+  id: string;
+  name: string;
+  files: Record<string, string>;
+  manifest: PluginBundleManifest;
+  report: CompatReport;
+}
+
 export interface PluginRegistryDeps {
   /**
    * 是否允许第三方插件（来自部署形态；云端默认 false）。
@@ -90,6 +100,11 @@ export interface PluginRegistryDeps {
   hostNodeMajor: number;
   /** 内置插件目录（市场展示 + 导出用） */
   builtinCatalog: readonly PluginCatalogEntry[];
+  /**
+   * 随应用自带的第三方形态 bundle（如米家插件）：市场里直接列出、点「安装」即装，
+   * 不需要用户找来源链接；不装就不生效。与 builtinCatalog（内核自身能力，恒可用）不同。
+   */
+  bundledBundles?: readonly BundledBundle[];
   /**
    * 插件存储（能力 `storage`）：插件**数据**的唯一落点。
    *
@@ -146,8 +161,11 @@ export interface PluginRegistryService {
     report: CompatReport;
   }>;
   install(input: {
-    url: string;
+    /** 来源链接（与 `builtin` 二选一） */
+    url?: string | undefined;
     ref?: string | undefined;
+    /** 自带 bundle 的包名（与 `url` 二选一） */
+    builtin?: string | undefined;
     allowLifecycleScripts: boolean;
   }): Promise<{ installed: InstalledPlugin; report: CompatReport }>;
   uninstall(id: string): Promise<void>;
@@ -160,6 +178,7 @@ export interface PluginRegistryService {
     title: string;
     slot: string;
     url: string;
+    icon: string | null;
   }>;
   /** 路由派发：找不到（未启用/未注册/路径不匹配）返回 undefined。 */
   dispatchRoute(input: {
@@ -207,7 +226,8 @@ export class PluginRegistryError extends Error {
       | "plugin_not_found"
       | "system_plugin"
       | "install_failed"
-      | "not_installed",
+      | "not_installed"
+      | "invalid_request",
     readonly report?: CompatReport,
   ) {
     super(message);
@@ -257,6 +277,7 @@ function manifestOrPlaceholder(
     return {
       name: fallbackName,
       version: "0.0.0",
+      title: null,
       description: "",
       category: null,
       license: null,
@@ -474,6 +495,83 @@ export function createPluginRegistryService(
     loaded.delete(id);
   }
 
+  /** 安装事务共用体：先门禁、后落盘、再装载；装载失败回滚落盘。 */
+  async function installFromFiles(
+    files: BundleFiles,
+    options: {
+      fallbackLabel: string;
+      idOverride?: string;
+      source: "url" | "builtin";
+      repositoryUrl?: string | null;
+      headSha?: string | null;
+      allowLifecycleScripts: boolean;
+    },
+  ): Promise<{ installed: InstalledPlugin; report: CompatReport }> {
+    const report = validateBundleFiles(files, {
+      hostNodeMajor: deps.hostNodeMajor,
+      allowLifecycleScripts: options.allowLifecycleScripts,
+      fallbackName: options.fallbackLabel,
+    });
+
+    // 门禁在前：不通过则一个字节都不落盘
+    if (!report.compatible) {
+      throw new PluginRegistryError(
+        `兼容性校验未通过，已阻止安装：${report.issues
+          .filter((item) => item.severity === "blocker")
+          .map((item) => item.message)
+          .join("；")}`,
+        "install_failed",
+        report,
+      );
+    }
+
+    const { manifest } = buildBundleManifest(files);
+
+    const id = sanitizeId(options.idOverride ?? `local__${manifest.name}`);
+
+    const state = await readState();
+    if (state.installed.some((record) => record.id === id)) {
+      // 重装：先卸载旧实例，避免工具重名冲突
+      unloadPlugin(id);
+    }
+
+    await writeBundleFiles(id, files);
+
+    const record: InstalledPlugin = {
+      id,
+      name: manifest.name,
+      version: manifest.version,
+      source: options.source,
+      repositoryUrl: options.repositoryUrl ?? null,
+      headSha: options.headSha ?? null,
+      enabled: true,
+      manifest,
+      report,
+      installedAt: new Date().toISOString(),
+    };
+
+    const loadResult = await loadInstalledPlugin(record);
+    if (!loadResult) {
+      // 装载失败：回滚落盘，保持「装了的都能用」
+      await rm(bundleDirOf(id), { recursive: true, force: true });
+      records.delete(id);
+      throw new PluginRegistryError(
+        `插件装载失败，已回滚：${manifest.name}`,
+        "install_failed",
+        report,
+      );
+    }
+
+    records.set(id, record);
+    const next: RegistryState = {
+      version: 1,
+      installed: [...state.installed.filter((item) => item.id !== id), record],
+    };
+    await writeState(next);
+
+    return { installed: record, report };
+  }
+
   return {
     async list() {
       const state = await readState();
@@ -497,7 +595,7 @@ export function createPluginRegistryService(
         entries.push({
           id: record.id,
           name: record.name,
-          title: record.name,
+          title: record.manifest.title ?? record.name,
           description: record.manifest.description,
           source: record.source,
           repositoryUrl: record.repositoryUrl,
@@ -508,6 +606,26 @@ export function createPluginRegistryService(
           installed: record.enabled,
           // 停用即收回入口（侧栏不该出现点不开的插件）
           ui: record.enabled ? (record.manifest.ui ?? []) : [],
+        });
+      }
+
+      // 自带而未装的 bundle：市场里直接可装（点「安装」，无需找来源链接）
+      const installedIds = new Set(state.installed.map((item) => item.id));
+      for (const bundle of deps.bundledBundles ?? []) {
+        if (installedIds.has(bundle.id)) continue;
+        entries.push({
+          id: bundle.id,
+          name: bundle.name,
+          title: bundle.manifest.title ?? bundle.name,
+          description: bundle.manifest.description,
+          source: "builtin",
+          repositoryUrl: null,
+          headSha: null,
+          installability: bundle.report.compatible ? "verified" : "failed",
+          category: bundle.manifest.category ?? null,
+          system: false,
+          installed: false,
+          ui: bundle.manifest.ui ?? [],
         });
       }
       return entries;
@@ -530,6 +648,25 @@ export function createPluginRegistryService(
     },
 
     async install(input) {
+      // 自带 bundle：与应用同发行的第一方代码，不走第三方开关
+      if (input.builtin) {
+        const bundled = (deps.bundledBundles ?? []).find(
+          (item) => item.name === input.builtin,
+        );
+        if (!bundled) {
+          throw new PluginRegistryError(
+            `自带的插件不存在：${input.builtin}`,
+            "invalid_request",
+          );
+        }
+        return installFromFiles(bundled.files, {
+          fallbackLabel: bundled.name,
+          idOverride: bundled.id,
+          source: "builtin",
+          allowLifecycleScripts: input.allowLifecycleScripts,
+        });
+      }
+
       // 云端等多租户形态：默认不允许在本实例上跑租户装的任意代码
       if (deps.allowThirdParty === false) {
         throw new PluginRegistryError(
@@ -538,81 +675,17 @@ export function createPluginRegistryService(
           "install_failed",
         );
       }
-      const { files, origin } = await fetchBundleFiles(input.url, {
+      const { files, origin } = await fetchBundleFiles(input.url ?? "", {
         ...(input.ref ? { ref: input.ref } : {}),
         ...(deps.githubToken ? { token: deps.githubToken } : {}),
       });
-
-      const report = validateBundleFiles(files, {
-        hostNodeMajor: deps.hostNodeMajor,
-        allowLifecycleScripts: input.allowLifecycleScripts,
-        fallbackName: origin.label,
-      });
-
-      // 门禁在前：不通过则一个字节都不落盘
-      if (!report.compatible) {
-        throw new PluginRegistryError(
-          `兼容性校验未通过，已阻止安装：${report.issues
-            .filter((item) => item.severity === "blocker")
-            .map((item) => item.message)
-            .join("；")}`,
-          "install_failed",
-          report,
-        );
-      }
-
-      const { manifest } = buildBundleManifest(files);
-
-      const id = sanitizeId(
-        origin.kind === "github"
-          ? origin.label.replace(/@.*$/, "").replace("/", "__")
-          : `local__${manifest.name}`,
-      );
-
-      const state = await readState();
-      if (state.installed.some((record) => record.id === id)) {
-        // 重装：先卸载旧实例，避免工具重名冲突
-        unloadPlugin(id);
-      }
-
-      await writeBundleFiles(id, files);
-
-      const record: InstalledPlugin = {
-        id,
-        name: manifest.name,
-        version: manifest.version,
-        source: origin.kind === "github" ? "url" : "url",
+      return installFromFiles(files, {
+        fallbackLabel: origin.label,
+        source: "url",
         repositoryUrl: origin.repositoryUrl,
         headSha: origin.headSha,
-        enabled: true,
-        manifest,
-        report,
-        installedAt: new Date().toISOString(),
-      };
-
-      const loadResult = await loadInstalledPlugin(record);
-      if (!loadResult) {
-        // 装载失败：回滚落盘，保持「装了的都能用」
-        await rm(bundleDirOf(id), { recursive: true, force: true });
-        records.delete(id);
-        throw new PluginRegistryError(
-          `插件装载失败，已回滚：${manifest.name}`,
-          "install_failed",
-          report,
-        );
-      }
-
-      records.set(id, record);
-      const next: RegistryState = {
-        version: 1,
-        installed: [
-          ...state.installed.filter((item) => item.id !== id),
-          record,
-        ],
-      };
-      await writeState(next);
-
-      return { installed: record, report };
+        allowLifecycleScripts: input.allowLifecycleScripts,
+      });
     },
 
     listPromptFragments() {
@@ -626,10 +699,6 @@ export function createPluginRegistryService(
     async readAsset({ pluginId, relativePath }) {
       const state = await readState();
       const record = state.installed.find((item) => item.id === pluginId);
-      if (!record?.enabled || record.manifest.assets !== true) {
-        return undefined;
-      }
-      const bundleDir = bundleDirOf(pluginId);
       const normalized = relativePath.replace(/\\/g, "/").replace(/^\/+/, "");
       if (
         !normalized ||
@@ -640,6 +709,28 @@ export function createPluginRegistryService(
       ) {
         return undefined;
       }
+      // 未安装的自带 bundle：资产从内存出（市场卡片图标在安装前也要能显示）
+      if (!record) {
+        const bundled = (deps.bundledBundles ?? []).find(
+          (item) => item.id === pluginId,
+        );
+        if (bundled?.manifest.assets !== true) return undefined;
+        const content = bundled.files[normalized];
+        if (
+          content === undefined ||
+          Buffer.byteLength(content, "utf8") > MAX_ASSET_BYTES
+        ) {
+          return undefined;
+        }
+        return {
+          content: Buffer.from(content, "utf8"),
+          contentType: contentTypeOf(normalized),
+        };
+      }
+      if (!record.enabled || record.manifest.assets !== true) {
+        return undefined;
+      }
+      const bundleDir = bundleDirOf(pluginId);
       const absolute = path.resolve(bundleDir, normalized);
       if (!absolute.startsWith(path.resolve(bundleDir) + path.sep)) {
         return undefined;

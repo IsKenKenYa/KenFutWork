@@ -62,6 +62,8 @@ export interface CompatUiEntry {
   title: string;
   slot?: PluginUiSlot;
   url: string;
+  /** 入口图标（相对插件根的资源路径，如 `assets/icon.svg`）；缺省用宿主通用图标。 */
+  icon?: string | null;
 }
 
 export interface CompatContext {

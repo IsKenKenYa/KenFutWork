@@ -95,6 +95,8 @@ export const pluginBundleManifestSchema = z.object({
   /** 包名（npm 语义；也可作为插件稳定 id） */
   name: z.string().min(1),
   version: z.string().min(1),
+  /** 展示名（`kenfutwork.title`，如「米家」）；缺省回落包名 */
+  title: z.string().nullable().default(null),
   description: z.string().default(""),
   license: z.string().nullable().default(null),
   repositoryUrl: z.string().nullable().default(null),
@@ -264,6 +266,16 @@ export const pluginInstallRequestSchema = z.object({
   allowLifecycleScripts: z.boolean().default(false),
 });
 export type PluginInstallRequest = z.infer<typeof pluginInstallRequestSchema>;
+
+/** 安装**随应用自带的 bundle**（市场里点「安装」即可，无需找来源链接）。 */
+export const pluginInstallBuiltinRequestSchema = z.object({
+  /** 自带 bundle 的包名（如 `kenfutwork-mihome`） */
+  builtin: z.string().trim().min(1),
+  allowLifecycleScripts: z.boolean().default(false),
+});
+export type PluginInstallBuiltinRequest = z.infer<
+  typeof pluginInstallBuiltinRequestSchema
+>;
 
 /**
  * 从**沙箱工作目录**安装插件 bundle（创造模式产物的人工入口）。

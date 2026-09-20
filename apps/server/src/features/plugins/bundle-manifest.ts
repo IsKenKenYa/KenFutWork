@@ -267,6 +267,10 @@ export function buildBundleManifest(files: BundleFiles): {
       typeof kenfutworkBlock.category === "string" && kenfutworkBlock.category
         ? kenfutworkBlock.category
         : null,
+    title:
+      typeof kenfutworkBlock.title === "string" && kenfutworkBlock.title
+        ? kenfutworkBlock.title
+        : null,
     enginesNode:
       engines && typeof engines.node === "string" ? engines.node : null,
     ui: declaredUi,

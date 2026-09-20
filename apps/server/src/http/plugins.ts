@@ -4,6 +4,7 @@ import {
   pluginExportRequestSchema,
   pluginInspectRequestSchema,
   pluginInspectResponseSchema,
+  pluginInstallBuiltinRequestSchema,
   pluginInstallRequestSchema,
   pluginInstallResponseSchema,
   sandboxPluginBundleListResponseSchema,
@@ -146,7 +147,11 @@ export async function registerPluginRoutes(
   app.post("/api/plugins/install", async (request, reply) => {
     if (!(await requireAdmin(request, reply))) return reply;
 
-    const parsed = pluginInstallRequestSchema.safeParse(request.body);
+    const body = (request.body ?? {}) as Record<string, unknown>;
+    const parsed =
+      "builtin" in body
+        ? pluginInstallBuiltinRequestSchema.safeParse(request.body)
+        : pluginInstallRequestSchema.safeParse(request.body);
     if (!parsed.success) {
       return sendError(reply, "invalid_request", "请求参数不合法。", 400);
     }
