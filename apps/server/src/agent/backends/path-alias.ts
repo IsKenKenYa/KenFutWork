@@ -37,7 +37,8 @@ export function aliasWorkDirPath(
     const prefix = raw.replaceAll("\\", "/").replace(/(.)[\\/]+$/, "$1");
     if (!prefix || prefix === "/") continue;
     if (normalized === prefix) return "/";
-    if (normalized.startsWith(`${prefix}/`)) return normalized.slice(prefix.length);
+    if (normalized.startsWith(`${prefix}/`))
+      return normalized.slice(prefix.length);
   }
   return path;
 }

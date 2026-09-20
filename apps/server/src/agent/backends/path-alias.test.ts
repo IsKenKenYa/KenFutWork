@@ -26,9 +26,9 @@ describe("aliasWorkDirPath（纯函数）", () => {
   });
 
   it("前缀部分重合但不完整（兄弟目录）不改写", () => {
-    expect(
-      aliasWorkDirPath("/Volumes/X/kimi-code-v2/a", prefixes),
-    ).toBe("/Volumes/X/kimi-code-v2/a");
+    expect(aliasWorkDirPath("/Volumes/X/kimi-code-v2/a", prefixes)).toBe(
+      "/Volumes/X/kimi-code-v2/a",
+    );
   });
 
   it("无关路径与相对路径原样透传", () => {
@@ -42,7 +42,9 @@ describe("aliasWorkDirPath（纯函数）", () => {
   });
 
   it("前缀末尾带分隔符也命中；Windows 反斜杠路径也认", () => {
-    expect(aliasWorkDirPath("/Volumes/X/kimi-code/a", ["/Volumes/X/kimi-code/"])).toBe("/a");
+    expect(
+      aliasWorkDirPath("/Volumes/X/kimi-code/a", ["/Volumes/X/kimi-code/"]),
+    ).toBe("/a");
     expect(
       aliasWorkDirPath("C:\\work\\proj\\src\\a.ts", ["C:\\work\\proj"]),
     ).toBe("/src/a.ts");
@@ -116,7 +118,8 @@ describe("withWorkDirAlias × FilesystemBackend（virtualMode）", () => {
   }
 
   afterEach(() => {
-    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+    for (const dir of dirs.splice(0))
+      rmSync(dir, { recursive: true, force: true });
   });
 
   it("别名让 ls/read 的真实绝对路径命中绑定目录", async () => {
@@ -138,7 +141,10 @@ describe("withWorkDirAlias × FilesystemBackend（virtualMode）", () => {
   it("未加别名层的同一个后端：绝对路径静默空列表（bug 本体，锁死不回归）", async () => {
     const root = makeRoot();
     const realRoot = resolve(root);
-    const bare = new FilesystemBackend({ rootDir: realRoot, virtualMode: true });
+    const bare = new FilesystemBackend({
+      rootDir: realRoot,
+      virtualMode: true,
+    });
 
     vi.stubGlobal("console", console);
     const listed = await bare.ls(`${realRoot}`);
