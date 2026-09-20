@@ -95,3 +95,6 @@ apps/desktop/src-tauri/gen/
 # 安装包产物（默认落在仓库根，见 apps/desktop/scripts/collect-bundle.mjs）
 /KenFutWork_*-setup.exe
 .playwright-mcp/
+
+# WorkBuddy AI 的会话/项目记忆目录（本机私有数据与日志，不入库；目录保留不删）
+/.workbuddy-ai/
