@@ -71,7 +71,7 @@ const markUri = `data:image/png;base64,${(await import("node:fs")).readFileSync(
  * `MUI_HEADERIMAGE_BITMAP_STRETCH` 默认 `FitControl` → NSIS 把位图 StretchBlt 到控件大小。
  * 于是**按控件名义尺寸出图 = 上线就是放大的糊图**：页头 150×57 在 150% 屏上被拉 1.5 倍，
  * 用户口径「为什么还是很糊」。改成 3× 出图后变成 2:1 降采样，字标立即清晰
- * （1×/1.5×/3× 三版探针 A/B 见 `docs/未做需求.md` §三十八）。
+ * （1×/1.5×/3× 三版探针 A/B 见 `docs/未做需求日志.md` §三十八）。
  *
  * 为什么是 3× 而不是 1.5×：1.5× 只在本机 150% 上刚好 1:1，换 100%/125%/175% 又会变成
  * 放大或非整数缩放；3× 在所有常见 DPI 下都是降采样，只会更清晰不会更糊。
