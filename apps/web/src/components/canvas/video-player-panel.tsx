@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+
+import { triggerDownload } from "@/lib/download";
 
 type VideoPlayerPanelProps = {
   elementId: string;
@@ -55,6 +57,21 @@ export function VideoPlayerPanel({
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
   }, [onClose]);
+
+  /**
+   * 下载走统一入口（`triggerDownload`）：桌面形态落系统下载目录 + 定位，
+   * 浏览器形态锚点下载。直链 `<a download>` 在 WKWebView（桌面壳）里毫无反应。
+   */
+  const handleDownload = useCallback(async () => {
+    try {
+      const res = await fetch(videoUrl);
+      if (!res.ok) throw new Error(String(res.status));
+      await triggerDownload(`${title || "video"}.mp4`, await res.blob());
+    } catch {
+      // 视频拉不下来才退回直链（浏览器形态仍有下载属性可用）
+      window.open(videoUrl, "_blank");
+    }
+  }, [videoUrl, title]);
 
   return createPortal(
     <div
@@ -121,11 +138,9 @@ export function VideoPlayerPanel({
 
       {/* Footer with download */}
       <div className="flex items-center justify-end px-3 py-2 border-t border-border/50">
-        <a
-          href={videoUrl}
-          download={`${title || "video"}.mp4`}
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          type="button"
+          onClick={() => void handleDownload()}
           className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted/80 transition-colors"
         >
           <svg
@@ -141,7 +156,7 @@ export function VideoPlayerPanel({
             <line x1="12" y1="15" x2="12" y2="3" />
           </svg>
           下载
-        </a>
+        </button>
       </div>
     </div>,
     document.body,

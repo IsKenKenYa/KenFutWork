@@ -16,8 +16,8 @@ interface TauriInvoke {
   invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
 }
 
-/** Tauri v2 注入的全局对象（`withGlobalTauri: true` 时存在）。 */
-function tauriInvoke(): TauriInvoke["invoke"] | null {
+/** Tauri v2 注入的全局对象（`withGlobalTauri: true` 时存在）；非桌面形态返回 null。 */
+export function tauriInvoke(): TauriInvoke["invoke"] | null {
   if (typeof window === "undefined") return null;
   const w = window as unknown as {
     __TAURI__?: { core?: TauriInvoke };

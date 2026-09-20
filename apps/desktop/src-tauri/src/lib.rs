@@ -5,6 +5,7 @@
 //! 服务端生命周期管理见 `server_handle`（spawn / 探活 / 复用 / 优雅退出）。
 
 pub mod browser_embed;
+pub mod desktop_system;
 pub mod server_handle;
 
 pub use server_handle::{
@@ -371,6 +372,8 @@ pub fn run() {
             }
         }))
         .invoke_handler(tauri::generate_handler![ping]);
+    // 系统缝（下载落盘 / 文件管理器定位 / 外链）——见 desktop_system.rs
+    let builder = desktop_system::register_system_commands(builder);
     // 右栏浏览器的真内核嵌入（子 webview + WebView2 DevTools）——见 browser_embed.rs
     browser_embed::register_embed_commands(builder)
         .setup(|app| {

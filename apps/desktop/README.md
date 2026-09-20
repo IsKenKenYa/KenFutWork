@@ -99,6 +99,25 @@ pnpm --filter @kenfutwork/web dev             # web UI（3000）
 cd apps/desktop/src-tauri && cargo tauri dev
 ```
 
+## macOS 系统权限与行为对齐（2026-09-20 盘点）
+
+壳的内核是 WKWebView，与浏览器/WebView2 行为有差异；「系统 API」逐项对齐如下。
+
+| 能力 | 现状 | 机制 / 权限 |
+| --- | --- | --- |
+| 系统文件夹对话框（选工作目录） | ✅ 可用 | 服务端 `osascript choose folder`（NSOpenPanel，无需特殊权限）。曾经的「Request failed」是前端 POST 带空 JSON 体被 Fastify 400，已修（`pickDirectory` 带 `{}`） |
+| 文件夹访问（TCC） | ✅ 系统自动弹窗 | agent 读用户选定目录时，若落在 `~/Desktop` / `~/Documents` / `~/Downloads`，macOS 首次访问会弹授权框（责任进程为 KenFutWork 壳），允许一次后不再问 |
+| 下载（图片/视频/画布/插件导出） | ✅ 已对齐 | 统一走 `triggerDownload`（`lib/download.ts`）→ Rust `save_file` 落系统下载目录（重名顺延）→ `reveal_path` 在访达中定位。首次写 `~/Downloads` 可能弹一次 TCC 授权 |
+| 打开访达窗口 | ✅ 已对齐 | 即下载完成后的 `reveal_path`（macOS `open -R`）；外链类「打开」见下行 |
+| 外部链接（target=_blank） | ✅ 已对齐 | WKWebView 开不了新窗口：工作台挂 `installDesktopExternalLinks`（捕获阶段拦截）→ Rust `open_external` 交给系统默认浏览器（只放行 http/https） |
+| 麦克风 / 摄像头 | 未使用 | 全仓无 `getUserMedia` 调用；未来加语音输入需 `NSMicrophoneUsageDescription` + WKWebView 媒体权限，到时再登记 |
+| Apple Events 自动化 | 未使用 | `osascript` 只弹 NSOpenPanel，不控制其他 App，不触发「控制 Finder」授权 |
+
+**IPC 能力面**：主窗口最终加载的是本机服务端托管的 UI（回环 http），Tauri 默认不给远程页面任何
+IPC——`capabilities/loopback-remote.json` 只对 `main` 窗口放行 `http://localhost:*` /
+`http://127.0.0.1:*`（都是我们自己的服务端）；子 webview（browser-embed）刻意不在列，嵌进来的
+外部站点拿不到任何壳命令。
+
 ## 路线（对齐《多端产品设计》D1–D3）
 
 1. **本壳可开**（当前提交）：窗口加载 web dev server。

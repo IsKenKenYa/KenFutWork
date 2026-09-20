@@ -6,6 +6,8 @@ import type {
 } from "@excalidraw/excalidraw/types";
 import { memo, useCallback, useEffect, useState } from "react";
 
+import { triggerDownload } from "@/lib/download";
+
 export type CanvasFilesPanelProps = {
   excalidrawApi: ExcalidrawImperativeAPI | null;
   /** 面板是否可见：不可见时退订画布变更（隐藏的列表没必要跟着重算）。 */
@@ -142,12 +144,11 @@ export function CanvasFilesPanel({
     };
   }, [active, excalidrawApi, refreshFiles]);
 
-  const handleDownload = useCallback((file: ImageFile) => {
+  const handleDownload = useCallback(async (file: ImageFile) => {
     if (!file.dataURL) return;
-    const a = document.createElement("a");
-    a.href = file.dataURL;
-    a.download = `${file.name}.png`;
-    a.click();
+    // dataURL → blob：统一走 triggerDownload（桌面形态落系统下载目录 + 定位）
+    const blob = await (await fetch(file.dataURL)).blob();
+    await triggerDownload(`${file.name}.png`, blob);
   }, []);
 
   if (!active) return null;

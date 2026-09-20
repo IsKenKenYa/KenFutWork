@@ -5,6 +5,7 @@ import { Check, Copy, Download, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { triggerDownload } from "@/lib/download";
 import { getServerBaseUrl } from "@/lib/env";
 
 /**
@@ -73,12 +74,10 @@ export function PluginExportDialog({
     const blob = new Blob([JSON.stringify(artifact.files, null, 2)], {
       type: "application/json",
     });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${artifact.name.replace(/[^\w.-]+/g, "-")}-bundle.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    void triggerDownload(
+      `${artifact.name.replace(/[^\w.-]+/g, "-")}-bundle.json`,
+      blob,
+    );
   };
 
   return (

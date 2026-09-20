@@ -96,6 +96,7 @@ import {
   usageFromEvent,
 } from "@/lib/context-usage";
 import { resolveDesignAutoCanvas } from "@/lib/design-auto-canvas";
+import { installDesktopExternalLinks } from "@/lib/desktop-system";
 import { formatElapsedSeconds, parseTimestampMs } from "@/lib/elapsed";
 import { getServerBaseUrl } from "@/lib/env";
 import { executionModeOptions } from "@/lib/execution-modes";
@@ -839,6 +840,14 @@ export function Workbench() {
       .then((status) => setNativeDirPicker(status))
       .catch(() => setNativeDirPicker({ available: false }));
   }, [session]);
+
+  /**
+   * 桌面形态接管 `target="_blank"` 外链：WKWebView 开不了新窗口，点过去毫无反应——
+   * 交给系统浏览器（`lib/desktop-system.ts`）。函数自身幂等，重复挂载安全。
+   */
+  useEffect(() => {
+    installDesktopExternalLinks();
+  }, []);
 
   // 自定义命令（需 token）：只在登录后拉一次，失败不阻断（没有命令就只是不展开）
   useEffect(() => {
