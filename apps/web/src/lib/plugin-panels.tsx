@@ -135,6 +135,54 @@ export function panelTokenTarget(
   return target === server ? target : null;
 }
 
+/**
+ * 插件入口图标：**单色渲染**（CSS mask + `bg-current`），跟随所在行/标题的文字色，
+ * 与宿主自己的线条图标同一套视觉语言（彩色贴图塞进菜单行会格格不入）。
+ *
+ * 槽位与图标分开：`slotClass` 固定占位（保证文字左对齐不被图标大小挤动），
+ * `iconClass` 决定图标本体大小（窄字形/空心描边可以放大或缩小一档做视觉配重）。
+ */
+export function PluginIcon({
+  icon,
+  pluginId,
+  slotClass = "h-4 w-4",
+  iconClass = "h-4 w-4",
+  fallback,
+}: {
+  icon: string | null;
+  pluginId?: string;
+  slotClass?: string;
+  iconClass?: string;
+  /** 没有插件图标时的占位（缺省是宿主通用图标） */
+  fallback?: React.ReactNode;
+}) {
+  const url = icon ? resolvePanelUrl(icon, pluginId) : null;
+  return (
+    <span
+      className={`flex shrink-0 items-center justify-center ${slotClass}`}
+      aria-hidden="true"
+    >
+      {url ? (
+        <span
+          className={`${iconClass} bg-current`}
+          style={{
+            maskImage: `url(${url})`,
+            maskSize: "contain",
+            maskRepeat: "no-repeat",
+            maskPosition: "center",
+            WebkitMaskImage: `url(${url})`,
+            WebkitMaskSize: "contain",
+            WebkitMaskRepeat: "no-repeat",
+            WebkitMaskPosition: "center",
+          }}
+        />
+      ) : (
+        (fallback ?? <PanelsTopLeft className={iconClass} />)
+      )}
+    </span>
+  );
+}
+
 export function PluginPanelOverlay({
   panel,
   accessToken,
@@ -176,7 +224,10 @@ export function PluginPanelOverlay({
       >
         <DialogHeader className="flex-row items-center justify-between space-y-0 border-b px-5 py-3 pr-12">
           <DialogTitle className="flex items-center gap-2 text-base font-medium">
-            <PanelsTopLeft className="h-4 w-4" />
+            <PluginIcon
+              icon={panel?.icon ?? null}
+              {...(panel ? { pluginId: panel.pluginId } : {})}
+            />
             {panel?.title ?? "插件面板"}
           </DialogTitle>
         </DialogHeader>

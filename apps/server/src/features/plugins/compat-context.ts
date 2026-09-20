@@ -62,10 +62,7 @@ export interface CompatUiEntry {
   title: string;
   slot?: PluginUiSlot;
   url: string;
-  /**
-   * 入口图标（相对插件根的资源路径）；与 shared 的 `pluginUiEntrySchema.icon` 同一口径
-   * （缺省 null）。merge origin/main 时两边都没有它而 registry-service 已在读——补上收口。
-   */
+  /** 入口图标（相对插件根的资源路径，如 `assets/icon.svg`）；缺省用宿主通用图标。 */
   icon?: string | null;
 }
 

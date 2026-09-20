@@ -32,7 +32,7 @@ const countMatches = (text, re) => (text.match(re) ?? []).length;
  * 历史值上。故口径（2026-09-14）：残留统计**整体排除中性化迁移**；权威口径是
  * 「迁移序列执行完后的库内状态」——auth.uid()=0、auth.users 外键=0、策略=0、
  * RLS 表=0、云 URL=0，由 `persistence` 的 schema 中性化集成测试锁定
- * （见 docs/tech/改造计划.md §4.13）。
+ * （见 docs/方案设计/改造计划.md §4.13）。
  */
 const NEUTRALIZER_MIGRATIONS = new Set([
   "20260914120000_localize_home_seed_urls.sql",

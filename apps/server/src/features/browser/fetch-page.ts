@@ -45,7 +45,10 @@ export interface PageSnapshot {
  */
 export interface BrowserService {
   /** 静态快照（无需浏览器）：抓 HTML 提元素。 */
-  snapshot(url: string): Promise<PageSnapshot>;
+  snapshot(
+    url: string,
+    options?: { elementLimit?: number },
+  ): Promise<PageSnapshot>;
   /** CDP 会话（「连接到 Chrome」/「自动截图」的执行面；未连接时各方法抛可读错误）。 */
   cdp: import("./cdp-session.js").CdpBrowserSession;
 }
@@ -53,7 +56,10 @@ export interface BrowserService {
 export function createBrowserService(
   cdp: import("./cdp-session.js").CdpBrowserSession,
 ): BrowserService {
-  return { snapshot: (url) => fetchPageSnapshot(url), cdp };
+  return {
+    snapshot: (url, options) => fetchPageSnapshot(url, options ?? {}),
+    cdp,
+  };
 }
 
 export class BrowserFetchError extends Error {
@@ -221,6 +227,14 @@ export function extractTitle(html: string): string {
 export interface FetchPageOptions {
   timeoutMs?: number;
   maxBytes?: number;
+  /**
+   * 提取多少个元素（缺省 40）。
+   *
+   * 为什么需要调大：`extractElements` 是**从头截取**的，而搜索引擎结果页的头部导航
+   * 本身就有二三十个链接——用默认 40 条抓 Bing，结果链接根本进不了列表
+   * （2026-09-20 实测：`web_search` 网页通道恒返回 0 条）。搜索通道因此要显式调大。
+   */
+  elementLimit?: number;
   /** 测试注入。 */
   fetchImpl?: typeof fetch;
 }
@@ -298,6 +312,6 @@ export async function fetchPageSnapshot(
     url: finalUrl,
     title: extractTitle(html),
     text: stripTags(stripNonContent(html)).slice(0, 20_000),
-    elements: extractElements(html),
+    elements: extractElements(html, options.elementLimit ?? 40),
   };
 }

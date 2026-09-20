@@ -2,22 +2,22 @@
 > 本文件是所有 coding Agent（Codex CLI / Claude Code / Trae IDE 等）的统一操作指南，是仓库的**唯一权威**。各 Agent 专用配置文件（`.codex/AGENTS.md`、`.claude/CLAUDE.md` 等）只保留各自的独占内容（如浏览器操作规范、框架文档索引），主体规范一律以本文件为准。
 
 ## 项目结构与模块组织
-本仓库是 **pnpm@10 workspace + Turborepo 的 monorepo**（KenFutWork：BYOK Work 平台——用户自定义供应商/模型的 AI 工作台，**design（画布创作）/ code（编码 agent）双模式**；多端形态：Tauri 桌面端（内嵌服务端 + 沙箱）为主，服务端 Docker 自托管，Web 与移动端为客户端；GPL-3.0 系开源）。产品与架构计划见 `docs/tech/改造计划.md`（服务端插件内核 + BYOK 供应商缝 + design/code 双模式）与 `docs/tech/多端产品设计.md`（桌面/自托管/Web/移动形态，**已去云托管**）。主要模块如下：
+本仓库是 **pnpm@10 workspace + Turborepo 的 monorepo**（KenFutWork：BYOK Work 平台——用户自定义供应商/模型的 AI 工作台，**design（画布创作）/ code（编码 agent）双模式**；多端形态：Tauri 桌面端（内嵌服务端 + 沙箱）为主，服务端 Docker 自托管，Web 与移动端为客户端；GPL-3.0 系开源）。产品与架构计划见 `docs/方案设计/改造计划.md`（服务端插件内核 + BYOK 供应商缝 + design/code 双模式）与 `docs/方案设计/多端产品设计.md`（桌面/自托管/Web/移动形态，**已去云托管**）。主要模块如下：
 - `apps/web` — 前端：Next.js 16（App Router，Turbopack）+ React 19 + Tailwind 4 + Base UI + Excalidraw 画布。路由在 `src/app/`，组件在 `src/components/`，客户端纯逻辑在 `src/lib/`；测试在 `test/*.test.ts(x)`。
 - `apps/server` — 后端：Fastify 5 + LangChain 1.x / deepagents agent 运行时 + PGMQ 队列 worker。装配层在 `src/app.ts` 与 `src/worker.ts`；agent 相关在 `src/agent/`（backends / tools / prompts / persistence / sub-agents）；领域服务在 `src/features/`；生成 provider 在 `src/generation/providers/`；HTTP 路由在 `src/http/`；WS 在 `src/ws/`；队列在 `src/queue/`；环境变量解析在 `src/config/env.ts`。
 - `packages/shared` — 跨端 zod 契约（HTTP API、WS 协议、job 事件、credits、skills 等），构建到 `dist/` 后被前后端引用；改契约先改这里，两端跟着编译器走。
 - `packages/ui`、`packages/config` — 内部共享组件与 TS 配置。
 - `supabase/migrations/` — 唯一数据库 Schema 迁移源（原生 SQL）。
-- `references/` — 外部参考项目（deepseek-harness、langgraph、jaaz 等），**只作方向参考**，禁止直接复制代码/schema/字段名；不要批量删除或忽略该目录。**例外**：`references/futureFlow` 是**待合并的 flow 子系统**（作者 future73807 即本仓协作者，`DEC-10`…`DEC-13` 已拍板），不是纯参考——集成方案见 `docs/tech/flow集成方案.md`；其代码按方案分阶段并入（子模块指针跟随 → iframe 内嵌 → 收编），不受本节「禁止复制」约束。
-- `docs/` — 技术文档与架构决策；入口与治理规则见 `docs/README.md`（文档地图、单源原则、决策 ID、快照刷新规则）；`docs/tech/改造计划.md` 是服务端架构演进蓝图，`docs/tech/多端产品设计.md` 是多端形态设计；`docs/future/02-当前项目实现状态.md` 是代码现状快照。
+- `references/` — 外部参考项目（deepseek-harness、langgraph、jaaz 等），**只作方向参考**，禁止直接复制代码/schema/字段名；不要批量删除或忽略该目录。**例外**：`references/futureFlow` 是**待合并的 flow 子系统**（作者 future73807 即本仓协作者，`DEC-10`…`DEC-13` 已拍板），不是纯参考——集成方案见 `docs/方案设计/flow集成方案.md`；其代码按方案分阶段并入（子模块指针跟随 → iframe 内嵌 → 收编），不受本节「禁止复制」约束。
+- `docs/` — 技术文档与架构决策；入口与治理规则见 `docs/README.md`（文档地图、单源原则、决策 ID、快照刷新规则）；`docs/方案设计/改造计划.md` 是服务端架构演进蓝图，`docs/方案设计/多端产品设计.md` 是多端形态设计；`docs/调研/02-当前项目实现状态.md` 是代码现状快照。
 
 本地开发需根目录 `.env.local`（模板见 `.env.example`），server 通过 `--env-file=../../.env.local` 读取。
 
 ## 插件化架构（服务端，硬约束）
-服务端正在向 deepseek-harness 式「一切皆插件」架构演进（蓝图与分阶段计划见 `docs/tech/改造计划.md`），以下规则**现在就生效**：
+服务端正在向 deepseek-harness 式「一切皆插件」架构演进（蓝图与分阶段计划见 `docs/方案设计/改造计划.md`），以下规则**现在就生效**：
 
 - **没有特权核心**：`app.ts` 的角色随改造逐步退化为 profile 装配器。新增行为一律挂到扩展点上，**禁止往 `app.ts` / `worker.ts` 继续堆手工装配**。
-- **扩展点速查表（改造期过渡摘要）**：`app.ts` 尚未退役，故下表是**当前代码可用的过渡机制**；**目标机制见 `docs/tech/改造计划.md` §4.10，冲突时以 §4.10 为准**，内核落地后本表由 §4.10 取代。新增行为禁止绕过扩展点：
+- **扩展点速查表（改造期过渡摘要）**：`app.ts` 尚未退役，故下表是**当前代码可用的过渡机制**；**目标机制见 `docs/方案设计/改造计划.md` §4.10，冲突时以 §4.10 为准**，内核落地后本表由 §4.10 取代。新增行为禁止绕过扩展点：
 
 | 目标 | 机制 | 不再改 |
 | --- | --- | --- |
@@ -30,7 +30,7 @@
 | 新增业务 feature | 服务定义 + Provider + Consumer（路由/工具/executor）内聚在 `src/features/<x>/`，暴露 `createXxxService(deps)` | — |
 
 - **能力缝三元组完整才算完整**：一个可替换能力 = Service Definition（接口）+ Service Provider（实现）+ Consumer（消费方）。只写实现不声明接口与消费方的「半个缝」不允许合入。
-- **服务 key 是稳定契约**：ctx key 的唯一权威表是 `docs/tech/改造计划.md` §4.2（含 `agentRunMetadata`/`agentPersistence` 等完整清单与依赖拓扑；多端 key 落地时并入该表）。新增或更名 ctx key 只改 §4.2 一处，禁止在其他文档维护副本清单。
+- **服务 key 是稳定契约**：ctx key 的唯一权威表是 `docs/方案设计/改造计划.md` §4.2（含 `agentRunMetadata`/`agentPersistence` 等完整清单与依赖拓扑；多端 key 落地时并入该表）。新增或更名 ctx key 只改 §4.2 一处，禁止在其他文档维护副本清单。
 - **BYOK 凭证红线**：用户 API Key 只写不读（前端永不回显）、服务端日志脱敏、按工作区 RLS 隔离；`ProviderInstanceConfig.protocol` 是封闭集合（openai-compatible / anthropic / gemini / 图视频协议），新增协议必须先扩契约再写适配器，禁止在业务代码里内联供应商判断。
 - **配置 fail loud**：feature 的启用条件（如 Lemon Squeezy 配置齐全才建 PaymentService）必须显式表达为 `enabled(env)` 判定，禁止静默跳过；misconfiguration 在启动期报错。
 - **改造期纪律**：迁移按计划 §4 的拓扑序逐 PR 进行，每个 PR 行为不变、测试护航；新写的 feature 直接按插件形状组织，不等内核落地。
@@ -71,7 +71,7 @@ vitest 按 app 配置（`apps/web/vitest.config.mjs`、`apps/server/vitest.confi
 3. **共享文件逐 hunk 复核**：多个 agent 会同时改 `app.ts` / `profiles/*.ts` / `packages/shared` 等共享文件。提交前 `git diff` 逐 hunk 确认只含本次改动；若混入他人未提交的 hunk，用「补丁过滤后 `git apply --cached`」只暂存自己的 hunk，**不要**整文件 add，也不要替他人提交。
 4. **禁止把仓库置于悬空引用状态**：提交前额外检查 HEAD 是否引用了未跟踪文件（`git stash list` 之外最容易出事的场景）。历史上曾因误带他人 hunk 导致 HEAD 无法构建。
 5. **提交前必须复跑门禁**：`pnpm test`（含 `tests/workspace.test.mjs` 的仓库级棘轮/文档门禁）与 `pnpm typecheck` 至少要覆盖本次改动所在包；跨端契约（`packages/shared`）改动必须全量。
-6. **文档与提交同步**：里程碑或架构级改动在 `docs/tech/改造计划.md` §4.13 台账里**同一提交**内更新（含问题、方案、验证命令、遗留项）；只写代码不记账视为未完成。
+6. **文档与提交同步**：里程碑或架构级改动在 `docs/日志.md`（历轮回执 + 变更台账）里**同一提交**内更新（含问题、方案、验证命令、遗留项）；只写代码不记账视为未完成。
 7. **不提交密钥与产物**：provider keys、`.env*`、凭据、`release/`、`data/`、日志、`**/dist` 一律不入库（见下节）。
 
 ## 产品行为不变量（硬约束）

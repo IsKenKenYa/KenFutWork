@@ -1,5 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 
+import { resolveExecutable } from "../../utils/resolve-executable.js";
+
 /**
  * 原生「选择文件夹」对话框（桌面形态，FORM-2 的执行面）。
  *
@@ -58,7 +60,13 @@ const WINDOWS_PICKER_SCRIPT = [
 
 const PICKER_TITLE = "选择工作目录";
 
-/** 各平台的原生对话框命令（数组顺序 = 尝试顺序，前一个没装/失败就试下一个）。 */
+/**
+ * 各平台对话框命令**按名字声明**，真正起进程前再解析成绝对路径。
+ *
+ * 为什么必须解析：桌面壳可能从一个 PATH 已损坏/陈旧的父进程继承环境（本机 2026-09-19
+ * 机器级 PATH 被第三方安装器整键覆盖，`powershell.exe` 按名字找不到，用户点「打开文件夹」
+ * 直接失败）。终端那条路径早就按绝对路径起 shell，这里当时漏了。
+ */
 export function nativePickerCommands(
   platform: NodeJS.Platform,
 ): PickerCommand[] {
@@ -91,6 +99,36 @@ export function nativePickerCommands(
       args: ["--getexistingdirectory", ".", "--title", PICKER_TITLE],
     },
   ];
+}
+
+/** Windows 上 PowerShell 的常规位置（PATH 坏掉时仍能找到它）。 */
+function windowsPickerExtraPaths(): string[] {
+  const systemRoot = process.env.SystemRoot ?? "C:\\Windows";
+  return [
+    `${systemRoot}\\System32\\WindowsPowerShell\\v1.0`,
+    `${systemRoot}\\System32`,
+  ];
+}
+
+/**
+ * 把命令名解析成绝对路径（解析不到就原样返回裸名——`spawn` 会报 ENOENT，
+ * 由 {@link interpretPickerOutcome} 翻成「不可用」并换下一个候选）。
+ */
+export function resolvePickerCommands(
+  commands: readonly PickerCommand[],
+  find: (name: string) => string | null,
+): PickerCommand[] {
+  return commands.map((entry) => {
+    const resolved = find(entry.command);
+    return resolved ? { ...entry, command: resolved } : { ...entry };
+  });
+}
+
+/** 缺命令时按平台说清缺的是哪一支（Windows 曾误报「缺 zenity / kdialog」）。 */
+function missingCommandHint(platform: NodeJS.Platform): string {
+  if (platform === "darwin") return "osascript";
+  if (platform === "win32") return "PowerShell（powershell.exe）";
+  return "zenity / kdialog";
 }
 
 export interface CommandOutcome {
@@ -137,7 +175,7 @@ export function interpretPickerOutcome(input: {
   if (outcome.missing) {
     return {
       status: "unavailable",
-      reason: `这台机器上没有可用的文件夹对话框命令（缺 ${input.platform === "darwin" ? "osascript" : "zenity / kdialog"}）。`,
+      reason: `这台机器上没有可用的文件夹对话框命令（缺 ${missingCommandHint(input.platform)}）。`,
     };
   }
   if (outcome.timedOut) {
@@ -185,12 +223,22 @@ export function createNativeDirectoryPicker(
       command: PickerCommand,
       timeoutMs: number,
     ) => Promise<CommandOutcome>;
+    /** 测试注入：把命令名解析成绝对路径。 */
+    findExecutable?: (name: string) => string | null;
     paths?: PickerPaths;
   } = {},
 ): NativeDirectoryPicker {
   const platform = options.platform ?? process.platform;
   const timeoutMs = options.timeoutMs ?? 10 * 60 * 1000;
-  const commands = nativePickerCommands(platform);
+  const commands = resolvePickerCommands(
+    nativePickerCommands(platform),
+    options.findExecutable ??
+      ((name) =>
+        resolveExecutable(
+          [name],
+          platform === "win32" ? windowsPickerExtraPaths() : [],
+        )),
+  );
   const run = options.runCommand ?? runPickerCommand;
 
   return {

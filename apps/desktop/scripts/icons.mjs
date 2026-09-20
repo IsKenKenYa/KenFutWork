@@ -5,10 +5,10 @@
  * 用法：`node scripts/icons.mjs`（在 apps/desktop 下）
  *
  * 两步：
- * 1. **合成应用图标**：源标（`docs/design/logo/GPT生成.png`，蓝 KF）叠在**白色圆角贴片**上
+ * 1. **合成应用图标**：源标（`docs/视觉设计/logo/新版.png`，蓝 KF）叠在**白色圆角贴片**上
  *    —— 用户口径「图标后面加上白色背景，圆角还是之前的小米图标同版圆角」：圆角取 22%，
  *    与上一版（岚配色圆角方块）的 clip 半径一致（112/512 ≈ 21.9%）。
- *    合成结果同时落到 `docs/design/logo/应用图标-白底圆角.png`（可入库的定稿）、
+ *    合成结果同时落到 `docs/视觉设计/logo/应用图标-白底圆角.png`（可入库的定稿）、
  *    `apps/web/public/logo.png`（应用内品牌图）与 `apps/web/public/app-icon.png`（启动页等）。
  * 2. **出整套平台图标**：交给 Tauri 自带的 `tauri icon`（ico、icns、png、Square 系列、android、ios），
  *    比手写 ICO 打包器可靠，也保证与框架约定一致。
@@ -22,16 +22,14 @@ import { join } from "node:path";
 const repoRoot = join(import.meta.dirname, "..", "..", "..");
 const iconsDir = join(import.meta.dirname, "..", "src-tauri", "icons");
 const publicDir = join(repoRoot, "apps", "web", "public");
-const designDir = join(repoRoot, "docs", "design", "logo");
+const designDir = join(repoRoot, "docs", "视觉设计", "logo");
 
 // sharp 是 apps/server 的依赖（图片生成 provider 用它）；按它的包位置解析，不给桌面壳加依赖
 const require = createRequire(join(repoRoot, "apps", "server", "package.json"));
 const sharp = require("sharp");
 
 /** 品牌标候选源（按优先级）：当前定稿在前。 */
-const SOURCES = ["GPT生成.png", "最终定稿.svg"].map((name) =>
-  join(designDir, name),
-);
+const SOURCES = ["新版.png"].map((name) => join(designDir, name));
 const source = SOURCES.find((path) => existsSync(path));
 if (!source) {
   console.error(`找不到品牌标源文件，试过：\n${SOURCES.join("\n")}`);
@@ -51,7 +49,7 @@ if (!source) {
  *   - 85% → **80%**：用户「图标改成 0.8 吧」——左右白边约 10%
  *     （1024 画布上墨迹约 819px，36px 任务栏图标上约 3.6px）。
  *
- * 校验方式：量 `docs/design/logo/应用图标-白底圆角.png` 的「墨迹宽度 / 1024」。注意标是
+ * 校验方式：量 `docs/视觉设计/logo/应用图标-白底圆角.png` 的「墨迹宽度 / 1024」。注意标是
  * 805×721、比高宽，`fit: contain` 下**左右是受限边**，这里的百分比说的都是左右那一侧；
  * 上下白边按比例自然更大（0.80 时约 15%）。
  */

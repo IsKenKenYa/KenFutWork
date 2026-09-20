@@ -115,9 +115,14 @@ export function apply(ctx) {
 
   /**
    * 器件视图：[{...基础字段, properties:[…], specError?}]。
-   * 逐器件解析规格（有缓存），再批量读一次属性值；某个器件规格解析失败不影响其它器件。
+   * 逐器件解析规格（成功/失败都有缓存），再批量读一次属性值；某个器件规格解析失败不影响其它器件。
+   * `refreshSpec`（用户点「刷新」）时强制对失败型号重试一次——否则 10 分钟内一直沿用负缓存。
    */
-  async function buildDeviceView(session, rawList) {
+  async function buildDeviceView(
+    session,
+    rawList,
+    { refreshSpec = false } = {},
+  ) {
     const targets = rawList
       .map(describeDevice)
       .filter((device) => device.did)
@@ -127,7 +132,7 @@ export function apply(ctx) {
     const planned = [];
     for (const device of targets) {
       try {
-        const spec = await specs.loadSpec(device.model);
+        const spec = await specs.loadSpec(device.model, { force: refreshSpec });
         planned.push({ device, properties: selectProperties(spec) });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -265,7 +270,10 @@ export function apply(ctx) {
       const { list, homeCount } = await loadDevices(workspaceId, session, {
         refresh: request.query.refresh === "1",
       });
-      const view = await buildDeviceView(session, list);
+      const view = await buildDeviceView(session, list, {
+        // 用户点「刷新」= 明确想重试：让规格失败的型号也再试一次
+        refreshSpec: request.query.refresh === "1",
+      });
       const authHint =
         view.devices.length === 0
           ? homeCount === 0
@@ -373,7 +381,9 @@ export function apply(ctx) {
       const { list, homeCount } = await loadDevices(workspaceId, session, {
         refresh: args?.refresh === true,
       });
-      const view = await buildDeviceView(session, list);
+      const view = await buildDeviceView(session, list, {
+        refreshSpec: args?.refresh === true,
+      });
       return {
         devices: view.devices.map((device) => ({
           did: device.did,

@@ -31,31 +31,18 @@
       body {
         margin: 0;
         padding: 16px;
-        height: 100vh;
-        display: flex;
-        flex-direction: column;
         background: var(--bg);
         color: var(--text);
         font: 13px/1.55 system-ui, -apple-system, "Segoe UI", "Microsoft YaHei",
           sans-serif;
+        /* 整页滚动（页脚留在内容流里）；滚动条槽位恒定，不因内容重建而横跳 */
+        scrollbar-gutter: stable;
       }
       header {
         display: flex;
         align-items: center;
         gap: 10px;
         margin-bottom: 12px;
-        flex: none;
-      }
-      /* 滚动只发生在设备区：header/footer 常驻，刷新重建网格时锁定滚动位置 */
-      main {
-        flex: 1 1 auto;
-        min-height: 0;
-        overflow-y: auto;
-        scrollbar-gutter: stable;
-      }
-      footer {
-        flex: none;
-        margin-top: 12px;
       }
       header h1 {
         font-size: 15px;
@@ -203,7 +190,7 @@
   </head>
   <body>
     <header>
-      <h1>米家</h1>
+      <!-- 标题由宿主弹窗 chrome 出（图标 + 名称），面板里不重复出，只留状态与操作 -->
       <span id="state" class="hint"></span>
       <span class="grow"></span>
       <button id="refresh" type="button" hidden>刷新</button>
@@ -212,7 +199,11 @@
     <main id="body">
       <div class="card hint">正在获取登录态…</div>
     </main>
-    <footer id="footer"></footer>
+    <!-- 页脚两块分开：瞬时消息（#note）与「规格解析失败」卡片（renderSpecErrors 管理）——
+         轮询只清瞬时消息，不动失败卡片，页面高度才稳定（否则滚动条每 5 秒抖一次） -->
+    <footer id="footer">
+      <p id="note" hidden></p>
+    </footer>
     <script type="module" src="./panel.js"></script>
   </body>
 </html>

@@ -146,7 +146,7 @@ const FIXTURE_README = [
   "",
   "| 文档 | 角色 |",
   "| --- | --- |",
-  "| `tech/改造计划.md` | 权威（ctx key 表属主） |",
+  "| `方案设计/改造计划.md` | 权威（ctx key 表属主） |",
   "| `sub/frozen.md` | 快照 |",
   "| `ok.md` | 权威 |",
   "",
@@ -191,14 +191,16 @@ async function withDocsFixture(run) {
   const fixtureRoot = await mkdtemp(path.join(tmpdir(), "kenfutwork-docs-"));
   try {
     await mkdir(path.join(fixtureRoot, "docs", "sub"), { recursive: true });
-    await mkdir(path.join(fixtureRoot, "docs", "tech"), { recursive: true });
+    await mkdir(path.join(fixtureRoot, "docs", "方案设计"), {
+      recursive: true,
+    });
     await writeFile(
       path.join(fixtureRoot, "docs", "README.md"),
       FIXTURE_README,
       "utf8",
     );
     await writeFile(
-      path.join(fixtureRoot, "docs", "tech", "改造计划.md"),
+      path.join(fixtureRoot, "docs", "方案设计", "改造计划.md"),
       FIXTURE_PLAN,
       "utf8",
     );
@@ -472,7 +474,7 @@ test("去 Supabase 残留只许减不许增（棘轮门禁）", async () => {
 // 向导带 `ManifestDPIAwareness PerMonitorV2`，控件随 DPI 放大（150% 屏上 1.5 倍），而
 // `MUI_HEADERIMAGE_BITMAP_STRETCH` 默认 `FitControl` —— NSIS 会把位图 StretchBlt 到控件大小。
 // 按名义尺寸出图 = 上线就被放大 1.5 倍，用户看到的就是糊图（2026-09-19 实测，见
-// docs/参考图/未做需求.md §三十八）。这条守门禁只拦「退回名义尺寸」这种改法。
+// docs/日志.md §三十八）。这条守门禁只拦「退回名义尺寸」这种改法。
 test("安装向导品牌图按 DPI 超采样出图（退回名义尺寸即被拉伸成糊图）", async () => {
   for (const [file, nominal] of [
     ["installer-header.bmp", [150, 57]],

@@ -20,7 +20,7 @@
 | `supabase/migrations` | **唯一**数据库 Schema 迁移源（原生 SQL，目录名沿用历史） |
 | `plugins/` | 参考插件（`example-clock` 最小工具插件；`demo-panel` 演示四种能力） |
 | `scripts/` | 构建/打包/诊断脚本（含本地搜索代理与本地模型替身） |
-| `docs/` | 技术文档；入口见 [`docs/README.md`](docs/README.md)（改造计划 §4.13 是变更台账） |
+| `docs/` | 技术文档；入口见 [`docs/README.md`](docs/README.md)（[`docs/日志.md`](docs/日志.md) 是历轮回执与变更台账） |
 
 ---
 
@@ -254,3 +254,10 @@ pnpm typecheck
 ## License
 
 GPL-3.0（见 [LICENSE](LICENSE)）。
+
+### 第三方素材（字体等）
+
+`docs/视觉设计/logo/` 下的字体样张与图片素材**不属于本项目代码，不在 GPL-3.0 的授权范围内**，版权归各自权利人所有：
+
+- 其中三支字体是**需商业授权**的第三方字体，另有多支来自 Google Fonts 的开源字体（逐项清单与字体内许可字段原文见 [docs/视觉设计/logo/字体/字体说明.md](docs/视觉设计/logo/字体/字体说明.md)）。随本仓库分发**不构成授权**，使用前请自行取得相应许可。
+- 仓库不代为授权、不担保这些素材的授权状态与可用性，也不对使用或再分发产生的任何后果负责。

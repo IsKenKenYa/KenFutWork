@@ -12,8 +12,8 @@
 
 ```bash
 # .env.local additions
-KENFUTWORK_SANDBOX_ROOT=/tmp/loomic-sandbox-dev
-KENFUTWORK_SKILLS_ROOT=./skills
+LOOMIC_SANDBOX_ROOT=/tmp/loomic-sandbox-dev
+LOOMIC_SKILLS_ROOT=./skills
 ```
 
 ### Verification Steps
@@ -33,15 +33,15 @@ KENFUTWORK_SKILLS_ROOT=./skills
 
 The Dockerfile handles everything:
 - Python + Pillow + reportlab installed in image
-- Skills + fonts copied to `/opt/kenfutwork/skills/`
+- Skills + fonts copied to `/opt/loomic/skills/`
 - Default env vars work out of the box
 
 ### Troubleshooting
 
 | Issue | Cause | Fix |
 |-------|-------|-----|
-| `execute` tool not available | Backend not sandbox | Check `KENFUTWORK_AGENT_BACKEND_MODE=state` and backend factory returns LocalShellBackend |
-| Fonts not found | Wrong FONT_DIR | Check `KENFUTWORK_SKILLS_ROOT` env var |
+| `execute` tool not available | Backend not sandbox | Check `LOOMIC_AGENT_BACKEND_MODE=state` and backend factory returns LocalShellBackend |
+| Fonts not found | Wrong FONT_DIR | Check `LOOMIC_SKILLS_ROOT` env var |
 | Sandbox dir fills up | Cleanup failed | Check runtime.ts finally block; add cron cleanup as safety net |
 | Python not found | Not in Docker image | Rebuild Docker image |
 | Skill not discovered | Skills path misconfigured | Check `/skills/` route in CompositeBackend |

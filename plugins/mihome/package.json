@@ -18,6 +18,7 @@
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
+    "title": "米家",
     "category": "工具与集成",
     "assets": true,
     "ui": [

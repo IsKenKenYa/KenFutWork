@@ -7,7 +7,7 @@
  * （实测 `Start-Process` 报 “The operation was canceled by the user”）。探针与正式包共用同一套
  * NSIS/MUI 设置（同 `MUI_HEADERIMAGE*`、同 `ManifestDPIAware` / `ManifestDPIAwareness`），
  * 只把 `RequestExecutionLevel` 降成 `user` —— 于是「位图被 StretchBlt 拉到 DPI 缩放后的控件尺寸」
- * 这条最容易出错的链路可以原样复现（2026-09-19「图还是糊」的根因，见 `docs/参考图/未做需求.md` §三十八）。
+ * 这条最容易出错的链路可以原样复现（2026-09-19「图还是糊」的根因，见 `docs/日志.md` §三十八）。
  *
  * 用法：`pnpm --filter @kenfutwork/desktop verify:wizard-art`
  * 产物：`%TEMP%\kfw-wizard-probe\页头.png`、`侧边.png`（窗口原始像素，未缩放）。

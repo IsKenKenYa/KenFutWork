@@ -9,7 +9,7 @@
  *   1) docs 内相对链接与锚点可解析（外部 http(s)/mailto 跳过，HTML 注释与代码块内跳过）；
  *   2) 冻结区（<!-- frozen:start --> ~ <!-- frozen:end -->）SHA-256 与 docs/frozen-lock.json 一致；
  *   3) 文档中出现的决策 ID（DEC-* / FORM-*）均已登记进 docs/README.md「决策 ID 登记表」；
- *   4) docs/**\/*.md 均已登记进文档地图（`KenFutWork原版文档/`、README 自身豁免）；
+ *   4) docs/**\/*.md 均已登记进文档地图（`历史文档/Loomic原版文档/`、README 自身豁免）；
  *   5) 全仓库只有《改造计划》§4.2 一处以表头 `ctx key` 定义 key 清单；
  *
  * 用法：
@@ -29,7 +29,7 @@ const LOCK_FILE = "docs/frozen-lock.json";
 const MAP_FILE = "docs/README.md";
 /** 文档地图自身不入图；原版历史文档整目录豁免。 */
 const MAP_EXCLUDE_FILES = new Set(["docs/README.md"]);
-const MAP_EXCLUDE_PREFIXES = ["docs/KenFutWork原版文档/"];
+const MAP_EXCLUDE_PREFIXES = ["docs/历史文档/Loomic原版文档/"];
 /**
  * 冻结扫描豁免：`docs/README.md` 的治理规则 3 必须把冻结标记写成字面量来定义规则，
  * 因而天然含有这两个标记，不能据此判定「自己也冻结」。
@@ -37,7 +37,7 @@ const MAP_EXCLUDE_PREFIXES = ["docs/KenFutWork原版文档/"];
 const FROZEN_SCAN_EXCLUDE = new Set(["docs/README.md"]);
 const DECISION_ID_PATTERN = /\b(DEC|FORM)-(\d+)\b/g;
 /** 唯一允许定义 ctx key 清单的文档。 */
-const CTX_KEY_TABLE_OWNER = "docs/tech/改造计划.md";
+const CTX_KEY_TABLE_OWNER = "docs/方案设计/改造计划.md";
 const CTX_KEY_HEADER_CELL = "ctx key";
 
 const docsDir = "docs";

@@ -1,3 +1,4 @@
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { registerPluginRoutes } from "../../http/plugins.js";
@@ -8,9 +9,12 @@ import {
   encryptSecret,
 } from "../model-providers/secret-store.js";
 import { projectWorkDirLoaderFor } from "../projects/work-dir.js";
+import { type BundleFiles, buildBundleManifest } from "./bundle-manifest.js";
 import { CompatLoadError } from "./compat-context.js";
+import { validateBundleFiles } from "./compat-validator.js";
 import { createInstallPluginTool } from "./install-plugin-tool.js";
 import {
+  type BundledBundle,
   createPluginRegistryService,
   type PluginCatalogEntry,
   type PluginRegistryService,
@@ -36,6 +40,12 @@ export interface PluginsPluginDeps {
   builtinCatalog: readonly PluginCatalogEntry[];
   /** 已安装插件落盘目录；缺省 `<cwd>/.kenfutwork/plugins`，可用 KENFUTWORK_PLUGINS_DIR 覆盖 */
   pluginsDir?: string;
+  /**
+   * 自带 bundle 插件目录（每个子目录是一个可安装的插件，如 `plugins/mihome`）。
+   * 缺省依次尝试 `<cwd>/plugins` 与 `<cwd>/../../plugins`（pnpm workspace 布局），
+   * 可用 KENFUTWORK_BUILTIN_PLUGINS_DIR 覆盖；目录不存在时没有自带插件（不报错）。
+   */
+  builtinPluginsDir?: string;
   /** GitHub token（可选，提升匿名速率上限） */
   githubToken?: string;
   /** 宿主 Node 主版本（engines 判定用）；缺省取 process.version */
@@ -62,6 +72,93 @@ function resolveHostNodeMajor(explicit?: number): number {
     process.version.replace(/^v/, "").split(".")[0] ?? "22",
     10,
   );
+}
+
+/** 自带 bundle 目录的候选（按顺序取第一个存在的）；显式传入/环境变量优先。 */
+function builtinPluginsDirCandidates(explicit?: string): string[] {
+  const candidates: string[] = [];
+  if (explicit) candidates.push(path.resolve(explicit));
+  const fromEnv = process.env.KENFUTWORK_BUILTIN_PLUGINS_DIR?.trim();
+  if (fromEnv) candidates.push(path.resolve(fromEnv));
+  candidates.push(path.resolve(process.cwd(), "plugins"));
+  candidates.push(path.resolve(process.cwd(), "..", "..", "plugins"));
+  return candidates;
+}
+
+/**
+ * 读自带 bundle 插件（每个子目录 = 一个可安装插件）。启动期一次读入内存：
+ * 市场列表要点出来、安装时直接落盘，资产（图标）也能在未安装时显示。
+ * 解析失败/门禁不过的子目录跳过并记日志——一个坏目录不拖垮其余自带插件。
+ */
+function loadBundledBundles(
+  explicitDir: string | undefined,
+  hostNodeMajor: number,
+  log: { warn(message: string): void },
+): BundledBundle[] {
+  let rootDir: string | undefined;
+  for (const candidate of builtinPluginsDirCandidates(explicitDir)) {
+    try {
+      if (readdirSync(candidate).length > 0) {
+        rootDir = candidate;
+        break;
+      }
+    } catch {
+      // 候选目录不存在，试下一个
+    }
+  }
+  if (!rootDir) return [];
+
+  const out: BundledBundle[] = [];
+  for (const entry of readdirSync(rootDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const pluginDir = path.join(rootDir, entry.name);
+    const files: BundleFiles = {};
+    const collect = (rel: string): void => {
+      for (const item of readdirSync(path.join(pluginDir, rel), {
+        withFileTypes: true,
+      })) {
+        const child = rel ? `${rel}/${item.name}` : item.name;
+        if (item.isDirectory()) {
+          if (item.name === "node_modules") continue;
+          collect(child);
+        } else {
+          files[child] = readFileSync(path.join(pluginDir, child), "utf8");
+        }
+      }
+    };
+    try {
+      collect("");
+      const { manifest } = buildBundleManifest(files);
+      const report = validateBundleFiles(files, {
+        hostNodeMajor,
+        allowLifecycleScripts: false,
+        fallbackName: entry.name,
+      });
+      if (!report.compatible) {
+        log.warn(
+          `[plugins] 自带插件 ${entry.name} 门禁未通过，跳过：${report.issues
+            .filter((issue) => issue.severity === "blocker")
+            .map((issue) => issue.message)
+            .join("；")}`,
+        );
+        continue;
+      }
+      out.push({
+        id: `local__${manifest.name}`,
+        name: manifest.name,
+        files,
+        manifest,
+        report,
+      });
+    } catch (error) {
+      log.warn(
+        `[plugins] 自带插件目录 ${entry.name} 读取失败，跳过：${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+  return out;
 }
 
 /**
@@ -108,6 +205,19 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
     inject: ["auth", "admin", "persistence", "viewer"],
     apply(ctx) {
       const pluginsDir = resolvePluginsDir(deps.pluginsDir);
+      const hostNodeMajor = resolveHostNodeMajor(deps.hostNodeMajor);
+      const bundledBundles = loadBundledBundles(
+        deps.builtinPluginsDir,
+        hostNodeMajor,
+        { warn: (message) => console.warn(message) },
+      );
+      if (bundledBundles.length > 0) {
+        console.log(
+          `[plugins] 自带插件：${bundledBundles
+            .map((bundle) => bundle.name)
+            .join(", ")}`,
+        );
+      }
       // 插件存储复用凭证缝的加解密（同一把 KENFUTWORK_CREDENTIAL_SECRET）：
       // 缺密钥时在**调用期** fail loud，而不是启动期——不用存储的插件照常可用。
       const credentialEnv = ctx.env.credentialSecret
@@ -120,8 +230,9 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
           pluginsDir,
           tools: ctx.get("tools"),
           subscribe: bridgeSubscribe(ctx),
-          hostNodeMajor: resolveHostNodeMajor(deps.hostNodeMajor),
+          hostNodeMajor,
           builtinCatalog: deps.builtinCatalog,
+          bundledBundles,
           storage: createPluginStorage({
             persistence: ctx.get("persistence"),
             cipher: {

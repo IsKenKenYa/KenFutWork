@@ -22,9 +22,9 @@ import {
   PanelLeftOpen,
   PanelRight,
   PanelsTopLeft,
-  Plug,
   Plus,
   Send,
+  Server,
   ShieldAlert,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -95,6 +95,11 @@ import { pickCheckpointForRun } from "@/lib/checkpoint-select";
 import { fetchCheckpoints } from "@/lib/code-checkpoints-api";
 import { commitGitAll } from "@/lib/code-git-api";
 import {
+  loadCodeWorkDir,
+  reconcileCodeWorkDir,
+  saveCodeWorkDir,
+} from "@/lib/code-work-dir-preference";
+import {
   contextUsageModelMeta,
   formatTokens,
   type RunUsageSnapshot,
@@ -112,9 +117,14 @@ import {
   panelWidthLimits,
   SIDEBAR_RAIL_WIDTH,
 } from "@/lib/panel-layout";
-import { PluginPanelButtons, resolvePanelUrl } from "@/lib/plugin-panels";
+import { PluginIcon, PluginPanelButtons } from "@/lib/plugin-panels";
 import { dropPartialAssistantTail } from "@/lib/run-events";
-import { describeRunFailure } from "@/lib/run-failure";
+import {
+  ACK_POLL_MS,
+  ACK_TIMEOUT_MS,
+  decideAckTimeout,
+  describeRunFailure,
+} from "@/lib/run-failure";
 import {
   createProject,
   deleteProject,
@@ -457,6 +467,11 @@ function saveTasks(mode: WorkbenchMode, tasks: WorkbenchTask[]) {
   } catch {
     // 存储失败不阻塞会话
   }
+}
+
+/** browser localStorage（SSR / 无 window 时给 undefined，lib 侧当 no-op）。 */
+function browserStorage(): Storage | undefined {
+  return typeof window === "undefined" ? undefined : window.localStorage;
 }
 
 export function Workbench() {
@@ -1006,6 +1021,29 @@ export function Workbench() {
   useEffect(() => {
     if (session?.access_token) refreshProjects();
   }, [session, refreshProjects]);
+
+  /**
+   * 恢复上次选中的工作目录（只做一次）。
+   *
+   * 不恢复的后果不是「少点一下」：Code 模式的 run 作用域取「选中项目的主画布」，
+   * 没选中时服务端懒供给隐藏 code 项目——**文件会落进 `tmp/sandbox/<canvasId>`
+   * 而不是用户配的目录**，界面上完全看不出来（2026-09-20 真机走实测）。
+   * 项目列表拿到之后再对账：项目被删了就只留名字，交给 startTask 的「按目录名补建」。
+   */
+  const workDirRestoredRef = useRef(false);
+  useEffect(() => {
+    if (workDirRestoredRef.current) return;
+    if (codeProjects.length === 0) return;
+    const saved = loadCodeWorkDir(browserStorage());
+    if (!saved) {
+      workDirRestoredRef.current = true;
+      return;
+    }
+    const reconciled = reconcileCodeWorkDir(saved, codeProjects);
+    setSelectedProjectId(reconciled.projectId);
+    setWorkDirName(reconciled.name);
+    workDirRestoredRef.current = true;
+  }, [codeProjects]);
 
   /**
    * 探测服务端的原生目录对话框能力（桌面形态才有）。
@@ -1600,14 +1638,29 @@ export function Workbench() {
   );
 
   /**
+   * 选中工作目录（项目）——**三处入口都走它**，好让「记住这个选择」只有一处实现。
+   *
+   * 为什么要记住：刷新后 `selectedProjectId` / `workDirName` 本来会归零，而 Code 模式的
+   * run 作用域取「选中项目的主画布」——没选中时服务端懒供给隐藏 code 项目，**文件会悄悄
+   * 落进 `<sandboxRoot>/<canvasId>` 而不是用户配的目录**，界面上看不出差别。
+   */
+  const selectWorkDir = useCallback(
+    (selection: { projectId: string; name: string } | null) => {
+      setSelectedProjectId(selection?.projectId ?? null);
+      setWorkDirName(selection?.name ?? null);
+      setWorkDirNotice(null);
+      saveCodeWorkDir(browserStorage(), selection);
+    },
+    [],
+  );
+
+  /**
    * 「不在项目中工作」：清掉工作目录与项目选择。
    * run 会退回会话自身的作用域（服务端懒供给的 Code 载体），不再绑定工作目录项目。
    */
   const clearWorkDirectory = useCallback(() => {
-    setWorkDirName(null);
-    setWorkDirNotice(null);
-    setSelectedProjectId(null);
-  }, []);
+    selectWorkDir(null);
+  }, [selectWorkDir]);
 
   /**
    * 「填本机路径」：把用户填的绝对路径绑成工作目录项目的 `projects.work_dir`。
@@ -1632,9 +1685,7 @@ export function Workbench() {
               : project,
           ),
         );
-        setSelectedProjectId(plan.projectId);
-        setWorkDirName(name);
-        setWorkDirNotice(null);
+        selectWorkDir({ projectId: plan.projectId, name });
         return;
       }
 
@@ -1644,11 +1695,12 @@ export function Workbench() {
         work_dir: path,
       });
       setCodeProjects((prev) => [result.project, ...prev]);
-      setSelectedProjectId(result.project.id);
-      setWorkDirName(result.project.name);
-      setWorkDirNotice(null);
+      selectWorkDir({
+        projectId: result.project.id,
+        name: result.project.name,
+      });
     },
-    [session, codeProjects],
+    [session, codeProjects, selectWorkDir],
   );
 
   const pickWorkDirectory = useCallback(async () => {
@@ -1687,8 +1739,6 @@ export function Workbench() {
 
     const result = await workDirPick(window);
     if (result.status === "picked") {
-      setWorkDirName(result.name);
-      setWorkDirNotice(null);
       // Code 模式：**工作目录即项目**。run 的生产后端要求绑定项目
       // （缺 canvasId 会立刻失败），而浏览器只拿得到目录名——所以这里按目录名
       // 建同名项目并选中，run 以该项目的主画布为作用域，文件落在项目的沙箱目录里。
@@ -1696,18 +1746,23 @@ export function Workbench() {
         // 目录名 → 工作目录项目：同名复用，没有就自动建（服务端 kind='code'）
         const plan = resolveWorkDirProject(result.name, codeProjects);
         if (plan.kind === "reuse") {
-          setSelectedProjectId(plan.projectId);
+          selectWorkDir({ projectId: plan.projectId, name: result.name });
           return;
         }
         const created = await createCodeProject(plan.name);
         if (created) {
-          setSelectedProjectId(created.id);
+          selectWorkDir({ projectId: created.id, name: created.name });
           return;
         }
+        setWorkDirName(result.name);
+        setWorkDirNotice(null);
         setWorkDirNotice(
           "已选定目录名，但项目创建失败，本次运行可能无法开始。",
         );
+        return;
       }
+      setWorkDirName(result.name);
+      setWorkDirNotice(null);
       return;
     }
     if (result.status === "cancelled") {
@@ -1724,6 +1779,7 @@ export function Workbench() {
     mode,
     codeProjects,
     createCodeProject,
+    selectWorkDir,
     session,
     nativeDirPicker,
     bindWorkDirectory,
@@ -1876,30 +1932,29 @@ export function Workbench() {
 
       let acked = false;
       /**
-       * ack 超时：**不能一律报「请重试」**。
+       * ack 超时的处置交给纯函数判定（口径只有一处，见 `lib/run-failure.ts`）。
        *
-       * 实测：服务端把 ack 推给一条已经断掉的连接（`ack_sent delivered=false`），客户端
-       * 12s 后照报「运行请求未被服务端确认…请重试」——可那个 run 其实已经在跑了。盲重试
-       * 会造出重复 run（重复扣额度、重复副作用）。所以：连接断着就先等着（服务端重连时
-       * 按 lastSeq 重放事件，本轮会自己接上），只有「连接正常却收不到 ack」或「长时间没
-       * 恢复」才判失败。
+       * 两条实测教训写在那个函数里：① 连接断着时不能一律报「请重试」——服务端会按
+       * lastSeq 重放，本轮能自己接上；② **看着连着却收不到 ack** 时更不能报「请重试」
+       * ——那是半开连接，服务端已经把 run 跑起来了，照着提示重发会造出重复 run。
        */
-      const ACK_TIMEOUT_MS = 12_000;
-      const ACK_MAX_WAIT_MS = 90_000;
       let waitedMs = 0;
       let ackTimer: number;
       const checkAck = () => {
         if (acked) return;
         waitedMs += ACK_TIMEOUT_MS;
-        if (!ws.connected && waitedMs < ACK_MAX_WAIT_MS) {
-          ackTimer = window.setTimeout(checkAck, 6_000);
+        const decision = decideAckTimeout({
+          connected: ws.connected,
+          waitedMs,
+        });
+        if (decision.action === "fail") {
+          markFailed(decision.text);
           return;
         }
-        markFailed(
-          ws.connected
-            ? "请求未被确认，请重试。"
-            : "连接长时间未恢复，本轮未确认；重连后会自动同步，仍无输出再重试。",
-        );
+        if (decision.action === "reconnect") {
+          ws.reconnectNow();
+        }
+        ackTimer = window.setTimeout(checkAck, ACK_POLL_MS);
       };
       ackTimer = window.setTimeout(checkAck, ACK_TIMEOUT_MS);
 
@@ -2159,7 +2214,7 @@ export function Workbench() {
       }
     >
       {sidebarCollapsed ? (
-        /* 收起态：图标栏（模式切换 + 插件市场 + 底部头像） */
+        /* 收起态：图标栏（模式切换 + 插件 + 底部头像） */
         <aside className="flex w-12 shrink-0 flex-col items-center gap-1 border-r bg-card py-2">
           <KenFutWorkLogo className="mb-1 size-7 shrink-0" />
           <button
@@ -2186,8 +2241,8 @@ export function Workbench() {
           ))}
           <button
             type="button"
-            title="插件市场"
-            aria-label="插件市场"
+            title="插件"
+            aria-label="插件"
             onClick={() => setPluginsOpen(true)}
             className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
           >
@@ -2205,7 +2260,7 @@ export function Workbench() {
           </div>
         </aside>
       ) : (
-        /* 展开态：logo + 模式切换 + 插件市场 + 项目(design) + 任务列表 + 底部个人中心 */
+        /* 展开态：logo + 模式切换 + 插件 + 项目(design) + 任务列表 + 底部个人中心 */
         <aside
           style={{ width: sidebarWidth }}
           className="relative flex shrink-0 flex-col border-r bg-card"
@@ -2276,7 +2331,7 @@ export function Workbench() {
               onClick={() => setPluginsOpen(true)}
               className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
-              <Layers className="h-4 w-4 shrink-0" /> 插件市场
+              <Layers className="h-4 w-4 shrink-0" /> 插件
             </button>
             <button
               type="button"
@@ -2290,7 +2345,9 @@ export function Workbench() {
               onClick={() => setMcpOpen(true)}
               className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
-              <Plug className="h-4 w-4 shrink-0" /> MCP
+              {/* Server 而不是 Plug：插头字形天生窄（墨迹只占格子 58%），居中也会显得缩在
+                  右边；Server 与相邻图标一样填满格子（92%），不必再做尺寸特例 */}
+              <Server className="h-4 w-4 shrink-0" /> MCP
             </button>
             {/* 插件面板（能力 `ui`）：侧栏槽位 */}
             <PluginPanelButtons
@@ -2304,16 +2361,9 @@ export function Workbench() {
                   title={`插件 ${panel.pluginId} 提供的面板`}
                   className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
-                  {panel.icon ? (
-                    // biome-ignore lint/performance/noImgElement: 插件图标的资源地址要带令牌缝解析，静态导出下 next/image 不能用
-                    <img
-                      src={resolvePanelUrl(panel.icon, panel.pluginId)}
-                      alt=""
-                      className="h-4 w-4 shrink-0 rounded-[4px]"
-                    />
-                  ) : (
-                    <PanelsTopLeft className="h-4 w-4 shrink-0" />
-                  )}{" "}
+                  {/* 插件图标：单色渲染（跟随本行文字色），槽位与本体都 16px——
+                      与 MCP/技能/插件 三个满格字形（墨迹 92%）同尺寸才不显小 */}
+                  <PluginIcon icon={panel.icon} pluginId={panel.pluginId} />{" "}
                   {panel.title}
                 </button>
               )}
@@ -2528,9 +2578,10 @@ export function Workbench() {
                                 })
                               }
                               onOpen={() => {
-                                setSelectedProjectId(p.id);
-                                setWorkDirName(p.name);
-                                setWorkDirNotice(null);
+                                selectWorkDir({
+                                  projectId: p.id,
+                                  name: p.name,
+                                });
                               }}
                               onRename={(next) =>
                                 void renameCodeProject(p.id, next)
@@ -3156,9 +3207,10 @@ ${formatElementReference(picked)}`
                     const project = codeProjects.find(
                       (p) => p.id === projectId,
                     );
-                    setSelectedProjectId(projectId);
-                    setWorkDirName(project?.name ?? null);
-                    setWorkDirNotice(null);
+                    selectWorkDir({
+                      projectId,
+                      name: project?.name ?? projectId,
+                    });
                   }}
                   onOpenFolder={() => void pickWorkDirectory()}
                   onBindPath={bindWorkDirectory}

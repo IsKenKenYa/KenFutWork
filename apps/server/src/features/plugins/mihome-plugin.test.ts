@@ -1,3 +1,4 @@
+import { readdirSync, readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -7,7 +8,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { ServerEnv } from "../../config/env.js";
 import { composePlugins } from "../../kernel/compose.js";
-import { createPluginRegistryService } from "./plugin-registry-service.js";
+import { buildBundleManifest } from "./bundle-manifest.js";
+import { validateBundleFiles } from "./compat-validator.js";
+import {
+  type BundledBundle,
+  createPluginRegistryService,
+} from "./plugin-registry-service.js";
 
 /**
  * 米家插件测试。分两层：
@@ -74,6 +80,15 @@ interface DeviceModelModule {
     values: Array<{ siid: number; piid: number; value: unknown }>,
   ) => Array<Record<string, unknown>>;
   describeDevice: (raw: Record<string, unknown>) => Record<string, unknown>;
+  createSpecResolver: (options?: {
+    fetchImpl?: (input: string | URL, init?: RequestInit) => Promise<Response>;
+    failureTtlMs?: number;
+  }) => {
+    loadSpec: (
+      model: string,
+      options?: { force?: boolean },
+    ) => Promise<{ services?: unknown[] }>;
+  };
 }
 
 async function loadPluginModule<ModuleShape>(
@@ -802,6 +817,56 @@ describe("米家插件：规格 → 控件模型", () => {
       room: null,
     });
   });
+
+  it("规格解析失败负缓存：TTL 内不重复试、force 强制重试、成功后才更新", async () => {
+    const model = await loadPluginModule<DeviceModelModule>(
+      "lib/device-model.js",
+    );
+    let instanceCalls = 0;
+    let instanceStatus = 500;
+    const resolver = model.createSpecResolver({
+      failureTtlMs: 60_000,
+      fetchImpl: async (input) => {
+        const url = String(input);
+        if (url.includes("/instances")) {
+          return new Response(
+            JSON.stringify({
+              instances: [{ model: "m.fail", type: "urn:test:fail" }],
+            }),
+            { status: 200 },
+          );
+        }
+        instanceCalls += 1;
+        if (instanceStatus !== 200) {
+          return new Response("boom", { status: instanceStatus });
+        }
+        return new Response(JSON.stringify({ services: [] }), { status: 200 });
+      },
+    });
+
+    // 第一次失败 → 记住失败；第二次（面板每 5 秒轮询）不再打上游、错误文案照旧
+    await expect(resolver.loadSpec("m.fail")).rejects.toThrow(/规格拉取失败/);
+    expect(instanceCalls).toBe(1);
+    await expect(resolver.loadSpec("m.fail")).rejects.toThrow(/规格拉取失败/);
+    expect(instanceCalls).toBe(1);
+
+    // 用户点「刷新」→ force 强制重试一次（失败则继续沿用负缓存）
+    await expect(
+      resolver.loadSpec("m.fail", { force: true }),
+    ).rejects.toThrow();
+    expect(instanceCalls).toBe(2);
+
+    // 上游恢复：force 重试成功后清掉负缓存，后续走成功缓存（不再打上游）
+    instanceStatus = 200;
+    await expect(
+      resolver.loadSpec("m.fail", { force: true }),
+    ).resolves.toMatchObject({ services: [] });
+    expect(instanceCalls).toBe(3);
+    await expect(resolver.loadSpec("m.fail")).resolves.toMatchObject({
+      services: [],
+    });
+    expect(instanceCalls).toBe(3);
+  });
 });
 
 // === 2. 全链路（真门禁 + 假云） ===
@@ -817,6 +882,8 @@ function installPlugin(
     homes?: Array<Record<string, unknown>>;
     emptyAccount?: boolean;
     pollThrows?: boolean;
+    /** 随应用自带的 bundle（市场直接列出未装条目，一键安装）。 */
+    bundledBundles?: BundledBundle[];
   } = {},
 ) {
   const kernel = composePlugins(makeEnv(), []);
@@ -837,6 +904,9 @@ function installPlugin(
     subscribe: () => () => {},
     hostNodeMajor: 22,
     builtinCatalog: [],
+    ...(options.bundledBundles
+      ? { bundledBundles: options.bundledBundles }
+      : {}),
     storage: {
       async get(workspaceId, pluginId, key) {
         return (
@@ -1389,6 +1459,72 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
     expect(again?.status).toBe(410);
   });
 
+  it("自带 bundle：未安装时市场直接列出，一键安装即生效（无需来源链接）", async () => {
+    const micloud = await loadPluginModule<MicloudModule>("lib/micloud.js");
+    // 把插件源目录整体读成「自带 bundle」的文件集合
+    const files: Record<string, string> = {};
+    const walk = (rel: string): void => {
+      for (const item of readdirSync(path.join(MIHOME_DIR, rel), {
+        withFileTypes: true,
+      })) {
+        const child = rel ? `${rel}/${item.name}` : item.name;
+        if (item.isDirectory()) walk(child);
+        else files[child] = readFileSync(path.join(MIHOME_DIR, child), "utf8");
+      }
+    };
+    walk("");
+
+    const bundled: BundledBundle = {
+      id: "local__kenfutwork-mihome",
+      name: "kenfutwork-mihome",
+      files,
+      manifest: buildBundleManifest(files).manifest,
+      report: validateBundleFiles(files, {
+        hostNodeMajor: 22,
+        allowLifecycleScripts: false,
+        fallbackName: "kenfutwork-mihome",
+      }),
+    };
+    const { service } = installPlugin(micloud, {
+      bundledBundles: [bundled],
+    });
+
+    // 未安装：市场按 builtin 来源列出（installed=false、带 ui 与图标、标题用展示名）
+    const listed = (await service.list()).find(
+      (entry) => entry.source === "builtin",
+    );
+    expect(listed).toMatchObject({
+      id: "local__kenfutwork-mihome",
+      name: "kenfutwork-mihome",
+      title: "米家",
+      installed: false,
+    });
+    expect(listed?.ui?.[0]?.icon).toBe("assets/icon.svg");
+    // 未安装也能读自带资产（市场卡片图标的来源）
+    const icon = await service.readAsset({
+      pluginId: "local__kenfutwork-mihome",
+      relativePath: "icon.svg",
+    });
+    expect(icon?.contentType).toBe("image/svg+xml");
+
+    // 一键安装：无 url、直接按包名装；装完即装载（ui 入口带 icon），市场不再重复列出
+    const result = await service.install({
+      builtin: "kenfutwork-mihome",
+      allowLifecycleScripts: false,
+    });
+    expect(result.installed.source).toBe("builtin");
+    expect(
+      service
+        .listUiEntries()
+        .find((entry) => entry.pluginId === "local__kenfutwork-mihome"),
+    ).toMatchObject({ icon: "assets/icon.svg", slot: "sidebar" });
+    // 安装后：市场不再出现「未安装」的自带条目（已安装的那条来自安装记录本身）
+    expect(
+      (await service.list()).filter(
+        (entry) => entry.source === "builtin" && !entry.installed,
+      ),
+    ).toEqual([]);
+  });
   it("空设备列表如实解释（家庭在、设备为零，不猜设备也不假装已连接）", async () => {
     const micloud = await loadPluginModule<MicloudModule>("lib/micloud.js");
     const { service } = installPlugin(micloud, { emptyAccount: true });

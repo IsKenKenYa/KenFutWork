@@ -1,5 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <!-- 米家品牌图标：绿底圆角方块 + 白色「米家」（侧栏 16px 下仍可辨色识形） -->
-  <rect width="64" height="64" rx="14" fill="#4CB750"/>
-  <text x="32" y="42" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif" font-size="27" font-weight="700" fill="#ffffff" text-anchor="middle">米家</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <!-- 米家（Mi Home）标：M+J 盾形描边。形状取自 Arcticons（arcticons:mi-home，CC BY-SA 4.0）。
+       描边 5（48 格）：空心描边比实心图标"轻"，加粗一档后与侧栏 lucide 线条图标同视觉重量
+       （宿主按 17px 渲染，见侧栏/市场卡片）。单色，宿主按「跟随菜单文字色」渲染（CSS mask）。 -->
+  <path fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-width="5" d="M6.964 29.122a17.4 17.4 0 0 1-.242-2.9V4.5L24 10.94L41.278 4.5v9.444m0 5.96v6.318A17.28 17.28 0 0 1 24 43.5h0A17.28 17.28 0 0 1 8.215 33.258"/>
 </svg>
