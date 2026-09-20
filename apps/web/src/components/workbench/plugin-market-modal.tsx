@@ -317,21 +317,23 @@ export function PluginMarketModal({
                     >
                       <span className="rounded-lg bg-muted p-2">
                         {showRealIcon && iconPath ? (
-                          // 与侧栏同一套渲染：单色（CSS mask + bg-current），跟卡片文字色走
-                          <span
-                            aria-hidden="true"
-                            className="block h-4 w-4 bg-current"
-                            style={{
-                              maskImage: `url(${resolvePanelUrl(iconPath, entry.id)})`,
-                              maskSize: "contain",
-                              maskRepeat: "no-repeat",
-                              maskPosition: "center",
-                              WebkitMaskImage: `url(${resolvePanelUrl(iconPath, entry.id)})`,
-                              WebkitMaskSize: "contain",
-                              WebkitMaskRepeat: "no-repeat",
-                              WebkitMaskPosition: "center",
-                            }}
-                          />
+                          // 与侧栏同一套渲染：单色（CSS mask + bg-current）+ 17px 等重
+                          <span className="flex h-4 w-4 items-center justify-center">
+                            <span
+                              aria-hidden="true"
+                              className="h-[17px] w-[17px] bg-current"
+                              style={{
+                                maskImage: `url(${resolvePanelUrl(iconPath, entry.id)})`,
+                                maskSize: "contain",
+                                maskRepeat: "no-repeat",
+                                maskPosition: "center",
+                                WebkitMaskImage: `url(${resolvePanelUrl(iconPath, entry.id)})`,
+                                WebkitMaskSize: "contain",
+                                WebkitMaskRepeat: "no-repeat",
+                                WebkitMaskPosition: "center",
+                              }}
+                            />
+                          </span>
                         ) : (
                           <Icon className="h-4 w-4" />
                         )}

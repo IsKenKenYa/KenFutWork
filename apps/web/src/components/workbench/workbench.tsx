@@ -1981,7 +1981,7 @@ export function Workbench() {
       }
     >
       {sidebarCollapsed ? (
-        /* 收起态：图标栏（模式切换 + 插件市场 + 底部头像） */
+        /* 收起态：图标栏（模式切换 + 插件 + 底部头像） */
         <aside className="flex w-12 shrink-0 flex-col items-center gap-1 border-r bg-card py-2">
           <KenFutWorkLogo className="mb-1 size-7 shrink-0" />
           <button
@@ -2008,8 +2008,8 @@ export function Workbench() {
           ))}
           <button
             type="button"
-            title="插件市场"
-            aria-label="插件市场"
+            title="插件"
+            aria-label="插件"
             onClick={() => setPluginsOpen(true)}
             className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
           >
@@ -2027,7 +2027,7 @@ export function Workbench() {
           </div>
         </aside>
       ) : (
-        /* 展开态：logo + 模式切换 + 插件市场 + 项目(design) + 任务列表 + 底部个人中心 */
+        /* 展开态：logo + 模式切换 + 插件 + 项目(design) + 任务列表 + 底部个人中心 */
         <aside
           style={{ width: sidebarWidth }}
           className="relative flex shrink-0 flex-col border-r bg-card"
@@ -2098,7 +2098,7 @@ export function Workbench() {
               onClick={() => setPluginsOpen(true)}
               className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
-              <Layers className="h-4 w-4 shrink-0" /> 插件市场
+              <Layers className="h-4 w-4 shrink-0" /> 插件
             </button>
             <button
               type="button"
@@ -2127,22 +2127,25 @@ export function Workbench() {
                   className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
                   {panel.icon ? (
-                    // 单色渲染（CSS mask + bg-current）：与侧栏其它线条图标同色、随悬停/主题变，
-                    // 不把插件自带图标当彩色贴图塞进菜单行
-                    <span
-                      aria-hidden="true"
-                      className="h-4 w-4 shrink-0 bg-current"
-                      style={{
-                        maskImage: `url(${resolvePanelUrl(panel.icon, panel.pluginId)})`,
-                        maskSize: "contain",
-                        maskRepeat: "no-repeat",
-                        maskPosition: "center",
-                        WebkitMaskImage: `url(${resolvePanelUrl(panel.icon, panel.pluginId)})`,
-                        WebkitMaskSize: "contain",
-                        WebkitMaskRepeat: "no-repeat",
-                        WebkitMaskPosition: "center",
-                      }}
-                    />
+                    // 单色渲染（CSS mask + bg-current）：与侧栏其它线条图标同色、随悬停/主题变。
+                    // 槽位固定 16px（标签左对齐不跑偏），图标本体 17px 居中——空心描边比实心图标
+                    // 「轻」，放大一档才与 lucide 图标等重（见 plugins/mihome/icon.svg 注释）
+                    <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                      <span
+                        aria-hidden="true"
+                        className="h-[17px] w-[17px] bg-current"
+                        style={{
+                          maskImage: `url(${resolvePanelUrl(panel.icon, panel.pluginId)})`,
+                          maskSize: "contain",
+                          maskRepeat: "no-repeat",
+                          maskPosition: "center",
+                          WebkitMaskImage: `url(${resolvePanelUrl(panel.icon, panel.pluginId)})`,
+                          WebkitMaskSize: "contain",
+                          WebkitMaskRepeat: "no-repeat",
+                          WebkitMaskPosition: "center",
+                        }}
+                      />
+                    </span>
                   ) : (
                     <PanelsTopLeft className="h-4 w-4 shrink-0" />
                   )}{" "}
