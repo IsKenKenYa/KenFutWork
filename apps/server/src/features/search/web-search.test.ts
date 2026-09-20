@@ -5,7 +5,9 @@ import { composePlugins } from "../../kernel/compose.js";
 import type { ToolRegistry } from "../../kernel/types.js";
 import { createSearchPlugin } from "./plugin.js";
 import {
+  createWebChannelSearchTool,
   createWebSearchTool,
+  hrefFromHint,
   parseSearchError,
   parseSearchResponse,
 } from "./web-search.js";
@@ -218,20 +220,192 @@ describe("web_search 工具（§4.5 联网搜索）", () => {
     expect(parseSearchResponse({})).toEqual([]);
   });
 
-  it("插件 enabled 判定：有 Key 才装配，工具进 ctx.tools", async () => {
-    const enabled = composePlugins(
-      { ...env, searchApiKey: "sk-search" } as ServerEnv,
-      [createSearchPlugin()],
-    );
-    const tools: ToolRegistry = enabled.get("tools");
-    expect(tools.get("web_search")).toBeDefined();
-    enabled.dispose();
+  /**
+   * 回归背景（2026-09-20 真机走查）：文档口径是「不配 Key 也能搜（走网页通道）」，但此前
+   * 唯一的执行面 `browser_open` 受「允许 AI 控制浏览器」开关门控、该开关默认关——于是
+   * 开箱状态下 `web_search` 不装配 + `browser_open` 被拒 = **实际搜不了**。
+   * 现在两条实现都贡献同名 `web_search`：配了 Key 走结构化 API，没配走网页通道。
+   *
+   * 浏览器缝用 override 顶掉（起真 plugin 要 Fastify 实例，这里只关心装的哪个工具）。
+   */
+  const fakeBrowser = {
+    snapshot: async () => ({ title: "t", text: "", elements: [] }),
+    cdp: {},
+  } as never;
 
-    const disabled = composePlugins({ ...env } as ServerEnv, [
-      createSearchPlugin(),
+  it("插件装配：有 Key 走结构化 API，没 Key 走网页通道，两边都注册 web_search", () => {
+    for (const withKey of [true, false]) {
+      const composed = composePlugins(
+        {
+          ...env,
+          ...(withKey ? { searchApiKey: "sk-search" } : {}),
+        } as ServerEnv,
+        [createSearchPlugin()],
+        { overrides: { browser: fakeBrowser } },
+      );
+      const tools: ToolRegistry = composed.get("tools");
+      const tool = tools.get("web_search");
+      expect(tool).toBeDefined();
+      // 文案点出这条工具当前走的是哪条路（模型据此判断结果性质）
+      expect(tool?.description ?? "").toContain(
+        withKey ? "公开网页" : "结果页",
+      );
+      composed.dispose();
+    }
+  });
+
+  it("没配 Key 时不再整块关掉插件（那是「不配就不能搜」的老行为）", () => {
+    const composed = composePlugins(
+      { ...env } as ServerEnv,
+      [createSearchPlugin()],
+      { overrides: { browser: fakeBrowser } },
+    );
+    const tools: ToolRegistry = composed.get("tools");
+    expect(tools.get("web_search")).toBeDefined();
+    composed.dispose();
+  });
+});
+
+describe("网页通道搜索（没配 Key 时的执行面）", () => {
+  /**
+   * 真实的 hint 形态是 `a[href="…"]`——**带引号**。这里按真机形状造数据：
+   * 早期用不带引号的形状写测试，结果线上「结果集恒为空」没被测出来（2026-09-20 实测）。
+   */
+  const anchor = (text: string, href: string) => ({
+    tag: "a",
+    text,
+    hint: `a[href="${href}"]`,
+  });
+
+  const snapshotOf = (
+    elements: { tag: string; text: string; hint: string }[],
+  ) => ({
+    title: "Bing",
+    text: "",
+    elements,
+  });
+
+  it("抓结果页 → 只留外部链接（引擎自己的导航链接剔掉）", async () => {
+    const tool = createWebChannelSearchTool({
+      snapshot: async () =>
+        snapshotOf([
+          anchor("登录", "https://www.bing.com/login"),
+          anchor("下一个", "https://cn.bing.com/search?q=x&first=10"),
+          anchor("KenFutWork 官网", "https://kenfut.example/"),
+          anchor("文档", "https://docs.kenfut.example/start"),
+        ]),
+    });
+    const result = (await tool.execute({ query: "KenFutWork" }, {})) as {
+      results: { title: string; link: string }[];
+      channel: string;
+      engine: string;
+    };
+    expect(result.channel).toBe("web");
+    expect(result.engine).toBe("Bing");
+    expect(result.results.map((r) => r.link)).toEqual([
+      "https://kenfut.example/",
+      "https://docs.kenfut.example/start",
     ]);
-    expect(disabled.tryGet("tools")?.get("web_search")).toBeUndefined();
-    disabled.dispose();
+  });
+
+  it("带引号的 hint 能取到 href（回归：不带引号的正则让结果集恒为空）", () => {
+    expect(hrefFromHint('a[href="https://x.example/a"]')).toBe(
+      "https://x.example/a",
+    );
+    expect(hrefFromHint("a[href='https://x.example/b']")).toBe(
+      "https://x.example/b",
+    );
+    expect(hrefFromHint("a[href=https://x.example/c]")).toBe(
+      "https://x.example/c",
+    );
+    expect(hrefFromHint('a[href="#"]')).toBe("#");
+    expect(hrefFromHint("a.title")).toBe("");
+  });
+
+  it("相对链接 / javascript: / 无文字链接都不当成结果（拿不到绝对地址就不编）", async () => {
+    const tool = createWebChannelSearchTool({
+      snapshot: async () =>
+        snapshotOf([
+          anchor("相对链接", "/search?q=x"),
+          anchor("脚本", "javascript:void(0)"),
+          anchor("", "https://kenfut.example/empty"),
+          anchor("真结果", "https://kenfut.example/real"),
+        ]),
+    });
+    const result = (await tool.execute({ query: "x" }, {})) as {
+      results: { link: string }[];
+    };
+    expect(result.results.map((r) => r.link)).toEqual([
+      "https://kenfut.example/real",
+    ]);
+  });
+
+  it("重复链接只留第一条；num 上限 20、下限 1", async () => {
+    const many = Array.from({ length: 30 }, (_, i) =>
+      anchor(`结果${i}`, `https://site${i}.example/`),
+    );
+    const tool = createWebChannelSearchTool({
+      snapshot: async () =>
+        snapshotOf([
+          anchor("重复", "https://kenfut.example/"),
+          anchor("重复再来", "https://kenfut.example/"),
+          ...many,
+        ]),
+    });
+    const capped = (await tool.execute({ query: "x", num: 99 }, {})) as {
+      results: { link: string }[];
+    };
+    expect(capped.results).toHaveLength(20);
+    expect(capped.results[0]?.link).toBe("https://kenfut.example/");
+    const floored = (await tool.execute({ query: "x", num: 0 }, {})) as {
+      results: unknown[];
+    };
+    expect(floored.results).toHaveLength(8); // 0 不是合法条数 → 回落默认 8
+  });
+
+  it("一条都没解析出来时如实说明（不假装搜到了，且给出可行的替代）", async () => {
+    const tool = createWebChannelSearchTool({
+      snapshot: async () =>
+        snapshotOf([anchor("登录", "https://www.bing.com/login")]),
+    });
+    const result = (await tool.execute({ query: "x" }, {})) as {
+      results: unknown[];
+      note: string;
+    };
+    expect(result.results).toEqual([]);
+    expect(result.note).toContain("没解析出可用的结果链接");
+    // 要点出「不是搜不到」以及三条替代路
+    expect(result.note).toContain("不是「搜不到」");
+    expect(result.note).toContain("browser_navigate");
+    expect(result.note).toContain("搜索供应商 Key");
+  });
+
+  it("换引擎（baidu）时按引擎口径剔自己的域名", async () => {
+    const tool = createWebChannelSearchTool({
+      engine: "baidu",
+      snapshot: async () =>
+        snapshotOf([
+          anchor("百度一下", "https://www.baidu.com/"),
+          anchor("结果", "https://kenfut.example/"),
+        ]),
+    });
+    const result = (await tool.execute({ query: "x" }, {})) as {
+      engine: string;
+      results: { link: string }[];
+    };
+    expect(result.engine).toBe("百度");
+    expect(result.results.map((r) => r.link)).toEqual([
+      "https://kenfut.example/",
+    ]);
+  });
+
+  it("空 query 抛可读错误（与结构化那条同一口径）", async () => {
+    const tool = createWebChannelSearchTool({
+      snapshot: async () => snapshotOf([]),
+    });
+    await expect(tool.execute({ query: "  " }, {})).rejects.toThrow(
+      "web_search 需要 query 参数",
+    );
   });
 });
 

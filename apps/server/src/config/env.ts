@@ -63,9 +63,11 @@ export type ServerEnv = {
   databaseUrl?: string;
   /** MCP server 配置（P4d）：JSON 数组，v1 支持 stdio 命令型。 */
   mcpServers?: McpServerConfig[];
-  /** 联网搜索（§4.5，BYOK 搜索供应商）：配置 Key 即启用 web_search 工具。 */
+  /** 联网搜索（§4.5，BYOK 搜索供应商）：配置 Key 即走结构化结果 API。 */
   searchApiKey?: string;
   searchProvider?: "metaso";
+  /** 没配 Key 时网页通道用哪个引擎（bing | baidu）；缺省 bing。 */
+  searchEngine?: "bing" | "baidu";
   /**
    * 部署形态：`local`（桌面/本机，默认）/ `self-hosted`（自托管实例）/ `cloud`（多租户云端）。
    *
@@ -208,6 +210,17 @@ export function loadServerEnv(
   const searchEndpoint =
     overrides.searchEndpoint ??
     normalizeOptionalString(source.KENFUTWORK_SEARCH_ENDPOINT);
+  /**
+   * 网页通道（没配 Key 时 `web_search` 抓结果页）用哪个引擎。封闭集合：bing | baidu。
+   * 认不出的值一律当没配（回落默认 bing），不让一个拼错的词把搜索打瘸。
+   */
+  const searchEngineRaw = normalizeOptionalString(
+    source.KENFUTWORK_SEARCH_ENGINE,
+  );
+  const searchEngine =
+    searchEngineRaw === "bing" || searchEngineRaw === "baidu"
+      ? searchEngineRaw
+      : undefined;
   const openAIApiBase =
     overrides.openAIApiBase ?? normalizeOptionalString(source.OPENAI_API_BASE);
   const openAIApiKey =
@@ -409,6 +422,7 @@ export function loadServerEnv(
     ...(searchApiKey ? { searchApiKey } : {}),
     ...(searchProvider ? { searchProvider } : {}),
     ...(searchEndpoint ? { searchEndpoint } : {}),
+    ...(searchEngine ? { searchEngine } : {}),
     ...(googleApiKey ? { googleApiKey } : {}),
     ...(googleApplicationCredentials ? { googleApplicationCredentials } : {}),
     ...(openAIApiBase ? { openAIApiBase } : {}),
