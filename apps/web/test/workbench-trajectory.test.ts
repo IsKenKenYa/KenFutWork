@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { TaskToolEntry } from "../src/lib/workbench-tools";
 import {
+  buildTimelineSpans,
   buildTrajectory,
+  flattenTrajectory,
   type TrajectoryRow,
 } from "../src/lib/workbench-trajectory";
 
@@ -107,5 +109,106 @@ describe("buildTrajectory 按轮分组", () => {
     ]);
     const kinds = (model.turns[0]?.rows ?? []).map((r) => r.kind);
     expect(kinds).toEqual(["tool", "tool", "tool"]);
+  });
+});
+
+describe("思考行与 runId 归属", () => {
+  it("reasoning 块成为「思考」行，位置即时序；runId 透传到行", () => {
+    const model = buildTrajectory([
+      {
+        role: "assistant",
+        text: "结论",
+        runId: "run-1",
+        startedAt: 1100,
+        blocks: [
+          { type: "reasoning", text: "想一想", at: 1100 },
+          { type: "text", text: "结论", at: 1300 },
+        ],
+      },
+    ]);
+    const rows = model.turns[0]?.rows ?? [];
+    expect(rows.map((r) => r.kind)).toEqual(["reasoning", "text"]);
+    expect(rows[0]).toMatchObject({
+      kind: "reasoning",
+      text: "想一想",
+      runId: "run-1",
+    });
+    expect(rows[1]?.runId).toBe("run-1");
+  });
+
+  it("工具行的 runId 优先取工具条目自己的（旧消息级兜底）", () => {
+    const model = buildTrajectory([
+      {
+        role: "assistant",
+        text: "",
+        runId: "run-old",
+        blocks: [
+          {
+            type: "tool",
+            tool: tool("t1", {
+              runId: "run-new",
+              startedAt: 100,
+              endedAt: 200,
+            }),
+          },
+        ],
+      },
+    ]);
+    expect(model.turns[0]?.rows[0]).toMatchObject({
+      kind: "tool",
+      runId: "run-new",
+    });
+  });
+});
+
+describe("flattenTrajectory 全局行号", () => {
+  it("跨轮连续编号，key 稳定可作 DOM 锚", () => {
+    const model = buildTrajectory([
+      { role: "user", text: "一", startedAt: 1000 },
+      { role: "assistant", text: "答一" },
+      { role: "user", text: "二", startedAt: 2000 },
+      { role: "assistant", text: "答二" },
+    ]);
+    const flat = flattenTrajectory(model);
+    expect(flat.map((e) => e.number)).toEqual([1, 2, 3, 4]);
+    expect(flat[0]?.key).toBe("t1-r0");
+    expect(flat[2]?.key).toBe("t2-r0");
+    expect(flat[3]?.key).toBe("t2-r1");
+  });
+});
+
+describe("buildTimelineSpans 时间轴几何", () => {
+  const model = buildTrajectory([
+    { role: "user", text: "问", startedAt: 1000 },
+    {
+      role: "assistant",
+      text: "",
+      startedAt: 1100,
+      blocks: [
+        { type: "tool", tool: tool("t1", { startedAt: 1100, endedAt: 2100 }) },
+        { type: "tool", tool: tool("no-time") },
+      ],
+    },
+  ]);
+
+  it("时长模式：按真实时刻与耗时定位；缺时刻的行如实跳过", () => {
+    const spans = buildTimelineSpans(model, "duration");
+    // 起点 1000、终点 2100 → 跨度 1100；t1 从 0% 起、宽约 90.9%
+    expect(spans).toHaveLength(2);
+    // 用户行：时刻点（1.2% 细条）落在 0%
+    expect(spans[0]).toMatchObject({ key: "t1-r0", xPercent: 0 });
+    // 工具行 t1：从 9.09% 起、宽 90.9%（耗时占比，下限 1.2%）
+    expect(spans[1]?.key).toBe("t1-r1");
+    expect(spans[1]?.xPercent).toBeCloseTo(9.09, 1);
+    expect(spans[1]?.widthPercent).toBeCloseTo(90.9, 1);
+    // 无时刻的工具行（t1-r2）不出现在时长模式
+    expect(spans.map((s) => s.key)).not.toContain("t1-r2");
+  });
+
+  it("时序模式：全部行（含缺时刻的）等距铺开", () => {
+    const spans = buildTimelineSpans(model, "sequence");
+    expect(spans).toHaveLength(3);
+    expect(spans[0]?.xPercent).toBe(0);
+    expect(spans[2]?.xPercent).toBe(96);
   });
 });

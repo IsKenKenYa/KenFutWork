@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import { parseTodos } from "../src/lib/todo-progress";
 import {
   appendAssistantDelta,
+  appendThinkingDelta,
   applyTaskToolEvent,
   capToolBlocks,
   groupAssistantBlocks,
   MAX_TOOL_BLOCKS_PER_MESSAGE,
   migrateLegacyTools,
   nextAssistantStartMs,
+  rebuildAssistantBlocks,
   settlePreviousAssistant,
   type TaskMessage,
   type TaskMessageBlock,
@@ -452,5 +454,216 @@ describe("migrateLegacyTools 旧数据迁移", () => {
   it("没有 legacy tools 时原样返回", () => {
     const messages: TaskMessage[] = [{ role: "assistant", text: "答" }];
     expect(migrateLegacyTools({ messages })).toEqual({ messages });
+  });
+});
+
+describe("appendThinkingDelta 思考流", () => {
+  it("思考先于正文到达：新建助手消息承载 reasoning 块，且不并入 text", () => {
+    const message = appendThinkingDelta(
+      { role: "assistant", text: "" },
+      "先分析结构",
+    );
+    expect(message.text).toBe("");
+    expect(message.blocks).toEqual([
+      expect.objectContaining({ type: "reasoning", text: "先分析结构" }),
+    ]);
+  });
+
+  it("连续思考增量续写同一块；正文到达后新起 text 段（顺序即时间线）", () => {
+    let message = appendThinkingDelta(
+      { role: "assistant", text: "" },
+      "第一段思考",
+    );
+    message = appendThinkingDelta(message, "，接着想");
+    // 续写合并进同一块，且保持首块的 at（这一段思考的开始时刻不变）
+    expect(message.blocks).toEqual([
+      expect.objectContaining({
+        type: "reasoning",
+        text: "第一段思考，接着想",
+      }),
+    ]);
+    message = appendAssistantDelta(message, "正文开始");
+    // 正文新起一段（新块带 at 时间戳）
+    expect(message.blocks?.[0]).toMatchObject({
+      type: "reasoning",
+      text: "第一段思考，接着想",
+    });
+    expect(message.blocks?.[1]).toMatchObject({
+      type: "text",
+      text: "正文开始",
+    });
+    expect(message.blocks).toHaveLength(2);
+    expect(message.text).toBe("正文开始");
+  });
+
+  it("正文之后再思考：新起 reasoning 段，不污染正文", () => {
+    let message = appendAssistantDelta(
+      { role: "assistant", text: "" },
+      "先写一段",
+    );
+    message = appendThinkingDelta(message, "想想接下来");
+    expect(message.blocks?.[0]).toMatchObject({
+      type: "text",
+      text: "先写一段",
+    });
+    expect(message.blocks?.[1]).toMatchObject({
+      type: "reasoning",
+      text: "想想接下来",
+    });
+    expect(message.blocks).toHaveLength(2);
+  });
+});
+
+describe("runId 归属（工具条目与新建助手消息）", () => {
+  it("tool.started 的 runId 进条目；工具先于正文时新建的助手消息也带上", () => {
+    const task = applyTaskToolEvent(baseTask, {
+      type: "tool.started",
+      toolCallId: "tc_run",
+      toolName: "read_file",
+      runId: "run-1",
+    });
+    const entry = toolBlocks(task.messages[0])[0];
+    expect(entry?.runId).toBe("run-1");
+    expect(task.messages[0]?.runId).toBe("run-1");
+  });
+
+  it("started 没带 runId 时，completed 补上归属", () => {
+    let task = applyTaskToolEvent(baseTask, {
+      type: "tool.started",
+      toolCallId: "tc_late",
+      toolName: "read_file",
+    });
+    task = applyTaskToolEvent(
+      { ...task, messages: task.messages },
+      {
+        type: "tool.completed",
+        toolCallId: "tc_late",
+        toolName: "read_file",
+        runId: "run-9",
+      },
+    );
+    expect(toolBlocks(task.messages[0])[0]?.runId).toBe("run-9");
+  });
+});
+
+describe("tool.completed 的产物（artifacts）", () => {
+  it("产物写入工具条目（此前该字段被静默丢弃）", () => {
+    const artifacts = [
+      {
+        type: "image" as const,
+        url: "https://example.com/a.png",
+        mimeType: "image/png",
+        width: 512,
+        height: 512,
+      },
+    ];
+    let task = applyTaskToolEvent(baseTask, {
+      type: "tool.started",
+      toolCallId: "tc_art",
+      toolName: "generate_image",
+    });
+    task = applyTaskToolEvent(task, {
+      type: "tool.completed",
+      toolCallId: "tc_art",
+      toolName: "generate_image",
+      artifacts,
+    });
+    expect(toolBlocks(task.messages[0])[0]?.artifacts).toEqual(artifacts);
+  });
+});
+
+describe("tool.started 入参归一化", () => {
+  it('服务端包装层（{input:"<json>"}）入库前剥掉——行内提示与详情才取得到值', () => {
+    const task = applyTaskToolEvent(baseTask, {
+      type: "tool.started",
+      toolCallId: "tc_wrap",
+      toolName: "write_file",
+      input: { input: '{"path":"src/a.ts","content":"x"}' },
+    });
+    const entry = toolBlocks(task.messages[0])[0];
+    expect(entry?.input).toEqual({ path: "src/a.ts", content: "x" });
+    expect(entry ? toolTargetHint(entry) : null).toBe("src/a.ts");
+  });
+
+  it("归一化失败（不是 JSON 对象）保留原样，不丢字段", () => {
+    const raw = { input: "not-json" };
+    const task = applyTaskToolEvent(baseTask, {
+      type: "tool.started",
+      toolCallId: "tc_raw",
+      toolName: "execute",
+      input: raw,
+    });
+    expect(toolBlocks(task.messages[0])[0]?.input).toEqual(raw);
+  });
+});
+
+describe("rebuildAssistantBlocks 服务端真序重建（含思考）", () => {
+  it("thinking 块映射为 reasoning，且与正文/工具的位置关系保持真序", () => {
+    const blocks = rebuildAssistantBlocks([
+      { type: "thinking", thinking: "想一想" },
+      { type: "text", text: "先说" },
+      {
+        type: "tool",
+        toolCallId: "t1",
+        toolName: "read_file",
+        input: { path: "a.ts" },
+      },
+      { type: "text", text: "再说" },
+    ] as Parameters<typeof rebuildAssistantBlocks>[0]);
+    expect(blocks.map((b) => b.type)).toEqual([
+      "reasoning",
+      "text",
+      "tool",
+      "text",
+    ]);
+    expect(blocks[0]).toMatchObject({ text: "想一想" });
+  });
+});
+
+describe("rebuildAssistantBlocks 恢复 runId 与时间戳（PG 历史回灌）", () => {
+  it("工具块上的 runId/startedAt/endedAt（ISO）换算进本地条目；旧数据缺省不伪造", () => {
+    const blocks = rebuildAssistantBlocks([
+      {
+        type: "tool",
+        toolCallId: "t1",
+        toolName: "execute",
+        status: "completed",
+        runId: "run-7",
+        startedAt: "2026-09-21T00:00:01.000Z",
+        endedAt: "2026-09-21T00:00:03.500Z",
+        input: { command: "ls" },
+      },
+      {
+        type: "tool",
+        toolCallId: "t2",
+        toolName: "read_file",
+        status: "completed",
+      },
+    ] as Parameters<typeof rebuildAssistantBlocks>[0]);
+    const [withTime, withoutTime] = blocks.map((b) =>
+      b.type === "tool" ? b.tool : null,
+    );
+    expect(withTime?.runId).toBe("run-7");
+    expect(withTime?.startedAt).toBe(Date.parse("2026-09-21T00:00:01.000Z"));
+    expect(withTime?.endedAt).toBe(Date.parse("2026-09-21T00:00:03.500Z"));
+    // 旧数据没有时间戳/归属：字段缺省，不伪造 0 或 NaN
+    expect(withoutTime?.runId).toBeUndefined();
+    expect(withoutTime?.startedAt).toBeUndefined();
+    expect(withoutTime?.endedAt).toBeUndefined();
+  });
+
+  it("text 块的 at 恢复为毫秒；思考块的 at 同理", () => {
+    const blocks = rebuildAssistantBlocks([
+      { type: "thinking", thinking: "想一想", at: "2026-09-21T00:00:00.000Z" },
+      { type: "text", text: "正文", at: "2026-09-21T00:00:02.000Z" },
+    ] as Parameters<typeof rebuildAssistantBlocks>[0]);
+    expect(blocks[0]).toMatchObject({
+      type: "reasoning",
+      at: Date.parse("2026-09-21T00:00:00.000Z"),
+    });
+    expect(blocks[1]).toMatchObject({
+      type: "text",
+      at: Date.parse("2026-09-21T00:00:02.000Z"),
+    });
   });
 });

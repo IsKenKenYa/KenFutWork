@@ -14,19 +14,36 @@ import type {
   TaskToolEntry,
 } from "./workbench-tools";
 
-/** 账本一行的类别（badge 文案由渲染层映射：用户 / 助手 / 工具）。 */
-export type TrajectoryRowKind = "user" | "text" | "tool";
+/** 账本一行的类别（badge 文案由渲染层映射：用户 / 思考 / 助手 / 工具）。 */
+export type TrajectoryRowKind = "user" | "reasoning" | "text" | "tool";
 
-/** 账本一行：一次用户发言 / 一段助手正文 / 一次工具调用，按发生顺序排列。 */
+/** 账本一行：一次用户发言 / 一段思考 / 一段助手正文 / 一次工具调用，按发生顺序排列。 */
 export type TrajectoryRow =
-  | { kind: "user"; atMs: number | null; text: string }
-  | { kind: "text"; atMs: number | null; text: string }
+  | {
+      kind: "user";
+      atMs: number | null;
+      text: string;
+      runId: string | null;
+    }
+  | {
+      kind: "reasoning";
+      atMs: number | null;
+      text: string;
+      runId: string | null;
+    }
+  | {
+      kind: "text";
+      atMs: number | null;
+      text: string;
+      runId: string | null;
+    }
   | {
       kind: "tool";
       atMs: number | null;
       /** startedAt→endedAt；缺任一端（还在跑 / 旧数据）为 null，如实显示。 */
       durationMs: number | null;
       tool: TaskToolEntry;
+      runId: string | null;
     };
 
 /** 一轮对话：一条用户消息 + 它引发的全部助手输出。 */
@@ -49,6 +66,7 @@ function rowsFromAssistantMessage(
   message: TaskMessage,
   rows: TrajectoryRow[],
 ): void {
+  const runId = message.runId ?? null;
   const blocks: TaskMessageBlock[] | undefined = message.blocks;
   if (!blocks) {
     // 旧数据：整条消息只有全文，落成一行正文
@@ -57,6 +75,7 @@ function rowsFromAssistantMessage(
         kind: "text",
         atMs: message.startedAt ?? null,
         text: message.text,
+        runId,
       });
     }
     return;
@@ -68,6 +87,17 @@ function rowsFromAssistantMessage(
         kind: "text",
         atMs: block.at ?? message.startedAt ?? null,
         text: block.text,
+        runId,
+      });
+      continue;
+    }
+    if (block.type === "reasoning") {
+      if (!block.text) continue;
+      rows.push({
+        kind: "reasoning",
+        atMs: block.at ?? message.startedAt ?? null,
+        text: block.text,
+        runId,
       });
       continue;
     }
@@ -80,6 +110,7 @@ function rowsFromAssistantMessage(
           ? Math.max(0, endedAt - startedAt)
           : null,
       tool: block.tool,
+      runId: block.tool.runId ?? runId,
     });
   }
 }
@@ -104,6 +135,7 @@ export function buildTrajectory(
             kind: "user",
             atMs: message.startedAt ?? null,
             text: message.text,
+            runId: message.runId ?? null,
           },
         ],
         toolCount: 0,
@@ -136,4 +168,87 @@ export function buildTrajectory(
     toolCount += turn.toolCount;
   }
   return { turns, toolCount };
+}
+
+// ── 平铺枚举与时间轴（deepseek-harness TrajectoryTimeline 的简化版） ──
+
+/** 跨轮平铺的一行：`key` 是 DOM 锚（时间轴点击滚动用），`number` 是全局行号 #N。 */
+export type FlatTrajectoryRow = {
+  key: string;
+  turn: TrajectoryTurn;
+  row: TrajectoryRow;
+  number: number;
+};
+
+export function flattenTrajectory(model: TrajectoryModel): FlatTrajectoryRow[] {
+  const flat: FlatTrajectoryRow[] = [];
+  let number = 0;
+  for (const turn of model.turns) {
+    turn.rows.forEach((row, ri) => {
+      number += 1;
+      flat.push({ key: `t${turn.index}-r${ri}`, turn, row, number });
+    });
+  }
+  return flat;
+}
+
+export type TrajectoryTimelineMode = "sequence" | "duration";
+
+/** 时间轴一根条：几何信息（0-100 百分比）；颜色/提示由渲染层按 kind 与原行组装。 */
+export type TrajectoryTimelineSpan = {
+  key: string;
+  kind: TrajectoryRowKind;
+  xPercent: number;
+  widthPercent: number;
+};
+
+/** 时刻缺失的行在「时长」模式下无法定位，如实跳过（不伪造位置）。 */
+export function buildTimelineSpans(
+  model: TrajectoryModel,
+  mode: TrajectoryTimelineMode,
+): TrajectoryTimelineSpan[] {
+  const flat = flattenTrajectory(model);
+  if (flat.length === 0) return [];
+
+  if (mode === "sequence") {
+    // 时序模式：行与行等距铺开（不看真实时刻——长思考不会把后面挤成一条缝）
+    return flat.map((entry, i) => ({
+      key: entry.key,
+      kind: entry.row.kind,
+      xPercent: flat.length > 1 ? (i / (flat.length - 1)) * 96 : 0,
+      widthPercent: 2,
+    }));
+  }
+
+  const starts = flat
+    .map((entry) => entry.row.atMs)
+    .filter((v): v is number => v !== null);
+  if (starts.length === 0) return [];
+  const minStart = Math.min(...starts);
+  const maxEnd = Math.max(
+    ...flat.map((entry) => {
+      if (entry.row.atMs === null) return minStart;
+      return (
+        entry.row.atMs +
+        (entry.row.kind === "tool" ? (entry.row.durationMs ?? 0) : 0)
+      );
+    }),
+  );
+  const span = Math.max(1, maxEnd - minStart);
+  const spans: TrajectoryTimelineSpan[] = [];
+  for (const entry of flat) {
+    if (entry.row.atMs === null) continue;
+    const width =
+      entry.row.kind === "tool" && entry.row.durationMs !== null
+        ? Math.max(1.2, (entry.row.durationMs / span) * 100)
+        : 1.2;
+    const x = Math.min(((entry.row.atMs - minStart) / span) * 100, 100 - width);
+    spans.push({
+      key: entry.key,
+      kind: entry.row.kind,
+      xPercent: x,
+      widthPercent: width,
+    });
+  }
+  return spans;
 }

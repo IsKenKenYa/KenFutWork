@@ -145,7 +145,13 @@ import {
   closeAllSubagents,
   type SubagentEntry,
 } from "@/lib/subagent-directory";
+import { createTaskSaver } from "@/lib/task-saver";
 import type { TodoItem } from "@/lib/todo-progress";
+import {
+  deriveTurnProcesses,
+  specCoveringIndex,
+  type TurnProcessSpec,
+} from "@/lib/turn-process";
 import {
   boundWorkDirPromptHint,
   folderPickerHint,
@@ -165,6 +171,7 @@ import {
 } from "@/lib/workbench-task-list";
 import {
   appendAssistantDelta,
+  appendThinkingDelta,
   applyTaskToolEvent,
   groupAssistantBlocks,
   migrateLegacyTools,
@@ -303,7 +310,17 @@ interface WorkbenchTask {
  *
  * 旧数据（无 `blocks`）走纯文本单气泡，行为与改造前一致。
  */
-function AssistantTurn({ msg }: { msg: TaskMessage }) {
+function AssistantTurn({
+  msg,
+  streaming = false,
+  onInspectTool,
+}: {
+  msg: TaskMessage;
+  /** 该消息是否仍在流式（任务运行中的最后一条）：思考行的「思考中」态用它。 */
+  streaming?: boolean;
+  /** 「查看轨迹」：切到轨迹页签并聚焦这次调用（dsh 的 Inspect 交叉跳转）。 */
+  onInspectTool?: (toolCallId: string) => void;
+}) {
   const groups = useMemo(
     () => (msg.blocks ? groupAssistantBlocks(msg.blocks) : null),
     [msg.blocks],
@@ -317,23 +334,38 @@ function AssistantTurn({ msg }: { msg: TaskMessage }) {
   }
   return (
     <div className="flex w-fit max-w-full flex-col items-start gap-2">
-      {groups.map((group, gi) =>
-        group.kind === "text" ? (
-          <div
-            // biome-ignore lint/suspicious/noArrayIndexKey: 组序即时序，块内没有更稳定的身份
-            key={gi}
-            className="w-fit max-w-full rounded-2xl rounded-bl-md bg-muted px-4 py-2.5"
-          >
-            <MarkdownRenderer text={group.text} />
-          </div>
-        ) : (
-          // 连续工具调用：一行一个，按发生顺序排。刻意**不**做「N 次工具调用」聚合折叠——
-          // 聚在一起就又回到「看不出谁是谁、哪次在哪」的老问题。
-          group.tools.map((tool) => (
-            <WorkbenchToolRow key={tool.toolCallId} tool={tool} />
-          ))
-        ),
-      )}
+      {groups.map((group, gi) => {
+        if (group.kind === "text") {
+          return (
+            <div
+              // biome-ignore lint/suspicious/noArrayIndexKey: 组序即时序，块内没有更稳定的身份
+              key={gi}
+              className="w-fit max-w-full rounded-2xl rounded-bl-md bg-muted px-4 py-2.5"
+            >
+              <MarkdownRenderer text={group.text} />
+            </div>
+          );
+        }
+        if (group.kind === "reasoning") {
+          return (
+            <ReasoningRow
+              // biome-ignore lint/suspicious/noArrayIndexKey: 组序即时序，块内没有更稳定的身份
+              key={gi}
+              text={group.text}
+              streaming={streaming && gi === groups.length - 1}
+            />
+          );
+        }
+        // 连续工具调用：一行一个，按发生顺序排。刻意**不**做「N 次工具调用」聚合折叠——
+        // 聚在一起就又回到「看不出谁是谁、哪次在哪」的老问题。
+        return group.tools.map((tool) => (
+          <WorkbenchToolRow
+            key={tool.toolCallId}
+            tool={tool}
+            {...(onInspectTool ? { onInspect: onInspectTool } : {})}
+          />
+        ));
+      })}
     </div>
   );
 }
@@ -352,7 +384,14 @@ function AssistantTurn({ msg }: { msg: TaskMessage }) {
  * 行被 `disabled` 后**点什么都不发生**，运行结束也永远是根哑巴行。现在入参也算
  * 可展开内容（看一眼这次调用传了什么参数，本身就排得上用场）。
  */
-function WorkbenchToolRow({ tool }: { tool: TaskToolEntry }) {
+function WorkbenchToolRow({
+  tool,
+  onInspect,
+}: {
+  tool: TaskToolEntry;
+  /** 「轨迹」小按钮：切到轨迹账本并聚焦这次调用（dsh 的 Inspect 交叉跳转）。 */
+  onInspect?: (toolCallId: string) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const hasDetail =
     Boolean(tool.output) || Boolean(tool.summary) || Boolean(tool.input);
@@ -368,45 +407,165 @@ function WorkbenchToolRow({ tool }: { tool: TaskToolEntry }) {
       : null;
   return (
     <div className="w-fit max-w-full rounded-xl border border-border/60 bg-card px-3 py-2">
-      <button
-        type="button"
-        disabled={!hasDetail}
-        aria-expanded={hasDetail ? expanded : undefined}
-        onClick={() => hasDetail && setExpanded((v) => !v)}
-        className={`flex items-center gap-2 text-xs text-muted-foreground ${
-          hasDetail ? "cursor-pointer hover:text-foreground" : ""
-        }`}
-      >
-        <span
-          className={`h-1.5 w-1.5 shrink-0 rounded-full ${meta.dotClass}`}
-        />
-        <span className="font-medium" title={tool.toolName}>
-          {toolDisplayLabel(tool.toolName)}
-        </span>
-        {hint ? (
-          <span className="max-w-[280px] truncate font-normal opacity-70">
-            {hint}
-          </span>
-        ) : null}
-        <span
-          className={meta.failed ? "text-red-600 dark:text-red-400" : undefined}
-          title={deniedReason ?? undefined}
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          disabled={!hasDetail}
+          aria-expanded={hasDetail ? expanded : undefined}
+          onClick={() => hasDetail && setExpanded((v) => !v)}
+          className={`flex min-w-0 flex-1 items-center gap-2 text-xs text-muted-foreground ${
+            hasDetail ? "cursor-pointer hover:text-foreground" : ""
+          }`}
         >
-          {meta.text}
-        </span>
-        {hasDetail && (
-          <svg
-            aria-hidden
-            viewBox="0 0 16 16"
-            className={`h-3 w-3 transition-transform ${expanded ? "rotate-90" : ""}`}
-            fill="currentColor"
+          <span
+            className={`h-1.5 w-1.5 shrink-0 rounded-full ${meta.dotClass}`}
+          />
+          <span className="shrink-0 font-medium" title={tool.toolName}>
+            {toolDisplayLabel(tool.toolName)}
+          </span>
+          {hint ? (
+            <span className="min-w-0 truncate font-normal opacity-70">
+              {hint}
+            </span>
+          ) : null}
+          <span
+            className={`ml-auto shrink-0 ${
+              meta.failed ? "text-red-600 dark:text-red-400" : undefined
+            }`}
+            title={deniedReason ?? undefined}
           >
-            <path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" />
-          </svg>
-        )}
-      </button>
+            {meta.text}
+          </span>
+          {hasDetail && (
+            <svg
+              aria-hidden
+              viewBox="0 0 16 16"
+              className={`h-3 w-3 shrink-0 transition-transform ${
+                expanded ? "rotate-90" : ""
+              }`}
+              fill="currentColor"
+            >
+              <path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" />
+            </svg>
+          )}
+        </button>
+        {onInspect ? (
+          <button
+            type="button"
+            onClick={() => onInspect(tool.toolCallId)}
+            title="在轨迹账本中查看这次调用"
+            aria-label="在轨迹账本中查看这次调用"
+            className="shrink-0 rounded border border-transparent px-1 py-0.5 text-[10px] text-muted-foreground/70 transition-colors hover:border-border hover:text-foreground"
+          >
+            轨迹
+          </button>
+        ) : null}
+      </div>
       {expanded ? <ToolEventDetail tool={tool} /> : null}
     </div>
+  );
+}
+
+/**
+ * 思考行（dsh ReasoningRow 同款）：默认折叠成一行摘要——流式时跟随**最新一行**
+ * （模型正在写的才是用户想瞄的），落定后显示首行；点开看全文。思考是推理过程
+ * 不是结论，永远不给它正文的视觉权重（muted 小字卡片）。
+ */
+function ReasoningRow({
+  text,
+  streaming,
+}: {
+  text: string;
+  streaming: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const lines = text.split("\n").filter((line) => line.trim().length > 0);
+  const summary = (streaming ? lines[lines.length - 1] : lines[0]) ?? "";
+  const clipped = summary.length > 80 ? `${summary.slice(0, 79)}…` : summary;
+  return (
+    <div className="w-fit max-w-full rounded-xl border border-border/60 bg-card px-3 py-1.5 text-xs text-muted-foreground">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 text-left"
+      >
+        <svg
+          aria-hidden
+          viewBox="0 0 16 16"
+          className={`h-3 w-3 shrink-0 transition-transform ${
+            open ? "rotate-90" : ""
+          }`}
+          fill="currentColor"
+        >
+          <path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" />
+        </svg>
+        <span className="shrink-0 font-medium">
+          {streaming ? "思考中" : "思考"}
+        </span>
+        {open ? null : (
+          <>
+            <span className="min-w-0 truncate font-normal opacity-70">
+              {clipped}
+            </span>
+            <span className="ml-auto shrink-0 text-[10px] opacity-60">
+              {text.length} 字
+            </span>
+          </>
+        )}
+      </button>
+      {open ? (
+        <div className="mt-1.5 max-h-72 overflow-y-auto whitespace-pre-wrap break-words border-l-2 border-border/60 pl-3 text-[11px] leading-5">
+          {text}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * 轮级过程折叠控制行（dsh TurnProcessNodeView 同款）：一轮跑完后把结论之前的
+ * 推理/工具/中途输出收成一行「思考与工具 · N 个工具调用 · …」。展开后过程逐行
+ * 原位可见（不是聚成一条摘要），再点收起。
+ */
+function TurnProcessRow({
+  spec,
+  expanded,
+  onToggle,
+}: {
+  spec: TurnProcessSpec;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const parts = [`${spec.toolCount} 个工具调用`];
+  if (spec.reasoningCount > 0) parts.push(`${spec.reasoningCount} 段思考`);
+  if (spec.foldedTextCount > 0)
+    parts.push(`${spec.foldedTextCount} 段中途输出`);
+  return (
+    <button
+      type="button"
+      aria-expanded={expanded}
+      onClick={onToggle}
+      title="展开这一轮的完整过程（推理 / 工具 / 中途输出逐行保留）"
+      className="flex w-fit items-center gap-2 rounded-xl border border-border/60 bg-card px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <svg
+        aria-hidden
+        viewBox="0 0 16 16"
+        className={`h-3 w-3 shrink-0 transition-transform ${
+          expanded ? "rotate-90" : ""
+        }`}
+        fill="currentColor"
+      >
+        <path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" />
+      </svg>
+      <span>
+        第 {spec.turnIndex} 轮 · 思考与工具 · {parts.join(" · ")}
+      </span>
+      <span className="text-[10px] opacity-60">
+        {expanded ? "收起" : "展开"}
+      </span>
+    </button>
   );
 }
 
@@ -689,7 +848,14 @@ export function Workbench() {
               const blocks = rebuildAssistantBlocks(hit.blocks);
               if (blocks.length === 0) return msg;
               changed = true;
-              return { ...msg, blocks };
+              // 从块里恢复 runId 归属（服务端 2026-09-21 存储改造后才有；
+              // 旧数据没有就不伪造，折叠/轨迹对该轮退化为按用户消息分轮）
+              const blockRunId = blocks.find(
+                (b) => b.type === "tool" && b.tool.runId,
+              );
+              const runId =
+                blockRunId?.type === "tool" ? blockRunId.tool.runId : undefined;
+              return { ...msg, blocks, ...(runId ? { runId } : {}) };
             });
             if (!changed) return t;
             return { ...t, messages, serverBlocksSyncedAt: syncedAt };
@@ -737,6 +903,28 @@ export function Workbench() {
     () => buildTrajectory(displayTask?.messages ?? []),
     [displayTask],
   );
+
+  /** 从对话流工具行「查看轨迹」跳来的聚焦目标（轨迹页签滚动定位用）。 */
+  const [trajectoryFocus, setTrajectoryFocus] = useState<string | null>(null);
+
+  /**
+   * 轮级过程折叠（deepseek-harness Turn Process Folding 同款）：跑完且产出了结论的
+   * 轮，把结论之前的推理/工具/中途正文收进一行可展开的控制行。运行中不折叠，
+   * 展开后过程逐行原位可见——不是「N 次调用」式的有损聚合（用户此前反对的是
+   * 聚掉细节；dsh 折叠正是「默认收起、展开即全量」的过程披露）。
+   */
+  const turnProcesses = useMemo(
+    () =>
+      deriveTurnProcesses(
+        displayTask?.messages ?? [],
+        displayTask ? displayTask.status !== "running" : true,
+      ),
+    [displayTask],
+  );
+  /** 手动展开的折叠轮（会话级 state，不持久化——dsh 同款取舍）。 */
+  const [expandedTurnProcesses, setExpandedTurnProcesses] = useState<
+    ReadonlySet<string>
+  >(new Set());
 
   /**
    * 选中模型的容量元数据（窗口 / 最大输出），两处编排器共用一份。
@@ -1394,6 +1582,11 @@ export function Workbench() {
 
   // 流事件 → 任务消息
   useEffect(() => {
+    // 流式持久化节流：message/thinking delta 每 token 全量回写 localStorage 是
+    // 长回答卡顿的大头——首写立即、尾巴合并，终态与清理时强制落盘（task-saver）。
+    const taskSaver = createTaskSaver((saveMode, list) =>
+      saveTasks(saveMode as WorkbenchMode, list as WorkbenchTask[]),
+    );
     const off = ws.onEvent((evt) => {
       const type = (evt as { type?: string }).type;
       const runId = (evt as { runId?: string }).runId;
@@ -1409,7 +1602,7 @@ export function Workbench() {
           const list = prev[mode];
           const next = list.map((t) => (t.id === taskId ? mutate(t) : t));
           const nextAll = { ...prev, [mode]: next };
-          saveTasks(mode, next);
+          taskSaver.save(mode, next);
           return nextAll;
         });
       };
@@ -1433,6 +1626,7 @@ export function Workbench() {
           ...task,
           messages: dropPartialAssistantTail(task.messages),
         }));
+        taskSaver.flush(mode);
         return;
       }
       if (!runId || runId !== activeRunIdRef.current) return;
@@ -1497,6 +1691,30 @@ export function Workbench() {
         // 本轮最后一次模型调用的累计用量（上下文容量 / 缓存命中浮层）
         const usage = usageFromEvent(evt);
         if (usage) apply((task) => ({ ...task, usage }));
+      } else if (type === "thinking.delta") {
+        // 思考流（dsh 的 ReasoningRow 数据源）：并入助手消息的 reasoning 块，
+        // 位置即真实顺序（与正文/工具互相打断）。此前这个事件被静默丢弃。
+        const delta = (evt as { delta?: string }).delta ?? "";
+        if (!delta) return;
+        apply((task) => {
+          const messages = [...task.messages];
+          const last = messages[messages.length - 1];
+          if (last && last.role === "assistant") {
+            messages[messages.length - 1] = appendThinkingDelta(last, delta);
+            return { ...task, messages };
+          }
+          // 思考先于正文到达（常态）：先建一条助手消息承载它
+          const nextStartMs = nextAssistantStartMs(messages, task.runStartedAt);
+          const settled = settlePreviousAssistant(messages, nextStartMs);
+          settled.push({
+            role: "assistant",
+            text: "",
+            startedAt: nextStartMs,
+            ...(runId ? { runId } : {}),
+            blocks: [{ type: "reasoning", text: delta }],
+          });
+          return { ...task, messages: settled };
+        });
       } else if (type === "message.delta") {
         const delta = (evt as { delta?: string }).delta ?? "";
         if (!delta) return;
@@ -1522,6 +1740,7 @@ export function Workbench() {
             role: "assistant",
             text: delta,
             startedAt: nextStartMs,
+            ...(runId ? { runId } : {}),
             blocks: [{ type: "text", text: delta }],
           });
           return { ...task, messages: settled };
@@ -1539,6 +1758,7 @@ export function Workbench() {
           }),
         );
         // 每轮成功结束自动提交一次（Code 模式 + 已绑项目），让对话在 git 里有迹可循
+        taskSaver.flush(mode);
         if (mode === "code") {
           void autoCommitTurnRef.current(taskId);
         }
@@ -1557,6 +1777,7 @@ export function Workbench() {
           status: "failed",
           messages: [...task.messages, { role: "assistant", text: message }],
         }));
+        taskSaver.flush(mode);
         markUnreadIfBackground();
       } else if (type === "run.failed") {
         // 服务端在 error.message 里给的是可读原因（如「模型流已 180 秒没有任何
@@ -1581,6 +1802,7 @@ export function Workbench() {
         if (mode === "code" && runId) {
           void fetchTurnCheckpointRef.current(taskId, runId);
         }
+        taskSaver.flush(mode);
         markUnreadIfBackground();
       } else if (type === "run.canceled") {
         const canceledTs = (evt as { timestamp?: string }).timestamp;
@@ -1594,11 +1816,16 @@ export function Workbench() {
               : {}),
           }),
         );
+        taskSaver.flush(mode);
         // 用户自己按的停止：算已读，但转圈要收掉
         setRunningTaskId(null);
       }
     });
-    return off;
+    // 事件监听随 mode/ws 变化重挂：节流窗口里的待写内容先落盘，不留给新的 saver 实例
+    return () => {
+      taskSaver.flush();
+      off();
+    };
   }, [ws, mode]);
 
   /** 真正落库并生效（确认弹窗与其余三档都走它）。 */
@@ -2798,6 +3025,7 @@ export function Workbench() {
                           ? parseTimestampMs(activeTask.runEndedAt)
                           : null
                       }
+                      focusToolCallId={trajectoryFocus}
                     />
                   ) : (
                     <>
@@ -2891,31 +3119,94 @@ export function Workbench() {
                           activeTask.status === "completed" &&
                           Boolean(activeTask.runEndedAt) &&
                           lastAssistantIdx >= 0;
-                        return shown.messages.map((msg, i) => (
-                          // biome-ignore lint/suspicious/noArrayIndexKey: 流式为追加列表，消息的稳定身份就是位置；内容键会每个 token 换 key，把整条消息重挂载
-                          <div key={i} className="space-y-2">
-                            {showSummary && i === lastAssistantIdx ? (
-                              <div className="text-xs font-medium text-muted-foreground">
-                                最终总结
-                              </div>
-                            ) : null}
-                            {/* 每条助手消息都带上「工作了多久」（用户口径：不能只显示一部分） */}
-                            {msg.role === "assistant" &&
-                            msg.elapsedMs !== undefined ? (
-                              <div className="text-[11px] text-muted-foreground">
-                                已工作{" "}
-                                {formatElapsedSeconds(msg.elapsedMs / 1000)}
-                              </div>
-                            ) : null}
-                            {msg.role === "user" ? (
-                              <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground whitespace-pre-wrap">
-                                {msg.text}
-                              </div>
-                            ) : (
-                              <AssistantTurn msg={msg} />
-                            )}
-                          </div>
-                        ));
+                        const streaming = activeTask.status === "running";
+                        return shown.messages.map((msg, i) => {
+                          // 轮级过程折叠（dsh 同款）：跑完且有结论的轮，结论前的
+                          // 推理/工具/中途输出收进控制行；手动展开后逐行原位可见
+                          const spec = specCoveringIndex(turnProcesses, i);
+                          const foldKey = spec
+                            ? `${activeTask.id}:${spec.turnIndex}`
+                            : null;
+                          const folded =
+                            spec !== null &&
+                            foldKey !== null &&
+                            !expandedTurnProcesses.has(foldKey);
+                          if (
+                            folded &&
+                            spec &&
+                            i > spec.startIndex &&
+                            i < spec.answerIndex
+                          ) {
+                            // 折叠区内的过程行：控制行展开后原位回来
+                            return null;
+                          }
+                          const tailOnly =
+                            folded &&
+                            spec !== null &&
+                            i === spec.answerIndex &&
+                            msg.role === "assistant";
+                          return (
+                            // biome-ignore lint/suspicious/noArrayIndexKey: 流式为追加列表，消息的稳定身份就是位置；内容键会每个 token 换 key，把整条消息重挂载
+                            <div key={i} className="space-y-2">
+                              {spec && i === spec.startIndex ? (
+                                <TurnProcessRow
+                                  spec={spec}
+                                  expanded={Boolean(
+                                    foldKey &&
+                                      expandedTurnProcesses.has(foldKey),
+                                  )}
+                                  onToggle={() =>
+                                    setExpandedTurnProcesses((prev) => {
+                                      const next = new Set(prev);
+                                      if (foldKey && next.has(foldKey)) {
+                                        next.delete(foldKey);
+                                      } else if (foldKey) {
+                                        next.add(foldKey);
+                                      }
+                                      return next;
+                                    })
+                                  }
+                                />
+                              ) : null}
+                              {showSummary && i === lastAssistantIdx ? (
+                                <div className="text-xs font-medium text-muted-foreground">
+                                  最终总结
+                                </div>
+                              ) : null}
+                              {/* 每条助手消息都带上「工作了多久」（用户口径：不能只显示一部分） */}
+                              {msg.role === "assistant" &&
+                              msg.elapsedMs !== undefined ? (
+                                <div className="text-[11px] text-muted-foreground">
+                                  已工作{" "}
+                                  {formatElapsedSeconds(msg.elapsedMs / 1000)}
+                                </div>
+                              ) : null}
+                              {msg.role === "user" ? (
+                                <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground whitespace-pre-wrap">
+                                  {msg.text}
+                                </div>
+                              ) : tailOnly && spec ? (
+                                // 折叠态：答案消息只渲染尾部正文（过程块都在控制行里）
+                                <div className="w-fit max-w-full rounded-2xl rounded-bl-md bg-muted px-4 py-2.5">
+                                  <MarkdownRenderer
+                                    text={spec.answerTailText}
+                                  />
+                                </div>
+                              ) : (
+                                <AssistantTurn
+                                  msg={msg}
+                                  streaming={
+                                    streaming && i === shown.messages.length - 1
+                                  }
+                                  onInspectTool={(toolCallId) => {
+                                    setTranscriptTab("trajectory");
+                                    setTrajectoryFocus(toolCallId);
+                                  }}
+                                />
+                              )}
+                            </div>
+                          );
+                        });
                       })()}
                       {/*
                     检查点条（Code 模式）：本轮终态后拉到的影子快照——改了什么、可回滚。

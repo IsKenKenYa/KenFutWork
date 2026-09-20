@@ -41,7 +41,42 @@ export function toolStatusMeta(tool: TaskToolEntry): ToolStatusMeta {
   return { text: "已完成", dotClass: "bg-emerald-500", failed: false };
 }
 
-/** 展开体：入参（逐字段）+ 输出（专用渲染器 / 结论文字）。没有可展开内容时调用方禁用展开。 */
+/** 产物预览（图/视频，tool.completed 带回）：此前事件里带了这个字段但被丢弃。 */
+function ToolArtifactsPreview({ tool }: { tool: TaskToolEntry }) {
+  if (!tool.artifacts || tool.artifacts.length === 0) return null;
+  return (
+    <div>
+      <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        产物
+      </div>
+      <div className="mt-1 flex flex-wrap gap-2">
+        {tool.artifacts.map((artifact) =>
+          artifact.type === "image" ? (
+            // biome-ignore lint/performance/noImgElement: 产物是任意远端地址（用户自己的存储/画布产物），next/image 的域名白名单与优化不适用于工作台流
+            <img
+              key={artifact.url}
+              src={artifact.url}
+              alt={artifact.title ?? "生成的图片"}
+              className="max-h-44 rounded-lg border border-border/60"
+            />
+          ) : (
+            <video
+              key={artifact.url}
+              src={artifact.url}
+              controls
+              className="max-h-44 rounded-lg border border-border/60"
+            >
+              {/* AI 生成的视频产物没有可挂的字幕文件；空 track 满足媒体可达性口径 */}
+              <track kind="captions" />
+            </video>
+          ),
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** 展开体：入参（逐字段）+ 输出（专用渲染器 / 结论文字）+ 产物预览。没有可展开内容时调用方禁用展开。 */
 export function ToolEventDetail({ tool }: { tool: TaskToolEntry }) {
   return (
     <div className="mt-2 space-y-2 border-l-2 border-border/60 pl-3">
@@ -82,6 +117,7 @@ export function ToolEventDetail({ tool }: { tool: TaskToolEntry }) {
           </div>
         </div>
       ) : null}
+      <ToolArtifactsPreview tool={tool} />
     </div>
   );
 }

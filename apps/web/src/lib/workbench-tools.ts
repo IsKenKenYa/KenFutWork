@@ -1,4 +1,4 @@
-import type { ContentBlock } from "@kenfutwork/shared";
+import type { ContentBlock, ToolArtifact } from "@kenfutwork/shared";
 import { parseTimestampMs } from "./elapsed";
 import {
   completeSubagent,
@@ -7,6 +7,7 @@ import {
   upsertSubagentStarted,
 } from "./subagent-directory";
 import { parseTodos, type TodoItem } from "./todo-progress";
+import { normalizeToolArgs } from "./tool-args";
 
 /**
  * 工作台 Code 模式的 run 事件 → 任务状态纯逻辑（tool.* / message.delta）。
@@ -35,20 +36,29 @@ export type TaskToolEntry = {
   summary?: string;
   /** 结构化输出：交回既有渲染器（web_search 会渲染成可点击来源）。 */
   output?: Record<string, unknown>;
-  /** 入参快照（tool.started 带上）：行内显示「读了哪个文件 / 跑了什么命令」。 */
+  /**
+   * 入参快照（tool.started 带上）：行内显示「读了哪个文件 / 跑了什么命令」。
+   * 入库前经 `normalizeToolArgs` 归一化——服务端透传的节点输入实测包了一层
+   * `{input:"<json>"}`，不剥掉行内提示与详情都取不到值。
+   */
   input?: Record<string, unknown>;
   /** 起止时刻（毫秒，来自事件 timestamp）：轨迹视图显示每次调用的发生时间与耗时。 */
   startedAt?: number;
   endedAt?: number;
+  /** 归属的 run（一次请求）：轨迹/对话据此回答「这次调用属于哪轮对话」。 */
+  runId?: string;
+  /** 产物（图/视频，tool.completed 带回）：详情展开时内联预览。 */
+  artifacts?: ToolArtifact[];
 };
 
-/** 助手消息内的有序块：一段文本 / 一次工具调用（严格按事件到达顺序交错）。 */
+/** 助手消息内的有序块：一段文本 / 一段思考 / 一次工具调用（严格按事件到达顺序交错）。 */
 export type TaskMessageBlock =
   | {
       type: "text";
       text: string /** 该段正文第一个字到达的时刻（毫秒）。 */;
       at?: number;
     }
+  | { type: "reasoning"; text: string; at?: number }
   | { type: "tool"; tool: TaskToolEntry };
 
 export type TaskMessage = {
@@ -61,10 +71,15 @@ export type TaskMessage = {
   elapsedMs?: number;
   /** 这条消息开始的时间（内部用：终态时据此算 elapsedMs）。 */
   startedAt?: number;
-  /** 全文（追问历史拼装、右键复制、标题等纯文本消费方用）；流式期间与 blocks 同步维护。 */
+  /** 归属的 run（一次请求）：一轮 = 一次 run，追问换新 runId。 */
+  runId?: string;
+  /**
+   * 全文（**只含正文，不含思考**）：追问历史拼装、右键复制、标题等纯文本消费方用；
+   * 思考是推理过程不是结论，拼进「供参考」的历史只会稀释重点。流式期间与 blocks 同步维护。
+   */
   text: string;
   /**
-   * 助手消息的有序块（文本段与工具调用交错）。缺省 = 旧数据/纯文本消息，
+   * 助手消息的有序块（文本/思考/工具交错）。缺省 = 旧数据/纯文本消息，
    * 渲染走 `text` 单气泡，行为与改造前一致。
    */
   blocks?: TaskMessageBlock[];
@@ -93,9 +108,10 @@ export function capToolBlocks(blocks: TaskMessageBlock[]): TaskMessageBlock[] {
   return kept;
 }
 
-/** 相邻 tool 块标成一组（text 块打断连续性）——渲染层据此把工具运行挨个铺成行。 */
+/** 相邻同类块并成一组（text 打断连续性）——渲染层据此把思考/工具各铺成行。 */
 export type AssistantBlockGroup =
   | { kind: "text"; text: string }
+  | { kind: "reasoning"; text: string }
   | { kind: "tools"; tools: TaskToolEntry[] };
 
 export function groupAssistantBlocks(
@@ -113,6 +129,15 @@ export function groupAssistantBlocks(
       }
       continue;
     }
+    if (block.type === "reasoning") {
+      const last = groups[groups.length - 1];
+      if (last?.kind === "reasoning") {
+        last.text += block.text;
+      } else {
+        groups.push({ kind: "reasoning", text: block.text });
+      }
+      continue;
+    }
     const last = groups[groups.length - 1];
     if (last?.kind === "tools") {
       last.tools.push(block.tool);
@@ -124,7 +149,40 @@ export function groupAssistantBlocks(
 }
 
 /**
- * 文本增量并入助手消息：追加到最后一个 text 块；末尾是工具调用就**新起一段**——
+ * 思考增量并入助手消息：末尾是思考块就续写，否则**新起一段**——
+ * 与正文互相打断，位置即真实顺序。**不**并入 `message.text`：思考是推理
+ * 过程不是结论，追问历史/复制的纯文本口径里不该有它（deepseek-harness 同款
+ * 做法：reasoning 是独立行，不混进 assistant 正文）。
+ */
+export function appendThinkingDelta(
+  message: TaskMessage,
+  delta: string,
+): TaskMessage {
+  if (!delta) return message;
+  const blocks =
+    message.blocks ??
+    (message.text ? [{ type: "text" as const, text: message.text }] : []);
+  const last = blocks[blocks.length - 1];
+  const nextBlocks: TaskMessageBlock[] =
+    last?.type === "reasoning"
+      ? [
+          ...blocks.slice(0, -1),
+          // 续写保持首块的 at（这一段思考的开始时刻不变）
+          {
+            type: "reasoning" as const,
+            text: last.text + delta,
+            ...(last.at !== undefined ? { at: last.at } : {}),
+          },
+        ]
+      : [
+          ...blocks,
+          { type: "reasoning" as const, text: delta, at: Date.now() },
+        ];
+  return { ...message, blocks: nextBlocks };
+}
+
+/**
+ * 文本增量并入助手消息：追加到最后一个 text 块；末尾是工具调用/思考就**新起一段**——
  * 工具之后的正文是新一轮思考的产物，不能和工具前的正文糊成一段（顺序即时间线）。
  * `text` 字段同步维护（纯文本消费方：追问历史、复制、标题）。
  */
@@ -202,6 +260,9 @@ export type ToolEventLike = {
   outputSummary?: string;
   output?: Record<string, unknown>;
   input?: Record<string, unknown>;
+  artifacts?: ToolArtifact[];
+  /** 事件所属 run：入库到工具条目与新建的助手消息上（归属哪轮对话的权威字段）。 */
+  runId?: string;
   timestamp?: string;
 };
 
@@ -270,8 +331,12 @@ export function toolTargetHint(entry: TaskToolEntry): string | null {
  * （实测 `["text","tool","text","tool",…]` 完全交错），按 sessionId 拉回来即可
  * 还原每一次调用真实发生的位置。拉取失败时才退化为本地有损迁移。
  *
- * 非 text/tool 块（thinking/image/mention）本地消息模型不渲染，按序跳过——
- * 丢的只是渲染不了的内容，文本与工具的时序不受影响。
+ * 2026-09-21 存储改造后服务端块上还有 runId/时间戳（见 assistant-block-collector）：
+ * 一并恢复——刷新后轮级折叠、轨迹时间轴与耗时列才能从 PG 历史完整还原。旧数据
+ * 没有这些字段，走各自的缺省（无 runId / 无时刻），不伪造。
+ *
+ * 非 text/tool/thinking 块（image/mention）本地消息模型不渲染，按序跳过——
+ * 丢的只是渲染不了的内容，文本/思考/工具的时序不受影响。
  */
 export function rebuildAssistantBlocks(
   serverBlocks: readonly ContentBlock[],
@@ -280,15 +345,37 @@ export function rebuildAssistantBlocks(
   for (const block of serverBlocks) {
     if (block.type === "text") {
       if (!block.text) continue;
+      const at = parseTimestampMs(block.at ?? "");
       const last = blocks[blocks.length - 1];
       if (last?.type === "text") {
         last.text += block.text;
       } else {
-        blocks.push({ type: "text", text: block.text });
+        blocks.push({
+          type: "text",
+          text: block.text,
+          ...(at !== null ? { at } : {}),
+        });
+      }
+      continue;
+    }
+    if (block.type === "thinking") {
+      if (!block.thinking) continue;
+      const at = parseTimestampMs(block.at ?? "");
+      const last = blocks[blocks.length - 1];
+      if (last?.type === "reasoning") {
+        last.text += block.thinking;
+      } else {
+        blocks.push({
+          type: "reasoning",
+          text: block.thinking,
+          ...(at !== null ? { at } : {}),
+        });
       }
       continue;
     }
     if (block.type !== "tool") continue;
+    const startedAt = parseTimestampMs(block.startedAt ?? "");
+    const endedAt = parseTimestampMs(block.endedAt ?? "");
     blocks.push({
       type: "tool",
       tool: {
@@ -299,6 +386,9 @@ export function rebuildAssistantBlocks(
         ...(block.input ? { input: block.input } : {}),
         ...(block.output ? { output: block.output } : {}),
         ...(block.outputSummary ? { summary: block.outputSummary } : {}),
+        ...(block.runId ? { runId: block.runId } : {}),
+        ...(startedAt !== null ? { startedAt } : {}),
+        ...(endedAt !== null ? { endedAt } : {}),
       },
     });
   }
@@ -373,6 +463,7 @@ function startToolBlock(
       role: "assistant",
       text: "",
       startedAt,
+      ...(entry.runId ? { runId: entry.runId } : {}),
       blocks: [{ type: "tool", tool: entry }],
     },
   ];
@@ -411,6 +502,9 @@ function completeToolBlock(
                   ? { summary: event.outputSummary }
                   : {}),
                 ...(event.output ? { output: event.output } : {}),
+                // started 没带 runId 的旧事件，completed 补上归属
+                ...(event.runId && !b.tool.runId ? { runId: event.runId } : {}),
+                ...(event.artifacts ? { artifacts: event.artifacts } : {}),
                 ...(atMs !== null ? { endedAt: atMs } : {}),
               },
             }
@@ -450,7 +544,12 @@ export function applyTaskToolEvent<T extends TaskToolState>(
           toolCallId,
           toolName,
           status: "running",
-          ...(event.input ? { input: event.input } : {}),
+          // 入库前剥掉服务端节点输入的包装层（`{input:"<json>"}`）——归一化失败
+          // （不是 JSON 对象）就保留原样，宁可展示原始形状也不丢字段。
+          ...(event.input
+            ? { input: normalizeToolArgs(event.input) ?? event.input }
+            : {}),
+          ...(event.runId ? { runId: event.runId } : {}),
           ...(atMs !== null ? { startedAt: atMs } : {}),
         })
       : completeToolBlock(task, toolCallId, event, atMs);
