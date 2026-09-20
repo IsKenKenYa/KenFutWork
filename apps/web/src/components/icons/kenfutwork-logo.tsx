@@ -23,9 +23,9 @@ export function KenFutWorkLogo({
   alt?: string;
 }) {
   return (
-    // biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败（loading-screen 同款豁免）
     // opacity-90：用户口径「软件里的图标加一点透明度」——纯色标记配白底贴片时，
     // 全不透明在浅色侧栏里偏「贴上去」；留一点透更贴合界面
+    // biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败（loading-screen 同款豁免）
     <img
       src="/logo-mark.png"
       alt={alt}

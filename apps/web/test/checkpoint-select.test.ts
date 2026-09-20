@@ -168,12 +168,12 @@ describe("formatCheckpointOption（回滚目标下拉的文案）", () => {
     expect(checkpointKindLabel("baseline")).toBe("基线快照");
     expect(checkpointKindLabel("restore")).toBe("回滚恢复点");
     expect(checkpointKindLabel("turn")).toBe("轮次快照");
-    expect(
-      formatCheckpointOption(mkRow({ kind: "baseline" })),
-    ).toContain("基线快照");
-    expect(
-      formatCheckpointOption(mkRow({ kind: "restore" })),
-    ).toContain("回滚恢复点");
+    expect(formatCheckpointOption(mkRow({ kind: "baseline" }))).toContain(
+      "基线快照",
+    );
+    expect(formatCheckpointOption(mkRow({ kind: "restore" }))).toContain(
+      "回滚恢复点",
+    );
   });
 
   it("createdAt 畸形：不抛错，文案退化成「类型 · 统计」", () => {

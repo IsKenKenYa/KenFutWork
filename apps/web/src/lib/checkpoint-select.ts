@@ -38,9 +38,7 @@ export function formatCheckpointStats(checkpoint: CheckpointSummary): string {
 }
 
 /** 检查点类型的中文短标（回滚目标下拉与 chip 共用一套口径）。 */
-export function checkpointKindLabel(
-  kind: CheckpointSummary["kind"],
-): string {
+export function checkpointKindLabel(kind: CheckpointSummary["kind"]): string {
   if (kind === "baseline") return "基线快照";
   if (kind === "restore") return "回滚恢复点";
   return "轮次快照";
@@ -58,9 +56,7 @@ export function toCheckpointOptions(
 }
 
 /** 回滚目标下拉的选项文案：`轮次快照 · 10:05 · 3 个文件 +12 −4`。 */
-export function formatCheckpointOption(
-  checkpoint: CheckpointSummary,
-): string {
+export function formatCheckpointOption(checkpoint: CheckpointSummary): string {
   const date = new Date(checkpoint.createdAt);
   const time = Number.isNaN(date.getTime())
     ? ""

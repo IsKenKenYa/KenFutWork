@@ -286,7 +286,7 @@ export function ModelEditDialog({
                 <div className="mt-1.5 flex flex-wrap items-center gap-2">
                   {state.reasoningEfforts.map((effort, index) => (
                     <button
-                      key={`${effort}-${index}`}
+                      key={effort}
                       type="button"
                       className="rounded-md border px-2.5 py-1.5 text-xs"
                       title="点击移除该档位"
