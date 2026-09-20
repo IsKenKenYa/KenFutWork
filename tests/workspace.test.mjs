@@ -138,7 +138,7 @@ const FIXTURE_README = [
   "",
   "| 文档 | 角色 |",
   "| --- | --- |",
-  "| `tech/改造计划.md` | 权威（ctx key 表属主） |",
+  "| `方案设计/改造计划.md` | 权威（ctx key 表属主） |",
   "| `sub/frozen.md` | 快照 |",
   "| `ok.md` | 权威 |",
   "",
@@ -183,14 +183,16 @@ async function withDocsFixture(run) {
   const fixtureRoot = await mkdtemp(path.join(tmpdir(), "kenfutwork-docs-"));
   try {
     await mkdir(path.join(fixtureRoot, "docs", "sub"), { recursive: true });
-    await mkdir(path.join(fixtureRoot, "docs", "tech"), { recursive: true });
+    await mkdir(path.join(fixtureRoot, "docs", "方案设计"), {
+      recursive: true,
+    });
     await writeFile(
       path.join(fixtureRoot, "docs", "README.md"),
       FIXTURE_README,
       "utf8",
     );
     await writeFile(
-      path.join(fixtureRoot, "docs", "tech", "改造计划.md"),
+      path.join(fixtureRoot, "docs", "方案设计", "改造计划.md"),
       FIXTURE_PLAN,
       "utf8",
     );

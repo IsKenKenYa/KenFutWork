@@ -3,7 +3,7 @@
 > 状态（2026-09-18 更新）：**本机已能构建**——Rust（rustup，cargo 1.98.1）+ MSVC（VS 2022 生成工具）
 > + **Windows SDK 10.0.26100（装在 `D:\Windows Kits\10`，非默认盘）** + WebView2 运行时 153。
 > 实测 `pnpm --filter @kenfutwork/desktop exec tauri build --debug --no-bundle` 通过，产物
-> `src-tauri/target/debug/kenfutwork-desktop.exe`。设计依据：`docs/tech/多端产品设计.md` §4
+> `src-tauri/target/debug/kenfutwork-desktop.exe`。设计依据：`docs/方案设计/多端产品设计.md` §4
 > （Tauri 2 + 系统 WebView + 服务端 sidecar，拒 Electron）。
 
 ## 构建前置（逐项自查，2026-09-18 实测）
@@ -48,7 +48,7 @@ pnpm --filter @kenfutwork/desktop build                   # 2) 出安装包
   并广播 `WM_SETTINGCHANGE`；`HKCU|HKLM\Software\KenFutWork` 另记 `InstallDir`/`Version`。
   **卸载时逐项撤掉**（PATH 只删自己那一段），再广播一次；按安装模式自动选 HKCU / HKLM 的 `Environment`。
 - **图标**：`node scripts/icons.mjs`（在 `apps/desktop` 下跑）从品牌 logo 唯一权威源
-  `docs/design/logo/最终定稿.svg` 生成 `src-tauri/icons/`（多尺寸 `icon.ico` 16→256 + `icon.png`）。
+  `docs/视觉设计/logo/新版.png` 生成 `src-tauri/icons/`（多尺寸 `icon.ico` 16→256 + `icon.png`）。
   exe 资源图标、安装包图标、开始菜单与任务栏图标都吃这一份，换标只需重跑这条命令。
 - **窗口指向 `http://127.0.0.1:<端口>` 而不是加载壳自带的 UI**：本机免登录的可信来源只认回环
   （`server/src/features/auth/local-trust.ts`），而且壳自带的 `tauri://localhost` 的资源协议
