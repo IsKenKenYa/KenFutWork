@@ -5,7 +5,7 @@ import type {
   McpRegistryServer,
   McpServerView,
 } from "@kenfutwork/shared";
-import { Loader2, Plug, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import { Loader2, Plus, RefreshCw, Search, Server, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -129,7 +129,7 @@ export function McpModal({
       >
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-5 py-3 pr-12">
           <DialogTitle className="flex shrink-0 items-center gap-2 text-base font-medium">
-            <Plug className="h-4 w-4" /> MCP
+            <Server className="h-4 w-4" /> MCP
           </DialogTitle>
           <div className="flex shrink-0 items-center gap-1 rounded-lg bg-muted p-1">
             {(
@@ -336,7 +336,7 @@ function ConfiguredTab({
                 <div className="flex items-start gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <Plug className="h-3.5 w-3.5 text-muted-foreground" />
+                      <Server className="h-3.5 w-3.5 text-muted-foreground" />
                       <span className="text-sm font-medium">{server.name}</span>
                       <Tag>
                         {server.source === "env" ? "环境变量" : "界面配置"}

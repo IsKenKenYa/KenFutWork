@@ -17,9 +17,9 @@ import {
   PanelLeftOpen,
   PanelRight,
   PanelsTopLeft,
-  Plug,
   Plus,
   Send,
+  Server,
   ShieldAlert,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -2112,12 +2112,9 @@ export function Workbench() {
               onClick={() => setMcpOpen(true)}
               className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
-              {/* 插头字形天生窄（墨迹只有别的一半宽），放大一档才与相邻图标等观感；
-                  槽位固定 16px、内层 shrink-0 允许溢出居中，标签左对齐不跑偏 */}
-              <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-                <Plug className="h-[18px] w-[18px] shrink-0" />
-              </span>{" "}
-              MCP
+              {/* Server 而不是 Plug：插头字形天生窄（墨迹只占格子 58%），居中也会显得缩在
+                  右边；Server 与相邻图标一样填满格子（92%），不必再做尺寸特例 */}
+              <Server className="h-4 w-4 shrink-0" /> MCP
             </button>
             {/* 插件面板（能力 `ui`）：侧栏槽位 */}
             <PluginPanelButtons

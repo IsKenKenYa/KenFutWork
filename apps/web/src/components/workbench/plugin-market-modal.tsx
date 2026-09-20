@@ -10,6 +10,7 @@ import {
   Palette,
   Plug,
   Search,
+  Server,
   ShieldCheck,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -31,7 +32,7 @@ const ICONS: Record<
   permissions: ShieldCheck,
   "agent-modes": Code2,
   search: Search,
-  mcp: Plug,
+  mcp: Server,
   usage: BarChart3,
   canvas: Palette,
   skills: Folder,
