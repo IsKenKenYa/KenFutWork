@@ -16,7 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/components/toast";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { getServerBaseUrl } from "@/lib/env";
-import { resolvePanelUrl } from "@/lib/plugin-panels";
+import { PluginIcon } from "@/lib/plugin-panels";
 import { ListEmpty, ListLoading } from "./list-state";
 import { PluginExportDialog } from "./plugin-export-dialog";
 import { PluginInstallByUrl } from "./plugin-install-by-url";
@@ -316,27 +316,11 @@ export function PluginMarketModal({
                       className="flex items-start gap-3 rounded-xl border p-4"
                     >
                       <span className="rounded-lg bg-muted p-2">
-                        {showRealIcon && iconPath ? (
-                          // 与侧栏同一套渲染：单色（CSS mask + bg-current）+ 17px 等重
-                          <span className="flex h-4 w-4 items-center justify-center">
-                            <span
-                              aria-hidden="true"
-                              className="h-[17px] w-[17px] bg-current"
-                              style={{
-                                maskImage: `url(${resolvePanelUrl(iconPath, entry.id)})`,
-                                maskSize: "contain",
-                                maskRepeat: "no-repeat",
-                                maskPosition: "center",
-                                WebkitMaskImage: `url(${resolvePanelUrl(iconPath, entry.id)})`,
-                                WebkitMaskSize: "contain",
-                                WebkitMaskRepeat: "no-repeat",
-                                WebkitMaskPosition: "center",
-                              }}
-                            />
-                          </span>
-                        ) : (
-                          <Icon className="h-4 w-4" />
-                        )}
+                        <PluginIcon
+                          icon={showRealIcon ? iconPath : null}
+                          pluginId={entry.id}
+                          fallback={<Icon className="h-4 w-4" />}
+                        />
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium">{entry.title}</p>

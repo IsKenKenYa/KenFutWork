@@ -194,16 +194,10 @@ function renderLogin(message) {
   setState("未连接");
   clear(els.body);
   const card = el("div", "card login");
-  card.appendChild(
-    el(
-      "p",
-      "hint",
-      "用米家 App 扫描二维码登录（只需一次；会话加密保存，服务端重启后无需重扫）。二维码过期会自动换新码。",
-    ),
-  );
+  card.appendChild(el("p", "hint", "用米家 App 扫描二维码登录"));
   const qrBox = el("div", "hint", "正在获取二维码…");
   card.appendChild(qrBox);
-  const button = el("button", null, "获取二维码");
+  const button = el("button", null, "刷新二维码");
   button.type = "button";
   button.addEventListener("click", () => {
     startLogin();

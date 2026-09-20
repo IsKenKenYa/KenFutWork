@@ -104,7 +104,7 @@ import {
   panelWidthLimits,
   SIDEBAR_RAIL_WIDTH,
 } from "@/lib/panel-layout";
-import { PluginPanelButtons, resolvePanelUrl } from "@/lib/plugin-panels";
+import { PluginIcon, PluginPanelButtons } from "@/lib/plugin-panels";
 import { dropPartialAssistantTail } from "@/lib/run-events";
 import {
   ACK_POLL_MS,
@@ -2131,29 +2131,13 @@ export function Workbench() {
                   title={`插件 ${panel.pluginId} 提供的面板`}
                   className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
-                  {panel.icon ? (
-                    // 单色渲染（CSS mask + bg-current）：与侧栏其它线条图标同色、随悬停/主题变。
-                    // 16px 与相邻 lucide 图标同框同墨迹；描边在 SVG 里加粗一档补空心的"轻"
-                    // （见 plugins/mihome/icon.svg 注释）
-                    <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-                      <span
-                        aria-hidden="true"
-                        className="h-4 w-4 bg-current"
-                        style={{
-                          maskImage: `url(${resolvePanelUrl(panel.icon, panel.pluginId)})`,
-                          maskSize: "contain",
-                          maskRepeat: "no-repeat",
-                          maskPosition: "center",
-                          WebkitMaskImage: `url(${resolvePanelUrl(panel.icon, panel.pluginId)})`,
-                          WebkitMaskSize: "contain",
-                          WebkitMaskRepeat: "no-repeat",
-                          WebkitMaskPosition: "center",
-                        }}
-                      />
-                    </span>
-                  ) : (
-                    <PanelsTopLeft className="h-4 w-4 shrink-0" />
-                  )}{" "}
+                  {/* 插件图标：单色渲染（跟随本行文字色）；槽位 16px、本体 15px——
+                      空心描边＋插头类窄字形都比 lucide 团块看起来"大"，收小一档才等观感 */}
+                  <PluginIcon
+                    icon={panel.icon}
+                    pluginId={panel.pluginId}
+                    iconClass="h-[15px] w-[15px]"
+                  />{" "}
                   {panel.title}
                 </button>
               )}
