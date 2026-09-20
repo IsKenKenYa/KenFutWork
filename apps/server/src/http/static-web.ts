@@ -1,5 +1,5 @@
 import { createReadStream, existsSync, statSync } from "node:fs";
-import { extname, isAbsolute, join, normalize, sep } from "node:path";
+import { basename, extname, isAbsolute, join, normalize, sep } from "node:path";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 /**
@@ -61,13 +61,19 @@ export function registerStaticWebRoutes(
 
   const sendFile = (reply: FastifyReply, file: string, code = 200) => {
     const isHtml = extname(file) === ".html";
+    // favicon 也要 no-cache：WebView2 拿**页面 favicon** 当窗口/任务栏图标，缓存一天的话
+    // 换了图标要等缓存过期才生效（2026-09-20 实测：exe 图标都换了，任务栏还是老图）。
+    const isFavicon = basename(file).toLowerCase().startsWith("favicon.");
     reply
       .code(code)
       .header(
         "content-type",
         MIME_TYPES[extname(file)] ?? "application/octet-stream",
       )
-      .header("cache-control", isHtml ? "no-cache" : "public, max-age=86400");
+      .header(
+        "cache-control",
+        isHtml || isFavicon ? "no-cache" : "public, max-age=86400",
+      );
     return reply.send(createReadStream(file));
   };
 

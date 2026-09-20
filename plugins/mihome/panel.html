@@ -31,6 +31,9 @@
       body {
         margin: 0;
         padding: 16px;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
         background: var(--bg);
         color: var(--text);
         font: 13px/1.55 system-ui, -apple-system, "Segoe UI", "Microsoft YaHei",
@@ -41,6 +44,18 @@
         align-items: center;
         gap: 10px;
         margin-bottom: 12px;
+        flex: none;
+      }
+      /* 滚动只发生在设备区：header/footer 常驻，刷新重建网格时锁定滚动位置 */
+      main {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        scrollbar-gutter: stable;
+      }
+      footer {
+        flex: none;
+        margin-top: 12px;
       }
       header h1 {
         font-size: 15px;

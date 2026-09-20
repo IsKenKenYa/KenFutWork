@@ -35,16 +35,21 @@
 2. **API CookieJar 不是「所有 callback cookie 全塞进去」**：按参考实现固定写
    `cUserId`、两份 `serviceToken`、时区/夏令时、`channel=MI_APP_STORE`、国家、`PassportDeviceId`、`locale`。
    `deviceId/pass_o/passToken/userId/cUserId/uLocale` 只属于 serviceLogin 请求；二维码 callback 不手工带旧 Cookie。
+   **serviceToken 就是扫码 callback 给的那枚（mijia），不做任何「兑换成其他 sid」的加工**——
+   兑换来的令牌打设备 API 只会 auth error（真机实测）。
 3. **设备 API 主机是 `api.mijia.tech`**：`sid=mijia` 的 serviceToken 发到 `api.io.mi.com` 一律 auth error，
    设备一条也列不出来（真机实测）；参考实现 2025-11 起也迁到了这个主机。callback 给的 STS URL 同样不是设备 API 主机
    （`normalizeApiHost` 去 `sts.` 前缀，只对存量值兜底）。主机归属的证据与风险见 `lib/micloud.js` 的
    `DEFAULT_API_HOST` 注释与《改造计划》§4.13 第十九轮（六）——**它不是小米公开文档里的端点**。
-4. **空列表要如实解释**：现代 `mijia` 会话无效或账号/地区不对时，云端可能只回空列表；面板显示
+4. **请求体是单个 `data` 参数 + 字段顺序固定**：整包业务参数 JSON 序列化后作为**唯一业务字段 `data`** 加密上传；
+   签名/密文的字段顺序必须是 **`data` 在前、`rc4_hash__` 在后**。`rc4_hash__` 放最前面时签名复算不上，
+   云端**不报错、只静默回空列表**（真机实测：同一会话差这一个顺序，32 台设备变 0 台）。
+5. **空列表要如实解释**：现代 `mijia` 会话无效或账号/地区不对时，云端可能只回空列表；面板显示
    「米家云没有返回家庭数据：请确认扫描的是绑定设备的米家账号，并确认账号地区与米家 App 一致」。
-5. **设备列表走家庭维度**：`/v2/homeroom/gethome_merged` 取 home_id/home_owner → 逐家庭
+6. **设备列表走家庭维度**：`/v2/homeroom/gethome_merged` 取 home_id/home_owner → 逐家庭
    `/home/home_device_list`（`limit`/`start_did`/`has_more` 分页）。经典 `/home/device_list` 只作
    「没有家庭模型的老账号」兜底。
-5. **响应形态不对称**：成功体是 RC4 加密（可能 gzip），**错误体是明文 JSON**——解码顺序必须先试明文。
+7. **响应形态不对称**：成功体是 RC4 加密（可能 gzip），**错误体是明文 JSON**——解码顺序必须先试明文。
 
 ## 已知限制（如实）
 
@@ -56,7 +61,7 @@
 3. **旧二维码必须重扫一次**：旧版本使用错误的 `sid=xiaomiio`，它不是字段不全能补的问题——serviceToken
    绑定登录 service，不能迁移成 `mijia`。**设备 API 主机改口径（`mijia-v1` → `mijia-v2`）时同样要重扫**：
    存量会话里存着旧主机。两种情况插件都会把旧会话自动清掉并回到未连接，请只扫新版本生成的码。
-4. **凭据去向（如实说明）**：本插件会把小米会话凭据发给 `account.xiaomi.com`（登录与令牌兑换）和
+4. **凭据去向（如实说明）**：本插件会把小米会话凭据发给 `account.xiaomi.com`（登录）和
    `api.mijia.tech`（设备 API）。`api.mijia.tech` 的归属证据是「与 `api.io.mi.com` 对同一请求返回逐字节相同的响应
    + 同 CA 族证书 + 小米官方项目用同父域子域」，**不是**小米公开文档里的端点；2026-09 曾一度按「未验证域名」禁用它，
    但真机实测 `api.io.mi.com` 对 `sid=mijia` 会话一律 auth error，禁用它等于功能不可用。不接受这一点就别装这个插件。

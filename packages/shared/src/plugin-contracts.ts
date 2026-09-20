@@ -83,6 +83,11 @@ export const pluginUiEntrySchema = z.object({
   title: z.string().min(1),
   slot: pluginUiSlotSchema.default("sidebar"),
   url: z.string().min(1),
+  /**
+   * 入口图标（可选，相对插件根的静态资源路径，如 `assets/icon.svg`）；
+   * 由宿主解析成 `/api/plugins/<id>/assets/…` 后以 `<img>` 渲染。缺省用宿主的通用图标。
+   */
+  icon: z.string().nullable().default(null),
 });
 export type PluginUiEntry = z.infer<typeof pluginUiEntrySchema>;
 
@@ -227,6 +232,7 @@ export const pluginMarketEntrySchema = z.object({
         title: z.string().min(1),
         slot: z.string().default("sidebar"),
         url: z.string().min(1),
+        icon: z.string().nullable().default(null),
       }),
     )
     .default([]),

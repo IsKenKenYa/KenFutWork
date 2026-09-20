@@ -244,6 +244,7 @@ export function buildBundleManifest(files: BundleFiles): {
               ? (slot as PluginUiSlot)
               : "sidebar",
             url: typeof item.url === "string" ? item.url : "",
+            icon: typeof item.icon === "string" && item.icon ? item.icon : null,
           };
         })
         .filter((item) => item.id && item.title && item.url)

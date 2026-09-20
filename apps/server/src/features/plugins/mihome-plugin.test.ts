@@ -129,8 +129,6 @@ function fakeXiaomiCloud(options: FakeCloudOptions) {
     serviceUserAgent: "",
     callbackCookie: "",
     callbackUserAgent: "",
-    /** sid=xiaomiio 兑换请求带的 cookie（锁 passToken 兑换链路）。 */
-    xiaomiioCallbackCookie: "",
     loginSid: null as string | null,
     loginUserAgent: "",
     loginHasLogo: null as string | null,
@@ -174,15 +172,15 @@ function fakeXiaomiCloud(options: FakeCloudOptions) {
 
   function handleAppRequest(url: URL, init: RequestInit): Response {
     const params = new URLSearchParams(String(init.body ?? ""));
-    // API CookieJar 必须匹配参考实现的完整键集，且用的是兑换出的 sid=xiaomiio 令牌；
-    // 缺一个就会「认不出账号」（真机症状：接口 code 0 但设备列表恒空）。
+    // API CookieJar 必须匹配参考实现的完整键集，且用的是**扫码登录 callback 的那枚
+    // serviceToken**（mijia）——兑换来的其他 sid 令牌云端不认（真机 code=2 auth error）。
     const headers = (init.headers ?? {}) as Record<string, string>;
     const cookie = headers.cookie ?? "";
     state.lastApiCookie = cookie;
     if (
       !cookie.includes("PassportDeviceId=") ||
-      !cookie.includes("yetAnotherServiceToken=XIO-1") ||
-      !cookie.includes("serviceToken=XIO-1") ||
+      !cookie.includes("yetAnotherServiceToken=TOKEN-1") ||
+      !cookie.includes("serviceToken=TOKEN-1") ||
       !cookie.includes("cUserId=C-1") ||
       !cookie.includes("channel=MI_APP_STORE") ||
       !cookie.includes("countryCode=CN") ||
@@ -240,7 +238,11 @@ function fakeXiaomiCloud(options: FakeCloudOptions) {
     }
 
     if (uri === "/home/home_device_list") {
-      state.lastHomeListParams = { ...plain };
+      // 参考实现把整包业务参数放在**单个 `data` 字段**（JSON 字符串）里加密上传
+      state.lastHomeListParams = JSON.parse(plain.data ?? "{}") as Record<
+        string,
+        string
+      >;
       return json(
         encryptPayload(signedNonce, {
           code: 0,
@@ -279,11 +281,10 @@ function fakeXiaomiCloud(options: FakeCloudOptions) {
     }
 
     if (uri === "/miotspec/prop/get") {
-      const wanted = JSON.parse(plain.params ?? "[]") as Array<{
-        did: string;
-        siid: number;
-        piid: number;
-      }>;
+      const payload = JSON.parse(plain.data ?? "{}") as {
+        params?: Array<{ did: string; siid: number; piid: number }>;
+      };
+      const wanted = payload.params ?? [];
       const result = wanted.map((item) => ({
         ...item,
         code: 0,
@@ -294,12 +295,15 @@ function fakeXiaomiCloud(options: FakeCloudOptions) {
     }
 
     if (uri === "/miotspec/prop/set") {
-      const wanted = JSON.parse(plain.params ?? "[]") as Array<{
-        did: string;
-        siid: number;
-        piid: number;
-        value: unknown;
-      }>;
+      const payload = JSON.parse(plain.data ?? "{}") as {
+        params?: Array<{
+          did: string;
+          siid: number;
+          piid: number;
+          value: unknown;
+        }>;
+      };
+      const wanted = payload.params ?? [];
       for (const item of wanted) {
         state.setCalls.push(item);
         state.values.set(`${item.did}:${item.siid}.${item.piid}`, item.value);
@@ -326,13 +330,7 @@ function fakeXiaomiCloud(options: FakeCloudOptions) {
       state.serviceSid = url.searchParams.get("sid");
       state.serviceCookie = headers.cookie ?? "";
       state.serviceUserAgent = headers["user-agent"] ?? "";
-      // 出码（sid=mijia）：未扫码 → 引导二维码；兑换（sid=xiaomiio）：已有 passToken → 直接给 STS
-      if (state.serviceSid === "xiaomiio") {
-        return accountJson({
-          code: 0,
-          location: "https://sts.account.example/sts?sid=xiaomiio",
-        });
-      }
+      // 出码（sid=mijia）：未扫码 → 引导二维码（拿 location 里的 query 拼 loginUrl）
       return accountJson({
         code: 70016,
         location:
@@ -381,17 +379,6 @@ function fakeXiaomiCloud(options: FakeCloudOptions) {
       const headers = new Headers();
       headers.append("set-cookie", "serviceToken=TOKEN-1; Path=/");
       headers.append("set-cookie", "auxiliaryToken=AUX-1; Path=/");
-      return new Response("ok", { status: 200, headers });
-    }
-    if (url.hostname === "sts.account.example") {
-      // 兑换（sid=xiaomiio）：设备 API 认的 serviceToken 与账号字段
-      const requestHeaders = (init.headers ?? {}) as Record<string, string>;
-      state.xiaomiioCallbackCookie = requestHeaders.cookie ?? "";
-      const headers = new Headers();
-      headers.append("set-cookie", "serviceToken=XIO-1; Path=/");
-      headers.append("set-cookie", "userId=u-1; Path=/");
-      headers.append("set-cookie", "cUserId=C-1; Path=/");
-      headers.append("set-cookie", "passToken=P-1; Path=/");
       return new Response("ok", { status: 200, headers });
     }
     if (url.hostname === "miot-spec.org") {
@@ -947,6 +934,7 @@ describe("米家插件：安装与门禁", () => {
         title: "米家",
         slot: "sidebar",
         url: "assets/panel.html",
+        icon: "assets/icon.svg",
       },
     ]);
   });
@@ -1248,29 +1236,33 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
     const view = devices?.body as { devices: Array<Record<string, unknown>> };
     expect(view.devices.map((item) => item.did)).toEqual(["d1", "d2", "d3"]);
 
-    // 家庭维度参数取自 gethome_merged（home_owner/home_id 不能是 0/空）
+    // 家庭维度参数取自 gethome_merged（home_owner/home_id 不能是 0/空）；
+    // `data` 包装里保留原始类型（数字/布尔），不再逐字段字符串化
     expect(cloud.state.lastHomeListParams).toMatchObject({
-      home_owner: "456",
-      home_id: "123",
-      limit: "200",
-      support_smart_home: "true",
+      home_owner: 456,
+      home_id: 123,
+      limit: 200,
+      support_smart_home: true,
     });
-    // API CookieJar 用的是兑换出的 sid=xiaomiio 令牌，并按白名单齐全
-    expect(cloud.state.lastApiCookie).toContain("serviceToken=XIO-1");
+    // API CookieJar 用的就是**扫码登录 callback 的那枚 serviceToken**（mijia），按白名单齐全；
+    // 兑换出来的其他 sid 令牌云端不认（真机 code=2 auth error，第十九轮（七））
+    expect(cloud.state.lastApiCookie).toContain("serviceToken=TOKEN-1");
     expect(cloud.state.lastApiCookie).toContain("cUserId=C-1");
     expect(cloud.state.lastApiCookie).toContain("PassportDeviceId=");
     expect(cloud.state.lastApiCookie).toContain("channel=MI_APP_STORE");
-    expect(cloud.state.lastApiCookie).toContain("yetAnotherServiceToken=XIO-1");
+    expect(cloud.state.lastApiCookie).toContain(
+      "yetAnotherServiceToken=TOKEN-1",
+    );
     expect(cloud.state.missingSessionCookie).toBe(0);
     // 设备 API 只打 mijia 主机：`sid=mijia` 的令牌发到 api.io.mi.com 一律 auth error（真机实测）
     expect(new Set(cloud.state.apiHosts)).toEqual(
       new Set(["https://api.mijia.tech"]),
     );
-    // 兑换结果落库：进程重启后不用再兑
+    // 会话里没有也不需要任何「兑换产物」
     const storedApi = JSON.parse(
       storage.get(JSON.stringify(["ws-1", installed.id, "session"])) ?? "{}",
-    ) as Record<string, { serviceToken?: string }>;
-    expect(storedApi.apiCookies?.serviceToken).toBe("XIO-1");
+    ) as Record<string, unknown>;
+    expect(storedApi.apiCookies).toBeUndefined();
   });
 
   it("新接口拿不到设备时兜底走经典接口（没有家庭模型的老账号）", async () => {

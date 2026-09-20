@@ -38,10 +38,26 @@ if (!source) {
   process.exit(1);
 }
 
-/** 白底圆角贴片参数：1024 画布、圆角 22%（≈上一版方块图标）、标占 86%（trim 掉透明边距后再留一圈白边——用户口径「还是要留点边距」）。 */
+/**
+ * 白底圆角贴片参数：1024 画布、圆角 22%（≈上一版方块图标）、标占 **80%**。
+ *
+ * 取值沿革（每次都拿真机截图量过；下一轮要调只改这一个常量）：
+ *   - 68% → 84% → 92% → 100%：用户反复要「标再大一点」，到 100% 时标顶满贴片（左右 0 白边）；
+ *   - 100% → 86%：用户「还是要留点边距」；
+ *   - 86% → 79%：用户「边距改为现在的 150%」——我把「边距」当成白边宽度，左右 7% → 10.5%；
+ *   - 79% → 94%：用户「为什么桌面端还是这么大白边」，白边收到左右各约 3%；
+ *   - 94% → 89%：用户「现在边距又太小了，再大一点」，左右白边回到约 5.5%；
+ *   - 89% → 85%：用户指着桌面图标「我要这个大小稍微小一点的那种，85 吧」——左右白边约 7.5%；
+ *   - 85% → **80%**：用户「图标改成 0.8 吧」——左右白边约 10%
+ *     （1024 画布上墨迹约 819px，36px 任务栏图标上约 3.6px）。
+ *
+ * 校验方式：量 `docs/design/logo/应用图标-白底圆角.png` 的「墨迹宽度 / 1024」。注意标是
+ * 805×721、比高宽，`fit: contain` 下**左右是受限边**，这里的百分比说的都是左右那一侧；
+ * 上下白边按比例自然更大（0.80 时约 15%）。
+ */
 const CANVAS = 1024;
 const RADIUS = Math.round(CANVAS * 0.22);
-const MARK = Math.round(CANVAS * 0.86);
+const MARK = Math.round(CANVAS * 0.8);
 
 const tile = Buffer.from(
   `<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS}" height="${CANVAS}">
@@ -73,9 +89,26 @@ const composedPath = join(designDir, "应用图标-白底圆角.png");
 await sharp(composed).toFile(composedPath);
 copyFileSync(composedPath, join(publicDir, "logo.png"));
 copyFileSync(composedPath, join(publicDir, "app-icon.png"));
+/**
+ * favicon / apple-touch-icon 也吃这一份。
+ *
+ * 2026-09-20 踩过：这两个以前是手工放的一次性文件，所有图标重出都没动过它们 —— 而
+ * **WebView2 拿页面 favicon 当窗口图标**（任务栏那枚就是它），于是 exe 的图标换了好几轮，
+ * 任务栏一直是 15:42 那张老图，用户看到的「89→85 差了不止一点点」其实是两套图在打架。
+ * 并进这条命令，以后换图标不可能再漏。
+ */
+for (const [name, size] of [
+  ["favicon.png", 64],
+  ["apple-touch-icon.png", 180],
+]) {
+  await sharp(composed)
+    .resize(size, size)
+    .png({ compressionLevel: 9 })
+    .toFile(join(publicDir, name));
+}
 console.log(
   `应用图标已合成（白底圆角 ${RADIUS}/${CANVAS}）：${composedPath}\n` +
-    `  同时写入 apps/web/public/logo.png 与 app-icon.png`,
+    `  同时写入 apps/web/public/{logo.png, app-icon.png, favicon.png, apple-touch-icon.png}`,
 );
 
 console.log(`再用 tauri icon 出整套平台图标 → ${iconsDir}`);

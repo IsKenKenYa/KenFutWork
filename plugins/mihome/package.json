@@ -9,6 +9,7 @@
     "lib",
     "panel.html",
     "panel.js",
+    "icon.svg",
     "cordis.patch.yml",
     "README.md"
   ],
@@ -24,7 +25,8 @@
         "id": "mihome",
         "title": "米家",
         "slot": "sidebar",
-        "url": "assets/panel.html"
+        "url": "assets/panel.html",
+        "icon": "assets/icon.svg"
       }
     ]
   }

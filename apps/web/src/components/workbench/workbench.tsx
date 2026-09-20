@@ -107,7 +107,7 @@ import {
   panelWidthLimits,
   SIDEBAR_RAIL_WIDTH,
 } from "@/lib/panel-layout";
-import { PluginPanelButtons } from "@/lib/plugin-panels";
+import { PluginPanelButtons, resolvePanelUrl } from "@/lib/plugin-panels";
 import { dropPartialAssistantTail } from "@/lib/run-events";
 import { describeRunFailure } from "@/lib/run-failure";
 import {
@@ -2144,7 +2144,17 @@ export function Workbench() {
                   title={`插件 ${panel.pluginId} 提供的面板`}
                   className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
-                  <PanelsTopLeft className="h-4 w-4 shrink-0" /> {panel.title}
+                  {panel.icon ? (
+                    // biome-ignore lint/performance/noImgElement: 插件图标的资源地址要带令牌缝解析，静态导出下 next/image 不能用
+                    <img
+                      src={resolvePanelUrl(panel.icon, panel.pluginId)}
+                      alt=""
+                      className="h-4 w-4 shrink-0 rounded-[4px]"
+                    />
+                  ) : (
+                    <PanelsTopLeft className="h-4 w-4 shrink-0" />
+                  )}{" "}
+                  {panel.title}
                 </button>
               )}
             />

@@ -262,6 +262,43 @@ describe("插件市场：使用态", () => {
     expect(await screen.findByText("第三方插件")).toBeVisible();
     expect(screen.queryByRole("button", { name: "使用" })).toBeNull();
   });
+
+  it("「导出」按钮不带图标（用户口径：导出不要加图标）", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        plugins: [
+          {
+            id: "local__x",
+            name: "some-third-party",
+            title: "第三方插件",
+            description: "x",
+            source: "local",
+            installed: true,
+            enabled: true,
+            system: false,
+          },
+        ],
+      }),
+    });
+    const { PluginMarketModal } = await import(
+      "../src/components/workbench/plugin-market-modal"
+    );
+    render(
+      <PluginMarketModal
+        open
+        onClose={() => {}}
+        accessToken="tok"
+        isAdmin
+        onUse={() => {}}
+      />,
+    );
+    // 与同排的「卸载」「使用」口径一致：只有文字，不带 ⬇ 之类的图标
+    const exportButton = await screen.findByRole("button", { name: "导出" });
+    expect(exportButton.querySelector("svg")).toBeNull();
+    expect(exportButton.textContent?.trim()).toBe("导出");
+  });
 });
 
 /**

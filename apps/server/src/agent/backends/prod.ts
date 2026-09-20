@@ -11,6 +11,7 @@ import {
 
 import { runtimeEnvAdditions } from "../../desktop/runtimes.js";
 import { resolveSandboxDir } from "../sandbox-dir.js";
+import { withWorkDirAlias } from "./path-alias.js";
 
 const DEFAULT_SKILLS_ROOT = "/opt/kenfutwork/skills";
 
@@ -113,7 +114,14 @@ export function createProductionBackendFactory(
       });
     }
 
-    return new CompositeBackend(sandbox, routes);
+    // 路径别名：virtualMode 沙箱把根外绝对路径**静默吞成空结果**，而模型拿得到真实
+    // 路径（用户贴的路径/历史对话/execute 的 pwd 回显），ls 之即得「目录是空的」
+    // （2026-09-20 实测）。别名层让以沙箱真实目录开头的路径直达虚拟根；realpath 两个
+    // 形态都认（macOS 的 /tmp → /private/tmp、外挂卷宗挂载点都可能差一层）。
+    return withWorkDirAlias(new CompositeBackend(sandbox, routes), [
+      realSandboxDir,
+      sandboxDir,
+    ]);
   };
 
   return { factory, sandboxDir: realSandboxDir, ephemeral: false };
