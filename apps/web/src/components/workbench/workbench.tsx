@@ -2127,11 +2127,21 @@ export function Workbench() {
                   className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
                   {panel.icon ? (
-                    // biome-ignore lint/performance/noImgElement: 插件图标的资源地址要带令牌缝解析，静态导出下 next/image 不能用
-                    <img
-                      src={resolvePanelUrl(panel.icon, panel.pluginId)}
-                      alt=""
-                      className="h-4 w-4 shrink-0 rounded-[4px]"
+                    // 单色渲染（CSS mask + bg-current）：与侧栏其它线条图标同色、随悬停/主题变，
+                    // 不把插件自带图标当彩色贴图塞进菜单行
+                    <span
+                      aria-hidden="true"
+                      className="h-4 w-4 shrink-0 bg-current"
+                      style={{
+                        maskImage: `url(${resolvePanelUrl(panel.icon, panel.pluginId)})`,
+                        maskSize: "contain",
+                        maskRepeat: "no-repeat",
+                        maskPosition: "center",
+                        WebkitMaskImage: `url(${resolvePanelUrl(panel.icon, panel.pluginId)})`,
+                        WebkitMaskSize: "contain",
+                        WebkitMaskRepeat: "no-repeat",
+                        WebkitMaskPosition: "center",
+                      }}
                     />
                   ) : (
                     <PanelsTopLeft className="h-4 w-4 shrink-0" />

@@ -84,8 +84,9 @@ export const pluginUiEntrySchema = z.object({
   slot: pluginUiSlotSchema.default("sidebar"),
   url: z.string().min(1),
   /**
-   * 入口图标（可选，相对插件根的静态资源路径，如 `assets/icon.svg`）；
-   * 由宿主解析成 `/api/plugins/<id>/assets/…` 后以 `<img>` 渲染。缺省用宿主的通用图标。
+   * 入口图标（可选，相对插件根的静态资源路径，如 `assets/icon.svg`）。
+   * 宿主解析成 `/api/plugins/<id>/assets/…` 后**按单色渲染**（CSS mask，跟随菜单/卡片的文字色，
+   * 与其它菜单图标同一套语言）——请提供单色线条或纯色形状的 SVG；缺省用宿主的通用图标。
    */
   icon: z.string().nullable().default(null),
 });

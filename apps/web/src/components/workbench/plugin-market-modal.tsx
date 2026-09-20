@@ -317,11 +317,20 @@ export function PluginMarketModal({
                     >
                       <span className="rounded-lg bg-muted p-2">
                         {showRealIcon && iconPath ? (
-                          // biome-ignore lint/performance/noImgElement: 插件图标的资源地址，静态导出下 next/image 不能用
-                          <img
-                            src={resolvePanelUrl(iconPath, entry.id)}
-                            alt=""
-                            className="h-4 w-4 rounded-[3px]"
+                          // 与侧栏同一套渲染：单色（CSS mask + bg-current），跟卡片文字色走
+                          <span
+                            aria-hidden="true"
+                            className="block h-4 w-4 bg-current"
+                            style={{
+                              maskImage: `url(${resolvePanelUrl(iconPath, entry.id)})`,
+                              maskSize: "contain",
+                              maskRepeat: "no-repeat",
+                              maskPosition: "center",
+                              WebkitMaskImage: `url(${resolvePanelUrl(iconPath, entry.id)})`,
+                              WebkitMaskSize: "contain",
+                              WebkitMaskRepeat: "no-repeat",
+                              WebkitMaskPosition: "center",
+                            }}
                           />
                         ) : (
                           <Icon className="h-4 w-4" />
