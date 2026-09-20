@@ -2128,13 +2128,9 @@ export function Workbench() {
                   title={`插件 ${panel.pluginId} 提供的面板`}
                   className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
-                  {/* 插件图标：单色渲染（跟随本行文字色）；槽位 16px、本体 15px——
-                      空心描边＋插头类窄字形都比 lucide 团块看起来"大"，收小一档才等观感 */}
-                  <PluginIcon
-                    icon={panel.icon}
-                    pluginId={panel.pluginId}
-                    iconClass="h-[15px] w-[15px]"
-                  />{" "}
+                  {/* 插件图标：单色渲染（跟随本行文字色），槽位与本体都 16px——
+                      与 MCP/技能/插件 三个满格字形（墨迹 92%）同尺寸才不显小 */}
+                  <PluginIcon icon={panel.icon} pluginId={panel.pluginId} />{" "}
                   {panel.title}
                 </button>
               )}

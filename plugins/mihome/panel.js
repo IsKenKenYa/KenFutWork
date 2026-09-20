@@ -37,6 +37,7 @@ const els = {
   state: document.getElementById("state"),
   body: document.getElementById("body"),
   footer: document.getElementById("footer"),
+  note: document.getElementById("note"),
   refresh: document.getElementById("refresh"),
   disconnect: document.getElementById("disconnect"),
 };
@@ -56,11 +57,16 @@ function setState(text) {
   els.state.textContent = text || "";
 }
 
-/** 页脚统一出口：错误红字与提示灰字互斥，避免消息堆叠。 */
+/**
+ * 页脚**瞬时消息**（错误红字/提示灰字，互斥）——单独一个 `#note` 节点。
+ *
+ * 与「规格解析失败」卡片分开的理由：轮询每 5 秒要清一次瞬时消息，若把它和失败卡片挤在同一
+ * 容器里，清空会让页面矮一截、滚动条每轮抖一次（实测页面高度在 3174/3075/3204 之间摆动）。
+ */
 function setNote(text, isError) {
-  clear(els.footer);
-  if (!text) return;
-  els.footer.appendChild(el("p", isError ? "error" : "hint", text));
+  els.note.textContent = text || "";
+  els.note.className = isError ? "error" : "hint";
+  els.note.hidden = !text;
 }
 
 function showError(message) {
@@ -71,8 +77,9 @@ function showHint(message) {
   setNote(message, false);
 }
 
-function clearFooter() {
-  clear(els.footer);
+/** 清「瞬时消息」——不碰规格失败卡片（见 setNote 的注释）。 */
+function clearNote() {
+  setNote("", false);
 }
 
 function setHeaderButtons(connected) {
@@ -117,7 +124,7 @@ function startLogin(options) {
   if (auto) {
     showHint("二维码已过期，正在自动换新码…");
   } else {
-    clearFooter();
+    clearNote();
   }
   api("login/qr")
     .then((payload) => {
@@ -128,7 +135,7 @@ function startLogin(options) {
       if (auto) {
         showHint(`二维码已自动刷新（第 ${state.autoRefreshes} 次）。`);
       } else {
-        clearFooter();
+        clearNote();
       }
       pollQr(payload.sessionId);
     })
@@ -254,7 +261,7 @@ function applyValue(did, siid, piid, value) {
 }
 
 function control(did, siid, piid, value) {
-  clearFooter();
+  clearNote();
   setState("下发中…");
   api("control", {
     method: "POST",
@@ -499,13 +506,15 @@ function renderDevices() {
 }
 
 function loadDevices(refresh) {
-  clearFooter();
   return api(`devices${refresh ? "?refresh=1" : ""}`)
     .then((payload) => {
       state.devices = payload.devices || [];
       state.total = payload.total || state.devices.length;
       state.specErrors = payload.specErrors || [];
       state.authHint = payload.authHint ?? null;
+      // 成功这一拍才清瞬时消息：与重渲染同一任务，不会出现「页面矮一截」的中间帧
+      // （在 fetch 之前清会让整页高度每轮摆动 → 滚动条抽搐，实测过）
+      clearNote();
       renderDevices();
       startPolling();
     })

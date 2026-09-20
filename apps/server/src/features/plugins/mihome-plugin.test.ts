@@ -80,6 +80,15 @@ interface DeviceModelModule {
     values: Array<{ siid: number; piid: number; value: unknown }>,
   ) => Array<Record<string, unknown>>;
   describeDevice: (raw: Record<string, unknown>) => Record<string, unknown>;
+  createSpecResolver: (options?: {
+    fetchImpl?: (input: string | URL, init?: RequestInit) => Promise<Response>;
+    failureTtlMs?: number;
+  }) => {
+    loadSpec: (
+      model: string,
+      options?: { force?: boolean },
+    ) => Promise<{ services?: unknown[] }>;
+  };
 }
 
 async function loadPluginModule<ModuleShape>(
@@ -807,6 +816,56 @@ describe("米家插件：规格 → 控件模型", () => {
       online: false,
       room: null,
     });
+  });
+
+  it("规格解析失败负缓存：TTL 内不重复试、force 强制重试、成功后才更新", async () => {
+    const model = await loadPluginModule<DeviceModelModule>(
+      "lib/device-model.js",
+    );
+    let instanceCalls = 0;
+    let instanceStatus = 500;
+    const resolver = model.createSpecResolver({
+      failureTtlMs: 60_000,
+      fetchImpl: async (input) => {
+        const url = String(input);
+        if (url.includes("/instances")) {
+          return new Response(
+            JSON.stringify({
+              instances: [{ model: "m.fail", type: "urn:test:fail" }],
+            }),
+            { status: 200 },
+          );
+        }
+        instanceCalls += 1;
+        if (instanceStatus !== 200) {
+          return new Response("boom", { status: instanceStatus });
+        }
+        return new Response(JSON.stringify({ services: [] }), { status: 200 });
+      },
+    });
+
+    // 第一次失败 → 记住失败；第二次（面板每 5 秒轮询）不再打上游、错误文案照旧
+    await expect(resolver.loadSpec("m.fail")).rejects.toThrow(/规格拉取失败/);
+    expect(instanceCalls).toBe(1);
+    await expect(resolver.loadSpec("m.fail")).rejects.toThrow(/规格拉取失败/);
+    expect(instanceCalls).toBe(1);
+
+    // 用户点「刷新」→ force 强制重试一次（失败则继续沿用负缓存）
+    await expect(
+      resolver.loadSpec("m.fail", { force: true }),
+    ).rejects.toThrow();
+    expect(instanceCalls).toBe(2);
+
+    // 上游恢复：force 重试成功后清掉负缓存，后续走成功缓存（不再打上游）
+    instanceStatus = 200;
+    await expect(
+      resolver.loadSpec("m.fail", { force: true }),
+    ).resolves.toMatchObject({ services: [] });
+    expect(instanceCalls).toBe(3);
+    await expect(resolver.loadSpec("m.fail")).resolves.toMatchObject({
+      services: [],
+    });
+    expect(instanceCalls).toBe(3);
   });
 });
 

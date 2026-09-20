@@ -124,12 +124,18 @@ export function describeDevice(raw) {
 }
 
 /**
- * 规格解析器：型号 → URN 索引（一次拉取，6 小时缓存）→ 单器件规格（按 URN 缓存）。
- * 规格库不可达时抛错，由调用方如实显示「仅在线状态」。
+ * 规格解析器：型号 → URN 索引（一次拉取，6 小时缓存）→ 单器件规格（成功按型号缓存、
+ * 失败按型号负缓存 `failureTtlMs`）。规格库不可达时抛错，由调用方如实显示「仅在线状态」。
  */
-export function createSpecResolver({ fetchImpl = fetch, logger } = {}) {
+export function createSpecResolver({
+  fetchImpl = fetch,
+  logger,
+  failureTtlMs = 10 * 60 * 1000,
+} = {}) {
   let indexCache = { at: 0, byModel: new Map() };
   const specCache = new Map();
+  /** 型号 → { at, message }：失败负缓存（见 loadSpec 注释）。 */
+  const failures = new Map();
 
   async function loadIndex(now = Date.now()) {
     if (now - indexCache.at < INDEX_TTL_MS && indexCache.byModel.size > 0) {
@@ -157,24 +163,44 @@ export function createSpecResolver({ fetchImpl = fetch, logger } = {}) {
     return byModel;
   }
 
-  async function loadSpec(model) {
+  /**
+   * 解析型号规格；失败**负缓存** `failureTtlMs`（缺省 10 分钟）。
+   *
+   * 为什么要缓存失败：面板每 5 秒轮询一次，不缓存就会把同一次失败反复重试（对没收录的型号
+   * 是无谓查询，对网络抖动还会让错误文案变来变去、把界面刷新得发抖）。失败期间抛同一句话，
+   * 只有**成功**才更新（`force` = 用户点「刷新」时强制重试一次）。
+   */
+  async function loadSpec(model, { force = false } = {}) {
     if (specCache.has(model)) return specCache.get(model);
-    const byModel = await loadIndex();
-    const type = byModel.get(model);
-    if (!type) {
-      throw new Error(
-        `规格库里没有型号 ${model}（新器件，规格可能还没收录）。`,
+    if (!force) {
+      const failed = failures.get(model);
+      if (failed && Date.now() - failed.at < failureTtlMs) {
+        throw new Error(failed.message);
+      }
+    }
+    try {
+      const byModel = await loadIndex();
+      const type = byModel.get(model);
+      if (!type) {
+        throw new Error(
+          `规格库里没有型号 ${model}（新器件，规格可能还没收录）。`,
+        );
+      }
+      const response = await fetchImpl(
+        `${SPEC_INSTANCE_URL}?type=${encodeURIComponent(type)}`,
       );
+      if (!response.ok) {
+        throw new Error(`规格拉取失败（HTTP ${response.status}）。`);
+      }
+      const spec = await response.json();
+      specCache.set(model, spec);
+      failures.delete(model);
+      return spec;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      failures.set(model, { at: Date.now(), message });
+      throw new Error(message);
     }
-    const response = await fetchImpl(
-      `${SPEC_INSTANCE_URL}?type=${encodeURIComponent(type)}`,
-    );
-    if (!response.ok) {
-      throw new Error(`规格拉取失败（HTTP ${response.status}）。`);
-    }
-    const spec = await response.json();
-    specCache.set(model, spec);
-    return spec;
   }
 
   return { loadSpec, loadIndex };

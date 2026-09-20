@@ -199,7 +199,11 @@
     <main id="body">
       <div class="card hint">正在获取登录态…</div>
     </main>
-    <footer id="footer"></footer>
+    <!-- 页脚两块分开：瞬时消息（#note）与「规格解析失败」卡片（renderSpecErrors 管理）——
+         轮询只清瞬时消息，不动失败卡片，页面高度才稳定（否则滚动条每 5 秒抖一次） -->
+    <footer id="footer">
+      <p id="note" hidden></p>
+    </footer>
     <script type="module" src="./panel.js"></script>
   </body>
 </html>
