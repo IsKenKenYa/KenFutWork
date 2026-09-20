@@ -464,7 +464,7 @@ test("去 Supabase 残留只许减不许增（棘轮门禁）", async () => {
 // 向导带 `ManifestDPIAwareness PerMonitorV2`，控件随 DPI 放大（150% 屏上 1.5 倍），而
 // `MUI_HEADERIMAGE_BITMAP_STRETCH` 默认 `FitControl` —— NSIS 会把位图 StretchBlt 到控件大小。
 // 按名义尺寸出图 = 上线就被放大 1.5 倍，用户看到的就是糊图（2026-09-19 实测，见
-// docs/参考图/未做需求.md §三十八）。这条守门禁只拦「退回名义尺寸」这种改法。
+// docs/未做需求.md §三十八）。这条守门禁只拦「退回名义尺寸」这种改法。
 test("安装向导品牌图按 DPI 超采样出图（退回名义尺寸即被拉伸成糊图）", async () => {
   for (const [file, nominal] of [
     ["installer-header.bmp", [150, 57]],
