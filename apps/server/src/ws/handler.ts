@@ -466,6 +466,20 @@ async function authenticateAndBind(
     log.error("socket_error", { userId: authenticatedUser.id, connectionId });
     clearInterval(pingInterval);
     connectionManager.remove(connectionId, socket);
+    /**
+     * 必须把 socket 也收掉，不能只注销注册。
+     *
+     * 只删 map entry 会留下**半开连接**：客户端那侧 socket 还开着（收不到 close 就不知道
+     * 该重连），于是 `connected` 还是 true、命令照样发得进来——服务端会真的把 run 跑起来，
+     * 而 ack 与随后所有事件都推不回去（实测日志：`ack_sent delivered=false`，
+     * 客户端 12 秒后报「请求未被确认，请重试。」，可那一轮其实在执行）。
+     * 关掉它，客户端才会走 onclose → 重连 → resume 对账。
+     */
+    try {
+      socket.close();
+    } catch {
+      // 已经坏掉的 socket 关它会抛，忽略
+    }
   });
 }
 

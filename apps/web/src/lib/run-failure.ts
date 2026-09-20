@@ -28,3 +28,45 @@ export function describeRunFailure(event: unknown): string {
     ? `${GENERIC_RUN_FAILURE_TEXT}（错误码 ${code}）`
     : GENERIC_RUN_FAILURE_TEXT;
 }
+
+/** ack 检查的节拍与总上限。 */
+export const ACK_TIMEOUT_MS = 12_000;
+export const ACK_POLL_MS = 6_000;
+export const ACK_MAX_WAIT_MS = 90_000;
+
+/** ack 等不到时的处置：继续等 / 换一条连接 / 判失败。 */
+export type AckTimeoutDecision =
+  | { action: "wait" }
+  | { action: "reconnect" }
+  | { action: "fail"; text: string };
+
+/**
+ * `agent.run` 发出后收不到 ack 时的处置口径（纯函数，只有这一处）。
+ *
+ * **为什么不能「看着连着」就直接报「请重试」**：实测（自建等效实例 + 真实模型）出现过
+ * 这种状态——服务端那侧连接已经注销，客户端这一侧 socket 还开着（半开连接），于是
+ * `ws.connected` 仍是 true、命令发得出去、服务端也真的把 run 跑了，但 ack 与随后所有
+ * 事件都推不回来。用户在 12 秒后看到「请求未被确认，请重试。」——而那一轮其实在执行，
+ * 照着提示重发一次就会**造出重复 run**（重复扣额度、重复副作用），正是本仓库明令避免的事。
+ *
+ * 现在的口径：只要还没到总上限，就先**换成一条新连接**（既有的重连对账 `resumeCanvas`
+ * 会把在飞的 run 接回来，`run.failed` / 转录重载负责收尾）；到了总上限才如实报失败，
+ * 并且把「服务端没确认」与「连接一直没恢复」分成两句不同的话。
+ */
+export function decideAckTimeout(input: {
+  connected: boolean;
+  waitedMs: number;
+  maxWaitMs?: number;
+}): AckTimeoutDecision {
+  const maxWaitMs = input.maxWaitMs ?? ACK_MAX_WAIT_MS;
+  if (input.waitedMs >= maxWaitMs) {
+    return {
+      action: "fail",
+      text: input.connected
+        ? "请求未被确认，请重试。"
+        : "连接长时间未恢复，本轮未确认；重连后会自动同步，仍无输出再重试。",
+    };
+  }
+  // 看着连着却收不到 ack = 半开连接的典型症状：换一条，让重连对账去接在飞的 run
+  return input.connected ? { action: "reconnect" } : { action: "wait" };
+}

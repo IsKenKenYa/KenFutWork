@@ -63,6 +63,14 @@ export type WebSocketHandle = {
   onTerminal: (cb: TerminalCallback) => () => void;
   registerRPC: (method: string, handler: RPCHandler) => () => void;
   resumeCanvas: (canvasId: string, onAck?: (ack: WsCommandAck) => void) => void;
+  /**
+   * 立刻换一条新连接（不等退避）。
+   *
+   * 用途：半开连接的自救——服务端那侧已经注销、客户端这侧 socket 还开着时，
+   * `connected` 是假的 true，命令发得出去、事件回不来。此时把 socket 关掉重连，
+   * 既有的重连对账（`resumeCanvas`）会把在飞的 run 接回来。
+   */
+  reconnectNow: () => void;
 };
 
 export function useWebSocket(getToken: () => string | null): WebSocketHandle {
@@ -343,6 +351,27 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
     [sendCommand],
   );
 
+  const reconnectNow = useCallback(() => {
+    reconnectAttempt.current = 0;
+    if (reconnectTimer.current) {
+      clearTimeout(reconnectTimer.current);
+      reconnectTimer.current = null;
+    }
+    const stale = wsRef.current;
+    if (stale) {
+      // 由我们自己接管重连：摘掉 onclose，免得它再调度一次
+      stale.onclose = null;
+      wsRef.current = null;
+      try {
+        stale.close();
+      } catch {
+        // 关一个已经坏掉的 socket 会抛，忽略
+      }
+    }
+    setConnected(false);
+    connect();
+  }, [connect]);
+
   const resumeCanvas = useCallback(
     (canvasId: string, onAck?: (ack: WsCommandAck) => void) => {
       if (onAck) {
@@ -426,5 +455,6 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
     sendTerminalInput,
     stopTerminal,
     onTerminal,
+    reconnectNow,
   };
 }
