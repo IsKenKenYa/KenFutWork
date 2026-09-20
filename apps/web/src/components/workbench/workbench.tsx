@@ -2112,7 +2112,12 @@ export function Workbench() {
               onClick={() => setMcpOpen(true)}
               className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
-              <Plug className="h-4 w-4 shrink-0" /> MCP
+              {/* 插头字形天生窄（墨迹只有别的一半宽），放大一档才与相邻图标等观感；
+                  槽位固定 16px、内层 shrink-0 允许溢出居中，标签左对齐不跑偏 */}
+              <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                <Plug className="h-[18px] w-[18px] shrink-0" />
+              </span>{" "}
+              MCP
             </button>
             {/* 插件面板（能力 `ui`）：侧栏槽位 */}
             <PluginPanelButtons
@@ -2128,12 +2133,12 @@ export function Workbench() {
                 >
                   {panel.icon ? (
                     // 单色渲染（CSS mask + bg-current）：与侧栏其它线条图标同色、随悬停/主题变。
-                    // 槽位固定 16px（标签左对齐不跑偏），图标本体 17px 居中——空心描边比实心图标
-                    // 「轻」，放大一档才与 lucide 图标等重（见 plugins/mihome/icon.svg 注释）
+                    // 16px 与相邻 lucide 图标同框同墨迹；描边在 SVG 里加粗一档补空心的"轻"
+                    // （见 plugins/mihome/icon.svg 注释）
                     <span className="flex h-4 w-4 shrink-0 items-center justify-center">
                       <span
                         aria-hidden="true"
-                        className="h-[17px] w-[17px] bg-current"
+                        className="h-4 w-4 bg-current"
                         style={{
                           maskImage: `url(${resolvePanelUrl(panel.icon, panel.pluginId)})`,
                           maskSize: "contain",
