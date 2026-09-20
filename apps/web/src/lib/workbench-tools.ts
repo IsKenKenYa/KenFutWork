@@ -223,6 +223,11 @@ export function nextAssistantStartMs(
       ? previousEnd.startedAt + previousEnd.elapsedMs
       : null;
   const runStart = runStartedAt ? parseTimestampMs(runStartedAt) : null;
+  // 跨轮防陈旧：追问隔了很久时，「上一轮的结束」早于本轮起点——取两者较晚者，
+  // 否则本轮第一条消息会带着上一轮时代的起点，「已工作」被撑大几分开外。
+  if (previousEndMs !== null && runStart !== null) {
+    return Math.max(previousEndMs, runStart);
+  }
   return previousEndMs ?? runStart ?? Date.now();
 }
 
@@ -251,6 +256,46 @@ export function settlePreviousAssistant(
     }
   }
   return next;
+}
+
+/**
+ * 终态时给最后一条助手消息结算「已工作」时长（成功/失败/取消三个终态都调）。
+ *
+ * **必须整条保留原消息**（`...last` 展开）：这里曾只挑 role/text/elapsedMs/startedAt
+ * 四个字段重组消息——块模型上线后，`blocks` 与 `runId` 归属在终态那一刻被整体抹掉
+ * （2026-09-21 真机冒烟抓到：直播中工具块都挂得上，一跑完就全消失，要靠刷新后的
+ * PG 历史回灌才找得回来）。
+ */
+export function settleAssistantElapsed<T extends { messages: TaskMessage[] }>(
+  task: T,
+): T {
+  const messages = [...task.messages];
+  const last = messages[messages.length - 1];
+  if (last?.role !== "assistant" || last.startedAt === undefined) {
+    return task;
+  }
+  const elapsedMs = Math.max(0, Date.now() - last.startedAt);
+  messages[messages.length - 1] = { ...last, elapsedMs };
+  return { ...task, messages };
+}
+
+/**
+ * 断线/刷新后重接 run 的本地基底：丢掉**最后一条用户消息之后**的全部内容
+ * （断线前流出的半截 assistant 文本/工具块），整段交给服务端事件重放重建——
+ * 与 run.retrying 的 dropPartialAssistantTail 同一思想，只是切口在用户消息上
+ * （重放从 run.started 开始，会把这一轮完整重演一遍）。
+ */
+export function messagesBaseForResume(
+  messages: readonly TaskMessage[],
+): TaskMessage[] {
+  let lastUserIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i]?.role === "user") {
+      lastUserIdx = i;
+      break;
+    }
+  }
+  return lastUserIdx < 0 ? [] : messages.slice(0, lastUserIdx + 1);
 }
 
 export type ToolEventLike = {

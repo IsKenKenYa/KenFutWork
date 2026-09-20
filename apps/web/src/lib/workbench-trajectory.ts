@@ -202,28 +202,42 @@ export type TrajectoryTimelineSpan = {
   widthPercent: number;
 };
 
+/**
+ * 时间轴布局：条几何 + 「时长」模式的线性时间基准（拖选聚焦据此把选区换算回
+ * 时间窗）。sequence 模式没有时间基准（minStart/spanMs 为 null，不支持拖选）。
+ */
+export type TrajectoryTimelineLayout = {
+  spans: TrajectoryTimelineSpan[];
+  minStartMs: number | null;
+  spanMs: number | null;
+};
+
 /** 时刻缺失的行在「时长」模式下无法定位，如实跳过（不伪造位置）。 */
-export function buildTimelineSpans(
+export function buildTimelineLayout(
   model: TrajectoryModel,
   mode: TrajectoryTimelineMode,
-): TrajectoryTimelineSpan[] {
+): TrajectoryTimelineLayout {
   const flat = flattenTrajectory(model);
-  if (flat.length === 0) return [];
+  if (flat.length === 0) return { spans: [], minStartMs: null, spanMs: null };
 
   if (mode === "sequence") {
     // 时序模式：行与行等距铺开（不看真实时刻——长思考不会把后面挤成一条缝）
-    return flat.map((entry, i) => ({
-      key: entry.key,
-      kind: entry.row.kind,
-      xPercent: flat.length > 1 ? (i / (flat.length - 1)) * 96 : 0,
-      widthPercent: 2,
-    }));
+    return {
+      minStartMs: null,
+      spanMs: null,
+      spans: flat.map((entry, i) => ({
+        key: entry.key,
+        kind: entry.row.kind,
+        xPercent: flat.length > 1 ? (i / (flat.length - 1)) * 96 : 0,
+        widthPercent: 2,
+      })),
+    };
   }
 
   const starts = flat
     .map((entry) => entry.row.atMs)
     .filter((v): v is number => v !== null);
-  if (starts.length === 0) return [];
+  if (starts.length === 0) return { spans: [], minStartMs: null, spanMs: null };
   const minStart = Math.min(...starts);
   const maxEnd = Math.max(
     ...flat.map((entry) => {
@@ -250,5 +264,36 @@ export function buildTimelineSpans(
       widthPercent: width,
     });
   }
-  return spans;
+  return { spans, minStartMs: minStart, spanMs: span };
+}
+
+/** 兼容入口：只要条几何时用这个。 */
+export function buildTimelineSpans(
+  model: TrajectoryModel,
+  mode: TrajectoryTimelineMode,
+): TrajectoryTimelineSpan[] {
+  return buildTimelineLayout(model, mode).spans;
+}
+
+/**
+ * 拖选聚焦：**可见条与选区相交**的行（WYSIWYG——条被 clamp 在 98.8% 显示时，
+ * 用户框住这个条就该选中它，按原始时刻过滤会出现「框住却选不中」的错位）。
+ * atMs 缺失的行没有条，聚焦期间如实隐藏（清除聚焦即回来）。
+ */
+export function rowsInSelection(
+  flat: readonly FlatTrajectoryRow[],
+  spans: readonly TrajectoryTimelineSpan[],
+  selLoPercent: number,
+  selHiPercent: number,
+): FlatTrajectoryRow[] {
+  const keys = new Set(
+    spans
+      .filter(
+        (span) =>
+          span.xPercent <= selHiPercent &&
+          span.xPercent + span.widthPercent >= selLoPercent,
+      )
+      .map((span) => span.key),
+  );
+  return flat.filter((entry) => keys.has(entry.key));
 }

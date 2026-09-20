@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { TaskToolEntry } from "../src/lib/workbench-tools";
 import {
+  buildTimelineLayout,
   buildTimelineSpans,
   buildTrajectory,
   flattenTrajectory,
+  rowsInSelection,
   type TrajectoryRow,
 } from "../src/lib/workbench-trajectory";
 
@@ -210,5 +212,54 @@ describe("buildTimelineSpans 时间轴几何", () => {
     expect(spans).toHaveLength(3);
     expect(spans[0]?.xPercent).toBe(0);
     expect(spans[2]?.xPercent).toBe(96);
+  });
+});
+
+describe("buildTimelineLayout 与拖选聚焦", () => {
+  const model = buildTrajectory([
+    { role: "user", text: "问", startedAt: 1000 },
+    {
+      role: "assistant",
+      text: "",
+      startedAt: 1100,
+      blocks: [
+        { type: "tool", tool: tool("t1", { startedAt: 1100, endedAt: 2100 }) },
+        { type: "text", text: "答", at: 2200 },
+      ],
+    },
+  ]);
+
+  it("时长模式布局带时间基准；sequence 模式没有（不支持拖选）", () => {
+    const duration = buildTimelineLayout(model, "duration");
+    expect(duration.minStartMs).toBe(1000);
+    expect(duration.spanMs).toBe(1200);
+    expect(duration.spans).toHaveLength(3);
+    const sequence = buildTimelineLayout(model, "sequence");
+    expect(sequence.minStartMs).toBeNull();
+    expect(sequence.spanMs).toBeNull();
+  });
+
+  it("rowsInSelection：可见条与选区相交即命中（WYSIWYG）；缺条的行不出现", () => {
+    const flat = flattenTrajectory(model);
+    const spans = buildTimelineLayout(model, "duration").spans;
+    // 全宽选区：所有有条的行都命中
+    expect(rowsInSelection(flat, spans, 0, 100)).toHaveLength(3);
+    // 只框最后一段（正文条的 clamp 位置附近）
+    const lastSpan = spans[spans.length - 1];
+    expect(
+      rowsInSelection(flat, spans, (lastSpan?.xPercent ?? 0) - 1, 100).map(
+        (e) => e.row.kind,
+      ),
+    ).toEqual(["text"]);
+    // 正文条被 clamp 到 98.8% 显示：框 99-100% 仍应命中它（WYSIWYG 的意义所在）
+    expect(
+      rowsInSelection(flat, spans, 99, 100).map((e) => e.row.kind),
+    ).toEqual(["text"]);
+  });
+
+  it("空模型：布局为空且无时间基准", () => {
+    const layout = buildTimelineLayout(buildTrajectory([]), "duration");
+    expect(layout.spans).toEqual([]);
+    expect(layout.minStartMs).toBeNull();
   });
 });

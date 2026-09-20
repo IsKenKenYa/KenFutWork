@@ -174,9 +174,11 @@ import {
   appendThinkingDelta,
   applyTaskToolEvent,
   groupAssistantBlocks,
+  messagesBaseForResume,
   migrateLegacyTools,
   nextAssistantStartMs,
   rebuildAssistantBlocks,
+  settleAssistantElapsed,
   settlePreviousAssistant,
   type TaskMessage,
   type TaskToolEntry,
@@ -211,30 +213,6 @@ type WorkbenchModelOption = {
   /** 单次最大输出（供应商实例声明）；上下文条「预留输出」段的来源。 */
   maxOutputTokens?: number | undefined;
 };
-
-/**
- * 结算最后一条助手消息的耗时（终态时调用）。
- *
- * 口径：**这一条消息到上一条之间**的整段时间（含中间的思考与工具调用）——
- * 只算它自己「从第一个字到这一刻」会恒等于 0（实测：模型把回复一口气吐完，
- * 第一个字与最后一个字相差几十毫秒，界面上就成了「已工作 0 秒」）。
- */
-function settleAssistantElapsed(task: WorkbenchTask): WorkbenchTask {
-  const messages = [...task.messages];
-  const last = messages[messages.length - 1];
-  if (last?.role !== "assistant" || last.startedAt === undefined) {
-    return task;
-  }
-  const elapsedMs = Math.max(0, Date.now() - last.startedAt);
-  messages[messages.length - 1] = {
-    role: "assistant",
-    text: last.text,
-    elapsedMs,
-    // **保留起点**：下一条消息要拿「上一条的起点 + 它的耗时」推算自己从哪一刻开始
-    startedAt: last.startedAt,
-  };
-  return { ...task, messages };
-}
 
 interface WorkbenchTask {
   id: string; // conversationId
@@ -293,6 +271,8 @@ interface WorkbenchTask {
    * 并提供「查看改动 / 回滚」入口。同一对话的下一轮终态会覆盖成最新 run 的检查点。
    */
   checkpoint?: CheckpointSummary;
+  /** 在途 run 的 id（run.started 时登记，终态不清）：刷新后断线重接（canvas.resume）用。 */
+  activeRunId?: string;
 }
 
 /**
@@ -322,7 +302,13 @@ function AssistantTurn({
   onInspectTool?: (toolCallId: string) => void;
 }) {
   const groups = useMemo(
-    () => (msg.blocks ? groupAssistantBlocks(msg.blocks) : null),
+    () =>
+      msg.blocks
+        ? // 纯空白文本段（模型在工具调用前后吐的换行）渲染成空泡泡纯属噪音
+          groupAssistantBlocks(msg.blocks).filter(
+            (g) => g.kind !== "text" || g.text.trim().length > 0,
+          )
+        : null,
     [msg.blocks],
   );
   if (!groups) {
@@ -1580,6 +1566,70 @@ export function Workbench() {
     }
   }, []);
 
+  /**
+   * 断线/刷新重接（canvas.resume）：进行中的任务在刷新后 activeRunIdRef 为空，
+   * 重放的事件会被 runId 过滤整段丢掉——挂载期发现「运行中 + 有在途 runId」的
+   * 当前任务就把跟踪值指回去并 resume，服务端事件缓冲整段重放，run 无缝续播。
+   * 服务端已无该画布的在途 run（服务重启过）则明确报失败，不让任务永远「运行中」。
+   */
+  const resumedTasksRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!session?.access_token) return;
+    const active = tasksByModeRef.current[mode].find(
+      (t) => t.id === activeTaskId,
+    );
+    if (
+      active?.status !== "running" ||
+      !active.activeRunId ||
+      resumedTasksRef.current.has(active.id)
+    ) {
+      return;
+    }
+    const project = codeProjects.find((p) => p.id === active.projectId);
+    const canvasId = project?.primaryCanvas?.id ?? null;
+    if (!canvasId) return;
+    resumedTasksRef.current.add(active.id);
+    activeRunIdRef.current = active.activeRunId;
+    runTaskIdRef.current = active.id;
+    // 丢掉断线前流出的半截内容（切口在最后一条用户消息），整段靠重放重建
+    const saveMode = mode;
+    setTasksByMode((prev) => {
+      const list = prev[mode].map((t2) =>
+        t2.id === active.id
+          ? { ...t2, messages: messagesBaseForResume(t2.messages) }
+          : t2,
+      );
+      saveTasks(saveMode as WorkbenchMode, list);
+      return { ...prev, [mode]: list };
+    });
+    ws.resumeCanvas(canvasId, (ack) => {
+      const payload = ack.payload as
+        | { activeRunId?: string | null }
+        | undefined;
+      if (payload?.activeRunId) return;
+      setTasksByMode((prev) => {
+        const list = prev[mode].map((t2) =>
+          t2.id === active.id
+            ? {
+                ...t2,
+                status: "failed" as const,
+                messages: [
+                  ...t2.messages,
+                  {
+                    role: "assistant" as const,
+                    text: "服务已重启，本轮运行中断，请重试。",
+                  },
+                ],
+              }
+            : t2,
+        );
+        saveTasks(saveMode as WorkbenchMode, list);
+        return { ...prev, [mode]: list };
+      });
+      setRunningTaskId(null);
+    });
+  }, [session?.access_token, activeTaskId, codeProjects, mode, ws]);
+
   // 流事件 → 任务消息
   useEffect(() => {
     // 流式持久化节流：message/thinking delta 每 token 全量回写 localStorage 是
@@ -1631,9 +1681,13 @@ export function Workbench() {
       }
       if (!runId || runId !== activeRunIdRef.current) return;
       if (type === "run.started") {
-        // 服务端权威起表时刻（覆盖提交时的本地乐观值）
+        // 服务端权威起表时刻（覆盖提交时的本地乐观值）+ 在途 runId（断线重接用）
         const ts = (evt as { timestamp?: string }).timestamp;
-        if (ts) apply((task) => ({ ...task, runStartedAt: ts }));
+        apply((task) => ({
+          ...task,
+          ...(ts ? { runStartedAt: ts } : {}),
+          ...(runId ? { activeRunId: runId } : {}),
+        }));
       } else if (type === "tool.started" || type === "tool.completed") {
         // 工具轨迹对所有工具都记（含被工具门拒绝的合成事件），子代理工具另进目录。
         // 曾经这里写成「先处理子代理、非子代理直接 return」，把通用分支变成死代码。

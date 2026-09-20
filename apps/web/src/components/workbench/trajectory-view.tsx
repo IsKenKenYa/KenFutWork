@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { formatElapsedSeconds } from "@/lib/elapsed";
 import { toolDisplayLabel, toolTargetHint } from "@/lib/workbench-tools";
 import {
-  buildTimelineSpans,
+  buildTimelineLayout,
   type FlatTrajectoryRow,
   flattenTrajectory,
+  rowsInSelection,
   type TrajectoryModel,
   type TrajectoryRow,
   type TrajectoryTimelineMode,
@@ -278,24 +279,45 @@ export function TrajectoryView({
     new Set(),
   );
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  /**
+   * 拖选聚焦（dsh Timeline 的选区过滤，简化版）：在时间轴上按下拖动选出一段时间窗，
+   * 账本只显示窗内的行；「清除聚焦」或再拖一次空选退出。仅「时长」模式支持
+   * （时序模式没有时间基准）。
+   */
+  const [focusRange, setFocusRange] = useState<{
+    loPercent: number;
+    hiPercent: number;
+  } | null>(null);
+  const [dragStartX, setDragStartX] = useState<number | null>(null);
+  const [dragX, setDragX] = useState<number | null>(null);
+  const stripRef = useRef<HTMLDivElement>(null);
 
   const flat = useMemo(() => flattenTrajectory(model), [model]);
-  const spans = useMemo(
-    () => buildTimelineSpans(model, timelineMode),
+  const layout = useMemo(
+    () => buildTimelineLayout(model, timelineMode),
     [model, timelineMode],
   );
+  const spans = layout.spans;
   const flatByKey = useMemo(() => {
     const map = new Map<string, FlatTrajectoryRow>();
     for (const entry of flat) map.set(entry.key, entry);
     return map;
   }, [flat]);
-  const visible = useMemo(
-    () =>
-      flat.filter((entry) =>
-        rowMatchesQuery(entry, query.trim().toLowerCase()),
-      ),
-    [flat, query],
-  );
+  const visible = useMemo(() => {
+    // 拖选聚焦（可见条与选区相交，WYSIWYG）与搜索两个过滤条件叠加
+    const inRange =
+      focusRange !== null
+        ? rowsInSelection(
+            flat,
+            spans,
+            focusRange.loPercent,
+            focusRange.hiPercent,
+          )
+        : flat;
+    return inRange.filter((entry) =>
+      rowMatchesQuery(entry, query.trim().toLowerCase()),
+    );
+  }, [flat, focusRange, spans, query]);
 
   // 对话流「查看轨迹」跳转：滚动到目标调用并高亮一瞬（轮被折叠时找不到就放弃）
   useEffect(() => {
@@ -314,6 +336,16 @@ export function TrajectoryView({
     document
       .querySelector(`[data-traj-key="${key}"]`)
       ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
+  /** 指针在时间轴上的位置 → 0-100 百分比。 */
+  const stripPercent = (clientX: number): number => {
+    const rect = stripRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return 0;
+    return Math.min(
+      100,
+      Math.max(0, ((clientX - rect.left) / rect.width) * 100),
+    );
   };
 
   const allCollapsed =
@@ -375,6 +407,16 @@ export function TrajectoryView({
               aria-label="搜索轨迹"
               className="w-44 rounded-md border bg-transparent px-2 py-1 text-[11px] outline-none placeholder:text-muted-foreground/60 focus:border-foreground/30"
             />
+            {focusRange !== null ? (
+              <button
+                type="button"
+                onClick={() => setFocusRange(null)}
+                className="rounded-md border border-primary/40 px-2 py-1 text-[10px] text-primary transition-colors hover:bg-primary/10"
+                title="清除时间轴拖选的聚焦区间"
+              >
+                清除聚焦
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() =>
@@ -413,7 +455,52 @@ export function TrajectoryView({
         {/* 逐行时间轴（dsh TrajectoryTimeline 简化版）：点一根条跳到账本行。
             每根条自带 aria-label 与 title，容器是纯视觉画布。 */}
         {spans.length > 0 ? (
-          <div className="relative h-5 rounded-md bg-muted/40">
+          <div
+            ref={stripRef}
+            className={`relative h-5 rounded-md bg-muted/40 ${
+              timelineMode === "duration" ? "cursor-crosshair" : ""
+            }`}
+            onPointerDown={(e) => {
+              if (timelineMode !== "duration" || layout.minStartMs === null)
+                return;
+              e.currentTarget.setPointerCapture(e.pointerId);
+              const pct = stripPercent(e.clientX);
+              setDragStartX(pct);
+              setDragX(pct);
+            }}
+            onPointerMove={(e) => {
+              if (dragStartX === null) return;
+              setDragX(stripPercent(e.clientX));
+            }}
+            onPointerUp={(e) => {
+              if (
+                dragStartX === null ||
+                layout.minStartMs === null ||
+                layout.spanMs === null
+              ) {
+                setDragStartX(null);
+                setDragX(null);
+                return;
+              }
+              const x2 = stripPercent(e.clientX);
+              const lo = Math.min(dragStartX, x2);
+              const hi = Math.max(dragStartX, x2);
+              setDragStartX(null);
+              setDragX(null);
+              if (hi - lo < 2) return; // 视为点击，不算选区
+              setFocusRange({ loPercent: lo, hiPercent: hi });
+            }}
+          >
+            {dragStartX !== null && dragX !== null ? (
+              <div
+                aria-hidden
+                className="absolute top-0 h-full bg-primary/15"
+                style={{
+                  left: `${Math.min(dragStartX, dragX)}%`,
+                  width: `${Math.abs(dragX - dragStartX)}%`,
+                }}
+              />
+            ) : null}
             {spans.map((span) => {
               const entry = flatByKey.get(span.key);
               const title = entry

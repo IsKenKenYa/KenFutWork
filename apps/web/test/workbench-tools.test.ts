@@ -7,9 +7,11 @@ import {
   capToolBlocks,
   groupAssistantBlocks,
   MAX_TOOL_BLOCKS_PER_MESSAGE,
+  messagesBaseForResume,
   migrateLegacyTools,
   nextAssistantStartMs,
   rebuildAssistantBlocks,
+  settleAssistantElapsed,
   settlePreviousAssistant,
   type TaskMessage,
   type TaskMessageBlock,
@@ -165,7 +167,8 @@ describe("applyTaskToolEvent 工具轨迹", () => {
           startedAt: 0,
         },
       ],
-      runStartedAt: "2026-09-20T02:10:00.000Z",
+      // runStart（500ms）早于上一轮结束（1000ms）：链式取上一轮结束
+      runStartedAt: "1970-01-01T00:00:00.500Z",
     };
     // 第二轮：用户追问 → 工具先到 → 正文再到
     task = {
@@ -375,15 +378,17 @@ describe("耗时起表", () => {
     const messages: TaskMessage[] = [
       { role: "assistant", text: "a", elapsedMs: 2000, startedAt: 1000 },
     ];
-    expect(nextAssistantStartMs(messages, "2026-09-20T02:10:00.000Z")).toBe(
+    // 链式值（3000）晚于本轮起点（500）：取链式
+    expect(nextAssistantStartMs(messages, "1970-01-01T00:00:00.500Z")).toBe(
       3000,
     );
 
     const legacy: TaskMessage[] = [
       { role: "assistant", text: "a", elapsedMs: 2000 },
     ];
-    const runStart = new Date("2026-09-20T02:10:00.000Z").getTime();
-    expect(nextAssistantStartMs(legacy, "2026-09-20T02:10:00.000Z")).toBe(
+    // 老数据只有耗时推不出链式：退到 run 起点
+    const runStart = new Date("1970-01-01T00:00:00.500Z").getTime();
+    expect(nextAssistantStartMs(legacy, "1970-01-01T00:00:00.500Z")).toBe(
       runStart,
     );
   });
@@ -665,5 +670,97 @@ describe("rebuildAssistantBlocks 恢复 runId 与时间戳（PG 历史回灌）"
       type: "text",
       at: Date.parse("2026-09-21T00:00:02.000Z"),
     });
+  });
+});
+
+describe("settleAssistantElapsed 终态结算（回归：不得抹掉 blocks/runId）", () => {
+  it("保留 blocks 与 runId，只追加 elapsedMs", () => {
+    const startedAt = Date.now() - 5_000;
+    const task: { status: string; messages: TaskMessage[] } = {
+      status: "completed",
+      messages: [
+        { role: "user", text: "问" },
+        {
+          role: "assistant",
+          text: "答",
+          startedAt,
+          runId: "run-1",
+          blocks: [
+            { type: "text", text: "答" },
+            {
+              type: "tool",
+              tool: {
+                toolCallId: "t1",
+                toolName: "execute",
+                status: "completed",
+                runId: "run-1",
+              },
+            },
+          ],
+        },
+      ],
+    };
+    const settled = settleAssistantElapsed(task);
+    const last = settled.messages[settled.messages.length - 1];
+    expect(last?.blocks).toHaveLength(2);
+    expect(last?.runId).toBe("run-1");
+    expect(last?.elapsedMs).toBeGreaterThanOrEqual(5_000);
+  });
+
+  it("末条不是 assistant 或没有起点时原样返回", () => {
+    const task = { messages: [{ role: "user" as const, text: "问" }] };
+    expect(settleAssistantElapsed(task)).toBe(task);
+  });
+});
+
+describe("nextAssistantStartMs 跨轮防陈旧", () => {
+  it("追问隔了很久：本轮第一条消息的起点不早于本轮 run 起点（「已工作」不再被撑到几分钟）", () => {
+    const messages: TaskMessage[] = [
+      { role: "user", text: "一", startedAt: 1_000 },
+      { role: "assistant", text: "答一", startedAt: 1_100, elapsedMs: 7_000 },
+    ];
+    // 上一轮结束 = 8_100；本轮 60 秒后才开始 → 起点应取本轮起点 68_100
+    expect(nextAssistantStartMs(messages, "1970-01-01T00:01:08.100Z")).toBe(
+      68_100,
+    );
+  });
+
+  it("同轮内多段消息：仍链式取上一段结束（行为不变）", () => {
+    const messages: TaskMessage[] = [
+      { role: "assistant", text: "a", startedAt: 1_000, elapsedMs: 500 },
+    ];
+    expect(nextAssistantStartMs(messages, "1970-01-01T00:00:00.500Z")).toBe(
+      1_500,
+    );
+  });
+});
+
+describe("messagesBaseForResume 断线重连基底", () => {
+  it("丢掉最后一条用户消息之后的半截 assistant 内容，用户消息本身保留", () => {
+    const messages: TaskMessage[] = [
+      { role: "user", text: "一" },
+      { role: "assistant", text: "答一" },
+      { role: "user", text: "二" },
+      {
+        role: "assistant",
+        text: "半截",
+        blocks: [
+          {
+            type: "tool",
+            tool: { toolCallId: "t1", toolName: "execute", status: "running" },
+          },
+        ],
+      },
+    ];
+    const base = messagesBaseForResume(messages);
+    expect(base).toHaveLength(3);
+    expect(base[2]?.role).toBe("user");
+  });
+
+  it("没有用户消息（防御）返回空数组；空数组原样", () => {
+    expect(messagesBaseForResume([{ role: "assistant", text: "a" }])).toEqual(
+      [],
+    );
+    expect(messagesBaseForResume([])).toEqual([]);
   });
 });
