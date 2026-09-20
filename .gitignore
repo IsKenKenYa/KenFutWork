@@ -85,9 +85,6 @@ apps/web/tmp/
 /runtime/
 .kenfutwork-data/
 
-# logo 字标字体样张（非商免/第三方字体，仅本机预览，禁止入库）
-docs/design/logo/字体/
-
 # 本机草稿/一次性验证脚本（真机走查用；不进 CI、不入库）
 .scratch/
 
