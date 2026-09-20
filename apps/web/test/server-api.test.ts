@@ -372,4 +372,29 @@ describe("CDP 动作的请求形状", () => {
       expect(init.body).toBe("{}");
     }
   });
+
+  /**
+   * 回归背景（真机踩到）：`pickDirectory` 是同一个坑的漏网之鱼——POST + JSON 头 +
+   * 空 body，服务端 400 `FST_ERR_CTP_EMPTY_JSON_BODY`，而 400 的默认响应体里
+   * `error` 是字符串（不是 `{code,message}`），客户端只认得出 `error.message`，
+   * 于是界面显示成一句无从下手的「系统文件夹对话框不可用：Request failed」。
+   */
+  it("pickDirectory 是 POST + JSON 头 + **非空 body**", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: "cancelled" }),
+    });
+
+    await pickDirectory("token");
+
+    const init = mockFetch.mock.calls[0]?.[1] as {
+      method?: string;
+      body?: string;
+      headers?: Record<string, string>;
+    };
+    expect(init.method).toBe("POST");
+    expect(init.headers?.["content-type"]).toBe("application/json");
+    expect(init.body).toBe("{}");
+  });
 });

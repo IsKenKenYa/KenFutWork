@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
-import { delimiter, join } from "node:path";
+
+import { resolveExecutable } from "../../utils/resolve-executable.js";
 
 /**
  * 右栏「终端」标签的命令执行（R3-1 的第三个标签）。
@@ -71,34 +71,6 @@ const EXTRA_BIN_DIRS =
         "C:\\Program Files (x86)\\Git\\bin",
       ]
     : ["/usr/local/bin", "/usr/bin", "/bin"];
-
-/** 在 PATH（以及上面那些常见位置）里找一个可执行文件。 */
-function resolveExecutable(
-  names: readonly string[],
-  extraPaths: readonly string[] = [],
-): string | null {
-  const pathExt =
-    process.platform === "win32"
-      ? (process.env.PATHEXT ?? ".EXE;.CMD;.BAT").split(";")
-      : [""];
-  const dirs = [
-    ...(process.env.PATH ?? "").split(delimiter).filter(Boolean),
-    ...extraPaths,
-  ];
-  for (const name of names) {
-    if (name.includes("/") || name.includes("\\")) {
-      if (existsSync(name)) return name;
-      continue;
-    }
-    for (const dir of dirs) {
-      for (const ext of pathExt) {
-        const candidate = join(dir, `${name}${ext}`);
-        if (existsSync(candidate)) return candidate;
-      }
-    }
-  }
-  return null;
-}
 
 /** 各平台要探测的 shell（顺序即界面顺序）。 */
 function shellCandidates(): Array<{

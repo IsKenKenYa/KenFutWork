@@ -5,6 +5,7 @@ import {
   createNativeDirectoryPicker,
   interpretPickerOutcome,
   nativePickerCommands,
+  resolvePickerCommands,
 } from "./directory-picker.js";
 
 /**
@@ -107,6 +108,14 @@ describe("对话框结果翻译", () => {
     });
   });
 
+  it("Windows 缺命令时说的是 PowerShell，不再误报 zenity / kdialog", () => {
+    expect(interpret("win32", { missing: true, code: null })).toEqual({
+      status: "unavailable",
+      reason:
+        "这台机器上没有可用的文件夹对话框命令（缺 PowerShell（powershell.exe））。",
+    });
+  });
+
   it("真的执行失败 → failed，并带上 stderr（截断）", () => {
     const result = interpret("linux", {
       code: 3,
@@ -133,6 +142,8 @@ describe("选择器装配", () => {
     stderr: "",
     ...partial,
   });
+  /** 测试里一律禁掉真实文件系统探测：命令名保持声明值，断言才稳定。 */
+  const noResolve = () => null;
 
   it("Linux 上 zenity 没装、kdialog 装了 → 用 kdialog 的结果", async () => {
     const runCommand = vi.fn(async (command: { command: string }) =>
@@ -143,6 +154,7 @@ describe("选择器装配", () => {
     const picker = createNativeDirectoryPicker({
       platform: "linux",
       runCommand,
+      findExecutable: noResolve,
     });
     expect(picker.availability()).toEqual({ available: true });
     await expect(picker.pick()).resolves.toEqual({
@@ -157,6 +169,7 @@ describe("选择器装配", () => {
     const picker = createNativeDirectoryPicker({
       platform: "linux",
       runCommand,
+      findExecutable: noResolve,
     });
     await expect(picker.pick()).resolves.toEqual({ status: "cancelled" });
     expect(runCommand).toHaveBeenCalledTimes(1);
@@ -169,9 +182,43 @@ describe("选择器装配", () => {
     const picker = createNativeDirectoryPicker({
       platform: "darwin",
       runCommand,
+      findExecutable: noResolve,
       timeoutMs: 1234,
     });
     await picker.pick();
     expect(runCommand.mock.calls[0]?.[1]).toBe(1234);
+  });
+
+  /**
+   * 回归背景（真机踩到）：桌面壳可能从一个 PATH 已损坏/陈旧的父进程继承环境
+   * （机器级 PATH 被第三方安装器整键覆盖，只剩它自己那一段）——`powershell.exe`
+   * 按名字根本找不到，用户点「打开文件夹」直接失败。终端那条路径早就解析绝对路径，
+   * 这里当时漏了。
+   */
+  it("起进程前把命令名解析成绝对路径", async () => {
+    const runCommand = vi.fn(
+      async (_command: { command: string }, _timeoutMs: number) =>
+        outcome({ stdout: "D:\\Desktop\\test" }),
+    );
+    const picker = createNativeDirectoryPicker({
+      platform: "win32",
+      runCommand,
+      findExecutable: (name) =>
+        name === "powershell.exe"
+          ? "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+          : null,
+    });
+    await picker.pick();
+    expect(runCommand.mock.calls[0]?.[0]?.command).toBe(
+      "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    );
+  });
+
+  it("解析不到就保持裸名（spawn 会报 ENOENT → 翻成「不可用」）", () => {
+    const resolved = resolvePickerCommands(
+      [{ command: "powershell.exe", args: [] }],
+      noResolve,
+    );
+    expect(resolved[0]?.command).toBe("powershell.exe");
   });
 });
