@@ -71,7 +71,7 @@ vitest 按 app 配置（`apps/web/vitest.config.mjs`、`apps/server/vitest.confi
 3. **共享文件逐 hunk 复核**：多个 agent 会同时改 `app.ts` / `profiles/*.ts` / `packages/shared` 等共享文件。提交前 `git diff` 逐 hunk 确认只含本次改动；若混入他人未提交的 hunk，用「补丁过滤后 `git apply --cached`」只暂存自己的 hunk，**不要**整文件 add，也不要替他人提交。
 4. **禁止把仓库置于悬空引用状态**：提交前额外检查 HEAD 是否引用了未跟踪文件（`git stash list` 之外最容易出事的场景）。历史上曾因误带他人 hunk 导致 HEAD 无法构建。
 5. **提交前必须复跑门禁**：`pnpm test`（含 `tests/workspace.test.mjs` 的仓库级棘轮/文档门禁）与 `pnpm typecheck` 至少要覆盖本次改动所在包；跨端契约（`packages/shared`）改动必须全量。
-6. **文档与提交同步**：里程碑或架构级改动在 `docs/方案设计/改造计划.md` §4.13 台账里**同一提交**内更新（含问题、方案、验证命令、遗留项）；只写代码不记账视为未完成。
+6. **文档与提交同步**：里程碑或架构级改动在 `docs/日志.md`（历轮回执 + 变更台账）里**同一提交**内更新（含问题、方案、验证命令、遗留项）；只写代码不记账视为未完成。
 7. **不提交密钥与产物**：provider keys、`.env*`、凭据、`release/`、`data/`、日志、`**/dist` 一律不入库（见下节）。
 
 ## 产品行为不变量（硬约束）

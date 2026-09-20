@@ -34,7 +34,7 @@
 | 9 | 队列 job | `backgroundJobTypeSchema` 仅图/视频 + `registerExecutor()` | flow 执行需后台化时扩 `flow_execution` job 类型 + executor | 中 |
 | 10 | WS 事件 | `streamEventSchema` 判别联合 + canvasId 锚定推送 + `lastSeq` 断线重放 | 加 `flowRun.*` 事件；flow 画布纳入 EventBuffer；SSE 收敛为子系统内部实现 | 中 |
 | 11 | workspace 工程 | `apps/*` 通配 + pnpm@10 锁定 + `onlyBuiltDependencies` 白名单 | React 18/zod 4/Nest 与主仓隔离；带 postinstall 的新依赖补白名单 | 中 |
-| 12 | 文档治理 | `check-docs` 门禁 + 决策 ID 表 + §4.13 台账 | 本方案入图；各阶段落地时同提交更新台账 | 低 |
+| 12 | 文档治理 | `check-docs` 门禁 + 决策 ID 表 + 《日志》四十六 | 本方案入图；各阶段落地时同提交更新台账 | 低 |
 
 ## 4. 合并方式（三选项）
 
@@ -57,7 +57,7 @@
 | P6 | 部署形态（`DEC-11`）：自托管 Compose 加 dify profile（无头）；桌面承载按 §8.1 另行决策 | 空库全量重放 + Compose 健康检查 |
 | P7 | （远期）深度收编评估 | 届时另立方案 |
 
-纪律：每阶段一个可验证行为变化 + 测试护航；跨端契约（`packages/shared`）改动全量门禁；《改造计划》§4.13 台账同提交记账。
+纪律：每阶段一个可验证行为变化 + 测试护航；跨端契约（`packages/shared`）改动全量门禁；《日志》台账同提交记账。
 
 ## 6. 许可证与合规
 

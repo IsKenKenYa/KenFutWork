@@ -188,7 +188,7 @@ ModelCapability = { image_in, video_in, audio_in, thinking, tool_use, dynamicall
 
 ## 5. 对本项目的可学习点（按落点给出提案）
 
-> 下列提案**本次不实施**；实施按《改造计划》§4.13 台账逐 PR 进行，并遵守「能力缝三元组完整」与「新增协议先扩契约」两条硬约束。
+> 下列提案**本次不实施**；实施按《日志》台账逐 PR 进行，并遵守「能力缝三元组完整」与「新增协议先扩契约」两条硬约束。
 
 ### 5.0 统一前提：能力词表从「生成能力」升级为「任务 + 修饰」
 
@@ -253,7 +253,7 @@ ModelCapability = { image_in, video_in, audio_in, thinking, tool_use, dynamicall
 
 ## 7. 遗留与未做
 
-- **未做**：任何契约与代码改动。本文只产出调研结论；落地需在《改造计划》§4.13 台账按 PR 记账，并遵守「每个 PR 行为不变、测试护航」。
+- **未做**：任何契约与代码改动。本文只产出调研结论；落地需在《日志》台账按 PR 记账，并遵守「每个 PR 行为不变、测试护航」。
 - **未做**：cherry-studio v1（`src/renderer/src/providers/AiProvider/*`）的历史实现对比——v2 已重构到 `src/main/ai/provider/*`，历史形态对当前设计无增量信息。
 - **未覆盖**：`references/` 中与模型 Provider 无关的子模块（MCP、skill、浏览器、UI 组件库）。
 - **明确的风险**：`references/` 项目均为**浅克隆**（仅 1 个提交），上述结构与路径引用绑定 §8 所列 commit；上游演进后需按 `references/submodule-maintain.sh update` 重新核对再引用。

@@ -20,7 +20,7 @@
 | `supabase/migrations` | **唯一**数据库 Schema 迁移源（原生 SQL，目录名沿用历史） |
 | `plugins/` | 参考插件（`example-clock` 最小工具插件；`demo-panel` 演示四种能力） |
 | `scripts/` | 构建/打包/诊断脚本（含本地搜索代理与本地模型替身） |
-| `docs/` | 技术文档；入口见 [`docs/README.md`](docs/README.md)（改造计划 §4.13 是变更台账） |
+| `docs/` | 技术文档；入口见 [`docs/README.md`](docs/README.md)（[`docs/日志.md`](docs/日志.md) 是历轮回执与变更台账） |
 
 ---
 
