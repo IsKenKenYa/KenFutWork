@@ -2,6 +2,7 @@
 
 import type {
   CheckpointSummary,
+  ContentBlock,
   ExecutionMode,
   ProjectSummary,
 } from "@kenfutwork/shared";
@@ -38,7 +39,6 @@ import {
 } from "@/components/chat/composer-context-menu";
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
 import { RunStopButton } from "@/components/chat/run-stop-button";
-import { ToolOutputRenderer } from "@/components/chat/tool-block-view";
 import { KenFutWorkLogo } from "@/components/icons/kenfutwork-logo";
 import { Button } from "@/components/ui/button";
 import {
@@ -80,6 +80,11 @@ import { SidebarRow } from "@/components/workbench/sidebar-row";
 import { SkillsModal } from "@/components/workbench/skills-modal";
 import { SubagentDirectoryView } from "@/components/workbench/subagent-directory-view";
 import { TodoProgressPanel } from "@/components/workbench/todo-progress-panel";
+import {
+  ToolEventDetail,
+  toolStatusMeta,
+} from "@/components/workbench/tool-event";
+import { TrajectoryView } from "@/components/workbench/trajectory-view";
 import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
 import { WorkDirectorySelect } from "@/components/workbench/work-directory-select";
 import { WorkbenchSidePanel } from "@/components/workbench/workbench-side-panel";
@@ -114,6 +119,7 @@ import {
   createProject,
   deleteProject,
   fetchDirectoryPickerStatus,
+  fetchMessages,
   fetchProjects,
   fetchViewer,
   fetchWorkspaceSettings,
@@ -147,7 +153,20 @@ import {
   resolveTaskIndicator,
   SESSION_PREVIEW_LIMIT,
 } from "@/lib/workbench-task-list";
-import { applyTaskToolEvent, type TaskToolEntry } from "@/lib/workbench-tools";
+import {
+  appendAssistantDelta,
+  applyTaskToolEvent,
+  groupAssistantBlocks,
+  migrateLegacyTools,
+  nextAssistantStartMs,
+  rebuildAssistantBlocks,
+  settlePreviousAssistant,
+  type TaskMessage,
+  type TaskToolEntry,
+  toolDisplayLabel,
+  toolTargetHint,
+} from "@/lib/workbench-tools";
+import { buildTrajectory } from "@/lib/workbench-trajectory";
 
 /**
  * Agent 工作台（产品主入口）：Code / Design 双模式（DEC-2）。
@@ -165,19 +184,6 @@ const COMPACT_SOURCE_LABELS: Record<
   fraction: "窗口的 85%",
   fallback: "框架回退值",
 };
-
-interface TaskMessage {
-  role: "user" | "assistant";
-  text: string;
-  /**
-   * 这条消息「工作了多久」（毫秒）：从这条消息的第一个字到本轮终态。
-   * 用户口径：「工作时间每个 AI 对话消息都要显示，而不是只显示一部分」——
-   * 所以是**每条**助手消息各自记一份，而不是只在会话头显示一个总时长。
-   */
-  elapsedMs?: number;
-  /** 这条消息开始的时间（内部用：终态时据此算 elapsedMs）。 */
-  startedAt?: number;
-}
 
 type WorkbenchModelOption = {
   id: string;
@@ -226,18 +232,23 @@ interface WorkbenchTask {
   /** 归档后不显示在项目分组中，仅出现在「已归档」区 */
   archived?: boolean;
   /**
-   * 本轮的工具调用轨迹（工作台此前**完全忽略** tool.* 事件，用户只看得到模型的话术，
-   * 看不到工具跑了什么——联网搜索的来源列表因此从未在 Code 模式里出现过，
-   * 产品早就写好的来源渲染器只管着已退役的旧对话 UI）。
+   * 最近一轮 run 的起止（ISO，来自 run.started / 终态事件；R1-1 工作时间）
    */
-  tools?: TaskToolEntry[];
-  /** 最近一轮 run 的起止（ISO，来自 run.started / 终态事件；R1-1 工作时间） */
   runStartedAt?: string | undefined;
   runEndedAt?: string | undefined;
   /** 子代理运行条目（R1-3：由 task/video_generate 工具事件推导） */
   subagents?: SubagentEntry[];
   /** agent 自己维护的待办表（R1-2：由 write_todos 工具事件推导） */
   todos?: TodoItem[];
+  /**
+   * 已按服务端 contentBlocks 真序重建过消息块的时刻（ISO）。
+   *
+   * v0 桌面包把一轮对话只存成「整段文本 + 任务级 tools（尾部 10 条）」，本地无时序，
+   * 迁移只能把工具堆在消息尾部（2026-09-20 用户三次反馈）。服务端从第一版起就按事件
+   * 顺序持久化 contentBlocks，启动后按 sessionId 拉回来重建一次并打这个戳——
+   * 没有这个戳的旧任务下次启动还会再试（服务端当时不在线是常态）。
+   */
+  serverBlocksSyncedAt?: string | undefined;
   /** 本轮用量快照（R4-1：服务端 run.usage 事件，上下文容量/缓存命中浮层的数据源） */
   usage?: RunUsageSnapshot;
   /**
@@ -268,25 +279,76 @@ interface WorkbenchTask {
 }
 
 /**
- * 工具调用一行：名称 + 状态；完成的 `web_search` 直接把来源渲染成可点击列表
- * （复用既有 `ToolOutputRenderer`——它本来就为联网搜索写好了来源视图，
- * 只是此前没有任何 Code 模式消费方）。
- */
-/**
- * 对话里的工具调用行：**默认折叠**，只留「状态点 + 工具名 + 状态」一行，点一下展开输出。
+ * 一轮助手回复的**逐个、按时序**渲染：正文段与每一次工具调用按发生顺序交错
+ * （参考 deepseek-harness 展开后的 turn：每个工具调用是独立一行；Cherry Studio
+ * 的 MessagePartsRenderer 同样逐行展示「编辑文件 xxx / 终端 … / 查阅 · N 搜 N 文件」）。
  *
- * 折叠是默认值而不是可选开关：一轮任务里工具调用可能有十几条（web_search 的来源列表尤其长），
- * 全展开会把对话正文挤没。展开状态自持（每个工具行各管各的），不写进任务数据。
+ * 历史事故①：工具轨迹曾以 `task.tools` 挂在任务上、全部渲染在对话最底部——
+ * 看不出每次调用属于哪轮对话、发生在哪段正文前后，跨轮任务还被 10 条上限截断
+ * （2026-09-20 反馈）。
+ * 历史事故②（同日二次反馈）：修好归属后又把连续调用收进「工具调用 × N」折叠组，
+ * 用户「还是看不到详细的工具调用记录」——要的是**逐个展示、按时间顺序**，
+ * 不能聚成一团。所以这里不做任何聚合：一次调用一行，行本身永远可见，
+ * 只有行内的输出详情才默认折叠（点行展开）。
+ *
+ * 旧数据（无 `blocks`）走纯文本单气泡，行为与改造前一致。
+ */
+function AssistantTurn({ msg }: { msg: TaskMessage }) {
+  const groups = useMemo(
+    () => (msg.blocks ? groupAssistantBlocks(msg.blocks) : null),
+    [msg.blocks],
+  );
+  if (!groups) {
+    return (
+      <div className="w-fit max-w-full rounded-2xl rounded-bl-md bg-muted px-4 py-2.5">
+        <MarkdownRenderer text={msg.text} />
+      </div>
+    );
+  }
+  return (
+    <div className="flex w-fit max-w-full flex-col items-start gap-2">
+      {groups.map((group, gi) =>
+        group.kind === "text" ? (
+          <div
+            // biome-ignore lint/suspicious/noArrayIndexKey: 组序即时序，块内没有更稳定的身份
+            key={gi}
+            className="w-fit max-w-full rounded-2xl rounded-bl-md bg-muted px-4 py-2.5"
+          >
+            <MarkdownRenderer text={group.text} />
+          </div>
+        ) : (
+          // 连续工具调用：一行一个，按发生顺序排。刻意**不**做「N 次工具调用」聚合折叠——
+          // 聚在一起就又回到「看不出谁是谁、哪次在哪」的老问题。
+          group.tools.map((tool) => (
+            <WorkbenchToolRow key={tool.toolCallId} tool={tool} />
+          ))
+        ),
+      )}
+    </div>
+  );
+}
+
+/**
+ * 对话里的工具调用行：**一次调用一行、永远可见**（状态点 + 工具名 + 动了什么 + 状态），
+ * 点一下才展开这次的详情（入参 + 输出，与轨迹视图同一份展开体）。
+ *
+ * 行永远可见是用户口径：「要按照时间顺序逐个展示，不能聚在一起」（2026-09-20 二次
+ * 反馈）——聚合折叠会让「详细的工具调用记录」重新消失。默认折叠的只有行内的
+ * 详情（web_search 的来源列表尤其长，全展开会把正文挤没）。展开状态自持
+ * （每个工具行各管各的），不写进任务数据。
+ *
+ * 「运行完成之后无法展开」的病史（2026-09-20 三次反馈）：可展开判定曾只认
+ * `output || summary`——服务端裁掉输出（或只记了入参）的调用既没有结论也没有输出，
+ * 行被 `disabled` 后**点什么都不发生**，运行结束也永远是根哑巴行。现在入参也算
+ * 可展开内容（看一眼这次调用传了什么参数，本身就排得上用场）。
  */
 function WorkbenchToolRow({ tool }: { tool: TaskToolEntry }) {
   const [expanded, setExpanded] = useState(false);
-  const hasDetail = Boolean(tool.output) || Boolean(tool.summary);
-  const statusText =
-    tool.status === "running"
-      ? "执行中…"
-      : tool.status === "denied"
-        ? "被拒绝"
-        : "已完成";
+  const hasDetail =
+    Boolean(tool.output) || Boolean(tool.summary) || Boolean(tool.input);
+  const meta = toolStatusMeta(tool);
+  /** 行内提示这次调用动了什么（读了哪个文件 / 跑了什么命令）——同名工具的多次调用靠它区分。 */
+  const hint = toolTargetHint(tool);
   /** 被拒的原因写在 title 上（不点开也能看到为什么没执行）。 */
   const deniedReason =
     tool.status === "denied"
@@ -306,16 +368,22 @@ function WorkbenchToolRow({ tool }: { tool: TaskToolEntry }) {
         }`}
       >
         <span
-          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-            tool.status === "running"
-              ? "animate-pulse bg-amber-500"
-              : tool.status === "denied"
-                ? "bg-rose-500"
-                : "bg-emerald-500"
-          }`}
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${meta.dotClass}`}
         />
-        <span className="font-mono">{tool.toolName}</span>
-        <span title={deniedReason ?? undefined}>{statusText}</span>
+        <span className="font-medium" title={tool.toolName}>
+          {toolDisplayLabel(tool.toolName)}
+        </span>
+        {hint ? (
+          <span className="max-w-[280px] truncate font-normal opacity-70">
+            {hint}
+          </span>
+        ) : null}
+        <span
+          className={meta.failed ? "text-red-600 dark:text-red-400" : undefined}
+          title={deniedReason ?? undefined}
+        >
+          {meta.text}
+        </span>
         {hasDetail && (
           <svg
             aria-hidden
@@ -327,17 +395,7 @@ function WorkbenchToolRow({ tool }: { tool: TaskToolEntry }) {
           </svg>
         )}
       </button>
-      {expanded ? (
-        tool.output ? (
-          <div className="mt-2">
-            <ToolOutputRenderer toolName={tool.toolName} output={tool.output} />
-          </div>
-        ) : (
-          <div className="mt-1 text-xs text-muted-foreground">
-            {tool.summary}
-          </div>
-        )
-      ) : null}
+      {expanded ? <ToolEventDetail tool={tool} /> : null}
     </div>
   );
 }
@@ -376,7 +434,10 @@ function loadTasks(mode: WorkbenchMode): WorkbenchTask[] {
   try {
     const raw = window.localStorage.getItem(`${TASKS_STORAGE_KEY}:${mode}`);
     if (!raw) return [];
-    // 迁移：旧数据无 projectId/archived 字段时补默认值
+    // 迁移：旧数据无 projectId/archived 字段时补默认值。
+    // 注意：**不**在这里把旧的 `task.tools` 拼进消息——本地没有时序信息，只能拼出
+    // 「文本在前、工具全部堆尾」，正是用户三次反馈的毛病。真序重建走服务端
+    // contentBlocks（见下方 serverBlocksResync 副作用），拉取失败才退化为有损迁移。
     return (JSON.parse(raw) as WorkbenchTask[]).map((t) => ({
       ...t,
       projectId: t.projectId ?? null,
@@ -413,6 +474,13 @@ export function Workbench() {
   /** Design 模式的输入交给画布页（`/canvas?...&prompt=`）自动发送，不落到工作台会话视图。 */
   const [canvasPrompt, setCanvasPrompt] = useState<string | null>(null);
   const [followUp, setFollowUp] = useState("");
+  /**
+   * 转录区视图（参考 deepseek-harness 的「对话 / 轨迹」双页签）：对话按发生顺序
+   * 交错展示，轨迹是按轮次分组的只读账本（每次调用的时间/耗时/入参/输出一表可查）。
+   */
+  const [transcriptTab, setTranscriptTab] = useState<"chat" | "trajectory">(
+    "chat",
+  );
   // Code 模式对话区右键菜单（原生菜单在应用内浏览器不弹，用户无法复制/粘贴）
   const chatMenu = useChatContextMenu();
   const codeMessagesRef = useRef<HTMLDivElement>(null);
@@ -527,6 +595,101 @@ export function Workbench() {
   });
   tasksByModeRef.current = tasksByMode;
 
+  /**
+   * 旧任务消息块的**服务端真序重建**（一次性，2026-09-20）。
+   *
+   * 病史：v0 桌面包把一轮对话只存成「整段文本 + 任务级 tools（尾部 10 条）」，localStorage
+   * 里没有任何时序信息——本地迁移只能拼出 [文本, 工具…]，用户看到的就是「工具调用全部
+   * 堆在消息尾部」，且跨轮工具被 10 条上限截断（三次反馈同一个现象）。服务端从第一版起
+   * 就按事件顺序持久化 contentBlocks（实测 `["text","tool","text","tool",…]` 交错），
+   * 这里按 sessionId 拉回来、按**全文逐字相等**匹配本地助手消息，用服务端真序重建 blocks。
+   *
+   * 服务端是权威：匹配上就**覆盖**本地 blocks（v1 的有损迁移已经污染过存量数据，
+   * 只补空缺的话污染永远冲不掉）；匹配不上的保持原样。消息文本绝不动——追问历史、
+   * 复制、标题消费的是 text。拉取失败不打戳，下次启动再试（宁可看不到，也不要把
+   * 工具按错位置钉在消息尾部）。
+   */
+  useEffect(() => {
+    if (!session?.access_token) return;
+    const token = session.access_token;
+    let cancelled = false;
+    void (async () => {
+      for (const m of ["code", "design"] as const) {
+        if (cancelled) return;
+        const pending = tasksByModeRef.current[m].filter(
+          (t) => t.status !== "running" && !t.serverBlocksSyncedAt,
+        );
+        if (pending.length === 0) continue;
+        // 同一 sessionId 的任务共享一次拉取（每个任务自成会话）
+        const bySession = new Map<string, string[]>();
+        for (const t of pending) {
+          bySession.set(t.sessionId, [
+            ...(bySession.get(t.sessionId) ?? []),
+            t.id,
+          ]);
+        }
+        const serverBySession = new Map<
+          string,
+          Array<{ text: string; blocks: ContentBlock[] }>
+        >();
+        for (const sessionId of bySession.keys()) {
+          try {
+            const res = await fetchMessages(token, sessionId);
+            serverBySession.set(
+              sessionId,
+              (res.messages ?? [])
+                .filter(
+                  (msg) =>
+                    msg.role === "assistant" &&
+                    (msg.contentBlocks?.length ?? 0) > 0,
+                )
+                .map((msg) => ({
+                  text: msg.content,
+                  blocks: msg.contentBlocks ?? [],
+                })),
+            );
+          } catch {
+            // 拉取失败：不打戳，下次启动再试（离线启动是常态）
+          }
+        }
+        if (cancelled) return;
+        const syncedAt = new Date().toISOString();
+        setTasksByMode((prev) => {
+          const list = prev[m].map((t) => {
+            if (t.status === "running" || t.serverBlocksSyncedAt) return t;
+            const server = serverBySession.get(t.sessionId);
+            if (!server) return t; // 没拉到：原样保持，等下次
+            // 按顺序贪心匹配：本地消息全文 == 服务端该轮文本块的拼接
+            const cursor = { i: 0 };
+            let changed = false;
+            const messages = t.messages.map((msg) => {
+              if (msg.role !== "assistant") return msg;
+              const hitIdx = server.findIndex(
+                (s, idx) => idx >= cursor.i && s.text === msg.text,
+              );
+              if (hitIdx < 0) return msg;
+              cursor.i = hitIdx + 1;
+              const hit = server[hitIdx];
+              if (!hit) return msg;
+              const blocks = rebuildAssistantBlocks(hit.blocks);
+              if (blocks.length === 0) return msg;
+              changed = true;
+              return { ...msg, blocks };
+            });
+            if (!changed) return t;
+            return { ...t, messages, serverBlocksSyncedAt: syncedAt };
+          });
+          if (list.every((t, i) => t === prev[m][i])) return prev;
+          saveTasks(m, list);
+          return { ...prev, [m]: list };
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.access_token]);
+
   const tasks = tasksByMode[mode];
   /**
    * 当前选中的项目：Code 模式在「工作目录项目」（kind='code'）里找，Design 在画布
@@ -541,6 +704,23 @@ export function Workbench() {
   const activeTask = useMemo(
     () => tasks.find((t) => t.id === activeTaskId) ?? null,
     [tasks, activeTaskId],
+  );
+
+  /**
+   * 展示用的任务：旧数据（任务级 `tools`、无消息块）在此做**渲染兜底**迁移——
+   * 工具挂进最后一条助手消息，至少看得到用过什么。真序仍以服务端重建为准
+   * （serverBlocksSyncedAt 之后 blocks 已带工具块，迁移会自动让位，见 lib 实现）。
+   * 刻意不落回存储：没有时序的顺序正是要淘汰的形态。
+   */
+  const displayTask = useMemo(
+    () => (activeTask ? migrateLegacyTools(activeTask) : null),
+    [activeTask],
+  );
+
+  /** 轨迹账本（对话/轨迹双页签的「轨迹」侧）：按轮次分组、行序即时序。 */
+  const trajectoryModel = useMemo(
+    () => buildTrajectory(displayTask?.messages ?? []),
+    [displayTask],
   );
 
   /**
@@ -1226,7 +1406,7 @@ export function Workbench() {
         // 工具轨迹对所有工具都记（含被工具门拒绝的合成事件），子代理工具另进目录。
         // 曾经这里写成「先处理子代理、非子代理直接 return」，把通用分支变成死代码。
         apply((task) =>
-          applyTaskToolEvent(
+          applyTaskToolEvent<WorkbenchTask>(
             task,
             evt as Parameters<typeof applyTaskToolEvent>[1],
           ),
@@ -1286,53 +1466,27 @@ export function Workbench() {
           const messages = [...task.messages];
           const last = messages[messages.length - 1];
           if (last && last.role === "assistant") {
-            messages[messages.length - 1] = {
-              ...last,
-              text: last.text + delta,
-            };
-          } else {
-            // 新的一条助手消息：起点取「上一条结束的时刻」，没有就退到本轮起点——
-            // 这样它记的是这一段的整段时间（含中间的思考与工具调用）
-            const previousEnd = [...messages]
-              .reverse()
-              .find((m) => m.role === "assistant" && m.elapsedMs !== undefined);
-            // 只有上一条**同时有起点与耗时**时才能链式推——老数据（只有耗时没有起点）
-            // 直接相加会得到「0 + 耗时」这种荒唐的绝对时刻（实测显示成 49 万小时）
-            const previousEndMs =
-              previousEnd?.startedAt !== undefined &&
-              previousEnd.elapsedMs !== undefined
-                ? previousEnd.startedAt + previousEnd.elapsedMs
-                : null;
-            const runStart = task.runStartedAt
-              ? parseTimestampMs(task.runStartedAt)
-              : null;
-            const nextStartMs = previousEndMs ?? runStart ?? Date.now();
-            /*
-              上一条助手消息到此定稿（模型已经开了下一轮）：把它的耗时结算掉。
-              只在终态结算最后一条时，中间那些消息永远没有 elapsedMs，界面上就
-              「只显示一部分」——用户口径是每条 AI 消息都要显示工作时间。
-            */
-            for (let i = messages.length - 1; i >= 0; i -= 1) {
-              const candidate = messages[i];
-              if (
-                candidate?.role === "assistant" &&
-                candidate.elapsedMs === undefined &&
-                candidate.startedAt !== undefined
-              ) {
-                messages[i] = {
-                  ...candidate,
-                  elapsedMs: Math.max(0, nextStartMs - candidate.startedAt),
-                };
-                break;
-              }
-            }
-            messages.push({
-              role: "assistant",
-              text: delta,
-              startedAt: nextStartMs,
-            });
+            // 追加进本轮这条助手消息的有序块：末尾是正文就续写，末尾是工具调用
+            // （工具刚跑完）就新起一段——工具之后的正文不会再和工具前的糊成一段。
+            messages[messages.length - 1] = appendAssistantDelta(last, delta);
+            return { ...task, messages };
           }
-          return { ...task, messages };
+          // 新的一条助手消息：起点取「上一条结束的时刻」，没有就退到本轮起点——
+          // 这样它记的是这一段的整段时间（含中间的思考与工具调用）
+          const nextStartMs = nextAssistantStartMs(messages, task.runStartedAt);
+          /*
+            上一条助手消息到此定稿（模型已经开了下一轮）：把它的耗时结算掉。
+            只在终态结算最后一条时，中间那些消息永远没有 elapsedMs，界面上就
+            「只显示一部分」——用户口径是每条 AI 消息都要显示工作时间。
+          */
+          const settled = settlePreviousAssistant(messages, nextStartMs);
+          settled.push({
+            role: "assistant",
+            text: delta,
+            startedAt: nextStartMs,
+            blocks: [{ type: "text", text: delta }],
+          });
+          return { ...task, messages: settled };
         });
       } else if (type === "run.completed") {
         const ts = (evt as { timestamp?: string }).timestamp;
@@ -1676,7 +1830,7 @@ export function Workbench() {
         title,
         mode,
         createdAt: Date.now(),
-        messages: [{ role: "user", text: text.trim() }],
+        messages: [{ role: "user", text: text.trim(), startedAt: Date.now() }],
         status: "running",
         projectId: mode === "code" ? (resolvedProject?.id ?? null) : null,
         archived: false,
@@ -1894,6 +2048,8 @@ export function Workbench() {
       if (!text.trim() || !taskId || !session?.access_token) return;
       const task = tasks.find((t) => t.id === taskId);
       if (!task) return;
+      // 追问发生在对话里：从轨迹页签发消息要跳回对话页，让新内容立即可见
+      setTranscriptTab("chat");
       setTasksByMode((prev) => {
         const list = prev[mode].map((t) =>
           t.id === taskId
@@ -1901,7 +2057,11 @@ export function Workbench() {
                 ...t,
                 messages: [
                   ...t.messages,
-                  { role: "user" as const, text: text.trim() },
+                  {
+                    role: "user" as const,
+                    text: text.trim(),
+                    startedAt: Date.now(),
+                  },
                 ],
                 status: "running" as const,
                 // 新一轮起表，清掉上一轮的终态时刻
@@ -2536,6 +2696,37 @@ export function Workbench() {
                   ) : null}
                 </div>
               </div>
+              {/* 对话 / 轨迹 双页签（参考 deepseek-harness 的会话头）。
+                对话 = 按发生顺序交错的流；轨迹 = 按轮次分组的只读账本。 */}
+              <div className="shrink-0 pr-[var(--scrollbar-lane,0px)]">
+                <div
+                  role="tablist"
+                  aria-label="转录视图"
+                  className="mx-auto flex w-full max-w-3xl items-center gap-1 px-6"
+                >
+                  {(
+                    [
+                      ["chat", "对话"],
+                      ["trajectory", "轨迹"],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      role="tab"
+                      aria-selected={transcriptTab === value}
+                      onClick={() => setTranscriptTab(value)}
+                      className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+                        transcriptTab === value
+                          ? "bg-muted font-medium text-foreground"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div
                 ref={codeMessagesRef}
                 role="none"
@@ -2543,152 +2734,172 @@ export function Workbench() {
                 onContextMenu={chatMenu.open}
               >
                 <div className="mx-auto w-full max-w-3xl space-y-4 px-6 pb-2">
-                  {activeTask.runStartedAt ? (
-                    <ElapsedEntry
-                      startedAt={activeTask.runStartedAt}
-                      endedAt={activeTask.runEndedAt}
-                      running={activeTask.status === "running"}
+                  {transcriptTab === "trajectory" ? (
+                    <TrajectoryView
+                      model={trajectoryModel}
+                      startedAtMs={
+                        activeTask.runStartedAt
+                          ? parseTimestampMs(activeTask.runStartedAt)
+                          : null
+                      }
+                      endedAtMs={
+                        activeTask.runEndedAt
+                          ? parseTimestampMs(activeTask.runEndedAt)
+                          : null
+                      }
                     />
-                  ) : null}
-                  {/*
+                  ) : (
+                    <>
+                      {activeTask.runStartedAt ? (
+                        <ElapsedEntry
+                          startedAt={activeTask.runStartedAt}
+                          endedAt={activeTask.runEndedAt}
+                          running={activeTask.status === "running"}
+                        />
+                      ) : null}
+                      {/*
                     上下文已自动压缩（R4-1 输出预留线的执行面）：说明「模型看到的历史被摘要过」，
                     而库里的转录仍然完整——不说这一句，用户会以为模型突然忘了前面的事。
                   */}
-                  {activeTask.compacted ? (
-                    <p
-                      role="status"
-                      className="rounded-md border bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground"
-                    >
-                      上下文已自动压缩：模型上下文超过{" "}
-                      {formatTokens(activeTask.compacted.triggerTokens)}（
-                      {
-                        COMPACT_SOURCE_LABELS[
-                          activeTask.compacted.triggerSource
-                        ]
-                      }
-                      ）后，较早的消息被摘要成一条，只保留最近{" "}
-                      {activeTask.compacted.keepMessages} 条；原文存在工作区的
-                      /conversation_history/，这条对话的完整记录不受影响。
-                    </p>
-                  ) : null}
-                  {/*
+                      {activeTask.compacted ? (
+                        <p
+                          role="status"
+                          className="rounded-md border bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground"
+                        >
+                          上下文已自动压缩：模型上下文超过{" "}
+                          {formatTokens(activeTask.compacted.triggerTokens)}（
+                          {
+                            COMPACT_SOURCE_LABELS[
+                              activeTask.compacted.triggerSource
+                            ]
+                          }
+                          ）后，较早的消息被摘要成一条，只保留最近{" "}
+                          {activeTask.compacted.keepMessages}{" "}
+                          条；原文存在工作区的
+                          /conversation_history/，这条对话的完整记录不受影响。
+                        </p>
+                      ) : null}
+                      {/*
                     用户钩子（R5-2「钩子」）：在项目工作目录里跑的命令，成败都如实列出——
                     配了钩子却看不到结果，等于不知道它跑没跑。失败不影响本轮。
                   */}
-                  {(activeTask.hookResults ?? []).map((hook) => (
-                    <p
-                      /* 同一条命令在起点/终点各配一次时事件不同，键按「事件+命令+耗时」取；
+                      {(activeTask.hookResults ?? []).map((hook) => (
+                        <p
+                          /* 同一条命令在起点/终点各配一次时事件不同，键按「事件+命令+耗时」取；
                          同一轮里同事件同命令只会出现一次（钩子表本身按事件+命令去重执行） */
-                      key={`${hook.event}::${hook.command}::${hook.durationMs}`}
-                      role="status"
-                      className="rounded-md border bg-muted/40 px-3 py-1.5 font-mono text-[11px] text-muted-foreground"
-                    >
-                      {hook.event === "turn-start"
-                        ? "本轮开始钩子"
-                        : "本轮结束钩子"}
-                      ：{hook.command}
-                      {" · "}
-                      {hook.timedOut
-                        ? "超时被杀"
-                        : hook.exitCode === 0
-                          ? "成功"
-                          : `退出码 ${hook.exitCode ?? "?"}`}
-                      {hook.output ? ` · ${hook.output}` : ""}
-                      {` · ${Math.max(1, Math.round(hook.durationMs / 1000))}s`}
-                    </p>
-                  ))}
-                  {/* 目标 + 进度（R1-2）：模型用了 write_todos 才出现，条数从事件流推导 */}
-                  {activeTask.todos && activeTask.todos.length > 0 ? (
-                    <TodoProgressPanel
-                      /* 目标 = 本轮的用户诉求（最后一条用户消息），不是首条——
+                          key={`${hook.event}::${hook.command}::${hook.durationMs}`}
+                          role="status"
+                          className="rounded-md border bg-muted/40 px-3 py-1.5 font-mono text-[11px] text-muted-foreground"
+                        >
+                          {hook.event === "turn-start"
+                            ? "本轮开始钩子"
+                            : "本轮结束钩子"}
+                          ：{hook.command}
+                          {" · "}
+                          {hook.timedOut
+                            ? "超时被杀"
+                            : hook.exitCode === 0
+                              ? "成功"
+                              : `退出码 ${hook.exitCode ?? "?"}`}
+                          {hook.output ? ` · ${hook.output}` : ""}
+                          {` · ${Math.max(1, Math.round(hook.durationMs / 1000))}s`}
+                        </p>
+                      ))}
+                      {/* 目标 + 进度（R1-2）：模型用了 write_todos 才出现，条数从事件流推导 */}
+                      {activeTask.todos && activeTask.todos.length > 0 ? (
+                        <TodoProgressPanel
+                          /* 目标 = 本轮的用户诉求（最后一条用户消息），不是首条——
                      首条是这条对话最初问的，跟当前这轮的待办不是一回事 */
-                      goal={
-                        [...activeTask.messages]
-                          .reverse()
-                          .find((message) => message.role === "user")?.text ??
-                        activeTask.title
-                      }
-                      items={activeTask.todos}
-                      running={activeTask.status === "running"}
-                    />
-                  ) : null}
-                  {activeTask.subagents && activeTask.subagents.length > 0 ? (
-                    <SubagentDirectoryView
-                      entries={activeTask.subagents}
-                      running={activeTask.status === "running"}
-                    />
-                  ) : null}
-                  {(() => {
-                    // 「最终总结」标题挂在本轮最后一个 assistant 消息上方（R1-1 收尾总结）
-                    const lastAssistantIdx = activeTask.messages.reduce(
-                      (last, msg, idx) =>
-                        msg.role === "assistant" ? idx : last,
-                      -1,
-                    );
-                    const showSummary =
-                      activeTask.status === "completed" &&
-                      Boolean(activeTask.runEndedAt) &&
-                      lastAssistantIdx >= 0;
-                    return activeTask.messages.map((msg, i) => (
-                      // biome-ignore lint/suspicious/noArrayIndexKey: 流式为追加列表，消息的稳定身份就是位置；内容键会每个 token 换 key，把整条消息重挂载
-                      <div key={i} className="space-y-1">
-                        {showSummary && i === lastAssistantIdx ? (
-                          <div className="text-xs font-medium text-muted-foreground">
-                            最终总结
+                          goal={
+                            [...activeTask.messages]
+                              .reverse()
+                              .find((message) => message.role === "user")
+                              ?.text ?? activeTask.title
+                          }
+                          items={activeTask.todos}
+                          running={activeTask.status === "running"}
+                        />
+                      ) : null}
+                      {activeTask.subagents &&
+                      activeTask.subagents.length > 0 ? (
+                        <SubagentDirectoryView
+                          entries={activeTask.subagents}
+                          running={activeTask.status === "running"}
+                        />
+                      ) : null}
+                      {(() => {
+                        // 「最终总结」标题挂在本轮最后一个 assistant 消息上方（R1-1 收尾总结）
+                        // 消息取 displayTask（含旧数据渲染兜底迁移），其余回执仍走 activeTask
+                        const shown = displayTask ?? activeTask;
+                        const lastAssistantIdx = shown.messages.reduce(
+                          (last, msg, idx) =>
+                            msg.role === "assistant" ? idx : last,
+                          -1,
+                        );
+                        const showSummary =
+                          activeTask.status === "completed" &&
+                          Boolean(activeTask.runEndedAt) &&
+                          lastAssistantIdx >= 0;
+                        return shown.messages.map((msg, i) => (
+                          // biome-ignore lint/suspicious/noArrayIndexKey: 流式为追加列表，消息的稳定身份就是位置；内容键会每个 token 换 key，把整条消息重挂载
+                          <div key={i} className="space-y-2">
+                            {showSummary && i === lastAssistantIdx ? (
+                              <div className="text-xs font-medium text-muted-foreground">
+                                最终总结
+                              </div>
+                            ) : null}
+                            {/* 每条助手消息都带上「工作了多久」（用户口径：不能只显示一部分） */}
+                            {msg.role === "assistant" &&
+                            msg.elapsedMs !== undefined ? (
+                              <div className="text-[11px] text-muted-foreground">
+                                已工作{" "}
+                                {formatElapsedSeconds(msg.elapsedMs / 1000)}
+                              </div>
+                            ) : null}
+                            {msg.role === "user" ? (
+                              <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground whitespace-pre-wrap">
+                                {msg.text}
+                              </div>
+                            ) : (
+                              <AssistantTurn msg={msg} />
+                            )}
                           </div>
-                        ) : null}
-                        {/* 每条助手消息都带上「工作了多久」（用户口径：不能只显示一部分） */}
-                        {msg.role === "assistant" &&
-                        msg.elapsedMs !== undefined ? (
-                          <div className="text-[11px] text-muted-foreground">
-                            已工作 {formatElapsedSeconds(msg.elapsedMs / 1000)}
-                          </div>
-                        ) : null}
-                        {msg.role === "user" ? (
-                          <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground whitespace-pre-wrap">
-                            {msg.text}
-                          </div>
-                        ) : (
-                          <div className="w-fit max-w-full rounded-2xl rounded-bl-md bg-muted px-4 py-2.5">
-                            <MarkdownRenderer text={msg.text} />
-                          </div>
-                        )}
-                      </div>
-                    ));
-                  })()}
-                  {(activeTask.tools ?? []).map((tool) => (
-                    <WorkbenchToolRow key={tool.toolCallId} tool={tool} />
-                  ))}
-                  {/*
+                        ));
+                      })()}
+                      {/*
                     检查点条（Code 模式）：本轮终态后拉到的影子快照——改了什么、可回滚。
                     仍在本轮运行中时禁用回滚（工作目录正被写入）。
                   */}
-                  {activeTask.checkpoint ? (
-                    <CheckpointChip
-                      checkpoint={activeTask.checkpoint}
-                      accessToken={session?.access_token ?? null}
-                      canvasId={conversationProject?.primaryCanvas.id ?? null}
-                      restoreDisabled={activeTask.status === "running"}
-                    />
-                  ) : null}
-                  {activeTask.status === "running" ? (
-                    <div
-                      role="status"
-                      className="flex w-fit items-center gap-1.5 rounded-2xl rounded-bl-md bg-muted px-4 py-3"
-                      aria-label="生成中"
-                    >
-                      {[0, 1, 2].map((dot) => (
-                        <span
-                          key={dot}
-                          className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/70"
-                          style={{ animationDelay: `${dot * 150}ms` }}
+                      {activeTask.checkpoint ? (
+                        <CheckpointChip
+                          checkpoint={activeTask.checkpoint}
+                          accessToken={session?.access_token ?? null}
+                          canvasId={
+                            conversationProject?.primaryCanvas.id ?? null
+                          }
+                          restoreDisabled={activeTask.status === "running"}
                         />
-                      ))}
-                      <span className="ml-1 text-xs text-muted-foreground">
-                        生成中…
-                      </span>
-                    </div>
-                  ) : null}
+                      ) : null}
+                      {activeTask.status === "running" ? (
+                        <div
+                          role="status"
+                          className="flex w-fit items-center gap-1.5 rounded-2xl rounded-bl-md bg-muted px-4 py-3"
+                          aria-label="生成中"
+                        >
+                          {[0, 1, 2].map((dot) => (
+                            <span
+                              key={dot}
+                              className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/70"
+                              style={{ animationDelay: `${dot * 150}ms` }}
+                            />
+                          ))}
+                          <span className="ml-1 text-xs text-muted-foreground">
+                            生成中…
+                          </span>
+                        </div>
+                      ) : null}
+                    </>
+                  )}
                 </div>
               </div>
               {/* 底部：继续对话（完整版工具行 + 多轮，复用同一会话）。

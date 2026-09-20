@@ -1,297 +1,456 @@
 import { describe, expect, it } from "vitest";
-
+import { parseTodos } from "../src/lib/todo-progress";
 import {
+  appendAssistantDelta,
   applyTaskToolEvent,
-  applyToolEvent,
-  capTools,
-  MAX_TASK_TOOLS,
+  capToolBlocks,
+  groupAssistantBlocks,
+  MAX_TOOL_BLOCKS_PER_MESSAGE,
+  migrateLegacyTools,
+  nextAssistantStartMs,
+  settlePreviousAssistant,
+  type TaskMessage,
+  type TaskMessageBlock,
   type TaskToolEntry,
   type TaskToolState,
+  toolDisplayLabel,
+  toolTargetHint,
 } from "../src/lib/workbench-tools";
 
 /**
- * 回归：工作台此前**完全忽略** tool.* 事件——用户只看得到模型的话术，看不到工具跑了
- * 什么；联网搜索的来源列表（产品早写好的 ToolOutputRenderer）因此从未在 Code 模式里
- * 出现过。这组用例把「按 toolCallId 归并、正常/失败都收尾、事件乱序不造孤儿行」钉住。
- */
-describe("工作台工具轨迹", () => {
-  it("被工具门拒绝：状态是 denied（不是「已完成」），原因留在 summary/output 上", () => {
-    let tools: TaskToolEntry[] = [];
-    tools = applyToolEvent(tools, {
-      type: "tool.started",
-      toolCallId: "d1",
-      toolName: "write_file",
-    });
-    tools = applyToolEvent(tools, {
-      type: "tool.completed",
-      toolCallId: "d1",
-      toolName: "write_file",
-      outputSummary:
-        "工具被拒绝（第 1 次）：工具 write_file 属危险操作，等待用户审批（default 档）。",
-      output: { denied: true, reason: "等待用户审批（default 档）", count: 1 },
-    });
-    expect(tools[0]).toMatchObject({ status: "denied", toolCallId: "d1" });
-    expect(tools[0]?.output?.denied).toBe(true);
-    // 正常完成的工具仍然是 completed（回归：别把两种收尾混成一种）
-    tools = applyToolEvent(tools, {
-      type: "tool.started",
-      toolCallId: "d2",
-      toolName: "execute",
-    });
-    tools = applyToolEvent(tools, {
-      type: "tool.completed",
-      toolCallId: "d2",
-      toolName: "execute",
-      outputSummary: "退出码 0",
-    });
-    expect(tools[1]?.status).toBe("completed");
-  });
-
-  it("tool.started → 新增执行中行；tool.completed → 就地收尾并带上结论与输出", () => {
-    let tools: TaskToolEntry[] = [];
-    tools = applyToolEvent(tools, {
-      type: "tool.started",
-      toolCallId: "c1",
-      toolName: "web_search",
-    });
-    expect(tools).toEqual([
-      { toolCallId: "c1", toolName: "web_search", status: "running" },
-    ]);
-
-    tools = applyToolEvent(tools, {
-      type: "tool.completed",
-      toolCallId: "c1",
-      toolName: "web_search",
-      outputSummary: "搜索来源 · Python",
-      output: { query: "Python", results: [{ title: "a", link: "https://a" }] },
-    });
-    expect(tools).toHaveLength(1);
-    expect(tools[0]).toMatchObject({
-      toolCallId: "c1",
-      status: "completed",
-      summary: "搜索来源 · Python",
-    });
-    expect(tools[0]?.output?.query).toBe("Python");
-  });
-
-  it("工具失败也收尾（outputSummary 形如「失败：…」），不会永远停在执行中", () => {
-    let tools = applyToolEvent([], {
-      type: "tool.started",
-      toolCallId: "c9",
-      toolName: "web_search",
-    });
-    tools = applyToolEvent(tools, {
-      type: "tool.completed",
-      toolCallId: "c9",
-      toolName: "web_search",
-      outputSummary:
-        "失败：web_search 请求失败（API密钥无效），请检查搜索供应商配置。",
-      output: { error: "…" },
-    });
-    expect(tools[0]?.status).toBe("completed");
-    expect(tools[0]?.summary).toContain("失败：");
-  });
-
-  it("缺 toolCallId 的事件被丢弃（归并键缺失只会造出无法配对的幽灵行）", () => {
-    const tools = applyToolEvent([], {
-      type: "tool.started",
-      toolName: "web_search",
-    });
-    expect(tools).toEqual([]);
-  });
-
-  it("completed 找不到对应行时不新增（不出现无先导的孤儿「已完成」行）", () => {
-    const tools = applyToolEvent([], {
-      type: "tool.completed",
-      toolCallId: "ghost",
-      toolName: "web_search",
-    });
-    expect(tools).toEqual([]);
-  });
-
-  it("轨迹有条数上限（整条任务写 localStorage，无上限会撑爆配额）", () => {
-    let tools: TaskToolEntry[] = [];
-    for (let i = 0; i < MAX_TASK_TOOLS + 5; i += 1) {
-      tools = applyToolEvent(tools, {
-        type: "tool.started",
-        toolCallId: `c${i}`,
-        toolName: "read_file",
-      });
-    }
-    expect(tools).toHaveLength(MAX_TASK_TOOLS);
-    // 保留的是最近的一批
-    expect(tools[tools.length - 1]?.toolCallId).toBe(`c${MAX_TASK_TOOLS + 4}`);
-    expect(capTools([])).toEqual([]);
-  });
-
-  it("多工具交错：各自按 id 归并，互不干扰", () => {
-    let tools = applyToolEvent([], {
-      type: "tool.started",
-      toolCallId: "a",
-      toolName: "web_search",
-    });
-    tools = applyToolEvent(tools, {
-      type: "tool.started",
-      toolCallId: "b",
-      toolName: "mcp__py-helper__add",
-    });
-    tools = applyToolEvent(tools, {
-      type: "tool.completed",
-      toolCallId: "b",
-      toolName: "mcp__py-helper__add",
-      outputSummary: "6912.0",
-    });
-    expect(tools.map((t) => [t.toolCallId, t.status])).toEqual([
-      ["a", "running"],
-      ["b", "completed"],
-    ]);
-  });
-});
-
-/**
- * 回归：一条工具事件必须**同时**喂给工具轨迹与子代理目录。
+ * 工具轨迹的纯逻辑测试（workbench Code 模式）。
  *
- * 线上曾写成「先处理子代理、非子代理直接 return」，把下面的通用分支变成死代码，
- * 于是界面上从来没有普通工具（含被工具门拒绝的合成事件）的记录。
+ * 锁住两条用户口径：
+ * 1. 工具调用**跟着所属的那轮助手消息**渲染、按发生顺序与正文交错——
+ *    不再全堆在对话最底部（看不出属于谁/哪一轮），也不再被整条任务 10 条的
+ *    上限截断（2026-09-20 反馈；参考 deepseek-harness turn-process /
+ *    Cherry Studio ToolBlockGroup）。
+ * 2. 普通工具也要进轨迹（2026-09-15 回归：非子代理工具曾被 early return 吃掉，
+ *    界面上从来没有任何工具调用记录）。
  */
-describe("applyTaskToolEvent（工具事件 → 任务状态）", () => {
-  it("普通工具也要进轨迹（不是只有子代理工具）", () => {
-    const next = applyTaskToolEvent({ tools: [] } as TaskToolState, {
-      type: "tool.started",
-      toolCallId: "c1",
-      toolName: "web_search",
+
+const baseTask: TaskToolState = {
+  messages: [],
+  subagents: [],
+};
+
+function toolBlocks(message: TaskMessage | undefined): TaskToolEntry[] {
+  if (!message) return [];
+  return (message.blocks ?? [])
+    .filter(
+      (b): b is { type: "tool"; tool: TaskToolEntry } => b.type === "tool",
+    )
+    .map((b) => b.tool);
+}
+
+describe("applyTaskToolEvent 工具轨迹", () => {
+  it("普通工具也进轨迹（不要求是子代理工具）", () => {
+    const task = applyTaskToolEvent(
+      { ...baseTask, messages: [{ role: "assistant", text: "正在读文件" }] },
+      {
+        type: "tool.started",
+        toolCallId: "tc_1",
+        toolName: "read_file",
+      },
+    );
+    expect(toolBlocks(task.messages[0])).toHaveLength(1);
+    expect(toolBlocks(task.messages[0])[0]).toMatchObject({
+      toolCallId: "tc_1",
+      toolName: "read_file",
+      status: "running",
     });
-    expect(next.tools).toEqual([
-      { toolCallId: "c1", toolName: "web_search", status: "running" },
-    ]);
-    expect(next.subagents).toBeUndefined();
   });
 
-  it("被工具门拒绝的合成事件同样进轨迹，并带出拒绝原因", () => {
-    let state: TaskToolState = { tools: [] };
-    state = applyTaskToolEvent(state, {
+  it("同一 toolCallId 的重复 started 不重复入块", () => {
+    const task = applyTaskToolEvent(
+      { ...baseTask, messages: [{ role: "assistant", text: "" }] },
+      { type: "tool.started", toolCallId: "tc_1", toolName: "read_file" },
+    );
+    const task2 = applyTaskToolEvent(task, {
       type: "tool.started",
-      toolCallId: "d1",
-      toolName: "write_file",
+      toolCallId: "tc_1",
+      toolName: "read_file",
     });
-    state = applyTaskToolEvent(state, {
+    expect(toolBlocks(task2.messages[0])).toHaveLength(1);
+  });
+
+  it("completed 就地收尾对应块（状态/结论/输出）", () => {
+    let task = applyTaskToolEvent(
+      { ...baseTask, messages: [{ role: "assistant", text: "" }] },
+      { type: "tool.started", toolCallId: "tc_1", toolName: "read_file" },
+    );
+    task = applyTaskToolEvent(task, {
       type: "tool.completed",
-      toolCallId: "d1",
-      toolName: "write_file",
-      outputSummary:
-        "工具被拒绝（第 1 次）：plan 计划模式：计划批准前仅允许只读工具",
+      toolCallId: "tc_1",
+      outputSummary: "读到了 12 行",
+      output: { ok: true },
+      timestamp: "2026-09-20T02:10:30.000Z",
+    });
+    expect(toolBlocks(task.messages[0])[0]).toMatchObject({
+      status: "completed",
+      summary: "读到了 12 行",
+      output: { ok: true },
+    });
+  });
+
+  it("找不到块的 completed 不造孤儿行", () => {
+    const task = applyTaskToolEvent(
+      { ...baseTask, messages: [{ role: "assistant", text: "正文" }] },
+      {
+        type: "tool.completed",
+        toolCallId: "tc_missing",
+        toolName: "read_file",
+      },
+    );
+    expect(task.messages).toHaveLength(1);
+    expect(toolBlocks(task.messages[0])).toHaveLength(0);
+  });
+
+  it("被拒（output.denied）记为 denied，不伪装成已完成", () => {
+    let task = applyTaskToolEvent(
+      { ...baseTask, messages: [{ role: "assistant", text: "" }] },
+      { type: "tool.started", toolCallId: "tc_1", toolName: "write_file" },
+    );
+    task = applyTaskToolEvent(task, {
+      type: "tool.completed",
+      toolCallId: "tc_1",
       output: {
         denied: true,
-        reason: "plan 计划模式：计划批准前仅允许只读工具",
+        reason: "工具 write_file 属危险操作，等待用户审批",
       },
     });
+    expect(toolBlocks(task.messages[0])[0]?.status).toBe("denied");
+  });
 
-    // 状态与「已完成」分开（用户口径：界面上写「已完成」而实际没执行会骗人）
-    expect(state.tools?.[0]).toMatchObject({
-      status: "denied",
-      summary: expect.stringContaining("工具被拒绝"),
-      output: { denied: true },
+  it("tool.started 带上入参快照（行内显示动了什么）", () => {
+    const task = applyTaskToolEvent(
+      { ...baseTask, messages: [{ role: "assistant", text: "" }] },
+      {
+        type: "tool.started",
+        toolCallId: "tc_1",
+        toolName: "read_file",
+        input: { path: "/tmp/a.ts" },
+      },
+    );
+    expect(toolBlocks(task.messages[0])[0]?.input).toEqual({
+      path: "/tmp/a.ts",
     });
   });
 
-  it("子代理工具同时进目录（两块状态一起更新）", () => {
-    const started = applyTaskToolEvent(
-      { tools: [], subagents: [] } as TaskToolState,
-      { type: "tool.started", toolCallId: "s1", toolName: "task" },
+  it("工具先于正文到达：先建一条空文本助手消息，工具块在最前", () => {
+    const task = applyTaskToolEvent(
+      { ...baseTask },
+      { type: "tool.started", toolCallId: "tc_1", toolName: "read_file" },
     );
-    expect(started.tools).toHaveLength(1);
-    expect(started.subagents).toHaveLength(1);
+    expect(task.messages).toHaveLength(1);
+    expect(task.messages[0]?.role).toBe("assistant");
+    expect(task.messages[0]?.blocks).toEqual([
+      { type: "tool", tool: expect.objectContaining({ toolCallId: "tc_1" }) },
+    ]);
+    // 新助手消息必须起表，否则这条消息永远没有「已工作」时长
+    expect(task.messages[0]?.startedAt).toBeTypeOf("number");
+  });
 
-    const done = applyTaskToolEvent(started, {
-      type: "tool.completed",
-      toolCallId: "s1",
-      toolName: "task",
-      timestamp: "2026-09-15T00:00:00.000Z",
+  it("跨轮归属：第二轮的工具进第二条助手消息，第一条不受影响（不再全堆底/被截断）", () => {
+    let task = {
+      ...baseTask,
+      messages: [
+        { role: "user" as const, text: "读一下" },
+        {
+          role: "assistant" as const,
+          text: "第一轮回",
+          elapsedMs: 1000,
+          startedAt: 0,
+        },
+      ],
+      runStartedAt: "2026-09-20T02:10:00.000Z",
+    };
+    // 第二轮：用户追问 → 工具先到 → 正文再到
+    task = {
+      ...task,
+      messages: [...task.messages, { role: "user" as const, text: "再读" }],
+    };
+    task = applyTaskToolEvent(task, {
+      type: "tool.started",
+      toolCallId: "tc_b",
+      toolName: "read_file",
     });
-    // 子代理条目以 endedAt 表达终态（不是 status）
-    expect(done.subagents?.[0]?.endedAt).toBe("2026-09-15T00:00:00.000Z");
+    task = applyTaskToolEvent(task, {
+      type: "tool.completed",
+      toolCallId: "tc_b",
+      output: { ok: true },
+    });
+    // 第二条助手消息（索引 3）：只有工具块
+    expect(toolBlocks(task.messages[3])).toHaveLength(1);
+    // 第一轮的助手消息（索引 1）没有被塞进任何工具
+    expect(toolBlocks(task.messages[1])).toHaveLength(0);
+    // 新消息起点链式推：上一条（起点 0 + 1000ms）
+    expect(task.messages[3]?.startedAt).toBe(1000);
+  });
+
+  it("单条消息的工具块超上限时丢最旧", () => {
+    const blocks: TaskMessageBlock[] = Array.from(
+      { length: MAX_TOOL_BLOCKS_PER_MESSAGE + 5 },
+      (_, i) => ({
+        type: "tool" as const,
+        tool: {
+          toolCallId: `tc_${i}`,
+          toolName: "read_file",
+          status: "completed" as const,
+        },
+      }),
+    );
+    const capped = capToolBlocks(blocks);
+    expect(capped).toHaveLength(MAX_TOOL_BLOCKS_PER_MESSAGE);
+    const kept = capped.filter(
+      (b): b is { type: "tool"; tool: TaskToolEntry } => b.type === "tool",
+    );
+    expect(kept[0]?.tool.toolCallId).toBe("tc_5");
+  });
+
+  it("write_todos 覆盖式更新目标进度", () => {
+    const task = applyTaskToolEvent(
+      { ...baseTask, messages: [{ role: "assistant", text: "" }] },
+      {
+        type: "tool.started",
+        toolCallId: "tc_1",
+        toolName: "write_todos",
+        input: {
+          todos: [
+            { content: "第一件事", status: "completed" },
+            { content: "第二件事", status: "in_progress" },
+          ],
+        },
+      },
+    );
+    expect(task.todos).toEqual(
+      parseTodos({
+        todos: [
+          { content: "第一件事", status: "completed" },
+          { content: "第二件事", status: "in_progress" },
+        ],
+      }),
+    );
+  });
+
+  it("write_todos 入参不可解析时保持原进度", () => {
+    const task = applyTaskToolEvent(
+      {
+        ...baseTask,
+        messages: [{ role: "assistant", text: "" }],
+        todos:
+          parseTodos({
+            todos: [{ content: "旧目标", status: "in_progress" }],
+          }) ?? [],
+      },
+      { type: "tool.started", toolCallId: "tc_1", toolName: "write_todos" },
+    );
+    expect(task.todos).toHaveLength(1);
+    expect(task.todos?.[0]?.content).toBe("旧目标");
   });
 });
 
-describe("applyTaskToolEvent：目标进度（write_todos）", () => {
-  it("write_todos 的入参成为当前待办表（整表替换）", () => {
-    const first = applyTaskToolEvent({ tools: [] } as TaskToolState, {
-      type: "tool.started",
-      toolCallId: "t1",
-      toolName: "write_todos",
-      input: {
-        todos: [
-          { content: "读契约", status: "in_progress" },
-          { content: "改服务端", status: "pending" },
+describe("appendAssistantDelta 文本增量并入有序块", () => {
+  it("追加到最后一段文本", () => {
+    const msg = appendAssistantDelta(
+      {
+        role: "assistant",
+        text: "你好",
+        blocks: [{ type: "text", text: "你好" }],
+      },
+      "世界",
+    );
+    expect(msg.text).toBe("你好世界");
+    expect(msg.blocks).toEqual([{ type: "text", text: "你好世界" }]);
+  });
+
+  it("末尾是工具调用时新起一段（工具之后的正文不糊成一段），新段带到达时刻", () => {
+    const msg = appendAssistantDelta(
+      {
+        role: "assistant",
+        text: "读完",
+        blocks: [
+          { type: "text", text: "读完" },
+          {
+            type: "tool",
+            tool: {
+              toolCallId: "t",
+              toolName: "read_file",
+              status: "completed",
+            },
+          },
         ],
       },
-    });
-    expect(first.todos).toEqual([
-      { content: "读契约", status: "in_progress" },
-      { content: "改服务端", status: "pending" },
-    ]);
-
-    const second = applyTaskToolEvent(first, {
-      type: "tool.started",
-      toolCallId: "t2",
-      toolName: "write_todos",
-      input: { todos: [{ content: "读契约", status: "completed" }] },
-    });
-    // 整表替换：第二次调用只留一条
-    expect(second.todos).toEqual([{ content: "读契约", status: "completed" }]);
+      "了文件",
+    );
+    expect(msg.text).toBe("读完了文件");
+    expect(msg.blocks).toHaveLength(3);
+    // 旧段不动；新段（工具之后的正文）第一个字到达的时刻要记下（轨迹视图用）
+    expect(msg.blocks?.[0]).toEqual({ type: "text", text: "读完" });
+    expect(msg.blocks?.[2]).toMatchObject({ type: "text", text: "了文件" });
+    const newSegment = msg.blocks?.[2];
+    expect(newSegment?.type === "text" && typeof newSegment.at).toBe("number");
   });
 
-  it("坏入参不清空已有进度（保持原状）", () => {
-    const state = applyTaskToolEvent({ tools: [] } as TaskToolState, {
-      type: "tool.started",
-      toolCallId: "t1",
-      toolName: "write_todos",
-      input: { todos: [{ content: "读契约", status: "completed" }] },
-    });
-    const afterBad = applyTaskToolEvent(state, {
-      type: "tool.started",
-      toolCallId: "t2",
-      toolName: "write_todos",
-      input: { todos: "broken" },
-    });
-    expect(afterBad.todos).toEqual([
-      { content: "读契约", status: "completed" },
+  it("空 delta 原样返回", () => {
+    const msg: TaskMessage = { role: "assistant", text: "x" };
+    expect(appendAssistantDelta(msg, "")).toBe(msg);
+  });
+});
+
+describe("groupAssistantBlocks 连续工具块并组", () => {
+  it("相邻 tool 块并成一组，text 打断连续性", () => {
+    const groups = groupAssistantBlocks([
+      { type: "text", text: "先读" },
+      {
+        type: "tool",
+        tool: { toolCallId: "a", toolName: "read_file", status: "completed" },
+      },
+      {
+        type: "tool",
+        tool: { toolCallId: "b", toolName: "read_file", status: "completed" },
+      },
+      { type: "text", text: "再写" },
+      {
+        type: "tool",
+        tool: { toolCallId: "c", toolName: "edit_file", status: "denied" },
+      },
     ]);
+    expect(groups).toHaveLength(4);
+    expect(groups[0]).toEqual({ kind: "text", text: "先读" });
+    expect(groups[1]).toMatchObject({
+      kind: "tools",
+      tools: [
+        expect.objectContaining({ toolCallId: "a" }),
+        expect.objectContaining({ toolCallId: "b" }),
+      ],
+    });
+    expect(groups[2]).toEqual({ kind: "text", text: "再写" });
+    expect(groups[3]).toMatchObject({
+      kind: "tools",
+      tools: [expect.objectContaining({ toolCallId: "c" })],
+    });
+  });
+});
+
+describe("toolDisplayLabel / toolTargetHint", () => {
+  it("常见工具映射中文标签，未知工具原样返回", () => {
+    expect(toolDisplayLabel("edit_file")).toBe("编辑文件");
+    expect(toolDisplayLabel("execute")).toBe("终端");
+    expect(toolDisplayLabel("web_search")).toBe("联网搜索");
+    expect(toolDisplayLabel("some_new_tool")).toBe("some_new_tool");
   });
 
-  it("非 write_todos 的工具事件不动待办表", () => {
-    const state = applyTaskToolEvent({ tools: [] } as TaskToolState, {
-      type: "tool.started",
-      toolCallId: "t1",
-      toolName: "write_todos",
-      input: { todos: [{ content: "读契约", status: "pending" }] },
-    });
-    const afterOther = applyTaskToolEvent(state, {
-      type: "tool.started",
-      toolCallId: "x1",
-      toolName: "read_file",
-      input: { todos: [{ content: "伪造成待办", status: "completed" }] },
-    });
-    expect(afterOther.todos).toEqual([
-      { content: "读契约", status: "pending" },
-    ]);
+  it("行内提示优先取路径/命令/查询，超长截断", () => {
+    expect(
+      toolTargetHint({
+        toolCallId: "t",
+        toolName: "read_file",
+        status: "completed",
+        input: { path: "/tmp/a.ts" },
+      }),
+    ).toBe("/tmp/a.ts");
+    expect(
+      toolTargetHint({
+        toolCallId: "t",
+        toolName: "execute",
+        status: "completed",
+        input: { command: "x".repeat(80) },
+      }),
+    ).toHaveLength(48);
+    expect(
+      toolTargetHint({
+        toolCallId: "t",
+        toolName: "read_file",
+        status: "completed",
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("耗时起表", () => {
+  it("起点链式推：上一条 起点+耗时；老数据（只有耗时）退到 run 起点", () => {
+    const messages: TaskMessage[] = [
+      { role: "assistant", text: "a", elapsedMs: 2000, startedAt: 1000 },
+    ];
+    expect(nextAssistantStartMs(messages, "2026-09-20T02:10:00.000Z")).toBe(
+      3000,
+    );
+
+    const legacy: TaskMessage[] = [
+      { role: "assistant", text: "a", elapsedMs: 2000 },
+    ];
+    const runStart = new Date("2026-09-20T02:10:00.000Z").getTime();
+    expect(nextAssistantStartMs(legacy, "2026-09-20T02:10:00.000Z")).toBe(
+      runStart,
+    );
   });
 
-  it("write_todos 的完成事件也保留待办表并写入轨迹", () => {
-    const state = applyTaskToolEvent({ tools: [] } as TaskToolState, {
-      type: "tool.started",
-      toolCallId: "t1",
-      toolName: "write_todos",
-      input: { todos: [{ content: "读契约", status: "in_progress" }] },
-    });
-    const done = applyTaskToolEvent(state, {
+  it("只结算第一条未结算的助手消息", () => {
+    const messages: TaskMessage[] = [
+      { role: "user", text: "问" },
+      { role: "assistant", text: "a", elapsedMs: 1000, startedAt: 0 },
+      { role: "assistant", text: "b", startedAt: 1000 },
+    ];
+    const settled = settlePreviousAssistant(messages, 4500);
+    expect(settled[1]?.elapsedMs).toBe(1000);
+    expect(settled[2]?.elapsedMs).toBe(3500);
+  });
+});
+
+describe("工具事件的起止时刻（轨迹视图数据源）", () => {
+  it("tool.started/tool.completed 的事件 timestamp 落成 startedAt/endedAt", () => {
+    let task = applyTaskToolEvent(
+      { ...baseTask, messages: [{ role: "assistant", text: "" }] },
+      {
+        type: "tool.started",
+        toolCallId: "tc_t",
+        toolName: "read_file",
+        timestamp: "2026-09-20T02:10:01.000Z",
+      },
+    );
+    task = applyTaskToolEvent(task, {
       type: "tool.completed",
-      toolCallId: "t1",
-      toolName: "write_todos",
-      outputSummary: "Updated todo list",
-      timestamp: "2026-09-16T00:00:00.000Z",
+      toolCallId: "tc_t",
+      toolName: "read_file",
+      timestamp: "2026-09-20T02:10:03.500Z",
     });
-    expect(done.todos).toEqual([{ content: "读契约", status: "in_progress" }]);
-    expect(done.tools?.[0]).toMatchObject({ status: "completed" });
+    const tool = toolBlocks(task.messages[0])[0];
+    expect(tool?.startedAt).toBe(Date.parse("2026-09-20T02:10:01.000Z"));
+    expect(tool?.endedAt).toBe(Date.parse("2026-09-20T02:10:03.500Z"));
+  });
+
+  it("事件缺 timestamp 时不伪造时刻", () => {
+    const task = applyTaskToolEvent(
+      { ...baseTask, messages: [{ role: "assistant", text: "" }] },
+      { type: "tool.started", toolCallId: "tc_t", toolName: "read_file" },
+    );
+    const tool = toolBlocks(task.messages[0])[0];
+    expect(tool?.startedAt).toBeUndefined();
+  });
+});
+
+describe("migrateLegacyTools 旧数据迁移", () => {
+  it("任务级 tools 挂进最后一条助手消息", () => {
+    const migrated = migrateLegacyTools<{
+      messages: TaskMessage[];
+      tools: TaskToolEntry[];
+    }>({
+      messages: [
+        { role: "user", text: "问" },
+        { role: "assistant", text: "答" },
+      ],
+      tools: [{ toolCallId: "t1", toolName: "read_file", status: "completed" }],
+    });
+    const blocks = migrated.messages[1]?.blocks ?? [];
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toEqual({ type: "text", text: "答" });
+    expect(blocks[1]).toMatchObject({ type: "tool" });
+    expect(migrated.messages[0]?.blocks).toBeUndefined();
+  });
+
+  it("没有 legacy tools 时原样返回", () => {
+    const messages: TaskMessage[] = [{ role: "assistant", text: "答" }];
+    expect(migrateLegacyTools({ messages })).toEqual({ messages });
   });
 });
