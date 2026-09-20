@@ -32,6 +32,11 @@ describe("triggerDownload（统一下载入口）", () => {
     const click = vi
       .spyOn(HTMLAnchorElement.prototype, "click")
       .mockImplementation(() => {});
+    // jsdom 30.1 自带 createObjectURL（读 jsdom Blob 的内部槽），与 Node 领域的
+    // Blob 跨 realm 不兼容——测试里一并 stub，断言只关心「走了对象 URL 这条路」
+    const create = vi
+      .spyOn(URL, "createObjectURL")
+      .mockImplementation(() => "blob:mock");
     const revoke = vi
       .spyOn(URL, "revokeObjectURL")
       .mockImplementation(() => {});
@@ -42,6 +47,7 @@ describe("triggerDownload（统一下载入口）", () => {
     const anchor = click.mock.instances[0] as HTMLAnchorElement;
     expect(anchor.download).toBe("a.png");
     expect(anchor.href).toMatch(/^blob:/);
+    expect(create).toHaveBeenCalledTimes(1);
     expect(revoke).toHaveBeenCalled();
   });
 
@@ -72,6 +78,8 @@ describe("triggerDownload（统一下载入口）", () => {
     const click = vi
       .spyOn(HTMLAnchorElement.prototype, "click")
       .mockImplementation(() => {});
+    vi.spyOn(URL, "createObjectURL").mockImplementation(() => "blob:mock");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
 
     await triggerDownload("a.png", new Blob(["x"]));

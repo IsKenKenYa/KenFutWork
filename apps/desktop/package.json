@@ -12,6 +12,6 @@
     "test": "node scripts/cargo.mjs test"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2"
+    "@tauri-apps/cli": "^2.11.5"
   }
 }
