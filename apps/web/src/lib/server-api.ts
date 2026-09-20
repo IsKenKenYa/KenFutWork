@@ -1153,7 +1153,9 @@ export async function pickDirectory(
 ): Promise<PickDirectoryResponse> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/system/pick-directory`,
-    { method: "POST", headers: authJsonHeaders(accessToken) },
+    // JSON 头必须带 body：Fastify 对空 JSON 体直接 400（FST_ERR_CTP_EMPTY_JSON_BODY），
+    // 错误体里没有 error.message，前端只会看到一句没头没尾的 "Request failed"。
+    { method: "POST", headers: authJsonHeaders(accessToken), body: "{}" },
   );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as PickDirectoryResponse;
