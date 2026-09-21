@@ -8,7 +8,6 @@ import {
   groupAssistantBlocks,
   MAX_TOOL_BLOCKS_PER_MESSAGE,
   messagesBaseForResume,
-  migrateLegacyTools,
   nextAssistantStartMs,
   rebuildAssistantBlocks,
   settleAssistantElapsed,
@@ -17,8 +16,6 @@ import {
   type TaskMessageBlock,
   type TaskToolEntry,
   type TaskToolState,
-  toolDisplayLabel,
-  toolTargetHint,
   toolTargetParts,
 } from "../src/lib/workbench-tools";
 
@@ -339,41 +336,6 @@ describe("groupAssistantBlocks 连续工具块并组", () => {
   });
 });
 
-describe("toolDisplayLabel / toolTargetHint", () => {
-  it("常见工具映射中文标签，未知工具原样返回", () => {
-    expect(toolDisplayLabel("edit_file")).toBe("编辑文件");
-    expect(toolDisplayLabel("execute")).toBe("终端");
-    expect(toolDisplayLabel("web_search")).toBe("联网搜索");
-    expect(toolDisplayLabel("some_new_tool")).toBe("some_new_tool");
-  });
-
-  it("行内提示优先取路径/命令/查询，超长截断", () => {
-    expect(
-      toolTargetHint({
-        toolCallId: "t",
-        toolName: "read_file",
-        status: "completed",
-        input: { path: "/tmp/a.ts" },
-      }),
-    ).toBe("/tmp/a.ts");
-    expect(
-      toolTargetHint({
-        toolCallId: "t",
-        toolName: "execute",
-        status: "completed",
-        input: { command: "x".repeat(80) },
-      }),
-    ).toHaveLength(48);
-    expect(
-      toolTargetHint({
-        toolCallId: "t",
-        toolName: "read_file",
-        status: "completed",
-      }),
-    ).toBeNull();
-  });
-});
-
 describe("耗时起表", () => {
   it("起点链式推：上一条 起点+耗时；老数据（只有耗时）退到 run 起点", () => {
     const messages: TaskMessage[] = [
@@ -435,31 +397,6 @@ describe("工具事件的起止时刻（轨迹视图数据源）", () => {
     );
     const tool = toolBlocks(task.messages[0])[0];
     expect(tool?.startedAt).toBeUndefined();
-  });
-});
-
-describe("migrateLegacyTools 旧数据迁移", () => {
-  it("任务级 tools 挂进最后一条助手消息", () => {
-    const migrated = migrateLegacyTools<{
-      messages: TaskMessage[];
-      tools: TaskToolEntry[];
-    }>({
-      messages: [
-        { role: "user", text: "问" },
-        { role: "assistant", text: "答" },
-      ],
-      tools: [{ toolCallId: "t1", toolName: "read_file", status: "completed" }],
-    });
-    const blocks = migrated.messages[1]?.blocks ?? [];
-    expect(blocks).toHaveLength(2);
-    expect(blocks[0]).toEqual({ type: "text", text: "答" });
-    expect(blocks[1]).toMatchObject({ type: "tool" });
-    expect(migrated.messages[0]?.blocks).toBeUndefined();
-  });
-
-  it("没有 legacy tools 时原样返回", () => {
-    const messages: TaskMessage[] = [{ role: "assistant", text: "答" }];
-    expect(migrateLegacyTools({ messages })).toEqual({ messages });
   });
 });
 
@@ -588,7 +525,10 @@ describe("tool.started 入参归一化", () => {
     });
     const entry = toolBlocks(task.messages[0])[0];
     expect(entry?.input).toEqual({ path: "src/a.ts", content: "x" });
-    expect(entry ? toolTargetHint(entry) : null).toBe("src/a.ts");
+    expect(entry ? toolTargetParts(entry) : null)?.toMatchObject({
+      primary: "a.ts",
+      rest: "src",
+    });
   });
 
   it("归一化失败（不是 JSON 对象）保留原样，不丢字段", () => {

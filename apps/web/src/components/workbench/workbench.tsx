@@ -177,7 +177,6 @@ import {
   applyTaskToolEvent,
   groupAssistantBlocks,
   messagesBaseForResume,
-  migrateLegacyTools,
   nextAssistantStartMs,
   rebuildAssistantBlocks,
   settleAssistantElapsed,
@@ -290,7 +289,6 @@ interface WorkbenchTask {
  * 不能聚成一团。所以这里不做任何聚合：一次调用一行，行本身永远可见，
  * 只有行内的输出详情才默认折叠（点行展开）。
  *
- * 旧数据（无 `blocks`）走纯文本单气泡，行为与改造前一致。
  */
 function AssistantTurn({
   msg,
@@ -303,24 +301,16 @@ function AssistantTurn({
   /** 「查看轨迹」：切到轨迹页签并聚焦这次调用（dsh 的 Inspect 交叉跳转）。 */
   onInspectTool?: (toolCallId: string) => void;
 }) {
-  const groups = useMemo(
-    () =>
-      msg.blocks
-        ? // 纯空白文本段（模型在工具调用前后吐的换行）渲染成空泡泡纯属噪音
-          groupAssistantBlocks(msg.blocks).filter(
-            (g) => g.kind !== "text" || g.text.trim().length > 0,
-          )
-        : null,
-    [msg.blocks],
-  );
-  if (!groups) {
-    // 旧数据单段正文：与新版同款无气泡排版（ZCode 口径——正文直接铺在背景上）
-    return (
-      <div className="w-full max-w-full">
-        <MarkdownRenderer text={msg.text} />
-      </div>
+  // 无 blocks 的消息（纯文本）就地归一化成单文本块——只有一条渲染路径，没有旧版分支
+  const groups = useMemo(() => {
+    const blocks =
+      msg.blocks ??
+      (msg.text ? [{ type: "text" as const, text: msg.text }] : []);
+    // 纯空白文本段（模型在工具调用前后吐的换行）渲染成空泡泡纯属噪音
+    return groupAssistantBlocks(blocks).filter(
+      (g) => g.kind !== "text" || g.text.trim().length > 0,
     );
-  }
+  }, [msg.blocks, msg.text]);
   return (
     <div className="flex w-full max-w-full flex-col items-start gap-2.5">
       {groups.map((group, gi) => {
@@ -925,15 +915,10 @@ export function Workbench() {
    * （serverBlocksSyncedAt 之后 blocks 已带工具块，迁移会自动让位，见 lib 实现）。
    * 刻意不落回存储：没有时序的顺序正是要淘汰的形态。
    */
-  const displayTask = useMemo(
-    () => (activeTask ? migrateLegacyTools(activeTask) : null),
-    [activeTask],
-  );
-
   /** 轨迹账本（对话/轨迹双页签的「轨迹」侧）：按轮次分组、行序即时序。 */
   const trajectoryModel = useMemo(
-    () => buildTrajectory(displayTask?.messages ?? []),
-    [displayTask],
+    () => buildTrajectory(activeTask?.messages ?? []),
+    [activeTask],
   );
 
   /** 从对话流工具行「查看轨迹」跳来的聚焦目标（轨迹页签滚动定位用）。 */
@@ -948,10 +933,10 @@ export function Workbench() {
   const turnProcesses = useMemo(
     () =>
       deriveTurnProcesses(
-        displayTask?.messages ?? [],
-        displayTask ? displayTask.status !== "running" : true,
+        activeTask?.messages ?? [],
+        activeTask ? activeTask.status !== "running" : true,
       ),
-    [displayTask],
+    [activeTask],
   );
   /** 手动展开的折叠轮（会话级 state，不持久化——dsh 同款取舍）。 */
   const [expandedTurnProcesses, setExpandedTurnProcesses] = useState<
@@ -3211,8 +3196,7 @@ export function Workbench() {
                       ) : null}
                       {(() => {
                         // 「最终总结」标题挂在本轮最后一个 assistant 消息上方（R1-1 收尾总结）
-                        // 消息取 displayTask（含旧数据渲染兜底迁移），其余回执仍走 activeTask
-                        const shown = displayTask ?? activeTask;
+                        const shown = activeTask;
                         const lastAssistantIdx = shown.messages.reduce(
                           (last, msg, idx) =>
                             msg.role === "assistant" ? idx : last,

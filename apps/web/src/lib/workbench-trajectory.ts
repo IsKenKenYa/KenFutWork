@@ -8,11 +8,7 @@
  * 消息（含其中的全部工具调用）都归属该轮，回答了「这些工具分别属于哪次对话」。
  */
 
-import type {
-  TaskMessage,
-  TaskMessageBlock,
-  TaskToolEntry,
-} from "./workbench-tools";
+import type { TaskMessage, TaskToolEntry } from "./workbench-tools";
 
 /** 账本一行的类别（badge 文案由渲染层映射：用户 / 思考 / 助手 / 工具）。 */
 export type TrajectoryRowKind = "user" | "reasoning" | "text" | "tool";
@@ -67,20 +63,7 @@ function rowsFromAssistantMessage(
   rows: TrajectoryRow[],
 ): void {
   const runId = message.runId ?? null;
-  const blocks: TaskMessageBlock[] | undefined = message.blocks;
-  if (!blocks) {
-    // 旧数据：整条消息只有全文，落成一行正文
-    if (message.text) {
-      rows.push({
-        kind: "text",
-        atMs: message.startedAt ?? null,
-        text: message.text,
-        runId,
-      });
-    }
-    return;
-  }
-  for (const block of blocks) {
+  for (const block of message.blocks ?? []) {
     if (block.type === "text") {
       if (!block.text) continue;
       rows.push({
@@ -120,8 +103,19 @@ function rowsFromAssistantMessage(
  * 全部归入第 1 轮，不丢行。
  */
 export function buildTrajectory(
-  messages: readonly TaskMessage[],
+  rawMessages: readonly TaskMessage[],
 ): TrajectoryModel {
+  // 无 blocks 的纯文本助手消息就地归一化成单文本块——账本只有一条投影路径
+  const messages = rawMessages.map((message) =>
+    message.role === "assistant" && !message.blocks
+      ? {
+          ...message,
+          blocks: message.text
+            ? [{ type: "text" as const, text: message.text }]
+            : [],
+        }
+      : message,
+  );
   const turns: TrajectoryTurn[] = [];
   let current: TrajectoryTurn | null = null;
   for (const message of messages) {

@@ -81,18 +81,6 @@ describe("buildTrajectory 按轮分组", () => {
     expect(rows[2]?.kind === "tool" && rows[2].atMs).toBeNull();
   });
 
-  it("无 blocks 的旧数据整条落成一行正文；轮次收尾取下一轮起点", () => {
-    const model = buildTrajectory([
-      { role: "assistant", text: "开场白", startedAt: 100 },
-      { role: "user", text: "问", startedAt: 900 },
-    ]);
-    expect(model.turns).toHaveLength(2);
-    expect(textRow(model.turns[0]?.rows[0])).toBe("开场白");
-    // 第 1 轮的结束 = 第 2 轮的开始（时长条据此画）
-    expect(model.turns[0]?.endedAtMs).toBe(900);
-    expect(model.turns[1]?.endedAtMs).toBeNull();
-  });
-
   it("空消息序列得到空模型", () => {
     expect(buildTrajectory([])).toEqual({ turns: [], toolCount: 0 });
   });

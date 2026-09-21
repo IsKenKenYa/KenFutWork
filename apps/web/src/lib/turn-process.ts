@@ -35,16 +35,14 @@ export type TurnProcessSpec = {
 /** 一条消息的尾部正文：末尾连续 text 块的拼接；旧数据（无 blocks）整条即正文。 */
 function tailTextOf(message: TaskMessage): {
   text: string;
-  /** 尾部正文从第几个块开始（无 blocks 时为 0）。 */
+  /** 尾部正文从第几个块开始。 */
   tailStart: number;
 } {
-  if (!message.blocks) {
-    return { text: message.text, tailStart: 0 };
-  }
-  let tailStart = message.blocks.length;
+  let tailStart = message.blocks?.length ?? 0;
+  const blocks = message.blocks ?? [];
   const parts: string[] = [];
-  for (let i = message.blocks.length - 1; i >= 0; i -= 1) {
-    const block = message.blocks[i];
+  for (let i = blocks.length - 1; i >= 0; i -= 1) {
+    const block = blocks[i];
     if (block?.type !== "text" || !block.text) break;
     tailStart = i;
     parts.unshift(block.text);
@@ -53,9 +51,20 @@ function tailTextOf(message: TaskMessage): {
 }
 
 export function deriveTurnProcesses(
-  messages: readonly TaskMessage[],
+  rawMessages: readonly TaskMessage[],
   taskClosed: boolean,
 ): TurnProcessSpec[] {
+  // 无 blocks 的纯文本助手消息就地归一化成单文本块——只有一条判定路径
+  const messages = rawMessages.map((message) =>
+    message.role === "assistant" && !message.blocks
+      ? {
+          ...message,
+          blocks: message.text
+            ? [{ type: "text" as const, text: message.text }]
+            : [],
+        }
+      : message,
+  );
   // ── 轮边界：[start, end) 的消息下标区间；**用户消息开启新轮**（它自己属于该轮，
   // 与轨迹账本 buildTrajectory 的分轮口径一致）；开头没有用户消息的助手消息
   // 防御性归入第 1 轮。
@@ -101,12 +110,7 @@ export function deriveTurnProcesses(
       const message = messages[idx];
       if (!message) continue;
       const isAnswer = idx === answerIndex;
-      const blocks = message.blocks;
-      if (!blocks) {
-        // 旧数据无 blocks：整条消息就是正文；答案消息整体是 tail，其余消息整条折叠
-        if (!isAnswer && message.text) foldedTextCount += 1;
-        continue;
-      }
+      const blocks = message.blocks ?? [];
       const limit = isAnswer ? tail.tailStart : blocks.length;
       for (let b = 0; b < limit; b += 1) {
         const block = blocks[b];

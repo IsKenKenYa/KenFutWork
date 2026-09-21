@@ -350,23 +350,6 @@ export function toolDisplayLabel(toolName: string): string {
   return TOOL_LABELS[toolName] ?? toolName;
 }
 
-/** 行内提示：从入参里取最能说明「这次调用动了什么」的字符串。 */
-export function toolTargetHint(entry: TaskToolEntry): string | null {
-  const input = entry.input;
-  if (!input) return null;
-  const raw =
-    (typeof input.path === "string" && input.path) ||
-    (typeof input.file_path === "string" && input.file_path) ||
-    (typeof input.command === "string" && input.command) ||
-    (typeof input.query === "string" && input.query) ||
-    (typeof input.url === "string" && input.url) ||
-    (typeof input.pattern === "string" && input.pattern) ||
-    (typeof input.slug === "string" && input.slug) ||
-    "";
-  if (!raw) return null;
-  return raw.length > 48 ? `${raw.slice(0, 47)}…` : raw;
-}
-
 export type ToolTargetParts = {
   /** 主文案：文件名（路径类）或完整命令（终端类）。 */
   primary: string;
@@ -379,8 +362,7 @@ export type ToolTargetParts = {
 /**
  * 工具行目标的三段拆分（ZCode 同款）：路径类显示「文件名 + 所在目录」（文件名
  * 是主文案、目录是次级灰），终端命令单独一档（行内 code 风格、font-sans 截断）。
- * 与 `toolTargetHint`（截断的单行提示，轨迹视图用）不同，这里**不截断**——
- * 截断交给渲染层（truncate class），窄列由 CSS 隐藏次级。
+ * 不在此截断——截断交给渲染层（truncate class），窄列由 CSS 隐藏次级。
  */
 export function toolTargetParts(entry: TaskToolEntry): ToolTargetParts | null {
   const input = entry.input;
@@ -491,42 +473,6 @@ export function rebuildAssistantBlocks(
     });
   }
   return blocks;
-}
-
-/**
- * 旧数据的有损迁移：v0 桌面包把工具轨迹挂在**任务级** `tools`（尾部 10 条、无时序）。
- * 最后一格兜底——服务端真序重建（`rebuildAssistantBlocks`）拉不到时，旧任务至少还能
- * 看到「用过哪些工具」，而不是什么都不显示。已有工具块（真序数据）的消息**不叠加**：
- * 无时序的旧数组盖在真序块上只会制造重复。
- *
- * 仅用于**渲染兜底**：调用方不得把返回值写回持久化（没有时序的顺序正是要淘汰的形态）。
- */
-export function migrateLegacyTools<
-  T extends {
-    messages: TaskMessage[];
-    tools?: TaskToolEntry[] | undefined;
-  },
->(task: T): T {
-  const tools = task.tools ?? [];
-  if (tools.length === 0) return task;
-  const messages = [...task.messages];
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const message = messages[i];
-    if (message?.role !== "assistant") continue;
-    const existing =
-      message.blocks ??
-      (message.text ? [{ type: "text" as const, text: message.text }] : []);
-    if (existing.some((b) => b.type === "tool")) return task;
-    messages[i] = {
-      ...message,
-      blocks: [
-        ...existing,
-        ...tools.map((tool) => ({ type: "tool" as const, tool })),
-      ],
-    };
-    return { ...task, messages };
-  }
-  return task;
 }
 
 /**

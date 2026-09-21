@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { formatElapsedSeconds } from "@/lib/elapsed";
-import { toolDisplayLabel, toolTargetHint } from "@/lib/workbench-tools";
+import { toolDisplayLabel, toolTargetParts } from "@/lib/workbench-tools";
 import {
   buildTimelineLayout,
   type FlatTrajectoryRow,
@@ -120,7 +120,7 @@ function ToolRowBody({
   const { tool } = row;
   const hasDetail =
     Boolean(tool.input) || Boolean(tool.output) || Boolean(tool.summary);
-  const hint = toolTargetHint(tool);
+  const target = toolTargetParts(tool);
   const meta = toolStatusMeta(tool);
   return (
     <div className="min-w-0 flex-1">
@@ -139,9 +139,12 @@ function ToolRowBody({
         <span className="shrink-0 font-medium">
           {toolDisplayLabel(tool.toolName)}
         </span>
-        {hint ? (
-          <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground/80">
-            {hint}
+        {target ? (
+          <span
+            className="min-w-0 truncate font-mono text-[11px] text-muted-foreground/80"
+            title={target.rest ? `${target.rest}/${target.primary}` : undefined}
+          >
+            {target.primary}
           </span>
         ) : null}
         <span
@@ -250,10 +253,9 @@ function rowMatchesQuery(entry: FlatTrajectoryRow, query: string): boolean {
   if (!query) return true;
   const { row } = entry;
   if (row.kind === "tool") {
-    const hint = toolTargetHint(row.tool) ?? "";
-    return `${row.tool.toolName} ${toolDisplayLabel(row.tool.toolName)} ${hint}`
-      .toLowerCase()
-      .includes(query);
+    const target = toolTargetParts(row.tool);
+    const searchable = `${row.tool.toolName} ${toolDisplayLabel(row.tool.toolName)} ${target?.primary ?? ""} ${target?.rest ?? ""}`;
+    return searchable.toLowerCase().includes(query);
   }
   return row.text.toLowerCase().includes(query);
 }

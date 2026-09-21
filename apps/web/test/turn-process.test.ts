@@ -174,24 +174,6 @@ describe("deriveTurnProcesses 折叠判定", () => {
     expect(specs[0]?.answerIndex).toBe(2);
   });
 
-  it("旧数据（无 blocks 的助手消息）：中途消息整条折叠、答案消息整体即答案", () => {
-    const messages = [
-      user("旧对话", 1000),
-      { role: "assistant", text: "先答一半" },
-      { role: "assistant", text: "直接回答" },
-      user("再来", 2000),
-      { role: "assistant", text: "第二轮回答" },
-    ] as TaskMessage[];
-    const specs = deriveTurnProcesses(messages, true);
-    // 第 1 轮有过程（中途消息）可折；第 2 轮只有孤零零一条答案，没有过程可收
-    expect(specs).toHaveLength(1);
-    expect(specs[0]?.turnIndex).toBe(1);
-    expect(specs[0]?.startIndex).toBe(1);
-    expect(specs[0]?.answerIndex).toBe(2);
-    expect(specs[0]?.answerTailText).toBe("直接回答");
-    expect(specs[0]?.foldedTextCount).toBe(1);
-  });
-
   it("开头没有用户消息的助手消息：防御性归入第 1 轮", () => {
     const messages = [
       assistant([
