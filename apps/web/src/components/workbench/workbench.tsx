@@ -3011,7 +3011,7 @@ export function Workbench() {
                 这两个 chip 取**对话自己绑定的项目**（run 的作用域就是它），
                 不依赖侧栏选中态——否则打开历史对话时它们会消失（用户反馈）。 */}
               <div className="shrink-0 pr-[var(--scrollbar-lane,0px)]">
-                <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-6 pt-6 pb-4">
+                <div className="flex w-full items-center gap-2 px-8 pt-6 pb-4">
                   <h1 className="min-w-0 truncate text-lg font-medium">
                     {activeTask.title}
                   </h1>
@@ -3084,7 +3084,7 @@ export function Workbench() {
                 <div
                   role="tablist"
                   aria-label="转录视图"
-                  className="mx-auto flex w-full max-w-3xl items-center gap-1 px-6"
+                  className="flex w-full items-center gap-1 px-8"
                 >
                   {(
                     [
@@ -3115,7 +3115,7 @@ export function Workbench() {
                 className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
                 onContextMenu={chatMenu.open}
               >
-                <div className="mx-auto w-full max-w-3xl space-y-4 px-6 pb-2">
+                <div className="w-full space-y-4 px-8 pb-2">
                   {transcriptTab === "trajectory" ? (
                     <TrajectoryView
                       model={trajectoryModel}
@@ -3353,7 +3353,7 @@ export function Workbench() {
 
               <div className="shrink-0 pr-[var(--scrollbar-lane,0px)]">
                 <form
-                  className="mx-auto w-full max-w-3xl px-6 pt-3 pb-4"
+                  className="w-full px-8 pt-3 pb-4"
                   onSubmit={(e) => {
                     e.preventDefault();
                     const value = expandCommand(followUp, commands).text;
@@ -3575,7 +3575,7 @@ ${formatElementReference(picked)}`
             />
           </div>
         ) : (
-          <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-6">
+          <div className="flex h-full flex-col items-center justify-center px-8">
             <div className="mb-9 flex items-center gap-3">
               {/* 尺寸与笔画各调过一轮（用户口径：h-14 + stroke 3 太粗太大 → stroke 2 又太细）：
                   现在 h-9（36px 盒 → 墨高 18px）+ strokeWidth 2.5，取中间 */}
