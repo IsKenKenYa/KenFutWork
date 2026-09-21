@@ -103,19 +103,8 @@ function rowsFromAssistantMessage(
  * 全部归入第 1 轮，不丢行。
  */
 export function buildTrajectory(
-  rawMessages: readonly TaskMessage[],
+  messages: readonly TaskMessage[],
 ): TrajectoryModel {
-  // 无 blocks 的纯文本助手消息就地归一化成单文本块——账本只有一条投影路径
-  const messages = rawMessages.map((message) =>
-    message.role === "assistant" && !message.blocks
-      ? {
-          ...message,
-          blocks: message.text
-            ? [{ type: "text" as const, text: message.text }]
-            : [],
-        }
-      : message,
-  );
   const turns: TrajectoryTurn[] = [];
   let current: TrajectoryTurn | null = null;
   for (const message of messages) {

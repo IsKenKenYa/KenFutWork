@@ -48,7 +48,10 @@ function toolBlocks(message: TaskMessage | undefined): TaskToolEntry[] {
 describe("applyTaskToolEvent 工具轨迹", () => {
   it("普通工具也进轨迹（不要求是子代理工具）", () => {
     const task = applyTaskToolEvent(
-      { ...baseTask, messages: [{ role: "assistant", text: "正在读文件" }] },
+      {
+        ...baseTask,
+        messages: [{ role: "assistant", text: "正在读文件", blocks: [] }],
+      },
       {
         type: "tool.started",
         toolCallId: "tc_1",
@@ -65,7 +68,7 @@ describe("applyTaskToolEvent 工具轨迹", () => {
 
   it("同一 toolCallId 的重复 started 不重复入块", () => {
     const task = applyTaskToolEvent(
-      { ...baseTask, messages: [{ role: "assistant", text: "" }] },
+      { ...baseTask, messages: [{ role: "assistant", text: "", blocks: [] }] },
       { type: "tool.started", toolCallId: "tc_1", toolName: "read_file" },
     );
     const task2 = applyTaskToolEvent(task, {
@@ -78,7 +81,7 @@ describe("applyTaskToolEvent 工具轨迹", () => {
 
   it("completed 就地收尾对应块（状态/结论/输出）", () => {
     let task = applyTaskToolEvent(
-      { ...baseTask, messages: [{ role: "assistant", text: "" }] },
+      { ...baseTask, messages: [{ role: "assistant", text: "", blocks: [] }] },
       { type: "tool.started", toolCallId: "tc_1", toolName: "read_file" },
     );
     task = applyTaskToolEvent(task, {
@@ -97,7 +100,10 @@ describe("applyTaskToolEvent 工具轨迹", () => {
 
   it("找不到块的 completed 不造孤儿行", () => {
     const task = applyTaskToolEvent(
-      { ...baseTask, messages: [{ role: "assistant", text: "正文" }] },
+      {
+        ...baseTask,
+        messages: [{ role: "assistant", text: "正文", blocks: [] }],
+      },
       {
         type: "tool.completed",
         toolCallId: "tc_missing",
@@ -110,7 +116,7 @@ describe("applyTaskToolEvent 工具轨迹", () => {
 
   it("被拒（output.denied）记为 denied，不伪装成已完成", () => {
     let task = applyTaskToolEvent(
-      { ...baseTask, messages: [{ role: "assistant", text: "" }] },
+      { ...baseTask, messages: [{ role: "assistant", text: "", blocks: [] }] },
       { type: "tool.started", toolCallId: "tc_1", toolName: "write_file" },
     );
     task = applyTaskToolEvent(task, {
@@ -126,7 +132,7 @@ describe("applyTaskToolEvent 工具轨迹", () => {
 
   it("tool.started 带上入参快照（行内显示动了什么）", () => {
     const task = applyTaskToolEvent(
-      { ...baseTask, messages: [{ role: "assistant", text: "" }] },
+      { ...baseTask, messages: [{ role: "assistant", text: "", blocks: [] }] },
       {
         type: "tool.started",
         toolCallId: "tc_1",
@@ -157,12 +163,13 @@ describe("applyTaskToolEvent 工具轨迹", () => {
     let task = {
       ...baseTask,
       messages: [
-        { role: "user" as const, text: "读一下" },
+        { role: "user" as const, text: "读一下", blocks: [] },
         {
           role: "assistant" as const,
           text: "第一轮回",
           elapsedMs: 1000,
           startedAt: 0,
+          blocks: [],
         },
       ],
       // runStart（500ms）早于上一轮结束（1000ms）：链式取上一轮结束
@@ -171,7 +178,10 @@ describe("applyTaskToolEvent 工具轨迹", () => {
     // 第二轮：用户追问 → 工具先到 → 正文再到
     task = {
       ...task,
-      messages: [...task.messages, { role: "user" as const, text: "再读" }],
+      messages: [
+        ...task.messages,
+        { role: "user" as const, text: "再读", blocks: [] },
+      ],
     };
     task = applyTaskToolEvent(task, {
       type: "tool.started",
@@ -213,7 +223,7 @@ describe("applyTaskToolEvent 工具轨迹", () => {
 
   it("write_todos 覆盖式更新目标进度", () => {
     const task = applyTaskToolEvent(
-      { ...baseTask, messages: [{ role: "assistant", text: "" }] },
+      { ...baseTask, messages: [{ role: "assistant", text: "", blocks: [] }] },
       {
         type: "tool.started",
         toolCallId: "tc_1",
@@ -240,7 +250,7 @@ describe("applyTaskToolEvent 工具轨迹", () => {
     const task = applyTaskToolEvent(
       {
         ...baseTask,
-        messages: [{ role: "assistant", text: "" }],
+        messages: [{ role: "assistant", text: "", blocks: [] }],
         todos:
           parseTodos({
             todos: [{ content: "旧目标", status: "in_progress" }],
@@ -296,7 +306,7 @@ describe("appendAssistantDelta 文本增量并入有序块", () => {
   });
 
   it("空 delta 原样返回", () => {
-    const msg: TaskMessage = { role: "assistant", text: "x" };
+    const msg: TaskMessage = { role: "assistant", text: "x", blocks: [] };
     expect(appendAssistantDelta(msg, "")).toBe(msg);
   });
 });
@@ -339,7 +349,13 @@ describe("groupAssistantBlocks 连续工具块并组", () => {
 describe("耗时起表", () => {
   it("起点链式推：上一条 起点+耗时；老数据（只有耗时）退到 run 起点", () => {
     const messages: TaskMessage[] = [
-      { role: "assistant", text: "a", elapsedMs: 2000, startedAt: 1000 },
+      {
+        role: "assistant",
+        text: "a",
+        elapsedMs: 2000,
+        startedAt: 1000,
+        blocks: [],
+      },
     ];
     // 链式值（3000）晚于本轮起点（500）：取链式
     expect(nextAssistantStartMs(messages, "1970-01-01T00:00:00.500Z")).toBe(
@@ -347,7 +363,7 @@ describe("耗时起表", () => {
     );
 
     const legacy: TaskMessage[] = [
-      { role: "assistant", text: "a", elapsedMs: 2000 },
+      { role: "assistant", text: "a", elapsedMs: 2000, blocks: [] },
     ];
     // 老数据只有耗时推不出链式：退到 run 起点
     const runStart = new Date("1970-01-01T00:00:00.500Z").getTime();
@@ -358,9 +374,15 @@ describe("耗时起表", () => {
 
   it("只结算第一条未结算的助手消息", () => {
     const messages: TaskMessage[] = [
-      { role: "user", text: "问" },
-      { role: "assistant", text: "a", elapsedMs: 1000, startedAt: 0 },
-      { role: "assistant", text: "b", startedAt: 1000 },
+      { role: "user", text: "问", blocks: [] },
+      {
+        role: "assistant",
+        text: "a",
+        elapsedMs: 1000,
+        startedAt: 0,
+        blocks: [],
+      },
+      { role: "assistant", text: "b", startedAt: 1000, blocks: [] },
     ];
     const settled = settlePreviousAssistant(messages, 4500);
     expect(settled[1]?.elapsedMs).toBe(1000);
@@ -371,7 +393,7 @@ describe("耗时起表", () => {
 describe("工具事件的起止时刻（轨迹视图数据源）", () => {
   it("tool.started/tool.completed 的事件 timestamp 落成 startedAt/endedAt", () => {
     let task = applyTaskToolEvent(
-      { ...baseTask, messages: [{ role: "assistant", text: "" }] },
+      { ...baseTask, messages: [{ role: "assistant", text: "", blocks: [] }] },
       {
         type: "tool.started",
         toolCallId: "tc_t",
@@ -392,7 +414,7 @@ describe("工具事件的起止时刻（轨迹视图数据源）", () => {
 
   it("事件缺 timestamp 时不伪造时刻", () => {
     const task = applyTaskToolEvent(
-      { ...baseTask, messages: [{ role: "assistant", text: "" }] },
+      { ...baseTask, messages: [{ role: "assistant", text: "", blocks: [] }] },
       { type: "tool.started", toolCallId: "tc_t", toolName: "read_file" },
     );
     const tool = toolBlocks(task.messages[0])[0];
@@ -403,7 +425,7 @@ describe("工具事件的起止时刻（轨迹视图数据源）", () => {
 describe("appendThinkingDelta 思考流", () => {
   it("思考先于正文到达：新建助手消息承载 reasoning 块，且不并入 text", () => {
     const message = appendThinkingDelta(
-      { role: "assistant", text: "" },
+      { role: "assistant", text: "", blocks: [] },
       "先分析结构",
     );
     expect(message.text).toBe("");
@@ -414,7 +436,7 @@ describe("appendThinkingDelta 思考流", () => {
 
   it("连续思考增量续写同一块；正文到达后新起 text 段（顺序即时间线）", () => {
     let message = appendThinkingDelta(
-      { role: "assistant", text: "" },
+      { role: "assistant", text: "", blocks: [] },
       "第一段思考",
     );
     message = appendThinkingDelta(message, "，接着想");
@@ -441,7 +463,7 @@ describe("appendThinkingDelta 思考流", () => {
 
   it("正文之后再思考：新起 reasoning 段，不污染正文", () => {
     let message = appendAssistantDelta(
-      { role: "assistant", text: "" },
+      { role: "assistant", text: "", blocks: [] },
       "先写一段",
     );
     message = appendThinkingDelta(message, "想想接下来");
@@ -620,7 +642,7 @@ describe("settleAssistantElapsed 终态结算（回归：不得抹掉 blocks/run
     const task: { status: string; messages: TaskMessage[] } = {
       status: "completed",
       messages: [
-        { role: "user", text: "问" },
+        { role: "user", text: "问", blocks: [] },
         {
           role: "assistant",
           text: "答",
@@ -649,7 +671,9 @@ describe("settleAssistantElapsed 终态结算（回归：不得抹掉 blocks/run
   });
 
   it("末条不是 assistant 或没有起点时原样返回", () => {
-    const task = { messages: [{ role: "user" as const, text: "问" }] };
+    const task = {
+      messages: [{ role: "user" as const, text: "问", blocks: [] }],
+    };
     expect(settleAssistantElapsed(task)).toBe(task);
   });
 });
@@ -657,8 +681,14 @@ describe("settleAssistantElapsed 终态结算（回归：不得抹掉 blocks/run
 describe("nextAssistantStartMs 跨轮防陈旧", () => {
   it("追问隔了很久：本轮第一条消息的起点不早于本轮 run 起点（「已工作」不再被撑到几分钟）", () => {
     const messages: TaskMessage[] = [
-      { role: "user", text: "一", startedAt: 1_000 },
-      { role: "assistant", text: "答一", startedAt: 1_100, elapsedMs: 7_000 },
+      { role: "user", text: "一", startedAt: 1_000, blocks: [] },
+      {
+        role: "assistant",
+        text: "答一",
+        startedAt: 1_100,
+        elapsedMs: 7_000,
+        blocks: [],
+      },
     ];
     // 上一轮结束 = 8_100；本轮 60 秒后才开始 → 起点应取本轮起点 68_100
     expect(nextAssistantStartMs(messages, "1970-01-01T00:01:08.100Z")).toBe(
@@ -668,7 +698,13 @@ describe("nextAssistantStartMs 跨轮防陈旧", () => {
 
   it("同轮内多段消息：仍链式取上一段结束（行为不变）", () => {
     const messages: TaskMessage[] = [
-      { role: "assistant", text: "a", startedAt: 1_000, elapsedMs: 500 },
+      {
+        role: "assistant",
+        text: "a",
+        startedAt: 1_000,
+        elapsedMs: 500,
+        blocks: [],
+      },
     ];
     expect(nextAssistantStartMs(messages, "1970-01-01T00:00:00.500Z")).toBe(
       1_500,
@@ -679,9 +715,9 @@ describe("nextAssistantStartMs 跨轮防陈旧", () => {
 describe("messagesBaseForResume 断线重连基底", () => {
   it("丢掉最后一条用户消息之后的半截 assistant 内容，用户消息本身保留", () => {
     const messages: TaskMessage[] = [
-      { role: "user", text: "一" },
-      { role: "assistant", text: "答一" },
-      { role: "user", text: "二" },
+      { role: "user", text: "一", blocks: [] },
+      { role: "assistant", text: "答一", blocks: [] },
+      { role: "user", text: "二", blocks: [] },
       {
         role: "assistant",
         text: "半截",
@@ -699,9 +735,9 @@ describe("messagesBaseForResume 断线重连基底", () => {
   });
 
   it("没有用户消息（防御）返回空数组；空数组原样", () => {
-    expect(messagesBaseForResume([{ role: "assistant", text: "a" }])).toEqual(
-      [],
-    );
+    expect(
+      messagesBaseForResume([{ role: "assistant", text: "a", blocks: [] }]),
+    ).toEqual([]);
     expect(messagesBaseForResume([])).toEqual([]);
   });
 });

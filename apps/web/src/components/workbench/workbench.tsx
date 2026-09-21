@@ -302,15 +302,14 @@ function AssistantTurn({
   onInspectTool?: (toolCallId: string) => void;
 }) {
   // 无 blocks 的消息（纯文本）就地归一化成单文本块——只有一条渲染路径，没有旧版分支
-  const groups = useMemo(() => {
-    const blocks =
-      msg.blocks ??
-      (msg.text ? [{ type: "text" as const, text: msg.text }] : []);
-    // 纯空白文本段（模型在工具调用前后吐的换行）渲染成空泡泡纯属噪音
-    return groupAssistantBlocks(blocks).filter(
-      (g) => g.kind !== "text" || g.text.trim().length > 0,
-    );
-  }, [msg.blocks, msg.text]);
+  const groups = useMemo(
+    () =>
+      // 纯空白文本段（模型在工具调用前后吐的换行）渲染成空泡泡纯属噪音
+      groupAssistantBlocks(msg.blocks).filter(
+        (g) => g.kind !== "text" || g.text.trim().length > 0,
+      ),
+    [msg.blocks],
+  );
   return (
     <div className="flex w-full max-w-full flex-col items-start gap-2.5">
       {groups.map((group, gi) => {
@@ -615,25 +614,30 @@ const MODE_META: Record<
   },
 };
 
-const TASKS_STORAGE_KEY = "workbench-tasks";
+/**
+ * 任务存储 key **带 schema 版本**：任务形状变化（blocks 必填等）时升版，
+ * 旧版本 key 在首次读取时直接删除——不做任何旧数据迁移/兼容（开发期无用户，
+ * 坏数据直接弃，保证进入渲染器的任务永远是当前形状）。
+ */
+const TASKS_STORAGE_KEY = "workbench-tasks:v2";
+const LEGACY_TASKS_STORAGE_KEYS = [
+  "workbench-tasks:code",
+  "workbench-tasks:design",
+];
 
 /** 「未分组」在「显示更多」展开状态里的分组 key（项目 id 不会取到这个名字）。 */
 const UNGROUPED_KEY = "__ungrouped__";
 
 function loadTasks(mode: WorkbenchMode): WorkbenchTask[] {
   if (typeof window === "undefined") return [];
+  // 旧版本 key 直接清掉（其中的任务形状已过期，读了只会制造双形状）
+  for (const key of LEGACY_TASKS_STORAGE_KEYS) {
+    window.localStorage.removeItem(key);
+  }
   try {
     const raw = window.localStorage.getItem(`${TASKS_STORAGE_KEY}:${mode}`);
     if (!raw) return [];
-    // 迁移：旧数据无 projectId/archived 字段时补默认值。
-    // 注意：**不**在这里把旧的 `task.tools` 拼进消息——本地没有时序信息，只能拼出
-    // 「文本在前、工具全部堆尾」，正是用户三次反馈的毛病。真序重建走服务端
-    // contentBlocks（见下方 serverBlocksResync 副作用），拉取失败才退化为有损迁移。
-    return (JSON.parse(raw) as WorkbenchTask[]).map((t) => ({
-      ...t,
-      projectId: t.projectId ?? null,
-      archived: t.archived ?? false,
-    }));
+    return JSON.parse(raw) as WorkbenchTask[];
   } catch {
     return [];
   }
@@ -1649,6 +1653,7 @@ export function Workbench() {
                   {
                     role: "assistant" as const,
                     text: "服务已重启，本轮运行中断，请重试。",
+                    blocks: [],
                   },
                 ],
               }
@@ -1860,7 +1865,10 @@ export function Workbench() {
         apply((task) => ({
           ...task,
           status: "failed",
-          messages: [...task.messages, { role: "assistant", text: message }],
+          messages: [
+            ...task.messages,
+            { role: "assistant", text: message, blocks: [] },
+          ],
         }));
         taskSaver.flush(mode);
         markUnreadIfBackground();
@@ -1880,7 +1888,7 @@ export function Workbench() {
             : {}),
           messages: [
             ...task.messages,
-            { role: "assistant", text: failureText },
+            { role: "assistant", text: failureText, blocks: [] },
           ],
         }));
         // 失败的轮也可能已写文件（服务端收尾 finally 里照打结束快照）：同样补检查点条
@@ -2198,7 +2206,14 @@ export function Workbench() {
         title,
         mode,
         createdAt: Date.now(),
-        messages: [{ role: "user", text: text.trim(), startedAt: Date.now() }],
+        messages: [
+          {
+            role: "user",
+            text: text.trim(),
+            startedAt: Date.now(),
+            blocks: [],
+          },
+        ],
         status: "running",
         projectId: mode === "code" ? (resolvedProject?.id ?? null) : null,
         archived: false,
@@ -2226,7 +2241,7 @@ export function Workbench() {
                   runEndedAt: new Date().toISOString(),
                   messages: [
                     ...t.messages,
-                    { role: "assistant" as const, text },
+                    { role: "assistant" as const, text, blocks: [] },
                   ],
                 }
               : t,
@@ -2428,6 +2443,7 @@ export function Workbench() {
                     role: "user" as const,
                     text: text.trim(),
                     startedAt: Date.now(),
+                    blocks: [],
                   },
                 ],
                 status: "running" as const,

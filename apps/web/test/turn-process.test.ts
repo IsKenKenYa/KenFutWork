@@ -15,7 +15,12 @@ import type { TaskMessage } from "../src/lib/workbench-tools";
  */
 
 function user(text: string, startedAt?: number): TaskMessage {
-  return { role: "user", text, ...(startedAt ? { startedAt } : {}) };
+  return {
+    role: "user",
+    text,
+    blocks: [],
+    ...(startedAt ? { startedAt } : {}),
+  };
 }
 
 function assistant(

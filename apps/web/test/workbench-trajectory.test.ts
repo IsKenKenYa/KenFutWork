@@ -25,7 +25,7 @@ function textRow(row: TrajectoryRow | undefined): string | null {
 describe("buildTrajectory 按轮分组", () => {
   it("用户消息开一轮；其后助手文本段与工具调用按发生顺序归属该轮", () => {
     const model = buildTrajectory([
-      { role: "user", text: "读一下", startedAt: 1000 },
+      { role: "user", text: "读一下", startedAt: 1000, blocks: [] },
       {
         role: "assistant",
         text: "先读",
@@ -39,7 +39,7 @@ describe("buildTrajectory 按轮分组", () => {
           { type: "text", text: "读完", at: 1600 },
         ],
       },
-      { role: "user", text: "再读", startedAt: 2000 },
+      { role: "user", text: "再读", startedAt: 2000, blocks: [] },
       {
         role: "assistant",
         text: "工具先到",
@@ -154,10 +154,18 @@ describe("思考行与 runId 归属", () => {
 describe("flattenTrajectory 全局行号", () => {
   it("跨轮连续编号，key 稳定可作 DOM 锚", () => {
     const model = buildTrajectory([
-      { role: "user", text: "一", startedAt: 1000 },
-      { role: "assistant", text: "答一" },
-      { role: "user", text: "二", startedAt: 2000 },
-      { role: "assistant", text: "答二" },
+      { role: "user", text: "一", startedAt: 1000, blocks: [] },
+      {
+        role: "assistant",
+        text: "答一",
+        blocks: [{ type: "text", text: "答一" }],
+      },
+      { role: "user", text: "二", startedAt: 2000, blocks: [] },
+      {
+        role: "assistant",
+        text: "答二",
+        blocks: [{ type: "text", text: "答二" }],
+      },
     ]);
     const flat = flattenTrajectory(model);
     expect(flat.map((e) => e.number)).toEqual([1, 2, 3, 4]);
@@ -169,7 +177,7 @@ describe("flattenTrajectory 全局行号", () => {
 
 describe("buildTimelineSpans 时间轴几何", () => {
   const model = buildTrajectory([
-    { role: "user", text: "问", startedAt: 1000 },
+    { role: "user", text: "问", startedAt: 1000, blocks: [] },
     {
       role: "assistant",
       text: "",
@@ -205,7 +213,7 @@ describe("buildTimelineSpans 时间轴几何", () => {
 
 describe("buildTimelineLayout 与拖选聚焦", () => {
   const model = buildTrajectory([
-    { role: "user", text: "问", startedAt: 1000 },
+    { role: "user", text: "问", startedAt: 1000, blocks: [] },
     {
       role: "assistant",
       text: "",

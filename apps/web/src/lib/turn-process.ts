@@ -51,20 +51,9 @@ function tailTextOf(message: TaskMessage): {
 }
 
 export function deriveTurnProcesses(
-  rawMessages: readonly TaskMessage[],
+  messages: readonly TaskMessage[],
   taskClosed: boolean,
 ): TurnProcessSpec[] {
-  // 无 blocks 的纯文本助手消息就地归一化成单文本块——只有一条判定路径
-  const messages = rawMessages.map((message) =>
-    message.role === "assistant" && !message.blocks
-      ? {
-          ...message,
-          blocks: message.text
-            ? [{ type: "text" as const, text: message.text }]
-            : [],
-        }
-      : message,
-  );
   // ── 轮边界：[start, end) 的消息下标区间；**用户消息开启新轮**（它自己属于该轮，
   // 与轨迹账本 buildTrajectory 的分轮口径一致）；开头没有用户消息的助手消息
   // 防御性归入第 1 轮。

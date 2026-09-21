@@ -79,10 +79,11 @@ export type TaskMessage = {
    */
   text: string;
   /**
-   * 助手消息的有序块（文本/思考/工具交错）。缺省 = 旧数据/纯文本消息，
-   * 渲染走 `text` 单气泡，行为与改造前一致。
+   * 有序块（文本/思考/工具交错）——**必填**：消息只有这一种形状，渲染层与
+   * 投影层不做任何「无 blocks」的兜底（开发期无历史用户，schema 直接收敛）。
+   * 纯文本消息就是 `[{ type: "text", text }]`，空消息是 `[]`。
    */
-  blocks?: TaskMessageBlock[];
+  blocks: TaskMessageBlock[];
 };
 
 /**
@@ -159,9 +160,7 @@ export function appendThinkingDelta(
   delta: string,
 ): TaskMessage {
   if (!delta) return message;
-  const blocks =
-    message.blocks ??
-    (message.text ? [{ type: "text" as const, text: message.text }] : []);
+  const blocks = message.blocks;
   const last = blocks[blocks.length - 1];
   const nextBlocks: TaskMessageBlock[] =
     last?.type === "reasoning"
@@ -191,9 +190,7 @@ export function appendAssistantDelta(
   delta: string,
 ): TaskMessage {
   if (!delta) return message;
-  const blocks =
-    message.blocks ??
-    (message.text ? [{ type: "text" as const, text: message.text }] : []);
+  const blocks = message.blocks;
   const last = blocks[blocks.length - 1];
   const nextBlocks: TaskMessageBlock[] =
     last?.type === "text"
@@ -492,8 +489,7 @@ function startToolBlock(
       (b) => b.type === "tool" && b.tool.toolCallId === entry.toolCallId,
     );
     if (exists) return messages;
-    const blocks: TaskMessageBlock[] =
-      last.blocks ?? (last.text ? [{ type: "text", text: last.text }] : []);
+    const blocks = last.blocks;
     messages[messages.length - 1] = {
       ...last,
       blocks: capToolBlocks([...blocks, { type: "tool", tool: entry }]),
