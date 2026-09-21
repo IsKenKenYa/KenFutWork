@@ -24,6 +24,8 @@ export interface SidebarRowProps {
   label: string;
   active?: boolean;
   icon?: React.ReactNode;
+  /** 行尾次级信息（如相对时间）；hover 时让位给「⋯」菜单。 */
+  trailing?: React.ReactNode;
   onOpen: () => void;
   onRename: (next: string) => void;
   onArchive?: () => void;
@@ -39,6 +41,7 @@ export function SidebarRow({
   label,
   active,
   icon,
+  trailing,
   onOpen,
   onRename,
   onArchive,
@@ -113,6 +116,11 @@ export function SidebarRow({
       >
         {icon}
         <span className="truncate">{label}</span>
+        {trailing ? (
+          <span className="ml-auto shrink-0 pl-2 text-[11px] tabular-nums text-muted-foreground/60 transition-opacity group-hover/row:opacity-0">
+            {trailing}
+          </span>
+        ) : null}
       </button>
       <DropdownMenu>
         <DropdownMenuTrigger

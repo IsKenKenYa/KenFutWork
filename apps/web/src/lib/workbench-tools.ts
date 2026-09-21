@@ -367,6 +367,59 @@ export function toolTargetHint(entry: TaskToolEntry): string | null {
   return raw.length > 48 ? `${raw.slice(0, 47)}…` : raw;
 }
 
+export type ToolTargetParts = {
+  /** 主文案：文件名（路径类）或完整命令（终端类）。 */
+  primary: string;
+  /** 次文案：路径类时为所在目录（完整路径进 title）；其余为 null。 */
+  rest: string | null;
+  /** 终端命令（用 code 风格渲染）。 */
+  isCommand: boolean;
+};
+
+/**
+ * 工具行目标的三段拆分（ZCode 同款）：路径类显示「文件名 + 所在目录」（文件名
+ * 是主文案、目录是次级灰），终端命令单独一档（行内 code 风格、font-sans 截断）。
+ * 与 `toolTargetHint`（截断的单行提示，轨迹视图用）不同，这里**不截断**——
+ * 截断交给渲染层（truncate class），窄列由 CSS 隐藏次级。
+ */
+export function toolTargetParts(entry: TaskToolEntry): ToolTargetParts | null {
+  const input = entry.input;
+  if (!input) return null;
+  const raw =
+    (typeof input.path === "string" && input.path) ||
+    (typeof input.file_path === "string" && input.file_path) ||
+    "";
+  if (raw) {
+    const normalized = raw.replace(/\\/g, "/");
+    const cut = normalized.lastIndexOf("/");
+    if (cut < 0 || cut === normalized.length - 1) {
+      return { primary: normalized, rest: null, isCommand: false };
+    }
+    return {
+      primary: normalized.slice(cut + 1),
+      rest: normalized.slice(0, cut),
+      isCommand: false,
+    };
+  }
+  const command =
+    typeof input.command === "string" && input.command ? input.command : null;
+  if (command) {
+    return {
+      primary: command,
+      rest: null,
+      isCommand: true,
+    };
+  }
+  const text =
+    (typeof input.query === "string" && input.query) ||
+    (typeof input.url === "string" && input.url) ||
+    (typeof input.pattern === "string" && input.pattern) ||
+    (typeof input.slug === "string" && input.slug) ||
+    "";
+  if (!text) return null;
+  return { primary: text, rest: null, isCommand: false };
+}
+
 /**
  * 服务端 contentBlocks → 本地消息 blocks（**真序重建**）。
  *

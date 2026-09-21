@@ -84,6 +84,7 @@ import {
   ToolEventDetail,
   toolStatusMeta,
 } from "@/components/workbench/tool-event";
+import { toolIcon } from "@/components/workbench/tool-icons";
 import { TrajectoryView } from "@/components/workbench/trajectory-view";
 import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
 import { WorkDirectorySelect } from "@/components/workbench/work-directory-select";
@@ -152,6 +153,7 @@ import {
   specCoveringIndex,
   type TurnProcessSpec,
 } from "@/lib/turn-process";
+import { formatTaskRelativeTime } from "@/lib/ui-format";
 import {
   boundWorkDirPromptHint,
   folderPickerHint,
@@ -183,7 +185,7 @@ import {
   type TaskMessage,
   type TaskToolEntry,
   toolDisplayLabel,
-  toolTargetHint,
+  toolTargetParts,
 } from "@/lib/workbench-tools";
 import { buildTrajectory } from "@/lib/workbench-trajectory";
 
@@ -312,21 +314,22 @@ function AssistantTurn({
     [msg.blocks],
   );
   if (!groups) {
+    // 旧数据单段正文：与新版同款无气泡排版（ZCode 口径——正文直接铺在背景上）
     return (
-      <div className="w-fit max-w-full rounded-2xl rounded-bl-md bg-muted px-4 py-2.5">
+      <div className="w-full max-w-full">
         <MarkdownRenderer text={msg.text} />
       </div>
     );
   }
   return (
-    <div className="flex w-fit max-w-full flex-col items-start gap-2">
+    <div className="flex w-full max-w-full flex-col items-start gap-2.5">
       {groups.map((group, gi) => {
         if (group.kind === "text") {
           return (
             <div
               // biome-ignore lint/suspicious/noArrayIndexKey: 组序即时序，块内没有更稳定的身份
               key={gi}
-              className="w-fit max-w-full rounded-2xl rounded-bl-md bg-muted px-4 py-2.5"
+              className="w-full max-w-full"
             >
               <MarkdownRenderer text={group.text} />
             </div>
@@ -357,18 +360,14 @@ function AssistantTurn({
 }
 
 /**
- * 对话里的工具调用行：**一次调用一行、永远可见**（状态点 + 工具名 + 动了什么 + 状态），
- * 点一下才展开这次的详情（入参 + 输出，与轨迹视图同一份展开体）。
+ * 对话里的工具调用行：**一次调用一行、永远可见**，视觉口径对齐 ZCode——
+ * **无边框卡片**的扁平行（图标 + 动词 + 文件名/路径 或 命令 + 状态），行宽由内容
+ * 决定（self-start），点整行展开详情（入参 + 输出，与轨迹视图同一份展开体）。
  *
- * 行永远可见是用户口径：「要按照时间顺序逐个展示，不能聚在一起」（2026-09-20 二次
- * 反馈）——聚合折叠会让「详细的工具调用记录」重新消失。默认折叠的只有行内的
- * 详情（web_search 的来源列表尤其长，全展开会把正文挤没）。展开状态自持
- * （每个工具行各管各的），不写进任务数据。
- *
- * 「运行完成之后无法展开」的病史（2026-09-20 三次反馈）：可展开判定曾只认
- * `output || summary`——服务端裁掉输出（或只记了入参）的调用既没有结论也没有输出，
- * 行被 `disabled` 后**点什么都不发生**，运行结束也永远是根哑巴行。现在入参也算
- * 可展开内容（看一眼这次调用传了什么参数，本身就排得上用场）。
+ * 行永远可见是用户口径：「要按照时间顺序逐个展示，不能聚在一起」（2026-09-20）。
+ * 外层圆角卡片是 2026-09-21 用户点名去掉的：「根本没必要有外面那一层圆角矩形」。
+ * 成功态不渲染状态文字（ZCode 同款：安静）；只有运行中/失败/被拒才占行尾。
+ * 「轨迹」跳转按钮与展开 chevron 都 hover 才显现。
  */
 function WorkbenchToolRow({
   tool,
@@ -382,58 +381,105 @@ function WorkbenchToolRow({
   const hasDetail =
     Boolean(tool.output) || Boolean(tool.summary) || Boolean(tool.input);
   const meta = toolStatusMeta(tool);
-  /** 行内提示这次调用动了什么（读了哪个文件 / 跑了什么命令）——同名工具的多次调用靠它区分。 */
-  const hint = toolTargetHint(tool);
-  /** 被拒的原因写在 title 上（不点开也能看到为什么没执行）。 */
-  const deniedReason =
+  const Icon = toolIcon(tool);
+  const target = toolTargetParts(tool);
+  /** 被拒/失败原因进 title（不点开也能看到为什么）。 */
+  const failReason =
     tool.status === "denied"
       ? ((tool.output?.reason as string | undefined) ??
         tool.summary ??
         "被工具门拦下")
-      : null;
+      : meta.failed
+        ? (tool.summary ?? "执行失败")
+        : null;
   return (
-    <div className="w-fit max-w-full rounded-xl border border-border/60 bg-card px-3 py-2">
+    <div className="group/tool-row w-full max-w-full">
       <div className="flex items-center gap-1">
         <button
           type="button"
           disabled={!hasDetail}
           aria-expanded={hasDetail ? expanded : undefined}
           onClick={() => hasDetail && setExpanded((v) => !v)}
-          className={`flex min-w-0 flex-1 items-center gap-2 text-xs text-muted-foreground ${
-            hasDetail ? "cursor-pointer hover:text-foreground" : ""
+          className={`inline-flex min-w-0 max-w-full items-center gap-2 self-start py-0.5 text-left text-xs ${
+            hasDetail ? "cursor-pointer" : "cursor-default"
           }`}
         >
-          <span
-            className={`h-1.5 w-1.5 shrink-0 rounded-full ${meta.dotClass}`}
+          <Icon
+            aria-hidden
+            className="size-4 shrink-0 text-muted-foreground/60"
           />
-          <span className="shrink-0 font-medium" title={tool.toolName}>
+          <span
+            className={`shrink-0 font-medium ${
+              meta.failed
+                ? "text-red-600 dark:text-red-400"
+                : "text-muted-foreground"
+            }`}
+            title={tool.toolName}
+          >
             {toolDisplayLabel(tool.toolName)}
           </span>
-          {hint ? (
-            <span className="min-w-0 truncate font-normal opacity-70">
-              {hint}
-            </span>
+          {target ? (
+            target.isCommand ? (
+              <code className="min-w-0 truncate font-sans text-muted-foreground/80">
+                {target.primary}
+              </code>
+            ) : (
+              <span
+                className="flex min-w-0 items-baseline gap-1.5"
+                title={
+                  target.rest
+                    ? `${target.rest}/${target.primary}`
+                    : target.primary
+                }
+              >
+                <span className="min-w-0 truncate text-foreground">
+                  {target.primary}
+                </span>
+                {target.rest ? (
+                  <span className="hidden min-w-0 truncate text-muted-foreground/50 @max-[520px]/conversation:hidden sm:inline">
+                    {target.rest}
+                  </span>
+                ) : null}
+              </span>
+            )
           ) : null}
-          <span
-            className={`ml-auto shrink-0 ${
-              meta.failed ? "text-red-600 dark:text-red-400" : undefined
-            }`}
-            title={deniedReason ?? undefined}
-          >
-            {meta.text}
-          </span>
-          {hasDetail && (
-            <svg
-              aria-hidden
-              viewBox="0 0 16 16"
-              className={`h-3 w-3 shrink-0 transition-transform ${
-                expanded ? "rotate-90" : ""
-              }`}
-              fill="currentColor"
+          {tool.status === "running" ? (
+            <span className="inline-flex shrink-0 items-center gap-1.5 text-muted-foreground">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+              执行中…
+            </span>
+          ) : meta.failed ? (
+            <span
+              className="shrink-0 cursor-help text-red-600 underline decoration-dotted underline-offset-2 dark:text-red-400"
+              title={failReason ?? undefined}
             >
-              <path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" />
-            </svg>
+              失败
+            </span>
+          ) : tool.status === "denied" ? (
+            <span
+              className="shrink-0 cursor-help text-rose-600 underline decoration-dotted underline-offset-2 dark:text-rose-400"
+              title={failReason ?? undefined}
+            >
+              被拒绝
+            </span>
+          ) : (
+            // 完成态的安静标记：只留一颗小绿点（ZCode 口径——成功不占文字）
+            <span
+              role="img"
+              aria-label="已完成"
+              className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500/70"
+            />
           )}
+          <svg
+            aria-hidden
+            viewBox="0 0 16 16"
+            className={`h-3 w-3 shrink-0 text-muted-foreground/50 opacity-0 transition-[opacity,transform] group-hover/tool-row:opacity-100 ${
+              expanded ? "rotate-90 opacity-100" : ""
+            } ${hasDetail ? "" : "invisible"}`}
+            fill="currentColor"
+          >
+            <path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" />
+          </svg>
         </button>
         {onInspect ? (
           <button
@@ -441,21 +487,26 @@ function WorkbenchToolRow({
             onClick={() => onInspect(tool.toolCallId)}
             title="在轨迹账本中查看这次调用"
             aria-label="在轨迹账本中查看这次调用"
-            className="shrink-0 rounded border border-transparent px-1 py-0.5 text-[10px] text-muted-foreground/70 transition-colors hover:border-border hover:text-foreground"
+            className="shrink-0 rounded px-1 py-0.5 text-[10px] text-muted-foreground/60 opacity-0 transition-opacity hover:text-foreground group-hover/tool-row:opacity-100"
           >
             轨迹
           </button>
         ) : null}
       </div>
-      {expanded ? <ToolEventDetail tool={tool} /> : null}
+      {expanded ? (
+        <div className="mb-1 ml-6 border-l-2 border-border/50 pl-3">
+          <ToolEventDetail tool={tool} />
+        </div>
+      ) : null}
     </div>
   );
 }
 
 /**
- * 思考行（dsh ReasoningRow 同款）：默认折叠成一行摘要——流式时跟随**最新一行**
- * （模型正在写的才是用户想瞄的），落定后显示首行；点开看全文。思考是推理过程
- * 不是结论，永远不给它正文的视觉权重（muted 小字卡片）。
+ * 思考行（dsh ReasoningRow 数据源 + ZCode ReasoningRow 视觉）：无卡片的一行——
+ * 脑图标 + 「思考」+ 摘要（流式时跟随最新一行），chevron hover 显现；展开正文
+ * 走左竖线缩进的纯文本区（不做 markdown 渲染）。思考是推理过程不是结论，
+ * 永远不给它正文的视觉权重。
  */
 function ReasoningRow({
   text,
@@ -469,39 +520,38 @@ function ReasoningRow({
   const summary = (streaming ? lines[lines.length - 1] : lines[0]) ?? "";
   const clipped = summary.length > 80 ? `${summary.slice(0, 79)}…` : summary;
   return (
-    <div className="w-fit max-w-full rounded-xl border border-border/60 bg-card px-3 py-1.5 text-xs text-muted-foreground">
+    <div className="w-full max-w-full">
       <button
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 text-left"
+        className="group/reasoning inline-flex max-w-full items-center gap-2 self-start py-0.5 text-left text-xs text-muted-foreground/60"
       >
+        <Brain
+          aria-hidden
+          className="size-4 shrink-0 text-muted-foreground/50"
+        />
+        <span
+          className={`shrink-0 font-medium ${streaming ? "text-foreground/80" : ""}`}
+        >
+          {streaming ? "思考中" : "思考"}
+        </span>
+        {open ? null : (
+          <span className="min-w-0 truncate font-normal">{clipped}</span>
+        )}
         <svg
           aria-hidden
           viewBox="0 0 16 16"
-          className={`h-3 w-3 shrink-0 transition-transform ${
-            open ? "rotate-90" : ""
+          className={`h-3 w-3 shrink-0 opacity-0 transition-[opacity,transform] group-hover/reasoning:opacity-100 ${
+            open ? "rotate-90 opacity-100" : ""
           }`}
           fill="currentColor"
         >
           <path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" />
         </svg>
-        <span className="shrink-0 font-medium">
-          {streaming ? "思考中" : "思考"}
-        </span>
-        {open ? null : (
-          <>
-            <span className="min-w-0 truncate font-normal opacity-70">
-              {clipped}
-            </span>
-            <span className="ml-auto shrink-0 text-[10px] opacity-60">
-              {text.length} 字
-            </span>
-          </>
-        )}
       </button>
       {open ? (
-        <div className="mt-1.5 max-h-72 overflow-y-auto whitespace-pre-wrap break-words border-l-2 border-border/60 pl-3 text-[11px] leading-5">
+        <div className="mb-1 ml-6 max-h-60 overflow-y-auto whitespace-pre-wrap break-words border-l-2 border-border/50 pl-3 text-[11px] leading-5 text-muted-foreground">
           {text}
         </div>
       ) : null}
@@ -510,9 +560,9 @@ function ReasoningRow({
 }
 
 /**
- * 轮级过程折叠控制行（dsh TurnProcessNodeView 同款）：一轮跑完后把结论之前的
- * 推理/工具/中途输出收成一行「思考与工具 · N 个工具调用 · …」。展开后过程逐行
- * 原位可见（不是聚成一条摘要），再点收起。
+ * 轮级过程折叠控制行（dsh TurnProcessNodeView 语义 + ZCode 组行视觉）：无卡片的
+ * 一行「第 N 轮 · 思考与工具 · N 个工具调用 · …」，chevron hover 显现。展开后
+ * 过程逐行原位可见（不是聚成一条摘要），再点收起。
  */
 function TurnProcessRow({
   spec,
@@ -533,7 +583,7 @@ function TurnProcessRow({
       aria-expanded={expanded}
       onClick={onToggle}
       title="展开这一轮的完整过程（推理 / 工具 / 中途输出逐行保留）"
-      className="flex w-fit items-center gap-2 rounded-xl border border-border/60 bg-card px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+      className="inline-flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground/60 transition-colors hover:text-foreground"
     >
       <svg
         aria-hidden
@@ -545,12 +595,8 @@ function TurnProcessRow({
       >
         <path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" />
       </svg>
-      <span>
-        第 {spec.turnIndex} 轮 · 思考与工具 · {parts.join(" · ")}
-      </span>
-      <span className="text-[10px] opacity-60">
-        {expanded ? "收起" : "展开"}
-      </span>
+      <span>第 {spec.turnIndex} 轮 · 思考与工具</span>
+      <span className="text-muted-foreground/70">{parts.join(" · ")}</span>
     </button>
   );
 }
@@ -2782,6 +2828,9 @@ export function Workbench() {
                             />
                           )
                         }
+                        trailing={formatTaskRelativeTime(
+                          t.runEndedAt ?? t.createdAt,
+                        )}
                         onOpen={() => setActiveTaskId(t.id)}
                         onRename={(next) => renameTask(t.id, next)}
                         onArchive={() => setTaskArchived(t.id, true)}
@@ -3240,8 +3289,9 @@ export function Workbench() {
                                   {msg.text}
                                 </div>
                               ) : tailOnly && spec ? (
-                                // 折叠态：答案消息只渲染尾部正文（过程块都在控制行里）
-                                <div className="w-fit max-w-full rounded-2xl rounded-bl-md bg-muted px-4 py-2.5">
+                                // 折叠态：答案消息只渲染尾部正文（过程块都在控制行里）；
+                                // 与展开态同款无气泡排版
+                                <div className="w-full max-w-full">
                                   <MarkdownRenderer
                                     text={spec.answerTailText}
                                   />

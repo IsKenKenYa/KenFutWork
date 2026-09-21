@@ -19,6 +19,7 @@ import {
   type TaskToolState,
   toolDisplayLabel,
   toolTargetHint,
+  toolTargetParts,
 } from "../src/lib/workbench-tools";
 
 /**
@@ -762,5 +763,73 @@ describe("messagesBaseForResume 断线重连基底", () => {
       [],
     );
     expect(messagesBaseForResume([])).toEqual([]);
+  });
+});
+
+describe("toolTargetParts 目标三段拆分（ZCode 同款）", () => {
+  it("路径：文件名为主、目录为次；Windows 分隔符归一", () => {
+    expect(
+      toolTargetParts({
+        toolCallId: "t",
+        toolName: "read_file",
+        status: "completed",
+        input: { path: "src/lib/workbench-tools.ts" },
+      }),
+    ).toEqual({
+      primary: "workbench-tools.ts",
+      rest: "src/lib",
+      isCommand: false,
+    });
+    expect(
+      toolTargetParts({
+        toolCallId: "t",
+        toolName: "edit_file",
+        status: "completed",
+        input: { file_path: "apps\\web\\src\\a.tsx" },
+      }),
+    ).toEqual({ primary: "a.tsx", rest: "apps/web/src", isCommand: false });
+  });
+
+  it("根相对文件名：无目录次文案", () => {
+    expect(
+      toolTargetParts({
+        toolCallId: "t",
+        toolName: "read_file",
+        status: "completed",
+        input: { path: "README.md" },
+      }),
+    ).toEqual({ primary: "README.md", rest: null, isCommand: false });
+  });
+
+  it("终端命令：isCommand 档，原样不截断（截断交给渲染层）", () => {
+    const long = `python3 - <<'EOF' ${"x".repeat(200)}`;
+    const parts = toolTargetParts({
+      toolCallId: "t",
+      toolName: "execute",
+      status: "completed",
+      input: { command: long },
+    });
+    expect(parts).toEqual({ primary: long, rest: null, isCommand: true });
+  });
+
+  it("查询/URL/模式：文本档", () => {
+    expect(
+      toolTargetParts({
+        toolCallId: "t",
+        toolName: "web_search",
+        status: "completed",
+        input: { query: "zcode ui" },
+      }),
+    ).toEqual({ primary: "zcode ui", rest: null, isCommand: false });
+  });
+
+  it("无入参或无目标键：null", () => {
+    expect(
+      toolTargetParts({
+        toolCallId: "t",
+        toolName: "execute",
+        status: "completed",
+      }),
+    ).toBeNull();
   });
 });
