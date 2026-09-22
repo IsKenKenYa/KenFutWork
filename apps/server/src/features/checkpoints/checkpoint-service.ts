@@ -105,6 +105,25 @@ export type CheckpointService = {
     workspaceId: string;
     checkpointId: string;
   }): Promise<CheckpointRow>;
+  /**
+   * 每轮文件清单：该检查点相对上一检查点的逐文件增删（「变更」面板的列表面）。
+   * 与 diffFor 同区间，但只算 numstat（不生成 diff 文本）。
+   */
+  turnFiles(input: {
+    workspaceId: string;
+    checkpointId: string;
+  }): Promise<{ files: ShadowNumstatFile[] }>;
+  /**
+   * 每文件撤销：把单个文件恢复到该检查点开始前的状态（即上一检查点里的样子；
+   * 文件是该轮新建的则直接删除）。恢复本身经 snapshotTo 记成 kind "restore"
+   * 的新检查点（label「文件恢复点」）；文件当前已与目标一致（无可恢复差异）时
+   * 不落行，返回基准行。
+   */
+  restoreFile(input: {
+    workspaceId: string;
+    checkpointId: string;
+    path: string;
+  }): Promise<CheckpointRow>;
 };
 
 export function createCheckpointService(options: {
@@ -368,6 +387,68 @@ export function createCheckpointService(options: {
               { canvasId: row.canvasId, sandboxDir: workTree, runId: null },
               "restore",
               "回滚恢复点",
+            )) ?? row
+          );
+        });
+      }),
+
+    turnFiles: (input) =>
+      guarded(async () => {
+        const row = await rowFor(input.workspaceId, input.checkpointId);
+        const scope = {
+          gitDir: gitDirFor(row.canvasId),
+          workTree: sandboxDirFor(row.canvasId),
+        };
+        const previous = await repository.getPrevious(
+          input.workspaceId,
+          row.canvasId,
+          row.createdAt,
+        );
+        const files = await git.numstat({
+          ...scope,
+          from: previous?.shadowCommit ?? EMPTY_TREE_SHA,
+          to: row.shadowCommit,
+        });
+        return { files };
+      }),
+
+    restoreFile: (input) =>
+      guarded(async () => {
+        // 路径校验：相对路径、无 `..` 段（git 本身也拒绝仓库外路径，这里双保险）
+        const normalized = input.path.replaceAll("\\", "/");
+        if (
+          !normalized ||
+          normalized.startsWith("/") ||
+          normalized.split("/").includes("..")
+        ) {
+          throw new CodeCheckpointError(
+            "checkpoint_failed",
+            "文件路径不合法。",
+            400,
+          );
+        }
+        const row = await rowFor(input.workspaceId, input.checkpointId);
+        const gitDir = gitDirFor(row.canvasId);
+        const workTree = sandboxDirFor(row.canvasId);
+        return withLock(row.canvasId, async () => {
+          const previous = await repository.getPrevious(
+            input.workspaceId,
+            row.canvasId,
+            row.createdAt,
+          );
+          // 撤销该轮对该文件的变更 = 恢复到该轮开始前的样子（上一检查点的树）
+          const baseSha = previous?.shadowCommit ?? EMPTY_TREE_SHA;
+          await git.restorePaths({
+            gitDir,
+            workTree,
+            sha: baseSha,
+            paths: [normalized],
+          });
+          return (
+            (await snapshotTo(
+              { canvasId: row.canvasId, sandboxDir: workTree, runId: null },
+              "restore",
+              "文件恢复点",
             )) ?? row
           );
         });

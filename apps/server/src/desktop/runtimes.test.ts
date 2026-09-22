@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 
 import {
   hasSystemGit,
@@ -176,7 +176,13 @@ describe("sandbox env 片段", () => {
  * （python/node/jdk 才是随包优先）。这里锁住这个优先级，避免「打包目录一前置就把本地
  * git 顶掉」。
  */
-describe("git 运行时的优先级（本地优先，打包兜底）", () => {
+describe("git 运行时的优先级（本地优先，打包兜底；Windows 桌面场景）", () => {
+  // 这些用例的 PATH/可执行体都是 Windows 形态：统一把平台 mock 成 win32
+  const realPlatform = process.platform;
+  Object.defineProperty(process, "platform", { value: "win32" });
+  afterAll(() => {
+    Object.defineProperty(process, "platform", { value: realPlatform });
+  });
   const app = join("C:", "app");
   const bundledGit = join(app, "runtime", "git", "cmd", "git.exe");
 
@@ -239,5 +245,51 @@ describe("git 运行时的优先级（本地优先，打包兜底）", () => {
         exists: fakeFs([join("C:/Git", "git.exe")]),
       }),
     ).toBe(true);
+  });
+});
+
+describe("hasSystemGit 平台探测（回归：POSIX 不能用 Windows 参数）", () => {
+  it("POSIX：PATH 用 `:` 分隔、可执行体是 git（不再写死 git.exe 与 `;`）", () => {
+    const posixPath = "/usr/bin:/opt/homebrew/bin:/usr/local/bin";
+    expect(
+      hasSystemGit({
+        path: posixPath,
+        separator: ":",
+        executable: "git",
+        exists: (p) => p === "/opt/homebrew/bin/git",
+      }),
+    ).toBe(true);
+    // 平台默认值：POSIX 上不传 separator/executable 也应探测成功
+    const realPlatform = process.platform;
+    Object.defineProperty(process, "platform", { value: "darwin" });
+    try {
+      expect(
+        hasSystemGit({
+          path: posixPath,
+          exists: (p) => p === "/opt/homebrew/bin/git",
+        }),
+      ).toBe(true);
+    } finally {
+      Object.defineProperty(process, "platform", { value: realPlatform });
+    }
+  });
+
+  it("Windows：PATH 用 `;` 分隔、可执行体是 git.exe（行为不变）", () => {
+    const winPath = "C:\\Windows;C:\\tools\\git\\cmd";
+    const realPlatform = process.platform;
+    Object.defineProperty(process, "platform", { value: "win32" });
+    // exists 收到的路径分隔符形态随 join 的平台而变：比较前统一成正斜杠
+    const norm = (p: string) => p.replaceAll("\\", "/");
+    try {
+      expect(
+        hasSystemGit({
+          path: winPath,
+          exists: (p) => norm(p) === "C:/tools/git/cmd/git.exe",
+        }),
+      ).toBe(true);
+      expect(hasSystemGit({ path: winPath, exists: () => false })).toBe(false);
+    } finally {
+      Object.defineProperty(process, "platform", { value: realPlatform });
+    }
   });
 });

@@ -66,6 +66,17 @@ export const checkpointRestoreResponseSchema = z.object({
   checkpoint: checkpointSummarySchema,
 });
 
+/** 某检查点相对上一检查点的逐文件变更清单（每轮文件撤销的列表面）。 */
+export const checkpointFilesResponseSchema = z.object({
+  files: z.array(checkpointFileChangeSchema),
+});
+
+/** 每文件撤销：把单个文件恢复到该检查点的状态（检查点之后新建的文件则删除）。 */
+export const checkpointRestoreFileRequestSchema = z.object({
+  /** 相对工作目录根的路径（不允许绝对路径与 `..` 段）。 */
+  path: z.string().min(1),
+});
+
 // 供前端/API 封装直接引用的推断类型（schema 单源，类型跟随，与 admin-contracts 同一口径）。
 export type CheckpointKind = z.infer<typeof checkpointKindSchema>;
 export type CheckpointSummary = z.infer<typeof checkpointSummarySchema>;

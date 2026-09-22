@@ -1,8 +1,10 @@
 import {
   applicationErrorResponseSchema,
   checkpointDiffResponseSchema,
+  checkpointFilesResponseSchema,
   checkpointListResponseSchema,
   checkpointPreviewResponseSchema,
+  checkpointRestoreFileRequestSchema,
   checkpointRestoreResponseSchema,
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
@@ -153,6 +155,77 @@ export async function registerCheckpointsRoutes(
       return sendCheckpointError(error, reply);
     }
   });
+
+  // GET /api/code/checkpoints/:checkpointId/files — 该轮的逐文件变更清单
+  app.get<{ Params: { checkpointId: string } }>(
+    "/api/code/checkpoints/:checkpointId/files",
+    async (request, reply) => {
+      const user = await options.auth.authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      try {
+        const result = await options.checkpointsService.turnFiles({
+          workspaceId: await workspaceIdFor(user),
+          checkpointId: request.params.checkpointId,
+        });
+        return reply
+          .code(200)
+          .send(checkpointFilesResponseSchema.parse({ files: result.files }));
+      } catch (error) {
+        return sendCheckpointError(error, reply);
+      }
+    },
+  );
+
+  // POST /api/code/checkpoints/:checkpointId/restore-file?canvasId= — 每文件撤销
+  app.post<{
+    Querystring: { canvasId?: string };
+    Params: { checkpointId: string };
+  }>(
+    "/api/code/checkpoints/:checkpointId/restore-file",
+    async (request, reply) => {
+      const user = await options.auth.authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      const canvasId = request.query.canvasId ?? "";
+      if (!canvasId) {
+        return reply.code(400).send(
+          applicationErrorResponseSchema.parse({
+            error: { code: "invalid_input", message: "缺少 canvasId。" },
+          }),
+        );
+      }
+      const parsed = checkpointRestoreFileRequestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send(
+          applicationErrorResponseSchema.parse({
+            error: { code: "invalid_input", message: "缺少 path。" },
+          }),
+        );
+      }
+      // 在途守卫与整目录回滚同款：run 还在写工作目录时不允许撤销
+      if (options.agentRuns?.hasActiveRunForCanvas(canvasId)) {
+        return reply.code(409).send(
+          applicationErrorResponseSchema.parse({
+            error: {
+              code: "run_in_progress",
+              message: "该项目的任务正在运行，请等本轮结束或先停止再撤销。",
+            },
+          }),
+        );
+      }
+      try {
+        const checkpoint = await options.checkpointsService.restoreFile({
+          workspaceId: await workspaceIdFor(user),
+          checkpointId: request.params.checkpointId,
+          path: parsed.data.path,
+        });
+        return reply
+          .code(200)
+          .send(checkpointRestoreResponseSchema.parse({ checkpoint }));
+      } catch (error) {
+        return sendCheckpointError(error, reply);
+      }
+    },
+  );
 }
 
 function sendUnauthorized(reply: FastifyReply) {

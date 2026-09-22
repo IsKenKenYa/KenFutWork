@@ -403,4 +403,205 @@ describe("检查点服务", () => {
       }),
     ).rejects.toMatchObject({ code: "not_found", statusCode: 404 });
   });
+
+  describe("检查点服务 · 每轮文件清单与每文件撤销", () => {
+    it("turnFiles 只列该轮（相对上一检查点）的变更文件", async () => {
+      const { workTree, service } = makeWorld();
+      write(workTree, "base.txt", "基础内容\n");
+      await service.beforeTurn({
+        canvasId: CANVAS_ID,
+        sandboxDir: workTree,
+        runId: "run-0",
+      });
+      await service.afterTurn({
+        canvasId: CANVAS_ID,
+        sandboxDir: workTree,
+        runId: "run-0",
+      });
+
+      write(workTree, "new-in-turn.txt", "本轮新增\n");
+      write(workTree, "base.txt", "本轮修改\n");
+      const endRow = await service.afterTurn({
+        canvasId: CANVAS_ID,
+        sandboxDir: workTree,
+        runId: "run-1",
+      });
+      if (!endRow) throw new Error("应落轮次结束快照");
+      if (!endRow) throw new Error("应落轮次结束快照");
+
+      const { files } = await service.turnFiles({
+        workspaceId: WORKSPACE_ID,
+        checkpointId: endRow.id,
+      });
+      const paths = files.map((f) => f.path).sort();
+      expect(paths).toEqual(["base.txt", "new-in-turn.txt"]);
+    });
+
+    it("restoreFile 把该轮修改的文件恢复到轮开始前，并落一条 restore 检查点", async () => {
+      const { workTree, repository, service } = makeWorld();
+      write(workTree, "doc.md", "原始内容\n");
+      await service.beforeTurn({
+        canvasId: CANVAS_ID,
+        sandboxDir: workTree,
+        runId: "run-1",
+      });
+      write(workTree, "doc.md", "被改坏的内容\n");
+      const endRow = await service.afterTurn({
+        canvasId: CANVAS_ID,
+        sandboxDir: workTree,
+        runId: "run-1",
+      });
+      if (!endRow) throw new Error("应落轮次结束快照");
+      if (!endRow) throw new Error("应落轮次结束快照");
+
+      const restored = await service.restoreFile({
+        workspaceId: WORKSPACE_ID,
+        checkpointId: endRow.id,
+        path: "doc.md",
+      });
+      expect(restored.kind).toBe("restore");
+      expect(readFileSync(join(workTree, "doc.md"), "utf8")).toBe("原始内容\n");
+      // 恢复本身落了可查的检查点行（变更面板据此刷新）
+      const rows = await repository.listByCanvas(WORKSPACE_ID, CANVAS_ID);
+      expect(rows[rows.length - 1]?.id).toBe(restored.id);
+    });
+
+    it("restoreFile 删除该轮新建的文件（回到该轮开始前不存在）", async () => {
+      const { workTree, service } = makeWorld();
+      write(workTree, "kept.txt", "轮前就有\n");
+      await service.beforeTurn({
+        canvasId: CANVAS_ID,
+        sandboxDir: workTree,
+        runId: "run-1",
+      });
+      write(workTree, "created.md", "本轮新建\n");
+      const endRow = await service.afterTurn({
+        canvasId: CANVAS_ID,
+        sandboxDir: workTree,
+        runId: "run-1",
+      });
+      if (!endRow) throw new Error("应落轮次结束快照");
+
+      await service.restoreFile({
+        workspaceId: WORKSPACE_ID,
+        checkpointId: endRow.id,
+        path: "created.md",
+      });
+      expect(existsSync(join(workTree, "created.md"))).toBe(false);
+      expect(existsSync(join(workTree, "kept.txt"))).toBe(true);
+    });
+
+    it("restoreFile 复活该轮删除的文件", async () => {
+      const { workTree, service } = makeWorld();
+      write(workTree, "doomed.txt", "将被删除\n");
+      await service.beforeTurn({
+        canvasId: CANVAS_ID,
+        sandboxDir: workTree,
+        runId: "run-1",
+      });
+      rmSync(join(workTree, "doomed.txt"));
+      const endRow = await service.afterTurn({
+        canvasId: CANVAS_ID,
+        sandboxDir: workTree,
+        runId: "run-1",
+      });
+      if (!endRow) throw new Error("应落轮次结束快照");
+
+      await service.restoreFile({
+        workspaceId: WORKSPACE_ID,
+        checkpointId: endRow.id,
+        path: "doomed.txt",
+      });
+      expect(readFileSync(join(workTree, "doomed.txt"), "utf8")).toBe(
+        "将被删除\n",
+      );
+    });
+
+    it("restoreFile 只动目标文件，其余文件不受影响", async () => {
+      const { workTree, service } = makeWorld();
+      write(workTree, "a.txt", "a-原始\n");
+      write(workTree, "b.txt", "b-原始\n");
+      await service.beforeTurn({
+        canvasId: CANVAS_ID,
+        sandboxDir: workTree,
+        runId: "run-1",
+      });
+      write(workTree, "a.txt", "a-改\n");
+      write(workTree, "b.txt", "b-改\n");
+      const endRow = await service.afterTurn({
+        canvasId: CANVAS_ID,
+        sandboxDir: workTree,
+        runId: "run-1",
+      });
+      if (!endRow) throw new Error("应落轮次结束快照");
+
+      await service.restoreFile({
+        workspaceId: WORKSPACE_ID,
+        checkpointId: endRow.id,
+        path: "a.txt",
+      });
+      expect(readFileSync(join(workTree, "a.txt"), "utf8")).toBe("a-原始\n");
+      expect(readFileSync(join(workTree, "b.txt"), "utf8")).toBe("b-改\n");
+    });
+
+    it("restoreFile 拒绝绝对路径与 `..` 段（400，fail loud）", async () => {
+      const { workTree, service } = makeWorld();
+      write(workTree, "x.txt", "x\n");
+      const row = await service.afterTurn({
+        canvasId: CANVAS_ID,
+        sandboxDir: workTree,
+        runId: "run-1",
+      });
+      if (!row) throw new Error("应落轮次快照");
+      for (const bad of ["/etc/passwd", "../escape.txt", "a/../../b.txt"]) {
+        await expect(
+          service.restoreFile({
+            workspaceId: WORKSPACE_ID,
+            checkpointId: row.id,
+            path: bad,
+          }),
+        ).rejects.toMatchObject({ statusCode: 400 });
+      }
+    });
+
+    it("restoreFile 重复撤销同一文件：第二次无可恢复差异，不新落检查点", async () => {
+      const { workTree, repository, service } = makeWorld();
+      write(workTree, "doc.md", "原始\n");
+      await service.beforeTurn({
+        canvasId: CANVAS_ID,
+        sandboxDir: workTree,
+        runId: "run-1",
+      });
+      write(workTree, "doc.md", "改\n");
+      const endRow = await service.afterTurn({
+        canvasId: CANVAS_ID,
+        sandboxDir: workTree,
+        runId: "run-1",
+      });
+      if (!endRow) throw new Error("应落轮次结束快照");
+      if (!endRow) throw new Error("应落轮次结束快照");
+
+      // 第一次撤销：恢复 + 落 restore 行
+      const first = await service.restoreFile({
+        workspaceId: WORKSPACE_ID,
+        checkpointId: endRow.id,
+        path: "doc.md",
+      });
+      expect(first.kind).toBe("restore");
+      const afterFirst = (
+        await repository.listByCanvas(WORKSPACE_ID, CANVAS_ID)
+      ).length;
+
+      // 第二次撤销：文件已与基准一致 → 无操作，不新落行（返回目标是本轮的 end 行）
+      const second = await service.restoreFile({
+        workspaceId: WORKSPACE_ID,
+        checkpointId: endRow.id,
+        path: "doc.md",
+      });
+      expect(second.kind).not.toBe("restore");
+      expect(
+        await repository.listByCanvas(WORKSPACE_ID, CANVAS_ID),
+      ).toHaveLength(afterFirst);
+    });
+  });
 });

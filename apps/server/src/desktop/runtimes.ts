@@ -142,8 +142,12 @@ export function hasSystemGit(options: {
   executable?: string;
 }): boolean {
   const exists = options.exists ?? existsSync;
-  const executable = options.executable ?? "git.exe";
-  const separator = options.separator ?? ";";
+  // 探测参数按平台取默认：Windows 是 git.exe + `;` 分隔，POSIX 是 git + `:`
+  // （此前写死 Windows 参数，macOS/Linux 上永远探不到宿主 git——检查点与 git
+  // 面板在非 Windows 桌面/自托管形态全部误判 unavailable，2026-09-22 真机抓到）。
+  const isWindows = process.platform === "win32";
+  const executable = options.executable ?? (isWindows ? "git.exe" : "git");
+  const separator = options.separator ?? (isWindows ? ";" : ":");
   return (options.path ?? "")
     .split(separator)
     .map((part) => part.trim())

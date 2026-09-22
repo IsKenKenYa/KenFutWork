@@ -262,6 +262,34 @@ export function createShadowGitClient(deps: {
     }
   };
 
+  /**
+   * 按路径恢复到目标时点（每文件撤销的内核）：路径在目标树里存在 →
+   * `checkout <sha> -- <path>` 恢复；不存在 → 该文件是检查点之后新建的，
+   * 撤销 = `rm -f` 删除。逐路径执行，调用方（服务层）负责画布锁与路径校验。
+   */
+  const restorePaths = async (
+    input: ShadowGitScope & { sha: string; paths: readonly string[] },
+  ): Promise<void> => {
+    for (const path of input.paths) {
+      const exists = await exec(
+        ["cat-file", "-e", `${input.sha}:${path}`],
+        input,
+      );
+      if (exists.code === 0) {
+        await expectOk(
+          ["checkout", input.sha, "--", path],
+          input,
+          `恢复文件失败：${path}`,
+        );
+      } else {
+        const removed = await exec(["rm", "-f", "--", path], input);
+        if (removed.code !== 0) {
+          throw new Error(removed.stderr.trim() || `删除文件失败：${path}`);
+        }
+      }
+    }
+  };
+
   return {
     ensureRepo,
     commitSnapshot,
@@ -270,6 +298,7 @@ export function createShadowGitClient(deps: {
     diffText,
     changedAgainst,
     restoreTo,
+    restorePaths,
   };
 }
 
