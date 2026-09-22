@@ -85,6 +85,7 @@ import {
 } from "@/components/workbench/tool-event";
 import { toolIcon } from "@/components/workbench/tool-icons";
 import { TrajectoryView } from "@/components/workbench/trajectory-view";
+import { TurnRail } from "@/components/workbench/turn-rail";
 import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
 import { WorkDirectorySelect } from "@/components/workbench/work-directory-select";
 import { WorkbenchSidePanel } from "@/components/workbench/workbench-side-panel";
@@ -183,7 +184,7 @@ import {
   toolDisplayLabel,
   toolTargetParts,
 } from "@/lib/workbench-tools";
-import { buildTrajectory } from "@/lib/workbench-trajectory";
+import { buildTrajectory, turnRailItems } from "@/lib/workbench-trajectory";
 
 /**
  * Agent 工作台（产品主入口）：Code / Design 双模式（DEC-2）。
@@ -826,6 +827,39 @@ export function Workbench() {
   const [expandedTurnProcesses, setExpandedTurnProcesses] = useState<
     ReadonlySet<string>
   >(new Set());
+
+  /** 左缘时间线刻度的数据（ZCode TurnNavigator 同款：一轮一项）。 */
+  const turnRail = useMemo(
+    () => turnRailItems(trajectoryModel),
+    [trajectoryModel],
+  );
+  /** 跳到某轮：滚动定位到该轮的用户消息锚（data-turn-anchor）。 */
+  const jumpToTurn = useCallback((index: number) => {
+    document
+      .querySelector(`[data-turn-anchor="${index}"]`)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  /**
+   * 每条消息所属的轮次（1 起始）——时间线刻度的滚动锚用。口径与
+   * buildTrajectory 一致：用户消息开启新轮（归属新轮），助手消息归属
+   * 「当前轮」（开头还没有用户消息时防御性归第 1 轮）。
+   */
+  const turnOfIndex = useMemo(() => {
+    const shown = activeTask?.messages ?? [];
+    const result: number[] = [];
+    let opened = 0;
+    for (const message of shown) {
+      // 用户消息开新轮；开头的助手消息（还没有任何用户消息）防御性先占第 1 轮
+      if (message.role === "user") {
+        opened += 1;
+      } else if (opened === 0) {
+        opened = 1;
+      }
+      result[result.length] = opened;
+    }
+    return result;
+  }, [activeTask?.messages]);
 
   /**
    * 选中模型的容量元数据（窗口 / 最大输出），两处编排器共用一份。
@@ -2992,9 +3026,12 @@ export function Workbench() {
               <div
                 ref={codeMessagesRef}
                 role="none"
-                className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
+                className="relative min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
                 onContextMenu={chatMenu.open}
               >
+                {transcriptTab === "chat" ? (
+                  <TurnRail items={turnRail} onJump={jumpToTurn} />
+                ) : null}
                 <div className="w-full space-y-4 px-8 pb-2">
                   {transcriptTab === "trajectory" ? (
                     <TrajectoryView
@@ -3129,8 +3166,12 @@ export function Workbench() {
                             i === spec.answerIndex &&
                             msg.role === "assistant";
                           return (
-                            // biome-ignore lint/suspicious/noArrayIndexKey: 流式为追加列表，消息的稳定身份就是位置；内容键会每个 token 换 key，把整条消息重挂载
-                            <div key={i} className="space-y-2">
+                            <div
+                              // biome-ignore lint/suspicious/noArrayIndexKey: 流式为追加列表，消息的稳定身份就是位置；内容键会每个 token 换 key，把整条消息重挂载
+                              key={i}
+                              className="space-y-2"
+                              data-turn-anchor={turnOfIndex[i]}
+                            >
                               {spec && i === spec.startIndex ? (
                                 <TurnProcessRow
                                   spec={spec}

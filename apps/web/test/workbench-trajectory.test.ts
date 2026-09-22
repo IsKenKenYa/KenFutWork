@@ -7,6 +7,7 @@ import {
   flattenTrajectory,
   rowsInSelection,
   type TrajectoryRow,
+  turnRailItems,
 } from "../src/lib/workbench-trajectory";
 
 /** 轨迹账本（buildTrajectory）的纯逻辑测试：按轮分组、行序即时序、时间缺省如实为 null。 */
@@ -257,5 +258,45 @@ describe("buildTimelineLayout 与拖选聚焦", () => {
     const layout = buildTimelineLayout(buildTrajectory([]), "duration");
     expect(layout.spans).toEqual([]);
     expect(layout.minStartMs).toBeNull();
+  });
+});
+
+describe("turnRailItems 时间线刻度项", () => {
+  it("一轮一项：用户消息预览 + 助手首行预览，压缩换行", () => {
+    const model = buildTrajectory([
+      { role: "user", text: "第一问\n第二行", startedAt: 1000, blocks: [] },
+      {
+        role: "assistant",
+        text: "答一",
+        runId: "r1",
+        blocks: [
+          { type: "tool", tool: tool("t1") },
+          { type: "text", text: "答一正文" },
+        ],
+      },
+    ]);
+    const items = turnRailItems(model);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      index: 1,
+      userPreview: "第一问 第二行",
+      assistantPreview: "答一正文",
+      startedAtMs: 1000,
+    });
+  });
+
+  it("长预览按上限截断；没有助手输出的轮给空串", () => {
+    const model = buildTrajectory([
+      { role: "user", text: "长".repeat(200), startedAt: 1000, blocks: [] },
+      {
+        role: "assistant",
+        text: "",
+        blocks: [{ type: "tool", tool: tool("t1") }],
+      },
+    ]);
+    const items = turnRailItems(model);
+    expect(items[0]?.userPreview.length).toBeLessThanOrEqual(120);
+    expect(items[0]?.userPreview.endsWith("…")).toBe(true);
+    expect(items[0]?.assistantPreview).toBe("");
   });
 });

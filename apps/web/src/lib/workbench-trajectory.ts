@@ -280,3 +280,41 @@ export function rowsInSelection(
   );
   return flat.filter((entry) => keys.has(entry.key));
 }
+
+// ── 左缘时间线刻度（ZCode ConversationTurnNavigator 的数据投影） ──
+
+/** 刻度一项：一轮对话（一条用户消息 + 它引发的全部输出）。 */
+export type TurnRailItem = {
+  /** 1 起始的轮次序号（= TrajectoryTurn.index，滚动锚 data-turn-anchor 同值）。 */
+  index: number;
+  startedAtMs: number | null;
+  /** 用户消息预览（≤120 字）。 */
+  userPreview: string;
+  /** 助手输出预览（≤160 字；还没有输出为空串）。 */
+  assistantPreview: string;
+};
+
+/** 单行截断预览：压掉换行、按长度截断。 */
+function preview(text: string, limit: number): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > limit ? `${flat.slice(0, limit - 1)}…` : flat;
+}
+
+/**
+ * 从账本模型提炼刻度项：一轮一项，用户消息是预览主体，助手取第一条正文行。
+ * 全部字段已在 TrajectoryTurn 里，零额外状态。
+ */
+export function turnRailItems(model: TrajectoryModel): TurnRailItem[] {
+  return model.turns.map((turn) => {
+    const user = turn.rows.find((row) => row.kind === "user");
+    const assistant = turn.rows.find(
+      (row) => row.kind === "text" || row.kind === "reasoning",
+    );
+    return {
+      index: turn.index,
+      startedAtMs: turn.startedAtMs,
+      userPreview: preview(user?.text ?? "", 120),
+      assistantPreview: preview(assistant?.text ?? "", 160),
+    };
+  });
+}

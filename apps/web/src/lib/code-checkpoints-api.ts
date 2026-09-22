@@ -84,6 +84,49 @@ export async function previewCheckpointRestore(
   return (await response.json()) as CheckpointRestorePreview;
 }
 
+/** 某检查点相对上一检查点的逐文件变更清单（变更面板的列表面）。 */
+export async function fetchCheckpointFiles(
+  accessToken: string,
+  checkpointId: string,
+): Promise<CheckpointFileChange[]> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/code/checkpoints/${encodeURIComponent(checkpointId)}/files`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  const payload = (await response.json()) as {
+    files: CheckpointFileChange[];
+  };
+  return payload.files;
+}
+
+/**
+ * 每文件撤销：把单个文件恢复到该检查点开始前的状态（该轮新建的文件则删除）。
+ * canvasId 必传：服务端做画布归属校验与在途 run 拦截。
+ */
+export async function restoreCheckpointFile(
+  accessToken: string,
+  canvasId: string,
+  checkpointId: string,
+  path: string,
+): Promise<CheckpointSummary> {
+  const query = new URLSearchParams({ canvasId });
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/code/checkpoints/${encodeURIComponent(checkpointId)}/restore-file?${query.toString()}`,
+    {
+      method: "POST",
+      headers: {
+        ...authHeaders(accessToken),
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ path }),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  const payload = (await response.json()) as { checkpoint: CheckpointSummary };
+  return payload.checkpoint;
+}
+
 /**
  * 回滚到某检查点（**丢内容**操作，二次确认由界面负责）。
  * canvasId 是必传 query：服务端靠它做画布归属校验与「在途 run 拦截」。
