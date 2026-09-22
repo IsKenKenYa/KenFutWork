@@ -9,7 +9,6 @@ import {
   MAX_TOOL_BLOCKS_PER_MESSAGE,
   messagesBaseForResume,
   nextAssistantStartMs,
-  rebuildAssistantBlocks,
   settleAssistantElapsed,
   settlePreviousAssistant,
   type TaskMessage,
@@ -562,77 +561,6 @@ describe("tool.started 入参归一化", () => {
       input: raw,
     });
     expect(toolBlocks(task.messages[0])[0]?.input).toEqual(raw);
-  });
-});
-
-describe("rebuildAssistantBlocks 服务端真序重建（含思考）", () => {
-  it("thinking 块映射为 reasoning，且与正文/工具的位置关系保持真序", () => {
-    const blocks = rebuildAssistantBlocks([
-      { type: "thinking", thinking: "想一想" },
-      { type: "text", text: "先说" },
-      {
-        type: "tool",
-        toolCallId: "t1",
-        toolName: "read_file",
-        input: { path: "a.ts" },
-      },
-      { type: "text", text: "再说" },
-    ] as Parameters<typeof rebuildAssistantBlocks>[0]);
-    expect(blocks.map((b) => b.type)).toEqual([
-      "reasoning",
-      "text",
-      "tool",
-      "text",
-    ]);
-    expect(blocks[0]).toMatchObject({ text: "想一想" });
-  });
-});
-
-describe("rebuildAssistantBlocks 恢复 runId 与时间戳（PG 历史回灌）", () => {
-  it("工具块上的 runId/startedAt/endedAt（ISO）换算进本地条目；旧数据缺省不伪造", () => {
-    const blocks = rebuildAssistantBlocks([
-      {
-        type: "tool",
-        toolCallId: "t1",
-        toolName: "execute",
-        status: "completed",
-        runId: "run-7",
-        startedAt: "2026-09-21T00:00:01.000Z",
-        endedAt: "2026-09-21T00:00:03.500Z",
-        input: { command: "ls" },
-      },
-      {
-        type: "tool",
-        toolCallId: "t2",
-        toolName: "read_file",
-        status: "completed",
-      },
-    ] as Parameters<typeof rebuildAssistantBlocks>[0]);
-    const [withTime, withoutTime] = blocks.map((b) =>
-      b.type === "tool" ? b.tool : null,
-    );
-    expect(withTime?.runId).toBe("run-7");
-    expect(withTime?.startedAt).toBe(Date.parse("2026-09-21T00:00:01.000Z"));
-    expect(withTime?.endedAt).toBe(Date.parse("2026-09-21T00:00:03.500Z"));
-    // 旧数据没有时间戳/归属：字段缺省，不伪造 0 或 NaN
-    expect(withoutTime?.runId).toBeUndefined();
-    expect(withoutTime?.startedAt).toBeUndefined();
-    expect(withoutTime?.endedAt).toBeUndefined();
-  });
-
-  it("text 块的 at 恢复为毫秒；思考块的 at 同理", () => {
-    const blocks = rebuildAssistantBlocks([
-      { type: "thinking", thinking: "想一想", at: "2026-09-21T00:00:00.000Z" },
-      { type: "text", text: "正文", at: "2026-09-21T00:00:02.000Z" },
-    ] as Parameters<typeof rebuildAssistantBlocks>[0]);
-    expect(blocks[0]).toMatchObject({
-      type: "reasoning",
-      at: Date.parse("2026-09-21T00:00:00.000Z"),
-    });
-    expect(blocks[1]).toMatchObject({
-      type: "text",
-      at: Date.parse("2026-09-21T00:00:02.000Z"),
-    });
   });
 });
 

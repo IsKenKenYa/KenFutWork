@@ -2,7 +2,6 @@
 
 import type {
   CheckpointSummary,
-  ContentBlock,
   ExecutionMode,
   ProjectSummary,
 } from "@kenfutwork/shared";
@@ -130,7 +129,6 @@ import {
   createProject,
   deleteProject,
   fetchDirectoryPickerStatus,
-  fetchMessages,
   fetchProjects,
   fetchViewer,
   fetchWorkspaceSettings,
@@ -178,7 +176,6 @@ import {
   groupAssistantBlocks,
   messagesBaseForResume,
   nextAssistantStartMs,
-  rebuildAssistantBlocks,
   settleAssistantElapsed,
   settlePreviousAssistant,
   type TaskMessage,
@@ -244,7 +241,6 @@ interface WorkbenchTask {
    * 顺序持久化 contentBlocks，启动后按 sessionId 拉回来重建一次并打这个戳——
    * 没有这个戳的旧任务下次启动还会再试（服务端当时不在线是常态）。
    */
-  serverBlocksSyncedAt?: string | undefined;
   /** 本轮用量快照（R4-1：服务端 run.usage 事件，上下文容量/缓存命中浮层的数据源） */
   usage?: RunUsageSnapshot;
   /**
@@ -620,20 +616,12 @@ const MODE_META: Record<
  * 坏数据直接弃，保证进入渲染器的任务永远是当前形状）。
  */
 const TASKS_STORAGE_KEY = "workbench-tasks:v2";
-const LEGACY_TASKS_STORAGE_KEYS = [
-  "workbench-tasks:code",
-  "workbench-tasks:design",
-];
 
 /** 「未分组」在「显示更多」展开状态里的分组 key（项目 id 不会取到这个名字）。 */
 const UNGROUPED_KEY = "__ungrouped__";
 
 function loadTasks(mode: WorkbenchMode): WorkbenchTask[] {
   if (typeof window === "undefined") return [];
-  // 旧版本 key 直接清掉（其中的任务形状已过期，读了只会制造双形状）
-  for (const key of LEGACY_TASKS_STORAGE_KEYS) {
-    window.localStorage.removeItem(key);
-  }
   try {
     const raw = window.localStorage.getItem(`${TASKS_STORAGE_KEY}:${mode}`);
     if (!raw) return [];
@@ -795,108 +783,6 @@ export function Workbench() {
   });
   tasksByModeRef.current = tasksByMode;
 
-  /**
-   * 旧任务消息块的**服务端真序重建**（一次性，2026-09-20）。
-   *
-   * 病史：v0 桌面包把一轮对话只存成「整段文本 + 任务级 tools（尾部 10 条）」，localStorage
-   * 里没有任何时序信息——本地迁移只能拼出 [文本, 工具…]，用户看到的就是「工具调用全部
-   * 堆在消息尾部」，且跨轮工具被 10 条上限截断（三次反馈同一个现象）。服务端从第一版起
-   * 就按事件顺序持久化 contentBlocks（实测 `["text","tool","text","tool",…]` 交错），
-   * 这里按 sessionId 拉回来、按**全文逐字相等**匹配本地助手消息，用服务端真序重建 blocks。
-   *
-   * 服务端是权威：匹配上就**覆盖**本地 blocks（v1 的有损迁移已经污染过存量数据，
-   * 只补空缺的话污染永远冲不掉）；匹配不上的保持原样。消息文本绝不动——追问历史、
-   * 复制、标题消费的是 text。拉取失败不打戳，下次启动再试（宁可看不到，也不要把
-   * 工具按错位置钉在消息尾部）。
-   */
-  useEffect(() => {
-    if (!session?.access_token) return;
-    const token = session.access_token;
-    let cancelled = false;
-    void (async () => {
-      for (const m of ["code", "design"] as const) {
-        if (cancelled) return;
-        const pending = tasksByModeRef.current[m].filter(
-          (t) => t.status !== "running" && !t.serverBlocksSyncedAt,
-        );
-        if (pending.length === 0) continue;
-        // 同一 sessionId 的任务共享一次拉取（每个任务自成会话）
-        const bySession = new Map<string, string[]>();
-        for (const t of pending) {
-          bySession.set(t.sessionId, [
-            ...(bySession.get(t.sessionId) ?? []),
-            t.id,
-          ]);
-        }
-        const serverBySession = new Map<
-          string,
-          Array<{ text: string; blocks: ContentBlock[] }>
-        >();
-        for (const sessionId of bySession.keys()) {
-          try {
-            const res = await fetchMessages(token, sessionId);
-            serverBySession.set(
-              sessionId,
-              (res.messages ?? [])
-                .filter(
-                  (msg) =>
-                    msg.role === "assistant" &&
-                    (msg.contentBlocks?.length ?? 0) > 0,
-                )
-                .map((msg) => ({
-                  text: msg.content,
-                  blocks: msg.contentBlocks ?? [],
-                })),
-            );
-          } catch {
-            // 拉取失败：不打戳，下次启动再试（离线启动是常态）
-          }
-        }
-        if (cancelled) return;
-        const syncedAt = new Date().toISOString();
-        setTasksByMode((prev) => {
-          const list = prev[m].map((t) => {
-            if (t.status === "running" || t.serverBlocksSyncedAt) return t;
-            const server = serverBySession.get(t.sessionId);
-            if (!server) return t; // 没拉到：原样保持，等下次
-            // 按顺序贪心匹配：本地消息全文 == 服务端该轮文本块的拼接
-            const cursor = { i: 0 };
-            let changed = false;
-            const messages = t.messages.map((msg) => {
-              if (msg.role !== "assistant") return msg;
-              const hitIdx = server.findIndex(
-                (s, idx) => idx >= cursor.i && s.text === msg.text,
-              );
-              if (hitIdx < 0) return msg;
-              cursor.i = hitIdx + 1;
-              const hit = server[hitIdx];
-              if (!hit) return msg;
-              const blocks = rebuildAssistantBlocks(hit.blocks);
-              if (blocks.length === 0) return msg;
-              changed = true;
-              // 从块里恢复 runId 归属（服务端 2026-09-21 存储改造后才有；
-              // 旧数据没有就不伪造，折叠/轨迹对该轮退化为按用户消息分轮）
-              const blockRunId = blocks.find(
-                (b) => b.type === "tool" && b.tool.runId,
-              );
-              const runId =
-                blockRunId?.type === "tool" ? blockRunId.tool.runId : undefined;
-              return { ...msg, blocks, ...(runId ? { runId } : {}) };
-            });
-            if (!changed) return t;
-            return { ...t, messages, serverBlocksSyncedAt: syncedAt };
-          });
-          if (list.every((t, i) => t === prev[m][i])) return prev;
-          saveTasks(m, list);
-          return { ...prev, [m]: list };
-        });
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [session?.access_token]);
-
   const tasks = tasksByMode[mode];
   /**
    * 当前选中的项目：Code 模式在「工作目录项目」（kind='code'）里找，Design 在画布
@@ -913,12 +799,6 @@ export function Workbench() {
     [tasks, activeTaskId],
   );
 
-  /**
-   * 展示用的任务：旧数据（任务级 `tools`、无消息块）在此做**渲染兜底**迁移——
-   * 工具挂进最后一条助手消息，至少看得到用过什么。真序仍以服务端重建为准
-   * （serverBlocksSyncedAt 之后 blocks 已带工具块，迁移会自动让位，见 lib 实现）。
-   * 刻意不落回存储：没有时序的顺序正是要淘汰的形态。
-   */
   /** 轨迹账本（对话/轨迹双页签的「轨迹」侧）：按轮次分组、行序即时序。 */
   const trajectoryModel = useMemo(
     () => buildTrajectory(activeTask?.messages ?? []),

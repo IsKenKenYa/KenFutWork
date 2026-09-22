@@ -1,4 +1,4 @@
-import type { ContentBlock, ToolArtifact } from "@kenfutwork/shared";
+import type { ToolArtifact } from "@kenfutwork/shared";
 import { parseTimestampMs } from "./elapsed";
 import {
   completeSubagent,
@@ -397,79 +397,6 @@ export function toolTargetParts(entry: TaskToolEntry): ToolTargetParts | null {
     "";
   if (!text) return null;
   return { primary: text, rest: null, isCommand: false };
-}
-
-/**
- * 服务端 contentBlocks → 本地消息 blocks（**真序重建**）。
- *
- * 为什么需要：v0 桌面包只把一轮对话存成「整段文本 + 任务级 tools（尾部 10 条）」，
- * 本地迁移只能拼出 [文本, 工具…]——工具看着全堆在消息尾部（2026-09-20 用户三次
- * 反馈同一个现象）。服务端从第一版起就按事件顺序持久化 contentBlocks
- * （实测 `["text","tool","text","tool",…]` 完全交错），按 sessionId 拉回来即可
- * 还原每一次调用真实发生的位置。拉取失败时才退化为本地有损迁移。
- *
- * 2026-09-21 存储改造后服务端块上还有 runId/时间戳（见 assistant-block-collector）：
- * 一并恢复——刷新后轮级折叠、轨迹时间轴与耗时列才能从 PG 历史完整还原。旧数据
- * 没有这些字段，走各自的缺省（无 runId / 无时刻），不伪造。
- *
- * 非 text/tool/thinking 块（image/mention）本地消息模型不渲染，按序跳过——
- * 丢的只是渲染不了的内容，文本/思考/工具的时序不受影响。
- */
-export function rebuildAssistantBlocks(
-  serverBlocks: readonly ContentBlock[],
-): TaskMessageBlock[] {
-  const blocks: TaskMessageBlock[] = [];
-  for (const block of serverBlocks) {
-    if (block.type === "text") {
-      if (!block.text) continue;
-      const at = parseTimestampMs(block.at ?? "");
-      const last = blocks[blocks.length - 1];
-      if (last?.type === "text") {
-        last.text += block.text;
-      } else {
-        blocks.push({
-          type: "text",
-          text: block.text,
-          ...(at !== null ? { at } : {}),
-        });
-      }
-      continue;
-    }
-    if (block.type === "thinking") {
-      if (!block.thinking) continue;
-      const at = parseTimestampMs(block.at ?? "");
-      const last = blocks[blocks.length - 1];
-      if (last?.type === "reasoning") {
-        last.text += block.thinking;
-      } else {
-        blocks.push({
-          type: "reasoning",
-          text: block.thinking,
-          ...(at !== null ? { at } : {}),
-        });
-      }
-      continue;
-    }
-    if (block.type !== "tool") continue;
-    const startedAt = parseTimestampMs(block.startedAt ?? "");
-    const endedAt = parseTimestampMs(block.endedAt ?? "");
-    blocks.push({
-      type: "tool",
-      tool: {
-        toolCallId: block.toolCallId,
-        toolName: block.toolName,
-        // 契约里工具块只有 running/completed；被拒是 completed + output.denied
-        status: block.output?.denied === true ? "denied" : "completed",
-        ...(block.input ? { input: block.input } : {}),
-        ...(block.output ? { output: block.output } : {}),
-        ...(block.outputSummary ? { summary: block.outputSummary } : {}),
-        ...(block.runId ? { runId: block.runId } : {}),
-        ...(startedAt !== null ? { startedAt } : {}),
-        ...(endedAt !== null ? { endedAt } : {}),
-      },
-    });
-  }
-  return blocks;
 }
 
 /**
