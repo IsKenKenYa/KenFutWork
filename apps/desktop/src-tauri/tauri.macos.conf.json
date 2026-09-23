@@ -1,0 +1,18 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "targets": ["app", "dmg"],
+    "icon": ["icons/icon.png", "icons/icon.icns"],
+    "resources": {
+      "../../../release/KenFutWork-server": "app/KenFutWork-server",
+      "../../../release/web": "app/web",
+      "../../../release/pg": "app/pg",
+      "../../../release/runtime": "app/runtime",
+      "../../../release/node_modules": "app/node_modules",
+      "../../../release/supabase": "app/supabase"
+    },
+    "macOS": {
+      "minimumSystemVersion": "12.0"
+    }
+  }
+}

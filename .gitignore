@@ -94,6 +94,7 @@ apps/desktop/src-tauri/gen/
 
 # 安装包产物（默认落在仓库根，见 apps/desktop/scripts/collect-bundle.mjs）
 /KenFutWork_*-setup.exe
+/KenFutWork_*.dmg
 .playwright-mcp/
 .zcodeignore
 

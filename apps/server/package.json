@@ -68,6 +68,7 @@
     "@embedded-postgres/linux-arm64": "17.10.0-beta.17",
     "@embedded-postgres/linux-x64": "17.10.0-beta.17",
     "@embedded-postgres/windows-x64": "17.10.0-beta.17",
+    "@img/sharp-darwin-arm64": "0.35.4",
     "@img/sharp-win32-x64": "0.35.4"
   }
 }

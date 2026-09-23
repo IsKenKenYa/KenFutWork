@@ -173,6 +173,9 @@ importers:
       '@embedded-postgres/windows-x64':
         specifier: 17.10.0-beta.17
         version: 17.10.0-beta.17
+      '@img/sharp-darwin-arm64':
+        specifier: 0.35.4
+        version: 0.35.4
       '@img/sharp-win32-x64':
         specifier: 0.35.4
         version: 0.35.4
