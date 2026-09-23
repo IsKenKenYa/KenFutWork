@@ -33,11 +33,14 @@ pnpm --filter @kenfutwork/desktop exec tauri build        # 出安装包；加 -
 ```sh
 pnpm fetch:runtimes                                       # 1) 拉随包运行时（darwin-arm64 资产，sha256 校验）
 pnpm package:mac                                          # 2) 出 release/（server.cjs + web + pg + runtime + node_modules）
-pnpm --filter @kenfutwork/desktop build                   # 3) tauri 出 .app → hdiutil 打 DMG → 收到仓库根
+pnpm --filter @kenfutwork/desktop build                   # 3) tauri 出 .app → bundle_dmg.sh 摆布局 → DMG 收到仓库根
 ```
 
-产物：仓库根 `KenFutWork_0.1.0_arm64.dmg`（约 346 MB；.app 818 MB 自包含：服务端 CJS + 内嵌
-Postgres + 随包 Node/Python/uv/JRE，用户机器无需预装）。
+产物：仓库根 `KenFutWork_0.1.0_arm64.dmg`（约 285 MB；.app 818 MB 自包含：服务端 CJS + 内嵌
+Postgres + 随包 Node/Python/uv/JRE，用户机器无需预装）。**安装引导**：Docker 式拖拽布局——
+品牌背景（标题/箭头/中文提示，源文件 `src-tauri/dmg/background.svg` 经 sharp 渲染）+ 左 .app
+右 Applications，由 `scripts/dmg/bundle_dmg.sh`（tauri 的 create-dmg 分叉，AppleScript 真实
+设置窗口 bounds 与图标坐标）生成；无头环境 AppleScript 受限时自动降级 appdmg → hdiutil。
 
 **形态要点（2026-09-23 落地）**：
 - **不做 Node SEA 单文件**：darwin 27 上 postject 注入后必崩（SIGSEGV，node 22/24 双载体 +

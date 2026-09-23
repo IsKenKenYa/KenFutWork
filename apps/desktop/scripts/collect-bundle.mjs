@@ -116,6 +116,54 @@ if (process.platform === "win32") {
     ],
   };
 
+  // **首选布局引擎：tauri 的 bundle_dmg.sh**（AppleScript 真实设置窗口 bounds 与
+  // 图标坐标；appdmg 写的窗口尺寸在本机 Finder 不生效导致图标错位，2026-09-23
+  // 用户截图实锤）。脚本与 support 已收进仓库 scripts/dmg/（带 repo 哨兵）。
+  const dmgScript = join(import.meta.dirname, "dmg", "bundle_dmg.sh");
+  const layout = [
+    "bash",
+    [
+      dmgScript,
+      "--volname",
+      "KenFutWork",
+      "--volicon",
+      join(srcTauri, "icons", "icon.icns"),
+      "--background",
+      join(srcTauri, "dmg", "background.png"),
+      "--window-size",
+      "660",
+      "400",
+      "--icon-size",
+      "128",
+      "--icon",
+      "KenFutWork.app",
+      "165",
+      "225",
+      "--app-drop-link",
+      "495",
+      "225",
+      dmgPath,
+      appDir,
+    ],
+  ];
+  const layoutOk = (() => {
+    if (!existsSync(dmgScript)) {
+      console.log("[collect] 未找到 bundle_dmg.sh，跳过布局引擎");
+      return false;
+    }
+    const run = spawnSync(layout[0], layout[1], { stdio: "inherit" });
+    return run.status === 0;
+  })();
+  if (layoutOk) {
+    const sizeMb = (statSync(dmgPath).size / 1024 / 1024).toFixed(1);
+    console.log(
+      `[collect] DMG 已在项目根：${dmgPath}（${sizeMb} MB，挂载后拖入 Applications）`,
+    );
+    process.exit(0);
+  }
+
+  // 布局引擎失败（无头/AppleScript 权限受限）→ appdmg 兜底（纯 JS 也有布局，
+  // 但窗口尺寸可能不被 Finder 采纳）；再失败 → hdiutil 无布局镜像。
   // appdmg 的原生依赖（macos-alias 的 volume.node / fs-xattr 的 xattr.node）：上游
   // tarball 不带产物、pnpm 默认拦 install 脚本，且 ABI 必须与「当前运行的 node」一致
   // ——加载/运行失败就整批删缓存产物、用当前 node 重跑 node-gyp、再试一次。
