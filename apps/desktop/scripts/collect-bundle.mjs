@@ -128,8 +128,10 @@ if (process.platform === "win32") {
       "KenFutWork",
       "--volicon",
       join(srcTauri, "icons", "icon.icns"),
-      // 背景必须是 **1x 尺寸（660×400）**：Finder 的窗口背景不感知 @2x，
-      // 1320×800 的图会被当成 1320×800pt 绘制 → 放大一倍裁切（2026-09-23 实测）。
+      // 背景两重口径（都实测踩过）：① 必须 **1x 尺寸（660×400）**——Finder 不感知
+      // @2x；② PNG 的 **DPI 元数据必须 72**——sharp 默认写 96，Finder 按 72/96=0.75
+      // 缩放绘制 → 背景只铺窗口的 75%、右下露白（用户截图实锤）。渲染命令见
+      // package 前置：sharp(svg,{density:72}).resize(660,400).withMetadata({density:72})。
       "--background",
       join(srcTauri, "dmg", "background.png"),
       "--window-size",
