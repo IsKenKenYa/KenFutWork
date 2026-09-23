@@ -270,7 +270,7 @@ ModelCapability = { image_in, video_in, audio_in, thinking, tool_use, dynamicall
 | deepseek-harness | provider-neutral + 图像预算参照 | 随子模块浅克隆 | MIT | `packages/llm/llm/README.md`、`packages/llm/llm-pi-ai/{README.md,src/context.ts}` |
 | jaaz | 自动注册 + VGM 基类参照 | 随子模块浅克隆 | 见仓库 | `server/tools/{image_providers/image_base_provider.py,video_providers/video_base_provider.py,video_generation/video_generation_core.py}` |
 | jellyfish | ProviderSpec 参照 | 随子模块浅克隆 | 见仓库 | `backend/app/services/llm/{provider_registry.py,provider_bootstrap.py,provider_resolver.py,runtime.py}` |
-| futureFlow | 反面参照 | 随子模块浅克隆 | 见仓库 | `gateway/src/llm/llm-proxy.controller.ts` |
+| futureFlow | 反面参照 | `eba16d8`（根级 `flow/` 子模块，完整克隆） | 见仓库 | `gateway/src/llm/llm-proxy.controller.ts` |
 | loomic | 本项目前身快照 | 随子模块浅克隆 | 见仓库 | `apps/server/src/generation/providers/` |
 | seedance-2.0-skill | VGM 内容层参照 | 随子模块浅克隆 | 见仓库 | `references/{storytelling-framework.md,continuity-qc.md,first-last-frame-guide.md}` |
 

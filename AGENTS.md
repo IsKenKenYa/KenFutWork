@@ -8,7 +8,7 @@
 - `packages/shared` — 跨端 zod 契约（HTTP API、WS 协议、job 事件、credits、skills 等），构建到 `dist/` 后被前后端引用；改契约先改这里，两端跟着编译器走。
 - `packages/ui`、`packages/config` — 内部共享组件与 TS 配置。
 - `supabase/migrations/` — 唯一数据库 Schema 迁移源（原生 SQL）。
-- `references/` — 外部参考项目（deepseek-harness、langgraph、jaaz 等），**只作方向参考**，禁止直接复制代码/schema/字段名；不要批量删除或忽略该目录。**例外**：`references/futureFlow` 是**待合并的 flow 子系统**（作者 future73807 即本仓协作者，`DEC-10`…`DEC-13` 已拍板），不是纯参考——集成方案见 `docs/方案设计/flow集成方案.md`；其代码按方案分阶段并入（子模块指针跟随 → iframe 内嵌 → 收编），不受本节「禁止复制」约束。
+- `references/` — 外部参考项目（deepseek-harness、langgraph、jaaz 等），**只作方向参考**，禁止直接复制代码/schema/字段名；不要批量删除或忽略该目录。**例外**：根级 `flow/` 是**待合并的 flow 子系统**（futureFlow 上游，作者 future73807 即本仓协作者，`DEC-10`…`DEC-13` 已拍板），不是纯参考——集成方案见 `docs/方案设计/flow集成方案.md`；其代码按方案分阶段并入（子模块指针跟随 → iframe 内嵌 → 收编），不受本节「禁止复制」约束。
 - `docs/` — 技术文档与架构决策；入口与治理规则见 `docs/README.md`（文档地图、单源原则、决策 ID、快照刷新规则）；`docs/方案设计/改造计划.md` 是服务端架构演进蓝图，`docs/方案设计/多端产品设计.md` 是多端形态设计；`docs/调研/02-当前项目实现状态.md` 是代码现状快照。
 
 本地开发需根目录 `.env.local`（模板见 `.env.example`），server 通过 `--env-file=../../.env.local` 读取。
