@@ -139,7 +139,13 @@ describe("PATH 注入", () => {
  * node/uv 顶层可执行体、python 的 bin/ 子目录、Adoptium mac JRE 的 Contents/Home。
  */
 describe("运行时目录解析（darwin 布局）", () => {
-  const app = join("/Applications", "KenFutWork.app", "Contents", "Resources", "app");
+  const app = join(
+    "/Applications",
+    "KenFutWork.app",
+    "Contents",
+    "Resources",
+    "app",
+  );
 
   it("发布包布局：node/uv 顶层、python bin/、jdk Contents/Home，JAVA_HOME 指向 Contents/Home", () => {
     const resolved = resolveRuntimes({

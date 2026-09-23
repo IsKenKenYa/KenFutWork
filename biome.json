@@ -28,7 +28,8 @@
       "!**/target",
       "!**/gen",
       "!**/data",
-      "!**/logs"
+      "!**/logs",
+      "!**/runtime"
     ]
   },
   "formatter": {

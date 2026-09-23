@@ -1,10 +1,10 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "bundle": {
-    "targets": ["app", "dmg"],
+    "targets": ["app"],
     "icon": ["icons/icon.png", "icons/icon.icns"],
     "resources": {
-      "../../../release/KenFutWork-server": "app/KenFutWork-server",
+      "../../../release/server": "app/server",
       "../../../release/web": "app/web",
       "../../../release/pg": "app/pg",
       "../../../release/runtime": "app/runtime",

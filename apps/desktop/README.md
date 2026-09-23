@@ -28,6 +28,29 @@ pnpm --filter @kenfutwork/desktop exec tauri build        # 出安装包；加 -
 > 同理 `bundle.resources` 里引 `release/` 要写**三级** `../../../release/...`
 > （src-tauri → apps/desktop → apps → 仓库根；少一级会报「resource path 不存在」）。
 
+## 出 macOS DMG（Apple Silicon，自包含 .app）
+
+```sh
+pnpm fetch:runtimes                                       # 1) 拉随包运行时（darwin-arm64 资产，sha256 校验）
+pnpm package:mac                                          # 2) 出 release/（server.cjs + web + pg + runtime + node_modules）
+pnpm --filter @kenfutwork/desktop build                   # 3) tauri 出 .app → hdiutil 打 DMG → 收到仓库根
+```
+
+产物：仓库根 `KenFutWork_0.1.0_arm64.dmg`（约 346 MB；.app 818 MB 自包含：服务端 CJS + 内嵌
+Postgres + 随包 Node/Python/uv/JRE，用户机器无需预装）。
+
+**形态要点（2026-09-23 落地）**：
+- **不做 Node SEA 单文件**：darwin 27 上 postject 注入后必崩（SIGSEGV，node 22/24 双载体 +
+  remove-signature 官方流程均复现）。改为「随包官方静态 node（runtime/node/bin/node）+
+  esbuild CJS（`server/server.cjs`，`KFW_PACKAGED_CJS` define 定位资源根）」——node 二进制
+  零修改、签名天然有效，壳的 mac 分支按 `node server/server.cjs` 拉起（lib.rs）。
+- **签名**：默认 ad-hoc（临时签名）。本机双击可用；**拷给别的 mac** 首开被 Gatekeeper 拦，
+  右键 → 打开，或 `xattr -cr /Applications/KenFutWork.app`。对外分发需 Developer ID + 公证。
+- **数据目录**：`~/Library/Application Support/com.kenfutwork.desktop/`（与 dev 态同目录，
+  首启直接复用已有数据）；检查点与沙箱由壳注入到该目录（.app 包内只读且受签名保护，不可写）。
+- **PG 软链**：darwin 包的 `pg-symlinks.json` 由 `package-mac.mjs` 复刻（libicudata 前车之鉴）；
+  pgmq shim 预装进 `pg/share/postgresql/extension`（darwin 是 PG 标准 share 布局，win 才平铺）。
+
 ## 出 Windows 安装包（NSIS，一键装）
 
 ```sh

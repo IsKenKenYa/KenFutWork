@@ -106,7 +106,8 @@ const SPECS = {
     python: {
       series: "3.12",
       probe: join("bin", "python3"),
-      resolve: async (series) => resolvePythonAsset(series, "aarch64-apple-darwin"),
+      resolve: async (series) =>
+        resolvePythonAsset(series, "aarch64-apple-darwin"),
     },
     uv: {
       probe: "uvx",
@@ -392,7 +393,9 @@ async function main() {
     );
   }
   const { only, force } = parseArgs(process.argv.slice(2), Object.keys(specs));
-  const selected = Object.entries(specs).filter(([name]) => only.includes(name));
+  const selected = Object.entries(specs).filter(([name]) =>
+    only.includes(name),
+  );
   if (selected.length === 0) {
     throw new Error(`--only 里没有可识别的运行时：${only.join(",")}`);
   }
@@ -400,7 +403,9 @@ async function main() {
     await fetchWithSha({ name, ...spec }, { force });
   }
   log(`完成（目标 ${TARGET}）。运行时目录：${RUNTIME_DIR}`);
-  log("打包时 scripts/package-win.mjs / package-mac.mjs 会把它拷进发布包的 <exeDir>/runtime/。");
+  log(
+    "打包时 scripts/package-win.mjs / package-mac.mjs 会把它拷进发布包的 <exeDir>/runtime/。",
+  );
 }
 
 main().catch((error) => {

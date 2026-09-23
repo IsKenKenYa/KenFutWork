@@ -1,20 +1,25 @@
 /**
- * macOS（Apple Silicon）生产包打包：产出 release/KenFutWork-server（Node SEA 单文件
- * 服务端，无后缀——Rust 壳 bundled_server_exe 的 cfg(not(windows)) 分支按这个名字找）
- * + 静态 UI（web/）+ 内嵌 Postgres + 随包运行时。产物经 tauri.macos.conf.json 的
- * resources 映射进 .app（Contents/Resources/app/…）。
+ * macOS（Apple Silicon）生产包打包：产出 release/server/server.cjs（esbuild 单文件
+ * 服务端）+ 静态 UI（web/）+ 内嵌 Postgres + 随包运行时。产物经 tauri.macos.conf.json
+ * 的 resources 映射进 .app（Contents/Resources/app/…）。
  *
- * 与 scripts/package-win.mjs 是**镜像脚本**（SEA/postject/pg/sharp/node-pty 六步同构），
+ * **为什么不用 Node SEA 单文件**：在 macOS 26（darwin 27，2026-09-23 实测）上
+ * postject 注入后必崩（SIGSEGV in BlobDeserializer；node 22.20 / 24.11 双载体 +
+ * remove-signature 官方流程均复现）。改用「随包官方静态 node（runtime/node/bin/node，
+ * 反正要随包）+ CJS 入口」：node 二进制零修改、签名天然有效，lib.rs 的 mac 分支按
+ * `runtime/node/bin/node server/server.cjs` 拉起。
+ *
+ * 与 scripts/package-win.mjs 是**镜像脚本**（pg/sharp/node-pty/运行时组装同构），
  * 有意不抽公共库：两条管线分属两台打包机、由不同人维护，耦合在一起会让每次合并都
  * 冲突。差异点（都标注在对应步骤）：
- *   - postject 注入会**破坏 arm64 强制签名**，注入后必须 `codesign -f -s -` 重签；
+ *   - 服务端不产 SEA 单文件，而是 server.cjs + 随包静态 node（原因见上）；
  *   - darwin 的 PG 包带 pg-symlinks.json（libicudata 等未带版本号的 dylib 软链），
  *     直接 cp 会丢链接 → initdb 报 image not found（docs/日志.md libicudata 前车之鉴）；
  *   - sharp 原生包是 @img/sharp-darwin-arm64；node-pty 用 prebuilds/darwin-arm64；
  *   - 随包运行时来自 fetch-runtimes.mjs 的 darwin-arm64 分支（node/python/uv/jdk）。
  *
- * 前置：pnpm install（esbuild/postject 为根 devDependencies）、
- *       `pnpm --filter @kenfutwork/server install` 已含 @img/sharp-darwin-arm64、
+ * 前置：pnpm install（esbuild 为根 devDependencies）、
+ *       apps/server 已装 @img/sharp-darwin-arm64、
  *       fetch-runtimes 已跑（可选，缺了运行时如实降级宿主机）。
  * 用法：pnpm package:mac
  */
@@ -30,7 +35,6 @@ import {
   rmSync,
   statSync,
   symlinkSync,
-  writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
 import { basename, dirname, join } from "node:path";
@@ -38,12 +42,9 @@ import process from "node:process";
 
 const ROOT = process.cwd();
 const RELEASE = join(ROOT, "release");
-const BUILD = join(RELEASE, "build");
-/** mac 产物无后缀：lib.rs bundled_server_exe 的 cfg(not(windows)) 分支按此名探测。 */
-const EXE_NAME = "KenFutWork-server";
 /** 内嵌 Postgres 二进制来源（按平台可选依赖分发的 PG 17 线）。 */
 const PG_PACKAGE = "@embedded-postgres/darwin-arm64";
-/** sharp 的 darwin 原生扩展（SEA 下按 <exeDir>/node_modules/@img/ 解析）。 */
+/** sharp 的 darwin 原生扩展（运行时按 <exeDir>/node_modules/@img/ 解析）。 */
 const SHARP_PACKAGE = "@img/sharp-darwin-arm64";
 /** 同源迁移与供给前导（桌面首启动即建全 schema）。 */
 const SUPABASE_DIR = join(ROOT, "supabase");
@@ -93,7 +94,9 @@ function resolvePgNativeDir() {
   }
   const nativeDir = join(dirname(entry), "..", "native");
   if (!existsSync(join(nativeDir, "bin"))) {
-    console.error(`[package-mac] 二进制包结构不符（缺 native/bin）：${nativeDir}`);
+    console.error(
+      `[package-mac] 二进制包结构不符（缺 native/bin）：${nativeDir}`,
+    );
     process.exit(1);
   }
   return nativeDir;
@@ -133,7 +136,6 @@ function main() {
   }
 
   rmSync(RELEASE, { recursive: true, force: true });
-  mkdirSync(BUILD, { recursive: true });
 
   // 1) 构建共享契约包与静态 UI（同源口径与 Windows 一致：API base 必须是相对路径）
   run("构建 @kenfutwork/shared", "pnpm", [
@@ -164,7 +166,10 @@ function main() {
   copyFileSync(splashSource, join(webOut, "_splash.html"));
   console.log("[package-mac] 启动页已写入静态导出：_splash.html");
 
-  // 2) esbuild 打包服务端为单文件 CJS（SEA 要求 CommonJS；external 口径与 Windows 一致）
+  // 2) esbuild 打包服务端为单文件 CJS（external 口径与 Windows 一致；多一个
+  //    KFW_PACKAGED_CJS define：entry-root 据此把资源根定位到 server.cjs 的父目录）
+  const serverOut = join(RELEASE, "server", "server.cjs");
+  mkdirSync(dirname(serverOut), { recursive: true });
   run("打包服务端（esbuild）", "pnpm", [
     "exec",
     "esbuild",
@@ -174,47 +179,11 @@ function main() {
     "--format=cjs",
     "--define:import.meta.url=__filename",
     "--define:import.meta.dirname=__dirname",
+    "--define:KFW_PACKAGED_CJS=true",
     "--external:node-pty",
-    `--outfile=${join(BUILD, "server.cjs")}`,
+    `--outfile=${serverOut}`,
     "--log-level=warning",
   ]);
-
-  // 3) Node SEA：生成 blob → 注入 node 副本 → **重签**
-  const nodeExe = process.execPath;
-  const seaConfig = join(BUILD, "sea-config.json");
-  writeFileSync(
-    seaConfig,
-    JSON.stringify(
-      {
-        main: join(BUILD, "server.cjs"),
-        output: join(BUILD, "sea-prep.blob"),
-        disableExperimentalSEAWarning: true,
-      },
-      null,
-      2,
-    ),
-  );
-  run("生成 SEA blob", nodeExe, ["--experimental-sea-config", seaConfig]);
-
-  const exePath = join(RELEASE, EXE_NAME);
-  copyFileSync(nodeExe, exePath);
-  run(
-    "注入 SEA blob（postject）",
-    "pnpm",
-    [
-      "exec",
-      "postject",
-      exePath,
-      "NODE_SEA_BLOB",
-      join(BUILD, "sea-prep.blob"),
-      "--sentinel-fuse",
-      "NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2",
-    ],
-    { quiet: true },
-  );
-  // arm64 上 macOS 强制所有可执行体带签名：postject 注入后原签名作废，二进制直接
-  // 被 kill（Killed: 9）。ad-hoc 重签（“-”身份）即可本机运行；对外分发需 Developer ID。
-  run("ad-hoc 重签服务端二进制", "codesign", ["--force", "--sign", "-", exePath]);
 
   // 4) 组装 release/：二进制 + 静态 UI + 内嵌 Postgres + 迁移 SQL
   const releaseWeb = join(RELEASE, "web");
@@ -228,6 +197,14 @@ function main() {
     });
   }
   replicatePgSymlinks(pgNative, join(RELEASE, "pg"));
+  // pgmq shim 的 sharedir 在 darwin 包里是 **share/postgresql/extension**（PG 标准布局；
+  // win 包才平铺在 share/extension）。**打包期预装**：.app 卷只读，运行期拷贝会 EROFS，
+  // 预装后服务端检测到文件已存在即跳过（零写入）。运行期解析按平台见 pgmq-shim.ts。
+  const extensionDir = join(RELEASE, "pg", "share", "postgresql", "extension");
+  mkdirSync(extensionDir, { recursive: true });
+  for (const file of ["pgmq.control", "pgmq--1.0.sql"]) {
+    copyFileSync(join(SHIM_DIR, file), join(extensionDir, file));
+  }
   for (const file of ["pgmq.control", "pgmq--1.0.sql"]) {
     cpSync(join(SHIM_DIR, file), join(RELEASE, "pg", "shim", file));
   }
@@ -247,7 +224,7 @@ function main() {
     "[package-mac] 捆绑内嵌 Postgres（pg/）+ 迁移 SQL（supabase/）+ pgmq shim",
   );
 
-  // 4c) sharp 的 darwin 原生扩展（SEA 下按 <exe>/node_modules/@img/ 解析，同 Windows 口径）
+  // 4c) sharp 的 darwin 原生扩展（server.cjs 按 __filename 向上解析 node_modules）
   const serverRequire = createRequire(
     join(ROOT, "apps", "server", "package.json"),
   );
@@ -261,10 +238,38 @@ function main() {
     );
     process.exit(1);
   }
+  // pnpm 布局下这个路径是**符号链接**——dereference 拷真身，否则包里是死链，
+  // 启动即 sharp 加载失败（2026-09-23 真机踩坑）。
   cpSync(sharpDir, join(RELEASE, "node_modules", SHARP_PACKAGE), {
     recursive: true,
+    dereference: true,
   });
-  console.log(`[package-mac] 捆绑 sharp 原生扩展（node_modules/${SHARP_PACKAGE}）`);
+  // sharp.node 的 @rpath 指向 @img/sharp-libvips-darwin-arm64/lib（mac 上 libvips
+  // 独立成包，Windows 则内嵌在同包内）。从 pnpm 虚拟仓取（版本随上游，glob 匹配）。
+  const libvipsParent = join(ROOT, "node_modules", ".pnpm");
+  const libvipsEntry = readdirSync(libvipsParent).find((name) =>
+    name.startsWith("@img+sharp-libvips-darwin-arm64@"),
+  );
+  if (!libvipsEntry) {
+    console.error(
+      "[package-mac] 缺 @img/sharp-libvips-darwin-arm64（sharp 的 libvips 依赖），先 pnpm install。",
+    );
+    process.exit(1);
+  }
+  cpSync(
+    join(
+      libvipsParent,
+      libvipsEntry,
+      "node_modules",
+      "@img",
+      "sharp-libvips-darwin-arm64",
+    ),
+    join(RELEASE, "node_modules", "@img", "sharp-libvips-darwin-arm64"),
+    { recursive: true, dereference: true },
+  );
+  console.log(
+    `[package-mac] 捆绑 sharp 原生扩展（node_modules/${SHARP_PACKAGE} + sharp-libvips-darwin-arm64）`,
+  );
 
   // 4c-2) node-pty（终端的真 PTY）：lib/ + prebuilds/darwin-arm64（pty.node + spawn-helper）
   //   + package.json。mac 无 conpty（那是 Windows 的伪终端方案）。
@@ -308,9 +313,22 @@ function main() {
     );
   }
 
+  // Adoptium 等上游带只读文件（classes.jsa=444），tauri-build 二次构建覆盖拷贝时会
+  // EACCES——统一放开属主写位（保留可执行位）；并清掉壳 target 里上一轮的陈旧资源
+  // 拷贝（target/release/app，同样可能是只读旧文件）。
+  run("放开产物写权限", "chmod", ["-R", "u+w", RELEASE]);
+  for (const profile of ["debug", "release"]) {
+    rmSync(
+      join(ROOT, "apps", "desktop", "src-tauri", "target", profile, "app"),
+      { recursive: true, force: true },
+    );
+  }
+
   console.log("");
   console.log(`[package-mac] 打包完成：${RELEASE}`);
-  console.log(`[package-mac]   ${EXE_NAME}  +  web/  +  pg/  +  runtime/`);
+  console.log(
+    `[package-mac]   server/server.cjs  +  web/  +  pg/  +  runtime/`,
+  );
   console.log(
     "[package-mac] 下一步：pnpm --filter @kenfutwork/desktop build（tauri 出 .app 与 DMG）",
   );

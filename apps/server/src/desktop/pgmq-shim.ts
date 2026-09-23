@@ -122,7 +122,9 @@ const defaultDeps: PgmqShimDeps = {
   exists: existsSync,
   async resolveExtensionDir(binDir) {
     // 捆绑的 Postgres 是精简分发（只有 initdb/pg_ctl/postgres），通常没有 pg_config，
-    // 故「跑 pg_config 取 sharedir」只是优先尝试，主路径是目录惯例 <bin>/../share/extension
+    // 故「跑 pg_config 取 sharedir」只是优先尝试，主路径是目录惯例。**布局按平台不同**：
+    // win 包的 extension 平铺在 share/ 下；darwin 包是 PG 标准的 share/postgresql/extension
+    // （2026-09-23：mac 打包按 win 惯例找 → shim 装错位置 → pg_available_extensions 空）。
     const pgConfig = join(binDir, binaryName("pg_config", process.platform));
     if (existsSync(pgConfig)) {
       const sharedir = await runCapture(pgConfig, ["--sharedir"]);
@@ -130,7 +132,16 @@ const defaultDeps: PgmqShimDeps = {
         return join(sharedir, "extension");
       }
     }
-    const conventional = join(binDir, "..", "share", "extension");
-    return existsSync(conventional) ? conventional : undefined;
+    const candidates =
+      process.platform === "win32"
+        ? [join(binDir, "..", "share", "extension")]
+        : [
+            join(binDir, "..", "share", "postgresql", "extension"),
+            join(binDir, "..", "share", "extension"),
+          ];
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) return candidate;
+    }
+    return undefined;
   },
 };

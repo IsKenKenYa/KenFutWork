@@ -84,53 +84,67 @@ fn desktop_env(data_dir: &Path, web_dir: &Path, port: u16) -> Vec<(String, Strin
     env
 }
 
-/** 安装包随带的那个服务端可执行（`<resource>/app/KenFutWork-server[.exe]`）；仓库里跑时为 None。
+/** 随包服务端的启动载体：程序 + 参数（存在且可运行时返回；仓库里跑时为 None）。
  *
  * 判定必须**严于 exists**：打包占位的零字节文件、tauri-build 残骸都算「存在但不可运行」，
  * 误判会让 dev 形态永远走不到 dev 拉起路径（2026-09-19 实测事故：探活盲等 90s panic）。
+ *
+ * 两种形态：
+ * - Windows：单文件 SEA（`app/KenFutWork-server.exe`）；
+ * - macOS：**不做 SEA**（darwin 27 上 postject 注入必崩，2026-09-23 实测），改用
+ *   随包静态 node 拉起 CJS 入口：`app/runtime/node/bin/node app/server/server.cjs`
+ *   （node 官方发行版签名天然有效，且该 node 本来就要随包给运行时用）。
  */
-fn bundled_server_exe(app: &tauri::AppHandle) -> Option<PathBuf> {
+fn bundled_server_launch(
+    app: &tauri::AppHandle,
+) -> Option<(PathBuf, Vec<String>, PathBuf)> {
     use tauri::Manager;
     let dir = app.path().resource_dir().ok()?.join("app");
-    #[cfg(windows)]
-    let exe = dir.join("KenFutWork-server.exe");
-    #[cfg(not(windows))]
-    let exe = dir.join("KenFutWork-server");
 
-    let meta = std::fs::metadata(&exe).ok()?;
-    // 零字节 = tauri-build 的占位残骸，不是真服务端
-    if meta.len() == 0 {
-        return None;
-    }
-    // Unix 上还要求可执行位（占位文件通常没有）
-    #[cfg(unix)]
+    #[cfg(windows)]
     {
+        let exe = dir.join("KenFutWork-server.exe");
+        let meta = std::fs::metadata(&exe).ok()?;
+        if meta.len() == 0 {
+            return None; // 零字节 = tauri-build 的占位残骸，不是真服务端
+        }
+        Some((exe, Vec::new(), dir))
+    }
+
+    #[cfg(not(windows))]
+    {
+        let node = dir.join("runtime").join("node").join("bin").join("node");
+        let server = dir.join("server").join("server.cjs");
+        let node_meta = std::fs::metadata(&node).ok()?;
+        let server_meta = std::fs::metadata(&server).ok()?;
+        if node_meta.len() == 0 || server_meta.len() == 0 {
+            return None; // 占位残骸
+        }
+        // Unix 上还要求可执行位（占位文件通常没有）
         use std::os::unix::fs::PermissionsExt;
-        if meta.permissions().mode() & 0o111 == 0 {
+        if node_meta.permissions().mode() & 0o111 == 0 {
             return None;
         }
+        Some((node, vec![server.to_string_lossy().to_string()], dir))
     }
-    Some(exe)
 }
 
-/// 打包态的拉起配置：随包服务端 exe + 桌面环境变量 + 指定端口。
+/// 打包态的拉起配置：随包服务端载体 + 桌面环境变量 + 指定端口。
 fn packaged_spawn_config(
-    exe: &Path,
+    program: &Path,
+    args: Vec<String>,
+    app_dir: &Path,
     data_dir: &Path,
     port: u16,
 ) -> ServerSpawnConfig {
-    let dir = exe
-        .parent()
-        .map(|parent| parent.to_path_buf())
-        .unwrap_or_else(|| data_dir.to_path_buf());
     let mut config = ServerSpawnConfig::new(
-        exe.to_string_lossy().as_ref(),
-        Vec::new(),
+        program.to_string_lossy().as_ref(),
+        args,
         data_dir.to_path_buf(),
         port,
     );
-    config.cwd = dir.clone();
-    config.env = desktop_env(data_dir, &dir.join("web"), port);
+    config.cwd = app_dir.to_path_buf();
+    config.env = desktop_env(data_dir, &app_dir.join("web"), port);
     config
 }
 
@@ -176,7 +190,7 @@ fn log_line(data_dir: &Path, message: &str) {
  */
 fn launch_packaged_server(
     data_dir: &Path,
-    exe: &Path,
+    launch: &(PathBuf, Vec<String>, PathBuf),
 ) -> Result<(u16, ServerLaunch), String> {
     for offset in 0..PORT_CANDIDATES {
         let port = SERVER_PORT + offset;
@@ -202,15 +216,15 @@ fn launch_packaged_server(
             log_line(data_dir, &format!("端口 {port} 不可用，换端口"));
             continue;
         }
-        let config = packaged_spawn_config(exe, data_dir, port);
+        let config =
+            packaged_spawn_config(&launch.0, launch.1.clone(), &launch.2, data_dir, port);
         log_line(
             data_dir,
             &format!(
-                "拉起随包服务端：{}（端口 {port}，UI 目录 {}）",
-                exe.display(),
-                exe.parent()
-                    .map(|dir| dir.join("web").display().to_string())
-                    .unwrap_or_default()
+                "拉起随包服务端：{} {}（端口 {port}，UI 目录 {}）",
+                launch.0.display(),
+                launch.1.join(" "),
+                launch.2.join("web").display().to_string()
             ),
         );
         match ensure_server_running(config) {
@@ -236,8 +250,8 @@ fn start_server(
     app: &tauri::AppHandle,
     data_dir: &Path,
 ) -> Result<(ServerLaunch, Option<u16>), String> {
-    if let Some(exe) = bundled_server_exe(app) {
-        let (port, launch) = launch_packaged_server(data_dir, &exe)?;
+    if let Some(server_launch) = bundled_server_launch(app) {
+        let (port, launch) = launch_packaged_server(data_dir, &server_launch)?;
         return Ok((launch, Some(port)));
     }
     ensure_server_running(dev_spawn_config(data_dir.to_path_buf()))
@@ -395,7 +409,7 @@ pub fn run() {
             // 主线程被占住，窗口连重绘都不做 → 用户看到的是一大片白屏。
             // 现在：先画启动中页面（打包态才画，dev 形态窗口归 devUrl），后台起服务，
             // 起来了再把它叫到主线程跳转。
-            let packaged = bundled_server_exe(app.handle()).is_some();
+            let packaged = bundled_server_launch(app.handle()).is_some();
             if packaged {
                 show_startup_splash(app.handle());
             }
