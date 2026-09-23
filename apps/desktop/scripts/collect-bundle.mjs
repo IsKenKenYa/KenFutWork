@@ -128,6 +128,8 @@ if (process.platform === "win32") {
       "KenFutWork",
       "--volicon",
       join(srcTauri, "icons", "icon.icns"),
+      // 背景必须是 **1x 尺寸（660×400）**：Finder 的窗口背景不感知 @2x，
+      // 1320×800 的图会被当成 1320×800pt 绘制 → 放大一倍裁切（2026-09-23 实测）。
       "--background",
       join(srcTauri, "dmg", "background.png"),
       "--window-size",
