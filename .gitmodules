@@ -54,3 +54,6 @@
 	path = references/kimi-code
 	url = https://github.com/MoonshotAI/kimi-code.git
 	shallow = true
+[submodule "flow"]
+	path = flow
+	url = https://github.com/future73807/futureFlow.git

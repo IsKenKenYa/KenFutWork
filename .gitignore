@@ -98,3 +98,6 @@ apps/desktop/src-tauri/gen/
 
 # WorkBuddy AI 的会话/项目记忆目录（本机私有数据与日志，不入库；目录保留不删）
 /.workbuddy-ai/
+
+# CommandCode CLI 的本地数据目录（taste 偏好等，本机私有，不入库）
+/.commandcode/
