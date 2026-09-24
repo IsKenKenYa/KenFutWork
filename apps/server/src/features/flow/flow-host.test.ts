@@ -1,9 +1,11 @@
+import type { ProviderInstanceResponse } from "@kenfutwork/shared";
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 
 import { registerFlowHostRoutes } from "../../http/flow-host.js";
 import type { AuthenticatedUser, RequestAuthenticator } from "../auth/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
+import type { ModelProviderService } from "../model-providers/model-provider-service.js";
 
 const SECRET = "flow-embed-secret-0123456789";
 const HOST_TOKEN = "host-session-token";
@@ -42,16 +44,69 @@ function createViewer(options: {
   };
 }
 
+/**
+ * BYOK 供应商缝的记录型替身：实例清单按 scope 分开存，
+ * `resolveCredentials` 按 id 给明文（真实实现里明文只在解密边界出现）。
+ */
+function createProviders(options: {
+  workspace?: ProviderInstanceResponse[];
+  system?: ProviderInstanceResponse[];
+  credentials?: Record<string, { baseUrl?: string; apiKey: string }>;
+  throwOnResolve?: boolean;
+}) {
+  const resolved: string[] = [];
+  const providers = {
+    async listInstances() {
+      return options.workspace ?? [];
+    },
+    async listSystemInstances() {
+      return options.system ?? [];
+    },
+    async resolveCredentials(
+      _user: unknown,
+      instanceId: string,
+    ): Promise<{ baseUrl?: string; apiKey: string }> {
+      resolved.push(instanceId);
+      if (options.throwOnResolve) throw new Error("解密失败");
+      return options.credentials?.[instanceId] ?? { apiKey: "" };
+    },
+  } as unknown as Pick<
+    ModelProviderService,
+    "listInstances" | "listSystemInstances" | "resolveCredentials"
+  >;
+  return { providers, resolved };
+}
+
+function difyInstance(overrides: Partial<ProviderInstanceResponse> = {}) {
+  return {
+    id: "dify-1",
+    scope: "workspace" as const,
+    name: "本地 Dify",
+    protocol: "dify-engine",
+    baseUrl: "http://127.0.0.1:5001",
+    hasCredential: true,
+    models: [],
+    headerKeys: [],
+    enabled: true,
+    ...overrides,
+  } satisfies ProviderInstanceResponse;
+}
+
 async function createApp(options: {
   secret?: string | undefined;
   frontendUrl?: string | undefined;
   auth?: RequestAuthenticator;
   viewer?: ViewerService;
+  providers?: Pick<
+    ModelProviderService,
+    "listInstances" | "listSystemInstances" | "resolveCredentials"
+  >;
 }) {
   const app = Fastify();
   await registerFlowHostRoutes(app, {
     auth: options.auth ?? createAuth({ user: null }),
     viewer: options.viewer ?? createViewer({}),
+    providers: options.providers ?? createProviders({}).providers,
     secret: options.secret,
     frontendUrl: options.frontendUrl,
   });
@@ -277,5 +332,157 @@ describe("flow 宿主身份交换（/api/flow/host/identity）", () => {
       subject: "user-123",
       email: "ken@example.com",
     });
+  });
+});
+
+describe("flow 宿主凭证下发（/api/flow/host/credentials，P3 凭证缝）", () => {
+  function postCredentials(
+    app: Awaited<ReturnType<typeof createApp>>,
+    options: { authorization?: string; payload?: unknown } = {},
+  ) {
+    return app.inject({
+      method: "POST",
+      url: "/api/flow/host/credentials",
+      headers: options.authorization
+        ? { authorization: options.authorization }
+        : {},
+      payload: options.payload ?? { token: HOST_TOKEN },
+    });
+  }
+
+  it("未配置共享密钥 → 503；密钥不匹配 → 401（与身份交换同一道门）", async () => {
+    const app = await createApp({
+      secret: undefined,
+      auth: createAuth({ user: USER }),
+    });
+    const unavailable = await postCredentials(app, {
+      authorization: `Bearer ${SECRET}`,
+    });
+    expect(unavailable.statusCode).toBe(503);
+
+    const configured = await createApp({
+      secret: SECRET,
+      auth: createAuth({ user: USER }),
+    });
+    const wrong = await postCredentials(configured, {
+      authorization: "Bearer nope",
+    });
+    expect(wrong.statusCode).toBe(401);
+  });
+
+  it("工作区与平台池都没有 dify-engine 实例 → 404 且指路（配实例或撤 HOST_CREDENTIALS_URL）", async () => {
+    const { providers } = createProviders({
+      workspace: [
+        difyInstance({ protocol: "openai-compatible", id: "chat-1" }),
+      ],
+    });
+    const app = await createApp({
+      secret: SECRET,
+      auth: createAuth({ user: USER }),
+      providers,
+    });
+    const response = await postCredentials(app, {
+      authorization: `Bearer ${SECRET}`,
+    });
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error.message).toContain("dify-engine");
+    expect(response.json().error.message).toContain("HOST_CREDENTIALS_URL");
+  });
+
+  it("工作区实例命中 → 200 下发 apiBase/apiKey/label（明文 Key 只经这条双门通道）", async () => {
+    const { providers, resolved } = createProviders({
+      workspace: [difyInstance()],
+      credentials: {
+        "dify-1": { baseUrl: "http://127.0.0.1:5001/", apiKey: "app-secret" },
+      },
+    });
+    const app = await createApp({
+      secret: SECRET,
+      auth: createAuth({ user: USER }),
+      providers,
+    });
+    const response = await postCredentials(app, {
+      authorization: `Bearer ${SECRET}`,
+    });
+    expect(response.statusCode).toBe(200);
+    // 尾斜杠归一（与 flow 侧 HostCredentialsPayload 的 apiBase 口径一致）
+    expect(response.json()).toEqual({
+      apiBase: "http://127.0.0.1:5001",
+      apiKey: "app-secret",
+      label: "本地 Dify",
+    });
+    expect(resolved).toEqual(["dify-1"]);
+  });
+
+  it("工作区没有 → 平台池（scope=system）兜底；禁用的实例被跳过", async () => {
+    const { providers } = createProviders({
+      system: [
+        difyInstance({ id: "off", scope: "system", enabled: false }),
+        difyInstance({ id: "pool", scope: "system", name: "平台 Dify" }),
+      ],
+      credentials: {
+        pool: { baseUrl: "http://10.0.0.8:5001", apiKey: "pool-key" },
+      },
+    });
+    const app = await createApp({
+      secret: SECRET,
+      auth: createAuth({ user: USER }),
+      providers,
+    });
+    const response = await postCredentials(app, {
+      authorization: `Bearer ${SECRET}`,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      apiBase: "http://10.0.0.8:5001",
+      apiKey: "pool-key",
+      label: "平台 Dify",
+    });
+  });
+
+  it("实例缺 base_url / 非 http(s) → 409 可读原因（不静默下发半截凭证）", async () => {
+    const missing = createProviders({
+      workspace: [difyInstance({ baseUrl: undefined })],
+      credentials: { "dify-1": { apiKey: "k" } },
+    });
+    const appMissing = await createApp({
+      secret: SECRET,
+      auth: createAuth({ user: USER }),
+      providers: missing.providers,
+    });
+    const responseMissing = await postCredentials(appMissing, {
+      authorization: `Bearer ${SECRET}`,
+    });
+    expect(responseMissing.statusCode).toBe(409);
+    expect(responseMissing.json().error.message).toContain("base_url");
+
+    const bad = createProviders({
+      workspace: [difyInstance({ baseUrl: "ftp://x" })],
+      credentials: { "dify-1": { baseUrl: "ftp://x", apiKey: "k" } },
+    });
+    const appBad = await createApp({
+      secret: SECRET,
+      auth: createAuth({ user: USER }),
+      providers: bad.providers,
+    });
+    const responseBad = await postCredentials(appBad, {
+      authorization: `Bearer ${SECRET}`,
+    });
+    expect(responseBad.statusCode).toBe(409);
+  });
+
+  it("宿主会话令牌无效 → 401（验的是 body 令牌，不是共享密钥）", async () => {
+    const seen: Array<string | undefined> = [];
+    const { providers } = createProviders({ workspace: [difyInstance()] });
+    const app = await createApp({
+      secret: SECRET,
+      auth: createAuth({ user: null, seen }),
+      providers,
+    });
+    const response = await postCredentials(app, {
+      authorization: `Bearer ${SECRET}`,
+    });
+    expect(response.statusCode).toBe(401);
+    expect(seen).toEqual([`Bearer ${HOST_TOKEN}`]);
   });
 });

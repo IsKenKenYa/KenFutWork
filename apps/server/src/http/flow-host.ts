@@ -3,30 +3,52 @@ import { timingSafeEqual } from "node:crypto";
 import {
   applicationErrorResponseSchema,
   FLOW_EMBED_PROTOCOL_VERSION,
+  flowHostCredentialsRequestSchema,
+  flowHostCredentialsResponseSchema,
   flowHostIdentityRequestSchema,
   flowHostIdentityResponseSchema,
   flowHostStatusResponseSchema,
+  type ProviderInstanceResponse,
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
+import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
+
+/** 工作区列表 / 平台池列表里属于指定 scope 的条目（服务端两路查询各自独立）。 */
+function instancesOfScope(
+  workspaceInstances: ProviderInstanceResponse[],
+  systemInstances: ProviderInstanceResponse[],
+  scope: "workspace" | "system",
+): ProviderInstanceResponse[] {
+  return scope === "workspace" ? workspaceInstances : systemInstances;
+}
+
+function isEnabledDifyEngine(instance: ProviderInstanceResponse): boolean {
+  return instance.protocol === "dify-engine" && instance.enabled;
+}
 
 /**
  * flow 宿主适配层的宿主侧路由（`ff-embed/v1`）。
  *
- * 两组调用方、两套门：
- * - `POST /api/flow/host/identity`：调用方是 flow 网关（`flow/` 子模块），两条门都要过：
+ * 调用方与门禁：
+ * - `POST /api/flow/host/identity`、`POST /api/flow/host/credentials`：调用方是 flow 网关
+ *   （`flow/` 子模块），两条门都要过：
  *   1. **共享密钥**（`Authorization: Bearer <KENFUTWORK_FLOW_EMBED_SECRET>`）——证明对方是本
  *      实例认可的 flow 网关，而不是任何能访问本端口的进程；
  *   2. **宿主会话令牌**（请求体 `token`）——证明这次交换背后真有一个登录用户，且身份由
- *      宿主自己签发（flow 侧只拿到 subject，不自己造账号）。
+ *      宿主自己签发（flow 侧只拿到 subject / 引擎凭证，不自己造账号）。
  * - `GET /api/flow/host/status`：调用方是本仓自己的前端（工作台），会话鉴权即可；
  *   它是能力探针，**未配置时也要能如实回答 disabled**（而不是 404），否则前端没法区分
  *   「没配」和「没有这个功能」。
  *
- * 本组路由是**基础设施**：没配共享密钥时身份交换如实回 503 并说明原因，而不是假装能用。
+ * 凭证缝（P3）：把工作区（回退平台池）里 `protocol='dify-engine'` 实例的引擎地址与 Key
+ * 下发给 flow 网关。**没配实例时明确 404 并指路**——不静默回落 `.env`（那会用我们自己的
+ * Key 办宿主的请求；要回落就别配 flow 侧的 HOST_CREDENTIALS_URL）。
+ *
+ * 本组路由是**基础设施**：没配共享密钥时身份/凭证交换如实回 503 并说明原因，而不是假装能用。
  * flow 模式在前端是否出现由插件安装态 + status.enabled 共同决定（见 `plugins/flow`）。
  */
 export async function registerFlowHostRoutes(
@@ -34,6 +56,11 @@ export async function registerFlowHostRoutes(
   options: {
     auth: RequestAuthenticator;
     viewer: ViewerService;
+    /** BYOK 供应商缝：dify-engine 实例的查询与凭证解析。 */
+    providers: Pick<
+      ModelProviderService,
+      "listInstances" | "listSystemInstances" | "resolveCredentials"
+    >;
     /** 共享密钥；缺省表示本实例未启用 flow 宿主能力。 */
     secret?: string | undefined;
     /** flow 前端地址（`KENFUTWORK_FLOW_FRONTEND_URL`）；iframe src 与 postMessage origin。 */
@@ -58,6 +85,20 @@ export async function registerFlowHostRoutes(
     reply.code(400).send(
       applicationErrorResponseSchema.parse({
         error: { code: "application_error", message },
+      }),
+    );
+
+  const sendNotFound = (reply: FastifyReply, message: string) =>
+    reply.code(404).send(
+      applicationErrorResponseSchema.parse({
+        error: { code: "flow_engine_not_configured", message },
+      }),
+    );
+
+  const sendConflict = (reply: FastifyReply, message: string) =>
+    reply.code(409).send(
+      applicationErrorResponseSchema.parse({
+        error: { code: "flow_engine_invalid", message },
       }),
     );
 
@@ -97,6 +138,98 @@ export async function registerFlowHostRoutes(
         enabled: reasons.length === 0,
         frontendUrl,
         reasons,
+      }),
+    );
+  });
+
+  app.post("/api/flow/host/credentials", async (request, reply) => {
+    const secret = options.secret?.trim();
+    if (!secret) {
+      return sendUnavailable(
+        reply,
+        "本实例未配置 KENFUTWORK_FLOW_EMBED_SECRET：flow 宿主凭证下发未启用。",
+      );
+    }
+    if (!secretMatches(bearerFrom(request.headers.authorization), secret)) {
+      return sendUnauthorized(reply, "flow 网关共享密钥不匹配。");
+    }
+    const protocol = String(
+      request.headers["x-ff-embed-protocol"] ?? "",
+    ).trim();
+    if (protocol && protocol !== FLOW_EMBED_PROTOCOL_VERSION) {
+      return sendBadInput(
+        reply,
+        `ff-embed 协议版本不匹配：宿主支持 ${FLOW_EMBED_PROTOCOL_VERSION}，收到 ${protocol}。`,
+      );
+    }
+    const parsed = flowHostCredentialsRequestSchema.safeParse(
+      request.body ?? {},
+    );
+    if (!parsed.success) {
+      return sendBadInput(
+        reply,
+        "凭证下发请求不合法：缺少宿主会话令牌（token）。",
+      );
+    }
+    const user = await options.auth.authenticate({
+      headers: {
+        ...request.headers,
+        authorization: `Bearer ${parsed.data.token}`,
+      },
+      ip: request.ip,
+    });
+    if (!user) {
+      return sendUnauthorized(reply, "宿主会话令牌无效或已过期。");
+    }
+
+    // 工作区实例优先，平台池（scope='system'）兜底；同层取列表第一个启用的实例。
+    const [workspaceInstances, systemInstances] = await Promise.all([
+      options.providers
+        .listInstances(user)
+        .catch(() => [] as ProviderInstanceResponse[]),
+      options.providers
+        .listSystemInstances()
+        .catch(() => [] as ProviderInstanceResponse[]),
+    ]);
+    const byScope = (scope: "workspace" | "system") =>
+      instancesOfScope(workspaceInstances, systemInstances, scope);
+    const candidate =
+      byScope("workspace").find(isEnabledDifyEngine) ??
+      byScope("system").find(isEnabledDifyEngine);
+    if (!candidate) {
+      return sendNotFound(
+        reply,
+        "当前工作区与平台池都没有启用的 Dify 引擎实例（protocol=dify-engine）。" +
+          "请在 设置 → 供应商 添加；或撤掉 flow 侧 HOST_CREDENTIALS_URL，" +
+          "让 flow 网关回落自己的 .env 全局密钥。",
+      );
+    }
+
+    const credentials = await options.providers.resolveCredentials(
+      user,
+      candidate.id,
+    );
+    const apiBase = credentials.baseUrl?.trim().replace(/\/+$/, "");
+    if (!apiBase) {
+      return sendConflict(
+        reply,
+        `Dify 引擎实例「${candidate.name}」缺少 base_url：引擎地址是凭证下发的必要字段，` +
+          "请在 设置 → 供应商 补齐。",
+      );
+    }
+    if (!/^https?:\/\//.test(apiBase)) {
+      return sendConflict(
+        reply,
+        `Dify 引擎实例「${candidate.name}」的 base_url 不是 http(s) 地址：${apiBase}。`,
+      );
+    }
+
+    // 明文 Key 只出现在这个响应里（双门过了的 flow 网关），不落日志。
+    return reply.code(200).send(
+      flowHostCredentialsResponseSchema.parse({
+        apiBase,
+        apiKey: credentials.apiKey,
+        label: candidate.name,
       }),
     );
   });

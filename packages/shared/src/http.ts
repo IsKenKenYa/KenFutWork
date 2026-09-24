@@ -559,6 +559,14 @@ export const applicationErrorCodeSchema = z.enum([
   "git_write_failed",
   // 用户侧使用统计（R4-2）
   "usage_query_failed",
+  /**
+   * flow 凭证缝（P3）：工作区/平台池没有启用的 dify-engine 实例（404）。
+   * 与 `plugin_asset_not_found` 同一条教训——错误码必须在本枚举里，
+   * 否则 `applicationErrorResponseSchema.parse` 抛错、可读原因被 ZodError 转储顶掉。
+   */
+  "flow_engine_not_configured",
+  /** flow 凭证缝（P3）：实例在但 base_url 缺失/非法（409），凭证不下发半截。 */
+  "flow_engine_invalid",
 ]);
 
 export const applicationErrorResponseSchema = z.object({

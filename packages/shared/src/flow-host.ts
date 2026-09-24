@@ -65,3 +65,33 @@ export const flowHostStatusResponseSchema = z.object({
 export type FlowHostStatusResponse = z.infer<
   typeof flowHostStatusResponseSchema
 >;
+
+/**
+ * 凭证下发（P3，`POST /api/flow/host/credentials`）：请求体与身份交换同形
+ * （`token` = 宿主会话令牌，由 flow 网关原样转交）。
+ */
+export const flowHostCredentialsRequestSchema = z.object({
+  token: z.string().min(1).max(8192),
+  protocolVersion: z.string().min(1).max(16).optional(),
+});
+
+/**
+ * 凭证下发响应：工作区（回退平台池）里 `protocol='dify-engine'` 实例的引擎地址与 Key。
+ * 形状与 flow 侧 `HostCredentialsPayload`（class-validator）对齐：apiBase 必须 http(s)、
+ * apiKey ≤512、label ≤64。
+ *
+ * **红线说明**：响应含明文 apiKey 是这条缝的**目的**（把 BYOK 引擎凭证下发给持有共享
+ * 密钥的 flow 网关，服务端到服务端）——浏览器永远拿不到它（双门鉴权：共享密钥 + 会话
+ * 令牌，缺一即拒）；日志同样不落明文。
+ */
+export const flowHostCredentialsResponseSchema = z.object({
+  apiBase: z.string().url(),
+  apiKey: z.string().min(1).max(512),
+  label: z.string().max(64).optional(),
+});
+export type FlowHostCredentialsRequest = z.infer<
+  typeof flowHostCredentialsRequestSchema
+>;
+export type FlowHostCredentialsResponse = z.infer<
+  typeof flowHostCredentialsResponseSchema
+>;
