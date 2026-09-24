@@ -40,3 +40,21 @@ export type FlowHostIdentityRequest = z.infer<
 export type FlowHostIdentityResponse = z.infer<
   typeof flowHostIdentityResponseSchema
 >;
+
+/**
+ * flow 宿主能力探针（`GET /api/flow/host/status`，宿主自己的前端调用，会话鉴权）。
+ *
+ * 工作台据此决定 Flow 模式入口是否出现（入口纪律：未安装插件或适配层未接通时不摆空壳）。
+ * `enabled` 要求共享密钥与 flow 前端地址**都**配好；缺什么、原因写进 `reasons`，
+ * 界面把原因如实透出（fail loud，不放无提示的假开关）。
+ */
+export const flowHostStatusResponseSchema = z.object({
+  enabled: z.boolean(),
+  /** flow 前端地址（`KENFUTWORK_FLOW_FRONTEND_URL`）；未配置为 null。 */
+  frontendUrl: z.string().nullable(),
+  /** 未启用时缺什么（每条一句可读原因）；启用后为空数组。 */
+  reasons: z.array(z.string()),
+});
+export type FlowHostStatusResponse = z.infer<
+  typeof flowHostStatusResponseSchema
+>;

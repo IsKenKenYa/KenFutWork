@@ -5,6 +5,7 @@ import {
   FLOW_EMBED_PROTOCOL_VERSION,
   flowHostIdentityRequestSchema,
   flowHostIdentityResponseSchema,
+  flowHostStatusResponseSchema,
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
@@ -15,14 +16,18 @@ import type { ViewerService } from "../features/bootstrap/ensure-user-foundation
 /**
  * flow 宿主适配层的宿主侧路由（`ff-embed/v1`）。
  *
- * 调用方是 flow 网关（`flow/` 子模块），两条门都要过：
- * 1. **共享密钥**（`Authorization: Bearer <KENFUTWORK_FLOW_EMBED_SECRET>`）——证明对方是本
- *    实例认可的 flow 网关，而不是任何能访问本端口的进程；
- * 2. **宿主会话令牌**（请求体 `token`）——证明这次交换背后真有一个登录用户，且身份由
- *    宿主自己签发（flow 侧只拿到 subject，不自己造账号）。
+ * 两组调用方、两套门：
+ * - `POST /api/flow/host/identity`：调用方是 flow 网关（`flow/` 子模块），两条门都要过：
+ *   1. **共享密钥**（`Authorization: Bearer <KENFUTWORK_FLOW_EMBED_SECRET>`）——证明对方是本
+ *      实例认可的 flow 网关，而不是任何能访问本端口的进程；
+ *   2. **宿主会话令牌**（请求体 `token`）——证明这次交换背后真有一个登录用户，且身份由
+ *      宿主自己签发（flow 侧只拿到 subject，不自己造账号）。
+ * - `GET /api/flow/host/status`：调用方是本仓自己的前端（工作台），会话鉴权即可；
+ *   它是能力探针，**未配置时也要能如实回答 disabled**（而不是 404），否则前端没法区分
+ *   「没配」和「没有这个功能」。
  *
- * 本组路由是**基础设施**：没配共享密钥时如实回 503 并说明原因，而不是假装能用。
- * flow 模式在前端是否出现由插件安装态决定（见 `plugins/flow`）。
+ * 本组路由是**基础设施**：没配共享密钥时身份交换如实回 503 并说明原因，而不是假装能用。
+ * flow 模式在前端是否出现由插件安装态 + status.enabled 共同决定（见 `plugins/flow`）。
  */
 export async function registerFlowHostRoutes(
   app: FastifyInstance,
@@ -31,16 +36,16 @@ export async function registerFlowHostRoutes(
     viewer: ViewerService;
     /** 共享密钥；缺省表示本实例未启用 flow 宿主能力。 */
     secret?: string | undefined;
+    /** flow 前端地址（`KENFUTWORK_FLOW_FRONTEND_URL`）；iframe src 与 postMessage origin。 */
+    frontendUrl?: string | undefined;
   },
 ): Promise<void> {
   const sendUnauthorized = (reply: FastifyReply, message: string) =>
-    reply
-      .code(401)
-      .send(
-        unauthenticatedErrorResponseSchema.parse({
-          error: { code: "unauthorized", message },
-        }),
-      );
+    reply.code(401).send(
+      unauthenticatedErrorResponseSchema.parse({
+        error: { code: "unauthorized", message },
+      }),
+    );
 
   const sendUnavailable = (reply: FastifyReply, message: string) =>
     reply.code(503).send(
@@ -68,6 +73,33 @@ export async function registerFlowHostRoutes(
     const prefix = "Bearer ";
     return header.startsWith(prefix) ? header.slice(prefix.length).trim() : "";
   };
+
+  app.get("/api/flow/host/status", async (request, reply) => {
+    const user = await options.auth.authenticate(request);
+    if (!user) {
+      return sendUnauthorized(reply, "Missing or invalid bearer token.");
+    }
+
+    const reasons: string[] = [];
+    if (!options.secret?.trim()) {
+      reasons.push(
+        "未配置 KENFUTWORK_FLOW_EMBED_SECRET（flow 网关回调宿主的共享密钥）。",
+      );
+    }
+    const frontendUrl = options.frontendUrl?.trim() || null;
+    if (!frontendUrl) {
+      reasons.push(
+        "未配置 KENFUTWORK_FLOW_FRONTEND_URL（flow 前端地址，iframe 加载用）。",
+      );
+    }
+    return reply.code(200).send(
+      flowHostStatusResponseSchema.parse({
+        enabled: reasons.length === 0,
+        frontendUrl,
+        reasons,
+      }),
+    );
+  });
 
   app.post("/api/flow/host/identity", async (request, reply) => {
     const secret = options.secret?.trim();

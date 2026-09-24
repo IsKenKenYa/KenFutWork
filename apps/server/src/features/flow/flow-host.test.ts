@@ -44,6 +44,7 @@ function createViewer(options: {
 
 async function createApp(options: {
   secret?: string | undefined;
+  frontendUrl?: string | undefined;
   auth?: RequestAuthenticator;
   viewer?: ViewerService;
 }) {
@@ -52,6 +53,7 @@ async function createApp(options: {
     auth: options.auth ?? createAuth({ user: null }),
     viewer: options.viewer ?? createViewer({}),
     secret: options.secret,
+    frontendUrl: options.frontendUrl,
   });
   return app;
 }
@@ -84,6 +86,78 @@ function post(
     payload: options.payload ?? { token: HOST_TOKEN },
   });
 }
+
+describe("flow 宿主能力探针（/api/flow/host/status）", () => {
+  it("未配置任何 flow 变量 → 200 + disabled，reasons 点名两个缺失项（不是 404/503）", async () => {
+    const app = await createApp({
+      secret: undefined,
+      auth: createAuth({ user: USER }),
+    });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/flow/host/status",
+      headers: { authorization: `Bearer ${HOST_TOKEN}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.enabled).toBe(false);
+    expect(body.frontendUrl).toBeNull();
+    expect(body.reasons).toHaveLength(2);
+    expect(body.reasons.join(" ")).toContain("KENFUTWORK_FLOW_EMBED_SECRET");
+    expect(body.reasons.join(" ")).toContain("KENFUTWORK_FLOW_FRONTEND_URL");
+  });
+
+  it("只配密钥缺前端地址 → disabled 且只缺一项", async () => {
+    const app = await createApp({
+      secret: SECRET,
+      auth: createAuth({ user: USER }),
+    });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/flow/host/status",
+      headers: { authorization: `Bearer ${HOST_TOKEN}` },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      enabled: false,
+      frontendUrl: null,
+      reasons: [expect.stringContaining("KENFUTWORK_FLOW_FRONTEND_URL")],
+    });
+  });
+
+  it("两项都配齐 → enabled 且透出 frontendUrl（不要求共享密钥头，走会话鉴权）", async () => {
+    const app = await createApp({
+      secret: SECRET,
+      frontendUrl: "http://127.0.0.1:8080",
+      auth: createAuth({ user: USER }),
+    });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/flow/host/status",
+      headers: { authorization: `Bearer ${HOST_TOKEN}` },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      enabled: true,
+      frontendUrl: "http://127.0.0.1:8080",
+      reasons: [],
+    });
+  });
+
+  it("未登录 → 401（探针也不给匿名看配置面）", async () => {
+    const app = await createApp({
+      secret: SECRET,
+      frontendUrl: "http://127.0.0.1:8080",
+      auth: createAuth({ user: null }),
+    });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/flow/host/status",
+      headers: { authorization: `Bearer ${HOST_TOKEN}` },
+    });
+    expect(response.statusCode).toBe(401);
+  });
+});
 
 describe("flow 宿主身份交换（/api/flow/host/identity）", () => {
   it("未配置共享密钥 → 503 且点名环境变量（不假装能用）", async () => {
