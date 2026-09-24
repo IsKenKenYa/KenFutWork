@@ -196,3 +196,43 @@ export const flowHostEventsResponseSchema = z.object({
 export type FlowHostEventsResponse = z.infer<
   typeof flowHostEventsResponseSchema
 >;
+
+/**
+ * 引擎承载路径探测（P6 探测层，`GET /api/flow/host/engine`，宿主自己的前端调用）。
+ *
+ * 三条路径（《flow 集成方案》§3.5.1 的平台矩阵）：
+ * - `wsl2`：Windows 专属，轻量 VM 内跑开源容器引擎（无 Docker Desktop 授权约束）；
+ * - `container`：本机已有的 Docker / Podman（macOS 上 Colima 等 Docker 兼容运行时也走这条）；
+ * - `remote`：不本地承载，引擎指向平台池里配置的 Dify 地址（Provider C 兜底）。
+ *
+ * `recommended` 按平台矩阵给出首选；都不可用时为 null（界面据此引导安装或去配 Provider C）。
+ * `reason` 是**可读原因 + 怎么补**（不放无提示的不可用），`detail` 是可用时的补充事实。
+ *
+ * 边界（如实声明）：本层只做**探测**；引擎的按需下载与生命周期托管（provision/start/
+ * stop/teardown）依赖方案 §9.1 待拍板的三个口径（WSL 分发形态 / 内存上限 / 数据卷落点），
+ * 尚未实现——探测层不假装能做，界面也不得据此显示「可启动」。
+ */
+export const flowEnginePathIdSchema = z.enum(["wsl2", "container", "remote"]);
+export type FlowEnginePathId = z.infer<typeof flowEnginePathIdSchema>;
+
+export const flowEnginePathSchema = z.object({
+  id: flowEnginePathIdSchema,
+  /** 界面用中文名（如「WSL2」「本机容器」「指向自管地址」）。 */
+  label: z.string().min(1),
+  available: z.boolean(),
+  /** 不可用/降级时的可读原因（缺什么、怎么补）。 */
+  reason: z.string().optional(),
+  /** 可用时的补充事实（版本、发行版名、地址来源）。 */
+  detail: z.string().optional(),
+});
+export type FlowEnginePath = z.infer<typeof flowEnginePathSchema>;
+
+export const flowHostEngineResponseSchema = z.object({
+  /** `process.platform`（界面按平台提示不同安装指引）。 */
+  platform: z.string().min(1),
+  paths: z.array(flowEnginePathSchema),
+  recommended: flowEnginePathIdSchema.nullable(),
+});
+export type FlowHostEngineResponse = z.infer<
+  typeof flowHostEngineResponseSchema
+>;

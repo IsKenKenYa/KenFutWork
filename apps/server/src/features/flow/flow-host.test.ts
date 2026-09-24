@@ -163,6 +163,7 @@ async function createApp(options: {
     subject: string,
   ) => Promise<{ userId: string; workspaceId: string | null } | null>;
   ws?: ReturnType<typeof createWs>["ws"];
+  engine?: { probe(): Promise<unknown> };
 }) {
   const app = Fastify();
   await registerFlowHostRoutes(app, {
@@ -178,6 +179,24 @@ async function createApp(options: {
       },
     },
     ws: options.ws ?? createWs().ws,
+    engine:
+      (options.engine as never) ??
+      ({
+        async probe() {
+          return {
+            platform: "win32",
+            paths: [
+              {
+                id: "wsl2",
+                label: "WSL2",
+                available: false,
+                reason: "测试替身",
+              },
+            ],
+            recommended: null,
+          };
+        },
+      } as never),
     secret: options.secret,
     frontendUrl: options.frontendUrl,
   });
@@ -815,5 +834,81 @@ describe("flow 宿主事件透出（/api/flow/host/events，P5 事件缝）", ()
     ]);
     // 三条事件、两个 subject：批内按 subject 记忆，只查两次
     expect(lookups).toEqual(["user-123", "user-456"]);
+  });
+});
+
+describe("flow 引擎承载路径探测（/api/flow/host/engine，P6 探测层）", () => {
+  it("未登录 → 401（探测结果也需会话，不暴露宿主能力面给匿名）", async () => {
+    const app = await createApp({ auth: createAuth({ user: null }) });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/flow/host/engine",
+      headers: { authorization: `Bearer ${HOST_TOKEN}` },
+    });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it("登录 → 200 原样回探测报告（三条路径 + 首选）", async () => {
+    const app = await createApp({
+      auth: createAuth({ user: USER }),
+      engine: {
+        async probe() {
+          return {
+            platform: "win32",
+            paths: [
+              {
+                id: "wsl2",
+                label: "WSL2",
+                available: true,
+                detail: "发行版 Ubuntu（WSL2，Running）",
+              },
+              {
+                id: "container",
+                label: "本机容器",
+                available: false,
+                reason: "未检测到 Docker / Podman",
+              },
+              {
+                id: "remote",
+                label: "指向自管地址",
+                available: false,
+                reason: "未配置自管 Dify 地址",
+              },
+            ],
+            recommended: "wsl2",
+          };
+        },
+      },
+    });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/flow/host/engine",
+      headers: { authorization: `Bearer ${HOST_TOKEN}` },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      platform: "win32",
+      paths: [
+        {
+          id: "wsl2",
+          label: "WSL2",
+          available: true,
+          detail: "发行版 Ubuntu（WSL2，Running）",
+        },
+        {
+          id: "container",
+          label: "本机容器",
+          available: false,
+          reason: "未检测到 Docker / Podman",
+        },
+        {
+          id: "remote",
+          label: "指向自管地址",
+          available: false,
+          reason: "未配置自管 Dify 地址",
+        },
+      ],
+      recommended: "wsl2",
+    });
   });
 });

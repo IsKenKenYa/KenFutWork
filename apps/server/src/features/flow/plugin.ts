@@ -1,6 +1,10 @@
+import os from "node:os";
+
 import { registerFlowHostRoutes } from "../../http/flow-host.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import { createViewerRepository } from "../bootstrap/repository.js";
+import { createProcessRunCommand } from "./engine/exec.js";
+import { probeEnginePaths } from "./engine/probe.js";
 
 /**
  * flow-host 插件：宿主适配层的宿主侧端点（`/api/flow/host/*`，`ff-embed/v1`）。
@@ -72,6 +76,17 @@ export function createFlowHostPlugin(deps: {
         accounts,
         // 事件缝透出走内核声明的 ws 缝（app.ts 装配时注册 connectionManager/eventBuffer）。
         ws: { connectionManager: ctx.get("ws").connectionManager },
+        // 引擎探测层：只探测可用路径（下载与生命周期托管待 §9.1 拍板后落地）。
+        engine: {
+          probe: () =>
+            probeEnginePaths({
+              platform: process.platform,
+              release: os.release(),
+              run: createProcessRunCommand(),
+              listSystemInstances: () =>
+                ctx.get("modelProviders").listSystemInstances(),
+            }),
+        },
         secret: deps.secret,
         frontendUrl: deps.frontendUrl,
       });

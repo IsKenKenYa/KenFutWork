@@ -3,6 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import {
   applicationErrorResponseSchema,
   FLOW_EMBED_PROTOCOL_VERSION,
+  type FlowHostEngineResponse,
   flowHostBillingRequestSchema,
   flowHostBillingResponseSchema,
   flowHostCredentialsRequestSchema,
@@ -79,6 +80,8 @@ export async function registerFlowHostRoutes(
     };
     /** WS 通道（事件缝透出用）：按用户投递 `flowRun.event`。 */
     ws: Pick<WsServices, "connectionManager">;
+    /** 引擎承载路径探测（P6 探测层）：平台 / WSL2 / 本机容器 / 自管地址。 */
+    engine: { probe(): Promise<FlowHostEngineResponse> };
     /** 共享密钥；缺省表示本实例未启用 flow 宿主能力。 */
     secret?: string | undefined;
     /** flow 前端地址（`KENFUTWORK_FLOW_FRONTEND_URL`）；iframe src 与 postMessage origin。 */
@@ -185,6 +188,16 @@ export async function registerFlowHostRoutes(
         reasons,
       }),
     );
+  });
+
+  app.get("/api/flow/host/engine", async (request, reply) => {
+    const user = await options.auth.authenticate(request);
+    if (!user) {
+      return sendUnauthorized(reply, "Missing or invalid bearer token.");
+    }
+    // 只探测（不做安装/下载/拉起）；探测失败如实冒泡，不吞成「都不支持」。
+    const report = await options.engine.probe();
+    return reply.code(200).send(report);
   });
 
   app.post("/api/flow/host/credentials", async (request, reply) => {
