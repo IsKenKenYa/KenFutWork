@@ -422,7 +422,9 @@ export function Workbench() {
    * Flow 模式入口（插件安装态 + 宿主适配层探针）：不可用就不出现切换项
    * （AGENTS.md 不变量：未装插件 / 适配层未接通时不摆空壳、不放假开关）。
    */
-  const { entry: flowEntry } = useFlowHostEntry(session?.access_token ?? null);
+  const { entry: flowEntry, refresh: refreshFlowEntry } = useFlowHostEntry(
+    session?.access_token ?? null,
+  );
 
   const [mode, setMode] = useState<WorkbenchMode>("code");
   /** 任务列表按模式分开存；flow 模式主区是工作流画布，没有会话列表（故恒为空）。 */
@@ -3313,6 +3315,8 @@ ${formatElementReference(picked)}`
           // 「从工作目录安装」用：服务端据此解析沙箱目录
           canvasId={selectedProject?.primaryCanvas?.id ?? null}
           isAdmin={isPlatformAdmin}
+          // 装/卸 flow 插件后立即重估 Flow 模式入口（不等下次进页面）
+          onPluginsChanged={refreshFlowEntry}
         />
       ) : null}
       {skillsOpen ? (
