@@ -1,0 +1,327 @@
+# 本地 Dify 无头栈（《flow 集成方案》DEC-11 + FORM-11 的引擎承载）
+#
+# 定位：flow 的执行引擎。**无头** = 不跑 dify-web / nginx（Console 用 API 直连，Web UI 不是
+# 本栈的一部分）——Dify 的 logo/版权附加条款只约束其前端，故本文件明文不适用（方案 §7）。
+# 镜像是**官方发行物**、经容器边界以 API 通信接入（聚合而非衍生），不复制 Dify 代码进本仓。
+#
+# 与 flow 网关的对接（flow/.env）：
+#   DIFY_API_BASE=http://127.0.0.1:${DIFY_PORT:-5001}/v1
+#   DIFY_CONSOLE_BASE=http://127.0.0.1:${DIFY_PORT:-5001}/console/api
+#   DIFY_ADMIN_EMAIL / DIFY_ADMIN_PASSWORD = 下面「首次初始化」里建的管理员
+# 模型 Provider 是插件（Dify 1.17 起），本栈首次起来时**没有**任何供应商插件：
+#   → 要么在 Dify 里安装供应商插件（需外网），要么把网关侧 DIFY_SYNC_LLM_PROVIDER 设为 false。
+#
+# 用法（profile 名 `dify`，与仓库其余 compose 文件并存、互不干扰）：
+#   docker compose -f docker-compose.dify.yml --profile dify up -d
+#   docker compose -f docker-compose.dify.yml --profile dify ps        # 健康检查状态
+#   docker compose -f docker-compose.dify.yml --profile dify down -v   # 停并删数据卷（无残留）
+#
+# 首次初始化（无头栈必须走 API，两步且**共用 cookie 会话**；实测于 1.17.1）：
+#   curl -c jar -X POST $BASE/console/api/init  -d '{"password":"'"$DIFY_INIT_PASSWORD"'"}' \
+#        -H 'content-type: application/json'                       # 校验 INIT_PASSWORD（201）
+#   curl -b jar -c jar -X POST $BASE/console/api/setup \
+#        -d '{"email":"admin@example.com","name":"admin","password":"<强口令>"}' \
+#        -H 'content-type: application/json'                       # 建管理员（201）
+#   之后 flow 网关的自动授权（DIFY_AUTO_BOOTSTRAP=true + DIFY_ADMIN_EMAIL/PASSWORD）即可接管。
+#
+# 端口：默认 5001（Dify 惯例）。**Windows 上 5001 常落在 Hyper-V/WSL 动态排除段**
+# （`netsh interface ipv4 show excludedportrange protocol=tcp` 可查；实测本机 4918–5017 被占），
+# 此时用 `DIFY_PORT=15001 docker compose … up -d` 换端口，并同步改 flow/.env 的两个地址。
+#
+# 体积（实测，供「按需下载」明示体积用）：本栈镜像合计 **≈8.3GB**（dify-plugin-daemon
+# 2.28GB、dify-sandbox 848MB、squid 303MB、weaviate 300MB、postgres 417MB、dify-api 等）；
+# 方案 §3.5 里「镜像 ~1.7GB」的旧估算是 0.15.x 时代的数字，1.17 起插件守护显著变大。
+#
+# 默认值的口径：**为本机/内网自托管可直接跑通**（与 Dify 官方 quickstart 同思路），
+# 生产部署必须覆盖 SECRET_KEY / INIT_PASSWORD / DB_PASSWORD / REDIS_PASSWORD /
+# SANDBOX_API_KEY / WEAVIATE_API_KEY / ADMIN_API_KEY（全部走环境变量或 .env 文件注入，不要改本文件）。
+#
+# 版本（DEC-13：保持可升级，不锁版本）：镜像 tag 固定到当前验证过的发行版本作为
+# **可复现基线**；升级 = 改 tag + 跑 flow 侧的 DSL 转换回归门禁，不是版本冻结。
+
+name: kenfutwork-dify
+
+x-dify-shared-env: &dify-shared-env
+  # ── 安全与实例 ──
+  SECRET_KEY: ${DIFY_SECRET_KEY:?生产必须设置（openssl rand -base64 42）}
+  INIT_PASSWORD: ${DIFY_INIT_PASSWORD:-kenfutwork-dify}
+  DEPLOY_ENV: PRODUCTION
+  LOG_LEVEL: ${DIFY_LOG_LEVEL:-INFO}
+  MIGRATION_ENABLED: "true"
+  # ── 对外地址（无头栈只有 API 面板：Console API 与 Service API 同端口）──
+  CONSOLE_API_URL: ${DIFY_CONSOLE_API_URL:-http://127.0.0.1:5001}
+  SERVICE_API_URL: ${DIFY_SERVICE_API_URL:-http://127.0.0.1:5001}
+  FILES_URL: ${DIFY_FILES_URL:-http://127.0.0.1:5001}
+  # ── 库 ──
+  DB_TYPE: postgresql
+  DB_USERNAME: ${DIFY_DB_USERNAME:-dify}
+  DB_PASSWORD: ${DIFY_DB_PASSWORD:-difyai123456}
+  DB_HOST: db_postgres
+  DB_PORT: "5432"
+  DB_DATABASE: ${DIFY_DB_DATABASE:-dify}
+  SQLALCHEMY_POOL_SIZE: "30"
+  SQLALCHEMY_POOL_RECYCLE: "3600"
+  # ── Redis / Celery ──
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_PASSWORD: ${DIFY_REDIS_PASSWORD:-difyai123456}
+  REDIS_DB: "0"
+  CELERY_BROKER_URL: redis://:${DIFY_REDIS_PASSWORD:-difyai123456}@redis:6379/1
+  # ── 向量库（workflow 应用不用，但 Dify 启动即校验其连通性）──
+  VECTOR_STORE: weaviate
+  WEAVIATE_ENDPOINT: http://weaviate:8080
+  WEAVIATE_API_KEY: ${DIFY_WEAVIATE_API_KEY:-kenfutwork-weaviate}
+  WEAVIATE_GRPC_ENDPOINT: grpc://weaviate:50051
+  # ── 存储（local：落卷，自托管最简单；对象存储走 OpenDAL 配置，本栈不启用）──
+  STORAGE_TYPE: local
+  # ── 代码执行沙箱（SQL/Python 节点的隔离边界，必需）──
+  CODE_EXECUTION_ENDPOINT: http://sandbox:8194
+  CODE_EXECUTION_API_KEY: ${DIFY_SANDBOX_API_KEY:-dify-sandbox}
+  # ── Console 服务端到服务端通道（Dify ≥1.17）：admin API key 直连、免登录免 CSRF ──
+  # 背景：1.17 起 console API 对浏览器会话加了 HttpOnly cookie + CSRF 校验，口令还要 base64；
+  # 官方给服务端客户端留的通道就是 ADMIN_API_KEY——flow 网关优先走它。
+  ADMIN_API_KEY_ENABLE: "true"
+  ADMIN_API_KEY: ${DIFY_ADMIN_API_KEY:?生产必须设置（openssl rand -hex 24）；flow 网关用同一值} 
+  # ── 插件守护 ──
+  PLUGIN_DAEMON_KEY: ${DIFY_PLUGIN_DAEMON_KEY:-kenfutwork-plugin-daemon}
+  PLUGIN_DIFY_INNER_API_URL: http://api:5001
+  PLUGIN_DIFY_INNER_API_KEY: ${DIFY_PLUGIN_INNER_API_KEY:-kenfutwork-inner-api}
+
+services:
+  # ── 存储卷属主初始化（api 以 uid 1001 运行，存储卷必须先归它）──
+  init_permissions:
+    profiles: ["dify"]
+    image: busybox:latest
+    restart: "no"
+    command:
+      - sh
+      - -c
+      - |
+        FLAG_FILE="/app/api/storage/.init_permissions"
+        if [ -f "$$FLAG_FILE" ]; then echo "already initialized"; exit 0; fi
+        chown -R 1001:1001 /app/api/storage && touch "$$FLAG_FILE"
+    volumes:
+      - dify_app_storage:/app/api/storage
+    networks: [dify]
+
+  db_postgres:
+    profiles: ["dify"]
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DIFY_DB_USERNAME:-dify}
+      POSTGRES_PASSWORD: ${DIFY_DB_PASSWORD:-difyai123456}
+      POSTGRES_DB: ${DIFY_DB_DATABASE:-dify}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    command: postgres -c 'max_connections=100'
+    volumes:
+      - dify_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "db_postgres", "-U", "${DIFY_DB_USERNAME:-dify}", "-d", "${DIFY_DB_DATABASE:-dify}"]
+      interval: 3s
+      timeout: 3s
+      retries: 60
+    networks: [dify]
+
+  redis:
+    profiles: ["dify"]
+    image: redis:6-alpine
+    restart: unless-stopped
+    environment:
+      REDISCLI_AUTH: ${DIFY_REDIS_PASSWORD:-difyai123456}
+    command: redis-server --requirepass ${DIFY_REDIS_PASSWORD:-difyai123456}
+    volumes:
+      - dify_redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a ${DIFY_REDIS_PASSWORD:-difyai123456} ping | grep -q PONG"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks: [dify]
+
+  weaviate:
+    profiles: ["dify"]
+    image: cr.weaviate.io/semitechnologies/weaviate:1.39.2
+    restart: unless-stopped
+    environment:
+      PERSISTENCE_DATA_PATH: /var/lib/weaviate
+      QUERY_DEFAULTS_LIMIT: "25"
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "false"
+      AUTHENTICATION_APIKEY_ENABLED: "true"
+      AUTHENTICATION_APIKEY_ALLOWED_KEYS: ${DIFY_WEAVIATE_API_KEY:-kenfutwork-weaviate}
+      AUTHENTICATION_APIKEY_USERS: hello@kenfutwork.local
+      AUTHORIZATION_ADMINLIST_ENABLED: "true"
+      AUTHORIZATION_ADMINLIST_USERS: hello@kenfutwork.local
+      DEFAULT_VECTORIZER_MODULE: none
+      CLUSTER_HOSTNAME: node1
+      DISABLE_TELEMETRY: "true"
+    volumes:
+      - dify_weaviate_data:/var/lib/weaviate
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/v1/.well-known/ready || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks: [dify]
+
+  # ── SSRF 反代：sandbox 的出网只经它（禁私网目标，最小配置见 docker/dify/ssrf_proxy）──
+  ssrf_proxy:
+    profiles: ["dify"]
+    image: ubuntu/squid:latest
+    restart: unless-stopped
+    volumes:
+      - ./docker/dify/ssrf_proxy/squid.conf:/etc/squid/squid.conf:ro
+    environment:
+      HTTP_PORT: "3128"
+    healthcheck:
+      test: ["CMD-SHELL", "squid -k check || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [dify]
+
+  sandbox:
+    profiles: ["dify"]
+    image: langgenius/dify-sandbox:0.2.15
+    restart: unless-stopped
+    environment:
+      API_KEY: ${DIFY_SANDBOX_API_KEY:-dify-sandbox}
+      GIN_MODE: release
+      WORKER_TIMEOUT: "15"
+      ENABLE_NETWORK: "true"
+      HTTP_PROXY: http://ssrf_proxy:3128
+      HTTPS_PROXY: http://ssrf_proxy:3128
+      SANDBOX_PORT: "8194"
+    volumes:
+      - dify_sandbox_dependencies:/dependencies
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8194/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    depends_on:
+      ssrf_proxy:
+        condition: service_started
+    networks: [dify]
+
+  plugin_daemon:
+    profiles: ["dify"]
+    image: langgenius/dify-plugin-daemon:0.6.10-local
+    restart: unless-stopped
+    environment:
+      <<: *dify-shared-env
+      SERVER_PORT: "5002"
+      SERVER_KEY: ${DIFY_PLUGIN_DAEMON_KEY:-kenfutwork-plugin-daemon}
+      DB_DATABASE: ${DIFY_PLUGIN_DB_DATABASE:-dify_plugin}
+      DIFY_INNER_API_URL: http://api:5001
+      DIFY_INNER_API_KEY: ${DIFY_PLUGIN_INNER_API_KEY:-kenfutwork-inner-api}
+      PLUGIN_WORKING_PATH: /app/storage/cwd
+      PLUGIN_STORAGE_LOCAL_ROOT: /app/storage
+      # 远端插件调试端点（必填：缺了 plugin_daemon 会以
+      # `invalid configuration: plugin remote installing host is empty` 反复重启）
+      PLUGIN_REMOTE_INSTALLING_HOST: "0.0.0.0"
+      PLUGIN_REMOTE_INSTALLING_PORT: "5003"
+      FORCE_VERIFYING_SIGNATURE: "true"
+      PLUGIN_MAX_EXECUTION_TIMEOUT: "600"
+      PYTHON_ENV_INIT_TIMEOUT: "120"
+    volumes:
+      - dify_plugin_daemon:/app/storage
+    depends_on:
+      db_postgres:
+        condition: service_healthy
+    networks: [dify]
+
+  # ── 引擎主体：api（Console + Service API 同端口）+ worker + beat ──
+  api:
+    profiles: ["dify"]
+    image: langgenius/dify-api:1.17.1
+    restart: unless-stopped
+    environment:
+      <<: *dify-shared-env
+      MODE: api
+      INNER_API_KEY_FOR_PLUGIN: ${DIFY_PLUGIN_INNER_API_KEY:-kenfutwork-inner-api}
+    ports:
+      # 只绑回环：flow 网关在本机/内网访问；要对外暴露请显式改绑定地址
+      - "127.0.0.1:${DIFY_PORT:-5001}:5001"
+    volumes:
+      - dify_app_storage:/app/api/storage
+    depends_on:
+      init_permissions:
+        condition: service_completed_successfully
+      db_postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      sandbox:
+        condition: service_healthy
+      weaviate:
+        condition: service_healthy
+      plugin_daemon:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    networks: [dify]
+
+  worker:
+    profiles: ["dify"]
+    image: langgenius/dify-api:1.17.1
+    restart: unless-stopped
+    environment:
+      <<: *dify-shared-env
+      MODE: worker
+    volumes:
+      - dify_app_storage:/app/api/storage
+    depends_on:
+      init_permissions:
+        condition: service_completed_successfully
+      db_postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      sandbox:
+        condition: service_healthy
+      weaviate:
+        condition: service_healthy
+    networks: [dify]
+
+  worker_beat:
+    profiles: ["dify"]
+    image: langgenius/dify-api:1.17.1
+    restart: unless-stopped
+    environment:
+      <<: *dify-shared-env
+      MODE: beat
+    volumes:
+      - dify_app_storage:/app/api/storage
+    depends_on:
+      init_permissions:
+        condition: service_completed_successfully
+      db_postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [dify]
+
+networks:
+  # 单网即可：本栈只在本机/内网用（官方把 sandbox 出网单列一个网络是为了它的 SSRF 代理拓扑，
+  # 这里 sandbox 已显式走 ssrf_proxy，无需再分网）。
+  dify:
+    name: kenfutwork_dify
+
+volumes:
+  dify_pg_data:
+    name: kenfutwork_dify_pg
+  dify_redis_data:
+    name: kenfutwork_dify_redis
+  dify_weaviate_data:
+    name: kenfutwork_dify_weaviate
+  dify_app_storage:
+    name: kenfutwork_dify_app_storage
+  dify_sandbox_dependencies:
+    name: kenfutwork_dify_sandbox_deps
+  dify_plugin_daemon:
+    name: kenfutwork_dify_plugin_daemon
