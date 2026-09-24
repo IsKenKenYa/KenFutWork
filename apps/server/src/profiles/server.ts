@@ -15,6 +15,7 @@ import { createChatPlugin } from "../features/chat/plugin.js";
 import { createCodeGitPlugin } from "../features/code-git/plugin.js";
 import { createCodeToolsPlugin } from "../features/code-tools/plugin.js";
 import { createCreditsPlugin } from "../features/credits/plugin.js";
+import { createFlowHostPlugin } from "../features/flow/plugin.js";
 import { createGenerationPlugin } from "../features/generation/plugin.js";
 import type { JobService } from "../features/jobs/job-service.js";
 import { createJobsPlugin } from "../features/jobs/plugin.js";
@@ -175,6 +176,8 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
         : {}),
     }),
     createGenerationPlugin({ env: deps.env }),
+    // flow 宿主适配层：配了共享密钥才注册 /api/flow/host/*（见 features/flow/plugin.ts）
+    createFlowHostPlugin({ secret: deps.env.flowEmbedSecret }),
     createAdminPlugin(),
     createBrowserPlugin(),
     createPluginsPlugin({

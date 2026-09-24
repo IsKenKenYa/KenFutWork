@@ -57,6 +57,12 @@ export type ServerEnv = {
   /** SecretStore 主密钥（DEC-7 凭证加密落库）；启用 BYOK 凭证写入时必须配置。 */
   credentialSecret?: string;
   /**
+   * flow 宿主适配层共享密钥（`KENFUTWORK_FLOW_EMBED_SECRET`）。
+   * 与 flow 侧 `HOST_SHARED_SECRET` 成对：flow 网关凭它调 `/api/flow/host/*`，
+   * 宿主凭它放行。缺省表示本实例不提供 flow 宿主能力（端点不注册）。
+   */
+  flowEmbedSecret?: string;
+  /**
    * 自管 Postgres 连接串（`persistence` 缝）。
    * 去 Supabase 收口后只认 `DATABASE_URL`。
    */
@@ -192,6 +198,9 @@ export function loadServerEnv(
   const credentialSecret =
     overrides.credentialSecret ??
     normalizeOptionalString(source.KENFUTWORK_CREDENTIAL_SECRET);
+  const flowEmbedSecret =
+    overrides.flowEmbedSecret ??
+    normalizeOptionalString(source.KENFUTWORK_FLOW_EMBED_SECRET);
   const mcpServers =
     overrides.mcpServers ?? parseMcpServers(source.KENFUTWORK_MCP_SERVERS);
   const canvasWorkDirs =
@@ -400,6 +409,7 @@ export function loadServerEnv(
     ...(canvasWorkDirs ? { canvasWorkDirs } : {}),
     ...(sandboxRoot ? { sandboxRoot } : {}),
     ...(credentialSecret ? { credentialSecret } : {}),
+    ...(flowEmbedSecret ? { flowEmbedSecret } : {}),
     ...(authDriver ? { authDriver } : {}),
     ...(autoCompactTriggerTokens ? { autoCompactTriggerTokens } : {}),
     ...(databaseUrl ? { databaseUrl } : {}),
