@@ -226,6 +226,16 @@ describe("@kenfutwork/shared contracts", () => {
     expect(
       projectCreateRequestSchema.parse({ name: "x", kind: "code" }).kind,
     ).toBe("code");
+    // flow 项目（《flow 集成方案》P1）：第三类项目，run 必绑项目同一条硬约束
+    expect(
+      projectCreateRequestSchema.parse({ name: "x", kind: "flow" }).kind,
+    ).toBe("flow");
+    // 封闭枚举：加类型必须两处同改（契约 + 库 CHECK），后者由 tests/workspace.test.mjs 对账
+    expect(getExportedSchema("projectKindSchema").options).toEqual([
+      "design",
+      "code",
+      "flow",
+    ]);
     expect(
       projectCreateRequestSchema.safeParse({ name: "x", kind: "nope" }).success,
     ).toBe(false);

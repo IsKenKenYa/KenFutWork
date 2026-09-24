@@ -361,6 +361,16 @@ const MODE_META: Record<
     placeholder: "从想法到设计，生成可交付的页面原型。",
     chips: ["设计还原", "概念成稿", "规范出图"],
   },
+  /**
+   * Flow 模式（《flow 集成方案》）：主区是工作流画布（编排 / 发布 / 执行都在画布内）。
+   * 这里先按类型穷举补齐；**切换器里的入口**随宿主适配层（P2）落地，接通前选不到这个模式。
+   */
+  flow: {
+    label: "Flow",
+    title: "Flow with KenFutWork",
+    placeholder: "编排可视化 AI 工作流，发布快照后执行并审计。",
+    chips: ["工作流编排", "发布与执行", "运行审计"],
+  },
 };
 
 const TASKS_STORAGE_KEY = "workbench-tasks";
@@ -407,9 +417,10 @@ export function Workbench() {
   const ws = useWebSocket(getToken);
 
   const [mode, setMode] = useState<WorkbenchMode>("code");
+  /** 任务列表按模式分开存；flow 模式主区是工作流画布，没有会话列表（故恒为空）。 */
   const [tasksByMode, setTasksByMode] = useState<
     Record<WorkbenchMode, WorkbenchTask[]>
-  >({ code: [], design: [] });
+  >({ code: [], design: [], flow: [] });
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   /** Design 模式的输入交给画布页（`/canvas?...&prompt=`）自动发送，不落到工作台会话视图。 */
@@ -522,6 +533,7 @@ export function Workbench() {
   const tasksByModeRef = useRef<Record<WorkbenchMode, WorkbenchTask[]>>({
     code: [],
     design: [],
+    flow: [],
   });
   tasksByModeRef.current = tasksByMode;
 
@@ -678,6 +690,7 @@ export function Workbench() {
     setTasksByMode({
       code: loadTasks("code"),
       design: loadTasks("design"),
+      flow: [],
     });
     try {
       const rawCollapsed = window.localStorage.getItem(
@@ -991,7 +1004,7 @@ export function Workbench() {
         current === projectId ? null : current,
       );
       setTasksByMode((prev) => {
-        const next: typeof prev = { code: [], design: [] };
+        const next: typeof prev = { code: [], design: [], flow: [] };
         for (const m of ["code", "design"] as const) {
           const kept = prev[m]
             .filter((t) => t.projectId !== projectId)
