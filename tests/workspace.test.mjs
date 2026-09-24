@@ -500,6 +500,42 @@ test("projects.kind 的库约束与共享契约枚举一致", async () => {
   );
 });
 
+// --- 供应商协议契约 ↔ 库约束一致性（《flow 集成方案》P3 凭证缝接缝 #5）---
+//
+// `provider_instances.protocol` 的封闭集合（packages/shared 的 providerProtocolSchema）与
+// 库 CHECK 是必须同改的两处：漏改库则创建实例直接 SQL 失败，漏改契约则库里的合法值
+// 被应用层拒绝。与 projects.kind 同一条对账纪律，跨文件契约靠脚本校验落地。
+test("provider_instances.protocol 的库约束与共享契约枚举一致", async () => {
+  const contracts = await readText("packages/shared/src/provider-contracts.ts");
+  const enumMatch = contracts.match(
+    /providerProtocolSchema = z\.enum\(\[([^\]]*)\]\)/,
+  );
+  assert.ok(enumMatch, "provider-contracts.ts 里应有 providerProtocolSchema 的封闭枚举");
+  const contractProtocols = [...enumMatch[1].matchAll(/"([^"]+)"/g)].map(
+    (match) => match[1],
+  );
+
+  // 迁移按文件名顺序执行，取**最后一处**定义（前向迁移的 drop/add 覆盖建表时的初值）。
+  let constraintProtocols = null;
+  for (const name of readdirSync(path.join(rootDir, "supabase/migrations")).sort()) {
+    if (!name.endsWith(".sql")) continue;
+    const sql = readFileSync(path.join(rootDir, "supabase/migrations", name), "utf8");
+    for (const match of sql.matchAll(
+      /CHECK \(protocol IN \(([^)]*)\)\)/gi,
+    )) {
+      constraintProtocols = [...match[1].matchAll(/'([^']+)'/g)].map(
+        (literal) => literal[1],
+      );
+    }
+  }
+  assert.ok(constraintProtocols, "应存在 provider_instances 协议 CHECK 约束定义");
+  assert.deepEqual(
+    [...contractProtocols].sort(),
+    [...constraintProtocols].sort(),
+    "协议封闭集合两处必须同改：shared 枚举与库 CHECK 漏改任一即此门禁红灯",
+  );
+});
+
 // 安装向导的品牌图必须**超采样**出图，不能按名义尺寸（页头 150×57 / 侧边 164×314）出：
 // 向导带 `ManifestDPIAwareness PerMonitorV2`，控件随 DPI 放大（150% 屏上 1.5 倍），而
 // `MUI_HEADERIMAGE_BITMAP_STRETCH` 默认 `FitControl` —— NSIS 会把位图 StretchBlt 到控件大小。

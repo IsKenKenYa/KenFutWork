@@ -29,6 +29,19 @@ describe("provider-contracts（BYOK 供应商缝）", () => {
     );
   });
 
+  it("dify-engine（Flow 凭证缝）：接受创建请求；库 CHECK 同改由 workspace 对账门禁锁定", () => {
+    expect(providerProtocolSchema.safeParse("dify-engine").success).toBe(true);
+    // 引擎实例不需要 models（本仓不消费其模型），只要 base_url + apiKey
+    expect(
+      providerInstanceCreateRequestSchema.safeParse({
+        name: "本地 Dify",
+        protocol: "dify-engine",
+        baseUrl: "http://127.0.0.1:5001",
+        apiKey: "app-xxx",
+      }).success,
+    ).toBe(true);
+  });
+
   it("能力词汇表：chat/image/video 之外拒绝", () => {
     expect(modelCapabilitySchema.safeParse("audio").success).toBe(false);
     expect(modelCapabilitySchema.safeParse("image").success).toBe(true);

@@ -5,7 +5,13 @@ import { z } from "zod";
  * 红线：apiKey 只写不读——所有响应 schema 一律不含 apiKey 字段（由本文件测试锁死）。
  */
 
-/** 线协议封闭集合：聊天 3 种 + 图视频 4 种；新增协议先扩这里再写适配器。 */
+/**
+ * 线协议封闭集合：聊天 3 种 + 图视频 4 种 + flow 引擎 1 种；新增协议先扩这里再写适配器。
+ *
+ * `dify-engine`（《flow 集成方案》P3 凭证缝）：Dify 引擎实例——**本仓不消费它的模型**，
+ * 唯一读出方是 flow 宿主凭证回调（`POST /api/flow/host/credentials`，服务端到服务端，
+ * 共享密钥门），把 `base_url + apiKey` 下发给 flow 网关；因此它不进任何本地适配器注册表。
+ */
 export const providerProtocolSchema = z.enum([
   "openai-compatible",
   "anthropic",
@@ -14,6 +20,7 @@ export const providerProtocolSchema = z.enum([
   "replicate",
   "volces",
   "metaso",
+  "dify-engine",
 ]);
 export type ProviderProtocol = z.infer<typeof providerProtocolSchema>;
 
@@ -239,21 +246,38 @@ export type ProviderInstanceConfig = z.infer<
 
 // --- HTTP 请求/响应（服务端 provider 设置 CRUD） ---
 
-export const providerInstanceCreateRequestSchema = z.object({
-  name: z.string().min(1),
-  protocol: providerProtocolSchema,
-  baseUrl: z.string().optional(),
-  /** 只写不读：创建时提交明文 Key，服务端加密落库后仅存 ref。 */
-  apiKey: z.string().min(1),
-  models: z.array(providerInstanceModelSchema).min(1),
-  compat: providerCompatSchema.optional(),
+export const providerInstanceCreateRequestSchema = z
+  .object({
+    name: z.string().min(1),
+    protocol: providerProtocolSchema,
+    baseUrl: z.string().optional(),
+    /** 只写不读：创建时提交明文 Key，服务端加密落库后仅存 ref。 */
+    apiKey: z.string().min(1),
+    /** 缺省视为空列表：模型型实例会被 superRefine 拒（见下），dify-engine 合法省略。 */
+    models: z.array(providerInstanceModelSchema).default([]),
+    compat: providerCompatSchema.optional(),
+    /**
+     * 自定义请求头：值只写不读（响应只回 `headerKeys`）。
+     * 显式传 `{}` 即清空；缺省表示不设置/不修改。
+     */
+    headers: providerInstanceHeadersSchema.optional(),
+    enabled: z.boolean().optional(),
+  })
   /**
-   * 自定义请求头：值只写不读（响应只回 `headerKeys`）。
-   * 显式传 `{}` 即清空；缺省表示不设置/不修改。
+   * models 的最低数量按协议收口：模型型实例（聊天/图视频）至少声明一个模型才可用；
+   * `dify-engine` 是引擎凭证（宿主不消费其模型，见 providerProtocolSchema 注释），
+   * 允许空列表——不为它编造占位模型。
    */
-  headers: providerInstanceHeadersSchema.optional(),
-  enabled: z.boolean().optional(),
-});
+  .superRefine((value, ctx) => {
+    if (value.protocol === "dify-engine") return;
+    if (value.models.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["models"],
+        message: "模型型实例至少声明一个模型",
+      });
+    }
+  });
 export type ProviderInstanceCreateRequest = z.infer<
   typeof providerInstanceCreateRequestSchema
 >;

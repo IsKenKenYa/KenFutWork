@@ -23,6 +23,8 @@ const PROTOCOLS = [
   { value: "replicate", label: "Replicate" },
   { value: "volces", label: "火山引擎" },
   { value: "metaso", label: "Metaso 视频" },
+  // Dify 引擎（《flow 集成方案》P3）：本仓不消费其模型，凭证经 flow 宿主回调下发给 flow 网关
+  { value: "dify-engine", label: "Dify 引擎（Flow）" },
 ] as const;
 
 /** 协议 → 界面名（列表与下拉同一处来源；认不出的值原样显示）。 */
