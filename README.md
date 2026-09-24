@@ -55,6 +55,25 @@ pnpm dev
 | `pro@test.kenfutwork.com` | pro |
 | `ultra@test.kenfutwork.com` | ultra |
 
+### 数据目录与身份（避免「换个启动方式数据就没了」）
+
+认证有**两种驱动**（`KENFUTWORK_AUTH_DRIVER`）：`managed`（默认，自管账户表 + 口令登录，
+自托管/云端用）与 `local-trust`（桌面免登录，固定本机账号，不做口令校验）。**BYOK 的供应商
+Key 与此解耦**：按工作区加密存在本机数据目录（`credential-secret`），不随账户迁移。
+
+| 启动方式 | 驱动 | 身份 | 数据目录 |
+| --- | --- | --- | --- |
+| `pnpm desktop` / DMG 安装包 / debug .app | `local-trust`（壳注入） | 本机用户 `local@kenfutwork.local` | `KENFUTWORK_DATA_DIR` |
+| `pnpm dev` | `managed`（口令登录） | 登录谁就是谁 | 同上（`.env.local` 统一指向桌面数据目录） |
+
+口径与注意（2026-09-23 起）：
+- `.env.local` 的 `KENFUTWORK_DATA_DIR` 统一指向 `~/Library/Application Support/com.kenfutwork.desktop`
+  （与桌面同库同身份）。旧仓库内 `.kenfutwork-data/` 是历史遗留，不再使用（保留可查）。
+- `local@kenfutwork.local` 已设口令 `kenfutwork-2026`：`pnpm dev` 的登录页用它登录，
+  与桌面形态看到的是**同一份**工作区/项目/对话。
+- 同时只跑一套内嵌 Postgres：桌面实例占着集群时 `pnpm dev` 会 fail loud（postmaster 锁），
+  先退出桌面实例即可——这是保护数据，不是故障。
+
 **管理员**：`KENFUTWORK_ADMIN_EMAIL` + `KENFUTWORK_ADMIN_PASSWORD` 配好后再跑一次 `pnpm seed`，该账号会被创建/提升为平台管理员（幂等）。
 
 > 开发库角色名注意：本机既有容器是历史建的（角色/库名 `loomic`），所以 `.env.local` 里的连接串用它；
