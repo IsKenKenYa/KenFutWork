@@ -21,6 +21,7 @@ import {
   Send,
   Server,
   ShieldAlert,
+  Workflow,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -63,6 +64,7 @@ import {
 } from "@/components/workbench/composer-compact-select";
 import { ContextUsageButton } from "@/components/workbench/context-usage-button";
 import { ElapsedEntry } from "@/components/workbench/elapsed-entry";
+import { FlowCanvasFrame } from "@/components/workbench/flow-canvas-frame";
 import { GitBranchSelect } from "@/components/workbench/git-branch-select";
 import { McpModal } from "@/components/workbench/mcp-modal";
 import { formatElementReference } from "@/components/workbench/panel-browser-view";
@@ -78,6 +80,7 @@ import { TodoProgressPanel } from "@/components/workbench/todo-progress-panel";
 import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
 import { WorkDirectorySelect } from "@/components/workbench/work-directory-select";
 import { WorkbenchSidePanel } from "@/components/workbench/workbench-side-panel";
+import { useFlowHostEntry } from "@/hooks/use-flow-host";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useAuth } from "@/lib/auth-context";
 import { onBrowserOpen } from "@/lib/browser-panel";
@@ -415,6 +418,11 @@ export function Workbench() {
   const { user, session, loading, signOut } = useAuth();
   const getToken = useCallback(() => session?.access_token ?? null, [session]);
   const ws = useWebSocket(getToken);
+  /**
+   * Flow 模式入口（插件安装态 + 宿主适配层探针）：不可用就不出现切换项
+   * （AGENTS.md 不变量：未装插件 / 适配层未接通时不摆空壳、不放假开关）。
+   */
+  const { entry: flowEntry } = useFlowHostEntry(session?.access_token ?? null);
 
   const [mode, setMode] = useState<WorkbenchMode>("code");
   /** 任务列表按模式分开存；flow 模式主区是工作流画布，没有会话列表（故恒为空）。 */
@@ -1971,14 +1979,21 @@ export function Workbench() {
 
   const meta = MODE_META[mode];
 
-  const modeItems = (["code", "design"] as const).map((m) => ({
+  /** 入口门控后的可选模式集合：flow 只在插件已装且适配层配齐时出现。 */
+  const availableModes: readonly WorkbenchMode[] = flowEntry?.available
+    ? ["code", "design", "flow"]
+    : ["code", "design"];
+
+  const modeItems = availableModes.map((m) => ({
     id: m,
     label: MODE_META[m].label,
     icon:
       m === "code" ? (
         <Code2 className="h-4 w-4 shrink-0" />
-      ) : (
+      ) : m === "design" ? (
         <Palette className="h-4 w-4 shrink-0" />
+      ) : (
+        <Workflow className="h-4 w-4 shrink-0" />
       ),
   }));
 
@@ -2152,7 +2167,17 @@ export function Workbench() {
 
           <div className="mx-3 my-2 border-t" />
 
-          {mode === "design" ? (
+          {mode === "flow" ? (
+            /* Flow：工作流列表/画布都在右侧 flow 产品里（iframe 内导航），
+               主仓侧不复制一份列表（不造第二套真相）。 */
+            <div className="flex min-h-0 flex-1 flex-col px-2">
+              <p className="px-2 py-6 text-center text-xs leading-relaxed text-muted-foreground">
+                工作流在右侧画布里管理：
+                <br />
+                编排 / 发布 / 执行 / 审计都在其中。
+              </p>
+            </div>
+          ) : mode === "design" ? (
             /* Design：项目列表（+ 直接创建，无任务列表） */
             <div className="flex min-h-0 flex-1 flex-col px-2">
               <div className="flex items-center justify-between px-1 pb-1">
@@ -2433,9 +2458,28 @@ export function Workbench() {
         </aside>
       )}
 
-      {/* 主区：Design＝画布（恒为画布，见 resolveWorkbenchSurface）/ Code＝任务视图 或 居中编排器 */}
+      {/* 主区：Design＝画布 / Flow＝flow 画布（恒为画布，见 resolveWorkbenchSurface）
+          / Code＝任务视图 或 居中编排器 */}
       <main className="min-w-0 flex-1 overflow-hidden bg-card">
-        {surface === "canvas" ? (
+        {mode === "flow" ? (
+          /* Flow：主区恒为 flow 画布（iframe 内含列表 / 编排 / 发布 / 执行全部视图），
+             与 Design 同一条不变量——不被任务/会话对话框顶掉。入口消失（如插件被卸载）
+             时如实说明，不放半截 iframe。 */
+          flowEntry === null ? (
+            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+              正在检查 flow 可用性…
+            </div>
+          ) : flowEntry.available ? (
+            <FlowCanvasFrame
+              frontendUrl={flowEntry.frontendUrl}
+              getToken={getToken}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center px-8 text-center text-sm text-muted-foreground">
+              {flowEntry.reason}
+            </div>
+          )
+        ) : surface === "canvas" ? (
           /* Design：选中项目后画布自动打开（原版 KenFutWork 画布，对话在画布内助手里） */
           <iframe
             key={`${selectedProject?.primaryCanvas.id}:${canvasPrompt ?? ""}`}

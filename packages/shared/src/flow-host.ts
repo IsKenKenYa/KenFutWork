@@ -19,6 +19,13 @@ import { z } from "zod";
 export const FLOW_EMBED_PROTOCOL_VERSION = "v1";
 
 /**
+ * flow 插件（`plugins/flow`，FORM-11 产品入口）的 bundle 名。
+ * 工作台以「该插件已安装」+「宿主适配层已配齐」共同门控 Flow 模式入口；
+ * 名字两端（市场清单 / 前端门控）只有这一处权威。
+ */
+export const FLOW_PLUGIN_BUNDLE_NAME = "kenfutwork-flow";
+
+/**
  * 身份交换请求：`token` 是宿主会话令牌（浏览器里那份），由 flow 网关原样转交。
  * 长度上限是防线也是实测（超长串没有验签价值，只用来烧 CPU）。
  */
