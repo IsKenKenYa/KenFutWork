@@ -253,6 +253,29 @@ describe("plugin-registry：安装并真的能用", () => {
     expect(entries.some((entry) => entry.source === "builtin")).toBe(true);
   });
 
+  /**
+   * flow 插件（FORM-11 产品入口）：P2 只做入口门控，不声明能力。
+   * 这条回归守住的是「市场条目可装」——清单/补丁/入口文件任何一处写坏，
+   * 这里都会先红（而不是等到用户在市场里点安装才失败）。
+   */
+  it("flow 插件可安装：零能力、市场条目带标题与分类", async () => {
+    const { service } = makeService();
+    const { installed, report } = await service.install({
+      url: path.join(REPO_ROOT, "plugins", "flow"),
+      allowLifecycleScripts: false,
+    });
+
+    expect(report.compatible).toBe(true);
+    expect(report.supportedCapabilities).toEqual([]);
+    expect(installed.name).toBe("kenfutwork-flow");
+
+    const entries = await service.list();
+    const flow = entries.find((entry) => entry.name === "kenfutwork-flow");
+    expect(flow?.installed).toBe(true);
+    expect(flow?.title).toBe("Flow 工作流");
+    expect(flow?.category).toBe("工作流");
+  });
+
   it("卸载后工具注销、落盘目录清除、列表不再有它", async () => {
     const { kernel, service } = makeService();
     const { installed } = await service.install({
