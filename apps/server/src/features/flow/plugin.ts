@@ -24,7 +24,14 @@ export function createFlowHostPlugin(deps: {
 }): PluginDefinition {
   return {
     name: "flow-host",
-    inject: ["auth", "viewer", "modelProviders", "credits", "persistence"],
+    inject: [
+      "auth",
+      "viewer",
+      "modelProviders",
+      "credits",
+      "persistence",
+      "ws",
+    ],
     apply(ctx) {
       if (!deps.secret?.trim() || !deps.frontendUrl?.trim()) {
         // 不视为错误：status 端点会如实回答 disabled + 缺什么，前端不摆空壳入口。
@@ -63,6 +70,8 @@ export function createFlowHostPlugin(deps: {
         providers: ctx.get("modelProviders"),
         credits: ctx.get("credits"),
         accounts,
+        // 事件缝透出走内核声明的 ws 缝（app.ts 装配时注册 connectionManager/eventBuffer）。
+        ws: { connectionManager: ctx.get("ws").connectionManager },
         secret: deps.secret,
         frontendUrl: deps.frontendUrl,
       });

@@ -7,9 +7,12 @@ import {
   flowHostBillingResponseSchema,
   flowHostCredentialsRequestSchema,
   flowHostCredentialsResponseSchema,
+  flowHostEventsRequestSchema,
+  flowHostEventsResponseSchema,
   flowHostIdentityRequestSchema,
   flowHostIdentityResponseSchema,
   flowHostStatusResponseSchema,
+  flowRunEventSchema,
   type ProviderInstanceResponse,
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
@@ -22,6 +25,7 @@ import {
   CreditServiceError,
 } from "../features/credits/credit-service.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
+import type { WsServices } from "../kernel/types.js";
 
 function isEnabledDifyEngine(instance: ProviderInstanceResponse): boolean {
   return instance.protocol === "dify-engine" && instance.enabled;
@@ -30,13 +34,14 @@ function isEnabledDifyEngine(instance: ProviderInstanceResponse): boolean {
 /**
  * flow 宿主适配层的宿主侧路由（`ff-embed/v1`）。
  *
- * 调用方与门禁：
- * - `POST /api/flow/host/identity`、`POST /api/flow/host/credentials`：调用方是 flow 网关
- *   （`flow/` 子模块），两条门都要过：
- *   1. **共享密钥**（`Authorization: Bearer <KENFUTWORK_FLOW_EMBED_SECRET>`）——证明对方是本
- *      实例认可的 flow 网关，而不是任何能访问本端口的进程；
- *   2. **宿主会话令牌**（请求体 `token`）——证明这次交换背后真有一个登录用户，且身份由
- *      宿主自己签发（flow 侧只拿到 subject / 引擎凭证，不自己造账号）。
+ * 调用方与门禁（P2–P5 定型）：
+ * - **身份交换**（`POST /api/flow/host/identity`）：交互式登录入口，两条门都要过——
+ *   共享密钥（`Authorization: Bearer <KENFUTWORK_FLOW_EMBED_SECRET>`，证明对方是本实例
+ *   认可的 flow 网关）+ **宿主会话令牌**（请求体 `token`，证明背后真有一个登录用户，
+ *   身份由宿主自己签发，flow 侧只拿到 subject）。
+ * - **凭证 / 计费 / 事件**（credentials / billing / events）：机器对机器的运行期回调，
+ *   发生在 run 生命周期里（可能晚于身份交换很久），**共享密钥 + `hostSubject` 归属键**
+ *   即可——短命会话令牌不可用（见 `FlowHostBillingRequest` 契约注释）。
  * - `GET /api/flow/host/status`：调用方是本仓自己的前端（工作台），会话鉴权即可；
  *   它是能力探针，**未配置时也要能如实回答 disabled**（而不是 404），否则前端没法区分
  *   「没配」和「没有这个功能」。
@@ -72,6 +77,8 @@ export async function registerFlowHostRoutes(
         subject: string,
       ): Promise<{ userId: string; workspaceId: string | null } | null>;
     };
+    /** WS 通道（事件缝透出用）：按用户投递 `flowRun.event`。 */
+    ws: Pick<WsServices, "connectionManager">;
     /** 共享密钥；缺省表示本实例未启用 flow 宿主能力。 */
     secret?: string | undefined;
     /** flow 前端地址（`KENFUTWORK_FLOW_FRONTEND_URL`）；iframe src 与 postMessage origin。 */
@@ -337,6 +344,66 @@ export async function registerFlowHostRoutes(
     } catch (error) {
       return sendCreditError(reply, error);
     }
+  });
+
+  app.post("/api/flow/host/events", async (request, reply) => {
+    const secret = options.secret?.trim();
+    if (!secret) {
+      return sendUnavailable(
+        reply,
+        "本实例未配置 KENFUTWORK_FLOW_EMBED_SECRET：flow 宿主事件透出未启用。",
+      );
+    }
+    if (!secretMatches(bearerFrom(request.headers.authorization), secret)) {
+      return sendUnauthorized(reply, "flow 网关共享密钥不匹配。");
+    }
+    const parsed = flowHostEventsRequestSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return sendBadInput(
+        reply,
+        `事件透出请求不合法：${parsed.error.issues[0]?.message ?? "形状不符合契约"}。`,
+      );
+    }
+
+    // 归属按**每条事件**解析（批次可能跨 run/跨用户）；同批内按 subject 记忆，避免重复查库。
+    const bySubject = new Map<string, string | null>();
+    let accepted = 0;
+    let skipped = 0;
+    for (const event of parsed.data.events) {
+      let userId = bySubject.get(event.hostSubject);
+      if (userId === undefined) {
+        const account = await options.accounts
+          .findBySubject(event.hostSubject)
+          .catch(() => null);
+        userId = account?.userId ?? null;
+        bySubject.set(event.hostSubject, userId);
+      }
+      if (!userId) {
+        // 旁路事件：归属解析不了就跳过并计数，不拖垮整批（flow 侧有自己的重放兜底）。
+        skipped += 1;
+        continue;
+      }
+      // 逐条再过一遍事件契约（at 必须是带时区的 ISO 时间，否则时间戳字段不可信）。
+      const streamEvent = flowRunEventSchema.safeParse({
+        type: "flowRun.event",
+        runId: event.runId,
+        seq: event.seq,
+        eventType: event.type,
+        payload: event.payload,
+        at: event.at,
+        timestamp: event.at,
+      });
+      if (!streamEvent.success) {
+        skipped += 1;
+        continue;
+      }
+      options.ws.connectionManager.pushToUser(userId, streamEvent.data);
+      accepted += 1;
+    }
+
+    return reply
+      .code(200)
+      .send(flowHostEventsResponseSchema.parse({ accepted, skipped }));
   });
 
   app.post("/api/flow/host/identity", async (request, reply) => {

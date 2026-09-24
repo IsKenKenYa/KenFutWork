@@ -160,3 +160,39 @@ export const flowHostBillingResponseSchema = z.object({
 export type FlowHostBillingResponse = z.infer<
   typeof flowHostBillingResponseSchema
 >;
+
+/**
+ * 事件透出（P5，`POST /api/flow/host/events`）：flow 网关按批推 run 事件，宿主
+ * 原样转发到本仓 WS 通道（`flowRun.event`）。
+ *
+ * 形状与 flow 侧 `EmbeddedEventSink` 对齐：批 ≤25 条 / 250ms 攒批，`events[].seq` 是
+ * **run 内**单调序号。每条事件带 `hostSubject`（与计费同一口径：宿主按它解析归属，
+ * 把事件投给对应用户的 WS 连接）——批次可能跨 run/跨用户，故归属键在**每条**事件上。
+ */
+export const flowHostEventsRequestSchema = z.object({
+  protocolVersion: z.string().min(1).max(16).optional(),
+  events: z
+    .array(
+      z.object({
+        runId: z.string().min(1).max(128),
+        seq: z.number().int().min(1),
+        /** flow 侧原事件类型名（宿主不解释，只透传）。 */
+        type: z.string().min(1).max(128),
+        payload: z.unknown(),
+        at: z.string().min(1).max(64),
+        hostSubject: z.string().min(1).max(256),
+      }),
+    )
+    .min(1)
+    .max(200),
+});
+export type FlowHostEventsRequest = z.infer<typeof flowHostEventsRequestSchema>;
+
+/** 事件透出的响应：投递计数（宿主只做透传，不识别的归属逐条计入 skipped，不整批失败）。 */
+export const flowHostEventsResponseSchema = z.object({
+  accepted: z.number().int().min(0),
+  skipped: z.number().int().min(0),
+});
+export type FlowHostEventsResponse = z.infer<
+  typeof flowHostEventsResponseSchema
+>;

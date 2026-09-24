@@ -391,6 +391,8 @@ describe("@kenfutwork/shared contracts", () => {
       "run.canceled",
       "run.completed",
       "run.failed",
+      // flow 事件缝（P5）：宿主把 flow 网关回调的运行事件透出到 WS 时的统一包装
+      "flowRun.event",
     ];
 
     for (const type of eventTypes) {
@@ -455,6 +457,17 @@ describe("@kenfutwork/shared contracts", () => {
                 code: "run_failed",
                 message: "The run failed.",
               },
+              timestamp: "2026-03-23T12:00:00.000Z",
+            });
+            break;
+          case "flowRun.event":
+            streamEventSchema.parse({
+              type,
+              runId: "flow_run_1",
+              seq: 1,
+              eventType: "workflow_started",
+              payload: { workflow_run_id: "wf-1" },
+              at: "2026-03-23T12:00:00.000Z",
               timestamp: "2026-03-23T12:00:00.000Z",
             });
             break;

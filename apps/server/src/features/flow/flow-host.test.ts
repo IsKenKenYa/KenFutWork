@@ -129,6 +129,21 @@ function createCredits(
 
 const ACCOUNT = { userId: "user-123", workspaceId: "ws-1" };
 
+/** WS 缝替身：记录 pushToUser 的调用（事件缝透出的观测点）。 */
+function createWs() {
+  const pushed: Array<{ userId: string; event: { type: string } }> = [];
+  return {
+    pushed,
+    ws: {
+      connectionManager: {
+        pushToUser(userId: string, event: unknown) {
+          pushed.push({ userId, event: event as { type: string } });
+        },
+      },
+    } as never,
+  };
+}
+
 async function createApp(options: {
   secret?: string | undefined;
   frontendUrl?: string | undefined;
@@ -143,6 +158,11 @@ async function createApp(options: {
     "flowReserveCredits" | "flowSettleCredits" | "flowRefundCredits"
   >;
   account?: { userId: string; workspaceId: string | null } | null;
+  /** 自定义 subject 查找（默认：只认 user-123，其余返回 null——认不出即跳过）。 */
+  findSubject?: (
+    subject: string,
+  ) => Promise<{ userId: string; workspaceId: string | null } | null>;
+  ws?: ReturnType<typeof createWs>["ws"];
 }) {
   const app = Fastify();
   await registerFlowHostRoutes(app, {
@@ -151,10 +171,13 @@ async function createApp(options: {
     providers: options.providers ?? createProviders({}).providers,
     credits: options.credits ?? createCredits().credits,
     accounts: {
-      async findBySubject() {
-        return options.account === undefined ? ACCOUNT : options.account;
+      async findBySubject(subject: string) {
+        if (options.findSubject) return options.findSubject(subject);
+        if (options.account !== undefined) return options.account;
+        return subject === ACCOUNT.userId ? ACCOUNT : null;
       },
     },
+    ws: options.ws ?? createWs().ws,
     secret: options.secret,
     frontendUrl: options.frontendUrl,
   });
@@ -673,5 +696,124 @@ describe("flow 宿主计费三段事务（/api/flow/host/billing，P4 计费缝�
     });
     expect(responseNoWs.statusCode).toBe(409);
     expect(responseNoWs.json().error.message).toContain("个人工作区");
+  });
+});
+
+describe("flow 宿主事件透出（/api/flow/host/events，P5 事件缝）", () => {
+  function postEvents(
+    app: Awaited<ReturnType<typeof createApp>>,
+    body: unknown,
+    authorization: string | undefined = `Bearer ${SECRET}`,
+  ) {
+    return app.inject({
+      method: "POST",
+      url: "/api/flow/host/events",
+      headers: authorization ? { authorization } : {},
+      payload: body as Record<string, unknown>,
+    });
+  }
+
+  const event = (overrides: Record<string, unknown> = {}) => ({
+    runId: "run-1",
+    seq: 1,
+    type: "workflow_started",
+    payload: { node: "start" },
+    at: "2026-09-24T12:00:00.000Z",
+    hostSubject: "user-123",
+    ...overrides,
+  });
+
+  it("未配置共享密钥 → 503；密钥不匹配 → 401", async () => {
+    const app = await createApp({ secret: undefined });
+    expect((await postEvents(app, { events: [event()] })).statusCode).toBe(503);
+
+    const configured = await createApp({ secret: SECRET });
+    expect(
+      (await postEvents(configured, { events: [event()] }, "Bearer nope"))
+        .statusCode,
+    ).toBe(401);
+  });
+
+  it("合法批次 → 按 hostSubject 投给该用户的 WS 连接，事件包成 flowRun.event", async () => {
+    const fake = createWs();
+    const app = await createApp({ secret: SECRET, ws: fake.ws });
+    const response = await postEvents(app, {
+      protocolVersion: "v1",
+      events: [
+        event(),
+        event({
+          seq: 2,
+          type: "node_finished",
+          at: "2026-09-24T12:00:01.000Z",
+        }),
+      ],
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ accepted: 2, skipped: 0 });
+    expect(fake.pushed).toHaveLength(2);
+    expect(fake.pushed[0]?.userId).toBe("user-123");
+    expect(fake.pushed[0]?.event).toMatchObject({
+      type: "flowRun.event",
+      runId: "run-1",
+      seq: 1,
+      eventType: "workflow_started",
+      timestamp: "2026-09-24T12:00:00.000Z",
+    });
+  });
+
+  it("归属认不出 / 时间戳非法 → 逐条跳过并计数（旁路事件不拖垮整批）", async () => {
+    const fake = createWs();
+    const app = await createApp({ secret: SECRET, ws: fake.ws });
+    const response = await postEvents(app, {
+      events: [
+        event(),
+        event({ hostSubject: "unknown-subject" }),
+        event({ seq: 3, at: "不是时间" }),
+      ],
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ accepted: 1, skipped: 2 });
+    expect(fake.pushed).toHaveLength(1);
+  });
+
+  it("请求形状不合法（空批 / 缺字段 / seq 非正）→ 400", async () => {
+    const app = await createApp({ secret: SECRET });
+    for (const body of [
+      { events: [] },
+      { events: [{ runId: "run-1" }] },
+      { events: [event({ seq: 0 })] },
+      {},
+    ]) {
+      expect((await postEvents(app, body)).statusCode).toBe(400);
+    }
+  });
+
+  it("同一批次里两个 subject → 各自投给各自用户；同 subject 只查一次（批内记忆）", async () => {
+    const fake = createWs();
+    const lookups: string[] = [];
+    const app = await createApp({
+      secret: SECRET,
+      ws: fake.ws,
+      findSubject: async (subject) => {
+        lookups.push(subject);
+        return { userId: `account-of-${subject}`, workspaceId: "ws-1" };
+      },
+    });
+    const response = await postEvents(app, {
+      events: [
+        event(),
+        event({ seq: 2 }),
+        event({ seq: 3, hostSubject: "user-456" }),
+      ],
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ accepted: 3, skipped: 0 });
+    expect(fake.pushed.map((entry) => entry.userId)).toEqual([
+      "account-of-user-123",
+      "account-of-user-123",
+      "account-of-user-456",
+    ]);
+    // 三条事件、两个 subject：批内按 subject 记忆，只查两次
+    expect(lookups).toEqual(["user-123", "user-456"]);
   });
 });
