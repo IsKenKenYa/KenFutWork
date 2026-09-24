@@ -9,6 +9,7 @@ import {
   FolderOpen,
   FolderPlus,
   Layers,
+  ListChecks,
   Loader2,
   MessageSquare,
   Mic,
@@ -64,7 +65,10 @@ import {
 } from "@/components/workbench/composer-compact-select";
 import { ContextUsageButton } from "@/components/workbench/context-usage-button";
 import { ElapsedEntry } from "@/components/workbench/elapsed-entry";
-import { FlowCanvasFrame } from "@/components/workbench/flow-canvas-frame";
+import {
+  FlowCanvasFrame,
+  type FlowCanvasFrameHandle,
+} from "@/components/workbench/flow-canvas-frame";
 import { GitBranchSelect } from "@/components/workbench/git-branch-select";
 import { McpModal } from "@/components/workbench/mcp-modal";
 import { formatElementReference } from "@/components/workbench/panel-browser-view";
@@ -425,6 +429,8 @@ export function Workbench() {
   const { entry: flowEntry, refresh: refreshFlowEntry } = useFlowHostEntry(
     session?.access_token ?? null,
   );
+  /** Flow 画布句柄：侧栏导航项让 iframe 内的 flow 路由跳转（ff-embed/navigate）。 */
+  const flowFrameRef = useRef<FlowCanvasFrameHandle>(null);
 
   const [mode, setMode] = useState<WorkbenchMode>("code");
   /** 任务列表按模式分开存；flow 模式主区是工作流画布，没有会话列表（故恒为空）。 */
@@ -2170,15 +2176,37 @@ export function Workbench() {
           <div className="mx-3 my-2 border-t" />
 
           {mode === "flow" ? (
-            /* Flow：工作流列表/画布都在右侧 flow 产品里（iframe 内导航），
+            /* Flow：侧栏导航项由宿主承担（内嵌形态 flow 自己的侧栏隐藏），
+               点击经 ff-embed/navigate 让 iframe 内的 flow 路由跳转；
                主仓侧不复制一份列表（不造第二套真相）。 */
-            <div className="flex min-h-0 flex-1 flex-col px-2">
-              <p className="px-2 py-6 text-center text-xs leading-relaxed text-muted-foreground">
-                工作流在右侧画布里管理：
-                <br />
-                编排 / 发布 / 执行 / 审计都在其中。
-              </p>
-            </div>
+            <nav
+              className="flex min-h-0 flex-1 flex-col px-2"
+              aria-label="Flow 导航"
+            >
+              {[
+                {
+                  path: "/",
+                  label: "工作流",
+                  icon: <Workflow className="h-4 w-4 shrink-0" />,
+                },
+                {
+                  path: "/tasks",
+                  label: "任务中心",
+                  icon: <ListChecks className="h-4 w-4 shrink-0" />,
+                },
+              ].map((item) => (
+                <button
+                  key={item.path}
+                  type="button"
+                  disabled={!flowEntry?.available}
+                  onClick={() => flowFrameRef.current?.navigate(item.path)}
+                  className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {item.icon}
+                  {item.label}
+                </button>
+              ))}
+            </nav>
           ) : mode === "design" ? (
             /* Design：项目列表（+ 直接创建，无任务列表） */
             <div className="flex min-h-0 flex-1 flex-col px-2">
@@ -2473,6 +2501,7 @@ export function Workbench() {
             </div>
           ) : flowEntry.available ? (
             <FlowCanvasFrame
+              ref={flowFrameRef}
               frontendUrl={flowEntry.frontendUrl}
               getToken={getToken}
             />

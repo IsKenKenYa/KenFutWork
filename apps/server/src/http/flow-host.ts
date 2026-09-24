@@ -462,10 +462,15 @@ export async function registerFlowHostRoutes(
     }
 
     // 显示名取 viewer 档案；档案缺失不阻断身份交换（flow 侧有邮箱/ID 兜底）。
+    // 档案没设展示名时回退邮箱前缀——账号互通要求 flow 界面显示的是宿主账号身份，
+    // 而不是 flow 侧按 subject 派生的 `host-<hash>` 用户名。
     const viewer = await options.viewer
       .ensureViewer(user)
       .catch(() => undefined);
-    const displayName = viewer?.profile?.displayName?.trim();
+    const displayName =
+      viewer?.profile?.displayName?.trim() ||
+      user.email?.split("@")[0]?.trim() ||
+      "";
 
     return reply.code(200).send(
       flowHostIdentityResponseSchema.parse({

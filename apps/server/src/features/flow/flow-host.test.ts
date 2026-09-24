@@ -410,7 +410,7 @@ describe("flow 宿主身份交换（/api/flow/host/identity）", () => {
     });
   });
 
-  it("viewer 档案缺失（抛错）→ 仍 200，只省略 displayName", async () => {
+  it("viewer 档案缺失（抛错）→ 仍 200，displayName 回退邮箱前缀（账号互通显示）", async () => {
     const app = await createApp({
       secret: SECRET,
       auth: createAuth({ user: USER }),
@@ -420,6 +420,7 @@ describe("flow 宿主身份交换（/api/flow/host/identity）", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       subject: "user-123",
+      displayName: "ken",
       email: "ken@example.com",
     });
   });

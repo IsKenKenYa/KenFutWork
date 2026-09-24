@@ -62,6 +62,17 @@ export function buildIdentity(
   return { type: "ff-embed/identity", version, hostToken };
 }
 
+/**
+ * 宿主 → flow 的站内导航（`ff-embed/navigate`）：Flow 模式的侧栏导航项由宿主承担
+ * （内嵌形态下 flow 自己的侧栏隐藏），点侧栏时让 iframe 内的 flow 路由跳转。
+ */
+export function buildNavigate(
+  version: string,
+  path: string,
+): { type: "ff-embed/navigate"; version: string; path: string } {
+  return { type: "ff-embed/navigate", version, path };
+}
+
 /** flow 前端会发来的消息类型（宿主侧只认这个集合，其余忽略）。 */
 export type FfEmbedInboundMessage =
   | { type: "ff-embed/hello"; version?: unknown }
