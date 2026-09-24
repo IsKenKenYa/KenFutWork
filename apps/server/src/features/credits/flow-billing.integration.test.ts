@@ -26,6 +26,17 @@ const DATABASE_URL = process.env.DATABASE_URL;
 
 type BalanceRow = { balance: number; reserved_balance: number };
 
+/**
+ * 仓储写入口按契约可能返回 null（真实实现不返回；路由层由服务层兜底抛错）。
+ * 集成测试直连仓储，这里把「非空」断言与取值合成一处，避免满屏 `?.`。
+ */
+function unwrapped<T>(value: T | null): T {
+  if (value === null) {
+    throw new Error("仓储返回了 null（真实库路径不应发生）");
+  }
+  return value;
+}
+
 describe.skipIf(!DATABASE_URL)("flow 三段事务真实库集成", () => {
   interface Fixture {
     persistence: ReturnType<typeof createPostgresPersistence>;
@@ -112,12 +123,14 @@ describe.skipIf(!DATABASE_URL)("flow 三段事务真实库集成", () => {
           );
 
           // reserve 预扣 30
-          const first = await credits.flowReserveCredits({
-            amount: 30,
-            runId,
-            userId,
-            workspaceId,
-          });
+          const first = unwrapped(
+            await credits.flowReserveCredits({
+              amount: 30,
+              runId,
+              userId,
+              workspaceId,
+            }),
+          );
           expect(first.replayed).toBe(false);
           expect(first.frozenAmount).toBe(30);
           let balance = await persistence.queryOne<BalanceRow>(
@@ -146,12 +159,14 @@ describe.skipIf(!DATABASE_URL)("flow 三段事务真实库集成", () => {
           expect(balance?.reserved_balance).toBe(30);
 
           // settle 实扣 12（≤ 冻结额）
-          const settled = await credits.flowSettleCredits({
-            actualCost: 12,
-            runId,
-            userId,
-            workspaceId,
-          });
+          const settled = unwrapped(
+            await credits.flowSettleCredits({
+              actualCost: 12,
+              runId,
+              userId,
+              workspaceId,
+            }),
+          );
           expect(settled.replayed).toBe(false);
           expect(settled.settledAmount).toBe(12);
           expect(settled.uncoveredAmount).toBe(0);
@@ -163,12 +178,14 @@ describe.skipIf(!DATABASE_URL)("flow 三段事务真实库集成", () => {
           expect(balance?.reserved_balance).toBe(0);
 
           // 重放 settle：同一 tx，余额不再变
-          const settleReplay = await credits.flowSettleCredits({
-            actualCost: 12,
-            runId,
-            userId,
-            workspaceId,
-          });
+          const settleReplay = unwrapped(
+            await credits.flowSettleCredits({
+              actualCost: 12,
+              runId,
+              userId,
+              workspaceId,
+            }),
+          );
           expect(settleReplay.replayed).toBe(true);
           expect(settleReplay.txId).toBe(settled.txId);
           balance = await persistence.queryOne<BalanceRow>(
@@ -198,12 +215,14 @@ describe.skipIf(!DATABASE_URL)("flow 三段事务真实库集成", () => {
             userId,
             workspaceId,
           });
-          const settled = await credits.flowSettleCredits({
-            actualCost: 25,
-            runId,
-            userId,
-            workspaceId,
-          });
+          const settled = unwrapped(
+            await credits.flowSettleCredits({
+              actualCost: 25,
+              runId,
+              userId,
+              workspaceId,
+            }),
+          );
           expect(settled.settledAmount).toBe(10);
           expect(settled.uncoveredAmount).toBe(15);
           const balance = await persistence.queryOne<BalanceRow>(
@@ -236,11 +255,13 @@ describe.skipIf(!DATABASE_URL)("flow 三段事务真实库集成", () => {
             userId,
             workspaceId,
           });
-          const refunded = await credits.flowRefundCredits({
-            runId,
-            userId,
-            workspaceId,
-          });
+          const refunded = unwrapped(
+            await credits.flowRefundCredits({
+              runId,
+              userId,
+              workspaceId,
+            }),
+          );
           expect(refunded.replayed).toBe(false);
           expect(refunded.releasedAmount).toBe(20);
           let balance = await persistence.queryOne<BalanceRow>(
@@ -251,11 +272,13 @@ describe.skipIf(!DATABASE_URL)("flow 三段事务真实库集成", () => {
           expect(balance?.balance).toBe(before?.balance);
 
           // 重放退款：同键返回原结果
-          const refundReplay = await credits.flowRefundCredits({
-            runId,
-            userId,
-            workspaceId,
-          });
+          const refundReplay = unwrapped(
+            await credits.flowRefundCredits({
+              runId,
+              userId,
+              workspaceId,
+            }),
+          );
           expect(refundReplay.replayed).toBe(true);
           expect(refundReplay.txId).toBe(refunded.txId);
 
@@ -349,20 +372,24 @@ describe.skipIf(!DATABASE_URL)("flow 三段事务真实库集成", () => {
           "select balance, reserved_balance from public.credit_balances where workspace_id = $1",
           [workspaceId],
         );
-        const [a, b] = await Promise.all([
-          createCreditRepository(persistence).flowReserveCredits({
-            amount: 7,
-            runId,
-            userId,
-            workspaceId,
-          }),
-          createCreditRepository(second).flowReserveCredits({
-            amount: 7,
-            runId,
-            userId,
-            workspaceId,
-          }),
-        ]);
+        const results = (
+          await Promise.all([
+            createCreditRepository(persistence).flowReserveCredits({
+              amount: 7,
+              runId,
+              userId,
+              workspaceId,
+            }),
+            createCreditRepository(second).flowReserveCredits({
+              amount: 7,
+              runId,
+              userId,
+              workspaceId,
+            }),
+          ])
+        ).map((result) => unwrapped(result));
+        const [a, b] = results;
+        if (!a || !b) throw new Error("两个并发 reserve 都应返回结果");
 
         // 一个新建，一个重放；两者指向同一 hold
         expect([a.replayed, b.replayed].sort()).toEqual([false, true]);
