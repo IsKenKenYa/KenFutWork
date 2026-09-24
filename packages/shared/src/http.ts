@@ -567,6 +567,10 @@ export const applicationErrorCodeSchema = z.enum([
   "flow_engine_not_configured",
   /** flow 凭证缝（P3）：实例在但 base_url 缺失/非法（409），凭证不下发半截。 */
   "flow_engine_invalid",
+  /** flow 计费缝（P4）：hold 状态不允许该操作（无 hold / 已结算 / 已退款 / 并发修改）→ 409。 */
+  "flow_billing_conflict",
+  /** flow 计费缝（P4）：其余失败 → 500。 */
+  "flow_billing_failed",
 ]);
 
 export const applicationErrorResponseSchema = z.object({

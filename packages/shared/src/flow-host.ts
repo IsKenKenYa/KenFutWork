@@ -67,22 +67,23 @@ export type FlowHostStatusResponse = z.infer<
 >;
 
 /**
- * 凭证下发（P3，`POST /api/flow/host/credentials`）：请求体与身份交换同形
- * （`token` = 宿主会话令牌，由 flow 网关原样转交）。
+ * 凭证下发（P3，`POST /api/flow/host/credentials`）：请求体只有协议版本——
+ * **这条缝是部署级的**（flow 网关一个引擎配置供全体用户），与 flow 侧
+ * `EmbeddedCredentialsProvider` 的实际调用形状一致；凭证来源是平台池
+ * （`scope='system'`）里启用的 `protocol='dify-engine'` 实例。
+ * 门禁只有共享密钥（机器对机器、无用户数据参与；会话令牌是交互式身份交换才需要的）。
  */
 export const flowHostCredentialsRequestSchema = z.object({
-  token: z.string().min(1).max(8192),
   protocolVersion: z.string().min(1).max(16).optional(),
 });
 
 /**
- * 凭证下发响应：工作区（回退平台池）里 `protocol='dify-engine'` 实例的引擎地址与 Key。
+ * 凭证下发响应：平台池 dify-engine 实例的引擎地址与 Key。
  * 形状与 flow 侧 `HostCredentialsPayload`（class-validator）对齐：apiBase 必须 http(s)、
  * apiKey ≤512、label ≤64。
  *
  * **红线说明**：响应含明文 apiKey 是这条缝的**目的**（把 BYOK 引擎凭证下发给持有共享
- * 密钥的 flow 网关，服务端到服务端）——浏览器永远拿不到它（双门鉴权：共享密钥 + 会话
- * 令牌，缺一即拒）；日志同样不落明文。
+ * 密钥的 flow 网关，服务端到服务端）——浏览器永远拿不到它；日志同样不落明文。
  */
 export const flowHostCredentialsResponseSchema = z.object({
   apiBase: z.string().url(),
@@ -94,4 +95,68 @@ export type FlowHostCredentialsRequest = z.infer<
 >;
 export type FlowHostCredentialsResponse = z.infer<
   typeof flowHostCredentialsResponseSchema
+>;
+
+/**
+ * 计费三段事务（P4，`POST /api/flow/host/billing`）。
+ *
+ * 请求是 op 判别联合，形状与 flow 侧 `EmbeddedBillingProvider` 逐参对齐（多一个
+ * `hostSubject`）：`hostSubject` 是**宿主侧稳定用户标识**（身份缝交换时宿主自己下发的），
+ * flow 网关从 `users.hostSubject` 取出后随请求带上——机器对机器的回调发生在 run 的生命
+ * 周期里（可能晚于身份交换很久），短命会话令牌不可用，稳定 subject 才是可用的归属键。
+ *
+ * 幂等：宿主按 `flow:<runId>:<op>` 去重（flow 侧同时以 `x-idempotency-key` 头下发）。
+ * 金额口径：宿主按自己的 credits 单位解释 amount/actualCost（取整），
+ * **冻结额是本次 run 的消费上限**（结算超出部分在 `uncoveredAmount` 里如实回报）。
+ */
+const flowBillingBase = {
+  protocolVersion: z.string().min(1).max(16).optional(),
+  runId: z.string().min(1).max(128),
+  hostSubject: z.string().min(1).max(256),
+};
+
+export const flowHostBillingRequestSchema = z.discriminatedUnion("op", [
+  z.object({
+    ...flowBillingBase,
+    op: z.literal("reserve"),
+    /** 预扣金额（宿主 credits 单位；向上取整，不低估占用）。 */
+    amount: z.number().finite().min(0),
+  }),
+  z.object({
+    ...flowBillingBase,
+    op: z.literal("settle"),
+    /** flow 侧账目参考的冻结额（宿主以自己 hold 里的金额为准，不采信此值）。 */
+    frozenAmount: z.number().finite().min(0),
+    actualCost: z.number().finite().min(0),
+    /** 用量明细（宿主折算自己计费单位用；缺省为空对象）。 */
+    usage: z.record(z.string(), z.unknown()).optional(),
+    remark: z.string().max(512).optional(),
+  }),
+  z.object({
+    ...flowBillingBase,
+    op: z.literal("refund"),
+    /** flow 侧账目参考的冻结额（宿主以自己 hold 里的金额为准）。 */
+    amount: z.number().finite().min(0),
+  }),
+]);
+export type FlowHostBillingRequest = z.infer<
+  typeof flowHostBillingRequestSchema
+>;
+
+/**
+ * 计费响应：每段都带 `replayed`（同键重放为 true，宿主未重复动账）与
+ * 实际生效金额；结算的 `uncoveredAmount` = 超出冻结上限、未扣的部分（如实回报，不静默）。
+ */
+export const flowHostBillingResponseSchema = z.object({
+  op: z.enum(["reserve", "settle", "refund"]),
+  replayed: z.boolean(),
+  /** 冻结/释放金额（reserve / refund）。 */
+  amount: z.number().int().min(0).optional(),
+  /** 实扣金额（settle）。 */
+  settledAmount: z.number().int().min(0).optional(),
+  /** 超出冻结上限未扣的部分（settle；0 表示全额结算）。 */
+  uncoveredAmount: z.number().int().min(0).optional(),
+});
+export type FlowHostBillingResponse = z.infer<
+  typeof flowHostBillingResponseSchema
 >;

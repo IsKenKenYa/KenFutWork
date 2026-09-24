@@ -1,17 +1,20 @@
 import { registerFlowHostRoutes } from "../../http/flow-host.js";
 import type { PluginDefinition } from "../../kernel/types.js";
+import { createViewerRepository } from "../bootstrap/repository.js";
 
 /**
  * flow-host 插件：宿主适配层的宿主侧端点（`/api/flow/host/*`，`ff-embed/v1`）。
  *
  * 能力缝三元组：
  * - Service Definition：`ff-embed/v1` 契约（`packages/shared/src/flow-host.ts`）
- * - Service Provider：本插件注册的宿主侧路由（身份交换 + 凭证下发；计费 / 事件随 P4–P5 接上）
+ * - Service Provider：本插件注册的宿主侧路由（身份交换 + 凭证下发 + 计费三段事务；
+ *   事件随 P5 接上）
  * - Consumer：flow 网关的 embedded Provider（`flow/gateway/src/host/embedded-*.provider.ts`）
  *
  * 与 `plugins/flow` 的分工（FORM-11）：**这里**是基础设施（flow 网关回调宿主），
  * **插件**是产品入口（工作台 Flow 模式 + 引擎托管）。路由始终注册：status 是能力探针，
- * 未配齐也要如实回答 disabled 与缺失原因；身份/凭证交换在未配密钥时按请求回 503（不假装能用）。
+ * 未配齐也要如实回答 disabled 与缺失原因；身份/凭证/计费在未配密钥时按请求回 503
+ * （不假装能用）。
  */
 export function createFlowHostPlugin(deps: {
   /** `KENFUTWORK_FLOW_EMBED_SECRET`；缺省表示未启用。 */
@@ -21,7 +24,7 @@ export function createFlowHostPlugin(deps: {
 }): PluginDefinition {
   return {
     name: "flow-host",
-    inject: ["auth", "viewer", "modelProviders"],
+    inject: ["auth", "viewer", "modelProviders", "credits", "persistence"],
     apply(ctx) {
       if (!deps.secret?.trim() || !deps.frontendUrl?.trim()) {
         // 不视为错误：status 端点会如实回答 disabled + 缺什么，前端不摆空壳入口。
@@ -36,10 +39,30 @@ export function createFlowHostPlugin(deps: {
       });
     },
     mounted(ctx) {
+      // 宿主 subject（身份缝下发的宿主用户 id）→ 账号与个人工作区：
+      // 身份缝的 subject 就是宿主 accounts.id，计费归属据此解析。
+      const viewerRepository = createViewerRepository(ctx.get("persistence"));
+      const accounts = {
+        async findBySubject(subject: string) {
+          const account = await ctx
+            .get("persistence")
+            .queryOne<{ id: string }>(
+              "select id from public.accounts where id = $1",
+              [subject],
+            );
+          if (!account) return null;
+          const workspace =
+            await viewerRepository.findPersonalWorkspace(subject);
+          return { userId: subject, workspaceId: workspace?.id ?? null };
+        },
+      };
+
       void registerFlowHostRoutes(ctx.app, {
         auth: ctx.get("auth"),
         viewer: ctx.get("viewer"),
         providers: ctx.get("modelProviders"),
+        credits: ctx.get("credits"),
+        accounts,
         secret: deps.secret,
         frontendUrl: deps.frontendUrl,
       });

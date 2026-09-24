@@ -23,6 +23,17 @@ export const creditTransactionTypeSchema = z.enum([
   "generation_refund",
   "admin_adjustment",
   "bonus",
+  /**
+   * 平台池聊天扣费（DB enum 20260913160000 已加；契约此前缺失——
+   * 一旦台账里有这类行，`GET /api/credits/transactions` 的解析会 500，随 P4 一并补齐）。
+   */
+  "chat_deduct",
+  /** flow 三段事务（P4）：预扣冻结（amount=0，冻结额记 metadata）。 */
+  "flow_reserve",
+  /** flow 三段事务（P4）：结算实扣。 */
+  "flow_deduct",
+  /** flow 三段事务（P4）：退款（释放冻结，余额未动）。 */
+  "flow_refund",
 ]);
 export type CreditTransactionType = z.infer<typeof creditTransactionTypeSchema>;
 

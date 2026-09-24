@@ -3,6 +3,8 @@ import { timingSafeEqual } from "node:crypto";
 import {
   applicationErrorResponseSchema,
   FLOW_EMBED_PROTOCOL_VERSION,
+  flowHostBillingRequestSchema,
+  flowHostBillingResponseSchema,
   flowHostCredentialsRequestSchema,
   flowHostCredentialsResponseSchema,
   flowHostIdentityRequestSchema,
@@ -15,16 +17,11 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 
 import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
+import {
+  type CreditService,
+  CreditServiceError,
+} from "../features/credits/credit-service.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
-
-/** 工作区列表 / 平台池列表里属于指定 scope 的条目（服务端两路查询各自独立）。 */
-function instancesOfScope(
-  workspaceInstances: ProviderInstanceResponse[],
-  systemInstances: ProviderInstanceResponse[],
-  scope: "workspace" | "system",
-): ProviderInstanceResponse[] {
-  return scope === "workspace" ? workspaceInstances : systemInstances;
-}
 
 function isEnabledDifyEngine(instance: ProviderInstanceResponse): boolean {
   return instance.protocol === "dify-engine" && instance.enabled;
@@ -59,8 +56,22 @@ export async function registerFlowHostRoutes(
     /** BYOK 供应商缝：dify-engine 实例的查询与凭证解析。 */
     providers: Pick<
       ModelProviderService,
-      "listInstances" | "listSystemInstances" | "resolveCredentials"
+      "listSystemInstances" | "resolveCredentialsById"
     >;
+    /** credits 缝：flow 三段事务（P4）。 */
+    credits: Pick<
+      CreditService,
+      "flowReserveCredits" | "flowSettleCredits" | "flowRefundCredits"
+    >;
+    /**
+     * 宿主 subject（身份缝下发的宿主用户 id）→ 计费归属。
+     * 实现由装配层用 persistence 提供（见 features/flow/plugin.ts）。
+     */
+    accounts: {
+      findBySubject(
+        subject: string,
+      ): Promise<{ userId: string; workspaceId: string | null } | null>;
+    };
     /** 共享密钥；缺省表示本实例未启用 flow 宿主能力。 */
     secret?: string | undefined;
     /** flow 前端地址（`KENFUTWORK_FLOW_FRONTEND_URL`）；iframe src 与 postMessage origin。 */
@@ -101,6 +112,33 @@ export async function registerFlowHostRoutes(
         error: { code: "flow_engine_invalid", message },
       }),
     );
+
+  /** 计费缝的 409（与 credits 缝的 conflict 同码，便于 flow 侧统一处理）。 */
+  const sendBillingConflict = (reply: FastifyReply, message: string) =>
+    reply.code(409).send(
+      applicationErrorResponseSchema.parse({
+        error: { code: "flow_billing_conflict", message },
+      }),
+    );
+
+  /** credits 缝的错误透传（CreditServiceError 的 code 都在应用错误码封闭集合里）。 */
+  const sendCreditError = (reply: FastifyReply, error: unknown) => {
+    if (error instanceof CreditServiceError) {
+      return reply.code(error.statusCode).send(
+        applicationErrorResponseSchema.parse({
+          error: { code: error.code, message: error.message },
+        }),
+      );
+    }
+    return reply.code(500).send(
+      applicationErrorResponseSchema.parse({
+        error: {
+          code: "flow_billing_failed",
+          message: `flow 计费失败：${error instanceof Error ? error.message : String(error)}`,
+        },
+      }),
+    );
+  };
 
   /** 定长比较，避免按前缀早退泄漏密钥形状。 */
   const secretMatches = (provided: string, expected: string): boolean => {
@@ -166,47 +204,25 @@ export async function registerFlowHostRoutes(
       request.body ?? {},
     );
     if (!parsed.success) {
-      return sendBadInput(
-        reply,
-        "凭证下发请求不合法：缺少宿主会话令牌（token）。",
-      );
-    }
-    const user = await options.auth.authenticate({
-      headers: {
-        ...request.headers,
-        authorization: `Bearer ${parsed.data.token}`,
-      },
-      ip: request.ip,
-    });
-    if (!user) {
-      return sendUnauthorized(reply, "宿主会话令牌无效或已过期。");
+      return sendBadInput(reply, "凭证下发请求不合法：protocolVersion 超长。");
     }
 
-    // 工作区实例优先，平台池（scope='system'）兜底；同层取列表第一个启用的实例。
-    const [workspaceInstances, systemInstances] = await Promise.all([
-      options.providers
-        .listInstances(user)
-        .catch(() => [] as ProviderInstanceResponse[]),
-      options.providers
-        .listSystemInstances()
-        .catch(() => [] as ProviderInstanceResponse[]),
-    ]);
-    const byScope = (scope: "workspace" | "system") =>
-      instancesOfScope(workspaceInstances, systemInstances, scope);
-    const candidate =
-      byScope("workspace").find(isEnabledDifyEngine) ??
-      byScope("system").find(isEnabledDifyEngine);
+    // 部署级解析：flow 网关一个引擎配置供全体用户（与 flow 侧
+    // EmbeddedCredentialsProvider 的实际调用形状一致），来源是平台池。
+    const systemInstances = await options.providers
+      .listSystemInstances()
+      .catch(() => [] as ProviderInstanceResponse[]);
+    const candidate = systemInstances.find(isEnabledDifyEngine);
     if (!candidate) {
       return sendNotFound(
         reply,
-        "当前工作区与平台池都没有启用的 Dify 引擎实例（protocol=dify-engine）。" +
-          "请在 设置 → 供应商 添加；或撤掉 flow 侧 HOST_CREDENTIALS_URL，" +
+        "平台池没有启用的 Dify 引擎实例（protocol=dify-engine）。" +
+          "请在 管理后台 → 系统供应商 添加；或撤掉 flow 侧 HOST_CREDENTIALS_URL，" +
           "让 flow 网关回落自己的 .env 全局密钥。",
       );
     }
 
-    const credentials = await options.providers.resolveCredentials(
-      user,
+    const credentials = await options.providers.resolveCredentialsById(
       candidate.id,
     );
     const apiBase = credentials.baseUrl?.trim().replace(/\/+$/, "");
@@ -214,7 +230,7 @@ export async function registerFlowHostRoutes(
       return sendConflict(
         reply,
         `Dify 引擎实例「${candidate.name}」缺少 base_url：引擎地址是凭证下发的必要字段，` +
-          "请在 设置 → 供应商 补齐。",
+          "请在 管理后台 → 系统供应商 补齐。",
       );
     }
     if (!/^https?:\/\//.test(apiBase)) {
@@ -224,7 +240,7 @@ export async function registerFlowHostRoutes(
       );
     }
 
-    // 明文 Key 只出现在这个响应里（双门过了的 flow 网关），不落日志。
+    // 明文 Key 只出现在这个响应里（共享密钥门过了的 flow 网关），不落日志。
     return reply.code(200).send(
       flowHostCredentialsResponseSchema.parse({
         apiBase,
@@ -232,6 +248,95 @@ export async function registerFlowHostRoutes(
         label: candidate.name,
       }),
     );
+  });
+
+  app.post("/api/flow/host/billing", async (request, reply) => {
+    const secret = options.secret?.trim();
+    if (!secret) {
+      return sendUnavailable(
+        reply,
+        "本实例未配置 KENFUTWORK_FLOW_EMBED_SECRET：flow 宿主计费未启用。",
+      );
+    }
+    if (!secretMatches(bearerFrom(request.headers.authorization), secret)) {
+      return sendUnauthorized(reply, "flow 网关共享密钥不匹配。");
+    }
+    const parsed = flowHostBillingRequestSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return sendBadInput(
+        reply,
+        `计费请求不合法：${parsed.error.issues[0]?.message ?? "形状不符合契约"}。`,
+      );
+    }
+    const payload = parsed.data;
+
+    // hostSubject → 宿主账号 → 个人工作区（身份缝交换时宿主自己下发的稳定标识）。
+    // 两种「归属解析不了」都是 409 flow_billing_conflict：对 flow 网关而言同一类
+    // 可操作错误（等宿主侧补配置/引导），不需要再区分状态码。
+    const account = await options.accounts.findBySubject(payload.hostSubject);
+    if (!account) {
+      return sendBillingConflict(
+        reply,
+        `宿主用户 ${payload.hostSubject} 不存在：计费归属必须来自身份缝交换过的账号。`,
+      );
+    }
+    const workspaceId = account.workspaceId;
+    if (!workspaceId) {
+      return sendBillingConflict(
+        reply,
+        `宿主用户 ${payload.hostSubject} 还没有个人工作区：请先在宿主侧完成一次登录引导。`,
+      );
+    }
+
+    // 金额口径：宿主 credits 单位取整（预扣向上取整不低估占用；结算四舍五入）。
+    const userId = account.userId;
+    try {
+      if (payload.op === "reserve") {
+        const result = await options.credits.flowReserveCredits({
+          amount: Math.max(0, Math.ceil(payload.amount)),
+          runId: payload.runId,
+          userId,
+          workspaceId,
+        });
+        return reply.code(200).send(
+          flowHostBillingResponseSchema.parse({
+            op: "reserve",
+            replayed: result.replayed,
+            amount: result.frozenAmount,
+          }),
+        );
+      }
+      if (payload.op === "settle") {
+        const result = await options.credits.flowSettleCredits({
+          actualCost: Math.max(0, Math.round(payload.actualCost)),
+          runId: payload.runId,
+          userId,
+          workspaceId,
+        });
+        return reply.code(200).send(
+          flowHostBillingResponseSchema.parse({
+            op: "settle",
+            replayed: result.replayed,
+            settledAmount: result.settledAmount,
+            uncoveredAmount: result.uncoveredAmount,
+          }),
+        );
+      }
+      const result = await options.credits.flowRefundCredits({
+        runId: payload.runId,
+        userId,
+        workspaceId,
+      });
+      return reply.code(200).send(
+        flowHostBillingResponseSchema.parse({
+          op: "refund",
+          replayed: result.replayed,
+          amount: result.releasedAmount,
+        }),
+      );
+    } catch (error) {
+      return sendCreditError(reply, error);
+    }
   });
 
   app.post("/api/flow/host/identity", async (request, reply) => {

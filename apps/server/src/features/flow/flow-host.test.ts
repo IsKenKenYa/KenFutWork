@@ -5,6 +5,10 @@ import { describe, expect, it } from "vitest";
 import { registerFlowHostRoutes } from "../../http/flow-host.js";
 import type { AuthenticatedUser, RequestAuthenticator } from "../auth/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
+import {
+  type CreditService,
+  CreditServiceError,
+} from "../credits/credit-service.js";
 import type { ModelProviderService } from "../model-providers/model-provider-service.js";
 
 const SECRET = "flow-embed-secret-0123456789";
@@ -45,34 +49,27 @@ function createViewer(options: {
 }
 
 /**
- * BYOK 供应商缝的记录型替身：实例清单按 scope 分开存，
- * `resolveCredentials` 按 id 给明文（真实实现里明文只在解密边界出现）。
+ * BYOK 供应商缝的记录型替身：平台池实例清单 + 按 id 给明文
+ * （真实实现里明文只在解密边界出现）。
  */
 function createProviders(options: {
-  workspace?: ProviderInstanceResponse[];
   system?: ProviderInstanceResponse[];
   credentials?: Record<string, { baseUrl?: string; apiKey: string }>;
-  throwOnResolve?: boolean;
 }) {
   const resolved: string[] = [];
   const providers = {
-    async listInstances() {
-      return options.workspace ?? [];
-    },
     async listSystemInstances() {
       return options.system ?? [];
     },
-    async resolveCredentials(
-      _user: unknown,
+    async resolveCredentialsById(
       instanceId: string,
     ): Promise<{ baseUrl?: string; apiKey: string }> {
       resolved.push(instanceId);
-      if (options.throwOnResolve) throw new Error("解密失败");
       return options.credentials?.[instanceId] ?? { apiKey: "" };
     },
   } as unknown as Pick<
     ModelProviderService,
-    "listInstances" | "listSystemInstances" | "resolveCredentials"
+    "listSystemInstances" | "resolveCredentialsById"
   >;
   return { providers, resolved };
 }
@@ -80,8 +77,8 @@ function createProviders(options: {
 function difyInstance(overrides: Partial<ProviderInstanceResponse> = {}) {
   return {
     id: "dify-1",
-    scope: "workspace" as const,
-    name: "本地 Dify",
+    scope: "system" as const,
+    name: "平台 Dify",
     protocol: "dify-engine",
     baseUrl: "http://127.0.0.1:5001",
     hasCredential: true,
@@ -92,6 +89,46 @@ function difyInstance(overrides: Partial<ProviderInstanceResponse> = {}) {
   } satisfies ProviderInstanceResponse;
 }
 
+/** credits 缝的记录型替身：记录调用参数并按脚本返回结果或抛错。 */
+function createCredits(
+  script: { reserve?: unknown; settle?: unknown; refund?: unknown } = {},
+) {
+  const calls: Array<{ op: string; input: unknown }> = [];
+  const credits = {
+    async flowReserveCredits(input: unknown) {
+      calls.push({ op: "reserve", input });
+      const value = script.reserve;
+      if (value instanceof Error) throw value;
+      return value ?? { holdId: "hold-1", frozenAmount: 0, replayed: false };
+    },
+    async flowSettleCredits(input: unknown) {
+      calls.push({ op: "settle", input });
+      const value = script.settle;
+      if (value instanceof Error) throw value;
+      return (
+        value ?? {
+          txId: "tx-1",
+          settledAmount: 0,
+          uncoveredAmount: 0,
+          replayed: false,
+        }
+      );
+    },
+    async flowRefundCredits(input: unknown) {
+      calls.push({ op: "refund", input });
+      const value = script.refund;
+      if (value instanceof Error) throw value;
+      return value ?? { txId: "tx-2", releasedAmount: 0, replayed: false };
+    },
+  } as unknown as Pick<
+    CreditService,
+    "flowReserveCredits" | "flowSettleCredits" | "flowRefundCredits"
+  >;
+  return { credits, calls };
+}
+
+const ACCOUNT = { userId: "user-123", workspaceId: "ws-1" };
+
 async function createApp(options: {
   secret?: string | undefined;
   frontendUrl?: string | undefined;
@@ -99,14 +136,25 @@ async function createApp(options: {
   viewer?: ViewerService;
   providers?: Pick<
     ModelProviderService,
-    "listInstances" | "listSystemInstances" | "resolveCredentials"
+    "listSystemInstances" | "resolveCredentialsById"
   >;
+  credits?: Pick<
+    CreditService,
+    "flowReserveCredits" | "flowSettleCredits" | "flowRefundCredits"
+  >;
+  account?: { userId: string; workspaceId: string | null } | null;
 }) {
   const app = Fastify();
   await registerFlowHostRoutes(app, {
     auth: options.auth ?? createAuth({ user: null }),
     viewer: options.viewer ?? createViewer({}),
     providers: options.providers ?? createProviders({}).providers,
+    credits: options.credits ?? createCredits().credits,
+    accounts: {
+      async findBySubject() {
+        return options.account === undefined ? ACCOUNT : options.account;
+      },
+    },
     secret: options.secret,
     frontendUrl: options.frontendUrl,
   });
@@ -346,89 +394,49 @@ describe("flow 宿主凭证下发（/api/flow/host/credentials，P3 凭证缝）
       headers: options.authorization
         ? { authorization: options.authorization }
         : {},
-      payload: options.payload ?? { token: HOST_TOKEN },
+      payload: options.payload ?? {},
     });
   }
 
-  it("未配置共享密钥 → 503；密钥不匹配 → 401（与身份交换同一道门）", async () => {
-    const app = await createApp({
-      secret: undefined,
-      auth: createAuth({ user: USER }),
-    });
+  it("未配置共享密钥 → 503；密钥不匹配 → 401（部署级缝只需这一道门）", async () => {
+    const app = await createApp({ secret: undefined });
     const unavailable = await postCredentials(app, {
       authorization: `Bearer ${SECRET}`,
     });
     expect(unavailable.statusCode).toBe(503);
 
-    const configured = await createApp({
-      secret: SECRET,
-      auth: createAuth({ user: USER }),
-    });
+    const configured = await createApp({ secret: SECRET });
     const wrong = await postCredentials(configured, {
       authorization: "Bearer nope",
     });
     expect(wrong.statusCode).toBe(401);
   });
 
-  it("工作区与平台池都没有 dify-engine 实例 → 404 且指路（配实例或撤 HOST_CREDENTIALS_URL）", async () => {
+  it("平台池没有 dify-engine 实例 → 404 且指路（管理后台配实例或撤 HOST_CREDENTIALS_URL）", async () => {
     const { providers } = createProviders({
-      workspace: [
-        difyInstance({ protocol: "openai-compatible", id: "chat-1" }),
-      ],
+      system: [difyInstance({ protocol: "openai-compatible", id: "chat-1" })],
     });
-    const app = await createApp({
-      secret: SECRET,
-      auth: createAuth({ user: USER }),
-      providers,
-    });
+    const app = await createApp({ secret: SECRET, providers });
     const response = await postCredentials(app, {
       authorization: `Bearer ${SECRET}`,
     });
     expect(response.statusCode).toBe(404);
+    expect(response.json().error.code).toBe("flow_engine_not_configured");
     expect(response.json().error.message).toContain("dify-engine");
     expect(response.json().error.message).toContain("HOST_CREDENTIALS_URL");
   });
 
-  it("工作区实例命中 → 200 下发 apiBase/apiKey/label（明文 Key 只经这条双门通道）", async () => {
+  it("平台池命中 → 200 下发 apiBase/apiKey/label（尾斜杠归一）；禁用的实例被跳过", async () => {
     const { providers, resolved } = createProviders({
-      workspace: [difyInstance()],
-      credentials: {
-        "dify-1": { baseUrl: "http://127.0.0.1:5001/", apiKey: "app-secret" },
-      },
-    });
-    const app = await createApp({
-      secret: SECRET,
-      auth: createAuth({ user: USER }),
-      providers,
-    });
-    const response = await postCredentials(app, {
-      authorization: `Bearer ${SECRET}`,
-    });
-    expect(response.statusCode).toBe(200);
-    // 尾斜杠归一（与 flow 侧 HostCredentialsPayload 的 apiBase 口径一致）
-    expect(response.json()).toEqual({
-      apiBase: "http://127.0.0.1:5001",
-      apiKey: "app-secret",
-      label: "本地 Dify",
-    });
-    expect(resolved).toEqual(["dify-1"]);
-  });
-
-  it("工作区没有 → 平台池（scope=system）兜底；禁用的实例被跳过", async () => {
-    const { providers } = createProviders({
       system: [
-        difyInstance({ id: "off", scope: "system", enabled: false }),
-        difyInstance({ id: "pool", scope: "system", name: "平台 Dify" }),
+        difyInstance({ id: "off", enabled: false }),
+        difyInstance({ id: "pool", name: "平台 Dify" }),
       ],
       credentials: {
-        pool: { baseUrl: "http://10.0.0.8:5001", apiKey: "pool-key" },
+        pool: { baseUrl: "http://10.0.0.8:5001/", apiKey: "pool-key" },
       },
     });
-    const app = await createApp({
-      secret: SECRET,
-      auth: createAuth({ user: USER }),
-      providers,
-    });
+    const app = await createApp({ secret: SECRET, providers });
     const response = await postCredentials(app, {
       authorization: `Bearer ${SECRET}`,
     });
@@ -438,31 +446,31 @@ describe("flow 宿主凭证下发（/api/flow/host/credentials，P3 凭证缝）
       apiKey: "pool-key",
       label: "平台 Dify",
     });
+    expect(resolved).toEqual(["pool"]);
   });
 
   it("实例缺 base_url / 非 http(s) → 409 可读原因（不静默下发半截凭证）", async () => {
     const missing = createProviders({
-      workspace: [difyInstance({ baseUrl: undefined })],
+      system: [difyInstance({ baseUrl: undefined })],
       credentials: { "dify-1": { apiKey: "k" } },
     });
     const appMissing = await createApp({
       secret: SECRET,
-      auth: createAuth({ user: USER }),
       providers: missing.providers,
     });
     const responseMissing = await postCredentials(appMissing, {
       authorization: `Bearer ${SECRET}`,
     });
     expect(responseMissing.statusCode).toBe(409);
+    expect(responseMissing.json().error.code).toBe("flow_engine_invalid");
     expect(responseMissing.json().error.message).toContain("base_url");
 
     const bad = createProviders({
-      workspace: [difyInstance({ baseUrl: "ftp://x" })],
+      system: [difyInstance({ baseUrl: "ftp://x" })],
       credentials: { "dify-1": { baseUrl: "ftp://x", apiKey: "k" } },
     });
     const appBad = await createApp({
       secret: SECRET,
-      auth: createAuth({ user: USER }),
       providers: bad.providers,
     });
     const responseBad = await postCredentials(appBad, {
@@ -470,19 +478,200 @@ describe("flow 宿主凭证下发（/api/flow/host/credentials，P3 凭证缝）
     });
     expect(responseBad.statusCode).toBe(409);
   });
+});
 
-  it("宿主会话令牌无效 → 401（验的是 body 令牌，不是共享密钥）", async () => {
-    const seen: Array<string | undefined> = [];
-    const { providers } = createProviders({ workspace: [difyInstance()] });
-    const app = await createApp({
+describe("flow 宿主计费三段事务（/api/flow/host/billing，P4 计费缝）", () => {
+  function postBilling(
+    app: Awaited<ReturnType<typeof createApp>>,
+    body: unknown,
+    authorization: string | undefined = `Bearer ${SECRET}`,
+  ) {
+    return app.inject({
+      method: "POST",
+      url: "/api/flow/host/billing",
+      headers: authorization ? { authorization } : {},
+      payload: body as Record<string, unknown>,
+    });
+  }
+
+  const base = { runId: "run-1", hostSubject: "user-123" };
+
+  it("未配置共享密钥 → 503；密钥不匹配 → 401", async () => {
+    const app = await createApp({ secret: undefined });
+    expect(
+      (await postBilling(app, { ...base, op: "reserve", amount: 5 }))
+        .statusCode,
+    ).toBe(503);
+
+    const configured = await createApp({ secret: SECRET });
+    expect(
+      (
+        await postBilling(
+          configured,
+          { ...base, op: "reserve", amount: 5 },
+          "Bearer nope",
+        )
+      ).statusCode,
+    ).toBe(401);
+  });
+
+  it("reserve：金额向上取整（不低估占用），归属取宿主 subject 的个人工作区", async () => {
+    const { credits, calls } = createCredits({
+      reserve: { holdId: "hold-9", frozenAmount: 6, replayed: false },
+    });
+    const app = await createApp({ secret: SECRET, credits });
+    const response = await postBilling(app, {
+      ...base,
+      op: "reserve",
+      amount: 5.2,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      op: "reserve",
+      replayed: false,
+      amount: 6,
+    });
+    expect(calls).toEqual([
+      {
+        op: "reserve",
+        input: {
+          amount: 6,
+          runId: "run-1",
+          userId: "user-123",
+          workspaceId: "ws-1",
+        },
+      },
+    ]);
+  });
+
+  it("settle：实扣 + 超出冻结上限的部分如实回报（uncoveredAmount）", async () => {
+    const { credits, calls } = createCredits({
+      settle: {
+        txId: "tx-9",
+        settledAmount: 5,
+        uncoveredAmount: 3,
+        replayed: false,
+      },
+    });
+    const app = await createApp({ secret: SECRET, credits });
+    const response = await postBilling(app, {
+      ...base,
+      op: "settle",
+      frozenAmount: 5,
+      actualCost: 7.6,
+      usage: { totalTokens: 1000 },
+      remark: "Token: 1000",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      op: "settle",
+      replayed: false,
+      settledAmount: 5,
+      uncoveredAmount: 3,
+    });
+    expect(calls).toEqual([
+      {
+        op: "settle",
+        input: {
+          actualCost: 8,
+          runId: "run-1",
+          userId: "user-123",
+          workspaceId: "ws-1",
+        },
+      },
+    ]);
+  });
+
+  it("refund：释放冻结；replayed 原样透传（同键重放不重复动账）", async () => {
+    const { credits } = createCredits({
+      refund: { txId: "tx-3", releasedAmount: 6, replayed: true },
+    });
+    const app = await createApp({ secret: SECRET, credits });
+    const response = await postBilling(app, {
+      ...base,
+      op: "refund",
+      amount: 6,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      op: "refund",
+      replayed: true,
+      amount: 6,
+    });
+  });
+
+  it("额度不足 → 402 insufficient_credits（透传 credits 缝的错误码与状态）", async () => {
+    const { credits } = createCredits({
+      reserve: new CreditServiceError(
+        "insufficient_credits",
+        "flow 预扣失败：可用额度不足。",
+        402,
+      ),
+    });
+    const app = await createApp({ secret: SECRET, credits });
+    const response = await postBilling(app, {
+      ...base,
+      op: "reserve",
+      amount: 100,
+    });
+    expect(response.statusCode).toBe(402);
+    expect(response.json().error.code).toBe("insufficient_credits");
+  });
+
+  it("hold 状态冲突（无 hold / 已结算 / 已退款）→ 409 flow_billing_conflict", async () => {
+    const { credits } = createCredits({
+      settle: new CreditServiceError(
+        "flow_billing_conflict",
+        "flow 结算失败：NO_HOLD: no flow credit hold for run run-1",
+        409,
+      ),
+    });
+    const app = await createApp({ secret: SECRET, credits });
+    const response = await postBilling(app, {
+      ...base,
+      op: "settle",
+      frozenAmount: 5,
+      actualCost: 5,
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("flow_billing_conflict");
+  });
+
+  it("未知 op / 缺字段 / 负金额 → 400（zod 判别联合在边界挡住）", async () => {
+    const app = await createApp({ secret: SECRET });
+    for (const body of [
+      { ...base, op: "capture", amount: 5 },
+      { ...base, op: "reserve" },
+      { ...base, op: "reserve", amount: -1 },
+      { op: "reserve", amount: 5 },
+      { ...base, op: "settle", frozenAmount: 5 },
+    ]) {
+      const response = await postBilling(app, body);
+      expect(response.statusCode).toBe(400);
+    }
+  });
+
+  it("宿主 subject 认不出 / 没有个人工作区 → 409 flow_billing_conflict（归属必须可解析）", async () => {
+    const unknown = await createApp({ secret: SECRET, account: null });
+    const responseUnknown = await postBilling(unknown, {
+      ...base,
+      op: "reserve",
+      amount: 5,
+    });
+    expect(responseUnknown.statusCode).toBe(409);
+    expect(responseUnknown.json().error.code).toBe("flow_billing_conflict");
+    expect(responseUnknown.json().error.message).toContain("不存在");
+
+    const noWorkspace = await createApp({
       secret: SECRET,
-      auth: createAuth({ user: null, seen }),
-      providers,
+      account: { userId: "user-123", workspaceId: null },
     });
-    const response = await postCredentials(app, {
-      authorization: `Bearer ${SECRET}`,
+    const responseNoWs = await postBilling(noWorkspace, {
+      ...base,
+      op: "reserve",
+      amount: 5,
     });
-    expect(response.statusCode).toBe(401);
-    expect(seen).toEqual([`Bearer ${HOST_TOKEN}`]);
+    expect(responseNoWs.statusCode).toBe(409);
+    expect(responseNoWs.json().error.message).toContain("个人工作区");
   });
 });
