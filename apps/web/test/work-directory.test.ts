@@ -178,9 +178,9 @@ describe("手填本机路径（Web 形态绑定真实目录）", () => {
     expect(workDirNameFromPath("   ")).toBe("");
   });
 
-  it("不支持目录选择器的说明指向「填本机路径」（不再说做不到）", () => {
-    expect(UNSUPPORTED_DIRECTORY_PICKER_NOTICE).toContain("填本机路径");
-    expect(UNSUPPORTED_DIRECTORY_PICKER_NOTICE).not.toContain("暂不能直接绑定");
+  it("不支持目录选择器的说明只说原因（「填本机路径」入口已移除，不再指向它）", () => {
+    expect(UNSUPPORTED_DIRECTORY_PICKER_NOTICE).toContain("不支持目录选择器");
+    expect(UNSUPPORTED_DIRECTORY_PICKER_NOTICE).not.toContain("填本机路径");
   });
 
   it("已绑定真实目录的提示词：说出真实路径，但仍要求相对工作区根书写", () => {
@@ -206,15 +206,15 @@ describe("打开文件夹的副标题", () => {
     expect(hint).toContain("绑成工作目录");
   });
 
-  it("不可用或还没探到：说明只拿得到目录名，并指向「填本机路径」", () => {
+  it("不可用或还没探到：说明按目录名复用/新建同名工作目录（不指向已移除的手填入口）", () => {
     for (const value of [
       { available: false, reason: "服务端在另一台机器上。" },
       null,
       undefined,
     ]) {
       const hint = folderPickerHint(value);
-      expect(hint).toContain("只拿得到目录名");
-      expect(hint).toContain("填本机路径");
+      expect(hint).toContain("按目录名");
+      expect(hint).not.toContain("填本机路径");
     }
   });
 });

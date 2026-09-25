@@ -37,7 +37,6 @@ function renderSelect(
   const onSelect = vi.fn();
   const onOpenFolder = vi.fn();
   const onClear = vi.fn();
-  const onBindPath = vi.fn(async () => {});
   render(
     <WorkDirectorySelect
       projects={projects}
@@ -45,11 +44,10 @@ function renderSelect(
       onSelect={onSelect}
       onOpenFolder={onOpenFolder}
       onClear={onClear}
-      onBindPath={onBindPath}
       {...props}
     />,
   );
-  return { onSelect, onOpenFolder, onClear, onBindPath };
+  return { onSelect, onOpenFolder, onClear };
 }
 
 afterEach(() => {
@@ -107,46 +105,33 @@ describe("WorkDirectorySelect", () => {
 });
 
 /**
- * 「填本机路径」：Web 形态唯一能真正绑定本机目录的入口（选择器只给得到目录名）。
- * 服务端校验失败的原因必须显示出来——禁用/静默失败是这一块的既有教训。
+ * 「填本机路径」入口已移除（用户口径）：底部只剩「打开文件夹」「不在项目中工作」，
+ * 绝对路径绑定只走桌面「打开文件夹」的系统对话框链路。空态提示只说「还没有工作目录」。
  */
-describe("WorkDirectorySelect：填本机路径", () => {
-  it("填路径 → 调 onBindPath(原文) 并关闭下拉", async () => {
-    const { onBindPath } = renderSelect();
+describe("WorkDirectorySelect：入口收敛", () => {
+  it("没有「填本机路径」入口，也没有手填路径表单", async () => {
+    renderSelect();
     await userEvent.click(screen.getByRole("button", { name: "工作目录" }));
-    await userEvent.click(screen.getByRole("button", { name: "填本机路径" }));
+    expect(
+      screen.queryByRole("button", { name: "填本机路径" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("本机工作目录路径")).not.toBeInTheDocument();
+  });
 
-    const input = screen.getByLabelText("本机工作目录路径");
-    await userEvent.type(input, "D:\\Desktop\\test");
-    await userEvent.click(screen.getByRole("button", { name: "绑定" }));
+  it("空列表：空态只说「还没有工作目录」", async () => {
+    renderSelect({ projects: [], selectedProjectId: null });
+    await userEvent.click(screen.getByRole("button", { name: "工作目录" }));
+    expect(screen.getByText("还没有工作目录")).toBeVisible();
+  });
 
-    expect(onBindPath).toHaveBeenCalledWith("D:\\Desktop\\test");
+  it("「不在项目中工作」触发 onClear 并关闭下拉", async () => {
+    const { onClear } = renderSelect();
+    await userEvent.click(screen.getByRole("button", { name: "工作目录" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "不在项目中工作" }),
+    );
+    expect(onClear).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
-  });
-
-  it("校验失败：显示服务端给的可读原因，表单留着让人改", async () => {
-    const onBindPath = vi.fn(async () => {
-      throw new Error("目录不存在：D:\\nope（服务端读的是本机文件系统）。");
-    });
-    renderSelect({ onBindPath });
-
-    await userEvent.click(screen.getByRole("button", { name: "工作目录" }));
-    await userEvent.click(screen.getByRole("button", { name: "填本机路径" }));
-    await userEvent.type(screen.getByLabelText("本机工作目录路径"), "D:\\nope");
-    await userEvent.click(screen.getByRole("button", { name: "绑定" }));
-
-    expect(await screen.findByText(/目录不存在/)).toBeVisible();
-    expect(screen.getByLabelText("本机工作目录路径")).toBeInTheDocument();
-  });
-
-  it("空路径不发请求，就地提示", async () => {
-    const { onBindPath } = renderSelect();
-    await userEvent.click(screen.getByRole("button", { name: "工作目录" }));
-    await userEvent.click(screen.getByRole("button", { name: "填本机路径" }));
-    await userEvent.click(screen.getByRole("button", { name: "绑定" }));
-
-    expect(onBindPath).not.toHaveBeenCalled();
-    expect(screen.getByText("请填写绝对路径。")).toBeVisible();
   });
 
   it("列表里显示已绑定的真实路径（绑定状态可见）", async () => {
@@ -161,19 +146,11 @@ describe("WorkDirectorySelect：填本机路径", () => {
     await userEvent.click(screen.getByRole("button", { name: "工作目录" }));
     expect(screen.getByText("D:\\Desktop\\test")).toBeVisible();
   });
-
-  it("只读展示（不传 onBindPath）：没有「填本机路径」入口", async () => {
-    renderSelect({ onBindPath: undefined });
-    await userEvent.click(screen.getByRole("button", { name: "工作目录" }));
-    expect(
-      screen.queryByRole("button", { name: "填本机路径" }),
-    ).not.toBeInTheDocument();
-  });
 });
 
 /**
  * 「打开文件夹」的副标题：桌面形态走服务端系统对话框（真绑定），其它形态是浏览器选择器
- * （只有目录名）。说清差别，用户才知道选的目录有没有被用上。
+ * （按目录名复用/新建）。说清差别，用户才知道选的目录有没有被用上。
  */
 describe("WorkDirectorySelect：打开文件夹的形态说明", () => {
   it("原生对话框可用：副标题写明系统对话框 + 直接绑定", async () => {
@@ -182,9 +159,9 @@ describe("WorkDirectorySelect：打开文件夹的形态说明", () => {
     expect(screen.getByText(/系统文件夹对话框/)).toBeVisible();
   });
 
-  it("不可用：副标题写明只有目录名，并指向「填本机路径」", async () => {
+  it("不可用：副标题写明按目录名复用/新建同名工作目录", async () => {
     renderSelect({ folderHint: folderPickerHint(null) });
     await userEvent.click(screen.getByRole("button", { name: "工作目录" }));
-    expect(screen.getByText(/只拿得到目录名/)).toBeVisible();
+    expect(screen.getByText(/按目录名/)).toBeVisible();
   });
 });

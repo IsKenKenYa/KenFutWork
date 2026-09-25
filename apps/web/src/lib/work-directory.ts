@@ -22,7 +22,7 @@ export type WorkDirectoryPickResult =
   | { status: "failed"; notice: string };
 
 export const UNSUPPORTED_DIRECTORY_PICKER_NOTICE =
-  "当前环境不支持目录选择器（需要 Chromium 内核，且页面未被 iframe 策略禁用）。请改用「填本机路径」手动输入绝对路径——服务端校验通过后会把它绑成这个项目的工作目录。";
+  "当前环境不支持目录选择器（需要 Chromium 内核或桌面端，且页面未被 iframe 策略禁用）。";
 
 /**
  * 从填写的绝对路径里取目录名（作为项目名）。
@@ -43,7 +43,7 @@ export function workDirNameFromPath(path: string): string {
  *
  * 两种形态差别很大，不写清就只能靠猜：
  * - 桌面形态：服务端弹**系统对话框**，拿回绝对路径 → 直接绑成 `projects.work_dir`（真绑定）；
- * - 其它形态：浏览器选择器只给得到目录名 → 只能按目录名复用/新建项目，要真绑定得手填路径。
+ * - 其它形态：浏览器选择器只给得到目录名 → 按目录名复用/新建同名项目。
  */
 export function folderPickerHint(
   native: { available: boolean } | null | undefined,
@@ -51,7 +51,7 @@ export function folderPickerHint(
   if (native?.available) {
     return "系统文件夹对话框（开在运行服务端的那台机器上）· 选中的绝对路径直接绑成工作目录";
   }
-  return "浏览器选择器 · 只拿得到目录名；要绑真实目录请用「填本机路径」";
+  return "浏览器选择器 · 按目录名复用/新建同名工作目录";
 }
 
 /**

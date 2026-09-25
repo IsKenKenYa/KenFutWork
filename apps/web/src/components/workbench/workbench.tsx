@@ -1980,11 +1980,11 @@ export function Workbench() {
   }, [selectWorkDir]);
 
   /**
-   * 「填本机路径」：把用户填的绝对路径绑成工作目录项目的 `projects.work_dir`。
+   * 把系统对话框选中的绝对路径绑成工作目录项目的 `projects.work_dir`。
    *
-   * 这是 Web 形态唯一能真正绑定本机目录的路子：`showDirectoryPicker` 只给得到目录名，
-   * 而服务端要的是绝对路径。校验在服务端做（绝对路径 + 存在 + 是目录），不合格时
-   * 抛出的可读原因由选择器表单显示——不吞成「失败」。
+   * 桌面「打开文件夹」的系统对话框是唯一能拿回绝对路径的入口（浏览器侧
+   * `showDirectoryPicker` 只给得到目录名）。校验在服务端做（绝对路径 + 存在 +
+   * 是目录），不合格时抛出的可读原因由调用方透出——不吞成「失败」。
    */
   const bindWorkDirectory = useCallback(
     async (path: string) => {
@@ -2025,7 +2025,7 @@ export function Workbench() {
     /**
      * 桌面形态先走**服务端系统对话框**：只有那一条能拿回绝对路径、真正绑定工作目录
      * （浏览器侧 `showDirectoryPicker` 只给得到目录名）。分流口径：
-     * - 选中 → 走「填本机路径」同一条绑定链（`bindWorkDirectory`）；
+     * - 选中 → 走同一条绑定链（`bindWorkDirectory`）；
      * - 取消 → 静默（用户主动取消不是错误）；
      * - 不可用 → **回落浏览器选择器**，并把原因一并说出来；
      * - 失败 → 只报原因，不静默换选择器（否则用户会以为「系统对话框怎么变成了浏览器弹窗」）。
@@ -2138,7 +2138,7 @@ export function Workbench() {
   /**
    * 把一份工作树路径绑成**当前项目**的工作目录（工作树对话框里的「绑为工作目录」）。
    *
-   * 与「填本机路径」的区别：那条会按目录名去找/建项目，这条**不动项目身份**——
+   * 与「打开文件夹」的区别：那条会按目录名去找/建项目，这条**不动项目身份**——
    * 工作树就是这个项目的另一份检出，绑完下一轮 run 起在那一份里干活。
    */
   const bindWorktreeToProject = useCallback(
@@ -3694,7 +3694,6 @@ ${formatElementReference(picked)}`
                     });
                   }}
                   onOpenFolder={() => void pickWorkDirectory()}
-                  onBindPath={bindWorkDirectory}
                   folderHint={folderPickerHint(nativeDirPicker)}
                   onClear={clearWorkDirectory}
                 />
@@ -3702,7 +3701,7 @@ ${formatElementReference(picked)}`
                   accessToken={session?.access_token ?? null}
                   canvasId={selectedProject?.primaryCanvas.id ?? null}
                   /* 工作树里「绑为工作目录」：把这份工作树绑成当前项目的工作目录。
-                     之后 agent/终端/git 都在那一份检出里跑——与「填本机路径」同一条
+                     之后 agent/终端/git 都在那一份检出里跑——与「打开文件夹」同一条
                      projects.work_dir 链，只是路径由工作树挑 */
                   onBindWorkDir={bindWorktreeToProject}
                 />
