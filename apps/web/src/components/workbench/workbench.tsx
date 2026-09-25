@@ -3544,6 +3544,7 @@ export function Workbench() {
                           }
                         >
                           <SelectTrigger
+                            hideChevron
                             className="h-7 max-w-[200px] gap-1 border-transparent bg-muted/60 px-2 text-xs"
                             aria-label="模型"
                           >
@@ -3812,6 +3813,7 @@ ${formatElementReference(picked)}`
                       }
                     >
                       <SelectTrigger
+                        hideChevron
                         className="h-7 max-w-[200px] gap-1 border-transparent bg-muted/60 px-2 text-xs"
                         aria-label="模型"
                       >
