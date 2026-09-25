@@ -164,6 +164,10 @@ async function createApp(options: {
   ) => Promise<{ userId: string; workspaceId: string | null } | null>;
   ws?: ReturnType<typeof createWs>["ws"];
   engine?: { probe(): Promise<unknown> };
+  engineInstall?: {
+    start(): { started: boolean; snapshot: unknown };
+    status(): unknown;
+  };
 }) {
   const app = Fastify();
   await registerFlowHostRoutes(app, {
@@ -179,6 +183,15 @@ async function createApp(options: {
       },
     },
     ws: options.ws ?? createWs().ws,
+    engineInstall:
+      (options.engineInstall as never) ??
+      ({
+        start: () => ({
+          started: false,
+          snapshot: { state: "idle", logTail: [] },
+        }),
+        status: () => ({ state: "idle", logTail: [] }),
+      } as never),
     engine:
       (options.engine as never) ??
       ({

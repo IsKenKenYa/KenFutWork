@@ -576,6 +576,8 @@ export const applicationErrorCodeSchema = z.enum([
   "flow_billing_conflict",
   /** flow 计费缝（P4）：其余失败 → 500。 */
   "flow_billing_failed",
+  /** flow 引擎托管（FORM-11）：安装已在进行中（409），轮询 status 即可。 */
+  "flow_engine_install_running",
 ]);
 
 export const applicationErrorResponseSchema = z.object({

@@ -3,7 +3,9 @@ import { timingSafeEqual } from "node:crypto";
 import {
   applicationErrorResponseSchema,
   FLOW_EMBED_PROTOCOL_VERSION,
+  type FlowEngineInstallStatus,
   type FlowHostEngineResponse,
+  flowEngineInstallStatusSchema,
   flowHostBillingRequestSchema,
   flowHostBillingResponseSchema,
   flowHostCredentialsRequestSchema,
@@ -82,6 +84,11 @@ export async function registerFlowHostRoutes(
     ws: Pick<WsServices, "connectionManager">;
     /** 引擎承载路径探测（P6 探测层）：平台 / WSL2 / 本机容器 / 自管地址。 */
     engine: { probe(): Promise<FlowHostEngineResponse> };
+    /** 引擎栈托管（FORM-11）：确认后拉镜像起栈，状态可轮询。 */
+    engineInstall: {
+      start(): { started: boolean; snapshot: FlowEngineInstallStatus };
+      status(): FlowEngineInstallStatus;
+    };
     /** 共享密钥；缺省表示本实例未启用 flow 宿主能力。 */
     secret?: string | undefined;
     /** flow 前端地址（`KENFUTWORK_FLOW_FRONTEND_URL`）；iframe src 与 postMessage origin。 */
@@ -198,6 +205,38 @@ export async function registerFlowHostRoutes(
     // 只探测（不做安装/下载/拉起）；探测失败如实冒泡，不吞成「都不支持」。
     const report = await options.engine.probe();
     return reply.code(200).send(report);
+  });
+
+  app.post("/api/flow/host/engine/install", async (request, reply) => {
+    const user = await options.auth.authenticate(request);
+    if (!user) {
+      return sendUnauthorized(reply, "Missing or invalid bearer token.");
+    }
+    // 确认闸：这是用户点「安装引擎」后的入口；已在安装中则 409（轮询 status 即可）。
+    const { started, snapshot } = options.engineInstall.start();
+    if (!started && snapshot.state === "installing") {
+      return reply.code(409).send(
+        applicationErrorResponseSchema.parse({
+          error: {
+            code: "flow_engine_install_running",
+            message: "引擎栈安装已在进行中，请轮询 status 端点。",
+          },
+        }),
+      );
+    }
+    return reply.code(200).send(flowEngineInstallStatusSchema.parse(snapshot));
+  });
+
+  app.get("/api/flow/host/engine/install/status", async (request, reply) => {
+    const user = await options.auth.authenticate(request);
+    if (!user) {
+      return sendUnauthorized(reply, "Missing or invalid bearer token.");
+    }
+    return reply
+      .code(200)
+      .send(
+        flowEngineInstallStatusSchema.parse(options.engineInstall.status()),
+      );
   });
 
   app.post("/api/flow/host/credentials", async (request, reply) => {

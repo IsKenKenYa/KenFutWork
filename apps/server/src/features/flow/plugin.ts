@@ -1,18 +1,42 @@
 import os from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { registerFlowHostRoutes } from "../../http/flow-host.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import { createViewerRepository } from "../bootstrap/repository.js";
 import { createProcessRunCommand } from "./engine/exec.js";
+import {
+  type EngineInstallOptions,
+  getEngineInstallSnapshot,
+  startEngineInstall,
+} from "./engine/install.js";
 import { probeEnginePaths } from "./engine/probe.js";
+
+/** 仓库根（探测 compose 文件与数据目录用；打包态由 KENFUTWORK_DATA_DIR 覆盖数据目录）。 */
+function repoRoot(): string {
+  // plugin.ts = apps/server/src/features/flow/ → 上溯 5 层到仓库根
+  return fileURLToPath(new URL("../../../../..", import.meta.url));
+}
+
+/** 引擎栈托管选项（compose 文件 + env/日志的数据目录）。 */
+function engineInstallOptions(): EngineInstallOptions {
+  const dataRoot =
+    process.env.KENFUTWORK_DATA_DIR?.trim() ||
+    join(repoRoot(), ".kenfutwork-data");
+  return {
+    composeFile: join(repoRoot(), "docker-compose.dify.yml"),
+    dataDir: dataRoot,
+  };
+}
 
 /**
  * flow-host 插件：宿主适配层的宿主侧端点（`/api/flow/host/*`，`ff-embed/v1`）。
  *
  * 能力缝三元组：
  * - Service Definition：`ff-embed/v1` 契约（`packages/shared/src/flow-host.ts`）
- * - Service Provider：本插件注册的宿主侧路由（身份交换 + 凭证下发 + 计费三段事务；
- *   事件随 P5 接上）
+ * - Service Provider：本插件注册的宿主侧路由（身份交换 + 凭证下发 + 计费三段事务 +
+ *   引擎栈托管）
  * - Consumer：flow 网关的 embedded Provider（`flow/gateway/src/host/embedded-*.provider.ts`）
  *
  * 与 `plugins/flow` 的分工（FORM-11）：**这里**是基础设施（flow 网关回调宿主），
@@ -76,7 +100,7 @@ export function createFlowHostPlugin(deps: {
         accounts,
         // 事件缝透出走内核声明的 ws 缝（app.ts 装配时注册 connectionManager/eventBuffer）。
         ws: { connectionManager: ctx.get("ws").connectionManager },
-        // 引擎探测层：只探测可用路径（下载与生命周期托管待 §9.1 拍板后落地）。
+        // 引擎探测层 + 托管（FORM-11）：探测路径，确认后拉镜像起栈，状态可轮询。
         engine: {
           probe: () =>
             probeEnginePaths({
@@ -86,6 +110,10 @@ export function createFlowHostPlugin(deps: {
               listSystemInstances: () =>
                 ctx.get("modelProviders").listSystemInstances(),
             }),
+        },
+        engineInstall: {
+          start: () => startEngineInstall(engineInstallOptions()),
+          status: () => getEngineInstallSnapshot(),
         },
         secret: deps.secret,
         frontendUrl: deps.frontendUrl,
