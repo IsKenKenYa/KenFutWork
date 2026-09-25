@@ -41,6 +41,7 @@ import {
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
 import { RunStopButton } from "@/components/chat/run-stop-button";
 import { KenFutWorkLogo } from "@/components/icons/kenfutwork-logo";
+import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -679,6 +680,59 @@ export function Workbench() {
   );
   /** Flow 画布句柄：侧栏导航项让 iframe 内的 flow 路由跳转（ff-embed/navigate）。 */
   const flowFrameRef = useRef<FlowCanvasFrameHandle>(null);
+
+  // ── 引擎栈托管（FORM-11）：确认后拉镜像起栈，轮询到 ready ──
+  const { toast } = useToast();
+  const [engineState, setEngineState] = useState<
+    "idle" | "installing" | "ready" | "error" | "unsupported"
+  >("idle");
+  const runEngineInstall = useCallback(async () => {
+    const token = session?.access_token;
+    if (!token || engineState === "installing") return;
+    setEngineState("installing");
+    try {
+      const base = getServerBaseUrl();
+      const start = await fetch(`${base}/api/flow/host/engine/install`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!start.ok && start.status !== 409) {
+        throw new Error(
+          (await start.json().catch(() => ({})))?.error?.message ??
+            `HTTP ${start.status}`,
+        );
+      }
+      // 轮询安装状态（拉镜像分钟级；上限 30 分钟防挂死）
+      const deadline = Date.now() + 30 * 60 * 1000;
+      let snapshot: { state: string; error?: string } = { state: "installing" };
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        const response = await fetch(
+          `${base}/api/flow/host/engine/install/status`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (!response.ok) continue;
+        snapshot = (await response.json()) as {
+          state: string;
+          error?: string;
+        };
+        if (snapshot.state === "ready" || snapshot.state === "error") break;
+      }
+      if (snapshot.state === "ready") {
+        toast("引擎栈已就绪（Dify 无头栈运行中）");
+        setEngineState("ready");
+      } else if (snapshot.state === "error") {
+        toast(`引擎栈安装失败：${snapshot.error ?? "详见服务端日志"}`, "error");
+        setEngineState("error");
+      } else {
+        toast("引擎栈安装超时，请稍后重试或查看服务端日志", "error");
+        setEngineState("error");
+      }
+    } catch (error: any) {
+      toast(`引擎栈安装失败：${error.message ?? "未知错误"}`, "error");
+      setEngineState("error");
+    }
+  }, [session, engineState]);
 
   const [mode, setMode] = useState<WorkbenchMode>("code");
   /** 任务列表按模式分开存；flow 模式主区是工作流画布，没有会话列表（故恒为空）。 */
@@ -2688,6 +2742,21 @@ export function Workbench() {
                   {item.label}
                 </button>
               ))}
+              {/* 引擎栈安装（FORM-11）：Docker 可用时点此拉起无头栈；拉镜像分钟级 */}
+              {flowEntry?.available && (
+                <button
+                  type="button"
+                  disabled={engineState === "installing"}
+                  onClick={() => void runEngineInstall()}
+                  className="mt-1 flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {engineState === "installing"
+                    ? "引擎栈安装中…"
+                    : engineState === "ready"
+                      ? "引擎栈已就绪"
+                      : "安装引擎栈"}
+                </button>
+              )}
             </nav>
           ) : mode === "design" ? (
             /* Design：项目列表（+ 直接创建，无任务列表） */
