@@ -11,10 +11,18 @@
 # 模型 Provider 是插件（Dify 1.17 起），本栈首次起来时**没有**任何供应商插件：
 #   → 要么在 Dify 里安装供应商插件（需外网），要么把网关侧 DIFY_SYNC_LLM_PROVIDER 设为 false。
 #
-# 用法（profile 名 `dify`，与仓库其余 compose 文件并存、互不干扰）：
-#   docker compose -f docker-compose.dify.yml --profile dify up -d
-#   docker compose -f docker-compose.dify.yml --profile dify ps        # 健康检查状态
-#   docker compose -f docker-compose.dify.yml --profile dify down -v   # 停并删数据卷（无残留）
+# 用法（与仓库其余 compose 文件并存、互不干扰）：
+#   docker compose -f docker-compose.dify.yml --profile dify up -d    # 全套：主仓 PG + Dify 无头栈
+#   docker compose -f docker-compose.dify.yml --profile pg up -d      # 只起主仓 PG
+#   docker compose -f docker-compose.dify.yml --profile dify ps       # 健康检查状态
+#   docker compose -f docker-compose.dify.yml --profile dify down -v  # 停并删数据卷（无残留）
+#
+# 统一环境口径（§9.1 ①③ 拍板，2026-09-25）：WSL2/容器里一套环境装下
+# **主仓 PG + Dify 无头栈（含代码沙箱）**——`pg` 服务复用 docker/pg-dev-shim 镜像
+# （postgres 17 + pgmq shim，主仓历史迁移需要），数据卷 kenfutwork_stack_pg；
+# flow 网关的 futureflow 库由 pg-init 脚本创建。与「开发库临时集群」（嵌入式 PG，
+# 无 Docker 机器的兜底）同端口 55433，**两者只能跑一个**：切到本栈前先
+# `node scripts/开发库临时集群.mjs stop`，然后主仓 `migrate apply` 在新库里重放。
 #
 # 首次初始化（无头栈必须走 API，两步且**共用 cookie 会话**；实测于 1.17.1）：
 #   curl -c jar -X POST $BASE/console/api/init  -d '{"password":"'"$DIFY_INIT_PASSWORD"'"}' \
@@ -106,6 +114,33 @@ services:
     volumes:
       - dify_app_storage:/app/api/storage
     networks: [dify]
+
+  # ── 主仓 Postgres（kenfutwork 库 + flow 网关的 futureflow 库，同一实例）──
+  # 镜像复用 docker/pg-dev-shim（postgres 17 + pgmq shim：主仓历史迁移需要
+  # `CREATE EXTENSION pgmq`，官方镜像不带）。端口默认 55433 与开发库临时集群一致：
+  # 两者只能跑一个（同端口），切换时先 `node scripts/开发库临时集群.mjs stop`。
+  pg:
+    profiles: ["dify", "pg"]
+    build:
+      context: ./docker/pg-dev-shim
+    image: kenfutwork-pg-dev:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kenfutwork
+      POSTGRES_USER: kenfutwork
+      POSTGRES_PASSWORD: ${KENFUTWORK_STACK_PG_PASSWORD:-kenfutwork}
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "127.0.0.1:${KENFUTWORK_STACK_PG_PORT:-55433}:5432"
+    volumes:
+      - kenfutwork_stack_pg_data:/var/lib/postgresql/data
+      - ./docker/dify/pg-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kenfutwork -d kenfutwork"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
 
   db_postgres:
     profiles: ["dify"]
@@ -316,6 +351,8 @@ networks:
     name: kenfutwork_dify
 
 volumes:
+  kenfutwork_stack_pg_data:
+    name: kenfutwork_stack_pg
   dify_pg_data:
     name: kenfutwork_dify_pg
   dify_redis_data:
