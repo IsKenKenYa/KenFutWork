@@ -42,10 +42,6 @@
 	path = references/deepseek-harness
 	url = https://github.com/deepseek-ai/deepseek-harness.git
 	shallow = true
-[submodule "references/futureFlow"]
-	path = references/futureFlow
-	url = https://github.com/future73807/futureFlow.git
-	shallow = true
 [submodule "references/cherry-studio"]
 	path = references/cherry-studio
 	url = https://github.com/CherryHQ/cherry-studio.git
@@ -54,6 +50,9 @@
 	path = references/kimi-code
 	url = https://github.com/MoonshotAI/kimi-code.git
 	shallow = true
+[submodule "flow"]
+	path = flow
+	url = https://github.com/future73807/futureFlow.git
 [submodule "references/zcode"]
 	path = references/zcode
 	url = https://github.com/zai-org/ZCode.git

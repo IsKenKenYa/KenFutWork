@@ -1,0 +1,20 @@
+{
+  "name": "kenfutwork-flow",
+  "version": "0.1.0",
+  "description": "Flow 工作流模式：安装后工作台出现第三种模式，主区内嵌可视化 AI 工作流（编排 / 发布 / 执行 / 审计）。需要服务端配置 KENFUTWORK_FLOW_EMBED_SECRET 与 KENFUTWORK_FLOW_FRONTEND_URL（见 README）。",
+  "type": "module",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "license": "GPL-3.0",
+  "kenfutwork": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "title": "Flow 工作流",
+    "category": "工作流"
+  }
+}

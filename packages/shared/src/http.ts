@@ -564,6 +564,18 @@ export const applicationErrorCodeSchema = z.enum([
   "run_in_progress",
   // 用户侧使用统计（R4-2）
   "usage_query_failed",
+  /**
+   * flow 凭证缝（P3）：工作区/平台池没有启用的 dify-engine 实例（404）。
+   * 与 `plugin_asset_not_found` 同一条教训——错误码必须在本枚举里，
+   * 否则 `applicationErrorResponseSchema.parse` 抛错、可读原因被 ZodError 转储顶掉。
+   */
+  "flow_engine_not_configured",
+  /** flow 凭证缝（P3）：实例在但 base_url 缺失/非法（409），凭证不下发半截。 */
+  "flow_engine_invalid",
+  /** flow 计费缝（P4）：hold 状态不允许该操作（无 hold / 已结算 / 已退款 / 并发修改）→ 409。 */
+  "flow_billing_conflict",
+  /** flow 计费缝（P4）：其余失败 → 500。 */
+  "flow_billing_failed",
 ]);
 
 export const applicationErrorResponseSchema = z.object({

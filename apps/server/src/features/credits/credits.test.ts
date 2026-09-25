@@ -190,6 +190,94 @@ describe("credits repository（读取走工作区谓词，写入口走库函数�
       "select public.grant_plan_credits($1, $2::public.subscription_plan, $3)",
     );
   });
+
+  it("flow 三段事务：三支 RPC 的参数顺序与返回映射（replayed 归一为布尔）", async () => {
+    const reserve = createRunner(() => ({
+      rowCount: 1,
+      rows: [{ hold_id: "hold-1", frozen_amount: "6", replayed: true }],
+    }));
+    const reserved = await createCreditRepository(
+      createPersistenceFromRunner(reserve.runner),
+    ).flowReserveCredits({
+      amount: 6,
+      runId: "run-1",
+      userId: USER_ID,
+      workspaceId: WORKSPACE_ID,
+    });
+    expect(reserve.sqls()[0]).toBe(
+      "select hold_id, frozen_amount, replayed from public.flow_reserve_credits($1, $2, $3, $4, $5)",
+    );
+    expect(reserve.calls[0]?.values).toEqual([
+      WORKSPACE_ID,
+      USER_ID,
+      6,
+      "run-1",
+      null,
+    ]);
+    // pg 驱动可能把 integer 返回成字符串，映射层归一为 number
+    expect(reserved).toEqual({
+      holdId: "hold-1",
+      frozenAmount: 6,
+      replayed: true,
+    });
+
+    const settle = createRunner(() => ({
+      rowCount: 1,
+      rows: [
+        {
+          tx_id: "tx-9",
+          settled_amount: 5,
+          uncovered_amount: 3,
+          replayed: false,
+        },
+      ],
+    }));
+    const settled = await createCreditRepository(
+      createPersistenceFromRunner(settle.runner),
+    ).flowSettleCredits({
+      actualCost: 8,
+      remark: "结算",
+      runId: "run-1",
+      userId: USER_ID,
+      workspaceId: WORKSPACE_ID,
+    });
+    expect(settle.sqls()[0]).toBe(
+      "select tx_id, settled_amount, uncovered_amount, replayed from public.flow_settle_credits($1, $2, $3, $4, $5)",
+    );
+    expect(settle.calls[0]?.values).toEqual([
+      WORKSPACE_ID,
+      USER_ID,
+      8,
+      "run-1",
+      "结算",
+    ]);
+    expect(settled).toEqual({
+      txId: "tx-9",
+      settledAmount: 5,
+      uncoveredAmount: 3,
+      replayed: false,
+    });
+
+    const refund = createRunner(() => ({
+      rowCount: 1,
+      rows: [{ tx_id: "tx-3", released_amount: 6, replayed: false }],
+    }));
+    const refunded = await createCreditRepository(
+      createPersistenceFromRunner(refund.runner),
+    ).flowRefundCredits({
+      runId: "run-1",
+      userId: USER_ID,
+      workspaceId: WORKSPACE_ID,
+    });
+    expect(refund.sqls()[0]).toBe(
+      "select tx_id, released_amount, replayed from public.flow_refund_credits($1, $2, $3, $4)",
+    );
+    expect(refunded).toEqual({
+      txId: "tx-3",
+      releasedAmount: 6,
+      replayed: false,
+    });
+  });
 });
 
 function createFakeRepository(
@@ -203,6 +291,22 @@ function createFakeRepository(
     findBalance: async () => 120,
     findPlan: async () => "free",
     findSubscription: async () => null,
+    flowRefundCredits: async () => ({
+      txId: "tx-flow-refund",
+      releasedAmount: 0,
+      replayed: false,
+    }),
+    flowReserveCredits: async () => ({
+      holdId: "hold-1",
+      frozenAmount: 0,
+      replayed: false,
+    }),
+    flowSettleCredits: async () => ({
+      txId: "tx-flow-settle",
+      settledAmount: 0,
+      uncoveredAmount: 0,
+      replayed: false,
+    }),
     grantPlanCredits: async () => {},
     hasClaimedToday: async () => false,
     listTransactions: async () => [],
@@ -405,6 +509,110 @@ describe("credit service", () => {
     await expect(failing.updatePlan(WORKSPACE_ID, "pro")).rejects.toMatchObject(
       { code: "credit_plan_update_failed", statusCode: 500 },
     );
+  });
+
+  it("flow 三段事务：库函数异常按消息映射（不足 402 / 状态冲突 409 / 参数非法 400）", async () => {
+    const insufficient = buildService({
+      flowReserveCredits: async () => {
+        throw new Error("INSUFFICIENT_CREDITS: have 3, need 5");
+      },
+    });
+    await expect(
+      insufficient.flowReserveCredits({
+        amount: 5,
+        runId: "run-1",
+        userId: USER_ID,
+        workspaceId: WORKSPACE_ID,
+      }),
+    ).rejects.toMatchObject({ code: "insufficient_credits", statusCode: 402 });
+
+    for (const message of [
+      "NO_HOLD: no flow credit hold for run run-1",
+      "HOLD_SETTLED: run run-1 was settled",
+      "HOLD_RELEASED: run run-1 was refunded",
+      "NO_BALANCE: No credit balance found",
+      "CONCURRENT_MODIFICATION: credit balance was modified concurrently",
+    ]) {
+      const conflicted = buildService({
+        flowSettleCredits: async () => {
+          throw new Error(message);
+        },
+      });
+      await expect(
+        conflicted.flowSettleCredits({
+          actualCost: 5,
+          runId: "run-1",
+          userId: USER_ID,
+          workspaceId: WORKSPACE_ID,
+        }),
+      ).rejects.toMatchObject({
+        code: "flow_billing_conflict",
+        statusCode: 409,
+      });
+    }
+
+    const invalid = buildService({
+      flowRefundCredits: async () => {
+        throw new Error("INVALID_RUN_ID: run id is required");
+      },
+    });
+    await expect(
+      invalid.flowRefundCredits({
+        runId: "",
+        userId: USER_ID,
+        workspaceId: WORKSPACE_ID,
+      }),
+    ).rejects.toMatchObject({ code: "flow_billing_failed", statusCode: 400 });
+  });
+
+  it("flow 三段事务：结果原样透传（replayed 与金额交给路由层回报）", async () => {
+    const service = buildService({
+      flowReserveCredits: async () => ({
+        holdId: "hold-9",
+        frozenAmount: 6,
+        replayed: true,
+      }),
+      flowSettleCredits: async () => ({
+        txId: "tx-9",
+        settledAmount: 5,
+        uncoveredAmount: 3,
+        replayed: false,
+      }),
+      flowRefundCredits: async () => ({
+        txId: "tx-3",
+        releasedAmount: 6,
+        replayed: false,
+      }),
+    });
+
+    await expect(
+      service.flowReserveCredits({
+        amount: 6,
+        runId: "run-1",
+        userId: USER_ID,
+        workspaceId: WORKSPACE_ID,
+      }),
+    ).resolves.toEqual({ holdId: "hold-9", frozenAmount: 6, replayed: true });
+    await expect(
+      service.flowSettleCredits({
+        actualCost: 8,
+        runId: "run-1",
+        userId: USER_ID,
+        workspaceId: WORKSPACE_ID,
+      }),
+    ).resolves.toEqual({
+      txId: "tx-9",
+      settledAmount: 5,
+      uncoveredAmount: 3,
+      replayed: false,
+    });
+    await expect(
+      service.flowRefundCredits({
+        runId: "run-1",
+        userId: USER_ID,
+        workspaceId: WORKSPACE_ID,
+      }),
+    ).resolves.toEqual({ txId: "tx-3", releasedAmount: 6, replayed: false });
   });
 });
 

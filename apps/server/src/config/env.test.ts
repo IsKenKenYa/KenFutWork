@@ -81,3 +81,55 @@ describe("部署形态与第三方插件开关", () => {
     );
   });
 });
+
+/**
+ * flow 前端地址（工作台 iframe src + postMessage origin 白名单）。
+ * 带路径/写错协议只会在运行期暴露成「iframe 打不开 / 消息被丢」，所以启动期 fail loud。
+ */
+describe("KENFUTWORK_FLOW_FRONTEND_URL 解析", () => {
+  it("空值返回 undefined；合法 origin 原样收下", () => {
+    expect(
+      loadServerEnv({}, {}).flowFrontendUrl,
+    ).toBeUndefined();
+    expect(
+      loadServerEnv(
+        {},
+        { KENFUTWORK_FLOW_FRONTEND_URL: "http://127.0.0.1:8080" },
+      ).flowFrontendUrl,
+    ).toBe("http://127.0.0.1:8080");
+    // 带尾斜杠归一为 origin（host:port 相同即可，避免两份写法两种白名单）
+    expect(
+      loadServerEnv(
+        {},
+        { KENFUTWORK_FLOW_FRONTEND_URL: "http://127.0.0.1:8080/" },
+      ).flowFrontendUrl,
+    ).toBe("http://127.0.0.1:8080");
+  });
+
+  it("带路径 / 查询 / 锚点 → fail loud（只收 origin）", () => {
+    expect(() =>
+      loadServerEnv(
+        {},
+        { KENFUTWORK_FLOW_FRONTEND_URL: "http://127.0.0.1:8080/canvas" },
+      ),
+    ).toThrow(/origin/);
+    expect(() =>
+      loadServerEnv(
+        {},
+        { KENFUTWORK_FLOW_FRONTEND_URL: "http://127.0.0.1:8080/?x=1" },
+      ),
+    ).toThrow(/origin/);
+  });
+
+  it("非 http(s) 或非法 URL → fail loud", () => {
+    expect(() =>
+      loadServerEnv(
+        {},
+        { KENFUTWORK_FLOW_FRONTEND_URL: "ftp://127.0.0.1:8080" },
+      ),
+    ).toThrow(/http\/https/);
+    expect(() =>
+      loadServerEnv({}, { KENFUTWORK_FLOW_FRONTEND_URL: "不是地址" }),
+    ).toThrow(/合法 URL/);
+  });
+});

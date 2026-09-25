@@ -56,18 +56,30 @@ export const adminSetRoleRequestSchema = z.object({
 export type AdminSetRoleRequest = z.infer<typeof adminSetRoleRequestSchema>;
 
 /** 系统供应商（平台池）：管理员配置 Key，分发给全体用户使用。 */
-export const adminSystemInstanceCreateRequestSchema = z.object({
-  name: z.string().min(1),
-  protocol: providerProtocolSchema,
-  baseUrl: z.string().optional(),
-  /** 只写不读：服务端加密落库，永不回显。 */
-  apiKey: z.string().min(1),
-  models: z.array(providerInstanceModelSchema).min(1),
-  compat: providerCompatSchema.optional(),
-  /** 自定义请求头（§4.8）：与用户实例同一套校验与只写口径。 */
-  headers: providerInstanceHeadersSchema.optional(),
-  enabled: z.boolean().optional(),
-});
+export const adminSystemInstanceCreateRequestSchema = z
+  .object({
+    name: z.string().min(1),
+    protocol: providerProtocolSchema,
+    baseUrl: z.string().optional(),
+    /** 只写不读：服务端加密落库，永不回显。 */
+    apiKey: z.string().min(1),
+    /** 缺省视为空列表：模型型实例会被 superRefine 拒（与用户实例同一条规则），dify-engine 合法省略。 */
+    models: z.array(providerInstanceModelSchema).default([]),
+    compat: providerCompatSchema.optional(),
+    /** 自定义请求头（§4.8）：与用户实例同一套校验与只写口径。 */
+    headers: providerInstanceHeadersSchema.optional(),
+    enabled: z.boolean().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.protocol === "dify-engine") return;
+    if (value.models.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["models"],
+        message: "模型型实例至少声明一个模型",
+      });
+    }
+  });
 export type AdminSystemInstanceCreateRequest = z.infer<
   typeof adminSystemInstanceCreateRequestSchema
 >;

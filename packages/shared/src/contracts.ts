@@ -130,9 +130,14 @@ export const canvasSummarySchema = z.object({
 
 /**
  * 项目类型：design=画布项目（Design 模式），code=工作目录项目（Code 模式
- * 「工作目录=项目」）。两端各自按 kind 取列表，两类项目互不串味。
+ * 「工作目录=项目」），flow=工作流项目（Flow 模式，可视化 AI 工作流的编排 / 发布 / 执行）。
+ * 两端各自按 kind 取列表，各类项目互不串味。
+ *
+ * flow 子系统的落地节奏（《flow 集成方案》P1）：本阶段只落**契约与库约束**——
+ * 类型由服务端一处持有，flow run 同样必绑项目（与 Code 模式同一条硬约束，画布 id 即作用域）；
+ * flow 的模式入口与画布随宿主适配层（P2）接通后出现，未接通前界面上不出现空壳入口。
  */
-export const projectKindSchema = z.enum(["design", "code"]);
+export const projectKindSchema = z.enum(["design", "code", "flow"]);
 export type ProjectKind = z.infer<typeof projectKindSchema>;
 
 export const projectSummarySchema = z.object({

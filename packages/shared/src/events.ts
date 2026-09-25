@@ -211,6 +211,32 @@ export const billingErrorEventSchema = z.object({
   dailyClaimed: z.boolean().optional(),
 });
 
+/**
+ * flow 运行事件（P5，《flow 集成方案》事件缝）。
+ *
+ * 定位：flow 网关（独立子系统）把 run 事件经宿主回调（`POST /api/flow/host/events`）
+ * 透出后，宿主**原样转发到本仓 WS 通道**——flow 自己的事件词汇表是移动靶
+ * （Dify SSE 事件随引擎版本演进，`DEC-13` 不锁版本），故这里不做逐事件镜像，
+ * 统一包一层 `flowRun.event`：`eventType` 保留 flow 侧的原类型名，`payload` 原样携带。
+ *
+ * `seq` 是 **run 内**单调序号（flow 侧生成），宿主侧不重排——客户端据此去重/续传
+ * （宿主侧 WS 信封自身不带 seq，断线重连会全量重放，见 ws 层的 lastSeq 口径）。
+ */
+export const flowRunEventSchema = z.object({
+  type: z.literal("flowRun.event"),
+  /** flow 的 run id（宿主不解析，只透传）。 */
+  runId: z.string().min(1).max(128),
+  /** run 内单调序号（flow 侧生成）。 */
+  seq: z.number().int().min(1),
+  /** flow 侧原事件类型名（如 `workflow_started` / `node_finished` / `workflow_finished`）。 */
+  eventType: z.string().min(1).max(128),
+  /** flow 侧原始载荷（原样携带，宿主不解释）。 */
+  payload: z.unknown(),
+  /** 事件产生时间（flow 侧，ISO 字符串）。 */
+  at: z.string().min(1).max(64),
+  timestamp: timestampSchema,
+});
+
 export const streamEventSchema = z.discriminatedUnion("type", [
   runStartedEventSchema,
   messageDeltaEventSchema,
@@ -226,6 +252,7 @@ export const streamEventSchema = z.discriminatedUnion("type", [
   runRetryingEventSchema,
   canvasSyncEventSchema,
   billingErrorEventSchema,
+  flowRunEventSchema,
 ]);
 
 export type StreamEvent = z.infer<typeof streamEventSchema>;

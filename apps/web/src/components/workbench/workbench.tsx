@@ -13,6 +13,7 @@ import {
   FolderOpen,
   FolderPlus,
   Layers,
+  ListChecks,
   Loader2,
   MessageSquare,
   Mic,
@@ -25,6 +26,7 @@ import {
   Send,
   Server,
   ShieldAlert,
+  Workflow,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -67,6 +69,10 @@ import {
 } from "@/components/workbench/composer-compact-select";
 import { ContextUsageButton } from "@/components/workbench/context-usage-button";
 import { ElapsedEntry } from "@/components/workbench/elapsed-entry";
+import {
+  FlowCanvasFrame,
+  type FlowCanvasFrameHandle,
+} from "@/components/workbench/flow-canvas-frame";
 import { GitBranchSelect } from "@/components/workbench/git-branch-select";
 import { McpModal } from "@/components/workbench/mcp-modal";
 import { formatElementReference } from "@/components/workbench/panel-browser-view";
@@ -89,6 +95,7 @@ import { TurnRail } from "@/components/workbench/turn-rail";
 import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
 import { WorkDirectorySelect } from "@/components/workbench/work-directory-select";
 import { WorkbenchSidePanel } from "@/components/workbench/workbench-side-panel";
+import { useFlowHostEntry } from "@/hooks/use-flow-host";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useAuth } from "@/lib/auth-context";
 import { onBrowserOpen } from "@/lib/browser-panel";
@@ -609,6 +616,16 @@ const MODE_META: Record<
     placeholder: "从想法到设计，生成可交付的页面原型。",
     chips: ["设计还原", "概念成稿", "规范出图"],
   },
+  /**
+   * Flow 模式（《flow 集成方案》）：主区是工作流画布（编排 / 发布 / 执行都在画布内）。
+   * 这里先按类型穷举补齐；**切换器里的入口**随宿主适配层（P2）落地，接通前选不到这个模式。
+   */
+  flow: {
+    label: "Flow",
+    title: "Flow with KenFutWork",
+    placeholder: "编排可视化 AI 工作流，发布快照后执行并审计。",
+    chips: ["工作流编排", "发布与执行", "运行审计"],
+  },
 };
 
 /**
@@ -653,11 +670,21 @@ export function Workbench() {
   const { user, session, loading, signOut } = useAuth();
   const getToken = useCallback(() => session?.access_token ?? null, [session]);
   const ws = useWebSocket(getToken);
+  /**
+   * Flow 模式入口（插件安装态 + 宿主适配层探针）：不可用就不出现切换项
+   * （AGENTS.md 不变量：未装插件 / 适配层未接通时不摆空壳、不放假开关）。
+   */
+  const { entry: flowEntry, refresh: refreshFlowEntry } = useFlowHostEntry(
+    session?.access_token ?? null,
+  );
+  /** Flow 画布句柄：侧栏导航项让 iframe 内的 flow 路由跳转（ff-embed/navigate）。 */
+  const flowFrameRef = useRef<FlowCanvasFrameHandle>(null);
 
   const [mode, setMode] = useState<WorkbenchMode>("code");
+  /** 任务列表按模式分开存；flow 模式主区是工作流画布，没有会话列表（故恒为空）。 */
   const [tasksByMode, setTasksByMode] = useState<
     Record<WorkbenchMode, WorkbenchTask[]>
-  >({ code: [], design: [] });
+  >({ code: [], design: [], flow: [] });
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   /** Design 模式的输入交给画布页（`/canvas?...&prompt=`）自动发送，不落到工作台会话视图。 */
@@ -781,6 +808,7 @@ export function Workbench() {
   const tasksByModeRef = useRef<Record<WorkbenchMode, WorkbenchTask[]>>({
     code: [],
     design: [],
+    flow: [],
   });
   tasksByModeRef.current = tasksByMode;
 
@@ -998,6 +1026,7 @@ export function Workbench() {
     setTasksByMode({
       code: loadTasks("code"),
       design: loadTasks("design"),
+      flow: [],
     });
     try {
       const rawCollapsed = window.localStorage.getItem(
@@ -1319,7 +1348,7 @@ export function Workbench() {
         current === projectId ? null : current,
       );
       setTasksByMode((prev) => {
-        const next: typeof prev = { code: [], design: [] };
+        const next: typeof prev = { code: [], design: [], flow: [] };
         for (const m of ["code", "design"] as const) {
           const kept = prev[m]
             .filter((t) => t.projectId !== projectId)
@@ -2433,14 +2462,21 @@ export function Workbench() {
 
   const meta = MODE_META[mode];
 
-  const modeItems = (["code", "design"] as const).map((m) => ({
+  /** 入口门控后的可选模式集合：flow 只在插件已装且适配层配齐时出现。 */
+  const availableModes: readonly WorkbenchMode[] = flowEntry?.available
+    ? ["code", "design", "flow"]
+    : ["code", "design"];
+
+  const modeItems = availableModes.map((m) => ({
     id: m,
     label: MODE_META[m].label,
     icon:
       m === "code" ? (
         <Code2 className="h-4 w-4 shrink-0" />
-      ) : (
+      ) : m === "design" ? (
         <Palette className="h-4 w-4 shrink-0" />
+      ) : (
+        <Workflow className="h-4 w-4 shrink-0" />
       ),
   }));
 
@@ -2540,12 +2576,14 @@ export function Workbench() {
             </button>
           </div>
 
-          {/* 模式切换（开关式：一个分段控件内左右切换 Code / Design） */}
-          <div className="px-3 pt-1 pb-0.5">
+          {/* 模式切换（开关式：一个分段控件内左右切换 Code / Design / Flow）。
+              三段并存时每段只有 ~60px：内边距收到最小、文字 13px、超宽截断，
+              否则最后一个（Flow）会被挤变形。 */}
+          <div className="px-2 pt-1 pb-0.5">
             <div
               role="radiogroup"
               aria-label="模式切换"
-              className="flex items-center gap-1 rounded-lg bg-muted p-1"
+              className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5"
             >
               {modeItems.map((item) => (
                 // biome-ignore lint/a11y/useSemanticElements: 分段控件用的是 radiogroup/radio 模式（原生 radio 无法承载这套样式与布局）
@@ -2556,10 +2594,10 @@ export function Workbench() {
                   aria-checked={mode === item.id}
                   data-active={mode === item.id}
                   onClick={() => switchMode(item.id)}
-                  className="flex min-h-[30px] flex-1 items-center justify-center gap-1.5 rounded-md px-2 text-sm text-muted-foreground transition-colors hover:text-foreground data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:text-foreground data-[active=true]:shadow-sm"
+                  className="flex min-h-[30px] min-w-0 flex-1 items-center justify-center gap-1 rounded-md px-1.5 text-[13px] whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:text-foreground data-[active=true]:shadow-sm"
                 >
                   {item.icon}
-                  {item.label}
+                  <span className="truncate">{item.label}</span>
                 </button>
               ))}
             </div>
@@ -2614,7 +2652,44 @@ export function Workbench() {
 
           <div className="mx-3 my-2 border-t" />
 
-          {mode === "design" ? (
+          {mode === "flow" ? (
+            /* Flow：侧栏导航项由宿主承担（内嵌形态 flow 自己的侧栏隐藏），
+               点击经 ff-embed/navigate 让 iframe 内的 flow 路由跳转；
+               主仓侧不复制一份列表（不造第二套真相）。 */
+            <nav
+              className="flex min-h-0 flex-1 flex-col px-2"
+              aria-label="Flow 导航"
+            >
+              {[
+                {
+                  path: "/",
+                  label: "工作流",
+                  icon: <Workflow className="h-4 w-4 shrink-0" />,
+                },
+                {
+                  path: "/plugins",
+                  label: "工作流插件",
+                  icon: <Layers className="h-4 w-4 shrink-0" />,
+                },
+                {
+                  path: "/tasks",
+                  label: "任务中心",
+                  icon: <ListChecks className="h-4 w-4 shrink-0" />,
+                },
+              ].map((item) => (
+                <button
+                  key={item.path}
+                  type="button"
+                  disabled={!flowEntry?.available}
+                  onClick={() => flowFrameRef.current?.navigate(item.path)}
+                  className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {item.icon}
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+          ) : mode === "design" ? (
             /* Design：项目列表（+ 直接创建，无任务列表） */
             <div className="flex min-h-0 flex-1 flex-col px-2">
               <div className="flex items-center justify-between px-1 pb-1">
@@ -2898,9 +2973,29 @@ export function Workbench() {
         </aside>
       )}
 
-      {/* 主区：Design＝画布（恒为画布，见 resolveWorkbenchSurface）/ Code＝任务视图 或 居中编排器 */}
+      {/* 主区：Design＝画布 / Flow＝flow 画布（恒为画布，见 resolveWorkbenchSurface）
+          / Code＝任务视图 或 居中编排器 */}
       <main className="min-w-0 flex-1 overflow-hidden bg-card">
-        {surface === "canvas" ? (
+        {mode === "flow" ? (
+          /* Flow：主区恒为 flow 画布（iframe 内含列表 / 编排 / 发布 / 执行全部视图），
+             与 Design 同一条不变量——不被任务/会话对话框顶掉。入口消失（如插件被卸载）
+             时如实说明，不放半截 iframe。 */
+          flowEntry === null ? (
+            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+              正在检查 flow 可用性…
+            </div>
+          ) : flowEntry.available ? (
+            <FlowCanvasFrame
+              ref={flowFrameRef}
+              frontendUrl={flowEntry.frontendUrl}
+              getToken={getToken}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center px-8 text-center text-sm text-muted-foreground">
+              {flowEntry.reason}
+            </div>
+          )
+        ) : surface === "canvas" ? (
           /* Design：选中项目后画布自动打开（原版 KenFutWork 画布，对话在画布内助手里） */
           <iframe
             key={`${selectedProject?.primaryCanvas.id}:${canvasPrompt ?? ""}`}
@@ -3868,6 +3963,8 @@ ${formatElementReference(picked)}`
           // 「从工作目录安装」用：服务端据此解析沙箱目录
           canvasId={selectedProject?.primaryCanvas?.id ?? null}
           isAdmin={isPlatformAdmin}
+          // 装/卸 flow 插件后立即重估 Flow 模式入口（不等下次进页面）
+          onPluginsChanged={refreshFlowEntry}
         />
       ) : null}
       {skillsOpen ? (

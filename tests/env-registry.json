@@ -22,6 +22,30 @@
       "status": "active",
       "note": "兜底通用 PORT"
     },
+    "KENFUTWORK_FLOW_EMBED_SECRET": {
+      "surface": "server",
+      "readers": [
+        "apps/server/src/config/env.ts",
+        "apps/server/src/features/flow/plugin.ts",
+        "apps/server/src/features/flow/flow-host.test.ts",
+        "apps/server/src/http/flow-host.ts"
+      ],
+      "inExamples": false,
+      "status": "active",
+      "note": "flow 宿主适配层共享密钥（与 flow 侧 HOST_SHARED_SECRET 成对）；不进 .env.example（含密钥语义，部署时生成）"
+    },
+    "KENFUTWORK_FLOW_FRONTEND_URL": {
+      "surface": "server",
+      "readers": [
+        "apps/server/src/config/env.ts",
+        "apps/server/src/config/env.test.ts",
+        "apps/server/src/features/flow/flow-host.test.ts",
+        "apps/server/src/http/flow-host.ts"
+      ],
+      "inExamples": false,
+      "status": "active",
+      "note": "flow 前端地址（iframe src 与 postMessage origin 白名单）；本机联调各不相同，不进 .env.example"
+    },
     "KENFUTWORK_WEB_ORIGIN": {
       "surface": "server",
       "readers": ["apps/server/src/config/env.ts"],

@@ -68,7 +68,12 @@ export function buildApp(
       ...(options.dump || process.env.KENFUTWORK_DUMP_CONFIG === "1"
         ? { dump: true }
         : {}),
-      overrides: options.overrides ?? {},
+      // ws 缝（内核 ServiceKey）：HTTP 进程内的连接管理与重放缓冲，供插件消费
+      //（如 flow-host 把 flow 网关回调的运行事件按用户投给 WS 客户端）。
+      overrides: {
+        ws: { connectionManager, eventBuffer },
+        ...(options.overrides ?? {}),
+      },
     },
   );
 

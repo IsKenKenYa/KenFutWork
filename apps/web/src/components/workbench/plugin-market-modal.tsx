@@ -65,6 +65,7 @@ export function PluginMarketModal({
   canvasId = null,
   isAdmin = false,
   onUse,
+  onPluginsChanged,
 }: {
   open: boolean;
   onClose: () => void;
@@ -78,6 +79,11 @@ export function PluginMarketModal({
    * 没给回调时按「这个插件没有可跳的界面」处理——不摆一个点了没反应的键。
    */
   onUse?: ((pluginName: string) => void) | undefined;
+  /**
+   * 安装/卸载成功后的通知（列表刷新之外）：宿主侧按插件安装态门控的 UI
+   * （如 Flow 模式入口）靠它立即反应，不等下一次进页面。
+   */
+  onPluginsChanged?: (() => void) | undefined;
 }) {
   const [tab, setTab] = useState<MarketTab>("discover");
   /** 切页签重置滚动位置（与设置/MCP/技能弹窗同款交互修正）。 */
@@ -144,6 +150,7 @@ export function PluginMarketModal({
     }
     toast.success(entry.installed ? "已卸载。" : "已安装。");
     refresh();
+    onPluginsChanged?.();
   }
 
   /**
@@ -275,13 +282,19 @@ export function PluginMarketModal({
                 <PluginInstallByUrl
                   accessToken={accessToken}
                   isAdmin={isAdmin}
-                  onInstalled={refresh}
+                  onInstalled={() => {
+                    refresh();
+                    onPluginsChanged?.();
+                  }}
                 />
                 <PluginInstallFromWorkdir
                   accessToken={accessToken}
                   canvasId={canvasId}
                   isAdmin={isAdmin}
-                  onInstalled={refresh}
+                  onInstalled={() => {
+                    refresh();
+                    onPluginsChanged?.();
+                  }}
                 />
               </>
             ) : null}

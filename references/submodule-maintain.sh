@@ -15,6 +15,10 @@
 #   ./references/submodule-maintain.sh update     # 浅拉取所有子模块到远端最新
 #   ./references/submodule-maintain.sh all        # convert + update
 #
+# 范围: 仅 references/ 下的只读参考子模块(见 submodule_paths)。
+#   根级 flow/ 是 flow 子系统的活跃开发副本——需要完整历史与本地分支,
+#   浅克隆(convert 会 rm -rf 重建)与 reset --hard(update)会丢东西, 故不在维护范围。
+#
 # 脚本位置: references/submodule-maintain.sh (从仓库根目录执行)
 # =============================================================================
 set -euo pipefail
@@ -27,10 +31,12 @@ DEPTH=1
 
 usage() {   sed -n '2,22p' "$0";   exit 0; }
 
-# 列出所有子模块路径, 每行一个
+# 列出需要维护的子模块路径, 每行一个
+# 只取 references/ 下的只读参考子模块; 根级 flow/ 等活跃开发副本由各自所有者维护
 submodule_paths() {
   git config --file .gitmodules --name-only --get-regexp '^submodule\..*\.path$' \
     | sed -E 's/^submodule\.(.*)\.path$/\1/' \
+    | grep -E '^references/' \
     || true
 }
 

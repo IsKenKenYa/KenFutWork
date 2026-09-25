@@ -48,6 +48,8 @@ const PROTOCOLS: ProviderProtocol[] = [
   "anthropic",
   "gemini",
   "volces",
+  // 平台池也能配 Dify 引擎（工作区缺省时 flow 凭证回调回退到系统实例）
+  "dify-engine",
 ];
 
 const DEFAULT_MODELS_JSON = JSON.stringify(

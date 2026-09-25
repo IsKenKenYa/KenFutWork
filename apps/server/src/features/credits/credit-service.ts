@@ -6,7 +6,15 @@ import type {
 } from "@kenfutwork/shared";
 import { PLAN_CONFIGS } from "@kenfutwork/shared";
 
-import type { CreditRepository } from "./repository.js";
+import type {
+  CreditRepository,
+  FlowRefundInput,
+  FlowRefundResult,
+  FlowReserveInput,
+  FlowReserveResult,
+  FlowSettleInput,
+  FlowSettleResult,
+} from "./repository.js";
 
 // ── Error ────────────────────────────────────────────────────
 
@@ -18,7 +26,11 @@ export class CreditServiceError extends Error {
     | "credit_claim_failed"
     | "credit_deduct_failed"
     | "credit_refund_failed"
-    | "credit_plan_update_failed";
+    | "credit_plan_update_failed"
+    /** flow 三段事务：状态不允许（无 hold / 已结算 / 已退款 / 并发修改 / 无余额行）→ 409。 */
+    | "flow_billing_conflict"
+    /** flow 三段事务：其余失败 → 500。 */
+    | "flow_billing_failed";
 
   constructor(
     code: CreditServiceError["code"],
@@ -70,6 +82,14 @@ export type CreditService = {
     runId: string,
     description?: string,
   ): Promise<string>;
+  /**
+   * flow 三段事务（P4）：预扣冻结 / 结算实扣 / 退款释放。
+   * 幂等键 `flow:<runId>:<op>` 由库函数承担；同键重放返回原结果（replayed=true）。
+   * 结算以**冻结额为上限**（超出部分在 uncoveredAmount 里如实回报）。
+   */
+  flowReserveCredits(input: FlowReserveInput): Promise<FlowReserveResult>;
+  flowSettleCredits(input: FlowSettleInput): Promise<FlowSettleResult>;
+  flowRefundCredits(input: FlowRefundInput): Promise<FlowRefundResult>;
   /** 管理员手动调剂额度（正发负扣，台账类型 admin_adjustment）。 */
   adminAdjustCredits(
     workspaceId: string,
@@ -115,6 +135,50 @@ export function createCreditService(options: {
     return new CreditServiceError(
       "credit_deduct_failed",
       `Failed to ${action}: ${message}`,
+      500,
+    );
+  }
+
+  /**
+   * flow 三段事务的错误映射（库函数以 `CODE: 可读原因` 抛错）：
+   * - 额度不足 → 402（复用 `insufficient_credits`）；
+   * - 状态冲突（无 hold / 已结算 / 已退款 / 无余额行 / 并发修改）→ 409；
+   * - 参数非法 → 400；
+   * - 其余 → 500。
+   */
+  function mapFlowBillingError(
+    error: unknown,
+    action: string,
+  ): CreditServiceError {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("INSUFFICIENT_CREDITS")) {
+      return new CreditServiceError(
+        "insufficient_credits",
+        `flow ${action}失败：可用额度不足。`,
+        402,
+      );
+    }
+    if (
+      /NO_HOLD|HOLD_SETTLED|HOLD_RELEASED|NO_BALANCE|CONCURRENT_MODIFICATION/.test(
+        message,
+      )
+    ) {
+      return new CreditServiceError(
+        "flow_billing_conflict",
+        `flow ${action}失败：${message}`,
+        409,
+      );
+    }
+    if (/INVALID_AMOUNT|INVALID_RUN_ID/.test(message)) {
+      return new CreditServiceError(
+        "flow_billing_failed",
+        `flow ${action}参数非法：${message}`,
+        400,
+      );
+    }
+    return new CreditServiceError(
+      "flow_billing_failed",
+      `flow ${action}失败：${message}`,
       500,
     );
   }
@@ -173,6 +237,54 @@ export function createCreditService(options: {
         });
 
       return txId as string;
+    },
+
+    async flowReserveCredits(input) {
+      const result = await repository
+        .flowReserveCredits(input)
+        .catch((error: unknown) => {
+          throw mapFlowBillingError(error, "预扣");
+        });
+      if (!result) {
+        throw new CreditServiceError(
+          "flow_billing_failed",
+          "预扣未返回结果。",
+          500,
+        );
+      }
+      return result;
+    },
+
+    async flowSettleCredits(input) {
+      const result = await repository
+        .flowSettleCredits(input)
+        .catch((error: unknown) => {
+          throw mapFlowBillingError(error, "结算");
+        });
+      if (!result) {
+        throw new CreditServiceError(
+          "flow_billing_failed",
+          "结算未返回结果。",
+          500,
+        );
+      }
+      return result;
+    },
+
+    async flowRefundCredits(input) {
+      const result = await repository
+        .flowRefundCredits(input)
+        .catch((error: unknown) => {
+          throw mapFlowBillingError(error, "退款");
+        });
+      if (!result) {
+        throw new CreditServiceError(
+          "flow_billing_failed",
+          "退款未返回结果。",
+          500,
+        );
+      }
+      return result;
     },
 
     async adminAdjustCredits(workspaceId, userId, amount, description) {
