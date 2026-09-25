@@ -2668,7 +2668,7 @@ export function Workbench() {
                 },
                 {
                   path: "/plugins",
-                  label: "插件商店",
+                  label: "工作流插件",
                   icon: <Layers className="h-4 w-4 shrink-0" />,
                 },
                 {

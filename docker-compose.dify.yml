@@ -83,6 +83,9 @@ x-dify-shared-env: &dify-shared-env
   ADMIN_API_KEY_ENABLE: "true"
   ADMIN_API_KEY: ${DIFY_ADMIN_API_KEY:?生产必须设置（openssl rand -hex 24）；flow 网关用同一值} 
   # ── 插件守护 ──
+  # 缺这个 api 会用默认 http://localhost:5002（容器内指向自己），
+  # 一切模型/插件相关调用全部报「Failed to request plugin daemon」（真机踩坑）。
+  PLUGIN_DAEMON_URL: http://plugin_daemon:5002
   PLUGIN_DAEMON_KEY: ${DIFY_PLUGIN_DAEMON_KEY:-kenfutwork-plugin-daemon}
   PLUGIN_DIFY_INNER_API_URL: http://api:5001
   PLUGIN_DIFY_INNER_API_KEY: ${DIFY_PLUGIN_INNER_API_KEY:-kenfutwork-inner-api}
