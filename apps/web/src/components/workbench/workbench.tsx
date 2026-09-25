@@ -2576,12 +2576,14 @@ export function Workbench() {
             </button>
           </div>
 
-          {/* 模式切换（开关式：一个分段控件内左右切换 Code / Design） */}
-          <div className="px-3 pt-1 pb-0.5">
+          {/* 模式切换（开关式：一个分段控件内左右切换 Code / Design / Flow）。
+              三段并存时每段只有 ~60px：内边距收到最小、文字 13px、超宽截断，
+              否则最后一个（Flow）会被挤变形。 */}
+          <div className="px-2 pt-1 pb-0.5">
             <div
               role="radiogroup"
               aria-label="模式切换"
-              className="flex items-center gap-1 rounded-lg bg-muted p-1"
+              className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5"
             >
               {modeItems.map((item) => (
                 // biome-ignore lint/a11y/useSemanticElements: 分段控件用的是 radiogroup/radio 模式（原生 radio 无法承载这套样式与布局）
@@ -2592,10 +2594,10 @@ export function Workbench() {
                   aria-checked={mode === item.id}
                   data-active={mode === item.id}
                   onClick={() => switchMode(item.id)}
-                  className="flex min-h-[30px] flex-1 items-center justify-center gap-1.5 rounded-md px-2 text-sm text-muted-foreground transition-colors hover:text-foreground data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:text-foreground data-[active=true]:shadow-sm"
+                  className="flex min-h-[30px] min-w-0 flex-1 items-center justify-center gap-1 rounded-md px-1.5 text-[13px] whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:text-foreground data-[active=true]:shadow-sm"
                 >
                   {item.icon}
-                  {item.label}
+                  <span className="truncate">{item.label}</span>
                 </button>
               ))}
             </div>
@@ -2663,6 +2665,11 @@ export function Workbench() {
                   path: "/",
                   label: "工作流",
                   icon: <Workflow className="h-4 w-4 shrink-0" />,
+                },
+                {
+                  path: "/plugins",
+                  label: "插件商店",
+                  icon: <Layers className="h-4 w-4 shrink-0" />,
                 },
                 {
                   path: "/tasks",
