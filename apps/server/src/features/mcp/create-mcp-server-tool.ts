@@ -125,6 +125,8 @@ export function createCreateMcpServerTool(options: {
 
       const created = await options.service.create({
         name,
+        kind: "stdio",
+        url: null,
         command,
         args: [scriptPath, ...extraArgs],
         env: env ?? {},

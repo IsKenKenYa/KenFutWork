@@ -1,11 +1,13 @@
 /**
  * MCP server 表单的纯逻辑（解析/校验/密钥保留），供设置页与单测共用。
  *
- * 两个易错点在这里处理掉：
+ * 三个易错点在这里处理掉：
  * 1. **参数含空格**：`args` 用「一行一个」而不是空格分隔（`--path /a b` 这类值
  *    用空格切分会碎）；
  * 2. **密钥只写不读**：接口只回 `envKeys`，编辑时若不重填 env，请求必须
- *    **不带 env 字段**（带了就等于用空对象覆盖掉已存的密钥）。
+ *    **不带 env 字段**（带了就等于用空对象覆盖掉已存的密钥）；
+ * 3. **两类传输互斥**：stdio 用 command/args/env，http 只用 url——校验按 kind
+ *    分开做，不混着要求。
  */
 
 export const MCP_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
@@ -52,18 +54,25 @@ export function parseEnvText(text: string): EnvParseResult {
 
 export interface McpServerFormInput {
   name: string;
+  /** 传输类型：stdio = 本地子进程；http = 远程端点。 */
+  kind: "stdio" | "http";
+  /** stdio 的本地命令（http 类型不填）。 */
   command: string;
+  /** http 的远程端点 URL（stdio 类型不填）。 */
+  url: string;
   argsText: string;
   envText: string;
 }
 
 export interface McpServerFormResult {
   errors: string[];
-  /** 可直接发请求的 payload（编辑态可能不含 env/name）。 */
+  /** 可直接发请求的 payload（编辑态可能不含 env/name；http 不含 command/args/env）。 */
   payload: {
     name?: string;
-    command: string;
-    args: string[];
+    kind: "stdio" | "http";
+    command?: string;
+    url?: string;
+    args?: string[];
     env?: Record<string, string>;
   };
 }
@@ -79,7 +88,6 @@ export function buildMcpServerPayload(
 ): McpServerFormResult {
   const errors: string[] = [];
   const name = input.name.trim();
-  const command = input.command.trim();
 
   if (options.mode === "create") {
     if (!name) {
@@ -88,6 +96,25 @@ export function buildMcpServerPayload(
       errors.push("名称只允许字母、数字、- 与 _。");
     }
   }
+
+  if (input.kind === "http") {
+    const url = input.url.trim();
+    if (!url) {
+      errors.push("远程端点 URL 必填。");
+    } else if (!/^https?:\/\//.test(url)) {
+      errors.push("远程端点 URL 必须以 http(s):// 开头。");
+    }
+    return {
+      errors,
+      payload: {
+        ...(options.mode === "create" ? { name } : {}),
+        kind: "http",
+        ...(url ? { url } : {}),
+      },
+    };
+  }
+
+  const command = input.command.trim();
   if (!command) {
     errors.push("启动命令必填。");
   }
@@ -101,6 +128,7 @@ export function buildMcpServerPayload(
     errors,
     payload: {
       ...(options.mode === "create" ? { name } : {}),
+      kind: "stdio",
       command,
       args: parseArgsText(input.argsText),
       ...(shouldSendEnv ? { env } : {}),

@@ -9,6 +9,7 @@ import type { McpCuratedServer } from "@kenfutwork/shared";
  */
 export interface CuratedPayload {
   name: string;
+  kind: "stdio";
   command: string;
   args: string[];
   env: Record<string, string>;
@@ -42,6 +43,7 @@ export function buildCuratedServerPayload(
   return {
     payload: {
       name: entry.name,
+      kind: "stdio",
       command: entry.command,
       args,
       env: {},

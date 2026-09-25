@@ -25,7 +25,9 @@ function fixtureRow(over: Partial<StoredMcpServer> = {}): StoredMcpServer {
   return {
     id: "fixture-1",
     name: "fixture",
+    kind: "stdio",
     command: "node",
+    url: null,
     args: [FIXTURE],
     env: {},
     enabled: true,
@@ -44,7 +46,9 @@ function inMemoryStore(rows: StoredMcpServer[]): McpServerStore {
       return rows.map((row) => ({
         id: row.id,
         name: row.name,
+        kind: row.kind,
         command: row.command,
+        url: row.url,
         args: row.args,
         envKeys: Object.keys(row.env),
         enabled: row.enabled,
@@ -56,9 +60,15 @@ function inMemoryStore(rows: StoredMcpServer[]): McpServerStore {
       return rows.find((row) => row.name === name) ?? null;
     },
     async create(input) {
-      const created = {
+      const created: StoredMcpServer = {
         id: `id-${input.name}`,
-        ...input,
+        name: input.name,
+        kind: input.kind ?? "stdio",
+        command: input.command ?? "",
+        args: input.args,
+        url: input.url,
+        env: input.env,
+        enabled: input.enabled,
         createdAt: "",
         updatedAt: "",
       };

@@ -20,19 +20,31 @@ import { ListEmpty, ListError, ListLoading } from "./list-state";
 
 const EMPTY_FORM: McpServerFormInput = {
   name: "",
+  kind: "stdio",
   command: "",
+  url: "",
   argsText: "",
   envText: "",
 };
 
 type McpTab = "configured" | "curated" | "registry";
 
+/** 直接创建配置的载荷（stdio/http 两类，推荐与市场页签共用）。 */
+type McpCreatePayload = {
+  name: string;
+  kind: "stdio" | "http";
+  command?: string;
+  url?: string;
+  args?: string[];
+  env?: Record<string, string>;
+};
+
 /**
  * MCP 管理弹窗（从「设置」挪到侧栏，与技能并列）。
  *
  * 三个页签：**已配置**（列表/启停/重连/编辑/删除 + 手动添加）、
  * **推荐**（内置精选目录，一键添加，参数就地填）、
- * **官方 MCP 市场**（registry.modelcontextprotocol.io 检索，仅 stdio+npm/pypi 可添加）。
+ * **官方 MCP 市场**（registry.modelcontextprotocol.io 检索；stdio 包与远程端点都可添加）。
  *
  * 安全：MCP server 会在本机以子进程执行命令——变更类操作服务端有管理员门，
  * 界面也逐条提示，不做静默安装。
@@ -88,12 +100,7 @@ export function McpModal({
 
   /** 直接创建配置（推荐/注册表两个页签共用）。 */
   const createServer = useCallback(
-    async (payload: {
-      name: string;
-      command: string;
-      args: string[];
-      env?: Record<string, string>;
-    }) => {
+    async (payload: McpCreatePayload) => {
       setBusy(payload.name);
       setError(null);
       setNotice(null);
@@ -341,6 +348,7 @@ function ConfiguredTab({
                       <Tag>
                         {server.source === "env" ? "环境变量" : "界面配置"}
                       </Tag>
+                      <Tag>{server.kind === "http" ? "远程" : "本地"}</Tag>
                       <Tag
                         tone={
                           server.status === "connected"
@@ -358,7 +366,9 @@ function ConfiguredTab({
                       </Tag>
                     </div>
                     <p className="mt-1 font-mono text-xs break-all text-muted-foreground">
-                      {server.command} {server.args.join(" ")}
+                      {server.kind === "http"
+                        ? (server.url ?? "")
+                        : `${server.command} ${server.args.join(" ")}`}
                     </p>
                     {server.envKeys.length > 0 ? (
                       <p className="mt-1 text-xs text-muted-foreground">
@@ -401,7 +411,9 @@ function ConfiguredTab({
                             setEnvTouched(false);
                             setForm({
                               name: server.name,
+                              kind: server.kind,
                               command: server.command,
+                              url: server.url ?? "",
                               argsText: formatArgsText(server.args),
                               envText: "",
                             });
@@ -441,6 +453,25 @@ function ConfiguredTab({
         <h3 className="text-sm font-medium">
           {editing ? `编辑「${editing.name}」` : "手动添加"}
         </h3>
+        <div className="flex items-center gap-1.5">
+          {(
+            [
+              { id: "stdio", label: "本地命令" },
+              { id: "http", label: "远程端点" },
+            ] as const
+          ).map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              disabled={Boolean(editing)}
+              data-active={form.kind === item.id}
+              onClick={() => setForm((prev) => ({ ...prev, kind: item.id }))}
+              className="rounded-md border px-2 py-1 text-xs transition-colors data-[active=true]:border-foreground data-[active=true]:bg-foreground data-[active=true]:text-background disabled:opacity-60"
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
         <div className="grid gap-2 sm:grid-cols-2">
           <input
             aria-label="MCP 名称"
@@ -452,41 +483,57 @@ function ConfiguredTab({
             }
             className="rounded-md border px-2 py-1.5 text-sm outline-none disabled:opacity-60"
           />
-          <input
-            aria-label="MCP 启动命令"
-            placeholder="启动命令（npx / uvx / node …）"
-            value={form.command}
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, command: event.target.value }))
-            }
-            className="rounded-md border px-2 py-1.5 text-sm outline-none"
-          />
+          {form.kind === "http" ? (
+            <input
+              aria-label="MCP 远程端点 URL"
+              placeholder="远程端点 URL（https://…）"
+              value={form.url}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, url: event.target.value }))
+              }
+              className="rounded-md border px-2 py-1.5 font-mono text-sm outline-none"
+            />
+          ) : (
+            <input
+              aria-label="MCP 启动命令"
+              placeholder="启动命令（npx / uvx / node …）"
+              value={form.command}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, command: event.target.value }))
+              }
+              className="rounded-md border px-2 py-1.5 text-sm outline-none"
+            />
+          )}
         </div>
-        <textarea
-          aria-label="MCP 参数"
-          placeholder={"参数（一行一个，含空格的值直接写整行）"}
-          value={form.argsText}
-          onChange={(event) =>
-            setForm((prev) => ({ ...prev, argsText: event.target.value }))
-          }
-          rows={3}
-          className="w-full rounded-md border px-2 py-1.5 font-mono text-xs outline-none"
-        />
-        <textarea
-          aria-label="MCP 环境变量"
-          placeholder={
-            editing && editing.envKeys.length > 0
-              ? `环境变量（一行 KEY=VALUE；留空则保留已存的 ${editing.envKeys.join(", ")}）`
-              : "环境变量（一行 KEY=VALUE，可留空）"
-          }
-          value={form.envText}
-          onChange={(event) => {
-            setEnvTouched(true);
-            setForm((prev) => ({ ...prev, envText: event.target.value }));
-          }}
-          rows={2}
-          className="w-full rounded-md border px-2 py-1.5 font-mono text-xs outline-none"
-        />
+        {form.kind === "stdio" ? (
+          <>
+            <textarea
+              aria-label="MCP 参数"
+              placeholder={"参数（一行一个，含空格的值直接写整行）"}
+              value={form.argsText}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, argsText: event.target.value }))
+              }
+              rows={3}
+              className="w-full rounded-md border px-2 py-1.5 font-mono text-xs outline-none"
+            />
+            <textarea
+              aria-label="MCP 环境变量"
+              placeholder={
+                editing && editing.envKeys.length > 0
+                  ? `环境变量（一行 KEY=VALUE；留空则保留已存的 ${editing.envKeys.join(", ")}）`
+                  : "环境变量（一行 KEY=VALUE，可留空）"
+              }
+              value={form.envText}
+              onChange={(event) => {
+                setEnvTouched(true);
+                setForm((prev) => ({ ...prev, envText: event.target.value }));
+              }}
+              rows={2}
+              className="w-full rounded-md border px-2 py-1.5 font-mono text-xs outline-none"
+            />
+          </>
+        ) : null}
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -534,12 +581,7 @@ function CuratedTab({
 }: {
   busy: string | null;
   authHeaders: () => Record<string, string>;
-  onCreate: (payload: {
-    name: string;
-    command: string;
-    args: string[];
-    env?: Record<string, string>;
-  }) => Promise<boolean>;
+  onCreate: (payload: McpCreatePayload) => Promise<boolean>;
 }) {
   const [entries, setEntries] = useState<McpCuratedServer[]>([]);
   const [values, setValues] = useState<Record<string, Record<string, string>>>(
@@ -660,12 +702,7 @@ function RegistryTab({
 }: {
   busy: string | null;
   authHeaders: () => Record<string, string>;
-  onCreate: (payload: {
-    name: string;
-    command: string;
-    args: string[];
-    env?: Record<string, string>;
-  }) => Promise<boolean>;
+  onCreate: (payload: McpCreatePayload) => Promise<boolean>;
 }) {
   const [query, setQuery] = useState("");
   const [servers, setServers] = useState<McpRegistryServer[]>([]);
@@ -724,8 +761,8 @@ function RegistryTab({
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        官方 MCP 市场。目前支持本地运行的 npm / Python
-        包，远程服务暂不支持，已在列表里标注。
+        官方 MCP 市场。本地包（npm / Python）与远程端点（HTTP/SSE）都可添加；
+        两者都缺的才不可用，会有标注。
       </p>
 
       <div className="flex items-center gap-2">
@@ -782,7 +819,10 @@ function RegistryTab({
                         </span>
                         {server.version ? <Tag>v{server.version}</Tag> : null}
                         {server.installable ? (
-                          <Tag tone="on">可添加</Tag>
+                          <>
+                            {server.kind === "http" ? <Tag>远程</Tag> : null}
+                            <Tag tone="on">可添加</Tag>
+                          </>
                         ) : (
                           <Tag tone="err">暂不支持</Tag>
                         )}
@@ -790,9 +830,11 @@ function RegistryTab({
                       <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
                         {server.description || "（无描述）"}
                       </p>
-                      <p className="mt-1 font-mono text-[11px] text-muted-foreground/70">
+                      <p className="mt-1 font-mono text-[11px] break-all text-muted-foreground/70">
                         {server.installable
-                          ? `${server.suggestedCommand} ${server.suggestedArgs.join(" ")}`
+                          ? server.kind === "http"
+                            ? (server.suggestedUrl ?? "")
+                            : `${server.suggestedCommand} ${server.suggestedArgs.join(" ")}`
                           : (server.unsupportedReason ?? "")}
                       </p>
                     </div>
@@ -805,9 +847,19 @@ function RegistryTab({
                           : (server.unsupportedReason ?? "")
                       }
                       onClick={() => {
+                        if (server.kind === "http") {
+                          if (!server.suggestedUrl) return;
+                          void onCreate({
+                            name: server.suggestedName,
+                            kind: "http",
+                            url: server.suggestedUrl,
+                          });
+                          return;
+                        }
                         if (!server.suggestedCommand) return;
                         void onCreate({
                           name: server.suggestedName,
+                          kind: "stdio",
                           command: server.suggestedCommand,
                           args: server.suggestedArgs,
                         });

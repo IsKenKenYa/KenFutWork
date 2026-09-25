@@ -1,13 +1,15 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 import type { ServerEnv } from "../../config/env.js";
 import type { ToolRegistry } from "../../kernel/types.js";
 import { type McpClientLike, registerMcpServerTools } from "./mcp-tools.js";
 import type {
+  McpServerCreateRaw,
   McpServerPatch,
   McpServerStore,
-  McpServerUpsertInput,
   PublicMcpServer,
 } from "./server-store.js";
 
@@ -32,8 +34,11 @@ export interface McpServerStatus {
   source: "env" | "managed";
   enabled: boolean;
   status: McpServerStatusState;
+  kind: "stdio" | "http";
   command: string;
   args: string[];
+  /** http 类型的远程端点 URL（stdio 为 null）。 */
+  url: string | null;
   envKeys: string[];
   toolCount: number;
   /** 上次连接失败原因（status=error 时有值）。 */
@@ -44,7 +49,7 @@ export interface McpService {
   listStatuses(): Promise<McpServerStatus[]>;
   /** 启动期连接：环境变量 + 库内启用项。 */
   connectAll(): Promise<void>;
-  create(input: McpServerUpsertInput): Promise<PublicMcpServer>;
+  create(input: McpServerCreateRaw): Promise<PublicMcpServer>;
   update(id: string, patch: McpServerPatch): Promise<PublicMcpServer | null>;
   setEnabled(id: string, enabled: boolean): Promise<PublicMcpServer | null>;
   remove(id: string): Promise<number>;
@@ -73,24 +78,56 @@ export function createMcpService(options: {
     return options.env.mcpServers ?? [];
   }
 
-  async function connect(
-    name: string,
-    command: string,
-    args: string[],
-    env: Record<string, string>,
-  ) {
+  /** 连接配置：stdio 走本地子进程；http 走远程端点（command 为空串、url 承载端点）。 */
+  type ConnectSpec = {
+    kind: "stdio" | "http";
+    command: string;
+    url: string | null;
+    args: string[];
+    env: Record<string, string>;
+  };
+
+  /** http 先试 Streamable HTTP，握手失败回退旧 SSE 端点（官方推荐顺序）。 */
+  async function openClient(spec: ConnectSpec): Promise<Client> {
+    const client = new Client({
+      name: "kenfutwork-server",
+      version: options.env.version,
+    });
+    if (spec.kind === "http" && spec.url) {
+      const url = new URL(spec.url);
+      try {
+        // SDK 的 StreamableHTTPClientTransport.sessionId 声明为可选，
+        // 与 Transport 接口的必填声明在 exactOptionalPropertyTypes 下不相容（运行时兼容）
+        await client.connect(
+          new StreamableHTTPClientTransport(url) as Parameters<
+            Client["connect"]
+          >[0],
+        );
+        return client;
+      } catch (streamableError) {
+        try {
+          await client.connect(new SSEClientTransport(url));
+          return client;
+        } catch {
+          // 两个端点协议都失败：抛 Streamable HTTP 的原始错误（更贴近用户配置的问题）
+          throw streamableError;
+        }
+      }
+    }
+    await client.connect(
+      new StdioClientTransport({
+        command: spec.command,
+        args: spec.args,
+        env: spec.env,
+      }),
+    );
+    return client;
+  }
+
+  async function connect(name: string, spec: ConnectSpec) {
     await disconnect(name);
     try {
-      const transport = new StdioClientTransport({
-        command,
-        args,
-        env,
-      });
-      const mcpClient = new Client({
-        name: "kenfutwork-server",
-        version: options.env.version,
-      });
-      await mcpClient.connect(transport);
+      const mcpClient = await openClient(spec);
       const client: McpClientLike = {
         listTools: async () => {
           const result = await mcpClient.listTools();
@@ -145,7 +182,9 @@ export function createMcpService(options: {
 
   async function reconcile(server: {
     name: string;
+    kind: "stdio" | "http";
     command: string;
+    url: string | null;
     args: string[];
     env: Record<string, string>;
     enabled: boolean;
@@ -154,7 +193,13 @@ export function createMcpService(options: {
       await disconnect(server.name);
       return;
     }
-    await connect(server.name, server.command, server.args, server.env);
+    await connect(server.name, {
+      kind: server.kind,
+      command: server.command,
+      url: server.url,
+      args: server.args,
+      env: server.env,
+    });
   }
 
   async function toStatus(server: {
@@ -162,7 +207,9 @@ export function createMcpService(options: {
     name: string;
     source: "env" | "managed";
     enabled: boolean;
+    kind: "stdio" | "http";
     command: string;
+    url: string | null;
     args: string[];
     envKeys: string[];
   }): Promise<McpServerStatus> {
@@ -190,7 +237,9 @@ export function createMcpService(options: {
       .map((server) => ({
         id: null,
         name: server.name,
+        kind: "stdio" as const,
         command: server.command,
+        url: null,
         args: server.args ?? [],
         env: server.env ?? {},
         enabled: true,
@@ -212,7 +261,9 @@ export function createMcpService(options: {
             name: server.name,
             source: server.source,
             enabled: server.enabled,
+            kind: server.kind,
             command: server.command,
+            url: server.url,
             args: server.args,
             envKeys: Object.keys(server.env),
           }),
@@ -249,7 +300,18 @@ export function createMcpService(options: {
       }
     },
 
-    async create(input) {
+    async create(rawInput) {
+      // 归一化：kind 缺省 stdio；http 行 command 存空串（列 NOT NULL），url 承载端点
+      const kind = rawInput.kind ?? "stdio";
+      const input = {
+        name: rawInput.name,
+        kind,
+        command: kind === "http" ? "" : (rawInput.command ?? ""),
+        args: rawInput.args,
+        url: kind === "http" ? (rawInput.url ?? null) : null,
+        env: rawInput.env,
+        enabled: rawInput.enabled,
+      };
       const created = await options.store.create(input);
       await reconcile(created);
       // 回读公开形态（env 值不下发）
@@ -309,7 +371,9 @@ export function createMcpService(options: {
         (envFallback
           ? {
               name: envFallback.name,
+              kind: "stdio" as const,
               command: envFallback.command,
+              url: null,
               args: envFallback.args ?? [],
               env: envFallback.env ?? {},
               enabled: true,
