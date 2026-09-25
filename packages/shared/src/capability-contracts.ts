@@ -198,5 +198,19 @@ export const usageStatsResponseSchema = z.object({
       tokens: z.number().int().nonnegative(),
     }),
   ),
+  /**
+   * 窗口内**逐日 × 模型**的 token 序列（趋势图按模型画多条线用）。
+   *
+   * 每个 `tokens` 数组与 `daily` 等长、按下标对齐（缺数据的天补 0）；
+   * 按 `byModel` 同序（用量降序）。老服务端可能没有这个字段。
+   */
+  dailyByModel: z
+    .array(
+      z.object({
+        model: z.string(),
+        tokens: z.array(z.number().int().nonnegative()),
+      }),
+    )
+    .default([]),
 });
 export type UsageStatsResponse = z.infer<typeof usageStatsResponseSchema>;

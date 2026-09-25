@@ -120,6 +120,8 @@ export function createUsageService(options: {
 
     const dailyTotals = new Map<string, number>();
     const modelTotals = new Map<string, { provider: string; tokens: number }>();
+    /** 逐日 × 模型：趋势图按模型画多条线（与 daily 同窗口、按下标对齐）。 */
+    const modelDaily = new Map<string, Map<string, number>>();
     const totals = { tokens: 0, inputTokens: 0, outputTokens: 0 };
 
     // 热力图要铺满一年（参考图是一整年的格子），故另起一个窗口的逐日聚合
@@ -143,6 +145,9 @@ export function createUsageService(options: {
       };
       bucket.tokens += tokens;
       modelTotals.set(row.model, bucket);
+      const perDay = modelDaily.get(row.model) ?? new Map<string, number>();
+      perDay.set(date, (perDay.get(date) ?? 0) + tokens);
+      modelDaily.set(row.model, perDay);
     }
 
     const heatmap: UsageStatsResponse["heatmap"] = [];
@@ -173,6 +178,25 @@ export function createUsageService(options: {
       cursor = addUtcDays(cursor, -1);
     }
 
+    const byModel = [...modelTotals.entries()]
+      .map(([model, bucket]) => ({
+        provider: bucket.provider,
+        model,
+        tokens: bucket.tokens,
+      }))
+      .sort((a, b) => b.tokens - a.tokens);
+
+    // 逐日 × 模型：与 byModel 同序（用量降序），逐日数组与 daily 按下标对齐
+    const dailyByModel: UsageStatsResponse["dailyByModel"] = byModel.map(
+      (entry) => {
+        const perDay = modelDaily.get(entry.model);
+        return {
+          model: entry.model,
+          tokens: daily.map((day) => perDay?.get(day.date) ?? 0),
+        };
+      },
+    );
+
     return {
       rangeDays,
       totals,
@@ -182,13 +206,8 @@ export function createUsageService(options: {
       longestSessionSeconds,
       daily,
       heatmap,
-      byModel: [...modelTotals.entries()]
-        .map(([model, bucket]) => ({
-          provider: bucket.provider,
-          model,
-          tokens: bucket.tokens,
-        }))
-        .sort((a, b) => b.tokens - a.tokens),
+      byModel,
+      dailyByModel,
     };
   }
 
