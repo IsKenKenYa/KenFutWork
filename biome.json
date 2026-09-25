@@ -29,7 +29,8 @@
       "!**/gen",
       "!**/data",
       "!**/logs",
-      "!**/runtime"
+      "!**/runtime",
+      "!**/flow"
     ]
   },
   "formatter": {

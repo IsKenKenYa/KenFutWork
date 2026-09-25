@@ -88,9 +88,7 @@ describe("部署形态与第三方插件开关", () => {
  */
 describe("KENFUTWORK_FLOW_FRONTEND_URL 解析", () => {
   it("空值返回 undefined；合法 origin 原样收下", () => {
-    expect(
-      loadServerEnv({}, {}).flowFrontendUrl,
-    ).toBeUndefined();
+    expect(loadServerEnv({}, {}).flowFrontendUrl).toBeUndefined();
     expect(
       loadServerEnv(
         {},

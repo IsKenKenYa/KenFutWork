@@ -1,0 +1,373 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "KenFutWork 整体架构",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/IsKenKenYa/KenFutWork",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "602af81e6f2ed07fba39611d163ed6164982f63b"
+    },
+    "viewBox": [1340, 645],
+    "views": [
+      {
+        "id": "main-path",
+        "label": "主请求链路",
+        "focus": ["web", "server", "agent", "llm"],
+        "note": "浏览器经 HTTP/WS 进入服务端，run 在服务端进程内流式调用 BYOK 供应商。"
+      },
+      {
+        "id": "async-path",
+        "label": "异步生成通道",
+        "focus": ["agent", "pgmq", "worker", "blob"],
+        "note": "图/视频生成走 PGMQ 队列，由独立 Worker 消费并写 Blob 存储。"
+      },
+      {
+        "id": "security",
+        "label": "鉴权与凭证",
+        "focus": ["auth", "pg", "llm"],
+        "note": "Bearer 会话仅存 SHA-256，工作区隔离靠应用层谓词，BYOK 密钥加密落库。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "web",
+      "type": "frontend",
+      "label": "Web 工作台",
+      "sublabel": "Next.js 16 · /workbench",
+      "tag": "React 19",
+      "pos": [30, 160],
+      "size": [140, 70],
+      "sources": [
+        {
+          "path": "apps/web/src/app/workbench/page.tsx",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "tauri",
+      "type": "frontend",
+      "label": "Tauri 桌面壳",
+      "sublabel": "窗口 / 托盘 / 自更新",
+      "tag": "sidecar",
+      "pos": [30, 300],
+      "size": [140, 70],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/lib.rs",
+          "line": 23
+        }
+      ]
+    },
+    {
+      "id": "server",
+      "type": "backend",
+      "label": "Fastify 服务端",
+      "sublabel": "HTTP + WS :3001",
+      "tag": "插件内核",
+      "pos": [303, 150],
+      "size": [170, 80],
+      "sources": [
+        {
+          "path": "apps/server/src/app.ts",
+          "line": 28
+        }
+      ]
+    },
+    {
+      "id": "auth",
+      "type": "security",
+      "label": "鉴权与工作区隔离",
+      "sublabel": "Bearer 会话 · :workspace 谓词",
+      "tag": "FORM-9",
+      "pos": [563, 40],
+      "size": [180, 70],
+      "sources": [
+        {
+          "path": "apps/server/src/features/auth/plugin.ts",
+          "line": 24
+        }
+      ]
+    },
+    {
+      "id": "agent",
+      "type": "backend",
+      "label": "Agent 运行时",
+      "sublabel": "deepagents · LangGraph",
+      "tag": "同进程流式",
+      "pos": [563, 280],
+      "size": [180, 80],
+      "sources": [
+        {
+          "path": "apps/server/src/agent/deep-agent.ts",
+          "line": 438
+        }
+      ]
+    },
+    {
+      "id": "sandbox",
+      "type": "backend",
+      "label": "沙箱工作区",
+      "sublabel": "tmp/sandbox/<canvasId>",
+      "tag": "LocalShell",
+      "pos": [563, 430],
+      "size": [180, 70],
+      "sources": [
+        {
+          "path": "apps/server/src/agent/sandbox-dir.ts",
+          "line": 28
+        }
+      ]
+    },
+    {
+      "id": "pg",
+      "type": "database",
+      "label": "Postgres 17",
+      "sublabel": "唯一持久化",
+      "tag": "桌面内嵌",
+      "pos": [870, 40],
+      "size": [170, 70],
+      "sources": [
+        {
+          "path": "apps/server/src/features/persistence/providers/postgres.ts",
+          "line": 82
+        }
+      ]
+    },
+    {
+      "id": "llm",
+      "type": "external",
+      "label": "LLM / 生成供应商",
+      "sublabel": "OpenAI 兼容 · Gemini · Vertex…",
+      "tag": "BYOK",
+      "pos": [870, 280],
+      "size": [170, 80],
+      "sources": [
+        {
+          "path": "apps/server/src/generation/types.ts",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "pgmq",
+      "type": "messagebus",
+      "label": "PGMQ 队列",
+      "sublabel": "image / video jobs",
+      "tag": "桌面 in-process",
+      "pos": [870, 430],
+      "size": [170, 70],
+      "sources": [
+        {
+          "path": "apps/server/src/features/queue/providers/pgmq.ts",
+          "line": 47
+        }
+      ]
+    },
+    {
+      "id": "worker",
+      "type": "backend",
+      "label": "Worker 进程",
+      "sublabel": "生成任务消费",
+      "tag": "独立进程",
+      "pos": [1140, 430],
+      "size": [170, 70],
+      "sources": [
+        {
+          "path": "apps/server/src/worker.ts",
+          "line": 26
+        }
+      ]
+    },
+    {
+      "id": "blob",
+      "type": "database",
+      "label": "Blob 存储",
+      "sublabel": "本地 FS · asset_objects",
+      "tag": "/api/blobs 签名",
+      "pos": [1140, 540],
+      "size": [170, 70],
+      "sources": [
+        {
+          "path": "apps/server/src/features/blob/plugin.ts",
+          "line": 5
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "客户端形态",
+      "wraps": ["web", "tauri"]
+    },
+    {
+      "kind": "region",
+      "label": "服务端进程（Fastify 5）",
+      "wraps": ["server", "auth", "agent", "sandbox"]
+    },
+    {
+      "kind": "region",
+      "label": "队列与后台",
+      "wraps": ["pgmq", "worker", "blob"]
+    }
+  ],
+  "connections": [
+    {
+      "id": "web-to-server",
+      "from": "web",
+      "to": "server",
+      "label": "HTTP /api/* · WS /api/ws",
+      "variant": "emphasis"
+    },
+    {
+      "id": "tauri-to-server",
+      "from": "tauri",
+      "to": "server",
+      "label": "spawn sidecar · 探活",
+      "variant": "dashed"
+    },
+    {
+      "id": "server-to-auth",
+      "from": "server",
+      "to": "auth",
+      "label": "Bearer 令牌校验",
+      "variant": "security"
+    },
+    {
+      "id": "server-to-agent",
+      "from": "server",
+      "to": "agent",
+      "label": "agent.run 流式执行",
+      "variant": "emphasis"
+    },
+    {
+      "id": "server-to-pg",
+      "from": "server",
+      "to": "pg",
+      "label": "SQL · :workspace 谓词隔离",
+      "variant": "emphasis",
+      "labelAt": [640, 183],
+      "via": [[790, 190], [790, 75]]
+    },
+    {
+      "id": "auth-to-pg",
+      "from": "auth",
+      "to": "pg",
+      "label": "会话令牌 SHA-256 查验",
+      "variant": "security"
+    },
+    {
+      "from": "agent",
+      "to": "pg",
+      "label": "LangGraph 检查点 · run 簿记",
+      "labelAt": [700, 165],
+      "id": "agent-to-pg",
+      "via": [[815, 320], [815, 145], [955, 145]],
+      "toSide": "bottom"
+    },
+    {
+      "id": "agent-to-llm",
+      "from": "agent",
+      "to": "llm",
+      "label": "BYOK 调用",
+      "variant": "security",
+      "fromSide": "right",
+      "toSide": "left",
+      "via": [[845, 320]],
+      "labelAt": [776, 306]
+    },
+    {
+      "id": "agent-to-sandbox",
+      "from": "agent",
+      "to": "sandbox",
+      "label": "LocalShell 工具 · 影子 git",
+      "labelDy": 24
+    },
+    {
+      "id": "agent-to-pgmq",
+      "from": "agent",
+      "to": "pgmq",
+      "label": "提交生成任务",
+      "variant": "dashed",
+      "labelAt": [745, 395]
+    },
+    {
+      "id": "pgmq-to-worker",
+      "from": "pgmq",
+      "to": "worker",
+      "label": "read_with_poll",
+      "labelAt": [1090, 487]
+    },
+    {
+      "id": "worker-to-llm",
+      "from": "worker",
+      "to": "llm",
+      "label": "图/视频生成调用",
+      "variant": "security",
+      "fromSide": "left",
+      "toSide": "right",
+      "via": [[1090, 465], [1090, 320]]
+    },
+    {
+      "id": "worker-to-blob",
+      "from": "worker",
+      "to": "blob",
+      "label": "生成资产写入",
+      "labelAt": [1225, 514]
+    },
+    {
+      "from": "worker",
+      "to": "pg",
+      "label": "状态结算 · 失败退积分",
+      "fromSide": "top",
+      "toSide": "right",
+      "via": [[1225, 400], [1225, 75]],
+      "labelAt": [1225, 240],
+      "id": "worker-to-pg"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "客户端",
+      "items": [
+        "Design 主区恒为画布 iframe",
+        "Tauri 壳只管窗口与 sidecar 生命周期",
+        "Code 模式 canvasId 即沙箱目录名"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "服务端",
+      "items": [
+        "插件内核装配 29 个 feature",
+        "run 为进程内异步流，经 WS 推流",
+        "Worker 独立进程，只消费队列"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "数据",
+      "items": [
+        "Postgres 唯一持久化（桌面内嵌）",
+        "PGMQ 双队列；桌面 in-process",
+        "Blob 本地 FS，/api/blobs 签名读取"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "安全",
+      "items": [
+        "会话令牌仅存 SHA-256，防枚举",
+        ":workspace 谓词强制隔离（FORM-9）",
+        "BYOK 密钥 AES-256-GCM、只写不读"
+      ]
+    }
+  ]
+}

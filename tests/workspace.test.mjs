@@ -518,25 +518,34 @@ test("provider_instances.protocol 的库约束与共享契约枚举一致", asyn
   const enumMatch = contracts.match(
     /providerProtocolSchema = z\.enum\(\[([^\]]*)\]\)/,
   );
-  assert.ok(enumMatch, "provider-contracts.ts 里应有 providerProtocolSchema 的封闭枚举");
+  assert.ok(
+    enumMatch,
+    "provider-contracts.ts 里应有 providerProtocolSchema 的封闭枚举",
+  );
   const contractProtocols = [...enumMatch[1].matchAll(/"([^"]+)"/g)].map(
     (match) => match[1],
   );
 
   // 迁移按文件名顺序执行，取**最后一处**定义（前向迁移的 drop/add 覆盖建表时的初值）。
   let constraintProtocols = null;
-  for (const name of readdirSync(path.join(rootDir, "supabase/migrations")).sort()) {
+  for (const name of readdirSync(
+    path.join(rootDir, "supabase/migrations"),
+  ).sort()) {
     if (!name.endsWith(".sql")) continue;
-    const sql = readFileSync(path.join(rootDir, "supabase/migrations", name), "utf8");
-    for (const match of sql.matchAll(
-      /CHECK \(protocol IN \(([^)]*)\)\)/gi,
-    )) {
+    const sql = readFileSync(
+      path.join(rootDir, "supabase/migrations", name),
+      "utf8",
+    );
+    for (const match of sql.matchAll(/CHECK \(protocol IN \(([^)]*)\)\)/gi)) {
       constraintProtocols = [...match[1].matchAll(/'([^']+)'/g)].map(
         (literal) => literal[1],
       );
     }
   }
-  assert.ok(constraintProtocols, "应存在 provider_instances 协议 CHECK 约束定义");
+  assert.ok(
+    constraintProtocols,
+    "应存在 provider_instances 协议 CHECK 约束定义",
+  );
   assert.deepEqual(
     [...contractProtocols].sort(),
     [...constraintProtocols].sort(),
