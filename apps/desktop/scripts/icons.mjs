@@ -104,9 +104,26 @@ for (const [name, size] of [
     .png({ compressionLevel: 9 })
     .toFile(join(publicDir, name));
 }
+/**
+ * logo-mark.png（应用内裸标记）也并入这条链：**同一份 mark** 居中放进 1024² 透明画布——
+ * 墨迹与桌面图标逐像素同位（宽 80%，标是宽标、高自然 ~71.6%），应用内和桌面观感一致
+ * （2026-09-26 用户口径「所有图标都保持占比 80%」；此前的 805×721 裁边版在 size-* 方框里
+ * 还会被水平拉伸 ~11%，正方形画布顺带治掉）。
+ */
+await sharp({
+  create: {
+    width: CANVAS,
+    height: CANVAS,
+    channels: 4,
+    background: { r: 0, g: 0, b: 0, alpha: 0 },
+  },
+})
+  .composite([{ input: mark, gravity: "center" }])
+  .png({ compressionLevel: 9 })
+  .toFile(join(publicDir, "logo-mark.png"));
 console.log(
   `应用图标已合成（白底圆角 ${RADIUS}/${CANVAS}）：${composedPath}\n` +
-    `  同时写入 apps/web/public/{logo.png, app-icon.png, favicon.png, apple-touch-icon.png}`,
+    `  同时写入 apps/web/public/{logo.png, app-icon.png, favicon.png, apple-touch-icon.png, logo-mark.png}`,
 );
 
 console.log(`再用 tauri icon 出整套平台图标 → ${iconsDir}`);
