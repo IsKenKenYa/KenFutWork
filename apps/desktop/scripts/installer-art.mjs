@@ -34,8 +34,7 @@ const headerSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="150" height="5
   </defs>
   <rect width="150" height="57" fill="#ffffff"/>
   <rect x="8" y="12" width="32" height="32" rx="8" ry="8" fill="#ffffff" stroke="#dbe4f5"/>
-  <!-- 图框=圆角块同尺寸：logo-mark 自带 80% 透明边（2026-09-26 统一口径），墨迹正好占块 80%，与桌面图标一致 -->
-  <image href="mark" x="8" y="12" width="32" height="32" preserveAspectRatio="xMidYMid meet"/>
+  <image href="mark" x="13" y="17" width="22" height="22" preserveAspectRatio="xMidYMid meet"/>
   <text x="45" y="36" font-family="${FONT}, sans-serif" font-size="17" font-weight="600" fill="${INK}">KenFutWork</text>
   <rect x="0" y="55" width="150" height="2" fill="url(#line)"/>
 </svg>`;
@@ -53,9 +52,9 @@ const sidebarSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="164" height="
   <rect width="164" height="314" fill="#ffffff"/>
   <!-- 圆角卡片：一点点圆角（用户口径） -->
   <rect x="10" y="58" width="144" height="198" rx="12" ry="12" fill="url(#card)" stroke="#dbe4f5"/>
-  <!-- 图标：白底圆角块（22% 圆角，与桌面图标同一套）；图框=块同尺寸，墨迹占块 80% 与桌面一致（2026-09-26） -->
+  <!-- 图标：白底圆角块（22% 圆角，与桌面图标同一套） -->
   <rect x="54" y="96" width="56" height="56" rx="13" ry="13" fill="#ffffff" stroke="#dbe4f5"/>
-  <image href="mark" x="54" y="96" width="56" height="56" preserveAspectRatio="xMidYMid meet"/>
+  <image href="mark" x="63" y="105" width="38" height="38" preserveAspectRatio="xMidYMid meet"/>
   <text x="82" y="184" text-anchor="middle" font-family="${FONT}, sans-serif" font-size="19" font-weight="600" fill="${BLUE}">KenFutWork</text>
   <text x="82" y="208" text-anchor="middle" font-family="${FONT}, sans-serif" font-size="12" font-weight="500" fill="#5c6b8f">BYOK 本地 AI 工作台</text>
   <rect x="0" y="311" width="164" height="3" fill="url(#line)"/>
