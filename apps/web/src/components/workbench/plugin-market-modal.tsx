@@ -3,15 +3,16 @@
 import type { PluginMarketEntry } from "@kenfutwork/shared";
 import {
   BarChart3,
+  Blocks,
   Bot,
   Code2,
-  Folder,
   Layers,
   Palette,
   Plug,
   Search,
   Server,
   ShieldCheck,
+  Workflow,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/components/toast";
@@ -35,8 +36,9 @@ const ICONS: Record<
   mcp: Server,
   usage: BarChart3,
   canvas: Palette,
-  skills: Folder,
+  skills: Blocks,
   "plugin-registry": Layers,
+  "kenfutwork-flow": Workflow,
 };
 
 type MarketTab = "discover" | "installed";
