@@ -6,12 +6,14 @@ import {
   runCreateRequestSchema,
   runCreateResponseSchema,
   unauthenticatedErrorResponseSchema,
+  type WorkspaceSettings,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { AgentRunService } from "../agent/runtime.js";
 import { resolveSandboxScopeId } from "../agent/sandbox-dir.js";
 import {
   BUILTIN_SUBAGENT_DISPATCHER,
+  listCustomSubAgents,
   listDeclaredSubAgents,
 } from "../agent/sub-agents.js";
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
@@ -83,10 +85,26 @@ export async function registerRunRoutes(
         }),
       );
     }
+    // 自定义子智能体按工作区设置读（设置页可增删的那份）；装配侧同一来源，
+    // 与内置撞名的项不会装配，这里也如实剔除（界面不显示「不会生效」的行）。
+    let custom: WorkspaceSettings["subagents"] = [];
+    if (options.settingsService && options.viewerService) {
+      try {
+        const viewer = await options.viewerService.ensureViewer(user);
+        const settings = await options.settingsService.getWorkspaceSettings(
+          user,
+          viewer.workspace.id,
+        );
+        custom = listCustomSubAgents(settings.subagents);
+      } catch {
+        // 读不到就当没有：内置清单仍然可用（设置页对自定义项另行报错）
+      }
+    }
     return reply.code(200).send(
       agentSubagentListResponseSchema.parse({
         subagents: listDeclaredSubAgents(),
         builtin: [BUILTIN_SUBAGENT_DISPATCHER],
+        custom,
       }),
     );
   });

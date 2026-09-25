@@ -355,6 +355,17 @@ export const agentSubagentListResponseSchema = z.object({
       description: z.string(),
     }),
   ),
+  /** 用户自定义子智能体（工作区设置里增删，可删除）。 */
+  custom: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        label: z.string().min(1),
+        description: z.string(),
+        systemPrompt: z.string(),
+      }),
+    )
+    .default([]),
 });
 
 export type AgentSubagentListResponse = z.infer<

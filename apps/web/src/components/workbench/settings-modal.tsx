@@ -11,7 +11,6 @@ import { ProviderSettings } from "@/components/provider-settings";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { AboutSection } from "@/components/workbench/about-section";
 import { AccountSection } from "@/components/workbench/account-section";
-import { ApiTokensSection } from "@/components/workbench/api-tokens-section";
 import { AppearanceSection } from "@/components/workbench/appearance-section";
 import { BrowserSettingsSection } from "@/components/workbench/browser-settings-section";
 import { CommandsSection } from "@/components/workbench/commands-section";
@@ -36,11 +35,8 @@ import {
 export type SettingsTab =
   | "pluginPanels"
   | "general"
-  | "appearance"
   | "commands"
   | "hooks"
-  | "apiTokens"
-  | "model"
   | "providers"
   | "permissions"
   | "browser"
@@ -53,13 +49,10 @@ export type SettingsTab =
   | "about";
 
 /**
- * 侧栏分组（R5-1）：基础设置 / Agent 能力 / 数据与统计。
+ * 侧栏分组：基础设置 / Agent 能力 / 数据与统计。
  *
- * 参考图（`agent-设置-权限.png` / `设置添加使用统计以及索引相关内容.png`）里点名、
- * 且本产品**真有对应页面**的条目，作为**别名行**列在对应分组下（点击跳到那一页）——
- * 用户按参考图的名字能找得到，又不复制出第二份内容。
- * 没做的那几条（外观/命令/钩子/工作树/对话流/外部应用授权/Beta/云端运行环境）在
- * `docs/日志.md` §二十二里逐条写明不做的原因。
+ * 用户口径（2026-09-26）：「外观和模型合并到通用」「外部应用授权去掉」——
+ * 通用页 = 外观 + 模型 + 个人资料 + 终端；apiTokens 页整体下线（组件同删）。
  */
 const TAB_GROUPS: Array<{
   label: string;
@@ -69,8 +62,6 @@ const TAB_GROUPS: Array<{
     label: "基础设置",
     tabs: [
       { id: "general", label: "通用" },
-      { id: "appearance", label: "外观" },
-      { id: "model", label: "模型" },
       { id: "providers", label: "供应商" },
       { id: "browser", label: "浏览器" },
     ],
@@ -82,7 +73,6 @@ const TAB_GROUPS: Array<{
       { id: "rules", label: "规则与记忆" },
       { id: "commands", label: "命令" },
       { id: "hooks", label: "钩子" },
-      { id: "apiTokens", label: "外部应用授权" },
       { id: "subagents", label: "子智能体" },
     ],
   },
@@ -161,6 +151,9 @@ export function SettingsModal({
   const [autoCompactEnabled, setAutoCompactEnabled] = useState(true);
   const [commands, setCommands] = useState<WorkspaceSettings["commands"]>([]);
   const [hooks, setHooks] = useState<WorkspaceSettings["hooks"]>([]);
+  const [subagents, setSubagents] = useState<WorkspaceSettings["subagents"]>(
+    [],
+  );
   const [loading, setLoading] = useState(false);
 
   const accessTokenRef = useRef(session?.access_token);
@@ -191,6 +184,7 @@ export function SettingsModal({
       setAutoCompactEnabled(settings.settings.autoCompactEnabled);
       setCommands(settings.settings.commands);
       setHooks(settings.settings.hooks);
+      setSubagents(settings.settings.subagents);
     } catch {
       // 加载失败时保留空态，各分区自行提示
     } finally {
@@ -280,6 +274,19 @@ export function SettingsModal({
     [getToken],
   );
 
+  /** 自定义子智能体增删后回写（PUT 部分更新只送这一个字段）。 */
+  const handleSubagentsSave = useCallback(
+    async (next: WorkspaceSettings["subagents"]) => {
+      const token = getToken();
+      if (!token) return;
+      const result = await updateWorkspaceSettings(token, {
+        subagents: next,
+      });
+      setSubagents(result.settings.subagents);
+    },
+    [getToken],
+  );
+
   const stableFetchModels = useCallback(
     () => fetchModels(getToken() ?? undefined),
     [getToken],
@@ -334,6 +341,15 @@ export function SettingsModal({
               <ListLoading label="正在加载设置…" rows={2} />
             ) : activeTab === "general" ? (
               <div className="space-y-8">
+                <AppearanceSection />
+                <AgentSection
+                  agentMaxRetries={agentMaxRetries}
+                  defaultModel={defaultModel}
+                  fetchModels={stableFetchModels}
+                  onSave={handleModelSave}
+                  autoCompactEnabled={autoCompactEnabled}
+                  onToggleAutoCompact={handleAutoCompactToggle}
+                />
                 {profile ? (
                   <ProfileSection
                     displayName={profile.displayName}
@@ -343,17 +359,6 @@ export function SettingsModal({
                 ) : null}
                 {token ? <TerminalSettingsSection accessToken={token} /> : null}
               </div>
-            ) : activeTab === "appearance" ? (
-              <AppearanceSection />
-            ) : activeTab === "model" ? (
-              <AgentSection
-                agentMaxRetries={agentMaxRetries}
-                defaultModel={defaultModel}
-                fetchModels={stableFetchModels}
-                onSave={handleModelSave}
-                autoCompactEnabled={autoCompactEnabled}
-                onToggleAutoCompact={handleAutoCompactToggle}
-              />
             ) : activeTab === "providers" ? (
               token ? (
                 <ProviderSettings accessToken={token} />
@@ -404,13 +409,13 @@ export function SettingsModal({
                   onSaved={setHooks}
                 />
               ) : null
-            ) : activeTab === "apiTokens" ? (
-              token ? (
-                <ApiTokensSection accessToken={token} />
-              ) : null
             ) : activeTab === "subagents" ? (
               token ? (
-                <SubagentsSection accessToken={token} />
+                <SubagentsSection
+                  accessToken={token}
+                  subagents={subagents}
+                  onSaved={handleSubagentsSave}
+                />
               ) : null
             ) : activeTab === "account" ? (
               profile ? (

@@ -1161,6 +1161,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         end: [],
       };
       let hookShell: WorkspaceSettings["terminalShell"] | undefined;
+      /** 用户自定义子智能体（工作区设置）：装配时追加进 deepagents subagents。 */
+      let customSubagents: WorkspaceSettings["subagents"] = [];
 
       try {
         /** 被拒工具调用的记账（含连续拒绝计数）；门存在时才有值。 */
@@ -1478,6 +1480,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               end: hooksFor(workspaceSettings?.hooks, "turn-end"),
             };
             hookShell = workspaceSettings?.terminalShell;
+            // 自定义子智能体同一趟读（装配时追加，与内置撞名的会被丢弃）
+            customSubagents = workspaceSettings?.subagents ?? [];
           }
 
           if (hookCommands.start.length > 0 && backendResult.sandboxDir) {
@@ -1623,6 +1627,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ...(resolvedModel ? { model: resolvedModel } : {}),
             ...(persistImage ? { persistImage } : {}),
             ...(autoCompact ? { autoCompact } : {}),
+            // 用户自定义子智能体（工作区设置，设置页可增删）
+            ...(customSubagents.length > 0 ? { customSubagents } : {}),
             // execute 工具由 LocalShellBackend 自动提供，无需手动传递
             ...(submitImageJob ? { submitImageJob } : {}),
             ...(submitVideoJob ? { submitVideoJob } : {}),

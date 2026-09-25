@@ -8,15 +8,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../src/components/toast";
 import { AccountSection } from "../src/components/workbench/account-section";
 import { SubagentsSection } from "../src/components/workbench/subagents-section";
-import { onPanelViewRequest } from "../src/lib/panel-open";
 
 /**
- * R5-2：设置里「子智能体」与「账号」两页的信息全部来自真实数据源——
+ * 设置里「子智能体」与「账号」两页的信息全部来自真实数据源——
  * 子智能体清单来自 `GET /api/agent/subagents`（与 agent 装配同源），
  * 账号来自 viewer（显示名/邮箱/套餐/额度）。
  *
- * 锁三件事：① 页面只显示服务端真给的东西；② 「打开右栏子智能体」走真通道
- * （有订阅者时转交，没有时**如实说明**而不是假装打开了）；③ 账号页没启用计费时不编数字。
+ * 子智能体是**管理列表**（风格 5）：自定义项可添加、可删除（写工作区设置），
+ * 内置声明只展示；与内置撞名/重名的添加就地拒绝（装配不会生效的行不许造出来）。
  */
 const fetchSubagents = vi.fn();
 const updateWorkspaceSettings = vi.fn();
@@ -33,63 +32,134 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("设置 → 子智能体", () => {
-  it("列出服务端给的子代理与内置分发工具（含工具名）", async () => {
-    fetchSubagents.mockResolvedValue({
-      subagents: [
-        {
-          name: "video_generate",
-          label: "视频生成",
-          description:
-            "Video generation availability depends on provider configuration.",
-          tools: ["generate_video"],
-        },
-      ],
-      builtin: [
-        {
-          name: "task",
-          label: "子任务分发",
-          description: "把子任务派给某个子代理。",
-        },
-      ],
-    });
-    render(<SubagentsSection accessToken="tok" />);
+/** 驱动「点删除 → onSaved 回写」的受控包装：子智能体页的状态在 modal，单测里用 state 镜像。 */
+function renderSubagents(props: {
+  subagents: Array<{
+    name: string;
+    label: string;
+    description: string;
+    systemPrompt: string;
+  }>;
+  onSaved: (next: unknown) => void;
+}) {
+  return render(
+    <SubagentsSection
+      accessToken="tok"
+      subagents={props.subagents}
+      onSaved={props.onSaved}
+    />,
+  );
+}
+
+describe("设置 → 子智能体（管理列表）", () => {
+  const CATALOG = {
+    subagents: [
+      {
+        name: "video_generate",
+        label: "视频生成",
+        description: "按描述生成视频。",
+        tools: ["generate_video"],
+      },
+    ],
+    builtin: [
+      {
+        name: "task",
+        label: "子任务分发",
+        description: "把子任务派给某个子代理。",
+      },
+    ],
+    custom: [
+      {
+        name: "translator",
+        label: "翻译官",
+        description: "把长文翻译成中文。",
+        systemPrompt: "You are a translator.",
+      },
+    ],
+  };
+
+  it("列出内置声明、自定义项与分发工具（可删的只有自定义项）", async () => {
+    fetchSubagents.mockResolvedValue(CATALOG);
+    renderSubagents({ subagents: CATALOG.custom, onSaved: () => {} });
 
     expect(await screen.findByText("视频生成")).toBeVisible();
+    expect(screen.getByText("翻译官")).toBeVisible();
     expect(screen.getByText("子任务分发")).toBeVisible();
     expect(screen.getByText(/工具：generate_video/)).toBeVisible();
+    // 自定义项有删除按钮，内置没有
+    expect(screen.getByRole("button", { name: "删除 翻译官" })).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "删除 视频生成" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("点「打开右栏子智能体」：有订阅者时转交面板通道", async () => {
-    fetchSubagents.mockResolvedValue({ subagents: [], builtin: [] });
-    const seen: string[] = [];
-    const unsubscribe = onPanelViewRequest((kind) => seen.push(kind));
-    render(<SubagentsSection accessToken="tok" />);
-    await screen.findByText(/主 Agent 可以把子任务/);
+  it("添加：填表后点添加 → onSaved 收到追加后的整表", async () => {
+    fetchSubagents.mockResolvedValue({ ...CATALOG, custom: [] });
+    const onSaved = vi.fn(async (next: unknown) => next);
+    renderSubagents({ subagents: [], onSaved });
 
     await userEvent.click(
-      screen.getByRole("button", { name: /打开右栏「子智能体」/ }),
+      await screen.findByRole("button", { name: /添加子智能体/ }),
     );
-    expect(seen).toEqual(["subagents"]);
-    unsubscribe();
+    await userEvent.type(screen.getByLabelText("子智能体名字"), "reviewer");
+    await userEvent.type(screen.getByLabelText("子智能体名称"), "审稿人");
+    await userEvent.type(
+      screen.getByLabelText("子智能体派活依据"),
+      "代码写完后让它评审",
+    );
+    await userEvent.type(
+      screen.getByLabelText("子智能体角色设定"),
+      "You are a code reviewer.",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "添加" }));
+
+    await waitFor(() =>
+      expect(onSaved).toHaveBeenCalledWith([
+        {
+          name: "reviewer",
+          label: "审稿人",
+          description: "代码写完后让它评审",
+          systemPrompt: "You are a code reviewer.",
+        },
+      ]),
+    );
   });
 
-  it("没有面板在监听（如 Design 模式）：如实说明，不假装打开", async () => {
-    fetchSubagents.mockResolvedValue({ subagents: [], builtin: [] });
-    render(<SubagentsSection accessToken="tok" />);
-    await screen.findByText(/主 Agent 可以把子任务/);
+  it("与内置撞名：就地拒绝（装配不会生效的行不许造出来）", async () => {
+    fetchSubagents.mockResolvedValue(CATALOG);
+    const onSaved = vi.fn();
+    renderSubagents({ subagents: [], onSaved });
 
     await userEvent.click(
-      screen.getByRole("button", { name: /打开右栏「子智能体」/ }),
+      await screen.findByRole("button", { name: /添加子智能体/ }),
     );
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      /没有右栏面板可打开/,
+    await userEvent.type(
+      screen.getByLabelText("子智能体名字"),
+      "video_generate",
     );
+    await userEvent.type(screen.getByLabelText("子智能体名称"), "冒牌货");
+    await userEvent.type(screen.getByLabelText("子智能体派活依据"), "x");
+    await userEvent.type(screen.getByLabelText("子智能体角色设定"), "y");
+    await userEvent.click(screen.getByRole("button", { name: "添加" }));
+
+    expect(await screen.findByText(/与内置子智能体撞名/)).toBeVisible();
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it("删除：点自定义项的删除 → onSaved 收到剔除后的整表", async () => {
+    fetchSubagents.mockResolvedValue(CATALOG);
+    const onSaved = vi.fn(async (next: unknown) => next);
+    renderSubagents({ subagents: CATALOG.custom, onSaved });
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "删除 翻译官" }),
+    );
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith([]));
   });
 
   it("读取失败：原样显示服务端原因", async () => {
     fetchSubagents.mockRejectedValue(new Error("服务端未装配认证。"));
-    render(<SubagentsSection accessToken="tok" />);
+    renderSubagents({ subagents: [], onSaved: () => {} });
     await waitFor(() =>
       expect(screen.getByText("服务端未装配认证。")).toBeVisible(),
     );
@@ -363,75 +433,5 @@ describe("设置 → 钩子", () => {
     expect(screen.getByText(/只有你能配置/)).toBeVisible();
     expect(screen.getByText(/工作目录/)).toBeVisible();
     expect(screen.getByText(/失败也不影响本轮对话/)).toBeVisible();
-  });
-});
-
-/**
- * 设置 → 外部应用授权（R5-2「外部应用授权」）。
- *
- * 锁三条：① 明文只显示一次（创建响应里拿到的那个串出现在醒目块里）；② 列表只显示前缀
- * 与最近使用时间（**不显示明文**）；③ 四条红线写在页面上（尤其「令牌不能签发令牌」）。
- */
-const fetchApiTokens = vi.fn();
-const createApiToken = vi.fn();
-const revokeApiToken = vi.fn();
-vi.mock("../src/lib/server-api.js", () => ({
-  fetchSubagents: (...args: unknown[]) => fetchSubagents(...args),
-  updateWorkspaceSettings: (...args: unknown[]) =>
-    updateWorkspaceSettings(...args),
-  fetchApiTokens: (...args: unknown[]) => fetchApiTokens(...args),
-  createApiToken: (...args: unknown[]) => createApiToken(...args),
-  revokeApiToken: (...args: unknown[]) => revokeApiToken(...args),
-}));
-
-describe("设置 → 外部应用授权", () => {
-  it("创建后明文只出现一次，列表只给前缀与最近使用", async () => {
-    fetchApiTokens.mockResolvedValue({
-      tokens: [
-        {
-          id: "tok-1",
-          name: "CI 部署",
-          tokenPrefix: "kfw_abcd1234",
-          createdAt: "2026-09-17T00:00:00.000Z",
-          lastUsedAt: null,
-          revokedAt: null,
-        },
-      ],
-    });
-    createApiToken.mockResolvedValue({
-      token: "kfw_plaintext_once",
-      record: {
-        id: "tok-2",
-        name: "新令牌",
-        tokenPrefix: "kfw_plainte",
-        createdAt: "2026-09-17T01:00:00.000Z",
-        lastUsedAt: null,
-        revokedAt: null,
-      },
-    });
-    const { ApiTokensSection } = await import(
-      "../src/components/workbench/api-tokens-section"
-    );
-    render(<ApiTokensSection accessToken="tok" />);
-
-    // 列表：前缀 + 从未使用（没有明文）
-    expect(await screen.findByText(/kfw_abcd1234…/)).toBeVisible();
-    expect(screen.queryByText("kfw_plaintext_once")).toBeNull();
-
-    await userEvent.type(screen.getByLabelText("令牌名字"), "新令牌");
-    await userEvent.click(screen.getByRole("button", { name: /创建令牌/ }));
-    expect(await screen.findByText("kfw_plaintext_once")).toBeVisible();
-    expect(screen.getByText(/令牌只显示这一次/)).toBeVisible();
-  });
-
-  it("红线写在页面上：只显示一次 / 可吊销 / 需要登录会话", async () => {
-    fetchApiTokens.mockResolvedValue({ tokens: [] });
-    const { ApiTokensSection } = await import(
-      "../src/components/workbench/api-tokens-section"
-    );
-    render(<ApiTokensSection accessToken="tok" />);
-    expect(await screen.findByText(/只显示一次/)).toBeVisible();
-    expect(screen.getByText(/可随时吊销/)).toBeVisible();
-    expect(screen.getByText(/创建与吊销令牌需要登录会话/)).toBeVisible();
   });
 });

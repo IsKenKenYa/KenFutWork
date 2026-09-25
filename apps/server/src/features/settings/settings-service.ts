@@ -41,6 +41,7 @@ export type WorkspaceSettingsPatch = {
   autoCompactEnabled?: boolean | undefined;
   commands?: WorkspaceSettings["commands"] | undefined;
   hooks?: WorkspaceSettings["hooks"] | undefined;
+  subagents?: WorkspaceSettings["subagents"] | undefined;
   userRules?: string | undefined;
   ruleEntries?: string[] | undefined;
 };
@@ -106,6 +107,52 @@ function parseHooks(raw: unknown): WorkspaceSettings["hooks"] {
   return out;
 }
 
+/**
+ * 读自定义子智能体表：只信形状对的那部分；名字重复时**保留先出现的**
+ * （派活按 name 定位，重名只有一个生效）。与内置声明的重名在此不拦——
+ * 装配侧会拒掉与内置同名的自定义项（见 sub-agents.ts）。
+ */
+function parseSubagents(raw: unknown): WorkspaceSettings["subagents"] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: WorkspaceSettings["subagents"] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const record = entry as Record<string, unknown>;
+    const name = record.name;
+    const label = record.label;
+    const description = record.description;
+    const systemPrompt = record.systemPrompt;
+    if (
+      typeof name !== "string" ||
+      !/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(name.trim())
+    ) {
+      continue;
+    }
+    if (
+      typeof label !== "string" ||
+      typeof description !== "string" ||
+      typeof systemPrompt !== "string" ||
+      !label.trim() ||
+      !description.trim() ||
+      !systemPrompt.trim()
+    ) {
+      continue;
+    }
+    const trimmedName = name.trim();
+    if (seen.has(trimmedName.toLowerCase())) continue;
+    seen.add(trimmedName.toLowerCase());
+    out.push({
+      name: trimmedName,
+      label: label.trim().slice(0, 64),
+      description: description.trim().slice(0, 500),
+      systemPrompt: systemPrompt.trim().slice(0, 4_000),
+    });
+    if (out.length >= 10) break;
+  }
+  return out;
+}
+
 export function createSettingsService(options: {
   repository: SettingsRepository;
   /** Override the fallback model when no workspace setting exists. */
@@ -139,6 +186,7 @@ export function createSettingsService(options: {
       storedRules,
       storedCommands,
       storedHooks,
+      storedSubagents,
     ] = await Promise.all([
       repository.findDefaultModel(workspaceId),
       repository.findAgentMaxRetries(workspaceId),
@@ -149,6 +197,7 @@ export function createSettingsService(options: {
       repository.findUserRules(workspaceId),
       repository.findCommands(workspaceId),
       repository.findHooks(workspaceId),
+      repository.findSubagents(workspaceId),
     ]).catch(() => {
       throw new SettingsServiceError(
         "settings_read_failed",
@@ -176,6 +225,7 @@ export function createSettingsService(options: {
       autoCompactEnabled: storedAutoCompact ?? true,
       commands: parseCommands(storedCommands),
       hooks: parseHooks(storedHooks),
+      subagents: parseSubagents(storedSubagents),
       userRules: storedRules?.userRules ?? "",
       ruleEntries: storedRules?.ruleEntries ?? [],
     };
@@ -234,6 +284,9 @@ export function createSettingsService(options: {
       }
       if (patch.commands !== undefined) {
         writes.push(repository.upsertCommands(workspaceId, patch.commands));
+      }
+      if (patch.subagents !== undefined) {
+        writes.push(repository.upsertSubagents(workspaceId, patch.subagents));
       }
       if (patch.userRules !== undefined) {
         writes.push(repository.upsertUserRules(workspaceId, patch.userRules));

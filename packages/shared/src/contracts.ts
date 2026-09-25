@@ -256,6 +256,31 @@ export const workspaceSettingsSchema = z.object({
     .max(50)
     .default([]),
   /**
+   * 用户自定义子智能体（设置 →「子智能体」）：主 Agent 按 name 把子任务派给它。
+   *
+   * 只有用户能增删（模型无法改这份清单）；内置声明（如视频生成）不在这里、不可删。
+   * description 是**派活依据**（模型据此决定何时分派），systemPrompt 是它的角色设定。
+   */
+  subagents: z
+    .array(
+      z.object({
+        name: z
+          .string()
+          .trim()
+          .min(1)
+          .max(32)
+          .regex(/^[a-zA-Z][a-zA-Z0-9_-]*$/, {
+            message: "名字以字母开头，只能用字母、数字、- 与 _。",
+          }),
+        /** 中文短名（界面用）。 */
+        label: z.string().trim().min(1).max(64),
+        description: z.string().trim().min(1).max(500),
+        systemPrompt: z.string().trim().min(1).max(4_000),
+      }),
+    )
+    .max(10)
+    .default([]),
+  /**
    * 上下文自动压缩：超阈值时把较早的消息摘要掉（阈值 = 窗口 − 预留输出，摘要用本轮模型，
    * 用户转录不变、原文 offload 到工作区 /conversation_history/）。关掉时中间件不挂。
    */

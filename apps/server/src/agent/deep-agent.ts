@@ -31,7 +31,10 @@ import {
 } from "./backends/index.js";
 import { bridgeKernelTools } from "./kernel-tools-bridge.js";
 import { KENFUTWORK_SYSTEM_PROMPT } from "./prompts/kenfutwork-main.js";
-import { declaredSubAgentSpecs } from "./sub-agents.js";
+import {
+  type CustomSubagentSpec,
+  declaredSubAgentSpecs,
+} from "./sub-agents.js";
 import type {
   PersistImageFn,
   SubmitImageJobFn,
@@ -274,6 +277,8 @@ export type KenFutWorkAgentFactory = (options: {
   toolGateHooks?: ToolGateHooks;
   /** 插件贡献的提示段（能力 `systemPrompt`）：追加在系统提示之后。 */
   systemPromptExtras?: readonly string[];
+  /** 用户自定义子智能体（工作区设置）：追加进 deepagents 的 subagents。 */
+  customSubagents?: CustomSubagentSpec[];
   /**
    * 上下文自动压缩的口径（阈值/保留条数，见 agent/auto-compact.ts）。
    * 传了才挂中间件——设置里关掉时**一个字都不挂**，不是挂上再短路。
@@ -317,6 +322,8 @@ export function createKenFutWorkDeepAgent(options: {
   toolGateHooks?: ToolGateHooks;
   /** 插件贡献的提示段（能力 `systemPrompt`）：追加在系统提示之后。 */
   systemPromptExtras?: readonly string[];
+  /** 用户自定义子智能体（工作区设置）：追加进 deepagents 的 subagents。 */
+  customSubagents?: CustomSubagentSpec[];
   /** 上下文自动压缩的口径（见 agent/auto-compact.ts）。 */
   autoCompact?: CompactionPlan;
   /**
@@ -441,8 +448,12 @@ export function createKenFutWorkDeepAgent(options: {
     model: resolvedModel,
     name: "kenfutwork",
     ...(options.store ? { store: options.store } : {}),
-    // 与设置页「子智能体」同一份清单（见 sub-agents.ts），界面与装配不允许漂移
-    subagents: declaredSubAgentSpecs(options.availableVideoModels ?? []),
+    // 与设置页「子智能体」同一份清单（见 sub-agents.ts），界面与装配不允许漂移；
+    // 用户自定义项按工作区设置追加（与内置撞名的已在装配侧丢弃）
+    subagents: declaredSubAgentSpecs(
+      options.availableVideoModels ?? [],
+      options.customSubagents ?? [],
+    ),
     systemPrompt,
     // 待办表（`write_todos`）：deepagents 只在它的 Codex profile 里挂 todoListMiddleware，
     // 非 Codex 模型默认**没有这个工具**——不挂的话「目标 + 进度」面板永远没有数据源，

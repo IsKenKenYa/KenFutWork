@@ -50,11 +50,62 @@ export function listDeclaredSubAgents(): Array<{
   ];
 }
 
-/** 装配用：直接给 deepagents 的 `subagents:` 数组（与上面同一份）。 */
+/** 用户自定义子智能体（工作区设置 `subagents` 列，设置页可增删）。 */
+export interface CustomSubagentSpec {
+  name: string;
+  label: string;
+  /** 派活依据（模型据此决定何时把子任务交给它）。 */
+  description: string;
+  systemPrompt: string;
+}
+
+/** 内置声明的名字（自定义项与它撞名时拒掉，内置优先——界面与装配不能漂移）。 */
+function builtinNames(): Set<string> {
+  return new Set(listDeclaredSubAgents().map((entry) => entry.name));
+}
+
+/** 自定义项 → deepagents SubAgent（无专用工具，角色全靠 systemPrompt）。 */
+function toSubAgent(spec: CustomSubagentSpec): SubAgent {
+  return {
+    name: spec.name,
+    description: spec.description,
+    systemPrompt: spec.systemPrompt,
+  };
+}
+
+/**
+ * 装配用清单：内置声明 + 用户自定义。
+ *
+ * 自定义项与内置撞名时**丢弃并告警**（fail loud 在日志，不静默让两个同名并存——
+ * deepagents 按 name 索引，撞名是未定义行为）。
+ */
 export function declaredSubAgentSpecs(
   availableVideoModels: AvailableVideoModel[] = [],
+  custom: CustomSubagentSpec[] = [],
 ): SubAgent[] {
-  return [createVideoSubAgent(availableVideoModels)];
+  const reserved = builtinNames();
+  const specs: SubAgent[] = [createVideoSubAgent(availableVideoModels)];
+  for (const entry of custom) {
+    if (reserved.has(entry.name)) {
+      console.warn(
+        `[sub-agents] 自定义子智能体「${entry.name}」与内置声明撞名，已忽略。`,
+      );
+      continue;
+    }
+    specs.push(toSubAgent(entry));
+  }
+  return specs;
+}
+
+/**
+ * 设置页用的自定义清单：**剔除**与内置撞名的项后原样返回（撞名的不会装配，
+ * 界面也不能显示成「会生效」）。解析（形状清洗/去重/截断）已在 settings-service 做。
+ */
+export function listCustomSubAgents(
+  custom: CustomSubagentSpec[] = [],
+): CustomSubagentSpec[] {
+  const reserved = builtinNames();
+  return custom.filter((entry) => !reserved.has(entry.name));
 }
 
 /** 内置的子任务分发工具（不由我们声明，但会出现在工具表与事件流里）。 */

@@ -108,6 +108,7 @@ describe("settings service", () => {
         findAutoCompactEnabled: async () => null,
         findCommands: async () => null,
         findHooks: async () => null,
+        findSubagents: async () => null,
         findUserRules: async () => null,
         upsertDefaultModel: async () => {},
         upsertAgentMaxRetries: async () => {},
@@ -117,6 +118,7 @@ describe("settings service", () => {
         upsertAutoCompactEnabled: async () => {},
         upsertCommands: async () => {},
         upsertHooks: async () => {},
+        upsertSubagents: async () => {},
         upsertUserRules: async () => {},
         upsertRuleEntries: async () => {},
       },
@@ -133,6 +135,7 @@ describe("settings service", () => {
       autoCompactEnabled: true,
       commands: [],
       hooks: [],
+      subagents: [],
       ruleEntries: [],
       userRules: "",
     });
@@ -147,6 +150,7 @@ describe("settings service", () => {
         findAutoCompactEnabled: async () => null,
         findCommands: async () => null,
         findHooks: async () => null,
+        findSubagents: async () => null,
         findUserRules: async () => null,
         upsertDefaultModel: async () => {},
         upsertAgentMaxRetries: async () => {},
@@ -156,6 +160,7 @@ describe("settings service", () => {
         upsertAutoCompactEnabled: async () => {},
         upsertCommands: async () => {},
         upsertHooks: async () => {},
+        upsertSubagents: async () => {},
         upsertUserRules: async () => {},
         upsertRuleEntries: async () => {},
       },
@@ -172,6 +177,7 @@ describe("settings service", () => {
       autoCompactEnabled: true,
       commands: [],
       hooks: [],
+      subagents: [],
       ruleEntries: [],
       userRules: "",
     });
@@ -193,6 +199,7 @@ describe("settings service", () => {
       findAutoCompactEnabled: async () => null,
       findCommands: async () => null,
       findHooks: async () => null,
+      findSubagents: async () => null,
       findUserRules: async () => null,
       upsertDefaultModel: async () => {},
       upsertAgentMaxRetries: async () => {},
@@ -202,6 +209,7 @@ describe("settings service", () => {
       upsertAutoCompactEnabled: async () => {},
       upsertCommands: async () => {},
       upsertHooks: async () => {},
+      upsertSubagents: async () => {},
       upsertUserRules: async () => {},
       upsertRuleEntries: async () => {},
     };
@@ -222,6 +230,7 @@ describe("settings service", () => {
       autoCompactEnabled: true,
       commands: [],
       hooks: [],
+      subagents: [],
       ruleEntries: [],
       userRules: "",
     });
@@ -242,6 +251,7 @@ describe("settings service", () => {
       autoCompactEnabled: true,
       commands: [],
       hooks: [],
+      subagents: [],
       ruleEntries: [],
       userRules: "",
     });
@@ -266,6 +276,7 @@ describe("settings service", () => {
       autoCompactEnabled: true,
       commands: [],
       hooks: [],
+      subagents: [],
       ruleEntries: [],
       userRules: "",
     });
@@ -285,6 +296,7 @@ describe("settings service", () => {
         findAutoCompactEnabled: async () => null,
         findCommands: async () => null,
         findHooks: async () => null,
+        findSubagents: async () => null,
         findUserRules: async () => null,
         upsertDefaultModel: async () => {},
         upsertAgentMaxRetries: async () => {},
@@ -294,6 +306,7 @@ describe("settings service", () => {
         upsertAutoCompactEnabled: async () => {},
         upsertCommands: async () => {},
         upsertHooks: async () => {},
+        upsertSubagents: async () => {},
         upsertUserRules: async () => {},
         upsertRuleEntries: async () => {},
       },
@@ -315,6 +328,7 @@ describe("settings service", () => {
         findAutoCompactEnabled: async () => null,
         findCommands: async () => null,
         findHooks: async () => null,
+        findSubagents: async () => null,
         findUserRules: async () => null,
         upsertDefaultModel: async () => {
           throw new SqlError("permission denied", { code: "42501" });
@@ -326,6 +340,7 @@ describe("settings service", () => {
         upsertAutoCompactEnabled: async () => {},
         upsertCommands: async () => {},
         upsertHooks: async () => {},
+        upsertSubagents: async () => {},
         upsertUserRules: async () => {},
         upsertRuleEntries: async () => {},
       },
@@ -340,6 +355,7 @@ describe("settings service", () => {
         autoCompactEnabled: true,
         commands: [],
         hooks: [],
+        subagents: [],
       })
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(SettingsServiceError);
@@ -364,6 +380,7 @@ describe("settings service", () => {
       autoCompactEnabled: null as boolean | null,
       commands: null as unknown,
       hooks: null as unknown,
+      subagents: null as unknown,
       userRules: null as string | null,
       ruleEntries: null as string[] | null,
     };
@@ -377,6 +394,7 @@ describe("settings service", () => {
         findAutoCompactEnabled: async () => null,
         findCommands: async () => null,
         findHooks: async () => null,
+        findSubagents: async () => null,
         findUserRules: async () => null,
         upsertDefaultModel: async (_workspaceId, defaultModel) => {
           stored = { ...stored, defaultModel };
@@ -405,6 +423,9 @@ describe("settings service", () => {
         upsertHooks: async (_workspaceId, hooks) => {
           stored = { ...stored, hooks: hooks as never };
         },
+        upsertSubagents: async (_workspaceId, subagents) => {
+          stored = { ...stored, subagents: subagents as never };
+        },
         upsertUserRules: async (_workspaceId, userRules) => {
           stored = { ...stored, userRules };
         },
@@ -428,6 +449,7 @@ describe("settings service", () => {
       autoCompactEnabled: true,
       commands: [],
       hooks: [],
+      subagents: [],
       ruleEntries: [],
       userRules: "",
     });
@@ -444,6 +466,7 @@ describe("settings service", () => {
       autoCompactEnabled: true,
       commands: [],
       hooks: [],
+      subagents: [],
       ruleEntries: [],
       userRules: "",
       defaultModel: "gemini-2.5-flash",

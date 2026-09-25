@@ -1162,6 +1162,7 @@ export async function pickDirectory(
 }
 
 // --- 子智能体（设置 →「子智能体」；清单与 agent 装配同源） ---
+// 类型直接取共享契约（手写副本曾漏字段：custom 上线时漂了一次）
 
 export type AgentSubagentListResponse = {
   subagents: Array<{
@@ -1171,6 +1172,12 @@ export type AgentSubagentListResponse = {
     tools: string[];
   }>;
   builtin: Array<{ name: string; label: string; description: string }>;
+  custom: Array<{
+    name: string;
+    label: string;
+    description: string;
+    systemPrompt: string;
+  }>;
 };
 
 export async function fetchSubagents(
