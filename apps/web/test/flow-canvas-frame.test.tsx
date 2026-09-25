@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { FlowCanvasFrame } from "../src/components/workbench/flow-canvas-frame";
@@ -77,10 +77,24 @@ describe("FlowCanvasFrame（ff-embed 宿主握手）", () => {
     expect(postMessage).not.toHaveBeenCalled();
   });
 
+  it("iframe 未加载完成 → 显示画布同款加载层（不白屏）；load 后出现握手提示", () => {
+    render(
+      <FlowCanvasFrame frontendUrl={FLOW_ORIGIN} getToken={() => "tok"} />,
+    );
+    expect(screen.getByText("加载工作流…")).toBeInTheDocument();
+    expect(screen.queryByText("正在与 flow 画布握手…")).not.toBeInTheDocument();
+
+    fireEvent.load(screen.getByTitle("Flow 工作流画布"));
+
+    expect(screen.queryByText("加载工作流…")).not.toBeInTheDocument();
+    expect(screen.getByText("正在与 flow 画布握手…")).toBeInTheDocument();
+  });
+
   it("ready → 握手提示消失", async () => {
     render(
       <FlowCanvasFrame frontendUrl={FLOW_ORIGIN} getToken={() => "tok"} />,
     );
+    fireEvent.load(screen.getByTitle("Flow 工作流画布"));
     expect(screen.getByText("正在与 flow 画布握手…")).toBeInTheDocument();
 
     dispatchFromFlow({ type: "ff-embed/ready", version: "v1" });

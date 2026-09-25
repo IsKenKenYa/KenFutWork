@@ -1,6 +1,7 @@
 "use client";
 
 import { FLOW_EMBED_PROTOCOL_VERSION } from "@kenfutwork/shared";
+import { Loader2 } from "lucide-react";
 import {
   forwardRef,
   useEffect,
@@ -46,6 +47,8 @@ export const FlowCanvasFrame = forwardRef<
 >(function FlowCanvasFrame(props, ref) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [connected, setConnected] = useState(false);
+  /** iframe 首次加载完成（onLoad）：之前显示画布同款加载层，防白屏。 */
+  const [frameLoaded, setFrameLoaded] = useState(false);
 
   // origin 白名单就是 flow 前端地址的 origin（服务端已校验只收 origin 形式）。
   const flowOrigin = useMemo(() => {
@@ -123,10 +126,21 @@ export const FlowCanvasFrame = forwardRef<
         ref={frameRef}
         src={props.frontendUrl}
         title={props.title ?? "Flow 工作流画布"}
-        className="h-full w-full border-0"
+        className={`h-full w-full border-0 transition-opacity duration-300 ${
+          frameLoaded ? "opacity-100" : "opacity-0"
+        }`}
+        onLoad={() => setFrameLoaded(true)}
         allow="clipboard-read; clipboard-write; fullscreen"
       />
-      {!connected ? (
+      {/* 画布同款加载层：iframe 资源加载期间不再白屏（flow 画布页 canvas-loading 同款布局） */}
+      {!frameLoaded ? (
+        <div className="absolute inset-0 grid place-items-center bg-card">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            <span>加载工作流…</span>
+          </div>
+        </div>
+      ) : !connected ? (
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-x-0 top-2 mx-auto w-fit rounded-full bg-muted/80 px-3 py-1 text-xs text-muted-foreground"
