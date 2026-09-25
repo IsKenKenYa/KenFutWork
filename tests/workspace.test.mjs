@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -8,6 +15,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { checkDocs, updateFrozenLock } from "../scripts/check-docs.mjs";
+import * as envModule from "../scripts/check-env.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -562,4 +570,89 @@ test("安装向导品牌图按 DPI 超采样出图（退回名义尺寸即被拉
         "MUI 会把它拉伸到 DPI 缩放后的控件大小，按名义尺寸出图在 150% 屏上就是糊的",
     );
   }
+});
+
+test("env 权威表：真仓校验通过（全部 KENFUTWORK_/LOOMIC_ 引用已登记）", () => {
+  const { checkEnv } = envModule;
+  const { errors, files } = checkEnv({ rootDir });
+  assert.ok(files.length > 0, "env 扫描面不应为空");
+  assert.deepEqual(errors, [], `env 校验失败：\n  - ${errors.join("\n  - ")}`);
+});
+
+test("env 门禁 fixture：未登记名 / 读者漂移 / 样例互锁各自被拦截", async () => {
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), "kfw-env-fixture-"));
+  const registryPath = path.join(fixtureRoot, "tests", "env-registry.json");
+  const examplePath = path.join(fixtureRoot, ".env.example");
+  const readerRel = "apps/server/src/a.ts";
+  const readerPath = path.join(fixtureRoot, readerRel);
+
+  const registry = {
+    vars: {
+      KFW_FIXTURE_A: {
+        surface: "server",
+        readers: [readerRel],
+        inExamples: true,
+        status: "active",
+      },
+    },
+    legacy: {
+      LOOMIC_FIXTURE_OLD: { allowedIn: ["src/legacy.ts"], reason: "兼容" },
+    },
+  };
+
+  await mkdir(path.join(fixtureRoot, "tests"), { recursive: true });
+  await mkdir(path.join(fixtureRoot, "apps/server/src"), { recursive: true });
+  writeFileSync(registryPath, JSON.stringify(registry));
+  writeFileSync(examplePath, "KFW_FIXTURE_A=1\n");
+  writeFileSync(readerPath, "use KFW_FIXTURE_A;");
+
+  // 干净基线：全链路通过
+  let result = envModule.checkEnv({ rootDir: fixtureRoot });
+  assert.deepEqual(result.errors, []);
+
+  // 读者文件消失（契约漂移·文件被删）→ fail
+  await rm(readerPath);
+  result = envModule.checkEnv({ rootDir: fixtureRoot });
+  assert.ok(
+    result.errors.some((line) => /读者文件不存在或不可读/.test(line)),
+    `读者文件消失应被拦截：${JSON.stringify(result.errors)}`,
+  );
+
+  // 读者漂移（文件在但不引用该名）→ fail
+  writeFileSync(readerPath, "export {};");
+  result = envModule.checkEnv({ rootDir: fixtureRoot });
+  assert.ok(
+    result.errors.some((line) => /已不再引用/.test(line)),
+    `读者漂移应被拦截：${JSON.stringify(result.errors)}`,
+  );
+  writeFileSync(readerPath, "use KFW_FIXTURE_A;");
+
+  // 未登记的新名出现 → fail
+  mkdirSync(path.join(fixtureRoot, "src"), { recursive: true });
+  writeFileSync(
+    path.join(fixtureRoot, "apps", "server", "src", "rogue.ts"),
+    "KENFUTWORK_FIXTURE_NEW=1;",
+  );
+  result = envModule.checkEnv({ rootDir: fixtureRoot });
+  assert.ok(
+    result.errors.some((line) => /未登记进/.test(line)),
+    `表外新名应被拦截：${JSON.stringify(result.errors)}`,
+  );
+  rmSync(path.join(fixtureRoot, "apps", "server", "src", "rogue.ts"));
+
+  // 旧前缀出现在白名单之外的文件 → fail
+  writeFileSync(
+    path.join(fixtureRoot, "apps", "server", "src", "rogue.ts"),
+    "LOOMIC_FIXTURE_OLD=1;",
+  );
+  result = envModule.checkEnv({ rootDir: fixtureRoot });
+  assert.ok(
+    result.errors.some((line) => /旧前缀 LOOMIC_FIXTURE_OLD/.test(line)),
+    `白名单外的 LOOMIC_ 引用应被拦截：${JSON.stringify(result.errors)}`,
+  );
+  rmSync(path.join(fixtureRoot, "apps", "server", "src", "rogue.ts"));
+
+  // 回到干净态：应通过
+  result = envModule.checkEnv({ rootDir: fixtureRoot });
+  assert.deepEqual(result.errors, []);
 });

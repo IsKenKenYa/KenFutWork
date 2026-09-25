@@ -53,3 +53,6 @@
 [submodule "flow"]
 	path = flow
 	url = https://github.com/future73807/futureFlow.git
+[submodule "references/zcode"]
+	path = references/zcode
+	url = https://github.com/zai-org/ZCode.git

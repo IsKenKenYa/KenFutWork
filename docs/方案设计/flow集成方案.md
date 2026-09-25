@@ -1,6 +1,6 @@
 # flow 集成方案（futureFlow 子系统 × 第三模式）
 
-> **角色声明**：方案稿——flow 子系统的集成实施蓝图。决策结论与理由的唯一权威在《[改造计划](./改造计划.md)》§6（`DEC-10`…`DEC-13`）；代码现状数字以代码为准。上游仓库以子模块挂载于根级 `flow/`（github.com/future73807/futureFlow，MIT，pnpm workspace：frontend + gateway；完整历史，不走 `references/` 的浅克隆维护，见《日志》五十）。
+> **角色声明**：方案稿——flow 子系统的集成实施蓝图。决策结论与理由的唯一权威在《[改造计划](./改造计划.md)》§6（`DEC-10`…`DEC-13`）；代码现状数字以代码为准。上游仓库以子模块挂载于根级 `flow/`（github.com/future73807/futureFlow，MIT，pnpm workspace：frontend + gateway；完整历史，不走 `references/` 的浅克隆维护，见《日志》五十四）。
 
 ## 1. 背景与定位
 

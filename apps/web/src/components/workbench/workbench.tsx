@@ -1,6 +1,10 @@
 "use client";
 
-import type { ExecutionMode, ProjectSummary } from "@kenfutwork/shared";
+import type {
+  CheckpointSummary,
+  ExecutionMode,
+  ProjectSummary,
+} from "@kenfutwork/shared";
 import {
   Blocks,
   Brain,
@@ -36,7 +40,6 @@ import {
 } from "@/components/chat/composer-context-menu";
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
 import { RunStopButton } from "@/components/chat/run-stop-button";
-import { ToolOutputRenderer } from "@/components/chat/tool-block-view";
 import { KenFutWorkLogo } from "@/components/icons/kenfutwork-logo";
 import { Button } from "@/components/ui/button";
 import {
@@ -55,6 +58,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { CheckpointChip } from "@/components/workbench/checkpoint-chip";
 import {
   ComposerCompactSelect,
   THINKING_OPTIONS,
@@ -81,6 +85,13 @@ import { SidebarRow } from "@/components/workbench/sidebar-row";
 import { SkillsModal } from "@/components/workbench/skills-modal";
 import { SubagentDirectoryView } from "@/components/workbench/subagent-directory-view";
 import { TodoProgressPanel } from "@/components/workbench/todo-progress-panel";
+import {
+  ToolEventDetail,
+  toolStatusMeta,
+} from "@/components/workbench/tool-event";
+import { toolIcon } from "@/components/workbench/tool-icons";
+import { TrajectoryView } from "@/components/workbench/trajectory-view";
+import { TurnRail } from "@/components/workbench/turn-rail";
 import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
 import { WorkDirectorySelect } from "@/components/workbench/work-directory-select";
 import { WorkbenchSidePanel } from "@/components/workbench/workbench-side-panel";
@@ -88,6 +99,8 @@ import { useFlowHostEntry } from "@/hooks/use-flow-host";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useAuth } from "@/lib/auth-context";
 import { onBrowserOpen } from "@/lib/browser-panel";
+import { pickCheckpointForRun } from "@/lib/checkpoint-select";
+import { fetchCheckpoints } from "@/lib/code-checkpoints-api";
 import { commitGitAll } from "@/lib/code-git-api";
 import {
   loadCodeWorkDir,
@@ -101,6 +114,7 @@ import {
   usageFromEvent,
 } from "@/lib/context-usage";
 import { resolveDesignAutoCanvas } from "@/lib/design-auto-canvas";
+import { installDesktopExternalLinks } from "@/lib/desktop-system";
 import { formatElapsedSeconds, parseTimestampMs } from "@/lib/elapsed";
 import { getServerBaseUrl } from "@/lib/env";
 import { executionModeOptions } from "@/lib/execution-modes";
@@ -138,7 +152,14 @@ import {
   closeAllSubagents,
   type SubagentEntry,
 } from "@/lib/subagent-directory";
+import { createTaskSaver } from "@/lib/task-saver";
 import type { TodoItem } from "@/lib/todo-progress";
+import {
+  deriveTurnProcesses,
+  specCoveringIndex,
+  type TurnProcessSpec,
+} from "@/lib/turn-process";
+import { formatTaskRelativeTime } from "@/lib/ui-format";
 import {
   boundWorkDirPromptHint,
   folderPickerHint,
@@ -156,7 +177,21 @@ import {
   resolveTaskIndicator,
   SESSION_PREVIEW_LIMIT,
 } from "@/lib/workbench-task-list";
-import { applyTaskToolEvent, type TaskToolEntry } from "@/lib/workbench-tools";
+import {
+  appendAssistantDelta,
+  appendThinkingDelta,
+  applyTaskToolEvent,
+  groupAssistantBlocks,
+  messagesBaseForResume,
+  nextAssistantStartMs,
+  settleAssistantElapsed,
+  settlePreviousAssistant,
+  type TaskMessage,
+  type TaskToolEntry,
+  toolDisplayLabel,
+  toolTargetParts,
+} from "@/lib/workbench-tools";
+import { buildTrajectory, turnRailItems } from "@/lib/workbench-trajectory";
 
 /**
  * Agent 工作台（产品主入口）：Code / Design 双模式（DEC-2）。
@@ -175,19 +210,6 @@ const COMPACT_SOURCE_LABELS: Record<
   fallback: "框架回退值",
 };
 
-interface TaskMessage {
-  role: "user" | "assistant";
-  text: string;
-  /**
-   * 这条消息「工作了多久」（毫秒）：从这条消息的第一个字到本轮终态。
-   * 用户口径：「工作时间每个 AI 对话消息都要显示，而不是只显示一部分」——
-   * 所以是**每条**助手消息各自记一份，而不是只在会话头显示一个总时长。
-   */
-  elapsedMs?: number;
-  /** 这条消息开始的时间（内部用：终态时据此算 elapsedMs）。 */
-  startedAt?: number;
-}
-
 type WorkbenchModelOption = {
   id: string;
   name: string;
@@ -197,30 +219,6 @@ type WorkbenchModelOption = {
   /** 单次最大输出（供应商实例声明）；上下文条「预留输出」段的来源。 */
   maxOutputTokens?: number | undefined;
 };
-
-/**
- * 结算最后一条助手消息的耗时（终态时调用）。
- *
- * 口径：**这一条消息到上一条之间**的整段时间（含中间的思考与工具调用）——
- * 只算它自己「从第一个字到这一刻」会恒等于 0（实测：模型把回复一口气吐完，
- * 第一个字与最后一个字相差几十毫秒，界面上就成了「已工作 0 秒」）。
- */
-function settleAssistantElapsed(task: WorkbenchTask): WorkbenchTask {
-  const messages = [...task.messages];
-  const last = messages[messages.length - 1];
-  if (last?.role !== "assistant" || last.startedAt === undefined) {
-    return task;
-  }
-  const elapsedMs = Math.max(0, Date.now() - last.startedAt);
-  messages[messages.length - 1] = {
-    role: "assistant",
-    text: last.text,
-    elapsedMs,
-    // **保留起点**：下一条消息要拿「上一条的起点 + 它的耗时」推算自己从哪一刻开始
-    startedAt: last.startedAt,
-  };
-  return { ...task, messages };
-}
 
 interface WorkbenchTask {
   id: string; // conversationId
@@ -235,18 +233,22 @@ interface WorkbenchTask {
   /** 归档后不显示在项目分组中，仅出现在「已归档」区 */
   archived?: boolean;
   /**
-   * 本轮的工具调用轨迹（工作台此前**完全忽略** tool.* 事件，用户只看得到模型的话术，
-   * 看不到工具跑了什么——联网搜索的来源列表因此从未在 Code 模式里出现过，
-   * 产品早就写好的来源渲染器只管着已退役的旧对话 UI）。
+   * 最近一轮 run 的起止（ISO，来自 run.started / 终态事件；R1-1 工作时间）
    */
-  tools?: TaskToolEntry[];
-  /** 最近一轮 run 的起止（ISO，来自 run.started / 终态事件；R1-1 工作时间） */
   runStartedAt?: string | undefined;
   runEndedAt?: string | undefined;
   /** 子代理运行条目（R1-3：由 task/video_generate 工具事件推导） */
   subagents?: SubagentEntry[];
   /** agent 自己维护的待办表（R1-2：由 write_todos 工具事件推导） */
   todos?: TodoItem[];
+  /**
+   * 已按服务端 contentBlocks 真序重建过消息块的时刻（ISO）。
+   *
+   * v0 桌面包把一轮对话只存成「整段文本 + 任务级 tools（尾部 10 条）」，本地无时序，
+   * 迁移只能把工具堆在消息尾部（2026-09-20 用户三次反馈）。服务端从第一版起就按事件
+   * 顺序持久化 contentBlocks，启动后按 sessionId 拉回来重建一次并打这个戳——
+   * 没有这个戳的旧任务下次启动还会再试（服务端当时不在线是常态）。
+   */
   /** 本轮用量快照（R4-1：服务端 run.usage 事件，上下文容量/缓存命中浮层的数据源） */
   usage?: RunUsageSnapshot;
   /**
@@ -269,80 +271,326 @@ interface WorkbenchTask {
     output: string;
     durationMs: number;
   }>;
+  /**
+   * 本轮结束的检查点（Code 模式影子 git，终态时拉取）：chip 展示这轮改了什么，
+   * 并提供「查看改动 / 回滚」入口。同一对话的下一轮终态会覆盖成最新 run 的检查点。
+   */
+  checkpoint?: CheckpointSummary;
+  /** 在途 run 的 id（run.started 时登记，终态不清）：刷新后断线重接（canvas.resume）用。 */
+  activeRunId?: string;
 }
 
 /**
- * 工具调用一行：名称 + 状态；完成的 `web_search` 直接把来源渲染成可点击列表
- * （复用既有 `ToolOutputRenderer`——它本来就为联网搜索写好了来源视图，
- * 只是此前没有任何 Code 模式消费方）。
- */
-/**
- * 对话里的工具调用行：**默认折叠**，只留「状态点 + 工具名 + 状态」一行，点一下展开输出。
+ * 一轮助手回复的**逐个、按时序**渲染：正文段与每一次工具调用按发生顺序交错
+ * （参考 deepseek-harness 展开后的 turn：每个工具调用是独立一行；Cherry Studio
+ * 的 MessagePartsRenderer 同样逐行展示「编辑文件 xxx / 终端 … / 查阅 · N 搜 N 文件」）。
  *
- * 折叠是默认值而不是可选开关：一轮任务里工具调用可能有十几条（web_search 的来源列表尤其长），
- * 全展开会把对话正文挤没。展开状态自持（每个工具行各管各的），不写进任务数据。
+ * 历史事故①：工具轨迹曾以 `task.tools` 挂在任务上、全部渲染在对话最底部——
+ * 看不出每次调用属于哪轮对话、发生在哪段正文前后，跨轮任务还被 10 条上限截断
+ * （2026-09-20 反馈）。
+ * 历史事故②（同日二次反馈）：修好归属后又把连续调用收进「工具调用 × N」折叠组，
+ * 用户「还是看不到详细的工具调用记录」——要的是**逐个展示、按时间顺序**，
+ * 不能聚成一团。所以这里不做任何聚合：一次调用一行，行本身永远可见，
+ * 只有行内的输出详情才默认折叠（点行展开）。
+ *
  */
-function WorkbenchToolRow({ tool }: { tool: TaskToolEntry }) {
+function AssistantTurn({
+  msg,
+  streaming = false,
+  onInspectTool,
+}: {
+  msg: TaskMessage;
+  /** 该消息是否仍在流式（任务运行中的最后一条）：思考行的「思考中」态用它。 */
+  streaming?: boolean;
+  /** 「查看轨迹」：切到轨迹页签并聚焦这次调用（dsh 的 Inspect 交叉跳转）。 */
+  onInspectTool?: (toolCallId: string) => void;
+}) {
+  // 无 blocks 的消息（纯文本）就地归一化成单文本块——只有一条渲染路径，没有旧版分支
+  const groups = useMemo(
+    () =>
+      // 纯空白文本段（模型在工具调用前后吐的换行）渲染成空泡泡纯属噪音
+      groupAssistantBlocks(msg.blocks).filter(
+        (g) => g.kind !== "text" || g.text.trim().length > 0,
+      ),
+    [msg.blocks],
+  );
+  return (
+    <div className="flex w-full max-w-full flex-col items-start gap-2.5">
+      {groups.map((group, gi) => {
+        if (group.kind === "text") {
+          return (
+            <div
+              // biome-ignore lint/suspicious/noArrayIndexKey: 组序即时序，块内没有更稳定的身份
+              key={gi}
+              className="w-full max-w-full"
+            >
+              <MarkdownRenderer text={group.text} />
+            </div>
+          );
+        }
+        if (group.kind === "reasoning") {
+          return (
+            <ReasoningRow
+              // biome-ignore lint/suspicious/noArrayIndexKey: 组序即时序，块内没有更稳定的身份
+              key={gi}
+              text={group.text}
+              streaming={streaming && gi === groups.length - 1}
+            />
+          );
+        }
+        // 连续工具调用：一行一个，按发生顺序排。刻意**不**做「N 次工具调用」聚合折叠——
+        // 聚在一起就又回到「看不出谁是谁、哪次在哪」的老问题。
+        return group.tools.map((tool) => (
+          <WorkbenchToolRow
+            key={tool.toolCallId}
+            tool={tool}
+            {...(onInspectTool ? { onInspect: onInspectTool } : {})}
+          />
+        ));
+      })}
+    </div>
+  );
+}
+
+/**
+ * 对话里的工具调用行：**一次调用一行、永远可见**，视觉口径对齐 ZCode——
+ * **无边框卡片**的扁平行（图标 + 动词 + 文件名/路径 或 命令 + 状态），行宽由内容
+ * 决定（self-start），点整行展开详情（入参 + 输出，与轨迹视图同一份展开体）。
+ *
+ * 行永远可见是用户口径：「要按照时间顺序逐个展示，不能聚在一起」（2026-09-20）。
+ * 外层圆角卡片是 2026-09-21 用户点名去掉的：「根本没必要有外面那一层圆角矩形」。
+ * 成功态不渲染状态文字（ZCode 同款：安静）；只有运行中/失败/被拒才占行尾。
+ * 「轨迹」跳转按钮与展开 chevron 都 hover 才显现。
+ */
+function WorkbenchToolRow({
+  tool,
+  onInspect,
+}: {
+  tool: TaskToolEntry;
+  /** 「轨迹」小按钮：切到轨迹账本并聚焦这次调用（dsh 的 Inspect 交叉跳转）。 */
+  onInspect?: (toolCallId: string) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
-  const hasDetail = Boolean(tool.output) || Boolean(tool.summary);
-  const statusText =
-    tool.status === "running"
-      ? "执行中…"
-      : tool.status === "denied"
-        ? "被拒绝"
-        : "已完成";
-  /** 被拒的原因写在 title 上（不点开也能看到为什么没执行）。 */
-  const deniedReason =
+  const hasDetail =
+    Boolean(tool.output) || Boolean(tool.summary) || Boolean(tool.input);
+  const meta = toolStatusMeta(tool);
+  const Icon = toolIcon(tool);
+  const target = toolTargetParts(tool);
+  /** 被拒/失败原因进 title（不点开也能看到为什么）。 */
+  const failReason =
     tool.status === "denied"
       ? ((tool.output?.reason as string | undefined) ??
         tool.summary ??
         "被工具门拦下")
-      : null;
+      : meta.failed
+        ? (tool.summary ?? "执行失败")
+        : null;
   return (
-    <div className="w-fit max-w-full rounded-xl border border-border/60 bg-card px-3 py-2">
-      <button
-        type="button"
-        disabled={!hasDetail}
-        aria-expanded={hasDetail ? expanded : undefined}
-        onClick={() => hasDetail && setExpanded((v) => !v)}
-        className={`flex items-center gap-2 text-xs text-muted-foreground ${
-          hasDetail ? "cursor-pointer hover:text-foreground" : ""
-        }`}
-      >
-        <span
-          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-            tool.status === "running"
-              ? "animate-pulse bg-amber-500"
-              : tool.status === "denied"
-                ? "bg-rose-500"
-                : "bg-emerald-500"
+    <div className="group/tool-row w-full max-w-full">
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          disabled={!hasDetail}
+          aria-expanded={hasDetail ? expanded : undefined}
+          onClick={() => hasDetail && setExpanded((v) => !v)}
+          className={`inline-flex min-w-0 max-w-full items-center gap-2 self-start py-0.5 text-left text-xs ${
+            hasDetail ? "cursor-pointer" : "cursor-default"
           }`}
-        />
-        <span className="font-mono">{tool.toolName}</span>
-        <span title={deniedReason ?? undefined}>{statusText}</span>
-        {hasDetail && (
+        >
+          <Icon
+            aria-hidden
+            className="size-4 shrink-0 text-muted-foreground/60"
+          />
+          <span
+            className={`shrink-0 font-medium ${
+              meta.failed
+                ? "text-red-600 dark:text-red-400"
+                : "text-muted-foreground"
+            }`}
+            title={tool.toolName}
+          >
+            {toolDisplayLabel(tool.toolName)}
+          </span>
+          {target ? (
+            target.isCommand ? (
+              <code className="min-w-0 truncate font-sans text-muted-foreground/80">
+                {target.primary}
+              </code>
+            ) : (
+              <span
+                className="flex min-w-0 items-baseline gap-1.5"
+                title={
+                  target.rest
+                    ? `${target.rest}/${target.primary}`
+                    : target.primary
+                }
+              >
+                <span className="min-w-0 truncate text-foreground">
+                  {target.primary}
+                </span>
+                {target.rest ? (
+                  <span className="hidden min-w-0 truncate text-muted-foreground/50 @max-[520px]/conversation:hidden sm:inline">
+                    {target.rest}
+                  </span>
+                ) : null}
+              </span>
+            )
+          ) : null}
+          {tool.status === "running" ? (
+            <span className="inline-flex shrink-0 items-center gap-1.5 text-muted-foreground">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+              执行中…
+            </span>
+          ) : meta.failed ? (
+            <span
+              className="shrink-0 cursor-help text-red-600 underline decoration-dotted underline-offset-2 dark:text-red-400"
+              title={failReason ?? undefined}
+            >
+              失败
+            </span>
+          ) : tool.status === "denied" ? (
+            <span
+              className="shrink-0 cursor-help text-rose-600 underline decoration-dotted underline-offset-2 dark:text-rose-400"
+              title={failReason ?? undefined}
+            >
+              被拒绝
+            </span>
+          ) : (
+            // 完成态的安静标记：只留一颗小绿点（ZCode 口径——成功不占文字）
+            <span
+              role="img"
+              aria-label="已完成"
+              className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500/70"
+            />
+          )}
           <svg
             aria-hidden
             viewBox="0 0 16 16"
-            className={`h-3 w-3 transition-transform ${expanded ? "rotate-90" : ""}`}
+            className={`h-3 w-3 shrink-0 text-muted-foreground/50 opacity-0 transition-[opacity,transform] group-hover/tool-row:opacity-100 ${
+              expanded ? "rotate-90 opacity-100" : ""
+            } ${hasDetail ? "" : "invisible"}`}
             fill="currentColor"
           >
             <path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" />
           </svg>
-        )}
-      </button>
+        </button>
+        {onInspect ? (
+          <button
+            type="button"
+            onClick={() => onInspect(tool.toolCallId)}
+            title="在轨迹账本中查看这次调用"
+            aria-label="在轨迹账本中查看这次调用"
+            className="shrink-0 rounded px-1 py-0.5 text-[10px] text-muted-foreground/60 opacity-0 transition-opacity hover:text-foreground group-hover/tool-row:opacity-100"
+          >
+            轨迹
+          </button>
+        ) : null}
+      </div>
       {expanded ? (
-        tool.output ? (
-          <div className="mt-2">
-            <ToolOutputRenderer toolName={tool.toolName} output={tool.output} />
-          </div>
-        ) : (
-          <div className="mt-1 text-xs text-muted-foreground">
-            {tool.summary}
-          </div>
-        )
+        <div className="mb-1 ml-6 border-l-2 border-border/50 pl-3">
+          <ToolEventDetail tool={tool} />
+        </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * 思考行（dsh ReasoningRow 数据源 + ZCode ReasoningRow 视觉）：无卡片的一行——
+ * 脑图标 + 「思考」+ 摘要（流式时跟随最新一行），chevron hover 显现；展开正文
+ * 走左竖线缩进的纯文本区（不做 markdown 渲染）。思考是推理过程不是结论，
+ * 永远不给它正文的视觉权重。
+ */
+function ReasoningRow({
+  text,
+  streaming,
+}: {
+  text: string;
+  streaming: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const lines = text.split("\n").filter((line) => line.trim().length > 0);
+  const summary = (streaming ? lines[lines.length - 1] : lines[0]) ?? "";
+  const clipped = summary.length > 80 ? `${summary.slice(0, 79)}…` : summary;
+  return (
+    <div className="w-full max-w-full">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="group/reasoning inline-flex max-w-full items-center gap-2 self-start py-0.5 text-left text-xs text-muted-foreground/60"
+      >
+        <Brain
+          aria-hidden
+          className="size-4 shrink-0 text-muted-foreground/50"
+        />
+        <span
+          className={`shrink-0 font-medium ${streaming ? "text-foreground/80" : ""}`}
+        >
+          {streaming ? "思考中" : "思考"}
+        </span>
+        {open ? null : (
+          <span className="min-w-0 truncate font-normal">{clipped}</span>
+        )}
+        <svg
+          aria-hidden
+          viewBox="0 0 16 16"
+          className={`h-3 w-3 shrink-0 opacity-0 transition-[opacity,transform] group-hover/reasoning:opacity-100 ${
+            open ? "rotate-90 opacity-100" : ""
+          }`}
+          fill="currentColor"
+        >
+          <path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" />
+        </svg>
+      </button>
+      {open ? (
+        <div className="mb-1 ml-6 max-h-60 overflow-y-auto whitespace-pre-wrap break-words border-l-2 border-border/50 pl-3 text-[11px] leading-5 text-muted-foreground">
+          {text}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * 轮级过程折叠控制行（dsh TurnProcessNodeView 语义 + ZCode 组行视觉）：无卡片的
+ * 一行「第 N 轮 · 思考与工具 · N 个工具调用 · …」，chevron hover 显现。展开后
+ * 过程逐行原位可见（不是聚成一条摘要），再点收起。
+ */
+function TurnProcessRow({
+  spec,
+  expanded,
+  onToggle,
+}: {
+  spec: TurnProcessSpec;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const parts = [`${spec.toolCount} 个工具调用`];
+  if (spec.reasoningCount > 0) parts.push(`${spec.reasoningCount} 段思考`);
+  if (spec.foldedTextCount > 0)
+    parts.push(`${spec.foldedTextCount} 段中途输出`);
+  return (
+    <button
+      type="button"
+      aria-expanded={expanded}
+      onClick={onToggle}
+      title="展开这一轮的完整过程（推理 / 工具 / 中途输出逐行保留）"
+      className="inline-flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground/60 transition-colors hover:text-foreground"
+    >
+      <svg
+        aria-hidden
+        viewBox="0 0 16 16"
+        className={`h-3 w-3 shrink-0 transition-transform ${
+          expanded ? "rotate-90" : ""
+        }`}
+        fill="currentColor"
+      >
+        <path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" />
+      </svg>
+      <span>第 {spec.turnIndex} 轮 · 思考与工具</span>
+      <span className="text-muted-foreground/70">{parts.join(" · ")}</span>
+    </button>
   );
 }
 
@@ -380,7 +628,12 @@ const MODE_META: Record<
   },
 };
 
-const TASKS_STORAGE_KEY = "workbench-tasks";
+/**
+ * 任务存储 key **带 schema 版本**：任务形状变化（blocks 必填等）时升版，
+ * 旧版本 key 在首次读取时直接删除——不做任何旧数据迁移/兼容（开发期无用户，
+ * 坏数据直接弃，保证进入渲染器的任务永远是当前形状）。
+ */
+const TASKS_STORAGE_KEY = "workbench-tasks:v2";
 
 /** 「未分组」在「显示更多」展开状态里的分组 key（项目 id 不会取到这个名字）。 */
 const UNGROUPED_KEY = "__ungrouped__";
@@ -390,12 +643,7 @@ function loadTasks(mode: WorkbenchMode): WorkbenchTask[] {
   try {
     const raw = window.localStorage.getItem(`${TASKS_STORAGE_KEY}:${mode}`);
     if (!raw) return [];
-    // 迁移：旧数据无 projectId/archived 字段时补默认值
-    return (JSON.parse(raw) as WorkbenchTask[]).map((t) => ({
-      ...t,
-      projectId: t.projectId ?? null,
-      archived: t.archived ?? false,
-    }));
+    return JSON.parse(raw) as WorkbenchTask[];
   } catch {
     return [];
   }
@@ -442,6 +690,13 @@ export function Workbench() {
   /** Design 模式的输入交给画布页（`/canvas?...&prompt=`）自动发送，不落到工作台会话视图。 */
   const [canvasPrompt, setCanvasPrompt] = useState<string | null>(null);
   const [followUp, setFollowUp] = useState("");
+  /**
+   * 转录区视图（参考 deepseek-harness 的「对话 / 轨迹」双页签）：对话按发生顺序
+   * 交错展示，轨迹是按轮次分组的只读账本（每次调用的时间/耗时/入参/输出一表可查）。
+   */
+  const [transcriptTab, setTranscriptTab] = useState<"chat" | "trajectory">(
+    "chat",
+  );
   // Code 模式对话区右键菜单（原生菜单在应用内浏览器不弹，用户无法复制/粘贴）
   const chatMenu = useChatContextMenu();
   const codeMessagesRef = useRef<HTMLDivElement>(null);
@@ -456,6 +711,10 @@ export function Workbench() {
   const autoCommitTurnRef = useRef<(taskId: string | null) => Promise<void>>(
     async () => {},
   );
+  /** 同 autoCommitTurnRef：终态拉检查点的实现也经 ref 取最新值（闭包会陈旧）。 */
+  const fetchTurnCheckpointRef = useRef<
+    (taskId: string, runId: string) => Promise<void>
+  >(async () => {});
   // biome-ignore lint/correctness/useExhaustiveDependencies: activeTaskId 只当触发器（量的是 DOM 宽度）；换任务后滚动条出现/消失要重新量
   useEffect(() => {
     const measure = () => {
@@ -568,6 +827,67 @@ export function Workbench() {
     () => tasks.find((t) => t.id === activeTaskId) ?? null,
     [tasks, activeTaskId],
   );
+
+  /** 轨迹账本（对话/轨迹双页签的「轨迹」侧）：按轮次分组、行序即时序。 */
+  const trajectoryModel = useMemo(
+    () => buildTrajectory(activeTask?.messages ?? []),
+    [activeTask],
+  );
+
+  /** 从对话流工具行「查看轨迹」跳来的聚焦目标（轨迹页签滚动定位用）。 */
+  const [trajectoryFocus, setTrajectoryFocus] = useState<string | null>(null);
+
+  /**
+   * 轮级过程折叠（deepseek-harness Turn Process Folding 同款）：跑完且产出了结论的
+   * 轮，把结论之前的推理/工具/中途正文收进一行可展开的控制行。运行中不折叠，
+   * 展开后过程逐行原位可见——不是「N 次调用」式的有损聚合（用户此前反对的是
+   * 聚掉细节；dsh 折叠正是「默认收起、展开即全量」的过程披露）。
+   */
+  const turnProcesses = useMemo(
+    () =>
+      deriveTurnProcesses(
+        activeTask?.messages ?? [],
+        activeTask ? activeTask.status !== "running" : true,
+      ),
+    [activeTask],
+  );
+  /** 手动展开的折叠轮（会话级 state，不持久化——dsh 同款取舍）。 */
+  const [expandedTurnProcesses, setExpandedTurnProcesses] = useState<
+    ReadonlySet<string>
+  >(new Set());
+
+  /** 左缘时间线刻度的数据（ZCode TurnNavigator 同款：一轮一项）。 */
+  const turnRail = useMemo(
+    () => turnRailItems(trajectoryModel),
+    [trajectoryModel],
+  );
+  /** 跳到某轮：滚动定位到该轮的用户消息锚（data-turn-anchor）。 */
+  const jumpToTurn = useCallback((index: number) => {
+    document
+      .querySelector(`[data-turn-anchor="${index}"]`)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  /**
+   * 每条消息所属的轮次（1 起始）——时间线刻度的滚动锚用。口径与
+   * buildTrajectory 一致：用户消息开启新轮（归属新轮），助手消息归属
+   * 「当前轮」（开头还没有用户消息时防御性归第 1 轮）。
+   */
+  const turnOfIndex = useMemo(() => {
+    const shown = activeTask?.messages ?? [];
+    const result: number[] = [];
+    let opened = 0;
+    for (const message of shown) {
+      // 用户消息开新轮；开头的助手消息（还没有任何用户消息）防御性先占第 1 轮
+      if (message.role === "user") {
+        opened += 1;
+      } else if (opened === 0) {
+        opened = 1;
+      }
+      result[result.length] = opened;
+    }
+    return result;
+  }, [activeTask?.messages]);
 
   /**
    * 选中模型的容量元数据（窗口 / 最大输出），两处编排器共用一份。
@@ -890,6 +1210,14 @@ export function Workbench() {
       .then((status) => setNativeDirPicker(status))
       .catch(() => setNativeDirPicker({ available: false }));
   }, [session]);
+
+  /**
+   * 桌面形态接管 `target="_blank"` 外链：WKWebView 开不了新窗口，点过去毫无反应——
+   * 交给系统浏览器（`lib/desktop-system.ts`）。函数自身幂等，重复挂载安全。
+   */
+  useEffect(() => {
+    installDesktopExternalLinks();
+  }, []);
 
   // 自定义命令（需 token）：只在登录后拉一次，失败不阻断（没有命令就只是不展开）
   useEffect(() => {
@@ -1216,8 +1544,78 @@ export function Workbench() {
     }
   }, []);
 
+  /**
+   * 断线/刷新重接（canvas.resume）：进行中的任务在刷新后 activeRunIdRef 为空，
+   * 重放的事件会被 runId 过滤整段丢掉——挂载期发现「运行中 + 有在途 runId」的
+   * 当前任务就把跟踪值指回去并 resume，服务端事件缓冲整段重放，run 无缝续播。
+   * 服务端已无该画布的在途 run（服务重启过）则明确报失败，不让任务永远「运行中」。
+   */
+  const resumedTasksRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!session?.access_token) return;
+    const active = tasksByModeRef.current[mode].find(
+      (t) => t.id === activeTaskId,
+    );
+    if (
+      active?.status !== "running" ||
+      !active.activeRunId ||
+      resumedTasksRef.current.has(active.id)
+    ) {
+      return;
+    }
+    const project = codeProjects.find((p) => p.id === active.projectId);
+    const canvasId = project?.primaryCanvas?.id ?? null;
+    if (!canvasId) return;
+    resumedTasksRef.current.add(active.id);
+    activeRunIdRef.current = active.activeRunId;
+    runTaskIdRef.current = active.id;
+    // 丢掉断线前流出的半截内容（切口在最后一条用户消息），整段靠重放重建
+    const saveMode = mode;
+    setTasksByMode((prev) => {
+      const list = prev[mode].map((t2) =>
+        t2.id === active.id
+          ? { ...t2, messages: messagesBaseForResume(t2.messages) }
+          : t2,
+      );
+      saveTasks(saveMode as WorkbenchMode, list);
+      return { ...prev, [mode]: list };
+    });
+    ws.resumeCanvas(canvasId, (ack) => {
+      const payload = ack.payload as
+        | { activeRunId?: string | null }
+        | undefined;
+      if (payload?.activeRunId) return;
+      setTasksByMode((prev) => {
+        const list = prev[mode].map((t2) =>
+          t2.id === active.id
+            ? {
+                ...t2,
+                status: "failed" as const,
+                messages: [
+                  ...t2.messages,
+                  {
+                    role: "assistant" as const,
+                    text: "服务已重启，本轮运行中断，请重试。",
+                    blocks: [],
+                  },
+                ],
+              }
+            : t2,
+        );
+        saveTasks(saveMode as WorkbenchMode, list);
+        return { ...prev, [mode]: list };
+      });
+      setRunningTaskId(null);
+    });
+  }, [session?.access_token, activeTaskId, codeProjects, mode, ws]);
+
   // 流事件 → 任务消息
   useEffect(() => {
+    // 流式持久化节流：message/thinking delta 每 token 全量回写 localStorage 是
+    // 长回答卡顿的大头——首写立即、尾巴合并，终态与清理时强制落盘（task-saver）。
+    const taskSaver = createTaskSaver((saveMode, list) =>
+      saveTasks(saveMode as WorkbenchMode, list as WorkbenchTask[]),
+    );
     const off = ws.onEvent((evt) => {
       const type = (evt as { type?: string }).type;
       const runId = (evt as { runId?: string }).runId;
@@ -1233,7 +1631,7 @@ export function Workbench() {
           const list = prev[mode];
           const next = list.map((t) => (t.id === taskId ? mutate(t) : t));
           const nextAll = { ...prev, [mode]: next };
-          saveTasks(mode, next);
+          taskSaver.save(mode, next);
           return nextAll;
         });
       };
@@ -1257,18 +1655,23 @@ export function Workbench() {
           ...task,
           messages: dropPartialAssistantTail(task.messages),
         }));
+        taskSaver.flush(mode);
         return;
       }
       if (!runId || runId !== activeRunIdRef.current) return;
       if (type === "run.started") {
-        // 服务端权威起表时刻（覆盖提交时的本地乐观值）
+        // 服务端权威起表时刻（覆盖提交时的本地乐观值）+ 在途 runId（断线重接用）
         const ts = (evt as { timestamp?: string }).timestamp;
-        if (ts) apply((task) => ({ ...task, runStartedAt: ts }));
+        apply((task) => ({
+          ...task,
+          ...(ts ? { runStartedAt: ts } : {}),
+          ...(runId ? { activeRunId: runId } : {}),
+        }));
       } else if (type === "tool.started" || type === "tool.completed") {
         // 工具轨迹对所有工具都记（含被工具门拒绝的合成事件），子代理工具另进目录。
         // 曾经这里写成「先处理子代理、非子代理直接 return」，把通用分支变成死代码。
         apply((task) =>
-          applyTaskToolEvent(
+          applyTaskToolEvent<WorkbenchTask>(
             task,
             evt as Parameters<typeof applyTaskToolEvent>[1],
           ),
@@ -1321,6 +1724,30 @@ export function Workbench() {
         // 本轮最后一次模型调用的累计用量（上下文容量 / 缓存命中浮层）
         const usage = usageFromEvent(evt);
         if (usage) apply((task) => ({ ...task, usage }));
+      } else if (type === "thinking.delta") {
+        // 思考流（dsh 的 ReasoningRow 数据源）：并入助手消息的 reasoning 块，
+        // 位置即真实顺序（与正文/工具互相打断）。此前这个事件被静默丢弃。
+        const delta = (evt as { delta?: string }).delta ?? "";
+        if (!delta) return;
+        apply((task) => {
+          const messages = [...task.messages];
+          const last = messages[messages.length - 1];
+          if (last && last.role === "assistant") {
+            messages[messages.length - 1] = appendThinkingDelta(last, delta);
+            return { ...task, messages };
+          }
+          // 思考先于正文到达（常态）：先建一条助手消息承载它
+          const nextStartMs = nextAssistantStartMs(messages, task.runStartedAt);
+          const settled = settlePreviousAssistant(messages, nextStartMs);
+          settled.push({
+            role: "assistant",
+            text: "",
+            startedAt: nextStartMs,
+            ...(runId ? { runId } : {}),
+            blocks: [{ type: "reasoning", text: delta }],
+          });
+          return { ...task, messages: settled };
+        });
       } else if (type === "message.delta") {
         const delta = (evt as { delta?: string }).delta ?? "";
         if (!delta) return;
@@ -1328,53 +1755,28 @@ export function Workbench() {
           const messages = [...task.messages];
           const last = messages[messages.length - 1];
           if (last && last.role === "assistant") {
-            messages[messages.length - 1] = {
-              ...last,
-              text: last.text + delta,
-            };
-          } else {
-            // 新的一条助手消息：起点取「上一条结束的时刻」，没有就退到本轮起点——
-            // 这样它记的是这一段的整段时间（含中间的思考与工具调用）
-            const previousEnd = [...messages]
-              .reverse()
-              .find((m) => m.role === "assistant" && m.elapsedMs !== undefined);
-            // 只有上一条**同时有起点与耗时**时才能链式推——老数据（只有耗时没有起点）
-            // 直接相加会得到「0 + 耗时」这种荒唐的绝对时刻（实测显示成 49 万小时）
-            const previousEndMs =
-              previousEnd?.startedAt !== undefined &&
-              previousEnd.elapsedMs !== undefined
-                ? previousEnd.startedAt + previousEnd.elapsedMs
-                : null;
-            const runStart = task.runStartedAt
-              ? parseTimestampMs(task.runStartedAt)
-              : null;
-            const nextStartMs = previousEndMs ?? runStart ?? Date.now();
-            /*
-              上一条助手消息到此定稿（模型已经开了下一轮）：把它的耗时结算掉。
-              只在终态结算最后一条时，中间那些消息永远没有 elapsedMs，界面上就
-              「只显示一部分」——用户口径是每条 AI 消息都要显示工作时间。
-            */
-            for (let i = messages.length - 1; i >= 0; i -= 1) {
-              const candidate = messages[i];
-              if (
-                candidate?.role === "assistant" &&
-                candidate.elapsedMs === undefined &&
-                candidate.startedAt !== undefined
-              ) {
-                messages[i] = {
-                  ...candidate,
-                  elapsedMs: Math.max(0, nextStartMs - candidate.startedAt),
-                };
-                break;
-              }
-            }
-            messages.push({
-              role: "assistant",
-              text: delta,
-              startedAt: nextStartMs,
-            });
+            // 追加进本轮这条助手消息的有序块：末尾是正文就续写，末尾是工具调用
+            // （工具刚跑完）就新起一段——工具之后的正文不会再和工具前的糊成一段。
+            messages[messages.length - 1] = appendAssistantDelta(last, delta);
+            return { ...task, messages };
           }
-          return { ...task, messages };
+          // 新的一条助手消息：起点取「上一条结束的时刻」，没有就退到本轮起点——
+          // 这样它记的是这一段的整段时间（含中间的思考与工具调用）
+          const nextStartMs = nextAssistantStartMs(messages, task.runStartedAt);
+          /*
+            上一条助手消息到此定稿（模型已经开了下一轮）：把它的耗时结算掉。
+            只在终态结算最后一条时，中间那些消息永远没有 elapsedMs，界面上就
+            「只显示一部分」——用户口径是每条 AI 消息都要显示工作时间。
+          */
+          const settled = settlePreviousAssistant(messages, nextStartMs);
+          settled.push({
+            role: "assistant",
+            text: delta,
+            startedAt: nextStartMs,
+            ...(runId ? { runId } : {}),
+            blocks: [{ type: "text", text: delta }],
+          });
+          return { ...task, messages: settled };
         });
       } else if (type === "run.completed") {
         const ts = (evt as { timestamp?: string }).timestamp;
@@ -1389,8 +1791,13 @@ export function Workbench() {
           }),
         );
         // 每轮成功结束自动提交一次（Code 模式 + 已绑项目），让对话在 git 里有迹可循
+        taskSaver.flush(mode);
         if (mode === "code") {
           void autoCommitTurnRef.current(taskId);
+        }
+        // 本轮结束拉取该 run 的检查点（Code 模式），任务卡上出现检查点条
+        if (mode === "code" && runId) {
+          void fetchTurnCheckpointRef.current(taskId, runId);
         }
         markUnreadIfBackground();
       } else if (type === "billing.error") {
@@ -1401,8 +1808,12 @@ export function Workbench() {
         apply((task) => ({
           ...task,
           status: "failed",
-          messages: [...task.messages, { role: "assistant", text: message }],
+          messages: [
+            ...task.messages,
+            { role: "assistant", text: message, blocks: [] },
+          ],
         }));
+        taskSaver.flush(mode);
         markUnreadIfBackground();
       } else if (type === "run.failed") {
         // 服务端在 error.message 里给的是可读原因（如「模型流已 180 秒没有任何
@@ -1420,9 +1831,14 @@ export function Workbench() {
             : {}),
           messages: [
             ...task.messages,
-            { role: "assistant", text: failureText },
+            { role: "assistant", text: failureText, blocks: [] },
           ],
         }));
+        // 失败的轮也可能已写文件（服务端收尾 finally 里照打结束快照）：同样补检查点条
+        if (mode === "code" && runId) {
+          void fetchTurnCheckpointRef.current(taskId, runId);
+        }
+        taskSaver.flush(mode);
         markUnreadIfBackground();
       } else if (type === "run.canceled") {
         const canceledTs = (evt as { timestamp?: string }).timestamp;
@@ -1436,11 +1852,16 @@ export function Workbench() {
               : {}),
           }),
         );
+        taskSaver.flush(mode);
         // 用户自己按的停止：算已读，但转圈要收掉
         setRunningTaskId(null);
       }
     });
-    return off;
+    // 事件监听随 mode/ws 变化重挂：节流窗口里的待写内容先落盘，不留给新的 saver 实例
+    return () => {
+      taskSaver.flush();
+      off();
+    };
   }, [ws, mode]);
 
   /** 真正落库并生效（确认弹窗与其余三档都走它）。 */
@@ -1728,7 +2149,14 @@ export function Workbench() {
         title,
         mode,
         createdAt: Date.now(),
-        messages: [{ role: "user", text: text.trim() }],
+        messages: [
+          {
+            role: "user",
+            text: text.trim(),
+            startedAt: Date.now(),
+            blocks: [],
+          },
+        ],
         status: "running",
         projectId: mode === "code" ? (resolvedProject?.id ?? null) : null,
         archived: false,
@@ -1756,7 +2184,7 @@ export function Workbench() {
                   runEndedAt: new Date().toISOString(),
                   messages: [
                     ...t.messages,
-                    { role: "assistant" as const, text },
+                    { role: "assistant" as const, text, blocks: [] },
                   ],
                 }
               : t,
@@ -1898,6 +2326,46 @@ export function Workbench() {
   }, []);
   autoCommitTurnRef.current = autoCommitTurn;
 
+  /**
+   * 本轮终态后拉取该 run 的检查点并写回任务（Code 模式）。
+   *
+   * 时序：服务端的**结束快照在终态事件之后**才落行（runtime 的 afterTurn 挂在收尾
+   * finally 里，而终态事件从流内 yield）——立刻拉会抢空，所以拉不到该 run 的行时
+   * 退避重试几次，拉到即停。拉取失败一律静默：检查点条是附赠视图，不打扰用户
+   * （该轮就是没有条）。
+   */
+  const fetchTurnCheckpoint = useCallback(
+    async (taskId: string, runId: string) => {
+      const { token, canvasId } = autoCommitContextRef.current;
+      if (!token || !canvasId) return;
+      for (const wait of [0, 1000, 2000, 4000]) {
+        if (wait > 0) {
+          await new Promise((resolve) => setTimeout(resolve, wait));
+        }
+        try {
+          const picked = pickCheckpointForRun(
+            await fetchCheckpoints(token, canvasId),
+            runId,
+          );
+          if (!picked) continue;
+          // 写死 code 列表：检查点只在 Code 模式任务上，此刻用户可能已切到 Design
+          setTasksByMode((prev) => {
+            const list = prev.code.map((t) =>
+              t.id === taskId ? { ...t, checkpoint: picked } : t,
+            );
+            saveTasks("code", list);
+            return { ...prev, code: list };
+          });
+          return;
+        } catch {
+          return; // 网络/鉴权失败：该轮没有检查点条
+        }
+      }
+    },
+    [],
+  );
+  fetchTurnCheckpointRef.current = fetchTurnCheckpoint;
+
   /** 任务视图内继续追问：追加 user 消息并复用同一会话发起新 run。 */
   const continueTask = useCallback(
     (text: string) => {
@@ -1905,6 +2373,8 @@ export function Workbench() {
       if (!text.trim() || !taskId || !session?.access_token) return;
       const task = tasks.find((t) => t.id === taskId);
       if (!task) return;
+      // 追问发生在对话里：从轨迹页签发消息要跳回对话页，让新内容立即可见
+      setTranscriptTab("chat");
       setTasksByMode((prev) => {
         const list = prev[mode].map((t) =>
           t.id === taskId
@@ -1912,7 +2382,12 @@ export function Workbench() {
                 ...t,
                 messages: [
                   ...t.messages,
-                  { role: "user" as const, text: text.trim() },
+                  {
+                    role: "user" as const,
+                    text: text.trim(),
+                    startedAt: Date.now(),
+                    blocks: [],
+                  },
                 ],
                 status: "running" as const,
                 // 新一轮起表，清掉上一轮的终态时刻
@@ -2336,6 +2811,9 @@ export function Workbench() {
                             />
                           )
                         }
+                        trailing={formatTaskRelativeTime(
+                          t.runEndedAt ?? t.createdAt,
+                        )}
                         onOpen={() => setActiveTaskId(t.id)}
                         onRename={(next) => renameTask(t.id, next)}
                         onArchive={() => setTaskArchived(t.id, true)}
@@ -2535,7 +3013,7 @@ export function Workbench() {
                 这两个 chip 取**对话自己绑定的项目**（run 的作用域就是它），
                 不依赖侧栏选中态——否则打开历史对话时它们会消失（用户反馈）。 */}
               <div className="shrink-0 pr-[var(--scrollbar-lane,0px)]">
-                <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-6 pt-6 pb-4">
+                <div className="flex w-full items-center gap-2 px-8 pt-6 pb-4">
                   <h1 className="min-w-0 truncate text-lg font-medium">
                     {activeTask.title}
                   </h1>
@@ -2602,147 +3080,281 @@ export function Workbench() {
                   ) : null}
                 </div>
               </div>
+              {/* 对话 / 轨迹 双页签（参考 deepseek-harness 的会话头）。
+                对话 = 按发生顺序交错的流；轨迹 = 按轮次分组的只读账本。 */}
+              <div className="shrink-0 pr-[var(--scrollbar-lane,0px)]">
+                <div
+                  role="tablist"
+                  aria-label="转录视图"
+                  className="flex w-full items-center gap-1 px-8"
+                >
+                  {(
+                    [
+                      ["chat", "对话"],
+                      ["trajectory", "轨迹"],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      role="tab"
+                      aria-selected={transcriptTab === value}
+                      onClick={() => setTranscriptTab(value)}
+                      className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+                        transcriptTab === value
+                          ? "bg-muted font-medium text-foreground"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div
                 ref={codeMessagesRef}
                 role="none"
-                className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
+                className="relative min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
                 onContextMenu={chatMenu.open}
               >
-                <div className="mx-auto w-full max-w-3xl space-y-4 px-6 pb-2">
-                  {activeTask.runStartedAt ? (
-                    <ElapsedEntry
-                      startedAt={activeTask.runStartedAt}
-                      endedAt={activeTask.runEndedAt}
-                      running={activeTask.status === "running"}
+                {transcriptTab === "chat" ? (
+                  <TurnRail items={turnRail} onJump={jumpToTurn} />
+                ) : null}
+                <div className="w-full space-y-4 px-8 pb-2">
+                  {transcriptTab === "trajectory" ? (
+                    <TrajectoryView
+                      model={trajectoryModel}
+                      startedAtMs={
+                        activeTask.runStartedAt
+                          ? parseTimestampMs(activeTask.runStartedAt)
+                          : null
+                      }
+                      endedAtMs={
+                        activeTask.runEndedAt
+                          ? parseTimestampMs(activeTask.runEndedAt)
+                          : null
+                      }
+                      focusToolCallId={trajectoryFocus}
                     />
-                  ) : null}
-                  {/*
+                  ) : (
+                    <>
+                      {activeTask.runStartedAt ? (
+                        <ElapsedEntry
+                          startedAt={activeTask.runStartedAt}
+                          endedAt={activeTask.runEndedAt}
+                          running={activeTask.status === "running"}
+                        />
+                      ) : null}
+                      {/*
                     上下文已自动压缩（R4-1 输出预留线的执行面）：说明「模型看到的历史被摘要过」，
                     而库里的转录仍然完整——不说这一句，用户会以为模型突然忘了前面的事。
                   */}
-                  {activeTask.compacted ? (
-                    <p
-                      role="status"
-                      className="rounded-md border bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground"
-                    >
-                      上下文已自动压缩：模型上下文超过{" "}
-                      {formatTokens(activeTask.compacted.triggerTokens)}（
-                      {
-                        COMPACT_SOURCE_LABELS[
-                          activeTask.compacted.triggerSource
-                        ]
-                      }
-                      ）后，较早的消息被摘要成一条，只保留最近{" "}
-                      {activeTask.compacted.keepMessages} 条；原文存在工作区的
-                      /conversation_history/，这条对话的完整记录不受影响。
-                    </p>
-                  ) : null}
-                  {/*
+                      {activeTask.compacted ? (
+                        <p
+                          role="status"
+                          className="rounded-md border bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground"
+                        >
+                          上下文已自动压缩：模型上下文超过{" "}
+                          {formatTokens(activeTask.compacted.triggerTokens)}（
+                          {
+                            COMPACT_SOURCE_LABELS[
+                              activeTask.compacted.triggerSource
+                            ]
+                          }
+                          ）后，较早的消息被摘要成一条，只保留最近{" "}
+                          {activeTask.compacted.keepMessages}{" "}
+                          条；原文存在工作区的
+                          /conversation_history/，这条对话的完整记录不受影响。
+                        </p>
+                      ) : null}
+                      {/*
                     用户钩子（R5-2「钩子」）：在项目工作目录里跑的命令，成败都如实列出——
                     配了钩子却看不到结果，等于不知道它跑没跑。失败不影响本轮。
                   */}
-                  {(activeTask.hookResults ?? []).map((hook) => (
-                    <p
-                      /* 同一条命令在起点/终点各配一次时事件不同，键按「事件+命令+耗时」取；
+                      {(activeTask.hookResults ?? []).map((hook) => (
+                        <p
+                          /* 同一条命令在起点/终点各配一次时事件不同，键按「事件+命令+耗时」取；
                          同一轮里同事件同命令只会出现一次（钩子表本身按事件+命令去重执行） */
-                      key={`${hook.event}::${hook.command}::${hook.durationMs}`}
-                      role="status"
-                      className="rounded-md border bg-muted/40 px-3 py-1.5 font-mono text-[11px] text-muted-foreground"
-                    >
-                      {hook.event === "turn-start"
-                        ? "本轮开始钩子"
-                        : "本轮结束钩子"}
-                      ：{hook.command}
-                      {" · "}
-                      {hook.timedOut
-                        ? "超时被杀"
-                        : hook.exitCode === 0
-                          ? "成功"
-                          : `退出码 ${hook.exitCode ?? "?"}`}
-                      {hook.output ? ` · ${hook.output}` : ""}
-                      {` · ${Math.max(1, Math.round(hook.durationMs / 1000))}s`}
-                    </p>
-                  ))}
-                  {/* 目标 + 进度（R1-2）：模型用了 write_todos 才出现，条数从事件流推导 */}
-                  {activeTask.todos && activeTask.todos.length > 0 ? (
-                    <TodoProgressPanel
-                      /* 目标 = 本轮的用户诉求（最后一条用户消息），不是首条——
-                     首条是这条对话最初问的，跟当前这轮的待办不是一回事 */
-                      goal={
-                        [...activeTask.messages]
-                          .reverse()
-                          .find((message) => message.role === "user")?.text ??
-                        activeTask.title
-                      }
-                      items={activeTask.todos}
-                      running={activeTask.status === "running"}
-                    />
-                  ) : null}
-                  {activeTask.subagents && activeTask.subagents.length > 0 ? (
-                    <SubagentDirectoryView
-                      entries={activeTask.subagents}
-                      running={activeTask.status === "running"}
-                    />
-                  ) : null}
-                  {(() => {
-                    // 「最终总结」标题挂在本轮最后一个 assistant 消息上方（R1-1 收尾总结）
-                    const lastAssistantIdx = activeTask.messages.reduce(
-                      (last, msg, idx) =>
-                        msg.role === "assistant" ? idx : last,
-                      -1,
-                    );
-                    const showSummary =
-                      activeTask.status === "completed" &&
-                      Boolean(activeTask.runEndedAt) &&
-                      lastAssistantIdx >= 0;
-                    return activeTask.messages.map((msg, i) => (
-                      // biome-ignore lint/suspicious/noArrayIndexKey: 流式为追加列表，消息的稳定身份就是位置；内容键会每个 token 换 key，把整条消息重挂载
-                      <div key={i} className="space-y-1">
-                        {showSummary && i === lastAssistantIdx ? (
-                          <div className="text-xs font-medium text-muted-foreground">
-                            最终总结
-                          </div>
-                        ) : null}
-                        {/* 每条助手消息都带上「工作了多久」（用户口径：不能只显示一部分） */}
-                        {msg.role === "assistant" &&
-                        msg.elapsedMs !== undefined ? (
-                          <div className="text-[11px] text-muted-foreground">
-                            已工作 {formatElapsedSeconds(msg.elapsedMs / 1000)}
-                          </div>
-                        ) : null}
-                        {msg.role === "user" ? (
-                          <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground whitespace-pre-wrap">
-                            {msg.text}
-                          </div>
-                        ) : (
-                          <div className="w-fit max-w-full rounded-2xl rounded-bl-md bg-muted px-4 py-2.5">
-                            <MarkdownRenderer text={msg.text} />
-                          </div>
-                        )}
-                      </div>
-                    ));
-                  })()}
-                  {(activeTask.tools ?? []).map((tool) => (
-                    <WorkbenchToolRow key={tool.toolCallId} tool={tool} />
-                  ))}
-                  {activeTask.status === "running" ? (
-                    <div
-                      role="status"
-                      className="flex w-fit items-center gap-1.5 rounded-2xl rounded-bl-md bg-muted px-4 py-3"
-                      aria-label="生成中"
-                    >
-                      {[0, 1, 2].map((dot) => (
-                        <span
-                          key={dot}
-                          className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/70"
-                          style={{ animationDelay: `${dot * 150}ms` }}
-                        />
+                          key={`${hook.event}::${hook.command}::${hook.durationMs}`}
+                          role="status"
+                          className="rounded-md border bg-muted/40 px-3 py-1.5 font-mono text-[11px] text-muted-foreground"
+                        >
+                          {hook.event === "turn-start"
+                            ? "本轮开始钩子"
+                            : "本轮结束钩子"}
+                          ：{hook.command}
+                          {" · "}
+                          {hook.timedOut
+                            ? "超时被杀"
+                            : hook.exitCode === 0
+                              ? "成功"
+                              : `退出码 ${hook.exitCode ?? "?"}`}
+                          {hook.output ? ` · ${hook.output}` : ""}
+                          {` · ${Math.max(1, Math.round(hook.durationMs / 1000))}s`}
+                        </p>
                       ))}
-                      <span className="ml-1 text-xs text-muted-foreground">
-                        生成中…
-                      </span>
-                    </div>
-                  ) : null}
+                      {/* 目标 + 进度（R1-2）：模型用了 write_todos 才出现，条数从事件流推导 */}
+                      {activeTask.todos && activeTask.todos.length > 0 ? (
+                        <TodoProgressPanel
+                          /* 目标 = 本轮的用户诉求（最后一条用户消息），不是首条——
+                     首条是这条对话最初问的，跟当前这轮的待办不是一回事 */
+                          goal={
+                            [...activeTask.messages]
+                              .reverse()
+                              .find((message) => message.role === "user")
+                              ?.text ?? activeTask.title
+                          }
+                          items={activeTask.todos}
+                          running={activeTask.status === "running"}
+                        />
+                      ) : null}
+                      {activeTask.subagents &&
+                      activeTask.subagents.length > 0 ? (
+                        <SubagentDirectoryView
+                          entries={activeTask.subagents}
+                          running={activeTask.status === "running"}
+                        />
+                      ) : null}
+                      {(() => {
+                        // 「最终总结」标题挂在本轮最后一个 assistant 消息上方（R1-1 收尾总结）
+                        const shown = activeTask;
+                        const lastAssistantIdx = shown.messages.reduce(
+                          (last, msg, idx) =>
+                            msg.role === "assistant" ? idx : last,
+                          -1,
+                        );
+                        const showSummary =
+                          activeTask.status === "completed" &&
+                          Boolean(activeTask.runEndedAt) &&
+                          lastAssistantIdx >= 0;
+                        const streaming = activeTask.status === "running";
+                        return shown.messages.map((msg, i) => {
+                          // 轮级过程折叠（dsh 同款）：跑完且有结论的轮，结论前的
+                          // 推理/工具/中途输出收进控制行；手动展开后逐行原位可见
+                          const spec = specCoveringIndex(turnProcesses, i);
+                          const foldKey = spec
+                            ? `${activeTask.id}:${spec.turnIndex}`
+                            : null;
+                          const folded =
+                            spec !== null &&
+                            foldKey !== null &&
+                            !expandedTurnProcesses.has(foldKey);
+                          if (
+                            folded &&
+                            spec &&
+                            i > spec.startIndex &&
+                            i < spec.answerIndex
+                          ) {
+                            // 折叠区内的过程行：控制行展开后原位回来
+                            return null;
+                          }
+                          const tailOnly =
+                            folded &&
+                            spec !== null &&
+                            i === spec.answerIndex &&
+                            msg.role === "assistant";
+                          return (
+                            <div
+                              // biome-ignore lint/suspicious/noArrayIndexKey: 流式为追加列表，消息的稳定身份就是位置；内容键会每个 token 换 key，把整条消息重挂载
+                              key={i}
+                              className="space-y-2"
+                              data-turn-anchor={turnOfIndex[i]}
+                            >
+                              {spec && i === spec.startIndex ? (
+                                <TurnProcessRow
+                                  spec={spec}
+                                  expanded={Boolean(
+                                    foldKey &&
+                                      expandedTurnProcesses.has(foldKey),
+                                  )}
+                                  onToggle={() =>
+                                    setExpandedTurnProcesses((prev) => {
+                                      const next = new Set(prev);
+                                      if (foldKey && next.has(foldKey)) {
+                                        next.delete(foldKey);
+                                      } else if (foldKey) {
+                                        next.add(foldKey);
+                                      }
+                                      return next;
+                                    })
+                                  }
+                                />
+                              ) : null}
+                              {showSummary && i === lastAssistantIdx ? (
+                                <div className="text-xs font-medium text-muted-foreground">
+                                  最终总结
+                                </div>
+                              ) : null}
+                              {/* 每条助手消息都带上「工作了多久」（用户口径：不能只显示一部分） */}
+                              {msg.role === "assistant" &&
+                              msg.elapsedMs !== undefined ? (
+                                <div className="text-[11px] text-muted-foreground">
+                                  已工作{" "}
+                                  {formatElapsedSeconds(msg.elapsedMs / 1000)}
+                                </div>
+                              ) : null}
+                              {msg.role === "user" ? (
+                                <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground whitespace-pre-wrap">
+                                  {msg.text}
+                                </div>
+                              ) : tailOnly && spec ? (
+                                // 折叠态：答案消息只渲染尾部正文（过程块都在控制行里）；
+                                // 与展开态同款无气泡排版
+                                <div className="w-full max-w-full">
+                                  <MarkdownRenderer
+                                    text={spec.answerTailText}
+                                  />
+                                </div>
+                              ) : (
+                                <AssistantTurn
+                                  msg={msg}
+                                  streaming={
+                                    streaming && i === shown.messages.length - 1
+                                  }
+                                  onInspectTool={(toolCallId) => {
+                                    setTranscriptTab("trajectory");
+                                    setTrajectoryFocus(toolCallId);
+                                  }}
+                                />
+                              )}
+                            </div>
+                          );
+                        });
+                      })()}
+                      {/*
+                    检查点条（Code 模式）：本轮终态后拉到的影子快照——改了什么、可回滚。
+                    仍在本轮运行中时禁用回滚（工作目录正被写入）。
+                  */}
+                      {activeTask.checkpoint ? (
+                        <CheckpointChip
+                          checkpoint={activeTask.checkpoint}
+                          accessToken={session?.access_token ?? null}
+                          canvasId={
+                            conversationProject?.primaryCanvas.id ?? null
+                          }
+                          restoreDisabled={activeTask.status === "running"}
+                        />
+                      ) : null}
+                      {activeTask.status === "running" ? (
+                        <div
+                          role="status"
+                          className="flex w-fit items-center gap-1.5 rounded-2xl rounded-bl-md bg-muted px-4 py-3"
+                          aria-label="生成中"
+                        >
+                          {[0, 1, 2].map((dot) => (
+                            <span
+                              key={dot}
+                              className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/70"
+                              style={{ animationDelay: `${dot * 150}ms` }}
+                            />
+                          ))}
+                          <span className="ml-1 text-xs text-muted-foreground">
+                            生成中…
+                          </span>
+                        </div>
+                      ) : null}
+                    </>
+                  )}
                 </div>
               </div>
               {/* 底部：继续对话（完整版工具行 + 多轮，复用同一会话）。
@@ -2750,7 +3362,7 @@ export function Workbench() {
 
               <div className="shrink-0 pr-[var(--scrollbar-lane,0px)]">
                 <form
-                  className="mx-auto w-full max-w-3xl px-6 pt-3 pb-4"
+                  className="w-full px-8 pt-3 pb-4"
                   onSubmit={(e) => {
                     e.preventDefault();
                     const value = expandCommand(followUp, commands).text;
@@ -2972,7 +3584,7 @@ ${formatElementReference(picked)}`
             />
           </div>
         ) : (
-          <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-6">
+          <div className="flex h-full flex-col items-center justify-center px-8">
             <div className="mb-9 flex items-center gap-3">
               {/* 尺寸与笔画各调过一轮（用户口径：h-14 + stroke 3 太粗太大 → stroke 2 又太细）：
                   现在 h-9（36px 盒 → 墨高 18px）+ strokeWidth 2.5，取中间 */}

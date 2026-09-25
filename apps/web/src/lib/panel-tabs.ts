@@ -10,6 +10,7 @@
 /** 面板里能开的视图种类。 */
 export type PanelViewKind =
   | "changes"
+  | "checkpoint"
   | "files"
   | "terminal"
   | "browser"
@@ -49,6 +50,7 @@ export function baseName(path: string): string {
 
 const VIEW_LABELS: Record<PanelViewKind, string> = {
   changes: "变更",
+  checkpoint: "检查点",
   files: "文件目录",
   terminal: "终端",
   browser: "浏览器",

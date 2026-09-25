@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.13/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.14/schema.json",
   "files": {
     "ignoreUnknown": true,
     "includes": [
@@ -18,6 +18,7 @@
       "!apps/server/src/features/model-providers/models-dev.snapshot.ts",
       "!**/.pnpm-store",
       "!**/tmp",
+      "!**/.zcode",
       "!**/target",
       "!**/gen",
       "!**/references",
@@ -27,7 +28,8 @@
       "!**/target",
       "!**/gen",
       "!**/data",
-      "!**/logs"
+      "!**/logs",
+      "!**/runtime"
     ]
   },
   "formatter": {

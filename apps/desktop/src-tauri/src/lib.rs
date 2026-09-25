@@ -5,6 +5,7 @@
 //! 服务端生命周期管理见 `server_handle`（spawn / 探活 / 复用 / 优雅退出）。
 
 pub mod browser_embed;
+pub mod desktop_system;
 pub mod server_handle;
 
 pub use server_handle::{
@@ -50,9 +51,8 @@ struct ServerState(std::sync::Mutex<Option<server_handle::ServerHandle>>);
  * 正是 `/canvas?id=…`，所以在壳自带 UI 上**画布永远是空白**（用户 2026-09-17 报的
  * 「design 模式是画布啊，怎么又给我改坏了」就是这个）。
  */
-fn desktop_env(app: &tauri::AppHandle, web_dir: &Path, port: u16) -> Vec<(String, String)> {
-    let _ = app;
-    vec![
+fn desktop_env(data_dir: &Path, web_dir: &Path, port: u16) -> Vec<(String, String)> {
+    let mut env = vec![
         ("KENFUTWORK_EMBEDDED_PG".into(), "1".into()),
         ("KENFUTWORK_AUTH_DRIVER".into(), "local-trust".into()),
         ("KENFUTWORK_QUEUE_DRIVER".into(), "in-process".into()),
@@ -66,43 +66,92 @@ fn desktop_env(app: &tauri::AppHandle, web_dir: &Path, port: u16) -> Vec<(String
             "KENFUTWORK_WEB_DIST".into(),
             web_dir.to_string_lossy().to_string(),
         ),
-    ]
+    ];
+    // macOS 打包态：.app 包内（Contents/Resources）只读且受签名保护——检查点影子仓库
+    // 与 agent 沙箱的缺省落点是 <exeDir>/data/checkpoints、<exeDir>/tmp/sandbox，会写进
+    // 包内毁签名（首次写入还可能直接 EROFS）。注入数据目录下的落点；Windows 安装在
+    // 可写目录、现状可用，故不动（与 main 侧对齐后再统一）。
+    #[cfg(target_os = "macos")]
+    env.push((
+        "KENFUTWORK_CHECKPOINT_ROOT".into(),
+        data_dir.join("checkpoints").to_string_lossy().to_string(),
+    ));
+    #[cfg(target_os = "macos")]
+    env.push((
+        "KENFUTWORK_SANDBOX_ROOT".into(),
+        data_dir.join("sandbox").to_string_lossy().to_string(),
+    ));
+    env
 }
 
-/** 安装包随带的那个服务端 exe（`<resource>/app/KenFutWork-server.exe`）；仓库里跑时为 None。 */
-fn bundled_server_exe(app: &tauri::AppHandle) -> Option<PathBuf> {
+/** 随包服务端的启动载体：程序 + 参数（存在且可运行时返回；仓库里跑时为 None）。
+ *
+ * 判定必须**严于 exists**：打包占位的零字节文件、tauri-build 残骸都算「存在但不可运行」，
+ * 误判会让 dev 形态永远走不到 dev 拉起路径（2026-09-19 实测事故：探活盲等 90s panic）。
+ *
+ * 两种形态：
+ * - Windows：单文件 SEA（`app/KenFutWork-server.exe`）；
+ * - macOS：**不做 SEA**（darwin 27 上 postject 注入必崩，2026-09-23 实测），改用
+ *   随包静态 node 拉起 CJS 入口：`app/runtime/node/bin/node app/server/server.cjs`
+ *   （node 官方发行版签名天然有效，且该 node 本来就要随包给运行时用）。
+ */
+fn bundled_server_launch(
+    app: &tauri::AppHandle,
+) -> Option<(PathBuf, Vec<String>, PathBuf)> {
     use tauri::Manager;
     let dir = app.path().resource_dir().ok()?.join("app");
-    let exe = dir.join("KenFutWork-server.exe");
-    exe.exists().then_some(exe)
+
+    #[cfg(windows)]
+    {
+        let exe = dir.join("KenFutWork-server.exe");
+        let meta = std::fs::metadata(&exe).ok()?;
+        if meta.len() == 0 {
+            return None; // 零字节 = tauri-build 的占位残骸，不是真服务端
+        }
+        Some((exe, Vec::new(), dir))
+    }
+
+    #[cfg(not(windows))]
+    {
+        let node = dir.join("runtime").join("node").join("bin").join("node");
+        let server = dir.join("server").join("server.cjs");
+        let node_meta = std::fs::metadata(&node).ok()?;
+        let server_meta = std::fs::metadata(&server).ok()?;
+        if node_meta.len() == 0 || server_meta.len() == 0 {
+            return None; // 占位残骸
+        }
+        // Unix 上还要求可执行位（占位文件通常没有）
+        use std::os::unix::fs::PermissionsExt;
+        if node_meta.permissions().mode() & 0o111 == 0 {
+            return None;
+        }
+        Some((node, vec![server.to_string_lossy().to_string()], dir))
+    }
 }
 
-/// 打包态的拉起配置：随包服务端 exe + 桌面环境变量 + 指定端口。
+/// 打包态的拉起配置：随包服务端载体 + 桌面环境变量 + 指定端口。
 fn packaged_spawn_config(
-    app: &tauri::AppHandle,
-    exe: &Path,
-    data_dir: PathBuf,
+    program: &Path,
+    args: Vec<String>,
+    app_dir: &Path,
+    data_dir: &Path,
     port: u16,
 ) -> ServerSpawnConfig {
-    let dir = exe
-        .parent()
-        .map(|parent| parent.to_path_buf())
-        .unwrap_or_else(|| data_dir.clone());
     let mut config = ServerSpawnConfig::new(
-        exe.to_string_lossy().as_ref(),
-        Vec::new(),
-        data_dir,
+        program.to_string_lossy().as_ref(),
+        args,
+        data_dir.to_path_buf(),
         port,
     );
-    config.cwd = dir.clone();
-    config.env = desktop_env(app, &dir.join("web"), port);
+    config.cwd = app_dir.to_path_buf();
+    config.env = desktop_env(data_dir, &app_dir.join("web"), port);
     config
 }
 
-/// 开发形态的拉起配置：命令与 cwd 可用 env 覆盖（dev.sh 注入 `LOOMIC_DESKTOP_SERVER_CWD`）。
+/// 开发形态的拉起配置：命令与 cwd 可用 env 覆盖（dev.sh 注入 `KENFUTWORK_DESKTOP_SERVER_CWD`）。
 fn dev_spawn_config(data_dir: PathBuf) -> ServerSpawnConfig {
-    let command = std::env::var("LOOMIC_DESKTOP_SERVER_CMD").unwrap_or_else(|_| "pnpm".into());
-    let args = std::env::var("LOOMIC_DESKTOP_SERVER_ARGS")
+    let command = std::env::var("KENFUTWORK_DESKTOP_SERVER_CMD").unwrap_or_else(|_| "pnpm".into());
+    let args = std::env::var("KENFUTWORK_DESKTOP_SERVER_ARGS")
         // 包名按品牌改过（`@kenfutwork/*`）：这里以前还写着旧作用域 `@loomic/server`，
         // 真机 `cargo check` 顺带发现——照旧名拉起会直接「找不到包」，桌面端起不来服务端。
         .unwrap_or_else(|_| "--filter @kenfutwork/server dev:server".into())
@@ -110,7 +159,7 @@ fn dev_spawn_config(data_dir: PathBuf) -> ServerSpawnConfig {
         .map(str::to_string)
         .collect();
     let mut config = ServerSpawnConfig::new(&command, args, data_dir, SERVER_PORT);
-    if let Ok(cwd) = std::env::var("LOOMIC_DESKTOP_SERVER_CWD") {
+    if let Ok(cwd) = std::env::var("KENFUTWORK_DESKTOP_SERVER_CWD") {
         config.cwd = cwd.into();
     }
     config
@@ -140,9 +189,8 @@ fn log_line(data_dir: &Path, message: &str) {
  * 是 → 复用；不是（别人的服务/dev API）→ 换下一个端口；没人听且可绑 → 拉自己的服务端。
  */
 fn launch_packaged_server(
-    app: &tauri::AppHandle,
     data_dir: &Path,
-    exe: &Path,
+    launch: &(PathBuf, Vec<String>, PathBuf),
 ) -> Result<(u16, ServerLaunch), String> {
     for offset in 0..PORT_CANDIDATES {
         let port = SERVER_PORT + offset;
@@ -168,15 +216,15 @@ fn launch_packaged_server(
             log_line(data_dir, &format!("端口 {port} 不可用，换端口"));
             continue;
         }
-        let config = packaged_spawn_config(app, exe, data_dir.to_path_buf(), port);
+        let config =
+            packaged_spawn_config(&launch.0, launch.1.clone(), &launch.2, data_dir, port);
         log_line(
             data_dir,
             &format!(
-                "拉起随包服务端：{}（端口 {port}，UI 目录 {}）",
-                exe.display(),
-                exe.parent()
-                    .map(|dir| dir.join("web").display().to_string())
-                    .unwrap_or_default()
+                "拉起随包服务端：{} {}（端口 {port}，UI 目录 {}）",
+                launch.0.display(),
+                launch.1.join(" "),
+                launch.2.join("web").display().to_string()
             ),
         );
         match ensure_server_running(config) {
@@ -202,8 +250,8 @@ fn start_server(
     app: &tauri::AppHandle,
     data_dir: &Path,
 ) -> Result<(ServerLaunch, Option<u16>), String> {
-    if let Some(exe) = bundled_server_exe(app) {
-        let (port, launch) = launch_packaged_server(app, data_dir, &exe)?;
+    if let Some(server_launch) = bundled_server_launch(app) {
+        let (port, launch) = launch_packaged_server(data_dir, &server_launch)?;
         return Ok((launch, Some(port)));
     }
     ensure_server_running(dev_spawn_config(data_dir.to_path_buf()))
@@ -350,6 +398,8 @@ pub fn run() {
             }
         }))
         .invoke_handler(tauri::generate_handler![ping]);
+    // 系统缝（下载落盘 / 文件管理器定位 / 外链）——见 desktop_system.rs
+    let builder = desktop_system::register_system_commands(builder);
     // 右栏浏览器的真内核嵌入（子 webview + WebView2 DevTools）——见 browser_embed.rs
     browser_embed::register_embed_commands(builder)
         .setup(|app| {
@@ -359,7 +409,7 @@ pub fn run() {
             // 主线程被占住，窗口连重绘都不做 → 用户看到的是一大片白屏。
             // 现在：先画启动中页面（打包态才画，dev 形态窗口归 devUrl），后台起服务，
             // 起来了再把它叫到主线程跳转。
-            let packaged = bundled_server_exe(app.handle()).is_some();
+            let packaged = bundled_server_launch(app.handle()).is_some();
             if packaged {
                 show_startup_splash(app.handle());
             }
@@ -409,4 +459,60 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod desktop_env_tests {
+    use super::*;
+
+    /**
+     * macOS 打包态数据落点回归（2026-09-23）：检查点影子仓库与 agent 沙箱的缺省
+     * 落点是 <exeDir>/data|tmp——在 .app 包内，只读且受签名保护。desktop_env 必须
+     * 把两者注入数据目录下的子目录；基线 env（嵌入式 PG / local-trust / 端口）不变。
+     */
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_packaged_env_points_checkpoint_and_sandbox_to_data_dir() {
+        let data_dir = std::path::Path::new("/Users/me/Library/Application Support/com.kenfutwork.desktop");
+        let env = desktop_env(
+            data_dir,
+            &std::path::Path::new("/Applications/KenFutWork.app/Contents/Resources/app/web"),
+            3002,
+        );
+        let get = |key: &str| {
+            env.iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.clone())
+                .unwrap_or_else(|| panic!("缺 env {key}"))
+        };
+        assert_eq!(
+            get("KENFUTWORK_CHECKPOINT_ROOT"),
+            data_dir.join("checkpoints").to_string_lossy().to_string()
+        );
+        assert_eq!(
+            get("KENFUTWORK_SANDBOX_ROOT"),
+            data_dir.join("sandbox").to_string_lossy().to_string()
+        );
+        // 基线不变
+        assert_eq!(get("KENFUTWORK_SERVER_PORT"), "3002");
+        assert_eq!(get("KENFUTWORK_EMBEDDED_PG"), "1");
+        assert_eq!(get("KENFUTWORK_AUTH_DRIVER"), "local-trust");
+        assert_eq!(
+            get("KENFUTWORK_WEB_DIST"),
+            "/Applications/KenFutWork.app/Contents/Resources/app/web"
+        );
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn windows_packaged_env_omits_mac_only_keys() {
+        let env = desktop_env(
+            std::path::Path::new("C:/data"),
+            std::path::Path::new("C:/app/web"),
+            3001,
+        );
+        assert!(env.iter().all(|(k, _)| k != "KENFUTWORK_CHECKPOINT_ROOT"));
+        assert!(env.iter().all(|(k, _)| k != "KENFUTWORK_SANDBOX_ROOT"));
+        assert_eq!(env.len(), 6);
+    }
 }

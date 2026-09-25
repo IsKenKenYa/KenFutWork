@@ -69,6 +69,9 @@ export function createAgentRunsPlugin(
 
       ctx.register("agentRuns", (d) => {
         const jobService = ctx.tryGet("jobs");
+        // 检查点缝（可选依赖）：有 checkpoints 服务时把轮次快照钩子接进 runtime；
+        // 缺席（部分装配/未启用）则不打检查点，run 照常
+        const checkpoints = ctx.tryGet("checkpoints");
         // 执行模式工具门：solo/plan 策略归 agent-modes，运行时只拿到判定函数
         const agentModes = d.get("agentModes");
         // 权限档同门：内置工具（execute/write_file/edit_file）不经过 ctx.tools.execute，
@@ -113,6 +116,27 @@ export function createAgentRunsPlugin(
           brandKitService: d.get("brandKit"),
           canvasRepository,
           canvasService: d.get("canvas"),
+          // 轮次快照钩子：显式包一层把行返回值折成 void（钩子失败由 runtime 兜底告警）
+          ...(checkpoints
+            ? {
+                checkpointHooks: {
+                  beforeTurn: async (hookCtx: {
+                    canvasId: string;
+                    sandboxDir: string;
+                    runId: string;
+                  }) => {
+                    await checkpoints.beforeTurn(hookCtx);
+                  },
+                  afterTurn: async (hookCtx: {
+                    canvasId: string;
+                    sandboxDir: string;
+                    runId: string;
+                  }) => {
+                    await checkpoints.afterTurn(hookCtx);
+                  },
+                },
+              }
+            : {}),
           workspaceSkillsLoader: createWorkspaceSkillsLoader({
             canvases: canvasRepository,
             skills: createSkillCatalogRepository(ctx.get("persistence")),

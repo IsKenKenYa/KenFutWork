@@ -12,6 +12,7 @@ import { brandKitPlugin } from "../features/brand-kit/plugin.js";
 import { createBrowserPlugin } from "../features/browser/plugin.js";
 import { createCanvasPlugin } from "../features/canvas/plugin.js";
 import { createChatPlugin } from "../features/chat/plugin.js";
+import { createCheckpointsPlugin } from "../features/checkpoints/plugin.js";
 import { createCodeGitPlugin } from "../features/code-git/plugin.js";
 import { createCodeToolsPlugin } from "../features/code-tools/plugin.js";
 import { createCreditsPlugin } from "../features/credits/plugin.js";
@@ -79,6 +80,14 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     category: "Agent 能力",
     description: "任务编排、流式输出、子代理与工具调用。",
     capabilities: ["agents", "tools"],
+  },
+  {
+    name: "checkpoints",
+    title: "检查点",
+    category: "Agent 能力",
+    description:
+      "Code 模式每轮自动快照，可查看改动并一键回滚（影子 git，不碰你的仓库）。",
+    capabilities: [],
   },
   {
     name: "permissions",
@@ -151,6 +160,8 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createViewerPlugin(),
     createCanvasPlugin(),
     createCodeGitPlugin(),
+    // 检查点（影子 git）在 agent-runs 之前装配：后者的轮次钩子经 tryGet 消费它
+    createCheckpointsPlugin(),
     createChatPlugin(),
     createSettingsPlugin(),
     createUploadsPlugin(),

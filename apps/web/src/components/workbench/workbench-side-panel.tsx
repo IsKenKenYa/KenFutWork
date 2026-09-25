@@ -6,6 +6,7 @@ import {
   type PickedElement,
 } from "@/components/workbench/panel-browser-view";
 import { ChangesPane } from "@/components/workbench/panel-changes-view";
+import { PanelCheckpointView } from "@/components/workbench/panel-checkpoint-view";
 import { FilesPane } from "@/components/workbench/panel-files-view";
 import { DiffPane, FilePane } from "@/components/workbench/panel-reading-view";
 import { PanelTabStrip } from "@/components/workbench/panel-tab-strip";
@@ -90,10 +91,17 @@ export function WorkbenchSidePanel({
   const [state, setState] = useState<{
     tabs: PanelTab[];
     activeId: string | null;
-  }>(() => ({
-    tabs: [makePanelTab({ kind: "changes" }, Date.now())],
-    activeId: "changes",
-  }));
+  }>(() => {
+    const now = Date.now();
+    // 默认两页：变更（用户 git）+ 检查点（影子快照的每文件撤销）
+    return {
+      tabs: [
+        makePanelTab({ kind: "changes" }, now),
+        makePanelTab({ kind: "checkpoint" }, now),
+      ],
+      activeId: "changes",
+    };
+  });
   /** 变更清单的重读计数：暂存/撤销之后 +1（清单与差异视图都跟着刷新）。 */
   const [changesVersion, setChangesVersion] = useState(0);
   const bumpChanges = useCallback(
@@ -362,6 +370,14 @@ function PaneContent({
           onChanged={onChanged}
           onOpenDiff={(path) => onOpenView({ kind: "diff", path })}
           onOpenFile={(path) => onOpenView({ kind: "file", path })}
+        />
+      );
+    case "checkpoint":
+      return (
+        <PanelCheckpointView
+          accessToken={accessToken}
+          canvasId={canvasId}
+          running={running}
         />
       );
     case "files":

@@ -25,41 +25,11 @@
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "nsis"
-    ],
-    "icon": [
-      "icons/icon.png",
-      "icons/icon.ico"
-    ],
+    "icon": ["icons/icon.png", "icons/icon.ico"],
     "publisher": "KenFutWork",
     "copyright": "GPL-3.0",
     "category": "DeveloperTool",
     "shortDescription": "BYOK AI 工作台（画布创作 / 编码 agent）",
-    "longDescription": "KenFutWork：自带数据库与运行时的本机 AI 工作台。装完即可用，无需另装 Node、Python、JDK 或数据库。",
-    "resources": {
-      "../../../release/KenFutWork-server.exe": "app/KenFutWork-server.exe",
-      "../../../release/web": "app/web",
-      "../../../release/pg": "app/pg",
-      "../../../release/runtime": "app/runtime",
-      "../../../release/node_modules": "app/node_modules",
-      "../../../release/supabase": "app/supabase"
-    },
-    "windows": {
-      "nsis": {
-        "installMode": "both",
-        "languages": [
-          "SimpChinese",
-          "English"
-        ],
-        "displayLanguageSelector": false,
-        "installerIcon": "icons/icon.ico",
-        "uninstallerIcon": "icons/icon.ico",
-        "installerHooks": "installer-hooks.nsh",
-        "startMenuFolder": "KenFutWork",
-        "headerImage": "installer-header.bmp",
-        "sidebarImage": "installer-sidebar.bmp"
-      }
-    }
+    "longDescription": "KenFutWork：自带数据库与运行时的本机 AI 工作台。装完即可用，无需另装 Node、Python、JDK 或数据库。"
   }
 }

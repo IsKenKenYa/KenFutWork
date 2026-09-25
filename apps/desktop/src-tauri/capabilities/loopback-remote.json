@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "loopback-remote",
+  "description": "回环远程页面能力：主窗口最终加载的是**本机服务端托管的 UI**（127.0.0.1 / localhost，见 lib.rs navigate_main_window）。Tauri 默认不给远程页面任何 IPC，不声明这条 capability，desktop_system 的下载落盘/Finder 定位/外链打开与 browser_embed_* 全部会被 ACL 拒绝。子 webview（browser-embed）刻意不在此列：嵌进来的外部站点拿不到任何壳命令。",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://localhost:*", "http://127.0.0.1:*"]
+  },
+  "permissions": ["core:default"]
+}

@@ -53,9 +53,9 @@ ENV NODE_ENV=production
 
 EXPOSE 3001
 
-# Python runtime for sandbox code execution (canvas-design skill)
+# Python runtime for sandbox code execution (canvas-design skill); git for checkpoints
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends python3 python3-pip && \
+    apt-get install -y --no-install-recommends python3 python3-pip git && \
     pip3 install --no-cache-dir --break-system-packages pillow reportlab && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 

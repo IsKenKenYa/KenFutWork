@@ -364,6 +364,23 @@ type CreateAgentRuntimeOptions = {
   toolGateFor?: (threadId: string) => ToolGate | undefined;
   /** 插件贡献的提示段（能力 systemPrompt）；每次 run 调用一次。 */
   pluginPromptFragments?: () => string[];
+  /**
+   * 检查点钩子（checkpoints 缝，可选依赖）：轮次开始/结束时打影子 git 快照。
+   * runtime 只负责在正确时机调用（beforeTurn 在流启动前、afterTurn 在收尾 finally，
+   * 成功/失败/取消都走到）并兜住异常——hook 失败绝不影响 run 终态与收尾流程。
+   */
+  checkpointHooks?: {
+    beforeTurn(ctx: {
+      canvasId: string;
+      sandboxDir: string;
+      runId: string;
+    }): Promise<void>;
+    afterTurn(ctx: {
+      canvasId: string;
+      sandboxDir: string;
+      runId: string;
+    }): Promise<void>;
+  };
   now?: () => string;
   runIdFactory?: () => string;
   tierGuard?: TierGuard;
@@ -512,6 +529,24 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
     hasRun(runId: string) {
       return runs.has(runId);
+    },
+
+    /**
+     * 该画布是否还有在途 run（accepted/running）：恢复路由的守卫用——run 还在
+     * 写工作目录时不允许回滚，否则恢复会把正在产出的文件冲掉。
+     * 画布命中两分支：run.canvasId（客户端发来的作用域）或 sandboxScopeId
+     * （服务端解析出的沙箱画布，见 createRun 的 runOptions）。
+     */
+    hasActiveRunForCanvas(canvasId: string): boolean {
+      for (const run of runs.values()) {
+        if (run.status !== "accepted" && run.status !== "running") {
+          continue;
+        }
+        if (run.canvasId === canvasId || run.sandboxScopeId === canvasId) {
+          return true;
+        }
+      }
+      return false;
     },
 
     async *streamRun(runId: string): AsyncGenerator<StreamEvent> {
@@ -1754,6 +1789,27 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             userMessage = new HumanMessage(enrichedPrompt);
           }
 
+          // 检查点（checkpoints 缝）：轮次开始的影子快照，必须在流启动前打（本轮
+          // 之前的落盘状态才是「轮次开始」）。只在有沙箱目录的**非临时**后端打——
+          // dev ephemeral 目录随 run 删除，打了也白打。hook 是旁路：抛错只告警，
+          // 绝不影响 run（与 turn-end hooks 同款兜底）。
+          if (
+            options.checkpointHooks &&
+            backendCanvasId &&
+            backendResult.sandboxDir &&
+            !backendResult.ephemeral
+          ) {
+            try {
+              await options.checkpointHooks.beforeTurn({
+                canvasId: backendCanvasId,
+                runId,
+                sandboxDir: backendResult.sandboxDir,
+              });
+            } catch (hookError) {
+              console.warn("[checkpoint] beforeTurn failed:", hookError);
+            }
+          }
+
           rlog.lap("stream_call_start");
           stream = agent.streamEvents(
             {
@@ -2058,6 +2114,25 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           } catch (hookError) {
             // 钩子是旁路：这里再兜一层，绝不让它把收尾流程带崩
             console.warn("[agent-runtime] turn-end hooks failed:", hookError);
+          }
+        }
+        // 检查点（checkpoints 缝）：轮次收尾的影子快照——成功/失败/取消都要走到
+        //（finally 保证），放在用户钩子之后、临时沙箱清理之前（ephemeral 不打）。
+        // 抛错只告警，绝不影响 run 的终态事件与收尾流程。
+        if (
+          options.checkpointHooks &&
+          backendCanvasId &&
+          backendResult.sandboxDir &&
+          !backendResult.ephemeral
+        ) {
+          try {
+            await options.checkpointHooks.afterTurn({
+              canvasId: backendCanvasId,
+              runId,
+              sandboxDir: backendResult.sandboxDir,
+            });
+          } catch (hookError) {
+            console.warn("[checkpoint] afterTurn failed:", hookError);
           }
         }
         if (backendResult.sandboxDir && backendResult.ephemeral) {

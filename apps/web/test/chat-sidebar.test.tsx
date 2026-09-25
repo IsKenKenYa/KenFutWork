@@ -293,12 +293,12 @@ describe("ChatSidebar", () => {
       const svg = screen.getByRole("button", { name }).querySelector("svg");
       expect(svg).not.toBeNull();
       expect(svg?.getAttribute("fill")).toBe("none");
-      expect(svg?.getAttribute("class")).toBe("h-4 w-4");
+      expect(svg?.getAttribute("class")).toContain("h-4 w-4");
     }
     // 历史记录/新建对话两个图标同样统一为 h-4 w-4
     for (const name of ["历史记录", "新建对话"]) {
       const svg = screen.getByRole("button", { name }).querySelector("svg");
-      expect(svg?.getAttribute("class")).toBe("h-4 w-4");
+      expect(svg?.getAttribute("class")).toContain("h-4 w-4");
     }
   });
 

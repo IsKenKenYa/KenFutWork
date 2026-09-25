@@ -279,7 +279,14 @@ describe("WorkbenchSidePanel（多标签）", () => {
     );
 
     await userEvent.click(screen.getByRole("button", { name: "关闭 终端" }));
-    // 右邻没有、左邻是变更 → 激活回到变更
+    // 右邻没有、左邻是检查点（默认第二页签）→ 激活检查点
+    expect(screen.getByRole("tab", { name: /检查点/ })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "关闭 检查点" }));
+    // 左邻是变更 → 激活回到变更
     expect(screen.getByRole("tab", { name: /变更/ })).toHaveAttribute(
       "aria-selected",
       "true",

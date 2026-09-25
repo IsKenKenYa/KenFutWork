@@ -154,7 +154,7 @@ export function createChatRepository(
           })
            select $1::uuid, c.id, $2::uuid, $3::text${
              withTitle ? ", $4::text" : ""
-}
+           }
              from public.canvases c
              join public.projects p on p.id = c.project_id
             where c.id = ${canvasParam}::uuid

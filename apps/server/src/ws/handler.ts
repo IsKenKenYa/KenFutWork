@@ -1,10 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type {
-  ContentBlock,
-  ToolBlock,
-  WsCommand,
-  WsTerminalStartCommand,
-} from "@kenfutwork/shared";
+import type { WsCommand, WsTerminalStartCommand } from "@kenfutwork/shared";
 import {
   type RunCreateRequest,
   wsCommandSchema,
@@ -37,6 +32,7 @@ import {
   type TerminalSession,
 } from "../features/code-git/terminal-session.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
+import { createAssistantBlockCollector } from "./assistant-block-collector.js";
 import type { ConnectionManager } from "./connection-manager.js";
 import type { CanvasEventBuffer } from "./event-buffer.js";
 import { createPipelineLogger } from "./logger.js";
@@ -711,9 +707,9 @@ async function handleRunCommand(
     connectionManager.sendTo(connectionId, { type: "keep-alive" });
   }, 15_000);
 
-  // Accumulate assistant content blocks for server-side persistence
-  const assistantText: string[] = [];
-  const assistantBlocks: ContentBlock[] = [];
+  // 对话历史块组装（content_blocks 持久化口径）：思考/工具归属/时间戳都落库，
+  // 刷新后轨迹时间轴与轮级归属才完整——逻辑与口径见 assistant-block-collector。
+  const blockCollector = createAssistantBlockCollector();
 
   const runSettings =
     viewer && services.settingsService
@@ -728,8 +724,7 @@ async function handleRunCommand(
   try {
     // 失败自动重试（判定集中在 agent/run-retry.ts）。上限取自工作区设置，缺省 10。
     for (let attempt = 1; ; attempt += 1) {
-      assistantText.length = 0;
-      assistantBlocks.length = 0;
+      blockCollector.reset();
       let sawToolExecution = false;
       let failureMessage: string | undefined;
       // 显式终态：成功与「用户取消」都不是失败，绝不能被重试判定当成「无原因可重试」
@@ -767,40 +762,14 @@ async function handleRunCommand(
           });
         }
 
-        // Accumulate content for server-side persistence
-        if (event.type === "message.delta") {
-          const lastBlock = assistantBlocks[assistantBlocks.length - 1];
-          if (lastBlock && lastBlock.type === "text") {
-            (lastBlock as { type: "text"; text: string }).text += event.delta;
-          } else {
-            assistantBlocks.push({ type: "text", text: event.delta });
-          }
-          assistantText.push(event.delta);
-        } else if (event.type === "tool.started") {
-          assistantBlocks.push({
-            type: "tool",
-            toolCallId: event.toolCallId,
-            toolName: event.toolName,
-            status: "running" as const,
-            ...(event.input ? { input: event.input } : {}),
-          });
-        } else if (event.type === "tool.completed") {
-          const idx = assistantBlocks.findIndex(
-            (b) =>
-              b.type === "tool" &&
-              (b as ToolBlock).toolCallId === event.toolCallId,
-          );
-          if (idx >= 0) {
-            assistantBlocks[idx] = {
-              ...(assistantBlocks[idx] as ToolBlock),
-              status: "completed" as const,
-              ...(event.output ? { output: event.output } : {}),
-              ...(event.outputSummary
-                ? { outputSummary: event.outputSummary }
-                : {}),
-              ...(event.artifacts ? { artifacts: event.artifacts } : {}),
-            };
-          }
+        // Accumulate content for server-side persistence（含思考/归属/时间戳）
+        if (
+          event.type === "message.delta" ||
+          event.type === "thinking.delta" ||
+          event.type === "tool.started" ||
+          event.type === "tool.completed"
+        ) {
+          blockCollector.onEvent(event);
         }
       }
       log.lap("stream_done", { runId });
@@ -813,8 +782,7 @@ async function handleRunCommand(
        */
       if (
         terminal === "completed" &&
-        assistantText.length === 0 &&
-        assistantBlocks.length === 0 &&
+        !blockCollector.hasVisibleContent &&
         !sawToolExecution
       ) {
         const reason =
@@ -841,18 +809,15 @@ async function handleRunCommand(
       });
       if (!decision.retry) {
         // ── Server-side assistant message persistence ──
-        if (
-          services.chatService &&
-          (assistantText.length > 0 || assistantBlocks.length > 0)
-        ) {
+        if (services.chatService && blockCollector.hasVisibleContent) {
           try {
             await services.chatService.createMessage(
               authenticatedUser,
               payload.sessionId,
               {
                 role: "assistant",
-                content: assistantText.join(""),
-                contentBlocks: assistantBlocks,
+                content: blockCollector.text,
+                contentBlocks: [...blockCollector.blocks],
               },
             );
             log.lap("assistant_message_persisted", { runId });

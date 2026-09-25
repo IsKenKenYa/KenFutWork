@@ -64,24 +64,6 @@ import { ExecutionModeSelect } from "./execution-mode-select";
 import { SessionSelector } from "./session-selector";
 import { useToast } from "./toast";
 
-/** 对话视图图标：空心气泡（与图层/文件同一套：24 视框、stroke 1.5、无填充）。 */
-function ChatBubbleIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      aria-hidden="true"
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-    </svg>
-  );
-}
-
 /** 图层图标：空心叠层（同一套线宽与视框）。 */
 function LayersStackIcon({ className }: { className?: string }) {
   return (

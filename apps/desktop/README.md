@@ -28,6 +28,32 @@ pnpm --filter @kenfutwork/desktop exec tauri build        # 出安装包；加 -
 > 同理 `bundle.resources` 里引 `release/` 要写**三级** `../../../release/...`
 > （src-tauri → apps/desktop → apps → 仓库根；少一级会报「resource path 不存在」）。
 
+## 出 macOS DMG（Apple Silicon，自包含 .app）
+
+```sh
+pnpm fetch:runtimes                                       # 1) 拉随包运行时（darwin-arm64 资产，sha256 校验）
+pnpm package:mac                                          # 2) 出 release/（server.cjs + web + pg + runtime + node_modules）
+pnpm --filter @kenfutwork/desktop build                   # 3) tauri 出 .app → bundle_dmg.sh 摆布局 → DMG 收到仓库根
+```
+
+产物：仓库根 `KenFutWork_0.1.0_arm64.dmg`（约 285 MB；.app 818 MB 自包含：服务端 CJS + 内嵌
+Postgres + 随包 Node/Python/uv/JRE，用户机器无需预装）。**安装引导**：Docker 式拖拽布局——
+品牌背景（标题/箭头/中文提示，源文件 `src-tauri/dmg/background.svg` 经 sharp 渲染）+ 左 .app
+右 Applications，由 `scripts/dmg/bundle_dmg.sh`（tauri 的 create-dmg 分叉，AppleScript 真实
+设置窗口 bounds 与图标坐标）生成；无头环境 AppleScript 受限时自动降级 appdmg → hdiutil。
+
+**形态要点（2026-09-23 落地）**：
+- **不做 Node SEA 单文件**：darwin 27 上 postject 注入后必崩（SIGSEGV，node 22/24 双载体 +
+  remove-signature 官方流程均复现）。改为「随包官方静态 node（runtime/node/bin/node）+
+  esbuild CJS（`server/server.cjs`，`KFW_PACKAGED_CJS` define 定位资源根）」——node 二进制
+  零修改、签名天然有效，壳的 mac 分支按 `node server/server.cjs` 拉起（lib.rs）。
+- **签名**：默认 ad-hoc（临时签名）。本机双击可用；**拷给别的 mac** 首开被 Gatekeeper 拦，
+  右键 → 打开，或 `xattr -cr /Applications/KenFutWork.app`。对外分发需 Developer ID + 公证。
+- **数据目录**：`~/Library/Application Support/com.kenfutwork.desktop/`（与 dev 态同目录，
+  首启直接复用已有数据）；检查点与沙箱由壳注入到该目录（.app 包内只读且受签名保护，不可写）。
+- **PG 软链**：darwin 包的 `pg-symlinks.json` 由 `package-mac.mjs` 复刻（libicudata 前车之鉴）；
+  pgmq shim 预装进 `pg/share/postgresql/extension`（darwin 是 PG 标准 share 布局，win 才平铺）。
+
 ## 出 Windows 安装包（NSIS，一键装）
 
 ```sh
@@ -98,6 +124,25 @@ pnpm --filter @kenfutwork/server dev:server   # 桌面形态：KENFUTWORK_EMBEDD
 pnpm --filter @kenfutwork/web dev             # web UI（3000）
 cd apps/desktop/src-tauri && cargo tauri dev
 ```
+
+## macOS 系统权限与行为对齐（2026-09-20 盘点）
+
+壳的内核是 WKWebView，与浏览器/WebView2 行为有差异；「系统 API」逐项对齐如下。
+
+| 能力 | 现状 | 机制 / 权限 |
+| --- | --- | --- |
+| 系统文件夹对话框（选工作目录） | ✅ 可用 | 服务端 `osascript choose folder`（NSOpenPanel，无需特殊权限）。曾经的「Request failed」是前端 POST 带空 JSON 体被 Fastify 400，已修（`pickDirectory` 带 `{}`） |
+| 文件夹访问（TCC） | ✅ 系统自动弹窗 | agent 读用户选定目录时，若落在 `~/Desktop` / `~/Documents` / `~/Downloads`，macOS 首次访问会弹授权框（责任进程为 KenFutWork 壳），允许一次后不再问 |
+| 下载（图片/视频/画布/插件导出） | ✅ 已对齐 | 统一走 `triggerDownload`（`lib/download.ts`）→ Rust `save_file` 落系统下载目录（重名顺延）→ `reveal_path` 在访达中定位。首次写 `~/Downloads` 可能弹一次 TCC 授权 |
+| 打开访达窗口 | ✅ 已对齐 | 即下载完成后的 `reveal_path`（macOS `open -R`）；外链类「打开」见下行 |
+| 外部链接（target=_blank） | ✅ 已对齐 | WKWebView 开不了新窗口：工作台挂 `installDesktopExternalLinks`（捕获阶段拦截）→ Rust `open_external` 交给系统默认浏览器（只放行 http/https） |
+| 麦克风 / 摄像头 | 未使用 | 全仓无 `getUserMedia` 调用；未来加语音输入需 `NSMicrophoneUsageDescription` + WKWebView 媒体权限，到时再登记 |
+| Apple Events 自动化 | 未使用 | `osascript` 只弹 NSOpenPanel，不控制其他 App，不触发「控制 Finder」授权 |
+
+**IPC 能力面**：主窗口最终加载的是本机服务端托管的 UI（回环 http），Tauri 默认不给远程页面任何
+IPC——`capabilities/loopback-remote.json` 只对 `main` 窗口放行 `http://localhost:*` /
+`http://127.0.0.1:*`（都是我们自己的服务端）；子 webview（browser-embed）刻意不在列，嵌进来的
+外部站点拿不到任何壳命令。
 
 ## 路线（对齐《多端产品设计》D1–D3）
 

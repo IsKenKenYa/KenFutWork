@@ -4,6 +4,8 @@ import { motion } from "framer-motion";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { triggerDownload } from "@/lib/download";
+
 /* ------------------------------------------------------------------ */
 /*  LightboxBtn — toolbar icon button                                  */
 /* ------------------------------------------------------------------ */
@@ -95,13 +97,8 @@ export function ImageLightbox({
   const handleDownload = useCallback(async () => {
     try {
       const res = await fetch(src);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = alt || "image";
-      a.click();
-      URL.revokeObjectURL(url);
+      if (!res.ok) throw new Error(String(res.status));
+      await triggerDownload(alt || "image", await res.blob());
     } catch {
       // Fallback: open in new tab if download fails (e.g. CORS)
       window.open(src, "_blank");

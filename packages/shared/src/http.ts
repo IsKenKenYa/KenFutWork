@@ -557,6 +557,11 @@ export const applicationErrorCodeSchema = z.enum([
   // Code 模式 git 写操作（R2-1：提交/推送/建分支）
   "git_unavailable",
   "git_write_failed",
+  // Code 模式检查点（影子 git）。服务内部语义码 not_found 不在枚举里（老坑见上），
+  // 路由映射成 checkpoint_not_found 再进响应
+  "checkpoint_not_found",
+  "checkpoint_failed",
+  "run_in_progress",
   // 用户侧使用统计（R4-2）
   "usage_query_failed",
   /**

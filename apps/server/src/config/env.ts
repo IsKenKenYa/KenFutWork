@@ -50,6 +50,12 @@ export type ServerEnv = {
    */
   sandboxRoot?: string;
   /**
+   * 检查点影子仓库根目录（`KENFUTWORK_CHECKPOINT_ROOT`，可相对）。缺省由入口解析为
+   * `<项目根（dev）/ exe 安装目录（打包）>/data/checkpoints`，画布影子仓库为其下
+   * `<画布UUID>.git`（GIT_DIR），work-tree 指向沙箱工作目录。
+   */
+  checkpointRoot?: string;
+  /**
    * 模型流空闲看门狗阈值（毫秒，`KENFUTWORK_AGENT_STREAM_IDLE_TIMEOUT_MS`）。
    * 上游停滞超过该时长即按有界失败终止本轮（缺省 180s，见 stream-idle-guard）。
    */
@@ -218,6 +224,9 @@ export function loadServerEnv(
   const sandboxRoot =
     overrides.sandboxRoot ??
     normalizeOptionalString(source.KENFUTWORK_SANDBOX_ROOT);
+  const checkpointRoot =
+    overrides.checkpointRoot ??
+    normalizeOptionalString(source.KENFUTWORK_CHECKPOINT_ROOT);
   const searchApiKey =
     overrides.searchApiKey ??
     normalizeOptionalString(source.KENFUTWORK_SEARCH_API_KEY);
@@ -417,6 +426,7 @@ export function loadServerEnv(
     ...(agentFilesRoot ? { agentFilesRoot } : {}),
     ...(canvasWorkDirs ? { canvasWorkDirs } : {}),
     ...(sandboxRoot ? { sandboxRoot } : {}),
+    ...(checkpointRoot ? { checkpointRoot } : {}),
     ...(credentialSecret ? { credentialSecret } : {}),
     ...(flowEmbedSecret ? { flowEmbedSecret } : {}),
     ...(flowFrontendUrl ? { flowFrontendUrl } : {}),

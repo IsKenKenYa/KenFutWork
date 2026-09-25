@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="800" viewBox="0 0 1320 800">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8faff"/>
+      <stop offset="0.55" stop-color="#eef2ff"/>
+      <stop offset="1" stop-color="#e7edff"/>
+    </linearGradient>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2e63fa"/>
+      <stop offset="1" stop-color="#214ada"/>
+    </linearGradient>
+    <linearGradient id="arrow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#5b83ff"/>
+      <stop offset="1" stop-color="#214ada"/>
+    </linearGradient>
+    <radialGradient id="glowL" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#2e63fa" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#2e63fa" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowR" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#7c9bff" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#7c9bff" stop-opacity="0"/>
+    </radialGradient>
+    <marker id="head" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="url(#arrow)"/>
+    </marker>
+  </defs>
+
+  <rect width="1320" height="800" fill="url(#bg)"/>
+  <ellipse cx="200" cy="160" rx="340" ry="240" fill="url(#glowL)"/>
+  <ellipse cx="1120" cy="640" rx="360" ry="260" fill="url(#glowR)"/>
+
+  <!-- 装饰星芒（品牌蓝 + 一点暖色，呼应钉钉参考图的点缀） -->
+  <g fill="#a9c2ff" opacity="0.85">
+    <path d="M120 520 l14 34 34 14 -34 14 -14 34 -14 -34 -34 -14 34 -14 z"/>
+    <path d="M1180 140 l11 27 27 11 -27 11 -11 27 -11 -27 -27 -11 27 -11 z" fill="#ffc9d6"/>
+  </g>
+  <g fill="#cdd9ff" opacity="0.9">
+    <path d="M1230 420 l9 22 22 9 -22 9 -9 22 -9 -22 -22 -9 22 -9 z"/>
+    <path d="M90 130 l8 20 20 8 -20 8 -8 20 -8 -20 -20 -8 20 -8 z" fill="#ffd9c9"/>
+  </g>
+
+  <!-- 标题与副题 -->
+  <text x="660" y="118" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, PingFang SC, sans-serif" font-size="72" font-weight="700" fill="url(#brand)">KenFutWork</text>
+  <text x="660" y="176" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, PingFang SC, sans-serif" font-size="30" fill="#6b6f85">BYOK AI 工作台 · 画布创作 / 编码智能体</text>
+
+  <!-- 拖拽引导：左（应用）→ 右（Applications），中间箭头 + 提示 -->
+  <path d="M 460 430 Q 660 540 852 442" fill="none" stroke="url(#arrow)" stroke-width="12" stroke-linecap="round" marker-end="url(#head)"/>
+  <text x="660" y="600" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, PingFang SC, sans-serif" font-size="34" font-weight="600" fill="#3d4468">把 KenFutWork 拖到右边 Applications</text>
+  <text x="660" y="650" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, PingFang SC, sans-serif" font-size="26" fill="#8a8fa8">松手即完成安装 · 之后可弹出本磁盘</text>
+</svg>
