@@ -222,6 +222,13 @@ vitest 按 app 配置（`apps/web/vitest.config.mjs`、`apps/server/vitest.confi
 - **避免的行为**：无意义免责声明、机械式礼貌、重复总结、情绪化共鸣、"你这个问题很好"、"作为 AI"、"我认为"、"让我们一步一步"、过度 emoji、为了显得自然而故意口语化。
 - **历史上下文核对**：当当前对话与历史对话存在明确关联时，可以参考历史上下文；若无直接关联，则禁止主动引入历史对话内容，避免上下文污染与错误联想。
 
+## 运行时可调数值（硬约束，DEC-18）
+桌面 BYOK 形态下 key 与算力都是用户自己的，一切限额必须用户可调——**运行时可调数值禁止在业务代码里写死字面量**（子代理派生深度/并发、LLM 请求重试次数与无限重试开关、工具/命令超时、批量与截断上限、退避间隔等）：
+- 默认值与区间护栏的唯一属主是 `packages/shared/src/governance.ts`（`AGENT_GOVERNANCE_DEFAULTS` / `AGENT_GOVERNANCE_LIMITS` / clamp 函数）；`workspaceSettingsSchema` 的对应字段直接引用它，禁止另写一份字面量。
+- 覆盖入口只有两个：`workspace_settings` 表（设置页 PATCH）与 env 兜底（`KENFUTWORK_*`，经 `resolveGovernanceEnvOverrides` 解析，非法值忽略不报错）。优先级一律 **库值 ?? env ?? DEFAULTS**；业务代码经 settings 服务读取，禁止直读 `process.env` 取治理值。
+- 新 PR 引入魔法数字（超时/上限/次数/间隔）即打回；确属一次性的局部常量须行内注释说明为何不进治理表。
+- 参照先例：kimi-code 的 `KIMI_LOOP_MAX_ATTEMPTS_PER_STEP` / `KIMI_CODE_INFINITE_RETRY`（重试档位可调 + 无限重试显式开启）。
+
 ## 数据库迁移（硬约束）
 > 方向说明：已决策去 Supabase 云（2026-09-11），存储统一自管 Postgres（桌面捆绑本机实例 / 自托管连用户 Postgres，见《多端产品设计》§5）；当前代码仍运行在 Supabase 上，迁移前本节规则照常生效。迁移后 `supabase/migrations/` 目录名沿用，内容为 Postgres SQL，且同样约束未来新增的存储适配器。
 - `supabase/migrations/` 中的原生 SQL 是唯一 Schema 迁移来源；不要引入 ORM Schema 或第二套迁移历史。

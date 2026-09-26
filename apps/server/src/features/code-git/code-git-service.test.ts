@@ -1,8 +1,8 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import type { WorkspaceSettings } from "@kenfutwork/shared";
 import { afterAll, describe, expect, it, vi } from "vitest";
-
 import { resolveSandboxDir } from "../../agent/sandbox-dir.js";
 import type { AuthenticatedUser } from "../auth/types.js";
 import {
@@ -14,7 +14,6 @@ import {
 import type { GitClient, GitRepoView } from "./git-client.js";
 import {
   detectTerminalShells,
-  type TerminalShellId,
   type TerminalShellOption,
 } from "./terminal-runner.js";
 
@@ -46,24 +45,7 @@ function build(options: {
     getWorkspaceSettings: (
       user: AuthenticatedUser,
       workspaceId: string,
-    ) => Promise<{
-      defaultModel: string;
-      agentMaxRetries: number;
-      terminalShell: TerminalShellId;
-      /** R4-3 索引库开关（这个桩只关心终端 shell，给它一个常量即可）。 */
-      codeIndexEnabled: boolean;
-      /** R4-3「索引新文件夹」（同上：常量）。 */
-      codeIndexAutoNewFolder: boolean;
-      /** 上下文自动压缩（同上：常量）。 */
-      autoCompactEnabled: boolean;
-      /** 自定义命令（同上：空表）。 */
-      commands: Array<{ name: string; description: string; prompt: string }>;
-      /** 用户钩子（同上：空表）。 */
-      hooks: Array<{ event: "turn-start" | "turn-end"; command: string }>;
-      /** 用户规则（同上：桩里给空值）。 */
-      userRules: string;
-      ruleEntries: string[];
-    }>;
+    ) => Promise<WorkspaceSettings>;
   };
   availableShells?: TerminalShellOption[];
   /** 项目绑定的本机工作目录（`projects.work_dir`）桩：按画布返回路径。 */
@@ -463,6 +445,11 @@ describe("终端 shell 解析", () => {
           hooks: [],
           userRules: "",
           ruleEntries: [],
+          subagentMaxDepth: 1,
+          subagentMaxConcurrency: 4,
+          llmRequestMaxRetries: 10,
+          llmInfiniteRetry: false,
+          executeTimeoutMs: 120000,
         }),
       },
     });

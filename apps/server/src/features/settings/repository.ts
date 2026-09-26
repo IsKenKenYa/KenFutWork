@@ -46,6 +46,20 @@ export interface SettingsRepository {
   ): Promise<void>;
   upsertUserRules(workspaceId: string, userRules: string): Promise<void>;
   upsertRuleEntries(workspaceId: string, entries: string[]): Promise<void>;
+  /** agent 治理五项（DEC-17/DEC-18）：逐列读写，缺列返回 null 由服务落 DEFAULTS。 */
+  findSubagentMaxDepth(workspaceId: string): Promise<number | null>;
+  findSubagentMaxConcurrency(workspaceId: string): Promise<number | null>;
+  findLlmRequestMaxRetries(workspaceId: string): Promise<number | null>;
+  findLlmInfiniteRetry(workspaceId: string): Promise<boolean | null>;
+  findExecuteTimeoutMs(workspaceId: string): Promise<number | null>;
+  upsertSubagentMaxDepth(workspaceId: string, value: number): Promise<void>;
+  upsertSubagentMaxConcurrency(
+    workspaceId: string,
+    value: number,
+  ): Promise<void>;
+  upsertLlmRequestMaxRetries(workspaceId: string, value: number): Promise<void>;
+  upsertLlmInfiniteRetry(workspaceId: string, value: boolean): Promise<void>;
+  upsertExecuteTimeoutMs(workspaceId: string, value: number): Promise<void>;
 }
 
 type DefaultModelRow = { default_model: string };
@@ -57,6 +71,11 @@ type AutoCompactEnabledRow = { auto_compact_enabled: boolean };
 type CommandsRow = { commands: unknown };
 type HooksRow = { hooks: unknown };
 type UserRulesRow = { user_rules: string; rule_entries: unknown };
+type SubagentMaxDepthRow = { subagent_max_depth: number };
+type SubagentMaxConcurrencyRow = { subagent_max_concurrency: number };
+type LlmRequestMaxRetriesRow = { llm_request_max_retries: number };
+type LlmInfiniteRetryRow = { llm_infinite_retry: boolean };
+type ExecuteTimeoutMsRow = { execute_timeout_ms: number };
 
 export function createSettingsRepository(
   persistence: PersistenceService,
@@ -273,6 +292,111 @@ export function createSettingsRepository(
          on conflict (workspace_id)
          do update set agent_max_retries = excluded.agent_max_retries`,
         [agentMaxRetries],
+      );
+    },
+
+    async findSubagentMaxDepth(workspaceId) {
+      const row = await persistence
+        .forWorkspace(workspaceId)
+        .queryOne<SubagentMaxDepthRow>(
+          `select subagent_max_depth
+             from public.workspace_settings
+            where workspace_id = :workspace`,
+        );
+      return row?.subagent_max_depth ?? null;
+    },
+
+    async upsertSubagentMaxDepth(workspaceId, value) {
+      await persistence.forWorkspace(workspaceId).query(
+        `insert into public.workspace_settings (workspace_id, subagent_max_depth)
+         values (:workspace, $1)
+         on conflict (workspace_id)
+         do update set subagent_max_depth = excluded.subagent_max_depth`,
+        [value],
+      );
+    },
+
+    async findSubagentMaxConcurrency(workspaceId) {
+      const row = await persistence
+        .forWorkspace(workspaceId)
+        .queryOne<SubagentMaxConcurrencyRow>(
+          `select subagent_max_concurrency
+             from public.workspace_settings
+            where workspace_id = :workspace`,
+        );
+      return row?.subagent_max_concurrency ?? null;
+    },
+
+    async upsertSubagentMaxConcurrency(workspaceId, value) {
+      await persistence.forWorkspace(workspaceId).query(
+        `insert into public.workspace_settings (workspace_id, subagent_max_concurrency)
+         values (:workspace, $1)
+         on conflict (workspace_id)
+         do update set subagent_max_concurrency = excluded.subagent_max_concurrency`,
+        [value],
+      );
+    },
+
+    async findLlmRequestMaxRetries(workspaceId) {
+      const row = await persistence
+        .forWorkspace(workspaceId)
+        .queryOne<LlmRequestMaxRetriesRow>(
+          `select llm_request_max_retries
+             from public.workspace_settings
+            where workspace_id = :workspace`,
+        );
+      return row?.llm_request_max_retries ?? null;
+    },
+
+    async upsertLlmRequestMaxRetries(workspaceId, value) {
+      await persistence.forWorkspace(workspaceId).query(
+        `insert into public.workspace_settings (workspace_id, llm_request_max_retries)
+         values (:workspace, $1)
+         on conflict (workspace_id)
+         do update set llm_request_max_retries = excluded.llm_request_max_retries`,
+        [value],
+      );
+    },
+
+    async findLlmInfiniteRetry(workspaceId) {
+      const row = await persistence
+        .forWorkspace(workspaceId)
+        .queryOne<LlmInfiniteRetryRow>(
+          `select llm_infinite_retry
+             from public.workspace_settings
+            where workspace_id = :workspace`,
+        );
+      return row?.llm_infinite_retry ?? null;
+    },
+
+    async upsertLlmInfiniteRetry(workspaceId, value) {
+      await persistence.forWorkspace(workspaceId).query(
+        `insert into public.workspace_settings (workspace_id, llm_infinite_retry)
+         values (:workspace, $1)
+         on conflict (workspace_id)
+         do update set llm_infinite_retry = excluded.llm_infinite_retry`,
+        [value],
+      );
+    },
+
+    async findExecuteTimeoutMs(workspaceId) {
+      const row = await persistence
+        .forWorkspace(workspaceId)
+        .queryOne<ExecuteTimeoutMsRow>(
+          `select execute_timeout_ms
+             from public.workspace_settings
+            where workspace_id = :workspace`,
+        );
+      return row?.execute_timeout_ms ?? null;
+    },
+
+    async upsertExecuteTimeoutMs(workspaceId, value) {
+      await persistence.forWorkspace(workspaceId).query(
+        `insert into public.workspace_settings (workspace_id, execute_timeout_ms)
+         values (:workspace, $1)
+         on conflict (workspace_id)
+         do update set execute_timeout_ms = excluded.execute_timeout_ms`,
+        [value],
       );
     },
   };

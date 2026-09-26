@@ -3,6 +3,7 @@ import { z } from "zod";
 import { toolArtifactSchema } from "./artifacts.js";
 import { brandKitAssetTypeSchema } from "./brand-kit-contracts.js";
 import { executionModeSchema } from "./capability-contracts.js";
+import { governanceBoolSetting, governanceSetting } from "./governance.js";
 
 export const identifierSchema = z.string().min(1);
 export const timestampSchema = z.iso.datetime({ offset: true });
@@ -265,6 +266,21 @@ export const workspaceSettingsSchema = z.object({
    * 缺省 10；服务端对「已执行工具」的轮次一律不重试（副作用安全），见 agent/run-retry.ts。
    */
   agentMaxRetries: z.number().int().min(0).max(50).default(10),
+  /**
+   * agent 治理可调数值（DEC-17/DEC-18）：以下五项的唯一字面量属主是 shared
+   * `governance.ts`（`AGENT_GOVERNANCE_DEFAULTS`），覆盖入口 = workspace_settings
+   * （本 schema 的设置页 PATCH）+ env 兜底；服务端读侧另有 clamp 护栏。
+   */
+  /** 子代理派生深度上限：1 = 子代理不得再派生（禁孙代理）。 */
+  subagentMaxDepth: governanceSetting("subagentMaxDepth"),
+  /** 后台任务（子代理/长命令）同时运行上限。 */
+  subagentMaxConcurrency: governanceSetting("subagentMaxConcurrency"),
+  /** LLM 请求级重试上限（含首次；0 = 不重试；治上游 429/5xx 抖动）。 */
+  llmRequestMaxRetries: governanceSetting("llmRequestMaxRetries"),
+  /** LLM 请求无限重试（用户显式开启；持续 429 的不稳定上游场景）。 */
+  llmInfiniteRetry: governanceBoolSetting("llmInfiniteRetry"),
+  /** Code 模式 execute 命令超时（毫秒；下限 5s 上限 30min）。 */
+  executeTimeoutMs: governanceSetting("executeTimeoutMs"),
 });
 
 export const modelInfoSchema = z.object({
@@ -334,6 +350,25 @@ export const toolBlockSchema = z.object({
   /** 起止时刻（ISO）：轨迹账本的时间列与耗时列的数据源；旧数据无此字段。 */
   startedAt: timestampSchema.optional(),
   endedAt: timestampSchema.optional(),
+  /** 子代理归因（DEC-19）：该调用发生在哪个具名子代理里；主 agent 调用缺省。 */
+  agentName: z.string().min(1).optional(),
+});
+
+/**
+ * 后台任务通知块（DEC-15）：后台子代理 / 长命令的终态通知在转录里的落库形态。
+ * 与 `task.notification` 流事件同源（服务端同一份事实写两处：事件管实时、块管回放），
+ * 渲染为静默通知行，不是 assistant 正文也不是工具行。
+ */
+export const taskNotificationBlockSchema = z.object({
+  type: z.literal("task_notification"),
+  taskId: z.string().min(1).max(128),
+  kind: z.enum(["subagent", "command"]),
+  label: z.string().min(1).max(2_000),
+  status: z.enum(["completed", "failed", "canceled"]),
+  summary: z.string().min(1).max(8_000),
+  nextStep: z.string().max(2_000).optional(),
+  /** 通知产生时刻（ISO）。 */
+  at: timestampSchema.optional(),
 });
 
 export const imageBlockSchema = z.object({
@@ -382,6 +417,7 @@ export const contentBlockSchema = z.union([
   toolBlockSchema,
   imageBlockSchema,
   mentionBlockSchema,
+  taskNotificationBlockSchema,
 ]);
 
 export const chatMessageSchema = z.object({

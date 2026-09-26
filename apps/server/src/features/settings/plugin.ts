@@ -19,6 +19,9 @@ export function createSettingsPlugin(): PluginDefinition {
       ctx.register("settings", () =>
         createSettingsService({
           defaultModel: ctx.env.agentModel,
+          ...(ctx.env.agentGovernance
+            ? { governanceEnv: ctx.env.agentGovernance }
+            : {}),
           resolveFallbackModel: async (user) => {
             const entries = await ctx
               .get("modelCatalog")

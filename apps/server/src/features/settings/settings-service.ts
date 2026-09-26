@@ -1,5 +1,17 @@
-import type { TerminalShellId, WorkspaceSettings } from "@kenfutwork/shared";
+import type {
+  AgentGovernanceOverrides,
+  TerminalShellId,
+  WorkspaceSettings,
+} from "@kenfutwork/shared";
 
+import {
+  AGENT_GOVERNANCE_DEFAULTS,
+  clampExecuteTimeoutMs,
+  clampLlmRequestMaxRetries,
+  clampSubagentMaxConcurrency,
+  clampSubagentMaxDepth,
+  coerceLlmInfiniteRetry,
+} from "@kenfutwork/shared";
 import {
   clampMaxRunRetries,
   DEFAULT_MAX_RUN_RETRIES,
@@ -43,6 +55,11 @@ export type WorkspaceSettingsPatch = {
   hooks?: WorkspaceSettings["hooks"] | undefined;
   userRules?: string | undefined;
   ruleEntries?: string[] | undefined;
+  subagentMaxDepth?: number | undefined;
+  subagentMaxConcurrency?: number | undefined;
+  llmRequestMaxRetries?: number | undefined;
+  llmInfiniteRetry?: boolean | undefined;
+  executeTimeoutMs?: number | undefined;
 };
 
 export type SettingsService = {
@@ -111,6 +128,11 @@ export function createSettingsService(options: {
   /** Override the fallback model when no workspace setting exists. */
   defaultModel?: string;
   /**
+   * agent 治理五项的 **env 兜底**（DEC-18）：优先级 = 库值 ?? env ?? DEFAULTS。
+   * 自托管/桌面打包场景不改库也能调档（如 `KENFUTWORK_SUBAGENT_MAX_CONCURRENCY=8`）。
+   */
+  governanceEnv?: AgentGovernanceOverrides;
+  /**
    * 无工作区设置时**动态解析**兜底模型（目录里首个可用的 chat 模型）。
    *
    * 为什么不能只用静态兜底：静态值来自 env（内置目录名，如 `gpt-4.1`），而实际可用模型
@@ -123,6 +145,7 @@ export function createSettingsService(options: {
   ) => Promise<string | undefined>;
 }): SettingsService {
   const defaultModel = options.defaultModel ?? FALLBACK_MODEL;
+  const governanceEnv = options.governanceEnv ?? {};
   const { repository } = options;
 
   const getSettings = async (
@@ -139,6 +162,11 @@ export function createSettingsService(options: {
       storedRules,
       storedCommands,
       storedHooks,
+      storedSubagentMaxDepth,
+      storedSubagentMaxConcurrency,
+      storedLlmRequestMaxRetries,
+      storedLlmInfiniteRetry,
+      storedExecuteTimeoutMs,
     ] = await Promise.all([
       repository.findDefaultModel(workspaceId),
       repository.findAgentMaxRetries(workspaceId),
@@ -149,6 +177,11 @@ export function createSettingsService(options: {
       repository.findUserRules(workspaceId),
       repository.findCommands(workspaceId),
       repository.findHooks(workspaceId),
+      repository.findSubagentMaxDepth(workspaceId),
+      repository.findSubagentMaxConcurrency(workspaceId),
+      repository.findLlmRequestMaxRetries(workspaceId),
+      repository.findLlmInfiniteRetry(workspaceId),
+      repository.findExecuteTimeoutMs(workspaceId),
     ]).catch(() => {
       throw new SettingsServiceError(
         "settings_read_failed",
@@ -178,6 +211,33 @@ export function createSettingsService(options: {
       hooks: parseHooks(storedHooks),
       userRules: storedRules?.userRules ?? "",
       ruleEntries: storedRules?.ruleEntries ?? [],
+      // 治理五项（DEC-17/DEC-18）：默认值/护栏唯一属主是 shared governance.ts；
+      // 优先级 = 库值 ?? env 兜底 ?? DEFAULTS，读侧一律钳回护栏
+      subagentMaxDepth: clampSubagentMaxDepth(
+        storedSubagentMaxDepth ??
+          governanceEnv.subagentMaxDepth ??
+          AGENT_GOVERNANCE_DEFAULTS.subagentMaxDepth,
+      ),
+      subagentMaxConcurrency: clampSubagentMaxConcurrency(
+        storedSubagentMaxConcurrency ??
+          governanceEnv.subagentMaxConcurrency ??
+          AGENT_GOVERNANCE_DEFAULTS.subagentMaxConcurrency,
+      ),
+      llmRequestMaxRetries: clampLlmRequestMaxRetries(
+        storedLlmRequestMaxRetries ??
+          governanceEnv.llmRequestMaxRetries ??
+          AGENT_GOVERNANCE_DEFAULTS.llmRequestMaxRetries,
+      ),
+      llmInfiniteRetry: coerceLlmInfiniteRetry(
+        storedLlmInfiniteRetry ??
+          governanceEnv.llmInfiniteRetry ??
+          AGENT_GOVERNANCE_DEFAULTS.llmInfiniteRetry,
+      ),
+      executeTimeoutMs: clampExecuteTimeoutMs(
+        storedExecuteTimeoutMs ??
+          governanceEnv.executeTimeoutMs ??
+          AGENT_GOVERNANCE_DEFAULTS.executeTimeoutMs,
+      ),
     };
   };
 
@@ -241,6 +301,46 @@ export function createSettingsService(options: {
       if (patch.ruleEntries !== undefined) {
         writes.push(
           repository.upsertRuleEntries(workspaceId, patch.ruleEntries),
+        );
+      }
+      if (patch.subagentMaxDepth !== undefined) {
+        writes.push(
+          repository.upsertSubagentMaxDepth(
+            workspaceId,
+            clampSubagentMaxDepth(patch.subagentMaxDepth),
+          ),
+        );
+      }
+      if (patch.subagentMaxConcurrency !== undefined) {
+        writes.push(
+          repository.upsertSubagentMaxConcurrency(
+            workspaceId,
+            clampSubagentMaxConcurrency(patch.subagentMaxConcurrency),
+          ),
+        );
+      }
+      if (patch.llmRequestMaxRetries !== undefined) {
+        writes.push(
+          repository.upsertLlmRequestMaxRetries(
+            workspaceId,
+            clampLlmRequestMaxRetries(patch.llmRequestMaxRetries),
+          ),
+        );
+      }
+      if (patch.llmInfiniteRetry !== undefined) {
+        writes.push(
+          repository.upsertLlmInfiniteRetry(
+            workspaceId,
+            patch.llmInfiniteRetry,
+          ),
+        );
+      }
+      if (patch.executeTimeoutMs !== undefined) {
+        writes.push(
+          repository.upsertExecuteTimeoutMs(
+            workspaceId,
+            clampExecuteTimeoutMs(patch.executeTimeoutMs),
+          ),
         );
       }
       await Promise.all(writes).catch(() => {

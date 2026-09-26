@@ -1,5 +1,8 @@
 import { readFileSync } from "node:fs";
 
+import type { AgentGovernanceOverrides } from "@kenfutwork/shared";
+import { resolveGovernanceEnvOverrides } from "@kenfutwork/shared";
+
 export const DEFAULT_AGENT_BACKEND_MODE = "state";
 export const DEFAULT_AGENT_MODEL = "gpt-4.1";
 export const DEFAULT_GOOGLE_AGENT_MODEL = "gemini-2.5-flash";
@@ -51,10 +54,15 @@ export type ServerEnv = {
   sandboxRoot?: string;
   /**
    * 检查点影子仓库根目录（`KENFUTWORK_CHECKPOINT_ROOT`，可相对）。缺省由入口解析为
-   * `<项目根（dev）/ exe 安装目录（打包）>/data/checkpoints`，画布影子仓库为其下
+   * `<项目根（dev）/ exe 安装打包目录>/data/checkpoints`，画布影子仓库为其下
    * `<画布UUID>.git`（GIT_DIR），work-tree 指向沙箱工作目录。
    */
   checkpointRoot?: string;
+  /**
+   * agent 治理五项的 env 兜底（DEC-18；变量名清单与解析见 shared `governance.ts`）。
+   * 优先级 = workspace_settings 库值 ?? 本字段 ?? DEFAULTS；非法值已被忽略。
+   */
+  agentGovernance?: AgentGovernanceOverrides;
   /**
    * 模型流空闲看门狗阈值（毫秒，`KENFUTWORK_AGENT_STREAM_IDLE_TIMEOUT_MS`）。
    * 上游停滞超过该时长即按有界失败终止本轮（缺省 180s，见 stream-idle-guard）。
@@ -411,6 +419,9 @@ export function loadServerEnv(
       source.KENFUTWORK_AGENT_STREAM_IDLE_TIMEOUT_MS,
   );
 
+  const agentGovernance =
+    overrides.agentGovernance ?? resolveGovernanceEnvOverrides(source);
+
   return {
     agentBackendMode:
       overrides.agentBackendMode ??
@@ -427,6 +438,9 @@ export function loadServerEnv(
     ...(canvasWorkDirs ? { canvasWorkDirs } : {}),
     ...(sandboxRoot ? { sandboxRoot } : {}),
     ...(checkpointRoot ? { checkpointRoot } : {}),
+    ...(Object.values(agentGovernance).some((v) => v !== undefined)
+      ? { agentGovernance }
+      : {}),
     ...(credentialSecret ? { credentialSecret } : {}),
     ...(flowEmbedSecret ? { flowEmbedSecret } : {}),
     ...(flowFrontendUrl ? { flowFrontendUrl } : {}),

@@ -217,6 +217,56 @@
       "status": "active",
       "note": "默认模型（<实例ID>:<模型ID>）"
     },
+    "KENFUTWORK_SUBAGENT_MAX_DEPTH": {
+      "surface": "server",
+      "readers": [
+        "packages/shared/src/governance.ts",
+        "packages/shared/src/governance.test.ts"
+      ],
+      "inExamples": true,
+      "status": "active",
+      "note": "agent 治理：子代理派生深度上限（DEC-17/18）；优先级 库值 ?? env ?? DEFAULTS"
+    },
+    "KENFUTWORK_SUBAGENT_MAX_CONCURRENCY": {
+      "surface": "server",
+      "readers": [
+        "packages/shared/src/governance.ts",
+        "packages/shared/src/governance.test.ts"
+      ],
+      "inExamples": true,
+      "status": "active",
+      "note": "agent 治理：后台任务（子代理/长命令）并发上限（DEC-17/18）"
+    },
+    "KENFUTWORK_LLM_REQUEST_MAX_RETRIES": {
+      "surface": "server",
+      "readers": [
+        "packages/shared/src/governance.ts",
+        "packages/shared/src/governance.test.ts"
+      ],
+      "inExamples": true,
+      "status": "active",
+      "note": "agent 治理：LLM 请求级重试上限（含首次；0=不重试；DEC-18）"
+    },
+    "KENFUTWORK_LLM_INFINITE_RETRY": {
+      "surface": "server",
+      "readers": [
+        "packages/shared/src/governance.ts",
+        "packages/shared/src/governance.test.ts"
+      ],
+      "inExamples": true,
+      "status": "active",
+      "note": "agent 治理：LLM 无限重试开关（true/1/yes/on；DEC-18）"
+    },
+    "KENFUTWORK_EXECUTE_TIMEOUT_MS": {
+      "surface": "server",
+      "readers": [
+        "packages/shared/src/governance.ts",
+        "packages/shared/src/governance.test.ts"
+      ],
+      "inExamples": true,
+      "status": "active",
+      "note": "agent 治理：Code 模式 execute 命令超时毫秒（DEC-18）"
+    },
     "KENFUTWORK_SEARCH_API_KEY": {
       "surface": "server",
       "readers": ["apps/server/src/config/env.ts"],

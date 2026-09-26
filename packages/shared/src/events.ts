@@ -46,6 +46,12 @@ export const toolStartedEventSchema = z.object({
   toolCallId: toolCallIdSchema,
   toolName: z.string().min(1),
   input: z.record(z.string(), z.unknown()).optional(),
+  /**
+   * 子代理归因（DEC-19）：该工具调用发生在哪个具名子代理里。
+   * 来源是 langchain run metadata 的 `lc_agent_name`（`parent_ids` 在
+   * @langchain/core 1.x 不存在，归因只能走 metadata）；主 agent 的调用缺省。
+   */
+  agentName: z.string().min(1).optional(),
   timestamp: timestampSchema,
 });
 
@@ -57,6 +63,32 @@ export const toolCompletedEventSchema = z.object({
   output: z.record(z.string(), z.unknown()).optional(),
   outputSummary: z.string().optional(),
   artifacts: z.array(toolArtifactSchema).optional(),
+  /** 子代理归因，同 {@link toolStartedEventSchema.agentName}。 */
+  agentName: z.string().min(1).optional(),
+  timestamp: timestampSchema,
+});
+
+/**
+ * 后台任务终态通知（DEC-15）：后台子代理 / 长命令结算后发一次。
+ *
+ * 定位是「模型可见 + 用户可见」的同一份事实：服务端把它注入下一轮模型输入
+ * （`<task-notification>` 包裹的 user 消息），同时经本事件推给前端渲染成
+ * 静默通知行。只有**终态**（completed/failed/canceled）才发——运行中进度走
+ * 既有 tool.* 事件，不在这里重复。
+ */
+export const taskNotificationEventSchema = z.object({
+  type: z.literal("task.notification"),
+  runId: runIdSchema,
+  /** 后台任务 id（run 内唯一，`task_` 前缀）。 */
+  taskId: z.string().min(1).max(128),
+  kind: z.enum(["subagent", "command"]),
+  /** 展示名：子代理为「名字 · 任务描述」，命令为命令行。 */
+  label: z.string().min(1).max(2_000),
+  status: z.enum(["completed", "failed", "canceled"]),
+  /** 结果摘要（已截断，模型与用户看到的是同一份）。 */
+  summary: z.string().min(1).max(8_000),
+  /** 失败时的下一步建议（DEC-17：失败带恢复指引）。 */
+  nextStep: z.string().max(2_000).optional(),
   timestamp: timestampSchema,
 });
 
@@ -243,6 +275,7 @@ export const streamEventSchema = z.discriminatedUnion("type", [
   thinkingDeltaEventSchema,
   toolStartedEventSchema,
   toolCompletedEventSchema,
+  taskNotificationEventSchema,
   runCanceledEventSchema,
   runCompletedEventSchema,
   runUsageEventSchema,
