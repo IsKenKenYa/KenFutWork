@@ -79,6 +79,7 @@ function createRepositoryFake(
     findLlmRequestMaxRetries: async () => null,
     findLlmInfiniteRetry: async () => null,
     findExecuteTimeoutMs: async () => null,
+    findSubagentMaxContinuations: async () => null,
     upsertDefaultModel: async () => {},
     upsertAgentMaxRetries: async () => {},
     upsertTerminalShell: async () => {},
@@ -94,6 +95,7 @@ function createRepositoryFake(
     upsertLlmRequestMaxRetries: async () => {},
     upsertLlmInfiniteRetry: async () => {},
     upsertExecuteTimeoutMs: async () => {},
+    upsertSubagentMaxContinuations: async () => {},
     ...overrides,
   };
 }
@@ -159,6 +161,7 @@ describe("settings service", () => {
       llmRequestMaxRetries: 10,
       llmInfiniteRetry: false,
       executeTimeoutMs: 120000,
+      subagentMaxContinuations: 50,
     });
 
     const stored = createSettingsService({
@@ -185,6 +188,7 @@ describe("settings service", () => {
       llmRequestMaxRetries: 10,
       llmInfiniteRetry: false,
       executeTimeoutMs: 120000,
+      subagentMaxContinuations: 50,
     });
   });
 
@@ -220,6 +224,7 @@ describe("settings service", () => {
       llmRequestMaxRetries: 10,
       llmInfiniteRetry: false,
       executeTimeoutMs: 120000,
+      subagentMaxContinuations: 50,
     });
 
     const emptyCatalog = createSettingsService({
@@ -245,6 +250,7 @@ describe("settings service", () => {
       llmRequestMaxRetries: 10,
       llmInfiniteRetry: false,
       executeTimeoutMs: 120000,
+      subagentMaxContinuations: 50,
     });
 
     let catalogCalls = 0;
@@ -274,6 +280,7 @@ describe("settings service", () => {
       llmRequestMaxRetries: 10,
       llmInfiniteRetry: false,
       executeTimeoutMs: 120000,
+      subagentMaxContinuations: 50,
     });
     expect(catalogCalls).toBe(0);
   });
@@ -406,6 +413,7 @@ describe("settings service", () => {
       llmRequestMaxRetries: 10,
       llmInfiniteRetry: false,
       executeTimeoutMs: 120000,
+      subagentMaxContinuations: 50,
     });
 
     // 只改终端 shell：模型与重试上限不动
@@ -424,6 +432,7 @@ describe("settings service", () => {
       userRules: "",
       subagentMaxDepth: 1,
       subagentMaxConcurrency: 4,
+      subagentMaxContinuations: 50,
       llmRequestMaxRetries: 10,
       llmInfiniteRetry: false,
       executeTimeoutMs: 120000,
@@ -478,6 +487,7 @@ describe("agent 治理设置（DEC-17/DEC-18：禁止硬编码，全部走 works
       llmRequestMaxRetries: 10,
       llmInfiniteRetry: false,
       executeTimeoutMs: 120000,
+      subagentMaxContinuations: 50,
     });
 
     const stored = createSettingsService({

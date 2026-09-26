@@ -47,6 +47,7 @@ describe("agent 治理默认值与护栏（DEC-17/DEC-18）", () => {
         KENFUTWORK_LLM_REQUEST_MAX_RETRIES: "0",
         KENFUTWORK_LLM_INFINITE_RETRY: "true",
         KENFUTWORK_EXECUTE_TIMEOUT_MS: "600000",
+        KENFUTWORK_SUBAGENT_MAX_CONTINUATIONS: "10",
       }),
     ).toEqual({
       subagentMaxDepth: 2,
@@ -54,6 +55,7 @@ describe("agent 治理默认值与护栏（DEC-17/DEC-18）", () => {
       llmRequestMaxRetries: 0,
       llmInfiniteRetry: true,
       executeTimeoutMs: 600000,
+      subagentMaxContinuations: 10,
     });
 
     expect(

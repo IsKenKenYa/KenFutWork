@@ -165,6 +165,7 @@ export function SettingsModal({
     llmRequestMaxRetries: 10,
     llmInfiniteRetry: false,
     executeTimeoutMs: 120000,
+    subagentMaxContinuations: 50,
   });
   const [codeIndexEnabled, setCodeIndexEnabled] = useState(false);
   const [codeIndexAutoNewFolder, setCodeIndexAutoNewFolder] = useState(true);
@@ -205,6 +206,7 @@ export function SettingsModal({
         llmRequestMaxRetries: settings.settings.llmRequestMaxRetries,
         llmInfiniteRetry: settings.settings.llmInfiniteRetry,
         executeTimeoutMs: settings.settings.executeTimeoutMs,
+        subagentMaxContinuations: settings.settings.subagentMaxContinuations,
       });
       setCommands(settings.settings.commands);
       setHooks(settings.settings.hooks);
@@ -304,6 +306,7 @@ export function SettingsModal({
       llmRequestMaxRetries: number;
       llmInfiniteRetry: boolean;
       executeTimeoutMs: number;
+      subagentMaxContinuations: number;
     }) => {
       const token = getToken();
       if (!token) return;
@@ -314,6 +317,7 @@ export function SettingsModal({
         llmRequestMaxRetries: result.settings.llmRequestMaxRetries,
         llmInfiniteRetry: result.settings.llmInfiniteRetry,
         executeTimeoutMs: result.settings.executeTimeoutMs,
+        subagentMaxContinuations: result.settings.subagentMaxContinuations,
       });
     },
     [getToken],

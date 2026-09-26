@@ -126,6 +126,46 @@ export function findSubagentDefinition(
   return resolveSubagentDefinitions(preset).find((def) => def.name === name);
 }
 
+/**
+ * 派发工具保留名（`DEC-17` 深度治理的结构性锁）：
+ * `resolveChildToolbelt` 会拒绝任何声明了这些名字的定义——
+ * 子代理的工具面**不可能**再含派发工具，孙代理无从产生。
+ */
+export const SUBAGENT_DISPATCH_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "task",
+  "task_background",
+  "task_output",
+]);
+
+/**
+ * 解析子代理工具带：只取定义声明的专用工具，且**拒绝派发工具保留名**
+ * （fail loud——错误定义在派发时立刻暴露，而不是在运行时生出孙代理）。
+ */
+export function resolveChildToolbelt<T extends { name: string }>(
+  definition: SubagentDefinition,
+  parentTools: readonly T[],
+): { tools: T[] } {
+  const forbidden = [
+    ...definition.tools,
+    ...(definition.filesystemTools ?? []),
+  ].filter((name) => SUBAGENT_DISPATCH_TOOL_NAMES.has(name));
+  if (forbidden.length > 0) {
+    throw new Error(
+      `子代理定义「${definition.name}」声明了派发工具（${forbidden.join("、")}）：` +
+        "子代理不得再派生子代理（DEC-17 深度上限 1），请从定义中移除。",
+    );
+  }
+  const byName = new Map(
+    parentTools.map((candidate) => [candidate.name, candidate]),
+  );
+  const tools: T[] = [];
+  for (const name of definition.tools) {
+    const picked = byName.get(name);
+    if (picked) tools.push(picked);
+  }
+  return { tools };
+}
+
 /** 面向界面的清单（设置页「子智能体」与 GET /api/agent/subagents）。 */
 export function listSubagentDefinitions(): Array<{
   name: string;

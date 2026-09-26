@@ -16,6 +16,8 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   subagentMaxDepth: 1,
   /** 后台任务（子代理/长命令）同时运行上限。 */
   subagentMaxConcurrency: 4,
+  /** 轮末闸门续轮上限：防挂死后台任务导致无限续轮（DEC-15/18）。 */
+  subagentMaxContinuations: 50,
   /** LLM 请求级重试上限（含首次；0 = 不重试）。 */
   llmRequestMaxRetries: 10,
   /** LLM 请求无限重试（用户显式开启，治持续 429 的不稳定上游）。 */
@@ -33,6 +35,7 @@ export type AgentGovernanceOverrides = {
   llmRequestMaxRetries?: number | undefined;
   llmInfiniteRetry?: boolean | undefined;
   executeTimeoutMs?: number | undefined;
+  subagentMaxContinuations?: number | undefined;
 };
 
 const clampInt = (value: number, min: number, max: number): number =>
@@ -45,6 +48,9 @@ export const clampSubagentMaxDepth = (value: number): number =>
 
 export const clampSubagentMaxConcurrency = (value: number): number =>
   clampInt(value, 1, 16);
+
+export const clampSubagentMaxContinuations = (value: number): number =>
+  clampInt(value, 1, 200);
 
 export const clampLlmRequestMaxRetries = (value: number): number =>
   clampInt(value, 0, 100);
@@ -61,6 +67,7 @@ export const AGENT_GOVERNANCE_LIMITS = {
   subagentMaxConcurrency: { min: 1, max: 16 },
   llmRequestMaxRetries: { min: 0, max: 100 },
   executeTimeoutMs: { min: 5_000, max: 1_800_000 },
+  subagentMaxContinuations: { min: 1, max: 200 },
 } as const;
 
 /**
@@ -97,6 +104,9 @@ export function resolveGovernanceEnvOverrides(
     ),
     llmInfiniteRetry: parseBool(source.KENFUTWORK_LLM_INFINITE_RETRY),
     executeTimeoutMs: parseStrictInt(source.KENFUTWORK_EXECUTE_TIMEOUT_MS),
+    subagentMaxContinuations: parseStrictInt(
+      source.KENFUTWORK_SUBAGENT_MAX_CONTINUATIONS,
+    ),
   };
   return Object.fromEntries(
     Object.entries(overrides).filter(([, v]) => v !== undefined),
@@ -112,7 +122,8 @@ export function governanceSetting<
     | "subagentMaxDepth"
     | "subagentMaxConcurrency"
     | "llmRequestMaxRetries"
-    | "executeTimeoutMs",
+    | "executeTimeoutMs"
+    | "subagentMaxContinuations",
 >(key: K) {
   const limits = AGENT_GOVERNANCE_LIMITS[key];
   return z

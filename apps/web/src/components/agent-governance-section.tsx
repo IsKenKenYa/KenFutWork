@@ -17,6 +17,7 @@ interface AgentGovernanceSectionProps {
     llmRequestMaxRetries: number;
     llmInfiniteRetry: boolean;
     executeTimeoutMs: number;
+    subagentMaxContinuations: number;
   };
   onSave: (next: {
     subagentMaxDepth: number;
@@ -24,6 +25,7 @@ interface AgentGovernanceSectionProps {
     llmRequestMaxRetries: number;
     llmInfiniteRetry: boolean;
     executeTimeoutMs: number;
+    subagentMaxContinuations: number;
   }) => Promise<void>;
 }
 
@@ -56,6 +58,13 @@ const NUMERIC_FIELDS = [
     min: 5_000,
     max: 1_800_000,
   },
+  {
+    key: "subagentMaxContinuations",
+    label: "后台任务等待轮数上限",
+    hint: "收尾时若后台任务未结束，最多再等几轮；1–200。",
+    min: 1,
+    max: 200,
+  },
 ] as const;
 
 export function AgentGovernanceSection({
@@ -67,6 +76,7 @@ export function AgentGovernanceSection({
     subagentMaxConcurrency: String(initial.subagentMaxConcurrency),
     llmRequestMaxRetries: String(initial.llmRequestMaxRetries),
     executeTimeoutMs: String(initial.executeTimeoutMs),
+    subagentMaxContinuations: String(initial.subagentMaxContinuations),
   });
   const [infiniteRetry, setInfiniteRetry] = useState(initial.llmInfiniteRetry);
   const [saving, setSaving] = useState(false);
@@ -80,6 +90,10 @@ export function AgentGovernanceSection({
     subagentMaxConcurrency: Number.parseInt(values.subagentMaxConcurrency, 10),
     llmRequestMaxRetries: Number.parseInt(values.llmRequestMaxRetries, 10),
     executeTimeoutMs: Number.parseInt(values.executeTimeoutMs, 10),
+    subagentMaxContinuations: Number.parseInt(
+      values.subagentMaxContinuations,
+      10,
+    ),
   };
   const valid = NUMERIC_FIELDS.every(
     ({ key, min, max }) =>
@@ -91,6 +105,7 @@ export function AgentGovernanceSection({
       parsed.subagentMaxConcurrency !== initial.subagentMaxConcurrency ||
       parsed.llmRequestMaxRetries !== initial.llmRequestMaxRetries ||
       parsed.executeTimeoutMs !== initial.executeTimeoutMs ||
+      parsed.subagentMaxContinuations !== initial.subagentMaxContinuations ||
       infiniteRetry !== initial.llmInfiniteRetry);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -105,6 +120,7 @@ export function AgentGovernanceSection({
         llmRequestMaxRetries: parsed.llmRequestMaxRetries,
         llmInfiniteRetry: infiniteRetry,
         executeTimeoutMs: parsed.executeTimeoutMs,
+        subagentMaxContinuations: parsed.subagentMaxContinuations,
       });
       setFeedback({ type: "success", message: "Agent 治理设置已更新" });
     } catch {

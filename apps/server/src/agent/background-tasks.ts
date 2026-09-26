@@ -66,6 +66,8 @@ export interface BackgroundTaskRegistry {
 
   /** 是否还有在跑任务（run 轮末闸门的唯一判据）。 */
   hasPending(): boolean;
+  /** 是否有已结算未消费的通知（决定 completed 时是否需要补发事件）。 */
+  hasNotifications(): boolean;
 
   /** 取消全部在跑任务：逐个调 abort、按 canceled 结算并入队通知。 */
   abortAll(reason: string): void;
@@ -142,6 +144,10 @@ export function createBackgroundTaskRegistry(options: {
 
     hasPending() {
       return [...tasks.values()].some((task) => task.status === "running");
+    },
+
+    hasNotifications() {
+      return pendingNotifications.length > 0;
     },
 
     abortAll(reason) {

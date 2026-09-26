@@ -275,6 +275,8 @@ export const workspaceSettingsSchema = z.object({
   subagentMaxDepth: governanceSetting("subagentMaxDepth"),
   /** 后台任务（子代理/长命令）同时运行上限。 */
   subagentMaxConcurrency: governanceSetting("subagentMaxConcurrency"),
+  /** 轮末闸门续轮上限：防挂死后台任务导致无限续轮。 */
+  subagentMaxContinuations: governanceSetting("subagentMaxContinuations"),
   /** LLM 请求级重试上限（含首次；0 = 不重试；治上游 429/5xx 抖动）。 */
   llmRequestMaxRetries: governanceSetting("llmRequestMaxRetries"),
   /** LLM 请求无限重试（用户显式开启；持续 429 的不稳定上游场景）。 */

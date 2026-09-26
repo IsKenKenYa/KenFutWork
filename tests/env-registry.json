@@ -267,6 +267,16 @@
       "status": "active",
       "note": "agent 治理：Code 模式 execute 命令超时毫秒（DEC-18）"
     },
+    "KENFUTWORK_SUBAGENT_MAX_CONTINUATIONS": {
+      "surface": "server",
+      "readers": [
+        "packages/shared/src/governance.ts",
+        "packages/shared/src/governance.test.ts"
+      ],
+      "inExamples": true,
+      "status": "active",
+      "note": "agent 治理：轮末闸门续轮上限（DEC-15/18）"
+    },
     "KENFUTWORK_SEARCH_API_KEY": {
       "surface": "server",
       "readers": ["apps/server/src/config/env.ts"],

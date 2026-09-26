@@ -52,7 +52,12 @@ export interface SettingsRepository {
   findLlmRequestMaxRetries(workspaceId: string): Promise<number | null>;
   findLlmInfiniteRetry(workspaceId: string): Promise<boolean | null>;
   findExecuteTimeoutMs(workspaceId: string): Promise<number | null>;
+  findSubagentMaxContinuations(workspaceId: string): Promise<number | null>;
   upsertSubagentMaxDepth(workspaceId: string, value: number): Promise<void>;
+  upsertSubagentMaxContinuations(
+    workspaceId: string,
+    value: number,
+  ): Promise<void>;
   upsertSubagentMaxConcurrency(
     workspaceId: string,
     value: number,
@@ -76,6 +81,7 @@ type SubagentMaxConcurrencyRow = { subagent_max_concurrency: number };
 type LlmRequestMaxRetriesRow = { llm_request_max_retries: number };
 type LlmInfiniteRetryRow = { llm_infinite_retry: boolean };
 type ExecuteTimeoutMsRow = { execute_timeout_ms: number };
+type SubagentMaxContinuationsRow = { subagent_max_continuations: number };
 
 export function createSettingsRepository(
   persistence: PersistenceService,
@@ -396,6 +402,27 @@ export function createSettingsRepository(
          values (:workspace, $1)
          on conflict (workspace_id)
          do update set execute_timeout_ms = excluded.execute_timeout_ms`,
+        [value],
+      );
+    },
+
+    async findSubagentMaxContinuations(workspaceId) {
+      const row = await persistence
+        .forWorkspace(workspaceId)
+        .queryOne<SubagentMaxContinuationsRow>(
+          `select subagent_max_continuations
+             from public.workspace_settings
+            where workspace_id = :workspace`,
+        );
+      return row?.subagent_max_continuations ?? null;
+    },
+
+    async upsertSubagentMaxContinuations(workspaceId, value) {
+      await persistence.forWorkspace(workspaceId).query(
+        `insert into public.workspace_settings (workspace_id, subagent_max_continuations)
+         values (:workspace, $1)
+         on conflict (workspace_id)
+         do update set subagent_max_continuations = excluded.subagent_max_continuations`,
         [value],
       );
     },

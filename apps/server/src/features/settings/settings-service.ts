@@ -9,6 +9,7 @@ import {
   clampExecuteTimeoutMs,
   clampLlmRequestMaxRetries,
   clampSubagentMaxConcurrency,
+  clampSubagentMaxContinuations,
   clampSubagentMaxDepth,
   coerceLlmInfiniteRetry,
 } from "@kenfutwork/shared";
@@ -57,6 +58,7 @@ export type WorkspaceSettingsPatch = {
   ruleEntries?: string[] | undefined;
   subagentMaxDepth?: number | undefined;
   subagentMaxConcurrency?: number | undefined;
+  subagentMaxContinuations?: number | undefined;
   llmRequestMaxRetries?: number | undefined;
   llmInfiniteRetry?: boolean | undefined;
   executeTimeoutMs?: number | undefined;
@@ -164,6 +166,7 @@ export function createSettingsService(options: {
       storedHooks,
       storedSubagentMaxDepth,
       storedSubagentMaxConcurrency,
+      storedSubagentMaxContinuations,
       storedLlmRequestMaxRetries,
       storedLlmInfiniteRetry,
       storedExecuteTimeoutMs,
@@ -179,6 +182,7 @@ export function createSettingsService(options: {
       repository.findHooks(workspaceId),
       repository.findSubagentMaxDepth(workspaceId),
       repository.findSubagentMaxConcurrency(workspaceId),
+      repository.findSubagentMaxContinuations(workspaceId),
       repository.findLlmRequestMaxRetries(workspaceId),
       repository.findLlmInfiniteRetry(workspaceId),
       repository.findExecuteTimeoutMs(workspaceId),
@@ -222,6 +226,11 @@ export function createSettingsService(options: {
         storedSubagentMaxConcurrency ??
           governanceEnv.subagentMaxConcurrency ??
           AGENT_GOVERNANCE_DEFAULTS.subagentMaxConcurrency,
+      ),
+      subagentMaxContinuations: clampSubagentMaxContinuations(
+        storedSubagentMaxContinuations ??
+          governanceEnv.subagentMaxContinuations ??
+          AGENT_GOVERNANCE_DEFAULTS.subagentMaxContinuations,
       ),
       llmRequestMaxRetries: clampLlmRequestMaxRetries(
         storedLlmRequestMaxRetries ??
@@ -316,6 +325,14 @@ export function createSettingsService(options: {
           repository.upsertSubagentMaxConcurrency(
             workspaceId,
             clampSubagentMaxConcurrency(patch.subagentMaxConcurrency),
+          ),
+        );
+      }
+      if (patch.subagentMaxContinuations !== undefined) {
+        writes.push(
+          repository.upsertSubagentMaxContinuations(
+            workspaceId,
+            clampSubagentMaxContinuations(patch.subagentMaxContinuations),
           ),
         );
       }

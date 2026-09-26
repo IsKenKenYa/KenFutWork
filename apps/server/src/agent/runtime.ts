@@ -5,6 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import {
   AGENT_GOVERNANCE_DEFAULTS,
   type BillingErrorCode,
+  clampSubagentMaxContinuations,
   type ImageAttachment,
   type ImageGenerationPreference,
   type ImageQualityLevel,
@@ -1186,6 +1187,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       /** Code 长命令超时（DEC-18）。 */
       let governanceExecuteTimeoutMs: number =
         AGENT_GOVERNANCE_DEFAULTS.executeTimeoutMs;
+      /** 后台任务续轮上限（DEC-15/18）：防挂死任务导致无限续轮。 */
+      let governanceMaxContinuations: number =
+        AGENT_GOVERNANCE_DEFAULTS.subagentMaxContinuations;
       /** 统一后台任务注册表（DEC-15）：设置读取后创建；取消/收尾经它连带清理。 */
       let backgroundTaskRegistry: BackgroundTaskRegistry | null = null;
 
@@ -1520,6 +1524,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             governanceExecuteTimeoutMs =
               workspaceSettings?.executeTimeoutMs ??
               AGENT_GOVERNANCE_DEFAULTS.executeTimeoutMs;
+            governanceMaxContinuations = clampSubagentMaxContinuations(
+              workspaceSettings?.subagentMaxContinuations ??
+                AGENT_GOVERNANCE_DEFAULTS.subagentMaxContinuations,
+            );
           }
 
           // 统一后台任务注册表（DEC-15）：每 run 一个（状态随 run 生命周期，
@@ -1921,8 +1929,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         // DEC-15 轮末闸门循环：模型收尾时若后台任务未结算，吞掉这次
         // run.completed，以「后台任务通知」为新一轮输入重入同一 thread；
         // 全部结算后的那次 completed 才放行（通知必达，usage 归属不变）。
+        // continuationRounds 有治理上限（DEC-18）：防挂死任务导致无限续轮。
         let continuationInput: string | null = null;
         let suppressCompletedForContinuation = false;
+        let continuationRounds = 0;
+        const maxContinuations = governanceMaxContinuations;
         while (true) {
           let sawTerminalEvent = false;
           try {
@@ -1998,18 +2009,46 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 return;
               }
               // 轮末闸门（DEC-15）：后台任务未结算就不让 run 收尾——吞掉
-              // completed、以通知重开一轮；状态/持久化都保持 running 口径
+              // completed、以通知重开一轮；状态/持久化都保持 running 口径。
+              // 已结算未注入的通知在这里补发 task.notification 事件（前端可见）；
+              // 续轮有治理上限（DEC-18），打到上限即放行终态（兜底 abortAll 兜住挂死任务）
               if (
                 event.type === "run.completed" &&
-                backgroundTaskRegistry?.hasPending()
+                backgroundTaskRegistry &&
+                (backgroundTaskRegistry.hasPending() ||
+                  backgroundTaskRegistry.hasNotifications())
               ) {
                 const notes = backgroundTaskRegistry.drainNotifications();
-                const waitHint = backgroundTaskRegistry.hasPending()
-                  ? "\n（仍有后台任务在跑：继续手头工作或用 task_output 查询；全部结算后再收尾。）"
-                  : "";
-                continuationInput = `${formatTaskNotificationsXml(notes)}${waitHint}`;
-                suppressCompletedForContinuation = true;
-                break;
+                for (const note of notes) {
+                  yield {
+                    type: "task.notification" as const,
+                    runId,
+                    ...note,
+                    timestamp: now(),
+                  };
+                }
+                const stillPending = backgroundTaskRegistry.hasPending();
+                continuationRounds += 1;
+                if (stillPending && continuationRounds <= maxContinuations) {
+                  const waitHint =
+                    "\n（仍有后台任务在跑：继续手头工作或用 task_output 查询；全部结算后再收尾。）";
+                  continuationInput = `${formatTaskNotificationsXml(notes)}${waitHint}`;
+                  suppressCompletedForContinuation = true;
+                  break;
+                }
+                if (stillPending) {
+                  // 续轮上限打满：终止残留任务（取消通知经 task.notification 到前端），
+                  // 随后放行终态——绝不带着挂死任务无限续轮
+                  backgroundTaskRegistry.abortAll("后台任务续轮达上限");
+                  for (const note of backgroundTaskRegistry.drainNotifications()) {
+                    yield {
+                      type: "task.notification" as const,
+                      runId,
+                      ...note,
+                      timestamp: now(),
+                    };
+                  }
+                }
               }
               run.status = mapEventToStatus(event);
               if (isTerminalEvent(event)) {
