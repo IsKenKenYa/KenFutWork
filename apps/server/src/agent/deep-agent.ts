@@ -43,6 +43,7 @@ import { bridgeKernelTools } from "./kernel-tools-bridge.js";
 import { createLlmRequestRetryMiddleware } from "./llm-retry-middleware.js";
 import { KENFUTWORK_SYSTEM_PROMPT } from "./prompts/kenfutwork-main.js";
 import {
+  resolveChildToolbelt,
   resolveSubagentDefinitions,
   type SubagentDefinition,
 } from "./subagent-definitions.js";
@@ -467,19 +468,12 @@ export function createKenFutWorkDeepAgent(options: {
   if (options.backgroundTasks) {
     const { registry, preset } = options.backgroundTasks;
     const toolGateForDispatch = options.toolGate;
-    const parentToolsByName = new Map(
-      tools.map((candidate) => [candidate.name, candidate]),
-    );
     const childRunner: SubagentChildRunner = async ({
       definition,
       description,
       signal,
     }) => {
-      const picked = definition.tools
-        .map((name) => parentToolsByName.get(name))
-        .filter((candidate): candidate is NonNullable<typeof candidate> =>
-          Boolean(candidate),
-        );
+      const { tools: picked } = resolveChildToolbelt(definition, tools);
       const middleware: AgentMiddleware[] = definition.filesystemTools?.length
         ? [
             createFilesystemMiddleware({
