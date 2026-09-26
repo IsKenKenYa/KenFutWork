@@ -62,6 +62,21 @@ export function AboutSection() {
       <p className="mt-4 text-xs text-muted-foreground">
         模型 Key 加密保存在本机，索引与对话数据都在本地。
       </p>
+      {/*
+        语音模型的署名（规划 §10 风险 7：SenseVoice 权重走 FunASR 模型许可，**需署名**）。
+        如实写「可能包含」而不是「已加载」——前端查不到下载态，不编造状态。
+      */}
+      <div className="mt-4 space-y-1 text-xs text-muted-foreground">
+        <p>语音能力使用以下第三方模型（按需下载，未下载则不包含）：</p>
+        <ul className="list-disc space-y-0.5 pl-4">
+          <li>
+            SenseVoiceSmall（语音识别，FunAudioLLM / FunASR）：权重适用 FunASR
+            模型许可，代码 MIT；ONNX 格式由 sherpa-onnx 提供。
+          </li>
+          <li>Silero VAD（静音检测）：MIT。</li>
+        </ul>
+        <p>语音识别在你的设备上完成；录音不留存，只记录耗时用于性能检测。</p>
+      </div>
     </section>
   );
 }

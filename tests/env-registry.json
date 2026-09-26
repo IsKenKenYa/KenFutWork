@@ -203,6 +203,24 @@
       "status": "active",
       "note": "MCP server JSON 数组（stdio 命令型）"
     },
+    "KENFUTWORK_VOICE_REAL_MODEL": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/voice/sherpa.integration.test.ts"
+      ],
+      "inExamples": true,
+      "status": "test-gate",
+      "note": "=1 启用语音内置模型的真机验收（会下载 228MB 模型）；生产无读者"
+    },
+    "KENFUTWORK_VOICE_MODELS_ROOT": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/voice/sherpa.integration.test.ts"
+      ],
+      "inExamples": true,
+      "status": "test-gate",
+      "note": "覆盖真机验收用的模型目录（默认 ~/.kenfutwork/models）"
+    },
     "KENFUTWORK_MCP_LIFECYCLE": {
       "surface": "test",
       "readers": ["apps/server/src/features/mcp/mcp-service.lifecycle.test.ts"],
