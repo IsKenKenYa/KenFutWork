@@ -393,3 +393,70 @@ describe("useVoiceMode（设置页改档同页立刻生效）", () => {
     });
   });
 });
+
+describe("撤销窗口的倒计时真的在走（真机踩过：卡在 2s，run 永不执行）", () => {
+  function setupArmed() {
+    const submitted: string[] = [];
+    const { recorder } = fakeRecorder();
+    function Harness() {
+      const voice = useComposerVoice({
+        accessToken: "tok",
+        mode: "loop",
+        undoWindowMs: 2_000,
+        onTranscript: () => undefined,
+        onAutoSubmit: (prompt) => submitted.push(prompt),
+        recorder,
+        transcribe: async () => "那个按钮改成蓝的",
+        refine: async () => "把首页右上角的按钮改成蓝色。",
+      });
+      return (
+        <div data-testid="composer" onPointerDown={voice.onPointerDown}>
+          <textarea aria-label="输入消息" />
+          {voice.status}
+        </div>
+      );
+    }
+    const view = render(<Harness />);
+    const composer = view.getByTestId("composer");
+    return { ...view, submitted, composer };
+  }
+
+  async function holdOnce(composer: HTMLElement) {
+    fireEvent.pointerDown(composer, {
+      pointerId: 1,
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+    });
+    fireEvent.pointerUp(window, { pointerId: 1 });
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
+
+  it("分次推进时倒计时递减（心跳把 loop 当依赖会导致每跳重启、永远停在初始值）", async () => {
+    const h = setupArmed();
+    await holdOnce(h.composer);
+    const label = () =>
+      h.getByRole("button", { name: /等等/ }).textContent ?? "";
+    expect(label()).toContain("2s");
+
+    // 关键：**分多次 act 推进**，让 React 在两次推进之间重渲染（这正是真机的样子）
+    for (const expected of ["2s", "1s"]) {
+      await act(async () => {
+        vi.advanceTimersByTime(500);
+      });
+      void expected;
+    }
+    const afterOneSecond = label();
+    expect(afterOneSecond).toMatch(/1s/);
+
+    await act(async () => {
+      vi.advanceTimersByTime(1_200);
+    });
+    expect(h.submitted).toEqual(["把首页右上角的按钮改成蓝色。"]);
+  });
+});

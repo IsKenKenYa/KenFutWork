@@ -166,6 +166,7 @@ export function useComposerVoice({
         })
           .then((prompt) => {
             const finalPrompt = prompt.trim() || trimmed;
+            armedRef.current = { prompt: finalPrompt, startedAt: Date.now() };
             setLoop({
               kind: "armed",
               prompt: finalPrompt,
@@ -174,6 +175,7 @@ export function useComposerVoice({
           })
           .catch((error: unknown) => {
             // 改写失败**不执行**：宁可不做，也不要拿一段没理顺的话去跑一整轮
+            armedRef.current = null;
             setLoop(null);
             showNotice(
               `没能整理成完整需求，已停在转文本：${
@@ -198,6 +200,7 @@ export function useComposerVoice({
   );
 
   const cancelLoop = useCallback((reason: "user" | "timeout-done") => {
+    armedRef.current = null;
     setLoop(null);
     if (reason === "user") {
       // 中止有明确反馈：用户点了「等等」要看到「已中止」，否则会以为点了没用
@@ -205,27 +208,45 @@ export function useComposerVoice({
     }
   }, []);
 
-  // 撤销窗口：倒计时走完才真的执行
+  /**
+   * 撤销窗口：倒计时走完才真的执行。
+   *
+   * **心跳不能把 `loop` 当依赖**：心跳自己会 `setLoop` 更新剩余毫秒，若 effect 依赖
+   * `loop`，每跳都会重启计时器、`startedAt` 跟着重置，倒计时永远停在 2 秒、**永不执行**
+   * ——真机点出来过（界面一直显示「等等（2s）」，run 从来没起）。故起点与提示词放 ref，
+   * 依赖只看「是不是 armed」这个布尔量。
+   */
+  const armedRef = useRef<{ prompt: string; startedAt: number } | null>(null);
+  const autoSubmitRef = useRef(onAutoSubmit);
+  autoSubmitRef.current = onAutoSubmit;
+  const armed = loop?.kind === "armed";
+
   useEffect(() => {
-    if (loop?.kind !== "armed") {
+    if (!armed) {
       return;
     }
-    const startedAt = Date.now();
-    const total = undoWindowMs;
     const timer = setInterval(() => {
-      const elapsed = Date.now() - startedAt;
-      const remaining = total - elapsed;
-      if (remaining <= 0) {
+      const current = armedRef.current;
+      if (!current) {
         clearInterval(timer);
-        const prompt = loop.prompt;
-        setLoop(null);
-        onAutoSubmit?.(prompt);
         return;
       }
-      setLoop({ kind: "armed", prompt: loop.prompt, remainingMs: remaining });
+      const remaining = undoWindowMs - (Date.now() - current.startedAt);
+      if (remaining <= 0) {
+        clearInterval(timer);
+        armedRef.current = null;
+        setLoop(null);
+        autoSubmitRef.current?.(current.prompt);
+        return;
+      }
+      setLoop({
+        kind: "armed",
+        prompt: current.prompt,
+        remainingMs: remaining,
+      });
     }, COUNTDOWN_TICK_MS);
     return () => clearInterval(timer);
-  }, [loop, onAutoSubmit, undoWindowMs]);
+  }, [armed, undoWindowMs]);
 
   // 撤销窗口内按 Esc 中止（与录音的 Esc 丢弃同一个直觉）
   useEffect(() => {
