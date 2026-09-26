@@ -22,6 +22,7 @@ import { RulesMemorySection } from "@/components/workbench/rules-memory-section"
 import { SubagentsSection } from "@/components/workbench/subagents-section";
 import { TerminalSettingsSection } from "@/components/workbench/terminal-settings-section";
 import { UsageStatsSection } from "@/components/workbench/usage-stats-section";
+import { VoiceSettingsSection } from "@/components/workbench/voice-settings-section";
 import { useAuth } from "@/lib/auth-context";
 import { PluginPanelButtons } from "@/lib/plugin-panels";
 import {
@@ -40,6 +41,7 @@ export type SettingsTab =
   | "providers"
   | "permissions"
   | "browser"
+  | "voice"
   | "rules"
   | "subagents"
   | "usage"
@@ -64,6 +66,7 @@ const TAB_GROUPS: Array<{
       { id: "general", label: "通用" },
       { id: "providers", label: "供应商" },
       { id: "browser", label: "浏览器" },
+      { id: "voice", label: "语音" },
     ],
   },
   {
@@ -369,6 +372,10 @@ export function SettingsModal({
               ) : null
             ) : activeTab === "browser" ? (
               <BrowserSettingsSection accessToken={accessToken} />
+            ) : activeTab === "voice" ? (
+              token ? (
+                <VoiceSettingsSection accessToken={token} />
+              ) : null
             ) : activeTab === "pluginPanels" ? (
               <PluginPanelsSettings accessToken={accessToken} />
             ) : activeTab === "usage" ? (

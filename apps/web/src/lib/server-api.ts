@@ -28,6 +28,11 @@ import type {
   SessionListResponse,
   UploadResponse,
   ViewerResponse,
+  VoiceDiagnoseResponse,
+  VoiceModelListResponse,
+  VoiceModelResponse,
+  VoiceSettingsResponse,
+  VoiceSettingsUpdateRequest,
   VoiceTranscribeResponse,
   WorkspaceSettings,
   WorkspaceSettingsResponse,
@@ -1305,4 +1310,103 @@ export async function revokeApiToken(
     { method: "DELETE", headers: authHeaders(accessToken) },
   );
   if (!response.ok) return handleErrorResponse(response);
+}
+
+/** 语音设置（模式 / 三段选择 / 语音回复开关）。 */
+export async function fetchVoiceSettings(
+  accessToken: string,
+): Promise<VoiceSettingsResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/voice/settings`, {
+    headers: authHeaders(accessToken),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as VoiceSettingsResponse;
+}
+
+/** 部分更新：只送要改的字段（未送的一律不动）。 */
+export async function updateVoiceSettings(
+  accessToken: string,
+  patch: VoiceSettingsUpdateRequest,
+): Promise<VoiceSettingsResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/voice/settings`, {
+    method: "PUT",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify(patch),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as VoiceSettingsResponse;
+}
+
+/** 三段候选目录（内置模型含下载状态；BYOK 实例候选零下载）。 */
+export async function fetchVoiceModels(
+  accessToken: string,
+): Promise<VoiceModelListResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/voice/models`, {
+    headers: authHeaders(accessToken),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as VoiceModelListResponse;
+}
+
+/** 开始下载（立刻返回 202；进度靠轮询 fetchVoiceModels）。 */
+export async function downloadVoiceModel(
+  accessToken: string,
+  modelId: string,
+): Promise<VoiceModelResponse> {
+  return voiceModelAction(accessToken, modelId, "POST");
+}
+
+/** 取消下载中的模型。 */
+export async function cancelVoiceModelDownload(
+  accessToken: string,
+  modelId: string,
+): Promise<VoiceModelResponse> {
+  return voiceModelAction(accessToken, modelId, "DELETE", "/download");
+}
+
+/** 删除已下载的模型文件。 */
+export async function removeVoiceModel(
+  accessToken: string,
+  modelId: string,
+): Promise<VoiceModelResponse> {
+  return voiceModelAction(accessToken, modelId, "DELETE");
+}
+
+async function voiceModelAction(
+  accessToken: string,
+  modelId: string,
+  method: "POST" | "DELETE",
+  suffix = "",
+): Promise<VoiceModelResponse> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/voice/models/${encodeURIComponent(modelId)}${suffix}`,
+    { method, headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as VoiceModelResponse;
+}
+
+/** 上次检测报告（没测过为 null）。 */
+export async function fetchVoiceDiagnose(
+  accessToken: string,
+): Promise<VoiceDiagnoseResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/voice/diagnose`, {
+    headers: authHeaders(accessToken),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as VoiceDiagnoseResponse;
+}
+
+/** 跑一次检测（可取消：把 signal 传进来即可中止）。 */
+export async function runVoiceDiagnose(
+  accessToken: string,
+  signal?: AbortSignal,
+): Promise<VoiceDiagnoseResponse> {
+  const response = await fetch(`${getServerBaseUrl()}/api/voice/diagnose`, {
+    method: "POST",
+    headers: authHeaders(accessToken),
+    ...(signal ? { signal } : {}),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as VoiceDiagnoseResponse;
 }
