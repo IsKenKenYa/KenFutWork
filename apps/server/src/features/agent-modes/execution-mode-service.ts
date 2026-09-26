@@ -84,6 +84,15 @@ const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "inspect_canvas",
   "screenshot_canvas",
   "get_brand_kit",
+  // 子代理结果查询（纯读）；派发工具 task/task_background 不在此列——
+  // 它们按**目标定义的只读性**动态判定（见 evaluateToolPolicy 的 detail 分支，DEC-17）
+  "task_output",
+]);
+
+/** 子代理派发工具：plan 模式下按目标定义 readOnly 与否动态放行。 */
+const SUBAGENT_DISPATCH_TOOLS: ReadonlySet<string> = new Set([
+  "task",
+  "task_background",
 ]);
 
 /**
@@ -166,6 +175,8 @@ const PLAN_DENY_REASON =
 export function evaluateToolPolicy(
   policy: ToolPolicy,
   toolName: string,
+  /** 子代理派发的目标定义细节（DEC-17）：只读定义在 plan 档放行派发。 */
+  detail?: { subagentReadOnly?: boolean },
 ): { allowed: true } | { allowed: false; reason: string } {
   if (policy.kind === "allow-all") {
     return { allowed: true };
@@ -173,9 +184,16 @@ export function evaluateToolPolicy(
   if (policy.kind === "deny-all") {
     return { allowed: false, reason: policy.reason };
   }
-  return READ_ONLY_TOOLS.has(toolName)
-    ? { allowed: true }
-    : { allowed: false, reason: policy.reason };
+  if (READ_ONLY_TOOLS.has(toolName)) {
+    return { allowed: true };
+  }
+  if (
+    SUBAGENT_DISPATCH_TOOLS.has(toolName) &&
+    detail?.subagentReadOnly === true
+  ) {
+    return { allowed: true };
+  }
+  return { allowed: false, reason: policy.reason };
 }
 
 function policyForMode(mode: ExecutionMode): ToolPolicy {

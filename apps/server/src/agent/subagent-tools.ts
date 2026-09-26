@@ -25,6 +25,10 @@ export type SubagentChildRunner = (input: {
   signal: AbortSignal;
 }) => Promise<string>;
 
+export type SubagentDispatchGate = (
+  def: SubagentDefinition,
+) => { allowed: true } | { allowed: false; reason: string };
+
 /** 截断工具结果里的子代理结论（子代理长篇大论不该灌满主上下文）。 */
 const CHILD_RESULT_MAX_CHARS = 8_000;
 
@@ -41,6 +45,12 @@ export function createSubagentTaskTools(deps: {
   /** 按 preset 过滤后的可用定义（工具描述与派发校验共用）。 */
   definitions: readonly SubagentDefinition[];
   childRunner: SubagentChildRunner;
+  /**
+   * 派发前置门（DEC-17）：plan 档按目标定义只读性放行/拒绝（explore/review/planner
+   * 可派，batch_image/video_generate 拒绝）。拒绝发生在**注册之前**——被拒的派发
+   * 不产生任务条目。未传 = 不设限（部分装配/测试）。
+   */
+  dispatchGate?: SubagentDispatchGate;
 }) {
   const { registry, definitions, childRunner } = deps;
 
@@ -113,6 +123,12 @@ export function createSubagentTaskTools(deps: {
     async (input) => {
       const resolved = resolve(input.subagent_type);
       if (typeof resolved === "string") return resolved;
+      if (deps.dispatchGate) {
+        const verdict = deps.dispatchGate(resolved);
+        if (!verdict.allowed) {
+          return `子代理「${resolved.label}」未派发：${verdict.reason}`;
+        }
+      }
       const registered = registry.register({
         kind: "subagent",
         label: `${resolved.label} · ${input.description}`,

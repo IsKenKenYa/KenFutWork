@@ -86,7 +86,8 @@ export function createAgentRunsPlugin(
             ? ("automation" as const)
             : ("interactive" as const);
           return composeToolGate({
-            modeVerdict: (toolName) => evaluateToolPolicy(policy, toolName),
+            modeVerdict: (toolName, detail) =>
+              evaluateToolPolicy(policy, toolName, detail),
             ...(permissions
               ? {
                   permissionVerdict: (toolName: string) => {

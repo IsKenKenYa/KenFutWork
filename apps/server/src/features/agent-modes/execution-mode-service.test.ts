@@ -258,3 +258,45 @@ describe("plan 批准门对组合 prompt 的判定（isPlanApprovalInput）", ()
     expect(isPlanApprovalInput(tricky)).toBe(false);
   });
 });
+
+describe("plan 只读子代理白名单（DEC-17：派发按定义只读性放行）", () => {
+  function planPolicy() {
+    const service = createExecutionModeService();
+    service.activate("t-plan-sub", "plan");
+    return service.resolveToolPolicy("t-plan-sub");
+  }
+
+  it("task/task_background 携带只读定义 detail 时放行（explore/review/planner 可派）", () => {
+    const policy = planPolicy();
+    for (const tool of ["task", "task_background"]) {
+      expect(
+        evaluateToolPolicy(policy, tool, { subagentReadOnly: true }).allowed,
+        tool,
+      ).toBe(true);
+    }
+  });
+
+  it("task 携带可写定义或不带 detail 时仍拒绝（batch_image/video_generate 不可派）", () => {
+    const policy = planPolicy();
+    expect(
+      evaluateToolPolicy(policy, "task", { subagentReadOnly: false }).allowed,
+    ).toBe(false);
+    expect(evaluateToolPolicy(policy, "task").allowed).toBe(false);
+    expect(
+      evaluateToolPolicy(policy, "task_background", {
+        subagentReadOnly: false,
+      }).allowed,
+    ).toBe(false);
+  });
+
+  it("task_output 无条件只读放行；solo 下派发一律拒绝", () => {
+    expect(evaluateToolPolicy(planPolicy(), "task_output").allowed).toBe(true);
+    const service = createExecutionModeService();
+    service.activate("t-solo-sub", "solo");
+    const solo = service.resolveToolPolicy("t-solo-sub");
+    expect(
+      evaluateToolPolicy(solo, "task", { subagentReadOnly: true }).allowed,
+    ).toBe(false);
+    expect(evaluateToolPolicy(solo, "task_output").allowed).toBe(false);
+  });
+});

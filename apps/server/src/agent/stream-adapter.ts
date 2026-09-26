@@ -69,6 +69,15 @@ type AdaptDeepAgentStreamOptions = {
  * artifacts suppressed (the parent re-emits them with placement).
  */
 const SUB_AGENT_PARENT_TOOLS = new Set(["video_generate"]);
+/**
+ * 子代理归因（DEC-19）：事件来自哪个具名子代理的 run。langchain v2 事件没有
+ * `parent_ids`，归因只能靠 run metadata（`lc_agent_name`，deepagents/自建派发
+ * 都写入）；主 agent 的事件没有该 metadata。
+ */
+function readSubagentName(evt: LangChainStreamEvent): string | undefined {
+  const name = evt.metadata?.lc_agent_name;
+  return typeof name === "string" && name.length > 0 ? name : undefined;
+}
 /** Inner tools that may be suppressed when running inside a sub-agent. */
 const INNER_SUB_AGENT_TOOLS = new Set(["generate_video"]);
 
@@ -201,6 +210,8 @@ export async function* adaptDeepAgentStream(
       if (evt.event === "on_chat_model_stream") {
         const chunk = evt.data?.chunk;
         if (!chunk) continue;
+        // 子代理的流：usage 照算（归父 run，DEC-6），文本不进主消息流（DEC-19）
+        const streamingSubagent = readSubagentName(evt);
 
         // Skip chunks that are tool calls (no text to emit)
         if (
@@ -281,13 +292,15 @@ export async function* adaptDeepAgentStream(
               typeof part.thinking === "string" &&
               part.thinking
             ) {
-              yield {
-                type: "thinking.delta" as const,
-                runId: options.runId,
-                messageId,
-                delta: part.thinking,
-                timestamp: now(),
-              };
+              if (!streamingSubagent) {
+                yield {
+                  type: "thinking.delta" as const,
+                  runId: options.runId,
+                  messageId,
+                  delta: part.thinking,
+                  timestamp: now(),
+                };
+              }
             } else {
               const text =
                 typeof part === "string"
@@ -298,7 +311,7 @@ export async function* adaptDeepAgentStream(
                       typeof (part as { text: unknown }).text === "string"
                     ? (part as { text: string }).text
                     : "";
-              if (text) {
+              if (text && !streamingSubagent) {
                 seenStreamedMessageIds.add(messageId);
                 yield {
                   type: "message.delta" as const,
@@ -314,6 +327,7 @@ export async function* adaptDeepAgentStream(
         }
 
         // String content (normal text)
+        if (streamingSubagent) continue;
         const delta = extractChunkText(chunk);
         if (!delta) continue;
 
@@ -332,6 +346,7 @@ export async function* adaptDeepAgentStream(
       if (evt.event === "on_chat_model_end") {
         const output = evt.data?.output;
         if (!output) continue;
+        if (readSubagentName(evt)) continue;
 
         if (
           AIMessageClass.isInstance(output) ||
@@ -379,12 +394,14 @@ export async function* adaptDeepAgentStream(
           activeSubAgentRuns.add(toolCallId);
         }
 
+        const subagentName = readSubagentName(evt);
         yield {
           runId: options.runId,
           timestamp: now(),
           toolCallId,
           toolName,
           ...(toolInput ? { input: toolInput } : {}),
+          ...(subagentName ? { agentName: subagentName } : {}),
           type: "tool.started",
         };
         continue;
@@ -412,6 +429,7 @@ export async function* adaptDeepAgentStream(
           output,
           (extractedArtifacts?.length ?? 0) > 0,
         );
+        const completedSubagent = readSubagentName(evt);
         yield {
           output: extractedOutput,
           outputSummary: summarizeOutput(output),
@@ -420,6 +438,7 @@ export async function* adaptDeepAgentStream(
           timestamp: now(),
           toolCallId,
           toolName,
+          ...(completedSubagent ? { agentName: completedSubagent } : {}),
           type: "tool.completed",
         };
 
@@ -453,6 +472,7 @@ export async function* adaptDeepAgentStream(
         seenCompletedToolCalls.add(toolCallId);
 
         const reason = describeToolError(evt.data?.error);
+        const errorSubagent = readSubagentName(evt);
         yield {
           output: { error: reason },
           outputSummary: `失败：${reason}`,
@@ -460,6 +480,7 @@ export async function* adaptDeepAgentStream(
           timestamp: now(),
           toolCallId,
           toolName,
+          ...(errorSubagent ? { agentName: errorSubagent } : {}),
           type: "tool.completed",
         };
 

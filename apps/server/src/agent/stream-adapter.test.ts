@@ -627,3 +627,71 @@ describe("stream-adapter 自动压缩信号", () => {
     expect(events.some((event) => event.type === "run.compacted")).toBe(false);
   });
 });
+
+describe("stream-adapter 子代理归因（DEC-19）", () => {
+  function eventStream(events: unknown[]): AsyncIterable<unknown> {
+    return {
+      async *[Symbol.asyncIterator]() {
+        for (const event of events) yield event;
+      },
+    };
+  }
+
+  it("子代理模型流不漏进主消息流（嵌套泄漏修复），主 agent 文本照常", async () => {
+    const events = await collect(
+      eventStream([
+        {
+          event: "on_chat_model_stream",
+          data: { chunk: new AIMessageChunk({ content: "主文" }) },
+        },
+        {
+          event: "on_chat_model_stream",
+          data: { chunk: new AIMessageChunk({ content: "子文" }) },
+          metadata: { lc_agent_name: "explore" },
+        },
+      ]),
+      {},
+    );
+    const deltas = events
+      .filter((event) => event.type === "message.delta")
+      .map((event) => (event as { delta: string }).delta);
+    expect(deltas).toEqual(["主文"]);
+  });
+
+  it("子代理的工具事件带 agentName；主 agent 工具事件不带", async () => {
+    const events = await collect(
+      eventStream([
+        {
+          event: "on_tool_start",
+          name: "read_file",
+          run_id: "child-1",
+          data: { input: { path: "a.ts" } },
+          metadata: { lc_agent_name: "explore" },
+        },
+        {
+          event: "on_tool_end",
+          name: "read_file",
+          run_id: "child-1",
+          data: { output: "文件内容" },
+          metadata: { lc_agent_name: "explore" },
+        },
+        {
+          event: "on_tool_start",
+          name: "web_search",
+          run_id: "main-1",
+          data: { input: { query: "x" } },
+        },
+      ]),
+      {},
+    );
+    const started = events.filter((event) => event.type === "tool.started");
+    expect(started[0]).toMatchObject({
+      toolName: "read_file",
+      agentName: "explore",
+    });
+    expect(started[1]).toMatchObject({ toolName: "web_search" });
+    expect(started[1]).not.toHaveProperty("agentName");
+    const completed = events.filter((event) => event.type === "tool.completed");
+    expect(completed[0]).toMatchObject({ agentName: "explore" });
+  });
+});

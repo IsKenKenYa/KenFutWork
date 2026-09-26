@@ -150,3 +150,32 @@ describe("子代理派发工具（DEC-14/DEC-16）", () => {
     expect(JSON.parse(all)).toHaveLength(1);
   });
 });
+
+describe("plan 只读白名单的派发门（DEC-17）", () => {
+  it("只读定义放行，可写定义在注册前被可读拒绝", async () => {
+    const registry = createBackgroundTaskRegistry({ maxConcurrent: 4 });
+    const tools = createSubagentTaskTools({
+      registry,
+      definitions: SUBAGENT_DEFINITIONS,
+      childRunner: async ({ description }) => `done: ${description}`,
+      dispatchGate: (def) =>
+        def.readOnly
+          ? { allowed: true }
+          : { allowed: false, reason: "plan 计划模式：批准前仅允许只读操作。" },
+    });
+
+    const readOnly = (await tools.taskTool.invoke(
+      { subagent_type: "explore", description: "调研" },
+      { configurable: {} },
+    )) as string;
+    expect(readOnly).toContain("done: 调研");
+
+    const writable = (await tools.taskBackgroundTool.invoke(
+      { subagent_type: "batch_image", description: "海报" },
+      { configurable: {} },
+    )) as string;
+    expect(writable).toContain("未派发");
+    expect(writable).toContain("只读");
+    expect(registry.list()).toHaveLength(1);
+  });
+});

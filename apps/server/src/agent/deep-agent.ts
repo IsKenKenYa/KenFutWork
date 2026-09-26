@@ -1,3 +1,4 @@
+import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
@@ -37,9 +38,14 @@ import {
   type AgentBackendResult,
   createAgentBackend,
 } from "./backends/index.js";
+import { createExecuteBackgroundTool } from "./execute-background.js";
 import { bridgeKernelTools } from "./kernel-tools-bridge.js";
+import { createLlmRequestRetryMiddleware } from "./llm-retry-middleware.js";
 import { KENFUTWORK_SYSTEM_PROMPT } from "./prompts/kenfutwork-main.js";
-import { resolveSubagentDefinitions } from "./subagent-definitions.js";
+import {
+  resolveSubagentDefinitions,
+  type SubagentDefinition,
+} from "./subagent-definitions.js";
 import {
   createSubagentTaskTools,
   type SubagentChildRunner,
@@ -64,6 +70,8 @@ export type KenFutWorkAgent = Pick<
  */
 export type ToolGate = (
   toolName: string,
+  /** 子代理派发细节（DEC-17）：plan 档按目标定义只读性放行 task/task_background。 */
+  detail?: { subagentReadOnly?: boolean },
 ) => { allowed: true } | { allowed: false; reason: string };
 
 /**
@@ -306,6 +314,10 @@ export type KenFutWorkAgentFactory = (options: {
     registry: import("./background-tasks.js").BackgroundTaskRegistry;
     preset: "design" | "code";
   };
+  /** Code 长命令超时（毫秒，DEC-18）：治理设置值；缺省走 governance 默认。 */
+  executeTimeoutMs?: number;
+  /** LLM 请求级重试（DEC-18）：治理设置值；缺省走 governance 默认（不无限）。 */
+  llmRetry?: { maxAttempts: number; infinite: boolean };
 }) => KenFutWorkAgent;
 
 export function createKenFutWorkDeepAgent(options: {
@@ -351,6 +363,10 @@ export function createKenFutWorkDeepAgent(options: {
     registry: import("./background-tasks.js").BackgroundTaskRegistry;
     preset: "design" | "code";
   };
+  /** Code 长命令超时（毫秒，DEC-18）。 */
+  executeTimeoutMs?: number;
+  /** LLM 请求级重试（DEC-18）。 */
+  llmRetry?: { maxAttempts: number; infinite: boolean };
 }): KenFutWorkAgent {
   const backendResult =
     options.backendResult ?? createAgentBackend(options.env, options.canvasId);
@@ -517,6 +533,14 @@ export function createKenFutWorkDeepAgent(options: {
       registry,
       definitions: resolveSubagentDefinitions(preset),
       childRunner,
+      // plan 档派发门（DEC-17）：按目标定义只读性判定——复用同一把工具门，
+      // solo/plan 的拒绝理由与普通工具一致
+      ...(options.toolGate
+        ? {
+            dispatchGate: (def: SubagentDefinition) =>
+              options.toolGate!("task", { subagentReadOnly: def.readOnly }),
+          }
+        : {}),
     });
     tools.push(
       dispatchTools.taskTool as never,
@@ -526,6 +550,38 @@ export function createKenFutWorkDeepAgent(options: {
     subagentMiddleware = [
       createTaskNotificationMiddleware(registry) as unknown as AgentMiddleware,
     ];
+
+    // Code 长命令（DEC-15）：与子代理共用注册表与通知通道；execute 能力探测失败
+    // （非 shell 后端）则不挂，不给模型一个必然失败的工具
+    if (preset === "code") {
+      const backendInstance = backendResult.factory({
+        store: options.store,
+        state: {},
+      } as never) as unknown as {
+        execute?: (command: string) => Promise<{
+          output: string;
+          exitCode: number | null;
+          truncated: boolean;
+        }>;
+      };
+      if (typeof backendInstance?.execute === "function") {
+        tools.push(
+          createExecuteBackgroundTool({
+            registry,
+            backend: backendInstance as {
+              execute: (command: string) => Promise<{
+                output: string;
+                exitCode: number | null;
+                truncated: boolean;
+              }>;
+            },
+            timeoutMs:
+              options.executeTimeoutMs ??
+              AGENT_GOVERNANCE_DEFAULTS.executeTimeoutMs,
+          }) as never,
+        );
+      }
+    }
   }
 
   options.onToolInventory?.(tools);
@@ -555,6 +611,16 @@ export function createKenFutWorkDeepAgent(options: {
     ? subagentMiddleware
     : [];
 
+  // LLM 请求级重试（DEC-18）：maxAttempts 含首次；infinite 为用户显式开启。
+  // 默认档（10 次/不无限）也挂——治上游抖动是基线行为，不是可选项。
+  const llmRetryMiddleware = createLlmRequestRetryMiddleware({
+    maxAttempts:
+      options.llmRetry?.maxAttempts ??
+      AGENT_GOVERNANCE_DEFAULTS.llmRequestMaxRetries,
+    infinite:
+      options.llmRetry?.infinite ?? AGENT_GOVERNANCE_DEFAULTS.llmInfiniteRetry,
+  });
+
   return createDeepAgent({
     backend: backendResult.factory,
     ...(options.checkpointer ? { checkpointer: options.checkpointer } : {}),
@@ -578,6 +644,7 @@ export function createKenFutWorkDeepAgent(options: {
           middleware: [
             ...summarizationMiddleware,
             ...notificationMiddleware,
+            llmRetryMiddleware,
             todoListMiddleware() as unknown as AgentMiddleware,
             createToolErrorGuardMiddleware(),
             createModelResponseGuardMiddleware(),
@@ -589,6 +656,7 @@ export function createKenFutWorkDeepAgent(options: {
           middleware: [
             ...summarizationMiddleware,
             ...notificationMiddleware,
+            llmRetryMiddleware,
             todoListMiddleware() as unknown as AgentMiddleware,
             createToolErrorGuardMiddleware(),
             createModelResponseGuardMiddleware(),

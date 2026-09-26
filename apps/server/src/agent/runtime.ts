@@ -1178,6 +1178,14 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       /** 后台任务并发上限（DEC-15/18）：治理设置读侧已钳回护栏。 */
       let governanceConcurrency: number =
         AGENT_GOVERNANCE_DEFAULTS.subagentMaxConcurrency;
+      /** LLM 请求级重试（DEC-18）：治理设置读侧已钳回护栏。 */
+      let governanceLlmRetry: { maxAttempts: number; infinite: boolean } = {
+        maxAttempts: AGENT_GOVERNANCE_DEFAULTS.llmRequestMaxRetries,
+        infinite: AGENT_GOVERNANCE_DEFAULTS.llmInfiniteRetry,
+      };
+      /** Code 长命令超时（DEC-18）。 */
+      let governanceExecuteTimeoutMs: number =
+        AGENT_GOVERNANCE_DEFAULTS.executeTimeoutMs;
       /** 统一后台任务注册表（DEC-15）：设置读取后创建；取消/收尾经它连带清理。 */
       let backgroundTaskRegistry: BackgroundTaskRegistry | null = null;
 
@@ -1501,6 +1509,17 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             governanceConcurrency =
               workspaceSettings?.subagentMaxConcurrency ??
               AGENT_GOVERNANCE_DEFAULTS.subagentMaxConcurrency;
+            governanceLlmRetry = {
+              maxAttempts:
+                workspaceSettings?.llmRequestMaxRetries ??
+                AGENT_GOVERNANCE_DEFAULTS.llmRequestMaxRetries,
+              infinite:
+                workspaceSettings?.llmInfiniteRetry ??
+                AGENT_GOVERNANCE_DEFAULTS.llmInfiniteRetry,
+            };
+            governanceExecuteTimeoutMs =
+              workspaceSettings?.executeTimeoutMs ??
+              AGENT_GOVERNANCE_DEFAULTS.executeTimeoutMs;
           }
 
           // 统一后台任务注册表（DEC-15）：每 run 一个（状态随 run 生命周期，
@@ -1673,6 +1692,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   },
                 }
               : {}),
+            executeTimeoutMs: governanceExecuteTimeoutMs,
+            llmRetry: governanceLlmRetry,
             // 插件提示段每次 run 取一次：新装/卸载插件下一轮即生效；用户规则拼在它之后
             ...(options.pluginPromptFragments || userRulesFragment.length > 0
               ? {
