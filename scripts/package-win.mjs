@@ -138,6 +138,9 @@ function main() {
     // node-pty 是原生模块（conpty.node + conpty.dll/OpenConsole.exe）：**不能打进单文件**，
     // 运行时从 <exe>/node_modules/node-pty 解析（同 sharp 的办法）。
     "--external:node-pty",
+    // sherpa-onnx-node 同理（语音助手的内置「听」）：它 require 平台包（sherpa-onnx-win-x64）
+    // 里的 .node，打进单文件后既丢了 .node 也丢了平台包解析路径。
+    "--external:sherpa-onnx-node",
     `--outfile=${join(BUILD, "server.cjs")}`,
     "--log-level=warning",
   ]);
@@ -253,6 +256,41 @@ function main() {
   console.log(
     "[package] 捆绑 node-pty（lib/ + prebuilds/win32-x64 + conpty.dll/OpenConsole.exe）",
   );
+
+  // 4c-3) sherpa-onnx-node（语音助手内置「听」的原生运行时）：**整包拷**。
+  //   JS 壳（sherpa-onnx.js 等）+ 平台包 sherpa-onnx-win-x64（onnxruntime.dll + .node）。
+  //   它内部按 require('sherpa-onnx-' + platform) 解析，故平台包必须与它同级落在
+  //   <exe>/node_modules/ 下；模型文件不在包里（按需下载到用户数据目录，规划 §5/§8）。
+  try {
+    const sherpaPkgPath = serverRequire.resolve("sherpa-onnx-node/package.json");
+    const sherpaDir = dirname(sherpaPkgPath);
+    const sherpaOut = join(RELEASE, "node_modules", "sherpa-onnx-node");
+    cpSync(sherpaDir, sherpaOut, { recursive: true });
+    // 平台包（含 23MB 原生库 + onnxruntime.dll）单独放同级 node_modules。
+    // 解析顺序：先从 server 的依赖树找（平台包已在 optionalDependencies 里，pnpm 会链到
+    // apps/server/node_modules）；找不到就退回从 sherpa-onnx-node 自身解析——pnpm 严格布局下
+    // 它也可能只挂在 .pnpm 目录里。两条都试，别因为一处解析不到就静默不拷。
+    let platformDir;
+    try {
+      platformDir = dirname(serverRequire.resolve("sherpa-onnx-win-x64/package.json"));
+    } catch {
+      const sherpaRequire = createRequire(sherpaPkgPath);
+      platformDir = dirname(sherpaRequire.resolve("sherpa-onnx-win-x64/package.json"));
+    }
+    cpSync(platformDir, join(RELEASE, "node_modules", "sherpa-onnx-win-x64"), {
+      recursive: true,
+    });
+    console.log(
+      "[package] 捆绑语音运行时（sherpa-onnx-node + sherpa-onnx-win-x64）",
+    );
+  } catch (error) {
+    // 不是硬失败：缺了它只是「语音不可用」（catalog 会在设置页如实说明模型未下载/运行时不可用）
+    console.warn(
+      `[package] 未捆绑语音运行时（内置「听」将不可用）：${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
 
   // 4d) 随包语言运行时（Node / Python / JRE）：agent 的 execute 跑在**宿主机**上，
   //     用户机器没装 Node/Python/JDK 时「建 python 项目」「跑 Java」「npx 起 MCP server」
