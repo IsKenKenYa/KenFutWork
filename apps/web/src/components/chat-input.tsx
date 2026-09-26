@@ -20,6 +20,7 @@ import {
   useComposerContextMenu,
 } from "./chat/composer-context-menu";
 import { RunStopButton } from "./chat/run-stop-button";
+import { useComposerVoice } from "./composer-voice";
 import { ImageAttachmentBar } from "./image-attachment-bar";
 import { ImageModelPreferencePopover } from "./image-model-preference";
 
@@ -37,6 +38,8 @@ type ChatInputProps = {
   mentions?: MessageMention[];
   onRemoveMention?: (mention: MessageMention) => void;
   selectedCanvasElements?: CanvasSelectedElement[];
+  /** 语音输入所需（缺省 = 不接线：按住说话退化为普通点击）。 */
+  accessToken?: string | undefined;
 };
 
 export type ChatInputHandle = {
@@ -61,6 +64,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       mentions,
       onRemoveMention,
       selectedCanvasElements,
+      accessToken,
     },
     ref,
   ) {
@@ -77,6 +81,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       value,
       setValue,
       textareaRef,
+    });
+
+    /**
+     * 语音输入（按住说话）：写回必须走 `setValue`——输入框是受控的，而撤销历史
+     * （composerMenu 的 historyRef）挂在 value 变化上；直接改 DOM 会让
+     * 撤销栈与 React state 脱钩。
+     */
+    const voice = useComposerVoice({
+      accessToken,
+      onTranscript: (text) => {
+        setValue((prev) => (prev ? `${prev}${text}` : text));
+        requestAnimationFrame(() => textareaRef.current?.focus());
+      },
     });
 
     useImperativeHandle(ref, () => ({
@@ -248,6 +265,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           className="flex min-h-[120px] flex-col justify-between gap-2 rounded-xl border-[0.5px] border-border bg-card p-2 transition-[border] focus-within:border-border"
           onDrop={handleDrop}
           onDragOver={handleDragOver}
+          onPointerDown={voice.onPointerDown}
+          style={voice.lockSelection ? { userSelect: "none" } : undefined}
         >
           {hasSelection && (
             <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground bg-muted/50 rounded-lg">
@@ -342,6 +361,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             style={{ scrollbarWidth: "none" }}
             className="min-h-[48px] max-h-60 resize-none bg-transparent px-1 text-sm leading-[1.8] text-foreground placeholder:text-muted-foreground focus:outline-none [&::-webkit-scrollbar]:hidden"
           />
+          {voice.status}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1">
               {onAddFiles && (

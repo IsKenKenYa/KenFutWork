@@ -1437,6 +1437,7 @@ export function ChatSidebar({
               mentions={messageMentions}
               onRemoveMention={handleRemoveMention}
               {...(selectedCanvasElements ? { selectedCanvasElements } : {})}
+              {...(accessToken ? { accessToken } : {})}
             />
           </div>
         </>

@@ -16,7 +16,6 @@ import {
   ListChecks,
   Loader2,
   MessageSquare,
-  Mic,
   Palette,
   PanelLeftClose,
   PanelLeftOpen,
@@ -40,6 +39,7 @@ import {
 } from "@/components/chat/composer-context-menu";
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
 import { RunStopButton } from "@/components/chat/run-stop-button";
+import { useComposerVoice } from "@/components/composer-voice";
 import { KenFutWorkLogo } from "@/components/icons/kenfutwork-logo";
 import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
@@ -794,6 +794,18 @@ export function Workbench() {
     const timer = window.setTimeout(() => setChatNotice(null), 3000);
     return () => window.clearTimeout(timer);
   }, [chatNotice]);
+  /**
+   * 语音输入（按住说话）：三处输入框共用同一个接线组件，转写结果都写回各自的
+   * 受控 state（追问框还会经过 composerMenu 的历史记录，故必须走 setFollowUp）。
+   */
+  const followUpVoice = useComposerVoice({
+    accessToken: session?.access_token,
+    onTranscript: setFollowUp,
+  });
+  const promptVoice = useComposerVoice({
+    accessToken: session?.access_token,
+    onTranscript: setPrompt,
+  });
   const [tier, setTier] = useState("default");
   /** 「完全访问」的风险确认弹窗（确认后才写库与生效）。 */
   const [pendingFullAccess, setPendingFullAccess] = useState(false);
@@ -3448,7 +3460,15 @@ export function Workbench() {
                     continueTask(value);
                   }}
                 >
-                  <div className="@container/composer rounded-xl border bg-background px-3 pt-2.5 pb-2">
+                  <div
+                    className="@container/composer rounded-xl border bg-background px-3 pt-2.5 pb-2"
+                    onPointerDown={followUpVoice.onPointerDown}
+                    style={
+                      followUpVoice.lockSelection
+                        ? { userSelect: "none" }
+                        : undefined
+                    }
+                  >
                     <textarea
                       ref={composerRef}
                       aria-label="继续对话"
@@ -3462,7 +3482,12 @@ export function Workbench() {
                       }}
                       onContextMenu={composerMenu.open}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
+                        // 中文输入法里确认候选词的回车不该提交（与画布助手同一处写法）
+                        if (
+                          e.key === "Enter" &&
+                          !e.shiftKey &&
+                          !e.nativeEvent.isComposing
+                        ) {
                           e.preventDefault();
                           const value = followUp;
                           setFollowUp("");
@@ -3470,10 +3495,11 @@ export function Workbench() {
                         }
                       }}
                       rows={1}
-                      placeholder="继续追问…"
+                      placeholder="继续追问…（按住说话）"
                       style={{ scrollbarWidth: "none" }}
                       className="max-h-40 min-h-[24px] w-full resize-none overflow-hidden bg-transparent text-sm outline-none placeholder:text-muted-foreground [&::-webkit-scrollbar]:hidden"
                     />
+                    {followUpVoice.status}
                     {workDirNotice ? (
                       <p className="mt-2 text-xs text-destructive">
                         {workDirNotice}
@@ -3600,15 +3626,9 @@ export function Workbench() {
                           progress={THINKING_PROGRESS[thinking] ?? 0}
                         />
                       </div>
-                      {/* 右簇：麦克风 / 发送 —— 与左簇同一个 h-7 口径 */}
+                      {/* 右簇：发送 —— 与左簇同一个 h-7 口径（语音不再有按钮：
+                          按住输入框即录音，见 promptVoice/followUpVoice） */}
                       <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          title="语音（即将上线）"
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
-                        >
-                          <Mic className="h-4 w-4" />
-                        </button>
                         {activeTask.status === "running" &&
                         activeRunIdRef.current ? (
                           /* 停止 = 暂停图标（与发送按钮同一个图标位，不再是一枚突兀的文字按钮）；
@@ -3708,13 +3728,24 @@ ${formatElementReference(picked)}`
                   onBindWorkDir={bindWorktreeToProject}
                 />
               </div>
-              <div className="@container/composer rounded-b-2xl border bg-background px-3 pt-3 pb-2.5 shadow-sm">
+              <div
+                className="@container/composer rounded-b-2xl border bg-background px-3 pt-3 pb-2.5 shadow-sm"
+                onPointerDown={promptVoice.onPointerDown}
+                style={
+                  promptVoice.lockSelection ? { userSelect: "none" } : undefined
+                }
+              >
                 <textarea
                   aria-label="任务描述"
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
+                    // 中文输入法里确认候选词的回车不该提交（与画布助手同一处写法）
+                    if (
+                      e.key === "Enter" &&
+                      !e.shiftKey &&
+                      !e.nativeEvent.isComposing
+                    ) {
                       e.preventDefault();
                       // 斜杠命令在提交前展开（转录里看到的就是实际发出去的）
                       startTask(expandCommand(prompt, commands).text);
@@ -3728,6 +3759,7 @@ ${formatElementReference(picked)}`
                   }
                   className="w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                 />
+                {promptVoice.status}
                 {/* 正在敲 `/` 时的可用命令提示（有命令才出现；点一条即补全成 `/名字 `） */}
                 {shouldSuggestCommands(prompt) && commands.length > 0 ? (
                   <p
@@ -3921,15 +3953,9 @@ ${formatElementReference(picked)}`
                       progress={THINKING_PROGRESS[thinking] ?? 0}
                     />
                   </div>
-                  {/* 右簇：麦克风 / 发送 —— 与左簇同一个 h-7 口径 */}
+                  {/* 右簇：发送 —— 与左簇同一个 h-7 口径（语音不再有按钮：
+                      按住输入框即录音） */}
                   <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      title="语音（即将上线）"
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
-                    >
-                      <Mic className="h-4 w-4" />
-                    </button>
                     {submitting ? (
                       <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                         <Loader2 className="h-4 w-4 animate-spin" />

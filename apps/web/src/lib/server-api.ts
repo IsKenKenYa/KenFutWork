@@ -28,6 +28,7 @@ import type {
   SessionListResponse,
   UploadResponse,
   ViewerResponse,
+  VoiceTranscribeResponse,
   WorkspaceSettings,
   WorkspaceSettingsResponse,
   WorkspaceSkillListResponse,
@@ -235,6 +236,35 @@ export async function uploadThumbnail(
     },
   );
   if (!response.ok) return handleErrorResponse(response);
+}
+
+// --- 语音 API ---
+
+/**
+ * 转写一段 16k 单声道 WAV（语音助手「听」）。
+ *
+ * 失败原因原样来自服务端（`ApiApplicationError.message`）：未选/未下载模型是 503 +
+ * 可读中文，音频非法是 400 —— 界面直接显示这句话，不要再另写一套泛化文案。
+ * 空文本是**正常结果**（用户没说），不是错误。
+ */
+export async function transcribeVoice(
+  accessToken: string,
+  wav: Uint8Array,
+): Promise<string> {
+  const formData = new FormData();
+  formData.append(
+    "file",
+    new Blob([new Uint8Array(wav)], { type: "audio/wav" }),
+    "audio.wav",
+  );
+  const response = await fetch(`${getServerBaseUrl()}/api/voice/transcribe`, {
+    method: "POST",
+    headers: authHeaders(accessToken),
+    body: formData,
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  const payload = (await response.json()) as VoiceTranscribeResponse;
+  return payload.text;
 }
 
 // --- Settings API ---
