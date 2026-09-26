@@ -53,9 +53,14 @@ function buildApp(
     report?: unknown;
     /** POST 时抛错。 */
     diagnoseFails?: boolean;
+    /** refine 时抛错（未选想模型）。 */
+    refineFails?: boolean;
+    /** 自定改写结果。 */
+    refined?: string;
   } = {},
 ) {
   let diagnosed = 0;
+  const refined: string[] = [];
   const started: string[] = [];
   const cancelled: string[] = [];
   const removed: string[] = [];
@@ -144,6 +149,15 @@ function buildApp(
         return { impl: transcriber, label: "内置（本机 CPU）" };
       },
       listCandidates: async () => candidates(),
+      refine: async (_user: unknown, _ws: string, input: { text: string }) => {
+        refined.push(input.text);
+        if (options.refineFails) {
+          throw new VoiceUnavailableError(
+            "未选择「想」模型：完整回路需要一个对话模型。",
+          );
+        }
+        return options.refined ?? "把首页的按钮改成蓝色，改完能在页面上看到。";
+      },
       getListenTimings: () => ({
         rtfMedian: 0.081,
         samples: 7,
@@ -197,6 +211,7 @@ function buildApp(
     cancelled,
     removed,
     diagnosed: () => diagnosed,
+    refined,
   };
 }
 
@@ -650,7 +665,9 @@ describe("/api/voice/diagnose（性能检测）", () => {
       });
       expect(response.statusCode).toBe(200);
       expect(diagnosed()).toBe(1);
-      expect(response.json().report.measuredAt).toBe("2026-09-26T10:00:00.000Z");
+      expect(response.json().report.measuredAt).toBe(
+        "2026-09-26T10:00:00.000Z",
+      );
     } finally {
       await app.close();
     }
@@ -683,6 +700,94 @@ describe("/api/voice/diagnose（性能检测）", () => {
           .statusCode,
       ).toBe(401);
       expect(diagnosed()).toBe(0);
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+describe("POST /api/voice/refine（想段：口述 → 完整需求）", () => {
+  it("正常路径：口述进来，完整需求出去；上下文条数与上限都按契约校验", async () => {
+    const { app, refined } = buildApp();
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/voice/refine",
+        headers: { authorization: "Bearer tok" },
+        payload: {
+          text: "那个按钮改成蓝的",
+          recentMessages: [
+            { role: "user", content: "首页要加一个按钮" },
+            { role: "assistant", content: "好的，加在右上角" },
+          ],
+        },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().prompt).toContain("蓝色");
+      expect(refined).toEqual(["那个按钮改成蓝的"]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("未选「想」模型：503 service_unavailable + 指向设置页的可读原因", async () => {
+    const { app } = buildApp({ refineFails: true });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/voice/refine",
+        headers: { authorization: "Bearer tok" },
+        payload: { text: "改蓝" },
+      });
+      expect(response.statusCode).toBe(503);
+      expect(response.json().error.code).toBe("service_unavailable");
+      expect(response.json().error.message).toContain("未选择「想」模型");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("上下文超上限或空文本：400 invalid_input（契约挡住，不落到服务层）", async () => {
+    const { app, refined } = buildApp();
+    try {
+      const tooMany = await app.inject({
+        method: "POST",
+        url: "/api/voice/refine",
+        headers: { authorization: "Bearer tok" },
+        payload: {
+          text: "改蓝",
+          recentMessages: Array.from({ length: 7 }, () => ({
+            role: "user",
+            content: "x",
+          })),
+        },
+      });
+      expect(tooMany.statusCode).toBe(400);
+      expect(tooMany.json().error.code).toBe("invalid_input");
+
+      const empty = await app.inject({
+        method: "POST",
+        url: "/api/voice/refine",
+        headers: { authorization: "Bearer tok" },
+        payload: { text: "" },
+      });
+      expect(empty.statusCode).toBe(400);
+      expect(refined).toEqual([]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("无 token：401 且不触达服务层", async () => {
+    const { app, refined } = buildApp({ unauthenticated: true });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/voice/refine",
+        payload: { text: "改蓝" },
+      });
+      expect(response.statusCode).toBe(401);
+      expect(refined).toEqual([]);
     } finally {
       await app.close();
     }

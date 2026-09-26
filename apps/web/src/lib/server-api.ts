@@ -31,6 +31,8 @@ import type {
   VoiceDiagnoseResponse,
   VoiceModelListResponse,
   VoiceModelResponse,
+  VoiceRefineRequest,
+  VoiceRefineResponse,
   VoiceSettingsResponse,
   VoiceSettingsUpdateRequest,
   VoiceTranscribeResponse,
@@ -270,6 +272,24 @@ export async function transcribeVoice(
   if (!response.ok) return handleErrorResponse(response);
   const payload = (await response.json()) as VoiceTranscribeResponse;
   return payload.text;
+}
+
+/**
+ * 「想」段：把口述补成完整需求（方案 B）。失败原因原样来自服务端
+ * （未选模型 → 503 + 可读中文），界面直接显示，不另写泛化文案。
+ */
+export async function refineVoice(
+  accessToken: string,
+  input: VoiceRefineRequest,
+): Promise<string> {
+  const response = await fetch(`${getServerBaseUrl()}/api/voice/refine`, {
+    method: "POST",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  const payload = (await response.json()) as VoiceRefineResponse;
+  return payload.prompt;
 }
 
 // --- Settings API ---

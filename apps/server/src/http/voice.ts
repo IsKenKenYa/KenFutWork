@@ -4,6 +4,8 @@ import {
   voiceDiagnoseResponseSchema,
   voiceModelListResponseSchema,
   voiceModelResponseSchema,
+  voiceRefineRequestSchema,
+  voiceRefineResponseSchema,
   voiceSettingsResponseSchema,
   voiceSettingsUpdateRequestSchema,
   voiceTranscribeResponseSchema,
@@ -277,6 +279,38 @@ export async function registerVoiceRoutes(
       return reply
         .code(200)
         .send(voiceTranscribeResponseSchema.parse({ text }));
+    } catch (error) {
+      return sendVoiceError(error, reply);
+    }
+  });
+
+  /**
+   * 「想」段（规划 §4.2）：口述 → 完整需求。
+   *
+   * 与转写一样**不落库、不写用量**（unsafe：HTTP 层不自动重试）；
+   * 未选/不可用即 503 + 可读原因——静默回原文本等于骗用户「已经帮你理顺了」。
+   */
+  app.post("/api/voice/refine", async (request, reply) => {
+    try {
+      const user = await options.auth.authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      const payload = voiceRefineRequestSchema.parse(request.body);
+      const viewer = await options.viewerService.ensureViewer(user);
+      const controller = new AbortController();
+      // 客户端断开即中止（用户在撤销窗口里取消时不必再等模型）
+      request.raw.once("close", () => controller.abort());
+      const prompt = await options.voiceService.refine(
+        user,
+        viewer.workspace.id,
+        {
+          text: payload.text,
+          ...(payload.recentMessages
+            ? { recentMessages: payload.recentMessages }
+            : {}),
+        },
+        controller.signal,
+      );
+      return reply.code(200).send(voiceRefineResponseSchema.parse({ prompt }));
     } catch (error) {
       return sendVoiceError(error, reply);
     }

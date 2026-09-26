@@ -20,7 +20,7 @@ import {
   useComposerContextMenu,
 } from "./chat/composer-context-menu";
 import { RunStopButton } from "./chat/run-stop-button";
-import { useComposerVoice } from "./composer-voice";
+import { useComposerVoice, useVoiceMode } from "./composer-voice";
 import { ImageAttachmentBar } from "./image-attachment-bar";
 import { ImageModelPreferencePopover } from "./image-model-preference";
 
@@ -88,12 +88,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
      * （composerMenu 的 historyRef）挂在 value 变化上；直接改 DOM 会让
      * 撤销栈与 React state 脱钩。
      */
+    const voiceMode = useVoiceMode(accessToken);
     const voice = useComposerVoice({
       accessToken,
+      mode: voiceMode,
       onTranscript: (text) => {
         setValue((prev) => (prev ? `${prev}${text}` : text));
         requestAnimationFrame(() => textareaRef.current?.focus());
       },
+      // 方案 B：画布助手直接在所属会话起一轮（与发送键同一条路径）
+      onAutoSubmit: onSend,
     });
 
     useImperativeHandle(ref, () => ({

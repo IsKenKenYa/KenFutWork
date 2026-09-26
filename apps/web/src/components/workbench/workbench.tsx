@@ -4,7 +4,9 @@ import type {
   CheckpointSummary,
   ExecutionMode,
   ProjectSummary,
+  VoiceRefineContextMessage,
 } from "@kenfutwork/shared";
+import { VOICE_REFINE_CONTEXT_LIMIT } from "@kenfutwork/shared";
 import {
   Blocks,
   Brain,
@@ -39,7 +41,7 @@ import {
 } from "@/components/chat/composer-context-menu";
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
 import { RunStopButton } from "@/components/chat/run-stop-button";
-import { useComposerVoice } from "@/components/composer-voice";
+import { useComposerVoice, useVoiceMode } from "@/components/composer-voice";
 import { KenFutWorkLogo } from "@/components/icons/kenfutwork-logo";
 import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
@@ -794,18 +796,6 @@ export function Workbench() {
     const timer = window.setTimeout(() => setChatNotice(null), 3000);
     return () => window.clearTimeout(timer);
   }, [chatNotice]);
-  /**
-   * 语音输入（按住说话）：三处输入框共用同一个接线组件，转写结果都写回各自的
-   * 受控 state（追问框还会经过 composerMenu 的历史记录，故必须走 setFollowUp）。
-   */
-  const followUpVoice = useComposerVoice({
-    accessToken: session?.access_token,
-    onTranscript: setFollowUp,
-  });
-  const promptVoice = useComposerVoice({
-    accessToken: session?.access_token,
-    onTranscript: setPrompt,
-  });
   const [tier, setTier] = useState("default");
   /** 「完全访问」的风险确认弹窗（确认后才写库与生效）。 */
   const [pendingFullAccess, setPendingFullAccess] = useState(false);
@@ -2431,6 +2421,40 @@ export function Workbench() {
     [],
   );
   fetchTurnCheckpointRef.current = fetchTurnCheckpoint;
+
+  /**
+   * 语音输入（按住说话）：三处输入框共用同一个接线组件。
+   *
+   * 方案 A 写回各自的受控 state（追问框还要经过 composerMenu 的撤销历史，故必须走
+   * setFollowUp）；方案 B 直接起一轮执行——**执行前有约 2 秒撤销窗口，且窗口里显示的
+   * 就是实际会发出去的那句完整需求**（规划 §4.3）。
+   *
+   * 为什么摆在这里而不是文件靠上：方案 B 要用 startTask/continueTask，而它们在上面
+   * 还没定义（hooks 顺序不受影响——这段每次渲染都会执行，位置固定）。
+   */
+  const voiceMode = useVoiceMode(session?.access_token);
+  const followUpHistory = useMemo<VoiceRefineContextMessage[]>(() => {
+    const task = tasks.find((item) => item.id === activeTaskId);
+    return (task?.messages ?? [])
+      .slice(-VOICE_REFINE_CONTEXT_LIMIT)
+      .map((m) => ({
+        role: m.role === "user" ? ("user" as const) : ("assistant" as const),
+        content: m.text,
+      }));
+  }, [activeTaskId, tasks]);
+  const followUpVoice = useComposerVoice({
+    accessToken: session?.access_token,
+    onTranscript: setFollowUp,
+    mode: voiceMode,
+    recentMessages: followUpHistory,
+    onAutoSubmit: (prompt) => void continueTask(prompt),
+  });
+  const promptVoice = useComposerVoice({
+    accessToken: session?.access_token,
+    onTranscript: setPrompt,
+    mode: voiceMode,
+    onAutoSubmit: (prompt) => void startTask(prompt),
+  });
 
   /** 任务视图内继续追问：追加 user 消息并复用同一会话发起新 run。 */
   const continueTask = useCallback(

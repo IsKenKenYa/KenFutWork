@@ -184,3 +184,34 @@ export const voiceDiagnoseResponseSchema = z.object({
   report: voiceDiagnoseReportSchema.nullable(),
 });
 export type VoiceDiagnoseResponse = z.infer<typeof voiceDiagnoseResponseSchema>;
+
+// --- 方案 B：把口述补成完整需求（规划 §4.2 / §4.3） ---
+
+/** 会话上下文条目（只带最近几条，用于消解「刚才那个按钮」这类指代）。 */
+export const voiceRefineContextMessageSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string().min(1),
+});
+export type VoiceRefineContextMessage = z.infer<
+  typeof voiceRefineContextMessageSchema
+>;
+
+/** 上下文条数上限：指代消解够用即可，别把整段会话塞进去。 */
+export const VOICE_REFINE_CONTEXT_LIMIT = 6;
+
+export const voiceRefineRequestSchema = z.object({
+  /** 口述转写出来的文本。 */
+  text: z.string().min(1).max(4_000),
+  recentMessages: z
+    .array(voiceRefineContextMessageSchema)
+    .max(VOICE_REFINE_CONTEXT_LIMIT)
+    .optional(),
+});
+export type VoiceRefineRequest = z.infer<typeof voiceRefineRequestSchema>;
+
+/**
+ * 完整需求（**实际会被发出的那段话**）。
+ * 规划 §4.3 第 1 条：转录里展示的就是真发出去的，不做「显示一套、发另一套」。
+ */
+export const voiceRefineResponseSchema = z.object({ prompt: z.string() });
+export type VoiceRefineResponse = z.infer<typeof voiceRefineResponseSchema>;

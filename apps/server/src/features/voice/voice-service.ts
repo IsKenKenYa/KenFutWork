@@ -19,7 +19,8 @@ import type {
   VoiceSettingsUpdateRequest,
 } from "@kenfutwork/shared";
 import { voiceDiagnoseReportSchema } from "@kenfutwork/shared";
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import type { VoiceRefineContextMessage } from "@kenfutwork/shared";
+import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
 import {
   resolveInstanceAudioProvider,
   resolveInstanceChatModel,
@@ -91,6 +92,13 @@ export interface VoiceServiceDeps {
   createBuiltinProvider?: (selection: VoiceSelection) => VoiceProvider;
   /** 测试注入：硬件探测（默认读 os + nvidia-smi）。 */
   collectHardware?: () => Promise<VoiceDiagnoseHardware>;
+  /** 测试注入：想段改写（默认打用户的 BYOK 对话模型）。 */
+  refine?: (
+    user: AuthenticatedUser,
+    selection: VoiceSelection,
+    input: { text: string; recentMessages?: VoiceRefineContextMessage[] },
+    signal?: AbortSignal,
+  ) => Promise<string>;
   /** 测试注入：想段 TTFT 探针（默认打用户的 BYOK 对话模型）。 */
   probeThink?: (
     user: AuthenticatedUser,
@@ -122,6 +130,17 @@ export interface VoiceService {
     user: AuthenticatedUser,
     segment?: "listen" | "think" | "speak",
   ): Promise<VoiceModelCandidate[]>;
+  /**
+   * 「想」段：把口述补成完整需求（规划 §4.2）。
+   * 未选/不可用即抛 `VoiceUnavailableError`（可读原因），**不静默回原文本**——
+   * 静默回落会让用户以为模型改写过，实际什么都没发生。
+   */
+  refine(
+    user: AuthenticatedUser,
+    workspaceId: string,
+    input: { text: string; recentMessages?: VoiceRefineContextMessage[] },
+    signal?: AbortSignal,
+  ): Promise<string>;
   /** 真实使用的「听」实测汇总（检测页与检测报告共用）。 */
   getListenTimings(): VoiceListenSummary;
   /** 上次检测报告（启动期读回的那份；没测过回 null）。 */
@@ -382,6 +401,22 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
       return [...builtin, ...instanceCandidates];
     },
 
+    async refine(user, workspaceId, input, signal) {
+      const settings = await readSettings(workspaceId);
+      if (!settings.think) {
+        throw new VoiceUnavailableError(
+          "未选择「想」模型：完整回路需要一个对话模型（到「设置 → 语音」选一个）。",
+        );
+      }
+      if (settings.think.kind !== "instance") {
+        throw new VoiceUnavailableError(
+          "「想」段目前只支持在线（BYOK 对话模型）——内置离线档需要额外的推理运行时。",
+        );
+      }
+      const run = deps.refine ?? refineWithInstanceChat(deps);
+      return run(user, settings.think, input, signal);
+    },
+
     getListenTimings() {
       return timingLog.summary();
     },
@@ -635,5 +670,73 @@ function probeThinkTtft(deps: VoiceServiceDeps) {
         ? {}
         : { tokensPerSecond: outputTokens / elapsed }),
     };
+  };
+}
+
+
+/**
+ * 「想」段的默认实现：用用户自己的 BYOK 对话模型把口述补成完整需求。
+ *
+ * 提示词只做「补全与澄清」，**不替用户加需求**（三个不许：不许加约束、不许换技术栈、
+ * 不许改意图）——方案 B 会自动执行改写结果，模型越权加需求就是替用户做决定。
+ */
+function refineWithInstanceChat(deps: VoiceServiceDeps) {
+  return async (
+    user: AuthenticatedUser,
+    selection: VoiceSelection,
+    input: { text: string; recentMessages?: VoiceRefineContextMessage[] },
+    signal?: AbortSignal,
+  ): Promise<string> => {
+    if (!selection.model) {
+      throw new Error("「想」段的供应商实例未指定模型。");
+    }
+    const credentials = await deps.modelProviders.resolveCredentials(
+      user,
+      selection.id,
+    );
+    const model = resolveInstanceChatModel(
+      credentials.protocol,
+      selection.model,
+      {
+        apiKey: credentials.apiKey,
+        ...(credentials.baseUrl ? { baseUrl: credentials.baseUrl } : {}),
+        ...(credentials.headers ? { headers: credentials.headers } : {}),
+      },
+    );
+    const context = (input.recentMessages ?? []).map((message) =>
+      message.role === "user"
+        ? new HumanMessage(message.content)
+        : new AIMessage(message.content),
+    );
+    const response = await model.invoke(
+      [
+        new SystemMessage(
+          [
+            "你负责把用户的口述补成一条可直接执行的完整需求（中文，一段话）。",
+            "只做三件事：补全被省略的主语/对象、把口语指代按上下文落实、点明可验收的结果。",
+            "三个不许：不许添加用户没说的约束、不许更换用户指定的技术或方案、不许改变用户意图。",
+            "信息不足时按上下文最合理的解释补全，不要反问。只输出补全后的需求，不要解释。",
+          ].join(String.fromCharCode(10)),
+        ),
+        ...context,
+        new HumanMessage(input.text),
+      ],
+      signal ? { signal } : {},
+    );
+    const text =
+      typeof response.content === "string"
+        ? response.content
+        : response.content
+            .map((part: unknown) =>
+              typeof part === "object" && part !== null && "text" in part
+                ? String((part as { text: unknown }).text ?? "")
+                : "",
+            )
+            .join("");
+    const trimmed = text.trim();
+    if (!trimmed) {
+      throw new Error("「想」段没有返回内容。");
+    }
+    return trimmed;
   };
 }
