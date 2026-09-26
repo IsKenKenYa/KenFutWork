@@ -3,6 +3,7 @@ import { parseTodos } from "../src/lib/todo-progress";
 import {
   appendAssistantDelta,
   appendThinkingDelta,
+  applyTaskNotification,
   applyTaskToolEvent,
   capToolBlocks,
   groupAssistantBlocks,
@@ -735,5 +736,92 @@ describe("toolTargetParts 目标三段拆分（ZCode 同款）", () => {
         status: "completed",
       }),
     ).toBeNull();
+  });
+});
+
+describe("后台任务通知块（DEC-15）", () => {
+  const baseTask = (blocks: TaskMessageBlock[] = []): TaskToolState => ({
+    messages: [
+      { role: "user", text: "开始", blocks: [] },
+      {
+        role: "assistant",
+        text: "",
+        startedAt: 1_000,
+        blocks,
+      },
+    ],
+  });
+
+  it("通知追加到末条助手消息块序列，正文 text 不变", () => {
+    const task = applyTaskNotification(
+      baseTask(),
+      {
+        taskId: "task_1",
+        kind: "command",
+        label: "pnpm test",
+        status: "completed",
+        summary: "全部通过",
+      },
+      "2026-09-27T12:00:00.000Z",
+    );
+    const last = task.messages.at(-1);
+    const block = last?.blocks.at(-1);
+    expect(block?.type).toBe("task_notification");
+    if (block?.type === "task_notification") {
+      expect(block.notification).toMatchObject({
+        taskId: "task_1",
+        status: "completed",
+      });
+    }
+    expect(last?.text).toBe("");
+  });
+
+  it("末条不是助手消息时新建一条（工具块先于正文同款兜底）", () => {
+    const task: TaskToolState = {
+      messages: [{ role: "user", text: "开始", blocks: [] }],
+    };
+    const next = applyTaskNotification(task, {
+      taskId: "task_2",
+      kind: "subagent",
+      label: "explore · 调研",
+      status: "failed",
+      summary: "上游 429",
+      nextStep: "可重试",
+    });
+    const last = next.messages.at(-1);
+    expect(last?.role).toBe("assistant");
+    expect(last?.blocks[0]?.type).toBe("task_notification");
+  });
+
+  it("通知块并入通知组渲染分组；capToolBlocks 不裁剪通知", () => {
+    const blocks: TaskMessageBlock[] = [
+      {
+        type: "task_notification",
+        notification: {
+          taskId: "t1",
+          kind: "command",
+          label: "a",
+          status: "completed",
+          summary: "s",
+        },
+      },
+      {
+        type: "task_notification",
+        notification: {
+          taskId: "t2",
+          kind: "subagent",
+          label: "b",
+          status: "failed",
+          summary: "s",
+        },
+      },
+    ];
+    expect(capToolBlocks(blocks)).toHaveLength(2);
+    const groups = groupAssistantBlocks(blocks);
+    expect(groups).toHaveLength(2);
+    expect(groups[0]?.kind).toBe("notification");
+    if (groups[0]?.kind === "notification") {
+      expect(groups[0].notification.label).toBe("a");
+    }
   });
 });

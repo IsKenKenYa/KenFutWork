@@ -8,10 +8,19 @@
  * 消息（含其中的全部工具调用）都归属该轮，回答了「这些工具分别属于哪次对话」。
  */
 
-import type { TaskMessage, TaskToolEntry } from "./workbench-tools";
+import type {
+  TaskMessage,
+  TaskNotificationPayload,
+  TaskToolEntry,
+} from "./workbench-tools";
 
 /** 账本一行的类别（badge 文案由渲染层映射：用户 / 思考 / 助手 / 工具）。 */
-export type TrajectoryRowKind = "user" | "reasoning" | "text" | "tool";
+export type TrajectoryRowKind =
+  | "user"
+  | "reasoning"
+  | "text"
+  | "tool"
+  | "notification";
 
 /** 账本一行：一次用户发言 / 一段思考 / 一段助手正文 / 一次工具调用，按发生顺序排列。 */
 export type TrajectoryRow =
@@ -39,6 +48,12 @@ export type TrajectoryRow =
       /** startedAt→endedAt；缺任一端（还在跑 / 旧数据）为 null，如实显示。 */
       durationMs: number | null;
       tool: TaskToolEntry;
+      runId: string | null;
+    }
+  | {
+      kind: "notification";
+      atMs: number | null;
+      notification: TaskNotificationPayload;
       runId: string | null;
     };
 
@@ -80,6 +95,15 @@ function rowsFromAssistantMessage(
         kind: "reasoning",
         atMs: block.at ?? message.startedAt ?? null,
         text: block.text,
+        runId,
+      });
+      continue;
+    }
+    if (block.type === "task_notification") {
+      rows.push({
+        kind: "notification",
+        atMs: block.at ?? message.startedAt ?? null,
+        notification: block.notification,
         runId,
       });
       continue;

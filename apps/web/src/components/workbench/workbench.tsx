@@ -180,6 +180,7 @@ import {
 import {
   appendAssistantDelta,
   appendThinkingDelta,
+  applyTaskNotification,
   applyTaskToolEvent,
   groupAssistantBlocks,
   messagesBaseForResume,
@@ -336,6 +337,29 @@ function AssistantTurn({
               text={group.text}
               streaming={streaming && gi === groups.length - 1}
             />
+          );
+        }
+        if (group.kind === "notification") {
+          const n = group.notification;
+          return (
+            <div
+              key={`notify-${n.taskId}`}
+              className="flex items-center gap-2 py-0.5 text-sm text-muted-foreground"
+            >
+              <span aria-hidden className="text-emerald-600">
+                ●
+              </span>
+              <span>
+                后台任务
+                {n.status === "completed"
+                  ? "完成"
+                  : n.status === "failed"
+                    ? "失败"
+                    : "已取消"}
+                ：{n.label} — {n.summary}
+                {n.nextStep ? `（${n.nextStep}）` : ""}
+              </span>
+            </div>
           );
         }
         // 连续工具调用：一行一个，按发生顺序排。刻意**不**做「N 次工具调用」聚合折叠——
@@ -1719,6 +1743,40 @@ export function Workbench() {
               keepMessages: evt2.keepMessages as number,
             },
           }));
+        }
+      } else if (type === "task.notification") {
+        // 后台任务终态通知（DEC-15）：转录里落静默通知行
+        const n = evt as {
+          taskId?: string;
+          kind?: "subagent" | "command";
+          label?: string;
+          status?: "completed" | "failed" | "canceled";
+          summary?: string;
+          nextStep?: string;
+          timestamp?: string;
+        };
+        if (
+          n.taskId &&
+          n.label &&
+          n.summary &&
+          (n.status === "completed" ||
+            n.status === "failed" ||
+            n.status === "canceled")
+        ) {
+          apply((task) =>
+            applyTaskNotification(
+              task,
+              {
+                taskId: n.taskId as string,
+                kind: n.kind ?? "subagent",
+                label: n.label as string,
+                status: n.status as "completed" | "failed" | "canceled",
+                summary: n.summary as string,
+                ...(n.nextStep ? { nextStep: n.nextStep } : {}),
+              },
+              n.timestamp,
+            ),
+          );
         }
       } else if (type === "run.usage") {
         // 本轮最后一次模型调用的累计用量（上下文容量 / 缓存命中浮层）

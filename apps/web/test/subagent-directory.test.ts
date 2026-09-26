@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-
 import {
   closeAllSubagents,
   completeSubagent,
@@ -8,6 +7,7 @@ import {
   summarizeSubagents,
   upsertSubagentStarted,
 } from "@/lib/subagent-directory";
+import { applyTaskToolEvent } from "../src/lib/workbench-tools";
 
 const STARTED = "2026-09-15T10:00:00Z";
 const ENDED = "2026-09-15T10:01:30Z";
@@ -117,5 +117,55 @@ describe("子代理入参归一化（真实载荷是 {input: '<json>'} 包装）
     });
     expect(list[0]?.name).toBe("task");
     expect(list[0]?.description).toBeUndefined();
+  });
+});
+
+describe("task_background 派发条目（DEC-15，经 applyTaskToolEvent 全链）", () => {
+  const baseTask = () =>
+    ({
+      messages: [
+        { role: "user", text: "开始", blocks: [] },
+        { role: "assistant", text: "", startedAt: 1_000, blocks: [] },
+      ],
+    }) as unknown as Parameters<typeof applyTaskToolEvent>[0];
+
+  it("task_background 派发成功不收尾条目（真终态走通知/兜底）", () => {
+    let task = baseTask();
+    task = applyTaskToolEvent(task, {
+      type: "tool.started",
+      toolCallId: "call-1",
+      toolName: "task_background",
+      input: { subagent_type: "explore", description: "调研" },
+      timestamp: "2026-09-27T12:00:00.000Z",
+    });
+    expect(task.subagents?.[0]?.name).toBe("explore");
+
+    task = applyTaskToolEvent(task, {
+      type: "tool.completed",
+      toolCallId: "call-1",
+      toolName: "task_background",
+      outputSummary: "已转为后台任务",
+      timestamp: "2026-09-27T12:00:05.000Z",
+    });
+    expect(task.subagents?.[0]?.endedAt).toBeUndefined();
+  });
+
+  it("task 派发用 subagent_type 命名；task 自身完成照常收尾", () => {
+    let task = baseTask();
+    task = applyTaskToolEvent(task, {
+      type: "tool.started",
+      toolCallId: "call-2",
+      toolName: "task",
+      input: { subagent_type: "review", description: "审查" },
+      timestamp: "2026-09-27T12:01:00.000Z",
+    });
+    expect(task.subagents?.[0]?.name).toBe("review");
+    task = applyTaskToolEvent(task, {
+      type: "tool.completed",
+      toolCallId: "call-2",
+      toolName: "task",
+      timestamp: "2026-09-27T12:02:00.000Z",
+    });
+    expect(task.subagents?.[0]?.endedAt).toBe("2026-09-27T12:02:00.000Z");
   });
 });

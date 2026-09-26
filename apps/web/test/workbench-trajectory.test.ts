@@ -300,3 +300,33 @@ describe("turnRailItems 时间线刻度项", () => {
     expect(items[0]?.assistantPreview).toBe("");
   });
 });
+
+describe("轨迹账本的后台任务通知行（DEC-15）", () => {
+  it("task_notification 块投影为 notification 行，按 at 排时间", () => {
+    const messages = [
+      { role: "user", text: "跑", startedAt: 1_000, blocks: [] },
+      {
+        role: "assistant",
+        text: "",
+        startedAt: 2_000,
+        blocks: [
+          {
+            type: "task_notification",
+            notification: {
+              taskId: "t1",
+              kind: "command",
+              label: "pnpm build",
+              status: "completed",
+              summary: "ok",
+            },
+            at: 5_000,
+          },
+        ],
+      },
+    ] as never;
+    const model = buildTrajectory(messages);
+    expect(model.turns[0]?.rows[0]?.kind).toBe("user");
+    expect(model.turns[0]?.rows[1]?.kind).toBe("notification");
+    expect(model.turns[0]?.rows[1]).toMatchObject({ atMs: 5_000 });
+  });
+});

@@ -46,6 +46,7 @@ const ROW_KIND_LABELS: Record<TrajectoryRow["kind"], string> = {
   reasoning: "思考",
   text: "助手",
   tool: "工具",
+  notification: "通知",
 };
 
 const KIND_BAR_COLORS: Record<TrajectoryRow["kind"], string> = {
@@ -53,6 +54,7 @@ const KIND_BAR_COLORS: Record<TrajectoryRow["kind"], string> = {
   reasoning: "bg-sky-500/50",
   text: "bg-muted-foreground/40",
   tool: "bg-amber-500/70",
+  notification: "bg-emerald-600/60",
 };
 
 function RowBadge({ kind }: { kind: TrajectoryRow["kind"] }) {
@@ -199,6 +201,10 @@ function TrajectoryRowView({
       <RowBadge kind={row.kind} />
       {row.kind === "tool" ? (
         <ToolRowBody row={row} />
+      ) : row.kind === "notification" ? (
+        <span className="truncate">
+          {row.notification.label} — {row.notification.summary}
+        </span>
       ) : (
         <TextRowBody text={row.text} />
       )}
@@ -256,6 +262,11 @@ function rowMatchesQuery(entry: FlatTrajectoryRow, query: string): boolean {
     const target = toolTargetParts(row.tool);
     const searchable = `${row.tool.toolName} ${toolDisplayLabel(row.tool.toolName)} ${target?.primary ?? ""} ${target?.rest ?? ""}`;
     return searchable.toLowerCase().includes(query);
+  }
+  if (row.kind === "notification") {
+    return `${row.notification.label} ${row.notification.summary}`
+      .toLowerCase()
+      .includes(query);
   }
   return row.text.toLowerCase().includes(query);
 }

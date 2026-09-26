@@ -8,7 +8,11 @@ import { normalizeToolArgs } from "./tool-args";
  * 不需要新增 WS 事件类型。纯函数便于单测。
  */
 
-export const SUBAGENT_TOOL_NAMES = new Set(["task", "video_generate"]);
+export const SUBAGENT_TOOL_NAMES = new Set([
+  "task",
+  "task_background",
+  "video_generate",
+]);
 
 export interface SubagentEntry {
   toolCallId: string;
@@ -31,17 +35,18 @@ export function upsertSubagentStarted(
     toolName: string;
     input?: Record<string, unknown>;
     timestamp: string;
+    agentName?: string;
   },
 ): SubagentEntry[] {
   // 入参同样要归一化：服务端透传的是包了一层的节点输入（见 lib/tool-args）
   const args = normalizeToolArgs(event.input) ?? {};
-  const inputName = args.name;
+  const inputName = args.name ?? args.subagent_type;
   const description =
     typeof args.description === "string" ? args.description : undefined;
   const name =
     typeof inputName === "string" && inputName.length > 0
       ? inputName
-      : event.toolName;
+      : event.agentName ?? event.toolName;
   const existing = list.find((entry) => entry.toolCallId === event.toolCallId);
   const entry: SubagentEntry = {
     toolCallId: event.toolCallId,

@@ -106,7 +106,8 @@ export function deriveTurnProcesses(
         if (!block) continue;
         if (block.type === "tool") toolCount += 1;
         else if (block.type === "reasoning") reasoningCount += 1;
-        else if (block.text) foldedTextCount += 1;
+        else if (block.type !== "task_notification" && block.text)
+          foldedTextCount += 1;
       }
     }
     if (toolCount + reasoningCount + foldedTextCount === 0) continue;

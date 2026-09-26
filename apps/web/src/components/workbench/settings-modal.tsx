@@ -4,6 +4,7 @@ import type { WorkspaceSettings } from "@kenfutwork/shared";
 import { PanelsTopLeft } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { AgentGovernanceSection } from "@/components/agent-governance-section";
 import { AgentSection } from "@/components/agent-section";
 import { PermissionSection } from "@/components/permission-section";
 import { ProfileSection } from "@/components/profile-section";
@@ -41,6 +42,7 @@ export type SettingsTab =
   | "hooks"
   | "apiTokens"
   | "model"
+  | "agentGovernance"
   | "providers"
   | "permissions"
   | "browser"
@@ -71,6 +73,7 @@ const TAB_GROUPS: Array<{
       { id: "general", label: "通用" },
       { id: "appearance", label: "外观" },
       { id: "model", label: "模型" },
+      { id: "agentGovernance", label: "Agent 治理" },
       { id: "providers", label: "供应商" },
       { id: "browser", label: "浏览器" },
     ],
@@ -156,6 +159,13 @@ export function SettingsModal({
   }>({ plan: null, balance: null });
   const [defaultModel, setDefaultModel] = useState("");
   const [agentMaxRetries, setAgentMaxRetries] = useState(10);
+  const [governance, setGovernance] = useState({
+    subagentMaxDepth: 1,
+    subagentMaxConcurrency: 4,
+    llmRequestMaxRetries: 10,
+    llmInfiniteRetry: false,
+    executeTimeoutMs: 120000,
+  });
   const [codeIndexEnabled, setCodeIndexEnabled] = useState(false);
   const [codeIndexAutoNewFolder, setCodeIndexAutoNewFolder] = useState(true);
   const [autoCompactEnabled, setAutoCompactEnabled] = useState(true);
@@ -189,6 +199,13 @@ export function SettingsModal({
       setCodeIndexEnabled(settings.settings.codeIndexEnabled);
       setCodeIndexAutoNewFolder(settings.settings.codeIndexAutoNewFolder);
       setAutoCompactEnabled(settings.settings.autoCompactEnabled);
+      setGovernance({
+        subagentMaxDepth: settings.settings.subagentMaxDepth,
+        subagentMaxConcurrency: settings.settings.subagentMaxConcurrency,
+        llmRequestMaxRetries: settings.settings.llmRequestMaxRetries,
+        llmInfiniteRetry: settings.settings.llmInfiniteRetry,
+        executeTimeoutMs: settings.settings.executeTimeoutMs,
+      });
       setCommands(settings.settings.commands);
       setHooks(settings.settings.hooks);
     } catch {
@@ -280,6 +297,28 @@ export function SettingsModal({
     [getToken],
   );
 
+  const handleGovernanceSave = useCallback(
+    async (next: {
+      subagentMaxDepth: number;
+      subagentMaxConcurrency: number;
+      llmRequestMaxRetries: number;
+      llmInfiniteRetry: boolean;
+      executeTimeoutMs: number;
+    }) => {
+      const token = getToken();
+      if (!token) return;
+      const result = await updateWorkspaceSettings(token, next);
+      setGovernance({
+        subagentMaxDepth: result.settings.subagentMaxDepth,
+        subagentMaxConcurrency: result.settings.subagentMaxConcurrency,
+        llmRequestMaxRetries: result.settings.llmRequestMaxRetries,
+        llmInfiniteRetry: result.settings.llmInfiniteRetry,
+        executeTimeoutMs: result.settings.executeTimeoutMs,
+      });
+    },
+    [getToken],
+  );
+
   const stableFetchModels = useCallback(
     () => fetchModels(getToken() ?? undefined),
     [getToken],
@@ -353,6 +392,11 @@ export function SettingsModal({
                 onSave={handleModelSave}
                 autoCompactEnabled={autoCompactEnabled}
                 onToggleAutoCompact={handleAutoCompactToggle}
+              />
+            ) : activeTab === "agentGovernance" ? (
+              <AgentGovernanceSection
+                initial={governance}
+                onSave={handleGovernanceSave}
               />
             ) : activeTab === "providers" ? (
               token ? (

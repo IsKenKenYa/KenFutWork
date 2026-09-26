@@ -47,11 +47,23 @@ export type TaskToolEntry = {
   endedAt?: number;
   /** 归属的 run（一次请求）：轨迹/对话据此回答「这次调用属于哪轮对话」。 */
   runId?: string;
+  /** 子代理归因（DEC-19）：该调用发生在哪个具名子代理里。 */
+  agentName?: string;
   /** 产物（图/视频，tool.completed 带回）：详情展开时内联预览。 */
   artifacts?: ToolArtifact[];
 };
 
 /** 助手消息内的有序块：一段文本 / 一段思考 / 一次工具调用（严格按事件到达顺序交错）。 */
+/** 后台任务通知载荷（DEC-15）：与服务端 task_notification 块契约同形。 */
+export type TaskNotificationPayload = {
+  taskId: string;
+  kind: "subagent" | "command";
+  label: string;
+  status: "completed" | "failed" | "canceled";
+  summary: string;
+  nextStep?: string;
+};
+
 export type TaskMessageBlock =
   | {
       type: "text";
@@ -59,7 +71,12 @@ export type TaskMessageBlock =
       at?: number;
     }
   | { type: "reasoning"; text: string; at?: number }
-  | { type: "tool"; tool: TaskToolEntry };
+  | { type: "tool"; tool: TaskToolEntry }
+  | {
+      type: "task_notification";
+      notification: TaskNotificationPayload;
+      at?: number;
+    };
 
 export type TaskMessage = {
   role: "user" | "assistant";
@@ -113,7 +130,8 @@ export function capToolBlocks(blocks: TaskMessageBlock[]): TaskMessageBlock[] {
 export type AssistantBlockGroup =
   | { kind: "text"; text: string }
   | { kind: "reasoning"; text: string }
-  | { kind: "tools"; tools: TaskToolEntry[] };
+  | { kind: "tools"; tools: TaskToolEntry[] }
+  | { kind: "notification"; notification: TaskNotificationPayload };
 
 export function groupAssistantBlocks(
   blocks: readonly TaskMessageBlock[],
@@ -137,6 +155,10 @@ export function groupAssistantBlocks(
       } else {
         groups.push({ kind: "reasoning", text: block.text });
       }
+      continue;
+    }
+    if (block.type === "task_notification") {
+      groups.push({ kind: "notification", notification: block.notification });
       continue;
     }
     const last = groups[groups.length - 1];
@@ -305,6 +327,8 @@ export type ToolEventLike = {
   artifacts?: ToolArtifact[];
   /** 事件所属 run：入库到工具条目与新建的助手消息上（归属哪轮对话的权威字段）。 */
   runId?: string;
+  /** 子代理归因（DEC-19）：事件来自哪个具名子代理的 run。 */
+  agentName?: string;
   timestamp?: string;
 };
 
@@ -517,6 +541,7 @@ export function applyTaskToolEvent<T extends TaskToolState>(
             ? { input: normalizeToolArgs(event.input) ?? event.input }
             : {}),
           ...(event.runId ? { runId: event.runId } : {}),
+          ...(event.agentName ? { agentName: event.agentName } : {}),
           ...(atMs !== null ? { startedAt: atMs } : {}),
         })
       : completeToolBlock(task, toolCallId, event, atMs);
@@ -540,6 +565,9 @@ export function applyTaskToolEvent<T extends TaskToolState>(
     };
   }
 
+  // task_background 的 tool.completed 是「派发成功」不是「子代理结束」——
+  // 目录条目保持运行中，真终态由 task.notification 或 run 终态兜底收口
+  if (toolName === "task_background") return base;
   if (!task.subagents) return base;
   return {
     ...base,
@@ -548,5 +576,44 @@ export function applyTaskToolEvent<T extends TaskToolState>(
       toolCallId,
       event.timestamp ?? "",
     ),
+  };
+}
+
+/**
+ * 后台任务通知（DEC-15）落成消息块：追加到末条助手消息；末条不是助手消息时
+ * 新建一条（与工具块先于正文时的兜底同款）。正文 `text` 不变——通知不是正文。
+ */
+export function applyTaskNotification<T extends TaskToolState>(
+  task: T,
+  notification: TaskNotificationPayload,
+  timestamp?: string,
+): T {
+  const atMs = parseTimestampMs(timestamp ?? "");
+  const block: TaskMessageBlock = {
+    type: "task_notification",
+    notification,
+    ...(atMs !== null ? { at: atMs } : {}),
+  };
+  const messages = [...task.messages];
+  const last = messages[messages.length - 1];
+  if (last?.role === "assistant") {
+    messages[messages.length - 1] = {
+      ...last,
+      blocks: [...last.blocks, block],
+    };
+    return { ...task, messages };
+  }
+  const startedAt = nextAssistantStartMs(messages, task.runStartedAt);
+  return {
+    ...task,
+    messages: [
+      ...settlePreviousAssistant(messages, startedAt),
+      {
+        role: "assistant",
+        text: "",
+        startedAt,
+        blocks: [block],
+      },
+    ],
   };
 }
