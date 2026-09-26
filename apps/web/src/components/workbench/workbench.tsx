@@ -2610,7 +2610,9 @@ export function Workbench() {
             {/* 左内边距与下面的模式切换控件对齐（外层 px-3 + 分段控件内 p-1 ⇒ pl-4）；
                 logo 与字标之间留 5px（用户口径） */}
             <span className="flex items-center gap-[5px] pl-1">
-              <KenFutWorkLogo className="h-[15px] w-auto text-foreground" />
+              {/* 24px 盒 → 墨迹高 17.1px（标在透明画布占 80%）：比 20px 字标的字高略高，
+                  与启动页同一口径（2026-09-26 用户「高一点、大一点」） */}
+              <KenFutWorkLogo className="h-6 w-auto text-foreground" />
               {/* 字标：Momo Trust Display + **三色**渐变（左深右浅；变量见 globals.css，
                   显式 sRGB 插值——oklab 中段会发灰显脏） */}
               <span
