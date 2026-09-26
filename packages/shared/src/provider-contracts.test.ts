@@ -42,9 +42,11 @@ describe("provider-contracts（BYOK 供应商缝）", () => {
     ).toBe(true);
   });
 
-  it("能力词汇表：chat/image/video 之外拒绝", () => {
-    expect(modelCapabilitySchema.safeParse("audio").success).toBe(false);
+  it("能力词汇表：audio 可用，枚举之外仍拒绝", () => {
+    // audio 是语音助手「听/说」段的能力（本次扩档）；未知能力照旧拒绝
+    expect(modelCapabilitySchema.safeParse("audio").success).toBe(true);
     expect(modelCapabilitySchema.safeParse("image").success).toBe(true);
+    expect(modelCapabilitySchema.safeParse("speech").success).toBe(false);
   });
 
   it("实例 config：空 models 与空 apiKeyRef 拒绝", () => {
