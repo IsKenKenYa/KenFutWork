@@ -6,7 +6,7 @@ import { createSubagentTaskTools } from "./subagent-tools.js";
 
 function setup(overrides?: {
   childRunner?: Parameters<typeof createSubagentTaskTools>[0]["childRunner"];
-  definitions?: readonly typeof SUBAGENT_DEFINITIONS[number][];
+  definitions?: readonly (typeof SUBAGENT_DEFINITIONS)[number][];
 }) {
   const registry = createBackgroundTaskRegistry({ maxConcurrent: 4 });
   const definitions = overrides?.definitions ?? SUBAGENT_DEFINITIONS;
@@ -118,7 +118,8 @@ describe("子代理派发工具（DEC-14/DEC-16）", () => {
     registry.abortAll("用户取消了本轮 run");
     await new Promise((r) => setTimeout(r, 0));
 
-    const task = registry.get(taskId!);
+    if (!taskId) throw new Error("unreachable: 未取到 taskId");
+    const task = registry.get(taskId);
     expect(task?.status).toBe("canceled");
     expect(registry.drainNotifications()).toHaveLength(1);
   });
@@ -130,9 +131,10 @@ describe("子代理派发工具（DEC-14/DEC-16）", () => {
       { configurable: {} },
     );
     const [task] = registry.list();
+    if (!task) throw new Error("unreachable: 未生成任务条目");
 
     const single = (await tools.taskOutputTool.invoke(
-      { task_id: task!.taskId },
+      { task_id: task.taskId },
       { configurable: {} },
     )) as string;
     expect(JSON.parse(single)).toMatchObject({ status: "completed" });

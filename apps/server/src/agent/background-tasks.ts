@@ -118,7 +118,7 @@ export function createBackgroundTaskRegistry(options: {
 
     settle(taskId, outcome) {
       const task = tasks.get(taskId);
-      if (!task || task.status !== "running") return;
+      if (task?.status !== "running") return;
       task.status = outcome.status;
       task.summary = outcome.summary;
       if (outcome.nextStep !== undefined) task.nextStep = outcome.nextStep;

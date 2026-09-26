@@ -81,8 +81,9 @@ export function AgentGovernanceSection({
     llmRequestMaxRetries: Number.parseInt(values.llmRequestMaxRetries, 10),
     executeTimeoutMs: Number.parseInt(values.executeTimeoutMs, 10),
   };
-  const valid = NUMERIC_FIELDS.every(({ key, min, max }) =>
-    Number.isInteger(parsed[key]) && parsed[key] >= min && parsed[key] <= max,
+  const valid = NUMERIC_FIELDS.every(
+    ({ key, min, max }) =>
+      Number.isInteger(parsed[key]) && parsed[key] >= min && parsed[key] <= max,
   );
   const hasChanges =
     valid &&

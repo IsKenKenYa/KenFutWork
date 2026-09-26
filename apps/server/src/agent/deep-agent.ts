@@ -466,6 +466,7 @@ export function createKenFutWorkDeepAgent(options: {
   let subagentMiddleware: AgentMiddleware[] = [];
   if (options.backgroundTasks) {
     const { registry, preset } = options.backgroundTasks;
+    const toolGateForDispatch = options.toolGate;
     const parentToolsByName = new Map(
       tools.map((candidate) => [candidate.name, candidate]),
     );
@@ -535,10 +536,10 @@ export function createKenFutWorkDeepAgent(options: {
       childRunner,
       // plan 档派发门（DEC-17）：按目标定义只读性判定——复用同一把工具门，
       // solo/plan 的拒绝理由与普通工具一致
-      ...(options.toolGate
+      ...(toolGateForDispatch
         ? {
             dispatchGate: (def: SubagentDefinition) =>
-              options.toolGate!("task", { subagentReadOnly: def.readOnly }),
+              toolGateForDispatch("task", { subagentReadOnly: def.readOnly }),
           }
         : {}),
     });

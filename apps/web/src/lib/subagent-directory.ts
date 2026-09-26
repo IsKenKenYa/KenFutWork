@@ -46,7 +46,7 @@ export function upsertSubagentStarted(
   const name =
     typeof inputName === "string" && inputName.length > 0
       ? inputName
-      : event.agentName ?? event.toolName;
+      : (event.agentName ?? event.toolName);
   const existing = list.find((entry) => entry.toolCallId === event.toolCallId);
   const entry: SubagentEntry = {
     toolCallId: event.toolCallId,
