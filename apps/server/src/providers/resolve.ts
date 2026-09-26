@@ -1,6 +1,9 @@
 import type { ProviderProtocol } from "@kenfutwork/shared";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 
+import type { InstanceAudioAdapterOptions } from "../features/voice/providers/openai-audio.js";
+import * as openaiAudio from "../features/voice/providers/openai-audio.js";
+import type { VoiceProvider } from "../features/voice/types.js";
 import type { ImageProvider, VideoProvider } from "../generation/types.js";
 import * as anthropic from "./anthropic/index.js";
 import * as gemini from "./gemini/index.js";
@@ -57,6 +60,19 @@ const VIDEO_ADAPTERS: Partial<
   volces: volces.createInstanceVideoProvider,
 };
 
+/**
+ * 音频适配器面（语音助手「听 / 说」段）：只有 openai-compatible 一族
+ * ——在线档就是既有 BYOK 实例，凭证与自定义头复用，协议封闭集合不动。
+ */
+const AUDIO_ADAPTERS: Partial<
+  Record<
+    ProviderProtocol,
+    (options: InstanceAudioAdapterOptions) => VoiceProvider
+  >
+> = {
+  "openai-compatible": openaiAudio.createInstanceAudioProvider,
+};
+
 /** 按用户实例实例化聊天模型；协议不支持聊天即 fail loud。 */
 export function resolveInstanceChatModel(
   protocol: ProviderProtocol,
@@ -95,6 +111,20 @@ export function resolveInstanceVideoProvider(
   if (!factory) {
     throw new Error(
       `[providers] 协议 ${protocol} 不支持视频生成实例化（fail loud）。`,
+    );
+  }
+  return factory(options);
+}
+
+/** 按用户实例实例化音频 Provider（听 / 说）；协议不支持音频即 fail loud。 */
+export function resolveInstanceAudioProvider(
+  protocol: ProviderProtocol,
+  options: InstanceAudioAdapterOptions,
+): VoiceProvider {
+  const factory = AUDIO_ADAPTERS[protocol];
+  if (!factory) {
+    throw new Error(
+      `[providers] 协议 ${protocol} 不支持音频转写/合成实例化（fail loud）。`,
     );
   }
   return factory(options);
