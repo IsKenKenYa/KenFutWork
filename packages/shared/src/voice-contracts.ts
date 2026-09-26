@@ -215,3 +215,14 @@ export type VoiceRefineRequest = z.infer<typeof voiceRefineRequestSchema>;
  */
 export const voiceRefineResponseSchema = z.object({ prompt: z.string() });
 export type VoiceRefineResponse = z.infer<typeof voiceRefineResponseSchema>;
+
+// --- 方案 B 的「说」段：语音播报回复（规划 §4.2 / §7） ---
+
+/** 播报请求：文本就是**将要念出来的那段**（不截断、不加工）。 */
+export const voiceSpeakRequestSchema = z.object({
+  text: z.string().min(1).max(4_000),
+});
+export type VoiceSpeakRequest = z.infer<typeof voiceSpeakRequestSchema>;
+
+/** 播报响应是**音频字节**（不是 JSON）：content-type 由 provider 决定（默认 audio/wav）。 */
+export const VOICE_SPEAK_MAX_CHARS = 500;

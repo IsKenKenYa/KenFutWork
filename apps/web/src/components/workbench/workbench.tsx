@@ -142,6 +142,7 @@ import {
   fetchDirectoryPickerStatus,
   fetchProjects,
   fetchViewer,
+  fetchVoiceSettings,
   fetchWorkspaceSettings,
   pickDirectory,
   updateProject,
@@ -163,6 +164,10 @@ import {
   type TurnProcessSpec,
 } from "@/lib/turn-process";
 import { formatTaskRelativeTime } from "@/lib/ui-format";
+import {
+  createVoicePlayback,
+  extractSpeakableText,
+} from "@/lib/voice-playback";
 import {
   boundWorkDirPromptHint,
   folderPickerHint,
@@ -867,6 +872,51 @@ export function Workbench() {
     flow: [],
   });
   tasksByModeRef.current = tasksByMode;
+
+  /**
+   * 语音播报（方案 B 的「说」段 + 设置里的「朗读回复」开关）。
+   * 一个实例管全场：新的一句会打断旧的一句（叠着播是语音交互里最刺耳的失败形态）。
+   */
+  const voicePlayback = useMemo(() => createVoicePlayback(), []);
+  /**
+   * 播报配置（开关 + 令牌）收进 ref：流事件回调里要读它，而那个 effect 的依赖表是
+   * 精心收敛过的（加 session 会让整条 WS 订阅随令牌变化重建）。
+   */
+  const speakConfigRef = useRef<{ token: string | null; enabled: boolean }>({
+    token: null,
+    enabled: false,
+  });
+  useEffect(() => {
+    const token = session?.access_token ?? null;
+    if (!token) {
+      speakConfigRef.current = { token: null, enabled: false };
+      return;
+    }
+    let cancelled = false;
+    void fetchVoiceSettings(token)
+      .then((response) => {
+        if (!cancelled) {
+          speakConfigRef.current = {
+            token,
+            enabled:
+              response.settings.mode === "loop" &&
+              response.settings.speakReplies,
+          };
+        }
+      })
+      .catch(() => {
+        // 读不到设置就不播报（保守一侧：不该念的念出来更打扰）
+        speakConfigRef.current = { token: null, enabled: false };
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.access_token]);
+  /** 用户说话即打断播报（他显然不想再听下去）。 */
+  const interruptPlayback = useCallback(() => {
+    voicePlayback.stop();
+  }, [voicePlayback]);
+  useEffect(() => () => voicePlayback.stop(), [voicePlayback]);
 
   const tasks = tasksByMode[mode];
   /**
@@ -1848,6 +1898,26 @@ export function Workbench() {
         );
         // 每轮成功结束自动提交一次（Code 模式 + 已绑项目），让对话在 git 里有迹可循
         taskSaver.flush(mode);
+        /*
+         * 语音播报（方案 B + 设置里的「朗读回复」）：只念**最后一条助手回复**。
+         * 文本从任务里现取（不另立引用，免得任务列表出现两个真相）；
+         * 失败不打扰用户——正文已经在屏幕上，念不出来不影响用。
+         */
+        const speakConfig = speakConfigRef.current;
+        if (speakConfig.enabled && speakConfig.token) {
+          const task = tasksByModeRef.current[mode].find(
+            (item) => item.id === taskId,
+          );
+          const latest = [...(task?.messages ?? [])]
+            .reverse()
+            .find((message) => message.role === "assistant");
+          const speakable = latest ? extractSpeakableText(latest.text) : "";
+          if (speakable) {
+            void voicePlayback
+              .speak(speakConfig.token, speakable)
+              .catch(() => undefined);
+          }
+        }
         if (mode === "code") {
           void autoCommitTurnRef.current(taskId);
         }
@@ -1918,7 +1988,7 @@ export function Workbench() {
       taskSaver.flush();
       off();
     };
-  }, [ws, mode]);
+  }, [ws, mode, voicePlayback]);
 
   /** 真正落库并生效（确认弹窗与其余三档都走它）。 */
   const applyTier = useCallback(
@@ -2433,6 +2503,7 @@ export function Workbench() {
    * 还没定义（hooks 顺序不受影响——这段每次渲染都会执行，位置固定）。
    */
   const voiceMode = useVoiceMode(session?.access_token);
+
   const followUpHistory = useMemo<VoiceRefineContextMessage[]>(() => {
     const task = tasks.find((item) => item.id === activeTaskId);
     return (task?.messages ?? [])
@@ -3486,7 +3557,11 @@ export function Workbench() {
                 >
                   <div
                     className="@container/composer rounded-xl border bg-background px-3 pt-2.5 pb-2"
-                    onPointerDown={followUpVoice.onPointerDown}
+                    onPointerDown={(event) => {
+                      // 用户碰输入框即闭嘴：他显然不想再听下去（打断也是这里唯一的入口）
+                      interruptPlayback();
+                      followUpVoice.onPointerDown(event);
+                    }}
                     style={
                       followUpVoice.lockSelection
                         ? { userSelect: "none" }
@@ -3754,7 +3829,10 @@ ${formatElementReference(picked)}`
               </div>
               <div
                 className="@container/composer rounded-b-2xl border bg-background px-3 pt-3 pb-2.5 shadow-sm"
-                onPointerDown={promptVoice.onPointerDown}
+                onPointerDown={(event) => {
+                  interruptPlayback();
+                  promptVoice.onPointerDown(event);
+                }}
                 style={
                   promptVoice.lockSelection ? { userSelect: "none" } : undefined
                 }

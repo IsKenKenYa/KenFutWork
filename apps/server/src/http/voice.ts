@@ -8,6 +8,7 @@ import {
   voiceRefineResponseSchema,
   voiceSettingsResponseSchema,
   voiceSettingsUpdateRequestSchema,
+  voiceSpeakRequestSchema,
   voiceTranscribeResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
@@ -279,6 +280,42 @@ export async function registerVoiceRoutes(
       return reply
         .code(200)
         .send(voiceTranscribeResponseSchema.parse({ text }));
+    } catch (error) {
+      return sendVoiceError(error, reply);
+    }
+  });
+
+  /**
+   * 「说」段（规划 §4.2）：把回复念出来。响应体是**音频字节**（不是 JSON）——
+   * content-type 由 provider 给（内置路径是 audio/wav，远端按其回包）。
+   *
+   * 前端拿到 Blob 直接播（`decodeAudioData`）；**打断**是前端的事（停播放器 +
+   * 中止在途请求），服务端不维护会话状态。
+   */
+  app.post("/api/voice/speak", async (request, reply) => {
+    try {
+      const user = await options.auth.authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      const payload = voiceSpeakRequestSchema.parse(request.body);
+      const viewer = await options.viewerService.ensureViewer(user);
+      const controller = new AbortController();
+      request.raw.once("close", () => controller.abort());
+      const { impl: synthesizer } =
+        await options.voiceService.resolveSynthesizer(
+          user,
+          viewer.workspace.id,
+        );
+      const { audio, mimeType } = await synthesizer.synthesize(payload.text, {
+        signal: controller.signal,
+      });
+      return (
+        reply
+          .code(200)
+          .header("content-type", mimeType)
+          // 不缓存：每次念的都是新内容，缓存住会念上一句
+          .header("cache-control", "no-store")
+          .send(Buffer.from(audio))
+      );
     } catch (error) {
       return sendVoiceError(error, reply);
     }

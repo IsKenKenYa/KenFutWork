@@ -34,9 +34,21 @@ describe("语音接线守卫", () => {
   it("三处输入框都接上了按住说话手势", () => {
     // workbench 两处（追问 followUpVoice / 空态 promptVoice）+ 画布助手 chat-input
     expect(WORKBENCH).toContain("useComposerVoice({");
-    expect(WORKBENCH).toContain("onPointerDown={followUpVoice.onPointerDown}");
-    expect(WORKBENCH).toContain("onPointerDown={promptVoice.onPointerDown}");
+    // workbench 两处在手势前先打断播报（用户碰输入框即闭嘴），故是包装后的调用
+    expect(WORKBENCH).toContain("followUpVoice.onPointerDown(event)");
+    expect(WORKBENCH).toContain("promptVoice.onPointerDown(event)");
+    expect(WORKBENCH).toContain("interruptPlayback()");
     expect(CHAT_INPUT).toContain("onPointerDown={voice.onPointerDown}");
+  });
+
+  it("播报只在方案 B + 朗读开关打开时发生，且能被打断", () => {
+    // 开关判定收在 ref 里（流事件 effect 的依赖表是收敛过的）
+    expect(WORKBENCH).toContain('mode === "loop"');
+    expect(WORKBENCH).toContain("speakConfig.enabled && speakConfig.token");
+    // 念的是**去掉代码块后**的正文（念代码没有意义）
+    expect(WORKBENCH).toContain("extractSpeakableText(");
+    // 打断入口：碰输入框 / 卸载时都停
+    expect(WORKBENCH).toContain("voicePlayback.stop()");
   });
 
   it("三处都渲染了状态行（录音中/转写中/失败原因要能被看见）", () => {

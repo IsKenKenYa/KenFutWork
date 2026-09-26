@@ -57,10 +57,13 @@ function buildApp(
     refineFails?: boolean;
     /** 自定改写结果。 */
     refined?: string;
+    /** speak 时抛错（未选说模型）。 */
+    speakFails?: boolean;
   } = {},
 ) {
   let diagnosed = 0;
   const refined: string[] = [];
+  const spoken: string[] = [];
   const started: string[] = [];
   const cancelled: string[] = [];
   const removed: string[] = [];
@@ -149,6 +152,26 @@ function buildApp(
         return { impl: transcriber, label: "内置（本机 CPU）" };
       },
       listCandidates: async () => candidates(),
+      resolveSynthesizer: async () => {
+        if (options.speakFails) {
+          throw new VoiceUnavailableError(
+            "未选择「说」模型：到「设置 → 语音」选一个。",
+          );
+        }
+        return {
+          impl: {
+            ready: async () => ({ ok: true }),
+            synthesize: async (text: string) => {
+              spoken.push(text);
+              return {
+                audio: new Uint8Array([82, 73, 70, 70]),
+                mimeType: "audio/wav",
+              };
+            },
+          },
+          label: "外部端点",
+        };
+      },
       refine: async (_user: unknown, _ws: string, input: { text: string }) => {
         refined.push(input.text);
         if (options.refineFails) {
@@ -212,6 +235,7 @@ function buildApp(
     removed,
     diagnosed: () => diagnosed,
     refined,
+    spoken,
   };
 }
 
@@ -790,6 +814,70 @@ describe("POST /api/voice/refine（想段：口述 → 完整需求）", () => {
       expect(refined).toEqual([]);
     } finally {
       await app.close();
+    }
+  });
+});
+
+describe("POST /api/voice/speak（说段：回复播报）", () => {
+  it("回的是**音频字节**（不是 JSON），content-type 取 provider 给的值", async () => {
+    const { app, spoken } = buildApp();
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/voice/speak",
+        headers: { authorization: "Bearer tok" },
+        payload: { text: "已经改好了" },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["content-type"]).toContain("audio/wav");
+      // 不缓存：播报内容每次都是新的，缓存住会念上一句
+      expect(response.headers["cache-control"]).toBe("no-store");
+      expect(Array.from(response.rawPayload)).toEqual([82, 73, 70, 70]);
+      expect(spoken).toEqual(["已经改好了"]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("未选「说」模型：503 + 指向设置页的原因", async () => {
+    const { app } = buildApp({ speakFails: true });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/voice/speak",
+        headers: { authorization: "Bearer tok" },
+        payload: { text: "念一句" },
+      });
+      expect(response.statusCode).toBe(503);
+      expect(response.json().error.message).toContain("未选择「说」模型");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("空文本：400（不打端点）；无 token：401", async () => {
+    const { app, spoken } = buildApp();
+    const anon = buildApp({ unauthenticated: true });
+    try {
+      const empty = await app.inject({
+        method: "POST",
+        url: "/api/voice/speak",
+        headers: { authorization: "Bearer tok" },
+        payload: { text: "" },
+      });
+      expect(empty.statusCode).toBe(400);
+      expect(spoken).toEqual([]);
+
+      const unauthorized = await anon.app.inject({
+        method: "POST",
+        url: "/api/voice/speak",
+        payload: { text: "念一句" },
+      });
+      expect(unauthorized.statusCode).toBe(401);
+      expect(anon.spoken).toEqual([]);
+    } finally {
+      await app.close();
+      await anon.app.close();
     }
   });
 });

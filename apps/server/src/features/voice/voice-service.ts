@@ -57,6 +57,7 @@ import {
 import type {
   VoiceActivityDetector,
   VoiceProvider,
+  VoiceSynthesizer,
   VoiceTranscriber,
 } from "./types.js";
 import {
@@ -141,6 +142,14 @@ export interface VoiceService {
     input: { text: string; recentMessages?: VoiceRefineContextMessage[] },
     signal?: AbortSignal,
   ): Promise<string>;
+  /**
+   * 解析「说」段；未就绪即抛 `VoiceUnavailableError`（可读原因）。
+   * 当前只有 BYOK 端点档（内置档待定，见 catalog 注释）。
+   */
+  resolveSynthesizer(
+    user: AuthenticatedUser,
+    workspaceId: string,
+  ): Promise<ResolvedSegment<VoiceSynthesizer>>;
   /** 真实使用的「听」实测汇总（检测页与检测报告共用）。 */
   getListenTimings(): VoiceListenSummary;
   /** 上次检测报告（启动期读回的那份；没测过回 null）。 */
@@ -415,6 +424,55 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
       }
       const run = deps.refine ?? refineWithInstanceChat(deps);
       return run(user, settings.think, input, signal);
+    },
+
+    async resolveSynthesizer(user, workspaceId) {
+      const settings = await readSettings(workspaceId);
+      const selection = settings.speak;
+      if (!selection) {
+        throw new VoiceUnavailableError(
+          "未选择「说」模型：到「设置 → 语音」选一个（当前只支持 BYOK 语音端点）。",
+        );
+      }
+      if (selection.kind === "builtin") {
+        throw new VoiceUnavailableError(
+          "内置「说」档待定（许可与体积未拍板），「说」段目前只支持 BYOK 端点。",
+        );
+      }
+      if (!selection.model) {
+        throw new VoiceUnavailableError(
+          "「说」的供应商实例未指定模型（一个实例可能既有转写也有语音模型）。",
+        );
+      }
+      const credentials = await deps.modelProviders
+        .resolveCredentials(user, selection.id)
+        .catch((error: unknown) => {
+          throw new VoiceUnavailableError(
+            `「说」的供应商实例不可用：${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        });
+      const provider = resolveInstanceAudioProvider(credentials.protocol, {
+        credentials: {
+          apiKey: credentials.apiKey,
+          ...(credentials.baseUrl ? { baseUrl: credentials.baseUrl } : {}),
+          ...(credentials.headers ? { headers: credentials.headers } : {}),
+        },
+        speechModel: selection.model,
+        ...(selection.voice ? { voice: selection.voice } : {}),
+      });
+      const synthesizer = provider.synthesizer;
+      if (!synthesizer) {
+        throw new VoiceUnavailableError(
+          `所选「说」模型不提供合成能力（${provider.label}）。`,
+        );
+      }
+      const verdict = await synthesizer.ready();
+      if (!verdict.ok) {
+        throw new VoiceUnavailableError(verdict.reason ?? "「说」模型不可用。");
+      }
+      return { impl: synthesizer, label: provider.label };
     },
 
     getListenTimings() {
