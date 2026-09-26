@@ -1,6 +1,7 @@
 import {
   applicationErrorResponseSchema,
   unauthenticatedErrorResponseSchema,
+  voiceDiagnoseResponseSchema,
   voiceModelListResponseSchema,
   voiceModelResponseSchema,
   voiceSettingsResponseSchema,
@@ -146,6 +147,46 @@ export async function registerVoiceRoutes(
       },
     );
   }
+  /**
+   * 检测报告：GET 读回上次结果（启动期读回的那份），POST 跑一次新的。
+   * 规划 §6 要求「可取消、不阻塞界面」：检测是一次普通请求，前端用 AbortController
+   * 取消即可——服务端把请求的中止信号透进探针，取消即停。
+   */
+  app.get("/api/voice/diagnose", async (request, reply) => {
+    try {
+      const user = await options.auth.authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      return reply.code(200).send(
+        voiceDiagnoseResponseSchema.parse({
+          report: options.voiceService.getLastDiagnose(),
+        }),
+      );
+    } catch (error) {
+      return sendVoiceError(error, reply);
+    }
+  });
+
+  app.post("/api/voice/diagnose", async (request, reply) => {
+    try {
+      const user = await options.auth.authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      const viewer = await options.viewerService.ensureViewer(user);
+      const controller = new AbortController();
+      // 客户端断开即中止（含「取消检测」）：别让探针在没人等的时候继续跑
+      request.raw.once("close", () => controller.abort());
+      const report = await options.voiceService.diagnose(
+        user,
+        viewer.workspace.id,
+        controller.signal,
+      );
+      return reply
+        .code(200)
+        .send(voiceDiagnoseResponseSchema.parse({ report }));
+    } catch (error) {
+      return sendVoiceError(error, reply);
+    }
+  });
+
   app.get("/api/voice/settings", async (request, reply) => {
     try {
       const user = await options.auth.authenticate(request);

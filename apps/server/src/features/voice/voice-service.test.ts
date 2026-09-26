@@ -531,3 +531,121 @@ describe("voice 服务：候选目录（三段卡片）", () => {
     expect(models.map((item) => item.id)).toEqual(["sensevoice-small-int8"]);
   });
 });
+
+describe("voice 服务：真实使用的耗时埋点（规划 §6）", () => {
+  /** 一次「说一句」的完整路径：解析 → 转写（含 VAD 包装）。 */
+  async function speakOnce(service: ReturnType<typeof createVoiceService>) {
+    const resolved = await service.resolveTranscriber(USER, "ws-1");
+    return resolved.impl.transcribe(
+      encodeWav(new Float32Array(16_000), 16_000),
+    );
+  }
+
+  function listenProviderStub(elapsedMs: number) {
+    return {
+      id: "builtin-sherpa",
+      label: "内置（本机 CPU）",
+      location: "cpu" as const,
+      transcriber: {
+        ready: async () => ({ ok: true }),
+        transcribe: async () => {
+          await new Promise((resolve) => setTimeout(resolve, elapsedMs));
+          return { text: "你好" };
+        },
+      },
+    };
+  }
+
+  function serviceWith(timing: {
+    provider: () => ReturnType<typeof listenProviderStub>;
+  }) {
+    return createVoiceService(
+      deps({
+        voice: { listen: { kind: "builtin", id: "sensevoice-small-int8" } },
+        createBuiltinProvider: (selection) =>
+          selection.id === SILERO_VAD_MODEL.id
+            ? {
+                id: "vad",
+                label: "vad",
+                location: "cpu",
+                vad: {
+                  ready: async () => ({
+                    ok: false,
+                    reason: "未下载静音检测（VAD）模型",
+                  }),
+                  segment: () => ({ segments: [] }),
+                },
+              }
+            : timing.provider(),
+      }),
+    );
+  }
+
+  it("首次调用只记载入耗时，第二次起进中位实时率（首次不污染统计）", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const service = serviceWith({
+      provider: () => listenProviderStub(20),
+    });
+
+    expect(service.getListenTimings()).toEqual({ samples: 0 });
+
+    await speakOnce(service);
+    const afterFirst = service.getListenTimings();
+    // 1 秒音频：首次 20ms 全记在「首次载入」上，不进中位
+    expect(afterFirst.samples).toBe(0);
+    expect(afterFirst.modelLoadMs).toBeGreaterThanOrEqual(15);
+    expect(afterFirst.lastClipSeconds).toBeCloseTo(1, 3);
+
+    await speakOnce(service);
+    const afterSecond = service.getListenTimings();
+    expect(afterSecond.samples).toBe(1);
+    expect(afterSecond.rtfMedian).toBeGreaterThan(0);
+    // 载入耗时不因稳态样本出现而丢失
+    expect(afterSecond.modelLoadMs).toBe(afterFirst.modelLoadMs);
+    warn.mockRestore();
+  });
+
+  it("转写失败**不**记读数（失败耗时不是吞吐读数，会把中位数拉成「机器飞快」）", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const service = createVoiceService(
+      deps({
+        voice: { listen: { kind: "builtin", id: "sensevoice-small-int8" } },
+        createBuiltinProvider: (selection) =>
+          selection.id === SILERO_VAD_MODEL.id
+            ? {
+                id: "vad",
+                label: "vad",
+                location: "cpu",
+                vad: {
+                  ready: async () => ({ ok: false, reason: "未下载" }),
+                  segment: () => ({ segments: [] }),
+                },
+              }
+            : {
+                id: "builtin-sherpa",
+                label: "内置（本机 CPU）",
+                location: "cpu",
+                transcriber: {
+                  ready: async () => ({ ok: true }),
+                  transcribe: async () => {
+                    throw new Error("识别器崩了");
+                  },
+                },
+              },
+      }),
+    );
+    await expect(speakOnce(service)).rejects.toThrow(/识别器崩了/);
+    expect(service.getListenTimings()).toEqual({ samples: 0 });
+    warn.mockRestore();
+  });
+
+  it("拿不到音频时长就不记样本（宁缺勿假：编一个实时率比没有读数更坏）", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const service = serviceWith({ provider: () => listenProviderStub(5) });
+    const resolved = await service.resolveTranscriber(USER, "ws-1");
+    // 桩 provider 不校验音频，所以这里不会抛；关键是**什么也没记**
+    await resolved.impl.transcribe(new Uint8Array(120));
+    expect(service.getListenTimings()).toEqual({ samples: 0 });
+    warn.mockRestore();
+  });
+});

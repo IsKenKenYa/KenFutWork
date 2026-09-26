@@ -18,6 +18,24 @@ import { registerVoiceRoutes } from "./voice.js";
 
 type TranscribeSpy = ReturnType<typeof vi.fn>;
 
+/** 一份形状合法的检测报告（路由层只做透传与形状校验，判定在前端纯函数里）。 */
+const SAMPLE_REPORT = {
+  hardware: {
+    cpuModel: "Test CPU",
+    cpuCores: 8,
+    totalMemoryBytes: 16 * 1024 ** 3,
+    platform: "win32 10.0.26200",
+  },
+  listen: {
+    state: "measured" as const,
+    summary: "实测 7 次的中位实时率 0.08。",
+    listen: { samples: 7, rtfMedian: 0.081, modelLoadMs: 2_700 },
+  },
+  think: { state: "unavailable" as const, summary: "未选择「想」模型。" },
+  speak: { state: "unavailable" as const, summary: "内置档待定。" },
+  measuredAt: "2026-09-26T10:00:00.000Z",
+};
+
 function buildApp(
   options: {
     text?: string;
@@ -29,8 +47,15 @@ function buildApp(
     withModelStore?: boolean;
     /** start 抛「未知模型」。 */
     unknownModelStart?: boolean;
+    /** GET 时读回的上次报告。 */
+    lastDiagnose?: unknown;
+    /** 自定报告。 */
+    report?: unknown;
+    /** POST 时抛错。 */
+    diagnoseFails?: boolean;
   } = {},
 ) {
+  let diagnosed = 0;
   const started: string[] = [];
   const cancelled: string[] = [];
   const removed: string[] = [];
@@ -119,6 +144,20 @@ function buildApp(
         return { impl: transcriber, label: "内置（本机 CPU）" };
       },
       listCandidates: async () => candidates(),
+      getListenTimings: () => ({
+        rtfMedian: 0.081,
+        samples: 7,
+        modelLoadMs: 2_700,
+        lastClipSeconds: 3.21,
+      }),
+      getLastDiagnose: () => options.lastDiagnose ?? null,
+      diagnose: async () => {
+        diagnosed += 1;
+        if (options.diagnoseFails) {
+          throw new VoiceUnavailableError("检测失败（测试）");
+        }
+        return options.report ?? SAMPLE_REPORT;
+      },
     } as never,
     ...(options.withModelStore
       ? {
@@ -157,6 +196,7 @@ function buildApp(
     started,
     cancelled,
     removed,
+    diagnosed: () => diagnosed,
   };
 }
 
@@ -565,6 +605,84 @@ describe("/api/voice/models（目录 / 下载 / 取消 / 删除）", () => {
       ).toBe(401);
       expect(started).toEqual([]);
       expect(removed).toEqual([]);
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+describe("/api/voice/diagnose（性能检测）", () => {
+  it("GET 读回上次报告；没测过时 report 为 null（不给空壳对象）", async () => {
+    const empty = buildApp();
+    const saved = buildApp({ lastDiagnose: SAMPLE_REPORT });
+    try {
+      const none = await empty.app.inject({
+        method: "GET",
+        url: "/api/voice/diagnose",
+        headers: { authorization: "Bearer tok" },
+      });
+      expect(none.statusCode).toBe(200);
+      expect(none.json()).toEqual({ report: null });
+      expect(empty.diagnosed()).toBe(0);
+
+      const loaded = await saved.app.inject({
+        method: "GET",
+        url: "/api/voice/diagnose",
+        headers: { authorization: "Bearer tok" },
+      });
+      expect(loaded.json().report.hardware.cpuCores).toBe(8);
+      expect(loaded.json().report.listen.listen.rtfMedian).toBe(0.081);
+      // GET 不该触发重新检测（检测要钱要时间，必须是显式动作）
+      expect(saved.diagnosed()).toBe(0);
+    } finally {
+      await empty.app.close();
+      await saved.app.close();
+    }
+  });
+
+  it("POST 跑一次检测并回报告", async () => {
+    const { app, diagnosed } = buildApp();
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/voice/diagnose",
+        headers: { authorization: "Bearer tok" },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(diagnosed()).toBe(1);
+      expect(response.json().report.measuredAt).toBe("2026-09-26T10:00:00.000Z");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("POST 检测失败：503 + 可读原因（不是 500 空白）", async () => {
+    const { app } = buildApp({ diagnoseFails: true });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/voice/diagnose",
+        headers: { authorization: "Bearer tok" },
+      });
+      expect(response.statusCode).toBe(503);
+      expect(response.json().error.message).toContain("检测失败");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("两条路由都要鉴权（无 token 401，不触达服务层）", async () => {
+    const { app, diagnosed } = buildApp({ unauthenticated: true });
+    try {
+      expect(
+        (await app.inject({ method: "GET", url: "/api/voice/diagnose" }))
+          .statusCode,
+      ).toBe(401);
+      expect(
+        (await app.inject({ method: "POST", url: "/api/voice/diagnose" }))
+          .statusCode,
+      ).toBe(401);
+      expect(diagnosed()).toBe(0);
     } finally {
       await app.close();
     }

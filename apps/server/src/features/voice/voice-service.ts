@@ -11,15 +11,23 @@
 
 import { join } from "node:path";
 import type {
+  VoiceDiagnoseHardware,
+  VoiceDiagnoseReport,
   VoiceModelCandidate,
   VoiceSelection,
   VoiceSettings,
   VoiceSettingsUpdateRequest,
 } from "@kenfutwork/shared";
-import { resolveInstanceAudioProvider } from "../../providers/resolve.js";
+import { voiceDiagnoseReportSchema } from "@kenfutwork/shared";
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import {
+  resolveInstanceAudioProvider,
+  resolveInstanceChatModel,
+} from "../../providers/resolve.js";
+
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { ModelProviderService } from "../model-providers/model-provider-service.js";
-import { decodeWav, encodeWav, floatToPcm16Array } from "./audio.js";
+import { decodeWav, encodeWav, floatToPcm16Array, probeWav } from "./audio.js";
 import {
   isValidBuiltinModelId,
   resolveBuiltinModelDir,
@@ -30,9 +38,21 @@ import {
   findBuiltinModel,
   SILERO_VAD_MODEL,
 } from "./catalog.js";
+import {
+  buildReport,
+  collectHardware,
+  listenSegment,
+  speakSegment,
+  thinkSegment,
+} from "./diagnose.js";
 import type { VoiceModelStore } from "./model-store.js";
 import { createSherpaProvider, type SherpaModels } from "./providers/sherpa.js";
-import type { VoiceRepository } from "./repository.js";
+import type { VoiceDiagnoseStore, VoiceRepository } from "./repository.js";
+import {
+  createVoiceTimingLog,
+  type VoiceListenSummary,
+  type VoiceTimingLog,
+} from "./timing-log.js";
 import type {
   VoiceActivityDetector,
   VoiceProvider,
@@ -65,8 +85,18 @@ export interface VoiceServiceDeps {
   modelsRoot: string;
   /** 内置模型下载状态（候选卡片要显示「未下载 / 下载中 / 就绪」）。 */
   modelStore?: VoiceModelStore;
+  /** 检测报告的持久化（app_config 单行；缺席 = 只测不存）。 */
+  diagnoseStore?: VoiceDiagnoseStore;
   /** 测试注入：内置 Provider 工厂（默认走 sherpa）。 */
   createBuiltinProvider?: (selection: VoiceSelection) => VoiceProvider;
+  /** 测试注入：硬件探测（默认读 os + nvidia-smi）。 */
+  collectHardware?: () => Promise<VoiceDiagnoseHardware>;
+  /** 测试注入：想段 TTFT 探针（默认打用户的 BYOK 对话模型）。 */
+  probeThink?: (
+    user: AuthenticatedUser,
+    selection: VoiceSelection,
+    signal?: AbortSignal,
+  ) => Promise<{ ttftSeconds: number; tokensPerSecond?: number }>;
 }
 
 export interface VoiceService {
@@ -92,11 +122,27 @@ export interface VoiceService {
     user: AuthenticatedUser,
     segment?: "listen" | "think" | "speak",
   ): Promise<VoiceModelCandidate[]>;
+  /** 真实使用的「听」实测汇总（检测页与检测报告共用）。 */
+  getListenTimings(): VoiceListenSummary;
+  /** 上次检测报告（启动期读回的那份；没测过回 null）。 */
+  getLastDiagnose(): VoiceDiagnoseReport | null;
+  /** 跑一次检测并持久化（规划 §6）。 */
+  diagnose(
+    user: AuthenticatedUser,
+    workspaceId: string,
+    signal?: AbortSignal,
+  ): Promise<VoiceDiagnoseReport>;
 }
 
 export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
   /** 内置 Provider 缓存（键 = 选择的三段文件集合；见文件头的缓存口径）。 */
   const builtinCache = new Map<string, VoiceProvider>();
+  /** 真实使用耗时（只记时长，不记音频与文本）。 */
+  const timingLog = createVoiceTimingLog();
+  /** 已经出过首次调用的 provider（用来把「模型载入」从中位 RTF 里单列）。 */
+  const warmedProviders = new Set<string>();
+  /** 上次检测报告（启动期读回；没测过为 null）。 */
+  let lastDiagnose: VoiceDiagnoseReport | null = null;
 
   function builtinProvider(selection: VoiceSelection): VoiceProvider {
     const key = `${selection.kind}:${selection.id}`;
@@ -190,6 +236,28 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
       : await instanceProvider(user, selection, segmentLabel);
   }
 
+  /**
+   * 启动期读回上次报告（读失败只是没有历史，不影响功能——检测结果不是必需能力）。
+   * 不 await：装配不该被一次读库拖住；报告晚几百毫秒可见无影响。
+   */
+  void (async () => {
+    if (!deps.diagnoseStore) {
+      return;
+    }
+    try {
+      const parsed = voiceDiagnoseReportSchema.safeParse(
+        await deps.diagnoseStore.load(),
+      );
+      lastDiagnose = parsed.success ? parsed.data : null;
+    } catch (error) {
+      console.warn(
+        "[voice] 检测报告读回失败（当作没测过）：",
+        error instanceof Error ? error.message : String(error),
+      );
+      lastDiagnose = null;
+    }
+  })();
+
   return {
     getSettings(user, workspaceId) {
       void user;
@@ -207,6 +275,9 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
 
     async resolveTranscriber(user, workspaceId) {
       const settings = await readSettings(workspaceId);
+      const providerKey = settings.listen
+        ? `${settings.listen.kind}:${settings.listen.id}`
+        : "none";
       const provider = await resolveProvider(
         user,
         settings.listen,
@@ -224,10 +295,17 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
         throw new VoiceUnavailableError(verdict.reason ?? "「听」模型不可用。");
       }
       const vad = await resolveVad();
-      return {
-        impl: vad ? withSilenceTrim(transcriber, vad) : transcriber,
-        label: provider.label,
-      };
+      const instrumented = withTranscriptionTiming(
+        vad ? withSilenceTrim(transcriber, vad) : transcriber,
+        () => {
+          // 首次调用含模型载入：单列成 modelLoadMs，不污染中位 RTF
+          const cold = !warmedProviders.has(providerKey);
+          warmedProviders.add(providerKey);
+          return cold;
+        },
+        timingLog,
+      );
+      return { impl: instrumented, label: provider.label };
     },
 
     async listCandidates(user, segment) {
@@ -302,6 +380,83 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
       }
 
       return [...builtin, ...instanceCandidates];
+    },
+
+    getListenTimings() {
+      return timingLog.summary();
+    },
+
+    getLastDiagnose() {
+      return lastDiagnose;
+    },
+
+    async diagnose(user, workspaceId, signal) {
+      const settings = await readSettings(workspaceId);
+      const hardware = await (deps.collectHardware ?? collectHardware)();
+
+      // 听：用真实使用的实测汇总（首次载入另计）；未选模型则明确置灰
+      let listenReason: string | undefined;
+      if (!settings.listen) {
+        listenReason =
+          "未选择「听」模型：到「设置 → 语音」选一个（内置模型需先下载）。";
+      } else {
+        const verdict = await resolveProvider(
+          user,
+          settings.listen,
+          "listen",
+          "听",
+        )
+          .then((provider) => provider.transcriber?.ready())
+          .catch((error: unknown) => ({
+            ok: false as const,
+            reason: error instanceof Error ? error.message : String(error),
+          }));
+        if (verdict && !verdict.ok) {
+          listenReason = verdict.reason ?? "「听」模型不可用。";
+        }
+      }
+
+      // 想：主动探一次首 token 延迟（在线链路真正在意的读数）
+      let thinkMeasurement:
+        | { ttftSeconds: number; tokensPerSecond?: number }
+        | undefined;
+      let thinkReason: string | undefined;
+      if (!settings.think) {
+        thinkReason = "未选择「想」模型：完整回路需要一个对话模型。";
+      } else {
+        try {
+          thinkMeasurement = await (deps.probeThink ?? probeThinkTtft(deps))(
+            user,
+            settings.think,
+            signal,
+          );
+        } catch (error) {
+          thinkReason = `「想」段探测失败：${
+            error instanceof Error ? error.message : String(error)
+          }`;
+        }
+      }
+
+      const report = buildReport({
+        hardware,
+        listen: listenSegment(timingLog.summary(), listenReason),
+        think: thinkSegment(thinkMeasurement, thinkReason),
+        // 内置「说」档待定（许可与体积），BYOK 端点候选已在目录里但这条路还没接
+        speak: speakSegment(),
+      });
+      lastDiagnose = report;
+      if (deps.diagnoseStore) {
+        // 先写库再改内存（写失败不该让内存里出现一个只存在于本次进程的报告）
+        await deps.diagnoseStore
+          .save(report)
+          .catch((error: unknown) =>
+            console.warn(
+              "[voice] 检测报告写入失败（结果仍可本次查看）：",
+              error instanceof Error ? error.message : String(error),
+            ),
+          );
+      }
+      return report;
     },
   };
 
@@ -386,4 +541,99 @@ function createBuiltinProviderFromModelsRoot(
   const vadDir = resolveBuiltinModelDir(modelsRoot, vadSpec.id);
   models.vad = { model: join(vadDir, vadSpec.layout.model) };
   return createSherpaProvider({ models });
+}
+
+/**
+ * 转写耗时埋点（规划 §6 的「运行期实测」）：包在 provider 外面，调用方（路由）
+ * 无法忘记记录。音频时长从 WAV 头读（不解码 8MB 样本），**只记时长与耗时**。
+ *
+ * 只记**成功**的转写：失败耗时不是吞吐读数（一个立刻失败的坏音频会把中位数拉成
+ * 「这台机器飞快」），而失败本身已经由错误信息交代了。
+ */
+function withTranscriptionTiming(
+  transcriber: VoiceTranscriber,
+  isCold: () => boolean,
+  log: VoiceTimingLog,
+): VoiceTranscriber {
+  return {
+    ready: () => transcriber.ready(),
+    async transcribe(wav, opts) {
+      const cold = isCold();
+      const started = Date.now();
+      const result = await transcriber.transcribe(wav, opts);
+      let clipSeconds: number | undefined;
+      try {
+        clipSeconds = probeWav(wav).durationSeconds;
+      } catch {
+        // 时长读不出来就不记（宁缺勿假：编一个实时率比没有读数更坏）
+      }
+      if (clipSeconds !== undefined) {
+        log.record({ clipSeconds, elapsedMs: Date.now() - started, cold });
+      }
+      return result;
+    },
+  };
+}
+
+/**
+ * 「想」段的首 token 延迟探针（规划 §6：语音闭环真正在意的是它）。
+ *
+ * 打的是用户自己的 BYOK 对话模型：一条极短提示 + 只读第一个 chunk 就掐断，
+ * 尽量少花 token。**只报能证的数**——生成速度只在流末给出 usage 时才报，
+ * 拿 chunk 数冒充 token 数会给出一个看着精确、实则错的读数。
+ */
+function probeThinkTtft(deps: VoiceServiceDeps) {
+  return async (
+    user: AuthenticatedUser,
+    selection: VoiceSelection,
+    signal?: AbortSignal,
+  ): Promise<{ ttftSeconds: number; tokensPerSecond?: number }> => {
+    if (!selection.model) {
+      throw new Error("「想」段的供应商实例未指定模型。");
+    }
+    const credentials = await deps.modelProviders.resolveCredentials(
+      user,
+      selection.id,
+    );
+    const model = resolveInstanceChatModel(
+      credentials.protocol,
+      selection.model,
+      {
+        apiKey: credentials.apiKey,
+        ...(credentials.baseUrl ? { baseUrl: credentials.baseUrl } : {}),
+        ...(credentials.headers ? { headers: credentials.headers } : {}),
+      },
+    );
+    const started = Date.now();
+    const stream = await model.stream(
+      [
+        new SystemMessage("你在测链路速度，直接回答即可。"),
+        new HumanMessage("说「好」。"),
+      ],
+      signal ? { signal } : {},
+    );
+    let firstChunkAt: number | undefined;
+    let outputTokens: number | undefined;
+    for await (const chunk of stream) {
+      if (firstChunkAt === undefined) {
+        firstChunkAt = Date.now();
+      }
+      const usage = (chunk as { usage_metadata?: { output_tokens?: number } })
+        .usage_metadata;
+      if (usage?.output_tokens) {
+        outputTokens = usage.output_tokens;
+      }
+    }
+    if (firstChunkAt === undefined) {
+      throw new Error("端点没有返回任何内容。");
+    }
+    const ttftSeconds = (firstChunkAt - started) / 1000;
+    const elapsed = (Date.now() - started) / 1000;
+    return {
+      ttftSeconds,
+      ...(outputTokens === undefined || elapsed <= 0
+        ? {}
+        : { tokensPerSecond: outputTokens / elapsed }),
+    };
+  };
 }

@@ -44,3 +44,44 @@ export function createVoiceRepository(
     },
   };
 }
+
+/**
+ * 检测报告的持久化（`app_config` 单行表，实例级）。
+ *
+ * 读回策略与权限档位那次一致：**启动期读回 + PUT 先写库再改内存**
+ * （`features/permissions/tier-store.ts` 是同一形状的先例），
+ * 差别是这里坏值一律当「没测过」（回 null），不猜半个报告。
+ */
+export interface VoiceDiagnoseStore {
+  /** 读回上次报告；无行/坏值返回 null。 */
+  load(): Promise<unknown>;
+  /** 覆盖写入（单行 upsert，幂等）。 */
+  save(report: unknown): Promise<void>;
+}
+
+type DiagnoseRow = { voice_diagnose: unknown };
+
+export function createVoiceDiagnoseStore(
+  persistence: PersistenceService,
+): VoiceDiagnoseStore {
+  return {
+    async load() {
+      const row = await persistence.queryOne<DiagnoseRow>(
+        `select voice_diagnose
+           from public.app_config where id = 1`,
+      );
+      return row?.voice_diagnose ?? null;
+    },
+
+    async save(report) {
+      await persistence.execute(
+        `insert into public.app_config (id, voice_diagnose)
+         values (1, $1::jsonb)
+         on conflict (id) do update
+           set voice_diagnose = excluded.voice_diagnose,
+               updated_at = now()`,
+        [report === null ? null : JSON.stringify(report)],
+      );
+    },
+  };
+}

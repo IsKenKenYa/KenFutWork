@@ -2,7 +2,10 @@ import { registerVoiceRoutes } from "../../http/voice.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import { resolveVoiceModelsRoot } from "./builtin-models.js";
 import { createVoiceModelStore, type VoiceModelStore } from "./model-store.js";
-import { createVoiceRepository } from "./repository.js";
+import {
+  createVoiceDiagnoseStore,
+  createVoiceRepository,
+} from "./repository.js";
 import { createVoiceService } from "./voice-service.js";
 
 /**
@@ -40,6 +43,7 @@ export function createVoicePlugin(
           modelProviders: deps.get("modelProviders"),
           modelsRoot,
           modelStore: store,
+          diagnoseStore: createVoiceDiagnoseStore(deps.get("persistence")),
         }),
       );
     },

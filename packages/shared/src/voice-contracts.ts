@@ -126,3 +126,61 @@ export const voiceModelDownloadParamsSchema = z.object({
   modelId: z.string().min(1),
 });
 
+
+// --- 性能检测（规划 §6） ---
+
+/** 硬件面：CPU / 内存 / GPU（nvidia-smi 尽力探测，探不到不影响功能）。 */
+export const voiceDiagnoseHardwareSchema = z.object({
+  cpuModel: z.string().min(1),
+  cpuCores: z.number().int().positive(),
+  totalMemoryBytes: z.number().int().positive(),
+  platform: z.string().min(1),
+  /** 探到的 GPU 描述；缺席 = 没探到（不是错误）。 */
+  gpu: z.string().optional(),
+});
+export type VoiceDiagnoseHardware = z.infer<typeof voiceDiagnoseHardwareSchema>;
+
+/**
+ * 一段的检测结论。三态：
+ * - `measured`：有实测读数（`metrics` 必填）；
+ * - `pending`：链路可用但**还没有实测**（如「听」还没说过话）——给可读引导；
+ * - `unavailable`：硬缺失（模型未下载 / 未选模型 / 未接线），`reason` 说明为什么。
+ * 规划 §6 的硬规则：性能不足只是警告，**只有硬缺失才置灰**。
+ */
+export const voiceDiagnoseSegmentSchema = z.object({
+  state: z.enum(["measured", "pending", "unavailable"]),
+  summary: z.string().min(1),
+  /** 听：稳态中位实时率 + 首次载入耗时。 */
+  listen: z
+    .object({
+      rtfMedian: z.number().nonnegative().optional(),
+      samples: z.number().int().nonnegative(),
+      modelLoadMs: z.number().nonnegative().optional(),
+      lastClipSeconds: z.number().positive().optional(),
+    })
+    .optional(),
+  /** 想：首 token 延迟（语音回路真正在意的读数）+ 可选生成速度。 */
+  think: z
+    .object({
+      ttftSeconds: z.number().nonnegative(),
+      tokensPerSecond: z.number().nonnegative().optional(),
+    })
+    .optional(),
+});
+export type VoiceDiagnoseSegment = z.infer<typeof voiceDiagnoseSegmentSchema>;
+
+export const voiceDiagnoseReportSchema = z.object({
+  hardware: voiceDiagnoseHardwareSchema,
+  listen: voiceDiagnoseSegmentSchema,
+  think: voiceDiagnoseSegmentSchema,
+  speak: voiceDiagnoseSegmentSchema,
+  /** 报告时间（ISO）；读回上次结果时靠它显示「多久之前测的」。 */
+  measuredAt: z.iso.datetime({ offset: true }),
+});
+export type VoiceDiagnoseReport = z.infer<typeof voiceDiagnoseReportSchema>;
+
+/** POST /api/voice/diagnose 的响应；`report` 为 null 表示还没测过。 */
+export const voiceDiagnoseResponseSchema = z.object({
+  report: voiceDiagnoseReportSchema.nullable(),
+});
+export type VoiceDiagnoseResponse = z.infer<typeof voiceDiagnoseResponseSchema>;

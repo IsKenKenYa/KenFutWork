@@ -9,6 +9,7 @@ import { resolveBuiltinModelDir } from "./builtin-models.js";
 import { SENSE_VOICE, SILERO_VAD_MODEL } from "./catalog.js";
 import { createVoiceModelStore } from "./model-store.js";
 import { createSherpaProvider } from "./providers/sherpa.js";
+import type { VoiceTranscriber } from "./types.js";
 
 /**
  * 真机验收（integration，默认跳过）：**真下载两百兆模型 + 真中文音频**跑一遍
@@ -76,7 +77,7 @@ describe.skipIf(!enabled)("内置 Speech-to-Text 真机（integration）", () =>
       models: {
         asr: {
           model: join(listenDir, SENSE_VOICE.layout.model),
-          tokens: join(listenDir, SENSE_VOICE.layout.tokens),
+          tokens: join(listenDir, SENSE_VOICE.layout.tokens ?? "tokens.txt"),
         },
         vad: { model: join(vadDir, SILERO_VAD_MODEL.layout.model) },
       },
@@ -91,10 +92,9 @@ describe.skipIf(!enabled)("内置 Speech-to-Text 真机（integration）", () =>
     const decoded = decodeWav(wav);
     expect(decoded.sampleRate).toBe(16_000);
 
+    const transcriber = provider.transcriber as VoiceTranscriber;
     const started = Date.now();
-    const { text } = (await provider.transcriber?.transcribe(wav)) as {
-      text: string;
-    };
+    const { text } = await transcriber.transcribe(wav);
     const seconds = (Date.now() - started) / 1000;
     const audioSeconds = decoded.samples.length / decoded.sampleRate;
     const rtf = seconds / audioSeconds;

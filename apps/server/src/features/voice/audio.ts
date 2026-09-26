@@ -256,3 +256,51 @@ export function resampleLinear(
 
 /** 内置 ASR / VAD 的采样率口径（sherpa 的 SenseVoice 与 silero-vad 都按 16k 训练）。 */
 export const VOICE_SAMPLE_RATE = 16_000;
+
+/** WAV 的格式与时长（不解码样本：8MB 上传只为拿时长不值得全量解一遍）。 */
+export interface WavProbe {
+  sampleRate: number;
+  channels: number;
+  durationSeconds: number;
+}
+
+/** 从头部读格式与时长（结构非法即抛 `VoiceAudioError`，与 `decodeWav` 同口径）。 */
+export function probeWav(bytes: Uint8Array): WavProbe {
+  if (bytes.byteLength < WAV_HEADER_BYTES) {
+    throw new VoiceAudioError("音频数据过短，不是合法的 WAV 文件。");
+  }
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (view.getUint32(0, false) !== RIFF || view.getUint32(8, false) !== WAVE) {
+    throw new VoiceAudioError("音频不是 RIFF/WAVE 容器。");
+  }
+  let sampleRate = 0;
+  let channels = 0;
+  let bitsPerSample = 0;
+  let dataLength = 0;
+  let offset = 12;
+  while (offset + 8 <= view.byteLength) {
+    const id = view.getUint32(offset, false);
+    const size = view.getUint32(offset + 4, true);
+    const body = offset + 8;
+    if (body + size > view.byteLength) {
+      throw new VoiceAudioError("WAV 数据不完整（文件被截断）。");
+    }
+    if (id === FMT && size >= 16) {
+      channels = view.getUint16(body + 2, true);
+      sampleRate = view.getUint32(body + 4, true);
+      bitsPerSample = view.getUint16(body + 14, true);
+    } else if (id === DATA) {
+      dataLength = size;
+    }
+    offset = body + size + (size % 2);
+  }
+  if (sampleRate < 1 || channels < 1 || bitsPerSample < 1) {
+    throw new VoiceAudioError("WAV 缺少可用的 fmt 块。");
+  }
+  const frameBytes = (bitsPerSample / 8) * channels;
+  return {
+    sampleRate,
+    channels,
+    durationSeconds: dataLength / frameBytes / sampleRate,
+  };
+}
