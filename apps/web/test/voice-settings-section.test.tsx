@@ -244,6 +244,23 @@ describe("语音设置页", () => {
     expect(saves[0]).toEqual({ mode: "transcribe", speakReplies: false });
   });
 
+  it("测到 NVIDIA GPU 时提示「可接 GPU 服务」（探不到则完全不提）", async () => {
+    await mount({
+      report: {
+        ...REPORT,
+        hardware: { ...REPORT.hardware, gpu: "NVIDIA GeForce RTX 4060" },
+      },
+    });
+    expect(await screen.findByText(/可接 GPU 服务/)).toBeTruthy();
+    expect(screen.getByText(/RTX 4060/)).toBeTruthy();
+  });
+
+  it("没有 GPU 时不出现该提示（不摆空壳）", async () => {
+    await mount();
+    expect(await screen.findByText(/Test CPU · 12 核/)).toBeTruthy();
+    expect(screen.queryByText(/可接 GPU 服务/)).toBeNull();
+  });
+
   it("没测过时给一句说明与重新检测按钮（不留空白）", async () => {
     await mount({ report: null });
     expect(await screen.findByText(/还没检测过/)).toBeTruthy();

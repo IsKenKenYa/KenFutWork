@@ -649,3 +649,99 @@ describe("voice 服务：真实使用的耗时埋点（规划 §6）", () => {
     warn.mockRestore();
   });
 });
+
+describe("voice 服务：候选性能标注（规划 §5 预估 → 实测）", () => {
+  function withTimings(modelState: "ready" | "missing") {
+    return deps({
+      modelProviders: { listInstances: async () => [] } as never,
+      modelStore: {
+        getState: async () => ({
+          state: modelState,
+          downloadedBytes: modelState === "ready" ? 1 : 0,
+          totalBytes: 1,
+        }),
+        start: async () => ({
+          state: "downloading",
+          downloadedBytes: 0,
+          totalBytes: 1,
+        }),
+        cancel: () => undefined,
+        remove: async () => undefined,
+      },
+    });
+  }
+
+  it("未下载：标「预估」并说明下载后会换成实测", async () => {
+    const service = createVoiceService(withTimings("missing"));
+    const [candidate] = await service.listCandidates(USER, "listen");
+    expect(candidate?.performanceNote).toContain("预估");
+    expect(candidate?.performanceNote).toContain("换成实测");
+  });
+
+  it("就绪但还没实测：仍标注预估（不编一个实测值出来）", async () => {
+    const service = createVoiceService(withTimings("ready"));
+    const [candidate] = await service.listCandidates(USER, "listen");
+    expect(candidate?.performanceNote).toContain("预估");
+  });
+
+  it("就绪 + 有实测：换成实测值，且把首次载入一并写清（别让人以为第一次也这么快）", async () => {
+    const service = createVoiceService(
+      deps({
+        voice: { listen: { kind: "builtin", id: "sensevoice-small-int8" } },
+        createBuiltinProvider: (selection) =>
+          selection.id === SILERO_VAD_MODEL.id
+            ? {
+                id: "vad",
+                label: "vad",
+                location: "cpu",
+                vad: {
+                  ready: async () => ({ ok: false, reason: "未下载" }),
+                  segment: () => ({ segments: [] }),
+                },
+              }
+            : {
+                id: "builtin-sherpa",
+                label: "内置（本机 CPU）",
+                location: "cpu",
+                transcriber: {
+                  ready: async () => ({ ok: true }),
+                  transcribe: async () => ({ text: "你好" }),
+                },
+              },
+        modelProviders: { listInstances: async () => [] } as never,
+        modelStore: {
+          getState: async () => ({
+            state: "ready",
+            downloadedBytes: 1,
+            totalBytes: 1,
+          }),
+          start: async () => ({
+            state: "downloading",
+            downloadedBytes: 0,
+            totalBytes: 1,
+          }),
+          cancel: () => undefined,
+          remove: async () => undefined,
+        },
+      }),
+    );
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    // 跑一轮真实转写：首次记 modelLoadMs，第二次进中位
+    await service
+      .resolveTranscriber(USER, "ws-1")
+      .then((r) =>
+        r.impl.transcribe(encodeWav(new Float32Array(16_000), 16_000)),
+      );
+    await service
+      .resolveTranscriber(USER, "ws-1")
+      .then((r) =>
+        r.impl.transcribe(encodeWav(new Float32Array(16_000), 16_000)),
+      );
+
+    const [candidate] = await service.listCandidates(USER, "listen");
+    expect(candidate?.performanceNote).toContain("实测");
+    expect(candidate?.performanceNote).toContain("首次使用另加载");
+    expect(candidate?.performanceNote).not.toContain("预估");
+    warn.mockRestore();
+  });
+});

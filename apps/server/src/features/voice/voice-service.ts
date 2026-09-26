@@ -347,12 +347,15 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
 
       // 内置离线模型：只列与目标段匹配的（VAD 是内部优化，不进选择器）
       const builtin: VoiceModelCandidate[] = [];
+      /** 真实使用的实测汇总：就绪的模型据此把「预估」换成实测（规划 §5）。 */
+      const measured = timingLog.summary();
       for (const model of BUILTIN_VOICE_MODELS) {
         if (model.segment === "vad" || !targets.includes(model.segment)) {
           continue;
         }
         const sizeBytes = builtinModelSizeBytes(model);
         const state = await deps.modelStore?.getState(model.id);
+        const ready = state?.state === "ready";
         builtin.push({
           id: model.id,
           segment: model.segment,
@@ -367,8 +370,19 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
             totalBytes: state?.totalBytes ?? sizeBytes,
             ...(state?.error ? { error: state.error } : {}),
           },
+          /**
+           * 规划 §5：未下载只显示**标注「预估」**的值；下载并实测后换成实测值。
+           * 首次调用含模型载入（实测同一机器上稳态 0.08 / 首次 0.68），
+           * 故实测行里把两者都写清楚，别让「0.08」这个数误导用户以为第一次也这么快。
+           */
           performanceNote:
-            "预估：本机 CPU 转写实时率约 0.1–0.3（下载后由检测换成实测）",
+            ready && measured.rtfMedian !== undefined
+              ? `实测：实时率 ${measured.rtfMedian.toFixed(2)}（${measured.samples} 次）${
+                  measured.modelLoadMs === undefined
+                    ? ""
+                    : `，首次使用另加载 ${(measured.modelLoadMs / 1000).toFixed(1)}s`
+                }`
+              : "预估：本机 CPU 实时率约 0.1–0.7（首次调用含模型载入会更慢）；下载并说一句后换成实测",
           license: model.license,
         });
       }

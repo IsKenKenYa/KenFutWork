@@ -346,6 +346,17 @@ export function VoiceSettingsSection({ accessToken }: { accessToken: string }) {
               {formatBytes(report.hardware.totalMemoryBytes)} 内存
               {report.hardware.gpu ? ` · ${report.hardware.gpu}` : ""}
             </p>
+            {/*
+              规划 §3.4：探到 NVIDIA GPU 就提示「可接 GPU 服务」。本机 GPU 的用法是
+              把「听 / 说」指到那个端点（`openai-compatible` 那条路），不另做一套
+              配置通道；探不到就什么都不提，功能一点不受影响。
+            */}
+            {report.hardware.gpu ? (
+              <p className="text-muted-foreground">
+                可接 GPU 服务：把「听 / 说」指向本机跑的 GPU 端点（Speaches /
+                faster-whisper 之类，填它的 OpenAI 兼容地址即可），比本机 CPU 快得多。
+              </p>
+            ) : null}
             {(["listen", "think", "speak"] as const).map((key) => (
               <p
                 key={key}
