@@ -68,7 +68,7 @@ function servingFetch(
 ) {
   const calls: string[] = [];
   const fetchFn = vi.fn(
-    async (url: string | URL, init?: RequestInit): Promise<Response> => {
+    async (url: string | URL, _init?: RequestInit): Promise<Response> => {
       const key = String(url);
       calls.push(key);
       const handler = handlers[key];
