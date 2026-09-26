@@ -11,9 +11,9 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { AgentRunService } from "../agent/runtime.js";
 import { resolveSandboxScopeId } from "../agent/sandbox-dir.js";
 import {
-  BUILTIN_SUBAGENT_DISPATCHER,
-  listDeclaredSubAgents,
-} from "../agent/sub-agents.js";
+  listSubagentDefinitions,
+  SUBAGENT_DISPATCH_TOOLS,
+} from "../agent/subagent-definitions.js";
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import { isPlanApprovalInput } from "../features/agent-modes/execution-mode-service.js";
 import {
@@ -85,8 +85,10 @@ export async function registerRunRoutes(
     }
     return reply.code(200).send(
       agentSubagentListResponseSchema.parse({
-        subagents: listDeclaredSubAgents(),
-        builtin: [BUILTIN_SUBAGENT_DISPATCHER],
+        // 子代理清单唯一来源是定义注册表（DEC-16）；派发工具 task/task_background
+        // 是我们自己的缝（不再是 deepagents 内置），一并列给界面。
+        subagents: listSubagentDefinitions(),
+        builtin: SUBAGENT_DISPATCH_TOOLS,
       }),
     );
   });

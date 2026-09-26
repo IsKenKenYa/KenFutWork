@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import {
+  AGENT_GOVERNANCE_DEFAULTS,
   type BillingErrorCode,
   type ImageAttachment,
   type ImageGenerationPreference,
@@ -52,6 +53,10 @@ import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createPipelineLogger } from "../ws/logger.js";
 import { type CompactionPlan, resolveCompactionPlan } from "./auto-compact.js";
 import { createAgentBackend } from "./backends/index.js";
+import {
+  type BackgroundTaskRegistry,
+  createBackgroundTaskRegistry,
+} from "./background-tasks.js";
 import type { ToolGate, ToolGateHooks } from "./deep-agent.js";
 import {
   createDefaultModelSpecifier,
@@ -63,6 +68,7 @@ import type { AgentPersistenceService } from "./persistence/index.js";
 import { measureTools } from "./prompt-composition.js";
 import { withBoundWorkDir } from "./sandbox-dir.js";
 import { adaptDeepAgentStream } from "./stream-adapter.js";
+import { formatTaskNotificationsXml } from "./task-notifications.js";
 import {
   createToolDenialTracker,
   type ToolDenialRecord,
@@ -389,6 +395,12 @@ type CreateAgentRuntimeOptions = {
 
 export type AgentRunService = ReturnType<typeof createAgentRunService>;
 
+/**
+ * run → 后台任务注册表（DEC-15）：cancelRun 据此连带取消全部后台子代理/长命令。
+ * WeakMap：注册表随 run 对象生灭，run 结束后不额外持引用。
+ */
+const backgroundTaskRegistries = new WeakMap<object, BackgroundTaskRegistry>();
+
 export function createAgentRunService(options: CreateAgentRuntimeOptions) {
   const now = options.now ?? (() => new Date().toISOString());
   const runs = new Map<string, RuntimeRunRecord>();
@@ -480,6 +492,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       if (!run.controller.signal.aborted) {
         run.controller.abort();
       }
+      // 后台任务连带取消（DEC-15）：abort 回调联动各子代理/长命令的中止信号
+      backgroundTaskRegistries.get(run)?.abortAll("用户取消了本轮 run");
 
       run.status = "canceled";
       return {
@@ -1161,6 +1175,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         end: [],
       };
       let hookShell: WorkspaceSettings["terminalShell"] | undefined;
+      /** 后台任务并发上限（DEC-15/18）：治理设置读侧已钳回护栏。 */
+      let governanceConcurrency: number =
+        AGENT_GOVERNANCE_DEFAULTS.subagentMaxConcurrency;
+      /** 统一后台任务注册表（DEC-15）：设置读取后创建；取消/收尾经它连带清理。 */
+      let backgroundTaskRegistry: BackgroundTaskRegistry | null = null;
 
       try {
         /** 被拒工具调用的记账（含连续拒绝计数）；门存在时才有值。 */
@@ -1478,7 +1497,18 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               end: hooksFor(workspaceSettings?.hooks, "turn-end"),
             };
             hookShell = workspaceSettings?.terminalShell;
+            // 后台任务并发上限（DEC-15/18）：治理设置读侧已钳回护栏
+            governanceConcurrency =
+              workspaceSettings?.subagentMaxConcurrency ??
+              AGENT_GOVERNANCE_DEFAULTS.subagentMaxConcurrency;
           }
+
+          // 统一后台任务注册表（DEC-15）：每 run 一个（状态随 run 生命周期，
+          // 纯内存——run 结束即无意义）；并发上限来自治理设置
+          backgroundTaskRegistry = createBackgroundTaskRegistry({
+            maxConcurrent: governanceConcurrency,
+          });
+          backgroundTaskRegistries.set(run, backgroundTaskRegistry);
 
           if (hookCommands.start.length > 0 && backendResult.sandboxDir) {
             for (const hook of await runHooks({
@@ -1634,6 +1664,15 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             // 执行模式工具门（solo/plan 硬约束）：拦截内置与桥接工具的全部调用
             ...(toolGate ? { toolGate } : {}),
             ...(toolGateHooks ? { toolGateHooks } : {}),
+            // 子代理派发缝（DEC-14/15/16）：注册表并发上限来自治理设置
+            ...(backgroundTaskRegistry
+              ? {
+                  backgroundTasks: {
+                    registry: backgroundTaskRegistry,
+                    preset,
+                  },
+                }
+              : {}),
             // 插件提示段每次 run 取一次：新装/卸载插件下一轮即生效；用户规则拼在它之后
             ...(options.pluginPromptFragments || userRulesFragment.length > 0
               ? {
@@ -1810,6 +1849,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             }
           }
 
+          // 首轮流在这里创建（含 prestep/hooks 前置）；后台任务续轮的流在
+          // 下方消费循环里重建（DEC-15 轮末闸门）
           rlog.lap("stream_call_start");
           stream = agent.streamEvents(
             {
@@ -1856,228 +1897,281 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         const usageUserId = run.userId;
         // 终态事件哨兵：正常路径适配器必发 run.completed / run.canceled / run.failed；
         // billing 门中止等异常路径会让 for-await 静默结束——收尾必须补失败事件。
-        let sawTerminalEvent = false;
-        try {
-          for await (const event of adaptDeepAgentStream({
-            conversationId: run.conversationId,
-            now,
-            ...(options.runUsage && usageUserId
-              ? {
-                  onUsage: (usage: {
-                    inputTokens: number;
-                    outputTokens: number;
-                  }) => {
-                    options.runUsage?.update(runId, {
-                      inputTokens: usage.inputTokens,
-                      outputTokens: usage.outputTokens,
-                      provider: run.usageMeta?.provider ?? "builtin",
-                      model: run.usageMeta?.model ?? "unknown",
-                      ...(run.usageMeta?.providerInstanceId
-                        ? {
-                            providerInstanceId:
-                              run.usageMeta.providerInstanceId,
-                          }
-                        : {}),
-                      userId: usageUserId,
-                    });
-                  },
+        // DEC-15 轮末闸门循环：模型收尾时若后台任务未结算，吞掉这次
+        // run.completed，以「后台任务通知」为新一轮输入重入同一 thread；
+        // 全部结算后的那次 completed 才放行（通知必达，usage 归属不变）。
+        let continuationInput: string | null = null;
+        let suppressCompletedForContinuation = false;
+        while (true) {
+          let sawTerminalEvent = false;
+          try {
+            for await (const event of adaptDeepAgentStream({
+              conversationId: run.conversationId,
+              now,
+              ...(options.runUsage && usageUserId
+                ? {
+                    onUsage: (usage: {
+                      inputTokens: number;
+                      outputTokens: number;
+                    }) => {
+                      options.runUsage?.update(runId, {
+                        inputTokens: usage.inputTokens,
+                        outputTokens: usage.outputTokens,
+                        provider: run.usageMeta?.provider ?? "builtin",
+                        model: run.usageMeta?.model ?? "unknown",
+                        ...(run.usageMeta?.providerInstanceId
+                          ? {
+                              providerInstanceId:
+                                run.usageMeta.providerInstanceId,
+                            }
+                          : {}),
+                        userId: usageUserId,
+                      });
+                    },
+                  }
+                : {}),
+              runId,
+              sessionId: run.sessionId,
+              // 分类占比（R4-1）：工具 schema 在这里量（装配刚回吐），消息侧由适配器在
+              // on_chat_model_start 里量；两边在适配器里合并成一条 composition 随 run.usage 下发。
+              toolComposition: measureTools(lastToolInventory),
+              // 压缩口径与装配同一份：适配器据此检测摘要消息并发 run.compacted
+              ...(autoCompact ? { autoCompact } : {}),
+              signal: run.controller.signal,
+              ...(options.env.agentStreamIdleTimeoutMs
+                ? { idleTimeoutMs: options.env.agentStreamIdleTimeoutMs }
+                : {}),
+              // 空闲超时即中止底层请求（释放上游连接），本轮按有界失败收尾
+              abortRun: () => run.controller.abort(),
+              stream,
+            })) {
+              // 被拒的工具调用先合成 tool.* 事件下发（否则界面上「谁被拦了、为什么」
+              // 完全没有记录——门在中间件里直接回了 ToolMessage，不产生任何工具事件）
+              for (const denied of denialTracker?.drain() ?? []) {
+                for (const synthetic of denialEvents(denied, runId, now())) {
+                  yield synthetic;
                 }
-              : {}),
-            runId,
-            sessionId: run.sessionId,
-            // 分类占比（R4-1）：工具 schema 在这里量（装配刚回吐），消息侧由适配器在
-            // on_chat_model_start 里量；两边在适配器里合并成一条 composition 随 run.usage 下发。
-            toolComposition: measureTools(lastToolInventory),
-            // 压缩口径与装配同一份：适配器据此检测摘要消息并发 run.compacted
-            ...(autoCompact ? { autoCompact } : {}),
-            signal: run.controller.signal,
-            ...(options.env.agentStreamIdleTimeoutMs
-              ? { idleTimeoutMs: options.env.agentStreamIdleTimeoutMs }
-              : {}),
-            // 空闲超时即中止底层请求（释放上游连接），本轮按有界失败收尾
-            abortRun: () => run.controller.abort(),
-            stream,
-          })) {
-            // 被拒的工具调用先合成 tool.* 事件下发（否则界面上「谁被拦了、为什么」
-            // 完全没有记录——门在中间件里直接回了 ToolMessage，不产生任何工具事件）
-            for (const denied of denialTracker?.drain() ?? []) {
-              for (const synthetic of denialEvents(denied, runId, now())) {
-                yield synthetic;
               }
-            }
-            // 有界失败：同一工具连续被拒达上限就中止本轮，不再让它空转
-            const fatalDenial = denialTracker?.fatalReason() ?? null;
-            if (fatalDenial) {
-              run.controller.abort();
-              run.status = "failed";
-              await updatePersistedRunFailure(
-                options.agentRunMetadataService,
-                run,
-                now,
-                new Error(fatalDenial),
-              ).catch((persistErr) =>
-                console.error(
-                  "[agent-runtime] Failed to persist tool-denial abort:",
-                  persistErr,
-                ),
-              );
-              yield {
-                error: { code: "run_failed", message: fatalDenial },
-                runId,
-                timestamp: now(),
-                type: "run.failed",
-              };
-              return;
-            }
-            run.status = mapEventToStatus(event);
-            if (isTerminalEvent(event)) {
-              sawTerminalEvent = true;
-            }
-            // billing 门中止（如图片生成的额度/tier 拒绝）会把异常误报成「用户取消」
-            // ——中止信号先于错误到达适配器。有 billingFailure 在身却报取消的，
-            // 一律改判 run.failed，文案给可读的 billing 原因。
-            // 被拒工具触发的有界失败：abort 后适配器报「用户取消」，但这是系统
-            // 主动中止——改判 run.failed 并把可读原因带给客户端（同 billing 口径）
-            if (
-              event.type === "run.canceled" &&
-              !run.billingFailure &&
-              denialTracker?.fatalReason()
-            ) {
-              const message =
-                denialTracker.fatalReason() ?? "工具连续被拒，已中止本轮。";
-              const failedEvent: StreamEvent = {
-                error: { code: "run_failed", message },
-                runId,
-                timestamp: now(),
-                type: "run.failed",
-              };
-              run.status = "failed";
-              await updatePersistedRunFailure(
-                options.agentRunMetadataService,
-                run,
-                now,
-                new Error(message),
-              ).catch((persistErr) =>
-                console.error(
-                  "[agent-runtime] Failed to persist tool-denial abort:",
-                  persistErr,
-                ),
-              );
-              yield failedEvent;
-              return;
-            }
-            if (event.type === "run.canceled" && run.billingFailure) {
-              const failedEvent: StreamEvent = {
-                error: {
-                  code: "run_failed",
-                  message: run.billingFailure.message,
-                },
-                runId,
-                timestamp: now(),
-                type: "run.failed",
-              };
-              run.status = "failed";
-              await updatePersistedRunFailure(
-                options.agentRunMetadataService,
-                run,
-                now,
-                new Error(run.billingFailure.message),
-              ).catch((persistErr) =>
-                console.error(
-                  "[agent-runtime] Failed to persist billing-canceled run failure:",
-                  persistErr,
-                ),
-              );
-              yield failedEvent;
-              return;
-            }
-            try {
-              await syncPersistedRunFromEvent(
-                options.agentRunMetadataService,
-                run,
-                event,
-                now,
-              );
-            } catch (error) {
-              const failedEvent = toFailedEvent(runId, now, error);
-              run.status = "failed";
-              yield failedEvent;
-              return;
-            }
-            yield event;
-
-            if (!isTerminalEvent(event) && options.eventDelayMs) {
-              try {
-                await delay(options.eventDelayMs, undefined, {
-                  signal: run.controller.signal,
-                });
-              } catch {
-                run.status = "canceled";
+              // 有界失败：同一工具连续被拒达上限就中止本轮，不再让它空转
+              const fatalDenial = denialTracker?.fatalReason() ?? null;
+              if (fatalDenial) {
+                run.controller.abort();
+                run.status = "failed";
+                await updatePersistedRunFailure(
+                  options.agentRunMetadataService,
+                  run,
+                  now,
+                  new Error(fatalDenial),
+                ).catch((persistErr) =>
+                  console.error(
+                    "[agent-runtime] Failed to persist tool-denial abort:",
+                    persistErr,
+                  ),
+                );
                 yield {
+                  error: { code: "run_failed", message: fatalDenial },
                   runId,
                   timestamp: now(),
-                  type: "run.canceled",
+                  type: "run.failed",
                 };
                 return;
               }
-            }
-          }
-        } catch (streamError) {
-          // Catch DB / checkpoint errors that bubble up from the LangGraph stream
-          // (e.g. Supabase circuit-breaker, connection pool exhaustion).
-          // Instead of crashing the process, yield a clean failure event.
-          console.error(
-            "[agent-runtime] Stream iteration failed:",
-            streamError,
-          );
-          const failedEvent = toFailedEvent(runId, now, streamError);
-          run.status = "failed";
-          await updatePersistedRunFailure(
-            options.agentRunMetadataService,
-            run,
-            now,
-            streamError,
-          ).catch((persistErr) =>
-            console.error(
-              "[agent-runtime] Failed to persist run failure:",
-              persistErr,
-            ),
-          );
-          yield failedEvent;
-          return;
-        }
+              // 轮末闸门（DEC-15）：后台任务未结算就不让 run 收尾——吞掉
+              // completed、以通知重开一轮；状态/持久化都保持 running 口径
+              if (
+                event.type === "run.completed" &&
+                backgroundTaskRegistry?.hasPending()
+              ) {
+                const notes = backgroundTaskRegistry.drainNotifications();
+                const waitHint = backgroundTaskRegistry.hasPending()
+                  ? "\n（仍有后台任务在跑：继续手头工作或用 task_output 查询；全部结算后再收尾。）"
+                  : "";
+                continuationInput = `${formatTaskNotificationsXml(notes)}${waitHint}`;
+                suppressCompletedForContinuation = true;
+                break;
+              }
+              run.status = mapEventToStatus(event);
+              if (isTerminalEvent(event)) {
+                sawTerminalEvent = true;
+              }
+              // billing 门中止（如图片生成的额度/tier 拒绝）会把异常误报成「用户取消」
+              // ——中止信号先于错误到达适配器。有 billingFailure 在身却报取消的，
+              // 一律改判 run.failed，文案给可读的 billing 原因。
+              // 被拒工具触发的有界失败：abort 后适配器报「用户取消」，但这是系统
+              // 主动中止——改判 run.failed 并把可读原因带给客户端（同 billing 口径）
+              if (
+                event.type === "run.canceled" &&
+                !run.billingFailure &&
+                denialTracker?.fatalReason()
+              ) {
+                const message =
+                  denialTracker.fatalReason() ?? "工具连续被拒，已中止本轮。";
+                const failedEvent: StreamEvent = {
+                  error: { code: "run_failed", message },
+                  runId,
+                  timestamp: now(),
+                  type: "run.failed",
+                };
+                run.status = "failed";
+                await updatePersistedRunFailure(
+                  options.agentRunMetadataService,
+                  run,
+                  now,
+                  new Error(message),
+                ).catch((persistErr) =>
+                  console.error(
+                    "[agent-runtime] Failed to persist tool-denial abort:",
+                    persistErr,
+                  ),
+                );
+                yield failedEvent;
+                return;
+              }
+              if (event.type === "run.canceled" && run.billingFailure) {
+                const failedEvent: StreamEvent = {
+                  error: {
+                    code: "run_failed",
+                    message: run.billingFailure.message,
+                  },
+                  runId,
+                  timestamp: now(),
+                  type: "run.failed",
+                };
+                run.status = "failed";
+                await updatePersistedRunFailure(
+                  options.agentRunMetadataService,
+                  run,
+                  now,
+                  new Error(run.billingFailure.message),
+                ).catch((persistErr) =>
+                  console.error(
+                    "[agent-runtime] Failed to persist billing-canceled run failure:",
+                    persistErr,
+                  ),
+                );
+                yield failedEvent;
+                return;
+              }
+              try {
+                await syncPersistedRunFromEvent(
+                  options.agentRunMetadataService,
+                  run,
+                  event,
+                  now,
+                );
+              } catch (error) {
+                const failedEvent = toFailedEvent(runId, now, error);
+                run.status = "failed";
+                yield failedEvent;
+                return;
+              }
+              yield event;
 
-        // 流静默结束（无终态事件）：billing 门中止是已知路径（abort 后适配器不发
-        // 事件）。这里补发 run.failed——持久化失败终态，并让 WS 重试判定拿到
-        // 失败文案（额度不足命中永久性失败模式，不再连环重试）。
-        if (!sawTerminalEvent && run.status === "running") {
-          // error.code 是封闭枚举（shared/errors.ts），billing 细节留在 billing.error
-          // 事件里；这里统一 run_failed，可读原因由 message 承载。
-          const message =
-            run.billingFailure?.message ??
-            "运行被中止且未产生结束事件（无终态事件）。";
-          const failedEvent: StreamEvent = {
-            error: { code: "run_failed", message },
-            runId,
-            timestamp: now(),
-            type: "run.failed",
-          };
-          run.status = "failed";
-          await updatePersistedRunFailure(
-            options.agentRunMetadataService,
-            run,
-            now,
-            new Error(message),
-          ).catch((persistErr) =>
+              if (!isTerminalEvent(event) && options.eventDelayMs) {
+                try {
+                  await delay(options.eventDelayMs, undefined, {
+                    signal: run.controller.signal,
+                  });
+                } catch {
+                  run.status = "canceled";
+                  yield {
+                    runId,
+                    timestamp: now(),
+                    type: "run.canceled",
+                  };
+                  return;
+                }
+              }
+            }
+          } catch (streamError) {
+            // Catch DB / checkpoint errors that bubble up from the LangGraph stream
+            // (e.g. Supabase circuit-breaker, connection pool exhaustion).
+            // Instead of crashing the process, yield a clean failure event.
             console.error(
-              "[agent-runtime] Failed to persist silent-abort run failure:",
-              persistErr,
-            ),
-          );
-          yield failedEvent;
-          return;
+              "[agent-runtime] Stream iteration failed:",
+              streamError,
+            );
+            const failedEvent = toFailedEvent(runId, now, streamError);
+            run.status = "failed";
+            await updatePersistedRunFailure(
+              options.agentRunMetadataService,
+              run,
+              now,
+              streamError,
+            ).catch((persistErr) =>
+              console.error(
+                "[agent-runtime] Failed to persist run failure:",
+                persistErr,
+              ),
+            );
+            yield failedEvent;
+            return;
+          }
+
+          // 流静默结束（无终态事件）：billing 门中止是已知路径（abort 后适配器不发
+          // 事件）。这里补发 run.failed——持久化失败终态，并让 WS 重试判定拿到
+          // 失败文案（额度不足命中永久性失败模式，不再连环重试）。
+          if (suppressCompletedForContinuation) {
+            suppressCompletedForContinuation = false;
+            // 续轮：附件映射随首轮消息已进 thread 历史，无需重带
+            stream = agent.streamEvents(
+              {
+                messages: [new HumanMessage(continuationInput ?? "")],
+              },
+              {
+                ...(run.threadId ||
+                run.canvasId ||
+                run.accessToken ||
+                run.userId
+                  ? {
+                      configurable: {
+                        ...(run.threadId ? { thread_id: run.threadId } : {}),
+                        ...(run.canvasId ? { canvas_id: run.canvasId } : {}),
+                        ...(run.accessToken
+                          ? { access_token: run.accessToken }
+                          : {}),
+                        ...(run.userId ? { user_id: run.userId } : {}),
+                      },
+                    }
+                  : {}),
+                signal: run.controller.signal,
+                version: "v2",
+              },
+            );
+            continue;
+          }
+          if (!sawTerminalEvent && run.status === "running") {
+            // error.code 是封闭枚举（shared/errors.ts），billing 细节留在 billing.error
+            // 事件里；这里统一 run_failed，可读原因由 message 承载。
+            const message =
+              run.billingFailure?.message ??
+              "运行被中止且未产生结束事件（无终态事件）。";
+            const failedEvent: StreamEvent = {
+              error: { code: "run_failed", message },
+              runId,
+              timestamp: now(),
+              type: "run.failed",
+            };
+            run.status = "failed";
+            await updatePersistedRunFailure(
+              options.agentRunMetadataService,
+              run,
+              now,
+              new Error(message),
+            ).catch((persistErr) =>
+              console.error(
+                "[agent-runtime] Failed to persist silent-abort run failure:",
+                persistErr,
+              ),
+            );
+            yield failedEvent;
+            return;
+          }
+          break;
         }
       } finally {
+        // 后台/前台子代理兜底清理（DEC-15）：run 终态后不允许子代理再存活
+        backgroundTaskRegistry?.abortAll("本轮 run 已结束");
         // DEC-1：turn 收尾（成功/失败/取消）发射 turn-stopping，用量等插件据此结算
         if (options.emitTurnStopping) {
           try {

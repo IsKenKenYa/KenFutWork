@@ -1,5 +1,5 @@
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
-import { AIMessage, ToolMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ChatVertexAI } from "@langchain/google-vertexai";
 import { isCommand } from "@langchain/langgraph";
@@ -8,8 +8,16 @@ import type {
   BaseStore,
 } from "@langchain/langgraph-checkpoint";
 import { ChatOpenAI } from "@langchain/openai";
-import { createDeepAgent, createSummarizationMiddleware } from "deepagents";
-import { type AgentMiddleware, todoListMiddleware } from "langchain";
+import {
+  createDeepAgent,
+  createFilesystemMiddleware,
+  createSummarizationMiddleware,
+} from "deepagents";
+import {
+  type AgentMiddleware,
+  createAgent,
+  todoListMiddleware,
+} from "langchain";
 import {
   DEFAULT_AGENT_MODEL,
   DEFAULT_GOOGLE_AGENT_MODEL,
@@ -31,7 +39,12 @@ import {
 } from "./backends/index.js";
 import { bridgeKernelTools } from "./kernel-tools-bridge.js";
 import { KENFUTWORK_SYSTEM_PROMPT } from "./prompts/kenfutwork-main.js";
-import { declaredSubAgentSpecs } from "./sub-agents.js";
+import { resolveSubagentDefinitions } from "./subagent-definitions.js";
+import {
+  createSubagentTaskTools,
+  type SubagentChildRunner,
+} from "./subagent-tools.js";
+import { createTaskNotificationMiddleware } from "./task-notifications.js";
 import type {
   PersistImageFn,
   SubmitImageJobFn,
@@ -284,6 +297,15 @@ export type KenFutWorkAgentFactory = (options: {
    * 用回调而不是返回值：调用方（runtime）拿的是 agent 对象，工具清单只在装配期有。
    */
   onToolInventory?: (tools: readonly unknown[]) => void;
+  /**
+   * 子代理派发缝（DEC-14/15/16）：注册表由 runtime 按 run 创建（并发上限来自治理设置）。
+   * 传入即挂 task / task_background / task_output 三工具与后台通知中间件；
+   * 缺席（部分装配/测试）则完全不出现派发能力。
+   */
+  backgroundTasks?: {
+    registry: import("./background-tasks.js").BackgroundTaskRegistry;
+    preset: "design" | "code";
+  };
 }) => KenFutWorkAgent;
 
 export function createKenFutWorkDeepAgent(options: {
@@ -324,6 +346,11 @@ export function createKenFutWorkDeepAgent(options: {
    * 用回调而不是返回值：调用方（runtime）拿到的是 agent 对象，工具清单只在装配期有。
    */
   onToolInventory?: (tools: readonly unknown[]) => void;
+  /** 子代理派发缝（DEC-14/15/16），同 {@link KenFutWorkAgentFactory.backgroundTasks}。 */
+  backgroundTasks?: {
+    registry: import("./background-tasks.js").BackgroundTaskRegistry;
+    preset: "design" | "code";
+  };
 }): KenFutWorkAgent {
   const backendResult =
     options.backendResult ?? createAgentBackend(options.env, options.canvasId);
@@ -413,6 +440,94 @@ export function createKenFutWorkDeepAgent(options: {
     ),
   ];
 
+  /**
+   * 子代理派发缝（DEC-14/15/16）：后台任务注册表在传入时挂三件套——
+   * task（前台并行）、task_background（后台 + 通知）、task_output（结果查询）。
+   * 子代理按定义经 createAgent 组装：模型同父、工具按定义白名单拾取、
+   * 只读定义挂文件工具白名单中间件（结构性无 execute）；子代理不挂任何
+   * 派发工具——深度上限 1 是结构性的（DEC-17）。
+   */
+  let subagentMiddleware: AgentMiddleware[] = [];
+  if (options.backgroundTasks) {
+    const { registry, preset } = options.backgroundTasks;
+    const parentToolsByName = new Map(
+      tools.map((candidate) => [candidate.name, candidate]),
+    );
+    const childRunner: SubagentChildRunner = async ({
+      definition,
+      description,
+      signal,
+    }) => {
+      const picked = definition.tools
+        .map((name) => parentToolsByName.get(name))
+        .filter((candidate): candidate is NonNullable<typeof candidate> =>
+          Boolean(candidate),
+        );
+      const middleware: AgentMiddleware[] = definition.filesystemTools?.length
+        ? [
+            createFilesystemMiddleware({
+              backend: backendResult.factory,
+              // 允许清单即白名单：read_file 必带；execute 不在列表 = 只读子代理无执行能力
+              tools: [...definition.filesystemTools],
+            }) as unknown as AgentMiddleware,
+          ]
+        : [];
+      const child = createAgent({
+        model: resolvedModel,
+        name: definition.name,
+        systemPrompt: definition.systemPrompt,
+        tools: picked,
+        middleware,
+      });
+      const result = (await child.invoke(
+        { messages: [new HumanMessage(description)] },
+        {
+          signal,
+          // 事件归因（DEC-19）：stream-adapter 按 lc_agent_name 区分子代理事件
+          metadata: { lc_agent_name: definition.name },
+          configurable: { ls_agent_type: "subagent" },
+        },
+      )) as { messages?: Array<{ content: unknown; getType?: () => string }> };
+      const messages = result?.messages ?? [];
+      const lastAi = [...messages]
+        .reverse()
+        .find((message) => message.getType?.() === "ai");
+      const content = lastAi?.content;
+      const text =
+        typeof content === "string"
+          ? content
+          : Array.isArray(content)
+            ? content
+                .filter(
+                  (part): part is { text: string } =>
+                    typeof part === "object" &&
+                    part !== null &&
+                    typeof (part as { text?: unknown }).text === "string",
+                )
+                .map((part) => part.text)
+                .join("\n")
+            : "";
+      if (!text.trim()) {
+        throw new Error("子代理结束但没有产出任何结论");
+      }
+      return text;
+    };
+
+    const dispatchTools = createSubagentTaskTools({
+      registry,
+      definitions: resolveSubagentDefinitions(preset),
+      childRunner,
+    });
+    tools.push(
+      dispatchTools.taskTool as never,
+      dispatchTools.taskBackgroundTool as never,
+      dispatchTools.taskOutputTool as never,
+    );
+    subagentMiddleware = [
+      createTaskNotificationMiddleware(registry) as unknown as AgentMiddleware,
+    ];
+  }
+
   options.onToolInventory?.(tools);
 
   /**
@@ -435,14 +550,20 @@ export function createKenFutWorkDeepAgent(options: {
       ]
     : [];
 
+  // 后台任务通知（DEC-15）：每次模型调用前注入已结算未消费的通知
+  const notificationMiddleware = options.backgroundTasks
+    ? subagentMiddleware
+    : [];
+
   return createDeepAgent({
     backend: backendResult.factory,
     ...(options.checkpointer ? { checkpointer: options.checkpointer } : {}),
     model: resolvedModel,
     name: "kenfutwork",
     ...(options.store ? { store: options.store } : {}),
-    // 与设置页「子智能体」同一份清单（见 sub-agents.ts），界面与装配不允许漂移
-    subagents: declaredSubAgentSpecs(options.availableVideoModels ?? []),
+    // 子代理派发改走自有 task/task_background 工具（DEC-14/15，见 backgroundTasks）：
+    // 不再传 deepagents 的 `subagents:` —— 内置 task 的 2 字段 schema、同步阻塞与
+    // 固定装配满足不了后台化与目录治理，自建缝声明/装配/消费三元组齐备。
     systemPrompt,
     // 待办表（`write_todos`）：deepagents 只在它的 Codex profile 里挂 todoListMiddleware，
     // 非 Codex 模型默认**没有这个工具**——不挂的话「目标 + 进度」面板永远没有数据源，
@@ -456,6 +577,7 @@ export function createKenFutWorkDeepAgent(options: {
       ? {
           middleware: [
             ...summarizationMiddleware,
+            ...notificationMiddleware,
             todoListMiddleware() as unknown as AgentMiddleware,
             createToolErrorGuardMiddleware(),
             createModelResponseGuardMiddleware(),
@@ -466,6 +588,7 @@ export function createKenFutWorkDeepAgent(options: {
       : {
           middleware: [
             ...summarizationMiddleware,
+            ...notificationMiddleware,
             todoListMiddleware() as unknown as AgentMiddleware,
             createToolErrorGuardMiddleware(),
             createModelResponseGuardMiddleware(),
