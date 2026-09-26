@@ -1,6 +1,8 @@
 import {
   applicationErrorResponseSchema,
   unauthenticatedErrorResponseSchema,
+  voiceModelListResponseSchema,
+  voiceModelResponseSchema,
   voiceSettingsResponseSchema,
   voiceSettingsUpdateRequestSchema,
   voiceTranscribeResponseSchema,
@@ -9,6 +11,10 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import { VoiceAudioError } from "../features/voice/audio.js";
+import {
+  VoiceModelError,
+  type VoiceModelStore,
+} from "../features/voice/model-store.js";
 import {
   type VoiceService,
   VoiceUnavailableError,
@@ -41,8 +47,105 @@ export async function registerVoiceRoutes(
     auth: RequestAuthenticator;
     voiceService: VoiceService;
     viewerService: ViewerService;
+    /**
+     * 内置模型的下载 / 删除（规划 §5）。缺席时只提供目录与设置读写
+     * ——"未装"要表现在路由不存在（404）而不是给个会炸的假接口。
+     */
+    modelStore?: VoiceModelStore;
   },
 ) {
+  const { modelStore } = options;
+
+  /** 单条候选（下载 / 取消 / 删除后回的那条）。 */
+  async function findCandidate(
+    user: Awaited<ReturnType<RequestAuthenticator["authenticate"]>>,
+    modelId: string,
+  ) {
+    if (!user) throw new VoiceUnavailableError("未认证。");
+    const models = await options.voiceService.listCandidates(user);
+    const candidate = models.find(
+      (item) => item.kind === "builtin" && item.id === modelId,
+    );
+    if (!candidate) {
+      throw new VoiceModelError(`未知的内置模型：${modelId}`);
+    }
+    return candidate;
+  }
+
+  if (modelStore) {
+    const store = modelStore;
+
+    app.get("/api/voice/models", async (request, reply) => {
+      try {
+        const user = await options.auth.authenticate(request);
+        if (!user) return sendUnauthorized(reply);
+        const models = await options.voiceService.listCandidates(user);
+        return reply
+          .code(200)
+          .send(voiceModelListResponseSchema.parse({ models }));
+      } catch (error) {
+        return sendVoiceError(error, reply);
+      }
+    });
+
+    // 下载是文件系统副作用但可重放（校验和不匹配即失败且不留半截文件），
+    // 故允许重试；接口立刻回 202，进度由前端轮询 GET /api/voice/models。
+    app.post<{ Params: { modelId: string } }>(
+      "/api/voice/models/:modelId/download",
+      async (request, reply) => {
+        try {
+          const user = await options.auth.authenticate(request);
+          if (!user) return sendUnauthorized(reply);
+          // **先校验再动手**：路由自己挡住未知/非内置 id，不把「能不能下」这件事
+          // 交给 store 的副作用路径去发现（那里的失败发生在已经开下载之后）
+          const candidate = await findCandidate(user, request.params.modelId);
+          await store.start(request.params.modelId);
+          const download = await store.getState(request.params.modelId);
+          return reply.code(202).send(
+            voiceModelResponseSchema.parse({
+              model: { ...candidate, download },
+            }),
+          );
+        } catch (error) {
+          return sendVoiceError(error, reply);
+        }
+      },
+    );
+
+    app.delete<{ Params: { modelId: string } }>(
+      "/api/voice/models/:modelId/download",
+      async (request, reply) => {
+        try {
+          const user = await options.auth.authenticate(request);
+          if (!user) return sendUnauthorized(reply);
+          store.cancel(request.params.modelId);
+          const model = await findCandidate(user, request.params.modelId);
+          return reply
+            .code(200)
+            .send(voiceModelResponseSchema.parse({ model }));
+        } catch (error) {
+          return sendVoiceError(error, reply);
+        }
+      },
+    );
+
+    app.delete<{ Params: { modelId: string } }>(
+      "/api/voice/models/:modelId",
+      async (request, reply) => {
+        try {
+          const user = await options.auth.authenticate(request);
+          if (!user) return sendUnauthorized(reply);
+          await store.remove(request.params.modelId);
+          const model = await findCandidate(user, request.params.modelId);
+          return reply
+            .code(200)
+            .send(voiceModelResponseSchema.parse({ model }));
+        } catch (error) {
+          return sendVoiceError(error, reply);
+        }
+      },
+    );
+  }
   app.get("/api/voice/settings", async (request, reply) => {
     try {
       const user = await options.auth.authenticate(request);
@@ -172,6 +275,9 @@ function sendVoiceError(error: unknown, reply: FastifyReply) {
     );
   }
   if (error instanceof VoiceAudioError) {
+    return sendInvalidInput(reply, error.message);
+  }
+  if (error instanceof VoiceModelError) {
     return sendInvalidInput(reply, error.message);
   }
   return reply.code(500).send(

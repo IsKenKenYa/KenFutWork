@@ -2,7 +2,7 @@ import type { VoiceSelection } from "@kenfutwork/shared";
 import { describe, expect, it, vi } from "vitest";
 
 import { decodeWav, encodeWav } from "./audio.js";
-import { SILERO_VAD } from "./builtin-models.js";
+import { SILERO_VAD_MODEL } from "./catalog.js";
 import type { VoiceProvider, VoiceTranscriber } from "./types.js";
 import {
   createVoiceService,
@@ -200,7 +200,7 @@ describe("voice 服务：听段解析", () => {
 describe("voice 服务：Provider 缓存口径", () => {
   it("内置 Provider 缓存：两次解析只构造一次（两百兆模型不能每轮重建）", async () => {
     const { factory, calls } = providerFactory((selection) =>
-      selection.id === SILERO_VAD.id
+      selection.id === SILERO_VAD_MODEL.id
         ? {
             id: "vad",
             label: "vad",
@@ -292,7 +292,7 @@ describe("voice 服务：静音掐头去尾（内部优化，不参与可用性�
       deps({
         voice: { listen: { kind: "builtin", id: "sensevoice-small-int8" } },
         createBuiltinProvider: (selection) =>
-          selection.id === SILERO_VAD.id
+          selection.id === SILERO_VAD_MODEL.id
             ? vadProvider([])
             : listenProvider(spy),
       }),
@@ -313,7 +313,7 @@ describe("voice 服务：静音掐头去尾（内部优化，不参与可用性�
       deps({
         voice: { listen: { kind: "builtin", id: "sensevoice-small-int8" } },
         createBuiltinProvider: (selection) =>
-          selection.id === SILERO_VAD.id
+          selection.id === SILERO_VAD_MODEL.id
             ? // 1 秒素材里只有 0.25s–0.5s 是话音
               vadProvider([[4_000, 8_000]])
             : listenProvider(spy),
@@ -336,7 +336,7 @@ describe("voice 服务：静音掐头去尾（内部优化，不参与可用性�
       deps({
         voice: { listen: { kind: "builtin", id: "sensevoice-small-int8" } },
         createBuiltinProvider: (selection) =>
-          selection.id === SILERO_VAD.id
+          selection.id === SILERO_VAD_MODEL.id
             ? vadProvider([], false)
             : listenProvider(spy),
       }),
@@ -384,5 +384,150 @@ describe("voice 服务：设置读写", () => {
       id: "sensevoice-small-int8",
     });
     expect(settings.speakReplies).toBe(false);
+  });
+});
+
+describe("voice 服务：候选目录（三段卡片）", () => {
+  function withInstances(
+    instances: Array<{
+      id: string;
+      name: string;
+      enabled: boolean;
+      models: Array<{
+        id: string;
+        name: string;
+        capability: string;
+        enabled?: boolean;
+      }>;
+    }>,
+    modelState?: {
+      state: "ready" | "missing" | "downloading";
+      downloadedBytes: number;
+      totalBytes: number;
+    },
+  ) {
+    return deps({
+      modelProviders: { listInstances: async () => instances } as never,
+      ...(modelState
+        ? {
+            modelStore: {
+              getState: async () => modelState,
+              start: async () => modelState,
+              cancel: () => undefined,
+              remove: async () => undefined,
+            },
+          }
+        : {}),
+    });
+  }
+
+  it("内置候选带上体积与下载状态；VAD 不进选择器（它是内部优化）", async () => {
+    const service = createVoiceService(
+      withInstances([], {
+        state: "missing",
+        downloadedBytes: 0,
+        totalBytes: 239_549_735,
+      }),
+    );
+    const models = await service.listCandidates(USER, "listen");
+    expect(models).toHaveLength(1);
+    const [builtin] = models;
+    expect(builtin?.id).toBe("sensevoice-small-int8");
+    expect(builtin?.kind).toBe("builtin");
+    expect(builtin?.needsDownload).toBe(true);
+    expect(builtin?.sizeBytes).toBeGreaterThan(200 * 1024 * 1024);
+    expect(builtin?.download.state).toBe("missing");
+    expect(builtin?.license).toBeTruthy();
+    expect(models.some((item) => item.id === "silero-vad")).toBe(false);
+  });
+
+  it("下载中/就绪的状态原样透出（前端靠它出进度条与删除按钮）", async () => {
+    const downloading = createVoiceService(
+      withInstances([], {
+        state: "downloading",
+        downloadedBytes: 1_024,
+        totalBytes: 2_048,
+      }),
+    );
+    const [entry] = await downloading.listCandidates(USER, "listen");
+    expect(entry?.download).toMatchObject({
+      state: "downloading",
+      downloadedBytes: 1_024,
+    });
+  });
+
+  it("实例候选按段取能力：听/说取 audio，想取 chat（一个实例两类都算候选）", async () => {
+    const service = createVoiceService(
+      withInstances([
+        {
+          id: "inst-1",
+          name: "我的网关",
+          enabled: true,
+          models: [
+            { id: "whisper-1", name: "Whisper", capability: "audio" },
+            { id: "tts-1", name: "TTS", capability: "audio" },
+            { id: "glm-5", name: "GLM", capability: "chat" },
+            { id: "dall-e", name: "DALL·E", capability: "image" },
+            {
+              id: "off",
+              name: "停用模型",
+              capability: "audio",
+              enabled: false,
+            },
+          ],
+        },
+      ]),
+    );
+
+    const listen = await service.listCandidates(USER, "listen");
+    expect(
+      listen
+        .filter((item) => item.kind === "instance")
+        .map((item) => item.model),
+    ).toEqual(["whisper-1", "tts-1"]);
+    // image 能力不进语音候选；停用的模型行也不进
+    expect(listen.some((item) => item.model === "dall-e")).toBe(false);
+    expect(listen.some((item) => item.model === "off")).toBe(false);
+
+    const think = await service.listCandidates(USER, "think");
+    expect(
+      think
+        .filter((item) => item.kind === "instance")
+        .map((item) => item.model),
+    ).toEqual(["glm-5"]);
+    // 想段目前没有内置档（离线 GGUF 需要额外推理运行时，见 catalog 注释）
+    expect(think.some((item) => item.kind === "builtin")).toBe(false);
+  });
+
+  it("实例停用：候选仍在但带不可选原因（不摆空壳，也不静默消失）", async () => {
+    const service = createVoiceService(
+      withInstances([
+        {
+          id: "inst-1",
+          name: "停用的网关",
+          enabled: false,
+          models: [{ id: "whisper-1", name: "Whisper", capability: "audio" }],
+        },
+      ]),
+    );
+    const models = await service.listCandidates(USER, "listen");
+    // [0] 是内置候选，实例候选要按 kind 找
+    const instance = models.find((item) => item.kind === "instance");
+    expect(instance?.unavailableReason).toContain("已停用");
+    expect(instance?.model).toBe("whisper-1");
+  });
+
+  it("实例查询失败：不该把整个目录打崩（回内置候选）", async () => {
+    const service = createVoiceService(
+      deps({
+        modelProviders: {
+          listInstances: async () => {
+            throw new Error("db down");
+          },
+        } as never,
+      }),
+    );
+    const models = await service.listCandidates(USER, "listen");
+    expect(models.map((item) => item.id)).toEqual(["sensevoice-small-int8"]);
   });
 });

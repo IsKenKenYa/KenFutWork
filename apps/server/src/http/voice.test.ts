@@ -3,6 +3,7 @@ import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
 
 import { encodeWav, VoiceAudioError } from "../features/voice/audio.js";
+import { VoiceModelError } from "../features/voice/model-store.js";
 import type { VoiceTranscriber } from "../features/voice/types.js";
 import { VoiceUnavailableError } from "../features/voice/voice-service.js";
 import { registerVoiceRoutes } from "./voice.js";
@@ -24,8 +25,44 @@ function buildApp(
     audioError?: string;
     /** 无 token 场景。 */
     unauthenticated?: boolean;
+    /** 挂上模型下载路由（不挂时应为 404）。 */
+    withModelStore?: boolean;
+    /** start 抛「未知模型」。 */
+    unknownModelStart?: boolean;
   } = {},
 ) {
+  const started: string[] = [];
+  const cancelled: string[] = [];
+  const removed: string[] = [];
+  /** 目录候选：一条内置（未下载）+ 一条实例端点。 */
+  const candidates = () => [
+    {
+      id: "sensevoice-small-int8",
+      segment: "listen" as const,
+      label: "SenseVoice Small（int8）",
+      kind: "builtin" as const,
+      location: "cpu" as const,
+      sizeBytes: 239_549_735,
+      needsDownload: true,
+      download: {
+        state: "missing" as const,
+        downloadedBytes: 0,
+        totalBytes: 239_549_735,
+      },
+      license: "FunASR Model License",
+    },
+    {
+      id: "inst-1",
+      segment: "listen" as const,
+      label: "我的网关 · whisper-1",
+      kind: "instance" as const,
+      location: "remote" as const,
+      model: "whisper-1",
+      sizeBytes: 0,
+      needsDownload: false,
+      download: { state: "ready" as const, downloadedBytes: 0, totalBytes: 0 },
+    },
+  ];
   const transcribeSpy = vi.fn(async () => {
     if (options.audioError) throw new VoiceAudioError(options.audioError);
     return { text: options.text ?? "打开设置页" };
@@ -81,13 +118,45 @@ function buildApp(
         }
         return { impl: transcriber, label: "内置（本机 CPU）" };
       },
+      listCandidates: async () => candidates(),
     } as never,
+    ...(options.withModelStore
+      ? {
+          modelStore: {
+            getState: async () => ({
+              state: "missing" as const,
+              downloadedBytes: 0,
+              totalBytes: 1_024,
+            }),
+            start: async (modelId: string) => {
+              started.push(modelId);
+              if (options.unknownModelStart) {
+                throw new VoiceModelError(`未知的内置模型：${modelId}`);
+              }
+              return {
+                state: "downloading" as const,
+                downloadedBytes: 0,
+                totalBytes: 1_024,
+              };
+            },
+            cancel: (modelId: string) => {
+              cancelled.push(modelId);
+            },
+            remove: async (modelId: string) => {
+              removed.push(modelId);
+            },
+          },
+        }
+      : {}),
   });
   return {
     app,
     transcribeSpy,
     receivedPatch: () => receivedPatch,
     settingsReads: () => receivedSettingsReads,
+    started,
+    cancelled,
+    removed,
   };
 }
 
@@ -343,6 +412,159 @@ describe("GET/PUT /api/voice/settings", () => {
           voice: "alloy",
         },
       });
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+describe("/api/voice/models（目录 / 下载 / 取消 / 删除）", () => {
+  it("未挂下载器时整组路由不存在（404，而不是会炸的假接口）", async () => {
+    const { app } = buildApp();
+    try {
+      expect(
+        (await app.inject({ method: "GET", url: "/api/voice/models" }))
+          .statusCode,
+      ).toBe(404);
+      expect(
+        (
+          await app.inject({
+            method: "POST",
+            url: "/api/voice/models/sensevoice-small-int8/download",
+            headers: { authorization: "Bearer tok" },
+          })
+        ).statusCode,
+      ).toBe(404);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("GET 目录：内置候选带下载状态与体积，实例候选标记零下载", async () => {
+    const { app } = buildApp({ withModelStore: true });
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/voice/models",
+        headers: { authorization: "Bearer tok" },
+      });
+      expect(response.statusCode).toBe(200);
+      const models = response.json().models as Array<Record<string, unknown>>;
+      expect(models).toHaveLength(2);
+      const builtin = models.find((item) => item.kind === "builtin");
+      expect(builtin?.sizeBytes).toBeGreaterThan(0);
+      expect(builtin?.needsDownload).toBe(true);
+      expect(builtin?.download).toMatchObject({ state: "missing" });
+      const instance = models.find((item) => item.kind === "instance");
+      expect(instance?.needsDownload).toBe(false);
+      expect(instance?.model).toBe("whisper-1");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("POST 下载：202 + 状态，且真的调了 store", async () => {
+    const { app, started } = buildApp({ withModelStore: true });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/voice/models/sensevoice-small-int8/download",
+        headers: { authorization: "Bearer tok" },
+      });
+      expect(response.statusCode).toBe(202);
+      expect(started).toEqual(["sensevoice-small-int8"]);
+      expect(response.json().model.id).toBe("sensevoice-small-int8");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("POST 未知模型：400 invalid_input（store 的拒绝原样透出，不变成 500）", async () => {
+    const { app } = buildApp({
+      withModelStore: true,
+      unknownModelStart: true,
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/voice/models/ghost/download",
+        headers: { authorization: "Bearer tok" },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error.code).toBe("invalid_input");
+      expect(response.json().error.message).toContain("未知的内置模型");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("DELETE 下载：取消；DELETE 模型：删除（两条路径各自落到 store）", async () => {
+    const { app, cancelled, removed } = buildApp({ withModelStore: true });
+    try {
+      const cancel = await app.inject({
+        method: "DELETE",
+        url: "/api/voice/models/sensevoice-small-int8/download",
+        headers: { authorization: "Bearer tok" },
+      });
+      expect(cancel.statusCode).toBe(200);
+      expect(cancelled).toEqual(["sensevoice-small-int8"]);
+
+      const remove = await app.inject({
+        method: "DELETE",
+        url: "/api/voice/models/sensevoice-small-int8",
+        headers: { authorization: "Bearer tok" },
+      });
+      expect(remove.statusCode).toBe(200);
+      expect(removed).toEqual(["sensevoice-small-int8"]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("实例候选不能被当内置模型下载（findCandidate 只认 builtin）", async () => {
+    const { app, started } = buildApp({ withModelStore: true });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/voice/models/inst-1/download",
+        headers: { authorization: "Bearer tok" },
+      });
+      // store 先拒（未知内置模型），故 400；无论如何都不会去动实例
+      expect(response.statusCode).toBe(400);
+      expect(started).toEqual([]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("模型路由同样要鉴权（无 token 401，不触达 store）", async () => {
+    const { app, started, removed } = buildApp({
+      withModelStore: true,
+      unauthenticated: true,
+    });
+    try {
+      expect(
+        (await app.inject({ method: "GET", url: "/api/voice/models" }))
+          .statusCode,
+      ).toBe(401);
+      expect(
+        (
+          await app.inject({
+            method: "POST",
+            url: "/api/voice/models/sensevoice-small-int8/download",
+          })
+        ).statusCode,
+      ).toBe(401);
+      expect(
+        (
+          await app.inject({
+            method: "DELETE",
+            url: "/api/voice/models/sensevoice-small-int8",
+          })
+        ).statusCode,
+      ).toBe(401);
+      expect(started).toEqual([]);
+      expect(removed).toEqual([]);
     } finally {
       await app.close();
     }

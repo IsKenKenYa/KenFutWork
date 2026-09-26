@@ -1,6 +1,7 @@
 import { registerVoiceRoutes } from "../../http/voice.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import { resolveVoiceModelsRoot } from "./builtin-models.js";
+import { createVoiceModelStore, type VoiceModelStore } from "./model-store.js";
 import { createVoiceRepository } from "./repository.js";
 import { createVoiceService } from "./voice-service.js";
 
@@ -18,16 +19,27 @@ import { createVoiceService } from "./voice-service.js";
 export function createVoicePlugin(
   options: { modelsRoot?: string } = {},
 ): PluginDefinition {
+  /**
+   * 下载器在 `apply` 里建、在 `mounted` 里用（compose 保证同插件的 apply 先于
+   * mounted）：**服务与路由必须共用同一个实例**，否则下载进度状态对不上
+   * （一个是「下载中」、另一个说「未下载」）。它是插件内部件而非可替换能力，
+   * 故不进 ctx key 表（那张表只登记能力缝）。
+   */
+  let modelStore: VoiceModelStore | undefined;
+
   return {
     name: "voice",
     inject: ["auth", "modelProviders", "persistence", "viewer"],
     apply(ctx) {
       const modelsRoot = options.modelsRoot ?? resolveVoiceModelsRoot(ctx.env);
+      const store = createVoiceModelStore({ modelsRoot });
+      modelStore = store;
       ctx.register("voice", (deps) =>
         createVoiceService({
           repository: createVoiceRepository(deps.get("persistence")),
           modelProviders: deps.get("modelProviders"),
           modelsRoot,
+          modelStore: store,
         }),
       );
     },
@@ -36,6 +48,7 @@ export function createVoicePlugin(
         auth: ctx.get("auth"),
         voiceService: ctx.get("voice"),
         viewerService: ctx.get("viewer"),
+        ...(modelStore ? { modelStore } : {}),
       });
     },
   };

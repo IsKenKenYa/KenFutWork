@@ -9,7 +9,9 @@
  *   可能刚被用户改过，缓存会把改动静默吞掉。
  */
 
+import { join } from "node:path";
 import type {
+  VoiceModelCandidate,
   VoiceSelection,
   VoiceSettings,
   VoiceSettingsUpdateRequest,
@@ -21,10 +23,15 @@ import { decodeWav, encodeWav, floatToPcm16Array } from "./audio.js";
 import {
   isValidBuiltinModelId,
   resolveBuiltinModelDir,
-  SENSE_VOICE_SMALL_INT8,
-  SILERO_VAD,
 } from "./builtin-models.js";
-import { createSherpaProvider } from "./providers/sherpa.js";
+import {
+  BUILTIN_VOICE_MODELS,
+  builtinModelSizeBytes,
+  findBuiltinModel,
+  SILERO_VAD_MODEL,
+} from "./catalog.js";
+import type { VoiceModelStore } from "./model-store.js";
+import { createSherpaProvider, type SherpaModels } from "./providers/sherpa.js";
 import type { VoiceRepository } from "./repository.js";
 import type {
   VoiceActivityDetector,
@@ -56,6 +63,8 @@ export interface VoiceServiceDeps {
   modelProviders: ModelProviderService;
   /** 内置模型根目录（`~/.kenfutwork/models` 或桌面数据目录下）。 */
   modelsRoot: string;
+  /** 内置模型下载状态（候选卡片要显示「未下载 / 下载中 / 就绪」）。 */
+  modelStore?: VoiceModelStore;
   /** 测试注入：内置 Provider 工厂（默认走 sherpa）。 */
   createBuiltinProvider?: (selection: VoiceSelection) => VoiceProvider;
 }
@@ -75,6 +84,14 @@ export interface VoiceService {
     user: AuthenticatedUser,
     workspaceId: string,
   ): Promise<ResolvedSegment<VoiceTranscriber>>;
+  /**
+   * 三段的候选卡片（规划 §5）：内置离线模型（含下载状态）+ 该用户自己的音频/对话
+   * 模型实例。**只列真能用的**：不可用的带 `unavailableReason` 置灰并写明原因。
+   */
+  listCandidates(
+    user: AuthenticatedUser,
+    segment?: "listen" | "think" | "speak",
+  ): Promise<VoiceModelCandidate[]>;
 }
 
 export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
@@ -110,9 +127,17 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
         `「${segmentLabel}」选择的内置模型 id 非法：${selection.id}`,
       );
     }
-    if (segment === "listen" && selection.id !== SENSE_VOICE_SMALL_INT8.id) {
+    const builtin = findBuiltinModel(selection.id);
+    if (!builtin || builtin.segment !== segment) {
+      const available = BUILTIN_VOICE_MODELS.filter(
+        (model) => model.segment === segment,
+      )
+        .map((model) => model.id)
+        .join("、");
       throw new VoiceUnavailableError(
-        `「${segmentLabel}」不支持的内置模型：${selection.id}（可用：${SENSE_VOICE_SMALL_INT8.id}）`,
+        `「${segmentLabel}」不支持的内置模型：${selection.id}${
+          available ? `（可用：${available}）` : "（该段目前没有内置模型）"
+        }`,
       );
     }
     return builtinProvider(selection);
@@ -204,6 +229,80 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
         label: provider.label,
       };
     },
+
+    async listCandidates(user, segment) {
+      const targets: Array<"listen" | "think" | "speak"> = segment
+        ? [segment]
+        : ["listen", "think", "speak"];
+
+      // 内置离线模型：只列与目标段匹配的（VAD 是内部优化，不进选择器）
+      const builtin: VoiceModelCandidate[] = [];
+      for (const model of BUILTIN_VOICE_MODELS) {
+        if (model.segment === "vad" || !targets.includes(model.segment)) {
+          continue;
+        }
+        const sizeBytes = builtinModelSizeBytes(model);
+        const state = await deps.modelStore?.getState(model.id);
+        builtin.push({
+          id: model.id,
+          segment: model.segment,
+          label: model.label,
+          kind: "builtin",
+          location: "cpu",
+          sizeBytes,
+          needsDownload: true,
+          download: {
+            state: state?.state ?? "missing",
+            downloadedBytes: state?.downloadedBytes ?? 0,
+            totalBytes: state?.totalBytes ?? sizeBytes,
+            ...(state?.error ? { error: state.error } : {}),
+          },
+          performanceNote:
+            "预估：本机 CPU 转写实时率约 0.1–0.3（下载后由检测换成实测）",
+          license: model.license,
+        });
+      }
+
+      /**
+       * 实例候选（零下载的在线档）：听/说用 `audio` 能力的模型，想用 `chat` 模型
+       * ——一个实例可能两类都有（whisper-1 与 tts-1 各算一条候选）。
+       */
+      const instances = await deps.modelProviders
+        .listInstances(user)
+        .catch(() => []);
+      const instanceCandidates: VoiceModelCandidate[] = [];
+      for (const target of targets) {
+        const capability = target === "think" ? "chat" : "audio";
+        for (const instance of instances) {
+          for (const model of instance.models) {
+            if (model.enabled === false || model.capability !== capability) {
+              continue;
+            }
+            instanceCandidates.push({
+              id: instance.id,
+              segment: target,
+              label: `${instance.name} · ${model.name}`,
+              kind: "instance",
+              location: "remote",
+              model: model.id,
+              sizeBytes: 0,
+              needsDownload: false,
+              download: {
+                state: "ready",
+                downloadedBytes: 0,
+                totalBytes: 0,
+              },
+              performanceNote: "延迟取决于端点（检测可实测）",
+              ...(instance.enabled
+                ? {}
+                : { unavailableReason: "该供应商实例已停用" }),
+            });
+          }
+        }
+      }
+
+      return [...builtin, ...instanceCandidates];
+    },
   };
 
   /**
@@ -211,7 +310,10 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
    * 它不参与「能力是否可用」的判定——VAD 缺席时照常转写，只是少了掐头去尾。
    */
   async function resolveVad(): Promise<VoiceActivityDetector | undefined> {
-    const provider = builtinProvider({ kind: "builtin", id: SILERO_VAD.id });
+    const provider = builtinProvider({
+      kind: "builtin",
+      id: SILERO_VAD_MODEL.id,
+    });
     const vad = provider.vad;
     if (!vad) {
       return undefined;
@@ -261,20 +363,27 @@ function withSilenceTrim(
   };
 }
 
-/** 内置 Provider 组装：听用 SenseVoice，VAD 用 silero（同目录布局）。 */
+/**
+ * 内置 Provider 组装：从目录表取该模型的文件布局，把相对路径拼到模型目录上。
+ * 听与 VAD 装在**同一个** provider 里（同一次 dlopen、同一份模块结论），
+ * 这也是 VAD 能作为「内部优化」静默参与的原因。
+ */
 function createBuiltinProviderFromModelsRoot(
   modelsRoot: string,
   selection: VoiceSelection,
 ): VoiceProvider {
-  const listenDir = resolveBuiltinModelDir(modelsRoot, selection.id);
-  const vadDir = resolveBuiltinModelDir(modelsRoot, SILERO_VAD.id);
-  return createSherpaProvider({
-    models: {
-      asr: {
-        model: `${listenDir}/${SENSE_VOICE_SMALL_INT8.files.model}`,
-        tokens: `${listenDir}/${SENSE_VOICE_SMALL_INT8.files.tokens}`,
-      },
-      vad: { model: `${vadDir}/${SILERO_VAD.files.model}` },
-    },
-  });
+  const models: SherpaModels = {};
+  const spec = findBuiltinModel(selection.id);
+  if (spec?.segment === "listen") {
+    const dir = resolveBuiltinModelDir(modelsRoot, spec.id);
+    models.asr = {
+      model: join(dir, spec.layout.model),
+      // 目录表里 ASR 必有词表（catalog 测试锁死），这里缺了就是表写坏了
+      tokens: join(dir, spec.layout.tokens ?? ""),
+    };
+  }
+  const vadSpec = SILERO_VAD_MODEL;
+  const vadDir = resolveBuiltinModelDir(modelsRoot, vadSpec.id);
+  models.vad = { model: join(vadDir, vadSpec.layout.model) };
+  return createSherpaProvider({ models });
 }

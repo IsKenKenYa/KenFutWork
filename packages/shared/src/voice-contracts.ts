@@ -73,3 +73,56 @@ export type VoiceTranscribeResponse = z.infer<
 
 /** 合成结果的 mimeType（浏览器 `decodeAudioData` 直接能解）。 */
 export const voiceSpeakResponseAudioMime = "audio/wav";
+
+/**
+ * 模型目录条目（规划 §5）：三段的候选都来自这一张表，界面按它出卡片。
+ * 字段就是卡片上要显示的东西——来源、体积、运行位置、是否需下载、性能标注。
+ */
+export const voiceModelCandidateSchema = z.object({
+  /** 选择器里存的 id：builtin 是模型目录 id，instance 是供应商实例 id。 */
+  id: z.string().min(1),
+  segment: voiceSegmentKindSchema,
+  label: z.string().min(1),
+  /** builtin = 需下载的离线模型；instance = 现成端点（零下载）。 */
+  kind: z.enum(["builtin", "instance"]),
+  location: z.enum(["cpu", "gpu", "remote"]),
+  /** 仅 instance：实例内的模型 id（选择时一并存下）。 */
+  model: z.string().min(1).optional(),
+  /** 体积（字节）；端点候选取 0（不占本机磁盘）。 */
+  sizeBytes: z.number().int().nonnegative(),
+  needsDownload: z.boolean(),
+  /** 下载进度：`state=downloading` 时由前端轮询本接口读进度。 */
+  download: z.object({
+    state: z.enum(["ready", "missing", "downloading"]),
+    downloadedBytes: z.number().int().nonnegative(),
+    totalBytes: z.number().int().nonnegative(),
+    /** 上次尝试的失败原因（成功或未开始时为空）。 */
+    error: z.string().optional(),
+  }),
+  /**
+   * 不可选的原因；缺席 = 可选。规划 §6 的硬规则：只有硬缺失才置灰，
+   * 且置灰必须写明为什么（不摆空壳、不放假开关）。
+   */
+  unavailableReason: z.string().optional(),
+  /** 性能标注：未实测一律标「预估」（规划 §5）。 */
+  performanceNote: z.string().optional(),
+  /** 许可与署名（内置离线模型需要；规划 §10 风险 7）。 */
+  license: z.string().optional(),
+});
+export type VoiceModelCandidate = z.infer<typeof voiceModelCandidateSchema>;
+
+export const voiceModelListResponseSchema = z.object({
+  models: z.array(voiceModelCandidateSchema),
+});
+export type VoiceModelListResponse = z.infer<typeof voiceModelListResponseSchema>;
+
+export const voiceModelResponseSchema = z.object({
+  model: voiceModelCandidateSchema,
+});
+export type VoiceModelResponse = z.infer<typeof voiceModelResponseSchema>;
+
+/** 下载是**文件系统副作用**，但可重放：校验和不匹配即失败且不留半截文件。 */
+export const voiceModelDownloadParamsSchema = z.object({
+  modelId: z.string().min(1),
+});
+
