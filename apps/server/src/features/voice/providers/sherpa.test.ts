@@ -22,6 +22,8 @@ interface Recorder {
   acceptedWaveforms: Array<{ samples: Float32Array; sampleRate: number }>;
   vadSegments: SherpaSpeechSegment[];
   flushCalls: number;
+  /** VAD 调用顺序（reset/accept/flush）：脏状态回归靠它锁。 */
+  vadCalls: string[];
   texts: string[];
   ttsCalls: Array<{ text: string; sid: number; speed: number }>;
   resultText: string;
