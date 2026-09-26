@@ -1,7 +1,11 @@
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { useComposerVoice } from "../src/components/composer-voice.js";
+import {
+  useComposerVoice,
+  useVoiceMode,
+  VOICE_SETTINGS_CHANGED_EVENT,
+} from "../src/components/composer-voice.js";
 import type { VoiceRecorder } from "../src/lib/voice-audio.js";
 
 /**
@@ -36,10 +40,30 @@ function fakeRecorder(): { recorder: VoiceRecorder; calls: string[] } {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  // useVoiceMode 首读会打设置接口：给个默认档的桩，免得真发请求
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            settings: {
+              mode: "transcribe",
+              listen: null,
+              think: null,
+              speak: null,
+              speakReplies: false,
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    ),
+  );
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
   // 本仓 vitest 未开 globals，Testing Library 的自动清理不会生效：手动清，
   // 否则上一轮的组件留在 body 里，getByTestId 会命中多个
   cleanup();
@@ -339,5 +363,33 @@ describe("useComposerVoice · 方案 B（完整回路 + 撤销窗口）", () => 
     await h.hold();
     expect(h.refine).not.toHaveBeenCalled();
     expect(h.transcripts).toEqual(["那个按钮改成蓝的"]);
+  });
+});
+
+describe("useVoiceMode（设置页改档同页立刻生效）", () => {
+  it("收到设置变更广播即换档：不必重载页面（真机踩过：切到完整回路后按住说话仍按旧档走）", async () => {
+    const modes: string[] = [];
+    function Harness() {
+      const mode = useVoiceMode("tok");
+      modes.push(mode);
+      return <span data-testid="mode">{mode}</span>;
+    }
+    const view = render(<Harness />);
+    // 首读打的是设置接口，默认档是「只转文本」
+    await vi.waitFor(() => {
+      expect(view.getByTestId("mode").textContent).toBe("transcribe");
+    });
+
+    // 设置页保存后广播
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent(VOICE_SETTINGS_CHANGED_EVENT, {
+          detail: { mode: "loop" },
+        }),
+      );
+    });
+    await vi.waitFor(() => {
+      expect(view.getByTestId("mode").textContent).toBe("loop");
+    });
   });
 });

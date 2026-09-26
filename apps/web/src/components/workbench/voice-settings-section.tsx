@@ -7,7 +7,7 @@ import type {
   VoiceSettings,
 } from "@kenfutwork/shared";
 import { useCallback, useEffect, useMemo, useState } from "react";
-
+import { VOICE_SETTINGS_CHANGED_EVENT } from "@/components/composer-voice";
 import { formatBytes } from "@/components/workbench/index-library-section";
 import { ListLoading } from "@/components/workbench/list-state";
 import {
@@ -121,6 +121,13 @@ export function VoiceSettingsSection({ accessToken }: { accessToken: string }) {
       try {
         const response = await updateVoiceSettings(accessToken, body);
         setSettings(response.settings);
+        // 广播给同一页面的输入框：不广播的话它们挂载时读到的还是旧模式，
+        // 用户在这里切到「完整回路」、回去按住说话却按旧档走（真机点出来过）。
+        window.dispatchEvent(
+          new CustomEvent(VOICE_SETTINGS_CHANGED_EVENT, {
+            detail: response.settings,
+          }),
+        );
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "保存失败。");
       } finally {
@@ -354,7 +361,8 @@ export function VoiceSettingsSection({ accessToken }: { accessToken: string }) {
             {report.hardware.gpu ? (
               <p className="text-muted-foreground">
                 可接 GPU 服务：把「听 / 说」指向本机跑的 GPU 端点（Speaches /
-                faster-whisper 之类，填它的 OpenAI 兼容地址即可），比本机 CPU 快得多。
+                faster-whisper 之类，填它的 OpenAI 兼容地址即可），比本机 CPU
+                快得多。
               </p>
             ) : null}
             {(["listen", "think", "speak"] as const).map((key) => (

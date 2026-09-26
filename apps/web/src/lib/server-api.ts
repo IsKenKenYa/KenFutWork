@@ -1373,7 +1373,9 @@ export async function downloadVoiceModel(
   accessToken: string,
   modelId: string,
 ): Promise<VoiceModelResponse> {
-  return voiceModelAction(accessToken, modelId, "POST");
+  // 路径必须带 `/download` 后缀：真机点出来过——漏了它就打到 /api/voice/models/:id
+  // （那里没有 POST 路由）→ 404，界面只显示「Request failed」，按钮看着能点、其实一次也没成。
+  return voiceModelAction(accessToken, modelId, "POST", "/download");
 }
 
 /** 取消下载中的模型。 */

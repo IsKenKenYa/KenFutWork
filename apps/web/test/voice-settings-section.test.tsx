@@ -110,6 +110,7 @@ function stubApi(
         return json({ settings: options.settings ?? SETTINGS });
       }
       if (path.includes("/api/voice/models/")) {
+        // 记下**完整**路径与方法：漏掉 /download 后缀这类缺陷只能靠这条锁住
         actions.push(`${init?.method ?? "GET"} ${path.split("/api")[1]}`);
         return json({ model: MODEL_BUILTIN });
       }
@@ -208,7 +209,20 @@ describe("语音设置页", () => {
     expect(screen.getByRole("checkbox", { name: "朗读回复" })).toBeTruthy();
   });
 
-  it("点「下载」打到下载端点并显示进度条；就绪后按钮变「删除」", async () => {
+  it("点「下载」打到**带 /download 后缀**的端点（真机踩过：漏后缀 404，按钮看着能点其实没成）", async () => {
+    await mount();
+    const downloadBtn = screen.getByRole("button", { name: "下载" });
+    fireEvent.click(downloadBtn);
+    await vi.waitFor(() => {
+      expect(actions).toContain(
+        "POST /voice/models/sensevoice-small-int8/download",
+      );
+    });
+    // 不允许出现「打到没有该路由的裸 id 路径」这种退化
+    expect(actions).not.toContain("POST /voice/models/sensevoice-small-int8");
+  });
+
+  it("下载中显示进度条与「取消」；取消打到 /download 后缀的 DELETE", async () => {
     await mount({
       models: [
         {

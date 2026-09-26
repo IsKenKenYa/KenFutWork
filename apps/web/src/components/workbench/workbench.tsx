@@ -41,7 +41,11 @@ import {
 } from "@/components/chat/composer-context-menu";
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
 import { RunStopButton } from "@/components/chat/run-stop-button";
-import { useComposerVoice, useVoiceMode } from "@/components/composer-voice";
+import {
+  useComposerVoice,
+  useVoiceMode,
+  VOICE_SETTINGS_CHANGED_EVENT,
+} from "@/components/composer-voice";
 import { KenFutWorkLogo } from "@/components/icons/kenfutwork-logo";
 import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
@@ -892,6 +896,22 @@ export function Workbench() {
       speakConfigRef.current = { token: null, enabled: false };
       return;
     }
+    /**
+     * 设置页改了「朗读回复 / 模式」后同页立刻生效（事件由设置页广播）：
+     * 否则用户刚打开发音回复、回到对话却还是按旧档走，要重载页面才灵。
+     */
+    const onSettingsChanged = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{ mode?: string; speakReplies?: boolean }>
+      ).detail;
+      if (!detail) return;
+      speakConfigRef.current = {
+        token,
+        enabled: detail.mode === "loop" && detail.speakReplies === true,
+      };
+    };
+    window.addEventListener(VOICE_SETTINGS_CHANGED_EVENT, onSettingsChanged);
+
     let cancelled = false;
     void fetchVoiceSettings(token)
       .then((response) => {
@@ -910,6 +930,10 @@ export function Workbench() {
       });
     return () => {
       cancelled = true;
+      window.removeEventListener(
+        VOICE_SETTINGS_CHANGED_EVENT,
+        onSettingsChanged,
+      );
     };
   }, [session?.access_token]);
   /** 用户说话即打断播报（他显然不想再听下去）。 */

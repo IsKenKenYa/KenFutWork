@@ -1,6 +1,10 @@
 "use client";
 
-import type { VoiceMode, VoiceRefineContextMessage } from "@kenfutwork/shared";
+import type {
+  VoiceMode,
+  VoiceRefineContextMessage,
+  VoiceSettings,
+} from "@kenfutwork/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { dedupeRequest } from "@/lib/dedupe-request";
@@ -64,6 +68,9 @@ export interface ComposerVoiceBinding {
   /** 状态行（null = 不显示）。放到输入框下方同一位置。 */
   status: React.ReactNode;
 }
+
+/** 设置页保存成功后广播的事件名（同页输入框据此换档）。 */
+export const VOICE_SETTINGS_CHANGED_EVENT = "kenfutwork:voice-settings-changed";
 
 /** 「没听到语音」这类提示的自动收起时长。 */
 const NOTICE_MS = 3_000;
@@ -307,6 +314,18 @@ export function useComposerVoice({
  */
 export function useVoiceMode(accessToken: string | undefined): VoiceMode {
   const [mode, setMode] = useState<VoiceMode>("transcribe");
+  // 设置页保存后广播：同页输入框立刻换档，不必重载页面
+  useEffect(() => {
+    const onChange = (event: Event) => {
+      const detail = (event as CustomEvent<VoiceSettings>).detail;
+      if (detail?.mode) {
+        setMode(detail.mode);
+      }
+    };
+    window.addEventListener(VOICE_SETTINGS_CHANGED_EVENT, onChange);
+    return () =>
+      window.removeEventListener(VOICE_SETTINGS_CHANGED_EVENT, onChange);
+  }, []);
   useEffect(() => {
     if (!accessToken) {
       setMode("transcribe");
