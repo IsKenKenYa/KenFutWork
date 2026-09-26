@@ -85,11 +85,9 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
-  document
-    .querySelectorAll("[data-test-composer]")
-    .forEach((el) => {
-      el.remove();
-    });
+  document.querySelectorAll("[data-test-composer]").forEach((el) => {
+    el.remove();
+  });
 });
 
 interface HarnessOptions {
@@ -130,6 +128,9 @@ function setup(options: HarnessOptions = {}) {
       Object.assign(event, { pointerId: 1, clientX: 10, clientY: 10, ...init });
       window.dispatchEvent(event);
     });
+  /** 用起手时指定的 pointerId 派发（指针归属用例需要多根指针）。 */
+  const fireFor = (type: string, pointerId: number) =>
+    fire(type, { pointerId });
   const advance = (ms: number) =>
     act(() => {
       vi.advanceTimersByTime(ms);
@@ -157,6 +158,7 @@ function setup(options: HarnessOptions = {}) {
     calls,
     down,
     fire,
+    fireFor,
     advance,
     settle,
   };
@@ -407,5 +409,55 @@ describe("取消与失败", () => {
     await h.settle();
     h.unmount();
     expect(h.calls).toContain("discard");
+  });
+});
+
+describe("指针归属（真机踩过：无关点击会把正在录的音提交掉）", () => {
+  it("录音期间别的指针松手：不提交（录音继续）", async () => {
+    const h = setup();
+    h.down(h.textarea, { pointerId: 7 });
+    h.advance(300);
+    await h.settle();
+    expect(h.calls).toContain("start");
+
+    // 页面上另一次点击（别的 pointerId）松手：不该动这次录音
+    h.fireFor("pointerup", 1);
+    await h.settle();
+    expect(h.calls).not.toContain("stop");
+    expect(h.transcripts).toEqual([]);
+    expect(h.result.current.phase).toBe("recording");
+
+    // 起手那根指针松手才提交
+    h.fireFor("pointerup", 7);
+    await h.settle();
+    expect(h.calls).toContain("stop");
+    expect(h.transcripts).toEqual(["把首页按钮改成蓝色"]);
+  });
+
+  it("录音期间别的指针被取消：不丢这次录音", async () => {
+    const h = setup();
+    h.down(h.textarea, { pointerId: 9 });
+    h.advance(300);
+    await h.settle();
+
+    h.fireFor("pointercancel", 2);
+    await h.settle();
+    expect(h.calls).not.toContain("discard");
+    expect(h.result.current.phase).toBe("recording");
+
+    h.fireFor("pointerup", 9);
+    await h.settle();
+    expect(h.transcripts).toHaveLength(1);
+  });
+
+  it("起手阶段（未满 200ms）别的指针松手：不误清自己的起手", async () => {
+    const h = setup();
+    h.down(h.textarea, { pointerId: 5 });
+    h.advance(100);
+    // 别的指针松手：既不该提交，也不该把 5 号的起手计时清掉
+    h.fireFor("pointerup", 4);
+    h.advance(200);
+    await h.settle();
+    expect(h.calls).toContain("start");
   });
 });

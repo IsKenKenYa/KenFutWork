@@ -115,11 +115,15 @@ export function useHoldToTalk(options: HoldToTalkOptions): HoldToTalk {
    * 会话状态：idle → starting（已起手、麦克风未就绪）→ active（在录）
    * → 提交/丢弃回 idle。`aborted` 表示「用户在 warm-up 期间就撤了」，
    * 由 `start()` 回来后自行丢弃，避免麦克风被遗弃。
+   *
+   * `pointerId` 一并记住：**只认起手那根指针的松手**。真机踩过——录音期间页面上
+   * 任何一次点按（别人的鼠标、工具点击、点工具行按钮）的 pointerup 都会走到
+   * window 监听上；不加这一层，一次无关点击就会把正在录的音提交掉。
    */
   const session = useRef<
     | { kind: "idle" }
-    | { kind: "starting"; aborted: boolean }
-    | { kind: "active"; recording: VoiceRecording }
+    | { kind: "starting"; aborted: boolean; pointerId: number }
+    | { kind: "active"; recording: VoiceRecording; pointerId: number }
   >({ kind: "idle" });
 
   /** 起手（未满 200ms）状态；不进 React state：pointermove 逐次读它。 */
@@ -178,25 +182,28 @@ export function useHoldToTalk(options: HoldToTalkOptions): HoldToTalk {
   );
 
   /** 200ms 到点：真正开麦。 */
-  const beginRecording = useCallback(async () => {
-    pending.current = null;
-    const marker = { kind: "starting" as const, aborted: false };
-    session.current = marker;
-    setPhase("recording");
-    setElapsedMs(0);
-    setStatusText("录音中…");
-    try {
-      const recording = await recorder.start();
-      if (marker.aborted) {
-        // 用户在开麦期间就松手/取消了：立刻放掉，不留孤儿麦克风
-        recording.discard();
-        return;
+  const beginRecording = useCallback(
+    async (pointerId: number) => {
+      pending.current = null;
+      const marker = { kind: "starting" as const, aborted: false, pointerId };
+      session.current = marker;
+      setPhase("recording");
+      setElapsedMs(0);
+      setStatusText("录音中…");
+      try {
+        const recording = await recorder.start();
+        if (marker.aborted) {
+          // 用户在开麦期间就松手/取消了：立刻放掉，不留孤儿麦克风
+          recording.discard();
+          return;
+        }
+        session.current = { kind: "active", recording, pointerId };
+      } catch (error) {
+        fail(error instanceof Error ? error.message : String(error));
       }
-      session.current = { kind: "active", recording };
-    } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
-    }
-  }, [fail, recorder]);
+    },
+    [fail, recorder],
+  );
 
   /** 松手提交：转写 → 回调文本。 */
   const submit = useCallback(async () => {
@@ -252,6 +259,14 @@ export function useHoldToTalk(options: HoldToTalkOptions): HoldToTalk {
         setStatusText(null);
       }
     };
+    /** 只认起了手的那根指针：别的指针（或页面上任何无关点击）的松手/取消一律不理会。 */
+    const owns = (pointerId: number) => {
+      const current = session.current;
+      if (current.kind === "idle") {
+        return false;
+      }
+      return current.pointerId === pointerId;
+    };
     const onPointerUp = (event: PointerEvent) => {
       if (pending.current?.pointerId === event.pointerId) {
         // 未满 200ms 松手 = 普通点击：放行给输入框做光标定位/选区
@@ -259,12 +274,18 @@ export function useHoldToTalk(options: HoldToTalkOptions): HoldToTalk {
         setPhase("idle");
         return;
       }
-      if (session.current.kind !== "idle") {
+      if (owns(event.pointerId)) {
         void submit();
       }
     };
-    const onPointerCancel = () => {
-      if (pending.current || session.current.kind !== "idle") {
+    const onPointerCancel = (event: PointerEvent) => {
+      if (pending.current?.pointerId === event.pointerId) {
+        clearPending();
+        setPhase("idle");
+        setStatusText(null);
+        return;
+      }
+      if (owns(event.pointerId)) {
         discardSession();
       }
     };
@@ -349,7 +370,7 @@ export function useHoldToTalk(options: HoldToTalkOptions): HoldToTalk {
         } catch {
           // 捕获失败不影响：window 上的 pointerup 仍会到
         }
-        void beginRecording();
+        void beginRecording(pointerId);
       }, holdMs);
       pending.current = {
         timer,

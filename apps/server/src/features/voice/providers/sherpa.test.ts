@@ -38,6 +38,7 @@ function stubModule(
     acceptedWaveforms: [],
     vadSegments: [],
     flushCalls: 0,
+    vadCalls: [],
     texts: [],
     ttsCalls: [],
     resultText: "  你好，世界。  ",
@@ -83,7 +84,9 @@ function stubModule(
       constructor(config: unknown) {
         recorder.vadConfigs.push(config);
       }
-      acceptWaveform() {}
+      acceptWaveform() {
+        recorder.vadCalls.push("accept");
+      }
       isEmpty() {
         return recorder.vadSegments.length === 0;
       }
@@ -95,6 +98,10 @@ function stubModule(
       }
       flush() {
         recorder.flushCalls += 1;
+        recorder.vadCalls.push("flush");
+      }
+      reset() {
+        recorder.vadCalls.push("reset");
       }
     } as unknown as SherpaModule["Vad"],
   };
@@ -400,6 +407,30 @@ describe("sherpa 内置 Provider：VAD", () => {
     ]);
     // 不 flush 会丢掉尾部未闭合段（表现为「最后几个字没识别出来」）
     expect(recorder.flushCalls).toBe(1);
+  });
+
+  it("每次切句前先 reset（实例跨调用复用，脏状态会让索引跑到音频长度之外）", async () => {
+    const { module, recorder } = stubModule();
+    recorder.vadSegments = [{ start: 0, samples: new Float32Array(100) }];
+    const provider = createSherpaProvider({
+      models: { vad: VAD },
+      loadModule: () => module,
+      fileExists: allFiles,
+    });
+    await provider.vad?.ready();
+
+    provider.vad?.segment(new Int16Array(1_024));
+    const afterFirst = [...recorder.vadCalls];
+    recorder.vadSegments = [{ start: 0, samples: new Float32Array(100) }];
+    provider.vad?.segment(new Int16Array(1_024));
+
+    // 第一次：reset → 喂 → flush；第二次必须再 reset（否则读到上一次的尾巴）
+    expect(afterFirst[0]).toBe("reset");
+    const secondRun = recorder.vadCalls.slice(afterFirst.length);
+    expect(secondRun[0]).toBe("reset");
+    expect(recorder.vadCalls.filter((call) => call === "reset")).toHaveLength(
+      2,
+    );
   });
 
   it("VAD 配置形状钉死（silero 档 + 16k）", async () => {

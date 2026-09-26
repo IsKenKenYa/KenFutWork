@@ -9,7 +9,7 @@ import { resolveBuiltinModelDir } from "./builtin-models.js";
 import { SENSE_VOICE, SILERO_VAD_MODEL } from "./catalog.js";
 import { createVoiceModelStore } from "./model-store.js";
 import { createSherpaProvider } from "./providers/sherpa.js";
-import type { VoiceTranscriber } from "./types.js";
+import type { VoiceActivityDetector, VoiceTranscriber } from "./types.js";
 
 /**
  * 真机验收（integration，默认跳过）：**真下载两百兆模型 + 真中文音频**跑一遍
@@ -111,14 +111,24 @@ describe.skipIf(!enabled)("内置 Speech-to-Text 真机（integration）", () =>
     );
 
     // VAD 真切句：样本带前导静音，首段起点必须明显晚于 0
-    const { segments } = (provider.vad?.segment(
-      floatToPcm16Array(decoded.samples),
-    ) ?? { segments: [] }) as { segments: Array<[number, number]> };
+    const pcm = floatToPcm16Array(decoded.samples);
+    const vad = provider.vad as VoiceActivityDetector;
+    const { segments } = vad.segment(pcm);
     expect(segments.length).toBeGreaterThan(0);
     expect(segments[0]?.[0]).toBeGreaterThan(0);
     for (const [start, end] of segments) {
       expect(end).toBeGreaterThan(start);
       expect(end).toBeLessThanOrEqual(decoded.samples.length);
+    }
+
+    /**
+     * **跨调用复用不能带脏状态**（真机回归锁）：同一实例连续切句三次，结果必须逐字一致。
+     * 修复前实测 #1 对、#2/#3 的索引跑到音频长度之外（89472 个采样点却给出 191072），
+     * 于是服务端按「全静音」回空文本——即「按住说话却什么都没识别到」。
+     */
+    const repeats = [vad.segment(pcm), vad.segment(pcm)];
+    for (const repeat of repeats) {
+      expect(repeat.segments).toEqual(segments);
     }
   }, 900_000);
 });

@@ -78,6 +78,8 @@ export interface SherpaVadInstance {
    * （表现为「最后几个字没识别出来」）。
    */
   flush(): void;
+  /** 复位内部状态（环形缓冲 + 模型状态）。实例跨调用复用，故每次切句前必须先调。 */
+  reset(): void;
 }
 
 /** 本文件用到的 sherpa-onnx-node 导出面（只声明用到的，不抄整份 API）。 */
@@ -344,6 +346,13 @@ export function createSherpaProvider(
         VAD_BUFFER_SECONDS,
       );
       const samples = pcm16ToFloat(pcm);
+      /**
+       * **每次切句前必须 reset**：Vad 实例是跨调用复用的（省下每次重建的模型加载），
+       * 但它的环形缓冲与模型内部状态会留着上一次的尾巴。真机踩过——第一次调用正常切出
+       * [11872, 82016]，**之后每次调用都对不上**（切不出段 → 服务端按「全静音」回空文本），
+       * 表现为「按住说话却什么都没识别到」；单测里的桩 VAD 无状态，永远发现不了这一条。
+       */
+      vadInstance.reset();
       for (let offset = 0; offset < samples.length; offset += VAD_WINDOW_SIZE) {
         vadInstance.acceptWaveform(
           samples.subarray(offset, offset + VAD_WINDOW_SIZE),
