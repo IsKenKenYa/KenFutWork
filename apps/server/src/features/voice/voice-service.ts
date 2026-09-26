@@ -14,13 +14,17 @@ import type {
   VoiceDiagnoseHardware,
   VoiceDiagnoseReport,
   VoiceModelCandidate,
+  VoiceRefineContextMessage,
   VoiceSelection,
   VoiceSettings,
   VoiceSettingsUpdateRequest,
 } from "@kenfutwork/shared";
 import { voiceDiagnoseReportSchema } from "@kenfutwork/shared";
-import type { VoiceRefineContextMessage } from "@kenfutwork/shared";
-import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
+import {
+  AIMessage,
+  HumanMessage,
+  SystemMessage,
+} from "@langchain/core/messages";
 import {
   resolveInstanceAudioProvider,
   resolveInstanceChatModel,
@@ -730,7 +734,6 @@ function probeThinkTtft(deps: VoiceServiceDeps) {
     };
   };
 }
-
 
 /**
  * 「想」段的默认实现：用用户自己的 BYOK 对话模型把口述补成完整需求。
