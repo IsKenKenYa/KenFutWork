@@ -17,6 +17,7 @@ describe("agent 治理默认值与护栏（DEC-17/DEC-18）", () => {
       llmRequestMaxRetries: 10,
       llmInfiniteRetry: false,
       executeTimeoutMs: 120000,
+      subagentMaxContinuations: 50,
     });
   });
 
