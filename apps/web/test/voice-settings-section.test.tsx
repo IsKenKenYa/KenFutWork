@@ -23,6 +23,7 @@ const MODEL_BUILTIN = {
     downloadedBytes: 0,
     totalBytes: 239_549_735,
   },
+  performanceNote: "预估 0.1–0.7×",
   license: "FunASR Model License",
 };
 
@@ -36,6 +37,7 @@ const MODEL_INSTANCE = {
   sizeBytes: 0,
   needsDownload: false,
   download: { state: "ready" as const, downloadedBytes: 0, totalBytes: 0 },
+  performanceNote: "端点延迟",
 };
 
 const MODEL_DISABLED = {
@@ -142,7 +144,8 @@ async function mount(options: Parameters<typeof stubApi>[0] = {}) {
   stubApi(options);
   render(<VoiceSettingsSection accessToken="tok" />);
   // 等功能模式出现（load 完成）；各用例自己再查它关心的候选
-  await screen.findByText(/功能模式/);
+  // 等首屏渲染完（新文案里没有大段说明，用模式单选当锚点）
+  await screen.findByRole("radio", { name: "只转文本" });
 }
 
 describe("语音设置页", () => {
@@ -152,14 +155,18 @@ describe("语音设置页", () => {
     for (const segment of ["听段模型", "想段模型", "说段模型"]) {
       expect(screen.getByRole("group", { name: segment })).toBeTruthy();
     }
-    expect(screen.getAllByText(/离线 · 本机 CPU/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/在线 · 端点/).length).toBeGreaterThan(0);
-    // 体积要显示（用户按体积决策下载）：直接读卡片文本，避开 "文字被拆成多个元素" 的匹配问题
+    // 文案只写标签：模式两项是「只转文本」「完整回路」，不带解释句
+    expect(screen.getByRole("radio", { name: "只转文本" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "完整回路" })).toBeTruthy();
+    expect(screen.getAllByText(/离线/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/在线/).length).toBeGreaterThan(0);
+    // 体积与性能都给数字（不写成句子）：直接读卡片文本，避开「文字被拆成多元素」的匹配问题
     const builtinCard = screen
       .getByText("SenseVoice Small（int8）")
       .closest("label");
     expect(builtinCard?.textContent).toContain("离线");
     expect(builtinCard?.textContent).toContain("228.5 MB");
+    expect(builtinCard?.textContent).toContain("预估 0.1–0.7×");
   });
 
   it("未选择 = 不下载：离线候选带「下载」按钮，在线候选不带", async () => {
@@ -235,8 +242,9 @@ describe("语音设置页", () => {
         },
       ],
     });
-    expect(screen.getByRole("progressbar")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    // 进度用按钮上的百分比表达（不另设进度条元素）
+    expect(screen.getByRole("button", { name: /取消 50%/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /取消 50%/ }));
     await vi.waitFor(() => {
       expect(actions).toContain(
         "DELETE /voice/models/sensevoice-small-int8/download",
@@ -246,10 +254,10 @@ describe("语音设置页", () => {
 
   it("检测报告：显示硬件、三段结论与可应用的建议", async () => {
     await mount();
-    expect(await screen.findByText(/Test CPU · 12 核/)).toBeTruthy();
-    expect(screen.getByText(/实测 7 次的中位实时率 0.08/)).toBeTruthy();
-    // 听达标但想未测 → 建议仍是「只转文本」
-    expect(screen.getByText(/建议：只转文本/)).toBeTruthy();
+    expect(await screen.findByText(/12 核/)).toBeTruthy();
+    expect(screen.getByText(/听 0.08× 首载 2.7s/)).toBeTruthy();
+    // 听达标但想未测 → 推荐仍是「只转文本」（只给结论，不写理由句）
+    expect(screen.getByText(/推荐 只转文本/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "应用推荐" }));
     await vi.waitFor(() => {
@@ -258,35 +266,61 @@ describe("语音设置页", () => {
     expect(saves[0]).toEqual({ mode: "transcribe", speakReplies: false });
   });
 
-  it("测到 NVIDIA GPU 时提示「可接 GPU 服务」（探不到则完全不提）", async () => {
+  it("测到 NVIDIA GPU 时给一行「可接 GPU 服务」（探不到则完全不提）", async () => {
     await mount({
       report: {
         ...REPORT,
         hardware: { ...REPORT.hardware, gpu: "NVIDIA GeForce RTX 4060" },
       },
     });
-    expect(await screen.findByText(/可接 GPU 服务/)).toBeTruthy();
-    expect(screen.getByText(/RTX 4060/)).toBeTruthy();
+    expect(
+      await screen.findByText(/^可接 GPU 服务：NVIDIA GeForce RTX 4060$/),
+    ).toBeTruthy();
   });
 
   it("没有 GPU 时不出现该提示（不摆空壳）", async () => {
     await mount();
-    expect(await screen.findByText(/Test CPU · 12 核/)).toBeTruthy();
+    expect(await screen.findByText(/12 核/)).toBeTruthy();
     expect(screen.queryByText(/可接 GPU 服务/)).toBeNull();
   });
 
-  it("没测过时给一句说明与重新检测按钮（不留空白）", async () => {
+  it("没测过时只给按钮（不留说明文字）", async () => {
     await mount({ report: null });
-    expect(await screen.findByText(/还没检测过/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "重新检测" })).toBeTruthy();
+    // 报告区不渲染（没有数据就没有那一块），而不是写一句「还没检测过」
+    expect(screen.queryByText(/检测过|实测/)).toBeNull();
   });
 
-  it("选中的候选读不出名字时原样显示 id 并提示重选（配置漂移不藏起来）", async () => {
+  it("选中的候选读不出名字时原样显示 id（配置漂移不藏起来）", async () => {
     await mount({
       settings: { ...SETTINGS, listen: { kind: "builtin", id: "ghost-model" } },
     });
-    expect(
-      await screen.findByText(/ghost-model（目录里已找不到，请重选）/),
-    ).toBeTruthy();
+    expect(await screen.findByText(/听：ghost-model/)).toBeTruthy();
+  });
+
+  it("界面文案只写标签：不出现句子与设计说明（硬约束）", async () => {
+    await mount();
+    const section = document.querySelector('section[aria-label="语音"]');
+    expect(section).not.toBeNull();
+    const text = section?.textContent ?? "";
+    // 句子特征：中文句号/分号，以及被删掉的那批解释句
+    expect(text).not.toMatch(/。|；/);
+    expect(text).not.toMatch(
+      /松开后|自己确认|自动把话|把你说的话|把模糊的话|用语音把回复|下载并说一句/,
+    );
+    /*
+     * 只看**元素自身的文本**（不含子孙）：用户一眼读到的一段就是它。
+     * 用 textContent 会把整棵子树拼成一长串（标签 + 元信息），那种长度不是句子。
+     */
+    const ownText = (el: Element) =>
+      [...el.childNodes]
+        .filter((node) => node.nodeType === 3)
+        .map((node) => node.textContent ?? "")
+        .join("")
+        .trim();
+    const tooLong = [...(section?.querySelectorAll("*") ?? [])]
+      .map(ownText)
+      .filter((chunk) => chunk.length > 40);
+    expect(tooLong).toEqual([]);
   });
 });

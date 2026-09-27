@@ -104,7 +104,7 @@ export function TerminalSettingsSection({
             })),
           ]}
         >
-          <SelectTrigger className="w-56" aria-label="默认 shell">
+          <SelectTrigger className="w-full" aria-label="默认 shell">
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="min-w-56">

@@ -99,18 +99,11 @@ export function CommandsSection({
   return (
     <section aria-label="命令设置">
       <h3 className="mb-1 text-base font-medium">命令</h3>
-      <p className="mb-3 text-sm text-muted-foreground">
-        自定义斜杠命令：在输入框里打
-        <code className="mx-1 rounded bg-muted px-1">/名字 参数</code>
-        ，发送时会展开成下面的提示词。
-        <code className="mx-1 rounded bg-muted px-1">{"{{args}}"}</code>
-        会被替换成参数；没写就追加到末尾。
-      </p>
 
       <div className="space-y-2">
         {rows.length === 0 ? (
           <p className="rounded-lg border px-3 py-2 text-sm text-muted-foreground">
-            还没有自定义命令，点下面的「新增命令」加一条。
+            没有命令
           </p>
         ) : null}
 

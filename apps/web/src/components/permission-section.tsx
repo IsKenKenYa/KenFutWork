@@ -134,9 +134,6 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
   return (
     <section aria-label="权限设置">
       <h3 className="mb-1 text-base font-medium">常规任务</h3>
-      <p className="mb-3 text-sm text-muted-foreground">
-        危险操作在默认档下需要你批准。
-      </p>
       <fieldset aria-label="常规任务档位" className="mb-4 min-w-0 space-y-2">
         {TIERS.map((t) => (
           <label
@@ -216,9 +213,6 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
       ) : null}
 
       <h3 className="mb-1 text-base font-medium">自动化任务</h3>
-      <p className="mb-3 text-sm text-muted-foreground">
-        无人值守的任务（如目标、循环）用这一档，建议比常规任务更严。
-      </p>
       <fieldset aria-label="自动化任务档位" className="mb-5 min-w-0 space-y-2">
         {TIERS.map((t) => (
           <label
@@ -255,7 +249,7 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
           placeholder="如 mcp__fs__write"
           value={toolName}
           onChange={(e) => setToolName(e.target.value)}
-          className="w-48 rounded-md border px-3 py-1.5 text-sm"
+          className="min-w-0 flex-1 rounded-md border px-3 py-1.5 text-sm"
         />
         <Select
           value={scope}
@@ -264,7 +258,7 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
           }}
           items={SCOPES.map((s) => ({ value: s.value, label: s.label }))}
         >
-          <SelectTrigger aria-label="记忆粒度" className="py-1.5">
+          <SelectTrigger aria-label="记忆粒度" className="w-28 shrink-0 py-1.5">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

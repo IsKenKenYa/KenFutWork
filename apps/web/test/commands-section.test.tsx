@@ -38,7 +38,7 @@ describe("设置 → 命令", () => {
     render(
       <CommandsSection accessToken="tok" commands={[]} onSaved={onSaved} />,
     );
-    expect(screen.getByText(/还没有自定义命令/)).toBeVisible();
+    expect(screen.getByText("没有命令")).toBeVisible();
 
     await userEvent.click(screen.getByRole("button", { name: /新增命令/ }));
     await userEvent.type(screen.getByLabelText("命令名 1"), "review");

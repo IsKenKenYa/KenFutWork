@@ -14,6 +14,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   formatCheckpointOption,
   toCheckpointOptions,
 } from "@/lib/checkpoint-select";
@@ -122,17 +129,32 @@ export function CheckpointRestoreDialog({
         <div className="border-b px-5 py-2.5">
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             <span className="shrink-0">回滚目标</span>
-            <select
+            <Select
               value={selectedId}
-              onChange={(event) => setSelectedId(event.target.value)}
-              className="min-w-0 flex-1 rounded-md border bg-transparent px-2 py-1 text-xs text-foreground"
+              onValueChange={(next) => {
+                if (typeof next === "string") setSelectedId(next);
+              }}
+              items={(options.length > 0 ? options : [checkpoint]).map(
+                (option) => ({
+                  value: option.id,
+                  label: formatCheckpointOption(option),
+                }),
+              )}
             >
-              {(options.length > 0 ? options : [checkpoint]).map((option) => (
-                <option key={option.id} value={option.id}>
-                  {formatCheckpointOption(option)}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger
+                aria-label="回滚目标"
+                className="min-w-0 flex-1 py-1 text-xs"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(options.length > 0 ? options : [checkpoint]).map((option) => (
+                  <SelectItem key={option.id} value={option.id}>
+                    {formatCheckpointOption(option)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </label>
         </div>
 

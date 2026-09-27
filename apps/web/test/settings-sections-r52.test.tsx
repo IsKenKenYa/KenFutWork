@@ -399,7 +399,7 @@ describe("设置 → 钩子", () => {
       "../src/components/workbench/hooks-section"
     );
     render(<HooksSection accessToken="tok" hooks={[]} onSaved={onSaved} />);
-    expect(screen.getByText(/还没有钩子/)).toBeVisible();
+    expect(screen.getByText("没有钩子")).toBeVisible();
 
     await userEvent.click(screen.getByRole("button", { name: /新增钩子/ }));
     await userEvent.type(
@@ -425,13 +425,21 @@ describe("设置 → 钩子", () => {
     expect(updateWorkspaceSettings).not.toHaveBeenCalled();
   });
 
-  it("边界写在页面上：只有你能配置 / 在工作目录里跑 / 失败不影响本轮", async () => {
+  /**
+   * 曾经这里断言「三条边界写在页面上」（只有你能配置 / 在工作目录里跑 / 失败不影响本轮）。
+   * 2026-09-27 用户口径把界面文案收成「只写标签、不写句子」（见 AGENTS.md「界面文案（硬约束）」），
+   * 那三句整体删除；边界本身仍是实现事实（钩子不进工具注册表、按工作目录执行、失败不改本轮状态），
+   * 由服务端行为与 docs 承担说明职责，不再由界面复述。
+   */
+  it("页面只剩标签与控件（无解释句）", async () => {
     const { HooksSection } = await import(
       "../src/components/workbench/hooks-section"
     );
     render(<HooksSection accessToken="tok" hooks={[]} onSaved={() => {}} />);
-    expect(screen.getByText(/只有你能配置/)).toBeVisible();
-    expect(screen.getByText(/工作目录/)).toBeVisible();
-    expect(screen.getByText(/失败也不影响本轮对话/)).toBeVisible();
+    expect(screen.getByText("钩子")).toBeVisible();
+    expect(screen.getByRole("button", { name: /新增钩子/ })).toBeVisible();
+    expect(screen.getByRole("button", { name: "保存钩子" })).toBeVisible();
+    // 解释句一律不许回来
+    expect(screen.queryByText(/只有你能配置|失败也不影响本轮/)).toBeNull();
   });
 });

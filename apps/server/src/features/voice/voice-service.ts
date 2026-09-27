@@ -371,18 +371,19 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
             ...(state?.error ? { error: state.error } : {}),
           },
           /**
-           * 规划 §5：未下载只显示**标注「预估」**的值；下载并实测后换成实测值。
-           * 首次调用含模型载入（实测同一机器上稳态 0.08 / 首次 0.68），
-           * 故实测行里把两者都写清楚，别让「0.08」这个数误导用户以为第一次也这么快。
+           * 规划 §5：未下载只给**标着「预估」**的值；下载并实测后换成实测值。
+           * 文案口径（用户口径 2026-09-27）：**只给数字**，不写句子——界面负责排版，
+           * 解释留在文档里。首次调用含模型载入，故实测值后面跟一个「首载」，别让人
+           * 以为第一次也这么快。
            */
           performanceNote:
             ready && measured.rtfMedian !== undefined
-              ? `实测：实时率 ${measured.rtfMedian.toFixed(2)}（${measured.samples} 次）${
+              ? `实测 ${measured.rtfMedian.toFixed(2)}×${
                   measured.modelLoadMs === undefined
                     ? ""
-                    : `，首次使用另加载 ${(measured.modelLoadMs / 1000).toFixed(1)}s`
+                    : ` 首载 ${(measured.modelLoadMs / 1000).toFixed(1)}s`
                 }`
-              : "预估：本机 CPU 实时率约 0.1–0.7（首次调用含模型载入会更慢）；下载并说一句后换成实测",
+              : "预估 0.1–0.7×",
           license: model.license,
         });
       }
@@ -416,7 +417,7 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
                 downloadedBytes: 0,
                 totalBytes: 0,
               },
-              performanceNote: "延迟取决于端点（检测可实测）",
+              performanceNote: "端点延迟",
               ...(instance.enabled
                 ? {}
                 : { unavailableReason: "该供应商实例已停用" }),
@@ -453,9 +454,18 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
         );
       }
       if (selection.kind === "builtin") {
-        throw new VoiceUnavailableError(
-          "内置「说」档待定（许可与体积未拍板），「说」段目前只支持 BYOK 端点。",
-        );
+        const provider = requireBuiltin(selection, "speak", "说");
+        const synthesizer = provider.synthesizer;
+        if (!synthesizer) {
+          throw new VoiceUnavailableError("所选「说」模型不提供合成能力。");
+        }
+        const verdict = await synthesizer.ready();
+        if (!verdict.ok) {
+          throw new VoiceUnavailableError(
+            verdict.reason ?? "「说」模型不可用。",
+          );
+        }
+        return { impl: synthesizer, label: provider.label };
       }
       if (!selection.model) {
         throw new VoiceUnavailableError(
@@ -548,12 +558,44 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
         }
       }
 
+      // 说：现场合成一句固定短句，量首包与实时率（规划 §6）
+      let speakMeasurement:
+        | { firstByteSeconds: number; rtf: number }
+        | undefined;
+      let speakReason: string | undefined;
+      if (!settings.speak) {
+        speakReason = "未选择「说」模型：到「设置 → 语音」选一个。";
+      } else {
+        const probeText = "这是一次语音合成检测。";
+        try {
+          const { impl: synthesizer } = await this.resolveSynthesizer(
+            user,
+            workspaceId,
+          );
+          const started = Date.now();
+          const { audio } = await synthesizer.synthesize(probeText, {
+            ...(signal ? { signal } : {}),
+          });
+          const elapsedSeconds = (Date.now() - started) / 1000;
+          // 内置路径是「一次性合成整段」，首包≈总耗时；按 WAV 头算音频时长得实时率
+          const audioSeconds = wavSeconds(audio);
+          speakMeasurement = {
+            firstByteSeconds: elapsedSeconds,
+            rtf:
+              audioSeconds > 0 ? elapsedSeconds / audioSeconds : elapsedSeconds,
+          };
+        } catch (error) {
+          speakReason = `「说」段检测失败：${
+            error instanceof Error ? error.message : String(error)
+          }`;
+        }
+      }
+
       const report = buildReport({
         hardware,
         listen: listenSegment(timingLog.summary(), listenReason),
         think: thinkSegment(thinkMeasurement, thinkReason),
-        // 内置「说」档待定（许可与体积），BYOK 端点候选已在目录里但这条路还没接
-        speak: speakSegment(),
+        speak: speakSegment(speakMeasurement, speakReason),
       });
       lastDiagnose = report;
       if (deps.diagnoseStore) {
@@ -600,6 +642,15 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
  * （「谢谢观看」一类），按住说话录进的前后静音正是这种噪声的常见来源。
  * 全段都判为静音时直接回空文本，不白跑一次识别。
  */
+/** 从 WAV 头读音频时长（检测里算实时率用；读不出就当 0，不猜）。 */
+function wavSeconds(wav: Uint8Array): number {
+  try {
+    return probeWav(wav).durationSeconds;
+  } catch {
+    return 0;
+  }
+}
+
 function withSilenceTrim(
   transcriber: VoiceTranscriber,
   vad: VoiceActivityDetector,
@@ -646,6 +697,22 @@ function createBuiltinProviderFromModelsRoot(
       model: join(dir, spec.layout.model),
       // 目录表里 ASR 必有词表（catalog 测试锁死），这里缺了就是表写坏了
       tokens: join(dir, spec.layout.tokens ?? ""),
+    };
+  }
+  if (spec?.segment === "speak") {
+    const dir = resolveBuiltinModelDir(modelsRoot, spec.id);
+    models.tts = {
+      // 目录表的 layout 是模型自身知识，按 id 映射到 sherpa 的档位
+      kind: spec.id.startsWith("kokoro") ? "kokoro" : "vits",
+      model: join(dir, spec.layout.model),
+      tokens: join(dir, spec.layout.tokens ?? "tokens.txt"),
+      ...(spec.layout.lexicon
+        ? { lexicon: join(dir, spec.layout.lexicon) }
+        : {}),
+      ...(spec.layout.dataDir
+        ? { dataDir: join(dir, spec.layout.dataDir) }
+        : {}),
+      ...(spec.layout.voices ? { voices: join(dir, spec.layout.voices) } : {}),
     };
   }
   const vadSpec = SILERO_VAD_MODEL;

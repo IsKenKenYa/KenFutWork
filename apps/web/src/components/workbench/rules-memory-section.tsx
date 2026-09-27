@@ -92,9 +92,6 @@ export function RulesMemorySection({
   return (
     <section aria-label="规则与记忆设置">
       <h3 className="mb-1 text-base font-medium">用户规则</h3>
-      <p className="mb-2 text-sm text-muted-foreground">
-        这些指令会附加到每次对话中，工作区内所有会话生效。
-      </p>
       <textarea
         aria-label="用户规则"
         value={rules}

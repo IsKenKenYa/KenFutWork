@@ -674,14 +674,13 @@ describe("voice 服务：候选性能标注（规划 §5 预估 → 实测）", 
   it("未下载：标「预估」并说明下载后会换成实测", async () => {
     const service = createVoiceService(withTimings("missing"));
     const [candidate] = await service.listCandidates(USER, "listen");
-    expect(candidate?.performanceNote).toContain("预估");
-    expect(candidate?.performanceNote).toContain("换成实测");
+    expect(candidate?.performanceNote).toBe("预估 0.1–0.7×");
   });
 
   it("就绪但还没实测：仍标注预估（不编一个实测值出来）", async () => {
     const service = createVoiceService(withTimings("ready"));
     const [candidate] = await service.listCandidates(USER, "listen");
-    expect(candidate?.performanceNote).toContain("预估");
+    expect(candidate?.performanceNote).toBe("预估 0.1–0.7×");
   });
 
   it("就绪 + 有实测：换成实测值，且把首次载入一并写清（别让人以为第一次也这么快）", async () => {
@@ -739,9 +738,62 @@ describe("voice 服务：候选性能标注（规划 §5 预估 → 实测）", 
       );
 
     const [candidate] = await service.listCandidates(USER, "listen");
-    expect(candidate?.performanceNote).toContain("实测");
-    expect(candidate?.performanceNote).toContain("首次使用另加载");
+    expect(candidate?.performanceNote).toMatch(/^实测 [0-9.]+× 首载 [0-9.]+s$/);
     expect(candidate?.performanceNote).not.toContain("预估");
     warn.mockRestore();
+  });
+});
+
+describe("voice 服务：说段解析（内置档已落地）", () => {
+  it("内置说模型：走 sherpa TTS，不再是「档位待定」", async () => {
+    const service = createVoiceService(
+      deps({
+        voice: {
+          speak: { kind: "builtin", id: "kokoro-multi-lang" },
+        },
+        createBuiltinProvider: (selection) => ({
+          id: "builtin-sherpa",
+          label: "内置（本机 CPU）",
+          location: "cpu",
+          synthesizer: {
+            ready: async () => ({ ok: true }),
+            synthesize: async () => ({
+              audio: new Uint8Array([82, 73, 70, 70]),
+              mimeType: "audio/wav",
+            }),
+          },
+        }),
+      }),
+    );
+    const resolved = await service.resolveSynthesizer(USER, "ws-1");
+    expect(resolved.label).toContain("本机 CPU");
+    const spoken = await resolved.impl.synthesize("你好");
+    expect(spoken.mimeType).toBe("audio/wav");
+  });
+
+  it("内置说模型未下载：可读原因来自 provider 的 ready", async () => {
+    const service = createVoiceService(
+      deps({
+        voice: { speak: { kind: "builtin", id: "kokoro-multi-lang" } },
+        createBuiltinProvider: () => ({
+          id: "builtin-sherpa",
+          label: "内置（本机 CPU）",
+          location: "cpu",
+          synthesizer: {
+            ready: async () => ({
+              ok: false,
+              reason: "「说」模型文件缺失：/models/kokoro/model.onnx",
+            }),
+            synthesize: async () => ({
+              audio: new Uint8Array(0),
+              mimeType: "audio/wav",
+            }),
+          },
+        }),
+      }),
+    );
+    await expect(service.resolveSynthesizer(USER, "ws-1")).rejects.toThrow(
+      /模型文件缺失/,
+    );
   });
 });

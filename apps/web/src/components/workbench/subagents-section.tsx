@@ -130,10 +130,6 @@ export function SubagentsSection({
   return (
     <section aria-label="子智能体设置">
       <h3 className="mb-1 text-base font-medium">子智能体</h3>
-      <p className="mb-3 text-sm text-muted-foreground">
-        主 Agent
-        可以把子任务交给这些子智能体执行；自定义项按「派活依据」决定何时分派。
-      </p>
 
       {error ? (
         <p className="mb-3 rounded-md border border-destructive/40 bg-destructive/5 px-2 py-1.5 text-xs text-destructive">

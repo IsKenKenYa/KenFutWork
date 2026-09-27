@@ -72,8 +72,7 @@ export function listenSegment(
   if (summary.samples === 0) {
     return {
       state: "pending",
-      summary:
-        "还没有实测数据：按住输入框说一句话，这里就会显示真实耗时（只记耗时，不存录音内容）。",
+      summary: "未实测（说一句即可）",
       listen: {
         samples: 0,
         ...(summary.modelLoadMs === undefined
@@ -86,10 +85,11 @@ export function listenSegment(
   const load =
     summary.modelLoadMs === undefined
       ? ""
-      : `，首次使用额外等 ${(summary.modelLoadMs / 1000).toFixed(1)}s（模型载入）`;
+      : ` 首载 ${(summary.modelLoadMs / 1000).toFixed(1)}s`;
   return {
     state: "measured",
-    summary: `实测 ${summary.samples} 次的中位实时率 ${rtf.toFixed(2)}${load}。`,
+    // 只给数字：界面上是「听 0.07× 首载 4.4s」，不是一句话
+    summary: `${rtf.toFixed(2)}×${load}`,
     listen: {
       samples: summary.samples,
       ...(summary.rtfMedian === undefined ? {} : { rtfMedian: rtf }),
@@ -114,16 +114,16 @@ export function thinkSegment(
   if (!measurement) {
     return {
       state: "pending",
-      summary: "还没有「想」段的实测读数。",
+      summary: "未实测",
     };
   }
   const speed =
     measurement.tokensPerSecond === undefined
       ? ""
-      : `、${measurement.tokensPerSecond.toFixed(1)} tok/s`;
+      : ` ${measurement.tokensPerSecond.toFixed(0)}t/s`;
   return {
     state: "measured",
-    summary: `首 token ${measurement.ttftSeconds.toFixed(2)}s${speed}。`,
+    summary: `${measurement.ttftSeconds.toFixed(2)}s${speed}`,
     think: {
       ttftSeconds: measurement.ttftSeconds,
       ...(measurement.tokensPerSecond === undefined
@@ -134,15 +134,25 @@ export function thinkSegment(
 }
 
 /**
- * 「说」段：内置 TTS 尚未提供（见 catalog 注释里未入选的原因），
- * 故当前恒为 `unavailable` 并写明「为什么」而不是给个假读数。
+ * 「说」段：有实测读数就给读数，没有就说明为什么。
+ *
+ * 读数口径（规划 §6）：**首包耗时 + 实时率**——语音播报里「多久出声」比总时长更关键。
+ * 与「听」不同，这里不需要历史样本：检测时现场合成一句固定短句即可（合成很快，
+ * 不打扰用户；也不用把用户的回复念一遍）。
  */
-export function speakSegment(reason?: string): VoiceDiagnoseSegment {
+export function speakSegment(
+  measurement?: { firstByteSeconds: number; rtf: number },
+  reason?: string,
+): VoiceDiagnoseSegment {
+  if (measurement) {
+    return {
+      state: "measured",
+      summary: `首包 ${measurement.firstByteSeconds.toFixed(2)}s、实时率 ${measurement.rtf.toFixed(2)}`,
+    };
+  }
   return {
-    state: "unavailable",
-    summary:
-      reason ??
-      "语音合成还没有可用的模型档：内置档待定（许可与体积），「说」段目前只支持 BYOK 端点。",
+    state: reason ? "unavailable" : "pending",
+    summary: reason ?? "未实测（点重新检测）",
   };
 }
 

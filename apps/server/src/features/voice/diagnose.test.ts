@@ -27,8 +27,8 @@ describe("listenSegment（听：用真实使用的实测）", () => {
       lastClipSeconds: 3.2,
     });
     expect(segment.state).toBe("measured");
-    expect(segment.summary).toContain("0.08");
-    expect(segment.summary).toContain("首次使用额外等 2.7s");
+    // 只给数字与「首载」标注，不写句子（界面文案硬约束）
+    expect(segment.summary).toBe("0.08× 首载 2.7s");
     expect(segment.listen).toEqual({
       samples: 12,
       rtfMedian: 0.083,
@@ -40,7 +40,7 @@ describe("listenSegment（听：用真实使用的实测）", () => {
   it("还没说过话：pending + 一句怎么拿到读数的引导（不是空白，也不是假数字）", () => {
     const segment = listenSegment({ samples: 0 });
     expect(segment.state).toBe("pending");
-    expect(segment.summary).toContain("按住输入框说一句话");
+    expect(segment.summary).toBe("未实测（说一句即可）");
     expect(segment.listen?.rtfMedian).toBeUndefined();
     // 首次载入耗时即便还没稳态样本，也已经能报（用户感知得到的那段等待）
     const withCold = listenSegment({ samples: 0, modelLoadMs: 2_700 });
@@ -58,10 +58,11 @@ describe("listenSegment（听：用真实使用的实测）", () => {
     expect(segment.listen).toBeUndefined();
   });
 
-  it("encoding: summary 是给人看的一句话", () => {
-    expect(listenSegment({ rtfMedian: 0.5, samples: 3 }).summary).toMatch(
-      /实测 3 次/,
-    );
+  it("summary 只给数字（不写成句子）", () => {
+    const summary = listenSegment({ rtfMedian: 0.5, samples: 3 }).summary;
+    expect(summary).toBe("0.50×");
+    // 句子特征（含「，」或「。」）不允许出现在界面读数里
+    expect(summary).not.toMatch(/[，。]/);
   });
 });
 
@@ -69,13 +70,13 @@ describe("thinkSegment（想：首 token 延迟）", () => {
   it("有读数：报首字与（可选）生成速度", () => {
     const segment = thinkSegment({ ttftSeconds: 0.42, tokensPerSecond: 32.5 });
     expect(segment.state).toBe("measured");
-    expect(segment.summary).toBe("首 token 0.42s、32.5 tok/s。");
+    expect(segment.summary).toBe("0.42s 33t/s");
     expect(segment.think).toEqual({ ttftSeconds: 0.42, tokensPerSecond: 32.5 });
   });
 
   it("端点不给速度读数：只说首字（不编一个速度出来）", () => {
     const segment = thinkSegment({ ttftSeconds: 0.9 });
-    expect(segment.summary).toBe("首 token 0.90s。");
+    expect(segment.summary).toBe("0.90s");
     expect(segment.think?.tokensPerSecond).toBeUndefined();
   });
 
@@ -91,12 +92,26 @@ describe("thinkSegment（想：首 token 延迟）", () => {
   });
 });
 
-describe("speakSegment（说：内置档待定，如实说明）", () => {
-  it("当前恒为 unavailable，且原因是「为什么」而不是「错误」", () => {
+describe("speakSegment（说：首包 + 实时率）", () => {
+  it("有实测：报首包与实时率（规划 §6 的门限就靠这两个数）", () => {
+    const segment = speakSegment({ firstByteSeconds: 0.42, rtf: 0.28 });
+    expect(segment.state).toBe("measured");
+    expect(segment.summary).toBe("首包 0.42s、实时率 0.28");
+  });
+
+  it("没测过：pending 并说明点一下就现场合成（不是空白，也不是假读数）", () => {
     const segment = speakSegment();
+    expect(segment.state).toBe("pending");
+    expect(segment.summary).toBe("未实测（点重新检测）");
+  });
+
+  it("硬缺失（未选模型/合成失败）：unavailable + 原因是「为什么」", () => {
+    const segment = speakSegment(
+      undefined,
+      "未选择「说」模型：到「设置 → 语音」选一个。",
+    );
     expect(segment.state).toBe("unavailable");
-    expect(segment.summary).toContain("内置档待定");
-    expect(segment.summary).toContain("BYOK 端点");
+    expect(segment.summary).toContain("未选择「说」模型");
   });
 });
 

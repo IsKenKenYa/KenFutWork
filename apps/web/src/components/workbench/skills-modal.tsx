@@ -10,6 +10,13 @@ import type {
 import { Blocks, Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { getServerBaseUrl } from "@/lib/env";
 import {
   describeInstallFailure,
@@ -637,20 +644,27 @@ function SkillsCreatePanel({
             onChange={(event) => setName(event.target.value)}
             className="rounded-md border px-2 py-1.5 text-sm outline-none"
           />
-          <select
-            aria-label="技能分类"
+          <Select
             value={category}
-            onChange={(event) =>
-              setCategory(event.target.value as SkillCategory)
-            }
-            className="rounded-md border px-2 py-1.5 text-sm outline-none"
+            onValueChange={(next) => {
+              if (typeof next === "string") setCategory(next as SkillCategory);
+            }}
+            items={CATEGORIES.map((item) => ({
+              value: item,
+              label: skillCategoryLabel(item),
+            }))}
           >
-            {CATEGORIES.map((item) => (
-              <option key={item} value={item}>
-                {skillCategoryLabel(item)}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger aria-label="技能分类" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CATEGORIES.map((item) => (
+                <SelectItem key={item} value={item}>
+                  {skillCategoryLabel(item)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <input
           aria-label="技能描述"

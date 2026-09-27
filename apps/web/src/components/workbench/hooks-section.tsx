@@ -3,6 +3,13 @@
 import type { WorkspaceSettings } from "@kenfutwork/shared";
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { updateWorkspaceSettings } from "@/lib/server-api";
 
 /**
@@ -75,15 +82,11 @@ export function HooksSection({
   return (
     <section aria-label="钩子设置">
       <h3 className="mb-1 text-base font-medium">钩子</h3>
-      <p className="mb-3 text-sm text-muted-foreground">
-        在每轮对话开始或结束时，于工作目录里执行一条命令（例如自动格式化）。
-        只有你能配置，失败也不影响本轮对话。
-      </p>
 
       <div className="space-y-2">
         {rows.length === 0 ? (
           <p className="rounded-lg border px-3 py-2 text-sm text-muted-foreground">
-            还没有钩子。点下面的「新增钩子」加一条。
+            没有钩子
           </p>
         ) : null}
 
@@ -92,28 +95,36 @@ export function HooksSection({
             key={row.id}
             className="flex items-center gap-2 rounded-lg border p-2.5"
           >
-            <select
-              aria-label={`钩子时机 ${index + 1}`}
+            <Select
               value={row.event}
-              onChange={(event) =>
+              onValueChange={(next) => {
+                if (typeof next !== "string") return;
                 setRows((current) =>
                   current.map((item, i) =>
                     i === index
-                      ? {
-                          ...item,
-                          event: event.target.value as
-                            | "turn-start"
-                            | "turn-end",
-                        }
+                      ? { ...item, event: next as "turn-start" | "turn-end" }
                       : item,
                   ),
-                )
-              }
-              className="shrink-0 rounded-md border bg-transparent px-2 py-1 text-xs outline-none"
+                );
+              }}
+              items={[
+                { value: "turn-start", label: "本轮开始" },
+                { value: "turn-end", label: "本轮结束" },
+              ]}
             >
-              <option value="turn-start">本轮开始</option>
-              <option value="turn-end">本轮结束</option>
-            </select>
+              {/* 原生 select 与旁边的输入框永远差几像素高（用户口径：下拉框错位），
+                  统一用共用组件，几何一处收口 */}
+              <SelectTrigger
+                aria-label={`钩子时机 ${index + 1}`}
+                className="w-32 shrink-0"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="turn-start">本轮开始</SelectItem>
+                <SelectItem value="turn-end">本轮结束</SelectItem>
+              </SelectContent>
+            </Select>
             <input
               aria-label={`钩子命令 ${index + 1}`}
               value={row.command}
@@ -127,7 +138,7 @@ export function HooksSection({
                 )
               }
               placeholder="例如：npx biome check ."
-              className="min-w-0 flex-1 rounded-md border bg-transparent px-2 py-1 font-mono text-xs outline-none"
+              className="min-w-0 flex-1 rounded-md border bg-transparent px-3 py-1.5 font-mono text-sm outline-none"
             />
             <button
               type="button"

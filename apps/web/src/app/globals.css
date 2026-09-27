@@ -226,6 +226,15 @@
   html {
     @apply font-sans;
     }
+  /*
+   * 单选/勾选框一律用前景色（浅色主题即黑色）：用户口径 2026-09-27——
+   * 浏览器默认的蓝色强调色与全站黑白风格不搭，且各页（权限/通用/语音…）不一致。
+   * 一处收口，全站同色。
+   */
+  input[type="radio"],
+  input[type="checkbox"] {
+    accent-color: var(--foreground);
+  }
 }
 
 /* ── Shadow utilities ── */
