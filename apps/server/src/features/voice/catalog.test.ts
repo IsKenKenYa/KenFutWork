@@ -27,17 +27,23 @@ describe("内置模型目录表", () => {
 
   it("layout 里每个路径都能在 files 找到（防两处漂移）", () => {
     for (const model of BUILTIN_VOICE_MODELS) {
-      const paths = new Set(model.files.map((file) => file.path));
+      const paths = model.files.map((file) => file.path);
       const layoutPaths = Object.values(model.layout).filter(
         (value): value is string => typeof value === "string",
       );
       expect(layoutPaths.length).toBeGreaterThan(0);
       for (const path of layoutPaths) {
         if (path === "") continue;
+        // 既可以是清单里的某个文件，也可以是一个**目录**（如 kokoro 的 espeak-ng-data：
+        // layout 要的是目录本身，清单里列的是它下面的每个文件）
+        const isFile = paths.includes(path);
+        const isDirectory = paths.some((candidate) =>
+          candidate.startsWith(`${path}/`),
+        );
         expect(
-          paths,
-          `${model.id} 的 layout 路径 ${path} 不在 files 里`,
-        ).toContain(path);
+          isFile || isDirectory,
+          `${model.id} 的 layout 路径 ${path} 既不在 files 里，也不是任何文件的目录前缀`,
+        ).toBe(true);
       }
     }
   });
@@ -55,6 +61,29 @@ describe("内置模型目录表", () => {
         expect(file.path.startsWith("/")).toBe(false);
       }
     }
+  });
+
+  it("说段（Kokoro）清单完整：300+ 文件、300MB+ 体积（防生成物被截断）", () => {
+    const kokoro = findBuiltinModel("kokoro-multi-lang");
+    expect(kokoro?.segment).toBe("speak");
+    // 375 个文件（2026-09-27 取回）；上限放宽一点，只防「被截断/被清空」
+    expect(kokoro?.files.length ?? 0).toBeGreaterThan(350);
+    expect(builtinModelSizeBytes(kokoro as never)).toBeGreaterThan(
+      350 * 1024 * 1024,
+    );
+    // 清单里必须含 layout 用到的每一类文件
+    const paths = new Set((kokoro?.files ?? []).map((file) => file.path));
+    for (const required of [
+      "model.onnx",
+      "voices.bin",
+      "tokens.txt",
+      "lexicon-zh.txt",
+    ]) {
+      expect(paths.has(required), `清单缺 ${required}`).toBe(true);
+    }
+    expect([...paths].some((path) => path.startsWith("espeak-ng-data/"))).toBe(
+      true,
+    );
   });
 
   it("听段确实有内置模型（默认档要能落地）", () => {

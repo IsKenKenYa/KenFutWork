@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { decodeWav, floatToPcm16Array } from "./audio.js";
 import { resolveBuiltinModelDir } from "./builtin-models.js";
-import { SENSE_VOICE, SILERO_VAD_MODEL } from "./catalog.js";
+import { KOKORO_MULTI_LANG, SENSE_VOICE, SILERO_VAD_MODEL } from "./catalog.js";
 import { createVoiceModelStore } from "./model-store.js";
 import { createSherpaProvider } from "./providers/sherpa.js";
 import type { VoiceActivityDetector, VoiceTranscriber } from "./types.js";
@@ -52,7 +52,12 @@ describe.skipIf(!enabled)("内置 Speech-to-Text 真机（integration）", () =>
     const store = createVoiceModelStore({ modelsRoot });
     await mkdir(modelsRoot, { recursive: true });
 
-    for (const modelId of [SENSE_VOICE.id, SILERO_VAD_MODEL.id]) {
+    // 「说」的模型 382MB，第一次跑这条会久一点（之后复用）
+    for (const modelId of [
+      SENSE_VOICE.id,
+      KOKORO_MULTI_LANG.id,
+      SILERO_VAD_MODEL.id,
+    ]) {
       if ((await store.getState(modelId)).state === "ready") {
         continue;
       }
@@ -73,11 +78,32 @@ describe.skipIf(!enabled)("内置 Speech-to-Text 真机（integration）", () =>
 
     const listenDir = resolveBuiltinModelDir(modelsRoot, SENSE_VOICE.id);
     const vadDir = resolveBuiltinModelDir(modelsRoot, SILERO_VAD_MODEL.id);
+    const speakDir = resolveBuiltinModelDir(modelsRoot, KOKORO_MULTI_LANG.id);
     const provider = createSherpaProvider({
       models: {
         asr: {
           model: join(listenDir, SENSE_VOICE.layout.model),
           tokens: join(listenDir, SENSE_VOICE.layout.tokens ?? "tokens.txt"),
+        },
+        tts: {
+          kind: "kokoro",
+          model: join(speakDir, KOKORO_MULTI_LANG.layout.model),
+          voices: join(
+            speakDir,
+            KOKORO_MULTI_LANG.layout.voices ?? "voices.bin",
+          ),
+          tokens: join(
+            speakDir,
+            KOKORO_MULTI_LANG.layout.tokens ?? "tokens.txt",
+          ),
+          lexicon: join(
+            speakDir,
+            KOKORO_MULTI_LANG.layout.lexicon ?? "lexicon-zh.txt",
+          ),
+          dataDir: join(
+            speakDir,
+            KOKORO_MULTI_LANG.layout.dataDir ?? "espeak-ng-data",
+          ),
         },
         vad: { model: join(vadDir, SILERO_VAD_MODEL.layout.model) },
       },
@@ -130,5 +156,28 @@ describe.skipIf(!enabled)("内置 Speech-to-Text 真机（integration）", () =>
     for (const repeat of repeats) {
       expect(repeat.segments).toEqual(segments);
     }
+    /**
+     * 「说」：现场合成一句中文，产出必须是**能解的 WAV**（前端要靠 decodeAudioData 播它）。
+     * 时长按 WAV 头核（Kokoro 本身 24k 单声道，不是 16k）。
+     */
+    const speakReady = await provider.synthesizer?.ready();
+    expect(speakReady?.ok, speakReady?.reason).toBe(true);
+    const speakStarted = Date.now();
+    const spoken = (await provider.synthesizer?.synthesize(
+      "你好，这是语音合成的验收。",
+    )) as { audio: Uint8Array; mimeType: string };
+    const speakSeconds = (Date.now() - speakStarted) / 1000;
+    const spokenWav = decodeWav(spoken.audio);
+    expect(spoken.mimeType).toBe("audio/wav");
+    expect(spokenWav.samples.length).toBeGreaterThan(spokenWav.sampleRate / 2);
+    let speakPeak = 0;
+    for (const value of spokenWav.samples) {
+      speakPeak = Math.max(speakPeak, Math.abs(value));
+    }
+    expect(speakPeak).toBeGreaterThan(0.01);
+    console.log(
+      `[voice] 合成实测：${(spokenWav.samples.length / spokenWav.sampleRate).toFixed(2)}s 音频（${spokenWav.sampleRate}Hz）` +
+        `，用时 ${speakSeconds.toFixed(2)}s，峰值 ${speakPeak.toFixed(3)}`,
+    );
   }, 900_000);
 });

@@ -7,14 +7,18 @@
  * 代价是上游版本更新要同步改本表——与 `scripts/fetch-runtimes.mjs` 同一取舍。
  *
  * **未入选的候选与原因**（不摆空壳，故不登记）：
- * - 内置「说」（TTS）：Kokoro 多语版是 378 个文件 / 383MB（含整棵 espeak-ng-data），
- *   体量与文件数都不适合按需下载；sherpa 的 zh 系列（vits-zh-ll 等）仓库未声明许可，
- *   与本项目 GPL-3.0 的兼容性无从确认。故内置「说」待定，「说」段暂时只列 BYOK 端点候选。
- * - 内置「想」（离线 LLM）：GGUF 需要 GGUF 推理运行时（llama.cpp 一类），
- *   `sherpa-onnx` 跑不了 LLM，本轮不引入该运行时；「想」段走在线（BYOK 对话模型）。
+ * - 内置「想」（离线 LLM）：体现为一个 GGUF 文件（规划 §3.2 的 Qwen3-4B-Instruct-2507
+ *   Q4_K_M，2.5GB），但要跑它必须再引一个 GGUF 推理运行时（llama.cpp 一类）——
+ *   `sherpa-onnx` 跑不了 LLM。加运行时是**新的依赖决策**，不是接线细节，故本轮不引；
+ *   离线「想」当前的可走路径：本机起 llama.cpp / ollama，把它的 OpenAI 兼容地址加成一个
+ *   BYOK 实例，再在「想」段选它（与 GPU 端点同一条路，见《多语言》外的 §3.4 口径）。
+ * - sherpa 的 zh 系列 TTS（vits-zh-ll 等）：仓库未声明许可，与 GPL-3.0 的兼容性
+ *   无从确认，故选许可明确的 Kokoro（Apache-2.0）。
  */
 
 import type { VoiceSegmentKind } from "@kenfutwork/shared";
+
+import { KOKORO_MULTI_LANG_FILES } from "./model-manifests/kokoro-multi-lang.files.js";
 
 /** 模型目录内的一个文件（含子目录相对路径）+ 校验信息。 */
 export interface BuiltinFileSpec {
@@ -108,9 +112,34 @@ export const SILERO_VAD_MODEL: BuiltinVoiceModelSpec = {
   ],
 };
 
+/**
+ * 说：Kokoro 多语版（规划 §3.3 的候选）。
+ *
+ * 选它的理由：许可是明确的 **Apache-2.0（含权重）**——本项目 GPL-3.0 兼容；
+ * 82M 参数、CPU 上可实时。代价是文件多（375 个 / 382.6MB，含整棵 espeak-ng-data
+ * 音素数据树），清单单独成文件（`model-manifests/`）。
+ * espeak-ng-data 本身随 espeak-ng 走 GPL-3.0，与本项目同向，不额外加限制。
+ */
+export const KOKORO_MULTI_LANG: BuiltinVoiceModelSpec = {
+  id: "kokoro-multi-lang",
+  segment: "speak",
+  label: "Kokoro 多语版（82M）",
+  license:
+    "Apache-2.0（模型权重与代码）；含 espeak-ng 音素数据（GPL-3.0）。署名见设置 → 关于",
+  layout: {
+    model: "model.onnx",
+    voices: "voices.bin",
+    tokens: "tokens.txt",
+    lexicon: "lexicon-zh.txt",
+    dataDir: "espeak-ng-data",
+  },
+  files: [...KOKORO_MULTI_LANG_FILES],
+};
+
 /** 全部内置模型（下载/删除只认这张表里的 id——别的 id 一律拒，不做任意 URL 下载器）。 */
 export const BUILTIN_VOICE_MODELS: readonly BuiltinVoiceModelSpec[] = [
   SENSE_VOICE,
+  KOKORO_MULTI_LANG,
   SILERO_VAD_MODEL,
 ];
 
