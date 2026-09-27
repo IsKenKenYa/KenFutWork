@@ -7,6 +7,7 @@ import {
   fetchCodeIndex,
   rebuildCodeIndex,
 } from "@/lib/server-api";
+import { SETTINGS_SECTION_GAP, SETTINGS_TITLE } from "@/lib/settings-layout";
 
 /**
  * 设置 → 索引库（R4-3）。
@@ -103,73 +104,77 @@ export function IndexLibrarySection({
 
   return (
     <section aria-label="索引库设置">
-      <h3 className="mb-1 text-base font-medium">索引库</h3>
+      <h3 className={SETTINGS_TITLE}>索引库</h3>
 
-      <p className="mb-1 text-xs text-muted-foreground">代码库</p>
-      <div className="divide-y rounded-lg border">
-        <IndexToggle
-          title="索引新文件夹"
-          checked={autoNewFolder}
-          onChange={(next) => void onToggleAuto(next)}
-        />
-        <IndexToggle
-          title="索引存储库（测试版）"
-          checked={enabled}
-          onChange={(next) => void onToggle(next)}
-        />
-      </div>
-
-      <div className="mt-3 rounded-lg border p-3 text-sm">
-        {canvasId === null ? (
-          <p className="text-muted-foreground">未绑定工作目录</p>
-        ) : stats ? (
-          <ul className="space-y-1 text-xs text-muted-foreground">
-            <li>
-              已索引 <span className="text-foreground">{stats.files}</span>{" "}
-              个文件 · {formatBytes(stats.bytes)}
-            </li>
-            <li>索引文件 {formatBytes(stats.indexBytes)}</li>
-            <li>上次构建 {formatBuiltAt(stats.builtAt)}</li>
-            {stats.skipped > 0 ? (
-              <li>已跳过 {stats.skipped} 个无法读取的文件</li>
-            ) : null}
-            {stats.truncated ? (
-              <li>已达到条数/体积上限，只索引了前一部分</li>
-            ) : null}
-          </ul>
-        ) : (
-          <p className="text-muted-foreground">
-            还没有索引
-            {autoNewFolder && enabled
-              ? "（搜一次即建立）"
-              : "（点「重建索引」）"}
-          </p>
-        )}
-        <div className="mt-3 flex items-center gap-2">
-          <button
-            type="button"
-            disabled={busy || !canvasId}
-            onClick={() => void run("rebuild")}
-            className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
-          >
-            {busy ? "处理中…" : "重建索引"}
-          </button>
-          <button
-            type="button"
-            disabled={busy || !canvasId || !stats}
-            onClick={() => void run("clear")}
-            className="rounded-md border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive disabled:opacity-40"
-          >
-            清空
-          </button>
+      <div className={`${SETTINGS_SECTION_GAP} w-full`}>
+        <div>
+          <p className="mb-2 text-xs text-muted-foreground">代码库</p>
+          <div className="divide-y rounded-lg border">
+            <IndexToggle
+              title="索引新文件夹"
+              checked={autoNewFolder}
+              onChange={(next) => void onToggleAuto(next)}
+            />
+            <IndexToggle
+              title="索引存储库（测试版）"
+              checked={enabled}
+              onChange={(next) => void onToggle(next)}
+            />
+          </div>
         </div>
-      </div>
 
-      {message ? (
-        <p role="status" className="mt-2 text-sm text-muted-foreground">
-          {message}
-        </p>
-      ) : null}
+        <div className="rounded-lg border p-3 text-sm">
+          {canvasId === null ? (
+            <p className="text-muted-foreground">未绑定工作目录</p>
+          ) : stats ? (
+            <ul className="space-y-1 text-xs text-muted-foreground">
+              <li>
+                已索引 <span className="text-foreground">{stats.files}</span>{" "}
+                个文件 · {formatBytes(stats.bytes)}
+              </li>
+              <li>索引文件 {formatBytes(stats.indexBytes)}</li>
+              <li>上次构建 {formatBuiltAt(stats.builtAt)}</li>
+              {stats.skipped > 0 ? (
+                <li>已跳过 {stats.skipped} 个无法读取的文件</li>
+              ) : null}
+              {stats.truncated ? (
+                <li>已达到条数/体积上限，只索引了前一部分</li>
+              ) : null}
+            </ul>
+          ) : (
+            <p className="text-muted-foreground">
+              还没有索引
+              {autoNewFolder && enabled
+                ? "（搜一次即建立）"
+                : "（点「重建索引」）"}
+            </p>
+          )}
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              disabled={busy || !canvasId}
+              onClick={() => void run("rebuild")}
+              className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
+            >
+              {busy ? "处理中…" : "重建索引"}
+            </button>
+            <button
+              type="button"
+              disabled={busy || !canvasId || !stats}
+              onClick={() => void run("clear")}
+              className="rounded-md border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive disabled:opacity-40"
+            >
+              清空
+            </button>
+          </div>
+        </div>
+
+        {message ? (
+          <p role="status" className="mt-2 text-sm text-muted-foreground">
+            {message}
+          </p>
+        ) : null}
+      </div>
     </section>
   );
 }

@@ -3,6 +3,11 @@
 import { useEffect, useState } from "react";
 
 import { getServerBaseUrl } from "@/lib/env";
+import {
+  SETTINGS_ROW,
+  SETTINGS_ROW_STACK,
+  SETTINGS_TITLE,
+} from "@/lib/settings-layout";
 
 /**
  * 设置 → 关于。
@@ -17,10 +22,6 @@ import { getServerBaseUrl } from "@/lib/env";
  * `apps/server/package.json`），标在产品名后等于把服务端版本说成客户端版本——自托管跑旧服务端
  * 时会直接说错，而且与下一行「服务端」重复同一个数字。版本只在「服务端」行如实出现。
  */
-
-/** 与语音设置页同一几何：全宽行、右值对齐。 */
-const ROW_CLASS =
-  "flex w-full items-center justify-between gap-4 rounded-lg border px-3 py-2 text-sm";
 
 /** 第三方模型的许可署名（规划 §10 风险 7；Kokoro Apache-2.0、espeak-ng 数据 GPL-3.0）。 */
 const THIRD_PARTY_NOTICES: ReadonlyArray<readonly [string, string]> = [
@@ -62,33 +63,38 @@ export function AboutSection() {
       : "读取中…";
 
   return (
-    <section aria-label="关于" className="w-full space-y-2">
-      <div className={`${ROW_CLASS} justify-start`}>
-        <span className="font-medium">KenFutWork</span>
-        <span className="ml-auto text-muted-foreground">BYOK 的 AI 工作台</span>
+    <section aria-label="关于" className="w-full">
+      <h3 className={SETTINGS_TITLE}>关于</h3>
+      <div className={`${SETTINGS_ROW_STACK} w-full`}>
+        <div className={`${SETTINGS_ROW} justify-start`}>
+          <span className="font-medium">KenFutWork</span>
+          <span className="ml-auto text-muted-foreground">
+            BYOK 的 AI 工作台
+          </span>
+        </div>
+        <div className={SETTINGS_ROW}>
+          <span className="text-muted-foreground">服务端</span>
+          <span className="min-w-0 break-all">{server}</span>
+        </div>
+        <div className={SETTINGS_ROW}>
+          <span className="text-muted-foreground">地址</span>
+          <span className="min-w-0 break-all">{base || "（同源）"}</span>
+        </div>
+        <details className="w-full rounded-lg border px-3 py-2 text-sm">
+          <summary className="cursor-pointer text-muted-foreground">
+            第三方模型许可
+          </summary>
+          <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+            {THIRD_PARTY_NOTICES.map(([name, license]) => (
+              <li key={name} className="flex justify-between gap-4">
+                <span>{name}</span>
+                <span>{license}</span>
+              </li>
+            ))}
+            <li className="pt-1">录音不留存</li>
+          </ul>
+        </details>
       </div>
-      <div className={ROW_CLASS}>
-        <span className="text-muted-foreground">服务端</span>
-        <span className="min-w-0 break-all">{server}</span>
-      </div>
-      <div className={ROW_CLASS}>
-        <span className="text-muted-foreground">地址</span>
-        <span className="min-w-0 break-all">{base || "（同源）"}</span>
-      </div>
-      <details className="w-full rounded-lg border px-3 py-2 text-sm">
-        <summary className="cursor-pointer text-muted-foreground">
-          第三方模型许可
-        </summary>
-        <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
-          {THIRD_PARTY_NOTICES.map(([name, license]) => (
-            <li key={name} className="flex justify-between gap-4">
-              <span>{name}</span>
-              <span>{license}</span>
-            </li>
-          ))}
-          <li className="pt-1">录音不留存</li>
-        </ul>
-      </details>
     </section>
   );
 }

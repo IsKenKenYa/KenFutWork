@@ -3,6 +3,7 @@
 import { Monitor, Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
+import { SETTINGS_TITLE } from "@/lib/settings-layout";
 
 /**
  * 设置 → 外观（R5-2：参考图里的「外观」条目）。
@@ -29,7 +30,7 @@ export function AppearanceSection() {
 
   return (
     <section aria-label="外观设置">
-      <h3 className="mb-1 text-base font-medium">外观</h3>
+      <h3 className={SETTINGS_TITLE}>外观</h3>
 
       <fieldset className="grid gap-2 sm:grid-cols-3">
         <legend className="sr-only">主题</legend>

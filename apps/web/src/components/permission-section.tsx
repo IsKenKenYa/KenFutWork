@@ -16,6 +16,7 @@ import {
   type PermissionSettingsView,
   updatePermissionSettings,
 } from "@/lib/server-api";
+import { SETTINGS_SECTION_GAP, SETTINGS_TITLE } from "@/lib/settings-layout";
 
 /**
  * 权限设置（DEC-4；R5-3 补第 4 档与分场景）。
@@ -132,161 +133,173 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
   const current = settings?.tier ?? "default";
 
   return (
-    <section aria-label="权限设置">
-      <h3 className="mb-1 text-base font-medium">常规任务</h3>
-      <fieldset aria-label="常规任务档位" className="mb-4 min-w-0 space-y-2">
-        {TIERS.map((t) => (
-          <label
-            key={t.value}
-            className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
-          >
-            <input
-              type="radio"
-              name="permission-tier"
-              value={t.value}
-              checked={current === t.value}
-              onChange={() =>
-                void patch({ tier: t.value }, `常规任务档位已更新：${t.label}`)
-              }
-              disabled={saving}
-            />
-            <span>
-              {t.label}
-              <span className="ml-2 text-xs text-muted-foreground">
-                {t.hint}
+    <section aria-label="权限设置" className={SETTINGS_SECTION_GAP}>
+      <div>
+        <h3 className={SETTINGS_TITLE}>常规任务</h3>
+        <fieldset aria-label="常规任务档位" className="min-w-0 space-y-2">
+          {TIERS.map((t) => (
+            <label
+              key={t.value}
+              className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
+            >
+              <input
+                type="radio"
+                name="permission-tier"
+                value={t.value}
+                checked={current === t.value}
+                onChange={() =>
+                  void patch(
+                    { tier: t.value },
+                    `常规任务档位已更新：${t.label}`,
+                  )
+                }
+                disabled={saving}
+              />
+              <span>
+                {t.label}
+                <span className="ml-2 text-xs text-muted-foreground">
+                  {t.hint}
+                </span>
               </span>
-            </span>
-          </label>
-        ))}
-      </fieldset>
-
-      {current === "custom" ? (
-        <fieldset
-          aria-label="自定义配置规则"
-          className="mb-5 min-w-0 space-y-3 rounded-lg border border-dashed p-3"
-        >
-          <p className="text-xs text-muted-foreground">
-            一行一条，支持 <code>*</code> 支持通配；拒绝优先
-          </p>
-          <label className="block text-sm">
-            拒绝这些工具
-            <textarea
-              aria-label="拒绝规则"
-              value={denyText}
-              onChange={(event) => setDenyText(event.target.value)}
-              rows={3}
-              placeholder={"mcp__dangerous__delete\nshell_*"}
-              className="mt-1 w-full rounded-md border px-2 py-1 font-mono text-xs"
-            />
-          </label>
-          <label className="block text-sm">
-            放行这些工具
-            <textarea
-              aria-label="放行规则"
-              value={allowText}
-              onChange={(event) => setAllowText(event.target.value)}
-              rows={3}
-              placeholder={"write_file\nmcp__py-helper__echo"}
-              className="mt-1 w-full rounded-md border px-2 py-1 font-mono text-xs"
-            />
-          </label>
-          <button
-            type="button"
-            disabled={saving}
-            onClick={() =>
-              void patch(
-                {
-                  rules: {
-                    deny: linesToRules(denyText),
-                    allow: linesToRules(allowText),
-                  },
-                },
-                "自定义规则已保存",
-              )
-            }
-            className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
-          >
-            保存规则
-          </button>
+            </label>
+          ))}
         </fieldset>
-      ) : null}
 
-      <h3 className="mb-1 text-base font-medium">自动化任务</h3>
-      <fieldset aria-label="自动化任务档位" className="mb-5 min-w-0 space-y-2">
-        {TIERS.map((t) => (
-          <label
-            key={`auto-${t.value}`}
-            className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
+        {current === "custom" ? (
+          <fieldset
+            aria-label="自定义配置规则"
+            className="mt-2 min-w-0 space-y-3 rounded-lg border border-dashed p-3"
           >
-            <input
-              type="radio"
-              name="automation-permission-tier"
-              value={t.value}
-              checked={settings?.automationTier === t.value}
-              onChange={() =>
+            <p className="text-xs text-muted-foreground">
+              一行一条，支持 <code>*</code> 支持通配；拒绝优先
+            </p>
+            <label className="block text-sm">
+              拒绝这些工具
+              <textarea
+                aria-label="拒绝规则"
+                value={denyText}
+                onChange={(event) => setDenyText(event.target.value)}
+                rows={3}
+                placeholder={"mcp__dangerous__delete\nshell_*"}
+                className="mt-1 w-full rounded-md border px-2 py-1 font-mono text-xs"
+              />
+            </label>
+            <label className="block text-sm">
+              放行这些工具
+              <textarea
+                aria-label="放行规则"
+                value={allowText}
+                onChange={(event) => setAllowText(event.target.value)}
+                rows={3}
+                placeholder={"write_file\nmcp__py-helper__echo"}
+                className="mt-1 w-full rounded-md border px-2 py-1 font-mono text-xs"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() =>
                 void patch(
-                  { automationTier: t.value },
-                  `自动化任务档位已更新：${t.label}`,
+                  {
+                    rules: {
+                      deny: linesToRules(denyText),
+                      allow: linesToRules(allowText),
+                    },
+                  },
+                  "自定义规则已保存",
                 )
               }
-              disabled={saving}
-            />
-            <span>
-              {t.label}
-              <span className="ml-2 text-xs text-muted-foreground">
-                {t.hint}
-              </span>
-            </span>
-          </label>
-        ))}
-      </fieldset>
-
-      <h3 className="mb-1 text-base font-medium">工具审批</h3>
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          aria-label="工具名"
-          placeholder="如 mcp__fs__write"
-          value={toolName}
-          onChange={(e) => setToolName(e.target.value)}
-          className="min-w-0 flex-1 rounded-md border px-3 py-1.5 text-sm"
-        />
-        <Select
-          value={scope}
-          onValueChange={(next) => {
-            if (typeof next === "string") setScope(next as typeof scope);
-          }}
-          items={SCOPES.map((s) => ({ value: s.value, label: s.label }))}
-        >
-          <SelectTrigger aria-label="记忆粒度" className="w-28 shrink-0 py-1.5">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {SCOPES.map((s) => (
-              <SelectItem key={s.value} value={s.value}>
-                {s.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <button
-          type="button"
-          onClick={() => void handleApprove()}
-          disabled={saving}
-          className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
-        >
-          批准
-        </button>
+              className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
+            >
+              保存规则
+            </button>
+          </fieldset>
+        ) : null}
       </div>
-      {settings && settings.approvedForever.length > 0 ? (
-        <p className="mt-2 text-xs text-muted-foreground">
-          已永久批准：{settings.approvedForever.join("、")}
-        </p>
-      ) : null}
-      {message ? (
-        <p role="status" className="mt-2 text-sm text-muted-foreground">
-          {message}
-        </p>
-      ) : null}
+
+      <div>
+        <h3 className={SETTINGS_TITLE}>自动化任务</h3>
+        <fieldset aria-label="自动化任务档位" className="min-w-0 space-y-2">
+          {TIERS.map((t) => (
+            <label
+              key={`auto-${t.value}`}
+              className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
+            >
+              <input
+                type="radio"
+                name="automation-permission-tier"
+                value={t.value}
+                checked={settings?.automationTier === t.value}
+                onChange={() =>
+                  void patch(
+                    { automationTier: t.value },
+                    `自动化任务档位已更新：${t.label}`,
+                  )
+                }
+                disabled={saving}
+              />
+              <span>
+                {t.label}
+                <span className="ml-2 text-xs text-muted-foreground">
+                  {t.hint}
+                </span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      </div>
+
+      <div>
+        <h3 className={SETTINGS_TITLE}>工具审批</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            aria-label="工具名"
+            placeholder="如 mcp__fs__write"
+            value={toolName}
+            onChange={(e) => setToolName(e.target.value)}
+            className="min-w-0 flex-1 rounded-md border px-3 py-1.5 text-sm"
+          />
+          <Select
+            value={scope}
+            onValueChange={(next) => {
+              if (typeof next === "string") setScope(next as typeof scope);
+            }}
+            items={SCOPES.map((s) => ({ value: s.value, label: s.label }))}
+          >
+            <SelectTrigger
+              aria-label="记忆粒度"
+              className="w-28 shrink-0 py-1.5"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SCOPES.map((s) => (
+                <SelectItem key={s.value} value={s.value}>
+                  {s.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <button
+            type="button"
+            onClick={() => void handleApprove()}
+            disabled={saving}
+            className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
+          >
+            批准
+          </button>
+        </div>
+        {settings && settings.approvedForever.length > 0 ? (
+          <p className="mt-2 text-xs text-muted-foreground">
+            已永久批准：{settings.approvedForever.join("、")}
+          </p>
+        ) : null}
+        {message ? (
+          <p role="status" className="mt-2 text-sm text-muted-foreground">
+            {message}
+          </p>
+        ) : null}
+      </div>
     </section>
   );
 }

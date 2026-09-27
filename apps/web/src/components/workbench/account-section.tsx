@@ -1,6 +1,7 @@
 "use client";
 
 import { ShieldCheck } from "lucide-react";
+import { SETTINGS_TITLE } from "@/lib/settings-layout";
 
 /**
  * 设置 → 账号（R5-2：参考图里的「账号」条目）。
@@ -28,7 +29,7 @@ export function AccountSection({
 }) {
   return (
     <section aria-label="账号设置">
-      <h3 className="mb-1 text-base font-medium">账号</h3>
+      <h3 className={SETTINGS_TITLE}>账号</h3>
 
       <dl className="divide-y rounded-lg border text-sm">
         <div className="flex items-center justify-between px-3 py-2.5">
@@ -53,7 +54,7 @@ export function AccountSection({
         <button
           type="button"
           onClick={onOpenAdmin}
-          className="mt-3 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+          className="mt-2 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
         >
           <ShieldCheck className="h-3.5 w-3.5" />
           管理后台

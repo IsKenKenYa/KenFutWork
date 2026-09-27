@@ -15,6 +15,7 @@ import {
   fetchWorkspaceSettings,
   updateWorkspaceSettings,
 } from "@/lib/server-api";
+import { SETTINGS_TITLE } from "@/lib/settings-layout";
 
 /**
  * 设置 → 通用 → 终端：右栏「终端」标签默认用哪个 shell（用户口径：「终端应该是直连 cmd 或者
@@ -79,7 +80,7 @@ export function TerminalSettingsSection({
   return (
     <section className="space-y-3">
       <div>
-        <h3 className="text-sm font-medium">终端</h3>
+        <h3 className={SETTINGS_TITLE}>终端</h3>
       </div>
       <div className="flex items-center gap-2">
         <Select

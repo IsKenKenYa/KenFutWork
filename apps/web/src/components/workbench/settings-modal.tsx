@@ -32,6 +32,7 @@ import {
   updateProfile,
   updateWorkspaceSettings,
 } from "@/lib/server-api";
+import { SETTINGS_SECTION_GAP, SETTINGS_TITLE } from "@/lib/settings-layout";
 
 export type SettingsTab =
   | "pluginPanels"
@@ -343,7 +344,9 @@ export function SettingsModal({
             {loading && !profile ? (
               <ListLoading label="正在加载设置…" rows={2} />
             ) : activeTab === "general" ? (
-              <div className="space-y-8">
+              /* 「通用」一页里并排四块（外观/模型/个人资料/终端）：间距用统一版式常量，
+                 不再各自 mt-* / space-y-8（实测弹窗里曾同时存在 8 种块间距） */
+              <div className={SETTINGS_SECTION_GAP}>
                 <AppearanceSection />
                 <AgentSection
                   agentMaxRetries={agentMaxRetries}
@@ -451,10 +454,12 @@ export function SettingsModal({
 /**
  * 「插件面板」设置页：列出 settings 槽位的插件面板。
  * 没有插件声明该槽位时，明确说明「当前没有插件提供设置面板」——不放空壳。
+ * 页面标题与其它设置页同一规格（`SETTINGS_TITLE`）：曾经只有这一页和语音页没有标题。
  */
 function PluginPanelsSettings({ accessToken }: { accessToken: string | null }) {
   return (
-    <div className="space-y-3">
+    <div>
+      <h3 className={SETTINGS_TITLE}>插件面板</h3>
       <div className="flex flex-wrap gap-2">
         <PluginPanelButtons
           accessToken={accessToken}

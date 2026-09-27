@@ -56,6 +56,37 @@ function isComment(line: string): boolean {
 }
 
 /**
+ * 逐行的「是否在注释里」标记。
+ *
+ * 光看行首不够：`/* … *​/` 与 `{/* … *​/}` 的**续行**是普通中文文本（不以 `*` 开头），
+ * 上一版的 `isComment` 只认行首形状，于是把块注释正文当成了界面文案——实测被误报两次
+ * （都是我自己写的多行 JSX 注释）。这里改成跟踪块注释状态，把整段注释都跳过；
+ * 判断 `/*` 之前先剥字符串字面量，免得代码里的 `"/*"` 把后面整段误当注释放过。
+ */
+function commentFlags(lines: string[]): boolean[] {
+  const flags = new Array<boolean>(lines.length).fill(false);
+  let inBlock = false;
+  lines.forEach((line, index) => {
+    const trimmed = line.trim();
+    if (inBlock) {
+      flags[index] = true;
+      if (trimmed.includes("*/")) inBlock = false;
+      return;
+    }
+    if (trimmed.startsWith("//") || trimmed.startsWith("*")) {
+      flags[index] = true;
+      return;
+    }
+    const probe = stripStringLiterals(trimmed);
+    const open = probe.indexOf("/*");
+    if (open < 0) return;
+    flags[index] = true;
+    if (!probe.slice(open + 2).includes("*/")) inBlock = true;
+  });
+  return flags;
+}
+
+/**
  * 这一行是否像 **JSX 文本子节点**：含中文，且剥掉字符串后不含代码形状
  * （`=` `;` `{` `}` `(` `)` `<>` `[` `]` `:`）。TS 语句、JSX 属性、类型声明都被排除。
  */
@@ -72,15 +103,40 @@ interface Violation {
   text: string;
 }
 
+/**
+ * 行内 JSX 文本节点（`<p className="…">文案</p>` 这种一行写完的）。
+ *
+ * 光靠 `looksLikeJsxText`（要求整行没有 `<` `>` `=` 等代码形状）会**整段漏掉**这一类：
+ * 实测把一句 36 字并带句号的说明塞进 `<p className="…">…</p>` 一行里，门禁是全绿的。
+ * 这里把 `>…<` 之间的片段抠出来单独判——含 `=` `;` `{}()[]` 的片段是表达式不是文案，
+ * 跳过（`/` 不能排除：「改文件 / 跑命令前先问我」这类标签里本来就有斜杠）。
+ */
+function inlineJsxTexts(line: string): string[] {
+  const text = stripStringLiterals(line);
+  const out: string[] = [];
+  for (const match of text.matchAll(/>([^<>]+)</g)) {
+    const chunk = (match[1] ?? "").trim();
+    if (chunk.length === 0 || !CJK.test(chunk)) continue;
+    if (/[=;{}()[\]]/.test(chunk)) continue;
+    out.push(chunk);
+  }
+  return out;
+}
+
 function findViolations(): Violation[] {
   const violations: Violation[] = [];
   for (const file of settingsFiles()) {
     const lines = readFileSync(file, "utf-8").split(/\r?\n/);
+    const comments = commentFlags(lines);
     lines.forEach((raw, index) => {
-      if (isComment(raw) || !looksLikeJsxText(raw)) return;
-      const text = stripStringLiterals(raw).trim();
-      if (text.length === 0) return;
-      if (/[。；]/.test(text) || text.length > 40) {
+      if (comments[index] || isComment(raw)) return;
+      const chunks = looksLikeJsxText(raw)
+        ? [stripStringLiterals(raw).trim()]
+        : inlineJsxTexts(raw);
+      const bad = chunks.filter((text) =>
+        text.length === 0 ? false : /[。；]/.test(text) || text.length > 40,
+      );
+      for (const text of bad) {
         violations.push({
           file: file.slice(file.indexOf("components")),
           line: index + 1,
@@ -172,6 +228,38 @@ describe("界面文案硬约束：设置区只写标签，不写句子", () => {
     expect(
       looksLikeJsxText('        const [value, setValue] = useState("");'),
     ).toBe(false);
+  });
+
+  /** 多行注释的续行是普通中文，光看行首会把它当成界面文案（实测误报过两次） */
+  it("块注释整段跳过：续行不再被误判，注释外的长句仍被抓到", () => {
+    const flags = commentFlags([
+      "    {",
+      "      /* 第一行说明，",
+      "         续行是普通中文，不以星号开头。 */",
+      '      <span className="text-sm">标签</span>',
+      "    }",
+      "    <p>这一句是真的界面文案，很长很长很长很长很长很长很长很长很长很长很长。</p>",
+    ]);
+    expect(flags).toEqual([false, true, true, false, false, false]);
+  });
+
+  /**
+   * 行内写法必须也扫得到。上一版只扫「整行纯文本」，于是
+   * `<p className="…">这一句是塞回来的界面说明句…。</p>` 这种一行写完的**全绿通过**
+   * （实测：把 36 字带句号的说明塞进去，门禁没报）。现在改成抠 `>…<` 片段来判。
+   */
+  it("行内 JSX 文案扫得到，表达式与属性不算文案", () => {
+    expect(
+      inlineJsxTexts(
+        '<p className="text-sm text-muted-foreground">还没有规则条目。</p>',
+      ),
+    ).toEqual(["还没有规则条目。"]);
+    // 表达式片段不是文案
+    expect(inlineJsxTexts("<span>{count} 条</span>")).toEqual([]);
+    // 属性里的中文（字符串已剥）不在 `>…<` 之间
+    expect(
+      inlineJsxTexts('<input aria-label="工具名" className="flex-1" />'),
+    ).toEqual([]);
   });
 
   it("空壳守卫自身有效：认出两种空壳，放过有内容的元素与自闭合的图标", () => {

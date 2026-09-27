@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { updateWorkspaceSettings } from "@/lib/server-api";
+import { SETTINGS_TITLE } from "@/lib/settings-layout";
 
 /**
  * 设置 → 钩子（R5-2「钩子」条目）。
@@ -81,7 +82,7 @@ export function HooksSection({
 
   return (
     <section aria-label="钩子设置">
-      <h3 className="mb-1 text-base font-medium">钩子</h3>
+      <h3 className={SETTINGS_TITLE}>钩子</h3>
 
       <div className="space-y-2">
         {rows.length === 0 ? (
@@ -152,7 +153,7 @@ export function HooksSection({
         ))}
       </div>
 
-      <div className="mt-3 flex items-center gap-2">
+      <div className="mt-2 flex items-center gap-2">
         <button
           type="button"
           onClick={() =>

@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SETTINGS_TITLE } from "@/lib/settings-layout";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
 
@@ -92,7 +93,7 @@ export function AgentSection({
 
   return (
     <div>
-      <h2 className="text-lg font-semibold mb-1">模型</h2>
+      <h2 className={SETTINGS_TITLE}>模型</h2>
 
       <form onSubmit={handleSubmit} className="w-full space-y-4">
         <div className="space-y-2">

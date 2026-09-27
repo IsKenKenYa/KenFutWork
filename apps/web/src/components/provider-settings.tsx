@@ -12,6 +12,7 @@ import {
   fetchProviderInstances,
   updateProviderInstance,
 } from "@/lib/server-api";
+import { SETTINGS_TITLE_TEXT } from "@/lib/settings-layout";
 
 /**
  * 供应商设置（P5 BYOK）：用户供应商实例 CRUD。
@@ -74,10 +75,8 @@ export function ProviderSettings({ accessToken }: { accessToken: string }) {
 
   return (
     <section aria-label="供应商设置">
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h3 className="text-base font-medium">供应商设置</h3>
-        </div>
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className={SETTINGS_TITLE_TEXT}>供应商设置</h3>
         <button
           type="button"
           onClick={() =>

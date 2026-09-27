@@ -21,6 +21,11 @@ import {
   updateVoiceSettings,
 } from "@/lib/server-api";
 import {
+  SETTINGS_ROW,
+  SETTINGS_SECTION_GAP,
+  SETTINGS_TITLE,
+} from "@/lib/settings-layout";
+import {
   adviseVoiceProfile,
   gradeAsrRtf,
   gradeLlm,
@@ -42,16 +47,6 @@ const SEGMENTS: Array<{ key: SegmentKey; label: string }> = [
   { key: "think", label: "想" },
   { key: "speak", label: "说" },
 ];
-
-/**
- * 设置里所有行同一几何：与输入框同高同字号、宽度铺满，`min-h` 定成 2.625rem（42px）。
- *
- * `min-h` 不是凑数：同一段候选列表里，「不用」行没有尾控件、「下载/删除」行有——
- * 不兜底就是 38px 与 42px 交替（真机量过；用户反馈「排版不合理」）。兜在行上比在
- * 每行手工插一个空占位元素干净：空占位正是刚被门禁判为「删文案剩的壳」的那类东西。
- */
-const ROW_CLASS =
-  "flex w-full min-h-[2.625rem] items-center gap-2 rounded-lg border px-3 py-2 text-sm";
 
 export function VoiceSettingsSection({ accessToken }: { accessToken: string }) {
   const [settings, setSettings] = useState<VoiceSettings | null>(null);
@@ -208,133 +203,139 @@ export function VoiceSettingsSection({ accessToken }: { accessToken: string }) {
   }
 
   return (
-    <section aria-label="语音" className="w-full space-y-5">
-      <fieldset aria-label="模式" className="w-full min-w-0 space-y-2">
-        {(
-          [
-            { value: "transcribe" as const, label: "只转文本" },
-            { value: "loop" as const, label: "完整回路" },
-          ] satisfies Array<{ value: VoiceSettings["mode"]; label: string }>
-        ).map((option) => (
-          <label
-            key={option.value}
-            className={`${ROW_CLASS} cursor-pointer ${
-              settings.mode === option.value ? "border-foreground" : ""
-            }`}
-          >
-            <input
-              type="radio"
-              name="voice-mode"
-              value={option.value}
-              checked={settings.mode === option.value}
-              onChange={() => void patch({ mode: option.value }, "mode")}
-              className="shrink-0"
-            />
-            {option.label}
-          </label>
-        ))}
-      </fieldset>
-
-      {SEGMENTS.map((segment) => (
-        <fieldset
-          key={segment.key}
-          aria-label={`${segment.label}段模型`}
-          className="w-full min-w-0 space-y-2"
-        >
-          <legend className="text-sm text-muted-foreground">
-            {segment.label}：
-            {selectedLabel(settings[segment.key], models, segment.key)}
-          </legend>
-          <label className={`${ROW_CLASS} cursor-pointer`}>
-            <input
-              type="radio"
-              name={`voice-${segment.key}`}
-              value="none"
-              checked={settings[segment.key] === null}
-              onChange={() => void select(segment.key, null)}
-              className="shrink-0"
-            />
-            不用
-          </label>
-          {candidatesFor(models, segment.key).map((candidate) => (
-            <CandidateRow
-              key={`${candidate.kind}:${candidate.id}:${candidate.model ?? ""}`}
-              candidate={candidate}
-              selected={isSelected(settings[segment.key], candidate)}
-              busy={busy === candidate.id}
-              onSelect={() => void select(segment.key, candidate)}
-              onAction={(action) => void modelAction(action, candidate.id)}
-            />
+    <section aria-label="语音" className="w-full">
+      <h3 className={SETTINGS_TITLE}>语音</h3>
+      <div className={`${SETTINGS_SECTION_GAP} w-full`}>
+        <fieldset aria-label="模式" className="w-full min-w-0 space-y-2">
+          {(
+            [
+              { value: "transcribe" as const, label: "只转文本" },
+              { value: "loop" as const, label: "完整回路" },
+            ] satisfies Array<{ value: VoiceSettings["mode"]; label: string }>
+          ).map((option) => (
+            <label
+              key={option.value}
+              className={`${SETTINGS_ROW} cursor-pointer ${
+                settings.mode === option.value ? "border-foreground" : ""
+              }`}
+            >
+              <input
+                type="radio"
+                name="voice-mode"
+                value={option.value}
+                checked={settings.mode === option.value}
+                onChange={() => void patch({ mode: option.value }, "mode")}
+                className="shrink-0"
+              />
+              {option.label}
+            </label>
           ))}
         </fieldset>
-      ))}
 
-      {settings.mode === "loop" ? (
-        <label className={`${ROW_CLASS} cursor-pointer justify-between`}>
-          <span>朗读回复</span>
-          <input
-            type="checkbox"
-            aria-label="朗读回复"
-            checked={settings.speakReplies}
-            onChange={(event) =>
-              void patch({ speakReplies: event.target.checked }, "speakReplies")
-            }
-            className="shrink-0"
-          />
-        </label>
-      ) : null}
+        {SEGMENTS.map((segment) => (
+          <fieldset
+            key={segment.key}
+            aria-label={`${segment.label}段模型`}
+            className="w-full min-w-0 space-y-2"
+          >
+            <legend className="text-sm text-muted-foreground">
+              {segment.label}：
+              {selectedLabel(settings[segment.key], models, segment.key)}
+            </legend>
+            <label className={`${SETTINGS_ROW} cursor-pointer`}>
+              <input
+                type="radio"
+                name={`voice-${segment.key}`}
+                value="none"
+                checked={settings[segment.key] === null}
+                onChange={() => void select(segment.key, null)}
+                className="shrink-0"
+              />
+              不用
+            </label>
+            {candidatesFor(models, segment.key).map((candidate) => (
+              <CandidateRow
+                key={`${candidate.kind}:${candidate.id}:${candidate.model ?? ""}`}
+                candidate={candidate}
+                selected={isSelected(settings[segment.key], candidate)}
+                busy={busy === candidate.id}
+                onSelect={() => void select(segment.key, candidate)}
+                onAction={(action) => void modelAction(action, candidate.id)}
+              />
+            ))}
+          </fieldset>
+        ))}
 
-      <div className="w-full space-y-2">
-        <div className="flex w-full items-center gap-2">
-          <span className="text-sm text-muted-foreground">性能检测</span>
-          <button
-            type="button"
-            disabled={diagnosing}
-            onClick={() => void runDiagnose()}
-            className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
-          >
-            {diagnosing ? "检测中…" : "重新检测"}
-          </button>
-          <button
-            type="button"
-            disabled={busy === "advice"}
-            onClick={() => void applyAdvice()}
-            className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
-          >
-            应用推荐
-          </button>
-        </div>
-        {report ? (
-          <div className="w-full space-y-1 rounded-lg border px-3 py-2 text-xs text-muted-foreground">
-            <p>
-              {report.hardware.cpuCores} 核 ·{" "}
-              {formatBytes(report.hardware.totalMemoryBytes)}
-              {report.hardware.gpu ? ` · ${report.hardware.gpu}` : ""}
-            </p>
-            <p>
-              听 {listenMetric(report)} · 想 {thinkMetric(report)} · 说{" "}
-              {speakMetric(report)}
-            </p>
-            <p>
-              推荐{" "}
-              {advice.recommendedMode === "loop"
-                ? advice.recommendedSpeakReplies
-                  ? "完整回路 + 朗读"
-                  : "完整回路"
-                : "只转文本"}
-            </p>
-            {report.hardware.gpu ? (
-              <p>可接 GPU 服务：{report.hardware.gpu}</p>
-            ) : null}
+        {settings.mode === "loop" ? (
+          <label className={`${SETTINGS_ROW} cursor-pointer justify-between`}>
+            <span>朗读回复</span>
+            <input
+              type="checkbox"
+              aria-label="朗读回复"
+              checked={settings.speakReplies}
+              onChange={(event) =>
+                void patch(
+                  { speakReplies: event.target.checked },
+                  "speakReplies",
+                )
+              }
+              className="shrink-0"
+            />
+          </label>
+        ) : null}
+
+        <div className="w-full space-y-2">
+          <div className="flex w-full items-center gap-2">
+            <span className="text-sm text-muted-foreground">性能检测</span>
+            <button
+              type="button"
+              disabled={diagnosing}
+              onClick={() => void runDiagnose()}
+              className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
+            >
+              {diagnosing ? "检测中…" : "重新检测"}
+            </button>
+            <button
+              type="button"
+              disabled={busy === "advice"}
+              onClick={() => void applyAdvice()}
+              className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
+            >
+              应用推荐
+            </button>
           </div>
+          {report ? (
+            <div className="w-full space-y-1 rounded-lg border px-3 py-2 text-xs text-muted-foreground">
+              <p>
+                {report.hardware.cpuCores} 核 ·{" "}
+                {formatBytes(report.hardware.totalMemoryBytes)}
+                {report.hardware.gpu ? ` · ${report.hardware.gpu}` : ""}
+              </p>
+              <p>
+                听 {listenMetric(report)} · 想 {thinkMetric(report)} · 说{" "}
+                {speakMetric(report)}
+              </p>
+              <p>
+                推荐{" "}
+                {advice.recommendedMode === "loop"
+                  ? advice.recommendedSpeakReplies
+                    ? "完整回路 + 朗读"
+                    : "完整回路"
+                  : "只转文本"}
+              </p>
+              {report.hardware.gpu ? (
+                <p>可接 GPU 服务：{report.hardware.gpu}</p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+
+        {message ? (
+          <p role="status" className="text-sm text-destructive">
+            {message}
+          </p>
         ) : null}
       </div>
-
-      {message ? (
-        <p role="status" className="text-sm text-destructive">
-          {message}
-        </p>
-      ) : null}
     </section>
   );
 }
@@ -420,7 +421,7 @@ function CandidateRow({
   const download = candidate.download;
   return (
     <label
-      className={`${ROW_CLASS} ${
+      className={`${SETTINGS_ROW} ${
         selected ? "border-foreground" : ""
       } ${candidate.unavailableReason ? "opacity-60" : ""}`}
     >

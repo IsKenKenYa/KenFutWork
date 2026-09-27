@@ -4,6 +4,7 @@ import type { WorkspaceSettings } from "@kenfutwork/shared";
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { updateWorkspaceSettings } from "@/lib/server-api";
+import { SETTINGS_TITLE } from "@/lib/settings-layout";
 
 /**
  * 设置 → 命令（R5-2 的「命令」条目）。
@@ -98,7 +99,7 @@ export function CommandsSection({
 
   return (
     <section aria-label="命令设置">
-      <h3 className="mb-1 text-base font-medium">命令</h3>
+      <h3 className={SETTINGS_TITLE}>命令</h3>
 
       <div className="space-y-2">
         {rows.length === 0 ? (
@@ -149,7 +150,7 @@ export function CommandsSection({
         ))}
       </div>
 
-      <div className="mt-3 flex items-center gap-2">
+      <div className="mt-2 flex items-center gap-2">
         <button
           type="button"
           onClick={() => {

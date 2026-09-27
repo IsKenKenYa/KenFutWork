@@ -4,6 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/lib/auth-context";
 import { getServerBaseUrl } from "@/lib/env";
+import {
+  SETTINGS_SECTION_GAP,
+  SETTINGS_TITLE_TEXT,
+} from "@/lib/settings-layout";
 import { formatDuration } from "@/lib/usage-format";
 
 // ── 使用统计（用户侧，设置「数据与统计 → 使用统计」） ──
@@ -94,7 +98,8 @@ function SegmentedToggle<T extends string | number>({
   ariaLabel: string;
 }) {
   return (
-    <div
+    /* fieldset 而非 div+role="group"：同样的分组语义，但用语义元素（lint/a11y/useSemanticElements） */
+    <fieldset
       aria-label={ariaLabel}
       className="flex items-center gap-0.5 rounded-md bg-muted p-0.5 text-xs"
     >
@@ -110,7 +115,7 @@ function SegmentedToggle<T extends string | number>({
           {option.label}
         </button>
       ))}
-    </div>
+    </fieldset>
   );
 }
 
@@ -190,7 +195,7 @@ function Heatmap({
   }, [weeks]);
 
   if (weeks.length === 0) {
-    return <p className="text-xs text-muted-foreground">暂无活动数据。</p>;
+    return <p className="text-xs text-muted-foreground">暂无活动数据</p>;
   }
 
   return (
@@ -455,7 +460,7 @@ function UsageDonut({ byModel }: { byModel: UsageStats["byModel"] }) {
   }, [byModel, total]);
 
   if (total <= 0) {
-    return <p className="text-xs text-muted-foreground">暂无用量数据。</p>;
+    return <p className="text-xs text-muted-foreground">暂无用量数据</p>;
   }
 
   const radius = 52;
@@ -590,9 +595,9 @@ export function UsageStatsSection() {
     : [];
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <h3 className="text-lg font-medium">使用统计</h3>
+    <div className={SETTINGS_SECTION_GAP}>
+      <div className="mb-2 flex items-center gap-3">
+        <h3 className={SETTINGS_TITLE_TEXT}>使用统计</h3>
         <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs text-muted-foreground">
           应用用量
         </span>

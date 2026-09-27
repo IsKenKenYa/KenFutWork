@@ -7,6 +7,7 @@ import {
   type AgentSubagentListResponse,
   fetchSubagents,
 } from "@/lib/server-api";
+import { SETTINGS_TITLE } from "@/lib/settings-layout";
 
 /**
  * 设置 → 子智能体（风格 5：管理列表——可添加、可删除）。
@@ -129,7 +130,7 @@ export function SubagentsSection({
 
   return (
     <section aria-label="子智能体设置">
-      <h3 className="mb-1 text-base font-medium">子智能体</h3>
+      <h3 className={SETTINGS_TITLE}>子智能体</h3>
 
       {error ? (
         <p className="mb-3 rounded-md border border-destructive/40 bg-destructive/5 px-2 py-1.5 text-xs text-destructive">

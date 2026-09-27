@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-
+import { SETTINGS_TITLE } from "@/lib/settings-layout";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -49,7 +49,7 @@ export function ProfileSection({
 
   return (
     <div>
-      <h2 className="text-lg font-semibold mb-1">个人资料</h2>
+      <h2 className={SETTINGS_TITLE}>个人资料</h2>
 
       <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
         <div className="space-y-2">

@@ -7,6 +7,7 @@ import {
   fetchWorkspaceSettings,
   type PermissionSettingsView,
 } from "@/lib/server-api";
+import { SETTINGS_TITLE } from "@/lib/settings-layout";
 
 /**
  * 设置 → 引导（R5-2 的条目之一，落成**真实状态检查**而不是静态说明书）。
@@ -113,7 +114,7 @@ export function OnboardingSection({
 
   return (
     <section aria-label="引导">
-      <h3 className="mb-1 text-base font-medium">引导</h3>
+      <h3 className={SETTINGS_TITLE}>引导</h3>
       {message ? <p className="text-sm text-destructive">{message}</p> : null}
       {steps ? (
         <ol className="space-y-2">
