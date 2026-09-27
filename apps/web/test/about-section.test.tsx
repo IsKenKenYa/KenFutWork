@@ -75,16 +75,37 @@ describe("设置 → 关于", () => {
     expect(details?.hasAttribute("open")).toBe(false);
     expect(screen.getByText("第三方模型许可")).toBeVisible();
 
-    // 五项署名与「录音不留存」都在（折叠不等于删掉——许可是法律要求）
+    // 五项署名都在（折叠不等于删掉——许可是法律要求）
     for (const label of [
       "SenseVoiceSmall",
       "sherpa-onnx",
       "Silero VAD",
       "Kokoro 多语版",
       "espeak-ng 数据",
-      "录音不留存",
     ]) {
       expect(screen.getByText(label)).toBeInTheDocument();
+    }
+    // 「录音不留存」不在许可清单里——它是隐私承诺，单独占一行（值是「不留存」）
+    expect(details?.textContent).not.toContain("录音");
+    expect(screen.getByText("录音")).toBeVisible();
+    expect(screen.getByText("不留存")).toBeVisible();
+  });
+
+  /**
+   * 版式的机械检查只能到这里：jsdom 没有布局，量不到「值是否真的靠右」。
+   * 能锁的是**结构**——每行都是「标签 + 值」两个 span，且行是 `justify-between`。
+   * 真机量过：漏掉 `justify-between` 时标签与值只隔 8px 挤在左边，用户直接点名。
+   */
+  it("每一行都是两列（标签 + 值），且靠 justify-between 分列", () => {
+    stubHealth({ ok: true, service: "kenfutwork-server", version: "1.2.3" });
+    render(<AboutSection />);
+    const rows = [
+      ...document.querySelectorAll('section[aria-label="关于"] > div > div'),
+    ];
+    expect(rows).toHaveLength(4);
+    for (const row of rows) {
+      expect(row.className).toContain("justify-between");
+      expect(row.children.length).toBe(2);
     }
   });
 

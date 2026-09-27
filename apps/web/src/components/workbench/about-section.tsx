@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { getServerBaseUrl } from "@/lib/env";
@@ -66,32 +67,43 @@ export function AboutSection() {
     <section aria-label="关于" className="w-full">
       <h3 className={SETTINGS_TITLE}>关于</h3>
       <div className={`${SETTINGS_ROW_STACK} w-full`}>
-        <div className={`${SETTINGS_ROW} justify-start`}>
+        {/*
+          每一行都是「标签在左、值在右」（`justify-between`）。曾经漏了这一条，
+          标签与值只隔 8px 挤在左边、右半整片空着——用户直接点名「这个排版不能改吗」。
+        */}
+        <div className={`${SETTINGS_ROW} justify-between`}>
           <span className="font-medium">KenFutWork</span>
-          <span className="ml-auto text-muted-foreground">
-            BYOK 的 AI 工作台
-          </span>
+          <span className="text-muted-foreground">BYOK 的 AI 工作台</span>
         </div>
-        <div className={SETTINGS_ROW}>
+        <div className={`${SETTINGS_ROW} justify-between`}>
           <span className="text-muted-foreground">服务端</span>
           <span className="min-w-0 break-all">{server}</span>
         </div>
-        <div className={SETTINGS_ROW}>
+        <div className={`${SETTINGS_ROW} justify-between`}>
           <span className="text-muted-foreground">地址</span>
           <span className="min-w-0 break-all">{base || "（同源）"}</span>
         </div>
-        <details className="w-full rounded-lg border px-3 py-2 text-sm">
-          <summary className="cursor-pointer text-muted-foreground">
+        {/* 隐私承诺单独一行（原先塞在许可清单里当无值的一项，看着像坏行） */}
+        <div className={`${SETTINGS_ROW} justify-between`}>
+          <span className="text-muted-foreground">录音</span>
+          <span>不留存</span>
+        </div>
+        {/*
+          许可折叠块：`summary` 自己就是一行（同 42px、同左内边距），展开后内容缩进对齐。
+          不用原生三角标——把它设成 flex 行原生标记就不渲染了，改用会转的箭头。
+        */}
+        <details className="w-full rounded-lg border">
+          <summary className="flex min-h-[2.625rem] cursor-pointer items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
+            <ChevronRight className="h-4 w-4 shrink-0 transition-transform [details[open]_&]:rotate-90" />
             第三方模型许可
           </summary>
-          <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+          <ul className="space-y-1 border-t px-3 py-2 text-xs text-muted-foreground">
             {THIRD_PARTY_NOTICES.map(([name, license]) => (
               <li key={name} className="flex justify-between gap-4">
                 <span>{name}</span>
                 <span>{license}</span>
               </li>
             ))}
-            <li className="pt-1">录音不留存</li>
           </ul>
         </details>
       </div>
