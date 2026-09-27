@@ -166,6 +166,13 @@ fn dev_spawn_config(data_dir: PathBuf) -> ServerSpawnConfig {
     if let Ok(cwd) = std::env::var("KENFUTWORK_DESKTOP_SERVER_CWD") {
         config.cwd = cwd.into();
     }
+    // 桌面 dev 的身份口径与打包形态一致：**local-trust 免登录（本机用户）**。
+    // 源码服务端经 --env-file 读 .env.local（managed 缺省），壳在这里覆盖成桌面
+    // 身份——注入的进程 env 优先级高于 --env-file。其余（数据目录/PG/队列）仍按
+    // .env.local 的 dev 链路，与 `pnpm dev` 同库同语义。
+    config
+        .env
+        .push(("KENFUTWORK_AUTH_DRIVER".into(), "local-trust".into()));
     config
 }
 
