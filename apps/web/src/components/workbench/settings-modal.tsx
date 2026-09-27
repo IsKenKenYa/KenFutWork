@@ -398,6 +398,7 @@ export function SettingsModal({
                   hasWorkDir={hasWorkDir}
                   conversationCount={conversationCount}
                   onGoToTab={(next) => setActiveTab(next)}
+                  onLeaveSettings={onClose}
                 />
               ) : null
             ) : activeTab === "commands" ? (

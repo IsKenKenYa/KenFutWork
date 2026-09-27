@@ -85,7 +85,9 @@ describe("设置 → 子智能体（管理列表）", () => {
     expect(await screen.findByText("视频生成")).toBeVisible();
     expect(screen.getByText("翻译官")).toBeVisible();
     expect(screen.getByText("子任务分发")).toBeVisible();
-    expect(screen.getByText(/工具：generate_video/)).toBeVisible();
+    // 工具 id 不再上界面：与派活名 video_generate 近乎同形，读起来是噪音（曾让行高不齐）
+    expect(screen.queryByText("generate_video")).toBeNull();
+    expect(screen.queryByText(/工具：/)).toBeNull();
     // 自定义项有删除按钮，内置没有
     expect(screen.getByRole("button", { name: "删除 翻译官" })).toBeVisible();
     expect(

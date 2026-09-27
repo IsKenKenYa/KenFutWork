@@ -137,7 +137,8 @@ export function AgentSection({
         </div>
 
         {onToggleAutoCompact ? (
-          <div className="rounded-lg border p-3">
+          /* 与同页的外观卡片同为 py-2：同一页里的行不同高就是「排版不合理」 */
+          <div className="rounded-lg border px-3 py-2">
             <label className="flex items-center justify-between gap-3">
               <span className="text-sm">上下文自动压缩</span>
               <input

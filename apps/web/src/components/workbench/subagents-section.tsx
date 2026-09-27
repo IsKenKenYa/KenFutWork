@@ -148,11 +148,6 @@ export function SubagentsSection({
                 name={entry.name}
                 label={entry.label}
                 description={entry.description}
-                detail={
-                  "tools" in entry && entry.tools.length > 0
-                    ? `工具：${entry.tools.join("、")}`
-                    : null
-                }
               />
             ))}
             {catalog.custom.map((entry) => (
@@ -264,6 +259,14 @@ export function SubagentsSection({
   );
 }
 
+/**
+ * 一行子智能体。**只两行**：标题（名称 + 派活 id）与一行说明。
+ *
+ * 曾经还有第三条「工具：generate_video」——两个近乎同形的 id 挤在一起
+ * （`video_generate` 派活名 / `generate_video` 工具名）读起来是噪音，而且
+ * 「按描述生成视频」这句说明已经把工具能力说清楚了；有工具的 77px、没工具的 58px
+ * 还让同一列表行高不齐（真机量过）。
+ */
 function SubagentRow({
   name,
   label,
@@ -274,7 +277,7 @@ function SubagentRow({
   name: string;
   label: string;
   description: string;
-  /** 附加说明（工具清单/角色设定摘要）。 */
+  /** 附加说明（只给自定义项：角色设定摘要）。 */
   detail?: string | null;
   /** 传入即渲染删除按钮（自定义项）。 */
   onDelete?: (() => void) | undefined;
@@ -283,9 +286,9 @@ function SubagentRow({
     <li className="flex items-start gap-3 px-3 py-2.5">
       <Bot className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
-        <p className="text-sm">
+        <p className="flex flex-wrap items-center gap-1.5 text-sm">
           {label}
-          <code className="ml-1.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+          <code className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
             {name}
           </code>
         </p>

@@ -81,6 +81,10 @@ function saveSettings(settings: BrowserSettings) {
   }
 }
 
+/**
+ * 单个开关行：标签 + 开关，副标题**只在真的多说了一件事时**才给
+ * （数字/时机/去向/行话解释）。复述标签的副标题按 2026-09-27 口径一律不写。
+ */
 function Toggle({
   label,
   hint,
@@ -89,7 +93,7 @@ function Toggle({
   disabled = false,
 }: {
   label: string;
-  hint: string;
+  hint?: string | undefined;
   checked: boolean;
   onChange?: (next: boolean) => void;
   disabled?: boolean;
@@ -105,7 +109,9 @@ function Toggle({
             </span>
           ) : null}
         </span>
-        <span className="block text-xs text-muted-foreground">{hint}</span>
+        {hint ? (
+          <span className="block text-xs text-muted-foreground">{hint}</span>
+        ) : null}
       </span>
       <button
         type="button"
@@ -309,7 +315,6 @@ export function BrowserSettingsSection({
       <div className="divide-y">
         <Toggle
           label="允许 AI 控制浏览器"
-          hint="让 Agent 能读网页并操作页面"
           checked={agentControl}
           onChange={(next) => void toggleAgentControl(next)}
         />
@@ -467,7 +472,7 @@ export function BrowserSettingsSection({
         />
         <Toggle
           label="自动截图"
-          hint="每次动作后自动截图，作为附件进对话"
+          hint="截图作为附件进对话"
           checked={browserAutoScreenshot}
           onChange={(next) =>
             void toggleServerFlag("browserAutoScreenshot", next)
@@ -475,7 +480,7 @@ export function BrowserSettingsSection({
         />
         <Toggle
           label="允许 AI 读取开发者工具数据"
-          hint="Agent 可读控制台日志与网络请求"
+          hint="控制台日志与网络请求"
           checked={browserDevtoolsRead}
           onChange={(next) =>
             void toggleServerFlag("browserDevtoolsReadEnabled", next)

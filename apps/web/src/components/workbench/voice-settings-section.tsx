@@ -43,9 +43,15 @@ const SEGMENTS: Array<{ key: SegmentKey; label: string }> = [
   { key: "speak", label: "说" },
 ];
 
-/** 设置里所有控件同一几何：与输入框同高同字号，宽度铺满。 */
+/**
+ * 设置里所有行同一几何：与输入框同高同字号、宽度铺满，`min-h` 定成 2.625rem（42px）。
+ *
+ * `min-h` 不是凑数：同一段候选列表里，「不用」行没有尾控件、「下载/删除」行有——
+ * 不兜底就是 38px 与 42px 交替（真机量过；用户反馈「排版不合理」）。兜在行上比在
+ * 每行手工插一个空占位元素干净：空占位正是刚被门禁判为「删文案剩的壳」的那类东西。
+ */
 const ROW_CLASS =
-  "flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-sm";
+  "flex w-full min-h-[2.625rem] items-center gap-2 rounded-lg border px-3 py-2 text-sm";
 
 export function VoiceSettingsSection({ accessToken }: { accessToken: string }) {
   const [settings, setSettings] = useState<VoiceSettings | null>(null);
@@ -501,7 +507,7 @@ function DownloadControl({
               : "download",
         );
       }}
-      className="shrink-0 rounded-md border px-3 py-1 text-xs disabled:opacity-50"
+      className="inline-flex h-6 shrink-0 items-center rounded-md border px-3 text-xs disabled:opacity-50"
     >
       {label}
     </button>
