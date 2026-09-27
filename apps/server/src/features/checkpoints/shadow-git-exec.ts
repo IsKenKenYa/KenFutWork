@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { mkdirSync } from "node:fs";
 
 import type {
   ExecShadowGit,
@@ -31,6 +32,16 @@ export function createShadowGitExec(options: {
     input?: string,
   ): Promise<ShadowGitCommandResult> =>
     new Promise((resolve) => {
+      // 桌面形态（gitDir/workTree 落数据目录）下，查询可能先于首个 agent run
+      // 到达——目录尚不存在时 git 会报 fatal: Invalid path 并把原话甩到面板。
+      // 这里兜底建目录（best-effort）：建不出来就让 git 的错误原样上抛。
+      for (const dir of [scope.gitDir, scope.workTree]) {
+        try {
+          mkdirSync(dir, { recursive: true });
+        } catch {
+          // 目录创建失败不拦截 git 调用——错误经 stderr 原样上抛
+        }
+      }
       const child = execFile(
         options.binary,
         ["--no-optional-locks", ...args],
