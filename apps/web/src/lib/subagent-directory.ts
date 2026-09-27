@@ -126,6 +126,19 @@ export interface SubagentEntry {
   blocks: SubagentBlock[];
 }
 
+/**
+ * 单个子代理转录的块数上限：后台子代理一轮可执行上百次工具调用，
+ * 不设上限会把整条任务撑爆 localStorage（对齐主消息 MAX_TOOL_BLOCKS 思路，
+ * 丢最旧的保留最新过程）。
+ */
+export const MAX_BLOCKS_PER_SUBAGENT = 120;
+
+function capBlocks(blocks: SubagentBlock[]): SubagentBlock[] {
+  return blocks.length <= MAX_BLOCKS_PER_SUBAGENT
+    ? blocks
+    : blocks.slice(blocks.length - MAX_BLOCKS_PER_SUBAGENT);
+}
+
 /** 解析事件时刻为毫秒（脏数据如实缺省）。 */
 function parseMs(timestamp?: string): number | undefined {
   if (!timestamp) return undefined;
@@ -205,7 +218,7 @@ export function appendSubagentDelta(
     } else {
       blocks.push({ type: kind, text: delta });
     }
-    return { ...entry, blocks };
+    return { ...entry, blocks: capBlocks(blocks) };
   });
 }
 
