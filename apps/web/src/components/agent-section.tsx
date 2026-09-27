@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SETTINGS_TITLE } from "@/lib/settings-layout";
+import { SETTINGS_ROW, SETTINGS_TITLE } from "@/lib/settings-layout";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
 
@@ -139,22 +139,20 @@ export function AgentSection({
 
         {onToggleAutoCompact ? (
           /* 与同页的外观卡片同为 py-2：同一页里的行不同高就是「排版不合理」 */
-          <div className="rounded-lg border px-3 py-2">
-            <label className="flex items-center justify-between gap-3">
-              <span className="text-sm">上下文自动压缩</span>
-              <input
-                type="checkbox"
-                role="switch"
-                aria-label="上下文自动压缩"
-                aria-checked={autoCompactEnabled}
-                checked={autoCompactEnabled}
-                onChange={(event) =>
-                  void onToggleAutoCompact(event.target.checked)
-                }
-                className="h-4 w-8 shrink-0 appearance-none rounded-full bg-muted transition-colors checked:bg-foreground/80 before:block before:h-3.5 before:w-3.5 before:translate-x-0.5 before:rounded-full before:background before:bg-background before:transition-transform checked:before:translate-x-4"
-              />
-            </label>
-          </div>
+          <label className={`${SETTINGS_ROW} cursor-pointer justify-between`}>
+            <span className="text-sm">上下文自动压缩</span>
+            <input
+              type="checkbox"
+              role="switch"
+              aria-label="上下文自动压缩"
+              aria-checked={autoCompactEnabled}
+              checked={autoCompactEnabled}
+              onChange={(event) =>
+                void onToggleAutoCompact(event.target.checked)
+              }
+              className="h-4 w-8 shrink-0 appearance-none rounded-full bg-muted transition-colors checked:bg-foreground/80 before:block before:h-3.5 before:w-3.5 before:translate-x-0.5 before:rounded-full before:background before:bg-background before:transition-transform checked:before:translate-x-4"
+            />
+          </label>
         ) : null}
 
         {feedback && (

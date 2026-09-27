@@ -75,7 +75,7 @@ function Card({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border bg-card p-4">
+    <section className="rounded-lg border bg-card p-4">
       <div className="mb-3 flex items-center justify-between gap-2">
         <h4 className="text-sm font-medium">{title}</h4>
         {action}
@@ -611,7 +611,7 @@ export function UsageStatsSection() {
       {stats ? (
         <>
           {/* 汇总条：一张卡、五格、竖分隔线（参考图同款） */}
-          <div className="flex divide-x rounded-xl border bg-card">
+          <div className="flex divide-x rounded-lg border bg-card">
             {summary.map((item) => (
               <div
                 key={item.label}

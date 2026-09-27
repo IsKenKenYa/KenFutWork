@@ -3,7 +3,7 @@
 import { Monitor, Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
-import { SETTINGS_TITLE } from "@/lib/settings-layout";
+import { SETTINGS_ROW, SETTINGS_TITLE } from "@/lib/settings-layout";
 
 /**
  * 设置 → 外观（R5-2：参考图里的「外观」条目）。
@@ -41,7 +41,7 @@ export function AppearanceSection() {
             <label
               key={value}
               data-active={active}
-              className="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors hover:bg-muted/60 data-[active=true]:border-foreground/40 data-[active=true]:bg-muted"
+              className={`${SETTINGS_ROW} cursor-pointer transition-colors hover:bg-muted/60 data-[active=true]:border-foreground/40 data-[active=true]:bg-muted`}
             >
               <input
                 type="radio"

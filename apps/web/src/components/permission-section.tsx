@@ -16,7 +16,11 @@ import {
   type PermissionSettingsView,
   updatePermissionSettings,
 } from "@/lib/server-api";
-import { SETTINGS_SECTION_GAP, SETTINGS_TITLE } from "@/lib/settings-layout";
+import {
+  SETTINGS_ROW,
+  SETTINGS_SECTION_GAP,
+  SETTINGS_TITLE,
+} from "@/lib/settings-layout";
 
 /**
  * 权限设置（DEC-4；R5-3 补第 4 档与分场景）。
@@ -138,10 +142,7 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
         <h3 className={SETTINGS_TITLE}>常规任务</h3>
         <fieldset aria-label="常规任务档位" className="min-w-0 space-y-2">
           {TIERS.map((t) => (
-            <label
-              key={t.value}
-              className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
-            >
+            <label key={t.value} className={SETTINGS_ROW}>
               <input
                 type="radio"
                 name="permission-tier"
@@ -221,10 +222,7 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
         <h3 className={SETTINGS_TITLE}>自动化任务</h3>
         <fieldset aria-label="自动化任务档位" className="min-w-0 space-y-2">
           {TIERS.map((t) => (
-            <label
-              key={`auto-${t.value}`}
-              className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
-            >
+            <label key={`auto-${t.value}`} className={SETTINGS_ROW}>
               <input
                 type="radio"
                 name="automation-permission-tier"

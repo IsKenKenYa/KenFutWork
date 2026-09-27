@@ -1,7 +1,7 @@
 "use client";
 
 import { ShieldCheck } from "lucide-react";
-import { SETTINGS_TITLE } from "@/lib/settings-layout";
+import { SETTINGS_ROW_MIN_HEIGHT, SETTINGS_TITLE } from "@/lib/settings-layout";
 
 /**
  * 设置 → 账号（R5-2：参考图里的「账号」条目）。
@@ -32,19 +32,27 @@ export function AccountSection({
       <h3 className={SETTINGS_TITLE}>账号</h3>
 
       <dl className="divide-y rounded-lg border text-sm">
-        <div className="flex items-center justify-between px-3 py-2.5">
+        <div
+          className={`flex items-center justify-between px-3 py-2 ${SETTINGS_ROW_MIN_HEIGHT}`}
+        >
           <dt className="text-muted-foreground">显示名</dt>
           <dd>{displayName || "（未设置）"}</dd>
         </div>
-        <div className="flex items-center justify-between px-3 py-2.5">
+        <div
+          className={`flex items-center justify-between px-3 py-2 ${SETTINGS_ROW_MIN_HEIGHT}`}
+        >
           <dt className="text-muted-foreground">邮箱</dt>
           <dd className="truncate">{email}</dd>
         </div>
-        <div className="flex items-center justify-between px-3 py-2.5">
+        <div
+          className={`flex items-center justify-between px-3 py-2 ${SETTINGS_ROW_MIN_HEIGHT}`}
+        >
           <dt className="text-muted-foreground">套餐</dt>
           <dd>{plan ?? "未启用计费"}</dd>
         </div>
-        <div className="flex items-center justify-between px-3 py-2.5">
+        <div
+          className={`flex items-center justify-between px-3 py-2 ${SETTINGS_ROW_MIN_HEIGHT}`}
+        >
           <dt className="text-muted-foreground">平台额度余额</dt>
           <dd>{balance === null ? "未启用计费" : balance}</dd>
         </div>

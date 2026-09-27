@@ -27,7 +27,11 @@ import {
   fetchPermissionSettings,
   updatePermissionSettings,
 } from "@/lib/server-api";
-import { SETTINGS_SECTION_GAP, SETTINGS_TITLE } from "@/lib/settings-layout";
+import {
+  SETTINGS_ROW_MIN_HEIGHT,
+  SETTINGS_SECTION_GAP,
+  SETTINGS_TITLE,
+} from "@/lib/settings-layout";
 
 /**
  * 浏览器设置（R5-4 按参考图分区：内置浏览器 / 外部浏览器 / 通用）。
@@ -100,7 +104,9 @@ function Toggle({
   disabled?: boolean;
 }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between gap-4 py-3">
+    <label
+      className={`flex cursor-pointer items-center justify-between gap-4 px-3 py-2 ${SETTINGS_ROW_MIN_HEIGHT}`}
+    >
       <span>
         <span className="block text-sm">
           {label}
@@ -314,13 +320,15 @@ export function BrowserSettingsSection({
     <section aria-label="浏览器设置" className={SETTINGS_SECTION_GAP}>
       <div>
         <h3 className={SETTINGS_TITLE}>内置浏览器</h3>
-        <div className="divide-y">
+        <div className="divide-y rounded-lg border">
           <Toggle
             label="允许 AI 控制浏览器"
             checked={agentControl}
             onChange={(next) => void toggleAgentControl(next)}
           />
-          <div className="flex flex-wrap items-center justify-between gap-3 py-3">
+          <div
+            className={`flex flex-wrap items-center justify-between gap-3 px-3 py-2 ${SETTINGS_ROW_MIN_HEIGHT}`}
+          >
             <span>
               <span className="block text-sm">浏览器数据</span>
               <span className="block text-xs text-muted-foreground">
@@ -360,7 +368,7 @@ export function BrowserSettingsSection({
 
       <div>
         <h3 className={SETTINGS_TITLE}>外部浏览器</h3>
-        <div className="rounded-md border px-3 py-2 text-xs">
+        <div className="rounded-lg border px-3 py-2 text-xs">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-muted-foreground">{cdpLabel}</span>
             <span className="flex items-center gap-2">
@@ -401,7 +409,7 @@ export function BrowserSettingsSection({
 
       <div>
         <h3 className={SETTINGS_TITLE}>通用</h3>
-        <div className="divide-y">
+        <div className="divide-y rounded-lg border">
           {/* biome-ignore lint/a11y/noLabelWithoutControl: 控件是内嵌的 Base UI SelectTrigger（自定义组件），规则无法静态识别包裹关联 */}
           <label className="flex w-full flex-col gap-2 py-3">
             <span>

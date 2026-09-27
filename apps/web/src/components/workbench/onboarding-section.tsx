@@ -7,7 +7,7 @@ import {
   fetchWorkspaceSettings,
   type PermissionSettingsView,
 } from "@/lib/server-api";
-import { SETTINGS_TITLE } from "@/lib/settings-layout";
+import { SETTINGS_ROW, SETTINGS_TITLE } from "@/lib/settings-layout";
 
 /**
  * 设置 → 引导（R5-2 的条目之一，落成**真实状态检查**而不是静态说明书）。
@@ -121,10 +121,7 @@ export function OnboardingSection({
           {steps.map((step, index) => {
             const tab = step.tab;
             return (
-              <li
-                key={step.id}
-                className="flex items-center gap-3 rounded-lg border px-3 py-2"
-              >
+              <li key={step.id} className={SETTINGS_ROW}>
                 <span
                   aria-hidden
                   className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs ${

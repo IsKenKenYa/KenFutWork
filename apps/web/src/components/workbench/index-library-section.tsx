@@ -7,7 +7,11 @@ import {
   fetchCodeIndex,
   rebuildCodeIndex,
 } from "@/lib/server-api";
-import { SETTINGS_SECTION_GAP, SETTINGS_TITLE } from "@/lib/settings-layout";
+import {
+  SETTINGS_ROW_MIN_HEIGHT,
+  SETTINGS_SECTION_GAP,
+  SETTINGS_TITLE,
+} from "@/lib/settings-layout";
 
 /**
  * 设置 → 索引库（R4-3）。
@@ -190,7 +194,9 @@ function IndexToggle({
   onChange: (next: boolean) => void;
 }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between gap-4 px-3 py-2.5">
+    <label
+      className={`flex cursor-pointer items-center justify-between gap-4 px-3 py-2 ${SETTINGS_ROW_MIN_HEIGHT}`}
+    >
       <span className="min-w-0 text-sm">{title}</span>
       <input
         type="checkbox"
