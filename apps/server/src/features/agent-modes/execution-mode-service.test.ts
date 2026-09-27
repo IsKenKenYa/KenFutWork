@@ -266,9 +266,9 @@ describe("plan 只读子代理白名单（DEC-17：派发按定义只读性放�
     return service.resolveToolPolicy("t-plan-sub");
   }
 
-  it("task/task_background 携带只读定义 detail 时放行（explore/review/planner 可派）", () => {
+  it("subagent_task/subagent_background 携带只读定义 detail 时放行（explore/review/planner 可派）", () => {
     const policy = planPolicy();
-    for (const tool of ["task", "task_background"]) {
+    for (const tool of ["subagent_task", "subagent_background"]) {
       expect(
         evaluateToolPolicy(policy, tool, { subagentReadOnly: true }).allowed,
         tool,
@@ -276,14 +276,16 @@ describe("plan 只读子代理白名单（DEC-17：派发按定义只读性放�
     }
   });
 
-  it("task 携带可写定义或不带 detail 时仍拒绝（batch_image/video_generate 不可派）", () => {
+  it("subagent_task 携带可写定义或不带 detail 时仍拒绝（batch_image/video_generate 不可派）", () => {
     const policy = planPolicy();
     expect(
-      evaluateToolPolicy(policy, "task", { subagentReadOnly: false }).allowed,
+      evaluateToolPolicy(policy, "subagent_task", {
+        subagentReadOnly: false,
+      }).allowed,
     ).toBe(false);
-    expect(evaluateToolPolicy(policy, "task").allowed).toBe(false);
+    expect(evaluateToolPolicy(policy, "subagent_task").allowed).toBe(false);
     expect(
-      evaluateToolPolicy(policy, "task_background", {
+      evaluateToolPolicy(policy, "subagent_background", {
         subagentReadOnly: false,
       }).allowed,
     ).toBe(false);

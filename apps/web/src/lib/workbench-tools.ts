@@ -571,7 +571,7 @@ export function applyTaskToolEvent<T extends TaskToolState>(
 
   // task_background 的 tool.completed 是「派发成功」不是「子代理结束」——
   // 目录条目保持运行中，真终态由 task.notification 或 run 终态兜底收口
-  if (toolName === "task_background") return base;
+  if (toolName === "subagent_background") return base;
   if (!task.subagents) return base;
   return {
     ...base,

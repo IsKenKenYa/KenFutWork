@@ -75,7 +75,7 @@ describe("深度治理的结构性锁（DEC-17：深度上限 1）", () => {
   it("resolveChildToolbelt：父工具面混入派发工具也不会进子代理工具带", () => {
     const parentTools = [
       { name: "task", meta: "x" },
-      { name: "task_background", meta: "x" },
+      { name: "subagent_task", meta: "x" },
       { name: "generate_image", meta: "x" },
     ];
     const batchImage = SUBAGENT_DEFINITIONS.find(

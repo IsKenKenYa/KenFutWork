@@ -84,15 +84,15 @@ const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "inspect_canvas",
   "screenshot_canvas",
   "get_brand_kit",
-  // 子代理结果查询（纯读）；派发工具 task/task_background 不在此列——
+  // 子代理结果查询（纯读）；派发工具 subagent_task/subagent_background 不在此列——
   // 它们按**目标定义的只读性**动态判定（见 evaluateToolPolicy 的 detail 分支，DEC-17）
   "task_output",
 ]);
 
 /** 子代理派发工具：plan 模式下按目标定义 readOnly 与否动态放行。 */
 const SUBAGENT_DISPATCH_TOOLS: ReadonlySet<string> = new Set([
-  "task",
-  "task_background",
+  "subagent_task",
+  "subagent_background",
 ]);
 
 /**

@@ -1,3 +1,5 @@
+import { ToolMessage } from "@langchain/core/messages";
+import type { AgentMiddleware } from "langchain";
 import { tool } from "langchain";
 import { z } from "zod";
 
@@ -109,7 +111,7 @@ export function createSubagentTaskTools(deps: {
       }
     },
     {
-      name: "task",
+      name: "subagent_task",
       description:
         "派生一个子代理执行子任务并等待其结果（前台）。多个独立子任务请在**同一条消息里多次调用本工具**并行派发。" +
         `当前可用的子代理类型：\n${describeAvailable()}`,
@@ -218,4 +220,44 @@ export function createSubagentTaskTools(deps: {
   );
 
   return { taskTool, taskBackgroundTool, taskOutputTool };
+}
+
+/**
+ * 把 deepagents 无条件内建的 `task` 工具从模型工具清单中排除（DEC-17）：
+ * createDeepAgent 不提供关闭开关，内建 `task`（空 subagents 时不可用）会与
+ * 我们的 `subagent_task` 混淆模型。模型清单移除 + 执意调用时回可读拒绝。
+ */
+export function createBuiltinTaskExclusionMiddleware(): AgentMiddleware {
+  return {
+    name: "excludeBuiltinTask",
+    wrapModelCall(
+      request: unknown,
+      handler: (req: unknown) => Promise<unknown>,
+    ) {
+      const req = request as { tools?: Array<{ name?: string }> };
+      const filtered = {
+        ...req,
+        tools: req.tools?.filter((candidate) => candidate?.name !== "task"),
+      };
+      return handler(filtered) as Promise<unknown>;
+    },
+    wrapToolCall(
+      request: unknown,
+      handler: (req: unknown) => Promise<unknown>,
+    ) {
+      const call = (
+        request as {
+          toolCall?: { name?: string; id?: string };
+        }
+      ).toolCall;
+      if (call?.name !== "task") return handler(request) as Promise<unknown>;
+      return Promise.resolve(
+        new ToolMessage({
+          content:
+            "task 工具已下线：请改用 subagent_task / subagent_background 派发子代理。",
+          tool_call_id: call.id ?? "",
+        }),
+      ) as Promise<unknown>;
+    },
+  } as unknown as AgentMiddleware;
 }

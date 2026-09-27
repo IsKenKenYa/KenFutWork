@@ -9,8 +9,8 @@ import { normalizeToolArgs } from "./tool-args";
  */
 
 export const SUBAGENT_TOOL_NAMES = new Set([
-  "task",
-  "task_background",
+  "subagent_task",
+  "subagent_background",
   "video_generate",
 ]);
 
