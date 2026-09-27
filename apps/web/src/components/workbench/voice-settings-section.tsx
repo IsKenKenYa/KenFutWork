@@ -311,10 +311,7 @@ export function VoiceSettingsSection({ accessToken }: { accessToken: string }) {
                 {formatBytes(report.hardware.totalMemoryBytes)}
                 {report.hardware.gpu ? ` · ${report.hardware.gpu}` : ""}
               </p>
-              <p>
-                听 {listenMetric(report)} · 想 {thinkMetric(report)} · 说{" "}
-                {speakMetric(report)}
-              </p>
+              <p>{segmentSummary(report)}</p>
               <p>
                 推荐{" "}
                 {advice.recommendedMode === "loop"
@@ -323,9 +320,11 @@ export function VoiceSettingsSection({ accessToken }: { accessToken: string }) {
                     : "完整回路"
                   : "只转文本"}
               </p>
-              {report.hardware.gpu ? (
-                <p>可接 GPU 服务：{report.hardware.gpu}</p>
-              ) : null}
+              {/*
+                规划 §3.4「检测到 NVIDIA GPU 时提示『可接 GPU 服务』」——只写这句结论，
+                **不再重复 GPU 名字**（上一行的硬件清单里已经有了）。
+              */}
+              {report.hardware.gpu ? <p>可接 GPU 服务</p> : null}
             </div>
           ) : null}
         </div>
@@ -369,6 +368,37 @@ function speakMetric(report: VoiceDiagnoseReport): string {
     return `${match[2]}× 首包 ${match[1]}s`;
   }
   return report.speak.state === "unavailable" ? "不可用" : "未实测";
+}
+
+/** 状态词（与实测读数区分：只有状态词才允许合并） */
+function isStateMetric(value: string): boolean {
+  return value === "不可用" || value === "未实测";
+}
+
+/**
+ * 三段读数压成一行：`听 0.07× 首载 4.4s · 想/说 不可用`。
+ *
+ * 相邻两段读到同一**状态**时并成一个标签（「想 不可用 · 说 不可用」→「想/说 不可用」）；
+ * 实测读数**不合并**——两个段偶尔量到同样的数字，并起来（「听/说 0.50×」）会读成一段。
+ */
+function segmentSummary(report: VoiceDiagnoseReport): string {
+  const parts: Array<[string, string]> = [
+    ["听", listenMetric(report)],
+    ["想", thinkMetric(report)],
+    ["说", speakMetric(report)],
+  ];
+  const merged: Array<{ labels: string[]; value: string }> = [];
+  for (const [label, value] of parts) {
+    const last = merged[merged.length - 1];
+    if (last && last.value === value && isStateMetric(value)) {
+      last.labels.push(label);
+    } else {
+      merged.push({ labels: [label], value });
+    }
+  }
+  return merged
+    .map((item) => `${item.labels.join("/")} ${item.value}`)
+    .join(" · ");
 }
 
 function candidatesFor(

@@ -266,6 +266,36 @@ describe("语音设置页", () => {
     expect(saves[0]).toEqual({ mode: "transcribe", speakReplies: false });
   });
 
+  /** 相邻两段同一状态并成一个标签（原来是「想 不可用 · 说 不可用」——同一句话写两遍） */
+  it("三段读数同行：相邻同状态合并成「想/说 不可用」", async () => {
+    await mount();
+    expect(
+      await screen.findByText("听 0.08× 首载 2.7s · 想/说 不可用"),
+    ).toBeTruthy();
+  });
+
+  /** 实测读数不合并：两段偶尔量到同样数字时，并起来会读成一段（「听/说 0.50×」） */
+  it("实测读数即使相同也不合并", async () => {
+    await mount({
+      report: {
+        ...REPORT,
+        think: {
+          state: "measured" as const,
+          summary: "实测。",
+          think: { ttftSeconds: 0.5, tokensPerSecond: 40 },
+        },
+        speak: {
+          state: "measured" as const,
+          summary: "首包 0.10s、实时率 0.50",
+        },
+      },
+    });
+    // 说说的是「0.50× 首包 0.10s」，想说的是「0.50s 40t/s」，数字格式不同 → 不合并；
+    // 关键断言是：两段同时 measured 时不会出现合并标签
+    const line = await screen.findByText(/听 0\.08× 首载 2\.7s/);
+    expect(line.textContent).not.toMatch(/听\/想|想\/说/);
+  });
+
   it("测到 NVIDIA GPU 时给一行「可接 GPU 服务」（探不到则完全不提）", async () => {
     await mount({
       report: {
@@ -273,9 +303,9 @@ describe("语音设置页", () => {
         hardware: { ...REPORT.hardware, gpu: "NVIDIA GeForce RTX 4060" },
       },
     });
-    expect(
-      await screen.findByText(/^可接 GPU 服务：NVIDIA GeForce RTX 4060$/),
-    ).toBeTruthy();
+    // 规划 §3.4 只要求这句结论；GPU 名字在上一行硬件清单里，不重复写
+    expect(await screen.findByText(/^可接 GPU 服务$/)).toBeTruthy();
+    expect(screen.queryByText(/可接 GPU 服务：/)).toBeNull();
   });
 
   it("没有 GPU 时不出现该提示（不摆空壳）", async () => {

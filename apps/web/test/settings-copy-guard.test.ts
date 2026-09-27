@@ -278,3 +278,69 @@ describe("界面文案硬约束：设置区只写标签，不写句子", () => {
     expect(EMPTY_INLINE.test('<div className="mt-3"></div>')).toBe(false);
   });
 });
+
+/** 设置区允许的字号档：小字 / 正文 / 标题。 */
+const ALLOWED_FONT_PX = new Set([12, 14, 16]);
+
+/**
+ * 版式守卫：字号只准用 12 / 14 / 16 三档，页面标题不准自带大字号。
+ *
+ * 背景（2026-09-27 第四轮反馈「排版很乱」）：量出来设置区混着 9px / 10px / 11px / 12.8px
+ * 四个自定档位，标题有 `text-base/500`、`text-lg/600`、`text-lg/500`、`text-sm/500` 四种规格
+ * ——同一个「通用」页里 16px 与 18px/600 并排。字号规格统一收进
+ * `apps/web/src/lib/settings-layout.ts` 后，由这条门禁盯住不再散掉。
+ *
+ * 唯一例外：导航分组眉标（`uppercase` 那一行）按惯例比条目小一档，故 < 12px 且同带
+ * `uppercase` 的行放过。
+ */
+function findFontViolations(): Violation[] {
+  const violations: Violation[] = [];
+  for (const file of settingsFiles()) {
+    const lines = readFileSync(file, "utf-8").split(/\r?\n/);
+    const comments = commentFlags(lines);
+    lines.forEach((raw, index) => {
+      if (comments[index] || isComment(raw)) return;
+      const rel = file.slice(file.indexOf("components"));
+      for (const match of raw.matchAll(/text-\[(\d+(?:\.\d+)?)px\]/g)) {
+        const px = Number(match[1]);
+        if (ALLOWED_FONT_PX.has(px)) continue;
+        if (px < 12 && raw.includes("uppercase")) continue;
+        violations.push({
+          file: rel,
+          line: index + 1,
+          text: `字号 ${px}px 不在 12/14/16 三档内`,
+        });
+      }
+      if (/text-(lg|xl|2xl|3xl)\b/.test(raw)) {
+        violations.push({
+          file: rel,
+          line: index + 1,
+          text: "页面标题请用 SETTINGS_TITLE / SETTINGS_TITLE_TEXT",
+        });
+      }
+    });
+  }
+  return violations;
+}
+
+describe("版式硬约束：设置区字号只有三档", () => {
+  it("没有自定字号，也没有自带大字号", () => {
+    const violations = findFontViolations();
+    const rendered = violations
+      .map((v) => `  ${v.file}:${v.line}  ${v.text}`)
+      .join("\n");
+    expect(
+      violations.length,
+      `设置区字号/标题规格散掉了（统一走 settings-layout.ts）：\n${rendered}`,
+    ).toBe(0);
+  });
+
+  it("守卫自身有效：认出 9px 与 text-lg，放过三档与眉标", () => {
+    expect(ALLOWED_FONT_PX.has(9)).toBe(false);
+    expect(ALLOWED_FONT_PX.has(12)).toBe(true);
+    // 眉标（uppercase）允许比 12px 小一档
+    const eyebrow = 'className="px-3 text-[10px] uppercase tracking-wide"';
+    expect(/text-\[(\d+(?:\.\d+)?)px\]/.exec(eyebrow)?.[1]).toBe("10");
+    expect(eyebrow.includes("uppercase")).toBe(true);
+  });
+});

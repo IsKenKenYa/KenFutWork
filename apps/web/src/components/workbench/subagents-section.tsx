@@ -289,13 +289,13 @@ function SubagentRow({
       <div className="min-w-0 flex-1">
         <p className="flex flex-wrap items-center gap-1.5 text-sm">
           {label}
-          <code className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+          <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
             {name}
           </code>
         </p>
         <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
         {detail ? (
-          <p className="mt-0.5 truncate text-[11px] text-muted-foreground/80">
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {detail}
           </p>
         ) : null}

@@ -127,7 +127,7 @@ export function OnboardingSection({
               >
                 <span
                   aria-hidden
-                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] ${
+                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs ${
                     step.done
                       ? "bg-emerald-500/15 text-emerald-600"
                       : "bg-muted text-muted-foreground"

@@ -105,7 +105,7 @@ function Toggle({
         <span className="block text-sm">
           {label}
           {disabled ? (
-            <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
               暂不可用
             </span>
           ) : null}
@@ -386,7 +386,7 @@ export function BrowserSettingsSection({
             </span>
           </div>
           {cdp?.status === "connected" ? (
-            <div className="mt-1 text-[11px] text-muted-foreground">
+            <div className="mt-1 text-xs text-muted-foreground">
               {cdp.browser} · {cdp.tabs} 个标签
               {cdp.currentUrl && cdp.currentUrl !== "about:blank"
                 ? ` · 当前 ${cdp.currentUrl}`
@@ -394,9 +394,7 @@ export function BrowserSettingsSection({
             </div>
           ) : null}
           {cdp?.status === "error" ? (
-            <div className="mt-1 text-[11px] text-destructive">
-              {cdp.message}
-            </div>
+            <div className="mt-1 text-xs text-destructive">{cdp.message}</div>
           ) : null}
         </div>
       </div>

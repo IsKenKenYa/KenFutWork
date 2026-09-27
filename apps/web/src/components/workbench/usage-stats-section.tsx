@@ -201,7 +201,7 @@ function Heatmap({
   return (
     <div>
       <div className="flex gap-[3px]">
-        <div className="mr-1 flex w-4 shrink-0 flex-col justify-between py-[1px] text-[10px] leading-none text-muted-foreground">
+        <div className="mr-1 flex w-4 shrink-0 flex-col justify-between py-[1px] text-xs leading-none text-muted-foreground">
           <span>一</span>
           <span>四</span>
           <span>日</span>
@@ -231,14 +231,14 @@ function Heatmap({
         {monthLabels.map((item) => (
           <span
             key={`${item.index}-${item.label}`}
-            className="absolute text-[10px] leading-4 text-muted-foreground"
+            className="absolute text-xs leading-4 text-muted-foreground"
             style={{ left: `${(item.index / weeks.length) * 100}%` }}
           >
             {item.label}
           </span>
         ))}
       </div>
-      <p className="mt-1 text-[10px] text-muted-foreground">
+      <p className="mt-1 text-xs text-muted-foreground">
         近一年{mode === "daily" ? "每日" : "累计"} token 用量（近 2 万条）
       </p>
     </div>
@@ -362,7 +362,7 @@ function TrendChart({
                     ? "end"
                     : "middle"
               }
-              className="fill-current text-[9px] text-muted-foreground"
+              className="fill-current text-xs text-muted-foreground"
             >
               {axisDate(date)}
             </text>
