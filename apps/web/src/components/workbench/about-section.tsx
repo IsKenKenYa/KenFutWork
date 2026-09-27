@@ -65,9 +65,11 @@ export function AboutSection() {
       <div className="mt-4 space-y-1 text-xs text-muted-foreground">
         <p>语音模型（按需下载）</p>
         <ul className="list-disc space-y-0.5 pl-4">
-          <li>SenseVoiceSmall · FunASR 许可 · sherpa-onnx</li>
+          <li>SenseVoiceSmall · FunASR 许可</li>
+          <li>sherpa-onnx · Apache-2.0</li>
           <li>Silero VAD · MIT</li>
-          <li>Kokoro 多语版 · Apache-2.0 · espeak-ng 数据 GPL-3.0</li>
+          <li>Kokoro 多语版 · Apache-2.0</li>
+          <li>espeak-ng 数据 · GPL-3.0</li>
         </ul>
         <p>录音不留存</p>
       </div>
