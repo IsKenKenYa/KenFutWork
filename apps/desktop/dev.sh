@@ -37,22 +37,17 @@ else
   echo "[dev] web 就绪（3000）"
 fi
 
-# 2.5 3001 上若挂着**旧打包快照**（target/**/app/server.cjs）就清掉——
-# 壳对「已健康的 3001」会直接复用，快照进程不清就会一直被复用，
-# 表现为「改了源码没生效」（2026-09-27 事故）。dev 形态只跑源码最新版。
+# 2.5 3001 端口归桌面 dev 独占：**无条件清掉任何占用者**（旧打包快照、
+# `pnpm dev` 起的 managed 服务端……）。壳对「已健康的 3001」会原样复用且不注入
+# 桌面身份（local-trust），残留进程不清就会出现登录页/旧代码——2026-09-27 两次踩坑。
 if port_up 3001; then
   pid="$(lsof -nP -iTCP:3001 -sTCP:LISTEN -t 2>/dev/null | head -1 || true)"
-  cmd="$(ps -p "$pid" -o command= 2>/dev/null || true)"
-  case "$cmd" in
-    *app/server/server.cjs*)
-      kill "$pid" 2>/dev/null || true
-      echo "[dev] 已停止旧打包快照服务端（3001 server.cjs）——dev 只跑源码最新版"
-      for _ in $(seq 1 10); do port_up 3001 || break; sleep 1; done
-      ;;
-    *)
-      echo "[dev] 3001 已有源码服务端（node --watch，改文件自动重载），复用"
-      ;;
-  esac
+  if [ -n "$pid" ]; then
+    echo "[dev] 停止 3001 上的旧服务端（pid $pid）——桌面 dev 以最新源码重新拉起"
+    kill "$pid" 2>/dev/null || true
+    for _ in $(seq 1 10); do port_up 3001 || break; sleep 1; done
+    port_up 3001 && { echo "[dev] 3001 仍被占用，请手动检查：lsof -nP -iTCP:3001"; exit 1; }
+  fi
 fi
 
 # 3. Tauri 窗口（阻塞在本进程；关窗即退出并回收上面拉起的进程）
