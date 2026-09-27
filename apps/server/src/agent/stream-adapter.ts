@@ -106,6 +106,14 @@ export async function* adaptDeepAgentStream(
   const activeSubAgentRuns = new Set<string>();
   /** 上一次下发 run.usage 时的 input token 数（同一提示词大小不重复发）。 */
   let lastUsageInputTokens = -1;
+  /**
+   * 派发栈（DEC-19 兜底归因）：metadata 传播在 createAgent 嵌套链上不可靠
+   * （真机实测子代理嵌套工具事件缺 lc_agent_name）。前台派发是栈式嵌套——
+   * subagent_task started 压栈（归因名=入参 subagent_type）、completed 弹栈；
+   * 栈顶派发即当前嵌套事件的归属。并行 fan-out 时多个子代理交错流式，
+   * 栈归因可能串位——已知限制，与 metadata 主归因兜底并用。
+   */
+  const dispatchStack: Array<{ callId: string; name: string }> = [];
   /** 本轮是否已报过「上下文已压缩」（每轮最多一条）。 */
   let compactionReported = false;
   /**
@@ -225,8 +233,10 @@ export async function* adaptDeepAgentStream(
         const chunk = evt.data?.chunk;
         if (!chunk) continue;
         // 子代理的流：usage 照算（归父 run，DEC-6），文本打标路由不进主消息流
-        const streamingSubagent = readSubagentName(evt, mainAgentName);
-        const streamingCallId = readSubagentCallId(evt);
+        const streamingSubagent =
+          readSubagentName(evt, mainAgentName) ?? dispatchStack.at(-1)?.name;
+        const streamingCallId =
+          readSubagentCallId(evt) ?? dispatchStack.at(-1)?.callId;
 
         // Skip chunks that are tool calls (no text to emit)
         if (
@@ -448,6 +458,20 @@ export async function* adaptDeepAgentStream(
 
         const subagentName = readSubagentName(evt, mainAgentName);
         const subagentCallId = readSubagentCallId(evt);
+        // 派发工具压栈（DEC-19 栈归因）：子代理嵌套事件的兜底归属来源
+        const isDispatchTool =
+          toolName === "subagent_task" || toolName === "subagent_background";
+        if (isDispatchTool) {
+          const dispatchType = (
+            toolInput as { subagent_type?: string } | undefined
+          )?.subagent_type;
+          dispatchStack.push({
+            callId: toolCallId,
+            name: dispatchType ?? toolName,
+          });
+        }
+        // 派发行本身是父调用：不继承子代理归因（否则被路由进子代理视图）
+        const inherited = isDispatchTool ? undefined : dispatchStack.at(-1);
         yield {
           runId: options.runId,
           timestamp: now(),
@@ -456,6 +480,9 @@ export async function* adaptDeepAgentStream(
           ...(toolInput ? { input: toolInput } : {}),
           ...(subagentName ? { agentName: subagentName } : {}),
           ...(subagentCallId ? { agentCallId: subagentCallId } : {}),
+          ...(!subagentName && inherited
+            ? { agentName: inherited.name, agentCallId: inherited.callId }
+            : {}),
           type: "tool.started",
         };
         continue;
@@ -483,8 +510,25 @@ export async function* adaptDeepAgentStream(
           output,
           (extractedArtifacts?.length ?? 0) > 0,
         );
-        const completedSubagent = readSubagentName(evt, mainAgentName);
-        const completedCallId = readSubagentCallId(evt);
+        const completedSubagent =
+          readSubagentName(evt, mainAgentName) ?? dispatchStack.at(-1)?.name;
+        const completedCallId =
+          readSubagentCallId(evt) ?? dispatchStack.at(-1)?.callId;
+        const completedIsDispatch =
+          toolName === "subagent_task" || toolName === "subagent_background";
+        if (completedIsDispatch) {
+          let stackIdx = -1;
+          for (let i = dispatchStack.length - 1; i >= 0; i -= 1) {
+            if (dispatchStack[i]?.callId === toolCallId) {
+              stackIdx = i;
+              break;
+            }
+          }
+          if (stackIdx >= 0) dispatchStack.splice(stackIdx, 1);
+        }
+        const inheritedDone = completedIsDispatch
+          ? undefined
+          : dispatchStack.at(-1);
         yield {
           output: extractedOutput,
           outputSummary: summarizeOutput(output),
@@ -495,6 +539,12 @@ export async function* adaptDeepAgentStream(
           toolName,
           ...(completedSubagent ? { agentName: completedSubagent } : {}),
           ...(completedCallId ? { agentCallId: completedCallId } : {}),
+          ...(!completedSubagent && inheritedDone
+            ? {
+                agentName: inheritedDone.name,
+                agentCallId: inheritedDone.callId,
+              }
+            : {}),
           type: "tool.completed",
         };
 
@@ -528,8 +578,10 @@ export async function* adaptDeepAgentStream(
         seenCompletedToolCalls.add(toolCallId);
 
         const reason = describeToolError(evt.data?.error);
-        const errorSubagent = readSubagentName(evt, mainAgentName);
-        const errorCallId = readSubagentCallId(evt);
+        const errorSubagent =
+          readSubagentName(evt, mainAgentName) ?? dispatchStack.at(-1)?.name;
+        const errorCallId =
+          readSubagentCallId(evt) ?? dispatchStack.at(-1)?.callId;
         yield {
           output: { error: reason },
           outputSummary: `失败：${reason}`,
