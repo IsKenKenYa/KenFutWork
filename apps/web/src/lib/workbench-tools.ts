@@ -62,6 +62,8 @@ export type TaskNotificationPayload = {
   status: "completed" | "failed" | "canceled";
   summary: string;
   nextStep?: string;
+  /** 派发调用 id：后台子代理结算时据此关目录条目。 */
+  agentCallId?: string;
 };
 
 export type TaskMessageBlock =
@@ -329,6 +331,8 @@ export type ToolEventLike = {
   runId?: string;
   /** 子代理归因（DEC-19）：事件来自哪个具名子代理的 run。 */
   agentName?: string;
+  /** 派发调用 id：带它的事件属于子代理视图，不进主对话。 */
+  agentCallId?: string;
   timestamp?: string;
 };
 

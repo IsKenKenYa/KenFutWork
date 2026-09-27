@@ -26,6 +26,8 @@ export type AssistantStreamEventLike = {
   outputSummary?: string | undefined;
   artifacts?: ToolArtifact[] | undefined;
   runId?: string | undefined;
+  /** 子代理归因：带 agentCallId 的增量/工具属于子代理视图，不进主对话持久化。 */
+  agentCallId?: string | undefined;
   /** ISO 时刻；缺省（测试/旧事件）就不打时间戳。 */
   timestamp?: string | undefined;
 };
@@ -73,6 +75,9 @@ export function createAssistantBlockCollector(): AssistantBlockCollector {
         textParts.push(event.delta);
         return;
       }
+      // 子代理内部事件（带 agentCallId）：不进主对话持久化——它们属于
+      // 子代理视图（zcode 右栏模型），主转录与历史还原都不该出现。
+      if (event.agentCallId) return;
       if (event.type === "thinking.delta") {
         if (!event.delta) return;
         const last = blocks[blocks.length - 1];
@@ -89,6 +94,7 @@ export function createAssistantBlockCollector(): AssistantBlockCollector {
       }
       if (event.type === "tool.started") {
         if (!event.toolCallId) return;
+        if (event.agentCallId) return;
         // 重连/重放同一次 tool.started：不重复入块
         const exists = blocks.some(
           (block) =>
@@ -108,6 +114,7 @@ export function createAssistantBlockCollector(): AssistantBlockCollector {
       }
       // tool.completed
       if (!event.toolCallId) return;
+      if (event.agentCallId) return;
       const idx = blocks.findIndex(
         (block) =>
           block.type === "tool" && block.toolCallId === event.toolCallId,

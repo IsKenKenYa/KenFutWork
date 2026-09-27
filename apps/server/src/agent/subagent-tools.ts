@@ -23,6 +23,8 @@ export type SubagentChildRunner = (input: {
   description: string;
   /** 中止信号：前台=父 run 信号联动的 controller；后台=注册表 abort 联动。 */
   signal: AbortSignal;
+  /** 派发调用 id（父 run 的 toolCallId）：子代理事件按它路由进对应视图。 */
+  callId: string;
 }) => Promise<string>;
 
 export type SubagentDispatchGate = (
@@ -66,7 +68,10 @@ export function createSubagentTaskTools(deps: {
   };
 
   const taskTool = tool(
-    async (input) => {
+    async (input, runtime) => {
+      const callId =
+        runtime?.toolCall?.id ||
+        `call_${Math.random().toString(36).slice(2, 10)}`;
       const resolved = resolve(input.subagent_type);
       if (typeof resolved === "string") return resolved;
       // 前台任务也进注册表：目录可见、取消联动（runtime 收尾/取消时 abortAll）
@@ -75,6 +80,7 @@ export function createSubagentTaskTools(deps: {
         kind: "subagent",
         label: `${resolved.label} · ${input.description}`,
         abort: () => controller.abort(),
+        callId,
       });
       if (!registered.ok) return registered.error;
       const { taskId } = registered;
@@ -84,6 +90,7 @@ export function createSubagentTaskTools(deps: {
           definition: resolved,
           description: input.description,
           signal: controller.signal,
+          callId,
         });
         registry.settle(taskId, {
           status: "completed",
@@ -120,7 +127,10 @@ export function createSubagentTaskTools(deps: {
   );
 
   const taskBackgroundTool = tool(
-    async (input) => {
+    async (input, runtime) => {
+      const callId =
+        runtime?.toolCall?.id ||
+        `call_${Math.random().toString(36).slice(2, 10)}`;
       const resolved = resolve(input.subagent_type);
       if (typeof resolved === "string") return resolved;
       if (deps.dispatchGate) {
@@ -133,6 +143,7 @@ export function createSubagentTaskTools(deps: {
         kind: "subagent",
         label: `${resolved.label} · ${input.description}`,
         abort: () => controller.abort(),
+        callId,
       });
       if (!registered.ok) return registered.error;
       const { taskId } = registered;
@@ -144,6 +155,7 @@ export function createSubagentTaskTools(deps: {
         definition: resolved,
         description: input.description,
         signal: controller.signal,
+        callId,
       }).then(
         (result) => {
           registry.settle(taskId, {

@@ -149,7 +149,10 @@ import {
   type WorkspaceCommand,
 } from "@/lib/slash-commands";
 import {
+  appendSubagentDelta,
+  appendSubagentTool,
   closeAllSubagents,
+  completeSubagentByCallId,
   type SubagentEntry,
 } from "@/lib/subagent-directory";
 import { createTaskSaver } from "@/lib/task-saver";
@@ -1692,6 +1695,23 @@ export function Workbench() {
           ...(runId ? { activeRunId: runId } : {}),
         }));
       } else if (type === "tool.started" || type === "tool.completed") {
+        // 子代理内部工具（带 agentCallId，zcode 右栏模型）：路由进对应子代理
+        // 视图的独立转录，**不进主对话**——主对话只保留父派发调用的紧凑行。
+        const subagentCallId = (evt as { agentCallId?: string }).agentCallId;
+        if (subagentCallId) {
+          apply((task) =>
+            task.subagents
+              ? {
+                  ...task,
+                  subagents: appendSubagentTool(
+                    task.subagents,
+                    evt as Parameters<typeof appendSubagentTool>[1],
+                  ),
+                }
+              : task,
+          );
+          return;
+        }
         // 工具轨迹对所有工具都记（含被工具门拒绝的合成事件），子代理工具另进目录。
         // 曾经这里写成「先处理子代理、非子代理直接 return」，把通用分支变成死代码。
         apply((task) =>
@@ -1763,9 +1783,23 @@ export function Workbench() {
             n.status === "failed" ||
             n.status === "canceled")
         ) {
-          apply((task) =>
-            applyTaskNotification(
-              task,
+          apply((task) => {
+            // 后台子代理结算：按派发调用 id 关掉目录条目（终态时刻）
+            const notifyCallId =
+              (evt as { agentCallId?: string }).agentCallId ?? undefined;
+            const withEnded =
+              n.kind === "subagent" && notifyCallId && task.subagents
+                ? {
+                    ...task,
+                    subagents: completeSubagentByCallId(
+                      task.subagents,
+                      notifyCallId,
+                      n.timestamp ?? "",
+                    ),
+                  }
+                : task;
+            return applyTaskNotification(
+              withEnded,
               {
                 taskId: n.taskId as string,
                 kind: n.kind ?? "subagent",
@@ -1773,10 +1807,11 @@ export function Workbench() {
                 status: n.status as "completed" | "failed" | "canceled",
                 summary: n.summary as string,
                 ...(n.nextStep ? { nextStep: n.nextStep } : {}),
+                ...(notifyCallId ? { agentCallId: notifyCallId } : {}),
               },
               n.timestamp,
-            ),
-          );
+            );
+          });
         }
       } else if (type === "run.usage") {
         // 本轮最后一次模型调用的累计用量（上下文容量 / 缓存命中浮层）
@@ -1787,6 +1822,24 @@ export function Workbench() {
         // 位置即真实顺序（与正文/工具互相打断）。此前这个事件被静默丢弃。
         const delta = (evt as { delta?: string }).delta ?? "";
         if (!delta) return;
+        // 子代理内部思考：进子代理视图（不进主对话）
+        const thinkCallId = (evt as { agentCallId?: string }).agentCallId;
+        if (thinkCallId) {
+          apply((task) =>
+            task.subagents
+              ? {
+                  ...task,
+                  subagents: appendSubagentDelta(
+                    task.subagents,
+                    thinkCallId,
+                    "thinking",
+                    delta,
+                  ),
+                }
+              : task,
+          );
+          return;
+        }
         apply((task) => {
           const messages = [...task.messages];
           const last = messages[messages.length - 1];
@@ -1809,6 +1862,24 @@ export function Workbench() {
       } else if (type === "message.delta") {
         const delta = (evt as { delta?: string }).delta ?? "";
         if (!delta) return;
+        // 子代理内部正文：进子代理视图（不进主对话）
+        const textCallId = (evt as { agentCallId?: string }).agentCallId;
+        if (textCallId) {
+          apply((task) =>
+            task.subagents
+              ? {
+                  ...task,
+                  subagents: appendSubagentDelta(
+                    task.subagents,
+                    textCallId,
+                    "text",
+                    delta,
+                  ),
+                }
+              : task,
+          );
+          return;
+        }
         apply((task) => {
           const messages = [...task.messages];
           const last = messages[messages.length - 1];

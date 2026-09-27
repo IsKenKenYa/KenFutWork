@@ -637,7 +637,7 @@ describe("stream-adapter 子代理归因（DEC-19）", () => {
     };
   }
 
-  it("子代理模型流不漏进主消息流（嵌套泄漏修复），主 agent 文本照常", async () => {
+  it("子代理模型流打标下发（agentName/agentCallId），主 agent 文本不带标——前端据此路由进子代理视图", async () => {
     const events = await collect(
       eventStream([
         {
@@ -647,15 +647,25 @@ describe("stream-adapter 子代理归因（DEC-19）", () => {
         {
           event: "on_chat_model_stream",
           data: { chunk: new AIMessageChunk({ content: "子文" }) },
-          metadata: { lc_agent_name: "explore" },
+          metadata: {
+            lc_agent_name: "explore",
+            lc_agent_call_id: "parent-call-1",
+          },
         },
       ]),
       {},
     );
-    const deltas = events
-      .filter((event) => event.type === "message.delta")
-      .map((event) => (event as { delta: string }).delta);
-    expect(deltas).toEqual(["主文"]);
+    const deltas = events.filter((event) => event.type === "message.delta");
+    expect(deltas).toHaveLength(2);
+    // 主 agent 文本：无归因字段
+    expect(deltas[0]).toMatchObject({ delta: "主文" });
+    expect(deltas[0]).not.toHaveProperty("agentName");
+    // 子代理文本：带归因与路由键（zcode 右栏模型）
+    expect(deltas[1]).toMatchObject({
+      delta: "子文",
+      agentName: "explore",
+      agentCallId: "parent-call-1",
+    });
   });
 
   it("子代理的工具事件带 agentName；主 agent 工具事件不带", async () => {

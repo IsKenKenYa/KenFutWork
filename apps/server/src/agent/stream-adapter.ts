@@ -78,6 +78,12 @@ function readSubagentName(evt: LangChainStreamEvent): string | undefined {
   const name = evt.metadata?.lc_agent_name;
   return typeof name === "string" && name.length > 0 ? name : undefined;
 }
+
+/** 派发调用 id（父 run 里 task/task_background 的 toolCallId），路由键。 */
+function readSubagentCallId(evt: LangChainStreamEvent): string | undefined {
+  const callId = evt.metadata?.lc_agent_call_id;
+  return typeof callId === "string" && callId.length > 0 ? callId : undefined;
+}
 /** Inner tools that may be suppressed when running inside a sub-agent. */
 const INNER_SUB_AGENT_TOOLS = new Set(["generate_video"]);
 
@@ -210,8 +216,9 @@ export async function* adaptDeepAgentStream(
       if (evt.event === "on_chat_model_stream") {
         const chunk = evt.data?.chunk;
         if (!chunk) continue;
-        // 子代理的流：usage 照算（归父 run，DEC-6），文本不进主消息流（DEC-19）
+        // 子代理的流：usage 照算（归父 run，DEC-6），文本打标路由不进主消息流
         const streamingSubagent = readSubagentName(evt);
+        const streamingCallId = readSubagentCallId(evt);
 
         // Skip chunks that are tool calls (no text to emit)
         if (
@@ -292,7 +299,18 @@ export async function* adaptDeepAgentStream(
               typeof part.thinking === "string" &&
               part.thinking
             ) {
-              if (!streamingSubagent) {
+              if (streamingSubagent) {
+                // 子代理思考：打标下发（前端路由进子代理视图），不进主对话
+                yield {
+                  type: "thinking.delta" as const,
+                  runId: options.runId,
+                  messageId,
+                  delta: part.thinking,
+                  agentName: streamingSubagent,
+                  agentCallId: streamingCallId,
+                  timestamp: now(),
+                };
+              } else {
                 yield {
                   type: "thinking.delta" as const,
                   runId: options.runId,
@@ -311,15 +329,28 @@ export async function* adaptDeepAgentStream(
                       typeof (part as { text: unknown }).text === "string"
                     ? (part as { text: string }).text
                     : "";
-              if (text && !streamingSubagent) {
-                seenStreamedMessageIds.add(messageId);
-                yield {
-                  type: "message.delta" as const,
-                  runId: options.runId,
-                  messageId,
-                  delta: text,
-                  timestamp: now(),
-                };
+              if (text) {
+                if (streamingSubagent) {
+                  // 子代理正文：打标下发（前端路由进子代理视图），不进主对话
+                  yield {
+                    type: "message.delta" as const,
+                    runId: options.runId,
+                    messageId,
+                    delta: text,
+                    agentName: streamingSubagent,
+                    agentCallId: streamingCallId,
+                    timestamp: now(),
+                  };
+                } else {
+                  seenStreamedMessageIds.add(messageId);
+                  yield {
+                    type: "message.delta" as const,
+                    runId: options.runId,
+                    messageId,
+                    delta: text,
+                    timestamp: now(),
+                  };
+                }
               }
             }
           }
@@ -327,9 +358,22 @@ export async function* adaptDeepAgentStream(
         }
 
         // String content (normal text)
-        if (streamingSubagent) continue;
         const delta = extractChunkText(chunk);
         if (!delta) continue;
+
+        if (streamingSubagent) {
+          // 子代理正文：打标下发，不进主对话（同上）
+          yield {
+            delta,
+            messageId,
+            runId: options.runId,
+            agentName: streamingSubagent,
+            agentCallId: streamingCallId,
+            timestamp: now(),
+            type: "message.delta",
+          } as never;
+          continue;
+        }
 
         seenStreamedMessageIds.add(messageId);
         yield {
@@ -395,6 +439,7 @@ export async function* adaptDeepAgentStream(
         }
 
         const subagentName = readSubagentName(evt);
+        const subagentCallId = readSubagentCallId(evt);
         yield {
           runId: options.runId,
           timestamp: now(),
@@ -402,6 +447,7 @@ export async function* adaptDeepAgentStream(
           toolName,
           ...(toolInput ? { input: toolInput } : {}),
           ...(subagentName ? { agentName: subagentName } : {}),
+          ...(subagentCallId ? { agentCallId: subagentCallId } : {}),
           type: "tool.started",
         };
         continue;
@@ -430,6 +476,7 @@ export async function* adaptDeepAgentStream(
           (extractedArtifacts?.length ?? 0) > 0,
         );
         const completedSubagent = readSubagentName(evt);
+        const completedCallId = readSubagentCallId(evt);
         yield {
           output: extractedOutput,
           outputSummary: summarizeOutput(output),
@@ -439,6 +486,7 @@ export async function* adaptDeepAgentStream(
           toolCallId,
           toolName,
           ...(completedSubagent ? { agentName: completedSubagent } : {}),
+          ...(completedCallId ? { agentCallId: completedCallId } : {}),
           type: "tool.completed",
         };
 
@@ -473,6 +521,7 @@ export async function* adaptDeepAgentStream(
 
         const reason = describeToolError(evt.data?.error);
         const errorSubagent = readSubagentName(evt);
+        const errorCallId = readSubagentCallId(evt);
         yield {
           output: { error: reason },
           outputSummary: `失败：${reason}`,
@@ -481,6 +530,7 @@ export async function* adaptDeepAgentStream(
           toolCallId,
           toolName,
           ...(errorSubagent ? { agentName: errorSubagent } : {}),
+          ...(errorCallId ? { agentCallId: errorCallId } : {}),
           type: "tool.completed",
         };
 

@@ -354,6 +354,8 @@ export const toolBlockSchema = z.object({
   endedAt: timestampSchema.optional(),
   /** 子代理归因（DEC-19）：该调用发生在哪个具名子代理里；主 agent 调用缺省。 */
   agentName: z.string().min(1).optional(),
+  /** 派发调用 id：渲染层据此把子代理内部工具路由进子代理视图，不进主对话。 */
+  agentCallId: z.string().min(1).optional(),
 });
 
 /**
@@ -369,6 +371,8 @@ export const taskNotificationBlockSchema = z.object({
   status: z.enum(["completed", "failed", "canceled"]),
   summary: z.string().min(1).max(8_000),
   nextStep: z.string().max(2_000).optional(),
+  /** 派发调用 id：后台子代理结算时据此关掉目录条目。 */
+  agentCallId: z.string().min(1).optional(),
   /** 通知产生时刻（ISO）。 */
   at: timestampSchema.optional(),
 });

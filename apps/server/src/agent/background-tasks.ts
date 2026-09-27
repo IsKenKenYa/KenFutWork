@@ -29,6 +29,8 @@ export interface BackgroundTaskSnapshot {
   nextStep?: string;
   startedAt: string;
   endedAt?: string;
+  /** 派发调用 id（register 时带入，随通知带出）。 */
+  callId?: string;
 }
 
 export interface BackgroundTaskNotification {
@@ -38,6 +40,8 @@ export interface BackgroundTaskNotification {
   status: "completed" | "failed" | "canceled";
   summary: string;
   nextStep?: string;
+  /** 派发调用 id（task/task_background 的 toolCallId）：前端据此关目录条目。 */
+  agentCallId?: string;
 }
 
 export type BackgroundTaskSettleOutcome = {
@@ -56,6 +60,8 @@ export interface BackgroundTaskRegistry {
     label: string;
     /** 取消回调（如 AbortController.abort）；`abortAll` 时逐个调用。 */
     abort?: () => void;
+    /** 派发调用 id：随通知带出（前端路由键）。 */
+    callId?: string;
   }): { ok: true; taskId: string } | { ok: false; error: string };
 
   /** 结算：终态落快照并进入通知队列。幂等，首次获胜。 */
@@ -93,7 +99,7 @@ export function createBackgroundTaskRegistry(options: {
   const pendingNotifications: BackgroundTaskNotification[] = [];
 
   return {
-    register({ kind, label, abort }) {
+    register({ kind, label, abort, callId }) {
       const running = [...tasks.values()].filter(
         (task) => task.status === "running",
       ).length;
@@ -113,6 +119,7 @@ export function createBackgroundTaskRegistry(options: {
         label,
         status: "running",
         startedAt: now().toISOString(),
+        ...(callId !== undefined ? { callId } : {}),
       });
       if (abort) aborts.set(taskId, abort);
       return { ok: true, taskId };
@@ -132,6 +139,7 @@ export function createBackgroundTaskRegistry(options: {
         label: task.label,
         status: outcome.status,
         summary: outcome.summary,
+        ...(task.callId !== undefined ? { agentCallId: task.callId } : {}),
         ...(outcome.nextStep !== undefined
           ? { nextStep: outcome.nextStep }
           : {}),

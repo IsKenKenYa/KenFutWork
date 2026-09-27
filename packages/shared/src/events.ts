@@ -37,6 +37,9 @@ export const messageDeltaEventSchema = z.object({
   runId: runIdSchema,
   messageId: messageIdSchema,
   delta: z.string(),
+  /** 子代理内部正文：按 agentCallId 路由到子代理视图，不进主对话流。 */
+  agentName: z.string().min(1).optional(),
+  agentCallId: z.string().min(1).optional(),
   timestamp: timestampSchema,
 });
 
@@ -52,6 +55,11 @@ export const toolStartedEventSchema = z.object({
    * @langchain/core 1.x 不存在，归因只能走 metadata）；主 agent 的调用缺省。
    */
   agentName: z.string().min(1).optional(),
+  /**
+   * 派发调用 id（父 run 里 task/task_background 的 toolCallId）：子代理内部
+   * 事件按它路由到对应子代理视图（zcode 右栏模型），不进主对话流。
+   */
+  agentCallId: z.string().min(1).optional(),
   timestamp: timestampSchema,
 });
 
@@ -65,6 +73,8 @@ export const toolCompletedEventSchema = z.object({
   artifacts: z.array(toolArtifactSchema).optional(),
   /** 子代理归因，同 {@link toolStartedEventSchema.agentName}。 */
   agentName: z.string().min(1).optional(),
+  /** 派发调用 id，同 {@link toolStartedEventSchema.agentCallId}。 */
+  agentCallId: z.string().min(1).optional(),
   timestamp: timestampSchema,
 });
 
@@ -89,6 +99,8 @@ export const taskNotificationEventSchema = z.object({
   summary: z.string().min(1).max(8_000),
   /** 失败时的下一步建议（DEC-17：失败带恢复指引）。 */
   nextStep: z.string().max(2_000).optional(),
+  /** 派发调用 id：后台子代理结算时据此关掉对应目录条目。 */
+  agentCallId: z.string().min(1).optional(),
   timestamp: timestampSchema,
 });
 
@@ -212,6 +224,9 @@ export const thinkingDeltaEventSchema = z.object({
   runId: runIdSchema,
   messageId: messageIdSchema,
   delta: z.string(),
+  /** 子代理内部思考：路由同 {@link messageDeltaEventSchema.agentCallId}。 */
+  agentName: z.string().min(1).optional(),
+  agentCallId: z.string().min(1).optional(),
   timestamp: timestampSchema,
 });
 

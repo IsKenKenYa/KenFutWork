@@ -472,6 +472,7 @@ export function createKenFutWorkDeepAgent(options: {
       definition,
       description,
       signal,
+      callId,
     }) => {
       const { tools: picked } = resolveChildToolbelt(definition, tools);
       const middleware: AgentMiddleware[] = definition.filesystemTools?.length
@@ -494,8 +495,11 @@ export function createKenFutWorkDeepAgent(options: {
         { messages: [new HumanMessage(description)] },
         {
           signal,
-          // 事件归因（DEC-19）：stream-adapter 按 lc_agent_name 区分子代理事件
-          metadata: { lc_agent_name: definition.name },
+          // 事件归因与路由（DEC-19）：name 供识别、call_id 供前端路由进对应子代理视图
+          metadata: {
+            lc_agent_name: definition.name,
+            lc_agent_call_id: callId,
+          },
           configurable: { ls_agent_type: "subagent" },
         },
       )) as { messages?: Array<{ content: unknown; getType?: () => string }> };

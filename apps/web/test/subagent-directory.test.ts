@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  appendSubagentDelta,
+  appendSubagentTool,
   closeAllSubagents,
   completeSubagent,
+  completeSubagentByCallId,
   isSubagentTool,
   type SubagentEntry,
   summarizeSubagents,
@@ -167,5 +170,79 @@ describe("task_background 派发条目（DEC-15，经 applyTaskToolEvent 全链�
       timestamp: "2026-09-27T12:02:00.000Z",
     });
     expect(task.subagents?.[0]?.endedAt).toBe("2026-09-27T12:02:00.000Z");
+  });
+});
+
+describe("子代理视图路由（zcode 右栏模型：agentCallId）", () => {
+  const entry = (): SubagentEntry[] => [
+    {
+      toolCallId: "parent-call-1",
+      name: "explore",
+      description: "调研",
+      startedAt: "2026-09-27T12:00:00.000Z",
+      blocks: [],
+    },
+  ];
+
+  it("子代理内部工具按 agentCallId 进对应条目转录，started/completed 配对", () => {
+    let list = entry();
+    list = appendSubagentTool(list, {
+      agentCallId: "parent-call-1",
+      toolCallId: "child-tool-1",
+      toolName: "ls",
+      type: "tool.started",
+      input: { path: "/" },
+      timestamp: "2026-09-27T12:00:10.000Z",
+    });
+    list = appendSubagentTool(list, {
+      agentCallId: "parent-call-1",
+      toolCallId: "child-tool-1",
+      toolName: "ls",
+      type: "tool.completed",
+      outputSummary: "12 项",
+      timestamp: "2026-09-27T12:00:12.000Z",
+    });
+    expect(list[0]?.blocks).toHaveLength(1);
+    const block = list[0]?.blocks[0];
+    expect(block?.type).toBe("tool");
+    if (block?.type === "tool") {
+      expect(block.tool).toMatchObject({
+        toolCallId: "child-tool-1",
+        status: "completed",
+        outputSummary: "12 项",
+      });
+    }
+    // 别的条目不受影响
+    const other = appendSubagentTool(entry(), {
+      agentCallId: "parent-call-2",
+      toolCallId: "child-tool-2",
+      toolName: "ls",
+      type: "tool.started",
+    });
+    expect(other[0]?.blocks).toHaveLength(0);
+  });
+
+  it("子代理正文/思考增量：末块同类续写，text 与 thinking 互不打断顺序", () => {
+    let list = entry();
+    list = appendSubagentDelta(list, "parent-call-1", "thinking", "先看结构");
+    list = appendSubagentDelta(list, "parent-call-1", "text", "分析如下：");
+    list = appendSubagentDelta(list, "parent-call-1", "text", "3 个模块");
+    list = appendSubagentDelta(list, "parent-call-1", "thinking", "再深入");
+    expect(list[0]?.blocks.map((b) => b.type)).toEqual([
+      "thinking",
+      "text",
+      "thinking",
+    ]);
+    const text = list[0]?.blocks[1];
+    if (text?.type === "text") expect(text.text).toBe("分析如下：3 个模块");
+  });
+
+  it("后台结算通知按 agentCallId 关条目；主对话不入这些块（类型层面隔离）", () => {
+    const list = completeSubagentByCallId(
+      entry(),
+      "parent-call-1",
+      "2026-09-27T12:05:00.000Z",
+    );
+    expect(list[0]?.endedAt).toBe("2026-09-27T12:05:00.000Z");
   });
 });
