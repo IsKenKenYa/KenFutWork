@@ -37,7 +37,7 @@ afterEach(() => {
 });
 
 describe("设置 → 关于", () => {
-  it("三行身份信息：产品名 + 服务端 + 地址", async () => {
+  it("信息面板：产品名 + 服务端 + 地址（许可与隐私承诺也在）", async () => {
     vi.stubEnv("NEXT_PUBLIC_SERVER_BASE_URL", "http://127.0.0.1:3001");
     stubHealth({ ok: true, service: "kenfutwork-server", version: "1.2.3" });
     render(<AboutSection />);
@@ -45,7 +45,6 @@ describe("设置 → 关于", () => {
     expect(screen.getByText("KenFutWork")).toBeVisible();
     expect(screen.getByText("BYOK 的 AI 工作台")).toBeVisible();
     expect(await screen.findByText("kenfutwork-server · v1.2.3")).toBeVisible();
-    expect(screen.getByText("地址")).toBeVisible();
     expect(screen.getByText("http://127.0.0.1:3001")).toBeVisible();
   });
 
@@ -54,7 +53,7 @@ describe("设置 → 关于", () => {
     const { container } = render(<AboutSection />);
     await screen.findByText("kenfutwork-server · v1.2.3");
 
-    // 全页只有「服务端」那一行带版本号；产品名行不许再出现一次
+    // 全页只有服务端那一行带版本号；产品名附近不许再出现一次
     expect(container.textContent?.match(/v1\.2\.3/g)).toHaveLength(1);
   });
 
@@ -65,54 +64,52 @@ describe("设置 → 关于", () => {
     expect(container.textContent).not.toMatch(/v\d+\.\d+\.\d+/);
   });
 
-  it("许可清单默认折叠在 <details> 里：署名可查但不占首屏", async () => {
-    stubHealth({ ok: true, service: "kenfutwork-server", version: "1.2.3" });
-    render(<AboutSection />);
-
-    const details = document.querySelector("details");
-    expect(details).not.toBeNull();
-    // 默认闭合：没有 open 属性
-    expect(details?.hasAttribute("open")).toBe(false);
-    expect(screen.getByText("第三方模型许可")).toBeVisible();
-
-    // 五项署名都在（折叠不等于删掉——许可是法律要求）
-    for (const label of [
-      "SenseVoiceSmall",
-      "sherpa-onnx",
-      "Silero VAD",
-      "Kokoro 多语版",
-      "espeak-ng 数据",
-    ]) {
-      expect(screen.getByText(label)).toBeInTheDocument();
-    }
-    // 「录音不留存」不在许可清单里——它是隐私承诺，单独占一行（值是「不留存」）
-    expect(details?.textContent).not.toContain("录音");
-    expect(screen.getByText("录音")).toBeVisible();
-    expect(screen.getByText("不留存")).toBeVisible();
-  });
-
   /**
-   * 版式的机械检查只能到这里：jsdom 没有布局，量不到「值是否真的靠右」。
-   * 能锁的是**结构**——每行都是「标签 + 值」两个 span，且行是 `justify-between`。
-   * 真机量过：漏掉 `justify-between` 时标签与值只隔 8px 挤在左边，用户直接点名。
+   * 版式口径（用户 2026-09-27：「不要做成选项卡，做成信息面板那样的」）：
+   * 关于页**不用设置区的行样式**——那是一行行带框的配置卡片；这里全部居中摊平罗列。
    */
-  it("每一行都是两列（标签 + 值），且靠 justify-between 分列", () => {
+  it("是居中信息面板：不许出现带框的配置行", () => {
     stubHealth({ ok: true, service: "kenfutwork-server", version: "1.2.3" });
     render(<AboutSection />);
-    const rows = [
-      ...document.querySelectorAll('section[aria-label="关于"] > div > div'),
-    ];
-    expect(rows).toHaveLength(4);
-    for (const row of rows) {
-      expect(row.className).toContain("justify-between");
-      expect(row.children.length).toBe(2);
-    }
+
+    const panel = document.querySelector(
+      'section[aria-label="关于"] > div',
+    ) as HTMLElement;
+    expect(panel.className).toContain("items-center");
+    expect(panel.className).toContain("text-center");
+    // 面板里没有任何带边框的行（也不再有 details 折叠）
+    expect(panel.querySelectorAll("details")).toHaveLength(0);
+    const bordered = [...panel.querySelectorAll("*")].filter((el) =>
+      /(^|\s)border(\s|$)/.test(el.className),
+    );
+    expect(bordered).toHaveLength(0);
   });
 
-  it("同源部署（base 为空串）显示「（同源）」而不是空白", async () => {
+  it("五项许可署名都摊开列出（不折叠）", () => {
+    stubHealth({ ok: true, service: "kenfutwork-server", version: "1.2.3" });
+    render(<AboutSection />);
+    for (const line of [
+      "SenseVoiceSmall · FunASR 许可",
+      "sherpa-onnx · Apache-2.0",
+      "Silero VAD · MIT",
+      "Kokoro 多语版 · Apache-2.0",
+      "espeak-ng 数据 · GPL-3.0",
+    ]) {
+      expect(screen.getByText(line)).toBeInTheDocument();
+    }
+    expect(screen.getByText("录音不留存")).toBeVisible();
+  });
+
+  it("同源部署（base 为空串）显示页面自己的 origin，不留空白也不写「（同源）」", async () => {
     vi.stubEnv("NEXT_PUBLIC_SERVER_BASE_URL", "");
     stubHealth({ ok: true, service: "kenfutwork-server", version: "1.2.3" });
-    render(<AboutSection />);
-    expect(await screen.findByText("（同源）")).toBeVisible();
+    const { container } = render(<AboutSection />);
+    // origin 在 effect 里读（SSR 阶段没有 window）
+    expect(
+      await screen.findByText(
+        window.location.origin || "http://localhost:3000",
+      ),
+    ).toBeVisible();
+    expect(container.textContent).not.toContain("（同源）");
   });
 });
