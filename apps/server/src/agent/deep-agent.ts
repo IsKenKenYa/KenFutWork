@@ -48,6 +48,7 @@ import {
   type SubagentDefinition,
 } from "./subagent-definitions.js";
 import {
+  createBuiltinTaskExclusionMiddleware,
   createSubagentTaskTools,
   type SubagentChildRunner,
 } from "./subagent-tools.js";
@@ -548,6 +549,9 @@ export function createKenFutWorkDeepAgent(options: {
     );
     subagentMiddleware = [
       createTaskNotificationMiddleware(registry) as unknown as AgentMiddleware,
+      // deepagents 无条件内建 `task` 工具（无关闭开关）：从模型工具清单整体排除——
+      // 派发只走受治理的 subagent_task/subagent_background（DEC-16/17）
+      createBuiltinTaskExclusionMiddleware(),
     ];
 
     // Code 长命令（DEC-15）：与子代理共用注册表与通知通道；execute 能力探测失败

@@ -705,3 +705,86 @@ describe("stream-adapter 子代理归因（DEC-19）", () => {
     expect(completed[0]).toMatchObject({ agentName: "explore" });
   });
 });
+
+describe("stream-adapter 派发栈兜底归因（DEC-19：metadata 缺失时）", () => {
+  function eventStream(events: unknown[]): AsyncIterable<unknown> {
+    return {
+      async *[Symbol.asyncIterator]() {
+        for (const event of events) yield event;
+      },
+    };
+  }
+
+  it("子代理嵌套工具事件缺 metadata 时，按派发栈继承 agentName/agentCallId", async () => {
+    const events = await collect(
+      eventStream([
+        // 父派发调用开始（subagent_task，input 带 subagent_type）
+        {
+          event: "on_tool_start",
+          name: "subagent_task",
+          run_id: "dispatch-1",
+          data: { input: { subagent_type: "explore", description: "调研" } },
+        },
+        // 子代理嵌套工具事件：无 metadata（真机实测的传播缺口）
+        {
+          event: "on_tool_start",
+          name: "read_file",
+          run_id: "child-1",
+          data: { input: { path: "a.ts" } },
+        },
+        {
+          event: "on_tool_end",
+          name: "read_file",
+          run_id: "child-1",
+          data: { output: "内容" },
+        },
+        // 派发完成 → 栈弹出到空
+        {
+          event: "on_tool_end",
+          name: "subagent_task",
+          run_id: "dispatch-1",
+          data: { output: "调研结论" },
+        },
+        // 主 agent 后续工具：不应再带归因
+        {
+          event: "on_tool_start",
+          name: "web_search",
+          run_id: "main-2",
+          data: { input: { query: "x" } },
+        },
+      ]),
+      {},
+    );
+    const started = events.filter((event) => event.type === "tool.started");
+    // [派发自身, 子代理 read_file, 主 agent web_search]
+    expect(started).toHaveLength(3);
+    expect(started[1]).toMatchObject({
+      toolName: "read_file",
+      agentName: "explore",
+      agentCallId: "dispatch-1",
+    });
+    expect(started[2]).not.toHaveProperty("agentName");
+    const completed = events.filter((event) => event.type === "tool.completed");
+    expect(completed[0]).toMatchObject({
+      toolName: "read_file",
+      agentName: "explore",
+    });
+  });
+
+  it("subagent_task 自身的派发行不带 agentName（父调用不是子代理内部事件）", async () => {
+    const events = await collect(
+      eventStream([
+        {
+          event: "on_tool_start",
+          name: "subagent_task",
+          run_id: "dispatch-2",
+          data: { input: { subagent_type: "review" } },
+        },
+      ]),
+      {},
+    );
+    const started = events.filter((event) => event.type === "tool.started");
+    expect(started[0]).toMatchObject({ toolName: "subagent_task" });
+    expect(started[0]).not.toHaveProperty("agentName");
+  });
+});
