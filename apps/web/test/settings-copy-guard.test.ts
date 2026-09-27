@@ -323,6 +323,43 @@ function findFontViolations(): Violation[] {
   return violations;
 }
 
+/**
+ * 版式守卫（二）：配置行必须「标签在左、控件在右」。
+ *
+ * 用户口径 2026-09-27：「好多可以设置成左右的，你为什么要设置成上下！！！！」——
+ * 起因是我把「控件被嫌只有 87px 宽」误判成「该拆成两行、控件铺满」，于是把浏览器页的
+ * 两个下拉改成了「标签上 / 控件下」。正确解是同一行内把控件放宽。
+ *
+ * 判据用**全宽下拉**当信号：`SelectTrigger` 一旦 `w-full`，几乎必然是拆成了两行
+ * （一行一个控件的下拉没有理由占满整行）。这条能抓住当时那 4 处（浏览器 ×2、
+ * 通用模型 ×1、终端 ×1）。真正的多行编辑（textarea / 表单里的输入）不受此限。
+ */
+function findStackedControlViolations(): Violation[] {
+  const violations: Violation[] = [];
+  for (const file of settingsFiles()) {
+    const lines = readFileSync(file, "utf-8").split(/\r?\n/);
+    const comments = commentFlags(lines);
+    lines.forEach((raw, index) => {
+      if (comments[index] || isComment(raw)) return;
+      if (!/className=.*\bw-full\b/.test(raw)) return;
+      // 往回看三行找这个 className 属于哪个元素——**跳过注释行**：
+      // 浏览器页上面就有一条 biome-ignore 注释里写着「SelectTrigger」，会被误当成控件
+      let context = "";
+      for (let i = Math.max(0, index - 3); i <= index; i += 1) {
+        if (comments[i] || isComment(lines[i] ?? "")) continue;
+        context += `${lines[i]}\n`;
+      }
+      if (!/SelectTrigger/.test(context)) return;
+      violations.push({
+        file: file.slice(file.indexOf("components")),
+        line: index + 1,
+        text: "全宽下拉＝又拆成上下排布了；用 SETTINGS_CONTROL_WIDTH",
+      });
+    });
+  }
+  return violations;
+}
+
 describe("版式硬约束：设置区字号只有三档", () => {
   it("没有自定字号，也没有自带大字号", () => {
     const violations = findFontViolations();
@@ -342,5 +379,16 @@ describe("版式硬约束：设置区字号只有三档", () => {
     const eyebrow = 'className="px-3 text-[10px] uppercase tracking-wide"';
     expect(/text-\[(\d+(?:\.\d+)?)px\]/.exec(eyebrow)?.[1]).toBe("10");
     expect(eyebrow.includes("uppercase")).toBe(true);
+  });
+
+  it("配置行没有全宽下拉（全宽＝拆成了上下排布）", () => {
+    const violations = findStackedControlViolations();
+    const rendered = violations
+      .map((v) => `  ${v.file}:${v.line}  ${v.text}`)
+      .join("\n");
+    expect(
+      violations.length,
+      `设置区出现全宽下拉（标签在左、控件在右；用 SETTINGS_CONTROL_WIDTH）：\n${rendered}`,
+    ).toBe(0);
   });
 });

@@ -9,7 +9,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SETTINGS_ROW, SETTINGS_TITLE } from "@/lib/settings-layout";
+import {
+  SETTINGS_CONTROL_WIDTH,
+  SETTINGS_ROW,
+  SETTINGS_TITLE,
+} from "@/lib/settings-layout";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
 
@@ -95,8 +99,9 @@ export function AgentSection({
     <div>
       <h2 className={SETTINGS_TITLE}>模型</h2>
 
-      <form onSubmit={handleSubmit} className="w-full space-y-4">
-        <div className="space-y-2">
+      <form onSubmit={handleSubmit} className="w-full space-y-2">
+        {/* 一个配置项 = 一行：标签在左、控件靠右（用户口径 2026-09-27「可以设置成左右的」） */}
+        <div className={`${SETTINGS_ROW} justify-between`}>
           <Label htmlFor="defaultModel">默认模型</Label>
           {modelsLoading ? (
             <p className="text-sm text-muted-foreground">模型加载中…</p>
@@ -108,7 +113,10 @@ export function AgentSection({
               }}
               items={models.map((m) => ({ value: m.id, label: m.name }))}
             >
-              <SelectTrigger id="defaultModel" className="w-full">
+              <SelectTrigger
+                id="defaultModel"
+                className={SETTINGS_CONTROL_WIDTH}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -122,8 +130,11 @@ export function AgentSection({
           )}
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="agentMaxRetries">失败自动重试次数</Label>
+        <div className={`${SETTINGS_ROW} justify-between`}>
+          <span className="flex items-center gap-2">
+            <Label htmlFor="agentMaxRetries">失败自动重试次数</Label>
+            <span className="text-xs text-muted-foreground">0 = 不重试</span>
+          </span>
           <input
             id="agentMaxRetries"
             aria-label="失败自动重试次数"
@@ -132,9 +143,8 @@ export function AgentSection({
             max={50}
             value={maxRetries}
             onChange={(event) => setMaxRetries(event.target.value)}
-            className="w-full rounded-md border px-3 py-1.5 text-sm outline-none"
+            className="w-32 shrink-0 rounded-md border px-3 py-1.5 text-sm outline-none"
           />
-          <p className="text-xs text-muted-foreground">0 = 不重试</p>
         </div>
 
         {onToggleAutoCompact ? (

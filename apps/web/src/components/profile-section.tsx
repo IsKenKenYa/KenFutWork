@@ -1,7 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { SETTINGS_TITLE } from "@/lib/settings-layout";
+import {
+  SETTINGS_CONTROL_WIDTH,
+  SETTINGS_ROW,
+  SETTINGS_TITLE,
+} from "@/lib/settings-layout";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -51,21 +55,30 @@ export function ProfileSection({
     <div>
       <h2 className={SETTINGS_TITLE}>个人资料</h2>
 
-      <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
-        <div className="space-y-2">
+      <form onSubmit={handleSubmit} className="w-full space-y-2">
+        {/* 一个配置项 = 一行：标签在左、控件靠右（用户口径 2026-09-27「可以设置成左右的」） */}
+        <div className={`${SETTINGS_ROW} justify-between`}>
           <Label htmlFor="displayName">显示名称</Label>
           <Input
             id="displayName"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             placeholder="你的名字"
+            className={`${SETTINGS_CONTROL_WIDTH} h-auto py-1.5`}
           />
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="email">邮箱</Label>
-          <Input id="email" value={email} disabled className="opacity-60" />
-          <p className="text-xs text-muted-foreground">邮箱不可修改</p>
+        <div className={`${SETTINGS_ROW} justify-between`}>
+          <span className="flex items-center gap-2">
+            <Label htmlFor="email">邮箱</Label>
+            <span className="text-xs text-muted-foreground">不可修改</span>
+          </span>
+          <Input
+            id="email"
+            value={email}
+            disabled
+            className={`${SETTINGS_CONTROL_WIDTH} h-auto py-1.5 opacity-60`}
+          />
         </div>
 
         {feedback && (

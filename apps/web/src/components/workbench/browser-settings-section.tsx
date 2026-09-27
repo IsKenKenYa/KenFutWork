@@ -28,6 +28,7 @@ import {
   updatePermissionSettings,
 } from "@/lib/server-api";
 import {
+  SETTINGS_CONTROL_WIDTH,
   SETTINGS_ROW_MIN_HEIGHT,
   SETTINGS_SECTION_GAP,
   SETTINGS_TITLE,
@@ -411,7 +412,9 @@ export function BrowserSettingsSection({
         <h3 className={SETTINGS_TITLE}>通用</h3>
         <div className="divide-y rounded-lg border">
           {/* biome-ignore lint/a11y/noLabelWithoutControl: 控件是内嵌的 Base UI SelectTrigger（自定义组件），规则无法静态识别包裹关联 */}
-          <label className="flex w-full flex-col gap-2 py-3">
+          <label
+            className={`flex w-full items-center justify-between gap-4 px-3 py-2 ${SETTINGS_ROW_MIN_HEIGHT}`}
+          >
             <span>
               <span className="block text-sm">默认搜索引擎</span>
               <span className="block text-xs text-muted-foreground">
@@ -432,7 +435,10 @@ export function BrowserSettingsSection({
                 label: e.label,
               }))}
             >
-              <SelectTrigger aria-label="默认搜索引擎" className="w-full">
+              <SelectTrigger
+                aria-label="默认搜索引擎"
+                className={SETTINGS_CONTROL_WIDTH}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -446,7 +452,9 @@ export function BrowserSettingsSection({
           </label>
 
           {/* biome-ignore lint/a11y/noLabelWithoutControl: 同上一处（内嵌自定义 SelectTrigger） */}
-          <label className="flex w-full flex-col gap-2 py-3">
+          <label
+            className={`flex w-full items-center justify-between gap-4 px-3 py-2 ${SETTINGS_ROW_MIN_HEIGHT}`}
+          >
             <span>
               <span className="block text-sm">AI 任务默认浏览器</span>
               <span className="block text-xs text-muted-foreground">
@@ -465,7 +473,10 @@ export function BrowserSettingsSection({
                 label: t.label,
               }))}
             >
-              <SelectTrigger aria-label="AI 任务默认浏览器" className="w-full">
+              <SelectTrigger
+                aria-label="AI 任务默认浏览器"
+                className={SETTINGS_CONTROL_WIDTH}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

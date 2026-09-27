@@ -15,7 +15,12 @@ import {
   fetchWorkspaceSettings,
   updateWorkspaceSettings,
 } from "@/lib/server-api";
-import { SETTINGS_TITLE } from "@/lib/settings-layout";
+import {
+  SETTINGS_CONTROL_WIDTH,
+  SETTINGS_ROW,
+  SETTINGS_ROW_STACK,
+  SETTINGS_TITLE,
+} from "@/lib/settings-layout";
 
 /**
  * 设置 → 通用 → 终端：右栏「终端」标签默认用哪个 shell（用户口径：「终端应该是直连 cmd 或者
@@ -78,11 +83,20 @@ export function TerminalSettingsSection({
   if (loading) return <ListLoading label="正在读取终端设置…" rows={1} />;
 
   return (
-    <section className="space-y-3">
-      <div>
-        <h3 className={SETTINGS_TITLE}>终端</h3>
-      </div>
-      <div className="flex items-center gap-2">
+    <section className={SETTINGS_ROW_STACK}>
+      <h3 className={SETTINGS_TITLE}>终端</h3>
+      {/*
+        一个配置项 = 一行：标签在左、控件靠右。这里用 div + 可见文字 + 触发器上的 aria-label，
+        而不是像浏览器页那样把 Select 包进 <label>（那需要 biome-ignore 压制 noLabelWithoutControl）。
+        原先只有控件、没有可见标签，光看界面不知道这个下拉是干什么的。
+      */}
+      <div className={`${SETTINGS_ROW} justify-between`}>
+        <span className="flex items-center gap-2">
+          <span>默认 shell</span>
+          {saving ? (
+            <span className="text-xs text-muted-foreground">保存中…</span>
+          ) : null}
+        </span>
         <Select
           aria-label="默认 shell"
           value={shell}
@@ -102,7 +116,10 @@ export function TerminalSettingsSection({
             })),
           ]}
         >
-          <SelectTrigger className="w-full" aria-label="默认 shell">
+          <SelectTrigger
+            className={SETTINGS_CONTROL_WIDTH}
+            aria-label="默认 shell"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="min-w-56">
@@ -116,13 +133,7 @@ export function TerminalSettingsSection({
             ))}
           </SelectContent>
         </Select>
-        {saving ? (
-          <span className="text-xs text-muted-foreground">保存中…</span>
-        ) : null}
       </div>
-      <p className="text-xs text-muted-foreground">
-        可用：{shells.map((option) => option.label).join("、")}
-      </p>
       {message ? (
         <p className="text-xs text-muted-foreground">{message}</p>
       ) : null}
