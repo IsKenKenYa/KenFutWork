@@ -3630,13 +3630,6 @@ export function Workbench() {
                     ) : null}
                     <div className="mt-1 flex items-center justify-between">
                       <div className="flex min-w-0 items-center gap-1.5">
-                        <button
-                          type="button"
-                          title="附件（即将上线）"
-                          className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
-                        >
-                          <Plus className="h-4 w-4" />
-                        </button>
                         <ComposerCompactSelect
                           ariaLabel="权限档位"
                           /* 图标随当前档位（四档各不相同），别再写死一个通用盾牌 */
@@ -3914,15 +3907,8 @@ ${formatElementReference(picked)}`
                   </p>
                 ) : null}
                 <div className="mt-1.5 flex items-center justify-between">
-                  {/* 左簇：附件 / 权限 / 执行模式 / 模型 / 上下文环 / 思考强度 —— 统一 h-7 与 gap-1.5 */}
+                  {/* 左簇：权限 / 执行模式 / 模型 / 上下文环 / 思考强度 —— 统一 h-7 与 gap-1.5 */}
                   <div className="flex min-w-0 items-center gap-1.5">
-                    <button
-                      type="button"
-                      title="附件（即将上线）"
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </button>
                     <ComposerCompactSelect
                       ariaLabel="权限档位"
                       icon={tierIcon(tier)}
