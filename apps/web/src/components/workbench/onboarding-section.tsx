@@ -35,28 +35,28 @@ export function buildOnboardingSteps(input: {
     {
       id: "provider",
       title: "接入模型",
-      hint: "在「供应商」里填自己的 API Key 和模型。",
+      hint: "供应商里填 Key 与模型",
       done: input.providerCount > 0,
       tab: "providers",
     },
     {
       id: "workdir",
       title: "绑定工作目录",
-      hint: "在 Code 模式里选一个目录，Agent 就在那里读写文件和执行命令。",
+      hint: "Code 模式选一个工作目录",
       done: input.hasWorkDir,
       tab: null,
     },
     {
       id: "permission",
       title: "选权限档位",
-      hint: "危险操作需要你确认；无人值守的任务先在「权限」里设好档位。",
+      hint: "权限里设好档位",
       done: input.permissionTier !== "default",
       tab: "permissions",
     },
     {
       id: "first-run",
       title: "发第一条消息",
-      hint: "在工作台里发一句试试。",
+      hint: "发一句试试",
       done: input.conversationCount > 0,
       tab: null,
     },
@@ -109,7 +109,6 @@ export function OnboardingSection({
   return (
     <section aria-label="引导">
       <h3 className="mb-1 text-base font-medium">引导</h3>
-      <p className="mb-3 text-sm text-muted-foreground">四步把工作台跑起来。</p>
       {message ? <p className="text-sm text-destructive">{message}</p> : null}
       {steps ? (
         <ol className="space-y-2">

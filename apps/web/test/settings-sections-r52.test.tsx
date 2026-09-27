@@ -208,7 +208,7 @@ describe("设置 → 账号", () => {
  * 用户才知道打开它意味着什么；② 开关**立即写**（部分更新），不是等「保存」按钮。
  */
 describe("设置 → 模型：上下文自动压缩开关", () => {
-  it("文案写清行为（何时压缩 / 关掉后的后果）", async () => {
+  it("开关存在且只剩短标签（说明句按 2026-09-27 口径删除）", async () => {
     const { AgentSection } = await import("../src/components/agent-section");
     render(
       <AgentSection
@@ -223,9 +223,11 @@ describe("设置 → 模型：上下文自动压缩开关", () => {
     expect(
       screen.getByRole("switch", { name: "上下文自动压缩" }),
     ).toBeChecked();
-    expect(screen.getByText(/接近模型上下文上限/)).toBeVisible();
-    expect(screen.getByText(/压缩成摘要/)).toBeVisible();
-    expect(screen.getByText(/超长对话会被模型拒绝/)).toBeVisible();
+    expect(screen.getByText("超限时自动压缩历史")).toBeVisible();
+    // 旧的三句说明不许回来（机械门禁见 settings-copy-guard.test.ts）
+    expect(
+      screen.queryByText(/接近模型上下文上限|压缩成摘要|超长对话会被模型拒绝/),
+    ).toBeNull();
   });
 
   it("关掉时立即回调（部分更新），不依赖「保存」按钮", async () => {

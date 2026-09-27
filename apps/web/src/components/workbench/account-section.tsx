@@ -29,9 +29,7 @@ export function AccountSection({
   return (
     <section aria-label="账号设置">
       <h3 className="mb-1 text-base font-medium">账号</h3>
-      <p className="mb-3 text-sm text-muted-foreground">
-        当前登录账号。头像菜单里也有这些信息与「退出登录」。
-      </p>
+      <p className="mb-3 text-sm text-muted-foreground"></p>
 
       <dl className="divide-y rounded-lg border text-sm">
         <div className="flex items-center justify-between px-3 py-2.5">
@@ -52,9 +50,7 @@ export function AccountSection({
         </div>
       </dl>
 
-      <p className="mt-2 text-xs text-muted-foreground">
-        用自己的 API Key 不消耗平台额度，额度只在用平台提供的模型时扣除。
-      </p>
+      <p className="mt-2 text-xs text-muted-foreground"></p>
 
       {isAdmin && onOpenAdmin ? (
         <button

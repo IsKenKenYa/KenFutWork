@@ -50,7 +50,6 @@ export function ProfileSection({
   return (
     <div>
       <h2 className="text-lg font-semibold mb-1">个人资料</h2>
-      <p className="text-sm text-muted-foreground mb-6">管理你的个人信息。</p>
 
       <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
         <div className="space-y-2">

@@ -104,34 +104,28 @@ export function IndexLibrarySection({
   return (
     <section aria-label="索引库设置">
       <h3 className="mb-1 text-base font-medium">索引库</h3>
-      <p className="mb-3 text-sm text-muted-foreground">
-        为工作目录建立本地索引，右栏「文件目录」的搜索靠它按文件名、路径和内容找文件。
-      </p>
+      <p className="mb-3 text-sm text-muted-foreground"></p>
 
       <p className="mb-1 text-xs text-muted-foreground">代码库</p>
       <div className="divide-y rounded-lg border">
         <IndexToggle
           title="索引新文件夹"
-          hint="自动索引文件数少于 50,000 的新文件夹。"
+          hint="新文件夹自动索引"
           checked={autoNewFolder}
           onChange={(next) => void onToggleAuto(next)}
         />
         <IndexToggle
           title="索引存储库以实现即时搜索（测试版）"
-          hint="自动为仓库建索引，加快文件搜索。数据保存在本地。"
+          hint="仓库自动索引"
           checked={enabled}
           onChange={(next) => void onToggle(next)}
         />
       </div>
-      <p className="mt-1.5 text-xs text-muted-foreground">
-        索引保存在本机，不会写进你的工作目录。
-      </p>
+      <p className="mt-1.5 text-xs text-muted-foreground"></p>
 
       <div className="mt-3 rounded-lg border p-3 text-sm">
         {canvasId === null ? (
-          <p className="text-muted-foreground">
-            当前会话没有绑定工作目录——绑定后这里会显示索引统计。
-          </p>
+          <p className="text-muted-foreground">未绑定工作目录</p>
         ) : stats ? (
           <ul className="space-y-1 text-xs text-muted-foreground">
             <li>
@@ -149,10 +143,8 @@ export function IndexLibrarySection({
           </ul>
         ) : (
           <p className="text-muted-foreground">
-            还没有索引——
-            {autoNewFolder && enabled
-              ? "在「文件目录」里搜一次会自动建立。"
-              : "点下面的「重建索引」建立一份。"}
+            还没有索引
+            {autoNewFolder && enabled ? "（搜一次即建立）" : "（点「重建索引」）"}
           </p>
         )}
         <div className="mt-3 flex items-center gap-2">

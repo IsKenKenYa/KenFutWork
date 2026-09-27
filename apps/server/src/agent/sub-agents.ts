@@ -44,7 +44,8 @@ export function listDeclaredSubAgents(): Array<{
       label: "视频生成",
       // 界面文案与 `spec.description` 分开：那一份是**写给模型看的**（派活依据），
       // 这一份是写给用户看的——同一句话当两用会逼用户读英文原文。
-      description: "按描述生成视频；是否可用取决于有没有配置视频供应商。",
+      // 只写标签 + 一个必要前提（「需配供应商」是用户要提前知道的事实，不是解释句）
+      description: "按描述生成视频 · 需配视频供应商",
       tools: (spec.tools ?? []).map((tool) => tool.name),
     },
   ];
@@ -112,6 +113,5 @@ export function listCustomSubAgents(
 export const BUILTIN_SUBAGENT_DISPATCHER = {
   name: "task",
   label: "子任务分发",
-  description:
-    "deepagents 内置：把子任务派给某个子代理并回收结果（子代理名由入参指定）。",
+  description: "派子任务给子代理",
 } as const;

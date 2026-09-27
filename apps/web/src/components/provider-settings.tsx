@@ -77,9 +77,7 @@ export function ProviderSettings({ accessToken }: { accessToken: string }) {
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h3 className="text-base font-medium">供应商设置</h3>
-          <p className="text-sm text-muted-foreground">
-            使用你自己的 API Key，Key 加密保存、不回显。
-          </p>
+          <p className="text-sm text-muted-foreground"></p>
         </div>
         <button
           type="button"

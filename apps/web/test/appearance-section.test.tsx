@@ -50,9 +50,17 @@ describe("设置 → 外观", () => {
     expect(await screen.findByText(/当前生效：浅色（跟随系统）/)).toBeVisible();
   });
 
-  it("说明里点明「本机存储」与画布跟随", () => {
+  /**
+   * 曾经这里断言「说明里点明本机存储与画布跟随」。2026-09-27 用户口径把界面文案收成
+   * 「只写标签」（见 AGENTS.md「界面文案（硬约束）」），那句说明已删；这条改为**反过来**
+   * 锁住它不再回来（设置区文案守卫 settings-copy-guard.test.ts 是同一口径的机械门禁）。
+   */
+  it("不再复述说明句（只留主题选项）", () => {
     render(<AppearanceSection />);
-    expect(screen.getByText(/主题保存在本机/)).toBeVisible();
-    expect(screen.getByText(/画布与代码预览/)).toBeVisible();
+    // 三个选项标签都还在
+    expect(screen.getByText("浅色")).toBeVisible();
+    expect(screen.getByText("深色")).toBeVisible();
+    expect(screen.getByText("跟随系统")).toBeVisible();
+    expect(screen.queryByText(/主题保存在本机|画布与代码预览/)).toBeNull();
   });
 });

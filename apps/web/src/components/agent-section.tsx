@@ -93,11 +93,9 @@ export function AgentSection({
   return (
     <div>
       <h2 className="text-lg font-semibold mb-1">模型</h2>
-      <p className="text-sm text-muted-foreground mb-6">
-        配置工作区的默认 AI 模型。
-      </p>
+      <p className="text-sm text-muted-foreground mb-6"></p>
 
-      <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
+      <form onSubmit={handleSubmit} className="w-full space-y-4">
         <div className="space-y-2">
           <Label htmlFor="defaultModel">默认模型</Label>
           {modelsLoading ? (
@@ -122,9 +120,7 @@ export function AgentSection({
               </SelectContent>
             </Select>
           )}
-          <p className="text-xs text-muted-foreground">
-            该模型用于工作区里所有新对话。
-          </p>
+          <p className="text-xs text-muted-foreground"></p>
         </div>
 
         <div className="space-y-2">
@@ -137,11 +133,9 @@ export function AgentSection({
             max={50}
             value={maxRetries}
             onChange={(event) => setMaxRetries(event.target.value)}
-            className="w-24 rounded-md border px-2 py-1 text-sm outline-none"
+            className="w-full rounded-md border px-3 py-1.5 text-sm outline-none"
           />
-          <p className="text-xs text-muted-foreground">
-            失败后最多尝试几次（含首次），0 表示不重试。
-          </p>
+          <p className="text-xs text-muted-foreground">0 = 不重试</p>
         </div>
 
         {onToggleAutoCompact ? (
@@ -160,9 +154,7 @@ export function AgentSection({
                 className="h-4 w-8 shrink-0 appearance-none rounded-full bg-muted transition-colors checked:bg-foreground/80 before:block before:h-3.5 before:w-3.5 before:translate-x-0.5 before:rounded-full before:background before:bg-background before:transition-transform checked:before:translate-x-4"
               />
             </label>
-            <p className="text-xs text-muted-foreground">
-              对话接近模型上下文上限时，自动把较早的消息压缩成摘要，长对话可以一直继续。关掉后超长对话会被模型拒绝。
-            </p>
+            <p className="text-xs text-muted-foreground">超限时自动压缩历史</p>
           </div>
         ) : null}
 

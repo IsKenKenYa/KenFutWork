@@ -234,8 +234,7 @@ function Heatmap({
         ))}
       </div>
       <p className="mt-1 text-[10px] text-muted-foreground">
-        近一年{mode === "daily" ? "每日" : "累计"} token
-        用量（颜色越深用量越高，按最近 2 万条记录统计）。
+        近一年{mode === "daily" ? "每日" : "累计"} token 用量（近 2 万条）
       </p>
     </div>
   );

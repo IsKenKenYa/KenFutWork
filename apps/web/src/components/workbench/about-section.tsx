@@ -48,9 +48,7 @@ export function AboutSection() {
   return (
     <section aria-label="关于">
       <h3 className="mb-1 text-base font-medium">关于</h3>
-      <p className="mb-3 text-sm text-muted-foreground">
-        KenFutWork：BYOK 的 AI 工作台（Code 对话 / Design 画布双模式）。
-      </p>
+      <p className="mb-3 text-sm text-muted-foreground">BYOK 的 AI 工作台</p>
       <dl className="space-y-2 text-sm">
         {rows.map(([label, value]) => (
           <div key={label} className="flex gap-3">
@@ -59,23 +57,19 @@ export function AboutSection() {
           </div>
         ))}
       </dl>
-      <p className="mt-4 text-xs text-muted-foreground">
-        模型 Key 加密保存在本机，索引与对话数据都在本地。
-      </p>
       {/*
-        语音模型的署名（规划 §10 风险 7：SenseVoice 权重走 FunASR 模型许可，**需署名**）。
-        如实写「可能包含」而不是「已加载」——前端查不到下载态，不编造状态。
-      */}
+       * 语音模型的许可署名（规划 §10 风险 7：SenseVoice 权重走 FunASR 模型许可，**需署名**；
+       * Kokoro 为 Apache-2.0，随带的 espeak-ng 音素数据为 GPL-3.0）。
+       * 许可是法律要求故保留清单——但只写「模型 + 许可 + 出处」，不写成段落（界面文案硬约束）。
+       */}
       <div className="mt-4 space-y-1 text-xs text-muted-foreground">
-        <p>语音能力使用以下第三方模型（按需下载，未下载则不包含）：</p>
+        <p>语音模型（按需下载）</p>
         <ul className="list-disc space-y-0.5 pl-4">
-          <li>
-            SenseVoiceSmall（语音识别，FunAudioLLM / FunASR）：权重适用 FunASR
-            模型许可，代码 MIT；ONNX 格式由 sherpa-onnx 提供。
-          </li>
-          <li>Silero VAD（静音检测）：MIT。</li>
+          <li>SenseVoiceSmall · FunASR 许可 · sherpa-onnx</li>
+          <li>Silero VAD · MIT</li>
+          <li>Kokoro 多语版 · Apache-2.0 · espeak-ng 数据 GPL-3.0</li>
         </ul>
-        <p>语音识别在你的设备上完成；录音不留存，只记录耗时用于性能检测。</p>
+        <p>录音不留存</p>
       </div>
     </section>
   );

@@ -36,16 +36,19 @@ describe("子智能体清单", () => {
     }
   });
 
-  it("视频子代理：模型看到英文能力描述，界面看到中文说明且写明「取决于供应商配置」", () => {
+  it("视频子代理：模型看到英文能力描述，界面看到中文标签 + 需配供应商", () => {
     const spec = declaredSubAgentSpecs().find(
       (entry) => entry.name === "video_generate",
     );
+    // 模型面：能力描述（detail 写给模型，长一点无妨）
     expect(spec?.description).toMatch(/provider configuration/i);
 
     const video = listDeclaredSubAgents().find(
       (entry) => entry.name === "video_generate",
     );
-    expect(video?.description).toMatch(/取决于.*供应商/);
+    // 界面面：只写标签 + 一个必要前提（界面文案硬约束：不写解释句）
+    expect(video?.description).toBe("按描述生成视频 · 需配视频供应商");
+    expect(video?.description).not.toMatch(/[。；]/);
   });
 });
 
@@ -75,10 +78,7 @@ describe("自定义子智能体的装配", () => {
   it("与内置撞名：丢弃（不抛错、不并存）", () => {
     const specs = declaredSubAgentSpecs(
       [],
-      [
-        { ...TRANSLATOR, name: "video_generate" },
-        TRANSLATOR,
-      ],
+      [{ ...TRANSLATOR, name: "video_generate" }, TRANSLATOR],
     );
     expect(specs.filter((spec) => spec.name === "video_generate")).toHaveLength(
       1,

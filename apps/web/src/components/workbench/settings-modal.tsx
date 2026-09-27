@@ -454,9 +454,7 @@ export function SettingsModal({
 function PluginPanelsSettings({ accessToken }: { accessToken: string | null }) {
   return (
     <div className="space-y-3">
-      <p className="text-sm text-muted-foreground">
-        已启用插件提供的设置面板会显示在这里。
-      </p>
+      <p className="text-sm text-muted-foreground"></p>
       <div className="flex flex-wrap gap-2">
         <PluginPanelButtons
           accessToken={accessToken}

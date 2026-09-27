@@ -13,8 +13,10 @@ import { IndexLibrarySection } from "../src/components/workbench/index-library-s
  * ① 「索引新文件夹」= 自动为尚无索引的工作目录建索引（文件数 < 50,000）；
  * ② 「索引存储库以实现即时搜索（测试版）」= 搜索走索引。
  *
- * 这一层锁接线：两行文案与参考图一致、各点各的回调（**不能串**——串了就是「点一个
- * 开关改另一个设置」这类静默错），以及没绑工作目录时的空态说明。
+ * 这一层锁接线：各行文案与各点各的回调（**不能串**——串了就是「点一个开关改另一个设置」
+ * 这类静默错），以及没绑工作目录时的空态。
+ * 文案口径 2026-09-27 起改为「只写标签」（AGENTS.md「界面文案（硬约束）」）：
+ * 原先按参考图写的整句说明（含 50,000 与「数据保存在本地」那段）已删。
  */
 const fetchCodeIndex = vi.fn();
 
@@ -58,17 +60,13 @@ describe("索引库设置：两个开关", () => {
     renderSection();
     expect(screen.getByText("代码库")).toBeVisible();
     expect(screen.getByRole("switch", { name: "索引新文件夹" })).toBeVisible();
-    expect(
-      screen.getByText("自动索引文件数少于 50,000 的新文件夹。"),
-    ).toBeVisible();
+    expect(screen.getByText("新文件夹自动索引")).toBeVisible();
     expect(
       screen.getByRole("switch", {
         name: "索引存储库以实现即时搜索（测试版）",
       }),
     ).toBeVisible();
-    expect(
-      screen.getByText("自动为仓库建索引，加快文件搜索。数据保存在本地。"),
-    ).toBeVisible();
+    expect(screen.getByText("仓库自动索引")).toBeVisible();
   });
 
   it("点第一行只改「索引新文件夹」，第二行只改「即时搜索」（不串）", async () => {
@@ -98,14 +96,14 @@ describe("索引库设置：两个开关", () => {
     ).toBeChecked();
   });
 
-  it("没绑工作目录：空态说明 + 不给「清空」（重建仍可点，服务端会如实拒绝无目录）", () => {
+  it("没绑工作目录：空态标签 + 不给「清空」（重建仍可点，服务端会如实拒绝无目录）", () => {
     renderSection({ canvasId: null });
-    expect(screen.getByText(/没有绑定工作目录/)).toBeVisible();
+    expect(screen.getByText("未绑定工作目录")).toBeVisible();
     expect(screen.getByRole("button", { name: "清空" })).toBeDisabled();
   });
 
-  it("自动建关着时，空态文案指路「重建索引」而不是说会自动建", () => {
+  it("自动建关着时，空态指路「重建索引」而不是说会自动建", () => {
     renderSection({ autoNewFolder: false, enabled: true });
-    expect(screen.getByText(/点下面的「重建索引」建立一份/)).toBeVisible();
+    expect(screen.getByText(/点「重建索引」/)).toBeVisible();
   });
 });

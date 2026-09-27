@@ -35,9 +35,7 @@ export function AppearanceSection() {
   return (
     <section aria-label="外观设置">
       <h3 className="mb-1 text-base font-medium">外观</h3>
-      <p className="mb-3 text-sm text-muted-foreground">
-        主题保存在本机，画布与代码预览会跟着切换。
-      </p>
+      <p className="mb-3 text-sm text-muted-foreground"></p>
 
       <fieldset className="grid gap-2 sm:grid-cols-3">
         <legend className="sr-only">主题</legend>

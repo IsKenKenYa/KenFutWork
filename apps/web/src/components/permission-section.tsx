@@ -166,8 +166,7 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
           className="mb-5 min-w-0 space-y-3 rounded-lg border border-dashed p-3"
         >
           <p className="text-xs text-muted-foreground">
-            一行一条，支持 <code>*</code>{" "}
-            通配。拒绝优先，未命中的按上面的档位处理。
+            一行一条，支持 <code>*</code> 支持通配；拒绝优先
           </p>
           <label className="block text-sm">
             拒绝这些工具

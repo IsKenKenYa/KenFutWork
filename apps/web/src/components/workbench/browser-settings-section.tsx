@@ -306,7 +306,6 @@ export function BrowserSettingsSection({
   return (
     <section aria-label="浏览器设置">
       <h3 className="mb-1 text-base font-medium">内置浏览器</h3>
-      <p className="mb-2 text-sm text-muted-foreground">右栏面板里的浏览器。</p>
       <div className="divide-y">
         <Toggle
           label="允许 AI 控制浏览器"
@@ -352,9 +351,7 @@ export function BrowserSettingsSection({
       </div>
 
       <h3 className="mt-5 mb-1 text-base font-medium">外部浏览器</h3>
-      <p className="mb-2 text-sm text-muted-foreground">
-        连接一个独立的浏览器实例，Agent 可以读页面、截图、点击与输入。
-      </p>
+      <p className="mb-2 text-sm text-muted-foreground"></p>
       <div className="rounded-md border px-3 py-2 text-xs">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-muted-foreground">{cdpLabel}</span>
@@ -396,7 +393,7 @@ export function BrowserSettingsSection({
       <h3 className="mt-5 mb-1 text-base font-medium">通用</h3>
       <div className="divide-y">
         {/* biome-ignore lint/a11y/noLabelWithoutControl: 控件是内嵌的 Base UI SelectTrigger（自定义组件），规则无法静态识别包裹关联 */}
-        <label className="flex items-center justify-between gap-4 py-3">
+        <label className="flex w-full flex-col gap-2 py-3">
           <span>
             <span className="block text-sm">默认搜索引擎</span>
             <span className="block text-xs text-muted-foreground">
@@ -417,7 +414,7 @@ export function BrowserSettingsSection({
               label: e.label,
             }))}
           >
-            <SelectTrigger aria-label="默认搜索引擎">
+            <SelectTrigger aria-label="默认搜索引擎" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -431,7 +428,7 @@ export function BrowserSettingsSection({
         </label>
 
         {/* biome-ignore lint/a11y/noLabelWithoutControl: 同上一处（内嵌自定义 SelectTrigger） */}
-        <label className="flex items-center justify-between gap-4 py-3">
+        <label className="flex w-full flex-col gap-2 py-3">
           <span>
             <span className="block text-sm">AI 任务默认浏览器</span>
             <span className="block text-xs text-muted-foreground">
@@ -450,7 +447,7 @@ export function BrowserSettingsSection({
               label: t.label,
             }))}
           >
-            <SelectTrigger aria-label="AI 任务默认浏览器">
+            <SelectTrigger aria-label="AI 任务默认浏览器" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
