@@ -221,3 +221,23 @@ export function completeSubagentByCallId(
       : entry,
   );
 }
+
+/**
+ * 隐式子代理条目（兜底路由）：凡带 agentName 的事件都归属一个以调用键
+ * （agentCallId 或 `agent:<名字>`）为 identity 的条目——无论子代理由哪条
+ * 机制派生（我们的 subagent_task、deepagents 内建 task），消息都不进主对话。
+ */
+export function upsertImplicitSubagent(
+  list: SubagentEntry[],
+  event: { callKey: string; name: string; timestamp?: string | undefined },
+): SubagentEntry[] {
+  const existing = list.find((entry) => entry.toolCallId === event.callKey);
+  if (existing) return list;
+  const entry: SubagentEntry = {
+    toolCallId: event.callKey,
+    name: event.name,
+    startedAt: event.timestamp ?? new Date().toISOString(),
+    blocks: [],
+  };
+  return [entry, ...list];
+}

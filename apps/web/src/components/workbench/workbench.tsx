@@ -154,6 +154,7 @@ import {
   closeAllSubagents,
   completeSubagentByCallId,
   type SubagentEntry,
+  upsertImplicitSubagent,
 } from "@/lib/subagent-directory";
 import { createTaskSaver } from "@/lib/task-saver";
 import type { TodoItem } from "@/lib/todo-progress";
@@ -1695,21 +1696,38 @@ export function Workbench() {
           ...(runId ? { activeRunId: runId } : {}),
         }));
       } else if (type === "tool.started" || type === "tool.completed") {
-        // 子代理内部工具（带 agentCallId，zcode 右栏模型）：路由进对应子代理
-        // 视图的独立转录，**不进主对话**——主对话只保留父派发调用的紧凑行。
+        // 子代理内部工具（zcode 右栏模型）：凡带 agentCallId/agentName 的事件
+        // 路由进对应子代理视图的独立转录，**不进主对话**——主对话只保留父派发
+        // 调用的紧凑行。agentCallId（我们的派发）缺失时按 agentName 建隐式条目
+        // （deepagents 内建 task 派生的 general-purpose 等兜底）。
         const subagentCallId = (evt as { agentCallId?: string }).agentCallId;
-        if (subagentCallId) {
-          apply((task) =>
-            task.subagents
-              ? {
-                  ...task,
-                  subagents: appendSubagentTool(
-                    task.subagents,
-                    evt as Parameters<typeof appendSubagentTool>[1],
-                  ),
-                }
-              : task,
-          );
+        const subagentName = (evt as { agentName?: string }).agentName;
+        const routeKey =
+          subagentCallId ??
+          (subagentName ? `agent:${subagentName}` : undefined);
+        if (routeKey) {
+          apply((task) => {
+            let subagents = task.subagents ?? [];
+            if (!subagents.some((entry) => entry.toolCallId === routeKey)) {
+              subagents = upsertImplicitSubagent(subagents, {
+                callKey: routeKey,
+                name: subagentName ?? routeKey,
+                timestamp: (evt as { timestamp?: string }).timestamp,
+              });
+            }
+            subagents = appendSubagentTool(subagents, {
+              agentCallId: routeKey,
+              ...(evt as {
+                toolCallId?: string;
+                toolName?: string;
+                input?: Record<string, unknown>;
+                outputSummary?: string;
+                timestamp?: string;
+                type: "tool.started" | "tool.completed";
+              }),
+            });
+            return { ...task, subagents };
+          });
           return;
         }
         // 工具轨迹对所有工具都记（含被工具门拒绝的合成事件），子代理工具另进目录。
@@ -1823,7 +1841,11 @@ export function Workbench() {
         const delta = (evt as { delta?: string }).delta ?? "";
         if (!delta) return;
         // 子代理内部思考：进子代理视图（不进主对话）
-        const thinkCallId = (evt as { agentCallId?: string }).agentCallId;
+        const thinkCallId =
+          (evt as { agentCallId?: string }).agentCallId ??
+          ((evt as { agentName?: string }).agentName
+            ? `agent:${(evt as { agentName?: string }).agentName}`
+            : undefined);
         if (thinkCallId) {
           apply((task) =>
             task.subagents
@@ -1863,7 +1885,11 @@ export function Workbench() {
         const delta = (evt as { delta?: string }).delta ?? "";
         if (!delta) return;
         // 子代理内部正文：进子代理视图（不进主对话）
-        const textCallId = (evt as { agentCallId?: string }).agentCallId;
+        const textCallId =
+          (evt as { agentCallId?: string }).agentCallId ??
+          ((evt as { agentName?: string }).agentName
+            ? `agent:${(evt as { agentName?: string }).agentName}`
+            : undefined);
         if (textCallId) {
           apply((task) =>
             task.subagents

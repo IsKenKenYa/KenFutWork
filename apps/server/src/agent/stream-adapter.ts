@@ -43,6 +43,8 @@ type AdaptDeepAgentStreamOptions = {
   }) => void;
   runId: string;
   sessionId: string;
+  /** 主 agent 的 lc_agent_name（createDeepAgent name）：归因时排除主 run。 */
+  mainAgentName?: string;
   signal?: AbortSignal;
   /**
    * 工具 schema 的分段量（runtime 在装配后量好传入）：MCP 工具 / 系统工具。
@@ -74,9 +76,14 @@ const SUB_AGENT_PARENT_TOOLS = new Set(["video_generate"]);
  * `parent_ids`，归因只能靠 run metadata（`lc_agent_name`，deepagents/自建派发
  * 都写入）；主 agent 的事件没有该 metadata。
  */
-function readSubagentName(evt: LangChainStreamEvent): string | undefined {
+function readSubagentName(
+  evt: LangChainStreamEvent,
+  mainAgentName: string,
+): string | undefined {
   const name = evt.metadata?.lc_agent_name;
-  return typeof name === "string" && name.length > 0 ? name : undefined;
+  if (typeof name !== "string" || name.length === 0) return undefined;
+  // 主 agent 自己的 run 也带 lc_agent_name（createDeepAgent 的 name）——不是子代理
+  return name === mainAgentName ? undefined : name;
 }
 
 /** 派发调用 id（父 run 里 task/task_background 的 toolCallId），路由键。 */
@@ -91,6 +98,7 @@ export async function* adaptDeepAgentStream(
   options: AdaptDeepAgentStreamOptions,
 ): AsyncGenerator<StreamEvent> {
   const now = options.now ?? (() => new Date().toISOString());
+  const mainAgentName = options.mainAgentName ?? "kenfutwork";
   const seenCompletedToolCalls = new Set<string>();
   const seenStreamedMessageIds = new Set<string>();
   const seenStartedToolCalls = new Set<string>();
@@ -217,7 +225,7 @@ export async function* adaptDeepAgentStream(
         const chunk = evt.data?.chunk;
         if (!chunk) continue;
         // 子代理的流：usage 照算（归父 run，DEC-6），文本打标路由不进主消息流
-        const streamingSubagent = readSubagentName(evt);
+        const streamingSubagent = readSubagentName(evt, mainAgentName);
         const streamingCallId = readSubagentCallId(evt);
 
         // Skip chunks that are tool calls (no text to emit)
@@ -390,7 +398,7 @@ export async function* adaptDeepAgentStream(
       if (evt.event === "on_chat_model_end") {
         const output = evt.data?.output;
         if (!output) continue;
-        if (readSubagentName(evt)) continue;
+        if (readSubagentName(evt, mainAgentName)) continue;
 
         if (
           AIMessageClass.isInstance(output) ||
@@ -438,7 +446,7 @@ export async function* adaptDeepAgentStream(
           activeSubAgentRuns.add(toolCallId);
         }
 
-        const subagentName = readSubagentName(evt);
+        const subagentName = readSubagentName(evt, mainAgentName);
         const subagentCallId = readSubagentCallId(evt);
         yield {
           runId: options.runId,
@@ -475,7 +483,7 @@ export async function* adaptDeepAgentStream(
           output,
           (extractedArtifacts?.length ?? 0) > 0,
         );
-        const completedSubagent = readSubagentName(evt);
+        const completedSubagent = readSubagentName(evt, mainAgentName);
         const completedCallId = readSubagentCallId(evt);
         yield {
           output: extractedOutput,
@@ -520,7 +528,7 @@ export async function* adaptDeepAgentStream(
         seenCompletedToolCalls.add(toolCallId);
 
         const reason = describeToolError(evt.data?.error);
-        const errorSubagent = readSubagentName(evt);
+        const errorSubagent = readSubagentName(evt, mainAgentName);
         const errorCallId = readSubagentCallId(evt);
         yield {
           output: { error: reason },
