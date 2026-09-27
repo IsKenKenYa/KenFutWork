@@ -80,7 +80,6 @@ export function TerminalSettingsSection({
     <section className="space-y-3">
       <div>
         <h3 className="text-sm font-medium">终端</h3>
-        <p className="mt-1 text-xs text-muted-foreground"></p>
       </div>
       <div className="flex items-center gap-2">
         <Select

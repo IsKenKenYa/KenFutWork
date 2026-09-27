@@ -118,7 +118,6 @@ export function RulesMemorySection({
       </div>
 
       <h3 className="mt-6 mb-1 text-base font-medium">规则条目</h3>
-      <p className="mb-2 text-sm text-muted-foreground"></p>
       <div className="mb-2 flex items-center gap-2">
         <input
           aria-label="新规则条目"

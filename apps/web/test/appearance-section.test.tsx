@@ -11,8 +11,9 @@ import { AppearanceSection } from "../src/components/workbench/appearance-sectio
  * 设置 → 外观（R5-2 的「外观」条目）。
  *
  * 机制本来就在（next-themes 的 class 策略 + `.dark` 令牌 + 画布按 resolvedTheme 切主题），
- * 这一页锁的是：三选一真的写 `theme`、当前生效值如实显示、以及**偏好存本机**这件事
- * 在界面上说清楚了（外观是设备级的，不跟工作区设置绑）。
+ * 这一页锁的是：三选一真的写 `theme`，且**选中态画在卡片上**——2026-09-27 用户口径
+ * 「设置里每个选项都要精简到极致」之后，另行复述的「当前生效：…」一行已删，
+ * 卡片高亮成了唯一的选中信号，故这里锁住它。
  */
 const setTheme = vi.fn();
 let themeValue = "system";
@@ -45,9 +46,15 @@ describe("设置 → 外观", () => {
     expect(setTheme).toHaveBeenCalledWith("dark");
   });
 
-  it("如实显示当前生效值（含「跟随系统」标注）", async () => {
+  /** 选中信号只剩卡片高亮（`data-active`）——多写一行「当前生效：浅色」在 2026-09-27 已删 */
+  it("选中态挂在卡片上：跟随系统时只有它亮", () => {
+    themeValue = "system";
     render(<AppearanceSection />);
-    expect(await screen.findByText(/当前生效：浅色（跟随系统）/)).toBeVisible();
+    const activeOf = (name: RegExp) =>
+      screen.getByRole("radio", { name }).closest("label")?.dataset.active;
+    expect(activeOf(/跟随系统/)).toBe("true");
+    expect(activeOf(/浅色/)).toBe("false");
+    expect(activeOf(/深色/)).toBe("false");
   });
 
   /**

@@ -93,7 +93,6 @@ export function AgentSection({
   return (
     <div>
       <h2 className="text-lg font-semibold mb-1">模型</h2>
-      <p className="text-sm text-muted-foreground mb-6"></p>
 
       <form onSubmit={handleSubmit} className="w-full space-y-4">
         <div className="space-y-2">
@@ -120,7 +119,6 @@ export function AgentSection({
               </SelectContent>
             </Select>
           )}
-          <p className="text-xs text-muted-foreground"></p>
         </div>
 
         <div className="space-y-2">
@@ -139,7 +137,7 @@ export function AgentSection({
         </div>
 
         {onToggleAutoCompact ? (
-          <div className="space-y-1 rounded-lg border p-3">
+          <div className="rounded-lg border p-3">
             <label className="flex items-center justify-between gap-3">
               <span className="text-sm">上下文自动压缩</span>
               <input
@@ -154,7 +152,6 @@ export function AgentSection({
                 className="h-4 w-8 shrink-0 appearance-none rounded-full bg-muted transition-colors checked:bg-foreground/80 before:block before:h-3.5 before:w-3.5 before:translate-x-0.5 before:rounded-full before:background before:bg-background before:transition-transform checked:before:translate-x-4"
               />
             </label>
-            <p className="text-xs text-muted-foreground">超限时自动压缩历史</p>
           </div>
         ) : null}
 

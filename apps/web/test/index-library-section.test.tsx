@@ -11,7 +11,7 @@ import { IndexLibrarySection } from "../src/components/workbench/index-library-s
  * 设置 → 索引库（R4-3）按参考图（`docs/参考图/索引库-代码库索引开关.png`）排成
  * **两行开关**，两行都是真行为：
  * ① 「索引新文件夹」= 自动为尚无索引的工作目录建索引（文件数 < 50,000）；
- * ② 「索引存储库以实现即时搜索（测试版）」= 搜索走索引。
+ * ② 「索引存储库（测试版）」= 搜索走索引。
  *
  * 这一层锁接线：各行文案与各点各的回调（**不能串**——串了就是「点一个开关改另一个设置」
  * 这类静默错），以及没绑工作目录时的空态。
@@ -56,17 +56,16 @@ describe("索引库设置：两个开关", () => {
   });
   afterEach(cleanup);
 
-  it("两行按参考图文案渲染（含 50,000 与本地索引说明）", () => {
+  /** 两行都只写标签：复述行为的副标题（「新文件夹自动索引」「仓库自动索引」）按 2026-09-27 口径删 */
+  it("两行只写标签（不带复述行为的副标题）", () => {
     renderSection();
     expect(screen.getByText("代码库")).toBeVisible();
     expect(screen.getByRole("switch", { name: "索引新文件夹" })).toBeVisible();
-    expect(screen.getByText("新文件夹自动索引")).toBeVisible();
+    expect(screen.queryByText("新文件夹自动索引")).toBeNull();
     expect(
-      screen.getByRole("switch", {
-        name: "索引存储库以实现即时搜索（测试版）",
-      }),
+      screen.getByRole("switch", { name: "索引存储库（测试版）" }),
     ).toBeVisible();
-    expect(screen.getByText("仓库自动索引")).toBeVisible();
+    expect(screen.queryByText("仓库自动索引")).toBeNull();
   });
 
   it("点第一行只改「索引新文件夹」，第二行只改「即时搜索」（不串）", async () => {
@@ -77,7 +76,7 @@ describe("索引库设置：两个开关", () => {
 
     await userEvent.click(
       screen.getByRole("switch", {
-        name: "索引存储库以实现即时搜索（测试版）",
+        name: "索引存储库（测试版）",
       }),
     );
     expect(onToggle).toHaveBeenCalledWith(true);
@@ -91,7 +90,7 @@ describe("索引库设置：两个开关", () => {
     ).not.toBeChecked();
     expect(
       screen.getByRole("switch", {
-        name: "索引存储库以实现即时搜索（测试版）",
+        name: "索引存储库（测试版）",
       }),
     ).toBeChecked();
   });

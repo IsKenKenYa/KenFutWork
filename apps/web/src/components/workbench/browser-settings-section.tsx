@@ -351,7 +351,6 @@ export function BrowserSettingsSection({
       </div>
 
       <h3 className="mt-5 mb-1 text-base font-medium">外部浏览器</h3>
-      <p className="mb-2 text-sm text-muted-foreground"></p>
       <div className="rounded-md border px-3 py-2 text-xs">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-muted-foreground">{cdpLabel}</span>

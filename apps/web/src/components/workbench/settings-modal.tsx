@@ -454,11 +454,11 @@ export function SettingsModal({
 function PluginPanelsSettings({ accessToken }: { accessToken: string | null }) {
   return (
     <div className="space-y-3">
-      <p className="text-sm text-muted-foreground"></p>
       <div className="flex flex-wrap gap-2">
         <PluginPanelButtons
           accessToken={accessToken}
           slot="settings"
+          emptyLabel="当前没有插件提供设置面板"
           renderButton={(panel, open) => (
             <button
               key={panel.id}

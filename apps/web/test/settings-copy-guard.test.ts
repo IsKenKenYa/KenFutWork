@@ -92,6 +92,49 @@ function findViolations(): Violation[] {
   return violations;
 }
 
+/** 只装文本的元素——它们空着一定是文案被删剩的壳 */
+const TEXT_TAGS = "p|span|li|dd|dt";
+const EMPTY_INLINE = new RegExp(`<(${TEXT_TAGS})\\b[^>]*>\\s*</\\1>`);
+const OPEN_TEXT_TAG = new RegExp(`^<(${TEXT_TAGS})\\b[^>]*>$`);
+const CLOSE_TEXT_TAG = new RegExp(`^</(${TEXT_TAGS})>$`);
+
+/**
+ * 被掏空的文本元素（`<p className="mb-6"></p>`）。
+ *
+ * 背景：2026-09-27 用户口径要求把设置区文案精简到极致，删句子时留下了空壳——
+ * 元素本身没了内容，`className` 上的 `mb-*` / `mt-*` 边距却还在，界面于是出现
+ * 用户点名的「排版很不合理」大片空白（一次清掉 12 处）。空壳没有任何合法用途。
+ */
+function findEmptyShells(): Violation[] {
+  const violations: Violation[] = [];
+  for (const file of settingsFiles()) {
+    const lines = readFileSync(file, "utf-8").split(/\r?\n/);
+    lines.forEach((raw, index) => {
+      const line = raw.trim();
+      if (EMPTY_INLINE.test(line)) {
+        violations.push({
+          file: file.slice(file.indexOf("components")),
+          line: index + 1,
+          text: line.slice(0, 60),
+        });
+        return;
+      }
+      const open = OPEN_TEXT_TAG.exec(line);
+      if (!open) return;
+      // 跨行空壳：`<p …>` 后面紧跟（跳过空行）就是 `</p>`
+      const rest = lines.slice(index + 1).filter((l) => l.trim().length > 0);
+      if (rest.length > 0 && CLOSE_TEXT_TAG.test((rest[0] ?? "").trim())) {
+        violations.push({
+          file: file.slice(file.indexOf("components")),
+          line: index + 1,
+          text: line.slice(0, 60),
+        });
+      }
+    });
+  }
+  return violations;
+}
+
 describe("界面文案硬约束：设置区只写标签，不写句子", () => {
   it("没有句子标点、没有超过 40 字的整句", () => {
     const violations = findViolations();
@@ -101,6 +144,21 @@ describe("界面文案硬约束：设置区只写标签，不写句子", () => {
     expect(
       violations.length,
       `设置区出现疑似说明句（只写标签；说明放 docs 或代码注释）：\n${rendered}`,
+    ).toBe(0);
+  });
+
+  /**
+   * 机械门禁：文案删干净、壳也要删干净。空壳留着会以边距的形式变成可见的排版事故，
+   * 而看源码时它几乎不可见——正是需要机器盯的那类残留。
+   */
+  it("没有删文案剩下的空元素（空壳会留出死空白）", () => {
+    const shells = findEmptyShells();
+    const rendered = shells
+      .map((v) => `  ${v.file}:${v.line}  ${v.text}`)
+      .join("\n");
+    expect(
+      shells.length,
+      `设置区有空文本元素（删文案时请连元素一起删）：\n${rendered}`,
     ).toBe(0);
   });
 
@@ -114,5 +172,21 @@ describe("界面文案硬约束：设置区只写标签，不写句子", () => {
     expect(
       looksLikeJsxText('        const [value, setValue] = useState("");'),
     ).toBe(false);
+  });
+
+  it("空壳守卫自身有效：认出两种空壳，放过有内容的元素与自闭合的图标", () => {
+    expect(EMPTY_INLINE.test('<p className="mb-6 text-sm"></p>')).toBe(true);
+    expect(EMPTY_INLINE.test("<span></span>")).toBe(true);
+    // 有内容的不算
+    expect(EMPTY_INLINE.test("<p>没有钩子</p>")).toBe(false);
+    // 自闭合的图标/输入框是正常的，不该误伤
+    expect(EMPTY_INLINE.test('<Icon className="h-4 w-4" />')).toBe(false);
+    expect(EMPTY_INLINE.test('<input type="radio" />')).toBe(false);
+    // 跨行空壳靠 OPEN_TEXT_TAG + 下一行闭合判定
+    expect(OPEN_TEXT_TAG.test('<p className="text-sm">')).toBe(true);
+    expect(CLOSE_TEXT_TAG.test("</p>")).toBe(true);
+    expect(CLOSE_TEXT_TAG.test("</span>")).toBe(true);
+    // 容器标签不在清单里：空的 <div> 有时是布局占位，不算「删文案剩的壳」
+    expect(EMPTY_INLINE.test('<div className="mt-3"></div>')).toBe(false);
   });
 });

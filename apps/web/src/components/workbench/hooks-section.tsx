@@ -85,9 +85,7 @@ export function HooksSection({
 
       <div className="space-y-2">
         {rows.length === 0 ? (
-          <p className="rounded-lg border px-3 py-2 text-sm text-muted-foreground">
-            没有钩子
-          </p>
+          <p className="text-sm text-muted-foreground">没有钩子</p>
         ) : null}
 
         {rows.map((row, index) => (

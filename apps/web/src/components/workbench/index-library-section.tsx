@@ -104,24 +104,20 @@ export function IndexLibrarySection({
   return (
     <section aria-label="索引库设置">
       <h3 className="mb-1 text-base font-medium">索引库</h3>
-      <p className="mb-3 text-sm text-muted-foreground"></p>
 
       <p className="mb-1 text-xs text-muted-foreground">代码库</p>
       <div className="divide-y rounded-lg border">
         <IndexToggle
           title="索引新文件夹"
-          hint="新文件夹自动索引"
           checked={autoNewFolder}
           onChange={(next) => void onToggleAuto(next)}
         />
         <IndexToggle
-          title="索引存储库以实现即时搜索（测试版）"
-          hint="仓库自动索引"
+          title="索引存储库（测试版）"
           checked={enabled}
           onChange={(next) => void onToggle(next)}
         />
       </div>
-      <p className="mt-1.5 text-xs text-muted-foreground"></p>
 
       <div className="mt-3 rounded-lg border p-3 text-sm">
         {canvasId === null ? (
@@ -144,7 +140,9 @@ export function IndexLibrarySection({
         ) : (
           <p className="text-muted-foreground">
             还没有索引
-            {autoNewFolder && enabled ? "（搜一次即建立）" : "（点「重建索引」）"}
+            {autoNewFolder && enabled
+              ? "（搜一次即建立）"
+              : "（点「重建索引」）"}
           </p>
         )}
         <div className="mt-3 flex items-center gap-2">
@@ -176,24 +174,19 @@ export function IndexLibrarySection({
   );
 }
 
-/** 一行参考图式开关：整行可点，标题 + 说明在左、开关在右。 */
+/** 单个开关行：标签 + 开关。标签只写名字，不复述行为（2026-09-27 用户口径）。 */
 function IndexToggle({
   title,
-  hint,
   checked,
   onChange,
 }: {
   title: string;
-  hint: string;
   checked: boolean;
   onChange: (next: boolean) => void;
 }) {
   return (
     <label className="flex cursor-pointer items-center justify-between gap-4 px-3 py-2.5">
-      <span className="min-w-0">
-        <span className="block text-sm">{title}</span>
-        <span className="block text-xs text-muted-foreground">{hint}</span>
-      </span>
+      <span className="min-w-0 text-sm">{title}</span>
       <input
         type="checkbox"
         role="switch"
