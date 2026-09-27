@@ -37,6 +37,24 @@ else
   echo "[dev] web 就绪（3000）"
 fi
 
+# 2.5 3001 上若挂着**旧打包快照**（target/**/app/server.cjs）就清掉——
+# 壳对「已健康的 3001」会直接复用，快照进程不清就会一直被复用，
+# 表现为「改了源码没生效」（2026-09-27 事故）。dev 形态只跑源码最新版。
+if port_up 3001; then
+  pid="$(lsof -nP -iTCP:3001 -sTCP:LISTEN -t 2>/dev/null | head -1 || true)"
+  cmd="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+  case "$cmd" in
+    *app/server/server.cjs*)
+      kill "$pid" 2>/dev/null || true
+      echo "[dev] 已停止旧打包快照服务端（3001 server.cjs）——dev 只跑源码最新版"
+      for _ in $(seq 1 10); do port_up 3001 || break; sleep 1; done
+      ;;
+    *)
+      echo "[dev] 3001 已有源码服务端（node --watch，改文件自动重载），复用"
+      ;;
+  esac
+fi
+
 # 3. Tauri 窗口（阻塞在本进程；关窗即退出并回收上面拉起的进程）
 echo "[dev] 打开 Tauri 窗口…"
 cd apps/desktop/src-tauri

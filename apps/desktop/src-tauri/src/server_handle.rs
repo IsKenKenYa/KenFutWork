@@ -251,7 +251,9 @@ fn ui_once(port: u16) -> bool {
  * 用户看到的「关闭应用时闪一个 cmd 黑框」就是退出路径上的 `taskkill` 干的
  * （2026-09-19 反馈）。所有辅助命令一律走这里。
  */
+#[cfg_attr(not(windows), allow(dead_code))]
 fn hidden_command(program: &str) -> Command {
+    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut command = Command::new(program);
     #[cfg(windows)]
     {

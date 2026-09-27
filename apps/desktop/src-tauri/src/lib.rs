@@ -33,6 +33,7 @@ const SERVER_PORT: u16 = 3001;
  * `{"message":"Route GET:/ not found"}`）——**Design 模式因此整块失效**（画布没了）。
  * 换端口的前提是前端按「同源」解析 API base（见 apps/web/src/lib/env.ts）。
  */
+#[cfg_attr(debug_assertions, allow(dead_code))]
 const PORT_CANDIDATES: u16 = 10;
 /// 退出宽限：SIGTERM 后等这么久，超时升级 SIGKILL（服务端 SIGTERM 会停 jobLoop 并停库）。
 const SHUTDOWN_GRACE: Duration = std::time::Duration::from_secs(10);
@@ -51,6 +52,7 @@ struct ServerState(std::sync::Mutex<Option<server_handle::ServerHandle>>);
  * 正是 `/canvas?id=…`，所以在壳自带 UI 上**画布永远是空白**（用户 2026-09-17 报的
  * 「design 模式是画布啊，怎么又给我改坏了」就是这个）。
  */
+#[cfg_attr(debug_assertions, allow(dead_code))]
 fn desktop_env(data_dir: &Path, web_dir: &Path, port: u16) -> Vec<(String, String)> {
     let mut env = vec![
         ("KENFUTWORK_EMBEDDED_PG".into(), "1".into()),
@@ -95,6 +97,7 @@ fn desktop_env(data_dir: &Path, web_dir: &Path, port: u16) -> Vec<(String, Strin
  *   随包静态 node 拉起 CJS 入口：`app/runtime/node/bin/node app/server/server.cjs`
  *   （node 官方发行版签名天然有效，且该 node 本来就要随包给运行时用）。
  */
+#[cfg_attr(debug_assertions, allow(dead_code))]
 fn bundled_server_launch(
     app: &tauri::AppHandle,
 ) -> Option<(PathBuf, Vec<String>, PathBuf)> {
@@ -130,6 +133,7 @@ fn bundled_server_launch(
 }
 
 /// 打包态的拉起配置：随包服务端载体 + 桌面环境变量 + 指定端口。
+#[cfg_attr(debug_assertions, allow(dead_code))]
 fn packaged_spawn_config(
     program: &Path,
     args: Vec<String>,
@@ -188,6 +192,7 @@ fn log_line(data_dir: &Path, message: &str) {
  * 顺序（每个候选端口）：探活 → 有东西在听时再验它托管的首页是不是 HTML。
  * 是 → 复用；不是（别人的服务/dev API）→ 换下一个端口；没人听且可绑 → 拉自己的服务端。
  */
+#[cfg_attr(debug_assertions, allow(dead_code))]
 fn launch_packaged_server(
     data_dir: &Path,
     launch: &(PathBuf, Vec<String>, PathBuf),
@@ -246,13 +251,23 @@ fn launch_packaged_server(
 }
 
 /// 启动服务端；返回窗口该指向的端口（dev 形态返回 None：窗口交给 devUrl / 壳自带 UI）。
+#[cfg_attr(debug_assertions, allow(unused_variables))]
 fn start_server(
     app: &tauri::AppHandle,
     data_dir: &Path,
 ) -> Result<(ServerLaunch, Option<u16>), String> {
-    if let Some(server_launch) = bundled_server_launch(app) {
-        let (port, launch) = launch_packaged_server(data_dir, &server_launch)?;
-        return Ok((launch, Some(port)));
+    // dev 构建（cargo run / tauri dev）**永不执行随包快照**：`target/**/app/server.cjs`
+    // 是上次打包的旧产物，优先执行会让人以为「改了源码没生效」（2026-09-27 事故：
+    // 3001 一直跑 9/23 的快照，子代理路由修复全部不可见）。dev 的意义就是跑最新
+    // 源码——一律走 dev 拉起路径（`dev:server` = node --watch + tsx，改文件自动重载）。
+    // release 打包形态不受影响：随包服务端正是打包形态的交付物。
+    #[cfg(not(debug_assertions))]
+    #[cfg(not(debug_assertions))]
+    {
+        if let Some(server_launch) = bundled_server_launch(app) {
+            let (port, launch) = launch_packaged_server(data_dir, &server_launch)?;
+            return Ok((launch, Some(port)));
+        }
     }
     ensure_server_running(dev_spawn_config(data_dir.to_path_buf()))
         .map(|launch| (launch, None))
@@ -409,7 +424,11 @@ pub fn run() {
             // 主线程被占住，窗口连重绘都不做 → 用户看到的是一大片白屏。
             // 现在：先画启动中页面（打包态才画，dev 形态窗口归 devUrl），后台起服务，
             // 起来了再把它叫到主线程跳转。
+            // 与 start_server 同口径：dev 构建不画打包启动页（窗口归 devUrl）
+            #[cfg(not(debug_assertions))]
             let packaged = bundled_server_launch(app.handle()).is_some();
+            #[cfg(debug_assertions)]
+            let packaged = false;
             if packaged {
                 show_startup_splash(app.handle());
             }
