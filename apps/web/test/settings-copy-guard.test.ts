@@ -3,36 +3,64 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * 界面文案硬约束守卫（《AGENTS.md》「界面文案（硬约束）」，用户口径 2026-09-27）。
+ * 界面文案与版式硬约束守卫（《AGENTS.md》「界面文案（硬约束）」，用户口径 2026-09-27）。
  *
  * 背景：语音设置页曾把方案文档整段抄进界面（「松开后把文字填进输入框，你自己确认再发送」、
  * 「预估：本机 CPU 实时率约 0.1–0.7（首次调用含模型载入会更慢）」），用户原话
- * 「根本不是给人看的」「我给你描述的是需求，而不是让你原原本本写上去」。
+ * 「根本不是给人看的」「我给你描述的是需求，而不是让你原原本本写上去」。之后每一轮又各抓到
+ * 一类同族问题：复述标签的副标题（「后台运行，不弹窗口（下次连接生效）」）、把要求原样抄上界
+ * （要求「做个假的弹窗」→ 界面写「假的弹窗」「虚假提交」）、能左右却在上下排布。用户后续原话：
+ * 「还是很啰嗦」「好多可以设置成左右的，你为什么要设置成上下」「添加硬约束，所有内容的文本
+ * 不要啰哩巴嗦」。三类问题都由本门禁盯住，不再靠人盯：
  *
- * 这是**机械门禁**（不是提醒）：扫设置区源码里的 JSX 文本，凡出现 ①句子标点（。；）
- * 或 ②超过 40 字的整句，即判违约。
+ * ① **文案（全站）**：`src/components` 与 `src/app` 下所有 tsx 的 JSX 文本出现句子标点
+ *    （。；，）、中文字数超过 20、或占位/虚假词（假的 / 虚假 / 即将上线 / 占位；「占位符」
+ *    是正常术语，除外）→ 违约；**文案属性**（`hint` / `title` / `placeholder` / `emptyLabel` /
+ *    `description`）的值同样受这两条约束，字符串写法与三元写法都扫（模板字符串是动态数据，不判）；
+ * ② **版式（设置区）**：出现「第二行小字」副标题（`block text-xs`）、全宽下拉、或带 `mt-` 的
+ *    全宽单行输入（= 标签上/控件下的上下排布）→ 违约；
+ * ③ **残留（设置区）**：删文案剩下的空元素；字号只准 12 / 14 / 16 三档，标题走统一常量。
  *
  * 判定刻意收窄以免误伤：
- * - 只扫设置区文件（用户点名的范围）；
- * - 注释整行跳过（说明留在代码里是对的）；
- * - 先把字符串字面量剥掉——**报错信息是硬约束的例外**（`message: "保存失败。"` 合法），
- *   而 JSX 文本不在引号里，正好区分开；
- * - 只认含中文的行：纯代码/类型/属性行不含中文，天然被排除。
+ * - 注释整行/整段/行尾都跳过（说明留在代码里是对的）；
+ * - 先把字符串字面量剥掉——**报错信息是硬约束的例外**（`message: "保存失败。"` 合法）；
+ * - 再剥 `{…}` 表达式与 JSX 标签，剩下的才是用户看得见的文本；
+ * - 只认含中文、且不含代码形状的文本；行数按**中文字数**算（Node / npx / JSON 这类
+ *   技术词不算「啰嗦」）。
  */
 
 const COMPONENTS = join(import.meta.dirname, "..", "src", "components");
+const APP = join(import.meta.dirname, "..", "src", "app");
 const CJK = /[\u4e00-\u9fff]/;
+const CJK_GLOBAL = /[\u4e00-\u9fff]/g;
 
-/** 设置区文件清单（设置弹窗本身 + 各 section）。 */
+/** 设置区文件清单（设置弹窗 + 各 section + 供应商表单；版式规则只对它们生效）。 */
 function settingsFiles(): string[] {
   const files: string[] = [];
   for (const dir of [COMPONENTS, join(COMPONENTS, "workbench")]) {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (!entry.isFile() || !entry.name.endsWith(".tsx")) continue;
-      if (!/section|settings-modal/.test(entry.name)) continue;
+      if (!/(section|settings|provider-instance-form)\.tsx$/.test(entry.name)) {
+        continue;
+      }
       files.push(join(dir, entry.name));
     }
   }
+  return files.sort();
+}
+
+/** 全站界面文件（文案规则扫这里：组件 + 页面）。 */
+function uiFiles(): string[] {
+  const files: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (entry.name.endsWith(".tsx")) files.push(path);
+    }
+  };
+  walk(COMPONENTS);
+  walk(APP);
   return files.sort();
 }
 
@@ -87,14 +115,39 @@ function commentFlags(lines: string[]): boolean[] {
 }
 
 /**
- * 这一行是否像 **JSX 文本子节点**：含中文，且剥掉字符串后不含代码形状
- * （`=` `;` `{` `}` `(` `)` `<>` `[` `]` `:`）。TS 语句、JSX 属性、类型声明都被排除。
+ * 这一行里用户看得见的文本：剥掉字符串 → 剥掉行内块注释 → 砍掉行尾 `//` 注释 →
+ * 剥掉 `{…}` 表达式 → 剥掉 JSX 标签 → 压空白。
+ *
+ * 上一版的两种写法各有一个盲区（实测都漏过文案）：
+ * ① 只看「整行没有 `<` `>` `=`」的纯文本行 → `<p className="…">说明句。</p>` 这种
+ *    一行写完的直接全绿；
+ * ② 抠 `>…<` 片段 → `<p>一行一条，支持 <code>*</code> 支持通配；拒绝优先</p>` 里被标签
+ *    夹断的后半句漏判（逗号/分号句就是这样塞回来的）。
+ * 现在改成「先剥、再看剩下什么」，两种都逃不掉；行尾注释（`? // 说明`）也不再算文案。
  */
-function looksLikeJsxText(line: string): boolean {
-  const text = stripStringLiterals(line);
-  if (!CJK.test(text)) return false;
-  if (/[=;{}()[\]<>:]/.test(text)) return false;
-  return true;
+function jsxTextChunk(line: string): string {
+  let text = stripStringLiterals(line).replace(/\/\*[\s\S]*?\*\//g, " ");
+  const trailing = text.indexOf("//");
+  if (trailing >= 0) text = text.slice(0, trailing);
+  return text
+    .replace(/\{[^{}]*\}/g, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * 剥完之后还剩下的是不是「用户看得见的文本」：含中文，且不含代码形状
+ * （`()` `[]` `{}` `=` `;` `|` —— 正则字面量、数组解构、比较表达式这类代码行都会带它们）。
+ */
+function isUiText(chunk: string): boolean {
+  if (chunk.length === 0 || !CJK.test(chunk)) return false;
+  return !/[()[\]{}=;|]/.test(chunk);
+}
+
+/** 中文字数（技术词不算啰嗦：Node / npx / JSON / token 都不计）。 */
+export function cjkCount(text: string): number {
+  return (text.match(CJK_GLOBAL) ?? []).length;
 }
 
 interface Violation {
@@ -104,43 +157,76 @@ interface Violation {
 }
 
 /**
- * 行内 JSX 文本节点（`<p className="…">文案</p>` 这种一行写完的）。
- *
- * 光靠 `looksLikeJsxText`（要求整行没有 `<` `>` `=` 等代码形状）会**整段漏掉**这一类：
- * 实测把一句 36 字并带句号的说明塞进 `<p className="…">…</p>` 一行里，门禁是全绿的。
- * 这里把 `>…<` 之间的片段抠出来单独判——含 `=` `;` `{}()[]` 的片段是表达式不是文案，
- * 跳过（`/` 不能排除：「改文件 / 跑命令前先问我」这类标签里本来就有斜杠）。
+ * 占位/虚假词：用户口径里的「假的弹窗」「虚假提交」这类**把要求抄上界面**的写法，
+ * 与「即将上线」「占位」同罪。「占位符」是正常术语（`{{sessionId}}` 占位符），不算。
  */
-function inlineJsxTexts(line: string): string[] {
-  const text = stripStringLiterals(line);
-  const out: string[] = [];
-  for (const match of text.matchAll(/>([^<>]+)</g)) {
-    const chunk = (match[1] ?? "").trim();
-    if (chunk.length === 0 || !CJK.test(chunk)) continue;
-    if (/[=;{}()[\]]/.test(chunk)) continue;
-    out.push(chunk);
+const BANNED_WORDS = /假的|虚假|即将上线|占位(?!符)/;
+
+/**
+ * 界面文案属性（`hint` / `title` / `placeholder` / `emptyLabel`）：这些 prop 的值**必然是**用户
+ * 看得见的文案，同样受「不写句子、不超 20 个中文字」约束。
+ *
+ * 为什么单列一条：JSX 文本之外的文案藏在字符串里，主规则（先剥字符串）看不见它们——
+ * 实测从空态提示、悬停提示与输入框提示里又抓出十几处句子级文案（「去「推荐」一键添加，
+ * 或在下方手动添加。」）。报错信息的例外不受影响：报错走 `message` / `throw`，不叫这些 prop 名。
+ */
+const COPY_PROPS =
+  /\b(hint|title|placeholder|emptyLabel|description)="([^"]*)"/g;
+
+/** 表达式写法（`prop={cond ? "a" : "b"}`）：该行里属于这个 prop 的字符串字面量同样要判。 */
+const COPY_PROP_EXPR = /\b(hint|title|placeholder|emptyLabel|description)=\{/;
+const STRING_LITERAL = /["']([^"']*)["']/g;
+
+/**
+ * 一行里所有「用户看得见的文案属性值」：字符串写法（`prop="…"`）与表达式写法
+ * （`prop={cond ? "a" : "b"}`，取该行字面量）都算。模板字符串是动态拼数据，不判。
+ */
+function copyPropValues(line: string): string[] {
+  const values: string[] = [];
+  for (const match of line.matchAll(COPY_PROPS)) values.push(match[2] ?? "");
+  if (COPY_PROP_EXPR.test(line)) {
+    for (const literal of line.matchAll(STRING_LITERAL)) {
+      values.push(literal[1] ?? "");
+    }
   }
-  return out;
+  return values;
 }
 
-function findViolations(): Violation[] {
+/** 全站文案规则：句子标点（。；，）、中文字数 > 20、占位/虚假词、或文案属性里的句子。 */
+function findCopyViolations(): Violation[] {
   const violations: Violation[] = [];
-  for (const file of settingsFiles()) {
+  for (const file of uiFiles()) {
     const lines = readFileSync(file, "utf-8").split(/\r?\n/);
     const comments = commentFlags(lines);
     lines.forEach((raw, index) => {
       if (comments[index] || isComment(raw)) return;
-      const chunks = looksLikeJsxText(raw)
-        ? [stripStringLiterals(raw).trim()]
-        : inlineJsxTexts(raw);
-      const bad = chunks.filter((text) =>
-        text.length === 0 ? false : /[。；]/.test(text) || text.length > 40,
-      );
-      for (const text of bad) {
+      const rel = file.slice(file.indexOf("src"));
+      const at = { file: rel, line: index + 1 };
+      // 文案属性（字符串值，主规则剥字符串后看不见）：必须看**原始行**，
+      // 剥过字符串的版本里值已经变成空串。字符串与表达式两种写法都由 copyPropValues 收齐。
+      for (const value of copyPropValues(raw)) {
+        if (!CJK.test(value)) continue;
+        if (/[。；，]/.test(value) || cjkCount(value) > 20) {
+          violations.push({
+            ...at,
+            text: `属性文案：${value.slice(0, 60)}`,
+          });
+        }
+      }
+      const text = jsxTextChunk(raw);
+      if (!isUiText(text)) return;
+      if (BANNED_WORDS.test(text)) {
+        violations.push({ ...at, text: `占位/虚假词：${text.slice(0, 60)}` });
+        return;
+      }
+      if (/[。；，]/.test(text)) {
+        violations.push({ ...at, text: `句子标点：${text.slice(0, 60)}` });
+        return;
+      }
+      if (cjkCount(text) > 20) {
         violations.push({
-          file: file.slice(file.indexOf("components")),
-          line: index + 1,
-          text: text.slice(0, 60),
+          ...at,
+          text: `${cjkCount(text)} 个中文字：${text.slice(0, 60)}`,
         });
       }
     });
@@ -191,46 +277,82 @@ function findEmptyShells(): Violation[] {
   return violations;
 }
 
-describe("界面文案硬约束：设置区只写标签，不写句子", () => {
-  it("没有句子标点、没有超过 40 字的整句", () => {
-    const violations = findViolations();
+describe("界面文案硬约束（全站）：只写标签，不写句子", () => {
+  it("没有句子标点、没有超过 20 个中文字的整句、没有占位/虚假词", () => {
+    const violations = findCopyViolations();
     const rendered = violations
       .map((v) => `  ${v.file}:${v.line}  「${v.text}」`)
       .join("\n");
     expect(
       violations.length,
-      `设置区出现疑似说明句（只写标签；说明放 docs 或代码注释）：\n${rendered}`,
-    ).toBe(0);
-  });
-
-  /**
-   * 机械门禁：文案删干净、壳也要删干净。空壳留着会以边距的形式变成可见的排版事故，
-   * 而看源码时它几乎不可见——正是需要机器盯的那类残留。
-   */
-  it("没有删文案剩下的空元素（空壳会留出死空白）", () => {
-    const shells = findEmptyShells();
-    const rendered = shells
-      .map((v) => `  ${v.file}:${v.line}  ${v.text}`)
-      .join("\n");
-    expect(
-      shells.length,
-      `设置区有空文本元素（删文案时请连元素一起删）：\n${rendered}`,
+      `界面出现说明句/占位词（只写标签；说明放 docs 或代码注释）：\n${rendered}`,
     ).toBe(0);
   });
 
   it("守卫自身有效：认出塞回来的说明句，放过报错文案与代码行", () => {
     expect(
-      looksLikeJsxText("        松开后把文字填进输入框，你自己确认再发送。"),
+      isUiText(
+        jsxTextChunk("        松开后把文字填进输入框，你自己确认再发送。"),
+      ),
     ).toBe(true);
     // 报错文案在字符串里：剥掉字符串后没有中文可判（硬约束的例外）
-    expect(looksLikeJsxText('        message: "保存失败。",')).toBe(false);
-    // 代码行（含 = 与引号）不会被误判成界面文案
+    expect(isUiText(jsxTextChunk('        message: "保存失败。",'))).toBe(
+      false,
+    );
+    // 代码行（正则字面量 / 解构 / 比较）不会被误判成界面文案
     expect(
-      looksLikeJsxText('        const [value, setValue] = useState("");'),
+      isUiText(
+        jsxTextChunk(
+          "    const match = report.speak.summary.match(/首包 ([\\d.]+)s、实时率/);",
+        ),
+      ),
     ).toBe(false);
+    expect(
+      isUiText(jsxTextChunk('        const [value, setValue] = useState("");')),
+    ).toBe(false);
+    // 行尾注释不算文案（`? // 说明` 这种曾在全站扫描里误报过）
+    expect(jsxTextChunk("      ? // 已绑定真实目录：可以说出工作区根")).toBe(
+      "?",
+    );
+    // 中文字数按中文算：技术词再长也不算啰嗦
+    expect(cjkCount("离线可用 · 需本机装 Node（npx）或 Python（uv/uvx）")).toBe(
+      9,
+    );
   });
 
-  /** 多行注释的续行是普通中文，光看行首会把它当成界面文案（实测误报过两次） */
+  /** 文案属性两种写法都要收：字符串写法与三元写法（漏掉后者时会话里又出现句子级提示）。 */
+  it("文案属性扫得到两种写法，模板字符串不判", () => {
+    expect(
+      copyPropValues('        hint="去「推荐」一键添加，或在下方手动添加。"'),
+    ).toEqual(["去「推荐」一键添加，或在下方手动添加。"]);
+    expect(
+      copyPropValues(
+        '        title={staged ? "取消暂存（文件内容不动）" : "下次提交带上"}',
+      ),
+    ).toEqual(["取消暂存（文件内容不动）", "下次提交带上"]);
+    // 模板字符串是动态拼数据（读数/轮次），不当文案判
+    expect(copyPropValues("        title={`第 1 轮`}")).toEqual([]);
+  });
+
+  /**
+   * 标签夹断的长句必须也扫得到。上一版抠 `>…<` 片段的写法漏过这一种：
+   * `<p>一行一条，支持 <code>*</code> 支持通配；拒绝优先</p>` 里 `；` 之后那半句没有
+   * 闭合的 `<`，整句在全绿里塞了回去（实测）。
+   */
+  it("标签夹断的句子扫得到，表达式与纯结构行不算文案", () => {
+    expect(
+      jsxTextChunk(
+        '<p className="text-xs">一行一条，支持 <code>*</code> 支持通配；拒绝优先</p>',
+      ),
+    ).toBe("一行一条，支持 * 支持通配；拒绝优先");
+    // 表达式片段剥掉后只剩结构
+    expect(jsxTextChunk("<span>{count} 条</span>")).toBe("条");
+    // 属性里的中文（字符串已剥）不算文本
+    expect(
+      jsxTextChunk('<input aria-label="工具名" className="flex-1" />'),
+    ).toBe("");
+  });
+
   it("块注释整段跳过：续行不再被误判，注释外的长句仍被抓到", () => {
     const flags = commentFlags([
       "    {",
@@ -241,25 +363,6 @@ describe("界面文案硬约束：设置区只写标签，不写句子", () => {
       "    <p>这一句是真的界面文案，很长很长很长很长很长很长很长很长很长很长很长。</p>",
     ]);
     expect(flags).toEqual([false, true, true, false, false, false]);
-  });
-
-  /**
-   * 行内写法必须也扫得到。上一版只扫「整行纯文本」，于是
-   * `<p className="…">这一句是塞回来的界面说明句…。</p>` 这种一行写完的**全绿通过**
-   * （实测：把 36 字带句号的说明塞进去，门禁没报）。现在改成抠 `>…<` 片段来判。
-   */
-  it("行内 JSX 文案扫得到，表达式与属性不算文案", () => {
-    expect(
-      inlineJsxTexts(
-        '<p className="text-sm text-muted-foreground">还没有规则条目。</p>',
-      ),
-    ).toEqual(["还没有规则条目。"]);
-    // 表达式片段不是文案
-    expect(inlineJsxTexts("<span>{count} 条</span>")).toEqual([]);
-    // 属性里的中文（字符串已剥）不在 `>…<` 之间
-    expect(
-      inlineJsxTexts('<input aria-label="工具名" className="flex-1" />'),
-    ).toEqual([]);
   });
 
   it("空壳守卫自身有效：认出两种空壳，放过有内容的元素与自闭合的图标", () => {
@@ -324,43 +427,68 @@ function findFontViolations(): Violation[] {
 }
 
 /**
- * 版式守卫（二）：配置行必须「标签在左、控件在右」。
+ * 版式守卫（二）：一行一个配置项——标签在左、控件在右。
  *
- * 用户口径 2026-09-27：「好多可以设置成左右的，你为什么要设置成上下！！！！」——
+ * 用户口径 2026-09-27：「好多可以设置成左右的，你为什么要设置成上下！！！！」
  * 起因是我把「控件被嫌只有 87px 宽」误判成「该拆成两行、控件铺满」，于是把浏览器页的
  * 两个下拉改成了「标签上 / 控件下」。正确解是同一行内把控件放宽。
  *
- * 判据用**全宽下拉**当信号：`SelectTrigger` 一旦 `w-full`，几乎必然是拆成了两行
- * （一行一个控件的下拉没有理由占满整行）。这条能抓住当时那 4 处（浏览器 ×2、
- * 通用模型 ×1、终端 ×1）。真正的多行编辑（textarea / 表单里的输入）不受此限。
+ * 三种上下排布的机械信号：
+ * ① `SelectTrigger` 带 `w-full`（一行一个控件的下拉没有理由占满整行）；
+ * ② 单行 `input` 带 `mt-` + `w-full`（标签压在上面、控件铺满）；
+ * ③ 行内第二行小字 `block text-xs`（复述标签的副标题——用户口径「副标题默认不写」）。
+ * 真正的多行编辑（textarea / JSON 编辑器）不受此限。
  */
 function findStackedControlViolations(): Violation[] {
   const violations: Violation[] = [];
-  for (const file of settingsFiles()) {
+  // ② 单行输入「标签上 / 控件下」是全站口径（模型编辑弹窗也踩过同一坑）；
+  // ①③ 两条留在设置区：别处（如对话框表单里的栅格）全宽下拉与行内小字有正当用法。
+  const settings = new Set(settingsFiles());
+  for (const file of uiFiles()) {
+    const inSettings = settings.has(file);
     const lines = readFileSync(file, "utf-8").split(/\r?\n/);
     const comments = commentFlags(lines);
     lines.forEach((raw, index) => {
       if (comments[index] || isComment(raw)) return;
+      const rel = file.slice(file.indexOf("components"));
+      // ③ 第二行小字（复述标签的副标题）
+      if (inSettings && /\bblock text-xs\b/.test(stripStringLiterals(raw))) {
+        violations.push({
+          file: rel,
+          line: index + 1,
+          text: "行内副标题（复述标签）：标签与值同行，说明不写",
+        });
+        return;
+      }
       if (!/className=.*\bw-full\b/.test(raw)) return;
-      // 往回看三行找这个 className 属于哪个元素——**跳过注释行**：
+      // 往回看六行找这个 className 属于哪个元素——**跳过注释行**：
       // 浏览器页上面就有一条 biome-ignore 注释里写着「SelectTrigger」，会被误当成控件
       let context = "";
-      for (let i = Math.max(0, index - 3); i <= index; i += 1) {
+      for (let i = Math.max(0, index - 6); i <= index; i += 1) {
         if (comments[i] || isComment(lines[i] ?? "")) continue;
         context += `${lines[i]}\n`;
       }
-      if (!/SelectTrigger/.test(context)) return;
-      violations.push({
-        file: file.slice(file.indexOf("components")),
-        line: index + 1,
-        text: "全宽下拉＝又拆成上下排布了；用 SETTINGS_CONTROL_WIDTH",
-      });
+      if (inSettings && /SelectTrigger/.test(context)) {
+        violations.push({
+          file: rel,
+          line: index + 1,
+          text: "全宽下拉＝又拆成上下排布了；用 SETTINGS_CONTROL_WIDTH",
+        });
+        return;
+      }
+      if (/<input\b|<Input\b/.test(context) && /\bmt-\d/.test(raw)) {
+        violations.push({
+          file: rel,
+          line: index + 1,
+          text: "单行输入拆成了上下两行；标签在左、控件在右",
+        });
+      }
     });
   }
   return violations;
 }
 
-describe("版式硬约束：设置区字号只有三档", () => {
+describe("版式硬约束（设置区）", () => {
   it("没有自定字号，也没有自带大字号", () => {
     const violations = findFontViolations();
     const rendered = violations
@@ -381,14 +509,25 @@ describe("版式硬约束：设置区字号只有三档", () => {
     expect(eyebrow.includes("uppercase")).toBe(true);
   });
 
-  it("配置行没有全宽下拉（全宽＝拆成了上下排布）", () => {
+  it("配置行没有上下排布（全宽下拉 / mt- 全宽输入 / 行内副标题）", () => {
     const violations = findStackedControlViolations();
     const rendered = violations
       .map((v) => `  ${v.file}:${v.line}  ${v.text}`)
       .join("\n");
     expect(
       violations.length,
-      `设置区出现全宽下拉（标签在左、控件在右；用 SETTINGS_CONTROL_WIDTH）：\n${rendered}`,
+      `设置区出现上下排布（标签在左、控件在右；用 SETTINGS_CONTROL_WIDTH）：\n${rendered}`,
+    ).toBe(0);
+  });
+
+  it("没有删文案剩下的空元素（空壳会留出死空白）", () => {
+    const shells = findEmptyShells();
+    const rendered = shells
+      .map((v) => `  ${v.file}:${v.line}  ${v.text}`)
+      .join("\n");
+    expect(
+      shells.length,
+      `设置区有空文本元素（删文案时请连元素一起删）：\n${rendered}`,
     ).toBe(0);
   });
 });
