@@ -222,6 +222,30 @@ describe("子代理视图路由（zcode 右栏模型：agentCallId）", () => {
     expect(other[0]?.blocks).toHaveLength(0);
   });
 
+  it("id 空间不同源（条目=run_id、归因=toolCall.id）：按同名活跃条目兜底路由，不新建重复条目", () => {
+    // 真机断点（2026-09-28）：派发条目由 on_tool_start 的 run_id 建，子代理事件
+    // 的 agentCallId 是 toolCall.id——精确匹配永不命中，转录被丢弃/另立条目。
+    let list = entry(); // toolCallId="parent-call-1", name="explore"
+    list = appendSubagentTool(list, {
+      agentCallId: "call_different_space",
+      agentName: "explore",
+      toolCallId: "child-tool-9",
+      toolName: "read_file",
+      type: "tool.started",
+      timestamp: "2026-09-27T12:00:10.000Z",
+    });
+    list = appendSubagentDelta(
+      list,
+      "call_different_space",
+      "text",
+      "结论：xxx",
+      "explore",
+    );
+    // 没有产生第二个条目（曾出现两个 planner），转录归进原条目
+    expect(list).toHaveLength(1);
+    expect(list[0]?.blocks.map((b) => b.type)).toEqual(["tool", "text"]);
+  });
+
   it("子代理正文/思考增量：末块同类续写，text 与 thinking 互不打断顺序", () => {
     let list = entry();
     list = appendSubagentDelta(list, "parent-call-1", "thinking", "先看结构");

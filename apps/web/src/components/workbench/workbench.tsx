@@ -1708,7 +1708,15 @@ export function Workbench() {
         if (routeKey) {
           apply((task) => {
             let subagents = task.subagents ?? [];
-            if (!subagents.some((entry) => entry.toolCallId === routeKey)) {
+            // 隐式条目只在没有**任何同名条目**时建：真实派发条目（tool.started
+            // 以 langchain run_id 建）先于子代理内部事件到达，而内部事件带的
+            // agentCallId 是 toolCall.id——两个 id 空间不同，若只按 id 查重会
+            // 给同一次派发再建一个条目（真机曾出现两个 planner，2026-09-28）。
+            const hasNamedEntry = subagents.some(
+              (entry) =>
+                entry.name === subagentName || entry.toolCallId === routeKey,
+            );
+            if (!hasNamedEntry) {
               subagents = upsertImplicitSubagent(subagents, {
                 callKey: routeKey,
                 name: subagentName ?? routeKey,
@@ -1717,6 +1725,8 @@ export function Workbench() {
             }
             subagents = appendSubagentTool(subagents, {
               agentCallId: routeKey,
+              // 名字兜底路由：把内部工具事件归进同名派发条目
+              ...(subagentName ? { agentName: subagentName } : {}),
               ...(evt as {
                 toolCallId?: string;
                 toolName?: string;
@@ -1856,6 +1866,8 @@ export function Workbench() {
                     thinkCallId,
                     "thinking",
                     delta,
+                    // id 空间不同源时按名字兜底路由（见 findSubagentEntry）
+                    (evt as { agentName?: string }).agentName,
                   ),
                 }
               : task,
@@ -1900,6 +1912,8 @@ export function Workbench() {
                     textCallId,
                     "text",
                     delta,
+                    // id 空间不同源时按名字兜底路由（见 findSubagentEntry）
+                    (evt as { agentName?: string }).agentName,
                   ),
                 }
               : task,
@@ -2391,6 +2405,12 @@ export function Workbench() {
           // 用它的主画布作作用域（同一项目的多次运行共享同一沙箱目录）；
           // 未选工作目录时退回 conversationId，由服务端懒供给会话。
           canvasId: runCanvasId,
+          // Code 模式显式声明 preset：run 的 canvasId 同时是沙箱目录（Code 模式也有
+          // canvasId），服务端「有 canvasId → design」的兜底把 Code 会话误判成
+          // design 工具面——子代理清单给了 planner/batch_image，内核工具也走画布集
+          // （真机 2026-09-28：Code 模式派出 design 的 planner 干 explore 的活）。
+          // Design/画布页不传：保持服务端 design 兜底，与画布页同口径。
+          ...(mode === "code" ? { preset: "code" as const } : {}),
           // 模式指令（inputDirective）由服务端 pre-step 事件缝注入，客户端不再拼接
           prompt: `${
             mode === "code"

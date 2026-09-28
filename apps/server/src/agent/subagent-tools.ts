@@ -50,6 +50,23 @@ function truncate(text: string, max: number): string {
 const FAILURE_NEXT_STEP =
   "该子代理失败了：可读取上面的失败原因后重试派生、换一种做法，或直接自己完成该步骤。";
 
+/**
+ * 派发调用 id：取 LLM 输出的 tool_call id（`runtime.toolCall.id`）。
+ * 注意它与 stream-adapter 建目录条目用的 langchain run_id **不同源**（langchain
+ * 不把 run_id 暴露给 tool handler，实测 config 上无此字段）——因此前端转录路由
+ * 以「同名条目」兜底匹配（见 web `findSubagentEntry`）；这里保留 run_id 兜底
+ * 读取（若未来版本暴露即自动对齐）与随机 id 兜底（测试/装配路径）。
+ */
+function resolveCallId(
+  runtime: { toolCall?: { id?: string }; run_id?: string } | undefined,
+): string {
+  return (
+    runtime?.run_id ||
+    runtime?.toolCall?.id ||
+    `call_${Math.random().toString(36).slice(2, 10)}`
+  );
+}
+
 export function createSubagentTaskTools(deps: {
   registry: BackgroundTaskRegistry;
   /** 按 preset 过滤后的可用定义（工具描述与派发校验共用）。 */
@@ -77,9 +94,7 @@ export function createSubagentTaskTools(deps: {
 
   const taskTool = tool(
     async (input, runtime) => {
-      const callId =
-        runtime?.toolCall?.id ||
-        `call_${Math.random().toString(36).slice(2, 10)}`;
+      const callId = resolveCallId(runtime);
       const resolved = resolve(input.subagent_type);
       if (typeof resolved === "string") return resolved;
       // 前台任务也进注册表：目录可见、取消联动（runtime 收尾/取消时 abortAll）
@@ -137,9 +152,7 @@ export function createSubagentTaskTools(deps: {
 
   const taskBackgroundTool = tool(
     async (input, runtime) => {
-      const callId =
-        runtime?.toolCall?.id ||
-        `call_${Math.random().toString(36).slice(2, 10)}`;
+      const callId = resolveCallId(runtime);
       const resolved = resolve(input.subagent_type);
       if (typeof resolved === "string") return resolved;
       if (deps.dispatchGate) {

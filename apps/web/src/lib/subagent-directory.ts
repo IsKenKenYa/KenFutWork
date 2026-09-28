@@ -147,13 +147,34 @@ function parseMs(timestamp?: string): number | undefined {
 }
 
 /**
- * 子代理内部工具事件落进对应条目的转录。toolCallId 是子代理内部的调用 id，
- * 与主对话的 id 空间互不影响；started/completed 靠它配对。
+ * 子代理事件的归因匹配（转录路由的键）：先按派发调用 id 精确匹配；**两侧 id
+ * 空间不同源**（条目 id 来自 on_tool_start 的 langchain run_id，归因键来自
+ * 工具 handler 的 toolCall.id，langchain 不把 run_id 暴露给 handler——
+ * 2026-09-28 真机定位），精确命中不了时按「同名条目」兜底，活跃（未结束）
+ * 的优先。单派发/并行不同类型都精确；并行同类型可能归错条目——v1 已知限制，
+ * v2 独立子 run 后由独立 runId 天然解决。
  */
+function findSubagentEntry(
+  list: SubagentEntry[],
+  agentCallId: string,
+  agentName?: string,
+): SubagentEntry | undefined {
+  const exact = list.find((entry) => entry.toolCallId === agentCallId);
+  if (exact) return exact;
+  if (!agentName) return undefined;
+  return (
+    list.find((entry) => entry.name === agentName && !entry.endedAt) ??
+    list.find((entry) => entry.name === agentName)
+  );
+}
+
+/** 子代理内部工具事件落进对应条目的转录。toolCallId 是子代理内部的调用 id，
+ * 与主对话的 id 空间互不影响；started/completed 靠它配对。 */
 export function appendSubagentTool(
   list: SubagentEntry[],
   event: {
     agentCallId: string;
+    agentName?: string;
     toolCallId?: string;
     toolName?: string;
     input?: Record<string, unknown>;
@@ -164,8 +185,10 @@ export function appendSubagentTool(
 ): SubagentEntry[] {
   const toolCallId = event.toolCallId;
   if (!toolCallId) return list;
+  const target = findSubagentEntry(list, event.agentCallId, event.agentName);
+  if (!target) return list;
   return list.map((entry) => {
-    if (entry.toolCallId !== event.agentCallId) return entry;
+    if (entry !== target) return entry;
     const blocks = [...entry.blocks];
     const idx = blocks.findIndex(
       (block) => block.type === "tool" && block.tool.toolCallId === toolCallId,
@@ -207,10 +230,13 @@ export function appendSubagentDelta(
   agentCallId: string,
   kind: "text" | "thinking",
   delta: string,
+  agentName?: string,
 ): SubagentEntry[] {
   if (!delta) return list;
+  const target = findSubagentEntry(list, agentCallId, agentName);
+  if (!target) return list;
   return list.map((entry) => {
-    if (entry.toolCallId !== agentCallId) return entry;
+    if (entry !== target) return entry;
     const blocks = [...entry.blocks];
     const last = blocks[blocks.length - 1];
     if (last?.type === kind) {
