@@ -178,6 +178,12 @@ const COPY_PROPS =
 
 /** 表达式写法（`prop={cond ? "a" : "b"}`）：该行里属于这个 prop 的字符串字面量同样要判。 */
 const COPY_PROP_EXPR = /\b(hint|title|placeholder|emptyLabel|description)=\{/;
+/**
+ * 对象字面量写法（`MODE_META` 这种配置表）：`placeholder: "…"`。同一批字段名，
+ * 因为配置表里的文案同样会渲染到界面上（实测：工作台首屏那句「帮你编写代码、调试 Bug…」）。
+ */
+const OBJECT_COPY_PROP =
+  /\b(label|title|placeholder|hint|description|emptyLabel):\s*"([^"]*)"/g;
 const STRING_LITERAL = /["']([^"']*)["']/g;
 const BACKTICK_LITERAL = /`([^`]*)`/g;
 
@@ -199,12 +205,15 @@ function hasCopyGuardIgnore(lines: string[], index: number): boolean {
 }
 
 /**
- * 一行里所有「用户看得见的文案属性值」：字符串写法（`prop="…"`）与表达式写法
- * （`prop={cond ? "a" : "b"}` / ``prop={`…${x}…`}``，取该行字面量）都算。
+ * 一行里所有「用户看得见的文案属性值」：字符串写法（`prop="…"`）、表达式写法
+ * （`prop={cond ? "a" : "b"}` / ``prop={`…${x}…`}``）与配置表写法（`placeholder: "…"`）都算。
  */
 function copyPropValues(line: string): string[] {
   const values: string[] = [];
   for (const match of line.matchAll(COPY_PROPS)) values.push(match[2] ?? "");
+  for (const match of line.matchAll(OBJECT_COPY_PROP)) {
+    values.push(match[2] ?? "");
+  }
   if (COPY_PROP_EXPR.test(line)) {
     for (const literal of line.matchAll(STRING_LITERAL)) {
       values.push(literal[1] ?? "");
@@ -395,6 +404,11 @@ describe("界面文案硬约束（全站）：只写标签，不写句子", () =
     ).toEqual(["取消暂存（文件内容不动）", "下次提交带上"]);
     // 模板：内容照样收进来（分句标点由 findTemplateCopyViolations 判）
     expect(copyPropValues("        title={`第 1 轮`}")).toEqual(["第 1 轮"]);
+    // 配置表写法：`placeholder: "…"` 同样要收（工作台首屏那句就是这么藏过去的）
+    expect(
+      copyPropValues('    placeholder: "写代码、调试、交付产物",'),
+    ).toEqual(["写代码、调试、交付产物"]);
+    expect(copyPropValues('    label: "Code",')).toEqual(["Code"]);
   });
 
   /** 模板规则：分句标点（，；）算句子；只有读数/问号的模板放过。 */
