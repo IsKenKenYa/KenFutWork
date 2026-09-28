@@ -27,6 +27,12 @@ export type SubagentChildRunner = (input: {
   signal: AbortSignal;
   /** 派发调用 id（父 run 的 toolCallId）：子代理事件按它路由进对应视图。 */
   callId: string;
+  /**
+   * 父 run 的 langchain callbacks（工具运行时继承而来）：子代理 invoke 带上它，
+   * 内部事件（模型流/工具行）才会**冒泡进父 run 的事件流**，右栏子代理线程才有
+   * 实时转录——不带 = 静默执行，条目永远空转（2026-09-28 真机）。
+   */
+  parentCallbacks?: unknown;
 }) => Promise<string>;
 
 export type SubagentDispatchGate = (
@@ -93,6 +99,7 @@ export function createSubagentTaskTools(deps: {
           description: input.description,
           signal: controller.signal,
           callId,
+          parentCallbacks: runtime?.callbacks,
         });
         registry.settle(taskId, {
           status: "completed",
@@ -158,6 +165,7 @@ export function createSubagentTaskTools(deps: {
         description: input.description,
         signal: controller.signal,
         callId,
+        parentCallbacks: runtime?.callbacks,
       }).then(
         (result) => {
           registry.settle(taskId, {

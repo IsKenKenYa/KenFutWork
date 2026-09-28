@@ -1,4 +1,5 @@
 import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
+import type { Callbacks } from "@langchain/core/callbacks/manager";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
@@ -474,6 +475,7 @@ export function createKenFutWorkDeepAgent(options: {
       description,
       signal,
       callId,
+      parentCallbacks,
     }) => {
       const { tools: picked } = resolveChildToolbelt(definition, tools);
       const middleware: AgentMiddleware[] = definition.filesystemTools?.length
@@ -488,7 +490,12 @@ export function createKenFutWorkDeepAgent(options: {
       const child = createAgent({
         model: resolvedModel,
         name: definition.name,
-        systemPrompt: definition.systemPrompt,
+        // 语言规则单点追加（子代理结论回填主对话，英文结论会带偏主对话语言）：
+        // 定义里的 systemPrompt 是中文，但其工具面（deepagents 文件工具等）描述是英文
+        systemPrompt:
+          definition.systemPrompt +
+          "\n\n始终用中文思考、工作与汇报（用户消息为其他语言时跟随用户语言）；" +
+          "代码、命令、路径、专有名词保留原文。",
         tools: picked,
         middleware,
       });
@@ -502,6 +509,11 @@ export function createKenFutWorkDeepAgent(options: {
             lc_agent_call_id: callId,
           },
           configurable: { ls_agent_type: "subagent" },
+          // 继承父 run 的 callbacks：子代理内部事件（模型流/工具行）冒泡进父流，
+          // stream-adapter 按 metadata 归因路由进右栏子代理线程；不带 = 静默执行
+          ...(parentCallbacks
+            ? { callbacks: parentCallbacks as Callbacks }
+            : {}),
         },
       )) as { messages?: Array<{ content: unknown; getType?: () => string }> };
       const messages = result?.messages ?? [];

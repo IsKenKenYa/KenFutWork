@@ -1,3 +1,4 @@
+import { CallbackManager } from "@langchain/core/callbacks/manager";
 import { describe, expect, it } from "vitest";
 
 import { createBackgroundTaskRegistry } from "./background-tasks.js";
@@ -36,6 +37,31 @@ describe("子代理派发工具（DEC-14/DEC-16）", () => {
       label: "代码调研 · 调研登录链路",
       status: "completed",
     });
+  });
+
+  it("task 把父 run 的 callbacks 透传给 childRunner——子代理事件才冒泡进父流（右栏实时转录的根）", async () => {
+    const seen: Array<unknown> = [];
+    // 工具运行时里的 callbacks 是 CallbackManager 实例（langchain 会在配置阶段校验）
+    const parentCallbacks = CallbackManager.fromHandlers({});
+    const { tools } = setup({
+      childRunner: async ({ parentCallbacks: passed }) => {
+        seen.push(passed);
+        return "done";
+      },
+    });
+    await tools.taskTool.invoke(
+      { subagent_type: "explore", description: "x" },
+      { configurable: {}, callbacks: parentCallbacks },
+    );
+    await tools.taskBackgroundTool.invoke(
+      { subagent_type: "explore", description: "x" },
+      { configurable: {}, callbacks: parentCallbacks },
+    );
+    // 前台与后台派发都必须透传（langchain 下发前会 configure 出自己的实例，
+    // 断言到「同类的 CallbackManager 到达 childRunner」为止，不锁引用）
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toBeInstanceOf(CallbackManager);
+    expect(seen[1]).toBeInstanceOf(CallbackManager);
   });
 
   it("task 未知类型：可读拒绝并列出可用清单，不产生任务", async () => {
