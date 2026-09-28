@@ -169,11 +169,7 @@ export function DiffPane({
             type="button"
             aria-label={staged ? "取消暂存此文件" : "暂存此文件"}
             disabled={busy}
-            title={
-              staged
-                ? "取消暂存（文件内容不动）"
-                : "暂存这个文件（下次提交会带上）"
-            }
+            title={staged ? "取消暂存（文件内容不动）" : "下次提交带上"}
             onClick={() => void toggleStaged()}
             className="shrink-0 border px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
           >
@@ -213,7 +209,7 @@ export function DiffPane({
                         type="button"
                         aria-label={`暂存第 ${line.hunkIndex + 1} 块`}
                         disabled={hunkBusy !== null}
-                        title="暂存块：只把这一块加进索引（其余块留在工作区）"
+                        title="只暂存这一块"
                         onClick={() => {
                           if (line.hunkIndex === undefined) return;
                           void applyHunkAction(line.hunkIndex, "stage");
@@ -226,7 +222,7 @@ export function DiffPane({
                         type="button"
                         aria-label={`撤销第 ${line.hunkIndex + 1} 块`}
                         disabled={hunkBusy !== null}
-                        title="撤销这一块改动（会丢失内容，需确认）"
+                        title="撤销这一块改动"
                         onClick={() => {
                           if (line.hunkIndex === undefined) return;
                           void applyHunkAction(line.hunkIndex, "discard");

@@ -103,7 +103,7 @@ export function FilesPane({
               setSearchError(null);
             }
           }}
-          placeholder="搜索文件（文件名 / 路径 / 内容）"
+          placeholder="搜索文件名 / 路径 / 内容"
           className="min-w-0 flex-1 bg-transparent text-xs outline-none"
         />
         <button
@@ -189,7 +189,7 @@ export function FilesPane({
       {listing === null ? (
         <p className="text-xs text-muted-foreground">读取中…</p>
       ) : listing.entries.length === 0 ? (
-        <p className="text-xs text-muted-foreground">这个目录是空的。</p>
+        <p className="text-xs text-muted-foreground">空目录</p>
       ) : (
         <ul aria-label="目录内容" className="divide-y border">
           {listing.entries.map((entry) => (
@@ -224,7 +224,7 @@ export function FilesPane({
         </ul>
       )}
       {listing?.truncated ? (
-        <p className="text-[10px] text-muted-foreground">只显示前 500 项。</p>
+        <p className="text-[10px] text-muted-foreground">只显示前 500 项</p>
       ) : null}
     </div>
   );

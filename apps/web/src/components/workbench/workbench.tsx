@@ -587,7 +587,7 @@ function TurnProcessRow({
       type="button"
       aria-expanded={expanded}
       onClick={onToggle}
-      title="展开这一轮的完整过程（推理 / 工具 / 中途输出逐行保留）"
+      title="展开本轮完整过程"
       className="inline-flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground/60 transition-colors hover:text-foreground"
     >
       <svg
@@ -3363,17 +3363,15 @@ export function Workbench() {
                           role="status"
                           className="rounded-md border bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground"
                         >
-                          上下文已自动压缩：模型上下文超过{" "}
+                          上下文已压缩：超过{" "}
                           {formatTokens(activeTask.compacted.triggerTokens)}（
                           {
                             COMPACT_SOURCE_LABELS[
                               activeTask.compacted.triggerSource
                             ]
                           }
-                          ）后，较早的消息被摘要成一条，只保留最近{" "}
-                          {activeTask.compacted.keepMessages}{" "}
-                          条；原文存在工作区的
-                          /conversation_history/，这条对话的完整记录不受影响。
+                          ）{" · "}保留最近 {activeTask.compacted.keepMessages}{" "}
+                          条 · 原文在 /conversation_history/
                         </p>
                       ) : null}
                       {/*
@@ -4118,7 +4116,7 @@ ${formatElementReference(picked)}`
               开启「完全访问」？
             </DialogTitle>
             <DialogDescription>
-              这一档不再逐条询问：改文件、跑命令、调用外部工具都会直接执行，出问题无法回滚。
+              改文件、跑命令、外部工具都直接执行 · 无法回滚
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

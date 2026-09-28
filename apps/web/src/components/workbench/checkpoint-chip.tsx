@@ -54,9 +54,7 @@ export function CheckpointChip({
           aria-label="回滚到这个检查点"
           disabled={restoreDisabled}
           title={
-            restoreDisabled
-              ? "本轮还在运行，结束或停止后再回滚。"
-              : "把工作目录整体回到这个时点（会先给你看受影响的文件）。"
+            restoreDisabled ? "本轮还在运行" : "回到这个时点（先看受影响文件）"
           }
           onClick={() => setRestoreOpen(true)}
           className="shrink-0 border px-1.5 py-0.5 text-[10px] transition-colors hover:border-destructive/40 hover:text-destructive disabled:opacity-40 disabled:hover:border-border disabled:hover:text-muted-foreground"
@@ -140,9 +138,7 @@ function CheckpointDiffDialog({
             {error ? null : "读取中…"}
           </p>
         ) : diff.diff === "" ? (
-          <p className="px-5 py-6 text-sm text-muted-foreground">
-            这个检查点没有相对上一检查点的改动。
-          </p>
+          <p className="px-5 py-6 text-sm text-muted-foreground">没有改动</p>
         ) : (
           <section
             aria-label="检查点差异"

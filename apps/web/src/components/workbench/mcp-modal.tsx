@@ -323,17 +323,13 @@ function ConfiguredTab({
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        MCP 服务在本机运行，它的工具会提供给 Agent
-        使用；添加、修改与删除需要管理员权限。
+        添加、修改与删除需要管理员权限
       </p>
 
       {loading ? (
         <ListLoading label="正在加载已配置的 MCP 服务…" rows={2} />
       ) : servers.length === 0 ? (
-        <ListEmpty
-          title="尚未配置 MCP 服务"
-          hint="去「推荐」一键添加，或在下方手动添加。"
-        />
+        <ListEmpty title="尚未配置 MCP 服务" hint="在「推荐」里一键添加" />
       ) : (
         <ul className="space-y-2">
           {servers.map((server) => {
@@ -509,7 +505,7 @@ function ConfiguredTab({
           <>
             <textarea
               aria-label="MCP 参数"
-              placeholder={"参数（一行一个，含空格的值直接写整行）"}
+              placeholder="每行一个参数"
               value={form.argsText}
               onChange={(event) =>
                 setForm((prev) => ({ ...prev, argsText: event.target.value }))
@@ -608,8 +604,7 @@ function CuratedTab({
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        内置的常用服务，离线可用。添加后在本机运行，需要本机已安装 Node（npx）或
-        Python（uv/uvx）。
+        离线可用 · 需本机装 Node（npx）或 Python（uv/uvx）
       </p>
       {localError ? (
         <p className="text-xs text-destructive">{localError}</p>
@@ -761,8 +756,7 @@ function RegistryTab({
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        官方 MCP 市场。本地包（npm / Python）与远程端点（HTTP/SSE）都可添加；
-        两者都缺的才不可用，会有标注。
+        本地包（npm / Python）与远程端点（HTTP/SSE）都可添加
       </p>
 
       <div className="flex items-center gap-2">
@@ -770,7 +764,7 @@ function RegistryTab({
           <Search className="h-3.5 w-3.5 text-muted-foreground" />
           <input
             aria-label="搜索官方注册表"
-            placeholder="搜索 MCP 服务名称（如 filesystem / github / fetch）"
+            placeholder="搜索服务名（如 github）"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
@@ -793,17 +787,14 @@ function RegistryTab({
       {loading ? (
         <ListLoading label="正在检索 MCP 市场…" rows={3} />
       ) : error ? (
-        <ListError
-          message={error}
-          hint="网络不可用时，可在「推荐」里添加内置的常用服务。"
-        />
+        <ListError message={error} hint="网络不可用时用「推荐」" />
       ) : (
         <>
           {count > 0 ? (
             <p className="text-xs text-muted-foreground">共 {count} 条</p>
           ) : null}
           {servers.length === 0 ? (
-            <ListEmpty title="没有匹配的服务" hint="换个更短的关键词再试。" />
+            <ListEmpty title="没有匹配的服务" hint="换个更短的关键词" />
           ) : (
             <ul className="space-y-2">
               {servers.map((server) => (

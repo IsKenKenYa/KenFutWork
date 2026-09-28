@@ -294,7 +294,9 @@ describe("WorkbenchSidePanel（多标签）", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "关闭 变更" }));
     expect(screen.queryAllByRole("tab")).toHaveLength(0);
-    expect(screen.getByText(/点上面的 ＋/)).toBeInTheDocument();
+    expect(
+      screen.getByText("点 ＋ 打开变更 / 文件目录 / 终端 / 浏览器"),
+    ).toBeInTheDocument();
   });
 
   it("标签列表下拉：可搜索、可切换、可关闭", async () => {
@@ -337,7 +339,10 @@ describe("WorkbenchSidePanel（多标签）", () => {
         ws={fakeWs()}
       />,
     );
-    expect(await screen.findByText(/未绑定工作目录/)).toBeInTheDocument();
+    // 变更与检查点两个面板都没绑目录：各自说「未绑定工作目录」，都不空转
+    expect(
+      (await screen.findAllByText(/未绑定工作目录/)).length,
+    ).toBeGreaterThan(0);
     expect(fetchGitChangesMock).not.toHaveBeenCalled();
   });
 

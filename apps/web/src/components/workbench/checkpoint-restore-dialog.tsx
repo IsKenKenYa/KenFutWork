@@ -122,7 +122,7 @@ export function CheckpointRestoreDialog({
             回滚工作目录
           </DialogTitle>
           <DialogDescription className="mt-1 text-xs">
-            工作目录将整体回到所选时点，之后的改动会被覆盖（可从历史检查点再恢复）。
+            改动会被覆盖 · 可再从历史恢复
           </DialogDescription>
         </DialogHeader>
 
@@ -169,9 +169,7 @@ export function CheckpointRestoreDialog({
               {error ? null : "读取受影响的文件中…"}
             </p>
           ) : preview.files.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              工作目录与该时点一致，没有会被覆盖的改动。
-            </p>
+            <p className="text-xs text-muted-foreground">没有改动</p>
           ) : (
             <ul aria-label="受影响的文件" className="divide-y">
               {preview.files.map((file) => (
@@ -195,9 +193,7 @@ export function CheckpointRestoreDialog({
               !accessToken || !canvasId || preview === null || restoring
             }
             onClick={() => void restore()}
-            title={
-              canvasId ? undefined : "这条对话没有绑定工作目录，无法回滚。"
-            }
+            title={canvasId ? undefined : "没有绑定工作目录"}
             className="rounded-md border border-destructive/40 px-3 py-1.5 text-xs text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-40"
           >
             {restoring ? "回滚中…" : "确认回滚"}

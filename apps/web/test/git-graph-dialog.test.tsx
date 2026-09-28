@@ -135,7 +135,7 @@ describe("GitGraphDialog", () => {
         canvasId="canvas-1"
       />,
     );
-    expect(await screen.findByText("还没有提交。")).toBeInTheDocument();
+    expect(await screen.findByText("还没有提交")).toBeInTheDocument();
   });
 
   it("日期格式化：ISO → MM/DD HH:mm；解析不了就原样返回", () => {

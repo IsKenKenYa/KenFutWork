@@ -180,11 +180,11 @@ export function ContextUsageButton({
 
           {view.overThreshold ? (
             <p className="mt-2 rounded-md bg-amber-500/10 px-2 py-1 text-[10px] text-amber-700 dark:text-amber-400">
-              已越过输出预留线（
+              已越过输出预留线
               {view.thresholdPercent !== null
-                ? `窗口的 ${view.thresholdPercent}%`
+                ? `（窗口的 ${view.thresholdPercent}%）`
                 : ""}
-              ）：留给回复的空间已被占用，继续追问可能超出模型上限。建议新建对话，或换用窗口更大的模型。
+              {" · "}留给回复的空间不足 · 新建对话或换更大窗口
             </p>
           ) : null}
 

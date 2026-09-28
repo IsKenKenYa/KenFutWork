@@ -104,7 +104,7 @@ export function PanelTabStrip({
             </p>
             {visible.length === 0 ? (
               <p className="px-1.5 py-1 text-xs text-muted-foreground">
-                没有匹配的标签页。
+                没有匹配的标签页
               </p>
             ) : (
               <ul aria-label="打开的标签页" className="space-y-0.5">

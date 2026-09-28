@@ -77,7 +77,7 @@ export function formatElementReference(picked: PickedElement): string {
   const position = picked.box
     ? ` ｜ 中心坐标：${Math.round(picked.box.x + picked.box.width / 2)},${Math.round(
         picked.box.y + picked.box.height / 2,
-      )}（受控浏览器视口内，可直接用 browser_act 的 x/y 点它）`
+      )}（视口内 · browser_act 可点）`
     : "";
   return `【页面元素】<${picked.tag}> ${picked.text || "(无文字)"} ｜ 定位提示：${picked.hint}${position} ｜ 来自：${where}`;
 }
@@ -375,7 +375,7 @@ export function BrowserPane({
               if (normalized) onNavigate(normalized);
             }
           }}
-          placeholder="输入网址，回车打开"
+          placeholder="输入网址后回车"
           className="min-w-0 flex-1 border border-transparent bg-muted/60 px-2 py-1 text-xs outline-none focus:border-ring focus:bg-transparent"
         />
         {/*
@@ -673,7 +673,7 @@ export function BrowserPane({
                   )}
                 </ul>
               ) : (
-                <p className="text-muted-foreground">这一页没有可选的元素。</p>
+                <p className="text-muted-foreground">没有可选的元素</p>
               )}
             </>
           ) : null}

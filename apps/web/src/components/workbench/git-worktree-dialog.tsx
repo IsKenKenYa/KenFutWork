@@ -103,13 +103,12 @@ export function GitWorktreeDialog({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <p className="mb-3 text-xs text-muted-foreground">
-            同一个仓库可以同时检出多份工作副本（各自在不同分支）。绑定为工作目录后，Agent、终端与
-            Git 都在那一份里工作。
+            同一仓库可检出多份 · 绑定后 Agent / 终端 / Git 都在其中工作
           </p>
 
           {!canvasId ? (
             <p className="text-sm text-muted-foreground">
-              先选中一个绑定了工作目录的项目。
+              先选中绑定了工作目录的项目
             </p>
           ) : (
             <>
@@ -214,7 +213,7 @@ export function GitWorktreeDialog({
                             : current.path,
                       }))
                     }
-                    placeholder="分支名，如 feature/x"
+                    placeholder="如 feature/x"
                     className="w-48 rounded-md border bg-transparent px-2 py-1 font-mono text-xs outline-none"
                   />
                   <label className="flex items-center gap-1 text-xs text-muted-foreground">

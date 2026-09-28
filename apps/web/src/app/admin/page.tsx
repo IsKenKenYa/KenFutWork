@@ -150,7 +150,7 @@ export default function AdminPage() {
       <main className="mx-auto max-w-3xl space-y-4 p-10">
         <h1 className="text-xl font-medium">无权访问</h1>
         <p className="text-sm text-muted-foreground">
-          管理后台仅平台管理员可用。如需权限请联系管理员。
+          仅管理员可用 · 需要权限请联系管理员
         </p>
         <Link className="text-sm underline" href="/workbench">
           返回工作台
@@ -323,8 +323,7 @@ export default function AdminPage() {
       <section className="space-y-3">
         <h2 className="text-base font-medium">系统供应商（分发给全体用户）</h2>
         <p className="text-sm text-muted-foreground">
-          这里配置的实例带平台 Key，用户在模型选择器里直接可用（无需自带
-          Key）；走平台池的对话按 token 扣用户额度，自带 Key 不计费。
+          平台池按 token 扣额度 · 自带 Key 不计费
         </p>
         <div className="space-y-2">
           {providers.map((instance) => (
@@ -380,9 +379,7 @@ export default function AdminPage() {
             </div>
           ))}
           {providers.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              还没有系统供应商——在下面添加第一个。
-            </p>
+            <p className="text-sm text-muted-foreground">还没有系统供应商</p>
           ) : null}
         </div>
 
@@ -500,7 +497,7 @@ export default function AdminPage() {
             />
           </div>
           <div className="space-y-1 sm:col-span-2">
-            <Label htmlFor="provider-headers">自定义请求头（JSON，可选）</Label>
+            <Label htmlFor="provider-headers">自定义请求头</Label>
             <textarea
               id="provider-headers"
               rows={2}
@@ -515,8 +512,7 @@ export default function AdminPage() {
               placeholder='{"x-opencode-session":"{{sessionId}}"}'
             />
             <p className="text-xs text-muted-foreground">
-              {providerHeadersHint}
-              平台池实例的头同样只作用于该实例，不会渗到用户自带实例。
+              {providerHeadersHint} · 只作用于本实例
             </p>
           </div>
           <div className="sm:col-span-2">

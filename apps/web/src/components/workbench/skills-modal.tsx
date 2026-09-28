@@ -572,15 +572,13 @@ function SkillsCreatePanel({
           </button>
         </div>
         <p className="text-xs text-muted-foreground">
-          工作目录里的技能包会出现在这里，可一键导入当前工作区。
+          工作目录里的技能包会出现在这里
         </p>
         {packagesError ? (
           <p className="text-xs text-destructive">{packagesError}</p>
         ) : null}
         {!packagesError && !packagesLoading && packages.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            当前工作目录里没有技能包。
-          </p>
+          <p className="text-xs text-muted-foreground">没有技能包</p>
         ) : null}
         {packages.length > 0 ? (
           <ul className="space-y-2">
@@ -794,7 +792,7 @@ function SkillsMarketPanel({
       <div className="flex items-center gap-2">
         <input
           aria-label="搜索市场"
-          placeholder="搜索技能（英文关键词更准，如 pdf / browser / seo）"
+          placeholder="如 pdf / browser / seo"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => {
@@ -823,15 +821,9 @@ function SkillsMarketPanel({
       {loading && items.length === 0 ? (
         <ListLoading label="正在检索技能市场…" rows={3} />
       ) : error ? (
-        <ListError
-          message={error}
-          hint="也可以跳过市场，用「导入 / 新建」从链接安装。"
-        />
+        <ListError message={error} hint="也可用「导入 / 新建」从链接安装" />
       ) : items.length === 0 ? (
-        <ListEmpty
-          title="没有匹配的技能"
-          hint="换英文关键词再试（如 pdf / browser / seo）。"
-        />
+        <ListEmpty title="没有匹配的技能" hint="换英文关键词再试" />
       ) : (
         <ul className="space-y-2">
           {items.map((item) => (

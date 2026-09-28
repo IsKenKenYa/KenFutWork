@@ -103,9 +103,7 @@ export function PanelCheckpointView({
 
   if (!accessToken || !canvasId) {
     return (
-      <p className="px-4 py-6 text-xs text-muted-foreground">
-        这个会话没有绑定工作目录，没有检查点。
-      </p>
+      <p className="px-4 py-6 text-xs text-muted-foreground">未绑定工作目录</p>
     );
   }
   if (loading) {
@@ -134,12 +132,10 @@ export function PanelCheckpointView({
       ) : null}
       {checkpoint === null ? (
         <p className="px-4 py-6 text-xs text-muted-foreground">
-          跑一轮对话后，这一轮改动的文件会出现在这里，可以逐个撤销。
+          跑一轮对话后出现
         </p>
       ) : files.length === 0 ? (
-        <p className="px-4 py-6 text-xs text-muted-foreground">
-          这一轮没有改动任何文件。
-        </p>
+        <p className="px-4 py-6 text-xs text-muted-foreground">没有改动</p>
       ) : (
         <ul
           aria-label="本轮改动的文件"
@@ -172,8 +168,8 @@ export function PanelCheckpointView({
                 onClick={() => setPendingUndo(file)}
                 title={
                   running
-                    ? "任务运行中，结束或停止后再撤销。"
-                    : `把 ${getPathLeaf(file.path)} 恢复到这一轮开始前的样子`
+                    ? "任务运行中"
+                    : `恢复到本轮开始前（${getPathLeaf(file.path)}）`
                 }
                 className="shrink-0 rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
               >
@@ -190,12 +186,12 @@ export function PanelCheckpointView({
           className="border-t bg-muted/30 px-4 py-3"
         >
           <p className="text-xs text-foreground">
-            把 <span className="font-mono">{pendingUndo.path}</span>{" "}
-            恢复到这一轮 开始前的样子？
+            <span className="font-mono">{pendingUndo.path}</span>{" "}
+            恢复到本轮开始前？
           </p>
           <p className="mt-1 text-[11px] text-muted-foreground">
-            该轮对它的修改会被覆盖（+{pendingUndo.added ?? 0} −
-            {pendingUndo.deleted ?? 0}）；恢复动作本身会记成一条新的检查点。
+            覆盖该轮修改（+{pendingUndo.added ?? 0} −{pendingUndo.deleted ?? 0}
+            ） · 恢复会记成新检查点
           </p>
           <div className="mt-2 flex justify-end gap-2">
             <button

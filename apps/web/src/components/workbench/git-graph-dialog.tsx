@@ -88,14 +88,12 @@ export function GitGraphDialog({
 
         {!isRepo ? (
           <p className="px-5 py-6 text-sm text-muted-foreground">
-            该工作目录还不是 git 仓库。
+            还不是 git 仓库
           </p>
         ) : entries === null ? (
           <p className="px-5 py-6 text-sm text-muted-foreground">读取中…</p>
         ) : entries.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-muted-foreground">
-            还没有提交。
-          </p>
+          <p className="px-5 py-6 text-sm text-muted-foreground">还没有提交</p>
         ) : (
           <>
             <div className="min-h-0 flex-1 overflow-y-auto">
@@ -165,7 +163,7 @@ export function GitGraphDialog({
               </table>
               {truncated ? (
                 <p className="px-5 py-2 text-[11px] text-muted-foreground">
-                  只显示最近 30 条提交。
+                  只显示最近 30 条
                 </p>
               ) : null}
             </div>

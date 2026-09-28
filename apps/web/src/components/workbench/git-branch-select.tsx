@@ -283,8 +283,7 @@ export function GitBranchSelect({
           className="absolute top-full left-0 z-50 mt-2 w-72 overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-md"
         >
           <p className="px-3 py-2 text-xs text-muted-foreground">
-            该工作目录还不是 git
-            仓库。初始化后每轮对话结束会自动提交，便于回滚。
+            还不是 git 仓库 · 初始化后每轮自动提交
           </p>
           <div className="border-t px-2 py-2">
             <button

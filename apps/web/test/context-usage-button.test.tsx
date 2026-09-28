@@ -165,7 +165,7 @@ describe("ContextUsageButton：预留输出与阈值", () => {
     const dialog = await openPopover();
     expect(dialog).toHaveTextContent("已越过输出预留线");
     expect(dialog).toHaveTextContent("新建对话");
-    expect(dialog).toHaveTextContent("窗口更大的模型");
+    expect(dialog).toHaveTextContent("更大窗口");
   });
 
   it("没声明最大输出：不显示预留段与阈值（少画而不是编一个数）", async () => {

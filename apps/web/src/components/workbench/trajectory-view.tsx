@@ -368,7 +368,7 @@ export function TrajectoryView({
   if (model.turns.length === 0) {
     return (
       <div className="py-10 text-center text-sm text-muted-foreground">
-        这条对话还没有可展示的轨迹。
+        还没有轨迹
       </div>
     );
   }
@@ -405,7 +405,7 @@ export function TrajectoryView({
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="搜索轨迹（工具 / 文件 / 关键词）"
+              placeholder="搜索工具 / 文件 / 关键词"
               aria-label="搜索轨迹"
               className="w-44 rounded-md border bg-transparent px-2 py-1 text-[11px] outline-none placeholder:text-muted-foreground/60 focus:border-foreground/30"
             />
@@ -537,7 +537,7 @@ export function TrajectoryView({
 
       {visible.length === 0 ? (
         <div className="py-6 text-center text-xs text-muted-foreground">
-          没有匹配「{query.trim()}」的轨迹行。
+          没有匹配「{query.trim()}」的轨迹
         </div>
       ) : null}
 

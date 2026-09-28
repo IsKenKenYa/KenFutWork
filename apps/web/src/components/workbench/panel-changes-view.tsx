@@ -61,10 +61,10 @@ export function ChangesPane({
   /** 撤销单个文件的改动（未跟踪 = 删除该文件）；**丢内容**，先确认。 */
   const discardFile = async (path: string, untracked: boolean) => {
     if (!accessToken || !canvasId) return;
-    const what = untracked
-      ? `删除未跟踪文件 ${path}`
-      : `把 ${path} 恢复成仓库里的样子`;
-    if (!window.confirm(`确定撤销？将${what}，这些改动无法从这里恢复。`)) {
+    const question = untracked
+      ? `删除未跟踪文件 ${path}？`
+      : `撤销 ${path} 的改动？`;
+    if (!window.confirm(question)) {
       return;
     }
     setDiscarding(true);
@@ -84,9 +84,7 @@ export function ChangesPane({
     if (!accessToken || !canvasId) return;
     const count = changes?.files.length ?? 0;
     if (
-      !window.confirm(
-        `确定撤销全部 ${count} 个文件的改动？未跟踪的新文件会被删除，且无法从这里恢复。`,
-      )
+      !window.confirm(`撤销全部 ${count} 个文件的改动？未跟踪文件会被删除。`)
     ) {
       return;
     }
@@ -126,7 +124,7 @@ export function ChangesPane({
       ) : !changes.isRepo ? (
         <p className="text-xs text-muted-foreground">还不是 git 仓库</p>
       ) : changes.files.length === 0 ? (
-        <p className="text-xs text-muted-foreground">没有未提交的更改。</p>
+        <p className="text-xs text-muted-foreground">没有未提交的更改</p>
       ) : (
         <div className="border">
           <div className="flex items-center gap-2 border-b px-2.5 py-2 text-xs">
@@ -239,7 +237,7 @@ export function ChangesPane({
           </ul>
           {changes.truncated ? (
             <p className="border-t px-2.5 py-1.5 text-[10px] text-muted-foreground">
-              只显示前 200 个文件。
+              只显示前 200 个文件
             </p>
           ) : null}
         </div>
