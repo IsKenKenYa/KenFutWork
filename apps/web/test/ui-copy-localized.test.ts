@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { getToolConfig } from "../src/components/chat/utils";
+
 /**
  * UI 文案汉化守卫（画布与对话区）。
  *
@@ -27,6 +29,10 @@ const FILES = [
   "chat-input.tsx",
   "chat-sidebar.tsx",
   "session-selector.tsx",
+  join("chat", "thinking-block-view.tsx"),
+  join("chat", "tool-block-view.tsx"),
+  join("chat", "image-lightbox.tsx"),
+  join("chat", "utils.ts"),
   join("canvas", "image-generator-panel.tsx"),
   join("canvas", "video-generator-panel.tsx"),
   join("brand-kit", "brand-kit-editor.tsx"),
@@ -75,6 +81,14 @@ const FORBIDDEN = [
   "No brand kits yet",
   "Create Brand Kit",
   "Fit All",
+  // 转录里的工具行 / 思考行（2026-09-27 真机截图时发现仍是英文）
+  "<span>Thinking...</span>",
+  "<span>Thought for a moment</span>",
+  '"AI is thinking"',
+  '"Toggle thinking content"',
+  'aria-label="Image viewer"',
+  'title="Image failed to load"',
+  '?? "Generated image"',
 ];
 
 describe("画布与对话区文案已汉化", () => {
@@ -94,6 +108,28 @@ describe("画布与对话区文案已汉化", () => {
   it("Excalidraw 指定了中文语言（原生 chrome 不指定即英文）", () => {
     const content = readFileSync(join(ROOT, "canvas-editor.tsx"), "utf-8");
     expect(content).toContain('langCode="zh-CN"');
+  });
+
+  /**
+   * Code 模式的工具必须在 `TOOL_CONFIG` 里有中文标题：漏一个，工具行标题就会走
+   * `formatToolName` 回落成英文（实测：转录里出现 `Read File` / `Run Terminal Command`）。
+   */
+  it("Code 模式的工具标题是中文（不在表里就会回落成英文）", () => {
+    for (const tool of [
+      "ls",
+      "read_file",
+      "write_file",
+      "edit_file",
+      "glob",
+      "grep",
+      "execute",
+      "write_todos",
+      "persist_sandbox_file",
+    ]) {
+      const label = getToolConfig(tool).label;
+      expect(label, tool).toMatch(/[\u4e00-\u9fff]/);
+      expect(label, tool).not.toMatch(/[A-Za-z]/);
+    }
   });
 });
 
