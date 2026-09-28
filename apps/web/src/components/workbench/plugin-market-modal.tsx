@@ -313,7 +313,7 @@ export function PluginMarketModal({
                   tab === "installed" ? "暂无已安装插件" : "未找到匹配的插件"
                 }
                 {...(tab === "installed"
-                  ? { hint: "可在「发现」里按来源链接安装。" }
+                  ? { hint: "在「发现」里按链接安装" }
                   : {})}
               />
             ) : (
