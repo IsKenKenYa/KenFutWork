@@ -21,6 +21,10 @@ trap cleanup EXIT
 
 port_up() { curl -s -o /dev/null -m 3 "http://127.0.0.1:$1" 2>/dev/null; }
 
+# 注意：macOS 自带 /bin/bash 为 3.2，其分词器缺陷会把「紧邻全角标点的未加括号
+# 变量」（如 $pid 后直接跟全角右括号）整体并入变量名，报 "pid: unbound
+# variable"（真机复现）。因此中文文案里的变量一律写 ${var} 括号形式，勿改回裸 $var 写法。
+
 # 服务端生命周期归 Tauri 壳（ensure_server_running：不健康才 spawn，关窗优雅停库）。
 # 这里只负责 web dev server（Tauri devUrl 指向它）。
 # web dev server 由本脚本独占并注入 API base（HTTP+WS 直连 :3001——Next dev
@@ -29,7 +33,7 @@ port_up() { curl -s -o /dev/null -m 3 "http://127.0.0.1:$1" 2>/dev/null; }
 if port_up 3000; then
   pid="$(lsof -nP -iTCP:3000 -sTCP:LISTEN -t 2>/dev/null | head -1 || true)"
   if [ -n "$pid" ]; then
-    echo "[dev] 停止 3000 上的旧 web dev server（pid $pid）——以最新 env 重启"
+    echo "[dev] 停止 3000 上的旧 web dev server（pid ${pid}）——以最新 env 重启"
     kill "$pid" 2>/dev/null || true
     for _ in $(seq 1 10); do port_up 3000 || break; sleep 1; done
   fi
@@ -53,7 +57,7 @@ echo "[dev] web 就绪（3000，API 直连 :3001）"
 if port_up 3001; then
   pid="$(lsof -nP -iTCP:3001 -sTCP:LISTEN -t 2>/dev/null | head -1 || true)"
   if [ -n "$pid" ]; then
-    echo "[dev] 停止 3001 上的旧服务端（pid $pid）"
+    echo "[dev] 停止 3001 上的旧服务端（pid ${pid}）"
     kill "$pid" 2>/dev/null || true
     for _ in $(seq 1 10); do port_up 3001 || break; sleep 1; done
     port_up 3001 && { echo "[dev] 3001 仍被占用，请手动检查：lsof -nP -iTCP:3001"; exit 1; }

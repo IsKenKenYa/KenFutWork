@@ -61,6 +61,14 @@
     --color-card-foreground: var(--card-foreground);
     --color-card: var(--card);
     --color-foreground: var(--foreground);
+    /* zcode 对话流三阶文字色（照搬 references/zcode packages/ui 语义 token）：
+       foreground 正文字、subtle 次要摘要、subtlest 工具行标签/时间戳。 */
+    --color-foreground-subtle: var(--muted-foreground);
+    --color-foreground-subtlest: color-mix(in oklch, var(--muted-foreground) 78%, transparent);
+    /* zcode 卡片底（Agent thought/output 区）：比 page 底深半档的面板色 */
+    --color-background-alt: var(--muted);
+    /* zcode 行内 code 底色（message.tsx bg-markdown-inline-code/50 的本体） */
+    --color-markdown-inline-code: var(--muted-foreground);
     --color-background: var(--background);
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
@@ -834,4 +842,48 @@
 }
 .hljs-strong {
   font-weight: 600;
+}
+
+/* ── zcode 对话流 UI 照搬层（references/zcode packages/ui）──────────────
+   text-ui-* 字号阶梯与 animated-gradient-text 流光：zcode 全对话流通用。 */
+@layer utilities {
+    .text-ui-base {
+        font-size: 0.875rem;
+        line-height: 1.5rem;
+    }
+    .text-ui-sm {
+        font-size: 0.8125rem;
+        line-height: 1.375rem;
+    }
+    .text-ui-xs {
+        font-size: 0.75rem;
+        line-height: 1.125rem;
+    }
+}
+
+/* zcode 运行态文案扫光（ToolSummaryRow kindLabel / Reasoning「思考中」同款）：
+   背景渐变平移 + background-clip:text，图标保持静态。 */
+@layer utilities {
+    .animated-gradient-text {
+        background-image: linear-gradient(
+            90deg,
+            var(--muted-foreground) 0%,
+            var(--foreground) 40%,
+            var(--muted-foreground) 80%
+        );
+        background-size: 200% 100%;
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        animation: zcode-gradient-slide 2.4s ease-in-out infinite;
+    }
+}
+
+@keyframes zcode-gradient-slide {
+    0% {
+        background-position: 100% 0;
+    }
+    100% {
+        background-position: -100% 0;
+    }
 }
