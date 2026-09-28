@@ -74,6 +74,39 @@ describe("loadSession 的令牌保留口径", () => {
     expect(readStoredSession()).toBeNull();
   });
 
+  it("404（该服务端不是口令形态，认证路由未挂载）：清旧令牌并回落问 viewer，拿到本机身份", async () => {
+    /**
+     * 真机事故（2026-09-28）：Tauri WebView 残留口令形态登录的旧令牌，dev.sh 把
+     * 服务端拉在 local-trust（认证路由不挂载，`/api/auth/session` 永远 404）。
+     * 旧代码把 404 归入「服务端暂时不可用、不动令牌」——令牌永远清不掉，永远
+     * 停在登录页。404 在这里是**明确的形态判定信号**：这台服务端没有口令认证面，
+     * 任何本地令牌都永久无效，必须清掉并走 `/api/viewer` 免登录探活。
+     */
+    window.localStorage.setItem(TOKEN_KEY, "stale-managed-token");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/auth/session")) {
+        return new Response("{}", { status: 404 });
+      }
+      return new Response(
+        JSON.stringify({
+          profile: {
+            id: "u1",
+            email: "local@kenfutwork.local",
+            displayName: "本机用户",
+          },
+        }),
+        { status: 200 },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const session = await loadSession();
+    expect(session?.user.email).toBe("local@kenfutwork.local");
+    expect(session?.access_token).toBe(LOCAL_TRUST_SESSION_TOKEN);
+    // 旧令牌确实被清了，后续刷新不再空跑一趟 404
+    expect(readStoredSession()).toBeNull();
+  });
+
   it("5xx（服务端暂时不可用）：保留令牌，不做登录态声明", async () => {
     vi.stubGlobal(
       "fetch",

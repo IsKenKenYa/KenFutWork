@@ -239,10 +239,16 @@ export async function loadSession(): Promise<AuthSession | null> {
     // 网络不可达：不武断清令牌（可能是服务还没起来），但也不声称已登录
     return null;
   }
-  if (response.status === 401) {
-    // 令牌确实无效/过期：清掉，别每次进页面都白跑一趟
+  if (response.status === 401 || response.status === 404) {
+    // 401 = 令牌无效/过期；404 = 这台服务端**不是口令形态**（认证路由未挂载，
+    // `KENFUTWORK_AUTH_DRIVER=local-trust` 的免登录形态）。两者都意味着本地令牌
+    // 在这台服务端上永久无效：清掉后回落问 `/api/viewer`。曾把 404 归入「服务端
+    // 暂时不可用、不动令牌」——桌面 dev 形态下 WebView 残留口令形态的旧令牌，
+    // loadSession 永远 404 永远 null，永远停在登录页（2026-09-28 真机）。
     persist(null);
-    return null;
+    // 此时 readStoredSession() 为空，递归即走 viewer 探活；免登录形态直接给出
+    // 本机身份，口令形态 viewer 401 → null（停登录页，行为不变）。最多递归一层。
+    return loadSession();
   }
   if (!response.ok) {
     // 服务端暂时不可用（重启 / 编译中 / 5xx）：**不动令牌**——否则重启一次就把人踢到登录页
