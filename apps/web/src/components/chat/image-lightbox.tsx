@@ -172,7 +172,7 @@ export function ImageLightbox({
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label="Image viewer"
+      aria-label="图片查看器"
     >
       {/* Image */}
       <div
@@ -298,7 +298,7 @@ export const ChatImage = React.memo(function ChatImage({
     return (
       <div
         className={`${className} flex items-center justify-center bg-muted text-muted-foreground text-xs`}
-        title="Image failed to load"
+        title="图片加载失败"
       >
         <svg
           aria-hidden="true"
