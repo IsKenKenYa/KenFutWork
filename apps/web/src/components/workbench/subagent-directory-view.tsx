@@ -2,13 +2,20 @@
 
 import { ArrowLeft, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
-
+import {
+  AgentActivitySection,
+  AgentPromptSection,
+} from "@/components/workbench/zcode/tool-renderers";
 import {
   elapsedSecondsBetween,
   formatElapsedSeconds,
   parseTimestampMs,
 } from "@/lib/elapsed";
-import type { SubagentBlock, SubagentEntry } from "@/lib/subagent-directory";
+import type {
+  SubagentBlock,
+  SubagentEntry,
+  SubagentToolRow,
+} from "@/lib/subagent-directory";
 
 /**
  * 「子智能体」视图（zcode 右栏模型）：主对话只保留父派发调用的紧凑行；
@@ -150,84 +157,102 @@ function SubagentThreadView({
           {formatElapsedSeconds(seconds)}
         </span>
       </div>
-      {entry.description ? (
-        <p className="line-clamp-3 pb-2 text-[11px] leading-relaxed text-muted-foreground/80">
-          {entry.description}
-        </p>
-      ) : null}
-      <div className="border-t pt-2">
+      <div className="ml-2 space-y-3 border-border border-l pt-2 pl-3.5">
+        {entry.description ? (
+          <AgentPromptSection prompt={entry.description} />
+        ) : null}
         <SubagentTranscript entry={entry} />
       </div>
     </div>
   );
 }
 
-/** 单个子代理的独立转录：正文平铺、思考弱化行、工具紧凑行（zcode 扁平风）。 */
+/**
+ * 子代理转录（zcode AgentToolCallBlock 展开区同构）：思考/输出各成一张
+ * AgentActivitySection 卡（markdown 渲染），子工具在左竖线缩进列表里
+ * 一行一条（无图标，zcode AgentChildToolList 口径）。
+ */
 function SubagentTranscript({ entry }: { entry: SubagentEntry }) {
   if (entry.blocks.length === 0) {
     return (
-      <p className="py-1 text-[11px] text-muted-foreground/60">
+      <p className="py-1 text-ui-sm text-muted-foreground/60">
         {entry.endedAt ? "该子智能体没有产出可显示的内容" : "正在执行…"}
       </p>
     );
   }
+  // zcode 分区：Agent thought 区 / Agent output 区 / child tools 区。
+  // 思考与正文各自按到达顺序拼接（块内是流式增量，同类相邻合并）。
+  const thoughtParts: string[] = [];
+  const outputParts: string[] = [];
+  type ToolBlock = Extract<SubagentBlock, { type: "tool" }>;
+  const toolBlocks: ToolBlock[] = [];
+  for (const block of entry.blocks) {
+    if (block.type === "thinking") {
+      thoughtParts.push(block.text);
+    } else if (block.type === "text") {
+      outputParts.push(block.text);
+    } else if (block.type === "tool") {
+      toolBlocks.push(block);
+    }
+  }
   return (
-    <div className="space-y-1 text-xs">
-      {entry.blocks.map((block, index) => {
-        // 块无稳定 id：key 用「类型 + 序号」，追加/续写都是尾插不重排
-        const key =
-          block.type === "tool"
-            ? `tool-${block.tool.toolCallId}`
-            : `${block.type}-${index}`;
-        return <SubagentBlockRow key={key} block={block} />;
-      })}
+    <div className="space-y-3">
+      {toolBlocks.length > 0 ? (
+        <div className="ml-2 space-y-2 border-border border-l pl-3.5">
+          {toolBlocks.map((block) => (
+            <SubagentToolRowView
+              key={block.tool.toolCallId}
+              tool={block.tool}
+            />
+          ))}
+        </div>
+      ) : null}
+      {thoughtParts.length > 0 ? (
+        <AgentActivitySection
+          label="Agent 思考"
+          content={thoughtParts.join("\n\n")}
+        />
+      ) : null}
+      {outputParts.length > 0 ? (
+        <AgentActivitySection
+          label="Agent 输出"
+          content={outputParts.join("\n\n")}
+        />
+      ) : null}
+      {thoughtParts.length === 0 &&
+      outputParts.length === 0 &&
+      toolBlocks.length === 0 ? (
+        <p className="py-1 text-ui-sm text-muted-foreground/60">正在执行…</p>
+      ) : null}
     </div>
   );
 }
 
-function SubagentBlockRow({ block }: { block: SubagentBlock }) {
-  if (block.type === "thinking") {
-    return (
-      <p className="whitespace-pre-wrap text-muted-foreground/70">
-        思考 · {block.text}
-      </p>
-    );
-  }
-  if (block.type === "text") {
-    return <p className="whitespace-pre-wrap">{block.text}</p>;
-  }
+/** 子工具行（zcode 子工具：无图标，quiet 完成态，运行态流光标签）。 */
+function SubagentToolRowView({ tool }: { tool: SubagentToolRow }) {
+  const running = tool.status === "running";
   const duration =
-    block.tool.startedAt !== undefined && block.tool.endedAt !== undefined
+    tool.startedAt !== undefined && tool.endedAt !== undefined
       ? formatElapsedSeconds(
-          elapsedSecondsBetween(
-            block.tool.startedAt,
-            block.tool.endedAt,
-            Date.now(),
-          ),
+          elapsedSecondsBetween(tool.startedAt, tool.endedAt, Date.now()),
         )
       : null;
   return (
-    <div className="flex items-center gap-1.5 text-muted-foreground">
+    <div className="flex w-full items-center gap-2 text-ui-base">
       <span
-        aria-hidden
-        className={
-          block.tool.status === "running"
-            ? "text-amber-500"
-            : "text-emerald-600"
-        }
+        className={`shrink-0 font-medium whitespace-nowrap ${
+          running ? "animated-gradient-text" : "text-foreground-subtlest"
+        }`}
       >
-        ●
+        {tool.toolName}
       </span>
-      <span className="min-w-0 truncate font-medium text-foreground/80">
-        {block.tool.toolName}
-      </span>
-      {block.tool.outputSummary ? (
-        <span className="min-w-0 truncate text-muted-foreground/70">
-          {block.tool.outputSummary}
+      {tool.outputSummary ? (
+        <span className="min-w-0 truncate text-foreground-subtlest">
+          {tool.outputSummary}
         </span>
       ) : null}
       {duration ? (
-        <span className="ml-auto shrink-0 tabular-nums text-muted-foreground/60">
+        <span className="ml-auto shrink-0 tabular-nums text-foreground-subtlest">
           {duration}
         </span>
       ) : null}

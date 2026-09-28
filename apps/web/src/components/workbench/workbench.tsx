@@ -38,7 +38,6 @@ import {
   ComposerContextMenu,
   useComposerContextMenu,
 } from "@/components/chat/composer-context-menu";
-import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
 import { RunStopButton } from "@/components/chat/run-stop-button";
 import { KenFutWorkLogo } from "@/components/icons/kenfutwork-logo";
 import { Button } from "@/components/ui/button";
@@ -85,16 +84,14 @@ import { SidebarRow } from "@/components/workbench/sidebar-row";
 import { SkillsModal } from "@/components/workbench/skills-modal";
 import { SubagentDirectoryView } from "@/components/workbench/subagent-directory-view";
 import { TodoProgressPanel } from "@/components/workbench/todo-progress-panel";
-import {
-  ToolEventDetail,
-  toolStatusMeta,
-} from "@/components/workbench/tool-event";
-import { toolIcon } from "@/components/workbench/tool-icons";
 import { TrajectoryView } from "@/components/workbench/trajectory-view";
 import { TurnRail } from "@/components/workbench/turn-rail";
 import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
 import { WorkDirectorySelect } from "@/components/workbench/work-directory-select";
 import { WorkbenchSidePanel } from "@/components/workbench/workbench-side-panel";
+import { MessageResponse } from "@/components/workbench/zcode/message-response";
+import { Reasoning } from "@/components/workbench/zcode/reasoning";
+import { resolveToolRenderer } from "@/components/workbench/zcode/tool-renderers";
 import { useFlowHostEntry } from "@/hooks/use-flow-host";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useAuth } from "@/lib/auth-context";
@@ -154,17 +151,11 @@ import {
   appendSubagentTool,
   closeAllSubagents,
   completeSubagentByCallId,
-  SUBAGENT_TOOL_NAMES,
   type SubagentEntry,
   upsertImplicitSubagent,
 } from "@/lib/subagent-directory";
 import { createTaskSaver } from "@/lib/task-saver";
 import type { TodoItem } from "@/lib/todo-progress";
-import {
-  deriveTurnProcesses,
-  specCoveringIndex,
-  type TurnProcessSpec,
-} from "@/lib/turn-process";
 import { formatTaskRelativeTime } from "@/lib/ui-format";
 import {
   boundWorkDirPromptHint,
@@ -194,9 +185,7 @@ import {
   settleAssistantElapsed,
   settlePreviousAssistant,
   type TaskMessage,
-  type TaskToolEntry,
   toolDisplayLabel,
-  toolTargetParts,
 } from "@/lib/workbench-tools";
 import { buildTrajectory, turnRailItems } from "@/lib/workbench-trajectory";
 
@@ -304,13 +293,10 @@ interface WorkbenchTask {
 function AssistantTurn({
   msg,
   streaming = false,
-  onInspectTool,
 }: {
   msg: TaskMessage;
   /** 该消息是否仍在流式（任务运行中的最后一条）：思考行的「思考中」态用它。 */
   streaming?: boolean;
-  /** 「查看轨迹」：切到轨迹页签并聚焦这次调用（dsh 的 Inspect 交叉跳转）。 */
-  onInspectTool?: (toolCallId: string) => void;
 }) {
   // 无 blocks 的消息（纯文本）就地归一化成单文本块——只有一条渲染路径，没有旧版分支
   const groups = useMemo(
@@ -325,19 +311,24 @@ function AssistantTurn({
     <div className="flex w-full max-w-full flex-col items-start gap-2.5">
       {groups.map((group, gi) => {
         if (group.kind === "text") {
+          // zcode 助手正文：streamdown 流式安全 markdown（MessageResponse）
           return (
             <div
               // biome-ignore lint/suspicious/noArrayIndexKey: 组序即时序，块内没有更稳定的身份
               key={gi}
               className="w-full max-w-full"
             >
-              <MarkdownRenderer text={group.text} />
+              <MessageResponse
+                text={group.text}
+                streaming={streaming && gi === groups.length - 1}
+              />
             </div>
           );
         }
         if (group.kind === "reasoning") {
+          // zcode 思考行：默认收起，完成态「思考 · 持续了 N 秒」
           return (
-            <ReasoningRow
+            <Reasoning
               // biome-ignore lint/suspicious/noArrayIndexKey: 组序即时序，块内没有更稳定的身份
               key={gi}
               text={group.text}
@@ -347,315 +338,50 @@ function AssistantTurn({
         }
         if (group.kind === "notification") {
           const n = group.notification;
+          // zcode 时间线标记分隔线（MarkerDividerRow）：两侧细横线 + 居中 pill
           return (
             <div
               key={`notify-${n.taskId}`}
-              className="flex items-center gap-2 py-0.5 text-sm text-muted-foreground"
+              className="flex w-full items-center gap-3 px-4 py-2 text-ui-base text-foreground-subtle"
             >
-              <span aria-hidden className="text-emerald-600">
-                ●
+              <div aria-hidden className="h-px min-w-8 flex-1 bg-border/50" />
+              <span className="inline-flex min-w-0 shrink items-center justify-center gap-1.5 text-center leading-5">
+                <span
+                  aria-hidden
+                  className={
+                    n.status === "completed"
+                      ? "text-emerald-600"
+                      : "text-red-600"
+                  }
+                >
+                  ●
+                </span>
+                <span className="min-w-0 break-words">
+                  后台任务
+                  {n.status === "completed"
+                    ? "完成"
+                    : n.status === "failed"
+                      ? "失败"
+                      : "已取消"}
+                  ：{n.label} — {n.summary}
+                  {n.nextStep ? `（${n.nextStep}）` : ""}
+                </span>
               </span>
-              <span>
-                后台任务
-                {n.status === "completed"
-                  ? "完成"
-                  : n.status === "failed"
-                    ? "失败"
-                    : "已取消"}
-                ：{n.label} — {n.summary}
-                {n.nextStep ? `（${n.nextStep}）` : ""}
-              </span>
+              <div aria-hidden className="h-px min-w-8 flex-1 bg-border/50" />
             </div>
           );
         }
-        // 连续工具调用：一行一个，按发生顺序排。刻意**不**做「N 次工具调用」聚合折叠——
-        // 聚在一起就又回到「看不出谁是谁、哪次在哪」的老问题。
+        // 连续工具调用：一行一个，zcode renderer 分流（read 单行 / edit 带 diff /
+        // execute 终端面板 / agent 子代理行点击开右栏）。刻意**不**做聚合折叠。
         return group.tools.map((tool) => (
-          <WorkbenchToolRow
-            key={tool.toolCallId}
-            tool={tool}
-            {...(onInspectTool ? { onInspect: onInspectTool } : {})}
-          />
+          <div key={tool.toolCallId} className="w-full max-w-full">
+            {resolveToolRenderer(tool, toolDisplayLabel(tool.toolName), () =>
+              requestPanelView("subagents"),
+            )}
+          </div>
         ));
       })}
     </div>
-  );
-}
-
-/**
- * 对话里的工具调用行：**一次调用一行、永远可见**，视觉口径对齐 ZCode——
- * **无边框卡片**的扁平行（图标 + 动词 + 文件名/路径 或 命令 + 状态），行宽由内容
- * 决定（self-start），点整行展开详情（入参 + 输出，与轨迹视图同一份展开体）。
- *
- * 行永远可见是用户口径：「要按照时间顺序逐个展示，不能聚在一起」（2026-09-20）。
- * 外层圆角卡片是 2026-09-21 用户点名去掉的：「根本没必要有外面那一层圆角矩形」。
- * 成功态不渲染状态文字（ZCode 同款：安静）；只有运行中/失败/被拒才占行尾。
- * 「轨迹」跳转按钮与展开 chevron 都 hover 才显现。
- */
-function WorkbenchToolRow({
-  tool,
-  onInspect,
-}: {
-  tool: TaskToolEntry;
-  /** 「轨迹」小按钮：切到轨迹账本并聚焦这次调用（dsh 的 Inspect 交叉跳转）。 */
-  onInspect?: (toolCallId: string) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  // 子代理派发行（zcode 形态）：一行紧凑摘要，点击**打开右栏线程**，入参永不铺开
-  const isDispatchTool = SUBAGENT_TOOL_NAMES.has(tool.toolName);
-  const dispatchType =
-    typeof tool.input?.subagent_type === "string"
-      ? tool.input.subagent_type
-      : null;
-  const dispatchSummary =
-    typeof tool.input?.description === "string" ? tool.input.description : null;
-  const hasDetail =
-    Boolean(tool.output) || Boolean(tool.summary) || Boolean(tool.input);
-  const clickable = isDispatchTool || hasDetail;
-  const meta = toolStatusMeta(tool);
-  const Icon = toolIcon(tool);
-  const target = toolTargetParts(tool);
-  /** 被拒/失败原因进 title（不点开也能看到为什么）。 */
-  const failReason =
-    tool.status === "denied"
-      ? ((tool.output?.reason as string | undefined) ??
-        tool.summary ??
-        "被工具门拦下")
-      : meta.failed
-        ? (tool.summary ?? "执行失败")
-        : null;
-  return (
-    <div className="group/tool-row w-full max-w-full">
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          disabled={!clickable}
-          aria-expanded={
-            isDispatchTool ? undefined : hasDetail ? expanded : undefined
-          }
-          onClick={() => {
-            if (isDispatchTool) {
-              // zcode 交互：派发行点击 = 右栏「子智能体」线程视图（转录都在那）
-              requestPanelView("subagents");
-              return;
-            }
-            if (hasDetail) setExpanded((v) => !v);
-          }}
-          className={`inline-flex min-w-0 max-w-full items-center gap-2 self-start py-0.5 text-left text-xs ${
-            clickable ? "cursor-pointer" : "cursor-default"
-          }`}
-        >
-          <Icon
-            aria-hidden
-            className="size-4 shrink-0 text-muted-foreground/60"
-          />
-          <span
-            className={`shrink-0 font-medium ${
-              meta.failed
-                ? "text-red-600 dark:text-red-400"
-                : "text-muted-foreground"
-            }`}
-            title={tool.toolName}
-          >
-            {toolDisplayLabel(tool.toolName)}
-          </span>
-          {isDispatchTool ? (
-            dispatchType ? (
-              <span className="shrink-0 text-muted-foreground/70">
-                {dispatchType}
-              </span>
-            ) : null
-          ) : target ? (
-            target.isCommand ? (
-              <code className="min-w-0 truncate font-sans text-muted-foreground/80">
-                {target.primary}
-              </code>
-            ) : (
-              <span
-                className="flex min-w-0 items-baseline gap-1.5"
-                title={
-                  target.rest
-                    ? `${target.rest}/${target.primary}`
-                    : target.primary
-                }
-              >
-                <span className="min-w-0 truncate text-foreground">
-                  {target.primary}
-                </span>
-                {target.rest ? (
-                  <span className="hidden min-w-0 truncate text-muted-foreground/50 @max-[520px]/conversation:hidden sm:inline">
-                    {target.rest}
-                  </span>
-                ) : null}
-              </span>
-            )
-          ) : null}
-          {isDispatchTool && dispatchSummary ? (
-            // 任务说明只作单行摘要（完整内容在右栏子代理线程的头部）
-            <span
-              className="min-w-0 truncate text-muted-foreground/70"
-              title={dispatchSummary}
-            >
-              {dispatchSummary}
-            </span>
-          ) : null}
-          {tool.status === "running" ? (
-            <span className="inline-flex shrink-0 items-center gap-1.5 text-muted-foreground">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
-              执行中…
-            </span>
-          ) : meta.failed ? (
-            <span
-              className="shrink-0 cursor-help text-red-600 underline decoration-dotted underline-offset-2 dark:text-red-400"
-              title={failReason ?? undefined}
-            >
-              失败
-            </span>
-          ) : tool.status === "denied" ? (
-            <span
-              className="shrink-0 cursor-help text-rose-600 underline decoration-dotted underline-offset-2 dark:text-rose-400"
-              title={failReason ?? undefined}
-            >
-              被拒绝
-            </span>
-          ) : (
-            // 完成态的安静标记：只留一颗小绿点（ZCode 口径——成功不占文字）
-            <span
-              role="img"
-              aria-label="已完成"
-              className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500/70"
-            />
-          )}
-          {isDispatchTool ? null : (
-            <svg
-              aria-hidden
-              viewBox="0 0 16 16"
-              className={`h-3 w-3 shrink-0 text-muted-foreground/50 opacity-0 transition-[opacity,transform] group-hover/tool-row:opacity-100 ${
-                expanded ? "rotate-90 opacity-100" : ""
-              } ${hasDetail ? "" : "invisible"}`}
-              fill="currentColor"
-            >
-              <path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" />
-            </svg>
-          )}
-        </button>
-        {onInspect ? (
-          <button
-            type="button"
-            onClick={() => onInspect(tool.toolCallId)}
-            title="在轨迹账本中查看这次调用"
-            aria-label="在轨迹账本中查看这次调用"
-            className="shrink-0 rounded px-1 py-0.5 text-[10px] text-muted-foreground/60 opacity-0 transition-opacity hover:text-foreground group-hover/tool-row:opacity-100"
-          >
-            轨迹
-          </button>
-        ) : null}
-      </div>
-      {expanded && !isDispatchTool ? (
-        <div className="mb-1 ml-6 border-l-2 border-border/50 pl-3">
-          <ToolEventDetail tool={tool} />
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-/**
- * 思考行（dsh ReasoningRow 数据源 + ZCode ReasoningRow 视觉）：无卡片的一行——
- * 脑图标 + 「思考」+ 摘要（流式时跟随最新一行），chevron hover 显现；展开正文
- * 走左竖线缩进的纯文本区（不做 markdown 渲染）。思考是推理过程不是结论，
- * 永远不给它正文的视觉权重。
- */
-function ReasoningRow({
-  text,
-  streaming,
-}: {
-  text: string;
-  streaming: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const lines = text.split("\n").filter((line) => line.trim().length > 0);
-  const summary = (streaming ? lines[lines.length - 1] : lines[0]) ?? "";
-  const clipped = summary.length > 80 ? `${summary.slice(0, 79)}…` : summary;
-  return (
-    <div className="w-full max-w-full">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="group/reasoning inline-flex max-w-full items-center gap-2 self-start py-0.5 text-left text-xs text-muted-foreground/60"
-      >
-        <Brain
-          aria-hidden
-          className="size-4 shrink-0 text-muted-foreground/50"
-        />
-        <span
-          className={`shrink-0 font-medium ${streaming ? "text-foreground/80" : ""}`}
-        >
-          {streaming ? "思考中" : "思考"}
-        </span>
-        {open ? null : (
-          <span className="min-w-0 truncate font-normal">{clipped}</span>
-        )}
-        <svg
-          aria-hidden
-          viewBox="0 0 16 16"
-          className={`h-3 w-3 shrink-0 opacity-0 transition-[opacity,transform] group-hover/reasoning:opacity-100 ${
-            open ? "rotate-90 opacity-100" : ""
-          }`}
-          fill="currentColor"
-        >
-          <path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" />
-        </svg>
-      </button>
-      {open ? (
-        <div className="mb-1 ml-6 max-h-60 overflow-y-auto whitespace-pre-wrap break-words border-l-2 border-border/50 pl-3 text-[11px] leading-5 text-muted-foreground">
-          {text}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-/**
- * 轮级过程折叠控制行（dsh TurnProcessNodeView 语义 + ZCode 组行视觉）：无卡片的
- * 一行「第 N 轮 · 思考与工具 · N 个工具调用 · …」，chevron hover 显现。展开后
- * 过程逐行原位可见（不是聚成一条摘要），再点收起。
- */
-function TurnProcessRow({
-  spec,
-  expanded,
-  onToggle,
-}: {
-  spec: TurnProcessSpec;
-  expanded: boolean;
-  onToggle: () => void;
-}) {
-  const parts = [`${spec.toolCount} 个工具调用`];
-  if (spec.reasoningCount > 0) parts.push(`${spec.reasoningCount} 段思考`);
-  if (spec.foldedTextCount > 0)
-    parts.push(`${spec.foldedTextCount} 段中途输出`);
-  return (
-    <button
-      type="button"
-      aria-expanded={expanded}
-      onClick={onToggle}
-      title="展开这一轮的完整过程（推理 / 工具 / 中途输出逐行保留）"
-      className="inline-flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground/60 transition-colors hover:text-foreground"
-    >
-      <svg
-        aria-hidden
-        viewBox="0 0 16 16"
-        className={`h-3 w-3 shrink-0 transition-transform ${
-          expanded ? "rotate-90" : ""
-        }`}
-        fill="currentColor"
-      >
-        <path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" />
-      </svg>
-      <span>第 {spec.turnIndex} 轮 · 思考与工具</span>
-      <span className="text-muted-foreground/70">{parts.join(" · ")}</span>
-    </button>
   );
 }
 
@@ -900,26 +626,7 @@ export function Workbench() {
   );
 
   /** 从对话流工具行「查看轨迹」跳来的聚焦目标（轨迹页签滚动定位用）。 */
-  const [trajectoryFocus, setTrajectoryFocus] = useState<string | null>(null);
-
-  /**
-   * 轮级过程折叠（deepseek-harness Turn Process Folding 同款）：跑完且产出了结论的
-   * 轮，把结论之前的推理/工具/中途正文收进一行可展开的控制行。运行中不折叠，
-   * 展开后过程逐行原位可见——不是「N 次调用」式的有损聚合（用户此前反对的是
-   * 聚掉细节；dsh 折叠正是「默认收起、展开即全量」的过程披露）。
-   */
-  const turnProcesses = useMemo(
-    () =>
-      deriveTurnProcesses(
-        activeTask?.messages ?? [],
-        activeTask ? activeTask.status !== "running" : true,
-      ),
-    [activeTask],
-  );
-  /** 手动展开的折叠轮（会话级 state，不持久化——dsh 同款取舍）。 */
-  const [expandedTurnProcesses, setExpandedTurnProcesses] = useState<
-    ReadonlySet<string>
-  >(new Set());
+  const [trajectoryFocus] = useState<string | null>(null);
 
   /** 左缘时间线刻度的数据（ZCode TurnNavigator 同款：一轮一项）。 */
   const turnRail = useMemo(
@@ -3448,30 +3155,6 @@ export function Workbench() {
                           lastAssistantIdx >= 0;
                         const streaming = activeTask.status === "running";
                         return shown.messages.map((msg, i) => {
-                          // 轮级过程折叠（dsh 同款）：跑完且有结论的轮，结论前的
-                          // 推理/工具/中途输出收进控制行；手动展开后逐行原位可见
-                          const spec = specCoveringIndex(turnProcesses, i);
-                          const foldKey = spec
-                            ? `${activeTask.id}:${spec.turnIndex}`
-                            : null;
-                          const folded =
-                            spec !== null &&
-                            foldKey !== null &&
-                            !expandedTurnProcesses.has(foldKey);
-                          if (
-                            folded &&
-                            spec &&
-                            i > spec.startIndex &&
-                            i < spec.answerIndex
-                          ) {
-                            // 折叠区内的过程行：控制行展开后原位回来
-                            return null;
-                          }
-                          const tailOnly =
-                            folded &&
-                            spec !== null &&
-                            i === spec.answerIndex &&
-                            msg.role === "assistant";
                           return (
                             <div
                               // biome-ignore lint/suspicious/noArrayIndexKey: 流式为追加列表，消息的稳定身份就是位置；内容键会每个 token 换 key，把整条消息重挂载
@@ -3479,26 +3162,6 @@ export function Workbench() {
                               className="space-y-2"
                               data-turn-anchor={turnOfIndex[i]}
                             >
-                              {spec && i === spec.startIndex ? (
-                                <TurnProcessRow
-                                  spec={spec}
-                                  expanded={Boolean(
-                                    foldKey &&
-                                      expandedTurnProcesses.has(foldKey),
-                                  )}
-                                  onToggle={() =>
-                                    setExpandedTurnProcesses((prev) => {
-                                      const next = new Set(prev);
-                                      if (foldKey && next.has(foldKey)) {
-                                        next.delete(foldKey);
-                                      } else if (foldKey) {
-                                        next.add(foldKey);
-                                      }
-                                      return next;
-                                    })
-                                  }
-                                />
-                              ) : null}
                               {showSummary && i === lastAssistantIdx ? (
                                 <div className="text-xs font-medium text-muted-foreground">
                                   最终总结
@@ -3513,16 +3176,10 @@ export function Workbench() {
                                 </div>
                               ) : null}
                               {msg.role === "user" ? (
-                                <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground whitespace-pre-wrap">
+                                // zcode 用户消息气泡（MessageContent is-user）：右对齐、
+                                // 含蓄底色（bg-secondary 而非品牌色）、rounded-lg
+                                <div className="ml-auto w-fit max-w-[85%] rounded-lg bg-secondary px-4 py-3 text-ui-base text-secondary-foreground whitespace-pre-wrap">
                                   {msg.text}
-                                </div>
-                              ) : tailOnly && spec ? (
-                                // 折叠态：答案消息只渲染尾部正文（过程块都在控制行里）；
-                                // 与展开态同款无气泡排版
-                                <div className="w-full max-w-full">
-                                  <MarkdownRenderer
-                                    text={spec.answerTailText}
-                                  />
                                 </div>
                               ) : (
                                 <AssistantTurn
@@ -3530,10 +3187,6 @@ export function Workbench() {
                                   streaming={
                                     streaming && i === shown.messages.length - 1
                                   }
-                                  onInspectTool={(toolCallId) => {
-                                    setTranscriptTab("trajectory");
-                                    setTrajectoryFocus(toolCallId);
-                                  }}
                                 />
                               )}
                             </div>
