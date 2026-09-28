@@ -438,6 +438,16 @@ pub fn run() {
             let packaged = false;
             if packaged {
                 show_startup_splash(app.handle());
+            } else {
+                // dev 形态：主窗口按 tauri.conf 的 `url: "_splash.html"` 会加载
+                // `devUrl + _splash.html`——该文件只存在于打包产物 frontendDist
+                // （web/out），Next dev 没有 → 窗口落 404 页；而 dev 的 start_server
+                // 返回端口 None，server 端口那条导航永不触发，404 就一直停在那
+                // （2026-09-28 真机：每次 `pnpm desktop` 都进 404）。这里把窗口带
+                // 回 devUrl 根：Next 根路径 307 → /workbench，未登录由前端守卫接手。
+                if let Some(dev_url) = app.config().build.dev_url.clone() {
+                    navigate_main_window(app.handle(), dev_url.as_str());
+                }
             }
             let handle = app.handle().clone();
             let thread_data_dir = data_dir.clone();
