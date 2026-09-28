@@ -72,7 +72,7 @@ export function TerminalSettingsSection({
     try {
       await updateWorkspaceSettings(accessToken, { terminalShell: next });
       setShell(next);
-      setMessage("已保存，下次执行时生效。");
+      setMessage("已保存");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "保存失败。");
     } finally {

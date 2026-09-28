@@ -141,17 +141,10 @@ export function IndexLibrarySection({
               {stats.skipped > 0 ? (
                 <li>已跳过 {stats.skipped} 个无法读取的文件</li>
               ) : null}
-              {stats.truncated ? (
-                <li>已达到条数/体积上限，只索引了前一部分</li>
-              ) : null}
+              {stats.truncated ? <li>已达上限，部分未索引</li> : null}
             </ul>
           ) : (
-            <p className="text-muted-foreground">
-              还没有索引
-              {autoNewFolder && enabled
-                ? "（搜一次即建立）"
-                : "（点「重建索引」）"}
-            </p>
+            <p className="text-muted-foreground">还没有索引</p>
           )}
           <div className="mt-2 flex items-center gap-2">
             <button

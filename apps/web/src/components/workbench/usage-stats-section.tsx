@@ -239,7 +239,7 @@ function Heatmap({
         ))}
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        近一年{mode === "daily" ? "每日" : "累计"} token 用量（近 2 万条）
+        近一年 · {mode === "daily" ? "每日" : "累计"}
       </p>
     </div>
   );
@@ -574,12 +574,12 @@ export function UsageStatsSection() {
         {
           label: "峰值 Token 数",
           value: formatTokens(stats.peakDayTokens),
-          hint: "单日 token 用量的峰值",
+          hint: "单日峰值",
         },
         {
           label: "最长聊天时长",
           value: formatDuration(stats.longestSessionSeconds),
-          hint: "单条对话从第一条消息到最后一条消息的跨度",
+          hint: "首尾消息跨度",
         },
         {
           label: "当前连续天数",

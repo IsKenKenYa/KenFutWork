@@ -131,23 +131,17 @@ describe("ProviderSettings（BYOK 供应商设置）", () => {
     await user.type(screen.getByLabelText("实例名称"), "opencode");
     await user.type(screen.getByLabelText("API Key"), "k");
     // 非法 JSON：拦在提交前（含 `[`/`{` 的值用 change 直填，避开 userEvent 的按键转义语法）
-    await fireEvent.change(
-      screen.getByLabelText("自定义请求头（JSON，可选）"),
-      {
-        target: { value: "[1,2]" },
-      },
-    );
+    await fireEvent.change(screen.getByLabelText("自定义请求头"), {
+      target: { value: "[1,2]" },
+    });
     await user.click(screen.getByRole("button", { name: "保存实例" }));
     expect(await screen.findByText(/必须是 JSON 对象/)).toBeDefined();
     expect(mockedCreate).not.toHaveBeenCalled();
 
     // 合法对象：值原样提交（只写通道）
-    await fireEvent.change(
-      screen.getByLabelText("自定义请求头（JSON，可选）"),
-      {
-        target: { value: '{"x-opencode-session":"{{sessionId}}"}' },
-      },
-    );
+    await fireEvent.change(screen.getByLabelText("自定义请求头"), {
+      target: { value: '{"x-opencode-session":"{{sessionId}}"}' },
+    });
     await user.click(screen.getByRole("button", { name: "保存实例" }));
     await waitFor(() => {
       expect(mockedCreate).toHaveBeenCalledWith(
@@ -212,9 +206,9 @@ describe("ProviderSettings（BYOK 供应商设置）", () => {
     );
     expect(screen.queryByLabelText("协议")).toBeNull();
     expect(screen.getByText(/协议不可修改/)).toBeDefined();
-    expect(screen.getByLabelText("API Key（留空则不改）")).toHaveProperty(
-      "value",
-      "",
+    expect(screen.getByLabelText("API Key")).toHaveProperty("value", "");
+    expect(screen.getByLabelText("API Key").getAttribute("placeholder")).toBe(
+      "留空则不改",
     );
     expect(screen.getByText(/已存：x-opencode-session/)).toBeDefined();
 
@@ -251,12 +245,9 @@ describe("ProviderSettings（BYOK 供应商设置）", () => {
     expect(mockedUpdate).not.toHaveBeenCalled();
 
     // 填 {} → 清空（而不是「无 headers 字段」）
-    await fireEvent.change(
-      screen.getByLabelText("自定义请求头（JSON，可选）"),
-      {
-        target: { value: "{}" },
-      },
-    );
+    await fireEvent.change(screen.getByLabelText("自定义请求头"), {
+      target: { value: "{}" },
+    });
     await user.click(screen.getByRole("button", { name: "保存修改" }));
     await waitFor(() => {
       expect(mockedUpdate).toHaveBeenCalledWith("token", "inst-1", {

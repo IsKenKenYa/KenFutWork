@@ -101,8 +101,9 @@ describe("索引库设置：两个开关", () => {
     expect(screen.getByRole("button", { name: "清空" })).toBeDisabled();
   });
 
-  it("自动建关着时，空态指路「重建索引」而不是说会自动建", () => {
+  it("空态只给「还没有索引」，重建入口就是旁边的按钮", () => {
     renderSection({ autoNewFolder: false, enabled: true });
-    expect(screen.getByText(/点「重建索引」/)).toBeVisible();
+    expect(screen.getByText("还没有索引")).toBeVisible();
+    expect(screen.getByRole("button", { name: "重建索引" })).toBeEnabled();
   });
 });

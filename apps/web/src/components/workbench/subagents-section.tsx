@@ -180,7 +180,7 @@ export function SubagentsSection({
               <div className="grid gap-2 sm:grid-cols-2">
                 <input
                   aria-label="子智能体名字"
-                  placeholder="名字（字母开头，如 translator）"
+                  placeholder="如 translator"
                   value={draft.name}
                   onChange={(event) =>
                     setDraft((prev) => ({ ...prev, name: event.target.value }))
@@ -189,7 +189,7 @@ export function SubagentsSection({
                 />
                 <input
                   aria-label="子智能体名称"
-                  placeholder="名称（界面显示，如 翻译官）"
+                  placeholder="如 翻译官"
                   value={draft.label}
                   onChange={(event) =>
                     setDraft((prev) => ({ ...prev, label: event.target.value }))
@@ -199,7 +199,7 @@ export function SubagentsSection({
               </div>
               <input
                 aria-label="子智能体派活依据"
-                placeholder="派活依据：什么任务该交给它（模型据此分派）"
+                placeholder="什么任务交给它"
                 value={draft.description}
                 onChange={(event) =>
                   setDraft((prev) => ({
@@ -211,7 +211,7 @@ export function SubagentsSection({
               />
               <textarea
                 aria-label="子智能体角色设定"
-                placeholder="角色设定（system prompt）：它的行事方式与边界"
+                placeholder="它的行事方式与边界"
                 value={draft.systemPrompt}
                 onChange={(event) =>
                   setDraft((prev) => ({

@@ -99,7 +99,7 @@ export function RulesMemorySection({
           value={rules}
           onChange={(event) => setRules(event.target.value)}
           rows={5}
-          placeholder={"例如：回答先给结论；不要用 emoji；改代码前先跑测试。"}
+          placeholder="例如：先给结论 · 改代码前跑测试"
           className="w-full rounded-md border px-3 py-2 text-sm"
           disabled={loading || !accessToken}
         />
@@ -113,9 +113,7 @@ export function RulesMemorySection({
             保存
           </button>
           {!accessToken ? (
-            <span className="text-xs text-muted-foreground">
-              未登录，无法保存
-            </span>
+            <span className="text-xs text-muted-foreground">未登录</span>
           ) : null}
         </div>
       </div>
@@ -133,7 +131,7 @@ export function RulesMemorySection({
                 void handleAddEntry();
               }
             }}
-            placeholder="输入一条规则，回车添加"
+            placeholder="回车添加"
             className="min-w-0 flex-1 rounded-md border px-3 py-1.5 text-sm"
             disabled={!accessToken}
           />

@@ -65,7 +65,7 @@ async function renderSection() {
 describe("浏览器设置：连接到 Chrome（CDP）", () => {
   it("未连接时显示「未连接」与「连接到 Chrome」，没有「断开」", async () => {
     await renderSection();
-    expect(await screen.findByText("状态：未连接")).toBeVisible();
+    expect(await screen.findByText("未连接")).toBeVisible();
     expect(
       screen.getByRole("button", { name: "连接到 Chrome" }),
     ).toBeInTheDocument();
@@ -79,7 +79,7 @@ describe("浏览器设置：连接到 Chrome（CDP）", () => {
     await user.click(screen.getByRole("button", { name: "连接到 Chrome" }));
 
     expect(connectCdp).toHaveBeenCalledWith("tok");
-    expect(await screen.findByText("状态：已连接（有窗口）")).toBeVisible();
+    expect(await screen.findByText("已连接（有窗口）")).toBeVisible();
     expect(screen.getByText("已连接")).toBeVisible();
     expect(await screen.findByRole("button", { name: "断开" })).toBeVisible();
   });
@@ -100,11 +100,11 @@ describe("浏览器设置：连接到 Chrome（CDP）", () => {
     disconnectCdp.mockResolvedValue({ status: "disconnected" });
     const user = await renderSection();
 
-    expect(await screen.findByText("状态：已连接（后台）")).toBeVisible();
+    expect(await screen.findByText("已连接（后台）")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "断开" }));
 
     expect(disconnectCdp).toHaveBeenCalledWith("tok");
-    expect(await screen.findByText("状态：未连接")).toBeVisible();
+    expect(await screen.findByText("未连接")).toBeVisible();
   });
 
   it("「允许 AI 读取开发者工具数据」默认开；关掉写服务端并回读（agent 那两个工具的门）", async () => {

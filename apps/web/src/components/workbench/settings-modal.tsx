@@ -464,7 +464,7 @@ function PluginPanelsSettings({ accessToken }: { accessToken: string | null }) {
         <PluginPanelButtons
           accessToken={accessToken}
           slot="settings"
-          emptyLabel="当前没有插件提供设置面板"
+          emptyLabel="暂无插件面板"
           renderButton={(panel, open) => (
             <button
               key={panel.id}

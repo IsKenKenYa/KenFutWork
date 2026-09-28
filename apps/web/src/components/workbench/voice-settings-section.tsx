@@ -206,30 +206,33 @@ export function VoiceSettingsSection({ accessToken }: { accessToken: string }) {
     <section aria-label="语音" className="w-full">
       <h3 className={SETTINGS_TITLE}>语音</h3>
       <div className={`${SETTINGS_SECTION_GAP} w-full`}>
-        <fieldset aria-label="模式" className="w-full min-w-0 space-y-2">
-          {(
-            [
-              { value: "transcribe" as const, label: "只转文本" },
-              { value: "loop" as const, label: "完整回路" },
-            ] satisfies Array<{ value: VoiceSettings["mode"]; label: string }>
-          ).map((option) => (
-            <label
-              key={option.value}
-              className={`${SETTINGS_ROW} cursor-pointer ${
-                settings.mode === option.value ? "border-foreground" : ""
-              }`}
-            >
-              <input
-                type="radio"
-                name="voice-mode"
-                value={option.value}
-                checked={settings.mode === option.value}
-                onChange={() => void patch({ mode: option.value }, "mode")}
-                className="shrink-0"
-              />
-              {option.label}
-            </label>
-          ))}
+        {/* 两个模式**横排**（能左右就别说上下）；听/想/说是模型清单，列表本身要竖排 */}
+        <fieldset aria-label="模式" className="w-full min-w-0">
+          <div className="grid grid-cols-2 gap-2">
+            {(
+              [
+                { value: "transcribe" as const, label: "只转文本" },
+                { value: "loop" as const, label: "完整回路" },
+              ] satisfies Array<{ value: VoiceSettings["mode"]; label: string }>
+            ).map((option) => (
+              <label
+                key={option.value}
+                className={`${SETTINGS_ROW} cursor-pointer ${
+                  settings.mode === option.value ? "border-foreground" : ""
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="voice-mode"
+                  value={option.value}
+                  checked={settings.mode === option.value}
+                  onChange={() => void patch({ mode: option.value }, "mode")}
+                  className="shrink-0"
+                />
+                {option.label}
+              </label>
+            ))}
+          </div>
         </fieldset>
 
         {SEGMENTS.map((segment) => (

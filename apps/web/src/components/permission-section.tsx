@@ -16,11 +16,7 @@ import {
   type PermissionSettingsView,
   updatePermissionSettings,
 } from "@/lib/server-api";
-import {
-  SETTINGS_ROW,
-  SETTINGS_SECTION_GAP,
-  SETTINGS_TITLE,
-} from "@/lib/settings-layout";
+import { SETTINGS_SECTION_GAP, SETTINGS_TITLE } from "@/lib/settings-layout";
 
 /**
  * 权限设置（DEC-4；R5-3 补第 4 档与分场景）。
@@ -36,6 +32,58 @@ import {
  */
 const TIERS: Array<{ value: PermissionTier; label: string; hint: string }> =
   TIER_OPTIONS.map(({ value, label, hint }) => ({ value, label, hint }));
+
+function tierLabel(value: PermissionTier): string {
+  return TIERS.find((tier) => tier.value === value)?.label ?? value;
+}
+
+/**
+ * 档位选择器：四个档**横排**（用户口径「能左右就别上下」），选中档的含义在下面给一行小字。
+ * 常规任务与自动化任务共用这一份——此前是两段复制粘贴的四行列表，改一处忘一处。
+ */
+function TierPicker({
+  label,
+  name,
+  current,
+  saving,
+  onPick,
+}: {
+  /** fieldset 的可访问名（两组各一个）。 */
+  label: string;
+  name: string;
+  current: PermissionTier;
+  saving: boolean;
+  onPick: (value: PermissionTier) => void;
+}) {
+  const selected = TIERS.find((tier) => tier.value === current);
+  return (
+    <fieldset aria-label={label} className="min-w-0">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {TIERS.map((tier) => (
+          <label
+            key={tier.value}
+            data-active={current === tier.value}
+            className="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors hover:bg-muted/60 data-[active=true]:border-foreground/40 data-[active=true]:bg-muted"
+          >
+            <input
+              type="radio"
+              name={name}
+              value={tier.value}
+              checked={current === tier.value}
+              onChange={() => onPick(tier.value)}
+              disabled={saving}
+              className="shrink-0"
+            />
+            {tier.label}
+          </label>
+        ))}
+      </div>
+      {selected ? (
+        <p className="mt-1 text-xs text-muted-foreground">{selected.hint}</p>
+      ) : null}
+    </fieldset>
+  );
+}
 
 const SCOPES = [
   { value: "once", label: "仅本次" },
@@ -140,31 +188,18 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
     <section aria-label="权限设置" className={SETTINGS_SECTION_GAP}>
       <div>
         <h3 className={SETTINGS_TITLE}>常规任务</h3>
-        <fieldset aria-label="常规任务档位" className="min-w-0 space-y-2">
-          {TIERS.map((t) => (
-            <label key={t.value} className={SETTINGS_ROW}>
-              <input
-                type="radio"
-                name="permission-tier"
-                value={t.value}
-                checked={current === t.value}
-                onChange={() =>
-                  void patch(
-                    { tier: t.value },
-                    `常规任务档位已更新：${t.label}`,
-                  )
-                }
-                disabled={saving}
-              />
-              <span>
-                {t.label}
-                <span className="ml-2 text-xs text-muted-foreground">
-                  {t.hint}
-                </span>
-              </span>
-            </label>
-          ))}
-        </fieldset>
+        <TierPicker
+          label="常规任务档位"
+          name="permission-tier"
+          current={current}
+          saving={saving}
+          onPick={(value) =>
+            void patch(
+              { tier: value },
+              `常规任务档位已更新：${tierLabel(value)}`,
+            )
+          }
+        />
 
         {current === "custom" ? (
           <fieldset
@@ -172,7 +207,7 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
             className="mt-2 min-w-0 space-y-3 rounded-lg border border-dashed p-3"
           >
             <p className="text-xs text-muted-foreground">
-              一行一条，支持 <code>*</code> 支持通配；拒绝优先
+              一行一条 · * 通配 · 拒绝优先
             </p>
             <label className="block text-sm">
               拒绝这些工具
@@ -220,31 +255,18 @@ export function PermissionSection({ accessToken }: { accessToken: string }) {
 
       <div>
         <h3 className={SETTINGS_TITLE}>自动化任务</h3>
-        <fieldset aria-label="自动化任务档位" className="min-w-0 space-y-2">
-          {TIERS.map((t) => (
-            <label key={`auto-${t.value}`} className={SETTINGS_ROW}>
-              <input
-                type="radio"
-                name="automation-permission-tier"
-                value={t.value}
-                checked={settings?.automationTier === t.value}
-                onChange={() =>
-                  void patch(
-                    { automationTier: t.value },
-                    `自动化任务档位已更新：${t.label}`,
-                  )
-                }
-                disabled={saving}
-              />
-              <span>
-                {t.label}
-                <span className="ml-2 text-xs text-muted-foreground">
-                  {t.hint}
-                </span>
-              </span>
-            </label>
-          ))}
-        </fieldset>
+        <TierPicker
+          label="自动化任务档位"
+          name="automation-permission-tier"
+          current={settings?.automationTier ?? "default"}
+          saving={saving}
+          onPick={(value) =>
+            void patch(
+              { automationTier: value },
+              `自动化任务档位已更新：${tierLabel(value)}`,
+            )
+          }
+        />
       </div>
 
       <div>

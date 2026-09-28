@@ -49,9 +49,9 @@ export function folderPickerHint(
   native: { available: boolean } | null | undefined,
 ): string {
   if (native?.available) {
-    return "系统文件夹对话框（开在运行服务端的那台机器上）· 选中的绝对路径直接绑成工作目录";
+    return "系统文件夹对话框 · 路径直接绑成工作目录";
   }
-  return "浏览器选择器 · 按目录名复用/新建同名工作目录";
+  return "浏览器选择器 · 按目录名复用或新建";
 }
 
 /**

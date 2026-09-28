@@ -88,18 +88,16 @@ function saveSettings(settings: BrowserSettings) {
 }
 
 /**
- * 单个开关行：标签 + 开关，副标题**只在真的多说了一件事时**才给
- * （数字/时机/去向/行话解释）。复述标签的副标题按 2026-09-27 口径一律不写。
+ * 单个开关行：标签 + 开关。**没有副标题**——复述标签的副标题按 2026-09-27 口径一律不写；
+ * 时机这类一句话事实走操作回执（`setMessage`），不常驻在行里。
  */
 function Toggle({
   label,
-  hint,
   checked,
   onChange,
   disabled = false,
 }: {
   label: string;
-  hint?: string | undefined;
   checked: boolean;
   onChange?: (next: boolean) => void;
   disabled?: boolean;
@@ -108,17 +106,12 @@ function Toggle({
     <label
       className={`flex cursor-pointer items-center justify-between gap-4 px-3 py-2 ${SETTINGS_ROW_MIN_HEIGHT}`}
     >
-      <span>
-        <span className="block text-sm">
-          {label}
-          {disabled ? (
-            <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-              暂不可用
-            </span>
-          ) : null}
-        </span>
-        {hint ? (
-          <span className="block text-xs text-muted-foreground">{hint}</span>
+      <span className="text-sm">
+        {label}
+        {disabled ? (
+          <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+            暂不可用
+          </span>
         ) : null}
       </span>
       <button
@@ -308,14 +301,14 @@ export function BrowserSettingsSection({
 
   const cdpLabel =
     cdp === null
-      ? "状态：读取中…"
+      ? "读取中…"
       : cdp.status === "connected"
-        ? `状态：已连接（${cdp.headless ? "后台" : "有窗口"}）`
+        ? `已连接（${cdp.headless ? "后台" : "有窗口"}）`
         : cdp.status === "connecting"
-          ? "状态：连接中…"
+          ? "连接中…"
           : cdp.status === "error"
-            ? "状态：连接失败"
-            : "状态：未连接";
+            ? "连接失败"
+            : "未连接";
 
   return (
     <section aria-label="浏览器设置" className={SETTINGS_SECTION_GAP}>
@@ -330,10 +323,10 @@ export function BrowserSettingsSection({
           <div
             className={`flex flex-wrap items-center justify-between gap-3 px-3 py-2 ${SETTINGS_ROW_MIN_HEIGHT}`}
           >
-            <span>
-              <span className="block text-sm">浏览器数据</span>
-              <span className="block text-xs text-muted-foreground">
-                面板历史（本机保存，共 {historyCount} 条）
+            <span className="flex items-center gap-2">
+              <span className="text-sm">浏览器数据</span>
+              <span className="text-xs text-muted-foreground">
+                {historyCount} 条
               </span>
             </span>
             <span className="flex shrink-0 items-center gap-2">
@@ -415,12 +408,7 @@ export function BrowserSettingsSection({
           <label
             className={`flex w-full items-center justify-between gap-4 px-3 py-2 ${SETTINGS_ROW_MIN_HEIGHT}`}
           >
-            <span>
-              <span className="block text-sm">默认搜索引擎</span>
-              <span className="block text-xs text-muted-foreground">
-                Agent 联网搜索使用的引擎
-              </span>
-            </span>
+            <span className="text-sm">默认搜索引擎</span>
             <Select
               value={settings.searchEngine}
               onValueChange={(next) => {
@@ -455,12 +443,7 @@ export function BrowserSettingsSection({
           <label
             className={`flex w-full items-center justify-between gap-4 px-3 py-2 ${SETTINGS_ROW_MIN_HEIGHT}`}
           >
-            <span>
-              <span className="block text-sm">AI 任务默认浏览器</span>
-              <span className="block text-xs text-muted-foreground">
-                对话里的链接在哪打开
-              </span>
-            </span>
+            <span className="text-sm">AI 任务默认浏览器</span>
             <Select
               value={openTarget}
               onValueChange={(next) => {
@@ -491,13 +474,11 @@ export function BrowserSettingsSection({
 
           <Toggle
             label="无头浏览器"
-            hint="后台运行，不弹窗口（下次连接生效）"
             checked={browserHeadless}
             onChange={(next) => void toggleServerFlag("browserHeadless", next)}
           />
           <Toggle
             label="自动截图"
-            hint="截图作为附件进对话"
             checked={browserAutoScreenshot}
             onChange={(next) =>
               void toggleServerFlag("browserAutoScreenshot", next)
@@ -505,7 +486,6 @@ export function BrowserSettingsSection({
           />
           <Toggle
             label="允许 AI 读取开发者工具数据"
-            hint="控制台日志与网络请求"
             checked={browserDevtoolsRead}
             onChange={(next) =>
               void toggleServerFlag("browserDevtoolsReadEnabled", next)

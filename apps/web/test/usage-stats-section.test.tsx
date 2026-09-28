@@ -161,10 +161,8 @@ describe("UsageStatsSection（R4-2 用户侧使用统计）", () => {
     vi.stubGlobal("fetch", mockFetchWith(STATS_7D));
     render(<UsageStatsSection />);
 
-    expect(await screen.findByText(/近一年每日 token/)).toBeInTheDocument();
-    await userEvent.click(
-      screen.getByRole("button", { name: "累计" }),
-    );
-    expect(screen.getByText(/近一年累计 token/)).toBeInTheDocument();
+    expect(await screen.findByText(/近一年 · 每日/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "累计" }));
+    expect(screen.getByText(/近一年 · 累计/)).toBeInTheDocument();
   });
 });
