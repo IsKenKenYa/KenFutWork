@@ -618,14 +618,13 @@ const MODE_META: Record<
   code: {
     label: "Code",
     title: "Code with KenFutWork",
-    placeholder:
-      "帮你编写代码、调试 Bug、优化性能等开发工作，交付生产级代码产物。",
+    placeholder: "写代码 · 调试 · 优化 · 交付产物",
     chips: ["应用开发", "项目理解", "游戏创意", "工具脚本"],
   },
   design: {
     label: "Design",
     title: "Design with KenFutWork",
-    placeholder: "从想法到设计，生成可交付的页面原型。",
+    placeholder: "从想法到可交付原型",
     chips: ["设计还原", "概念成稿", "规范出图"],
   },
   /**
@@ -635,7 +634,7 @@ const MODE_META: Record<
   flow: {
     label: "Flow",
     title: "Flow with KenFutWork",
-    placeholder: "编排可视化 AI 工作流，发布快照后执行并审计。",
+    placeholder: "编排 · 发布快照 · 执行审计",
     chips: ["工作流编排", "发布与执行", "运行审计"],
   },
 };
