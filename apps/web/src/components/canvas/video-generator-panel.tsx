@@ -502,7 +502,13 @@ export function VideoGeneratorPanel({
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
+            // 输入法组合态的 Enter 是上屏不是生成（isComposing + 229 双信号）
+            if (
+              e.key === "Enter" &&
+              !e.shiftKey &&
+              !e.nativeEvent.isComposing &&
+              e.keyCode !== 229
+            ) {
               e.preventDefault();
               void handleGenerate();
             }

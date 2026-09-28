@@ -125,6 +125,7 @@ import {
   panelWidthLimits,
   SIDEBAR_RAIL_WIDTH,
 } from "@/lib/panel-layout";
+import { requestPanelView } from "@/lib/panel-open";
 import { PluginIcon, PluginPanelButtons } from "@/lib/plugin-panels";
 import { dropPartialAssistantTail } from "@/lib/run-events";
 import {
@@ -153,6 +154,7 @@ import {
   appendSubagentTool,
   closeAllSubagents,
   completeSubagentByCallId,
+  SUBAGENT_TOOL_NAMES,
   type SubagentEntry,
   upsertImplicitSubagent,
 } from "@/lib/subagent-directory";
@@ -399,8 +401,17 @@ function WorkbenchToolRow({
   onInspect?: (toolCallId: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  // 子代理派发行（zcode 形态）：一行紧凑摘要，点击**打开右栏线程**，入参永不铺开
+  const isDispatchTool = SUBAGENT_TOOL_NAMES.has(tool.toolName);
+  const dispatchType =
+    typeof tool.input?.subagent_type === "string"
+      ? tool.input.subagent_type
+      : null;
+  const dispatchSummary =
+    typeof tool.input?.description === "string" ? tool.input.description : null;
   const hasDetail =
     Boolean(tool.output) || Boolean(tool.summary) || Boolean(tool.input);
+  const clickable = isDispatchTool || hasDetail;
   const meta = toolStatusMeta(tool);
   const Icon = toolIcon(tool);
   const target = toolTargetParts(tool);
@@ -418,11 +429,20 @@ function WorkbenchToolRow({
       <div className="flex items-center gap-1">
         <button
           type="button"
-          disabled={!hasDetail}
-          aria-expanded={hasDetail ? expanded : undefined}
-          onClick={() => hasDetail && setExpanded((v) => !v)}
+          disabled={!clickable}
+          aria-expanded={
+            isDispatchTool ? undefined : hasDetail ? expanded : undefined
+          }
+          onClick={() => {
+            if (isDispatchTool) {
+              // zcode 交互：派发行点击 = 右栏「子智能体」线程视图（转录都在那）
+              requestPanelView("subagents");
+              return;
+            }
+            if (hasDetail) setExpanded((v) => !v);
+          }}
           className={`inline-flex min-w-0 max-w-full items-center gap-2 self-start py-0.5 text-left text-xs ${
-            hasDetail ? "cursor-pointer" : "cursor-default"
+            clickable ? "cursor-pointer" : "cursor-default"
           }`}
         >
           <Icon
@@ -439,7 +459,13 @@ function WorkbenchToolRow({
           >
             {toolDisplayLabel(tool.toolName)}
           </span>
-          {target ? (
+          {isDispatchTool ? (
+            dispatchType ? (
+              <span className="shrink-0 text-muted-foreground/70">
+                {dispatchType}
+              </span>
+            ) : null
+          ) : target ? (
             target.isCommand ? (
               <code className="min-w-0 truncate font-sans text-muted-foreground/80">
                 {target.primary}
@@ -463,6 +489,15 @@ function WorkbenchToolRow({
                 ) : null}
               </span>
             )
+          ) : null}
+          {isDispatchTool && dispatchSummary ? (
+            // 任务说明只作单行摘要（完整内容在右栏子代理线程的头部）
+            <span
+              className="min-w-0 truncate text-muted-foreground/70"
+              title={dispatchSummary}
+            >
+              {dispatchSummary}
+            </span>
           ) : null}
           {tool.status === "running" ? (
             <span className="inline-flex shrink-0 items-center gap-1.5 text-muted-foreground">
@@ -491,16 +526,18 @@ function WorkbenchToolRow({
               className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500/70"
             />
           )}
-          <svg
-            aria-hidden
-            viewBox="0 0 16 16"
-            className={`h-3 w-3 shrink-0 text-muted-foreground/50 opacity-0 transition-[opacity,transform] group-hover/tool-row:opacity-100 ${
-              expanded ? "rotate-90 opacity-100" : ""
-            } ${hasDetail ? "" : "invisible"}`}
-            fill="currentColor"
-          >
-            <path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" />
-          </svg>
+          {isDispatchTool ? null : (
+            <svg
+              aria-hidden
+              viewBox="0 0 16 16"
+              className={`h-3 w-3 shrink-0 text-muted-foreground/50 opacity-0 transition-[opacity,transform] group-hover/tool-row:opacity-100 ${
+                expanded ? "rotate-90 opacity-100" : ""
+              } ${hasDetail ? "" : "invisible"}`}
+              fill="currentColor"
+            >
+              <path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" />
+            </svg>
+          )}
         </button>
         {onInspect ? (
           <button
@@ -514,7 +551,7 @@ function WorkbenchToolRow({
           </button>
         ) : null}
       </div>
-      {expanded ? (
+      {expanded && !isDispatchTool ? (
         <div className="mb-1 ml-6 border-l-2 border-border/50 pl-3">
           <ToolEventDetail tool={tool} />
         </div>
@@ -3566,7 +3603,12 @@ export function Workbench() {
                       }}
                       onContextMenu={composerMenu.open}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
+                        // 输入法组合态（拼音候选/英文直输确认）按 Enter 是「上屏」
+                        // 不是发送；WKWebView（Safari 内核）组合中 keyCode=229 且
+                        // isComposing 可能已翻转，两个信号都要认（真机 2026-09-28）
+                        const composing =
+                          e.nativeEvent.isComposing || e.keyCode === 229;
+                        if (e.key === "Enter" && !e.shiftKey && !composing) {
                           e.preventDefault();
                           const value = followUp;
                           setFollowUp("");
@@ -3818,7 +3860,10 @@ ${formatElementReference(picked)}`
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
+                    // 同上：输入法组合态的 Enter 是上屏不是发送（isComposing + 229 双信号）
+                    const composing =
+                      e.nativeEvent.isComposing || e.keyCode === 229;
+                    if (e.key === "Enter" && !e.shiftKey && !composing) {
                       e.preventDefault();
                       // 斜杠命令在提交前展开（转录里看到的就是实际发出去的）
                       startTask(expandCommand(prompt, commands).text);
