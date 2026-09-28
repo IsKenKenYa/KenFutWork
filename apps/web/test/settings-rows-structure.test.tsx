@@ -4,12 +4,18 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-
 import { AgentSection } from "../src/components/agent-section";
 import { PermissionSection } from "../src/components/permission-section";
 import { ProfileSection } from "../src/components/profile-section";
 import { ProviderSettings } from "../src/components/provider-settings";
+import { AccountSection } from "../src/components/workbench/account-section";
 import { BrowserSettingsSection } from "../src/components/workbench/browser-settings-section";
+import { CommandsSection } from "../src/components/workbench/commands-section";
+import { HooksSection } from "../src/components/workbench/hooks-section";
+import { IndexLibrarySection } from "../src/components/workbench/index-library-section";
+import { OnboardingSection } from "../src/components/workbench/onboarding-section";
+import { RulesMemorySection } from "../src/components/workbench/rules-memory-section";
+import { SubagentsSection } from "../src/components/workbench/subagents-section";
 import { TerminalSettingsSection } from "../src/components/workbench/terminal-settings-section";
 import { VoiceSettingsSection } from "../src/components/workbench/voice-settings-section";
 
@@ -25,7 +31,10 @@ import { VoiceSettingsSection } from "../src/components/workbench/voice-settings
  * 控件有没有固定宽度），颜色与像素由真机复核。
  */
 
-function stubApi(overrides: Record<string, unknown> = {}) {
+function stubApi(
+  overrides: Record<string, unknown> = {},
+  customSubagents: unknown[] = [],
+) {
   const json = (body: unknown) =>
     new Response(JSON.stringify(body), {
       status: 200,
@@ -78,6 +87,19 @@ function stubApi(overrides: Record<string, unknown> = {}) {
       }
       if (path.includes("/api/voice/models")) return json({ models: [] });
       if (path.includes("/api/voice/diagnose")) return json({ report: null });
+      if (path.includes("/api/health")) {
+        return json({
+          ok: true,
+          version: "0.1.0",
+          service: "kenfutwork-server",
+        });
+      }
+      if (path.includes("/api/code/index")) {
+        return json({ enabled: true, autoNewFolder: true, stats: null });
+      }
+      if (path.includes("/api/agent/subagents")) {
+        return json({ subagents: [], custom: customSubagents, builtin: [] });
+      }
       return new Response("not found", { status: 404 });
     }),
   );
@@ -246,5 +268,165 @@ describe("设置区结构：标签在左、控件在右（横排）", () => {
     expect(document.querySelectorAll(".justify-between.flex-col")).toHaveLength(
       0,
     );
+  });
+});
+
+/** 只读值行（账号页那种）：标签在第一个子元素、值在最后一个，且不是竖排。 */
+function expectTextRight(labelText: string, valueText: string) {
+  const label = screen.getByText(labelText);
+  const row = label.closest(".justify-between") as HTMLElement | null;
+  expect(row, `「${labelText}」不在左右行里`).not.toBeNull();
+  const rowElement = row as HTMLElement;
+  expect(rowElement.className).not.toMatch(/flex-col/);
+  const children = Array.from(rowElement.children);
+  expect(children[0]?.textContent).toContain(labelText);
+  expect(children.at(-1)?.textContent).toContain(valueText);
+}
+
+/** 一行里塞了多个控件的行（命令 / 钩子那种）：同一行、横排、末位是指定控件。 */
+function expectSingleRow(row: HTMLElement | null, tail: HTMLElement) {
+  expect(row).not.toBeNull();
+  const rowElement = row as HTMLElement;
+  expect(rowElement.className).toMatch(/\bflex\b/);
+  expect(rowElement.className).not.toMatch(/flex-col/);
+  expect(rowElement.lastElementChild).toBe(tail);
+}
+
+/**
+ * 其余各页同样按「标签左 / 值右」核对（真机截图核过一遍，这里把口径固化成断言）。
+ */
+describe("设置区结构（二）：其余各页也是「标签左 / 值右」", () => {
+  it("账号：四行都是标签左、值右", () => {
+    render(
+      <AccountSection
+        displayName="阿远"
+        email="a@example.com"
+        plan="Pro"
+        balance={12.5}
+      />,
+    );
+    for (const [label, value] of [
+      ["显示名", "阿远"],
+      ["邮箱", "a@example.com"],
+      ["套餐", "Pro"],
+      ["平台额度余额", "12.5"],
+    ] as const) {
+      expectTextRight(label, value);
+    }
+  });
+
+  it("索引库：两个开关都在行的最右", async () => {
+    stubApi();
+    render(
+      <IndexLibrarySection
+        accessToken="tok"
+        canvasId="c1"
+        enabled
+        autoNewFolder
+        onToggle={async () => undefined}
+        onToggleAuto={async () => undefined}
+      />,
+    );
+    for (const name of ["索引新文件夹", "索引存储库（测试版）"]) {
+      expectControlRight(await screen.findByRole("switch", { name }), name);
+    }
+  });
+
+  it("引导：四步都是「序号 + 标题 + 右侧状态」，没有上下排布", async () => {
+    stubApi();
+    render(
+      <OnboardingSection
+        accessToken="tok"
+        hasWorkDir
+        conversationCount={3}
+        onGoToTab={() => undefined}
+        onLeaveSettings={() => undefined}
+      />,
+    );
+    for (const title of [
+      "接入模型",
+      "绑定工作目录",
+      "选权限档位",
+      "发第一条消息",
+    ]) {
+      const label = await screen.findByText(title);
+      const row = label.closest("li") as HTMLElement;
+      expect(row.className).toMatch(/\bflex\b/);
+      expect(row.className).not.toMatch(/flex-col/);
+      // 每步只有一个右侧位：已完成状态字或「去处理」按钮
+      expect(row.lastElementChild?.textContent).toMatch(/已完成|去处理/);
+    }
+  });
+
+  it("命令 / 钩子：名称、说明与删除同处一行；提示词整行（多行编辑例外）", async () => {
+    render(
+      <CommandsSection
+        accessToken="tok"
+        commands={[
+          { name: "review", description: "审查改动", prompt: "看看改动" },
+        ]}
+        onSaved={() => undefined}
+      />,
+    );
+    const nameInput = screen.getByLabelText("命令名 1");
+    expectSingleRow(
+      nameInput.parentElement,
+      screen.getByLabelText("删除命令 1"),
+    );
+    // 提示词是多行编辑器：铺满整行，不和上面那排控件挤同一行
+    const prompt = screen.getByLabelText("命令提示词 1");
+    expect(prompt.className).toContain("w-full");
+    expect(prompt.closest(".flex")).not.toBe(nameInput.parentElement);
+
+    render(
+      <HooksSection
+        accessToken="tok"
+        hooks={[{ event: "turn-start", command: "npm test" }]}
+        onSaved={() => undefined}
+      />,
+    );
+    const commandInput = screen.getByDisplayValue("npm test");
+    expectSingleRow(
+      commandInput.parentElement,
+      screen.getByLabelText("删除钩子 1"),
+    );
+  });
+
+  it("规则条目与子智能体：× / 删除都在行尾", async () => {
+    stubApi({ userRules: "", ruleEntries: ["先给结论"] }, [
+      {
+        name: "translator",
+        label: "翻译官",
+        description: "把文本翻成中文",
+        systemPrompt: "你是翻译。",
+      },
+    ]);
+    render(<RulesMemorySection accessToken="tok" />);
+    const entry = await screen.findByText("先给结论");
+    const entryRow = entry.closest("li") as HTMLElement;
+    expect(entryRow.className).toMatch(/\bflex\b/);
+    expect(entryRow.lastElementChild).toBe(
+      screen.getByLabelText("删除规则 先给结论"),
+    );
+
+    render(
+      <SubagentsSection
+        accessToken="tok"
+        subagents={[
+          {
+            name: "translator",
+            label: "翻译官",
+            description: "把文本翻成中文",
+            systemPrompt: "你是翻译。",
+          },
+        ]}
+        onSaved={() => undefined}
+      />,
+    );
+    const customDelete = await screen.findByLabelText("删除 翻译官");
+    const customRow = customDelete.closest("li") as HTMLElement;
+    expect(customRow.className).toMatch(/\bflex\b/);
+    expect(customRow.className).not.toMatch(/flex-col/);
+    expect(customRow.lastElementChild).toBe(customDelete);
   });
 });
