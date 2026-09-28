@@ -2591,6 +2591,7 @@ export function Workbench() {
         .slice(-12)
         .map((m) => `${m.role === "user" ? "用户" : "助手"}：${m.text}`)
         .join("\n\n");
+      // copy-guard-ignore: 注入给模型的对话历史提示词，不是界面文案
       const historyBlock = history
         ? `【对话历史（供参考，延续上文语境）】\n${history}\n\n【本轮用户消息】\n`
         : "";

@@ -146,7 +146,7 @@ export function ContextUsageButton({
                       : Math.min(100, 100 - view.thresholdPercent),
                   )}%`,
                 }}
-                title="预留输出（留给模型回复的空间）"
+                title="预留输出"
               />
             ) : null}
             {view.thresholdPercent !== null ? (

@@ -251,7 +251,7 @@ export function SkillsModal({
             <SkillsMarketPanel
               accessToken={accessToken}
               onInstalled={(name) => {
-                setNotice(`已安装「${name}」，可在「技能库」启用。`);
+                setNotice(`已安装「${name}」· 在「技能库」启用`);
                 refresh();
               }}
             />
@@ -813,7 +813,8 @@ function SkillsMarketPanel({
 
       <p className="text-xs text-muted-foreground">
         来自 npm 技能市场
-        {total > 0 ? `，共 ${total} 个（显示前 ${items.length} 个）` : ""}。
+        {total > 0 ? ` · 共 ${total} 个` : ""}
+        {items.length < total ? ` · 显示前 ${items.length} 个` : ""}
       </p>
 
       {message ? <p className="text-xs text-emerald-600">{message}</p> : null}

@@ -111,9 +111,7 @@ export function DiffPane({
       if (!hunk) return;
       if (
         action === "discard" &&
-        !window.confirm(
-          `撤销第 ${hunkIndex + 1} 块？这一块在 ${path} 里的改动会被丢掉，无法从这里恢复。`,
-        )
+        !window.confirm(`撤销第 ${hunkIndex + 1} 块？改动无法从这里恢复`)
       ) {
         return;
       }
@@ -169,7 +167,7 @@ export function DiffPane({
             type="button"
             aria-label={staged ? "取消暂存此文件" : "暂存此文件"}
             disabled={busy}
-            title={staged ? "取消暂存（文件内容不动）" : "下次提交带上"}
+            title={staged ? undefined : "下次提交带上"}
             onClick={() => void toggleStaged()}
             className="shrink-0 border px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
           >

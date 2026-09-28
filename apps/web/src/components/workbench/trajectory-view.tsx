@@ -414,7 +414,6 @@ export function TrajectoryView({
                 type="button"
                 onClick={() => setFocusRange(null)}
                 className="rounded-md border border-primary/40 px-2 py-1 text-[10px] text-primary transition-colors hover:bg-primary/10"
-                title="清除时间轴拖选的聚焦区间"
               >
                 清除聚焦
               </button>

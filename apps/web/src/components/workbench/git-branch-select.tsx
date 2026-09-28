@@ -154,7 +154,7 @@ export function GitBranchSelect({
       if (!accessToken || !canvasId) return;
       if (status?.dirty) {
         const ok = window.confirm(
-          `「${status.branch ?? "当前分支"}」有未提交改动，切到「${branch}」可能被拒绝或带走改动。继续？`,
+          `「${status.branch ?? "当前分支"}」有未提交改动 · 切到「${branch}」可能被拒绝或带走`,
         );
         if (!ok) return;
       }

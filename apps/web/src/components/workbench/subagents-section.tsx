@@ -76,7 +76,7 @@ export function SubagentsSection({
       "task",
     ]);
     if (reserved.has(next.name)) {
-      return `名字「${next.name}」与内置子智能体撞名，换一个。`;
+      return `名字「${next.name}」与内置子智能体撞名 · 换一个`;
     }
     if (
       subagents.some(

@@ -114,7 +114,7 @@ export function McpModal({
           setError(await readError(response, "添加失败（需要管理员权限）。"));
           return false;
         }
-        setNotice(`已添加「${payload.name}」，可在「已配置」查看连接状态。`);
+        setNotice(`已添加「${payload.name}」· 在「已配置」查看连接状态`);
         setTab("configured");
         refresh();
         return true;
@@ -517,8 +517,8 @@ function ConfiguredTab({
               aria-label="MCP 环境变量"
               placeholder={
                 editing && editing.envKeys.length > 0
-                  ? `环境变量（一行 KEY=VALUE；留空则保留已存的 ${editing.envKeys.join(", ")}）`
-                  : "环境变量（一行 KEY=VALUE，可留空）"
+                  ? `每行 KEY=VALUE · 留空保留 ${editing.envKeys.join("、")}`
+                  : "每行 KEY=VALUE"
               }
               value={form.envText}
               onChange={(event) => {

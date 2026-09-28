@@ -178,7 +178,7 @@ export function useComposerVoice({
             armedRef.current = null;
             setLoop(null);
             showNotice(
-              `没能整理成完整需求，已停在转文本：${
+              `没能整理成完整需求 · 已停在转文本：${
                 error instanceof Error ? error.message : String(error)
               }`,
             );
