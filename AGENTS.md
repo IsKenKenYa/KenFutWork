@@ -221,7 +221,8 @@ vitest 按 app 配置（`apps/web/vitest.config.mjs`、`apps/server/vitest.confi
 - **数字不写成句子**：性能给读数（`0.07× 首载 4.4s`），不给「实测 7 次的中位实时率 0.07，首次使用额外等 4.4 秒」。
 - **报错写人话**：错误信息是例外——它必须说清「哪里不对、去哪改」，一句话，不写堆栈与内部术语。
 - **改文案不做翻译**：不要为了"完整"把注释里的说明搬到界面；删掉比说清更重要。
-- 验收：新增/改动界面文案时，逐条问「这句是不是标签？能不能再删一半？」；设置页文案改动要**真机看图**，不看图不算完成（历史事故：整页文案写成方案文档，用户看不懂）。机械门禁由 `apps/web/test/settings-copy-guard.test.ts`（**全站** JSX 文本 + 文案属性 `hint`/`title`/`placeholder`/`emptyLabel`/`description`：句子标点 `。；，`、中文字数 > 20、占位/虚假词；属性值字符串与三元写法都扫；设置区另盯副标题/上下排布/字号/空壳）与 `apps/web/test/settings-rows-structure.test.tsx`（渲染后的结构：标签在左、控件在右，档位横排）组成，改 UI 必跑 `pnpm --filter @kenfutwork/web test`。
+- **模板里同样只写短语**：`` `${}` `` 拼出来的提示/通知也受「不写句子」约束（禁止分句标点 `，`/`；`）；确实不是界面文案的（注入给模型的提示词）用 `copy-guard-ignore` 显式豁免，并在注释里写明理由。
+- 验收：新增/改动界面文案时，逐条问「这句是不是标签？能不能再删一半？」；设置页文案改动要**真机看图**，不看图不算完成（历史事故：整页文案写成方案文档，用户看不懂）。机械门禁由 `apps/web/test/settings-copy-guard.test.ts`（**全站** JSX 文本 + 文案属性 `hint`/`title`/`placeholder`/`emptyLabel`/`description` + **模板字符串**：句子标点 `。；，`（模板只禁 `，`/`；`）、中文字数 > 20、占位/虚假词；属性值字符串/三元/模板写法都扫；设置区另盯副标题/上下排布/字号/空壳）与 `apps/web/test/settings-rows-structure.test.tsx`（渲染后的结构：标签在左、控件在右，档位横排）组成，改 UI 必跑 `pnpm --filter @kenfutwork/web test`。
 
 ### 沟通与表达规范
 - **保持理性、克制、准确**：不进行情绪化迎合，不使用空洞安慰、过度夸赞或刻意拟人化表达。

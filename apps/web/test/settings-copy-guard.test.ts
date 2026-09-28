@@ -16,7 +16,10 @@ import { describe, expect, it } from "vitest";
  * ① **文案（全站）**：`src/components` 与 `src/app` 下所有 tsx 的 JSX 文本出现句子标点
  *    （。；，）、中文字数超过 20、或占位/虚假词（假的 / 虚假 / 即将上线 / 占位；「占位符」
  *    是正常术语，除外）→ 违约；**文案属性**（`hint` / `title` / `placeholder` / `emptyLabel` /
- *    `description`）的值同样受这两条约束，字符串写法与三元写法都扫（模板字符串是动态数据，不判）；
+ *    `description`）的值同样受这两条约束，字符串、三元与模板写法都扫；
+ *    **模板字符串**里出现分句标点 `，`/`；` 也违约（说明句的最后一处藏身处：实测
+ *    「没能整理成完整需求，已停在转文本：…」「…有未提交改动，切到…」都藏在这里）；
+ *    提示词注入这类「不是界面文案」的模板用 `copy-guard-ignore` 显式豁免并写明理由；
  * ② **版式（设置区）**：出现「第二行小字」副标题（`block text-xs`）、全宽下拉、或带 `mt-` 的
  *    全宽单行输入（= 标签上/控件下的上下排布）→ 违约；
  * ③ **残留（设置区）**：删文案剩下的空元素；字号只准 12 / 14 / 16 三档，标题走统一常量。
@@ -176,10 +179,28 @@ const COPY_PROPS =
 /** 表达式写法（`prop={cond ? "a" : "b"}`）：该行里属于这个 prop 的字符串字面量同样要判。 */
 const COPY_PROP_EXPR = /\b(hint|title|placeholder|emptyLabel|description)=\{/;
 const STRING_LITERAL = /["']([^"']*)["']/g;
+const BACKTICK_LITERAL = /`([^`]*)`/g;
+
+/** 一行里的模板字符串内容（`` `…` ``；跨行的模板不在此列）。 */
+function templateCopyValues(line: string): string[] {
+  return [...line.matchAll(BACKTICK_LITERAL)].map((match) => match[1] ?? "");
+}
+
+/**
+ * 显式豁免：`copy-guard-ignore` 标记写在被判行的同一行或上方 5 行内。
+ * 只给「不是界面文案」的文案用（实测：注入给模型的对话历史提示词），
+ * 用一次要在注释里写明理由——豁免多了就等于没有门禁。
+ */
+function hasCopyGuardIgnore(lines: string[], index: number): boolean {
+  for (let i = Math.max(0, index - 5); i <= index; i += 1) {
+    if ((lines[i] ?? "").includes("copy-guard-ignore")) return true;
+  }
+  return false;
+}
 
 /**
  * 一行里所有「用户看得见的文案属性值」：字符串写法（`prop="…"`）与表达式写法
- * （`prop={cond ? "a" : "b"}`，取该行字面量）都算。模板字符串是动态拼数据，不判。
+ * （`prop={cond ? "a" : "b"}` / ``prop={`…${x}…`}``，取该行字面量）都算。
  */
 function copyPropValues(line: string): string[] {
   const values: string[] = [];
@@ -188,8 +209,38 @@ function copyPropValues(line: string): string[] {
     for (const literal of line.matchAll(STRING_LITERAL)) {
       values.push(literal[1] ?? "");
     }
+    values.push(...templateCopyValues(line));
   }
   return values;
+}
+
+/**
+ * 模板字符串是「看不见的文案」的第二处藏身处：说明性分句常写在 `${}` 拼出来的提示里
+ * （实测：「没能整理成完整需求，已停在转文本：…」「…有未提交改动，切到…」「撤销第 N 块？
+ * 这一块在 x 里的改动会被丢掉，无法从这里恢复。」）。只禁**分句标点** `，`/`；`：模板里
+ * 数字与英文读数很多，`。` 又常见于单句报错（硬约束的例外）。跨行的模板不做静态判定。
+ */
+function findTemplateCopyViolations(): Violation[] {
+  const violations: Violation[] = [];
+  for (const file of uiFiles()) {
+    const lines = readFileSync(file, "utf-8").split(/\r?\n/);
+    const comments = commentFlags(lines);
+    lines.forEach((raw, index) => {
+      if (comments[index] || isComment(raw)) return;
+      if (hasCopyGuardIgnore(lines, index)) return;
+      for (const value of templateCopyValues(raw)) {
+        if (!CJK.test(value)) continue;
+        if (/[，；]/.test(value)) {
+          violations.push({
+            file: file.slice(file.indexOf("src")),
+            line: index + 1,
+            text: `模板文案：${value.slice(0, 60)}`,
+          });
+        }
+      }
+    });
+  }
+  return violations;
 }
 
 /** 全站文案规则：句子标点（。；，）、中文字数 > 20、占位/虚假词、或文案属性里的句子。 */
@@ -200,6 +251,7 @@ function findCopyViolations(): Violation[] {
     const comments = commentFlags(lines);
     lines.forEach((raw, index) => {
       if (comments[index] || isComment(raw)) return;
+      if (hasCopyGuardIgnore(lines, index)) return;
       const rel = file.slice(file.indexOf("src"));
       const at = { file: rel, line: index + 1 };
       // 文案属性（字符串值，主规则剥字符串后看不见）：必须看**原始行**，
@@ -289,6 +341,17 @@ describe("界面文案硬约束（全站）：只写标签，不写句子", () =
     ).toBe(0);
   });
 
+  it("模板字符串里没有分句标点（说明句的最后一处藏身处）", () => {
+    const violations = findTemplateCopyViolations();
+    const rendered = violations
+      .map((v) => `  ${v.file}:${v.line}  「${v.text}」`)
+      .join("\n");
+    expect(
+      violations.length,
+      `模板提示里出现分句标点（改成 · 或删掉说明）：\n${rendered}`,
+    ).toBe(0);
+  });
+
   it("守卫自身有效：认出塞回来的说明句，放过报错文案与代码行", () => {
     expect(
       isUiText(
@@ -321,7 +384,7 @@ describe("界面文案硬约束（全站）：只写标签，不写句子", () =
   });
 
   /** 文案属性两种写法都要收：字符串写法与三元写法（漏掉后者时会话里又出现句子级提示）。 */
-  it("文案属性扫得到两种写法，模板字符串不判", () => {
+  it("文案属性扫得到两种写法，模板也收（内容交给模板规则判）", () => {
     expect(
       copyPropValues('        hint="去「推荐」一键添加，或在下方手动添加。"'),
     ).toEqual(["去「推荐」一键添加，或在下方手动添加。"]);
@@ -330,8 +393,21 @@ describe("界面文案硬约束（全站）：只写标签，不写句子", () =
         '        title={staged ? "取消暂存（文件内容不动）" : "下次提交带上"}',
       ),
     ).toEqual(["取消暂存（文件内容不动）", "下次提交带上"]);
-    // 模板字符串是动态拼数据（读数/轮次），不当文案判
-    expect(copyPropValues("        title={`第 1 轮`}")).toEqual([]);
+    // 模板：内容照样收进来（分句标点由 findTemplateCopyViolations 判）
+    expect(copyPropValues("        title={`第 1 轮`}")).toEqual(["第 1 轮"]);
+  });
+
+  /** 模板规则：分句标点（，；）算句子；只有读数/问号的模板放过。 */
+  it("模板文案规则：认出分句标点，放过读数模板", () => {
+    expect(
+      templateCopyValues("              `没能整理成完整需求，已停在转文本`,"),
+    ).toEqual(["没能整理成完整需求，已停在转文本"]);
+    expect(templateCopyValues("        title={`已索引 12 个文件`}")).toEqual([
+      "已索引 12 个文件",
+    ]);
+    expect(
+      templateCopyValues("          `撤销第 3 块？改动无法从这里恢复`,"),
+    ).toEqual(["撤销第 3 块？改动无法从这里恢复"]);
   });
 
   /**
