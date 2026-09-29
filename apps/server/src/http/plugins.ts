@@ -109,7 +109,7 @@ export async function registerPluginRoutes(
     try {
       await options.admin.requireAdmin(user);
     } catch {
-      void sendError(reply, "forbidden", "需要管理员权限。", 403);
+      void sendError(reply, "forbidden", "需要管理员权限 · 请用管理员账号登录", 403);
       return false;
     }
     return true;

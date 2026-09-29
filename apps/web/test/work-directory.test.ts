@@ -59,16 +59,37 @@ describe("工作目录选择", () => {
     expect(result.status).toBe("cancelled");
   });
 
-  it("其它错误：转为可展示的失败说明（含原因）", async () => {
+  it("其它错误：转成人话，不把浏览器异常原文拼进提示", async () => {
     const result = await pickWorkDirectory({
       showDirectoryPicker: async () => {
         throw new Error("permission denied by policy");
       },
     });
     expect(result.status).toBe("failed");
-    expect((result as { notice: string }).notice).toContain(
-      "permission denied by policy",
+    const notice = (result as { notice: string }).notice;
+    expect(notice).toBe("目录选择器不可用");
+    expect(notice).not.toContain("permission denied");
+  });
+
+  it("NotAllowedError（缺用户手势）：给可执行的下一步，且不泄漏内部术语", async () => {
+    // 真机实测的原文：Failed to execute 'showDirectoryPicker' on 'Window':
+    // Must be handling a user gesture to show a file picker.
+    const gesture = Object.assign(
+      new Error(
+        "Failed to execute 'showDirectoryPicker' on 'Window': Must be handling a user gesture to show a file picker.",
+      ),
+      { name: "NotAllowedError" },
     );
+    const result = await pickWorkDirectory({
+      showDirectoryPicker: async () => {
+        throw gesture;
+      },
+    });
+    expect(result.status).toBe("failed");
+    const notice = (result as { notice: string }).notice;
+    expect(notice).toContain("再点一次");
+    expect(notice).not.toContain("showDirectoryPicker");
+    expect(notice).not.toContain("user gesture");
   });
 
   it("resolveDirectoryPicker 只认函数（不误绑到其它同名属性）", () => {

@@ -94,12 +94,20 @@ export function describePickFailure(error: unknown): WorkDirectoryPickResult {
   if (name === "AbortError") {
     return { status: "cancelled" };
   }
-  const message =
-    error instanceof Error ? error.message : String(error ?? "未知错误");
-  return {
-    status: "failed",
-    notice: `选择工作目录失败：${message}`,
-  };
+  /**
+   * 浏览器原生异常是英文内部术语（`showDirectoryPicker` / `user gesture`…），
+   * 直接拼进提示等于把堆栈给用户看——按 `name` 归类成人话。
+   */
+  if (name === "NotAllowedError") {
+    return {
+      status: "failed",
+      notice: "目录选择器没打开 · 在「打开文件夹」上再点一次",
+    };
+  }
+  if (name === "SecurityError") {
+    return { status: "failed", notice: "目录选择器被页面策略禁用" };
+  }
+  return { status: "failed", notice: "目录选择器不可用" };
 }
 
 /**

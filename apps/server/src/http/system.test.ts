@@ -10,7 +10,7 @@ import { registerSystemRoutes } from "./system.js";
  *
  * 两条必须钉住的行为：
  * - 非桌面形态**绝不**去弹对话框（那会开在服务器那台机器的屏幕上）；直接报不可用 + 原因，
- *   客户端据此回落「填本机路径」；
+ *   且只说事实：不指路已移除的「填本机路径」入口；
  * - 四种结果按 `status` 分流回 200（取消不是错误，失败要带可读原因）。
  */
 
@@ -203,7 +203,7 @@ describe("system 插件接线", () => {
       },
     });
 
-  it("服务端形态（自托管）：路由在，探测报不可用并指路「填本机路径」", async () => {
+  it("服务端形态（自托管）：路由在，探测报不可用，且不指路已移除的入口", async () => {
     const app = boot({});
     try {
       const response = await app.inject({
@@ -213,7 +213,9 @@ describe("system 插件接线", () => {
       expect(response.statusCode).toBe(200);
       const body = response.json() as { available: boolean; reason?: string };
       expect(body.available).toBe(false);
-      expect(body.reason).toContain("填本机路径");
+      expect(body.reason).toBe("非桌面形态：系统文件夹对话框开不到你面前");
+      // 「填本机路径」入口已按用户口径从界面移除，再指路等于让人去找不存在的东西
+      expect(body.reason).not.toContain("填本机路径");
     } finally {
       await app.close();
     }
