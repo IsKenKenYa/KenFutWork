@@ -328,6 +328,12 @@ function AssistantTurn({
       ),
     [msg.blocks],
   );
+  /**
+   * 空回复兜底（B3，真机实测）：模型偶尔只调工具就直接结束，assistant 消息没有任何正文——
+   * 此前渲染成「只有工具行、没有回答」，用户不知道是「没回」还是「还在转」。
+   * 给一句明确的短标签；流式中不显示（那是在途，不是没回）。
+   */
+  const noAnswer = !streaming && !groups.some((g) => g.kind === "text");
   return (
     <div className="flex w-full max-w-full flex-col items-start gap-2.5">
       {groups.map((group, gi) => {
@@ -362,6 +368,11 @@ function AssistantTurn({
           />
         ));
       })}
+      {noAnswer ? (
+        <p className="text-xs text-muted-foreground">
+          模型没有返回内容 · 可以重试
+        </p>
+      ) : null}
     </div>
   );
 }
