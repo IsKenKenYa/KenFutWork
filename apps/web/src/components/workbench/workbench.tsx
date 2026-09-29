@@ -144,6 +144,7 @@ import {
   createProject,
   deleteProject,
   fetchDirectoryPickerStatus,
+  fetchMessages,
   fetchProjects,
   fetchViewer,
   fetchVoiceSettings,
@@ -196,6 +197,7 @@ import {
   groupAssistantBlocks,
   messagesBaseForResume,
   nextAssistantStartMs,
+  serverBlocksToTaskBlocks,
   settleAssistantElapsed,
   settlePreviousAssistant,
   type TaskMessage,
@@ -1737,6 +1739,71 @@ export function Workbench() {
       setRunningTaskId(null);
     });
   }, [session?.access_token, activeTaskId, codeProjects, mode, ws]);
+
+  /**
+   * 打开任务时与服务端对账（Code 模式的转录存在本地任务仓，只记客户端收到的事件）：
+   * 断线/超时会让一轮的 assistant 段落在本地是空的——实测界面只剩用户消息 +「已工作 N 秒」，
+   * 服务端 `chat_messages` 却按事件顺序存着完整 contentBlocks（B4）。
+   * 另外「运行中但没有在途 runId」的任务重接不了（B2），服务端已有本轮内容时收尾成 completed。
+   * 在途且可重接（有 activeRunId）的任务交给上面的重接 effect，这里不碰。
+   */
+  const reconciledTasksRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const token = session?.access_token ?? null;
+    if (!token) return;
+    const active = tasksByModeRef.current[mode].find(
+      (t) => t.id === activeTaskId,
+    );
+    if (!active?.sessionId) return;
+    if (active.status === "running" && active.activeRunId) return;
+    if (reconciledTasksRef.current.has(active.id)) return;
+    const hasEmptyAssistant = active.messages.some(
+      (m) => m.role === "assistant" && m.blocks.length === 0,
+    );
+    if (!hasEmptyAssistant && active.status !== "running") return;
+    reconciledTasksRef.current.add(active.id);
+    const saveMode = mode;
+    void fetchMessages(token, active.sessionId)
+      .then((res) => {
+        const assistants = res.messages.filter((m) => m.role === "assistant");
+        if (assistants.length === 0) return;
+        setTasksByMode((prev) => {
+          let filled = false;
+          let index = 0;
+          const list = prev[saveMode].map((t) => {
+            if (t.id !== active.id) return t;
+            const messages = t.messages.map((m) => {
+              if (m.role !== "assistant") return m;
+              const source =
+                assistants[index] ?? assistants[assistants.length - 1];
+              index += 1;
+              if (m.blocks.length > 0 || !source) return m;
+              const blocks = serverBlocksToTaskBlocks(
+                source.contentBlocks ?? [],
+              );
+              if (blocks.length === 0) return m;
+              filled = true;
+              return { ...m, blocks, text: source.content ?? m.text };
+            });
+            if (!filled) return t;
+            return {
+              ...t,
+              messages,
+              // 服务端已有本轮内容 = 这轮在服务端跑完过，本地还挂着「运行中」是断线遗留
+              ...(t.status === "running"
+                ? { status: "completed" as const }
+                : {}),
+            };
+          });
+          saveTasks(saveMode as WorkbenchMode, list);
+          return { ...prev, [saveMode]: list };
+        });
+      })
+      .catch(() => {
+        // 对账失败不打扰用户：放开占位，下次打开这条任务再试一次
+        reconciledTasksRef.current.delete(active.id);
+      });
+  }, [mode, activeTaskId, session]);
 
   // 流事件 → 任务消息
   useEffect(() => {

@@ -1,4 +1,4 @@
-import type { ToolArtifact } from "@kenfutwork/shared";
+import type { ContentBlock, ToolArtifact } from "@kenfutwork/shared";
 import { parseTimestampMs } from "./elapsed";
 import {
   completeSubagent,
@@ -549,4 +549,65 @@ export function applyTaskToolEvent<T extends TaskToolState>(
       event.timestamp ?? "",
     ),
   };
+}
+
+/**
+ * 服务端 `contentBlocks`（真序、ISO 时间）→ 本地 `TaskMessageBlock[]`（显示层、毫秒）。
+ *
+ * 为什么需要：Code 模式的会话与转录存在**本地任务仓**（localStorage），只记客户端收到的
+ * 事件——断线/超时会让一轮的 assistant 段落在本地是空的（实测：本地 `blocks: []`、
+ * `status: "failed"`，服务端 `chat_messages` 却按事件顺序存着完整内容）。打开任务时用它
+ * 把服务端真值补回本地。图片/引用块本地没有渲染位，跳过。
+ */
+export function serverBlocksToTaskBlocks(
+  blocks: readonly ContentBlock[],
+): TaskMessageBlock[] {
+  const next: TaskMessageBlock[] = [];
+  for (const block of blocks) {
+    if (block.type === "text") {
+      const at = block.at ? parseTimestampMs(block.at) : null;
+      next.push({
+        type: "text",
+        text: block.text,
+        ...(at !== null ? { at } : {}),
+      });
+      continue;
+    }
+    if (block.type === "thinking") {
+      const at = block.at ? parseTimestampMs(block.at) : null;
+      next.push({
+        type: "reasoning",
+        text: block.thinking,
+        ...(at !== null ? { at } : {}),
+      });
+      continue;
+    }
+    if (block.type !== "tool") continue;
+    const startedAt = block.startedAt
+      ? parseTimestampMs(block.startedAt)
+      : null;
+    const endedAt = block.endedAt ? parseTimestampMs(block.endedAt) : null;
+    const input = block.input ? normalizeToolArgs(block.input) : null;
+    next.push({
+      type: "tool",
+      tool: {
+        toolCallId: block.toolCallId,
+        toolName: block.toolName,
+        status:
+          block.status === "running"
+            ? "running"
+            : block.output?.denied === true
+              ? "denied"
+              : "completed",
+        ...(block.outputSummary ? { summary: block.outputSummary } : {}),
+        ...(block.output ? { output: block.output } : {}),
+        ...(input ? { input } : {}),
+        ...(startedAt !== null ? { startedAt } : {}),
+        ...(endedAt !== null ? { endedAt } : {}),
+        ...(block.runId ? { runId: block.runId } : {}),
+        ...(block.artifacts ? { artifacts: block.artifacts } : {}),
+      },
+    });
+  }
+  return next;
 }
