@@ -62,6 +62,15 @@ vitest 按 app 配置（`apps/web/vitest.config.mjs`、`apps/server/vitest.confi
 - **不写无意义断言**：测试要验证行为而非实现细节；不要为了凑覆盖率写 `expect(x).toBeDefined()`。
 - **集成测试标注 integration**：需要真实数据库/中间件的测试命名为 `*.integration.test.ts`，默认 skipped，CI 不强制运行。
 
+## API 文档与 Apifox 同步（硬约束）
+API 文档是单源链，任何一环脱节都会腐烂，纪律如下：
+
+- **单源链**：`packages/shared` 的 zod 契约 → `apps/server/src/openapi/registry.ts`（中央路由表：每端点一条 method+path+契约引用+**中文** summary/description）→ `pnpm api:spec` 生成 `docs/api/openapi.json` → `apifox import` 录入 Apifox。
+- **改路由/契约必须同 PR 三连**：① 改 `registry.ts`（含中文注释，禁止留空）；② `pnpm api:spec`；③ `apifox import --project 8892388 --format openapi --file docs/api/openapi.json --overwrite-mode overwrite`（默认覆盖更新，同 method+path 不产生重复；**`info.title` 固定勿改**——Apifox 按它匹配导入模块，变更会新建重复模块）。
+- **漂移门禁**：`tests/api-spec-consistency.test.mjs` 对账 spec↔源码路由、强制注释非空/operationId 唯一/tags 封闭清单/schema 引用已导出。漏跑 `pnpm api:spec` 直接红。
+- `docs/api/openapi.json` 是生成产物勿手改；契约唯一属主仍是 `packages/shared`。WS（`/api/ws`）与流事件不入 OpenAPI：导读在 `docs/api/ws-protocol.md` 与 `docs/api/job-events.md`（均已登记 `docs/README.md` 文档地图），Apifox 侧为独立 WebSocket 条目。
+- **Apifox 账号**：团队 KenFutWork（4773665）／项目 KenFutWork-Community（8892388）／环境「开发环境」= `http://localhost:3001`。CLI 自动化写入受 AI 权限保护：批量/首次导入走 AI 分支（命名 `ai/YYYYMMDD-from-<来源分支>-<说明>`），**合并回主支必须用户确认**；或在 Apifox 客户端「项目设置-功能设置-外部 AI 编辑权限」开启直写后单端点级修改可直写。
+
 ## 提交与 PR 指南
 近期历史使用简洁摘要与 `feat:` / `fix:` 前缀，可带 scope：`feat(<scope>): ...`。保持 commit 小且祈使语气。PR 描述包含：问题/方案摘要、验证命令、关联 issue 或 spec、UI 改动截图或录屏。提交消息以中文为主，遵循 git commit message 规范，fix/feat 等关键词可用英文。
 
