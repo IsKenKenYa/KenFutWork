@@ -46,6 +46,7 @@
     "ws": "^8.21.3"
   },
   "scripts": {
+    "api:spec": "node --import tsx ./src/openapi/generate.ts",
     "build": "node ../../scripts/validate-foundation-app.mjs build",
     "predev": "pnpm --filter @kenfutwork/shared build",
     "dev": "node --watch --env-file=../../.env.local --import tsx ./src/server.ts & WORKER_ID=w1 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & wait",

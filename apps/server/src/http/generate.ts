@@ -2,12 +2,14 @@
 
 import {
   applicationErrorResponseSchema,
+  generateImageRequestSchema,
+  generateVideoRequestSchema,
   type ImageQualityLevel,
   unauthenticatedErrorResponseSchema,
   type VideoResolution,
 } from "@kenfutwork/shared";
 import type { FastifyInstance } from "fastify";
-import { z } from "zod";
+import type { z } from "zod";
 import type {
   AuthenticatedUser,
   RequestAuthenticator,
@@ -24,42 +26,6 @@ import type { UploadService } from "../features/uploads/upload-service.js";
 import type { GeneratedImage } from "../generation/types.js";
 import { instanceHeadersOption } from "../providers/instance-headers.js";
 import { resolveInstanceImageProvider } from "../providers/resolve.js";
-
-const generateImageRequestSchema = z.object({
-  prompt: z.string().min(1),
-  model: z.string().optional(),
-  /** BYOK：用户供应商实例 id；携带时按实例实例化协议适配器（P4）。 */
-  providerInstanceId: z.string().uuid().optional(),
-  aspectRatio: z.enum(["1:1", "16:9", "9:16", "4:3", "3:4"]).optional(),
-  quality: z.enum(["standard", "hd", "ultra"]).optional(),
-  /**
-   * 参考图（URL / data URL / 裸 base64）：非空时适配器走 `/images/edits`
-   * （参考图编辑/inpainting），空缺省仍走 `/images/generations`。
-   */
-  inputImages: z.array(z.string().min(1)).max(4).optional(),
-  /**
-   * 会话标识（§4.8 自定义头占位符的渲染上下文）：画布助手发起时带上当前会话，
-   * 使 `{{sessionId}}` 能取到值；确无会话的调用方可缺省（实例若配了占位符会 fail loud）。
-   * **口径与 run 路径一致**（`sessionIdSchema` = 非空字符串）——Code 模式的会话 id 是
-   * 客户端自造的，按 uuid 校验会把合法值挡在门外。
-   */
-  sessionId: z.string().min(1).optional(),
-  threadId: z.string().min(1).optional(),
-});
-
-const generateVideoRequestSchema = z.object({
-  prompt: z.string().min(1),
-  model: z.string().optional(),
-  /** BYOK：用户供应商实例 id；携带时任务载荷透传，worker 按实例实例化适配器。 */
-  providerInstanceId: z.string().uuid().optional(),
-  duration: z.number().int().min(3).max(16).optional(),
-  resolution: z.enum(["720p", "1080p", "4k"]).optional(),
-  aspectRatio: z.enum(["16:9", "9:16"]).optional(),
-  inputImages: z.array(z.string()).max(3).optional(),
-  /** 会话标识：随 job 行落库，worker 侧按同一口径渲染自定义头（§4.8）。口径同 run 路径。 */
-  sessionId: z.string().min(1).optional(),
-  threadId: z.string().min(1).optional(),
-});
 
 export async function registerGenerateRoutes(
   app: FastifyInstance,
