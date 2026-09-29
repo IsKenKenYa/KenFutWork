@@ -87,7 +87,11 @@ export function kernelToolToStructuredTool(
         if (error instanceof ToolDeniedError) {
           // 用纯字符串：工具结果的最兼容形态。结构化对象虽也能用，但在
           // 「模型偶发返回异常工具调用」时更易触发上游中间件的消息校验问题。
-          return `工具 ${definition.name} 被拒绝（当前权限档位需审批，需用户批准或改用它法）。原因：${error.message}`;
+          //
+          // 措辞必须说清**去哪批准**：此前只说「等待用户审批」，模型据此编出
+          // 「审批弹窗 / 审批面板」（实测真机上根本没有）——界面里只有
+          // 「设置 → 权限 → 工具审批」这一个入口。
+          return `工具 ${definition.name} 被拒绝：当前权限档下它需要审批。让用户在「设置 → 权限 → 工具审批」里批准它（可选仅本次 / 本会话 / 永久），或把本会话权限档切到「自动审批」。界面没有审批弹窗，别让用户去找。原因：${error.message}`;
         }
         throw error;
       }

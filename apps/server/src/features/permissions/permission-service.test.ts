@@ -16,7 +16,8 @@ describe("permissions 缝（DEC-4）", () => {
     const svc = createPermissionService();
     const decision = svc.evaluate({ toolName: "mcp__fs__write" });
     expect(decision.decision).toBe("deny");
-    expect(decision.reason).toMatch(/等待用户审批/);
+    // 理由必须说清**去哪批准**（模型据此转述给用户，含糊会让它编出「审批弹窗」）
+    expect(decision.reason).toMatch(/设置 → 权限 → 工具审批/);
   });
 
   it("永久审批记忆放行；thread 记忆只影响该会话", () => {
@@ -116,7 +117,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
     );
     // 普通工具不受这条规则影响（execute 仍走 default 的审批要求）
     expect(svc.evaluate({ toolName: "execute" }).reason).toMatch(
-      /等待用户审批/,
+      /设置 → 权限 → 工具审批/,
     );
   });
 
