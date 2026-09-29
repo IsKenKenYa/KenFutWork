@@ -39,6 +39,7 @@ graph LR
 | `api/openapi.json` | 服务端 HTTP API 的 OpenAPI 3.1 规范（162 端点）：由中央路由表 `apps/server/src/openapi/registry.ts` 经 `pnpm api:spec` 生成，也是 Apifox「KenFutWork-Community」项目的导入源 | **快照（生成产物）**：勿手改；与源码路由的漂移由 `tests/api-spec-consistency.test.mjs` 门禁拦截；契约唯一属主仍是 `packages/shared` 的 zod schema |
 | `api/ws-protocol.md` | WebSocket 端点 `/api/ws` 的协议导读：客户端命令（agent.run / agent.cancel / canvas.resume / terminal.*）与服务端帧（event / rpc / command.ack / terminal.*） | 参考：契约唯一属主 `packages/shared/src/ws-protocol.ts`，本文不复制结构定义 |
 | `api/job-events.md` | 服务端事件契约导读：`streamEventSchema` 16 型 run/job 流事件清单与投递通道（WS 实时推送 + jobs 轮询兜底） | 参考：契约唯一属主 `packages/shared/src/events.ts` |
+| `api/smoke-scenarios.md` | 只读冒烟场景清单（15 端点 × 状态码 + 响应核心字段断言，实测回执与 Apifox 场景 `8814394` 的维护方式） | 参考：断言字段以 `docs/api/openapi.json` 响应 schema 顶层字段为准 |
 | `插件/米家插件规划.md` | 米家设备能力的方案规划：现成方案调研（能否顶替手机米家 App）、插件系统硬边界实测、三条落地路线与推荐、已知限制 | 参考：结论拍板后按该文档落地，并在《日志》记账 |
 | `插件/语音助手插件规划.md` | 语音助手的方案规划：内建插件与「默认开启」机制实测、听/想/说三段的模型选型（CPU/GPU/远端可混搭）、两套模式（默认只转文本）、按需下载与性能检测、能力缝与分阶段落地 | 参考：结论拍板后按该文档落地，并在《日志》记账 |
 | `参考图/` | 需求参考图（逐张读进 `未做需求.md` 台账）与配图 | 参考 |
