@@ -44,6 +44,8 @@ const FILES = [
   join("brand-kit", "guidance-section.tsx"),
   join("brand-kit", "color-picker-popover.tsx"),
   join("brand-kit", "empty-state.tsx"),
+  join("credits", "credit-insufficient-dialog.tsx"),
+  join("credits", "tier-limit-toast.tsx"),
 ];
 
 /** 已汉化的英文串（出现即回归）。 */
@@ -89,6 +91,15 @@ const FORBIDDEN = [
   'aria-label="Image viewer"',
   'title="Image failed to load"',
   '?? "Generated image"',
+  // 额度不足弹窗整块英文（2026-09-27 扫描发现）
+  "Not Enough Credits",
+  "This generation requires",
+  ">Required<",
+  ">Available<",
+  ">Needed<",
+  "Claim Daily Credits",
+  "Upgrade Plan",
+  ">Cancel<",
 ];
 
 describe("画布与对话区文案已汉化", () => {
