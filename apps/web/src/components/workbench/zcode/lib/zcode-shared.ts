@@ -4442,3 +4442,454 @@ export function isValidShortcutBinding(binding: string): boolean {
   const parsed = parseShortcutBinding(binding);
   return parsed !== null && serializeShortcutBinding(parsed) === binding;
 }
+
+/* ---------- zcode 照搬（P6 补充）：`@zcode/shared` git.ts 消费切片 ----------
+ * 来源：references/zcode/packages/shared/src/git.ts
+ * 消费方：GitActionMenu / GitBranchSwitcher / GitPaneChangeCard / ConversationStatusPanel
+ * / conversationStatusPanelModel / git-branch-switcher/display / git-action-menu/* /
+ * GitPane/helpers / hooks/useGitRepository（stub）/ hooks/useGitBranchSwitcher（stub）。
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明（Locale 已在本文件 protocol 切片）。
+ */
+export type GitHeadRefType = "branch" | "detached";
+
+export type GitChangeKind = "modified" | "added" | "deleted" | "renamed";
+
+export type GitChangeSourceId = "unstaged" | "staged" | "branch" | "last-turn";
+
+export type GitRepositoryChangeSourceId = Extract<
+  GitChangeSourceId,
+  "unstaged" | "staged" | "branch"
+>;
+
+export type GitChangeSectionId =
+  | "staged"
+  | "unstaged"
+  | "untracked"
+  | "conflicted"
+  | "branch"
+  | "last-turn";
+
+export type GitDiffAvailability =
+  | "patch"
+  | "binary"
+  | "truncated"
+  | "unavailable";
+
+export type GitBranchMutationAction = "switch" | "create-and-switch";
+
+export type GitBranchMutationIssueCode =
+  | "invalid-branch-name"
+  | "branch-already-exists"
+  | "target-branch-not-found"
+  | "tracked-changes-would-be-overwritten"
+  | "untracked-changes-would-be-overwritten"
+  | "conflicts-present"
+  | "operation-in-progress"
+  | "branch-in-other-worktree"
+  | "unknown";
+
+export interface GitRepositorySummary {
+  workspacePath: string;
+  repoRoot: string;
+  workspaceInRepoPath: string;
+  /** Git 元数据 watcher 边界；workspace 内容 watcher 由 UI 按 workspace Host 平台决定。 */
+  autoRefreshWatchPaths: GitRepositoryAutoRefreshWatchPath[];
+  branchName: string | null;
+  trackingBranchName: string | null;
+  headRefType: GitHeadRefType;
+  ahead: number;
+  behind: number;
+  isDirty: boolean;
+  isGitAvailable: boolean;
+  isRepository: boolean;
+}
+
+export interface GitRepositoryAutoRefreshWatchPath {
+  path: string;
+  recursive: boolean;
+}
+
+export interface GitFileChange {
+  path: string;
+  repoRelativePath: string;
+  workspaceRelativePath: string;
+  x?: string;
+  y?: string;
+  kind: GitChangeKind;
+  section: GitChangeSectionId;
+  added: number;
+  removed: number;
+  isStaged: boolean;
+  isUntracked: boolean;
+  isConflicted: boolean;
+}
+
+export interface GitDiffRequest {
+  path: string;
+  staged?: boolean;
+  sourceId?: GitChangeSourceId;
+}
+
+export interface GitDiffResult {
+  path: string;
+  availability: GitDiffAvailability;
+  patch: string | null;
+  beforeContent: string | null;
+  afterContent: string | null;
+  summary?: string | null;
+}
+
+export interface GitIdentity {
+  userName: string | null;
+  userEmail: string | null;
+  nameSource: string | null;
+  emailSource: string | null;
+  scopeLabel?: string | null;
+}
+
+export interface GitRepositoryRequest {
+  workspacePath: string;
+}
+
+export interface GitBranchComparison {
+  baseRef: string | null;
+  headRef: string | null;
+  comparisonLabel: string | null;
+  changes: GitFileChange[];
+}
+
+export interface GitLocalBranch {
+  name: string;
+  isCurrent: boolean;
+  upstreamName: string | null;
+  commitHash: string | null;
+  commitTimestampMs: number | null;
+}
+
+export interface GitLocalBranchListResult {
+  headRefType: GitHeadRefType;
+  currentBranchName: string | null;
+  branches: GitLocalBranch[];
+}
+
+export interface GitBranchMutationIssue {
+  code: GitBranchMutationIssueCode;
+  message: string;
+  paths?: string[];
+  detail?: string | null;
+}
+
+export interface GitBranchMutationResult {
+  ok: boolean;
+  action: GitBranchMutationAction;
+  branchName: string | null;
+  didChange: boolean;
+  created: boolean;
+  summary: GitRepositorySummary;
+  issues: GitBranchMutationIssue[];
+}
+
+export interface GitChangesRequest extends GitRepositoryRequest {
+  sourceId: Extract<GitRepositoryChangeSourceId, "unstaged" | "staged">;
+}
+
+export interface GitCommitRequest extends GitRepositoryRequest {
+  message: string;
+  paths?: string[];
+  stagedOnly?: boolean;
+}
+
+export interface GitCommitResult {
+  commitHash: string;
+  summary: GitRepositorySummary;
+}
+
+export interface GitGenerateCommitMessageRequest extends GitRepositoryRequest {
+  workspaceIdentity?: string;
+  locale?: Locale;
+  includeUnstaged?: boolean;
+  currentSessionFilePaths?: string[];
+  conversationContext?: GitCommitMessageConversationContext;
+}
+
+export interface GitCommitMessageConversationContext {
+  sessionId?: string;
+  omittedMessageCount?: number;
+  messages: GitCommitMessageConversationMessage[];
+}
+
+export interface GitCommitMessageConversationMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface GitGenerateCommitMessageResult {
+  message: string;
+  providerId: string;
+  model: string;
+}
+
+export interface GitPushRequest extends GitRepositoryRequest {}
+
+export interface GitPushResult {
+  branchName: string | null;
+  trackingBranchName: string | null;
+  remoteName: string | null;
+  setUpstream: boolean;
+  summary: GitRepositorySummary;
+}
+
+export interface GitRefreshRequest extends GitRepositoryRequest {
+  includeIdentity?: boolean;
+  includeBranchComparison?: boolean;
+}
+
+export interface GitRefreshResult {
+  summary: GitRepositorySummary;
+  identity: GitIdentity | null;
+  unstagedChanges: GitFileChange[];
+  stagedChanges: GitFileChange[];
+  branchComparison: GitBranchComparison | null;
+}
+
+/* ---------- zcode 照搬（P6 补充）：`@zcode/shared` test-ids.ts（切片：summary panel/后台工作 TID） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export const TID_CHAT_SUMMARY_PANEL = "chat-summary-panel";
+export const TID_V4_BACKGROUND_WORK_ITEM = "v4-background-work-item";
+export const TID_V4_BACKGROUND_WORK_CANCEL = "v4-background-work-cancel";
+
+/* ---------- zcode 照搬（P6 补充）：`@zcode/shared` zcode-protocol/index.ts（切片：运行中 subagent 摘要） 消费切片 ----------
+ * 来源：references/zcode/packages/shared/src/zcode-protocol/index.ts
+ * 消费方：ConversationStatusPanel / conversationStatusPanelModel。
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明（nonEmptyString 已在本文件）。
+ */
+const zcodeSessionSubagentBaseSchema = z
+  .object({
+    childSessionId: nonEmptyString,
+    agentId: nonEmptyString.optional(),
+    toolCallId: nonEmptyString.optional(),
+    subagentType: nonEmptyString,
+    title: nonEmptyString,
+    summary: z.string().optional(),
+    startedAt: z.number().int().nonnegative().optional(),
+    endedAt: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+
+export const zcodeSessionRunningSubagentSchema =
+  zcodeSessionSubagentBaseSchema.extend({
+    status: z.enum(["running", "waiting", "blocked"]),
+  });
+export type ZCodeSessionRunningSubagent = z.infer<
+  typeof zcodeSessionRunningSubagentSchema
+>;
+
+/* ---------- zcode 照搬（P6 补充）：`@zcode/shared` rendererActionTrace.ts 消费切片 ----------
+ * 来源：references/zcode/packages/shared/src/rendererActionTrace.ts
+ * 消费方：lib/userActionTelemetry / lib/userActionTraceCatalog。
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬全文件符号声明。
+ */
+export const RENDERER_ACTION_TRACE_SERVICE_NAME = "zcode-desktop-renderer";
+export const RENDERER_ACTION_TRACE_MAX_SAMPLE_RATIO = 0.2;
+export const RENDERER_ACTION_TRACE_MAX_BATCH_SPANS = 32;
+export const RENDERER_ACTION_TRACE_MAX_BATCH_BYTES = 256 * 1024;
+
+export const rendererActionTraceGroupSchema = z.enum([
+  "core",
+  "settings",
+  "workbench",
+  "extensions",
+  "automation",
+  "account",
+]);
+export type RendererActionTraceGroup = z.infer<
+  typeof rendererActionTraceGroupSchema
+>;
+
+export const rendererActionTraceConfigSchema = z
+  .object({
+    enabled: z.boolean(),
+    localTtftEnabled: z.boolean().optional(),
+    sampleRatio: z
+      .number()
+      .finite()
+      .min(0)
+      .max(RENDERER_ACTION_TRACE_MAX_SAMPLE_RATIO),
+    enabledGroups: z.array(rendererActionTraceGroupSchema).max(6),
+    configVersion: z.string().trim().min(1).max(128),
+  })
+  .strict();
+export type RendererActionTraceConfigV1 = z.infer<
+  typeof rendererActionTraceConfigSchema
+>;
+
+export const DISABLED_RENDERER_ACTION_TRACE_CONFIG: RendererActionTraceConfigV1 =
+  {
+    enabled: false,
+    sampleRatio: 0,
+    enabledGroups: [],
+    configVersion: "disabled",
+  };
+
+const hexTraceIdSchema = z.string().regex(/^[0-9a-f]{32}$/u);
+const hexSpanIdSchema = z.string().regex(/^[0-9a-f]{16}$/u);
+const boundedIdentifierSchema = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z0-9._:-]{1,128}$/u);
+const boundedValueSchema = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z0-9._:-]{1,64}$/u);
+
+export const rendererActionTraceAttributesSchema = z
+  .object({
+    feature_id: boundedIdentifierSchema,
+    action: boundedIdentifierSchema,
+    catalog_group: rendererActionTraceGroupSchema,
+    operation_kind: z.enum([
+      "navigation",
+      "preference",
+      "command",
+      "management",
+      "destructive",
+    ]),
+    surface: boundedIdentifierSchema,
+    trigger: z.enum([
+      "button",
+      "keyboard",
+      "shortcut",
+      "menu",
+      "switch",
+      "select",
+      "drag",
+    ]),
+    outcome: z.enum([
+      "completed",
+      "failed",
+      "rejected",
+      "cancelled",
+      "noop",
+      "abandoned",
+    ]),
+    result_source: z
+      .enum([
+        "local_commit",
+        "shared_settings",
+        "setting_service",
+        "platform_result",
+        "authority_ack",
+        "optimistic_projection",
+      ])
+      .optional(),
+    failure_stage: boundedIdentifierSchema.optional(),
+    state_after: z.enum(["enabled", "disabled"]).optional(),
+    configured: z.boolean().optional(),
+    requires_restart: z.boolean().optional(),
+    section_id: boundedIdentifierSchema.optional(),
+    value_after: boundedValueSchema.optional(),
+    workspace_kind: z.enum(["local", "remote"]).optional(),
+    remote_kind: z.enum(["ssh", "wsl", "docker", "server"]).optional(),
+    admission_result: z
+      .enum([
+        "accepted",
+        "rejected",
+        "stale",
+        "duplicate",
+        "noop",
+        "not_applicable",
+      ])
+      .optional(),
+    automation_kind: z.enum(["scheduled", "off_peak"]).optional(),
+    action_id: z.string().uuid(),
+  })
+  .strict();
+export type RendererActionTraceAttributes = z.infer<
+  typeof rendererActionTraceAttributesSchema
+>;
+
+export const rendererActionTraceSpanSchema = z
+  .object({
+    traceId: hexTraceIdSchema,
+    spanId: hexSpanIdSchema,
+    name: z.literal("ui_action"),
+    startTimeUnixMs: z.number().finite().nonnegative(),
+    endTimeUnixMs: z.number().finite().nonnegative(),
+    status: z.enum(["unset", "ok", "error"]),
+    attributes: rendererActionTraceAttributesSchema,
+  })
+  .strict()
+  .superRefine((span, context) => {
+    if (span.endTimeUnixMs < span.startTimeUnixMs) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "endTimeUnixMs must be greater than or equal to startTimeUnixMs",
+        path: ["endTimeUnixMs"],
+      });
+    }
+  });
+export type RendererActionTraceSpanV1 = z.infer<
+  typeof rendererActionTraceSpanSchema
+>;
+
+export const rendererActionTraceResourceSchema = z
+  .object({
+    serviceName: z.literal(RENDERER_ACTION_TRACE_SERVICE_NAME),
+    serviceVersion: boundedIdentifierSchema,
+    deploymentEnvironment: z.enum(["development", "test", "production"]),
+    rendererInstanceId: boundedIdentifierSchema,
+  })
+  .strict();
+export type RendererActionTraceResourceV1 = z.infer<
+  typeof rendererActionTraceResourceSchema
+>;
+
+export const rendererActionTraceBatchSchema = z
+  .object({
+    version: z.literal(1),
+    rendererInstanceId: boundedIdentifierSchema,
+    sequence: z.number().int().nonnegative(),
+    droppedSinceLastFlush: z.number().int().nonnegative(),
+    resource: rendererActionTraceResourceSchema,
+    spans: z
+      .array(rendererActionTraceSpanSchema)
+      .max(RENDERER_ACTION_TRACE_MAX_BATCH_SPANS),
+  })
+  .strict()
+  .superRefine((batch, context) => {
+    if (batch.resource.rendererInstanceId !== batch.rendererInstanceId) {
+      context.addIssue({
+        code: "custom",
+        message: "rendererInstanceId must match the resource",
+        path: ["resource", "rendererInstanceId"],
+      });
+    }
+  });
+export type RendererActionTraceBatchV1 = z.infer<
+  typeof rendererActionTraceBatchSchema
+>;
+
+/* ---------- zcode 照搬（P6 补充）：`@zcode/shared` background-task-controls.ts（切片：elapsed 计算） 消费切片 ----------
+ * 消费方：BackgroundTaskElapsedLabel。许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export function getZCodeBackgroundTaskControlItemElapsedMs(
+  job: ZCodeBackgroundTaskControlItem,
+  now = Date.now(),
+): number {
+  const elapsedFromStart =
+    job.startedAt === undefined ? undefined : Math.max(0, now - job.startedAt);
+  return Math.max(elapsedFromStart ?? 0, job.elapsedMs ?? 0);
+}
+
+/* ---------- zcode 照搬（P6 补充）：`@zcode/shared` test-ids.ts（切片：v4 队列 TID） 消费切片 ----------
+ * 消费方：v4/ConversationQueuePanel。许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export const TID_V4_QUEUE = "v4-queue";
+export const TID_V4_QUEUE_PAUSED_BANNER = "v4-queue-paused-banner";
+export const TID_V4_QUEUE_RESUME = "v4-queue-resume";
+export const TID_V4_QUEUE_ITEM = "v4-queue-item";
+export const TID_V4_QUEUE_ITEM_DELETE = "v4-queue-item-delete";
+export const TID_V4_QUEUE_ITEM_EDIT = "v4-queue-item-edit";
+export const TID_V4_QUEUE_ITEM_SEND_NOW = "v4-queue-item-send-now";

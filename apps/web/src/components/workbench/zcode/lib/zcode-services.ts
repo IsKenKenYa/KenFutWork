@@ -14,6 +14,16 @@
 import type {
   AgentSummary,
   AgentsCapability,
+  GitBranchMutationResult,
+  GitCommitMessageConversationContext,
+  GitCommitResult,
+  GitFileChange,
+  GitGenerateCommitMessageResult,
+  GitIdentity,
+  GitLocalBranchListResult,
+  GitPushResult,
+  GitRefreshResult,
+  Locale,
   SubAgentConfig,
   WorkspacePurpose,
   ZCodeProvider,
@@ -88,4 +98,62 @@ export interface ISubagentsService {
     provider: ZCodeProvider;
   }): Promise<{ agent: AgentSummary | null }>;
   deleteAgent(params: { agentId: string; filePath: string }): Promise<unknown>;
+}
+
+/* ---------- git.ts（P6 补充：IGitService 类型切片） ---------- */
+
+/**
+ * zcode IGitService 的宿主切片：本仓 git 数据/操作走宿主自己的服务端 API
+ * （apps/web/src/lib/code-git-api.ts），不经 zcode RPC。此处仅保留照搬组件
+ * （GitActionMenu / git-branch-switcher/switchAssist / hooks/useGitRepository 等）
+ * 以类型位消费的方法签名；运行时注入的是「未接通」stub（见 hooks/useServices），
+ * 纯展示逻辑（props 驱动）不受影响，写操作抛错即能力缺失、UI 降级。
+ */
+export interface IGitService {
+  refresh(params: {
+    workspacePath: string;
+    includeIdentity?: boolean | undefined;
+    includeBranchComparison?: boolean | undefined;
+  }): Promise<GitRefreshResult>;
+  getChanges(params: {
+    workspacePath: string;
+    sourceId: "unstaged" | "staged";
+  }): Promise<GitFileChange[]>;
+  getIdentity(params: { workspacePath: string }): Promise<GitIdentity | null>;
+  getLocalBranches(params: {
+    workspacePath: string;
+  }): Promise<GitLocalBranchListResult>;
+  switchBranch(params: {
+    workspacePath: string;
+    targetBranchName: string;
+  }): Promise<GitBranchMutationResult>;
+  createBranchAndSwitch(params: {
+    workspacePath: string;
+    branchName: string;
+    startPoint?: string | undefined;
+  }): Promise<GitBranchMutationResult>;
+  stagePaths(params: {
+    workspacePath: string;
+    paths: string[];
+  }): Promise<unknown>;
+  discardPaths(params: {
+    workspacePath: string;
+    paths: string[];
+    staged?: boolean | undefined;
+  }): Promise<unknown>;
+  commit(params: {
+    workspacePath: string;
+    message: string;
+    paths?: string[] | undefined;
+    stagedOnly?: boolean | undefined;
+  }): Promise<GitCommitResult>;
+  generateCommitMessage(params: {
+    workspacePath: string;
+    workspaceIdentity?: string | undefined;
+    locale?: Locale | undefined;
+    includeUnstaged?: boolean | undefined;
+    currentSessionFilePaths?: string[] | undefined;
+    conversationContext?: GitCommitMessageConversationContext | undefined;
+  }): Promise<GitGenerateCommitMessageResult>;
+  push(params: { workspacePath: string }): Promise<GitPushResult>;
 }

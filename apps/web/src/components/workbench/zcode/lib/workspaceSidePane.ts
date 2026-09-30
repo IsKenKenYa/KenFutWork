@@ -1,8 +1,8 @@
 /**
  * zcode 照搬：`@/lib/workspaceSidePane.ts`（references/zcode/packages/ui/src/lib/workspaceSidePane.ts）
  * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- * 适配注记：接口可选属性放宽 | undefined 以等价 zcode tsconfig 行为（exactOptionalPropertyTypes）。
+ * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀；源文件自带头注保留于下。
+ * P6 适配：exactOptionalPropertyTypes——activateBrowserSidePane 调用点的可选属性改条件展开（原样传 `string | null | undefined` 不过编译）。
  */
 /* eslint-disable max-lines -- Side pane tab 状态集中维护 Browser/Git/CodeViewer/Treemapping/Whiteboard 的打开、复用、关闭和排序规则；拆分需要同步迁移现有内存恢复逻辑。 */
 
@@ -21,18 +21,18 @@ export interface BrowserSidePaneTab {
   id: string;
   type: "browser";
   /** 打开 tab 时冻结的对话归属；null 表示草稿态。 */
-  ownerTaskId?: string | null | undefined;
+  ownerTaskId?: string | null;
   /** 工作区隔离 key（workspaceIdentity || workspacePath）。 */
-  workspaceKey?: string | null | undefined;
-  remoteSessionId?: string | null | undefined;
-  faviconUrl?: string | null | undefined;
-  initialUrl?: string | null | undefined;
+  workspaceKey?: string | null;
+  remoteSessionId?: string | null;
+  faviconUrl?: string | null;
+  initialUrl?: string | null;
   /** 由 Agent 控制的页面触发的 popup；不应套用人类浏览器的持久化显示偏好。 */
-  agentOpened?: boolean | undefined;
-  openedAt?: number | undefined;
-  title?: string | null | undefined;
-  residency?: BrowserTabResidencyState | undefined;
-  residencyGeneration?: number | undefined;
+  agentOpened?: boolean;
+  openedAt?: number;
+  title?: string | null;
+  residency?: BrowserTabResidencyState;
+  residencyGeneration?: number;
 }
 
 export type BrowserSidePaneMetadata = Partial<
@@ -44,17 +44,17 @@ export const BROWSER_USE_OPERATION_INDICATOR_DURATION_MS = 5_000;
 export interface GitSidePaneTab {
   id: "git";
   type: "git";
-  ownerTaskId?: string | null | undefined;
-  workspaceKey?: string | null | undefined;
-  openedAt?: number | undefined;
+  ownerTaskId?: string | null;
+  workspaceKey?: string | null;
+  openedAt?: number;
 }
 
 export interface CodeViewerSidePaneTab {
   id: string;
   type: "code-viewer";
-  ownerTaskId?: string | null | undefined;
-  workspaceKey?: string | null | undefined;
-  openedAt?: number | undefined;
+  ownerTaskId?: string | null;
+  workspaceKey?: string | null;
+  openedAt?: number;
   source: CodeViewerSource;
   sourceKey: string | null;
 }
@@ -66,79 +66,79 @@ export type TreemappingSidePaneSource =
 export interface TreemappingSidePaneTab {
   id: "treemapping";
   type: "treemapping";
-  ownerTaskId?: string | null | undefined;
-  workspaceKey?: string | null | undefined;
-  openedAt?: number | undefined;
-  source?: TreemappingSidePaneSource | undefined;
+  ownerTaskId?: string | null;
+  workspaceKey?: string | null;
+  openedAt?: number;
+  source?: TreemappingSidePaneSource;
 }
 
 export interface WhiteboardSidePaneTab {
   id: string;
   type: "whiteboard";
-  ownerTaskId?: string | null | undefined;
-  workspaceKey?: string | null | undefined;
+  ownerTaskId?: string | null;
+  workspaceKey?: string | null;
   boardId: string;
-  openedAt?: number | undefined;
+  openedAt?: number;
   title: string;
 }
 
 export interface ModelTrajectorySidePaneTab {
   id: string;
   type: "model-trajectory";
-  ownerTaskId?: string | null | undefined;
-  workspaceKey?: string | null | undefined;
-  openedAt?: number | undefined;
+  ownerTaskId?: string | null;
+  workspaceKey?: string | null;
+  openedAt?: number;
   /** 目标 task/session id；model-io 按该 id 匹配。 */
   taskId: string;
-  title?: string | null | undefined;
+  title?: string | null;
 }
 
 export interface DeveloperToolsSidePaneTab {
   id: "developer-tools";
   type: "developer-tools";
-  ownerTaskId?: string | null | undefined;
-  workspaceKey?: string | null | undefined;
-  openedAt?: number | undefined;
+  ownerTaskId?: string | null;
+  workspaceKey?: string | null;
+  openedAt?: number;
 }
 
 export interface TerminalSidePaneTab {
   id: string;
   type: "terminal";
-  ownerTaskId?: string | null | undefined;
-  workspaceKey?: string | null | undefined;
-  openedAt?: number | undefined;
+  ownerTaskId?: string | null;
+  workspaceKey?: string | null;
+  openedAt?: number;
   title: string;
-  cwd?: string | undefined;
-  remoteSessionId?: string | null | undefined;
+  cwd?: string;
+  remoteSessionId?: string | null;
 }
 
 /** browser-use 受控浏览器视图（renderer `<webview>` + main CDP）。 */
 export interface BrowserUseSidePaneTab {
   id: string;
   type: "browser-use";
-  ownerTaskId?: string | null | undefined;
-  workspaceKey?: string | null | undefined;
-  remoteSessionId?: string | null | undefined;
+  ownerTaskId?: string | null;
+  workspaceKey?: string | null;
+  remoteSessionId?: string | null;
   sessionId: string;
   /** main 分配的 opaque IAB tab identity，也是 webview attach key。 */
   tabId: string;
-  browserId?: string | undefined;
-  browserGeneration?: number | undefined;
-  openedAt?: number | undefined;
-  title?: string | null | undefined;
-  faviconUrl?: string | null | undefined;
-  residency?: BrowserTabResidencyState | undefined;
-  residencyGeneration?: number | undefined;
+  browserId?: string;
+  browserGeneration?: number;
+  openedAt?: number;
+  title?: string | null;
+  faviconUrl?: string | null;
+  residency?: BrowserTabResidencyState;
+  residencyGeneration?: number;
   /** 最近一次 agent browser-use 操作的 UI 指示截止时间。 */
-  browserUseOperationUntil?: number | undefined;
+  browserUseOperationUntil?: number;
   /** 模型布局命令对应的单调版本；目标 view 据此重建 ResizeObserver 基线。 */
-  browserUseResizeBaselineVersion?: number | undefined;
+  browserUseResizeBaselineVersion?: number;
 }
 
 export interface OpenBackgroundBashSideTabRequest {
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
-  remoteSessionId?: string | undefined;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
   rootSessionId: string;
   sessionId: string;
   workId: string;
@@ -151,18 +151,18 @@ export interface BackgroundBashSidePaneTab
   type: "bash-output";
   workspaceKey: string;
   ownerTaskId: string;
-  openedAt?: number | undefined;
+  openedAt?: number;
 }
 
 export interface SubagentSessionSidePaneTab {
   id: string;
   type: "subagent-session";
-  ownerTaskId?: string | null | undefined;
-  openedAt?: number | undefined;
+  ownerTaskId?: string | null;
+  openedAt?: number;
   workspaceKey: string;
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
-  remoteSessionId?: string | undefined;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
   rootSessionId: string;
   parentSessionId: string;
   childSessionId: string;
@@ -173,12 +173,12 @@ export interface SubagentSessionSidePaneTab {
 export interface SubagentDirectorySidePaneTab {
   id: string;
   type: "subagent-directory";
-  ownerTaskId?: string | null | undefined;
-  openedAt?: number | undefined;
+  ownerTaskId?: string | null;
+  openedAt?: number;
   workspaceKey: string;
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
-  remoteSessionId?: string | undefined;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
   rootSessionId: string;
   parentSessionId: string;
 }
@@ -186,12 +186,12 @@ export interface SubagentDirectorySidePaneTab {
 export interface SelectionSideChatPaneTab {
   id: string;
   type: "selection-side-chat";
-  ownerTaskId?: string | null | undefined;
-  openedAt?: number | undefined;
+  ownerTaskId?: string | null;
+  openedAt?: number;
   workspaceKey: string;
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
-  remoteSessionId?: string | undefined;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
   parentSessionId: string;
   childSessionId: string;
   ordinal: number;
@@ -200,23 +200,23 @@ export interface SelectionSideChatPaneTab {
 export interface PlanDetailSidePaneTab {
   id: string;
   type: "plan-detail";
-  ownerTaskId?: string | null | undefined;
-  openedAt?: number | undefined;
+  ownerTaskId?: string | null;
+  openedAt?: number;
   workspaceKey: string;
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
-  remoteSessionId?: string | undefined;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
   parentSessionId: string;
   toolCallId: string;
   markdown: string;
-  planFilePath?: string | undefined;
+  planFilePath?: string;
 }
 
 export interface OpenPlanDetailSideTabRequest {
   parentSessionId: string;
   toolCallId: string;
   markdown: string;
-  planFilePath?: string | undefined;
+  planFilePath?: string;
 }
 
 /**
@@ -245,34 +245,34 @@ export interface OpenPlanDetailSideTabRequest {
 export interface WorkflowRunSidePaneTab {
   id: string;
   type: "workflow-run";
-  ownerTaskId?: string | null | undefined;
-  openedAt?: number | undefined;
+  ownerTaskId?: string | null;
+  openedAt?: number;
   workspaceKey: string;
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
-  remoteSessionId?: string | undefined;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
   parentSessionId: string;
   toolCallId: string;
   runId: string;
   /** 打开时冻结的展示名，仅作投影缺席（run 被淘汰 / 冷启动）时的标题兜底。 */
-  workflowName?: string | undefined;
+  workflowName?: string;
   /** 落点：展开这一站、列出全部、节头滚到顶。缺席即停在原处。 */
-  focusPhaseId?: string | undefined;
+  focusPhaseId?: string;
 }
 
 export interface OpenWorkflowRunSideTabRequest {
   parentSessionId: string;
   toolCallId: string;
   runId: string;
-  workflowName?: string | undefined;
+  workflowName?: string;
   /** 落点：详情页展开这一站、列出全部、滚到节头。缺席即停在原处。 */
-  phaseId?: string | undefined;
+  phaseId?: string;
   /**
    * 「配置」之后面板跟着工作流走：
    * 把显示这个 run 的 tab **原地**换成新 run 的 tab——同一个位置、沿用它的名字与归属。没有这样的
    * tab（已关掉）就什么都不做：面板不会为此重新打开。
    */
-  replaceRunId?: string | undefined;
+  replaceRunId?: string;
 }
 
 /**
@@ -288,12 +288,12 @@ export interface OpenWorkflowRunSideTabRequest {
 export interface WorkflowRunDirectorySidePaneTab {
   id: string;
   type: "workflow-directory";
-  ownerTaskId?: string | null | undefined;
-  openedAt?: number | undefined;
+  ownerTaskId?: string | null;
+  openedAt?: number;
   workspaceKey: string;
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
-  remoteSessionId?: string | undefined;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
   parentSessionId: string;
 }
 
@@ -328,12 +328,12 @@ export interface OpenWorkflowRunDirectorySideTabRequest {
 export interface WorkflowActorSessionSidePaneTab {
   id: string;
   type: "workflow-actor-session";
-  ownerTaskId?: string | null | undefined;
-  openedAt?: number | undefined;
+  ownerTaskId?: string | null;
+  openedAt?: number;
   workspaceKey: string;
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
-  remoteSessionId?: string | undefined;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
   parentSessionId: string;
   runId: string;
   /**
@@ -341,29 +341,29 @@ export interface WorkflowActorSessionSidePaneTab {
    * tab 打开时没有会话；面板按
    * 槽位在实时投影里找它，找到即自愈。身份不在这里，在 (runId, siteId, ordinal)。
    */
-  actorSessionId?: string | undefined;
+  actorSessionId?: string;
   /** actor 站点 id 与序号：与 runId 一起是 tab 的身份，从不参与命名。 */
   siteId: string;
   ordinal: number;
   /** 脚本里写下的名字（`agent("reviewer")`）；分析拿不到字面量时缺席，标题走本地化兜底。 */
-  actorName?: string | undefined;
+  actorName?: string;
 }
 
 export interface OpenWorkflowActorSessionSideTabRequest {
   parentSessionId: string;
   runId: string;
   /** 打开时已知的会话 id；未启动的槽位缺席。 */
-  actorSessionId?: string | undefined;
+  actorSessionId?: string;
   siteId: string;
   ordinal: number;
-  actorName?: string | undefined;
+  actorName?: string;
 }
 
 export interface OpenScopedWorkflowActorSessionSideTabRequest
   extends OpenWorkflowActorSessionSideTabRequest {
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
-  remoteSessionId?: string | undefined;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
 }
 
 /**
@@ -381,35 +381,35 @@ export interface OpenScopedWorkflowActorSessionSideTabRequest
 export interface WorkflowWorkspaceSidePaneTab {
   id: string;
   type: "workflow-workspace";
-  ownerTaskId?: string | null | undefined;
-  openedAt?: number | undefined;
+  ownerTaskId?: string | null;
+  openedAt?: number;
   workspaceKey: string;
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
-  remoteSessionId?: string | undefined;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
   parentSessionId: string;
   /** 发起该 run 的工具调用 id：静态图（阶段名、步标签）挂在那条行上，与 workflow-run tab 同一条路。 */
   toolCallId: string;
   runId: string;
   /** 打开时冻结的展示名，仅作投影缺席时的标题兜底。 */
-  workflowName?: string | undefined;
+  workflowName?: string;
   /** 落点：滚到这一站的第一张卡；还没到的站落到末尾。缺席即停在原处。 */
-  focusPhaseId?: string | undefined;
+  focusPhaseId?: string;
 }
 
 export interface OpenWorkflowWorkspaceSideTabRequest {
   parentSessionId: string;
   toolCallId: string;
   runId: string;
-  workflowName?: string | undefined;
-  phaseId?: string | undefined;
+  workflowName?: string;
+  phaseId?: string;
 }
 
 export interface OpenScopedWorkflowWorkspaceSideTabRequest
   extends OpenWorkflowWorkspaceSideTabRequest {
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
-  remoteSessionId?: string | undefined;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
 }
 
 /**
@@ -433,80 +433,80 @@ export interface OpenScopedWorkflowWorkspaceSideTabRequest
 export interface WorkflowArtifactSidePaneTab {
   id: string;
   type: "workflow-artifact";
-  ownerTaskId?: string | null | undefined;
-  openedAt?: number | undefined;
+  ownerTaskId?: string | null;
+  openedAt?: number;
   workspaceKey: string;
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
-  remoteSessionId?: string | undefined;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
   parentSessionId: string;
   runId: string;
   /** 产物 id（脚本里的编译期字面量，`[A-Za-z0-9_.-]` ≤ 64）。 */
   artifactId: string;
   /** 打开时的初始版本；缺席即最新版。**不进 tab 身份**——见类型上那段注释。 */
-  version?: number | undefined;
+  version?: number;
   /** 打开时冻结的展示名，仅作元数据缺席（冷恢复 / 老 CLI）时的标题兜底。 */
-  title?: string | undefined;
+  title?: string;
 }
 
 export interface OpenWorkflowArtifactSideTabRequest {
   parentSessionId: string;
   runId: string;
   artifactId: string;
-  version?: number | undefined;
-  title?: string | undefined;
+  version?: number;
+  title?: string;
   /**
    * 最新版的 contentType（表面上的摘要带得到就带）。`useAppPanels.handleOpenWorkflowArtifact`
    * 据它决定 html 产物是直接开浏览器 tab 还是开产物 tab；缺席即一律开产物 tab。
    */
-  contentType?: string | undefined;
+  contentType?: string;
   /**
    * 工作区相对的原路径。只有已经合并过 journal 的表面（run 侧板）带得到；缺席时由
    * `handleOpenWorkflowArtifact` 自己查 journal 补齐——摘要刻意不带它（状态帧体积）。
    */
-  sourcePath?: string | undefined;
+  sourcePath?: string;
 }
 
 export interface OpenScopedWorkflowArtifactSideTabRequest
   extends OpenWorkflowArtifactSideTabRequest {
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
-  remoteSessionId?: string | undefined;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
 }
 
 export interface OpenScopedWorkflowRunSideTabRequest
   extends OpenWorkflowRunSideTabRequest {
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
-  remoteSessionId?: string | undefined;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
 }
 
 export interface OpenScopedWorkflowRunDirectorySideTabRequest
   extends OpenWorkflowRunDirectorySideTabRequest {
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
-  remoteSessionId?: string | undefined;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
 }
 
 export interface OpenScopedPlanDetailSideTabRequest
   extends OpenPlanDetailSideTabRequest {
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
-  remoteSessionId?: string | undefined;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
 }
 
 export interface OpenSelectionSideChatRequest {
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
-  remoteSessionId?: string | undefined;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
   parentSessionId: string;
   childSessionId: string;
   /** active child 已确定不存在时，由宿主原子替换对应旧 tab。 */
-  replacesChildSessionId?: string | undefined;
+  replacesChildSessionId?: string;
 }
 
 export interface OpenSubagentSideTabRequest {
-  rootSessionId?: string | undefined;
+  rootSessionId?: string;
   parentSessionId: string;
   childSessionId: string;
   subagentType: string;
@@ -514,15 +514,15 @@ export interface OpenSubagentSideTabRequest {
 }
 
 export interface OpenSubagentDirectorySideTabRequest {
-  rootSessionId?: string | undefined;
+  rootSessionId?: string;
   parentSessionId: string;
 }
 
 export interface OpenScopedSubagentDirectorySideTabRequest
   extends OpenSubagentDirectorySideTabRequest {
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
-  remoteSessionId?: string | undefined;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
 }
 
 export interface SyncSubagentSessionTabsRequest {
@@ -534,8 +534,8 @@ export interface SyncSubagentSessionTabsRequest {
 export interface OpenScopedSubagentSideTabRequest
   extends OpenSubagentSideTabRequest {
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
-  remoteSessionId?: string | undefined;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
 }
 
 export type WorkspaceSidePaneTab =
@@ -650,12 +650,12 @@ export function normalizeWorkspaceSidePaneState(
 }
 
 function createBrowserSidePaneTab(options?: {
-  tabId?: string | undefined;
-  initialUrl?: string | null | undefined;
-  ownerTaskId?: string | null | undefined;
-  workspaceKey?: string | null | undefined;
-  remoteSessionId?: string | null | undefined;
-  agentOpened?: boolean | undefined;
+  tabId?: string;
+  initialUrl?: string | null;
+  ownerTaskId?: string | null;
+  workspaceKey?: string | null;
+  remoteSessionId?: string | null;
+  agentOpened?: boolean;
 }): BrowserSidePaneTab {
   return {
     id: options?.tabId ?? `browser:${createUuid()}`,
@@ -687,7 +687,7 @@ function createGitSidePaneTab(): GitSidePaneTab {
 
 function createModelTrajectorySidePaneTab(options: {
   taskId: string;
-  title?: string | null | undefined;
+  title?: string | null;
 }): ModelTrajectorySidePaneTab {
   return {
     // 同一个 task 复用同一个 tab，避免重复打开多份相同轨迹。
@@ -709,8 +709,8 @@ function createDeveloperToolsSidePaneTab(): DeveloperToolsSidePaneTab {
 
 function createTerminalSidePaneTab(options: {
   title: string;
-  cwd?: string | undefined;
-  remoteSessionId?: string | null | undefined;
+  cwd?: string;
+  remoteSessionId?: string | null;
 }): TerminalSidePaneTab {
   return {
     id: `terminal:${createUuid()}`,
@@ -731,9 +731,9 @@ function encodeSidePaneTabIdPart(value: string): string {
 function createSubagentSessionSidePaneTab(options: {
   workspaceKey: string;
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
-  remoteSessionId?: string | undefined;
-  rootSessionId?: string | undefined;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
+  rootSessionId?: string;
   parentSessionId: string;
   childSessionId: string;
   subagentType: string;
@@ -768,9 +768,9 @@ function createSubagentSessionSidePaneTab(options: {
 function createSubagentDirectorySidePaneTab(options: {
   workspaceKey: string;
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
-  remoteSessionId?: string | undefined;
-  rootSessionId?: string | undefined;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
+  rootSessionId?: string;
   parentSessionId: string;
 }): SubagentDirectorySidePaneTab {
   const rootSessionId = options.rootSessionId ?? options.parentSessionId;
@@ -1163,7 +1163,7 @@ export function stampSidePaneTabsOwnership(
   ownership: {
     ownerTaskId: string | null;
     workspaceKey: string | null;
-    remoteSessionId?: string | null | undefined;
+    remoteSessionId?: string | null;
   },
 ): WorkspaceSidePaneState | null {
   if (!state) return state;
@@ -1271,13 +1271,13 @@ export function restoreSidePaneTab(
 function activateBrowserSidePane(
   current: WorkspaceSidePaneState | null,
   options?: {
-    tabId?: string | undefined;
-    initialUrl?: string | null | undefined;
-    forceNew?: boolean | undefined;
-    ownerTaskId?: string | null | undefined;
-    workspaceKey?: string | null | undefined;
-    remoteSessionId?: string | null | undefined;
-    agentOpened?: boolean | undefined;
+    tabId?: string;
+    initialUrl?: string | null;
+    forceNew?: boolean;
+    ownerTaskId?: string | null;
+    workspaceKey?: string | null;
+    remoteSessionId?: string | null;
+    agentOpened?: boolean;
   },
 ): WorkspaceSidePaneState {
   if (!options?.forceNew && !options?.tabId && !options?.initialUrl) {
@@ -1298,13 +1298,13 @@ function activateBrowserSidePane(
 export function openBrowserSidePane(
   current: WorkspaceSidePaneState | null,
   options?: {
-    tabId?: string | undefined;
-    initialUrl?: string | null | undefined;
-    ownerTaskId?: string | null | undefined;
-    workspaceKey?: string | null | undefined;
-    remoteSessionId?: string | null | undefined;
-    activate?: boolean | undefined;
-    agentOpened?: boolean | undefined;
+    tabId?: string;
+    initialUrl?: string | null;
+    ownerTaskId?: string | null;
+    workspaceKey?: string | null;
+    remoteSessionId?: string | null;
+    activate?: boolean;
+    agentOpened?: boolean;
   },
 ): WorkspaceSidePaneState {
   const next = activateBrowserSidePane(current, {
@@ -1326,8 +1326,8 @@ export function findBrowserSidePaneTabByUrl(
   current: WorkspaceSidePaneState | null,
   options: {
     initialUrl: string;
-    ownerTaskId?: string | null | undefined;
-    workspaceKey?: string | null | undefined;
+    ownerTaskId?: string | null;
+    workspaceKey?: string | null;
   },
 ): BrowserSidePaneTab | undefined {
   const ownerKey = sidePaneOwnerKey(options.ownerTaskId);
@@ -1352,10 +1352,10 @@ export function openOrActivateBrowserSidePaneByUrl(
   options: {
     initialUrl: string;
     /** 新建时用的 tab id；缺席即现生成。命中已有 tab 时忽略。 */
-    tabId?: string | undefined;
-    ownerTaskId?: string | null | undefined;
-    workspaceKey?: string | null | undefined;
-    remoteSessionId?: string | null | undefined;
+    tabId?: string;
+    ownerTaskId?: string | null;
+    workspaceKey?: string | null;
+    remoteSessionId?: string | null;
   },
 ): WorkspaceSidePaneState {
   const existing = findBrowserSidePaneTabByUrl(current, options);
@@ -1363,8 +1363,12 @@ export function openOrActivateBrowserSidePaneByUrl(
   return activateBrowserSidePane(current, {
     initialUrl: options.initialUrl,
     ...(options.tabId ? { tabId: options.tabId } : {}),
-    ownerTaskId: options.ownerTaskId,
-    workspaceKey: options.workspaceKey,
+    ...(options.ownerTaskId === undefined
+      ? {}
+      : { ownerTaskId: options.ownerTaskId }),
+    ...(options.workspaceKey === undefined
+      ? {}
+      : { workspaceKey: options.workspaceKey }),
     ...(options.remoteSessionId
       ? { remoteSessionId: options.remoteSessionId }
       : {}),
@@ -1378,11 +1382,11 @@ function openBrowserUseSidePane(
     workspaceKey: string;
     sessionId: string;
     tabId: string;
-    browserId?: string | undefined;
-    browserGeneration?: number | undefined;
-    remoteSessionId?: string | undefined;
-    title?: string | undefined;
-    activate?: boolean | undefined;
+    browserId?: string;
+    browserGeneration?: number;
+    remoteSessionId?: string;
+    title?: string;
+    activate?: boolean;
   },
 ): WorkspaceSidePaneState {
   const id = `browser-use:${options.tabId}`;
@@ -1444,7 +1448,7 @@ function openBrowserUseSidePane(
 
 interface BrowserUseSidePaneScope {
   workspaceKey: string;
-  remoteSessionId?: string | undefined;
+  remoteSessionId?: string;
   ownerTaskId: string | null;
 }
 
@@ -1453,11 +1457,11 @@ export function applyBrowserUseSidePaneEvent(
   current: WorkspaceSidePaneState | null,
   options: {
     workspaceKey: string;
-    remoteSessionId?: string | undefined;
+    remoteSessionId?: string;
     sessionId: string;
     tabId: string;
-    browserId?: string | undefined;
-    browserGeneration?: number | undefined;
+    browserId?: string;
+    browserGeneration?: number;
   },
   activeScope: BrowserUseSidePaneScope,
 ): { state: WorkspaceSidePaneState; shouldReveal: boolean } {
@@ -1479,11 +1483,11 @@ export function applyBrowserUseSidePaneVisibilityEvent(
   current: WorkspaceSidePaneState | null,
   options: {
     workspaceKey: string;
-    remoteSessionId?: string | undefined;
+    remoteSessionId?: string;
     sessionId: string;
     tabId: string;
-    browserId?: string | undefined;
-    browserGeneration?: number | undefined;
+    browserId?: string;
+    browserGeneration?: number;
   },
   activeScope: BrowserUseSidePaneScope,
 ): {
@@ -1525,11 +1529,11 @@ export function applyBrowserTabResidencyEvent(
   current: WorkspaceSidePaneState | null,
   event: {
     tabId: string;
-    workspaceKey?: string | undefined;
-    remoteSessionId?: string | undefined;
-    sessionId?: string | undefined;
-    browserId?: string | undefined;
-    browserGeneration?: number | undefined;
+    workspaceKey?: string;
+    remoteSessionId?: string;
+    sessionId?: string;
+    browserId?: string;
+    browserGeneration?: number;
     generation: number;
     residency: Extract<
       BrowserTabResidencyState,
@@ -1674,7 +1678,7 @@ export function openModelTrajectorySidePane(
   current: WorkspaceSidePaneState | null,
   options: {
     taskId: string;
-    title?: string | null | undefined;
+    title?: string | null;
   },
 ): WorkspaceSidePaneState {
   return activateSidePaneTab(
@@ -1701,9 +1705,9 @@ export function openSubagentSessionSidePane(
   options: {
     workspaceKey: string;
     workspacePath: string;
-    workspaceIdentity?: string | undefined;
-    remoteSessionId?: string | undefined;
-    rootSessionId?: string | undefined;
+    workspaceIdentity?: string;
+    remoteSessionId?: string;
+    rootSessionId?: string;
     parentSessionId: string;
     childSessionId: string;
     subagentType: string;
@@ -1744,9 +1748,9 @@ export function openSubagentDirectorySidePane(
   options: {
     workspaceKey: string;
     workspacePath: string;
-    workspaceIdentity?: string | undefined;
-    remoteSessionId?: string | undefined;
-    rootSessionId?: string | undefined;
+    workspaceIdentity?: string;
+    remoteSessionId?: string;
+    rootSessionId?: string;
     parentSessionId: string;
   },
 ): WorkspaceSidePaneState {
@@ -2249,7 +2253,7 @@ export function markBrowserUseSidePaneTabOperation(
     browserGeneration: number;
     tabId: string;
     operationUntil: number;
-    resetsResizeBaseline?: boolean | undefined;
+    resetsResizeBaseline?: boolean;
   },
 ): WorkspaceSidePaneState | null {
   if (!current) return current;
@@ -2324,7 +2328,7 @@ export function toggleBrowserSidePane(
   }
 
   return activateBrowserSidePane(current, {
-    ownerTaskId,
+    ...(ownerTaskId === undefined ? {} : { ownerTaskId }),
     ...(remoteSessionId ? { remoteSessionId } : {}),
   });
 }

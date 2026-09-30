@@ -20,6 +20,7 @@ import { ChatPromptEditor } from "@zui/prompt-editor/ChatPromptEditor";
 import { TabStoreProvider } from "@zui/store/TabStoreProvider";
 import { ToolCallBlock } from "@zui/ToolCallBlocks";
 import { useTheme } from "@zui/useTheme";
+import { ConversationStatusPanel } from "@zui/v4/ConversationStatusPanel";
 import {
   Blocks,
   Brain,
@@ -3419,6 +3420,35 @@ export function Workbench() {
                 工作目录与分支已移到标题行右端，输入框不再背标签条。 */}
 
                       <div className="shrink-0 pr-[var(--scrollbar-lane,0px)]">
+                        {/* zcode 状态面板（P6）：子代理分区数据源 = 目录条目投影；
+                            git/goal/workflow 数据缝未接，分区由面板内部条件渲染隐藏 */}
+                        <ConversationStatusPanel
+                          layoutMode="auto"
+                          workspacePath={conversationProject?.workDir ?? ""}
+                          runningSubagents={(activeTask.subagents ?? [])
+                            .filter((entry) => !entry.endedAt)
+                            .map((entry) => ({
+                              childSessionId: entry.toolCallId,
+                              toolCallId: entry.toolCallId,
+                              subagentType: entry.name,
+                              title: entry.description
+                                ? (entry.description.split("\n")[0] ??
+                                  entry.name)
+                                : entry.name,
+                              ...(entry.description
+                                ? { summary: entry.description }
+                                : {}),
+                              status: "running" as const,
+                            }))}
+                          endedSubagentCount={
+                            (activeTask.subagents ?? []).filter(
+                              (entry) => entry.endedAt,
+                            ).length
+                          }
+                          onOpenSubagentDirectory={() =>
+                            requestPanelView("subagents")
+                          }
+                        />
                         <div className="w-full px-8 pt-3 pb-4">
                           {/* zcode composer（P5a）：ChatPromptEditor 原件（Lexical 编辑器 +
                       rounded-2xl 输入壳 + 发送/停止状态机 + `/` 命令目录）；我们的
