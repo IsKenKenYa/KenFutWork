@@ -1,4 +1,5 @@
 import type { TaskChatToolCallTreeNode } from "@/components/workbench/zcode/lib/toolCallTree.js";
+import type { SubagentToolRow } from "@/lib/subagent-directory";
 import type { TaskToolEntry } from "@/lib/workbench-tools";
 
 /**
@@ -16,8 +17,11 @@ import type { TaskToolEntry } from "@/lib/workbench-tools";
  * - completed      → completed（summary 以「失败」开头 = 执行异常，映射 failed）
  * - denied         → stopped（被工具门/权限档拦下，未执行；zcode cancelled 同语义）
  *
- * 子代理树：我方事件流无 parentToolUseId（子代理过程走独立目录视图），恒为主层节点；
- * v2 独立子 run 落地后在 minded 处补树形投影。
+ * 子代理树：主层节点由 {@link toToolCallTreeNode} 投影（无 parent 归属）；子代理
+ * 目录条目内的工具行（SubagentToolRow）经 {@link toChildToolCallNode} 投影为
+ * childToolCalls——zcode AgentToolCallBlock 的运行态 live ticker
+ * （collapsedChildSummary）消费它们滚动展示子代理最新动作，装配处按 toolCallId
+ * 关联注入（P3）。
  */
 
 const STATUS_MAP: Record<TaskToolEntry["status"], string> = {
@@ -53,6 +57,7 @@ function errorOf(entry: TaskToolEntry): string | undefined {
 /** 把一条 DeepAgents 工具事件投影为 zcode 树节点（恒为主层节点，见文件头说明）。 */
 export function toToolCallTreeNode(
   entry: TaskToolEntry,
+  childToolCalls: TaskChatToolCallTreeNode[] = [],
 ): TaskChatToolCallTreeNode {
   return {
     toolCall: {
@@ -69,7 +74,7 @@ export function toToolCallTreeNode(
       ...(errorOf(entry) ? { error: errorOf(entry) } : {}),
       ...(entry.startedAt !== undefined ? { startedAt: entry.startedAt } : {}),
     },
-    childToolCalls: [],
+    childToolCalls,
   };
 }
 
@@ -77,5 +82,37 @@ export function toToolCallTreeNode(
 export function toToolCallTreeNodes(
   entries: readonly TaskToolEntry[],
 ): TaskChatToolCallTreeNode[] {
-  return entries.map(toToolCallTreeNode);
+  return entries.map((entry) => toToolCallTreeNode(entry));
+}
+
+/**
+ * 子代理目录条目内的工具行 → zcode child 节点（AgentToolCallBlock 的
+ * childToolCalls / live ticker 消费）。字段按 child 身份分流需要投影：
+ * read_file 等文件族走 input.file_path（buildReadSummary），search 族走
+ * input.query/pattern；status 用 zcode 词表。
+ */
+export function toChildToolCallNode(
+  row: SubagentToolRow,
+): TaskChatToolCallTreeNode {
+  return {
+    toolCall: {
+      toolId: row.toolCallId,
+      parentToolUseId: null,
+      toolName: row.toolName,
+      kind: row.toolName,
+      ...(row.outputSummary ? { title: row.outputSummary } : {}),
+      input: row.input,
+      status: row.status === "running" ? "in_progress" : "completed",
+      ...(row.outputSummary ? { content: row.outputSummary } : {}),
+      ...(row.startedAt !== undefined ? { startedAt: row.startedAt } : {}),
+    },
+    childToolCalls: [],
+  };
+}
+
+/** 子代理目录条目的全部工具行 → child 节点列表（保序）。 */
+export function toChildToolCallNodes(
+  rows: readonly SubagentToolRow[],
+): TaskChatToolCallTreeNode[] {
+  return rows.map(toChildToolCallNode);
 }

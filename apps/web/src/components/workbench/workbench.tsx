@@ -198,7 +198,7 @@ import {
   toolDisplayLabel,
 } from "@/lib/workbench-tools";
 import { buildTrajectory, turnRailItems } from "@/lib/workbench-trajectory";
-import { toToolCallTreeNode } from "@/lib/zcode-adapter";
+import { toChildToolCallNodes, toToolCallTreeNode } from "@/lib/zcode-adapter";
 
 /**
  * Agent 工作台（产品主入口）：Code / Design 双模式（DEC-2）。
@@ -304,10 +304,13 @@ interface WorkbenchTask {
 function AssistantTurn({
   msg,
   streaming = false,
+  subagents,
 }: {
   msg: TaskMessage;
   /** 该消息是否仍在流式（任务运行中的最后一条）：思考行的「思考中」态用它。 */
   streaming?: boolean;
+  /** 子代理目录条目（P3 live ticker：派发行按 toolCallId 关联取工具行）。 */
+  subagents?: SubagentEntry[] | undefined;
 }) {
   // zcode 组件装配适配（手册 §2.2）：theme 经 zui useTheme 注入；外链优先右栏
   // 浏览器面板，面板不可用/拒绝时退系统浏览器（canOpenInBrowserPanel/requestBrowserOpen）
@@ -399,20 +402,34 @@ function AssistantTurn({
         // tool identity 分流：read 单行 / edit diff 计数 / execute 终端面板 /
         // agent 子代理行点击开右栏）。刻意**不**做聚合折叠。
         // 工具行无纵向内边距（zcode ToolCallRowView 同口径：间距由组容器 gap 给）。
-        return group.tools.map((tool) => (
-          <div key={tool.toolCallId} className="w-full max-w-full py-0">
-            <ToolCallBlock
-              toolCallNode={toToolCallTreeNode(tool)}
-              workspacePath=""
-              theme={zcodeTheme}
-              codePreviewSettings={DEFAULT_CODE_PREVIEW_SETTINGS}
-              onOpenBrowserUrl={openExternalUrl}
-              agentSummaryAction={{
-                onActivate: () => requestPanelView("subagents"),
-              }}
-            />
-          </div>
-        ));
+        return group.tools.map((tool) => {
+          // P3 live ticker：子代理派发行的运行态摘要来自目录条目内的工具行
+          // （zcode AgentToolCallBlock 的 collapsedChildSummary 消费 childToolCalls）
+          const subagentEntry = subagents?.find(
+            (candidate) => candidate.toolCallId === tool.toolCallId,
+          );
+          const childTools = subagentEntry
+            ? toChildToolCallNodes(
+                subagentEntry.blocks.flatMap((block) =>
+                  block.type === "tool" ? [block.tool] : [],
+                ),
+              )
+            : [];
+          return (
+            <div key={tool.toolCallId} className="w-full max-w-full py-0">
+              <ToolCallBlock
+                toolCallNode={toToolCallTreeNode(tool, childTools)}
+                workspacePath=""
+                theme={zcodeTheme}
+                codePreviewSettings={DEFAULT_CODE_PREVIEW_SETTINGS}
+                onOpenBrowserUrl={openExternalUrl}
+                agentSummaryAction={{
+                  onActivate: () => requestPanelView("subagents"),
+                }}
+              />
+            </div>
+          );
+        });
       })}
     </div>
   );
@@ -3220,6 +3237,7 @@ export function Workbench() {
                                   streaming={
                                     streaming && i === shown.messages.length - 1
                                   }
+                                  subagents={activeTask.subagents}
                                 />
                               )}
                             </div>
