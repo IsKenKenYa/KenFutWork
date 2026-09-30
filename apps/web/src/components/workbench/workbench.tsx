@@ -17,7 +17,9 @@ import { useTheme } from "@zui/useTheme";
 import {
   Blocks,
   Brain,
+  Check,
   Code2,
+  Copy,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -285,6 +287,35 @@ interface WorkbenchTask {
   checkpoint?: CheckpointSummary;
   /** 在途 run 的 id（run.started 时登记，终态不清）：刷新后断线重接（canvas.resume）用。 */
   activeRunId?: string;
+}
+/**
+ * zcode CopyRowAction 视觉（v4 ConversationRowView 照搬）：ghost 复制按钮，
+ * 成功 1.2s 打勾。zcode 的 runUserAction 埋点缝我们没有，直写剪贴板。
+ */
+function UserRowCopyAction({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      aria-label="复制"
+      title="复制"
+      disabled={text.length === 0}
+      onClick={() => {
+        if (!text || !navigator.clipboard) return;
+        void navigator.clipboard.writeText(text).then(() => {
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1200);
+        });
+      }}
+      className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+    >
+      {copied ? (
+        <Check aria-hidden className="size-3.5 text-success" />
+      ) : (
+        <Copy aria-hidden className="size-3.5" />
+      )}
+    </button>
+  );
 }
 
 /**
@@ -3209,7 +3240,7 @@ export function Workbench() {
                             <div
                               // biome-ignore lint/suspicious/noArrayIndexKey: 流式为追加列表，消息的稳定身份就是位置；内容键会每个 token 换 key，把整条消息重挂载
                               key={i}
-                              className="space-y-2"
+                              className="group/turn space-y-2"
                               data-turn-anchor={turnOfIndex[i]}
                             >
                               {showSummary && i === lastAssistantIdx ? (
@@ -3226,10 +3257,14 @@ export function Workbench() {
                                 </div>
                               ) : null}
                               {msg.role === "user" ? (
-                                // zcode 用户消息气泡（MessageContent is-user）：右对齐、
-                                // 含蓄底色（bg-secondary 而非品牌色）、rounded-lg
-                                <div className="ml-auto w-fit max-w-[85%] rounded-lg bg-secondary px-4 py-3 text-ui-base text-secondary-foreground whitespace-pre-wrap">
-                                  {msg.text}
+                                // zcode v4 用户消息行（UserInputRowView 气泡 + hover 操作行）：
+                                // rounded-xl rounded-tr-xs + border + bg-surface（面板色非品牌色），
+                                // hover 显现复制（group/user-row 口径，复制成功 1.2s 打勾）
+                                <div className="group/user-row flex w-full flex-col items-end">
+                                  <div className="flex max-w-full flex-col gap-2 rounded-xl rounded-tr-xs border border-border bg-surface px-4 py-3 text-ui-base text-foreground whitespace-pre-wrap">
+                                    {msg.text}
+                                  </div>
+                                  <UserRowCopyAction text={msg.text} />
                                 </div>
                               ) : (
                                 <AssistantTurn
@@ -3240,6 +3275,23 @@ export function Workbench() {
                                   subagents={activeTask.subagents}
                                 />
                               )}
+                              {/* zcode ConversationAssistantTextActions 口径：
+                                  轮尾助手正文 hover 显现复制 + 相对时间（我们无 feedback/fork 缝，
+                                  按原件条件渲染口径直接不渲染那两个入口） */}
+                              {msg.role === "assistant" &&
+                              showSummary &&
+                              i === lastAssistantIdx ? (
+                                <div className="mt-1 flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover/turn:opacity-100">
+                                  <UserRowCopyAction text={msg.text} />
+                                  <span className="select-none text-ui-sm text-foreground-subtlest">
+                                    {formatTaskRelativeTime(
+                                      activeTask.runEndedAt ??
+                                        activeTask.runEndedAt ??
+                                        activeTask.createdAt,
+                                    )}
+                                  </span>
+                                </div>
+                              ) : null}
                             </div>
                           );
                         });
