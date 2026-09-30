@@ -321,6 +321,10 @@ const IGNORED_DIRS = new Set([
   ".next",
   "out",
   ".turbo",
+  // i18n 目录是纯文案键值表（如 zcode 移植的 zh-CN.ts），键名里的 `.storage.`
+  // （"resourceManager.storage.summaryTotal"）会被 storageRefs 误计为存储客户端
+  // 访问——文案不是代码，与 ctx/deps 接收者同一条误报排除原则（口径修正 2026-09-30）。
+  "i18n",
 ]);
 
 /** 全部源文件（排除测试）——按全量统计才能同口径比较：只统计「已耦合文件」时，
