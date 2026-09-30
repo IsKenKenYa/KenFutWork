@@ -56,10 +56,16 @@ const unavailableFileService: ZCodeFileServiceSlice = {
   },
 };
 
-/** 恒抛错的 subagents 服务占位：调用即「未接通」，store 侧落 error 态、agents 恒空。 */
+/**
+ * subagents 服务占位：list 返回空目录（capability null）——store 侧落**成功空态**
+ * 而非 error 态（写操作仍抛「未接通」）。此前恒抛错会让每次 composer 挂载都
+ * console.error 触发 Next dev overlay（真机噪音，2026-10-01）；照搬组件对空目录
+ * 的降级路径（agents 恒空、配置面板隐藏）与 error 态一致。
+ * 适配注记：stub 行为调整已登记（P5b）。
+ */
 const unavailableSubagentsService: ISubagentsService = {
   async list() {
-    throw new Error("subagentsService.list 未接通");
+    return { agents: [], capability: null };
   },
   async setEnabled() {
     throw new Error("subagentsService.setEnabled 未接通");

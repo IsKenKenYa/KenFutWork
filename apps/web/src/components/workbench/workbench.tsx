@@ -206,6 +206,7 @@ import {
 } from "@/lib/workbench-tools";
 import { buildTrajectory, turnRailItems } from "@/lib/workbench-trajectory";
 import { toChildToolCallNodes, toToolCallTreeNode } from "@/lib/zcode-adapter";
+import { createHostFileService } from "@/lib/zcode-file-service";
 
 /**
  * Agent 工作台（产品主入口）：Code / Design 双模式（DEC-2）。
@@ -1076,6 +1077,20 @@ export function Workbench() {
   useEffect(() => {
     installDesktopExternalLinks();
   }, []);
+
+  // P5b：mention 文件数据源（@ 面板）——fileService 真实现接服务端文件能力
+  const zcodeFileService = useMemo(
+    () =>
+      createHostFileService({
+        accessToken: session?.access_token ?? null,
+        // 对话绑定项目优先（会话内），回退页面选中项目（首页场景）
+        canvasId:
+          conversationProject?.primaryCanvas.id ??
+          selectedProject?.primaryCanvas.id ??
+          null,
+      }),
+    [session, conversationProject],
+  );
 
   // 自定义命令（需 token）：只在登录后拉一次，失败不阻断（没有命令就只是不展开）。
   // 同一份命令表经 injectWorkspaceSlashCommands 喂给 zcode composer 的 `/` 面板
@@ -2501,7 +2516,9 @@ export function Workbench() {
   return (
     <TooltipProvider>
       <PlatformProvider platform={zcodeStubPlatform}>
-        <ServiceProvider services={zcodeStubServices}>
+        <ServiceProvider
+          services={{ ...zcodeStubServices, fileService: zcodeFileService }}
+        >
           {/* zcode TabStoreProvider：composer（LexicalChatInput → activeTaskProvider）消费
         tab store 的默认态；数据面接通时替换 provider 内部实现，照搬组件零改动 */}
           <TabStoreProvider>
@@ -3420,7 +3437,7 @@ export function Workbench() {
                             submitLabel="发送"
                             cancelLabel="停止本轮"
                             showSlashButton
-                            enableMentionPanel={false}
+                            enableMentionPanel
                             leadingActions={
                               <>
                                 <button
@@ -3670,7 +3687,7 @@ ${formatElementReference(picked)}`
                           enterSubmits
                           submitLabel="发送"
                           showSlashButton
-                          enableMentionPanel={false}
+                          enableMentionPanel
                           leadingActions={
                             <>
                               <button
