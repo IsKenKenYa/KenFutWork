@@ -77,6 +77,13 @@ export interface BroadcastClaimLease {
  */
 export interface IServiceAccessor {
   readonly [serviceId: string]: unknown;
+  /** zcode 照搬（P9 补充）：消费方（useModelSelectionView / useUsageEntitlement）按 optional 切片访问，stub 下得 undefined 判空降级。 */
+  readonly modelSelectionService?: IModelSelectionService | undefined;
+  readonly usageStatsService?: IUsageStatsService | undefined;
+  /** zcode 照搬（P9 补充）：AssistantPreviewCards 校验消费面（AssistantPreviewCardFileStatService 切片），stub 下恒 undefined。 */
+  readonly fileService?:
+    | import("./assistantPreviewCards").AssistantPreviewCardFileStatService
+    | undefined;
 }
 
 /** 与 zcode ISubagentsService.list 同形状；仅保留 store 消费的入参与返回。 */
@@ -156,4 +163,71 @@ export interface IGitService {
     conversationContext?: GitCommitMessageConversationContext | undefined;
   }): Promise<GitGenerateCommitMessageResult>;
   push(params: { workspacePath: string }): Promise<GitPushResult>;
+}
+
+/* ---------- zcode 照搬（P9 补充）：services 服务缝类型切片 ----------
+ * 来源：references/zcode/packages/services/src/model-provider/providerFacadeServices.ts、
+ * references/zcode/packages/provider/src/facades.ts（View 类型）、rpc Event 形状。
+ * 消费方：hooks/{useModelSelectionView,useProviderSettingsView}、lib/providerSettingsSnapshot、
+ * lib/{modelSelectionGroups,modelThoughtOption,accountProviderAccess,codingPlanFunnelTelemetry}、
+ * settings/CodingPlanUpgradeDialog、hooks/useCodingPlanEntryPlanList。许可证：Apache-2.0（zcode）。
+ * 适配注记：类型切片与上游字段逐一对齐；View 主体在 lib/zcode-provider.ts（@zcode/provider 切片），
+ * 此处 re-export 以保持消费方 `from "@zcode/services"` 的导入面。
+ */
+
+/** zcode rpc Event 的宿主切片：订阅返回可释放句柄。 */
+export interface ZCodeEventSubscription {
+  dispose(): void;
+}
+
+export type ZCodeServiceEvent<T> = (
+  listener: (value: T) => void,
+) => ZCodeEventSubscription;
+
+export type {
+  AccountProviderState,
+  ConfigValidationIssue,
+  ModelConfigObject,
+  ModelId,
+  ModelSelectionView,
+  ModelSelectionViewInput,
+  ProviderConfigObject,
+  ProviderId,
+  ProviderSettingsProviderView,
+  ProviderSettingsView,
+} from "@zui/lib/zcode-provider";
+
+import type {
+  ModelSelectionView,
+  ModelSelectionViewInput,
+  ProviderSettingsView,
+} from "@zui/lib/zcode-provider";
+import type {
+  CodingPlanResetOpportunityRequest,
+  CodingPlanResetOpportunityResult,
+  UsageEntitlementRequest,
+  UsageEntitlementSnapshot,
+} from "@zui/lib/zcode-shared";
+
+/** 模型选择 Facade 的服务切片：消费方仅读 View 与变更事件（写入面本仓未接通）。 */
+export interface IModelSelectionService {
+  readonly onDidChange: ZCodeServiceEvent<ModelSelectionView>;
+  getView(input?: ModelSelectionViewInput): Promise<ModelSelectionView>;
+}
+
+/** Provider Settings Facade 的服务切片：消费方仅读 View 与变更事件（写入面本仓未接通）。 */
+export interface IProviderSettingsService {
+  readonly onDidChange: ZCodeServiceEvent<ProviderSettingsView>;
+  getView(): Promise<ProviderSettingsView>;
+}
+
+/** Usage Stats Facade 的服务切片：本仓消费面 entitlement 读取 + coding-plan 重置机会查询（P9 补充；写面/其余查询未接通）。 */
+export interface IUsageStatsService {
+  getEntitlementSnapshot(
+    request?: UsageEntitlementRequest,
+  ): Promise<UsageEntitlementSnapshot>;
+  /** zcode 照搬（P9 补充）：签名逐字取自 references/zcode/packages/services/src/usage-stats/usageStats.ts。 */
+  requestCodingPlanResetOpportunity(
+    request: CodingPlanResetOpportunityRequest,
+  ): Promise<CodingPlanResetOpportunityResult>;
 }

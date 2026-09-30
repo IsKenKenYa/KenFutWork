@@ -250,7 +250,7 @@ export function parsePromptCodeComments(
   content: string,
   options: {
     workspacePath: string;
-    workspaceIdentity?: string;
+    workspaceIdentity?: string | undefined;
   },
 ): ParsedCodeCommentPrompt {
   // 这里不能使用 multiline 的 `$`，否则非贪婪匹配会在第一行 `## Comment 1` 后提前停止，

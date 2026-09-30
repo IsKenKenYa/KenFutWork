@@ -28,7 +28,7 @@ interface WorkspaceEditorSelectionState {
 
 export function resolveWorkspaceFileManagerEditor(
   availableEditors: EditorInfo[],
-  remoteTarget?: RemoteTarget | OpenInEditorRemoteTarget,
+  remoteTarget?: RemoteTarget | OpenInEditorRemoteTarget | undefined,
 ): EditorInfo | null {
   // WSL 的 Explorer 已具备 UNC 映射能力，“在资源管理器中打开”应与
   // “打开方式 → 资源管理器”复用同一个编辑器入口；SSH/Docker 仍保持失败关闭。
@@ -54,7 +54,7 @@ export function resolveWorkspaceEditorSelection({
 }: {
   installedEditors: EditorInfo[];
   selectedEditorId: string | null;
-  remoteTarget?: RemoteTarget | OpenInEditorRemoteTarget;
+  remoteTarget?: RemoteTarget | OpenInEditorRemoteTarget | undefined;
 }): WorkspaceEditorSelectionState {
   let availableEditors: EditorInfo[];
 
@@ -108,3 +108,4 @@ export function shouldPersistWorkspaceEditorSelection(
   // 这种 fallback 不是用户显式选择，不能覆盖本地工作区继续使用的全局编辑器偏好。
   return selectionKind === "explicit";
 }
+/* 适配注记（P9）：可选参数放宽 | undefined（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。 */

@@ -38,16 +38,18 @@ export { clampImagePreviewOffset as clampMarkdownImagePreviewOffset } from "@zui
 
 export type MarkdownImageProps = ComponentProps<"img"> & {
   node?: unknown;
-  workspacePath?: string;
-  workspaceHomePath?: string;
-  sessionId?: string;
-  readAttachment?: (params: {
-    sessionId: string;
-    ref: string;
-  }) => Promise<
-    | { bytes: Uint8Array; mediaType: string }
-    | { url: string; mediaType: string }
-  >;
+  workspacePath?: string | undefined;
+  workspaceHomePath?: string | undefined;
+  sessionId?: string | undefined;
+  readAttachment?:
+    | ((params: {
+        sessionId: string;
+        ref: string;
+      }) => Promise<
+        | { bytes: Uint8Array; mediaType: string }
+        | { url: string; mediaType: string }
+      >)
+    | undefined;
 };
 
 const markdownImageOnlyLinePattern = /^\s*!\[[^\]]*]\([^\n]+\)\s*$/;
@@ -436,3 +438,4 @@ export function MarkdownImage({
     </>
   );
 }
+/* 适配注记（P9）：接口可选属性放宽 | undefined（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。 */

@@ -2,6 +2,7 @@
  * zcode 照搬：`@/lib/markdownFileLink.ts`（references/zcode/packages/ui/src/lib/markdownFileLink.ts）
  * 许可证：Apache-2.0（zcode）。
  * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
+ * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
  */
 
 import { stripBalancedAssistantPathQuotes } from "@zui/lib/assistantPathQuotes";
@@ -19,7 +20,7 @@ interface ParsedMarkdownFileLink {
 
 export interface MarkdownFileLinkResolveOptions {
   /** 当前 workspace Host 报告的用户 Home；Renderer 不自行读取本机 Home。 */
-  homePath?: string;
+  homePath?: string | undefined;
 }
 
 const LINE_AND_COLUMN_SUFFIX_RE = /^(?<path>.+):(?<line>\d+):(?<column>\d+)$/;

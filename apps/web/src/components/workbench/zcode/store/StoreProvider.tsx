@@ -11,6 +11,7 @@
  */
 "use client";
 
+import type { Theme } from "@zui/useTheme";
 import { createContext, type ReactNode, useContext } from "react";
 
 /** zcode ZCodeState 的最小占位：照搬组件 selector 可能触及的字段在此登记。 */
@@ -22,6 +23,14 @@ export interface ZCodeStatePlaceholder {
    * useInterfaceMode 的 selector 触及此字段，恒走 defaultValue=false 分支。
    */
   readonly interfaceMode?: string;
+  /**
+   * zcode 照搬（P9 补充）：ZCodeState.theme / ZCodeState.user 的占位登记——coding-plan
+   * 购买缝照搬件（CodingPlanEmbeddedWebviewDialog / useCodingPlanEntryPlanList）的 selector
+   * 触及。本仓无真实 store：WithDefault 恒走 defaultValue 分支，字段运行时不可达。
+   * user 取 zcode UserInfo 的消费切片（购买上报只用 id）。
+   */
+  readonly theme: Theme;
+  readonly user: { readonly id: string } | null;
 }
 
 export type ZCodeStorePlaceholder = {

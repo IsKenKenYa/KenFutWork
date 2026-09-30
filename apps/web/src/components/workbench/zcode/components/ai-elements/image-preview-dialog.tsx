@@ -30,11 +30,11 @@ import { useEffect, useRef, useState } from "react";
 
 export interface ImagePreviewDialogItem {
   alt: string;
-  error?: boolean;
-  filename?: string;
-  loading?: boolean;
-  mediaType?: string;
-  src?: string;
+  error?: boolean | undefined;
+  filename?: string | undefined;
+  loading?: boolean | undefined;
+  mediaType?: string | undefined;
+  src?: string | undefined;
 }
 
 interface PreviewOffset {
@@ -613,3 +613,4 @@ export function ImagePreviewDialog({
     </Dialog>
   );
 }
+/* 适配注记（P9）：接口可选属性放宽 | undefined（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。 */

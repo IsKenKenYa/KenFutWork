@@ -461,7 +461,7 @@ export type ReasoningContentProps = ComponentProps<
   typeof CollapsibleContent
 > & {
   children: string;
-  variant?: "default" | "nested";
+  variant?: "default" | "nested" | undefined;
 };
 
 export const ReasoningContent = memo(

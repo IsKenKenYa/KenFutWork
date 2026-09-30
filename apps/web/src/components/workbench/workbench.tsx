@@ -18,9 +18,9 @@ import { injectWorkspaceSlashCommands } from "@zui/hooks/useSlashCommands";
 import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@zui/lib/codePreviewSettings";
 import { ChatPromptEditor } from "@zui/prompt-editor/ChatPromptEditor";
 import { TabStoreProvider } from "@zui/store/TabStoreProvider";
-import { ToolCallBlock } from "@zui/ToolCallBlocks";
 import { useTheme } from "@zui/useTheme";
 import { ConversationStatusPanel } from "@zui/v4/ConversationStatusPanel";
+import { ConversationTimeline } from "@zui/v4/ConversationTimeline";
 import {
   Blocks,
   Brain,
@@ -100,9 +100,6 @@ import {
 } from "@/components/workbench/settings-modal";
 import { SidebarRow } from "@/components/workbench/sidebar-row";
 import { SkillsModal } from "@/components/workbench/skills-modal";
-import { TodoProgressPanel } from "@/components/workbench/todo-progress-panel";
-import { TrajectoryView } from "@/components/workbench/trajectory-view";
-import { TurnRail } from "@/components/workbench/turn-rail";
 import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
 import { WorkDirectorySelect } from "@/components/workbench/work-directory-select";
 import { WorkbenchSidePanel } from "@/components/workbench/workbench-side-panel";
@@ -205,9 +202,8 @@ import {
   type TaskMessage,
   toolDisplayLabel,
 } from "@/lib/workbench-tools";
-import { buildTrajectory, turnRailItems } from "@/lib/workbench-trajectory";
-import { toChildToolCallNodes, toToolCallTreeNode } from "@/lib/zcode-adapter";
 import { createHostFileService } from "@/lib/zcode-file-service";
+import { toConversationRows } from "@/lib/zcode-rows";
 
 /**
  * Agent 工作台（产品主入口）：Code / Design 双模式（DEC-2）。
@@ -294,183 +290,6 @@ interface WorkbenchTask {
   checkpoint?: CheckpointSummary;
   /** 在途 run 的 id（run.started 时登记，终态不清）：刷新后断线重接（canvas.resume）用。 */
   activeRunId?: string;
-}
-/**
- * zcode CopyRowAction 视觉（v4 ConversationRowView 照搬）：ghost 复制按钮，
- * 成功 1.2s 打勾。zcode 的 runUserAction 埋点缝我们没有，直写剪贴板。
- */
-function UserRowCopyAction({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      aria-label="复制"
-      title="复制"
-      disabled={text.length === 0}
-      onClick={() => {
-        if (!text || !navigator.clipboard) return;
-        void navigator.clipboard.writeText(text).then(() => {
-          setCopied(true);
-          window.setTimeout(() => setCopied(false), 1200);
-        });
-      }}
-      className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-    >
-      {copied ? (
-        <Check aria-hidden className="size-3.5 text-success" />
-      ) : (
-        <Copy aria-hidden className="size-3.5" />
-      )}
-    </button>
-  );
-}
-
-/**
- * 一轮助手回复的**逐个、按时序**渲染：正文段与每一次工具调用按发生顺序交错
- * （参考 deepseek-harness 展开后的 turn：每个工具调用是独立一行；Cherry Studio
- * 的 MessagePartsRenderer 同样逐行展示「编辑文件 xxx / 终端 … / 查阅 · N 搜 N 文件」）。
- *
- * 历史事故①：工具轨迹曾以 `task.tools` 挂在任务上、全部渲染在对话最底部——
- * 看不出每次调用属于哪轮对话、发生在哪段正文前后，跨轮任务还被 10 条上限截断
- * （2026-09-20 反馈）。
- * 历史事故②（同日二次反馈）：修好归属后又把连续调用收进「工具调用 × N」折叠组，
- * 用户「还是看不到详细的工具调用记录」——要的是**逐个展示、按时间顺序**，
- * 不能聚成一团。所以这里不做任何聚合：一次调用一行，行本身永远可见，
- * 只有行内的输出详情才默认折叠（点行展开）。
- *
- */
-function AssistantTurn({
-  msg,
-  streaming = false,
-  subagents,
-}: {
-  msg: TaskMessage;
-  /** 该消息是否仍在流式（任务运行中的最后一条）：思考行的「思考中」态用它。 */
-  streaming?: boolean;
-  /** 子代理目录条目（P3 live ticker：派发行按 toolCallId 关联取工具行）。 */
-  subagents?: SubagentEntry[] | undefined;
-}) {
-  // zcode 组件装配适配（手册 §2.2）：theme 经 zui useTheme 注入；外链优先右栏
-  // 浏览器面板，面板不可用/拒绝时退系统浏览器（canOpenInBrowserPanel/requestBrowserOpen）
-  const { resolvedTheme: zcodeTheme } = useTheme();
-  const openExternalUrl = (url: string) => {
-    if (canOpenInBrowserPanel() && requestBrowserOpen(url)) return;
-    window.open(url, "_blank", "noopener");
-  };
-  // 无 blocks 的消息（纯文本）就地归一化成单文本块——只有一条渲染路径，没有旧版分支
-  const groups = useMemo(
-    () =>
-      // 纯空白文本段（模型在工具调用前后吐的换行）渲染成空泡泡纯属噪音
-      groupAssistantBlocks(msg.blocks).filter(
-        (g) => g.kind !== "text" || g.text.trim().length > 0,
-      ),
-    [msg.blocks],
-  );
-  return (
-    <div className="flex w-full max-w-full flex-col items-start gap-2.5">
-      {groups.map((group, gi) => {
-        if (group.kind === "text") {
-          // zcode 助手正文：streamdown 流式安全 markdown（MessageResponse）
-          return (
-            <div
-              // biome-ignore lint/suspicious/noArrayIndexKey: 组序即时序，块内没有更稳定的身份
-              key={gi}
-              className="w-full max-w-full"
-            >
-              <MessageResponse
-                streaming={streaming && gi === groups.length - 1}
-                theme={zcodeTheme}
-                codePreviewSettings={DEFAULT_CODE_PREVIEW_SETTINGS}
-                onOpenExternalUrl={openExternalUrl}
-              >
-                {group.text}
-              </MessageResponse>
-            </div>
-          );
-        }
-        if (group.kind === "reasoning") {
-          // zcode 思考行：默认收起，完成态「思考 · 持续了 N 秒」
-          return (
-            <Reasoning
-              // biome-ignore lint/suspicious/noArrayIndexKey: 组序即时序，块内没有更稳定的身份
-              key={gi}
-              isStreaming={streaming && gi === groups.length - 1}
-            >
-              <ReasoningTrigger streamingText={group.text} />
-              <ReasoningContent>{group.text}</ReasoningContent>
-            </Reasoning>
-          );
-        }
-        if (group.kind === "notification") {
-          const n = group.notification;
-          // zcode 时间线标记分隔线（MarkerDividerRow）：两侧细横线 + 居中 pill
-          return (
-            <div
-              key={`notify-${n.taskId}`}
-              className="flex w-full items-center gap-3 px-4 py-2 text-ui-base text-foreground-subtle"
-            >
-              <div aria-hidden className="h-px min-w-8 flex-1 bg-border/50" />
-              <span className="inline-flex min-w-0 shrink items-center justify-center gap-1.5 text-center leading-5">
-                <span
-                  aria-hidden
-                  className={
-                    n.status === "completed"
-                      ? "text-emerald-600"
-                      : "text-red-600"
-                  }
-                >
-                  ●
-                </span>
-                <span className="min-w-0 break-words">
-                  后台任务
-                  {n.status === "completed"
-                    ? "完成"
-                    : n.status === "failed"
-                      ? "失败"
-                      : "已取消"}
-                  ：{n.label} — {n.summary}
-                  {n.nextStep ? `（${n.nextStep}）` : ""}
-                </span>
-              </span>
-              <div aria-hidden className="h-px min-w-8 flex-1 bg-border/50" />
-            </div>
-          );
-        }
-        // 连续工具调用：一行一个，zcode ToolCallBlocks 原件渲染（renderer 按
-        // tool identity 分流：read 单行 / edit diff 计数 / execute 终端面板 /
-        // agent 子代理行点击开右栏）。刻意**不**做聚合折叠。
-        // 工具行无纵向内边距（zcode ToolCallRowView 同口径：间距由组容器 gap 给）。
-        return group.tools.map((tool) => {
-          // P3 live ticker：子代理派发行的运行态摘要来自目录条目内的工具行
-          // （zcode AgentToolCallBlock 的 collapsedChildSummary 消费 childToolCalls）
-          const subagentEntry = subagents?.find(
-            (candidate) => candidate.toolCallId === tool.toolCallId,
-          );
-          const childTools = subagentEntry
-            ? toChildToolCallNodes(
-                subagentEntry.blocks.flatMap((block) =>
-                  block.type === "tool" ? [block.tool] : [],
-                ),
-              )
-            : [];
-          return (
-            <div key={tool.toolCallId} className="w-full max-w-full py-0">
-              <ToolCallBlock
-                toolCallNode={toToolCallTreeNode(tool, childTools)}
-                workspacePath=""
-                theme={zcodeTheme}
-                codePreviewSettings={DEFAULT_CODE_PREVIEW_SETTINGS}
-                onOpenBrowserUrl={openExternalUrl}
-                agentSummaryAction={{
-                  onActivate: () => requestPanelView("subagents"),
-                }}
-              />
-            </div>
-          );
-        });
-      })}
-    </div>
-  );
 }
 
 const MODE_META: Record<
@@ -573,9 +392,6 @@ export function Workbench() {
    * 转录区视图（参考 deepseek-harness 的「对话 / 轨迹」双页签）：对话按发生顺序
    * 交错展示，轨迹是按轮次分组的只读账本（每次调用的时间/耗时/入参/输出一表可查）。
    */
-  const [transcriptTab, setTranscriptTab] = useState<"chat" | "trajectory">(
-    "chat",
-  );
   // Code 模式对话区右键菜单（原生菜单在应用内浏览器不弹，用户无法复制/粘贴）
   const chatMenu = useChatContextMenu();
   const codeMessagesRef = useRef<HTMLDivElement>(null);
@@ -708,50 +524,13 @@ export function Workbench() {
   );
 
   /** 轨迹账本（对话/轨迹双页签的「轨迹」侧）：按轮次分组、行序即时序。 */
-  const trajectoryModel = useMemo(
-    () => buildTrajectory(activeTask?.messages ?? []),
-    [activeTask],
-  );
 
   /** 从对话流工具行「查看轨迹」跳来的聚焦目标（轨迹页签滚动定位用）。 */
-  const [trajectoryFocus] = useState<string | null>(null);
 
   /** 左缘时间线刻度的数据（ZCode TurnNavigator 同款：一轮一项）。 */
-  const turnRail = useMemo(
-    () => turnRailItems(trajectoryModel),
-    [trajectoryModel],
-  );
-  /** 跳到某轮：滚动定位到该轮的用户消息锚（data-turn-anchor）。 */
-  const jumpToTurn = useCallback((index: number) => {
-    document
-      .querySelector(`[data-turn-anchor="${index}"]`)
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, []);
 
   /**
-   * 每条消息所属的轮次（1 起始）——时间线刻度的滚动锚用。口径与
-   * buildTrajectory 一致：用户消息开启新轮（归属新轮），助手消息归属
-   * 「当前轮」（开头还没有用户消息时防御性归第 1 轮）。
-   */
-  const turnOfIndex = useMemo(() => {
-    const shown = activeTask?.messages ?? [];
-    const result: number[] = [];
-    let opened = 0;
-    for (const message of shown) {
-      // 用户消息开新轮；开头的助手消息（还没有任何用户消息）防御性先占第 1 轮
-      if (message.role === "user") {
-        opened += 1;
-      } else if (opened === 0) {
-        opened = 1;
-      }
-      result[result.length] = opened;
-    }
-    return result;
-  }, [activeTask?.messages]);
-
-  /**
-   * 选中模型的容量元数据（窗口 / 最大输出），两处编排器共用一份。
-   *
+   * composer 模型 chips 共用的上下文元数据（contextWindow/maxOutputTokens）。
    * 此前它们各写各的 `models.find(...)`，**带真实用量的那个漏传 `maxOutputTokens`**——
    * 上下文浮层「预留输出 / 剩余」两段与阈值刻度因此任何模式下都不出现（真机实测才发现）。
    */
@@ -1078,6 +857,13 @@ export function Workbench() {
   useEffect(() => {
     installDesktopExternalLinks();
   }, []);
+
+  // zcode 装配（P5a/P9）：主题解析 + 外链打开（右栏浏览器面板优先，退系统浏览器）
+  const { resolvedTheme: zcodeTheme } = useTheme();
+  const openExternalUrl = (url: string) => {
+    if (canOpenInBrowserPanel() && requestBrowserOpen(url)) return;
+    window.open(url, "_blank", "noopener");
+  };
 
   // P5b：mention 文件数据源（@ 面板）——fileService 真实现接服务端文件能力
   const zcodeFileService = useMemo(
@@ -2405,8 +2191,6 @@ export function Workbench() {
       if (!text.trim() || !taskId || !session?.access_token) return;
       const task = tasks.find((t) => t.id === taskId);
       if (!task) return;
-      // 追问发生在对话里：从轨迹页签发消息要跳回对话页，让新内容立即可见
-      setTranscriptTab("chat");
       setTasksByMode((prev) => {
         const list = prev[mode].map((t) =>
           t.id === taskId
@@ -3162,63 +2946,15 @@ export function Workbench() {
                           ) : null}
                         </div>
                       </div>
-                      {/* 对话 / 轨迹 双页签（参考 deepseek-harness 的会话头）。
-                对话 = 按发生顺序交错的流；轨迹 = 按轮次分组的只读账本。 */}
-                      <div className="shrink-0 pr-[var(--scrollbar-lane,0px)]">
-                        <div
-                          role="tablist"
-                          aria-label="转录视图"
-                          className="flex w-full items-center gap-1 px-8"
-                        >
-                          {(
-                            [
-                              ["chat", "对话"],
-                              ["trajectory", "轨迹"],
-                            ] as const
-                          ).map(([value, label]) => (
-                            <button
-                              key={value}
-                              type="button"
-                              role="tab"
-                              aria-selected={transcriptTab === value}
-                              onClick={() => setTranscriptTab(value)}
-                              className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
-                                transcriptTab === value
-                                  ? "bg-muted font-medium text-foreground"
-                                  : "text-muted-foreground hover:text-foreground"
-                              }`}
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
+
                       <div
                         ref={codeMessagesRef}
                         role="none"
                         className="relative min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
                         onContextMenu={chatMenu.open}
                       >
-                        {transcriptTab === "chat" ? (
-                          <TurnRail items={turnRail} onJump={jumpToTurn} />
-                        ) : null}
                         <div className="w-full space-y-4 px-8 pb-2">
-                          {transcriptTab === "trajectory" ? (
-                            <TrajectoryView
-                              model={trajectoryModel}
-                              startedAtMs={
-                                activeTask.runStartedAt
-                                  ? parseTimestampMs(activeTask.runStartedAt)
-                                  : null
-                              }
-                              endedAtMs={
-                                activeTask.runEndedAt
-                                  ? parseTimestampMs(activeTask.runEndedAt)
-                                  : null
-                              }
-                              focusToolCallId={trajectoryFocus}
-                            />
-                          ) : (
+                          {
                             <>
                               {activeTask.runStartedAt ? (
                                 <ElapsedEntry
@@ -3278,102 +3014,32 @@ export function Workbench() {
                                   {` · ${Math.max(1, Math.round(hook.durationMs / 1000))}s`}
                                 </p>
                               ))}
-                              {/* 目标 + 进度（R1-2）：模型用了 write_todos 才出现，条数从事件流推导 */}
-                              {activeTask.todos &&
-                              activeTask.todos.length > 0 ? (
-                                <TodoProgressPanel
-                                  /* 目标 = 本轮的用户诉求（最后一条用户消息），不是首条——
-                     首条是这条对话最初问的，跟当前这轮的待办不是一回事 */
-                                  goal={
-                                    [...activeTask.messages]
-                                      .reverse()
-                                      .find(
-                                        (message) => message.role === "user",
-                                      )?.text ?? activeTask.title
-                                  }
-                                  items={activeTask.todos}
-                                  running={activeTask.status === "running"}
-                                />
-                              ) : null}
+
                               {/* 子代理目录只在右栏面板（zcode 模型：主对话仅派发行紧凑行）；
                           此处不再内联渲染目录列表。 */}
                               {(() => {
-                                // 「最终总结」标题挂在本轮最后一个 assistant 消息上方（R1-1 收尾总结）
-                                const shown = activeTask;
-                                const lastAssistantIdx = shown.messages.reduce(
-                                  (last, msg, idx) =>
-                                    msg.role === "assistant" ? idx : last,
-                                  -1,
+                                const zcodeRows =
+                                  toConversationRows(activeTask);
+                                const rowContext = {
+                                  workspacePath:
+                                    conversationProject?.workDir ?? "",
+                                  theme: zcodeTheme,
+                                  codePreviewSettings:
+                                    DEFAULT_CODE_PREVIEW_SETTINGS,
+                                  sessionId: activeTask.id,
+                                  messageStreamShowReasoning: true,
+                                  messageStreamShowTodos: true,
+                                  onOpenBrowserUrl: openExternalUrl,
+                                };
+                                return (
+                                  <ConversationTimeline
+                                    rows={zcodeRows}
+                                    totalCount={zcodeRows.length}
+                                    sessionKey={activeTask.id}
+                                    rowContext={rowContext}
+                                    hideTurnNavigator
+                                  />
                                 );
-                                const showSummary =
-                                  activeTask.status === "completed" &&
-                                  Boolean(activeTask.runEndedAt) &&
-                                  lastAssistantIdx >= 0;
-                                const streaming =
-                                  activeTask.status === "running";
-                                return shown.messages.map((msg, i) => {
-                                  return (
-                                    <div
-                                      // biome-ignore lint/suspicious/noArrayIndexKey: 流式为追加列表，消息的稳定身份就是位置；内容键会每个 token 换 key，把整条消息重挂载
-                                      key={i}
-                                      className="group/turn space-y-2"
-                                      data-turn-anchor={turnOfIndex[i]}
-                                    >
-                                      {showSummary && i === lastAssistantIdx ? (
-                                        <div className="text-xs font-medium text-muted-foreground">
-                                          最终总结
-                                        </div>
-                                      ) : null}
-                                      {/* 每条助手消息都带上「工作了多久」（用户口径：不能只显示一部分） */}
-                                      {msg.role === "assistant" &&
-                                      msg.elapsedMs !== undefined ? (
-                                        <div className="text-[11px] text-muted-foreground">
-                                          已工作{" "}
-                                          {formatElapsedSeconds(
-                                            msg.elapsedMs / 1000,
-                                          )}
-                                        </div>
-                                      ) : null}
-                                      {msg.role === "user" ? (
-                                        // zcode v4 用户消息行（UserInputRowView 气泡 + hover 操作行）：
-                                        // rounded-xl rounded-tr-xs + border + bg-surface（面板色非品牌色），
-                                        // hover 显现复制（group/user-row 口径，复制成功 1.2s 打勾）
-                                        <div className="group/user-row flex w-full flex-col items-end">
-                                          <div className="flex max-w-full flex-col gap-2 rounded-xl rounded-tr-xs border border-border bg-surface px-4 py-3 text-ui-base text-foreground whitespace-pre-wrap">
-                                            {msg.text}
-                                          </div>
-                                          <UserRowCopyAction text={msg.text} />
-                                        </div>
-                                      ) : (
-                                        <AssistantTurn
-                                          msg={msg}
-                                          streaming={
-                                            streaming &&
-                                            i === shown.messages.length - 1
-                                          }
-                                          subagents={activeTask.subagents}
-                                        />
-                                      )}
-                                      {/* zcode ConversationAssistantTextActions 口径：
-                                  轮尾助手正文 hover 显现复制 + 相对时间（我们无 feedback/fork 缝，
-                                  按原件条件渲染口径直接不渲染那两个入口） */}
-                                      {msg.role === "assistant" &&
-                                      showSummary &&
-                                      i === lastAssistantIdx ? (
-                                        <div className="mt-1 flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover/turn:opacity-100">
-                                          <UserRowCopyAction text={msg.text} />
-                                          <span className="select-none text-ui-sm text-foreground-subtlest">
-                                            {formatTaskRelativeTime(
-                                              activeTask.runEndedAt ??
-                                                activeTask.runEndedAt ??
-                                                activeTask.createdAt,
-                                            )}
-                                          </span>
-                                        </div>
-                                      ) : null}
-                                    </div>
-                                  );
-                                });
                               })()}
                               {/*
                     检查点条（Code 模式）：本轮终态后拉到的影子快照——改了什么、可回滚。
@@ -3413,7 +3079,7 @@ export function Workbench() {
                                 </div>
                               ) : null}
                             </>
-                          )}
+                          }
                         </div>
                       </div>
                       {/* 底部：继续对话（完整版工具行 + 多轮，复用同一会话）。

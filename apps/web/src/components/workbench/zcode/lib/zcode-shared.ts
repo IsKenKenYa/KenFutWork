@@ -4,6 +4,7 @@
  * 许可证：Apache-2.0（zcode）。
  * 适配口径：类型逐字照搬；运行时函数（artifact 图片重写 / remoteTarget 构造）为纯函数照搬。
  * 远程连接类型（SSH/WSL/Docker）仅作类型保留——我们宿主暂无远程工作区，platform stub 永远不会返回 remoteTarget。
+ * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
  */
 
 /* ---------- remoteTarget.ts ---------- */
@@ -56,9 +57,9 @@ export type OpenInEditorRemoteTarget =
   | Pick<DockerConnectOptions, "kind" | "container">;
 
 export interface OpenInEditorOptions {
-  remoteTarget?: OpenInEditorRemoteTarget;
-  workspaceIdentity?: string;
-  pathKind?: "file" | "directory";
+  remoteTarget?: OpenInEditorRemoteTarget | undefined;
+  workspaceIdentity?: string | undefined;
+  pathKind?: "file" | "directory" | undefined;
 }
 
 export type SaveFileRequest =
@@ -1512,7 +1513,7 @@ export type ModelSelection = z.infer<typeof modelSelectionSchema>;
  * zcode 照搬（P2 补充）：`@zcode/shared` zcode-task-types-core.ts / zcode-agent-policy.ts /
  * subagents-types.ts 的消费切片（subagents store 与 CUA renderer 消费面）。
  * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明（手册 §2.1）。
- * 符号：ZCodeProvider, ZCODE_AGENT_PROVIDER, normalizeAgentProviderToZCodeAgent, AgentColor,
+ * 符号：ZCodeProvider, ZCODE_AGENT_PROVIDER, normalizeAgentProviderToZCodeAgent, isZCodeAgentProvider, AgentColor,
  * AgentScope, AgentSource, AgentPermissionMode, AgentDiagnostic, AgentSummary, AgentsCapability,
  * SubAgentConfig
  */
@@ -1526,6 +1527,12 @@ export function normalizeAgentProviderToZCodeAgent(
   _provider?: ZCodeProvider | null,
 ): ZCodeProvider {
   return ZCODE_AGENT_PROVIDER;
+}
+
+export function isZCodeAgentProvider(
+  provider: ZCodeProvider | null | undefined,
+): provider is typeof ZCODE_AGENT_PROVIDER {
+  return provider === ZCODE_AGENT_PROVIDER;
 }
 
 export type AgentScope = "built-in" | "workspace" | "user";
@@ -1970,6 +1977,7 @@ function collectOutputCandidates(output: unknown): unknown[] {
 
 /* ---------- zcode 照搬（P5 补充）：跨切片类型导入 ---------- */
 
+import process from "node:process";
 import type { ErrorAttribution } from "./zcode-shared/zcode-protocol-v4";
 import type { ToolCallDisplay } from "./zcode-shared/zcode-protocol-v4/toolDisplay";
 
@@ -2395,7 +2403,7 @@ export interface ZCodeConfigOption {
   type: "select" | "boolean";
   currentValue: string | boolean;
   /** type === "select" 时的选项列表 */
-  options?: ZCodeConfigSelectValue[];
+  options?: ZCodeConfigSelectValue[] | undefined;
 }
 export interface ZCodeConfigSelectValue {
   value: string;
@@ -4190,6 +4198,8 @@ export type AutomationSessionCreateTelemetry = z.infer<
  */
 
 export interface IPlatformService {
+  /** 通过宿主环境统一上报 UI 侧 telemetry 事件（P9 补充：appTelemetry / codingPlanFunnelTelemetry 消费）。 */
+  reportTelemetryEvent(payload: RendererTelemetryEventPayload): Promise<void>;
   /** 上报 ARMS 自定义事件（Desktop main 转发）；Web/手机宿主可不实现。 */
   reportArmsCustomEvent(payload: ArmsCustomEventPayload): Promise<void>;
 }
@@ -4685,6 +4695,18 @@ export type ZCodeSessionRunningSubagent = z.infer<
   typeof zcodeSessionRunningSubagentSchema
 >;
 
+/* ---------- zcode 照搬（P9 补充）：`@zcode/shared` zcode-protocol/index.ts（切片：终态 subagent + subagents 目录结果） ----------
+ * 消费方：hooks/useSessionSubagents（stub）、app-shell/SubagentDirectorySidePane。
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明（base schema 已在本文件）。
+ */
+export const zcodeSessionEndedSubagentSchema =
+  zcodeSessionSubagentBaseSchema.extend({
+    status: z.enum(["success", "failed", "cancelled", "lost"]),
+  });
+export type ZCodeSessionEndedSubagent = z.infer<
+  typeof zcodeSessionEndedSubagentSchema
+>;
+
 /* ---------- zcode 照搬（P6 补充）：`@zcode/shared` rendererActionTrace.ts 消费切片 ----------
  * 来源：references/zcode/packages/shared/src/rendererActionTrace.ts
  * 消费方：lib/userActionTelemetry / lib/userActionTraceCatalog。
@@ -4893,3 +4915,987 @@ export const TID_V4_QUEUE_ITEM = "v4-queue-item";
 export const TID_V4_QUEUE_ITEM_DELETE = "v4-queue-item-delete";
 export const TID_V4_QUEUE_ITEM_EDIT = "v4-queue-item-edit";
 export const TID_V4_QUEUE_ITEM_SEND_NOW = "v4-queue-item-send-now";
+
+/* ---------- zcode 照搬（P9 补充）：`@zcode/shared` test-ids.ts / test-ids-workflow.ts（切片：v4 对话流 + cron/offpeak 卡 + 工作流通知 TID） ----------
+ * 消费方：v4/ConversationRowView / ConversationTurnGroup / ConversationTimeline / ConversationTurnNavigator /
+ * ConversationAgentToolCallRow / ConversationHookDetailsAction / ConversationFileRewindDialog /
+ * ToolCallBlocks/renderers/{cron-create,offpeak-create} / WorkflowNotificationArtifactChips /
+ * components/workflow-timeline/WorkflowRunDigest。许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+/** 聊天加载指示器 */
+export const TID_CHAT_LOADING = "chat-loading";
+/** 聊天助手消息历史折叠触发器（动态后缀为 historyStateKey） */
+export const TID_CHAT_ASSISTANT_HISTORY_TRIGGER =
+  "chat-assistant-history-trigger";
+/** 聊天助手消息历史折叠内容（动态后缀为 historyStateKey） */
+export const TID_CHAT_ASSISTANT_HISTORY_CONTENT =
+  "chat-assistant-history-content";
+/** 独立后台结果轮的任务标题（动态后缀为 turn key） */
+export const TID_CHAT_BACKGROUND_RESULT_TITLE = "chat-background-result-title";
+/** 会话里终态通知行折叠头部上的 chip——与中枢那枚刻意不同 id */
+export const TID_CHAT_WORKFLOW_ARTIFACT_CHIP =
+  "workflow-notification-artifact-chip";
+/** 轮尾 run 卡；后缀 = `${turnKey}-${toolCallId}`。 */
+export const TID_CHAT_WORKFLOW_RUN_DIGEST = "workflow-run-digest";
+/** v4 消息时间线容器 */
+export const TID_V4_TIMELINE = "v4-timeline";
+/** v4 投影行（动态后缀为 rowId） */
+export const TID_V4_ROW = "v4-row";
+/** v4 assistant 行 fork 按钮（动态后缀为 rowId） */
+export const TID_V4_FORK = "v4-fork";
+/** v4 assistant 行点赞按钮（动态后缀为 rowId） */
+export const TID_V4_FEEDBACK_LIKE = "v4-feedback-like";
+/** v4 assistant 行点踩按钮（动态后缀为 rowId） */
+export const TID_V4_FEEDBACK_DISLIKE = "v4-feedback-dislike";
+/** v4 turn Hook 详情按钮（动态后缀为 product turnId） */
+export const TID_V4_HOOK_DETAILS_TRIGGER = "v4-hook-details-trigger";
+/** v4 turn Hook 详情 Popover（动态后缀为 product turnId） */
+export const TID_V4_HOOK_DETAILS_CONTENT = "v4-hook-details-content";
+/** v4 user 行 edit 按钮（动态后缀为 rowId） */
+export const TID_V4_EDIT = "v4-edit";
+/** v4 user query 编辑输入框（动态后缀为 rowId） */
+export const TID_V4_EDIT_INPUT = "v4-edit-input";
+/** v4 user query 编辑提交按钮（动态后缀为 rowId） */
+export const TID_V4_EDIT_SUBMIT = "v4-edit-submit";
+/** v4 user query 编辑取消按钮（动态后缀为 rowId） */
+export const TID_V4_EDIT_CANCEL = "v4-edit-cancel";
+/** v4 user query 编辑附件删除按钮（动态后缀为 rowId-index） */
+export const TID_V4_EDIT_ATTACHMENT_REMOVE = "v4-edit-attachment-remove";
+export const TID_V4_EDIT_REWIND_WORKSPACE = "v4-edit-rewind-workspace";
+/** v4 edit 文件冲突弹窗 */
+export const TID_V4_EDIT_WORKSPACE_CONFLICT_DIALOG =
+  "v4-edit-workspace-conflict-dialog";
+/** v4 edit 文件冲突后降级为仅裁剪对话 */
+export const TID_V4_EDIT_WORKSPACE_CONFLICT_CONVERSATION_ONLY =
+  "v4-edit-workspace-conflict-conversation-only";
+/** v4 时间线「回到底部」按钮（解除底部跟随后出现，虚拟滚动锚定） */
+export const TID_V4_TIMELINE_BOTTOM = "v4-timeline-bottom";
+/** v4 对话轮次全局导航 rail（宽屏 2+ 可导航 turn 时出现） */
+export const TID_V4_TURN_NAVIGATOR = "v4-turn-navigator";
+/** v4 对话轮次导航项（动态后缀为 render unit key） */
+export const TID_V4_TURN_NAVIGATOR_ITEM = "v4-turn-navigator-item";
+/** v4 对话轮次导航 HoverCard 预览（动态后缀为 render unit key） */
+export const TID_V4_TURN_NAVIGATOR_TOOLTIP = "v4-turn-navigator-tooltip";
+/** v4 subagent 下钻「在分屏打开」入口（动态后缀为 childSessionId） */
+export const TID_V4_SUBAGENT_OPEN_SIDE_PANE = "v4-subagent-open-side-pane";
+/** v4 userInput 行附件列表（动态后缀为 rowId） */
+export const TID_V4_ROW_ATTACHMENTS = "v4-row-attachments";
+/** 定时任务（cron）创建卡 / 打开按钮 */
+export const TID_CRON_CREATE_CARD = "cron-create-card";
+export const TID_CRON_CREATE_OPEN = "cron-create-open";
+/** 闲时任务（off-peak）创建卡 / 打开按钮 */
+export const TID_OFFPEAK_CREATE_CARD = "offpeak-create-card";
+export const TID_OFFPEAK_CREATE_OPEN = "offpeak-create-open";
+
+/* ---------- zcode 照搬（P9 补充）：`@zcode/shared` env.ts / version.ts（切片） ----------
+ * 消费方：lib/rendererZCodeEndpoint、settings/model-provider-section/constants、CodingPlanEmbeddedWebviewDialog、
+ * model-provider-family。许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明
+ * （define 注入在 web 宿主不存在，走 fallback 分支）。
+ */
+export type ZCodeEnv = "test" | "production";
+
+// 非构建环境（如 e2e 测试的 mocha）下 define 不存在，用 typeof 检查 + fallback 避免 ReferenceError
+declare const __ZCODE_ENV__: string;
+
+export function normalizeZCodeEnv(value: string | undefined): ZCodeEnv {
+  return value?.trim().toLowerCase() === "production" ? "production" : "test";
+}
+
+export const ZCODE_ENV = normalizeZCodeEnv(
+  typeof __ZCODE_ENV__ === "undefined" ? undefined : __ZCODE_ENV__,
+);
+
+// 由各 bundler 通过 define 注入，避免运行时 JSON import 的跨 bundler 兼容问题。
+declare const __ZCODE_VERSION__: string;
+
+export const ZCODE_VERSION: string =
+  typeof __ZCODE_VERSION__ === "undefined" ? "0.0.0-dev" : __ZCODE_VERSION__;
+
+/* ---------- zcode 照搬（P9 补充）：`@zcode/shared` zcodeEndpoint.ts 全量 ----------
+ * 消费方：lib/rendererZCodeEndpoint、settings/model-provider-section/{constants,codingPlanEmbeddedWebview}、
+ * model-provider-family。许可证：Apache-2.0（zcode）。适配注记：逐字照搬全文件符号声明
+ * （`__ZCODE_ENDPOINT_ENV__` define 在 web 宿主不存在，运行时读 process.env 分支兜底）。
+ */
+export const DEFAULT_ZCODE_ENDPOINT_ORIGIN = "https://zcode.z.ai";
+export const DEFAULT_BIGMODEL_API_ORIGIN = "https://bigmodel.cn";
+export const DEFAULT_ZAI_OAUTH_ORIGIN = "https://chat.z.ai";
+export const DEFAULT_ZAI_BUSINESS_BASE_URL = "https://api.z.ai";
+export const DEFAULT_ZAI_OAUTH_CLIENT_ID = "client_P8X5CMWmlaRO9gyO-KSqtg";
+
+// 构建仅注入公开链接；Node 调用方仍可显式传 env，避免读取另一进程的配置。
+declare const __ZCODE_ENDPOINT_ENV__:
+  | Record<string, string | undefined>
+  | undefined;
+export function pickProductEndpointEnv(
+  env: Record<string, string | undefined>,
+): Record<string, string> {
+  const keys = [
+    "ZCODE_BASE_URL",
+    "ZCODE_ENDPOINT_ORIGIN",
+    "BIGMODEL_API_BASE_URL",
+    "ZAI_OAUTH_ORIGIN",
+    "ZAI_BUSINESS_BASE_URL",
+    "ZAI_OAUTH_CLIENT_ID",
+    "ZAI_OAUTH_APP_ID",
+  ];
+  return Object.fromEntries(
+    keys.flatMap((key) => (env[key]?.trim() ? [[key, env[key]!.trim()]] : [])),
+  );
+}
+export function readProductEndpointEnv(): Record<string, string | undefined> {
+  return {
+    ...(typeof __ZCODE_ENDPOINT_ENV__ === "undefined"
+      ? {}
+      : __ZCODE_ENDPOINT_ENV__),
+    ...pickProductEndpointEnv(
+      typeof process === "undefined" ? {} : process.env,
+    ),
+  };
+}
+
+export interface ZCodeEndpointUrls {
+  origin: string;
+  apiBaseUrl: string;
+  webShareCallbackUrl: string;
+  zcodePlanOpenAiBaseUrl: string;
+  zcodePlanAnthropicBaseUrl: string;
+  zcodePlanBillingCurrentUrl: string;
+  zcodePlanBillingBalanceUrl: string;
+}
+
+export interface RuntimeZCodeEndpointEnv {
+  [key: string]: string | undefined;
+  ZCODE_ENV?: string | undefined;
+  ZCODE_BASE_URL?: string | undefined;
+  ZCODE_ENDPOINT_ORIGIN?: string | undefined;
+}
+
+export interface RuntimeBigModelApiEnv {
+  [key: string]: string | undefined;
+  ZCODE_ENV?: string | undefined;
+  BIGMODEL_API_BASE_URL?: string | undefined;
+}
+
+export interface RuntimeZaiEndpointEnv {
+  [key: string]: string | undefined;
+  ZCODE_ENV?: string | undefined;
+  ZAI_OAUTH_ORIGIN?: string | undefined;
+  ZAI_BUSINESS_BASE_URL?: string | undefined;
+  ZAI_OAUTH_CLIENT_ID?: string | undefined;
+  ZAI_OAUTH_APP_ID?: string | undefined;
+}
+
+export interface RuntimeProductEndpointEnv
+  extends RuntimeZCodeEndpointEnv,
+    RuntimeBigModelApiEnv,
+    RuntimeZaiEndpointEnv {}
+
+export interface RuntimeProductEndpointConfig {
+  zcodeEnv: ZCodeEnv;
+  zcodeEndpointOrigin: string;
+  zcodeEndpointUrls: ZCodeEndpointUrls;
+  zaiOAuthOrigin: string;
+  zaiBusinessBaseUrl: string;
+  zaiOAuthClientId: string;
+  bigModelApiOrigin: string;
+}
+
+function readRuntimeEnvValue(
+  env: Record<string, string | undefined>,
+  key: string,
+): string | undefined {
+  const value = env[key]?.trim();
+  return value ? value : undefined;
+}
+
+export function normalizeZCodeEndpointOrigin(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error("ZCode endpoint origin is empty");
+  }
+
+  const parsed = new URL(trimmed);
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error("ZCode endpoint origin must use http or https");
+  }
+  return parsed.origin;
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  return (
+    hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1"
+  );
+}
+
+export function isTrustedCodingPlanWebviewOrigin(
+  value: string | null | undefined,
+  options?: {
+    e2eStoreBridgeEnabled?: boolean | undefined;
+  },
+): boolean {
+  if (!value) return false;
+  try {
+    const origin = normalizeZCodeEndpointOrigin(value);
+    if (
+      origin === DEFAULT_ZCODE_ENDPOINT_ORIGIN ||
+      origin === resolveRuntimeZCodeEndpointOrigin()
+    ) {
+      return true;
+    }
+    const parsed = new URL(origin);
+    return (
+      options?.e2eStoreBridgeEnabled === true &&
+      isLoopbackHostname(parsed.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function resolveZCodeEndpointOrigin(options?: {
+  env?: ZCodeEnv;
+  envBaseOrigin?: string | null | undefined;
+  overrideOrigin?: string | null | undefined;
+}): string {
+  const origin =
+    options?.overrideOrigin?.trim() || options?.envBaseOrigin?.trim();
+  return origin
+    ? normalizeZCodeEndpointOrigin(origin)
+    : DEFAULT_ZCODE_ENDPOINT_ORIGIN;
+}
+
+export function resolveRuntimeZCodeEnv(
+  env: RuntimeZCodeEndpointEnv = readProductEndpointEnv(),
+): ZCodeEnv {
+  // 产品身份仅用于既有展示与安装标识，不参与地址解析。
+  return env.ZCODE_ENV?.trim().toLowerCase() === "test" ? "test" : "production";
+}
+
+export function resolveRuntimeZCodeEndpointOrigin(
+  env: RuntimeZCodeEndpointEnv = readProductEndpointEnv(),
+  options?: { overrideOrigin?: string | null },
+): string {
+  return resolveZCodeEndpointOrigin({
+    envBaseOrigin:
+      readRuntimeEnvValue(env, "ZCODE_BASE_URL") ??
+      readRuntimeEnvValue(env, "ZCODE_ENDPOINT_ORIGIN"),
+    overrideOrigin: options?.overrideOrigin,
+  });
+}
+
+export function buildRuntimeZCodeEndpointUrls(
+  env: RuntimeZCodeEndpointEnv = readProductEndpointEnv(),
+): ZCodeEndpointUrls {
+  return buildZCodeEndpointUrls(resolveRuntimeZCodeEndpointOrigin(env));
+}
+
+export function buildRuntimeZCodeApiUrl(
+  env: RuntimeZCodeEndpointEnv = readProductEndpointEnv(),
+  path: string,
+): string {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${resolveRuntimeZCodeEndpointOrigin(env)}${normalizedPath}`;
+}
+
+export function resolveBigModelApiOrigin(
+  env: RuntimeBigModelApiEnv = readProductEndpointEnv(),
+): string {
+  return normalizeZCodeEndpointOrigin(
+    readRuntimeEnvValue(env, "BIGMODEL_API_BASE_URL") ??
+      DEFAULT_BIGMODEL_API_ORIGIN,
+  );
+}
+
+export function buildBigModelApiUrl(
+  env: RuntimeBigModelApiEnv = readProductEndpointEnv(),
+  path: string,
+): string {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${resolveBigModelApiOrigin(env)}${normalizedPath}`;
+}
+
+export function buildBigModelCodingPlanPersonalManageUrl(
+  env: RuntimeBigModelApiEnv = readProductEndpointEnv(),
+): string {
+  // 管理页与业务 API 共用显式 origin，避免把已登录账号带到另一个部署。
+  return buildBigModelApiUrl(env, "/coding-plan/personal/overview");
+}
+
+export function buildBigModelCodingPlanTeamManageUrl(
+  env: RuntimeBigModelApiEnv = readProductEndpointEnv(),
+): string {
+  return buildBigModelApiUrl(env, "/coding-plan/team/plans");
+}
+
+export function resolveZaiOAuthOrigin(
+  env: RuntimeZaiEndpointEnv = readProductEndpointEnv(),
+): string {
+  return normalizeZCodeEndpointOrigin(
+    readRuntimeEnvValue(env, "ZAI_OAUTH_ORIGIN") ?? DEFAULT_ZAI_OAUTH_ORIGIN,
+  );
+}
+
+export function resolveZaiBusinessBaseUrl(
+  env: RuntimeZaiEndpointEnv = readProductEndpointEnv(),
+): string {
+  return normalizeZCodeEndpointOrigin(
+    readRuntimeEnvValue(env, "ZAI_BUSINESS_BASE_URL") ??
+      DEFAULT_ZAI_BUSINESS_BASE_URL,
+  );
+}
+
+export function resolveZaiOAuthClientId(
+  env: RuntimeZaiEndpointEnv = readProductEndpointEnv(),
+): string {
+  return (
+    readRuntimeEnvValue(env, "ZAI_OAUTH_CLIENT_ID") ??
+    readRuntimeEnvValue(env, "ZAI_OAUTH_APP_ID") ??
+    DEFAULT_ZAI_OAUTH_CLIENT_ID
+  );
+}
+
+export function buildZaiOAuthUrl(origin: string, path: string): string {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${normalizeZCodeEndpointOrigin(origin)}${normalizedPath}`;
+}
+
+export function buildRuntimeZaiOAuthUrl(
+  env: RuntimeZaiEndpointEnv = readProductEndpointEnv(),
+  path: string,
+): string {
+  return buildZaiOAuthUrl(resolveZaiOAuthOrigin(env), path);
+}
+
+export function buildRuntimeZaiBusinessUrl(
+  env: RuntimeZaiEndpointEnv = readProductEndpointEnv(),
+  path: string,
+): string {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${resolveZaiBusinessBaseUrl(env)}${normalizedPath}`;
+}
+
+export function resolveRuntimeProductEndpointConfig(
+  env: RuntimeProductEndpointEnv = readProductEndpointEnv(),
+): RuntimeProductEndpointConfig {
+  const zcodeEnv = resolveRuntimeZCodeEnv(env);
+  const zcodeEndpointOrigin = resolveRuntimeZCodeEndpointOrigin(env);
+
+  return {
+    zcodeEnv,
+    zcodeEndpointOrigin,
+    zcodeEndpointUrls: buildZCodeEndpointUrls(zcodeEndpointOrigin),
+    zaiOAuthOrigin: resolveZaiOAuthOrigin(env),
+    zaiBusinessBaseUrl: resolveZaiBusinessBaseUrl(env),
+    zaiOAuthClientId: resolveZaiOAuthClientId(env),
+    bigModelApiOrigin: resolveBigModelApiOrigin(env),
+  };
+}
+
+export function buildZCodeEndpointUrls(origin: string): ZCodeEndpointUrls {
+  const normalizedOrigin = normalizeZCodeEndpointOrigin(origin);
+  return {
+    origin: normalizedOrigin,
+    apiBaseUrl: `${normalizedOrigin}/api/v1`,
+    webShareCallbackUrl: `${normalizedOrigin}/cn/share/callback`,
+    zcodePlanOpenAiBaseUrl: `${normalizedOrigin}/api/v1/zcode-plan`,
+    zcodePlanAnthropicBaseUrl: `${normalizedOrigin}/api/v1/zcode-plan/anthropic`,
+    zcodePlanBillingCurrentUrl: `${normalizedOrigin}/api/v1/zcode-plan/billing/current`,
+    zcodePlanBillingBalanceUrl: `${normalizedOrigin}/api/v1/zcode-plan/billing/balance`,
+  };
+}
+
+export function rewriteZCodeEndpointUrl(
+  input: string | URL,
+  endpointOrigin: string,
+): string | URL {
+  const originalUrl = typeof input === "string" ? input : input.toString();
+  let parsed: URL;
+  try {
+    parsed = new URL(originalUrl);
+  } catch {
+    return input;
+  }
+  const sourceOrigin = DEFAULT_ZCODE_ENDPOINT_ORIGIN;
+  if (parsed.origin !== sourceOrigin) {
+    return input;
+  }
+
+  const targetOrigin = normalizeZCodeEndpointOrigin(endpointOrigin);
+  if (targetOrigin === sourceOrigin) {
+    return input;
+  }
+
+  const target = new URL(targetOrigin);
+  target.pathname = parsed.pathname;
+  target.search = parsed.search;
+  target.hash = parsed.hash;
+  return target.toString();
+}
+
+/* ---------- zcode 照搬（P9 补充）：`@zcode/shared` model-provider-family.ts 全量 ----------
+ * 消费方：ToolCallBlocks/renderers/list-models、settings/model-provider-section/{useCodingPlanEntitlements,enterpriseCodingPlanProducts}、
+ * lib/{modelSelectionGroups,startPlanEntitlementOptions}、v4/composer/modelTriggerDisplay、CodingPlanUpgradeDialog。
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬全文件符号声明（oauth/model-provider-types/env/zcodeEndpoint 依赖已在本文件）。
+ */
+export type ModelProviderFamilyId = "zai" | "bigmodel";
+export type ProviderFamilyDomain = ModelProviderFamilyId;
+
+export interface ModelProviderFamilySpec {
+  id: ModelProviderFamilyId;
+  label: string;
+  rootDomain: string;
+  oauthProviderId: typeof ZAI_PROVIDER_ID | typeof BIGMODEL_PROVIDER_ID;
+  startPlanProviderId:
+    | typeof BUILTIN_MODEL_PROVIDER_IDS.zaiStartPlan
+    | typeof BUILTIN_MODEL_PROVIDER_IDS.bigmodelStartPlan;
+  individualCodingPlanProviderId:
+    | typeof BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan
+    | typeof BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan;
+  teamCodingPlanProviderId:
+    | typeof BUILTIN_MODEL_PROVIDER_IDS.zaiTeamCodingPlan
+    | typeof BUILTIN_MODEL_PROVIDER_IDS.bigmodelTeamCodingPlan;
+  teamCodingPlanManageUrl: string;
+}
+
+export const MODEL_PROVIDER_FAMILY_SPECS = [
+  {
+    id: "zai",
+    label: "Z.ai",
+    rootDomain: "z.ai",
+    oauthProviderId: ZAI_PROVIDER_ID,
+    startPlanProviderId: BUILTIN_MODEL_PROVIDER_IDS.zaiStartPlan,
+    individualCodingPlanProviderId:
+      BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan,
+    teamCodingPlanProviderId: BUILTIN_MODEL_PROVIDER_IDS.zaiTeamCodingPlan,
+    teamCodingPlanManageUrl: "https://z.ai/manage-apikey/subscription",
+  },
+  {
+    id: "bigmodel",
+    label: "BigModel",
+    rootDomain: "bigmodel.cn",
+    oauthProviderId: BIGMODEL_PROVIDER_ID,
+    startPlanProviderId: BUILTIN_MODEL_PROVIDER_IDS.bigmodelStartPlan,
+    individualCodingPlanProviderId:
+      BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan,
+    teamCodingPlanProviderId: BUILTIN_MODEL_PROVIDER_IDS.bigmodelTeamCodingPlan,
+    teamCodingPlanManageUrl: buildBigModelCodingPlanTeamManageUrl({
+      ZCODE_ENV,
+    }),
+  },
+] as const satisfies readonly ModelProviderFamilySpec[];
+
+const MODEL_PROVIDER_FAMILY_SPEC_BY_ID = new Map<
+  ModelProviderFamilyId,
+  ModelProviderFamilySpec
+>(MODEL_PROVIDER_FAMILY_SPECS.map((spec) => [spec.id, spec]));
+
+const MODEL_PROVIDER_FAMILY_ID_BY_PROVIDER_ID = new Map<
+  BuiltinModelProviderId,
+  ModelProviderFamilyId
+>(
+  MODEL_PROVIDER_FAMILY_SPECS.flatMap((spec) =>
+    [
+      spec.startPlanProviderId,
+      spec.individualCodingPlanProviderId,
+      spec.teamCodingPlanProviderId,
+    ].map((providerId) => [providerId, spec.id] as const),
+  ),
+);
+
+export function getModelProviderFamilySpec(
+  familyId: ModelProviderFamilyId,
+): ModelProviderFamilySpec {
+  return MODEL_PROVIDER_FAMILY_SPEC_BY_ID.get(familyId)!;
+}
+
+export function resolveModelProviderFamilyIdByProviderId(
+  providerId: string,
+): ModelProviderFamilyId | null {
+  return (
+    MODEL_PROVIDER_FAMILY_ID_BY_PROVIDER_ID.get(
+      providerId as BuiltinModelProviderId,
+    ) ?? null
+  );
+}
+
+export function resolveModelProviderFamilyIdByBaseURL(
+  baseURL: string | null | undefined,
+): ModelProviderFamilyId | null {
+  const trimmed = baseURL?.trim();
+  if (!trimmed) {
+    return null;
+  }
+  let hostname: string;
+  try {
+    hostname = new URL(trimmed).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+  for (const spec of MODEL_PROVIDER_FAMILY_SPECS) {
+    if (
+      hostname === spec.rootDomain ||
+      hostname.endsWith(`.${spec.rootDomain}`)
+    ) {
+      return spec.id;
+    }
+  }
+  return null;
+}
+
+export function resolveModelProviderFamilySpecByProviderId(
+  providerId: string,
+): ModelProviderFamilySpec | null {
+  const familyId = resolveModelProviderFamilyIdByProviderId(providerId);
+  return familyId ? getModelProviderFamilySpec(familyId) : null;
+}
+
+export function resolveModelProviderFamilyLabelByProviderId(
+  providerId: string,
+): string | null {
+  return resolveModelProviderFamilySpecByProviderId(providerId)?.label ?? null;
+}
+
+export function normalizeProviderFamilyDomain(
+  value: string | null | undefined,
+): ProviderFamilyDomain | null {
+  return value === "zai" || value === "bigmodel" ? value : null;
+}
+
+export function resolveProviderFamilyDomainFromOAuthProvider(
+  provider: OAuthProviderId | string | null | undefined,
+): ProviderFamilyDomain | null {
+  if (provider === ZAI_PROVIDER_ID) {
+    return "zai";
+  }
+  if (provider === BIGMODEL_PROVIDER_ID) {
+    return "bigmodel";
+  }
+  return null;
+}
+
+export function shouldShowModelProviderFamilyForDomain(params: {
+  familyId: ModelProviderFamilyId;
+  providerFamilyDomain: ProviderFamilyDomain | null | undefined;
+}): boolean {
+  const providerFamilyDomain = normalizeProviderFamilyDomain(
+    params.providerFamilyDomain,
+  );
+  if (!providerFamilyDomain) {
+    return true;
+  }
+  return params.familyId === providerFamilyDomain;
+}
+
+export function shouldShowModelProviderFamilyForActiveOAuth(params: {
+  familyId: ModelProviderFamilyId;
+  activeOAuthProvider: OAuthProviderId | null | undefined;
+}): boolean {
+  return shouldShowModelProviderFamilyForDomain({
+    familyId: params.familyId,
+    providerFamilyDomain: resolveProviderFamilyDomainFromOAuthProvider(
+      params.activeOAuthProvider,
+    ),
+  });
+}
+
+export function shouldShowBuiltinModelProviderForDomain(params: {
+  providerId: string;
+  providerFamilyDomain: ProviderFamilyDomain | null | undefined;
+}): boolean {
+  const familyId = resolveModelProviderFamilyIdByProviderId(params.providerId);
+  if (!familyId) {
+    return true;
+  }
+  return shouldShowModelProviderFamilyForDomain({
+    familyId,
+    providerFamilyDomain: params.providerFamilyDomain,
+  });
+}
+
+export function shouldShowBuiltinModelProviderForActiveOAuth(params: {
+  providerId: string;
+  activeOAuthProvider: OAuthProviderId | null | undefined;
+}): boolean {
+  return shouldShowBuiltinModelProviderForDomain({
+    providerId: params.providerId,
+    providerFamilyDomain: resolveProviderFamilyDomainFromOAuthProvider(
+      params.activeOAuthProvider,
+    ),
+  });
+}
+
+/* ---------- zcode 照搬（P9 补充）：`@zcode/shared` provider-family-connection-selection.ts 全量 ----------
+ * 消费方：settings/model-provider-section/useCodingPlanEntitlements。许可证：Apache-2.0（zcode）。
+ * 适配注记：逐字照搬全文件符号声明。
+ */
+const p9NonEmptyString = z.string().trim().min(1);
+
+export const providerFamilyConnectionSelectionSchema = z.discriminatedUnion(
+  "kind",
+  [
+    z.object({ kind: z.literal("start-plan") }).strict(),
+    z.object({ kind: z.literal("individual-coding-plan") }).strict(),
+    z
+      .object({
+        kind: z.literal("team-coding-plan"),
+        productId: p9NonEmptyString,
+        organizationId: p9NonEmptyString,
+        projectId: p9NonEmptyString,
+      })
+      .strict(),
+  ],
+);
+
+export const providerFamilyConnectionSelectionSettingsSchema = z
+  .object({
+    zai: providerFamilyConnectionSelectionSchema.optional(),
+    bigmodel: providerFamilyConnectionSelectionSchema.optional(),
+  })
+  .partial();
+
+/** 用户对一个 Provider Family 的连接选择意图；不包含账号身份或动态凭据。 */
+export type ProviderFamilyConnectionSelection = Readonly<
+  z.infer<typeof providerFamilyConnectionSelectionSchema>
+>;
+
+export type ProviderFamilyConnectionSelectionSettings = z.infer<
+  typeof providerFamilyConnectionSelectionSettingsSchema
+>;
+
+/* ---------- zcode 照搬（P9 补充）：`@zcode/shared` automation-types.ts（切片：自定义重复规则） ----------
+ * 消费方：ToolCallBlocks/renderers/cron-create、settings/automationCardSchedule。许可证：Apache-2.0（zcode）。
+ * 适配注记：逐字照搬符号声明。
+ */
+/** 自定义重复规则；cronExpr 保留为兼容展示，调度以本字段为权威。 */
+export interface ZCodeAutomationScheduleRule {
+  unit: "minute" | "hourly" | "daily" | "weekly" | "monthly" | "yearly";
+  interval: number;
+  hour: number;
+  minute: number;
+  anchorAt: number;
+  weekdays?: number[];
+  monthDays?: number[];
+  /** yearly 用：1-12 人类月份。缺省回退 anchorAt 的月份（兼容未写该字段的旧记录）。 */
+  months?: number[];
+  monthlyMode?: "date" | "weekday";
+}
+
+/* ---------- zcode 照搬（P9 补充）：`@zcode/shared` zcode-task-types-core.ts（切片：持久化文件变更） ----------
+ * 消费方：lib/taskChangeSummary。许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export type ZCodeTaskSnapshotFileContentField =
+  | "beforeContent"
+  | "afterContent";
+export type ZCodeTurnFileState = "applied" | "reverted";
+/** 持久化的文件快照 */
+export interface ZCodePersistedFileSnapshot {
+  path: string;
+  beforeContent: string | null;
+  afterContent: string;
+  writeCount: number;
+  /** 仅用于响应态快照：表示文件快照正文已被首屏预算裁剪，可按 ref 拉取完整内容。 */
+  contentRefs?: ZCodeTaskSnapshotFileContentRef[];
+}
+export interface ZCodeTaskSnapshotFileContentRef {
+  field: ZCodeTaskSnapshotFileContentField;
+  refId: string;
+  hash: string;
+}
+/** 持久化的轮次文件变更 */
+export interface ZCodePersistedFileChange {
+  turnIndex: number;
+  snapshots: ZCodePersistedFileSnapshot[];
+  /** 当前这轮文件变更是否仍应用在 workspace 上 */
+  fileState?: ZCodeTurnFileState;
+}
+
+/* ---------- zcode 照搬（P9 补充）：`@zcode/shared` model-selection.ts（切片：Picker 展示值） ----------
+ * 消费方：lib/zcodeSessionProjection。许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export const ZCODE_MODEL_REASONING_SEPARATOR = "$";
+
+/* ---------- zcode 照搬（P9 补充）：`@zcode/shared` usage-stats.ts（切片：entitlement 请求） ----------
+ * 消费方：hooks/useUsageEntitlement（IUsageStatsService.getEntitlementSnapshot 入参）。
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export interface UsageEntitlementRequest {
+  /** 购买或领取完成后，使对应 Start Plan balance 短期缓存失效。 */
+  invalidateBalanceCache?: boolean | undefined;
+  /** 兼容旧调用方的提示；Coding Plan 权益必须查询订阅并返回摘要，不再允许仅用额度推断权益。 */
+  includeSubscription?: boolean | undefined;
+  /** 聊天输入区可传入当前选中的内置供应商,确保 BigModel/Z.AI 用量跟随模型选择。 */
+  preferredProviderId?: string | undefined;
+  /** 指定 Account Provider 的静态访问类别，或调用边界已解析的动态账号访问上下文。 */
+  accountAccess?: ZCodeProviderAccountAccess | ZCodeAccountAccess | undefined;
+  /** 当前模型已明确选中该内置供应商时，即使供应商列表里被隐藏也允许读取其 key。 */
+  allowDisabledPreferredProvider?: boolean | undefined;
+  /** 读取 Start Plan 余额必须显式指定 preferredProviderId（防误读其他 family 的余额）。 */
+  requirePreferredProvider?: boolean | undefined;
+  /** 契约兼容：允许 env 兜底 key 参与权益读取（本仓 BYOK 直连供应商场景）。 */
+  allowEnvApiKey?: boolean | undefined;
+}
+
+/** 公共解析结果。页面可以展示不完整选择，执行入口必须同时检查 selectionIssue。 */
+export interface EffectiveModelSelectionResult {
+  readonly effectiveSelection: ModelSelection | null;
+  readonly selectionIssue?:
+    | "selection-missing"
+    | "account-connection-unavailable"
+    | "provider-not-found"
+    | "model-not-found"
+    | "reasoning-level-missing"
+    | "reasoning-level-not-supported";
+}
+
+/** UI Picker/legacy CLI 的展示值；不是可逆的 ModelSelection 序列化格式。 */
+export function formatModelPickerValue(
+  selection: ModelSelection | undefined,
+): string {
+  // 只在显示边界把未绑定表示为空；实际执行仍校验完整 ModelSelection。
+  if (!selection) return "";
+  const base = `${selection.providerId}/${selection.modelId}`;
+  const reasoningLevel = selection.options?.reasoningLevel;
+  return reasoningLevel
+    ? `${base}${ZCODE_MODEL_REASONING_SEPARATOR}${reasoningLevel}`
+    : base;
+}
+
+/** 只解析 Picker/legacy 字符串边界；领域状态与协议必须直接保存 ModelSelection。 */
+export function parseModelPickerValue(value: string): ModelSelection {
+  const normalized = value.trim();
+  const providerSeparatorIndex = normalized.indexOf("/");
+  if (providerSeparatorIndex <= 0) {
+    throw new Error(`模型选择缺少 Provider: ${normalized}`);
+  }
+  const providerId = normalized.slice(0, providerSeparatorIndex);
+  const rawModelId = normalized.slice(providerSeparatorIndex + 1);
+  const reasoningSeparatorIndex = rawModelId.indexOf(
+    ZCODE_MODEL_REASONING_SEPARATOR,
+  );
+  if (
+    reasoningSeparatorIndex <= 0 ||
+    reasoningSeparatorIndex >= rawModelId.length - 1
+  ) {
+    return modelSelectionSchema.parse({ providerId, modelId: rawModelId });
+  }
+  return modelSelectionSchema.parse({
+    providerId,
+    modelId: rawModelId.slice(0, reasoningSeparatorIndex),
+    options: { reasoningLevel: rawModelId.slice(reasoningSeparatorIndex + 1) },
+  });
+}
+
+/* ---------- zcode 照搬（P9 补充）：`@zcode/shared` zcode-agent-model-state.ts（切片：模式 Select 选项） ----------
+ * 消费方：lib/taskModelRecovery。许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+const ZCODE_AGENT_MODE_OPTIONS = [
+  {
+    id: "build",
+    name: "Ask before changes",
+    description: "Ask before each file changes.",
+  },
+  {
+    id: "edit",
+    name: "Edit automatically",
+    description:
+      "Edit selected files or relevant workspace files automatically.",
+  },
+  {
+    id: "plan",
+    name: "Plan mode",
+    description: "Inspect the code and present a plan before editing.",
+  },
+  {
+    id: "yolo",
+    name: "Full access",
+    description: "Edit and run commands with fewer confirmations.",
+  },
+] as const satisfies readonly ZCodeTaskModeInfo[];
+
+export function getZCodeAgentModeSelectOptions(): NonNullable<
+  ZCodeConfigOption["options"]
+> {
+  return ZCODE_AGENT_MODE_OPTIONS.map((mode) => ({
+    value: mode.id,
+    name: mode.name,
+    description: mode.description,
+  }));
+}
+
+/* ---------- zcode 照搬（P9 补充）：`@zcode/shared` zcode-task-types-core.ts（切片：模式信息） ----------
+ * 消费方：lib/taskModelRecovery / lib/zcodeSessionProjection。许可证：Apache-2.0（zcode）。
+ * 适配注记：逐字照搬符号声明。
+ */
+export interface ZCodeTaskModeInfo {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+/* ---------- zcode 照搬（P9 补充）：`@zcode/shared` protocol.ts（切片：DEFAULT_LOCALE） ----------
+ * 消费方：ErrorBoundary。许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export const DEFAULT_LOCALE: Locale = "zh-CN";
+
+/* ---------- zcode 照搬（P9 补充）：`@zcode/shared` coding-plan-subscription.ts / channels.ts（消费切片） ----------
+ * 消费方：hooks/useCodingPlanEntryPlanList、settings/model-provider-section/{enterpriseCodingPlanProducts,codingPlanProductPresentation,codingPlanEmbeddedWebview}、
+ * settings/CodingPlanEmbeddedWebviewDialog。许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明
+ * （CodingPlanSubscriptionProviderId 依赖的 BUILTIN_MODEL_PROVIDER_IDS 已在本文件）。
+ */
+export type CodingPlanSubscriptionProviderId =
+  | typeof BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan
+  | typeof BUILTIN_MODEL_PROVIDER_IDS.zaiTeamCodingPlan
+  | typeof BUILTIN_MODEL_PROVIDER_IDS.zaiStartPlan
+  | typeof BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan
+  | typeof BUILTIN_MODEL_PROVIDER_IDS.bigmodelTeamCodingPlan
+  | typeof BUILTIN_MODEL_PROVIDER_IDS.bigmodelStartPlan;
+
+export interface CodingPlanCampaignDiscountDetail {
+  campaignName?: string;
+  campaignDiscountAmount?: number;
+  rewardMode?: string;
+  rewardAmount?: number;
+  rewardDetail?: string;
+  applyScene?: string;
+}
+
+export interface CodingPlanProductEquity {
+  id?: number;
+  productId?: string;
+  productEquityTitle?: string;
+  productEquityDetails?: string;
+  createTime?: string;
+  updateTime?: string;
+}
+
+export interface CodingPlanProductPreviewPayment {
+  productId: string;
+  productName?: string | undefined;
+  productBigTitle?: string | undefined;
+  productSmallTitle?: string | undefined;
+  productIntroduction?: string | undefined;
+  productDescription?: string | undefined;
+  relateResourcePack?: string | undefined;
+  inCurrentPeriod?: boolean | undefined;
+  lastValid?: boolean | undefined;
+  effectiveTime?: string | null | undefined;
+  originalAmount?: number | undefined;
+  discountAmount?: number | undefined;
+  payAmount?: number | undefined;
+  monthlyOriginalAmount?: number | undefined;
+  monthlyRenewAmount?: number | undefined;
+  monthlyPayAmount?: number | undefined;
+  renewAmount?: number | undefined;
+  canPurchase?: boolean | null | undefined;
+  soldOut?: boolean | undefined;
+  hasFirstTimeSubscriptionPromo?: boolean | undefined;
+  delay?: boolean | undefined;
+  canRepurchase?: boolean | null | undefined;
+  forbidden?: boolean | undefined;
+  campaignDiscountDetails?: CodingPlanCampaignDiscountDetail[] | undefined;
+  productEquityList?: CodingPlanProductEquity[] | null | undefined;
+  priceUnit?: "month" | "quarter" | "year" | undefined;
+  priceCurrency?: "CNY" | "USD" | undefined;
+}
+
+export interface CodingPlanCardCopyItem {
+  text: string;
+  tooltip?: string;
+}
+
+export type CodingPlanCardCopyConfigItem = string | CodingPlanCardCopyItem;
+
+export interface CodingPlanStaticProductEquity {
+  productEquityTitle: string;
+  productEquityDetails?: string;
+}
+
+export type EnterpriseCodingPlanTier = "LITE" | "PRO" | "MAX";
+export type EnterpriseCodingPlanSubscribeMode = "CONTINUOUS" | "ONE_TIME";
+export type EnterpriseCodingPlanSubscribePeriod =
+  | "MONTHLY"
+  | "QUARTERLY"
+  | "YEARLY";
+
+export interface CodingPlanStaticTeamProduct {
+  productId: string;
+  productName: string;
+  tier: EnterpriseCodingPlanTier;
+  subscribeMode: EnterpriseCodingPlanSubscribeMode;
+  subscribePeriod: EnterpriseCodingPlanSubscribePeriod;
+  purchaseMethodName: string;
+  priceCurrency: "CNY";
+  originalAmount?: number;
+  discountAmount?: number;
+  payAmount?: number;
+  renewAmount?: number;
+  equity?: CodingPlanCardCopyConfigItem[];
+  description?: CodingPlanCardCopyConfigItem[];
+}
+
+export type EnterpriseCodingPlanProjectApiKeyStatus =
+  | "available"
+  | "unavailable"
+  | "unknown";
+
+export type EnterpriseCodingPlanProjectApiKeyUnavailableReason =
+  | "no_valid_team_plan_authorization"
+  | "request_failed";
+
+export interface EnterpriseCodingPlanProjectContext {
+  organizationId: string;
+  organizationName?: string | null;
+  projectId: string;
+  projectName?: string | null;
+  apiKeyStatus?: EnterpriseCodingPlanProjectApiKeyStatus;
+  apiKeyUnavailableReason?: EnterpriseCodingPlanProjectApiKeyUnavailableReason | null;
+  apiKeyUnavailableMessage?: string | null;
+}
+
+export interface EnterpriseCodingPlanPricingProduct {
+  productId: string;
+  tier: EnterpriseCodingPlanTier;
+  subscribeMode: EnterpriseCodingPlanSubscribeMode;
+  subscribePeriod: EnterpriseCodingPlanSubscribePeriod;
+  purchaseMethodName?: string | undefined;
+  originalAmount?: number | undefined;
+  discountAmount?: number | undefined;
+  payAmount?: number | undefined;
+  renewAmount?: number | undefined;
+  canRepurchase?: boolean | null | undefined;
+  subscribed?: boolean | null | undefined;
+  organizationId?: string | null | undefined;
+  organizationName?: string | null | undefined;
+  projectId?: string | null | undefined;
+  projectName?: string | null | undefined;
+  teamProjects?: EnterpriseCodingPlanProjectContext[] | undefined;
+  apiKeyStatus?: EnterpriseCodingPlanProjectApiKeyStatus | undefined;
+  apiKeyUnavailableReason?:
+    | EnterpriseCodingPlanProjectApiKeyUnavailableReason
+    | null
+    | undefined;
+  apiKeyUnavailableMessage?: string | null | undefined;
+  campaignDiscountDetails?: CodingPlanCampaignDiscountDetail[] | undefined;
+}
+
+/**
+ * Electron `<webview>`（partition=persist:zcode-coding-plan）的 `sendToHost` / `ipc-message` 频道。
+ * 官网页通过 preload 注入的 window.zcodeBridge 调用，不经过 main process。
+ */
+export const CodingPlanWebviewChannels = {
+  /** 官网页购买成功后通知 App 刷新 entitlements 并关闭 webview。 */
+  PurchaseComplete: "zcode:coding-plan-purchase-complete",
+} as const;
+
+/** 购买完成回传 payload。provider 与官网 CodingPlanProvider / auth-ready 事件 detail.provider 同构。 */
+export interface CodingPlanPurchaseCompletePayload {
+  provider: "zai" | "bigmodel";
+  /** 客户端时间戳，用于 App 侧去重/日志，不参与判等。 */
+  timestamp: number;
+}
+
+/**
+ * 官网页 window.__zcodeLang__ 的取值，与 App IntlProvider 的 Locale 一致。
+ * App locale 变化时通过 executeJavaScript 重写此变量并派发 lang-change 事件。
+ */
+export type CodingPlanWebviewLocale = "zh-CN" | "en-US";

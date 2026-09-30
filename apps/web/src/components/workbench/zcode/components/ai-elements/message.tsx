@@ -2,6 +2,8 @@
  * zcode 照搬：`@/components/ai-elements/message.tsx`（references/zcode/packages/ui/src/components/ai-elements/message.tsx）
  * 许可证：Apache-2.0（zcode）。
  * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）；源文件自带头注保留于下。
+ * 适配注记（P9）：导出接口与文件内函数参数的可选成员放宽 `| undefined`（纯类型注记，
+ * 运行时逐字不动；exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
  */
 /*
  * Derived from vercel/ai-elements (packages/elements/src/message.tsx).
@@ -41,9 +43,6 @@ import {
   MarkdownTableRow,
 } from "@zui/components/ai-elements/markdown-table";
 import { STREAMDOWN_CONTROLS } from "@zui/components/ai-elements/streamdown-controls";
-import { cn } from "@zui/components/lib/utils";
-import { Button } from "@zui/components/ui/button";
-import { ButtonGroup, ButtonGroupText } from "@zui/components/ui/button-group";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -57,7 +56,6 @@ import { useOptionalPlatform, usePlatform } from "@zui/hooks/usePlatform";
 import { useOptionalServices } from "@zui/hooks/useServices";
 import { useWorkspaceOpenInEditorTarget } from "@zui/hooks/useWorkspaceOpenInEditorTarget";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { UIMessage } from "@zui/lib/ai-types";
 import { stripBalancedAssistantPathQuotes } from "@zui/lib/assistantPathQuotes";
 import type { CodePreviewSettings } from "@zui/lib/codePreviewSettings";
 import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@zui/lib/codePreviewSettings";
@@ -92,6 +90,7 @@ import { useZCodeStore } from "@zui/store/StoreProvider";
 import type { Theme } from "@zui/useTheme";
 import { sortInstalledEditorsForFileTree } from "@zui/workspace-file-tree/helpers";
 import { getWorkspaceFileRelativePath } from "@zui/workspace-file-tree/model";
+import type { UIMessage } from "ai";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -126,6 +125,9 @@ import {
   Streamdown,
 } from "streamdown";
 import type { Pluggable, PluggableList } from "unified";
+import { cn } from "../lib/utils";
+import { Button } from "../ui/button";
+import { ButtonGroup, ButtonGroupText } from "../ui/button-group";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
@@ -452,11 +454,11 @@ export interface MessageFileLinkTarget {
   path: string;
   label: string;
   /** 仅用于显式尾随斜杠的目录展示提示；打开第三方应用前必须重新 stat。 */
-  pathKind?: NonNullable<OpenInEditorOptions["pathKind"]>;
-  relativePath?: string;
-  workspacePath?: string;
-  workspaceIdentity?: string;
-  workspaceRemoteSessionId?: string;
+  pathKind?: NonNullable<OpenInEditorOptions["pathKind"]> | undefined;
+  relativePath?: string | undefined;
+  workspacePath?: string | undefined;
+  workspaceIdentity?: string | undefined;
+  workspaceRemoteSessionId?: string | undefined;
 }
 
 // @streamdown/math 默认不解析 `$...$` 行内公式，导致客户消息里块级 `$$...$$`
@@ -951,15 +953,15 @@ function resolveMessageCodeTheme(
 }
 
 export function buildMessageStreamdownRenderKey(params: {
-  attachmentReaderEpoch?: number;
+  attachmentReaderEpoch?: number | undefined;
   codeBlockTheme: BundledTheme;
   fontSizePx: number;
-  renderZCodeFileCitations?: boolean;
-  sessionId?: string;
-  workspacePath?: string;
-  workspaceHomePath?: string;
-  workspaceIdentity?: string;
-  workspaceRemoteSessionId?: string;
+  renderZCodeFileCitations?: boolean | undefined;
+  sessionId?: string | undefined;
+  workspacePath?: string | undefined;
+  workspaceHomePath?: string | undefined;
+  workspaceIdentity?: string | undefined;
+  workspaceRemoteSessionId?: string | undefined;
   wrapLongLines: boolean;
 }): string {
   // streaming/static 只是解析模式，不应参与 React key；否则流式状态抖动会卸载
@@ -1032,9 +1034,9 @@ export function buildMessageFileLinkTarget(input: {
   href: string;
   label: string;
   path: string;
-  workspacePath?: string;
-  workspaceIdentity?: string;
-  workspaceRemoteSessionId?: string;
+  workspacePath?: string | undefined;
+  workspaceIdentity?: string | undefined;
+  workspaceRemoteSessionId?: string | undefined;
 }): MessageFileLinkTarget {
   // 文件名是否带扩展名不能代表文件系统类型；env、hosts、config 等无扩展名文件
   // 过去会被误判为目录。这里只保留显式尾随斜杠作为图标提示，打开方式必须再 stat。
@@ -1044,19 +1046,13 @@ export function buildMessageFileLinkTarget(input: {
   return {
     path: input.path,
     label: input.label,
-    ...(pathKind === undefined ? {} : { pathKind }),
+    pathKind,
     relativePath: input.workspacePath
       ? getWorkspaceFileRelativePath(input.workspacePath, input.path)
       : input.label,
-    ...(input.workspacePath === undefined
-      ? {}
-      : { workspacePath: input.workspacePath }),
-    ...(input.workspaceIdentity === undefined
-      ? {}
-      : { workspaceIdentity: input.workspaceIdentity }),
-    ...(input.workspaceRemoteSessionId === undefined
-      ? {}
-      : { workspaceRemoteSessionId: input.workspaceRemoteSessionId }),
+    workspacePath: input.workspacePath,
+    workspaceIdentity: input.workspaceIdentity,
+    workspaceRemoteSessionId: input.workspaceRemoteSessionId,
   };
 }
 
@@ -1082,10 +1078,8 @@ export async function openMessageFileLinkInEditor({
   const fileStat = await statFile({ path: fileLink.path });
   return openInEditor(editorId, fileLink.path, {
     pathKind: fileStat.type,
-    ...(remoteTarget === undefined ? {} : { remoteTarget }),
-    ...(fileLink.workspaceIdentity === undefined
-      ? {}
-      : { workspaceIdentity: fileLink.workspaceIdentity }),
+    remoteTarget,
+    workspaceIdentity: fileLink.workspaceIdentity,
   });
 }
 
@@ -1220,7 +1214,7 @@ const MessageFileLinkButton = forwardRef<
 });
 
 interface MessageFileLinkProps {
-  className?: string;
+  className?: string | undefined;
   fileIconSrc: string;
   fileLink: MessageFileLinkTarget;
   onOpen: () => void;
@@ -1237,15 +1231,9 @@ function MessageFileLink({
   const services = useOptionalServices();
   const fileActions = useFileContextActions();
   const openInEditorContext = useWorkspaceOpenInEditorTarget({
-    ...(fileLink.workspacePath === undefined
-      ? {}
-      : { workspacePath: fileLink.workspacePath }),
-    ...(fileLink.workspaceIdentity === undefined
-      ? {}
-      : { workspaceIdentity: fileLink.workspaceIdentity }),
-    ...(fileLink.workspaceRemoteSessionId === undefined
-      ? {}
-      : { workspaceRemoteSessionId: fileLink.workspaceRemoteSessionId }),
+    workspacePath: fileLink.workspacePath,
+    workspaceIdentity: fileLink.workspaceIdentity,
+    workspaceRemoteSessionId: fileLink.workspaceRemoteSessionId,
   });
   const [editors, setEditors] = useState<EditorInfo[]>([]);
   const [editorsLoaded, setEditorsLoaded] = useState(false);
@@ -1257,9 +1245,7 @@ function MessageFileLink({
         : resolveWorkspaceEditorSelection({
             installedEditors: editors,
             selectedEditorId: null,
-            ...(openInEditorContext.remoteTarget === undefined
-              ? {}
-              : { remoteTarget: openInEditorContext.remoteTarget }),
+            remoteTarget: openInEditorContext.remoteTarget,
           }).availableEditors,
     [editors, openInEditorContext],
   );
@@ -1597,13 +1583,11 @@ export const MessageResponse = memo(
           codeBlockTheme,
           fontSizePx: codePreviewSettings.fontSizePx,
           renderZCodeFileCitations,
-          ...(sessionId === undefined ? {} : { sessionId }),
-          ...(workspacePath === undefined ? {} : { workspacePath }),
-          ...(workspaceHomePath === undefined ? {} : { workspaceHomePath }),
-          ...(workspaceIdentity === undefined ? {} : { workspaceIdentity }),
-          ...(workspaceRemoteSessionId === undefined
-            ? {}
-            : { workspaceRemoteSessionId }),
+          sessionId,
+          workspacePath,
+          workspaceHomePath,
+          workspaceIdentity,
+          workspaceRemoteSessionId,
           wrapLongLines,
         }) + (forceCodeWrap ? ":wrap-locked" : "")
       );
@@ -1636,9 +1620,7 @@ export const MessageResponse = memo(
             workspacePath,
             resolvedHref,
             {
-              ...(workspaceHomePath === undefined
-                ? {}
-                : { homePath: workspaceHomePath }),
+              homePath: workspaceHomePath,
             },
           );
 
@@ -1650,11 +1632,9 @@ export const MessageResponse = memo(
               href: resolvedHref,
               path: fileLink.path,
               label: labelText,
-              ...(workspacePath === undefined ? {} : { workspacePath }),
-              ...(workspaceIdentity === undefined ? {} : { workspaceIdentity }),
-              ...(workspaceRemoteSessionId === undefined
-                ? {}
-                : { workspaceRemoteSessionId }),
+              workspacePath,
+              workspaceIdentity,
+              workspaceRemoteSessionId,
             });
             const fileIconSrc =
               fileLinkTarget.pathKind === "directory"
@@ -1662,9 +1642,7 @@ export const MessageResponse = memo(
                 : descriptor.fileIconSrc;
             return (
               <MessageFileLink
-                {...(linkClassName === undefined
-                  ? {}
-                  : { className: linkClassName })}
+                className={linkClassName}
                 fileIconSrc={fileIconSrc}
                 fileLink={fileLinkTarget}
                 onOpen={() => {
@@ -1676,13 +1654,9 @@ export const MessageResponse = memo(
                     type: "file",
                     title: getPathLeaf(fileLink.path),
                     path: fileLink.path,
-                    ...(workspacePath === undefined ? {} : { workspacePath }),
-                    ...(workspaceIdentity === undefined
-                      ? {}
-                      : { workspaceIdentity }),
-                    ...(workspaceRemoteSessionId === undefined
-                      ? {}
-                      : { workspaceRemoteSessionId }),
+                    workspacePath,
+                    workspaceIdentity,
+                    workspaceRemoteSessionId,
                   });
                 }}
               />
@@ -1713,10 +1687,10 @@ export const MessageResponse = memo(
         img: (imageProps: MarkdownImageProps) => (
           <MarkdownImage
             {...imageProps}
-            {...(workspacePath === undefined ? {} : { workspacePath })}
-            {...(workspaceHomePath === undefined ? {} : { workspaceHomePath })}
-            {...(sessionId === undefined ? {} : { sessionId })}
-            {...(readAttachment === undefined ? {} : { readAttachment })}
+            workspacePath={workspacePath}
+            workspaceHomePath={workspaceHomePath}
+            sessionId={sessionId}
+            readAttachment={readAttachment}
           />
         ),
         p: MarkdownImageParagraph,

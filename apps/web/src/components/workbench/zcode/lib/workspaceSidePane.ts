@@ -3,6 +3,7 @@
  * 许可证：Apache-2.0（zcode）。
  * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀；源文件自带头注保留于下。
  * P6 适配：exactOptionalPropertyTypes——activateBrowserSidePane 调用点的可选属性改条件展开（原样传 `string | null | undefined` 不过编译）。
+ * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
  */
 /* eslint-disable max-lines -- Side pane tab 状态集中维护 Browser/Git/CodeViewer/Treemapping/Whiteboard 的打开、复用、关闭和排序规则；拆分需要同步迁移现有内存恢复逻辑。 */
 
@@ -353,10 +354,10 @@ export interface OpenWorkflowActorSessionSideTabRequest {
   parentSessionId: string;
   runId: string;
   /** 打开时已知的会话 id；未启动的槽位缺席。 */
-  actorSessionId?: string;
+  actorSessionId?: string | undefined;
   siteId: string;
   ordinal: number;
-  actorName?: string;
+  actorName?: string | undefined;
 }
 
 export interface OpenScopedWorkflowActorSessionSideTabRequest

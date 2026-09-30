@@ -259,8 +259,8 @@ export function FileDisplayIcon({
   className,
 }: {
   src: string;
-  size?: number;
-  className?: string;
+  size?: number | undefined;
+  className?: string | undefined;
 }): ReactElement {
   const [fileIconSrc, setFileIconSrc] = useState(src);
 
@@ -306,3 +306,4 @@ export function getFileDisplayPath(
 
   return normalizedPath;
 }
+/* 适配注记（P9）：接口可选属性放宽 | undefined（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。 */

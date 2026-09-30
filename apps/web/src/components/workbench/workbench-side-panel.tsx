@@ -1,5 +1,6 @@
 "use client";
 
+import { SubagentDirectorySidePane } from "@zui/app-shell/SubagentDirectorySidePane";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BrowserPane,
@@ -12,7 +13,6 @@ import { DiffPane, FilePane } from "@/components/workbench/panel-reading-view";
 import { PanelTabStrip } from "@/components/workbench/panel-tab-strip";
 import { TerminalPane } from "@/components/workbench/panel-terminal-view";
 import { PanelEmptyState } from "@/components/workbench/panel-view-icon";
-import { SubagentDirectoryView } from "@/components/workbench/subagent-directory-view";
 import type { WebSocketHandle } from "@/hooks/use-websocket";
 import {
   canGoBack,
@@ -421,7 +421,17 @@ function PaneContent({
       );
     case "subagents":
       return subagents.length > 0 ? (
-        <SubagentDirectoryView entries={subagents} />
+        <SubagentDirectorySidePane
+          tab={{
+            id: "subagent-directory",
+            type: "subagent-directory",
+            workspaceKey: canvasId ?? "",
+            workspacePath: canvasId ?? "",
+            rootSessionId: canvasId ?? "",
+            parentSessionId: canvasId ?? "",
+          }}
+          onOpenSubagentSession={() => undefined}
+        />
       ) : (
         <PanelEmptyState kind="subagents" title="这个会话还没有派过子智能体" />
       );
