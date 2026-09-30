@@ -5,6 +5,14 @@ import type {
   ExecutionMode,
   ProjectSummary,
 } from "@kenfutwork/shared";
+import { MessageResponse } from "@zui/components/ai-elements/message.js";
+import {
+  Reasoning,
+  ReasoningContent,
+  ReasoningTrigger,
+} from "@zui/components/ai-elements/reasoning.js";
+import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@zui/lib/codePreviewSettings.js";
+import { useTheme } from "@zui/useTheme.js";
 import {
   Blocks,
   Brain,
@@ -89,13 +97,15 @@ import { TurnRail } from "@/components/workbench/turn-rail";
 import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
 import { WorkDirectorySelect } from "@/components/workbench/work-directory-select";
 import { WorkbenchSidePanel } from "@/components/workbench/workbench-side-panel";
-import { MessageResponse } from "@/components/workbench/zcode/message-response";
-import { Reasoning } from "@/components/workbench/zcode/reasoning";
 import { resolveToolRenderer } from "@/components/workbench/zcode/tool-renderers";
 import { useFlowHostEntry } from "@/hooks/use-flow-host";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useAuth } from "@/lib/auth-context";
-import { onBrowserOpen } from "@/lib/browser-panel";
+import {
+  canOpenInBrowserPanel,
+  onBrowserOpen,
+  requestBrowserOpen,
+} from "@/lib/browser-panel";
 import { pickCheckpointForRun } from "@/lib/checkpoint-select";
 import { fetchCheckpoints } from "@/lib/code-checkpoints-api";
 import { commitGitAll } from "@/lib/code-git-api";
@@ -298,6 +308,13 @@ function AssistantTurn({
   /** 该消息是否仍在流式（任务运行中的最后一条）：思考行的「思考中」态用它。 */
   streaming?: boolean;
 }) {
+  // zcode 组件装配适配（手册 §2.2）：theme 经 zui useTheme 注入；外链优先右栏
+  // 浏览器面板，面板不可用/拒绝时退系统浏览器（canOpenInBrowserPanel/requestBrowserOpen）
+  const { resolvedTheme: zcodeTheme } = useTheme();
+  const openExternalUrl = (url: string) => {
+    if (canOpenInBrowserPanel() && requestBrowserOpen(url)) return;
+    window.open(url, "_blank", "noopener");
+  };
   // 无 blocks 的消息（纯文本）就地归一化成单文本块——只有一条渲染路径，没有旧版分支
   const groups = useMemo(
     () =>
@@ -319,9 +336,13 @@ function AssistantTurn({
               className="w-full max-w-full"
             >
               <MessageResponse
-                text={group.text}
                 streaming={streaming && gi === groups.length - 1}
-              />
+                theme={zcodeTheme}
+                codePreviewSettings={DEFAULT_CODE_PREVIEW_SETTINGS}
+                onOpenExternalUrl={openExternalUrl}
+              >
+                {group.text}
+              </MessageResponse>
             </div>
           );
         }
@@ -331,9 +352,11 @@ function AssistantTurn({
             <Reasoning
               // biome-ignore lint/suspicious/noArrayIndexKey: 组序即时序，块内没有更稳定的身份
               key={gi}
-              text={group.text}
-              streaming={streaming && gi === groups.length - 1}
-            />
+              isStreaming={streaming && gi === groups.length - 1}
+            >
+              <ReasoningTrigger streamingText={group.text} />
+              <ReasoningContent>{group.text}</ReasoningContent>
+            </Reasoning>
           );
         }
         if (group.kind === "notification") {

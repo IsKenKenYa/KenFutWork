@@ -30,7 +30,8 @@
       "!**/data",
       "!**/logs",
       "!**/runtime",
-      "!**/flow"
+      "!**/flow",
+      "!**/docs/api/openapi.json"
     ]
   },
   "formatter": {
@@ -72,7 +73,23 @@
           "a11y": {
             "useAriaPropsSupportedByRole": "warn",
             "useValidAriaRole": "warn",
-            "noLabelWithoutControl": "warn"
+            "noLabelWithoutControl": "warn",
+            "useMediaCaption": "warn"
+          },
+          "correctness": {
+            "useExhaustiveDependencies": "warn"
+          },
+          "suspicious": {
+            "noControlCharactersInRegex": "warn"
+          },
+          "security": {
+            "noDangerouslySetInnerHtml": "warn"
+          },
+          "performance": {
+            "noImgElement": "warn"
+          },
+          "style": {
+            "noNonNullAssertion": "warn"
           }
         }
       }

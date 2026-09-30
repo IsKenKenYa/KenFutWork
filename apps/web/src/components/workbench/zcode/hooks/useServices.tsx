@@ -16,7 +16,10 @@ import type { FileMediaPreview, FileStat } from "../lib/zcode-shared.js";
 /** zcode fileService 的最小切片：照搬组件实际调用的方法。 */
 export interface ZCodeFileServiceSlice {
   stat(params: { path: string }): Promise<Pick<FileStat, "type">>;
-  getMediaPreview?(params: { path: string }): Promise<FileMediaPreview>;
+  readMediaPreview(params: {
+    path: string;
+    maxBytes?: number;
+  }): Promise<FileMediaPreview>;
 }
 
 export interface ZCodeServiceSlice {
@@ -26,6 +29,9 @@ export interface ZCodeServiceSlice {
 const unavailableFileService: ZCodeFileServiceSlice = {
   async stat({ path }) {
     throw new Error(`fileService.stat 未接通（${path}）`);
+  },
+  async readMediaPreview({ path }) {
+    throw new Error(`fileService.readMediaPreview 未接通（${path}）`);
   },
 };
 

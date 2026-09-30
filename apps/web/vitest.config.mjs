@@ -10,6 +10,11 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),
+      // zcode 照搬层路径映射（tsconfig paths 同口径；vitest 不读 tsconfig paths）
+      "@zui": path.resolve(
+        import.meta.dirname,
+        "src/components/workbench/zcode",
+      ),
     },
   },
   test: {

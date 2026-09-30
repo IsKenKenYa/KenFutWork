@@ -15,6 +15,8 @@ import type {
   EditorInfo,
   OpenInEditorOptions,
   RemoteTarget,
+  SaveFileRequest,
+  SaveFileResult,
 } from "../lib/zcode-shared.js";
 
 /** zcode IPlatformService 的最小切片：只声明照搬组件实际调用的方法。 */
@@ -33,6 +35,8 @@ export interface ZCodePlatformSlice {
   openInFileManager(
     path: string,
   ): Promise<{ success: boolean; error?: string }>;
+  /** 用宿主原生另存为对话框写入文件；普通 Web 端不实现（zcode IPlatformService.saveFile 同为可选）。 */
+  saveFile?(payload: SaveFileRequest): Promise<SaveFileResult>;
   /** 选择目录。 */
   selectDirectory(): Promise<string | null>;
   /** 连接远程（我们宿主未接通，恒失败）。 */

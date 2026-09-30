@@ -1,5 +1,6 @@
 "use client";
 
+import { MessageResponse } from "@zui/components/ai-elements/message.js";
 import {
   Bot,
   FileText,
@@ -10,9 +11,7 @@ import {
   SquareTerminal,
 } from "lucide-react";
 import type { ReactNode } from "react";
-
 import type { TaskToolEntry } from "@/lib/workbench-tools";
-import { MessageResponse } from "./message-response";
 import { ToolLayout } from "./tool-layout";
 
 /**
@@ -409,10 +408,9 @@ export function AgentPromptSection({ prompt }: { prompt: string }) {
           任务说明
         </h4>
         <div className="max-h-64 overflow-auto">
-          <MessageResponse
-            text={prompt}
-            className="min-w-0 break-words px-3 py-2 text-ui-base [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
-          />
+          <MessageResponse className="min-w-0 break-words px-3 py-2 text-ui-base [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+            {prompt}
+          </MessageResponse>
         </div>
       </div>
     </section>
@@ -434,10 +432,9 @@ export function AgentActivitySection({
           {label}
         </h4>
         <div className="max-h-64 overflow-auto">
-          <MessageResponse
-            text={content}
-            className="min-w-0 break-words px-3 py-2 text-ui-base [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
-          />
+          <MessageResponse className="min-w-0 break-words px-3 py-2 text-ui-base [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+            {content}
+          </MessageResponse>
         </div>
       </div>
     </section>
