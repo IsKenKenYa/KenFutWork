@@ -121,3 +121,84 @@ describe("GET /api/agent/subagents", () => {
     }
   });
 });
+
+/**
+ * `GET /api/agent/runs/latest`（失败轮的原因要给界面看服务端原文）的路由级回归。
+ *
+ * 钉三件事：未登录 401；按 `resolveWorkspace` 解析出的工作区查；会话不在该工作区
+ * 链上时按「没有这轮」返回 null（与 activity 同一口径，不给资源枚举留信号）。
+ */
+describe("GET /api/agent/runs/latest", () => {
+  it("未登录：401", async () => {
+    const app = buildApp(false);
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/agent/runs/latest?sessionId=s-1",
+      });
+      expect(response.statusCode).toBe(401);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("归属工作区：交回终态与失败原因原文（查询带工作区过滤）", async () => {
+    const calls: Array<{ sessionId: string; workspaceId: string }> = [];
+    const app = buildApp(true, {
+      viewerService: {
+        resolveWorkspace: async () => ({ id: "ws-1" }),
+      },
+      latestRunQuery: async (input: {
+        sessionId: string;
+        workspaceId: string;
+      }) => {
+        calls.push(input);
+        return {
+          status: "failed",
+          errorCode: "run_failed",
+          errorMessage:
+            "服务重启，本轮已中断（进程在生成过程中退出，未有终态事件）。",
+          startedAt: "2026-09-29T12:00:00.000Z",
+          completedAt: "2026-09-29T12:00:09.000Z",
+        };
+      },
+    });
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/agent/runs/latest?sessionId=384c8166-995c-4890-97e2-678be1495057",
+      });
+      expect(response.statusCode).toBe(200);
+      const body = response.json() as {
+        run: { status: string; errorMessage: string | null } | null;
+      };
+      expect(body.run?.status).toBe("failed");
+      expect(body.run?.errorMessage).toContain("服务重启，本轮已中断");
+      expect(calls).toEqual([
+        {
+          sessionId: "384c8166-995c-4890-97e2-678be1495057",
+          workspaceId: "ws-1",
+        },
+      ]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("会话没有 run / 不属于该工作区：run 为 null", async () => {
+    const app = buildApp(true, {
+      viewerService: { resolveWorkspace: async () => ({ id: "ws-1" }) },
+      latestRunQuery: async () => null,
+    });
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/agent/runs/latest?sessionId=someone-else",
+      });
+      expect(response.statusCode).toBe(200);
+      expect((response.json() as { run: unknown }).run).toBeNull();
+    } finally {
+      await app.close();
+    }
+  });
+});

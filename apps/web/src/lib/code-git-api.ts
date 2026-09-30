@@ -1,4 +1,4 @@
-import type { TerminalShellId } from "@kenfutwork/shared";
+import type { AgentRunLatestResponse, TerminalShellId } from "@kenfutwork/shared";
 
 import { getServerBaseUrl } from "./env";
 import { ApiApplicationError, ApiAuthError } from "./server-api";
@@ -280,6 +280,26 @@ export async function fetchAgentActivity(
   if (!response.ok) return handleErrorResponse(response);
   const payload = (await response.json()) as { activity: AgentActivity };
   return payload.activity;
+}
+
+/**
+ * 会话最近一轮 run 的终态（失败轮的原因要给界面看服务端原文）。
+ *
+ * 用途：Code 模式的转录存在本地任务仓，只记收到的事件；断线/重启会让「本轮为什么结束」
+ * 在本地丢失（实测界面只剩「已工作 N 秒」）。打开任务对账时用它把
+ * `agent_runs.error_message` 原文补进转录。会话不属于当前工作区、或还没有 run 时
+ * 服务端返回 `run: null`。
+ */
+export async function fetchLatestRun(
+  accessToken: string,
+  sessionId: string,
+): Promise<AgentRunLatestResponse> {
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/agent/runs/latest?sessionId=${encodeURIComponent(sessionId)}`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as AgentRunLatestResponse;
 }
 
 // --- R3-1「终端」标签：在画布工作目录里跑用户命令 ---

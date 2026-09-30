@@ -3,6 +3,7 @@
 import type {
   CheckpointSummary,
   ExecutionMode,
+  MessageMention,
   ProjectSummary,
   VoiceRefineContextMessage,
 } from "@kenfutwork/shared";
@@ -31,6 +32,11 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  MessageMentionPicker,
+  type MessageMentionPickerItem,
+  type SkillMentionItem,
+} from "@/components/canvas-image-picker";
 import {
   ChatContextMenu,
   useChatContextMenu,
@@ -108,7 +114,7 @@ import { useAuth } from "@/lib/auth-context";
 import { onBrowserOpen } from "@/lib/browser-panel";
 import { pickCheckpointForRun } from "@/lib/checkpoint-select";
 import { fetchCheckpoints } from "@/lib/code-checkpoints-api";
-import { commitGitAll } from "@/lib/code-git-api";
+import { commitGitAll, fetchLatestRun } from "@/lib/code-git-api";
 import {
   loadCodeWorkDir,
   reconcileCodeWorkDir,
@@ -149,6 +155,7 @@ import {
   fetchViewer,
   fetchVoiceSettings,
   fetchWorkspaceSettings,
+  fetchWorkspaceSkills,
   pickDirectory,
   updateProject,
 } from "@/lib/server-api";
@@ -319,14 +326,18 @@ function AssistantTurn({
   /** 「查看轨迹」：切到轨迹页签并聚焦这次调用（dsh 的 Inspect 交叉跳转）。 */
   onInspectTool?: (toolCallId: string) => void;
 }) {
-  // 无 blocks 的消息（纯文本）就地归一化成单文本块——只有一条渲染路径，没有旧版分支
+  // 无 blocks 的消息（纯文本要点 / 失败与中断提示）就地归一化成单文本块——只有一条
+  // 渲染路径，没有旧版分支。历史事故：断线重接与对账都往 `text` 写提示，而渲染只看
+  // blocks，结果「有文字却渲染成空白轮」（真机实测，B2/B4 的提示都栽在这里）。
   const groups = useMemo(
     () =>
       // 纯空白文本段（模型在工具调用前后吐的换行）渲染成空泡泡纯属噪音
-      groupAssistantBlocks(msg.blocks).filter(
-        (g) => g.kind !== "text" || g.text.trim().length > 0,
-      ),
-    [msg.blocks],
+      groupAssistantBlocks(
+        msg.blocks.length === 0 && msg.text.trim().length > 0
+          ? [{ type: "text", text: msg.text }]
+          : msg.blocks,
+      ).filter((g) => g.kind !== "text" || g.text.trim().length > 0),
+    [msg.blocks, msg.text],
   );
   /**
    * 空回复兜底（B3，真机实测）：模型偶尔只调工具就直接结束，assistant 消息没有任何正文——
@@ -767,6 +778,15 @@ export function Workbench() {
   /** Design 模式的输入交给画布页（`/canvas?...&prompt=`）自动发送，不落到工作台会话视图。 */
   const [canvasPrompt, setCanvasPrompt] = useState<string | null>(null);
   const [followUp, setFollowUp] = useState("");
+  /**
+   * 「@」引用（与画布聊天同一套口径）：把本消息用到的技能挂进 run 载荷。
+   * Code 模式此前没有 @ 提及（只有画布聊天侧有），这里补齐这一侧。
+   */
+  const [atQuery, setAtQuery] = useState<string | null>(null);
+  const [messageMentions, setMessageMentions] = useState<MessageMention[]>([]);
+  const [skillMentionItems, setSkillMentionItems] = useState<
+    SkillMentionItem[]
+  >([]);
   /**
    * 转录区视图（参考 deepseek-harness 的「对话 / 轨迹」双页签）：对话按发生顺序
    * 交错展示，轨迹是按轮次分组的只读账本（每次调用的时间/耗时/入参/输出一表可查）。
@@ -1755,8 +1775,11 @@ export function Workbench() {
    * 打开任务时与服务端对账（Code 模式的转录存在本地任务仓，只记客户端收到的事件）：
    * 断线/超时会让一轮的 assistant 段落在本地是空的——实测界面只剩用户消息 +「已工作 N 秒」，
    * 服务端 `chat_messages` 却按事件顺序存着完整 contentBlocks（B4）。
-   * 另外「运行中但没有在途 runId」的任务重接不了（B2），服务端已有本轮内容时收尾成 completed。
-   * 在途且可重接（有 activeRunId）的任务交给上面的重接 effect，这里不碰。
+   *
+   * 除内容外还要对**终态**：本轮在服务端是 failed 且本地没拿到任何内容时，把
+   * `agent_runs.error_message` 原文写进转录——否则用户永远不知道这轮为什么没结果。
+   * 「运行中但没有在途 runId」的任务重接不了（B2）：有内容收尾成 completed，
+   * 只有失败原因则收尾成 failed。在途且可重接（有 activeRunId）的交给上面的重接 effect。
    */
   const reconciledTasksRef = useRef<Set<string>>(new Set());
   useEffect(() => {
@@ -1766,24 +1789,48 @@ export function Workbench() {
       (t) => t.id === activeTaskId,
     );
     if (!active?.sessionId) return;
-    if (active.status === "running" && active.activeRunId) return;
     if (reconciledTasksRef.current.has(active.id)) return;
-    const hasEmptyAssistant = active.messages.some(
-      (m) => m.role === "assistant" && m.blocks.length === 0,
-    );
-    if (!hasEmptyAssistant && active.status !== "running") return;
+    const lastMessage = active.messages[active.messages.length - 1];
+    const missing =
+      active.messages.some(
+        (m) => m.role === "assistant" && m.blocks.length === 0,
+      ) || lastMessage?.role === "user";
+    // 在途任务（status=running + activeRunId）平时交给上面的重接 effect；这里只在服务端
+    // 那一轮已经有终态时收尾——重接也接不到（B2 实测：服务端被重启，run 已标记 failed，
+    // 界面却永远停在「已工作 N 秒」）。
+    const resumable =
+      active.status === "running" && Boolean(active.activeRunId);
+    if (!missing && !resumable) return;
     reconciledTasksRef.current.add(active.id);
     const saveMode = mode;
-    void fetchMessages(token, active.sessionId)
-      .then((res) => {
+    void Promise.all([
+      fetchMessages(token, active.sessionId),
+      // 失败原因兜底：多这一条查询不该让对账失败（拿不到就当没有）
+      fetchLatestRun(token, active.sessionId).catch(() => null),
+    ])
+      .then(([res, latest]) => {
+        const terminal = latest?.run ?? null;
+        // 在途且服务端没有终态（还在跑 / 没记录）：交给重接路径，别插手
+        if (
+          resumable &&
+          (!terminal ||
+            (terminal.status !== "failed" && terminal.status !== "completed"))
+        ) {
+          return;
+        }
         const assistants = res.messages.filter((m) => m.role === "assistant");
-        if (assistants.length === 0) return;
+        const failedReason =
+          terminal?.status === "failed" && terminal.errorMessage
+            ? terminal.errorMessage
+            : null;
+        if (assistants.length === 0 && !failedReason) return;
         setTasksByMode((prev) => {
           let filled = false;
+          let wroteReason = false;
           let index = 0;
           const list = prev[saveMode].map((t) => {
             if (t.id !== active.id) return t;
-            const messages = t.messages.map((m) => {
+            let messages = t.messages.map((m) => {
               if (m.role !== "assistant") return m;
               const source =
                 assistants[index] ?? assistants[assistants.length - 1];
@@ -1796,13 +1843,47 @@ export function Workbench() {
               filled = true;
               return { ...m, blocks, text: source.content ?? m.text };
             });
-            if (!filled) return t;
+            if (!filled && failedReason) {
+              // 取最后一条 assistant 消息（不用 findLastIndex：本包 lib 目标不含 ES2023）
+              let lastAssistantIndex = -1;
+              for (let i = messages.length - 1; i >= 0; i -= 1) {
+                if (messages[i]?.role === "assistant") {
+                  lastAssistantIndex = i;
+                  break;
+                }
+              }
+              const lastAssistant =
+                lastAssistantIndex === -1
+                  ? undefined
+                  : messages[lastAssistantIndex];
+              if (!lastAssistant) {
+                messages = [
+                  ...messages,
+                  { role: "assistant", text: failedReason, blocks: [] },
+                ];
+                wroteReason = true;
+              } else if (
+                !lastAssistant.text &&
+                lastAssistant.blocks.length === 0
+              ) {
+                messages = messages.map((m, i) =>
+                  i === lastAssistantIndex ? { ...m, text: failedReason } : m,
+                );
+                wroteReason = true;
+              }
+            }
+            if (!filled && !wroteReason && t.status !== "running") return t;
             return {
               ...t,
               messages,
-              // 服务端已有本轮内容 = 这轮在服务端跑完过，本地还挂着「运行中」是断线遗留
+              // 服务端已有本轮内容 = 这轮在服务端跑过（本地挂着「运行中」是断线遗留）；
+              // 只有失败原因时落成 failed——本轮确实没有产出内容
               ...(t.status === "running"
-                ? { status: "completed" as const }
+                ? {
+                    status: filled
+                      ? ("completed" as const)
+                      : ("failed" as const),
+                  }
                 : {}),
             };
           });
@@ -1815,6 +1896,87 @@ export function Workbench() {
         reconciledTasksRef.current.delete(active.id);
       });
   }, [mode, activeTaskId, session]);
+
+  /** @ 提及的技能来源：只列已启用的工作区技能（与画布聊天同一条口径）。 */
+  useEffect(() => {
+    const token = session?.access_token;
+    if (!token) return;
+    let cancelled = false;
+    fetchWorkspaceSkills(token)
+      .then((data) => {
+        if (cancelled) return;
+        setSkillMentionItems(
+          (data.skills ?? [])
+            .filter((s) => s.enabled)
+            .map((s) => ({
+              kind: "skill" as const,
+              id: s.id,
+              label: s.name,
+              slug: s.slug,
+              description: s.description,
+            })),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setSkillMentionItems([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.access_token]);
+
+  /**
+   * 输入框里的「@ + 查询词」检测：触发规则与画布聊天一致
+   * （行首或空格后触发，空格 / 换行收尾即关闭）。
+   */
+  const refreshAtQuery = useCallback((value: string) => {
+    const lastAt = value.lastIndexOf("@");
+    if (lastAt === -1) {
+      setAtQuery(null);
+      return;
+    }
+    const charBefore = lastAt > 0 ? value[lastAt - 1] : " ";
+    if (charBefore !== " " && charBefore !== "\n" && lastAt !== 0) {
+      setAtQuery(null);
+      return;
+    }
+    const query = value.slice(lastAt + 1);
+    if (query.includes(" ") || query.includes("\n")) {
+      setAtQuery(null);
+      return;
+    }
+    setAtQuery(query);
+  }, []);
+
+  /** 选中一条技能：进 chips 队列，并把输入框里的 @查询词 换成 @技能名。 */
+  const pickSkillMention = useCallback(
+    (
+      item: MessageMentionPickerItem,
+      value: string,
+      setValue: (next: string) => void,
+    ) => {
+      if (item.kind !== "skill") return;
+      setMessageMentions((prev) =>
+        prev.some((m) => m.mentionType === "skill" && m.id === item.id)
+          ? prev
+          : [
+              ...prev,
+              {
+                mentionType: "skill",
+                id: item.id,
+                label: item.label,
+                slug: item.slug,
+              },
+            ],
+      );
+      const lastAt = value.lastIndexOf("@");
+      setValue(
+        `${lastAt === -1 ? value : value.slice(0, lastAt)}@${item.label} `,
+      );
+      setAtQuery(null);
+    },
+    [],
+  );
 
   // 流事件 → 任务消息
   useEffect(() => {
@@ -2397,6 +2559,7 @@ export function Workbench() {
       });
       setActiveTaskId(task.id);
       setPrompt("");
+      setMessageMentions([]);
       setSubmitting(true);
 
       // 失败兜底：WS 命令可能被丢弃（重连窗口）或 ack 丢失。没有兜底时任务会永远停在
@@ -2479,6 +2642,8 @@ export function Workbench() {
               : ""
           }${thinkingPromptHint(thinking)}${text.trim()}`,
           ...(model ? { model } : {}),
+          // @ 引用：服务端按 mentions 把技能挂进本轮（与画布聊天同一字段）
+          ...(messageMentions.length > 0 ? { mentions: messageMentions } : {}),
           executionMode,
         },
         (ack) => {
@@ -2506,6 +2671,7 @@ export function Workbench() {
       createCodeProject,
       session,
       ws,
+      messageMentions,
     ],
   );
 
@@ -2688,6 +2854,8 @@ export function Workbench() {
           canvasId: taskCanvasId,
           prompt: `${thinkingHint}${historyBlock}${text.trim()}`,
           ...(model ? { model } : {}),
+          // @ 引用：服务端按 mentions 把技能挂进本轮（与画布聊天同一字段）
+          ...(messageMentions.length > 0 ? { mentions: messageMentions } : {}),
           executionMode,
         },
         (ack) => {
@@ -2700,6 +2868,7 @@ export function Workbench() {
           setSubmitting(false);
         },
       );
+      setMessageMentions([]);
     },
     [
       activeTaskId,
@@ -2711,6 +2880,7 @@ export function Workbench() {
       session,
       ws,
       codeProjects,
+      messageMentions,
     ],
   );
 
@@ -3656,7 +3826,7 @@ export function Workbench() {
                   }}
                 >
                   <div
-                    className="@container/composer rounded-xl border bg-background px-3 pt-2.5 pb-2"
+                    className="@container/composer relative rounded-xl border bg-background px-3 pt-2.5 pb-2"
                     onPointerDown={(event) => {
                       // 用户碰输入框即闭嘴：他显然不想再听下去（打断也是这里唯一的入口）
                       interruptPlayback();
@@ -3668,12 +3838,42 @@ export function Workbench() {
                         : undefined
                     }
                   >
+                    {atQuery !== null && skillMentionItems.length > 0 ? (
+                      <MessageMentionPicker
+                        items={skillMentionItems}
+                        query={atQuery}
+                        onSelect={(item) =>
+                          pickSkillMention(item, followUp, setFollowUp)
+                        }
+                        onClose={() => setAtQuery(null)}
+                      />
+                    ) : null}
+                    {messageMentions.length > 0 ? (
+                      <div className="mb-1.5 flex flex-wrap gap-1.5">
+                        {messageMentions.map((mention) => (
+                          <button
+                            key={mention.id}
+                            type="button"
+                            onClick={() =>
+                              setMessageMentions((prev) =>
+                                prev.filter((m) => m.id !== mention.id),
+                              )
+                            }
+                            className="flex items-center gap-1 rounded-full border bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground"
+                          >
+                            @{mention.label}
+                            <span aria-hidden="true">×</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
                     <textarea
                       ref={composerRef}
                       aria-label="继续对话"
                       value={followUp}
                       onChange={(e) => {
                         setFollowUp(e.target.value);
+                        refreshAtQuery(e.target.value);
                         // 自动长高（并隐藏滚动条：对话框右侧不出现滚动条）
                         const el = e.currentTarget;
                         el.style.height = "auto";
@@ -3921,7 +4121,7 @@ ${formatElementReference(picked)}`
                 />
               </div>
               <div
-                className="@container/composer rounded-b-2xl border bg-background px-3 pt-3 pb-2.5 shadow-sm"
+                className="@container/composer relative rounded-b-2xl border bg-background px-3 pt-3 pb-2.5 shadow-sm"
                 onPointerDown={(event) => {
                   interruptPlayback();
                   promptVoice.onPointerDown(event);
@@ -3930,10 +4130,42 @@ ${formatElementReference(picked)}`
                   promptVoice.lockSelection ? { userSelect: "none" } : undefined
                 }
               >
+                {atQuery !== null && skillMentionItems.length > 0 ? (
+                  <MessageMentionPicker
+                    items={skillMentionItems}
+                    query={atQuery}
+                    onSelect={(item) =>
+                      pickSkillMention(item, prompt, setPrompt)
+                    }
+                    onClose={() => setAtQuery(null)}
+                  />
+                ) : null}
+                {messageMentions.length > 0 ? (
+                  <div className="mb-1.5 flex flex-wrap gap-1.5">
+                    {messageMentions.map((mention) => (
+                      <button
+                        key={mention.id}
+                        type="button"
+                        onClick={() =>
+                          setMessageMentions((prev) =>
+                            prev.filter((m) => m.id !== mention.id),
+                          )
+                        }
+                        className="flex items-center gap-1 rounded-full border bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground"
+                      >
+                        @{mention.label}
+                        <span aria-hidden="true">×</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
                 <textarea
                   aria-label="任务描述"
                   value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
+                  onChange={(e) => {
+                    setPrompt(e.target.value);
+                    refreshAtQuery(e.target.value);
+                  }}
                   onKeyDown={(e) => {
                     // 中文输入法里确认候选词的回车不该提交（与画布助手同一处写法）
                     if (

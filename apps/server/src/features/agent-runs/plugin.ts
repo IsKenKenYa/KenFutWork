@@ -184,6 +184,11 @@ export function createAgentRunsPlugin(
         activityQuery: createAgentActivityQuery({
           repository: createAgentRunRepository(ctx.get("persistence")),
         }),
+        // 会话最近一轮 run 的终态（失败轮的原因）：与 activity 同一条仓储包装
+        latestRunQuery: (input) =>
+          createAgentRunRepository(ctx.get("persistence")).latestForSession(
+            input,
+          ),
         agentModes: ctx.get("agentModes"),
         agentRunMetadataService: ctx.get("agentRunMetadata"),
         auth: ctx.get("auth"),

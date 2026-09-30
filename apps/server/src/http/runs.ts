@@ -1,5 +1,6 @@
 import {
   agentRunActivityResponseSchema,
+  agentRunLatestResponseSchema,
   agentSubagentListResponseSchema,
   applicationErrorResponseSchema,
   runCancelResponseSchema,
@@ -44,6 +45,17 @@ export async function registerRunRoutes(
     activityQuery?: (input: {
       workspaceId: string;
     }) => Promise<{ runs: number; totalSeconds: number; windowDays: number }>;
+    /** 会话最近一轮 run 的终态查询（失败轮给界面看服务端原文原因）。 */
+    latestRunQuery?: (input: {
+      sessionId: string;
+      workspaceId: string;
+    }) => Promise<{
+      status: string;
+      errorCode: string | null;
+      errorMessage: string | null;
+      startedAt: string;
+      completedAt: string | null;
+    } | null>;
     agentModes?: ExecutionModeService;
     agentRunMetadataService?: AgentRunMetadataService;
     auth?: RequestAuthenticator;
@@ -140,6 +152,44 @@ export async function registerRunRoutes(
     return reply
       .code(200)
       .send(agentRunActivityResponseSchema.parse({ activity }));
+  });
+
+  // GET /api/agent/runs/latest — 会话最近一轮 run 的终态。
+  //
+  // 为什么需要：Code 模式的转录存在客户端本地任务仓（只记收到的事件），断线/重启会让
+  // 「本轮为什么结束」在本地丢失——实测界面只剩「已工作 N 秒」。服务端 `agent_runs`
+  // 一直有终态与可读原因（error_message），界面在对账时用它兜底。
+  // 归属：会话不属于调用方工作区时按「没有这轮」返回 null（与 activity 同一口径，
+  // 不给资源枚举留信号）。
+  app.get("/api/agent/runs/latest", async (request, reply) => {
+    const authenticatedUser = options.auth
+      ? await options.auth.authenticate(request)
+      : null;
+    if (!authenticatedUser) {
+      return reply.code(401).send(
+        applicationErrorResponseSchema.parse({
+          error: {
+            code: "unauthorized",
+            message: "Missing or invalid bearer token.",
+          },
+        }),
+      );
+    }
+    const sessionId = (request.query as { sessionId?: string }).sessionId ?? "";
+    const workspace =
+      sessionId && options.viewerService
+        ? await options.viewerService
+            .resolveWorkspace(authenticatedUser)
+            .catch(() => null)
+        : null;
+    const run =
+      workspace && options.latestRunQuery
+        ? await options.latestRunQuery({
+            sessionId,
+            workspaceId: workspace.id,
+          })
+        : null;
+    return reply.code(200).send(agentRunLatestResponseSchema.parse({ run }));
   });
 
   app.post("/api/agent/runs", async (request, reply) => {

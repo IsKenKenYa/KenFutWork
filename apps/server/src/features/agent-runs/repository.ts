@@ -16,6 +16,15 @@ export type NewAgentRun = {
   threadId: string;
 };
 
+/** 最近一轮 run 的终态（失败原因要给界面看服务端原文）。 */
+export type AgentRunTerminal = {
+  status: string;
+  errorCode: string | null;
+  errorMessage: string | null;
+  startedAt: string;
+  completedAt: string | null;
+};
+
 /**
  * agent-runs 聚合的数据访问（`agent_runs`）。
  *
@@ -55,6 +64,18 @@ export interface AgentRunRepository {
     workspaceId: string;
     since: Date;
   }): Promise<{ runs: number; totalSeconds: number }>;
+  /**
+   * 会话最近一轮 run 的终态：界面要显示失败轮的**服务端原文原因**
+   * （客户端本地仓只记收到的事件，断线/重启会让原因丢失）。
+   *
+   * 隔离与 `workspaceActivity` 同一条链（`agent_runs` 无 workspace_id）：
+   * `session → canvas → project`，按调用方工作区过滤——会话不属于该工作区时
+   * 返回 `null`，不泄漏别的租户的运行状态。
+   */
+  latestForSession(input: {
+    sessionId: string;
+    workspaceId: string;
+  }): Promise<AgentRunTerminal | null>;
 }
 
 export function createAgentRunRepository(
@@ -133,6 +154,41 @@ export function createAgentRunRepository(
             and created_at < $2`,
         [message, before.toISOString()],
       );
+    },
+
+    async latestForSession(input) {
+      const rows = await persistence
+        .forWorkspace(input.workspaceId)
+        .query<{
+          status: string;
+          error_code: string | null;
+          error_message: string | null;
+          created_at: string | Date;
+          completed_at: string | Date | null;
+        }>(
+          `select r.status, r.error_code, r.error_message,
+                  r.created_at, r.completed_at
+             from public.agent_runs r
+             join public.chat_sessions s on s.id = r.session_id
+             join public.canvases c on c.id = s.canvas_id
+             join public.projects p on p.id = c.project_id
+            where r.session_id = $1
+              and p.workspace_id = :workspace
+            order by r.created_at desc
+            limit 1`,
+          [input.sessionId],
+        );
+      const row = rows[0];
+      if (!row) return null;
+      return {
+        status: row.status,
+        errorCode: row.error_code,
+        errorMessage: row.error_message,
+        startedAt: new Date(row.created_at).toISOString(),
+        completedAt: row.completed_at
+          ? new Date(row.completed_at).toISOString()
+          : null,
+      };
     },
   };
 }

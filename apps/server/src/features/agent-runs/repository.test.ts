@@ -193,3 +193,56 @@ describe("workspaceActivity（运行活动）", () => {
     }
   });
 });
+
+/**
+ * 会话最近一轮 run 的终态（失败轮的原因要给界面看服务端原文）。
+ *
+ * 界面侧的意义：Code 模式的转录存在客户端本地任务仓，只记收到的事件；断线/重启会
+ * 让「本轮为什么结束」在本地丢失。这个只读查询是非归属工作区时的**不泄漏**边界。
+ */
+describe("latestForSession（会话最近一轮 run 的终态）", () => {
+  it("取最新一行并带上失败原因原文；隔离谓词走父链", async () => {
+    const { calls, runner } = createRunner(() => ({
+      rowCount: 1,
+      rows: [
+        {
+          status: "failed",
+          error_code: "run_failed",
+          error_message: "服务重启，本轮已中断。",
+          created_at: "2026-09-29T12:00:00.000Z",
+          completed_at: "2026-09-29T12:00:09.000Z",
+        },
+      ],
+    }));
+    const terminal = await createAgentRunRepository(
+      createPersistenceFromRunner(runner),
+    ).latestForSession({ sessionId: "session-1", workspaceId: "ws-1" });
+
+    expect(terminal).toEqual({
+      status: "failed",
+      errorCode: "run_failed",
+      errorMessage: "服务重启，本轮已中断。",
+      startedAt: "2026-09-29T12:00:00.000Z",
+      completedAt: "2026-09-29T12:00:09.000Z",
+    });
+    const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
+    expect(sql).toContain("from public.agent_runs r");
+    expect(sql).toContain("join public.chat_sessions s on s.id = r.session_id");
+    expect(sql).toContain("join public.canvases c on c.id = s.canvas_id");
+    expect(sql).toContain("join public.projects p on p.id = c.project_id");
+    expect(sql).toContain("where r.session_id = $1");
+    expect(sql).toContain("order by r.created_at desc");
+    expect(sql).toContain("limit 1");
+    // 归属工作区是追加参数（:workspace），会话不在这条工作区链上时查不到行
+    expect(calls[0]?.values).toEqual(["session-1", "ws-1"]);
+  });
+
+  it("会话没有 run / 不属于该工作区：返回 null", async () => {
+    const { runner } = createRunner(() => ({ rowCount: 0, rows: [] }));
+    await expect(
+      createAgentRunRepository(
+        createPersistenceFromRunner(runner),
+      ).latestForSession({ sessionId: "session-x", workspaceId: "ws-1" }),
+    ).resolves.toBeNull();
+  });
+});
