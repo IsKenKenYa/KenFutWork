@@ -2618,6 +2618,10 @@ export function Workbench() {
       };
       ackTimer = window.setTimeout(checkAck, ACK_TIMEOUT_MS);
 
+      // 留意 queue 里的技能：谁还在正文里（@技能名）就发谁——用户把引用删掉就不该再挂
+      const activeMentions = messageMentions.filter((mention) =>
+        text.includes(`@${mention.label}`),
+      );
       ws.startRun(
         {
           sessionId,
@@ -2643,7 +2647,7 @@ export function Workbench() {
           }${thinkingPromptHint(thinking)}${text.trim()}`,
           ...(model ? { model } : {}),
           // @ 引用：服务端按 mentions 把技能挂进本轮（与画布聊天同一字段）
-          ...(messageMentions.length > 0 ? { mentions: messageMentions } : {}),
+          ...(activeMentions.length > 0 ? { mentions: activeMentions } : {}),
           executionMode,
         },
         (ack) => {
@@ -2847,6 +2851,10 @@ export function Workbench() {
           ? codeProjects.find((p) => p.id === task.projectId)
           : null;
       const taskCanvasId = taskProject?.primaryCanvas?.id ?? task.id;
+      // 留意 queue 里的技能：谁还在正文里（@技能名）就发谁——用户把引用删掉就不该再挂
+      const activeMentions = messageMentions.filter((mention) =>
+        text.includes(`@${mention.label}`),
+      );
       ws.startRun(
         {
           sessionId: task.sessionId,
@@ -2855,7 +2863,7 @@ export function Workbench() {
           prompt: `${thinkingHint}${historyBlock}${text.trim()}`,
           ...(model ? { model } : {}),
           // @ 引用：服务端按 mentions 把技能挂进本轮（与画布聊天同一字段）
-          ...(messageMentions.length > 0 ? { mentions: messageMentions } : {}),
+          ...(activeMentions.length > 0 ? { mentions: activeMentions } : {}),
           executionMode,
         },
         (ack) => {
@@ -3848,25 +3856,6 @@ export function Workbench() {
                         onClose={() => setAtQuery(null)}
                       />
                     ) : null}
-                    {messageMentions.length > 0 ? (
-                      <div className="mb-1.5 flex flex-wrap gap-1.5">
-                        {messageMentions.map((mention) => (
-                          <button
-                            key={mention.id}
-                            type="button"
-                            onClick={() =>
-                              setMessageMentions((prev) =>
-                                prev.filter((m) => m.id !== mention.id),
-                              )
-                            }
-                            className="flex items-center gap-1 rounded-full border bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground"
-                          >
-                            @{mention.label}
-                            <span aria-hidden="true">×</span>
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
                     <textarea
                       ref={composerRef}
                       aria-label="继续对话"
@@ -4139,25 +4128,6 @@ ${formatElementReference(picked)}`
                     }
                     onClose={() => setAtQuery(null)}
                   />
-                ) : null}
-                {messageMentions.length > 0 ? (
-                  <div className="mb-1.5 flex flex-wrap gap-1.5">
-                    {messageMentions.map((mention) => (
-                      <button
-                        key={mention.id}
-                        type="button"
-                        onClick={() =>
-                          setMessageMentions((prev) =>
-                            prev.filter((m) => m.id !== mention.id),
-                          )
-                        }
-                        className="flex items-center gap-1 rounded-full border bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground"
-                      >
-                        @{mention.label}
-                        <span aria-hidden="true">×</span>
-                      </button>
-                    ))}
-                  </div>
                 ) : null}
                 <textarea
                   aria-label="任务描述"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export type CanvasImageItem = {
   kind: "canvas-image";
@@ -70,6 +70,14 @@ function groupTitle(kind: MessageMentionPickerItem["kind"]): string {
   return "模型";
 }
 
+/** 分组在弹层里的先后（键盘上下键按这个顺序走）。 */
+const MENTION_KIND_ORDER: MessageMentionPickerItem["kind"][] = [
+  "canvas-image",
+  "brand-kit-asset",
+  "image-model",
+  "skill",
+];
+
 export function MessageMentionPicker({
   items,
   query,
@@ -77,6 +85,10 @@ export function MessageMentionPicker({
   onClose,
 }: MessageMentionPickerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // 键盘选择（↑↓ 选、回车确认、Esc 关闭）：光标在输入框里、列表只是弹出层，
+  // 所以监听挂在 document 的捕获阶段，并且命中这些键时 stopPropagation——
+  // 否则输入框的回车会抢先把半截「@查询词」当消息发出去。
+  const [activeIndex, setActiveIndex] = useState(0);
 
   const filteredItems = query
     ? items.filter((item) =>
@@ -101,6 +113,9 @@ export function MessageMentionPicker({
     },
   );
 
+  // 键盘索引与视觉顺序一致：按分组顺序摊平
+  const visibleItems = MENTION_KIND_ORDER.flatMap((kind) => groupedItems[kind]);
+
   // Close on click outside
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -115,14 +130,41 @@ export function MessageMentionPicker({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [onClose]);
 
-  // Close on Escape
+  // 查询词变了：回到第一项（否则索引会指到别人身上）
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [query]);
+
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        e.stopPropagation();
+        setActiveIndex((index) =>
+          Math.min(index + 1, Math.max(visibleItems.length - 1, 0)),
+        );
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        e.stopPropagation();
+        setActiveIndex((index) => Math.max(index - 1, 0));
+        return;
+      }
+      if (e.key === "Enter") {
+        const item = visibleItems[activeIndex];
+        if (!item) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onSelect(item);
+        onClose();
+        return;
+      }
       if (e.key === "Escape") onClose();
     }
-    document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
-  }, [onClose]);
+    document.addEventListener("keydown", handleKey, true);
+    return () => document.removeEventListener("keydown", handleKey, true);
+  }, [visibleItems, activeIndex, onSelect, onClose]);
 
   if (filteredItems.length === 0) {
     return (
@@ -145,9 +187,7 @@ export function MessageMentionPicker({
       className="absolute bottom-full left-2 mb-2 max-h-64 w-64 overflow-y-auto rounded-xl border border-border bg-popover shadow-lg"
     >
       <div className="p-2">
-        {(
-          ["canvas-image", "brand-kit-asset", "image-model", "skill"] as const
-        ).map((kind) => {
+        {MENTION_KIND_ORDER.map((kind) => {
           const sectionItems = groupedItems[kind];
           if (!sectionItems.length) return null;
           return (
@@ -155,40 +195,49 @@ export function MessageMentionPicker({
               <div className="mb-1.5 px-1 text-[11px] font-medium text-muted-foreground">
                 {groupTitle(kind)}
               </div>
-              {sectionItems.map((item) => (
-                <button
-                  key={`${item.kind}:${item.id}`}
-                  type="button"
-                  onClick={() => {
-                    onSelect(item);
-                    onClose();
-                  }}
-                  className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted"
-                >
-                  <PickerLeadingVisual item={item} />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm text-foreground">
-                      {itemLabel(item)}
+              {sectionItems.map((item) => {
+                const active = visibleItems[activeIndex] === item;
+                return (
+                  <button
+                    key={`${item.kind}:${item.id}`}
+                    type="button"
+                    data-active={active || undefined}
+                    onMouseEnter={() =>
+                      setActiveIndex(visibleItems.indexOf(item))
+                    }
+                    onClick={() => {
+                      onSelect(item);
+                      onClose();
+                    }}
+                    className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors ${
+                      active ? "bg-muted" : "hover:bg-muted"
+                    }`}
+                  >
+                    <PickerLeadingVisual item={item} />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm text-foreground">
+                        {itemLabel(item)}
+                      </div>
+                      {item.kind === "brand-kit-asset" && (
+                        <div className="truncate text-[11px] text-muted-foreground">
+                          {item.assetType}
+                          {item.textContent ? ` · ${item.textContent}` : ""}
+                        </div>
+                      )}
+                      {item.kind === "image-model" && item.description && (
+                        <div className="truncate text-[11px] text-muted-foreground">
+                          {item.description}
+                        </div>
+                      )}
+                      {item.kind === "skill" && item.description && (
+                        <div className="truncate text-[11px] text-muted-foreground">
+                          {item.description}
+                        </div>
+                      )}
                     </div>
-                    {item.kind === "brand-kit-asset" && (
-                      <div className="truncate text-[11px] text-muted-foreground">
-                        {item.assetType}
-                        {item.textContent ? ` · ${item.textContent}` : ""}
-                      </div>
-                    )}
-                    {item.kind === "image-model" && item.description && (
-                      <div className="truncate text-[11px] text-muted-foreground">
-                        {item.description}
-                      </div>
-                    )}
-                    {item.kind === "skill" && item.description && (
-                      <div className="truncate text-[11px] text-muted-foreground">
-                        {item.description}
-                      </div>
-                    )}
-                  </div>
-                </button>
-              ))}
+                  </button>
+                );
+              })}
             </div>
           );
         })}
