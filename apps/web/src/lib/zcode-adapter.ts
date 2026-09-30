@@ -30,6 +30,32 @@ const STATUS_MAP: Record<TaskToolEntry["status"], string> = {
   denied: "stopped",
 };
 
+/**
+ * 我方工具名 → zcode tool-identity 注册名（ZCODE_KNOWN_TOOL_NAMES）。
+ * resolveToolCallIdentity / renderer 分流 / agent 家族判定都按 zcode 注册名；
+ * 未登记的名字落 unknown → 通用 fallback 卡。子代理派发映射到 Task（agent
+ * 家族），其 input.subagent_type 由 AgentToolCallBlock 读取为子代理名。
+ */
+const TOOL_IDENTITY_MAP: Record<string, string> = {
+  subagent_task: "Task",
+  subagent_background: "Task",
+  task_output: "TaskOutput",
+  read_file: "Read",
+  write_file: "Write",
+  edit_file: "Edit",
+  execute: "Bash",
+  execute_background: "Bash",
+  grep: "Grep",
+  glob: "Glob",
+  ls: "Glob",
+  web_search: "WebSearch",
+  write_todos: "TodoWrite",
+};
+
+function zcodeToolName(toolName: string): string {
+  return TOOL_IDENTITY_MAP[toolName] ?? toolName;
+}
+
 /** summary 以「失败」前缀开头的完成态实为失败（workbench-tools 归约口径）。 */
 function isFailedSummary(entry: TaskToolEntry): boolean {
   return entry.summary?.startsWith("失败") === true;
@@ -64,9 +90,9 @@ export function toToolCallTreeNode(
       toolId: entry.toolCallId,
       // 我方无 parent 归属：主层节点恒 null（zcode null = 主 agent 直发）
       parentToolUseId: null,
-      toolName: entry.toolName,
-      // kind 是 zcode 聚合分类的兜底键；我方无 kind 概念，给工具名本身
-      kind: entry.toolName,
+      toolName: zcodeToolName(entry.toolName),
+      // kind 是 zcode 聚合分类的兜底键；给映射后的注册名（分流依据）
+      kind: zcodeToolName(entry.toolName),
       ...(entry.summary ? { title: titleOf(entry) } : {}),
       input: entry.input,
       status: statusOf(entry),
@@ -98,8 +124,8 @@ export function toChildToolCallNode(
     toolCall: {
       toolId: row.toolCallId,
       parentToolUseId: null,
-      toolName: row.toolName,
-      kind: row.toolName,
+      toolName: zcodeToolName(row.toolName),
+      kind: zcodeToolName(row.toolName),
       ...(row.outputSummary ? { title: row.outputSummary } : {}),
       input: row.input,
       status: row.status === "running" ? "in_progress" : "completed",

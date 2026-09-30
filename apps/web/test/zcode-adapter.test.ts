@@ -73,8 +73,9 @@ describe("zcode-adapter：字段投影", () => {
     );
     const tc = node.toolCall;
     expect(tc.toolId).toBe("call_9");
-    expect(tc.toolName).toBe("execute");
-    expect(tc.kind).toBe("execute");
+    // 身份映射：execute → zcode 注册名 Bash（renderer 分流依据）
+    expect(tc.toolName).toBe("Bash");
+    expect(tc.kind).toBe("Bash");
     expect(tc.input).toEqual({ command: "ls -la" });
     expect(tc.output).toEqual({ output: "total 0" });
     expect(tc.title).toBe("第一行结论");
@@ -104,6 +105,23 @@ describe("zcode-adapter：字段投影", () => {
   });
 });
 
+describe("zcode-adapter：agent 家族映射（P3）", () => {
+  it("subagent_task → Task（agent 家族），input.subagent_type 保留供名字读取", () => {
+    const node = toToolCallTreeNode(
+      entry({
+        toolCallId: "call_ag",
+        toolName: "subagent_task",
+        input: { subagent_type: "planner", description: "调研" },
+      }),
+    );
+    expect(node.toolCall.toolName).toBe("Task");
+    expect(node.toolCall.kind).toBe("Task");
+    expect(
+      (node.toolCall.input as { subagent_type?: string }).subagent_type,
+    ).toBe("planner");
+  });
+});
+
 describe("zcode-adapter：批量", () => {
   it("toToolCallTreeNodes 保序且逐条投影", () => {
     const nodes = toToolCallTreeNodes([
@@ -111,7 +129,8 @@ describe("zcode-adapter：批量", () => {
       entry({ toolCallId: "b", toolName: "read_file" }),
     ]);
     expect(nodes.map((n) => n.toolCall.toolId)).toEqual(["a", "b"]);
-    expect(nodes.map((n) => n.toolCall.toolName)).toEqual(["ls", "read_file"]);
+    // ls → Glob / read_file → Read（zcode 注册名）
+    expect(nodes.map((n) => n.toolCall.toolName)).toEqual(["Glob", "Read"]);
     expect(nodes.every((n) => n.childToolCalls.length === 0)).toBe(true);
   });
 });

@@ -11,7 +11,13 @@ import {
   ReasoningContent,
   ReasoningTrigger,
 } from "@zui/components/ai-elements/reasoning";
+import { TooltipProvider } from "@zui/components/ui/tooltip";
+import { PlatformProvider, zcodeStubPlatform } from "@zui/hooks/usePlatform";
+import { ServiceProvider, zcodeStubServices } from "@zui/hooks/useServices";
+import { injectWorkspaceSlashCommands } from "@zui/hooks/useSlashCommands";
 import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@zui/lib/codePreviewSettings";
+import { ChatPromptEditor } from "@zui/prompt-editor/ChatPromptEditor";
+import { TabStoreProvider } from "@zui/store/TabStoreProvider";
 import { ToolCallBlock } from "@zui/ToolCallBlocks";
 import { useTheme } from "@zui/useTheme";
 import {
@@ -93,7 +99,6 @@ import {
 } from "@/components/workbench/settings-modal";
 import { SidebarRow } from "@/components/workbench/sidebar-row";
 import { SkillsModal } from "@/components/workbench/skills-modal";
-import { SubagentDirectoryView } from "@/components/workbench/subagent-directory-view";
 import { TodoProgressPanel } from "@/components/workbench/todo-progress-panel";
 import { TrajectoryView } from "@/components/workbench/trajectory-view";
 import { TurnRail } from "@/components/workbench/turn-rail";
@@ -1072,12 +1077,23 @@ export function Workbench() {
     installDesktopExternalLinks();
   }, []);
 
-  // 自定义命令（需 token）：只在登录后拉一次，失败不阻断（没有命令就只是不展开）
+  // 自定义命令（需 token）：只在登录后拉一次，失败不阻断（没有命令就只是不展开）。
+  // 同一份命令表经 injectWorkspaceSlashCommands 喂给 zcode composer 的 `/` 面板
+  // （P5b：选中命令以 `/名字 args` 发送，onSubmit 里 expandCommand 展开）。
   useEffect(() => {
     const token = session?.access_token;
     if (!token) return;
     fetchWorkspaceSettings(token)
-      .then((data) => setCommands(data.settings.commands))
+      .then((data) => {
+        setCommands(data.settings.commands);
+        injectWorkspaceSlashCommands(
+          data.settings.commands.map((command) => ({
+            name: command.name,
+            description: command.description || command.prompt.slice(0, 80),
+            source: "custom" as const,
+          })),
+        );
+      })
       .catch(() => {});
   }, [session]);
 
@@ -2480,1511 +2496,1528 @@ export function Workbench() {
       ),
   }));
 
+  // zcode context 装配层（P5a，手册 §1.2 stub 体系）：Platform/Services/TabStore
+  // 全部走 stub slice（能力 unavailable 自动降级），数据面接通时替换实现，照搬组件零改动
   return (
-    <div
-      className="flex h-screen bg-background text-foreground"
-      style={
-        {
-          "--workbench-sidebar": `${
-            sidebarCollapsed ? SIDEBAR_RAIL_WIDTH : sidebarWidth
-          }px`,
-        } as React.CSSProperties
-      }
-    >
-      {sidebarCollapsed ? (
-        /* 收起态：图标栏（模式切换 + 插件 + 底部头像） */
-        <aside className="flex w-12 shrink-0 flex-col items-center gap-1 border-r bg-card py-2">
-          <KenFutWorkLogo className="mb-1 size-7 shrink-0" />
-          <button
-            type="button"
-            aria-label="展开侧栏"
-            onClick={() => setSidebarCollapsed(false)}
-            className="rounded-md p-2 hover:bg-muted"
-          >
-            <PanelLeftOpen className="h-4 w-4" />
-          </button>
-          <div className="my-1 w-6 border-t" />
-          {modeItems.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              title={item.label}
-              aria-label={item.label}
-              data-active={mode === item.id}
-              onClick={() => switchMode(item.id)}
-              className="rounded-md p-2 hover:bg-muted data-[active=true]:bg-muted data-[active=true]:text-foreground data-[active=false]:text-muted-foreground"
-            >
-              {item.icon}
-            </button>
-          ))}
-          <button
-            type="button"
-            title="插件"
-            aria-label="插件"
-            onClick={() => setPluginsOpen(true)}
-            className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <Layers className="h-4 w-4" />
-          </button>
-          <div className="mt-auto">
-            <UserMenu
-              user={workbenchUser}
-              collapsed
-              isAdmin={isPlatformAdmin}
-              onOpenSettings={() => setSettingsTab("general")}
-              onOpenAdmin={() => router.push("/admin")}
-              onSignOut={handleSignOut}
-            />
-          </div>
-        </aside>
-      ) : (
-        /* 展开态：logo + 模式切换 + 插件 + 项目(design) + 任务列表 + 底部个人中心 */
-        <aside
-          style={{ width: sidebarWidth }}
-          className="relative flex shrink-0 flex-col border-r bg-card"
-        >
-          {/* 拖拽把手：贴侧栏右边缘；向右拖 = 变宽 */}
-          {/* biome-ignore lint/a11y/useSemanticElements: 拖拽改宽的把手，不是 <hr>（内容分隔线） */}
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="调整侧栏宽度"
-            onMouseDown={startSidebarResize}
-            className="absolute top-0 -right-0.5 z-10 h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-foreground/20"
-          />
-          <div className="flex items-center justify-between px-3 pt-3 pb-2">
-            {/* 左内边距与下面的模式切换控件对齐（外层 px-3 + 分段控件内 p-1 ⇒ pl-4）；
-                logo 与字标之间留 5px（用户口径） */}
-            <span className="flex items-center gap-[5px] pl-1">
-              <KenFutWorkLogo className="h-[15px] w-auto text-foreground" />
-              {/* 字标：Momo Trust Display + **三色**渐变（左深右浅；变量见 globals.css，
-                  显式 sRGB 插值——oklab 中段会发灰显脏） */}
-              <span
-                className="font-wordmark bg-clip-text text-xl tracking-tight text-transparent"
-                style={{ backgroundImage: "var(--wordmark-gradient)" }}
-              >
-                KenFutWork
-              </span>
-            </span>
-            <button
-              type="button"
-              aria-label="收起侧栏"
-              onClick={() => setSidebarCollapsed(true)}
-              className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <PanelLeftClose className="h-4 w-4" />
-            </button>
-          </div>
-
-          {/* 模式切换（开关式：一个分段控件内左右切换 Code / Design / Flow）。
-              三段并存时每段只有 ~60px：内边距收到最小、文字 13px、超宽截断，
-              否则最后一个（Flow）会被挤变形。 */}
-          <div className="px-2 pt-1 pb-0.5">
+    <TooltipProvider>
+      <PlatformProvider platform={zcodeStubPlatform}>
+        <ServiceProvider services={zcodeStubServices}>
+          {/* zcode TabStoreProvider：composer（LexicalChatInput → activeTaskProvider）消费
+        tab store 的默认态；数据面接通时替换 provider 内部实现，照搬组件零改动 */}
+          <TabStoreProvider>
             <div
-              role="radiogroup"
-              aria-label="模式切换"
-              className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5"
-            >
-              {modeItems.map((item) => (
-                // biome-ignore lint/a11y/useSemanticElements: 分段控件用的是 radiogroup/radio 模式（原生 radio 无法承载这套样式与布局）
-                <button
-                  key={item.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={mode === item.id}
-                  data-active={mode === item.id}
-                  onClick={() => switchMode(item.id)}
-                  className="flex min-h-[30px] min-w-0 flex-1 items-center justify-center gap-1 rounded-md px-1.5 text-[13px] whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:text-foreground data-[active=true]:shadow-sm"
-                >
-                  {item.icon}
-                  <span className="truncate">{item.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="mx-3 my-2 border-t" />
-
-          <nav className="space-y-0.5 px-2">
-            <button
-              type="button"
-              onClick={() => setPluginsOpen(true)}
-              className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <Layers className="h-4 w-4 shrink-0" /> 插件
-            </button>
-            <button
-              type="button"
-              onClick={() => setSkillsOpen(true)}
-              className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <Blocks className="h-4 w-4 shrink-0" /> 技能
-            </button>
-            <button
-              type="button"
-              onClick={() => setMcpOpen(true)}
-              className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              {/* Server 而不是 Plug：插头字形天生窄（墨迹只占格子 58%），居中也会显得缩在
-                  右边；Server 与相邻图标一样填满格子（92%），不必再做尺寸特例 */}
-              <Server className="h-4 w-4 shrink-0" /> MCP
-            </button>
-            {/* 插件面板（能力 `ui`）：侧栏槽位 */}
-            <PluginPanelButtons
-              accessToken={session?.access_token ?? null}
-              slot="sidebar"
-              renderButton={(panel, open) => (
-                <button
-                  key={panel.id}
-                  type="button"
-                  onClick={open}
-                  title={`插件 ${panel.pluginId} 提供的面板`}
-                  className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                >
-                  {/* 插件图标：单色渲染（跟随本行文字色），槽位与本体都 16px——
-                      与 MCP/技能/插件 三个满格字形（墨迹 92%）同尺寸才不显小 */}
-                  <PluginIcon icon={panel.icon} pluginId={panel.pluginId} />{" "}
-                  {panel.title}
-                </button>
-              )}
-            />
-          </nav>
-
-          <div className="mx-3 my-2 border-t" />
-
-          {mode === "flow" ? (
-            /* Flow：侧栏导航项由宿主承担（内嵌形态 flow 自己的侧栏隐藏），
-               点击经 ff-embed/navigate 让 iframe 内的 flow 路由跳转；
-               主仓侧不复制一份列表（不造第二套真相）。 */
-            <nav
-              className="flex min-h-0 flex-1 flex-col px-2"
-              aria-label="Flow 导航"
-            >
-              {[
-                {
-                  path: "/",
-                  label: "工作流",
-                  icon: <Workflow className="h-4 w-4 shrink-0" />,
-                },
-                {
-                  path: "/plugins",
-                  label: "工作流插件",
-                  icon: <Layers className="h-4 w-4 shrink-0" />,
-                },
-                {
-                  path: "/tasks",
-                  label: "任务中心",
-                  icon: <ListChecks className="h-4 w-4 shrink-0" />,
-                },
-              ].map((item) => (
-                <button
-                  key={item.path}
-                  type="button"
-                  disabled={!flowEntry?.available}
-                  onClick={() => flowFrameRef.current?.navigate(item.path)}
-                  className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {item.icon}
-                  {item.label}
-                </button>
-              ))}
-            </nav>
-          ) : mode === "design" ? (
-            /* Design：项目列表（+ 直接创建，无任务列表） */
-            <div className="flex min-h-0 flex-1 flex-col px-2">
-              <div className="flex items-center justify-between px-1 pb-1">
-                <span className="text-xs text-muted-foreground">项目</span>
-                <button
-                  type="button"
-                  aria-label="创建项目"
-                  title="创建项目"
-                  disabled={creatingProject}
-                  onClick={() => {
-                    void createProjectNamed("未命名画布").then((project) => {
-                      if (project) setSelectedProjectId(project.id);
-                    });
-                  }}
-                  className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto pb-1">
-                {projects.length === 0 ? (
-                  <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-                    {creatingProject ? "创建中…" : "暂无项目"}
-                  </p>
-                ) : (
-                  projects.map((p) => (
-                    <SidebarRow
-                      key={p.id}
-                      label={p.name}
-                      active={selectedProjectId === p.id}
-                      icon={
-                        <Palette className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      }
-                      onOpen={() => {
-                        setSelectedProjectId(p.id);
-                        setActiveTaskId(null);
-                      }}
-                      onRename={(next) => void renameProject(p.id, next)}
-                      onDelete={() => void removeProject(p.id)}
-                    />
-                  ))
-                )}
-              </div>
-            </div>
-          ) : (
-            /* Code：项目列表（工作目录=项目，下面挂对话；右键重命名/归档/删除） */
-            <div className="flex min-h-0 flex-1 flex-col px-2">
-              <div className="flex items-center justify-between px-1 pb-1">
-                <span className="text-xs text-muted-foreground">工作目录</span>
-                <div className="flex items-center gap-0.5">
-                  <button
-                    type="button"
-                    aria-label="新建工作目录"
-                    title="新建工作目录"
-                    disabled={creatingProject}
-                    onClick={() => {
-                      void createCodeProject("未命名工作目录").then(
-                        (project) => {
-                          if (project) setSelectedProjectId(project.id);
-                        },
-                      );
-                    }}
-                    className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
-                  >
-                    <FolderPlus className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="新建对话"
-                    title={
-                      selectedProject
-                        ? `在「${selectedProject.name}」下新建对话`
-                        : "选中工作目录后新建对话会自动关联它"
-                    }
-                    onClick={() => {
-                      // 新建对话：保留当前选中的工作目录，新对话即挂在它下面
-                      setActiveTaskId(null);
-                    }}
-                    className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-              <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pb-1">
-                {(() => {
-                  const knownProjectIds = new Set(
-                    codeProjects.map((p) => p.id),
-                  );
-                  /**
-                   * 未分组 = 没有项目，或 projectId 指向一个已不存在的项目。
-                   * 后者是必须的防御：项目被删/换库后，任务若仍带着孤儿 id，
-                   * 既进不了任何项目分组、也不进未分组——对话会「凭空消失」。
-                   */
-                  const ungrouped = tasks.filter(
-                    (t) =>
-                      !t.archived &&
-                      (t.projectId == null ||
-                        !knownProjectIds.has(t.projectId)),
-                  );
-                  const archived = tasks.filter((t) => t.archived);
-                  const taskRow = (t: WorkbenchTask) => {
-                    const indicator = resolveTaskIndicator(
-                      t.status === "running" && runningTaskId === t.id,
-                      unreadTaskIds.includes(t.id),
-                    );
-                    return (
-                      <SidebarRow
-                        key={t.id}
-                        label={t.title}
-                        active={activeTaskId === t.id}
-                        icon={
-                          indicator === "running" ? (
-                            /* 与对话图标同色（不再用琥珀色：侧栏一排转圈太抢眼） */
-                            <Loader2
-                              aria-label="运行中"
-                              className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground"
-                            />
-                          ) : (
-                            <MessageSquare
-                              className={`h-3.5 w-3.5 shrink-0 ${
-                                indicator === "unread"
-                                  ? "fill-current text-foreground"
-                                  : "text-muted-foreground"
-                              }`}
-                            />
-                          )
-                        }
-                        trailing={formatTaskRelativeTime(
-                          t.runEndedAt ?? t.createdAt,
-                        )}
-                        onOpen={() => setActiveTaskId(t.id)}
-                        onRename={(next) => renameTask(t.id, next)}
-                        onArchive={() => setTaskArchived(t.id, true)}
-                        onDelete={() => deleteTask(t.id)}
-                      />
-                    );
-                  };
-                  /**
-                   * 分组内的对话列表：默认只露前 `SESSION_PREVIEW_LIMIT` 条，
-                   * 其余收进「显示更多」——一个工作目录下几十条对话时，侧栏不该被单个
-                   * 工作目录撑满（展开状态按分组持久化）。
-                   */
-                  const taskGroup = (
-                    groupKey: string,
-                    items: WorkbenchTask[],
-                  ) => {
-                    const { visible, hiddenCount } = previewGroup(
-                      items,
-                      expandedGroups.includes(groupKey),
-                    );
-                    return (
-                      <div className="ml-4 space-y-0.5 border-l pl-1">
-                        {visible.map(taskRow)}
-                        {hiddenCount > 0 ? (
-                          <button
-                            type="button"
-                            onClick={() => toggleGroupExpanded(groupKey)}
-                            className="w-full rounded-md px-2 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                          >
-                            显示更多
-                          </button>
-                        ) : null}
-                        {items.length > SESSION_PREVIEW_LIMIT &&
-                        expandedGroups.includes(groupKey) ? (
-                          <button
-                            type="button"
-                            onClick={() => toggleGroupExpanded(groupKey)}
-                            className="w-full rounded-md px-2 py-1 text-left text-xs text-muted-foreground/70 transition-colors hover:bg-muted hover:text-muted-foreground"
-                          >
-                            收起
-                          </button>
-                        ) : null}
-                      </div>
-                    );
-                  };
-                  return (
-                    <>
-                      {codeProjects.map((p) => {
-                        const items = tasks.filter(
-                          (t) => !t.archived && t.projectId === p.id,
-                        );
-                        return (
-                          <div key={p.id}>
-                            <SidebarRow
-                              label={p.name}
-                              active={selectedProjectId === p.id}
-                              icon={
-                                <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                              }
-                              expanded={!collapsedProjects.includes(p.id)}
-                              onToggleExpanded={() =>
-                                setCollapsedProjects((prev) => {
-                                  const next = prev.includes(p.id)
-                                    ? prev.filter((id) => id !== p.id)
-                                    : [...prev, p.id];
-                                  try {
-                                    window.localStorage.setItem(
-                                      "workbench:collapsed-projects",
-                                      JSON.stringify(next),
-                                    );
-                                  } catch {
-                                    // 存储失败不影响使用
-                                  }
-                                  return next;
-                                })
-                              }
-                              onOpen={() => {
-                                selectWorkDir({
-                                  projectId: p.id,
-                                  name: p.name,
-                                });
-                              }}
-                              onRename={(next) =>
-                                void renameCodeProject(p.id, next)
-                              }
-                              onDelete={() => void removeCodeProject(p.id)}
-                            />
-                            {collapsedProjects.includes(
-                              p.id,
-                            ) ? null : items.length === 0 ? (
-                              <div className="ml-4 space-y-0.5 border-l pl-1">
-                                <p className="px-2 py-1 text-xs text-muted-foreground/70">
-                                  暂无对话
-                                </p>
-                              </div>
-                            ) : (
-                              taskGroup(p.id, items)
-                            )}
-                          </div>
-                        );
-                      })}
-                      {ungrouped.length > 0 ? (
-                        <div>
-                          <p className="px-2 py-1 text-xs text-muted-foreground">
-                            未分组
-                          </p>
-                          {taskGroup(UNGROUPED_KEY, ungrouped)}
-                        </div>
-                      ) : null}
-                      {archived.length > 0 ? (
-                        <details className="px-1">
-                          <summary className="cursor-pointer px-1 py-1 text-xs text-muted-foreground hover:text-foreground">
-                            已归档（{archived.length}）
-                          </summary>
-                          <div className="ml-4 space-y-0.5 border-l pl-1">
-                            {archived.map((t) => (
-                              <SidebarRow
-                                key={t.id}
-                                label={t.title}
-                                icon={
-                                  <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
-                                }
-                                onOpen={() => setActiveTaskId(t.id)}
-                                onRename={(next) => renameTask(t.id, next)}
-                                onRestore={() => setTaskArchived(t.id, false)}
-                                onDelete={() => deleteTask(t.id)}
-                              />
-                            ))}
-                          </div>
-                        </details>
-                      ) : null}
-                    </>
-                  );
-                })()}
-              </div>
-            </div>
-          )}
-
-          {/* 底部：个人中心（头像弹出） */}
-          <div className="border-t p-2">
-            <UserMenu
-              user={workbenchUser}
-              collapsed={false}
-              isAdmin={isPlatformAdmin}
-              onOpenSettings={() => setSettingsTab("general")}
-              onOpenAdmin={() => router.push("/admin")}
-              onSignOut={handleSignOut}
-            />
-          </div>
-        </aside>
-      )}
-
-      {/* 主区：Design＝画布 / Flow＝flow 画布（恒为画布，见 resolveWorkbenchSurface）
-          / Code＝任务视图 或 居中编排器 */}
-      <main className="min-w-0 flex-1 overflow-hidden bg-card">
-        {mode === "flow" ? (
-          /* Flow：主区恒为 flow 画布（iframe 内含列表 / 编排 / 发布 / 执行全部视图），
-             与 Design 同一条不变量——不被任务/会话对话框顶掉。入口消失（如插件被卸载）
-             时如实说明，不放半截 iframe。 */
-          flowEntry === null ? (
-            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-              正在检查 flow 可用性…
-            </div>
-          ) : flowEntry.available ? (
-            <FlowCanvasFrame
-              ref={flowFrameRef}
-              frontendUrl={flowEntry.frontendUrl}
-              getToken={getToken}
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center px-8 text-center text-sm text-muted-foreground">
-              {flowEntry.reason}
-            </div>
-          )
-        ) : surface === "canvas" ? (
-          /* Design：选中项目后画布自动打开（原版 KenFutWork 画布，对话在画布内助手里） */
-          <iframe
-            key={`${selectedProject?.primaryCanvas.id}:${canvasPrompt ?? ""}`}
-            src={`/canvas?id=${selectedProject?.primaryCanvas.id}${
-              canvasPrompt ? `&prompt=${encodeURIComponent(canvasPrompt)}` : ""
-            }`}
-            title={`${selectedProject?.name ?? ""} 画布`}
-            className="h-full w-full border-0"
-          />
-        ) : activeTask ? (
-          /* 转录列 + 右栏停靠面板（面板收起时返回 null，不占宽）。 */
-          <div className="flex h-full">
-            <div
-              className="flex h-full min-w-0 flex-1 flex-col"
+              className="flex h-screen bg-background text-foreground"
               style={
                 {
-                  "--scrollbar-lane": `${scrollbarLane}px`,
+                  "--workbench-sidebar": `${
+                    sidebarCollapsed ? SIDEBAR_RAIL_WIDTH : sidebarWidth
+                  }px`,
                 } as React.CSSProperties
               }
             >
-              {/* 标题行：会话标题 + 本轮回执 + 插件面板入口；右端贴住工作目录与分支。
-                这两个 chip 取**对话自己绑定的项目**（run 的作用域就是它），
-                不依赖侧栏选中态——否则打开历史对话时它们会消失（用户反馈）。 */}
-              <div className="shrink-0 pr-[var(--scrollbar-lane,0px)]">
-                <div className="flex w-full items-center gap-2 px-8 pt-6 pb-4">
-                  <h1 className="min-w-0 truncate text-lg font-medium">
-                    {activeTask.title}
-                  </h1>
-                  {lastAutoCommitAt ? (
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      已自动提交本轮
-                    </span>
-                  ) : null}
-                  {/* 插件面板（能力 `ui`）：对话槽位 */}
-                  <PluginPanelButtons
-                    accessToken={session?.access_token ?? null}
-                    slot="conversation"
-                    renderButton={(panel, open) => (
-                      <button
-                        key={panel.id}
-                        type="button"
-                        onClick={open}
-                        title={`插件 ${panel.pluginId} 提供的面板`}
-                        className="flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
-                      >
-                        <PanelsTopLeft className="h-3.5 w-3.5" />
-                        {panel.title}
-                      </button>
-                    )}
-                  />
-                  {mode === "code" ? (
-                    <div className="ml-auto flex shrink-0 items-center gap-2">
-                      <WorkDirectorySelect
-                        projects={codeProjects}
-                        selectedProjectId={conversationProject?.id ?? null}
-                        lockedHint={
-                          conversationProject
-                            ? `本次对话已绑定工作目录「${conversationProject.name}」`
-                            : "本次对话没有绑定工作目录"
-                        }
-                        busy={creatingProject}
-                        onSelect={() => undefined}
-                        onOpenFolder={() => undefined}
-                        onClear={() => undefined}
-                      />
-                      <GitBranchSelect
-                        accessToken={session?.access_token ?? null}
-                        canvasId={conversationProject?.primaryCanvas.id ?? null}
-                        /* 自动提交后 key 变化 → 重新拉取更改统计 */
-                        key={`${conversationProject?.primaryCanvas.id ?? ""}:${lastAutoCommitAt ?? ""}`}
-                      />
-                      {/* 面板开关：与参考图一致，右栏由这个键开合 */}
-                      <button
-                        type="button"
-                        aria-label="面板"
-                        aria-expanded={panelOpen}
-                        title={
-                          panelOpen
-                            ? "收起面板"
-                            : "打开面板（变更 / 文件 / 终端 / 浏览器 / 子智能体）"
-                        }
-                        onClick={() => setPanelOpen((current) => !current)}
-                        className="rounded-md border p-1.5 text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground data-[active=true]:border-foreground/30 data-[active=true]:text-foreground"
-                        data-active={panelOpen}
-                      >
-                        <PanelRight className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-              {/* 对话 / 轨迹 双页签（参考 deepseek-harness 的会话头）。
-                对话 = 按发生顺序交错的流；轨迹 = 按轮次分组的只读账本。 */}
-              <div className="shrink-0 pr-[var(--scrollbar-lane,0px)]">
-                <div
-                  role="tablist"
-                  aria-label="转录视图"
-                  className="flex w-full items-center gap-1 px-8"
-                >
-                  {(
-                    [
-                      ["chat", "对话"],
-                      ["trajectory", "轨迹"],
-                    ] as const
-                  ).map(([value, label]) => (
+              {sidebarCollapsed ? (
+                /* 收起态：图标栏（模式切换 + 插件 + 底部头像） */
+                <aside className="flex w-12 shrink-0 flex-col items-center gap-1 border-r bg-card py-2">
+                  <KenFutWorkLogo className="mb-1 size-7 shrink-0" />
+                  <button
+                    type="button"
+                    aria-label="展开侧栏"
+                    onClick={() => setSidebarCollapsed(false)}
+                    className="rounded-md p-2 hover:bg-muted"
+                  >
+                    <PanelLeftOpen className="h-4 w-4" />
+                  </button>
+                  <div className="my-1 w-6 border-t" />
+                  {modeItems.map((item) => (
                     <button
-                      key={value}
+                      key={item.id}
                       type="button"
-                      role="tab"
-                      aria-selected={transcriptTab === value}
-                      onClick={() => setTranscriptTab(value)}
-                      className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
-                        transcriptTab === value
-                          ? "bg-muted font-medium text-foreground"
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
+                      title={item.label}
+                      aria-label={item.label}
+                      data-active={mode === item.id}
+                      onClick={() => switchMode(item.id)}
+                      className="rounded-md p-2 hover:bg-muted data-[active=true]:bg-muted data-[active=true]:text-foreground data-[active=false]:text-muted-foreground"
                     >
-                      {label}
+                      {item.icon}
                     </button>
                   ))}
-                </div>
-              </div>
-              <div
-                ref={codeMessagesRef}
-                role="none"
-                className="relative min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
-                onContextMenu={chatMenu.open}
-              >
-                {transcriptTab === "chat" ? (
-                  <TurnRail items={turnRail} onJump={jumpToTurn} />
-                ) : null}
-                <div className="w-full space-y-4 px-8 pb-2">
-                  {transcriptTab === "trajectory" ? (
-                    <TrajectoryView
-                      model={trajectoryModel}
-                      startedAtMs={
-                        activeTask.runStartedAt
-                          ? parseTimestampMs(activeTask.runStartedAt)
-                          : null
-                      }
-                      endedAtMs={
-                        activeTask.runEndedAt
-                          ? parseTimestampMs(activeTask.runEndedAt)
-                          : null
-                      }
-                      focusToolCallId={trajectoryFocus}
+                  <button
+                    type="button"
+                    title="插件"
+                    aria-label="插件"
+                    onClick={() => setPluginsOpen(true)}
+                    className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <Layers className="h-4 w-4" />
+                  </button>
+                  <div className="mt-auto">
+                    <UserMenu
+                      user={workbenchUser}
+                      collapsed
+                      isAdmin={isPlatformAdmin}
+                      onOpenSettings={() => setSettingsTab("general")}
+                      onOpenAdmin={() => router.push("/admin")}
+                      onSignOut={handleSignOut}
+                    />
+                  </div>
+                </aside>
+              ) : (
+                /* 展开态：logo + 模式切换 + 插件 + 项目(design) + 任务列表 + 底部个人中心 */
+                <aside
+                  style={{ width: sidebarWidth }}
+                  className="relative flex shrink-0 flex-col border-r bg-card"
+                >
+                  {/* 拖拽把手：贴侧栏右边缘；向右拖 = 变宽 */}
+                  {/* biome-ignore lint/a11y/useSemanticElements: 拖拽改宽的把手，不是 <hr>（内容分隔线） */}
+                  <div
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="调整侧栏宽度"
+                    onMouseDown={startSidebarResize}
+                    className="absolute top-0 -right-0.5 z-10 h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-foreground/20"
+                  />
+                  <div className="flex items-center justify-between px-3 pt-3 pb-2">
+                    {/* 左内边距与下面的模式切换控件对齐（外层 px-3 + 分段控件内 p-1 ⇒ pl-4）；
+                logo 与字标之间留 5px（用户口径） */}
+                    <span className="flex items-center gap-[5px] pl-1">
+                      <KenFutWorkLogo className="h-[15px] w-auto text-foreground" />
+                      {/* 字标：Momo Trust Display + **三色**渐变（左深右浅；变量见 globals.css，
+                  显式 sRGB 插值——oklab 中段会发灰显脏） */}
+                      <span
+                        className="font-wordmark bg-clip-text text-xl tracking-tight text-transparent"
+                        style={{ backgroundImage: "var(--wordmark-gradient)" }}
+                      >
+                        KenFutWork
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      aria-label="收起侧栏"
+                      onClick={() => setSidebarCollapsed(true)}
+                      className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    >
+                      <PanelLeftClose className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  {/* 模式切换（开关式：一个分段控件内左右切换 Code / Design / Flow）。
+              三段并存时每段只有 ~60px：内边距收到最小、文字 13px、超宽截断，
+              否则最后一个（Flow）会被挤变形。 */}
+                  <div className="px-2 pt-1 pb-0.5">
+                    <div
+                      role="radiogroup"
+                      aria-label="模式切换"
+                      className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5"
+                    >
+                      {modeItems.map((item) => (
+                        // biome-ignore lint/a11y/useSemanticElements: 分段控件用的是 radiogroup/radio 模式（原生 radio 无法承载这套样式与布局）
+                        <button
+                          key={item.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={mode === item.id}
+                          data-active={mode === item.id}
+                          onClick={() => switchMode(item.id)}
+                          className="flex min-h-[30px] min-w-0 flex-1 items-center justify-center gap-1 rounded-md px-1.5 text-[13px] whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:text-foreground data-[active=true]:shadow-sm"
+                        >
+                          {item.icon}
+                          <span className="truncate">{item.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mx-3 my-2 border-t" />
+
+                  <nav className="space-y-0.5 px-2">
+                    <button
+                      type="button"
+                      onClick={() => setPluginsOpen(true)}
+                      className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                      <Layers className="h-4 w-4 shrink-0" /> 插件
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSkillsOpen(true)}
+                      className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                      <Blocks className="h-4 w-4 shrink-0" /> 技能
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMcpOpen(true)}
+                      className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                      {/* Server 而不是 Plug：插头字形天生窄（墨迹只占格子 58%），居中也会显得缩在
+                  右边；Server 与相邻图标一样填满格子（92%），不必再做尺寸特例 */}
+                      <Server className="h-4 w-4 shrink-0" /> MCP
+                    </button>
+                    {/* 插件面板（能力 `ui`）：侧栏槽位 */}
+                    <PluginPanelButtons
+                      accessToken={session?.access_token ?? null}
+                      slot="sidebar"
+                      renderButton={(panel, open) => (
+                        <button
+                          key={panel.id}
+                          type="button"
+                          onClick={open}
+                          title={`插件 ${panel.pluginId} 提供的面板`}
+                          className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        >
+                          {/* 插件图标：单色渲染（跟随本行文字色），槽位与本体都 16px——
+                      与 MCP/技能/插件 三个满格字形（墨迹 92%）同尺寸才不显小 */}
+                          <PluginIcon
+                            icon={panel.icon}
+                            pluginId={panel.pluginId}
+                          />{" "}
+                          {panel.title}
+                        </button>
+                      )}
+                    />
+                  </nav>
+
+                  <div className="mx-3 my-2 border-t" />
+
+                  {mode === "flow" ? (
+                    /* Flow：侧栏导航项由宿主承担（内嵌形态 flow 自己的侧栏隐藏），
+               点击经 ff-embed/navigate 让 iframe 内的 flow 路由跳转；
+               主仓侧不复制一份列表（不造第二套真相）。 */
+                    <nav
+                      className="flex min-h-0 flex-1 flex-col px-2"
+                      aria-label="Flow 导航"
+                    >
+                      {[
+                        {
+                          path: "/",
+                          label: "工作流",
+                          icon: <Workflow className="h-4 w-4 shrink-0" />,
+                        },
+                        {
+                          path: "/plugins",
+                          label: "工作流插件",
+                          icon: <Layers className="h-4 w-4 shrink-0" />,
+                        },
+                        {
+                          path: "/tasks",
+                          label: "任务中心",
+                          icon: <ListChecks className="h-4 w-4 shrink-0" />,
+                        },
+                      ].map((item) => (
+                        <button
+                          key={item.path}
+                          type="button"
+                          disabled={!flowEntry?.available}
+                          onClick={() =>
+                            flowFrameRef.current?.navigate(item.path)
+                          }
+                          className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {item.icon}
+                          {item.label}
+                        </button>
+                      ))}
+                    </nav>
+                  ) : mode === "design" ? (
+                    /* Design：项目列表（+ 直接创建，无任务列表） */
+                    <div className="flex min-h-0 flex-1 flex-col px-2">
+                      <div className="flex items-center justify-between px-1 pb-1">
+                        <span className="text-xs text-muted-foreground">
+                          项目
+                        </span>
+                        <button
+                          type="button"
+                          aria-label="创建项目"
+                          title="创建项目"
+                          disabled={creatingProject}
+                          onClick={() => {
+                            void createProjectNamed("未命名画布").then(
+                              (project) => {
+                                if (project) setSelectedProjectId(project.id);
+                              },
+                            );
+                          }}
+                          className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto pb-1">
+                        {projects.length === 0 ? (
+                          <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+                            {creatingProject ? "创建中…" : "暂无项目"}
+                          </p>
+                        ) : (
+                          projects.map((p) => (
+                            <SidebarRow
+                              key={p.id}
+                              label={p.name}
+                              active={selectedProjectId === p.id}
+                              icon={
+                                <Palette className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                              }
+                              onOpen={() => {
+                                setSelectedProjectId(p.id);
+                                setActiveTaskId(null);
+                              }}
+                              onRename={(next) =>
+                                void renameProject(p.id, next)
+                              }
+                              onDelete={() => void removeProject(p.id)}
+                            />
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    /* Code：项目列表（工作目录=项目，下面挂对话；右键重命名/归档/删除） */
+                    <div className="flex min-h-0 flex-1 flex-col px-2">
+                      <div className="flex items-center justify-between px-1 pb-1">
+                        <span className="text-xs text-muted-foreground">
+                          工作目录
+                        </span>
+                        <div className="flex items-center gap-0.5">
+                          <button
+                            type="button"
+                            aria-label="新建工作目录"
+                            title="新建工作目录"
+                            disabled={creatingProject}
+                            onClick={() => {
+                              void createCodeProject("未命名工作目录").then(
+                                (project) => {
+                                  if (project) setSelectedProjectId(project.id);
+                                },
+                              );
+                            }}
+                            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
+                          >
+                            <FolderPlus className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="新建对话"
+                            title={
+                              selectedProject
+                                ? `在「${selectedProject.name}」下新建对话`
+                                : "选中工作目录后新建对话会自动关联它"
+                            }
+                            onClick={() => {
+                              // 新建对话：保留当前选中的工作目录，新对话即挂在它下面
+                              setActiveTaskId(null);
+                            }}
+                            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pb-1">
+                        {(() => {
+                          const knownProjectIds = new Set(
+                            codeProjects.map((p) => p.id),
+                          );
+                          /**
+                           * 未分组 = 没有项目，或 projectId 指向一个已不存在的项目。
+                           * 后者是必须的防御：项目被删/换库后，任务若仍带着孤儿 id，
+                           * 既进不了任何项目分组、也不进未分组——对话会「凭空消失」。
+                           */
+                          const ungrouped = tasks.filter(
+                            (t) =>
+                              !t.archived &&
+                              (t.projectId == null ||
+                                !knownProjectIds.has(t.projectId)),
+                          );
+                          const archived = tasks.filter((t) => t.archived);
+                          const taskRow = (t: WorkbenchTask) => {
+                            const indicator = resolveTaskIndicator(
+                              t.status === "running" && runningTaskId === t.id,
+                              unreadTaskIds.includes(t.id),
+                            );
+                            return (
+                              <SidebarRow
+                                key={t.id}
+                                label={t.title}
+                                active={activeTaskId === t.id}
+                                icon={
+                                  indicator === "running" ? (
+                                    /* 与对话图标同色（不再用琥珀色：侧栏一排转圈太抢眼） */
+                                    <Loader2
+                                      aria-label="运行中"
+                                      className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground"
+                                    />
+                                  ) : (
+                                    <MessageSquare
+                                      className={`h-3.5 w-3.5 shrink-0 ${
+                                        indicator === "unread"
+                                          ? "fill-current text-foreground"
+                                          : "text-muted-foreground"
+                                      }`}
+                                    />
+                                  )
+                                }
+                                trailing={formatTaskRelativeTime(
+                                  t.runEndedAt ?? t.createdAt,
+                                )}
+                                onOpen={() => setActiveTaskId(t.id)}
+                                onRename={(next) => renameTask(t.id, next)}
+                                onArchive={() => setTaskArchived(t.id, true)}
+                                onDelete={() => deleteTask(t.id)}
+                              />
+                            );
+                          };
+                          /**
+                           * 分组内的对话列表：默认只露前 `SESSION_PREVIEW_LIMIT` 条，
+                           * 其余收进「显示更多」——一个工作目录下几十条对话时，侧栏不该被单个
+                           * 工作目录撑满（展开状态按分组持久化）。
+                           */
+                          const taskGroup = (
+                            groupKey: string,
+                            items: WorkbenchTask[],
+                          ) => {
+                            const { visible, hiddenCount } = previewGroup(
+                              items,
+                              expandedGroups.includes(groupKey),
+                            );
+                            return (
+                              <div className="ml-4 space-y-0.5 border-l pl-1">
+                                {visible.map(taskRow)}
+                                {hiddenCount > 0 ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      toggleGroupExpanded(groupKey)
+                                    }
+                                    className="w-full rounded-md px-2 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                                  >
+                                    显示更多
+                                  </button>
+                                ) : null}
+                                {items.length > SESSION_PREVIEW_LIMIT &&
+                                expandedGroups.includes(groupKey) ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      toggleGroupExpanded(groupKey)
+                                    }
+                                    className="w-full rounded-md px-2 py-1 text-left text-xs text-muted-foreground/70 transition-colors hover:bg-muted hover:text-muted-foreground"
+                                  >
+                                    收起
+                                  </button>
+                                ) : null}
+                              </div>
+                            );
+                          };
+                          return (
+                            <>
+                              {codeProjects.map((p) => {
+                                const items = tasks.filter(
+                                  (t) => !t.archived && t.projectId === p.id,
+                                );
+                                return (
+                                  <div key={p.id}>
+                                    <SidebarRow
+                                      label={p.name}
+                                      active={selectedProjectId === p.id}
+                                      icon={
+                                        <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                      }
+                                      expanded={
+                                        !collapsedProjects.includes(p.id)
+                                      }
+                                      onToggleExpanded={() =>
+                                        setCollapsedProjects((prev) => {
+                                          const next = prev.includes(p.id)
+                                            ? prev.filter((id) => id !== p.id)
+                                            : [...prev, p.id];
+                                          try {
+                                            window.localStorage.setItem(
+                                              "workbench:collapsed-projects",
+                                              JSON.stringify(next),
+                                            );
+                                          } catch {
+                                            // 存储失败不影响使用
+                                          }
+                                          return next;
+                                        })
+                                      }
+                                      onOpen={() => {
+                                        selectWorkDir({
+                                          projectId: p.id,
+                                          name: p.name,
+                                        });
+                                      }}
+                                      onRename={(next) =>
+                                        void renameCodeProject(p.id, next)
+                                      }
+                                      onDelete={() =>
+                                        void removeCodeProject(p.id)
+                                      }
+                                    />
+                                    {collapsedProjects.includes(
+                                      p.id,
+                                    ) ? null : items.length === 0 ? (
+                                      <div className="ml-4 space-y-0.5 border-l pl-1">
+                                        <p className="px-2 py-1 text-xs text-muted-foreground/70">
+                                          暂无对话
+                                        </p>
+                                      </div>
+                                    ) : (
+                                      taskGroup(p.id, items)
+                                    )}
+                                  </div>
+                                );
+                              })}
+                              {ungrouped.length > 0 ? (
+                                <div>
+                                  <p className="px-2 py-1 text-xs text-muted-foreground">
+                                    未分组
+                                  </p>
+                                  {taskGroup(UNGROUPED_KEY, ungrouped)}
+                                </div>
+                              ) : null}
+                              {archived.length > 0 ? (
+                                <details className="px-1">
+                                  <summary className="cursor-pointer px-1 py-1 text-xs text-muted-foreground hover:text-foreground">
+                                    已归档（{archived.length}）
+                                  </summary>
+                                  <div className="ml-4 space-y-0.5 border-l pl-1">
+                                    {archived.map((t) => (
+                                      <SidebarRow
+                                        key={t.id}
+                                        label={t.title}
+                                        icon={
+                                          <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+                                        }
+                                        onOpen={() => setActiveTaskId(t.id)}
+                                        onRename={(next) =>
+                                          renameTask(t.id, next)
+                                        }
+                                        onRestore={() =>
+                                          setTaskArchived(t.id, false)
+                                        }
+                                        onDelete={() => deleteTask(t.id)}
+                                      />
+                                    ))}
+                                  </div>
+                                </details>
+                              ) : null}
+                            </>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 底部：个人中心（头像弹出） */}
+                  <div className="border-t p-2">
+                    <UserMenu
+                      user={workbenchUser}
+                      collapsed={false}
+                      isAdmin={isPlatformAdmin}
+                      onOpenSettings={() => setSettingsTab("general")}
+                      onOpenAdmin={() => router.push("/admin")}
+                      onSignOut={handleSignOut}
+                    />
+                  </div>
+                </aside>
+              )}
+
+              {/* 主区：Design＝画布 / Flow＝flow 画布（恒为画布，见 resolveWorkbenchSurface）
+          / Code＝任务视图 或 居中编排器 */}
+              <main className="min-w-0 flex-1 overflow-hidden bg-card">
+                {mode === "flow" ? (
+                  /* Flow：主区恒为 flow 画布（iframe 内含列表 / 编排 / 发布 / 执行全部视图），
+             与 Design 同一条不变量——不被任务/会话对话框顶掉。入口消失（如插件被卸载）
+             时如实说明，不放半截 iframe。 */
+                  flowEntry === null ? (
+                    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                      正在检查 flow 可用性…
+                    </div>
+                  ) : flowEntry.available ? (
+                    <FlowCanvasFrame
+                      ref={flowFrameRef}
+                      frontendUrl={flowEntry.frontendUrl}
+                      getToken={getToken}
                     />
                   ) : (
-                    <>
-                      {activeTask.runStartedAt ? (
-                        <ElapsedEntry
-                          startedAt={activeTask.runStartedAt}
-                          endedAt={activeTask.runEndedAt}
-                          running={activeTask.status === "running"}
-                        />
-                      ) : null}
-                      {/*
+                    <div className="flex h-full items-center justify-center px-8 text-center text-sm text-muted-foreground">
+                      {flowEntry.reason}
+                    </div>
+                  )
+                ) : surface === "canvas" ? (
+                  /* Design：选中项目后画布自动打开（原版 KenFutWork 画布，对话在画布内助手里） */
+                  <iframe
+                    key={`${selectedProject?.primaryCanvas.id}:${canvasPrompt ?? ""}`}
+                    src={`/canvas?id=${selectedProject?.primaryCanvas.id}${
+                      canvasPrompt
+                        ? `&prompt=${encodeURIComponent(canvasPrompt)}`
+                        : ""
+                    }`}
+                    title={`${selectedProject?.name ?? ""} 画布`}
+                    className="h-full w-full border-0"
+                  />
+                ) : activeTask ? (
+                  /* 转录列 + 右栏停靠面板（面板收起时返回 null，不占宽）。 */
+                  <div className="flex h-full">
+                    <div
+                      className="flex h-full min-w-0 flex-1 flex-col"
+                      style={
+                        {
+                          "--scrollbar-lane": `${scrollbarLane}px`,
+                        } as React.CSSProperties
+                      }
+                    >
+                      {/* 标题行：会话标题 + 本轮回执 + 插件面板入口；右端贴住工作目录与分支。
+                这两个 chip 取**对话自己绑定的项目**（run 的作用域就是它），
+                不依赖侧栏选中态——否则打开历史对话时它们会消失（用户反馈）。 */}
+                      <div className="shrink-0 pr-[var(--scrollbar-lane,0px)]">
+                        <div className="flex w-full items-center gap-2 px-8 pt-6 pb-4">
+                          <h1 className="min-w-0 truncate text-lg font-medium">
+                            {activeTask.title}
+                          </h1>
+                          {lastAutoCommitAt ? (
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                              已自动提交本轮
+                            </span>
+                          ) : null}
+                          {/* 插件面板（能力 `ui`）：对话槽位 */}
+                          <PluginPanelButtons
+                            accessToken={session?.access_token ?? null}
+                            slot="conversation"
+                            renderButton={(panel, open) => (
+                              <button
+                                key={panel.id}
+                                type="button"
+                                onClick={open}
+                                title={`插件 ${panel.pluginId} 提供的面板`}
+                                className="flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+                              >
+                                <PanelsTopLeft className="h-3.5 w-3.5" />
+                                {panel.title}
+                              </button>
+                            )}
+                          />
+                          {mode === "code" ? (
+                            <div className="ml-auto flex shrink-0 items-center gap-2">
+                              <WorkDirectorySelect
+                                projects={codeProjects}
+                                selectedProjectId={
+                                  conversationProject?.id ?? null
+                                }
+                                lockedHint={
+                                  conversationProject
+                                    ? `本次对话已绑定工作目录「${conversationProject.name}」`
+                                    : "本次对话没有绑定工作目录"
+                                }
+                                busy={creatingProject}
+                                onSelect={() => undefined}
+                                onOpenFolder={() => undefined}
+                                onClear={() => undefined}
+                              />
+                              <GitBranchSelect
+                                accessToken={session?.access_token ?? null}
+                                canvasId={
+                                  conversationProject?.primaryCanvas.id ?? null
+                                }
+                                /* 自动提交后 key 变化 → 重新拉取更改统计 */
+                                key={`${conversationProject?.primaryCanvas.id ?? ""}:${lastAutoCommitAt ?? ""}`}
+                              />
+                              {/* 面板开关：与参考图一致，右栏由这个键开合 */}
+                              <button
+                                type="button"
+                                aria-label="面板"
+                                aria-expanded={panelOpen}
+                                title={
+                                  panelOpen
+                                    ? "收起面板"
+                                    : "打开面板（变更 / 文件 / 终端 / 浏览器 / 子智能体）"
+                                }
+                                onClick={() =>
+                                  setPanelOpen((current) => !current)
+                                }
+                                className="rounded-md border p-1.5 text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground data-[active=true]:border-foreground/30 data-[active=true]:text-foreground"
+                                data-active={panelOpen}
+                              >
+                                <PanelRight className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                      {/* 对话 / 轨迹 双页签（参考 deepseek-harness 的会话头）。
+                对话 = 按发生顺序交错的流；轨迹 = 按轮次分组的只读账本。 */}
+                      <div className="shrink-0 pr-[var(--scrollbar-lane,0px)]">
+                        <div
+                          role="tablist"
+                          aria-label="转录视图"
+                          className="flex w-full items-center gap-1 px-8"
+                        >
+                          {(
+                            [
+                              ["chat", "对话"],
+                              ["trajectory", "轨迹"],
+                            ] as const
+                          ).map(([value, label]) => (
+                            <button
+                              key={value}
+                              type="button"
+                              role="tab"
+                              aria-selected={transcriptTab === value}
+                              onClick={() => setTranscriptTab(value)}
+                              className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+                                transcriptTab === value
+                                  ? "bg-muted font-medium text-foreground"
+                                  : "text-muted-foreground hover:text-foreground"
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div
+                        ref={codeMessagesRef}
+                        role="none"
+                        className="relative min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
+                        onContextMenu={chatMenu.open}
+                      >
+                        {transcriptTab === "chat" ? (
+                          <TurnRail items={turnRail} onJump={jumpToTurn} />
+                        ) : null}
+                        <div className="w-full space-y-4 px-8 pb-2">
+                          {transcriptTab === "trajectory" ? (
+                            <TrajectoryView
+                              model={trajectoryModel}
+                              startedAtMs={
+                                activeTask.runStartedAt
+                                  ? parseTimestampMs(activeTask.runStartedAt)
+                                  : null
+                              }
+                              endedAtMs={
+                                activeTask.runEndedAt
+                                  ? parseTimestampMs(activeTask.runEndedAt)
+                                  : null
+                              }
+                              focusToolCallId={trajectoryFocus}
+                            />
+                          ) : (
+                            <>
+                              {activeTask.runStartedAt ? (
+                                <ElapsedEntry
+                                  startedAt={activeTask.runStartedAt}
+                                  endedAt={activeTask.runEndedAt}
+                                  running={activeTask.status === "running"}
+                                />
+                              ) : null}
+                              {/*
                     上下文已自动压缩（R4-1 输出预留线的执行面）：说明「模型看到的历史被摘要过」，
                     而库里的转录仍然完整——不说这一句，用户会以为模型突然忘了前面的事。
                   */}
-                      {activeTask.compacted ? (
-                        <p
-                          role="status"
-                          className="rounded-md border bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground"
-                        >
-                          上下文已自动压缩：模型上下文超过{" "}
-                          {formatTokens(activeTask.compacted.triggerTokens)}（
-                          {
-                            COMPACT_SOURCE_LABELS[
-                              activeTask.compacted.triggerSource
-                            ]
-                          }
-                          ）后，较早的消息被摘要成一条，只保留最近{" "}
-                          {activeTask.compacted.keepMessages}{" "}
-                          条；原文存在工作区的
-                          /conversation_history/，这条对话的完整记录不受影响。
-                        </p>
-                      ) : null}
-                      {/*
+                              {activeTask.compacted ? (
+                                <p
+                                  role="status"
+                                  className="rounded-md border bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground"
+                                >
+                                  上下文已自动压缩：模型上下文超过{" "}
+                                  {formatTokens(
+                                    activeTask.compacted.triggerTokens,
+                                  )}
+                                  （
+                                  {
+                                    COMPACT_SOURCE_LABELS[
+                                      activeTask.compacted.triggerSource
+                                    ]
+                                  }
+                                  ）后，较早的消息被摘要成一条，只保留最近{" "}
+                                  {activeTask.compacted.keepMessages}{" "}
+                                  条；原文存在工作区的
+                                  /conversation_history/，这条对话的完整记录不受影响。
+                                </p>
+                              ) : null}
+                              {/*
                     用户钩子（R5-2「钩子」）：在项目工作目录里跑的命令，成败都如实列出——
                     配了钩子却看不到结果，等于不知道它跑没跑。失败不影响本轮。
                   */}
-                      {(activeTask.hookResults ?? []).map((hook) => (
-                        <p
-                          /* 同一条命令在起点/终点各配一次时事件不同，键按「事件+命令+耗时」取；
+                              {(activeTask.hookResults ?? []).map((hook) => (
+                                <p
+                                  /* 同一条命令在起点/终点各配一次时事件不同，键按「事件+命令+耗时」取；
                          同一轮里同事件同命令只会出现一次（钩子表本身按事件+命令去重执行） */
-                          key={`${hook.event}::${hook.command}::${hook.durationMs}`}
-                          role="status"
-                          className="rounded-md border bg-muted/40 px-3 py-1.5 font-mono text-[11px] text-muted-foreground"
-                        >
-                          {hook.event === "turn-start"
-                            ? "本轮开始钩子"
-                            : "本轮结束钩子"}
-                          ：{hook.command}
-                          {" · "}
-                          {hook.timedOut
-                            ? "超时被杀"
-                            : hook.exitCode === 0
-                              ? "成功"
-                              : `退出码 ${hook.exitCode ?? "?"}`}
-                          {hook.output ? ` · ${hook.output}` : ""}
-                          {` · ${Math.max(1, Math.round(hook.durationMs / 1000))}s`}
-                        </p>
-                      ))}
-                      {/* 目标 + 进度（R1-2）：模型用了 write_todos 才出现，条数从事件流推导 */}
-                      {activeTask.todos && activeTask.todos.length > 0 ? (
-                        <TodoProgressPanel
-                          /* 目标 = 本轮的用户诉求（最后一条用户消息），不是首条——
+                                  key={`${hook.event}::${hook.command}::${hook.durationMs}`}
+                                  role="status"
+                                  className="rounded-md border bg-muted/40 px-3 py-1.5 font-mono text-[11px] text-muted-foreground"
+                                >
+                                  {hook.event === "turn-start"
+                                    ? "本轮开始钩子"
+                                    : "本轮结束钩子"}
+                                  ：{hook.command}
+                                  {" · "}
+                                  {hook.timedOut
+                                    ? "超时被杀"
+                                    : hook.exitCode === 0
+                                      ? "成功"
+                                      : `退出码 ${hook.exitCode ?? "?"}`}
+                                  {hook.output ? ` · ${hook.output}` : ""}
+                                  {` · ${Math.max(1, Math.round(hook.durationMs / 1000))}s`}
+                                </p>
+                              ))}
+                              {/* 目标 + 进度（R1-2）：模型用了 write_todos 才出现，条数从事件流推导 */}
+                              {activeTask.todos &&
+                              activeTask.todos.length > 0 ? (
+                                <TodoProgressPanel
+                                  /* 目标 = 本轮的用户诉求（最后一条用户消息），不是首条——
                      首条是这条对话最初问的，跟当前这轮的待办不是一回事 */
-                          goal={
-                            [...activeTask.messages]
-                              .reverse()
-                              .find((message) => message.role === "user")
-                              ?.text ?? activeTask.title
-                          }
-                          items={activeTask.todos}
-                          running={activeTask.status === "running"}
-                        />
-                      ) : null}
-                      {activeTask.subagents &&
-                      activeTask.subagents.length > 0 ? (
-                        <SubagentDirectoryView
-                          entries={activeTask.subagents}
-                          running={activeTask.status === "running"}
-                        />
-                      ) : null}
-                      {(() => {
-                        // 「最终总结」标题挂在本轮最后一个 assistant 消息上方（R1-1 收尾总结）
-                        const shown = activeTask;
-                        const lastAssistantIdx = shown.messages.reduce(
-                          (last, msg, idx) =>
-                            msg.role === "assistant" ? idx : last,
-                          -1,
-                        );
-                        const showSummary =
-                          activeTask.status === "completed" &&
-                          Boolean(activeTask.runEndedAt) &&
-                          lastAssistantIdx >= 0;
-                        const streaming = activeTask.status === "running";
-                        return shown.messages.map((msg, i) => {
-                          return (
-                            <div
-                              // biome-ignore lint/suspicious/noArrayIndexKey: 流式为追加列表，消息的稳定身份就是位置；内容键会每个 token 换 key，把整条消息重挂载
-                              key={i}
-                              className="group/turn space-y-2"
-                              data-turn-anchor={turnOfIndex[i]}
-                            >
-                              {showSummary && i === lastAssistantIdx ? (
-                                <div className="text-xs font-medium text-muted-foreground">
-                                  最终总结
-                                </div>
-                              ) : null}
-                              {/* 每条助手消息都带上「工作了多久」（用户口径：不能只显示一部分） */}
-                              {msg.role === "assistant" &&
-                              msg.elapsedMs !== undefined ? (
-                                <div className="text-[11px] text-muted-foreground">
-                                  已工作{" "}
-                                  {formatElapsedSeconds(msg.elapsedMs / 1000)}
-                                </div>
-                              ) : null}
-                              {msg.role === "user" ? (
-                                // zcode v4 用户消息行（UserInputRowView 气泡 + hover 操作行）：
-                                // rounded-xl rounded-tr-xs + border + bg-surface（面板色非品牌色），
-                                // hover 显现复制（group/user-row 口径，复制成功 1.2s 打勾）
-                                <div className="group/user-row flex w-full flex-col items-end">
-                                  <div className="flex max-w-full flex-col gap-2 rounded-xl rounded-tr-xs border border-border bg-surface px-4 py-3 text-ui-base text-foreground whitespace-pre-wrap">
-                                    {msg.text}
-                                  </div>
-                                  <UserRowCopyAction text={msg.text} />
-                                </div>
-                              ) : (
-                                <AssistantTurn
-                                  msg={msg}
-                                  streaming={
-                                    streaming && i === shown.messages.length - 1
+                                  goal={
+                                    [...activeTask.messages]
+                                      .reverse()
+                                      .find(
+                                        (message) => message.role === "user",
+                                      )?.text ?? activeTask.title
                                   }
-                                  subagents={activeTask.subagents}
+                                  items={activeTask.todos}
+                                  running={activeTask.status === "running"}
                                 />
-                              )}
-                              {/* zcode ConversationAssistantTextActions 口径：
+                              ) : null}
+                              {/* 子代理目录只在右栏面板（zcode 模型：主对话仅派发行紧凑行）；
+                          此处不再内联渲染目录列表。 */}
+                              {(() => {
+                                // 「最终总结」标题挂在本轮最后一个 assistant 消息上方（R1-1 收尾总结）
+                                const shown = activeTask;
+                                const lastAssistantIdx = shown.messages.reduce(
+                                  (last, msg, idx) =>
+                                    msg.role === "assistant" ? idx : last,
+                                  -1,
+                                );
+                                const showSummary =
+                                  activeTask.status === "completed" &&
+                                  Boolean(activeTask.runEndedAt) &&
+                                  lastAssistantIdx >= 0;
+                                const streaming =
+                                  activeTask.status === "running";
+                                return shown.messages.map((msg, i) => {
+                                  return (
+                                    <div
+                                      // biome-ignore lint/suspicious/noArrayIndexKey: 流式为追加列表，消息的稳定身份就是位置；内容键会每个 token 换 key，把整条消息重挂载
+                                      key={i}
+                                      className="group/turn space-y-2"
+                                      data-turn-anchor={turnOfIndex[i]}
+                                    >
+                                      {showSummary && i === lastAssistantIdx ? (
+                                        <div className="text-xs font-medium text-muted-foreground">
+                                          最终总结
+                                        </div>
+                                      ) : null}
+                                      {/* 每条助手消息都带上「工作了多久」（用户口径：不能只显示一部分） */}
+                                      {msg.role === "assistant" &&
+                                      msg.elapsedMs !== undefined ? (
+                                        <div className="text-[11px] text-muted-foreground">
+                                          已工作{" "}
+                                          {formatElapsedSeconds(
+                                            msg.elapsedMs / 1000,
+                                          )}
+                                        </div>
+                                      ) : null}
+                                      {msg.role === "user" ? (
+                                        // zcode v4 用户消息行（UserInputRowView 气泡 + hover 操作行）：
+                                        // rounded-xl rounded-tr-xs + border + bg-surface（面板色非品牌色），
+                                        // hover 显现复制（group/user-row 口径，复制成功 1.2s 打勾）
+                                        <div className="group/user-row flex w-full flex-col items-end">
+                                          <div className="flex max-w-full flex-col gap-2 rounded-xl rounded-tr-xs border border-border bg-surface px-4 py-3 text-ui-base text-foreground whitespace-pre-wrap">
+                                            {msg.text}
+                                          </div>
+                                          <UserRowCopyAction text={msg.text} />
+                                        </div>
+                                      ) : (
+                                        <AssistantTurn
+                                          msg={msg}
+                                          streaming={
+                                            streaming &&
+                                            i === shown.messages.length - 1
+                                          }
+                                          subagents={activeTask.subagents}
+                                        />
+                                      )}
+                                      {/* zcode ConversationAssistantTextActions 口径：
                                   轮尾助手正文 hover 显现复制 + 相对时间（我们无 feedback/fork 缝，
                                   按原件条件渲染口径直接不渲染那两个入口） */}
-                              {msg.role === "assistant" &&
-                              showSummary &&
-                              i === lastAssistantIdx ? (
-                                <div className="mt-1 flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover/turn:opacity-100">
-                                  <UserRowCopyAction text={msg.text} />
-                                  <span className="select-none text-ui-sm text-foreground-subtlest">
-                                    {formatTaskRelativeTime(
-                                      activeTask.runEndedAt ??
-                                        activeTask.runEndedAt ??
-                                        activeTask.createdAt,
-                                    )}
-                                  </span>
-                                </div>
-                              ) : null}
-                            </div>
-                          );
-                        });
-                      })()}
-                      {/*
+                                      {msg.role === "assistant" &&
+                                      showSummary &&
+                                      i === lastAssistantIdx ? (
+                                        <div className="mt-1 flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover/turn:opacity-100">
+                                          <UserRowCopyAction text={msg.text} />
+                                          <span className="select-none text-ui-sm text-foreground-subtlest">
+                                            {formatTaskRelativeTime(
+                                              activeTask.runEndedAt ??
+                                                activeTask.runEndedAt ??
+                                                activeTask.createdAt,
+                                            )}
+                                          </span>
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  );
+                                });
+                              })()}
+                              {/*
                     检查点条（Code 模式）：本轮终态后拉到的影子快照——改了什么、可回滚。
                     仍在本轮运行中时禁用回滚（工作目录正被写入）。
                   */}
-                      {activeTask.checkpoint ? (
-                        <CheckpointChip
-                          checkpoint={activeTask.checkpoint}
-                          accessToken={session?.access_token ?? null}
-                          canvasId={
-                            conversationProject?.primaryCanvas.id ?? null
-                          }
-                          restoreDisabled={activeTask.status === "running"}
-                        />
-                      ) : null}
-                      {activeTask.status === "running" ? (
-                        <div
-                          role="status"
-                          className="flex w-fit items-center gap-1.5 rounded-2xl rounded-bl-md bg-muted px-4 py-3"
-                          aria-label="生成中"
-                        >
-                          {[0, 1, 2].map((dot) => (
-                            <span
-                              key={dot}
-                              className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/70"
-                              style={{ animationDelay: `${dot * 150}ms` }}
-                            />
-                          ))}
-                          <span className="ml-1 text-xs text-muted-foreground">
-                            生成中…
-                          </span>
+                              {activeTask.checkpoint ? (
+                                <CheckpointChip
+                                  checkpoint={activeTask.checkpoint}
+                                  accessToken={session?.access_token ?? null}
+                                  canvasId={
+                                    conversationProject?.primaryCanvas.id ??
+                                    null
+                                  }
+                                  restoreDisabled={
+                                    activeTask.status === "running"
+                                  }
+                                />
+                              ) : null}
+                              {activeTask.status === "running" ? (
+                                <div
+                                  role="status"
+                                  className="flex w-fit items-center gap-1.5 rounded-2xl rounded-bl-md bg-muted px-4 py-3"
+                                  aria-label="生成中"
+                                >
+                                  {[0, 1, 2].map((dot) => (
+                                    <span
+                                      key={dot}
+                                      className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/70"
+                                      style={{
+                                        animationDelay: `${dot * 150}ms`,
+                                      }}
+                                    />
+                                  ))}
+                                  <span className="ml-1 text-xs text-muted-foreground">
+                                    生成中…
+                                  </span>
+                                </div>
+                              ) : null}
+                            </>
+                          )}
                         </div>
-                      ) : null}
-                    </>
-                  )}
-                </div>
-              </div>
-              {/* 底部：继续对话（完整版工具行 + 多轮，复用同一会话）。
+                      </div>
+                      {/* 底部：继续对话（完整版工具行 + 多轮，复用同一会话）。
                 工作目录与分支已移到标题行右端，输入框不再背标签条。 */}
 
-              <div className="shrink-0 pr-[var(--scrollbar-lane,0px)]">
-                <form
-                  className="w-full px-8 pt-3 pb-4"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const value = expandCommand(followUp, commands).text;
-                    setFollowUp("");
-                    continueTask(value);
-                  }}
-                >
-                  <div className="@container/composer rounded-xl border bg-background px-3 pt-2.5 pb-2">
-                    <textarea
-                      ref={composerRef}
-                      aria-label="继续对话"
-                      value={followUp}
-                      onChange={(e) => {
-                        setFollowUp(e.target.value);
-                        // 自动长高（并隐藏滚动条：对话框右侧不出现滚动条）
-                        const el = e.currentTarget;
-                        el.style.height = "auto";
-                        el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-                      }}
-                      onContextMenu={composerMenu.open}
-                      onKeyDown={(e) => {
-                        // 输入法组合态（拼音候选/英文直输确认）按 Enter 是「上屏」
-                        // 不是发送；WKWebView（Safari 内核）组合中 keyCode=229 且
-                        // isComposing 可能已翻转，两个信号都要认（真机 2026-09-28）
-                        const composing =
-                          e.nativeEvent.isComposing || e.keyCode === 229;
-                        if (e.key === "Enter" && !e.shiftKey && !composing) {
-                          e.preventDefault();
-                          const value = followUp;
-                          setFollowUp("");
-                          continueTask(value);
-                        }
-                      }}
-                      rows={1}
-                      placeholder="继续追问…"
-                      style={{ scrollbarWidth: "none" }}
-                      className="max-h-40 min-h-[24px] w-full resize-none overflow-hidden bg-transparent text-sm outline-none placeholder:text-muted-foreground [&::-webkit-scrollbar]:hidden"
-                    />
-                    {workDirNotice ? (
-                      <p className="mt-2 text-xs text-destructive">
-                        {workDirNotice}
-                      </p>
-                    ) : null}
-                    <div className="mt-1 flex items-center justify-between">
-                      <div className="flex min-w-0 items-center gap-1.5">
-                        <button
-                          type="button"
-                          title="附件（即将上线）"
-                          className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
-                        >
-                          <Plus className="h-4 w-4" />
-                        </button>
-                        <ComposerCompactSelect
-                          ariaLabel="权限档位"
-                          /* 图标随当前档位（四档各不相同），别再写死一个通用盾牌 */
-                          icon={tierIcon(tier)}
-                          options={TIER_OPTIONS}
-                          value={tier}
-                          onChange={(next) => {
-                            void handleTierChange(next);
-                          }}
-                        />
-                        <Select
-                          aria-label="执行模式"
-                          value={executionMode}
-                          onValueChange={(next) => {
-                            if (typeof next === "string")
-                              setExecutionMode(next as ExecutionMode);
-                          }}
-                          // 词表可能还没到（要等会话就绪）：用本地兜底补齐六档，
-                          // 否则这里会渲染原始 id（英文 agent），点开还是空列表
-                          items={executionModeOptions(executionModes).map(
-                            (m) => ({
-                              value: m.id,
-                              label: m.label,
-                            }),
-                          )}
-                        >
-                          <SelectTrigger
-                            className="h-7 gap-1 border-transparent bg-muted/60 px-2 text-xs"
-                            aria-label="执行模式"
-                            hideChevron
-                          >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent className="min-w-28">
-                            {executionModeOptions(executionModes).map((m) => (
-                              <SelectItem key={m.id} value={m.id}>
-                                {m.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Select
-                          aria-label="模型"
-                          value={model}
-                          onValueChange={(next) => {
-                            if (typeof next === "string")
-                              handleModelChange(next);
-                          }}
-                          items={
-                            models.length === 0
-                              ? [{ value: "", label: "未配置模型" }]
-                              : models.map((m) => ({
-                                  value: m.id,
-                                  label: m.name,
-                                }))
-                          }
-                        >
-                          <SelectTrigger
-                            className="h-7 max-w-[200px] gap-1 border-transparent bg-muted/60 px-2 text-xs"
-                            aria-label="模型"
-                          >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent className="max-w-[300px]">
-                            {models.length === 0 ? (
+                      <div className="shrink-0 pr-[var(--scrollbar-lane,0px)]">
+                        <div className="w-full px-8 pt-3 pb-4">
+                          {/* zcode composer（P5a）：ChatPromptEditor 原件（Lexical 编辑器 +
+                      rounded-2xl 输入壳 + 发送/停止状态机 + `/` 命令目录）；我们的
+                      权限档位/执行模式/模型/上下文/思考强度 chips 走 leadingActions 槽。
+                      mention（@ 面板）数据源未接，显式关闭不摆空壳（手册 §7）。 */}
+                          <ChatPromptEditor
+                            workspacePath={conversationProject?.workDir ?? ""}
+                            taskId={activeTask.id}
+                            placeholder="继续追问…"
+                            submitting={
+                              activeTask.status === "running" &&
+                              Boolean(activeRunIdRef.current)
+                            }
+                            submitDisabled={activeTask.status === "running"}
+                            enterSubmits
+                            submitLabel="发送"
+                            cancelLabel="停止本轮"
+                            showSlashButton
+                            enableMentionPanel={false}
+                            leadingActions={
                               <>
-                                {/* 目录为空 = 没配过供应商（打包版首启动就是这个状态）：
-                                    只显示「未配置模型」等于把用户留在死胡同，给一条直达设置的路 */}
-                                <SelectItem value="">未配置模型</SelectItem>
-                                <div className="-mx-1 my-1 border-t" />
                                 <button
                                   type="button"
-                                  onClick={() => setSettingsTab("providers")}
-                                  className="w-full rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                                  title="附件（即将上线）"
+                                  className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
                                 >
-                                  添加供应商…
+                                  <Plus className="h-4 w-4" />
+                                </button>
+                                <ComposerCompactSelect
+                                  ariaLabel="权限档位"
+                                  /* 图标随当前档位（四档各不相同），别再写死一个通用盾牌 */
+                                  icon={tierIcon(tier)}
+                                  options={TIER_OPTIONS}
+                                  value={tier}
+                                  onChange={(next) => {
+                                    void handleTierChange(next);
+                                  }}
+                                />
+                                <Select
+                                  aria-label="执行模式"
+                                  value={executionMode}
+                                  onValueChange={(next) => {
+                                    if (typeof next === "string")
+                                      setExecutionMode(next as ExecutionMode);
+                                  }}
+                                  // 词表可能还没到（要等会话就绪）：用本地兜底补齐六档，
+                                  // 否则这里会渲染原始 id（英文 agent），点开还是空列表
+                                  items={executionModeOptions(
+                                    executionModes,
+                                  ).map((m) => ({
+                                    value: m.id,
+                                    label: m.label,
+                                  }))}
+                                >
+                                  <SelectTrigger
+                                    className="h-7 gap-1 border-transparent bg-muted/60 px-2 text-xs"
+                                    aria-label="执行模式"
+                                    hideChevron
+                                  >
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent className="min-w-28">
+                                    {executionModeOptions(executionModes).map(
+                                      (m) => (
+                                        <SelectItem key={m.id} value={m.id}>
+                                          {m.label}
+                                        </SelectItem>
+                                      ),
+                                    )}
+                                  </SelectContent>
+                                </Select>
+                                <Select
+                                  aria-label="模型"
+                                  value={model}
+                                  onValueChange={(next) => {
+                                    if (typeof next === "string")
+                                      handleModelChange(next);
+                                  }}
+                                  items={
+                                    models.length === 0
+                                      ? [{ value: "", label: "未配置模型" }]
+                                      : models.map((m) => ({
+                                          value: m.id,
+                                          label: m.name,
+                                        }))
+                                  }
+                                >
+                                  <SelectTrigger
+                                    className="h-7 max-w-[200px] gap-1 border-transparent bg-muted/60 px-2 text-xs"
+                                    aria-label="模型"
+                                  >
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent className="max-w-[300px]">
+                                    {models.length === 0 ? (
+                                      <>
+                                        {/* 目录为空 = 没配过供应商（打包版首启动就是这个状态）：
+                                    只显示「未配置模型」等于把用户留在死胡同，给一条直达设置的路 */}
+                                        <SelectItem value="">
+                                          未配置模型
+                                        </SelectItem>
+                                        <div className="-mx-1 my-1 border-t" />
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setSettingsTab("providers")
+                                          }
+                                          className="w-full rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                                        >
+                                          添加供应商…
+                                        </button>
+                                      </>
+                                    ) : (
+                                      models.map((m) => (
+                                        <SelectItem key={m.id} value={m.id}>
+                                          <span className="flex items-center gap-1.5">
+                                            <span>{m.name}</span>
+                                            {m.vision ? (
+                                              <span className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+                                                视觉
+                                              </span>
+                                            ) : null}
+                                          </span>
+                                        </SelectItem>
+                                      ))
+                                    )}
+                                  </SelectContent>
+                                </Select>
+                                {/* 上下文容量 / 缓存命中（R4-1）：模型旁一个圆形入口 */}
+                                <ContextUsageButton
+                                  usage={activeTask.usage ?? null}
+                                  modelId={model}
+                                  contextWindow={modelMeta.contextWindow}
+                                  maxOutputTokens={modelMeta.maxOutputTokens}
+                                />
+                                <ComposerCompactSelect
+                                  ariaLabel="思考强度"
+                                  icon={<Brain className="h-3.5 w-3.5" />}
+                                  options={THINKING_OPTIONS}
+                                  value={thinking}
+                                  onChange={handleThinkingChange}
+                                  contentClassName="min-w-24"
+                                  progress={THINKING_PROGRESS[thinking] ?? 0}
+                                />
+                                <button
+                                  type="button"
+                                  title="语音（即将上线）"
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
+                                >
+                                  <Mic className="h-4 w-4" />
                                 </button>
                               </>
-                            ) : (
-                              models.map((m) => (
-                                <SelectItem key={m.id} value={m.id}>
-                                  <span className="flex items-center gap-1.5">
-                                    <span>{m.name}</span>
-                                    {m.vision ? (
-                                      <span className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
-                                        视觉
-                                      </span>
-                                    ) : null}
-                                  </span>
-                                </SelectItem>
-                              ))
-                            )}
-                          </SelectContent>
-                        </Select>
-                        {/* 上下文容量 / 缓存命中（R4-1）：模型旁一个圆形入口 */}
-                        <ContextUsageButton
-                          usage={activeTask.usage ?? null}
-                          modelId={model}
-                          contextWindow={modelMeta.contextWindow}
-                          maxOutputTokens={modelMeta.maxOutputTokens}
-                        />
-                        <ComposerCompactSelect
-                          ariaLabel="思考强度"
-                          icon={<Brain className="h-3.5 w-3.5" />}
-                          options={THINKING_OPTIONS}
-                          value={thinking}
-                          onChange={handleThinkingChange}
-                          contentClassName="min-w-24"
-                          progress={THINKING_PROGRESS[thinking] ?? 0}
-                        />
-                      </div>
-                      {/* 右簇：麦克风 / 发送 —— 与左簇同一个 h-7 口径 */}
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          title="语音（即将上线）"
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
-                        >
-                          <Mic className="h-4 w-4" />
-                        </button>
-                        {activeTask.status === "running" &&
-                        activeRunIdRef.current ? (
-                          /* 停止 = 暂停图标（与发送按钮同一个图标位，不再是一枚突兀的文字按钮）；
-                       与 Design 画布助手共用同一个组件，免得两处图标/文案漂移 */
-                          <RunStopButton
-                            onStop={() => {
+                            }
+                            onCancel={() => {
                               const runId = activeRunIdRef.current;
                               if (runId) ws.cancelRun(runId);
                             }}
+                            onChange={setFollowUp}
+                            onSubmit={(value: string) => {
+                              // `/命令 args` 在发送前展开（转录里看到的就是实际发出去的）
+                              const expanded = expandCommand(
+                                value,
+                                commands,
+                              ).text;
+                              if (!expanded.trim()) return false;
+                              continueTask(expanded);
+                              return true;
+                            }}
                           />
-                        ) : (
-                          <button
-                            type="submit"
-                            aria-label="发送"
-                            disabled={!followUp.trim()}
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground disabled:opacity-50"
-                          >
-                            <Send className="h-4 w-4" />
-                          </button>
-                        )}
+                          {workDirNotice ? (
+                            <p className="mt-2 text-xs text-destructive">
+                              {workDirNotice}
+                            </p>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </form>
-              </div>
-            </div>
-            {/* 右栏停靠面板：编辑器式多标签（参考图 R3-1 的标签面板） */}
-            <WorkbenchSidePanel
-              open={panelOpen}
-              onRequestOpen={() => setPanelOpen(true)}
-              accessToken={session?.access_token ?? null}
-              canvasId={conversationProject?.primaryCanvas.id ?? null}
-              subagents={activeTask.subagents ?? []}
-              running={activeTask.status === "running"}
-              ws={ws}
-              widthLimits={panelLimits}
-              /* CSS 兜底：宿主不派发 resize 事件时 JS 的 limits 会陈旧，这条由排版保证
+                    {/* 右栏停靠面板：编辑器式多标签（参考图 R3-1 的标签面板） */}
+                    <WorkbenchSidePanel
+                      open={panelOpen}
+                      onRequestOpen={() => setPanelOpen(true)}
+                      accessToken={session?.access_token ?? null}
+                      canvasId={conversationProject?.primaryCanvas.id ?? null}
+                      subagents={activeTask.subagents ?? []}
+                      running={activeTask.status === "running"}
+                      ws={ws}
+                      widthLimits={panelLimits}
+                      /* CSS 兜底：宿主不派发 resize 事件时 JS 的 limits 会陈旧，这条由排版保证
                对话列 ≥ MIN_CONVERSATION_WIDTH（数值与 lib/panel-layout 同一口径） */
-              maxWidthExpression={`calc(100vw - var(--workbench-sidebar, 256px) - ${MIN_CONVERSATION_WIDTH}px)`}
-              /* 拖到上限还往里拉 → 收起左栏腾地方（用户口径：再往左边拉，侧栏自动收起来） */
-              onGrowBlocked={() => setSidebarCollapsed(true)}
-              /* 右栏浏览器里拾取到的元素（R3-4）：写进追问输入框，用户补一句话就能发 */
-              onPickElement={(picked) => {
-                setFollowUp((current) =>
-                  current.trim()
-                    ? `${current}
+                      maxWidthExpression={`calc(100vw - var(--workbench-sidebar, 256px) - ${MIN_CONVERSATION_WIDTH}px)`}
+                      /* 拖到上限还往里拉 → 收起左栏腾地方（用户口径：再往左边拉，侧栏自动收起来） */
+                      onGrowBlocked={() => setSidebarCollapsed(true)}
+                      /* 右栏浏览器里拾取到的元素（R3-4）：写进追问输入框，用户补一句话就能发 */
+                      onPickElement={(picked) => {
+                        setFollowUp((current) =>
+                          current.trim()
+                            ? `${current}
 ${formatElementReference(picked)}`
-                    : formatElementReference(picked),
-                );
-                composerRef.current?.focus();
-              }}
-            />
-          </div>
-        ) : (
-          <div className="flex h-full flex-col items-center justify-center px-8">
-            <div className="mb-9 flex items-center gap-3">
-              {/* 尺寸与笔画各调过一轮（用户口径：h-14 + stroke 3 太粗太大 → stroke 2 又太细）：
+                            : formatElementReference(picked),
+                        );
+                        composerRef.current?.focus();
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="flex h-full flex-col items-center justify-center px-8">
+                    <div className="mb-9 flex items-center gap-3">
+                      {/* 尺寸与笔画各调过一轮（用户口径：h-14 + stroke 3 太粗太大 → stroke 2 又太细）：
                   现在 h-9（36px 盒 → 墨高 18px）+ strokeWidth 2.5，取中间 */}
-              {mode === "code" ? (
-                <Code2 className="h-9 w-9" strokeWidth={2.5} />
-              ) : (
-                <Palette className="h-9 w-9" strokeWidth={2.5} />
-              )}
-              {/* 标题颜色**不动**（用户口径：这句的蓝色还原回去）——只保留字标字体 */}
-              <h1 className="font-wordmark text-4xl tracking-tight">
-                {meta.title}
-              </h1>
-            </div>
+                      {mode === "code" ? (
+                        <Code2 className="h-9 w-9" strokeWidth={2.5} />
+                      ) : (
+                        <Palette className="h-9 w-9" strokeWidth={2.5} />
+                      )}
+                      {/* 标题颜色**不动**（用户口径：这句的蓝色还原回去）——只保留字标字体 */}
+                      <h1 className="font-wordmark text-4xl tracking-tight">
+                        {meta.title}
+                      </h1>
+                    </div>
 
-            <div className="w-full">
-              {/* 工作目录 + 分支：贴住输入框上沿的标签条（文件夹标签的读法），
+                    <div className="w-full">
+                      {/* 工作目录 + 分支：贴住输入框上沿的标签条（文件夹标签的读法），
                   不再挤进输入框底部那排小控件 */}
-              <div className="flex items-center gap-3 rounded-t-2xl border border-b-0 bg-muted/50 px-3 py-1.5">
-                <WorkDirectorySelect
-                  projects={codeProjects}
-                  selectedProjectId={selectedProjectId}
-                  busy={creatingProject}
-                  onSelect={(projectId) => {
-                    const project = codeProjects.find(
-                      (p) => p.id === projectId,
-                    );
-                    selectWorkDir({
-                      projectId,
-                      name: project?.name ?? projectId,
-                    });
-                  }}
-                  onOpenFolder={() => void pickWorkDirectory()}
-                  onBindPath={bindWorkDirectory}
-                  folderHint={folderPickerHint(nativeDirPicker)}
-                  onClear={clearWorkDirectory}
-                />
-                <GitBranchSelect
-                  accessToken={session?.access_token ?? null}
-                  canvasId={selectedProject?.primaryCanvas.id ?? null}
-                  /* 工作树里「绑为工作目录」：把这份工作树绑成当前项目的工作目录。
+                      <div className="flex items-center gap-3 rounded-t-2xl border border-b-0 bg-muted/50 px-3 py-1.5">
+                        <WorkDirectorySelect
+                          projects={codeProjects}
+                          selectedProjectId={selectedProjectId}
+                          busy={creatingProject}
+                          onSelect={(projectId) => {
+                            const project = codeProjects.find(
+                              (p) => p.id === projectId,
+                            );
+                            selectWorkDir({
+                              projectId,
+                              name: project?.name ?? projectId,
+                            });
+                          }}
+                          onOpenFolder={() => void pickWorkDirectory()}
+                          onBindPath={bindWorkDirectory}
+                          folderHint={folderPickerHint(nativeDirPicker)}
+                          onClear={clearWorkDirectory}
+                        />
+                        <GitBranchSelect
+                          accessToken={session?.access_token ?? null}
+                          canvasId={selectedProject?.primaryCanvas.id ?? null}
+                          /* 工作树里「绑为工作目录」：把这份工作树绑成当前项目的工作目录。
                      之后 agent/终端/git 都在那一份检出里跑——与「填本机路径」同一条
                      projects.work_dir 链，只是路径由工作树挑 */
-                  onBindWorkDir={bindWorktreeToProject}
-                />
-              </div>
-              <div className="@container/composer rounded-b-2xl border bg-background px-3 pt-3 pb-2.5 shadow-sm">
-                <textarea
-                  aria-label="任务描述"
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  onKeyDown={(e) => {
-                    // 同上：输入法组合态的 Enter 是上屏不是发送（isComposing + 229 双信号）
-                    const composing =
-                      e.nativeEvent.isComposing || e.keyCode === 229;
-                    if (e.key === "Enter" && !e.shiftKey && !composing) {
-                      e.preventDefault();
-                      // 斜杠命令在提交前展开（转录里看到的就是实际发出去的）
-                      startTask(expandCommand(prompt, commands).text);
-                    }
-                  }}
-                  rows={2}
-                  placeholder={
-                    mode === "design"
-                      ? "从想法到设计，生成可交付的页面原型。先在左侧创建一个项目。"
-                      : meta.placeholder
-                  }
-                  className="w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                />
-                {/* 正在敲 `/` 时的可用命令提示（有命令才出现；点一条即补全成 `/名字 `） */}
-                {shouldSuggestCommands(prompt) && commands.length > 0 ? (
-                  <p
-                    role="status"
-                    className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground"
-                  >
-                    <span>可用命令：</span>
-                    {commands.map((command) => (
-                      <button
-                        key={command.name}
-                        type="button"
-                        title={
-                          command.description || command.prompt.slice(0, 80)
-                        }
-                        onClick={() => setPrompt(`/${command.name} `)}
-                        className="rounded bg-muted px-1.5 py-0.5 font-mono hover:text-foreground"
-                      >
-                        /{command.name}
-                      </button>
-                    ))}
-                  </p>
-                ) : null}
-                {workDirNotice ? (
-                  <p className="mt-2 text-xs text-destructive">
-                    {workDirNotice}
-                  </p>
-                ) : null}
-                <div className="mt-1.5 flex items-center justify-between">
-                  {/* 左簇：附件 / 权限 / 执行模式 / 模型 / 上下文环 / 思考强度 —— 统一 h-7 与 gap-1.5 */}
-                  <div className="flex min-w-0 items-center gap-1.5">
-                    <button
-                      type="button"
-                      title="附件（即将上线）"
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </button>
-                    <ComposerCompactSelect
-                      ariaLabel="权限档位"
-                      icon={tierIcon(tier)}
-                      options={TIER_OPTIONS}
-                      value={tier}
-                      onChange={(next) => {
-                        void handleTierChange(next);
-                      }}
-                    />
-                    <Select
-                      aria-label="执行模式"
-                      value={executionMode}
-                      onValueChange={(next) => {
-                        if (typeof next === "string")
-                          setExecutionMode(next as ExecutionMode);
-                      }}
-                      items={executionModeOptions(executionModes).map((m) => ({
-                        value: m.id,
-                        label: m.label,
-                      }))}
-                    >
-                      <SelectTrigger
-                        className="h-7 gap-1 border-transparent bg-muted/60 px-2 text-xs"
-                        aria-label="执行模式"
-                        hideChevron
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="min-w-28">
-                        {executionModeOptions(executionModes).map((m) => (
-                          <SelectItem key={m.id} value={m.id}>
-                            {m.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Select
-                      aria-label="模型"
-                      value={model}
-                      onValueChange={(next) => {
-                        if (typeof next === "string") handleModelChange(next);
-                      }}
-                      items={
-                        models.length === 0
-                          ? [{ value: "", label: "未配置模型" }]
-                          : models.map((m) => ({ value: m.id, label: m.name }))
-                      }
-                    >
-                      <SelectTrigger
-                        className="h-7 max-w-[200px] gap-1 border-transparent bg-muted/60 px-2 text-xs"
-                        aria-label="模型"
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="max-w-[300px]">
-                        {models.length === 0 ? (
-                          <>
-                            {/* 目录为空就是「没配过供应商」：只显示「未配置模型」等于把用户
-                                留在死胡同里（打包版首启动就是这个状态），给一条直达设置的路 */}
-                            <SelectItem value="">未配置模型</SelectItem>
-                            <div className="-mx-1 my-1 border-t" />
-                            <button
-                              type="button"
-                              onClick={() => setSettingsTab("providers")}
-                              className="w-full rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-                            >
-                              添加供应商…
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            {(() => {
-                              // BYOK（providerName 存在）分组在前，内置目录在后
-                              const byok = models.filter((m) => m.providerName);
-                              const builtin = models.filter(
-                                (m) => !m.providerName,
-                              );
-                              const badge = (m: (typeof models)[number]) => (
-                                <>
-                                  {m.vision ? (
-                                    <span className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
-                                      视觉
-                                    </span>
-                                  ) : null}
-                                  {m.contextWindow &&
-                                  m.contextWindow >= 1_000_000 ? (
-                                    <span className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
-                                      1M
-                                    </span>
-                                  ) : null}
-                                </>
-                              );
-                              return (
-                                <>
-                                  {byok.length > 0 ? (
+                          onBindWorkDir={bindWorktreeToProject}
+                        />
+                      </div>
+                      <div className="@container/composer rounded-b-2xl border border-input-border bg-input px-2 pt-2 pb-2 shadow-sm">
+                        {/* zcode composer（P5a）：ChatPromptEditor 原件——Lexical 编辑器 +
+                    rounded-2xl 输入壳 + `/` 命令面板（目录接工作区设置的自定义命令，
+                    发送前 expandCommand 展开）+ 发送状态机。chips 走 leadingActions。 */}
+                        <ChatPromptEditor
+                          workspacePath={selectedProject?.workDir ?? ""}
+                          taskId={null}
+                          placeholder={
+                            mode === "design"
+                              ? "从想法到设计，生成可交付的页面原型。先在左侧创建一个项目。"
+                              : meta.placeholder
+                          }
+                          submitting={submitting}
+                          submitDisabled={submitting}
+                          enterSubmits
+                          submitLabel="发送"
+                          showSlashButton
+                          enableMentionPanel={false}
+                          leadingActions={
+                            <>
+                              <button
+                                type="button"
+                                title="附件（即将上线）"
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
+                              >
+                                <Plus className="h-4 w-4" />
+                              </button>
+                              <ComposerCompactSelect
+                                ariaLabel="权限档位"
+                                icon={tierIcon(tier)}
+                                options={TIER_OPTIONS}
+                                value={tier}
+                                onChange={(next) => {
+                                  void handleTierChange(next);
+                                }}
+                              />
+                              <Select
+                                aria-label="执行模式"
+                                value={executionMode}
+                                onValueChange={(next) => {
+                                  if (typeof next === "string")
+                                    setExecutionMode(next as ExecutionMode);
+                                }}
+                                items={executionModeOptions(executionModes).map(
+                                  (m) => ({
+                                    value: m.id,
+                                    label: m.label,
+                                  }),
+                                )}
+                              >
+                                <SelectTrigger
+                                  className="h-7 gap-1 border-transparent bg-muted/60 px-2 text-xs"
+                                  aria-label="执行模式"
+                                  hideChevron
+                                >
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className="min-w-28">
+                                  {executionModeOptions(executionModes).map(
+                                    (m) => (
+                                      <SelectItem key={m.id} value={m.id}>
+                                        {m.label}
+                                      </SelectItem>
+                                    ),
+                                  )}
+                                </SelectContent>
+                              </Select>
+                              <Select
+                                aria-label="模型"
+                                value={model}
+                                onValueChange={(next) => {
+                                  if (typeof next === "string")
+                                    handleModelChange(next);
+                                }}
+                                items={
+                                  models.length === 0
+                                    ? [{ value: "", label: "未配置模型" }]
+                                    : models.map((m) => ({
+                                        value: m.id,
+                                        label: m.name,
+                                      }))
+                                }
+                              >
+                                <SelectTrigger
+                                  className="h-7 max-w-[200px] gap-1 border-transparent bg-muted/60 px-2 text-xs"
+                                  aria-label="模型"
+                                >
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className="max-w-[300px]">
+                                  {models.length === 0 ? (
                                     <>
-                                      <SelectLabel>
-                                        {byok.at(0)?.providerName?.trim() ??
-                                          "我的供应商"}
-                                      </SelectLabel>
-                                      {byok.map((m) => (
-                                        <SelectItem key={m.id} value={m.id}>
-                                          <span className="flex items-center gap-1.5">
-                                            <span>{m.name}</span>
-                                            {badge(m)}
-                                          </span>
-                                        </SelectItem>
-                                      ))}
+                                      <SelectItem value="">
+                                        未配置模型
+                                      </SelectItem>
+                                      <div className="-mx-1 my-1 border-t" />
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setSettingsTab("providers")
+                                        }
+                                        className="w-full rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                                      >
+                                        添加供应商…
+                                      </button>
                                     </>
-                                  ) : null}
-                                  {builtin.length > 0 ? (
+                                  ) : (
                                     <>
-                                      <SelectLabel>内置模型</SelectLabel>
-                                      {builtin.map((m) => (
-                                        <SelectItem key={m.id} value={m.id}>
-                                          <span className="flex items-center gap-1.5">
-                                            <span>{m.name}</span>
-                                            {badge(m)}
-                                          </span>
-                                        </SelectItem>
-                                      ))}
+                                      {(() => {
+                                        const byok = models.filter(
+                                          (m) => m.providerName,
+                                        );
+                                        const builtin = models.filter(
+                                          (m) => !m.providerName,
+                                        );
+                                        const badge = (
+                                          m: (typeof models)[number],
+                                        ) => (
+                                          <>
+                                            {m.vision ? (
+                                              <span className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+                                                视觉
+                                              </span>
+                                            ) : null}
+                                            {m.contextWindow &&
+                                            m.contextWindow >= 1_000_000 ? (
+                                              <span className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+                                                1M
+                                              </span>
+                                            ) : null}
+                                          </>
+                                        );
+                                        return (
+                                          <>
+                                            {byok.length > 0 ? (
+                                              <>
+                                                <SelectLabel>
+                                                  {byok
+                                                    .at(0)
+                                                    ?.providerName?.trim() ??
+                                                    "我的供应商"}
+                                                </SelectLabel>
+                                                {byok.map((m) => (
+                                                  <SelectItem
+                                                    key={m.id}
+                                                    value={m.id}
+                                                  >
+                                                    <span className="flex items-center gap-1.5">
+                                                      <span>{m.name}</span>
+                                                      {badge(m)}
+                                                    </span>
+                                                  </SelectItem>
+                                                ))}
+                                              </>
+                                            ) : null}
+                                            {builtin.length > 0 ? (
+                                              <>
+                                                <SelectLabel>
+                                                  内置模型
+                                                </SelectLabel>
+                                                {builtin.map((m) => (
+                                                  <SelectItem
+                                                    key={m.id}
+                                                    value={m.id}
+                                                  >
+                                                    <span className="flex items-center gap-1.5">
+                                                      <span>{m.name}</span>
+                                                      {badge(m)}
+                                                    </span>
+                                                  </SelectItem>
+                                                ))}
+                                              </>
+                                            ) : null}
+                                          </>
+                                        );
+                                      })()}
+                                      <div className="-mx-1 my-1 border-t" />
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setSettingsTab("providers")
+                                        }
+                                        className="w-full rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                                      >
+                                        管理模型…
+                                      </button>
                                     </>
-                                  ) : null}
-                                </>
-                              );
-                            })()}
-                            <div className="-mx-1 my-1 border-t" />
-                            <button
-                              type="button"
-                              onClick={() => setSettingsTab("providers")}
-                              className="w-full rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-                            >
-                              管理模型…
-                            </button>
-                          </>
-                        )}
-                      </SelectContent>
-                    </Select>
-                    {/* 上下文容量 / 缓存命中（R4-1）：模型旁一个圆形入口 */}
-                    <ContextUsageButton
-                      usage={null}
-                      modelId={model}
-                      contextWindow={modelMeta.contextWindow}
-                      maxOutputTokens={modelMeta.maxOutputTokens}
-                    />
-                    <ComposerCompactSelect
-                      ariaLabel="思考强度"
-                      icon={<Brain className="h-3.5 w-3.5" />}
-                      options={THINKING_OPTIONS}
-                      value={thinking}
-                      onChange={handleThinkingChange}
-                      contentClassName="min-w-24"
-                      progress={THINKING_PROGRESS[thinking] ?? 0}
-                    />
-                  </div>
-                  {/* 右簇：麦克风 / 发送 —— 与左簇同一个 h-7 口径 */}
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      title="语音（即将上线）"
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
-                    >
-                      <Mic className="h-4 w-4" />
-                    </button>
-                    {submitting ? (
-                      <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        aria-label="发送"
-                        disabled={!prompt.trim()}
-                        onClick={() =>
-                          startTask(expandCommand(prompt, commands).text)
-                        }
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground disabled:opacity-50"
-                      >
-                        <Send className="h-4 w-4" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
+                                  )}
+                                </SelectContent>
+                              </Select>
+                              <ContextUsageButton
+                                usage={null}
+                                modelId={model}
+                                contextWindow={modelMeta.contextWindow}
+                                maxOutputTokens={modelMeta.maxOutputTokens}
+                              />
+                              <ComposerCompactSelect
+                                ariaLabel="思考强度"
+                                icon={<Brain className="h-3.5 w-3.5" />}
+                                options={THINKING_OPTIONS}
+                                value={thinking}
+                                onChange={handleThinkingChange}
+                                contentClassName="min-w-24"
+                                progress={THINKING_PROGRESS[thinking] ?? 0}
+                              />
+                              <button
+                                type="button"
+                                title="语音（即将上线）"
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
+                              >
+                                <Mic className="h-4 w-4" />
+                              </button>
+                            </>
+                          }
+                          onChange={setPrompt}
+                          onSubmit={(value: string) => {
+                            // `/命令 args` 在提交前展开（转录里看到的就是实际发出去的）
+                            const expanded = expandCommand(
+                              value,
+                              commands,
+                            ).text;
+                            if (!expanded.trim()) return false;
+                            startTask(expanded);
+                            return true;
+                          }}
+                        />
+                      </div>
+                    </div>
 
-            <div className="mt-5 flex items-center gap-3">
-              {meta.chips.map((chip) => (
-                <button
-                  key={chip}
-                  type="button"
-                  onClick={() => setPrompt(chip)}
-                  className="rounded-full border px-4 py-1.5 text-xs text-muted-foreground hover:bg-muted"
+                    <div className="mt-5 flex items-center gap-3">
+                      {meta.chips.map((chip) => (
+                        <button
+                          key={chip}
+                          type="button"
+                          onClick={() => setPrompt(chip)}
+                          className="rounded-full border px-4 py-1.5 text-xs text-muted-foreground hover:bg-muted"
+                        >
+                          {chip}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </main>
+
+              {/**
+               * 「完全访问」的风险确认（用户口径：别用括号交代风险，改成弹窗 + 确定）。
+               * 文案不用 markdown 语法（`**…**` 会原样显示出来）；按钮用仓库统一的 Button。
+               */}
+              <Dialog
+                open={pendingFullAccess}
+                onOpenChange={setPendingFullAccess}
+              >
+                <DialogContent className="max-w-sm">
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                      <ShieldAlert className="h-4 w-4 text-destructive" />
+                      开启「完全访问」？
+                    </DialogTitle>
+                    <DialogDescription>
+                      这一档不再逐条询问：改文件、跑命令、调用外部工具都会直接执行，出问题无法回滚。
+                    </DialogDescription>
+                  </DialogHeader>
+                  <DialogFooter>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPendingFullAccess(false)}
+                    >
+                      取消
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => {
+                        setPendingFullAccess(false);
+                        void applyTier("full-access");
+                      }}
+                    >
+                      仍要开启
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+
+              <SettingsModal
+                open={settingsTab !== null}
+                initialTab={settingsTab === null ? undefined : settingsTab}
+                onClose={() => setSettingsTab(null)}
+                accessToken={session?.access_token ?? null}
+                /* 索引库按「画布 = 工作目录」建：Code 模式取对话绑定的项目，Design 取选中项目 */
+                activeCanvasId={
+                  (mode === "code"
+                    ? (conversationProject ?? selectedProject)
+                    : selectedProject
+                  )?.primaryCanvas?.id ?? null
+                }
+                /* 引导页的状态来自真实数据：有没有工作目录项目、已有多少会话 */
+                hasWorkDir={codeProjects.length > 0}
+                conversationCount={tasks.length}
+                isAdmin={isPlatformAdmin}
+                onOpenAdmin={() => router.push("/admin")}
+                key={mode}
+              />
+              {pluginsOpen ? (
+                <PluginMarketModal
+                  open={pluginsOpen}
+                  onUse={handlePluginUse}
+                  onClose={() => setPluginsOpen(false)}
+                  accessToken={session?.access_token ?? null}
+                  // 「从工作目录安装」用：服务端据此解析沙箱目录
+                  canvasId={selectedProject?.primaryCanvas?.id ?? null}
+                  isAdmin={isPlatformAdmin}
+                  // 装/卸 flow 插件后立即重估 Flow 模式入口（不等下次进页面）
+                  onPluginsChanged={refreshFlowEntry}
+                />
+              ) : null}
+              {skillsOpen ? (
+                <SkillsModal
+                  open={skillsOpen}
+                  onClose={() => setSkillsOpen(false)}
+                  accessToken={session?.access_token ?? null}
+                  // 「从工作目录导入」用：两类项目都有主画布，服务端据此解析沙箱目录
+                  canvasId={selectedProject?.primaryCanvas?.id ?? null}
+                />
+              ) : null}
+              {/* MCP 管理：从「设置」挪到侧栏（与技能并列），页面带精选目录与官方注册表 */}
+              {mcpOpen ? (
+                <McpModal
+                  open={mcpOpen}
+                  onClose={() => setMcpOpen(false)}
+                  accessToken={session?.access_token ?? null}
+                />
+              ) : null}
+              <ComposerContextMenu
+                state={composerMenu.state}
+                items={composerMenu.items}
+                onRun={(item) => void composerMenu.run(item)}
+                onClose={composerMenu.close}
+              />
+              <ChatContextMenu
+                state={chatMenu.state}
+                messages={(activeTask?.messages ?? []).map((message) => ({
+                  role: message.role,
+                  text: message.text,
+                }))}
+                containerRef={codeMessagesRef}
+                onPasteText={(text) => setFollowUp((prev) => `${prev}${text}`)}
+                onNotice={(message) => setChatNotice(message)}
+                onClose={chatMenu.close}
+              />
+              {chatNotice ? (
+                <div
+                  role="status"
+                  className="fixed bottom-6 left-1/2 z-[3000] -translate-x-1/2 rounded-xl border border-border bg-card px-4 py-2 text-xs text-foreground shadow-lg"
                 >
-                  {chip}
-                </button>
-              ))}
+                  {chatNotice}
+                </div>
+              ) : null}
             </div>
-          </div>
-        )}
-      </main>
-
-      {/**
-       * 「完全访问」的风险确认（用户口径：别用括号交代风险，改成弹窗 + 确定）。
-       * 文案不用 markdown 语法（`**…**` 会原样显示出来）；按钮用仓库统一的 Button。
-       */}
-      <Dialog open={pendingFullAccess} onOpenChange={setPendingFullAccess}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ShieldAlert className="h-4 w-4 text-destructive" />
-              开启「完全访问」？
-            </DialogTitle>
-            <DialogDescription>
-              这一档不再逐条询问：改文件、跑命令、调用外部工具都会直接执行，出问题无法回滚。
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setPendingFullAccess(false)}
-            >
-              取消
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              size="sm"
-              onClick={() => {
-                setPendingFullAccess(false);
-                void applyTier("full-access");
-              }}
-            >
-              仍要开启
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <SettingsModal
-        open={settingsTab !== null}
-        initialTab={settingsTab === null ? undefined : settingsTab}
-        onClose={() => setSettingsTab(null)}
-        accessToken={session?.access_token ?? null}
-        /* 索引库按「画布 = 工作目录」建：Code 模式取对话绑定的项目，Design 取选中项目 */
-        activeCanvasId={
-          (mode === "code"
-            ? (conversationProject ?? selectedProject)
-            : selectedProject
-          )?.primaryCanvas?.id ?? null
-        }
-        /* 引导页的状态来自真实数据：有没有工作目录项目、已有多少会话 */
-        hasWorkDir={codeProjects.length > 0}
-        conversationCount={tasks.length}
-        isAdmin={isPlatformAdmin}
-        onOpenAdmin={() => router.push("/admin")}
-        key={mode}
-      />
-      {pluginsOpen ? (
-        <PluginMarketModal
-          open={pluginsOpen}
-          onUse={handlePluginUse}
-          onClose={() => setPluginsOpen(false)}
-          accessToken={session?.access_token ?? null}
-          // 「从工作目录安装」用：服务端据此解析沙箱目录
-          canvasId={selectedProject?.primaryCanvas?.id ?? null}
-          isAdmin={isPlatformAdmin}
-          // 装/卸 flow 插件后立即重估 Flow 模式入口（不等下次进页面）
-          onPluginsChanged={refreshFlowEntry}
-        />
-      ) : null}
-      {skillsOpen ? (
-        <SkillsModal
-          open={skillsOpen}
-          onClose={() => setSkillsOpen(false)}
-          accessToken={session?.access_token ?? null}
-          // 「从工作目录导入」用：两类项目都有主画布，服务端据此解析沙箱目录
-          canvasId={selectedProject?.primaryCanvas?.id ?? null}
-        />
-      ) : null}
-      {/* MCP 管理：从「设置」挪到侧栏（与技能并列），页面带精选目录与官方注册表 */}
-      {mcpOpen ? (
-        <McpModal
-          open={mcpOpen}
-          onClose={() => setMcpOpen(false)}
-          accessToken={session?.access_token ?? null}
-        />
-      ) : null}
-      <ComposerContextMenu
-        state={composerMenu.state}
-        items={composerMenu.items}
-        onRun={(item) => void composerMenu.run(item)}
-        onClose={composerMenu.close}
-      />
-      <ChatContextMenu
-        state={chatMenu.state}
-        messages={(activeTask?.messages ?? []).map((message) => ({
-          role: message.role,
-          text: message.text,
-        }))}
-        containerRef={codeMessagesRef}
-        onPasteText={(text) => setFollowUp((prev) => `${prev}${text}`)}
-        onNotice={(message) => setChatNotice(message)}
-        onClose={chatMenu.close}
-      />
-      {chatNotice ? (
-        <div
-          role="status"
-          className="fixed bottom-6 left-1/2 z-[3000] -translate-x-1/2 rounded-xl border border-border bg-card px-4 py-2 text-xs text-foreground shadow-lg"
-        >
-          {chatNotice}
-        </div>
-      ) : null}
-    </div>
+          </TabStoreProvider>
+        </ServiceProvider>
+      </PlatformProvider>
+    </TooltipProvider>
   );
 }

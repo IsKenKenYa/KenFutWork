@@ -261,7 +261,7 @@ function buildTextPreview(
   return {
     type: "text",
     title,
-    ...(path !== undefined ? { path } : {}),
+    ...(path === undefined ? {} : { path }),
     content,
     language: inferCodeLanguage(path, content),
   };
@@ -530,7 +530,7 @@ export function getToolCallCodePreview(
       return {
         type: "patch",
         title: viewerTitle,
-        ...(resolvedPath !== undefined ? { path: resolvedPath } : {}),
+        ...(resolvedPath === undefined ? {} : { path: resolvedPath }),
         patch,
       };
     }
@@ -546,7 +546,7 @@ export function getToolCallCodePreview(
     return {
       type: "patch",
       title: viewerTitle,
-      ...(resolvedPath !== undefined ? { path: resolvedPath } : {}),
+      ...(resolvedPath === undefined ? {} : { path: resolvedPath }),
       patch: explicitPatch,
     };
   }
@@ -565,7 +565,7 @@ export function getToolCallCodePreview(
         return {
           type: "patch",
           title: viewerTitle,
-          ...(resolvedPath !== undefined ? { path: resolvedPath } : {}),
+          ...(resolvedPath === undefined ? {} : { path: resolvedPath }),
           patch,
         };
       }

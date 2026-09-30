@@ -373,7 +373,7 @@ export function ExecuteToolCallBlock(context: ToolCallBlockRenderContext) {
         showIcon={context.showIcon !== false}
         canToggle={!isOfficeMode && (context.canToggle ?? true)}
         forceOpen={!isOfficeMode && (context.forceOpen ?? false)}
-        hideSecondaryTextWhenOpen
+        hideSecondaryTextWhenOpen={true}
         kindLabel={
           (isOfficeMode
             ? intl.formatMessage({
@@ -404,7 +404,7 @@ export function ExecuteToolCallBlock(context: ToolCallBlockRenderContext) {
         title={isOfficeMode ? undefined : toolCall.title}
         renderContent={renderContent}
       />
-      {!isOfficeMode ? (
+      {isOfficeMode ? null : (
         <ToolSnapshotFieldNotice
           refs={toolCall.snapshotRefs ?? []}
           onLoadFullToolCallFields={
@@ -413,7 +413,7 @@ export function ExecuteToolCallBlock(context: ToolCallBlockRenderContext) {
               : undefined
           }
         />
-      ) : null}
+      )}
       {/* <pre className="text-[8px]">{JSON.stringify(toolCall, null, 2)}</pre> */}
     </>
   );

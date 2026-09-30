@@ -272,7 +272,7 @@ function ToolLayoutComponent({
         // 这样 edit 卡片保持和成功态一致的展开逻辑，同时仍然能在 hover 时拿到报错原因。
         <TooltipProvider>
           <Tooltip>
-            <TooltipTrigger asChild>
+            <TooltipTrigger asChild={true}>
               <span className="whitespace-nowrap underline decoration-dotted underline-offset-2 cursor-help">
                 {statusLabel}
               </span>

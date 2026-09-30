@@ -298,7 +298,7 @@ export function ChangesGroupToolCallBlock(context: ToolCallBlockRenderContext) {
             theme={context.theme}
             codePreviewSettings={context.codePreviewSettings}
             showIcon={false}
-            animateDiffCountOnMount
+            animateDiffCountOnMount={true}
             onOpenCodeViewer={context.onOpenCodeViewer}
             onOpenFileLink={context.onOpenFileLink}
             onOpenBrowserUrl={context.onOpenBrowserUrl}
@@ -337,7 +337,7 @@ export function ChangesGroupToolCallBlock(context: ToolCallBlockRenderContext) {
           ? runningDiffCount
           : undefined
       }
-      hideDiffCountWhenOpen
+      hideDiffCountWhenOpen={true}
       animateSummaryContent={context.isRunning}
       disableSummaryContentAnimation={context.disableSummaryContentAnimation}
       summaryContentKey={`changes:${toolCall.toolId}:${context.isRunning ? `${latest?.child.toolCall.toolId ?? "running"}:${actionText ?? "changing"}:${latestFile?.path ?? "file"}` : files.map((file) => file.path).join("|")}`}

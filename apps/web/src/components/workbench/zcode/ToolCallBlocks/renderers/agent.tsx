@@ -85,7 +85,7 @@ function AgentChildToolList({
           onOpenBrowserUrl={onOpenBrowserUrl}
           onOpenAutomationsMain={onOpenAutomationsMain}
           onLoadFullToolCallFields={onLoadFullToolCallFields}
-          suppressSourceLabel
+          suppressSourceLabel={true}
         />
       ))}
     </div>
@@ -127,15 +127,15 @@ export function AgentActivitySection({
           <MessageResponse
             className="px-3 py-2 min-w-0 break-words text-ui-base [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
             workspacePath={workspacePath}
-            {...(theme !== undefined ? { theme } : {})}
-            {...(codePreviewSettings !== undefined
-              ? { codePreviewSettings }
-              : {})}
-            {...(onOpenCodeViewer !== undefined ? { onOpenCodeViewer } : {})}
-            {...(onOpenFileLink !== undefined ? { onOpenFileLink } : {})}
-            {...(onOpenBrowserUrl !== undefined
-              ? { onOpenExternalUrl: onOpenBrowserUrl }
-              : {})}
+            {...(theme === undefined ? {} : { theme })}
+            {...(codePreviewSettings === undefined
+              ? {}
+              : { codePreviewSettings })}
+            {...(onOpenCodeViewer === undefined ? {} : { onOpenCodeViewer })}
+            {...(onOpenFileLink === undefined ? {} : { onOpenFileLink })}
+            {...(onOpenBrowserUrl === undefined
+              ? {}
+              : { onOpenExternalUrl: onOpenBrowserUrl })}
           >
             {content}
           </MessageResponse>
@@ -457,7 +457,7 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
         kindDetail={agentNameDetail}
         expandedKindDetail={agentNameDetail}
         sourceLabel={sourceLabel}
-        autoCollapseOnComplete
+        autoCollapseOnComplete={true}
         primaryText={
           collapsedChildSummary
             ? collapsedChildSummary.primaryText
@@ -467,7 +467,7 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
         secondaryText={collapsedChildSummary?.secondaryText}
         expandedSecondaryText={null}
         summaryContentSeparator="·"
-        animateSummaryContent
+        animateSummaryContent={true}
         disableSummaryContentAnimation={context.disableSummaryContentAnimation}
         summaryContentKey={
           collapsedChildSummary?.animationKey ??

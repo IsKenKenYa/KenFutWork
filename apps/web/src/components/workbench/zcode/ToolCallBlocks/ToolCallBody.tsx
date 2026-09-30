@@ -122,18 +122,18 @@ function InlineCodeContent({
         <MessageResponse
           className="min-w-0 break-words"
           workspacePath={workspacePath}
-          {...(theme !== undefined ? { theme } : {})}
-          {...(codePreviewSettings !== undefined
-            ? { codePreviewSettings }
-            : {})}
-          {...(onOpenCodeViewer !== undefined ? { onOpenCodeViewer } : {})}
+          {...(theme === undefined ? {} : { theme })}
+          {...(codePreviewSettings === undefined
+            ? {}
+            : { codePreviewSettings })}
+          {...(onOpenCodeViewer === undefined ? {} : { onOpenCodeViewer })}
           // 工具输出里的 markdown 文件链接之前只拿到 onOpenCodeViewer，
           // 点击会退化成 code viewer fallback；有 diff source 上下文时容易打开变更视图。
           // 这里优先交给 shell 的文件链接分流，文件看内容，目录走文件树 reveal。
-          {...(onOpenFileLink !== undefined ? { onOpenFileLink } : {})}
-          {...(onOpenBrowserUrl !== undefined
-            ? { onOpenExternalUrl: onOpenBrowserUrl }
-            : {})}
+          {...(onOpenFileLink === undefined ? {} : { onOpenFileLink })}
+          {...(onOpenBrowserUrl === undefined
+            ? {}
+            : { onOpenExternalUrl: onOpenBrowserUrl })}
         >
           {preview.content}
         </MessageResponse>
@@ -215,13 +215,13 @@ function InlinePlanResult({
       <MessageResponse
         className="size-full min-w-0 break-words whitespace-normal [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
         workspacePath={workspacePath}
-        {...(theme !== undefined ? { theme } : {})}
-        {...(codePreviewSettings !== undefined ? { codePreviewSettings } : {})}
-        {...(onOpenCodeViewer !== undefined ? { onOpenCodeViewer } : {})}
-        {...(onOpenFileLink !== undefined ? { onOpenFileLink } : {})}
-        {...(onOpenBrowserUrl !== undefined
-          ? { onOpenExternalUrl: onOpenBrowserUrl }
-          : {})}
+        {...(theme === undefined ? {} : { theme })}
+        {...(codePreviewSettings === undefined ? {} : { codePreviewSettings })}
+        {...(onOpenCodeViewer === undefined ? {} : { onOpenCodeViewer })}
+        {...(onOpenFileLink === undefined ? {} : { onOpenFileLink })}
+        {...(onOpenBrowserUrl === undefined
+          ? {}
+          : { onOpenExternalUrl: onOpenBrowserUrl })}
       >
         {plan}
       </MessageResponse>

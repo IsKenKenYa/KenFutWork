@@ -1044,19 +1044,19 @@ export function buildMessageFileLinkTarget(input: {
   return {
     path: input.path,
     label: input.label,
-    ...(pathKind !== undefined ? { pathKind } : {}),
+    ...(pathKind === undefined ? {} : { pathKind }),
     relativePath: input.workspacePath
       ? getWorkspaceFileRelativePath(input.workspacePath, input.path)
       : input.label,
-    ...(input.workspacePath !== undefined
-      ? { workspacePath: input.workspacePath }
-      : {}),
-    ...(input.workspaceIdentity !== undefined
-      ? { workspaceIdentity: input.workspaceIdentity }
-      : {}),
-    ...(input.workspaceRemoteSessionId !== undefined
-      ? { workspaceRemoteSessionId: input.workspaceRemoteSessionId }
-      : {}),
+    ...(input.workspacePath === undefined
+      ? {}
+      : { workspacePath: input.workspacePath }),
+    ...(input.workspaceIdentity === undefined
+      ? {}
+      : { workspaceIdentity: input.workspaceIdentity }),
+    ...(input.workspaceRemoteSessionId === undefined
+      ? {}
+      : { workspaceRemoteSessionId: input.workspaceRemoteSessionId }),
   };
 }
 
@@ -1082,10 +1082,10 @@ export async function openMessageFileLinkInEditor({
   const fileStat = await statFile({ path: fileLink.path });
   return openInEditor(editorId, fileLink.path, {
     pathKind: fileStat.type,
-    ...(remoteTarget !== undefined ? { remoteTarget } : {}),
-    ...(fileLink.workspaceIdentity !== undefined
-      ? { workspaceIdentity: fileLink.workspaceIdentity }
-      : {}),
+    ...(remoteTarget === undefined ? {} : { remoteTarget }),
+    ...(fileLink.workspaceIdentity === undefined
+      ? {}
+      : { workspaceIdentity: fileLink.workspaceIdentity }),
   });
 }
 
@@ -1154,7 +1154,7 @@ function MessageExternalLink({
 
   return (
     <ContextMenu>
-      <ContextMenuTrigger asChild>
+      <ContextMenuTrigger asChild={true}>
         <button
           type="button"
           className={cn(
@@ -1237,15 +1237,15 @@ function MessageFileLink({
   const services = useOptionalServices();
   const fileActions = useFileContextActions();
   const openInEditorContext = useWorkspaceOpenInEditorTarget({
-    ...(fileLink.workspacePath !== undefined
-      ? { workspacePath: fileLink.workspacePath }
-      : {}),
-    ...(fileLink.workspaceIdentity !== undefined
-      ? { workspaceIdentity: fileLink.workspaceIdentity }
-      : {}),
-    ...(fileLink.workspaceRemoteSessionId !== undefined
-      ? { workspaceRemoteSessionId: fileLink.workspaceRemoteSessionId }
-      : {}),
+    ...(fileLink.workspacePath === undefined
+      ? {}
+      : { workspacePath: fileLink.workspacePath }),
+    ...(fileLink.workspaceIdentity === undefined
+      ? {}
+      : { workspaceIdentity: fileLink.workspaceIdentity }),
+    ...(fileLink.workspaceRemoteSessionId === undefined
+      ? {}
+      : { workspaceRemoteSessionId: fileLink.workspaceRemoteSessionId }),
   });
   const [editors, setEditors] = useState<EditorInfo[]>([]);
   const [editorsLoaded, setEditorsLoaded] = useState(false);
@@ -1257,9 +1257,9 @@ function MessageFileLink({
         : resolveWorkspaceEditorSelection({
             installedEditors: editors,
             selectedEditorId: null,
-            ...(openInEditorContext.remoteTarget !== undefined
-              ? { remoteTarget: openInEditorContext.remoteTarget }
-              : {}),
+            ...(openInEditorContext.remoteTarget === undefined
+              ? {}
+              : { remoteTarget: openInEditorContext.remoteTarget }),
           }).availableEditors,
     [editors, openInEditorContext],
   );
@@ -1333,7 +1333,7 @@ function MessageFileLink({
 
   return (
     <ContextMenu onOpenChange={(open) => open && void loadEditors()}>
-      <ContextMenuTrigger asChild>
+      <ContextMenuTrigger asChild={true}>
         <MessageFileLinkButton
           className={className}
           fileIconSrc={fileIconSrc}
@@ -1363,7 +1363,7 @@ function MessageFileLink({
             </ContextMenuItem>
           ))
         ) : (
-          <ContextMenuItem disabled>
+          <ContextMenuItem disabled={true}>
             {intl.formatMessage({
               id: loadingEditors
                 ? "common.loading"
@@ -1597,13 +1597,13 @@ export const MessageResponse = memo(
           codeBlockTheme,
           fontSizePx: codePreviewSettings.fontSizePx,
           renderZCodeFileCitations,
-          ...(sessionId !== undefined ? { sessionId } : {}),
-          ...(workspacePath !== undefined ? { workspacePath } : {}),
-          ...(workspaceHomePath !== undefined ? { workspaceHomePath } : {}),
-          ...(workspaceIdentity !== undefined ? { workspaceIdentity } : {}),
-          ...(workspaceRemoteSessionId !== undefined
-            ? { workspaceRemoteSessionId }
-            : {}),
+          ...(sessionId === undefined ? {} : { sessionId }),
+          ...(workspacePath === undefined ? {} : { workspacePath }),
+          ...(workspaceHomePath === undefined ? {} : { workspaceHomePath }),
+          ...(workspaceIdentity === undefined ? {} : { workspaceIdentity }),
+          ...(workspaceRemoteSessionId === undefined
+            ? {}
+            : { workspaceRemoteSessionId }),
           wrapLongLines,
         }) + (forceCodeWrap ? ":wrap-locked" : "")
       );
@@ -1636,9 +1636,9 @@ export const MessageResponse = memo(
             workspacePath,
             resolvedHref,
             {
-              ...(workspaceHomePath !== undefined
-                ? { homePath: workspaceHomePath }
-                : {}),
+              ...(workspaceHomePath === undefined
+                ? {}
+                : { homePath: workspaceHomePath }),
             },
           );
 
@@ -1650,11 +1650,11 @@ export const MessageResponse = memo(
               href: resolvedHref,
               path: fileLink.path,
               label: labelText,
-              ...(workspacePath !== undefined ? { workspacePath } : {}),
-              ...(workspaceIdentity !== undefined ? { workspaceIdentity } : {}),
-              ...(workspaceRemoteSessionId !== undefined
-                ? { workspaceRemoteSessionId }
-                : {}),
+              ...(workspacePath === undefined ? {} : { workspacePath }),
+              ...(workspaceIdentity === undefined ? {} : { workspaceIdentity }),
+              ...(workspaceRemoteSessionId === undefined
+                ? {}
+                : { workspaceRemoteSessionId }),
             });
             const fileIconSrc =
               fileLinkTarget.pathKind === "directory"
@@ -1662,9 +1662,9 @@ export const MessageResponse = memo(
                 : descriptor.fileIconSrc;
             return (
               <MessageFileLink
-                {...(linkClassName !== undefined
-                  ? { className: linkClassName }
-                  : {})}
+                {...(linkClassName === undefined
+                  ? {}
+                  : { className: linkClassName })}
                 fileIconSrc={fileIconSrc}
                 fileLink={fileLinkTarget}
                 onOpen={() => {
@@ -1676,13 +1676,13 @@ export const MessageResponse = memo(
                     type: "file",
                     title: getPathLeaf(fileLink.path),
                     path: fileLink.path,
-                    ...(workspacePath !== undefined ? { workspacePath } : {}),
-                    ...(workspaceIdentity !== undefined
-                      ? { workspaceIdentity }
-                      : {}),
-                    ...(workspaceRemoteSessionId !== undefined
-                      ? { workspaceRemoteSessionId }
-                      : {}),
+                    ...(workspacePath === undefined ? {} : { workspacePath }),
+                    ...(workspaceIdentity === undefined
+                      ? {}
+                      : { workspaceIdentity }),
+                    ...(workspaceRemoteSessionId === undefined
+                      ? {}
+                      : { workspaceRemoteSessionId }),
                   });
                 }}
               />
@@ -1713,10 +1713,10 @@ export const MessageResponse = memo(
         img: (imageProps: MarkdownImageProps) => (
           <MarkdownImage
             {...imageProps}
-            {...(workspacePath !== undefined ? { workspacePath } : {})}
-            {...(workspaceHomePath !== undefined ? { workspaceHomePath } : {})}
-            {...(sessionId !== undefined ? { sessionId } : {})}
-            {...(readAttachment !== undefined ? { readAttachment } : {})}
+            {...(workspacePath === undefined ? {} : { workspacePath })}
+            {...(workspaceHomePath === undefined ? {} : { workspaceHomePath })}
+            {...(sessionId === undefined ? {} : { sessionId })}
+            {...(readAttachment === undefined ? {} : { readAttachment })}
           />
         ),
         p: MarkdownImageParagraph,

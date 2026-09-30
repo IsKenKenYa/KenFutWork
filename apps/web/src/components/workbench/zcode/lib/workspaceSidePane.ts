@@ -660,12 +660,12 @@ function createBrowserSidePaneTab(options?: {
   return {
     id: options?.tabId ?? `browser:${createUuid()}`,
     type: "browser",
-    ...(options?.ownerTaskId !== undefined
-      ? { ownerTaskId: options.ownerTaskId }
-      : {}),
-    ...(options?.workspaceKey !== undefined
-      ? { workspaceKey: options.workspaceKey }
-      : {}),
+    ...(options?.ownerTaskId === undefined
+      ? {}
+      : { ownerTaskId: options.ownerTaskId }),
+    ...(options?.workspaceKey === undefined
+      ? {}
+      : { workspaceKey: options.workspaceKey }),
     // human tab 过去从不写 remoteSessionId，而 stampSidePaneTabsOwnership 只补
     // ownerTaskId 未定义的 tab —— 凡是创建时就带 ownerTaskId 的（打开链接/终端 URL/popup/share）
     // 远程下该字段永久缺失。attach 侧 renderer 会用 workspaceRemoteSessionId 兜底冻结 main 的
@@ -1400,31 +1400,31 @@ function openBrowserUseSidePane(
     sessionId: options.sessionId,
     tabId: options.tabId,
     ...(options.browserId ? { browserId: options.browserId } : {}),
-    ...(options.browserGeneration !== undefined
-      ? { browserGeneration: options.browserGeneration }
-      : {}),
+    ...(options.browserGeneration === undefined
+      ? {}
+      : { browserGeneration: options.browserGeneration }),
     openedAt: existing?.openedAt ?? Date.now(),
     ...((options.title ?? existing?.title)
       ? { title: options.title ?? existing?.title ?? null }
       : {}),
-    ...(existing?.faviconUrl !== undefined
-      ? { faviconUrl: existing.faviconUrl }
-      : {}),
-    ...(existing?.residency !== undefined
-      ? { residency: existing.residency }
-      : {}),
-    ...(existing?.residencyGeneration !== undefined
-      ? { residencyGeneration: existing.residencyGeneration }
-      : {}),
-    ...(existing?.browserUseOperationUntil !== undefined
-      ? { browserUseOperationUntil: existing.browserUseOperationUntil }
-      : {}),
-    ...(existing?.browserUseResizeBaselineVersion !== undefined
-      ? {
+    ...(existing?.faviconUrl === undefined
+      ? {}
+      : { faviconUrl: existing.faviconUrl }),
+    ...(existing?.residency === undefined
+      ? {}
+      : { residency: existing.residency }),
+    ...(existing?.residencyGeneration === undefined
+      ? {}
+      : { residencyGeneration: existing.residencyGeneration }),
+    ...(existing?.browserUseOperationUntil === undefined
+      ? {}
+      : { browserUseOperationUntil: existing.browserUseOperationUntil }),
+    ...(existing?.browserUseResizeBaselineVersion === undefined
+      ? {}
+      : {
           browserUseResizeBaselineVersion:
             existing.browserUseResizeBaselineVersion,
-        }
-      : {}),
+        }),
   };
 
   if (options.activate !== false) {

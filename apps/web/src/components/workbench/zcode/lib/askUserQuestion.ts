@@ -97,8 +97,8 @@ function normalizeOption(
   return {
     id,
     label,
-    ...(description !== undefined ? { description } : {}),
-    ...(placeholder !== undefined ? { placeholder } : {}),
+    ...(description === undefined ? {} : { description }),
+    ...(placeholder === undefined ? {} : { placeholder }),
     requiresInput:
       readBoolean(value, CUSTOM_INPUT_FLAGS) ||
       (index >= 0 && placeholder !== undefined),
@@ -281,7 +281,7 @@ function normalizeQuestion(
     question,
     type,
     options: normalizedOptions,
-    ...(customInput !== undefined ? { customInput } : {}),
+    ...(customInput === undefined ? {} : { customInput }),
   };
 }
 
@@ -293,7 +293,7 @@ export function normalizeAskUserQuestionInput(
     questions: readQuestions(input)
       .map((question, index) => normalizeQuestion(question, index))
       .filter((question): question is AskUserQuestionItem => question !== null),
-    ...(answers !== undefined ? { answers } : {}),
+    ...(answers === undefined ? {} : { answers }),
   };
 }
 

@@ -351,7 +351,7 @@ export function EditToolCallBlock(context: ToolCallBlockRenderContext) {
         kindLabel={context.kindLabelOverride ?? kindLabel}
         sourceLabel={context.sourceLabel}
         primaryText={primaryText}
-        prioritizePrimaryText
+        prioritizePrimaryText={true}
         expandedPrimaryText={expandedPrimaryText}
         secondaryText={secondaryText}
         diffCount={context.isOfficeMode ? undefined : diffCount}
@@ -503,7 +503,7 @@ function EditFileSummaryBlock({
         kindLabel={kindLabel}
         sourceLabel={sourceLabel}
         primaryText={primaryText}
-        prioritizePrimaryText
+        prioritizePrimaryText={true}
         secondaryText={secondaryText}
         diffCount={diffCount}
         statusLabel={statusLabel}

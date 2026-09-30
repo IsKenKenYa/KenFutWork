@@ -218,9 +218,9 @@ export function extractAssistantFileReferences(
     );
     const kind = path
       ? resolveZCodeFileCitationPreviewKind({
-          ...(citation.artifactKind !== undefined
-            ? { artifactKind: citation.artifactKind }
-            : {}),
+          ...(citation.artifactKind === undefined
+            ? {}
+            : { artifactKind: citation.artifactKind }),
           path,
         })
       : null;

@@ -181,7 +181,7 @@ export function TaskStopToolCallBlock(context: ToolCallBlockRenderContext) {
                 id: "chat.toolCall.taskStop.taskType",
               })}
               value={taskType}
-              mono
+              mono={true}
             />
           ) : null}
           {taskDetail ? (

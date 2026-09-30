@@ -366,7 +366,7 @@ export const CodeBlock = ({
           {shouldRenderMermaid ? (
             <MermaidBlock
               code={code}
-              {...(appTheme !== undefined ? { theme: appTheme } : {})}
+              {...(appTheme === undefined ? {} : { theme: appTheme })}
               onOpenPreview={openMermaidPreview}
               onPreviewSvgChange={setMermaidPreviewSvg}
               // className={cn(children ? "border-t border-border" : null)}
@@ -377,11 +377,11 @@ export const CodeBlock = ({
               enableSyntaxHighlighting={enableSyntaxHighlighting}
               language={language}
               showLineNumbers={showLineNumbers}
-              {...(theme !== undefined ? { theme } : {})}
+              {...(theme === undefined ? {} : { theme })}
               wrapLongLines={isWrapped}
               focusedRange={focusedRange}
-              {...(focusRequestId !== undefined ? { focusRequestId } : {})}
-              {...(markedLines !== undefined ? { markedLines } : {})}
+              {...(focusRequestId === undefined ? {} : { focusRequestId })}
+              {...(markedLines === undefined ? {} : { markedLines })}
               className="bg-transparent"
               fontSizePx={fontSizePx}
               // markdown 代码块外层是 bg-card，但 CodeViewer 默认把 @pierre/diffs 背景设成 background。

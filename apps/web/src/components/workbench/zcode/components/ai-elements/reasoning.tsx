@@ -120,8 +120,8 @@ export const Reasoning = memo(
     const isOpenControlled = open !== undefined;
     const [isOpen, setIsOpen] = useControllableState<boolean>({
       defaultProp: defaultOpen,
-      ...(onOpenChange !== undefined ? { onChange: onOpenChange } : {}),
-      ...(open !== undefined ? { prop: open } : {}),
+      ...(onOpenChange === undefined ? {} : { onChange: onOpenChange }),
+      ...(open === undefined ? {} : { prop: open }),
     });
     const [duration, setDuration] = useControllableState<number | undefined>({
       defaultProp: undefined,
@@ -438,7 +438,7 @@ export const ReasoningTrigger = memo(
                       {streamingSummary.text}
                     </span>
                   }
-                  enabled
+                  enabled={true}
                 />
               </span>
             ) : null}
@@ -588,8 +588,8 @@ export const ReasoningContent = memo(
         data-reasoning-content="true"
         data-reasoning-content-variant={variant}
         data-testid={TID_CHAT_REASONING_CONTENT}
-        {...(forceMount !== undefined ? { forceMount } : {})}
-        {...(className !== undefined ? { className } : {})}
+        {...(forceMount === undefined ? {} : { forceMount })}
+        {...(className === undefined ? {} : { className })}
         {...props}
       >
         {shouldRenderChildren ? (

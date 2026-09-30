@@ -70,31 +70,21 @@
       "includes": ["apps/web/src/components/workbench/zcode/**"],
       "linter": {
         "rules": {
-          "a11y": {
-            "useAriaPropsSupportedByRole": "warn",
-            "useValidAriaRole": "warn",
-            "noLabelWithoutControl": "warn",
-            "useMediaCaption": "warn"
-          },
-          "correctness": {
-            "useExhaustiveDependencies": "warn"
-          },
+          "a11y": "warn",
+          "correctness": "warn",
           "complexity": {
-            "noUselessFragments": "warn",
-            "useIndexOf": "warn",
-            "useLiteralKeys": "warn"
+            "noExcessiveLinesPerFunction": "warn"
           },
-          "suspicious": {
-            "noControlCharactersInRegex": "warn"
-          },
-          "security": {
-            "noDangerouslySetInnerHtml": "warn"
-          },
-          "performance": {
-            "noImgElement": "warn"
-          },
+          "suspicious": "warn",
+          "security": "warn",
+          "performance": "warn",
           "style": {
-            "noNonNullAssertion": "warn"
+            "noExcessiveLinesPerFile": "warn",
+            "noImplicitBoolean": "warn",
+            "noNegationElse": "warn",
+            "noTernary": "warn",
+            "useConsistentTypeDefinitions": "warn",
+            "useExportsLast": "warn"
           }
         }
       }

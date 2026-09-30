@@ -51,15 +51,15 @@ export function AgentPromptSection({
           <MessageResponse
             className="px-3 py-2 min-w-0 break-words text-ui-base [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
             workspacePath={workspacePath}
-            {...(theme !== undefined ? { theme } : {})}
-            {...(codePreviewSettings !== undefined
-              ? { codePreviewSettings }
-              : {})}
-            {...(onOpenCodeViewer !== undefined ? { onOpenCodeViewer } : {})}
-            {...(onOpenFileLink !== undefined ? { onOpenFileLink } : {})}
-            {...(onOpenBrowserUrl !== undefined
-              ? { onOpenExternalUrl: onOpenBrowserUrl }
-              : {})}
+            {...(theme === undefined ? {} : { theme })}
+            {...(codePreviewSettings === undefined
+              ? {}
+              : { codePreviewSettings })}
+            {...(onOpenCodeViewer === undefined ? {} : { onOpenCodeViewer })}
+            {...(onOpenFileLink === undefined ? {} : { onOpenFileLink })}
+            {...(onOpenBrowserUrl === undefined
+              ? {}
+              : { onOpenExternalUrl: onOpenBrowserUrl })}
           >
             {prompt}
           </MessageResponse>

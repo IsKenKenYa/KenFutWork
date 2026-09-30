@@ -172,7 +172,7 @@ function CuaAppList({ items }: { items: CuaAppItem[] }) {
             <img
               src={icons[item.bundleId]}
               alt=""
-              aria-hidden
+              aria-hidden={true}
               className="size-4 shrink-0 object-contain"
             />
           ) : (

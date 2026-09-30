@@ -6,8 +6,9 @@ import type * as React from "react";
 import { cn } from "../lib/utils";
 
 type ProgressProps = React.ComponentProps<typeof ProgressPrimitive.Root> & {
-  indicatorClassName?: string;
-  segments?: readonly ProgressSegment[];
+  indicatorClassName?: string | undefined;
+  segments?: readonly ProgressSegment[] | undefined;
+  // P5 适配：可选属性放宽 `| undefined`（exactOptionalPropertyTypes，照搬调用点显式传 undefined）。
 };
 
 export interface ProgressSegment {

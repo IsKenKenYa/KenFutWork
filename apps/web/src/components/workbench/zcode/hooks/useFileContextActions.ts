@@ -102,7 +102,7 @@ export function useFileContextActions(options: FileContextActionOptions = {}) {
           ? await platform.openInEditor("explorer", openPath, {
               pathKind: "directory",
               remoteTarget,
-              ...(workspaceIdentity !== undefined ? { workspaceIdentity } : {}),
+              ...(workspaceIdentity === undefined ? {} : { workspaceIdentity }),
             })
           : await platform.openInFileManager(openPath);
       if (result.success) {

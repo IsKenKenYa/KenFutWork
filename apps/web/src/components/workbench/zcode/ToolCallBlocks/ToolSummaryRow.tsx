@@ -156,9 +156,9 @@ function SummaryContent({
         prioritizePrimaryText && "flex-1 overflow-hidden",
       )}
     >
-      {separator != null ? (
+      {separator == null ? null : (
         <span className="shrink-0 text-foreground-subtlest">{separator}</span>
-      ) : null}
+      )}
       <QueuedSummaryContent
         contentKey={contentKey}
         contentRefreshVersion={contentRefreshVersion}
@@ -211,7 +211,7 @@ export function ToolSummaryRow(props: ToolSummaryRowProps) {
 
   if (canToggle) {
     return (
-      <CollapsibleTrigger asChild>
+      <CollapsibleTrigger asChild={true}>
         <div
           data-testid={testId(TID_TOOL_SUMMARY_TRIGGER, toolId)}
           role="button"
@@ -233,7 +233,7 @@ export function ToolSummaryRow(props: ToolSummaryRowProps) {
         >
           {sharedContent}
           <ChevronRightIcon
-            aria-hidden
+            aria-hidden={true}
             className={cn(
               "size-4 text-foreground-subtlest opacity-0 transition-transform transition-opacity duration-200 ease-out will-change-transform group-hover/tool-summary:opacity-100 shrink-0",
               isExpanded ? "rotate-90 opacity-100" : "rotate-0",

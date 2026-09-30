@@ -189,9 +189,9 @@ export function MarkdownImage({
   );
   const localImageLink = useMemo(() => {
     const fileLink = resolveMarkdownFileLink(workspacePath, resolvedSrc, {
-      ...(workspaceHomePath !== undefined
-        ? { homePath: workspaceHomePath }
-        : {}),
+      ...(workspaceHomePath === undefined
+        ? {}
+        : { homePath: workspaceHomePath }),
     });
     return fileLink && isImagePreviewPath(fileLink.path) ? fileLink : null;
   }, [resolvedSrc, workspaceHomePath, workspacePath]);

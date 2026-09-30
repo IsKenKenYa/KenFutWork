@@ -148,7 +148,7 @@ function CuaGroupChildren({
               workspacePath={context.workspacePath}
               theme={context.theme}
               codePreviewSettings={context.codePreviewSettings}
-              showIcon
+              showIcon={true}
               cuaAppIconClassName="size-5"
               onOpenCodeViewer={context.onOpenCodeViewer}
               onOpenFileLink={context.onOpenFileLink}
@@ -212,11 +212,11 @@ export function CuaGroupToolCallBlock(context: CuaGroupRenderProps) {
       TERMINAL_CUA_STATUSES.has(event.node.toolCall.status),
   );
   const latestToolSummary =
-    latestSummaryEvent !== undefined
-      ? buildCuaSummaryPresentation(latestSummaryEvent.node.toolCall, intl, {
+    latestSummaryEvent === undefined
+      ? null
+      : buildCuaSummaryPresentation(latestSummaryEvent.node.toolCall, intl, {
           appIconClassName: "size-5",
-        })
-      : null;
+        });
   const isRunning = context.isRunning || toolCall.status === "in_progress";
   const eventCount = events.length;
   const messageCount = events.filter(
@@ -304,7 +304,7 @@ export function CuaGroupToolCallBlock(context: CuaGroupRenderProps) {
           : intl.formatMessage({ id: "chat.toolCall.cua.group.completedLabel" })
       }
       primaryText={isRunning ? primaryText : null}
-      prioritizePrimaryText
+      prioritizePrimaryText={true}
       diffCount={diffCount}
       animateSummaryContent={isRunning}
       disableSummaryContentAnimation={context.disableSummaryContentAnimation}

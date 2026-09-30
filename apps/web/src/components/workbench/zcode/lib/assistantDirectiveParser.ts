@@ -318,12 +318,12 @@ export function findUnclosedAssistantDirectiveStart(
       let quote: DirectiveQuoteState | null = null;
       let escaped = false;
       for (const character of parameterPrefix) {
-        if (quote !== null) {
+        if (quote === null) {
+          quote = getDirectiveQuoteState(character, options);
+        } else {
           if (escaped) escaped = false;
           else if (character === "\\") escaped = true;
           else if (character === quote.close) quote = null;
-        } else {
-          quote = getDirectiveQuoteState(character, options);
         }
       }
       const isParameterPrefix =

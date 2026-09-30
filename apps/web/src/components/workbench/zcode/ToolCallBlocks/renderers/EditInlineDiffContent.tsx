@@ -76,7 +76,7 @@ export const EditInlineDiffContent = memo(function EditInlineDiffContent({
     <div className="space-y-3">
       <div
         className="mb-2 max-h-60 overflow-auto rounded-xl border border-border bg-card"
-        data-inline-diff-preview
+        data-inline-diff-preview={true}
       >
         {/* 聊天内联 diff 展开时直接挂载 @pierre/diffs 会把高亮和 Shadow DOM 汇总渲染压到主线程，
         导致点击展开后长时间掉帧。这里首帧只渲染轻量 hunk 文本，再在 effect 里异步补 Shiki token；

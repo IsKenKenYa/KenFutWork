@@ -445,7 +445,7 @@ export function ImagePreviewDialog({
             intl.formatMessage({ id: "chat.attachments.preview.title" })}
         </DialogTitle>
         <div className="pointer-events-auto absolute right-4 top-4 z-20 flex items-center gap-2 [app-region:no-drag] platform-mac-desktop:top-12 platform-linux-desktop:right-6 platform-linux-desktop:top-4 platform-windows-desktop:right-6 platform-windows-desktop:top-[calc(env(titlebar-area-height,48px)_+_0.5rem)]">
-          {!activeItemIsVideo ? (
+          {activeItemIsVideo ? null : (
             <Button
               type="button"
               aria-label={intl.formatMessage({ id: "markdownImage.download" })}
@@ -457,8 +457,8 @@ export function ImagePreviewDialog({
             >
               <DownloadIcon />
             </Button>
-          ) : null}
-          <DialogClose asChild>
+          )}
+          <DialogClose asChild={true}>
             <Button
               type="button"
               aria-label={intl.formatMessage({ id: "common.close" })}
@@ -522,8 +522,8 @@ export function ImagePreviewDialog({
                     {/* 可发送的 video MIME 不保证当前 Chromium 能解码其容器或 codec；
                 解码失败只收口当前 gallery item，不能关闭预览或影响相邻媒体。 */}
                     <video
-                      controls
-                      playsInline
+                      controls={true}
+                      playsInline={true}
                       className={cn(
                         "max-h-full max-w-full rounded-xl border border-border bg-background shadow-2xl",
                         videoState === "loading" && "invisible absolute",
@@ -580,7 +580,7 @@ export function ImagePreviewDialog({
             </div>
           ) : null
         ) : null}
-        {!activeItemIsVideo ? (
+        {activeItemIsVideo ? null : (
           <div className="pointer-events-auto absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border border-popover-border bg-popover/95 p-1 shadow-md [app-region:no-drag]">
             <Button
               type="button"
@@ -608,7 +608,7 @@ export function ImagePreviewDialog({
               <PlusIcon />
             </Button>
           </div>
-        ) : null}
+        )}
       </DialogContent>
     </Dialog>
   );

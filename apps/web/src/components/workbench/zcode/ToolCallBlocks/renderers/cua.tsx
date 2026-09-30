@@ -313,16 +313,11 @@ function buildCuaDetailsModel(
   const screenshot = success ? screenshotCandidate : undefined;
   const resultValues: Record<string, string> | undefined = list
     ? { count: String(list.items.length) }
-    : waitDuration !== null
-      ? { duration: String(waitDuration) }
-      : undefined;
-  const resultId = !success
+    : waitDuration === null
+      ? undefined
+      : { duration: String(waitDuration) };
+  const resultId = success
     ? access
-      ? "chat.toolCall.cua.details.accessIncomplete"
-      : errorCode === "element_stale"
-        ? "chat.toolCall.cua.details.elementStale"
-        : "chat.toolCall.cua.details.failed"
-    : access
       ? "chat.toolCall.cua.details.accessReady"
       : toolName === "type" && typedText
         ? "chat.toolCall.cua.details.typed"
@@ -346,7 +341,12 @@ function buildCuaDetailsModel(
                         ? list?.items.length
                           ? "chat.toolCall.cua.details.windowsFound"
                           : "chat.toolCall.cua.details.noWindows"
-                        : "chat.toolCall.cua.details.completed";
+                        : "chat.toolCall.cua.details.completed"
+    : access
+      ? "chat.toolCall.cua.details.accessIncomplete"
+      : errorCode === "element_stale"
+        ? "chat.toolCall.cua.details.elementStale"
+        : "chat.toolCall.cua.details.failed";
   return {
     actionRows,
     resultId,
@@ -370,7 +370,7 @@ function buildCuaDetailsModel(
         ? "chat.toolCall.cua.details.elementStaleAction"
         : undefined,
     suggestedAction:
-      errorCode !== "element_stale" ? cuaDisplay?.suggestedAction : undefined,
+      errorCode === "element_stale" ? undefined : cuaDisplay?.suggestedAction,
   };
 }
 
@@ -468,16 +468,16 @@ export function buildCuaSummaryPresentation(
                 ? "chat.toolCall.cua.holdKey"
                 : "chat.toolCall.cua.pressKeyAction",
           })
-        : listCount !== null
-          ? intl.formatMessage(
-              { id: "chat.toolCall.cua.listWindowsCount" },
-              { count: listCount },
-            )
-          : intl.formatMessage({
+        : listCount === null
+          ? intl.formatMessage({
               id:
                 CUA_TOOL_SUMMARY_IDS[toolName ?? ""] ??
                 "chat.toolCall.cua.default",
-            }));
+            })
+          : intl.formatMessage(
+              { id: "chat.toolCall.cua.listWindowsCount" },
+              { count: listCount },
+            ));
   const taggedTarget = actionTarget ?? keyName;
   const primaryText =
     taggedTarget && !authoredDescription ? (

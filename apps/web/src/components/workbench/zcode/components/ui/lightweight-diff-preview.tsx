@@ -130,7 +130,7 @@ export function LightweightDiffPreview({
   return (
     <div
       className={cn("w-full min-w-0 overflow-auto bg-background", className)}
-      data-lightweight-diff-preview
+      data-lightweight-diff-preview={true}
       {...props}
     >
       <div
@@ -138,7 +138,7 @@ export function LightweightDiffPreview({
           "min-w-full font-mono leading-relaxed text-foreground",
           !codePreviewSettings.wrapLongLines && "w-max",
         )}
-        data-lightweight-diff-scroll-content
+        data-lightweight-diff-scroll-content={true}
         style={{ fontSize: codePreviewSettings.fontSizePx }}
       >
         {lines.map((line, index) => {

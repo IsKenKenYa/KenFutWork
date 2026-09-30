@@ -535,7 +535,7 @@ export function ExploreToolCallBlock(context: ToolCallBlockRenderContext) {
         secondaryText={collapsedChildSummary?.secondaryText}
         expandedSecondaryText={null}
         summaryContentSeparator="·"
-        animateSummaryContent
+        animateSummaryContent={true}
         disableSummaryContentAnimation={context.disableSummaryContentAnimation}
         summaryContentKey={
           collapsedChildSummary?.animationKey ??

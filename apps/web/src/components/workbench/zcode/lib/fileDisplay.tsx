@@ -214,7 +214,7 @@ export function FileDisplayInline({
         options?.className ?? "inline-flex max-w-full items-center gap-1 "
       }
     >
-      {options?.showIcon !== false ? (
+      {options?.showIcon === false ? null : (
         <img
           src={fileIconSrc}
           alt=""
@@ -230,7 +230,7 @@ export function FileDisplayInline({
             setFileIconSrc(fallbackSrc);
           }}
         />
-      ) : null}
+      )}
       <span
         className={
           options?.fileNameClassName ??

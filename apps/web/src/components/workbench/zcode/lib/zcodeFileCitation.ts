@@ -90,12 +90,12 @@ export function extractZCodeFileCitationDirectives(
     ...(directive.parameters?.path?.trim()
       ? { path: directive.parameters.path.trim() }
       : {}),
-    ...(directive.parameters?.purpose !== undefined
-      ? { purpose: directive.parameters.purpose }
-      : {}),
-    ...(directive.parameters?.artifact_kind !== undefined
-      ? { artifactKind: directive.parameters.artifact_kind }
-      : {}),
+    ...(directive.parameters?.purpose === undefined
+      ? {}
+      : { purpose: directive.parameters.purpose }),
+    ...(directive.parameters?.artifact_kind === undefined
+      ? {}
+      : { artifactKind: directive.parameters.artifact_kind }),
   }));
 }
 

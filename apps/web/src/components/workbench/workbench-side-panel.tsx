@@ -421,7 +421,7 @@ function PaneContent({
       );
     case "subagents":
       return subagents.length > 0 ? (
-        <SubagentDirectoryView entries={subagents} running={running} />
+        <SubagentDirectoryView entries={subagents} />
       ) : (
         <PanelEmptyState kind="subagents" title="这个会话还没有派过子智能体" />
       );

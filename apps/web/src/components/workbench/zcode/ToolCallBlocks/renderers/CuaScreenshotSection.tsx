@@ -54,7 +54,7 @@ export function CuaScreenshotSection({
       </h4>
       {screenshot.dataUrl ? (
         <Dialog>
-          <DialogTrigger asChild>
+          <DialogTrigger asChild={true}>
             <button
               type="button"
               className="block w-full overflow-hidden rounded-lg border border-border bg-surface outline-none focus-visible:ring-2 focus-visible:ring-ring"

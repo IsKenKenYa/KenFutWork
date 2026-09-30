@@ -90,7 +90,7 @@ export function createOpenInEditorRemoteTarget(
       return {
         kind: "ssh",
         host: target.host,
-        ...(target.port !== undefined ? { port: target.port } : {}),
+        ...(target.port === undefined ? {} : { port: target.port }),
         username: target.username,
         ...(target.sshConfigAlias?.trim()
           ? { sshConfigAlias: target.sshConfigAlias.trim() }
@@ -1966,4 +1966,2479 @@ function collectOutputCandidates(output: unknown): unknown[] {
   }
 
   return candidates;
+}
+
+/* ---------- zcode 照搬（P5 补充）：跨切片类型导入 ---------- */
+
+import type { ErrorAttribution } from "./zcode-shared/zcode-protocol-v4";
+import type { ToolCallDisplay } from "./zcode-shared/zcode-protocol-v4/toolDisplay";
+
+/** zcode 照搬（P5 补充）：zcode-protocol 共享的最小串约束（多个 schema 切片复用）。 */
+const nonEmptyString = z.string().trim().min(1);
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` oauth.ts（切片） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+
+/** 内置 BigModel provider id */
+export const BIGMODEL_PROVIDER_ID = "bigmodel" as const;
+
+/** 内置 ZAI provider id */
+export const ZAI_PROVIDER_ID = "zai" as const;
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` oauth.ts（切片续） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+/** OAuth provider 标识 */
+export type OAuthProviderId =
+  | typeof BIGMODEL_PROVIDER_ID
+  | typeof ZAI_PROVIDER_ID
+  | (string & { readonly __oauthProviderBrand?: never });
+
+/** Provider 展示元信息 */
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` model-provider-types.ts 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+/* eslint-disable max-lines -- 模型供应商 schema、迁移和运行时投影 helper 需要共享同一套类型边界，暂时集中在单文件避免契约分散。 */
+export const BUILTIN_PROVIDER_TEMPLATE_IDS = {
+  zai: "zai-api",
+  bigmodel: "bigmodel-api",
+} as const;
+
+export const BUILTIN_MODEL_PROVIDER_IDS = {
+  zaiIndividualCodingPlan: "account:zai-individual-coding-plan",
+  zaiTeamCodingPlan: "account:zai-team-coding-plan",
+  zaiStartPlan: "account:zai-start-plan",
+  bigmodelIndividualCodingPlan: "account:bigmodel-individual-coding-plan",
+  bigmodelTeamCodingPlan: "account:bigmodel-team-coding-plan",
+  bigmodelStartPlan: "account:bigmodel-start-plan",
+} as const;
+
+export type BuiltinOAuthProviderId = keyof typeof BUILTIN_MODEL_PROVIDER_IDS;
+
+export type BuiltinModelProviderId =
+  (typeof BUILTIN_MODEL_PROVIDER_IDS)[BuiltinOAuthProviderId];
+
+export function isBuiltinModelProviderId(
+  id: string,
+): id is BuiltinModelProviderId {
+  return (
+    id === BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan ||
+    id === BUILTIN_MODEL_PROVIDER_IDS.zaiTeamCodingPlan ||
+    id === BUILTIN_MODEL_PROVIDER_IDS.zaiStartPlan ||
+    id === BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan ||
+    id === BUILTIN_MODEL_PROVIDER_IDS.bigmodelTeamCodingPlan ||
+    id === BUILTIN_MODEL_PROVIDER_IDS.bigmodelStartPlan
+  );
+}
+
+export function isZaiCodingPlanProviderId(id: string): boolean {
+  return (
+    id === BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan ||
+    id === BUILTIN_MODEL_PROVIDER_IDS.zaiTeamCodingPlan ||
+    id === BUILTIN_MODEL_PROVIDER_IDS.zaiStartPlan
+  );
+}
+
+export function isBigModelStartPlanProviderId(id: string): boolean {
+  return id === BUILTIN_MODEL_PROVIDER_IDS.bigmodelStartPlan;
+}
+
+export function isStartPlanModelProviderId(id: string): boolean {
+  return (
+    id === BUILTIN_MODEL_PROVIDER_IDS.zaiStartPlan ||
+    id === BUILTIN_MODEL_PROVIDER_IDS.bigmodelStartPlan
+  );
+}
+
+/**
+ * 个人版 Coding Plan（不含 Start Plan 与 Team Plan）。
+ * Start Plan 用 disconnected 展示领取/付费卡，Team Plan 有独立文案，
+ * "服务端明确无权益"只对个人版需要区分成"未开通"。
+ */
+export function isIndividualCodingPlanModelProviderId(id: string): boolean {
+  return (
+    id === BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan ||
+    id === BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan
+  );
+}
+
+export function isCodingPlanModelProviderId(id: string): boolean {
+  return (
+    isZaiCodingPlanProviderId(id) ||
+    id === BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan ||
+    id === BUILTIN_MODEL_PROVIDER_IDS.bigmodelTeamCodingPlan ||
+    id === BUILTIN_MODEL_PROVIDER_IDS.bigmodelStartPlan
+  );
+}
+
+/** 一个正式 Model 的连通性测试结果。 */
+export type ModelConnectivityResult =
+  | { readonly success: true }
+  | {
+      readonly success: false;
+      readonly error: {
+        readonly message: string;
+        /** 设置连接测试边界已确认的资格失败；其他执行错误保留原消息。 */
+        readonly code?: "provider-unavailable" | "model-unavailable";
+      };
+    };
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` workspacePurpose.ts 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+/** App 持有的 workspace 展示分类；不参与 workspace identity。 */
+export type WorkspacePurpose = "project" | "conversation";
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` protocol.ts（切片：WorkspaceFileEntry/Locale/TabId/TabState） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export interface WorkspaceFileEntry {
+  name: string;
+  path: string;
+  relativePath: string;
+  type: "file" | "directory";
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` protocol.ts（切片续） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+/** 支持的语言 */
+export type Locale = "zh-CN" | "en-US";
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` protocol.ts（切片续2） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+/** 标签页唯一标识 */
+export type TabId = string;
+
+/** 单个标签页的状态 */
+export interface TabState {
+  id: TabId;
+  /** workspace 绝对路径 */
+  workspacePath: string;
+  /** 显示名称，通常为路径最后一段 */
+  label: string;
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` test-ids.ts（切片：composer/输入建议/工具栏 TID） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export const TID_CHAT_ATTACHMENT_MENU_ITEM = "chat-attachment-menu-item";
+/** 聊天发送按钮 */
+export const TID_CHAT_SEND_BUTTON = "chat-send-button";
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` test-ids.ts（切片续） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+/** 聊天输入框前缀提示面板 */
+export const TID_PROMPT_SUGGESTION_PANEL = "prompt-suggestion-panel";
+/** 聊天输入框前缀提示分组（动态后缀为分组 id） */
+export const TID_PROMPT_SUGGESTION_SECTION = "prompt-suggestion-section";
+/** 聊天输入框前缀提示选项（动态后缀为选项 id） */
+export const TID_PROMPT_SUGGESTION_OPTION = "prompt-suggestion-option";
+/** 聊天输入框前缀提示状态行（动态后缀为分组 id） */
+export const TID_PROMPT_SUGGESTION_STATUS = "prompt-suggestion-status";
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` test-ids.ts（切片续2） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+// Chat Toolbar
+/** 聊天工具栏模型选择按钮 */
+export const TID_CHAT_MODEL_SELECT_TRIGGER = "chat-model-select-trigger";
+/** 聊天工具栏模型供应商分组（动态后缀为 provider group key） */
+export const TID_CHAT_MODEL_SELECT_GROUP = "chat-model-select-group";
+/** 聊天工具栏模型选择条目（动态后缀为模型 value） */
+export const TID_CHAT_MODEL_SELECT_ITEM = "chat-model-select-item";
+/** 聊天工具栏思考深度选择按钮 */
+export const TID_CHAT_THOUGHT_LEVEL_SELECT_TRIGGER =
+  "chat-thought-level-select-trigger";
+/** 聊天工具栏思考深度选择条目（动态后缀为思考深度 value） */
+export const TID_CHAT_THOUGHT_LEVEL_SELECT_ITEM =
+  "chat-thought-level-select-item";
+/** 聊天工具栏模式选择按钮（v4 switchCollaborationMode e2e 锚点） */
+export const TID_CHAT_MODE_SELECT_TRIGGER = "chat-mode-select-trigger";
+/** 聊天工具栏模式选择条目（动态后缀为 mode value） */
+export const TID_CHAT_MODE_SELECT_ITEM = "chat-mode-select-item";
+/** 聊天工具栏 context 消耗按钮 */
+export const TID_CHAT_CONTEXT_USAGE_TRIGGER = "chat-context-usage-trigger";
+/** 思考块折叠触发按钮 */
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` zcode-task-types-core.ts（切片：TraceId/InputId/QueryId） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+/** 全链路追踪 ID，用于日志和观测链路。 */
+export type TraceId = string;
+/** 每次用户输入的归属 ID，用于 stop/队列/终态收口。 */
+/** 每条真实用户 query 的语义归因 ID，用于模型请求 header 和用户问题级观测。 */
+export type QueryId = string;
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` zcode-task-types-core.ts（切片：task 元数据依赖） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export type ZCodeTaskMigrationSource = "claudeCode";
+export type ZCodeTaskGoalStatus =
+  | "active"
+  | "paused"
+  | "budget_limited"
+  | "complete";
+export type ZCodeTaskTargetChangedAction =
+  | "set"
+  | "status_updated"
+  | "cleared"
+  | "usage_accounted"
+  | "run_started"
+  | "run_finished"
+  | "summary_updated";
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` zcode-task-types-core.ts（切片：ZCodeTaskGoal） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export interface ZCodeTaskGoal {
+  sessionID: string;
+  targetID: string;
+  objective: string;
+  summaryTitle: string | null;
+  status: ZCodeTaskGoalStatus;
+  tokenBudget: number | null;
+  tokensUsed: number;
+  timeUsedSeconds: number;
+  activeInputId?: string | null;
+  activeRunStartedAtMs?: number | null;
+  activeRunLastSeenAtMs?: number | null;
+  time: {
+    created: number;
+    updated: number;
+  };
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` zcode-task-types-core.ts（切片：ZCodeTaskMode） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export type ZCodeTaskMode =
+  | "yolo"
+  | "plan"
+  | "edit"
+  | "auto"
+  | "autoEdit"
+  | "build";
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` zcode-task-types-core.ts（切片：运行时状态/持久状态/最后错误） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export type ZCodeTaskRuntimeStatus =
+  | "idle"
+  | "creating"
+  | "notReady"
+  | "restoring"
+  | "ready"
+  | "streaming"
+  | "completed"
+  | "failed";
+/** 持久化的任务状态，记录最后一次 prompt 的结果 */
+export type ZCodeTaskPersistStatus = "running" | "completed" | "error";
+export interface ZCodeTaskLastError {
+  attribution?: ErrorAttribution;
+  code?: string;
+  message: string;
+  traceId?: TraceId;
+  taskId?: string;
+}
+/**
+ * 当前 prompt 支持的附件类型。
+ * 图片小文件走 agent image block；本地文件/大图片优先走 localPath，让 agent 按自己的阈值读取。
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` zcode-task-types-core.ts（切片：交互自动裁决/挂起交互） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export type ZCodeTaskInteractionAutoResolution =
+  | {
+      state: "hiddenGrace" | "visibleCountdown";
+      startedAt: number;
+      visibleAt: number;
+      deadlineAt: number;
+    }
+  | {
+      state: "snoozed";
+      startedAt: number;
+      snoozedAt: number;
+    };
+
+export interface ZCodeTaskPendingInteraction {
+  interactionId: string;
+  kind: "permission" | "userInput";
+  /** sessions-index 下发的轻量工具身份；旧摘要缺失时保持兼容。 */
+  toolName?: string;
+  autoResolution?: ZCodeTaskInteractionAutoResolution;
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` zcode-task-types-core.ts（切片：ZCodeTaskMeta） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export interface ZCodeTaskMeta {
+  /** UI taskId 与 ZCode agent sessionId 保持一致，用于列表选择、日志关联和恢复会话。 */
+  taskId: string;
+  /** session/任务级观测 traceId，不用于区分单次用户输入 */
+  traceId: TraceId;
+  /** 任务标题（用户输入或从首条消息截取） */
+  title: string;
+  /**
+   * 用户是否手动覆盖过任务标题。
+   *
+   * 运行中 agent 仍会继续推送自动生成标题；UI 需要知道当前标题是手动命名，
+   * 才能在更新 status/target/updatedAt 时避免把手动标题短暂冲掉。
+   */
+  titleOverridden?: boolean | undefined;
+  /** 关联的 workspace 绝对路径 */
+  workspacePath: string;
+  /**
+   * 远程 workspace 的稳定身份（authority + canonicalPath）。
+   *
+   * 仅按 workspacePath 持久化时，“同路径不同远端主机”会写进同一目录，
+   * 导致任务列表、快照和日志互相串读。这里补充 workspaceIdentity 参与隔离。
+   */
+  workspaceIdentity?: string | undefined;
+  /** app-owned workspace 分类；缺省为 project，不参与 workspaceKey。 */
+  workspacePurpose?: WorkspacePurpose | undefined;
+  createdAt: number;
+  updatedAt: number;
+  mode: ZCodeTaskMode;
+  model?: string | undefined;
+  /**
+   * task 级推理强度。
+   *
+   * active task 内切换 effort 时，如果只写 workspace settings.json，
+   * 同一 workspace 的其它 task 会被串改；如果只改 session，下一轮 prompt 又可能被
+   * workspace 默认值回推覆盖。这里单独持久化 task-local thoughtLevel，发送前再重放到 session。
+   */
+  thoughtLevel?: string | undefined;
+  /**
+   * 该 task 最近一次确认与 workspace 运行时基线对齐的 epoch。
+   *
+   * 过去仅靠 workspacePreferredModel 判断“要不要覆盖当前 task 模型”，
+   * 会把“同 supplier 的 task 内模型切换”误当成全局收敛，导致其它 task 被串改。
+   * 这里记录 runtimeEpoch，用来区分“task 自身模型保持”与“runtime 基线确实变更后需要收敛”。
+   */
+  runtimeEpoch?: number | undefined;
+  /** 创建此 task 时使用的 agent provider，缺省视为 "glm"（旧数据兼容） */
+  provider?: ZCodeProvider | undefined;
+  /** 迁移来源；普通新建任务为空，用于识别 Claude Code 原生历史导入。 */
+  migrationSource?: ZCodeTaskMigrationSource | undefined;
+  /**
+   * cron 身份标记：该 session 属于哪条 automation。
+   *
+   * cron 身份必须定义在共享的 ZCodeTaskMeta 上，供持久化层、V4 UI 和服务契约
+   * 共同使用，避免字段已持久化却无法经类型契约访问。
+   */
+  cronAutomationId?: string | undefined;
+  /**
+   * 闲时任务身份标记：该 session/幻影行属于哪条 off-peak 任务。
+   * 与 cronAutomationId 是兄弟标记（闲时不复用 cron 标记）；行 id = 创建时
+   * 预分配的 sessionId，标记从创建到运行恒定，供月亮图标与系统分组归属使用。
+   */
+  offPeakTaskId?: string | undefined;
+  /** fork 产物保留来源 taskId，供 UI 做本地化标题兜底和后续追溯。 */
+  forkedFromTaskId?: string | undefined;
+  /** 未读任务记录最近一次标记/产生未读的时间，用于跨重启保留蓝点状态。 */
+  unreadAt?: number | undefined;
+  /** 持久化的任务状态，记录最后一次 prompt 的结果 */
+  status?: ZCodeTaskPersistStatus | undefined;
+  /** sessions-index 提供的队首阻塞交互摘要，供未打开的后台 task 渲染侧栏状态。 */
+  pendingInteraction?: ZCodeTaskPendingInteraction | undefined;
+  /**
+   * 最后一次失败的可展示原因。
+   *
+   * 手机远控断连时实时 task_error 可能无法送达；恢复只能看到 meta.status=error，
+   * 但拿不到错误正文，用户会以为发送没有触发。这里把失败原因随 task meta 一起持久化。
+   */
+  lastError?: ZCodeTaskLastError | undefined;
+  /** 任务级文件改动摘要，仅用于列表/标题展示，真实回滚仍以 fileChanges 为准 */
+  changeSummary?: ZCodeTaskChangeSummary | undefined;
+  /** zcode-cli /goal 会话目标；null 表示已显式清空。 */
+  target?: ZCodeTaskGoal | null | undefined;
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` zcode-task-types-core.ts（切片：文件改动摘要） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export interface ZCodeTaskChangeSummary {
+  /** 整个任务里涉及过的唯一文件数 */
+  fileCount: number;
+  /** 按最终文件结果聚合后的新增行数 */
+  added: number;
+  /** 按最终文件结果聚合后的删除行数 */
+  removed: number;
+  /** 任务涉及的文件摘要 */
+  files: ZCodeTaskChangedFileSummary[];
+}
+export interface ZCodeTaskChangedFileSummary {
+  path: string;
+  added: number;
+  removed: number;
+  /** 同一任务内该文件被写入的总次数 */
+  writeCount: number;
+  /** 最后一次写入发生在第几轮，后续回滚按钮可直接复用 */
+  lastTurnIndex: number;
+}
+// ---- ZCode 配置与命令类型 ----
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` zcode-task-types-core.ts（切片：configOption/SelectValue/SlashCommand） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export interface ZCodeConfigOption {
+  id: string;
+  name: string;
+  description?: string;
+  /** mode | model | thought_level | 自定义 */
+  category?: string;
+  type: "select" | "boolean";
+  currentValue: string | boolean;
+  /** type === "select" 时的选项列表 */
+  options?: ZCodeConfigSelectValue[];
+}
+export interface ZCodeConfigSelectValue {
+  value: string;
+  name: string;
+  description?: string;
+  /** 值来源：原生模型列表或会话侧注入项（用于 UI 去重与展示控制） */
+  origin?: "native" | "injected";
+  /** 模型选项所属供应商/分组 id，用于 provider -> model 分组选择 */
+  modelProviderId?: string;
+  /** 模型选项所属供应商/分组展示名 */
+  modelProviderName?: string;
+  /** 缺失表示能力未知，空数组表示已知没有可选 reasoning 档位 */
+  modelThoughtLevels?: string[];
+  /** 模型目录声明的默认 reasoning 档位，不代表用户显式选择 */
+  modelDefaultThoughtLevel?: string;
+}
+export interface ZCodeSlashCommand {
+  name: string;
+  description: string;
+  inputHint?: string;
+  /** 命令来源；旧协议可能为空，客户端应按 builtin 兼容处理。 */
+  source?: "builtin" | "custom";
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` zcode-task-types-core.ts（切片：permission 请求族） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export interface ZCodePermissionRequest {
+  type: "permission_request";
+  taskId: string;
+  traceId: TraceId;
+  inputId?: InputId;
+  requestId: string;
+  description: string;
+  kind: string;
+  title?: string;
+  options: ZCodePermissionOption[];
+  /** V4 permission 是否允许在 Deny 时附带用户反馈。 */
+  freeText?: boolean;
+  origin?: ZCodeInteractionRequestOrigin;
+  /**
+   * 工具自报的确认预览，复用 tool call row 的 display 投影（同一有界形状）。
+   * 缺省 = 纯文本 ask（legacy v3 链路会显式剥离该字段）。
+   */
+  display?: ToolCallDisplay;
+  /** agent RequestPermissionRequest.toolCall 原始 payload */
+  raw: unknown;
+}
+export interface ZCodeTaskPermissionResponse {
+  type: "permission_response";
+  taskId: string;
+  traceId: TraceId;
+  inputId?: InputId;
+  requestId: string;
+  optionId: string;
+  response: ZCodePermissionResponse;
+}
+export interface ZCodePermissionOption {
+  optionId: string;
+  kind: string;
+  name: string;
+  description?: string;
+  response: ZCodePermissionResponse;
+}
+/** ZCode Elicitation 请求事件，用于 AskUserQuestion 等需要用户交互的工具 */
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` zcode-task-types-core.ts（切片：elicitation 请求族） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export interface ZCodeElicitationRequest {
+  type: "elicitation_request";
+  taskId: string;
+  traceId: TraceId;
+  inputId?: InputId;
+  requestId: string;
+  message: string;
+  header?: string;
+  options: ZCodeElicitationOption[];
+  multiSelect?: boolean;
+  /** AskUserQuestion 的多题结构；存在时 UI 以 tab 形式一次性收集全部答案。 */
+  questions?: ZCodeElicitationQuestion[];
+  /** remote 控制链路同步的当前题号，用于跨端保持 AskUserQuestion 进度。 */
+  currentQuestionIndex?: number;
+  /** remote 控制链路同步的草稿答案，key 为 answer_0 / answer_1。 */
+  answerDrafts?: Record<string, string[]>;
+  origin?: ZCodeInteractionRequestOrigin;
+  /** ElicitationSchema 原始 payload */
+  schema?: unknown;
+}
+/** ZCode Elicitation 单个问题 */
+export interface ZCodeElicitationQuestion {
+  question: string;
+  header: string;
+  options: ZCodeElicitationOption[];
+  multiSelect?: boolean;
+}
+/** ZCode Elicitation 选项 */
+export interface ZCodeElicitationOption {
+  value: string;
+  label: string;
+  description?: string;
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` zcode-task-types-core.ts（切片：Usage/ContextCacheUsage） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export interface ZCodeUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  /** 推理/思考消耗的 token 数；对齐 agent `thoughtTokens`。 */
+  reasoningTokens?: number;
+  /** 命中缓存的 input token 数 */
+  cachedInputTokens?: number;
+  /** 写入缓存的 input token 数 */
+  cachedWriteInputTokens?: number;
+}
+export interface ZCodeContextCacheUsage {
+  /** Provider 上报的最近一次主轮输入 token 数。 */
+  inputTokens: number;
+  /** Provider 上报的最近一次主轮缓存命中 token 数。 */
+  cacheReadTokens: number;
+  /** Provider 上报的最近一次主轮缓存写入 token 数。 */
+  cacheWriteTokens: number;
+  /** 最近一次主轮 provider usage 的缓存命中率；未知时为 null。 */
+  latestHitRate?: number | null;
+  /** 参与累计平均的主轮请求数量。 */
+  hitRateRequestCount?: number;
+  /** 参与累计平均的主轮 input token 总量。 */
+  totalInputTokens?: number;
+  /** 参与累计平均的主轮 cache read token 总量。 */
+  totalCacheReadTokens?: number;
+  /** 参与累计平均的主轮 cache write token 总量。 */
+  totalCacheWriteTokens?: number;
+  /** Agent 归一化后返回给 app 的主轮累计平均缓存命中率；未知时为 null。 */
+  hitRate: number | null;
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` zcode-task-types-core.ts（切片：ZCodeApiRetryStatus） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+/** Agent API 遇到可重试错误时的临时状态；只用于内存 UI，不写入任务持久化。
+ * attempt 表示当前正在进行的“第几次重试”，从 1 开始，不是总尝试次数。
+ */
+export interface ZCodeApiRetryStatus {
+  kind: "api_retry";
+  attempt: number;
+  maxRetries: number;
+  retryDelayMs: number;
+  errorStatus: number | null;
+  error: string;
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` zcode-task-types.ts（切片：init 状态/ZCodeError） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+/** workspace 级 ZCode 初始化状态 */
+export type ZCodeWorkspaceInitStatus =
+  | "idle"
+  | "initializing"
+  | "ready"
+  | "failed";
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` zcode-task-types.ts（切片续） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+
+export interface ZCodeError {
+  code: string;
+  message: string;
+  traceId?: TraceId | undefined;
+  taskId?: string | undefined;
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` background-task-controls.ts（切片：控制项） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export type ZCodeBackgroundTaskControlStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "killed"
+  | "lost";
+
+export interface ZCodeBackgroundTaskControlItem {
+  jobId: string;
+  toolCallId?: string;
+  command: string;
+  taskKind: "agent" | "bash";
+  cancellable?: boolean;
+  title?: string;
+  status: ZCodeBackgroundTaskControlStatus;
+  startedAt?: number;
+  elapsedMs?: number;
+  pid?: number;
+  stdoutTail?: string;
+  stderrTail?: string;
+  outputTail?: string;
+  raw?: unknown;
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` shortcutCommands.ts（切片：ShortcutCommandId） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+
+/** 可配置快捷键的命令 ID，与 SHORTCUT_COMMANDS 一一对应。 */
+export type ShortcutCommandId =
+  | "toggleInterfaceMode"
+  | "openOnboarding"
+  | "openCommandCenter"
+  | "openSettings"
+  | "findInTask"
+  | "toggleSidebar"
+  | "switchTheme"
+  | "toggleTerminal"
+  | "toggleSidePane"
+  | "previousConversation"
+  | "nextConversation"
+  | "navigateBack"
+  | "navigateForward"
+  | "openModelMenu"
+  | "cycleSessionMode"
+  | "cycleThoughtLevel"
+  | "newTask"
+  | "openWorkspace"
+  | "closeActiveContext"
+  | "zoomIn"
+  | "zoomOut"
+  | "resetZoom"
+  | "composerSend"
+  | "composerInsertNewline";
+
+/**
+ * 命令作用域：global = 全局分发（useAppKeyboard / 菜单 accelerator）；
+ * composer = 聊天输入框聚焦时由 Lexical 键盘行为插件消费，其余分发方零感知。
+ * Enter 族键因此可以安全入表——杀伤半径被限制在输入框内。
+ */
+/** 快捷键命令的分发通道：window = renderer 键盘分发（三端一致）；menu = 桌面应用菜单 accelerator。 */
+export type ShortcutChannel = "window" | "menu";
+export type ShortcutScope = "global" | "composer";
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` zcode-protocol-legacy-types.ts（切片：permission response 族） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export const zcodePermissionDecisionSchema = z.enum([
+  "allow",
+  "deny",
+  "escalate",
+  "modify",
+]);
+export const zcodePermissionRuleBehaviorSchema = z.enum([
+  "allow",
+  "deny",
+  "ask",
+]);
+/** Backward-compatible wire/storage key interpreted only for trusted official CUA tools. */
+export const OFFICIAL_CUA_PERMISSION_RULE_TOOL_NAME =
+  "zcode:permission-capability:official_cua";
+/**
+ * workflow 运行确认窗第三选项「Refine」（拒绝并附修改意见）的稳定 optionId。
+ * CLI 侧 v4 投影合成选项、broker 应答映射与 GUI 特判共用同一常量；
+ * 该选项只在 v4 链路投放。
+ */
+export const WORKFLOW_REFINE_PERMISSION_OPTION_ID = "workflowRefine";
+export const zcodePermissionRuleValueSchema = z
+  .object({
+    toolName: nonEmptyString,
+    ruleContent: z.string().optional(),
+  })
+  .strict();
+export const zcodePermissionUpdateSchema = z
+  .object({
+    type: z.literal("addRules"),
+    behavior: zcodePermissionRuleBehaviorSchema,
+    rules: z.array(zcodePermissionRuleValueSchema).min(1),
+  })
+  .strict();
+export const zcodePermissionResponseSchema = z
+  .object({
+    decision: zcodePermissionDecisionSchema,
+    reason: z.string().optional(),
+    modifiedInput: z.unknown().optional(),
+    permissionUpdates: z.array(zcodePermissionUpdateSchema).optional(),
+  })
+  .strict();
+export type ZCodePermissionResponse = z.infer<
+  typeof zcodePermissionResponseSchema
+>;
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` zcode-protocol-legacy-types.ts（切片：interaction origin） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export const zcodeInteractionRequestOriginSchema = z
+  .object({
+    kind: z.literal("subagent"),
+    agentId: nonEmptyString,
+    agentType: nonEmptyString,
+    childSessionId: nonEmptyString,
+    childTurnId: nonEmptyString.optional(),
+    description: z.string().optional(),
+    parentSessionId: nonEmptyString,
+    parentToolCallId: nonEmptyString.optional(),
+    parentTurnId: nonEmptyString.optional(),
+  })
+  .strict();
+export type ZCodeInteractionRequestOrigin = z.infer<
+  typeof zcodeInteractionRequestOriginSchema
+>;
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` zcode-protocol-legacy-types.ts（切片：context usage breakdown） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export const zcodeContextUsageBreakdownSourceSchema = z.enum([
+  "system_prompt",
+  "meta_user_context",
+  "skills",
+  "tool_prompt",
+  "system_tool_schemas",
+  "mcp_tool_schemas",
+  "messages",
+]);
+export const zcodeContextUsageBreakdownItemSchema = z
+  .object({
+    source: zcodeContextUsageBreakdownSourceSchema,
+    chars: z.number().int().nonnegative(),
+  })
+  .strict();
+export type ZCodeContextUsageBreakdownItem = z.infer<
+  typeof zcodeContextUsageBreakdownItemSchema
+>;
+export const zcodeContextUsageBreakdownSchema = z.array(
+  zcodeContextUsageBreakdownItemSchema,
+);
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` zcode-protocol/index.ts（切片：nonEmptyString） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` zcode-protocol/index.ts（切片：账号访问 schema） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export const zcodeAccountAccessSchema = z.discriminatedUnion("planKind", [
+  z
+    .object({
+      type: z.literal("zhipu-account"),
+      family: z.enum(["zai", "bigmodel"]),
+      planKind: z.literal("start-plan"),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("zhipu-account"),
+      family: z.enum(["zai", "bigmodel"]),
+      planKind: z.literal("individual-coding-plan"),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("zhipu-account"),
+      family: z.enum(["zai", "bigmodel"]),
+      planKind: z.literal("team-coding-plan"),
+      productId: nonEmptyString,
+      organizationId: nonEmptyString,
+      projectId: nonEmptyString,
+    })
+    .strict(),
+]);
+export type ZCodeAccountAccess = z.infer<typeof zcodeAccountAccessSchema>;
+
+/** Active Model 固定的账号访问类别；当前商品和 Team scope 由账号服务在请求期解析。 */
+export const zcodeProviderAccountAccessSchema = z
+  .object({
+    type: z.literal("zhipu-account"),
+    accountType: z.enum(["zai", "bigmodel"]),
+    mode: z.enum([
+      "start-plan",
+      "individual-coding-plan",
+      "team-coding-plan",
+      "off-peak",
+    ]),
+    entitled: z.boolean(),
+  })
+  .strict();
+export type ZCodeProviderAccountAccess = z.infer<
+  typeof zcodeProviderAccountAccessSchema
+>;
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` zcode-protocol/index.ts（切片：Plugin 对话引用 catalog） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+// 不带 → workspace 当前 catalog（新建草稿 Picker）。身份与能力字段保持
+// identifiers-only，不携带 rootPath/配置等；可选 icon/displayName(I18n)/description(I18n)
+// 仅供 UI 展示与 Picker 搜索，不参与身份、权限或 runtime reminder。
+export const zcodePluginReferenceCatalogEntrySchema = z
+  .object({
+    // 仅 referenceCatalogWithCategory 返回；旧入口保持原结构。
+    category: nonEmptyString.optional(),
+    pluginId: nonEmptyString,
+    name: nonEmptyString,
+    marketplace: nonEmptyString,
+    icon: z.string().optional(),
+    // 商店 listing 的 display-only 本地化显示名投影（沿 icon 先例）：让 Picker 能按
+    // 中文显示名搜索/展示；locale 解析复用 shared 的 plugin-display-name helper。
+    displayName: z.string().optional(),
+    displayNameI18n: z.record(z.string(), z.string()).optional(),
+    // 仅供 Picker 展示，不进入能力身份或 model-only reminder。
+    description: z.string().optional(),
+    descriptionI18n: z.record(z.string(), z.string()).optional(),
+    enabled: z.boolean(),
+    // 非空 = 与其他 enabled Plugin 共享 manifest name 的 V1 fail closed 冲突：
+    // Picker 禁选并展示原因，runtime 解析按 ambiguous 跳过。
+    conflictingPluginIds: z.array(nonEmptyString),
+    skillQualifiedNames: z.array(nonEmptyString),
+    mcpServerNames: z.array(nonEmptyString),
+    // 旧 Host 不投影该字段时按空数组兼容；只有新 Agent 会把它用于 reminder live 交集。
+    subagentNames: z.array(nonEmptyString).default([]),
+  })
+  .strict();
+export type ZCodePluginReferenceCatalogEntry = z.infer<
+  typeof zcodePluginReferenceCatalogEntrySchema
+>;
+
+// ── Skill 对话引用 catalog──
+// 新草稿读取 workspace 当前目录；已有 Session 读取 AgentRuntime 首次 context
+// 初始化时冻结的发现结果。该协议只承载 Composer 的只读引用投影，不替代 Settings
+// 的 Skill 管理接口，也不持久化 runtime 快照。
+export const zcodeSkillReferenceCatalogEntrySchema = z
+  .object({
+    id: nonEmptyString,
+    name: nonEmptyString,
+    description: z.string(),
+    path: nonEmptyString,
+    scope: z.enum(["workspace", "user", "plugin"]),
+    enabled: z.literal(true),
+    pluginName: nonEmptyString.optional(),
+  })
+  .strict();
+export type ZCodeSkillReferenceCatalogEntry = z.infer<
+  typeof zcodeSkillReferenceCatalogEntrySchema
+>;
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` zcode-protocol/index.ts（切片：Plugin Store Listing） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+// 商店信息（Store Listing）：目录条目携带的展示性元数据（显示名/icon/分类/作者/链接/hero/
+// 示例提示词），全部可选，UI 缺失时按降级矩阵处理（字母头像/隐藏区块/省略信息行）。
+// i18n 采用 `<字段>I18n` map，locale 解析复用 shared 的 plugin-display-name helper。
+export const zcodePluginStoreListingSchema = z
+  .object({
+    displayName: z.string().optional(),
+    displayNameI18n: z.record(z.string(), z.string()).optional(),
+    descriptionI18n: z.record(z.string(), z.string()).optional(),
+    icon: z.string().optional(),
+    category: z.string().optional(),
+    author: z.string().optional(),
+    authorUrl: z.string().optional(),
+    homepage: z.string().optional(),
+    privacyPolicy: z.string().optional(),
+    termsOfService: z.string().optional(),
+    heroImage: z.string().optional(),
+    examplePrompts: z.array(z.string()).optional(),
+    examplePromptsI18n: z.record(z.string(), z.array(z.string())).optional(),
+    /**
+     * 需要付费套餐才好用的插件：市场目录条目声明 `requiresPaidPlan: true`，
+     * UI 在标题右侧展示提示图标。描述的是「使用条件」而非「插件是收费商品」——
+     * 不参与安装门禁与计费，命名也不绑定具体套餐商品名。
+     */
+    requiresPaidPlan: z.boolean().optional(),
+  })
+  .strict();
+export type ZCodePluginStoreListing = z.infer<
+  typeof zcodePluginStoreListingSchema
+>;
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` usage-quota.ts 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+/**
+ * Coding Plan 额度相关的纯类型定义。
+ *
+ * 从 usage-stats.ts 拆出：MCP 额度接入后该文件超过 oxlint max-lines(400) 门禁，
+ * 而额度是可以独立描述的一组类型（不依赖统计聚合结构），拆出后两边都在门禁内。
+ * 这里只依赖自身，usage-stats.ts 单向导入并 re-export，不构成循环依赖。
+ */
+
+export interface UsageQuotaSnapshot {
+  level: string | null;
+  limits: UsageQuotaLimit[];
+}
+
+export interface UsageQuotaLimit {
+  type: string;
+  /** Start Plan 服务端额度桶及周期身份；周期时间为毫秒，供提醒去重。 */
+  bucketId?: string | undefined;
+  userPlanId?: string | undefined;
+  periodStart?: number | undefined;
+  periodEnd?: number | undefined;
+  /** 所属 entitlement 的周期类型，如 daily / one_time。 */
+  period?: string | undefined;
+  meter?: string | undefined;
+  unitType?: string | undefined;
+  /** Start Plan bucket 所属套餐身份，仅用于设置页按 plan 分组展示。 */
+  planId?: string | undefined;
+  unit?: number | undefined;
+  number?: number | undefined;
+  usage?: number | undefined;
+  currentValue?: number | undefined;
+  remaining?: number | undefined;
+  percentage?: number | undefined;
+  nextResetTime?: number | undefined;
+  usageDetails: UsageQuotaUsageDetail[];
+}
+
+export interface UsageQuotaUsageDetail {
+  modelCode: string;
+  displayName?: string;
+  usage: number;
+}
+
+/**
+ * `aggregate.type` 的合成值。
+ *
+ * 不复用 TOKENS_LIMIT / TIME_LIMIT：`isSameLimitCategory` 会把 TIME_LIMIT 判为工具额度同类，
+ * 让 MCP 汇总额度被现有的 findCodingPlanQuotaLimit 查询误命中。
+ */
+export const MCP_USAGE_QUOTA_LIMIT_TYPE = "MCP_USAGE_LIMIT" as const;
+
+/** MCP 额度所属的 Coding Plan 连接，供 UI 判断能否显示在当前 provider tab 下。 */
+export type UsageMcpQuotaScope =
+  | {
+      providerFamily: "zai" | "bigmodel";
+      targetType: "PERSONAL";
+    }
+  | {
+      providerFamily: "zai" | "bigmodel";
+      targetType: "TEAM";
+      organizationId: string;
+      projectId: string;
+    };
+
+export interface UsageMcpQuotaSnapshot {
+  /** 服务端 server_time，毫秒（接口返回 Unix 秒）。 */
+  serverTime: number;
+  level: string | null;
+  scope: UsageMcpQuotaScope;
+  /**
+   * 服务端 `total_usage`（总已用 / 总额度 / 总剩余）的等价表达，直接复用现有额度条 / 额度卡的
+   * 展示逻辑。注意 percentage 沿用 quota 接口口径：**已使用占比**，展示端负责反转成剩余。
+   */
+  aggregate: UsageQuotaLimit;
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` usage-stats.ts（切片：entitlement snapshot 族） 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export interface UsageEntitlementSnapshot {
+  generatedAt: number;
+  /** 当前额度响应的服务端时间（毫秒）；与本地快照生成时间 generatedAt 分离。 */
+  serverTime?: number;
+  authenticated: boolean;
+  unavailableReason?:
+    | "not_authenticated"
+    | "not_configured"
+    | "no_plan"
+    | "unavailable";
+  /** 无可用 Start Plan 时，保留明确过期原因用于展示。 */
+  startPlanExpired?: boolean;
+  /** 团队订阅明确失效的原因，仅与 no_plan 一起返回。 */
+  teamPlanUnavailableReason?: "expired" | "unassigned";
+  /** 当前 entitlement 查询对应的个人 / 团队上下文，用于设置页连接方式主判定。 */
+  context?: UsageEntitlementContext | null;
+  /** 当前用于查询 quota 的模型供应商信息。 */
+  provider: UsageEntitlementProviderInfo | null;
+  remaining: UsageEntitlementRemaining | null;
+  subscription: UsageEntitlementSubscription | null;
+  quota: UsageQuotaSnapshot | null;
+  /**
+   * ZCode 官方 Server MCP 的调用额度（`/api/v1/mcp/usage`）。
+   * 与 quota 同一份快照下发，是为了继承 entitlement 已有的缓存 / in-flight 合并 / TTL 策略；
+   * 拉取失败、未开通 Coding Plan、或该额度不属于本次查询的连接时一律为 null（可选数据面）。
+   */
+  mcpQuota?: UsageMcpQuotaSnapshot | null;
+}
+
+export interface UsageEntitlementContext {
+  scope: "personal" | "team";
+  organizationId?: string | null;
+  projectId?: string | null;
+  displayName?: string | null;
+  productId?: string | null;
+}
+
+export type PlanIdentityStatus =
+  | "coding_plan"
+  | "start_plan"
+  | "no_plan"
+  | "unknown";
+
+export interface PlanIdentitySnapshot {
+  generatedAt: number;
+  planStatus: PlanIdentityStatus;
+  planProductId: string;
+}
+
+export interface UsageEntitlementRemaining {
+  count: number;
+  isShow: boolean;
+  percentage?: number;
+  nextResetTime?: number | null;
+}
+
+export interface UsageEntitlementProviderInfo {
+  id: string;
+  name: string;
+}
+
+export interface UsageEntitlementSubscription {
+  identityType: "email" | "phoneNumber" | "unknown";
+  identityMasked: string | null;
+  details: UsageEntitlementSubscriptionDetail[];
+}
+
+export interface UsageEntitlementSubscriptionDetail {
+  productId: string;
+  productName: string;
+  purchaseTime: string | null;
+  beginTime: string | null;
+  billingCycle?: string | null;
+  renewTime?: string | null;
+  expireTime: string | null;
+  /** Start Plan balance 套餐下的权益生效时间；其他订阅类型可不提供。 */
+  entitlements?: Array<{
+    entitlementId: string;
+    /** 服务端 entitlement show_name，用于待生效提示。 */
+    showName?: string | null;
+    effectiveTime: string | null;
+  }>;
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` coding-plan-reset.ts 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export type CodingPlanResetType = "FIVE_HOUR" | "WEEK";
+
+export interface CodingPlanResetScopeRequest {
+  preferredProviderId: string;
+  /** Registry 静态访问类别，或调用边界已解析的 Team scope。 */
+  accountAccess: ZCodeProviderAccountAccess | ZCodeAccountAccess;
+}
+
+export interface CodingPlanResetOpportunitySnapshot {
+  expireAt: number;
+}
+
+export interface CodingPlanResetHistorySnapshot {
+  usedAt: number;
+}
+
+export interface CodingPlanResetStatusSnapshot {
+  availableFiveHourResets: CodingPlanResetOpportunitySnapshot[];
+  availableWeekResets: CodingPlanResetOpportunitySnapshot[];
+  latestFiveHourResetHistory: CodingPlanResetHistorySnapshot | null;
+  latestWeekResetHistory: CodingPlanResetHistorySnapshot | null;
+  hasUnreadHistory: boolean;
+}
+
+export interface CodingPlanResetOpportunityRequest
+  extends CodingPlanResetScopeRequest {
+  idempotencyKey: string;
+}
+
+export interface CodingPlanResetOpportunityResult {
+  granted: boolean;
+  nextTryAt: number | null;
+}
+
+export interface CodingPlanResetUseRequest extends CodingPlanResetScopeRequest {
+  idempotencyKey: string;
+  resetType: CodingPlanResetType;
+}
+
+export interface CodingPlanResetUseResult {
+  used: true;
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` pluginStoreOrder.ts 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+
+const orderList = z
+  .array(z.string().trim().min(1))
+  .transform((items) => [...new Set(items)]);
+const modeOrderSchema = z.object({
+  categoryOrder: orderList.optional(),
+  pluginOrder: z.record(z.string(), orderList).optional(),
+});
+const pluginStoreOrderSchema = z.object({
+  code: modeOrderSchema.optional().catch(undefined),
+  work: modeOrderSchema.optional().catch(undefined),
+});
+
+export type PluginStoreModeOrder = z.infer<typeof modeOrderSchema>;
+export type PluginStoreOrder = z.infer<typeof pluginStoreOrderSchema>;
+
+/** 排序只是展示配置；错误模式独立回退，不能阻止目录浏览或污染另一种模式。 */
+export function parsePluginStoreOrder(value: unknown): PluginStoreOrder | null {
+  return pluginStoreOrderSchema.safeParse(value).data ?? null;
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` plugin-marketplaces.ts 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export interface DefaultPluginMarketplace {
+  id: string;
+  source: string;
+  name: string;
+  description: string;
+  pluginCount: number;
+  lastUpdated?: string;
+}
+
+export const ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID = "zcode-plugins-official";
+
+/** Settings 三类资源发现共用；Bootstrap 单测与官方 definition 的 defaultEnabled 机械对照。 */
+export const DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS: ReadonlySet<string> = new Set(
+  [
+    "browser-use@zcode-plugins-official",
+    "image-search@zcode-plugins-official",
+    "documents@zcode-plugins-official",
+    "pdf@zcode-plugins-official",
+    "presentations@zcode-plugins-official",
+    "spreadsheets@zcode-plugins-official",
+    // node_repl 宿主：不进市场、不对用户露出，也不贡献任何 skill/command/subagent，但必须
+    // 始终可用 —— node_repl 的注册门禁是「Browser Use 或 Computer Use 任一启用」，宿主自己
+    // 不参与那个判断。Browser Use 默认开着，宿主若默认关就等于它上来就没有宿主。
+    "node-repl-host@zcode-plugins-official",
+    "skill-creator@zcode-plugins-official",
+    "plugin-creator@zcode-plugins-official",
+    "zcode-guide@zcode-plugins-official",
+    // 电脑控制回退为默认关闭，故 computer-use 不在此名单内。
+    // 该集合必须与 official-plugin-definitions.ts 里标了 defaultEnabled 的插件逐一对应，
+    // bootstrap 的「Settings 默认启用集合与 CLI 的官方插件声明一致」单测机械对照两者。
+  ],
+);
+
+export const DEFAULT_PLUGIN_MARKETPLACES: DefaultPluginMarketplace[] = [
+  {
+    // ZCode 官方唯一市场：本地 seed 分片与 CDN 分片在 Agent storage 内合并。
+    // CDN manifest 的 name 必须与该 canonical id 一致。
+    id: ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID,
+    source: "https://cdn-zcode.z.ai/zcode/official-plugin/marketplace.json",
+    name: ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID,
+    description:
+      "Official ZCode plugins marketplace: built-in and community plugins for ZCode.",
+    pluginCount: 0,
+  },
+];
+
+// 商店「公开」分段只有一个 ZCode 官方市场 id，内置与 CDN 不再拆分身份。
+export const PUBLIC_STORE_MARKETPLACE_IDS = [
+  ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID,
+] as const;
+
+export function isPublicStoreMarketplaceId(id: string): boolean {
+  return (PUBLIC_STORE_MARKETPLACE_IDS as readonly string[]).includes(id);
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` pluginStoreOrdering.ts 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+
+export const FALLBACK_PLUGIN_STORE_CATEGORY = "other";
+export const PLUGIN_STORE_CATEGORY_ORDER: readonly string[] = [
+  "productivity",
+  "developer-tools",
+  "utilities",
+  "finance",
+  "legal",
+  "template",
+];
+
+// 完整 ID 避免个人市场的同名插件被误置顶；所有展示入口复用同一默认顺序。
+const DOCUMENT_PLUGIN_RANKS = new Map(
+  ["pdf", "presentations", "spreadsheets", "documents"].map((name, index) => [
+    `${name}@${ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID}`,
+    index,
+  ]),
+);
+
+export function compareDocumentPluginPriority(
+  leftId: string,
+  rightId: string,
+): number {
+  return compareRanks(DOCUMENT_PLUGIN_RANKS, leftId, rightId);
+}
+
+/** 分类归并只影响展示，市场与引用 Picker 必须使用同一个排序键。 */
+export function resolvePluginStoreCategory(
+  category: string | undefined,
+): string | undefined {
+  const normalized = category?.trim();
+  return normalized === "guides" ? "utilities" : normalized || undefined;
+}
+
+interface PluginStoreSortEntry {
+  id: string;
+  category?: string | undefined;
+  displayName: string;
+}
+
+/** 纯展示排序：配置优先，剩余分类按产品默认顺序，类内文档插件优先，再按本地化名称稳定兜底。 */
+export function sortPluginStoreEntries<T>(
+  items: readonly T[],
+  project: (item: T) => PluginStoreSortEntry,
+  locale: string,
+  order?: PluginStoreModeOrder,
+): T[] {
+  const categoryRanks = ranks(order?.categoryOrder);
+  const pluginRanks = new Map(
+    Object.entries(order?.pluginOrder ?? {}).map(([category, ids]) => [
+      category,
+      ranks(ids),
+    ]),
+  );
+  return items
+    .map((item, index) => {
+      const entry = project(item);
+      return {
+        item,
+        index,
+        ...entry,
+        category:
+          resolvePluginStoreCategory(entry.category) ??
+          FALLBACK_PLUGIN_STORE_CATEGORY,
+      };
+    })
+    .sort(
+      (left, right) =>
+        compareRanks(categoryRanks, left.category, right.category) ||
+        compareCategories(left.category, right.category) ||
+        compareRanks(pluginRanks.get(left.category), left.id, right.id) ||
+        compareDocumentPluginPriority(left.id, right.id) ||
+        left.displayName.localeCompare(right.displayName, locale) ||
+        left.index - right.index,
+    )
+    .map(({ item }) => item);
+}
+
+function ranks(order: readonly string[] = []): Map<string, number> {
+  const result = new Map<string, number>();
+  for (const key of order) if (!result.has(key)) result.set(key, result.size);
+  return result;
+}
+function compareRanks(
+  order: Map<string, number> | undefined,
+  left: string,
+  right: string,
+): number {
+  if (!order) return 0;
+  return (order.get(left) ?? order.size) - (order.get(right) ?? order.size);
+}
+function compareCategories(left: string, right: string): number {
+  if (left === right) return 0;
+  if (left === FALLBACK_PLUGIN_STORE_CATEGORY) return 1;
+  if (right === FALLBACK_PLUGIN_STORE_CATEGORY) return -1;
+  const a = PLUGIN_STORE_CATEGORY_ORDER.indexOf(left);
+  const b = PLUGIN_STORE_CATEGORY_ORDER.indexOf(right);
+  if (a !== -1 && b !== -1) return a - b;
+  if (a !== -1) return -1;
+  if (b !== -1) return 1;
+  return left < right ? -1 : 1;
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` plugin-display-name.ts 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+
+const CANONICAL_PLUGIN_NAME_ACRONYMS: Readonly<Record<string, string>> = {
+  aws: "AWS",
+  mcp: "MCP",
+  zcode: "ZCode",
+};
+
+/** listing 的多语言字段先精确匹配，再按语言前缀兜底。 */
+export function resolveLocalizedText(
+  locale: string,
+  base: string | undefined,
+  i18n: Record<string, string> | undefined,
+): string | undefined {
+  if (i18n) {
+    const exact = i18n[locale];
+    if (exact) return exact;
+    const language = locale.split("-")[0];
+    if (language) {
+      const match = Object.entries(i18n).find(
+        ([key]) => key.split("-")[0] === language,
+      );
+      if (match?.[1]) return match[1];
+    }
+  }
+  return base;
+}
+
+export function formatCanonicalPluginName(
+  name: string,
+  locale: string,
+): string {
+  return name
+    .trim()
+    .split(/[-_]+/u)
+    .filter(Boolean)
+    .map(
+      (part) =>
+        CANONICAL_PLUGIN_NAME_ACRONYMS[part.toLowerCase()] ??
+        `${part.charAt(0).toLocaleUpperCase(locale)}${part.slice(1)}`,
+    )
+    .join(" ");
+}
+
+/**
+ * 用户可见插件名称只信任与完整 Plugin ID 关联的 listing；缺失时才回退到 canonical slug。
+ * 不按裸 manifest name 猜测官方产品名，避免同名 marketplace 插件互相覆盖。
+ */
+export function resolvePluginDisplayName(
+  plugin: { name: string; listing?: ZCodePluginStoreListing },
+  locale: string,
+): string {
+  return (
+    resolveLocalizedText(
+      locale,
+      plugin.listing?.displayName,
+      plugin.listing?.displayNameI18n,
+    ) ?? formatCanonicalPluginName(plugin.name, locale)
+  );
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` skills-types.ts 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export type SkillScope = "workspace" | "user" | "plugin";
+
+export interface SkillMetadata {
+  slug?: string;
+  version?: string;
+  ownerId?: string;
+  publishedAt?: number;
+}
+
+export interface SkillSummary {
+  id: string;
+  name: string;
+  description: string;
+  body: string;
+  path: string;
+  /**
+   * 发现阶段命中的原始 SKILL.md 路径（未经 realpath 解析）。
+   * 软链导入的技能里 `path` 是 realpath 后的目标文件，`sourcePath` 才指向 `~/.zcode/skills/<name>` 下的链接本体，
+   * 删除时必须用它才能只删链接、不动目标。普通技能与 `path` 相同。
+   */
+  sourcePath?: string;
+  scope: SkillScope;
+  enabled: boolean;
+  /** plugin scope 时为来源插件名；其它 scope 留空。 */
+  pluginName?: string | undefined;
+  /** plugin scope 时为来源插件完整 ID（name@marketplace）；旧 payload 可缺省。 */
+  pluginId?: string;
+  metadata?: SkillMetadata;
+}
+
+export interface SkillsCapability {
+  userScopeAvailable: boolean;
+  userScopeReason?: "desktop_only";
+}
+
+export type SkillDiagnosticSeverity = "warning" | "error";
+
+/** 与 zcode-cli `SkillDiagnosticCode` 同步。变动时一并改 apps/zcode-cli/packages/contracts/src/skills/index.ts。 */
+export type SkillDiagnosticCode =
+  | "skill_root_not_found"
+  | "skill_scan_failed"
+  | "skill_read_failed"
+  | "skill_missing_frontmatter"
+  | "skill_invalid_frontmatter"
+  | "skill_missing_name"
+  | "skill_invalid_name"
+  | "skill_missing_description"
+  | "skill_description_too_long"
+  | "skill_unknown_frontmatter"
+  | "skill_duplicate_name"
+  | "skill_too_large"
+  | "skill_not_found";
+
+export interface SkillDiagnostic {
+  code: SkillDiagnosticCode;
+  severity: SkillDiagnosticSeverity;
+  message: string;
+  path?: string;
+  skillName?: string;
+}
+
+export interface SkillsListResult {
+  skills: SkillSummary[];
+  capability: SkillsCapability;
+  diagnostics: SkillDiagnostic[];
+}
+
+export interface SkillsPromptContext {
+  prompt: string;
+  activatedSkillNames: string[];
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` launchMarks.ts 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+/** main 进程采集的四个启动时刻（epoch 毫秒）。renderer 据此计算分阶段耗时。 */
+export interface LaunchMarks {
+  /** process.getCreationTime()：进程创建（锚点 T0） */
+  createdAt: number;
+  /** main/index.ts 模块顶部 Date.now()（T1） */
+  mainStart: number;
+  /** app.whenReady 回调入口 Date.now()（T2） */
+  appReady: number;
+  /** 主窗口 loadWindow 内 loadURL 前 Date.now()（T3） */
+  loadUrl: number;
+}
+
+/** 主窗口 loadURL query string 中携带 launch marks 的参数名 */
+export const LAUNCH_MARKS_QUERY_KEY = "zcodeLaunchMarks";
+
+export function serializeLaunchMarks(marks: LaunchMarks): string {
+  return JSON.stringify(marks);
+}
+
+export function parseLaunchMarks(
+  raw: string | null | undefined,
+): LaunchMarks | null {
+  if (raw == null || raw === "") {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (parsed == null || typeof parsed !== "object") {
+    return null;
+  }
+  const record = parsed as Record<string, unknown>;
+  const keys: (keyof LaunchMarks)[] = [
+    "createdAt",
+    "mainStart",
+    "appReady",
+    "loadUrl",
+  ];
+  const result = {} as LaunchMarks;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      return null;
+    }
+    result[key] = value;
+  }
+  return result;
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` telemetry.ts 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export interface TelemetryRendererContext {
+  clientTimezone: string;
+  clientLanguage: string;
+  screenResolution: string;
+}
+
+export interface TelemetryEventPayload {
+  elementName: string;
+  eventRegion: string;
+  eventType: string;
+  eventText?: string;
+  eventExtraDetail: Record<string, string>;
+  userId?: string;
+  talkId?: string;
+  messageId?: string;
+}
+
+export interface RendererTelemetryEventPayload extends TelemetryEventPayload {
+  context: TelemetryRendererContext;
+}
+
+export interface ArmsCustomEventPayload {
+  name: string;
+  group: string;
+  value?: number | undefined;
+  properties?:
+    | Record<string, string | number | boolean | undefined>
+    | undefined;
+}
+
+/** desktop main 实际传给 armsRum.sendCustom 的最终参数。 */
+export interface FinalArmsCustomEventPayload {
+  name: string;
+  type: "custom";
+  group: string;
+  value: number;
+  properties: Record<string, string>;
+}
+
+/** 仅 E2E test bridge 可读取的 main-process 内存记录。 */
+export interface FinalArmsCustomEventE2EEntry {
+  sequence: number;
+  recordedAt: number;
+  payload: FinalArmsCustomEventPayload;
+}
+
+export interface ConfigureFinalArmsCustomEventE2ERequest {
+  /** 命中后仍进入 ring，但不调用真实 armsRum.sendCustom。 */
+  suppressedEventNames: string[];
+}
+
+/**
+ * URL 配置进入业务埋点前只允许提取 hostname。
+ * 无效值和非 HTTP(S) 协议返回空串，避免误把完整 URL、userinfo 或任意文本带入 payload。
+ */
+export function resolveSafeTelemetryHostname(
+  value: string | null | undefined,
+): string {
+  const normalized = value?.trim();
+  if (!normalized) return "";
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return "";
+    return parsed.hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+/** 错误原文可能带任意格式密钥；整体丢弃，不用正则猜测秘密边界。 */
+export function sanitizeTelemetryErrorMessage(
+  value: string | null | undefined,
+): string {
+  return value ? "[redacted]" : "";
+}
+
+function sanitizeLoginHostname(value: string): string {
+  const hostname = resolveSafeTelemetryHostname(value);
+  if (hostname) return hostname;
+  // UI 已取过 hostname 时 Core 仍需幂等；只接受精确 hostname，不放行无协议的路径或凭据。
+  const normalized = value.trim().toLowerCase();
+  return normalized &&
+    resolveSafeTelemetryHostname(`https://${normalized}`) === normalized
+    ? normalized
+    : "";
+}
+
+/** 只清洗上报副本；业务错误、授权地址和调用方持有的 detail 不得被修改。 */
+export function sanitizeTelemetryEventDetail(
+  elementName: string,
+  detail: Readonly<Record<string, string>>,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(detail).map(([key, value]) => [
+      key,
+      key === "error_msg"
+        ? sanitizeTelemetryErrorMessage(value)
+        : elementName === "app_login_ck" && key === "login_url"
+          ? sanitizeLoginHostname(value)
+          : value,
+    ]),
+  );
+}
+
+interface TelemetryScreenLike {
+  width: number;
+  height: number;
+}
+
+interface TelemetryWindowLike {
+  intlLocale?: string;
+  timeZone?: string;
+  screen: TelemetryScreenLike;
+}
+
+export function collectTelemetryRendererContext(
+  options?: TelemetryWindowLike,
+): TelemetryRendererContext {
+  const resolvedIntlOptions =
+    typeof Intl === "undefined"
+      ? undefined
+      : Intl.DateTimeFormat().resolvedOptions();
+  const timeZone = options?.timeZone ?? resolvedIntlOptions?.timeZone ?? "UTC";
+  const clientLanguage =
+    options?.intlLocale ?? resolvedIntlOptions?.locale ?? "en-US";
+  const runtimeScreen = (globalThis as { screen?: TelemetryScreenLike }).screen;
+  const screen = options?.screen ?? runtimeScreen ?? { width: 0, height: 0 };
+
+  return {
+    clientTimezone: timeZone,
+    clientLanguage,
+    screenResolution: `${screen.width}x${screen.height}`,
+  };
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` legacy-model-provider-identity.ts 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+
+// 不凭用户自定义 Provider 的名字猜所属站点；闲时 Ticket 的绑定身份也不能改。
+export function migrateLegacyOfficialGlmModelId(
+  providerId: string,
+  modelId: string,
+): string {
+  return /^(?:builtin:(?:zai|bigmodel)(?:-start-plan|-coding-plan)?|account:(?:zai|bigmodel)-(?:start-plan|individual-coding-plan|team-coding-plan))$/.test(
+    providerId,
+  )
+    ? normalizeOfficialGlmModelId(modelId)
+    : modelId;
+}
+
+/**
+ * 仅供已发布旧数据的单向升级使用，不是运行时 Provider 别名或选择兜底。
+ * 依赖当前账号解释旧 Coding Plan 会使离线/SSH 迁移丢失原意图。
+ * 同域 Individual 仅是确定性迁移落点，当前账号对应留给有效选择解析，不能据此绑定执行。
+ * 迁移不查模型/档位是否可用；普通未知 ID 不构成旧格式证据。
+ */
+export function migrateLegacyModelProviderId(
+  providerId: string,
+): string | undefined {
+  switch (providerId) {
+    case "builtin:bigmodel":
+      return BUILTIN_PROVIDER_TEMPLATE_IDS.bigmodel;
+    case "builtin:zai":
+      return BUILTIN_PROVIDER_TEMPLATE_IDS.zai;
+    case "builtin:bigmodel-start-plan":
+      return BUILTIN_MODEL_PROVIDER_IDS.bigmodelStartPlan;
+    case "builtin:zai-start-plan":
+      return BUILTIN_MODEL_PROVIDER_IDS.zaiStartPlan;
+    case "builtin:bigmodel-coding-plan":
+      return BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan;
+    case "builtin:zai-coding-plan":
+      return BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan;
+    default:
+      return providerId.startsWith("builtin:") ? undefined : providerId;
+  }
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` official-glm-model-id.ts 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+// 只供官方模型名单、telemetry 模型白名单与单向迁移入口使用；不能用于 Registry 比较或通用请求改写。
+const canonicalIds = [
+  "GLM-5.3",
+  "GLM-5.3-Flash",
+  "GLM-5V-Turbo",
+  "GLM-5.2",
+  "GLM-5.1",
+  "GLM-5.1-Highspeed",
+  "GLM-5",
+  "GLM-5-Turbo",
+  "GLM-4.7",
+  "GLM-4.7-FlashX",
+  "GLM-4.7-Flash",
+  "GLM-4.6",
+  "GLM-4.5-Air",
+  "GLM-4.5",
+  "GLM-4.6V",
+  "GLM-4.6V-Flash",
+  "GLM-4.6V-FlashX",
+  "GLM-4.1V-Thinking-FlashX",
+  "GLM-4.1V-Thinking-Flash",
+  "GLM-4-FlashX-250414",
+  "GLM-4-Flash-250414",
+  "GLM-4V-Flash",
+];
+const byLowercase = new Map(canonicalIds.map((id) => [id.toLowerCase(), id]));
+
+/** 官方 GLM 模型规范 ID 名单；telemetry 白名单以此为来源，新增官方模型时同步进入白名单。 */
+export const OFFICIAL_GLM_MODEL_IDS: readonly string[] = canonicalIds;
+
+export function normalizeOfficialGlmModelId(modelId: string): string {
+  return byLowercase.get(modelId.toLowerCase()) ?? modelId;
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` telemetryRedaction.ts 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+/**
+ * 遥测文本与模型身份的脱敏收口。
+ *
+ * ARMS 自动采集的 exception / api / click 事件，以及自定义事件里带自由文本的字段，都可能包含
+ * 本机路径、邮箱、完整 URL 和凭据。这里提供纯函数实现，供 desktop main 的 `beforeReport` 与
+ * renderer 侧埋点共用，避免每个埋点各写一份模式。
+ *
+ * 模式与 CLI 的 `apps/zcode-cli/packages/telemetry/src/error-sanitizer.ts` 保持一致；两者位于不同
+ * workspace 且不允许互相依赖，扩展任一侧时必须同步另一侧。
+ */
+
+/** 单字段默认上限；ARMS 单字段过长会被截断或拒绝，主动截断保证关键头部一定上得去。 */
+export const TELEMETRY_TEXT_MAX_LENGTH = 2_048;
+
+/** 脱敏前的输入上限：错误可能携带整段响应正文，先有界截断再正则清洗，避免无界 CPU 成本。 */
+const TELEMETRY_TEXT_SCAN_LIMIT = 4_096;
+
+/** 路由段保留原文的最大长度；更长的段一律视为不可信内容。 */
+const TELEMETRY_ROUTE_SEGMENT_MAX_LENGTH = 128;
+
+export interface RedactTelemetryTextOptions {
+  /** 输出上限，默认 {@link TELEMETRY_TEXT_MAX_LENGTH}。 */
+  maxLength?: number;
+}
+
+/**
+ * 把自由文本清洗成可上报形态：URL 去 query、路径/邮箱/凭据归一为占位符，并有界截断。
+ *
+ * 只作用于上报副本；错误展示、本地日志、崩溃归档和分类逻辑必须继续使用原值。
+ */
+export function redactTelemetryText(
+  value: string | undefined | null,
+  options: RedactTelemetryTextOptions = {},
+): string {
+  if (typeof value !== "string" || !value) {
+    return "";
+  }
+
+  const maxLength = options.maxLength ?? TELEMETRY_TEXT_MAX_LENGTH;
+  const redacted = value
+    .slice(0, TELEMETRY_TEXT_SCAN_LIMIT)
+    .replace(/\bhttps?:\/\/[^\s"'<>]+/giu, (match) => redactTelemetryUrl(match))
+    .replace(
+      /(\bauthorization\b["']?\s*[:=])\s*(?:(?:Bearer|Basic)\s+)?[^\s,"'};]+/giu,
+      "$1 {redacted}",
+    )
+    .replace(
+      /([?&](?:api[_-]?key|token|access[_-]?token|authorization|password|passwd|secret|cookie|session)=)[^&\s]+/giu,
+      "$1{redacted}",
+    )
+    .replace(
+      /(["']?(?:api[_-]?key|token|access[_-]?token|password|passwd|secret|client[_-]?secret|cookie|set-cookie|session)["']?\s*[:=]\s*["']?)(?!\{redacted\})[^\s,"'};]+/giu,
+      "$1{redacted}",
+    )
+    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/giu, "$1 {redacted}")
+    .replace(/\b(?:sk|rk|pk)-[A-Za-z0-9_-]{12,}\b/giu, "{secret}")
+    .replace(/\bgh[pousr]_[A-Za-z0-9]{20,}\b/gu, "{secret}")
+    .replace(/\bAKIA[A-Z0-9]{16}\b/gu, "{secret}")
+    .replace(/\bAIza[0-9A-Za-z_-]{30,}\b/gu, "{secret}")
+    .replace(/\b[^/@\s]+@[^/@\s]+\.[^/@\s]+\b/gu, "{email}")
+    // 修复原因：崩溃/异常消息里的绝对路径会带上本机用户名与工作区目录名，必须在离开本机前归一。
+    .replace(/\/(?:private\/)?(?:var\/folders|tmp)\/[^\s:;,)\]}]+/gu, "{path}")
+    .replace(
+      /\/(?:Users|home|root|workspace|workspaces|Volumes)\/[^/\s]+(?:\/[^\s:;,)\]}]+)*/gu,
+      "{path}",
+    )
+    .replace(/\b[A-Za-z]:\\[^\\\s]+(?:\\[^\s:;,)\]}]+)*/gu, "{path}")
+    .replace(/\p{Cc}+/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+
+  return redacted.slice(0, maxLength);
+}
+
+/**
+ * 把 URL 清洗成 `protocol//host` 加归一化路由；丢弃 query 与 fragment。
+ *
+ * `file://`、本地绝对路径归一为 `local_file`，`blob:` / `data:` 只保留协议标记，
+ * 无法解析时返回 `unknown`，不回退到原值。
+ */
+export function redactTelemetryUrl(value: string | undefined | null): string {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) {
+    return "unknown";
+  }
+  if (/^blob:/iu.test(raw)) {
+    return "blob";
+  }
+  if (/^data:/iu.test(raw)) {
+    return "data";
+  }
+  // Bug 根因：枚举常见根目录会漏掉 /opt、/root、/mnt 等合法 POSIX 绝对路径。
+  if (
+    /^file:/iu.test(raw) ||
+    /^[a-zA-Z]:[\\/]/u.test(raw) ||
+    raw.startsWith("/")
+  ) {
+    return "local_file";
+  }
+
+  try {
+    // Bug 根因：无条件补 `https://` 会让 `!!!` 之类的普通文本被 URL 解析成 host 后原样回显。
+    // 只有本身带 scheme，或看起来确实是 host[:port][/path] 的输入才进入解析。
+    const candidate = raw.includes("://")
+      ? raw
+      : /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d{1,5})?(?:[/?#]|$)/iu.test(raw)
+        ? `https://${raw}`
+        : "";
+    if (!candidate) {
+      return "unknown";
+    }
+    const parsed = new URL(candidate);
+    if (parsed.protocol === "file:" || !parsed.host) {
+      return "local_file";
+    }
+    const route = parsed.pathname
+      .split("/")
+      .map((segment) => redactTelemetryRouteSegment(segment))
+      .join("/");
+    return `${parsed.protocol}//${parsed.host}${route}`;
+  } catch {
+    return "unknown";
+  }
+}
+
+function redactTelemetryRouteSegment(segment: string): string {
+  if (!segment) {
+    return segment;
+  }
+  if (
+    // 邮箱、长数字 ID、hash 和 UUID 都是高基数身份，不能原样留在路由里。
+    /@/u.test(segment) ||
+    /^\d{7,}$/u.test(segment) ||
+    /^[0-9a-f]{16,}$/iu.test(segment) ||
+    /^[0-9a-f]{8}-[0-9a-f-]{27,}$/iu.test(segment)
+  ) {
+    return "{segment}";
+  }
+  return segment.slice(0, TELEMETRY_ROUTE_SEGMENT_MAX_LENGTH);
+}
+
+/** 官方 GLM 名单之外的历史内置模型；仍是 ZCode 自己发布的稳定 ID，不是用户命名。 */
+const TELEMETRY_LEGACY_BUILTIN_MODEL_IDS: readonly string[] = [
+  "charglm-4",
+  "codegeex-4",
+  "emohaa",
+];
+
+/**
+ * telemetry 模型白名单：只有这里的内置稳定模型 ID 允许原样进入遥测。
+ *
+ * 白名单独立于账号返回的运行时 catalog，但以人工维护的官方 GLM 名单为来源：
+ * 修复原因：此前手抄一份列表漏掉了 GLM-5.3 / GLM-5.3-Flash / GLM-5V-Turbo，导致旗舰模型在
+ * plan_* / perf_ui_* 里整体写成 `custom`。派生自官方名单后，两处不会再各自漂移。
+ */
+export const TELEMETRY_SAFE_BUILTIN_MODEL_IDS: ReadonlySet<string> = new Set([
+  ...OFFICIAL_GLM_MODEL_IDS.map((id) => id.toLowerCase()),
+  ...TELEMETRY_LEGACY_BUILTIN_MODEL_IDS,
+]);
+
+export type TelemetryProviderScope = "builtin" | "custom" | "unknown";
+
+export interface TelemetryProviderIdentity {
+  providerId: string;
+  providerScope: TelemetryProviderScope;
+}
+
+/**
+ * 旧报表身份（`builtin:zai` / `builtin:zai-start-plan` 等）是 ZCode 自己的固定 ID。
+ *
+ * 修复原因：V4 supervisor 投影 /report detail 时会用 legacyTelemetryProviderId 把运行时
+ * `account:*` 映射成这些旧身份，plan_ttft / perf_ui_* 复用同一份 detail。只认 `account:*`
+ * 会让全部内置用户被当成自定义 provider 归一为 `custom`。复用 shared 的单向迁移表判定，
+ * 未知的 `builtin:` 前缀仍按自定义处理，不能借前缀混入。
+ */
+function isLegacyBuiltinTelemetryProviderId(providerId: string): boolean {
+  const migrated = migrateLegacyModelProviderId(providerId);
+  return migrated !== undefined && migrated !== providerId;
+}
+
+/** 内置 provider 保留稳定 ID；自定义 provider 由用户命名，原样上报会泄露私有名称并制造高基数。 */
+export function resolveTelemetryProviderScope(
+  providerId: string | undefined | null,
+): TelemetryProviderIdentity {
+  const normalized = providerId?.trim();
+  if (!normalized) {
+    return { providerId: "", providerScope: "unknown" };
+  }
+  if (
+    isBuiltinModelProviderId(normalized) ||
+    isLegacyBuiltinTelemetryProviderId(normalized)
+  ) {
+    return { providerId: normalized, providerScope: "builtin" };
+  }
+  return { providerId: "custom", providerScope: "custom" };
+}
+
+/**
+ * 从 `custom:<providerId>:<modelName>` 编码值或 `<providerId>/<modelId>` 复合值里剥出裸模型 ID。
+ * 裸 ID 只用于查白名单，无论 provider 部分是什么都不会原样进入遥测。
+ */
+function extractBareModelId(value: string): string {
+  const decoded = decodeCustomModelValue(value);
+  if (decoded) {
+    return decoded.modelName ?? "";
+  }
+  const separator = value.indexOf("/");
+  return separator > 0 ? value.slice(separator + 1) : value;
+}
+
+/**
+ * 只保留白名单内的内置模型 ID。
+ *
+ * 自定义 provider 的模型、内置 provider 下未命中白名单的模型统一写 `custom`；
+ * provider scope 未知或模型缺失时写空串，与既有留空口径一致。
+ */
+export function resolveTelemetryModelId(
+  providerScope: TelemetryProviderScope,
+  modelId: string | undefined | null,
+): string {
+  const normalized = modelId?.trim();
+  if (!normalized || providerScope === "unknown") {
+    return "";
+  }
+  if (providerScope === "custom") {
+    return "custom";
+  }
+  // 修复原因：supervisor 投影出的 detail.model_name 是 `<providerId>/<modelId>` 复合值或
+  // `custom:` 编码值，直接整串查白名单必然落空；先剥出裸模型 ID 再判定。
+  const bareModelId = extractBareModelId(normalized).toLowerCase();
+  return TELEMETRY_SAFE_BUILTIN_MODEL_IDS.has(bareModelId)
+    ? bareModelId
+    : "custom";
+}
+
+/**
+ * 归一化「只拿到一个模型值、没有独立 provider 字段」的场景。
+ *
+ * 支持三种形态：`custom:<providerId>[:<modelName>]` 编码值、`<providerId>/<modelId>` 复合值和
+ * 裸模型 ID。裸 ID 直接按白名单判定，未命中一律降级为 `custom`——这正是「新增内置模型未进入
+ * 白名单时必须默认降级」的要求，因此不需要调用方额外传 provider。
+ */
+export function sanitizeTelemetryModelValue(
+  value: string | undefined | null,
+): string {
+  const normalized = value?.trim();
+  if (!normalized) {
+    return "";
+  }
+
+  // `custom:` 前缀本身就表示非内置 provider，无需解码出用户命名即可判定。
+  const decoded = decodeCustomModelValue(normalized);
+  if (decoded) {
+    return resolveTelemetryModelId(
+      resolveTelemetryProviderScope(decoded.providerId).providerScope,
+      decoded.modelName,
+    );
+  }
+
+  const separator = normalized.indexOf("/");
+  if (separator > 0) {
+    const { providerScope } = resolveTelemetryProviderScope(
+      normalized.slice(0, separator),
+    );
+    return resolveTelemetryModelId(
+      providerScope,
+      normalized.slice(separator + 1),
+    );
+  }
+
+  return resolveTelemetryModelId("builtin", normalized);
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` custom-model-value.ts 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export const CUSTOM_MODEL_VALUE_PREFIX = "custom:";
+
+export interface DecodedCustomModelValue {
+  providerId: string;
+  modelName?: string;
+}
+
+function safeDecodeUriComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+export function encodeCustomModelValue(
+  providerId: string,
+  modelName?: string,
+): string {
+  const encodedProviderId = encodeURIComponent(providerId);
+  if (!modelName) {
+    return `${CUSTOM_MODEL_VALUE_PREFIX}${encodedProviderId}`;
+  }
+
+  return `${CUSTOM_MODEL_VALUE_PREFIX}${encodedProviderId}:${encodeURIComponent(modelName)}`;
+}
+
+export function decodeCustomModelValue(
+  value: string,
+): DecodedCustomModelValue | null {
+  if (!value.startsWith(CUSTOM_MODEL_VALUE_PREFIX)) {
+    return null;
+  }
+
+  const body = value.slice(CUSTOM_MODEL_VALUE_PREFIX.length);
+  const separatorIndex = body.indexOf(":");
+
+  if (separatorIndex < 0) {
+    return {
+      providerId: safeDecodeUriComponent(body),
+    };
+  }
+
+  const legacyParts = body.split(":");
+  if (legacyParts.length >= 3 && legacyParts[0] === "builtin") {
+    return {
+      providerId: `${legacyParts[0]}:${legacyParts[1]}`,
+      modelName: safeDecodeUriComponent(legacyParts.slice(2).join(":")),
+    };
+  }
+
+  const encodedProviderId = body.slice(0, separatorIndex);
+  const encodedModelName = body.slice(separatorIndex + 1);
+
+  return {
+    providerId: safeDecodeUriComponent(encodedProviderId),
+    modelName: safeDecodeUriComponent(encodedModelName),
+  };
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` model-selection-types.ts 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export const ZCODE_AGENT_PROVIDER_NOT_READY_CODE =
+  "ZCODE_AGENT_PROVIDER_NOT_READY" as const;
+export const ZCODE_AGENT_PROVIDER_NOT_READY_REASON =
+  "provider_not_ready" as const;
+
+export type ModelSelectionGhostReason =
+  | "mismatch"
+  | "no-preference"
+  | "providers-not-ready"
+  | "unresolved-config";
+
+export type ModelSelectionUiErrorCode =
+  | "CONFIG_READ_FAILED"
+  | "CONFIG_PARSE_FAILED"
+  | "CONFIG_INVALID_SCHEMA"
+  | "CONFIG_REQUIRED_FIELD_MISSING";
+
+export interface ModelSelectionUiError {
+  code: ModelSelectionUiErrorCode;
+  i18nKey: string;
+  detail?: string;
+}
+
+export interface ModelSelectionResolution {
+  selectedSupplierKey: string;
+  selectedModel: string | null;
+  isGhostSupplier: boolean;
+  supplierMismatchReason: ModelSelectionGhostReason | null;
+  uiError: ModelSelectionUiError | null;
+  shouldClearLocalPreference: boolean;
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` model-selection-key.ts 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+
+export const NATIVE_SUPPLIER_KEY_PREFIX = "native:";
+export const CUSTOM_SUPPLIER_KEY_PREFIX = "custom:";
+export const GHOST_SUPPLIER_KEY_PREFIX = "ghost:";
+
+const TRAILING_SLASHES_RE = /\/+$/;
+const MAX_ENCODED_GHOST_IDENTITY_LENGTH = 160;
+
+function fnv1a32(value: string, seed = 0x811c9dc5): number {
+  let hash = seed >>> 0;
+  for (const char of value) {
+    hash ^= char.codePointAt(0) ?? 0;
+    hash = Math.imul(hash, 0x01000193);
+    hash >>>= 0;
+  }
+  return hash >>> 0;
+}
+
+function hash12(value: string): string {
+  const high = fnv1a32(value, 0x811c9dc5).toString(16).padStart(8, "0");
+  const low = fnv1a32(value, 0x9e3779b1).toString(16).padStart(8, "0");
+  return `${high}${low}`.slice(0, 12);
+}
+
+export function normalizeSupplierBaseUrl(baseUrl: string): string {
+  return baseUrl.trim().replace(TRAILING_SLASHES_RE, "");
+}
+
+export function buildNativeSupplierKey(zcodeProvider: ZCodeProvider): string {
+  return `${NATIVE_SUPPLIER_KEY_PREFIX}${zcodeProvider}`;
+}
+
+export function buildCustomSupplierKey(providerId: string): string {
+  return `${CUSTOM_SUPPLIER_KEY_PREFIX}${providerId.trim()}`;
+}
+
+export function buildGhostSupplierIdentity(rawIdentity: string): string {
+  const encodedIdentity = encodeURIComponent(rawIdentity.trim() || "unknown");
+  if (encodedIdentity.length <= MAX_ENCODED_GHOST_IDENTITY_LENGTH) {
+    return encodedIdentity;
+  }
+
+  // ghost identity 可能包含长 URL，直接拼 key 会放大状态串并污染日志。
+  // 超长时退化成稳定摘要，避免 selectedSupplierKey 无限增长。
+  return `hash=${hash12(rawIdentity)}`;
+}
+
+export function buildGhostSupplierKey(
+  zcodeProvider: ZCodeProvider,
+  reason: ModelSelectionGhostReason,
+  rawIdentity: string,
+): string {
+  return [
+    GHOST_SUPPLIER_KEY_PREFIX,
+    zcodeProvider,
+    ":",
+    reason,
+    ":",
+    buildGhostSupplierIdentity(rawIdentity),
+  ].join("");
+}
+
+export function resolveSupplierKeyFromModelDisplayValue(
+  zcodeProvider: ZCodeProvider,
+  value: string | boolean | undefined,
+): string {
+  const customModel = decodeCustomModelValue(String(value ?? ""));
+  if (customModel?.providerId) {
+    return buildCustomSupplierKey(customModel.providerId);
+  }
+
+  return buildNativeSupplierKey(zcodeProvider);
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` sessionCreateTelemetry.ts 消费切片 ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+
+export type SessionCreateSource = "group" | "project" | "session";
+export type SessionCreateClientKind = "desktop" | "mobile" | "web";
+
+/** 手机转发只开放本事件；公共用户/设备身份仍由桌面 TelemetryCore 注入。 */
+export const sessionCreateTelemetrySchema = z
+  .object({
+    elementName: z.literal("session_create"),
+    eventRegion: z.literal("app"),
+    eventType: z.literal("result"),
+    talkId: z.string().min(1).max(512),
+    messageId: z.string().min(1).max(512),
+    context: z
+      .object({
+        clientTimezone: z.string().max(128),
+        clientLanguage: z.string().max(128),
+        screenResolution: z.string().max(64),
+      })
+      .strict(),
+    eventExtraDetail: z
+      .object({
+        create_source: z.enum(["group", "project", "session"]),
+        client_kind: z.literal("mobile"),
+        workspace_kind: z.enum(["local", "remote"]),
+        remote_kind: z.enum(["", "ssh", "wsl", "docker", "server"]),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type MobileSessionCreateTelemetry = z.infer<
+  typeof sessionCreateTelemetrySchema
+>;
+
+/** 自动化由执行 Host 报告；手机不得冒充无人值守派发来源。 */
+export const automationSessionCreateTelemetrySchema =
+  sessionCreateTelemetrySchema.extend({
+    eventExtraDetail:
+      sessionCreateTelemetrySchema.shape.eventExtraDetail.extend({
+        create_source: z.enum(["automation_idle", "automation_scheduled"]),
+        client_kind: z.literal("desktop"),
+      }),
+  });
+export type AutomationSessionCreateTelemetry = z.infer<
+  typeof automationSessionCreateTelemetrySchema
+>;
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` platform.ts 消费切片（IPlatformService 收窄） ----------
+ * 许可证：Apache-2.0（zcode）。
+ * 适配注记：原接口含远程连接/编辑器/MCP 配置等 30+ 方法与重型依赖闭包；本仓照搬件只经
+ * `Pick<IPlatformService, "reportArmsCustomEvent">`（uiPerfArmsTelemetry）消费，此处按原
+ * 成员签名收窄声明，语义对消费面等价。
+ */
+
+export interface IPlatformService {
+  /** 上报 ARMS 自定义事件（Desktop main 转发）；Web/手机宿主可不实现。 */
+  reportArmsCustomEvent(payload: ArmsCustomEventPayload): Promise<void>;
+}
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` zcode-protocol-legacy-types.ts 收窄切片 ----------
+ * 许可证：Apache-2.0（zcode）。
+ * 适配注记：原符号 ZCodeSessionActiveTurnKind 经 zcodeSessionRuntimeStateSchema.activeTurnKind
+ * 推导（NonNullable）；为避免拖入整棵 runtime-state schema 闭包，按同词表内联 enum，
+ * 联合成员与推导结果一致。
+ */
+
+export const zcodeSessionActiveTurnKindSchema = z.enum([
+  "regular",
+  "compact",
+  "rewind",
+]);
+export type ZCodeSessionActiveTurnKind = z.infer<
+  typeof zcodeSessionActiveTurnKindSchema
+>;
+
+/* ---------- zcode 照搬（P5 补充）：`@zcode/shared` shortcutCommands.ts 消费切片（命令表与序列化） ----------
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明。
+ */
+export interface ShortcutCommandEntry {
+  /** 命令 id；与 ShortcutCommandId 一一对应。 */
+  readonly id: ShortcutCommandId;
+  readonly channel: ShortcutChannel;
+  /** 作用域；缺省 global。 */
+  readonly scope?: ShortcutScope;
+  /** 默认绑定，规范形式序列化串；多条表示双默认（覆盖时整组替换）。 */
+  readonly defaultBindings: readonly string[];
+}
+
+/**
+ * 命令表：快捷键命令的唯一事实来源。
+ * 注意：navigateBack/navigateForward 是历史前进/后退；previousConversation/nextConversation
+ * 才是"上一个/下一个任务"（早期原型曾把两者标混，以本表为准）。
+ */
+export const SHORTCUT_COMMANDS: readonly ShortcutCommandEntry[] = [
+  {
+    id: "openCommandCenter",
+    channel: "window",
+    defaultBindings: ["CmdOrCtrl+k", "CmdOrCtrl+Shift+p"],
+  },
+  // 打开设置页：mac ⌘, / win·linux Ctrl+,（系统惯例，如 macOS Settings…、VSCode）
+  { id: "openSettings", channel: "window", defaultBindings: ["CmdOrCtrl+,"] },
+  { id: "findInTask", channel: "window", defaultBindings: ["CmdOrCtrl+f"] },
+  { id: "toggleSidebar", channel: "window", defaultBindings: ["CmdOrCtrl+b"] },
+  {
+    id: "switchTheme",
+    channel: "window",
+    defaultBindings: ["CmdOrCtrl+Shift+l"],
+  },
+  { id: "toggleTerminal", channel: "window", defaultBindings: ["CmdOrCtrl+j"] },
+  {
+    id: "toggleSidePane",
+    channel: "window",
+    defaultBindings: ["CmdOrCtrl+Alt+b"],
+  },
+  {
+    id: "previousConversation",
+    channel: "window",
+    defaultBindings: ["CmdOrCtrl+Shift+["],
+  },
+  {
+    id: "nextConversation",
+    channel: "window",
+    defaultBindings: ["CmdOrCtrl+Shift+]"],
+  },
+  { id: "navigateBack", channel: "window", defaultBindings: ["CmdOrCtrl+["] },
+  {
+    id: "navigateForward",
+    channel: "window",
+    defaultBindings: ["CmdOrCtrl+]"],
+  },
+  // composer 工具条动作（原固定热键转正）：显式 Ctrl 修饰（mac 上也是 Ctrl，
+  // 与旧 matchesCtrlShortcut 语义一致），由工具条的 window capture 监听按生效表消费。
+  { id: "openModelMenu", channel: "window", defaultBindings: ["Ctrl+m"] },
+  {
+    id: "cycleSessionMode",
+    channel: "window",
+    defaultBindings: ["Ctrl+Shift+m"],
+  },
+  { id: "cycleThoughtLevel", channel: "window", defaultBindings: ["Ctrl+t"] },
+  { id: "newTask", channel: "menu", defaultBindings: ["CmdOrCtrl+n"] },
+  { id: "openWorkspace", channel: "menu", defaultBindings: ["CmdOrCtrl+o"] },
+  {
+    id: "closeActiveContext",
+    channel: "menu",
+    defaultBindings: ["CmdOrCtrl+w"],
+  },
+  { id: "zoomIn", channel: "menu", defaultBindings: ["CmdOrCtrl+="] },
+  { id: "zoomOut", channel: "menu", defaultBindings: ["CmdOrCtrl+-"] },
+  { id: "resetZoom", channel: "menu", defaultBindings: ["CmdOrCtrl+0"] },
+  // composer 作用域：由输入框 Lexical 插件消费，不进 useAppKeyboard / 菜单。
+  // channel 仅作类型占位（渲染进程行为），分发方按 scope 识别。
+  {
+    id: "composerSend",
+    channel: "window",
+    scope: "composer",
+    defaultBindings: ["Enter"],
+  },
+  {
+    id: "composerInsertNewline",
+    channel: "window",
+    scope: "composer",
+    defaultBindings: ["Shift+Enter"],
+  },
+  {
+    id: "toggleInterfaceMode",
+    channel: "window",
+    defaultBindings: ["CmdOrCtrl+Shift+u"],
+  },
+  {
+    id: "openOnboarding",
+    channel: "window",
+    defaultBindings: ["CmdOrCtrl+Shift+o"],
+  },
+];
+
+/** 按命令 ID 取默认绑定；未知命令返回空数组（生效表 resolve 对未知命令整体忽略）。 */
+export function getDefaultShortcutBindings(id: string): readonly string[] {
+  return (
+    SHORTCUT_COMMANDS.find((entry) => entry.id === id)?.defaultBindings ?? []
+  );
+}
+
+// ============================================================================
+// 绑定序列化格式（Electron accelerator 兼容子集）
+// ============================================================================
+
+/** 解析后的绑定：四个修饰键开关 + 规范化键名。 */
+export interface ParsedShortcutBinding {
+  cmdOrCtrl: boolean;
+  ctrl: boolean;
+  alt: boolean;
+  shift: boolean;
+  altGr: boolean;
+  /** 规范化键名：小写字母 / 数字 / 符号字符（= - [ ] , . / ; ' ` \）/ 命名键（F1..F12、ArrowUp…）。 */
+  key: string;
+}
+
+/** 序列化时修饰键的固定顺序。 */
+const MODIFIER_ORDER = [
+  ["CmdOrCtrl", "cmdOrCtrl"],
+  ["Ctrl", "ctrl"],
+  ["Alt", "alt"],
+  ["Shift", "shift"],
+  ["AltGr", "altGr"],
+] as const satisfies ReadonlyArray<
+  readonly [string, keyof ParsedShortcutBinding]
+>;
+
+/** 菜单兼容别名归一：Plus/Equal → "="，Minus → "-"。 */
+const KEY_ALIASES: Readonly<Record<string, string>> = {
+  Plus: "=",
+  Equal: "=",
+  Minus: "-",
+};
+
+/** 单字符键：小写字母、数字与符号。大写字母不合法（录制/序列化统一小写化）。 */
+const SINGLE_CHAR_KEY = /^[a-z0-9[\]=\-,./;'\\`]$/;
+
+/** 命名键白名单（大小写敏感）。Enter 供 composer 作用域命令使用。 */
+const NAMED_KEYS: ReadonlySet<string> = new Set([
+  ...Array.from({ length: 12 }, (_, index) => `F${index + 1}`),
+  "ArrowUp",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+  "Home",
+  "End",
+  "PageUp",
+  "PageDown",
+  "Delete",
+  "Insert",
+  "Enter",
+]);
+
+/** 键名规范化：合法返回规范化键名，非法返回 null。 */
+export function normalizeShortcutKey(rawKey: string): string | null {
+  const aliased = KEY_ALIASES[rawKey] ?? rawKey;
+  if (SINGLE_CHAR_KEY.test(aliased)) {
+    return aliased;
+  }
+  return NAMED_KEYS.has(aliased) ? aliased : null;
+}
+
+/**
+ * 解析绑定串。宽容点：修饰键顺序不敏感（"Shift+CmdOrCtrl+p" 可解析）；
+ * 严格点：键名必须规范形式（大写字母、裸 "+"、未知命名键均非法），重复修饰键非法。
+ */
+export function parseShortcutBinding(
+  binding: string,
+): ParsedShortcutBinding | null {
+  const tokens = binding.split("+");
+  // 末位必须是键；"+" 自身不是合法键（用 "=" 或别名 Plus），split 产生空 token 即非法。
+  const keyToken = tokens[tokens.length - 1];
+  if (keyToken === undefined || keyToken === "") {
+    return null;
+  }
+
+  const parsed: ParsedShortcutBinding = {
+    cmdOrCtrl: false,
+    ctrl: false,
+    alt: false,
+    shift: false,
+    altGr: false,
+    key: "",
+  };
+
+  for (const token of tokens.slice(0, -1)) {
+    const modifier = MODIFIER_ORDER.find(([name]) => name === token);
+    if (!modifier || parsed[modifier[1]]) {
+      // 未知修饰键（含 Meta/Command 等 Electron 修饰名）或重复修饰键均非法。
+      return null;
+    }
+    parsed[modifier[1]] = true;
+  }
+
+  const key = normalizeShortcutKey(keyToken);
+  if (key === null) {
+    return null;
+  }
+  parsed.key = key;
+  return parsed;
+}
+
+/** 序列化为规范形式（修饰键按固定顺序 + 规范键名）；任一部分非法返回 null。 */
+export function serializeShortcutBinding(
+  parsed: ParsedShortcutBinding,
+): string | null {
+  const key = normalizeShortcutKey(parsed.key);
+  if (key === null) {
+    return null;
+  }
+
+  const parts: string[] = [];
+  for (const [name, field] of MODIFIER_ORDER) {
+    if (parsed[field]) {
+      parts.push(name);
+    }
+  }
+  parts.push(key);
+  return parts.join("+");
+}
+
+/** 绑定串是否为合法规范形式（parse 后重新 serialize 与原串一致）。 */
+export function isValidShortcutBinding(binding: string): boolean {
+  const parsed = parseShortcutBinding(binding);
+  return parsed !== null && serializeShortcutBinding(parsed) === binding;
 }

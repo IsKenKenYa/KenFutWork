@@ -172,7 +172,7 @@ function ToastContainer() {
             key={item.id}
             item={item}
             onDone={handleRemove}
-            isBottom
+            isBottom={true}
           />
         ))}
       </div>
@@ -183,7 +183,7 @@ function ToastContainer() {
             key={item.id}
             item={item}
             onDone={handleRemove}
-            isBottom
+            isBottom={true}
           />
         ))}
       </div>

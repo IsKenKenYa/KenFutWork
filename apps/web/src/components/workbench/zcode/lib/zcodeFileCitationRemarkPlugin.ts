@@ -99,7 +99,7 @@ export function createZCodeFileCitationRemarkPlugin(
       transformCitationChildren(
         tree as CitationMarkdownNode,
         workspacePath,
-        homePath !== undefined ? { homePath } : {},
+        homePath === undefined ? {} : { homePath },
       );
     };
   };

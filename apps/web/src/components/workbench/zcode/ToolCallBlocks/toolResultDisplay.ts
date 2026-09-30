@@ -143,8 +143,8 @@ function parseDisplay(value: unknown): ToolResultDisplay | undefined {
     return {
       kind: "local_agent_message",
       status: value.status,
-      ...(error !== undefined ? { error } : {}),
-      ...(message !== undefined ? { message } : {}),
+      ...(error === undefined ? {} : { error }),
+      ...(message === undefined ? {} : { message }),
     };
   }
 
@@ -167,9 +167,9 @@ function parseDisplay(value: unknown): ToolResultDisplay | undefined {
       kind: "task_stop",
       taskId,
       taskType,
-      ...(command !== undefined ? { command } : {}),
+      ...(command === undefined ? {} : { command }),
       message,
-      ...(truncated !== undefined ? { truncated } : {}),
+      ...(truncated === undefined ? {} : { truncated }),
     };
   }
 
@@ -196,8 +196,8 @@ function parseDisplay(value: unknown): ToolResultDisplay | undefined {
     return {
       kind: "task_output",
       retrievalStatus: value.retrievalStatus,
-      ...(taskStatus !== undefined ? { taskStatus } : {}),
-      ...(output !== undefined ? { output } : {}),
+      ...(taskStatus === undefined ? {} : { taskStatus }),
+      ...(output === undefined ? {} : { output }),
       ...(truncated === true ? { truncated: true } : {}),
     };
   }
@@ -255,13 +255,13 @@ function parseDisplay(value: unknown): ToolResultDisplay | undefined {
       schemaVersion: 1,
       toolName,
       status: value.status,
-      ...(structuredContent !== undefined ? { structuredContent } : {}),
-      ...(text !== undefined ? { text } : {}),
-      ...(errorCode !== undefined ? { errorCode } : {}),
-      ...(suggestedAction !== undefined ? { suggestedAction } : {}),
+      ...(structuredContent === undefined ? {} : { structuredContent }),
+      ...(text === undefined ? {} : { text }),
+      ...(errorCode === undefined ? {} : { errorCode }),
+      ...(suggestedAction === undefined ? {} : { suggestedAction }),
       ...(media?.length ? { media } : {}),
-      ...(value.truncated !== undefined ? { truncated: value.truncated } : {}),
-      ...(targetApp !== undefined ? { targetApp } : {}),
+      ...(value.truncated === undefined ? {} : { truncated: value.truncated }),
+      ...(targetApp === undefined ? {} : { targetApp }),
     };
   }
 
@@ -315,7 +315,7 @@ function parseCuaTargetApp(
   if (iconLocators.length !== value.iconLocators.length) return null;
   return {
     schemaVersion: 1,
-    ...(displayName !== undefined ? { displayName } : {}),
+    ...(displayName === undefined ? {} : { displayName }),
     iconLocators,
   };
 }

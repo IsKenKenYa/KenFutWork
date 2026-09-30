@@ -15,22 +15,24 @@ import {
   useCallback,
 } from "react";
 
+// P5 适配：可选属性放宽 `| undefined`（exactOptionalPropertyTypes，照搬调用点显式传 undefined）。
 interface ControlHintTooltipProps {
   children: ReactNode;
   title: ReactNode;
-  description?: string;
-  shortcut?: string;
-  standalone?: boolean;
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
+  description?: string | undefined;
+  shortcut?: string | undefined;
+  standalone?: boolean | undefined;
+  open?: boolean | undefined;
+  onOpenChange?: ((open: boolean) => void) | undefined;
   side?: ComponentProps<typeof TooltipContent>["side"];
   align?: ComponentProps<typeof TooltipContent>["align"];
   sideOffset?: ComponentProps<typeof TooltipContent>["sideOffset"];
-  className?: string;
-  triggerClassName?: string;
-  triggerRef?: Ref<HTMLElement>;
+  className?: string | undefined;
+  triggerClassName?: string | undefined;
+  triggerRef?: Ref<HTMLElement> | undefined;
 }
 
+// biome-ignore lint/style/useConsistentTypeDefinitions: 逐字照搬 zcode 源写法
 type TriggerChildProps = {
   className?: string;
   ref?: Ref<HTMLElement>;
@@ -106,8 +108,13 @@ export function ControlHintTooltip({
   // 会把 Radix 上下文树放大到消息数量级；共享 Provider 统一放在 Root。
   // exactOptionalPropertyTypes：open 缺省表示非受控，不能显式传 undefined
   const tooltip = (
-    <Tooltip {...(open !== undefined ? { open, onOpenChange } : {})}>
-      <TooltipTrigger asChild>{trigger}</TooltipTrigger>
+    <Tooltip
+      {...(open === undefined ? {} : { open })}
+      {...(open !== undefined && onOpenChange !== undefined
+        ? { onOpenChange }
+        : {})}
+    >
+      <TooltipTrigger asChild={true}>{trigger}</TooltipTrigger>
       <TooltipContent
         align={align}
         side={side}

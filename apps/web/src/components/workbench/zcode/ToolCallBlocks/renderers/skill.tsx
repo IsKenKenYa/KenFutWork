@@ -221,7 +221,7 @@ export function SkillToolCallBlock(context: ToolCallBlockRenderContext) {
         showIcon={context.showIcon !== false}
         canToggle={context.canToggle ?? true}
         forceOpen={context.forceOpen ?? false}
-        hideSecondaryTextWhenOpen
+        hideSecondaryTextWhenOpen={true}
         kindLabel={
           context.kindLabelOverride ??
           intl.formatMessage({

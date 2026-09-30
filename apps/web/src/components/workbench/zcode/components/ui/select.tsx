@@ -86,7 +86,7 @@ function SelectTrigger({
       {...props}
     >
       {children}
-      <SelectPrimitive.Icon asChild>
+      <SelectPrimitive.Icon asChild={true}>
         {indicator ?? (
           <ChevronDownIcon className="pointer-events-none size-3.5 text-foreground-subtle" />
         )}

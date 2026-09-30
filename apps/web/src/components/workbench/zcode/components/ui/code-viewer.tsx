@@ -425,7 +425,7 @@ function CommentDraft({
         placeholder={labels.commentPlaceholder}
         className="min-h-16 w-full resize-none rounded-lg border-input-border bg-input text-ui-base text-foreground placeholder:text-foreground-subtlest hover:border-input-border-hover focus-visible:border-input-border-focused focus-visible:bg-input-focused focus-visible:ring-0 md:text-ui-base"
         rows={3}
-        autoFocus
+        autoFocus={true}
       />
       <div className="mt-2 flex items-center justify-end gap-2">
         <Button
@@ -783,7 +783,7 @@ export function CodeViewer({
       ...(canUseCommentGutterUtility
         ? { onGutterUtilityClick: handleGutterUtilitySelection }
         : {}),
-      ...(theme !== undefined ? { theme } : {}),
+      ...(theme === undefined ? {} : { theme }),
       // 内建 comment + 默认贴在行号右侧，用户拖拽时容易和代码起点混在一起。
       // 这里只调整 Shadow DOM 内 gutter utility 的位置，不接管 pointer 事件，避免破坏多行拖拽 range。
       unsafeCSS: CODE_VIEWER_UNSAFE_CSS + markedLinesCss,
@@ -843,7 +843,7 @@ export function CodeViewer({
     >
       {topCommentNotice ? (
         <div
-          data-code-review-target-warning
+          data-code-review-target-warning={true}
           className="px-3 pt-3 text-ui-sm text-warning"
         >
           {topCommentNotice}

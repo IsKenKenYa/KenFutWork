@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, CheckCircle2, LoaderCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   elapsedSecondsBetween,
@@ -12,6 +12,7 @@ import type {
   SubagentEntry,
   SubagentToolRow,
 } from "@/lib/subagent-directory";
+import { formatTaskRelativeTime } from "@/lib/ui-format";
 import { AgentActivitySection } from "./zcode/ToolCallBlocks/renderers/agent";
 import { AgentPromptSection } from "./zcode/ToolCallBlocks/renderers/agentPromptSection";
 
@@ -24,10 +25,8 @@ import { AgentPromptSection } from "./zcode/ToolCallBlocks/renderers/agentPrompt
  */
 export function SubagentDirectoryView({
   entries,
-  running,
 }: {
   entries: SubagentEntry[];
-  running: boolean;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // 秒级心跳：运行中条目的时长实时走动（全部结束后不空转）
@@ -58,60 +57,114 @@ export function SubagentDirectoryView({
   const finished = entries.length - runningEntries.length;
 
   return (
-    <div className="space-y-2 px-1 py-2">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span className="font-medium text-foreground">子智能体</span>
-        <span>
-          {runningEntries.length > 0 || running
-            ? `正在运行 · ${runningEntries.length}`
-            : "没有正在运行的子智能体"}
-        </span>
-        <span aria-hidden>·</span>
-        <span>已结束 · {finished}</span>
-      </div>
-      <ul className="space-y-1">
-        {entries.map((entry) => {
-          const startMs = parseTimestampMs(entry.startedAt);
-          const endMs = entry.endedAt ? parseTimestampMs(entry.endedAt) : null;
-          const seconds =
-            startMs === null
-              ? 0
-              : elapsedSecondsBetween(startMs, endMs ?? undefined, nowMs);
-          return (
-            <li key={entry.toolCallId}>
-              <button
-                type="button"
-                onClick={() => setSelectedId(entry.toolCallId)}
-                title={entry.description ?? entry.name}
-                className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-xs transition-colors hover:bg-muted"
-              >
-                <ChevronRight
-                  aria-hidden
-                  className="h-3 w-3 shrink-0 text-muted-foreground/50"
-                />
-                <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-                <span
-                  className={
-                    entry.endedAt
-                      ? "shrink-0 text-muted-foreground/70"
-                      : "shrink-0 text-emerald-600"
-                  }
-                >
-                  {entry.endedAt ? "已结束" : "运行中"}
-                </span>
-                <span className="shrink-0 tabular-nums text-muted-foreground/70">
-                  {formatElapsedSeconds(seconds)}
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+    // zcode SubagentDirectorySidePane 视觉规格（references app-shell 同名件）：
+    // 分组头 text-ui-sm subtlest + DirectoryRow（状态图标/标题/状态词/相对时间）
+    <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
+      <section>
+        <h3 className="px-3 pb-1.5 text-ui-sm font-medium text-foreground-subtlest">
+          正在运行 · {runningEntries.length}
+        </h3>
+        {runningEntries.length > 0 ? (
+          runningEntries.map((entry) => (
+            <SubagentDirectoryRow
+              key={entry.toolCallId}
+              entry={entry}
+              onOpen={() => setSelectedId(entry.toolCallId)}
+            />
+          ))
+        ) : (
+          <p className="px-3 py-3 text-ui-base text-foreground-subtlest">
+            没有正在运行的子智能体
+          </p>
+        )}
+      </section>
+      <section className="mt-5">
+        <h3 className="px-3 pb-1.5 text-ui-sm font-medium text-foreground-subtlest">
+          已结束 · {finished}
+        </h3>
+        {finished > 0 ? (
+          entries
+            .filter((entry) => entry.endedAt)
+            .map((entry) => (
+              <SubagentDirectoryRow
+                key={entry.toolCallId}
+                entry={entry}
+                onOpen={() => setSelectedId(entry.toolCallId)}
+              />
+            ))
+        ) : (
+          <p className="px-3 py-3 text-ui-base text-foreground-subtlest">
+            暂无
+          </p>
+        )}
+      </section>
     </div>
   );
 }
 
-/** 单个子代理的独立线程视图：头部（返回 + 名字 + 状态 + 时长）+ 全量转录。 */
+/** zcode DirectoryRow 同款行：状态图标 + 标题 + 状态词 + 相对时间。 */
+function SubagentDirectoryRow({
+  entry,
+  onOpen,
+}: {
+  entry: SubagentEntry;
+  onOpen: () => void;
+}) {
+  const status = entry.endedAt ? "success" : "running";
+  const timestamp = entry.endedAt ?? entry.startedAt;
+  return (
+    <button
+      type="button"
+      className="flex w-full min-w-0 items-start gap-3 rounded-lg px-3 py-2.5 text-left text-ui-base transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border"
+      onClick={onOpen}
+    >
+      <StatusIcon status={status} />
+      <span className="min-w-0 flex-1">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate font-medium text-foreground">
+            {entry.name}
+          </span>
+          <span className="shrink-0 text-ui-sm text-foreground-subtlest">
+            {entry.endedAt ? "已结束" : "运行中"}
+          </span>
+        </span>
+        {entry.description ? (
+          <span className="mt-0.5 block truncate text-ui-sm text-foreground-subtle">
+            {entry.description}
+          </span>
+        ) : null}
+      </span>
+      {timestamp ? (
+        <span className="shrink-0 text-ui-sm text-foreground-subtlest">
+          {formatTaskRelativeTime(timestamp)}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
+/** zcode StatusIcon 同款（running=旋转/success=勾），we only have two states. */
+function StatusIcon({ status }: { status: "running" | "success" }) {
+  if (status === "running") {
+    return (
+      <LoaderCircle
+        aria-hidden
+        className="mt-0.5 size-4 shrink-0 animate-spin text-foreground-subtle"
+      />
+    );
+  }
+  return (
+    <CheckCircle2
+      aria-hidden
+      className="mt-0.5 size-4 shrink-0 text-foreground-subtle"
+    />
+  );
+}
+
+/**
+ * 单个子代理的独立线程视图：头部（返回 + 名字 + 状态 + 时长）+ 全量转录。
+ * （zcode 交互：列表点条目 → 整面板切线程；转录区形态见下方 SubagentTranscript。）
+ */
 function SubagentThreadView({
   entry,
   nowMs,

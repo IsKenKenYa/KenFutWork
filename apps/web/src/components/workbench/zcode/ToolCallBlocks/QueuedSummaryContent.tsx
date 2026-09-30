@@ -129,12 +129,14 @@ export function QueuedSummaryContent({
   });
   const createSnapshot = (): SummaryContentSnapshot => ({
     key: contentKey,
-    ...(contentRefreshVersion !== undefined
-      ? { refreshVersion: contentRefreshVersion }
-      : {}),
+    ...(contentRefreshVersion === undefined
+      ? {}
+      : { refreshVersion: contentRefreshVersion }),
     primaryText,
-    ...(secondaryText !== undefined ? { secondaryText } : {}),
-    ...(trailingText !== undefined ? { trailingText } : {}),
+    // biome-ignore lint/style/noTernary: exactOptionalPropertyTypes 的条件展开适配（手册 §2.4-1）
+    ...(secondaryText === undefined ? {} : { secondaryText }),
+    // biome-ignore lint/style/noTernary: 同上
+    ...(trailingText === undefined ? {} : { trailingText }),
   });
   const [displayedContent, setDisplayedContent] = useState(createSnapshot);
   const displayedContentRef = useRef(displayedContent);

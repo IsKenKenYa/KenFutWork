@@ -665,7 +665,7 @@ export function DiagramPreviewDialog({
               <CircleMinusIcon className="size-3.5" />
             </PreviewButton>
             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+              <DropdownMenuTrigger asChild={true}>
                 <Button
                   aria-label={intl.formatMessage({
                     id: "codeBlock.mermaid.zoomLevel",

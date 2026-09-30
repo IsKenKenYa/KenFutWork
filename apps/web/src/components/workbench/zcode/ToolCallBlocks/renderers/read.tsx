@@ -341,7 +341,7 @@ export function ReadToolCallBlock(context: ToolCallBlockRenderContext) {
         })}
         sourceLabel={context.sourceLabel}
         primaryText={primaryText}
-        prioritizePrimaryText
+        prioritizePrimaryText={true}
         secondaryText={summary ? renderFilePath(summary.filePath) : undefined}
         statusLabel={statusLabel}
         statusTooltip={toolCall.status === "failed" ? errorText : undefined}
