@@ -10,7 +10,8 @@
     "isolatedModules": true,
     "noEmit": true,
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@zui/*": ["./src/components/workbench/zcode/*"]
     },
     "plugins": [
       {

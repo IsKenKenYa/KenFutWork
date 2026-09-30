@@ -63,5 +63,19 @@
         "useSemanticElements": "warn"
       }
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["apps/web/src/components/workbench/zcode/**"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "useAriaPropsSupportedByRole": "warn",
+            "useValidAriaRole": "warn",
+            "noLabelWithoutControl": "warn"
+          }
+        }
+      }
+    }
+  ]
 }

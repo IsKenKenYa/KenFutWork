@@ -1,6 +1,11 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "tailwind-scrollbar-hide/v4";
 @import "shadcn/tailwind.css";
+@import "katex/dist/katex.min.css";
+
+/* streamdown 的运行时类名不在本仓源码里，显式扫描防 Tailwind 漏编（照搬 zcode styles.css 的接法） */
+@source "../../node_modules/streamdown/dist/*.js";
 
 /**
  * 字标字体：Momo Trust Display（Google Fonts，OFL 免费可商用）——自托管一份
@@ -61,14 +66,6 @@
     --color-card-foreground: var(--card-foreground);
     --color-card: var(--card);
     --color-foreground: var(--foreground);
-    /* zcode 对话流三阶文字色（照搬 references/zcode packages/ui 语义 token）：
-       foreground 正文字、subtle 次要摘要、subtlest 工具行标签/时间戳。 */
-    --color-foreground-subtle: var(--muted-foreground);
-    --color-foreground-subtlest: color-mix(in oklch, var(--muted-foreground) 78%, transparent);
-    /* zcode 卡片底（Agent thought/output 区）：比 page 底深半档的面板色 */
-    --color-background-alt: var(--muted);
-    /* zcode 行内 code 底色（message.tsx bg-markdown-inline-code/50 的本体） */
-    --color-markdown-inline-code: var(--muted-foreground);
     --color-background: var(--background);
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
@@ -79,7 +76,84 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* ── zcode 设计 token（照搬 references/zcode/packages/ui/src/styles.css 的 @theme 与 :root/.dark）──
+   只搬 light/dark 两套（zai 变体不搬）。与本仓既有 token 同名的（foreground-subtle/subtlest、
+   background-alt、markdown-inline-code）以 zcode 定义为准；palette 变量（--color-neutral-* 等）
+   用 Tailwind v4 默认主题色。滚动条例外：保留本仓细滚动条（用户点名的全项目偏好，见下文滚动条段）。 */
+@theme {
+    /* Windows 的 Consolas 不含中文字形，Tailwind 默认栈最终会让中文落到宋体。
+       保留各平台西文等宽字体，并在通用 monospace 前显式加入各平台 CJK 无衬线字体。 */
+    --font-mono:
+        ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+        "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", monospace;
+    --text-ui-xl: calc(var(--ui-font-size) + 4px);
+    --text-ui-lg: calc(var(--ui-font-size) + 2px);
+    --text-ui-base: var(--ui-font-size);
+    --text-ui-caption: calc(var(--ui-font-size) - 1px);
+    --text-ui-sm: calc(var(--ui-font-size) - 2px);
+    --text-ui-xs: calc(var(--ui-font-size) - 4px);
+    /* iOS Safari 会缩放小于 16px 的聚焦输入；该平台下限不能跟随界面字号降低。 */
+    --text-mobile-input-safe: 16px;
+    --animated-gradient-text-strong: rgba(10, 10, 10, 1);
+    --animated-gradient-text-soft: rgba(10, 10, 10, 0.22);
+    --color-background-alt: color-mix(in oklab, var(--color-neutral-100) 60%, transparent);
+    --color-icon-blue: var(--color-sky-500);
+    --color-border-hover: color-mix(in oklab, var(--color-neutral-950) 20%, transparent);
+    --color-hover: var(--color-neutral-200);
+    --color-selected: color-mix(in oklab, var(--color-neutral-950) 10%, transparent);
+    --color-header: var(--color-neutral-100);
+    --color-panel: var(--color-neutral-100);
+    --color-surface: color-mix(in oklab, var(--color-neutral-950) 3%, transparent);
+    --color-surface-hover: color-mix(in oklab, var(--color-neutral-950) 5%, transparent);
+    --color-markdown-inline-code: var(--color-tag);
+    --color-card-selected: var(--color-neutral-200);
+    --color-card-border: var(--color-border);
+    --color-popover-header: var(--color-neutral-100);
+    --color-popover-border: var(--color-border);
+    --color-input-focused: var(--color-neutral-50);
+    --color-input-border-hover: var(--color-border-hover);
+    --color-input-border-focused: var(--color-brand);
+    --color-foreground-subtle: color-mix(in oklab, var(--color-neutral-700) 60%, transparent);
+    --color-foreground-subtlest: color-mix(in oklab, var(--color-neutral-700) 40%, transparent);
+    --color-foreground-inverse: var(--color-white);
+    --color-idle-task: var(--color-violet-600);
+    --color-idle-task-surface: var(--color-violet-50);
+    --color-diff-added: var(--color-green-600);
+    --color-diff-added-foreground: var(--color-foreground-inverse);
+    --color-diff-removed: var(--color-red-600);
+    --color-diff-removed-foreground: var(--color-foreground-inverse);
+    --color-toast: var(--color-white);
+    --color-tooltip: var(--color-neutral-100);
+    --color-tooltip-foreground: var(--color-neutral-950);
+    --color-tag: var(--color-neutral-200);
+    --color-menu: var(--color-white);
+    --color-menu-hover: var(--color-neutral-100);
+    --color-interaction-ask-surface: var(--color-sky-50);
+    --color-interaction-ask-foreground: var(--color-sky-700);
+    --color-interaction-confirmation-surface: var(--color-green-50);
+    --color-interaction-confirmation-foreground: var(--color-green-700);
+    --color-file-node: color-mix(in oklab, var(--color-sky-600) 14%, transparent);
+    --color-file-node-hover: color-mix(in oklab, var(--color-sky-600) 20%, transparent);
+    --color-file-node-foreground: var(--color-sky-600);
+    --color-skill-node: color-mix(in oklab, var(--color-violet-600) 14%, transparent);
+    --color-skill-node-hover: color-mix(in oklab, var(--color-violet-600) 20%, transparent);
+    --color-skill-node-foreground: var(--color-violet-600);
+    --color-command-node: color-mix(in oklab, var(--color-slate-500) 14%, transparent);
+    --color-command-node-hover: color-mix(in oklab, var(--color-slate-500) 20%, transparent);
+    --color-command-node-foreground: var(--color-slate-600);
+    --color-subagent-node: color-mix(in oklab, #6f7a2f 14%, transparent);
+    --color-subagent-node-hover: color-mix(in oklab, #6f7a2f 20%, transparent);
+    --color-subagent-node-foreground: #6f7a2f;
+    --color-session-node: color-mix(in oklab, var(--color-teal-600) 14%, transparent);
+    --color-session-node-hover: color-mix(in oklab, var(--color-teal-600) 20%, transparent);
+    --color-session-node-foreground: var(--color-teal-600);
+    --color-plugin-node: color-mix(in oklab, var(--color-amber-600) 14%, transparent);
+    --color-plugin-node-hover: color-mix(in oklab, var(--color-amber-600) 20%, transparent);
+    --color-plugin-node-foreground: var(--color-amber-600);
+}
+
 :root {
+    --ui-font-size: 14px;
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
@@ -188,6 +262,55 @@
         #9db3f7 45%,
         #bccfff 100%
     );
+    /* ── zcode 暗色 token 覆盖（照搬 styles.css .dark）── */
+    --animated-gradient-text-strong: rgba(255, 255, 255, 1);
+    --animated-gradient-text-soft: rgba(255, 255, 255, 0.2);
+    --color-background-alt: color-mix(in oklab, var(--color-neutral-800) 60%, transparent);
+    --color-icon-blue: var(--color-sky-600);
+    --color-border-hover: color-mix(in oklab, var(--color-neutral-50) 30%, transparent);
+    --color-hover: var(--color-surface-hover);
+    --color-selected: color-mix(in oklab, var(--color-white) 10%, transparent);
+    --color-header: var(--color-neutral-900);
+    --color-panel: var(--color-neutral-900);
+    --color-surface: color-mix(in oklab, var(--color-white) 5%, transparent);
+    --color-surface-hover: color-mix(in oklab, var(--color-white) 10%, transparent);
+    --color-card-selected: var(--color-neutral-700);
+    --color-popover-header: var(--color-neutral-700);
+    --color-input-focused: var(--color-neutral-950);
+    --color-foreground-subtle: color-mix(in oklab, var(--color-neutral-200) 60%, transparent);
+    --color-foreground-subtlest: color-mix(in oklab, var(--color-neutral-200) 30%, transparent);
+    --color-idle-task: var(--color-violet-400);
+    --color-idle-task-surface: color-mix(in oklab, var(--color-violet-950) 50%, transparent);
+    --color-diff-added: var(--color-green-500);
+    --color-diff-removed: var(--color-red-500);
+    --color-toast: var(--color-neutral-900);
+    --color-tooltip: var(--color-neutral-900);
+    --color-tooltip-foreground: var(--color-neutral-50);
+    --color-tag: var(--color-neutral-700);
+    --color-menu: var(--color-neutral-950);
+    --color-menu-hover: var(--color-neutral-900);
+    --color-interaction-ask-surface: color-mix(in oklab, var(--color-sky-950) 50%, transparent);
+    --color-interaction-ask-foreground: var(--color-sky-300);
+    --color-interaction-confirmation-surface: color-mix(in oklab, var(--color-green-950) 45%, transparent);
+    --color-interaction-confirmation-foreground: var(--color-green-300);
+    --color-file-node: color-mix(in oklab, var(--color-sky-400) 18%, transparent);
+    --color-file-node-hover: color-mix(in oklab, var(--color-sky-400) 24%, transparent);
+    --color-file-node-foreground: var(--color-sky-300);
+    --color-skill-node: color-mix(in oklab, var(--color-violet-400) 18%, transparent);
+    --color-skill-node-hover: color-mix(in oklab, var(--color-violet-400) 24%, transparent);
+    --color-skill-node-foreground: var(--color-violet-300);
+    --color-command-node: color-mix(in oklab, var(--color-slate-300) 16%, transparent);
+    --color-command-node-hover: color-mix(in oklab, var(--color-slate-300) 22%, transparent);
+    --color-command-node-foreground: var(--color-slate-300);
+    --color-subagent-node: color-mix(in oklab, #b7bd75 18%, transparent);
+    --color-subagent-node-hover: color-mix(in oklab, #b7bd75 24%, transparent);
+    --color-subagent-node-foreground: #b7bd75;
+    --color-session-node: color-mix(in oklab, var(--color-teal-400) 18%, transparent);
+    --color-session-node-hover: color-mix(in oklab, var(--color-teal-400) 24%, transparent);
+    --color-session-node-foreground: var(--color-teal-300);
+    --color-plugin-node: color-mix(in oklab, var(--color-amber-400) 18%, transparent);
+    --color-plugin-node-hover: color-mix(in oklab, var(--color-amber-400) 24%, transparent);
+    --color-plugin-node-foreground: var(--color-amber-300);
 }
 
 /**
@@ -844,46 +967,308 @@
   font-weight: 600;
 }
 
-/* ── zcode 对话流 UI 照搬层（references/zcode packages/ui）──────────────
-   text-ui-* 字号阶梯与 animated-gradient-text 流光：zcode 全对话流通用。 */
-@layer utilities {
-    .text-ui-base {
-        font-size: 0.875rem;
-        line-height: 1.5rem;
-    }
-    .text-ui-sm {
-        font-size: 0.8125rem;
-        line-height: 1.375rem;
-    }
-    .text-ui-xs {
-        font-size: 0.75rem;
-        line-height: 1.125rem;
-    }
+/* ── zcode 对话流 UI 照搬层（references/zcode packages/ui/src/styles.css）──────────────
+   动画与工具类逐段照搬；字号阶梯 text-ui-* 已由上方 @theme token 生成（zcode 原版不带行高）。 */
+
+/* 中文模板描述按单字断行会拆开词组；Chromium 支持时启用短语级换行。 */
+.text-wrap-phrase {
+  overflow-wrap: break-word;
+  word-break: normal;
+  line-break: strict;
+  text-wrap: pretty;
 }
 
-/* zcode 运行态文案扫光（ToolSummaryRow kindLabel / Reasoning「思考中」同款）：
-   背景渐变平移 + background-clip:text，图标保持静态。 */
-@layer utilities {
-    .animated-gradient-text {
-        background-image: linear-gradient(
-            90deg,
-            var(--muted-foreground) 0%,
-            var(--foreground) 40%,
-            var(--muted-foreground) 80%
-        );
-        background-size: 200% 100%;
-        -webkit-background-clip: text;
-        background-clip: text;
-        color: transparent;
-        animation: zcode-gradient-slide 2.4s ease-in-out infinite;
-    }
+@supports (word-break: auto-phrase) {
+  .text-wrap-phrase {
+    word-break: auto-phrase;
+  }
 }
 
-@keyframes zcode-gradient-slide {
+@layer utilities {
+  /* zcode 运行态文案扫光（ToolSummaryRow kindLabel / Reasoning「思考中」同款） */
+  .animated-gradient-text {
+    display: inline-block;
+    background: linear-gradient(
+      90deg,
+      var(--animated-gradient-text-strong) 0%,
+      var(--animated-gradient-text-strong) 34%,
+      var(--animated-gradient-text-soft) 50%,
+      var(--animated-gradient-text-strong) 66%,
+      var(--animated-gradient-text-strong) 100%
+    );
+    background-size: 300% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    animation: gradient-flow 4s linear infinite;
+    will-change: background-position;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+  }
+
+  .animated-gradient-text-subtle {
+    --animated-gradient-text-strong: var(--color-foreground-subtle);
+  }
+
+  @keyframes gradient-flow {
     0% {
-        background-position: 100% 0;
+      background-position: 100% 0;
     }
+
+    50% {
+      background-position: 0% 0;
+    }
+
     100% {
-        background-position: -100% 0;
+      background-position: 0% 0;
     }
+  }
+}
+
+@keyframes zcode-stream-text-in {
+  0% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes zcode-draft-prompt-waterfall {
+  from {
+    opacity: 0;
+    clip-path: inset(0 0 100% 0);
+    transform: translateY(-12px);
+  }
+
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translateY(0);
+  }
+}
+
+.zcode-draft-prompt-waterfall {
+  animation: zcode-draft-prompt-waterfall 260ms cubic-bezier(0.22, 1, 0.36, 1)
+    var(--zcode-draft-prompt-waterfall-delay, 0ms) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zcode-draft-prompt-waterfall {
+    animation: none;
+  }
+}
+
+@keyframes markdown-image-loading-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+
+  to {
+    background-position: -100% 0;
+  }
+}
+
+.markdown-image-loading-shimmer {
+  background-color: var(--color-card);
+  background-image: linear-gradient(
+    135deg,
+    var(--color-card) 0%,
+    var(--color-background) 50%,
+    var(--color-card) 100%
+  );
+  background-size: 240% 100%;
+  animation: markdown-image-loading-shimmer 1.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .markdown-image-loading-shimmer {
+    animation: none;
+  }
+}
+
+@keyframes zcode-stream-marker-in {
+  0% {
+    color: transparent;
+  }
+
+  100% {
+    color: var(--color-foreground-subtlest);
+  }
+}
+
+[data-zcode-stream-animate="true"] {
+  animation: zcode-stream-text-in 900ms cubic-bezier(0.16, 1, 0.3, 1)
+    var(--zcode-stream-animation-delay, 0ms) both;
+  will-change: opacity;
+}
+
+[data-zcode-stream-marker-animate="true"]::marker {
+  animation: zcode-stream-marker-in 900ms cubic-bezier(0.16, 1, 0.3, 1)
+    var(--zcode-stream-animation-delay, 0ms) both;
+}
+
+[data-zcode-tool-stream-animate="true"],
+[data-zcode-chat-loading-animate="true"] {
+  animation: zcode-stream-text-in 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: opacity;
+}
+
+/*  Collapsible 在测量 closed 高度时会写入 inline animation-name:none。
+   自动结束收起需要在延迟卸载期间继续播放高度动画，
+   所以这里用 !important 覆盖 inline style，只作用于显式标记的收起窗口。 */
+[data-zcode-collapsible-animate-close="true"][data-state="closed"] {
+  animation: zcode-collapsible-up 300ms ease-in-out forwards !important;
+}
+
+[data-zcode-collapsible-animate-close="true"][data-state="closed"] > * {
+  animation: zcode-collapsible-fade-out 300ms ease-in-out forwards !important;
+}
+
+@keyframes zcode-collapsible-up {
+  from {
+    height: var(--radix-collapsible-content-height);
+  }
+
+  to {
+    height: 0;
+  }
+}
+
+@keyframes zcode-collapsible-fade-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-zcode-stream-animate="true"],
+  [data-zcode-stream-marker-animate="true"]::marker,
+  [data-zcode-tool-stream-animate="true"],
+  [data-zcode-chat-loading-animate="true"],
+  [data-zcode-collapsible-animate-close="true"][data-state="closed"],
+  [data-zcode-collapsible-animate-close="true"][data-state="closed"] > * {
+    animation: none;
+  }
+}
+
+/* 点赞/点踩选中时的反馈动画：图标回弹 + 细小粒子飞散两段，
+   粒子用 box-shadow 画在 ::after 上且跟随 currentColor，零额外 DOM、不引入新颜色。 */
+.zcode-reaction-burst {
+  position: relative;
+  display: inline-flex;
+}
+
+.zcode-reaction-burst > svg {
+  animation: zcode-reaction-pop 450ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.zcode-reaction-burst::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 3px;
+  margin: -1.5px 0 0 -1.5px;
+  border-radius: 50%;
+  background: transparent;
+  opacity: 0;
+  pointer-events: none;
+  animation: zcode-reaction-particles 560ms cubic-bezier(0.16, 1, 0.3, 1) 60ms forwards;
+}
+
+@keyframes zcode-reaction-pop {
+  0% {
+    transform: scale(0);
+  }
+
+  45% {
+    transform: scale(1.3);
+  }
+
+  70% {
+    transform: scale(0.95);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes zcode-reaction-particles {
+  0% {
+    opacity: 0;
+    box-shadow:
+      7.7px 2.1px 0 0,
+      2.1px 7.7px 0 0,
+      -5.7px 5.7px 0 0,
+      -7.7px -2.1px 0 0,
+      -2.1px -7.7px 0 0,
+      5.7px -5.7px 0 0;
+  }
+
+  20% {
+    opacity: 0.7;
+  }
+
+  100% {
+    opacity: 0;
+    box-shadow:
+      15.5px 4.1px 0 -1px,
+      4.1px 15.5px 0 -1px,
+      -11.3px 11.3px 0 -1px,
+      -15.5px -4.1px 0 -1px,
+      -4.1px -15.5px 0 -1px,
+      11.3px -11.3px 0 -1px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zcode-reaction-burst > svg,
+  .zcode-reaction-burst::after {
+    animation: none;
+  }
+}
+
+@keyframes zcode-task-interaction-countdown {
+  from {
+    transform: scaleX(var(--zcode-interaction-progress, 1));
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.zcode-task-interaction-countdown-fill {
+  animation: zcode-task-interaction-countdown var(--zcode-interaction-remaining-ms, 240000ms) linear
+    forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zcode-task-interaction-countdown-fill {
+    animation: none;
+    transform: scaleX(var(--zcode-interaction-progress, 1));
+  }
+}
+
+/* Mention 图标不进入 TextNode DOM，避免首部 img/svg 截断 Lexical 原生选区映射。 */
+.prompt-mention::before {
+  content: "";
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  background: var(--mention-icon-color, transparent) var(--mention-image, none) center / contain
+    no-repeat;
+  mask: var(--mention-mask, none) center / contain no-repeat;
+}
+
+.prompt-mention[data-mention-category="plugins"]::before {
+  border-radius: var(--radius-sm);
 }
