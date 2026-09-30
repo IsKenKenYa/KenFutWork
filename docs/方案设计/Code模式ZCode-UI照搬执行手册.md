@@ -221,11 +221,15 @@ pnpm test
 - `ConversationQueuePanel.tsx`：排队消息面板。
 - 装配进 workbench Code 模式对话区（悬浮位与 zcode 一致）。
 
-## 9. P7 施工单：虚拟滚动时间线（可选，独立评估）
+## 9. P7 施工单：虚拟滚动时间线（✅ 性能基线评估完成，正式暂缓归档——2026-10-01）
+
+> **评估结论**（真机 51 轮长对话：scrollHeight 14138px / DOM 1789 nodes）：滚动帧率 136fps 满帧、输入延迟中位 101ms——当前与可预见量级无卡顿，虚拟滚动三件复杂度（高度缓存/滚动锚定/live tail 特判）无对应收益，**暂缓归档**。触发条件：单会话消息 DOM >1 万 nodes 或实测掉帧，届时再按本节施工。
 
 `@tanstack/react-virtual` 时间线 + 高度缓存 + live tail 移出虚拟列表 + 回到底部按钮（zcode 会话主列表实现，施工时定位）。**独立 PR**，先做性能基线截图再动工；若当前消息量级无卡顿可暂缓。
 
-## 10. P8 施工单：PermissionDialog（UI 照搬 + 协议适配，另立项）
+## 10. P8 施工单：PermissionDialog（✅ 台账确认另立项——2026-10-01）
+
+> **台账**：依赖服务端 DeepAgents interrupt/HITL 权限协议（run 事件流需先产出 permission_request 事件与 always-allow 语义），属服务端契约工作，已另立项跟踪；UI 照搬与协议适配待该立项落地后按本节施工。P1–P7 施工单至此全部收口。
 
 - `PermissionDialog.tsx`（zcode 源根目录）：序号选项 + 数字键应答 + always-allow 文案归一（无倒计时条）。
 - 协议侧：DeepAgents interrupt/HITL 事件 → PermissionDialog props 的适配属服务端契约工作，**另立项跟踪**；未接通前不渲染入口（方案 §3 纪律：不摆空壳）。
