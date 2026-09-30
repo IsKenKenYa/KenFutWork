@@ -4,7 +4,7 @@
  * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
  */
 
-import { sortInstalledEditorsForOpenWith } from "@zui/lib/openWithEditors.js";
+import { sortInstalledEditorsForOpenWith } from "@zui/lib/openWithEditors";
 import type {
   EditorInfo,
   OpenInEditorRemoteTarget,

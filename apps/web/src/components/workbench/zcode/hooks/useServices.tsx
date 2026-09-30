@@ -11,7 +11,7 @@
 
 import { createContext, type ReactNode, useContext } from "react";
 
-import type { FileMediaPreview, FileStat } from "../lib/zcode-shared.js";
+import type { FileMediaPreview, FileStat } from "../lib/zcode-shared";
 
 /** zcode fileService 的最小切片：照搬组件实际调用的方法。 */
 export interface ZCodeFileServiceSlice {

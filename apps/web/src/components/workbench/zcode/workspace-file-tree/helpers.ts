@@ -4,7 +4,7 @@
  * 许可证：Apache-2.0（zcode）。
  */
 
-import type { EditorInfo } from "../lib/zcode-shared.js";
+import type { EditorInfo } from "../lib/zcode-shared";
 
 const PINNED_OPEN_WITH_EDITOR_IDS = [
   "finder",

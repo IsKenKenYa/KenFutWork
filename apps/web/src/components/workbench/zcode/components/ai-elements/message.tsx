@@ -15,23 +15,23 @@ import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
 import { createMathPlugin } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
-import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
+import { ControlHintTooltip } from "@zui/ControlHintTooltip";
 import {
   CodeBlock,
   CodeBlockHeader,
-} from "@zui/components/ai-elements/code-block.js";
-import { MarkdownBlockquote } from "@zui/components/ai-elements/markdown-blockquote.js";
+} from "@zui/components/ai-elements/code-block";
+import { MarkdownBlockquote } from "@zui/components/ai-elements/markdown-blockquote";
 import {
   MarkdownImage,
   MarkdownImageParagraph,
   type MarkdownImageProps,
   normalizeConsecutiveMarkdownImageBlocks,
-} from "@zui/components/ai-elements/markdown-image.js";
+} from "@zui/components/ai-elements/markdown-image";
 import {
   MarkdownListItem,
   MarkdownOrderedList,
   MarkdownUnorderedList,
-} from "@zui/components/ai-elements/markdown-list.js";
+} from "@zui/components/ai-elements/markdown-list";
 import {
   MarkdownTable,
   MarkdownTableBody,
@@ -39,62 +39,59 @@ import {
   MarkdownTableHead,
   MarkdownTableHeader,
   MarkdownTableRow,
-} from "@zui/components/ai-elements/markdown-table.js";
-import { STREAMDOWN_CONTROLS } from "@zui/components/ai-elements/streamdown-controls.js";
-import { cn } from "@zui/components/lib/utils.js";
-import { Button } from "@zui/components/ui/button.js";
-import {
-  ButtonGroup,
-  ButtonGroupText,
-} from "@zui/components/ui/button-group.js";
+} from "@zui/components/ai-elements/markdown-table";
+import { STREAMDOWN_CONTROLS } from "@zui/components/ai-elements/streamdown-controls";
+import { cn } from "@zui/components/lib/utils";
+import { Button } from "@zui/components/ui/button";
+import { ButtonGroup, ButtonGroupText } from "@zui/components/ui/button-group";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
-} from "@zui/components/ui/context-menu.js";
-import { resolveMessageLinkOpenTarget } from "@zui/embeddedBrowserHelpers.js";
-import { useFileContextActions } from "@zui/hooks/useFileContextActions.js";
-import { useOptionalPlatform, usePlatform } from "@zui/hooks/usePlatform.js";
-import { useOptionalServices } from "@zui/hooks/useServices.js";
-import { useWorkspaceOpenInEditorTarget } from "@zui/hooks/useWorkspaceOpenInEditorTarget.js";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
-import type { UIMessage } from "@zui/lib/ai-types.js";
-import { stripBalancedAssistantPathQuotes } from "@zui/lib/assistantPathQuotes.js";
-import type { CodePreviewSettings } from "@zui/lib/codePreviewSettings.js";
-import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@zui/lib/codePreviewSettings.js";
-import type { CodeViewerSource } from "@zui/lib/codeViewer.js";
+} from "@zui/components/ui/context-menu";
+import { resolveMessageLinkOpenTarget } from "@zui/embeddedBrowserHelpers";
+import { useFileContextActions } from "@zui/hooks/useFileContextActions";
+import { useOptionalPlatform, usePlatform } from "@zui/hooks/usePlatform";
+import { useOptionalServices } from "@zui/hooks/useServices";
+import { useWorkspaceOpenInEditorTarget } from "@zui/hooks/useWorkspaceOpenInEditorTarget";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider";
+import type { UIMessage } from "@zui/lib/ai-types";
+import { stripBalancedAssistantPathQuotes } from "@zui/lib/assistantPathQuotes";
+import type { CodePreviewSettings } from "@zui/lib/codePreviewSettings";
+import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@zui/lib/codePreviewSettings";
+import type { CodeViewerSource } from "@zui/lib/codeViewer";
 import {
   persistLastSelectedEditorId,
   readLastSelectedEditorId,
-} from "@zui/lib/editorPreference.js";
+} from "@zui/lib/editorPreference";
 import {
   FileDisplayIcon,
   FOLDER_FILE_ICON_SRC,
   resolveFileDisplayDescriptor,
-} from "@zui/lib/fileDisplay.js";
+} from "@zui/lib/fileDisplay";
 import {
   normalizeWorkspaceRelativeFilePath,
   parseMarkdownFileLinkTarget,
   resolveMarkdownFileLink,
-} from "@zui/lib/markdownFileLink.js";
-import { getPathLeaf } from "@zui/lib/path.js";
-import { windowsFileLinkEscapeRemarkPlugin } from "@zui/lib/windowsFileLinkEscapeRemarkPlugin.js";
-import { resolveWorkspaceEditorSelection } from "@zui/lib/workspaceEditorSelection.js";
+} from "@zui/lib/markdownFileLink";
+import { getPathLeaf } from "@zui/lib/path";
+import { windowsFileLinkEscapeRemarkPlugin } from "@zui/lib/windowsFileLinkEscapeRemarkPlugin";
+import { resolveWorkspaceEditorSelection } from "@zui/lib/workspaceEditorSelection";
 import type {
   EditorInfo,
   FileStat,
   OpenInEditorOptions,
 } from "@zui/lib/zcode-shared";
 import { rewriteMarkdownArtifactImageSources } from "@zui/lib/zcode-shared";
-import { projectZCodeFileCitations } from "@zui/lib/zcodeFileCitation.js";
-import { createZCodeFileCitationRemarkPlugin } from "@zui/lib/zcodeFileCitationRemarkPlugin.js";
-import { logger } from "@zui/logger.js";
-import { useZCodeStore } from "@zui/store/StoreProvider.js";
-import type { Theme } from "@zui/useTheme.js";
-import { sortInstalledEditorsForFileTree } from "@zui/workspace-file-tree/helpers.js";
-import { getWorkspaceFileRelativePath } from "@zui/workspace-file-tree/model.js";
+import { projectZCodeFileCitations } from "@zui/lib/zcodeFileCitation";
+import { createZCodeFileCitationRemarkPlugin } from "@zui/lib/zcodeFileCitationRemarkPlugin";
+import { logger } from "@zui/logger";
+import { useZCodeStore } from "@zui/store/StoreProvider";
+import type { Theme } from "@zui/useTheme";
+import { sortInstalledEditorsForFileTree } from "@zui/workspace-file-tree/helpers";
+import { getWorkspaceFileRelativePath } from "@zui/workspace-file-tree/model";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,

@@ -5,18 +5,18 @@
  */
 "use client";
 
-import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
-import { cn } from "@zui/components/lib/utils.js";
-import { Button } from "@zui/components/ui/button.js";
+import { ControlHintTooltip } from "@zui/ControlHintTooltip";
+import { cn } from "@zui/components/lib/utils";
+import { Button } from "@zui/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@zui/components/ui/dialog.js";
-import { toast } from "@zui/components/ui/toast.js";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+} from "@zui/components/ui/dialog";
+import { toast } from "@zui/components/ui/toast";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider";
 import {
   ArrowLeftFromLine,
   ArrowRightToLine,

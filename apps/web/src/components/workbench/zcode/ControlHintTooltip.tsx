@@ -1,11 +1,11 @@
-import { cn } from "@zui/components/lib/utils.js";
+import { cn } from "@zui/components/lib/utils";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@zui/components/ui/tooltip.js";
-import { isAppleKeyboardPlatform } from "@zui/lib/keyboardShortcuts.js";
+} from "@zui/components/ui/tooltip";
+import { isAppleKeyboardPlatform } from "@zui/lib/keyboardShortcuts";
 import {
   type ComponentProps,
   cloneElement,

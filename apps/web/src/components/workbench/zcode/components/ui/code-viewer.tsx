@@ -6,20 +6,20 @@ import type {
   SupportedLanguages,
 } from "@pierre/diffs";
 import { File, type FileOptions } from "@pierre/diffs/react";
-import { cn } from "@zui/components/lib/utils.js";
-import { Button } from "@zui/components/ui/button.js";
-import { Textarea } from "@zui/components/ui/textarea.js";
+import { cn } from "@zui/components/lib/utils";
+import { Button } from "@zui/components/ui/button";
+import { Textarea } from "@zui/components/ui/textarea";
 import type {
   CodeCommentPreview,
   CodeCommentRange,
-} from "@zui/lib/codeCommentContext.js";
-import { isDarkCodePreviewTheme } from "@zui/lib/codePreviewPreferences.js";
-import { DIFFS_PREFERRED_HIGHLIGHTER } from "@zui/lib/diffsHighlighterEngine.js";
+} from "@zui/lib/codeCommentContext";
+import { isDarkCodePreviewTheme } from "@zui/lib/codePreviewPreferences";
+import { DIFFS_PREFERRED_HIGHLIGHTER } from "@zui/lib/diffsHighlighterEngine";
 import {
   formatCommandShortcutLabel,
   isAppleKeyboardPlatform,
   type KeyboardShortcutPlatformInfo,
-} from "@zui/lib/keyboardShortcuts.js";
+} from "@zui/lib/keyboardShortcuts";
 import { Trash2Icon } from "lucide-react";
 import type {
   CSSProperties,

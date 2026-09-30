@@ -4,7 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 import { Select as SelectPrimitive } from "radix-ui";
 import * as React from "react";
-import { cn } from "../lib/utils.js";
+import { cn } from "../lib/utils";
 
 // resize 大会话时 Select trigger 跟随基础控件批量重排，
 // transition-all 会把布局/滚动条相关属性也动画化；这里限定为颜色过渡。

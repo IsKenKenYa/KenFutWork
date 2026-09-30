@@ -5,31 +5,31 @@
  */
 /* eslint-disable max-lines -- codeViewer 集中维护文件、文本、图片和 diff 预览提取；本次只收敛 tool identity，不顺手拆文件以免扩大回归面。 */
 
-import type { CodeViewerWorkspaceScope } from "@zui/lib/codeViewerWorkspaceScope.js";
+import type { CodeViewerWorkspaceScope } from "@zui/lib/codeViewerWorkspaceScope";
 import {
   decodeFilePathUriEscapes,
   getPathLeaf,
   isAbsoluteFilePath,
   joinFilePath,
-} from "@zui/lib/path.js";
-import type { TaskChatToolCall as ChatToolCall } from "@zui/lib/taskChatMessageTypes.js";
+} from "@zui/lib/path";
+import type { TaskChatToolCall as ChatToolCall } from "@zui/lib/taskChatMessageTypes";
 import {
   buildUnifiedDiff,
   extractBeforeAfter,
   extractStructuredDiff,
-} from "@zui/lib/toolDiffPreview.js";
+} from "@zui/lib/toolDiffPreview";
 import {
   isFileContentWriteToolCall,
   isFileDiffToolCall,
   resolveToolCallIdentity,
-} from "@zui/lib/toolIdentity.js";
+} from "@zui/lib/toolIdentity";
 import {
   getMediaPreviewFormat,
   type MediaPreviewKind,
 } from "@zui/lib/zcode-shared";
 import type { BundledLanguage } from "shiki";
 
-export { buildUnifiedDiff } from "@zui/lib/toolDiffPreview.js";
+export { buildUnifiedDiff } from "@zui/lib/toolDiffPreview";
 
 export const FILE_VIEWER_MAX_TEXT_BYTES = 256 * 1024;
 export interface FileCodeViewerSource extends CodeViewerWorkspaceScope {

@@ -8,7 +8,7 @@ import {
   findAssistantDirectivePrefixStart,
   findMarkdownCodeRanges,
   findUnclosedAssistantDirectiveStart,
-} from "@zui/lib/assistantDirectiveParser.js";
+} from "@zui/lib/assistantDirectiveParser";
 
 type ZCodeFileCitationPreviewKind =
   | "docx"

@@ -6,6 +6,8 @@
  * 只经 `useZCodeStoreWithDefault` 容错读取（无 Provider 时回退 defaultValue），
  * 故这里不建真实 store：永远走 defaultValue 分支。
  * theme / codePreviewSettings 由宿主组件（workbench 装配处）以 props 注入。
+ * 适配注记：P2 追加 `interfaceMode` 占位字段——照搬件 hooks/useInterfaceMode.ts 的
+ * selector 触及 `state.interfaceMode`；本仓恒非 office 模式，仍恒走 defaultValue=false。
  */
 "use client";
 
@@ -15,6 +17,11 @@ import { createContext, type ReactNode, useContext } from "react";
 export interface ZCodeStatePlaceholder {
   /** 占位：真实偏好经 props 注入，不经 store。 */
   readonly __placeholder?: never;
+  /**
+   * 占位：zcode ZCodeState.interfaceMode（"office" | 其他）；宿主恒非 office，
+   * useInterfaceMode 的 selector 触及此字段，恒走 defaultValue=false 分支。
+   */
+  readonly interfaceMode?: string;
 }
 
 export type ZCodeStorePlaceholder = {

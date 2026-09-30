@@ -9,20 +9,20 @@ import {
   ImagePreviewDialog,
   type ImagePreviewDialogItem,
   sanitizeImageSourceForLog,
-} from "@zui/components/ai-elements/image-preview-dialog.js";
+} from "@zui/components/ai-elements/image-preview-dialog";
 import {
   ImageThumbnailGallery,
   imageThumbnailClassName,
   imageThumbnailTriggerClassName,
-} from "@zui/components/ai-elements/image-thumbnail-gallery.js";
-import { cn } from "@zui/components/lib/utils.js";
-import { useOptionalServices } from "@zui/hooks/useServices.js";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
-import { isImagePreviewPath } from "@zui/lib/codeViewer.js";
-import { resolveMarkdownFileLink } from "@zui/lib/markdownFileLink.js";
+} from "@zui/components/ai-elements/image-thumbnail-gallery";
+import { cn } from "@zui/components/lib/utils";
+import { useOptionalServices } from "@zui/hooks/useServices";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider";
+import { isImagePreviewPath } from "@zui/lib/codeViewer";
+import { resolveMarkdownFileLink } from "@zui/lib/markdownFileLink";
 import type { FileMediaPreview } from "@zui/lib/zcode-shared";
 import { decodeMarkdownArtifactImageSource } from "@zui/lib/zcode-shared";
-import { logger } from "@zui/logger.js";
+import { logger } from "@zui/logger";
 import { ImageIcon, ImageOffIcon } from "lucide-react";
 import type { ComponentProps, MouseEvent } from "react";
 import {
@@ -34,7 +34,7 @@ import {
   useState,
 } from "react";
 
-export { clampImagePreviewOffset as clampMarkdownImagePreviewOffset } from "@zui/components/ai-elements/image-preview-dialog.js";
+export { clampImagePreviewOffset as clampMarkdownImagePreviewOffset } from "@zui/components/ai-elements/image-preview-dialog";
 
 export type MarkdownImageProps = ComponentProps<"img"> & {
   node?: unknown;

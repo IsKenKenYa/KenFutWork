@@ -6,11 +6,11 @@
 "use client";
 
 import { createMermaidPlugin, type MermaidConfig } from "@streamdown/mermaid";
-import { cn } from "@zui/components/lib/utils.js";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
-import { logger } from "@zui/logger.js";
-import type { Theme } from "@zui/useTheme.js";
-import { resolveTheme } from "@zui/useTheme.js";
+import { cn } from "@zui/components/lib/utils";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider";
+import { logger } from "@zui/logger";
+import type { Theme } from "@zui/useTheme";
+import { resolveTheme } from "@zui/useTheme";
 import { Loader2Icon } from "lucide-react";
 import type { HTMLAttributes } from "react";
 import { useEffect, useId, useMemo, useState } from "react";

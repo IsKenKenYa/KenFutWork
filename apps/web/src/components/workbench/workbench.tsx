@@ -5,14 +5,15 @@ import type {
   ExecutionMode,
   ProjectSummary,
 } from "@kenfutwork/shared";
-import { MessageResponse } from "@zui/components/ai-elements/message.js";
+import { MessageResponse } from "@zui/components/ai-elements/message";
 import {
   Reasoning,
   ReasoningContent,
   ReasoningTrigger,
-} from "@zui/components/ai-elements/reasoning.js";
-import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@zui/lib/codePreviewSettings.js";
-import { useTheme } from "@zui/useTheme.js";
+} from "@zui/components/ai-elements/reasoning";
+import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@zui/lib/codePreviewSettings";
+import { ToolCallBlock } from "@zui/ToolCallBlocks";
+import { useTheme } from "@zui/useTheme";
 import {
   Blocks,
   Brain,
@@ -97,7 +98,6 @@ import { TurnRail } from "@/components/workbench/turn-rail";
 import { UserMenu, type WorkbenchUser } from "@/components/workbench/user-menu";
 import { WorkDirectorySelect } from "@/components/workbench/work-directory-select";
 import { WorkbenchSidePanel } from "@/components/workbench/workbench-side-panel";
-import { resolveToolRenderer } from "@/components/workbench/zcode/tool-renderers";
 import { useFlowHostEntry } from "@/hooks/use-flow-host";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useAuth } from "@/lib/auth-context";
@@ -198,6 +198,7 @@ import {
   toolDisplayLabel,
 } from "@/lib/workbench-tools";
 import { buildTrajectory, turnRailItems } from "@/lib/workbench-trajectory";
+import { toToolCallTreeNode } from "@/lib/zcode-adapter";
 
 /**
  * Agent 工作台（产品主入口）：Code / Design 双模式（DEC-2）。
@@ -394,13 +395,22 @@ function AssistantTurn({
             </div>
           );
         }
-        // 连续工具调用：一行一个，zcode renderer 分流（read 单行 / edit 带 diff /
-        // execute 终端面板 / agent 子代理行点击开右栏）。刻意**不**做聚合折叠。
+        // 连续工具调用：一行一个，zcode ToolCallBlocks 原件渲染（renderer 按
+        // tool identity 分流：read 单行 / edit diff 计数 / execute 终端面板 /
+        // agent 子代理行点击开右栏）。刻意**不**做聚合折叠。
+        // 工具行无纵向内边距（zcode ToolCallRowView 同口径：间距由组容器 gap 给）。
         return group.tools.map((tool) => (
-          <div key={tool.toolCallId} className="w-full max-w-full">
-            {resolveToolRenderer(tool, toolDisplayLabel(tool.toolName), () =>
-              requestPanelView("subagents"),
-            )}
+          <div key={tool.toolCallId} className="w-full max-w-full py-0">
+            <ToolCallBlock
+              toolCallNode={toToolCallTreeNode(tool)}
+              workspacePath=""
+              theme={zcodeTheme}
+              codePreviewSettings={DEFAULT_CODE_PREVIEW_SETTINGS}
+              onOpenBrowserUrl={openExternalUrl}
+              agentSummaryAction={{
+                onActivate: () => requestPanelView("subagents"),
+              }}
+            />
           </div>
         ));
       })}

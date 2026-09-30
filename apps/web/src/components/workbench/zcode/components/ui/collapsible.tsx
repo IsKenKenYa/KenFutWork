@@ -1,5 +1,5 @@
 import { Collapsible as CollapsiblePrimitive } from "radix-ui";
-import { cn } from "../lib/utils.js";
+import { cn } from "../lib/utils";
 
 function Collapsible({
   ...props

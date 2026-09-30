@@ -4,12 +4,12 @@
  * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
  */
 
-import { stripBalancedAssistantPathQuotes } from "@zui/lib/assistantPathQuotes.js";
+import { stripBalancedAssistantPathQuotes } from "@zui/lib/assistantPathQuotes";
 import {
   decodeFilePathUriEscapes,
   isAbsoluteFilePath,
   joinFilePath,
-} from "@zui/lib/path.js";
+} from "@zui/lib/path";
 
 interface ParsedMarkdownFileLink {
   path: string;

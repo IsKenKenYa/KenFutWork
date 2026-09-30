@@ -11,34 +11,34 @@
  */
 "use client";
 
-import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
-import { DiagramPreviewDialog } from "@zui/components/ai-elements/diagram-preview-dialog.js";
-import { MermaidBlock } from "@zui/components/ai-elements/mermaid-block.js";
-import { cn } from "@zui/components/lib/utils.js";
-import { Button } from "@zui/components/ui/button.js";
-import { CodeViewer } from "@zui/components/ui/code-viewer.js";
+import { ControlHintTooltip } from "@zui/ControlHintTooltip";
+import { DiagramPreviewDialog } from "@zui/components/ai-elements/diagram-preview-dialog";
+import { MermaidBlock } from "@zui/components/ai-elements/mermaid-block";
+import { cn } from "@zui/components/lib/utils";
+import { Button } from "@zui/components/ui/button";
+import { CodeViewer } from "@zui/components/ui/code-viewer";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@zui/components/ui/select.js";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+} from "@zui/components/ui/select";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider";
 import {
   FileDisplayIcon,
   resolveFileDisplayDescriptor,
-} from "@zui/lib/fileDisplay.js";
+} from "@zui/lib/fileDisplay";
 import {
   isMermaidLanguage,
   shouldRenderMermaidCodeBlock,
-} from "@zui/lib/mermaidLanguage.js";
+} from "@zui/lib/mermaidLanguage";
 import {
   getCurrentMermaidDocumentVisibility,
   resolveMermaidAutoRenderDecision,
-} from "@zui/lib/mermaidRenderBudget.js";
-import { logger } from "@zui/logger.js";
-import type { Theme } from "@zui/useTheme.js";
+} from "@zui/lib/mermaidRenderBudget";
+import { logger } from "@zui/logger";
+import type { Theme } from "@zui/useTheme";
 import { CheckIcon, CopyIcon, Maximize2Icon, WrapTextIcon } from "lucide-react";
 import type { ComponentProps, CSSProperties, HTMLAttributes } from "react";
 import {
@@ -56,27 +56,27 @@ import type { BundledTheme } from "shiki";
 type CodeBlockProps = HTMLAttributes<HTMLDivElement> & {
   code: string;
   language: string;
-  enableSyntaxHighlighting?: boolean;
-  showLineNumbers?: boolean;
-  theme?: BundledTheme;
+  enableSyntaxHighlighting?: boolean | undefined;
+  showLineNumbers?: boolean | undefined;
+  theme?: BundledTheme | undefined;
   /**
    * 应用主题（store 耦合剥离）：仅透传给 Mermaid 渲染分支；
    * `theme` 已被 shiki 高亮主题占用，故另起名 appTheme。缺省时 Mermaid 按 "system" 兜底。
    */
-  appTheme?: Theme;
-  wrapLongLines?: boolean;
-  fontSizePx?: number;
-  renderMermaid?: boolean;
+  appTheme?: Theme | undefined;
+  wrapLongLines?: boolean | undefined;
+  fontSizePx?: number | undefined;
+  renderMermaid?: boolean | undefined;
   /** 正文独立限高，避免滚动时把 Header 的复制/换行按钮一起卷走。 */
-  contentClassName?: string;
+  contentClassName?: string | undefined;
   /**
    * 行定位透传（CodeViewer 已实现滚动+高亮，CodeBlock 也一并暴露）：
    * focusedRange 高亮行区间，focusRequestId 变化时触发滚动到该区间。
    */
-  focusedRange?: { startLine: number; endLine: number } | null;
-  focusRequestId?: string;
+  focusedRange?: { startLine: number; endLine: number } | null | undefined;
+  focusRequestId?: string | undefined;
   /** 行号着警示色的行（透传 CodeViewer `markedLines`），编译反馈卡标出被诊断指到的行。 */
-  markedLines?: readonly number[];
+  markedLines?: readonly number[] | undefined;
 };
 
 interface CodeBlockContextType {
@@ -186,9 +186,9 @@ export const CodeBlockContainer = ({
 );
 
 export type CodeBlockHeaderProps = HTMLAttributes<HTMLDivElement> & {
-  showWrapButton?: boolean;
-  displayFile?: string;
-  language?: string;
+  showWrapButton?: boolean | undefined;
+  displayFile?: string | undefined;
+  language?: string | undefined;
 };
 
 export const CodeBlockHeader = ({
@@ -487,9 +487,9 @@ export const CodeBlockMermaidPreviewButton = ({
 };
 
 export type CodeBlockCopyButtonProps = ComponentProps<typeof Button> & {
-  onCopy?: () => void;
-  onError?: (error: Error) => void;
-  timeout?: number;
+  onCopy?: (() => void) | undefined;
+  onError?: ((error: Error) => void) | undefined;
+  timeout?: number | undefined;
 };
 
 export const CodeBlockCopyButton = ({

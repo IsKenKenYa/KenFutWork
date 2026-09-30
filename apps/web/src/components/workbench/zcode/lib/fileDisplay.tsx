@@ -6,8 +6,8 @@ import {
   normalizePath,
   resolveIconName,
   trimTrailingSeparator,
-} from "@zui/lib/fileDisplayHelpers.js";
-import { getPathLeaf, isAbsoluteFilePath } from "@zui/lib/path.js";
+} from "@zui/lib/fileDisplayHelpers";
+import { getPathLeaf, isAbsoluteFilePath } from "@zui/lib/path";
 import { type ReactElement, useEffect, useState } from "react";
 
 export const INLINE_FALLBACK_FILE_ICON_SRC =

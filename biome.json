@@ -79,6 +79,11 @@
           "correctness": {
             "useExhaustiveDependencies": "warn"
           },
+          "complexity": {
+            "noUselessFragments": "warn",
+            "useIndexOf": "warn",
+            "useLiteralKeys": "warn"
+          },
           "suspicious": {
             "noControlCharactersInRegex": "warn"
           },

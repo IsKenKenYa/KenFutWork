@@ -1,7 +1,7 @@
 import { Check, Minus } from "lucide-react";
 import { Checkbox as CheckboxPrimitive } from "radix-ui";
 import type * as React from "react";
-import { cn } from "../lib/utils.js";
+import { cn } from "../lib/utils";
 
 type CheckboxProps = React.ComponentProps<typeof CheckboxPrimitive.Root> & {
   checkIconStrokeWidth?: number;

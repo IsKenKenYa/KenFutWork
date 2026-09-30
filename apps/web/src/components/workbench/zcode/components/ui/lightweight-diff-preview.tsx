@@ -1,10 +1,10 @@
-import { cn } from "@zui/components/lib/utils.js";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
-import type { CodePreviewSettings } from "@zui/lib/codePreviewSettings.js";
+import { cn } from "@zui/components/lib/utils";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider";
+import type { CodePreviewSettings } from "@zui/lib/codePreviewSettings";
 import {
   getPatchPreviewLineContent,
   parseTruncatedMarkerOmittedLineCount,
-} from "@zui/lib/patchDiffPreview.js";
+} from "@zui/lib/patchDiffPreview";
 import type { CSSProperties, HTMLAttributes, ReactNode } from "react";
 
 export type LightweightDiffLineKind = "added" | "removed" | "context";

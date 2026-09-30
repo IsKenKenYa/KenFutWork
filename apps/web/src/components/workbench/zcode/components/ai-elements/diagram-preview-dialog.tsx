@@ -5,23 +5,23 @@
  */
 "use client";
 
-import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
-import { cn } from "@zui/components/lib/utils.js";
-import { Button } from "@zui/components/ui/button.js";
+import { ControlHintTooltip } from "@zui/ControlHintTooltip";
+import { cn } from "@zui/components/lib/utils";
+import { Button } from "@zui/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
-} from "@zui/components/ui/dialog.js";
+} from "@zui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@zui/components/ui/dropdown-menu.js";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+} from "@zui/components/ui/dropdown-menu";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider";
 import {
   type DiagramPoint,
   type DiagramViewportBounds,
@@ -29,8 +29,8 @@ import {
   fitDiagramToViewport,
   panDiagram,
   zoomDiagramAtPoint,
-} from "@zui/lib/diagramViewport.js";
-import { logger } from "@zui/logger.js";
+} from "@zui/lib/diagramViewport";
+import { logger } from "@zui/logger";
 import {
   ChevronDownIcon,
   CircleMinusIcon,

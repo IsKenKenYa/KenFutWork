@@ -7,7 +7,7 @@
 import {
   normalizeAskUserQuestionInput,
   readAskUserQuestionInput,
-} from "@zui/lib/askUserQuestion.js";
+} from "@zui/lib/askUserQuestion";
 import {
   getZCodeToolFamilyForName,
   isTodoPlanToolName,
@@ -43,9 +43,9 @@ export interface ToolCallIdentity {
 }
 
 interface ToolIdentityLike {
-  toolName?: string | null;
-  kind?: string | null;
-  title?: string | null;
+  toolName?: string | null | undefined;
+  kind?: string | null | undefined;
+  title?: string | null | undefined;
   input?: unknown;
   raw?: unknown;
 }

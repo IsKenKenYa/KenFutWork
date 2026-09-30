@@ -1,14 +1,14 @@
 import {
   getLightweightDiffLineParts,
   LightweightDiffPreview,
-} from "@zui/components/ui/lightweight-diff-preview.js";
-import type { CodePreviewSettings } from "@zui/lib/codePreviewSettings.js";
+} from "@zui/components/ui/lightweight-diff-preview";
+import type { CodePreviewSettings } from "@zui/lib/codePreviewSettings";
 import {
   highlightCode,
   shouldUseSyntaxHighlighting,
   type TokenizedCode,
-} from "@zui/lib/shikiHighlighter.js";
-import { logger } from "@zui/logger.js";
+} from "@zui/lib/shikiHighlighter";
+import { logger } from "@zui/logger";
 import { type HTMLAttributes, useEffect, useMemo, useState } from "react";
 import type { BundledTheme, ThemedToken } from "shiki";
 

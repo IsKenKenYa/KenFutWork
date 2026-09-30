@@ -43,7 +43,7 @@ function shouldAnimateQueuedSummaryContent({
   reducedMotion,
 }: {
   enabled: boolean;
-  disableAnimation?: boolean;
+  disableAnimation?: boolean | undefined;
   reducedMotion: boolean;
 }) {
   return enabled && disableAnimation !== true && !reducedMotion;
@@ -51,10 +51,10 @@ function shouldAnimateQueuedSummaryContent({
 
 interface SummaryContentSnapshot {
   key: string;
-  refreshVersion?: string;
+  refreshVersion?: string | undefined;
   primaryText: ReactNode;
-  secondaryText?: ReactNode;
-  trailingText?: ReactNode;
+  secondaryText?: ReactNode | undefined;
+  trailingText?: ReactNode | undefined;
 }
 
 function shouldRefreshQueuedSummaryContent(
@@ -114,12 +114,12 @@ export function QueuedSummaryContent({
   disableAnimation = false,
 }: {
   contentKey: string;
-  contentRefreshVersion?: string;
+  contentRefreshVersion?: string | undefined;
   primaryText: ReactNode;
-  secondaryText?: ReactNode;
-  trailingText?: ReactNode;
+  secondaryText?: ReactNode | undefined;
+  trailingText?: ReactNode | undefined;
   enabled: boolean;
-  disableAnimation?: boolean;
+  disableAnimation?: boolean | undefined;
 }) {
   const reducedMotion = usePrefersReducedMotion();
   const shouldAnimate = shouldAnimateQueuedSummaryContent({

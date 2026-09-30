@@ -7,9 +7,9 @@
 import {
   type AssistantFilePathResolveOptions,
   resolveAssistantRawFilePath,
-} from "@zui/lib/assistantFileReferences.js";
-import { getPathLeaf } from "@zui/lib/path.js";
-import { extractZCodeFileCitations } from "@zui/lib/zcodeFileCitation.js";
+} from "@zui/lib/assistantFileReferences";
+import { getPathLeaf } from "@zui/lib/path";
+import { extractZCodeFileCitations } from "@zui/lib/zcodeFileCitation";
 import type { Plugin } from "unified";
 
 interface CitationMarkdownNode {

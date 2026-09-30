@@ -7,12 +7,12 @@
 "use client";
 
 import { useCallback } from "react";
-import { toast } from "../components/ui/toast.js";
-import { useZCodeIntl } from "../i18n/IntlProvider.js";
-import { getContainingDirectoryPath } from "../lib/path.js";
-import type { OpenInEditorRemoteTarget } from "../lib/zcode-shared.js";
-import { logger } from "../logger.js";
-import { usePlatform } from "./usePlatform.js";
+import { toast } from "../components/ui/toast";
+import { useZCodeIntl } from "../i18n/IntlProvider";
+import { getContainingDirectoryPath } from "../lib/path";
+import type { OpenInEditorRemoteTarget } from "../lib/zcode-shared";
+import { logger } from "../logger";
+import { usePlatform } from "./usePlatform";
 
 interface FileContextActionOptions {
   canOpenLocalFileManager?: boolean;

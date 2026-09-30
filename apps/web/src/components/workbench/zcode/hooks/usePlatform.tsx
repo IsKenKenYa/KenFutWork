@@ -6,18 +6,21 @@
  * 故 platform stub 的对应方法一律返回失败/空——UI 据此降级（隐藏「在编辑器中打开」等入口，
  * 符合「未接通不出现」纪律）。openExternal 接到我们已有的右栏浏览器面板 / 系统浏览器口径。
  * 后续 Tauri 桌面落地编辑器检测时，只需替换本文件的 stub 实现，照搬组件零改动。
+ * 适配注记：P2 追加 `getApplicationIcon?` 可选方法声明（CUA 卡面图标消费方以
+ * `platform?.getApplicationIcon` 判空降级）；本仓无实现，恒走默认图标。
  */
 "use client";
 
 import { createContext, type ReactNode, useCallback, useContext } from "react";
 
 import type {
+  ApplicationIconRequest,
   EditorInfo,
   OpenInEditorOptions,
   RemoteTarget,
   SaveFileRequest,
   SaveFileResult,
-} from "../lib/zcode-shared.js";
+} from "../lib/zcode-shared";
 
 /** zcode IPlatformService 的最小切片：只声明照搬组件实际调用的方法。 */
 export interface ZCodePlatformSlice {
@@ -39,6 +42,13 @@ export interface ZCodePlatformSlice {
   saveFile?(payload: SaveFileRequest): Promise<SaveFileResult>;
   /** 选择目录。 */
   selectDirectory(): Promise<string | null>;
+  /**
+   * 按定位符请求应用图标（CUA 卡面用）；普通 Web 端不实现（zcode IPlatformService 同为可选），
+   * 消费方（CuaAppSummaryIcon / CuaListDetails）以 `platform?.getApplicationIcon` 判空降级为默认图标。
+   */
+  getApplicationIcon?(
+    request: string | ApplicationIconRequest,
+  ): Promise<{ iconDataUrl: string } | null>;
   /** 连接远程（我们宿主未接通，恒失败）。 */
   connectRemote(
     options: RemoteTarget,

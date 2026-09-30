@@ -10,7 +10,7 @@
 
 import { useMemo } from "react";
 
-import type { OpenInEditorRemoteTarget } from "../lib/zcode-shared.js";
+import type { OpenInEditorRemoteTarget } from "../lib/zcode-shared";
 
 interface WorkspaceOpenInEditorScope {
   workspacePath?: string;

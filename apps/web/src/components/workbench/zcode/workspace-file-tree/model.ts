@@ -6,7 +6,7 @@
  * 由服务端 API 供数，不进入 zcode 渲染层）。
  */
 
-import { getPathLeaf } from "../lib/path.js";
+import { getPathLeaf } from "../lib/path";
 
 function normalizeForRelativePath(path: string): string {
   return path.replace(/\\/g, "/").replace(/\/+$/, "");

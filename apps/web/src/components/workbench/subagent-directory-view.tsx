@@ -3,10 +3,6 @@
 import { ArrowLeft, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
-  AgentActivitySection,
-  AgentPromptSection,
-} from "@/components/workbench/zcode/tool-renderers";
-import {
   elapsedSecondsBetween,
   formatElapsedSeconds,
   parseTimestampMs,
@@ -16,6 +12,8 @@ import type {
   SubagentEntry,
   SubagentToolRow,
 } from "@/lib/subagent-directory";
+import { AgentActivitySection } from "./zcode/ToolCallBlocks/renderers/agent";
+import { AgentPromptSection } from "./zcode/ToolCallBlocks/renderers/agentPromptSection";
 
 /**
  * 「子智能体」视图（zcode 右栏模型）：主对话只保留父派发调用的紧凑行；
@@ -159,7 +157,8 @@ function SubagentThreadView({
       </div>
       <div className="ml-2 space-y-3 border-border border-l pt-2 pl-3.5">
         {entry.description ? (
-          <AgentPromptSection prompt={entry.description} />
+          /* workspacePath 传空：我方无工作区文件链接语义，zcode 原件内的链接解析自然降级 */
+          <AgentPromptSection prompt={entry.description} workspacePath="" />
         ) : null}
         <SubagentTranscript entry={entry} />
       </div>
@@ -211,12 +210,14 @@ function SubagentTranscript({ entry }: { entry: SubagentEntry }) {
         <AgentActivitySection
           label="Agent 思考"
           content={thoughtParts.join("\n\n")}
+          workspacePath=""
         />
       ) : null}
       {outputParts.length > 0 ? (
         <AgentActivitySection
           label="Agent 输出"
           content={outputParts.join("\n\n")}
+          workspacePath=""
         />
       ) : null}
       {thoughtParts.length === 0 &&

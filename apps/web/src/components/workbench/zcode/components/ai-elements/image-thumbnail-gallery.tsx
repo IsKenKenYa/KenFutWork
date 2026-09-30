@@ -5,7 +5,7 @@
  */
 "use client";
 
-import { cn } from "@zui/components/lib/utils.js";
+import { cn } from "@zui/components/lib/utils";
 import type { ComponentProps } from "react";
 
 export const imageThumbnailTriggerClassName =

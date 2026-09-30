@@ -5,18 +5,18 @@
  */
 "use client";
 
-import { cn } from "@zui/components/lib/utils.js";
-import { Button } from "@zui/components/ui/button.js";
+import { cn } from "@zui/components/lib/utils";
+import { Button } from "@zui/components/ui/button";
 import {
   Dialog,
   DialogClose,
   DialogContent,
   DialogTitle,
-} from "@zui/components/ui/dialog.js";
-import { toast } from "@zui/components/ui/toast.js";
-import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
-import { logger } from "@zui/logger.js";
+} from "@zui/components/ui/dialog";
+import { toast } from "@zui/components/ui/toast";
+import { useOptionalPlatform } from "@zui/hooks/usePlatform";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider";
+import { logger } from "@zui/logger";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,

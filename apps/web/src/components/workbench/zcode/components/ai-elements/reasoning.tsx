@@ -12,13 +12,13 @@
 "use client";
 
 import { useControllableState } from "@radix-ui/react-use-controllable-state";
-import { cn } from "@zui/components/lib/utils.js";
+import { cn } from "@zui/components/lib/utils";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@zui/components/ui/collapsible.js";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+} from "@zui/components/ui/collapsible";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider";
 import {
   TID_CHAT_REASONING_CONTENT,
   TID_CHAT_REASONING_TRIGGER,
@@ -29,8 +29,8 @@ import {
   resolveVerticalScrollMaskState,
   type ScrollMaskState,
   type ScrollMetrics,
-} from "@zui/mentions/components/scrollMask.js";
-import { QueuedSummaryContent } from "@zui/ToolCallBlocks/QueuedSummaryContent.js";
+} from "@zui/mentions/components/scrollMask";
+import { QueuedSummaryContent } from "@zui/ToolCallBlocks/QueuedSummaryContent";
 import { BrainIcon, ChevronRightIcon } from "lucide-react";
 import type { ComponentProps, CSSProperties, ReactNode } from "react";
 import {

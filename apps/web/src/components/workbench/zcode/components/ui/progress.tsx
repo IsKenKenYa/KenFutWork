@@ -3,7 +3,7 @@
 import { Progress as ProgressPrimitive } from "radix-ui";
 import type * as React from "react";
 
-import { cn } from "../lib/utils.js";
+import { cn } from "../lib/utils";
 
 type ProgressProps = React.ComponentProps<typeof ProgressPrimitive.Root> & {
   indicatorClassName?: string;

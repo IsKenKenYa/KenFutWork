@@ -5,7 +5,7 @@
  */
 "use client";
 
-import zhCN from "./zh-CN.js";
+import zhCN from "./zh-CN";
 
 export type Locale = "zh-CN" | "en-US";
 export type LocalePreference = "system" | Locale;

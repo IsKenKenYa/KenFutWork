@@ -1,4 +1,4 @@
-import { cn } from "@zui/components/lib/utils.js";
+import { cn } from "@zui/components/lib/utils";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -115,7 +115,7 @@ export function FlipMetricValue({
 }: {
   value: string;
   className?: string;
-  animateInitial?: boolean;
+  animateInitial?: boolean | undefined;
 }) {
   const reducedMotion = usePrefersReducedMotion();
   const characters = useMemo(() => Array.from(value), [value]);

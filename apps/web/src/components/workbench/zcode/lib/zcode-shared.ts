@@ -1067,3 +1067,903 @@ export function buildConversationPreviewArtifactCandidates(input: {
     ),
   });
 }
+
+/**
+ * zcode 照搬（P2 补充）：`@zcode/shared` tool-plan-adapter.ts 的消费切片。
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明（手册 §2.1）。
+ */
+
+export function extractPlanStepsFromToolOutput(params: {
+  title?: string | undefined;
+  kind?: string | undefined;
+  output: unknown;
+}): ZCodePlanStep[] | null {
+  const fingerprint = [params.title, params.kind].filter(Boolean).join(" ");
+  if (!isTodoPlanToolName(fingerprint)) {
+    return null;
+  }
+
+  for (const candidate of collectOutputCandidates(params.output)) {
+    const steps = extractPlanStepsFromValue(candidate);
+    if (steps) {
+      return steps;
+    }
+  }
+
+  return null;
+}
+
+export function extractPlanStepsFromToolInput(params: {
+  title?: string | undefined;
+  kind?: string | undefined;
+  input: unknown;
+}): ZCodePlanStep[] | null {
+  const fingerprint = [params.title, params.kind].filter(Boolean).join(" ");
+  if (!isTodoPlanToolName(fingerprint)) {
+    return null;
+  }
+
+  return extractPlanStepsFromValue(params.input);
+}
+
+/**
+ * zcode 照搬（P2 补充）：`@zcode/shared` zcode-task-types-core.ts 的消费切片。
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明（手册 §2.1）。
+ */
+
+export interface ZCodePlanStep {
+  id: string;
+  title: string;
+  status: "pending" | "in_progress" | "completed";
+}
+
+/**
+ * zcode 照搬（P2 补充）：`@zcode/shared` test-ids.ts 的消费切片。
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明（手册 §2.1）。
+ * 符号：TID_CHAT_TOOL_CALL_BLOCK, TID_TOOL_SUMMARY_TRIGGER, testId
+ */
+
+/** 工具调用摘要行触发按钮（动态后缀为 toolId） */
+export const TID_TOOL_SUMMARY_TRIGGER = "tool-summary-trigger";
+/** 聊天工具调用块容器（动态后缀为 toolCallId） */
+export const TID_CHAT_TOOL_CALL_BLOCK = "chat-tool-call-block";
+
+/** 为动态元素生成带后缀的 testid，如 file-tree-item-/home/user */
+export function testId(base: string, suffix: string): string {
+  return `${base}-${suffix}`;
+}
+
+/**
+ * zcode 照搬（P2 补充）：`@zcode/shared` tool-call-summary.ts 全量。
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明（手册 §2.1）。
+ * 私有辅助 isRecord 与下方 tool-plan-adapter 切片共用一份（两源逐字相同）。
+ */
+
+export type CompactToolCallState =
+  | "input-available"
+  | "input-streaming"
+  | "output-available"
+  | "output-denied"
+  | "output-error";
+
+export interface ToolCallSummarySource {
+  title?: string | undefined;
+  kind: string;
+  input: unknown;
+  output?: unknown;
+  raw?: unknown | undefined;
+}
+
+export interface ToolCallChangeStat {
+  added: number;
+  removed: number;
+}
+
+export interface ToolCallSummary {
+  primaryText: string;
+  secondaryText?: string | undefined;
+  changeStat?: ToolCallChangeStat | undefined;
+}
+
+const TOOL_CALL_RUNNING_STATES = new Set<CompactToolCallState>([
+  "input-streaming",
+  "input-available",
+]);
+
+const TOOL_CALL_FINISHED_STATES = new Set<CompactToolCallState>([
+  "output-available",
+  "output-error",
+  "output-denied",
+]);
+
+const TOOL_CALL_STATUS_MESSAGE_IDS: Record<CompactToolCallState, string> = {
+  "input-streaming": "chat.toolCall.status.pending",
+  "input-available": "chat.toolCall.status.running",
+  "output-available": "chat.toolCall.status.completed",
+  "output-error": "chat.toolCall.status.failed",
+  "output-denied": "chat.toolCall.status.denied",
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeDisplayText(value: string): string {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function countLines(value: string): number {
+  if (value.length === 0) return 0;
+  let count = 1;
+  for (let i = 0; i < value.length; i++) {
+    if (value.charCodeAt(i) === 10) count++;
+  }
+  if (value.charCodeAt(value.length - 1) === 10) count--;
+  return count;
+}
+
+function readFirstStringField(
+  value: Record<string, unknown>,
+  keys: readonly string[],
+): string | undefined {
+  for (const key of keys) {
+    const candidate = value[key];
+    if (typeof candidate === "string") {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+function extractBeforeAfterText(
+  source: unknown,
+): { before: string; after: string } | null {
+  if (!isRecord(source)) {
+    return null;
+  }
+
+  const before = readFirstStringField(source, [
+    "old_string",
+    "oldString",
+    "oldText",
+    "before",
+  ]);
+  const after = readFirstStringField(source, [
+    "new_string",
+    "newString",
+    "newText",
+    "after",
+    "content",
+  ]);
+  if (before !== undefined && after !== undefined) {
+    return { before, after };
+  }
+
+  const metadata = source["metadata"];
+  if (isRecord(metadata)) {
+    const fileDiff = metadata["filediff"];
+    if (isRecord(fileDiff)) {
+      const nestedBefore = readFirstStringField(fileDiff, [
+        "old_string",
+        "oldString",
+        "oldText",
+        "before",
+      ]);
+      const nestedAfter = readFirstStringField(fileDiff, [
+        "new_string",
+        "newString",
+        "newText",
+        "after",
+        "content",
+      ]);
+      if (nestedBefore !== undefined && nestedAfter !== undefined) {
+        return { before: nestedBefore, after: nestedAfter };
+      }
+    }
+  }
+
+  const contentBlocks = source["content"];
+  if (Array.isArray(contentBlocks)) {
+    for (const block of contentBlocks) {
+      if (!isRecord(block)) {
+        continue;
+      }
+      const blockBefore = readFirstStringField(block, [
+        "old_string",
+        "oldString",
+        "oldText",
+        "before",
+      ]);
+      const blockAfter = readFirstStringField(block, [
+        "new_string",
+        "newString",
+        "newText",
+        "after",
+        "content",
+      ]);
+      if (blockBefore !== undefined && blockAfter !== undefined) {
+        return { before: blockBefore, after: blockAfter };
+      }
+    }
+  }
+
+  return null;
+}
+
+function getChangeStat(
+  kind: string,
+  input: unknown,
+  output?: unknown,
+  raw?: unknown,
+): ToolCallChangeStat | undefined {
+  if (!/(edit|patch|replace|multi.?edit)/i.test(kind)) return undefined;
+
+  const changeSource =
+    extractBeforeAfterText(input) ??
+    extractBeforeAfterText(output) ??
+    extractBeforeAfterText(raw);
+  if (!changeSource) return undefined;
+
+  const removed = countLines(changeSource.before);
+  const added = countLines(changeSource.after);
+  if (added === 0 && removed === 0) return undefined;
+
+  return { added, removed };
+}
+
+function getInputSummary(input: unknown): string | undefined {
+  if (typeof input === "string") {
+    const summary = normalizeDisplayText(input);
+    return summary.length > 0 ? summary : undefined;
+  }
+
+  if (!isRecord(input)) {
+    return undefined;
+  }
+
+  for (const key of [
+    "command",
+    "path",
+    "file_path",
+    "filePath",
+    "prompt",
+  ] as const) {
+    const candidate = input[key];
+    if (typeof candidate !== "string") {
+      continue;
+    }
+
+    const summary = normalizeDisplayText(candidate);
+    if (summary.length > 0) {
+      return summary;
+    }
+  }
+
+  return undefined;
+}
+
+export function isCompactToolCallRunningState(
+  state: string,
+): state is CompactToolCallState {
+  return TOOL_CALL_RUNNING_STATES.has(state as CompactToolCallState);
+}
+
+export function isCompactToolCallFinishedState(
+  state: string,
+): state is CompactToolCallState {
+  return TOOL_CALL_FINISHED_STATES.has(state as CompactToolCallState);
+}
+
+export function getCompactToolCallStatusMessageId(
+  state: string,
+  rawStatus?: string,
+): string {
+  if (rawStatus === "stopped") {
+    return "chat.toolCall.status.stopped";
+  }
+
+  return (
+    TOOL_CALL_STATUS_MESSAGE_IDS[state as CompactToolCallState] ??
+    "chat.toolCall.status.pending"
+  );
+}
+
+export function getCompactToolCallSummary({
+  title,
+  kind,
+  input,
+  output,
+  raw,
+}: ToolCallSummarySource): ToolCallSummary {
+  const changeStat = getChangeStat(kind, input, output, raw);
+  const primaryText = (title && normalizeDisplayText(title)) || "tool";
+  const secondaryText = getInputSummary(input);
+  return {
+    primaryText,
+    secondaryText,
+    changeStat,
+  };
+}
+
+/**
+ * zcode 照搬（P2 补充）：`@zcode/shared` lineChangeStat.ts 全量。
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明（手册 §2.1）。
+ */
+
+const MAX_LCS_CELLS = 400_000;
+
+function splitIntoLogicalLines(content: string | null): string[] {
+  if (!content) {
+    return [];
+  }
+
+  const lines = content.split("\n");
+  if (lines[lines.length - 1] === "") {
+    lines.pop();
+  }
+  return lines;
+}
+
+export interface LineChangeStat {
+  added: number;
+  removed: number;
+}
+
+export function computeLineChangeStat(
+  beforeContent: string | null,
+  afterContent: string,
+): LineChangeStat {
+  const beforeLines = splitIntoLogicalLines(beforeContent);
+  const afterLines = splitIntoLogicalLines(afterContent);
+
+  let prefixIndex = 0;
+  while (
+    prefixIndex < beforeLines.length &&
+    prefixIndex < afterLines.length &&
+    beforeLines[prefixIndex] === afterLines[prefixIndex]
+  ) {
+    prefixIndex += 1;
+  }
+
+  let beforeTailIndex = beforeLines.length - 1;
+  let afterTailIndex = afterLines.length - 1;
+  while (
+    beforeTailIndex >= prefixIndex &&
+    afterTailIndex >= prefixIndex &&
+    beforeLines[beforeTailIndex] === afterLines[afterTailIndex]
+  ) {
+    beforeTailIndex -= 1;
+    afterTailIndex -= 1;
+  }
+
+  const trimmedBefore = beforeLines.slice(prefixIndex, beforeTailIndex + 1);
+  const trimmedAfter = afterLines.slice(prefixIndex, afterTailIndex + 1);
+
+  if (trimmedBefore.length === 0) {
+    return { added: trimmedAfter.length, removed: 0 };
+  }
+
+  if (trimmedAfter.length === 0) {
+    return { added: 0, removed: trimmedBefore.length };
+  }
+
+  // UI 的 edit 卡片和任务摘要都需要“真实改动行数”，
+  // 不能把 before/after 总行数直接当成 +/-。这里统一做一次行级 LCS 统计，
+  // 再由各端复用同一份结果，避免不同入口展示出不同计数。
+  //
+  // 另外超大文件如果强行算完整 LCS，会让列表和消息面板明显卡顿，
+  // 所以超过阈值时退回到保守估算，优先保证交互流畅。
+  if (trimmedBefore.length * trimmedAfter.length > MAX_LCS_CELLS) {
+    return { added: trimmedAfter.length, removed: trimmedBefore.length };
+  }
+
+  const lcs = Array.from({ length: trimmedAfter.length + 1 }, () => 0);
+  for (
+    let beforeIndex = 1;
+    beforeIndex <= trimmedBefore.length;
+    beforeIndex += 1
+  ) {
+    let previousDiagonal = 0;
+    for (
+      let afterIndex = 1;
+      afterIndex <= trimmedAfter.length;
+      afterIndex += 1
+    ) {
+      const previousRow = lcs[afterIndex]!;
+      if (trimmedBefore[beforeIndex - 1] === trimmedAfter[afterIndex - 1]) {
+        lcs[afterIndex] = previousDiagonal + 1;
+      } else {
+        lcs[afterIndex] = Math.max(lcs[afterIndex]!, lcs[afterIndex - 1]!);
+      }
+      previousDiagonal = previousRow;
+    }
+  }
+
+  const unchangedLineCount = lcs[trimmedAfter.length] ?? 0;
+  return {
+    added: trimmedAfter.length - unchangedLineCount,
+    removed: trimmedBefore.length - unchangedLineCount,
+  };
+}
+
+/**
+ * zcode 照搬（P2 补充）：`@zcode/shared` model-selection.ts 的消费切片。
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明（手册 §2.1）。
+ * 符号：modelSelectionSchema, ModelSelection
+ */
+
+/** 用户对后续模型执行的完整选择；不表达已经创建的 Active Model。 */
+export const modelSelectionSchema = z
+  .object({
+    providerId: z.string().trim().min(1),
+    modelId: z.string().trim().min(1),
+    options: z
+      .object({
+        reasoningLevel: z.string().trim().min(1).optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+export type ModelSelection = z.infer<typeof modelSelectionSchema>;
+
+/**
+ * zcode 照搬（P2 补充）：`@zcode/shared` zcode-task-types-core.ts / zcode-agent-policy.ts /
+ * subagents-types.ts 的消费切片（subagents store 与 CUA renderer 消费面）。
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明（手册 §2.1）。
+ * 符号：ZCodeProvider, ZCODE_AGENT_PROVIDER, normalizeAgentProviderToZCodeAgent, AgentColor,
+ * AgentScope, AgentSource, AgentPermissionMode, AgentDiagnostic, AgentSummary, AgentsCapability,
+ * SubAgentConfig
+ */
+
+/** 支持的 ZCode agent 提供方；当前仅保留 glm。 */
+export type ZCodeProvider = "glm";
+
+export const ZCODE_AGENT_PROVIDER = "glm" satisfies ZCodeProvider;
+
+export function normalizeAgentProviderToZCodeAgent(
+  _provider?: ZCodeProvider | null,
+): ZCodeProvider {
+  return ZCODE_AGENT_PROVIDER;
+}
+
+export type AgentScope = "built-in" | "workspace" | "user";
+
+export type AgentSource = "built-in" | "user" | "plugin";
+
+export type AgentPermissionMode = "auto" | "plan";
+
+export type AgentColor =
+  | "red"
+  | "blue"
+  | "green"
+  | "yellow"
+  | "purple"
+  | "orange"
+  | "pink"
+  | "cyan";
+
+export interface AgentDiagnostic {
+  code: string;
+  message: string;
+  path?: string;
+}
+
+export interface AgentSummary {
+  id: string;
+  name: string;
+  description: string;
+  systemPrompt: string;
+  color?: AgentColor;
+  modelSelection?: ModelSelection;
+  defaultModelSelection?: ModelSelection;
+  modelSelectionOverride?: ModelSelection;
+  tools?: string[];
+  disallowedTools?: string[];
+  injectAgentsMd?: boolean;
+  skills?: string[];
+  permissionMode?: AgentPermissionMode;
+  maxTurns?: number;
+  background?: boolean;
+  mcpServers?: unknown[];
+  path: string;
+  scope: AgentScope;
+  source: AgentSource;
+  enabled: boolean;
+  readOnly?: boolean;
+  projectPath?: string;
+  pluginId?: string;
+  pluginName?: string;
+  diagnostics?: AgentDiagnostic[];
+}
+
+export interface AgentsCapability {
+  userScopeAvailable: boolean;
+  userScopeReason?: "desktop_only";
+}
+
+/** Agent 配置，用于创建/更新 agent */
+export interface SubAgentConfig {
+  name: string;
+  description: string;
+  systemPrompt: string;
+  color?: AgentColor;
+  modelSelection?: ModelSelection;
+  tools?: string[];
+  disallowedTools?: string[];
+  injectAgentsMd?: boolean;
+  skills?: string[];
+  permissionMode?: AgentPermissionMode;
+  maxTurns?: number;
+  background?: boolean;
+  mcpServers?: unknown[];
+}
+
+/**
+ * zcode 照搬（P2 补充）：`@zcode/shared` streaming-tool-input-preview.ts 的消费切片。
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明（手册 §2.1）。
+ * 符号：ZCodeStreamingToolInputPreview, buildZCodeStreamingToolInputPreview（含其私有辅助）。
+ */
+
+export interface ZCodeStreamingToolInputPreview {
+  complete: boolean;
+  input: unknown;
+  rawInput: string;
+}
+
+const PARTIAL_JSON_STRING_FIELD_KEYS = [
+  "file_path",
+  "filePath",
+  "path",
+  "target_path",
+  "targetPath",
+  "filename",
+  "file",
+  "content",
+  "new_string",
+  "newString",
+  "new_text",
+  "newText",
+  "old_string",
+  "oldString",
+  "old_text",
+  "oldText",
+  "command",
+  "description",
+  "title",
+  "pattern",
+  "replacement",
+  // ExitPlanMode 的正文位于 plan 字段。把它纳入半截 JSON 预览后，计划卡片与
+  // 侧边详情才能从首个流式 chunk 开始更新，而不是等 input_end 才突然出现。
+  "plan",
+  // CreateWorkflow 的脚本与名字：流式草稿
+  // 要在模型还在写脚本时就把站扫出来，半截 script 必须从首个 chunk 起就进预览。
+  "name",
+  "script",
+] as const;
+
+export function buildZCodeStreamingToolInputPreview(
+  rawInput: string,
+  completeInput?: unknown,
+): ZCodeStreamingToolInputPreview {
+  if (completeInput !== undefined) {
+    return {
+      complete: true,
+      input: completeInput,
+      rawInput,
+    };
+  }
+
+  const parsed = parseCompleteJson(rawInput);
+  if (parsed.ok) {
+    return {
+      complete: true,
+      input: parsed.value,
+      rawInput,
+    };
+  }
+
+  return {
+    complete: false,
+    input: readPartialJsonObjectPreview(rawInput) ?? {},
+    rawInput,
+  };
+}
+
+function parseCompleteJson(
+  value: string,
+): { ok: true; value: unknown } | { ok: false } {
+  try {
+    return { ok: true, value: JSON.parse(value) as unknown };
+  } catch {
+    return { ok: false };
+  }
+}
+
+function readPartialJsonObjectPreview(
+  rawInput: string,
+): Record<string, string> | null {
+  const preview: Record<string, string> = {};
+  for (const key of PARTIAL_JSON_STRING_FIELD_KEYS) {
+    const value = readPartialJsonStringField(rawInput, key);
+    if (value !== undefined) {
+      preview[key] = value;
+    }
+  }
+  return Object.keys(preview).length > 0 ? preview : null;
+}
+
+function readPartialJsonStringField(
+  rawInput: string,
+  key: string,
+): string | undefined {
+  const match = new RegExp(`"${escapeRegExp(key)}"\\s*:\\s*"`).exec(rawInput);
+  if (!match) {
+    return undefined;
+  }
+
+  let encoded = "";
+  let escaped = false;
+  let closed = false;
+  for (
+    let index = match.index + match[0].length;
+    index < rawInput.length;
+    index += 1
+  ) {
+    const char = rawInput[index] ?? "";
+    if (escaped) {
+      encoded += `\\${char}`;
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      closed = true;
+      break;
+    }
+    encoded += char;
+  }
+  if (escaped) {
+    encoded += "\\";
+  }
+
+  return decodeJsonStringSegment(encoded, closed);
+}
+
+function decodeJsonStringSegment(encoded: string, closed: boolean): string {
+  const normalized = closed ? encoded : trimDanglingJsonEscape(encoded);
+  try {
+    return JSON.parse(`"${normalized}"`) as string;
+  } catch {
+    return decodeJsonStringSegmentBestEffort(normalized);
+  }
+}
+
+function trimDanglingJsonEscape(value: string): string {
+  return value.replace(/\\u[0-9a-fA-F]{0,3}$/, "").replace(/\\$/, "");
+}
+
+function decodeJsonStringSegmentBestEffort(value: string): string {
+  return value
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "\r")
+    .replace(/\\t/g, "\t")
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, "\\");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * zcode 照搬（P2 补充）：`@zcode/shared` uuid.ts 的消费切片。
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明（手册 §2.1）。
+ * 符号：createUuid（含其私有辅助 byteToHex / formatUuid）。
+ */
+
+function byteToHex(byte: number): string {
+  return byte.toString(16).padStart(2, "0");
+}
+
+function formatUuid(bytes: Uint8Array): string {
+  const normalized = new Uint8Array(bytes);
+  normalized[6] = (normalized[6]! & 0x0f) | 0x40;
+  normalized[8] = (normalized[8]! & 0x3f) | 0x80;
+
+  const segments = [
+    normalized.slice(0, 4),
+    normalized.slice(4, 6),
+    normalized.slice(6, 8),
+    normalized.slice(8, 10),
+    normalized.slice(10, 16),
+  ];
+
+  return segments
+    .map((segment) => Array.from(segment, byteToHex).join(""))
+    .join("-");
+}
+
+export function createUuid(): string {
+  const runtimeCrypto = globalThis.crypto;
+  if (runtimeCrypto?.randomUUID) {
+    return runtimeCrypto.randomUUID();
+  }
+
+  if (runtimeCrypto?.getRandomValues) {
+    const bytes = new Uint8Array(16);
+    runtimeCrypto.getRandomValues(bytes);
+    return formatUuid(bytes);
+  }
+
+  // 部分移动端 WebView 只有 `crypto` 对象但没有 `randomUUID()`，
+  // 之前 UI 初始化直接调用会在首屏崩掉。这里退回到最小可用的随机实现，
+  // 保证移动端至少能生成 tab / history / request 所需的临时 ID。
+  const bytes = new Uint8Array(16);
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Math.floor(Math.random() * 256);
+  }
+  return formatUuid(bytes);
+}
+
+/**
+ * zcode 照搬（P2 补充）：`@zcode/shared` platform.ts / cuaAccessibilitySettings.ts 的消费切片。
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明（手册 §2.1）。
+ * 符号：ApplicationIconLocator, ApplicationIconRequest, BrowserTabResidencyState,
+ * CuaPermissionKind, CuaAccessibilitySettingsResult
+ */
+
+export type ApplicationIconLocator =
+  | { kind: "darwin-bundle-id"; value: string }
+  | { kind: "windows-executable-path"; value: string }
+  | { kind: "windows-aumid"; value: string };
+
+export interface ApplicationIconRequest {
+  locators: ApplicationIconLocator[];
+}
+
+export type BrowserTabResidencyState =
+  | "live-visible"
+  | "live-background"
+  | "suspend-pending"
+  | "suspended"
+  | "restoring";
+
+export type CuaPermissionKind = "accessibility" | "screen_recording";
+
+export interface CuaAccessibilitySettingsResult {
+  success: boolean;
+  canceled?: boolean;
+  /** main 级 onboarding 会话 id；同一 Helper identity 的并发窗口共享同一 id。 */
+  sessionId?: string;
+  /** 只有所有 staged 设置页都观察到任意 ZCode 窗口返回后才为 true。 */
+  returnedFromSettings?: boolean;
+  /**
+   * 同一 main onboarding 会话可能被多个窗口加入。每个独立 renderer/host 只有一个调用拿到 true，负责
+   * 重启该 host 的 Helper；同一 renderer 的重复调用拿到 false。不能全局只选一个窗口，因为每个窗口
+   * 都有独立 host/Helper，授权前已启动的进程都需要各自恢复。
+   * undefined 是旧 main 的兼容形状，按单窗口 owner 处理。
+   */
+  restartHelperAfterReturn?: boolean;
+  error?: string;
+}
+
+/**
+ * zcode 照搬（P2 补充）：`@zcode/shared` tool-plan-adapter.ts 的私有辅助切片。
+ * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬符号声明（手册 §2.1）；
+ * 私有辅助 isRecord 与上方 tool-call-summary 切片共用一份（两源逐字相同）。
+ * 符号：PLAN_COLLECTION_KEYS, readString, normalizePlanStatus, parsePlanStep, parseJsonValue,
+ * readPlanCollection, extractPlanStepsFromValue, collectOutputCandidates
+ */
+
+const PLAN_COLLECTION_KEYS = ["todos", "plan", "steps", "items"] as const;
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+}
+
+function normalizePlanStatus(value: unknown): ZCodePlanStep["status"] | null {
+  const status = readString(value)?.replace(/-/g, "_").toLowerCase();
+  if (
+    status === "pending" ||
+    status === "in_progress" ||
+    status === "completed"
+  ) {
+    return status;
+  }
+  return null;
+}
+
+function parsePlanStep(value: unknown, index: number): ZCodePlanStep | null {
+  if (typeof value === "string") {
+    const title = value.trim();
+    return title
+      ? { id: title, title, status: index === 0 ? "in_progress" : "pending" }
+      : null;
+  }
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const title =
+    readString(value.content) ??
+    readString(value.step) ??
+    readString(value.title) ??
+    readString(value.text) ??
+    readString(value.activeForm);
+  const status = normalizePlanStatus(value.status);
+  if (!title || !status) {
+    return null;
+  }
+
+  return {
+    id: readString(value.id) ?? title,
+    title,
+    status,
+  };
+}
+
+function parseJsonValue(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function readPlanCollection(input: unknown): unknown[] | null {
+  const value = typeof input === "string" ? parseJsonValue(input) : input;
+  if (!isRecord(value)) {
+    return null;
+  }
+  for (const key of PLAN_COLLECTION_KEYS) {
+    const collection = value[key];
+    if (Array.isArray(collection)) {
+      return collection;
+    }
+  }
+  return null;
+}
+
+function extractPlanStepsFromValue(value: unknown): ZCodePlanStep[] | null {
+  const collection = readPlanCollection(value);
+  if (!collection || collection.length === 0) {
+    return null;
+  }
+
+  const steps = collection
+    .map((item, index) => parsePlanStep(item, index))
+    .filter((step): step is ZCodePlanStep => step !== null);
+
+  return steps.length === collection.length ? steps : null;
+}
+
+function collectOutputCandidates(output: unknown): unknown[] {
+  const candidates: unknown[] = [output];
+  const parsedOutput =
+    typeof output === "string" ? parseJsonValue(output) : undefined;
+  if (parsedOutput !== undefined) {
+    candidates.push(parsedOutput);
+  }
+
+  if (isRecord(output)) {
+    for (const key of ["content", "output", "result"] as const) {
+      const value = output[key];
+      candidates.push(value);
+      if (typeof value === "string") {
+        const parsedValue = parseJsonValue(value);
+        if (parsedValue !== undefined) {
+          candidates.push(parsedValue);
+        }
+      }
+    }
+  }
+
+  return candidates;
+}

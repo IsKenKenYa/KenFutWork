@@ -1,5 +1,5 @@
-import { uiMemoryDiagnosticsRegistry } from "@zui/lib/memoryDiagnostics.js";
-import { logger } from "@zui/logger.js";
+import { uiMemoryDiagnosticsRegistry } from "@zui/lib/memoryDiagnostics";
+import { logger } from "@zui/logger";
 import type {
   BundledLanguage,
   BundledTheme,

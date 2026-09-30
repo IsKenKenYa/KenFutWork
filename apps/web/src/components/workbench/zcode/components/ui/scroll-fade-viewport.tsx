@@ -1,4 +1,4 @@
-import { cn } from "@zui/components/lib/utils.js";
+import { cn } from "@zui/components/lib/utils";
 import type { ComponentProps } from "react";
 import { useEffect, useImperativeHandle, useRef, useState } from "react";
 

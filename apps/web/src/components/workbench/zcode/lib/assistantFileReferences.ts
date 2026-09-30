@@ -8,12 +8,12 @@ import {
   isAssistantPathQuoteCharacter,
   isBalancedAssistantPathQuotePair,
   stripBalancedAssistantPathQuotes,
-} from "@zui/lib/assistantPathQuotes.js";
+} from "@zui/lib/assistantPathQuotes";
 import {
   type MarkdownFileLinkResolveOptions,
   resolveMarkdownFileLink,
-} from "@zui/lib/markdownFileLink.js";
-import { decodeFilePathUriEscapes, joinFilePath } from "@zui/lib/path.js";
+} from "@zui/lib/markdownFileLink";
+import { decodeFilePathUriEscapes, joinFilePath } from "@zui/lib/path";
 import {
   extractConversationPreviewFileReferences,
   MEDIA_PREVIEW_FORMATS,
@@ -21,7 +21,7 @@ import {
 import {
   extractZCodeFileCitationDirectives,
   resolveZCodeFileCitationPreviewKind,
-} from "@zui/lib/zcodeFileCitation.js";
+} from "@zui/lib/zcodeFileCitation";
 
 export type AssistantPreviewFileKind =
   | "markdown"

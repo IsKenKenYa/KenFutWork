@@ -2,10 +2,10 @@
  * 轻量 toast 提示
  *
  * 不引入第三方库，用 React portal 渲染到 body，3 秒自动消失。
- * 调用方式：`import { toast } from "@zui/components/ui/toast.js"; toast("message");`
+ * 调用方式：`import { toast } from "@zui/components/ui/toast"; toast("message");`
  */
 
-import { cn } from "@zui/components/lib/utils.js";
+import { cn } from "@zui/components/lib/utils";
 import { Info, TriangleAlert, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
