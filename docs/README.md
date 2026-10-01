@@ -32,6 +32,7 @@ graph LR
 | `调研/05-Ruflo调研与可借鉴点.md` | Ruflo（原 claude-flow）形态核对与取舍：不引入依赖；可借鉴项（编排原语 / 记忆检索模式 / 角色清单）与落点、开工前待拍板口径 | 调研：结论按现有缝落地，落点以《改造计划》§4.2/§4.10 为准 |
 | `调研/06-参考项目Agent设计机制调研.md` | `references/` 下 9 个项目（zcode / dsh / codex / nomifun / kimi-code / cherry-studio / jaaz / loomic / langgraph）的 subagent、Agent 间协作、多模态读取、工具设计四主题源码级调研，结论带 `文件:行号` 引用可回源核对；文末附待拍板参照点清单 | 调研：只作方向参考；参照点拍板后写入《改造计划》§6 |
 | `调研/07-ComputerUse集成调研.md` | Computer Use（桌面 GUI 操控）集成选型调研：浅克隆 UI-TARS Desktop / Agent-S / OpenAdapt / Anthropic computer-use-demo 四仓源码级深读 + `references/zcode` CUA 全链精读（开源壳/闭core 边界）+ 本项目集成面盘点（工具缝/权限档/ToolArtifact/UI 接收端反推）+ P0–P3 分阶段方案与待拍板清单（CU-A…CU-F） | 调研：只作方向参考；待拍板项走《改造计划》§6 决策流程 |
+| `调研/08-TencentOctop机制级调研.md` | `references/octop`（TencentCloud/Octop，自托管多用户多 Agent AI 助手平台，Python/FastAPI + Wails 壳）的机制级调研：多用户认证与 BYOK 密钥存储、AgentTeams 多 Agent 编排、工具治理目录、MCP 双向、cache-aware 计量与回合前 token 配额硬拒、桌面绿色运行时产线——含可借鉴点清单（10 项带成本估计）与不适用清单（明文密钥/无会话吊销等反面教材），与 KFW 现状逐板块对照 | 调研：只作方向参考；可借鉴点进入《改造计划》§6 决策流程 |
 | `历史文档/Agent设计最佳实践研究报告.md` | agent 质量最佳实践 | 参考 |
 | `历史文档/产品需求规格.md` | 2026-09 需求访谈沉淀（产品定位 / 领域模型 / 北极星场景 / 各缝行为测试清单）——**已归档**，文头列出归档时核出的 6 条与现状的漂移 | **历史**：不作依据；定位与契约以 `AGENTS.md`、《改造计划》《多端产品设计》与 `packages/shared` 的 zod 契约为准 |
 | `历史文档/` 其余 | 历史留档（被取代的规格 / 定稿后归档的建议稿） | 历史：只在回看当时的判断时读 |
