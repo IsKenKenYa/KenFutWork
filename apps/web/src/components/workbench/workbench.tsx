@@ -3035,13 +3035,6 @@ export function Workbench() {
                             enableMentionPanel
                             leadingActions={
                               <>
-                                <button
-                                  type="button"
-                                  title="附件（即将上线）"
-                                  className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
-                                >
-                                  <Plus className="h-4 w-4" />
-                                </button>
                                 <ComposerCompactSelect
                                   ariaLabel="权限档位"
                                   /* 图标随当前档位（四档各不相同），别再写死一个通用盾牌 */
@@ -3158,13 +3151,6 @@ export function Workbench() {
                                   contentClassName="min-w-24"
                                   progress={THINKING_PROGRESS[thinking] ?? 0}
                                 />
-                                <button
-                                  type="button"
-                                  title="语音（即将上线）"
-                                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
-                                >
-                                  <Mic className="h-4 w-4" />
-                                </button>
                               </>
                             }
                             onCancel={() => {
@@ -3234,10 +3220,9 @@ ${formatElementReference(picked)}`
                       </h1>
                     </div>
 
-                    <div className="w-full">
-                      {/* 工作目录 + 分支：贴住输入框上沿的标签条（文件夹标签的读法），
-                  不再挤进输入框底部那排小控件 */}
-                      <div className="flex items-center gap-3 rounded-t-2xl border border-b-0 bg-muted/50 px-3 py-1.5">
+                    <div className="mx-auto flex w-full max-w-2xl flex-col items-center">
+                      {/* 工作目录 + 分支：zcode composer 的 topContent 槽（会话态 KenFutWork/分支行同位） */}
+                      <div className="mb-2 flex w-full items-center gap-3">
                         <WorkDirectorySelect
                           projects={codeProjects}
                           selectedProjectId={selectedProjectId}
@@ -3265,10 +3250,10 @@ ${formatElementReference(picked)}`
                           onBindWorkDir={bindWorktreeToProject}
                         />
                       </div>
-                      <div className="@container/composer rounded-b-2xl border border-input-border bg-input px-2 pt-2 pb-2 shadow-sm">
-                        {/* zcode composer（P5a）：ChatPromptEditor 原件——Lexical 编辑器 +
-                    rounded-2xl 输入壳 + `/` 命令面板（目录接工作区设置的自定义命令，
-                    发送前 expandCommand 展开）+ 发送状态机。chips 走 leadingActions。 */}
+                      {/* zcode composer（P5a）：ChatPromptEditor 原件（自带单层
+                          rounded-2xl border-input-border 壳 + `/` 命令面板 + 发送状态机）；
+                          不再额外包宿主容器壳（双层壳已剥） */}
+                      <div className="w-full">
                         <ChatPromptEditor
                           workspacePath={selectedProject?.workDir ?? ""}
                           taskId={null}
@@ -3285,13 +3270,6 @@ ${formatElementReference(picked)}`
                           enableMentionPanel
                           leadingActions={
                             <>
-                              <button
-                                type="button"
-                                title="附件（即将上线）"
-                                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
-                              >
-                                <Plus className="h-4 w-4" />
-                              </button>
                               <ComposerCompactSelect
                                 ariaLabel="权限档位"
                                 icon={tierIcon(tier)}
@@ -3470,13 +3448,6 @@ ${formatElementReference(picked)}`
                                 contentClassName="min-w-24"
                                 progress={THINKING_PROGRESS[thinking] ?? 0}
                               />
-                              <button
-                                type="button"
-                                title="语音（即将上线）"
-                                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
-                              >
-                                <Mic className="h-4 w-4" />
-                              </button>
                             </>
                           }
                           onChange={setPrompt}
@@ -3494,7 +3465,7 @@ ${formatElementReference(picked)}`
                       </div>
                     </div>
 
-                    <div className="mt-5 flex items-center gap-3">
+                    <div className="mt-5 flex items-center justify-center gap-3">
                       {meta.chips.map((chip) => (
                         <button
                           key={chip}
