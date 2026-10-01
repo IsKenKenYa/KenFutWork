@@ -128,26 +128,23 @@ describe("feature 插件注册画布/品牌工具（装配缝）", () => {
       webOrigin: "http://localhost:3000",
     };
     const app = Fastify();
-    const kernel = composePlugins(
-      env,
-      [brandKitPlugin, createCanvasPlugin({ connectionManager: {} as never })],
-      {
-        app,
-        overrides: {
-          auth: { authenticate: async () => null } as never,
-          blob: blobStub(),
-          persistence: {
+    const kernel = composePlugins(env, [brandKitPlugin, createCanvasPlugin()], {
+      app,
+      overrides: {
+        auth: { authenticate: async () => null } as never,
+        blob: blobStub(),
+        persistence: {
+          execute: async () => ({ rows: [] }),
+          forWorkspace: () => ({
             execute: async () => ({ rows: [] }),
-            forWorkspace: () => ({
-              execute: async () => ({ rows: [] }),
-              query: async () => [],
-            }),
             query: async () => [],
-          } as never,
-          viewer: { resolveWorkspace: async () => null } as never,
-        },
+          }),
+          query: async () => [],
+        } as never,
+        viewer: { resolveWorkspace: async () => null } as never,
+        ws: { connectionManager: {} as never, eventBuffer: {} as never },
       },
-    );
+    });
     try {
       const designNames = kernel
         .get("tools")
