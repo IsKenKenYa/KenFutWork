@@ -24,7 +24,8 @@
 | 接入新供应商（OpenAI 兼容网关等） | 前端「供应商设置」添加实例（BYOK，零代码）——改造期过渡：仍走 `http/models.ts` 硬编码目录 | 任何服务端文件 |
 | 新线协议适配器 | `providers/<protocol>/` 实现 + `ProviderInstanceConfig.protocol` 联合类型扩一项 | 适配器之外的代码 |
 | 新增生成 provider（图/视频） | 实现 `ImageProvider`/`VideoProvider` 接口，经 `generation/providers/registry.ts` 注册 | server/worker 两处注册路径 |
-| 新增 agent 工具 | 在所属 feature 内创建工具工厂并注册（改造期过渡：仍需在 `agent/tools/index.ts` 接线，内核落地后改走工具缝） | — |
+| 新增 agent 工具 | 在所属 feature 内创建工具工厂，插件 `apply()` 向 `ctx.tools` 注册（静态工具直接注册；动态 schema/job 闭包/backend 绑定的工具走 `registerDynamic` per-run 解析） | `agent/tools/` 集中装配（已退役）与任何运行时文件 |
+| 新增系统提示段 | 定义 `PromptSectionDefinition`（name/order/scope/resolve），插件 `apply()` 向 `ctx.systemPrompt` 注册（挂载即出现） | deep-agent/runtime 内联组装 |
 | 新增 HTTP 路由 | 新建 `src/http/<feature>.ts` 导出 `registerXxxRoutes(app, deps)` | — |
 | 新增后台任务 | 新建 `features/jobs/executors/<type>.ts` 调 `registerExecutor()` | `worker.ts` import 清单 |
 | 新增业务 feature | 服务定义 + Provider + Consumer（路由/工具/executor）内聚在 `src/features/<x>/`，暴露 `createXxxService(deps)` | — |

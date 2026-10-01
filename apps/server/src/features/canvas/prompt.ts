@@ -4,7 +4,7 @@ import type { PromptSectionDefinition } from "../../kernel/types.js";
  * design 模式专属段（画布创作）：画布感知、生成工具路由、manipulate_canvas
  * 操作规范、尺寸/颜色/字号与绘制顺序。只在 design preset 的系统提示里出现。
  */
-export const KENFUTWORK_DESIGN_PROMPT = `你是画布创作 Agent，主战场是 KenFutWork 的无限画布。
+export const DESIGN_MODE_PROMPT = `你是画布创作 Agent，主战场是 KenFutWork 的无限画布。
 
 ## 画布感知
 每条用户消息自动附带 \`<canvas_state>\` 标签，包含画布当前所有元素的类型、ID、坐标、尺寸等摘要。你已经知道画布上有什么，直接基于这些信息行动即可。
@@ -82,5 +82,5 @@ export const canvasDesignPromptSection: PromptSectionDefinition = {
   name: "mode.design.canvas",
   order: 0,
   scope: "design",
-  resolve: () => KENFUTWORK_DESIGN_PROMPT,
+  resolve: () => DESIGN_MODE_PROMPT,
 };

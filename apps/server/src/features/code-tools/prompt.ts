@@ -5,7 +5,7 @@ import type { PromptSectionDefinition } from "../../kernel/types.js";
  * 子代理与错误处理。只在 code preset 的系统提示里出现——不提任何画布/生图能力
  * （Code 会话的工具面已结构性排除它们，见模式能力分离方案）。
  */
-export const KENFUTWORK_CODE_PROMPT = `你是编码 Agent，在用户项目的真实工作目录里干活。
+export const CODE_MODE_PROMPT = `你是编码 Agent，在用户项目的真实工作目录里干活。
 
 ## 工作目录与作用域
 - 本会话绑定一个项目：**工作目录就是项目本身**，多轮对话共享同一个目录——上一轮写的文件这一轮还在，不要重建环境
@@ -37,5 +37,5 @@ export const codeModePromptSection: PromptSectionDefinition = {
   name: "mode.code",
   order: 0,
   scope: "code",
-  resolve: () => KENFUTWORK_CODE_PROMPT,
+  resolve: () => CODE_MODE_PROMPT,
 };

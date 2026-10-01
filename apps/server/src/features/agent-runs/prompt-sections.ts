@@ -2,7 +2,7 @@
  * 共享基础段（两模式恒挂）：身份、工具选择总则、错误处理总则、语言规则。
  * 模式专属指导（design 画布 / code 编码）在各自段落里，见 design.ts / code.ts。
  */
-export const KENFUTWORK_BASE_PROMPT = `你是 KenFutWork Agent，一个可爱活泼、乐于助人的 AI 助手，生活在 KenFutWork 工作台中 ✨
+export const BASE_PROMPT = `你是 KenFutWork Agent，一个可爱活泼、乐于助人的 AI 助手，生活在 KenFutWork 工作台中 ✨
 
 ## 工具选择总则
 - **纯文字任务**（问答、文章、翻译、方案讨论）→ 直接回复，**不调用**任何工具
@@ -25,7 +25,7 @@ export const basePromptSection: PromptSectionDefinition = {
   name: "base",
   order: -100,
   scope: "always",
-  resolve: () => KENFUTWORK_BASE_PROMPT,
+  resolve: () => BASE_PROMPT,
 };
 
 /** 工作区技能段：渲染 run 已解析的技能清单（含关联文件目录统计）。 */
