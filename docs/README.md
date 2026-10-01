@@ -22,6 +22,7 @@ graph LR
 | `方案设计/子代理与后台任务设计.md` | 子代理 / 多 agent 体系 v1 的实施方案与落地记录：分阶段架构（`DEC-14`）、统一后台任务原语（`DEC-15`）、内置清单（`DEC-16`）、治理档（`DEC-17`）、tunables 纪律（`DEC-18`）、事件归因（`DEC-19`），附文件接线图与验证门 | **方案稿**：v1 已按本稿落地；v2（独立子 run/continuable/面包屑）另立项 |
 | `方案设计/Code模式ZCode-UI照搬方案.md` | Code 模式对话 UI 全量照搬 `references/zcode/` 的差异分析与实施蓝图：照搬边界（UI 逐文件照搬 / 数据经 `zcode-adapter` 适配层接 DeepAgents 事件）、逐区域差距表、P0–P8 分阶段计划、许可证 attribution | **方案稿**：UI 照搬的实施蓝图；落轮次与回执记《日志》 |
 | `方案设计/Code模式ZCode-UI照搬执行手册.md` | 照搬方案的执行手册（Agent 施工单）：进度快照（已就位/待替换清单）、import 路径映射与宿主适配规则、P1–P8 逐文件 source→target 施工单与接线坐标、每阶段验收门禁、风险登记 | **执行手册**：照搬施工的唯一操作口径；进度状态随 PR 推进刷新 |
+| `方案设计/ComputerUse集成设计.md` | Computer Use 集成方案稿（依据《调研/07》+ 本机实测）：工具面走内核 `ctx.tools`（scope: code、`mcp__computer-use__<action>` 命名点亮已照搬 UI）、观察协议（a11y 文本树优先 + raster 帧绑定 + 预算）、执行层 `ComputerUseExecutor` 缝三档（nut-js+JXA 过渡 → 独立 helper broker 目标态）、权限/lease/actionSent 安全语义、P0–P3 分阶段验收与待拍板 CU-A…G | **方案稿**：待拍板；决策走《改造计划》§6 |
 | `插件/flow插件集成规划.md` | flow 第三模式（futureFlow 子系统）集成改造方案：已拍板决策（`DEC-10`…`DEC-13`）、双模式架构（内嵌/独立 + 宿主适配层 + `ff-embed/v1` 契约）、接缝清单、合并方式三选项、分阶段路线、许可证合规与开放问题 | **方案稿**：flow 子系统实施蓝图；决策结论与理由以《改造计划》§6 为准，上游以根级 `flow/` 子模块为准（见《日志》五十四） |
 | `调研/02-当前项目实现状态.md` | 代码现状快照（组件/路由/features/迁移盘点） | **权威**：全部现状数字（行数/import/路由/组件/迁移计数/provider 数量）；允许滞后于代码，刷新规则见下 |
 | `调研/01-deepseek-harness插件调研.md` | dsh 插件架构调研记录 | 调研：结论已被权威文档吸收，只读 |
@@ -30,6 +31,7 @@ graph LR
 | `调研/03-改造建议与路线.md` | 双模式改造建议稿（v3） | **收口中**：§0–§7 为冻结区（`<!-- frozen:start/end -->` + `docs/frozen-lock.json` 校验，禁改）；**仅 §8 可编辑**；P0 定稿后整篇归档 |
 | `调研/05-Ruflo调研与可借鉴点.md` | Ruflo（原 claude-flow）形态核对与取舍：不引入依赖；可借鉴项（编排原语 / 记忆检索模式 / 角色清单）与落点、开工前待拍板口径 | 调研：结论按现有缝落地，落点以《改造计划》§4.2/§4.10 为准 |
 | `调研/06-参考项目Agent设计机制调研.md` | `references/` 下 9 个项目（zcode / dsh / codex / nomifun / kimi-code / cherry-studio / jaaz / loomic / langgraph）的 subagent、Agent 间协作、多模态读取、工具设计四主题源码级调研，结论带 `文件:行号` 引用可回源核对；文末附待拍板参照点清单 | 调研：只作方向参考；参照点拍板后写入《改造计划》§6 |
+| `调研/07-ComputerUse集成调研.md` | Computer Use（桌面 GUI 操控）集成选型调研：浅克隆 UI-TARS Desktop / Agent-S / OpenAdapt / Anthropic computer-use-demo 四仓源码级深读 + `references/zcode` CUA 全链精读（开源壳/闭core 边界）+ 本项目集成面盘点（工具缝/权限档/ToolArtifact/UI 接收端反推）+ P0–P3 分阶段方案与待拍板清单（CU-A…CU-F） | 调研：只作方向参考；待拍板项走《改造计划》§6 决策流程 |
 | `历史文档/Agent设计最佳实践研究报告.md` | agent 质量最佳实践 | 参考 |
 | `历史文档/产品需求规格.md` | 2026-09 需求访谈沉淀（产品定位 / 领域模型 / 北极星场景 / 各缝行为测试清单）——**已归档**，文头列出归档时核出的 6 条与现状的漂移 | **历史**：不作依据；定位与契约以 `AGENTS.md`、《改造计划》《多端产品设计》与 `packages/shared` 的 zod 契约为准 |
 | `历史文档/` 其余 | 历史留档（被取代的规格 / 定稿后归档的建议稿） | 历史：只在回看当时的判断时读 |
