@@ -34,6 +34,12 @@ import {
   type TierGuard,
   TierGuardError,
 } from "../features/credits/tier-guard.js";
+// execute 工具由 deepagents 内置提供（LocalShellBackend 作为 sandbox backend）
+// 不需要自定义代码执行工具
+import type {
+  SubmitImageJobFn,
+  SubmitVideoJobFn,
+} from "../features/generation/tool-types.js";
 import type { JobService } from "../features/jobs/job-service.js";
 import type { ModelCatalogService } from "../features/model-providers/model-catalog-service.js";
 import { parseInstanceSpecifier } from "../features/model-providers/model-catalog-service.js";
@@ -78,10 +84,6 @@ import {
   createToolDenialTracker,
   type ToolDenialRecord,
 } from "./tool-denial.js";
-// execute 工具由 deepagents 内置提供（LocalShellBackend 作为 sandbox backend）
-// 不需要自定义代码执行工具
-import type { SubmitImageJobFn } from "./tools/image-generate.js";
-import type { SubmitVideoJobFn } from "./tools/video-generate.js";
 import type {
   WorkspaceSkillEntry,
   WorkspaceSkillsLoader,
@@ -484,7 +486,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     ((agentOptions) =>
       createKenFutWorkDeepAgent({
         ...agentOptions,
-        blob: options.blob,
         onToolInventory: (tools) => {
           lastToolInventory = tools;
         },
@@ -1484,19 +1485,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             });
           }
 
-          // §4.5 统一工具注册表：ctx.tools 按 preset 过滤后桥接进模型工具列表；
-          // execute 改经注册表 guarded 路径派发（tool-pre-execute 拦截在注册表侧生效）
           const preset = resolvePresetForRun(run);
-          const kernelToolRegistry = options.tools;
-          const kernelToolDefinitions = kernelToolRegistry
-            ? kernelToolRegistry.list(preset).map((tool) => ({
-                ...tool,
-                execute: (
-                  args: Record<string, unknown>,
-                  execCtx: ToolExecutionContext,
-                ) => kernelToolRegistry.execute(tool.name, args, execCtx),
-              }))
-            : [];
 
           // 执行模式工具门：solo/plan 按线程策略拦截（undefined = 全放行）
           const toolGate =
@@ -1710,6 +1699,39 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             }
           }
 
+          // §4.5 统一工具注册表：静态 list(preset) + 动态 per-run 解析（backend/
+          // 沙箱/模型目录/job 闭包在此就绪），合并桥接进模型工具列表；execute 经
+          // 注册表 guarded 路径派发（tool-pre-execute 拦截在注册表侧生效）
+          const kernelToolRegistry = options.tools;
+          const kernelToolDefinitions = kernelToolRegistry
+            ? kernelToolRegistry
+                .resolveRunTools({
+                  preset,
+                  backendFactory: backendResult.factory,
+                  ...(backendResult.sandboxDir
+                    ? { sandboxDir: backendResult.sandboxDir }
+                    : {}),
+                  ...(persistence?.store ? { store: persistence.store } : {}),
+                  ...(persistImage ? { persistImage } : {}),
+                  ...(submitImageJob ? { submitImageJob } : {}),
+                  ...(submitVideoJob ? { submitVideoJob } : {}),
+                  ...(availableImageModels.length
+                    ? { availableImageModels }
+                    : {}),
+                  ...(availableVideoModels.length
+                    ? { availableVideoModels }
+                    : {}),
+                })
+                .map((tool) => ({
+                  ...tool,
+                  execute: (
+                    args: Record<string, unknown>,
+                    execCtx: ToolExecutionContext,
+                  ) =>
+                    kernelToolRegistry.executeDefinition(tool, args, execCtx),
+                }))
+            : [];
+
           agent = resolvedAgentFactory({
             backendResult,
             preset,
@@ -1726,11 +1748,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     : {}),
                 })
               : "",
-            ...(availableImageModels.length ? { availableImageModels } : {}),
-            ...(availableVideoModels.length ? { availableVideoModels } : {}),
-            ...(options.canvasRepository
-              ? { canvasRepository: options.canvasRepository }
-              : {}),
             ...(run.canvasId ? { canvasId: run.canvasId } : {}),
             ...(persistence ? { checkpointer: persistence.checkpointer } : {}),
             ...(options.connectionManager
@@ -1738,13 +1755,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               : {}),
             env: options.env,
             ...(resolvedModel ? { model: resolvedModel } : {}),
-            ...(persistImage ? { persistImage } : {}),
             ...(autoCompact ? { autoCompact } : {}),
             // execute 工具由 LocalShellBackend 自动提供，无需手动传递
-            ...(submitImageJob ? { submitImageJob } : {}),
-            ...(submitVideoJob ? { submitVideoJob } : {}),
             ...(persistence ? { store: persistence.store } : {}),
-            ...(workspaceSkills.length > 0 ? { workspaceSkills } : {}),
             ...(kernelToolDefinitions.length > 0
               ? { kernelTools: kernelToolDefinitions }
               : {}),

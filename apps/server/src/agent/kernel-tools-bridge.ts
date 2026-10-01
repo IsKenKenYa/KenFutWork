@@ -72,11 +72,22 @@ export function kernelToolToStructuredTool(
   const schema: ZodTypeAny =
     definition.zodSchema ?? jsonSchemaToZod(definition.parameters);
   const dynamic = tool(
-    async (args: Record<string, unknown>) => {
+    async (
+      args: Record<string, unknown>,
+      config?: { configurable?: Record<string, unknown> },
+    ) => {
+      // invoke 期的 run 级输入（附件 assetId→dataURI）在装配期不可得：
+      // 从 LangChain RunnableConfig（func 第二参）透传进 execCtx（副本，不污染装配期对象）
+      const attachmentMap = config?.configurable?.user_attachment_map as
+        | Record<string, string>
+        | undefined;
+      const effectiveCtx: ToolExecutionContext = attachmentMap
+        ? { ...execCtx, userAttachmentMap: attachmentMap }
+        : execCtx;
       try {
         return await definition.execute(
           args as Record<string, unknown>,
-          execCtx,
+          effectiveCtx,
         );
       } catch (error) {
         /**

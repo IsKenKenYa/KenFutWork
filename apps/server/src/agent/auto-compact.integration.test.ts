@@ -186,13 +186,6 @@ describe("自动压缩的装配接线", () => {
       preset: "code",
       // 提示经内核段注册表组装，由 runtime 传入；直连装配的测试给占位串
       systemPrompt: "test",
-      blob: {
-        bucket: () => ({
-          upload: async () => {},
-          resolveUrl: async () => "https://blob.test/x",
-          getPublicUrl: () => "https://blob.test/x",
-        }),
-      } as never,
       env,
       model: model as never,
       ...(autoCompact ? { autoCompact } : {}),

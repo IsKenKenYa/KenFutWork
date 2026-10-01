@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { AvailableVideoModel } from "../../generation/types.js";
+import type { AvailableVideoModel } from "../../../generation/types.js";
 import { runVideoGenerate, type SubmitVideoJobFn } from "./video-generate.js";
 
 const metasoModel: AvailableVideoModel = {

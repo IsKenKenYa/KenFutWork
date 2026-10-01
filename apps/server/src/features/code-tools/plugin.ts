@@ -1,13 +1,18 @@
 import { readFile, stat } from "node:fs/promises";
 
+import type { BackendProtocolV2 } from "deepagents";
+
 import type { PluginDefinition, ToolDefinition } from "../../kernel/types.js";
 import { diffLines, summarizeDiff } from "./diff.js";
+import { createPersistSandboxFileToolDefinition } from "./persist-sandbox-file.js";
+import { createProjectSearchToolDefinition } from "./project-search.js";
 import { codeModePromptSection } from "./prompt.js";
 
 /**
  * code 能力层工具（P6）：文件预览 + 差异分析，向 ctx.tools 注册（scope: code）。
  * 文件预览复用 deepagents fs 工具之外的场景化预览（元数据 + 截断内容）。
- * code 模式提示段（挂载即出现）同属本插件。
+ * code 模式提示段（挂载即出现）同属本插件。project_search / persist_sandbox_file
+ * 是 per-run 动态工具（backend/沙箱目录绑定）——经内核动态工具缝解析，scope=shared。
  */
 
 const PREVIEW_MAX_BYTES = 64 * 1024;
@@ -79,13 +84,39 @@ export const diffFilesTool: ToolDefinition = {
 export function createCodeToolsPlugin(): PluginDefinition {
   return {
     name: "code-tools",
-    inject: [],
+    inject: ["blob"],
     apply(ctx) {
       const tools = ctx.get("tools");
       tools.register(previewFileTool);
       tools.register(diffFilesTool);
       // code 模式段：提示与工具同属主（挂载即出现）
       ctx.get("systemPrompt").register(codeModePromptSection);
+
+      // project_search：backend 绑定 per-run（grep 虚拟工作区）——动态解析。
+      // 实例化口径与 deep-agent 的 execute_background 探测一致（store + 空 state）。
+      tools.registerDynamic({
+        id: "workspace.project-search",
+        scope: "shared",
+        resolve: (run) =>
+          createProjectSearchToolDefinition({
+            // 工厂产物为 AnyBackendProtocol 联合；grep 工具按 V2 协议消费
+            // （与 deep-agent 的 execute_background 能力探测同款实例化口径）
+            backend: run.backendFactory({
+              ...(run.store ? { store: run.store } : {}),
+              state: {},
+            } as never) as BackendProtocolV2,
+          }),
+      });
+      // persist_sandbox_file：沙箱目录守卫与 backend 口径一致（per-run 事实）
+      tools.registerDynamic({
+        id: "workspace.persist-sandbox-file",
+        scope: "shared",
+        resolve: (run) =>
+          createPersistSandboxFileToolDefinition({
+            blob: ctx.get("blob"),
+            ...(run.sandboxDir ? { sandboxDir: run.sandboxDir } : {}),
+          }),
+      });
     },
   };
 }

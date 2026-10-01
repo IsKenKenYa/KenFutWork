@@ -4,9 +4,14 @@ import { registerImageModelRoutes } from "../../http/image-models.js";
 import { registerModelRoutes } from "../../http/models.js";
 import { registerVideoModelRoutes } from "../../http/video-models.js";
 import type { PluginDefinition } from "../../kernel/types.js";
+import { createImageGenerateToolDefinition } from "./tools/image-generate.js";
+import { createVideoGenerateToolDefinition } from "./tools/video-generate.js";
 
 /**
- * generation 插件（P8）：图/视频模型目录 + 直连生成路由收编。
+ * generation 插件（P8）：图/视频模型目录 + 直连生成路由收编 + **生成工具**
+ * （generate_image / generate_video，scope=design）。工具是 per-run 动态的：
+ * schema 内嵌工作区模型目录、job 闭包捕获 run 上下文——经内核动态工具缝
+ * 在 run 起始期解析（§4.10）。
  * 服务依赖（credits/uploads/viewer 等）经 ctx 解析；provider 按实例实例化见
  * providers/resolve.ts（遗留 env 注册并行至 BYOK 切换）。
  */
@@ -26,7 +31,36 @@ export function createGenerationPlugin(deps: {
       "jobs",
       "modelCatalog",
     ],
-    apply() {},
+    apply(ctx) {
+      const tools = ctx.get("tools");
+      tools.registerDynamic({
+        id: "generation.image",
+        scope: "design",
+        resolve: (run) =>
+          createImageGenerateToolDefinition({
+            ...(run.persistImage ? { persistImage: run.persistImage } : {}),
+            ...(run.submitImageJob
+              ? { submitImageJob: run.submitImageJob }
+              : {}),
+            ...(run.availableImageModels
+              ? { availableModels: run.availableImageModels }
+              : {}),
+          }),
+      });
+      tools.registerDynamic({
+        id: "generation.video",
+        scope: "design",
+        resolve: (run) =>
+          createVideoGenerateToolDefinition({
+            ...(run.submitVideoJob
+              ? { submitVideoJob: run.submitVideoJob }
+              : {}),
+            ...(run.availableVideoModels
+              ? { availableModels: run.availableVideoModels }
+              : {}),
+          }),
+      });
+    },
     mounted(ctx) {
       void registerModelRoutes(ctx.app, {
         env: deps.env,

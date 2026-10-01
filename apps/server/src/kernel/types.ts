@@ -1,3 +1,4 @@
+import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeAny } from "zod";
 
@@ -21,6 +22,11 @@ import type { CheckpointService } from "../features/checkpoints/checkpoint-servi
 import type { CodeGitService } from "../features/code-git/code-git-service.js";
 import type { CreditService } from "../features/credits/credit-service.js";
 import type { TierGuard } from "../features/credits/tier-guard.js";
+import type {
+  PersistImageFn,
+  SubmitImageJobFn,
+  SubmitVideoJobFn,
+} from "../features/generation/tool-types.js";
 import type { JobService } from "../features/jobs/job-service.js";
 import type { ModelCatalogService } from "../features/model-providers/model-catalog-service.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
@@ -35,6 +41,10 @@ import type { AssetWriter } from "../features/uploads/asset-writer.js";
 import type { UploadService } from "../features/uploads/upload-service.js";
 import type { RunUsageAccumulator } from "../features/usage/run-usage-accumulator.js";
 import type { UsageService } from "../features/usage/usage-service.js";
+import type {
+  AvailableModel,
+  AvailableVideoModel,
+} from "../generation/types.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import type { CanvasEventBuffer } from "../ws/event-buffer.js";
 
@@ -274,6 +284,12 @@ export interface ToolExecutionContext {
   canvasId?: string | undefined;
   /** 运行方（agent 运行时）传入的请求级用户令牌；需要用户上下文的工具据此解析数据。 */
   accessToken?: string | undefined;
+  /**
+   * 附件 assetId → data URI 映射（run 附件下载产物）：generate_image 的
+   * 参考图解析经它。桥接层从 LangChain invoke 期的 configurable 透传——
+   * execCtx 本体在装配期构建时它尚不可得。
+   */
+  userAttachmentMap?: Record<string, string> | undefined;
 }
 
 /**
@@ -311,6 +327,51 @@ export interface ToolRegistry {
     args: Record<string, unknown>,
     execCtx?: ToolExecutionContext,
   ): Promise<unknown>;
+  /**
+   * guarded 执行任意工具实例（含 per-run 动态解析的产物——它们不在静态
+   * 注册表里，`execute(name)` 查不到）。拦截语义与 execute 一致。
+   */
+  executeDefinition(
+    tool: ToolDefinition,
+    args: Record<string, unknown>,
+    execCtx?: ToolExecutionContext,
+  ): Promise<unknown>;
+  /**
+   * 注册 per-run 动态工具：resolve 在每次 run 起始期调用（runtime 传入
+   * 运行态依赖），返回 null = 本 run 不装配。静态工具装不下的东西
+   * （动态 schema、闭包捕获 run 上下文、backend 绑定）走这条路。
+   */
+  registerDynamic(entry: DynamicToolEntry): () => void;
+  /** 静态 list(scope) + 动态 per-run 解析合并，按 scope 过滤。 */
+  resolveRunTools(ctx: RunToolResolutionContext): ToolDefinition[];
+}
+
+/** per-run 工具解析上下文：runtime 在 run 起始期构建，动态工具据此实例化。 */
+export interface RunToolResolutionContext {
+  preset: "design" | "code";
+  /** deepagents backend 工厂（project_search 的 grep 虚拟工作区经它）。 */
+  backendFactory: AgentBackendFactory;
+  /** 本 run 后端的沙箱目录（dev=per-run tmp；prod=per-canvas 工作区）。 */
+  sandboxDir?: string | undefined;
+  /** 会话 store（backend 实例化入参）。 */
+  store?: BaseStore | undefined;
+  /** 生成图持久化闭包（blob 缝，捕获 run 工作区）。 */
+  persistImage?: PersistImageFn | undefined;
+  /** 图片生成 job 闭包（捕获 run 上下文，产物落画布）。 */
+  submitImageJob?: SubmitImageJobFn | undefined;
+  /** 视频生成 job 闭包。 */
+  submitVideoJob?: SubmitVideoJobFn | undefined;
+  /** 工作区实例的图片模型目录（generate_image 的动态 schema 来源）。 */
+  availableImageModels?: AvailableModel[] | undefined;
+  /** 工作区实例的视频模型目录。 */
+  availableVideoModels?: AvailableVideoModel[] | undefined;
+}
+
+/** 动态工具条目：id 用于排查与注销；scope 参与与静态工具相同的 preset 过滤。 */
+export interface DynamicToolEntry {
+  id: string;
+  scope: ToolScope;
+  resolve: (ctx: RunToolResolutionContext) => ToolDefinition | null;
 }
 
 /** 非工具能力贡献者条目（由运行时按 key 解析，模型不可见）。 */

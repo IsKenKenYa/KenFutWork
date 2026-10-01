@@ -25,12 +25,6 @@ import {
   DEFAULT_GOOGLE_AGENT_MODEL,
   type ServerEnv,
 } from "../config/env.js";
-import type { BlobStore } from "../features/blob/types.js";
-import type { CanvasRepository } from "../features/canvas/repository.js";
-import type {
-  AvailableModel,
-  AvailableVideoModel,
-} from "../generation/types.js";
 import type { ToolDefinition, ToolExecutionContext } from "../kernel/types.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import type { CompactionPlan } from "./auto-compact.js";
@@ -52,12 +46,6 @@ import {
   type SubagentChildRunner,
 } from "./subagent-tools.js";
 import { createTaskNotificationMiddleware } from "./task-notifications.js";
-import type {
-  PersistImageFn,
-  SubmitImageJobFn,
-} from "./tools/image-generate.js";
-import { createRunScopedTools } from "./tools/index.js";
-import type { SubmitVideoJobFn } from "./tools/video-generate.js";
 
 export type KenFutWorkAgent = Pick<
   ReturnType<typeof createDeepAgent>,
@@ -275,13 +263,6 @@ export type KenFutWorkAgentFactory = (options: {
   connectionManager?: ConnectionManager;
   env: ServerEnv;
   model?: BaseLanguageModel | string;
-  persistImage?: PersistImageFn;
-
-  submitImageJob?: SubmitImageJobFn;
-  submitVideoJob?: SubmitVideoJobFn;
-  /** 工作区实例模型清单（BYOK specifier）：生成工具的 schema 与校验来源。 */
-  availableImageModels?: AvailableModel[];
-  availableVideoModels?: AvailableVideoModel[];
   store?: BaseStore;
   /** 内核 ctx.tools 贡献的工具（按 preset 过滤后），桥接为模型可调用工具。 */
   kernelTools?: ToolDefinition[];
@@ -324,22 +305,11 @@ export type KenFutWorkAgentFactory = (options: {
 
 export function createKenFutWorkDeepAgent(options: {
   backendResult?: AgentBackendResult;
-  /** 对象存储（blob 缝）：沙箱文件持久化、生成物落盘经它（必需能力）。 */
-  blob: BlobStore;
-  /** 画布数据访问（工作区作用域）：工具的画布读写经它。 */
-  canvasRepository?: CanvasRepository;
   canvasId?: string;
   checkpointer?: BaseCheckpointSaver;
   connectionManager?: ConnectionManager;
   env: ServerEnv;
   model?: BaseLanguageModel | string;
-  persistImage?: PersistImageFn;
-
-  submitImageJob?: SubmitImageJobFn;
-  submitVideoJob?: SubmitVideoJobFn;
-  /** 工作区实例模型清单（BYOK specifier）：生成工具的 schema 与校验来源。 */
-  availableImageModels?: AvailableModel[];
-  availableVideoModels?: AvailableVideoModel[];
   store?: BaseStore;
   kernelTools?: ToolDefinition[];
   runToolContext?: ToolExecutionContext;
@@ -387,36 +357,8 @@ export function createKenFutWorkDeepAgent(options: {
 
   // 工具清单先落地成变量：R4-1 的分类占比要按 schema 量「系统工具 / MCP 工具」，
   // 而调用方（runtime）拿到的是 agent 对象，只有这里才知道装配了什么工具。
-  // 运行态工具（backend/沙箱耦合、动态 schema）按 preset 装配；
-  // 服务型画布/品牌工具经内核注册表（runtime 已按 preset 过滤后经 kernelTools 传入）。
+  // 全部工具经内核注册表（runtime 已按 preset 解析静态+动态后经 kernelTools 传入）。
   const tools = [
-    ...createRunScopedTools(
-      backendResult.factory,
-      {
-        blob: options.blob,
-        ...(options.canvasRepository
-          ? { canvasRepository: options.canvasRepository }
-          : {}),
-        ...(backendResult.sandboxDir
-          ? { sandboxDir: backendResult.sandboxDir }
-          : {}),
-
-        ...(options.persistImage ? { persistImage: options.persistImage } : {}),
-        ...(options.submitImageJob
-          ? { submitImageJob: options.submitImageJob }
-          : {}),
-        ...(options.submitVideoJob
-          ? { submitVideoJob: options.submitVideoJob }
-          : {}),
-        ...(options.availableImageModels
-          ? { availableImageModels: options.availableImageModels }
-          : {}),
-        ...(options.availableVideoModels
-          ? { availableVideoModels: options.availableVideoModels }
-          : {}),
-      },
-      preset,
-    ),
     ...bridgeKernelTools(
       options.kernelTools ?? [],
       options.runToolContext ?? {},

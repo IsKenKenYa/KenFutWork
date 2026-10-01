@@ -110,6 +110,36 @@ describe("kernelToolToStructuredTool（模型可调用桥）", () => {
     expect(bridged.map((t) => t.name)).toEqual(["mcp__srv__a", "mcp__srv__b"]);
   });
 
+  it("invoke 期 configurable 的 user_attachment_map 透传进 execCtx（副本不污染）", async () => {
+    const seen: Array<Record<string, string> | undefined> = [];
+    const definition: ToolDefinition = {
+      name: "attachment_tool",
+      description: "",
+      scope: "design",
+      parameters: { type: "object" },
+      execute: async (_args, execCtx) => {
+        seen.push(execCtx.userAttachmentMap);
+        return "ok";
+      },
+    };
+    const bridged = kernelToolToStructuredTool(definition, { runId: "r1" });
+
+    // invoke 带 configurable（runtime 的 run 级注入路径）
+    await bridged.invoke(
+      {} as never,
+      {
+        configurable: {
+          user_attachment_map: { asset_1: "data:image/png;base64,x" },
+        },
+      } as never,
+    );
+    // invoke 不带 configurable：execCtx 原样（无该字段）
+    await bridged.invoke({} as never);
+
+    expect(seen[0]).toEqual({ asset_1: "data:image/png;base64,x" });
+    expect(seen[1]).toBeUndefined();
+  });
+
   it("zodSchema 优先直通：default/enum 精度不因 JSON Schema 往返丢失", async () => {
     const zodSchema = z.object({
       level: z.enum(["low", "high"]).default("low"),

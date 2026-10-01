@@ -1,10 +1,14 @@
-import { tool } from "langchain";
 import { z } from "zod";
+
 import type {
   AvailableModel,
   ImageQuality,
   OutputFormat,
-} from "../../generation/types.js";
+} from "../../../generation/types.js";
+import type { ToolDefinition } from "../../../kernel/types.js";
+import type { PersistImageFn, SubmitImageJobFn } from "../tool-types.js";
+
+export type { PersistImageFn, SubmitImageJobFn } from "../tool-types.js";
 
 /**
  * Build the zod schema dynamically from the models available in the registry.
@@ -118,42 +122,6 @@ type ImageGenerateResult = {
   jobType?: "image_generation";
   placement?: { x: number; y: number; width: number; height: number };
 };
-
-/**
- * Optional function to persist a generated image to OSS.
- * Accepts the ephemeral URL and returns a persistent signed URL.
- */
-export type PersistImageFn = (
-  sourceUrl: string,
-  mimeType: string,
-  prompt: string,
-) => Promise<string>;
-
-/**
- * Submit an image generation job and wait for it to complete.
- * Returns the final result: signed_url on success, error on failure.
- */
-export type SubmitImageJobFn = (input: {
-  prompt: string;
-  title: string;
-  model: string;
-  aspectRatio: string;
-  inputImages?: string[];
-  quality?: string;
-  /** 画布落点（可选）：运行时的作业回调据此显式指定插入位置。 */
-  placementX?: number;
-  placementY?: number;
-  placementWidth?: number;
-  placementHeight?: number;
-}) => Promise<{
-  jobId: string;
-  elementId?: string;
-  imageUrl?: string;
-  width?: number;
-  height?: number;
-  mimeType?: string;
-  error?: string;
-}>;
 
 export async function runImageGenerate(
   input: ImageGenerateInput,
@@ -271,37 +239,30 @@ export async function runImageGenerate(
   };
 }
 
-export function createImageGenerateTool(deps?: {
+export function createImageGenerateToolDefinition(deps?: {
   persistImage?: PersistImageFn;
   submitImageJob?: SubmitImageJobFn;
   /** 工作区实例的模型清单（BYOK 目录 specifier）；缺省 = 未配置任何实例。 */
   availableModels?: AvailableModel[];
-}) {
+}): ToolDefinition {
   const models = deps?.availableModels ?? [];
-
   const modelSummary = models.length
     ? models.map((m) => `${m.displayName} (${m.id})`).join(", ")
     : "No models available";
+  const schema = buildImageGenerateSchema(models);
 
-  return tool(
-    async (input: ImageGenerateInput, config) => {
-      const configurable = (
-        config as { configurable?: Record<string, unknown> }
-      )?.configurable;
-      const attachmentMap = configurable?.user_attachment_map as
-        | Record<string, string>
-        | undefined;
-      return await runImageGenerate(
-        input,
+  return {
+    name: "generate_image",
+    description: `Generate an image using AI. Available models: ${modelSummary}. Returns the generated image URL.`,
+    scope: "design",
+    zodSchema: schema,
+    parameters: z.toJSONSchema(schema),
+    execute: async (args, execCtx) =>
+      runImageGenerate(
+        schema.parse(args) as ImageGenerateInput,
         deps?.persistImage,
         deps?.submitImageJob,
-        attachmentMap,
-      );
-    },
-    {
-      name: "generate_image",
-      description: `Generate an image using AI. Available models: ${modelSummary}. Returns the generated image URL.`,
-      schema: buildImageGenerateSchema(models),
-    },
-  );
+        execCtx.userAttachmentMap,
+      ),
+  };
 }

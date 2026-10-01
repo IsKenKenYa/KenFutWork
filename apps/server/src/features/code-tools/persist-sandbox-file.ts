@@ -1,10 +1,10 @@
 import { realpathSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { basename, extname } from "node:path";
-import { tool } from "@langchain/core/tools";
+
 import { z } from "zod";
-import type { BlobStore } from "../../features/blob/types.js";
-import type { CanvasRepository } from "../../features/canvas/repository.js";
+import type { ToolDefinition } from "../../kernel/types.js";
+import type { BlobStore } from "../blob/types.js";
 
 const MIME_MAP: Record<string, string> = {
   ".png": "image/png",
@@ -33,21 +33,29 @@ const persistSandboxFileSchema = z.object({
 export type PersistSandboxFileDeps = {
   /** 对象存储（blob 缝）：上传沙箱产物并按需签名。 */
   blob: BlobStore;
-  /** 画布数据访问：由画布解析工作区（对象路径用）。 */
-  canvasRepository?: CanvasRepository;
+  /** 本 run 后端的沙箱目录（路径守卫口径与 backend 一致，per-run 解析）。 */
   sandboxDir?: string;
 };
 
-export function createPersistSandboxFileTool(deps: PersistSandboxFileDeps) {
-  return tool(
-    async (input, config) => {
-      const configurable = (
-        config as { configurable?: Record<string, unknown> }
-      )?.configurable;
-      const canvasId =
-        typeof configurable?.canvas_id === "string"
-          ? configurable.canvas_id
-          : undefined;
+/**
+ * `persist_sandbox_file`（shared）：沙箱产物上传换签名 URL。沙箱目录是
+ * per-run 事实（dev=per-run tmp），经内核动态工具缝在 run 起始期解析；
+ * 工作区从 execCtx.workspaceId 直取（runtime 已解析，不再经画布 JOIN 反查）。
+ */
+export function createPersistSandboxFileToolDefinition(
+  deps: PersistSandboxFileDeps,
+): ToolDefinition {
+  return {
+    name: "persist_sandbox_file",
+    description:
+      "Upload a file generated in the sandbox (e.g., a PDF or PNG created by Python code execution) " +
+      "to persistent storage. Returns a signed URL the user can access. " +
+      "Use this after execute() produces an output file you want to share with the user.",
+    scope: "shared",
+    zodSchema: persistSandboxFileSchema,
+    parameters: z.toJSONSchema(persistSandboxFileSchema),
+    execute: async (args, execCtx) => {
+      const input = persistSandboxFileSchema.parse(args);
 
       // Path traversal guard: restrict reads to sandbox directory.
       // Use realpathSync to resolve symlinks (macOS /tmp → /private/tmp).
@@ -80,18 +88,9 @@ export function createPersistSandboxFileTool(deps: PersistSandboxFileDeps) {
           ? `${safeTitle}${ext}`
           : basename(input.filePath);
 
-        // Resolve workspace ID from canvas for Storage RLS compliance.
-        // RLS requires: storage.foldername(name)[1] = workspace_id
-        let workspaceId: string | null = null;
-        if (canvasId && deps.canvasRepository) {
-          // 由画布反查工作区（单条 JOIN；画布 id 来自本次运行）
-          workspaceId = await deps.canvasRepository
-            .findWorkspaceIdByCanvas(canvasId)
-            .catch(() => null);
-        }
-
-        const storagePath = workspaceId
-          ? `${workspaceId}/generated/${Date.now()}-${fileName}`
+        // 存储路径按工作区前缀（RLS 口径）；工作区未解析时回落 uploads/ 前缀
+        const storagePath = execCtx.workspaceId
+          ? `${execCtx.workspaceId}/generated/${Date.now()}-${fileName}`
           : `uploads/${Date.now()}-${fileName}`;
         const bucket = deps.blob.bucket("project-assets");
         await bucket.upload(storagePath, fileBuffer, {
@@ -112,13 +111,5 @@ export function createPersistSandboxFileTool(deps: PersistSandboxFileDeps) {
         return `Error reading or uploading file: ${err instanceof Error ? err.message : String(err)}`;
       }
     },
-    {
-      name: "persist_sandbox_file",
-      description:
-        "Upload a file generated in the sandbox (e.g., a PDF or PNG created by Python code execution) " +
-        "to persistent storage. Returns a signed URL the user can access. " +
-        "Use this after execute() produces an output file you want to share with the user.",
-      schema: persistSandboxFileSchema,
-    },
-  );
+  };
 }

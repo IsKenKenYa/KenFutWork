@@ -1,8 +1,7 @@
-import type { ToolRuntime } from "@langchain/core/tools";
-import type { BackendProtocolV2, BackendRuntime } from "deepagents";
-import { type AnyBackendProtocol, resolveBackend } from "deepagents";
-import { tool } from "langchain";
+import type { BackendProtocolV2 } from "deepagents";
 import { z } from "zod";
+
+import type { ToolDefinition } from "../../kernel/types.js";
 
 const DEFAULT_SEARCH_ROOT = "/workspace";
 const DEFAULT_MAX_MATCHES = 5;
@@ -52,6 +51,7 @@ export async function runProjectSearch(
 
     return left.path.localeCompare(right.path);
   });
+
   const matchCount = sortedMatches.length;
   const limitedMatches = sortedMatches.slice(
     0,
@@ -73,23 +73,21 @@ export async function runProjectSearch(
   };
 }
 
-export function createProjectSearchTool(
-  backend:
-    | AnyBackendProtocol
-    | ((runtime: BackendRuntime) => AnyBackendProtocol),
-) {
-  return tool(
-    async (input, runtime: ToolRuntime) => {
-      return await runProjectSearch(
-        await resolveBackend(backend, runtime),
-        input,
-      );
-    },
-    {
-      name: "project_search",
-      description:
-        "Search the KenFutWork workspace for matching project text without using shell execution.",
-      schema: projectSearchSchema,
-    },
-  );
+/**
+ * `project_search`（shared）：工作区全文检索，不经 shell。backend 绑定是
+ * per-run 的（grep 虚拟工作区）——经内核动态工具缝在 run 起始期解析实例化。
+ */
+export function createProjectSearchToolDefinition(deps: {
+  backend: BackendProtocolV2;
+}): ToolDefinition {
+  return {
+    name: "project_search",
+    description:
+      "Search the KenFutWork workspace for matching project text without using shell execution.",
+    scope: "shared",
+    zodSchema: projectSearchSchema,
+    parameters: z.toJSONSchema(projectSearchSchema),
+    execute: async (args) =>
+      runProjectSearch(deps.backend, projectSearchSchema.parse(args)),
+  };
 }

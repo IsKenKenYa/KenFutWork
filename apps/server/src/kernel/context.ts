@@ -7,11 +7,13 @@ import type {
   CapabilityRegistration,
   CapabilityRegistry,
   DepsOf,
+  DynamicToolEntry,
   KernelEvents,
   ListenerOf,
   PluginContext,
   PromptCompositionContext,
   PromptSectionDefinition,
+  RunToolResolutionContext,
   SerialListener,
   ServiceKey,
   ServiceMap,
@@ -113,6 +115,7 @@ export class AgentRunEventBus {
 /** 统一工具注册表：schema + scope + guarded 执行（先过 tool-pre-execute 事件）。 */
 export class ToolRegistryImpl implements ToolRegistry {
   private readonly tools = new Map<string, ToolDefinition>();
+  private readonly dynamicEntries = new Map<string, DynamicToolEntry>();
 
   constructor(private readonly events: AgentRunEventBus) {}
 
@@ -124,6 +127,30 @@ export class ToolRegistryImpl implements ToolRegistry {
     return () => {
       this.tools.delete(tool.name);
     };
+  }
+
+  registerDynamic(entry: DynamicToolEntry): () => void {
+    if (this.dynamicEntries.has(entry.id)) {
+      throw new Error(`[kernel] 动态工具 ${entry.id} 重复注册。`);
+    }
+    this.dynamicEntries.set(entry.id, entry);
+    return () => {
+      this.dynamicEntries.delete(entry.id);
+    };
+  }
+
+  resolveRunTools(ctx: RunToolResolutionContext): ToolDefinition[] {
+    const resolved: ToolDefinition[] = [];
+    for (const entry of this.dynamicEntries.values()) {
+      if (entry.scope !== "shared" && entry.scope !== ctx.preset) {
+        continue;
+      }
+      const tool = entry.resolve(ctx);
+      if (tool) {
+        resolved.push(tool);
+      }
+    }
+    return [...this.list(ctx.preset), ...resolved];
   }
 
   get(name: string): ToolDefinition | undefined {
@@ -153,16 +180,23 @@ export class ToolRegistryImpl implements ToolRegistry {
     args: Record<string, unknown>,
     execCtx: ToolExecutionContext = {},
   ): Promise<unknown> {
-    const tool = this.require(name);
+    return this.executeDefinition(this.require(name), args, execCtx);
+  }
+
+  async executeDefinition(
+    tool: ToolDefinition,
+    args: Record<string, unknown>,
+    execCtx: ToolExecutionContext = {},
+  ): Promise<unknown> {
     const decision = await this.events.emitWaterfall("tool-pre-execute", {
       args,
       decision: "allow",
       runId: execCtx.runId,
       ...(execCtx.threadId ? { threadId: execCtx.threadId } : {}),
-      toolName: name,
+      toolName: tool.name,
     });
     if (decision.decision === "deny") {
-      throw new ToolDeniedError(name, decision.denyReason);
+      throw new ToolDeniedError(tool.name, decision.denyReason);
     }
     return tool.execute(args, execCtx);
   }

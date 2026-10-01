@@ -1,35 +1,10 @@
-import { tool } from "langchain";
 import { z } from "zod";
 
-import type { AvailableVideoModel } from "../../generation/types.js";
+import type { AvailableVideoModel } from "../../../generation/types.js";
+import type { ToolDefinition } from "../../../kernel/types.js";
+import type { SubmitVideoJobFn } from "../tool-types.js";
 
-// ── Submit function type ───────────────────────────────────────────────────
-
-export type SubmitVideoJobFn = (input: {
-  prompt: string;
-  model: string;
-  title?: string;
-  duration?: number;
-  resolution?: string;
-  aspectRatio?: string;
-  inputImages?: string[];
-  inputVideo?: string;
-  enableAudio?: boolean;
-  /** 画布落点（可选）：运行时的作业回调据此显式指定插入位置。 */
-  placementX?: number;
-  placementY?: number;
-  placementWidth?: number;
-  placementHeight?: number;
-}) => Promise<{
-  jobId: string;
-  elementId?: string;
-  videoUrl?: string;
-  width?: number;
-  height?: number;
-  durationSeconds?: number;
-  mimeType?: string;
-  error?: string;
-}>;
+export type { SubmitVideoJobFn } from "../tool-types.js";
 
 // ── Dynamic schema builder ─────────────────────────────────────────────────
 
@@ -282,27 +257,30 @@ export async function runVideoGenerate(
 
 // ── Tool factory ───────────────────────────────────────────────────────────
 
-export function createVideoGenerateTool(deps?: {
+export function createVideoGenerateToolDefinition(deps?: {
   submitVideoJob?: SubmitVideoJobFn;
   /** 工作区实例的模型清单（BYOK 目录 specifier）；缺省 = 未配置任何实例。 */
   availableModels?: AvailableVideoModel[];
-}) {
+}): ToolDefinition {
   const models = deps?.availableModels ?? [];
-
   const modelSummary = models.length
     ? models.map((m) => `${m.displayName} (${m.id})`).join(", ")
     : "No video models available";
+  const schema = buildVideoGenerateSchema(models);
 
-  return tool(
-    async (input: VideoGenerateInput) => {
-      return await runVideoGenerate(input, models, deps?.submitVideoJob);
-    },
-    {
-      name: "generate_video",
-      description: `Generate a video using AI. Available models: ${modelSummary}. Supports text-to-video, image-to-video, and video editing. Returns the generated video URL.`,
-      schema: buildVideoGenerateSchema(models),
-    },
-  );
+  return {
+    name: "generate_video",
+    description: `Generate a video using AI. Available models: ${modelSummary}. Supports text-to-video, image-to-video, and video editing. Returns the generated video URL.`,
+    scope: "design",
+    zodSchema: schema,
+    parameters: z.toJSONSchema(schema),
+    execute: async (args) =>
+      runVideoGenerate(
+        schema.parse(args) as VideoGenerateInput,
+        models,
+        deps?.submitVideoJob,
+      ),
+  };
 }
 
 function validateCapabilities(
