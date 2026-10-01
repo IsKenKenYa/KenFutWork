@@ -19726,6 +19726,36 @@
                 "type": "integer",
                 "minimum": 5000,
                 "maximum": 1800000
+              },
+              "computerUseActionTimeoutMs": {
+                "default": 10000,
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 120000
+              },
+              "computerUseObserveMaxBytes": {
+                "default": 32768,
+                "type": "integer",
+                "minimum": 4096,
+                "maximum": 262144
+              },
+              "computerUseScreenshotMaxBytes": {
+                "default": 262144,
+                "type": "integer",
+                "minimum": 16384,
+                "maximum": 2097152
+              },
+              "computerUseMaxActionsPerRun": {
+                "default": 200,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2000
+              },
+              "computerUseSessionMaxMs": {
+                "default": 1800000,
+                "type": "integer",
+                "minimum": 60000,
+                "maximum": 86400000
               }
             },
             "required": [
@@ -19744,7 +19774,12 @@
               "subagentMaxContinuations",
               "llmRequestMaxRetries",
               "llmInfiniteRetry",
-              "executeTimeoutMs"
+              "executeTimeoutMs",
+              "computerUseActionTimeoutMs",
+              "computerUseObserveMaxBytes",
+              "computerUseScreenshotMaxBytes",
+              "computerUseMaxActionsPerRun",
+              "computerUseSessionMaxMs"
             ],
             "additionalProperties": false
           }
@@ -19882,6 +19917,31 @@
             "type": "integer",
             "minimum": 5000,
             "maximum": 1800000
+          },
+          "computerUseActionTimeoutMs": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 120000
+          },
+          "computerUseObserveMaxBytes": {
+            "type": "integer",
+            "minimum": 4096,
+            "maximum": 262144
+          },
+          "computerUseScreenshotMaxBytes": {
+            "type": "integer",
+            "minimum": 16384,
+            "maximum": 2097152
+          },
+          "computerUseMaxActionsPerRun": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000
+          },
+          "computerUseSessionMaxMs": {
+            "type": "integer",
+            "minimum": 60000,
+            "maximum": 86400000
           }
         }
       },

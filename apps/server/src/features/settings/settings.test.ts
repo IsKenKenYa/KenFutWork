@@ -162,6 +162,11 @@ describe("settings service", () => {
       llmInfiniteRetry: false,
       executeTimeoutMs: 120000,
       subagentMaxContinuations: 50,
+      computerUseActionTimeoutMs: 10000,
+      computerUseObserveMaxBytes: 32768,
+      computerUseScreenshotMaxBytes: 262144,
+      computerUseMaxActionsPerRun: 200,
+      computerUseSessionMaxMs: 1800000,
     });
 
     const stored = createSettingsService({
@@ -189,6 +194,11 @@ describe("settings service", () => {
       llmInfiniteRetry: false,
       executeTimeoutMs: 120000,
       subagentMaxContinuations: 50,
+      computerUseActionTimeoutMs: 10000,
+      computerUseObserveMaxBytes: 32768,
+      computerUseScreenshotMaxBytes: 262144,
+      computerUseMaxActionsPerRun: 200,
+      computerUseSessionMaxMs: 1800000,
     });
   });
 
@@ -225,6 +235,11 @@ describe("settings service", () => {
       llmInfiniteRetry: false,
       executeTimeoutMs: 120000,
       subagentMaxContinuations: 50,
+      computerUseActionTimeoutMs: 10000,
+      computerUseObserveMaxBytes: 32768,
+      computerUseScreenshotMaxBytes: 262144,
+      computerUseMaxActionsPerRun: 200,
+      computerUseSessionMaxMs: 1800000,
     });
 
     const emptyCatalog = createSettingsService({
@@ -251,6 +266,11 @@ describe("settings service", () => {
       llmInfiniteRetry: false,
       executeTimeoutMs: 120000,
       subagentMaxContinuations: 50,
+      computerUseActionTimeoutMs: 10000,
+      computerUseObserveMaxBytes: 32768,
+      computerUseScreenshotMaxBytes: 262144,
+      computerUseMaxActionsPerRun: 200,
+      computerUseSessionMaxMs: 1800000,
     });
 
     let catalogCalls = 0;
@@ -281,6 +301,11 @@ describe("settings service", () => {
       llmInfiniteRetry: false,
       executeTimeoutMs: 120000,
       subagentMaxContinuations: 50,
+      computerUseActionTimeoutMs: 10000,
+      computerUseObserveMaxBytes: 32768,
+      computerUseScreenshotMaxBytes: 262144,
+      computerUseMaxActionsPerRun: 200,
+      computerUseSessionMaxMs: 1800000,
     });
     expect(catalogCalls).toBe(0);
   });
@@ -414,6 +439,11 @@ describe("settings service", () => {
       llmInfiniteRetry: false,
       executeTimeoutMs: 120000,
       subagentMaxContinuations: 50,
+      computerUseActionTimeoutMs: 10000,
+      computerUseObserveMaxBytes: 32768,
+      computerUseScreenshotMaxBytes: 262144,
+      computerUseMaxActionsPerRun: 200,
+      computerUseSessionMaxMs: 1800000,
     });
 
     // 只改终端 shell：模型与重试上限不动
@@ -433,6 +463,11 @@ describe("settings service", () => {
       subagentMaxDepth: 1,
       subagentMaxConcurrency: 4,
       subagentMaxContinuations: 50,
+      computerUseActionTimeoutMs: 10000,
+      computerUseObserveMaxBytes: 32768,
+      computerUseScreenshotMaxBytes: 262144,
+      computerUseMaxActionsPerRun: 200,
+      computerUseSessionMaxMs: 1800000,
       llmRequestMaxRetries: 10,
       llmInfiniteRetry: false,
       executeTimeoutMs: 120000,
@@ -488,6 +523,11 @@ describe("agent 治理设置（DEC-17/DEC-18：禁止硬编码，全部走 works
       llmInfiniteRetry: false,
       executeTimeoutMs: 120000,
       subagentMaxContinuations: 50,
+      computerUseActionTimeoutMs: 10000,
+      computerUseObserveMaxBytes: 32768,
+      computerUseScreenshotMaxBytes: 262144,
+      computerUseMaxActionsPerRun: 200,
+      computerUseSessionMaxMs: 1800000,
     });
 
     const stored = createSettingsService({

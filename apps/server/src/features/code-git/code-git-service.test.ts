@@ -451,6 +451,11 @@ describe("终端 shell 解析", () => {
           llmInfiniteRetry: false,
           executeTimeoutMs: 120000,
           subagentMaxContinuations: 50,
+          computerUseActionTimeoutMs: 10_000,
+          computerUseObserveMaxBytes: 32_768,
+          computerUseScreenshotMaxBytes: 262_144,
+          computerUseMaxActionsPerRun: 200,
+          computerUseSessionMaxMs: 1_800_000,
         }),
       },
     });

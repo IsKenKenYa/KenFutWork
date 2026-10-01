@@ -6,6 +6,11 @@ import type {
 
 import {
   AGENT_GOVERNANCE_DEFAULTS,
+  clampComputerUseActionTimeoutMs,
+  clampComputerUseMaxActionsPerRun,
+  clampComputerUseObserveMaxBytes,
+  clampComputerUseScreenshotMaxBytes,
+  clampComputerUseSessionMaxMs,
   clampExecuteTimeoutMs,
   clampLlmRequestMaxRetries,
   clampSubagentMaxConcurrency,
@@ -246,6 +251,27 @@ export function createSettingsService(options: {
         storedExecuteTimeoutMs ??
           governanceEnv.executeTimeoutMs ??
           AGENT_GOVERNANCE_DEFAULTS.executeTimeoutMs,
+      ),
+      // CU 治理五键（里程碑 1 无库列）：env 兜底 → DEFAULTS；表值列随 P2 落
+      computerUseActionTimeoutMs: clampComputerUseActionTimeoutMs(
+        governanceEnv.computerUseActionTimeoutMs ??
+          AGENT_GOVERNANCE_DEFAULTS.computerUseActionTimeoutMs,
+      ),
+      computerUseObserveMaxBytes: clampComputerUseObserveMaxBytes(
+        governanceEnv.computerUseObserveMaxBytes ??
+          AGENT_GOVERNANCE_DEFAULTS.computerUseObserveMaxBytes,
+      ),
+      computerUseScreenshotMaxBytes: clampComputerUseScreenshotMaxBytes(
+        governanceEnv.computerUseScreenshotMaxBytes ??
+          AGENT_GOVERNANCE_DEFAULTS.computerUseScreenshotMaxBytes,
+      ),
+      computerUseMaxActionsPerRun: clampComputerUseMaxActionsPerRun(
+        governanceEnv.computerUseMaxActionsPerRun ??
+          AGENT_GOVERNANCE_DEFAULTS.computerUseMaxActionsPerRun,
+      ),
+      computerUseSessionMaxMs: clampComputerUseSessionMaxMs(
+        governanceEnv.computerUseSessionMaxMs ??
+          AGENT_GOVERNANCE_DEFAULTS.computerUseSessionMaxMs,
       ),
     };
   };

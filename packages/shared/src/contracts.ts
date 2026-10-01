@@ -283,6 +283,18 @@ export const workspaceSettingsSchema = z.object({
   llmInfiniteRetry: governanceBoolSetting("llmInfiniteRetry"),
   /** Code 模式 execute 命令超时（毫秒；下限 5s 上限 30min）。 */
   executeTimeoutMs: governanceSetting("executeTimeoutMs"),
+  /** Computer Use：单个桌面动作超时（毫秒）。 */
+  computerUseActionTimeoutMs: governanceSetting("computerUseActionTimeoutMs"),
+  /** Computer Use：观察树文本预算（字节），超限按优先级裁剪。 */
+  computerUseObserveMaxBytes: governanceSetting("computerUseObserveMaxBytes"),
+  /** Computer Use：截图内联 base64 预算（字节），超限只回文字摘要。 */
+  computerUseScreenshotMaxBytes: governanceSetting(
+    "computerUseScreenshotMaxBytes",
+  ),
+  /** Computer Use：单个 run 内动作数上限（防失控连点）。 */
+  computerUseMaxActionsPerRun: governanceSetting("computerUseMaxActionsPerRun"),
+  /** Computer Use：控制租约会话时长上限（毫秒）。 */
+  computerUseSessionMaxMs: governanceSetting("computerUseSessionMaxMs"),
 });
 
 export const modelInfoSchema = z.object({

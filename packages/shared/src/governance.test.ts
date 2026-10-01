@@ -18,6 +18,12 @@ describe("agent 治理默认值与护栏（DEC-17/DEC-18）", () => {
       llmInfiniteRetry: false,
       executeTimeoutMs: 120000,
       subagentMaxContinuations: 50,
+      // Computer Use 五项（CU 插件里程碑 1 拍板档）
+      computerUseActionTimeoutMs: 10_000,
+      computerUseObserveMaxBytes: 32_768,
+      computerUseScreenshotMaxBytes: 262_144,
+      computerUseMaxActionsPerRun: 200,
+      computerUseSessionMaxMs: 1_800_000,
     });
   });
 

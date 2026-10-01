@@ -277,6 +277,41 @@
       "status": "active",
       "note": "agent 治理：轮末闸门续轮上限（DEC-15/18）"
     },
+    "KENFUTWORK_COMPUTER_USE_ACTION_TIMEOUT_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "agent 治理：Computer Use 单个桌面动作超时毫秒（CU 插件）"
+    },
+    "KENFUTWORK_COMPUTER_USE_OBSERVE_MAX_BYTES": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "agent 治理：Computer Use 观察树文本预算字节（CU 插件）"
+    },
+    "KENFUTWORK_COMPUTER_USE_SCREENSHOT_MAX_BYTES": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "agent 治理：Computer Use 截图内联 base64 预算字节（CU 插件）"
+    },
+    "KENFUTWORK_COMPUTER_USE_MAX_ACTIONS_PER_RUN": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "agent 治理：Computer Use 单 run 动作数上限（CU 插件）"
+    },
+    "KENFUTWORK_COMPUTER_USE_SESSION_MAX_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "agent 治理：Computer Use 控制租约会话时长上限毫秒（CU 插件）"
+    },
     "KENFUTWORK_SEARCH_API_KEY": {
       "surface": "server",
       "readers": ["apps/server/src/config/env.ts"],

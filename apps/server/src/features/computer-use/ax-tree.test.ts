@@ -40,22 +40,26 @@ describe("flattenAxTree（AX 树展平 + 索引）", () => {
   it("深度优先展平并分配连续索引", () => {
     const rows = flattenAxTree(calcTree);
     expect(rows.map((r) => r.index)).toEqual([0, 1, 2, 3, 4]);
-    expect(rows[0].node.role).toBe("group");
-    expect(rows[0].depth).toBe(0);
-    expect(rows[1].depth).toBe(1);
+    expect(rows[0]?.node.role).toBe("group");
+    expect(rows[0]?.depth).toBe(0);
+    expect(rows[1]?.depth).toBe(1);
   });
 
   it("空树（无 children）仍产出根行", () => {
     const rows = flattenAxTree({ role: "window", title: "计算器" });
     expect(rows).toHaveLength(1);
-    expect(rows[0].node.role).toBe("window");
+    expect(rows[0]?.node.role).toBe("window");
   });
 });
 
 describe("formatAxTree（观察树文本化）", () => {
   const base = {
     app: { pid: 24231, bundleId: "com.apple.calculator", name: "计算器" },
-    window: { windowId: 6363, title: "计算器", bounds: [990, 382, 230, 408] },
+    window: {
+      windowId: 6363,
+      title: "计算器",
+      bounds: [990, 382, 230, 408] as [number, number, number, number],
+    },
     stateId: "s-1",
   };
 

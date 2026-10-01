@@ -24,6 +24,16 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   llmInfiniteRetry: false,
   /** Code 模式 execute 命令超时（毫秒）。 */
   executeTimeoutMs: 120_000,
+  /** Computer Use：单个桌面动作（点击/输入/截屏）超时（毫秒）。 */
+  computerUseActionTimeoutMs: 10_000,
+  /** Computer Use：观察树文本预算（字节），超限按优先级裁剪。 */
+  computerUseObserveMaxBytes: 32_768,
+  /** Computer Use：截图内联 base64 预算（字节），超限只回文字摘要。 */
+  computerUseScreenshotMaxBytes: 262_144,
+  /** Computer Use：单个 run 内动作数上限（防失控连点）。 */
+  computerUseMaxActionsPerRun: 200,
+  /** Computer Use：控制租约会话时长上限（毫秒）。 */
+  computerUseSessionMaxMs: 1_800_000,
 } as const;
 
 export type AgentGovernanceValue = keyof typeof AGENT_GOVERNANCE_DEFAULTS;
@@ -36,6 +46,11 @@ export type AgentGovernanceOverrides = {
   llmInfiniteRetry?: boolean | undefined;
   executeTimeoutMs?: number | undefined;
   subagentMaxContinuations?: number | undefined;
+  computerUseActionTimeoutMs?: number | undefined;
+  computerUseObserveMaxBytes?: number | undefined;
+  computerUseScreenshotMaxBytes?: number | undefined;
+  computerUseMaxActionsPerRun?: number | undefined;
+  computerUseSessionMaxMs?: number | undefined;
 };
 
 const clampInt = (value: number, min: number, max: number): number =>
@@ -58,6 +73,21 @@ export const clampLlmRequestMaxRetries = (value: number): number =>
 export const clampExecuteTimeoutMs = (value: number): number =>
   clampInt(value, 5_000, 1_800_000);
 
+export const clampComputerUseActionTimeoutMs = (value: number): number =>
+  clampInt(value, 1_000, 120_000);
+
+export const clampComputerUseObserveMaxBytes = (value: number): number =>
+  clampInt(value, 4_096, 262_144);
+
+export const clampComputerUseScreenshotMaxBytes = (value: number): number =>
+  clampInt(value, 16_384, 2_097_152);
+
+export const clampComputerUseMaxActionsPerRun = (value: number): number =>
+  clampInt(value, 1, 2_000);
+
+export const clampComputerUseSessionMaxMs = (value: number): number =>
+  clampInt(value, 60_000, 86_400_000);
+
 export const coerceLlmInfiniteRetry = (value: unknown): boolean =>
   value === true;
 
@@ -68,6 +98,11 @@ export const AGENT_GOVERNANCE_LIMITS = {
   llmRequestMaxRetries: { min: 0, max: 100 },
   executeTimeoutMs: { min: 5_000, max: 1_800_000 },
   subagentMaxContinuations: { min: 1, max: 200 },
+  computerUseActionTimeoutMs: { min: 1_000, max: 120_000 },
+  computerUseObserveMaxBytes: { min: 4_096, max: 262_144 },
+  computerUseScreenshotMaxBytes: { min: 16_384, max: 2_097_152 },
+  computerUseMaxActionsPerRun: { min: 1, max: 2_000 },
+  computerUseSessionMaxMs: { min: 60_000, max: 86_400_000 },
 } as const;
 
 /**
@@ -107,6 +142,21 @@ export function resolveGovernanceEnvOverrides(
     subagentMaxContinuations: parseStrictInt(
       source.KENFUTWORK_SUBAGENT_MAX_CONTINUATIONS,
     ),
+    computerUseActionTimeoutMs: parseStrictInt(
+      source.KENFUTWORK_COMPUTER_USE_ACTION_TIMEOUT_MS,
+    ),
+    computerUseObserveMaxBytes: parseStrictInt(
+      source.KENFUTWORK_COMPUTER_USE_OBSERVE_MAX_BYTES,
+    ),
+    computerUseScreenshotMaxBytes: parseStrictInt(
+      source.KENFUTWORK_COMPUTER_USE_SCREENSHOT_MAX_BYTES,
+    ),
+    computerUseMaxActionsPerRun: parseStrictInt(
+      source.KENFUTWORK_COMPUTER_USE_MAX_ACTIONS_PER_RUN,
+    ),
+    computerUseSessionMaxMs: parseStrictInt(
+      source.KENFUTWORK_COMPUTER_USE_SESSION_MAX_MS,
+    ),
   };
   return Object.fromEntries(
     Object.entries(overrides).filter(([, v]) => v !== undefined),
@@ -123,7 +173,12 @@ export function governanceSetting<
     | "subagentMaxConcurrency"
     | "llmRequestMaxRetries"
     | "executeTimeoutMs"
-    | "subagentMaxContinuations",
+    | "subagentMaxContinuations"
+    | "computerUseActionTimeoutMs"
+    | "computerUseObserveMaxBytes"
+    | "computerUseScreenshotMaxBytes"
+    | "computerUseMaxActionsPerRun"
+    | "computerUseSessionMaxMs",
 >(key: K) {
   const limits = AGENT_GOVERNANCE_LIMITS[key];
   return z
