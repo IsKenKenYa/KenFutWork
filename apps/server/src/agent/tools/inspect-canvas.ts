@@ -1,7 +1,6 @@
-import { tool } from "langchain";
 import { z } from "zod";
-
 import type { CanvasRepository } from "../../features/canvas/repository.js";
+import type { ToolDefinition } from "../../kernel/types.js";
 
 const inspectCanvasSchema = z.object({
   detail_level: z
@@ -160,16 +159,24 @@ export function buildCanvasSummaryForContext(
   return lines.join("\n");
 }
 
-export function createInspectCanvasTool(deps: {
+/**
+ * `inspect_canvas`（design preset）：画布读取工具，经内核工具注册表
+ * （`ctx.tools`）贡献。画布与工作区上下文从 `execCtx` 取——与 agent 运行时
+ * 填充的 `runToolContext` 同源（run.canvasId）。
+ */
+export function createInspectCanvasToolDefinition(deps: {
   /** 画布数据访问（工作区作用域）：内容读取不再直连 SDK。 */
   canvasRepository?: CanvasRepository;
-}) {
-  return tool(
-    async (input, config) => {
-      const configurable = (
-        config as { configurable?: Record<string, unknown> }
-      )?.configurable;
-      const canvasId = configurable?.canvas_id;
+}): ToolDefinition {
+  return {
+    name: "inspect_canvas",
+    description:
+      "Inspect the current canvas state. Returns element positions, sizes, and types. Use before placing new elements to avoid overlaps. Set detail_level='full' for complete properties, or query a specific element_id. Use filter_type to narrow by element type(s) and filter_region to narrow by spatial area.",
+    scope: "design",
+    zodSchema: inspectCanvasSchema,
+    parameters: z.toJSONSchema(inspectCanvasSchema),
+    execute: async (args, execCtx) => {
+      const canvasId = execCtx.canvasId;
 
       if (typeof canvasId !== "string" || !canvasId) {
         return JSON.stringify({
@@ -187,6 +194,8 @@ export function createInspectCanvasTool(deps: {
             "Canvas data access is not wired into this agent runtime (canvasRepository missing).",
         });
       }
+
+      const input = inspectCanvasSchema.parse(args);
 
       // 经 projects 父链解析工作区，再按工作区作用域取内容（不直连 SDK）
       const workspaceId = await deps.canvasRepository
@@ -278,11 +287,5 @@ export function createInspectCanvasTool(deps: {
         elements: summaryElements,
       });
     },
-    {
-      name: "inspect_canvas",
-      description:
-        "Inspect the current canvas state. Returns element positions, sizes, and types. Use before placing new elements to avoid overlaps. Set detail_level='full' for complete properties, or query a specific element_id. Use filter_type to narrow by element type(s) and filter_region to narrow by spatial area.",
-      schema: inspectCanvasSchema,
-    },
-  );
+  };
 }

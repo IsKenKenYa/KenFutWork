@@ -4,8 +4,9 @@ import type {
   CanvasRepository,
   CanvasRow,
 } from "../../features/canvas/repository.js";
-import { createInspectCanvasTool } from "./inspect-canvas.js";
-import { createManipulateCanvasTool } from "./manipulate-canvas.js";
+import type { ToolExecutionContext } from "../../kernel/types.js";
+import { createInspectCanvasToolDefinition } from "./inspect-canvas.js";
+import { createManipulateCanvasToolDefinition } from "./manipulate-canvas.js";
 
 const CANVAS_ID = "canvas-1";
 const WORKSPACE_ID = "ws-1";
@@ -68,13 +69,13 @@ function repo(overrides: RepoOptions = {}): CanvasRepository {
 
 async function invokeInspect(
   repository: CanvasRepository | undefined,
-  configurable: Record<string, unknown>,
+  execCtx: ToolExecutionContext,
   input: Record<string, unknown> = {},
 ) {
-  const tool = createInspectCanvasTool(
+  const definition = createInspectCanvasToolDefinition(
     repository ? { canvasRepository: repository } : {},
   );
-  const result = await tool.invoke(input, { configurable } as never);
+  const result = await definition.execute(input, execCtx);
   return JSON.parse(result as string);
 }
 
@@ -82,15 +83,10 @@ async function invokeManipulate(
   repository: CanvasRepository | undefined,
   input: Record<string, unknown>,
 ) {
-  const tool = createManipulateCanvasTool(
+  const definition = createManipulateCanvasToolDefinition(
     repository ? { canvasRepository: repository } : {},
   );
-  const result = await tool.invoke(
-    input as never,
-    {
-      configurable: { canvas_id: CANVAS_ID },
-    } as never,
-  );
+  const result = await definition.execute(input, { canvasId: CANVAS_ID });
   return JSON.parse(result as string);
 }
 
@@ -107,7 +103,7 @@ describe("inspect_canvas：内容读取经 canvas repository（不再直连 SDK�
   });
 
   it("数据访问未接线 → 说清原因，不伪装成画布不存在", async () => {
-    const output = await invokeInspect(undefined, { canvas_id: CANVAS_ID });
+    const output = await invokeInspect(undefined, { canvasId: CANVAS_ID });
 
     expect(output.error).toBe("canvas_context_unavailable");
   });
@@ -121,7 +117,7 @@ describe("inspect_canvas：内容读取经 canvas repository（不再直连 SDK�
           return canvasRow([rect("r1", 10, 20)]);
         },
       }),
-      { canvas_id: CANVAS_ID },
+      { canvasId: CANVAS_ID },
     );
 
     expect(seen).toEqual([[WORKSPACE_ID, CANVAS_ID]]);
@@ -142,7 +138,7 @@ describe("inspect_canvas：内容读取经 canvas repository（不再直连 SDK�
 
   it("画布不属本工作区（findById 回 null）→ canvas_not_found", async () => {
     const output = await invokeInspect(repo({ findById: async () => null }), {
-      canvas_id: CANVAS_ID,
+      canvasId: CANVAS_ID,
     });
 
     expect(output.error).toBe("canvas_not_found");
@@ -155,7 +151,7 @@ describe("inspect_canvas：内容读取经 canvas repository（不再直连 SDK�
           throw new Error("db down");
         },
       }),
-      { canvas_id: CANVAS_ID },
+      { canvasId: CANVAS_ID },
     );
 
     expect(output.error).toBe("canvas_not_found");
@@ -170,7 +166,7 @@ describe("inspect_canvas：内容读取经 canvas repository（不再直连 SDK�
             { ...rect("dead", 0, 0), isDeleted: true },
           ]),
       }),
-      { canvas_id: CANVAS_ID },
+      { canvasId: CANVAS_ID },
     );
 
     expect(output.elementCount).toBe(1);
@@ -180,12 +176,12 @@ describe("inspect_canvas：内容读取经 canvas repository（不再直连 SDK�
   it("element_id 命中给单个元素；未命中给 element_not_found", async () => {
     const hit = await invokeInspect(
       repo({ findById: async () => canvasRow([rect("r1", 1, 2)]) }),
-      { canvas_id: CANVAS_ID },
+      { canvasId: CANVAS_ID },
       { element_id: "r1" },
     );
     const miss = await invokeInspect(
       repo({ findById: async () => canvasRow([rect("r1", 1, 2)]) }),
-      { canvas_id: CANVAS_ID },
+      { canvasId: CANVAS_ID },
       { element_id: "nope" },
     );
 
@@ -198,7 +194,7 @@ describe("inspect_canvas：内容读取经 canvas repository（不再直连 SDK�
       repo({
         findById: async () => canvasRow([rect("r1", 0, 0), videoEl("v1")]),
       }),
-      { canvas_id: CANVAS_ID },
+      { canvasId: CANVAS_ID },
       { filter_type: ["video"] },
     );
 
@@ -213,7 +209,7 @@ describe("inspect_canvas：内容读取经 canvas repository（不再直连 SDK�
         findById: async () =>
           canvasRow([rect("inside", 10, 10), rect("outside", 900, 900)]),
       }),
-      { canvas_id: CANVAS_ID },
+      { canvasId: CANVAS_ID },
       {
         filter_region: { min_x: 0, min_y: 0, max_x: 200, max_y: 200 },
       },
@@ -254,13 +250,13 @@ describe("manipulate_canvas：读写经 canvas repository", () => {
 
   it("未知画布上下文 → no_canvas_context（不读写）", async () => {
     const saveContent = vi.fn();
-    const tool = createManipulateCanvasTool({
+    const definition = createManipulateCanvasToolDefinition({
       canvasRepository: repo({ saveContent: saveContent as never }),
     });
 
-    const result = await tool.invoke(
+    const result = await definition.execute(
       { operations: [{ action: "move", element_id: "r1", x: 1, y: 1 }] },
-      { configurable: {} } as never,
+      {},
     );
 
     expect(JSON.parse(result as string).error).toBe("no_canvas_context");

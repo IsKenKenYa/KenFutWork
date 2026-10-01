@@ -182,6 +182,8 @@ describe("自动压缩的装配接线", () => {
     const model = new RecordingChatModel();
     const agent = createKenFutWorkDeepAgent({
       backendResult,
+      // 无 canvasId 的纯装配形态 = code preset（与本测试「画布无关」的定位一致）
+      preset: "code",
       blob: {
         bucket: () => ({
           upload: async () => {},

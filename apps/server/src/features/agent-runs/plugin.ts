@@ -7,6 +7,10 @@ import type {
 import { createAgentPersistenceService } from "../../agent/persistence/index.js";
 import { createAgentRunService } from "../../agent/runtime.js";
 import { composeToolGate } from "../../agent/tool-gate.js";
+import { createBrandKitToolDefinition } from "../../agent/tools/brand-kit.js";
+import { createInspectCanvasToolDefinition } from "../../agent/tools/inspect-canvas.js";
+import { createManipulateCanvasToolDefinition } from "../../agent/tools/manipulate-canvas.js";
+import { createScreenshotCanvasToolDefinition } from "../../agent/tools/screenshot-canvas.js";
 import { createWorkspaceSkillsLoader } from "../../agent/workspace-skills.js";
 import { registerRunRoutes } from "../../http/runs.js";
 import type { KernelEvents, PluginDefinition } from "../../kernel/types.js";
@@ -67,6 +71,30 @@ export function createAgentRunsPlugin(
       );
       const canvasRepository = createCanvasRepository(ctx.get("persistence"));
 
+      // 服务型画布/品牌工具（DEC-2 收敛）：经统一工具注册表贡献，scope=design——
+      // Code 会话的工具面在 registry.list(preset) 处结构性排除画布能力。
+      // 运行态工具（project_search / persist_sandbox_file / 生图生频）不在此列：
+      // 它们依赖 per-run backend 与动态 schema，仍在 deep-agent 装配点按 preset 创建。
+      const builtinTools = ctx.get("tools");
+      builtinTools.register(
+        createInspectCanvasToolDefinition({ canvasRepository }),
+      );
+      builtinTools.register(
+        createManipulateCanvasToolDefinition({ canvasRepository }),
+      );
+      builtinTools.register(
+        createScreenshotCanvasToolDefinition({
+          connectionManager: deps.connectionManager,
+          blob: ctx.get("blob"),
+        }),
+      );
+      builtinTools.register(
+        createBrandKitToolDefinition({
+          brandKitService: ctx.get("brandKit"),
+          canvasRepository,
+        }),
+      );
+
       ctx.register("agentRuns", (d) => {
         const jobService = ctx.tryGet("jobs");
         // 检查点缝（可选依赖）：有 checkpoints 服务时把轮次快照钩子接进 runtime；
@@ -114,7 +142,6 @@ export function createAgentRunsPlugin(
           agentPersistenceService: d.get("agentPersistence"),
           ...(deps.agentFactory ? { agentFactory: deps.agentFactory } : {}),
           agentRunMetadataService: d.get("agentRunMetadata"),
-          brandKitService: d.get("brandKit"),
           canvasRepository,
           canvasService: d.get("canvas"),
           // 轮次快照钩子：显式包一层把行返回值折成 void（钩子失败由 runtime 兜底告警）

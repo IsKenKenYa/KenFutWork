@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import type { ZodTypeAny } from "zod";
 
 import type { AgentBackendFactory } from "../agent/backends/index.js";
 import type { AgentPersistenceService } from "../agent/persistence/index.js";
@@ -209,6 +210,11 @@ export interface ToolExecutionContext {
   threadId?: string | undefined;
   workspaceId?: string | undefined;
   /**
+   * 运行方用户 id：需要用户身份的工具（画布截图 RPC 路由、品牌套件 `:user`
+   * 隔离谓词）据此构造调用方，与 workspaceId 同为 run 起始期一次性解析。
+   */
+  userId?: string | undefined;
+  /**
    * 本轮 run 绑定的画布：需要落点的工具（如 install_plugin 从工作目录安装）
    * 据此解析沙箱目录——解析口径与 agent/git 同一处（resolveSandboxDir）。
    */
@@ -227,6 +233,12 @@ export interface ToolDefinition {
   description: string;
   scope: ToolScope;
   parameters: Record<string, unknown>;
+  /**
+   * 原生 zod schema（内置工具专用逃生口）：桥接层优先用它构造 StructuredTool，
+   * 避免 zod → JSON Schema → zod 往返丢精度（default/union/enum）。
+   * 缺省（如 MCP 工具）仍走 parameters 的 JSON Schema 转换。
+   */
+  zodSchema?: ZodTypeAny | undefined;
   execute(
     args: Record<string, unknown>,
     execCtx: ToolExecutionContext,

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { z } from "zod";
+import { z } from "zod";
 import { ToolDeniedError } from "../kernel/context.js";
 import type { ToolDefinition } from "../kernel/types.js";
 import {
@@ -108,6 +108,30 @@ describe("kernelToolToStructuredTool（模型可调用桥）", () => {
     }));
     const bridged = bridgeKernelTools(defs);
     expect(bridged.map((t) => t.name)).toEqual(["mcp__srv__a", "mcp__srv__b"]);
+  });
+
+  it("zodSchema 优先直通：default/enum 精度不因 JSON Schema 往返丢失", async () => {
+    const zodSchema = z.object({
+      level: z.enum(["low", "high"]).default("low"),
+      count: z.number().default(3),
+    });
+    const seen: Array<Record<string, unknown>> = [];
+    const bridged = kernelToolToStructuredTool({
+      name: "native_zod_tool",
+      description: "",
+      scope: "design",
+      parameters: { type: "object" },
+      zodSchema,
+      execute: async (args) => {
+        seen.push(args);
+        return "ok";
+      },
+    });
+
+    // 模型只传部分字段 → zod default 补齐（JSON Schema 转换路径会丢 default）
+    const result = await bridged.invoke({} as never);
+    expect(result).toBe("ok");
+    expect(seen.at(0)).toEqual({ level: "low", count: 3 });
   });
 });
 

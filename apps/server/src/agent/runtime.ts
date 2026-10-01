@@ -26,7 +26,6 @@ import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-s
 import type { AuthenticatedUser } from "../features/auth/types.js";
 import type { BlobStore } from "../features/blob/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
-import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
 import type { CanvasService } from "../features/canvas/canvas-service.js";
 import type { CanvasRepository } from "../features/canvas/repository.js";
 import type { CreditService } from "../features/credits/credit-service.js";
@@ -319,8 +318,6 @@ type CreateAgentRuntimeOptions = {
   agentPersistenceService?: AgentPersistenceService;
   agentFactory?: KenFutWorkAgentFactory;
   agentRunMetadataService?: AgentRunMetadataService;
-  /** 品牌套件服务（brand-kit 插件提供）：get_brand_kit 工具经它取数。 */
-  brandKitService?: BrandKitService;
   /** 画布数据访问（工作区作用域）：run 启动时读画布摘要、解析 brandKitId。 */
   canvasRepository?: CanvasRepository;
   /** 画布写入（canvas 插件提供）：生成物落画布经此，运行时不再直连存储 SDK。 */
@@ -1662,12 +1659,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
           agent = resolvedAgentFactory({
             backendResult,
+            preset,
             ...(brandKitId ? { brandKitId } : {}),
             ...(availableImageModels.length ? { availableImageModels } : {}),
             ...(availableVideoModels.length ? { availableVideoModels } : {}),
-            ...(options.brandKitService
-              ? { brandKitService: options.brandKitService }
-              : {}),
             ...(options.canvasRepository
               ? { canvasRepository: options.canvasRepository }
               : {}),
@@ -1696,7 +1691,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               ? {
                   backgroundTasks: {
                     registry: backgroundTaskRegistry,
-                    preset,
                   },
                 }
               : {}),
@@ -1716,6 +1710,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               ...(run.canvasId ? { canvasId: run.canvasId } : {}),
               ...(run.threadId ? { threadId: run.threadId } : {}),
               ...(run.accessToken ? { accessToken: run.accessToken } : {}),
+              ...(run.userId ? { userId: run.userId } : {}),
               ...(toolWorkspaceId ? { workspaceId: toolWorkspaceId } : {}),
             },
           });

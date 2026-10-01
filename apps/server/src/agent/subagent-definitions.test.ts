@@ -16,10 +16,10 @@ describe("子代理定义注册表（DEC-16）", () => {
       "batch_image",
       "video_generate",
     ]);
+    // video_generate 已随 generate_video 归 design（Code 会话无画布落点）
     expect(resolveSubagentDefinitions("code").map((d) => d.name)).toEqual([
       "explore",
       "review",
-      "video_generate",
     ]);
   });
 

@@ -68,7 +68,9 @@ export function kernelToolToStructuredTool(
   definition: ToolDefinition,
   execCtx: ToolExecutionContext = {},
 ): StructuredTool {
-  const schema = jsonSchemaToZod(definition.parameters);
+  // 内置工具带原生 zod schema：直用，避免 JSON Schema 往返丢 default/union/enum
+  const schema: ZodTypeAny =
+    definition.zodSchema ?? jsonSchemaToZod(definition.parameters);
   const dynamic = tool(
     async (args: Record<string, unknown>) => {
       try {

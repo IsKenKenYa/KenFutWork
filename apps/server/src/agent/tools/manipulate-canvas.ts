@@ -1,6 +1,6 @@
-import { tool } from "langchain";
 import { z } from "zod";
 import type { CanvasRepository } from "../../features/canvas/repository.js";
+import type { ToolDefinition } from "../../kernel/types.js";
 import {
   BINDING_GAP,
   bumpVersion,
@@ -806,16 +806,24 @@ const handlers: Record<
 // Tool factory
 // ---------------------------------------------------------------------------
 
-export function createManipulateCanvasTool(deps: {
+/**
+ * `manipulate_canvas`（design preset）：画布写入工具，经内核工具注册表
+ * （`ctx.tools`）贡献。画布上下文从 `execCtx.canvasId` 取（= run.canvasId），
+ * 与读取工具同口径。
+ */
+export function createManipulateCanvasToolDefinition(deps: {
   /** 画布数据访问（工作区作用域）：内容读写不再直连 SDK。 */
   canvasRepository?: CanvasRepository;
-}) {
-  return tool(
-    async (input, config) => {
-      const configurable = (
-        config as { configurable?: Record<string, unknown> }
-      )?.configurable;
-      const canvasId = configurable?.canvas_id;
+}): ToolDefinition {
+  return {
+    name: "manipulate_canvas",
+    description:
+      "Manipulate elements on the canvas. Supports: move, resize, delete (cascades to bound text), update_style, update_text (modify text content of any element or its label), add_text, add_shape (with optional label for centered text), add_line (with optional element binding for auto-connected arrows), align, distribute, reorder. Use inspect_canvas first to understand the current layout. Returns created element IDs for subsequent binding.",
+    scope: "design",
+    zodSchema: manipulateCanvasSchema,
+    parameters: z.toJSONSchema(manipulateCanvasSchema),
+    execute: async (args, execCtx) => {
+      const canvasId = execCtx.canvasId;
 
       if (typeof canvasId !== "string" || !canvasId) {
         return JSON.stringify({
@@ -824,6 +832,8 @@ export function createManipulateCanvasTool(deps: {
             "This tool requires a canvas context. Ensure the conversation is linked to a canvas.",
         });
       }
+
+      const input = manipulateCanvasSchema.parse(args);
 
       // --- Read current canvas -------------------------------------------------
       const workspaceId = await deps.canvasRepository
@@ -908,11 +918,5 @@ export function createManipulateCanvasTool(deps: {
       }
       return JSON.stringify(result);
     },
-    {
-      name: "manipulate_canvas",
-      description:
-        "Manipulate elements on the canvas. Supports: move, resize, delete (cascades to bound text), update_style, update_text (modify text content of any element or its label), add_text, add_shape (with optional label for centered text), add_line (with optional element binding for auto-connected arrows), align, distribute, reorder. Use inspect_canvas first to understand the current layout. Returns created element IDs for subsequent binding.",
-      schema: manipulateCanvasSchema,
-    },
-  );
+  };
 }

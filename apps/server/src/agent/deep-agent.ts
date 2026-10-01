@@ -26,7 +26,6 @@ import {
   type ServerEnv,
 } from "../config/env.js";
 import type { BlobStore } from "../features/blob/types.js";
-import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
 import type { CanvasRepository } from "../features/canvas/repository.js";
 import type {
   AvailableModel,
@@ -58,7 +57,7 @@ import type {
   PersistImageFn,
   SubmitImageJobFn,
 } from "./tools/image-generate.js";
-import { createMainAgentTools } from "./tools/index.js";
+import { createRunScopedTools } from "./tools/index.js";
 import type { SubmitVideoJobFn } from "./tools/video-generate.js";
 import type { WorkspaceSkillEntry } from "./workspace-skills.js";
 
@@ -309,13 +308,17 @@ export type KenFutWorkAgentFactory = (options: {
    */
   onToolInventory?: (tools: readonly unknown[]) => void;
   /**
+   * 运行 preset（DEC-2，会话级能力集）：运行态工具与子代理清单按它装配——
+   * 生图生频仅 design（Code 会话无画布落点），execute_background 仅 code。
+   */
+  preset: "design" | "code";
+  /**
    * 子代理派发缝（DEC-14/15/16）：注册表由 runtime 按 run 创建（并发上限来自治理设置）。
    * 传入即挂 task / task_background / task_output 三工具与后台通知中间件；
    * 缺席（部分装配/测试）则完全不出现派发能力。
    */
   backgroundTasks?: {
     registry: import("./background-tasks.js").BackgroundTaskRegistry;
-    preset: "design" | "code";
   };
   /** Code 长命令超时（毫秒，DEC-18）：治理设置值；缺省走 governance 默认。 */
   executeTimeoutMs?: number;
@@ -326,8 +329,6 @@ export type KenFutWorkAgentFactory = (options: {
 export function createKenFutWorkDeepAgent(options: {
   backendResult?: AgentBackendResult;
   brandKitId?: string | null;
-  /** 品牌套件服务（工具 get_brand_kit 经它取数，不再直连 SDK）。 */
-  brandKitService?: BrandKitService;
   /** 对象存储（blob 缝）：沙箱文件持久化、生成物落盘经它（必需能力）。 */
   blob: BlobStore;
   /** 画布数据访问（工作区作用域）：工具的画布读写经它。 */
@@ -364,15 +365,19 @@ export function createKenFutWorkDeepAgent(options: {
   /** 子代理派发缝（DEC-14/15/16），同 {@link KenFutWorkAgentFactory.backgroundTasks}。 */
   backgroundTasks?: {
     registry: import("./background-tasks.js").BackgroundTaskRegistry;
-    preset: "design" | "code";
   };
   /** Code 长命令超时（毫秒，DEC-18）。 */
   executeTimeoutMs?: number;
   /** LLM 请求级重试（DEC-18）。 */
   llmRetry?: { maxAttempts: number; infinite: boolean };
+  /** 运行 preset（DEC-2），同 {@link KenFutWorkAgentFactory.preset}。 */
+  preset: "design" | "code";
 }): KenFutWorkAgent {
   const backendResult =
     options.backendResult ?? createAgentBackend(options.env, options.canvasId);
+
+  // 运行 preset（DEC-2）：本次装配的能力集口径——运行态工具、子代理清单共用
+  const preset = options.preset;
 
   applyOpenAICompatEnv(options.env);
 
@@ -382,10 +387,12 @@ export function createKenFutWorkDeepAgent(options: {
       ? createStreamingChatModel(modelSpec)
       : modelSpec;
 
-  let systemPrompt = options.brandKitId
-    ? KENFUTWORK_SYSTEM_PROMPT +
-      "\n\n当前项目已绑定品牌套件。在进行设计相关工作时，请先使用 get_brand_kit 工具查询品牌信息，确保设计符合品牌规范。"
-    : KENFUTWORK_SYSTEM_PROMPT;
+  // 品牌套件提示段仅 design（get_brand_kit 工具已迁内核注册表按 scope 过滤，提示同口径）
+  let systemPrompt =
+    options.brandKitId && preset === "design"
+      ? KENFUTWORK_SYSTEM_PROMPT +
+        "\n\n当前项目已绑定品牌套件。在进行设计相关工作时，请先使用 get_brand_kit 工具查询品牌信息，确保设计符合品牌规范。"
+      : KENFUTWORK_SYSTEM_PROMPT;
 
   // Inject enabled skills (both system and user-created) into the system prompt.
   // All skills are loaded from the database via loadWorkspaceSkills() in runtime.ts.
@@ -422,37 +429,36 @@ export function createKenFutWorkDeepAgent(options: {
 
   // 工具清单先落地成变量：R4-1 的分类占比要按 schema 量「系统工具 / MCP 工具」，
   // 而调用方（runtime）拿到的是 agent 对象，只有这里才知道装配了什么工具。
+  // 运行态工具（backend/沙箱耦合、动态 schema）按 preset 装配；
+  // 服务型画布/品牌工具经内核注册表（runtime 已按 preset 过滤后经 kernelTools 传入）。
   const tools = [
-    ...createMainAgentTools(backendResult.factory, {
-      ...(options.brandKitService
-        ? { brandKitService: options.brandKitService }
-        : {}),
-      blob: options.blob,
-      ...(options.canvasRepository
-        ? { canvasRepository: options.canvasRepository }
-        : {}),
-      ...(options.brandKitId != null ? { brandKitId: options.brandKitId } : {}),
-      ...(options.connectionManager
-        ? { connectionManager: options.connectionManager }
-        : {}),
-      ...(options.persistImage ? { persistImage: options.persistImage } : {}),
-      ...(backendResult.sandboxDir
-        ? { sandboxDir: backendResult.sandboxDir }
-        : {}),
+    ...createRunScopedTools(
+      backendResult.factory,
+      {
+        blob: options.blob,
+        ...(options.canvasRepository
+          ? { canvasRepository: options.canvasRepository }
+          : {}),
+        ...(backendResult.sandboxDir
+          ? { sandboxDir: backendResult.sandboxDir }
+          : {}),
 
-      ...(options.submitImageJob
-        ? { submitImageJob: options.submitImageJob }
-        : {}),
-      ...(options.submitVideoJob
-        ? { submitVideoJob: options.submitVideoJob }
-        : {}),
-      ...(options.availableImageModels
-        ? { availableImageModels: options.availableImageModels }
-        : {}),
-      ...(options.availableVideoModels
-        ? { availableVideoModels: options.availableVideoModels }
-        : {}),
-    }),
+        ...(options.persistImage ? { persistImage: options.persistImage } : {}),
+        ...(options.submitImageJob
+          ? { submitImageJob: options.submitImageJob }
+          : {}),
+        ...(options.submitVideoJob
+          ? { submitVideoJob: options.submitVideoJob }
+          : {}),
+        ...(options.availableImageModels
+          ? { availableImageModels: options.availableImageModels }
+          : {}),
+        ...(options.availableVideoModels
+          ? { availableVideoModels: options.availableVideoModels }
+          : {}),
+      },
+      preset,
+    ),
     ...bridgeKernelTools(
       options.kernelTools ?? [],
       options.runToolContext ?? {},
@@ -468,7 +474,7 @@ export function createKenFutWorkDeepAgent(options: {
    */
   let subagentMiddleware: AgentMiddleware[] = [];
   if (options.backgroundTasks) {
-    const { registry, preset } = options.backgroundTasks;
+    const { registry } = options.backgroundTasks;
     const toolGateForDispatch = options.toolGate;
     const childRunner: SubagentChildRunner = async ({
       definition,

@@ -101,7 +101,9 @@ export const SUBAGENT_DEFINITIONS: readonly SubagentDefinition[] = [
     description:
       "视频生成：按创意描述调 generate_video 生成视频并落画布。" +
       "生成耗时长（轮询数分钟），适合派给子代理等待结果。",
-    preset: "shared",
+    // design 专属（与 generate_video 工具同口径）：Code 会话无画布落点，
+    // 视频产物无处可去——两模式打通后另行调整（见模式能力分离方案）。
+    preset: "design",
     readOnly: false,
     systemPrompt:
       "你是视频生成专员。用 generate_video 按描述生成视频并返回结果。" +

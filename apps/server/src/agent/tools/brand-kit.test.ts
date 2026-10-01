@@ -1,11 +1,14 @@
 import type { BrandKitDetail } from "@kenfutwork/shared";
 import { describe, expect, it, vi } from "vitest";
-
 import type { BrandKitService } from "../../features/brand-kit/brand-kit-service.js";
-import { createBrandKitTool } from "./brand-kit.js";
+import type { CanvasRepository } from "../../features/canvas/repository.js";
+import type { ToolExecutionContext } from "../../kernel/types.js";
+import { createBrandKitToolDefinition } from "./brand-kit.js";
 
 const KIT_ID = "kit-1";
 const USER_ID = "user-1";
+const CANVAS_ID = "canvas-1";
+const WORKSPACE_ID = "ws-1";
 
 function kitDetail(): BrandKitDetail {
   return {
@@ -57,24 +60,47 @@ function kitDetail(): BrandKitDetail {
   } as BrandKitDetail;
 }
 
-function buildTool(service: Partial<BrandKitService>) {
-  return createBrandKitTool(
-    { brandKitService: service as BrandKitService },
-    KIT_ID,
-  );
+function canvasRepo(
+  findProjectBrandKitId: CanvasRepository["findProjectBrandKitId"],
+): CanvasRepository {
+  return {
+    findById: async () => null,
+    findProjectBrandKitId,
+    findWorkspaceIdByCanvas: async () => WORKSPACE_ID,
+    saveContent: async () => 1,
+    appendContent: async () => 1,
+  };
 }
 
-/** 工具从运行上下文取身份（access_token + user_id）。 */
-async function invoke(
-  tool: ReturnType<typeof createBrandKitTool>,
-  configurable: Record<string, unknown>,
+function buildTool(
+  service: Partial<BrandKitService>,
+  findProjectBrandKitId: CanvasRepository["findProjectBrandKitId"] = async () =>
+    KIT_ID,
 ) {
-  const result = await tool.invoke({}, { configurable } as never);
+  return createBrandKitToolDefinition({
+    brandKitService: service as BrandKitService,
+    canvasRepository: canvasRepo(findProjectBrandKitId),
+  });
+}
+
+/** 工具从执行上下文取身份与套件绑定。 */
+async function invoke(
+  definition: ReturnType<typeof buildTool>,
+  execCtx: ToolExecutionContext,
+) {
+  const result = await definition.execute({}, execCtx);
   return JSON.parse(result as string);
 }
 
-describe("get_brand_kit 工具（身份取自运行上下文）", () => {
-  it("用 configurable 里的 access_token + user_id 调服务，并把资产按类型分组", async () => {
+const FULL_CTX: ToolExecutionContext = {
+  accessToken: "token-1",
+  userId: USER_ID,
+  canvasId: CANVAS_ID,
+  workspaceId: WORKSPACE_ID,
+};
+
+describe("get_brand_kit 工具（身份与绑定取自执行上下文）", () => {
+  it("用 execCtx 里的身份调服务、画布重推导套件绑定，并把资产按类型分组", async () => {
     const seen: Array<{ accessToken: string; userId: string; kitId: string }> =
       [];
     const tool = buildTool({
@@ -84,10 +110,7 @@ describe("get_brand_kit 工具（身份取自运行上下文）", () => {
       }),
     });
 
-    const output = await invoke(tool, {
-      access_token: "token-1",
-      user_id: USER_ID,
-    });
+    const output = await invoke(tool, FULL_CTX);
 
     // 回归锁：user_id 必须从运行上下文取到并传给服务（:user 隔离谓词所需）
     expect(seen).toEqual([
@@ -106,6 +129,16 @@ describe("get_brand_kit 工具（身份取自运行上下文）", () => {
     });
   });
 
+  it("画布未绑定品牌套件 → no_brand_kit_bound，不调服务", async () => {
+    const getKit = vi.fn();
+    const tool = buildTool({ getKit }, async () => null);
+
+    const output = await invoke(tool, FULL_CTX);
+
+    expect(output.error).toBe("no_brand_kit_bound");
+    expect(getKit).not.toHaveBeenCalled();
+  });
+
   it("字体缺 weight 时落回 400", async () => {
     const detail = kitDetail();
     const font = detail.assets[1];
@@ -113,22 +146,25 @@ describe("get_brand_kit 工具（身份取自运行上下文）", () => {
     detail.assets = [{ ...font, metadata: {} }] as BrandKitDetail["assets"];
     const tool = buildTool({ getKit: async () => detail });
 
-    const output = await invoke(tool, {
-      access_token: "t",
-      user_id: USER_ID,
-    });
+    const output = await invoke(tool, FULL_CTX);
     expect(output.fonts[0]?.weight).toBe("400");
   });
 
-  it("缺 access_token 或 user_id 时明示原因，不调服务", async () => {
+  it("缺 accessToken 或 userId 时明示原因，不调服务", async () => {
     const getKit = vi.fn();
     const tool = buildTool({ getKit });
 
-    const noToken = await invoke(tool, { user_id: USER_ID });
+    const noToken = await invoke(tool, {
+      ...FULL_CTX,
+      accessToken: undefined,
+    });
     expect(noToken.error).toContain("access token");
-    const noUser = await invoke(tool, { access_token: "t" });
+    const noUser = await invoke(tool, { ...FULL_CTX, userId: undefined });
     expect(noUser.error).toContain("user id");
-    const neither = await invoke(tool, {});
+    const neither = await invoke(tool, {
+      canvasId: CANVAS_ID,
+      workspaceId: WORKSPACE_ID,
+    });
     expect(neither.error).toContain("access token");
     expect(getKit).not.toHaveBeenCalled();
   });
@@ -140,10 +176,7 @@ describe("get_brand_kit 工具（身份取自运行上下文）", () => {
       },
     });
 
-    const output = await invoke(tool, {
-      access_token: "t",
-      user_id: USER_ID,
-    });
+    const output = await invoke(tool, FULL_CTX);
     expect(output).toEqual({ error: "Brand kit not found" });
   });
 });

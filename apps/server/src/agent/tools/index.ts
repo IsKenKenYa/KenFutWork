@@ -1,33 +1,22 @@
 import type { StructuredTool } from "@langchain/core/tools";
 import type { AnyBackendProtocol, BackendRuntime } from "deepagents";
 import type { BlobStore } from "../../features/blob/types.js";
-import type { BrandKitService } from "../../features/brand-kit/brand-kit-service.js";
 import type { CanvasRepository } from "../../features/canvas/repository.js";
 import type {
   AvailableModel,
   AvailableVideoModel,
 } from "../../generation/types.js";
-import type { ConnectionManager } from "../../ws/connection-manager.js";
-import { createBrandKitTool } from "./brand-kit.js";
 import {
   createImageGenerateTool,
   type PersistImageFn,
   type SubmitImageJobFn,
 } from "./image-generate.js";
-import { createInspectCanvasTool } from "./inspect-canvas.js";
-import { createManipulateCanvasTool } from "./manipulate-canvas.js";
 import { createPersistSandboxFileTool } from "./persist-sandbox-file.js";
 import { createProjectSearchTool } from "./project-search.js";
-import { createScreenshotCanvasTool } from "./screenshot-canvas.js";
 import {
   createVideoGenerateTool,
   type SubmitVideoJobFn,
 } from "./video-generate.js";
-
-export { createImageGenerateTool } from "./image-generate.js";
-export { createInspectCanvasTool } from "./inspect-canvas.js";
-export { createManipulateCanvasTool } from "./manipulate-canvas.js";
-export { createVideoGenerateTool } from "./video-generate.js";
 
 // ---------------------------------------------------------------------------
 // deepagents 内置工具参考 (由 FilesystemMiddleware 自动注入)
@@ -57,20 +46,28 @@ export { createVideoGenerateTool } from "./video-generate.js";
 //   default      → LocalShellBackend            — execute + 临时文件
 // ---------------------------------------------------------------------------
 
-export function createMainAgentTools(
+/**
+ * 工具装配的两条通路（DEC-2 收敛）：
+ * - **服务型工具**（inspect/manipulate/screenshot_canvas、get_brand_kit）经内核
+ *   注册表 `ctx.tools` 贡献，由 agent-runs 插件注册，按 preset 过滤 scope；
+ * - **运行态工具**在此装配点创建——它们依赖 per-run 状态：`project_search`
+ *   绑定 run 的 backend（grep 虚拟工作区）、`persist_sandbox_file` 的路径守卫
+ *   必须与 backend 的沙箱目录口径一致、生图生频的 schema 内嵌工作区模型目录
+ *   且提交闭包捕获 run 上下文。
+ *
+ * 生图生频归 design 专属（Code 会话无画布落点），运行态工具恒可用。
+ */
+export function createRunScopedTools(
   backend:
     | AnyBackendProtocol
     | ((runtime: BackendRuntime) => AnyBackendProtocol),
   deps: {
     /** 对象存储（blob 缝）：沙箱文件持久化等。 */
     blob: BlobStore;
-    brandKitService?: BrandKitService;
-    /** 画布数据访问（工作区作用域）：画布读写与工作区解析经它。 */
+    /** 画布数据访问（工作区作用域）：工作区解析经它。 */
     canvasRepository?: CanvasRepository;
-    brandKitId?: string | null;
-    connectionManager?: ConnectionManager;
-    persistImage?: PersistImageFn;
     sandboxDir?: string;
+    persistImage?: PersistImageFn;
     submitImageJob?: SubmitImageJobFn;
     submitVideoJob?: SubmitVideoJobFn;
     /** 工作区实例的模型清单（BYOK 目录 specifier，image/image-edit）。 */
@@ -78,24 +75,10 @@ export function createMainAgentTools(
     /** 工作区实例的视频模型清单（BYOK 目录 specifier）。 */
     availableVideoModels?: AvailableVideoModel[];
   },
-) {
+  preset: "design" | "code",
+): StructuredTool[] {
   const tools: StructuredTool[] = [
     createProjectSearchTool(backend),
-    createInspectCanvasTool(deps),
-    createManipulateCanvasTool(deps),
-    createImageGenerateTool({
-      ...(deps.persistImage ? { persistImage: deps.persistImage } : {}),
-      ...(deps.submitImageJob ? { submitImageJob: deps.submitImageJob } : {}),
-      ...(deps.availableImageModels
-        ? { availableModels: deps.availableImageModels }
-        : {}),
-    }),
-    createVideoGenerateTool({
-      ...(deps.submitVideoJob ? { submitVideoJob: deps.submitVideoJob } : {}),
-      ...(deps.availableVideoModels
-        ? { availableModels: deps.availableVideoModels }
-        : {}),
-    }),
     createPersistSandboxFileTool({
       blob: deps.blob,
       ...(deps.canvasRepository
@@ -103,24 +86,21 @@ export function createMainAgentTools(
         : {}),
       ...(deps.sandboxDir ? { sandboxDir: deps.sandboxDir } : {}),
     }),
-    // execute 工具由 deepagents FilesystemMiddleware 自动注入，
-    // 因为 CompositeBackend 的 default backend 是 LocalShellBackend。
-    // 不需要在这里手动注册。
   ];
-  // 品牌套件工具需要服务实例（数据访问经它走 persistence 缝）
-  if (deps.brandKitId && deps.brandKitService) {
+  if (preset === "design") {
     tools.push(
-      createBrandKitTool(
-        { brandKitService: deps.brandKitService },
-        deps.brandKitId,
-      ),
-    );
-  }
-  if (deps.connectionManager) {
-    tools.push(
-      createScreenshotCanvasTool({
-        connectionManager: deps.connectionManager,
+      createImageGenerateTool({
         ...(deps.persistImage ? { persistImage: deps.persistImage } : {}),
+        ...(deps.submitImageJob ? { submitImageJob: deps.submitImageJob } : {}),
+        ...(deps.availableImageModels
+          ? { availableModels: deps.availableImageModels }
+          : {}),
+      }),
+      createVideoGenerateTool({
+        ...(deps.submitVideoJob ? { submitVideoJob: deps.submitVideoJob } : {}),
+        ...(deps.availableVideoModels
+          ? { availableModels: deps.availableVideoModels }
+          : {}),
       }),
     );
   }
