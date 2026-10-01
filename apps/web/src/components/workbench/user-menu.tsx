@@ -1,5 +1,7 @@
 "use client";
 
+import { useAuth } from "@/lib/auth-context";
+import { isLocalTrustSession } from "@/lib/session";
 import { LogOut, Settings, ShieldCheck } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -39,6 +41,9 @@ export function UserMenu({
 }) {
   const displayName = user?.displayName ?? "未登录";
   const initial = displayName.slice(0, 1).toUpperCase();
+  // 本机主人（local-trust 免登录）没有「退出」概念：会话由回环来源认定，
+  // 退出后刷新即回（ZCode 的 BYOK 本地形态同款——不摆无意义按钮）
+  const localTrust = isLocalTrustSession(useAuth().session);
 
   return (
     <DropdownMenu>
@@ -82,11 +87,15 @@ export function UserMenu({
             管理后台
           </DropdownMenuItem>
         ) : null}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem variant="destructive" onClick={onSignOut}>
-          <LogOut className="size-4" />
-          退出登录
-        </DropdownMenuItem>
+        {localTrust ? null : (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onClick={onSignOut}>
+              <LogOut className="size-4" />
+              退出登录
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

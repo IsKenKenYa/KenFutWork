@@ -21,6 +21,10 @@ import { onPanelViewRequest } from "../src/lib/panel-open";
 const fetchSubagents = vi.fn();
 const updateWorkspaceSettings = vi.fn();
 
+vi.mock("../src/lib/auth-context", () => ({
+  useAuth: () => ({ session: null, user: null, loading: false, signOut: vi.fn(), refresh: vi.fn() }),
+}));
+
 vi.mock("../src/lib/server-api.js", () => ({
   fetchSubagents: (...args: unknown[]) => fetchSubagents(...args),
   // 钩子/命令等页面都用它写工作区设置（同一文件只能有一个 mock 工厂，所以放一起）

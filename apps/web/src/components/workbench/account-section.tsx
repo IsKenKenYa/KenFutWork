@@ -2,6 +2,9 @@
 
 import { ShieldCheck } from "lucide-react";
 
+import { useAuth } from "@/lib/auth-context";
+import { isLocalTrustSession } from "@/lib/session";
+
 /**
  * 设置 → 账号（R5-2：参考图里的「账号」条目）。
  *
@@ -26,6 +29,9 @@ export function AccountSection({
   isAdmin?: boolean;
   onOpenAdmin?: () => void;
 }) {
+  // 本机主人（local-trust 免登录）：账号语义降级（对齐 ZCode 的 BYOK 本地形态——
+  // 无账号概念，登录邮箱是内部占位地址，不该当作用户信息展示）
+  const localTrust = isLocalTrustSession(useAuth().session);
   return (
     <section aria-label="账号设置">
       <h3 className="mb-1 text-base font-medium">账号</h3>
@@ -40,7 +46,9 @@ export function AccountSection({
         </div>
         <div className="flex items-center justify-between px-3 py-2.5">
           <dt className="text-muted-foreground">邮箱</dt>
-          <dd className="truncate">{email}</dd>
+          <dd className="truncate">
+            {localTrust ? "本机用户（免登录）" : email}
+          </dd>
         </div>
         <div className="flex items-center justify-between px-3 py-2.5">
           <dt className="text-muted-foreground">套餐</dt>
