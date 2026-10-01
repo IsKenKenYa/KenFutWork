@@ -153,14 +153,44 @@ function buildService(
     repository?: Partial<AdminRepository>;
     workspaces?: Partial<ViewerRepository>;
     credits?: unknown;
+    authDriver?: string;
   } = {},
 ) {
   return createAdminService({
     credits: (options.credits ?? {}) as never,
     repository: createFakeRepository(options.repository),
     workspaces: createFakeWorkspaces(options.workspaces),
+    ...(options.authDriver !== undefined
+      ? { authDriver: options.authDriver }
+      : {}),
   });
 }
+
+describe("本机主人即管理员（local-trust 形态）", () => {
+  it("local-trust 驱动下 isAdmin 恒 true：认证层保证唯一用户=本机主人，无需 DB 角色", async () => {
+    await expect(
+      buildService({ authDriver: "local-trust" }).isAdmin(USER_ID),
+    ).resolves.toBe(true);
+  });
+
+  it("local-trust 下 requireAdmin 放行（插件安装等变更门不再锁主人）", async () => {
+    await expect(
+      buildService({ authDriver: "local-trust" }).requireAdmin({
+        id: USER_ID,
+        accessToken: "",
+        email: "",
+        userMetadata: {},
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("managed（缺省）与未知驱动行为不变：仍走 DB role 判定", async () => {
+    await expect(buildService().isAdmin(USER_ID)).resolves.toBe(false);
+    await expect(
+      buildService({ authDriver: "managed" }).isAdmin(USER_ID),
+    ).resolves.toBe(false);
+  });
+});
 
 describe("admin 服务（平台管理后台）", () => {
   it("isAdmin：只有 role='admin' 才是管理员；查不到即 false", async () => {

@@ -26,6 +26,9 @@ export function createAdminPlugin(
         credits: ctx.get("credits"),
         repository: createAdminRepository(persistence),
         workspaces: createViewerRepository(persistence),
+        // 本机主人即管理员：local-trust（桌面免登录）形态恒判 admin
+        //（安全边界论证见 admin-service.ts）；managed 维持 DB role 门
+        authDriver: ctx.env.authDriver,
       });
       ctx.register("admin", () => service);
     },

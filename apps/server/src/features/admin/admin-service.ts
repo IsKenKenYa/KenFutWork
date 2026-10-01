@@ -68,8 +68,17 @@ export function createAdminService(options: {
   repository: AdminRepository;
   /** workspaces/profiles 域的数据访问（目标用户的工作区与平台角色）。 */
   workspaces: ViewerRepository;
+  /**
+   * 认证形态（`KENFUTWORK_AUTH_DRIVER`）。`local-trust`（桌面免登录）下
+   * 认证层保证**唯一用户 = 本机主人**（两驱动互斥，无其他登录路径）——
+   * 本机主人已拥有 shell 工具与全部 BYOK 权限，admin 门在此形态不构成
+   * 额外安全边界，只会把主人自己锁在门外（如插件安装）。故恒判管理员；
+   * managed 多用户形态维持 DB role 门不变。
+   */
+  authDriver?: string | undefined;
 }): AdminService {
   const { repository, workspaces } = options;
+  const localTrustOwner = options.authDriver === "local-trust";
 
   async function fetchOverview(): Promise<PlatformOverviewRow[]> {
     return repository.fetchUsersOverview().catch(() => {
@@ -97,6 +106,7 @@ export function createAdminService(options: {
 
   return {
     async isAdmin(userId) {
+      if (localTrustOwner) return true;
       const role = await workspaces.findPlatformRole(userId).catch(() => null);
       return role === "admin";
     },
