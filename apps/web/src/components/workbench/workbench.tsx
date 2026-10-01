@@ -2953,134 +2953,33 @@ export function Workbench() {
                         className="relative min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
                         onContextMenu={chatMenu.open}
                       >
-                        <div className="w-full space-y-4 px-8 pb-2">
-                          {
-                            <>
-                              {activeTask.runStartedAt ? (
-                                <ElapsedEntry
-                                  startedAt={activeTask.runStartedAt}
-                                  endedAt={activeTask.runEndedAt}
-                                  running={activeTask.status === "running"}
-                                />
-                              ) : null}
-                              {/*
-                    上下文已自动压缩（R4-1 输出预留线的执行面）：说明「模型看到的历史被摘要过」，
-                    而库里的转录仍然完整——不说这一句，用户会以为模型突然忘了前面的事。
-                  */}
-                              {activeTask.compacted ? (
-                                <p
-                                  role="status"
-                                  className="rounded-md border bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground"
-                                >
-                                  上下文已自动压缩：模型上下文超过{" "}
-                                  {formatTokens(
-                                    activeTask.compacted.triggerTokens,
-                                  )}
-                                  （
-                                  {
-                                    COMPACT_SOURCE_LABELS[
-                                      activeTask.compacted.triggerSource
-                                    ]
-                                  }
-                                  ）后，较早的消息被摘要成一条，只保留最近{" "}
-                                  {activeTask.compacted.keepMessages}{" "}
-                                  条；原文存在工作区的
-                                  /conversation_history/，这条对话的完整记录不受影响。
-                                </p>
-                              ) : null}
-                              {/*
-                    用户钩子（R5-2「钩子」）：在项目工作目录里跑的命令，成败都如实列出——
-                    配了钩子却看不到结果，等于不知道它跑没跑。失败不影响本轮。
-                  */}
-                              {(activeTask.hookResults ?? []).map((hook) => (
-                                <p
-                                  /* 同一条命令在起点/终点各配一次时事件不同，键按「事件+命令+耗时」取；
-                         同一轮里同事件同命令只会出现一次（钩子表本身按事件+命令去重执行） */
-                                  key={`${hook.event}::${hook.command}::${hook.durationMs}`}
-                                  role="status"
-                                  className="rounded-md border bg-muted/40 px-3 py-1.5 font-mono text-[11px] text-muted-foreground"
-                                >
-                                  {hook.event === "turn-start"
-                                    ? "本轮开始钩子"
-                                    : "本轮结束钩子"}
-                                  ：{hook.command}
-                                  {" · "}
-                                  {hook.timedOut
-                                    ? "超时被杀"
-                                    : hook.exitCode === 0
-                                      ? "成功"
-                                      : `退出码 ${hook.exitCode ?? "?"}`}
-                                  {hook.output ? ` · ${hook.output}` : ""}
-                                  {` · ${Math.max(1, Math.round(hook.durationMs / 1000))}s`}
-                                </p>
-                              ))}
-
-                              {/* 子代理目录只在右栏面板（zcode 模型：主对话仅派发行紧凑行）；
-                          此处不再内联渲染目录列表。 */}
-                              {(() => {
-                                const zcodeRows =
-                                  toConversationRows(activeTask);
-                                const rowContext = {
-                                  workspacePath:
-                                    conversationProject?.workDir ?? "",
-                                  theme: zcodeTheme,
-                                  codePreviewSettings:
-                                    DEFAULT_CODE_PREVIEW_SETTINGS,
-                                  sessionId: activeTask.id,
-                                  messageStreamShowReasoning: true,
-                                  messageStreamShowTodos: true,
-                                  onOpenBrowserUrl: openExternalUrl,
-                                };
-                                return (
-                                  <ConversationTimeline
-                                    rows={zcodeRows}
-                                    totalCount={zcodeRows.length}
-                                    sessionKey={activeTask.id}
-                                    rowContext={rowContext}
-                                    hideTurnNavigator
-                                  />
-                                );
-                              })()}
-                              {/*
-                    检查点条（Code 模式）：本轮终态后拉到的影子快照——改了什么、可回滚。
-                    仍在本轮运行中时禁用回滚（工作目录正被写入）。
-                  */}
-                              {activeTask.checkpoint ? (
-                                <CheckpointChip
-                                  checkpoint={activeTask.checkpoint}
-                                  accessToken={session?.access_token ?? null}
-                                  canvasId={
-                                    conversationProject?.primaryCanvas.id ??
-                                    null
-                                  }
-                                  restoreDisabled={
-                                    activeTask.status === "running"
-                                  }
-                                />
-                              ) : null}
-                              {activeTask.status === "running" ? (
-                                <div
-                                  role="status"
-                                  className="flex w-fit items-center gap-1.5 rounded-2xl rounded-bl-md bg-muted px-4 py-3"
-                                  aria-label="生成中"
-                                >
-                                  {[0, 1, 2].map((dot) => (
-                                    <span
-                                      key={dot}
-                                      className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/70"
-                                      style={{
-                                        animationDelay: `${dot * 150}ms`,
-                                      }}
-                                    />
-                                  ))}
-                                  <span className="ml-1 text-xs text-muted-foreground">
-                                    生成中…
-                                  </span>
-                                </div>
-                              ) : null}
-                            </>
-                          }
-                        </div>
+                        <ConversationTimeline
+                          rows={toConversationRows(activeTask)}
+                          totalCount={toConversationRows(activeTask).length}
+                          sessionKey={activeTask.id}
+                          rowContext={{
+                            workspacePath: conversationProject?.workDir ?? "",
+                            theme: zcodeTheme,
+                            codePreviewSettings: DEFAULT_CODE_PREVIEW_SETTINGS,
+                            sessionId: activeTask.id,
+                            messageStreamShowReasoning: true,
+                            messageStreamShowTodos: true,
+                            onOpenBrowserUrl: openExternalUrl,
+                          }}
+                          hideTurnNavigator
+                        />
+                        {activeTask.checkpoint ? (
+                          <div className="px-8 pb-2">
+                            <CheckpointChip
+                              checkpoint={activeTask.checkpoint}
+                              accessToken={session?.access_token ?? null}
+                              canvasId={
+                                conversationProject?.primaryCanvas.id ?? null
+                              }
+                              restoreDisabled={activeTask.status === "running"}
+                            />
+                          </div>
+                        ) : null}
                       </div>
                       {/* 底部：继续对话（完整版工具行 + 多轮，复用同一会话）。
                 工作目录与分支已移到标题行右端，输入框不再背标签条。 */}

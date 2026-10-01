@@ -37,6 +37,21 @@ function rowsFromMessage(
   msg: TaskMessage,
   turnId: string,
   state: { rowId: number; seq: number },
+  extras: {
+    compacted?: {
+      triggerTokens: number;
+      keepMessages: number;
+      triggerSource: string;
+    } | null;
+    hookResults?: Array<{
+      event: "turn-start" | "turn-end";
+      command: string;
+      exitCode: number | null;
+      timedOut: boolean;
+      output: string;
+      durationMs: number;
+    }>;
+  },
 ): ConversationRow[] {
   const rows: ConversationRow[] = [];
   const createdAt = msg.startedAt ?? Date.now();
@@ -124,6 +139,65 @@ function rowsFromMessage(
       });
     }
   }
+  // 会话级状态 → zcode 原生行（此前是手写 p 标签，违规残留清除）：
+  // compact → timelineMarker(compact)；钩子 → hookInvocationRow。
+  if (extras.compacted) {
+    state.rowId += 1;
+    state.seq += 1;
+    rows.push({
+      ...base(state.rowId, turnId, Date.now(), state.seq),
+      kind: "timelineMarker",
+      marker: {
+        type: "compact",
+        origin: "auto",
+        status: "success",
+        tokensBefore: extras.compacted.triggerTokens,
+        ...(extras.compacted.keepMessages ? {} : {}),
+      },
+    });
+  }
+  const hooks = extras.hookResults ?? [];
+  if (hooks.length > 0) {
+    const firstStart = Date.now();
+    const executions = hooks.map((hook, index) => ({
+      hookRunId: `${turnId}:hook:${index}`,
+      hookIndex: index,
+      didExecute: true,
+      state: hook.timedOut
+        ? ("failed" as const)
+        : hook.exitCode === 0 || hook.exitCode === null
+          ? ("completed" as const)
+          : ("failed" as const),
+      ...(hook.timedOut
+        ? { outcome: "timed_out" as const }
+        : hook.exitCode !== 0 && hook.exitCode !== null
+          ? { outcome: "failed" as const }
+          : {}),
+      startedAt: Date.now() - hook.durationMs,
+      endedAt: Date.now(),
+      durationMs: hook.durationMs,
+      displayName: hook.command,
+      sourceKind: "project" as const,
+    }));
+    const anyFailed = hooks.some(
+      (hook) =>
+        hook.timedOut || (hook.exitCode !== null && hook.exitCode !== 0),
+    );
+    state.rowId += 1;
+    state.seq += 1;
+    rows.push({
+      ...base(state.rowId, turnId, Date.now(), state.seq),
+      kind: "hookInvocation",
+      hookInvocationId: `${turnId}:hooks`,
+      hookEventName: "Stop",
+      hookCount: hooks.length,
+      state: anyFailed ? "failed" : "completed",
+      startedAt: firstStart,
+      durationMs: hooks.reduce((acc, hook) => acc + hook.durationMs, 0),
+      lane: "assistantWork",
+      executions,
+    });
+  }
   return rows;
 }
 
@@ -133,15 +207,33 @@ function rowsFromMessage(
  */
 export function toConversationRows(task: {
   id: string;
+  status: string;
   messages: TaskMessage[];
+  compacted?: {
+    triggerTokens: number;
+    keepMessages: number;
+    triggerSource: string;
+  } | null;
+  hookResults?: Array<{
+    event: "turn-start" | "turn-end";
+    command: string;
+    exitCode: number | null;
+    timedOut: boolean;
+    output: string;
+    durationMs: number;
+  }>;
   subagents?: SubagentEntryLite[];
 }): ConversationRow[] {
   const state = { rowId: 0, seq: 0 };
   const rows: ConversationRow[] = [];
+  const extras = {
+    ...(task.compacted ? { compacted: task.compacted } : {}),
+    ...(task.hookResults ? { hookResults: task.hookResults } : {}),
+  };
 
   for (const msg of task.messages) {
     const before = rows.length;
-    const produced = rowsFromMessage(msg, task.id, state);
+    const produced = rowsFromMessage(msg, task.id, state, extras);
     rows.push(...produced);
     if (!task.subagents || task.subagents.length === 0) continue;
     // 子代理行：插到对应派发 toolCall 行之后
