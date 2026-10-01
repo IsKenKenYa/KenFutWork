@@ -23,6 +23,7 @@ graph LR
 | `方案设计/Code模式ZCode-UI照搬方案.md` | Code 模式对话 UI 全量照搬 `references/zcode/` 的差异分析与实施蓝图：照搬边界（UI 逐文件照搬 / 数据经 `zcode-adapter` 适配层接 DeepAgents 事件）、逐区域差距表、P0–P8 分阶段计划、许可证 attribution | **方案稿**：UI 照搬的实施蓝图；落轮次与回执记《日志》 |
 | `方案设计/Code模式ZCode-UI照搬执行手册.md` | 照搬方案的执行手册（Agent 施工单）：进度快照（已就位/待替换清单）、import 路径映射与宿主适配规则、P1–P8 逐文件 source→target 施工单与接线坐标、每阶段验收门禁、风险登记 | **执行手册**：照搬施工的唯一操作口径；进度状态随 PR 推进刷新 |
 | `方案设计/ComputerUse集成设计.md` | Computer Use 集成方案稿（依据《调研/07》+ 本机实测）：工具面走内核 `ctx.tools`（scope: code、`mcp__computer-use__<action>` 命名点亮已照搬 UI）、观察协议（a11y 文本树优先 + raster 帧绑定 + 预算）、执行层 `ComputerUseExecutor` 缝三档（nut-js+JXA 过渡 → 独立 helper broker 目标态）、权限/lease/actionSent 安全语义、P0–P3 分阶段验收与待拍板 CU-A…G | **方案稿**：待拍板；决策走《改造计划》§6 |
+| `方案设计/模式能力分离方案.md` | Code/Design 双模式能力分离（`DEC-2` 收敛实现）：问题诊断（四处混装 + 双 canvasId 口径）、用户拍板、落地架构（工具双通路=注册表服务型/装配点运行态、提示 base+模式段互斥、canvas_state 仅 design）、远期打通前置条件与遗留项 | **已落地记录**：两模式能力边界的唯一参考；方向属主仍是《改造计划》§6 `DEC-2` |
 | `插件/flow插件集成规划.md` | flow 第三模式（futureFlow 子系统）集成改造方案：已拍板决策（`DEC-10`…`DEC-13`）、双模式架构（内嵌/独立 + 宿主适配层 + `ff-embed/v1` 契约）、接缝清单、合并方式三选项、分阶段路线、许可证合规与开放问题 | **方案稿**：flow 子系统实施蓝图；决策结论与理由以《改造计划》§6 为准，上游以根级 `flow/` 子模块为准（见《日志》五十四） |
 | `调研/02-当前项目实现状态.md` | 代码现状快照（组件/路由/features/迁移盘点） | **权威**：全部现状数字（行数/import/路由/组件/迁移计数/provider 数量）；允许滞后于代码，刷新规则见下 |
 | `调研/01-deepseek-harness插件调研.md` | dsh 插件架构调研记录 | 调研：结论已被权威文档吸收，只读 |
