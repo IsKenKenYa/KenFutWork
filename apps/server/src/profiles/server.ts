@@ -159,7 +159,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     brandKitPlugin,
     createCreditsPlugin(),
     createViewerPlugin(),
-    createCanvasPlugin(),
+    createCanvasPlugin({ connectionManager: deps.connectionManager }),
     createCodeGitPlugin(),
     // 检查点（影子 git）在 agent-runs 之前装配：后者的轮次钩子经 tryGet 消费它
     createCheckpointsPlugin(),

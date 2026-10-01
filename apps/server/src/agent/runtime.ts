@@ -28,6 +28,7 @@ import type { BlobStore } from "../features/blob/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { CanvasService } from "../features/canvas/canvas-service.js";
 import type { CanvasRepository } from "../features/canvas/repository.js";
+import { buildCanvasSummaryForContext } from "../features/canvas/tools/inspect-canvas.js";
 import type { CreditService } from "../features/credits/credit-service.js";
 import {
   type TierGuard,
@@ -76,7 +77,6 @@ import {
 // execute 工具由 deepagents 内置提供（LocalShellBackend 作为 sandbox backend）
 // 不需要自定义代码执行工具
 import type { SubmitImageJobFn } from "./tools/image-generate.js";
-import { buildCanvasSummaryForContext } from "./tools/inspect-canvas.js";
 import type { SubmitVideoJobFn } from "./tools/video-generate.js";
 import type {
   WorkspaceSkillEntry,

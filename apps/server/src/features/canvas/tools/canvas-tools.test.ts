@@ -1,10 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-
-import type {
-  CanvasRepository,
-  CanvasRow,
-} from "../../features/canvas/repository.js";
-import type { ToolExecutionContext } from "../../kernel/types.js";
+import type { ToolExecutionContext } from "../../../kernel/types.js";
+import type { CanvasRepository, CanvasRow } from "../repository.js";
 import { createInspectCanvasToolDefinition } from "./inspect-canvas.js";
 import { createManipulateCanvasToolDefinition } from "./manipulate-canvas.js";
 

@@ -1,11 +1,18 @@
+import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 
+import type { ServerEnv } from "../../config/env.js";
+import { createBrandKitToolDefinition } from "../../features/brand-kit/brand-kit-tool.js";
+import { brandKitPlugin } from "../../features/brand-kit/plugin.js";
+import { createCanvasPlugin } from "../../features/canvas/plugin.js";
+import {
+  createInspectCanvasToolDefinition,
+  createManipulateCanvasToolDefinition,
+  createScreenshotCanvasToolDefinition,
+} from "../../features/canvas/tools/index.js";
+import { composePlugins } from "../../kernel/compose.js";
 import { AgentRunEventBus, ToolRegistryImpl } from "../../kernel/context.js";
-import { createBrandKitToolDefinition } from "./brand-kit.js";
 import { createRunScopedTools } from "./index.js";
-import { createInspectCanvasToolDefinition } from "./inspect-canvas.js";
-import { createManipulateCanvasToolDefinition } from "./manipulate-canvas.js";
-import { createScreenshotCanvasToolDefinition } from "./screenshot-canvas.js";
 
 /**
  * 模式能力分离的装配契约（DEC-2 收敛）：Code 会话的工具面**结构性**不含
@@ -103,5 +110,63 @@ describe("服务型画布/品牌工具（内核注册表 scope）", () => {
         "get_brand_kit",
       ]),
     );
+  });
+});
+
+/**
+ * 装配级回归（§4.10 注册权下沉）：canvas / brand-kit 插件在自己的 apply 里
+ * 向 ctx.tools 注册四件画布工具。这条缝断在「插件忘了注册」或「注册权又回到
+ * agent-runs 集中装配」时红——按 server profile 的真实接线方式组合验证。
+ */
+describe("feature 插件注册画布/品牌工具（装配缝）", () => {
+  it("canvas + brand-kit 装配后：design 工具面含四件，code 不含", async () => {
+    const env: ServerEnv = {
+      agentBackendMode: "state",
+      agentModel: "test-model",
+      port: 0,
+      version: "test",
+      webOrigin: "http://localhost:3000",
+    };
+    const app = Fastify();
+    const kernel = composePlugins(
+      env,
+      [brandKitPlugin, createCanvasPlugin({ connectionManager: {} as never })],
+      {
+        app,
+        overrides: {
+          auth: { authenticate: async () => null } as never,
+          blob: blobStub(),
+          persistence: {
+            execute: async () => ({ rows: [] }),
+            forWorkspace: () => ({
+              execute: async () => ({ rows: [] }),
+              query: async () => [],
+            }),
+            query: async () => [],
+          } as never,
+          viewer: { resolveWorkspace: async () => null } as never,
+        },
+      },
+    );
+    try {
+      const designNames = kernel
+        .get("tools")
+        .list("design")
+        .map((tool) => tool.name);
+      expect(designNames).toEqual(
+        expect.arrayContaining(DESIGN_ONLY_TOOLS.slice(0, 4)),
+      );
+
+      const codeNames = kernel
+        .get("tools")
+        .list("code")
+        .map((tool) => tool.name);
+      for (const name of DESIGN_ONLY_TOOLS.slice(0, 4)) {
+        expect(codeNames, `${name} 不得进入 code 工具面`).not.toContain(name);
+      }
+    } finally {
+      kernel.dispose();
+      await app.close();
+    }
   });
 });

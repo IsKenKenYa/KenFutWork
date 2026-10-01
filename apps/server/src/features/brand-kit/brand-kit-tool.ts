@@ -1,10 +1,9 @@
 import type { BrandKitDetail } from "@kenfutwork/shared";
 import { z } from "zod";
-
-import type { AuthenticatedUser } from "../../features/auth/types.js";
-import type { BrandKitService } from "../../features/brand-kit/brand-kit-service.js";
-import type { CanvasRepository } from "../../features/canvas/repository.js";
 import type { ToolDefinition } from "../../kernel/types.js";
+import type { AuthenticatedUser } from "../auth/types.js";
+import type { CanvasRepository } from "../canvas/repository.js";
+import type { BrandKitService } from "./brand-kit-service.js";
 
 const brandKitSchema = z.object({});
 

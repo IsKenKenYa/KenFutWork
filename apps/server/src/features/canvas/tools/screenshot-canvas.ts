@@ -1,9 +1,8 @@
 import type { ScreenshotResult } from "@kenfutwork/shared";
 import { z } from "zod";
-
-import type { BlobStore } from "../../features/blob/types.js";
-import type { ToolDefinition } from "../../kernel/types.js";
-import type { ConnectionManager } from "../../ws/connection-manager.js";
+import type { ToolDefinition } from "../../../kernel/types.js";
+import type { ConnectionManager } from "../../../ws/connection-manager.js";
+import type { BlobStore } from "../../blob/types.js";
 
 const screenshotCanvasSchema = z.object({
   mode: z

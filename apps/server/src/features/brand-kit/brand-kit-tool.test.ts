@@ -1,9 +1,9 @@
 import type { BrandKitDetail } from "@kenfutwork/shared";
 import { describe, expect, it, vi } from "vitest";
-import type { BrandKitService } from "../../features/brand-kit/brand-kit-service.js";
-import type { CanvasRepository } from "../../features/canvas/repository.js";
 import type { ToolExecutionContext } from "../../kernel/types.js";
-import { createBrandKitToolDefinition } from "./brand-kit.js";
+import type { CanvasRepository } from "../canvas/repository.js";
+import type { BrandKitService } from "./brand-kit-service.js";
+import { createBrandKitToolDefinition } from "./brand-kit-tool.js";
 
 const KIT_ID = "kit-1";
 const USER_ID = "user-1";

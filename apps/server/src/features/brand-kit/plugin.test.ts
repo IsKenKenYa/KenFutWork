@@ -94,7 +94,12 @@ describe("brandKitPlugin（P2 插件化试点）", () => {
     expect(() =>
       composePlugins(testEnv, [brandKitPlugin], {
         app,
-        overrides: { brandKit: fakeBrandKitService([]) },
+        // persistence 供 apply 期建 canvasRepository（工具的套件 JOIN 反查），
+        // 缺它同样 fail loud——这里测的是 auth 缺席的那条
+        overrides: {
+          brandKit: fakeBrandKitService([]),
+          persistence: {} as never,
+        },
       }),
     ).toThrow(/服务 key auth 未注册/);
     return app.close();

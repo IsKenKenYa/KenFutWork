@@ -1,6 +1,6 @@
 import { z } from "zod";
-import type { CanvasRepository } from "../../features/canvas/repository.js";
-import type { ToolDefinition } from "../../kernel/types.js";
+import type { ToolDefinition } from "../../../kernel/types.js";
+import type { CanvasRepository } from "../repository.js";
 import {
   BINDING_GAP,
   bumpVersion,
