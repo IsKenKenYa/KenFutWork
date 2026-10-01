@@ -148,7 +148,7 @@ describe("ContextUsageButton：预留输出与阈值", () => {
     expect(dialog).toHaveTextContent("预留输出 12.8万");
     expect(dialog).toHaveTextContent("剩余 37.2万");
     // 阈值刻度（87.2% 处的细线）+ 预留段（琥珀）
-    const threshold = container.querySelector('[style*="left: 87.2%"]');
+    const threshold = document.querySelector('[style*="left: 87.2%"]');
     expect(threshold).not.toBeNull();
     // 未越线：没有警示文案
     expect(dialog).not.toHaveTextContent("已越过输出预留线");

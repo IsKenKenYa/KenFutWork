@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@zui/components/ui/hover-card";
+import { Popover as RadixPopover } from "radix-ui";
+import { useEffect } from "react";
 
 import { contextUsageView, type RunUsageSnapshot } from "@/lib/context-usage";
 
@@ -35,14 +41,6 @@ export function ContextUsageButton({
   /** 模型声明的单次最大输出（上下文条「预留输出」段的来源）；缺省即不画那一段。 */
   maxOutputTokens?: number | null | undefined;
 }) {
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  /**
-   * 关面板的防抖定时器：面板与环之间有 8px 空隙（`mb-2`），鼠标从环挪到面板时会**穿过
-   * 空隙**、触发一次 `mouseleave`——不防抖就会「一挪进面板就自己关掉」。120ms 足够穿过
-   * 空隙，又短到不会被读成「卡住不关」。
-   */
-  const closeTimer = useRef<number | null>(null);
   const view = contextUsageView(
     usage,
     contextWindow,
@@ -50,186 +48,140 @@ export function ContextUsageButton({
     maxOutputTokens,
   );
 
-  const cancelClose = useCallback(() => {
-    if (closeTimer.current !== null) {
-      window.clearTimeout(closeTimer.current);
-      closeTimer.current = null;
-    }
-  }, []);
-
-  const scheduleClose = useCallback(() => {
-    cancelClose();
-    closeTimer.current = window.setTimeout(() => setOpen(false), 120);
-  }, [cancelClose]);
-
-  // 卸载时清掉待触发的关闭（否则可能对已卸载组件 setState）
-  useEffect(() => cancelClose, [cancelClose]);
-
-  // 键盘可达：Tab 聚焦到环也展开，移开即收（面板里没有可聚焦控件，不需要额外处理）
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, []);
-
   return (
-    /* `inline-flex` 不能少：普通 div 会带上父级行高，环就比相邻图标**高 2px**（实测 cy 483 vs 485） */
-    /* biome-ignore lint/a11y/noStaticElementInteractions: 这个 div 只是环与浮层的**命中盒**（悬停区域要跨过两者之间的空隙）；语义由里面的 button 承担，给它补一个 role 只会多一个说不出意义的节点、并和按钮的 `aria-label` 重复 */
-    <div
-      ref={containerRef}
-      className="relative inline-flex items-center"
-      /* 悬停展开（用户口径：「鼠标放上去悬浮显示，而不是点击才出来」）：
-         环与面板都在这个容器里，指针移进面板仍算「没离开」，只有真的离开才排关闭 */
-      onMouseEnter={() => {
-        cancelClose();
-        setOpen(true);
-      }}
-      onMouseLeave={scheduleClose}
-      onFocus={() => {
-        cancelClose();
-        setOpen(true);
-      }}
-      onBlur={scheduleClose}
-    >
-      <button
-        type="button"
-        aria-label="上下文容量"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        title={view.usageFineLine ?? view.usageLine ?? "上下文容量与缓存命中"}
-        /* 悬停即展开，所以按下不再切换开合（点击时面板本来就是开的，再 toggle 会立刻关掉）。
-           保留 button 是为了 Tab 可达与 aria-expanded 的语义 */
-        /* 与相邻图标按钮同心中线（h-6 w-6 命中盒 + 居中，环本身 16）：
-           圈不会跟图标错开半个像素；hover 只给底色（环的颜色不受悬停影响） */
-        className="inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors hover:bg-muted"
-      >
-        <ContextRing
-          percent={view.percent}
-          overThreshold={view.overThreshold}
-        />
-      </button>
-
-      {open ? (
-        <div
-          role="dialog"
-          aria-label="上下文容量与缓存命中"
-          className="absolute right-0 bottom-full z-50 mb-2 w-72 rounded-xl border bg-popover p-3 text-popover-foreground shadow-md"
+    /* 悬停即展开（用户口径）——zcode HoverCard 原生 hover 语义（焦点转移由组件处理，
+       不会像手写 Popover 版那样 focus-outside 误关闭） */
+    <HoverCard openDelay={0} closeDelay={120}>
+      <HoverCardTrigger asChild>
+        <button
+          type="button"
+          aria-label="上下文容量"
+          title={view.usageFineLine ?? view.usageLine ?? "上下文容量与缓存命中"}
+          /* 与相邻图标按钮同心中线（h-6 w-6 命中盒 + 居中，环本身 16） */
+          className="inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors hover:bg-muted outline-none"
         >
-          {/* 第一行：当前 / 窗口（两位小数百分比）——参考图的读数 + 用户口径的精确位 */}
-          <div className="flex items-baseline justify-between gap-2 text-xs">
-            <span className="font-medium">上下文容量</span>
+          <ContextRing
+            percent={view.percent}
+            overThreshold={view.overThreshold}
+          />
+        </button>
+      </HoverCardTrigger>
+      <HoverCardContent
+        role="dialog"
+        aria-label="上下文容量与缓存命中"
+        side="top"
+        align="start"
+        sideOffset={8}
+        className="w-72 rounded-xl border bg-popover p-3 text-popover-foreground shadow-md"
+      >
+        {/* 第一行：当前 / 窗口（两位小数百分比）——参考图的读数 + 用户口径的精确位 */}
+        <div className="flex items-baseline justify-between gap-2 text-xs">
+          <span className="font-medium">上下文容量</span>
+          <span className="tabular-nums">
+            {view.usageFineLine ?? view.usageLine ?? "本轮暂无用量"}
+          </span>
+        </div>
+
+        {/* 三段条（Roo Code 口径）：已用 + 预留输出 + 剩余；接缝即「输出预留线」。
+            预留输出段只在模型**声明了最大输出**时画——不编这个数 */}
+        <div className="relative mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className={`h-full rounded-l-full ${
+              view.overThreshold ? "bg-amber-500" : "bg-info"
+            }`}
+            style={{ width: `${view.percent ?? 0}%` }}
+          />
+          {view.reserveTokens !== null && view.thresholdPercent !== null ? (
+            <div
+              className="absolute top-0 h-full bg-amber-400/50"
+              style={{
+                left: `${view.thresholdPercent}%`,
+                width: `${Math.max(
+                  0,
+                  (view.percent ?? 0) > view.thresholdPercent
+                    ? 100 - (view.percent ?? 0)
+                    : Math.min(100, 100 - view.thresholdPercent),
+                )}%`,
+              }}
+              title="预留输出（留给模型回复的空间）"
+            />
+          ) : null}
+          {view.thresholdPercent !== null ? (
+            <div
+              className="absolute top-0 h-full w-px bg-amber-600"
+              style={{ left: `${view.thresholdPercent}%` }}
+            />
+          ) : null}
+        </div>
+
+        {view.reserveTokens !== null ? (
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+            <span className="inline-flex items-center gap-1">
+              <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-info" />
+              已用 {view.inputLabel}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span
+                aria-hidden
+                className="h-1.5 w-1.5 rounded-full bg-amber-400/70"
+              />
+              预留输出 {view.reserveLabel}
+            </span>
+            <span>剩余 {view.remainingLabel}</span>
+          </div>
+        ) : null}
+
+        {view.overThreshold ? (
+          <p className="mt-2 rounded-md bg-amber-500/10 px-2 py-1 text-[10px] text-amber-700 dark:text-amber-400">
+            已越过输出预留线（
+            {view.thresholdPercent !== null
+              ? `窗口的 ${view.thresholdPercent}%`
+              : ""}
+            ）：留给回复的空间已被占用，继续追问可能超出模型上限。建议新建对话，或换用窗口更大的模型。
+          </p>
+        ) : null}
+
+        {view.composition.length > 0 ? (
+          <ul aria-label="上下文分类占比" className="mt-3 space-y-1 text-xs">
+            {view.composition.map((part) => (
+              <li
+                key={part.label}
+                className="flex items-center justify-between"
+              >
+                <span className="flex items-center gap-1.5 text-muted-foreground">
+                  <span
+                    aria-hidden
+                    className="h-1.5 w-1.5 rounded-full bg-info"
+                  />
+                  {part.label}
+                </span>
+                <span className="tabular-nums">{part.percent}%</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
+        <div className="mt-3 border-t pt-2 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">
+              平均缓存命中率
+              {view.cacheHitScope === "call" ? "（本次调用）" : ""}
+            </span>
             <span className="tabular-nums">
-              {view.usageFineLine ?? view.usageLine ?? "本轮暂无用量"}
+              {view.cacheHitLabel ?? "模型未提供"}
             </span>
           </div>
-
-          {/* 三段条（Roo Code 口径）：已用 + 预留输出 + 剩余；接缝即「输出预留线」。
-              预留输出段只在模型**声明了最大输出**时画——不编这个数 */}
-          <div className="relative mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+          {/* 命中率也画成进度条（用户口径：思考强度与缓存都要有进度条），
+              颜色与上下文「已用」同一支蓝（用户口径：缓存条也要和上下文一样的蓝） */}
+          <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
             <div
-              className={`h-full rounded-l-full ${
-                view.overThreshold ? "bg-amber-500" : "bg-info"
-              }`}
-              style={{ width: `${view.percent ?? 0}%` }}
+              className="h-full rounded-full bg-info"
+              style={{ width: `${view.cacheHitPercent ?? 0}%` }}
             />
-            {view.reserveTokens !== null && view.thresholdPercent !== null ? (
-              <div
-                className="absolute top-0 h-full bg-amber-400/50"
-                style={{
-                  left: `${view.thresholdPercent}%`,
-                  width: `${Math.max(
-                    0,
-                    (view.percent ?? 0) > view.thresholdPercent
-                      ? 100 - (view.percent ?? 0)
-                      : Math.min(100, 100 - view.thresholdPercent),
-                  )}%`,
-                }}
-                title="预留输出（留给模型回复的空间）"
-              />
-            ) : null}
-            {view.thresholdPercent !== null ? (
-              <div
-                aria-hidden
-                className="absolute top-0 h-full w-px bg-amber-600"
-                style={{ left: `${view.thresholdPercent}%` }}
-              />
-            ) : null}
-          </div>
-
-          {view.reserveTokens !== null ? (
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
-              <span className="inline-flex items-center gap-1">
-                <span
-                  aria-hidden
-                  className="h-1.5 w-1.5 rounded-full bg-info"
-                />
-                已用 {view.inputLabel}
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <span
-                  aria-hidden
-                  className="h-1.5 w-1.5 rounded-full bg-amber-400/70"
-                />
-                预留输出 {view.reserveLabel}
-              </span>
-              <span>剩余 {view.remainingLabel}</span>
-            </div>
-          ) : null}
-
-          {view.overThreshold ? (
-            <p className="mt-2 rounded-md bg-amber-500/10 px-2 py-1 text-[10px] text-amber-700 dark:text-amber-400">
-              已越过输出预留线（
-              {view.thresholdPercent !== null
-                ? `窗口的 ${view.thresholdPercent}%`
-                : ""}
-              ）：留给回复的空间已被占用，继续追问可能超出模型上限。建议新建对话，或换用窗口更大的模型。
-            </p>
-          ) : null}
-
-          {view.composition.length > 0 ? (
-            <ul aria-label="上下文分类占比" className="mt-3 space-y-1 text-xs">
-              {view.composition.map((part) => (
-                <li
-                  key={part.label}
-                  className="flex items-center justify-between"
-                >
-                  <span className="flex items-center gap-1.5 text-muted-foreground">
-                    <span
-                      aria-hidden
-                      className="h-1.5 w-1.5 rounded-full bg-info"
-                    />
-                    {part.label}
-                  </span>
-                  <span className="tabular-nums">{part.percent}%</span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-
-          <div className="mt-3 border-t pt-2 text-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">
-                平均缓存命中率
-                {view.cacheHitScope === "call" ? "（本次调用）" : ""}
-              </span>
-              <span className="tabular-nums">
-                {view.cacheHitLabel ?? "模型未提供"}
-              </span>
-            </div>
-            {/* 命中率也画成进度条（用户口径：思考强度与缓存都要有进度条），
-                颜色与上下文「已用」同一支蓝（用户口径：缓存条也要和上下文一样的蓝） */}
-            <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-info"
-                style={{ width: `${view.cacheHitPercent ?? 0}%` }}
-              />
-            </div>
           </div>
         </div>
-      ) : null}
-    </div>
+      </HoverCardContent>
+    </HoverCard>
   );
 }
 
