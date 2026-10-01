@@ -98,4 +98,13 @@ describe("深度治理的结构性锁（DEC-17：深度上限 1）", () => {
       ),
     ).toThrow(/派发工具/);
   });
+
+  it("resolveChildToolbelt：声明的工具不在父工具面时 fail loud（防空工具带空转）", () => {
+    const explore = SUBAGENT_DEFINITIONS.find((d) => d.name === "explore");
+    if (!explore) throw new Error("unreachable");
+    // 父工具面缺 project_search（如装配漂移/preset 过滤掏空）→ 派发期报错
+    expect(() => resolveChildToolbelt(explore, [{ name: "ls" }])).toThrow(
+      /不在父工具面/,
+    );
+  });
 });

@@ -8,7 +8,7 @@ import {
   jsonSchemaToZod,
   kernelToolToStructuredTool,
 } from "./kernel-tools-bridge.js";
-import { resolvePresetForRun } from "./runtime.js";
+import { resolveCanvasStateForRun, resolvePresetForRun } from "./runtime.js";
 
 describe("jsonSchemaToZod（桥接转换）", () => {
   it("object 属性与 required 生成校验", () => {
@@ -201,5 +201,67 @@ describe("resolvePresetForRun（DEC-2 会话级 preset）", () => {
     expect(resolvePresetForRun({ canvasId: "c1", preset: "code" })).toBe(
       "code",
     );
+  });
+});
+
+describe("resolveCanvasStateForRun（DEC-2 画布状态门控：design 才注入）", () => {
+  const CANVAS_ID = "canvas-1";
+  const elements = [
+    { id: "r1", type: "rectangle", x: 0, y: 0, width: 100, height: 50 },
+  ];
+
+  function deps(overrides: { findById?: () => unknown } = {}) {
+    return {
+      viewerService: {
+        resolveWorkspace: async () => ({ id: "ws-1" }),
+      } as never,
+      canvasRepository: {
+        findById: async () => ({ content: { elements } }),
+        findWorkspaceIdByCanvas: async () => "ws-1",
+        findProjectBrandKitId: async () => null,
+        saveContent: async () => 1,
+        appendContent: async () => 1,
+        ...overrides,
+      } as never,
+    };
+  }
+
+  it("design（含 canvasId 兜底路径）：解析画布并产出摘要", async () => {
+    const summary = await resolveCanvasStateForRun(
+      { canvasId: CANVAS_ID, userId: "u1", preset: "design" },
+      deps(),
+    );
+    expect(summary).toContain("Canvas: 1 elements");
+    expect(summary).toContain("rectangle#r1");
+
+    // 未显式声明 preset、带 canvasId → design 兜底，同样注入
+    const fallback = await resolveCanvasStateForRun(
+      { canvasId: CANVAS_ID, userId: "u1" },
+      deps(),
+    );
+    expect(fallback).toContain("Canvas: 1 elements");
+  });
+
+  it("code：即使带真实 canvasId（项目主画布）也不注入", async () => {
+    const summary = await resolveCanvasStateForRun(
+      { canvasId: CANVAS_ID, userId: "u1", preset: "code" },
+      deps(),
+    );
+    expect(summary).toBeNull();
+  });
+
+  it("design 但仓储缺席 / 画布解析失败 → null（非关键）", async () => {
+    expect(
+      await resolveCanvasStateForRun(
+        { canvasId: CANVAS_ID, userId: "u1", preset: "design" },
+        {},
+      ),
+    ).toBeNull();
+    expect(
+      await resolveCanvasStateForRun(
+        { canvasId: CANVAS_ID, userId: "u1", preset: "design" },
+        deps({ findById: () => null }),
+      ),
+    ).toBeNull();
   });
 });

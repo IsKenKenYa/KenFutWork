@@ -140,8 +140,9 @@ export const SUBAGENT_DISPATCH_TOOL_NAMES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * 解析子代理工具带：只取定义声明的专用工具，且**拒绝派发工具保留名**
- * （fail loud——错误定义在派发时立刻暴露，而不是在运行时生出孙代理）。
+ * 解析子代理工具带：只取定义声明的专用工具，**拒绝派发工具保留名**、
+ * **缺名 fail loud**（错误定义或 preset 漂移在派发期立即暴露，而不是派出
+ * 一个没有工具的子代理空转）。
  */
 export function resolveChildToolbelt<T extends { name: string }>(
   definition: SubagentDefinition,
@@ -160,12 +161,18 @@ export function resolveChildToolbelt<T extends { name: string }>(
   const byName = new Map(
     parentTools.map((candidate) => [candidate.name, candidate]),
   );
-  const tools: T[] = [];
-  for (const name of definition.tools) {
-    const picked = byName.get(name);
-    if (picked) tools.push(picked);
+  const missing = definition.tools.filter((name) => !byName.has(name));
+  if (missing.length > 0) {
+    // fail loud：preset 过滤或装配漂移会掏空子代理工具带（如 shared 子代理
+    // 依赖 design 工具）——静默跳过等于派出一个没有手的专员，必须在派发期暴露。
+    throw new Error(
+      `子代理定义「${definition.name}」声明的工具不在父工具面（${missing.join("、")}）：` +
+        "检查定义的 preset 与工具 scope 是否一致（design 工具不会出现在 code 运行里）。",
+    );
   }
-  return { tools };
+  return {
+    tools: definition.tools.map((name) => byName.get(name) as NonNullable<T>),
+  };
 }
 
 /** 面向界面的清单（设置页「子智能体」与 GET /api/agent/subagents）。 */

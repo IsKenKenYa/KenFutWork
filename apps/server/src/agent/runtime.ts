@@ -87,15 +87,64 @@ import type {
  * tags when attachments are present so the LLM can reference them by assetId.
  */
 /**
- * run → agent preset（DEC-2 会话级能力集）：
- * 画布内运行归 design preset（画布工具为主），无画布的纯会话归 code preset。
- * 显式传入 preset 时以传入值优先。
+ * run → agent preset（DEC-2 会话级能力集），**模式能力分离的口径源头**：
+ * - 客户端显式传 preset 时以传入值优先（Code 工作台显式传 `code`——
+ *   Code run 必带 canvasId（沙箱目录名载体），按 canvasId 推定会误判）；
+ * - 未显式声明时按 canvasId 兜底：有画布归 design（画布页会话），无画布归 code。
  */
 export function resolvePresetForRun(run: {
   canvasId?: string | undefined;
   preset?: "design" | "code" | undefined;
 }): "design" | "code" {
   return run.preset ?? (run.canvasId ? "design" : "code");
+}
+
+/**
+ * 首轮消息的画布状态摘要（`<canvas_state>`）：**仅 design 注入**。
+ *
+ * Code run 也带 canvasId（项目主画布/Code 工作台载体），但 Code 会话没有画布
+ * （DEC-2 分离）——注入隐藏画布的数据只会误导模型。仓储缺席或画布解析失败
+ * 一律返回 null（非关键：design 下 agent 仍可手动 inspect_canvas）。
+ */
+export async function resolveCanvasStateForRun(
+  run: {
+    canvasId?: string | undefined;
+    userId?: string | undefined;
+    preset?: "design" | "code" | undefined;
+  },
+  deps: {
+    canvasRepository?: CanvasRepository;
+    viewerService?: ViewerService;
+  },
+): Promise<string | null> {
+  if (
+    resolvePresetForRun(run) !== "design" ||
+    !run.canvasId ||
+    !run.userId ||
+    !deps.canvasRepository
+  ) {
+    return null;
+  }
+  try {
+    const canvasWorkspace = await deps.viewerService
+      ?.resolveWorkspace({ id: run.userId })
+      .catch(() => null);
+    const canvasRow = canvasWorkspace
+      ? await deps.canvasRepository
+          .findById(canvasWorkspace.id, run.canvasId)
+          .catch(() => null)
+      : null;
+    const content = canvasRow?.content as { elements?: unknown[] } | undefined;
+    if (content?.elements) {
+      return buildCanvasSummaryForContext(
+        content.elements as Array<Record<string, unknown>>,
+      );
+    }
+    return null;
+  } catch {
+    // Non-critical — agent can still call inspect_canvas manually
+    return null;
+  }
 }
 
 export function buildUserMessage(
@@ -1732,29 +1781,15 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         try {
           // Auto-inject canvas state summary so the agent has immediate awareness
           // of what's on the canvas without needing to call inspect_canvas first.
-          let canvasSummary: string | null = null;
-          if (run.canvasId && run.userId && options.canvasRepository) {
-            try {
-              const canvasWorkspace = await options.viewerService
-                ?.resolveWorkspace({ id: run.userId })
-                .catch(() => null);
-              const canvasRow = canvasWorkspace
-                ? await options.canvasRepository
-                    .findById(canvasWorkspace.id, run.canvasId)
-                    .catch(() => null)
-                : null;
-              const content = canvasRow?.content as
-                | { elements?: unknown[] }
-                | undefined;
-              if (content?.elements) {
-                canvasSummary = buildCanvasSummaryForContext(
-                  content.elements as Array<Record<string, unknown>>,
-                );
-              }
-            } catch {
-              // Non-critical — agent can still call inspect_canvas manually
-            }
-          }
+          // 门控在 resolveCanvasStateForRun：design 才注入（Code 会话无画布）。
+          const canvasSummary = await resolveCanvasStateForRun(run, {
+            ...(options.canvasRepository
+              ? { canvasRepository: options.canvasRepository }
+              : {}),
+            ...(options.viewerService
+              ? { viewerService: options.viewerService }
+              : {}),
+          });
 
           // 附件在下载与提示词构建两处消费：收窄成局部 const（缺省空数组，分支内不再判空）
           const attachments = run.attachments ?? [];
