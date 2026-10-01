@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ToolRegistryImpl } from "../../kernel/context.js";
-import type { KernelEvents } from "../../kernel/types.js";
+import { AgentRunEventBus, ToolRegistryImpl } from "../../kernel/context.js";
 import { createBrandKitToolDefinition } from "./brand-kit.js";
 import { createRunScopedTools } from "./index.js";
 import { createInspectCanvasToolDefinition } from "./inspect-canvas.js";
@@ -67,11 +66,7 @@ describe("运行态工具装配（createRunScopedTools）", () => {
 
 describe("服务型画布/品牌工具（内核注册表 scope）", () => {
   function registryWithBuiltIns() {
-    const events = {
-      emit: async () => {},
-      on: () => () => {},
-    } as unknown as KernelEvents;
-    const registry = new ToolRegistryImpl(events);
+    const registry = new ToolRegistryImpl(new AgentRunEventBus());
     registry.register(createInspectCanvasToolDefinition({}));
     registry.register(createManipulateCanvasToolDefinition({}));
     registry.register(

@@ -41,7 +41,7 @@ import {
 import { createExecuteBackgroundTool } from "./execute-background.js";
 import { bridgeKernelTools } from "./kernel-tools-bridge.js";
 import { createLlmRequestRetryMiddleware } from "./llm-retry-middleware.js";
-import { KENFUTWORK_SYSTEM_PROMPT } from "./prompts/kenfutwork-main.js";
+import { composeSystemPrompt } from "./prompts/compose.js";
 import {
   resolveChildToolbelt,
   resolveSubagentDefinitions,
@@ -387,45 +387,13 @@ export function createKenFutWorkDeepAgent(options: {
       ? createStreamingChatModel(modelSpec)
       : modelSpec;
 
-  // 品牌套件提示段仅 design（get_brand_kit 工具已迁内核注册表按 scope 过滤，提示同口径）
-  let systemPrompt =
-    options.brandKitId && preset === "design"
-      ? KENFUTWORK_SYSTEM_PROMPT +
-        "\n\n当前项目已绑定品牌套件。在进行设计相关工作时，请先使用 get_brand_kit 工具查询品牌信息，确保设计符合品牌规范。"
-      : KENFUTWORK_SYSTEM_PROMPT;
-
-  // Inject enabled skills (both system and user-created) into the system prompt.
-  // All skills are loaded from the database via loadWorkspaceSkills() in runtime.ts.
-  const wsSkills = options.workspaceSkills ?? [];
-  if (wsSkills.length > 0) {
-    const skillsList = wsSkills
-      .map((s) => {
-        let line = `- **${s.name}**: ${s.description}\n  → Read \`${s.path}\` for full instructions`;
-        if (s.files.length > 0) {
-          const counts: Record<string, number> = {};
-          for (const f of s.files) {
-            const dir = f.path.split("/")[0] ?? "other";
-            counts[dir] = (counts[dir] ?? 0) + 1;
-          }
-          const summary = Object.entries(counts)
-            .map(([dir, n]) => `${dir}/ (${n})`)
-            .join(", ");
-          line += `\n  → Has: ${summary}`;
-        }
-        return line;
-      })
-      .join("\n");
-    systemPrompt += `\n\n## Skills\n\nThe following skills are enabled in this workspace:\n${skillsList}`;
-  }
-
-  // 插件提示段（能力 systemPrompt）：接在品牌/技能之后——插件是外部贡献，
-  // 不该覆盖内置规则，只追加行为引导。
-  const extras = (options.systemPromptExtras ?? []).filter(
-    (section) => section.trim().length > 0,
-  );
-  if (extras.length > 0) {
-    systemPrompt += `\n\n## 插件提示段\n\n${extras.join("\n\n")}`;
-  }
+  // 系统提示组装（base + 模式段 + 品牌/Skills/插件段）集中在 prompts/compose.ts
+  const systemPrompt = composeSystemPrompt({
+    preset,
+    ...(options.brandKitId != null ? { brandKitId: options.brandKitId } : {}),
+    workspaceSkills: options.workspaceSkills ?? [],
+    systemPromptExtras: options.systemPromptExtras ?? [],
+  });
 
   // 工具清单先落地成变量：R4-1 的分类占比要按 schema 量「系统工具 / MCP 工具」，
   // 而调用方（runtime）拿到的是 agent 对象，只有这里才知道装配了什么工具。
