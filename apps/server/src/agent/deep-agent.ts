@@ -41,7 +41,6 @@ import {
 import { createExecuteBackgroundTool } from "./execute-background.js";
 import { bridgeKernelTools } from "./kernel-tools-bridge.js";
 import { createLlmRequestRetryMiddleware } from "./llm-retry-middleware.js";
-import { composeSystemPrompt } from "./prompts/compose.js";
 import {
   resolveChildToolbelt,
   resolveSubagentDefinitions,
@@ -59,7 +58,6 @@ import type {
 } from "./tools/image-generate.js";
 import { createRunScopedTools } from "./tools/index.js";
 import type { SubmitVideoJobFn } from "./tools/video-generate.js";
-import type { WorkspaceSkillEntry } from "./workspace-skills.js";
 
 export type KenFutWorkAgent = Pick<
   ReturnType<typeof createDeepAgent>,
@@ -272,7 +270,6 @@ function createModelResponseGuardMiddleware(): AgentMiddleware {
 
 export type KenFutWorkAgentFactory = (options: {
   backendResult?: AgentBackendResult;
-  brandKitId?: string | null;
   canvasId?: string;
   checkpointer?: BaseCheckpointSaver;
   connectionManager?: ConnectionManager;
@@ -286,7 +283,6 @@ export type KenFutWorkAgentFactory = (options: {
   availableImageModels?: AvailableModel[];
   availableVideoModels?: AvailableVideoModel[];
   store?: BaseStore;
-  workspaceSkills?: WorkspaceSkillEntry[];
   /** 内核 ctx.tools 贡献的工具（按 preset 过滤后），桥接为模型可调用工具。 */
   kernelTools?: ToolDefinition[];
   /** 本次运行的工具执行上下文（runId/accessToken）。 */
@@ -295,8 +291,6 @@ export type KenFutWorkAgentFactory = (options: {
   toolGate?: ToolGate;
   /** 工具门旁路钩子（拒绝可见性 + 连续拒绝计数）。 */
   toolGateHooks?: ToolGateHooks;
-  /** 插件贡献的提示段（能力 `systemPrompt`）：追加在系统提示之后。 */
-  systemPromptExtras?: readonly string[];
   /**
    * 上下文自动压缩的口径（阈值/保留条数，见 agent/auto-compact.ts）。
    * 传了才挂中间件——设置里关掉时**一个字都不挂**，不是挂上再短路。
@@ -312,6 +306,8 @@ export type KenFutWorkAgentFactory = (options: {
    * 生图生频仅 design（Code 会话无画布落点），execute_background 仅 code。
    */
   preset: "design" | "code";
+  /** 本 run 的系统提示：runtime 经内核段注册表组装后传入（deep-agent 只消费）。 */
+  systemPrompt: string;
   /**
    * 子代理派发缝（DEC-14/15/16）：注册表由 runtime 按 run 创建（并发上限来自治理设置）。
    * 传入即挂 task / task_background / task_output 三工具与后台通知中间件；
@@ -328,7 +324,6 @@ export type KenFutWorkAgentFactory = (options: {
 
 export function createKenFutWorkDeepAgent(options: {
   backendResult?: AgentBackendResult;
-  brandKitId?: string | null;
   /** 对象存储（blob 缝）：沙箱文件持久化、生成物落盘经它（必需能力）。 */
   blob: BlobStore;
   /** 画布数据访问（工作区作用域）：工具的画布读写经它。 */
@@ -346,15 +341,12 @@ export function createKenFutWorkDeepAgent(options: {
   availableImageModels?: AvailableModel[];
   availableVideoModels?: AvailableVideoModel[];
   store?: BaseStore;
-  workspaceSkills?: WorkspaceSkillEntry[];
   kernelTools?: ToolDefinition[];
   runToolContext?: ToolExecutionContext;
   /** 执行模式工具门（solo/plan 硬约束），拦截包括内置工具在内的全部调用。 */
   toolGate?: ToolGate;
   /** 工具门旁路钩子（拒绝可见性 + 连续拒绝计数）。 */
   toolGateHooks?: ToolGateHooks;
-  /** 插件贡献的提示段（能力 `systemPrompt`）：追加在系统提示之后。 */
-  systemPromptExtras?: readonly string[];
   /** 上下文自动压缩的口径（见 agent/auto-compact.ts）。 */
   autoCompact?: CompactionPlan;
   /**
@@ -372,6 +364,8 @@ export function createKenFutWorkDeepAgent(options: {
   llmRetry?: { maxAttempts: number; infinite: boolean };
   /** 运行 preset（DEC-2），同 {@link KenFutWorkAgentFactory.preset}。 */
   preset: "design" | "code";
+  /** 本 run 的系统提示：runtime 经内核段注册表组装后传入（deep-agent 只消费）。 */
+  systemPrompt: string;
 }): KenFutWorkAgent {
   const backendResult =
     options.backendResult ?? createAgentBackend(options.env, options.canvasId);
@@ -387,13 +381,9 @@ export function createKenFutWorkDeepAgent(options: {
       ? createStreamingChatModel(modelSpec)
       : modelSpec;
 
-  // 系统提示组装（base + 模式段 + 品牌/Skills/插件段）集中在 prompts/compose.ts
-  const systemPrompt = composeSystemPrompt({
-    preset,
-    ...(options.brandKitId != null ? { brandKitId: options.brandKitId } : {}),
-    workspaceSkills: options.workspaceSkills ?? [],
-    systemPromptExtras: options.systemPromptExtras ?? [],
-  });
+  // 系统提示由调用方（runtime）经内核段注册表组装后传入——deep-agent 只消费，
+  // 不再自带组装逻辑（提示段属主是各 feature 插件，挂载即出现）。
+  const systemPrompt = options.systemPrompt;
 
   // 工具清单先落地成变量：R4-1 的分类占比要按 schema 量「系统工具 / MCP 工具」，
   // 而调用方（runtime）拿到的是 agent 对象，只有这里才知道装配了什么工具。

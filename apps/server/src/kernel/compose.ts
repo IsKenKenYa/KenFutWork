@@ -6,6 +6,7 @@ import {
   CapabilityRegistryImpl,
   createKernelEvents,
   createPluginContext,
+  SystemPromptRegistryImpl,
   ToolRegistryImpl,
 } from "./context.js";
 import type {
@@ -133,7 +134,7 @@ export function composePlugins(
     mountTree.push({ plugin: currentPlugin, key });
   };
 
-  // 内核自持的两个注册表型 key：在插件 apply 之前就绪（插件要在 apply 内向其贡献）。
+  // 内核自持的注册表型 key：在插件 apply 之前就绪（插件要在 apply 内向其贡献）。
   if (!overrides.tools) {
     factories.set("tools", {
       kind: "ready",
@@ -144,6 +145,12 @@ export function composePlugins(
     factories.set("capabilities", {
       kind: "ready",
       service: new CapabilityRegistryImpl(),
+    });
+  }
+  if (!overrides.systemPrompt) {
+    factories.set("systemPrompt", {
+      kind: "ready",
+      service: new SystemPromptRegistryImpl(),
     });
   }
 

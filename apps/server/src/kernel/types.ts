@@ -128,6 +128,8 @@ export interface ServiceMap {
   capabilities: CapabilityRegistry;
   /** 统一工具注册表（schema + 作用域 + guarded 执行） */
   tools: ToolRegistry;
+  /** 系统提示段注册表（模式段/品牌段/skills/规则与插件段，挂载即出现） */
+  systemPrompt: SystemPromptRegistry;
   /** 浏览器能力缝（R3-4/R5-4）：受控网页抓取与元素提取（人用快照端点、agent 用 browser_open） */
   browser: BrowserService;
   /** ConnectionManager + EventBuffer */
@@ -202,6 +204,57 @@ export type ListenerOf<E extends AgentRunEvent> = E extends "turn-stopping"
 
 /** 工具作用域：preset 按此过滤各自工具子集（shared 恒可用）。 */
 export type ToolScope = "design" | "code" | "shared";
+
+/** 提示段作用域：always 恒挂；design/code 按 run 的 preset 过滤（模式段互斥）。 */
+export type PromptSectionScope = "always" | "design" | "code";
+
+/**
+ * 提示段组装上下文：run 起始期已解析的**事实**（preset、工作区、套件绑定、
+ * 技能清单）。需要服务自取数据的段（用户规则、插件提示段）在 provider 闭包里
+ * 持有服务引用，按 ctx 定位——ctx 不装「已取好的数据」，只装定位键。
+ */
+export interface PromptCompositionContext {
+  preset: "design" | "code";
+  /** 工作区 id：规则段等按工作区读取设置的定位键。 */
+  workspaceId?: string | undefined;
+  /** 项目绑定的品牌套件 id（品牌段出现与否的判定）。 */
+  brandKitId?: string | undefined;
+  /** 工作区技能清单（skills 段渲染；结构取 WorkspaceSkillEntry 的消费子集）。 */
+  workspaceSkills?: ReadonlyArray<{
+    name: string;
+    description: string;
+    path: string;
+    files: ReadonlyArray<{ path: string }>;
+  }>;
+  /**
+   * 用户规则段（run 起始期事实）：runtime 读 settings 的同一趟顺带格式化取出
+   * （autoCompact/hooks 同源），段 provider 纯渲染——避免段内二次读库。
+   */
+  userRulesFragment?: readonly string[];
+}
+
+/**
+ * 系统提示段（dsh PromptSection 式）：插件向 `ctx.systemPrompt` 贡献，
+ * 挂载即出现、卸载即消失。`resolve` 返回 null/空白 = 本 run 不出现该段。
+ */
+export interface PromptSectionDefinition {
+  /** 段名（唯一，重名 fail loud；用于排查，不进模型可见文本）。 */
+  name: string;
+  /** 升序拼装，同 order 按注册序。内置段约定：base=-100 / 模式段=0 / 品牌=50 / skills=200 / 规则与插件=300。 */
+  order: number;
+  scope: PromptSectionScope;
+  resolve: (
+    ctx: PromptCompositionContext,
+  ) => string | null | Promise<string | null>;
+}
+
+/** 系统提示段注册表：组装 = scope 过滤 + order 排序 + 空段剔除 + join。 */
+export interface SystemPromptRegistry {
+  /** 注册提示段，返回注销 disposer；重名 fail loud。 */
+  register(section: PromptSectionDefinition): () => void;
+  /** 组装本 run 的系统提示（各段 resolve 可异步）。 */
+  compose(ctx: PromptCompositionContext): Promise<string>;
+}
 
 export interface ToolExecutionContext {
   runId?: string | undefined;

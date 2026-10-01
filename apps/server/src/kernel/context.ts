@@ -10,9 +10,12 @@ import type {
   KernelEvents,
   ListenerOf,
   PluginContext,
+  PromptCompositionContext,
+  PromptSectionDefinition,
   SerialListener,
   ServiceKey,
   ServiceMap,
+  SystemPromptRegistry,
   ToolDefinition,
   ToolExecutionContext,
   ToolRegistry,
@@ -162,6 +165,39 @@ export class ToolRegistryImpl implements ToolRegistry {
       throw new ToolDeniedError(name, decision.denyReason);
     }
     return tool.execute(args, execCtx);
+  }
+}
+
+/**
+ * 系统提示段注册表：插件贡献段（scope/order/resolve），组装按 scope 过滤、
+ * order 升序（Map 迭代序=注册序，sort 稳定 → 同 order 保注册序）、空段剔除。
+ */
+export class SystemPromptRegistryImpl implements SystemPromptRegistry {
+  private readonly sections = new Map<string, PromptSectionDefinition>();
+
+  register(section: PromptSectionDefinition): () => void {
+    if (this.sections.has(section.name)) {
+      throw new Error(`[kernel] 提示段 ${section.name} 重复注册。`);
+    }
+    this.sections.set(section.name, section);
+    return () => {
+      this.sections.delete(section.name);
+    };
+  }
+
+  async compose(ctx: PromptCompositionContext): Promise<string> {
+    const active = [...this.sections.values()].filter(
+      (section) => section.scope === "always" || section.scope === ctx.preset,
+    );
+    active.sort((a, b) => a.order - b.order);
+    const texts: string[] = [];
+    for (const section of active) {
+      const text = await section.resolve(ctx);
+      if (text && text.trim().length > 0) {
+        texts.push(text);
+      }
+    }
+    return texts.join("\n\n");
   }
 }
 

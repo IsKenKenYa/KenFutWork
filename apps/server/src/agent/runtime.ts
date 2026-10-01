@@ -46,7 +46,11 @@ import type {
   AvailableModel,
   AvailableVideoModel,
 } from "../generation/types.js";
-import type { ToolExecutionContext, ToolRegistry } from "../kernel/types.js";
+import type {
+  SystemPromptRegistry,
+  ToolExecutionContext,
+  ToolRegistry,
+} from "../kernel/types.js";
 import { instanceHeadersOption } from "../providers/instance-headers.js";
 import { resolveInstanceChatModel } from "../providers/resolve.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
@@ -399,6 +403,8 @@ type CreateAgentRuntimeOptions = {
   runUsage?: RunUsageAccumulator;
   /** 内核统一工具注册表：按 run 的 preset 过滤后桥接进模型工具列表（§4.5）。 */
   tools?: ToolRegistry;
+  /** 内核系统提示段注册表：run 起始期组装系统提示（模式段/品牌/skills/规则与插件）。 */
+  systemPromptRegistry?: SystemPromptRegistry;
   /** 事件缝（DEC-1）：turn 收尾时发射 turn-stopping，插件据此结算。 */
   emitTurnStopping?: (payload: { runId: string }) => Promise<void>;
   /**
@@ -415,8 +421,6 @@ type CreateAgentRuntimeOptions = {
    * solo/plan 的工具拦截判定；返回 undefined 表示全放行（agent 等模式）。
    */
   toolGateFor?: (threadId: string) => ToolGate | undefined;
-  /** 插件贡献的提示段（能力 systemPrompt）；每次 run 调用一次。 */
-  pluginPromptFragments?: () => string[];
   /**
    * 检查点钩子（checkpoints 缝，可选依赖）：轮次开始/结束时打影子 git 快照。
    * runtime 只负责在正确时机调用（beforeTurn 在流启动前、afterTurn 在收尾 finally，
@@ -1709,7 +1713,19 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           agent = resolvedAgentFactory({
             backendResult,
             preset,
-            ...(brandKitId ? { brandKitId } : {}),
+            // 系统提示经内核段注册表组装（模式段/品牌/skills/规则与插件段）；
+            // registry 缺席（部分装配/测试）时为空串——生产装配恒有段注册表
+            systemPrompt: options.systemPromptRegistry
+              ? await options.systemPromptRegistry.compose({
+                  preset,
+                  ...(brandKitId ? { brandKitId } : {}),
+                  ...(toolWorkspaceId ? { workspaceId: toolWorkspaceId } : {}),
+                  workspaceSkills,
+                  ...(userRulesFragment.length > 0
+                    ? { userRulesFragment }
+                    : {}),
+                })
+              : "",
             ...(availableImageModels.length ? { availableImageModels } : {}),
             ...(availableVideoModels.length ? { availableVideoModels } : {}),
             ...(options.canvasRepository
@@ -1745,15 +1761,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               : {}),
             executeTimeoutMs: governanceExecuteTimeoutMs,
             llmRetry: governanceLlmRetry,
-            // 插件提示段每次 run 取一次：新装/卸载插件下一轮即生效；用户规则拼在它之后
-            ...(options.pluginPromptFragments || userRulesFragment.length > 0
-              ? {
-                  systemPromptExtras: [
-                    ...(options.pluginPromptFragments?.() ?? []),
-                    ...userRulesFragment,
-                  ],
-                }
-              : {}),
             runToolContext: {
               runId,
               ...(run.canvasId ? { canvasId: run.canvasId } : {}),

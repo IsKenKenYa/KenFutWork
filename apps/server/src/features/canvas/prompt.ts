@@ -1,3 +1,5 @@
+import type { PromptSectionDefinition } from "../../kernel/types.js";
+
 /**
  * design 模式专属段（画布创作）：画布感知、生成工具路由、manipulate_canvas
  * 操作规范、尺寸/颜色/字号与绘制顺序。只在 design preset 的系统提示里出现。
@@ -74,3 +76,11 @@ x 右增，y 下增，元素位置 = 左上角。默认图片 512×512。元素�
 
 ## 绘制顺序
 1. 背景区域 → 2. 带标签形状 → 3. 箭头绑定 → 4. 注释文字 → 5. 对齐/分布`;
+
+/** canvas 插件贡献的 design 模式段（挂载即出现，order 约定见内核类型注释）。 */
+export const canvasDesignPromptSection: PromptSectionDefinition = {
+  name: "mode.design.canvas",
+  order: 0,
+  scope: "design",
+  resolve: () => KENFUTWORK_DESIGN_PROMPT,
+};

@@ -20,6 +20,11 @@ import {
   createAgentActivityQuery,
   createAgentRunMetadataService,
 } from "./agent-run-service.js";
+import {
+  basePromptSection,
+  createRulesPromptSection,
+  skillsPromptSection,
+} from "./prompt-sections.js";
 import { createAgentRunRepository } from "./repository.js";
 
 export interface AgentRunsPluginDeps {
@@ -66,6 +71,18 @@ export function createAgentRunsPlugin(
         createAgentRunMetadataService({ repository: agentRunRepository }),
       );
       const canvasRepository = createCanvasRepository(ctx.get("persistence"));
+
+      // 运行时属主的提示段：base（两模式恒挂）、skills（run 事实渲染）、
+      // 规则与插件段（规则经 ctx 携带，插件段闭包自取——装/卸载下一轮即生效）。
+      const systemPrompt = ctx.get("systemPrompt");
+      systemPrompt.register(basePromptSection);
+      systemPrompt.register(skillsPromptSection);
+      systemPrompt.register(
+        createRulesPromptSection({
+          pluginFragments: () =>
+            ctx.tryGet("plugins")?.listPromptFragments() ?? [],
+        }),
+      );
 
       ctx.register("agentRuns", (d) => {
         const jobService = ctx.tryGet("jobs");
@@ -159,16 +176,15 @@ export function createAgentRunsPlugin(
           ...(ctx.tryGet("modelCatalog")
             ? { modelCatalog: ctx.get("modelCatalog") as never }
             : {}),
-          // 用户规则拼进系统提示词（B）：settings 已是本插件的依赖
+          // 用户规则（settings 同一趟顺带读 autoCompact/hooks）：规则段经
+          // systemPromptRegistry 组装，runtime 只负责把读到的片段放进 ctx
           settingsService: ctx.get("settings"),
           runUsage: ctx.get("runUsage"),
           tools: ctx.get("tools"),
+          systemPromptRegistry: ctx.get("systemPrompt"),
           emitTurnStopping: (payload) => deps.events.emitTurnStopping(payload),
           ...(deps.emitPreStep ? { emitPreStep: deps.emitPreStep } : {}),
           toolGateFor,
-          // 插件提示段（能力 systemPrompt）：plugins 是可选依赖（部分装配/测试里没有）
-          pluginPromptFragments: () =>
-            ctx.tryGet("plugins")?.listPromptFragments() ?? [],
           creditService: d.get("credits"),
           tierGuard: d.get("tierGuard"),
           viewerService: d.get("viewer"),

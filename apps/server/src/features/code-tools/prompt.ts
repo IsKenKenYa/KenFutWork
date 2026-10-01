@@ -1,3 +1,5 @@
+import type { PromptSectionDefinition } from "../../kernel/types.js";
+
 /**
  * code 模式专属段（编码 agent）：工作目录作用域、文件/命令工具约定、检查点、
  * 子代理与错误处理。只在 code preset 的系统提示里出现——不提任何画布/生图能力
@@ -29,3 +31,11 @@ export const KENFUTWORK_CODE_PROMPT = `你是编码 Agent，在用户项目的�
 - 命令失败 → 读 stderr 与退出码，说清原因与下一步；不要盲目重试
 - 文件找不到 → 先 ls/glob 确认真实路径再操作，不要凭记忆猜路径
 - 改完要验证：能跑测试就跑测试，能编译就编译，用结果说话`;
+
+/** code-tools 插件贡献的 code 模式段（挂载即出现，order 约定见内核类型注释）。 */
+export const codeModePromptSection: PromptSectionDefinition = {
+  name: "mode.code",
+  order: 0,
+  scope: "code",
+  resolve: () => KENFUTWORK_CODE_PROMPT,
+};

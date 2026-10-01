@@ -1,6 +1,7 @@
 import { registerCanvasRoutes } from "../../http/canvases.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import { createCanvasService } from "./canvas-service.js";
+import { canvasDesignPromptSection } from "./prompt.js";
 import { createCanvasRepository } from "./repository.js";
 import { createInspectCanvasToolDefinition } from "./tools/inspect-canvas.js";
 import { createManipulateCanvasToolDefinition } from "./tools/manipulate-canvas.js";
@@ -38,6 +39,9 @@ export function createCanvasPlugin(): PluginDefinition {
           blob: ctx.get("blob"),
         }),
       );
+
+      // design 模式段：提示与工具同属主、同装卸（挂载即出现）
+      ctx.get("systemPrompt").register(canvasDesignPromptSection);
     },
     mounted(ctx) {
       void registerCanvasRoutes(ctx.app, {

@@ -2,10 +2,12 @@ import { readFile, stat } from "node:fs/promises";
 
 import type { PluginDefinition, ToolDefinition } from "../../kernel/types.js";
 import { diffLines, summarizeDiff } from "./diff.js";
+import { codeModePromptSection } from "./prompt.js";
 
 /**
  * code 能力层工具（P6）：文件预览 + 差异分析，向 ctx.tools 注册（scope: code）。
  * 文件预览复用 deepagents fs 工具之外的场景化预览（元数据 + 截断内容）。
+ * code 模式提示段（挂载即出现）同属本插件。
  */
 
 const PREVIEW_MAX_BYTES = 64 * 1024;
@@ -82,6 +84,8 @@ export function createCodeToolsPlugin(): PluginDefinition {
       const tools = ctx.get("tools");
       tools.register(previewFileTool);
       tools.register(diffFilesTool);
+      // code 模式段：提示与工具同属主（挂载即出现）
+      ctx.get("systemPrompt").register(codeModePromptSection);
     },
   };
 }
