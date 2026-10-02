@@ -86,7 +86,9 @@
 - Settings View 的 revision 是整个 workspace Registry 的单调修订，持久 mutation 成功后推进，commit 后广播相同 View；没有配置变化的 refresh 不增修订。禁止 Date.now、数组长度、各实例 revision 求和。
 - 原 Key 表单依赖旧明文作脏比较，宿主不回读后必须在原组件增加最小 presence/明确 clear 接线；不重新手写供应商 UI。
 
-现有 KenFutWork `modelProviders` 已持有身份、workspace 隔离、加密和真实实例库，必须扩此聚合承接上述语义：当前 `providerInstanceCreateRequestSchema` 要求 Key 和模型齐全，update 禁止空 models；`encrypted_api_key` 非空、读面 hasCredential 恒 true；缺 workspace 修订、CAS、顺序及完整 original model overlay。后续前向迁移与域接口应补这些事实，不另建明文 ZCode 配置文件或第二套模型真相。原 `providerFacades` 的原样 serializer 会含 Key，不能直接跨网络返回。
+KenFutWork `modelProviders` 持有身份、workspace 隔离、加密和真实实例库，扩此聚合承接上述语义。草稿切片已新增前向迁移 `20261002210045_provider_draft_registry.sql`：凭证允许真实 NULL，读面 hasCredential 反映实际配置；workspace 修订随配置写入同事务推进，探测缓存及同值写入不推进。原宿主已接无 Key/无模型的创建、读取、刷新和删除。既有 HTTP create/update 仍要求完整实例；完整原 overlay、模型原子操作/CAS、顺序、通知和凭证 clear 继续实施，不另建明文 ZCode 配置文件或第二套模型真相。原 `providerFacades` 的原样 serializer 会含 Key，不能直接跨网络返回。
+
+草稿公开 RPC red（未实现时 501）→green 已在独占临时数据库验证，含创建/删除 revision +1、读取/刷新不增修订、不可执行和凭证不回读。72 条迁移空库重放、历史 SHA、二次 no-op 和实际可空字段检查通过；server 1478 回归、server 类型检查与 25 项 workspace/API 门禁通过。该切片只证明空草稿链路。
 
 只读审计基线仍为 `29628c9acdb81b703bbd4080c207a0e7ce5e276e`。上述缺口说明当前模型读取冒烟不证明原设置写入完成；服务接线验收必须覆盖空草稿→模型配置→写 Key→真实 executable、清 Key、删除最后模型、并发/CAS、通知和刷新恢复。
 

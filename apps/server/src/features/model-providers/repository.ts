@@ -7,7 +7,7 @@ export type ProviderInstanceRecord = {
   name: string;
   protocol: string;
   base_url: string | null;
-  encrypted_api_key: string;
+  encrypted_api_key: string | null;
   models: Array<{
     id: string;
     name: string;
@@ -41,7 +41,7 @@ export type NewWorkspaceInstance = {
   compat?: Record<string, unknown> | undefined;
   headers?: Record<string, string> | undefined;
   createdBy: string;
-  encryptedApiKey: string;
+  encryptedApiKey: string | null;
   enabled: boolean;
   models: unknown;
   name: string;
@@ -72,6 +72,7 @@ export type NewSystemInstance = {
  *   避免与工作区实例串行。
  */
 export interface ModelProviderRepository {
+  getWorkspaceRevision(workspaceId: string): Promise<number>;
   deleteSystemInstance(instanceId: string): Promise<number>;
   deleteWorkspaceInstance(
     workspaceId: string,
@@ -149,6 +150,14 @@ export function createModelProviderRepository(
   persistence: PersistenceService,
 ): ModelProviderRepository {
   return {
+    async getWorkspaceRevision(workspaceId) {
+      const row = await persistence
+        .forWorkspace(workspaceId)
+        .queryOne<{ revision: string }>(
+          `select revision from public.provider_registry_revisions where workspace_id = :workspace`,
+        );
+      return Number(row?.revision ?? 0);
+    },
     async listWorkspaceInstances(workspaceId) {
       return persistence
         .forWorkspace(workspaceId)

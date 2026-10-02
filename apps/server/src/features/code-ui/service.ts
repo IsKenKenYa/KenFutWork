@@ -10,6 +10,7 @@ import {
   appSettingsSchema,
   zcodeWorkspacePresentationSchema,
 } from "@zcode/shared";
+import { z } from "zod";
 import type { AgentRunService } from "../../agent/runtime.js";
 import { resolveSandboxDir } from "../../agent/sandbox-dir.js";
 import type { ServerEnv } from "../../config/env.js";
@@ -89,6 +90,39 @@ export class CodeUiService {
     method: string,
     args: unknown[],
   ) {
+    if (service === "providerSettingsService") {
+      if (method === "getView" || method === "refresh")
+        return { result: (await this.modelViews(user)).settings };
+      if (method === "createPersonalProvider") {
+        const input = z
+          .object({
+            providerName: z.string().min(1).optional(),
+            locale: z.enum(["zh-CN", "en-US"]).optional(),
+          })
+          .strict()
+          .parse(args[0] ?? {});
+        const provider = await this.deps.modelProviders.createDraftInstance(
+          user,
+          {
+            name: input.providerName ?? "new-provider",
+            protocol: "openai-compatible",
+          },
+        );
+        return {
+          result: {
+            providerId: provider.id,
+            view: (await this.modelViews(user)).settings,
+          },
+        };
+      }
+      if (method === "deletePersonalProvider") {
+        await this.deps.modelProviders.deleteInstance(
+          user,
+          z.string().uuid().parse(args[0]),
+        );
+        return { result: (await this.modelViews(user)).settings };
+      }
+    }
     if (service === "file" && method === "readTextFile")
       return {
         result: await readCodeUiTextFile(
@@ -600,14 +634,16 @@ export class CodeUiService {
     selection?: protocol.SessionConfigState["modelSelection"] | null,
   ) {
     const workspace = await this.deps.viewer.resolveWorkspace(user);
-    const [instances, catalog, settings] = await Promise.all([
+    const [instances, catalog, settings, revision] = await Promise.all([
       this.deps.modelProviders.listInstances(user),
       this.deps.modelCatalog.listCatalog(user),
       this.deps.settings.getWorkspaceSettings(user, workspace.id),
+      this.deps.modelProviders.getWorkspaceRevision(user),
     ]);
     return buildCodeUiModelViews({
       instances,
       catalog,
+      revision,
       ...(settings.defaultModel
         ? { defaultSpecifier: settings.defaultModel }
         : {}),

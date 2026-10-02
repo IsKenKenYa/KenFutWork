@@ -105,8 +105,11 @@ export function buildCodeUiModelViews(input: {
 }): { settings: ProviderSettingsView; selection: ModelSelectionView } {
   const revision = input.revision ?? 0;
   const providers = input.instances
-    .filter((instance) =>
-      instance.models.some((model) => model.capability === "chat"),
+    .filter(
+      (instance) =>
+        instance.protocol === "openai-compatible" ||
+        instance.protocol === "anthropic" ||
+        instance.protocol === "gemini",
     )
     .map((instance) => ({
       providerId: instance.id,

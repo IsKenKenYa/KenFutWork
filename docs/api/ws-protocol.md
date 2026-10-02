@@ -46,3 +46,5 @@
 Code 使用 `packages/shared/src/code-ui-contracts.ts` 导出的原 V4 协议：认证 HTTP RPC `/api/code-ui/rpc` 与 SSE `/api/code-ui/events`，不经旧工作台的 TaskMessage 展示归约。连接先收 hello，以 connectionId 完成 clientHello；原 subscribe 服务参数是 sessionId，RPC 只返回 ACK，snapshot/恢复帧随后经 owned 通知下发。主/子转录与租约独立，UI 复用原 SessionDataLayer。
 
 现阶段已接创建、发送、命令查询、快照/订阅/恢复、历史行读取、Task 索引及文本文件读取。权限/提问、停止/队列、文件回退、终端等尚待接通；既有 `/api/ws` 的 Design/终端通道不因此改变。
+
+供应商 Settings RPC 已接 `getView`、`refresh`、空配置的 `createPersonalProvider` 和 `deletePersonalProvider`。草稿真实持久化无凭证、无模型状态，不能执行；读面不返回 Key。View 使用持久工作区配置修订，创建/删除推进修订，无变化刷新保持修订。完整 overlay、模型操作/CAS、凭证 clear 和 `onDidChange` 通知仍待接通，不能将这条草稿链路视为设置全部完成。

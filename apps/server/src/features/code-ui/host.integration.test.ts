@@ -71,6 +71,81 @@ async function openCodeStream(streams: AbortController[]) {
 }
 
 describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", () => {
+  it("原供应商创建操作保存真实无凭证无模型草稿，读取和刷新保持不可执行且不泄露凭证", async () => {
+    expect((await request("/api/viewer")).status).toBe(200);
+    let providerId = "";
+    const rpc = (method: string, args: unknown[] = []) =>
+      request("/api/code-ui/rpc", {
+        service: "providerSettingsService",
+        method,
+        args,
+      });
+    try {
+      const initial = await rpc("getView");
+      expect(initial.status).toBe(200);
+      const created = await rpc("createPersonalProvider", [
+        { providerName: `Code 草稿 ${randomUUID()}`, locale: "zh-CN" },
+      ]);
+      expect(created.status, JSON.stringify(created.body)).toBe(200);
+      expect(created.body.result.view.revision).toBe(
+        initial.body.result.revision + 1,
+      );
+      providerId = created.body.result.providerId;
+      const draft = created.body.result.view.providers.find(
+        (provider: { providerId: string }) =>
+          provider.providerId === providerId,
+      );
+      expect(draft).toMatchObject({
+        providerId,
+        executable: false,
+        models: [],
+      });
+      expect(JSON.stringify(draft)).not.toMatch(/apiKey|encrypted_api_key/);
+      const loaded = await rpc("getView");
+      expect(loaded.status).toBe(200);
+      expect(loaded.body.result.revision).toBe(
+        created.body.result.view.revision,
+      );
+      expect(
+        loaded.body.result.providers.find(
+          (provider: { providerId: string }) =>
+            provider.providerId === providerId,
+        ),
+      ).toEqual(draft);
+      const fresh = await rpc("refresh", ["integration:reload"]);
+      expect(fresh.status).toBe(200);
+      expect(fresh.body.result.revision).toBe(loaded.body.result.revision);
+      expect(
+        fresh.body.result.providers.find(
+          (provider: { providerId: string }) =>
+            provider.providerId === providerId,
+        ),
+      ).toEqual(draft);
+      const selectable = await request("/api/code-ui/rpc", {
+        service: "modelSelectionService",
+        method: "getView",
+        args: [],
+      });
+      expect(
+        selectable.body.result.providers.some(
+          (provider: { providerId: string }) =>
+            provider.providerId === providerId,
+        ),
+      ).toBe(false);
+      const removed = await rpc("deletePersonalProvider", [providerId]);
+      expect(removed.status).toBe(200);
+      expect(removed.body.result.revision).toBe(fresh.body.result.revision + 1);
+      expect(
+        removed.body.result.providers.some(
+          (provider: { providerId: string }) =>
+            provider.providerId === providerId,
+        ),
+      ).toBe(false);
+      providerId = "";
+    } finally {
+      if (providerId) await rpc("deletePersonalProvider", [providerId]);
+    }
+  });
   it("原文件宿主读取空文件与 Unicode，拒绝项目外路径与 symlink 逃逸", async () => {
     const dir = await mkdtemp(join(tmpdir(), "ken-code-ui-files-"));
     const outside = await mkdtemp(join(tmpdir(), "ken-code-ui-outside-"));

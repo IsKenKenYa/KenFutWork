@@ -108,7 +108,7 @@ function toResponse(row: ProviderInstanceRecord): ProviderInstanceResponse {
     name: row.name,
     protocol: row.protocol as ProviderProtocol,
     ...(row.base_url ? { baseUrl: row.base_url } : {}),
-    hasCredential: true,
+    hasCredential: Boolean(row.encrypted_api_key),
     models: mapModels(row.models),
     ...(row.compat ? { compat: row.compat } : {}),
     // 自定义头只回键名，值不回显（与 MCP env/envKeys 同口径）。
@@ -153,6 +153,11 @@ function toPatch(input: ProviderInstanceUpdateRequest) {
 }
 
 export interface ModelProviderService {
+  getWorkspaceRevision(user: AuthenticatedUser): Promise<number>;
+  createDraftInstance(
+    user: AuthenticatedUser,
+    input: { name: string; protocol: ProviderProtocol; baseUrl?: string },
+  ): Promise<ProviderInstanceResponse>;
   listInstances(user: AuthenticatedUser): Promise<ProviderInstanceResponse[]>;
   createInstance(
     user: AuthenticatedUser,
@@ -259,6 +264,12 @@ export function createModelProviderService(options: {
 
   /** 解密实例凭证；停用即 409，解密失败即 fail loud。 */
   function decryptRow(row: ProviderInstanceRecord) {
+    if (!row.encrypted_api_key)
+      throw new ModelProviderServiceError(
+        "credential_unavailable",
+        "Provider credential is not configured.",
+        409,
+      );
     if (!row.enabled) {
       throw new ModelProviderServiceError(
         "credential_unavailable",
@@ -282,6 +293,33 @@ export function createModelProviderService(options: {
   }
 
   return {
+    async getWorkspaceRevision(user) {
+      return repository.getWorkspaceRevision(
+        await requireWorkspaceId(user, "instance_query_failed"),
+      );
+    },
+    async createDraftInstance(user, input) {
+      const workspaceId = await requireWorkspaceId(
+        user,
+        "instance_create_failed",
+      );
+      const row = await repository.insertWorkspaceInstance({
+        name: input.name,
+        protocol: input.protocol,
+        ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
+        workspaceId,
+        createdBy: user.id,
+        encryptedApiKey: null,
+        models: [],
+        enabled: true,
+      });
+      if (!row)
+        throw new ModelProviderServiceError(
+          "instance_create_failed",
+          "Unable to create provider draft.",
+        );
+      return toResponse(row);
+    },
     async listInstances(user) {
       const workspaceId = await requireWorkspaceId(
         user,
