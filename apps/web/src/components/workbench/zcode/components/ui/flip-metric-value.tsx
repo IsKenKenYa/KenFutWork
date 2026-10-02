@@ -1,6 +1,6 @@
-import { cn } from "@zui/components/lib/utils";
-import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { cn } from "@zui/components/lib/utils.js";
 
 const FLIP_TRANSITION = {
   duration: 0.16,
@@ -11,10 +11,7 @@ function usePrefersReducedMotion() {
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
   useEffect(() => {
-    if (
-      typeof window === "undefined" ||
-      typeof window.matchMedia !== "function"
-    ) {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
       return;
     }
 
@@ -115,7 +112,7 @@ export function FlipMetricValue({
 }: {
   value: string;
   className?: string;
-  animateInitial?: boolean | undefined;
+  animateInitial?: boolean;
 }) {
   const reducedMotion = usePrefersReducedMotion();
   const characters = useMemo(() => Array.from(value), [value]);

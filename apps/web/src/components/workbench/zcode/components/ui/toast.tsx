@@ -2,19 +2,14 @@
  * 轻量 toast 提示
  *
  * 不引入第三方库，用 React portal 渲染到 body，3 秒自动消失。
- * 调用方式：`import { toast } from "@zui/components/ui/toast"; toast("message");`
+ * 调用方式：`import { toast } from "@zui/components/ui/toast.js"; toast("message");`
  */
-
-import { cn } from "@zui/components/lib/utils";
-import { Info, TriangleAlert, X } from "lucide-react";
-import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { useEffect, useState } from "react";
+import { Info, TriangleAlert, X } from "lucide-react";
+import { cn } from "@zui/components/lib/utils.js";
 
-export type ToastPosition =
-  | "top-center"
-  | "top-right"
-  | "bottom-left"
-  | "bottom-center";
+export type ToastPosition = "top-center" | "top-right" | "bottom-left" | "bottom-center";
 type ToastVariant = "default" | "update" | "info" | "warning";
 
 export interface ToastOptions {
@@ -35,24 +30,18 @@ export interface ToastItem {
   message: string;
   durationMs: number;
   position: ToastPosition;
-  variant?: ToastVariant | undefined;
-  actionLabel?: string | undefined;
-  onAction?: (() => void) | undefined;
-  dismissible?: boolean | undefined;
-  dismissLabel?: string | undefined;
-  anchorId?: string | undefined;
-  dedupeKey?: string | undefined;
+  variant?: ToastVariant;
+  actionLabel?: string;
+  onAction?: () => void;
+  dismissible?: boolean;
+  dismissLabel?: string;
+  anchorId?: string;
+  dedupeKey?: string;
 }
 
-export function upsertToastItem(
-  items: readonly ToastItem[],
-  item: ToastItem,
-): ToastItem[] {
+export function upsertToastItem(items: readonly ToastItem[], item: ToastItem): ToastItem[] {
   if (!item.dedupeKey) return [...items, item];
-  return [
-    ...items.filter((current) => current.dedupeKey !== item.dedupeKey),
-    item,
-  ];
+  return [...items.filter((current) => current.dedupeKey !== item.dedupeKey), item];
 }
 
 export function resolveToastStackClassName(position: ToastPosition): string {
@@ -107,19 +96,14 @@ function ToastContainer() {
       }
       // 挂载前的进度更新和既有去重必须同时生效，不能合入分享提示后又堆叠同一操作。
       setItems((prev) =>
-        upsertToastItem(
-          prev,
-          pendingUpdate ? { ...item, ...pendingUpdate } : item,
-        ),
+        upsertToastItem(prev, pendingUpdate ? { ...item, ...pendingUpdate } : item),
       );
     };
     removeToast = (id: number) => {
       setItems((prev) => prev.filter((item) => item.id !== id));
     };
     updateToastItem = (id: number, patch: ToastUpdate) => {
-      setItems((prev) =>
-        prev.map((item) => (item.id === id ? { ...item, ...patch } : item)),
-      );
+      setItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
     };
 
     return () => {
@@ -133,16 +117,10 @@ function ToastContainer() {
     setItems((prev) => prev.filter((item) => item.id !== id));
   };
 
-  const topCenterItems = items.filter(
-    (item) => item.position === "top-center" && !item.anchorId,
-  );
+  const topCenterItems = items.filter((item) => item.position === "top-center" && !item.anchorId);
   const topRightItems = items.filter((item) => item.position === "top-right");
-  const bottomLeftItems = items.filter(
-    (item) => item.position === "bottom-left",
-  );
-  const bottomCenterItems = items.filter(
-    (item) => item.position === "bottom-center",
-  );
+  const bottomLeftItems = items.filter((item) => item.position === "bottom-left");
+  const bottomCenterItems = items.filter((item) => item.position === "bottom-center");
   const anchoredTopCenterItems = new Map<string, ToastItem[]>();
   for (const item of items) {
     if (item.position !== "top-center" || !item.anchorId) continue;
@@ -168,23 +146,13 @@ function ToastContainer() {
       {/* 左下角 */}
       <div className={resolveToastStackClassName("bottom-left")}>
         {bottomLeftItems.map((item) => (
-          <ToastMessage
-            key={item.id}
-            item={item}
-            onDone={handleRemove}
-            isBottom={true}
-          />
+          <ToastMessage key={item.id} item={item} onDone={handleRemove} isBottom />
         ))}
       </div>
       {/* 底部居中：保存和连通性等操作结果固定在窗口底部，不随设置内容滚动。 */}
       <div className={resolveToastStackClassName("bottom-center")}>
         {bottomCenterItems.map((item) => (
-          <ToastMessage
-            key={item.id}
-            item={item}
-            onDone={handleRemove}
-            isBottom={true}
-          />
+          <ToastMessage key={item.id} item={item} onDone={handleRemove} isBottom />
         ))}
       </div>
       {[...anchoredTopCenterItems].map(([anchorId, anchorItems]) => (
@@ -199,9 +167,7 @@ function ToastContainer() {
   );
 }
 
-export function resolveToastAnchorLeft(
-  rect: Pick<DOMRect, "left" | "width">,
-): number {
+export function resolveToastAnchorLeft(rect: Pick<DOMRect, "left" | "width">): number {
   return rect.left + rect.width / 2;
 }
 
@@ -219,9 +185,7 @@ export function AnchoredToastStack({
   useEffect(() => {
     let observedAnchor: HTMLElement | null = null;
     const resizeObserver =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(() => syncPosition());
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => syncPosition());
 
     const syncPosition = () => {
       const anchor = document.getElementById(anchorId);
@@ -231,21 +195,14 @@ export function AnchoredToastStack({
         if (observedAnchor) resizeObserver?.observe(observedAnchor);
       }
       setLeft(
-        observedAnchor
-          ? resolveToastAnchorLeft(observedAnchor.getBoundingClientRect())
-          : null,
+        observedAnchor ? resolveToastAnchorLeft(observedAnchor.getBoundingClientRect()) : null,
       );
     };
     syncPosition();
 
     const mutationObserver =
-      typeof MutationObserver === "undefined"
-        ? null
-        : new MutationObserver(syncPosition);
-    mutationObserver?.observe(document.body, {
-      childList: true,
-      subtree: true,
-    });
+      typeof MutationObserver === "undefined" ? null : new MutationObserver(syncPosition);
+    mutationObserver?.observe(document.body, { childList: true, subtree: true });
     window.addEventListener("resize", syncPosition);
     document.addEventListener("scroll", syncPosition, {
       capture: true,
@@ -338,11 +295,11 @@ export function ToastMessageView({
 }: {
   item: ToastItem;
   visible: boolean;
-  isBottom?: boolean | undefined;
-  title?: string | undefined;
-  body?: string | undefined;
-  onAction?: (() => void) | undefined;
-  onDismiss?: (() => void) | undefined;
+  isBottom?: boolean;
+  title?: string;
+  body?: string;
+  onAction?: () => void;
+  onDismiss?: () => void;
 }) {
   const isUpdate = item.variant === "update";
   const isNotice = item.variant === "info" || item.variant === "warning";
@@ -381,9 +338,7 @@ export function ToastMessageView({
             aria-hidden="true"
           />
           <div className="min-w-0 flex-1">
-            <div className="truncate text-ui-base font-medium text-foreground">
-              {displayTitle}
-            </div>
+            <div className="truncate text-ui-base font-medium text-foreground">{displayTitle}</div>
             {displayBody ? (
               <div className="mt-0.5 truncate text-ui-base leading-4 text-foreground-subtle">
                 {displayBody}
@@ -404,15 +359,9 @@ export function ToastMessageView({
         // 固定最小高度会在 12px 内容 padding 之外继续补高，产生额外上下留白。
         <div className="flex min-w-0 items-center gap-4 px-4">
           {item.variant === "warning" ? (
-            <TriangleAlert
-              className="size-4 shrink-0 text-warning"
-              aria-hidden="true"
-            />
+            <TriangleAlert className="size-4 shrink-0 text-warning" aria-hidden="true" />
           ) : (
-            <Info
-              className="size-4 shrink-0 text-foreground-subtle"
-              aria-hidden="true"
-            />
+            <Info className="size-4 shrink-0 text-foreground-subtle" aria-hidden="true" />
           )}
           <div className="flex min-w-0 flex-[1_0_0] items-start gap-4 py-3 text-sm">
             <div className="min-w-0 flex-1 leading-5">

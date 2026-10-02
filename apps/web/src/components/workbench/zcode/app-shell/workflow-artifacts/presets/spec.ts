@@ -1,9 +1,4 @@
 /**
- * zcode 照搬：`@/app-shell/workflow-artifacts/presets/spec.ts`（references/zcode/packages/ui/src/app-shell/workflow-artifacts/presets/spec.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-/**
  * 预置产物（chart / table / metrics / board）的 spec 类型镜像 + 宽松解析。
  *
  * 这里的 `artifact` 是**用户面**的那一个：
@@ -74,11 +69,7 @@ export type BoardSpec = ArtifactPresetOptions & {
 };
 
 export type ArtifactPresetKind = "chart" | "table" | "metrics" | "board";
-export type ArtifactPresetSpec =
-  | ChartSpec
-  | TableSpec
-  | MetricsSpec
-  | BoardSpec;
+export type ArtifactPresetSpec = ChartSpec | TableSpec | MetricsSpec | BoardSpec;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -86,9 +77,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /** 非空字符串；spec 里所有的字段路径 / 列名都必须是它。 */
 function readNonEmptyString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0
-    ? value
-    : undefined;
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
 /**
@@ -126,10 +115,7 @@ function parseFieldList(value: unknown): ArtifactField[] | undefined {
 function parseOptions(spec: Record<string, unknown>): ArtifactPresetOptions {
   const title = readNonEmptyString(spec.title);
   const description = readNonEmptyString(spec.description);
-  return {
-    ...(title ? { title } : {}),
-    ...(description ? { description } : {}),
-  };
+  return { ...(title ? { title } : {}), ...(description ? { description } : {}) };
 }
 
 function parseChartSpec(spec: Record<string, unknown>): ChartSpec | undefined {
@@ -140,18 +126,12 @@ function parseChartSpec(spec: Record<string, unknown>): ChartSpec | undefined {
   // y 单个也好、数组也好，都归一化成数组：下游（apply / 渲染器）只认一种形状，
   // 少一处 `Array.isArray` 分叉就少一处「单序列图漏渲染」的机会。
   const single = Array.isArray(spec.y) ? undefined : parseField(spec.y);
-  const y = Array.isArray(spec.y)
-    ? parseFieldList(spec.y)
-    : single
-      ? [single]
-      : undefined;
+  const y = Array.isArray(spec.y) ? parseFieldList(spec.y) : single ? [single] : undefined;
   if (!y) {
     return undefined;
   }
-  const type =
-    CHART_TYPES.find((candidate) => candidate === spec.type) ?? "line";
-  const scale =
-    CHART_SCALES.find((candidate) => candidate === spec.scale) ?? "linear";
+  const type = CHART_TYPES.find((candidate) => candidate === spec.type) ?? "line";
+  const scale = CHART_SCALES.find((candidate) => candidate === spec.scale) ?? "linear";
   const baseline = parseField(spec.baseline);
   return {
     ...parseOptions(spec),
@@ -172,9 +152,7 @@ function parseTableSpec(spec: Record<string, unknown>): TableSpec | undefined {
   return { ...parseOptions(spec), columns, ...(key ? { key } : {}) };
 }
 
-function parseMetricsSpec(
-  spec: Record<string, unknown>,
-): MetricsSpec | undefined {
+function parseMetricsSpec(spec: Record<string, unknown>): MetricsSpec | undefined {
   const metrics = parseFieldList(spec.metrics);
   if (!metrics) {
     return undefined;

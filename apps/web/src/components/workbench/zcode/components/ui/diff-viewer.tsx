@@ -1,18 +1,13 @@
-/**
- * zcode 照搬：`@/components/ui/diff-viewer.tsx`（references/zcode/packages/ui/src/components/ui/diff-viewer.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；
- *           P6 适配：exactOptionalPropertyTypes——@pierre/diffs 组件可选 props（theme/themeType/selectedLines）改条件展开。
- */
 "use client";
 
-import type { FileContents, FileDiffOptions } from "@pierre/diffs";
-import { MultiFileDiff, PatchDiff } from "@pierre/diffs/react";
-import { cn } from "@zui/components/lib/utils";
-import { DIFFS_PREFERRED_HIGHLIGHTER } from "@zui/lib/diffsHighlighterEngine";
 import type { CSSProperties, HTMLAttributes } from "react";
 import { memo, useMemo } from "react";
 import type { BundledTheme } from "shiki";
+import type { FileContents, FileDiffOptions } from "@pierre/diffs";
+import { MultiFileDiff, PatchDiff } from "@pierre/diffs/react";
+
+import { cn } from "@zui/components/lib/utils.js";
+import { DIFFS_PREFERRED_HIGHLIGHTER } from "@zui/lib/diffsHighlighterEngine.js";
 
 type DiffViewerStyle = CSSProperties & {
   "--diffs-bg"?: string;
@@ -93,16 +88,14 @@ function DiffViewerComponent(props: DiffViewerProps) {
       unsafeCSS: DIFF_VIEWER_UNSAFE_CSS,
       // @pierre/diffs 的 code 节点在 Shadow DOM 内，外层 Tailwind class 无法命中；
       // 需要覆盖其内部样式时走 unsafeCSS 注入，且只做最小覆盖，不做大范围样式重写。
-      // P6 适配：exactOptionalPropertyTypes——可选 theme/themeType 改条件展开。
-      ...(lightTheme && darkTheme
-        ? {
-            theme: {
+      theme:
+        lightTheme && darkTheme
+          ? {
               light: lightTheme,
               dark: darkTheme,
-            },
-          }
-        : {}),
-      ...(themeType === undefined ? {} : { themeType }),
+            }
+          : undefined,
+      themeType,
       preferredHighlighter: DIFFS_PREFERRED_HIGHLIGHTER,
       ...optionsOverride,
     }),
@@ -114,7 +107,7 @@ function DiffViewerComponent(props: DiffViewerProps) {
       patch={props.patch}
       options={options}
       disableWorkerPool={disableWorkerPool}
-      {...(selectedLines === undefined ? {} : { selectedLines })}
+      selectedLines={selectedLines}
       className={cn("min-h-full w-full", diffClassName)}
       style={viewerStyle}
     />
@@ -124,15 +117,13 @@ function DiffViewerComponent(props: DiffViewerProps) {
       newFile={props.newFile}
       options={options}
       disableWorkerPool={disableWorkerPool}
-      {...(selectedLines === undefined ? {} : { selectedLines })}
+      selectedLines={selectedLines}
       className={cn("min-h-full w-full", diffClassName)}
       style={viewerStyle}
     />
   );
 
-  const divProps = rendersPatch
-    ? omitPatchDiffProps(props)
-    : omitMultiFileDiffProps(props);
+  const divProps = rendersPatch ? omitPatchDiffProps(props) : omitMultiFileDiffProps(props);
 
   return (
     <div

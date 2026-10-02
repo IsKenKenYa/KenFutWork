@@ -2,12 +2,7 @@ const MERMAID_AUTO_RENDER_MAX_SOURCE_CHARS = 20_000;
 const MERMAID_AUTO_RENDER_MAX_LINES = 600;
 const MERMAID_AUTO_RENDER_MAX_COMPLEXITY_SCORE = 1_500;
 
-type MermaidDocumentVisibilityState =
-  | "visible"
-  | "hidden"
-  | "prerender"
-  | "unloaded"
-  | "unknown";
+type MermaidDocumentVisibilityState = "visible" | "hidden" | "prerender" | "unloaded" | "unknown";
 
 type MermaidAutoRenderSkipReason =
   | "document-hidden"
@@ -41,8 +36,7 @@ interface MermaidAutoRenderOptions {
   maxComplexityScore?: number;
 }
 
-const MERMAID_EDGE_TOKEN_PATTERN =
-  /(?:<-->|<--|-->|---|-\.->|==>|--x|--o|x--|o--)/gu;
+const MERMAID_EDGE_TOKEN_PATTERN = /(?:<-->|<--|-->|---|-\.->|==>|--x|--o|x--|o--)/gu;
 const MERMAID_NODE_TOKEN_PATTERN =
   /(?:^|\n)\s*[A-Za-z][\w-]*(?:\[[^\]\n]{0,200}\]|\([^)\n]{0,200}\)|\{[^}\n]{0,200}\})/gu;
 
@@ -74,9 +68,7 @@ export function getCurrentMermaidDocumentVisibility(): MermaidDocumentVisibility
     return "visible";
   }
 
-  const visibilityState = document.visibilityState as
-    | MermaidDocumentVisibilityState
-    | undefined;
+  const visibilityState = document.visibilityState as MermaidDocumentVisibilityState | undefined;
   if (
     visibilityState === "visible" ||
     visibilityState === "hidden" ||
@@ -92,14 +84,8 @@ export function getCurrentMermaidDocumentVisibility(): MermaidDocumentVisibility
 function measureMermaidSource(source: string): MermaidAutoRenderMetrics {
   const sourceChars = source.length;
   const lineCount = countLines(source);
-  const edgeLikeTokenCount = countPatternMatches(
-    source,
-    MERMAID_EDGE_TOKEN_PATTERN,
-  );
-  const nodeLikeTokenCount = countPatternMatches(
-    source,
-    MERMAID_NODE_TOKEN_PATTERN,
-  );
+  const edgeLikeTokenCount = countPatternMatches(source, MERMAID_EDGE_TOKEN_PATTERN);
+  const nodeLikeTokenCount = countPatternMatches(source, MERMAID_NODE_TOKEN_PATTERN);
   const complexityScore = lineCount + edgeLikeTokenCount + nodeLikeTokenCount;
 
   return {
@@ -117,18 +103,13 @@ export function resolveMermaidAutoRenderDecision(
 ): MermaidAutoRenderDecision {
   const metrics = measureMermaidSource(source);
   const documentVisibilityState = options.documentVisibilityState ?? "visible";
-  const maxSourceChars =
-    options.maxSourceChars ?? MERMAID_AUTO_RENDER_MAX_SOURCE_CHARS;
+  const maxSourceChars = options.maxSourceChars ?? MERMAID_AUTO_RENDER_MAX_SOURCE_CHARS;
   const maxLines = options.maxLines ?? MERMAID_AUTO_RENDER_MAX_LINES;
-  const maxComplexityScore =
-    options.maxComplexityScore ?? MERMAID_AUTO_RENDER_MAX_COMPLEXITY_SCORE;
+  const maxComplexityScore = options.maxComplexityScore ?? MERMAID_AUTO_RENDER_MAX_COMPLEXITY_SCORE;
 
   // Mermaid/DOMPurify 渲染会在 native 层构造大 DOM/SVG 字符串，事后 catch 或截断无法阻止 OOM。
   // 因此必须在进入 Mermaid render 前按源码规模和页面可见性做预算门禁。
-  if (
-    documentVisibilityState !== "visible" &&
-    documentVisibilityState !== "unknown"
-  ) {
+  if (documentVisibilityState !== "visible" && documentVisibilityState !== "unknown") {
     return {
       shouldRender: false,
       reason: "document-hidden",

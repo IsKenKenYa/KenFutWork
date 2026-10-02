@@ -1,15 +1,9 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/cuaDetails.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/cuaDetails.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
-
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { CuaScreenshotSection } from "@zui/ToolCallBlocks/renderers/CuaScreenshotSection";
-import type { CuaDetailsModel } from "@zui/ToolCallBlocks/renderers/cua";
-import { CuaDetailListSection } from "@zui/ToolCallBlocks/renderers/cuaListDetails";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
 import { CheckCircle2, XCircle } from "lucide-react";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { CuaDetailsModel } from "@zui/ToolCallBlocks/renderers/cua.js";
+import { CuaScreenshotSection } from "@zui/ToolCallBlocks/renderers/CuaScreenshotSection.js";
+import { CuaDetailListSection } from "@zui/ToolCallBlocks/renderers/cuaListDetails.js";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -17,10 +11,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function readText(
-  record: Record<string, unknown> | null,
-  key: string,
-): string | null {
+function readText(record: Record<string, unknown> | null, key: string): string | null {
   const value = record?.[key];
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -31,9 +22,7 @@ function CuaDetailRows({ rows }: { rows: CuaDetailsModel["actionRows"] }) {
     <dl className="grid grid-cols-[minmax(4rem,auto)_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-sm">
       {rows.map((row) => (
         <div key={`${row.labelId}:${row.value}`} className="contents">
-          <dt className="text-foreground-subtlest">
-            {intl.formatMessage({ id: row.labelId })}
-          </dt>
+          <dt className="text-foreground-subtlest">{intl.formatMessage({ id: row.labelId })}</dt>
           <dd
             className={
               row.code
@@ -80,9 +69,7 @@ export function CuaToolCallDetails({
       ) : null}
       <section
         className={
-          model.actionRows.length > 0
-            ? "space-y-2 border-t border-border pt-3"
-            : "space-y-2"
+          model.actionRows.length > 0 ? "space-y-2 border-t border-border pt-3" : "space-y-2"
         }
       >
         <h4 className="text-sm text-foreground-subtle">
@@ -111,9 +98,7 @@ export function CuaToolCallDetails({
       {model.failureReasonId || model.failureReason ? (
         <section className="space-y-2 border-t border-border pt-3">
           <h4 className="text-sm text-foreground-subtle">
-            {intl.formatMessage({
-              id: "chat.toolCall.cua.details.failureReason",
-            })}
+            {intl.formatMessage({ id: "chat.toolCall.cua.details.failureReason" })}
           </h4>
           <p className="text-sm text-foreground">
             {model.failureReasonId
@@ -125,9 +110,7 @@ export function CuaToolCallDetails({
       {model.suggestedActionId || model.suggestedAction ? (
         <section className="space-y-2 border-t border-border pt-3">
           <h4 className="text-sm text-foreground-subtle">
-            {intl.formatMessage({
-              id: "chat.toolCall.cua.details.suggestedAction",
-            })}
+            {intl.formatMessage({ id: "chat.toolCall.cua.details.suggestedAction" })}
           </h4>
           <p className="text-sm text-foreground">
             {model.suggestedActionId
@@ -136,15 +119,11 @@ export function CuaToolCallDetails({
           </p>
         </section>
       ) : null}
-      {model.screenshot ? (
-        <CuaScreenshotSection screenshot={model.screenshot} />
-      ) : null}
+      {model.screenshot ? <CuaScreenshotSection screenshot={model.screenshot} /> : null}
       {model.permissionRows?.length ? (
         <section className="space-y-2 border-t border-border pt-3">
           <h4 className="text-sm text-foreground-subtle">
-            {intl.formatMessage({
-              id: "chat.toolCall.cua.details.permissions",
-            })}
+            {intl.formatMessage({ id: "chat.toolCall.cua.details.permissions" })}
           </h4>
           <CuaDetailRows rows={model.permissionRows} />
         </section>
@@ -152,9 +131,7 @@ export function CuaToolCallDetails({
       {model.environmentRows?.length ? (
         <section className="space-y-2 border-t border-border pt-3">
           <h4 className="text-sm text-foreground-subtle">
-            {intl.formatMessage({
-              id: "chat.toolCall.cua.details.environment",
-            })}
+            {intl.formatMessage({ id: "chat.toolCall.cua.details.environment" })}
           </h4>
           <CuaDetailRows rows={model.environmentRows} />
         </section>

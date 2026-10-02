@@ -1,19 +1,13 @@
-/**
- * zcode 照搬：`@/hooks/useWorkflowRunArtifacts.ts`（references/zcode/packages/ui/src/hooks/useWorkflowRunArtifacts.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { orderArtifactsPrimaryFirst } from "@zui/app-shell/workflow-artifacts/artifactPresentation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   WorkflowRunArtifact,
   WorkflowRunArtifactKind,
   WorkflowRunArtifactSummary,
   WorkflowRunArtifactVersion,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import { logger } from "@zui/logger";
-import { useV4Conversation } from "@zui/v4/V4ConversationContext";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+} from "@zcode/shared/zcode-protocol-v4";
+import { orderArtifactsPrimaryFirst } from "@zui/app-shell/workflow-artifacts/artifactPresentation.js";
+import { logger } from "@zui/logger.js";
+import { useV4Conversation } from "@zui/v4/V4ConversationContext.js";
 
 /**
  * ⚠ 术语：本模块的 artifact 是
@@ -80,10 +74,7 @@ interface WorkflowRunArtifactsViewState {
  */
 function isWorkflowRunArtifactsCapabilityMissing(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return (
-    message.includes("capabilityUnsupported") ||
-    message.includes("ArtifactRows")
-  );
+  return message.includes("capabilityUnsupported") || message.includes("ArtifactRows");
 }
 
 /**
@@ -94,13 +85,9 @@ function isWorkflowRunArtifactsCapabilityMissing(error: unknown): boolean {
  * 每轮 report 的看板每轮重查一次 journal。反过来，新产物出现与同 id 发布新版都会改这个签名，
  * 而那两件事恰恰**必须**重查（新产物要 spec，新版要 versions）。
  */
-function summariesSignature(
-  summaries: readonly WorkflowRunArtifactSummary[] | undefined,
-): string {
+function summariesSignature(summaries: readonly WorkflowRunArtifactSummary[] | undefined): string {
   if (summaries === undefined) return "";
-  return summaries
-    .map((summary) => `${summary.id}:${summary.kind}:${summary.version}`)
-    .join("|");
+  return summaries.map((summary) => `${summary.id}:${summary.kind}:${summary.version}`).join("|");
 }
 
 function viewFromJournal(record: WorkflowRunArtifact): WorkflowRunArtifactView {
@@ -108,15 +95,9 @@ function viewFromJournal(record: WorkflowRunArtifact): WorkflowRunArtifactView {
     id: record.id,
     kind: record.kind,
     ...(record.title === undefined ? {} : { title: record.title }),
-    ...(record.description === undefined
-      ? {}
-      : { description: record.description }),
-    ...(record.contentType === undefined
-      ? {}
-      : { contentType: record.contentType }),
-    ...(record.sourcePath === undefined
-      ? {}
-      : { sourcePath: record.sourcePath }),
+    ...(record.description === undefined ? {} : { description: record.description }),
+    ...(record.contentType === undefined ? {} : { contentType: record.contentType }),
+    ...(record.sourcePath === undefined ? {} : { sourcePath: record.sourcePath }),
     ...(record.spec === undefined ? {} : { spec: record.spec }),
     // journal 的元素不带 bytes（字节挂在版本上），所以从最新版上取。
     ...(() => {
@@ -130,16 +111,12 @@ function viewFromJournal(record: WorkflowRunArtifact): WorkflowRunArtifactView {
   };
 }
 
-function viewFromSummary(
-  summary: WorkflowRunArtifactSummary,
-): WorkflowRunArtifactView {
+function viewFromSummary(summary: WorkflowRunArtifactSummary): WorkflowRunArtifactView {
   return {
     id: summary.id,
     kind: summary.kind,
     ...(summary.title === undefined ? {} : { title: summary.title }),
-    ...(summary.contentType === undefined
-      ? {}
-      : { contentType: summary.contentType }),
+    ...(summary.contentType === undefined ? {} : { contentType: summary.contentType }),
     ...(summary.bytes === undefined ? {} : { bytes: summary.bytes }),
     version: summary.version,
     itemCount: summary.itemCount ?? 0,
@@ -169,9 +146,7 @@ function mergeArtifactSources(
   if (live === undefined) {
     return journal === undefined ? [] : journal.map(viewFromJournal);
   }
-  const byId = new Map(
-    (journal ?? []).map((record) => [record.id, record] as const),
-  );
+  const byId = new Map((journal ?? []).map((record) => [record.id, record] as const));
   const merged = live.map((summary) => {
     const record = byId.get(summary.id);
     if (record === undefined) return viewFromSummary(summary);
@@ -183,12 +158,8 @@ function mergeArtifactSources(
       ...viewFromSummary(summary),
       ...(record.versions.length === 0 ? {} : { versions: record.versions }),
       ...(record.spec === undefined ? {} : { spec: record.spec }),
-      ...(record.sourcePath === undefined
-        ? {}
-        : { sourcePath: record.sourcePath }),
-      ...(record.description === undefined
-        ? {}
-        : { description: record.description }),
+      ...(record.sourcePath === undefined ? {} : { sourcePath: record.sourcePath }),
+      ...(record.description === undefined ? {} : { description: record.description }),
     } satisfies WorkflowRunArtifactView;
   });
   return [...merged, ...[...byId.values()].map(viewFromJournal)];
@@ -219,9 +190,7 @@ export function useWorkflowRunArtifacts(options: {
   enabled?: boolean;
 }): WorkflowRunArtifactsViewState {
   const { workflowRunArtifacts } = useV4Conversation();
-  const [journal, setJournal] = useState<
-    readonly WorkflowRunArtifact[] | undefined
-  >(undefined);
+  const [journal, setJournal] = useState<readonly WorkflowRunArtifact[] | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -229,9 +198,7 @@ export function useWorkflowRunArtifacts(options: {
   const requestVersionRef = useRef(0);
 
   const enabled =
-    options.enabled !== false &&
-    options.sessionId.length > 0 &&
-    options.runId.length > 0;
+    options.enabled !== false && options.sessionId.length > 0 && options.runId.length > 0;
   const signature = summariesSignature(options.live);
   const { sessionId, runId } = options;
 
@@ -255,11 +222,7 @@ export function useWorkflowRunArtifacts(options: {
         return;
       }
       const message = caught instanceof Error ? caught.message : String(caught);
-      logger.warn("[workflow-artifacts] 读取产物清单失败", {
-        error: message,
-        runId,
-        sessionId,
-      });
+      logger.warn("[workflow-artifacts] 读取产物清单失败", { error: message, runId, sessionId });
       setError(message);
     }
   }, [runId, sessionId, workflowRunArtifacts]);

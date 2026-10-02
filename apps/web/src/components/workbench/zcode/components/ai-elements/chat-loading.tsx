@@ -1,14 +1,9 @@
-/**
- * zcode 照搬：`@/components/ai-elements/chat-loading.tsx`（references/zcode/packages/ui/src/components/ai-elements/chat-loading.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
 "use client";
 
-import { cn } from "@zui/components/lib/utils";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { LoaderIcon } from "lucide-react";
 import type { ComponentPropsWithoutRef } from "react";
+import { LoaderIcon } from "lucide-react";
+import { cn } from "@zui/components/lib/utils.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 
 export interface ChatLoadingProps extends ComponentPropsWithoutRef<"div"> {
   loading: boolean;
@@ -16,12 +11,7 @@ export interface ChatLoadingProps extends ComponentPropsWithoutRef<"div"> {
   className?: string;
 }
 
-export function ChatLoading({
-  loading,
-  size = "default",
-  className,
-  ...props
-}: ChatLoadingProps) {
+export function ChatLoading({ loading, size = "default", className, ...props }: ChatLoadingProps) {
   const { intl } = useZCodeIntl();
 
   if (!loading) {

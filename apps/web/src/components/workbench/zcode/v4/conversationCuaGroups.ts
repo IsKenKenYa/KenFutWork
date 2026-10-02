@@ -1,20 +1,8 @@
-/**
- * zcode 照搬：`@/v4/conversationCuaGroups.ts`（references/zcode/packages/ui/src/v4/conversationCuaGroups.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射；AssistantWorkRow 改从其定义模块 @zui/v4/conversationTurnFlowItems.js 导入，避免拖入 conversationTurnRenderUnits → workflowLaunchTurn 工作流链（手册 §2.1）。
- */
-
-import type { TaskChatToolCallTreeNode } from "@zui/lib/toolCallTree";
-import type {
-  AssistantTextRow,
-  ReasoningRow,
-  ToolCallRow,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import type {
-  AssistantWorkRow,
-  ConversationTurnFlowItem,
-} from "@zui/v4/conversationTurnFlowItems";
-import { toolCallRowToLegacyNode } from "@zui/v4/toolCallRowAdapter";
+import type { AssistantTextRow, ReasoningRow, ToolCallRow } from "@zcode/shared/zcode-protocol-v4";
+import type { TaskChatToolCallTreeNode } from "@zui/lib/toolCallTree.js";
+import type { AssistantWorkRow } from "@zui/v4/conversationTurnRenderUnits.js";
+import type { ConversationTurnFlowItem } from "@zui/v4/conversationTurnFlowItems.js";
+import { toolCallRowToLegacyNode } from "@zui/v4/toolCallRowAdapter.js";
 
 export type ConversationCuaGroupEvent =
   | { kind: "tool"; row: ToolCallRow; node: TaskChatToolCallTreeNode }
@@ -58,16 +46,12 @@ function buildCuaGroup(
   assistantResponseId?: string,
   anchorRow?: ToolCallRow,
 ): ConversationCuaGroupRenderItem {
-  const rows = events.flatMap((event) =>
-    event.kind === "tool" ? [event.row] : [],
-  );
+  const rows = events.flatMap((event) => (event.kind === "tool" ? [event.row] : []));
   const firstRow = anchorRow ?? rows[0];
   const identity = assistantResponseId
     ? `cua-response:${assistantResponseId}`
     : `cua:${firstRow?.rowId ?? "unknown"}`;
-  const virtualToolId = assistantResponseId
-    ? identity
-    : `cua:${firstRow?.toolCallId ?? "unknown"}`;
+  const virtualToolId = assistantResponseId ? identity : `cua:${firstRow?.toolCallId ?? "unknown"}`;
   return {
     kind: "cuaGroup",
     // 以首个 ToolCall 为身份无法在正文流式阶段表达 response，也会让工具到达时
@@ -87,10 +71,7 @@ function buildCuaGroup(
         title: "Computer Use",
         input: {},
         status: active ? "in_progress" : "completed",
-        startedAt:
-          typeof firstRow?.startedAt === "number"
-            ? firstRow.startedAt
-            : undefined,
+        startedAt: typeof firstRow?.startedAt === "number" ? firstRow.startedAt : undefined,
       },
       childToolCalls: rows.map(toolCallRowToLegacyNode),
     },
@@ -162,28 +143,16 @@ export function prepareCuaGroupFlowItems(
     anchorRow?: ToolCallRow,
   ): ConversationCuaGroupRenderItem => {
     if (activeGroup) {
-      if (
-        assistantResponseId &&
-        !activeGroup.assistantResponseIds.includes(assistantResponseId)
-      ) {
+      if (assistantResponseId && !activeGroup.assistantResponseIds.includes(assistantResponseId)) {
         activeGroup.assistantResponseIds.push(assistantResponseId);
       }
       return activeGroup;
     }
-    activeGroup = buildCuaGroup(
-      [],
-      true,
-      flowKind,
-      assistantResponseId,
-      anchorRow,
-    );
+    activeGroup = buildCuaGroup([], true, flowKind, assistantResponseId, anchorRow);
     prepared.push(activeGroup);
     return activeGroup;
   };
-  const appendCua = (
-    row: ToolCallRow,
-    flowKind: ConversationCuaGroupRenderItem["flowKind"],
-  ) => {
+  const appendCua = (row: ToolCallRow, flowKind: ConversationCuaGroupRenderItem["flowKind"]) => {
     const event: ConversationCuaGroupEvent = {
       kind: "tool",
       row,
@@ -199,11 +168,7 @@ export function prepareCuaGroupFlowItems(
     flowKind: ConversationCuaGroupRenderItem["flowKind"],
     classification: ResponseClassification,
   ) => {
-    const group = ensureGroup(
-      flowKind,
-      row.assistantResponseId,
-      classification.firstCuaRow,
-    );
+    const group = ensureGroup(flowKind, row.assistantResponseId, classification.firstCuaRow);
     group.events.push({ kind: "assistantMessage", row });
   };
   const appendReasoning = (
@@ -211,11 +176,7 @@ export function prepareCuaGroupFlowItems(
     flowKind: ConversationCuaGroupRenderItem["flowKind"],
     classification: ResponseClassification,
   ) => {
-    const group = ensureGroup(
-      flowKind,
-      row.assistantResponseId,
-      classification.firstCuaRow,
-    );
+    const group = ensureGroup(flowKind, row.assistantResponseId, classification.firstCuaRow);
     group.events.push({ kind: "reasoning", row });
   };
   const handleAssistantMessage = (
@@ -224,9 +185,7 @@ export function prepareCuaGroupFlowItems(
     appendOutside: () => void,
   ) => {
     const responseId = row.assistantResponseId;
-    const classification = responseId
-      ? responseClassifications.get(responseId)
-      : undefined;
+    const classification = responseId ? responseClassifications.get(responseId) : undefined;
     if (classification?.hasOfficialCua && !classification.hasNonCuaTool) {
       appendAssistantMessage(row, flowKind, classification);
       return;
@@ -246,9 +205,7 @@ export function prepareCuaGroupFlowItems(
     appendOutside: () => void,
   ) => {
     const responseId = row.assistantResponseId;
-    const classification = responseId
-      ? responseClassifications.get(responseId)
-      : undefined;
+    const classification = responseId ? responseClassifications.get(responseId) : undefined;
     if (classification?.hasOfficialCua && !classification.hasNonCuaTool) {
       appendReasoning(row, flowKind, classification);
       return;
@@ -276,9 +233,7 @@ export function prepareCuaGroupFlowItems(
       continue;
     }
     if (item.kind === "assistantText") {
-      handleAssistantMessage(item.row, "assistantWork", () =>
-        prepared.push(item),
-      );
+      handleAssistantMessage(item.row, "assistantWork", () => prepared.push(item));
       continue;
     }
 
@@ -289,13 +244,9 @@ export function prepareCuaGroupFlowItems(
         closeGroup();
         appendFlowRow(prepared, item.kind, row);
       } else if (row.kind === "assistantText") {
-        handleAssistantMessage(row, item.kind, () =>
-          appendFlowRow(prepared, item.kind, row),
-        );
+        handleAssistantMessage(row, item.kind, () => appendFlowRow(prepared, item.kind, row));
       } else if (row.kind === "reasoning") {
-        handleReasoning(row, item.kind, () =>
-          appendFlowRow(prepared, item.kind, row),
-        );
+        handleReasoning(row, item.kind, () => appendFlowRow(prepared, item.kind, row));
       } else {
         // marker、todo/status 只在 Group 外展示，不构成 response 工具边界。
         appendFlowRow(prepared, item.kind, row);
@@ -313,21 +264,14 @@ export function prepareCuaGroups(
   enabled: boolean,
   stageTailIsRunning: boolean,
 ): Array<AssistantWorkRow | ConversationCuaGroupRenderItem> {
-  const projected = prepareCuaGroupFlowItems(
-    [{ kind: "assistantWork", rows: [...rows] }],
-    {
-      enabled,
-      stageTailIsRunning,
-    },
-  );
-  const flattened: Array<AssistantWorkRow | ConversationCuaGroupRenderItem> =
-    [];
+  const projected = prepareCuaGroupFlowItems([{ kind: "assistantWork", rows: [...rows] }], {
+    enabled,
+    stageTailIsRunning,
+  });
+  const flattened: Array<AssistantWorkRow | ConversationCuaGroupRenderItem> = [];
   for (const item of projected) {
     if (item.kind === "cuaGroup") flattened.push(item);
-    else if (
-      item.kind === "assistantHistory" ||
-      item.kind === "assistantWork"
-    ) {
+    else if (item.kind === "assistantHistory" || item.kind === "assistantWork") {
       flattened.push(...item.rows);
     } else if (item.kind === "assistantText") {
       flattened.push(item.row);

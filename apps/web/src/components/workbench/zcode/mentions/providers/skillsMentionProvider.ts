@@ -1,25 +1,12 @@
-/**
- * zcode 照搬：`@/mentions/providers/skillsMentionProvider.ts`（references/zcode/packages/ui/src/mentions/providers/skillsMentionProvider.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀
- *（本仓 Turbopack 不做 .js→.ts/.tsx 试探，手册 §2.4-2 在本仓构建链的等价适配）。
- */
-
-import { useSkills } from "@zui/hooks/useSkills";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import {
-  resolveSkillDisplayDescription,
-  resolveSkillSourceLabel,
-} from "@zui/lib/builtinSkillI18n";
-import { filterSkillsForProvider } from "@zui/lib/skillSourceFilter";
-import type { Locale, SkillScope, ZCodeProvider } from "@zui/lib/zcode-shared";
-import { buildSkillMentionMarkdown } from "@zui/mentions/mentionMarkdown";
-import { filterMentionItemsWithOptions } from "@zui/mentions/mentionSearch";
-import type {
-  MentionCategoryResult,
-  MentionItem,
-} from "@zui/mentions/mentionTypes";
 import { useMemo } from "react";
+import type { Locale, SkillScope, ZCodeProvider } from "@zcode/shared";
+import type { MentionCategoryResult, MentionItem } from "@zui/mentions/mentionTypes.js";
+import { filterMentionItemsWithOptions } from "@zui/mentions/mentionSearch.js";
+import { buildSkillMentionMarkdown } from "@zui/mentions/mentionMarkdown.js";
+import { useSkills } from "@zui/hooks/useSkills.js";
+import { filterSkillsForProvider } from "@zui/lib/skillSourceFilter.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { resolveSkillDisplayDescription, resolveSkillSourceLabel } from "@zui/lib/builtinSkillI18n.js";
 
 export function mapSkillsToMentionItemsForTest(
   skills: Array<{
@@ -28,7 +15,7 @@ export function mapSkillsToMentionItemsForTest(
     description: string;
     path: string;
     scope: SkillScope;
-    pluginName?: string | undefined;
+    pluginName?: string;
   }>,
   locale?: Locale,
 ): MentionItem[] {
@@ -57,14 +44,10 @@ export function mapSkillsToMentionItemsForTest(
       id: `skill:${skill.id}`,
       category: "skills",
       label: skill.name,
-      description: description
-        ? `${sourceLabel} · ${description}`
-        : sourceLabel,
+      description: description ? `${sourceLabel} · ${description}` : sourceLabel,
       value: skill.name,
       markdown: buildSkillMentionMarkdown(skill.name, skill.path),
-      keywords: [
-        ...new Set([skill.name, skill.description, description, skill.scope]),
-      ],
+      keywords: [...new Set([skill.name, skill.description, description, skill.scope])],
       data: {
         path: skill.path,
         scope: skill.scope,
@@ -95,9 +78,7 @@ export function useSkillsMentionProvider(
   const allItems = useMemo(
     () =>
       mapSkillsToMentionItemsForTest(
-        filterSkillsForProvider(skills, provider).filter(
-          (skill) => skill.enabled,
-        ),
+        filterSkillsForProvider(skills, provider).filter((skill) => skill.enabled),
         locale,
       ),
     [locale, provider, skills],

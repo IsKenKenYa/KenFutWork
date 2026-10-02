@@ -1,9 +1,4 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/cuaErrorDetails.ts`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/cuaErrorDetails.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
 
 interface CuaErrorDetails {
   code: string;
@@ -19,10 +14,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function readText(
-  record: Record<string, unknown> | null,
-  key: string,
-): string | null {
+function readText(record: Record<string, unknown> | null, key: string): string | null {
   const value = record?.[key];
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }

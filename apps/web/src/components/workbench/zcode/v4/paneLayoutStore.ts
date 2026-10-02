@@ -1,17 +1,9 @@
-/**
- * zcode 照搬：`@/v4/paneLayoutStore.ts`（references/zcode/packages/ui/src/v4/paneLayoutStore.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
 // 分屏 Layout/Focus 层的 zustand 装配。
 // 模型与纯状态机在 paneLayoutTree.ts，持久化在 paneLayoutPersistence.ts——
 // 本文件只做 store 装配 + 持久化订阅，并 re-export 两者（消费面单一入口）。
-
-import { isRendererReloadNavigation } from "@zui/lib/rendererNavigation";
-import {
-  persistPaneLayout,
-  readPersistedPaneLayout,
-} from "@zui/v4/paneLayoutPersistence";
+import { create } from "zustand";
+import { isRendererReloadNavigation } from "@zui/lib/rendererNavigation.js";
+import { persistPaneLayout, readPersistedPaneLayout } from "@zui/v4/paneLayoutPersistence.js";
 import {
   bindPaneSession,
   closePane,
@@ -19,17 +11,16 @@ import {
   focusPane,
   INITIAL_PANE_LAYOUT,
   openSessionInNewPane,
+  replacePaneBinding,
+  setSplitNodeRatio,
+  splitPaneAt,
+  splitPaneAtSide,
   type PaneBinding,
   type PaneLayoutSnapshot,
   type PaneSplitSide,
   type PaneWorkspaceScope,
-  replacePaneBinding,
   type SplitDirection,
-  setSplitNodeRatio,
-  splitPaneAt,
-  splitPaneAtSide,
-} from "@zui/v4/paneLayoutTree";
-import { create } from "zustand";
+} from "@zui/v4/paneLayoutTree.js";
 
 const persistedPaneLayoutAtModuleLoad = readPersistedPaneLayout();
 const restoredPaneLayoutAtModuleLoad = isRendererReloadNavigation()
@@ -41,22 +32,14 @@ export function hadPersistedPaneLayoutAtModuleLoad(): boolean {
   return persistedPaneLayoutAtModuleLoad !== null;
 }
 
-export * from "@zui/v4/paneLayoutPersistence";
-export * from "@zui/v4/paneLayoutTree";
+export * from "@zui/v4/paneLayoutTree.js";
+export * from "@zui/v4/paneLayoutPersistence.js";
 
 interface PaneLayoutStore extends PaneLayoutSnapshot {
   /** 在 anchor pane 处拆分出 draft pane（绑 scope，首发 createSession 后原地绑定）。 */
-  splitPane: (
-    anchorPaneId: string,
-    direction: SplitDirection,
-    scope: PaneWorkspaceScope,
-  ) => void;
+  splitPane: (anchorPaneId: string, direction: SplitDirection, scope: PaneWorkspaceScope) => void;
   /** 在 anchor pane 四周拆出已绑定 session 的 pane（draft drop / 非 group 拖拽入口）。 */
-  splitPaneWithBinding: (
-    anchorPaneId: string,
-    side: PaneSplitSide,
-    binding: PaneBinding,
-  ) => void;
+  splitPaneWithBinding: (anchorPaneId: string, side: PaneSplitSide, binding: PaneBinding) => void;
   /** 侧栏/下钻入口：已开 → 聚焦；否则焦点 pane 向右拆分并绑定 session。 */
   openSessionInNewPane: (scope: PaneWorkspaceScope, sessionId: string) => void;
   /** draft 临时布局：普通 sidebar 点击只替换 focused secondary，不覆盖 primary draft。 */

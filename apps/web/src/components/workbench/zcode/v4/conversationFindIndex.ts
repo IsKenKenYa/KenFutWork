@@ -1,16 +1,7 @@
-/**
- * zcode 照搬：`@/v4/conversationFindIndex.ts`（references/zcode/packages/ui/src/v4/conversationFindIndex.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { projectAssistantCodeComments } from "@zui/lib/assistantCodeComment";
-import type {
-  AssistantTextRow,
-  UserInputRow,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import type { ConversationTurnRenderUnit } from "@zui/v4/conversationTurnRenderUnits";
-import type { ChatSearchResultHighlightRequest } from "@zui/v4/legacyChatViewTypes";
+import type { AssistantTextRow, UserInputRow } from "@zcode/shared/zcode-protocol-v4";
+import type { ChatSearchResultHighlightRequest } from "@zui/v4/legacyChatViewTypes.js";
+import type { ConversationTurnRenderUnit } from "@zui/v4/conversationTurnRenderUnits.js";
+import { projectAssistantCodeComments } from "@zui/lib/assistantCodeComment.js";
 
 export type ConversationFindRowKind = "userInput" | "assistantText";
 
@@ -96,12 +87,7 @@ export function buildConversationFindIndex(
   const normalizedQuery = normalizeConversationFindQuery(query);
   const targets: ConversationFindTarget[] = [];
   units.forEach((unit, unitIndex) =>
-    addTargetsForUnit(
-      targets,
-      unit,
-      unitIndex,
-      options.projectAssistantCodeComments === true,
-    ),
+    addTargetsForUnit(targets, unit, unitIndex, options.projectAssistantCodeComments === true),
   );
 
   if (!normalizedQuery) {
@@ -196,13 +182,9 @@ function normalizeSearchResultProbeText(text: string): string {
 }
 
 function includesProbe(sourceText: string, probe: string): boolean {
-  const normalizedSource =
-    normalizeSearchResultProbeText(sourceText).toLocaleLowerCase();
-  const normalizedProbe =
-    normalizeSearchResultProbeText(probe).toLocaleLowerCase();
-  return (
-    normalizedProbe.length > 0 && normalizedSource.includes(normalizedProbe)
-  );
+  const normalizedSource = normalizeSearchResultProbeText(sourceText).toLocaleLowerCase();
+  const normalizedProbe = normalizeSearchResultProbeText(probe).toLocaleLowerCase();
+  return normalizedProbe.length > 0 && normalizedSource.includes(normalizedProbe);
 }
 
 export function resolveSearchResultHighlightMatch(
@@ -215,9 +197,7 @@ export function resolveSearchResultHighlightMatch(
 
   const snippet = request.snippet?.trim();
   if (snippet) {
-    const snippetMatch = index.matches.find((match) =>
-      includesProbe(match.sourceText, snippet),
-    );
+    const snippetMatch = index.matches.find((match) => includesProbe(match.sourceText, snippet));
     if (snippetMatch) {
       return snippetMatch;
     }

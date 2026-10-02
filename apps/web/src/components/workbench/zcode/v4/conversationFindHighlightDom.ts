@@ -1,9 +1,4 @@
-/**
- * zcode 照搬：`@/v4/conversationFindHighlightDom.ts`（references/zcode/packages/ui/src/v4/conversationFindHighlightDom.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import type { ConversationFindMatch } from "@zui/v4/conversationFindIndex";
+import type { ConversationFindMatch } from "@zui/v4/conversationFindIndex.js";
 
 const FIND_HIGHLIGHT_NAME = "zcode-v4-conversation-find";
 const ACTIVE_FIND_HIGHLIGHT_NAME = "zcode-v4-conversation-find-active";
@@ -38,8 +33,7 @@ function ensureConversationFindHighlightStyle() {
     return;
   }
 
-  const style =
-    document.getElementById(FIND_STYLE_ID) ?? document.createElement("style");
+  const style = document.getElementById(FIND_STYLE_ID) ?? document.createElement("style");
   style.id = FIND_STYLE_ID;
   if (style.textContent !== FIND_HIGHLIGHT_STYLE) {
     // 开发态 HMR 会复用旧 style 节点；内容变化时必须同步更新。
@@ -58,11 +52,8 @@ function getCssHighlightSupport(): {
     return null;
   }
 
-  const highlights = (
-    CSS as unknown as { highlights?: CssHighlightRegistryLike }
-  ).highlights;
-  const Highlight = (window as unknown as { Highlight?: HighlightConstructor })
-    .Highlight;
+  const highlights = (CSS as unknown as { highlights?: CssHighlightRegistryLike }).highlights;
+  const Highlight = (window as unknown as { Highlight?: HighlightConstructor }).Highlight;
   if (!highlights || !Highlight) {
     return null;
   }
@@ -91,10 +82,7 @@ function shouldSkipTextNode(textNode: Text): boolean {
   );
 }
 
-function collectTextRangesInElement(
-  element: HTMLElement,
-  normalizedQuery: string,
-): Range[] {
+function collectTextRangesInElement(element: HTMLElement, normalizedQuery: string): Range[] {
   const ranges: Range[] = [];
   const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
@@ -129,10 +117,7 @@ function collectTextRangesInElement(
   return ranges;
 }
 
-function getMountedRowElement(
-  root: HTMLElement,
-  rowId: number,
-): HTMLElement | null {
+function getMountedRowElement(root: HTMLElement, rowId: number): HTMLElement | null {
   return root.querySelector<HTMLElement>(`[data-row-id="${rowId}"]`);
 }
 
@@ -177,10 +162,7 @@ export function applyConversationFindHighlights({
     ? getMountedConversationFindRange(root, query, activeMatch)
     : null;
 
-  support.highlights.set(
-    FIND_HIGHLIGHT_NAME,
-    createHighlight(support.Highlight, ranges, 0),
-  );
+  support.highlights.set(FIND_HIGHLIGHT_NAME, createHighlight(support.Highlight, ranges, 0));
   support.highlights.set(
     ACTIVE_FIND_HIGHLIGHT_NAME,
     createHighlight(support.Highlight, activeRange ? [activeRange] : [], 1),
@@ -212,8 +194,7 @@ export function applySearchResultHighlight({
 
 export function scrollConversationFindRangeIntoView(range: Range) {
   const container = range.commonAncestorContainer;
-  const element =
-    container instanceof Element ? container : container.parentElement;
+  const element = container instanceof Element ? container : container.parentElement;
   element?.scrollIntoView({ block: "center", behavior: "smooth" });
 }
 

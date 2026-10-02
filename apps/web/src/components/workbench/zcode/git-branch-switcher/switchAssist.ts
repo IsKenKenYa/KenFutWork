@@ -1,26 +1,15 @@
-/**
- * zcode 照搬：`@/git-branch-switcher/switchAssist.ts`（references/zcode/packages/ui/src/git-branch-switcher/switchAssist.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；
- *           IGitService 来自本仓 lib/zcode-services 宿主切片类型（@zcode/services 不照搬）。
- */
-
+import type { IGitService } from "@zcode/services";
+import type { GitBranchMutationIssue, GitBranchMutationResult, GitIdentity } from "@zcode/shared";
 import {
   buildGitBranchCommitPreviewFiles,
-  type GitBranchCommitPreviewFile,
-  getGitBranchCommitTotals,
   getPrimaryGitBranchIssue,
+  getGitBranchCommitTotals,
   isGitBranchCommitAssistIssue,
   selectGitBranchAffectedFiles,
-} from "@zui/git-branch-switcher/display";
-import { getErrorMessage } from "@zui/lib/errorMessage";
-import type { IGitService } from "@zui/lib/zcode-services";
-import type {
-  GitBranchMutationIssue,
-  GitBranchMutationResult,
-  GitIdentity,
-} from "@zui/lib/zcode-shared";
-import { logger } from "@zui/logger";
+  type GitBranchCommitPreviewFile,
+} from "@zui/git-branch-switcher/display.js";
+import { getErrorMessage } from "@zui/lib/errorMessage.js";
+import { logger } from "@zui/logger.js";
 
 export type GitBranchSwitchAssistDialogStep = "blocked" | "commit";
 
@@ -37,10 +26,7 @@ export interface GitBranchSwitchAssistState {
   identity: GitIdentity | null;
 }
 
-export function formatGitBranchIssuePathList(
-  locale: string,
-  paths: readonly string[],
-): string {
+export function formatGitBranchIssuePathList(locale: string, paths: readonly string[]): string {
   if (paths.length === 0) {
     return "";
   }
@@ -52,10 +38,7 @@ export function formatGitBranchIssuePathList(
 }
 
 export function hasGitCommitIdentity(identity: GitIdentity | null): boolean {
-  return (
-    identity === null ||
-    (Boolean(identity.userName) && Boolean(identity.userEmail))
-  );
+  return identity === null || (Boolean(identity.userName) && Boolean(identity.userEmail));
 }
 
 export async function buildGitBranchSwitchAssistState(options: {
@@ -64,26 +47,21 @@ export async function buildGitBranchSwitchAssistState(options: {
   result: GitBranchMutationResult;
 }): Promise<GitBranchSwitchAssistState | null> {
   const issue = getPrimaryGitBranchIssue(options.result.issues);
-  if (
-    !issue ||
-    !isGitBranchCommitAssistIssue(issue.code) ||
-    !options.result.branchName
-  ) {
+  if (!issue || !isGitBranchCommitAssistIssue(issue.code) || !options.result.branchName) {
     return null;
   }
 
-  const [unstagedChangesResult, stagedChangesResult, identityResult] =
-    await Promise.allSettled([
-      options.gitService.getChanges({
-        workspacePath: options.workspacePath,
-        sourceId: "unstaged",
-      }),
-      options.gitService.getChanges({
-        workspacePath: options.workspacePath,
-        sourceId: "staged",
-      }),
-      options.gitService.getIdentity({ workspacePath: options.workspacePath }),
-    ]);
+  const [unstagedChangesResult, stagedChangesResult, identityResult] = await Promise.allSettled([
+    options.gitService.getChanges({
+      workspacePath: options.workspacePath,
+      sourceId: "unstaged",
+    }),
+    options.gitService.getChanges({
+      workspacePath: options.workspacePath,
+      sourceId: "staged",
+    }),
+    options.gitService.getIdentity({ workspacePath: options.workspacePath }),
+  ]);
 
   if (unstagedChangesResult.status === "rejected") {
     logger.warn("[GitBranchSwitcher] 读取 unstaged 更改失败", {
@@ -105,27 +83,17 @@ export async function buildGitBranchSwitchAssistState(options: {
   }
 
   const unstagedChanges =
-    unstagedChangesResult.status === "fulfilled"
-      ? unstagedChangesResult.value
-      : [];
-  const stagedChanges =
-    stagedChangesResult.status === "fulfilled" ? stagedChangesResult.value : [];
-  const commitFiles = buildGitBranchCommitPreviewFiles([
-    ...unstagedChanges,
-    ...stagedChanges,
-  ]);
+    unstagedChangesResult.status === "fulfilled" ? unstagedChangesResult.value : [];
+  const stagedChanges = stagedChangesResult.status === "fulfilled" ? stagedChangesResult.value : [];
+  const commitFiles = buildGitBranchCommitPreviewFiles([...unstagedChanges, ...stagedChanges]);
   const affectedFiles = selectGitBranchAffectedFiles({
     files: commitFiles,
     issuePaths: issue.paths,
   });
   const stagePaths = Array.from(
-    new Set([
-      ...commitFiles.map((file) => file.stagePath),
-      ...(issue.paths ?? []),
-    ]),
+    new Set([...commitFiles.map((file) => file.stagePath), ...(issue.paths ?? [])]),
   );
-  const { fileCount, totalAdded, totalRemoved } =
-    getGitBranchCommitTotals(commitFiles);
+  const { fileCount, totalAdded, totalRemoved } = getGitBranchCommitTotals(commitFiles);
 
   return {
     targetBranchName: options.result.branchName,
@@ -137,7 +105,6 @@ export async function buildGitBranchSwitchAssistState(options: {
     fileCount,
     totalAdded,
     totalRemoved,
-    identity:
-      identityResult.status === "fulfilled" ? identityResult.value : null,
+    identity: identityResult.status === "fulfilled" ? identityResult.value : null,
   };
 }

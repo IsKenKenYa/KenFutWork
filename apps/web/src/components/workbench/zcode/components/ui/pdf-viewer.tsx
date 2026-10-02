@@ -1,46 +1,19 @@
-/**
- * zcode 照搬：`@/components/ui/pdf-viewer.tsx`（references/zcode/packages/ui/src/components/ui/pdf-viewer.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：仅两处宿主差异——① 上游 Vite 的 `?url` worker 导入改为 new URL(import.meta.url)
- *   构造（Next/Turbopack 无 ?url；jsdom/无 worker 环境由 react-pdf 走 fake worker 降级）；
- *   ② `import.meta.env?.BASE_URL`（Vite）在本仓为 undefined，cMapUrl 退回 "./"；其余逐字照搬，
- *   本地 import 无 .js 后缀；源文件自带头注保留于下。
- * 适配注记：本文件接口可选属性放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
 "use client";
 
-import {
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  ZoomInIcon,
-  ZoomOutIcon,
-} from "lucide-react";
-import type {
-  HTMLAttributes,
-  KeyboardEvent as ReactKeyboardEvent,
-} from "react";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import type { HTMLAttributes, KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeftIcon, ChevronRightIcon, ZoomInIcon, ZoomOutIcon } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/TextLayer.css";
+import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
-import { cn } from "@zui/components/lib/utils";
-import { Button } from "@zui/components/ui/button";
-import * as pdfZoom from "@zui/components/ui/usePdfZoomOverlay";
-import { isAppleKeyboardPlatform } from "@zui/lib/keyboardShortcuts";
-import { createPdfJsDocumentOptions } from "@zui/lib/pdfJsAssets";
+import { cn } from "@zui/components/lib/utils.js";
+import { Button } from "@zui/components/ui/button.js";
+import * as pdfZoom from "@zui/components/ui/usePdfZoomOverlay.js";
+import { isAppleKeyboardPlatform } from "@zui/lib/keyboardShortcuts.js";
+import { createPdfJsDocumentOptions } from "@zui/lib/pdfJsAssets.js";
 
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url,
-).toString();
+pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
 // 与 service 层 readFileRange 的默认分段大小对齐，一次 range 请求对应一次 RPC 调用。
 const RANGE_CHUNK_BYTES = 256 * 1024;
@@ -49,9 +22,7 @@ const RANGE_CHUNK_BYTES = 256 * 1024;
 // 字符映射；浏览器原生 PDF 预览自带该资源，而 PDF.js 必须显式传入 cMapUrl。
 // 使用 Vite base 解析，Desktop 的 file:// 与 Web/手机远控的子路径部署都读取各自静态资源。
 const DOCUMENT_OPTIONS = createPdfJsDocumentOptions(
-  typeof import.meta.env?.BASE_URL === "string"
-    ? import.meta.env.BASE_URL
-    : "./",
+  typeof import.meta.env?.BASE_URL === "string" ? import.meta.env.BASE_URL : "./",
   globalThis.location?.href ?? "http://localhost/",
 );
 
@@ -66,20 +37,13 @@ const RANGE_DOCUMENT_OPTIONS = {
 
 export interface PdfViewerRangeSource {
   totalBytes: number;
-  initialData?: Uint8Array | undefined;
+  initialData?: Uint8Array;
   requestRange: (offset: number, length: number) => Promise<Uint8Array>;
 }
 
-export type PdfViewerSource =
-  | string
-  | Blob
-  | ArrayBuffer
-  | Uint8Array
-  | PdfViewerRangeSource;
+export type PdfViewerSource = string | Blob | ArrayBuffer | Uint8Array | PdfViewerRangeSource;
 
-function isPdfViewerRangeSource(
-  source: PdfViewerSource,
-): source is PdfViewerRangeSource {
+function isPdfViewerRangeSource(source: PdfViewerSource): source is PdfViewerRangeSource {
   return (
     typeof source === "object" &&
     source !== null &&
@@ -92,10 +56,7 @@ class PdfViewerRangeTransport extends pdfjs.PDFDataRangeTransport {
   private readonly rangeSource: PdfViewerRangeSource;
   private readonly onRequestError: (error: Error) => void;
 
-  constructor(
-    rangeSource: PdfViewerRangeSource,
-    onRequestError: (error: Error) => void,
-  ) {
+  constructor(rangeSource: PdfViewerRangeSource, onRequestError: (error: Error) => void) {
     super(rangeSource.totalBytes, rangeSource.initialData ?? null);
     this.rangeSource = rangeSource;
     this.onRequestError = onRequestError;
@@ -108,9 +69,7 @@ class PdfViewerRangeTransport extends pdfjs.PDFDataRangeTransport {
         this.onDataRange(begin, chunk);
       })
       .catch((error: unknown) => {
-        this.onRequestError(
-          error instanceof Error ? error : new Error(String(error)),
-        );
+        this.onRequestError(error instanceof Error ? error : new Error(String(error)));
       });
   }
 }
@@ -139,15 +98,11 @@ const DEFAULT_LABELS: PdfViewerLabels = {
 
 export interface PdfViewerProps extends HTMLAttributes<HTMLDivElement> {
   source: PdfViewerSource;
-  labels?: Partial<PdfViewerLabels> | undefined;
-  onLoadError?: (error: Error) => void | undefined;
+  labels?: Partial<PdfViewerLabels>;
+  onLoadError?: (error: Error) => void;
 }
 
-type PdfDocumentFile =
-  | string
-  | Blob
-  | { data: Uint8Array }
-  | { range: PdfViewerRangeTransport };
+type PdfDocumentFile = string | Blob | { data: Uint8Array } | { range: PdfViewerRangeTransport };
 
 function normalizePdfSource(
   source: Exclude<PdfViewerSource, PdfViewerRangeSource>,
@@ -164,13 +119,7 @@ function normalizePdfSource(
   return { data: new Uint8Array(source) };
 }
 
-export function PdfViewer({
-  source,
-  labels,
-  onLoadError,
-  className,
-  ...props
-}: PdfViewerProps) {
+export function PdfViewer({ source, labels, onLoadError, className, ...props }: PdfViewerProps) {
   const mergedLabels = { ...DEFAULT_LABELS, ...labels };
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pageNumber, setPageNumber] = useState(1);
@@ -179,8 +128,7 @@ export function PdfViewer({
   // 缩放手势期间只更新 displayScale（CSS transform 预览），停顿后再提交给 renderScale。
   const [renderScale, setRenderScale] = useState(pdfZoom.DEFAULT_SCALE);
   const [displayScale, setDisplayScale] = useState(pdfZoom.DEFAULT_SCALE);
-  const [pageIntrinsicSize, setPageIntrinsicSize] =
-    useState<pdfZoom.PdfPageSize | null>(null);
+  const [pageIntrinsicSize, setPageIntrinsicSize] = useState<pdfZoom.PdfPageSize | null>(null);
   const [rangeError, setRangeError] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const pendingScrollToTopRef = useRef(false);
@@ -189,8 +137,7 @@ export function PdfViewer({
   const pendingZoomAnchorRef = useRef<pdfZoom.PdfZoomAnchor | null>(null);
   const onLoadErrorRef = useRef(onLoadError);
   onLoadErrorRef.current = onLoadError;
-  const { clearZoomOverlay, pageViewportRef, stageZoomOverlay } =
-    pdfZoom.usePdfZoomOverlay();
+  const { clearZoomOverlay, pageViewportRef, stageZoomOverlay } = pdfZoom.usePdfZoomOverlay();
 
   const rangeTransport = useMemo(() => {
     if (!isPdfViewerRangeSource(source)) {
@@ -206,9 +153,7 @@ export function PdfViewer({
     if (rangeTransport) {
       return { range: rangeTransport };
     }
-    return normalizePdfSource(
-      source as Exclude<PdfViewerSource, PdfViewerRangeSource>,
-    );
+    return normalizePdfSource(source as Exclude<PdfViewerSource, PdfViewerRangeSource>);
   }, [rangeTransport, source]);
 
   useEffect(() => {
@@ -362,9 +307,7 @@ export function PdfViewer({
     const zoomWithAppleModifier = isAppleKeyboardPlatform();
     const handleWheelZoom = (event: WheelEvent) => {
       // macOS 绑定 command，其余平台（Windows/Linux）绑定 ctrl
-      const zoomModifierPressed = zoomWithAppleModifier
-        ? event.metaKey
-        : event.ctrlKey;
+      const zoomModifierPressed = zoomWithAppleModifier ? event.metaKey : event.ctrlKey;
       if (!zoomModifierPressed) {
         return;
       }
@@ -374,8 +317,7 @@ export function PdfViewer({
         return;
       }
       zoomTo(
-        displayScaleRef.current *
-          Math.exp(-event.deltaY * pdfZoom.WHEEL_ZOOM_SENSITIVITY),
+        displayScaleRef.current * Math.exp(-event.deltaY * pdfZoom.WHEEL_ZOOM_SENSITIVITY),
         event,
       );
     };
@@ -391,10 +333,7 @@ export function PdfViewer({
   const controlsDisabled = numPages === null;
   const zoomPercent = Math.round(displayScale * 100);
   const zoomPreviewScale = displayScale / renderScale;
-  const pageDisplaySize = pdfZoom.getPdfPageDisplaySize(
-    pageIntrinsicSize,
-    displayScale,
-  );
+  const pageDisplaySize = pdfZoom.getPdfPageDisplaySize(pageIntrinsicSize, displayScale);
   const pagePreviewStyle = pdfZoom.getPdfPagePreviewStyle(
     pageDisplaySize !== undefined,
     zoomPreviewScale,
@@ -410,28 +349,20 @@ export function PdfViewer({
       <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto">
         <div className="mx-auto w-max p-4">
           {rangeError ? (
-            <div className="p-3 text-ui-base text-destructive">
-              {mergedLabels.loadError}
-            </div>
+            <div className="p-3 text-ui-base text-destructive">{mergedLabels.loadError}</div>
           ) : (
-            <div
-              ref={pageViewportRef}
-              className="relative"
-              style={pageDisplaySize}
-            >
+            <div ref={pageViewportRef} className="relative" style={pageDisplaySize}>
               <div style={pagePreviewStyle}>
                 <Document
                   file={file}
-                  options={
-                    rangeTransport ? RANGE_DOCUMENT_OPTIONS : DOCUMENT_OPTIONS
-                  }
+                  options={rangeTransport ? RANGE_DOCUMENT_OPTIONS : DOCUMENT_OPTIONS}
                   onLoadSuccess={(document) => {
                     setNumPages(document.numPages);
                     const clamped = Math.min(pageNumber, document.numPages);
                     setPageNumber(clamped);
                     setPageInput(String(clamped));
                   }}
-                  {...(onLoadError === undefined ? {} : { onLoadError })}
+                  onLoadError={onLoadError}
                   loading={
                     <div className="p-3 text-ui-base text-foreground-subtle">
                       {mergedLabels.loading}
@@ -500,9 +431,7 @@ export function PdfViewer({
           variant="ghost"
           size="icon-sm"
           aria-label={mergedLabels.nextPage}
-          disabled={
-            controlsDisabled || numPages === null || pageNumber >= numPages
-          }
+          disabled={controlsDisabled || numPages === null || pageNumber >= numPages}
           onClick={() => goToPage(pageNumber + 1)}
         >
           <ChevronRightIcon />

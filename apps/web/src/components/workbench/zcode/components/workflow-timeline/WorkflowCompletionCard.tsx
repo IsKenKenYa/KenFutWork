@@ -1,37 +1,22 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/WorkflowCompletionCard.tsx`（references/zcode/packages/ui/src/components/workflow-timeline/WorkflowCompletionCard.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { buildPresetLabels } from "@zui/app-shell/workflow-artifacts/artifactPresentation";
-import { cn } from "@zui/components/lib/utils";
-import type { WorkflowCompletionArtifact } from "@zui/components/workflow-timeline/WorkflowArtifactTile";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { buildPresetLabels } from "@zui/app-shell/workflow-artifacts/artifactPresentation.js";
+import { cn } from "@zui/components/lib/utils.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { workDurationParts, workDurationUnitSeparator } from "@zui/lib/workDuration.js";
+import type { WorkflowCompletionArtifact } from "./WorkflowArtifactTile.js";
 import {
   WORKFLOW_RUN_KIND_ID,
   WorkflowCardHeader,
   WorkflowRunStatus,
-} from "@zui/components/workflow-timeline/WorkflowCardChrome";
+} from "./WorkflowCardChrome.js";
 import {
   completionArtifactCellCount,
   completionArtifactLayout,
   WorkflowCompletionArtifacts,
-} from "@zui/components/workflow-timeline/WorkflowCompletionArtifacts";
-import { PILL_STAGGER_MS } from "@zui/components/workflow-timeline/WorkflowTimeline";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import {
-  workDurationParts,
-  workDurationUnitSeparator,
-} from "@zui/lib/workDuration";
-import {
-  type CSSProperties,
-  type ReactNode,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+} from "./WorkflowCompletionArtifacts.js";
+import { PILL_STAGGER_MS } from "./WorkflowTimeline.js";
 
-export { COMPLETION_INDEX_MAX } from "@zui/components/workflow-timeline/WorkflowCompletionArtifacts";
+export { COMPLETION_INDEX_MAX } from "./WorkflowCompletionArtifacts.js";
 
 /**
  * 完成卡：主代理消化一条 **completed** 工作流通知的那一轮，
@@ -71,13 +56,9 @@ const COUNT_UP_MS = 640;
  * tokens 的紧凑写法：`812` / `386.4k` / `1.30M`。千位一位小数、百万两位——固定位数让四格
  * 的等宽数字在 run 与 run 之间对得齐。全值进 title。
  */
-export function formatCompactCount(count: number): {
-  value: string;
-  unit: string;
-} {
+export function formatCompactCount(count: number): { value: string; unit: string } {
   if (count < 1_000) return { value: count.toLocaleString(), unit: "" };
-  if (count < 1_000_000)
-    return { value: (count / 1_000).toFixed(1), unit: "k" };
+  if (count < 1_000_000) return { value: (count / 1_000).toFixed(1), unit: "k" };
   return { value: (count / 1_000_000).toFixed(2), unit: "M" };
 }
 
@@ -101,11 +82,7 @@ function motionAllowed(): boolean {
 function useCountUp(target: number | undefined): number | undefined {
   const [shown, setShown] = useState(target);
   useEffect(() => {
-    if (
-      target === undefined ||
-      !motionAllowed() ||
-      typeof requestAnimationFrame !== "function"
-    ) {
+    if (target === undefined || !motionAllowed() || typeof requestAnimationFrame !== "function") {
       setShown(target);
       return;
     }
@@ -138,21 +115,14 @@ function Figure({
   delayMs: number;
 }) {
   const { intl } = useZCodeIntl();
-  const unavailable = intl.formatMessage({
-    id: "chat.toolCall.workflow.completion.unavailable",
-  });
-  const style: CSSProperties = {
-    animationDelay: `${delayMs}ms`,
-    animationFillMode: "backwards",
-  };
+  const unavailable = intl.formatMessage({ id: "chat.toolCall.workflow.completion.unavailable" });
+  const style: CSSProperties = { animationDelay: `${delayMs}ms`, animationFillMode: "backwards" };
   return (
     <div
       className="wf-arrive flex min-w-0 flex-col"
       data-testid={`workflow-completion-figure-${testKey}`}
       data-value={
-        parts === undefined
-          ? undefined
-          : parts.map((part) => part.value + part.unit).join(" ")
+        parts === undefined ? undefined : parts.map((part) => part.value + part.unit).join(" ")
       }
       style={style}
     >
@@ -160,9 +130,7 @@ function Figure({
         aria-label={parts === undefined ? unavailable : undefined}
         className={cn(
           "whitespace-nowrap font-mono text-ui-lg leading-tight tabular-nums",
-          parts === undefined
-            ? "text-foreground-subtlest"
-            : "font-medium text-foreground",
+          parts === undefined ? "text-foreground-subtlest" : "font-medium text-foreground",
         )}
         title={title}
       >
@@ -173,16 +141,12 @@ function Figure({
                 {index > 0 ? " " : null}
                 {part.value}
                 {part.unit.length === 0 ? null : (
-                  <span className="text-ui-sm font-normal text-foreground-subtle">
-                    {part.unit}
-                  </span>
+                  <span className="text-ui-sm font-normal text-foreground-subtle">{part.unit}</span>
                 )}
               </span>
             ))}
       </span>
-      <span className="truncate text-ui-sm text-foreground-subtle">
-        {label}
-      </span>
+      <span className="truncate text-ui-sm text-foreground-subtle">{label}</span>
     </div>
   );
 }
@@ -200,10 +164,7 @@ export function WorkflowCompletionCard({
   const { intl, locale } = useZCodeIntl();
   const format = intl.formatMessage.bind(intl);
   const labels = useMemo(
-    () =>
-      buildPresetLabels((descriptor, values) =>
-        intl.formatMessage(descriptor, values),
-      ),
+    () => buildPresetLabels((descriptor, values) => intl.formatMessage(descriptor, values)),
     [intl],
   );
 
@@ -225,15 +186,11 @@ export function WorkflowCompletionCard({
           value: String(part.value),
           unit: `${separator}${part.unit}`,
         }));
-  const tokenParts =
-    tokens === undefined ? undefined : [formatCompactCount(tokens)];
+  const tokenParts = tokens === undefined ? undefined : [formatCompactCount(tokens)];
   const plain = (value: number | undefined) =>
-    value === undefined
-      ? undefined
-      : [{ value: value.toLocaleString(), unit: "" }];
+    value === undefined ? undefined : [{ value: value.toLocaleString(), unit: "" }];
 
-  const figureDelay =
-    PILL_STAGGER_MS * (completionArtifactCellCount(layout) + 1);
+  const figureDelay = PILL_STAGGER_MS * (completionArtifactCellCount(layout) + 1);
 
   return (
     <section
@@ -246,12 +203,7 @@ export function WorkflowCompletionCard({
         expanded={false}
         kind={format({ id: WORKFLOW_RUN_KIND_ID.completed })}
         name={name}
-        status={
-          <WorkflowRunStatus
-            status="completed"
-            testId="workflow-completion-status"
-          />
-        }
+        status={<WorkflowRunStatus status="completed" testId="workflow-completion-status" />}
         {...(onOpenRun === undefined ? {} : { onOpenDetails: onOpenRun })}
       />
       <WorkflowCompletionArtifacts

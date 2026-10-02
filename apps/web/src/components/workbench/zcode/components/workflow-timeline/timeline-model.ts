@@ -1,43 +1,39 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/timeline-model.ts`（references/zcode/packages/ui/src/components/workflow-timeline/timeline-model.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { phaseBinder } from "@zui/components/workflow-graph/instance-phases";
-import {
-  type LaneRef,
-  laneRefsById,
-} from "@zui/components/workflow-graph/lane-name";
+import type { WorkflowRunState } from "@zcode/shared/zcode-protocol-v4";
+import { laneRefsById, type LaneRef } from "@zui/components/workflow-graph/lane-name.js";
 import {
   collapseStatuses,
   liveParticipantView,
   participantStatus,
   participantsOfPhase,
   withImplicitPhase,
-} from "@zui/components/workflow-graph/participant-model";
-import { phaseMembers } from "@zui/components/workflow-graph/phase-model";
+} from "@zui/components/workflow-graph/participant-model.js";
+import { phaseBinder } from "@zui/components/workflow-graph/instance-phases.js";
+import { phaseNameMatches, type PhaseNaming } from "@zui/components/workflow-graph/phase-name.js";
+import { phaseMembers } from "@zui/components/workflow-graph/phase-model.js";
+import { workflowRunOverlay } from "@zui/components/workflow-graph/run-status.js";
 import {
-  type PhaseNaming,
-  phaseNameMatches,
-} from "@zui/components/workflow-graph/phase-name";
-import { workflowRunOverlay } from "@zui/components/workflow-graph/run-status";
-import {
-  type LaneClass,
   laneClassOf,
+  type LaneClass,
   type StepRunStatus,
   type WorkflowCausalityGraphData,
-} from "@zui/components/workflow-graph/types";
+} from "@zui/components/workflow-graph/types.js";
+import { sharedTimelineModel } from "./timeline-cache.js";
+import {
+  observePhase,
+  phaseEntryFor,
+  siteIdsOf,
+  stationUnlisted,
+  type StationUnlisted,
+} from "./station-observation.js";
 import {
   assignAirLanes,
   bandOf,
   foldPhaseBands,
   foldPhaseEdges,
+  trackOf,
   type RailSpec,
   type TimelineRailKind,
-  trackOf,
-} from "@zui/components/workflow-timeline/timeline-bands";
-import type { WorkflowRunState } from "@zui/lib/zcode-shared/zcode-protocol-v4";
+} from "./timeline-bands.js";
 
 /**
  * 时间线模型。
@@ -52,12 +48,9 @@ import type { WorkflowRunState } from "@zui/lib/zcode-shared/zcode-protocol-v4";
  */
 
 export type TimelineInk = "faint" | "strong" | "march";
-export type { TimelineRailKind } from "@zui/components/workflow-timeline/timeline-bands";
+export type { TimelineRailKind } from "./timeline-bands.js";
 // 弧的分道是纯下标的组合学，与带的折叠同住 timeline-bands.ts；这里转出去，渲染层的入口不变。
-export {
-  arcLaneCount,
-  assignArcLanes,
-} from "@zui/components/workflow-timeline/timeline-bands";
+export { arcLaneCount, assignArcLanes } from "./timeline-bands.js";
 
 export interface TimelinePill {
   /** 拆分后的参与者 id（实例卡 `${participant}@${ordinal}`）；React key 与打开实例的抓手。 */
@@ -104,8 +97,10 @@ export interface TimelineStation {
   onLoop: boolean;
   /** 所在的轨道（`timeline-bands.ts`）；带外一律 0，也就是主线。 */
   track: number;
-  /** `settled / observed`；一个节点都没观察到时缺席。 */
+  /** `settled / observed`；一个节点都没观察到时缺席。表外已结算的实例也在这两个数里。 */
   fraction?: { settled: number; observed: number };
+  /** 界在这一站花掉的表外条目（`station-observation.ts`）；一条都没少时缺席。 */
+  unlisted?: StationUnlisted;
   /** 流式草稿里尚未闭合的最后一站。 */
   typing?: true;
 }
@@ -166,38 +161,8 @@ export interface WorkflowTimelineModel {
   draft?: { agents: number };
 }
 
-interface ObservedPhase {
-  visited: boolean;
-  rounds: number;
-  settled: number;
-  observed: number;
-  /** 控制流进入过这一站（`run.phases` 里有它的进入记录）。 */
-  entered: boolean;
-}
-
-type WorkflowRunPhaseEntry = NonNullable<WorkflowRunState["phases"]>[number];
-
-/**
- * 一站的进入记录：按名字关联（`phaseNameMatches`，规则抽到 phase-name.ts，与实例绑定共用一条）。同一个 128 字
- * 前缀下可能有两条记录，精确的那条优先。
- */
-function phaseEntryFor(
-  run: WorkflowRunState | undefined,
-  name: string | undefined,
-): WorkflowRunPhaseEntry | undefined {
-  const entries = run?.phases;
-  if (entries === undefined || name === undefined) return undefined;
-  return (
-    entries.find((entry) => entry.name === name) ??
-    entries.find((entry) => phaseNameMatches(name, entry.name))
-  );
-}
-
-/** `currentPhase` 与一站的关联，与 {@link phaseEntryFor} 同一条名字规则。 */
-function isCurrentPhase(
-  run: WorkflowRunState | undefined,
-  name: string | undefined,
-): boolean {
+/** `currentPhase` 与一站的关联，与 `phaseEntryFor` 同一条名字规则。 */
+function isCurrentPhase(run: WorkflowRunState | undefined, name: string | undefined): boolean {
   return phaseNameMatches(name, run?.currentPhase);
 }
 
@@ -226,52 +191,18 @@ function stationStatus(
 }
 
 /**
- * 一站观察到的节点：站点相同还不够——同一个站点被 k 个阶段再入时 k 张卡共享站点 id，节点还要
- * 按实例的出生戳落到这一站，否则 visited / rounds /
- * fraction 一起虚高 k 倍。
+ * 一个模型，三处消费（不变式 1）：卡、详情页与侧栏清单在同一帧里拿到**同一个**模型对象，
+ * 按 (graph, run) 的对象身份记忆——为什么身份是正确的键见 `timeline-cache.ts`。模型是只读的，
+ * 没有消费者改它，所以共享顺带也是引用稳定性的来源。
  */
-function observePhase(
-  run: WorkflowRunState | undefined,
-  siteIds: ReadonlySet<string>,
-  entry: WorkflowRunPhaseEntry | undefined,
-  belongs: (node: WorkflowRunState["nodes"][number]) => boolean,
-): ObservedPhase {
-  const result: ObservedPhase = {
-    entered: false,
-    observed: 0,
-    rounds: 0,
-    settled: 0,
-    visited: false,
-  };
-  if (run === undefined) return result;
-  for (const node of run.nodes) {
-    if (!siteIds.has(node.siteId) || !belongs(node)) continue;
-    result.visited = true;
-    result.observed += 1;
-    if (node.ordinal > result.rounds) result.rounds = node.ordinal;
-    if (node.phase === "settled") result.settled += 1;
-  }
-  // 进入记录：到过 = 有节点落在这站 ∨ 控制流进入过；轮次取两者之大（单阶段循环体的第二轮
-  // 由节点数出来，零成员站的第二轮只有进入记录知道）。
-  if (entry !== undefined) {
-    result.entered = true;
-    result.visited = true;
-    if (entry.rounds > result.rounds) result.rounds = entry.rounds;
-  }
-  return result;
-}
-
-/**
- * 站点集合：成员 step 的 `source ?? id`——may-set 拷贝报的是站点 id，与 run-status.ts 的
- * 关联键同源；漏掉 `source` 会让拷贝站永远「未到」。
- */
-function siteIdsOf(
-  steps: readonly WorkflowCausalityGraphData["steps"][number][],
-): Set<string> {
-  return new Set(steps.map((step) => step.source ?? step.id));
-}
-
 export function buildWorkflowTimeline(
+  input: WorkflowCausalityGraphData,
+  run: WorkflowRunState | undefined,
+): WorkflowTimelineModel {
+  return sharedTimelineModel(input, run, () => computeWorkflowTimeline(input, run));
+}
+
+function computeWorkflowTimeline(
   input: WorkflowCausalityGraphData,
   run: WorkflowRunState | undefined,
 ): WorkflowTimelineModel {
@@ -284,17 +215,12 @@ export function buildWorkflowTimeline(
   const binder = phaseBinder(graph, run);
   const laneRefs = laneRefsById(graph.lanes);
   const sessionByInstance = new Map(
-    (run?.actors ?? []).map((actor) => [
-      `${actor.siteId}@${actor.ordinal}`,
-      actor.sessionId,
-    ]),
+    (run?.actors ?? []).map((actor) => [`${actor.siteId}@${actor.ordinal}`, actor.sessionId]),
   );
   const askingInstances = new Set(
     (run?.pendingQuestions ?? [])
       .filter(
-        (question) =>
-          question.actorSiteId !== undefined &&
-          question.actorOrdinal !== undefined,
+        (question) => question.actorSiteId !== undefined && question.actorOrdinal !== undefined,
       )
       .map((question) => `${question.actorSiteId}@${question.actorOrdinal}`),
   );
@@ -323,8 +249,7 @@ export function buildWorkflowTimeline(
   );
   const fold = foldPhaseEdges(phases.length, folded, edges);
   const arcPairs = [...fold.arcs].sort(
-    (left, right) =>
-      Math.abs(left.from - left.to) - Math.abs(right.from - right.to),
+    (left, right) => Math.abs(left.from - left.to) - Math.abs(right.from - right.to),
   );
   // 回边的两端上环；端点在带里时整条带都上环——带是一个节点，再入的是整条带。
   const onLoop = new Set<number>();
@@ -341,83 +266,71 @@ export function buildWorkflowTimeline(
   const avatarIndexes = new Map<string, number>();
   const stations: TimelineStation[] = phases.map((phase, i) => {
     const memberSteps = members.get(phase.id) ?? [];
+    const unlisted = stationUnlisted(run, binder, phase.id);
     const observed = observePhase(
       run,
       siteIdsOf(memberSteps),
       phaseEntryFor(run, phase.name),
       (node) => binder.has(phase.id, node.phaseName),
+      unlisted,
     );
-    const pills: TimelinePill[] = participantsOfPhase(live.graph, phase.id).map(
-      (participant) => {
-        const instance = live.instances[participant.id];
-        const lane = laneRefs.get(participant.lane) ?? {
-          id: participant.lane,
-          laneClass: laneClassOf(participant.lane),
-        };
-        // 折叠为空 = 这个子代理在这一站、这一次 run 里什么都没做：空心是诚实的。undefined 只留给
-        // 无 run 的静态药丸。
-        const status =
-          run === undefined
-            ? undefined
-            : (participantStatus(
-                participant,
-                overlay.statuses,
-                live.participantStatuses,
-              ) ?? "pending");
-        const sessionId =
-          instance === undefined
-            ? undefined
-            : sessionByInstance.get(`${participant.lane}@${instance.ordinal}`);
-        const slot =
-          run !== undefined && lane.laneClass === "agent"
-            ? {
-                ordinal:
-                  instance?.ordinal ?? (participant.member?.index ?? 0) + 1,
+    const pills: TimelinePill[] = participantsOfPhase(live.graph, phase.id).map((participant) => {
+      const instance = live.instances[participant.id];
+      const lane = laneRefs.get(participant.lane) ?? {
+        id: participant.lane,
+        laneClass: laneClassOf(participant.lane),
+      };
+      // 折叠为空 = 这个子代理在这一站、这一次 run 里什么都没做：空心是诚实的。undefined 只留给
+      // 无 run 的静态药丸。
+      const status =
+        run === undefined
+          ? undefined
+          : (participantStatus(participant, overlay.statuses, live.participantStatuses) ??
+            "pending");
+      const sessionId =
+        instance === undefined
+          ? undefined
+          : sessionByInstance.get(`${participant.lane}@${instance.ordinal}`);
+      const slot =
+        run !== undefined && lane.laneClass === "agent"
+          ? {
+              ordinal: instance?.ordinal ?? (participant.member?.index ?? 0) + 1,
+              siteId: participant.lane,
+            }
+          : undefined;
+      const avatarKey = `${participant.lane}@${instance?.ordinal ?? (participant.member?.index ?? 0) + 1}`;
+      if (lane.laneClass === "agent" && !avatarIndexes.has(avatarKey)) {
+        avatarIndexes.set(avatarKey, avatarIndexes.size);
+      }
+      return {
+        ...(lane.laneClass === "agent" ? { avatarIndex: avatarIndexes.get(avatarKey)! } : {}),
+        key: participant.id,
+        lane,
+        laneClass: lane.laneClass,
+        ...(instance?.name === undefined ? {} : { runtimeName: instance.name }),
+        status,
+        ...(instance === undefined
+          ? {}
+          : {
+              instance: {
+                ordinal: instance.ordinal,
                 siteId: participant.lane,
-              }
-            : undefined;
-        const avatarKey = `${participant.lane}@${instance?.ordinal ?? (participant.member?.index ?? 0) + 1}`;
-        if (lane.laneClass === "agent" && !avatarIndexes.has(avatarKey)) {
-          avatarIndexes.set(avatarKey, avatarIndexes.size);
-        }
-        return {
-          ...(lane.laneClass === "agent"
-            ? { avatarIndex: avatarIndexes.get(avatarKey)! }
-            : {}),
-          key: participant.id,
-          lane,
-          laneClass: lane.laneClass,
-          ...(instance?.name === undefined
-            ? {}
-            : { runtimeName: instance.name }),
-          status,
-          ...(instance === undefined
-            ? {}
-            : {
-                instance: {
-                  ordinal: instance.ordinal,
-                  siteId: participant.lane,
-                  ...(sessionId === undefined ? {} : { sessionId }),
-                },
-              }),
-          ...(slot === undefined ? {} : { slot }),
-          ...(run !== undefined && lane.laneClass === "workspace"
-            ? { workspace: { phaseId: phase.id } }
-            : {}),
-          stepIds: [...participant.steps],
-          ...(instance !== undefined &&
-          askingInstances.has(`${participant.lane}@${instance.ordinal}`)
-            ? { asking: true as const }
-            : {}),
-        };
-      },
-    );
+                ...(sessionId === undefined ? {} : { sessionId }),
+              },
+            }),
+        ...(slot === undefined ? {} : { slot }),
+        ...(run !== undefined && lane.laneClass === "workspace"
+          ? { workspace: { phaseId: phase.id } }
+          : {}),
+        stepIds: [...participant.steps],
+        ...(instance !== undefined && askingInstances.has(`${participant.lane}@${instance.ordinal}`)
+          ? { asking: true as const }
+          : {}),
+      };
+    });
     return {
       id: phase.id,
-      naming: {
-        id: phase.id,
-        ...(phase.name === undefined ? {} : { name: phase.name }),
-      },
+      naming: { id: phase.id, ...(phase.name === undefined ? {} : { name: phase.name }) },
       pills,
       status: stationStatus(
         run,
@@ -434,12 +347,8 @@ export function buildWorkflowTimeline(
       track: trackOf(folded, i),
       ...(observed.observed === 0
         ? {}
-        : {
-            fraction: {
-              observed: observed.observed,
-              settled: observed.settled,
-            },
-          }),
+        : { fraction: { observed: observed.observed, settled: observed.settled } }),
+      ...(unlisted === undefined ? {} : { unlisted }),
     };
   });
 
@@ -454,10 +363,7 @@ export function buildWorkflowTimeline(
 
   const rails: TimelineRail[] = fold.rails.map((rail: RailSpec) => ({
     from: rail.from,
-    ink:
-      visited(rail.from) && visited(rail.to)
-        ? ("strong" as TimelineInk)
-        : "faint",
+    ink: visited(rail.from) && visited(rail.to) ? ("strong" as TimelineInk) : "faint",
     ...(rail.kind === undefined ? {} : { kind: rail.kind }),
     to: rail.to,
   }));
@@ -484,10 +390,7 @@ export function buildWorkflowTimeline(
     const entry = bandOf(folded, r)?.from ?? r;
     const reentry = arcs.find(
       (arc) =>
-        arc.to === entry &&
-        arc.from > arc.to &&
-        visited(arc.from) &&
-        stations[r]!.rounds >= 2,
+        arc.to === entry && arc.from > arc.to && visited(arc.from) && stations[r]!.rounds >= 2,
     );
     if (reentry !== undefined) {
       reentry.ink = "march";
@@ -506,9 +409,8 @@ export function buildWorkflowTimeline(
   }
 
   const railInk = (from: number, to: number): TimelineInk =>
-    rails.find(
-      (rail) => rail.from === from && rail.to === to && rail.kind !== "twin",
-    )?.ink ?? "faint";
+    rails.find((rail) => rail.from === from && rail.to === to && rail.kind !== "twin")?.ink ??
+    "faint";
   const bands: TimelineBand[] = fold.bands.map((band) => ({
     from: band.from,
     ...(band.join === undefined ? {} : { join: band.join }),
@@ -531,14 +433,7 @@ export function buildWorkflowTimeline(
     }),
   }));
 
-  return {
-    arcs,
-    bands,
-    live: run !== undefined,
-    rails,
-    runningIndex,
-    stations,
-  };
+  return { arcs, bands, live: run !== undefined, rails, runningIndex, stations };
 }
 
 /** 一枚药丸「正在做什么」：优先正在跑的 step 的 label，其次最后一个已结算的，再次第一个。 */
@@ -548,8 +443,7 @@ export function pillActivity(
   pill: TimelinePill,
 ): { label: string; asks: number; reads: number } {
   const stepsById = new Map(graph.steps.map((step) => [step.id, step]));
-  const statuses =
-    run === undefined ? {} : workflowRunOverlay(run, graph).statuses;
+  const statuses = run === undefined ? {} : workflowRunOverlay(run, graph).statuses;
   let asks = 0;
   let reads = 0;
   let running: string | undefined;

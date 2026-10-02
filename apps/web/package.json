@@ -50,7 +50,8 @@
     "unified": "^11.0.5",
     "use-stick-to-bottom": "^1.1.6",
     "zod": "^4.6.5",
-    "zustand": "^5.0.15"
+    "zustand": "^5.0.15",
+    "@zcode/ui": "workspace:*"
   },
   "devDependencies": {
     "@kenfutwork/config": "workspace:*",

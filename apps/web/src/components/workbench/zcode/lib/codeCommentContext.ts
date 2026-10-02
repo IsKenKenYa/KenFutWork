@@ -1,10 +1,7 @@
 export const CODE_COMMENT_ADD_TO_CHAT_EVENT = "zcode:code-comment-add-to-chat";
-export const CODE_COMMENT_REMOVE_FROM_CHAT_EVENT =
-  "zcode:code-comment-remove-from-chat";
-export const CODE_COMMENT_REMOVE_BROADCAST_CHANNEL =
-  "code-comment:remove-from-chat";
-export const CODE_COMMENT_PREVIEW_RESTORE_BROADCAST_CHANNEL =
-  "code-comment:restore-preview";
+export const CODE_COMMENT_REMOVE_FROM_CHAT_EVENT = "zcode:code-comment-remove-from-chat";
+export const CODE_COMMENT_REMOVE_BROADCAST_CHANNEL = "code-comment:remove-from-chat";
+export const CODE_COMMENT_PREVIEW_RESTORE_BROADCAST_CHANNEL = "code-comment:restore-preview";
 
 export interface CodeCommentRange {
   startLine: number;
@@ -51,10 +48,7 @@ type CodeCommentRemoveFromChatEvent = CustomEvent<CodeCommentRemovePayload>;
 
 const removedCodeCommentKeys = new Set<string>();
 
-export function getCodeCommentWorkspaceKey(
-  workspacePath: string,
-  workspaceIdentity?: string,
-) {
+export function getCodeCommentWorkspaceKey(workspacePath: string, workspaceIdentity?: string) {
   return workspaceIdentity?.trim() || workspacePath;
 }
 
@@ -74,9 +68,7 @@ export function unmarkCodeCommentRemoved(payload: CodeCommentRemovePayload) {
   removedCodeCommentKeys.delete(getCodeCommentRemovalKey(payload));
 }
 
-export function isCodeCommentAddToChatEvent(
-  event: Event,
-): event is CodeCommentAddToChatEvent {
+export function isCodeCommentAddToChatEvent(event: Event): event is CodeCommentAddToChatEvent {
   return (
     event.type === CODE_COMMENT_ADD_TO_CHAT_EVENT &&
     "detail" in event &&
@@ -96,9 +88,7 @@ export function isCodeCommentRemoveFromChatEvent(
   );
 }
 
-export function isCodeCommentRemovePayload(
-  payload: unknown,
-): payload is CodeCommentRemovePayload {
+export function isCodeCommentRemovePayload(payload: unknown): payload is CodeCommentRemovePayload {
   return (
     typeof payload === "object" &&
     payload !== null &&
@@ -107,14 +97,11 @@ export function isCodeCommentRemovePayload(
     typeof (payload as CodeCommentRemovePayload).workspacePath === "string" &&
     (payload as CodeCommentRemovePayload).workspacePath.length > 0 &&
     ((payload as CodeCommentRemovePayload).workspaceIdentity === undefined ||
-      typeof (payload as CodeCommentRemovePayload).workspaceIdentity ===
-        "string")
+      typeof (payload as CodeCommentRemovePayload).workspaceIdentity === "string")
   );
 }
 
-export function isCodeCommentPayload(
-  payload: unknown,
-): payload is CodeCommentPayload {
+export function isCodeCommentPayload(payload: unknown): payload is CodeCommentPayload {
   const candidate = payload as CodeCommentPayload;
   return (
     typeof payload === "object" &&
@@ -143,19 +130,14 @@ function buildCodeCommentMarkdown(payload: CodeCommentPayload) {
   return `## Comment\nFile: ${payload.sourcePath ?? payload.sourceTitle}\nSide: R\nLines: ${lineLabel}\nSelected text:\n\`\`\`\n${payload.selectedText.trim()}\n\`\`\`\nComment:\n${payload.comment.trim()}\n`;
 }
 
-function buildCodeCommentsBlock(
-  attachments: readonly CodeCommentComposerAttachment[],
-) {
+function buildCodeCommentsBlock(attachments: readonly CodeCommentComposerAttachment[]) {
   if (attachments.length === 0) {
     return "";
   }
 
   return `# Code comments:\n\n${attachments
     .map((attachment, index) =>
-      buildCodeCommentMarkdown(attachment).replace(
-        "## Comment",
-        `## Comment ${index + 1}`,
-      ),
+      buildCodeCommentMarkdown(attachment).replace("## Comment", `## Comment ${index + 1}`),
     )
     .join("\n")}`;
 }
@@ -216,12 +198,7 @@ function parseCodeCommentItem(
   const lines = linesMatch[1];
   const selectedText = selectedTextMatch[1];
   const rawComment = selectedTextMatch[2];
-  if (
-    !filePath ||
-    !lines ||
-    selectedText === undefined ||
-    rawComment === undefined
-  ) {
+  if (!filePath || !lines || selectedText === undefined || rawComment === undefined) {
     return null;
   }
 
@@ -250,14 +227,12 @@ export function parsePromptCodeComments(
   content: string,
   options: {
     workspacePath: string;
-    workspaceIdentity?: string | undefined;
+    workspaceIdentity?: string;
   },
 ): ParsedCodeCommentPrompt {
   // 这里不能使用 multiline 的 `$`，否则非贪婪匹配会在第一行 `## Comment 1` 后提前停止，
   // 导致持久化消息无法解析回 comment 附件，只能把原始 markdown 暴露在聊天气泡里。
-  const blockMatch = /(?:^|\n\n)# Code comments:\s*\n\n([\s\S]*?)\s*$/.exec(
-    content,
-  );
+  const blockMatch = /(?:^|\n\n)# Code comments:\s*\n\n([\s\S]*?)\s*$/.exec(content);
   if (!blockMatch || blockMatch.index < 0) {
     return {
       visibleContent: content,
@@ -278,12 +253,7 @@ export function parsePromptCodeComments(
     .filter(Boolean);
   const codeCommentAttachments = rawItems
     .map((item, index) =>
-      parseCodeCommentItem(
-        item,
-        index,
-        options.workspacePath,
-        options.workspaceIdentity,
-      ),
+      parseCodeCommentItem(item, index, options.workspacePath, options.workspaceIdentity),
     )
     .filter((item): item is CodeCommentComposerAttachment => item !== null);
 
@@ -308,9 +278,7 @@ export function dispatchCodeCommentAddToChat(payload: CodeCommentPayload) {
   return !window.dispatchEvent(event);
 }
 
-export function dispatchCodeCommentRemoveFromChat(
-  payload: CodeCommentRemovePayload,
-) {
+export function dispatchCodeCommentRemoveFromChat(payload: CodeCommentRemovePayload) {
   markCodeCommentRemoved(payload);
   window.dispatchEvent(
     new CustomEvent(CODE_COMMENT_REMOVE_FROM_CHAT_EVENT, {

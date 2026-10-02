@@ -1,25 +1,14 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/workflow-run-compact-card.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/workflow-run-compact-card.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { cn } from "@zui/components/lib/utils";
+import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
+import { cn } from "@zui/components/lib/utils.js";
 import {
   RUN_STATUS_DOT,
   RUN_STATUS_TEXT,
-} from "@zui/components/workflow-graph/run-status-presentation";
-import type { WorkflowRunCardSummary } from "@zui/ToolCallBlocks/shared";
-import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
+} from "@zui/components/workflow-graph/run-status-presentation.js";
+import type { WorkflowRunCardSummary } from "@zui/ToolCallBlocks/shared.js";
 
-function isInteractiveDescendant(
-  target: EventTarget | null,
-  card: HTMLElement,
-): boolean {
+function isInteractiveDescendant(target: EventTarget | null, card: HTMLElement): boolean {
   if (!(target instanceof Element)) return false;
-  const interactive = target.closest(
-    "button, a, input, textarea, select, [role='button']",
-  );
+  const interactive = target.closest("button, a, input, textarea, select, [role='button']");
   // 卡片自身带 role=button，closest 会让卡片任意位置都命中自己，那样「点击卡片打开详情」
   // 就永远不执行（plan 卡的原始 bug）。这里只拦截真实子控件。
   return interactive !== null && interactive !== card;
@@ -109,14 +98,9 @@ export function WorkflowRunCompactCard({
           {/* 状态词永远在圆点旁边：状态绝不只靠颜色或动画表达。 */}
           <span
             aria-hidden="true"
-            className={cn(
-              "size-1.5 shrink-0 rounded-full",
-              RUN_STATUS_DOT[workflowRun.status],
-            )}
+            className={cn("size-1.5 shrink-0 rounded-full", RUN_STATUS_DOT[workflowRun.status])}
           />
-          <span
-            className={cn("text-ui-sm", RUN_STATUS_TEXT[workflowRun.status])}
-          >
+          <span className={cn("text-ui-sm", RUN_STATUS_TEXT[workflowRun.status])}>
             {statusLabel}
           </span>
         </span>

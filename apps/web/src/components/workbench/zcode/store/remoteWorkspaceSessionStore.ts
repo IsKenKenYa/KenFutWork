@@ -1,14 +1,8 @@
-/**
- * zcode 照搬：`@/store/remoteWorkspaceSessionStore.ts`（references/zcode/packages/ui/src/store/remoteWorkspaceSessionStore.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-
-import { remoteAgentServiceGeneration } from "@zui/lib/remoteAgentServiceGeneration";
-import { createRemoteWorkspaceDisconnectedError } from "@zui/lib/remoteWorkspaceServiceError";
-import type { IServiceAccessor } from "@zui/lib/zcode-services";
-import type { RemoteTarget } from "@zui/lib/zcode-shared";
 import { create } from "zustand";
+import type { RemoteTarget } from "@zcode/shared";
+import type { IServiceAccessor } from "@zcode/services";
+import { remoteAgentServiceGeneration } from "@zui/lib/remoteAgentServiceGeneration.js";
+import { createRemoteWorkspaceDisconnectedError } from "@zui/lib/remoteWorkspaceServiceError.js";
 
 export interface RemoteWorkspaceSession {
   sessionId: string;
@@ -33,97 +27,94 @@ interface RemoteWorkspaceSessionState {
   unbindWorkspaceIdentity: (workspaceIdentity: string) => void;
 }
 
-export const useRemoteWorkspaceSessionStore =
-  create<RemoteWorkspaceSessionState>()((set) => ({
-    baseServices: null,
-    sessionsById: {},
-    sessionIdByWorkspacePath: {},
-    sessionIdByWorkspaceIdentity: {},
-    registerBaseServices: (services) =>
-      set({
-        baseServices: services,
-      }),
-    registerSession: (session) =>
-      set((state) => ({
-        sessionsById: {
-          ...state.sessionsById,
-          [session.sessionId]: session,
-        },
-      })),
-    unregisterSession: (sessionId) =>
-      set((state) => {
-        const nextSessionsById = { ...state.sessionsById };
-        delete nextSessionsById[sessionId];
+export const useRemoteWorkspaceSessionStore = create<RemoteWorkspaceSessionState>()((set) => ({
+  baseServices: null,
+  sessionsById: {},
+  sessionIdByWorkspacePath: {},
+  sessionIdByWorkspaceIdentity: {},
+  registerBaseServices: (services) =>
+    set({
+      baseServices: services,
+    }),
+  registerSession: (session) =>
+    set((state) => ({
+      sessionsById: {
+        ...state.sessionsById,
+        [session.sessionId]: session,
+      },
+    })),
+  unregisterSession: (sessionId) =>
+    set((state) => {
+      const nextSessionsById = { ...state.sessionsById };
+      delete nextSessionsById[sessionId];
 
-        const nextSessionIdByWorkspacePath = Object.fromEntries(
-          Object.entries(state.sessionIdByWorkspacePath).filter(
-            ([, currentSessionId]) => currentSessionId !== sessionId,
-          ),
-        );
+      const nextSessionIdByWorkspacePath = Object.fromEntries(
+        Object.entries(state.sessionIdByWorkspacePath).filter(
+          ([, currentSessionId]) => currentSessionId !== sessionId,
+        ),
+      );
 
-        const nextSessionIdByWorkspaceIdentity = Object.fromEntries(
-          Object.entries(state.sessionIdByWorkspaceIdentity).filter(
-            ([, currentSessionId]) => currentSessionId !== sessionId,
-          ),
-        );
+      const nextSessionIdByWorkspaceIdentity = Object.fromEntries(
+        Object.entries(state.sessionIdByWorkspaceIdentity).filter(
+          ([, currentSessionId]) => currentSessionId !== sessionId,
+        ),
+      );
 
-        return {
-          sessionsById: nextSessionsById,
-          sessionIdByWorkspacePath: nextSessionIdByWorkspacePath,
-          sessionIdByWorkspaceIdentity: nextSessionIdByWorkspaceIdentity,
-        };
-      }),
-    bindWorkspacePath: (workspacePath, sessionId) =>
-      set((state) => ({
-        sessionIdByWorkspacePath: {
-          ...state.sessionIdByWorkspacePath,
-          [workspacePath]: sessionId,
-        },
-      })),
-    unbindWorkspacePath: (workspacePath) =>
-      set((state) => {
-        if (!(workspacePath in state.sessionIdByWorkspacePath)) {
-          return state;
-        }
+      return {
+        sessionsById: nextSessionsById,
+        sessionIdByWorkspacePath: nextSessionIdByWorkspacePath,
+        sessionIdByWorkspaceIdentity: nextSessionIdByWorkspaceIdentity,
+      };
+    }),
+  bindWorkspacePath: (workspacePath, sessionId) =>
+    set((state) => ({
+      sessionIdByWorkspacePath: {
+        ...state.sessionIdByWorkspacePath,
+        [workspacePath]: sessionId,
+      },
+    })),
+  unbindWorkspacePath: (workspacePath) =>
+    set((state) => {
+      if (!(workspacePath in state.sessionIdByWorkspacePath)) {
+        return state;
+      }
 
-        const nextSessionIdByWorkspacePath = {
-          ...state.sessionIdByWorkspacePath,
-        };
-        delete nextSessionIdByWorkspacePath[workspacePath];
+      const nextSessionIdByWorkspacePath = {
+        ...state.sessionIdByWorkspacePath,
+      };
+      delete nextSessionIdByWorkspacePath[workspacePath];
 
-        return {
-          ...state,
-          sessionIdByWorkspacePath: nextSessionIdByWorkspacePath,
-        };
-      }),
-    bindWorkspaceIdentity: (workspaceIdentity, sessionId) =>
-      set((state) => ({
-        sessionIdByWorkspaceIdentity: {
-          ...state.sessionIdByWorkspaceIdentity,
-          [workspaceIdentity]: sessionId,
-        },
-      })),
-    unbindWorkspaceIdentity: (workspaceIdentity) =>
-      set((state) => {
-        if (!(workspaceIdentity in state.sessionIdByWorkspaceIdentity)) {
-          return state;
-        }
+      return {
+        ...state,
+        sessionIdByWorkspacePath: nextSessionIdByWorkspacePath,
+      };
+    }),
+  bindWorkspaceIdentity: (workspaceIdentity, sessionId) =>
+    set((state) => ({
+      sessionIdByWorkspaceIdentity: {
+        ...state.sessionIdByWorkspaceIdentity,
+        [workspaceIdentity]: sessionId,
+      },
+    })),
+  unbindWorkspaceIdentity: (workspaceIdentity) =>
+    set((state) => {
+      if (!(workspaceIdentity in state.sessionIdByWorkspaceIdentity)) {
+        return state;
+      }
 
-        const nextSessionIdByWorkspaceIdentity = {
-          ...state.sessionIdByWorkspaceIdentity,
-        };
-        delete nextSessionIdByWorkspaceIdentity[workspaceIdentity];
+      const nextSessionIdByWorkspaceIdentity = {
+        ...state.sessionIdByWorkspaceIdentity,
+      };
+      delete nextSessionIdByWorkspaceIdentity[workspaceIdentity];
 
-        return {
-          ...state,
-          sessionIdByWorkspaceIdentity: nextSessionIdByWorkspaceIdentity,
-        };
-      }),
-  }));
+      return {
+        ...state,
+        sessionIdByWorkspaceIdentity: nextSessionIdByWorkspaceIdentity,
+      };
+    }),
+}));
 
-export function registerRemoteWorkspaceSession(
-  session: RemoteWorkspaceSession,
-): void {
+export function registerRemoteWorkspaceSession(session: RemoteWorkspaceSession): void {
   // 同一 remoteSessionId 的 proxy 可连续换代，而不同 React consumer 的 effect
   // 提交顺序不可靠。session 注册是权威换代顺序，先在共享 generation 模块预分配
   // 单调代际，避免迟到的中间 proxy 把 transport 从最新代切回去。
@@ -132,8 +123,7 @@ export function registerRemoteWorkspaceSession(
   if (session.services.zcodeAgentService) {
     remoteAgentServiceGeneration(session.services.zcodeAgentService);
   }
-  const previousSession =
-    useRemoteWorkspaceSessionStore.getState().sessionsById[session.sessionId];
+  const previousSession = useRemoteWorkspaceSessionStore.getState().sessionsById[session.sessionId];
   if (previousSession && previousSession !== session) {
     // 同一 remoteSessionId 的 attachment 换代时，旧 MessagePort 仍可能有挂起 RPC。
     // 先终结旧 transport，确保 provider sync 的 in-flight Promise 不会跨代永久悬置。
@@ -142,64 +132,41 @@ export function registerRemoteWorkspaceSession(
   useRemoteWorkspaceSessionStore.getState().registerSession(session);
 }
 
-export function registerBaseWorkspaceServices(
-  services: IServiceAccessor,
-): void {
+export function registerBaseWorkspaceServices(services: IServiceAccessor): void {
   useRemoteWorkspaceSessionStore.getState().registerBaseServices(services);
 }
 
 export function unregisterRemoteWorkspaceSession(sessionId: string): void {
-  const session =
-    useRemoteWorkspaceSessionStore.getState().sessionsById[sessionId];
+  const session = useRemoteWorkspaceSessionStore.getState().sessionsById[sessionId];
   useRemoteWorkspaceSessionStore.getState().unregisterSession(sessionId);
   // 同步可能发生在 workspace bind 之前，无法仅靠索引清理 in-flight。
   // 注入的 disposer 直接终结 attachment，使 ChannelClient 将挂起 RPC fail-closed。
   session?.dispose?.(createRemoteWorkspaceDisconnectedError());
 }
 
-export function bindRemoteWorkspacePath(
-  workspacePath: string,
-  sessionId: string,
-): void {
-  useRemoteWorkspaceSessionStore
-    .getState()
-    .bindWorkspacePath(workspacePath, sessionId);
+export function bindRemoteWorkspacePath(workspacePath: string, sessionId: string): void {
+  useRemoteWorkspaceSessionStore.getState().bindWorkspacePath(workspacePath, sessionId);
 }
 
 export function unbindRemoteWorkspacePath(workspacePath: string): void {
   useRemoteWorkspaceSessionStore.getState().unbindWorkspacePath(workspacePath);
 }
 
-export function bindRemoteWorkspaceIdentity(
-  workspaceIdentity: string,
-  sessionId: string,
-): void {
-  useRemoteWorkspaceSessionStore
-    .getState()
-    .bindWorkspaceIdentity(workspaceIdentity, sessionId);
+export function bindRemoteWorkspaceIdentity(workspaceIdentity: string, sessionId: string): void {
+  useRemoteWorkspaceSessionStore.getState().bindWorkspaceIdentity(workspaceIdentity, sessionId);
 }
 
 export function unbindRemoteWorkspaceIdentity(workspaceIdentity: string): void {
-  useRemoteWorkspaceSessionStore
-    .getState()
-    .unbindWorkspaceIdentity(workspaceIdentity);
+  useRemoteWorkspaceSessionStore.getState().unbindWorkspaceIdentity(workspaceIdentity);
 }
 
-export function getRemoteWorkspaceSession(
-  sessionId: string,
-): RemoteWorkspaceSession | null {
-  return (
-    useRemoteWorkspaceSessionStore.getState().sessionsById[sessionId] ?? null
-  );
+export function getRemoteWorkspaceSession(sessionId: string): RemoteWorkspaceSession | null {
+  return useRemoteWorkspaceSessionStore.getState().sessionsById[sessionId] ?? null;
 }
 
 /** 当前在册代理的远程 session 身份；旧代代理不匹配，仅用于 scope 诊断。 */
-export function findRemoteWorkspaceSessionIdForAgentService(
-  agentService: object,
-): string | null {
-  for (const session of Object.values(
-    useRemoteWorkspaceSessionStore.getState().sessionsById,
-  )) {
+export function findRemoteWorkspaceSessionIdForAgentService(agentService: object): string | null {
+  for (const session of Object.values(useRemoteWorkspaceSessionStore.getState().sessionsById)) {
     if (session.services.zcodeAgentService === agentService) {
       return session.sessionId;
     }
@@ -207,9 +174,7 @@ export function findRemoteWorkspaceSessionIdForAgentService(
   return null;
 }
 
-export function getRemoteWorkspaceServicesForPath(
-  workspacePath: string,
-): IServiceAccessor | null {
+export function getRemoteWorkspaceServicesForPath(workspacePath: string): IServiceAccessor | null {
   const state = useRemoteWorkspaceSessionStore.getState();
   const sessionId = state.sessionIdByWorkspacePath[workspacePath];
   if (!sessionId) {

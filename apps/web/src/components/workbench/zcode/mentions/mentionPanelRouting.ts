@@ -1,20 +1,7 @@
-/**
- * zcode 照搬：`@/mentions/mentionPanelRouting.ts`（references/zcode/packages/ui/src/mentions/mentionPanelRouting.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀
- *（本仓 Turbopack 不做 .js→.ts/.tsx 试探，手册 §2.4-2 在本仓构建链的等价适配）。
- */
-import type { PromptInputTrigger } from "@zui/lib/promptInputTriggers";
+import type { PromptInputTrigger } from "@zui/lib/promptInputTriggers.js";
 
-export type MentionPanelGroupId =
-  | "plugins"
-  | "files"
-  | "sessions"
-  | "whiteboards"
-  | "skills";
-export type SessionMentionWorkspaceScope =
-  | "current-workspace"
-  | "same-authority-workspaces";
+export type MentionPanelGroupId = "plugins" | "files" | "sessions" | "whiteboards" | "skills";
+export type SessionMentionWorkspaceScope = "current-workspace" | "same-authority-workspaces";
 
 const CONTEXT_GROUP_ORDER: readonly MentionPanelGroupId[] = [
   "plugins",

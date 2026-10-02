@@ -1,9 +1,4 @@
-/**
- * zcode 照搬：`@/components/workflow-graph/name-pattern.ts`（references/zcode/packages/ui/src/components/workflow-graph/name-pattern.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import type { WorkflowCausalityGraphData } from "@zui/components/workflow-graph/types";
+import type { WorkflowCausalityGraphData } from "./types.js";
 
 /**
  * 「名字只在运行时才成形」这件事的唯一渲染点。
@@ -18,9 +13,7 @@ import type { WorkflowCausalityGraphData } from "@zui/components/workflow-graph/
 const ELLIPSIS = "…";
 
 /** 一条车道 / 一张卡片的名字形状；形状取自协议，不在这里另立一套。 */
-export type NamePattern = NonNullable<
-  WorkflowCausalityGraphData["lanes"][number]["namePattern"]
->;
+export type NamePattern = NonNullable<WorkflowCausalityGraphData["lanes"][number]["namePattern"]>;
 
 /**
  * `{head: "研究员"}` → `研究员…`，`{tail: "-worker"}` → `…-worker`，两端都有 → `a…b`。
@@ -28,9 +21,7 @@ export type NamePattern = NonNullable<
  * 两个 affix 都缺席时返回 undefined 而不是孤零零一个 `…`：分析器不会发这种 pattern，但契约
  * 上 `{}` 是能通过 `.strict()` 的，这里不替它兜着就会在画面上留一个没有意义的省略号。
  */
-export function formatNamePattern(
-  pattern: NamePattern | undefined,
-): string | undefined {
+export function formatNamePattern(pattern: NamePattern | undefined): string | undefined {
   if (pattern === undefined) return undefined;
   const head = pattern.head ?? "";
   const tail = pattern.tail ?? "";

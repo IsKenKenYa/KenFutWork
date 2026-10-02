@@ -1,11 +1,5 @@
-/**
- * zcode 照搬：`@/lib/modelThoughtOption.ts`（references/zcode/packages/ui/src/lib/modelThoughtOption.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import type { ModelSelectionView } from "@zui/lib/zcode-services";
-import type { ZCodeConfigOption } from "@zui/lib/zcode-shared";
+import type { ZCodeConfigOption } from "@zcode/shared";
+import type { ModelSelectionView } from "@zcode/services";
 
 /** 从 Registry 的 ModelConfig Option Specs 读取思考档位。 */
 export function resolveModelThoughtOption(params: {
@@ -18,9 +12,7 @@ export function resolveModelThoughtOption(params: {
   const provider = params.modelSelectionView.providers.find(
     (candidate) => candidate.providerId === params.providerId,
   );
-  const model = provider?.models.find(
-    (candidate) => candidate.modelId === params.modelId,
-  );
+  const model = provider?.models.find((candidate) => candidate.modelId === params.modelId);
   const reasoning = model?.config.optionSpecs.reasoningLevel;
   if (!reasoning || reasoning.values.length === 0) return null;
 

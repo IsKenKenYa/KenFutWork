@@ -1,13 +1,7 @@
-/**
- * zcode 照搬：`@/components/coding-plan-quota-reset/CodingPlanQuotaResetStatus.tsx`（references/zcode/packages/ui/src/components/coding-plan-quota-reset/CodingPlanQuotaResetStatus.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { CodingPlanQuotaResetUiStatus } from "@zui/lib/codingPlanQuotaResetUi";
-import type { CodingPlanResetType } from "@zui/lib/zcode-shared";
 import { CheckIcon, Loader2 } from "lucide-react";
+import type { CodingPlanResetType } from "@zcode/shared";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { CodingPlanQuotaResetUiStatus } from "@zui/lib/codingPlanQuotaResetUi.js";
 
 /**
  * 自动重置提示内容（纯展示），供 composer 额度入口的受控 tooltip 使用：
@@ -26,10 +20,7 @@ export function CodingPlanQuotaResetStatusContent({
 
   if (status === "processing") {
     return (
-      <span
-        role="status"
-        className="inline-flex items-center gap-1.5 text-ui-base"
-      >
+      <span role="status" className="inline-flex items-center gap-1.5 text-ui-base">
         <Loader2
           className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none"
           aria-hidden="true"
@@ -47,10 +38,7 @@ export function CodingPlanQuotaResetStatusContent({
   }
 
   return (
-    <span
-      role="status"
-      className="inline-flex items-center gap-1.5 text-ui-base text-success"
-    >
+    <span role="status" className="inline-flex items-center gap-1.5 text-ui-base text-success">
       <CheckIcon
         className="size-3.5 shrink-0 animate-in zoom-in-75 motion-reduce:animate-none"
         aria-hidden="true"
@@ -58,9 +46,7 @@ export function CodingPlanQuotaResetStatusContent({
       <span>
         {intl.formatMessage({
           id:
-            resetType === "WEEK"
-              ? "codingPlan.quotaReset.doneWeek"
-              : "codingPlan.quotaReset.done",
+            resetType === "WEEK" ? "codingPlan.quotaReset.doneWeek" : "codingPlan.quotaReset.done",
         })}
       </span>
     </span>

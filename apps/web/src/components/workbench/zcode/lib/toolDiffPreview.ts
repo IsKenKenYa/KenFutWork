@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/lib/toolDiffPreview.ts`（references/zcode/packages/ui/src/lib/toolDiffPreview.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
 import { trimPatchContext } from "@pierre/diffs";
 
 const MAX_DIFF_LCS_CELLS = 60_000;
@@ -16,10 +11,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function findStringField(
-  value: unknown,
-  keys: readonly string[],
-): string | undefined {
+function findStringField(value: unknown, keys: readonly string[]): string | undefined {
   if (!isRecord(value)) {
     return undefined;
   }
@@ -34,25 +26,13 @@ function findStringField(
   return undefined;
 }
 
-export function extractBeforeAfter(
-  value: unknown,
-): { before: string; after: string } | null {
+export function extractBeforeAfter(value: unknown): { before: string; after: string } | null {
   if (!isRecord(value)) {
     return null;
   }
 
-  const before = findStringField(value, [
-    "before",
-    "old_string",
-    "oldText",
-    "oldContent",
-  ]);
-  const after = findStringField(value, [
-    "after",
-    "new_string",
-    "newText",
-    "newContent",
-  ]);
+  const before = findStringField(value, ["before", "old_string", "oldText", "oldContent"]);
+  const after = findStringField(value, ["after", "new_string", "newText", "newContent"]);
   if (before !== undefined && after !== undefined) {
     return { before, after };
   }
@@ -63,18 +43,12 @@ export function extractBeforeAfter(
 function extractStructuredDiffBlock(
   value: unknown,
 ): { path?: string; oldText: string; newText: string } | null {
-  if (
-    !isRecord(value) ||
-    value.type !== "diff" ||
-    typeof value.newText !== "string"
-  ) {
+  if (!isRecord(value) || value.type !== "diff" || typeof value.newText !== "string") {
     return null;
   }
 
   return {
-    ...(typeof value.path === "string" && value.path.trim()
-      ? { path: value.path }
-      : {}),
+    path: typeof value.path === "string" && value.path.trim() ? value.path : undefined,
     oldText:
       typeof value.oldText === "string"
         ? value.oldText
@@ -115,10 +89,7 @@ function formatDiffRange(lineCount: number): string {
   return lineCount === 0 ? "0,0" : `1,${lineCount}`;
 }
 
-function formatDiffRangeFromSliceStart(
-  startIndex: number,
-  lineCount: number,
-): string {
+function formatDiffRangeFromSliceStart(startIndex: number, lineCount: number): string {
   if (lineCount === 0) {
     return `${startIndex},0`;
   }
@@ -126,10 +97,7 @@ function formatDiffRangeFromSliceStart(
   return `${startIndex + 1},${lineCount}`;
 }
 
-function countSharedPrefix(
-  beforeLines: readonly string[],
-  afterLines: readonly string[],
-): number {
+function countSharedPrefix(beforeLines: readonly string[], afterLines: readonly string[]): number {
   const maxLength = Math.min(beforeLines.length, afterLines.length);
   let index = 0;
   while (index < maxLength && beforeLines[index] === afterLines[index]) {
@@ -143,13 +111,11 @@ function countSharedSuffix(
   afterLines: readonly string[],
   sharedPrefixCount: number,
 ): number {
-  const maxLength =
-    Math.min(beforeLines.length, afterLines.length) - sharedPrefixCount;
+  const maxLength = Math.min(beforeLines.length, afterLines.length) - sharedPrefixCount;
   let offset = 0;
   while (
     offset < maxLength &&
-    beforeLines[beforeLines.length - 1 - offset] ===
-      afterLines[afterLines.length - 1 - offset]
+    beforeLines[beforeLines.length - 1 - offset] === afterLines[afterLines.length - 1 - offset]
   ) {
     offset += 1;
   }
@@ -168,14 +134,8 @@ function collectUniqueLineMatches(
   beforeLines: readonly string[],
   afterLines: readonly string[],
 ): LineMatch[] {
-  const beforeOccurrences = new Map<
-    string,
-    { count: number; firstIndex: number }
-  >();
-  const afterOccurrences = new Map<
-    string,
-    { count: number; firstIndex: number }
-  >();
+  const beforeOccurrences = new Map<string, { count: number; firstIndex: number }>();
+  const afterOccurrences = new Map<string, { count: number; firstIndex: number }>();
 
   for (let index = 0; index < beforeLines.length; index += 1) {
     const line = beforeLines[index]!;
@@ -213,9 +173,7 @@ function collectUniqueLineMatches(
   return matches;
 }
 
-function findIncreasingAnchorMatches(
-  matches: readonly LineMatch[],
-): LineMatch[] {
+function findIncreasingAnchorMatches(matches: readonly LineMatch[]): LineMatch[] {
   if (matches.length === 0) {
     return [];
   }
@@ -259,9 +217,7 @@ function appendDiffBodyWithLargeSegmentFallback(
   beforeLines: readonly string[],
   afterLines: readonly string[],
 ): void {
-  const anchors = findIncreasingAnchorMatches(
-    collectUniqueLineMatches(beforeLines, afterLines),
-  );
+  const anchors = findIncreasingAnchorMatches(collectUniqueLineMatches(beforeLines, afterLines));
 
   if (anchors.length === 0) {
     // 之前大区间直接整块退化成“全删再全加”，
@@ -317,16 +273,8 @@ function appendDiffBodyWithLcs(
     Array<number>(afterLines.length + 1).fill(0),
   );
 
-  for (
-    let beforeIndex = beforeLines.length - 1;
-    beforeIndex >= 0;
-    beforeIndex -= 1
-  ) {
-    for (
-      let afterIndex = afterLines.length - 1;
-      afterIndex >= 0;
-      afterIndex -= 1
-    ) {
+  for (let beforeIndex = beforeLines.length - 1; beforeIndex >= 0; beforeIndex -= 1) {
+    for (let afterIndex = afterLines.length - 1; afterIndex >= 0; afterIndex -= 1) {
       lcs[beforeIndex]![afterIndex] =
         beforeLines[beforeIndex] === afterLines[afterIndex]
           ? (lcs[beforeIndex + 1]![afterIndex + 1] ?? 0) + 1
@@ -343,11 +291,7 @@ function appendDiffBodyWithLcs(
     const beforeLine = beforeLines[beforeIndex];
     const afterLine = afterLines[afterIndex];
 
-    if (
-      beforeLine !== undefined &&
-      afterLine !== undefined &&
-      beforeLine === afterLine
-    ) {
+    if (beforeLine !== undefined && afterLine !== undefined && beforeLine === afterLine) {
       patchLines.push(` ${beforeLine}`);
       beforeIndex += 1;
       afterIndex += 1;
@@ -400,28 +344,14 @@ export function buildUnifiedDiff(
 ): string | null {
   const contextLines = options?.contextLines;
   const hasContextLimit =
-    typeof contextLines === "number" &&
-    Number.isFinite(contextLines) &&
-    contextLines >= 0;
-  const normalizedContextLines = hasContextLimit
-    ? Math.max(0, Math.floor(contextLines))
-    : 0;
+    typeof contextLines === "number" && Number.isFinite(contextLines) && contextLines >= 0;
+  const normalizedContextLines = hasContextLimit ? Math.max(0, Math.floor(contextLines)) : 0;
   const beforeLines = splitLines(before);
   const afterLines = splitLines(after);
   const sharedPrefixCount = countSharedPrefix(beforeLines, afterLines);
-  const sharedSuffixCount = countSharedSuffix(
-    beforeLines,
-    afterLines,
-    sharedPrefixCount,
-  );
-  const beforeMiddle = beforeLines.slice(
-    sharedPrefixCount,
-    beforeLines.length - sharedSuffixCount,
-  );
-  const afterMiddle = afterLines.slice(
-    sharedPrefixCount,
-    afterLines.length - sharedSuffixCount,
-  );
+  const sharedSuffixCount = countSharedSuffix(beforeLines, afterLines, sharedPrefixCount);
+  const beforeMiddle = beforeLines.slice(sharedPrefixCount, beforeLines.length - sharedSuffixCount);
+  const afterMiddle = afterLines.slice(sharedPrefixCount, afterLines.length - sharedSuffixCount);
   const isCreatedFile = beforeLines.length === 0 && afterLines.length > 0;
   const isDeletedFile = beforeLines.length > 0 && afterLines.length === 0;
 
@@ -434,10 +364,8 @@ export function buildUnifiedDiff(
 
   const beforeSliceStart = sharedPrefixCount - limitedPrefixCount;
   const afterSliceStart = sharedPrefixCount - limitedPrefixCount;
-  const beforeRangeLineCount =
-    limitedPrefixCount + beforeMiddle.length + limitedSuffixCount;
-  const afterRangeLineCount =
-    limitedPrefixCount + afterMiddle.length + limitedSuffixCount;
+  const beforeRangeLineCount = limitedPrefixCount + beforeMiddle.length + limitedSuffixCount;
+  const afterRangeLineCount = limitedPrefixCount + afterMiddle.length + limitedSuffixCount;
 
   const patchLines = [
     // 仅有 `---/+++` 文件头时，删除一行 SQL 注释（`-- ...`）会生成 `--- ...` 正文。

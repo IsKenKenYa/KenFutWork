@@ -1,21 +1,3 @@
-/**
- * zcode 照搬：`@/mentions/nodes/PromptMentionNode.ts`（references/zcode/packages/ui/src/mentions/nodes/PromptMentionNode.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀；P5 适配：可选属性放宽 `| undefined`（exactOptionalPropertyTypes，照搬调用点显式传 undefined）
- *（本仓 Turbopack 不做 .js→.ts/.tsx 试探，手册 §2.4-2 在本仓构建链的等价适配）。
- */
-
-import { resolveFileDisplayDescriptor } from "@zui/lib/fileDisplay";
-import {
-  getPromptMentionVariantClassName,
-  PROMPT_MENTION_BASE_CLASS_NAME,
-} from "@zui/mentions/mentionChip";
-import type {
-  MentionCategory,
-  MentionItemData,
-} from "@zui/mentions/mentionTypes";
-import { decoratePromptMention } from "@zui/mentions/nodes/promptMentionDecoration";
-import { normalizePromptMentionDisplayLabel } from "@zui/mentions/promptMentionLabel";
 import {
   $applyNodeReplacement,
   type EditorConfig,
@@ -24,15 +6,18 @@ import {
   type SerializedTextNode,
   TextNode,
 } from "lexical";
-
-export * from "@zui/mentions/nodes/mentionIconDom";
+import { resolveFileDisplayDescriptor } from "@zui/lib/fileDisplay.js";
+import {
+  getPromptMentionVariantClassName,
+  PROMPT_MENTION_BASE_CLASS_NAME,
+} from "@zui/mentions/mentionChip.js";
+import { normalizePromptMentionDisplayLabel } from "@zui/mentions/promptMentionLabel.js";
+import type { MentionCategory, MentionItemData } from "@zui/mentions/mentionTypes.js";
+import { decoratePromptMention } from "@zui/mentions/nodes/promptMentionDecoration.js";
+export * from "@zui/mentions/nodes/mentionIconDom.js";
 
 function displayLabel(payload: PromptMentionPayload): string {
-  const label = normalizePromptMentionDisplayLabel(
-    payload.category,
-    payload.label,
-    payload.value,
-  );
+  const label = normalizePromptMentionDisplayLabel(payload.category, payload.label, payload.value);
   return payload.category === "files"
     ? resolveFileDisplayDescriptor(
         payload.data?.path ?? payload.data?.relativePath ?? payload.value,
@@ -46,14 +31,14 @@ export interface PromptMentionPayload {
   label: string;
   value: string;
   markdown: string;
-  description?: string | undefined;
-  data?: MentionItemData | undefined;
+  description?: string;
+  data?: MentionItemData;
 }
 
 type SerializedPromptMentionNode = SerializedTextNode & {
   category: MentionCategory;
-  data?: MentionItemData | undefined;
-  description?: string | undefined;
+  data?: MentionItemData;
+  description?: string;
   mentionId: string;
   markdown: string;
   type: "prompt-mention";
@@ -63,7 +48,7 @@ type SerializedPromptMentionNode = SerializedTextNode & {
 
 export class PromptMentionNode extends TextNode {
   __category: MentionCategory;
-  __data?: MentionItemData | undefined;
+  __data?: MentionItemData;
   __description: string;
   __markdown: string;
   __mentionId: string;
@@ -88,9 +73,7 @@ export class PromptMentionNode extends TextNode {
     );
   }
 
-  static importJSON(
-    serializedNode: SerializedPromptMentionNode,
-  ): PromptMentionNode {
+  static importJSON(serializedNode: SerializedPromptMentionNode): PromptMentionNode {
     const node = $createPromptMentionNode({
       id: serializedNode.mentionId,
       category: serializedNode.category,
@@ -130,16 +113,10 @@ export class PromptMentionNode extends TextNode {
     return dom;
   }
 
-  updateDOM(
-    prevNode: PromptMentionNode,
-    dom: HTMLElement,
-    config: EditorConfig,
-  ): boolean {
+  updateDOM(prevNode: PromptMentionNode, dom: HTMLElement, config: EditorConfig): boolean {
     const shouldUpdate = super.updateDOM(prevNode as this, dom, config);
     if (prevNode.__category !== this.__category) {
-      const variantClassName = getPromptMentionVariantClassName(
-        this.__category,
-      );
+      const variantClassName = getPromptMentionVariantClassName(this.__category);
       dom.className = `prompt-mention ${PROMPT_MENTION_BASE_CLASS_NAME} ${variantClassName}`;
       dom.setAttribute("data-mention-category", this.__category);
     }
@@ -208,9 +185,7 @@ export class PromptMentionNode extends TextNode {
   }
 }
 
-export function $createPromptMentionNode(
-  payload: PromptMentionPayload,
-): PromptMentionNode {
+export function $createPromptMentionNode(payload: PromptMentionPayload): PromptMentionNode {
   const node = new PromptMentionNode(payload);
   node.setMode("token");
   return $applyNodeReplacement(node);

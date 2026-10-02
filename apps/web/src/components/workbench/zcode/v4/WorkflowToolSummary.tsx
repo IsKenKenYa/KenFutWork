@@ -1,15 +1,9 @@
-/**
- * zcode 照搬：`@/v4/WorkflowToolSummary.tsx`（references/zcode/packages/ui/src/v4/WorkflowToolSummary.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { WORKFLOW_CARD_ICON } from "@zui/components/workflow-timeline/WorkflowCardChrome";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { WorkflowRunCardSummary } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
 import { ArrowUpRightIcon } from "lucide-react";
 import { useMemo } from "react";
+import { WORKFLOW_CARD_ICON } from "@zui/components/workflow-timeline/WorkflowCardChrome.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout.js";
+import type { WorkflowRunCardSummary } from "@zui/ToolCallBlocks/shared.js";
 
 export function WorkflowToolSummary({
   toolCallId,
@@ -19,9 +13,9 @@ export function WorkflowToolSummary({
 }: {
   toolCallId: string;
   summary: WorkflowRunCardSummary;
-  onOpen?: (() => void) | undefined;
+  onOpen?: () => void;
   /** AmendWorkflow 发起行：种类词换成「工作流已调整」。 */
-  amend?: boolean | undefined;
+  amend?: boolean;
 }) {
   const { intl } = useZCodeIntl();
   // ToolLayout 是 memo 组件：primaryText 若是内联 JSX，每次渲染都会打破 memo（reactStableReferences 测试会拦下）。
@@ -30,7 +24,7 @@ export function WorkflowToolSummary({
   const primaryText = useMemo(
     () => (
       <span className="inline-flex min-w-0 items-center gap-2">
-        <span aria-hidden={true}>·</span>
+        <span aria-hidden>·</span>
         <span
           data-testid="workflow-summary-agents"
           className={
@@ -50,9 +44,7 @@ export function WorkflowToolSummary({
                 },
                 { count: agents },
               )}
-          {onOpen ? (
-            <ArrowUpRightIcon aria-hidden={true} className="size-4 shrink-0" />
-          ) : null}
+          {onOpen ? <ArrowUpRightIcon aria-hidden className="size-4 shrink-0" /> : null}
         </span>
       </span>
     ),
@@ -68,18 +60,14 @@ export function WorkflowToolSummary({
         toolId={toolCallId}
         icon={WORKFLOW_CARD_ICON}
         kindLabel={intl.formatMessage({
-          id: amend
-            ? "chat.toolCall.workflow.amend.amended"
-            : "chat.toolCall.workflow.ran",
+          id: amend ? "chat.toolCall.workflow.amend.amended" : "chat.toolCall.workflow.ran",
         })}
         canToggle={false}
         primaryText={primaryText}
         summaryAction={
           onOpen
             ? {
-                ariaLabel: intl.formatMessage({
-                  id: "chat.toolCall.workflow.openRunDetails",
-                }),
+                ariaLabel: intl.formatMessage({ id: "chat.toolCall.workflow.openRunDetails" }),
                 onActivate: onOpen,
               }
             : undefined

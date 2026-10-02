@@ -1,16 +1,10 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/execute-group.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/execute-group.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
-
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { ToolCallBlock } from "@zui/ToolCallBlocks";
-import { getExecuteSecondaryText } from "@zui/ToolCallBlocks/renderers/execute";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
 import { SquareTerminalIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { ToolCallBlock } from "@zui/ToolCallBlocks.js";
+import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
+import { getExecuteSecondaryText } from "@zui/ToolCallBlocks/renderers/execute.js";
 
 const EXECUTE_GROUP_ICON = (
   <SquareTerminalIcon className="size-4 shrink-0 text-foreground-subtle" />
@@ -34,26 +28,16 @@ function formatCompletedSummary(
       { count: childStatuses.length },
     ),
   ];
-  const failedCount = childStatuses.filter(
-    (status) => status === "failed",
-  ).length;
-  const stoppedCount = childStatuses.filter(
-    (status) => status === "stopped",
-  ).length;
+  const failedCount = childStatuses.filter((status) => status === "failed").length;
+  const stoppedCount = childStatuses.filter((status) => status === "stopped").length;
   if (failedCount > 0) {
     parts.push(
-      intl.formatMessage(
-        { id: "chat.toolCall.executeGroup.failed" },
-        { count: failedCount },
-      ),
+      intl.formatMessage({ id: "chat.toolCall.executeGroup.failed" }, { count: failedCount }),
     );
   }
   if (stoppedCount > 0) {
     parts.push(
-      intl.formatMessage(
-        { id: "chat.toolCall.executeGroup.stopped" },
-        { count: stoppedCount },
-      ),
+      intl.formatMessage({ id: "chat.toolCall.executeGroup.stopped" }, { count: stoppedCount }),
     );
   }
   return parts.join(", ");
@@ -61,30 +45,21 @@ function formatCompletedSummary(
 
 export function ExecuteGroupToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
-  const {
-    toolCallNode,
-    isRunning,
-    statusLabel,
-    isOfficeMode = false,
-  } = context;
+  const { toolCallNode, isRunning, statusLabel, isOfficeMode = false } = context;
   const { toolCall, childToolCalls } = toolCallNode;
   const latestActiveChild = childToolCalls.findLast((child) =>
     ACTIVE_STATUSES.has(child.toolCall.status),
   );
   const latestChild = latestActiveChild ?? childToolCalls.at(-1);
   const latestCommand =
-    !isOfficeMode && latestChild
-      ? getExecuteSecondaryText(latestChild.toolCall.input)
-      : undefined;
+    !isOfficeMode && latestChild ? getExecuteSecondaryText(latestChild.toolCall.input) : undefined;
   const runningActionLabel = latestCommand
     ? intl.formatMessage({ id: "chat.toolCall.execute.running" })
     : undefined;
   const runningPrimaryText = useMemo(
     () =>
       runningActionLabel ? (
-        <span className="shrink-0 text-foreground-subtle">
-          {runningActionLabel}
-        </span>
+        <span className="shrink-0 text-foreground-subtle">{runningActionLabel}</span>
       ) : null,
     [runningActionLabel],
   );
@@ -141,9 +116,7 @@ export function ExecuteGroupToolCallBlock(context: ToolCallBlockRenderContext) {
       expandedKindLabel={intl.formatMessage({
         id: "chat.toolCall.executeGroup.label",
       })}
-      primaryText={
-        isRunning && runningActionLabel ? runningPrimaryText : completedSummary
-      }
+      primaryText={isRunning && runningActionLabel ? runningPrimaryText : completedSummary}
       secondaryText={isRunning ? runningSecondaryText : undefined}
       summaryContentSeparator="·"
       expandedPrimaryText={completedSummary}
@@ -159,13 +132,7 @@ export function ExecuteGroupToolCallBlock(context: ToolCallBlockRenderContext) {
       }
       statusLabel={statusLabel}
       isRunning={isRunning}
-      title={
-        isOfficeMode
-          ? undefined
-          : isRunning && latestCommand
-            ? latestCommand
-            : toolCall.title
-      }
+      title={isOfficeMode ? undefined : isRunning && latestCommand ? latestCommand : toolCall.title}
       expandedTitle={toolCall.title}
       renderContent={renderContent}
     />

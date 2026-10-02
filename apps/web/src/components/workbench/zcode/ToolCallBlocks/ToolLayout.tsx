@@ -1,82 +1,67 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/ToolLayout.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/ToolLayout.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- * 适配注记：接口可选属性放宽 | undefined 以等价 zcode tsconfig 行为（exactOptionalPropertyTypes）。
- */
-
-import { cn } from "@zui/components/lib/utils";
-import { Button } from "@zui/components/ui/button";
-import {
-  Collapsible,
-  CollapsibleContent,
-} from "@zui/components/ui/collapsible";
+import { memo, type ReactNode, useEffect, useRef, useState } from "react";
+import { Collapsible, CollapsibleContent } from "@zui/components/ui/collapsible.js";
+import { Button } from "@zui/components/ui/button.js";
+import { cn } from "@zui/components/lib/utils.js";
+import { CheckIcon, CopyIcon } from "lucide-react";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@zui/components/ui/tooltip";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { uiMemoryDiagnosticsRegistry } from "@zui/lib/memoryDiagnostics";
-import {
-  type ToolSummaryAction,
-  ToolSummaryRow,
-} from "@zui/ToolCallBlocks/ToolSummaryRow";
-import { CheckIcon, CopyIcon } from "lucide-react";
-import { memo, type ReactNode, useEffect, useRef, useState } from "react";
+} from "@zui/components/ui/tooltip.js";
+import { ToolSummaryRow, type ToolSummaryAction } from "@zui/ToolCallBlocks/ToolSummaryRow.js";
+import { uiMemoryDiagnosticsRegistry } from "@zui/lib/memoryDiagnostics.js";
 
 const toolLayoutOpenState = new Map<string, boolean>();
 // 内存诊断计数器：该表按 toolId 只增不减，先落日志。
-uiMemoryDiagnosticsRegistry.register("toolLayout", () => ({
-  openState: toolLayoutOpenState.size,
-}));
+uiMemoryDiagnosticsRegistry.register("toolLayout", () => ({ openState: toolLayoutOpenState.size }));
 const TOOL_CONTENT_COLLAPSE_UNMOUNT_DELAY_MS = 300;
 const TOOL_CONTENT_SHELL_CLASSNAME = "text-popover-foreground outline-none";
 const TOOL_CONTENT_SPACING_CLASSNAME = "pt-2";
 
 interface ToolLayoutProps {
   toolId: string;
-  persistOpenKey?: string | undefined;
+  persistOpenKey?: string;
   icon: ReactNode;
-  showIcon?: boolean | undefined;
-  canToggle?: boolean | undefined;
-  forceOpen?: boolean | undefined;
-  autoOpen?: boolean | undefined;
-  autoCollapseOnComplete?: boolean | undefined;
+  showIcon?: boolean;
+  canToggle?: boolean;
+  forceOpen?: boolean;
+  autoOpen?: boolean;
+  autoCollapseOnComplete?: boolean;
   kindLabel: ReactNode;
-  expandedKindLabel?: ReactNode | undefined;
-  kindDetail?: ReactNode | undefined;
-  expandedKindDetail?: ReactNode | undefined;
-  sourceLabel?: ReactNode | undefined;
+  expandedKindLabel?: ReactNode;
+  kindDetail?: ReactNode;
+  expandedKindDetail?: ReactNode;
+  sourceLabel?: ReactNode;
   primaryText: ReactNode;
-  prioritizePrimaryText?: boolean | undefined;
-  expandedPrimaryText?: ReactNode | undefined;
-  secondaryText?: ReactNode | undefined;
-  expandedSecondaryText?: ReactNode | undefined;
-  summaryContentSeparator?: ReactNode | undefined;
-  animateSummaryContent?: boolean | undefined;
-  disableSummaryContentAnimation?: boolean | undefined;
-  summaryContentKey?: string | undefined;
-  summaryContentRefreshVersion?: string | undefined;
-  hideSecondaryTextWhenOpen?: boolean | undefined;
-  diffCount?: ReactNode | undefined;
-  hideDiffCountWhenOpen?: boolean | undefined;
-  statusLabel?: ReactNode | undefined;
-  statusTooltip?: ReactNode | undefined;
+  prioritizePrimaryText?: boolean;
+  expandedPrimaryText?: ReactNode;
+  secondaryText?: ReactNode;
+  expandedSecondaryText?: ReactNode;
+  summaryContentSeparator?: ReactNode;
+  animateSummaryContent?: boolean;
+  disableSummaryContentAnimation?: boolean;
+  summaryContentKey?: string;
+  summaryContentRefreshVersion?: string;
+  hideSecondaryTextWhenOpen?: boolean;
+  diffCount?: ReactNode;
+  hideDiffCountWhenOpen?: boolean;
+  statusLabel?: ReactNode;
+  statusTooltip?: ReactNode;
   /**
    * 状态词之前的指示物（如编译反馈行的空环灯），与状态词同显同隐。放在提示触发区之外：
    * 虚线下划线与悬停提示只属于词，灯不该被划线，也不该成为另一个悬停目标。
    */
-  statusIndicator?: ReactNode | undefined;
-  showStatusLabel?: boolean | undefined;
-  showFailureStatus?: boolean | undefined;
-  isRunning?: boolean | undefined;
-  title?: string | undefined;
-  expandedTitle?: string | undefined;
-  content?: ReactNode | undefined;
-  renderContent?: (() => ReactNode) | undefined;
-  summaryAction?: ToolSummaryAction | undefined;
+  statusIndicator?: ReactNode;
+  showStatusLabel?: boolean;
+  showFailureStatus?: boolean;
+  isRunning?: boolean;
+  title?: string;
+  expandedTitle?: string;
+  content?: ReactNode;
+  renderContent?: () => ReactNode;
+  summaryAction?: ToolSummaryAction;
 }
 
 function ToolLayoutComponent({
@@ -131,36 +116,26 @@ function ToolLayoutComponent({
   const contentUnmountDelayRef = useRef<number | null>(null);
   const hasAutoOpenedRef = useRef(false);
   const previousIsRunningRef = useRef(isRunning);
-  const shouldShowStatusLabel =
-    (showStatusLabel || showFailureStatus) && statusLabel != null;
-  const shouldRenderResolvedContent =
-    !hasSummaryAction && (isExpanded || shouldRenderContent);
+  const shouldShowStatusLabel = (showStatusLabel || showFailureStatus) && statusLabel != null;
+  const shouldRenderResolvedContent = !hasSummaryAction && (isExpanded || shouldRenderContent);
   const resolvedContent = shouldRenderResolvedContent
     ? (renderContent?.() ?? content ?? null)
     : null;
   const summaryPrimaryText =
-    isExpanded && expandedPrimaryText != null
-      ? expandedPrimaryText
-      : primaryText;
-  const summaryKindLabel =
-    isExpanded && expandedKindLabel != null ? expandedKindLabel : kindLabel;
+    isExpanded && expandedPrimaryText != null ? expandedPrimaryText : primaryText;
+  const summaryKindLabel = isExpanded && expandedKindLabel != null ? expandedKindLabel : kindLabel;
   const summaryKindDetail =
-    isExpanded && expandedKindDetail !== undefined
-      ? expandedKindDetail
-      : kindDetail;
+    isExpanded && expandedKindDetail !== undefined ? expandedKindDetail : kindDetail;
   const summarySecondaryText =
     isExpanded && expandedSecondaryText !== undefined
       ? expandedSecondaryText
       : isExpanded && hideSecondaryTextWhenOpen
         ? null
         : secondaryText;
-  const summaryTitle =
-    isExpanded && expandedTitle !== undefined ? expandedTitle : title;
+  const summaryTitle = isExpanded && expandedTitle !== undefined ? expandedTitle : title;
   const resolvedSummaryContentKey =
-    summaryContentKey ??
-    `${String(summaryTitle ?? "")}:${String(statusLabel ?? "")}`;
-  const shouldShowDiffCount =
-    diffCount != null && !(isExpanded && hideDiffCountWhenOpen);
+    summaryContentKey ?? `${String(summaryTitle ?? "")}:${String(statusLabel ?? "")}`;
+  const shouldShowDiffCount = diffCount != null && !(isExpanded && hideDiffCountWhenOpen);
   // toolcall 在流式期间数量多且持续更新，旋转 loading 图标会让
   // 动画长期占用渲染资源；运行态改由文案扫光和状态文字表达，图标保持静态。
   const summaryIcon = icon;
@@ -246,10 +221,7 @@ function ToolLayoutComponent({
   }, []);
 
   const handleCopyFailureTooltip = () => {
-    if (
-      typeof statusTooltip !== "string" ||
-      statusTooltip.trim().length === 0
-    ) {
+    if (typeof statusTooltip !== "string" || statusTooltip.trim().length === 0) {
       return;
     }
 
@@ -272,7 +244,7 @@ function ToolLayoutComponent({
         // 这样 edit 卡片保持和成功态一致的展开逻辑，同时仍然能在 hover 时拿到报错原因。
         <TooltipProvider>
           <Tooltip>
-            <TooltipTrigger asChild={true}>
+            <TooltipTrigger asChild>
               <span className="whitespace-nowrap underline decoration-dotted underline-offset-2 cursor-help">
                 {statusLabel}
               </span>
@@ -282,8 +254,7 @@ function ToolLayoutComponent({
                 <span className="line-clamp-3 min-w-0 flex-1 whitespace-pre-wrap break-words">
                   {statusTooltip}
                 </span>
-                {typeof statusTooltip === "string" &&
-                statusTooltip.trim().length > 0 ? (
+                {typeof statusTooltip === "string" && statusTooltip.trim().length > 0 ? (
                   <Button
                     type="button"
                     variant="ghost"
@@ -368,9 +339,7 @@ function ToolLayoutComponent({
         statusNode={statusNode}
         title={summaryTitle}
         toggleAriaLabel={intl.formatMessage({
-          id: isExpanded
-            ? "chat.toolCall.collapseDetails"
-            : "chat.toolCall.expandDetails",
+          id: isExpanded ? "chat.toolCall.collapseDetails" : "chat.toolCall.expandDetails",
         })}
         toolId={toolId}
       />
@@ -379,17 +348,10 @@ function ToolLayoutComponent({
           {/* padding 直接挂在高度动画节点上时，主体归零后仍会停在 8px，
               直到延迟卸载切换 display:none 才瞬间消失。放入内部后会被外层 overflow
               随动画高度连续裁切到 0，保留原间距且不改变 300ms 的测量保护。 */}
-          <div className={TOOL_CONTENT_SPACING_CLASSNAME}>
-            {resolvedContent}
-          </div>
+          <div className={TOOL_CONTENT_SPACING_CLASSNAME}>{resolvedContent}</div>
         </CollapsibleContent>
       ) : !hasSummaryAction && forceOpen ? (
-        <div
-          className={cn(
-            TOOL_CONTENT_SHELL_CLASSNAME,
-            TOOL_CONTENT_SPACING_CLASSNAME,
-          )}
-        >
+        <div className={cn(TOOL_CONTENT_SHELL_CLASSNAME, TOOL_CONTENT_SPACING_CLASSNAME)}>
           {resolvedContent}
         </div>
       ) : null}

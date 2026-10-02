@@ -1,20 +1,11 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/cron-create.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/cron-create.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { cn } from "@zui/components/lib/utils";
-import { Button } from "@zui/components/ui/button";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { ZCodeAutomationScheduleRule } from "@zui/lib/zcode-shared";
-import {
-  TID_CRON_CREATE_CARD,
-  TID_CRON_CREATE_OPEN,
-} from "@zui/lib/zcode-shared";
-import { describeAutomationCardSchedule } from "@zui/settings/automationCardSchedule";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
 import { ClockIcon } from "lucide-react";
+import { TID_CRON_CREATE_CARD, TID_CRON_CREATE_OPEN } from "@zcode/shared";
+import type { ZCodeAutomationScheduleRule } from "@zcode/shared";
+import { Button } from "@zui/components/ui/button.js";
+import { cn } from "@zui/components/lib/utils.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { describeAutomationCardSchedule } from "@zui/settings/automationCardSchedule.js";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
 
 export interface CronCreateAutomationSummary {
   automationId?: string;
@@ -26,32 +17,20 @@ export interface CronCreateAutomationSummary {
   maxRuns?: number;
 }
 
-const SCHEDULE_RULE_UNITS = new Set([
-  "minute",
-  "hourly",
-  "daily",
-  "weekly",
-  "monthly",
-  "yearly",
-]);
+const SCHEDULE_RULE_UNITS = new Set(["minute", "hourly", "daily", "weekly", "monthly", "yearly"]);
 
 function isScheduleRule(value: unknown): value is ZCodeAutomationScheduleRule {
   // 宽松结构校验：输出可能来自协议或历史工具结果，字段宽松地放行后由 describe 层兜底。
   if (!isPlainRecord(value)) return false;
-  if (typeof value.unit !== "string" || !SCHEDULE_RULE_UNITS.has(value.unit))
-    return false;
-  if (typeof value.interval !== "number" || !Number.isFinite(value.interval))
-    return false;
-  if (typeof value.hour !== "number" || typeof value.minute !== "number")
-    return false;
+  if (typeof value.unit !== "string" || !SCHEDULE_RULE_UNITS.has(value.unit)) return false;
+  if (typeof value.interval !== "number" || !Number.isFinite(value.interval)) return false;
+  if (typeof value.hour !== "number" || typeof value.minute !== "number") return false;
   if (typeof value.anchorAt !== "number") return false;
   return true;
 }
 
 function normalizeToolName(value: unknown): string {
-  return typeof value === "string"
-    ? value.toLowerCase().replace(/[^a-z0-9]/gu, "")
-    : "";
+  return typeof value === "string" ? value.toLowerCase().replace(/[^a-z0-9]/gu, "") : "";
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -84,9 +63,7 @@ function normalizeOutputCandidate(value: unknown): unknown {
   return typeof value === "string" ? parseJsonString(value) : value;
 }
 
-function readCronCreateAutomationOutputSummary(
-  value: unknown,
-): CronCreateAutomationSummary | null {
+function readCronCreateAutomationOutputSummary(value: unknown): CronCreateAutomationSummary | null {
   const normalizedValue = normalizeOutputCandidate(value);
   if (!isPlainRecord(normalizedValue)) {
     return null;
@@ -96,11 +73,9 @@ function readCronCreateAutomationOutputSummary(
     ? normalizedValue.automation
     : normalizedValue;
   const automationId =
-    typeof automation.automationId === "string" &&
-    automation.automationId.trim()
+    typeof automation.automationId === "string" && automation.automationId.trim()
       ? automation.automationId.trim()
-      : typeof automation.automation_id === "string" &&
-          automation.automation_id.trim()
+      : typeof automation.automation_id === "string" && automation.automation_id.trim()
         ? automation.automation_id.trim()
         : undefined;
   const title =
@@ -121,13 +96,9 @@ function readCronCreateAutomationOutputSummary(
   const scheduleRule = isScheduleRule(automation.scheduleRule)
     ? (automation.scheduleRule as ZCodeAutomationScheduleRule)
     : undefined;
-  const recurring =
-    typeof automation.recurring === "boolean"
-      ? automation.recurring
-      : undefined;
+  const recurring = typeof automation.recurring === "boolean" ? automation.recurring : undefined;
   const maxRuns =
-    typeof automation.maxRuns === "number" &&
-    Number.isFinite(automation.maxRuns)
+    typeof automation.maxRuns === "number" && Number.isFinite(automation.maxRuns)
       ? automation.maxRuns
       : undefined;
 
@@ -136,8 +107,8 @@ function readCronCreateAutomationOutputSummary(
     ...(title ? { title } : {}),
     ...(cronExpr ? { cronExpr } : {}),
     ...(scheduleRule ? { scheduleRule } : {}),
-    ...(recurring === undefined ? {} : { recurring }),
-    ...(maxRuns === undefined ? {} : { maxRuns }),
+    ...(recurring !== undefined ? { recurring } : {}),
+    ...(maxRuns !== undefined ? { maxRuns } : {}),
   };
 }
 
@@ -171,26 +142,19 @@ export function CronCreateAutomationCard({
   onOpenAutomationsMain,
 }: {
   automation: CronCreateAutomationSummary;
-  onOpenAutomationsMain?: ((automationId?: string) => void) | undefined;
+  onOpenAutomationsMain?: (automationId?: string) => void;
 }) {
   const { intl } = useZCodeIntl();
   const title =
-    automation.title ??
-    intl.formatMessage({ id: "automations.chatCreated.defaultTitle" });
+    automation.title ?? intl.formatMessage({ id: "automations.chatCreated.defaultTitle" });
   const schedule = automation.cronExpr
     ? describeAutomationCardSchedule(
         {
           cronExpr: automation.cronExpr,
           // 透传权威 scheduleRule/循环态，否则「每50小时」「每40天」会回退成「每小时的第00分」。
-          ...(automation.scheduleRule
-            ? { scheduleRule: automation.scheduleRule }
-            : {}),
-          ...(automation.recurring === undefined
-            ? {}
-            : { recurring: automation.recurring }),
-          ...(automation.maxRuns === undefined
-            ? {}
-            : { maxRuns: automation.maxRuns }),
+          ...(automation.scheduleRule ? { scheduleRule: automation.scheduleRule } : {}),
+          ...(automation.recurring !== undefined ? { recurring: automation.recurring } : {}),
+          ...(automation.maxRuns !== undefined ? { maxRuns: automation.maxRuns } : {}),
         },
         intl,
       )
@@ -207,12 +171,8 @@ export function CronCreateAutomationCard({
           <ClockIcon className="size-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-ui-base font-medium text-foreground">
-            {title}
-          </div>
-          <div className="mt-0.5 truncate text-ui-base text-foreground-subtle">
-            {schedule}
-          </div>
+          <div className="truncate text-ui-base font-medium text-foreground">{title}</div>
+          <div className="mt-0.5 truncate text-ui-base text-foreground-subtle">{schedule}</div>
         </div>
         <Button
           type="button"
@@ -228,9 +188,7 @@ export function CronCreateAutomationCard({
           disabled={!canOpenAutomations}
           onClick={() => onOpenAutomationsMain?.(automation.automationId)}
         >
-          <span>
-            {intl.formatMessage({ id: "automations.chatCreated.open" })}
-          </span>
+          <span>{intl.formatMessage({ id: "automations.chatCreated.open" })}</span>
         </Button>
       </div>
     </div>

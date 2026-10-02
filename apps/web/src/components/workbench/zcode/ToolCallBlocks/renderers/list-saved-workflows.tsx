@@ -1,17 +1,11 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/list-saved-workflows.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/list-saved-workflows.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { FallbackToolCallBlock } from "@zui/ToolCallBlocks/renderers/fallback";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
-import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay";
 import { Library } from "lucide-react";
 import { useCallback, useMemo } from "react";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { FallbackToolCallBlock } from "@zui/ToolCallBlocks/renderers/fallback.js";
+import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay.js";
+import { ToolLayout } from "../ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "../shared.js";
 
 const LIST_SAVED_WORKFLOWS_TOOL_ICON = (
   <Library className="size-4 shrink-0 text-foreground-subtle" />
@@ -133,12 +127,7 @@ function readListSavedWorkflowsResult(
   }
 
   const raw = isPlainRecord(toolCall.raw) ? toolCall.raw : null;
-  for (const candidate of [
-    toolCall.output,
-    raw?.rawOutput,
-    raw?.output,
-    raw?.result,
-  ]) {
+  for (const candidate of [toolCall.output, raw?.rawOutput, raw?.output, raw?.result]) {
     const result = readResultRecord(candidate);
     if (result) {
       return result;
@@ -158,16 +147,11 @@ function readListSavedWorkflowsResult(
  * 卡片只回答「有哪些、干什么用」；脚本本体本来就不在结果里（spec：一次列举不该把 20 段脚本
  * 灌进上下文）。坏文件单独一行——它们是**刻意可见**的，不静默跳过。
  */
-export function ListSavedWorkflowsToolCallBlock(
-  context: ToolCallBlockRenderContext,
-) {
+export function ListSavedWorkflowsToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
   const { toolCall } = context.toolCallNode;
 
-  const result = useMemo(
-    () => readListSavedWorkflowsResult(toolCall),
-    [toolCall],
-  );
+  const result = useMemo(() => readListSavedWorkflowsResult(toolCall), [toolCall]);
 
   const kindLabel = intl.formatMessage({
     id: context.isRunning
@@ -177,12 +161,8 @@ export function ListSavedWorkflowsToolCallBlock(
   const scopeProjectLabel = intl.formatMessage({
     id: "chat.permission.workflow.saved.scope.project",
   });
-  const scopeGlobalLabel = intl.formatMessage({
-    id: "chat.toolCall.workflow.scope.global",
-  });
-  const emptyLabel = intl.formatMessage({
-    id: "chat.toolCall.workflow.list.empty",
-  });
+  const scopeGlobalLabel = intl.formatMessage({ id: "chat.toolCall.workflow.scope.global" });
+  const emptyLabel = intl.formatMessage({ id: "chat.toolCall.workflow.list.empty" });
 
   const workflowCount = result?.workflows.length ?? 0;
   const invalidCount = result?.invalid.length ?? 0;
@@ -224,10 +204,7 @@ export function ListSavedWorkflowsToolCallBlock(
     return (
       <div className="mb-2 space-y-2" data-saved-workflow-list="true">
         {result.workflows.map((workflow) => (
-          <div
-            key={workflow.path ?? workflow.name}
-            className="min-w-0 space-y-0.5"
-          >
+          <div key={workflow.path ?? workflow.name} className="min-w-0 space-y-0.5">
             <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
               <span
                 className="min-w-0 truncate font-mono text-ui-base text-foreground-subtle"
@@ -244,9 +221,7 @@ export function ListSavedWorkflowsToolCallBlock(
                 </span>
               ) : (
                 <span className="shrink-0 text-ui-xs text-foreground-subtlest">
-                  {workflow.scope === "project"
-                    ? scopeProjectLabel
-                    : workflow.scope}
+                  {workflow.scope === "project" ? scopeProjectLabel : workflow.scope}
                 </span>
               )}
             </div>
@@ -294,12 +269,7 @@ export function ListSavedWorkflowsToolCallBlock(
 
   // 读不出结构化结果（老会话、失败、降级路径）就交回通用卡，而不是画一张空列表。
   if (!result) {
-    return (
-      <FallbackToolCallBlock
-        {...context}
-        iconOverride={LIST_SAVED_WORKFLOWS_TOOL_ICON}
-      />
-    );
+    return <FallbackToolCallBlock {...context} iconOverride={LIST_SAVED_WORKFLOWS_TOOL_ICON} />;
   }
 
   return (

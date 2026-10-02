@@ -1,10 +1,4 @@
-/**
- * zcode 照搬：`@/mentions/mentionSearch.ts`（references/zcode/packages/ui/src/mentions/mentionSearch.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀
- *（本仓 Turbopack 不做 .js→.ts/.tsx 试探，手册 §2.4-2 在本仓构建链的等价适配）。
- */
-import type { MentionItem } from "@zui/mentions/mentionTypes";
+import type { MentionItem } from "@zui/mentions/mentionTypes.js";
 
 /**
  * Safety-net cap for virtualized display. Large enough to never feel
@@ -44,8 +38,7 @@ export function buildVisibleMentionGroups<TItem>(
   groups: MentionResultGroup<TItem>[],
 ): MentionResultGroup<TItem>[] {
   return groups.filter(
-    (group) =>
-      group.loading || group.errorText !== null || group.items.length > 0,
+    (group) => group.loading || group.errorText !== null || group.items.length > 0,
   );
 }
 
@@ -131,10 +124,7 @@ function sortScoredItems<T>(
     .map((item) => item.item);
 }
 
-function applyMentionItemLimit(
-  items: MentionItem[],
-  limit?: number,
-): MentionItem[] {
+function applyMentionItemLimit(items: MentionItem[], limit?: number): MentionItem[] {
   if (!Number.isFinite(limit)) {
     return items;
   }
@@ -152,15 +142,8 @@ function getDefaultMentionItemPriority(item: MentionItem): number {
 
 function sortDefaultMentionItems(items: MentionItem[]): MentionItem[] {
   return items
-    .map((item, index) => ({
-      index,
-      item,
-      priority: getDefaultMentionItemPriority(item),
-    }))
-    .sort(
-      (left, right) =>
-        left.priority - right.priority || left.index - right.index,
-    )
+    .map((item, index) => ({ index, item, priority: getDefaultMentionItemPriority(item) }))
+    .sort((left, right) => left.priority - right.priority || left.index - right.index)
     .map(({ item }) => item);
 }
 
@@ -187,9 +170,7 @@ export function filterMentionItemsWithOptions(
         const labelScore = scoreFuzzyMatch(item.label, normalizedQuery);
         // 插件长描述仅展示，避免子序列匹配把无关候选带入搜索（plugin-reference-mention）。
         const descriptionScore =
-          item.category === "plugins"
-            ? null
-            : scoreFuzzyMatch(item.description, normalizedQuery);
+          item.category === "plugins" ? null : scoreFuzzyMatch(item.description, normalizedQuery);
         const valueScore = scoreFuzzyMatch(item.value, normalizedQuery);
         const keywordScore = Math.min(
           ...(item.keywords ?? []).map((keyword) => {
@@ -200,10 +181,8 @@ export function filterMentionItemsWithOptions(
         );
         const bestScore = Math.min(
           labelScore ?? Number.POSITIVE_INFINITY,
-          valueScore === null ? Number.POSITIVE_INFINITY : valueScore + 25,
-          descriptionScore === null
-            ? Number.POSITIVE_INFINITY
-            : descriptionScore + 100,
+          valueScore !== null ? valueScore + 25 : Number.POSITIVE_INFINITY,
+          descriptionScore !== null ? descriptionScore + 100 : Number.POSITIVE_INFINITY,
           keywordScore,
         );
 

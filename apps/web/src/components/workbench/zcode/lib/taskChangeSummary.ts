@@ -1,23 +1,14 @@
-/**
- * zcode 照搬：`@/lib/taskChangeSummary.ts`（references/zcode/packages/ui/src/lib/taskChangeSummary.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { getPathLeaf } from "@zui/lib/path";
 import type {
   ZCodePersistedFileChange,
-  ZCodeTaskChangedFileSummary,
   ZCodeTaskChangeSummary,
+  ZCodeTaskChangedFileSummary,
   ZCodeTaskMeta,
-} from "@zui/lib/zcode-shared";
-import { computeLineChangeStat } from "@zui/lib/zcode-shared";
+} from "@zcode/shared";
+import { computeLineChangeStat } from "@zcode/shared";
+import { getPathLeaf } from "@zui/lib/path.js";
 
 interface TaskChangeSummaryIntl {
-  formatMessage: (
-    desc: { id: string },
-    values?: Record<string, string>,
-  ) => string;
+  formatMessage: (desc: { id: string }, values?: Record<string, string>) => string;
 }
 
 interface AggregatedFileChange {
@@ -67,13 +58,8 @@ export function formatTaskTitleWithChanges(
   return `${title} (${formatTaskChangeStats(summary, intl)})`;
 }
 
-export function toWorkspaceRelativePath(
-  workspacePath: string,
-  filePath: string,
-): string {
-  const normalizedWorkspacePath = trimTrailingSeparators(
-    workspacePath.replace(/\\/g, "/"),
-  );
+export function toWorkspaceRelativePath(workspacePath: string, filePath: string): string {
+  const normalizedWorkspacePath = trimTrailingSeparators(workspacePath.replace(/\\/g, "/"));
   const normalizedFilePath = filePath.replace(/\\/g, "/");
 
   if (normalizedFilePath === normalizedWorkspacePath) {
@@ -82,17 +68,13 @@ export function toWorkspaceRelativePath(
 
   const exactPrefix = `${normalizedWorkspacePath}/`;
   if (normalizedFilePath.startsWith(exactPrefix)) {
-    return (
-      normalizedFilePath.slice(exactPrefix.length) || getPathLeaf(filePath)
-    );
+    return normalizedFilePath.slice(exactPrefix.length) || getPathLeaf(filePath);
   }
 
   // Windows 路径在不同来源下大小写可能不一致，这里做一次只用于比较的降级匹配。
   const caseInsensitivePrefix = exactPrefix.toLowerCase();
   if (normalizedFilePath.toLowerCase().startsWith(caseInsensitivePrefix)) {
-    return (
-      normalizedFilePath.slice(exactPrefix.length) || getPathLeaf(filePath)
-    );
+    return normalizedFilePath.slice(exactPrefix.length) || getPathLeaf(filePath);
   }
 
   return normalizedFilePath;
@@ -133,14 +115,9 @@ export function buildTaskChangeSummary(
 
   let added = 0;
   let removed = 0;
-  const files: ZCodeTaskChangedFileSummary[] = Array.from(
-    changedFileMap.values(),
-  )
+  const files: ZCodeTaskChangedFileSummary[] = Array.from(changedFileMap.values())
     .map((file) => {
-      const fileStat = computeLineChangeStat(
-        file.originalContent,
-        file.finalContent,
-      );
+      const fileStat = computeLineChangeStat(file.originalContent, file.finalContent);
       added += fileStat.added;
       removed += fileStat.removed;
       return {
@@ -199,10 +176,7 @@ export function buildTurnChangeSummary(
   let removed = 0;
   const files: ZCodeTaskChangedFileSummary[] = Array.from(filesByPath.entries())
     .map(([path, snapshot]) => {
-      const fileStat = computeLineChangeStat(
-        snapshot.beforeContent,
-        snapshot.afterContent,
-      );
+      const fileStat = computeLineChangeStat(snapshot.beforeContent, snapshot.afterContent);
       added += fileStat.added;
       removed += fileStat.removed;
       return {

@@ -1,26 +1,13 @@
-/**
- * zcode 照搬：`@/hooks/useSubagents.ts`（references/zcode/packages/ui/src/hooks/useSubagents.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-
-import { useResolvedRemoteWorkspaceSessionId } from "@zui/hooks/useResolvedRemoteWorkspaceSessionId";
-import { shouldEnableWorkspaceRpc } from "@zui/lib/workspaceRpcAvailability";
-import type { ZCodeProvider } from "@zui/lib/zcode-shared";
-import {
-  getSubagentsContextKey,
-  useSubagentsContextStore,
-} from "@zui/store/subagentsContextStore";
-import { useSubagentsStore } from "@zui/store/subagentsStore";
-import { useTabStore } from "@zui/store/TabStoreProvider";
-import {
-  isWorkspaceTab,
-  type WindowTabState,
-  type WorkspaceTabState,
-} from "@zui/store/tabStore";
+import type { ZCodeProvider } from "@zcode/shared";
 import { useCallback, useEffect, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { useServices } from "./useServices";
+import { useServices } from "./useServices.js";
+import { useResolvedRemoteWorkspaceSessionId } from "@zui/hooks/useResolvedRemoteWorkspaceSessionId.js";
+import { shouldEnableWorkspaceRpc } from "@zui/lib/workspaceRpcAvailability.js";
+import { useTabStore } from "@zui/store/TabStoreProvider.js";
+import { isWorkspaceTab, type WindowTabState, type WorkspaceTabState } from "@zui/store/tabStore.js";
+import { getSubagentsContextKey, useSubagentsContextStore } from "@zui/store/subagentsContextStore.js";
+import { useSubagentsStore } from "@zui/store/subagentsStore.js";
 
 export function useSubagents(
   workspacePath: string | null,
@@ -42,13 +29,10 @@ export function useSubagents(
       const activeWorkspaceTab = state.activeTabId
         ? state.tabs.find((tab) => tab.id === state.activeTabId)
         : undefined;
-      const matchesRequestedScope = (
-        tab: WindowTabState,
-      ): tab is WorkspaceTabState =>
+      const matchesRequestedScope = (tab: WindowTabState): tab is WorkspaceTabState =>
         isWorkspaceTab(tab) &&
         tab.workspacePath === workspacePath &&
-        (!explicitIdentity ||
-          tab.workspaceIdentity?.trim() === explicitIdentity);
+        (!explicitIdentity || tab.workspaceIdentity?.trim() === explicitIdentity);
       const matchedWorkspaceTab =
         activeWorkspaceTab && matchesRequestedScope(activeWorkspaceTab)
           ? activeWorkspaceTab
@@ -61,8 +45,7 @@ export function useSubagents(
       };
     }),
   );
-  const workspaceIdentity =
-    explicitIdentity || workspaceRpcTarget.workspaceIdentity;
+  const workspaceIdentity = explicitIdentity || workspaceRpcTarget.workspaceIdentity;
   const remoteSessionId = useResolvedRemoteWorkspaceSessionId(
     workspacePath,
     workspaceRpcTarget.preferredRemoteSessionId,
@@ -107,12 +90,7 @@ export function useSubagents(
       return;
     }
     if (context) return;
-    void initialize(
-      workspacePath,
-      provider,
-      subagentsService,
-      workspaceIdentity,
-    );
+    void initialize(workspacePath, provider, subagentsService, workspaceIdentity);
   }, [
     context,
     initialize,
@@ -128,12 +106,7 @@ export function useSubagents(
       return;
     }
     if (!workspacePath) return;
-    await refreshStore(
-      workspacePath,
-      provider,
-      subagentsService,
-      workspaceIdentity,
-    );
+    await refreshStore(workspacePath, provider, subagentsService, workspaceIdentity);
   }, [
     provider,
     refreshStore,

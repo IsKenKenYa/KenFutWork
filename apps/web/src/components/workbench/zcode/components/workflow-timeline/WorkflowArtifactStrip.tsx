@@ -1,19 +1,13 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/WorkflowArtifactStrip.tsx`（references/zcode/packages/ui/src/components/workflow-timeline/WorkflowArtifactStrip.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { ARTIFACT_CHIP_MAX_VISIBLE } from "@zui/app-shell/workflow-artifacts/artifactPresentation";
-import { cn } from "@zui/components/lib/utils";
+import type { KeyboardEvent, MouseEvent } from "react";
+import { ARTIFACT_CHIP_MAX_VISIBLE } from "@zui/app-shell/workflow-artifacts/artifactPresentation.js";
+import { cn } from "@zui/components/lib/utils.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { PILL_STAGGER_MS } from "./WorkflowTimeline.js";
 import {
+  WorkflowArtifactPill,
   type ArtifactPillData,
   type ArtifactPillSize,
-  WorkflowArtifactPill,
-} from "@zui/components/workflow-timeline/WorkflowArtifactPill";
-import { PILL_STAGGER_MS } from "@zui/components/workflow-timeline/WorkflowTimeline";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { KeyboardEvent, MouseEvent } from "react";
+} from "./WorkflowArtifactPill.js";
 
 /**
  * 产物条：一行产物药丸，至多三枚，
@@ -81,7 +75,7 @@ export function WorkflowArtifactStrip({
           enterDelayMs={PILL_STAGGER_MS * i}
           key={artifact.id}
           size={size}
-          truncateTitle={true}
+          truncateTitle
           {...(pillTestId === undefined ? {} : { testId: pillTestId })}
           {...(onOpenArtifact === undefined ? {} : { onOpen: onOpenArtifact })}
         />

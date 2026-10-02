@@ -1,21 +1,12 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/task-stop.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/task-stop.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- * 适配注记：接口可选属性放宽 | undefined 以等价 zcode tsconfig 行为（exactOptionalPropertyTypes）。
- */
-
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
-import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay";
 import { CircleStopIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
+import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay.js";
 
-const TASK_STOP_TOOL_ICON = (
-  <CircleStopIcon className="size-4 shrink-0 text-foreground-subtle" />
-);
+const TASK_STOP_TOOL_ICON = <CircleStopIcon className="size-4 shrink-0 text-foreground-subtle" />;
 
 const HOOK_ADDITIONAL_CONTEXT_MARKER = "\n\n[Hook additional context]";
 
@@ -31,9 +22,7 @@ function toRecord(value: unknown): Record<string, unknown> | undefined {
   const serialized = markerIndex >= 0 ? value.slice(0, markerIndex) : value;
   try {
     const parsed: unknown = JSON.parse(serialized);
-    return typeof parsed === "object" &&
-      parsed !== null &&
-      !Array.isArray(parsed)
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>)
       : undefined;
   } catch {
@@ -83,9 +72,7 @@ function compactLegacyTaskStopResult(
   // 旧 snapshot 只保存了会重复 command/prompt 的标准成功文案。
   // 仅做完整模板匹配，避免裁剪 provider 返回的自定义结果。
   const standardMessage = `Successfully stopped task: ${taskId} (${command})`;
-  return message === standardMessage
-    ? `Successfully stopped task: ${taskId}`
-    : message;
+  return message === standardMessage ? `Successfully stopped task: ${taskId}` : message;
 }
 
 function DetailField({
@@ -95,13 +82,11 @@ function DetailField({
 }: {
   label: string;
   value: string;
-  mono?: boolean | undefined;
+  mono?: boolean;
 }) {
   return (
     <div className="space-y-1">
-      <dt className="text-ui-base font-medium text-foreground-subtle">
-        {label}
-      </dt>
+      <dt className="text-ui-base font-medium text-foreground-subtle">{label}</dt>
       <dd
         className={
           mono
@@ -120,28 +105,20 @@ export function TaskStopToolCallBlock(context: ToolCallBlockRenderContext) {
   const { toolCall } = context.toolCallNode;
   const display = readToolResultDisplay(toolCall.raw);
   const taskStopDisplay = display?.kind === "task_stop" ? display : undefined;
-  const input =
-    toRecord(toolCall.input) ??
-    readRawRecord(toolCall.raw, ["rawInput", "input"]);
-  const output =
-    toRecord(toolCall.output) ??
-    readRawRecord(toolCall.raw, ["rawOutput", "output"]);
+  const input = toRecord(toolCall.input) ?? readRawRecord(toolCall.raw, ["rawInput", "input"]);
+  const output = toRecord(toolCall.output) ?? readRawRecord(toolCall.raw, ["rawOutput", "output"]);
   const taskId =
     taskStopDisplay?.taskId ??
     readStringField(output, ["task_id"]) ??
     readStringField(input, ["task_id", "shell_id"]);
-  const taskType =
-    taskStopDisplay?.taskType ?? readStringField(output, ["task_type"]);
+  const taskType = taskStopDisplay?.taskType ?? readStringField(output, ["task_type"]);
   const displayCommand = taskStopDisplay?.command;
   const legacyCommand = readStringField(output, ["command"]);
   const isLocalAgentTask = taskType === "local_agent";
   // 旧 local_agent 快照的 command 可能是完整 prompt，只有 Core 投影的 display 才能作为短 description 展示。
-  const taskDetail = isLocalAgentTask
-    ? displayCommand
-    : (displayCommand ?? legacyCommand);
+  const taskDetail = isLocalAgentTask ? displayCommand : (displayCommand ?? legacyCommand);
   const resultCommand = displayCommand ?? legacyCommand;
-  const outputMessage =
-    taskStopDisplay?.message ?? readStringField(output, ["message"]);
+  const outputMessage = taskStopDisplay?.message ?? readStringField(output, ["message"]);
   const detailsTruncated = taskStopDisplay?.truncated === true;
   const isDenied = toolCall.status === "denied";
   const isStopped = toolCall.status === "stopped";
@@ -150,9 +127,7 @@ export function TaskStopToolCallBlock(context: ToolCallBlockRenderContext) {
   const resultMessage = isUnsuccessful
     ? (context.errorText ?? outputMessage)
     : compactLegacyTaskStopResult(outputMessage, taskId, resultCommand);
-  const hasDetails = Boolean(
-    taskType || taskDetail || resultMessage || detailsTruncated,
-  );
+  const hasDetails = Boolean(taskType || taskDetail || resultMessage || detailsTruncated);
   const kindLabelId = context.isRunning
     ? "chat.toolCall.taskStop.stopping"
     : "chat.toolCall.kind.taskStop";
@@ -165,9 +140,7 @@ export function TaskStopToolCallBlock(context: ToolCallBlockRenderContext) {
         : undefined;
   const primaryText = useMemo(
     () => (
-      <code className="min-w-0 truncate font-mono">
-        {taskId ?? toolCall.title ?? "TaskStop"}
-      </code>
+      <code className="min-w-0 truncate font-mono">{taskId ?? toolCall.title ?? "TaskStop"}</code>
     ),
     [taskId, toolCall.title],
   );
@@ -177,11 +150,9 @@ export function TaskStopToolCallBlock(context: ToolCallBlockRenderContext) {
         <dl className="space-y-3">
           {taskType ? (
             <DetailField
-              label={intl.formatMessage({
-                id: "chat.toolCall.taskStop.taskType",
-              })}
+              label={intl.formatMessage({ id: "chat.toolCall.taskStop.taskType" })}
               value={taskType}
-              mono={true}
+              mono
             />
           ) : null}
           {taskDetail ? (
@@ -197,9 +168,7 @@ export function TaskStopToolCallBlock(context: ToolCallBlockRenderContext) {
           ) : null}
           {resultMessage ? (
             <DetailField
-              label={intl.formatMessage({
-                id: "chat.toolCall.taskStop.result",
-              })}
+              label={intl.formatMessage({ id: "chat.toolCall.taskStop.result" })}
               value={resultMessage}
             />
           ) : null}
@@ -211,14 +180,7 @@ export function TaskStopToolCallBlock(context: ToolCallBlockRenderContext) {
         ) : null}
       </div>
     ),
-    [
-      detailsTruncated,
-      intl,
-      isLocalAgentTask,
-      resultMessage,
-      taskDetail,
-      taskType,
-    ],
+    [detailsTruncated, intl, isLocalAgentTask, resultMessage, taskDetail, taskType],
   );
 
   return (
@@ -232,9 +194,7 @@ export function TaskStopToolCallBlock(context: ToolCallBlockRenderContext) {
         kindLabel={intl.formatMessage({ id: kindLabelId })}
         sourceLabel={context.sourceLabel}
         primaryText={primaryText}
-        statusLabel={
-          statusLabelId ? intl.formatMessage({ id: statusLabelId }) : undefined
-        }
+        statusLabel={statusLabelId ? intl.formatMessage({ id: statusLabelId }) : undefined}
         showStatusLabel={statusLabelId != null}
         statusTooltip={isFailed ? resultMessage : undefined}
         showFailureStatus={isFailed}

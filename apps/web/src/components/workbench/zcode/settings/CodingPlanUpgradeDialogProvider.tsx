@@ -1,34 +1,107 @@
-/**
- * zcode 宿主适配 stub：`@/settings/CodingPlanUpgradeDialogProvider` 的最小等价。
- * 来源：references/zcode/packages/ui/src/settings/CodingPlanUpgradeDialogProvider.tsx
- *
- * zcode 的购买升级面板依赖其账号/订单服务（CodingPlanUpgradeDialog + useCodingPlanEntryPlanList +
- * codingPlanFunnelTelemetry）。本仓是 BYOK Work 平台，无 Coding Plan 购买链路，故不挂 Provider：
- * `useOptionalCodingPlanUpgradeDialog` 恒返回 null，消费方（CodingPlanEntryButton 的 gate）按
- * `dialog?.inventory?.status ?? "ready"` 语义恒走 ready 分支，入口按钮正常渲染、不显示加载/重试态。
- * 后续若接入订阅购买，只需在本文件挂上真实 Provider，照搬组件零改动。
- * 适配注记：导出签名与原文件一致；Provider 不注入 context value（stub 降级）。
- */
-"use client";
+import {
+  createContext,
+  useCallback,
+  useEffect,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  CodingPlanUpgradeDialog,
+  type CodingPlanUpgradeDialogTarget,
+} from "@zui/settings/CodingPlanUpgradeDialog.js";
 
-import { createContext, type ReactNode, useContext } from "react";
+import {
+  useCodingPlanEntryPlanList,
+  type CodingPlanEntryInventory,
+} from "@zui/hooks/useCodingPlanEntryPlanList.js";
+import { usePlatform } from "@zui/hooks/usePlatform.js";
+import { reportCodingPlanUpgradeClick } from "@zui/lib/codingPlanFunnelTelemetry.js";
 
 interface CodingPlanUpgradeDialogContextValue {
-  inventory: { status: "ready" | "loading" | "error"; retry?: () => void };
-  openCodingPlanUpgrade: (target: unknown) => boolean;
+  inventory: CodingPlanEntryInventory;
+  openCodingPlanUpgrade: (
+    target: CodingPlanUpgradeDialogTarget,
+    observation?: { signal: AbortSignal; onResult: (opened: boolean) => void },
+  ) => boolean;
 }
 
-const CodingPlanUpgradeDialogContext =
-  createContext<CodingPlanUpgradeDialogContextValue | null>(null);
+const CodingPlanUpgradeDialogContext = createContext<CodingPlanUpgradeDialogContextValue | null>(
+  null,
+);
 
-export function CodingPlanUpgradeDialogProvider({
-  children,
-}: {
-  children: ReactNode;
-}) {
+export function CodingPlanUpgradeDialogProvider({ children }: { children: ReactNode }) {
+  const platform = usePlatform();
+  const inventory = useCodingPlanEntryPlanList();
+  const inventoryRef = useRef(inventory);
+  inventoryRef.current = inventory;
+  const [target, setTarget] = useState<CodingPlanUpgradeDialogTarget | undefined>(undefined);
+  const [openVersion, setOpenVersion] = useState(0);
+  const opening = useRef<((opened: boolean) => void) | null>(null);
+  const handleOpenResult = useCallback((opened: boolean) => opening.current?.(opened), []);
+  useEffect(() => () => opening.current?.(false), []);
+  const openCodingPlanUpgrade = useCallback(
+    (
+      nextTarget: CodingPlanUpgradeDialogTarget,
+      observation?: { signal: AbortSignal; onResult: (opened: boolean) => void },
+    ) => {
+      // 所有入口统一守卫；查询完成后不自动重放之前被拦截的点击。
+      const { status, entryPlanList } = inventoryRef.current;
+      if (observation?.signal.aborted) return false;
+      if (status !== "ready") {
+        if (observation && status === "error") inventoryRef.current.retry();
+        return false;
+      }
+      opening.current?.(false);
+      if (observation) {
+        const finish = (opened: boolean) => {
+          if (opening.current !== finish) return;
+          opening.current = null;
+          observation.signal.removeEventListener("abort", abort);
+          if (!opened) setTarget(undefined);
+          observation.onResult(opened);
+        };
+        const abort = () => finish(false);
+        opening.current = finish;
+        observation.signal.addEventListener("abort", abort, { once: true });
+      }
+      // 原入口只携带当前卡片的套餐；在点击时冻结全连接列表，App 与 WebView 共用同一快照。
+      nextTarget = nextTarget.funnelContext
+        ? {
+            ...nextTarget,
+            funnelContext: { ...nextTarget.funnelContext, entryPlanList },
+          }
+        : nextTarget;
+      if (nextTarget.funnelContext) {
+        void reportCodingPlanUpgradeClick(platform, nextTarget.funnelContext);
+      }
+      setTarget(nextTarget);
+      // 每次显式打开隔离旧 webview 事件，旧 dom-ready 不能确认新的观察请求。
+      setOpenVersion((version) => version + 1);
+      return true;
+    },
+    [platform],
+  );
+  const value = useMemo(
+    () => ({ openCodingPlanUpgrade, inventory }),
+    [openCodingPlanUpgrade, inventory],
+  );
+
   return (
-    <CodingPlanUpgradeDialogContext.Provider value={null}>
+    <CodingPlanUpgradeDialogContext.Provider value={value}>
       {children}
+      <CodingPlanUpgradeDialog
+        key={openVersion}
+        target={target}
+        onClose={() => {
+          handleOpenResult(false);
+          setTarget(undefined);
+        }}
+        onOpenResult={opening.current ?? undefined}
+        onReopen={setTarget}
+      />
     </CodingPlanUpgradeDialogContext.Provider>
   );
 }
@@ -44,7 +117,7 @@ export function useCodingPlanUpgradeDialog() {
 }
 
 /**
- * 可独立挂载的 conversation pane 使用可选上下文；本仓恒无 Provider，恒返回 null。
+ * 可独立挂载的 conversation pane 使用可选上下文；完整 App Root 仍会注入真实购买面板。
  */
 export function useOptionalCodingPlanUpgradeDialog() {
   return useContext(CodingPlanUpgradeDialogContext);

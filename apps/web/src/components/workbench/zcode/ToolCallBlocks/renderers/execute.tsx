@@ -1,25 +1,16 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/execute.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/execute.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- * 适配注记：接口可选属性放宽 | undefined 以等价 zcode tsconfig 行为（exactOptionalPropertyTypes）。
- */
-
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
 import {
   bashOutputDisplaySchema,
   executionOutputPreviewSchema,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import { ExecuteOutput } from "@zui/ToolCallBlocks/renderers/ExecuteOutput";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
+} from "@zcode/shared/zcode-protocol-v4";
+import { ExecuteOutput } from "@zui/ToolCallBlocks/renderers/ExecuteOutput.js";
 import { SquareTerminalIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { ToolLayout } from "../ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "../shared.js";
 
-const EXECUTE_TOOL_ICON = (
-  <SquareTerminalIcon className="size-4 shrink-0 text-foreground-subtle" />
-);
+const EXECUTE_TOOL_ICON = <SquareTerminalIcon className="size-4 shrink-0 text-foreground-subtle" />;
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -66,10 +57,7 @@ export function getExecuteSecondaryText(input: unknown): string | undefined {
       }
 
       const parsedRecord = item as Record<string, unknown>;
-      if (
-        typeof parsedRecord.cmd === "string" &&
-        parsedRecord.cmd.trim().length > 0
-      ) {
+      if (typeof parsedRecord.cmd === "string" && parsedRecord.cmd.trim().length > 0) {
         return parsedRecord.cmd.trim();
       }
     }
@@ -110,7 +98,7 @@ function readFirstStringField(
 }
 
 function getExecuteContentParts(input: unknown): {
-  executionCommand?: string | undefined;
+  executionCommand?: string;
 } {
   if (typeof input === "string") {
     const trimmed = input.trim();
@@ -184,14 +172,11 @@ function getExecuteContentParts(input: unknown): {
 
       const parsedRecord = item as Record<string, unknown>;
       const executionCommand =
-        typeof parsedRecord.cmd === "string" &&
-        parsedRecord.cmd.trim().length > 0
+        typeof parsedRecord.cmd === "string" && parsedRecord.cmd.trim().length > 0
           ? parsedRecord.cmd.trim()
-          : typeof parsedRecord.command === "string" &&
-              parsedRecord.command.trim().length > 0
+          : typeof parsedRecord.command === "string" && parsedRecord.command.trim().length > 0
             ? parsedRecord.command.trim()
-            : typeof parsedRecord.script === "string" &&
-                parsedRecord.script.trim().length > 0
+            : typeof parsedRecord.script === "string" && parsedRecord.script.trim().length > 0
               ? parsedRecord.script.trim()
               : undefined;
 
@@ -273,11 +258,7 @@ function extractExecuteResultText(output: unknown): string | null {
     }
   }
 
-  if (
-    typeof output === "number" ||
-    typeof output === "boolean" ||
-    typeof output === "bigint"
-  ) {
+  if (typeof output === "number" || typeof output === "boolean" || typeof output === "bigint") {
     return String(output);
   }
 
@@ -286,13 +267,7 @@ function extractExecuteResultText(output: unknown): string | null {
 
 export function ExecuteToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
-  const {
-    toolCallNode,
-    isRunning,
-    statusLabel,
-    errorText,
-    isOfficeMode = false,
-  } = context;
+  const { toolCallNode, isRunning, statusLabel, errorText, isOfficeMode = false } = context;
   const { toolCall } = toolCallNode;
   const secondaryText = getExecuteSecondaryText(toolCall.input);
   const contentParts = getExecuteContentParts(toolCall.input);
@@ -308,15 +283,11 @@ export function ExecuteToolCallBlock(context: ToolCallBlockRenderContext) {
   const resultText = outputDisplay?.output ?? outputText ?? rawOutputText;
   const outputPreview = useMemo(() => {
     if (!isRunning || !isPlainRecord(toolCall.raw)) return undefined;
-    const parsed = executionOutputPreviewSchema.safeParse(
-      toolCall.raw.outputPreview,
-    );
+    const parsed = executionOutputPreviewSchema.safeParse(toolCall.raw.outputPreview);
     return parsed.success ? parsed.data : undefined;
   }, [isRunning, toolCall.raw]);
   const failureVisibleText =
-    toolCall.status === "failed"
-      ? (errorText ?? resultText ?? undefined)
-      : undefined;
+    toolCall.status === "failed" ? (errorText ?? resultText ?? undefined) : undefined;
   const secondaryTextNode = useMemo(
     // 收起态 command 属于摘要正文，使用 UI sans 与同一行文案保持一致；
     // 展开后的完整命令仍保留 font-mono，便于阅读和复制技术内容。
@@ -337,9 +308,7 @@ export function ExecuteToolCallBlock(context: ToolCallBlockRenderContext) {
 
         {outputPreview || failureVisibleText || resultText ? (
           <ExecuteOutput
-            text={
-              outputPreview?.fullText ?? failureVisibleText ?? resultText ?? ""
-            }
+            text={outputPreview?.fullText ?? failureVisibleText ?? resultText ?? ""}
             running={isRunning}
           />
         ) : (
@@ -355,14 +324,7 @@ export function ExecuteToolCallBlock(context: ToolCallBlockRenderContext) {
         )}
       </div>
     ),
-    [
-      contentParts.executionCommand,
-      failureVisibleText,
-      intl,
-      isRunning,
-      resultText,
-      outputPreview,
-    ],
+    [contentParts.executionCommand, failureVisibleText, intl, isRunning, resultText, outputPreview],
   );
 
   return (
@@ -373,7 +335,7 @@ export function ExecuteToolCallBlock(context: ToolCallBlockRenderContext) {
         showIcon={context.showIcon !== false}
         canToggle={!isOfficeMode && (context.canToggle ?? true)}
         forceOpen={!isOfficeMode && (context.forceOpen ?? false)}
-        hideSecondaryTextWhenOpen={true}
+        hideSecondaryTextWhenOpen
         kindLabel={
           (isOfficeMode
             ? intl.formatMessage({
@@ -383,9 +345,7 @@ export function ExecuteToolCallBlock(context: ToolCallBlockRenderContext) {
               })
             : context.kindLabelOverride) ??
           intl.formatMessage({
-            id: isRunning
-              ? "chat.toolCall.execute.running"
-              : "chat.toolCall.kind.terminal",
+            id: isRunning ? "chat.toolCall.execute.running" : "chat.toolCall.kind.terminal",
           })
         }
         sourceLabel={context.sourceLabel}
@@ -404,7 +364,7 @@ export function ExecuteToolCallBlock(context: ToolCallBlockRenderContext) {
         title={isOfficeMode ? undefined : toolCall.title}
         renderContent={renderContent}
       />
-      {isOfficeMode ? null : (
+      {!isOfficeMode ? (
         <ToolSnapshotFieldNotice
           refs={toolCall.snapshotRefs ?? []}
           onLoadFullToolCallFields={
@@ -413,7 +373,7 @@ export function ExecuteToolCallBlock(context: ToolCallBlockRenderContext) {
               : undefined
           }
         />
-      )}
+      ) : null}
       {/* <pre className="text-[8px]">{JSON.stringify(toolCall, null, 2)}</pre> */}
     </>
   );

@@ -1,41 +1,32 @@
-/**
- * zcode 照搬：`@/v4/useAssistantPreviewCardsForRow.ts`（references/zcode/packages/ui/src/v4/useAssistantPreviewCardsForRow.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-
-import {
-  type AssistantPreviewCard,
-  buildAssistantPreviewCardsFromReferences,
-  extractAssistantFileReferences,
-} from "@zui/lib/assistantPreviewCards";
+import { useEffect, useMemo, useState } from "react";
 import type {
   AssistantTextRow,
   ConversationRowTarget,
   V4ConversationFileChangesResult,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import { logger } from "@zui/logger";
+} from "@zcode/shared/zcode-protocol-v4";
+import {
+  buildAssistantPreviewCardsFromReferences,
+  extractAssistantFileReferences,
+  type AssistantPreviewCard,
+} from "@zui/lib/assistantPreviewCards.js";
+import { logger } from "@zui/logger.js";
 import type {
   ConversationFileChangesRequestOptions,
   ConversationFileChangesState,
-} from "@zui/v4/conversationRowContext";
-import { useEffect, useMemo, useState } from "react";
+} from "@zui/v4/conversationRowContext.js";
 
 interface UseAssistantPreviewCardsForAssistantTextRowParams {
-  row?: AssistantTextRow | undefined;
+  row?: AssistantTextRow;
   assistantTextRows: readonly AssistantTextRow[];
-  latestAssistantTextRow?: AssistantTextRow | undefined;
+  latestAssistantTextRow?: AssistantTextRow;
   workspacePath: string;
-  workspaceHomePath?: string | undefined;
+  workspaceHomePath?: string;
   fileChangesTarget: ConversationRowTarget | null;
-  fileChangesState?: ConversationFileChangesState | undefined;
-  fetchFileChanges?:
-    | ((
-        target: ConversationRowTarget,
-        options: ConversationFileChangesRequestOptions,
-      ) => Promise<V4ConversationFileChangesResult>)
-    | undefined;
+  fileChangesState?: ConversationFileChangesState;
+  fetchFileChanges?: (
+    target: ConversationRowTarget,
+    options: ConversationFileChangesRequestOptions,
+  ) => Promise<V4ConversationFileChangesResult>;
 }
 
 interface LoadedChangedPaths {
@@ -62,10 +53,7 @@ export function useAssistantPreviewCardsForAssistantTextRow({
   fileChangesState,
   fetchFileChanges,
 }: UseAssistantPreviewCardsForAssistantTextRowParams): AssistantPreviewCard[] {
-  const turnText = useMemo(
-    () => joinAssistantTurnText(assistantTextRows),
-    [assistantTextRows],
-  );
+  const turnText = useMemo(() => joinAssistantTurnText(assistantTextRows), [assistantTextRows]);
   const canBuildCards =
     row !== undefined &&
     latestAssistantTextRow?.rowId === row.rowId &&
@@ -95,8 +83,7 @@ export function useAssistantPreviewCardsForAssistantTextRow({
   const requestKey = target
     ? `${target.rowId}:${target.entityId}:${fileChangesState ?? "unknown"}`
     : "";
-  const [loadedChangedPaths, setLoadedChangedPaths] =
-    useState<LoadedChangedPaths | null>(null);
+  const [loadedChangedPaths, setLoadedChangedPaths] = useState<LoadedChangedPaths | null>(null);
 
   useEffect(() => {
     if (!needsFileChanges || !fetchFileChanges || !target) return;
@@ -114,21 +101,15 @@ export function useAssistantPreviewCardsForAssistantTextRow({
         if (disposed) return;
         setLoadedChangedPaths({
           key: requestKey,
-          paths:
-            result.state === "reverted"
-              ? []
-              : result.items.map((item) => item.path),
+          paths: result.state === "reverted" ? [] : result.items.map((item) => item.path),
         });
       },
       (error: unknown) => {
         if (disposed) return;
-        logger.warn(
-          "[AssistantPreviewCards] 读取本轮文件变更失败，已抑制 Markdown/HTML 卡片",
-          {
-            error: error instanceof Error ? error.message : String(error),
-            rowId: target.rowId,
-          },
-        );
+        logger.warn("[AssistantPreviewCards] 读取本轮文件变更失败，已抑制 Markdown/HTML 卡片", {
+          error: error instanceof Error ? error.message : String(error),
+          rowId: target.rowId,
+        });
         setLoadedChangedPaths({ key: requestKey, paths: [] });
       },
     );
@@ -136,13 +117,7 @@ export function useAssistantPreviewCardsForAssistantTextRow({
     return () => {
       disposed = true;
     };
-  }, [
-    fetchFileChanges,
-    fileChangesState,
-    needsFileChanges,
-    requestKey,
-    target,
-  ]);
+  }, [fetchFileChanges, fileChangesState, needsFileChanges, requestKey, target]);
 
   const changedFilePaths =
     needsFileChanges && loadedChangedPaths?.key === requestKey
@@ -152,23 +127,11 @@ export function useAssistantPreviewCardsForAssistantTextRow({
   return useMemo(
     () =>
       canBuildCards
-        ? buildAssistantPreviewCardsFromReferences(
-            turnText,
-            workspacePath,
-            fileReferences,
-            {
-              changedFilePaths,
-              homePath: workspaceHomePath,
-            },
-          )
+        ? buildAssistantPreviewCardsFromReferences(turnText, workspacePath, fileReferences, {
+            changedFilePaths,
+            homePath: workspaceHomePath,
+          })
         : [],
-    [
-      canBuildCards,
-      changedFilePaths,
-      fileReferences,
-      turnText,
-      workspaceHomePath,
-      workspacePath,
-    ],
+    [canBuildCards, changedFilePaths, fileReferences, turnText, workspaceHomePath, workspacePath],
   );
 }

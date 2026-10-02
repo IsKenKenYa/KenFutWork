@@ -1,17 +1,11 @@
-/**
- * zcode 照搬：`@/store/whiteboardStore.ts`（references/zcode/packages/ui/src/store/whiteboardStore.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-
-import { shouldExposeE2EStoreBridge } from "@zui/lib/e2eStoreBridge";
+import { create } from "zustand";
 import {
   buildWhiteboardWorkspaceKey,
   createWhiteboardDocument,
   type WhiteboardDocument,
   type WhiteboardStroke,
-} from "@zui/lib/whiteboard";
-import { create } from "zustand";
+} from "@zui/lib/whiteboard.js";
+import { shouldExposeE2EStoreBridge } from "@zui/lib/e2eStoreBridge.js";
 
 interface WhiteboardWorkspaceState {
   boardIds: string[];
@@ -96,126 +90,124 @@ function updateBoard(
   };
 }
 
-export const useWhiteboardStore = create<WhiteboardStoreState>()(
-  (set, get) => ({
-    workspaces: {},
-    createBoard: (params) => {
-      const workspaceKey = buildWhiteboardWorkspaceKey(params);
-      const workspaceState = getWorkspaceState(get(), workspaceKey);
-      const board = createWhiteboardDocument({
-        defaultNamePrefix: params.defaultNamePrefix,
-        existingNames: workspaceState.boardIds.map(
-          (boardId) => workspaceState.boardsById[boardId]?.name ?? "",
-        ),
-      });
+export const useWhiteboardStore = create<WhiteboardStoreState>()((set, get) => ({
+  workspaces: {},
+  createBoard: (params) => {
+    const workspaceKey = buildWhiteboardWorkspaceKey(params);
+    const workspaceState = getWorkspaceState(get(), workspaceKey);
+    const board = createWhiteboardDocument({
+      defaultNamePrefix: params.defaultNamePrefix,
+      existingNames: workspaceState.boardIds.map(
+        (boardId) => workspaceState.boardsById[boardId]?.name ?? "",
+      ),
+    });
 
-      set((state) => {
-        const currentWorkspaceState = getWorkspaceState(state, workspaceKey);
-        return {
-          workspaces: {
-            ...state.workspaces,
-            [workspaceKey]: {
-              boardIds: [...currentWorkspaceState.boardIds, board.id],
-              boardsById: {
-                ...currentWorkspaceState.boardsById,
-                [board.id]: board,
-              },
+    set((state) => {
+      const currentWorkspaceState = getWorkspaceState(state, workspaceKey);
+      return {
+        workspaces: {
+          ...state.workspaces,
+          [workspaceKey]: {
+            boardIds: [...currentWorkspaceState.boardIds, board.id],
+            boardsById: {
+              ...currentWorkspaceState.boardsById,
+              [board.id]: board,
             },
           },
-        };
-      });
+        },
+      };
+    });
 
-      return board;
-    },
-    renameBoard: (params) => {
-      const name = params.name.trim();
-      if (!name) {
-        return;
-      }
+    return board;
+  },
+  renameBoard: (params) => {
+    const name = params.name.trim();
+    if (!name) {
+      return;
+    }
 
-      set((state) =>
-        updateBoard(state, {
-          ...params,
-          updater: (board) => ({
+    set((state) =>
+      updateBoard(state, {
+        ...params,
+        updater: (board) => ({
+          ...board,
+          name,
+          updatedAt: Date.now(),
+        }),
+      }),
+    );
+  },
+  addStroke: (params) => {
+    set((state) =>
+      updateBoard(state, {
+        ...params,
+        updater: (board) => ({
+          ...board,
+          strokes: [...board.strokes, params.stroke],
+          undoneStrokes: [],
+          updatedAt: Date.now(),
+        }),
+      }),
+    );
+  },
+  undoStroke: (params) => {
+    set((state) =>
+      updateBoard(state, {
+        ...params,
+        updater: (board) => {
+          const stroke = board.strokes.at(-1);
+          if (!stroke) {
+            return board;
+          }
+
+          return {
             ...board,
-            name,
+            strokes: board.strokes.slice(0, -1),
+            undoneStrokes: [...board.undoneStrokes, stroke],
             updatedAt: Date.now(),
-          }),
-        }),
-      );
-    },
-    addStroke: (params) => {
-      set((state) =>
-        updateBoard(state, {
-          ...params,
-          updater: (board) => ({
-            ...board,
-            strokes: [...board.strokes, params.stroke],
-            undoneStrokes: [],
-            updatedAt: Date.now(),
-          }),
-        }),
-      );
-    },
-    undoStroke: (params) => {
-      set((state) =>
-        updateBoard(state, {
-          ...params,
-          updater: (board) => {
-            const stroke = board.strokes.at(-1);
-            if (!stroke) {
-              return board;
-            }
+          };
+        },
+      }),
+    );
+  },
+  redoStroke: (params) => {
+    set((state) =>
+      updateBoard(state, {
+        ...params,
+        updater: (board) => {
+          const stroke = board.undoneStrokes.at(-1);
+          if (!stroke) {
+            return board;
+          }
 
-            return {
-              ...board,
-              strokes: board.strokes.slice(0, -1),
-              undoneStrokes: [...board.undoneStrokes, stroke],
-              updatedAt: Date.now(),
-            };
-          },
-        }),
-      );
-    },
-    redoStroke: (params) => {
-      set((state) =>
-        updateBoard(state, {
-          ...params,
-          updater: (board) => {
-            const stroke = board.undoneStrokes.at(-1);
-            if (!stroke) {
-              return board;
-            }
-
-            return {
-              ...board,
-              strokes: [...board.strokes, stroke],
-              undoneStrokes: board.undoneStrokes.slice(0, -1),
-              updatedAt: Date.now(),
-            };
-          },
-        }),
-      );
-    },
-    clearBoard: (params) => {
-      set((state) =>
-        updateBoard(state, {
-          ...params,
-          updater: (board) => ({
+          return {
             ...board,
-            strokes: [],
-            undoneStrokes: [],
+            strokes: [...board.strokes, stroke],
+            undoneStrokes: board.undoneStrokes.slice(0, -1),
             updatedAt: Date.now(),
-          }),
+          };
+        },
+      }),
+    );
+  },
+  clearBoard: (params) => {
+    set((state) =>
+      updateBoard(state, {
+        ...params,
+        updater: (board) => ({
+          ...board,
+          strokes: [],
+          undoneStrokes: [],
+          updatedAt: Date.now(),
         }),
-      );
-    },
-    getBoard: (params) => {
-      const workspaceKey = buildWhiteboardWorkspaceKey(params);
-      return get().workspaces[workspaceKey]?.boardsById[params.boardId] ?? null;
-    },
-  }),
-);
+      }),
+    );
+  },
+  getBoard: (params) => {
+    const workspaceKey = buildWhiteboardWorkspaceKey(params);
+    return get().workspaces[workspaceKey]?.boardsById[params.boardId] ?? null;
+  },
+}));
 
 type WhiteboardStoreE2EBridge = typeof useWhiteboardStore;
 

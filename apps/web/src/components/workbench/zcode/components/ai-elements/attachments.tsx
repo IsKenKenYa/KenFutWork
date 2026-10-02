@@ -1,9 +1,3 @@
-/**
- * zcode 照搬：`@/components/ai-elements/attachments.tsx`（references/zcode/packages/ui/src/components/ai-elements/attachments.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
 /*
  * Derived from vercel/ai-elements (packages/elements/src/attachments.tsx).
  * Copyright 2023 Vercel, Inc. Licensed under Apache-2.0.
@@ -12,13 +6,9 @@
  */
 "use client";
 
-import { cn } from "@zui/components/lib/utils";
-import { Button } from "@zui/components/ui/button";
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from "@zui/components/ui/hover-card";
+import { Button } from "../ui/button.js";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "../ui/hover-card.js";
+import { cn } from "../lib/utils.js";
 import type { FileUIPart, SourceDocumentUIPart } from "ai";
 import {
   FileTextIcon,
@@ -35,8 +25,8 @@ import type {
   HTMLAttributes,
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
-  ReactNode,
   PointerEvent as ReactPointerEvent,
+  ReactNode,
 } from "react";
 import { createContext, useCallback, useContext, useMemo } from "react";
 
@@ -47,15 +37,15 @@ import { createContext, useCallback, useContext, useMemo } from "react";
 export type AttachmentData =
   | (FileUIPart & {
       id: string;
-      description?: string | undefined;
-      displayName?: string | undefined;
-      sourceKind?: "clipboard-text" | undefined;
+      description?: string;
+      displayName?: string;
+      sourceKind?: "clipboard-text";
     })
   | (SourceDocumentUIPart & {
       id: string;
-      description?: string | undefined;
-      displayName?: string | undefined;
-      sourceKind?: "clipboard-text" | undefined;
+      description?: string;
+      displayName?: string;
+      sourceKind?: "clipboard-text";
     });
 
 export type AttachmentMediaCategory =
@@ -81,9 +71,7 @@ const mediaCategoryIcons: Record<AttachmentMediaCategory, typeof ImageIcon> = {
 // Utility Functions
 // ============================================================================
 
-export const getMediaCategory = (
-  data: AttachmentData,
-): AttachmentMediaCategory => {
+export const getMediaCategory = (data: AttachmentData): AttachmentMediaCategory => {
   if (data.type === "source-document") {
     return "source";
   }
@@ -119,11 +107,7 @@ export const getAttachmentLabel = (data: AttachmentData): string => {
   return data.filename || (category === "image" ? "Image" : "Attachment");
 };
 
-const renderAttachmentImage = (
-  url: string,
-  filename: string | undefined,
-  isGrid: boolean,
-) =>
+const renderAttachmentImage = (url: string, filename: string | undefined, isGrid: boolean) =>
   isGrid ? (
     <img
       alt={filename || "Image"}
@@ -155,7 +139,7 @@ const AttachmentsContext = createContext<AttachmentsContextValue | null>(null);
 interface AttachmentContextValue {
   data: AttachmentData;
   mediaCategory: AttachmentMediaCategory;
-  onRemove?: (() => void) | undefined;
+  onRemove?: () => void;
   variant: AttachmentVariant;
 }
 
@@ -181,7 +165,7 @@ export const useAttachmentContext = () => {
 // ============================================================================
 
 export type AttachmentsProps = HTMLAttributes<HTMLDivElement> & {
-  variant?: AttachmentVariant | undefined;
+  variant?: AttachmentVariant;
 };
 
 export const Attachments = ({
@@ -215,10 +199,10 @@ export const Attachments = ({
 
 export type AttachmentProps = HTMLAttributes<HTMLDivElement> & {
   data: AttachmentData;
-  variant?: AttachmentVariant | undefined;
-  onRemove?: (() => void) | undefined;
-  onOpen?: (() => void) | undefined;
-  openLabel?: string | undefined;
+  variant?: AttachmentVariant;
+  onRemove?: () => void;
+  onOpen?: () => void;
+  openLabel?: string;
 };
 
 export const Attachment = ({
@@ -315,7 +299,7 @@ export const Attachment = ({
 // ============================================================================
 
 export type AttachmentPreviewProps = HTMLAttributes<HTMLDivElement> & {
-  fallbackIcon?: ReactNode | undefined;
+  fallbackIcon?: ReactNode;
 };
 
 export const AttachmentPreview = ({
@@ -347,8 +331,8 @@ export const AttachmentPreview = ({
         <video
           aria-hidden="true"
           className="size-full object-cover"
-          muted={true}
-          playsInline={true}
+          muted
+          playsInline
           preload="metadata"
           src={data.url}
         />
@@ -389,7 +373,7 @@ export const AttachmentPreview = ({
 // ============================================================================
 
 export type AttachmentInfoProps = HTMLAttributes<HTMLDivElement> & {
-  showMediaType?: boolean | undefined;
+  showMediaType?: boolean;
 };
 
 export const AttachmentInfo = ({
@@ -420,14 +404,10 @@ export const AttachmentInfo = ({
     <div className={cn("min-w-0 flex-1", className)} {...props}>
       <span className="block truncate">{label}</span>
       {description ? (
-        <span className="block truncate text-muted-foreground text-ui-base">
-          {description}
-        </span>
+        <span className="block truncate text-muted-foreground text-ui-base">{description}</span>
       ) : null}
       {showMediaType && data.mediaType && (
-        <span className="block truncate text-muted-foreground text-ui-base">
-          {data.mediaType}
-        </span>
+        <span className="block truncate text-muted-foreground text-ui-base">{data.mediaType}</span>
       )}
     </div>
   );
@@ -438,9 +418,9 @@ export const AttachmentInfo = ({
 // ============================================================================
 
 export type AttachmentRemoveProps = ComponentProps<typeof Button> & {
-  alwaysVisible?: boolean | undefined;
-  label?: string | undefined;
-  placement?: "default" | "corner" | undefined;
+  alwaysVisible?: boolean;
+  label?: string;
+  placement?: "default" | "corner";
 };
 
 export const AttachmentRemove = ({
@@ -550,28 +530,20 @@ export const AttachmentHoverCard = ({
   <HoverCard closeDelay={closeDelay} openDelay={openDelay} {...props} />
 );
 
-export type AttachmentHoverCardTriggerProps = ComponentProps<
-  typeof HoverCardTrigger
->;
+export type AttachmentHoverCardTriggerProps = ComponentProps<typeof HoverCardTrigger>;
 
-export const AttachmentHoverCardTrigger = (
-  props: AttachmentHoverCardTriggerProps,
-) => <HoverCardTrigger {...props} />;
+export const AttachmentHoverCardTrigger = (props: AttachmentHoverCardTriggerProps) => (
+  <HoverCardTrigger {...props} />
+);
 
-export type AttachmentHoverCardContentProps = ComponentProps<
-  typeof HoverCardContent
->;
+export type AttachmentHoverCardContentProps = ComponentProps<typeof HoverCardContent>;
 
 export const AttachmentHoverCardContent = ({
   align = "start",
   className,
   ...props
 }: AttachmentHoverCardContentProps) => (
-  <HoverCardContent
-    align={align}
-    className={cn("w-auto p-2", className)}
-    {...props}
-  />
+  <HoverCardContent align={align} className={cn("w-auto p-2", className)} {...props} />
 );
 
 // ============================================================================
@@ -580,11 +552,7 @@ export const AttachmentHoverCardContent = ({
 
 export type AttachmentEmptyProps = HTMLAttributes<HTMLDivElement>;
 
-export const AttachmentEmpty = ({
-  className,
-  children,
-  ...props
-}: AttachmentEmptyProps) => (
+export const AttachmentEmpty = ({ className, children, ...props }: AttachmentEmptyProps) => (
   <div
     className={cn(
       "flex items-center justify-center p-4 text-muted-foreground text-ui-base",
@@ -595,4 +563,3 @@ export const AttachmentEmpty = ({
     {children ?? "No attachments"}
   </div>
 );
-/* 适配注记（P9）：接口可选属性放宽 | undefined（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。 */

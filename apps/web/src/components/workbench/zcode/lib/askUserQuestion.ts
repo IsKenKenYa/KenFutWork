@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/lib/askUserQuestion.ts`（references/zcode/packages/ui/src/lib/askUserQuestion.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
 type ZCodeUserQuestionAnswers = Record<string, unknown>;
 
 type AskUserQuestionType = "single" | "multiple";
@@ -61,10 +56,7 @@ function readBoolean(record: Record<string, unknown>, keys: readonly string[]) {
   return keys.some((key) => record[key] === true);
 }
 
-function normalizeOption(
-  value: unknown,
-  index: number,
-): AskUserQuestionOption | null {
+function normalizeOption(value: unknown, index: number): AskUserQuestionOption | null {
   if (typeof value === "string") {
     return {
       id: `option-${index}`,
@@ -78,15 +70,8 @@ function normalizeOption(
   }
 
   const label =
-    readString(value, ["label", "name", "title", "text", "value"]) ??
-    JSON.stringify(value);
+    readString(value, ["label", "name", "title", "text", "value"]) ?? JSON.stringify(value);
   const id = readString(value, ["id", "optionId", "value", "key"]) ?? label;
-  const description = readString(value, [
-    "description",
-    "detail",
-    "help",
-    "hint",
-  ]);
   const placeholder = readString(value, [
     "placeholder",
     "customInputPlaceholder",
@@ -97,17 +82,14 @@ function normalizeOption(
   return {
     id,
     label,
-    ...(description === undefined ? {} : { description }),
-    ...(placeholder === undefined ? {} : { placeholder }),
+    description: readString(value, ["description", "detail", "help", "hint"]),
+    placeholder,
     requiresInput:
-      readBoolean(value, CUSTOM_INPUT_FLAGS) ||
-      (index >= 0 && placeholder !== undefined),
+      readBoolean(value, CUSTOM_INPUT_FLAGS) || (index >= 0 && placeholder !== undefined),
   };
 }
 
-function isImplicitCustomInputOption(
-  option: AskUserQuestionOption | undefined,
-) {
+function isImplicitCustomInputOption(option: AskUserQuestionOption | undefined) {
   if (!option) {
     return false;
   }
@@ -123,9 +105,7 @@ function readQuestions(input: unknown): unknown[] {
     return questions;
   }
   // ZCode Agent 的单题输入与交互请求的多题输入共用展示管线。
-  return typeof input.question === "string" && Array.isArray(input.options)
-    ? [input]
-    : [];
+  return typeof input.question === "string" && Array.isArray(input.options) ? [input] : [];
 }
 
 function readAnswers(input: unknown): ZCodeUserQuestionAnswers | undefined {
@@ -151,9 +131,7 @@ function parseJsonRecord(output: unknown): Record<string, unknown> | undefined {
   }
 }
 
-function readNestedAskUserQuestionAnswers(
-  input: unknown,
-): ZCodeUserQuestionAnswers | undefined {
+function readNestedAskUserQuestionAnswers(input: unknown): ZCodeUserQuestionAnswers | undefined {
   const record = parseJsonRecord(input);
   if (!record) {
     return undefined;
@@ -217,21 +195,12 @@ function parseZCodeAskUserQuestionOutput(
   };
 }
 
-function normalizeQuestion(
-  value: unknown,
-  index: number,
-): AskUserQuestionItem | null {
+function normalizeQuestion(value: unknown, index: number): AskUserQuestionItem | null {
   if (!isPlainRecord(value)) {
     return null;
   }
 
-  const question = readString(value, [
-    "question",
-    "prompt",
-    "label",
-    "title",
-    "text",
-  ]);
+  const question = readString(value, ["question", "prompt", "label", "title", "text"]);
   if (!question) {
     return null;
   }
@@ -248,8 +217,7 @@ function normalizeQuestion(
   const lastOption = options.at(-1);
   const lastOptionIsCustomInput =
     lastOption !== undefined &&
-    (lastOption.requiresInput === true ||
-      isImplicitCustomInputOption(lastOption));
+    (lastOption.requiresInput === true || isImplicitCustomInputOption(lastOption));
   const customInput =
     lastOptionIsCustomInput && lastOption
       ? {
@@ -265,9 +233,7 @@ function normalizeQuestion(
             requiresInput: true,
           }
         : undefined;
-  const normalizedOptions = lastOptionIsCustomInput
-    ? options.slice(0, -1)
-    : options;
+  const normalizedOptions = lastOptionIsCustomInput ? options.slice(0, -1) : options;
   const type =
     value.multiple === true ||
     value.multiSelect === true ||
@@ -281,19 +247,16 @@ function normalizeQuestion(
     question,
     type,
     options: normalizedOptions,
-    ...(customInput === undefined ? {} : { customInput }),
+    customInput,
   };
 }
 
-export function normalizeAskUserQuestionInput(
-  input: unknown,
-): AskUserQuestionData {
-  const answers = readAnswers(input);
+export function normalizeAskUserQuestionInput(input: unknown): AskUserQuestionData {
   return {
     questions: readQuestions(input)
       .map((question, index) => normalizeQuestion(question, index))
       .filter((question): question is AskUserQuestionItem => question !== null),
-    ...(answers === undefined ? {} : { answers }),
+    answers: readAnswers(input),
   };
 }
 
@@ -336,9 +299,7 @@ export function readAskUserQuestionAnswers(value: {
     return value.input.answers;
   }
   if (isPlainRecord(value.raw)) {
-    const nestedRawOutputAnswers = readNestedAskUserQuestionAnswers(
-      value.raw.rawOutput,
-    );
+    const nestedRawOutputAnswers = readNestedAskUserQuestionAnswers(value.raw.rawOutput);
     if (nestedRawOutputAnswers) {
       return nestedRawOutputAnswers;
     }
@@ -360,9 +321,7 @@ export function readAskUserQuestionAnswers(value: {
     if (parsedRawZCodeAnswers) {
       return parsedRawZCodeAnswers;
     }
-    const nestedRawContentAnswers = readNestedAskUserQuestionAnswers(
-      value.raw.content,
-    );
+    const nestedRawContentAnswers = readNestedAskUserQuestionAnswers(value.raw.content);
     if (nestedRawContentAnswers) {
       return nestedRawContentAnswers;
     }
@@ -377,9 +336,7 @@ export function getAskUserQuestionAnswerText(
 ) {
   const value = answers?.[question.question] ?? answers?.[question.id];
   if (Array.isArray(value)) {
-    const values = value
-      .map((item) => String(item).trim())
-      .filter((item) => item.length > 0);
+    const values = value.map((item) => String(item).trim()).filter((item) => item.length > 0);
     return values.length > 0 ? values.join("，") : noAnswerText;
   }
   if (typeof value === "string") {

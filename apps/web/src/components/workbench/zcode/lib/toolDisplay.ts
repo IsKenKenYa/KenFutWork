@@ -1,27 +1,20 @@
-/**
- * zcode 照搬：`@/lib/toolDisplay.ts`（references/zcode/packages/ui/src/lib/toolDisplay.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- * 适配注记：接口可选属性放宽 | undefined 以等价 zcode tsconfig 行为（exactOptionalPropertyTypes）。
- */
-
+import type { TaskChatToolCall as ChatToolCall } from "@zui/lib/taskChatMessageTypes.js";
 import {
-  type CodeViewerSource,
   getToolCallCodeContentPreview,
   getToolCallCodePreview,
+  type CodeViewerSource,
   type ImageCodeViewerSource,
   type PatchCodeViewerSource,
   type TextCodeViewerSource,
-} from "@zui/lib/codeViewer";
-import { isAbsoluteFilePath, joinFilePath } from "@zui/lib/path";
-import type { TaskChatToolCall as ChatToolCall } from "@zui/lib/taskChatMessageTypes";
-import { getToolCallErrorText } from "@zui/lib/toolError";
+} from "@zui/lib/codeViewer.js";
+import { isAbsoluteFilePath, joinFilePath } from "@zui/lib/path.js";
+import { getToolCallErrorText } from "@zui/lib/toolError.js";
 import {
   isFileContentWriteToolCall,
   isFileDiffToolCall,
   resolveToolCallIdentity,
   type ToolCallIdentity,
-} from "@zui/lib/toolIdentity";
+} from "@zui/lib/toolIdentity.js";
 
 export type ToolInlinePreview =
   | { type: "none" }
@@ -31,7 +24,7 @@ export type ToolInlinePreview =
 
 export interface ToolPlanResult {
   plan: string;
-  planFilePath?: string | undefined;
+  planFilePath?: string;
 }
 
 export interface ToolDisplayModel {
@@ -50,7 +43,7 @@ interface ToolDisplayContext {
   identity: ToolCallIdentity;
   preview: CodeViewerSource | null;
   contentPreview: TextCodeViewerSource | null;
-  errorText?: string | undefined;
+  errorText?: string;
 }
 
 interface ToolDisplayStrategy {
@@ -89,10 +82,7 @@ function extractToolPlanResultFromValue(
   };
 }
 
-function toInlinePreview(
-  context: ToolDisplayContext,
-  preferPatch: boolean,
-): ToolInlinePreview {
+function toInlinePreview(context: ToolDisplayContext, preferPatch: boolean): ToolInlinePreview {
   if (preferPatch && context.preview?.type === "patch") {
     return {
       type: "patch",
@@ -205,8 +195,7 @@ const executeToolStrategy: ToolDisplayStrategy = {
     return {
       inlinePreview: { type: "none" },
       showInput: false,
-      showOutput:
-        context.toolCall.output !== undefined || Boolean(context.errorText),
+      showOutput: context.toolCall.output !== undefined || Boolean(context.errorText),
       showKind: false,
     };
   },
@@ -225,8 +214,7 @@ const searchToolStrategy: ToolDisplayStrategy = {
       inlinePreview: { type: "none" },
       showSummaryFileLink: false,
       showInput: false,
-      showOutput:
-        context.toolCall.output !== undefined || Boolean(context.errorText),
+      showOutput: context.toolCall.output !== undefined || Boolean(context.errorText),
       showKind: false,
     };
   },
@@ -243,8 +231,7 @@ const goalToolStrategy: ToolDisplayStrategy = {
       inlinePreview: { type: "none" },
       showSummaryFileLink: false,
       showInput: false,
-      showOutput:
-        context.toolCall.output !== undefined || Boolean(context.errorText),
+      showOutput: context.toolCall.output !== undefined || Boolean(context.errorText),
       showKind: false,
     };
   },
@@ -289,10 +276,7 @@ export function buildToolDisplayModel(
   // 用户要看的 plan 来自 tool result，不是 tool input。
   // EnterPlanMode 一类输入里也可能带 plan/todo 结构；如果这里兜底读 input，
   // 同一份计划会被误当成结果渲染，和顶部真实 plan 事件的职责再次混在一起。
-  const planResult = extractToolPlanResultFromValue(
-    toolCall.output,
-    workspacePath,
-  );
+  const planResult = extractToolPlanResultFromValue(toolCall.output, workspacePath);
   const context: ToolDisplayContext = {
     toolCall,
     identity,
@@ -305,17 +289,14 @@ export function buildToolDisplayModel(
     inlinePreview: { type: "none" },
     planResult,
     viewerSource: preview,
-    viewerLabelId:
-      preview?.type === "patch" ? "codeViewer.viewDiff" : "codeViewer.viewCode",
+    viewerLabelId: preview?.type === "patch" ? "codeViewer.viewDiff" : "codeViewer.viewCode",
     showSummaryFileLink: Boolean(preview?.path),
     showInput: planResult ? false : toolCall.input !== undefined,
     showOutput: toolCall.output !== undefined || Boolean(errorText),
     showKind: true,
   };
 
-  const matchedStrategy = TOOL_DISPLAY_STRATEGIES.find((strategy) =>
-    strategy.matches(context),
-  );
+  const matchedStrategy = TOOL_DISPLAY_STRATEGIES.find((strategy) => strategy.matches(context));
 
   // tool 展示之前靠 `kind === "edit"` 直接分叉，预览提取层已经能识别 read/replace/image，
   // 但渲染层完全吃不到，最后只剩一堆零散特判。这里收敛成“通用模型 + kind 策略增强”，

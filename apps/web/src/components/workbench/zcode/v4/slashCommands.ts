@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/v4/slashCommands.ts`（references/zcode/packages/ui/src/v4/slashCommands.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
 export type V4VisibleSlashCommand =
   | {
       kind: "compact";
@@ -94,8 +89,7 @@ export function parseV4VisibleSlashCommand(
   if (action === "pause" || action === "clear" || action === "show") {
     return { kind: "unsupportedGoal", action, displayText };
   }
-  const objective =
-    action === "replace" ? args.replace(/^replace\s*/i, "").trim() : args;
+  const objective = action === "replace" ? args.replace(/^replace\s*/i, "").trim() : args;
   if (!objective) return { kind: "emptyGoal", displayText };
   return { kind: "sendGoalCommand", objective, displayText };
 }
@@ -111,20 +105,15 @@ export function parseSelectionSideSlashCommand(
   attachments: readonly unknown[] = [],
   options: SelectionSideSlashCommandParseOptions = {},
 ): SelectionSideSlashCommand | null {
-  if (attachments.length > 0 || (options.contextAttachmentCount ?? 0) > 0)
-    return null;
+  if (attachments.length > 0 || (options.contextAttachmentCount ?? 0) > 0) return null;
   const displayText = content.trim();
   const match = /^\/(side|btw)(?:\s+([\s\S]*))?$/i.exec(displayText);
   if (!match) return null;
-  const command = match[1]?.toLowerCase() as
-    | SelectionSideSlashCommand["command"]
-    | undefined;
+  const command = match[1]?.toLowerCase() as SelectionSideSlashCommand["command"] | undefined;
   const enabledNames = options.enabledCommandNames;
   if (
     enabledNames &&
-    !enabledNames.some(
-      (name) => name.trim().replace(/^\/+/, "").toLowerCase() === command,
-    )
+    !enabledNames.some((name) => name.trim().replace(/^\/+/, "").toLowerCase() === command)
   ) {
     return null;
   }
@@ -133,10 +122,7 @@ export function parseSelectionSideSlashCommand(
   return { command, text, displayText };
 }
 
-export function v4QueuedCommandText(
-  kind: "sendText" | "sendGoalCommand",
-  text: string,
-): string {
+export function v4QueuedCommandText(kind: "sendText" | "sendGoalCommand", text: string): string {
   if (kind !== "sendGoalCommand") return text;
   const trimmed = text.trim();
   if (!trimmed) return text;

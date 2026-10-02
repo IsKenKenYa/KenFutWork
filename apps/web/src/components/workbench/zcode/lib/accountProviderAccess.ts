@@ -1,13 +1,5 @@
-/**
- * zcode 照搬：`@/lib/accountProviderAccess.ts`（references/zcode/packages/ui/src/lib/accountProviderAccess.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import type { ProviderSettingsView } from "@zui/lib/zcode-services";
-import {
-  type ZCodeProviderAccountAccess,
-  zcodeProviderAccountAccessSchema,
-} from "@zui/lib/zcode-shared";
+import type { ProviderSettingsView } from "@zcode/services";
+import { type ZCodeProviderAccountAccess, zcodeProviderAccountAccessSchema } from "@zcode/shared";
 
 interface EntitledAccountProviderAccess {
   readonly providerId: string;
@@ -19,18 +11,14 @@ export function resolveEntitledAccountProviderAccess(
   view: ProviderSettingsView | null | undefined,
   providerId: string,
 ): EntitledAccountProviderAccess | null {
-  const provider = view?.providers.find(
-    (entry) => entry.providerId === providerId,
-  );
+  const provider = view?.providers.find((entry) => entry.providerId === providerId);
   if (provider?.effectiveConfig.access?.type !== "zhipu-account") {
     return null;
   }
 
   // Registry Access 是静态 accountType/mode 约束，动态 planKind 与 Team scope
   // 只能由账号服务在请求期解析。旧 Schema 会把所有真实 Registry Provider 误判为空。
-  const parsed = zcodeProviderAccountAccessSchema.safeParse(
-    provider.effectiveConfig.access,
-  );
+  const parsed = zcodeProviderAccountAccessSchema.safeParse(provider.effectiveConfig.access);
   if (!parsed.success || parsed.data.entitled !== true) return null;
   const label = provider.providerName?.trim();
   return {
@@ -45,9 +33,7 @@ export function resolveEntitledAccountProviderAccessFingerprint(
   providerId: string,
 ): string {
   const access = resolveEntitledAccountProviderAccess(view, providerId);
-  return access
-    ? JSON.stringify([view?.revision, access.providerId, access.access])
-    : "";
+  return access ? JSON.stringify([view?.revision, access.providerId, access.access]) : "";
 }
 
 /**
@@ -58,9 +44,7 @@ export function resolveAccountProviderInspectionAccess(
   view: ProviderSettingsView | null | undefined,
   providerId: string,
 ): EntitledAccountProviderAccess | null {
-  const provider = view?.providers.find(
-    (entry) => entry.providerId === providerId,
-  );
+  const provider = view?.providers.find((entry) => entry.providerId === providerId);
   if (!provider) return null;
   // 明确无 Start 权益仍需只读查询过期原因；执行权限仍由 entitled 门禁控制。
   if (
@@ -72,9 +56,7 @@ export function resolveAccountProviderInspectionAccess(
     )
   )
     return null;
-  const parsed = zcodeProviderAccountAccessSchema.safeParse(
-    provider.effectiveConfig.access,
-  );
+  const parsed = zcodeProviderAccountAccessSchema.safeParse(provider.effectiveConfig.access);
   if (!parsed.success || parsed.data.mode === "off-peak") return null;
   if (!provider.accountState && parsed.data.entitled !== true) return null;
   return { providerId, access: parsed.data };

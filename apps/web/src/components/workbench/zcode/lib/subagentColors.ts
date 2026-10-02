@@ -1,9 +1,4 @@
-/**
- * zcode 照搬：`@/lib/subagentColors.ts`（references/zcode/packages/ui/src/lib/subagentColors.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
-import type { AgentColor } from "@zui/lib/zcode-shared";
+import type { AgentColor } from "@zcode/shared";
 
 export const SUBAGENT_COLORS: AgentColor[] = [
   "yellow",
@@ -19,13 +14,10 @@ export const SUBAGENT_COLORS: AgentColor[] = [
 export const SUBAGENT_COLOR_CLASS: Record<AgentColor, string> = {
   blue: "bg-sky-300 text-sky-900 dark:bg-sky-400/32 dark:text-sky-50",
   cyan: "bg-cyan-300 text-cyan-900 dark:bg-cyan-400/32 dark:text-cyan-50",
-  green:
-    "bg-emerald-300 text-emerald-900 dark:bg-emerald-400/32 dark:text-emerald-50",
-  orange:
-    "bg-orange-300 text-orange-900 dark:bg-orange-400/32 dark:text-orange-50",
+  green: "bg-emerald-300 text-emerald-900 dark:bg-emerald-400/32 dark:text-emerald-50",
+  orange: "bg-orange-300 text-orange-900 dark:bg-orange-400/32 dark:text-orange-50",
   pink: "bg-pink-300 text-pink-900 dark:bg-pink-400/32 dark:text-pink-50",
-  purple:
-    "bg-violet-300 text-violet-900 dark:bg-violet-400/32 dark:text-violet-50",
+  purple: "bg-violet-300 text-violet-900 dark:bg-violet-400/32 dark:text-violet-50",
   red: "bg-rose-300 text-rose-900 dark:bg-rose-400/32 dark:text-rose-50",
   yellow: "bg-amber-300 text-amber-900 dark:bg-amber-300/32 dark:text-amber-50",
 };

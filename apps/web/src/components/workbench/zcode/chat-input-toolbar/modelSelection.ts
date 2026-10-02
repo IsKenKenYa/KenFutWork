@@ -1,16 +1,7 @@
-/**
- * zcode 照搬：`@/chat-input-toolbar/modelSelection.ts`（references/zcode/packages/ui/src/chat-input-toolbar/modelSelection.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀
- *（本仓 Turbopack 不做 .js→.ts/.tsx 试探，手册 §2.4-2 在本仓构建链的等价适配）。
- */
+import type { ModelSelectGroup } from "@zui/ModelConfigSelect.js";
+import { decodeCustomModelValue } from "@zui/lib/zcodeCustomModelValue.js";
 
-import { decodeCustomModelValue } from "@zui/lib/zcodeCustomModelValue";
-import type { ModelSelectGroup } from "@zui/ModelConfigSelect";
-
-export function shouldShowManageModelsAction(
-  onManageModels?: () => void,
-): boolean {
+export function shouldShowManageModelsAction(onManageModels?: () => void): boolean {
   return typeof onManageModels === "function";
 }
 
@@ -42,19 +33,12 @@ export function resolveModelSelectTriggerDisplay(
   if (normalizedValue.trim().toLocaleLowerCase() === "<synthetic>") {
     return { value: undefined, placeholder: undefined };
   }
-  if (
-    modelGroups.some((group) =>
-      group.items.some((item) => item.value === normalizedValue),
-    )
-  ) {
+  if (modelGroups.some((group) => group.items.some((item) => item.value === normalizedValue))) {
     return { value: normalizedValue, placeholder: undefined };
   }
 
   const customSelection = decodeCustomModelValue(normalizedValue);
-  if (
-    options?.allowUnavailableCustomModelPlaceholder &&
-    customSelection?.modelName?.trim()
-  ) {
+  if (options?.allowUnavailableCustomModelPlaceholder && customSelection?.modelName?.trim()) {
     return { value: undefined, placeholder: customSelection.modelName.trim() };
   }
   if (options?.allowUnavailableModelPlaceholder && normalizedValue.trim()) {

@@ -1,19 +1,13 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/WorkflowArtifactTile.tsx`（references/zcode/packages/ui/src/components/workflow-timeline/WorkflowArtifactTile.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
+import type { CSSProperties, ReactNode } from "react";
+import { ArrowUpRightIcon } from "lucide-react";
 import {
   ArtifactKindIcon,
   artifactDisplayTitle,
   artifactKindMessageId,
-} from "@zui/app-shell/workflow-artifacts/artifactPresentation";
-import { cn } from "@zui/components/lib/utils";
-import type { ArtifactPillData } from "@zui/components/workflow-timeline/WorkflowArtifactPill";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { ArrowUpRightIcon } from "lucide-react";
-import type { CSSProperties, ReactNode } from "react";
+} from "@zui/app-shell/workflow-artifacts/artifactPresentation.js";
+import { cn } from "@zui/components/lib/utils.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { ArtifactPillData } from "./WorkflowArtifactPill.js";
 
 /**
  * 产物瓦片：一件产物 = 预览区 + 说明行。
@@ -37,26 +31,23 @@ import type { CSSProperties, ReactNode } from "react";
  * `.wf-tile:has(.wf-tile-hit:hover)` 驱动。
  */
 export interface WorkflowCompletionArtifact extends ArtifactPillData {
-  contentType?: string | undefined;
-  bytes?: number | undefined;
-  sourcePath?: string | undefined;
+  contentType?: string;
+  bytes?: number;
+  sourcePath?: string;
   /** 预置看板喂进来的条数；通知载荷上没有，只有活投影 / journal 补过之后才有。 */
-  itemCount?: number | undefined;
+  itemCount?: number;
   /** 预置看板的 spec（只有 journal 带得回来）；预览区据它画图。 */
   spec?: unknown;
   /** 作者写的一两句说明；只有交付物行念它（瓦片放不下）。 */
-  description?: string | undefined;
+  description?: string;
   /** run 的交付物。 */
-  primary?: true | undefined;
+  primary?: true;
 }
 
 /** 内容拿不到时的纸页字形：一张小纸 + 右下角的扩展名徽字。诚实，不装饰。 */
 export function ArtifactSheetGlyph({ badge }: { badge?: string }) {
   return (
-    <div
-      className="absolute inset-0 grid place-items-center"
-      data-testid="workflow-artifact-sheet"
-    >
+    <div className="absolute inset-0 grid place-items-center" data-testid="workflow-artifact-sheet">
       <div className="flex aspect-[3/4] w-[38%] max-w-[72px] flex-col gap-1.5 rounded-[4px] border border-border bg-card p-2.5 shadow-[0_1px_0_var(--color-workflow-rule)]">
         <i className="block h-[5px] w-[55%] rounded-sm bg-surface-hover" />
         <i className="block h-[3px] rounded-sm bg-surface-hover" />
@@ -97,9 +88,7 @@ export function WorkflowArtifactTile({
 }) {
   const { intl } = useZCodeIntl();
   const title = artifactDisplayTitle(artifact);
-  const kindLabel = intl.formatMessage({
-    id: artifactKindMessageId(artifact.kind),
-  });
+  const kindLabel = intl.formatMessage({ id: artifactKindMessageId(artifact.kind) });
   const openable = onOpen !== undefined;
   const version = artifact.version ?? 1;
   const showVersion = version >= 2;
@@ -109,16 +98,13 @@ export function WorkflowArtifactTile({
       : { animationDelay: `${enterDelayMs}ms`, animationFillMode: "backwards" };
 
   return (
-    <div
-      className="wf-tile relative flex min-w-0 flex-col gap-1.5"
-      data-variant="tile"
-    >
+    <div className="wf-tile relative flex min-w-0 flex-col gap-1.5" data-variant="tile">
       {/* 预览框：底部渐隐由预览内容自己决定（文档缩略要「还有」的暗示，看板与图片不要）。 */}
       <div
-        aria-hidden={true}
+        aria-hidden
         className="wf-tile-frame wf-arrive relative aspect-[16/10] w-full overflow-hidden rounded-lg border border-border bg-panel"
         data-testid="workflow-artifact-tile-frame"
-        inert={true}
+        inert
         style={style}
       >
         {preview ?? <ArtifactSheetGlyph />}
@@ -145,13 +131,8 @@ export function WorkflowArtifactTile({
         title={tooltip ?? `${kindLabel} · ${title}`}
         type="button"
       >
-        <ArtifactKindIcon
-          className="size-4 shrink-0 text-foreground-subtle"
-          kind={artifact.kind}
-        />
-        <span className="wf-pill-name min-w-0 flex-1 truncate text-foreground">
-          {title}
-        </span>
+        <ArtifactKindIcon className="size-4 shrink-0 text-foreground-subtle" kind={artifact.kind} />
+        <span className="wf-pill-name min-w-0 flex-1 truncate text-foreground">{title}</span>
         {detail === undefined || detail === null ? null : (
           <span
             className="flex shrink-0 items-center gap-1 font-mono text-ui-xs tabular-nums text-foreground-subtlest"
@@ -181,7 +162,7 @@ export function WorkflowArtifactTile({
             ) : null}
             {openable ? (
               <span
-                aria-hidden={true}
+                aria-hidden
                 className="wf-pill-go flex items-center justify-center text-foreground-subtlest"
                 data-testid="workflow-artifact-tile-open"
               >

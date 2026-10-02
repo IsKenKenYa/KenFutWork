@@ -1,28 +1,22 @@
-/**
- * zcode 照搬：`@/v4/ConversationWorkflowCompletion.tsx`（references/zcode/packages/ui/src/v4/ConversationWorkflowCompletion.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { WorkflowArtifactTilePreview } from "@zui/app-shell/workflow-artifacts/WorkflowArtifactTilePreview";
-import type { WorkflowCompletionArtifact } from "@zui/components/workflow-timeline/WorkflowArtifactTile";
-import {
-  completionArtifactLayout,
-  completionPreviewIds,
-} from "@zui/components/workflow-timeline/WorkflowCompletionArtifacts";
+import { useMemo } from "react";
+import type { WorkflowRunArtifactSummary } from "@zcode/shared/zcode-protocol-v4";
 import {
   WorkflowCompletionCard,
   type WorkflowCompletionFigures,
-} from "@zui/components/workflow-timeline/WorkflowCompletionCard";
+} from "@zui/components/workflow-timeline/WorkflowCompletionCard.js";
+import {
+  completionArtifactLayout,
+  completionPreviewIds,
+} from "@zui/components/workflow-timeline/WorkflowCompletionArtifacts.js";
+import type { WorkflowCompletionArtifact } from "@zui/components/workflow-timeline/WorkflowArtifactTile.js";
 import {
   useWorkflowRunArtifacts,
   type WorkflowRunArtifactView,
-} from "@zui/hooks/useWorkflowRunArtifacts";
-import type { WorkflowRunArtifactSummary } from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import type { ConversationRowRenderContext } from "@zui/v4/conversationRowContext";
-import { useHasV4Conversation } from "@zui/v4/V4ConversationContext";
-import type { WorkflowTurnCompletion } from "@zui/v4/workflowTurnCompletion";
-import { useMemo } from "react";
+} from "@zui/hooks/useWorkflowRunArtifacts.js";
+import type { ConversationRowRenderContext } from "@zui/v4/conversationRowContext.js";
+import { WorkflowArtifactTilePreview } from "@zui/app-shell/workflow-artifacts/WorkflowArtifactTilePreview.js";
+import { useHasV4Conversation } from "@zui/v4/V4ConversationContext.js";
+import type { WorkflowTurnCompletion } from "@zui/v4/workflowTurnCompletion.js";
 
 /**
  * 完成卡的落位：把解析出的完成事实接上
@@ -49,9 +43,7 @@ export function ConversationWorkflowCompletion({
   const run = summary?.run;
 
   const figures: WorkflowCompletionFigures = {
-    ...(completion.durationMs === undefined
-      ? {}
-      : { durationMs: completion.durationMs }),
+    ...(completion.durationMs === undefined ? {} : { durationMs: completion.durationMs }),
     ...(run === undefined
       ? {}
       : {
@@ -79,26 +71,17 @@ export function ConversationWorkflowCompletion({
   // 决定 html 产物直接开浏览器 tab。
   const openArtifactFrom =
     context.onOpenWorkflowArtifact && sessionId
-      ? (artifacts: readonly WorkflowCompletionArtifact[]) =>
-          (artifactId: string) => {
-            const artifact = artifacts.find(
-              (candidate) => candidate.id === artifactId,
-            );
-            context.onOpenWorkflowArtifact?.({
-              parentSessionId: sessionId,
-              runId: completion.runId,
-              artifactId,
-              ...(artifact?.title === undefined
-                ? {}
-                : { title: artifact.title }),
-              ...(artifact?.contentType === undefined
-                ? {}
-                : { contentType: artifact.contentType }),
-              ...(artifact?.sourcePath === undefined
-                ? {}
-                : { sourcePath: artifact.sourcePath }),
-            });
-          }
+      ? (artifacts: readonly WorkflowCompletionArtifact[]) => (artifactId: string) => {
+          const artifact = artifacts.find((candidate) => candidate.id === artifactId);
+          context.onOpenWorkflowArtifact?.({
+            parentSessionId: sessionId,
+            runId: completion.runId,
+            artifactId,
+            ...(artifact?.title === undefined ? {} : { title: artifact.title }),
+            ...(artifact?.contentType === undefined ? {} : { contentType: artifact.contentType }),
+            ...(artifact?.sourcePath === undefined ? {} : { sourcePath: artifact.sourcePath }),
+          });
+        }
       : undefined;
   const onOpenArtifact = openArtifactFrom?.(completion.artifacts);
 
@@ -112,9 +95,7 @@ export function ConversationWorkflowCompletion({
   };
 
   if (!hasConversation || sessionId === undefined) {
-    return (
-      <WorkflowCompletionCard {...shared} artifacts={completion.artifacts} />
-    );
+    return <WorkflowCompletionCard {...shared} artifacts={completion.artifacts} />;
   }
   return (
     <WorkflowCompletionWithData
@@ -145,15 +126,11 @@ function mergeCompletionArtifacts(
     return {
       ...artifact,
       version: Math.max(artifact.version ?? 1, view.version),
-      ...(view.contentType === undefined
-        ? {}
-        : { contentType: view.contentType }),
+      ...(view.contentType === undefined ? {} : { contentType: view.contentType }),
       ...(view.bytes === undefined ? {} : { bytes: view.bytes }),
       ...(view.sourcePath === undefined ? {} : { sourcePath: view.sourcePath }),
       ...(view.spec === undefined ? {} : { spec: view.spec }),
-      ...(view.description === undefined
-        ? {}
-        : { description: view.description }),
+      ...(view.description === undefined ? {} : { description: view.description }),
       ...(view.primary === true ? { primary: true as const } : {}),
       itemCount: view.itemCount,
     } satisfies WorkflowCompletionArtifact;
@@ -165,15 +142,11 @@ function mergeCompletionArtifacts(
       version: view.version,
       itemCount: view.itemCount,
       ...(view.title === undefined ? {} : { title: view.title }),
-      ...(view.contentType === undefined
-        ? {}
-        : { contentType: view.contentType }),
+      ...(view.contentType === undefined ? {} : { contentType: view.contentType }),
       ...(view.bytes === undefined ? {} : { bytes: view.bytes }),
       ...(view.sourcePath === undefined ? {} : { sourcePath: view.sourcePath }),
       ...(view.spec === undefined ? {} : { spec: view.spec }),
-      ...(view.description === undefined
-        ? {}
-        : { description: view.description }),
+      ...(view.description === undefined ? {} : { description: view.description }),
       ...(view.primary === true ? { primary: true as const } : {}),
     });
   }
@@ -195,10 +168,7 @@ function WorkflowCompletionWithData({
     artifacts: readonly WorkflowCompletionArtifact[],
   ) => (artifactId: string) => void;
   sessionId: string;
-  shared: Omit<
-    Parameters<typeof WorkflowCompletionCard>[0],
-    "artifacts" | "renderPreview"
-  >;
+  shared: Omit<Parameters<typeof WorkflowCompletionCard>[0], "artifacts" | "renderPreview">;
   theme: ConversationRowRenderContext["theme"];
 }) {
   const state = useWorkflowRunArtifacts({
@@ -214,8 +184,7 @@ function WorkflowCompletionWithData({
   // journal 补齐（产物多的 run 是常态），`+N` 与「还有 N 个」却仍按载荷的旗子写成省略号——用户看到的
   // 是「还有 … 个」，而数字明明已经知道。清单完整时旗子作废；只有老 CLI（查不到 journal）或还没
   // 答上来时才仍是省略号，那时数字确实不可知。
-  const artifactsTruncated =
-    shared.artifactsTruncated === true && !state.complete;
+  const artifactsTruncated = shared.artifactsTruncated === true && !state.complete;
   const renderPreview = (artifact: WorkflowCompletionArtifact) => (
     <WorkflowArtifactTilePreview
       artifact={artifact}
@@ -227,10 +196,7 @@ function WorkflowCompletionWithData({
   );
   // 只有画出来的框挂预览——今天只有交付物行有框；索引行与「还有 N 个」不读字节。
   const previewIds = useMemo(
-    () =>
-      completionPreviewIds(
-        completionArtifactLayout(artifacts, artifactsTruncated),
-      ),
+    () => completionPreviewIds(completionArtifactLayout(artifacts, artifactsTruncated)),
     [artifacts, artifactsTruncated],
   );
   // 补齐过的清单重造一次回调：载荷上没有的 `sourcePath`、老载荷上没有的 `contentType`

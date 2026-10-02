@@ -1,29 +1,19 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/ToolCallBody.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/ToolCallBody.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- * 适配注记：接口可选属性放宽 | undefined 以等价 zcode tsconfig 行为（exactOptionalPropertyTypes）。
- */
-
-import { CodeBlock } from "@zui/components/ai-elements/code-block";
-import {
-  type MessageFileLinkTarget,
-  MessageResponse,
-} from "@zui/components/ai-elements/message";
-import { ToolInput, ToolOutput } from "@zui/components/ai-elements/tool";
-import { useServices } from "@zui/hooks/useServices";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { CodePreviewSettings } from "@zui/lib/codePreviewSettings";
+import { useEffect, useState, type ReactNode } from "react";
+import type { FileMediaPreview } from "@zcode/shared";
+import { CodeBlock } from "@zui/components/ai-elements/code-block.js";
+import { MessageResponse, type MessageFileLinkTarget } from "@zui/components/ai-elements/message.js";
+import { ToolInput, ToolOutput } from "@zui/components/ai-elements/tool.js";
+import { useServices } from "@zui/hooks/useServices.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import type {
   CodeViewerSource,
   ImageCodeViewerSource,
   TextCodeViewerSource,
-} from "@zui/lib/codeViewer";
-import type { TaskChatToolCallTreeNode } from "@zui/lib/toolCallTree";
-import type { ToolDisplayModel, ToolInlinePreview } from "@zui/lib/toolDisplay";
-import type { FileMediaPreview } from "@zui/lib/zcode-shared";
-import type { Theme } from "@zui/useTheme";
-import { type ReactNode, useEffect, useState } from "react";
+} from "@zui/lib/codeViewer.js";
+import type { CodePreviewSettings } from "@zui/lib/codePreviewSettings.js";
+import type { TaskChatToolCallTreeNode } from "@zui/lib/toolCallTree.js";
+import type { ToolDisplayModel, ToolInlinePreview } from "@zui/lib/toolDisplay.js";
+import type { Theme } from "@zui/useTheme.js";
 
 export function ToolCallBody({
   childToolList,
@@ -39,16 +29,16 @@ export function ToolCallBody({
 }: {
   childToolList: ReactNode;
   displayModel: ToolDisplayModel;
-  inlinePreviewOverride?: ToolInlinePreview | undefined;
+  inlinePreviewOverride?: ToolInlinePreview;
   toolCall: TaskChatToolCallTreeNode["toolCall"];
   workspacePath: string;
   /** 应用主题（store 耦合剥离）：透传给 markdown / 代码块渲染，缺省按 "system" 兜底。 */
-  theme?: Theme | undefined;
+  theme?: Theme;
   /** 代码预览设置（store 耦合剥离）：透传给 markdown 渲染，需保持引用稳定。 */
-  codePreviewSettings?: CodePreviewSettings | undefined;
-  onOpenCodeViewer?: ((source: CodeViewerSource) => void) | undefined;
-  onOpenFileLink?: ((target: MessageFileLinkTarget) => void) | undefined;
-  onOpenBrowserUrl?: ((url: string) => void) | undefined;
+  codePreviewSettings?: CodePreviewSettings;
+  onOpenCodeViewer?: (source: CodeViewerSource) => void;
+  onOpenFileLink?: (target: MessageFileLinkTarget) => void;
+  onOpenBrowserUrl?: (url: string) => void;
 }) {
   const inlinePreview = inlinePreviewOverride ?? displayModel.inlinePreview;
 
@@ -89,9 +79,7 @@ export function ToolCallBody({
             <ToolOutput errorText={toolCall.error} output={toolCall.output} />
           ) : null}
           {displayModel.showKind ? (
-            <p className="text-ui-base text-muted-foreground">
-              {toolCall.kind}
-            </p>
+            <p className="text-ui-base text-muted-foreground">{toolCall.kind}</p>
           ) : null}
         </>
       )}
@@ -110,11 +98,11 @@ function InlineCodeContent({
 }: {
   preview: TextCodeViewerSource;
   workspacePath: string;
-  theme?: Theme | undefined;
-  codePreviewSettings?: CodePreviewSettings | undefined;
-  onOpenCodeViewer?: ((source: CodeViewerSource) => void) | undefined;
-  onOpenFileLink?: ((target: MessageFileLinkTarget) => void) | undefined;
-  onOpenBrowserUrl?: ((url: string) => void) | undefined;
+  theme?: Theme;
+  codePreviewSettings?: CodePreviewSettings;
+  onOpenCodeViewer?: (source: CodeViewerSource) => void;
+  onOpenFileLink?: (target: MessageFileLinkTarget) => void;
+  onOpenBrowserUrl?: (url: string) => void;
 }) {
   if (preview.language === "markdown") {
     return (
@@ -122,18 +110,14 @@ function InlineCodeContent({
         <MessageResponse
           className="min-w-0 break-words"
           workspacePath={workspacePath}
-          {...(theme === undefined ? {} : { theme })}
-          {...(codePreviewSettings === undefined
-            ? {}
-            : { codePreviewSettings })}
-          {...(onOpenCodeViewer === undefined ? {} : { onOpenCodeViewer })}
+          theme={theme}
+          codePreviewSettings={codePreviewSettings}
+          onOpenCodeViewer={onOpenCodeViewer}
           // 工具输出里的 markdown 文件链接之前只拿到 onOpenCodeViewer，
           // 点击会退化成 code viewer fallback；有 diff source 上下文时容易打开变更视图。
           // 这里优先交给 shell 的文件链接分流，文件看内容，目录走文件树 reveal。
-          {...(onOpenFileLink === undefined ? {} : { onOpenFileLink })}
-          {...(onOpenBrowserUrl === undefined
-            ? {}
-            : { onOpenExternalUrl: onOpenBrowserUrl })}
+          onOpenFileLink={onOpenFileLink}
+          onOpenExternalUrl={onOpenBrowserUrl}
         >
           {preview.content}
         </MessageResponse>
@@ -143,11 +127,7 @@ function InlineCodeContent({
 
   return (
     <div className="max-h-60 overflow-auto rounded-xl bg-muted/15">
-      <CodeBlock
-        code={preview.content}
-        language={preview.language}
-        appTheme={theme}
-      />
+      <CodeBlock code={preview.content} language={preview.language} appTheme={theme} />
     </div>
   );
 }
@@ -155,19 +135,15 @@ function InlineCodeContent({
 function InlineImageContent({ preview }: { preview: ImageCodeViewerSource }) {
   const { fileService } = useServices();
   const { intl } = useZCodeIntl();
-  const [imagePreview, setImagePreview] = useState<FileMediaPreview | null>(
-    null,
-  );
+  const [imagePreview, setImagePreview] = useState<FileMediaPreview | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    void fileService
-      .readMediaPreview({ path: preview.path })
-      .then((mediaPreview) => {
-        if (!cancelled) {
-          setImagePreview(mediaPreview);
-        }
-      });
+    void fileService.readMediaPreview({ path: preview.path }).then((mediaPreview) => {
+      if (!cancelled) {
+        setImagePreview(mediaPreview);
+      }
+    });
 
     return () => {
       cancelled = true;
@@ -192,13 +168,13 @@ function InlinePlanResult({
   onOpenBrowserUrl,
 }: {
   plan: string;
-  planFilePath?: string | undefined;
+  planFilePath?: string;
   workspacePath: string;
-  theme?: Theme | undefined;
-  codePreviewSettings?: CodePreviewSettings | undefined;
-  onOpenCodeViewer?: ((source: CodeViewerSource) => void) | undefined;
-  onOpenFileLink?: ((target: MessageFileLinkTarget) => void) | undefined;
-  onOpenBrowserUrl?: ((url: string) => void) | undefined;
+  theme?: Theme;
+  codePreviewSettings?: CodePreviewSettings;
+  onOpenCodeViewer?: (source: CodeViewerSource) => void;
+  onOpenFileLink?: (target: MessageFileLinkTarget) => void;
+  onOpenBrowserUrl?: (url: string) => void;
 }) {
   const { intl } = useZCodeIntl();
 
@@ -215,13 +191,11 @@ function InlinePlanResult({
       <MessageResponse
         className="size-full min-w-0 break-words whitespace-normal [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
         workspacePath={workspacePath}
-        {...(theme === undefined ? {} : { theme })}
-        {...(codePreviewSettings === undefined ? {} : { codePreviewSettings })}
-        {...(onOpenCodeViewer === undefined ? {} : { onOpenCodeViewer })}
-        {...(onOpenFileLink === undefined ? {} : { onOpenFileLink })}
-        {...(onOpenBrowserUrl === undefined
-          ? {}
-          : { onOpenExternalUrl: onOpenBrowserUrl })}
+        theme={theme}
+        codePreviewSettings={codePreviewSettings}
+        onOpenCodeViewer={onOpenCodeViewer}
+        onOpenFileLink={onOpenFileLink}
+        onOpenExternalUrl={onOpenBrowserUrl}
       >
         {plan}
       </MessageResponse>

@@ -1,46 +1,32 @@
-/**
- * zcode 照搬：`@/mentions/components/MentionPanel.tsx`（references/zcode/packages/ui/src/mentions/components/MentionPanel.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀；P5 适配：可选属性放宽 `| undefined`（exactOptionalPropertyTypes，照搬调用点显式传 undefined）（Turbopack 无 .js→.ts
- * 试探）；源文件自带头注保留于下。
- */
 /* oxlint-disable eslint(max-lines) -- 提示面板集中承载虚拟列表和 E2E 定位属性，暂不为少量测试属性拆组件。 */
-
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { cn } from "@zui/components/lib/utils";
 import {
   TID_PROMPT_SUGGESTION_OPTION,
   TID_PROMPT_SUGGESTION_PANEL,
   TID_PROMPT_SUGGESTION_SECTION,
   TID_PROMPT_SUGGESTION_STATUS,
   testId,
-} from "@zui/lib/zcode-shared";
+} from "@zcode/shared";
+import { cn } from "@zui/components/lib/utils.js";
+import { Info, LoaderIcon } from "lucide-react";
 import {
   EMPTY_SCROLL_MASK_STATE,
   getVerticalScrollMaskStyle,
   resolveVerticalScrollMaskState,
   type ScrollMaskState,
-} from "@zui/mentions/components/scrollMask";
-import { Info, LoaderIcon } from "lucide-react";
-import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+} from "@zui/mentions/components/scrollMask.js";
 
 export interface MentionPanelOption {
   id: string;
   label: string;
   description: string;
-  content?: ReactNode | undefined;
-  meta?: ReactNode | undefined;
+  content?: ReactNode;
+  meta?: ReactNode;
   /** 禁选态（如同名 Plugin 冲突 fail closed）：可见但不可点击，键盘导航由上层跳过。 */
-  disabled?: boolean | undefined;
+  disabled?: boolean;
   /** 禁选原因；无自定义 content 时展示在描述位。 */
-  disabledReason?: string | undefined;
+  disabledReason?: string;
 }
 
 export interface MentionPanelSection {
@@ -48,9 +34,9 @@ export interface MentionPanelSection {
   title: string;
   options: MentionPanelOption[];
   emptyText: string;
-  loadingText?: string | undefined;
-  loading?: boolean | undefined;
-  errorText?: string | null | undefined;
+  loadingText?: string;
+  loading?: boolean;
+  errorText?: string | null;
 }
 
 interface MentionPanelProps {
@@ -158,12 +144,8 @@ export function MentionPanel({
   trigger,
 }: MentionPanelProps) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const [hoveredOptionIndex, setHoveredOptionIndex] = useState<number | null>(
-    null,
-  );
-  const [scrollMaskState, setScrollMaskState] = useState<ScrollMaskState>(
-    EMPTY_SCROLL_MASK_STATE,
-  );
+  const [hoveredOptionIndex, setHoveredOptionIndex] = useState<number | null>(null);
+  const [scrollMaskState, setScrollMaskState] = useState<ScrollMaskState>(EMPTY_SCROLL_MASK_STATE);
 
   const virtualRows = useMemo(() => buildVirtualRows(sections), [sections]);
 
@@ -194,8 +176,7 @@ export function MentionPanel({
     });
 
     setScrollMaskState((current) =>
-      current.showTop === nextState.showTop &&
-      current.showBottom === nextState.showBottom
+      current.showTop === nextState.showTop && current.showBottom === nextState.showBottom
         ? current
         : nextState,
     );
@@ -245,15 +226,15 @@ export function MentionPanel({
     });
 
     let resizeObserver: ResizeObserver | null = null;
-    if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", scheduleUpdate);
-    } else {
+    if (typeof ResizeObserver !== "undefined") {
       resizeObserver = new ResizeObserver(scheduleUpdate);
       resizeObserver.observe(scrollContainer);
       const contentElement = scrollContainer.firstElementChild;
       if (contentElement) {
         resizeObserver.observe(contentElement);
       }
+    } else {
+      window.addEventListener("resize", scheduleUpdate);
     }
 
     return () => {
@@ -281,10 +262,7 @@ export function MentionPanel({
           role="listbox"
           aria-label={title}
           onMouseLeave={() => setHoveredOptionIndex(null)}
-          style={{
-            ...scrollMaskStyle,
-            ...(listMaxHeight ? { maxHeight: listMaxHeight } : {}),
-          }}
+          style={{ ...scrollMaskStyle, ...(listMaxHeight ? { maxHeight: listMaxHeight } : {}) }}
         >
           <div
             style={{
@@ -343,11 +321,7 @@ export function MentionPanel({
   );
 }
 
-function SectionHeaderRow({
-  row,
-}: {
-  row: Extract<VirtualRow, { kind: "section_header" }>;
-}) {
+function SectionHeaderRow({ row }: { row: Extract<VirtualRow, { kind: "section_header" }> }) {
   return (
     <div
       className={SECTION_HEADER_CLASS_NAME}
@@ -458,15 +432,11 @@ function OptionRow({
                 {option.label}
               </span>
               {option.meta ? (
-                <span className="shrink-0 text-ui-xs text-foreground-subtlest">
-                  {option.meta}
-                </span>
+                <span className="shrink-0 text-ui-xs text-foreground-subtlest">{option.meta}</span>
               ) : null}
             </span>
             <span className="mt-1 block truncate text-ui-xs text-foreground-subtlest">
-              {isDisabled && option.disabledReason
-                ? option.disabledReason
-                : option.description}
+              {isDisabled && option.disabledReason ? option.disabledReason : option.description}
             </span>
           </span>
         )}

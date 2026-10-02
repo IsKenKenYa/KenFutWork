@@ -1,9 +1,4 @@
 /**
- * zcode 照搬：`@/components/workflow-timeline/WorkflowMarchLight.tsx`（references/zcode/packages/ui/src/components/workflow-timeline/WorkflowMarchLight.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-/**
  * 行进边的光：控制流进入正在运行的站所走的那条边，
  * 在 SVG 里叠一条 1.5px、圆头的路径，用一道 `userSpaceOnUse` 的渐变描边——从路径起点的全透明到 80% 处的
  * 满警示色，于是它在灯那一头最亮、朝控制流来的方向淡去，像是灯照亮了自己来的路。它不动：行进边说的是

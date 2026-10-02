@@ -1,14 +1,6 @@
-/**
- * zcode 照搬：`@/lib/taskModelRecovery.ts`（references/zcode/packages/ui/src/lib/taskModelRecovery.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import type { ZCodeConfigOption, ZCodeTaskMeta } from "@zui/lib/zcode-shared";
-import { getZCodeAgentModeSelectOptions } from "@zui/lib/zcode-shared";
-import {
-  decodeCustomModelValue,
-  encodeCustomModelValue,
-} from "@zui/lib/zcodeCustomModelValue";
+import type { ZCodeConfigOption, ZCodeTaskMeta } from "@zcode/shared";
+import { getZCodeAgentModeSelectOptions } from "@zcode/shared";
+import { decodeCustomModelValue, encodeCustomModelValue } from "@zui/lib/zcodeCustomModelValue.js";
 
 function parseProviderQualifiedModel(
   model: string,
@@ -32,14 +24,9 @@ function isSyntheticModelPlaceholder(model: string): boolean {
   return model.trim().toLocaleLowerCase() === "<synthetic>";
 }
 
-function resolveGlmRecoveredTaskModelValue(
-  taskModel: string | undefined,
-): string | null {
+function resolveGlmRecoveredTaskModelValue(taskModel: string | undefined): string | null {
   const normalizedTaskModel = taskModel?.trim();
-  if (
-    !normalizedTaskModel ||
-    isSyntheticModelPlaceholder(normalizedTaskModel)
-  ) {
+  if (!normalizedTaskModel || isSyntheticModelPlaceholder(normalizedTaskModel)) {
     return null;
   }
 
@@ -48,8 +35,7 @@ function resolveGlmRecoveredTaskModelValue(
     return normalizedTaskModel;
   }
 
-  const providerQualifiedModel =
-    parseProviderQualifiedModel(normalizedTaskModel);
+  const providerQualifiedModel = parseProviderQualifiedModel(normalizedTaskModel);
   if (providerQualifiedModel) {
     return encodeCustomModelValue(
       providerQualifiedModel.providerId,
@@ -64,10 +50,7 @@ function resolveRecoveredTaskModelValue(
   taskMeta: Pick<ZCodeTaskMeta, "provider" | "model">,
 ): string | null {
   const normalizedTaskModel = taskMeta.model?.trim();
-  if (
-    !normalizedTaskModel ||
-    isSyntheticModelPlaceholder(normalizedTaskModel)
-  ) {
+  if (!normalizedTaskModel || isSyntheticModelPlaceholder(normalizedTaskModel)) {
     return null;
   }
 
@@ -81,17 +64,10 @@ function resolveRecoveredTaskModelValue(
 function resolveModelOptionName(modelValue: string): string {
   const customModel = decodeCustomModelValue(modelValue);
   const providerQualifiedModel = parseProviderQualifiedModel(modelValue);
-  return (
-    customModel?.modelName?.trim() ||
-    providerQualifiedModel?.modelName ||
-    modelValue
-  );
+  return customModel?.modelName?.trim() || providerQualifiedModel?.modelName || modelValue;
 }
 
-function ensureModelOptionValue(
-  option: ZCodeConfigOption,
-  modelValue: string,
-): ZCodeConfigOption {
+function ensureModelOptionValue(option: ZCodeConfigOption, modelValue: string): ZCodeConfigOption {
   const options = option.options ?? [];
   const hasOption = options.some((candidate) => candidate.value === modelValue);
   if (hasOption && option.currentValue === modelValue) {
@@ -140,9 +116,7 @@ function createRecoveredModeOption(modeValue: string): ZCodeConfigOption {
   };
 }
 
-function createRecoveredThoughtLevelOption(
-  thoughtLevel: string,
-): ZCodeConfigOption {
+function createRecoveredThoughtLevelOption(thoughtLevel: string): ZCodeConfigOption {
   return {
     category: "thought_level",
     currentValue: thoughtLevel,
@@ -212,10 +186,7 @@ function mergeRecoveredTaskModelConfigOptions({
     // 历史 task 恢复时，resume/config_option_update 可能晚于首帧渲染。
     // 只清空上一条 task 的配置会让工具栏短暂退回“选择模型”；这里用 task.meta.model
     // 合成最小模型项，先稳定展示持久化模型，真实 configOptions 回来后再覆盖。
-    return [
-      createRecoveredModelOption(recoveredModelValue),
-      ...nextConfigOptions,
-    ];
+    return [createRecoveredModelOption(recoveredModelValue), ...nextConfigOptions];
   }
 
   // 旧会话恢复时 task.meta.model 可能已经被写回 task 配置。
@@ -271,10 +242,7 @@ export function resolveTaskRestorePreloadConfigOptions({
     if (!hasThoughtOption) {
       // 和 mode 一样，automation task-local thoughtLevel 需要先从 task meta 回显；
       // 后续 session settings 会补齐该模型支持的完整 thought options。
-      cachedOptions = [
-        ...cachedOptions,
-        createRecoveredThoughtLevelOption(thoughtLevel),
-      ];
+      cachedOptions = [...cachedOptions, createRecoveredThoughtLevelOption(thoughtLevel)];
     }
   }
 

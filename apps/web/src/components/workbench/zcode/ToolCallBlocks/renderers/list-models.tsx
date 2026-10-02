@@ -1,27 +1,19 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/list-models.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/list-models.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { thoughtLevelLabelId } from "@zui/chat-input-toolbar/thoughtLevelOptions";
-import { useWorkflowSubagentModelProviderName } from "@zui/hooks/useWorkflowSubagentModelProviderName";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
+import { Cpu } from "lucide-react";
+import { useCallback, useMemo } from "react";
 import {
   getModelProviderFamilySpec,
   resolveModelProviderFamilyIdByProviderId,
-} from "@zui/lib/zcode-shared";
-import { FallbackToolCallBlock } from "@zui/ToolCallBlocks/renderers/fallback";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
-import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay";
-import { Cpu } from "lucide-react";
-import { useCallback, useMemo } from "react";
+} from "@zcode/shared";
+import { thoughtLevelLabelId } from "@zui/chat-input-toolbar/thoughtLevelOptions.js";
+import { useWorkflowSubagentModelProviderName } from "@zui/hooks/useWorkflowSubagentModelProviderName.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { FallbackToolCallBlock } from "@zui/ToolCallBlocks/renderers/fallback.js";
+import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay.js";
+import { ToolLayout } from "../ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "../shared.js";
 
-const LIST_MODELS_TOOL_ICON = (
-  <Cpu className="size-4 shrink-0 text-foreground-subtle" />
-);
+const LIST_MODELS_TOOL_ICON = <Cpu className="size-4 shrink-0 text-foreground-subtle" />;
 
 type FormatMessage = (
   descriptor: { id: string },
@@ -29,9 +21,7 @@ type FormatMessage = (
 ) => string;
 
 /** providerId → 会话模型清单里的 provider 名；查不到即缺席（见 useWorkflowSubagentModelProviderName）。 */
-type ProviderNameLookup =
-  | ((providerId: string) => string | undefined)
-  | undefined;
+type ProviderNameLookup = ((providerId: string) => string | undefined) | undefined;
 
 interface ListModelsEntryView {
   id: string;
@@ -108,10 +98,7 @@ function readResultRecord(value: unknown): ListModelsResult | null {
       providerLabel: readTrimmedString(entry.providerLabel),
       reasoningLevels: readStringArray(entry.reasoningLevels),
       defaultReasoningLevel: readTrimmedString(entry.defaultReasoningLevel),
-      contextWindow:
-        typeof entry.contextWindow === "number"
-          ? entry.contextWindow
-          : undefined,
+      contextWindow: typeof entry.contextWindow === "number" ? entry.contextWindow : undefined,
       disabledReason: readTrimmedString(entry.disabledReason),
     });
   }
@@ -151,12 +138,7 @@ function readListModelsResult(
   }
 
   const raw = isPlainRecord(toolCall.raw) ? toolCall.raw : null;
-  for (const candidate of [
-    toolCall.output,
-    raw?.rawOutput,
-    raw?.output,
-    raw?.result,
-  ]) {
+  for (const candidate of [toolCall.output, raw?.rawOutput, raw?.output, raw?.result]) {
     const result = readResultRecord(candidate);
     if (result) {
       return result;
@@ -187,11 +169,7 @@ function listModelsGroupName(
   }
   // 会话清单查不到时会退回 providerId 本身（zcodeSessionSettingsToConfigOptions），当作没查到。
   const resolved = providerName?.(providerId)?.trim();
-  if (
-    resolved !== undefined &&
-    resolved.length > 0 &&
-    resolved !== providerId
-  ) {
+  if (resolved !== undefined && resolved.length > 0 && resolved !== providerId) {
     return resolved;
   }
   return formatMessage({ id: "chat.toolCall.workflow.models.provider" });
@@ -209,9 +187,7 @@ function formatContextWindow(contextWindow: number): string {
     return `${Math.round(contextWindow / 1_000)}K`;
   }
   const millions = contextWindow / 1_000_000;
-  return Number.isInteger(millions)
-    ? `${millions}M`
-    : `${millions.toFixed(1)}M`;
+  return Number.isInteger(millions) ? `${millions}M` : `${millions.toFixed(1)}M`;
 }
 
 function levelWord(level: string, formatMessage: FormatMessage): string {
@@ -224,31 +200,20 @@ function levelWord(level: string, formatMessage: FormatMessage): string {
  * 行的 tooltip：第一行是思考强度档位（没有档位就说没有），换行后是规范 id。规范 id 是给
  * 机器回填 `subagent_model` 用的，它只该住在这里（subagent-model-label.ts 的同款分工）。
  */
-function listModelsRowTooltip(
-  model: ListModelsEntryView,
-  formatMessage: FormatMessage,
-): string {
+function listModelsRowTooltip(model: ListModelsEntryView, formatMessage: FormatMessage): string {
   let levelsLine: string;
   if (model.reasoningLevels.length === 0) {
-    levelsLine = formatMessage({
-      id: "chat.toolCall.workflow.models.noLevels",
-    });
+    levelsLine = formatMessage({ id: "chat.toolCall.workflow.models.noLevels" });
   } else {
     const levels = model.reasoningLevels
       .map((level) => levelWord(level, formatMessage))
       .join(" · ");
     levelsLine =
       model.defaultReasoningLevel === undefined
-        ? formatMessage(
-            { id: "chat.toolCall.workflow.models.levelsNoDefault" },
-            { levels },
-          )
+        ? formatMessage({ id: "chat.toolCall.workflow.models.levelsNoDefault" }, { levels })
         : formatMessage(
             { id: "chat.toolCall.workflow.models.levels" },
-            {
-              default: levelWord(model.defaultReasoningLevel, formatMessage),
-              levels,
-            },
+            { default: levelWord(model.defaultReasoningLevel, formatMessage), levels },
           );
   }
   return `${levelsLine}\n${model.id}`;
@@ -260,9 +225,7 @@ interface ListModelsGroup {
 }
 
 /** 按 providerId 分组，保持首次出现的顺序——目录的顺序是宿主注册表的顺序，卡不重排。 */
-function groupModelsByProvider(
-  models: ListModelsEntryView[],
-): ListModelsGroup[] {
+function groupModelsByProvider(models: ListModelsEntryView[]): ListModelsGroup[] {
   const groups: ListModelsGroup[] = [];
   const byProviderId = new Map<string, ListModelsGroup>();
   for (const model of models) {
@@ -290,9 +253,7 @@ function groupModelsByProvider(
 export function ListModelsToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
   const { toolCall } = context.toolCallNode;
-  const providerName = useWorkflowSubagentModelProviderName(
-    context.workspacePath,
-  );
+  const providerName = useWorkflowSubagentModelProviderName(context.workspacePath);
 
   const result = useMemo(() => readListModelsResult(toolCall), [toolCall]);
 
@@ -301,15 +262,9 @@ export function ListModelsToolCallBlock(context: ToolCallBlockRenderContext) {
       ? "chat.toolCall.workflow.models.listing"
       : "chat.toolCall.workflow.models.listed",
   });
-  const emptyLabel = intl.formatMessage({
-    id: "chat.toolCall.workflow.models.empty",
-  });
-  const currentLabel = intl.formatMessage({
-    id: "chat.toolCall.workflow.models.current",
-  });
-  const truncatedLabel = intl.formatMessage({
-    id: "chat.toolCall.workflow.models.truncated",
-  });
+  const emptyLabel = intl.formatMessage({ id: "chat.toolCall.workflow.models.empty" });
+  const currentLabel = intl.formatMessage({ id: "chat.toolCall.workflow.models.current" });
+  const truncatedLabel = intl.formatMessage({ id: "chat.toolCall.workflow.models.truncated" });
 
   const modelCount = result?.models.length ?? 0;
   // 轻量 intl 没有 ICU 复数，单复数各用独立 message key（同 workflow.list.count 的先例）。
@@ -350,8 +305,7 @@ export function ListModelsToolCallBlock(context: ToolCallBlockRenderContext) {
             <div className="text-ui-xs text-foreground-subtlest">
               {listModelsGroupName(
                 group.providerId,
-                group.models.find((model) => model.providerLabel !== undefined)
-                  ?.providerLabel,
+                group.models.find((model) => model.providerLabel !== undefined)?.providerLabel,
                 providerName,
                 intl.formatMessage,
               )}
@@ -396,20 +350,11 @@ export function ListModelsToolCallBlock(context: ToolCallBlockRenderContext) {
         ))}
 
         {result.truncated ? (
-          <p className="text-ui-sm text-foreground-subtlest">
-            {truncatedLabel}
-          </p>
+          <p className="text-ui-sm text-foreground-subtlest">{truncatedLabel}</p>
         ) : null}
       </div>
     );
-  }, [
-    currentLabel,
-    groups,
-    intl.formatMessage,
-    providerName,
-    result,
-    truncatedLabel,
-  ]);
+  }, [currentLabel, groups, intl.formatMessage, providerName, result, truncatedLabel]);
 
   // 失败态**不**退回兜底卡：那张卡会摊开错误 JSON，而这里真正要说的是「这个会话读不到模型
   // 目录」。它与「一个模型也没有」是两回事，卡上既不画列表也不说那句空话（同
@@ -429,7 +374,7 @@ export function ListModelsToolCallBlock(context: ToolCallBlockRenderContext) {
           primaryText={null}
           statusLabel={context.statusLabel}
           statusTooltip={context.errorText}
-          showFailureStatus={true}
+          showFailureStatus
           isRunning={context.isRunning}
           title={toolCall.title}
         />
@@ -447,12 +392,7 @@ export function ListModelsToolCallBlock(context: ToolCallBlockRenderContext) {
 
   // 读不出结构化结果（老会话、降级路径）就交回通用卡，而不是画一张空目录。
   if (result === null) {
-    return (
-      <FallbackToolCallBlock
-        {...context}
-        iconOverride={LIST_MODELS_TOOL_ICON}
-      />
-    );
+    return <FallbackToolCallBlock {...context} iconOverride={LIST_MODELS_TOOL_ICON} />;
   }
 
   // 一个模型也没有时摘要行就是那句话，没有可展开的内容——空卡体比没有卡体更难读。

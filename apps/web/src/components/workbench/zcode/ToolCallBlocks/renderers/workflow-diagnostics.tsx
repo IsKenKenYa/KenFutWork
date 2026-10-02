@@ -1,9 +1,4 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/workflow-diagnostics.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/workflow-diagnostics.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 
 /** 一条 TS 诊断（CreateWorkflow 与 EvalWorkflowSnippet 的 display 共用同一形状）。 */
 interface WorkflowDiagnosticEntry {
@@ -51,11 +46,11 @@ export function WorkflowDiagnosticsSection({
   saved = false,
 }: {
   diagnostics: readonly WorkflowDiagnosticEntry[];
-  truncated?: boolean | undefined;
+  truncated?: boolean;
   /** 条数；display 带 `errorCount`（截断前的总数）时传它，缺席按行数算。 */
-  count?: number | undefined;
+  count?: number;
   /** 脚本来自保存的工作流文件：那句话点名文件而不是这次调用。 */
-  saved?: boolean | undefined;
+  saved?: boolean;
 }) {
   const { intl } = useZCodeIntl();
   if (diagnostics.length === 0) {
@@ -75,10 +70,7 @@ export function WorkflowDiagnosticsSection({
   // 码按字符串交给 ICU：数字参数会被本地化分组（「9,003」）。
   const codeLabel = (code: number) =>
     isWorkflowAnalyzerRuleCode(code)
-      ? intl.formatMessage(
-          { id: "chat.toolCall.workflow.feedback.rule" },
-          { code: String(code) },
-        )
+      ? intl.formatMessage({ id: "chat.toolCall.workflow.feedback.rule" }, { code: String(code) })
       : `TS${code}`;
 
   return (
@@ -87,10 +79,7 @@ export function WorkflowDiagnosticsSection({
       data-testid="workflow-compiler-feedback"
     >
       <div className="flex min-w-0 items-baseline justify-between gap-2 text-ui-xs font-medium text-foreground-subtle">
-        <span
-          className="min-w-0 truncate"
-          data-testid="workflow-compiler-feedback-title"
-        >
+        <span className="min-w-0 truncate" data-testid="workflow-compiler-feedback-title">
           {intl.formatMessage({ id: "chat.toolCall.workflow.feedback" })}
         </span>
         <span
@@ -131,4 +120,3 @@ export function WorkflowDiagnosticsSection({
     </div>
   );
 }
-/* 适配注记（P9）：接口可选属性放宽 | undefined（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。 */

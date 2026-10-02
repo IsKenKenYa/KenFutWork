@@ -1,14 +1,13 @@
 "use client";
 
+import * as React from "react";
 import { Progress as ProgressPrimitive } from "radix-ui";
-import type * as React from "react";
 
-import { cn } from "../lib/utils";
+import { cn } from "../lib/utils.js";
 
 type ProgressProps = React.ComponentProps<typeof ProgressPrimitive.Root> & {
-  indicatorClassName?: string | undefined;
-  segments?: readonly ProgressSegment[] | undefined;
-  // P5 适配：可选属性放宽 `| undefined`（exactOptionalPropertyTypes，照搬调用点显式传 undefined）。
+  indicatorClassName?: string;
+  segments?: readonly ProgressSegment[];
 };
 
 export interface ProgressSegment {
@@ -18,13 +17,7 @@ export interface ProgressSegment {
   style?: React.CSSProperties;
 }
 
-function Progress({
-  className,
-  indicatorClassName,
-  segments,
-  value,
-  ...props
-}: ProgressProps) {
+function Progress({ className, indicatorClassName, segments, value, ...props }: ProgressProps) {
   const normalizedValue = Math.min(Math.max(value ?? 0, 0), 100);
   const normalizedSegments =
     segments
@@ -47,9 +40,7 @@ function Progress({
         data-slot="progress-indicator"
         className={cn(
           "h-full rounded-full transition-[width]",
-          normalizedSegments.length > 0
-            ? "flex overflow-hidden bg-transparent"
-            : "bg-primary",
+          normalizedSegments.length > 0 ? "flex overflow-hidden bg-transparent" : "bg-primary",
           normalizedValue > 0 && indicatorClassName,
         )}
         style={{ width: `${normalizedValue}%` }}

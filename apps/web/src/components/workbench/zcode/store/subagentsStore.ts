@@ -1,25 +1,16 @@
-/**
- * zcode 照搬：`@/store/subagentsStore.ts`（references/zcode/packages/ui/src/store/subagentsStore.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射；ISubagentsService 改由 @zui/lib/zcode-services.js 的宿主 stub 类型提供（未接 RPC，服务不可得时 store 落 error 态、agents 恒空，UI 自动降级）（手册 §2.1）。
- */
-
-import { shouldExposeE2EStoreBridge } from "@zui/lib/e2eStoreBridge";
-import type { ISubagentsService } from "@zui/lib/zcode-services";
+import { create } from "zustand";
 import {
-  type AgentSummary,
-  type AgentsCapability,
   normalizeAgentProviderToZCodeAgent,
-  type SubAgentConfig,
   ZCODE_AGENT_PROVIDER,
   type ZCodeProvider,
-} from "@zui/lib/zcode-shared";
-import { logger } from "@zui/logger";
-import {
-  getSubagentsContextKey,
-  useSubagentsContextStore,
-} from "@zui/store/subagentsContextStore";
-import { create } from "zustand";
+  type AgentSummary,
+  type AgentsCapability,
+  type SubAgentConfig,
+} from "@zcode/shared";
+import type { ISubagentsService } from "@zcode/services";
+import { shouldExposeE2EStoreBridge } from "@zui/lib/e2eStoreBridge.js";
+import { logger } from "@zui/logger.js";
+import { getSubagentsContextKey, useSubagentsContextStore } from "@zui/store/subagentsContextStore.js";
 
 interface SubagentsStoreState {
   workspacePath: string | null;
@@ -40,10 +31,7 @@ interface SubagentsStoreState {
     maybeSubagentsService?: ISubagentsService,
     workspaceIdentity?: string,
   ) => Promise<void>;
-  refresh: (
-    subagentsService: ISubagentsService,
-    workspaceIdentity?: string,
-  ) => Promise<void>;
+  refresh: (subagentsService: ISubagentsService, workspaceIdentity?: string) => Promise<void>;
   setEnabled: (
     agentId: string,
     enabled: boolean,
@@ -72,10 +60,7 @@ interface SubagentsStoreState {
   ) => Promise<boolean>;
 }
 
-const inFlightAgentLoads = new Map<
-  string,
-  ReturnType<ISubagentsService["list"]>
->();
+const inFlightAgentLoads = new Map<string, ReturnType<ISubagentsService["list"]>>();
 let latestAgentLoadRequestId = 0;
 
 function getAgentLoadKey(
@@ -145,9 +130,7 @@ export const useSubagentsStore = create<SubagentsStoreState>((set, get) => ({
     const provider = normalizeAgentProviderToZCodeAgent(
       hasProvider ? providerOrSubagentsService : ZCODE_AGENT_PROVIDER,
     );
-    const subagentsService = hasProvider
-      ? maybeSubagentsService
-      : providerOrSubagentsService;
+    const subagentsService = hasProvider ? maybeSubagentsService : providerOrSubagentsService;
     const normalizedWorkspaceIdentity = workspaceIdentity?.trim() || null;
     if (!subagentsService) {
       set({
@@ -213,10 +196,7 @@ export const useSubagentsStore = create<SubagentsStoreState>((set, get) => ({
       });
     }
   },
-  async refresh(
-    subagentsService: ISubagentsService,
-    workspaceIdentity?: string,
-  ) {
+  async refresh(subagentsService: ISubagentsService, workspaceIdentity?: string) {
     const workspacePath = get().workspacePath;
     if (!workspacePath) {
       return;
@@ -409,21 +389,12 @@ export async function refreshLoadedSubagentsStoreForWorkspace(params: {
   const workspaceIdentity = params.workspaceIdentity?.trim() || null;
   const state = useSubagentsStore.getState();
   const refreshes: Promise<void>[] = [];
-  if (
-    state.workspacePath === workspacePath &&
-    state.workspaceIdentity === workspaceIdentity
-  ) {
-    refreshes.push(
-      state.refresh(params.subagentsService, workspaceIdentity ?? undefined),
-    );
+  if (state.workspacePath === workspacePath && state.workspaceIdentity === workspaceIdentity) {
+    refreshes.push(state.refresh(params.subagentsService, workspaceIdentity ?? undefined));
   }
 
   const contextStore = useSubagentsContextStore.getState();
-  const contextKey = getSubagentsContextKey(
-    workspacePath,
-    ZCODE_AGENT_PROVIDER,
-    workspaceIdentity,
-  );
+  const contextKey = getSubagentsContextKey(workspacePath, ZCODE_AGENT_PROVIDER, workspaceIdentity);
   if (contextStore.contexts[contextKey]) {
     // 分屏输入框按 workspaceKey 持有子智能体目录；设置页变更后只刷新对应桶，
     // 避免同路径的本地/远端 workspace 相互污染。

@@ -1,16 +1,16 @@
+import { useEffect, useMemo, useState, type HTMLAttributes } from "react";
+import type { BundledTheme, ThemedToken } from "shiki";
 import {
   getLightweightDiffLineParts,
   LightweightDiffPreview,
-} from "@zui/components/ui/lightweight-diff-preview";
-import type { CodePreviewSettings } from "@zui/lib/codePreviewSettings";
+} from "@zui/components/ui/lightweight-diff-preview.js";
 import {
   highlightCode,
   shouldUseSyntaxHighlighting,
   type TokenizedCode,
-} from "@zui/lib/shikiHighlighter";
-import { logger } from "@zui/logger";
-import { type HTMLAttributes, useEffect, useMemo, useState } from "react";
-import type { BundledTheme, ThemedToken } from "shiki";
+} from "@zui/lib/shikiHighlighter.js";
+import { logger } from "@zui/logger.js";
+import type { CodePreviewSettings } from "@zui/store/index.js";
 
 const HIGHLIGHTED_LIGHTWEIGHT_DIFF_MAX_CHARS = 120_000;
 
@@ -22,12 +22,8 @@ export function getHighlightedLightweightDiffLine(line: string) {
   };
 }
 
-export function buildHighlightedLightweightDiffCode(
-  lines: readonly string[],
-): string {
-  return lines
-    .map((line) => getHighlightedLightweightDiffLine(line).code)
-    .join("\n");
+export function buildHighlightedLightweightDiffCode(lines: readonly string[]): string {
+  return lines.map((line) => getHighlightedLightweightDiffLine(line).code).join("\n");
 }
 
 function useHighlightedLightweightDiffTokens({
@@ -38,12 +34,10 @@ function useHighlightedLightweightDiffTokens({
 }: {
   code: string;
   language: string;
-  path?: string | undefined;
+  path?: string;
   theme: BundledTheme;
 }) {
-  const [tokenizedCode, setTokenizedCode] = useState<TokenizedCode | null>(
-    null,
-  );
+  const [tokenizedCode, setTokenizedCode] = useState<TokenizedCode | null>(null);
 
   useEffect(() => {
     setTokenizedCode(null);
@@ -94,9 +88,7 @@ function useHighlightedLightweightDiffTokens({
   return tokenizedCode;
 }
 
-function renderHighlightedLightweightDiffTokens(
-  tokens: readonly ThemedToken[] | undefined,
-) {
+function renderHighlightedLightweightDiffTokens(tokens: readonly ThemedToken[] | undefined) {
   if (!tokens || tokens.length === 0) {
     return null;
   }
@@ -116,15 +108,17 @@ function HighlightedLightweightDiffCodeLine({
   tokens,
 }: {
   code: string;
-  tokens?: readonly ThemedToken[] | undefined;
+  tokens?: readonly ThemedToken[];
 }) {
   const tokenNodes = renderHighlightedLightweightDiffTokens(tokens);
 
   return <>{tokenNodes ?? (code || " ")}</>;
 }
 
-export interface HighlightedLightweightDiffPreviewProps
-  extends Omit<HTMLAttributes<HTMLDivElement>, "children"> {
+export interface HighlightedLightweightDiffPreviewProps extends Omit<
+  HTMLAttributes<HTMLDivElement>,
+  "children"
+> {
   codePreviewSettings: Pick<
     CodePreviewSettings,
     "fontSizePx" | "showLineNumbers" | "wrapLongLines"
@@ -143,10 +137,7 @@ export function HighlightedLightweightDiffPreview({
   theme,
   ...props
 }: HighlightedLightweightDiffPreviewProps) {
-  const highlightCodeText = useMemo(
-    () => buildHighlightedLightweightDiffCode(lines),
-    [lines],
-  );
+  const highlightCodeText = useMemo(() => buildHighlightedLightweightDiffCode(lines), [lines]);
   const tokenizedCode = useHighlightedLightweightDiffTokens({
     code: highlightCodeText,
     language,

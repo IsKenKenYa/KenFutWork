@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/cuaSummaryMessages.ts`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/cuaSummaryMessages.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
 export const CUA_TOOL_SUMMARY_IDS: Record<string, string> = {
   request_access: "chat.toolCall.cua.requestAccess",
   list_apps: "chat.toolCall.cua.listApps",

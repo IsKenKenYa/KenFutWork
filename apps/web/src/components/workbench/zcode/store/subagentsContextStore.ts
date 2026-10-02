@@ -1,18 +1,12 @@
-/**
- * zcode 照搬：`@/store/subagentsContextStore.ts`（references/zcode/packages/ui/src/store/subagentsContextStore.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射；ISubagentsService 改由 @zui/lib/zcode-services.js 的宿主 stub 类型提供（未接 RPC，服务不可得时 store 落 error 态、agents 恒空，UI 自动降级）（手册 §2.1）。
- */
-
-import type { ISubagentsService } from "@zui/lib/zcode-services";
+import { create } from "zustand";
+import type { ISubagentsService } from "@zcode/services";
 import {
+  normalizeAgentProviderToZCodeAgent,
   type AgentSummary,
   type AgentsCapability,
-  normalizeAgentProviderToZCodeAgent,
   type ZCodeProvider,
-} from "@zui/lib/zcode-shared";
-import { logger } from "@zui/logger";
-import { create } from "zustand";
+} from "@zcode/shared";
+import { logger } from "@zui/logger.js";
 
 interface SubagentsContextSnapshot {
   workspacePath: string;
@@ -95,23 +89,17 @@ async function loadContext(
     workspacePath: string;
     provider: ZCodeProvider;
     subagentsService: ISubagentsService;
-    workspaceIdentity?: string | undefined;
+    workspaceIdentity?: string;
     bypassCache: boolean;
   },
   set: (
-    updater: (
-      state: SubagentsContextStoreState,
-    ) => Partial<SubagentsContextStoreState>,
+    updater: (state: SubagentsContextStoreState) => Partial<SubagentsContextStoreState>,
   ) => void,
   get: () => SubagentsContextStoreState,
 ): Promise<void> {
   const provider = normalizeAgentProviderToZCodeAgent(params.provider);
   const workspaceIdentity = params.workspaceIdentity?.trim() || undefined;
-  const key = getSubagentsContextKey(
-    params.workspacePath,
-    provider,
-    workspaceIdentity,
-  );
+  const key = getSubagentsContextKey(params.workspacePath, provider, workspaceIdentity);
   const existing = get().contexts[key];
   const requestId = ++nextRequestId;
   latestRequestIds.set(key, requestId);
@@ -175,88 +163,40 @@ async function loadContext(
   }
 }
 
-export const useSubagentsContextStore = create<SubagentsContextStoreState>(
-  (set, get) => ({
-    contexts: {},
-    async initialize(
-      workspacePath,
-      provider,
-      subagentsService,
-      workspaceIdentity,
-    ) {
-      const key = getSubagentsContextKey(
-        workspacePath,
-        provider,
-        workspaceIdentity,
-      );
-      // 多个可见 pane 会各自挂载 Subagents 消费者。旧单例把“当前 workspace”
-      // 当成全局可变字段，跨 workspace pane 会互相触发 initialize；按 workspaceKey+provider
-      // 分桶后，每个 effect 只订阅自己的稳定快照。
-      if (get().contexts[key]) return;
-      await loadContext(
-        {
-          workspacePath,
-          provider,
-          subagentsService,
-          workspaceIdentity,
-          bypassCache: false,
-        },
-        set,
-        get,
-      );
-    },
-    async refresh(
-      workspacePath,
-      provider,
-      subagentsService,
-      workspaceIdentity,
-    ) {
-      await loadContext(
-        {
-          workspacePath,
-          provider,
-          subagentsService,
-          workspaceIdentity,
-          bypassCache: true,
-        },
-        set,
-        get,
-      );
-    },
-    async setEnabled(
-      workspacePath,
-      provider,
-      agentId,
-      enabled,
-      subagentsService,
-      workspaceIdentity,
-    ) {
-      try {
-        await subagentsService.setEnabled({ agentId, enabled });
-        await get().refresh(
-          workspacePath,
-          provider,
-          subagentsService,
-          workspaceIdentity,
-        );
-      } catch (error) {
-        const key = getSubagentsContextKey(
-          workspacePath,
-          provider,
-          workspaceIdentity,
-        );
-        const message = error instanceof Error ? error.message : String(error);
-        set((state) => {
-          const existing = state.contexts[key];
-          return existing
-            ? updateContext(state, key, {
-                ...existing,
-                loading: false,
-                error: message,
-              })
-            : {};
-        });
-      }
-    },
-  }),
-);
+export const useSubagentsContextStore = create<SubagentsContextStoreState>((set, get) => ({
+  contexts: {},
+  async initialize(workspacePath, provider, subagentsService, workspaceIdentity) {
+    const key = getSubagentsContextKey(workspacePath, provider, workspaceIdentity);
+    // 多个可见 pane 会各自挂载 Subagents 消费者。旧单例把“当前 workspace”
+    // 当成全局可变字段，跨 workspace pane 会互相触发 initialize；按 workspaceKey+provider
+    // 分桶后，每个 effect 只订阅自己的稳定快照。
+    if (get().contexts[key]) return;
+    await loadContext(
+      { workspacePath, provider, subagentsService, workspaceIdentity, bypassCache: false },
+      set,
+      get,
+    );
+  },
+  async refresh(workspacePath, provider, subagentsService, workspaceIdentity) {
+    await loadContext(
+      { workspacePath, provider, subagentsService, workspaceIdentity, bypassCache: true },
+      set,
+      get,
+    );
+  },
+  async setEnabled(workspacePath, provider, agentId, enabled, subagentsService, workspaceIdentity) {
+    try {
+      await subagentsService.setEnabled({ agentId, enabled });
+      await get().refresh(workspacePath, provider, subagentsService, workspaceIdentity);
+    } catch (error) {
+      const key = getSubagentsContextKey(workspacePath, provider, workspaceIdentity);
+      const message = error instanceof Error ? error.message : String(error);
+      set((state) => {
+        const existing = state.contexts[key];
+        return existing
+          ? updateContext(state, key, { ...existing, loading: false, error: message })
+          : {};
+      });
+    }
+  },
+}));

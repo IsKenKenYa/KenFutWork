@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/components/ui/usePdfZoomOverlay.ts`（references/zcode/packages/ui/src/components/ui/usePdfZoomOverlay.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useRef } from "react";
 
@@ -43,9 +38,7 @@ export function resolvePdfPageSize(
   width: number,
   height: number,
 ): PdfPageSize {
-  return current?.width === width && current.height === height
-    ? current
-    : { width, height };
+  return current?.width === width && current.height === height ? current : { width, height };
 }
 
 export function getPdfPageDisplaySize(
@@ -87,30 +80,12 @@ export function capturePdfZoomAnchor(
     return null;
   }
 
-  const requestedClientX =
-    pointer?.clientX ?? containerRect.left + containerRect.width / 2;
-  const requestedClientY =
-    pointer?.clientY ?? containerRect.top + containerRect.height / 2;
-  const visibleClientX = clamp(
-    requestedClientX,
-    containerRect.left,
-    containerRect.right,
-  );
-  const visibleClientY = clamp(
-    requestedClientY,
-    containerRect.top,
-    containerRect.bottom,
-  );
-  const pageXRatio = clamp(
-    (visibleClientX - pageRect.left) / pageRect.width,
-    0,
-    1,
-  );
-  const pageYRatio = clamp(
-    (visibleClientY - pageRect.top) / pageRect.height,
-    0,
-    1,
-  );
+  const requestedClientX = pointer?.clientX ?? containerRect.left + containerRect.width / 2;
+  const requestedClientY = pointer?.clientY ?? containerRect.top + containerRect.height / 2;
+  const visibleClientX = clamp(requestedClientX, containerRect.left, containerRect.right);
+  const visibleClientY = clamp(requestedClientY, containerRect.top, containerRect.bottom);
+  const pageXRatio = clamp((visibleClientX - pageRect.left) / pageRect.width, 0, 1);
+  const pageYRatio = clamp((visibleClientY - pageRect.top) / pageRect.height, 0, 1);
 
   return {
     clientX: pageRect.left + pageRect.width * pageXRatio,
@@ -126,10 +101,8 @@ export function restorePdfZoomAnchor(
   anchor: PdfZoomAnchor,
 ): void {
   const pageRect = pageViewport.getBoundingClientRect();
-  container.scrollLeft +=
-    pageRect.left + pageRect.width * anchor.pageXRatio - anchor.clientX;
-  container.scrollTop +=
-    pageRect.top + pageRect.height * anchor.pageYRatio - anchor.clientY;
+  container.scrollLeft += pageRect.left + pageRect.width * anchor.pageXRatio - anchor.clientX;
+  container.scrollTop += pageRect.top + pageRect.height * anchor.pageYRatio - anchor.clientY;
 }
 
 export function usePdfZoomOverlay() {
@@ -141,58 +114,48 @@ export function usePdfZoomOverlay() {
     zoomOverlayRef.current = null;
   }, []);
 
-  const stageZoomOverlay = useCallback(
-    (targetWidth: number, targetHeight: number) => {
-      const viewport = pageViewportRef.current;
-      if (!viewport) {
+  const stageZoomOverlay = useCallback((targetWidth: number, targetHeight: number) => {
+    const viewport = pageViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    let overlay = zoomOverlayRef.current;
+    if (!overlay) {
+      const sourceCanvas = viewport.querySelector<HTMLCanvasElement>(".react-pdf__Page__canvas");
+      if (!sourceCanvas || sourceCanvas.style.visibility === "hidden") {
         return;
       }
 
-      let overlay = zoomOverlayRef.current;
-      if (!overlay) {
-        const sourceCanvas = viewport.querySelector<HTMLCanvasElement>(
-          ".react-pdf__Page__canvas",
-        );
-        if (!sourceCanvas || sourceCanvas.style.visibility === "hidden") {
-          return;
-        }
-
-        const width = sourceCanvas.offsetWidth;
-        const height = sourceCanvas.offsetHeight;
-        if (
-          width === 0 ||
-          height === 0 ||
-          sourceCanvas.width === 0 ||
-          sourceCanvas.height === 0
-        ) {
-          return;
-        }
-
-        overlay = document.createElement("canvas");
-        overlay.width = sourceCanvas.width;
-        overlay.height = sourceCanvas.height;
-        overlay.style.position = "absolute";
-        overlay.style.inset = "0";
-        overlay.style.zIndex = "1";
-        overlay.style.display = "block";
-        overlay.style.pointerEvents = "none";
-        overlay.style.userSelect = "none";
-        overlay.setAttribute("aria-hidden", "true");
-        const overlayContext = overlay.getContext("2d");
-        if (!overlayContext) {
-          return;
-        }
-        overlayContext.drawImage(sourceCanvas, 0, 0);
-        viewport.appendChild(overlay);
-
-        zoomOverlayRef.current = overlay;
+      const width = sourceCanvas.offsetWidth;
+      const height = sourceCanvas.offsetHeight;
+      if (width === 0 || height === 0 || sourceCanvas.width === 0 || sourceCanvas.height === 0) {
+        return;
       }
 
-      overlay.style.width = `${targetWidth}px`;
-      overlay.style.height = `${targetHeight}px`;
-    },
-    [],
-  );
+      overlay = document.createElement("canvas");
+      overlay.width = sourceCanvas.width;
+      overlay.height = sourceCanvas.height;
+      overlay.style.position = "absolute";
+      overlay.style.inset = "0";
+      overlay.style.zIndex = "1";
+      overlay.style.display = "block";
+      overlay.style.pointerEvents = "none";
+      overlay.style.userSelect = "none";
+      overlay.setAttribute("aria-hidden", "true");
+      const overlayContext = overlay.getContext("2d");
+      if (!overlayContext) {
+        return;
+      }
+      overlayContext.drawImage(sourceCanvas, 0, 0);
+      viewport.appendChild(overlay);
+
+      zoomOverlayRef.current = overlay;
+    }
+
+    overlay.style.width = `${targetWidth}px`;
+    overlay.style.height = `${targetHeight}px`;
+  }, []);
 
   useEffect(() => {
     return () => {

@@ -1,4 +1,4 @@
-import { cn } from "@zui/components/lib/utils";
+import { cn } from "@zui/components/lib/utils.js";
 
 /**
  * 键帽组件（对齐 shadcn Kbd）：每个按键独立成 chip，固定高度 + 最小方形宽度 +

@@ -1,40 +1,23 @@
-/**
- * zcode 照搬：`@/AssistantPreviewCards.tsx`（references/zcode/packages/ui/src/AssistantPreviewCards.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件接口可选属性放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-
-import type { MessageFileLinkTarget } from "@zui/components/ai-elements/message";
-import { useWorkspaceServices } from "@zui/hooks/useWorkspaceServices";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
+import { FileTextIcon, GlobeIcon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import type { MessageFileLinkTarget } from "@zui/components/ai-elements/message.js";
+import { useWorkspaceServices } from "@zui/hooks/useWorkspaceServices.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import {
   type AssistantPreviewCard,
   type AssistantPreviewCardFileStatService,
   type AssistantPreviewCardsAutoOpenRequest,
   getAssistantPreviewCardFilePath,
   shouldOpenAssistantHtmlInBrowser,
-} from "@zui/lib/assistantPreviewCards";
+} from "@zui/lib/assistantPreviewCards.js";
 import {
   getAssistantPreviewCardsValidationSignature,
   resolveAssistantPreviewCardsWithoutFileStat,
   resolveValidatedAssistantPreviewCards,
-} from "@zui/lib/assistantPreviewCardValidation";
-import type { CodeViewerSource } from "@zui/lib/codeViewer";
-import {
-  FileDisplayIcon,
-  resolveFileDisplayDescriptor,
-} from "@zui/lib/fileDisplay";
-import { OpenSplitButton } from "@zui/OpenSplitButton";
-import { FileTextIcon, GlobeIcon } from "lucide-react";
-import {
-  type CSSProperties,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+} from "@zui/lib/assistantPreviewCardValidation.js";
+import type { CodeViewerSource } from "@zui/lib/codeViewer.js";
+import { FileDisplayIcon, resolveFileDisplayDescriptor } from "@zui/lib/fileDisplay.js";
+import { OpenSplitButton } from "@zui/OpenSplitButton.js";
 
 interface AssistantPreviewCardValidationResult {
   visibleCards: AssistantPreviewCard[];
@@ -44,9 +27,9 @@ interface AssistantPreviewCardValidationResult {
 function buildAssistantPreviewCardFileSource(
   card: Extract<AssistantPreviewCard, { type: "markdown" | "file" }>,
   scope: {
-    workspacePath?: string | undefined;
-    workspaceIdentity?: string | undefined;
-    workspaceRemoteSessionId?: string | undefined;
+    workspacePath?: string;
+    workspaceIdentity?: string;
+    workspaceRemoteSessionId?: string;
   },
 ): CodeViewerSource {
   return {
@@ -54,9 +37,7 @@ function buildAssistantPreviewCardFileSource(
     title: card.title,
     path: card.path,
     ...(scope.workspacePath ? { workspacePath: scope.workspacePath } : {}),
-    ...(scope.workspaceIdentity
-      ? { workspaceIdentity: scope.workspaceIdentity }
-      : {}),
+    ...(scope.workspaceIdentity ? { workspaceIdentity: scope.workspaceIdentity } : {}),
     ...(scope.workspaceRemoteSessionId
       ? { workspaceRemoteSessionId: scope.workspaceRemoteSessionId }
       : {}),
@@ -67,9 +48,9 @@ function buildAssistantPreviewPptxAutoOpenRequest(
   visibleCards: readonly AssistantPreviewCard[],
   baseKey: string,
   scope: {
-    workspacePath?: string | undefined;
-    workspaceIdentity?: string | undefined;
-    workspaceRemoteSessionId?: string | undefined;
+    workspacePath?: string;
+    workspaceIdentity?: string;
+    workspaceRemoteSessionId?: string;
   },
 ): AssistantPreviewCardsAutoOpenRequest | null {
   const pptxCards = visibleCards.filter(
@@ -81,40 +62,29 @@ function buildAssistantPreviewPptxAutoOpenRequest(
   return {
     // stat 结果对应的最终卡片签名必须进入一次性 key；同一 turn 的候选若晚到，
     // 不会把旧的校验投影误当成已经消费的新结果。
-    key: JSON.stringify([
-      baseKey,
-      getAssistantPreviewCardsValidationSignature(pptxCards),
-    ]),
-    sources: pptxCards.map((card) =>
-      buildAssistantPreviewCardFileSource(card, scope),
-    ),
+    key: JSON.stringify([baseKey, getAssistantPreviewCardsValidationSignature(pptxCards)]),
+    sources: pptxCards.map((card) => buildAssistantPreviewCardFileSource(card, scope)),
   };
 }
 
 interface AssistantPreviewCardsProps {
   cards: AssistantPreviewCard[];
-  workspacePath?: string | undefined;
-  workspaceIdentity?: string | undefined;
-  workspaceRemoteSessionId?: string | undefined;
-  onOpenBrowserUrl?: ((url: string) => void | undefined) | undefined;
-  onOpenFileLink?:
-    | ((target: MessageFileLinkTarget) => void | undefined)
-    | undefined;
-  onOpenCodeViewer?:
-    | ((source: CodeViewerSource) => void | undefined)
-    | undefined;
+  workspacePath?: string;
+  workspaceIdentity?: string;
+  workspaceRemoteSessionId?: string;
+  onOpenBrowserUrl?: (url: string) => void;
+  onOpenFileLink?: (target: MessageFileLinkTarget) => void;
+  onOpenCodeViewer?: (source: CodeViewerSource) => void;
   /** Desktop 完成态生成产物：批量打开本轮已通过校验的 PPTX。 */
-  autoOpenPptxKey?: string | undefined;
-  onAutoOpenPptx?:
-    | ((request: AssistantPreviewCardsAutoOpenRequest) => void | undefined)
-    | undefined;
+  autoOpenPptxKey?: string;
+  onAutoOpenPptx?: (request: AssistantPreviewCardsAutoOpenRequest) => void;
 }
 
 function shouldRenderAssistantPreviewCardAsFile(
   card: AssistantPreviewCard,
   scope: {
-    workspaceIdentity?: string | undefined;
-    workspaceRemoteSessionId?: string | undefined;
+    workspaceIdentity?: string;
+    workspaceRemoteSessionId?: string;
   },
 ): boolean {
   const filePath = getAssistantPreviewCardFilePath(card);
@@ -129,9 +99,9 @@ function shouldRenderAssistantPreviewCardAsFile(
 function useAssistantPreviewCardValidation(
   cards: AssistantPreviewCard[],
   scope: {
-    workspacePath?: string | undefined;
-    workspaceIdentity?: string | undefined;
-    workspaceRemoteSessionId?: string | undefined;
+    workspacePath?: string;
+    workspaceIdentity?: string;
+    workspaceRemoteSessionId?: string;
   } = {},
 ): AssistantPreviewCardValidationResult {
   const { fileService } = useWorkspaceServices(
@@ -139,10 +109,7 @@ function useAssistantPreviewCardValidation(
     scope.workspaceRemoteSessionId,
     scope.workspaceIdentity,
   );
-  const cardsSignature = useMemo(
-    () => getAssistantPreviewCardsValidationSignature(cards),
-    [cards],
-  );
+  const cardsSignature = useMemo(() => getAssistantPreviewCardsValidationSignature(cards), [cards]);
   const validationCardsRef = useRef({ cards, signature: cardsSignature });
   // timeline 重建时会传入内容相同但引用不同的 cards 数组，effect 若依赖数组引用会重复发起 RPC。
   // 只在语义签名变化时替换校验快照；workspace fileService 变化仍会使用同一快照重新校验。
@@ -155,7 +122,7 @@ function useAssistantPreviewCardValidation(
     [validationCards],
   );
   const [validationResult, setValidationResult] = useState<{
-    fileService: AssistantPreviewCardFileStatService | null | undefined;
+    fileService: AssistantPreviewCardFileStatService | null;
     signature: string;
     visibleCards: AssistantPreviewCard[];
   }>(() => ({
@@ -173,12 +140,7 @@ function useAssistantPreviewCardValidation(
 
     // 历史消息切换时，上一条消息的已通过 stat 结果会在 effect 清理前短暂复用。
     // 这里按当前候选签名批量二次校验，全部算完后一次发布，避免文件卡先闪一批再被替换。
-    // 适配注记（P9）：宿主 stub 下 fileService 可为 undefined；类型位按非空断言收窄，
-    // 运行时 stat 调用在 undefined 上抛错走下方 rejection 分支（可见卡清空），降级语义不变。
-    void resolveValidatedAssistantPreviewCards(
-      validationCards,
-      fileService as AssistantPreviewCardFileStatService,
-    ).then(
+    void resolveValidatedAssistantPreviewCards(validationCards, fileService).then(
       (visibleCards) => {
         if (disposed) return;
         setValidationResult({
@@ -210,8 +172,7 @@ function useAssistantPreviewCardValidation(
   }
 
   const hasCurrentValidation =
-    validationResult.fileService === fileService &&
-    validationResult.signature === cardsSignature;
+    validationResult.fileService === fileService && validationResult.signature === cardsSignature;
 
   return {
     visibleCards: hasCurrentValidation ? validationResult.visibleCards : [],
@@ -240,15 +201,11 @@ export function AssistantPreviewCards({
   useEffect(() => {
     if (!settled || !autoOpenPptxKey || !onAutoOpenPptx) return;
 
-    const request = buildAssistantPreviewPptxAutoOpenRequest(
-      visibleCards,
-      autoOpenPptxKey,
-      {
-        workspacePath,
-        workspaceIdentity,
-        workspaceRemoteSessionId,
-      },
-    );
+    const request = buildAssistantPreviewPptxAutoOpenRequest(visibleCards, autoOpenPptxKey, {
+      workspacePath,
+      workspaceIdentity,
+      workspaceRemoteSessionId,
+    });
     if (!request) return;
 
     // 自动打开只能消费最终可见卡片；这样与 15 个候选、10 张上限和 Host stat
@@ -302,16 +259,12 @@ function AssistantPreviewCardRow({
   card: AssistantPreviewCard;
   animationDelayMs: number;
   subtitle: string;
-  workspacePath?: string | undefined;
-  workspaceIdentity?: string | undefined;
-  workspaceRemoteSessionId?: string | undefined;
-  onOpenBrowserUrl?: ((url: string) => void | undefined) | undefined;
-  onOpenFileLink?:
-    | ((target: MessageFileLinkTarget) => void | undefined)
-    | undefined;
-  onOpenCodeViewer?:
-    | ((source: CodeViewerSource) => void | undefined)
-    | undefined;
+  workspacePath?: string;
+  workspaceIdentity?: string;
+  workspaceRemoteSessionId?: string;
+  onOpenBrowserUrl?: (url: string) => void;
+  onOpenFileLink?: (target: MessageFileLinkTarget) => void;
+  onOpenCodeViewer?: (source: CodeViewerSource) => void;
 }) {
   const filePath = getAssistantPreviewCardFilePath(card);
   const renderAsFile = shouldRenderAssistantPreviewCardAsFile(card, {
@@ -350,12 +303,8 @@ function AssistantPreviewCardRow({
         )}
       </div>
       <div className="min-w-0 flex flex-1 flex-col gap-1">
-        <div className="truncate text-ui-base font-medium leading-5">
-          {card.title}
-        </div>
-        <div className="truncate text-ui-base leading-5 text-foreground-subtlest">
-          {subtitle}
-        </div>
+        <div className="truncate text-ui-base font-medium leading-5">{card.title}</div>
+        <div className="truncate text-ui-base leading-5 text-foreground-subtlest">{subtitle}</div>
       </div>
       <OpenSplitButton
         target={
@@ -366,9 +315,7 @@ function AssistantPreviewCardRow({
                 // website 卡有两个来源——html 引用卡（file://）与 localhost
                 // 预览卡（http(s) 活服务）。localPath 直开只对前者生效；localhost 卡
                 // 必须继续把 URL 交给浏览器，否则丢路由/动态内容。
-                localPath: card.url.startsWith("file:")
-                  ? card.filePath
-                  : undefined,
+                localPath: card.url.startsWith("file:") ? card.filePath : undefined,
               }
             : {
                 type: "file",

@@ -1,20 +1,12 @@
-/**
- * zcode 照搬：`@/v4/conversationTurnFlowItems.ts`（references/zcode/packages/ui/src/v4/conversationTurnFlowItems.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
 import type {
   AssistantTextRow,
   ConversationRow,
   TurnHeaderRow,
   UserInputRow,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import type { ConversationCuaGroupRenderItem } from "@zui/v4/conversationCuaGroups";
+} from "@zcode/shared/zcode-protocol-v4";
+import type { ConversationCuaGroupRenderItem } from "@zui/v4/conversationCuaGroups.js";
 
-export type AssistantWorkRow = Exclude<
-  ConversationRow,
-  TurnHeaderRow | UserInputRow
->;
+export type AssistantWorkRow = Exclude<ConversationRow, TurnHeaderRow | UserInputRow>;
 
 export type ConversationTurnFlowItem =
   | { kind: "userInput"; row: UserInputRow }
@@ -59,12 +51,8 @@ export function buildConversationFlowItems(options: {
   latestAssistantTextRow?: AssistantTextRow;
   timelineOnly: boolean;
 }): ConversationTurnFlowItem[] {
-  const historyRowIds = new Set(
-    options.assistantHistoryRows.map((row) => row.rowId),
-  );
-  const followingRowIds = new Set(
-    options.assistantFollowingRows.map((row) => row.rowId),
-  );
+  const historyRowIds = new Set(options.assistantHistoryRows.map((row) => row.rowId));
+  const followingRowIds = new Set(options.assistantFollowingRows.map((row) => row.rowId));
   const tailRowIds = new Set(options.assistantTailRows.map((row) => row.rowId));
   const items: ConversationTurnFlowItem[] = [];
 
@@ -80,8 +68,7 @@ export function buildConversationFlowItems(options: {
     if (tailRowIds.has(row.rowId)) continue;
     if (
       isAssistantTextRow(row) &&
-      (row.rowId === options.visibleAssistantTextRow?.rowId ||
-        !historyRowIds.has(row.rowId)) &&
+      (row.rowId === options.visibleAssistantTextRow?.rowId || !historyRowIds.has(row.rowId)) &&
       !followingRowIds.has(row.rowId) &&
       !tailRowIds.has(row.rowId) &&
       !options.timelineOnly
@@ -95,9 +82,7 @@ export function buildConversationFlowItems(options: {
     }
     appendGroupedAssistantFlowItem(
       items,
-      historyRowIds.has(row.rowId) && !options.timelineOnly
-        ? "assistantHistory"
-        : "assistantWork",
+      historyRowIds.has(row.rowId) && !options.timelineOnly ? "assistantHistory" : "assistantWork",
       row,
     );
   }

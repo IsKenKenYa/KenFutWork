@@ -1,9 +1,3 @@
-/**
- * zcode 照搬：`@/SlashCommandPlugin.tsx`（references/zcode/packages/ui/src/SlashCommandPlugin.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀（Turbopack 无 .js→.ts
- * 试探）；源文件自带头注保留于下。
- */
 /* eslint-disable max-lines -- Lexical slash 插件的 trigger/面板/键盘导航同属一个协议状态机，oxfmt 换行后略超 400 行。 */
 /**
  * SlashCommandPlugin — Lexical trigger 面板插件
@@ -13,13 +7,10 @@
  * 2. 面板通过 portal 渲染到输入区上方的独立挂载层，展开时直接覆盖消息区
  * 3. 支持 Esc 关闭、上下键切换、Enter / Tab 选中，以及跟随输入做模糊搜索
  */
-
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ZCodeProvider } from "@zcode/shared";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
-import { useSkills } from "@zui/hooks/useSkills";
-import { useSubagents } from "@zui/hooks/useSubagents";
-import { filterSkillsForProvider } from "@zui/lib/skillSourceFilter";
-import { buildSlashApplyMentionPayload } from "@zui/lib/slashApplyMentionPayload";
-import type { ZCodeProvider } from "@zui/lib/zcode-shared";
+import { createPortal } from "react-dom";
 import {
   $createTextNode,
   BLUR_COMMAND,
@@ -31,39 +22,41 @@ import {
   KEY_ESCAPE_COMMAND,
   KEY_TAB_COMMAND,
 } from "lexical";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { useSlashCommands } from "./hooks/useSlashCommands";
-import { useZCodeIntl } from "./i18n/IntlProvider";
+import { useSubagents } from "@zui/hooks/useSubagents.js";
+import { useSkills } from "@zui/hooks/useSkills.js";
+import { buildSlashApplyMentionPayload } from "@zui/lib/slashApplyMentionPayload.js";
+import { filterSkillsForProvider } from "@zui/lib/skillSourceFilter.js";
+import { useZCodeIntl } from "./i18n/IntlProvider.js";
+import { useSlashCommands } from "./hooks/useSlashCommands.js";
+import { $createPromptMentionNode } from "./mentions/nodes/PromptMentionNode.js";
 import {
-  type ActivePromptInputTrigger,
   extractActivePromptInputTrigger,
   filterPromptInputSuggestions,
   getActivePromptInputTokenTailLength,
   getBestPromptInputSuggestionIndex,
   getPromptInputTriggerSignature,
+  type ActivePromptInputTrigger,
   type PromptInputSuggestionItem,
-} from "./lib/promptInputTriggers";
-import { shouldSlashPanelProcessUpdate } from "./lib/slashPanelUpdateFilter";
-import {
-  type ActivePromptInputTokenSnapshot,
-  getActivePromptInputTokenReplacementRange,
-  reconcileActivePromptInputTokenSnapshot,
-} from "./mentions/activePromptInputToken";
-import { MentionPanel } from "./mentions/components/MentionPanel";
-import { getCurrentTextNodeSelection } from "./mentions/mentionHelpers";
-import { $createPromptMentionNode } from "./mentions/nodes/PromptMentionNode";
+} from "./lib/promptInputTriggers.js";
+import { MentionPanel } from "./mentions/components/MentionPanel.js";
 import {
   buildAppSlashCommandSuggestions,
   buildSkillSuggestions,
-  buildSlashSuggestions,
   buildSubagentSuggestions,
+  buildSlashSuggestions,
   getTextAroundCursor,
   isAppSlashCommandSuggestion,
   normalizeSlashCommandValue,
   type SlashCommandPluginProps,
-} from "./slashCommandHelpers";
-import { useSlashCommandMentionPanelSections } from "./slashCommandPanelSections";
+} from "./slashCommandHelpers.js";
+import { useSlashCommandMentionPanelSections } from "./slashCommandPanelSections.js";
+import { getCurrentTextNodeSelection } from "./mentions/mentionHelpers.js";
+import {
+  getActivePromptInputTokenReplacementRange,
+  reconcileActivePromptInputTokenSnapshot,
+  type ActivePromptInputTokenSnapshot,
+} from "./mentions/activePromptInputToken.js";
+import { shouldSlashPanelProcessUpdate } from "./lib/slashPanelUpdateFilter.js";
 
 export function SlashCommandPlugin({
   workspacePath,
@@ -77,8 +70,7 @@ export function SlashCommandPlugin({
 }: SlashCommandPluginProps & { provider: ZCodeProvider }) {
   const [editor] = useLexicalComposerContext();
   const { intl, locale } = useZCodeIntl();
-  const [activeTrigger, setActiveTrigger] =
-    useState<ActivePromptInputTrigger | null>(null);
+  const [activeTrigger, setActiveTrigger] = useState<ActivePromptInputTrigger | null>(null);
   // 远程 workspace 的 slashCommands 写在 workspaceIdentity 桶。
   // 这里只按 workspacePath 读取会落到 path 桶，表现为 ZCode Agent 已收到 available_commands_update 但 / 面板为空。
   const commands = useSlashCommands(workspacePath, workspaceIdentity);
@@ -102,55 +94,36 @@ export function SlashCommandPlugin({
   const activeSignatureRef = useRef<string | null>(null);
   const activeTokenRef = useRef<ActivePromptInputTokenSnapshot | null>(null);
   const commandSuggestions = useMemo(() => {
-    const excluded = new Set(
-      (excludedCommandNames ?? []).map(normalizeSlashCommandValue),
-    );
+    const excluded = new Set((excludedCommandNames ?? []).map(normalizeSlashCommandValue));
     const cliSuggestions = buildSlashSuggestions(commands).filter(
       (item) => !excluded.has(item.value),
     );
     // App 层命令追加在 CLI catalog 之后展示；CLI 已提供同名命令时以 CLI 为准，避免遮蔽。
     const cliValues = new Set(cliSuggestions.map((item) => item.value));
-    const appSuggestions = buildAppSlashCommandSuggestions(
-      appCommands ?? [],
-    ).filter((item) => !cliValues.has(item.value) && !excluded.has(item.value));
+    const appSuggestions = buildAppSlashCommandSuggestions(appCommands ?? []).filter(
+      (item) => !cliValues.has(item.value) && !excluded.has(item.value),
+    );
     return [...cliSuggestions, ...appSuggestions];
   }, [appCommands, commands, excludedCommandNames]);
-  const subagentSuggestions = useMemo(
-    () => buildSubagentSuggestions(agents),
-    [agents],
-  );
+  const subagentSuggestions = useMemo(() => buildSubagentSuggestions(agents), [agents]);
   const skillSuggestions = useMemo(
     () =>
       buildSkillSuggestions(
-        filterSkillsForProvider(skills, provider).filter(
-          (skill) => skill.enabled,
-        ),
+        filterSkillsForProvider(skills, provider).filter((skill) => skill.enabled),
         locale,
       ),
     [locale, provider, skills],
   );
   const filteredCommandSuggestions = useMemo(
-    () =>
-      filterPromptInputSuggestions(
-        commandSuggestions,
-        activeTrigger?.query ?? null,
-      ),
+    () => filterPromptInputSuggestions(commandSuggestions, activeTrigger?.query ?? null),
     [commandSuggestions, activeTrigger?.query],
   );
   const filteredSubagentSuggestions = useMemo(
-    () =>
-      filterPromptInputSuggestions(
-        subagentSuggestions,
-        activeTrigger?.query ?? null,
-      ),
+    () => filterPromptInputSuggestions(subagentSuggestions, activeTrigger?.query ?? null),
     [subagentSuggestions, activeTrigger?.query],
   );
   const filteredSkillSuggestions = useMemo(
-    () =>
-      filterPromptInputSuggestions(
-        skillSuggestions,
-        activeTrigger?.query ?? null,
-      ),
+    () => filterPromptInputSuggestions(skillSuggestions, activeTrigger?.query ?? null),
     [skillSuggestions, activeTrigger?.query],
   );
   const filteredSuggestions = useMemo(
@@ -159,11 +132,7 @@ export function SlashCommandPlugin({
       ...filteredSkillSuggestions,
       ...filteredSubagentSuggestions,
     ],
-    [
-      filteredCommandSuggestions,
-      filteredSkillSuggestions,
-      filteredSubagentSuggestions,
-    ],
+    [filteredCommandSuggestions, filteredSkillSuggestions, filteredSubagentSuggestions],
   );
   const activeSignature = useMemo(
     () => getPromptInputTriggerSignature(activeTrigger),
@@ -180,10 +149,7 @@ export function SlashCommandPlugin({
     // 例如 `/rev` 时 command 描述里的弱匹配可能排在 subagent 分组前面，导致无法默认选中最佳 subagent。
     // 这里按统一的模糊评分选择全局最佳项，同时不改变面板的分组展示顺序。
     setSelectedIndex(
-      getBestPromptInputSuggestionIndex(
-        filteredSuggestions,
-        activeTrigger?.query ?? null,
-      ),
+      getBestPromptInputSuggestionIndex(filteredSuggestions, activeTrigger?.query ?? null),
     );
   }, [activeSignature, activeTrigger?.query, filteredSuggestions]);
 
@@ -207,77 +173,74 @@ export function SlashCommandPlugin({
   }, [disabled]);
 
   useEffect(() => {
-    return editor.registerUpdateListener(
-      ({ dirtyElements, dirtyLeaves, editorState, tags }) => {
-        editorState.read(() => {
-          // 历史导航回填含 / 的历史条目时，不应重新打开 slash 面板，
-          // 否则面板以 COMMAND_PRIORITY_CRITICAL 注册方向键处理器，吞掉后续历史翻阅按键。
-          if (!shouldSlashPanelProcessUpdate(tags)) {
-            activeTokenRef.current = null;
-            setActiveTrigger(null);
-            return;
-          }
+    return editor.registerUpdateListener(({ dirtyElements, dirtyLeaves, editorState, tags }) => {
+      editorState.read(() => {
+        // 历史导航回填含 / 的历史条目时，不应重新打开 slash 面板，
+        // 否则面板以 COMMAND_PRIORITY_CRITICAL 注册方向键处理器，吞掉后续历史翻阅按键。
+        if (!shouldSlashPanelProcessUpdate(tags)) {
+          activeTokenRef.current = null;
+          setActiveTrigger(null);
+          return;
+        }
 
-          if (disabled) {
-            activeTokenRef.current = null;
-            setActiveTrigger(null);
-            return;
-          }
+        if (disabled) {
+          activeTokenRef.current = null;
+          setActiveTrigger(null);
+          return;
+        }
 
-          const selectionState = getCurrentTextNodeSelection();
-          const cursorText = selectionState ?? getTextAroundCursor();
-          if (!cursorText) {
-            activeTokenRef.current = null;
-            dismissedSignatureRef.current = null;
-            setActiveTrigger(null);
-            return;
-          }
+        const selectionState = getCurrentTextNodeSelection();
+        const cursorText = selectionState ?? getTextAroundCursor();
+        if (!cursorText) {
+          activeTokenRef.current = null;
+          dismissedSignatureRef.current = null;
+          setActiveTrigger(null);
+          return;
+        }
 
-          const nextActiveToken = selectionState
-            ? reconcileActivePromptInputTokenSnapshot(
-                activeTokenRef.current,
-                selectionState,
-                dirtyElements.size === 0 && dirtyLeaves.size === 0,
-              )
-            : null;
-          const nextActiveTrigger = selectionState
-            ? nextActiveToken
-            : extractActivePromptInputTrigger(cursorText.textBeforeCursor);
-          if (!nextActiveTrigger || nextActiveTrigger.trigger !== "/") {
-            activeTokenRef.current = null;
-            dismissedSignatureRef.current = null;
-            setActiveTrigger(null);
-            return;
-          }
-          activeTokenRef.current = nextActiveToken;
+        const nextActiveToken = selectionState
+          ? reconcileActivePromptInputTokenSnapshot(
+              activeTokenRef.current,
+              selectionState,
+              dirtyElements.size === 0 && dirtyLeaves.size === 0,
+            )
+          : null;
+        const nextActiveTrigger = selectionState
+          ? nextActiveToken
+          : extractActivePromptInputTrigger(cursorText.textBeforeCursor);
+        if (!nextActiveTrigger || nextActiveTrigger.trigger !== "/") {
+          activeTokenRef.current = null;
+          dismissedSignatureRef.current = null;
+          setActiveTrigger(null);
+          return;
+        }
+        activeTokenRef.current = nextActiveToken;
 
-          const nextSignature =
-            getPromptInputTriggerSignature(nextActiveTrigger);
+        const nextSignature = getPromptInputTriggerSignature(nextActiveTrigger);
+        if (
+          dismissedSignatureRef.current !== null &&
+          dismissedSignatureRef.current !== nextSignature
+        ) {
+          dismissedSignatureRef.current = null;
+        }
+
+        if (dismissedSignatureRef.current === nextSignature) {
+          setActiveTrigger(null);
+          return;
+        }
+
+        setActiveTrigger((current) => {
           if (
-            dismissedSignatureRef.current !== null &&
-            dismissedSignatureRef.current !== nextSignature
+            current?.trigger === nextActiveTrigger.trigger &&
+            current.query === nextActiveTrigger.query
           ) {
-            dismissedSignatureRef.current = null;
+            return current;
           }
 
-          if (dismissedSignatureRef.current === nextSignature) {
-            setActiveTrigger(null);
-            return;
-          }
-
-          setActiveTrigger((current) => {
-            if (
-              current?.trigger === nextActiveTrigger.trigger &&
-              current.query === nextActiveTrigger.query
-            ) {
-              return current;
-            }
-
-            return nextActiveTrigger;
-          });
+          return nextActiveTrigger;
         });
-      },
-    );
+      });
+    });
   }, [disabled, editor]);
 
   const applySuggestion = useCallback(
@@ -301,8 +264,7 @@ export function SlashCommandPlugin({
         }
 
         const tokenStart =
-          snapshotRange?.start ??
-          selectionState.cursorOffset - activeSlashTrigger.query.length - 1;
+          snapshotRange?.start ?? selectionState.cursorOffset - activeSlashTrigger.query.length - 1;
         const tokenEnd =
           snapshotRange?.end ??
           selectionState.cursorOffset +
@@ -324,9 +286,7 @@ export function SlashCommandPlugin({
           return;
         }
 
-        const mentionNode = $createPromptMentionNode(
-          buildSlashApplyMentionPayload(suggestion),
-        );
+        const mentionNode = $createPromptMentionNode(buildSlashApplyMentionPayload(suggestion));
         const trailingWhitespace = $createTextNode(" ");
         selectionState.selection.insertNodes([mentionNode, trailingWhitespace]);
         trailingWhitespace.selectEnd();
@@ -338,10 +298,7 @@ export function SlashCommandPlugin({
       setSelectedIndex(0);
       if (isAppCommand) {
         appCommands
-          ?.find(
-            (command) =>
-              normalizeSlashCommandValue(command.value) === suggestion.value,
-          )
+          ?.find((command) => normalizeSlashCommandValue(command.value) === suggestion.value)
           ?.run();
         return;
       }
@@ -379,9 +336,7 @@ export function SlashCommandPlugin({
 
         event?.preventDefault();
         event?.stopPropagation();
-        setSelectedIndex((prev) =>
-          Math.min(prev + 1, filteredSuggestions.length - 1),
-        );
+        setSelectedIndex((prev) => Math.min(prev + 1, filteredSuggestions.length - 1));
         return true;
       },
       COMMAND_PRIORITY_CRITICAL,
@@ -466,13 +421,7 @@ export function SlashCommandPlugin({
       unregisterEscape();
       unregisterBlur();
     };
-  }, [
-    editor,
-    filteredSuggestions.length,
-    isOpen,
-    selectSuggestion,
-    selectedIndex,
-  ]);
+  }, [editor, filteredSuggestions.length, isOpen, selectSuggestion, selectedIndex]);
 
   const panelTitle = intl.formatMessage({ id: "chat.slash.title" });
   const hasActiveQuery = (activeTrigger?.query ?? "").trim().length > 0;

@@ -1,16 +1,5 @@
-/**
- * zcode 照搬：`@/lib/markdownFileLink.ts`（references/zcode/packages/ui/src/lib/markdownFileLink.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-
-import { stripBalancedAssistantPathQuotes } from "@zui/lib/assistantPathQuotes";
-import {
-  decodeFilePathUriEscapes,
-  isAbsoluteFilePath,
-  joinFilePath,
-} from "@zui/lib/path";
+import { decodeFilePathUriEscapes, isAbsoluteFilePath, joinFilePath } from "@zui/lib/path.js";
+import { stripBalancedAssistantPathQuotes } from "@zui/lib/assistantPathQuotes.js";
 
 interface ParsedMarkdownFileLink {
   path: string;
@@ -20,7 +9,7 @@ interface ParsedMarkdownFileLink {
 
 export interface MarkdownFileLinkResolveOptions {
   /** 当前 workspace Host 报告的用户 Home；Renderer 不自行读取本机 Home。 */
-  homePath?: string | undefined;
+  homePath?: string;
 }
 
 const LINE_AND_COLUMN_SUFFIX_RE = /^(?<path>.+):(?<line>\d+):(?<column>\d+)$/;
@@ -75,21 +64,14 @@ function isUnsupportedNamedHomePath(path: string): boolean {
   return /^~[^\\/]+[\\/]/.test(path);
 }
 
-function resolveHomeRelativeFilePath(
-  path: string,
-  homePath: string | undefined,
-): string | null {
+function resolveHomeRelativeFilePath(path: string, homePath: string | undefined): string | null {
   const homeRelativePath = normalizeHomeRelativePath(path);
   if (!homeRelativePath || !homePath || !isAbsoluteFilePath(homePath)) {
     return null;
   }
 
-  const separator =
-    homePath.includes("\\") && !homePath.includes("/") ? "\\" : "/";
-  return joinFilePath(
-    homePath,
-    homeRelativePath.slice(2).replace(/[\\/]/g, separator),
-  );
+  const separator = homePath.includes("\\") && !homePath.includes("/") ? "\\" : "/";
+  return joinFilePath(homePath, homeRelativePath.slice(2).replace(/[\\/]/g, separator));
 }
 
 function isBareWorkspaceRelativeFileHref(href: string): boolean {
@@ -106,10 +88,7 @@ function isBareWorkspaceRelativeFileHref(href: string): boolean {
   return href.includes("/") || href.includes("\\");
 }
 
-function isAbsoluteMarkdownFileHref(
-  rawHref: string,
-  normalizedHref: string,
-): boolean {
+function isAbsoluteMarkdownFileHref(rawHref: string, normalizedHref: string): boolean {
   return (
     isAbsoluteFilePath(rawHref) ||
     isAbsoluteFilePath(normalizedHref) ||
@@ -123,19 +102,12 @@ function isLikelyUnixAbsoluteFilePath(path: string): boolean {
   }
 
   const firstSegment = path.slice(1).split("/")[0];
-  return Boolean(
-    firstSegment && COMMON_UNIX_ABSOLUTE_ROOT_SEGMENTS.has(firstSegment),
-  );
+  return Boolean(firstSegment && COMMON_UNIX_ABSOLUTE_ROOT_SEGMENTS.has(firstSegment));
 }
 
-function isPathInsideWorkspaceRoot(
-  path: string,
-  workspacePath: string,
-): boolean {
+function isPathInsideWorkspaceRoot(path: string, workspacePath: string): boolean {
   const normalizedPath = path.replace(/\\/g, "/").replace(/\/$/, "");
-  const normalizedWorkspacePath = workspacePath
-    .replace(/\\/g, "/")
-    .replace(/\/$/, "");
+  const normalizedWorkspacePath = workspacePath.replace(/\\/g, "/").replace(/\/$/, "");
   return (
     normalizedPath === normalizedWorkspacePath ||
     normalizedPath.startsWith(`${normalizedWorkspacePath}/`)
@@ -172,9 +144,7 @@ function normalizeMarkdownFilePath(path: string): string {
   return parseFileUrlPath(path) ?? decodeFilePathUriEscapes(path);
 }
 
-export function normalizeWorkspaceRelativeFilePath(
-  relativePath: string,
-): string | null {
+export function normalizeWorkspaceRelativeFilePath(relativePath: string): string | null {
   const segments: string[] = [];
   for (const segment of relativePath.replace(/\\/g, "/").split("/")) {
     if (!segment || segment === ".") {
@@ -199,27 +169,17 @@ function resolveContainedWorkspaceRelativePath(
   workspacePath: string,
   relativePath: string,
 ): string | null {
-  const normalizedRelativePath =
-    normalizeWorkspaceRelativeFilePath(relativePath);
+  const normalizedRelativePath = normalizeWorkspaceRelativeFilePath(relativePath);
   if (normalizedRelativePath === null) return null;
 
-  const separator =
-    workspacePath.includes("\\") && !workspacePath.includes("/") ? "\\" : "/";
-  return joinFilePath(
-    workspacePath,
-    normalizedRelativePath.replaceAll("/", separator),
-  );
+  const separator = workspacePath.includes("\\") && !workspacePath.includes("/") ? "\\" : "/";
+  return joinFilePath(workspacePath, normalizedRelativePath.replaceAll("/", separator));
 }
 
-export function parseMarkdownFileLinkTarget(
-  href: string,
-): ParsedMarkdownFileLink {
+export function parseMarkdownFileLinkTarget(href: string): ParsedMarkdownFileLink {
   // 只在路径归一化阶段解码一次；入口提前 decode 会让 `%2520` 变成 `%20`，
   // 再由 normalizeMarkdownFilePath 解码成空格，破坏文件名中的字面 percent-escape。
-  const normalizedHref = stripBalancedAssistantPathQuotes(href).replace(
-    /\\/g,
-    "/",
-  );
+  const normalizedHref = stripBalancedAssistantPathQuotes(href).replace(/\\/g, "/");
   const withHashLineMatch = normalizedHref.match(HASH_LINE_SUFFIX_RE);
   if (withHashLineMatch?.groups) {
     const { path, line } = withHashLineMatch.groups;
@@ -232,9 +192,7 @@ export function parseMarkdownFileLinkTarget(
     }
   }
 
-  const withLineAndColumnMatch = normalizedHref.match(
-    LINE_AND_COLUMN_SUFFIX_RE,
-  );
+  const withLineAndColumnMatch = normalizedHref.match(LINE_AND_COLUMN_SUFFIX_RE);
   if (withLineAndColumnMatch?.groups) {
     const { path, line, column } = withLineAndColumnMatch.groups;
     if (path && line && column) {
@@ -280,10 +238,7 @@ export function resolveMarkdownFileLink(
     return null;
   }
 
-  const homePath = resolveHomeRelativeFilePath(
-    parsedTarget.path,
-    options.homePath,
-  );
+  const homePath = resolveHomeRelativeFilePath(parsedTarget.path, options.homePath);
   if (isHomeRelativeFilePath(parsedTarget.path)) {
     return homePath
       ? {
@@ -297,11 +252,7 @@ export function resolveMarkdownFileLink(
     // `/C:/...` 只是在 Windows Markdown 渲染管线中绕过 harden 的内部格式。
     // 旧 guard 只把盘符 workspace 当成 Windows，遗漏统一路径工具已支持的 UNC。
     // Windows workspace 既可能是盘符也可能是反斜杠 UNC；以 `/` 开头的 Unix 路径仍须拒绝。
-    if (
-      !workspacePath ||
-      workspacePath.startsWith("/") ||
-      !isAbsoluteFilePath(workspacePath)
-    ) {
+    if (!workspacePath || workspacePath.startsWith("/") || !isAbsoluteFilePath(workspacePath)) {
       return null;
     }
     return {
@@ -325,10 +276,7 @@ export function resolveMarkdownFileLink(
       return null;
     }
 
-    const containedPath = resolveContainedWorkspaceRelativePath(
-      workspacePath,
-      relativePath,
-    );
+    const containedPath = resolveContainedWorkspaceRelativePath(workspacePath, relativePath);
     if (!containedPath) return null;
 
     return {

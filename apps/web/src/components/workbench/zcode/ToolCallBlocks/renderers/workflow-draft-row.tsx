@@ -1,28 +1,18 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/workflow-draft-row.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/workflow-draft-row.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件接口可选属性放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-
-import {
-  CodeBlock,
-  CodeBlockHeader,
-} from "@zui/components/ai-elements/code-block";
-import { cn } from "@zui/components/lib/utils";
-import { DRAFT_FEEDBACK_DOT } from "@zui/components/workflow-graph/run-status-presentation";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { ToolCallCreateWorkflowDisplay } from "@zui/lib/zcode-shared/zcode-protocol-v4";
+import { useMemo, type ReactNode } from "react";
+import type { ToolCallCreateWorkflowDisplay } from "@zcode/shared/zcode-protocol-v4";
+import { CodeBlock, CodeBlockHeader } from "@zui/components/ai-elements/code-block.js";
+import { cn } from "@zui/components/lib/utils.js";
+import { DRAFT_FEEDBACK_DOT } from "@zui/components/workflow-graph/run-status-presentation.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { WorkflowDraftPosition } from "@zui/ToolCallBlocks/shared.js";
 import {
   formatWorkflowFeedbackTooltip,
   workflowDiagnosticLines,
-} from "@zui/ToolCallBlocks/renderers/createWorkflowDisplay";
+} from "@zui/ToolCallBlocks/renderers/createWorkflowDisplay.js";
 import {
   WorkflowDiagnosticsSection,
   workflowFeedbackLedeMessageId,
-} from "@zui/ToolCallBlocks/renderers/workflow-diagnostics";
-import type { WorkflowDraftPosition } from "@zui/ToolCallBlocks/shared";
-import { type ReactNode, useMemo } from "react";
+} from "@zui/ToolCallBlocks/renderers/workflow-diagnostics.js";
 
 /**
  * 编译反馈行在 ToolLayout 各槽位里说的话。
@@ -64,10 +54,7 @@ export function useWorkflowDraftRowSlots({
 }: WorkflowDraftRowInput): WorkflowDraftRowSlots {
   const { intl } = useZCodeIntl();
   const ordinal = workflowDraftOrdinalShown(draft, { compileErrors, inFlight });
-  const inFlightOrdinal = workflowDraftOrdinalShown(draft, {
-    compileErrors: false,
-    inFlight,
-  });
+  const inFlightOrdinal = workflowDraftOrdinalShown(draft, { compileErrors: false, inFlight });
   const inFlightOrdinalText =
     inFlightOrdinal === undefined
       ? undefined
@@ -83,38 +70,23 @@ export function useWorkflowDraftRowSlots({
 
   // ToolLayout 是 memo 组件：交给它的节点必须按值记忆，否则每次父级渲染都会整行重渲染。
   const secondaryText = useMemo(
-    () =>
-      ordinal === undefined ? undefined : (
-        <WorkflowDraftOrdinal ordinal={ordinal} />
-      ),
+    () => (ordinal === undefined ? undefined : <WorkflowDraftOrdinal ordinal={ordinal} />),
     [ordinal],
   );
   const statusLabel = useMemo(
     () =>
-      words === undefined ? undefined : (
-        <span data-testid="workflow-draft-status">{words}</span>
-      ),
+      words === undefined ? undefined : <span data-testid="workflow-draft-status">{words}</span>,
     [words],
   );
   const statusIndicator = useMemo(
-    () =>
-      compileErrors ? <WorkflowDraftLamp superseded={superseded} /> : undefined,
+    () => (compileErrors ? <WorkflowDraftLamp superseded={superseded} /> : undefined),
     [compileErrors, superseded],
   );
   const statusTooltip = useMemo(
-    () =>
-      compileErrors
-        ? formatWorkflowFeedbackTooltip(lede, diagnostics)
-        : undefined,
+    () => (compileErrors ? formatWorkflowFeedbackTooltip(lede, diagnostics) : undefined),
     [compileErrors, diagnostics, lede],
   );
-  return {
-    secondaryText,
-    statusLabel,
-    statusIndicator,
-    statusTooltip,
-    inFlightOrdinalText,
-  };
+  return { secondaryText, statusLabel, statusIndicator, statusTooltip, inFlightOrdinalText };
 }
 
 /**
@@ -134,10 +106,7 @@ export function WorkflowFeedbackContent({
 }) {
   // 按内容记忆：display 不变就是同一个数组，代码块的注入样式不会跟着重建。
   const flaggedLines = useMemo(
-    () =>
-      display?.ok === false
-        ? workflowDiagnosticLines(display.diagnostics)
-        : undefined,
+    () => (display?.ok === false ? workflowDiagnosticLines(display.diagnostics) : undefined),
     [display],
   );
   return (
@@ -149,10 +118,8 @@ export function WorkflowFeedbackContent({
             contentClassName="max-h-80 overflow-auto"
             code={scriptText}
             language="typescript"
-            showLineNumbers={true}
-            {...(flaggedLines === undefined
-              ? {}
-              : { markedLines: flaggedLines })}
+            showLineNumbers
+            {...(flaggedLines === undefined ? {} : { markedLines: flaggedLines })}
           >
             <CodeBlockHeader className="pl-3 pr-2 pt-2" language="typescript" />
           </CodeBlock>
@@ -191,10 +158,7 @@ function workflowDraftOrdinalShown(
 function WorkflowDraftOrdinal({ ordinal }: { ordinal: number }) {
   const { intl } = useZCodeIntl();
   return (
-    <span
-      className="shrink-0 whitespace-nowrap tabular-nums"
-      data-testid="workflow-draft-ordinal"
-    >
+    <span className="shrink-0 whitespace-nowrap tabular-nums" data-testid="workflow-draft-ordinal">
       {intl.formatMessage(
         { id: "chat.toolCall.workflow.draftOrdinal" },
         { ordinal: String(ordinal) },
@@ -210,7 +174,7 @@ function WorkflowDraftOrdinal({ ordinal }: { ordinal: number }) {
 function WorkflowDraftLamp({ superseded }: { superseded: boolean }) {
   return (
     <span
-      aria-hidden={true}
+      aria-hidden
       className={cn(
         "wf-lamp size-2 shrink-0 rounded-full",
         superseded ? DRAFT_FEEDBACK_DOT.settled : DRAFT_FEEDBACK_DOT.open,

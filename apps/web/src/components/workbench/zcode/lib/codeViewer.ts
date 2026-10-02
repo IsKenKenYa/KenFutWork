@@ -1,35 +1,26 @@
-/**
- * zcode 照搬：`@/lib/codeViewer.ts`（references/zcode/packages/ui/src/lib/codeViewer.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）；源文件自带头注保留于下。
- */
 /* eslint-disable max-lines -- codeViewer 集中维护文件、文本、图片和 diff 预览提取；本次只收敛 tool identity，不顺手拆文件以免扩大回归面。 */
-
-import type { CodeViewerWorkspaceScope } from "@zui/lib/codeViewerWorkspaceScope";
+import type { BundledLanguage } from "shiki";
+import { getMediaPreviewFormat, type MediaPreviewKind } from "@zcode/shared";
+import type { TaskChatToolCall as ChatToolCall } from "@zui/lib/taskChatMessageTypes.js";
+import type { CodeViewerWorkspaceScope } from "@zui/lib/codeViewerWorkspaceScope.js";
 import {
   decodeFilePathUriEscapes,
   getPathLeaf,
   isAbsoluteFilePath,
   joinFilePath,
-} from "@zui/lib/path";
-import type { TaskChatToolCall as ChatToolCall } from "@zui/lib/taskChatMessageTypes";
+} from "@zui/lib/path.js";
 import {
   buildUnifiedDiff,
   extractBeforeAfter,
   extractStructuredDiff,
-} from "@zui/lib/toolDiffPreview";
+} from "@zui/lib/toolDiffPreview.js";
 import {
   isFileContentWriteToolCall,
   isFileDiffToolCall,
   resolveToolCallIdentity,
-} from "@zui/lib/toolIdentity";
-import {
-  getMediaPreviewFormat,
-  type MediaPreviewKind,
-} from "@zui/lib/zcode-shared";
-import type { BundledLanguage } from "shiki";
+} from "@zui/lib/toolIdentity.js";
 
-export { buildUnifiedDiff } from "@zui/lib/toolDiffPreview";
+export { buildUnifiedDiff } from "@zui/lib/toolDiffPreview.js";
 
 export const FILE_VIEWER_MAX_TEXT_BYTES = 256 * 1024;
 export interface FileCodeViewerSource extends CodeViewerWorkspaceScope {
@@ -69,8 +60,7 @@ export interface PatchCodeViewerSource extends CodeViewerWorkspaceScope {
   patch: string;
 }
 
-export interface MultiFileDiffCodeViewerSource
-  extends CodeViewerWorkspaceScope {
+export interface MultiFileDiffCodeViewerSource extends CodeViewerWorkspaceScope {
   type: "multi-file-diff";
   title: string;
   path?: string;
@@ -188,10 +178,7 @@ function normalizeToolLabel(label: string, fallbackPath?: string) {
   return "Tool Preview";
 }
 
-function findStringField(
-  value: unknown,
-  keys: readonly string[],
-): string | undefined {
+function findStringField(value: unknown, keys: readonly string[]): string | undefined {
   if (!isRecord(value)) {
     return undefined;
   }
@@ -215,12 +202,7 @@ function extractDiffText(value: unknown): string | undefined {
     return value;
   }
 
-  return findStringField(value, [
-    "diff",
-    "patch",
-    "unifiedDiff",
-    "unified_diff",
-  ]);
+  return findStringField(value, ["diff", "patch", "unifiedDiff", "unified_diff"]);
 }
 
 function extractContentText(value: unknown): string | undefined {
@@ -261,7 +243,7 @@ function buildTextPreview(
   return {
     type: "text",
     title,
-    ...(path === undefined ? {} : { path }),
+    path,
     content,
     language: inferCodeLanguage(path, content),
   };
@@ -280,15 +262,10 @@ function resolveViewerPath(rawPath: string | undefined, workspacePath: string) {
   return joinFilePath(workspacePath, decodedPath);
 }
 
-export function inferCodeLanguage(
-  path?: string,
-  contentHint?: string,
-): BundledLanguage {
+export function inferCodeLanguage(path?: string, contentHint?: string): BundledLanguage {
   if (path) {
     const leaf = getPathLeaf(path);
-    const extension = leaf.includes(".")
-      ? leaf.split(".").pop()?.toLowerCase()
-      : undefined;
+    const extension = leaf.includes(".") ? leaf.split(".").pop()?.toLowerCase() : undefined;
     if (extension && EXTENSION_TO_LANGUAGE[extension]) {
       return EXTENSION_TO_LANGUAGE[extension];
     }
@@ -317,9 +294,7 @@ export function inferImageMediaType(path?: string): string | null {
   }
 
   const leaf = getPathLeaf(path);
-  const extension = leaf.includes(".")
-    ? leaf.split(".").pop()?.toLowerCase()
-    : undefined;
+  const extension = leaf.includes(".") ? leaf.split(".").pop()?.toLowerCase() : undefined;
   if (!extension) {
     return null;
   }
@@ -353,20 +328,14 @@ export function isPptxPreviewPath(path?: string): boolean {
   return getPathLeaf(path).toLowerCase().endsWith(".pptx");
 }
 
-function isUsableDiffFileTarget(
-  target: string | null | undefined,
-): target is string {
+function isUsableDiffFileTarget(target: string | null | undefined): target is string {
   const trimmedTarget = target?.trim();
   return Boolean(trimmedTarget && trimmedTarget !== "/dev/null");
 }
 
 function unquoteDiffPath(path: string): string {
   const trimmedPath = path.trim();
-  if (
-    trimmedPath.length >= 2 &&
-    trimmedPath.startsWith('"') &&
-    trimmedPath.endsWith('"')
-  ) {
+  if (trimmedPath.length >= 2 && trimmedPath.startsWith('"') && trimmedPath.endsWith('"')) {
     return trimmedPath.slice(1, -1);
   }
 
@@ -390,15 +359,11 @@ function parseDiffHeaderPath(headerValue: string): string | null {
 
   if (trimmedValue.startsWith('"')) {
     const quotedPathMatch = trimmedValue.match(/^"((?:\\.|[^"\\])+)"/);
-    return quotedPathMatch?.[1]
-      ? stripDiffPathPrefix(quotedPathMatch[1])
-      : null;
+    return quotedPathMatch?.[1] ? stripDiffPathPrefix(quotedPathMatch[1]) : null;
   }
 
   const pathWithoutTimestamp = trimmedValue.split("\t", 1)[0]?.trim();
-  return pathWithoutTimestamp
-    ? stripDiffPathPrefix(pathWithoutTimestamp)
-    : null;
+  return pathWithoutTimestamp ? stripDiffPathPrefix(pathWithoutTimestamp) : null;
 }
 
 function parseDiffGitLinePath(line: string): string | null {
@@ -412,12 +377,8 @@ function parseDiffGitLinePath(line: string): string | null {
     return normalizedNextPath;
   }
 
-  const normalizedPreviousPath = previousPath
-    ? stripDiffPathPrefix(previousPath)
-    : null;
-  return isUsableDiffFileTarget(normalizedPreviousPath)
-    ? normalizedPreviousPath
-    : null;
+  const normalizedPreviousPath = previousPath ? stripDiffPathPrefix(previousPath) : null;
+  return isUsableDiffFileTarget(normalizedPreviousPath) ? normalizedPreviousPath : null;
 }
 
 function getPatchHeaderFileTarget(patch: string): string | null {
@@ -489,9 +450,7 @@ export function createDiffSourceFilePreviewSource(
     title: getPathLeaf(path),
     path,
     ...(workspacePath ? { workspacePath } : {}),
-    ...(source.workspaceIdentity
-      ? { workspaceIdentity: source.workspaceIdentity }
-      : {}),
+    ...(source.workspaceIdentity ? { workspaceIdentity: source.workspaceIdentity } : {}),
     ...(source.workspaceRemoteSessionId
       ? { workspaceRemoteSessionId: source.workspaceRemoteSessionId }
       : {}),
@@ -505,15 +464,10 @@ export function getToolCallCodePreview(
   // 结构化 diff 是工具结果的显式变更事实，优先于 input/output 中的全文预览。
   const structuredDiff = extractStructuredDiff(toolCall.raw);
   const resolvedPath = resolveViewerPath(
-    structuredDiff?.path ??
-      extractRawPath(toolCall.input) ??
-      extractRawPath(toolCall.output),
+    structuredDiff?.path ?? extractRawPath(toolCall.input) ?? extractRawPath(toolCall.output),
     workspacePath,
   );
-  const viewerTitle = normalizeToolLabel(
-    toolCall.title ?? toolCall.kind,
-    resolvedPath,
-  );
+  const viewerTitle = normalizeToolLabel(toolCall.title ?? toolCall.kind, resolvedPath);
   const identity = resolveToolCallIdentity(toolCall);
   const isDiffTool = isFileDiffToolCall(toolCall, identity);
   const isReadTool = identity.family === "file-read";
@@ -530,7 +484,7 @@ export function getToolCallCodePreview(
       return {
         type: "patch",
         title: viewerTitle,
-        ...(resolvedPath === undefined ? {} : { path: resolvedPath }),
+        path: resolvedPath,
         patch,
       };
     }
@@ -540,20 +494,18 @@ export function getToolCallCodePreview(
     };
   }
 
-  const explicitPatch =
-    extractDiffText(toolCall.output) ?? extractDiffText(toolCall.input);
+  const explicitPatch = extractDiffText(toolCall.output) ?? extractDiffText(toolCall.input);
   if (explicitPatch) {
     return {
       type: "patch",
       title: viewerTitle,
-      ...(resolvedPath === undefined ? {} : { path: resolvedPath }),
+      path: resolvedPath,
       patch: explicitPatch,
     };
   }
 
   if (isDiffTool) {
-    const beforeAfter =
-      extractBeforeAfter(toolCall.input) ?? extractBeforeAfter(toolCall.output);
+    const beforeAfter = extractBeforeAfter(toolCall.input) ?? extractBeforeAfter(toolCall.output);
     if (beforeAfter) {
       const patch = buildUnifiedDiff(
         beforeAfter.before,
@@ -565,7 +517,7 @@ export function getToolCallCodePreview(
         return {
           type: "patch",
           title: viewerTitle,
-          ...(resolvedPath === undefined ? {} : { path: resolvedPath }),
+          path: resolvedPath,
           patch,
         };
       }
@@ -577,13 +529,10 @@ export function getToolCallCodePreview(
   }
 
   const preferredContent = isReadTool
-    ? (extractContentText(toolCall.output) ??
-      extractContentText(toolCall.input))
+    ? (extractContentText(toolCall.output) ?? extractContentText(toolCall.input))
     : isWriteTool
-      ? (extractContentText(toolCall.input) ??
-        extractContentText(toolCall.output))
-      : (extractContentText(toolCall.output) ??
-        extractContentText(toolCall.input));
+      ? (extractContentText(toolCall.input) ?? extractContentText(toolCall.output))
+      : (extractContentText(toolCall.output) ?? extractContentText(toolCall.input));
 
   if (preferredContent) {
     return buildTextPreview(viewerTitle, resolvedPath, preferredContent);
@@ -598,8 +547,7 @@ export function getToolCallCodePreview(
       type: "image",
       title: viewerTitle,
       path: resolvedPath,
-      mediaType:
-        inferImageMediaType(resolvedPath) ?? "application/octet-stream",
+      mediaType: inferImageMediaType(resolvedPath) ?? "application/octet-stream",
     };
   }
 
@@ -620,15 +568,10 @@ export function getToolCallCodeContentPreview(
 ): TextCodeViewerSource | null {
   const structuredDiff = extractStructuredDiff(toolCall.raw);
   const resolvedPath = resolveViewerPath(
-    structuredDiff?.path ??
-      extractRawPath(toolCall.input) ??
-      extractRawPath(toolCall.output),
+    structuredDiff?.path ?? extractRawPath(toolCall.input) ?? extractRawPath(toolCall.output),
     workspacePath,
   );
-  const viewerTitle = normalizeToolLabel(
-    toolCall.title ?? toolCall.kind,
-    resolvedPath,
-  );
+  const viewerTitle = normalizeToolLabel(toolCall.title ?? toolCall.kind, resolvedPath);
   const identity = resolveToolCallIdentity(toolCall);
   const isDiffTool = isFileDiffToolCall(toolCall, identity);
   const isReadTool = identity.family === "file-read";
@@ -639,21 +582,17 @@ export function getToolCallCodeContentPreview(
   }
 
   if (isDiffTool) {
-    const beforeAfter =
-      extractBeforeAfter(toolCall.input) ?? extractBeforeAfter(toolCall.output);
+    const beforeAfter = extractBeforeAfter(toolCall.input) ?? extractBeforeAfter(toolCall.output);
     if (beforeAfter) {
       return buildTextPreview(viewerTitle, resolvedPath, beforeAfter.after);
     }
   }
 
   const preferredContent = isReadTool
-    ? (extractContentText(toolCall.output) ??
-      extractContentText(toolCall.input))
+    ? (extractContentText(toolCall.output) ?? extractContentText(toolCall.input))
     : isWriteTool
-      ? (extractContentText(toolCall.input) ??
-        extractContentText(toolCall.output))
-      : (extractContentText(toolCall.output) ??
-        extractContentText(toolCall.input));
+      ? (extractContentText(toolCall.input) ?? extractContentText(toolCall.output))
+      : (extractContentText(toolCall.output) ?? extractContentText(toolCall.input));
 
   if (!preferredContent) {
     return null;

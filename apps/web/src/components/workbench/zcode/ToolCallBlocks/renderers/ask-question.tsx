@@ -1,20 +1,14 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/ask-question.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/ask-question.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
-
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
+import { CircleHelpIcon } from "lucide-react";
+import { useCallback } from "react";
 import {
   getAskUserQuestionAnswerText,
   normalizeAskUserQuestionInput,
   readAskUserQuestionAnswers,
   readAskUserQuestionInput,
-} from "@zui/lib/askUserQuestion";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { CircleHelpIcon } from "lucide-react";
-import { useCallback } from "react";
+} from "@zui/lib/askUserQuestion.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
 
 const ASK_QUESTION_TOOL_ICON = (
   <CircleHelpIcon className="size-4 shrink-0 text-foreground-subtle" />
@@ -54,9 +48,7 @@ export function AskQuestionToolCallBlock(context: ToolCallBlockRenderContext) {
             </div>
           ))}
           {data.questions.length === 0 ? (
-            <p className="text-ui-base leading-5 text-foreground-subtle">
-              {noAnswerText}
-            </p>
+            <p className="text-ui-base leading-5 text-foreground-subtle">{noAnswerText}</p>
           ) : null}
         </div>
       ) : null,

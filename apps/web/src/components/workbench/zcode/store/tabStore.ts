@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/store/tabStore.ts`（references/zcode/packages/ui/src/store/tabStore.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；P5 适配：可选属性放宽 `| undefined`（exactOptionalPropertyTypes，照搬调用点显式传 undefined），仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
 /* oxlint-disable eslint(max-lines) */
 /**
  * Tab Store —— 多标签页状态管理
@@ -10,22 +5,21 @@
  * 每个窗口拥有独立的 tab store（不跨窗口广播）。
  * 标签页状态通过 settingService 持久化（见 useTabPersistence）。
  */
-
-import {
-  persistWorkspaceExpandedPreference,
-  readWorkspaceExpansionState,
-  resolveExpandedWorkspacePaths,
-  type WorkspaceExpansionState,
-} from "@zui/lib/workspaceExpansionPreference";
+import { create } from "zustand";
 import {
   createUuid,
   type RemoteTarget,
   type TabId,
   type TabState,
   type WorkspacePurpose,
-} from "@zui/lib/zcode-shared";
-import { isSameWorkspaceTab } from "@zui/store/tabWorkspaceIdentity";
-import { create } from "zustand";
+} from "@zcode/shared";
+import {
+  persistWorkspaceExpandedPreference,
+  readWorkspaceExpansionState,
+  resolveExpandedWorkspacePaths,
+  type WorkspaceExpansionState,
+} from "@zui/lib/workspaceExpansionPreference.js";
+import { isSameWorkspaceTab } from "@zui/store/tabWorkspaceIdentity.js";
 
 export const SETTINGS_TAB_ID = "__settings__" satisfies TabId;
 
@@ -40,23 +34,23 @@ export interface SettingsTabState {
 export interface WorkspaceTabState extends TabState {
   kind: "workspace";
   /** 启动期一次性校验结果；不持久化，运行期间不重检。 */
-  availability?: WorkspaceAvailability | undefined;
-  remoteSessionId?: string | undefined;
-  remoteTarget?: RemoteTarget | undefined;
-  remoteHistoryId?: string | undefined;
-  workspaceIdentity?: string | undefined;
-  localWorkspacePath?: string | undefined;
-  workspacePurpose?: WorkspacePurpose | undefined;
+  availability?: WorkspaceAvailability;
+  remoteSessionId?: string;
+  remoteTarget?: RemoteTarget;
+  remoteHistoryId?: string;
+  workspaceIdentity?: string;
+  localWorkspacePath?: string;
+  workspacePurpose?: WorkspacePurpose;
 }
 
 export interface WorkspaceTabOptions {
-  availability?: WorkspaceAvailability | undefined;
-  remoteSessionId?: string | undefined;
-  remoteTarget?: RemoteTarget | undefined;
-  remoteHistoryId?: string | undefined;
-  workspaceIdentity?: string | undefined;
-  localWorkspacePath?: string | undefined;
-  workspacePurpose?: WorkspacePurpose | undefined;
+  availability?: WorkspaceAvailability;
+  remoteSessionId?: string;
+  remoteTarget?: RemoteTarget;
+  remoteHistoryId?: string;
+  workspaceIdentity?: string;
+  localWorkspacePath?: string;
+  workspacePurpose?: WorkspacePurpose;
 }
 
 export interface RestorableWorkspaceTab {
@@ -75,14 +69,10 @@ export function isWorkspaceTab(tab: WindowTabState): tab is WorkspaceTabState {
   return tab.kind === "workspace";
 }
 
-export function isWorkspaceTabReadOnly(
-  tab: WindowTabState,
-): tab is WorkspaceTabState & {
+export function isWorkspaceTabReadOnly(tab: WindowTabState): tab is WorkspaceTabState & {
   availability: "unavailable-local-directory";
 } {
-  return (
-    isWorkspaceTab(tab) && tab.availability === "unavailable-local-directory"
-  );
+  return isWorkspaceTab(tab) && tab.availability === "unavailable-local-directory";
 }
 
 export function isWorkspaceReadOnly(
@@ -120,10 +110,7 @@ export interface TabStoreState {
   /** 新增标签页，返回新 tab 的 ID */
   addTab: (workspacePath: string, options?: WorkspaceTabOptions) => TabId;
   /** 确保 workspace 出现在任务区数据源中，但不抢走当前焦点 */
-  ensureWorkspaceTab: (
-    workspacePath: string,
-    options?: WorkspaceTabOptions,
-  ) => TabId;
+  ensureWorkspaceTab: (workspacePath: string, options?: WorkspaceTabOptions) => TabId;
   /** 关闭标签页 */
   closeTab: (tabId: TabId) => void;
   /** 激活指定标签页 */
@@ -135,10 +122,7 @@ export interface TabStoreState {
   /** 打开设置标签页（窗口内唯一） */
   openSettingsTab: () => void;
   /** 通过 workspace 路径激活 tab（跨窗口 focus 用），返回是否找到 */
-  activateTabByPath: (
-    path: string,
-    options?: { workspaceIdentity?: string },
-  ) => boolean;
+  activateTabByPath: (path: string, options?: { workspaceIdentity?: string }) => boolean;
   /** 切换 workspace 的展开/收起态 */
   toggleWorkspaceExpanded: (path: string) => void;
   /** 展开当前任务区里的全部 workspace */
@@ -146,10 +130,7 @@ export interface TabStoreState {
   /** 收起当前任务区里的全部 workspace */
   collapseAllWorkspaceTabs: (paths: string[]) => void;
   /** 批量恢复标签页（启动时从持久化数据恢复用） */
-  restoreTabs: (
-    tabs: Array<string | RestorableWorkspaceTab>,
-    activeIndex: number,
-  ) => void;
+  restoreTabs: (tabs: Array<string | RestorableWorkspaceTab>, activeIndex: number) => void;
   /** 启动首帧后补齐持久化标签页；保留当前 active identity 和用户在此期间新增的标签页。 */
   completeTabRestore: (tabs: Array<string | RestorableWorkspaceTab>) => void;
 }
@@ -219,11 +200,7 @@ function createSettingsTab(): SettingsTabState {
   };
 }
 
-function moveItem<T>(
-  items: readonly T[],
-  fromIndex: number,
-  toIndex: number,
-): T[] {
+function moveItem<T>(items: readonly T[], fromIndex: number, toIndex: number): T[] {
   const nextItems = [...items];
   const [movedItem] = nextItems.splice(fromIndex, 1);
   if (!movedItem) {
@@ -269,9 +246,7 @@ interface StorageLike {
   setItem(key: string, value: string): void;
 }
 
-export function createTabStore(
-  storage: StorageLike | null | undefined = undefined,
-) {
+export function createTabStore(storage: StorageLike | null | undefined = undefined) {
   return create<TabStoreState>()((set, get) => ({
     tabs: [],
     activeTabId: null,
@@ -285,15 +260,10 @@ export function createTabStore(
       // 这里优先按 workspaceIdentity（authority + canonicalPath）匹配，路径只作为最后兜底。
       const existing = get().tabs.find(
         (tab): tab is WorkspaceTabState =>
-          isWorkspaceTab(tab) &&
-          isSameWorkspaceTab(tab, workspacePath, options),
+          isWorkspaceTab(tab) && isSameWorkspaceTab(tab, workspacePath, options),
       );
       if (existing) {
-        persistWorkspaceExpandedPreference(
-          existing.workspacePath,
-          true,
-          storage,
-        );
+        persistWorkspaceExpandedPreference(existing.workspacePath, true, storage);
         set((state) => ({
           // 远程 workspace 手动重连成功后会再次走 addTab，
           // 但这里之前命中已有 tab 只做激活，不把新的 remoteSessionId 等元数据写回旧 tab。
@@ -308,8 +278,7 @@ export function createTabStore(
           activeWorkspacePath: existing.workspacePath,
           // Settings 页的插件管理要按“最近激活 workspace”的 identity 继续命中同一远端。
           // 之前这里只保存路径，切到 settings tab 后 identity 会丢失，导致同路径远端隔离失效。
-          activeWorkspaceIdentity:
-            options?.workspaceIdentity ?? existing.workspaceIdentity ?? null,
+          activeWorkspaceIdentity: options?.workspaceIdentity ?? existing.workspaceIdentity ?? null,
           expandedWorkspacePaths: ensureWorkspaceExpanded(
             state.expandedWorkspacePaths,
             existing.workspacePath,
@@ -339,15 +308,10 @@ export function createTabStore(
     ensureWorkspaceTab: (workspacePath: string, options) => {
       const existing = get().tabs.find(
         (tab): tab is WorkspaceTabState =>
-          isWorkspaceTab(tab) &&
-          isSameWorkspaceTab(tab, workspacePath, options),
+          isWorkspaceTab(tab) && isSameWorkspaceTab(tab, workspacePath, options),
       );
       if (existing) {
-        persistWorkspaceExpandedPreference(
-          existing.workspacePath,
-          true,
-          storage,
-        );
+        persistWorkspaceExpandedPreference(existing.workspacePath, true, storage);
         set((state) => ({
           tabs: state.tabs.map((tab) =>
             tab.id !== existing.id || !isWorkspaceTab(tab)
@@ -435,30 +399,20 @@ export function createTabStore(
         expandedWorkspacePaths: (() => {
           const prunedExpandedWorkspacePaths =
             closingTab && isWorkspaceTab(closingTab)
-              ? pruneExpandedWorkspace(
-                  stateBefore.expandedWorkspacePaths,
-                  closingTab.workspacePath,
-                )
+              ? pruneExpandedWorkspace(stateBefore.expandedWorkspacePaths, closingTab.workspacePath)
               : stateBefore.expandedWorkspacePaths;
 
           // 关闭当前 workspace 后，主内容会自动切到相邻 tab。
           // 之前侧边栏把展开态放在组件本地状态时，会在 workspacePath 变化后顺手把接替项展开；
           // 现在改由 store 托管后，这个兜底也要一起搬过来，否则“关闭当前 tab”会留下一个已激活但折叠的 workspace。
           return fallbackWorkspacePath
-            ? ensureWorkspaceExpanded(
-                prunedExpandedWorkspacePaths,
-                fallbackWorkspacePath,
-              )
+            ? ensureWorkspaceExpanded(prunedExpandedWorkspacePaths, fallbackWorkspacePath)
             : prunedExpandedWorkspacePaths;
         })(),
       };
 
       if (fallbackWorkspacePath) {
-        persistWorkspaceExpandedPreference(
-          fallbackWorkspacePath,
-          true,
-          storage,
-        );
+        persistWorkspaceExpandedPreference(fallbackWorkspacePath, true, storage);
       }
 
       set(nextState);
@@ -480,10 +434,7 @@ export function createTabStore(
           ? (tab.workspaceIdentity ?? null)
           : stateBefore.activeWorkspaceIdentity,
         expandedWorkspacePaths: isWorkspaceTab(tab)
-          ? ensureWorkspaceExpanded(
-              stateBefore.expandedWorkspacePaths,
-              tab.workspacePath,
-            )
+          ? ensureWorkspaceExpanded(stateBefore.expandedWorkspacePaths, tab.workspacePath)
           : stateBefore.expandedWorkspacePaths,
       };
 
@@ -524,11 +475,7 @@ export function createTabStore(
           return state;
         }
 
-        const reorderedWorkspaceTabs = moveItem(
-          workspaceTabs,
-          fromIndex,
-          toIndex,
-        );
+        const reorderedWorkspaceTabs = moveItem(workspaceTabs, fromIndex, toIndex);
         let workspaceIndex = 0;
         const newTabs = state.tabs.map((tab) => {
           if (!isWorkspaceTab(tab)) {
@@ -596,22 +543,17 @@ export function createTabStore(
 
     activateTabByPath: (path: string, options) => {
       const stateBefore = get();
-      const tab = stateBefore.tabs.find(
-        (currentTab): currentTab is WorkspaceTabState => {
-          if (
-            !isWorkspaceTab(currentTab) ||
-            currentTab.workspacePath !== path
-          ) {
-            return false;
-          }
+      const tab = stateBefore.tabs.find((currentTab): currentTab is WorkspaceTabState => {
+        if (!isWorkspaceTab(currentTab) || currentTab.workspacePath !== path) {
+          return false;
+        }
 
-          if (options?.workspaceIdentity) {
-            return currentTab.workspaceIdentity === options.workspaceIdentity;
-          }
+        if (options?.workspaceIdentity) {
+          return currentTab.workspaceIdentity === options.workspaceIdentity;
+        }
 
-          return true;
-        },
-      );
+        return true;
+      });
       if (!tab) {
         return false;
       }
@@ -620,10 +562,7 @@ export function createTabStore(
         activeTabId: tab.id,
         activeWorkspacePath: path,
         activeWorkspaceIdentity: tab.workspaceIdentity ?? null,
-        expandedWorkspacePaths: ensureWorkspaceExpanded(
-          stateBefore.expandedWorkspacePaths,
-          path,
-        ),
+        expandedWorkspacePaths: ensureWorkspaceExpanded(stateBefore.expandedWorkspacePaths, path),
       };
 
       persistWorkspaceExpandedPreference(path, true, storage);
@@ -649,8 +588,7 @@ export function createTabStore(
       if (!activeWorkspaceTab || !isWorkspaceTab(activeWorkspaceTab)) {
         return;
       }
-      const expansionState: WorkspaceExpansionState =
-        readWorkspaceExpansionState(storage);
+      const expansionState: WorkspaceExpansionState = readWorkspaceExpansionState(storage);
       set({
         tabs,
         activeTabId: activeWorkspaceTab.id,
@@ -690,17 +628,10 @@ export function createTabStore(
           return createWorkspaceTab(normalized.workspacePath, options);
         });
         const extraWorkspaceTabs = state.tabs.filter(
-          (tab): tab is WorkspaceTabState =>
-            isWorkspaceTab(tab) && !consumedTabIds.has(tab.id),
+          (tab): tab is WorkspaceTabState => isWorkspaceTab(tab) && !consumedTabIds.has(tab.id),
         );
-        const nonWorkspaceTabs = state.tabs.filter(
-          (tab) => !isWorkspaceTab(tab),
-        );
-        const tabs = [
-          ...extraWorkspaceTabs,
-          ...completedTabs,
-          ...nonWorkspaceTabs,
-        ];
+        const nonWorkspaceTabs = state.tabs.filter((tab) => !isWorkspaceTab(tab));
+        const tabs = [...extraWorkspaceTabs, ...completedTabs, ...nonWorkspaceTabs];
         const expansionState = readWorkspaceExpansionState(storage);
 
         // active-first 的第二阶段若再次调用 restoreTabs，会重建 active tab id，

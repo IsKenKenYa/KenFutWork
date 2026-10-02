@@ -1,17 +1,8 @@
-/**
- * zcode 照搬：`@/v4/ConversationPendingGuideList.tsx`（references/zcode/packages/ui/src/v4/ConversationPendingGuideList.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type {
-  QueueItem,
-  UserInputRow,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import { ConversationTurnRow } from "@zui/v4/ConversationTurnRow";
-import type { ConversationRowRenderContext } from "@zui/v4/conversationRowContext";
 import { memo, useMemo } from "react";
+import type { QueueItem, UserInputRow } from "@zcode/shared/zcode-protocol-v4";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { ConversationTurnRow } from "@zui/v4/ConversationTurnRow.js";
+import type { ConversationRowRenderContext } from "@zui/v4/conversationRowContext.js";
 
 interface ConversationPendingGuideListProps {
   context: ConversationRowRenderContext;
@@ -42,10 +33,7 @@ function ConversationPendingGuideListImpl({
   turnId,
 }: ConversationPendingGuideListProps) {
   const { intl } = useZCodeIntl();
-  const rows = useMemo(
-    () => items.map((item) => pendingGuideRow(item, turnId)),
-    [items, turnId],
-  );
+  const rows = useMemo(() => items.map((item) => pendingGuideRow(item, turnId)), [items, turnId]);
   const status = intl.formatMessage({ id: "chat.message.turnSteer.pending" });
 
   if (rows.length === 0) return null;
@@ -63,6 +51,4 @@ function ConversationPendingGuideListImpl({
   );
 }
 
-export const ConversationPendingGuideList = memo(
-  ConversationPendingGuideListImpl,
-);
+export const ConversationPendingGuideList = memo(ConversationPendingGuideListImpl);

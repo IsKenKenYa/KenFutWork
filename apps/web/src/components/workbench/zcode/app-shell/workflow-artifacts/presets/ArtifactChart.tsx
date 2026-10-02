@@ -1,11 +1,4 @@
 /**
- * zcode 照搬：`@/app-shell/workflow-artifacts/presets/ArtifactChart.tsx`（references/zcode/packages/ui/src/app-shell/workflow-artifacts/presets/ArtifactChart.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件接口可选属性放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-/**
  * `chart` 预置渲染器的**入口**：懒加载 + 局部故障隔离，本模块自己不碰 recharts。
  *
  * 为什么必须懒：recharts 在模块初始化阶段会触发 decimal.js-light 的 LN10 校验，在 Electron
@@ -18,15 +11,15 @@
  * Suspense / 错误边界——本文件只是那套接法的默认封装。
  */
 
-import type { ArtifactItem } from "@zui/app-shell/workflow-artifacts/presets/apply";
-import type { PresetLabels } from "@zui/app-shell/workflow-artifacts/presets/parts";
-import type { ChartSpec } from "@zui/app-shell/workflow-artifacts/presets/spec";
-import { cn } from "@zui/components/lib/utils";
-import { ScopedErrorBoundary } from "@zui/ErrorBoundary";
 import { lazy, Suspense } from "react";
+import type { ArtifactItem } from "@zui/app-shell/workflow-artifacts/presets/apply.js";
+import type { PresetLabels } from "@zui/app-shell/workflow-artifacts/presets/parts.js";
+import type { ChartSpec } from "@zui/app-shell/workflow-artifacts/presets/spec.js";
+import { cn } from "@zui/components/lib/utils.js";
+import { ScopedErrorBoundary } from "@zui/ErrorBoundary.js";
 
 const ArtifactChartView = lazy(
-  () => import("@zui/app-shell/workflow-artifacts/presets/ArtifactChartView"),
+  () => import("@zui/app-shell/workflow-artifacts/presets/ArtifactChartView.js"),
 );
 
 /** 加载中的占位：只占位不说话——一句「加载中」在 200ms 的懒加载里只会闪一下。 */
@@ -52,9 +45,9 @@ export function ArtifactChart({
 }: {
   spec: ChartSpec;
   items: readonly ArtifactItem[];
-  compact?: boolean | undefined;
+  compact?: boolean;
   labels: PresetLabels;
-  className?: string | undefined;
+  className?: string;
 }) {
   return (
     // 图表崩了只塌这一块，run 侧板的其余部分照常——产物区是交付面，不该是单点故障。

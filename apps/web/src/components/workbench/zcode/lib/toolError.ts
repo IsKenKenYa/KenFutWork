@@ -1,9 +1,4 @@
-/**
- * zcode 照搬：`@/lib/toolError.ts`（references/zcode/packages/ui/src/lib/toolError.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
-import type { TaskChatToolCall as ChatToolCall } from "@zui/lib/taskChatMessageTypes";
+import type { TaskChatToolCall as ChatToolCall } from "@zui/lib/taskChatMessageTypes.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -65,10 +60,7 @@ export function getToolCallErrorText(
   }
 
   if (isRecord(toolCall.output)) {
-    const outputError = readFirstStringField(toolCall.output, [
-      "error",
-      "message",
-    ]);
+    const outputError = readFirstStringField(toolCall.output, ["error", "message"]);
     if (outputError) {
       return outputError;
     }
@@ -83,9 +75,7 @@ export function getToolCallErrorText(
     return undefined;
   }
 
-  const rawOutput = isRecord(toolCall.raw.rawOutput)
-    ? toolCall.raw.rawOutput
-    : null;
+  const rawOutput = isRecord(toolCall.raw.rawOutput) ? toolCall.raw.rawOutput : null;
   const rawOutputError = rawOutput
     ? readFirstStringField(rawOutput, ["error", "message"])
     : undefined;
@@ -100,9 +90,7 @@ export function getToolCallErrorText(
   }
 
   if (toolCall.status === "failed" || rawStatus === "failed") {
-    const contentBlocks = Array.isArray(toolCall.raw.content)
-      ? toolCall.raw.content
-      : [];
+    const contentBlocks = Array.isArray(toolCall.raw.content) ? toolCall.raw.content : [];
     for (const block of contentBlocks) {
       if (!isRecord(block)) {
         continue;

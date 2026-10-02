@@ -1,16 +1,9 @@
-/**
- * zcode 照搬：`@/prompt-editor/usePromptEditorDragState.ts`（references/zcode/packages/ui/src/prompt-editor/usePromptEditorDragState.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀
- *（本仓 Turbopack 不做 .js→.ts/.tsx 试探，手册 §2.4-2 在本仓构建链的等价适配）。
- */
-
+import { useEffect, useRef, useState } from "react";
 import {
   hasWorkspaceFileDragPayload,
   isWorkspaceFileDragStateEvent,
   WORKSPACE_FILE_DRAG_STATE_EVENT,
-} from "@zui/lib/workspaceFileDrag";
-import { useEffect, useRef, useState } from "react";
+} from "@zui/lib/workspaceFileDrag.js";
 
 function hasExternalFileDrag(dataTransfer: DataTransfer): boolean {
   return (
@@ -32,10 +25,7 @@ export function usePromptEditorDragState({
   const resetDragFeedbackTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (
-      (!enableWorkspaceFileDrop && !enableExternalFileDrop) ||
-      typeof window === "undefined"
-    ) {
+    if ((!enableWorkspaceFileDrop && !enableExternalFileDrop) || typeof window === "undefined") {
       setWorkspaceFileDragging(false);
       setExternalFileDragging(false);
       return;
@@ -59,10 +49,7 @@ export function usePromptEditorDragState({
       clearResetDragFeedbackTimer();
       // 取消 OS 文件拖拽或把 file tree 拖拽拖出窗口时，Electron/浏览器不一定派发 drop/dragend。
       // dragover 在拖拽仍停留窗口内时会持续触发；一旦心跳停止，就主动撤销输入框高亮，避免视觉反馈卡住。
-      resetDragFeedbackTimerRef.current = window.setTimeout(
-        resetDragFeedback,
-        300,
-      );
+      resetDragFeedbackTimerRef.current = window.setTimeout(resetDragFeedback, 300);
     };
     const handleWorkspaceFileDragState = (event: Event) => {
       if (isWorkspaceFileDragStateEvent(event)) {
@@ -80,16 +67,10 @@ export function usePromptEditorDragState({
       }
       // 有些拖拽路径不会先触发目标输入框的 dragover。
       // 监听窗口级 dragover 后，只要拖拽数据可识别，就提前亮出所有可投放输入框。
-      if (
-        enableWorkspaceFileDrop &&
-        hasWorkspaceFileDragPayload(event.dataTransfer)
-      ) {
+      if (enableWorkspaceFileDrop && hasWorkspaceFileDragPayload(event.dataTransfer)) {
         setWorkspaceFileDragging(true);
         scheduleDragFeedbackReset();
-      } else if (
-        enableExternalFileDrop &&
-        hasExternalFileDrag(event.dataTransfer)
-      ) {
+      } else if (enableExternalFileDrop && hasExternalFileDrag(event.dataTransfer)) {
         setExternalFileDragging(true);
         scheduleDragFeedbackReset();
       }
@@ -102,10 +83,7 @@ export function usePromptEditorDragState({
       resetDragFeedback();
     };
 
-    window.addEventListener(
-      WORKSPACE_FILE_DRAG_STATE_EVENT,
-      handleWorkspaceFileDragState,
-    );
+    window.addEventListener(WORKSPACE_FILE_DRAG_STATE_EVENT, handleWorkspaceFileDragState);
     window.addEventListener("dragover", handleGlobalDragOver);
     window.addEventListener("dragend", resetDragFeedback);
     window.addEventListener("drop", resetDragFeedback);
@@ -115,10 +93,7 @@ export function usePromptEditorDragState({
     }
     return () => {
       clearResetDragFeedbackTimer();
-      window.removeEventListener(
-        WORKSPACE_FILE_DRAG_STATE_EVENT,
-        handleWorkspaceFileDragState,
-      );
+      window.removeEventListener(WORKSPACE_FILE_DRAG_STATE_EVENT, handleWorkspaceFileDragState);
       window.removeEventListener("dragover", handleGlobalDragOver);
       window.removeEventListener("dragend", resetDragFeedback);
       window.removeEventListener("drop", resetDragFeedback);

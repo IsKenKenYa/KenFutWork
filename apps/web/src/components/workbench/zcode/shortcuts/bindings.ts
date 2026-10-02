@@ -1,28 +1,22 @@
 /**
- * zcode 照搬：`@/shortcuts/bindings.ts`（references/zcode/packages/ui/src/shortcuts/bindings.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-/**
  * 快捷键执行内核 —— 匹配、录制、生效表与冲突检测的唯一实现。
  *
  * - 键位知识（格式解析、平台修饰键语义、保留键）只允许存在于此模块与 shared/shortcutCommands.ts；
  * - 全部为纯函数，DOM 事件以结构化参数传入，便于单测覆盖组合键边界；
  * - IME 组合中（isComposing / Process / Dead / keyCode 229）与长按 repeat 一律不匹配、不录制。
  */
-
+import {
+  type ParsedShortcutBinding,
+  type ShortcutCommandId,
+  parseShortcutBinding,
+  serializeShortcutBinding,
+  SHORTCUT_COMMANDS,
+} from "@zcode/shared";
 import {
   isAppleKeyboardPlatform,
   type KeyboardShortcutPlatformInfo,
-} from "@zui/lib/keyboardShortcuts";
-import {
-  type ParsedShortcutBinding,
-  parseShortcutBinding,
-  SHORTCUT_COMMANDS,
-  type ShortcutCommandId,
-  serializeShortcutBinding,
-} from "@zui/lib/zcode-shared";
-import { logger } from "@zui/logger";
+} from "@zui/lib/keyboardShortcuts.js";
+import { logger } from "@zui/logger.js";
 
 /** 匹配/录制所需的键盘事件结构（KeyboardEvent 的子集，测试可构造）。 */
 export interface ShortcutBindingEvent {
@@ -68,14 +62,9 @@ const CODE_TO_KEY: Readonly<Record<string, string>> = {
       String.fromCharCode(97 + index),
     ]),
   ),
+  ...Object.fromEntries(Array.from({ length: 10 }, (_, index) => [`Digit${index}`, String(index)])),
   ...Object.fromEntries(
-    Array.from({ length: 10 }, (_, index) => [`Digit${index}`, String(index)]),
-  ),
-  ...Object.fromEntries(
-    Array.from({ length: 12 }, (_, index) => [
-      `F${index + 1}`,
-      `F${index + 1}`,
-    ]),
+    Array.from({ length: 12 }, (_, index) => [`F${index + 1}`, `F${index + 1}`]),
   ),
   BracketLeft: "[",
   BracketRight: "]",
@@ -149,8 +138,7 @@ function modifiersMatch(
 
   // AltGr 与 Ctrl+Alt 物理不可区分（Windows/Linux 的 Ctrl+Alt+B 等现有绑定就是同按），
   // 因此 AltGr 绑定与 cmdOrCtrl/ctrl + Alt 绑定匹配同一物理组合，不做独占判定。
-  const wantPrimaryOrCtrl =
-    parsed.altGr || parsed.cmdOrCtrl || (!isApple && parsed.ctrl);
+  const wantPrimaryOrCtrl = parsed.altGr || parsed.cmdOrCtrl || (!isApple && parsed.ctrl);
   const wantCtrl = !parsed.altGr && !parsed.cmdOrCtrl && parsed.ctrl && isApple;
   const wantAlt = parsed.altGr || parsed.alt;
 
@@ -203,9 +191,7 @@ export function isShiftOnlyPrintableBinding(binding: string): boolean {
  * 与 isShiftOnlyPrintableBinding 配套：可编辑目标内跳过纯 Shift 可打印键绑定。
  * 无 DOM 环境（node 单测）下恒为 false。
  */
-export function isEditableShortcutEventTarget(
-  target: EventTarget | null,
-): boolean {
+export function isEditableShortcutEventTarget(target: EventTarget | null): boolean {
   if (typeof HTMLElement === "undefined" || !(target instanceof HTMLElement)) {
     return false;
   }
@@ -217,10 +203,7 @@ export function isEditableShortcutEventTarget(
 }
 
 /** 键匹配：event.key 小写比较优先，event.code 兜底（macOS Option 改写、非 US 布局）。 */
-function eventMatchesKey(
-  event: Pick<ShortcutBindingEvent, "key" | "code">,
-  key: string,
-): boolean {
+function eventMatchesKey(event: Pick<ShortcutBindingEvent, "key" | "code">, key: string): boolean {
   if (event.key === key) {
     return true;
   }
@@ -275,8 +258,7 @@ export function recordShortcutBinding(
   }
 
   if (isImeEvent(event)) {
-    const codeKey =
-      event.code === undefined ? undefined : CODE_TO_KEY[event.code];
+    const codeKey = event.code !== undefined ? CODE_TO_KEY[event.code] : undefined;
     if (codeKey === undefined) {
       return { kind: "pending" };
     }
@@ -284,9 +266,9 @@ export function recordShortcutBinding(
   }
 
   const key =
-    event.code === undefined
-      ? normalizeEventKey(event.key)
-      : (CODE_TO_KEY[event.code] ?? normalizeEventKey(event.key));
+    event.code !== undefined
+      ? (CODE_TO_KEY[event.code] ?? normalizeEventKey(event.key))
+      : normalizeEventKey(event.key);
   if (key === null) {
     return { kind: "invalid", reason: "unsupported-key" };
   }
@@ -300,8 +282,7 @@ function buildRecordedBinding(
   platformInfo?: KeyboardShortcutPlatformInfo,
 ): ShortcutRecordResult {
   const isApple = isAppleKeyboardPlatform(platformInfo);
-  const hasModifier =
-    event.metaKey || event.ctrlKey || event.altKey || event.shiftKey;
+  const hasModifier = event.metaKey || event.ctrlKey || event.altKey || event.shiftKey;
   // F 键 / 方向键等命名键（多字符）允许无修饰单键；普通字符键必须至少一个修饰键。
   const namedKey = key.length > 1;
   if (!hasModifier && !namedKey) {
@@ -310,9 +291,7 @@ function buildRecordedBinding(
 
   const parsed: ParsedShortcutBinding = {
     // AltGr 与 Ctrl+Alt 物理不可区分，录制统一产出 CmdOrCtrl+Alt（用户心智里按的就是 Ctrl+Alt）。
-    cmdOrCtrl: isApple
-      ? event.metaKey && !event.ctrlKey
-      : event.ctrlKey && !event.metaKey,
+    cmdOrCtrl: isApple ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey,
     ctrl: isApple ? event.ctrlKey && !event.metaKey : false,
     alt: event.altKey,
     shift: event.shiftKey,
@@ -338,9 +317,7 @@ function buildRecordedBinding(
 /** event.key → 规范键名（仅 fallback 路径）：单字符小写化，命名键原样。 */
 function normalizeEventKey(rawKey: string): string | null {
   if (rawKey.length === 1) {
-    return /^[a-zA-Z0-9[\]=\-,./;'\\`]$/.test(rawKey)
-      ? rawKey.toLowerCase()
-      : null;
+    return /^[a-zA-Z0-9[\]=\-,./;'\\`]$/.test(rawKey) ? rawKey.toLowerCase() : null;
   }
   return rawKey in KEY_TO_CODE ? rawKey : null;
 }
@@ -370,9 +347,7 @@ export function isShortcutRecordingActive(): boolean {
 // 生效表
 // ============================================================================
 
-export type EffectiveShortcutBindings = Readonly<
-  Record<ShortcutCommandId, readonly string[]>
->;
+export type EffectiveShortcutBindings = Readonly<Record<ShortcutCommandId, readonly string[]>>;
 
 /**
  * 计算生效表：命令表默认绑定 + 用户覆盖（整组替换）。
@@ -392,22 +367,14 @@ export function resolveEffectiveShortcutBindings(
       effective[entry.id] = entry.defaultBindings;
       continue;
     }
-    const valid = override.filter(
-      (binding) => parseShortcutBinding(binding) !== null,
-    );
+    const valid = override.filter((binding) => parseShortcutBinding(binding) !== null);
     if (override.length > 0 && valid.length === 0) {
-      logger.warn("[shortcuts] 覆盖绑定全部非法，回退默认", {
-        commandId: entry.id,
-        override,
-      });
+      logger.warn("[shortcuts] 覆盖绑定全部非法，回退默认", { commandId: entry.id, override });
       effective[entry.id] = entry.defaultBindings;
       continue;
     }
     if (valid.length !== override.length) {
-      logger.warn("[shortcuts] 忽略非法覆盖条目", {
-        commandId: entry.id,
-        override,
-      });
+      logger.warn("[shortcuts] 忽略非法覆盖条目", { commandId: entry.id, override });
     }
     effective[entry.id] = valid;
   }

@@ -1,34 +1,26 @@
-/**
- * zcode 照搬：`@/ErrorBoundary.tsx`（references/zcode/packages/ui/src/ErrorBoundary.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件接口可选属性放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-
-import { cn } from "@zui/components/lib/utils";
-import { Button } from "@zui/components/ui/button";
-import { DesktopWindowFrame } from "@zui/DesktopWindowFrame";
-import enUS from "@zui/i18n/locales/en-US";
-import zhCN from "@zui/i18n/locales/zh-CN";
-import { reportReactErrorToArms } from "@zui/lib/reactErrorArmsTelemetry";
-import type { Locale } from "@zui/lib/zcode-shared";
-import { DEFAULT_LOCALE } from "@zui/lib/zcode-shared";
-import { logger } from "@zui/logger";
-import { AlertTriangleIcon, RefreshCw } from "lucide-react";
-import type { ErrorInfo, ReactNode } from "react";
 import { Component } from "react";
+import type { ErrorInfo, ReactNode } from "react";
+import type { Locale } from "@zcode/shared";
+import { DEFAULT_LOCALE } from "@zcode/shared";
+import { DesktopWindowFrame } from "@zui/DesktopWindowFrame.js";
+import zhCN from "@zui/i18n/locales/zh-CN.js";
+import enUS from "@zui/i18n/locales/en-US.js";
+import { logger } from "@zui/logger.js";
+import { reportReactErrorToArms } from "@zui/lib/reactErrorArmsTelemetry.js";
+import { cn } from "@zui/components/lib/utils.js";
+import { Button } from "@zui/components/ui/button.js";
+import { AlertTriangleIcon, RefreshCw } from "lucide-react";
 
 interface AppErrorBoundaryProps {
   children: ReactNode;
-  isDesktop?: boolean | undefined;
-  isMacDesktop?: boolean | undefined;
-  isWindowsDesktop?: boolean | undefined;
+  isDesktop?: boolean;
+  isMacDesktop?: boolean;
+  isWindowsDesktop?: boolean;
   /**
    * React 错误边界捕获的异常不会冒泡到 window.onerror，监控 SDK默认收不到。
    * Desktop 等宿主可传入此回调，将 React 错误边界捕获的异常转发到监控 SDK。
    */
-  onCaughtReactError?: (error: Error, errorInfo: ErrorInfo) => void | undefined;
+  onCaughtReactError?: (error: Error, errorInfo: ErrorInfo) => void;
 }
 
 interface AppErrorBoundaryState {
@@ -36,24 +28,16 @@ interface AppErrorBoundaryState {
   componentStack: string;
 }
 
-export type ScopedErrorBoundaryVariant =
-  | "panel"
-  | "inline"
-  | "compact"
-  | "silent";
+export type ScopedErrorBoundaryVariant = "panel" | "inline" | "compact" | "silent";
 
 interface ScopedErrorBoundaryProps {
   children: ReactNode;
   scope: string;
-  resetKeys?: readonly unknown[] | undefined;
-  variant?: ScopedErrorBoundaryVariant | undefined;
-  className?: string | undefined;
-  onReset?: () => void | undefined;
-  onCaughtReactError?: (
-    error: Error,
-    errorInfo: ErrorInfo,
-    scope: string,
-  ) => void | undefined;
+  resetKeys?: readonly unknown[];
+  variant?: ScopedErrorBoundaryVariant;
+  className?: string;
+  onReset?: () => void;
+  onCaughtReactError?: (error: Error, errorInfo: ErrorInfo, scope: string) => void;
 }
 
 const LOCALE_PREFERENCE_KEY = "zcode-locale-preference";
@@ -69,7 +53,7 @@ function normalizeError(error: unknown): Error {
 function serializeErrorForLog(error: Error): {
   name: string;
   message: string;
-  stack?: string | undefined;
+  stack?: string;
 } {
   return {
     name: error.name,
@@ -79,10 +63,7 @@ function serializeErrorForLog(error: Error): {
 }
 
 function resolveBoundaryLocale(): Locale {
-  if (
-    typeof localStorage !== "undefined" &&
-    typeof localStorage.getItem === "function"
-  ) {
+  if (typeof localStorage !== "undefined" && typeof localStorage.getItem === "function") {
     try {
       const storedPreference = localStorage.getItem(LOCALE_PREFERENCE_KEY);
       if (storedPreference === "zh-CN" || storedPreference === "en-US") {
@@ -96,9 +77,7 @@ function resolveBoundaryLocale(): Locale {
   }
 
   if (typeof navigator !== "undefined") {
-    return navigator.language.toLowerCase().startsWith("zh")
-      ? "zh-CN"
-      : "en-US";
+    return navigator.language.toLowerCase().startsWith("zh") ? "zh-CN" : "en-US";
   }
 
   return DEFAULT_LOCALE;
@@ -118,9 +97,7 @@ function haveResetKeysChanged(
     return true;
   }
 
-  return previousKeys.some(
-    (previousKey, index) => !Object.is(previousKey, nextKeys[index]),
-  );
+  return previousKeys.some((previousKey, index) => !Object.is(previousKey, nextKeys[index]));
 }
 
 function ErrorFallback({
@@ -136,12 +113,11 @@ function ErrorFallback({
   componentStack: string;
   onReset: () => void;
   onReload: () => void;
-  isDesktop?: boolean | undefined;
-  isMacDesktop?: boolean | undefined;
-  isWindowsDesktop?: boolean | undefined;
+  isDesktop?: boolean;
+  isMacDesktop?: boolean;
+  isWindowsDesktop?: boolean;
 }) {
-  const errorSummary =
-    error.message.trim() || formatBoundaryMessage("appError.unknown");
+  const errorSummary = error.message.trim() || formatBoundaryMessage("appError.unknown");
 
   return (
     <DesktopWindowFrame
@@ -217,15 +193,14 @@ function ScopedErrorFallback({
   componentStack: string;
   onReset: () => void;
   onReload: () => void;
-  variant?: ScopedErrorBoundaryVariant | undefined;
-  className?: string | undefined;
+  variant?: ScopedErrorBoundaryVariant;
+  className?: string;
 }) {
   if (variant === "silent") {
     return null;
   }
 
-  const errorSummary =
-    error.message.trim() || formatBoundaryMessage("appError.unknown");
+  const errorSummary = error.message.trim() || formatBoundaryMessage("appError.unknown");
   const isCompact = variant === "compact";
   const showDetails = variant !== "compact";
 
@@ -243,9 +218,7 @@ function ScopedErrorFallback({
           <p className="truncate text-ui-base font-medium text-foreground">
             {formatBoundaryMessage("appError.sectionTitle")}
           </p>
-          <p className="truncate font-mono text-ui-base text-foreground-subtle">
-            {errorSummary}
-          </p>
+          <p className="truncate font-mono text-ui-base text-foreground-subtle">{errorSummary}</p>
         </div>
         <Button type="button" size="sm" variant="outline" onClick={onReset}>
           {formatBoundaryMessage("appError.sectionRetry")}
@@ -297,10 +270,7 @@ function ScopedErrorFallback({
     return (
       <div
         role="alert"
-        className={cn(
-          "w-full rounded-xl border border-destructive/20 bg-surface p-4",
-          className,
-        )}
+        className={cn("w-full rounded-xl border border-destructive/20 bg-surface p-4", className)}
       >
         {content}
       </div>
@@ -330,10 +300,7 @@ function ScopedErrorFallback({
  * 用户看到的就只剩一张白屏。这里包一层共享根级边界，把异常收敛成可恢复 fallback，
  * 至少保证界面还能给出“重试 / 刷新”的出口，并把错误打到统一 UI 日志里。
  */
-export class AppErrorBoundary extends Component<
-  AppErrorBoundaryProps,
-  AppErrorBoundaryState
-> {
+export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorBoundaryState> {
   state: AppErrorBoundaryState = {
     error: null,
     componentStack: "",
@@ -429,11 +396,7 @@ export class ScopedErrorBoundary extends Component<
       serializeErrorForLog(normalizedError),
       errorInfo.componentStack,
     );
-    this.props.onCaughtReactError?.(
-      normalizedError,
-      errorInfo,
-      this.props.scope,
-    );
+    this.props.onCaughtReactError?.(normalizedError, errorInfo, this.props.scope);
     // 同根级边界：scoped 区域捕获的渲染异常同样不会冒泡到 RUM，按 scope 区分上报，
     // 让 sidebar/chat/terminal/settings 等局部崩溃在 RUM 里可见、可定位。
     reportReactErrorToArms({
@@ -445,10 +408,7 @@ export class ScopedErrorBoundary extends Component<
   }
 
   override componentDidUpdate(previousProps: ScopedErrorBoundaryProps) {
-    if (
-      this.state.error &&
-      haveResetKeysChanged(previousProps.resetKeys, this.props.resetKeys)
-    ) {
+    if (this.state.error && haveResetKeysChanged(previousProps.resetKeys, this.props.resetKeys)) {
       // 局部 fallback 如果不随 workspace/task/tab 切换自动清空，
       // 用户离开出错区域后再回来仍会看到旧错误。resetKeys 变化时重置边界，
       // 让新的隔离上下文可以重新渲染。

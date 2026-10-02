@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.vendor.json",
+  "compilerOptions": {
+    "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "outDir": "dist-host",
+    "rootDir": "host",
+    "paths": { "@zui/*": ["./dist-types/*"] }
+  },
+  "include": ["host/**/*.ts", "host/**/*.tsx"],
+  "exclude": ["host/upstream", "node_modules", "dist", "dist-types", "dist-host"]
+}

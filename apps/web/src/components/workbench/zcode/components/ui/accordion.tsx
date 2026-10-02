@@ -1,19 +1,14 @@
-import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
+import * as React from "react";
 import { Accordion as AccordionPrimitive } from "radix-ui";
-import type * as React from "react";
-import { cn } from "../lib/utils";
 
-function Accordion({
-  className,
-  ...props
-}: React.ComponentProps<typeof AccordionPrimitive.Root>) {
+import { cn } from "../lib/utils.js";
+import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
+
+function Accordion({ className, ...props }: React.ComponentProps<typeof AccordionPrimitive.Root>) {
   return (
     <AccordionPrimitive.Root
       data-slot="accordion"
-      className={cn(
-        "flex w-full flex-col overflow-hidden rounded-md border",
-        className,
-      )}
+      className={cn("flex w-full flex-col overflow-hidden rounded-md border", className)}
       {...props}
     />
   );
@@ -84,4 +79,4 @@ function AccordionContent({
   );
 }
 
-export { Accordion, AccordionContent, AccordionItem, AccordionTrigger };
+export { Accordion, AccordionItem, AccordionTrigger, AccordionContent };

@@ -1,21 +1,17 @@
-/**
- * zcode 照搬：`@/lib/providerSettingsFormTypes.ts`（references/zcode/packages/ui/src/lib/providerSettingsFormTypes.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
+import { isApiKeyAccess } from "@zcode/provider";
 import type {
-  AccountProviderState,
   ConfigValidationIssue,
+  AccountProviderState,
   ModelConfigObject,
   ProviderConfigObject,
   ProviderSettingsProviderView,
-} from "@zui/lib/zcode-provider";
-import { isApiKeyAccess } from "@zui/lib/zcode-provider";
+} from "@zcode/provider";
 
 /** 设置页面在一次编辑会话中使用的 Provider 状态。 */
-export interface ProviderSettingsFormProvider
-  extends Pick<ProviderSettingsProviderView, "providerName" | "templateId"> {
+export interface ProviderSettingsFormProvider extends Pick<
+  ProviderSettingsProviderView,
+  "providerName" | "templateId"
+> {
   providerId: string;
   /** 仅本次显式改名的补丁；其他编辑不得把继承名称物化成个人配置。 */
   providerNameUpdate?: string | null;
@@ -60,9 +56,7 @@ export function getProviderFormLabel(
 export function getProviderFormApiKey(
   provider: Pick<ProviderSettingsFormProvider, "config">,
 ): string {
-  return isApiKeyAccess(provider.config.access)
-    ? (provider.config.access.apiKey ?? "")
-    : "";
+  return isApiKeyAccess(provider.config.access) ? (provider.config.access.apiKey ?? "") : "";
 }
 
 export function getProviderFormApiKeyManagementUrl(

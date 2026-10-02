@@ -1,9 +1,4 @@
-/**
- * zcode 照搬：`@/lib/exploreToolCall.ts`（references/zcode/packages/ui/src/lib/exploreToolCall.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import { resolveToolCallIdentity } from "@zui/lib/toolIdentity";
+import { resolveToolCallIdentity } from "@zui/lib/toolIdentity.js";
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -28,9 +23,7 @@ function unwrapShellCommand(command: string): string {
     }
     return normalized;
   };
-  const shellCommandMatch = trimmed.match(
-    /^(?:\/bin\/)?(?:zsh|bash|sh)\s+-lc\s+([\s\S]+)$/i,
-  );
+  const shellCommandMatch = trimmed.match(/^(?:\/bin\/)?(?:zsh|bash|sh)\s+-lc\s+([\s\S]+)$/i);
   if (shellCommandMatch?.[1]) {
     return stripWrappingQuotes(shellCommandMatch[1]);
   }
@@ -72,13 +65,8 @@ function extractToolCommands(input: unknown): string[] {
 
     if (value.every((item) => typeof item === "string")) {
       const commandParts = value as string[];
-      const shellCommandIndex = commandParts.findIndex(
-        (part) => part === "-lc",
-      );
-      if (
-        shellCommandIndex >= 0 &&
-        typeof commandParts[shellCommandIndex + 1] === "string"
-      ) {
+      const shellCommandIndex = commandParts.findIndex((part) => part === "-lc");
+      if (shellCommandIndex >= 0 && typeof commandParts[shellCommandIndex + 1] === "string") {
         const shellCommand = commandParts[shellCommandIndex + 1]!.trim();
         if (shellCommand.length > 0) {
           commandCandidates.push(shellCommand);
@@ -99,10 +87,7 @@ function extractToolCommands(input: unknown): string[] {
       }
 
       const parsedCommand = item.cmd;
-      if (
-        typeof parsedCommand === "string" &&
-        parsedCommand.trim().length > 0
-      ) {
+      if (typeof parsedCommand === "string" && parsedCommand.trim().length > 0) {
         commandCandidates.push(parsedCommand.trim());
       }
     }
@@ -112,11 +97,7 @@ function extractToolCommands(input: unknown): string[] {
 
   if (!isPlainRecord(input)) {
     return Array.from(
-      new Set(
-        commandCandidates.flatMap((candidate) =>
-          normalizeCommandCandidate(candidate),
-        ),
-      ),
+      new Set(commandCandidates.flatMap((candidate) => normalizeCommandCandidate(candidate))),
     );
   }
 
@@ -125,11 +106,7 @@ function extractToolCommands(input: unknown): string[] {
   }
 
   return Array.from(
-    new Set(
-      commandCandidates.flatMap((candidate) =>
-        normalizeCommandCandidate(candidate),
-      ),
-    ),
+    new Set(commandCandidates.flatMap((candidate) => normalizeCommandCandidate(candidate))),
   );
 }
 
@@ -140,24 +117,12 @@ const EXECUTE_WRITE_COMMAND_RE =
 const SHELL_REDIRECT_WRITE_RE = /(^|[^\d<])>>?\s*\S|&>\s*\S/i;
 const SHELL_LOOP_RE = /\b(for|while)\b/i;
 
-export function isShellToolCallAwaitingCommand({
-  kind,
-  input,
-}: {
-  kind: string;
-  input: unknown;
-}) {
+export function isShellToolCallAwaitingCommand({ kind, input }: { kind: string; input: unknown }) {
   const identity = resolveToolCallIdentity({ kind, input });
   return identity.family === "shell" && extractToolCommands(input).length === 0;
 }
 
-export function isExploreToolCall({
-  kind,
-  input,
-}: {
-  kind: string;
-  input: unknown;
-}) {
+export function isExploreToolCall({ kind, input }: { kind: string; input: unknown }) {
   const identity = resolveToolCallIdentity({ kind, input });
 
   if (identity.family === "file-write") {
@@ -196,18 +161,11 @@ export function isExploreToolCall({
   // 有些只读探查会包在 for/while 循环里，例如批量查看 README 或递归扫目录，
   // 这种命令本身不一定以 rg/ls 开头，但仍然属于 explore。
   return commands.some(
-    (command) =>
-      SHELL_LOOP_RE.test(command) && EXECUTE_READ_COMMAND_RE.test(command),
+    (command) => SHELL_LOOP_RE.test(command) && EXECUTE_READ_COMMAND_RE.test(command),
   );
 }
 
-export function isExecuteToolCall({
-  kind,
-  input,
-}: {
-  kind: string;
-  input: unknown;
-}) {
+export function isExecuteToolCall({ kind, input }: { kind: string; input: unknown }) {
   const identity = resolveToolCallIdentity({ kind, input });
   return (
     identity.family === "shell" &&

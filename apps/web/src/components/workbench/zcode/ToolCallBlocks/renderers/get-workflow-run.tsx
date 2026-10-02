@@ -1,67 +1,46 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/get-workflow-run.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/get-workflow-run.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import {
-  CodeBlock,
-  CodeBlockHeader,
-} from "@zui/components/ai-elements/code-block";
+import { Gauge } from "lucide-react";
+import { useCallback, useMemo } from "react";
+import type { ToolCallGetWorkflowRunDisplay } from "@zcode/shared/zcode-protocol-v4";
+import { CodeBlock, CodeBlockHeader } from "@zui/components/ai-elements/code-block.js";
 import {
   RUN_STATUS_TEXT,
   readWorkflowRunStopReason,
   workflowRunStopReasonMessageId,
-} from "@zui/components/workflow-graph/run-status-presentation";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import {
-  formatWorkflowAge,
-  formatWorkflowTokenCount,
-} from "@zui/lib/workflowObservationFormat";
-import type { ToolCallGetWorkflowRunDisplay } from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import { WorkflowRunSubagentRoster } from "@zui/ToolCallBlocks/renderers/get-workflow-run-roster";
+} from "@zui/components/workflow-graph/run-status-presentation.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { formatWorkflowAge, formatWorkflowTokenCount } from "@zui/lib/workflowObservationFormat.js";
+import { WorkflowRunSubagentRoster } from "@zui/ToolCallBlocks/renderers/get-workflow-run-roster.js";
 import {
   WorkflowRunHealthLine,
   WorkflowRunPhaseTrack,
-} from "@zui/ToolCallBlocks/renderers/get-workflow-run-situation";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
-import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay";
-import { Gauge } from "lucide-react";
-import { useCallback, useMemo } from "react";
+} from "@zui/ToolCallBlocks/renderers/get-workflow-run-situation.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay.js";
+import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
 
 const ICON = <Gauge className="size-4 shrink-0 text-foreground-subtle" />;
 
-export function GetWorkflowRunToolCallBlock(
-  context: ToolCallBlockRenderContext,
-) {
+export function GetWorkflowRunToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
   const { toolCall } = context.toolCallNode;
   const display = readToolResultDisplay(toolCall.raw);
   const running = context.isRunning;
   // 查询错误与 run 执行失败是两个状态层级；错误查询不能继续展示旧 display。
   const failed = !running && toolCall.status === "failed";
-  const run =
-    !running && !failed && display?.kind === "get_workflow_run"
-      ? display
-      : undefined;
-  const fallback =
-    typeof toolCall.output === "string" ? toolCall.output.trim() : undefined;
-  const failureLabel = intl.formatMessage({
-    id: "chat.toolCall.status.failed",
-  });
+  const run = !running && !failed && display?.kind === "get_workflow_run" ? display : undefined;
+  const fallback = typeof toolCall.output === "string" ? toolCall.output.trim() : undefined;
+  const failureLabel = intl.formatMessage({ id: "chat.toolCall.status.failed" });
   const error = context.errorText || fallback || failureLabel;
   const primaryText = useMemo(
     () =>
       run ? (
         <span className="inline-flex min-w-0 items-center gap-2">
-          <span aria-hidden={true}>·</span>
+          <span aria-hidden>·</span>
           <span className="min-w-0 truncate">
-            {run.label ??
-              intl.formatMessage({ id: "chat.toolCall.workflow.fallbackName" })}
+            {run.label ?? intl.formatMessage({ id: "chat.toolCall.workflow.fallbackName" })}
           </span>
-          <span aria-hidden={true}>·</span>
+          <span aria-hidden>·</span>
           {/*
             有那句摘要就让它占住折叠行：一句「在第 2 / 4 个阶段、5 步已结算、2 个在跑」比
             「5/7 步」回答了更多问题。截断交给 CSS（truncate），不在这里切字符——切出来的
@@ -78,10 +57,7 @@ export function GetWorkflowRunToolCallBlock(
               )}
             </span>
           ) : (
-            <span
-              className="min-w-0 truncate"
-              data-testid="workflow-run-summary-line"
-            >
+            <span className="min-w-0 truncate" data-testid="workflow-run-summary-line">
               {run.summary}
             </span>
           )}
@@ -89,8 +65,7 @@ export function GetWorkflowRunToolCallBlock(
       ) : undefined,
     [intl, run],
   );
-  const hasDetails =
-    !running && (failed || run !== undefined || Boolean(fallback));
+  const hasDetails = !running && (failed || run !== undefined || Boolean(fallback));
   const renderContent = useCallback(() => {
     if (failed || !run)
       return (
@@ -149,9 +124,7 @@ function GetWorkflowRunBody({
 }) {
   const { intl } = useZCodeIntl();
   const terminal =
-    display.status === "completed" ||
-    display.status === "errored" ||
-    display.status === "stopped";
+    display.status === "completed" || display.status === "errored" || display.status === "stopped";
   const stopReason = readWorkflowRunStopReason(display);
   const tokens = intl.formatMessage(
     { id: "chat.toolCall.workflow.run.usage.tokens" },
@@ -161,8 +134,7 @@ function GetWorkflowRunBody({
   if (display.result !== undefined) {
     try {
       const value: unknown = JSON.parse(display.result);
-      if (value !== null && typeof value === "object")
-        json = JSON.stringify(value, null, 2);
+      if (value !== null && typeof value === "object") json = JSON.stringify(value, null, 2);
     } catch {
       /* 普通文本结果沿用正文排版。 */
     }
@@ -187,10 +159,7 @@ function GetWorkflowRunBody({
         都是它的展开。老载荷没有它，卡就从第一件事（结果 / 错误）开始。
       */}
       {display.summary === undefined || display.summary.length === 0 ? null : (
-        <p
-          className="break-words text-ui-base text-foreground"
-          data-testid="workflow-run-summary"
-        >
+        <p className="break-words text-ui-base text-foreground" data-testid="workflow-run-summary">
           {display.summary}
         </p>
       )}
@@ -203,9 +172,7 @@ function GetWorkflowRunBody({
           className="break-words text-ui-sm text-warning"
           data-testid="workflow-run-questions-unknown"
         >
-          {intl.formatMessage({
-            id: "chat.toolCall.workflow.getRun.questionsUnknown",
-          })}
+          {intl.formatMessage({ id: "chat.toolCall.workflow.getRun.questionsUnknown" })}
         </p>
       ) : null}
       {display.error ? (
@@ -221,7 +188,7 @@ function GetWorkflowRunBody({
             appTheme={theme}
             className="border border-border bg-card"
             contentClassName="max-h-80 overflow-auto"
-            wrapLongLines={true}
+            wrapLongLines
           >
             <CodeBlockHeader language="json" className="pl-3 pr-2 pt-2" />
           </CodeBlock>
@@ -253,40 +220,35 @@ function GetWorkflowRunBody({
       )}
       <div className="flex flex-wrap items-center gap-x-2 text-ui-sm text-foreground-subtlest">
         <span className={RUN_STATUS_TEXT[display.status]}>
-          {intl.formatMessage({
-            id: `chat.toolCall.workflow.run.status.${display.status}`,
-          })}
+          {intl.formatMessage({ id: `chat.toolCall.workflow.run.status.${display.status}` })}
         </span>
         {stopReason ? (
           <span data-testid="workflow-run-stop-reason">
-            {intl.formatMessage({
-              id: workflowRunStopReasonMessageId(stopReason),
-            })}
+            {intl.formatMessage({ id: workflowRunStopReasonMessageId(stopReason) })}
           </span>
         ) : null}
-        <span aria-hidden={true}>·</span>
-        {terminal ? null : (
+        <span aria-hidden>·</span>
+        {!terminal ? (
           <>
             <span>
               {intl.formatMessage(
                 { id: "chat.toolCall.workflow.card.steps" },
                 {
-                  done:
-                    display.usage.nodesCompleted + display.usage.nodesFailed,
+                  done: display.usage.nodesCompleted + display.usage.nodesFailed,
                   total: display.usage.nodesObserved,
                 },
               )}
             </span>
-            <span aria-hidden={true}>·</span>
+            <span aria-hidden>·</span>
             <span>
               {intl.formatMessage(
                 { id: "chat.toolCall.workflow.getRun.runningNodes" },
                 { count: display.usage.nodesRunning },
               )}
             </span>
-            <span aria-hidden={true}>·</span>
+            <span aria-hidden>·</span>
           </>
-        )}
+        ) : null}
         <span>{tokens}</span>
       </div>
       {display.status !== "completed" && logs ? (
@@ -296,18 +258,14 @@ function GetWorkflowRunBody({
       ) : null}
       {display.possiblyInterrupted ? (
         <p className="text-ui-sm text-warning">
-          {intl.formatMessage({
-            id: "chat.toolCall.workflow.getRun.interruptedHint",
-          })}
+          {intl.formatMessage({ id: "chat.toolCall.workflow.getRun.interruptedHint" })}
         </p>
       ) : null}
       {display.truncated ? (
         <p className="text-ui-xs text-foreground-subtle">
           {/* 这张卡被裁掉的是花名册 / 阶段 / 日志的行，不是诊断——共用 create_workflow 的
               「省略了部分诊断」会说错是什么被省略了。 */}
-          {intl.formatMessage({
-            id: "chat.toolCall.workflow.getRun.truncated",
-          })}
+          {intl.formatMessage({ id: "chat.toolCall.workflow.getRun.truncated" })}
         </p>
       ) : null}
     </div>

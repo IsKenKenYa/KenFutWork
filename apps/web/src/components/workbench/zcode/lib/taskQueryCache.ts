@@ -1,15 +1,10 @@
-/**
- * zcode 照搬：`@/lib/taskQueryCache.ts`（references/zcode/packages/ui/src/lib/taskQueryCache.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
 import type {
   ZCodeTaskListKind,
   ZCodeTaskListSortBy,
   ZCodeTaskListWorkspaceScope,
-} from "@zui/lib/zcode-services";
-import type { ZCodeTaskMeta } from "@zui/lib/zcode-shared";
-import { resolveWorkspaceStateKey } from "@zui/store/zcodeSessionStoreSelectors";
+} from "@zcode/services";
+import type { ZCodeTaskMeta } from "@zcode/shared";
+import { resolveWorkspaceStateKey } from "@zui/store/zcodeSessionStoreSelectors.js";
 
 export type TaskEntityKey = string;
 export type TaskListCacheKey = string;
@@ -42,10 +37,7 @@ export interface CachedTaskListResult {
   descriptor: TaskListCacheDescriptor;
 }
 
-export function buildTaskWorkspaceKey(
-  workspacePath: string,
-  workspaceIdentity?: string,
-): string {
+export function buildTaskWorkspaceKey(workspacePath: string, workspaceIdentity?: string): string {
   return resolveWorkspaceStateKey(workspacePath, workspaceIdentity);
 }
 
@@ -61,10 +53,7 @@ function normalizeTaskListWorkspaceScopes(
   const uniqueScopes = new Map<string, ZCodeTaskListWorkspaceScope>();
 
   for (const scope of scopes) {
-    const workspaceKey = buildTaskWorkspaceKey(
-      scope.workspacePath,
-      scope.workspaceIdentity,
-    );
+    const workspaceKey = buildTaskWorkspaceKey(scope.workspacePath, scope.workspaceIdentity);
     if (!workspaceKey.trim()) {
       continue;
     }
@@ -88,9 +77,7 @@ export function buildTaskListCacheDescriptor(params: {
   expanded: boolean;
   visibleLimit?: number | null;
 }): TaskListCacheDescriptor {
-  const normalizedScopes = normalizeTaskListWorkspaceScopes(
-    params.workspaceScopes,
-  );
+  const normalizedScopes = normalizeTaskListWorkspaceScopes(params.workspaceScopes);
   const workspaceKeys = normalizedScopes.map((scope) =>
     buildTaskWorkspaceKey(scope.workspacePath, scope.workspaceIdentity),
   );
@@ -100,10 +87,7 @@ export function buildTaskListCacheDescriptor(params: {
     sortBy: params.sortBy,
     search: normalizeTaskListSearch(params.search),
     expanded: params.expanded,
-    visibleLimit:
-      params.expanded || params.visibleLimit === undefined
-        ? null
-        : params.visibleLimit,
+    visibleLimit: params.expanded || params.visibleLimit === undefined ? null : params.visibleLimit,
     workspaceKeys,
   };
 }

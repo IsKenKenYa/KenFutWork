@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/v4/conversationShareSelectionPanelLayout.ts`（references/zcode/packages/ui/src/v4/conversationShareSelectionPanelLayout.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
 /** 分享选择面板的几何约束；面板内容本身仍由 CSS 自适应。 */
 const CONVERSATION_SHARE_SELECTION_PANEL_EDGE_INSET_PX = 24;
 const CONVERSATION_SHARE_SELECTION_PANEL_DOCK_GAP_PX = 16;
@@ -67,10 +62,7 @@ function resolveConversationShareSelectionPanelLayout({
     0,
     dockStart - CONVERSATION_SHARE_SELECTION_PANEL_DOCK_GAP_PX - top,
   );
-  const maxHeight = Math.max(
-    minHeight,
-    Math.min(unconstrainedMaxHeight, availableHeight),
-  );
+  const maxHeight = Math.max(minHeight, Math.min(unconstrainedMaxHeight, availableHeight));
 
   return {
     centerYPx: top + maxHeight / 2,
@@ -95,24 +87,16 @@ export function syncConversationShareSelectionPanelLayout(
   const centerY = `${layout.centerYPx}px`;
 
   if (
-    container.style.getPropertyValue(
-      CONVERSATION_SHARE_SELECTION_PANEL_MAX_HEIGHT_PROPERTY,
-    ) !== maxHeight
+    container.style.getPropertyValue(CONVERSATION_SHARE_SELECTION_PANEL_MAX_HEIGHT_PROPERTY) !==
+    maxHeight
   ) {
-    container.style.setProperty(
-      CONVERSATION_SHARE_SELECTION_PANEL_MAX_HEIGHT_PROPERTY,
-      maxHeight,
-    );
+    container.style.setProperty(CONVERSATION_SHARE_SELECTION_PANEL_MAX_HEIGHT_PROPERTY, maxHeight);
   }
   if (
-    container.style.getPropertyValue(
-      CONVERSATION_SHARE_SELECTION_PANEL_CENTER_Y_PROPERTY,
-    ) !== centerY
+    container.style.getPropertyValue(CONVERSATION_SHARE_SELECTION_PANEL_CENTER_Y_PROPERTY) !==
+    centerY
   ) {
-    container.style.setProperty(
-      CONVERSATION_SHARE_SELECTION_PANEL_CENTER_Y_PROPERTY,
-      centerY,
-    );
+    container.style.setProperty(CONVERSATION_SHARE_SELECTION_PANEL_CENTER_Y_PROPERTY, centerY);
   }
 
   return layout;

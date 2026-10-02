@@ -1,10 +1,4 @@
-/**
- * zcode 照搬：`@/lib/remoteWorkspaceServiceError.ts`（references/zcode/packages/ui/src/lib/remoteWorkspaceServiceError.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-export const REMOTE_WORKSPACE_DISCONNECTED_ERROR_CODE =
-  "ZCODE_REMOTE_WORKSPACE_DISCONNECTED";
+export const REMOTE_WORKSPACE_DISCONNECTED_ERROR_CODE = "ZCODE_REMOTE_WORKSPACE_DISCONNECTED";
 
 export function createRemoteWorkspaceDisconnectedError(): Error & {
   code: typeof REMOTE_WORKSPACE_DISCONNECTED_ERROR_CODE;

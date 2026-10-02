@@ -1,11 +1,4 @@
 /**
- * zcode 照搬：`@/app-shell/workflow-artifacts/presets/ArtifactChartView.tsx`（references/zcode/packages/ui/src/app-shell/workflow-artifacts/presets/ArtifactChartView.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件接口可选属性放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-/**
  * `chart` 预置渲染器的**实现**（recharts 在这个模块里，且只在这里）。
  *
  * 不要直接从 index 静态导入它：recharts 在模块初始化阶段会触发 decimal.js-light 的 LN10 校验，
@@ -17,44 +10,44 @@
  * - 全尺寸：`workflow-artifact` tab 里的带轴图 + 图例 + 参考线 + tooltip。
  */
 
-import {
-  type ArtifactItem,
-  applyArtifactItems,
-  type ChartModel,
-} from "@zui/app-shell/workflow-artifacts/presets/apply";
-import {
-  ARTIFACT_CHART_MAX_SERIES,
-  artifactSeriesColorVar,
-  artifactSeriesDash,
-  artifactSeriesSymbol,
-} from "@zui/app-shell/workflow-artifacts/presets/palette";
-import {
-  fieldHeading,
-  PresetEmpty,
-  PresetHeading,
-  type PresetLabels,
-  REVEAL_ANIMATION_CLASS,
-} from "@zui/app-shell/workflow-artifacts/presets/parts";
-import type { ChartSpec } from "@zui/app-shell/workflow-artifacts/presets/spec";
-import { cn } from "@zui/components/lib/utils";
-import {
-  type ChartConfig,
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from "@zui/components/ui/chart";
 import { memo, useMemo } from "react";
 import {
   Bar,
   CartesianGrid,
   ComposedChart,
-  type DotItemDotProps,
   Line,
   ReferenceLine,
   Scatter,
   XAxis,
   YAxis,
+  type DotItemDotProps,
 } from "recharts";
+import {
+  applyArtifactItems,
+  type ArtifactItem,
+  type ChartModel,
+} from "@zui/app-shell/workflow-artifacts/presets/apply.js";
+import {
+  artifactSeriesColorVar,
+  artifactSeriesDash,
+  artifactSeriesSymbol,
+  ARTIFACT_CHART_MAX_SERIES,
+} from "@zui/app-shell/workflow-artifacts/presets/palette.js";
+import {
+  fieldHeading,
+  PresetEmpty,
+  PresetHeading,
+  REVEAL_ANIMATION_CLASS,
+  type PresetLabels,
+} from "@zui/app-shell/workflow-artifacts/presets/parts.js";
+import type { ChartSpec } from "@zui/app-shell/workflow-artifacts/presets/spec.js";
+import { cn } from "@zui/components/lib/utils.js";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@zui/components/ui/chart.js";
 
 /** 点多到这个数以上就不画点了：一条挤满圆点的线比没有点更难读。 */
 const MAX_VISIBLE_DOTS = 60;
@@ -72,9 +65,7 @@ function renderRevealDot(props: DotItemDotProps) {
     return null;
   }
   const sequence =
-    payload &&
-    typeof payload === "object" &&
-    typeof payload.sequence === "number"
+    payload && typeof payload === "object" && typeof payload.sequence === "number"
       ? payload.sequence
       : index;
   return (
@@ -103,14 +94,7 @@ function seriesMarks(model: ChartModel, showDots: boolean) {
   return model.series.map((series) => {
     const color = `var(--color-${series.key})`;
     if (model.type === "bar") {
-      return (
-        <Bar
-          dataKey={series.key}
-          fill={color}
-          key={series.key}
-          isAnimationActive={false}
-        />
-      );
+      return <Bar dataKey={series.key} fill={color} key={series.key} isAnimationActive={false} />;
     }
     if (model.type === "scatter") {
       return (
@@ -124,7 +108,6 @@ function seriesMarks(model: ChartModel, showDots: boolean) {
         />
       );
     }
-    const dash = artifactSeriesDash(series.colorIndex);
     return (
       <Line
         connectNulls={false}
@@ -135,7 +118,7 @@ function seriesMarks(model: ChartModel, showDots: boolean) {
         isAnimationActive={false}
         key={series.key}
         stroke={color}
-        {...(dash === undefined ? {} : { strokeDasharray: dash })}
+        strokeDasharray={artifactSeriesDash(series.colorIndex)}
         strokeWidth={2}
         type="monotone"
       />
@@ -156,10 +139,7 @@ type PlotProps = { model: ChartModel; compact: boolean };
  * `memo` 的比较谓词（`true` = 跳过重渲染）。单独导出是为了能直接测——「什么时候不重画」
  * 是这张图的性能契约本身，把它藏在 memo 的第二实参里就没法钉住了。
  */
-export function chartPlotPropsEqual(
-  previous: PlotProps,
-  next: PlotProps,
-): boolean {
+export function chartPlotPropsEqual(previous: PlotProps, next: PlotProps): boolean {
   if (previous.compact !== next.compact) {
     return false;
   }
@@ -171,9 +151,7 @@ export function chartPlotPropsEqual(
   if (a.series.length !== b.series.length) {
     return false;
   }
-  if (
-    a.series.some((series, index) => series.label !== b.series[index]?.label)
-  ) {
+  if (a.series.some((series, index) => series.label !== b.series[index]?.label)) {
     return false;
   }
   if (a.points.length !== b.points.length) {
@@ -197,18 +175,13 @@ export function chartPlotPropsEqual(
   );
 }
 
-const ArtifactChartPlot = memo(function ArtifactChartPlot({
-  model,
-  compact,
-}: PlotProps) {
+const ArtifactChartPlot = memo(function ArtifactChartPlot({ model, compact }: PlotProps) {
   const config = useMemo(() => buildChartConfig(model), [model]);
   const showDots = model.points.length <= MAX_VISIBLE_DOTS;
   // 数值 x 才配数值轴；bar 天然是分类比较，一律走分类轴（band scale 才有正确的柱宽）。
   const categoricalX = model.type === "bar" || !model.x.numeric;
   const logDomain: [number, number] | undefined =
-    model.scale === "log" && model.domain
-      ? [model.domain.yMin, model.domain.yMax]
-      : undefined;
+    model.scale === "log" && model.domain ? [model.domain.yMin, model.domain.yMax] : undefined;
 
   if (compact) {
     return (
@@ -216,13 +189,10 @@ const ArtifactChartPlot = memo(function ArtifactChartPlot({
         <ComposedChart data={model.points} margin={COMPACT_MARGIN}>
           <XAxis
             dataKey={categoricalX ? "xLabel" : "x"}
-            hide={true}
+            hide
             type={categoricalX ? "category" : "number"}
           />
-          <YAxis
-            hide={true}
-            {...(logDomain ? { domain: logDomain, scale: "log" as const } : {})}
-          />
+          <YAxis hide {...(logDomain ? { domain: logDomain, scale: "log" as const } : {})} />
           {seriesMarks(model, showDots && model.points.length <= 24)}
         </ComposedChart>
       </ChartContainer>
@@ -240,9 +210,7 @@ const ArtifactChartPlot = memo(function ArtifactChartPlot({
           tickLine={false}
           tickMargin={8}
           type={categoricalX ? "category" : "number"}
-          {...(categoricalX
-            ? {}
-            : { domain: ["dataMin", "dataMax"] as [string, string] })}
+          {...(categoricalX ? {} : { domain: ["dataMin", "dataMax"] as [string, string] })}
         />
         <YAxis
           axisLine={false}
@@ -268,9 +236,7 @@ const ArtifactChartPlot = memo(function ArtifactChartPlot({
           content={
             <ChartTooltipContent
               labelFormatter={(_label, payload) => {
-                const point = payload?.[0]?.payload as
-                  | { xLabel?: string }
-                  | undefined;
+                const point = payload?.[0]?.payload as { xLabel?: string } | undefined;
                 return fieldHeading(point?.xLabel ?? "", model.x.unit);
               }}
             />
@@ -311,9 +277,7 @@ function ChartLegendRow({ model }: { model: ChartModel }) {
                 y2={4}
               />
             </svg>
-            <span className="truncate text-foreground-subtle">
-              {series.label}
-            </span>
+            <span className="truncate text-foreground-subtle">{series.label}</span>
             {typeof value === "number" ? (
               // 直接标注最新值：图例不只是一块色块 + 名字，它同时是这条序列此刻的读数。
               <span className="shrink-0 font-mono text-ui-xs text-foreground tabular-nums">
@@ -336,10 +300,7 @@ function CompactLatestValue({ model }: { model: ChartModel }) {
     return null;
   }
   return (
-    <span
-      className="flex shrink-0 items-baseline gap-1"
-      data-testid="artifact-chart-latest"
-    >
+    <span className="flex shrink-0 items-baseline gap-1" data-testid="artifact-chart-latest">
       <span
         className={cn(
           "font-mono text-ui-base font-medium text-foreground tabular-nums",
@@ -365,9 +326,9 @@ export function ArtifactChartView({
 }: {
   spec: ChartSpec;
   items: readonly ArtifactItem[];
-  compact?: boolean | undefined;
+  compact?: boolean;
   labels: PresetLabels;
-  className?: string | undefined;
+  className?: string;
 }) {
   const model = useMemo(() => {
     const built = applyArtifactItems("chart", spec, items);
@@ -381,11 +342,7 @@ export function ArtifactChartView({
     return (
       <div className={className}>
         {compact ? null : (
-          <PresetHeading
-            className="mb-3"
-            description={spec.description}
-            title={spec.title}
-          />
+          <PresetHeading className="mb-3" description={spec.description} title={spec.title} />
         )}
         <PresetEmpty compact={compact} label={labels.empty} />
       </div>
@@ -399,7 +356,7 @@ export function ArtifactChartView({
         data-testid="artifact-chart-compact"
       >
         <div className="min-w-0 flex-1">
-          <ArtifactChartPlot compact={true} model={model} />
+          <ArtifactChartPlot compact model={model} />
         </div>
         <CompactLatestValue model={model} />
       </div>
@@ -408,11 +365,7 @@ export function ArtifactChartView({
 
   return (
     <div className={cn("min-w-0", className)} data-testid="artifact-chart">
-      <PresetHeading
-        className="mb-2"
-        description={spec.description}
-        title={spec.title}
-      />
+      <PresetHeading className="mb-2" description={spec.description} title={spec.title} />
       <div className="mb-2">
         <ChartLegendRow model={model} />
       </div>

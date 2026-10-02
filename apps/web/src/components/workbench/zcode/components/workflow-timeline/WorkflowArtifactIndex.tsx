@@ -1,23 +1,17 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/WorkflowArtifactIndex.tsx`（references/zcode/packages/ui/src/components/workflow-timeline/WorkflowArtifactIndex.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
+import type { CSSProperties } from "react";
+import { ArrowUpRightIcon, EllipsisIcon } from "lucide-react";
 import {
   ArtifactDetail,
   ArtifactKindIcon,
   artifactDetailText,
   artifactDisplayTitle,
   artifactKindMessageId,
-} from "@zui/app-shell/workflow-artifacts/artifactPresentation";
-import type { PresetLabels } from "@zui/app-shell/workflow-artifacts/presets/index";
-import { cn } from "@zui/components/lib/utils";
-import type { WorkflowCompletionArtifact } from "@zui/components/workflow-timeline/WorkflowArtifactTile";
-import { PILL_STAGGER_MS } from "@zui/components/workflow-timeline/WorkflowTimeline";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { ArrowUpRightIcon, EllipsisIcon } from "lucide-react";
-import type { CSSProperties } from "react";
+} from "@zui/app-shell/workflow-artifacts/artifactPresentation.js";
+import type { PresetLabels } from "@zui/app-shell/workflow-artifacts/presets/index.js";
+import { cn } from "@zui/components/lib/utils.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { WorkflowCompletionArtifact } from "./WorkflowArtifactTile.js";
+import { PILL_STAGGER_MS } from "./WorkflowTimeline.js";
 
 /**
  * 产物索引（侧板）：交付物行之后的**其余产物**，一件一行。
@@ -39,9 +33,7 @@ import type { CSSProperties } from "react";
  *
  * ⚠ 术语：artifact = 脚本经 `artifact.*` 发布给用户看的产出。
  */
-function enterStyle(
-  enterDelayMs: number | undefined,
-): CSSProperties | undefined {
+function enterStyle(enterDelayMs: number | undefined): CSSProperties | undefined {
   return enterDelayMs === undefined || enterDelayMs <= 0
     ? undefined
     : { animationDelay: `${enterDelayMs}ms`, animationFillMode: "backwards" };
@@ -68,9 +60,7 @@ function WorkflowArtifactLine({
 }) {
   const { intl } = useZCodeIntl();
   const title = artifactDisplayTitle(artifact);
-  const kindLabel = intl.formatMessage({
-    id: artifactKindMessageId(artifact.kind),
-  });
+  const kindLabel = intl.formatMessage({ id: artifactKindMessageId(artifact.kind) });
   const hasDetail = artifactDetailText(artifact, labels) !== undefined;
   const openable = onOpen !== undefined;
   const version = artifact.version ?? 1;
@@ -83,10 +73,7 @@ function WorkflowArtifactLine({
           ? `${intl.formatMessage({ id: "chat.toolCall.workflow.run.artifacts.open" })}: ${title}`
           : undefined
       }
-      className={cn(
-        LINE_CLASS,
-        openable ? "wf-line-open cursor-pointer" : "cursor-default",
-      )}
+      className={cn(LINE_CLASS, openable ? "wf-line-open cursor-pointer" : "cursor-default")}
       data-artifact-id={artifact.id}
       data-artifact-kind={artifact.kind}
       data-artifact-open={openable ? "true" : undefined}
@@ -133,7 +120,7 @@ function WorkflowArtifactLine({
           ) : null}
           {openable ? (
             <span
-              aria-hidden={true}
+              aria-hidden
               className="wf-pill-go flex items-center justify-center text-foreground-subtlest"
               data-testid="workflow-artifact-tile-open"
             >
@@ -165,24 +152,16 @@ function WorkflowArtifactMoreLine({
   const openable = onOpen !== undefined;
   return (
     <button
-      className={cn(
-        LINE_CLASS,
-        openable ? "wf-line-open cursor-pointer" : "cursor-default",
-      )}
+      className={cn(LINE_CLASS, openable ? "wf-line-open cursor-pointer" : "cursor-default")}
       data-testid={testId}
       data-variant="more"
       disabled={!openable}
       onClick={onOpen}
       style={enterStyle(enterDelayMs)}
-      title={intl.formatMessage({
-        id: "chat.toolCall.workflow.openRunDetails",
-      })}
+      title={intl.formatMessage({ id: "chat.toolCall.workflow.openRunDetails" })}
       type="button"
     >
-      <EllipsisIcon
-        aria-hidden={true}
-        className="size-3.5 shrink-0 text-foreground-subtlest"
-      />
+      <EllipsisIcon aria-hidden className="size-3.5 shrink-0 text-foreground-subtlest" />
       <span className="min-w-0 flex-1 truncate text-foreground-subtle">
         {intl.formatMessage(
           { id: "chat.toolCall.workflow.completion.moreArtifacts" },
@@ -193,7 +172,7 @@ function WorkflowArtifactMoreLine({
         // 一扇门没有状态标记可让位：↗ 在场即在，不等悬停（wf-pill-go-rest）。
         <span className="grid size-3 shrink-0 place-items-center">
           <span
-            aria-hidden={true}
+            aria-hidden
             className="wf-pill-go wf-pill-go-rest flex items-center justify-center text-foreground-subtlest"
             data-testid="workflow-artifact-tile-open"
           >
@@ -248,9 +227,7 @@ export function WorkflowArtifactIndex({
     <div
       className={cn(
         "grid gap-x-5",
-        columns === "auto"
-          ? "grid-cols-[repeat(auto-fit,minmax(220px,1fr))]"
-          : "grid-cols-1",
+        columns === "auto" ? "grid-cols-[repeat(auto-fit,minmax(220px,1fr))]" : "grid-cols-1",
         rule && "border-t border-[var(--color-workflow-rule)] pt-1.5",
       )}
       data-columns={columns}

@@ -1,14 +1,8 @@
-/**
- * zcode 照搬：`@/v4/ConversationUserInputBody.tsx`（references/zcode/packages/ui/src/v4/ConversationUserInputBody.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { cn } from "@zui/components/lib/utils";
-import { Button } from "@zui/components/ui/button";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { cn } from "@zui/components/lib/utils.js";
+import { Button } from "@zui/components/ui/button.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 
 const COLLAPSED_USER_INPUT_CONTENT_MAX_HEIGHT_PX = 120;
 const USER_INPUT_CONTENT_OVERFLOW_TOLERANCE_PX = 1;
@@ -16,15 +10,11 @@ const USER_INPUT_CONTENT_OVERFLOW_TOLERANCE_PX = 1;
 function isUserInputContentOverflowing(scrollHeight: number): boolean {
   return (
     scrollHeight >
-    COLLAPSED_USER_INPUT_CONTENT_MAX_HEIGHT_PX +
-      USER_INPUT_CONTENT_OVERFLOW_TOLERANCE_PX
+    COLLAPSED_USER_INPUT_CONTENT_MAX_HEIGHT_PX + USER_INPUT_CONTENT_OVERFLOW_TOLERANCE_PX
   );
 }
 
-function resolveUserInputContentMaxHeight(
-  expanded: boolean,
-  contentScrollHeight: number,
-): string {
+function resolveUserInputContentMaxHeight(expanded: boolean, contentScrollHeight: number): string {
   const height = expanded
     ? Math.max(contentScrollHeight, COLLAPSED_USER_INPUT_CONTENT_MAX_HEIGHT_PX)
     : COLLAPSED_USER_INPUT_CONTENT_MAX_HEIGHT_PX;
@@ -70,9 +60,7 @@ export function ConversationUserInputBody({
       );
       if (!expanded) {
         const nextExpandable = isUserInputContentOverflowing(nextScrollHeight);
-        setExpandable((current) =>
-          current === nextExpandable ? current : nextExpandable,
-        );
+        setExpandable((current) => (current === nextExpandable ? current : nextExpandable));
       }
     };
     const scheduleOverflowUpdate = () => {
@@ -93,36 +81,27 @@ export function ConversationUserInputBody({
     scheduleOverflowUpdate();
 
     let observer: ResizeObserver | null = null;
-    if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", scheduleOverflowUpdate);
-    } else {
+    if (typeof ResizeObserver !== "undefined") {
       observer = new ResizeObserver(scheduleOverflowUpdate);
       observer.observe(content);
+    } else {
+      window.addEventListener("resize", scheduleOverflowUpdate);
     }
 
     return () => {
       observer?.disconnect();
       window.removeEventListener("resize", scheduleOverflowUpdate);
-      if (
-        animationFrameRef.current !== null &&
-        animationFrameRef.current >= 0
-      ) {
+      if (animationFrameRef.current !== null && animationFrameRef.current >= 0) {
         window.cancelAnimationFrame(animationFrameRef.current);
       }
       animationFrameRef.current = null;
     };
   }, [contentText, expanded, rowId]);
 
-  const resolvedMaxHeight = resolveUserInputContentMaxHeight(
-    expanded,
-    contentScrollHeight,
-  );
+  const resolvedMaxHeight = resolveUserInputContentMaxHeight(expanded, contentScrollHeight);
 
   return (
-    <div
-      data-conversation-selectable="true"
-      className="relative min-w-0 flex-1"
-    >
+    <div data-conversation-selectable="true" className="relative min-w-0 flex-1">
       <div
         ref={contentRef}
         data-v4-user-input-collapsible-content="true"

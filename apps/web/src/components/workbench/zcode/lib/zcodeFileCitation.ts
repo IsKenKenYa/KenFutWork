@@ -1,22 +1,11 @@
-/**
- * zcode 照搬：`@/lib/zcodeFileCitation.ts`（references/zcode/packages/ui/src/lib/zcodeFileCitation.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
 import {
   extractAssistantDirectives,
   findAssistantDirectivePrefixStart,
   findMarkdownCodeRanges,
   findUnclosedAssistantDirectiveStart,
-} from "@zui/lib/assistantDirectiveParser";
+} from "@zui/lib/assistantDirectiveParser.js";
 
-type ZCodeFileCitationPreviewKind =
-  | "docx"
-  | "xlsx"
-  | "pptx"
-  | "pdf"
-  | "video"
-  | "audio";
+type ZCodeFileCitationPreviewKind = "docx" | "xlsx" | "pptx" | "pdf" | "video" | "audio";
 
 interface ZCodeFileCitation {
   artifactKind?: string;
@@ -49,9 +38,7 @@ const ARTIFACT_KIND_TO_PREVIEW_KIND: Readonly<
   video: "video",
   workbook: "xlsx",
 };
-const PREVIEW_EXTENSION_TO_KIND: Readonly<
-  Record<string, ZCodeFileCitationPreviewKind>
-> = {
+const PREVIEW_EXTENSION_TO_KIND: Readonly<Record<string, ZCodeFileCitationPreviewKind>> = {
   ".docx": "docx",
   ".flac": "audio",
   ".m4a": "audio",
@@ -76,9 +63,7 @@ const ZCODE_FILE_CITATION_SYNTAX = {
   allowTripleColon: true,
 } as const;
 
-export function extractZCodeFileCitationDirectives(
-  content: string,
-): ZCodeFileCitationDirective[] {
+export function extractZCodeFileCitationDirectives(content: string): ZCodeFileCitationDirective[] {
   return extractAssistantDirectives(
     content,
     ZCODE_FILE_CITATION_DIRECTIVE_NAME,
@@ -87,21 +72,17 @@ export function extractZCodeFileCitationDirectives(
     start: directive.start,
     end: directive.end,
     raw: directive.raw,
-    ...(directive.parameters?.path?.trim()
-      ? { path: directive.parameters.path.trim() }
+    ...(directive.parameters?.path?.trim() ? { path: directive.parameters.path.trim() } : {}),
+    ...(directive.parameters?.purpose !== undefined
+      ? { purpose: directive.parameters.purpose }
       : {}),
-    ...(directive.parameters?.purpose === undefined
-      ? {}
-      : { purpose: directive.parameters.purpose }),
-    ...(directive.parameters?.artifact_kind === undefined
-      ? {}
-      : { artifactKind: directive.parameters.artifact_kind }),
+    ...(directive.parameters?.artifact_kind !== undefined
+      ? { artifactKind: directive.parameters.artifact_kind }
+      : {}),
   }));
 }
 
-export function extractZCodeFileCitations(
-  content: string,
-): ZCodeFileCitation[] {
+export function extractZCodeFileCitations(content: string): ZCodeFileCitation[] {
   return extractZCodeFileCitationDirectives(content).flatMap((directive) =>
     directive.path
       ? [
@@ -138,8 +119,7 @@ export function projectZCodeFileCitations(
       ["code-comment", ZCODE_FILE_CITATION_DIRECTIVE_NAME],
       protectedRanges,
       {
-        minimumSingleColonPrefixLength:
-          ZCODE_FILE_CITATION_SINGLE_COLON_PREFIX_LENGTH,
+        minimumSingleColonPrefixLength: ZCODE_FILE_CITATION_SINGLE_COLON_PREFIX_LENGTH,
         singleColonDirectiveNames: [ZCODE_FILE_CITATION_DIRECTIVE_NAME],
         tripleColonDirectiveNames: [ZCODE_FILE_CITATION_DIRECTIVE_NAME],
       },
@@ -154,9 +134,7 @@ export function projectZCodeFileCitations(
   };
 }
 
-function inferPreviewKindFromPath(
-  path: string,
-): ZCodeFileCitationPreviewKind | null {
+function inferPreviewKindFromPath(path: string): ZCodeFileCitationPreviewKind | null {
   const normalizedPath = path.trim().toLowerCase();
   for (const [extension, kind] of Object.entries(PREVIEW_EXTENSION_TO_KIND)) {
     if (normalizedPath.endsWith(extension)) return kind;
@@ -171,7 +149,6 @@ export function resolveZCodeFileCitationPreviewKind(params: {
   const inferredKind = inferPreviewKindFromPath(params.path);
   if (params.artifactKind === undefined) return inferredKind;
 
-  const artifactKind =
-    ARTIFACT_KIND_TO_PREVIEW_KIND[params.artifactKind.trim().toLowerCase()];
+  const artifactKind = ARTIFACT_KIND_TO_PREVIEW_KIND[params.artifactKind.trim().toLowerCase()];
   return artifactKind && artifactKind === inferredKind ? artifactKind : null;
 }

@@ -1,4 +1,3 @@
-/** zcode 照搬：`@/lib/diagramViewport.ts`（references/zcode/packages/ui/src/lib/diagramViewport.ts）许可证：Apache-2.0（zcode）。适配注记：逐字照搬，仅 import 路径映射（`@/x` → `@zui/x`，`@zcode/shared` → `@zui/lib/zcode-shared.js`）。 */
 export type DiagramPoint = {
   x: number;
   y: number;
@@ -73,12 +72,7 @@ export function fitDiagramToViewport({
   viewportHeight: number;
   viewportWidth: number;
 }): DiagramViewportTransform {
-  if (
-    diagramWidth <= 0 ||
-    diagramHeight <= 0 ||
-    viewportWidth <= 0 ||
-    viewportHeight <= 0
-  ) {
+  if (diagramWidth <= 0 || diagramHeight <= 0 || viewportWidth <= 0 || viewportHeight <= 0) {
     return { scale: 1, translateX: 0, translateY: 0 };
   }
 

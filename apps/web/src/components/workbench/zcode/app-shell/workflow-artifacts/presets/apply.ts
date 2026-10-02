@@ -1,9 +1,4 @@
 /**
- * zcode 照搬：`@/app-shell/workflow-artifacts/presets/apply.ts`（references/zcode/packages/ui/src/app-shell/workflow-artifacts/presets/apply.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-/**
  * `applyArtifactItems` —— 把一串 `report(item, artifactId)` 条目折成预置看板的视图模型。
  *
  * 纯函数、不含 React：看板本身**不存数据**，它的每一个点 / 行 / 卡片都是一条 journal 上
@@ -14,18 +9,18 @@
  */
 
 import {
+  artifactFieldLabel,
+  chartSeriesFields,
   type ArtifactChartScale,
   type ArtifactChartType,
   type ArtifactField,
   type ArtifactPresetKind,
   type ArtifactPresetSpec,
-  artifactFieldLabel,
   type BoardSpec,
   type ChartSpec,
-  chartSeriesFields,
   type MetricsSpec,
   type TableSpec,
-} from "@zui/app-shell/workflow-artifacts/presets/spec";
+} from "@zui/app-shell/workflow-artifacts/presets/spec.js";
 
 /**
  * 一条到达的条目。`sequence` 是 run 内全局递增的事件序号——它同时是 React key
@@ -170,11 +165,7 @@ function formatArtifactValue(value: unknown): string {
   if (typeof value === "string") {
     return value;
   }
-  if (
-    typeof value === "number" ||
-    typeof value === "boolean" ||
-    typeof value === "bigint"
-  ) {
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
     return String(value);
   }
   try {
@@ -189,10 +180,7 @@ function seriesKey(index: number): string {
   return `y${index}`;
 }
 
-function applyChart(
-  spec: ChartSpec,
-  items: readonly ArtifactItem[],
-): ChartModel {
+function applyChart(spec: ChartSpec, items: readonly ArtifactItem[]): ChartModel {
   const fields = chartSeriesFields(spec);
   const series: ChartSeriesModel[] = fields.map((field, index) => ({
     key: seriesKey(index),
@@ -236,13 +224,12 @@ function applyChart(
   }
 
   // 数值 x 才排序。混了一个非数值就整轴退化成「到达顺序」——半排序的 x 轴比不排序更骗人。
-  const numericX =
-    raws.length > 0 && raws.every((raw) => toFiniteNumber(raw.x) !== undefined);
+  const numericX = raws.length > 0 && raws.every((raw) => toFiniteNumber(raw.x) !== undefined);
   const ordered = numericX
     ? [...raws].sort((left, right) => {
         const delta = toFiniteNumber(left.x)! - toFiniteNumber(right.x)!;
         // 同 x 时按到达顺序，保证同一批条目每次折叠出同一个顺序。
-        return delta === 0 ? left.sequence - right.sequence : delta;
+        return delta !== 0 ? delta : left.sequence - right.sequence;
       })
     : raws;
 
@@ -288,10 +275,7 @@ function applyChart(
   };
 }
 
-function applyTable(
-  spec: TableSpec,
-  items: readonly ArtifactItem[],
-): TableModel {
+function applyTable(spec: TableSpec, items: readonly ArtifactItem[]): TableModel {
   const columns: TableColumnModel[] = spec.columns.map((column) => ({
     field: column.field,
     label: artifactFieldLabel(column),
@@ -302,9 +286,7 @@ function applyTable(
   // 一张会跳动排序的表在运行期没法读。
   const byId = new Map<string, TableRowModel>();
   for (const entry of items) {
-    const keyValue = spec.key
-      ? readArtifactField(entry.item, spec.key)
-      : undefined;
+    const keyValue = spec.key ? readArtifactField(entry.item, spec.key) : undefined;
     // key 缺席（或声明了 key 但这条没带）时用 journal 身份兜底：`siteId@ordinal` 逐条唯一，
     // 于是 upsert 自然退化成追加——不必为两种模式各写一条路径。
     const id = hasValue(keyValue)
@@ -322,10 +304,7 @@ function applyTable(
   return { kind: "table", columns, rows: [...byId.values()] };
 }
 
-function applyMetrics(
-  spec: MetricsSpec,
-  items: readonly ArtifactItem[],
-): MetricsModel {
+function applyMetrics(spec: MetricsSpec, items: readonly ArtifactItem[]): MetricsModel {
   const metrics: MetricTileModel[] = spec.metrics.map((metric) => ({
     field: metric.field,
     label: artifactFieldLabel(metric),
@@ -352,10 +331,7 @@ function applyMetrics(
   return { kind: "metrics", metrics };
 }
 
-function applyBoard(
-  spec: BoardSpec,
-  items: readonly ArtifactItem[],
-): BoardModel {
+function applyBoard(spec: BoardSpec, items: readonly ArtifactItem[]): BoardModel {
   const detail: ArtifactField[] = spec.detail ?? [];
   // Map 的插入顺序 = 卡片首次出现的顺序；改状态的卡在新列里仍按这个顺序排。
   const byId = new Map<string, BoardCardModel>();
@@ -367,12 +343,8 @@ function applyBoard(
       continue;
     }
     const id = formatArtifactValue(keyValue);
-    const status = formatArtifactValue(
-      readArtifactField(entry.item, spec.status),
-    );
-    const titleRaw = spec.cardTitle
-      ? readArtifactField(entry.item, spec.cardTitle)
-      : undefined;
+    const status = formatArtifactValue(readArtifactField(entry.item, spec.status));
+    const titleRaw = spec.cardTitle ? readArtifactField(entry.item, spec.cardTitle) : undefined;
     byId.set(id, {
       id,
       sequence: entry.sequence,
@@ -392,11 +364,7 @@ function applyBoard(
     cards: [],
   }));
   const listed = new Map(columns.map((column) => [column.id, column]));
-  const other: BoardColumnModel = {
-    id: BOARD_OTHER_COLUMN_ID,
-    other: true,
-    cards: [],
-  };
+  const other: BoardColumnModel = { id: BOARD_OTHER_COLUMN_ID, other: true, cards: [] };
 
   for (const card of byId.values()) {
     (listed.get(card.status) ?? other).cards.push(card);

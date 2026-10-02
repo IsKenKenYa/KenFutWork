@@ -1,32 +1,24 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/list-workflow-runs.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/list-workflow-runs.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { cn } from "@zui/components/lib/utils";
+import { History } from "lucide-react";
+import { useMemo } from "react";
+import type { ToolCallListWorkflowRunsDisplay } from "@zcode/shared/zcode-protocol-v4";
 import {
   RUN_STATUS_DOT,
   RUN_STATUS_TEXT,
   readWorkflowRunStopReason,
   workflowRunStopReasonMessageId,
-} from "@zui/components/workflow-graph/run-status-presentation";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
+} from "@zui/components/workflow-graph/run-status-presentation.js";
+import { cn } from "@zui/components/lib/utils.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import {
   formatWorkflowTimestamp,
   formatWorkflowTokenCount,
-} from "@zui/lib/workflowObservationFormat";
-import type { ToolCallListWorkflowRunsDisplay } from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
-import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay";
-import { History } from "lucide-react";
-import { useMemo } from "react";
+} from "@zui/lib/workflowObservationFormat.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay.js";
+import { ToolLayout } from "../ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "../shared.js";
 
-const LIST_WORKFLOW_RUNS_TOOL_ICON = (
-  <History className="size-4 shrink-0 text-foreground-subtle" />
-);
+const LIST_WORKFLOW_RUNS_TOOL_ICON = <History className="size-4 shrink-0 text-foreground-subtle" />;
 
 /**
  * ListWorkflowRuns 的聊天卡。
@@ -35,24 +27,19 @@ const LIST_WORKFLOW_RUNS_TOOL_ICON = (
  * ［状态点词 | label mono | 短时间 | tokens］，本会话 run 加边框小签，possiblyInterrupted
  * 行尾给警示标注——「可能已中断」是读面标注不是状态改写，卡片上同样只标注。
  */
-export function ListWorkflowRunsToolCallBlock(
-  context: ToolCallBlockRenderContext,
-) {
+export function ListWorkflowRunsToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
   const { toolCall } = context.toolCallNode;
 
   const display = readToolResultDisplay(toolCall.raw);
-  const listDisplay =
-    display?.kind === "list_workflow_runs" ? display : undefined;
+  const listDisplay = display?.kind === "list_workflow_runs" ? display : undefined;
 
   const kindLabel = intl.formatMessage({
     id: context.isRunning
       ? "chat.toolCall.workflow.listRuns.listing"
       : "chat.toolCall.workflow.listRuns.listed",
   });
-  const emptyLabel = intl.formatMessage({
-    id: "chat.toolCall.workflow.listRuns.empty",
-  });
+  const emptyLabel = intl.formatMessage({ id: "chat.toolCall.workflow.listRuns.empty" });
   const runCount = listDisplay?.runs.length ?? 0;
   const countLabel = intl.formatMessage(
     {
@@ -90,16 +77,13 @@ export function ListWorkflowRunsToolCallBlock(
           {rows}
           {listDisplay.truncated ? (
             <p className="text-ui-xs text-foreground-subtle">
-              {intl.formatMessage({
-                id: "chat.toolCall.workflow.listRuns.truncated",
-              })}
+              {intl.formatMessage({ id: "chat.toolCall.workflow.listRuns.truncated" })}
             </p>
           ) : null}
         </div>
       );
     }
-    if (fallbackText === undefined || fallbackText.length === 0)
-      return undefined;
+    if (fallbackText === undefined || fallbackText.length === 0) return undefined;
     return () => (
       <pre className="mb-2 max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-panel px-4 py-3 font-mono text-ui-base text-foreground-subtle">
         {fallbackText}
@@ -122,9 +106,7 @@ export function ListWorkflowRunsToolCallBlock(
         kindLabel={context.kindLabelOverride ?? kindLabel}
         sourceLabel={context.sourceLabel}
         primaryText={primaryText}
-        statusLabel={
-          toolCall.status === "failed" ? context.statusLabel : undefined
-        }
+        statusLabel={toolCall.status === "failed" ? context.statusLabel : undefined}
         statusTooltip={context.errorText}
         showFailureStatus={toolCall.status === "failed"}
         isRunning={context.isRunning}
@@ -143,23 +125,15 @@ export function ListWorkflowRunsToolCallBlock(
   );
 }
 
-function ListWorkflowRunsBody({
-  runs,
-}: {
-  runs: ToolCallListWorkflowRunsDisplay["runs"];
-}) {
+function ListWorkflowRunsBody({ runs }: { runs: ToolCallListWorkflowRunsDisplay["runs"] }) {
   const { intl } = useZCodeIntl();
-  const ownSessionLabel = intl.formatMessage({
-    id: "chat.toolCall.workflow.listRuns.ownSession",
-  });
+  const ownSessionLabel = intl.formatMessage({ id: "chat.toolCall.workflow.listRuns.ownSession" });
   const interruptedLabel = intl.formatMessage({
     id: "chat.toolCall.workflow.listRuns.interrupted",
   });
 
   if (runs.length === 0) {
-    const emptyLabel = intl.formatMessage({
-      id: "chat.toolCall.workflow.listRuns.empty",
-    });
+    const emptyLabel = intl.formatMessage({ id: "chat.toolCall.workflow.listRuns.empty" });
     return <p className="text-ui-sm text-foreground-subtlest">{emptyLabel}</p>;
   }
 
@@ -180,19 +154,12 @@ function ListWorkflowRunsBody({
             <span className="flex shrink-0 items-center gap-1.5">
               <span
                 aria-hidden="true"
-                className={cn(
-                  "size-1.5 rounded-full",
-                  RUN_STATUS_DOT[run.status],
-                )}
+                className={cn("size-1.5 rounded-full", RUN_STATUS_DOT[run.status])}
               />
-              <span className={cn("text-ui-sm", RUN_STATUS_TEXT[run.status])}>
-                {statusWord}
-              </span>
+              <span className={cn("text-ui-sm", RUN_STATUS_TEXT[run.status])}>{statusWord}</span>
               {stopReason ? (
                 <span className="text-ui-xs text-foreground-subtlest">
-                  {intl.formatMessage({
-                    id: workflowRunStopReasonMessageId(stopReason),
-                  })}
+                  {intl.formatMessage({ id: workflowRunStopReasonMessageId(stopReason) })}
                 </span>
               ) : null}
             </span>
@@ -208,9 +175,7 @@ function ListWorkflowRunsBody({
               </span>
             ) : null}
             {run.possiblyInterrupted === true ? (
-              <span className="shrink-0 text-ui-xs text-warning">
-                {interruptedLabel}
-              </span>
+              <span className="shrink-0 text-ui-xs text-warning">{interruptedLabel}</span>
             ) : null}
             <span className="shrink-0 font-mono text-ui-xs tabular-nums text-foreground-subtlest">
               {formatWorkflowTimestamp(run.updatedAt)}

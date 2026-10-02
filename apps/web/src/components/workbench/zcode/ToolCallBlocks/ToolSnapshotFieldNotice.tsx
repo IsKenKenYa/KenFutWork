@@ -1,24 +1,15 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/ToolSnapshotFieldNotice.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/ToolSnapshotFieldNotice.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- * 适配注记：接口可选属性放宽 | undefined 以等价 zcode tsconfig 行为（exactOptionalPropertyTypes）。
- */
-
-import { Button } from "@zui/components/ui/button";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { ZCodeTaskSnapshotToolFieldRef } from "@zui/lib/zcode-shared";
-import { Loader2Icon } from "lucide-react";
 import { useState } from "react";
+import { Loader2Icon } from "lucide-react";
+import type { ZCodeTaskSnapshotToolFieldRef } from "@zcode/shared";
+import { Button } from "@zui/components/ui/button.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 
 export function ToolSnapshotFieldNotice({
   refs,
   onLoadFullToolCallFields,
 }: {
   refs: readonly ZCodeTaskSnapshotToolFieldRef[];
-  onLoadFullToolCallFields?:
-    | (() => Promise<boolean | void> | boolean | void)
-    | undefined;
+  onLoadFullToolCallFields?: () => Promise<boolean | void> | boolean | void;
 }) {
   const { intl, locale } = useZCodeIntl();
   const [loading, setLoading] = useState(false);

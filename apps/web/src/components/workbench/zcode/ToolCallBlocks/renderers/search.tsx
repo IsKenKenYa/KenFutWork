@@ -1,25 +1,14 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/search.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/search.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
-
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
 import { SearchIcon } from "lucide-react";
 import { useMemo } from "react";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { ToolLayout } from "../ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "../shared.js";
 
-const SEARCH_TOOL_ICON = (
-  <SearchIcon className="size-4 shrink-0 text-foreground-subtle" />
-);
+const SEARCH_TOOL_ICON = <SearchIcon className="size-4 shrink-0 text-foreground-subtle" />;
 
 type IntlLike = {
-  formatMessage: (
-    descriptor: { id: string },
-    values?: Record<string, string>,
-  ) => string;
+  formatMessage: (descriptor: { id: string }, values?: Record<string, string>) => string;
 };
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -30,10 +19,7 @@ export function getSearchPrimaryText(intl: IntlLike, input: unknown): string {
   if (typeof input === "string") {
     const trimmed = input.trim();
     return trimmed.length > 0
-      ? intl.formatMessage(
-          { id: "chat.toolCall.search.findWithQuery" },
-          { query: trimmed },
-        )
+      ? intl.formatMessage({ id: "chat.toolCall.search.findWithQuery" }, { query: trimmed })
       : intl.formatMessage({ id: "chat.toolCall.search.find" });
   }
 
@@ -58,11 +44,7 @@ export function getSearchPrimaryText(intl: IntlLike, input: unknown): string {
           : intl.formatMessage({ id: "chat.toolCall.search.list" });
       }
 
-      if (
-        item.type === "search" ||
-        item.type === "grep" ||
-        item.type === "glob"
-      ) {
+      if (item.type === "search" || item.type === "grep" || item.type === "glob") {
         const candidate =
           typeof item.pattern === "string"
             ? item.pattern.trim()
@@ -72,10 +54,7 @@ export function getSearchPrimaryText(intl: IntlLike, input: unknown): string {
                 ? item.path.trim()
                 : "";
         return candidate.length > 0
-          ? intl.formatMessage(
-              { id: "chat.toolCall.search.findWithQuery" },
-              { query: candidate },
-            )
+          ? intl.formatMessage({ id: "chat.toolCall.search.findWithQuery" }, { query: candidate })
           : intl.formatMessage({ id: "chat.toolCall.search.find" });
       }
     }
@@ -100,10 +79,7 @@ export function getSearchPrimaryText(intl: IntlLike, input: unknown): string {
 
     const trimmed = candidate.trim();
     if (trimmed.length > 0) {
-      return intl.formatMessage(
-        { id: "chat.toolCall.search.findWithQuery" },
-        { query: trimmed },
-      );
+      return intl.formatMessage({ id: "chat.toolCall.search.findWithQuery" }, { query: trimmed });
     }
   }
 
@@ -130,9 +106,7 @@ export function SearchToolCallBlock(context: ToolCallBlockRenderContext) {
         kindLabel={
           context.kindLabelOverride ??
           intl.formatMessage({
-            id: isRunning
-              ? "chat.toolCall.search.searching"
-              : "chat.toolCall.kind.search",
+            id: isRunning ? "chat.toolCall.search.searching" : "chat.toolCall.kind.search",
           })
         }
         sourceLabel={context.sourceLabel}

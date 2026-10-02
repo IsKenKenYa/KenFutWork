@@ -1,18 +1,12 @@
-/**
- * zcode 照搬：`@/components/coding-plan-quota-reset/CodingPlanQuotaResetDialog.tsx`（references/zcode/packages/ui/src/components/coding-plan-quota-reset/CodingPlanQuotaResetDialog.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；P5 适配：可选属性放宽 `| undefined`（exactOptionalPropertyTypes，照搬调用点显式传 undefined）。
- */
-
-import { getContextQuotaMeterGridClass } from "@zui/chat-input-toolbar/contextQuotaMeterGrid";
-import { Button } from "@zui/components/ui/button";
-import { Dialog, DialogContent, DialogTitle } from "@zui/components/ui/dialog";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { burstCodingPlanQuotaResetConfetti } from "@zui/lib/codingPlanQuotaResetConfetti";
-import type { CodingPlanResetType } from "@zui/lib/zcode-shared";
-import { CheckIcon, Loader2 } from "lucide-react";
 import type { MouseEvent, UIEvent } from "react";
 import { useEffect, useRef, useState } from "react";
+import type { CodingPlanResetType } from "@zcode/shared";
+import { CheckIcon, Loader2 } from "lucide-react";
+import { Button } from "@zui/components/ui/button.js";
+import { Dialog, DialogContent, DialogTitle } from "@zui/components/ui/dialog.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { getContextQuotaMeterGridClass } from "@zui/chat-input-toolbar/contextQuotaMeterGrid.js";
+import { burstCodingPlanQuotaResetConfetti } from "@zui/lib/codingPlanQuotaResetConfetti.js";
 
 const SUCCESS_DISPLAY_MS = 600;
 const ROW_EXIT_MS = 820;
@@ -22,7 +16,7 @@ export interface CodingPlanQuotaResetDialogUsageItem {
   id: string;
   label: string;
   percentage: number | null;
-  resetTime?: string | undefined;
+  resetTime?: string;
   value: string;
 }
 
@@ -46,10 +40,7 @@ function getRemainingSeconds(expiresAt: number | null, now: number): number {
 
 export function formatCodingPlanQuotaResetCountdown(
   totalSeconds: number,
-  formatMessage: (
-    descriptor: { id: string },
-    values?: Record<string, string>,
-  ) => string,
+  formatMessage: (descriptor: { id: string }, values?: Record<string, string>) => string,
 ): string {
   const days = Math.floor(totalSeconds / 86_400);
   const hours = Math.floor((totalSeconds % 86_400) / 3_600);
@@ -63,36 +54,20 @@ export function formatCodingPlanQuotaResetCountdown(
   };
   if (days > 0) {
     return hours > 0
-      ? formatMessage(
-          { id: "codingPlan.quotaReset.countdown.daysHours" },
-          values,
-        )
-      : formatMessage(
-          { id: "codingPlan.quotaReset.countdown.daysOnly" },
-          values,
-        );
+      ? formatMessage({ id: "codingPlan.quotaReset.countdown.daysHours" }, values)
+      : formatMessage({ id: "codingPlan.quotaReset.countdown.daysOnly" }, values);
   }
   if (hours > 0) {
     return minutes > 0
-      ? formatMessage(
-          { id: "codingPlan.quotaReset.countdown.hoursMinutes" },
-          values,
-        )
-      : formatMessage(
-          { id: "codingPlan.quotaReset.countdown.hoursOnly" },
-          values,
-        );
+      ? formatMessage({ id: "codingPlan.quotaReset.countdown.hoursMinutes" }, values)
+      : formatMessage({ id: "codingPlan.quotaReset.countdown.hoursOnly" }, values);
   }
-  return formatMessage(
-    { id: "codingPlan.quotaReset.countdown.minutesSeconds" },
-    values,
-  );
+  return formatMessage({ id: "codingPlan.quotaReset.countdown.minutesSeconds" }, values);
 }
 
 function readScrollMasks(viewport: HTMLDivElement) {
   return {
-    bottom:
-      viewport.scrollTop + viewport.clientHeight < viewport.scrollHeight - 1,
+    bottom: viewport.scrollTop + viewport.clientHeight < viewport.scrollHeight - 1,
     top: viewport.scrollTop > 1,
   };
 }
@@ -117,13 +92,8 @@ interface ResetRowCount {
 }
 
 /** 展示张数 = 权威张数 − 本地已核销，钳到 0；无本地记录时回退到 config 的 count。 */
-function remainingResetCount(
-  state: ResetRowCount | undefined,
-  fallback: number,
-): number {
-  return state
-    ? Math.max(0, state.authoritative - state.consumedLocally)
-    : fallback;
+function remainingResetCount(state: ResetRowCount | undefined, fallback: number): number {
+  return state ? Math.max(0, state.authoritative - state.consumedLocally) : fallback;
 }
 
 function seedResetRowCounts(
@@ -131,10 +101,7 @@ function seedResetRowCounts(
 ): Map<CodingPlanResetType, ResetRowCount> {
   const seeded = new Map<CodingPlanResetType, ResetRowCount>();
   for (const item of items) {
-    seeded.set(item.resetType, {
-      authoritative: item.count,
-      consumedLocally: 0,
-    });
+    seeded.set(item.resetType, { authoritative: item.count, consumedLocally: 0 });
   }
   return seeded;
 }
@@ -150,18 +117,14 @@ export function CodingPlanQuotaResetDialog({
 }) {
   const { intl } = useZCodeIntl();
   const [now, setNow] = useState(() => Date.now());
-  const [resettingType, setResettingType] =
-    useState<CodingPlanResetType | null>(null);
-  const [successfulType, setSuccessfulType] =
-    useState<CodingPlanResetType | null>(null);
-  const [exitingType, setExitingType] = useState<CodingPlanResetType | null>(
-    null,
-  );
+  const [resettingType, setResettingType] = useState<CodingPlanResetType | null>(null);
+  const [successfulType, setSuccessfulType] = useState<CodingPlanResetType | null>(null);
+  const [exitingType, setExitingType] = useState<CodingPlanResetType | null>(null);
   // 同一类型可能持有多张机会。按类型维护 { 权威张数, 本地已核销张数 }，成功后只减 1，
   // 归零才隐藏该行——避免核销一张就把整行（含剩余机会）隐藏，逼用户关闭再打开。
-  const [rowCounts, setRowCounts] = useState<
-    Map<CodingPlanResetType, ResetRowCount>
-  >(() => new Map());
+  const [rowCounts, setRowCounts] = useState<Map<CodingPlanResetType, ResetRowCount>>(
+    () => new Map(),
+  );
   const [scrollMasks, setScrollMasks] = useState({ bottom: false, top: false });
   const resetListRef = useRef<HTMLDivElement>(null);
   const timersRef = useRef<number[]>([]);
@@ -221,15 +184,9 @@ export function CodingPlanQuotaResetDialog({
           continue;
         }
         if (!state) {
-          ensureNext().set(item.resetType, {
-            authoritative: item.count,
-            consumedLocally: 0,
-          });
+          ensureNext().set(item.resetType, { authoritative: item.count, consumedLocally: 0 });
         } else if (item.count > state.authoritative) {
-          ensureNext().set(item.resetType, {
-            ...state,
-            authoritative: item.count,
-          });
+          ensureNext().set(item.resetType, { ...state, authoritative: item.count });
         } else if (item.count < state.authoritative) {
           const drop = state.authoritative - item.count;
           ensureNext().set(item.resetType, {
@@ -257,10 +214,7 @@ export function CodingPlanQuotaResetDialog({
   );
 
   const visibleResetItems = config.resetItems.filter((item) => {
-    const remaining = remainingResetCount(
-      rowCounts.get(item.resetType),
-      item.count,
-    );
+    const remaining = remainingResetCount(rowCounts.get(item.resetType), item.count);
     return (
       remaining > 0 ||
       resettingType === item.resetType ||
@@ -272,9 +226,7 @@ export function CodingPlanQuotaResetDialog({
   const updateScrollMasks = (event: UIEvent<HTMLDivElement>) => {
     const next = readScrollMasks(event.currentTarget);
     setScrollMasks((current) =>
-      current.top === next.top && current.bottom === next.bottom
-        ? current
-        : next,
+      current.top === next.top && current.bottom === next.bottom ? current : next,
     );
   };
 
@@ -289,10 +241,7 @@ export function CodingPlanQuotaResetDialog({
       await item.onReset();
       setSuccessfulType(item.resetType);
       burstCodingPlanQuotaResetConfetti(origin);
-      const exitTimer = window.setTimeout(
-        () => setExitingType(item.resetType),
-        SUCCESS_DISPLAY_MS,
-      );
+      const exitTimer = window.setTimeout(() => setExitingType(item.resetType), SUCCESS_DISPLAY_MS);
       const removeTimer = window.setTimeout(() => {
         // 只把该类型的本地已核销张数 +1（钳到权威张数），归零才隐藏；多张时行会以剩余
         // 张数的形态继续展示，无需关闭重开。服务端读数追上后由对账 effect 抵扣该本地值。
@@ -304,10 +253,7 @@ export function CodingPlanQuotaResetDialog({
           };
           next.set(item.resetType, {
             ...state,
-            consumedLocally: Math.min(
-              state.authoritative,
-              state.consumedLocally + 1,
-            ),
+            consumedLocally: Math.min(state.authoritative, state.consumedLocally + 1),
           });
           return next;
         });
@@ -332,19 +278,13 @@ export function CodingPlanQuotaResetDialog({
           {intl.formatMessage({ id: "codingPlan.quotaReset.dialog.title" })}
         </DialogTitle>
 
-        <section
-          aria-label={intl.formatMessage({
-            id: "codingPlan.quotaReset.dialog.remaining",
-          })}
-        >
+        <section aria-label={intl.formatMessage({ id: "codingPlan.quotaReset.dialog.remaining" })}>
           <div
             className={`grid gap-2 ${getContextQuotaMeterGridClass(config.usageItems.length)} max-sm:grid-cols-1`}
           >
             {config.usageItems.map((item) => (
               <div key={item.id} className="min-w-0 rounded-lg bg-surface p-3">
-                <div className="truncate text-ui-sm text-foreground-subtle">
-                  {item.label}
-                </div>
+                <div className="truncate text-ui-sm text-foreground-subtle">{item.label}</div>
                 <div className="mt-2 flex min-w-0 items-baseline gap-1.5">
                   <span className="text-ui-lg font-semibold leading-none text-foreground">
                     {item.value}
@@ -371,9 +311,7 @@ export function CodingPlanQuotaResetDialog({
 
         {visibleResetItems.length > 0 ? (
           <section
-            aria-label={intl.formatMessage({
-              id: "codingPlan.quotaReset.dialog.resettable",
-            })}
+            aria-label={intl.formatMessage({ id: "codingPlan.quotaReset.dialog.resettable" })}
           >
             <div className="relative">
               <div
@@ -384,20 +322,13 @@ export function CodingPlanQuotaResetDialog({
                 {visibleResetItems.map((item) => {
                   const success = successfulType === item.resetType;
                   const isExiting = exitingType === item.resetType;
-                  const effectiveProcessing =
-                    item.processing || resettingType === item.resetType;
-                  const remainingSeconds = getRemainingSeconds(
-                    item.expiresAt,
-                    now,
-                  );
+                  const effectiveProcessing = item.processing || resettingType === item.resetType;
+                  const remainingSeconds = getRemainingSeconds(item.expiresAt, now);
                   // 同一类型可能持有多张机会，但服务端 /use 不支持指定核销哪一张，entry 只保留
                   // 张数与最早到期时刻。展示张数取本地对账后的剩余值：核销一张后行会以剩余
                   // 张数继续展示。多张时显式标注张数与「最快」，避免用户把最早到期时间误读成
                   // 全部机会的统一期限。
-                  const remaining = remainingResetCount(
-                    rowCounts.get(item.resetType),
-                    item.count,
-                  );
+                  const remaining = remainingResetCount(rowCounts.get(item.resetType), item.count);
                   const hasMultipleOpportunities = remaining > 1;
                   return (
                     <div
@@ -413,16 +344,12 @@ export function CodingPlanQuotaResetDialog({
                           <div className="min-w-0 flex-1">
                             <div className="flex min-w-0 items-center gap-1.5">
                               <span className="truncate text-ui-base text-foreground">
-                                {intl.formatMessage({
-                                  id: resetTypeLabelId(item.resetType),
-                                })}
+                                {intl.formatMessage({ id: resetTypeLabelId(item.resetType) })}
                               </span>
                               {hasMultipleOpportunities ? (
                                 <span className="inline-flex h-5 shrink-0 items-center rounded-full bg-interaction-confirmation-surface px-1.5 text-ui-sm text-interaction-confirmation-foreground">
                                   {intl.formatMessage(
-                                    {
-                                      id: "codingPlan.quotaReset.dialog.itemCount",
-                                    },
+                                    { id: "codingPlan.quotaReset.dialog.itemCount" },
                                     { count: remaining },
                                   )}
                                 </span>
@@ -450,31 +377,21 @@ export function CodingPlanQuotaResetDialog({
                             size="sm"
                             aria-label={
                               success
-                                ? intl.formatMessage({
-                                    id: "codingPlan.quotaReset.success",
-                                  })
-                                : intl.formatMessage({
-                                    id: resetTypeAriaId(item.resetType),
-                                  })
+                                ? intl.formatMessage({ id: "codingPlan.quotaReset.success" })
+                                : intl.formatMessage({ id: resetTypeAriaId(item.resetType) })
                             }
                             className="bg-success text-success-foreground hover:bg-success/80"
                             disabled={Boolean(
                               success ||
-                                effectiveProcessing ||
-                                (resettingType !== null &&
-                                  resettingType !== item.resetType),
+                              effectiveProcessing ||
+                              (resettingType !== null && resettingType !== item.resetType),
                             )}
                             onClick={(event) => void resetLimit(item, event)}
                           >
                             {success ? (
                               <>
-                                <CheckIcon
-                                  className="size-3.5"
-                                  aria-hidden="true"
-                                />
-                                {intl.formatMessage({
-                                  id: "codingPlan.quotaReset.completed",
-                                })}
+                                <CheckIcon className="size-3.5" aria-hidden="true" />
+                                {intl.formatMessage({ id: "codingPlan.quotaReset.completed" })}
                               </>
                             ) : effectiveProcessing ? (
                               <Loader2
@@ -482,9 +399,7 @@ export function CodingPlanQuotaResetDialog({
                                 aria-hidden="true"
                               />
                             ) : (
-                              intl.formatMessage({
-                                id: "codingPlan.quotaReset.reset",
-                              })
+                              intl.formatMessage({ id: "codingPlan.quotaReset.reset" })
                             )}
                           </Button>
                         </div>

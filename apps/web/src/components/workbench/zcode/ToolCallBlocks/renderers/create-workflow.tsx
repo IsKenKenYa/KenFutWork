@@ -1,30 +1,23 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/create-workflow.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/create-workflow.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件接口可选属性放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-
-import { CodeBlock } from "@zui/components/ai-elements/code-block";
-import { cn } from "@zui/components/lib/utils";
-import { Button } from "@zui/components/ui/button";
+import { ChevronRightIcon, RotateCcwIcon } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { CodeBlock } from "@zui/components/ai-elements/code-block.js";
+import { Button } from "@zui/components/ui/button.js";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@zui/components/ui/collapsible";
-import {
-  draftTimeline,
-  scanWorkflowDraft,
-} from "@zui/components/workflow-timeline/draft-scan";
+} from "@zui/components/ui/collapsible.js";
+import { cn } from "@zui/components/lib/utils.js";
+import { draftTimeline, scanWorkflowDraft } from "@zui/components/workflow-timeline/draft-scan.js";
+import { WorkflowArtifactStrip } from "@zui/components/workflow-timeline/WorkflowArtifactStrip.js";
 import {
   buildWorkflowTimeline,
   type TimelinePill,
   type TimelineStation,
   type WorkflowTimelineModel,
-} from "@zui/components/workflow-timeline/timeline-model";
-import { workflowCardDetail } from "@zui/components/workflow-timeline/timeline-summary";
-import { WorkflowArtifactStrip } from "@zui/components/workflow-timeline/WorkflowArtifactStrip";
+} from "@zui/components/workflow-timeline/timeline-model.js";
+import { workflowCardDetail } from "@zui/components/workflow-timeline/timeline-summary.js";
 import {
   WORKFLOW_CARD_ICON,
   WorkflowCardFooter,
@@ -32,10 +25,9 @@ import {
   WorkflowRunStatus,
   WorkflowStaticStatus,
   workflowRunKindMessageId,
-} from "@zui/components/workflow-timeline/WorkflowCardChrome";
-import { WorkflowTimeline } from "@zui/components/workflow-timeline/WorkflowTimeline";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { isAmendWorkflowToolCall } from "@zui/lib/workflowToolNames";
+} from "@zui/components/workflow-timeline/WorkflowCardChrome.js";
+import { WorkflowTimeline } from "@zui/components/workflow-timeline/WorkflowTimeline.js";
+import { isAmendWorkflowToolCall } from "@zui/lib/workflowToolNames.js";
 import {
   isPlainRecord,
   readWorkflowAmendTarget,
@@ -43,30 +35,27 @@ import {
   readWorkflowKindMessageId,
   readWorkflowName,
   readWorkflowPrelaunchKindMessageId,
+  readWorkflowRetuneCall,
   readWorkflowSaved,
   readWorkflowScript,
-} from "@zui/ToolCallBlocks/renderers/createWorkflowInput";
-import { ChevronRightIcon, RotateCcwIcon } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
-
-export { readWorkflowKindMessageId } from "@zui/ToolCallBlocks/renderers/createWorkflowInput";
-
+} from "@zui/ToolCallBlocks/renderers/createWorkflowInput.js";
+export { readWorkflowKindMessageId } from "@zui/ToolCallBlocks/renderers/createWorkflowInput.js";
 import {
   readFallbackOutputText,
   readWorkflowDisplay,
-} from "@zui/ToolCallBlocks/renderers/createWorkflowDisplay";
+} from "@zui/ToolCallBlocks/renderers/createWorkflowDisplay.js";
 import {
   WorkflowAmendsLine,
   WorkflowCardMetaLine,
-} from "@zui/ToolCallBlocks/renderers/WorkflowCardMetaLine";
-import { WorkflowDiagnosticsSection } from "@zui/ToolCallBlocks/renderers/workflow-diagnostics";
+} from "@zui/ToolCallBlocks/renderers/WorkflowCardMetaLine.js";
+import { WorkflowDiagnosticsSection } from "@zui/ToolCallBlocks/renderers/workflow-diagnostics.js";
 import {
   useWorkflowDraftRowSlots,
   WorkflowFeedbackContent,
-} from "@zui/ToolCallBlocks/renderers/workflow-draft-row";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
+} from "@zui/ToolCallBlocks/renderers/workflow-draft-row.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { ToolLayout } from "../ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "../shared.js";
 
 /** 没有 display 时交给草稿槽位的空诊断：模块级常量，免得每次渲染一个新数组打穿记忆。 */
 const NO_DIAGNOSTICS: readonly never[] = [];
@@ -84,53 +73,36 @@ const workflowCardOpenState = new Map<string, boolean>();
  * AmendWorkflow 行走**同一个**渲染器（display kind 同为 `create_workflow`，图、草稿笔与诊断卡只有一份
  * 实现），只换修订词汇，并在卡体多一行「调整自 run X」——按工具名判，不看 family。
  */
-export function CreateWorkflowToolCallBlock(
-  context: ToolCallBlockRenderContext,
-) {
+export function CreateWorkflowToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
   const { toolCall } = context.toolCallNode;
   const amend = isAmendWorkflowToolCall(toolCall);
-  const amendTarget = amend
-    ? readWorkflowAmendTarget(toolCall.input)
-    : undefined;
+  const amendTarget = amend ? readWorkflowAmendTarget(toolCall.input) : undefined;
 
-  const display = useMemo(
-    () => readWorkflowDisplay(toolCall.raw),
-    [toolCall.raw],
-  );
-  const scriptText = useMemo(
-    () => readWorkflowScript(toolCall.input),
-    [toolCall.input],
-  );
+  const display = useMemo(() => readWorkflowDisplay(toolCall.raw), [toolCall.raw]);
+  // 在途的词：只改并发上限的调用不写脚本、也不编译，
+  // 「正在校验工作流」对它不成立。整行退成设置行是**结算之后**的事，由接线层按同一个入参形状裁
+  // （ConversationRowView），这里只管在途这几个词。
+  const retuning = amend && readWorkflowRetuneCall(toolCall.input) !== undefined;
+  const scriptText = useMemo(() => readWorkflowScript(toolCall.input), [toolCall.input]);
   const workflowName = readWorkflowName(toolCall.input);
-  const saved = useMemo(
-    () => readWorkflowSaved(toolCall.input),
-    [toolCall.input],
-  );
-  const fallbackOutputText = display
-    ? null
-    : readFallbackOutputText(toolCall.output);
-  const fallbackName = intl.formatMessage({
-    id: "chat.toolCall.workflow.fallbackName",
-  });
+  const saved = useMemo(() => readWorkflowSaved(toolCall.input), [toolCall.input]);
+  const fallbackOutputText = display ? null : readFallbackOutputText(toolCall.output);
+  const fallbackName = intl.formatMessage({ id: "chat.toolCall.workflow.fallbackName" });
   const name = workflowName ?? fallbackName;
 
   const workflowRun = context.workflowRun;
   const run = workflowRun?.run;
   const hasCompileErrors = display?.ok === false;
-  const showFailureStatus =
-    hasCompileErrors || (!display && toolCall.status === "failed");
+  const showFailureStatus = hasCompileErrors || (!display && toolCall.status === "failed");
   const draft = context.workflowDraft;
 
   // 空图（脚本里一次 ask / files.* 都没有）不值得一条空轨道；有 step 才建模型。
   const graph =
-    display?.causalityGraph !== undefined &&
-    display.causalityGraph.steps.length > 0
+    display?.causalityGraph !== undefined && display.causalityGraph.steps.length > 0
       ? display.causalityGraph
       : undefined;
-  const v4Status = isPlainRecord(toolCall.raw)
-    ? toolCall.raw.v4Status
-    : undefined;
+  const v4Status = isPlainRecord(toolCall.raw) ? toolCall.raw.v4Status : undefined;
   const writing = context.isRunning && v4Status === "inputStreaming";
   // 沿用前驱脚本的修订：行上的入参是模型发出的
   // 那一份，`script` 与 `path` 都没有就是省略了脚本（`path` 修订不带 `script`，却是改过的脚本）
@@ -150,14 +122,11 @@ export function CreateWorkflowToolCallBlock(
   const model = useMemo<WorkflowTimelineModel | undefined>(() => {
     if (graph !== undefined) return buildWorkflowTimeline(graph, run);
     // 流式草稿：display 还没到，站先从半截脚本里扫出来；display 一到整个模型被替换。
-    if (writing && scriptText !== undefined)
-      return draftTimeline(scanWorkflowDraft(scriptText));
+    if (writing && scriptText !== undefined) return draftTimeline(scanWorkflowDraft(scriptText));
     return undefined;
   }, [graph, run, scriptText, writing]);
 
-  const [isOpen, setIsOpen] = useState(
-    () => workflowCardOpenState.get(toolCall.toolId) ?? true,
-  );
+  const [isOpen, setIsOpen] = useState(() => workflowCardOpenState.get(toolCall.toolId) ?? true);
   const forceOpen = context.forceOpen ?? false;
   const canToggle = context.canToggle ?? true;
   const expanded = forceOpen || !canToggle || isOpen;
@@ -170,18 +139,14 @@ export function CreateWorkflowToolCallBlock(
   const [scriptOpen, setScriptOpen] = useState(false);
 
   const onOpenWorkflowRun = context.onOpenWorkflowRun;
-  const named = useMemo(
-    () => (workflowName === undefined ? {} : { workflowName }),
-    [workflowName],
-  );
+  const named = useMemo(() => (workflowName === undefined ? {} : { workflowName }), [workflowName]);
   const handleOpenRunDetails = useCallback(
     () => onOpenWorkflowRun?.(named),
     [onOpenWorkflowRun, named],
   );
   // 站头与「还有 n 个」那一行交出站 id：详情页落到这一站、把清单展开。
   const handleSelectStation = useCallback(
-    (station: TimelineStation) =>
-      onOpenWorkflowRun?.({ ...named, phaseId: station.id }),
+    (station: TimelineStation) => onOpenWorkflowRun?.({ ...named, phaseId: station.id }),
     [onOpenWorkflowRun, named],
   );
   const onResumeWorkflowRun = context.onResumeWorkflowRun;
@@ -255,8 +220,7 @@ export function CreateWorkflowToolCallBlock(
   // 编不过：编译反馈行；无 display 且失败：失败摘要。handler 在编不过的路径上直接回诊断、不启动引擎，
   // 本来就不该有 run——即使宿主联接到了也留在反馈行，把「诊断优先」写死在这里而不是依赖调用方。
   // 启动前复用普通摘要：编写中不展示半截脚本，待确认可展开最终脚本。
-  const prelaunch =
-    workflowRun === undefined && (writing || v4Status === "pendingApproval");
+  const prelaunch = workflowRun === undefined && (writing || v4Status === "pendingApproval");
   const summaryOnly = writing && !showFailureStatus;
   // 编写中的行不可展开，但草稿阶段线常驻在行下（不是展开内容，没有折叠入口）：
   // 站由笔逐字写出，display 一到整个模型换成分析器的站，这块随 writing 结束一起离场。
@@ -310,39 +274,25 @@ export function CreateWorkflowToolCallBlock(
 
   // 已联接 run 的种类词按 run 状态说（旧宿主的运行卡）；修订行在 run 出现之前用修订词汇。
   const kindId =
-    workflowRun === undefined
-      ? readWorkflowKindMessageId(toolCall.raw, context.isRunning, amend)
-      : workflowRunKindMessageId(workflowRun);
-  const kindText =
-    context.kindLabelOverride ?? intl.formatMessage({ id: kindId });
+    workflowRun !== undefined
+      ? workflowRunKindMessageId(workflowRun)
+      : readWorkflowKindMessageId(toolCall.raw, context.isRunning, amend, retuning);
+  const kindText = context.kindLabelOverride ?? intl.formatMessage({ id: kindId });
   // 种类词按文案换（编写中 → 待确认 → 运行中）：换词动画由表头自己包，见 WorkflowCardHeader。
-  const live =
-    workflowRun === undefined
-      ? context.isRunning
-      : workflowRun.status === "running";
+  const live = workflowRun !== undefined ? workflowRun.status === "running" : context.isRunning;
   const status =
-    workflowRun === undefined ? (
-      display?.ok === true ? (
-        <WorkflowStaticStatus
-          word={intl.formatMessage({ id: "chat.toolCall.workflow.compiled" })}
-        />
-      ) : undefined
-    ) : (
+    workflowRun !== undefined ? (
       <WorkflowRunStatus run={workflowRun} testId="workflow-card-status" />
-    );
+    ) : display?.ok === true ? (
+      <WorkflowStaticStatus word={intl.formatMessage({ id: "chat.toolCall.workflow.compiled" })} />
+    ) : undefined;
   // 细节串与它的 tooltip（含子代理模型名）与 v4 轮尾摘要同一份实现。这条渲染路径拿不到会话的
   // 模型清单（工具卡一层不碰 store），自定义 provider 的名字因此查不到——按同一条兜底规则退回
   // 裸 modelId，绝不显示 providerId。
-  const cardDetail = workflowCardDetail(
-    intl.formatMessage.bind(intl),
-    model,
-    graph,
-    run,
-  );
+  const cardDetail = workflowCardDetail(intl.formatMessage.bind(intl), model, graph, run);
   // 校验中（在途、还没有图）从第 2 稿起在细节位写稿号，免得「正在修改 · 第 2 稿」→ 校验 → 反馈之间一闪而空。
   const headerDetail = cardDetail?.detail ?? draftSlots.inFlightOrdinalText;
-  const terminal =
-    run !== undefined && (run.status === "errored" || run.status === "stopped");
+  const terminal = run !== undefined && (run.status === "errored" || run.status === "stopped");
   const resume =
     workflowRun?.resumable === true && onResumeWorkflowRun !== undefined ? (
       <Button
@@ -357,14 +307,11 @@ export function CreateWorkflowToolCallBlock(
         {intl.formatMessage({ id: "chat.toolCall.workflow.run.resume" })}
       </Button>
     ) : undefined;
-  const savedSourceLabel = intl.formatMessage({
-    id: "chat.permission.workflow.saved.badge",
-  });
+  const savedSourceLabel = intl.formatMessage({ id: "chat.permission.workflow.saved.badge" });
   const savedScopeProjectLabel = intl.formatMessage({
     id: "chat.permission.workflow.saved.scope.project",
   });
-  const showScriptFold =
-    workflowRun === undefined && !writing && scriptText !== undefined;
+  const showScriptFold = workflowRun === undefined && !writing && scriptText !== undefined;
 
   return (
     <>
@@ -372,9 +319,7 @@ export function CreateWorkflowToolCallBlock(
         aria-label={typeof kindText === "string" ? kindText : undefined}
         className="wf-motion flex w-full min-w-0 flex-col gap-2"
         data-testid="workflow-card"
-        data-workflow-card-state={
-          workflowRun?.status ?? (writing ? "writing" : "static")
-        }
+        data-workflow-card-state={workflowRun?.status ?? (writing ? "writing" : "static")}
         {...(workflowRun === undefined
           ? {}
           : {
@@ -384,30 +329,20 @@ export function CreateWorkflowToolCallBlock(
       >
         <WorkflowCardHeader
           detail={headerDetail}
-          {...(cardDetail?.title === undefined
-            ? {}
-            : { detailTitle: cardDetail.title })}
+          {...(cardDetail?.title === undefined ? {} : { detailTitle: cardDetail.title })}
           expanded={expanded}
           kind={kindText}
           live={live}
           name={name}
           status={status}
-          {...(onOpenWorkflowRun === undefined
-            ? {}
-            : { onOpenDetails: handleOpenRunDetails })}
+          {...(onOpenWorkflowRun === undefined ? {} : { onOpenDetails: handleOpenRunDetails })}
           {...(forceOpen || !canToggle ? {} : { onToggle: handleToggle })}
         />
 
         {expanded ? (
-          <div
-            className="wf-unfold flex min-w-0 flex-col gap-2"
-            data-testid="workflow-card-body"
-          >
+          <div className="wf-unfold flex min-w-0 flex-col gap-2" data-testid="workflow-card-body">
             {amendTarget === undefined ? null : (
-              <WorkflowAmendsLine
-                runId={amendTarget}
-                scriptInherited={keptScript}
-              />
+              <WorkflowAmendsLine runId={amendTarget} scriptInherited={keptScript} />
             )}
             {saved ? (
               <WorkflowCardMetaLine
@@ -428,10 +363,7 @@ export function CreateWorkflowToolCallBlock(
                 model={model}
                 {...(onOpenWorkflowRun === undefined
                   ? {}
-                  : {
-                      onOpenMore: handleSelectStation,
-                      onSelectStation: handleSelectStation,
-                    })}
+                  : { onOpenMore: handleSelectStation, onSelectStation: handleSelectStation })}
                 {...(onOpenWorkflowActor === undefined || run === undefined
                   ? {}
                   : { onOpenPill: handleOpenPill })}
@@ -457,9 +389,7 @@ export function CreateWorkflowToolCallBlock(
 
             {graph?.truncated === true ? (
               <p className="text-ui-xs text-foreground-subtlest">
-                {intl.formatMessage({
-                  id: "chat.toolCall.workflow.graph.truncated",
-                })}
+                {intl.formatMessage({ id: "chat.toolCall.workflow.graph.truncated" })}
               </p>
             ) : null}
 
@@ -478,11 +408,7 @@ export function CreateWorkflowToolCallBlock(
               </pre>
             ) : null}
 
-            {!scriptText &&
-            !keptScript &&
-            !display &&
-            !fallbackOutputText &&
-            !context.isRunning ? (
+            {!scriptText && !keptScript && !display && !fallbackOutputText && !context.isRunning ? (
               <p className="font-mono text-ui-base text-foreground-subtle">
                 {intl.formatMessage({ id: "chat.toolCall.workflow.noScript" })}
               </p>
@@ -515,7 +441,7 @@ export function CreateWorkflowToolCallBlock(
                       code={scriptText}
                       language="typescript"
                       renderMermaid={false}
-                      showLineNumbers={true}
+                      showLineNumbers
                     />
                   </div>
                 </CollapsibleContent>

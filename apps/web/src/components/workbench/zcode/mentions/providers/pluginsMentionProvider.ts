@@ -1,29 +1,19 @@
-/**
- * zcode 照搬：`@/mentions/providers/pluginsMentionProvider.ts`（references/zcode/packages/ui/src/mentions/providers/pluginsMentionProvider.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀
- *（本仓 Turbopack 不做 .js→.ts/.tsx 试探，手册 §2.4-2 在本仓构建链的等价适配）。
- */
-
-import { useIsOfficeMode } from "@zui/hooks/useInterfaceMode";
-import { usePluginReferenceCatalog } from "@zui/hooks/usePluginReferenceCatalog";
-import { usePluginStoreOrder } from "@zui/hooks/usePluginStoreOrder";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
+import { useMemo } from "react";
 import {
+  sortPluginStoreEntries,
   isPublicStoreMarketplaceId,
   type PluginStoreModeOrder,
-  resolveLocalizedText,
   resolvePluginDisplayName,
-  sortPluginStoreEntries,
+  resolveLocalizedText,
   type ZCodePluginReferenceCatalogEntry,
-} from "@zui/lib/zcode-shared";
-import { buildPluginMentionMarkdown } from "@zui/mentions/mentionMarkdown";
-import { filterMentionItemsWithOptions } from "@zui/mentions/mentionSearch";
-import type {
-  MentionCategoryResult,
-  MentionItem,
-} from "@zui/mentions/mentionTypes";
-import { useMemo } from "react";
+} from "@zcode/shared";
+import type { MentionCategoryResult, MentionItem } from "@zui/mentions/mentionTypes.js";
+import { filterMentionItemsWithOptions } from "@zui/mentions/mentionSearch.js";
+import { buildPluginMentionMarkdown } from "@zui/mentions/mentionMarkdown.js";
+import { usePluginReferenceCatalog } from "@zui/hooks/usePluginReferenceCatalog.js";
+import { usePluginStoreOrder } from "@zui/hooks/usePluginStoreOrder.js";
+import { useIsOfficeMode } from "@zui/hooks/useInterfaceMode.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 
 interface PluginMentionLabels {
   conflictReason: string;
@@ -47,9 +37,7 @@ function mapPluginCatalogToMentionItemsForTest(
     order && entries.some((entry) => entry.category !== undefined)
       ? [
           ...sortPluginStoreEntries(
-            entries.filter((entry) =>
-              isPublicStoreMarketplaceId(entry.marketplace),
-            ),
+            entries.filter((entry) => isPublicStoreMarketplaceId(entry.marketplace)),
             (entry) => ({
               id: entry.pluginId,
               category: entry.category,
@@ -67,9 +55,7 @@ function mapPluginCatalogToMentionItemsForTest(
             locale,
             order,
           ),
-          ...entries.filter(
-            (entry) => !isPublicStoreMarketplaceId(entry.marketplace),
-          ),
+          ...entries.filter((entry) => !isPublicStoreMarketplaceId(entry.marketplace)),
         ]
       : entries;
   return sorted
@@ -90,12 +76,7 @@ function mapPluginCatalogToMentionItemsForTest(
           },
           locale,
         ),
-        description:
-          resolveLocalizedText(
-            locale,
-            entry.description,
-            entry.descriptionI18n,
-          ) ?? "",
+        description: resolveLocalizedText(locale, entry.description, entry.descriptionI18n) ?? "",
         value: entry.pluginId,
         markdown: buildPluginMentionMarkdown(entry.name, entry.pluginId),
         keywords: [
@@ -132,21 +113,14 @@ export function usePluginsMentionProvider(
   const { order } = usePluginStoreOrder(enabled);
   const isOfficeMode = useIsOfficeMode();
   const modeOrder = isOfficeMode ? order?.work : order?.code;
-  const catalog = usePluginReferenceCatalog(
-    workspacePath,
-    workspaceIdentity,
-    sessionId,
-    enabled,
-  );
+  const catalog = usePluginReferenceCatalog(workspacePath, workspaceIdentity, sessionId, enabled);
 
   const allItems = useMemo(
     () =>
       mapPluginCatalogToMentionItemsForTest(
         catalog.entries,
         {
-          conflictReason: intl.formatMessage({
-            id: "chat.mention.plugins.conflict",
-          }),
+          conflictReason: intl.formatMessage({ id: "chat.mention.plugins.conflict" }),
         },
         locale,
         modeOrder,

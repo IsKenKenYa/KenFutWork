@@ -1,15 +1,18 @@
-/**
- * zcode 照搬：`@/ModelConfigSelect.tsx`（references/zcode/packages/ui/src/ModelConfigSelect.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；P5 适配：可选属性放宽 `| undefined`（exactOptionalPropertyTypes，照搬调用点显式传 undefined）。
- */
 /* eslint-disable max-lines -- 模型菜单同时维护触发器、模型项、provider family 连接方式子菜单和焦点恢复，拆开会增加受控 Dropdown 状态同步成本。 */
-
-import { ControlHintTooltip } from "@zui/ControlHintTooltip";
-import { RollingToolbarLabel } from "@zui/chat-input-toolbar/RollingToolbarLabel";
-import { cn } from "@zui/components/lib/utils";
-import { ModelInputCapabilityBadge } from "@zui/components/ModelInputCapabilityBadge";
-import { Button } from "@zui/components/ui/button";
+import {
+  Fragment,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
+import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
+import { cn } from "@zui/components/lib/utils.js";
+import { Button } from "@zui/components/ui/button.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,47 +25,27 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@zui/components/ui/dropdown-menu";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from "@zui/components/ui/select";
+} from "@zui/components/ui/dropdown-menu.js";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@zui/components/ui/select.js";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@zui/components/ui/tooltip";
-import {
-  isCoarseTouchDevice,
-  shouldRestoreChatInputFocusAfterPickerClose,
-} from "@zui/lib/pickerFocus";
+} from "@zui/components/ui/tooltip.js";
+import { AlertCircle, CheckIcon, ChevronDownIcon, LoaderIcon, PackageIcon } from "lucide-react";
 import {
   TID_CHAT_MODEL_SELECT_GROUP,
   TID_CHAT_MODEL_SELECT_ITEM,
   TID_CHAT_MODEL_SELECT_TRIGGER,
   testId,
-} from "@zui/lib/zcode-shared";
+} from "@zcode/shared";
 import {
-  AlertCircle,
-  CheckIcon,
-  ChevronDownIcon,
-  LoaderIcon,
-  PackageIcon,
-} from "lucide-react";
-import {
-  Fragment,
-  memo,
-  type ReactNode,
-  type RefObject,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+  isCoarseTouchDevice,
+  shouldRestoreChatInputFocusAfterPickerClose,
+} from "@zui/lib/pickerFocus.js";
+import { RollingToolbarLabel } from "@zui/chat-input-toolbar/RollingToolbarLabel.js";
+import { ModelInputCapabilityBadge } from "@zui/components/ModelInputCapabilityBadge.js";
 
 export interface ModelSelectGroupItem {
   key: string;
@@ -96,18 +79,15 @@ export interface ModelSelectGroup {
 export interface ModelSelectFooterAction {
   key: string;
   label: string;
-  selected?: boolean | undefined;
-  onSelect?: (() => void) | undefined;
+  selected?: boolean;
+  onSelect?: () => void;
 }
 
-const EMPTY_MODEL_SELECT_FOOTER_ACTIONS: readonly ModelSelectFooterAction[] =
-  [];
+const EMPTY_MODEL_SELECT_FOOTER_ACTIONS: readonly ModelSelectFooterAction[] = [];
 export const MODEL_CONFIG_SELECT_BADGE_CLASS_NAME =
   "shrink-0 rounded-full bg-surface px-1 py-px text-ui-xs font-medium leading-normal text-foreground-subtle";
 
-function shouldShowModelProviderLevel(
-  modelGroups: readonly ModelSelectGroup[],
-): boolean {
+function shouldShowModelProviderLevel(modelGroups: readonly ModelSelectGroup[]): boolean {
   return modelGroups.length > 0;
 }
 
@@ -122,21 +102,13 @@ function isFamilyConnectionGroup(
 }
 
 function shouldRenderModelGroupSeparator(
-  previousGroup:
-    | Pick<ModelSelectGroup, "connectionOptions" | "key" | "labelBadge">
-    | undefined,
-  currentGroup: Pick<
-    ModelSelectGroup,
-    "connectionOptions" | "key" | "labelBadge"
-  >,
+  previousGroup: Pick<ModelSelectGroup, "connectionOptions" | "key" | "labelBadge"> | undefined,
+  currentGroup: Pick<ModelSelectGroup, "connectionOptions" | "key" | "labelBadge">,
 ): boolean {
   if (!previousGroup) {
     return false;
   }
-  return (
-    isFamilyConnectionGroup(previousGroup) ||
-    isFamilyConnectionGroup(currentGroup)
-  );
+  return isFamilyConnectionGroup(previousGroup) || isFamilyConnectionGroup(currentGroup);
 }
 
 function isModelSelectGroupSelected(
@@ -151,7 +123,7 @@ function getModelTriggerLabelClassName({
   triggerLabelClassName,
 }: {
   labelVisibilityClassName: string | undefined;
-  triggerLabelClassName?: string | undefined;
+  triggerLabelClassName?: string;
 }): string {
   if (triggerLabelClassName?.trim()) {
     return triggerLabelClassName;
@@ -259,22 +231,16 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
   const hasSelectableModel = modelGroups.length > 0;
   // 闲时任务白名单只有一层模型值；只要存在 group 就强制展示 provider 层的话，
   // 下方已有的扁平模型分支永远不可达，也无法复用 New Task 模型选择器。
-  const shouldShowProviderLevel =
-    showProviderLevel ?? shouldShowModelProviderLevel(modelGroups);
+  const shouldShowProviderLevel = showProviderLevel ?? shouldShowModelProviderLevel(modelGroups);
   // 模型名和上游占位值可能大小写敏感，强制大写会把 `<synthetic>` 改成 `<SYNTHETIC>` 这类非原始值。
   const triggerDisplayLabel = triggerLabel;
   const renderedTriggerDisplayLabel =
     formatTriggerLabel?.(triggerDisplayLabel) ?? triggerDisplayLabel;
   const renderedPendingLabel =
-    pendingLabel && formatTriggerLabel
-      ? formatTriggerLabel(pendingLabel)
-      : pendingLabel;
+    pendingLabel && formatTriggerLabel ? formatTriggerLabel(pendingLabel) : pendingLabel;
   const currentTriggerLabel =
-    pending && renderedPendingLabel
-      ? renderedPendingLabel
-      : renderedTriggerDisplayLabel;
-  const currentTriggerTitle =
-    pending && pendingLabel ? pendingLabel : triggerDisplayLabel;
+    pending && renderedPendingLabel ? renderedPendingLabel : renderedTriggerDisplayLabel;
+  const currentTriggerTitle = pending && pendingLabel ? pendingLabel : triggerDisplayLabel;
   const triggerLabelClassName = getModelTriggerLabelClassName({
     labelVisibilityClassName,
     triggerLabelClassName: customTriggerLabelClassName,
@@ -291,10 +257,7 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
   );
 
   useEffect(() => {
-    if (
-      openRequestKey <= 0 ||
-      openRequestKey === lastOpenRequestKeyRef.current
-    ) {
+    if (openRequestKey <= 0 || openRequestKey === lastOpenRequestKeyRef.current) {
       return;
     }
     lastOpenRequestKeyRef.current = openRequestKey;
@@ -317,9 +280,7 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
   );
 
   const triggerAriaLabel = useMemo(() => {
-    return pending && pendingLabel
-      ? pendingLabel
-      : (tooltipTitle ?? currentTriggerTitle);
+    return pending && pendingLabel ? pendingLabel : (tooltipTitle ?? currentTriggerTitle);
   }, [currentTriggerTitle, pending, pendingLabel, tooltipTitle]);
 
   const renderModelItem = useCallback(
@@ -341,16 +302,14 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
               {item.name}
             </span>
             {item.badgeLabel ? (
-              <span className={MODEL_CONFIG_SELECT_BADGE_CLASS_NAME}>
-                {item.badgeLabel}
-              </span>
+              <span className={MODEL_CONFIG_SELECT_BADGE_CLASS_NAME}>{item.badgeLabel}</span>
             ) : null}
             {item.supportsVisionInput ? <ModelInputCapabilityBadge /> : null}
           </span>
           {itemLocked ? (
             <TooltipProvider>
               <Tooltip>
-                <TooltipTrigger asChild={true}>
+                <TooltipTrigger asChild>
                   <span
                     className="inline-flex size-4 items-center justify-center rounded-full text-foreground-subtlest hover:text-foreground-subtle"
                     onClick={(event) => {
@@ -436,9 +395,7 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
           {group.label}
         </span>
         {group.labelBadge ? (
-          <span className={MODEL_CONFIG_SELECT_BADGE_CLASS_NAME}>
-            {group.labelBadge}
-          </span>
+          <span className={MODEL_CONFIG_SELECT_BADGE_CLASS_NAME}>{group.labelBadge}</span>
         ) : null}
       </span>
     ),
@@ -451,8 +408,7 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
       if (options.length > 0) {
         const selectedOptionKey = group.selectedOptionKey ?? options[0]?.key;
         const selectedConnection =
-          options.find((option) => option.key === selectedOptionKey) ??
-          options[0];
+          options.find((option) => option.key === selectedOptionKey) ?? options[0];
         return (
           <div className="flex min-h-8 items-center gap-2 px-2 py-1">
             <span
@@ -462,14 +418,9 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
               {group.label}
             </span>
             <Select
-              // exactOptionalPropertyTypes：value 缺省表示非受控，不能显式传 undefined
-              {...(selectedOptionKey === undefined
-                ? {}
-                : { value: selectedOptionKey })}
+              value={selectedOptionKey}
               onValueChange={(nextKey) => {
-                const option = options.find(
-                  (candidate) => candidate.key === nextKey,
-                );
+                const option = options.find((candidate) => candidate.key === nextKey);
                 if (!option) {
                   return;
                 }
@@ -487,9 +438,7 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
                 onKeyDown={(event) => event.stopPropagation()}
               >
                 <span className="max-w-28 truncate">
-                  {selectedConnection?.badgeLabel ??
-                    selectedConnection?.label ??
-                    group.label}
+                  {selectedConnection?.badgeLabel ?? selectedConnection?.label ?? group.label}
                 </span>
               </SelectTrigger>
               <SelectContent
@@ -528,15 +477,10 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
       });
     }
     return actions;
-  }, [
-    footerActions,
-    manageModelsLabel,
-    onManageModels,
-    showManageModelsAction,
-  ]);
+  }, [footerActions, manageModelsLabel, onManageModels, showManageModelsAction]);
 
   const modelTrigger = (
-    <DropdownMenuTrigger asChild={true}>
+    <DropdownMenuTrigger asChild>
       <Button
         type="button"
         variant="ghost"
@@ -553,10 +497,7 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
         )}
       >
         <PackageIcon
-          className={cn(
-            "pointer-events-none size-4 shrink-0 text-current",
-            triggerIconClassName,
-          )}
+          className={cn("pointer-events-none size-4 shrink-0 text-current", triggerIconClassName)}
           aria-hidden="true"
         />
         <span className={triggerLabelClassName} title={currentTriggerTitle}>
@@ -587,17 +528,11 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
     <DropdownMenu open={open} onOpenChange={handlePopoverOpenChange}>
       {tooltipTitle ? (
         <ControlHintTooltip
-          title={
-            guideTooltipOpen && guideTooltipTitle
-              ? guideTooltipTitle
-              : tooltipTitle
-          }
+          title={guideTooltipOpen && guideTooltipTitle ? guideTooltipTitle : tooltipTitle}
           shortcut={guideTooltipOpen ? undefined : shortcutLabel}
           triggerRef={triggerRef}
           open={guideTooltipOpen ? true : undefined}
-          className={
-            guideTooltipOpen ? "bg-background py-0.5 pr-0.5 pl-2" : undefined
-          }
+          className={guideTooltipOpen ? "bg-background py-0.5 pr-0.5 pl-2" : undefined}
         >
           {modelTrigger}
         </ControlHintTooltip>
@@ -629,8 +564,7 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
             }
             // 聊天输入框的 data-testid 挂在 contenteditable 自身上，不是父节点。
             // 这里与 mode 选择器保持同一个入口，避免关闭模型弹层后找不到输入框而丢失焦点。
-            const input =
-              document.querySelector<HTMLElement>(focusSelectorOnClose);
+            const input = document.querySelector<HTMLElement>(focusSelectorOnClose);
             input?.focus();
           }}
         >
@@ -655,10 +589,7 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
                       <div>
                         <DropdownMenuLabel
                           className="flex min-h-8 items-center px-2 py-1"
-                          data-testid={testId(
-                            TID_CHAT_MODEL_SELECT_GROUP,
-                            group.key,
-                          )}
+                          data-testid={testId(TID_CHAT_MODEL_SELECT_GROUP, group.key)}
                           data-model-provider-key={group.key}
                         >
                           {renderGroupLabel(group)}
@@ -672,24 +603,16 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
                   );
                 }
 
-                const groupSelected = isModelSelectGroupSelected(
-                  group,
-                  normalizedValue,
-                );
+                const groupSelected = isModelSelectGroupSelected(group, normalizedValue);
                 return (
                   <Fragment key={group.key}>
                     {groupSeparator}
                     <DropdownMenuSub>
                       <DropdownMenuSubTrigger
                         className="min-h-8"
-                        data-testid={testId(
-                          TID_CHAT_MODEL_SELECT_GROUP,
-                          group.key,
-                        )}
+                        data-testid={testId(TID_CHAT_MODEL_SELECT_GROUP, group.key)}
                         data-model-provider-key={group.key}
-                        data-model-provider-selected={
-                          groupSelected ? "true" : undefined
-                        }
+                        data-model-provider-selected={groupSelected ? "true" : undefined}
                       >
                         {renderGroupLabel(group)}
                         {groupSelected ? (
@@ -721,20 +644,14 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
                   key={action.key}
                   className="min-h-8 gap-2 px-2"
                   data-model-footer-action={action.key}
-                  data-model-footer-action-selected={
-                    action.selected ? "true" : undefined
-                  }
+                  data-model-footer-action-selected={action.selected ? "true" : undefined}
                   onSelect={() => {
                     handlePopoverOpenChange(false);
                     action.onSelect?.();
                   }}
                 >
-                  <span className="min-w-0 flex-1 truncate">
-                    {action.label}
-                  </span>
-                  {action.selected ? (
-                    <CheckIcon className="size-4 text-foreground-subtle" />
-                  ) : null}
+                  <span className="min-w-0 flex-1 truncate">{action.label}</span>
+                  {action.selected ? <CheckIcon className="size-4 text-foreground-subtle" /> : null}
                 </DropdownMenuItem>
               ))}
             </div>

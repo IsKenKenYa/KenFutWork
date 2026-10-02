@@ -1,21 +1,15 @@
-/**
- * zcode 照搬：`@/components/workflow-graph/run-status.ts`（references/zcode/packages/ui/src/components/workflow-graph/run-status.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { phaseBinder } from "@zui/components/workflow-graph/instance-phases";
+import type {
+  WorkflowRunActor,
+  WorkflowRunNode,
+  WorkflowRunState,
+} from "@zcode/shared/zcode-protocol-v4";
+import { phaseBinder } from "./instance-phases.js";
 import {
   isSyntheticLaneId,
   type StepRunStatus,
   type StepStatusTable,
   type WorkflowCausalityGraphData,
-} from "@zui/components/workflow-graph/types";
-import type {
-  WorkflowRunActor,
-  WorkflowRunNode,
-  WorkflowRunState,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
+} from "./types.js";
 
 /**
  * 实时叠加视图（live view v1）的纯选择器。
@@ -56,9 +50,7 @@ export function statusOfRunNode(node: WorkflowRunNode): StepRunStatus {
       // 失败与取消都画成 failed（journal 里两者语义不同，但叠加视图只用四值词汇表）。
       // outcome 缺省在引擎里不可达（settled 必带 outcome）；真出现时按「已结束」处理，
       // 因为谎报 pending（没开始）比少一格颜色更糟，而谎报 failed 会造成假警报。
-      return node.outcome === "failed" || node.outcome === "cancelled"
-        ? "failed"
-        : "done";
+      return node.outcome === "failed" || node.outcome === "cancelled" ? "failed" : "done";
     default:
       return "pending";
   }
@@ -83,9 +75,7 @@ export function aggregateRunStatuses(
   if (statuses.length === 0) return undefined;
   if (statuses.includes("running")) return "running";
   const queued = statuses.includes("pending");
-  const settled = statuses.some(
-    (status) => status === "done" || status === "failed",
-  );
+  const settled = statuses.some((status) => status === "done" || status === "failed");
   if (queued) return settled ? "running" : "pending";
   return statuses.includes("failed") ? "failed" : "done";
 }

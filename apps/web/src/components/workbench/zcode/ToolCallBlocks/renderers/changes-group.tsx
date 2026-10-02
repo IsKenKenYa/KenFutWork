@@ -1,30 +1,22 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/changes-group.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/changes-group.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
-
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { getFileDisplayPath } from "@zui/lib/fileDisplay";
-import { ToolCallBlock } from "@zui/ToolCallBlocks";
+import { PencilIcon } from "lucide-react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { getFileDisplayPath } from "@zui/lib/fileDisplay.js";
+import { ToolCallBlock } from "@zui/ToolCallBlocks.js";
+import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout.js";
+import { buildEditCodeViewerSource } from "@zui/ToolCallBlocks/renderers/edit.js";
+import {
+  readRawToolCallFileSummaries,
+  type ToolCallBlockRenderContext,
+} from "@zui/ToolCallBlocks/shared.js";
 import {
   getEditKindLabelMessageId,
   renderDiffCount,
   renderFileChip,
   renderFilePath,
-} from "@zui/ToolCallBlocks/renderers";
-import { buildEditCodeViewerSource } from "@zui/ToolCallBlocks/renderers/edit";
-import {
-  readRawToolCallFileSummaries,
-  type ToolCallBlockRenderContext,
-} from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { PencilIcon } from "lucide-react";
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+} from "@zui/ToolCallBlocks/renderers.js";
 
-const CHANGES_GROUP_ICON = (
-  <PencilIcon className="size-4 shrink-0 text-foreground-subtle" />
-);
+const CHANGES_GROUP_ICON = <PencilIcon className="size-4 shrink-0 text-foreground-subtle" />;
 const FILE_CHIP_GAP_PX = 8;
 const FILE_CHIP_TRAILING_SPACE_PX = 24;
 
@@ -74,9 +66,7 @@ function resolveResponsiveFileChipCount({
   return visibleCount;
 }
 
-type ChangeFileSummary = ReturnType<
-  typeof readRawToolCallFileSummaries
->[number];
+type ChangeFileSummary = ReturnType<typeof readRawToolCallFileSummaries>[number];
 
 function ResponsiveFileChipList({
   files,
@@ -100,23 +90,18 @@ function ResponsiveFileChipList({
       // summary 是 shrink-to-content，按自身宽度测量会在隐藏 chip 后继续收缩。
       // 以整行 ToolCall 的右边界计算，才能稳定得到当前真正可用的空间。
       const containerRect = container.getBoundingClientRect();
-      const boundaryRight =
-        boundary?.getBoundingClientRect().right ?? containerRect.right;
+      const boundaryRight = boundary?.getBoundingClientRect().right ?? containerRect.right;
       const nextVisibleCount = resolveResponsiveFileChipCount({
         availableWidth: resolveFileChipAvailableWidth({
           boundaryRight,
           listLeft: containerRect.left,
           trailingWidth: FILE_CHIP_TRAILING_SPACE_PX,
         }),
-        chipWidths: files.map(
-          (_, index) => chipRefs.current[index]?.offsetWidth ?? 0,
-        ),
+        chipWidths: files.map((_, index) => chipRefs.current[index]?.offsetWidth ?? 0),
         overflowWidth: overflowMeasureRef.current?.offsetWidth ?? 0,
         gap: FILE_CHIP_GAP_PX,
       });
-      setVisibleCount((current) =>
-        current === nextVisibleCount ? current : nextVisibleCount,
-      );
+      setVisibleCount((current) => (current === nextVisibleCount ? current : nextVisibleCount));
     };
     updateVisibleCount();
     if (typeof ResizeObserver === "undefined") return;
@@ -155,15 +140,12 @@ function ResponsiveFileChipList({
               summary,
               clickable: isVisible && Boolean(onOpenCodeViewer),
               basePath: workspacePath,
-              onClick: () =>
-                onOpenCodeViewer?.(buildEditCodeViewerSource(summary)),
+              onClick: () => onOpenCodeViewer?.(buildEditCodeViewerSource(summary)),
             })}
           </span>
         );
       })}
-      {hiddenCount > 0 ? (
-        <span className="shrink-0">+{hiddenCount}</span>
-      ) : null}
+      {hiddenCount > 0 ? <span className="shrink-0">+{hiddenCount}</span> : null}
       <span
         ref={overflowMeasureRef}
         aria-hidden="true"
@@ -182,24 +164,18 @@ export function ChangesGroupToolCallBlock(context: ToolCallBlockRenderContext) {
     () =>
       childToolCalls.map((child) => ({
         child,
-        summaries: readRawToolCallFileSummaries(
-          child.toolCall.raw,
-          child.toolCall,
-        ),
+        summaries: readRawToolCallFileSummaries(child.toolCall.raw, child.toolCall),
       })),
     [childToolCalls],
   );
   const files = useMemo(() => {
-    const unique = new Map<
-      string,
-      ReturnType<typeof readRawToolCallFileSummaries>[number]
-    >();
+    const unique = new Map<string, ReturnType<typeof readRawToolCallFileSummaries>[number]>();
     for (const entry of childSummaries) {
       for (const summary of entry.summaries) {
-        const fileKey = getFileDisplayPath(
-          summary.path,
-          context.workspacePath,
-        ).replaceAll("\\", "/");
+        const fileKey = getFileDisplayPath(summary.path, context.workspacePath).replaceAll(
+          "\\",
+          "/",
+        );
         if (!unique.has(fileKey)) unique.set(fileKey, summary);
       }
     }
@@ -270,9 +246,7 @@ export function ChangesGroupToolCallBlock(context: ToolCallBlockRenderContext) {
         <span className="inline-flex min-w-0 items-center gap-2">
           <span className="shrink-0 text-foreground-subtlest">·</span>
           {actionText ? (
-            <span className="shrink-0 text-foreground-subtle">
-              {actionText}
-            </span>
+            <span className="shrink-0 text-foreground-subtle">{actionText}</span>
           ) : null}
           {renderFileChip({
             summary: latestFile,
@@ -298,7 +272,7 @@ export function ChangesGroupToolCallBlock(context: ToolCallBlockRenderContext) {
             theme={context.theme}
             codePreviewSettings={context.codePreviewSettings}
             showIcon={false}
-            animateDiffCountOnMount={true}
+            animateDiffCountOnMount
             onOpenCodeViewer={context.onOpenCodeViewer}
             onOpenFileLink={context.onOpenFileLink}
             onOpenBrowserUrl={context.onOpenBrowserUrl}
@@ -332,12 +306,8 @@ export function ChangesGroupToolCallBlock(context: ToolCallBlockRenderContext) {
       summaryContentSeparator="·"
       expandedPrimaryText={countText}
       expandedSecondaryText={null}
-      diffCount={
-        !context.isOfficeMode && context.isRunning
-          ? runningDiffCount
-          : undefined
-      }
-      hideDiffCountWhenOpen={true}
+      diffCount={!context.isOfficeMode && context.isRunning ? runningDiffCount : undefined}
+      hideDiffCountWhenOpen
       animateSummaryContent={context.isRunning}
       disableSummaryContentAnimation={context.disableSummaryContentAnimation}
       summaryContentKey={`changes:${toolCall.toolId}:${context.isRunning ? `${latest?.child.toolCall.toolId ?? "running"}:${actionText ?? "changing"}:${latestFile?.path ?? "file"}` : files.map((file) => file.path).join("|")}`}

@@ -1,47 +1,26 @@
-/**
- * zcode 照搬：`@/prompt-editor/ChatPromptActionMenu.tsx`（references/zcode/packages/ui/src/prompt-editor/ChatPromptActionMenu.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀；P5 适配：可选属性放宽 `| undefined`（exactOptionalPropertyTypes，照搬调用点显式传 undefined）
- *（本仓 Turbopack 不做 .js→.ts/.tsx 试探，手册 §2.4-2 在本仓构建链的等价适配）。
- */
-
-import { ControlHintTooltip } from "@zui/ControlHintTooltip";
-import { Button } from "@zui/components/ui/button";
+import { ContextMentionOptionContent } from "@zui/mentions/components/ContextMentionOptionContent.js";
+import { useFileMentionProvider } from "@zui/mentions/providers/fileMentionProvider.js";
+import { useSessionsMentionProvider } from "@zui/mentions/providers/sessionsMentionProvider.js";
 import {
-  Popover,
-  PopoverAnchor,
-  PopoverContent,
-  PopoverTrigger,
-} from "@zui/components/ui/popover";
-import { useSlashCommands } from "@zui/hooks/useSlashCommands";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { LexicalChatInputHandle } from "@zui/LexicalChatInput";
-import { buildSlashApplyMentionPayload } from "@zui/lib/slashApplyMentionPayload";
-import { ContextMentionOptionContent } from "@zui/mentions/components/ContextMentionOptionContent";
-import {
-  MentionPanel,
-  type MentionPanelSection,
-} from "@zui/mentions/components/MentionPanel";
-import { PluginMentionOptionContent } from "@zui/mentions/components/PluginMentionOptionContent";
-import { getSessionMentionWorkspaceScope } from "@zui/mentions/mentionPanelRouting";
-import {
-  buildVisibleMentionGroups,
   MENTION_FILES_ONLY_DEFAULT_PREVIEW_LIMIT,
-} from "@zui/mentions/mentionSearch";
-import { useFileMentionProvider } from "@zui/mentions/providers/fileMentionProvider";
-import { usePluginsMentionProvider } from "@zui/mentions/providers/pluginsMentionProvider";
-import { useSessionsMentionProvider } from "@zui/mentions/providers/sessionsMentionProvider";
-import { normalizeSlashCommandValue } from "@zui/slashCommandHelpers";
-import { useChatViewActiveTaskProvider } from "@zui/v4/activeTaskProvider";
+  buildVisibleMentionGroups,
+} from "@zui/mentions/mentionSearch.js";
+import { getSessionMentionWorkspaceScope } from "@zui/mentions/mentionPanelRouting.js";
+import { useChatViewActiveTaskProvider } from "@zui/v4/activeTaskProvider.js";
+import { useMemo, useRef, useState, type MutableRefObject } from "react";
 import type { EditorState } from "lexical";
-import {
-  GoalIcon,
-  Info,
-  PaperclipIcon,
-  PlusIcon,
-  Workflow,
-} from "lucide-react";
-import { type MutableRefObject, useMemo, useRef, useState } from "react";
+import { GoalIcon, Info, PaperclipIcon, PlusIcon, Workflow } from "lucide-react";
+import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
+import { Button } from "@zui/components/ui/button.js";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@zui/components/ui/popover.js";
+import { buildSlashApplyMentionPayload } from "@zui/lib/slashApplyMentionPayload.js";
+import { useSlashCommands } from "@zui/hooks/useSlashCommands.js";
+import { normalizeSlashCommandValue } from "@zui/slashCommandHelpers.js";
+import type { LexicalChatInputHandle } from "@zui/LexicalChatInput.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { MentionPanel, type MentionPanelSection } from "@zui/mentions/components/MentionPanel.js";
+import { PluginMentionOptionContent } from "@zui/mentions/components/PluginMentionOptionContent.js";
+import { usePluginsMentionProvider } from "@zui/mentions/providers/pluginsMentionProvider.js";
 
 /**
  * 「添加」分区里紧随附件之后的命令快捷项，选中即插入与 `/` 面板相同的命令标签。
@@ -49,11 +28,7 @@ import { type MutableRefObject, useMemo, useRef, useState } from "react";
  */
 const QUICK_COMMANDS = {
   goal: { id: "add-goal", labelId: "chat.goalBanner.label", Icon: GoalIcon },
-  workflow: {
-    id: "add-workflow",
-    labelId: "chat.composer.addWorkflow",
-    Icon: Workflow,
-  },
+  workflow: { id: "add-workflow", labelId: "chat.composer.addWorkflow", Icon: Workflow },
 } as const;
 type QuickCommand = keyof typeof QUICK_COMMANDS;
 
@@ -71,23 +46,21 @@ export function ChatPromptActionMenu({
   excludedSlashCommandNames,
 }: {
   actionMenuTitle: string;
-  attachmentAction?:
-    | {
-        label: string;
-        onSelect: () => void;
-        testId?: string;
-        menuItemTestId?: string;
-      }
-    | undefined;
-  disabled?: boolean | undefined;
-  disabledReason?: string | undefined;
+  attachmentAction?: {
+    label: string;
+    onSelect: () => void;
+    testId?: string;
+    menuItemTestId?: string;
+  };
+  disabled?: boolean;
+  disabledReason?: string;
   inputApiRef: MutableRefObject<LexicalChatInputHandle | null>;
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
+  workspaceIdentity?: string;
   sessionId: string | null;
   container: HTMLElement | null;
   showPlugins: boolean;
-  excludedSlashCommandNames?: readonly string[] | undefined;
+  excludedSlashCommandNames?: readonly string[];
 }) {
   const { intl } = useZCodeIntl();
   const [open, setOpen] = useState(false);
@@ -99,8 +72,7 @@ export function ChatPromptActionMenu({
   const anchorRef = useMemo(
     () => ({
       current: {
-        getBoundingClientRect: () =>
-          container?.getBoundingClientRect() ?? new DOMRect(),
+        getBoundingClientRect: () => container?.getBoundingClientRect() ?? new DOMRect(),
       },
     }),
     [container],
@@ -114,11 +86,7 @@ export function ChatPromptActionMenu({
     intl.formatMessage({ id: "chat.mention.plugins.empty" }),
     intl.formatMessage({ id: "chat.mention.plugins.title" }),
   );
-  const provider = useChatViewActiveTaskProvider(
-    sessionId,
-    workspacePath,
-    workspaceIdentity,
-  );
+  const provider = useChatViewActiveTaskProvider(sessionId, workspacePath, workspaceIdentity);
   const slashCommands = useSlashCommands(workspacePath, workspaceIdentity);
   const files = useFileMentionProvider(
     workspacePath,
@@ -148,10 +116,7 @@ export function ChatPromptActionMenu({
       errorText: group.error?.message ?? null,
     })),
   );
-  const mentionItems = [
-    ...plugins.items,
-    ...contextGroups.flatMap((group) => group.items),
-  ];
+  const mentionItems = [...plugins.items, ...contextGroups.flatMap((group) => group.items)];
   const attachmentCount = attachmentAction ? 1 : 0;
   const options = [
     ...(attachmentAction ? [{ disabled: false }] : []),
@@ -194,9 +159,7 @@ export function ChatPromptActionMenu({
             content: (
               <>
                 <Icon className="size-4 shrink-0" />
-                <span className="truncate text-ui-base font-medium">
-                  {label}
-                </span>
+                <span className="truncate text-ui-base font-medium">{label}</span>
               </>
             ),
           };
@@ -225,12 +188,7 @@ export function ChatPromptActionMenu({
       errorText: group.errorText,
       options: group.items.map((item) => ({
         ...item,
-        content: (
-          <ContextMentionOptionContent
-            item={item}
-            workspacePath={workspacePath}
-          />
-        ),
+        content: <ContextMentionOptionContent item={item} workspacePath={workspacePath} />,
       })),
     })),
   ].filter((section) => section.id !== "add" || section.options.length > 0);
@@ -269,17 +227,12 @@ export function ChatPromptActionMenu({
           // 否则会把 CLI 不会展开的裸文本发给模型。
           const emptyDraft = inputApiRef.current?.getText() === "";
           const offered = (command: QuickCommand, available: boolean) =>
-            emptyDraft &&
-            available &&
-            !excludedSlashCommandNames?.includes(command);
+            emptyDraft && available && !excludedSlashCommandNames?.includes(command);
           setQuickCommands([
             ...(offered("goal", sessionId === null) ? (["goal"] as const) : []),
             ...(offered(
               "workflow",
-              slashCommands.some(
-                (entry) =>
-                  normalizeSlashCommandValue(entry.name) === "workflow",
-              ),
+              slashCommands.some((entry) => normalizeSlashCommandValue(entry.name) === "workflow"),
             )
               ? (["workflow"] as const)
               : []),
@@ -291,7 +244,7 @@ export function ChatPromptActionMenu({
       }}
     >
       <ControlHintTooltip title={disabledReason ?? actionMenuTitle}>
-        <PopoverTrigger asChild={true}>
+        <PopoverTrigger asChild>
           <Button
             type="button"
             variant="ghost"
@@ -335,19 +288,13 @@ export function ChatPromptActionMenu({
             event.stopPropagation();
             const delta = event.key === "ArrowDown" ? 1 : -1;
             for (let step = 1; step <= options.length; step++) {
-              const next =
-                (selectedIndex + delta * step + options.length) %
-                options.length;
+              const next = (selectedIndex + delta * step + options.length) % options.length;
               if (!options[next]?.disabled) {
                 setSelectedIndex(next);
                 break;
               }
             }
-          } else if (
-            event.key === "Enter" ||
-            event.key === "Tab" ||
-            event.key === " "
-          ) {
+          } else if (event.key === "Enter" || event.key === "Tab" || event.key === " ") {
             event.preventDefault();
             event.stopPropagation();
             selectOption(selectedIndex);
@@ -367,10 +314,7 @@ export function ChatPromptActionMenu({
                   ["$", "chat.composer.skillShortcut"],
                 ] as const
               ).map(([trigger, id]) => (
-                <div
-                  key={trigger}
-                  className="flex shrink-0 items-center gap-1.5"
-                >
+                <div key={trigger} className="flex shrink-0 items-center gap-1.5">
                   <code className="flex size-5 shrink-0 items-center justify-center rounded bg-tooltip-tag font-mono text-foreground">
                     {trigger}
                   </code>
@@ -379,11 +323,7 @@ export function ChatPromptActionMenu({
               ))}
               <div className="flex items-center gap-1.5">
                 <Info className="size-4 shrink-0" />
-                <span>
-                  {intl.formatMessage({
-                    id: "chat.composer.contextSearchHint",
-                  })}
-                </span>
+                <span>{intl.formatMessage({ id: "chat.composer.contextSearchHint" })}</span>
               </div>
             </div>
           }

@@ -1,37 +1,17 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/switch-mode.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/switch-mode.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：MessageResponseProps（禁改件 message.tsx）可选属性不接受 undefined，调用点按手册 §4 条件展开。
- */
+import { useState, type KeyboardEvent, type MouseEvent } from "react";
+import { MessageResponse } from "@zui/components/ai-elements/message.js";
+import { ToolOutput } from "@zui/components/ai-elements/tool.js";
+import { Button } from "@zui/components/ui/button.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { getToolCallErrorText } from "@zui/lib/toolError.js";
+import { extractPlanToolCallContent, getPlanFileLabel } from "@zui/lib/planToolCall.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import type { ToolCallBlockRenderContext } from "../shared.js";
+import { ArrowRightIcon, CheckIcon, CopyIcon, NotepadTextIcon } from "lucide-react";
 
-import { MessageResponse } from "@zui/components/ai-elements/message";
-import { ToolOutput } from "@zui/components/ai-elements/tool";
-import { Button } from "@zui/components/ui/button";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import {
-  extractPlanToolCallContent,
-  getPlanFileLabel,
-} from "@zui/lib/planToolCall";
-import { getToolCallErrorText } from "@zui/lib/toolError";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
-import {
-  ArrowRightIcon,
-  CheckIcon,
-  CopyIcon,
-  NotepadTextIcon,
-} from "lucide-react";
-import { type KeyboardEvent, type MouseEvent, useState } from "react";
-
-function isInteractiveDescendant(
-  target: EventTarget | null,
-  card: HTMLElement,
-): boolean {
+function isInteractiveDescendant(target: EventTarget | null, card: HTMLElement): boolean {
   if (!(target instanceof Element)) return false;
-  const interactive = target.closest(
-    "button, a, input, textarea, select, [role='button']",
-  );
+  const interactive = target.closest("button, a, input, textarea, select, [role='button']");
   // 卡片自身带 role=button，旧 closest 会让卡片任意位置都命中自己，
   // 结果“点击卡片打开详情”从未执行。这里只拦截复制/展开/正文链接等真实子控件。
   return interactive !== null && interactive !== card;
@@ -41,10 +21,7 @@ export function SwitchModeToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
   const { toolCall } = context.toolCallNode;
   const errorText = getToolCallErrorText(toolCall);
-  const { markdown, planFilePath } = extractPlanToolCallContent(
-    toolCall,
-    context.workspacePath,
-  );
+  const { markdown, planFilePath } = extractPlanToolCallContent(toolCall, context.workspacePath);
   const snapshotNotice = (
     <ToolSnapshotFieldNotice
       refs={toolCall.snapshotRefs ?? []}
@@ -69,8 +46,7 @@ export function SwitchModeToolCallBlock(context: ToolCallBlockRenderContext) {
   };
 
   const handleCardClick = (event: MouseEvent<HTMLElement>) => {
-    if (!isInteractiveDescendant(event.target, event.currentTarget))
-      openDetail();
+    if (!isInteractiveDescendant(event.target, event.currentTarget)) openDetail();
   };
 
   const handleCardKeyDown = (event: KeyboardEvent<HTMLElement>) => {
@@ -83,12 +59,7 @@ export function SwitchModeToolCallBlock(context: ToolCallBlockRenderContext) {
   };
 
   const handleCopy = () => {
-    if (
-      !markdown ||
-      typeof navigator === "undefined" ||
-      !navigator.clipboard?.writeText
-    )
-      return;
+    if (!markdown || typeof navigator === "undefined" || !navigator.clipboard?.writeText) return;
     void navigator.clipboard.writeText(markdown).then(
       () => setCopiedMarkdown(markdown),
       () => setCopiedMarkdown(null),
@@ -134,11 +105,7 @@ export function SwitchModeToolCallBlock(context: ToolCallBlockRenderContext) {
                   handleCopy();
                 }}
               >
-                {copied ? (
-                  <CheckIcon className="size-3.5" />
-                ) : (
-                  <CopyIcon className="size-3.5" />
-                )}
+                {copied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
               </Button>
             </div>
           </header>
@@ -148,24 +115,12 @@ export function SwitchModeToolCallBlock(context: ToolCallBlockRenderContext) {
             <div className="max-h-64 overflow-hidden px-4 pt-2 pb-12 [mask-image:linear-gradient(to_bottom,black_0%,black_30%,transparent_100%)]">
               <MessageResponse
                 className="min-w-0 break-words text-foreground [&_h1]:text-foreground [&_h2]:text-foreground [&_h3]:text-foreground [&_li]:text-foreground-subtle [&_p]:text-foreground-subtle"
-                {...(context.workspacePath === undefined
-                  ? {}
-                  : { workspacePath: context.workspacePath })}
-                {...(context.theme === undefined
-                  ? {}
-                  : { theme: context.theme })}
-                {...(context.codePreviewSettings === undefined
-                  ? {}
-                  : { codePreviewSettings: context.codePreviewSettings })}
-                {...(context.onOpenCodeViewer === undefined
-                  ? {}
-                  : { onOpenCodeViewer: context.onOpenCodeViewer })}
-                {...(context.onOpenFileLink === undefined
-                  ? {}
-                  : { onOpenFileLink: context.onOpenFileLink })}
-                {...(context.onOpenBrowserUrl === undefined
-                  ? {}
-                  : { onOpenExternalUrl: context.onOpenBrowserUrl })}
+                workspacePath={context.workspacePath}
+                theme={context.theme}
+                codePreviewSettings={context.codePreviewSettings}
+                onOpenCodeViewer={context.onOpenCodeViewer}
+                onOpenFileLink={context.onOpenFileLink}
+                onOpenExternalUrl={context.onOpenBrowserUrl}
               >
                 {markdown}
               </MessageResponse>
@@ -195,10 +150,7 @@ export function SwitchModeToolCallBlock(context: ToolCallBlockRenderContext) {
   if (toolCall.output !== undefined || errorText) {
     return (
       <>
-        <ToolOutput
-          errorText={errorText}
-          output={errorText ? undefined : toolCall.output}
-        />
+        <ToolOutput errorText={errorText} output={errorText ? undefined : toolCall.output} />
         {snapshotNotice}
       </>
     );

@@ -1,11 +1,5 @@
-/**
- * zcode 照搬：`@/DesktopWindowFrame.tsx`（references/zcode/packages/ui/src/DesktopWindowFrame.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { cn } from "@zui/components/lib/utils";
 import { memo, type ReactNode } from "react";
+import { cn } from "@zui/components/lib/utils.js";
 
 export const DesktopWindowFrame = memo(function DesktopWindowFrameComponent({
   title: _title,
@@ -20,19 +14,18 @@ export const DesktopWindowFrame = memo(function DesktopWindowFrameComponent({
 }: {
   title: string;
   children: ReactNode;
-  topBar?: ReactNode | undefined;
-  actions?: ReactNode | undefined;
+  topBar?: ReactNode;
+  actions?: ReactNode;
   /** 标签栏插槽，渲染在 header 内标题后面 */
-  tabBar?: ReactNode | undefined;
-  isDesktop?: boolean | undefined;
-  isMacDesktop?: boolean | undefined;
-  isWindowsDesktop?: boolean | undefined;
-  headerTestId?: string | undefined;
-  showHeader?: boolean | undefined;
+  tabBar?: ReactNode;
+  isDesktop?: boolean;
+  isMacDesktop?: boolean;
+  isWindowsDesktop?: boolean;
+  headerTestId?: string;
+  showHeader?: boolean;
 }) {
   const isLinuxDesktop = isDesktop && !isMacDesktop && !isWindowsDesktop;
-  const usesOpaqueRootSurface =
-    !isDesktop || isWindowsDesktop || isLinuxDesktop;
+  const usesOpaqueRootSurface = !isDesktop || isWindowsDesktop || isLinuxDesktop;
 
   return (
     <div
@@ -55,4 +48,3 @@ export const DesktopWindowFrame = memo(function DesktopWindowFrameComponent({
     </div>
   );
 });
-/* 适配注记（P9）：接口可选属性放宽 | undefined（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。 */

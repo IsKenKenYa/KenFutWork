@@ -1,10 +1,5 @@
-/**
- * zcode 照搬：`@/settings/model-provider-section/codingPlanPricingCards.ts`（references/zcode/packages/ui/src/settings/model-provider-section/codingPlanPricingCards.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import { BUILTIN_MODEL_PROVIDER_IDS } from "@zui/lib/zcode-shared";
-import type { CodingPlanProviderId } from "@zui/settings/model-provider-section/constants";
+import { BUILTIN_MODEL_PROVIDER_IDS } from "@zcode/shared";
+import type { CodingPlanProviderId } from "@zui/settings/model-provider-section/constants.js";
 
 // 死代码清理：原生购买组件 CodingPlanPricingCards 及其配套 resolver 已随
 // CodingPlanPurchasePanel 一起下线（购买流程切换为内嵌官网 webview）。

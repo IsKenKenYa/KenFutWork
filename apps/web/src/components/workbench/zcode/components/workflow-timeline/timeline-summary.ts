@@ -1,13 +1,7 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/timeline-summary.ts`（references/zcode/packages/ui/src/components/workflow-timeline/timeline-summary.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import type { WorkflowCausalityGraphData } from "@zui/components/workflow-graph/types";
-import { workflowSubagentModelCardLabel } from "@zui/components/workflow-timeline/subagent-model-label";
-import type { WorkflowTimelineModel } from "@zui/components/workflow-timeline/timeline-model";
-import type { WorkflowRunState } from "@zui/lib/zcode-shared/zcode-protocol-v4";
+import { workflowRunStepCounts, type WorkflowRunState } from "@zcode/shared/zcode-protocol-v4";
+import type { WorkflowCausalityGraphData } from "@zui/components/workflow-graph/types.js";
+import { workflowSubagentModelCardLabel } from "./subagent-model-label.js";
+import type { WorkflowTimelineModel } from "./timeline-model.js";
 
 /**
  * 卡片表头细节与页脚摘要行的文案素材。侧栏状态头的摘要行也读这里——同一个 run 在两个面上必须说同一句话。
@@ -32,16 +26,11 @@ export function timelineCounts(
 ): TimelineCounts {
   const lanes = new Set<string>();
   for (const station of model.stations) {
-    for (const pill of station.pills)
-      if (pill.laneClass === "agent") lanes.add(pill.lane.id);
+    for (const pill of station.pills) if (pill.laneClass === "agent") lanes.add(pill.lane.id);
   }
   // 草稿不画药丸，子代理数由扫描器直接给。
   const agents = model.draft?.agents ?? lanes.size;
-  return {
-    agents,
-    phases: model.stations.length,
-    steps: graph?.steps.length ?? 0,
-  };
+  return { agents, phases: model.stations.length, steps: graph?.steps.length ?? 0 };
 }
 
 /** 循环上的站到过的最多轮次；没有循环或还没到过时 0。 */
@@ -53,25 +42,8 @@ export function timelineRounds(model: WorkflowTimelineModel): number {
   return rounds;
 }
 
-export function workflowRunStepCounts(run: WorkflowRunState): {
-  settled: number;
-  observed: number;
-} {
-  let settled = 0;
-  for (const node of run.nodes) if (node.phase === "settled") settled += 1;
-  return { observed: run.nodes.length, settled };
-}
-
-function count(
-  format: FormatMessage,
-  one: string,
-  many: string,
-  value: number,
-): string {
-  return format(
-    { id: value === 1 ? one : many },
-    { count: value.toLocaleString() },
-  );
+function count(format: FormatMessage, one: string, many: string, value: number): string {
+  return format({ id: value === 1 ? one : many }, { count: value.toLocaleString() });
 }
 
 /**
@@ -98,13 +70,8 @@ function agentsPart(
   model: WorkflowTimelineModel,
   run: WorkflowRunState | undefined,
 ): string {
-  if (
-    run !== undefined &&
-    (run.status === "pending" || run.status === "running")
-  ) {
-    const working = run.actors.filter(
-      (actor) => actor.status === "running",
-    ).length;
+  if (run !== undefined && (run.status === "pending" || run.status === "running")) {
+    const working = run.actors.filter((actor) => actor.status === "running").length;
     return count(
       format,
       "chat.toolCall.workflow.card.agentWorking",
@@ -112,10 +79,7 @@ function agentsPart(
       working,
     );
   }
-  const agents = Math.max(
-    run?.actors.length ?? 0,
-    timelineCounts(model, undefined).agents,
-  );
+  const agents = Math.max(run?.actors.length ?? 0, timelineCounts(model, undefined).agents);
   return count(
     format,
     "chat.toolCall.workflow.card.agent",
@@ -142,10 +106,7 @@ export function workflowHeaderDetail(
    */
   subagentModelName?: string,
 ): string {
-  const parts = [
-    workflowPhasesDetail(format, model, graph),
-    agentsPart(format, model, run),
-  ];
+  const parts = [workflowPhasesDetail(format, model, graph), agentsPart(format, model, run)];
   if (subagentModelName !== undefined) {
     parts.push(subagentModelName);
   }
@@ -172,13 +133,7 @@ export function workflowCardDetail(
     ...(providerName === undefined ? {} : { providerName }),
   });
   return {
-    detail: workflowHeaderDetail(
-      format,
-      model,
-      graph,
-      run,
-      subagentModel?.name,
-    ),
+    detail: workflowHeaderDetail(format, model, graph, run, subagentModel?.name),
     ...(subagentModel === undefined ? {} : { title: subagentModel.title }),
   };
 }
@@ -215,9 +170,7 @@ export function workflowSummaryParts(
   }
   const active = run.status === "pending" || run.status === "running";
   if (active) {
-    const working = run.actors.filter(
-      (actor) => actor.status === "running",
-    ).length;
+    const working = run.actors.filter((actor) => actor.status === "running").length;
     parts.push(
       count(
         format,
@@ -227,10 +180,7 @@ export function workflowSummaryParts(
       ),
     );
   } else {
-    const agents = Math.max(
-      run.actors.length,
-      timelineCounts(model, undefined).agents,
-    );
+    const agents = Math.max(run.actors.length, timelineCounts(model, undefined).agents);
     parts.push(
       count(
         format,
@@ -240,13 +190,9 @@ export function workflowSummaryParts(
       ),
     );
   }
-  const { observed, settled } = workflowRunStepCounts(run);
-  parts.push(
-    format(
-      { id: "chat.toolCall.workflow.card.steps" },
-      { done: settled, total: observed },
-    ),
-  );
+  // 步数走 @zcode/shared 的唯一实现：表内 + 表外（撞界后没进表的实例仍算步数）。
+  const { settled, total } = workflowRunStepCounts(run);
+  parts.push(format({ id: "chat.toolCall.workflow.card.steps" }, { done: settled, total }));
   if (options.tokens !== false) {
     parts.push(
       format(
@@ -260,10 +206,7 @@ export function workflowSummaryParts(
     parts.push(
       active
         ? format({ id: "chat.toolCall.workflow.card.round" }, { count: rounds })
-        : format(
-            { id: "chat.toolCall.workflow.card.rounds" },
-            { count: rounds },
-          ),
+        : format({ id: "chat.toolCall.workflow.card.rounds" }, { count: rounds }),
     );
   }
   const artifacts = run.artifacts?.length ?? 0;

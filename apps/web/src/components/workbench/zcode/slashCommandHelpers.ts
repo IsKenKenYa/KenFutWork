@@ -1,43 +1,26 @@
 /**
- * zcode 照搬：`@/slashCommandHelpers.ts`（references/zcode/packages/ui/src/slashCommandHelpers.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀；P5 适配：可选属性放宽 `| undefined`（exactOptionalPropertyTypes，照搬调用点显式传 undefined）（Turbopack 无 .js→.ts
- * 试探）；源文件自带头注保留于下。
- */
-/**
  * slashCommandHelpers — 纯函数辅助工具，供 SlashCommandPlugin.tsx 使用
  */
-
-import type {
-  AgentSummary,
-  Locale,
-  SkillSummary,
-  ZCodeSlashCommand,
-} from "@zui/lib/zcode-shared";
-import type { MentionItem } from "@zui/mentions/mentionTypes";
-import { mapSkillsToMentionItemsForTest } from "@zui/mentions/providers/skillsMentionProvider";
-import { mapSubagentsToMentionItemsForTest } from "@zui/mentions/providers/subagentsMentionProvider";
-import {
-  $getRoot,
-  $getSelection,
-  $isRangeSelection,
-  $isTextNode,
-} from "lexical";
-import type { PromptInputSuggestionItem } from "./lib/promptInputTriggers";
+import { $getRoot, $getSelection, $isRangeSelection, $isTextNode } from "lexical";
+import type { AgentSummary, Locale, SkillSummary, ZCodeSlashCommand } from "@zcode/shared";
+import type { MentionItem } from "@zui/mentions/mentionTypes.js";
+import { mapSubagentsToMentionItemsForTest } from "@zui/mentions/providers/subagentsMentionProvider.js";
+import { mapSkillsToMentionItemsForTest } from "@zui/mentions/providers/skillsMentionProvider.js";
+import type { PromptInputSuggestionItem } from "./lib/promptInputTriggers.js";
 
 export interface SlashCommandPluginProps {
-  container?: HTMLElement | null | undefined;
+  container?: HTMLElement | null;
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
+  workspaceIdentity?: string;
   /** 已有 Session 的 id；null/undefined 表示新建草稿，决定 Skill catalog authority。 */
   sessionId?: string | null;
-  disabled?: boolean | undefined;
-  excludedCommandNames?: readonly string[] | undefined;
+  disabled?: boolean;
+  excludedCommandNames?: readonly string[];
   /**
    * App 层本地命令（如 `/side`）。命令目录仍以 CLI catalog 为权威；这里只允许渲染层
    * 追加"选中即执行 UI 行为"的命令，不参与发送，也不写回 CLI 命令列表。
    */
-  appCommands?: readonly AppSlashCommand[] | undefined;
+  appCommands?: readonly AppSlashCommand[];
 }
 
 /** App 层斜杠命令：选中即执行 UI 行为（不插入 mention、不发送）。 */
@@ -69,17 +52,13 @@ export function buildAppSlashCommandSuggestions(
         value,
         label: `/${value}`,
         description: command.description,
-        keywords: [
-          ...new Set([value, command.description, ...(command.keywords ?? [])]),
-        ],
+        keywords: [...new Set([value, command.description, ...(command.keywords ?? [])])],
       },
     ];
   });
 }
 
-export function isAppSlashCommandSuggestion(
-  suggestion: PromptInputSuggestionItem,
-): boolean {
+export function isAppSlashCommandSuggestion(suggestion: PromptInputSuggestionItem): boolean {
   return suggestion.id.startsWith(APP_SLASH_SUGGESTION_ID_PREFIX);
 }
 
@@ -94,10 +73,7 @@ export function shouldOfferSideSlashCommand(options: {
   isMobileViewport: boolean;
 }): boolean {
   return (
-    !options.isDraft &&
-    !options.selectionSideChat &&
-    !options.readOnly &&
-    !options.isMobileViewport
+    !options.isDraft && !options.selectionSideChat && !options.readOnly && !options.isMobileViewport
   );
 }
 
@@ -107,9 +83,7 @@ export function normalizeSlashCommandValue(name: string): string {
   return name.trim().replace(/^\/+/, "");
 }
 
-export function buildSlashSuggestions(
-  commands: ZCodeSlashCommand[],
-): PromptInputSuggestionItem[] {
+export function buildSlashSuggestions(commands: ZCodeSlashCommand[]): PromptInputSuggestionItem[] {
   return commands.flatMap((command) => {
     const value = normalizeSlashCommandValue(command.name);
     // UI 曾同时维护内建白名单、GLM `/goal` fallback 和 v4 追加目录，
@@ -125,14 +99,7 @@ export function buildSlashSuggestions(
         value,
         label: command.inputHint?.trim() || `/${value}`,
         description: command.description,
-        keywords: [
-          ...new Set([
-            value,
-            command.name,
-            command.description,
-            command.inputHint ?? "",
-          ]),
-        ],
+        keywords: [...new Set([value, command.name, command.description, command.inputHint ?? ""])],
       },
     ];
   });
@@ -142,14 +109,7 @@ export function buildSubagentSuggestions(
   agents: Array<
     Pick<
       AgentSummary,
-      | "id"
-      | "name"
-      | "description"
-      | "path"
-      | "scope"
-      | "source"
-      | "enabled"
-      | "modelSelection"
+      "id" | "name" | "description" | "path" | "scope" | "source" | "enabled" | "modelSelection"
     >
   >,
 ): PromptInputSuggestionItem[] {
@@ -160,10 +120,7 @@ export function buildSubagentSuggestions(
 
 export function buildSkillSuggestions(
   skills: Array<
-    Pick<
-      SkillSummary,
-      "id" | "name" | "description" | "path" | "scope" | "pluginName"
-    >
+    Pick<SkillSummary, "id" | "name" | "description" | "path" | "scope" | "pluginName">
   >,
   locale?: Locale,
 ): PromptInputSuggestionItem[] {
@@ -173,16 +130,12 @@ export function buildSkillSuggestions(
     value: item.value,
     label: `$${item.value}`,
     description: item.description,
-    keywords: [
-      ...new Set([...(item.keywords ?? []), "skill", "skills", item.value]),
-    ],
+    keywords: [...new Set([...(item.keywords ?? []), "skill", "skills", item.value])],
     data: item.data,
   }));
 }
 
-function mapSubagentMentionItemToSuggestion(
-  item: MentionItem,
-): PromptInputSuggestionItem {
+function mapSubagentMentionItemToSuggestion(item: MentionItem): PromptInputSuggestionItem {
   return {
     id: item.id,
     trigger: "/",

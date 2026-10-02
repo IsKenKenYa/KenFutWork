@@ -1,45 +1,32 @@
-/**
- * zcode 照搬：`@/v4/conversationRowContext.ts`（references/zcode/packages/ui/src/v4/conversationRowContext.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
 // v4 行渲染上下文（ai-elements / ToolCallBlocks 回接所需的宿主注入面）。
 // 注入模式对齐 PermissionDialog（store 耦合剥离）：展示组件不自取 store，
 // theme / codePreviewSettings 在宿主（SessionPane）处取，向下走稳定 props。
-
-import type { MessageFileLinkTarget } from "@zui/components/ai-elements/message";
-import type { WorkflowCausalityGraphData } from "@zui/components/workflow-graph/types";
-import type { WorkflowRunSettingsChange } from "@zui/components/workflow-timeline/workflowRunSettings";
-import type { AssistantPreviewCardsAutoOpenRequest } from "@zui/lib/assistantPreviewCards";
-import type { CodePreviewSettings } from "@zui/lib/codePreviewSettings";
-import type { CodeViewerSource } from "@zui/lib/codeViewer";
-import type { OpenAutomationsMain } from "@zui/lib/taskNavigationHistory";
+import type { CodePreviewSettings } from "@zui/lib/codePreviewSettings.js";
+import type { CodeViewerSource } from "@zui/lib/codeViewer.js";
+import type { AssistantPreviewCardsAutoOpenRequest } from "@zui/lib/assistantPreviewCards.js";
+import type { OpenAutomationsMain } from "@zui/lib/taskNavigationHistory.js";
+import type { MessageFileLinkTarget } from "@zui/components/ai-elements/message.js";
+import type { WorkflowCausalityGraphData } from "@zui/components/workflow-graph/types.js";
+import type { WorkflowRunSettingsChange } from "@zui/components/workflow-timeline/workflowRunSettings.js";
+import type { WorkflowDraftPosition, WorkflowRunCardSummary } from "@zui/ToolCallBlocks/shared.js";
+import type { Theme } from "@zui/useTheme.js";
+import type { ModelSelectionView } from "@zcode/services";
+import type { ConversationAttachmentReadParams, ConversationTransport } from "@zui/v4/transport.js";
 import type {
   OpenPlanDetailSideTabRequest,
-  OpenSubagentSideTabRequest,
   OpenWorkflowActorSessionSideTabRequest,
   OpenWorkflowArtifactSideTabRequest,
   OpenWorkflowRunSideTabRequest,
   OpenWorkflowWorkspaceSideTabRequest,
-} from "@zui/lib/workspaceSidePane";
-import type { ModelSelectionView } from "@zui/lib/zcode-services";
+  OpenSubagentSideTabRequest,
+} from "@zui/lib/workspaceSidePane.js";
 import type {
   CommandAck,
   ConversationRowTarget,
   TurnHeaderRow,
   V4ConversationFileChangesResult,
   V4ConversationFileRewindPreviewResult,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import type {
-  WorkflowDraftPosition,
-  WorkflowRunCardSummary,
-} from "@zui/ToolCallBlocks/shared";
-import type { Theme } from "@zui/useTheme";
-import type {
-  ConversationAttachmentReadParams,
-  ConversationTransport,
-} from "@zui/v4/transport";
+} from "@zcode/shared/zcode-protocol-v4";
 
 export type ConversationFileChangesState = Exclude<
   NonNullable<TurnHeaderRow["fileChanges"]>["state"],
@@ -93,9 +80,7 @@ export interface ConversationRowRenderContext {
   /** Assistant Preview Cards：Markdown/文件卡片预览入口，由 app shell 注入 code viewer 行为。 */
   onOpenCodeViewer?: (source: CodeViewerSource) => void;
   /** Desktop 完成态 PPTX：由 shell 原子创建多个右侧 Preview Tab。 */
-  onAutoOpenAssistantPptx?: (
-    request: AssistantPreviewCardsAutoOpenRequest,
-  ) => void;
+  onAutoOpenAssistantPptx?: (request: AssistantPreviewCardsAutoOpenRequest) => void;
   /** 当前 renderer 观察到 running → completedSuccess 后，锁定到具体 turn。 */
   assistantPreviewPptxAutoOpenTarget?: { turnId: string; key: string } | null;
   /** Assistant markdown 本地文件链接入口：由 shell 统一 stat 后分流到预览或文件树。 */
@@ -112,9 +97,7 @@ export interface ConversationRowRenderContext {
    * 与 `onOpenWorkflowRun` 同构：行只发意图（哪个 run 的哪个产物），会话与 workspace 身份
    * 由宿主补齐。**不带版本号**——chip 的语义是「让我看这个产物」，落点恒为最新版。
    */
-  onOpenWorkflowArtifact?: (
-    request: OpenWorkflowArtifactSideTabRequest,
-  ) => void;
+  onOpenWorkflowArtifact?: (request: OpenWorkflowArtifactSideTabRequest) => void;
   /**
    * 取消一项后台工作（`cancelBackgroundWork{workId}`），由宿主绑定 dispatchCommand + sessionId。
    *
@@ -143,16 +126,12 @@ export interface ConversationRowRenderContext {
   /**
    * 工具卡上的子代理药丸 → 该子代理的 transcript tab：与详情页子代理行同一条打开路径，宿主补齐 workspace 身份。
    */
-  onOpenWorkflowActor?: (
-    request: OpenWorkflowActorSessionSideTabRequest,
-  ) => void;
+  onOpenWorkflowActor?: (request: OpenWorkflowActorSessionSideTabRequest) => void;
   /**
    * 工具卡上的脚本药丸 → 该 run 的脚本 transcript tab：
    * 与详情页脊线上的脚本行同一条打开路径，宿主补齐 workspace 身份。
    */
-  onOpenWorkflowWorkspace?: (
-    request: OpenWorkflowWorkspaceSideTabRequest,
-  ) => void;
+  onOpenWorkflowWorkspace?: (request: OpenWorkflowWorkspaceSideTabRequest) => void;
   /**
    * CreateWorkflow 工具调用 → workflow run 摘要的解析表，由宿主从 `workflowRuns` 投影建立。
    *
@@ -214,7 +193,7 @@ export interface ConversationFileChangesRequestOptions {
    */
   cachePolicy: "in-flight" | "terminal";
   /** rewind 会在同一 logEpoch 内切换 active/reverted，终态缓存必须按该语义状态隔离。 */
-  fileChangesState?: ConversationFileChangesState | undefined;
+  fileChangesState?: ConversationFileChangesState;
 }
 
 export type ConversationReasoningVisibility = Pick<

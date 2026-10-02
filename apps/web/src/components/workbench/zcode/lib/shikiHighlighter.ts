@@ -1,16 +1,7 @@
-import { uiMemoryDiagnosticsRegistry } from "@zui/lib/memoryDiagnostics";
-import { logger } from "@zui/logger";
-import type {
-  BundledLanguage,
-  BundledTheme,
-  HighlighterGeneric,
-  ThemedToken,
-} from "shiki";
-import {
-  bundledLanguages,
-  bundledLanguagesInfo,
-  createHighlighter,
-} from "shiki";
+import type { BundledLanguage, BundledTheme, HighlighterGeneric, ThemedToken } from "shiki";
+import { bundledLanguages, bundledLanguagesInfo, createHighlighter } from "shiki";
+import { logger } from "@zui/logger.js";
+import { uiMemoryDiagnosticsRegistry } from "@zui/lib/memoryDiagnostics.js";
 
 export interface TokenizedCode {
   tokens: ThemedToken[][];
@@ -41,9 +32,7 @@ export function shouldUseSyntaxHighlighting(language: string): boolean {
     return false;
   }
 
-  return (
-    bundledLanguageIds.has(candidate) || bundledLanguageAliases.has(candidate)
-  );
+  return bundledLanguageIds.has(candidate) || bundledLanguageAliases.has(candidate);
 }
 
 function normalizeCodeLanguage(language: string): BundledLanguage {
@@ -82,21 +71,14 @@ const getResolvedCodeTheme = (theme?: BundledTheme): BundledTheme => {
     return theme;
   }
 
-  if (
-    typeof document !== "undefined" &&
-    document.documentElement.classList.contains("dark")
-  ) {
+  if (typeof document !== "undefined" && document.documentElement.classList.contains("dark")) {
     return "github-dark";
   }
 
   return "github-light";
 };
 
-const getCodeTokensCacheKey = (
-  code: string,
-  language: BundledLanguage,
-  theme: BundledTheme,
-) => {
+const getCodeTokensCacheKey = (code: string, language: BundledLanguage, theme: BundledTheme) => {
   const start = code.slice(0, 100);
   const end = code.length > 100 ? code.slice(-100) : "";
   return `${theme}:${language}:${code.length}:${start}:${end}`;
@@ -152,11 +134,7 @@ export const highlightCode = (
 
   const resolvedTheme = getResolvedCodeTheme(theme);
   const resolvedLanguage = normalizeCodeLanguage(language);
-  const tokensCacheKey = getCodeTokensCacheKey(
-    code,
-    resolvedLanguage,
-    resolvedTheme,
-  );
+  const tokensCacheKey = getCodeTokensCacheKey(code, resolvedLanguage, resolvedTheme);
 
   const cached = tokensCache.get(tokensCacheKey);
   if (cached) {

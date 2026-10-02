@@ -1,26 +1,6 @@
-/**
- * zcode 照搬：`@/app-shell/SubagentDirectorySidePane.tsx`（references/zcode/packages/ui/src/app-shell/SubagentDirectorySidePane.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { Button } from "@zui/components/ui/button";
-import { useSessionSubagents } from "@zui/hooks/useSessionSubagents";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { formatTaskRelativeTime } from "@zui/lib/taskListItemPresentation";
-import type {
-  OpenScopedSubagentSideTabRequest,
-  SubagentDirectorySidePaneTab,
-} from "@zui/lib/workspaceSidePane";
-import type { ZCodeSessionEndedSubagent } from "@zui/lib/zcode-shared";
-import type { RunningSubagentSummary } from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import type { PaneWorkspaceScope } from "@zui/v4/paneLayoutStore";
-import type { SessionLease } from "@zui/v4/sessionDataLayer";
-import { useConversationProjection } from "@zui/v4/useConversationProjection";
-import {
-  useV4Conversation,
-  V4PaneConversationProvider,
-} from "@zui/v4/V4ConversationContext";
+import { memo, useEffect, useMemo, useState } from "react";
+import type { ZCodeSessionEndedSubagent } from "@zcode/shared";
+import type { RunningSubagentSummary } from "@zcode/shared/zcode-protocol-v4";
 import {
   BanIcon,
   CheckCircle2Icon,
@@ -29,7 +9,18 @@ import {
   LoaderCircleIcon,
   PauseCircleIcon,
 } from "lucide-react";
-import { memo, useEffect, useMemo, useState } from "react";
+import { Button } from "@zui/components/ui/button.js";
+import { useSessionSubagents } from "@zui/hooks/useSessionSubagents.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type {
+  OpenScopedSubagentSideTabRequest,
+  SubagentDirectorySidePaneTab,
+} from "@zui/lib/workspaceSidePane.js";
+import { formatTaskRelativeTime } from "@zui/lib/taskListItemPresentation.js";
+import type { PaneWorkspaceScope } from "@zui/v4/paneLayoutStore.js";
+import type { SessionLease } from "@zui/v4/sessionDataLayer.js";
+import { V4PaneConversationProvider, useV4Conversation } from "@zui/v4/V4ConversationContext.js";
+import { useConversationProjection } from "@zui/v4/useConversationProjection.js";
 
 type DirectoryItem = RunningSubagentSummary | ZCodeSessionEndedSubagent;
 
@@ -41,9 +32,7 @@ function buildSubagentDirectoryOpenRequest(
 ): OpenScopedSubagentSideTabRequest {
   return {
     workspacePath: tab.workspacePath,
-    ...(tab.workspaceIdentity
-      ? { workspaceIdentity: tab.workspaceIdentity }
-      : {}),
+    ...(tab.workspaceIdentity ? { workspaceIdentity: tab.workspaceIdentity } : {}),
     ...(tab.remoteSessionId ? { remoteSessionId: tab.remoteSessionId } : {}),
     rootSessionId: tab.rootSessionId,
     parentSessionId: tab.parentSessionId,
@@ -57,23 +46,18 @@ function StatusIcon({ status }: { status: DirectoryItem["status"] }) {
   const className = "size-4 shrink-0";
   switch (status) {
     case "running":
-      return (
-        <LoaderCircleIcon
-          aria-hidden={true}
-          className={`${className} animate-spin`}
-        />
-      );
+      return <LoaderCircleIcon aria-hidden className={`${className} animate-spin`} />;
     case "waiting":
     case "blocked":
-      return <PauseCircleIcon aria-hidden={true} className={className} />;
+      return <PauseCircleIcon aria-hidden className={className} />;
     case "success":
-      return <CheckCircle2Icon aria-hidden={true} className={className} />;
+      return <CheckCircle2Icon aria-hidden className={className} />;
     case "failed":
-      return <CircleAlertIcon aria-hidden={true} className={className} />;
+      return <CircleAlertIcon aria-hidden className={className} />;
     case "cancelled":
-      return <BanIcon aria-hidden={true} className={className} />;
+      return <BanIcon aria-hidden className={className} />;
     case "lost":
-      return <CircleDashedIcon aria-hidden={true} className={className} />;
+      return <CircleDashedIcon aria-hidden className={className} />;
   }
 }
 
@@ -97,13 +81,9 @@ const DirectoryRow = memo(function DirectoryRow({
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 items-center gap-2">
-          <span className="truncate font-medium text-foreground">
-            {item.title}
-          </span>
+          <span className="truncate font-medium text-foreground">{item.title}</span>
           <span className="shrink-0 text-ui-sm text-foreground-subtlest">
-            {intl.formatMessage({
-              id: `subagentDirectory.status.${item.status}`,
-            })}
+            {intl.formatMessage({ id: `subagentDirectory.status.${item.status}` })}
           </span>
         </span>
         {item.summary ? (
@@ -121,36 +101,27 @@ const DirectoryRow = memo(function DirectoryRow({
   );
 });
 
-export const SubagentDirectorySidePane = memo(
-  function SubagentDirectorySidePane({
-    tab,
-    onOpenSubagentSession,
-  }: {
-    tab: SubagentDirectorySidePaneTab;
-    onOpenSubagentSession: (request: OpenScopedSubagentSideTabRequest) => void;
-  }) {
-    const scope = useMemo<PaneWorkspaceScope>(
-      () => ({
-        workspacePath: tab.workspacePath,
-        ...(tab.workspaceIdentity
-          ? { workspaceIdentity: tab.workspaceIdentity }
-          : {}),
-        ...(tab.remoteSessionId
-          ? { remoteSessionId: tab.remoteSessionId }
-          : {}),
-      }),
-      [tab.remoteSessionId, tab.workspaceIdentity, tab.workspacePath],
-    );
-    return (
-      <V4PaneConversationProvider scope={scope}>
-        <SubagentDirectoryContents
-          tab={tab}
-          onOpenSubagentSession={onOpenSubagentSession}
-        />
-      </V4PaneConversationProvider>
-    );
-  },
-);
+export const SubagentDirectorySidePane = memo(function SubagentDirectorySidePane({
+  tab,
+  onOpenSubagentSession,
+}: {
+  tab: SubagentDirectorySidePaneTab;
+  onOpenSubagentSession: (request: OpenScopedSubagentSideTabRequest) => void;
+}) {
+  const scope = useMemo<PaneWorkspaceScope>(
+    () => ({
+      workspacePath: tab.workspacePath,
+      ...(tab.workspaceIdentity ? { workspaceIdentity: tab.workspaceIdentity } : {}),
+      ...(tab.remoteSessionId ? { remoteSessionId: tab.remoteSessionId } : {}),
+    }),
+    [tab.remoteSessionId, tab.workspaceIdentity, tab.workspacePath],
+  );
+  return (
+    <V4PaneConversationProvider scope={scope}>
+      <SubagentDirectoryContents tab={tab} onOpenSubagentSession={onOpenSubagentSession} />
+    </V4PaneConversationProvider>
+  );
+});
 
 const SubagentDirectoryContents = memo(function SubagentDirectoryContents({
   tab,
@@ -193,16 +164,11 @@ const SubagentDirectoryContents = memo(function SubagentDirectoryContents({
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
         <section>
           <h3 className="px-3 pb-1.5 text-ui-sm font-medium text-foreground-subtlest">
-            {intl.formatMessage({ id: "subagentDirectory.running" })} ·{" "}
-            {running.length}
+            {intl.formatMessage({ id: "subagentDirectory.running" })} · {running.length}
           </h3>
           {running.length > 0 ? (
             running.map((item) => (
-              <DirectoryRow
-                key={item.childSessionId}
-                item={item}
-                onOpen={handleOpen}
-              />
+              <DirectoryRow key={item.childSessionId} item={item} onOpen={handleOpen} />
             ))
           ) : (
             <p className="px-3 py-3 text-ui-base text-foreground-subtlest">
@@ -213,15 +179,10 @@ const SubagentDirectoryContents = memo(function SubagentDirectoryContents({
 
         <section className="mt-5">
           <h3 className="px-3 pb-1.5 text-ui-sm font-medium text-foreground-subtlest">
-            {intl.formatMessage({ id: "subagentDirectory.ended" })} ·{" "}
-            {endedTotal}
+            {intl.formatMessage({ id: "subagentDirectory.ended" })} · {endedTotal}
           </h3>
           {directory.ended.items.map((item) => (
-            <DirectoryRow
-              key={item.childSessionId}
-              item={item}
-              onOpen={handleOpen}
-            />
+            <DirectoryRow key={item.childSessionId} item={item} onOpen={handleOpen} />
           ))}
           {directory.ended.nextCursor ? (
             <div className="px-3 pt-2">
@@ -239,10 +200,7 @@ const SubagentDirectoryContents = memo(function SubagentDirectoryContents({
         </section>
 
         {directory.error ? (
-          <p
-            role="alert"
-            className="mx-3 mt-4 text-ui-sm text-[var(--color-danger)]"
-          >
+          <p role="alert" className="mx-3 mt-4 text-ui-sm text-[var(--color-danger)]">
             {intl.formatMessage({ id: "subagentDirectory.loadFailed" })}
           </p>
         ) : null}

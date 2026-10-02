@@ -1,45 +1,31 @@
-/**
- * zcode 照搬：`@/v4/ConversationTurnNavigator.tsx`（references/zcode/packages/ui/src/v4/ConversationTurnNavigator.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { cn } from "@zui/components/lib/utils";
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from "@zui/components/ui/hover-card";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
 import {
   TID_V4_TURN_NAVIGATOR,
   TID_V4_TURN_NAVIGATOR_ITEM,
   TID_V4_TURN_NAVIGATOR_TOOLTIP,
   testId,
-} from "@zui/lib/zcode-shared";
+} from "@zcode/shared";
+import { cn } from "@zui/components/lib/utils.js";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@zui/components/ui/hover-card.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import {
   buildConversationTurnNavigatorItems,
-  type ConversationTurnNavigatorVirtualItem,
   resolveConversationTurnNavigatorActiveUnitIndex,
   resolveConversationTurnNavigatorBarVisualState,
   resolveConversationTurnNavigatorVisualFocusItemIndex,
-} from "@zui/v4/conversationTurnNavigatorHelpers";
-import type { ConversationTurnRenderUnit } from "@zui/v4/conversationTurnRenderUnits";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+  type ConversationTurnNavigatorVirtualItem,
+} from "@zui/v4/conversationTurnNavigatorHelpers.js";
+import type { ConversationTurnRenderUnit } from "@zui/v4/conversationTurnRenderUnits.js";
 
 interface ConversationTurnNavigatorProps {
   renderUnits: readonly ConversationTurnRenderUnit[];
   scrollOffsetPx: number;
   viewportHeightPx: number;
   virtualItems: readonly ConversationTurnNavigatorVirtualItem[];
-  activeQueryRowId?: number | undefined;
-  isHydratingDirectory?: boolean | undefined;
-  onJumpToQuery: (
-    target: { unitIndex: number; rowId: number },
-    behavior: ScrollBehavior,
-  ) => void;
+  activeQueryRowId?: number;
+  isHydratingDirectory?: boolean;
+  onJumpToQuery: (target: { unitIndex: number; rowId: number }, behavior: ScrollBehavior) => void;
 }
 
 function usePrefersReducedMotion() {
@@ -70,9 +56,7 @@ function ConversationTurnNavigatorImpl({
 }: ConversationTurnNavigatorProps) {
   const { intl } = useZCodeIntl();
   const prefersReducedMotion = usePrefersReducedMotion();
-  const [interactionItemIndex, setInteractionItemIndex] = useState<
-    number | undefined
-  >(undefined);
+  const [interactionItemIndex, setInteractionItemIndex] = useState<number | undefined>(undefined);
   const items = useMemo(
     () =>
       buildConversationTurnNavigatorItems(renderUnits, {
@@ -111,24 +95,18 @@ function ConversationTurnNavigatorImpl({
     return { byRowId, firstByUnitIndex };
   }, [items]);
   const activeItemIndex =
-    (activeQueryRowId === undefined
-      ? undefined
-      : itemIndexes.byRowId.get(activeQueryRowId)) ??
+    (activeQueryRowId === undefined ? undefined : itemIndexes.byRowId.get(activeQueryRowId)) ??
     (activeUnitIndex === undefined
       ? undefined
       : itemIndexes.firstByUnitIndex.get(activeUnitIndex)) ??
     -1;
-  const visualFocusItemIndex =
-    resolveConversationTurnNavigatorVisualFocusItemIndex({
-      activeItemIndex,
-      interactionItemIndex,
-    });
+  const visualFocusItemIndex = resolveConversationTurnNavigatorVisualFocusItemIndex({
+    activeItemIndex,
+    interactionItemIndex,
+  });
   const railScrollRef = useRef<HTMLDivElement>(null);
   const getRailScrollElement = useCallback(() => railScrollRef.current, []);
-  const getRailItemKey = useCallback(
-    (index: number) => items[index]?.key ?? index,
-    [items],
-  );
+  const getRailItemKey = useCallback((index: number) => items[index]?.key ?? index, [items]);
   const railVirtualizer = useVirtualizer({
     count: items.length,
     estimateSize: () => 10,
@@ -173,10 +151,7 @@ function ConversationTurnNavigatorImpl({
         onPointerLeave={() => setInteractionItemIndex(undefined)}
         onScroll={() => setInteractionItemIndex(undefined)}
       >
-        <div
-          className="relative w-9"
-          style={{ height: `${railVirtualizer.getTotalSize()}px` }}
-        >
+        <div className="relative w-9" style={{ height: `${railVirtualizer.getTotalSize()}px` }}>
           {virtualRows.map((virtualRow) => {
             const itemIndex = virtualRow.index;
             const item = items[itemIndex];
@@ -186,8 +161,7 @@ function ConversationTurnNavigatorImpl({
               itemIndex,
               visualFocusItemIndex,
             });
-            const showScrollActiveColor =
-              visualFocusItemIndex === undefined && active;
+            const showScrollActiveColor = visualFocusItemIndex === undefined && active;
             return (
               <div
                 key={item.key}
@@ -195,7 +169,7 @@ function ConversationTurnNavigatorImpl({
                 style={{ transform: `translateY(${virtualRow.start}px)` }}
               >
                 <HoverCard closeDelay={80} openDelay={120}>
-                  <HoverCardTrigger asChild={true}>
+                  <HoverCardTrigger asChild>
                     <button
                       type="button"
                       aria-current={active ? "location" : undefined}
@@ -232,9 +206,7 @@ function ConversationTurnNavigatorImpl({
                           "block h-0.5 w-3 origin-left rounded-full transition-[height,opacity,transform,background-color] duration-150 ease-out motion-reduce:transition-none",
                           visualState.colorTone === "focus" && "bg-foreground",
                           visualState.colorTone === "muted" &&
-                            (showScrollActiveColor
-                              ? "bg-foreground"
-                              : "bg-foreground-subtlest"),
+                            (showScrollActiveColor ? "bg-foreground" : "bg-foreground-subtlest"),
                         )}
                         style={{
                           opacity: showScrollActiveColor
@@ -251,10 +223,7 @@ function ConversationTurnNavigatorImpl({
                     align="start"
                     side="right"
                     sideOffset={8}
-                    data-testid={testId(
-                      TID_V4_TURN_NAVIGATOR_TOOLTIP,
-                      item.key,
-                    )}
+                    data-testid={testId(TID_V4_TURN_NAVIGATOR_TOOLTIP, item.key)}
                     className="w-80 max-w-[calc(100vw-2rem)] border border-popover-border bg-popover p-3 text-popover-foreground shadow-lg"
                   >
                     <div className="space-y-2">

@@ -1,18 +1,10 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/cuaActionDetail.ts`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/cuaActionDetail.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
 }
 
-function readText(
-  record: Record<string, unknown> | null,
-  key: string,
-): string | null {
+function readText(record: Record<string, unknown> | null, key: string): string | null {
   const value = record?.[key];
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -22,9 +14,7 @@ function readOpenTarget(input: unknown): string | null {
   if (!url) return null;
   try {
     const parsed = new URL(url);
-    const leaf = decodeURIComponent(
-      parsed.pathname.split("/").filter(Boolean).at(-1) ?? "",
-    );
+    const leaf = decodeURIComponent(parsed.pathname.split("/").filter(Boolean).at(-1) ?? "");
     return leaf.trim() || null;
   } catch {
     return null;
@@ -48,15 +38,10 @@ function formatShortcut(value: string): string {
     .map((part) => part.trim())
     .filter(Boolean);
   if (parts.length === 0) return value;
-  return parts
-    .map((part) => MAC_KEY_SYMBOLS[part.toLowerCase()] ?? part.toUpperCase())
-    .join("");
+  return parts.map((part) => MAC_KEY_SYMBOLS[part.toLowerCase()] ?? part.toUpperCase()).join("");
 }
 
-export function readCuaActionDetail(
-  toolName: string | null,
-  input: unknown,
-): string | null {
+export function readCuaActionDetail(toolName: string | null, input: unknown): string | null {
   const record = asRecord(input);
   if (toolName === "open_application") return readOpenTarget(input);
   if (toolName === "key" || toolName === "hold_key") {

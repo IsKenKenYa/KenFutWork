@@ -1,9 +1,4 @@
 /**
- * zcode 照搬：`@/lib/workflowObservationFormat.ts`（references/zcode/packages/ui/src/lib/workflowObservationFormat.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-/**
  * 观察类工作流工具卡的数值/时间格式化（GetWorkflowRun 与 ListWorkflowRuns 共用）。
  * 纯函数、无 i18n 依赖：数字与时间走 Intl 默认 locale，文案才走 message 表。
  */
@@ -54,8 +49,7 @@ function padTwo(value: number): string {
  */
 export function formatWorkflowDuration(ms: number): string {
   const total = Number.isFinite(ms) && ms > 0 ? ms : 0;
-  if (total < DURATION_MS.minute)
-    return `${Math.floor(total / DURATION_MS.second)}s`;
+  if (total < DURATION_MS.minute) return `${Math.floor(total / DURATION_MS.second)}s`;
   if (total < DURATION_MS.hour) {
     const minutes = Math.floor(total / DURATION_MS.minute);
     return `${minutes}m ${padTwo(Math.floor((total % DURATION_MS.minute) / DURATION_MS.second))}s`;

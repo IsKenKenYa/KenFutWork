@@ -1,10 +1,4 @@
 /**
- * zcode 照搬：`@/lib/workflowToolNames.ts`（references/zcode/packages/ui/src/lib/workflowToolNames.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-/**
  * 工作流一族工具的**按名字**识别，三处原本各自一份同款匹配器的合并：
  * - 可复用工作流：`SaveWorkflow` / `ListSavedWorkflows`；
  * - 升级问答：`escalate` / `ResolveWorkflowQuestion`；
@@ -27,22 +21,17 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 function normalizeToolToken(value: unknown): string {
   // 照 cron-create.tsx 的同款归一：抹掉大小写与分隔符，`SaveWorkflow` / `save_workflow`
   // 两种 wire 写法都命中。
-  return typeof value === "string"
-    ? value.toLowerCase().replace(/[^a-z0-9]/gu, "")
-    : "";
+  return typeof value === "string" ? value.toLowerCase().replace(/[^a-z0-9]/gu, "") : "";
 }
 
 interface WorkflowToolNameSource {
-  toolName?: string | null | undefined;
-  kind?: string | null | undefined;
-  title?: string | null | undefined;
-  raw?: unknown | undefined;
+  toolName?: string | null;
+  kind?: string | null;
+  title?: string | null;
+  raw?: unknown;
 }
 
-function matchesToolName(
-  source: WorkflowToolNameSource,
-  token: string,
-): boolean {
+function matchesToolName(source: WorkflowToolNameSource, token: string): boolean {
   const rawNames = isPlainRecord(source.raw)
     ? [source.raw.toolName, source.raw.tool_name, source.raw.name]
     : [];
@@ -51,15 +40,11 @@ function matchesToolName(
   );
 }
 
-export function isSaveWorkflowToolCall(
-  source: WorkflowToolNameSource,
-): boolean {
+export function isSaveWorkflowToolCall(source: WorkflowToolNameSource): boolean {
   return matchesToolName(source, "saveworkflow");
 }
 
-export function isListSavedWorkflowsToolCall(
-  source: WorkflowToolNameSource,
-): boolean {
+export function isListSavedWorkflowsToolCall(source: WorkflowToolNameSource): boolean {
   return matchesToolName(source, "listsavedworkflows");
 }
 
@@ -67,33 +52,23 @@ export function isEscalateToolCall(source: WorkflowToolNameSource): boolean {
   return matchesToolName(source, "escalate");
 }
 
-export function isResolveWorkflowQuestionToolCall(
-  source: WorkflowToolNameSource,
-): boolean {
+export function isResolveWorkflowQuestionToolCall(source: WorkflowToolNameSource): boolean {
   return matchesToolName(source, "resolveworkflowquestion");
 }
 
-export function isGetWorkflowRunToolCall(
-  source: WorkflowToolNameSource,
-): boolean {
+export function isGetWorkflowRunToolCall(source: WorkflowToolNameSource): boolean {
   return matchesToolName(source, "getworkflowrun");
 }
 
-export function isListWorkflowRunsToolCall(
-  source: WorkflowToolNameSource,
-): boolean {
+export function isListWorkflowRunsToolCall(source: WorkflowToolNameSource): boolean {
   return matchesToolName(source, "listworkflowruns");
 }
 
-export function isEvalWorkflowSnippetToolCall(
-  source: WorkflowToolNameSource,
-): boolean {
+export function isEvalWorkflowSnippetToolCall(source: WorkflowToolNameSource): boolean {
   return matchesToolName(source, "evalworkflowsnippet");
 }
 
-export function isResumeWorkflowRunToolCall(
-  source: WorkflowToolNameSource,
-): boolean {
+export function isResumeWorkflowRunToolCall(source: WorkflowToolNameSource): boolean {
   return matchesToolName(source, "resumeworkflowrun");
 }
 
@@ -110,9 +85,7 @@ export function isListModelsToolCall(source: WorkflowToolNameSource): boolean {
  * 编译反馈的稿号联接要在行窗口里认出
  * 每一次创建，而 family 会把修订也算进来。
  */
-export function isCreateWorkflowToolCall(
-  source: WorkflowToolNameSource,
-): boolean {
+export function isCreateWorkflowToolCall(source: WorkflowToolNameSource): boolean {
   return matchesToolName(source, "createworkflow");
 }
 
@@ -121,8 +94,6 @@ export function isCreateWorkflowToolCall(
  * family（确认窗按 family 选运行确认块），但工具行仍按名先判：同一个 create-workflow 渲染器换
  * 一套修订词汇，而不是让 family 兜底把它画成一张普通的「创建工作流」卡。
  */
-export function isAmendWorkflowToolCall(
-  source: WorkflowToolNameSource,
-): boolean {
+export function isAmendWorkflowToolCall(source: WorkflowToolNameSource): boolean {
   return matchesToolName(source, "amendworkflow");
 }

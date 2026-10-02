@@ -1,16 +1,10 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/respond-to-coordinator.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/respond-to-coordinator.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
-import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay";
 import { ReplyIcon } from "lucide-react";
 import { useMemo } from "react";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
+import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay.js";
 
 const RESPOND_TO_COORDINATOR_TOOL_ICON = (
   <ReplyIcon className="size-4 shrink-0 text-foreground-subtle" />
@@ -26,9 +20,7 @@ function toRecord(value: unknown): Record<string, unknown> | undefined {
 
   try {
     const parsed: unknown = JSON.parse(value);
-    return typeof parsed === "object" &&
-      parsed !== null &&
-      !Array.isArray(parsed)
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>)
       : undefined;
   } catch {
@@ -38,27 +30,20 @@ function toRecord(value: unknown): Record<string, unknown> | undefined {
 
 function readSummary(input: unknown): string | undefined {
   const summary = toRecord(input)?.summary;
-  return typeof summary === "string" && summary.trim().length > 0
-    ? summary
-    : undefined;
+  return typeof summary === "string" && summary.trim().length > 0 ? summary : undefined;
 }
 
-export function RespondToCoordinatorToolCallBlock(
-  context: ToolCallBlockRenderContext,
-) {
+export function RespondToCoordinatorToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
   const { toolCall } = context.toolCallNode;
   const display = readToolResultDisplay(toolCall.raw);
-  const responseDisplay =
-    display?.kind === "respond_to_coordinator" ? display : undefined;
+  const responseDisplay = display?.kind === "respond_to_coordinator" ? display : undefined;
   const summary = readSummary(toolCall.input);
   const isDenied = toolCall.status === "denied";
   const isStopped = toolCall.status === "stopped";
   const isExecutionFailed = toolCall.status === "failed";
   const isFailed =
-    !isDenied &&
-    !isStopped &&
-    (isExecutionFailed || responseDisplay?.status === "failed");
+    !isDenied && !isStopped && (isExecutionFailed || responseDisplay?.status === "failed");
   const kindLabelId = context.isRunning
     ? "chat.toolCall.respondToCoordinator.replying"
     : "chat.toolCall.kind.response";
@@ -90,9 +75,7 @@ export function RespondToCoordinatorToolCallBlock(
         kindLabel={intl.formatMessage({ id: kindLabelId })}
         sourceLabel={context.sourceLabel}
         primaryText={primaryText}
-        statusLabel={
-          statusLabelId ? intl.formatMessage({ id: statusLabelId }) : undefined
-        }
+        statusLabel={statusLabelId ? intl.formatMessage({ id: statusLabelId }) : undefined}
         showStatusLabel={statusLabelId != null}
         statusTooltip={isExecutionFailed ? context.errorText : undefined}
         showFailureStatus={isFailed}

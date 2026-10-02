@@ -1,27 +1,16 @@
-/**
- * zcode 照搬：`@/v4/mapSessionSummaryToTaskMeta.ts`（references/zcode/packages/ui/src/v4/mapSessionSummaryToTaskMeta.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
 // sessions-index 的 SessionSummary → 侧栏实时 detail ZCodeTaskMeta 映射。
 // 这些对象不独立决定列表行存在性；后续以 tasks-index.sqlite 持久行为左表 join。
 // 注意：summary.sessionEnded 是「成功轮收口」语义（completedSuccess 即 true），不是删除；
 // session.removed 只会移除实时 detail，持久行删除仍由 tasks-index row/tombstone 决定。
-import type {
-  TraceId,
-  ZCodeProvider,
-  ZCodeTaskMeta,
-} from "@zui/lib/zcode-shared";
-import type { SessionSummary } from "@zui/lib/zcode-shared/zcode-protocol-v4";
+import type { TraceId, ZCodeProvider, ZCodeTaskMeta } from "@zcode/shared";
+import type { SessionSummary } from "@zcode/shared/zcode-protocol-v4";
 import {
   attachTaskListRowActivity,
   type TaskListMetaWithActivity,
-} from "@zui/v4/taskListRowActivity";
+} from "@zui/v4/taskListRowActivity.js";
 
 /** phase → 侧栏持久化状态（running/completed/error）；draft 无结果状态。 */
-function phaseToStatus(
-  phase: SessionSummary["phase"],
-): ZCodeTaskMeta["status"] {
+function phaseToStatus(phase: SessionSummary["phase"]): ZCodeTaskMeta["status"] {
   switch (phase) {
     case "running":
     case "prewarming":
@@ -62,9 +51,7 @@ export function mapSessionSummaryToTaskMeta(
       ? previous.title
       : summary.title || previous?.title || "";
   const titleOverridden =
-    summaryTitleIsCustom || previous?.titleOverridden === true
-      ? true
-      : undefined;
+    summaryTitleIsCustom || previous?.titleOverridden === true ? true : undefined;
   return attachTaskListRowActivity(
     {
       taskId: summary.sessionId,
@@ -72,19 +59,13 @@ export function mapSessionSummaryToTaskMeta(
       title,
       ...(titleOverridden ? { titleOverridden } : {}),
       workspacePath: options.workspacePath,
-      ...(options.workspaceIdentity
-        ? { workspaceIdentity: options.workspaceIdentity }
-        : {}),
+      ...(options.workspaceIdentity ? { workspaceIdentity: options.workspaceIdentity } : {}),
       createdAt: summary.createdAt || previous?.createdAt || 0,
       updatedAt: summary.lastActivityAt || previous?.updatedAt || 0,
       mode: previous?.mode ?? "build",
       ...(previous?.model ? { model: previous.model } : {}),
-      ...(summary.parentSessionId
-        ? { forkedFromTaskId: summary.parentSessionId }
-        : {}),
-      ...(previous?.provider
-        ? { provider: previous.provider as ZCodeProvider }
-        : {}),
+      ...(summary.parentSessionId ? { forkedFromTaskId: summary.parentSessionId } : {}),
+      ...(previous?.provider ? { provider: previous.provider as ZCodeProvider } : {}),
       ...(status ? { status } : {}),
       ...(summary.pendingInteraction
         ? {
@@ -109,9 +90,7 @@ export function mapSessionSummaryToTaskMeta(
       ...(summary.pendingInteractionSummary
         ? { pendingInteractions: summary.pendingInteractionSummary }
         : {}),
-      ...(summary.workflowActivity
-        ? { workflowActivity: summary.workflowActivity }
-        : {}),
+      ...(summary.workflowActivity ? { workflowActivity: summary.workflowActivity } : {}),
     },
   );
 }

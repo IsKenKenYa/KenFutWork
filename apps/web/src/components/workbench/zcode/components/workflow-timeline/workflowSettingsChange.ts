@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/workflowSettingsChange.ts`（references/zcode/packages/ui/src/components/workflow-timeline/workflowSettingsChange.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
 // ============================================================
 // 设置轮的两处文字
 // ============================================================
@@ -10,11 +5,11 @@
 // 同时运行」，与详情页的来龙去脉块「由你调整设置」下的 from → to 两行。两处读同一块 `amend` 元数据，
 // 措辞规则只在这里写一次。纯函数 + 注入的 formatMessage / providerName，与 subagent-model-label 同规。
 
+import type { WorkflowSettingsAmendMeta } from "@zcode/shared/zcode-protocol-v4";
 import {
   describeWorkflowSubagentModel,
   type WorkflowSubagentModelDeps,
-} from "@zui/components/workflow-timeline/subagent-model-label";
-import type { WorkflowSettingsAmendMeta } from "@zui/lib/zcode-shared/zcode-protocol-v4";
+} from "./subagent-model-label.js";
 
 /** 模型的屏幕名：只要名字（档位留给 tooltip），与 run 卡上的模型段同一个词。 */
 function modelName(canonical: string, deps: WorkflowSubagentModelDeps): string {
@@ -35,9 +30,7 @@ export function workflowSettingsChangeSegments(
     const to = amend.subagentModel.to;
     segments.push(
       to === undefined
-        ? formatMessage({
-            id: "chat.toolCall.workflow.settingsChange.modelSession",
-          })
+        ? formatMessage({ id: "chat.toolCall.workflow.settingsChange.modelSession" })
         : formatMessage(
             { id: "chat.toolCall.workflow.settingsChange.model" },
             { model: modelName(to, deps) },
@@ -46,17 +39,11 @@ export function workflowSettingsChangeSegments(
   }
   if (amend.maxConcurrency !== undefined) {
     const to = amend.maxConcurrency.to;
-    const atCeiling =
-      to === undefined || (amend.ceiling !== undefined && to >= amend.ceiling);
+    const atCeiling = to === undefined || (amend.ceiling !== undefined && to >= amend.ceiling);
     segments.push(
       atCeiling
-        ? formatMessage({
-            id: "chat.toolCall.workflow.settingsChange.limitCeiling",
-          })
-        : formatMessage(
-            { id: "chat.toolCall.workflow.settingsChange.limit" },
-            { n: to },
-          ),
+        ? formatMessage({ id: "chat.toolCall.workflow.settingsChange.limitCeiling" })
+        : formatMessage({ id: "chat.toolCall.workflow.settingsChange.limit" }, { n: to }),
     );
   }
   return segments;
@@ -97,10 +84,7 @@ export function workflowSettingsProvenanceRows(
         ? String(bound)
         : ceiling === undefined
           ? formatMessage({ id: "chat.workflowLaunch.settings.machineLimit" })
-          : formatMessage(
-              { id: "chat.workflowLaunch.settings.machineLimitValue" },
-              { n: ceiling },
-            );
+          : formatMessage({ id: "chat.workflowLaunch.settings.machineLimitValue" }, { n: ceiling });
     rows.push({
       key: "limit",
       label: formatMessage({ id: "chat.workflowLaunch.settings.limit" }),

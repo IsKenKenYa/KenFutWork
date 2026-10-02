@@ -1,23 +1,37 @@
-/**
- * zcode 宿主适配 stub：`@/hooks/usePluginStoreOrder` 的最小等价。
- * 来源：references/zcode/packages/ui/src/hooks/usePluginStoreOrder.ts
- *
- * zcode 的插件市场排序快照来自 clientConfigService（Host 配置服务）。本仓无该服务，
- * 恒返回 null order：消费方按「无自定义排序」分支走默认顺序。refresh 保留为可调用
- * 的空操作，签名与原文件一致。后续接通配置服务时替换本实现即可，照搬组件零改动。
- * 适配注记：数据恒空（stub 降级）。
- */
-"use client";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { PluginStoreOrder } from "@zcode/shared";
+import { useServices } from "@zui/hooks/useServices.js";
+import { logger } from "@zui/logger.js";
 
-import type { PluginStoreOrder } from "@zui/lib/zcode-shared";
+/** 只持有当前页面投影；请求合并与 TTL 统一归 Host 配置服务管理。 */
+export function usePluginStoreOrder(enabled = true) {
+  const { clientConfigService: service } = useServices();
+  const [snapshot, setSnapshot] = useState<{
+    service: typeof service;
+    order: PluginStoreOrder | null;
+  }>();
+  const generation = useRef(0);
+  const refresh = useCallback(
+    async (forceRefresh = false) => {
+      const current = ++generation.current;
+      try {
+        const { pluginStoreOrder: order } = await service.getSnapshot({ forceRefresh });
+        if (generation.current === current) setSnapshot({ service, order });
+      } catch {
+        if (generation.current === current) {
+          logger.warn("[PluginStoreOrder] 配置读取失败，保留当前排序");
+        }
+      }
+    },
+    [service],
+  );
 
-import { useCallback } from "react";
+  useEffect(() => {
+    if (enabled) void refresh();
+    return () => {
+      generation.current += 1;
+    };
+  }, [enabled, refresh]);
 
-export function usePluginStoreOrder(_enabled = true): {
-  order: PluginStoreOrder | null;
-  refresh: (forceRefresh?: boolean) => Promise<void>;
-} {
-  const refresh = useCallback(async (_forceRefresh = false) => {}, []);
-
-  return { order: null, refresh };
+  return { order: snapshot?.service === service ? snapshot.order : null, refresh };
 }

@@ -1,37 +1,27 @@
-/**
- * zcode 照搬：`@/v4/useConversationTimelineFind.ts`（references/zcode/packages/ui/src/v4/useConversationTimelineFind.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-
-import { useAssistantCodeCommentFeatureEnabled } from "@zui/AssistantCodeCommentFeatureProvider";
-import type {
-  ConversationRow,
-  SessionPhase,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ConversationRow, SessionPhase } from "@zcode/shared/zcode-protocol-v4";
 import {
   applyConversationFindHighlights,
   applySearchResultHighlight,
   clearConversationFindHighlights,
   clearSearchResultHighlight,
   scrollConversationFindRangeIntoView,
-} from "@zui/v4/conversationFindHighlightDom";
+} from "@zui/v4/conversationFindHighlightDom.js";
 import {
   buildConversationFindIndex,
-  type ConversationFindMatch,
-  type ConversationFindMatchKey,
   findConversationMatchIndexByKey,
   getConversationFindMatchKey,
   resolveConversationFindActiveIndex,
   resolveSearchResultHighlightMatch,
-} from "@zui/v4/conversationFindIndex";
-import type { ConversationTurnRenderUnit } from "@zui/v4/conversationTurnRenderUnits";
+  type ConversationFindMatch,
+  type ConversationFindMatchKey,
+} from "@zui/v4/conversationFindIndex.js";
+import type { ConversationTurnRenderUnit } from "@zui/v4/conversationTurnRenderUnits.js";
 import type {
   ChatSearchResultHighlightRequest,
   ConversationFindMatchState,
-} from "@zui/v4/legacyChatViewTypes";
-import { useEffect, useMemo, useRef, useState } from "react";
+} from "@zui/v4/legacyChatViewTypes.js";
+import { useAssistantCodeCommentFeatureEnabled } from "@zui/AssistantCodeCommentFeatureProvider.js";
 
 const FIND_AUTO_LOAD_ROW_LIMIT = 1200;
 const SEARCH_RESULT_HIGHLIGHT_DURATION_MS = 3000;
@@ -43,19 +33,14 @@ interface UseConversationTimelineFindOptions {
   mountedRowsKey: string;
   canLoadOlder: boolean;
   loadingOlder: boolean;
-  onLoadOlder?: (() => Promise<void> | void) | undefined;
-  sessionPhase?: SessionPhase | undefined;
+  onLoadOlder?: () => Promise<void> | void;
+  sessionPhase?: SessionPhase;
   conversationFindQuery: string;
   conversationFindActiveIndex: number;
   conversationFindNavigationRequestId: number;
-  onConversationFindMatchStateChange?:
-    | ((state: ConversationFindMatchState) => void)
-    | undefined;
-  searchResultHighlightRequest?:
-    | ChatSearchResultHighlightRequest
-    | null
-    | undefined;
-  onSearchResultHighlightDone?: ((requestId: number) => void) | undefined;
+  onConversationFindMatchStateChange?: (state: ConversationFindMatchState) => void;
+  searchResultHighlightRequest?: ChatSearchResultHighlightRequest | null;
+  onSearchResultHighlightDone?: (requestId: number) => void;
   scrollToUnit: (unitIndex: number) => void;
 }
 
@@ -67,18 +52,12 @@ function normalizeSearchResultSnippet(text: string): string {
     .trim();
 }
 
-function sourceTextContainsSnippet(
-  sourceText: string,
-  snippet: string,
-): boolean {
-  const normalizedSnippet =
-    normalizeSearchResultSnippet(snippet).toLocaleLowerCase();
+function sourceTextContainsSnippet(sourceText: string, snippet: string): boolean {
+  const normalizedSnippet = normalizeSearchResultSnippet(snippet).toLocaleLowerCase();
   if (!normalizedSnippet) {
     return false;
   }
-  return normalizeSearchResultSnippet(sourceText)
-    .toLocaleLowerCase()
-    .includes(normalizedSnippet);
+  return normalizeSearchResultSnippet(sourceText).toLocaleLowerCase().includes(normalizedSnippet);
 }
 
 export function useConversationTimelineFind({
@@ -99,13 +78,9 @@ export function useConversationTimelineFind({
   scrollToUnit,
 }: UseConversationTimelineFindOptions) {
   const codeCommentCardsEnabled = useAssistantCodeCommentFeatureEnabled();
-  const findStable =
-    sessionPhase !== "running" && sessionPhase !== "prewarming";
+  const findStable = sessionPhase !== "running" && sessionPhase !== "prewarming";
   const unitFindCacheRef = useRef(
-    new Map<
-      string,
-      { source: ConversationFindMatch[]; loadedRowCount: number }
-    >(),
+    new Map<string, { source: ConversationFindMatch[]; loadedRowCount: number }>(),
   );
   const unitFindCacheQueryRef = useRef("");
   const conversationFindIndex = useMemo(() => {
@@ -121,9 +96,7 @@ export function useConversationTimelineFind({
     // 避免每个 token 都扫描整段历史，导致长会话 renderer 主线程被持续占满。
     renderUnits.forEach((unit, unitIndex) => {
       const cacheKey = `${normalizedQuery}:${codeCommentCardsEnabled}:${unit.key}`;
-      const cached = unit.isRunning
-        ? undefined
-        : unitFindCacheRef.current.get(cacheKey);
+      const cached = !unit.isRunning ? unitFindCacheRef.current.get(cacheKey) : undefined;
       const unitIndexResult = cached
         ? { matches: cached.source, loadedRowCount: cached.loadedRowCount }
         : buildConversationFindIndex([unit], query, {
@@ -140,30 +113,16 @@ export function useConversationTimelineFind({
         matches.push({ ...match, globalIndex: matches.length, unitIndex });
       }
     });
-    return {
-      query: normalizedQuery,
-      matches,
-      matchCount: matches.length,
-      loadedRowCount,
-    };
+    return { query: normalizedQuery, matches, matchCount: matches.length, loadedRowCount };
   }, [codeCommentCardsEnabled, conversationFindQuery, renderUnits]);
   const searchResultFindIndex = useMemo(
     () =>
       findStable && searchResultHighlightRequest
-        ? buildConversationFindIndex(
-            renderUnits,
-            searchResultHighlightRequest.query,
-            {
-              projectAssistantCodeComments: codeCommentCardsEnabled,
-            },
-          )
+        ? buildConversationFindIndex(renderUnits, searchResultHighlightRequest.query, {
+            projectAssistantCodeComments: codeCommentCardsEnabled,
+          })
         : buildConversationFindIndex([], ""),
-    [
-      codeCommentCardsEnabled,
-      findStable,
-      renderUnits,
-      searchResultHighlightRequest,
-    ],
+    [codeCommentCardsEnabled, findStable, renderUnits, searchResultHighlightRequest],
   );
   const [resolvedFindActiveIndex, setResolvedFindActiveIndex] = useState(-1);
   const findActiveKeyRef = useRef<ConversationFindMatchKey | null>(null);
@@ -193,8 +152,7 @@ export function useConversationTimelineFind({
       return;
     }
 
-    const queryChanged =
-      lastFindQueryRef.current !== conversationFindIndex.query;
+    const queryChanged = lastFindQueryRef.current !== conversationFindIndex.query;
     const externalActiveIndexChanged =
       lastExternalActiveIndexRef.current !== conversationFindActiveIndex;
     let nextActiveIndex = resolveConversationFindActiveIndex(
@@ -213,9 +171,7 @@ export function useConversationTimelineFind({
     }
 
     const activeMatch =
-      nextActiveIndex >= 0
-        ? (conversationFindIndex.matches[nextActiveIndex] ?? null)
-        : null;
+      nextActiveIndex >= 0 ? (conversationFindIndex.matches[nextActiveIndex] ?? null) : null;
     findActiveKeyRef.current = getConversationFindMatchKey(activeMatch);
     lastFindQueryRef.current = conversationFindIndex.query;
     lastExternalActiveIndexRef.current = nextActiveIndex;
@@ -224,11 +180,7 @@ export function useConversationTimelineFind({
       matchCount: conversationFindIndex.matchCount,
       activeIndex: nextActiveIndex,
     });
-  }, [
-    conversationFindActiveIndex,
-    conversationFindIndex,
-    onConversationFindMatchStateChange,
-  ]);
+  }, [conversationFindActiveIndex, conversationFindIndex, onConversationFindMatchStateChange]);
 
   useEffect(() => {
     if (
@@ -246,14 +198,7 @@ export function useConversationTimelineFind({
     }
     lastFindAutoLoadAttemptRef.current = attemptKey;
     void onLoadOlder?.();
-  }, [
-    canLoadOlder,
-    conversationFindIndex.query,
-    findStable,
-    loadingOlder,
-    onLoadOlder,
-    rows,
-  ]);
+  }, [canLoadOlder, conversationFindIndex.query, findStable, loadingOlder, onLoadOlder, rows]);
 
   useEffect(() => {
     if (!conversationFindIndex.query || !activeFindMatch) {
@@ -282,10 +227,7 @@ export function useConversationTimelineFind({
         activeMatch: activeFindMatch,
       });
       const highlightScrollKey = `${conversationFindNavigationRequestId}:${conversationFindIndex.query}:${activeFindMatch?.rowId ?? "none"}:${activeFindMatch?.rowMatchIndex ?? -1}:${activeFindMatch?.unitIndex ?? -1}`;
-      if (
-        activeRange &&
-        lastFindHighlightScrollKeyRef.current !== highlightScrollKey
-      ) {
+      if (activeRange && lastFindHighlightScrollKeyRef.current !== highlightScrollKey) {
         lastFindHighlightScrollKeyRef.current = highlightScrollKey;
         scrollConversationFindRangeIntoView(activeRange);
       }
@@ -349,18 +291,14 @@ export function useConversationTimelineFind({
       return;
     }
 
-    const match = resolveSearchResultHighlightMatch(
-      searchResultFindIndex,
-      request,
-    );
+    const match = resolveSearchResultHighlightMatch(searchResultFindIndex, request);
     const snippet = request.snippet?.trim();
     const snippetFound = snippet
       ? searchResultFindIndex.matches.some((candidate) =>
           sourceTextContainsSnippet(candidate.sourceText, snippet),
         )
       : true;
-    const canStillLoad =
-      canLoadOlder && rows.length < FIND_AUTO_LOAD_ROW_LIMIT && !loadingOlder;
+    const canStillLoad = canLoadOlder && rows.length < FIND_AUTO_LOAD_ROW_LIMIT && !loadingOlder;
     if (snippet && !snippetFound && (canStillLoad || loadingOlder)) {
       return;
     }
@@ -429,4 +367,3 @@ export function useConversationTimelineFind({
     };
   }, []);
 }
-/* 适配注记（P9）：接口可选属性放宽 | undefined（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。 */

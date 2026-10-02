@@ -1,38 +1,36 @@
-import { cn } from "@zui/components/lib/utils";
+import {
+  cloneElement,
+  isValidElement,
+  useCallback,
+  type ComponentProps,
+  type ReactNode,
+  type Ref,
+} from "react";
+import { cn } from "@zui/components/lib/utils.js";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@zui/components/ui/tooltip";
-import { isAppleKeyboardPlatform } from "@zui/lib/keyboardShortcuts";
-import {
-  type ComponentProps,
-  cloneElement,
-  isValidElement,
-  type ReactNode,
-  type Ref,
-  useCallback,
-} from "react";
+} from "@zui/components/ui/tooltip.js";
+import { isAppleKeyboardPlatform } from "@zui/lib/keyboardShortcuts.js";
 
-// P5 适配：可选属性放宽 `| undefined`（exactOptionalPropertyTypes，照搬调用点显式传 undefined）。
 interface ControlHintTooltipProps {
   children: ReactNode;
   title: ReactNode;
-  description?: string | undefined;
-  shortcut?: string | undefined;
-  standalone?: boolean | undefined;
-  open?: boolean | undefined;
-  onOpenChange?: ((open: boolean) => void) | undefined;
+  description?: string;
+  shortcut?: string;
+  standalone?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   side?: ComponentProps<typeof TooltipContent>["side"];
   align?: ComponentProps<typeof TooltipContent>["align"];
   sideOffset?: ComponentProps<typeof TooltipContent>["sideOffset"];
-  className?: string | undefined;
-  triggerClassName?: string | undefined;
-  triggerRef?: Ref<HTMLElement> | undefined;
+  className?: string;
+  triggerClassName?: string;
+  triggerRef?: Ref<HTMLElement>;
 }
 
-// biome-ignore lint/style/useConsistentTypeDefinitions: 逐字照搬 zcode 源写法
 type TriggerChildProps = {
   className?: string;
   ref?: Ref<HTMLElement>;
@@ -68,9 +66,7 @@ export function ControlHintTooltip({
   triggerRef,
 }: ControlHintTooltipProps) {
   const useAppleShortcutFont = isAppleKeyboardPlatform();
-  const shortcutFontClassName = useAppleShortcutFont
-    ? "tracking-normal"
-    : "font-mono";
+  const shortcutFontClassName = useAppleShortcutFont ? "tracking-normal" : "font-mono";
   const shortcutFontStyle = useAppleShortcutFont
     ? {
         fontFamily:
@@ -106,15 +102,9 @@ export function ControlHintTooltip({
 
   // 大会话会为每条消息动作渲染大量 ControlHintTooltip，逐个创建 Provider
   // 会把 Radix 上下文树放大到消息数量级；共享 Provider 统一放在 Root。
-  // exactOptionalPropertyTypes：open 缺省表示非受控，不能显式传 undefined
   const tooltip = (
-    <Tooltip
-      {...(open === undefined ? {} : { open })}
-      {...(open !== undefined && onOpenChange !== undefined
-        ? { onOpenChange }
-        : {})}
-    >
-      <TooltipTrigger asChild={true}>{trigger}</TooltipTrigger>
+    <Tooltip open={open} onOpenChange={onOpenChange}>
+      <TooltipTrigger asChild>{trigger}</TooltipTrigger>
       <TooltipContent
         align={align}
         side={side}
@@ -134,11 +124,7 @@ export function ControlHintTooltip({
             {shortcut ? (
               <kbd
                 data-slot="kbd"
-                className={cn(
-                  shortcutKbdBaseClassName,
-                  shortcutFontClassName,
-                  "shrink-0",
-                )}
+                className={cn(shortcutKbdBaseClassName, shortcutFontClassName, "shrink-0")}
                 style={shortcutFontStyle}
               >
                 {shortcut}
@@ -160,11 +146,7 @@ export function ControlHintTooltip({
         {!description && shortcut ? (
           <kbd
             data-slot="kbd"
-            className={cn(
-              shortcutKbdBaseClassName,
-              shortcutFontClassName,
-              "shrink-0",
-            )}
+            className={cn(shortcutKbdBaseClassName, shortcutFontClassName, "shrink-0")}
             style={shortcutFontStyle}
           >
             {shortcut}

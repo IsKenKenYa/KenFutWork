@@ -1,33 +1,24 @@
-/**
- * zcode 照搬：`@/mentions/nodes/promptMentionDecoration.ts`（references/zcode/packages/ui/src/mentions/nodes/promptMentionDecoration.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀
- *（本仓 Turbopack 不做 .js→.ts/.tsx 试探，手册 §2.4-2 在本仓构建链的等价适配）。
- */
 import {
   DOCUMENT_FILE_ICON_SRC,
   FOLDER_FILE_ICON_SRC,
   INLINE_FALLBACK_FILE_ICON_SRC,
   resolveFileDisplayDescriptor,
-} from "@zui/lib/fileDisplay";
-import { resolvePluginIconSource } from "@zui/lib/pluginIconSource";
-import type {
-  MentionCategory,
-  MentionItemData,
-} from "@zui/mentions/mentionTypes";
+} from "@zui/lib/fileDisplay.js";
+import { resolvePluginIconSource } from "@zui/lib/pluginIconSource.js";
+import type { MentionCategory, MentionItemData } from "@zui/mentions/mentionTypes.js";
 import {
   COMMAND_MENTION_ICON_NODE,
   COMPACT_COMMAND_MENTION_ICON_NODE,
   createMentionSvgIcon,
   GOAL_COMMAND_MENTION_ICON_NODE,
-  type MentionLucideIconNode,
   PLUGIN_MENTION_ICON_NODE,
   SESSION_MENTION_ICON_NODE,
   SKILL_MENTION_ICON_NODE,
   SUBAGENT_MENTION_ICON_NODE,
   WHITEBOARD_MENTION_ICON_NODE,
   WORKFLOW_COMMAND_MENTION_ICON_NODE,
-} from "@zui/mentions/nodes/mentionIconDom";
+  type MentionLucideIconNode,
+} from "@zui/mentions/nodes/mentionIconDom.js";
 
 const pendingImages = new WeakMap<HTMLElement, HTMLImageElement>();
 
@@ -81,19 +72,11 @@ export function decoratePromptMention(
     return;
   }
   if (category === "files") {
-    const descriptor = resolveFileDisplayDescriptor(
-      data?.path ?? data?.relativePath ?? value,
-    );
-    const url =
-      data?.kind === "directory"
-        ? FOLDER_FILE_ICON_SRC
-        : descriptor.fileIconSrc;
+    const descriptor = resolveFileDisplayDescriptor(data?.path ?? data?.relativePath ?? value);
+    const url = data?.kind === "directory" ? FOLDER_FILE_ICON_SRC : descriptor.fileIconSrc;
     setImage(dom, url, () =>
       setImage(dom, DOCUMENT_FILE_ICON_SRC, () => {
-        dom.style.setProperty(
-          "--mention-image",
-          cssUrl(INLINE_FALLBACK_FILE_ICON_SRC),
-        );
+        dom.style.setProperty("--mention-image", cssUrl(INLINE_FALLBACK_FILE_ICON_SRC));
       }),
     );
     return;

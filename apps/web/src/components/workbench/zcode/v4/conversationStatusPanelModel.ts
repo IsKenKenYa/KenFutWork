@@ -1,15 +1,4 @@
-/**
- * zcode 照搬：`@/v4/conversationStatusPanelModel.ts`（references/zcode/packages/ui/src/v4/conversationStatusPanelModel.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀。
- * P6 适配：exactOptionalPropertyTypes——BuildConversationStatusPanelModelInput 可选字段放宽 `| undefined`（照搬调用点显式传 undefined），仅签名放宽、逻辑零改动。
- */
-
-import {
-  extractPlanToolCallContent,
-  getPlanDirectoryTitle,
-} from "@zui/lib/planToolCall";
-import type { GitRepositorySummary } from "@zui/lib/zcode-shared";
+import type { GitRepositorySummary } from "@zcode/shared";
 import type {
   BackgroundWorkSummary,
   GoalState,
@@ -17,8 +6,9 @@ import type {
   RunningSubagentSummary,
   ToolCallRow,
   WorkflowRunState,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import { workflowRunStepCounts } from "@zui/v4/workflowRunCardJoin";
+} from "@zcode/shared/zcode-protocol-v4";
+import { workflowRunStepCounts } from "@zcode/shared/zcode-protocol-v4";
+import { extractPlanToolCallContent, getPlanDirectoryTitle } from "@zui/lib/planToolCall.js";
 
 export interface ConversationStatusPanelGitModel {
   branchName: string | null;
@@ -51,8 +41,7 @@ export interface ConversationStatusPanelSessionPlansModel {
   items: ConversationStatusPanelSessionPlanItem[];
 }
 
-export interface ConversationStatusPanelRunningSubagent
-  extends RunningSubagentSummary {
+export interface ConversationStatusPanelRunningSubagent extends RunningSubagentSummary {
   controlWorkId?: string;
   cancellable?: boolean;
 }
@@ -113,9 +102,7 @@ export function workflowRunOpenTarget(
   return {
     runId: run.runId,
     toolCallId: run.toolCallId,
-    ...(run.title && run.title !== run.runId
-      ? { workflowName: run.title }
-      : {}),
+    ...(run.title && run.title !== run.runId ? { workflowName: run.title } : {}),
   };
 }
 
@@ -131,20 +118,17 @@ export interface ConversationStatusPanelModel {
 }
 
 interface BuildConversationStatusPanelModelInput {
-  isOfficeMode?: boolean | undefined;
-  gitSummary?: GitRepositorySummary | null | undefined;
-  gitDirtyFileCount?: number | undefined;
-  gitWorktreeChangeSummary?:
-    | { added: number; removed: number }
-    | null
-    | undefined;
-  goal?: GoalState | null | undefined;
-  sessionPlans?: readonly ToolCallRow[] | undefined;
-  workspacePath?: string | undefined;
-  plan?: PlanState | null | undefined;
-  backgroundWorks?: readonly BackgroundWorkSummary[] | undefined;
-  runningSubagents?: readonly RunningSubagentSummary[] | undefined;
-  workflowRuns?: readonly WorkflowRunState[] | undefined;
+  isOfficeMode?: boolean;
+  gitSummary?: GitRepositorySummary | null;
+  gitDirtyFileCount?: number;
+  gitWorktreeChangeSummary?: { added: number; removed: number } | null;
+  goal?: GoalState | null;
+  sessionPlans?: readonly ToolCallRow[];
+  workspacePath?: string;
+  plan?: PlanState | null;
+  backgroundWorks?: readonly BackgroundWorkSummary[];
+  runningSubagents?: readonly RunningSubagentSummary[];
+  workflowRuns?: readonly WorkflowRunState[];
 }
 
 function buildGitModel({
@@ -209,9 +193,7 @@ function buildSessionPlansModel(
     .filter(
       (row) =>
         row.toolName === "ExitPlanMode" &&
-        (row.status === "success" ||
-          row.status === "error" ||
-          row.status === "cancelled"),
+        (row.status === "success" || row.status === "error" || row.status === "cancelled"),
     )
     .toSorted((left, right) => right.rowId - left.rowId)
     .flatMap((row) => {
@@ -224,9 +206,7 @@ function buildSessionPlansModel(
           toolCallId: row.toolCallId,
           markdown: content.markdown,
           ...(title ? { title } : {}),
-          ...(content.planFilePath
-            ? { planFilePath: content.planFilePath }
-            : {}),
+          ...(content.planFilePath ? { planFilePath: content.planFilePath } : {}),
         },
       ];
     });
@@ -263,12 +243,14 @@ function buildRunningWorkflowRuns(
     if (run.status !== "pending" && run.status !== "running") continue;
     const work = workflowWorkByWorkId.get(run.runId);
     if (work) joinedWorkIds.add(run.runId);
+    // 计数与聊天紧凑卡同源（唯一实现在 @zcode/shared 的 workflowRunStepCounts：表内 + 表外）。
+    const steps = workflowRunStepCounts(run);
     rows.push({
       runId: run.runId,
       ...(run.toolCallId ? { toolCallId: run.toolCallId } : {}),
       status: run.status,
-      // 计数与聊天紧凑卡同源（唯一实现在 workflowRunCardJoin.ts）。
-      ...workflowRunStepCounts(run),
+      nodesSettled: steps.settled,
+      nodesTotal: steps.total,
       ...(work ? { title: work.title, startedAt: work.startedAt } : {}),
       ...(work?.status === "running"
         ? {
@@ -308,11 +290,7 @@ export function resolveSoleRunningWorkflowRunTarget(
     "runningBashWorks" | "runningSubagentWorks" | "runningWorkflowRuns"
   >,
 ): ConversationStatusPanelWorkflowRunTarget | null {
-  if (
-    model.runningBashWorks.length > 0 ||
-    model.runningSubagentWorks.length > 0
-  )
-    return null;
+  if (model.runningBashWorks.length > 0 || model.runningSubagentWorks.length > 0) return null;
   if (model.runningWorkflowRuns.length !== 1) return null;
   return workflowRunOpenTarget(model.runningWorkflowRuns[0]!);
 }
@@ -322,17 +300,11 @@ export function buildConversationStatusPanelModel(
 ): ConversationStatusPanelModel {
   const git = input.isOfficeMode ? null : buildGitModel(input);
   const goal = input.goal ?? null;
-  const sessionPlans = buildSessionPlansModel(
-    input.sessionPlans,
-    input.workspacePath,
-  );
+  const sessionPlans = buildSessionPlansModel(input.sessionPlans, input.workspacePath);
   const plan = buildPlanModel(input.plan);
   const runningBashWorks: BackgroundWorkSummary[] = [];
   const workflowWorkByWorkId = new Map<string, BackgroundWorkSummary>();
-  const subagentControlByChildSessionId = new Map<
-    string,
-    BackgroundWorkSummary | null
-  >();
+  const subagentControlByChildSessionId = new Map<string, BackgroundWorkSummary | null>();
   for (const work of input.backgroundWorks ?? []) {
     if (work.kind === "workflow") {
       // "workflow"（workflow run）曾与 bash 同列在 Terminals 下，那是保住停止入口的已记录错标；
@@ -362,9 +334,7 @@ export function buildConversationStatusPanelModel(
   const runningSubagentWorks: ConversationStatusPanelRunningSubagent[] = (
     input.runningSubagents ?? []
   ).map((subagent) => {
-    const controlWork = subagentControlByChildSessionId.get(
-      subagent.childSessionId,
-    );
+    const controlWork = subagentControlByChildSessionId.get(subagent.childSessionId);
     if (!controlWork) return subagent;
     return {
       ...subagent,
@@ -392,10 +362,7 @@ export function buildConversationStatusPanelModel(
     });
   }
 
-  const runningWorkflowRuns = buildRunningWorkflowRuns(
-    input.workflowRuns,
-    workflowWorkByWorkId,
-  );
+  const runningWorkflowRuns = buildRunningWorkflowRuns(input.workflowRuns, workflowWorkByWorkId);
 
   return {
     git,
@@ -407,12 +374,12 @@ export function buildConversationStatusPanelModel(
     runningWorkflowRuns,
     hasContent: Boolean(
       git ||
-        goal ||
-        sessionPlans ||
-        plan ||
-        runningBashWorks.length > 0 ||
-        runningSubagentWorks.length > 0 ||
-        runningWorkflowRuns.length > 0,
+      goal ||
+      sessionPlans ||
+      plan ||
+      runningBashWorks.length > 0 ||
+      runningSubagentWorks.length > 0 ||
+      runningWorkflowRuns.length > 0,
     ),
   };
 }

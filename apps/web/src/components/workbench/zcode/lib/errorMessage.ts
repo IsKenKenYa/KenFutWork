@@ -1,15 +1,6 @@
-/**
- * zcode 照搬：`@/lib/errorMessage.ts`（references/zcode/packages/ui/src/lib/errorMessage.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
 export function getErrorMessage(error: unknown): string {
   const rawMessage =
-    error instanceof Error
-      ? error.message
-      : typeof error === "string"
-        ? error
-        : String(error);
+    error instanceof Error ? error.message : typeof error === "string" ? error : String(error);
 
   // 远程连接链路里有的错误已经带了 "Error: ..." 前缀，
   // 上层再包装成 Error 或直接 String(error) 展示时，会叠成 "Error: Error: ..."。

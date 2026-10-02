@@ -1,19 +1,7 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/workflow-face-motion.ts`（references/zcode/packages/ui/src/components/workflow-timeline/workflow-face-motion.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import type { StepRunStatus } from "@zui/components/workflow-graph/types";
+import type { StepRunStatus } from "@zui/components/workflow-graph/types.js";
 
 export type FaceState = "waiting" | "scanning" | "content" | "sad";
-export type EyeExpression =
-  | "dots"
-  | "pill"
-  | "happy"
-  | "sleepy"
-  | "focused"
-  | "sad"
-  | "confused";
+export type EyeExpression = "dots" | "pill" | "happy" | "sleepy" | "focused" | "sad" | "confused";
 export function faceState(status: StepRunStatus | undefined): FaceState {
   return status === "running"
     ? "scanning"
@@ -37,18 +25,14 @@ const SPECIAL: Record<FaceState, readonly EyeExpression[]> = {
 };
 
 /** 一张脸只有一个待执行计时器；DOM 动作不触发整个工作流的 React 重渲染。 */
-export function startFaceMotion(
-  face: SVGSVGElement,
-  state: FaceState,
-): () => void {
+export function startFaceMotion(face: SVGSVGElement, state: FaceState): () => void {
   const media = window.matchMedia?.("(prefers-reduced-motion: reduce)");
   let timer: ReturnType<typeof setTimeout> | undefined;
   let visible = true;
   let rounds = 0;
   let lookingLeft = false;
   let previous: EyeExpression | undefined;
-  const random = (min: number, max: number) =>
-    min + Math.random() * (max - min);
+  const random = (min: number, max: number) => min + Math.random() * (max - min);
   const later = (delay: number, action: () => void) => {
     timer = setTimeout(action, delay);
   };
@@ -98,11 +82,8 @@ export function startFaceMotion(
     const expression = pool[Math.floor(Math.random() * pool.length)]!;
     previous = expression;
     rounds = 0;
-    const hold =
-      expression === "confused" ? random(2200, 3800) : random(800, 1800);
-    morph(expression, () =>
-      later(hold, () => morph(BASE_EXPRESSION[state], pause)),
-    );
+    const hold = expression === "confused" ? random(2200, 3800) : random(800, 1800);
+    morph(expression, () => later(hold, () => morph(BASE_EXPRESSION[state], pause)));
   };
   const glance = () => {
     motion("glance");
@@ -158,8 +139,7 @@ export function startFaceMotion(
       });
     } else {
       const blinks = Math.random() < 0.5 ? 2 : 3;
-      const duration =
-        state === "scanning" ? random(200, 260) : random(260, 320);
+      const duration = state === "scanning" ? random(200, 260) : random(260, 320);
       face.style.setProperty("--wf-face-blinks", String(blinks));
       face.style.setProperty("--wf-face-blink-time", `${duration}ms`);
       motion("blink");
@@ -172,8 +152,7 @@ export function startFaceMotion(
     rounds = 0;
     lookingLeft = false;
     base();
-    if (!document.hidden && !media?.matches && visible)
-      later(random(1200, 2800), cycle);
+    if (!document.hidden && !media?.matches && visible) later(random(1200, 2800), cycle);
   };
   const observer =
     typeof IntersectionObserver === "undefined"

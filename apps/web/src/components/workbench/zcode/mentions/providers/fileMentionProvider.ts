@@ -1,20 +1,10 @@
-/**
- * zcode 照搬：`@/mentions/providers/fileMentionProvider.ts`（references/zcode/packages/ui/src/mentions/providers/fileMentionProvider.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀
- *（本仓 Turbopack 不做 .js→.ts/.tsx 试探，手册 §2.4-2 在本仓构建链的等价适配）。
- */
-
-import { useServices } from "@zui/hooks/useServices";
-import type { WorkspaceFileEntry } from "@zui/lib/zcode-shared";
-import { WORKSPACE_FILE_SEARCH_DISPLAY_CAP } from "@zui/lib/zcode-shared/workspaceFileSearch";
-import { buildFileMentionMarkdown } from "@zui/mentions/mentionMarkdown";
-import { getMentionGroupLimitForQuery } from "@zui/mentions/mentionSearch";
-import type {
-  MentionCategoryResult,
-  MentionItem,
-} from "@zui/mentions/mentionTypes";
 import { useEffect, useMemo, useState } from "react";
+import type { WorkspaceFileEntry } from "@zcode/shared";
+import { useServices } from "@zui/hooks/useServices.js";
+import { buildFileMentionMarkdown } from "@zui/mentions/mentionMarkdown.js";
+import { WORKSPACE_FILE_SEARCH_DISPLAY_CAP } from "@zcode/shared/workspaceFileSearch";
+import { getMentionGroupLimitForQuery } from "@zui/mentions/mentionSearch.js";
+import type { MentionCategoryResult, MentionItem } from "@zui/mentions/mentionTypes.js";
 
 function mapWorkspaceFileToMentionItem(entry: WorkspaceFileEntry): MentionItem {
   return {
@@ -26,11 +16,7 @@ function mapWorkspaceFileToMentionItem(entry: WorkspaceFileEntry): MentionItem {
     // 文件 mention 的标准转译格式需要保持 `[filename](path)`，
     // 之前这里误把整条 relativePath 当成链接文本，导致发送后回显和复制内容都退化成“长路径做标题”。
     // 这里恢复为只用 basename 做 label，路径只放在链接目标里，和输入框 node 样式保持一致。
-    markdown: buildFileMentionMarkdown(
-      entry.relativePath,
-      entry.name,
-      entry.type,
-    ),
+    markdown: buildFileMentionMarkdown(entry.relativePath, entry.name, entry.type),
     keywords: [entry.relativePath, entry.path],
     data: {
       kind: entry.type,
@@ -55,8 +41,7 @@ export function useFileMentionProvider(
 ): MentionCategoryResult {
   const { fileService } = useServices();
   const limit =
-    getMentionGroupLimitForQuery(query, defaultPreviewLimit) ??
-    WORKSPACE_FILE_SEARCH_DISPLAY_CAP;
+    getMentionGroupLimitForQuery(query, defaultPreviewLimit) ?? WORKSPACE_FILE_SEARCH_DISPLAY_CAP;
   // 连接实例也属于作用域：相同路径的远程重连不能接纳旧 Host 的查询结果。
   const scope = useMemo(
     () => ({
@@ -85,38 +70,17 @@ export function useFileMentionProvider(
         let entries = await fileService.searchWorkspaceFiles(params);
         if (!active) return;
         const normalizedQuery = normalizeRefreshQuery(query);
-        if (
-          entries.length === 0 &&
-          normalizedQuery &&
-          scope.lastMissQuery !== normalizedQuery
-        ) {
+        if (entries.length === 0 && normalizedQuery && scope.lastMissQuery !== normalizedQuery) {
           scope.lastMissQuery = normalizedQuery;
           // 无命中补扫必须绕过 Host TTL，否则外部新文件在缓存有效期内永远不可见。
-          entries = await fileService.searchWorkspaceFiles({
-            ...params,
-            refresh: true,
-          });
+          entries = await fileService.searchWorkspaceFiles({ ...params, refresh: true });
           if (!active) return;
         }
-        setResult({
-          scope,
-          query,
-          limit,
-          entries,
-          loading: false,
-          error: null,
-        });
+        setResult({ scope, query, limit, entries, loading: false, error: null });
       } catch (error) {
         if (!active) return;
         scope.error = error instanceof Error ? error : new Error(String(error));
-        setResult({
-          scope,
-          query,
-          limit,
-          entries: [],
-          loading: false,
-          error: scope.error,
-        });
+        setResult({ scope, query, limit, entries: [], loading: false, error: scope.error });
       }
     };
     void search();
@@ -124,21 +88,10 @@ export function useFileMentionProvider(
     return () => {
       active = false;
     };
-  }, [
-    enabled,
-    fileService,
-    workspacePath,
-    workspaceIdentity,
-    query,
-    limit,
-    scope,
-  ]);
+  }, [enabled, fileService, workspacePath, workspaceIdentity, query, limit, scope]);
 
   const current =
-    enabled &&
-    result?.scope === scope &&
-    result.query === query &&
-    result.limit === limit;
+    enabled && result?.scope === scope && result.query === query && result.limit === limit;
   const items = useMemo(
     () => (current ? result.entries.map(mapWorkspaceFileToMentionItem) : []),
     [current, result],

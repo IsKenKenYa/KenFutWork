@@ -1,52 +1,42 @@
-/**
- * zcode 照搬：`@/store/zcodeSessionStoreTaskSlice.ts`（references/zcode/packages/ui/src/store/zcodeSessionStoreTaskSlice.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
 /* oxlint-disable eslint(max-lines) -- 当前文件承接 task 级状态切片，先保持最小改动修复草稿逻辑，后续再统一拆分 */
-
-import { clearPersistedComposerDraft } from "@zui/lib/chatComposerDraftStorage";
-import { areConfigOptionsEquivalent } from "@zui/lib/configOptionsEquality";
-import { removeTaskFromHistory } from "@zui/lib/taskNavigationHistory";
 import {
   normalizeAgentProviderToZCodeAgent,
   type ZCodeApiRetryStatus,
   type ZCodeConfigOption,
-  type ZCodeElicitationRequest,
   type ZCodePermissionRequest,
+  type ZCodeElicitationRequest,
   type ZCodeProvider,
-  type ZCodeTaskMeta,
   type ZCodeTaskRuntimeStatus,
-} from "@zui/lib/zcode-shared";
-import { mergeTaskWithOptimisticMeta } from "@zui/lib/zcodeTaskMetaMerge";
-import type { ZCodeUiError } from "@zui/lib/zcodeUiError";
+  type ZCodeTaskMeta,
+} from "@zcode/shared";
+import type { ZCodeUiError } from "@zui/lib/zcodeUiError.js";
+import { removeTaskFromHistory } from "@zui/lib/taskNavigationHistory.js";
+import { mergeTaskWithOptimisticMeta } from "@zui/lib/zcodeTaskMetaMerge.js";
+import type {
+  ConfigOptionsStatus,
+  ElicitationFormDraft,
+  ZCodeSessionStoreState,
+  TaskUsageState,
+} from "@zui/store/zcodeSessionStoreTypes.js";
+import { getDefaultWorkspaceState } from "@zui/store/zcodeSessionStoreTypes.js";
+import { clearPersistedComposerDraft } from "@zui/lib/chatComposerDraftStorage.js";
+import { areConfigOptionsEquivalent } from "@zui/lib/configOptionsEquality.js";
 import {
   getTaskRuntimeState,
   getTaskUiState,
   getWorkspaceState,
   resolveWorkspaceStateKey,
   updateWorkspaceState,
-} from "@zui/store/zcodeSessionStoreSelectors";
-import type {
-  ConfigOptionsStatus,
-  ElicitationFormDraft,
-  TaskUsageState,
-  ZCodeSessionStoreState,
-} from "@zui/store/zcodeSessionStoreTypes";
-import { getDefaultWorkspaceState } from "@zui/store/zcodeSessionStoreTypes";
+} from "@zui/store/zcodeSessionStoreSelectors.js";
 
 type SetFn = (
   partial:
     | ZCodeSessionStoreState
     | Partial<ZCodeSessionStoreState>
-    | ((
-        state: ZCodeSessionStoreState,
-      ) => ZCodeSessionStoreState | Partial<ZCodeSessionStoreState>),
+    | ((state: ZCodeSessionStoreState) => ZCodeSessionStoreState | Partial<ZCodeSessionStoreState>),
 ) => void;
 
-function sortTasksByUpdatedAt(
-  tasks: readonly ZCodeTaskMeta[],
-): ZCodeTaskMeta[] {
+function sortTasksByUpdatedAt(tasks: readonly ZCodeTaskMeta[]): ZCodeTaskMeta[] {
   return [...tasks].sort((left, right) => {
     if (right.updatedAt !== left.updatedAt) {
       return right.updatedAt - left.updatedAt;
@@ -151,9 +141,7 @@ function areTaskUsageBreakdownsEqual(
     return false;
   }
   return left.every(
-    (item, index) =>
-      item.source === right[index]?.source &&
-      item.chars === right[index]?.chars,
+    (item, index) => item.source === right[index]?.source && item.chars === right[index]?.chars,
   );
 }
 
@@ -176,9 +164,7 @@ function areTaskUsageStatesEqual(
   );
 }
 
-function normalizeTaskContextWindow(
-  contextWindow: number | null,
-): number | null {
+function normalizeTaskContextWindow(contextWindow: number | null): number | null {
   if (contextWindow === null) {
     return null;
   }
@@ -196,10 +182,7 @@ function updateWorkspaceStateForIdentityScopedTaskState(
     current: ReturnType<typeof getDefaultWorkspaceState>,
   ) => ReturnType<typeof getDefaultWorkspaceState>,
 ): Pick<ZCodeSessionStoreState, "workspaces"> {
-  const workspaceKey = resolveWorkspaceStateKey(
-    workspacePath,
-    workspaceIdentity,
-  );
+  const workspaceKey = resolveWorkspaceStateKey(workspacePath, workspaceIdentity);
   if (workspaceKey === workspacePath) {
     return updateWorkspaceState(state, workspacePath, updater);
   }
@@ -229,9 +212,7 @@ export function createTaskSlice(set: SetFn) {
           (current) => {
             const currentTaskRuntime = getTaskRuntimeState(current, taskId);
             const isRunningStatus =
-              status === "creating" ||
-              status === "restoring" ||
-              status === "streaming";
+              status === "creating" || status === "restoring" || status === "streaming";
             const nextTaskRuntime = {
               ...currentTaskRuntime,
               status,
@@ -241,12 +222,8 @@ export function createTaskSlice(set: SetFn) {
               // 终态/非运行态如果继续保留旧 inputId，移动端只靠快照补齐时会把已结束任务误判成仍在 loading。
               // activeTurnKind 同样是 session 运行态；compact 完成后必须清掉，
               // 否则 app 层会继续把同一 task 的发送误判为“压缩中”并吞掉。
-              activeTurnKind: isRunningStatus
-                ? currentTaskRuntime.activeTurnKind
-                : undefined,
-              activeInputId: isRunningStatus
-                ? currentTaskRuntime.activeInputId
-                : undefined,
+              activeTurnKind: isRunningStatus ? currentTaskRuntime.activeTurnKind : undefined,
+              activeInputId: isRunningStatus ? currentTaskRuntime.activeInputId : undefined,
               activeInputOwnerClientId: isRunningStatus
                 ? currentTaskRuntime.activeInputOwnerClientId
                 : undefined,
@@ -271,11 +248,7 @@ export function createTaskSlice(set: SetFn) {
       workspaceIdentity?: string,
     ) => {
       set((state) => {
-        const current = getWorkspaceState(
-          state,
-          workspacePath,
-          workspaceIdentity,
-        );
+        const current = getWorkspaceState(state, workspacePath, workspaceIdentity);
         const currentRuntime = getTaskRuntimeState(current, taskId);
         if (areTaskUsageStatesEqual(currentRuntime.usage, usage)) {
           // usage_update 在流式期间可能以相同数值重复到达。
@@ -308,11 +281,7 @@ export function createTaskSlice(set: SetFn) {
     ) => {
       const normalizedContextWindow = normalizeTaskContextWindow(contextWindow);
       set((state) => {
-        const current = getWorkspaceState(
-          state,
-          workspacePath,
-          workspaceIdentity,
-        );
+        const current = getWorkspaceState(state, workspacePath, workspaceIdentity);
         const currentRuntime = getTaskRuntimeState(current, taskId);
         if (currentRuntime.contextWindow === normalizedContextWindow) {
           return state;
@@ -371,14 +340,9 @@ export function createTaskSlice(set: SetFn) {
     ) => {
       const normalizedOptions = [...options];
       set((state) => {
-        const current = getWorkspaceState(
-          state,
-          workspacePath,
-          workspaceIdentity,
-        );
+        const current = getWorkspaceState(state, workspacePath, workspaceIdentity);
         const currentOptions = current.taskConfigOptionsByTaskId[taskId] ?? [];
-        const currentStatus =
-          current.taskConfigOptionsStatusByTaskId[taskId] ?? "ready";
+        const currentStatus = current.taskConfigOptionsStatusByTaskId[taskId] ?? "ready";
         if (
           currentStatus === status &&
           areConfigOptionsEquivalent(currentOptions, normalizedOptions)
@@ -443,19 +407,13 @@ export function createTaskSlice(set: SetFn) {
             }
 
             const currentPermissionRequest = taskUiState.permissionRequest;
-            const pendingPermissionRequests =
-              taskUiState.pendingPermissionRequests ?? [];
+            const pendingPermissionRequests = taskUiState.pendingPermissionRequests ?? [];
 
             let nextPermissionRequest = currentPermissionRequest;
             let nextPendingPermissionRequests = pendingPermissionRequests;
 
             if (currentPermissionRequest?.requestId === request.requestId) {
-              if (
-                arePermissionRequestsEquivalent(
-                  currentPermissionRequest,
-                  request,
-                )
-              ) {
+              if (arePermissionRequestsEquivalent(currentPermissionRequest, request)) {
                 return current;
               }
               nextPermissionRequest = request;
@@ -469,31 +427,21 @@ export function createTaskSlice(set: SetFn) {
                 (item) => item.requestId === request.requestId,
               );
               if (existingPendingIndex >= 0) {
-                const existingPendingRequest =
-                  pendingPermissionRequests[existingPendingIndex];
+                const existingPendingRequest = pendingPermissionRequests[existingPendingIndex];
                 if (!existingPendingRequest) {
                   return current;
                 }
-                if (
-                  arePermissionRequestsEquivalent(
-                    existingPendingRequest,
-                    request,
-                  )
-                ) {
+                if (arePermissionRequestsEquivalent(existingPendingRequest, request)) {
                   return current;
                 }
-                nextPendingPermissionRequests = pendingPermissionRequests.map(
-                  (item, index) =>
-                    index === existingPendingIndex ? request : item,
+                nextPendingPermissionRequests = pendingPermissionRequests.map((item, index) =>
+                  index === existingPendingIndex ? request : item,
                 );
               } else {
                 // 同一 task 里可能连续出现多个权限请求。只有一个 permissionRequest 字段时，
                 // 后到的请求会直接覆盖前一个，导致前面的 pending 权限永远没人响应，任务表面上像是“卡住”。
                 // 这里把后续请求按 task 入队，保证用户确认当前请求后，下一个还能自动顶上来继续处理。
-                nextPendingPermissionRequests = [
-                  ...pendingPermissionRequests,
-                  request,
-                ];
+                nextPendingPermissionRequests = [...pendingPermissionRequests, request];
               }
             }
 
@@ -527,8 +475,7 @@ export function createTaskSlice(set: SetFn) {
           (current) => {
             const taskUiState = getTaskUiState(current, taskId);
             const currentPermissionRequest = taskUiState.permissionRequest;
-            const pendingPermissionRequests =
-              taskUiState.pendingPermissionRequests ?? [];
+            const pendingPermissionRequests = taskUiState.pendingPermissionRequests ?? [];
 
             if (currentPermissionRequest?.requestId === requestId) {
               const [nextPermissionRequest, ...restPendingPermissionRequests] =
@@ -600,8 +547,7 @@ export function createTaskSlice(set: SetFn) {
             }
 
             const currentElicitationRequest = taskUiState.elicitationRequest;
-            const pendingElicitationRequests =
-              taskUiState.pendingElicitationRequests ?? [];
+            const pendingElicitationRequests = taskUiState.pendingElicitationRequests ?? [];
 
             let nextElicitationRequest = currentElicitationRequest;
             let nextPendingElicitationRequests = pendingElicitationRequests;
@@ -610,24 +556,19 @@ export function createTaskSlice(set: SetFn) {
               nextElicitationRequest = request;
             } else if (currentElicitationRequest === null) {
               nextElicitationRequest = request;
-              nextPendingElicitationRequests =
-                pendingElicitationRequests.filter(
-                  (item) => item.requestId !== request.requestId,
-                );
+              nextPendingElicitationRequests = pendingElicitationRequests.filter(
+                (item) => item.requestId !== request.requestId,
+              );
             } else {
               const existingPendingIndex = pendingElicitationRequests.findIndex(
                 (item) => item.requestId === request.requestId,
               );
               if (existingPendingIndex >= 0) {
-                nextPendingElicitationRequests = pendingElicitationRequests.map(
-                  (item, index) =>
-                    index === existingPendingIndex ? request : item,
+                nextPendingElicitationRequests = pendingElicitationRequests.map((item, index) =>
+                  index === existingPendingIndex ? request : item,
                 );
               } else {
-                nextPendingElicitationRequests = [
-                  ...pendingElicitationRequests,
-                  request,
-                ];
+                nextPendingElicitationRequests = [...pendingElicitationRequests, request];
               }
             }
 
@@ -661,14 +602,11 @@ export function createTaskSlice(set: SetFn) {
           (current) => {
             const taskUiState = getTaskUiState(current, taskId);
             const currentElicitationRequest = taskUiState.elicitationRequest;
-            const pendingElicitationRequests =
-              taskUiState.pendingElicitationRequests ?? [];
+            const pendingElicitationRequests = taskUiState.pendingElicitationRequests ?? [];
 
             if (currentElicitationRequest?.requestId === requestId) {
-              const [
-                nextElicitationRequest,
-                ...restPendingElicitationRequests
-              ] = pendingElicitationRequests;
+              const [nextElicitationRequest, ...restPendingElicitationRequests] =
+                pendingElicitationRequests;
               return {
                 ...current,
                 taskUiByTaskId: {
@@ -750,9 +688,7 @@ export function createTaskSlice(set: SetFn) {
             if (!(requestId in taskUiState.elicitationFormDraftsByRequestId)) {
               return current;
             }
-            const nextDrafts = {
-              ...taskUiState.elicitationFormDraftsByRequestId,
-            };
+            const nextDrafts = { ...taskUiState.elicitationFormDraftsByRequestId };
             delete nextDrafts[requestId];
             return {
               ...current,
@@ -812,31 +748,23 @@ export function createTaskSlice(set: SetFn) {
           state,
           workspacePath,
           (current) => {
-            const existingTask =
-              current.optimisticTaskListByTaskId[params.task.taskId];
+            const existingTask = current.optimisticTaskListByTaskId[params.task.taskId];
             const nextTask = existingTask
               ? mergeTaskWithOptimisticMeta(params.task, existingTask)
               : params.task;
-            const currentTaskRuntime = getTaskRuntimeState(
-              current,
-              params.task.taskId,
-            );
+            const currentTaskRuntime = getTaskRuntimeState(current, params.task.taskId);
             const cachedTasks = current.taskListCache ?? [];
             const nextTaskListCache =
               current.taskListCache === null
                 ? current.taskListCache
                 : sortTasksByUpdatedAt([
                     nextTask,
-                    ...cachedTasks.filter(
-                      (cachedTask) => cachedTask.taskId !== params.task.taskId,
-                    ),
+                    ...cachedTasks.filter((cachedTask) => cachedTask.taskId !== params.task.taskId),
                   ]);
 
             return {
               ...current,
-              selectedProvider: normalizeAgentProviderToZCodeAgent(
-                params.provider,
-              ),
+              selectedProvider: normalizeAgentProviderToZCodeAgent(params.provider),
               // 性能优化：后台首发不需要先经历 optimistic -> cache -> runtime 多轮 set。
               // 合到一次写入可以削掉并发压测创建任务时的 renderer 订阅风暴。
               optimisticTaskListByTaskId: {
@@ -871,11 +799,8 @@ export function createTaskSlice(set: SetFn) {
           state,
           workspacePath,
           (current) => {
-            const existingTask =
-              current.optimisticTaskListByTaskId[task.taskId];
-            const nextTask = existingTask
-              ? mergeTaskWithOptimisticMeta(task, existingTask)
-              : task;
+            const existingTask = current.optimisticTaskListByTaskId[task.taskId];
+            const nextTask = existingTask ? mergeTaskWithOptimisticMeta(task, existingTask) : task;
 
             return {
               ...current,
@@ -902,10 +827,8 @@ export function createTaskSlice(set: SetFn) {
           state,
           workspacePath,
           (current) => {
-            const {
-              [taskId]: _removedTaskMeta,
-              ...restOptimisticTaskListByTaskId
-            } = current.optimisticTaskListByTaskId;
+            const { [taskId]: _removedTaskMeta, ...restOptimisticTaskListByTaskId } =
+              current.optimisticTaskListByTaskId;
             return {
               ...current,
               optimisticTaskListByTaskId: restOptimisticTaskListByTaskId,
@@ -916,11 +839,7 @@ export function createTaskSlice(set: SetFn) {
       );
     },
 
-    removeTaskState: (
-      workspacePath: string,
-      taskId: string,
-      workspaceIdentity?: string,
-    ) => {
+    removeTaskState: (workspacePath: string, taskId: string, workspaceIdentity?: string) => {
       // task 删除会清内存 task state，但 composer 草稿还有桌面端 localStorage 桶。
       // 如果不在统一删除 action 里同步清理，重启后已删除 task 的草稿会继续残留。
       clearPersistedComposerDraft(workspacePath, taskId, workspaceIdentity);
@@ -929,26 +848,19 @@ export function createTaskSlice(set: SetFn) {
           state,
           workspacePath,
           (current) => {
-            const {
-              [taskId]: _removedTaskRuntime,
-              ...restTaskRuntimeByTaskId
-            } = current.taskRuntimeByTaskId;
-            const { [taskId]: _removedTaskUi, ...restTaskUiByTaskId } =
-              current.taskUiByTaskId;
-            const {
-              [taskId]: _removedTaskConfigOptions,
-              ...restTaskConfigOptionsByTaskId
-            } = current.taskConfigOptionsByTaskId;
+            const { [taskId]: _removedTaskRuntime, ...restTaskRuntimeByTaskId } =
+              current.taskRuntimeByTaskId;
+            const { [taskId]: _removedTaskUi, ...restTaskUiByTaskId } = current.taskUiByTaskId;
+            const { [taskId]: _removedTaskConfigOptions, ...restTaskConfigOptionsByTaskId } =
+              current.taskConfigOptionsByTaskId;
             const {
               [taskId]: _removedTaskConfigOptionsStatus,
               ...restTaskConfigOptionsStatusByTaskId
             } = current.taskConfigOptionsStatusByTaskId;
             const { [taskId]: _removedTaskUnread, ...restTaskUnreadByTaskId } =
               current.taskUnreadByTaskId;
-            const {
-              [taskId]: _removedTaskMeta,
-              ...restOptimisticTaskListByTaskId
-            } = current.optimisticTaskListByTaskId;
+            const { [taskId]: _removedTaskMeta, ...restOptimisticTaskListByTaskId } =
+              current.optimisticTaskListByTaskId;
             const {
               [taskId]: _removedPromotedGroupedDraftTask,
               ...restPromotedGroupedDraftTaskByTaskId
@@ -960,21 +872,17 @@ export function createTaskSlice(set: SetFn) {
             // 这里在删除成功后统一回收选中态和运行态，让主区域立即退出这条已删除任务。
             return {
               ...current,
-              activeTaskId: shouldCloseDeletedTask
-                ? null
-                : current.activeTaskId,
+              activeTaskId: shouldCloseDeletedTask ? null : current.activeTaskId,
               draftRuntime: shouldCloseDeletedTask
                 ? { status: "idle", error: null }
                 : current.draftRuntime,
               taskRuntimeByTaskId: restTaskRuntimeByTaskId,
               taskUiByTaskId: restTaskUiByTaskId,
               taskConfigOptionsByTaskId: restTaskConfigOptionsByTaskId,
-              taskConfigOptionsStatusByTaskId:
-                restTaskConfigOptionsStatusByTaskId,
+              taskConfigOptionsStatusByTaskId: restTaskConfigOptionsStatusByTaskId,
               taskUnreadByTaskId: restTaskUnreadByTaskId,
               optimisticTaskListByTaskId: restOptimisticTaskListByTaskId,
-              promotedGroupedDraftTaskByTaskId:
-                restPromotedGroupedDraftTaskByTaskId,
+              promotedGroupedDraftTaskByTaskId: restPromotedGroupedDraftTaskByTaskId,
             };
           },
           workspaceIdentity,

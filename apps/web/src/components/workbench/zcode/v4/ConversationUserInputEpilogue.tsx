@@ -1,12 +1,6 @@
-/**
- * zcode 照搬：`@/v4/ConversationUserInputEpilogue.tsx`（references/zcode/packages/ui/src/v4/ConversationUserInputEpilogue.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 import { useState } from "react";
+import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 
 /**
  * 用户消息里的引擎附加文本。
@@ -22,17 +16,10 @@ export function splitUserInputEpilogue(
   text: string,
   epilogueStart: number | undefined,
 ): { body: string; epilogue?: string } {
-  if (
-    epilogueStart === undefined ||
-    epilogueStart < 0 ||
-    epilogueStart > text.length
-  ) {
+  if (epilogueStart === undefined || epilogueStart < 0 || epilogueStart > text.length) {
     return { body: text };
   }
-  return {
-    body: text.slice(0, epilogueStart),
-    epilogue: text.slice(epilogueStart),
-  };
+  return { body: text.slice(0, epilogueStart), epilogue: text.slice(epilogueStart) };
 }
 
 /**
@@ -48,10 +35,7 @@ export function ConversationUserInputEpilogue({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
   const label = intl.formatMessage({ id: "chat.userInput.epilogue.label" });
   return (
-    <div
-      data-v4-user-input-epilogue="true"
-      className="flex min-w-0 flex-col gap-1"
-    >
+    <div data-v4-user-input-epilogue="true" className="flex min-w-0 flex-col gap-1">
       <button
         aria-expanded={open}
         className="flex items-center gap-1 self-start rounded-md text-ui-xs text-foreground-subtlest transition-colors hover:text-foreground"

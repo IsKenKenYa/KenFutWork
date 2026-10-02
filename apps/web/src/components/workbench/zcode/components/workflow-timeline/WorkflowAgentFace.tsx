@@ -1,20 +1,12 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/WorkflowAgentFace.tsx`（references/zcode/packages/ui/src/components/workflow-timeline/WorkflowAgentFace.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
+import { useEffect, useRef, type CSSProperties } from "react";
 import {
   BASE_EXPRESSION,
   faceState,
   startFaceMotion,
-} from "@zui/components/workflow-timeline/workflow-face-motion";
-import { type CSSProperties, useEffect, useRef } from "react";
-
-export { faceState } from "@zui/components/workflow-timeline/workflow-face-motion";
-
-import { cn } from "@zui/components/lib/utils";
-import type { StepRunStatus } from "@zui/components/workflow-graph/types";
+} from "@zui/components/workflow-timeline/workflow-face-motion.js";
+export { faceState } from "@zui/components/workflow-timeline/workflow-face-motion.js";
+import { cn } from "@zui/components/lib/utils.js";
+import type { StepRunStatus } from "@zui/components/workflow-graph/types.js";
 
 /**
  * 瓦片脸：应用图标的圆角方块去掉 Z、
@@ -38,31 +30,19 @@ export const FACE_COLORS = [
 /** 名字散列选色（31 进制取模 360 后映射到九色板）；只在没有 `avatarIndex` 时兜底。 */
 export function avatarColor(name: string): string {
   let hash = 0;
-  for (const char of name)
-    hash = (hash * 31 + (char.codePointAt(0) ?? 0)) % 360;
+  for (const char of name) hash = (hash * 31 + (char.codePointAt(0) ?? 0)) % 360;
   return FACE_COLORS[hash % FACE_COLORS.length]!;
 }
 
 /** 代理的颜色：编号优先（九色环循环），缺席时退回名字散列。药丸悬停描边与脸共用它。 */
-export function agentColor(
-  avatarIndex: number | undefined,
-  name: string,
-): string {
+export function agentColor(avatarIndex: number | undefined, name: string): string {
   if (avatarIndex === undefined) return avatarColor(name);
   return FACE_COLORS[
-    ((avatarIndex % FACE_COLORS.length) + FACE_COLORS.length) %
-      FACE_COLORS.length
+    ((avatarIndex % FACE_COLORS.length) + FACE_COLORS.length) % FACE_COLORS.length
   ]!;
 }
 
-const EXPRESSIONS = [
-  "pill",
-  "happy",
-  "sleepy",
-  "focused",
-  "sad",
-  "confused",
-] as const;
+const EXPRESSIONS = ["pill", "happy", "sleepy", "focused", "sad", "confused"] as const;
 
 // 直接在 20 格内绘制参考眼型；共享左右起点，换脸时保持底部和视线位置。
 function Eyes() {
@@ -76,47 +56,24 @@ function Eyes() {
             ))}
           </g>
           {EXPRESSIONS.map((expression) => (
-            <g
-              key={expression}
-              data-eye-expression={expression}
-              fill="var(--wf-face-eye)"
-            >
+            <g key={expression} data-eye-expression={expression} fill="var(--wf-face-eye)">
               {[7, 13].map((x, i) => {
                 if (expression === "pill" || expression === "confused") {
                   const short = expression === "confused" && i === 1;
                   return (
-                    <rect
-                      key={x}
-                      x={x}
-                      y={short ? 8 : 6}
-                      width={4}
-                      height={short ? 4 : 6}
-                      rx={2}
-                    />
+                    <rect key={x} x={x} y={short ? 8 : 6} width={4} height={short ? 4 : 6} rx={2} />
                   );
                 }
                 const paths = {
                   happy: "M0 11 V8 A2 2 0 0 1 4 8 V11 Z",
                   sleepy:
-                    i === 0
-                      ? "M0 8 L4 7 V9 A2 2 0 0 1 0 9 Z"
-                      : "M0 7 L4 8 V9 A2 2 0 0 1 0 9 Z",
+                    i === 0 ? "M0 8 L4 7 V9 A2 2 0 0 1 0 9 Z" : "M0 7 L4 8 V9 A2 2 0 0 1 0 9 Z",
                   focused:
-                    i === 0
-                      ? "M0 6 L4 8 V10 A2 2 0 0 1 0 10 Z"
-                      : "M0 8 L4 6 V10 A2 2 0 0 1 0 10 Z",
+                    i === 0 ? "M0 6 L4 8 V10 A2 2 0 0 1 0 10 Z" : "M0 8 L4 6 V10 A2 2 0 0 1 0 10 Z",
                   sad:
-                    i === 0
-                      ? "M0 8 L4 6 V10 A2 2 0 0 1 0 10 Z"
-                      : "M0 6 L4 8 V10 A2 2 0 0 1 0 10 Z",
+                    i === 0 ? "M0 8 L4 6 V10 A2 2 0 0 1 0 10 Z" : "M0 6 L4 8 V10 A2 2 0 0 1 0 10 Z",
                 };
-                return (
-                  <path
-                    key={x}
-                    transform={`translate(${x} 0)`}
-                    d={paths[expression]}
-                  />
-                );
+                return <path key={x} transform={`translate(${x} 0)`} d={paths[expression]} />;
               })}
             </g>
           ))}
@@ -139,7 +96,7 @@ export function WorkflowAgentFace({
   status,
 }: {
   avatarIndex: number | undefined;
-  className?: string | undefined;
+  className?: string;
   name: string;
   status: StepRunStatus | undefined;
 }) {
@@ -148,30 +105,21 @@ export function WorkflowAgentFace({
   useEffect(() => {
     if (ref.current) return startFaceMotion(ref.current, state);
   }, [state]);
-  const style = {
-    "--wf-face-body": agentColor(avatarIndex, name),
-  } as CSSProperties;
+  const style = { "--wf-face-body": agentColor(avatarIndex, name) } as CSSProperties;
   return (
     <svg
-      aria-hidden={true}
+      aria-hidden
       className={cn("wf-face overflow-visible", className)}
       data-face-state={state}
       data-expression={BASE_EXPRESSION[state]}
       data-motion="idle"
-      data-subagent-avatar={true}
+      data-subagent-avatar
       ref={ref}
       style={style}
       viewBox="0 0 20 20"
     >
-      <rect
-        className="wf-face-body"
-        fill="var(--wf-face-body)"
-        height={20}
-        rx={7}
-        width={20}
-      />
+      <rect className="wf-face-body" fill="var(--wf-face-body)" height={20} rx={7} width={20} />
       <Eyes />
     </svg>
   );
 }
-/* 适配注记（P9）：接口可选属性放宽 | undefined（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。 */

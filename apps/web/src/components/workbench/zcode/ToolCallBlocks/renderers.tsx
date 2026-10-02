@@ -1,31 +1,24 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- * 适配注记：接口可选属性放宽 | undefined 以等价 zcode tsconfig 行为（exactOptionalPropertyTypes）。
- */
-
-import { FlipMetricValue } from "@zui/components/ui/flip-metric-value";
 import {
   FileDisplayIcon,
   getFileDisplayPath,
   resolveFileDisplayDescriptor,
-} from "@zui/lib/fileDisplay";
-import { getPathLeaf } from "@zui/lib/path";
-import { inferEditOperation } from "@zui/ToolCallBlocks/fileSummaries";
+} from "@zui/lib/fileDisplay.js";
+import { FlipMetricValue } from "@zui/components/ui/flip-metric-value.js";
+import { getPathLeaf } from "@zui/lib/path.js";
+import { inferEditOperation } from "@zui/ToolCallBlocks/fileSummaries.js";
 import type {
-  EditKindLabelId,
   EditKindSource,
+  EditKindLabelId,
   EditOperationKind,
   RawToolCallFileSummary,
-} from "@zui/ToolCallBlocks/fileSummaryTypes";
+} from "@zui/ToolCallBlocks/fileSummaryTypes.js";
 
 export function renderDiffCount(
   changeStat?: {
     added: number;
     removed: number;
   },
-  options?: { animateInitial?: boolean | undefined },
+  options?: { animateInitial?: boolean },
 ) {
   if (!changeStat) {
     return null;
@@ -44,8 +37,7 @@ export function renderDiffCount(
           role="text"
           title={`+${changeStat.added}`}
         >
-          +
-          {/* 性能修复：投影已按秒给出真实统计，数字只做一次短翻页，不再逐行 rAF 追赶。 */}
+          +{/* 性能修复：投影已按秒给出真实统计，数字只做一次短翻页，不再逐行 rAF 追赶。 */}
           <FlipMetricValue
             value={String(changeStat.added)}
             animateInitial={options?.animateInitial}
@@ -78,10 +70,10 @@ export function renderFileChip({
   basePath,
 }: {
   summary: RawToolCallFileSummary;
-  clickable?: boolean | undefined;
-  onClick?: (() => void) | undefined;
-  title?: string | undefined;
-  basePath?: string | undefined;
+  clickable?: boolean;
+  onClick?: () => void;
+  title?: string;
+  basePath?: string;
 }) {
   const descriptor = resolveFileDisplayDescriptor(summary.path, {
     basePath,
@@ -103,14 +95,8 @@ export function renderFileChip({
           onClick?.();
         }}
       >
-        <FileDisplayIcon
-          src={descriptor.fileIconSrc}
-          size={16}
-          className="size-4 shrink-0"
-        />
-        <span className="min-w-0 truncate text-foreground-subtle">
-          {getPathLeaf(summary.path)}
-        </span>
+        <FileDisplayIcon src={descriptor.fileIconSrc} size={16} className="size-4 shrink-0" />
+        <span className="min-w-0 truncate text-foreground-subtle">{getPathLeaf(summary.path)}</span>
       </button>
     );
   }
@@ -120,20 +106,13 @@ export function renderFileChip({
       className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-foreground-subtle"
       title={chipTitle}
     >
-      <FileDisplayIcon
-        src={descriptor.fileIconSrc}
-        size={16}
-        className="size-4 shrink-0"
-      />
+      <FileDisplayIcon src={descriptor.fileIconSrc} size={16} className="size-4 shrink-0" />
       <span className="min-w-0 truncate">{getPathLeaf(summary.path)}</span>
     </span>
   );
 }
 
-export function renderFilePath(
-  path: string | null | undefined,
-  basePath?: string,
-) {
+export function renderFilePath(path: string | null | undefined, basePath?: string) {
   if (!path) {
     return null;
   }
@@ -153,22 +132,14 @@ export function getEditKindLabelMessageId(
   isRunning: boolean,
   source?: EditKindSource,
 ): EditKindLabelId {
-  const inferredOperation = inferEditOperation(
-    operationKinds,
-    actionLabels,
-    source,
-  );
+  const inferredOperation = inferEditOperation(operationKinds, actionLabels, source);
 
   if (inferredOperation === "write") {
-    return isRunning
-      ? "chat.toolCall.edit.writing"
-      : "chat.toolCall.kind.write";
+    return isRunning ? "chat.toolCall.edit.writing" : "chat.toolCall.kind.write";
   }
 
   if (inferredOperation === "delete") {
-    return isRunning
-      ? "chat.toolCall.edit.deleting"
-      : "chat.toolCall.kind.delete";
+    return isRunning ? "chat.toolCall.edit.deleting" : "chat.toolCall.kind.delete";
   }
 
   if (actionLabels.length === 0) {
@@ -181,25 +152,21 @@ export function getEditKindLabelMessageId(
 export function renderJoinedFileChips(
   summaries: RawToolCallFileSummary[],
   options: {
-    clickable?: boolean | undefined;
-    onClick?: ((summary: RawToolCallFileSummary) => void) | undefined;
-    basePath?: string | undefined;
+    clickable?: boolean;
+    onClick?: (summary: RawToolCallFileSummary) => void;
+    basePath?: string;
   } = {},
 ) {
   return (
     <div className="inline-flex min-w-0 items-center">
       {summaries.map((summary, index) => (
         <span key={summary.path} className="inline-flex min-w-0 items-center">
-          {index > 0 ? (
-            <span className="mx-1 text-foreground-subtlest">,</span>
-          ) : null}
+          {index > 0 ? <span className="mx-1 text-foreground-subtlest">,</span> : null}
           {renderFileChip({
             summary,
             clickable: options.clickable,
             basePath: options.basePath,
-            onClick: options.onClick
-              ? () => options.onClick?.(summary)
-              : undefined,
+            onClick: options.onClick ? () => options.onClick?.(summary) : undefined,
           })}
         </span>
       ))}

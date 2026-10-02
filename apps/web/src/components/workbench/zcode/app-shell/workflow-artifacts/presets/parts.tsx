@@ -1,9 +1,4 @@
 /**
- * zcode 照搬：`@/app-shell/workflow-artifacts/presets/parts.tsx`（references/zcode/packages/ui/src/app-shell/workflow-artifacts/presets/parts.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-/**
  * 四个预置渲染器共用的小零件：labels 契约、空态、字段标签、揭示动画的类名。
  *
  * 这些组件**一律不碰 i18n**：run 侧板与 `workflow-artifact` tab 各自持有 intl，
@@ -11,8 +6,8 @@
  * 三处复用，谁在什么语境下叫什么由调用方决定；组件自己去查 message id 会把这三处焊死。
  */
 
-import { cn } from "@zui/components/lib/utils";
 import type { ReactNode } from "react";
+import { cn } from "@zui/components/lib/utils.js";
 
 /** 调用方必须提供的三句译文（其余文案全部来自 spec 里作者自己写的 label / title）。 */
 export type PresetLabels = {
@@ -32,13 +27,7 @@ export const REVEAL_ANIMATION_CLASS =
   "animate-in fade-in duration-300 ease-out motion-reduce:animate-none";
 
 /** 一条数据都没有时的占位。压到最低存在感：看板本身在运行期就是会先空着的。 */
-export function PresetEmpty({
-  label,
-  compact,
-}: {
-  label: string;
-  compact?: boolean;
-}) {
+export function PresetEmpty({ label, compact }: { label: string; compact?: boolean }) {
   return (
     <div
       className={cn(
@@ -67,10 +56,10 @@ export function PresetHeading({
   trailing,
   className,
 }: {
-  title?: string | undefined;
-  description?: string | undefined;
-  trailing?: ReactNode | undefined;
-  className?: string | undefined;
+  title?: string;
+  description?: string;
+  trailing?: ReactNode;
+  className?: string;
 }) {
   if (!title && !description && !trailing) {
     return null;
@@ -79,18 +68,13 @@ export function PresetHeading({
     <div className={cn("flex items-start justify-between gap-3", className)}>
       <div className="min-w-0">
         {title ? (
-          <div className="truncate text-ui-base font-medium text-foreground">
-            {title}
-          </div>
+          <div className="truncate text-ui-base font-medium text-foreground">{title}</div>
         ) : null}
         {description ? (
-          <div className="mt-0.5 text-ui-sm text-foreground-subtle">
-            {description}
-          </div>
+          <div className="mt-0.5 text-ui-sm text-foreground-subtle">{description}</div>
         ) : null}
       </div>
       {trailing ? <div className="shrink-0">{trailing}</div> : null}
     </div>
   );
 }
-/* 适配注记（P9）：接口可选属性放宽 | undefined（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。 */

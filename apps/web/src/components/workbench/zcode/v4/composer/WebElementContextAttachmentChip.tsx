@@ -1,23 +1,13 @@
-/**
- * zcode 照搬：`@/v4/composer/WebElementContextAttachmentChip.tsx`（references/zcode/packages/ui/src/v4/composer/WebElementContextAttachmentChip.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-
-import type { AttachmentHoverCardContentProps } from "@zui/components/ai-elements/attachments";
-import { Button } from "@zui/components/ui/button";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { WebElementContextComposerAttachment } from "@zui/lib/webElementContext";
-import { ContextAttachmentPill } from "@zui/v4/composer/ContextAttachmentPill";
 import { Globe2Icon, MousePointer2Icon, Trash2Icon } from "lucide-react";
+import type { AttachmentHoverCardContentProps } from "@zui/components/ai-elements/attachments.js";
+import { Button } from "@zui/components/ui/button.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { WebElementContextComposerAttachment } from "@zui/lib/webElementContext.js";
+import { ContextAttachmentPill } from "@zui/v4/composer/ContextAttachmentPill.js";
 
 function getElementTitle(context: WebElementContextComposerAttachment) {
   return (
-    context.accessibleName ||
-    context.text ||
-    context.selector ||
-    context.tagName.toLowerCase()
+    context.accessibleName || context.text || context.selector || context.tagName.toLowerCase()
   );
 }
 
@@ -34,9 +24,9 @@ export function WebElementContextAttachmentChip({
   onRemoveAll,
 }: {
   contexts: readonly WebElementContextComposerAttachment[];
-  contentAlign?: AttachmentHoverCardContentProps["align"] | undefined;
-  onRemove?: (id: string) => void | undefined;
-  onRemoveAll?: () => void | undefined;
+  contentAlign?: AttachmentHoverCardContentProps["align"];
+  onRemove?: (id: string) => void;
+  onRemoveAll?: () => void;
 }) {
   const { intl } = useZCodeIntl();
   if (contexts.length === 0) {
@@ -45,10 +35,7 @@ export function WebElementContextAttachmentChip({
 
   const label = intl.formatMessage(
     {
-      id:
-        contexts.length === 1
-          ? "chat.webElements.one"
-          : "chat.webElements.many",
+      id: contexts.length === 1 ? "chat.webElements.one" : "chat.webElements.many",
     },
     { count: String(contexts.length) },
   );
@@ -57,9 +44,7 @@ export function WebElementContextAttachmentChip({
   return (
     <ContextAttachmentPill
       contentAlign={contentAlign}
-      icon={
-        <MousePointer2Icon className="size-4 shrink-0 text-foreground-subtle" />
-      }
+      icon={<MousePointer2Icon className="size-4 shrink-0 text-foreground-subtle" />}
       label={label}
       onRemoveAll={onRemoveAll}
       removeLabel={removeLabel}
@@ -71,9 +56,7 @@ export function WebElementContextAttachmentChip({
         >
           <Globe2Icon className="mt-1 size-4 shrink-0 text-foreground-subtle" />
           <div className="min-w-0 flex-1">
-            <div className="truncate font-medium">
-              {getElementTitle(context)}
-            </div>
+            <div className="truncate font-medium">{getElementTitle(context)}</div>
             <div className="truncate font-mono text-ui-base text-foreground-subtle">
               {getElementMeta(context)}
             </div>

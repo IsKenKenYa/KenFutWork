@@ -1,15 +1,5 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/timeline-ledge.ts`（references/zcode/packages/ui/src/components/workflow-timeline/timeline-ledge.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import {
-  lampX,
-  STATION_WIDTH,
-  stationX,
-} from "@zui/components/workflow-timeline/timeline-geometry";
 import type { CSSProperties } from "react";
+import { lampX, stationX, STATION_WIDTH } from "./timeline-geometry.js";
 
 /**
  * 边檐的纯几何：一根轨道两端压缩。
@@ -44,11 +34,8 @@ export const NO_FOLD: TimelineFold = { left: [], right: [] };
 /** 一侧边檐占的宽（含两侧内边距；0 枚灯 = 没有边檐）。 */
 export function ledgeWidth(count: number): number {
   if (count <= 0) return 0;
-  const lamps =
-    Math.min(count, LEDGE_MAX_LAMPS) * LEDGE_PITCH - (LEDGE_PITCH - LEDGE_LAMP);
-  return (
-    LEDGE_PAD + lamps + (count > LEDGE_MAX_LAMPS ? LEDGE_MORE : 0) + LEDGE_PAD
-  );
+  const lamps = Math.min(count, LEDGE_MAX_LAMPS) * LEDGE_PITCH - (LEDGE_PITCH - LEDGE_LAMP);
+  return LEDGE_PAD + lamps + (count > LEDGE_MAX_LAMPS ? LEDGE_MORE : 0) + LEDGE_PAD;
 }
 
 /**
@@ -65,10 +52,7 @@ export function foldStations(
   inset = 0,
 ): TimelineFold {
   if (count === 0 || clientWidth <= 0) return NO_FOLD;
-  const xs = Array.from(
-    { length: count },
-    (_, i) => lampX(i, inset) - scrollLeft,
-  );
+  const xs = Array.from({ length: count }, (_, i) => lampX(i, inset) - scrollLeft);
   let left: number[] = [];
   let right: number[] = [];
   for (let pass = 0; pass < 8; pass += 1) {
@@ -78,8 +62,7 @@ export function foldStations(
     const nextRight = xs.flatMap((x, i) =>
       x > clientWidth - rw && i !== keep && !nextLeft.includes(i) ? [i] : [],
     );
-    if (nextLeft.length === left.length && nextRight.length === right.length)
-      break;
+    if (nextLeft.length === left.length && nextRight.length === right.length) break;
     left = nextLeft;
     right = nextRight;
   }
@@ -121,10 +104,7 @@ export function ledgeStubWidth(
     width = lampX(open, inset) - scrollLeft - STUB_MIN - inner;
   } else {
     const open = indexes[0]! - 1;
-    width =
-      clientWidth -
-      inner -
-      (stationX(open, inset) + STATION_WIDTH - scrollLeft);
+    width = clientWidth - inner - (stationX(open, inset) + STATION_WIDTH - scrollLeft);
   }
   return width < STUB_MIN ? 0 : Math.round(width);
 }
@@ -149,9 +129,7 @@ export function timelineMaskStyle(
   edges: EdgeOverflow,
 ): CSSProperties | undefined {
   if (!edges.left && !edges.right) return undefined;
-  const edgeLeft = edges.left
-    ? `transparent 0px, #000 ${LEDGE_FADE}px`
-    : "#000 0px";
+  const edgeLeft = edges.left ? `transparent 0px, #000 ${LEDGE_FADE}px` : "#000 0px";
   const edgeRight = edges.right
     ? `#000 calc(100% - ${LEDGE_FADE}px), transparent 100%`
     : "#000 100%";
@@ -187,8 +165,7 @@ export function scrollbarThumb(
   if (clientWidth <= 0 || scrollWidth <= clientWidth) return undefined;
   const width = Math.max(THUMB_MIN, (clientWidth * clientWidth) / scrollWidth);
   const range = scrollWidth - clientWidth;
-  const left =
-    ((clientWidth - width) * Math.min(Math.max(scrollLeft, 0), range)) / range;
+  const left = ((clientWidth - width) * Math.min(Math.max(scrollLeft, 0), range)) / range;
   return { left: Math.round(left), width: Math.round(width) };
 }
 
@@ -219,15 +196,8 @@ export function flightAfterScroll(
 }
 
 /** 镜头：把一站滚到视口正中的 scrollLeft（左端不越 0）。边檐上的灯点了就走这条。 */
-export function stationCameraLeft(
-  index: number,
-  clientWidth: number,
-  inset = 0,
-): number {
-  return Math.max(
-    0,
-    stationX(index, inset) - (clientWidth - STATION_WIDTH) / 2,
-  );
+export function stationCameraLeft(index: number, clientWidth: number, inset = 0): number {
+  return Math.max(0, stationX(index, inset) - (clientWidth - STATION_WIDTH) / 2);
 }
 
 /**

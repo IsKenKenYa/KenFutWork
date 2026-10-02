@@ -1,16 +1,10 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/submit-result.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/submit-result.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { CodeBlock } from "@zui/components/ai-elements/code-block";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
 import { ClipboardCheckIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
+import { CodeBlock } from "@zui/components/ai-elements/code-block.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
 
 const SUBMIT_RESULT_TOOL_ICON = (
   <ClipboardCheckIcon className="size-4 shrink-0 text-foreground-subtle" />
@@ -29,9 +23,7 @@ function toRecord(value: unknown): Record<string, unknown> | undefined {
 
   try {
     const parsed: unknown = JSON.parse(value);
-    return typeof parsed === "object" &&
-      parsed !== null &&
-      !Array.isArray(parsed)
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>)
       : undefined;
   } catch {
@@ -40,9 +32,7 @@ function toRecord(value: unknown): Record<string, unknown> | undefined {
 }
 
 function readText(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0
-    ? value
-    : undefined;
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
 /**
@@ -116,14 +106,11 @@ export function SubmitResultToolCallBlock(context: ToolCallBlockRenderContext) {
 
   const isRejected = toolCall.status === "failed";
   // 拒绝与停止在卡面上是同一句话：提交没走完。spec 只定义四相，不为 denied 造第五个词条。
-  const isStopped =
-    toolCall.status === "stopped" || toolCall.status === "denied";
+  const isStopped = toolCall.status === "stopped" || toolCall.status === "denied";
   const isSubmitting =
     !isRejected &&
     !isStopped &&
-    (context.isRunning ||
-      toolCall.status === "pending" ||
-      toolCall.status === "in_progress");
+    (context.isRunning || toolCall.status === "pending" || toolCall.status === "in_progress");
   const kindLabelId = isRejected
     ? "chat.toolCall.submitResult.rejected"
     : isStopped
@@ -135,26 +122,20 @@ export function SubmitResultToolCallBlock(context: ToolCallBlockRenderContext) {
   // 驳回原文：错误通道优先，其次工具自己的错误字段与纯文本输出。接受态的输出恒为
   // 「The result was accepted.」，没有信息量，从不读。
   const rejectionText = isRejected
-    ? (context.errorText ??
-      readText(toolCall.error) ??
-      readText(toolCall.output))
+    ? (context.errorText ?? readText(toolCall.error) ?? readText(toolCall.output))
     : undefined;
   // 驳回态是扁平行，不给展开入口；驳回原文走失败态 tooltip（可悬停复制），不再有逐字段
   // 违规面板。rejectionText 只在驳回态存在，故非驳回态的展开门只看 result 键是否在场。
   const hasDetails = !isRejected && hasResult;
 
-  const resultLabel = intl.formatMessage({
-    id: "chat.toolCall.submitResult.resultHeading",
-  });
+  const resultLabel = intl.formatMessage({ id: "chat.toolCall.submitResult.resultHeading" });
   const inlinePreview = useMemo(
     () => (hasResult ? toInlinePreview(normalizedResult) : undefined),
     [hasResult, normalizedResult],
   );
   const primaryText = useMemo(
     () => (
-      <span className="min-w-0 truncate">
-        {inlinePreview ?? toolCall.title ?? "submit_result"}
-      </span>
+      <span className="min-w-0 truncate">{inlinePreview ?? toolCall.title ?? "submit_result"}</span>
     ),
     [inlinePreview, toolCall.title],
   );
@@ -165,9 +146,7 @@ export function SubmitResultToolCallBlock(context: ToolCallBlockRenderContext) {
       <div className="space-y-3">
         {hasResult ? (
           <section className="space-y-1.5">
-            <h4 className="text-ui-sm font-medium text-foreground-subtlest">
-              {resultLabel}
-            </h4>
+            <h4 className="text-ui-sm font-medium text-foreground-subtlest">{resultLabel}</h4>
             {isProse ? (
               // 人话是 prose：DESIGN.md 把 mono 留给路径/命令/代码/标识符/终端数据。
               // 刻意不做 markdown 渲染——result 字符串没有 markdown 契约。
@@ -199,14 +178,12 @@ export function SubmitResultToolCallBlock(context: ToolCallBlockRenderContext) {
         showIcon={context.showIcon !== false}
         canToggle={hasDetails && (context.canToggle ?? true)}
         forceOpen={hasDetails && (context.forceOpen ?? false)}
-        hideSecondaryTextWhenOpen={true}
+        hideSecondaryTextWhenOpen
         kindLabel={intl.formatMessage({ id: kindLabelId })}
         sourceLabel={context.sourceLabel}
         primaryText={primaryText}
         statusLabel={
-          isRejected
-            ? intl.formatMessage({ id: "chat.toolCall.status.failed" })
-            : undefined
+          isRejected ? intl.formatMessage({ id: "chat.toolCall.status.failed" }) : undefined
         }
         statusTooltip={isRejected ? rejectionText : undefined}
         showFailureStatus={isRejected}

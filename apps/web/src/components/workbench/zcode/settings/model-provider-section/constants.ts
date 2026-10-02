@@ -1,39 +1,29 @@
-/**
- * zcode 照搬：`@/settings/model-provider-section/constants.ts`（references/zcode/packages/ui/src/settings/model-provider-section/constants.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import type { ProviderSettingsFormProvider } from "@zui/lib/providerSettingsFormTypes";
-import { getProviderFormLabel } from "@zui/lib/providerSettingsFormTypes";
 import {
   BIGMODEL_PROVIDER_ID,
-  BUILTIN_MODEL_PROVIDER_IDS,
-  type BuiltinModelProviderId,
   buildBigModelApiUrl,
   buildBigModelCodingPlanPersonalManageUrl,
+  BUILTIN_MODEL_PROVIDER_IDS,
   createUuid,
   type OAuthProviderId,
-  type UsageEntitlementSnapshot,
-  type UsageEntitlementSubscriptionDetail,
-  type UsageQuotaLimit,
-  ZAI_PROVIDER_ID,
   ZCODE_ENV,
-} from "@zui/lib/zcode-shared";
+  ZAI_PROVIDER_ID,
+  type BuiltinModelProviderId,
+  type UsageQuotaLimit,
+  type UsageEntitlementSubscriptionDetail,
+  type UsageEntitlementSnapshot,
+} from "@zcode/shared";
+import type { ProviderSettingsFormProvider } from "@zui/lib/providerSettingsFormTypes.js";
+import { getProviderFormLabel } from "@zui/lib/providerSettingsFormTypes.js";
 
 export function generateId(): string {
   return createUuid();
 }
 
 export const PRESET_SUBSCRIPTION_TIMEOUT_MS = 2 * 60 * 1000;
-export const BIGMODEL_REGISTRATION_URL = buildBigModelApiUrl(
-  { ZCODE_ENV },
-  "/login",
-);
-const BIGMODEL_CODING_PLAN_PERSONAL_MANAGE_URL =
-  buildBigModelCodingPlanPersonalManageUrl({
-    ZCODE_ENV,
-  });
+export const BIGMODEL_REGISTRATION_URL = buildBigModelApiUrl({ ZCODE_ENV }, "/login");
+const BIGMODEL_CODING_PLAN_PERSONAL_MANAGE_URL = buildBigModelCodingPlanPersonalManageUrl({
+  ZCODE_ENV,
+});
 
 export interface PresetProviderSpec {
   id: BuiltinModelProviderId;
@@ -54,10 +44,9 @@ export const PRESET_PROVIDER_SPECS: PresetProviderSpec[] = [
   },
 ];
 
-export const PRESET_PROVIDER_SPEC_BY_ID = new Map<
-  BuiltinModelProviderId,
-  PresetProviderSpec
->(PRESET_PROVIDER_SPECS.map((item) => [item.id, item]));
+export const PRESET_PROVIDER_SPEC_BY_ID = new Map<BuiltinModelProviderId, PresetProviderSpec>(
+  PRESET_PROVIDER_SPECS.map((item) => [item.id, item]),
+);
 
 export type CodingPlanProviderId =
   | typeof BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan
@@ -75,10 +64,7 @@ export type CodingPlanStatus =
   | "unavailable"
   | "unsupported";
 
-export type TeamPlanAvailabilityReason =
-  | "not-allocated"
-  | "expired"
-  | "credential-unavailable";
+export type TeamPlanAvailabilityReason = "not-allocated" | "expired" | "credential-unavailable";
 
 interface CodingPlanProviderSpec {
   id: CodingPlanProviderId;
@@ -129,8 +115,7 @@ export function resolveModelProviderDisplayName(
   provider: Pick<ProviderSettingsFormProvider, "providerId" | "config">,
 ): string {
   if (
-    provider.providerId ===
-      BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan ||
+    provider.providerId === BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan ||
     provider.providerId === BUILTIN_MODEL_PROVIDER_IDS.zaiTeamCodingPlan
   ) {
     return "Z.ai - Coding Plan";

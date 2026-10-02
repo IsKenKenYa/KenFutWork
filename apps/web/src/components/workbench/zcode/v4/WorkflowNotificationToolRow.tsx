@@ -1,22 +1,12 @@
-/**
- * zcode 照搬：`@/v4/WorkflowNotificationToolRow.tsx`（references/zcode/packages/ui/src/v4/WorkflowNotificationToolRow.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-
-import { workflowRunQuestionWaitedLabel } from "@zui/app-shell/workflowRunQuestions";
-import {
-  CodeBlock,
-  CodeBlockHeader,
-} from "@zui/components/ai-elements/code-block";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { WorkflowNotificationMeta } from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import type { Theme } from "@zui/useTheme";
-import { WorkflowNotificationArtifactChips } from "@zui/v4/WorkflowNotificationArtifactChips";
 import { Hourglass, MessageCircleQuestion, Workflow } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { WorkflowNotificationMeta } from "@zcode/shared/zcode-protocol-v4";
+import { CodeBlock, CodeBlockHeader } from "@zui/components/ai-elements/code-block.js";
+import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { Theme } from "@zui/useTheme.js";
+import { workflowRunQuestionWaitedLabel } from "@zui/app-shell/workflowRunQuestions.js";
+import { WorkflowNotificationArtifactChips } from "@zui/v4/WorkflowNotificationArtifactChips.js";
 
 /**
  * 后台 workflow 通知行。
@@ -35,9 +25,7 @@ const TID_CHAT_WORKFLOW_NOTIFICATION_ROW = "chat-workflow-notification-row";
 /** 折叠头部单行概要上限，照 escalate 卡：概要只是「大概问了什么」，全文在展开体里。 */
 const INLINE_PREVIEW_MAX_LENGTH = 160;
 
-const TERMINAL_ICON = (
-  <Workflow className="size-4 shrink-0 text-foreground-subtle" />
-);
+const TERMINAL_ICON = <Workflow className="size-4 shrink-0 text-foreground-subtle" />;
 const ESCALATION_ICON = (
   <MessageCircleQuestion className="size-4 shrink-0 text-foreground-subtle" />
 );
@@ -58,10 +46,7 @@ function toInlinePreview(value: string): string | undefined {
     : collapsed;
 }
 
-const TERMINAL_KIND_LABEL_ID: Record<
-  "completed" | "errored" | "stopped",
-  string
-> = {
+const TERMINAL_KIND_LABEL_ID: Record<"completed" | "errored" | "stopped", string> = {
   completed: "chat.backgroundResult.workflow.completed",
   errored: "chat.backgroundResult.workflow.errored",
   stopped: "chat.backgroundResult.workflow.stopped",
@@ -69,9 +54,7 @@ const TERMINAL_KIND_LABEL_ID: Record<
 
 /** stall 行的 kindLabel：run 还在跑，只是 20 分钟没有一次成功的模型请求。 */
 const STALL_KIND_LABEL_ID = "chat.backgroundResult.workflow.stall";
-const STALL_ICON = (
-  <Hourglass className="size-4 shrink-0 text-foreground-subtle" />
-);
+const STALL_ICON = <Hourglass className="size-4 shrink-0 text-foreground-subtle" />;
 
 /** 展开体里的一个 `label: value` 事实行（stall 的等待时长 / 原因 / 并发数）。 */
 function factLine(label: string, value: string, key: string) {
@@ -106,16 +89,16 @@ interface WorkflowNotificationToolRowProps {
   /** CodeBlock 的应用主题（json result 走它）。 */
   theme: Theme;
   /** 预绑定的打开 run 详情回调；不可得时展开体内不渲染「打开运行详情」链接。 */
-  onOpenRun?: (() => void) | undefined;
+  onOpenRun?: () => void;
   /**
    * 预绑定的打开产物 tab 回调（宿主从 join 注入，同 `onOpenRun`）。缺席时 chips 仍然渲染，
    * 只是不可点——「交付了什么」是事实，「能不能打开」是能力。
    */
-  onOpenArtifact?: ((artifactId: string) => void) | undefined;
+  onOpenArtifact?: (artifactId: string) => void;
   /** 升级行的在场性联查：undefined = run 不在活投影；Set 含 qid = Waiting；不含 = Answered。 */
-  pendingQids?: ReadonlySet<string> | undefined;
+  pendingQids?: ReadonlySet<string>;
   /** 测试/宿主强制展开（透传 ToolLayout.forceOpen）；产品默认折叠。 */
-  forceOpen?: boolean | undefined;
+  forceOpen?: boolean;
 }
 
 export function WorkflowNotificationToolRow({
@@ -151,9 +134,7 @@ export function WorkflowNotificationToolRow({
   const isStall = notification.kind === "stall";
 
   // kindLabel + primaryText + 展开体，按三类通知分别铸造。
-  const escalationView = isEscalation
-    ? escalationState(pendingQids, notification.qid)
-    : undefined;
+  const escalationView = isEscalation ? escalationState(pendingQids, notification.qid) : undefined;
 
   // stopped 的原因词跟在 kindLabel 后。
   const stopReason =
@@ -161,22 +142,18 @@ export function WorkflowNotificationToolRow({
       ? notification.stopReason
       : undefined;
   const kindLabel = isEscalation
-    ? intl.formatMessage({
-        id: `chat.backgroundResult.workflow.${escalationView!}`,
-      })
+    ? intl.formatMessage({ id: `chat.backgroundResult.workflow.${escalationView!}` })
     : isStall
       ? intl.formatMessage({ id: STALL_KIND_LABEL_ID })
-      : stopReason === undefined
-        ? intl.formatMessage({
-            id: TERMINAL_KIND_LABEL_ID[notification.status],
-          })
-        : `${intl.formatMessage({ id: TERMINAL_KIND_LABEL_ID[notification.status] })} · ${intl.formatMessage({ id: `chat.toolCall.workflow.run.stopReason.${stopReason}` })}`;
+      : stopReason !== undefined
+        ? `${intl.formatMessage({ id: TERMINAL_KIND_LABEL_ID[notification.status] })} · ${intl.formatMessage({ id: `chat.toolCall.workflow.run.stopReason.${stopReason}` })}`
+        : intl.formatMessage({ id: TERMINAL_KIND_LABEL_ID[notification.status] });
 
   const primaryText = useMemo(() => {
     if (notification.kind === "terminal" || notification.kind === "stall") {
       return (
         <span className="inline-flex min-w-0 items-center gap-2">
-          <span aria-hidden={true}>·</span>
+          <span aria-hidden>·</span>
           <span className="min-w-0 truncate">{runName}</span>
         </span>
       );
@@ -193,7 +170,7 @@ export function WorkflowNotificationToolRow({
     notification.artifacts !== undefined &&
     notification.artifacts.length > 0 ? (
       <span className="inline-flex min-w-0 items-center gap-2">
-        <span aria-hidden={true}>·</span>
+        <span aria-hidden>·</span>
         <WorkflowNotificationArtifactChips
           artifacts={notification.artifacts}
           {...(notification.artifactsTruncated === undefined
@@ -209,43 +186,31 @@ export function WorkflowNotificationToolRow({
   const hasDetails =
     notification.kind === "escalation" || notification.kind === "stall"
       ? true
-      : notification.error === undefined
-        ? Boolean(notification.result)
-        : true;
+      : notification.error !== undefined
+        ? true
+        : Boolean(notification.result);
 
   const waited =
     escalationView === "waiting" && notification.kind === "escalation"
-      ? workflowRunQuestionWaitedLabel(
-          notification.askedAt,
-          now,
-          (descriptor, values) => intl.formatMessage(descriptor, values),
+      ? workflowRunQuestionWaitedLabel(notification.askedAt, now, (descriptor, values) =>
+          intl.formatMessage(descriptor, values),
         )
       : undefined;
 
   const renderContent = useCallback(() => {
     if (notification.kind === "escalation") {
-      const contextHeading = intl.formatMessage({
-        id: "chat.toolCall.workflow.escalate.context",
-      });
+      const contextHeading = intl.formatMessage({ id: "chat.toolCall.workflow.escalate.context" });
       return (
         <div className="space-y-3">
           {/* 问题全文（不引用答案原文——答案在相邻 ResolveWorkflowQuestion 卡里）。 */}
-          <p className={`${PANEL_CLASS} text-foreground`}>
-            {notification.question}
-          </p>
-          {notification.context === undefined ? null : (
+          <p className={`${PANEL_CLASS} text-foreground`}>{notification.question}</p>
+          {notification.context !== undefined ? (
             <section className="space-y-1.5">
-              <h4 className="text-ui-sm font-medium text-foreground-subtlest">
-                {contextHeading}
-              </h4>
-              <p className={`${PANEL_CLASS} text-foreground-subtle`}>
-                {notification.context}
-              </p>
+              <h4 className="text-ui-sm font-medium text-foreground-subtlest">{contextHeading}</h4>
+              <p className={`${PANEL_CLASS} text-foreground-subtle`}>{notification.context}</p>
             </section>
-          )}
-          {waited ? (
-            <p className="text-ui-sm text-foreground-subtle">{waited}</p>
           ) : null}
+          {waited ? <p className="text-ui-sm text-foreground-subtle">{waited}</p> : null}
           {openRunLink}
         </div>
       );
@@ -256,29 +221,22 @@ export function WorkflowNotificationToolRow({
       return (
         <div className="space-y-1" data-testid="workflow-notification-stall">
           <p className={`${PANEL_CLASS} text-foreground`}>
-            {intl.formatMessage(
-              { id: "chat.backgroundResult.workflow.stall.body" },
-              { minutes },
-            )}
+            {intl.formatMessage({ id: "chat.backgroundResult.workflow.stall.body" }, { minutes })}
           </p>
-          {notification.reason === undefined
-            ? null
-            : factLine(
-                intl.formatMessage({
-                  id: "chat.backgroundResult.workflow.stall.reason",
-                }),
+          {notification.reason !== undefined
+            ? factLine(
+                intl.formatMessage({ id: "chat.backgroundResult.workflow.stall.reason" }),
                 notification.reason,
                 "reason",
-              )}
-          {notification.cap === undefined
-            ? null
-            : factLine(
-                intl.formatMessage({
-                  id: "chat.backgroundResult.workflow.stall.cap",
-                }),
+              )
+            : null}
+          {notification.cap !== undefined
+            ? factLine(
+                intl.formatMessage({ id: "chat.backgroundResult.workflow.stall.cap" }),
                 String(notification.cap),
                 "cap",
-              )}
+              )
+            : null}
           {openRunLink}
         </div>
       );
@@ -305,10 +263,7 @@ export function WorkflowNotificationToolRow({
       }
     }
     return (
-      <div
-        className="mb-2 min-w-0 space-y-2"
-        data-testid="workflow-notification-result"
-      >
+      <div className="mb-2 min-w-0 space-y-2" data-testid="workflow-notification-result">
         {resultForm === "json" ? (
           <CodeBlock
             appTheme={theme}
@@ -316,7 +271,7 @@ export function WorkflowNotificationToolRow({
             language="json"
             className="border border-border bg-card"
             contentClassName="max-h-80 overflow-auto"
-            wrapLongLines={true}
+            wrapLongLines
           >
             <CodeBlockHeader className="pl-3 pr-2 pt-2" language="json" />
           </CodeBlock>
@@ -337,13 +292,11 @@ export function WorkflowNotificationToolRow({
       <ToolLayout
         toolId={toolId}
         persistOpenKey={toolId}
-        icon={
-          isEscalation ? ESCALATION_ICON : isStall ? STALL_ICON : TERMINAL_ICON
-        }
+        icon={isEscalation ? ESCALATION_ICON : isStall ? STALL_ICON : TERMINAL_ICON}
         // 图标已由 kind 区分；showIcon 缺省即显示。
         canToggle={hasDetails}
         forceOpen={forceOpen && hasDetails}
-        hideSecondaryTextWhenOpen={true}
+        hideSecondaryTextWhenOpen
         kindLabel={kindLabel}
         primaryText={primaryText}
         secondaryText={artifactChips}

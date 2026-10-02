@@ -1,14 +1,6 @@
-/**
- * zcode 照搬：`@/lib/codingPlanQuotaResetCoordinator.ts`（references/zcode/packages/ui/src/lib/codingPlanQuotaResetCoordinator.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import type { IUsageStatsService } from "@zui/lib/zcode-services";
-import type {
-  CodingPlanResetOpportunityResult,
-  CodingPlanResetScopeRequest,
-} from "@zui/lib/zcode-shared";
-import { logger } from "@zui/logger";
+import type { IUsageStatsService } from "@zcode/services";
+import type { CodingPlanResetOpportunityResult, CodingPlanResetScopeRequest } from "@zcode/shared";
+import { logger } from "@zui/logger.js";
 
 const STATUS_POLL_INTERVAL_MS = 5 * 60_000;
 const OPPORTUNITY_MIN_RETRY_MS = 5 * 60_000;
@@ -47,10 +39,7 @@ function buildScopeKey(scope: CodingPlanResetScopeRequest): string {
   return JSON.stringify([scope.preferredProviderId, scope.accountAccess]);
 }
 
-function buildCoordinatorKey(
-  authSessionSeq: number,
-  scope: CodingPlanResetScopeRequest,
-): string {
+function buildCoordinatorKey(authSessionSeq: number, scope: CodingPlanResetScopeRequest): string {
   return `${authSessionSeq}::${buildScopeKey(scope)}`;
 }
 
@@ -77,9 +66,7 @@ function createIdempotencyKey(): string {
   if (bytes.some((value) => value !== 0)) {
     bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40;
     bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
-    const hex = Array.from(bytes, (value) =>
-      value.toString(16).padStart(2, "0"),
-    ).join("");
+    const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
   }
 
@@ -204,10 +191,7 @@ class CodingPlanQuotaResetPollingCoordinator {
 
   private start(): void {
     if (!this.listening) {
-      document.addEventListener(
-        "visibilitychange",
-        this.handleVisibilityChange,
-      );
+      document.addEventListener("visibilitychange", this.handleVisibilityChange);
       this.listening = true;
     }
     if (document.visibilityState !== "hidden") {
@@ -218,10 +202,7 @@ class CodingPlanQuotaResetPollingCoordinator {
   private stop(): void {
     this.clearInterval();
     if (this.listening) {
-      document.removeEventListener(
-        "visibilitychange",
-        this.handleVisibilityChange,
-      );
+      document.removeEventListener("visibilitychange", this.handleVisibilityChange);
       this.listening = false;
     }
     // HoverCard 关闭会短暂没有订阅者。只停止计时器、不删除 Coordinator，
@@ -234,10 +215,7 @@ class CodingPlanQuotaResetPollingCoordinator {
   private startVisiblePolling(): void {
     this.clearInterval();
     void this.run();
-    this.interval = window.setInterval(
-      () => void this.run(),
-      STATUS_POLL_INTERVAL_MS,
-    );
+    this.interval = window.setInterval(() => void this.run(), STATUS_POLL_INTERVAL_MS);
   }
 
   private clearInterval(): void {
@@ -253,10 +231,7 @@ class CodingPlanQuotaResetPollingCoordinator {
       return this.running;
     }
     const refreshCallbacks = [...this.subscribers.values()];
-    if (
-      refreshCallbacks.length === 0 ||
-      document.visibilityState === "hidden"
-    ) {
+    if (refreshCallbacks.length === 0 || document.visibilityState === "hidden") {
       return Promise.resolve();
     }
 
@@ -292,10 +267,7 @@ class CodingPlanQuotaResetPollingCoordinator {
 export function subscribeCodingPlanQuotaResetPolling(
   params: PollingSubscriptionParams,
 ): () => void {
-  const coordinatorKey = buildCoordinatorKey(
-    params.authSessionSeq,
-    params.scope,
-  );
+  const coordinatorKey = buildCoordinatorKey(params.authSessionSeq, params.scope);
   const coordinators = getServiceMap(coordinatorsByService, params.service);
   let coordinator = coordinators.get(coordinatorKey);
   if (!coordinator) {
@@ -308,14 +280,8 @@ export function subscribeCodingPlanQuotaResetPolling(
 export function requestCodingPlanResetOpportunityWhenDue(
   params: CoordinatorParams,
 ): Promise<CodingPlanResetOpportunityResult | null> {
-  const coordinatorKey = buildCoordinatorKey(
-    params.authSessionSeq,
-    params.scope,
-  );
-  const schedules = getServiceMap(
-    opportunitySchedulesByService,
-    params.service,
-  );
+  const coordinatorKey = buildCoordinatorKey(params.authSessionSeq, params.scope);
+  const schedules = getServiceMap(opportunitySchedulesByService, params.service);
   let schedule = schedules.get(coordinatorKey);
   if (!schedule) {
     schedule = {
@@ -354,14 +320,10 @@ export function requestCodingPlanResetOpportunityWhenDue(
       return result;
     })
     .catch((error: unknown) => {
-      const transient =
-        !isOpportunityThrottleError(error) &&
-        isOpportunityTransientError(error);
+      const transient = !isOpportunityThrottleError(error) && isOpportunityTransientError(error);
       schedule.nextCheckAt =
         Date.now() +
-        (transient
-          ? OPPORTUNITY_TRANSIENT_ERROR_RETRY_MS
-          : OPPORTUNITY_STABLE_ERROR_COOLDOWN_MS);
+        (transient ? OPPORTUNITY_TRANSIENT_ERROR_RETRY_MS : OPPORTUNITY_STABLE_ERROR_COOLDOWN_MS);
       // 鉴权、业务拒绝和协议错误不能当成瞬时依赖错误，否则每个轮询周期都会空转一次并刷 warn。
       // 只有 2007、网络中断和超时复用原幂等 key 在五分钟后重试；429 与稳定错误冷却后开启新判断。
       schedule.retryIdempotencyKey = transient ? idempotencyKey : null;

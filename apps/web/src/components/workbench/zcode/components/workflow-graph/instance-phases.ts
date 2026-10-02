@@ -1,12 +1,6 @@
-/**
- * zcode 照搬：`@/components/workflow-graph/instance-phases.ts`（references/zcode/packages/ui/src/components/workflow-graph/instance-phases.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { phaseNameMatches } from "@zui/components/workflow-graph/phase-name";
-import type { WorkflowCausalityGraphData } from "@zui/components/workflow-graph/types";
-import type { WorkflowRunState } from "@zui/lib/zcode-shared/zcode-protocol-v4";
+import type { WorkflowRunState } from "@zcode/shared/zcode-protocol-v4";
+import { phaseNameMatches } from "./phase-name.js";
+import type { WorkflowCausalityGraphData } from "./types.js";
 
 /**
  * 运行时实例的归属阶段。
@@ -18,9 +12,7 @@ import type { WorkflowRunState } from "@zui/lib/zcode-shared/zcode-protocol-v4";
  */
 
 /** 这次 run 说过阶段的话吗：任一 actor / 节点带戳。旧 CLI、旧 run、无标记脚本都没有。 */
-export function runHasPhaseVocabulary(
-  run: WorkflowRunState | undefined,
-): boolean {
+export function runHasPhaseVocabulary(run: WorkflowRunState | undefined): boolean {
   if (run === undefined) return false;
   return (
     run.actors.some((actor) => actor.phaseName !== undefined) ||
@@ -45,13 +37,9 @@ export function phasesOf(
   const all = () => new Set(phases.map((phase) => phase.id));
   if (phaseName === undefined && !runHasVocabulary) return all();
   const matched = phases.filter((phase) =>
-    phaseName === undefined
-      ? phase.name === undefined
-      : phaseNameMatches(phase.name, phaseName),
+    phaseName === undefined ? phase.name === undefined : phaseNameMatches(phase.name, phaseName),
   );
-  return matched.length === 0
-    ? all()
-    : new Set(matched.map((phase) => phase.id));
+  return matched.length === 0 ? all() : new Set(matched.map((phase) => phase.id));
 }
 
 /** 一次视图算一遍的解析器：词汇表判定与每个戳的结果都只算一次（每个节点都要问一遍）。 */

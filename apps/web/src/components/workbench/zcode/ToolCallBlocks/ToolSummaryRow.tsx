@@ -1,21 +1,14 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/ToolSummaryRow.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/ToolSummaryRow.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- * 适配注记：接口可选属性放宽 | undefined 以等价 zcode tsconfig 行为（exactOptionalPropertyTypes）。
- */
-
-import { cn } from "@zui/components/lib/utils";
-import { CollapsibleTrigger } from "@zui/components/ui/collapsible";
-import { TID_TOOL_SUMMARY_TRIGGER, testId } from "@zui/lib/zcode-shared";
-import { QueuedSummaryContent } from "@zui/ToolCallBlocks/QueuedSummaryContent";
-import { ChevronRightIcon } from "lucide-react";
 import type { KeyboardEvent, ReactNode } from "react";
+import { ChevronRightIcon } from "lucide-react";
+import { testId, TID_TOOL_SUMMARY_TRIGGER } from "@zcode/shared";
+import { cn } from "@zui/components/lib/utils.js";
+import { CollapsibleTrigger } from "@zui/components/ui/collapsible.js";
+import { QueuedSummaryContent } from "@zui/ToolCallBlocks/QueuedSummaryContent.js";
 
 export interface ToolSummaryAction {
   ariaLabel: string;
   onActivate: () => void;
-  testId?: string | undefined;
+  testId?: string;
 }
 
 function handleToolSummaryActionKeyDown(
@@ -32,27 +25,27 @@ function handleToolSummaryActionKeyDown(
 }
 
 interface ToolSummaryRowProps {
-  action?: ToolSummaryAction | undefined;
+  action?: ToolSummaryAction;
   animateContent: boolean;
   canToggle: boolean;
   contentKey: string;
-  contentRefreshVersion?: string | undefined;
-  diffCount?: ReactNode | undefined;
+  contentRefreshVersion?: string;
+  diffCount?: ReactNode;
   disableContentAnimation: boolean;
   forceOpen: boolean;
   icon: ReactNode;
   isExpanded: boolean;
-  kindDetail?: ReactNode | undefined;
+  kindDetail?: ReactNode;
   kindLabel: ReactNode;
   kindLabelClassName: string;
   primaryText: ReactNode;
-  prioritizePrimaryText?: boolean | undefined;
-  secondaryText?: ReactNode | undefined;
-  separator?: ReactNode | undefined;
+  prioritizePrimaryText?: boolean;
+  secondaryText?: ReactNode;
+  separator?: ReactNode;
   showIcon: boolean;
-  sourceLabel?: ReactNode | undefined;
-  statusNode?: ReactNode | undefined;
-  title?: string | undefined;
+  sourceLabel?: ReactNode;
+  statusNode?: ReactNode;
+  title?: string;
   toggleAriaLabel: string;
   toolId: string;
 }
@@ -93,9 +86,7 @@ function SummaryLeadingContent({
           {kindLabel}
         </span>
       ) : null}
-      {kindDetail ? (
-        <span className="min-w-0 shrink-0">{kindDetail}</span>
-      ) : null}
+      {kindDetail ? <span className="min-w-0 shrink-0">{kindDetail}</span> : null}
       {sourceLabel ? (
         <span
           className={cn(
@@ -136,12 +127,9 @@ function SummaryContent({
   | "separator"
   | "statusNode"
 >) {
-  const hasSummaryContent = [
-    primaryText,
-    secondaryText,
-    diffCount,
-    statusNode,
-  ].some((node) => node != null && node !== false && node !== "");
+  const hasSummaryContent = [primaryText, secondaryText, diffCount, statusNode].some(
+    (node) => node != null && node !== false && node !== "",
+  );
 
   // 展开态可能主动清空摘要，但渲染空 flex 容器的话，标题行的 gap
   // 会在“类别—空容器—箭头”之间计算两次，视觉上形成一块异常大的空白。
@@ -156,9 +144,9 @@ function SummaryContent({
         prioritizePrimaryText && "flex-1 overflow-hidden",
       )}
     >
-      {separator == null ? null : (
+      {separator != null ? (
         <span className="shrink-0 text-foreground-subtlest">{separator}</span>
-      )}
+      ) : null}
       <QueuedSummaryContent
         contentKey={contentKey}
         contentRefreshVersion={contentRefreshVersion}
@@ -174,15 +162,7 @@ function SummaryContent({
 }
 
 export function ToolSummaryRow(props: ToolSummaryRowProps) {
-  const {
-    action,
-    canToggle,
-    forceOpen,
-    isExpanded,
-    title,
-    toggleAriaLabel,
-    toolId,
-  } = props;
+  const { action, canToggle, forceOpen, isExpanded, title, toggleAriaLabel, toolId } = props;
   const sharedContent = (
     <>
       <SummaryLeadingContent {...props} />
@@ -198,9 +178,7 @@ export function ToolSummaryRow(props: ToolSummaryRowProps) {
         tabIndex={0}
         aria-label={action.ariaLabel}
         onClick={action.onActivate}
-        onKeyDown={(event) =>
-          handleToolSummaryActionKeyDown(event, action.onActivate)
-        }
+        onKeyDown={(event) => handleToolSummaryActionKeyDown(event, action.onActivate)}
         className="group/tool-summary inline-flex max-w-full cursor-pointer items-center gap-2 self-start text-left text-ui-base transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border-focused"
         title={title}
       >
@@ -211,7 +189,7 @@ export function ToolSummaryRow(props: ToolSummaryRowProps) {
 
   if (canToggle) {
     return (
-      <CollapsibleTrigger asChild={true}>
+      <CollapsibleTrigger asChild>
         <div
           data-testid={testId(TID_TOOL_SUMMARY_TRIGGER, toolId)}
           role="button"
@@ -233,7 +211,7 @@ export function ToolSummaryRow(props: ToolSummaryRowProps) {
         >
           {sharedContent}
           <ChevronRightIcon
-            aria-hidden={true}
+            aria-hidden
             className={cn(
               "size-4 text-foreground-subtlest opacity-0 transition-transform transition-opacity duration-200 ease-out will-change-transform group-hover/tool-summary:opacity-100 shrink-0",
               isExpanded ? "rotate-90 opacity-100" : "rotate-0",

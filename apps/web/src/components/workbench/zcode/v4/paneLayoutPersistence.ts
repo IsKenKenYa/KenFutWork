@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/v4/paneLayoutPersistence.ts`（references/zcode/packages/ui/src/v4/paneLayoutPersistence.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
 // 分屏 Layout 层持久化（localStorage）：try/catch 静默降级；
 // 损坏数据整体丢弃回初始布局（不部分救回）。
 // 兼容读取旧版 v1（单值 splitPane），仅当 v1 workspaceKey 是可信本地路径时迁移。
@@ -10,14 +5,14 @@ import {
   clampSplitRatio,
   leafPaneIds,
   MAX_WORKBENCH_PANES,
+  PRIMARY_LEAF,
+  V4_PRIMARY_PANE_ID,
   type PaneBinding,
   type PaneLayoutNode,
   type PaneLayoutSnapshot,
   type PaneWorkspaceScope,
-  PRIMARY_LEAF,
   type SplitDirection,
-  V4_PRIMARY_PANE_ID,
-} from "@zui/v4/paneLayoutTree";
+} from "@zui/v4/paneLayoutTree.js";
 
 const PANE_LAYOUT_STORAGE_KEY = "zcode-v4-pane-layout:v2";
 /** 旧版单值分屏的 key（只读迁移，不再写入）。 */
@@ -81,9 +76,7 @@ function sanitizeNode(raw: unknown): PaneLayoutNode | null {
       type: "split",
       id: record.id,
       direction: record.direction,
-      ratio: clampSplitRatio(
-        typeof record.ratio === "number" ? record.ratio : Number.NaN,
-      ),
+      ratio: clampSplitRatio(typeof record.ratio === "number" ? record.ratio : Number.NaN),
       first,
       second,
     };
@@ -96,20 +89,15 @@ function sanitizeScope(raw: unknown): PaneWorkspaceScope | null {
     return null;
   }
   const record = raw as Partial<PersistedScopeV2>;
-  if (
-    typeof record.workspacePath !== "string" ||
-    record.workspacePath.length === 0
-  ) {
+  if (typeof record.workspacePath !== "string" || record.workspacePath.length === 0) {
     return null;
   }
   return {
     workspacePath: record.workspacePath,
-    ...(typeof record.workspaceIdentity === "string" &&
-    record.workspaceIdentity.trim().length > 0
+    ...(typeof record.workspaceIdentity === "string" && record.workspaceIdentity.trim().length > 0
       ? { workspaceIdentity: record.workspaceIdentity }
       : {}),
-    ...(typeof record.remoteSessionId === "string" &&
-    record.remoteSessionId.length > 0
+    ...(typeof record.remoteSessionId === "string" && record.remoteSessionId.length > 0
       ? { remoteSessionId: record.remoteSessionId }
       : {}),
   };
@@ -151,26 +139,21 @@ function sanitizePersistedPaneLayout(raw: unknown): PaneLayoutSnapshot | null {
     if (typeof rawBinding !== "object" || rawBinding === null) {
       return null;
     }
-    const scope = sanitizeScope(
-      (rawBinding as Partial<PersistedBindingV2>).workspaceScope,
-    );
+    const scope = sanitizeScope((rawBinding as Partial<PersistedBindingV2>).workspaceScope);
     if (!scope) {
       return null;
     }
     const rawSessionId = (rawBinding as Partial<PersistedBindingV2>).sessionId;
     const sessionId =
-      typeof rawSessionId === "string" && rawSessionId.length > 0
-        ? rawSessionId
-        : null;
+      typeof rawSessionId === "string" && rawSessionId.length > 0 ? rawSessionId : null;
     panes[paneId] = {
       workspaceScope: scope,
       sessionId,
-      ...(sessionId === null ? {} : { restoredUnvalidated: true as const }),
+      ...(sessionId !== null ? { restoredUnvalidated: true as const } : {}),
     };
   }
   const focusedPaneId =
-    typeof record.focusedPaneId === "string" &&
-    paneIds.includes(record.focusedPaneId)
+    typeof record.focusedPaneId === "string" && paneIds.includes(record.focusedPaneId)
       ? record.focusedPaneId
       : V4_PRIMARY_PANE_ID;
   return { root, panes, focusedPaneId };
@@ -204,9 +187,7 @@ function migratePersistedPaneLayoutV1(raw: unknown): PaneLayoutSnapshot | null {
   }
   const rawSessionId = record.splitPane?.sessionId;
   const sessionId =
-    typeof rawSessionId === "string" && rawSessionId.length > 0
-      ? rawSessionId
-      : null;
+    typeof rawSessionId === "string" && rawSessionId.length > 0 ? rawSessionId : null;
   return {
     root: {
       type: "split",
@@ -222,7 +203,7 @@ function migratePersistedPaneLayoutV1(raw: unknown): PaneLayoutSnapshot | null {
       [V4_LEGACY_SPLIT_PANE_ID]: {
         workspaceScope: { workspacePath: workspaceKey },
         sessionId,
-        ...(sessionId === null ? {} : { restoredUnvalidated: true as const }),
+        ...(sessionId !== null ? { restoredUnvalidated: true as const } : {}),
       },
     },
     focusedPaneId:

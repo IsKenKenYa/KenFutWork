@@ -1,9 +1,4 @@
 /**
- * zcode 照搬：`@/ToolCallBlocks/renderers/get-workflow-run-situation.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/get-workflow-run-situation.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-/**
  * GetWorkflowRun 工具卡的**情势截面**：阶段轨 + 健康行（花名册在
  * get-workflow-run-roster.tsx）。
  *
@@ -17,20 +12,13 @@
  * 布局：一律换行行（flex-wrap），没有定宽表格——手机窄屏下要能折行而不是横向溢出。
  */
 
-import { throttleReasonLabel } from "@zui/app-shell/workflowRunThrottle";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import {
-  formatWorkflowAge,
-  formatWorkflowDuration,
-} from "@zui/lib/workflowObservationFormat";
-import type { ToolCallGetWorkflowRunDisplay } from "@zui/lib/zcode-shared/zcode-protocol-v4";
+import type { ToolCallGetWorkflowRunDisplay } from "@zcode/shared/zcode-protocol-v4";
+import { throttleReasonLabel } from "@zui/app-shell/workflowRunThrottle.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { formatWorkflowAge, formatWorkflowDuration } from "@zui/lib/workflowObservationFormat.js";
 
-type WorkflowRunPhaseView = NonNullable<
-  ToolCallGetWorkflowRunDisplay["phases"]
->[number];
-type WorkflowRunHealthView = NonNullable<
-  ToolCallGetWorkflowRunDisplay["health"]
->;
+type WorkflowRunPhaseView = NonNullable<ToolCallGetWorkflowRunDisplay["phases"]>[number];
+type WorkflowRunHealthView = NonNullable<ToolCallGetWorkflowRunDisplay["health"]>;
 
 const I18N_PREFIX = "chat.toolCall.workflow.getRun.";
 
@@ -39,8 +27,7 @@ export const SITUATION_BLOCK_CLASS =
   "min-w-0 space-y-1 rounded-lg border border-border bg-surface px-2 py-1.5";
 
 /** 情势区块里的一行：窄屏折行，基线对齐（数字与文字混排时才不会互相顶高）。 */
-export const SITUATION_ROW_CLASS =
-  "flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5";
+export const SITUATION_ROW_CLASS = "flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5";
 
 /**
  * 阶段状态词的语义色。与 run 整体状态同一套判断（run-status-presentation.ts）：
@@ -76,9 +63,7 @@ export function WorkflowRunPhaseTrack({
         if (phase.rounds > 0) {
           cells.push(
             intl.formatMessage(
-              {
-                id: `${I18N_PREFIX}phase.${phase.rounds === 1 ? "roundsOne" : "rounds"}`,
-              },
+              { id: `${I18N_PREFIX}phase.${phase.rounds === 1 ? "roundsOne" : "rounds"}` },
               { count: phase.rounds },
             ),
           );
@@ -95,31 +80,18 @@ export function WorkflowRunPhaseTrack({
           // 终态 run 里的「还在跑」是没结算，不是在动。
           cells.push(
             intl.formatMessage(
-              {
-                id: `${I18N_PREFIX}phase.${terminal ? "unfinished" : "running"}`,
-              },
+              { id: `${I18N_PREFIX}phase.${terminal ? "unfinished" : "running"}` },
               { count: phase.nodesRunning },
             ),
           );
         }
-        const duration = phaseDuration(
-          phase,
-          generatedAt,
-          terminal,
-          intl.formatMessage,
-        );
+        const duration = phaseDuration(phase, generatedAt, terminal, intl.formatMessage);
         return (
           <div className={SITUATION_ROW_CLASS} key={`${phase.name}-${index}`}>
-            <span className="shrink-0 tabular-nums text-foreground-subtlest">
-              {index + 1}.
-            </span>
-            <span className="min-w-0 break-words text-foreground">
-              {phase.name}
-            </span>
+            <span className="shrink-0 tabular-nums text-foreground-subtlest">{index + 1}.</span>
+            <span className="min-w-0 break-words text-foreground">{phase.name}</span>
             <span className={`shrink-0 ${PHASE_STATE_TEXT[phase.state]}`}>
-              {intl.formatMessage({
-                id: `${I18N_PREFIX}phase.state.${phase.state}`,
-              })}
+              {intl.formatMessage({ id: `${I18N_PREFIX}phase.state.${phase.state}` })}
             </span>
             {cells.map((cell) => (
               <span className="text-foreground-subtle" key={cell}>
@@ -145,8 +117,7 @@ function phaseDuration(
   formatMessage: FormatMessage,
 ): string | undefined {
   if (phase.enteredAt === undefined) return undefined;
-  if (phase.exitedAt !== undefined)
-    return formatWorkflowDuration(phase.exitedAt - phase.enteredAt);
+  if (phase.exitedAt !== undefined) return formatWorkflowDuration(phase.exitedAt - phase.enteredAt);
   // 没有离开时刻：活着的 run 说「到现在为止」；终态 run 什么也不说——它的离开时刻无人记录，
   // 拿快照时刻去减等于把进程死后的那几个小时算进这个阶段。
   if (terminal) return undefined;
@@ -181,32 +152,20 @@ export function WorkflowRunHealthLine({
   const lastProgress = formatWorkflowAge(generatedAt, health.lastProgressAt);
   if (lastProgress !== undefined) {
     cells.push(
-      intl.formatMessage(
-        { id: `${I18N_PREFIX}health.lastProgress` },
-        { age: lastProgress },
-      ),
+      intl.formatMessage({ id: `${I18N_PREFIX}health.lastProgress` }, { age: lastProgress }),
     );
   }
 
   if (health.concurrency !== undefined) {
     const { effective, cap, reason, since } = health.concurrency;
-    cells.push(
-      intl.formatMessage(
-        { id: `${I18N_PREFIX}health.concurrency` },
-        { effective, cap },
-      ),
-    );
+    cells.push(intl.formatMessage({ id: `${I18N_PREFIX}health.concurrency` }, { effective, cap }));
     // 原因与起始时刻各占一格，不塞进括号：括号的形状中英文不同，而这一行本来就是按格读的。
     // reason 是开放字符串，认识的映射成短标签，不认识的原样显示。
-    if (reason !== undefined)
-      cells.push(throttleReasonLabel(reason, intl.formatMessage));
+    if (reason !== undefined) cells.push(throttleReasonLabel(reason, intl.formatMessage));
     const sinceAge = formatWorkflowAge(generatedAt, since);
     if (sinceAge !== undefined) {
       cells.push(
-        intl.formatMessage(
-          { id: `${I18N_PREFIX}health.concurrencySince` },
-          { age: sinceAge },
-        ),
+        intl.formatMessage({ id: `${I18N_PREFIX}health.concurrencySince` }, { age: sinceAge }),
       );
     }
   }
@@ -218,10 +177,7 @@ export function WorkflowRunHealthLine({
         ? intl.formatMessage({ id: `${I18N_PREFIX}health.notStalled` })
         : stalledAge === undefined
           ? intl.formatMessage({ id: `${I18N_PREFIX}health.stalledNoClock` })
-          : intl.formatMessage(
-              { id: `${I18N_PREFIX}health.stalled` },
-              { age: stalledAge },
-            ),
+          : intl.formatMessage({ id: `${I18N_PREFIX}health.stalled` }, { age: stalledAge }),
     );
   }
 
@@ -251,23 +207,16 @@ export function WorkflowRunHealthLine({
   return (
     <div className="min-w-0 space-y-1" data-testid="workflow-run-health">
       {cells.length === 0 ? null : (
-        <div
-          className={`${SITUATION_ROW_CLASS} text-ui-sm text-foreground-subtlest`}
-        >
+        <div className={`${SITUATION_ROW_CLASS} text-ui-sm text-foreground-subtlest`}>
           {cells.map((cell) => (
             <span key={cell}>{cell}</span>
           ))}
         </div>
       )}
       {leftover === undefined ? null : (
-        <p
-          className="break-words text-ui-sm text-warning"
-          data-testid="workflow-run-leftover"
-        >
+        <p className="break-words text-ui-sm text-warning" data-testid="workflow-run-leftover">
           {intl.formatMessage(
-            {
-              id: `${I18N_PREFIX}health.${leftover === 1 ? "leftoverOne" : "leftover"}`,
-            },
+            { id: `${I18N_PREFIX}health.${leftover === 1 ? "leftoverOne" : "leftover"}` },
             { count: leftover },
           )}
         </p>

@@ -1,30 +1,22 @@
 /**
- * zcode 照搬：`@/store/zcodeSessionStoreSelectors.ts`（references/zcode/packages/ui/src/store/zcodeSessionStoreSelectors.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-/**
  * ZCode Session Store 选择器与内部辅助函数
  *
  * 从 zcodeSessionStore.ts 拆分出来，包含 workspace 状态读取/更新辅助函数，
  * 以及所有按 task 粒度的只读访问器和独立选择器。
  */
-import type {
-  ZCodeTaskMeta,
-  ZCodeTaskRuntimeStatus,
-} from "@zui/lib/zcode-shared";
-import { mergeTaskWithOptimisticMeta } from "@zui/lib/zcodeTaskMetaMerge";
+import type { ZCodeTaskRuntimeStatus, ZCodeTaskMeta } from "@zcode/shared";
+import { mergeTaskWithOptimisticMeta } from "@zui/lib/zcodeTaskMetaMerge.js";
 import {
-  createDefaultWorkspaceState,
-  DEFAULT_TASK_RUNTIME_STATE,
   DEFAULT_TASK_UI_STATE,
   DEFAULT_WORKSPACE_INIT_STATE,
+  DEFAULT_TASK_RUNTIME_STATE,
+  createDefaultWorkspaceState,
   getDefaultWorkspaceState,
-  type TaskRuntimeState,
-  type WorkspaceInitState,
-  type WorkspaceZCodeUIState,
   type ZCodeSessionStoreState,
-} from "./zcodeSessionStoreTypes";
+  type WorkspaceInitState,
+  type TaskRuntimeState,
+  type WorkspaceZCodeUIState,
+} from "./zcodeSessionStoreTypes.js";
 
 // ────────────────────────────────────────────
 // Internal helpers（store 本体也需要使用）
@@ -41,9 +33,7 @@ function copyTaskRecordEntries<T>(
   record: Record<string, T>,
   taskIds: ReadonlySet<string>,
 ): Record<string, T> {
-  const entries = Object.entries(record).filter(([taskId]) =>
-    taskIds.has(taskId),
-  );
+  const entries = Object.entries(record).filter(([taskId]) => taskIds.has(taskId));
   return entries.length > 0 ? Object.fromEntries(entries) : {};
 }
 
@@ -71,9 +61,7 @@ function createIdentityWorkspaceStateSeed(
   workspaceIdentity?: string,
 ): WorkspaceZCodeUIState {
   if (!baseState) {
-    return createDefaultWorkspaceState(
-      getDefaultWorkspaceState().selectedProvider,
-    );
+    return createDefaultWorkspaceState(getDefaultWorkspaceState().selectedProvider);
   }
 
   const seededState = createDefaultWorkspaceState(baseState.selectedProvider);
@@ -81,9 +69,7 @@ function createIdentityWorkspaceStateSeed(
     ? collectIdentityTaskIds(baseState, workspaceIdentity)
     : new Set<string>();
   const migratedTaskListCache =
-    baseState.taskListCache?.filter((task) =>
-      migratedTaskIds.has(task.taskId),
-    ) ?? null;
+    baseState.taskListCache?.filter((task) => migratedTaskIds.has(task.taskId)) ?? null;
   return {
     ...seededState,
     // identity 首次写入时可以继承 workspace/draft 级展示种子，
@@ -97,8 +83,7 @@ function createIdentityWorkspaceStateSeed(
     ...(migratedTaskIds.size > 0
       ? {
           activeTaskId:
-            baseState.activeTaskId &&
-            migratedTaskIds.has(baseState.activeTaskId)
+            baseState.activeTaskId && migratedTaskIds.has(baseState.activeTaskId)
               ? baseState.activeTaskId
               : seededState.activeTaskId,
           optimisticTaskListByTaskId: copyTaskRecordEntries(
@@ -119,14 +104,8 @@ function createIdentityWorkspaceStateSeed(
             baseState.taskRuntimeByTaskId,
             migratedTaskIds,
           ),
-          taskUiByTaskId: copyTaskRecordEntries(
-            baseState.taskUiByTaskId,
-            migratedTaskIds,
-          ),
-          taskUnreadByTaskId: copyTaskRecordEntries(
-            baseState.taskUnreadByTaskId,
-            migratedTaskIds,
-          ),
+          taskUiByTaskId: copyTaskRecordEntries(baseState.taskUiByTaskId, migratedTaskIds),
+          taskUnreadByTaskId: copyTaskRecordEntries(baseState.taskUnreadByTaskId, migratedTaskIds),
         }
       : {}),
   };
@@ -137,12 +116,8 @@ export function getWorkspaceState(
   workspacePath: string,
   workspaceIdentity?: string,
 ): WorkspaceZCodeUIState {
-  const baseState =
-    state.workspaces[workspacePath] ?? getDefaultWorkspaceState();
-  const workspaceKey = resolveWorkspaceStateKey(
-    workspacePath,
-    workspaceIdentity,
-  );
+  const baseState = state.workspaces[workspacePath] ?? getDefaultWorkspaceState();
+  const workspaceKey = resolveWorkspaceStateKey(workspacePath, workspaceIdentity);
   if (workspaceKey === workspacePath) {
     return baseState;
   }
@@ -164,18 +139,12 @@ export function updateWorkspaceState(
   updater: (current: WorkspaceZCodeUIState) => WorkspaceZCodeUIState,
   workspaceIdentity?: string,
 ): Pick<ZCodeSessionStoreState, "workspaces"> {
-  const workspaceKey = resolveWorkspaceStateKey(
-    workspacePath,
-    workspaceIdentity,
-  );
+  const workspaceKey = resolveWorkspaceStateKey(workspacePath, workspaceIdentity);
   const current =
     workspaceKey === workspacePath
       ? getWorkspaceState(state, workspacePath, workspaceIdentity)
       : (state.workspaces[workspaceKey] ??
-        createIdentityWorkspaceStateSeed(
-          state.workspaces[workspacePath],
-          workspaceIdentity,
-        ));
+        createIdentityWorkspaceStateSeed(state.workspaces[workspacePath], workspaceIdentity));
   const nextWorkspaceState = updater(current);
 
   if (nextWorkspaceState === current) {
@@ -213,9 +182,7 @@ export function getTaskRuntimeState(
   workspaceState: WorkspaceZCodeUIState,
   taskId: string,
 ): TaskRuntimeState {
-  return (
-    workspaceState.taskRuntimeByTaskId[taskId] ?? DEFAULT_TASK_RUNTIME_STATE
-  );
+  return workspaceState.taskRuntimeByTaskId[taskId] ?? DEFAULT_TASK_RUNTIME_STATE;
 }
 
 interface WorkspaceDisplayedTaskState {
@@ -233,38 +200,25 @@ export function getWorkspaceDisplayedTaskState(
     };
   }
 
-  const runtimeState = getTaskRuntimeState(
-    workspaceState,
-    workspaceState.activeTaskId,
-  );
+  const runtimeState = getTaskRuntimeState(workspaceState, workspaceState.activeTaskId);
   return {
     taskStatus: runtimeState.status,
     taskError: runtimeState.error,
   };
 }
 
-export function getTaskUiState(
-  workspaceState: WorkspaceZCodeUIState,
-  taskId: string,
-) {
+export function getTaskUiState(workspaceState: WorkspaceZCodeUIState, taskId: string) {
   return workspaceState.taskUiByTaskId[taskId] ?? DEFAULT_TASK_UI_STATE;
 }
 
 export function getTaskMeta(
   workspaceState:
     | WorkspaceZCodeUIState
-    | Partial<
-        Pick<
-          WorkspaceZCodeUIState,
-          "optimisticTaskListByTaskId" | "taskListCache"
-        >
-      >,
+    | Partial<Pick<WorkspaceZCodeUIState, "optimisticTaskListByTaskId" | "taskListCache">>,
   taskId: string,
 ): ZCodeTaskMeta | null {
   const optimisticTask = workspaceState.optimisticTaskListByTaskId?.[taskId];
-  const cachedTask =
-    workspaceState.taskListCache?.find((task) => task.taskId === taskId) ??
-    null;
+  const cachedTask = workspaceState.taskListCache?.find((task) => task.taskId === taskId) ?? null;
 
   if (!optimisticTask) {
     return cachedTask;
@@ -280,12 +234,7 @@ export function getTaskMeta(
 export function getVisibleTaskMetas(
   workspaceState:
     | WorkspaceZCodeUIState
-    | Partial<
-        Pick<
-          WorkspaceZCodeUIState,
-          "optimisticTaskListByTaskId" | "taskListCache"
-        >
-      >,
+    | Partial<Pick<WorkspaceZCodeUIState, "optimisticTaskListByTaskId" | "taskListCache">>,
 ): ZCodeTaskMeta[] {
   const taskById = new Map<string, ZCodeTaskMeta>();
 
@@ -293,9 +242,7 @@ export function getVisibleTaskMetas(
     taskById.set(task.taskId, task);
   }
 
-  for (const task of Object.values(
-    workspaceState.optimisticTaskListByTaskId ?? {},
-  )) {
+  for (const task of Object.values(workspaceState.optimisticTaskListByTaskId ?? {})) {
     taskById.set(task.taskId, getTaskMeta(workspaceState, task.taskId) ?? task);
   }
 

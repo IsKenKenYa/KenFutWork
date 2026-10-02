@@ -1,16 +1,8 @@
-/**
- * zcode 照搬：`@/v4/activeTaskProvider.ts`（references/zcode/packages/ui/src/v4/activeTaskProvider.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-import type { ZCodeProvider } from "@zui/lib/zcode-shared";
-import { useTabStore } from "@zui/store/TabStoreProvider";
-import { isWorkspaceTab } from "@zui/store/tabStore";
-import {
-  selectWorkspaceZCodeState,
-  useZCodeSessionStore,
-} from "@zui/store/zcodeSessionStore";
-import type { WorkspaceZCodeUIState } from "@zui/store/zcodeSessionStoreTypes";
+import type { ZCodeProvider } from "@zcode/shared";
+import { selectWorkspaceZCodeState, useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
+import type { WorkspaceZCodeUIState } from "@zui/store/zcodeSessionStoreTypes.js";
+import { useTabStore } from "@zui/store/TabStoreProvider.js";
+import { isWorkspaceTab } from "@zui/store/tabStore.js";
 
 function resolveChatViewActiveTaskProvider(
   taskId: string | null,
@@ -31,8 +23,7 @@ function resolveChatViewActiveTaskProvider(
   // optimistic meta 才是当前前端刚确认过的最新结果，所以必须先吃 optimistic，图标才会立即切换。
   return (
     workspaceState.optimisticTaskListByTaskId[taskId]?.provider ??
-    workspaceState.taskListCache?.find((task) => task.taskId === taskId)
-      ?.provider ??
+    workspaceState.taskListCache?.find((task) => task.taskId === taskId)?.provider ??
     workspaceState.selectedProvider
   );
 }
@@ -48,18 +39,13 @@ export function useChatViewActiveTaskProvider(
     }
 
     const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
-    if (
-      !activeTab ||
-      !isWorkspaceTab(activeTab) ||
-      activeTab.workspacePath !== workspacePath
-    ) {
+    if (!activeTab || !isWorkspaceTab(activeTab) || activeTab.workspacePath !== workspacePath) {
       return undefined;
     }
 
     return activeTab.workspaceIdentity;
   });
-  const resolvedWorkspaceIdentity =
-    workspaceIdentity ?? activeTabWorkspaceIdentity;
+  const resolvedWorkspaceIdentity = workspaceIdentity ?? activeTabWorkspaceIdentity;
 
   return useZCodeSessionStore((state) => {
     const workspaceState = selectWorkspaceZCodeState(

@@ -1,41 +1,34 @@
-/**
- * zcode 照搬：`@/prompt-editor/ChatPromptEditor.tsx`（references/zcode/packages/ui/src/prompt-editor/ChatPromptEditor.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀（Turbopack 无 .js→.ts
- * 试探）；源文件自带头注保留于下。
- */
 /* oxlint-disable eslint(max-lines) -- 输入壳同时收口 Lexical 同步、拖拽和工具栏插槽，暂不拆组件。 */
 // 输入展示壳：纯 props 组件、无 store/协议依赖；mention 面板通过 enableMentionPanel 透传。
-
-import { ControlHintTooltip } from "@zui/ControlHintTooltip";
-import { cn } from "@zui/components/lib/utils";
-import { Button } from "@zui/components/ui/button";
-import { Spinner } from "@zui/components/ui/spinner";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import {
-  type ChatComposerPasteEvent,
-  LexicalChatInput,
-  type LexicalChatInputHandle,
-} from "@zui/LexicalChatInput";
-import { appendWorkspaceFileMentionToComposer } from "@zui/lib/workspaceFileComposer";
-import {
-  hasWorkspaceFileDragPayload,
-  readWorkspaceFileDragPayload,
-} from "@zui/lib/workspaceFileDrag";
-import { TID_CHAT_SEND_BUTTON } from "@zui/lib/zcode-shared";
-import { ChatPromptActionMenu } from "@zui/prompt-editor/ChatPromptActionMenu";
-import { useComposerToolbarFit } from "@zui/prompt-editor/useComposerToolbarFit";
-import { usePromptEditorDragState } from "@zui/prompt-editor/usePromptEditorDragState";
-import type { AppSlashCommand } from "@zui/slashCommandHelpers";
-import { ArrowUpIcon, Hand, XIcon } from "lucide-react";
 import type {
+  KeyboardEventHandler,
   DragEventHandler,
   FormEventHandler,
-  KeyboardEventHandler,
   MutableRefObject,
   ReactNode,
 } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { TID_CHAT_SEND_BUTTON } from "@zcode/shared";
+import { ArrowUpIcon, Hand, XIcon } from "lucide-react";
+import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
+import { Button } from "@zui/components/ui/button.js";
+import { Spinner } from "@zui/components/ui/spinner.js";
+import { cn } from "@zui/components/lib/utils.js";
+import {
+  LexicalChatInput,
+  type ChatComposerPasteEvent,
+  type LexicalChatInputHandle,
+} from "@zui/LexicalChatInput.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { AppSlashCommand } from "@zui/slashCommandHelpers.js";
+import {
+  hasWorkspaceFileDragPayload,
+  readWorkspaceFileDragPayload,
+} from "@zui/lib/workspaceFileDrag.js";
+import { appendWorkspaceFileMentionToComposer } from "@zui/lib/workspaceFileComposer.js";
+import { usePromptEditorDragState } from "@zui/prompt-editor/usePromptEditorDragState.js";
+import { ChatPromptActionMenu } from "@zui/prompt-editor/ChatPromptActionMenu.js";
+import { useComposerToolbarFit } from "@zui/prompt-editor/useComposerToolbarFit.js";
 
 function runAfterFrame(callback: () => void) {
   if (typeof requestAnimationFrame === "function") {
@@ -162,8 +155,7 @@ export function ChatPromptEditor({
   const resolvedInputApiRef = inputApiRef ?? internalInputApiRef;
   const [internalTriggerPanelContainer, setInternalTriggerPanelContainer] =
     useState<HTMLDivElement | null>(null);
-  const resolvedTriggerPanelContainer =
-    triggerPanelContainer ?? internalTriggerPanelContainer;
+  const resolvedTriggerPanelContainer = triggerPanelContainer ?? internalTriggerPanelContainer;
   const latestTextRef = useRef(initialValue ?? "");
   const hasSyncedInitialValueRef = useRef(false);
   const {
@@ -183,8 +175,7 @@ export function ChatPromptEditor({
   const workspaceFileDragHint = intl.formatMessage({
     id: "chat.composer.workspaceFileDragHint",
   });
-  const hasActionMenu =
-    Boolean(attachmentAction) || showMentionButton || showSlashButton;
+  const hasActionMenu = Boolean(attachmentAction) || showMentionButton || showSlashButton;
 
   useEffect(() => {
     if (!syncInitialValueOnMount) {
@@ -220,9 +211,7 @@ export function ChatPromptEditor({
   const handleSubmit: FormEventHandler<HTMLFormElement> = useCallback(
     (event) => {
       event.preventDefault();
-      onSubmit(
-        resolvedInputApiRef.current?.getMarkdown() ?? latestTextRef.current,
-      );
+      onSubmit(resolvedInputApiRef.current?.getMarkdown() ?? latestTextRef.current);
     },
     [onSubmit, resolvedInputApiRef],
   );
@@ -237,8 +226,7 @@ export function ChatPromptEditor({
       // 冒泡到行内编辑 form；弹窗已消费这次交互，不能再把消息编辑一并取消。
       if (
         event.defaultPrevented ||
-        (event.target instanceof Element &&
-          event.target.closest('[role="dialog"]'))
+        (event.target instanceof Element && event.target.closest('[role="dialog"]'))
       ) {
         return;
       }
@@ -260,8 +248,7 @@ export function ChatPromptEditor({
   const handleDragOver: DragEventHandler<HTMLDivElement> = useCallback(
     (event) => {
       const hasWorkspaceFilePayload =
-        enableWorkspaceFileDrop &&
-        hasWorkspaceFileDragPayload(event.dataTransfer);
+        enableWorkspaceFileDrop && hasWorkspaceFileDragPayload(event.dataTransfer);
       if (hasWorkspaceFilePayload) {
         // 浏览器在 dragover 阶段通常只暴露 dataTransfer.types，不保证能读到 getData 内容。
         // 之前用完整 payload 判断，导致编辑输入框 drop 可用但 hover 状态不亮。
@@ -271,10 +258,7 @@ export function ChatPromptEditor({
         setInternalDragging(true);
         return;
       }
-      if (
-        enableExternalFileDrop &&
-        Array.from(event.dataTransfer.types).includes("Files")
-      ) {
+      if (enableExternalFileDrop && Array.from(event.dataTransfer.types).includes("Files")) {
         setExternalFileDragging(true);
       }
 
@@ -286,10 +270,7 @@ export function ChatPromptEditor({
   const handleDragLeave: DragEventHandler<HTMLDivElement> = useCallback(
     (event) => {
       const nextTarget = event.relatedTarget;
-      if (
-        nextTarget instanceof Node &&
-        event.currentTarget.contains(nextTarget)
-      ) {
+      if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
         return;
       }
 
@@ -313,8 +294,7 @@ export function ChatPromptEditor({
         event.stopPropagation();
         setInternalDragging(false);
         setWorkspaceFileDragging(false);
-        const currentMarkdown =
-          resolvedInputApiRef.current?.getMarkdown() ?? latestTextRef.current;
+        const currentMarkdown = resolvedInputApiRef.current?.getMarkdown() ?? latestTextRef.current;
         appendWorkspaceFileMentionToComposer({
           inputApiRef: resolvedInputApiRef,
           currentMarkdown,
@@ -352,11 +332,7 @@ export function ChatPromptEditor({
       : undefined;
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      onKeyDown={handleKeyDown}
-      className={cn("relative", className)}
-    >
+    <form onSubmit={handleSubmit} onKeyDown={handleKeyDown} className={cn("relative", className)}>
       {triggerPanelContainer ? null : (
         <div
           ref={setInternalTriggerPanelContainer}
@@ -410,14 +386,8 @@ export function ChatPromptEditor({
           enableMentionPanel={enableMentionPanel}
         />
         <div ref={toolbarRef} className="group/toolbar flex items-end gap-3">
-          <div
-            className="flex min-w-0 flex-1 items-center"
-            data-composer-leading-actions={true}
-          >
-            <div
-              className="flex shrink-0 items-center gap-1"
-              data-composer-leading-content={true}
-            >
+          <div className="flex min-w-0 flex-1 items-center" data-composer-leading-actions>
+            <div className="flex shrink-0 items-center gap-1" data-composer-leading-content>
               {hasActionMenu ? (
                 <ChatPromptActionMenu
                   actionMenuTitle={actionMenuTitle}
@@ -436,16 +406,13 @@ export function ChatPromptEditor({
               {/* 权限/模式选择曾作为 leadingActions 先于动作菜单渲染，导致常驻顺序与产品规范相反。*/}
               {leadingActions}
               {onModeSwitchContainerChange ? (
-                <span
-                  ref={onModeSwitchContainerChange}
-                  className="flex shrink-0 items-center"
-                />
+                <span ref={onModeSwitchContainerChange} className="flex shrink-0 items-center" />
               ) : null}
             </div>
           </div>
           <div
             className="ml-auto flex shrink-0 items-center justify-end gap-1.5"
-            data-composer-trailing-actions={true}
+            data-composer-trailing-actions
           >
             {onCancel && cancelLabel ? (
               <ControlHintTooltip title={cancelLabel} shortcut="Esc">
@@ -465,10 +432,7 @@ export function ChatPromptEditor({
             ) : null}
             {betweenCancelAndSubmitAction}
             {submitControl ?? (
-              <ControlHintTooltip
-                title={submitLabel}
-                shortcut={enterSubmits ? "Enter" : undefined}
-              >
+              <ControlHintTooltip title={submitLabel} shortcut={enterSubmits ? "Enter" : undefined}>
                 <Button
                   type="submit"
                   size="icon-md"
@@ -477,11 +441,7 @@ export function ChatPromptEditor({
                   aria-label={submitLabel}
                   className="gap-1 rounded-lg bg-brand text-ui-base text-foreground-inverse hover:bg-brand/80"
                 >
-                  {submitting ? (
-                    <Spinner className="size-4" />
-                  ) : (
-                    <ArrowUpIcon className="size-4" />
-                  )}
+                  {submitting ? <Spinner className="size-4" /> : <ArrowUpIcon className="size-4" />}
                   <span className="sr-only">{submitLabel}</span>
                 </Button>
               </ControlHintTooltip>

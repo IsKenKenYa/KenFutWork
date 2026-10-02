@@ -1,13 +1,6 @@
-/**
- * zcode 照搬：`@/chat-input-toolbar/thoughtLevelOptions.ts`（references/zcode/packages/ui/src/chat-input-toolbar/thoughtLevelOptions.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀
- *（本仓 Turbopack 不做 .js→.ts/.tsx 试探，手册 §2.4-2 在本仓构建链的等价适配）。
- */
-
-import { getConfigOptionEntryLabel } from "@zui/chat-input-toolbar/display";
-import type { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { ZCodeConfigOption, ZCodeProvider } from "@zui/lib/zcode-shared";
+import type { ZCodeConfigOption, ZCodeProvider } from "@zcode/shared";
+import type { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { getConfigOptionEntryLabel } from "@zui/chat-input-toolbar/display.js";
 
 type ThoughtLevelEntry = NonNullable<ZCodeConfigOption["options"]>[number];
 
@@ -65,22 +58,15 @@ export function isNoThoughtLevel(entry: ThoughtLevelEntry): boolean {
 export function getNextThoughtLevelValue(
   option: Pick<ZCodeConfigOption, "type" | "currentValue" | "options">,
 ): string | null {
-  if (
-    option.type !== "select" ||
-    !option.options ||
-    option.options.length < 2
-  ) {
+  if (option.type !== "select" || !option.options || option.options.length < 2) {
     return null;
   }
 
   // 配置已声明档位顺序；名称别名只用于展示，不能改变菜单或快捷键顺序。
   const entries = option.options;
   const currentValue = String(option.currentValue);
-  const currentIndex = entries.findIndex(
-    (candidate) => candidate.value === currentValue,
-  );
-  const nextIndex =
-    currentIndex === -1 ? 0 : (currentIndex + 1) % entries.length;
+  const currentIndex = entries.findIndex((candidate) => candidate.value === currentValue);
+  const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % entries.length;
 
   return entries[nextIndex]?.value ?? null;
 }

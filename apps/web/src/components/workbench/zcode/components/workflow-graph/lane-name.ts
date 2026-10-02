@@ -1,18 +1,5 @@
-/**
- * zcode 照搬：`@/components/workflow-graph/lane-name.ts`（references/zcode/packages/ui/src/components/workflow-graph/lane-name.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import {
-  formatNamePattern,
-  type NamePattern,
-} from "@zui/components/workflow-graph/name-pattern";
-import {
-  type LaneClass,
-  laneClassOf,
-  type WorkflowLaneData,
-} from "@zui/components/workflow-graph/types";
+import { laneClassOf, type LaneClass, type WorkflowLaneData } from "./types.js";
+import { formatNamePattern, type NamePattern } from "./name-pattern.js";
 
 /**
  * 车道显示名的唯一策略点。
@@ -59,10 +46,7 @@ const NAME_ID_BY_CLASS: Partial<Record<LaneClass, string>> = {
   workspace: "chat.toolCall.workflow.graph.lane.script",
 };
 
-export function laneDisplayName(
-  lane: LaneNaming,
-  formatMessage: LaneNameFormatter,
-): string {
+export function laneDisplayName(lane: LaneNaming, formatMessage: LaneNameFormatter): string {
   const classNameId = NAME_ID_BY_CLASS[lane.laneClass];
   if (classNameId !== undefined) return formatMessage({ id: classNameId });
   // 作者原词原样显示：本地化它就是改作者的话。
@@ -97,9 +81,7 @@ export interface LaneRef extends LaneNaming {
  *
  * 计数与语言无关，所以它属于这一层（并且可单测）；文案本身在渲染时才成型。
  */
-function anonymousLaneIndexes(
-  lanes: readonly WorkflowLaneData[],
-): Map<string, number> {
+function anonymousLaneIndexes(lanes: readonly WorkflowLaneData[]): Map<string, number> {
   const anonymous = lanes.filter(
     (lane) =>
       lane.name === undefined &&
@@ -121,9 +103,7 @@ function anonymousLaneIndexes(
  * 不必为一份命名素材把 React Flow 拖进依赖里。图里没有的车道 id 由调用方兜底成
  * `{id, laneClass}`：站点特化之类的将来变化不该让下钻崩掉。
  */
-export function laneRefsById(
-  lanes: readonly WorkflowLaneData[],
-): Map<string, LaneRef> {
+export function laneRefsById(lanes: readonly WorkflowLaneData[]): Map<string, LaneRef> {
   const anonymousIndexes = anonymousLaneIndexes(lanes);
   return new Map(
     lanes.map((lane) => {
@@ -134,9 +114,7 @@ export function laneRefsById(
           id: lane.id,
           laneClass: laneClassOf(lane.id),
           ...(lane.name === undefined ? {} : { name: lane.name }),
-          ...(lane.namePattern === undefined
-            ? {}
-            : { namePattern: lane.namePattern }),
+          ...(lane.namePattern === undefined ? {} : { namePattern: lane.namePattern }),
           ...(anonymousIndex === undefined ? {} : { anonymousIndex }),
         },
       ];

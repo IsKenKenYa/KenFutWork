@@ -1,15 +1,9 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/escalate.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/escalate.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
 import { MessageCircleQuestion } from "lucide-react";
 import { useCallback, useMemo } from "react";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
 
 const ESCALATE_TOOL_ICON = (
   <MessageCircleQuestion className="size-4 shrink-0 text-foreground-subtle" />
@@ -28,9 +22,7 @@ function toRecord(value: unknown): Record<string, unknown> | undefined {
   }
   try {
     const parsed: unknown = JSON.parse(value);
-    return typeof parsed === "object" &&
-      parsed !== null &&
-      !Array.isArray(parsed)
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>)
       : undefined;
   } catch {
@@ -39,9 +31,7 @@ function toRecord(value: unknown): Record<string, unknown> | undefined {
 }
 
 function readText(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0
-    ? value
-    : undefined;
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
 /** 折叠头部的单行概要：换行折叠成空格，超长截断。 */
@@ -77,9 +67,7 @@ export function EscalateToolCallBlock(context: ToolCallBlockRenderContext) {
   // 停驻中：still running / pending / in_progress 且未失败——答案尚未回来。
   const isAsking =
     !isFailed &&
-    (context.isRunning ||
-      toolCall.status === "pending" ||
-      toolCall.status === "in_progress");
+    (context.isRunning || toolCall.status === "pending" || toolCall.status === "in_progress");
 
   // 答案文本 = 模型面内容：answered 时是主代理的答案原文，refused 时是端口写好的文案。
   // 两支都是普通结果（handler 的 formatModelContent 只返回 message），只按 output 读。
@@ -90,25 +78,15 @@ export function EscalateToolCallBlock(context: ToolCallBlockRenderContext) {
       ? "chat.toolCall.workflow.escalate.asking"
       : "chat.toolCall.workflow.escalate.asked",
   });
-  const questionHeading = intl.formatMessage({
-    id: "chat.toolCall.workflow.escalate.question",
-  });
-  const contextHeading = intl.formatMessage({
-    id: "chat.toolCall.workflow.escalate.context",
-  });
-  const answerHeading = intl.formatMessage({
-    id: "chat.toolCall.workflow.escalate.answer",
-  });
-  const fallbackName = intl.formatMessage({
-    id: "chat.toolCall.workflow.escalate.fallbackName",
-  });
+  const questionHeading = intl.formatMessage({ id: "chat.toolCall.workflow.escalate.question" });
+  const contextHeading = intl.formatMessage({ id: "chat.toolCall.workflow.escalate.context" });
+  const answerHeading = intl.formatMessage({ id: "chat.toolCall.workflow.escalate.answer" });
+  const fallbackName = intl.formatMessage({ id: "chat.toolCall.workflow.escalate.fallbackName" });
 
   const inlinePreview = useMemo(() => toInlinePreview(question), [question]);
   const primaryText = useMemo(
     () => (
-      <span className="min-w-0 truncate">
-        {inlinePreview ?? toolCall.title ?? fallbackName}
-      </span>
+      <span className="min-w-0 truncate">{inlinePreview ?? toolCall.title ?? fallbackName}</span>
     ),
     [inlinePreview, toolCall.title, fallbackName],
   );
@@ -116,53 +94,38 @@ export function EscalateToolCallBlock(context: ToolCallBlockRenderContext) {
   // 展开门：只要有问题、context 或答案任一段可展开的内容。首帧 input 可能还是 `{}`，那时
   // 不给空面板一个展开入口（照 submit-result 的流式门）。
   const hasDetails =
-    question !== undefined ||
-    questionContext !== undefined ||
-    answerText !== undefined;
+    question !== undefined || questionContext !== undefined || answerText !== undefined;
 
   const renderContent = useCallback(
     () => (
       <div className="space-y-3">
-        {question === undefined ? null : (
+        {question !== undefined ? (
           <section className="space-y-1.5">
-            <h4 className="text-ui-sm font-medium text-foreground-subtlest">
-              {questionHeading}
-            </h4>
+            <h4 className="text-ui-sm font-medium text-foreground-subtlest">{questionHeading}</h4>
             <p className="whitespace-pre-wrap break-words rounded-lg border border-border bg-panel px-4 py-3 text-ui-base leading-5 text-foreground">
               {question}
             </p>
           </section>
-        )}
-        {questionContext === undefined ? null : (
+        ) : null}
+        {questionContext !== undefined ? (
           <section className="space-y-1.5">
-            <h4 className="text-ui-sm font-medium text-foreground-subtlest">
-              {contextHeading}
-            </h4>
+            <h4 className="text-ui-sm font-medium text-foreground-subtlest">{contextHeading}</h4>
             <p className="whitespace-pre-wrap break-words rounded-lg border border-border bg-panel px-4 py-3 text-ui-base leading-5 text-foreground-subtle">
               {questionContext}
             </p>
           </section>
-        )}
-        {answerText === undefined ? null : (
+        ) : null}
+        {answerText !== undefined ? (
           <section className="space-y-1.5">
-            <h4 className="text-ui-sm font-medium text-foreground-subtlest">
-              {answerHeading}
-            </h4>
+            <h4 className="text-ui-sm font-medium text-foreground-subtlest">{answerHeading}</h4>
             <p className="whitespace-pre-wrap break-words rounded-lg border border-border bg-panel px-4 py-3 text-ui-base leading-5 text-foreground">
               {answerText}
             </p>
           </section>
-        )}
+        ) : null}
       </div>
     ),
-    [
-      question,
-      questionContext,
-      answerText,
-      questionHeading,
-      contextHeading,
-      answerHeading,
-    ],
+    [question, questionContext, answerText, questionHeading, contextHeading, answerHeading],
   );
 
   return (
@@ -173,14 +136,12 @@ export function EscalateToolCallBlock(context: ToolCallBlockRenderContext) {
         showIcon={context.showIcon !== false}
         canToggle={hasDetails && (context.canToggle ?? true)}
         forceOpen={hasDetails && (context.forceOpen ?? false)}
-        hideSecondaryTextWhenOpen={true}
+        hideSecondaryTextWhenOpen
         kindLabel={kindLabel}
         sourceLabel={context.sourceLabel}
         primaryText={primaryText}
         statusLabel={
-          isFailed
-            ? intl.formatMessage({ id: "chat.toolCall.status.failed" })
-            : undefined
+          isFailed ? intl.formatMessage({ id: "chat.toolCall.status.failed" }) : undefined
         }
         statusTooltip={isFailed ? context.errorText : undefined}
         showFailureStatus={isFailed}

@@ -1,32 +1,15 @@
-/**
- * zcode 照搬：`@/v4/ConversationQueuePanel.tsx`（references/zcode/packages/ui/src/v4/ConversationQueuePanel.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀。
- * P6 适配：exactOptionalPropertyTypes——QueueRowProps 可选回调放宽 `| undefined`（照搬调用点显式传 undefined），仅签名放宽、逻辑零改动。
- */
 import {
   closestCenter,
   DndContext,
-  type DragEndEvent,
-  type Modifier,
   PointerSensor,
   useSensor,
   useSensors,
+  type DragEndEvent,
+  type Modifier,
 } from "@dnd-kit/core";
-import {
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
+import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ControlHintTooltip } from "@zui/ControlHintTooltip";
-import { cn } from "@zui/components/lib/utils";
-import { Button } from "@zui/components/ui/button";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import {
-  runUserAction,
-  runUserActionAsync,
-} from "@zui/lib/userActionTelemetry";
+import { memo, useCallback, useMemo, useState, type CSSProperties } from "react";
 import {
   TID_V4_QUEUE,
   TID_V4_QUEUE_ITEM,
@@ -36,21 +19,14 @@ import {
   TID_V4_QUEUE_PAUSED_BANNER,
   TID_V4_QUEUE_RESUME,
   testId,
-} from "@zui/lib/zcode-shared";
-import type { QueueState } from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import {
-  ArrowUpFromLine,
-  GripVertical,
-  PencilIcon,
-  Trash2Icon,
-} from "lucide-react";
-import {
-  type CSSProperties,
-  memo,
-  useCallback,
-  useMemo,
-  useState,
-} from "react";
+} from "@zcode/shared";
+import type { QueueState } from "@zcode/shared/zcode-protocol-v4";
+import { ArrowUpFromLine, GripVertical, PencilIcon, Trash2Icon } from "lucide-react";
+import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
+import { Button } from "@zui/components/ui/button.js";
+import { cn } from "@zui/components/lib/utils.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { runUserAction, runUserActionAsync } from "@zui/lib/userActionTelemetry.js";
 
 interface ConversationQueuePanelProps {
   queue: QueueState;
@@ -84,20 +60,14 @@ function resolveV4QueueReorderAnchor(
     return null;
   }
 
-  const fromIndex = items.findIndex(
-    (item) => item.queueItemId === activeQueueItemId,
-  );
-  const overIndex = items.findIndex(
-    (item) => item.queueItemId === overQueueItemId,
-  );
+  const fromIndex = items.findIndex((item) => item.queueItemId === activeQueueItemId);
+  const overIndex = items.findIndex((item) => item.queueItemId === overQueueItemId);
   if (fromIndex < 0 || overIndex < 0) {
     return null;
   }
 
   if (fromIndex < overIndex) {
-    const itemsAfterRemoval = items.filter(
-      (item) => item.queueItemId !== activeQueueItemId,
-    );
+    const itemsAfterRemoval = items.filter((item) => item.queueItemId !== activeQueueItemId);
     const overIndexAfterRemoval = itemsAfterRemoval.findIndex(
       (item) => item.queueItemId === overQueueItemId,
     );
@@ -144,10 +114,10 @@ interface QueueRowProps {
   index: number;
   intl: ReturnType<typeof useZCodeIntl>["intl"];
   sortable: boolean;
-  onDeleteItem?: ((queueItemId: string) => void) | undefined;
-  onEditItem?: ((queueItemId: string) => Promise<void> | void) | undefined;
+  onDeleteItem?: (queueItemId: string) => void;
+  onEditItem?: (queueItemId: string) => Promise<void> | void;
   editPending: boolean;
-  onSendNow?: ((queueItemId: string) => void) | undefined;
+  onSendNow?: (queueItemId: string) => void;
 }
 
 const QueueRow = memo(function QueueRow({
@@ -259,15 +229,11 @@ const QueueRow = memo(function QueueRow({
           }
         >
           <ArrowUpFromLine className="size-3.5" />
-          {intl.formatMessage({
-            id: isCompact ? "chat.queue.runNow" : "chat.queue.sendNow",
-          })}
+          {intl.formatMessage({ id: isCompact ? "chat.queue.runNow" : "chat.queue.sendNow" })}
         </Button>
       ) : null}
       {onEditItem && !isCompact ? (
-        <ControlHintTooltip
-          title={intl.formatMessage({ id: "chat.queue.edit" })}
-        >
+        <ControlHintTooltip title={intl.formatMessage({ id: "chat.queue.edit" })}>
           <Button
             type="button"
             variant="ghost"
@@ -283,9 +249,7 @@ const QueueRow = memo(function QueueRow({
         </ControlHintTooltip>
       ) : null}
       {onDeleteItem ? (
-        <ControlHintTooltip
-          title={intl.formatMessage({ id: "chat.queue.remove" })}
-        >
+        <ControlHintTooltip title={intl.formatMessage({ id: "chat.queue.remove" })}>
           <Button
             type="button"
             variant="ghost"
@@ -324,10 +288,7 @@ function ConversationQueuePanelImpl({
       activationConstraint: { distance: 6 },
     }),
   );
-  const itemIds = useMemo(
-    () => queue.items.map((item) => item.queueItemId),
-    [queue.items],
-  );
+  const itemIds = useMemo(() => queue.items.map((item) => item.queueItemId), [queue.items]);
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       const overId = event.over?.id;
@@ -347,11 +308,7 @@ function ConversationQueuePanelImpl({
     setResumePending(true);
     try {
       await runUserActionAsync({
-        input: {
-          featureId: "conversation.queue.policy",
-          action: "resume",
-          trigger: "button",
-        },
+        input: { featureId: "conversation.queue.policy", action: "resume", trigger: "button" },
         operation: () => Promise.resolve(onResume()),
         completed: { resultSource: "authority_ack" },
         failureStage: "queue_resume",
@@ -373,7 +330,7 @@ function ConversationQueuePanelImpl({
         "-mb-7 pb-7",
       )}
     >
-      {queue.autoDrain ? null : (
+      {!queue.autoDrain ? (
         <div
           data-testid={TID_V4_QUEUE_PAUSED_BANNER}
           className="mb-1 flex min-h-10 items-center gap-3 rounded-xl border border-border/70 bg-surface-raised px-3 py-2 text-ui-base text-foreground"
@@ -394,9 +351,7 @@ function ConversationQueuePanelImpl({
               variant="ghost"
               size="sm"
               data-testid={TID_V4_QUEUE_RESUME}
-              aria-label={intl.formatMessage({
-                id: "chat.queue.resume.description",
-              })}
+              aria-label={intl.formatMessage({ id: "chat.queue.resume.description" })}
               disabled={resumePending}
               className="shrink-0 text-foreground-subtle hover:text-foreground"
               onClick={() => void handleResume()}
@@ -405,7 +360,7 @@ function ConversationQueuePanelImpl({
             </Button>
           ) : null}
         </div>
-      )}
+      ) : null}
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}

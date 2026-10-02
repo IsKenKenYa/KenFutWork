@@ -1,26 +1,11 @@
-/**
- * zcode 照搬：`@/chat-input-toolbar/display.tsx`（references/zcode/packages/ui/src/chat-input-toolbar/display.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀（Turbopack 无 .js→.ts
- * 试探）；源文件自带头注保留于下。
- */
 /* eslint-disable max-lines -- 工具展示 */
-
-import { ControlHintTooltip } from "@zui/ControlHintTooltip";
-import { RollingToolbarLabel } from "@zui/chat-input-toolbar/RollingToolbarLabel";
-import { cn } from "@zui/components/lib/utils";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@zui/components/ui/select";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import {
-  isCoarseTouchDevice,
-  shouldRestoreChatInputFocusAfterPickerClose,
-} from "@zui/lib/pickerFocus";
+  useCallback,
+  useMemo,
+  type ComponentProps,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type RefObject,
+} from "react";
 import {
   TID_CHAT_MODE_SELECT_ITEM,
   TID_CHAT_MODE_SELECT_TRIGGER,
@@ -31,54 +16,50 @@ import {
   type ZCodeConfigOption,
   type ZCodeConfigSelectValue,
   type ZCodeProvider,
-} from "@zui/lib/zcode-shared";
-import { logger } from "@zui/logger";
+} from "@zcode/shared";
+import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@zui/components/ui/select.js";
+import {
+  isCoarseTouchDevice,
+  shouldRestoreChatInputFocusAfterPickerClose,
+} from "@zui/lib/pickerFocus.js";
+import { cn } from "@zui/components/lib/utils.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { logger } from "@zui/logger.js";
 import {
   ChevronDownIcon,
   HandIcon,
-  type LucideIcon,
   NotepadText,
   ShieldAlertIcon,
   ShieldCheckIcon,
+  type LucideIcon,
 } from "lucide-react";
-import {
-  type ComponentProps,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type RefObject,
-  useCallback,
-  useMemo,
-} from "react";
-import {
-  ZCODE_MODE_OPTION_DESCRIPTION_IDS,
-  ZCODE_MODE_OPTION_LABEL_IDS,
-} from "./display-help";
+import { ZCODE_MODE_OPTION_DESCRIPTION_IDS, ZCODE_MODE_OPTION_LABEL_IDS } from "./display-help.js";
+import { RollingToolbarLabel } from "@zui/chat-input-toolbar/RollingToolbarLabel.js";
 
 export {
   ChatContextUsage,
   getContextCompressionCommand,
   getRenderableTaskUsage,
-} from "@zui/chat-input-toolbar/contextUsage";
+} from "@zui/chat-input-toolbar/contextUsage.js";
 
 type ConfigSelectTriggerSize = ComponentProps<typeof SelectTrigger>["size"];
-type ConfigSelectTriggerVariant = ComponentProps<
-  typeof SelectTrigger
->["variant"];
+type ConfigSelectTriggerVariant = ComponentProps<typeof SelectTrigger>["variant"];
 
 /** Radix Select 在受控值与子项注册竞争时可能发出空值等未渲染值；直接上抛会把
  * 系统事件误当成用户选择（如 Automations 编辑页仅打开详情就被标记未保存修改）。
  * 用户只能点到已渲染的 option，值域外的选择回调一律丢弃。 */
-function isConfigSelectValueInOptions(
-  option: ZCodeConfigOption,
-  value: string,
-): boolean {
-  return (
-    option.options?.some((entry) => String(entry.value) === value) ?? false
-  );
+function isConfigSelectValueInOptions(option: ZCodeConfigOption, value: string): boolean {
+  return option.options?.some((entry) => String(entry.value) === value) ?? false;
 }
 
-function getConfigSelectTriggerTestId(
-  option: ZCodeConfigOption,
-): string | undefined {
+function getConfigSelectTriggerTestId(option: ZCodeConfigOption): string | undefined {
   if (option.category === "thought_level") {
     return TID_CHAT_THOUGHT_LEVEL_SELECT_TRIGGER;
   }
@@ -136,9 +117,7 @@ export function ChatApiRetryStatus({
   }
 
   const retryTitle =
-    apiRetry.errorStatus == null
-      ? retryLabel
-      : `${retryLabel} · HTTP ${apiRetry.errorStatus}`;
+    apiRetry.errorStatus == null ? retryLabel : `${retryLabel} · HTTP ${apiRetry.errorStatus}`;
 
   return (
     <span
@@ -212,10 +191,7 @@ function getConfigOptionEntryDescription(
     return entry.description;
   }
 
-  const descriptionMessageId = getModeOptionDescriptionMessageId(
-    provider,
-    entry,
-  );
+  const descriptionMessageId = getModeOptionDescriptionMessageId(provider, entry);
   if (descriptionMessageId) {
     return intl.formatMessage({ id: descriptionMessageId });
   }
@@ -233,15 +209,10 @@ export function resolveModeOptionIcon(value: unknown): LucideIcon {
   }
 
   // build 对应常规确认模式，使用确认图标。
-  if (typeof value === "string" && value.toLocaleLowerCase() === "build")
-    return HandIcon;
-  if (typeof value === "string" && value.toLocaleLowerCase() === "plan")
-    return NotepadText;
+  if (typeof value === "string" && value.toLocaleLowerCase() === "build") return HandIcon;
+  if (typeof value === "string" && value.toLocaleLowerCase() === "plan") return NotepadText;
 
-  if (
-    typeof value === "string" &&
-    /^(auto|agent|autoEdit|edit)$/i.test(value)
-  ) {
+  if (typeof value === "string" && /^(auto|agent|autoEdit|edit)$/i.test(value)) {
     return ShieldCheckIcon;
   }
 
@@ -291,32 +262,27 @@ export function ConfigSelect({
   // 本组件这次渲染执行的 hook 数量和上次不一致，React 会抛
   // "Rendered fewer hooks than expected" 导致工具栏区域崩溃。
   // 修复方式：early return 下移到所有 hook 之后，保证 hook 调用顺序稳定。
-  const handleContentKeyDown = useCallback(
-    (event: ReactKeyboardEvent<HTMLDivElement>) => {
-      if (event.key !== "Tab") {
-        return;
-      }
+  const handleContentKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Tab") {
+      return;
+    }
 
-      const highlightedItem =
-        event.currentTarget.querySelector<HTMLElement>(
-          '[data-slot="select-item"][data-highlighted]',
-        ) ??
-        event.currentTarget.querySelector<HTMLElement>(
-          '[data-slot="select-item"][data-state="checked"]',
-        ) ??
-        event.currentTarget.querySelector<HTMLElement>(
-          '[data-slot="select-item"]',
-        );
+    const highlightedItem =
+      event.currentTarget.querySelector<HTMLElement>(
+        '[data-slot="select-item"][data-highlighted]',
+      ) ??
+      event.currentTarget.querySelector<HTMLElement>(
+        '[data-slot="select-item"][data-state="checked"]',
+      ) ??
+      event.currentTarget.querySelector<HTMLElement>('[data-slot="select-item"]');
 
-      if (!highlightedItem) {
-        return;
-      }
+    if (!highlightedItem) {
+      return;
+    }
 
-      event.preventDefault();
-      highlightedItem.click();
-    },
-    [],
-  );
+    event.preventDefault();
+    highlightedItem.click();
+  }, []);
 
   // early return 必须在所有 hook 之后（见上方注释说明的崩溃原因）
   if (option.type !== "select" || !option.options?.length) {
@@ -326,12 +292,9 @@ export function ConfigSelect({
   const shouldUseToolbarFloatingSelect =
     option.category === "mode" || option.category === "thought_level";
   const shouldShowHighPermissionModeIcon =
-    option.category === "mode" &&
-    isHighPermissionModeValue(option.currentValue);
+    option.category === "mode" && isHighPermissionModeValue(option.currentValue);
   const ResolvedLeadingIcon =
-    option.category === "mode"
-      ? resolveModeOptionIcon(option.currentValue)
-      : LeadingIcon;
+    option.category === "mode" ? resolveModeOptionIcon(option.currentValue) : LeadingIcon;
   const resolvedTriggerClassName = cn(
     triggerClassName,
     shouldShowHighPermissionModeIcon &&
@@ -358,9 +321,7 @@ export function ConfigSelect({
       }
     : undefined;
   const triggerTestId = getConfigSelectTriggerTestId(option);
-  const currentEntry = option.options.find(
-    (entry) => entry.value === option.currentValue,
-  );
+  const currentEntry = option.options.find((entry) => entry.value === option.currentValue);
   const currentValueLabel = currentEntry
     ? getConfigOptionEntryLabel(intl, provider, option, currentEntry)
     : String(option.currentValue ?? "");
@@ -369,9 +330,8 @@ export function ConfigSelect({
 
   return (
     <Select
-      // exactOptionalPropertyTypes：open/disabled 缺省表示非受控/未禁用，不能显式传 undefined
-      {...(open === undefined ? {} : { open })}
-      {...(onOpenChange === undefined ? {} : { onOpenChange })}
+      open={open}
+      onOpenChange={onOpenChange}
       value={String(option.currentValue)}
       onValueChange={(value) => {
         // 见 isConfigSelectValueInOptions：值域外的回调来自 Radix 内部竞争，不是用户选择。
@@ -384,13 +344,9 @@ export function ConfigSelect({
         }
         onValueChange(value);
       }}
-      {...(disabled === undefined ? {} : { disabled })}
+      disabled={disabled}
     >
-      <ControlHintTooltip
-        title={tooltipTitle}
-        shortcut={shortcutLabel}
-        {...(triggerRef === undefined ? {} : { triggerRef })}
-      >
+      <ControlHintTooltip title={tooltipTitle} shortcut={shortcutLabel} triggerRef={triggerRef}>
         <SelectTrigger
           variant={triggerVariant}
           size={triggerSize}
@@ -416,9 +372,7 @@ export function ConfigSelect({
               <RollingToolbarLabel label={currentValueLabel} />
             ) : (
               <SelectValue>
-                <span className={thoughtLevelTextClassName}>
-                  {currentValueLabel}
-                </span>
+                <span className={thoughtLevelTextClassName}>{currentValueLabel}</span>
               </SelectValue>
             )}
           </span>
@@ -443,8 +397,7 @@ export function ConfigSelect({
             return;
           }
           // ConfigSelect 被非聊天界面复用时，关闭菜单不能强制抢焦点到聊天输入框。
-          const input =
-            document.querySelector<HTMLElement>(restoreFocusSelector);
+          const input = document.querySelector<HTMLElement>(restoreFocusSelector);
           logger.debug("[ConfigSelect] picker focus handoff", {
             category: option.category,
             restoreFocusSelector,
@@ -456,12 +409,7 @@ export function ConfigSelect({
         {option.category === "mode"
           ? option.options.map((entry) => {
               const ModeIcon = resolveModeOptionIcon(entry.value);
-              const optionLabel = getConfigOptionEntryLabel(
-                intl,
-                provider,
-                option,
-                entry,
-              );
+              const optionLabel = getConfigOptionEntryLabel(intl, provider, option, entry);
               const optionDescription = getConfigOptionEntryDescription(
                 intl,
                 provider,

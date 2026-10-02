@@ -1,13 +1,6 @@
-/**
- * zcode 照搬：`@/chat-input-toolbar/ChatCodingPlanMcpUsageMeter.tsx`（references/zcode/packages/ui/src/chat-input-toolbar/ChatCodingPlanMcpUsageMeter.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀；P5 适配：可选属性放宽 `| undefined`（exactOptionalPropertyTypes，照搬调用点显式传 undefined）
- *（本仓 Turbopack 不做 .js→.ts/.tsx 试探，手册 §2.4-2 在本仓构建链的等价适配）。
- */
-
-import { ControlHintTooltip } from "@zui/ControlHintTooltip";
-import { cn } from "@zui/components/lib/utils";
 import { InfoIcon } from "lucide-react";
+import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
+import { cn } from "@zui/components/lib/utils.js";
 
 export function ChatCodingPlanMcpUsageMeter({
   color,
@@ -23,7 +16,7 @@ export function ChatCodingPlanMcpUsageMeter({
   label: string;
   percentage: number | null;
   primaryQuotaCount: number;
-  resetTime?: string | undefined;
+  resetTime?: string;
   value: string;
 }) {
   const boundedPercentage = Number.isFinite(percentage)
@@ -36,7 +29,7 @@ export function ChatCodingPlanMcpUsageMeter({
   const labelContent = (
     <span className="flex min-w-0 items-center gap-1">
       <span className="min-w-0 truncate text-foreground-subtle">{label}</span>
-      <ControlHintTooltip title={description} standalone={true}>
+      <ControlHintTooltip title={description} standalone>
         <button
           type="button"
           aria-label={description}
@@ -51,12 +44,7 @@ export function ChatCodingPlanMcpUsageMeter({
   const valueContent = (
     <span className="min-w-0 truncate whitespace-nowrap tabular-nums">
       <span className="font-mono text-foreground">{value}</span>
-      {resetTime ? (
-        <span className="text-ui-xs text-foreground-subtle">
-          {" "}
-          · {resetTime}
-        </span>
-      ) : null}
+      {resetTime ? <span className="text-ui-xs text-foreground-subtle"> · {resetTime}</span> : null}
     </span>
   );
   const progressContent = (
@@ -86,12 +74,8 @@ export function ChatCodingPlanMcpUsageMeter({
         data-primary-quota-count={primaryQuotaCount}
       >
         <div className="min-w-0 space-y-0.5 text-ui-sm">
-          <div className="flex min-h-5 min-w-0 items-center">
-            {labelContent}
-          </div>
-          <div className="relative min-w-0 overflow-hidden text-ui-sm">
-            {valueContent}
-          </div>
+          <div className="flex min-h-5 min-w-0 items-center">{labelContent}</div>
+          <div className="relative min-w-0 overflow-hidden text-ui-sm">{valueContent}</div>
         </div>
         {progressContent}
       </div>

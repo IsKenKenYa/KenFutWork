@@ -1,19 +1,11 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/goal.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/goal.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
 import { GoalIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
 
-const GOAL_TOOL_ICON = (
-  <GoalIcon className="size-4 shrink-0 text-foreground-subtle" />
-);
+const GOAL_TOOL_ICON = <GoalIcon className="size-4 shrink-0 text-foreground-subtle" />;
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -105,10 +97,7 @@ function readAdditionalContent(
     readNestedValue(toolCall.raw, ["result", "display"]),
   ]) {
     const normalized = normalizeResultValue(candidate);
-    if (
-      !isEmptyResultValue(normalized) &&
-      !isSameResultValue(normalized, primaryResult)
-    ) {
+    if (!isEmptyResultValue(normalized) && !isSameResultValue(normalized, primaryResult)) {
       return normalized;
     }
   }
@@ -166,9 +155,7 @@ export function GoalToolCallBlock(context: ToolCallBlockRenderContext) {
   const resultText = formatResultPayload(resultPayload);
   const goalLabel = intl.formatMessage({ id: "chat.toolCall.goal.label" });
   const primaryText = useMemo(
-    () => (
-      <span className="min-w-0 truncate">{toolCall.title ?? goalLabel}</span>
-    ),
+    () => <span className="min-w-0 truncate">{toolCall.title ?? goalLabel}</span>,
     [goalLabel, toolCall.title],
   );
   const handleLoadFullToolCallFields = context.onLoadFullToolCallFields;
@@ -193,13 +180,7 @@ export function GoalToolCallBlock(context: ToolCallBlockRenderContext) {
         />
       </>
     ),
-    [
-      handleLoadFullToolCallFields,
-      intl,
-      resultText,
-      toolCall.snapshotRefs,
-      toolCall.toolId,
-    ],
+    [handleLoadFullToolCallFields, intl, resultText, toolCall.snapshotRefs, toolCall.toolId],
   );
 
   return (
@@ -213,15 +194,9 @@ export function GoalToolCallBlock(context: ToolCallBlockRenderContext) {
         kindLabel={goalLabel}
         sourceLabel={context.sourceLabel}
         primaryText={primaryText}
-        secondaryText={
-          toolCall.status === "failed" ? undefined : context.statusLabel
-        }
-        statusLabel={
-          toolCall.status === "failed" ? context.statusLabel : undefined
-        }
-        statusTooltip={
-          toolCall.status === "failed" ? context.errorText : undefined
-        }
+        secondaryText={toolCall.status === "failed" ? undefined : context.statusLabel}
+        statusLabel={toolCall.status === "failed" ? context.statusLabel : undefined}
+        statusTooltip={toolCall.status === "failed" ? context.errorText : undefined}
         showFailureStatus={toolCall.status === "failed"}
         isRunning={context.isRunning}
         title={toolCall.title}

@@ -1,14 +1,5 @@
-/**
- * zcode 照搬：`@/git-action-menu/currentSessionFileScope.ts`（references/zcode/packages/ui/src/git-action-menu/currentSessionFileScope.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-
-import type { GitBranchCommitPreviewFile } from "@zui/git-branch-switcher/display";
-import type {
-  GitRepositorySummary,
-  ZCodeTaskChangeSummary,
-} from "@zui/lib/zcode-shared";
+import type { GitRepositorySummary, ZCodeTaskChangeSummary } from "@zcode/shared";
+import type { GitBranchCommitPreviewFile } from "@zui/git-branch-switcher/display.js";
 
 function normalizeCommitScopePath(path: string): string {
   return path
@@ -74,9 +65,7 @@ function buildCurrentSessionFileScope(options: {
   }
 
   const scope = new Set<string>();
-  const workspaceInRepoPath = normalizeWorkspaceInRepoPath(
-    options.gitSummary.workspaceInRepoPath,
-  );
+  const workspaceInRepoPath = normalizeWorkspaceInRepoPath(options.gitSummary.workspaceInRepoPath);
 
   for (const filePath of filePaths) {
     addScopePath(scope, filePath);
@@ -84,10 +73,7 @@ function buildCurrentSessionFileScope(options: {
     addScopePath(scope, stripBasePath(filePath, options.workspacePath));
 
     const normalizedPath = normalizeCommitScopePath(filePath);
-    if (
-      workspaceInRepoPath !== "." &&
-      !normalizedPath.startsWith(`${workspaceInRepoPath}/`)
-    ) {
+    if (workspaceInRepoPath !== "." && !normalizedPath.startsWith(`${workspaceInRepoPath}/`)) {
       addScopePath(scope, `${workspaceInRepoPath}/${normalizedPath}`);
     }
   }
@@ -103,11 +89,9 @@ function isPreviewFileInScope(
     return true;
   }
 
-  return [
-    file.stagePath,
-    file.repoRelativePath,
-    file.workspaceRelativePath,
-  ].some((path) => scope.has(normalizeCommitScopePath(path)));
+  return [file.stagePath, file.repoRelativePath, file.workspaceRelativePath].some((path) =>
+    scope.has(normalizeCommitScopePath(path)),
+  );
 }
 
 export function getCurrentSessionFilePaths(
@@ -115,9 +99,7 @@ export function getCurrentSessionFilePaths(
 ): string[] | undefined {
   const paths = Array.from(
     new Set(
-      (summary?.files ?? [])
-        .map((file) => file.path.trim())
-        .filter((path) => path.length > 0),
+      (summary?.files ?? []).map((file) => file.path.trim()).filter((path) => path.length > 0),
     ),
   );
   return paths.length > 0 ? paths : undefined;

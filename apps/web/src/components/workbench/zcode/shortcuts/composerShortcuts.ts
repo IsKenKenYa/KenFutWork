@@ -1,15 +1,10 @@
 /**
- * zcode 照搬：`@/shortcuts/composerShortcuts.ts`（references/zcode/packages/ui/src/shortcuts/composerShortcuts.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-/**
  * composer 作用域快捷键解析——独立模块，唯一消费方是
  * LexicalChatInput 的键盘行为插件；useAppKeyboard / 菜单 / Web 回退监听对
  * composer 命令零感知。只依赖内核匹配器，不依赖 DOM / React，可独立单测。
  */
-import type { ShortcutBindingEvent } from "./bindings";
-import { matchesShortcutBinding } from "./bindings";
+import type { ShortcutBindingEvent } from "./bindings.js";
+import { matchesShortcutBinding } from "./bindings.js";
 
 /** composer 作用域命令在生效表中的切片（只关心这两条，避免拉全量表的类型依赖）。 */
 interface ComposerEffectiveBindings {
@@ -31,10 +26,7 @@ type ComposerKeyAction = "send" | "newline";
  * 反转投递让位）由调用方执行，本函数只回答"键位表说了算"的部分。
  */
 export function resolveComposerKeyAction(
-  event: Pick<
-    ShortcutBindingEvent,
-    "key" | "code" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey"
-  >,
+  event: Pick<ShortcutBindingEvent, "key" | "code" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey">,
   effective: ComposerEffectiveBindings,
   platformInfo?: { platform?: string; userAgent?: string },
 ): ComposerKeyAction | null {
@@ -56,8 +48,6 @@ export function resolveComposerKeyAction(
  * 用户已把 `composerSend` 改绑走（生效绑定不再包含裸 Enter，含显式空数组 = 未设置）时，
  * 裸 Enter 不再代表发送，放行 Lexical 换行——"Ctrl+Enter 党"改绑后的预期行为。
  */
-export function shouldBareEnterFallThroughToNewline(
-  effective: ComposerEffectiveBindings,
-): boolean {
+export function shouldBareEnterFallThroughToNewline(effective: ComposerEffectiveBindings): boolean {
   return !effective.composerSend.includes("Enter");
 }

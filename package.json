@@ -23,6 +23,7 @@
     "fetch:runtimes": "node scripts/fetch-runtimes.mjs"
   },
   "devDependencies": {
+    "@babel/parser": "^7.29.0",
     "@biomejs/biome": "^2.5.14",
     "appdmg": "^0.6.6",
     "esbuild": "^0.28.2",

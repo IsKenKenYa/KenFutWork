@@ -1,21 +1,17 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/toolResultDisplay.ts`（references/zcode/packages/ui/src/ToolCallBlocks/toolResultDisplay.ts）
- * 许可证：Apache-2.0（zcode）。适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
 import {
-  type ToolCallEvalWorkflowSnippetDisplay,
-  type ToolCallGetWorkflowRunDisplay,
-  type ToolCallListModelsDisplay,
-  type ToolCallListWorkflowRunsDisplay,
-  type ToolCallResumeWorkflowRunDisplay,
-  type ToolCallSavedWorkflowListDisplay,
   toolCallEvalWorkflowSnippetDisplaySchema,
   toolCallGetWorkflowRunDisplaySchema,
   toolCallListModelsDisplaySchema,
   toolCallListWorkflowRunsDisplaySchema,
   toolCallResumeWorkflowRunDisplaySchema,
   toolCallSavedWorkflowListDisplaySchema,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
+  type ToolCallEvalWorkflowSnippetDisplay,
+  type ToolCallGetWorkflowRunDisplay,
+  type ToolCallListModelsDisplay,
+  type ToolCallListWorkflowRunsDisplay,
+  type ToolCallResumeWorkflowRunDisplay,
+  type ToolCallSavedWorkflowListDisplay,
+} from "@zcode/shared/zcode-protocol-v4";
 
 interface LocalAgentMessageToolResultDisplay {
   kind: "local_agent_message";
@@ -94,26 +90,19 @@ const WORKFLOW_DISPLAY_PARSERS_BY_KIND: Record<
   string,
   (value: Record<string, unknown>) => ToolResultDisplay | undefined
 > = {
-  get_workflow_run: (value) =>
-    parseWorkflowDisplay(toolCallGetWorkflowRunDisplaySchema, value),
-  list_workflow_runs: (value) =>
-    parseWorkflowDisplay(toolCallListWorkflowRunsDisplaySchema, value),
+  get_workflow_run: (value) => parseWorkflowDisplay(toolCallGetWorkflowRunDisplaySchema, value),
+  list_workflow_runs: (value) => parseWorkflowDisplay(toolCallListWorkflowRunsDisplaySchema, value),
   eval_workflow_snippet: (value) =>
     parseWorkflowDisplay(toolCallEvalWorkflowSnippetDisplaySchema, value),
   saved_workflow_list: (value) =>
     parseWorkflowDisplay(toolCallSavedWorkflowListDisplaySchema, value),
-  list_models: (value) =>
-    parseWorkflowDisplay(toolCallListModelsDisplaySchema, value),
+  list_models: (value) => parseWorkflowDisplay(toolCallListModelsDisplaySchema, value),
   resume_workflow_run: (value) =>
     parseWorkflowDisplay(toolCallResumeWorkflowRunDisplaySchema, value),
 };
 
 function parseWorkflowDisplay<T extends ToolResultDisplay>(
-  schema: {
-    safeParse: (
-      data: unknown,
-    ) => { success: true; data: T } | { success: false };
-  },
+  schema: { safeParse: (data: unknown) => { success: true; data: T } | { success: false } },
   value: Record<string, unknown>,
 ): ToolResultDisplay | undefined {
   const parsed = schema.safeParse(value);
@@ -135,16 +124,15 @@ function parseDisplay(value: unknown): ToolResultDisplay | undefined {
   if (!isRecord(value)) return undefined;
 
   if (value.kind === "local_agent_message") {
-    if (value.status !== "success" && value.status !== "failed")
-      return undefined;
+    if (value.status !== "success" && value.status !== "failed") return undefined;
     const error = readOptionalString(value, "error");
     const message = readOptionalString(value, "message");
     if (error === null || message === null) return undefined;
     return {
       kind: "local_agent_message",
       status: value.status,
-      ...(error === undefined ? {} : { error }),
-      ...(message === undefined ? {} : { message }),
+      ...(error !== undefined ? { error } : {}),
+      ...(message !== undefined ? { message } : {}),
     };
   }
 
@@ -167,9 +155,9 @@ function parseDisplay(value: unknown): ToolResultDisplay | undefined {
       kind: "task_stop",
       taskId,
       taskType,
-      ...(command === undefined ? {} : { command }),
+      ...(command !== undefined ? { command } : {}),
       message,
-      ...(truncated === undefined ? {} : { truncated }),
+      ...(truncated !== undefined ? { truncated } : {}),
     };
   }
 
@@ -196,8 +184,8 @@ function parseDisplay(value: unknown): ToolResultDisplay | undefined {
     return {
       kind: "task_output",
       retrievalStatus: value.retrievalStatus,
-      ...(taskStatus === undefined ? {} : { taskStatus }),
-      ...(output === undefined ? {} : { output }),
+      ...(taskStatus !== undefined ? { taskStatus } : {}),
+      ...(output !== undefined ? { output } : {}),
       ...(truncated === true ? { truncated: true } : {}),
     };
   }
@@ -255,13 +243,13 @@ function parseDisplay(value: unknown): ToolResultDisplay | undefined {
       schemaVersion: 1,
       toolName,
       status: value.status,
-      ...(structuredContent === undefined ? {} : { structuredContent }),
-      ...(text === undefined ? {} : { text }),
-      ...(errorCode === undefined ? {} : { errorCode }),
-      ...(suggestedAction === undefined ? {} : { suggestedAction }),
+      ...(structuredContent !== undefined ? { structuredContent } : {}),
+      ...(text !== undefined ? { text } : {}),
+      ...(errorCode !== undefined ? { errorCode } : {}),
+      ...(suggestedAction !== undefined ? { suggestedAction } : {}),
       ...(media?.length ? { media } : {}),
-      ...(value.truncated === undefined ? {} : { truncated: value.truncated }),
-      ...(targetApp === undefined ? {} : { targetApp }),
+      ...(value.truncated !== undefined ? { truncated: value.truncated } : {}),
+      ...(targetApp !== undefined ? { targetApp } : {}),
     };
   }
 
@@ -269,8 +257,7 @@ function parseDisplay(value: unknown): ToolResultDisplay | undefined {
   // shared 的 strict schema 解析，保证 UI 消费侧与协议侧字段表永远同步——手写第二套结构
   // 校验是漂移温床。
   if (typeof value.kind === "string") {
-    const parseWorkflowDisplayByKind =
-      WORKFLOW_DISPLAY_PARSERS_BY_KIND[value.kind];
+    const parseWorkflowDisplayByKind = WORKFLOW_DISPLAY_PARSERS_BY_KIND[value.kind];
     if (parseWorkflowDisplayByKind !== undefined) {
       return parseWorkflowDisplayByKind(value);
     }
@@ -279,50 +266,37 @@ function parseDisplay(value: unknown): ToolResultDisplay | undefined {
   return undefined;
 }
 
-function parseCuaTargetApp(
-  value: unknown,
-): CuaToolResultDisplay["targetApp"] | undefined | null {
+function parseCuaTargetApp(value: unknown): CuaToolResultDisplay["targetApp"] | undefined | null {
   if (value === undefined) return undefined;
-  if (
-    !isRecord(value) ||
-    value.schemaVersion !== 1 ||
-    !Array.isArray(value.iconLocators)
-  ) {
+  if (!isRecord(value) || value.schemaVersion !== 1 || !Array.isArray(value.iconLocators)) {
     return null;
   }
   const displayName = readOptionalString(value, "displayName");
-  if (
-    displayName === null ||
-    (displayName !== undefined && displayName.length > 512)
-  )
-    return null;
+  if (displayName === null || (displayName !== undefined && displayName.length > 512)) return null;
   if (value.iconLocators.length > 3) return null;
-  const iconLocators: NonNullable<
-    CuaToolResultDisplay["targetApp"]
-  >["iconLocators"] = value.iconLocators.flatMap((locator) => {
-    if (!isRecord(locator)) return [];
-    const locatorValue = readOptionalString(locator, "value");
-    if (
-      !locatorValue ||
-      (locator.kind !== "darwin-bundle-id" &&
-        locator.kind !== "windows-executable-path" &&
-        locator.kind !== "windows-aumid")
-    ) {
-      return [];
-    }
-    return [{ kind: locator.kind, value: locatorValue }];
-  });
+  const iconLocators: NonNullable<CuaToolResultDisplay["targetApp"]>["iconLocators"] =
+    value.iconLocators.flatMap((locator) => {
+      if (!isRecord(locator)) return [];
+      const locatorValue = readOptionalString(locator, "value");
+      if (
+        !locatorValue ||
+        (locator.kind !== "darwin-bundle-id" &&
+          locator.kind !== "windows-executable-path" &&
+          locator.kind !== "windows-aumid")
+      ) {
+        return [];
+      }
+      return [{ kind: locator.kind, value: locatorValue }];
+    });
   if (iconLocators.length !== value.iconLocators.length) return null;
   return {
     schemaVersion: 1,
-    ...(displayName === undefined ? {} : { displayName }),
+    ...(displayName !== undefined ? { displayName } : {}),
     iconLocators,
   };
 }
 
-export function readToolResultDisplay(
-  raw: unknown,
-): ToolResultDisplay | undefined {
+export function readToolResultDisplay(raw: unknown): ToolResultDisplay | undefined {
   if (!isRecord(raw)) return undefined;
 
   const result = isRecord(raw.result) ? raw.result : undefined;

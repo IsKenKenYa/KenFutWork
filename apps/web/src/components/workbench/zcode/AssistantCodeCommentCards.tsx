@@ -1,29 +1,19 @@
-/**
- * zcode 照搬：`@/AssistantCodeCommentCards.tsx`（references/zcode/packages/ui/src/AssistantCodeCommentCards.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { cn } from "@zui/components/lib/utils";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { AssistantCodeCommentCard } from "@zui/lib/assistantCodeComment";
-import type { CodeViewerSource } from "@zui/lib/codeViewer";
-import { getPathLeaf } from "@zui/lib/path";
 import { useState } from "react";
+import { cn } from "@zui/components/lib/utils.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { AssistantCodeCommentCard } from "@zui/lib/assistantCodeComment.js";
+import type { CodeViewerSource } from "@zui/lib/codeViewer.js";
+import { getPathLeaf } from "@zui/lib/path.js";
 
 let navigationRequestSequence = 0;
 
 function displayTitle(card: AssistantCodeCommentCard): string {
   if (card.priority === undefined) return card.title;
   const prefix = `[P${card.priority}]`;
-  return card.title.startsWith(prefix)
-    ? card.title.slice(prefix.length).trimStart()
-    : card.title;
+  return card.title.startsWith(prefix) ? card.title.slice(prefix.length).trimStart() : card.title;
 }
 
-function priorityClassName(
-  priority: AssistantCodeCommentCard["priority"],
-): string {
+function priorityClassName(priority: AssistantCodeCommentCard["priority"]): string {
   if (priority === 0) {
     return "border-destructive/40 bg-destructive/10 text-destructive";
   }
@@ -33,8 +23,7 @@ function priorityClassName(
 function hasTextSelectionInCard(card: HTMLElement): boolean {
   if (typeof window === "undefined") return false;
   const selection = window.getSelection();
-  if (!selection || selection.isCollapsed || selection.rangeCount === 0)
-    return false;
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return false;
 
   try {
     return selection.getRangeAt(0).intersectsNode(card);
@@ -51,10 +40,10 @@ export function AssistantCodeCommentCards({
   workspaceRemoteSessionId,
 }: {
   cards: readonly AssistantCodeCommentCard[];
-  onOpenCodeViewer?: ((source: CodeViewerSource) => void) | undefined;
-  workspaceIdentity?: string | undefined;
+  onOpenCodeViewer?: (source: CodeViewerSource) => void;
+  workspaceIdentity?: string;
   workspacePath: string;
-  workspaceRemoteSessionId?: string | undefined;
+  workspaceRemoteSessionId?: string;
 }) {
   const { intl } = useZCodeIntl();
   const [isOpen, setIsOpen] = useState(false);
@@ -77,9 +66,7 @@ export function AssistantCodeCommentCards({
           aria-expanded={isOpen}
           aria-label={intl.formatMessage(
             {
-              id: isOpen
-                ? "chat.codeCommentCards.collapseAll"
-                : "chat.codeCommentCards.expandAll",
+              id: isOpen ? "chat.codeCommentCards.collapseAll" : "chat.codeCommentCards.expandAll",
             },
             { count: cards.length },
           )}
@@ -96,10 +83,7 @@ export function AssistantCodeCommentCards({
           <h3 className="min-w-0 truncate text-ui-base font-medium text-foreground">
             {intl.formatMessage(
               {
-                id:
-                  cards.length === 1
-                    ? "chat.codeComments.one"
-                    : "chat.codeComments.many",
+                id: cards.length === 1 ? "chat.codeComments.one" : "chat.codeComments.many",
               },
               { count: cards.length },
             )}
@@ -131,16 +115,12 @@ export function AssistantCodeCommentCards({
                   path: card.path,
                   workspacePath,
                   ...(workspaceIdentity ? { workspaceIdentity } : {}),
-                  ...(workspaceRemoteSessionId
-                    ? { workspaceRemoteSessionId }
-                    : {}),
+                  ...(workspaceRemoteSessionId ? { workspaceRemoteSessionId } : {}),
                   review: {
                     requestId,
                     title,
                     body: card.body,
-                    ...(card.priority === undefined
-                      ? {}
-                      : { priority: card.priority }),
+                    ...(card.priority !== undefined ? { priority: card.priority } : {}),
                     ...(card.startLine
                       ? {
                           startLine: card.startLine,
@@ -176,7 +156,7 @@ export function AssistantCodeCommentCards({
                     }}
                   >
                     <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
-                      {card.priority === undefined ? null : (
+                      {card.priority !== undefined ? (
                         <span
                           className={cn(
                             "shrink-0 rounded border px-1.5 py-0.5 text-ui-xs font-medium",
@@ -185,7 +165,7 @@ export function AssistantCodeCommentCards({
                         >
                           P{card.priority}
                         </span>
-                      )}
+                      ) : null}
                       <span className="min-w-0 shrink truncate text-ui-base font-medium text-foreground">
                         {title}
                       </span>

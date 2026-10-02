@@ -1,46 +1,33 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/WorkflowRunDigest.tsx`（references/zcode/packages/ui/src/components/workflow-timeline/WorkflowRunDigest.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件接口可选属性放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-
-import { ControlHintTooltip } from "@zui/ControlHintTooltip";
-import { cn } from "@zui/components/lib/utils";
-import { Button } from "@zui/components/ui/button";
-import type { WorkflowCausalityGraphData } from "@zui/components/workflow-graph/types";
-import {
-  buildWorkflowTimeline,
-  type TimelinePill,
-} from "@zui/components/workflow-timeline/timeline-model";
-import { workflowCardDetail } from "@zui/components/workflow-timeline/timeline-summary";
-import { WorkflowArtifactStrip } from "@zui/components/workflow-timeline/WorkflowArtifactStrip";
-import {
-  WORKFLOW_RUN_ENDED_KIND_ID,
-  WorkflowCardHeader,
-  workflowRunKindMessageId,
-} from "@zui/components/workflow-timeline/WorkflowCardChrome";
-import {
-  useWorkflowRunSettingsPopoverState,
-  type WorkflowRunSettingsHost,
-  WorkflowRunSettingsPopover,
-} from "@zui/components/workflow-timeline/WorkflowRunSettingsPopover";
-import {
-  timelineHeight,
-  WorkflowTimeline,
-} from "@zui/components/workflow-timeline/WorkflowTimeline";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { TID_CHAT_WORKFLOW_RUN_DIGEST, testId } from "@zui/lib/zcode-shared";
-import type { WorkflowRunState } from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import type { WorkflowRunCardSummary } from "@zui/ToolCallBlocks/fileSummaryTypes";
+import { useMemo, useState } from "react";
 import {
   MessageCircleQuestionIcon,
   RotateCcwIcon,
   SlidersHorizontalIcon,
   SquareIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { TID_CHAT_WORKFLOW_RUN_DIGEST, testId } from "@zcode/shared";
+import type { WorkflowRunState } from "@zcode/shared/zcode-protocol-v4";
+import { cn } from "@zui/components/lib/utils.js";
+import { Button } from "@zui/components/ui/button.js";
+import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
+import type { WorkflowCausalityGraphData } from "@zui/components/workflow-graph/types.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { WorkflowRunCardSummary } from "@zui/ToolCallBlocks/fileSummaryTypes.js";
+import { buildWorkflowTimeline, type TimelinePill } from "./timeline-model.js";
+import { workflowCardDetail } from "./timeline-summary.js";
+import {
+  WORKFLOW_RUN_ENDED_KIND_ID,
+  WorkflowCardHeader,
+  workflowRunKindMessageId,
+} from "./WorkflowCardChrome.js";
+import { WorkflowArtifactStrip } from "./WorkflowArtifactStrip.js";
+import {
+  useWorkflowRunSettingsPopoverState,
+  WorkflowRunSettingsPopover,
+  type WorkflowRunSettingsHost,
+} from "./WorkflowRunSettingsPopover.js";
+import { timelineHeight, WorkflowTimeline } from "./WorkflowTimeline.js";
+import { WorkflowTruncatedNotice } from "./WorkflowTruncatedNotice.js";
 
 /** 下方运行卡默认展开，无箭头但仍可收起；状态由标题表达。 */
 export interface WorkflowRunDigestProps {
@@ -54,25 +41,25 @@ export interface WorkflowRunDigestProps {
    */
   summary: WorkflowRunCardSummary | undefined;
   /** 该 run 停驻的待答问题数；> 0 时表头出现警示色芯片。 */
-  pendingQuestions?: number | undefined;
+  pendingQuestions?: number;
   /**
    * 打开 run 详情；缺席即无 ⤢、芯片不可点、「还有 n 个」那一行是静态的。带 `landing` 时详情页落到
    * 那一站：只有那一行会带，⤢ 与问题芯片开的是整个 run。
    */
   onOpenRun?: (landing?: { phaseId: string }) => void;
   /** 恢复 run；只在 `summary.resumable` 且回调在场时渲染 Resume。 */
-  onResume?: () => void | undefined;
+  onResume?: () => void;
   /**
    * 停止 run；只在 running 且回调
    * 在场时渲染 Stop，与 Resume 占同一个位置——两个互斥状态，用户从卡上就看到 run 的两条出路。
    */
-  onCancel?: () => void | undefined;
+  onCancel?: () => void;
   /** 点一枚药丸开那个子代理的 transcript；缺席即药丸不可点。 */
-  onOpenPill?: (pill: TimelinePill) => void | undefined;
+  onOpenPill?: (pill: TimelinePill) => void;
   /** 点脚本药丸开脚本 transcript、落到那一站；缺席即脚本药丸不可点。 */
-  onOpenWorkspace?: (pill: TimelinePill) => void | undefined;
+  onOpenWorkspace?: (pill: TimelinePill) => void;
   /** 点一枚产物药丸开产物 tab；缺席即产物药丸禁用。 */
-  onOpenArtifact?: (artifactId: string) => void | undefined;
+  onOpenArtifact?: (artifactId: string) => void;
   /**
    * providerId → provider 名（宿主从会话的模型清单给，见 useWorkflowSubagentModelProviderName）。
    * 缺席即拼名退回裸 modelId——**永远不显示 providerId**（团队套餐的它是一个 UUID）。
@@ -82,7 +69,7 @@ export interface WorkflowRunDigestProps {
    * 「配置」弹层的宿主。在场即表头有
    * Configure 钮——宿主只在回调在场且 run 能配置时给它。
    */
-  settingsHost?: WorkflowRunSettingsHost | undefined;
+  settingsHost?: WorkflowRunSettingsHost;
   /** testid 后缀（unit.key + toolCallId）。 */
   testIdKey: string;
 }
@@ -122,10 +109,7 @@ export function WorkflowRunDigest({
         ? model
         : {
             ...model,
-            stations: model.stations.map((station) => ({
-              ...station,
-              pills: [],
-            })),
+            stations: model.stations.map((station) => ({ ...station, pills: [] })),
           },
     [expanded, model],
   );
@@ -142,19 +126,10 @@ export function WorkflowRunDigest({
   // 卡上刻意**不**画 lineage：
   // 「调整自 / 已被替代」两句只在详情页与确认窗说；卡只换种类词——卡上太吵。
   // 细节串的最后一段是子代理模型名（没指定过模型就没有这一段），强度与规范串进 tooltip。
-  const cardDetail = workflowCardDetail(
-    format,
-    model,
-    graph,
-    run,
-    subagentModelProviderName,
-  );
+  const cardDetail = workflowCardDetail(format, model, graph, run, subagentModelProviderName);
   const live = summary?.status === "running";
   const kind = format({
-    id:
-      summary === undefined
-        ? WORKFLOW_RUN_ENDED_KIND_ID
-        : workflowRunKindMessageId(summary),
+    id: summary === undefined ? WORKFLOW_RUN_ENDED_KIND_ID : workflowRunKindMessageId(summary),
   });
   const questionsLabel =
     pendingQuestions > 0
@@ -174,7 +149,7 @@ export function WorkflowRunDigest({
         className="wf-arrive flex shrink-0 items-center gap-1 rounded-full bg-[color-mix(in_oklab,var(--color-warning)_12%,transparent)] py-0.5 pl-1.5 pr-2 text-ui-xs font-medium text-warning"
         data-testid="workflow-digest-questions"
       >
-        <MessageCircleQuestionIcon aria-hidden={true} className="size-3" />
+        <MessageCircleQuestionIcon aria-hidden className="size-3" />
         {questionsLabel}
       </span>
     ) : (
@@ -184,7 +159,7 @@ export function WorkflowRunDigest({
         onClick={() => onOpenRun()}
         type="button"
       >
-        <MessageCircleQuestionIcon aria-hidden={true} className="size-3" />
+        <MessageCircleQuestionIcon aria-hidden className="size-3" />
         {questionsLabel}
       </button>
     );
@@ -221,8 +196,7 @@ export function WorkflowRunDigest({
       aria-label={kind}
       className={cn(
         "wf-motion wf-arrive flex w-full min-w-0 flex-col gap-1 rounded-xl border border-border/70 bg-card/70 px-3.5 pb-2 pt-1.5 outline-none",
-        hasRail &&
-          "cursor-pointer focus-visible:ring-2 focus-visible:ring-ring/40",
+        hasRail && "cursor-pointer focus-visible:ring-2 focus-visible:ring-ring/40",
       )}
       data-expanded={hasRail ? String(expanded) : undefined}
       data-testid={testId(TID_CHAT_WORKFLOW_RUN_DIGEST, testIdKey)}
@@ -249,9 +223,7 @@ export function WorkflowRunDigest({
     >
       <WorkflowCardHeader
         detail={cardDetail?.detail}
-        {...(cardDetail?.title === undefined
-          ? {}
-          : { detailTitle: cardDetail.title })}
+        {...(cardDetail?.title === undefined ? {} : { detailTitle: cardDetail.title })}
         expanded={expanded}
         kind={kind}
         leading={questions}
@@ -267,9 +239,7 @@ export function WorkflowRunDigest({
             </>
           )
         }
-        {...(onOpenRun === undefined
-          ? {}
-          : { onOpenDetails: () => onOpenRun() })}
+        {...(onOpenRun === undefined ? {} : { onOpenDetails: () => onOpenRun() })}
       />
       {shown === undefined || !hasRail ? null : (
         // 收起时只隐藏代理，保留阶段线作为运行进度概览。
@@ -285,13 +255,16 @@ export function WorkflowRunDigest({
             {...(onOpenWorkspace === undefined ? {} : { onOpenWorkspace })}
             {...(onOpenRun === undefined
               ? {}
-              : {
-                  onOpenMore: (station) => onOpenRun({ phaseId: station.id }),
-                })}
+              : { onOpenMore: (station) => onOpenRun({ phaseId: station.id }) })}
           />
         </div>
       )}
-      {/* 产物条：run 的交付物，收起与展开态都在——它是收据上最有用的一行。 */}
+      {/* 时间线下的那一句「仅展示 n/m 步的详情」：表头的计数已经是真实步数，这一行只说
+          停在界上的是**详情**。收起态也在——它解释的是上面那些数，不是药丸。
+          没有轨道的卡（行窗口里翻不到发起行）按规范是**单行**，也没有任何计数可供限定，
+          这一句跟着一起缺席。 */}
+      {hasRail ? <WorkflowTruncatedNotice run={run} testId="workflow-digest-truncated" /> : null}
+      {/* 产物条（追记「产物药丸」）：run 的交付物，收起与展开态都在——它是收据上最有用的一行。 */}
       {run?.artifacts !== undefined && run.artifacts.length > 0 ? (
         <WorkflowArtifactStrip
           artifacts={run.artifacts}
@@ -318,11 +291,8 @@ function ConfigureRunButton({
   run: WorkflowRunState;
 }) {
   const { intl } = useZCodeIntl();
-  const { anchorRef, open, setOpen, toggleFrom } =
-    useWorkflowRunSettingsPopoverState();
-  const label = intl.formatMessage({
-    id: "chat.toolCall.workflow.run.settings.title",
-  });
+  const { anchorRef, open, setOpen, toggleFrom } = useWorkflowRunSettingsPopoverState();
+  const label = intl.formatMessage({ id: "chat.toolCall.workflow.run.settings.title" });
   return (
     <>
       <ControlHintTooltip title={label} side="top">
@@ -362,9 +332,7 @@ function CancelRunButton({ onCancel }: { onCancel: () => void }) {
   const { intl } = useZCodeIntl();
   const [cancelling, setCancelling] = useState(false);
   const label = intl.formatMessage({
-    id: cancelling
-      ? "chat.toolCall.workflow.run.cancelling"
-      : "chat.toolCall.workflow.run.cancel",
+    id: cancelling ? "chat.toolCall.workflow.run.cancelling" : "chat.toolCall.workflow.run.cancel",
   });
   return (
     <ControlHintTooltip
@@ -373,9 +341,7 @@ function CancelRunButton({ onCancel }: { onCancel: () => void }) {
       {...(cancelling
         ? {}
         : {
-            description: intl.formatMessage({
-              id: "chat.toolCall.workflow.run.stopHint",
-            }),
+            description: intl.formatMessage({ id: "chat.toolCall.workflow.run.stopHint" }),
           })}
     >
       <Button

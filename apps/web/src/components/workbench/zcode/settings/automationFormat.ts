@@ -1,17 +1,9 @@
-/**
- * zcode 照搬：`@/settings/automationFormat.ts`（references/zcode/packages/ui/src/settings/automationFormat.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
 // 定时任务展示层格式化：cron 表达式 → 人类可读的调度摘要 / 相对时间 / cron builder 组装。
 // 说明：croner 只在 services 侧用于算下次触发时间；UI 这里仅做「已知常见模式」的可读化，
 // 覆盖不到的表达式回退成原始 cron 文本，保证不误导。
 
 export interface IntlLike {
-  formatMessage: (
-    descriptor: { id: string },
-    values?: Record<string, string>,
-  ) => string;
+  formatMessage: (descriptor: { id: string }, values?: Record<string, string>) => string;
 }
 
 export type AutomationStatusKind = "active" | "paused" | "completed" | "failed";
@@ -30,9 +22,7 @@ interface AutomationFailureLike {
 }
 
 /** 最近一次真实运行/派发失败时展示失败态；循环任务本身仍保持 active 并继续调度。 */
-export function hasAutomationFailureState(
-  automation: AutomationFailureLike,
-): boolean {
+export function hasAutomationFailureState(automation: AutomationFailureLike): boolean {
   return (
     automation.lifecycleStatus === "failed" ||
     automation.dispatchStatus === "failed_to_dispatch" ||
@@ -46,26 +36,13 @@ export function resolveAutomationStatusKind(
 ): AutomationStatusKind {
   if (automation.lifecycleStatus === "failed") return "failed";
   if (automation.lifecycleStatus === "completed") return "completed";
-  if (automation.lifecycleStatus === "paused" || !automation.enabled)
-    return "paused";
+  if (automation.lifecycleStatus === "paused" || !automation.enabled) return "paused";
   return "active";
 }
 
 /** cron builder 支持的频率类型（覆盖 Feishu 自定义重复里最常用的几种）。 */
-export type CronFrequency =
-  | "hourly"
-  | "daily"
-  | "weekdays"
-  | "weekly"
-  | "monthly"
-  | "custom";
-export type CustomRepeatUnit =
-  | "minute"
-  | "hourly"
-  | "daily"
-  | "weekly"
-  | "monthly"
-  | "yearly";
+export type CronFrequency = "hourly" | "daily" | "weekdays" | "weekly" | "monthly" | "custom";
+export type CustomRepeatUnit = "minute" | "hourly" | "daily" | "weekly" | "monthly" | "yearly";
 export type CustomMonthlyMode = "date" | "weekday";
 
 export interface CronBuilderState {
@@ -112,10 +89,7 @@ export function buildCronExpr(state: CronBuilderState): string {
     case "weekdays":
       return `${minute} ${hour} * * 1-5`;
     case "weekly": {
-      const days =
-        weekdays.length > 0
-          ? [...weekdays].sort((a, b) => a - b).join(",")
-          : "*";
+      const days = weekdays.length > 0 ? [...weekdays].sort((a, b) => a - b).join(",") : "*";
       return `${minute} ${hour} * * ${days}`;
     }
     case "monthly":
@@ -130,22 +104,15 @@ export function buildCronExpr(state: CronBuilderState): string {
       if (state.customUnit === "hourly") {
         // croner 的小时步长最大为 24，把“每 31 小时”写成 `*/31` 会在保存校验时失败。
         // 真实间隔由 scheduleRule 承载；超出 cron 表达能力时仅保留合法的每小时候选。
-        return interval <= 24
-          ? `${minute} */${interval} * * *`
-          : `${minute} * * * *`;
+        return interval <= 24 ? `${minute} */${interval} * * *` : `${minute} * * * *`;
       }
       if (state.customUnit === "daily") {
         // croner 的日期步长最大为 31，把“每 32 天”写成 `*/32` 会在保存校验时失败。
         // 真实间隔由 scheduleRule 承载；超出 cron 表达能力时仅保留合法的每日候选。
-        return interval <= 31
-          ? `${minute} ${hour} */${interval} * *`
-          : `${minute} ${hour} * * *`;
+        return interval <= 31 ? `${minute} ${hour} */${interval} * *` : `${minute} ${hour} * * *`;
       }
       if (state.customUnit === "weekly") {
-        const days =
-          state.customWeekdays.length > 0
-            ? state.customWeekdays.join(",")
-            : "1";
+        const days = state.customWeekdays.length > 0 ? state.customWeekdays.join(",") : "1";
         return `${minute} ${hour} * * ${days}`;
       }
       if (state.customUnit === "monthly") {
@@ -154,17 +121,11 @@ export function buildCronExpr(state: CronBuilderState): string {
         if (state.customMonthlyMode === "weekday") {
           return `${minute} ${hour} * * ${state.customWeekdays[0] ?? 1}#1`;
         }
-        const days =
-          state.customMonthDays.length > 0
-            ? state.customMonthDays.join(",")
-            : "1";
+        const days = state.customMonthDays.length > 0 ? state.customMonthDays.join(",") : "1";
         return `${minute} ${hour} ${days} * *`;
       }
       // yearly：用用户选择的月份/日期组装 `M H DOM MON *`（不再固定为当前月份）。
-      const yearMonth = Math.min(
-        12,
-        Math.max(1, Math.floor(state.customMonth)),
-      );
+      const yearMonth = Math.min(12, Math.max(1, Math.floor(state.customMonth)));
       const yearDay = state.customMonthDays[0] ?? new Date().getDate();
       return `${minute} ${hour} ${yearDay} ${yearMonth} *`;
     }
@@ -201,13 +162,7 @@ export function parseCronToBuilder(expr: string): CronBuilderState {
   const isNum = (v: string) => /^\d+$/.test(v);
 
   const minuteInterval = /^\*\/([1-9]\d*)$/.exec(min);
-  if (
-    minuteInterval &&
-    hr === "*" &&
-    dom === "*" &&
-    mon === "*" &&
-    dow === "*"
-  ) {
+  if (minuteInterval && hr === "*" && dom === "*" && mon === "*" && dow === "*") {
     return {
       ...fallback,
       frequency: "custom",
@@ -217,13 +172,7 @@ export function parseCronToBuilder(expr: string): CronBuilderState {
   }
 
   const hourlyInterval = /^\*\/(\d+)$/.exec(hr);
-  if (
-    isNum(min) &&
-    hourlyInterval &&
-    dom === "*" &&
-    mon === "*" &&
-    dow === "*"
-  ) {
+  if (isNum(min) && hourlyInterval && dom === "*" && mon === "*" && dow === "*") {
     return {
       ...fallback,
       frequency: "custom",
@@ -263,13 +212,7 @@ export function parseCronToBuilder(expr: string): CronBuilderState {
       .map((d) => Number(d))
       .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
     if (days.length > 0) {
-      return {
-        ...fallback,
-        frequency: "weekly",
-        hour: hrNum,
-        minute: minNum,
-        weekdays: days,
-      };
+      return { ...fallback, frequency: "weekly", hour: hrNum, minute: minNum, weekdays: days };
     }
   }
   // 每年：`M H DOM MON *`（月份为 1-12 数字，与每月的 `MON === "*"` 区分）
@@ -305,10 +248,7 @@ function weekdayLabel(day: number, intl: IntlLike): string {
 }
 
 /** builder → 可读调度摘要；编辑态直接使用，避免自定义规则经过 cron 反解析后丢失 UI 语义。 */
-export function describeCronBuilder(
-  state: CronBuilderState,
-  intl: IntlLike,
-): string {
+export function describeCronBuilder(state: CronBuilderState, intl: IntlLike): string {
   const time = `${pad2(state.hour)}:${pad2(state.minute)}`;
   switch (state.frequency) {
     case "hourly":
@@ -319,23 +259,13 @@ export function describeCronBuilder(
     case "daily":
       return intl.formatMessage({ id: "automations.schedule.daily" }, { time });
     case "weekdays":
-      return intl.formatMessage(
-        { id: "automations.schedule.weekdays" },
-        { time },
-      );
+      return intl.formatMessage({ id: "automations.schedule.weekdays" }, { time });
     case "weekly": {
       const days = [...state.weekdays]
-        .sort(
-          (a, b) =>
-            WEEKDAY_ORDER.indexOf(a as never) -
-            WEEKDAY_ORDER.indexOf(b as never),
-        )
+        .sort((a, b) => WEEKDAY_ORDER.indexOf(a as never) - WEEKDAY_ORDER.indexOf(b as never))
         .map((d) => weekdayLabel(d, intl))
         .join("、");
-      return intl.formatMessage(
-        { id: "automations.schedule.weekly" },
-        { days, time },
-      );
+      return intl.formatMessage({ id: "automations.schedule.weekly" }, { days, time });
     }
     case "monthly":
       return intl.formatMessage(
@@ -439,10 +369,7 @@ export function describeCron(expr: string, intl: IntlLike): string {
 
   const builder = parseCronToBuilder(normalizedExpr);
   // 未识别 cron 会落到带 09:00 默认值的 custom 状态，不能把默认值误当成真实调度展示。
-  if (
-    builder.frequency === "custom" &&
-    buildCronExpr(builder) !== normalizedExpr
-  ) {
+  if (builder.frequency === "custom" && buildCronExpr(builder) !== normalizedExpr) {
     return intl.formatMessage({ id: "automations.frequency.custom" });
   }
   return describeCronBuilder(builder, intl);
@@ -458,9 +385,7 @@ export function canVisualizeCronInAutomationEditor(expr: string): boolean {
 }
 
 /** 本地时区偏移 → GMT 文案；支持 GMT+8 与 GMT+5:30 这类半小时时区。 */
-export function formatGmtOffset(
-  offsetMinutes = -new Date().getTimezoneOffset(),
-): string {
+export function formatGmtOffset(offsetMinutes = -new Date().getTimezoneOffset()): string {
   if (offsetMinutes === 0) return "GMT";
   const sign = offsetMinutes > 0 ? "+" : "-";
   const absoluteMinutes = Math.abs(offsetMinutes);
@@ -477,11 +402,7 @@ export function formatDateTime(ts: number | undefined): string {
 }
 
 /** 相对时间（如 “in 2h”“3d ago”），用于“下次运行 / 上次运行”。 */
-export function formatRelativeToNow(
-  ts: number | undefined,
-  now: number,
-  intl: IntlLike,
-): string {
+export function formatRelativeToNow(ts: number | undefined, now: number, intl: IntlLike): string {
   if (!ts) return "-";
   const diff = ts - now;
   const abs = Math.abs(diff);
@@ -527,10 +448,7 @@ export function formatAutomationCardNextRun(
 }
 
 /** 运行时长（毫秒）→ 可读文本（如 “1m 20s”“3s”）。 */
-export function formatDuration(
-  startTs: number | undefined,
-  endTs: number | undefined,
-): string {
+export function formatDuration(startTs: number | undefined, endTs: number | undefined): string {
   if (!startTs || !endTs || endTs < startTs) return "-";
   const totalSec = Math.round((endTs - startTs) / 1000);
   const min = Math.floor(totalSec / 60);

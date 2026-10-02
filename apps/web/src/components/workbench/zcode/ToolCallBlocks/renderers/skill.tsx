@@ -1,19 +1,11 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/skill.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/skill.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
-
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
 import { WandSparkles } from "lucide-react";
 import { useCallback, useMemo } from "react";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { ToolLayout } from "../ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "../shared.js";
 
-const SKILL_TOOL_ICON = (
-  <WandSparkles className="size-4 shrink-0 text-foreground-subtle" />
-);
+const SKILL_TOOL_ICON = <WandSparkles className="size-4 shrink-0 text-foreground-subtle" />;
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -60,13 +52,7 @@ function getSkillArgs(
   }
 
   if (isPlainRecord(toolCall.input)) {
-    return readFirstStringField(toolCall.input, [
-      "args",
-      "arg",
-      "path",
-      "prompt",
-      "input",
-    ]);
+    return readFirstStringField(toolCall.input, ["args", "arg", "path", "prompt", "input"]);
   }
 
   return undefined;
@@ -136,16 +122,10 @@ export function SkillToolCallBlock(context: ToolCallBlockRenderContext) {
     toolCall.status === "failed"
       ? (context.errorText ?? outputText ?? rawOutputText ?? undefined)
       : (outputText ?? rawOutputText ?? undefined);
-  const skillFallbackLabel = intl.formatMessage({
-    id: "chat.toolCall.skill.label",
-  });
-  const skillUnknownLabel = intl.formatMessage({
-    id: "chat.toolCall.skill.unknown",
-  });
+  const skillFallbackLabel = intl.formatMessage({ id: "chat.toolCall.skill.label" });
+  const skillUnknownLabel = intl.formatMessage({ id: "chat.toolCall.skill.unknown" });
   const skillArgsLabel = intl.formatMessage({ id: "chat.toolCall.skill.args" });
-  const skillNoOutputLabel = intl.formatMessage({
-    id: "chat.toolCall.skill.noOutput",
-  });
+  const skillNoOutputLabel = intl.formatMessage({ id: "chat.toolCall.skill.noOutput" });
   const primaryText = useMemo(
     () => (
       <span className="truncate font-mono text-foreground-subtlest">
@@ -155,10 +135,7 @@ export function SkillToolCallBlock(context: ToolCallBlockRenderContext) {
     [skillFallbackLabel, skillName, toolCall.title],
   );
   const secondaryText = useMemo(
-    () =>
-      skillArgs ? (
-        <code className="truncate font-mono">{skillArgs}</code>
-      ) : null,
+    () => (skillArgs ? <code className="truncate font-mono">{skillArgs}</code> : null),
     [skillArgs],
   );
   const renderContent = useCallback(
@@ -173,9 +150,7 @@ export function SkillToolCallBlock(context: ToolCallBlockRenderContext) {
           </div>
           {skillArgs ? (
             <div className="flex items-start gap-2 font-mono text-ui-base text-foreground">
-              <span className="shrink-0 text-foreground-subtle">
-                {skillArgsLabel}
-              </span>
+              <span className="shrink-0 text-foreground-subtle">{skillArgsLabel}</span>
               <pre className="min-w-0 flex-1 whitespace-pre-wrap break-words text-foreground-subtle">
                 {skillArgs}
               </pre>
@@ -192,9 +167,7 @@ export function SkillToolCallBlock(context: ToolCallBlockRenderContext) {
         ) : (
           !context.isRunning && (
             <div className="space-y-1">
-              <p className="font-mono text-ui-base text-foreground-subtle">
-                {skillNoOutputLabel}
-              </p>
+              <p className="font-mono text-ui-base text-foreground-subtle">{skillNoOutputLabel}</p>
             </div>
           )
         )}
@@ -221,13 +194,11 @@ export function SkillToolCallBlock(context: ToolCallBlockRenderContext) {
         showIcon={context.showIcon !== false}
         canToggle={context.canToggle ?? true}
         forceOpen={context.forceOpen ?? false}
-        hideSecondaryTextWhenOpen={true}
+        hideSecondaryTextWhenOpen
         kindLabel={
           context.kindLabelOverride ??
           intl.formatMessage({
-            id: context.isRunning
-              ? "chat.toolCall.skill.running"
-              : "chat.toolCall.kind.skill",
+            id: context.isRunning ? "chat.toolCall.skill.running" : "chat.toolCall.kind.skill",
           })
         }
         sourceLabel={context.sourceLabel}

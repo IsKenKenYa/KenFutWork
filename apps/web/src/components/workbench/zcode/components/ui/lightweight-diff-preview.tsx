@@ -1,11 +1,11 @@
-import { cn } from "@zui/components/lib/utils";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { CodePreviewSettings } from "@zui/lib/codePreviewSettings";
+import type { CSSProperties, HTMLAttributes, ReactNode } from "react";
+import { cn } from "@zui/components/lib/utils.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import {
   getPatchPreviewLineContent,
   parseTruncatedMarkerOmittedLineCount,
-} from "@zui/lib/patchDiffPreview";
-import type { CSSProperties, HTMLAttributes, ReactNode } from "react";
+} from "@zui/lib/patchDiffPreview.js";
+import type { CodePreviewSettings } from "@zui/store/index.js";
 
 export type LightweightDiffLineKind = "added" | "removed" | "context";
 
@@ -22,22 +22,19 @@ type LightweightDiffLineStyles = {
   rowStyle?: CSSProperties;
 };
 
-export interface LightweightDiffPreviewProps
-  extends Omit<HTMLAttributes<HTMLDivElement>, "children"> {
+export interface LightweightDiffPreviewProps extends Omit<
+  HTMLAttributes<HTMLDivElement>,
+  "children"
+> {
   codePreviewSettings: Pick<
     CodePreviewSettings,
     "fontSizePx" | "showLineNumbers" | "wrapLongLines"
   >;
   lines: readonly string[];
-  renderLineContent?: (
-    line: LightweightDiffLineParts,
-    index: number,
-  ) => ReactNode;
+  renderLineContent?: (line: LightweightDiffLineParts, index: number) => ReactNode;
 }
 
-export function getLightweightDiffLineParts(
-  line: string,
-): LightweightDiffLineParts {
+export function getLightweightDiffLineParts(line: string): LightweightDiffLineParts {
   if (line.startsWith("+")) {
     return {
       content: getPatchPreviewLineContent(line),
@@ -73,20 +70,16 @@ export function getLightweightDiffLineParts(
   };
 }
 
-function getLightweightDiffLineStyles(
-  kind: LightweightDiffLineKind,
-): LightweightDiffLineStyles {
+function getLightweightDiffLineStyles(kind: LightweightDiffLineKind): LightweightDiffLineStyles {
   if (kind === "added") {
     return {
       lineNumberClassName: "text-diff-added",
       rowStyle: {
-        backgroundColor:
-          "color-mix(in srgb, var(--color-diff-added) 14%, transparent)",
+        backgroundColor: "color-mix(in srgb, var(--color-diff-added) 14%, transparent)",
         boxShadow: "inset 3px 0 0 var(--color-diff-added)",
       },
       gutterStyle: {
-        backgroundColor:
-          "color-mix(in srgb, var(--color-diff-added) 18%, var(--color-background))",
+        backgroundColor: "color-mix(in srgb, var(--color-diff-added) 18%, var(--color-background))",
         boxShadow: "inset 3px 0 0 var(--color-diff-added)",
         color: "var(--color-diff-added)",
       },
@@ -97,8 +90,7 @@ function getLightweightDiffLineStyles(
     return {
       lineNumberClassName: "text-diff-removed",
       rowStyle: {
-        backgroundColor:
-          "color-mix(in srgb, var(--color-diff-removed) 14%, transparent)",
+        backgroundColor: "color-mix(in srgb, var(--color-diff-removed) 14%, transparent)",
         boxShadow: "inset 3px 0 0 var(--color-diff-removed)",
       },
       gutterStyle: {
@@ -130,7 +122,7 @@ export function LightweightDiffPreview({
   return (
     <div
       className={cn("w-full min-w-0 overflow-auto bg-background", className)}
-      data-lightweight-diff-preview={true}
+      data-lightweight-diff-preview
       {...props}
     >
       <div
@@ -138,7 +130,7 @@ export function LightweightDiffPreview({
           "min-w-full font-mono leading-relaxed text-foreground",
           !codePreviewSettings.wrapLongLines && "w-max",
         )}
-        data-lightweight-diff-scroll-content={true}
+        data-lightweight-diff-scroll-content
         style={{ fontSize: codePreviewSettings.fontSizePx }}
       >
         {lines.map((line, index) => {
@@ -159,11 +151,7 @@ export function LightweightDiffPreview({
           const lineStyles = getLightweightDiffLineStyles(lineParts.kind);
 
           return (
-            <div
-              className="flex min-w-full w-full"
-              key={index}
-              style={lineStyles.rowStyle}
-            >
+            <div className="flex min-w-full w-full" key={index} style={lineStyles.rowStyle}>
               {/* 不换行时由内层滚动面统一计算 max-content 宽度。
               如果每行各自 w-max，横向滚动到右侧时短行背景会提前结束，产生黑色断层。 */}
               {codePreviewSettings.showLineNumbers ? (
@@ -188,8 +176,7 @@ export function LightweightDiffPreview({
               >
                 {/* 轻量 diff 只用行背景、状态条和行号颜色表达增删，和富 DiffViewer 保持一致；
                 不能把 unified diff 的 `+/-/空格` 协议 marker 当成代码内容显示出来。 */}
-                {renderLineContent?.(lineParts, index) ??
-                  (lineParts.content || " ")}
+                {renderLineContent?.(lineParts, index) ?? (lineParts.content || " ")}
               </code>
             </div>
           );

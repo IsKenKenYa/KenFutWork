@@ -1,51 +1,36 @@
-/**
- * zcode 照搬：`@/components/ai-elements/diagram-preview-dialog.tsx`（references/zcode/packages/ui/src/components/ai-elements/diagram-preview-dialog.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
 "use client";
 
-import { ControlHintTooltip } from "@zui/ControlHintTooltip";
-import { cn } from "@zui/components/lib/utils";
-import { Button } from "@zui/components/ui/button";
+import { ChevronDownIcon, CircleMinusIcon, CirclePlusIcon, XIcon } from "lucide-react";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-} from "@zui/components/ui/dialog";
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type WheelEvent as ReactWheelEvent,
+} from "react";
+import { Button } from "@zui/components/ui/button.js";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@zui/components/ui/dialog.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@zui/components/ui/dropdown-menu";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
+} from "@zui/components/ui/dropdown-menu.js";
+import { cn } from "@zui/components/lib/utils.js";
+import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import {
-  type DiagramPoint,
-  type DiagramViewportBounds,
-  type DiagramViewportTransform,
   fitDiagramToViewport,
   panDiagram,
   zoomDiagramAtPoint,
-} from "@zui/lib/diagramViewport";
-import { logger } from "@zui/logger";
-import {
-  ChevronDownIcon,
-  CircleMinusIcon,
-  CirclePlusIcon,
-  XIcon,
-} from "lucide-react";
-import {
-  type PointerEvent as ReactPointerEvent,
-  type WheelEvent as ReactWheelEvent,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+  type DiagramPoint,
+  type DiagramViewportBounds,
+  type DiagramViewportTransform,
+} from "@zui/lib/diagramViewport.js";
+import { logger } from "@zui/logger.js";
 
 type DiagramPreviewDialogProps = {
   open: boolean;
@@ -115,10 +100,7 @@ function getPointerDistance(points: PointerEvent[]): number {
     return 0;
   }
 
-  return Math.hypot(
-    first.clientX - second.clientX,
-    first.clientY - second.clientY,
-  );
+  return Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY);
 }
 
 function isTransparentPaint(value: string): boolean {
@@ -242,11 +224,7 @@ function isCanvasBackgroundElement(
   box: DOMRect,
   rootBounds: DiagramViewportBounds,
 ): boolean {
-  if (
-    element.tagName.toLowerCase() !== "rect" ||
-    rootBounds.width <= 0 ||
-    rootBounds.height <= 0
-  ) {
+  if (element.tagName.toLowerCase() !== "rect" || rootBounds.width <= 0 || rootBounds.height <= 0) {
     return false;
   }
 
@@ -261,15 +239,10 @@ function isCanvasBackgroundElement(
     box.width >= rootBounds.width * 0.95 &&
     box.height >= rootBounds.height * 0.95;
 
-  return (
-    coversRoot &&
-    (isTransparentPaint(style.stroke) || className.includes("background"))
-  );
+  return coversRoot && (isTransparentPaint(style.stroke) || className.includes("background"));
 }
 
-function resolveSvgBounds(
-  svgElement: SVGSVGElement | null,
-): DiagramViewportBounds {
+function resolveSvgBounds(svgElement: SVGSVGElement | null): DiagramViewportBounds {
   if (!svgElement) {
     return { height: 0, width: 0 };
   }
@@ -286,11 +259,7 @@ function resolveSvgBounds(
     }
 
     const style = getComputedStyle(element);
-    if (
-      style.display === "none" ||
-      style.visibility === "hidden" ||
-      Number(style.opacity) === 0
-    ) {
+    if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) {
       continue;
     }
 
@@ -358,8 +327,7 @@ export function DiagramPreviewDialog({
     transform: DiagramViewportTransform;
   } | null>(null);
   const pinchGestureRef = useRef<PinchGestureState | null>(null);
-  const [transform, setTransform] =
-    useState<DiagramViewportTransform>(defaultTransform);
+  const [transform, setTransform] = useState<DiagramViewportTransform>(defaultTransform);
 
   const fitToViewport = useCallback(() => {
     const viewport = viewportRef.current;
@@ -440,9 +408,7 @@ export function DiagramPreviewDialog({
 
     const rect = viewport.getBoundingClientRect();
     const center = { x: rect.width / 2, y: rect.height / 2 };
-    setTransform((current) =>
-      zoomDiagramAtPoint(current, center, current.scale * factor),
-    );
+    setTransform((current) => zoomDiagramAtPoint(current, center, current.scale * factor));
   }, []);
 
   const zoomToScale = useCallback((scale: number) => {
@@ -538,15 +504,11 @@ export function DiagramPreviewDialog({
     if (event.ctrlKey) {
       const point = getViewportPoint(viewport, event.clientX, event.clientY);
       const factor = Math.exp(-event.deltaY * 0.01);
-      setTransform((current) =>
-        zoomDiagramAtPoint(current, point, current.scale * factor),
-      );
+      setTransform((current) => zoomDiagramAtPoint(current, point, current.scale * factor));
       return;
     }
 
-    setTransform((current) =>
-      panDiagram(current, { x: -event.deltaX, y: -event.deltaY }),
-    );
+    setTransform((current) => panDiagram(current, { x: -event.deltaX, y: -event.deltaY }));
   }, []);
 
   const handlePointerDown = useCallback(
@@ -576,62 +538,47 @@ export function DiagramPreviewDialog({
     [transform],
   );
 
-  const handlePointerMove = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      const viewport = viewportRef.current;
-      if (!viewport || !activePointersRef.current.has(event.pointerId)) {
-        return;
-      }
+  const handlePointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const viewport = viewportRef.current;
+    if (!viewport || !activePointersRef.current.has(event.pointerId)) {
+      return;
+    }
 
-      activePointersRef.current.set(event.pointerId, event.nativeEvent);
-      const activePointers = Array.from(activePointersRef.current.values());
+    activePointersRef.current.set(event.pointerId, event.nativeEvent);
+    const activePointers = Array.from(activePointersRef.current.values());
 
-      if (activePointers.length >= 2 && pinchGestureRef.current) {
-        const nextCenter = getPointerCenter(activePointers);
-        const nextDistance = getPointerDistance(activePointers);
-        const gesture = pinchGestureRef.current;
-        const viewportCenter = getViewportPoint(
-          viewport,
-          nextCenter.x,
-          nextCenter.y,
-        );
-        const panDelta = {
-          x: nextCenter.x - gesture.center.x,
-          y: nextCenter.y - gesture.center.y,
-        };
-        const nextScale =
-          gesture.transform.scale *
-          (gesture.distance > 0 ? nextDistance / gesture.distance : 1);
-        const zoomed = zoomDiagramAtPoint(
-          gesture.transform,
-          viewportCenter,
-          nextScale,
-        );
-        setTransform(panDiagram(zoomed, panDelta));
-        return;
-      }
+    if (activePointers.length >= 2 && pinchGestureRef.current) {
+      const nextCenter = getPointerCenter(activePointers);
+      const nextDistance = getPointerDistance(activePointers);
+      const gesture = pinchGestureRef.current;
+      const viewportCenter = getViewportPoint(viewport, nextCenter.x, nextCenter.y);
+      const panDelta = {
+        x: nextCenter.x - gesture.center.x,
+        y: nextCenter.y - gesture.center.y,
+      };
+      const nextScale =
+        gesture.transform.scale * (gesture.distance > 0 ? nextDistance / gesture.distance : 1);
+      const zoomed = zoomDiagramAtPoint(gesture.transform, viewportCenter, nextScale);
+      setTransform(panDiagram(zoomed, panDelta));
+      return;
+    }
 
-      if (dragOriginRef.current) {
-        const point = getViewportPoint(viewport, event.clientX, event.clientY);
-        setTransform(
-          panDiagram(dragOriginRef.current.transform, {
-            x: point.x - dragOriginRef.current.point.x,
-            y: point.y - dragOriginRef.current.point.y,
-          }),
-        );
-      }
-    },
-    [],
-  );
+    if (dragOriginRef.current) {
+      const point = getViewportPoint(viewport, event.clientX, event.clientY);
+      setTransform(
+        panDiagram(dragOriginRef.current.transform, {
+          x: point.x - dragOriginRef.current.point.x,
+          y: point.y - dragOriginRef.current.point.y,
+        }),
+      );
+    }
+  }, []);
 
-  const handlePointerEnd = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      activePointersRef.current.delete(event.pointerId);
-      dragOriginRef.current = null;
-      pinchGestureRef.current = null;
-    },
-    [],
-  );
+  const handlePointerEnd = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    activePointersRef.current.delete(event.pointerId);
+    dragOriginRef.current = null;
+    pinchGestureRef.current = null;
+  }, []);
 
   const transformStyle = useMemo(
     () => ({
@@ -654,9 +601,7 @@ export function DiagramPreviewDialog({
           {intl.formatMessage({ id: "codeBlock.mermaid.previewDescription" })}
         </DialogDescription>
         <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-border border-b px-3">
-          <div className="min-w-0 truncate text-ui-base font-medium text-foreground">
-            {title}
-          </div>
+          <div className="min-w-0 truncate text-ui-base font-medium text-foreground">{title}</div>
           <div className="flex shrink-0 items-center gap-1">
             <PreviewButton
               label={intl.formatMessage({ id: "codeBlock.mermaid.zoomOut" })}
@@ -665,11 +610,9 @@ export function DiagramPreviewDialog({
               <CircleMinusIcon className="size-3.5" />
             </PreviewButton>
             <DropdownMenu>
-              <DropdownMenuTrigger asChild={true}>
+              <DropdownMenuTrigger asChild>
                 <Button
-                  aria-label={intl.formatMessage({
-                    id: "codeBlock.mermaid.zoomLevel",
-                  })}
+                  aria-label={intl.formatMessage({ id: "codeBlock.mermaid.zoomLevel" })}
                   className="min-w-14 gap-1 px-1.5 font-mono text-foreground-subtle"
                   size="sm"
                   type="button"
@@ -683,10 +626,7 @@ export function DiagramPreviewDialog({
                 {zoomScaleOptions.map((scale) => {
                   const percent = Math.round(scale * 100);
                   return (
-                    <DropdownMenuItem
-                      key={percent}
-                      onSelect={() => zoomToScale(scale)}
-                    >
+                    <DropdownMenuItem key={percent} onSelect={() => zoomToScale(scale)}>
                       {intl.formatMessage(
                         { id: "codeBlock.mermaid.zoomToPercent" },
                         { percent: String(percent) },
@@ -754,13 +694,7 @@ function PreviewButton({
 }) {
   return (
     <ControlHintTooltip title={label} side="bottom">
-      <Button
-        aria-label={label}
-        onClick={onClick}
-        size="icon-md"
-        type="button"
-        variant="ghost"
-      >
+      <Button aria-label={label} onClick={onClick} size="icon-md" type="button" variant="ghost">
         {children}
       </Button>
     </ControlHintTooltip>

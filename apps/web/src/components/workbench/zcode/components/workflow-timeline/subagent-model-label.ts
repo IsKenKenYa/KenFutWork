@@ -1,11 +1,6 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/subagent-model-label.ts`（references/zcode/packages/ui/src/components/workflow-timeline/subagent-model-label.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import { thoughtLevelLabelId } from "@zui/chat-input-toolbar/thoughtLevelOptions";
-import { parseModelPickerValue } from "@zui/lib/zcodeSessionProjection";
-import { formatProviderModelLabel } from "@zui/v4/composer/modelTriggerDisplay";
+import { thoughtLevelLabelId } from "@zui/chat-input-toolbar/thoughtLevelOptions.js";
+import { parseModelPickerValue } from "@zui/lib/zcodeSessionProjection.js";
+import { formatProviderModelLabel } from "@zui/v4/composer/modelTriggerDisplay.js";
 
 /**
  * 子代理模型的**词**：run 上存的是规范串
@@ -44,8 +39,7 @@ export interface WorkflowSubagentModelDeps {
 /** 解析不出结构时的兜底取名：砍掉 `providerId/` 前缀与 `$level` 后缀，剩下的就是人能读的那截。 */
 function fallbackName(canonical: string): string {
   const separatorIndex = canonical.indexOf("/");
-  const rest =
-    separatorIndex > 0 ? canonical.slice(separatorIndex + 1) : canonical;
+  const rest = separatorIndex > 0 ? canonical.slice(separatorIndex + 1) : canonical;
   const levelIndex = rest.indexOf("$");
   const name = levelIndex > 0 ? rest.slice(0, levelIndex) : rest;
   return name.length > 0 ? name : canonical;
@@ -74,14 +68,8 @@ export function describeWorkflowSubagentModel(
   // 那种「名字」正是我们要挡的东西，当作没查到。
   const resolvedName = deps.providerName?.(parsed.providerId)?.trim();
   const providerName =
-    resolvedName === undefined || resolvedName === parsed.providerId
-      ? undefined
-      : resolvedName;
-  const name = formatProviderModelLabel(
-    parsed.providerId,
-    providerName,
-    parsed.modelId,
-  );
+    resolvedName === undefined || resolvedName === parsed.providerId ? undefined : resolvedName;
+  const name = formatProviderModelLabel(parsed.providerId, providerName, parsed.modelId);
 
   const rawLevel = parsed.options?.reasoningLevel;
   if (rawLevel === undefined) {
@@ -91,8 +79,7 @@ export function describeWorkflowSubagentModel(
   const labelId = thoughtLevelLabelId(rawLevel);
   return {
     canonical: trimmed,
-    level:
-      labelId === undefined ? rawLevel : deps.formatMessage({ id: labelId }),
+    level: labelId === undefined ? rawLevel : deps.formatMessage({ id: labelId }),
     name,
   };
 }
@@ -137,8 +124,5 @@ export function workflowSubagentModelCardLabel(
     return undefined;
   }
   const label = describeWorkflowSubagentModel(canonical, deps);
-  return {
-    name: label.name,
-    title: workflowSubagentModelTooltip(deps.formatMessage, label),
-  };
+  return { name: label.name, title: workflowSubagentModelTooltip(deps.formatMessage, label) };
 }

@@ -1,19 +1,11 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/save-workflow.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/save-workflow.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
 import { Save } from "lucide-react";
 import { useMemo } from "react";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { ToolLayout } from "../ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "../shared.js";
 
-const SAVE_WORKFLOW_TOOL_ICON = (
-  <Save className="size-4 shrink-0 text-foreground-subtle" />
-);
+const SAVE_WORKFLOW_TOOL_ICON = <Save className="size-4 shrink-0 text-foreground-subtle" />;
 
 /**
  * 覆盖徽标的样式：与 CreateWorkflow 结果卡的 compiled 小签同族（镌刻小签——rounded-xs +
@@ -99,27 +91,21 @@ export function readSaveWorkflowInput(input: unknown): SaveWorkflowInput {
     path: readTrimmedString(record.path),
     scope: readTrimmedString(record.scope),
     shadowing:
-      record.shadowing === "hides_global" ||
-      record.shadowing === "hidden_by_project"
+      record.shadowing === "hides_global" || record.shadowing === "hidden_by_project"
         ? record.shadowing
         : undefined,
     // 只有显式 true 才是覆盖：字段缺席时说不出「已经有一个文件在那儿」，
     // 就不能让确认窗替用户断言这件事。
     overwrite: record.overwrite === true,
     script:
-      typeof record.script === "string" && record.script.length > 0
-        ? record.script
-        : undefined,
+      typeof record.script === "string" && record.script.length > 0 ? record.script : undefined,
     args: readArgDeclarations(record.args),
   };
 }
 
 export function SaveWorkflowOverwriteBadge({ label }: { label: string }) {
   return (
-    <span
-      className={OVERWRITE_BADGE_CLASSNAME}
-      data-workflow-overwrite-badge="true"
-    >
+    <span className={OVERWRITE_BADGE_CLASSNAME} data-workflow-overwrite-badge="true">
       {label}
     </span>
   );
@@ -150,36 +136,21 @@ export function SaveWorkflowToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
   const { toolCall } = context.toolCallNode;
 
-  const saved = useMemo(
-    () => readSaveWorkflowInput(toolCall.input),
-    [toolCall.input],
-  );
+  const saved = useMemo(() => readSaveWorkflowInput(toolCall.input), [toolCall.input]);
 
   const kindLabel = intl.formatMessage({
     id: context.isRunning
       ? "chat.toolCall.workflow.save.saving"
       : "chat.toolCall.workflow.save.saved",
   });
-  const fallbackName = intl.formatMessage({
-    id: "chat.toolCall.workflow.fallbackName",
-  });
-  const overwriteLabel = intl.formatMessage({
-    id: "chat.toolCall.workflow.save.overwrite",
-  });
-  const pathLabel = intl.formatMessage({
-    id: "chat.permission.workflow.save.path",
-  });
-  const whenToUseLabel = intl.formatMessage({
-    id: "chat.permission.workflow.save.whenToUse",
-  });
+  const fallbackName = intl.formatMessage({ id: "chat.toolCall.workflow.fallbackName" });
+  const overwriteLabel = intl.formatMessage({ id: "chat.toolCall.workflow.save.overwrite" });
+  const pathLabel = intl.formatMessage({ id: "chat.permission.workflow.save.path" });
+  const whenToUseLabel = intl.formatMessage({ id: "chat.permission.workflow.save.whenToUse" });
   const isGlobalScope = saved.scope === "global";
   const isProjectScope = saved.scope === "project";
-  const scopeLabel = intl.formatMessage({
-    id: "chat.toolCall.workflow.save.scope.label",
-  });
-  const globalBadgeLabel = intl.formatMessage({
-    id: "chat.toolCall.workflow.scope.global",
-  });
+  const scopeLabel = intl.formatMessage({ id: "chat.toolCall.workflow.save.scope.label" });
+  const globalBadgeLabel = intl.formatMessage({ id: "chat.toolCall.workflow.scope.global" });
   const scopeValue = isGlobalScope
     ? intl.formatMessage({ id: "chat.toolCall.workflow.save.scope.global" })
     : isProjectScope
@@ -187,13 +158,9 @@ export function SaveWorkflowToolCallBlock(context: ToolCallBlockRenderContext) {
       : null;
   const shadowingLabel =
     saved.shadowing === "hides_global"
-      ? intl.formatMessage({
-          id: "chat.toolCall.workflow.save.scope.hidesGlobal",
-        })
+      ? intl.formatMessage({ id: "chat.toolCall.workflow.save.scope.hidesGlobal" })
       : saved.shadowing === "hidden_by_project"
-        ? intl.formatMessage({
-            id: "chat.toolCall.workflow.save.scope.hiddenByProject",
-          })
+        ? intl.formatMessage({ id: "chat.toolCall.workflow.save.scope.hiddenByProject" })
         : null;
 
   const primaryText = useMemo(
@@ -210,12 +177,8 @@ export function SaveWorkflowToolCallBlock(context: ToolCallBlockRenderContext) {
       // 折叠行：全局档加一个「全局」小标，与 overwrite 徽标同排（未知/项目档不加）。
       saved.overwrite || isGlobalScope ? (
         <span className="flex items-center gap-1">
-          {saved.overwrite ? (
-            <SaveWorkflowOverwriteBadge label={overwriteLabel} />
-          ) : null}
-          {isGlobalScope ? (
-            <SaveWorkflowScopeBadge label={globalBadgeLabel} />
-          ) : null}
+          {saved.overwrite ? <SaveWorkflowOverwriteBadge label={overwriteLabel} /> : null}
+          {isGlobalScope ? <SaveWorkflowScopeBadge label={globalBadgeLabel} /> : null}
         </span>
       ) : null,
     [globalBadgeLabel, isGlobalScope, overwriteLabel, saved.overwrite],
@@ -233,9 +196,7 @@ export function SaveWorkflowToolCallBlock(context: ToolCallBlockRenderContext) {
         {scopeValue === null ? null : (
           // 作用域行在落点之上。
           <p className="flex min-w-0 items-baseline gap-2 text-ui-sm">
-            <span className="shrink-0 text-foreground-subtlest">
-              {scopeLabel}
-            </span>
+            <span className="shrink-0 text-foreground-subtlest">{scopeLabel}</span>
             <span className="min-w-0 text-foreground-subtle">{scopeValue}</span>
           </p>
         )}
@@ -246,22 +207,15 @@ export function SaveWorkflowToolCallBlock(context: ToolCallBlockRenderContext) {
         )}
         {saved.path === undefined ? null : (
           <p className="flex min-w-0 items-baseline gap-2 text-ui-sm">
-            <span className="shrink-0 text-foreground-subtlest">
-              {pathLabel}
-            </span>
-            <span
-              className="min-w-0 truncate font-mono text-foreground-subtle"
-              title={saved.path}
-            >
+            <span className="shrink-0 text-foreground-subtlest">{pathLabel}</span>
+            <span className="min-w-0 truncate font-mono text-foreground-subtle" title={saved.path}>
               {saved.path}
             </span>
           </p>
         )}
         {saved.whenToUse === undefined ? null : (
           <p className="flex min-w-0 items-baseline gap-2 text-ui-sm">
-            <span className="shrink-0 text-foreground-subtlest">
-              {whenToUseLabel}
-            </span>
+            <span className="shrink-0 text-foreground-subtlest">{whenToUseLabel}</span>
             <span className="min-w-0 whitespace-pre-wrap break-words text-foreground-subtle">
               {saved.whenToUse}
             </span>

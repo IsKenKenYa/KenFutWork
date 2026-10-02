@@ -1,14 +1,9 @@
-/**
- * zcode 照搬：`@/v4/workflowLaunchTurn.ts`（references/zcode/packages/ui/src/v4/workflowLaunchTurn.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
 import type {
   ConversationRow,
   TurnHeaderRow,
   UserInputRow,
   WorkflowLaunchMeta,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
+} from "@zcode/shared/zcode-protocol-v4";
 
 /**
  * 中枢直接启动轮在转写里的规则。

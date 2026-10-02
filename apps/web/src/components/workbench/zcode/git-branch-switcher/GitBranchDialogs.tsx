@@ -1,10 +1,5 @@
-/**
- * zcode 照搬：`@/git-branch-switcher/GitBranchDialogs.tsx`（references/zcode/packages/ui/src/git-branch-switcher/GitBranchDialogs.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-
-import { Button } from "@zui/components/ui/button";
+import { type FormEvent } from "react";
+import { Button } from "@zui/components/ui/button.js";
 import {
   Dialog,
   DialogContent,
@@ -12,18 +7,17 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@zui/components/ui/dialog";
-import { Input } from "@zui/components/ui/input";
-import { Textarea } from "@zui/components/ui/textarea";
+} from "@zui/components/ui/dialog.js";
+import { Input } from "@zui/components/ui/input.js";
+import { Textarea } from "@zui/components/ui/textarea.js";
 import {
+  hasGitCommitIdentity,
   type GitBranchSwitchAssistDialogStep,
   type GitBranchSwitchAssistState,
-  hasGitCommitIdentity,
-} from "@zui/git-branch-switcher/switchAssist";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { FileDisplayInline } from "@zui/lib/fileDisplay";
+} from "@zui/git-branch-switcher/switchAssist.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { FileDisplayInline } from "@zui/lib/fileDisplay.js";
 import { AlertCircleIcon, GitBranchIcon, LoaderIcon } from "lucide-react";
-import type { FormEvent } from "react";
 
 interface GitBranchCreateDialogProps {
   open: boolean;
@@ -81,7 +75,7 @@ export function GitBranchCreateDialog({
             <Input
               id="git-branch-switcher-create-input"
               size="lg"
-              autoFocus={true}
+              autoFocus
               value={branchName}
               disabled={mutationPending}
               placeholder={intl.formatMessage({
@@ -116,9 +110,7 @@ export function GitBranchCreateDialog({
               disabled={mutationPending || branchName.trim().length === 0}
               className="h-10 min-w-0 px-5"
             >
-              {mutationPending ? (
-                <LoaderIcon className="size-4 animate-spin" />
-              ) : null}
+              {mutationPending ? <LoaderIcon className="size-4 animate-spin" /> : null}
               {intl.formatMessage({
                 id: "git.branchSwitcher.createDialog.confirm",
               })}
@@ -224,10 +216,8 @@ export function GitBranchSwitchAssistDialog({
                       <FileDisplayInline
                         path={file.workspaceRelativePath}
                         options={{
-                          className:
-                            "inline-flex min-w-0 max-w-full items-center gap-1.5",
-                          fileNameClassName:
-                            "truncate text-ui-base font-medium text-foreground",
+                          className: "inline-flex min-w-0 max-w-full items-center gap-1.5",
+                          fileNameClassName: "truncate text-ui-base font-medium text-foreground",
                         }}
                       />
                     </div>
@@ -334,7 +324,7 @@ export function GitBranchSwitchAssistDialog({
               </div>
             </div>
 
-            {hasIdentity ? null : (
+            {!hasIdentity ? (
               <div className="flex items-start gap-3 rounded-xl bg-warning/10 px-4 py-3 text-ui-base text-warning">
                 <AlertCircleIcon className="mt-0.5 size-4 shrink-0" />
                 <p>
@@ -343,7 +333,7 @@ export function GitBranchSwitchAssistDialog({
                   })}
                 </p>
               </div>
-            )}
+            ) : null}
 
             <div>
               <div className="space-y-2">
@@ -375,9 +365,7 @@ export function GitBranchSwitchAssistDialog({
               </div>
             </div>
 
-            {commitError ? (
-              <p className="text-ui-base text-destructive">{commitError}</p>
-            ) : null}
+            {commitError ? <p className="text-ui-base text-destructive">{commitError}</p> : null}
 
             <DialogFooter className="gap-2 pt-4">
               <Button
@@ -393,14 +381,10 @@ export function GitBranchSwitchAssistDialog({
               <Button
                 type="submit"
                 size="lg"
-                disabled={
-                  mutationPending || (!hasIdentity && state.identity !== null)
-                }
+                disabled={mutationPending || (!hasIdentity && state.identity !== null)}
                 className="h-10 min-w-0 px-5"
               >
-                {mutationPending ? (
-                  <LoaderIcon className="size-4 animate-spin" />
-                ) : null}
+                {mutationPending ? <LoaderIcon className="size-4 animate-spin" /> : null}
                 {intl.formatMessage({
                   id: "git.branchSwitcher.commitDialog.confirm",
                 })}

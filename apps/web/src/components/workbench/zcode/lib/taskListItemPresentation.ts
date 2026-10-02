@@ -1,10 +1,5 @@
-/**
- * zcode 照搬：`@/lib/taskListItemPresentation.ts`（references/zcode/packages/ui/src/lib/taskListItemPresentation.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import type { ZCodeTaskMeta } from "@zui/lib/zcode-shared";
-import type { TaskListRowActivity } from "@zui/v4/taskListRowActivity";
+import type { ZCodeTaskMeta } from "@zcode/shared";
+import type { TaskListRowActivity } from "@zui/v4/taskListRowActivity.js";
 
 export function deriveTaskLeadingIndicator(
   task: ZCodeTaskMeta,
@@ -38,28 +33,19 @@ export function deriveTaskLeadingIndicator(
 export function formatTaskRelativeTime(
   timestamp: number,
   intl: {
-    formatMessage: (
-      desc: { id: string },
-      values?: Record<string, string>,
-    ) => string;
+    formatMessage: (desc: { id: string }, values?: Record<string, string>) => string;
   },
 ): string {
   const diff = Date.now() - timestamp;
   const minutes = Math.floor(diff / 60000);
   if (minutes < 1) return intl.formatMessage({ id: "taskList.justNow" });
   if (minutes < 60) {
-    return intl.formatMessage(
-      { id: "taskList.minutesAgo" },
-      { minutes: String(minutes) },
-    );
+    return intl.formatMessage({ id: "taskList.minutesAgo" }, { minutes: String(minutes) });
   }
 
   const hours = Math.floor(minutes / 60);
   if (hours < 24) {
-    return intl.formatMessage(
-      { id: "taskList.hoursAgo" },
-      { hours: String(hours) },
-    );
+    return intl.formatMessage({ id: "taskList.hoursAgo" }, { hours: String(hours) });
   }
 
   const days = Math.floor(hours / 24);

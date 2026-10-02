@@ -1,24 +1,4 @@
-/**
- * zcode 照搬：`@/v4/ConversationUserInputContent.tsx`（references/zcode/packages/ui/src/v4/ConversationUserInputContent.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件接口可选属性放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-
-import { cn } from "@zui/components/lib/utils";
-import { FileDisplayInline } from "@zui/lib/fileDisplay";
-import { isTrustedPluginIconSource } from "@zui/lib/pluginIconSource";
-import {
-  getPromptMentionVariantClassName,
-  PROMPT_MENTION_BASE_CLASS_NAME,
-} from "@zui/mentions/mentionChip";
-import {
-  formatSkillMentionDisplayLabel,
-  parseMentionMarkdown,
-} from "@zui/mentions/mentionMarkdown";
-import { usePluginReferenceIconProjection } from "@zui/v4/pluginReferenceIconContext";
-import { parseV4VisibleSlashCommand } from "@zui/v4/slashCommands";
+import { memo, useState } from "react";
 import {
   Bot,
   Cable,
@@ -28,7 +8,19 @@ import {
   SquareSlash,
   WandSparkles,
 } from "lucide-react";
-import { memo, useState } from "react";
+import { cn } from "@zui/components/lib/utils.js";
+import { FileDisplayInline } from "@zui/lib/fileDisplay.js";
+import { isTrustedPluginIconSource } from "@zui/lib/pluginIconSource.js";
+import { usePluginReferenceIconProjection } from "@zui/v4/pluginReferenceIconContext.js";
+import {
+  getPromptMentionVariantClassName,
+  PROMPT_MENTION_BASE_CLASS_NAME,
+} from "@zui/mentions/mentionChip.js";
+import {
+  formatSkillMentionDisplayLabel,
+  parseMentionMarkdown,
+} from "@zui/mentions/mentionMarkdown.js";
+import { parseV4VisibleSlashCommand } from "@zui/v4/slashCommands.js";
 
 const GOAL_QUERY_TOKEN_PATTERN = /^(\s*)(\/(?:goal|target))(?=\s|$)([\s\S]*)$/i;
 const EMPTY_ATTACHMENTS: readonly unknown[] = [];
@@ -69,9 +61,7 @@ function normalizeCommandMentionLabel(label: string): string {
   return label.trim().replace(/^\/+/, "").toLowerCase();
 }
 
-function mentionClassName(
-  category: Parameters<typeof getPromptMentionVariantClassName>[0],
-) {
+function mentionClassName(category: Parameters<typeof getPromptMentionVariantClassName>[0]) {
   return cn(
     "mx-0.5 max-w-full",
     PROMPT_MENTION_BASE_CLASS_NAME,
@@ -88,7 +78,7 @@ function V4UserInputMention({
 }: {
   part: Exclude<V4UserInputMentionPart, { type: "text" }>;
   authoritativeGoal: boolean;
-  pluginIcon?: string | undefined;
+  pluginIcon?: string;
 }) {
   if (part.type === "file" || part.type === "directory") {
     return (
@@ -96,12 +86,10 @@ function V4UserInputMention({
         <FileDisplayInline
           path={part.label}
           options={{
-            className:
-              "inline-flex min-w-0 max-w-full items-center gap-1 align-middle",
+            className: "inline-flex min-w-0 max-w-full items-center gap-1 align-middle",
             iconSize: 16,
             kind: part.type === "directory" ? "directory" : "file",
-            fileNameClassName:
-              "truncate text-ui-base leading-6 font-medium text-current",
+            fileNameClassName: "truncate text-ui-base leading-6 font-medium text-current",
           }}
         />
       </span>
@@ -129,10 +117,7 @@ function V4UserInputMention({
   if (part.type === "plugin") {
     // Plugin 引用在气泡里渲染为 chip：不进 file 分支、不可作外链打开。
     return (
-      <span
-        className={mentionClassName("plugins")}
-        data-plugin-mention-id={part.pluginId}
-      >
+      <span className={mentionClassName("plugins")} data-plugin-mention-id={part.pluginId}>
         <PluginUserMessageIcon src={pluginIcon} />
         {part.label}
       </span>
@@ -149,10 +134,7 @@ function V4UserInputMention({
   }
 
   const commandName = normalizeCommandMentionLabel(part.label);
-  if (
-    (commandName === "goal" || commandName === "target") &&
-    !authoritativeGoal
-  ) {
+  if ((commandName === "goal" || commandName === "target") && !authoritativeGoal) {
     // 旧版纯文本嗅探会把带附件的 `/goal` 普通 prompt 也画成控制命令。
     // V4 只允许发送入口确认的首个 goal token 使用特殊 UI，其余情况必须保持用户原文。
     return `/${part.label}`;
@@ -177,7 +159,7 @@ function V4UserInputMention({
   );
 }
 
-function PluginUserMessageIcon({ src }: { src?: string | undefined }) {
+function PluginUserMessageIcon({ src }: { src?: string }) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const showImage = isTrustedPluginIconSource(src) && failedSrc !== src;
 
@@ -198,54 +180,46 @@ function PluginUserMessageIcon({ src }: { src?: string | undefined }) {
   );
 }
 
-export const ConversationUserInputContent = memo(
-  function ConversationUserInputContent({
-    text,
-    attachments = EMPTY_ATTACHMENTS,
-    contextAttachmentCount = 0,
-  }: {
-    text: string;
-    attachments?: readonly unknown[] | undefined;
-    contextAttachmentCount?: number | undefined;
-  }) {
-    const pluginIconProjection = usePluginReferenceIconProjection();
-    const goalQuery = parseV4UserInputGoalQuery(
-      text,
-      attachments,
-      contextAttachmentCount,
-    );
-    const parts = parseMentionMarkdown(text);
-    const authoritativeGoalPartIndex = goalQuery
-      ? parts.findIndex(
-          (part) =>
-            part.type === "command" &&
-            ["goal", "target"].includes(
-              normalizeCommandMentionLabel(part.label),
-            ),
-        )
-      : -1;
+export const ConversationUserInputContent = memo(function ConversationUserInputContent({
+  text,
+  attachments = EMPTY_ATTACHMENTS,
+  contextAttachmentCount = 0,
+}: {
+  text: string;
+  attachments?: readonly unknown[];
+  contextAttachmentCount?: number;
+}) {
+  const pluginIconProjection = usePluginReferenceIconProjection();
+  const goalQuery = parseV4UserInputGoalQuery(text, attachments, contextAttachmentCount);
+  const parts = parseMentionMarkdown(text);
+  const authoritativeGoalPartIndex = goalQuery
+    ? parts.findIndex(
+        (part) =>
+          part.type === "command" &&
+          ["goal", "target"].includes(normalizeCommandMentionLabel(part.label)),
+      )
+    : -1;
 
-    return (
-      <>
-        {parts.map((part, index) => {
-          if (part.type === "text") {
-            return part.text;
-          }
+  return (
+    <>
+      {parts.map((part, index) => {
+        if (part.type === "text") {
+          return part.text;
+        }
 
-          return (
-            <V4UserInputMention
-              key={`${part.type}-${index}`}
-              part={part}
-              authoritativeGoal={index === authoritativeGoalPartIndex}
-              pluginIcon={
-                part.type === "plugin" && part.pluginId
-                  ? pluginIconProjection?.iconByPluginId.get(part.pluginId)
-                  : undefined
-              }
-            />
-          );
-        })}
-      </>
-    );
-  },
-);
+        return (
+          <V4UserInputMention
+            key={`${part.type}-${index}`}
+            part={part}
+            authoritativeGoal={index === authoritativeGoalPartIndex}
+            pluginIcon={
+              part.type === "plugin" && part.pluginId
+                ? pluginIconProjection?.iconByPluginId.get(part.pluginId)
+                : undefined
+            }
+          />
+        );
+      })}
+    </>
+  );
+});

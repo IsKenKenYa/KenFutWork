@@ -1,9 +1,4 @@
-/**
- * zcode 照搬：`@/v4/conversationLayout.ts`（references/zcode/packages/ui/src/v4/conversationLayout.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀。
- */
-import type { ChatViewSummaryPanelVariant } from "@zui/v4/legacyChatViewTypes";
+import type { ChatViewSummaryPanelVariant } from "@zui/v4/legacyChatViewTypes.js";
 
 const CONVERSATION_DRAFT_CONTENT_WIDTH_CLASS_NAME = "max-w-2xl";
 const CONVERSATION_CONTENT_WITH_STATUS_PANEL_WIDTH_CLASS_NAME =
@@ -13,16 +8,13 @@ const CONVERSATION_CONTENT_WITHOUT_STATUS_PANEL_WIDTH_CLASS_NAME =
 const CONVERSATION_STATUS_PANEL_WIDE_OFFSET_CLASS_NAME =
   "@min-[1280px]/conversation:-translate-x-42";
 
-type ConversationStatusPanelResolvedVariant =
-  | ChatViewSummaryPanelVariant
-  | "auto";
+type ConversationStatusPanelResolvedVariant = ChatViewSummaryPanelVariant | "auto";
 
 export function getConversationContentWidthClassName(params: {
   centeredEmptyLayout: boolean;
   statusPanelLayout: "none" | "auto" | "inline";
 }): string {
-  if (params.centeredEmptyLayout)
-    return CONVERSATION_DRAFT_CONTENT_WIDTH_CLASS_NAME;
+  if (params.centeredEmptyLayout) return CONVERSATION_DRAFT_CONTENT_WIDTH_CLASS_NAME;
 
   // 宽布局统一使用 1280px，避免面板状态变化时触发不同断点造成内容列跳变。
   return params.statusPanelLayout === "none"
@@ -49,7 +41,5 @@ export function getConversationStatusPanelOffsetClassName(
   layout: "none" | "auto" | "inline",
 ): string | undefined {
   // 状态面板和会话宽布局统一在 1280px 启用，保证面板状态切换不改变响应分水岭。
-  return layout === "none"
-    ? undefined
-    : CONVERSATION_STATUS_PANEL_WIDE_OFFSET_CLASS_NAME;
+  return layout === "none" ? undefined : CONVERSATION_STATUS_PANEL_WIDE_OFFSET_CLASS_NAME;
 }

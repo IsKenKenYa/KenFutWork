@@ -1,11 +1,8 @@
-import type * as React from "react";
+import * as React from "react";
 
-import { cn } from "../lib/utils";
+import { cn } from "../lib/utils.js";
 
-function Label({
-  className,
-  ...props
-}: React.LabelHTMLAttributes<HTMLLabelElement>) {
+function Label({ className, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) {
   return (
     <label
       data-slot="label"

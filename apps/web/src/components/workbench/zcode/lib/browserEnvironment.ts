@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/lib/browserEnvironment.ts`（references/zcode/packages/ui/src/lib/browserEnvironment.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
 export interface BrowserReadableStorageLike {
   getItem(key: string): string | null;
 }
@@ -13,23 +8,20 @@ export interface BrowserStorageLike extends BrowserReadableStorageLike {
 
 function getLocalStorageCandidate(): unknown {
   try {
-    return typeof window === "undefined"
-      ? typeof localStorage === "undefined"
-        ? undefined
-        : localStorage
-      : window.localStorage;
+    return typeof window !== "undefined"
+      ? window.localStorage
+      : typeof localStorage !== "undefined"
+        ? localStorage
+        : undefined;
   } catch {
     return undefined;
   }
 }
 
-function isBrowserReadableStorageLike(
-  storage: unknown,
-): storage is BrowserReadableStorageLike {
+function isBrowserReadableStorageLike(storage: unknown): storage is BrowserReadableStorageLike {
   return (
     Boolean(storage) &&
-    typeof (storage as Partial<BrowserReadableStorageLike>).getItem ===
-      "function"
+    typeof (storage as Partial<BrowserReadableStorageLike>).getItem === "function"
   );
 }
 
@@ -78,10 +70,7 @@ export function writeSafeLocalStorage(key: string, value: string): void {
 }
 
 export function readNavigatorLanguage(): string | null {
-  if (
-    typeof navigator === "undefined" ||
-    typeof navigator.language !== "string"
-  ) {
+  if (typeof navigator === "undefined" || typeof navigator.language !== "string") {
     return null;
   }
 

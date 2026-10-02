@@ -1,16 +1,10 @@
-/**
- * zcode 照搬：`@/hooks/useResolvedRemoteWorkspaceSessionId.ts`（references/zcode/packages/ui/src/hooks/useResolvedRemoteWorkspaceSessionId.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-
+import { useTabStore } from "@zui/store/TabStoreProvider.js";
+import { isWorkspaceTab, type WorkspaceTabState } from "@zui/store/tabStore.js";
+import { useRemoteWorkspaceSessionStore } from "@zui/store/remoteWorkspaceSessionStore.js";
 import {
   resolveWorkspaceRemoteSessionId,
   type WorkspaceServiceResolverState,
-} from "@zui/lib/workspaceServiceResolver";
-import { useRemoteWorkspaceSessionStore } from "@zui/store/remoteWorkspaceSessionStore";
-import { useTabStore } from "@zui/store/TabStoreProvider";
-import { isWorkspaceTab, type WorkspaceTabState } from "@zui/store/tabStore";
+} from "@zui/lib/workspaceServiceResolver.js";
 
 function resolveRemoteWorkspaceSessionIdForTarget<TServices>(params: {
   workspacePath: string | null | undefined;
@@ -32,15 +26,12 @@ function resolveRemoteWorkspaceSessionIdForTarget<TServices>(params: {
       : params.activeTab.workspacePath === params.workspacePath)
       ? params.activeTab
       : null;
-  const activeTabWorkspaceIdentity =
-    matchingActiveTab?.workspaceIdentity?.trim() || undefined;
+  const activeTabWorkspaceIdentity = matchingActiveTab?.workspaceIdentity?.trim() || undefined;
   const explicitRemoteSessionId = [
     params.preferredRemoteSessionId,
     matchingActiveTab?.remoteSessionId,
   ].find((candidateSessionId): candidateSessionId is string =>
-    Boolean(
-      candidateSessionId && params.state.sessionsById[candidateSessionId],
-    ),
+    Boolean(candidateSessionId && params.state.sessionsById[candidateSessionId]),
   );
 
   return (
@@ -76,9 +67,7 @@ export function useResolvedRemoteWorkspaceSessionId(
     }
 
     if (workspaceIdentity) {
-      return activeTab.workspaceIdentity?.trim() === workspaceIdentity.trim()
-        ? activeTab
-        : null;
+      return activeTab.workspaceIdentity?.trim() === workspaceIdentity.trim() ? activeTab : null;
     }
 
     return activeTab.workspacePath === workspacePath ? activeTab : null;
@@ -87,15 +76,10 @@ export function useResolvedRemoteWorkspaceSessionId(
   return useRemoteWorkspaceSessionStore((state) =>
     resolveRemoteWorkspaceSessionIdForTarget({
       workspacePath,
-      // exactOptionalPropertyTypes：可选属性仅在有意义时展开（null 语义保持透传）。
-      ...(preferredRemoteSessionId === undefined
-        ? {}
-        : { preferredRemoteSessionId }),
-      ...(workspaceIdentity === undefined ? {} : { workspaceIdentity }),
-      ...(remoteTarget === undefined ? {} : { remoteTarget }),
-      ...(activeWorkspaceTab === undefined
-        ? {}
-        : { activeTab: activeWorkspaceTab }),
+      preferredRemoteSessionId,
+      workspaceIdentity,
+      remoteTarget,
+      activeTab: activeWorkspaceTab,
       state,
     }),
   );

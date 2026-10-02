@@ -1,13 +1,5 @@
-/**
- * zcode 照搬：`@/v4/workflowTurnCompletion.ts`（references/zcode/packages/ui/src/v4/workflowTurnCompletion.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import type {
-  TurnHeaderRow,
-  WorkflowNotificationMeta,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import type { WorkflowRunCardSummary } from "@zui/ToolCallBlocks/fileSummaryTypes";
+import type { TurnHeaderRow, WorkflowNotificationMeta } from "@zcode/shared/zcode-protocol-v4";
+import type { WorkflowRunCardSummary } from "@zui/ToolCallBlocks/fileSummaryTypes.js";
 
 /**
  * 完成卡的解析：这一轮是不是「主代理消化了一条
@@ -20,10 +12,7 @@ import type { WorkflowRunCardSummary } from "@zui/ToolCallBlocks/fileSummaryType
  * 产物清单**以通知载荷为底**：它随通知持久化，冷恢复也在；投影 / journal 只是在它之上
  * 补字节数、出处、看板 spec。
  */
-export type WorkflowTerminalNotification = Extract<
-  WorkflowNotificationMeta,
-  { kind: "terminal" }
->;
+export type WorkflowTerminalNotification = Extract<WorkflowNotificationMeta, { kind: "terminal" }>;
 
 export interface WorkflowTurnCompletion {
   runId: string;
@@ -40,22 +29,19 @@ export interface WorkflowTurnCompletion {
 
 export function resolveWorkflowTurnCompletion(
   header: TurnHeaderRow | undefined,
-  join: { byRunId?: ReadonlyMap<string, WorkflowRunCardSummary> | undefined },
+  join: { byRunId?: ReadonlyMap<string, WorkflowRunCardSummary> },
 ): WorkflowTurnCompletion | undefined {
   if (header?.origin !== "backgroundResult") return undefined;
   const originMeta = header.originMeta;
   if (originMeta?.backgroundSource !== "workflow") return undefined;
   const notification = originMeta.workflowNotification;
-  if (notification?.kind !== "terminal" || notification.status !== "completed")
-    return undefined;
+  if (notification?.kind !== "terminal" || notification.status !== "completed") return undefined;
   const name = originMeta.title.trim();
   if (name.length === 0) return undefined;
   return {
     runId: originMeta.workId,
     name,
-    ...(notification.durationMs === undefined
-      ? {}
-      : { durationMs: notification.durationMs }),
+    ...(notification.durationMs === undefined ? {} : { durationMs: notification.durationMs }),
     artifacts: notification.artifacts ?? [],
     artifactsTruncated: notification.artifactsTruncated === true,
     summary: join.byRunId?.get(originMeta.workId),

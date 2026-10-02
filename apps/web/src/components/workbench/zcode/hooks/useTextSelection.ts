@@ -1,15 +1,4 @@
-/**
- * zcode 照搬：`@/hooks/useTextSelection.ts`（references/zcode/packages/ui/src/hooks/useTextSelection.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import {
-  type RefObject,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 
 /** 统一鼠标、键盘和触控选区的监听；作用域变化后旧选区不能路由到新任务。 */
 export function useTextSelection<T>({
@@ -25,10 +14,7 @@ export function useTextSelection<T>({
   scopeKey: unknown;
   observeSelectionChange?: boolean;
 }) {
-  const [snapshot, setSnapshot] = useState<{
-    scopeKey: unknown;
-    value: T;
-  } | null>(null);
+  const [snapshot, setSnapshot] = useState<{ scopeKey: unknown; value: T } | null>(null);
   const frameRef = useRef(0);
   const close = useCallback(() => {
     window.cancelAnimationFrame(frameRef.current);
@@ -45,8 +31,7 @@ export function useTextSelection<T>({
         setSnapshot(value ? { scopeKey, value } : null);
       });
     };
-    const onKey = (event: KeyboardEvent) =>
-      event.key === "Escape" ? close() : schedule();
+    const onKey = (event: KeyboardEvent) => (event.key === "Escape" ? close() : schedule());
     const onSelection = () => {
       if (window.getSelection()?.isCollapsed) close();
       else if (observeSelectionChange) schedule();
@@ -68,10 +53,7 @@ export function useTextSelection<T>({
     };
   }, [close, enabled, inspect, observeSelectionChange, rootRef, scopeKey]);
   return {
-    state:
-      enabled && snapshot && snapshot.scopeKey === scopeKey
-        ? snapshot.value
-        : null,
+    state: enabled && snapshot && snapshot.scopeKey === scopeKey ? snapshot.value : null,
     close,
   };
 }

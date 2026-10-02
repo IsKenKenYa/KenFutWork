@@ -1,13 +1,7 @@
-/**
- * zcode 照搬：`@/lib/usageEntitlementCache.ts`（references/zcode/packages/ui/src/lib/usageEntitlementCache.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import type { UsageEntitlementSnapshot } from "@zui/lib/zcode-shared";
+import type { UsageEntitlementSnapshot } from "@zcode/shared";
 
 // 旧缓存可能由 quota level 合成订阅；切换命名空间避免升级后恢复伪权益。
-const USAGE_ENTITLEMENT_CACHE_PREFIX =
-  "zcode:usage-entitlement:subscription-v2:";
+const USAGE_ENTITLEMENT_CACHE_PREFIX = "zcode:usage-entitlement:subscription-v2:";
 export const USAGE_ENTITLEMENT_CACHE_TTL_MS = 10 * 60 * 1000;
 
 interface CachedUsageEntitlementSnapshot {
@@ -57,10 +51,7 @@ export function readCachedUsageEntitlementSnapshot(params: {
     const cachedAt = typeof parsed.cachedAt === "number" ? parsed.cachedAt : 0;
     const snapshot = parsed.snapshot;
     const currentTime = params.now?.() ?? Date.now();
-    if (
-      !snapshot ||
-      currentTime - cachedAt > (params.ttlMs ?? USAGE_ENTITLEMENT_CACHE_TTL_MS)
-    ) {
+    if (!snapshot || currentTime - cachedAt > (params.ttlMs ?? USAGE_ENTITLEMENT_CACHE_TTL_MS)) {
       storage?.removeItem(cacheKey);
       return null;
     }

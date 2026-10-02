@@ -1,40 +1,33 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/cua.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/cua.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- * 适配注记：接口可选属性放宽 | undefined 以等价 zcode tsconfig 行为（exactOptionalPropertyTypes）。
- */
 /* oxlint-disable eslint(max-lines) -- summary 与同源 detail 投影暂集中维护，本次 review fix 不扩大重构范围。 */
-
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { isZCodeCuaToolName } from "@zui/lib/cuaPermissionAction";
-import type { ApplicationIconRequest } from "@zui/lib/zcode-shared";
-import { buildCuaAccessDetails } from "@zui/ToolCallBlocks/renderers/cuaAccessDetails";
-import { readCuaActionDetail } from "@zui/ToolCallBlocks/renderers/cuaActionDetail";
-import { CuaAppSummaryIcon } from "@zui/ToolCallBlocks/renderers/cuaAppSummaryIcon";
-import { CuaToolCallDetails } from "@zui/ToolCallBlocks/renderers/cuaDetails";
-import { readCuaErrorDetails } from "@zui/ToolCallBlocks/renderers/cuaErrorDetails";
-import { CUA_FALLBACK_ICON } from "@zui/ToolCallBlocks/renderers/cuaIcon";
-import {
-  buildCuaDetailList,
-  type CuaDetailList,
-} from "@zui/ToolCallBlocks/renderers/cuaListDetails";
+import { type ReactNode, useCallback, useMemo } from "react";
+import type { ApplicationIconRequest } from "@zcode/shared";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { isZCodeCuaToolName } from "@zui/lib/cuaPermissionAction.js";
+import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout.js";
+import { readCuaActionDetail } from "@zui/ToolCallBlocks/renderers/cuaActionDetail.js";
+import { buildCuaAccessDetails } from "@zui/ToolCallBlocks/renderers/cuaAccessDetails.js";
+import { CuaToolCallDetails } from "@zui/ToolCallBlocks/renderers/cuaDetails.js";
+import { readCuaErrorDetails } from "@zui/ToolCallBlocks/renderers/cuaErrorDetails.js";
+import { CUA_FALLBACK_ICON } from "@zui/ToolCallBlocks/renderers/cuaIcon.js";
+import { CuaAppSummaryIcon } from "@zui/ToolCallBlocks/renderers/cuaAppSummaryIcon.js";
 import {
   readCuaActionTargetName,
   readCuaAppName,
   readCuaResultBundleId,
   readCuaResultListCount,
   readCuaResultState,
-} from "@zui/ToolCallBlocks/renderers/cuaResultState";
+} from "@zui/ToolCallBlocks/renderers/cuaResultState.js";
+import {
+  buildCuaDetailList,
+  type CuaDetailList,
+} from "@zui/ToolCallBlocks/renderers/cuaListDetails.js";
 import {
   buildCuaScreenshotDetails,
   type CuaScreenshotDetails,
-} from "@zui/ToolCallBlocks/renderers/cuaScreenshotDetails";
-import { CUA_TOOL_SUMMARY_IDS } from "@zui/ToolCallBlocks/renderers/cuaSummaryMessages";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay";
-import { type ReactNode, useCallback, useMemo } from "react";
+} from "@zui/ToolCallBlocks/renderers/cuaScreenshotDetails.js";
+import { CUA_TOOL_SUMMARY_IDS } from "@zui/ToolCallBlocks/renderers/cuaSummaryMessages.js";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
+import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay.js";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -42,18 +35,12 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function readText(
-  record: Record<string, unknown> | null,
-  key: string,
-): string | null {
+function readText(record: Record<string, unknown> | null, key: string): string | null {
   const value = record?.[key];
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function readNumber(
-  record: Record<string, unknown> | null,
-  key: string,
-): number | null {
+function readNumber(record: Record<string, unknown> | null, key: string): number | null {
   const value = record?.[key];
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -88,11 +75,7 @@ function readCuaUserTitle(
   toolCall: ToolCallBlockRenderContext["toolCallNode"]["toolCall"],
 ): string | null {
   const raw = asRecord(toolCall.raw);
-  for (const input of [
-    asRecord(toolCall.input),
-    asRecord(raw?.rawInput),
-    asRecord(raw?.input),
-  ]) {
+  for (const input of [asRecord(toolCall.input), asRecord(raw?.rawInput), asRecord(raw?.input)]) {
     const title = readText(input, "title");
     if (title) return title;
   }
@@ -102,23 +85,13 @@ function readCuaUserTitle(
 function collectToolNames(
   toolCall: ToolCallBlockRenderContext["toolCallNode"]["toolCall"],
 ): Array<string | null | undefined> {
-  return [
-    toolCall.toolName,
-    toolCall.kind,
-    toolCall.title,
-    readRawToolName(toolCall.raw),
-  ];
+  return [toolCall.toolName, toolCall.kind, toolCall.title, readRawToolName(toolCall.raw)];
 }
 
 function readBundleId(input: unknown): string | null {
   const record = asRecord(input);
-  for (const container of [
-    asRecord(record?.app),
-    asRecord(record?.app_ref),
-    record,
-  ]) {
-    const bundleId =
-      readText(container, "bundle_id") ?? readText(container, "bundleId");
+  for (const container of [asRecord(record?.app), asRecord(record?.app_ref), record]) {
+    const bundleId = readText(container, "bundle_id") ?? readText(container, "bundleId");
     if (bundleId) return bundleId;
   }
   return null;
@@ -141,24 +114,24 @@ function readCuaApplicationIconRequest(
 interface CuaDetailRow {
   labelId: string;
   value: string;
-  code?: boolean | undefined;
-  status?: boolean | undefined;
+  code?: boolean;
+  status?: boolean;
 }
 
 export interface CuaDetailsModel {
   actionRows: CuaDetailRow[];
   resultId: string;
-  resultValues?: Record<string, string> | undefined;
+  resultValues?: Record<string, string>;
   stateRows: CuaDetailRow[];
   success: boolean;
-  list?: CuaDetailList | undefined;
-  permissionRows?: CuaDetailRow[] | undefined;
-  environmentRows?: CuaDetailRow[] | undefined;
-  screenshot?: CuaScreenshotDetails | undefined;
-  failureReasonId?: string | undefined;
-  failureReason?: string | undefined;
-  suggestedActionId?: string | undefined;
-  suggestedAction?: string | undefined;
+  list?: CuaDetailList;
+  permissionRows?: CuaDetailRow[];
+  environmentRows?: CuaDetailRow[];
+  screenshot?: CuaScreenshotDetails;
+  failureReasonId?: string;
+  failureReason?: string;
+  suggestedActionId?: string;
+  suggestedAction?: string;
 }
 
 function readTargetDescription(
@@ -210,8 +183,7 @@ function buildCuaDetailsModel(
   const error = readCuaErrorDetails(toolCall);
   const display = readToolResultDisplay(toolCall.raw);
   const cuaDisplay = display?.kind === "cua" ? display : undefined;
-  const waitDuration =
-    toolName === "wait" ? readNumber(input, "duration") : null;
+  const waitDuration = toolName === "wait" ? readNumber(input, "duration") : null;
 
   if (!appName && error?.targetAppName)
     actionRows.push({
@@ -227,10 +199,7 @@ function buildCuaDetailsModel(
   if (!access && toolName !== "list_apps" && toolName !== "screenshot") {
     actionRows.push({
       labelId: "chat.toolCall.cua.details.operation",
-      value: formatTarget(
-        CUA_TOOL_SUMMARY_IDS[toolName] ?? "chat.toolCall.cua.default",
-        {},
-      ),
+      value: formatTarget(CUA_TOOL_SUMMARY_IDS[toolName] ?? "chat.toolCall.cua.default", {}),
     });
   }
   if (actionDetail || typedText || openUrl) {
@@ -283,21 +252,12 @@ function buildCuaDetailsModel(
       }),
     });
   }
-  if (
-    typeof changes?.added_count === "number" ||
-    typeof changes?.removed_count === "number"
-  ) {
+  if (typeof changes?.added_count === "number" || typeof changes?.removed_count === "number") {
     stateRows.push({
       labelId: "chat.toolCall.cua.details.changes",
       value: formatTarget("chat.toolCall.cua.details.changeCounts", {
-        added: String(
-          typeof changes?.added_count === "number" ? changes.added_count : 0,
-        ),
-        removed: String(
-          typeof changes?.removed_count === "number"
-            ? changes.removed_count
-            : 0,
-        ),
+        added: String(typeof changes?.added_count === "number" ? changes.added_count : 0),
+        removed: String(typeof changes?.removed_count === "number" ? changes.removed_count : 0),
       }),
     });
   }
@@ -313,11 +273,16 @@ function buildCuaDetailsModel(
   const screenshot = success ? screenshotCandidate : undefined;
   const resultValues: Record<string, string> | undefined = list
     ? { count: String(list.items.length) }
-    : waitDuration === null
-      ? undefined
-      : { duration: String(waitDuration) };
-  const resultId = success
+    : waitDuration !== null
+      ? { duration: String(waitDuration) }
+      : undefined;
+  const resultId = !success
     ? access
+      ? "chat.toolCall.cua.details.accessIncomplete"
+      : errorCode === "element_stale"
+        ? "chat.toolCall.cua.details.elementStale"
+        : "chat.toolCall.cua.details.failed"
+    : access
       ? "chat.toolCall.cua.details.accessReady"
       : toolName === "type" && typedText
         ? "chat.toolCall.cua.details.typed"
@@ -341,12 +306,7 @@ function buildCuaDetailsModel(
                         ? list?.items.length
                           ? "chat.toolCall.cua.details.windowsFound"
                           : "chat.toolCall.cua.details.noWindows"
-                        : "chat.toolCall.cua.details.completed"
-    : access
-      ? "chat.toolCall.cua.details.accessIncomplete"
-      : errorCode === "element_stale"
-        ? "chat.toolCall.cua.details.elementStale"
-        : "chat.toolCall.cua.details.failed";
+                        : "chat.toolCall.cua.details.completed";
   return {
     actionRows,
     resultId,
@@ -358,19 +318,14 @@ function buildCuaDetailsModel(
     environmentRows: access?.environmentRows,
     screenshot,
     failureReasonId:
-      errorCode === "element_stale"
-        ? "chat.toolCall.cua.details.elementStaleReason"
-        : undefined,
+      errorCode === "element_stale" ? "chat.toolCall.cua.details.elementStaleReason" : undefined,
     failureReason:
       errorCode !== "element_stale" && cuaDisplay?.status === "failed"
         ? (cuaDisplay.text ?? cuaDisplay.errorCode)
         : undefined,
     suggestedActionId:
-      errorCode === "element_stale"
-        ? "chat.toolCall.cua.details.elementStaleAction"
-        : undefined,
-    suggestedAction:
-      errorCode === "element_stale" ? undefined : cuaDisplay?.suggestedAction,
+      errorCode === "element_stale" ? "chat.toolCall.cua.details.elementStaleAction" : undefined,
+    suggestedAction: errorCode !== "element_stale" ? cuaDisplay?.suggestedAction : undefined,
   };
 }
 
@@ -388,7 +343,7 @@ interface CuaSummaryPresentation {
   description: string;
   title: string;
   isFailed: boolean;
-  failureText?: string | undefined;
+  failureText?: string;
 }
 
 type CuaIntl = ReturnType<typeof useZCodeIntl>["intl"];
@@ -396,18 +351,12 @@ type CuaIntl = ReturnType<typeof useZCodeIntl>["intl"];
 export function buildCuaSummaryPresentation(
   toolCall: ToolCallBlockRenderContext["toolCallNode"]["toolCall"],
   intl: CuaIntl,
-  options?: {
-    fallbackErrorText?: string | undefined;
-    appIconClassName?: "size-4" | "size-5" | undefined;
-  },
+  options?: { fallbackErrorText?: string; appIconClassName?: "size-4" | "size-5" },
 ): CuaSummaryPresentation {
-  const toolName =
-    collectToolNames(toolCall).map(readCuaToolName).find(Boolean) ?? null;
+  const toolName = collectToolNames(toolCall).map(readCuaToolName).find(Boolean) ?? null;
   const display = readToolResultDisplay(toolCall.raw);
   const cuaDisplay = display?.kind === "cua" ? display : null;
-  const isFailed = cuaDisplay
-    ? cuaDisplay.status === "failed"
-    : toolCall.status === "failed";
+  const isFailed = cuaDisplay ? cuaDisplay.status === "failed" : toolCall.status === "failed";
   const failureText =
     cuaDisplay?.status === "failed"
       ? (cuaDisplay.text ?? options?.fallbackErrorText)
@@ -415,9 +364,7 @@ export function buildCuaSummaryPresentation(
   const rawCuaApp = asRecord(asRecord(toolCall.raw)?.cuaApp);
   const result = readCuaResultState(toolCall);
   const resultApp = asRecord(result?.app);
-  const genericAppName = intl.formatMessage({
-    id: "chat.toolCall.cua.appName",
-  });
+  const genericAppName = intl.formatMessage({ id: "chat.toolCall.cua.appName" });
   const appName =
     cuaDisplay?.targetApp?.displayName ??
     readText(resultApp, "name") ??
@@ -429,28 +376,21 @@ export function buildCuaSummaryPresentation(
     readText(rawCuaApp, "bundleId") ??
     undefined;
   const rawActionTarget =
-    toolName === "left_click" ||
-    toolName === "right_click" ||
-    toolName === "type"
+    toolName === "left_click" || toolName === "right_click" || toolName === "type"
       ? readCuaActionTargetName(toolCall)
       : null;
   // CUA 无法解析元素可读名称时会返回纯数字 index；直接把 `57` 放进 tag
   // 看起来像无上下文的值，因此明确标注为本地化的元素编号。
   const actionTarget =
     rawActionTarget && /^\d+$/u.test(rawActionTarget)
-      ? intl.formatMessage(
-          { id: "chat.toolCall.cua.elementTarget" },
-          { index: rawActionTarget },
-        )
+      ? intl.formatMessage({ id: "chat.toolCall.cua.elementTarget" }, { index: rawActionTarget })
       : rawActionTarget;
   const keyName =
     toolName === "key" || toolName === "hold_key"
       ? readCuaActionDetail(toolName, toolCall.input)
       : null;
-  const authoredDescription =
-    toolName === "get_app_state" ? readCuaUserTitle(toolCall) : null;
-  const listCount =
-    toolName === "list_windows" ? readCuaResultListCount(toolCall) : null;
+  const authoredDescription = toolName === "get_app_state" ? readCuaUserTitle(toolCall) : null;
+  const listCount = toolName === "list_windows" ? readCuaResultListCount(toolCall) : null;
   const actionId =
     toolName === "type"
       ? "chat.toolCall.cua.type"
@@ -468,16 +408,11 @@ export function buildCuaSummaryPresentation(
                 ? "chat.toolCall.cua.holdKey"
                 : "chat.toolCall.cua.pressKeyAction",
           })
-        : listCount === null
-          ? intl.formatMessage({
-              id:
-                CUA_TOOL_SUMMARY_IDS[toolName ?? ""] ??
-                "chat.toolCall.cua.default",
-            })
-          : intl.formatMessage(
-              { id: "chat.toolCall.cua.listWindowsCount" },
-              { count: listCount },
-            ));
+        : listCount !== null
+          ? intl.formatMessage({ id: "chat.toolCall.cua.listWindowsCount" }, { count: listCount })
+          : intl.formatMessage({
+              id: CUA_TOOL_SUMMARY_IDS[toolName ?? ""] ?? "chat.toolCall.cua.default",
+            }));
   const taggedTarget = actionTarget ?? keyName;
   const primaryText =
     taggedTarget && !authoredDescription ? (
@@ -522,9 +457,7 @@ export function CuaToolCallBlock(context: ToolCallBlockRenderContext) {
   });
   const { toolName } = summary;
   const isActive =
-    context.isRunning ||
-    toolCall.status === "pending" ||
-    toolCall.status === "in_progress";
+    context.isRunning || toolCall.status === "pending" || toolCall.status === "in_progress";
   const detailsModel = useMemo(
     () =>
       toolName
@@ -535,10 +468,7 @@ export function CuaToolCallBlock(context: ToolCallBlockRenderContext) {
     [intl, toolCall, toolName],
   );
   const renderContent = useCallback(
-    () =>
-      detailsModel ? (
-        <CuaToolCallDetails model={detailsModel} toolCall={toolCall} />
-      ) : null,
+    () => (detailsModel ? <CuaToolCallDetails model={detailsModel} toolCall={toolCall} /> : null),
     [detailsModel, toolCall],
   );
 
@@ -547,9 +477,7 @@ export function CuaToolCallBlock(context: ToolCallBlockRenderContext) {
       toolId={toolCall.toolId}
       icon={
         context.cuaAppIconClassName === "size-5" ? (
-          <span className="shrink-0 size-4 flex items-center justify-center">
-            {summary.icon}
-          </span>
+          <span className="shrink-0 size-4 flex items-center justify-center">{summary.icon}</span>
         ) : (
           summary.icon
         )
@@ -564,9 +492,7 @@ export function CuaToolCallBlock(context: ToolCallBlockRenderContext) {
       kindLabel={summary.appName}
       primaryText={summary.primaryText}
       statusLabel={
-        summary.isFailed
-          ? intl.formatMessage({ id: "chat.toolCall.status.failed" })
-          : undefined
+        summary.isFailed ? intl.formatMessage({ id: "chat.toolCall.status.failed" }) : undefined
       }
       statusTooltip={summary.isFailed ? summary.failureText : undefined}
       showFailureStatus={summary.isFailed}

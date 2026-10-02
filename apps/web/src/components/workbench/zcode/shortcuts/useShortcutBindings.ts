@@ -1,32 +1,20 @@
 /**
- * zcode 照搬：`@/shortcuts/useShortcutBindings.ts`（references/zcode/packages/ui/src/shortcuts/useShortcutBindings.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-/**
  * 快捷键内核的 React 桥接：生效表与展示 label 的唯一 hook 出口。
  *
  * 数据来源是 useSettings 的共享快照（setting.json），因此设置页写入 → update → refresh
  * 后所有消费方自动重算；不引入独立的 store/广播通道。
  */
-
-import { useSettings } from "@zui/hooks/useSettingService";
-import type { ShortcutCommandId } from "@zui/lib/zcode-shared";
 import { useMemo } from "react";
-import {
-  type EffectiveShortcutBindings,
-  resolveEffectiveShortcutBindings,
-} from "./bindings";
-import { formatShortcutBindingLabel } from "./label";
+import { type ShortcutCommandId } from "@zcode/shared";
+import { useSettings } from "@zui/hooks/useSettingService.js";
+import { resolveEffectiveShortcutBindings, type EffectiveShortcutBindings } from "./bindings.js";
+import { formatShortcutBindingLabel } from "./label.js";
 
 /** 当前生效的快捷键表（默认 + 用户覆盖合并后的只读视图）。 */
 export function useEffectiveShortcutBindings(): EffectiveShortcutBindings {
   const { settings } = useSettings();
   const overrides = settings?.shortcutBindings;
-  return useMemo(
-    () => resolveEffectiveShortcutBindings(overrides),
-    [overrides],
-  );
+  return useMemo(() => resolveEffectiveShortcutBindings(overrides), [overrides]);
 }
 
 /**

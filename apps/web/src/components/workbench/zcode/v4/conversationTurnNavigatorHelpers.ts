@@ -1,14 +1,6 @@
-/**
- * zcode 照搬：`@/v4/conversationTurnNavigatorHelpers.ts`（references/zcode/packages/ui/src/v4/conversationTurnNavigatorHelpers.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import type { ConversationTurnRenderUnit } from "@zui/v4/conversationTurnRenderUnits";
+import type { ConversationTurnRenderUnit } from "@zui/v4/conversationTurnRenderUnits.js";
 
-export type ConversationTurnNavigatorAssistantPreviewKind =
-  | "empty"
-  | "running"
-  | "text";
+export type ConversationTurnNavigatorAssistantPreviewKind = "empty" | "running" | "text";
 
 export interface ConversationTurnNavigatorItem {
   key: string;
@@ -107,10 +99,7 @@ export function resolveConversationTurnNavigatorHydrationRetryDelayMs(
 const DEFAULT_MAX_PREVIEW_CHARS = 220;
 const DEFAULT_MAX_PREVIEW_PARAGRAPHS = 2;
 
-function normalizePreviewParagraphs(
-  text: string,
-  maxParagraphs: number,
-): string[] {
+function normalizePreviewParagraphs(text: string, maxParagraphs: number): string[] {
   return text
     .trim()
     .split(/\n\s*\n/u)
@@ -138,10 +127,7 @@ function buildPreviewText({
   maxPreviewChars: number;
   maxPreviewParagraphs: number;
 }): string {
-  const paragraphs = normalizePreviewParagraphs(
-    texts.join("\n\n"),
-    maxPreviewParagraphs,
-  );
+  const paragraphs = normalizePreviewParagraphs(texts.join("\n\n"), maxPreviewParagraphs);
   if (paragraphs.length === 0) {
     return fallback;
   }
@@ -184,30 +170,23 @@ export function buildConversationTurnNavigatorItems(
   units: readonly ConversationTurnRenderUnit[],
   options: BuildConversationTurnNavigatorItemsOptions,
 ): ConversationTurnNavigatorItem[] {
-  const resolvedOptions: Required<BuildConversationTurnNavigatorItemsOptions> =
-    {
-      ...options,
-      maxPreviewChars: options.maxPreviewChars ?? DEFAULT_MAX_PREVIEW_CHARS,
-      maxPreviewParagraphs:
-        options.maxPreviewParagraphs ?? DEFAULT_MAX_PREVIEW_PARAGRAPHS,
-    };
+  const resolvedOptions: Required<BuildConversationTurnNavigatorItemsOptions> = {
+    ...options,
+    maxPreviewChars: options.maxPreviewChars ?? DEFAULT_MAX_PREVIEW_CHARS,
+    maxPreviewParagraphs: options.maxPreviewParagraphs ?? DEFAULT_MAX_PREVIEW_PARAGRAPHS,
+  };
 
   return units.flatMap((unit, unitIndex) => {
     // provider/store 的物理 role=user 还包含 background/goal/mailbox
     // 等系统上下文；目录代表用户主动 query，只能使用投影明确裁决的 realUser。
-    const realUserInputs = unit.visibleUserInputs.filter(
-      (row) => row.origin === "realUser",
-    );
+    const realUserInputs = unit.visibleUserInputs.filter((row) => row.origin === "realUser");
     if (unit.timelineOnly || realUserInputs.length === 0) {
       return [];
     }
 
     // 导航项按 query 拆分，但 hover 的 assistant 摘要保持旧产品语义：
     // 取所属 product turn 的文本结果，不在 renderer 猜测 guide 回复分段。
-    const { assistantPreview, assistantPreviewKind } = buildAssistantPreview(
-      unit,
-      resolvedOptions,
-    );
+    const { assistantPreview, assistantPreviewKind } = buildAssistantPreview(unit, resolvedOptions);
     return realUserInputs.map((row, queryIndex) => ({
       // 不能以 product turn 为目录粒度，并把同一 turn 的 steer query
       // 全部拼进一个 preview。目录真正导航的是用户可见 query，必须用稳定 row
@@ -247,8 +226,7 @@ export function resolveConversationTurnNavigatorActiveUnitIndex({
 
   const itemByUnitIndex = new Map(items.map((item) => [item.unitIndex, item]));
   const viewportStart = resolveFiniteNonNegative(scrollOffsetPx);
-  const viewportEnd =
-    viewportStart + Math.max(1, resolveFiniteNonNegative(viewportHeightPx));
+  const viewportEnd = viewportStart + Math.max(1, resolveFiniteNonNegative(viewportHeightPx));
 
   let activeUnitIndex: number | undefined;
   let activeDistance = Number.POSITIVE_INFINITY;
@@ -258,13 +236,11 @@ export function resolveConversationTurnNavigatorActiveUnitIndex({
       continue;
     }
     const rowStart = resolveFiniteNonNegative(virtualItem.start);
-    const rowEnd =
-      rowStart + Math.max(1, resolveFiniteNonNegative(virtualItem.size));
+    const rowEnd = rowStart + Math.max(1, resolveFiniteNonNegative(virtualItem.size));
     if (rowEnd < viewportStart || rowStart > viewportEnd) {
       continue;
     }
-    const distanceToViewportStart =
-      rowStart <= viewportStart ? 0 : rowStart - viewportStart;
+    const distanceToViewportStart = rowStart <= viewportStart ? 0 : rowStart - viewportStart;
     if (distanceToViewportStart < activeDistance) {
       activeUnitIndex = item.unitIndex;
       activeDistance = distanceToViewportStart;
@@ -295,14 +271,11 @@ export function resolveConversationTurnNavigatorActiveQueryRowId({
   positions,
   scrollOffsetPx,
   viewportHeightPx,
-}: ResolveConversationTurnNavigatorActiveQueryRowIdOptions):
-  | number
-  | undefined {
+}: ResolveConversationTurnNavigatorActiveQueryRowIdOptions): number | undefined {
   if (positions.length === 0) return undefined;
 
   const viewportStart = resolveFiniteNonNegative(scrollOffsetPx);
-  const viewportEnd =
-    viewportStart + Math.max(1, resolveFiniteNonNegative(viewportHeightPx));
+  const viewportEnd = viewportStart + Math.max(1, resolveFiniteNonNegative(viewportHeightPx));
   const normalized = positions
     .map((position) => {
       const start = resolveFiniteNonNegative(position.start);
@@ -312,18 +285,14 @@ export function resolveConversationTurnNavigatorActiveQueryRowId({
         end: Math.max(start, resolveFiniteNonNegative(position.end)),
       };
     })
-    .sort(
-      (left, right) => left.start - right.start || left.rowId - right.rowId,
-    );
+    .sort((left, right) => left.start - right.start || left.rowId - right.rowId);
 
   const visible = normalized.filter(
-    (position) =>
-      position.end >= viewportStart && position.start <= viewportEnd,
+    (position) => position.end >= viewportStart && position.start <= viewportEnd,
   );
   if (visible.length > 0) {
     return visible.reduce((nearest, candidate) =>
-      Math.abs(candidate.start - viewportStart) <
-      Math.abs(nearest.start - viewportStart)
+      Math.abs(candidate.start - viewportStart) < Math.abs(nearest.start - viewportStart)
         ? candidate
         : nearest,
     ).rowId;
@@ -358,8 +327,6 @@ export function resolveConversationTurnNavigatorBarVisualState({
 
 export function resolveConversationTurnNavigatorVisualFocusItemIndex({
   interactionItemIndex,
-}: ResolveConversationTurnNavigatorVisualFocusItemIndexOptions):
-  | number
-  | undefined {
+}: ResolveConversationTurnNavigatorVisualFocusItemIndexOptions): number | undefined {
   return interactionItemIndex;
 }

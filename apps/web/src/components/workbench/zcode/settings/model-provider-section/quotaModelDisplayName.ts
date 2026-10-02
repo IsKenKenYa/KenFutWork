@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/settings/model-provider-section/quotaModelDisplayName.ts`（references/zcode/packages/ui/src/settings/model-provider-section/quotaModelDisplayName.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
 export function formatQuotaModelDisplayName(value: string): string {
   const compact = value.replace(/\s+/g, " ").trim();
   if (/^GLM-\S+$/i.test(compact)) {

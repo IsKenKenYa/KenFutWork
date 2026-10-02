@@ -1,24 +1,18 @@
-/**
- * zcode 照搬：`@/lib/userActionTelemetry.ts`（references/zcode/packages/ui/src/lib/userActionTelemetry.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-
-import {
-  resolveUserActionCatalogEntry,
-  type UserActionFeatureId,
-} from "@zui/lib/userActionTraceCatalog";
 import type {
   RendererActionTraceAttributes,
   RendererActionTraceBatchV1,
   RendererActionTraceConfigV1,
   RendererActionTraceResourceV1,
   RendererActionTraceSpanV1,
-} from "@zui/lib/zcode-shared";
+} from "@zcode/shared";
 import {
   RENDERER_ACTION_TRACE_MAX_BATCH_BYTES,
   RENDERER_ACTION_TRACE_MAX_BATCH_SPANS,
-} from "@zui/lib/zcode-shared";
+} from "@zcode/shared";
+import {
+  resolveUserActionCatalogEntry,
+  type UserActionFeatureId,
+} from "@zui/lib/userActionTraceCatalog.js";
 
 const RENDERER_ACTION_TRACE_MAX_QUEUE_SPANS = 256;
 const RENDERER_ACTION_TRACE_FLUSH_DELAY_MS = 2_000;
@@ -29,9 +23,7 @@ interface UserActionTelemetryClock {
 }
 
 export type UserActionTrigger = RendererActionTraceAttributes["trigger"];
-export type UserActionResultSource = NonNullable<
-  RendererActionTraceAttributes["result_source"]
->;
+export type UserActionResultSource = NonNullable<RendererActionTraceAttributes["result_source"]>;
 
 interface StartUserActionInput {
   featureId: UserActionFeatureId;
@@ -226,26 +218,14 @@ export class RendererUserActionTelemetry implements UserActionTelemetry {
       ...(result.resultSource ? { result_source: result.resultSource } : {}),
       ...(result.failureStage ? { failure_stage: result.failureStage } : {}),
       ...(result.stateAfter ? { state_after: result.stateAfter } : {}),
-      ...(result.configured === undefined
-        ? {}
-        : { configured: result.configured }),
-      ...(result.requiresRestart === undefined
-        ? {}
-        : { requires_restart: result.requiresRestart }),
+      ...(result.configured !== undefined ? { configured: result.configured } : {}),
+      ...(result.requiresRestart !== undefined ? { requires_restart: result.requiresRestart } : {}),
       ...(result.sectionId ? { section_id: result.sectionId } : {}),
       ...(result.valueAfter ? { value_after: result.valueAfter } : {}),
-      ...(active.input.workspaceKind
-        ? { workspace_kind: active.input.workspaceKind }
-        : {}),
-      ...(active.input.remoteKind
-        ? { remote_kind: active.input.remoteKind }
-        : {}),
-      ...(result.admissionResult
-        ? { admission_result: result.admissionResult }
-        : {}),
-      ...(active.input.automationKind
-        ? { automation_kind: active.input.automationKind }
-        : {}),
+      ...(active.input.workspaceKind ? { workspace_kind: active.input.workspaceKind } : {}),
+      ...(active.input.remoteKind ? { remote_kind: active.input.remoteKind } : {}),
+      ...(result.admissionResult ? { admission_result: result.admissionResult } : {}),
+      ...(active.input.automationKind ? { automation_kind: active.input.automationKind } : {}),
     };
     const span: RendererActionTraceSpanV1 = {
       traceId: active.traceId,
@@ -273,10 +253,7 @@ export class RendererUserActionTelemetry implements UserActionTelemetry {
 
   private takeNextBatch(): RendererActionTraceSpanV1[] {
     const spans: RendererActionTraceSpanV1[] = [];
-    while (
-      spans.length < RENDERER_ACTION_TRACE_MAX_BATCH_SPANS &&
-      this.completedQueue.length > 0
-    ) {
+    while (spans.length < RENDERER_ACTION_TRACE_MAX_BATCH_SPANS && this.completedQueue.length > 0) {
       const candidate = this.completedQueue[0];
       if (!candidate) break;
       const next = [...spans, candidate];
@@ -300,9 +277,7 @@ let activeUserActionTelemetry: UserActionTelemetry = {
   start: () => NOOP_ACTION_HANDLE,
 };
 
-export function setUserActionTelemetry(
-  telemetry: UserActionTelemetry | null,
-): void {
+export function setUserActionTelemetry(telemetry: UserActionTelemetry | null): void {
   activeUserActionTelemetry = telemetry ?? { start: () => NOOP_ACTION_HANDLE };
 }
 
@@ -320,9 +295,7 @@ export async function runUserActionAsync<T>(options: {
   try {
     const value = await options.operation();
     handle.complete(
-      typeof options.completed === "function"
-        ? options.completed(value)
-        : options.completed,
+      typeof options.completed === "function" ? options.completed(value) : options.completed,
     );
     return value;
   } catch (error) {
@@ -341,9 +314,7 @@ export function runUserAction<T>(options: {
   try {
     const value = options.operation();
     handle.complete(
-      typeof options.completed === "function"
-        ? options.completed(value)
-        : options.completed,
+      typeof options.completed === "function" ? options.completed(value) : options.completed,
     );
     return value;
   } catch (error) {
@@ -353,15 +324,13 @@ export function runUserAction<T>(options: {
 }
 
 function defaultNow(): number {
-  return typeof performance === "undefined"
-    ? Date.now()
-    : performance.timeOrigin + performance.now();
+  return typeof performance !== "undefined"
+    ? performance.timeOrigin + performance.now()
+    : Date.now();
 }
 
 function randomHex(bytes: 8 | 16): string {
   const values = new Uint8Array(bytes);
   crypto.getRandomValues(values);
-  return Array.from(values, (value) =>
-    value.toString(16).padStart(2, "0"),
-  ).join("");
+  return Array.from(values, (value) => value.toString(16).padStart(2, "0")).join("");
 }

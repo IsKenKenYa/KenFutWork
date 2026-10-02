@@ -137,17 +137,13 @@ export function trimTrailingSeparator(path: string): string {
 export function resolveIconName(filePath: string): string {
   const normalizedPath = normalizePath(filePath);
   const lastSlash = normalizedPath.lastIndexOf("/");
-  const leaf =
-    lastSlash === -1 ? normalizedPath : normalizedPath.slice(lastSlash + 1);
+  const leaf = lastSlash === -1 ? normalizedPath : normalizedPath.slice(lastSlash + 1);
   const normalizedLeaf = leaf.toLowerCase();
   const lastDot = leaf.lastIndexOf(".");
   const fileNameWithoutExtension =
     lastDot === -1 ? normalizedLeaf : normalizedLeaf.slice(0, lastDot);
 
-  const fileNameAliasCandidates = new Set<string>([
-    normalizedLeaf,
-    fileNameWithoutExtension,
-  ]);
+  const fileNameAliasCandidates = new Set<string>([normalizedLeaf, fileNameWithoutExtension]);
 
   // 之前只会匹配完整文件名和"去掉最后一个扩展名"的结果，
   // 像 vitest.config.ts / tsconfig.base.json / .env.local 这类多段文件名会提前退回扩展名图标，
@@ -172,9 +168,7 @@ export function resolveIconName(filePath: string): string {
   }
 
   const extension = leaf.slice(lastDot + 1).toLowerCase();
-  return (
-    EXTENSION_ICON_ALIASES[extension] ?? extension ?? DEFAULT_FILE_ICON_NAME
-  );
+  return EXTENSION_ICON_ALIASES[extension] ?? extension ?? DEFAULT_FILE_ICON_NAME;
 }
 
 export function getIconPalette(iconName: string) {

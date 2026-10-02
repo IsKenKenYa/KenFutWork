@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/electron-webview.d.ts`（references/zcode/packages/ui/src/electron-webview.d.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬（Electron `<webview>` 全局 JSX 声明；消费方 CodingPlanEmbeddedWebviewDialog）。
- */
 import type { DetailedHTMLProps, HTMLAttributes } from "react";
 
 declare module "react" {
@@ -159,13 +154,12 @@ declare global {
 
   namespace JSX {
     interface IntrinsicElements {
-      webview: DetailedHTMLProps<
-        HTMLAttributes<HTMLWebViewElement>,
-        HTMLWebViewElement
-      > & {
+      webview: DetailedHTMLProps<HTMLAttributes<HTMLWebViewElement>, HTMLWebViewElement> & {
         partition?: string;
         src?: string;
       };
     }
   }
 }
+
+export {};

@@ -1,16 +1,11 @@
-/**
- * zcode 照搬：`@/lib/builtinSkillI18n.ts`（references/zcode/packages/ui/src/lib/builtinSkillI18n.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；P5 适配：可选属性放宽 `| undefined`（exactOptionalPropertyTypes，照搬调用点显式传 undefined）。
- */
-import type { Locale, SkillScope } from "@zui/lib/zcode-shared";
+import type { Locale, SkillScope } from "@zcode/shared";
 
 interface SkillDisplayCandidate {
   name: string;
   description: string;
   path: string;
   scope: SkillScope;
-  pluginName?: string | undefined;
+  pluginName?: string;
 }
 
 const OFFICIAL_BUILTIN_PLUGIN_NAMES = new Set([
@@ -48,8 +43,7 @@ const OFFICIAL_PLUGIN_PATH_MARKERS = [
 
 const BUILTIN_SKILL_DESCRIPTIONS: Record<string, Record<Locale, string>> = {
   "android-dev": {
-    "zh-CN":
-      "通过 android-emulator MCP 工具构建、运行、检查并轻量自动化 Android 应用。",
+    "zh-CN": "通过 android-emulator MCP 工具构建、运行、检查并轻量自动化 Android 应用。",
     "en-US":
       "Build, run, inspect, and lightly automate Android apps through the android-emulator MCP tools.",
   },
@@ -60,8 +54,7 @@ const BUILTIN_SKILL_DESCRIPTIONS: Record<string, Record<Locale, string>> = {
       "Use before any creative work, including creating features, building components, adding functionality, or modifying behavior. Explores user intent, requirements, and design before implementation.",
   },
   "control-browser": {
-    "zh-CN":
-      "控制 ZCode 内置浏览器，用于打开、检查、点击、输入、截图或验证网页和本地开发页面。",
+    "zh-CN": "控制 ZCode 内置浏览器，用于打开、检查、点击、输入、截图或验证网页和本地开发页面。",
     "en-US":
       "Control ZCode's built-in browser to open, inspect, click, type, screenshot, or verify webpages and local development targets.",
   },
@@ -76,12 +69,6 @@ const BUILTIN_SKILL_DESCRIPTIONS: Record<string, Record<Locale, string>> = {
     "en-US":
       "Create, edit, and analyze DOCX documents with revisions, comments, formatting preservation, and text extraction. Use for new documents, edits, revision handling, comments, and professional Word document work.",
   },
-  "dynamic-workflows": {
-    "zh-CN":
-      "编写、调试或重新提交 CreateWorkflow 的 dynamic workflow 脚本时使用：如何设计子代理拓扑、定义结果类型、按文件或 git 扇出、用 world.run 命令做门控检查、用 EvalWorkflowSnippet 预检片段、写 planner-reviewer 循环、用 report() 保住已完成的工作、把产物发布给用户，以及 run 转入后台后该怎么处理。",
-    "en-US":
-      "Use when writing, debugging, or resubmitting a dynamic-workflow script for CreateWorkflow: choosing subagent topology, typing subagent results, fanning out over files or git, gating loops on world.run commands, testing pieces with EvalWorkflowSnippet, planner-reviewer loops, report() salvage, publishing artifacts the user opens, and handling a backgrounded run.",
-  },
   "executing-plans": {
     "zh-CN": "已有书面实现计划，并要在带评审检查点的独立会话中执行时使用。",
     "en-US":
@@ -93,8 +80,7 @@ const BUILTIN_SKILL_DESCRIPTIONS: Record<string, Record<Locale, string>> = {
       "Use when implementation is complete, tests pass, and you need to decide how to integrate the work through merge, PR, or cleanup.",
   },
   "ios-dev": {
-    "zh-CN":
-      "通过 ios-simulator MCP 工具构建、运行、检查并轻量自动化 iOS 模拟器应用。",
+    "zh-CN": "通过 ios-simulator MCP 工具构建、运行、检查并轻量自动化 iOS 模拟器应用。",
     "en-US":
       "Build, run, inspect, and lightly automate iOS Simulator apps through the ios-simulator MCP tools.",
   },
@@ -123,8 +109,7 @@ const BUILTIN_SKILL_DESCRIPTIONS: Record<string, Record<Locale, string>> = {
   },
   "plugin-creator": {
     "zh-CN": "创建、校验 ZCode 插件，并指导本地安装与更新。",
-    "en-US":
-      "Create and validate ZCode plugins, and guide local installation and updates.",
+    "en-US": "Create and validate ZCode plugins, and guide local installation and updates.",
   },
   "skill-creator": {
     "zh-CN":
@@ -144,8 +129,7 @@ const BUILTIN_SKILL_DESCRIPTIONS: Record<string, Record<Locale, string>> = {
   },
   "test-driven-development": {
     "zh-CN": "实现任何功能或 bugfix 时，在编写实现代码前使用。",
-    "en-US":
-      "Use when implementing any feature or bugfix, before writing implementation code.",
+    "en-US": "Use when implementing any feature or bugfix, before writing implementation code.",
   },
   "using-git-worktrees": {
     "zh-CN":
@@ -183,10 +167,7 @@ const BUILTIN_SKILL_DESCRIPTIONS: Record<string, Record<Locale, string>> = {
   },
 };
 
-export function resolveSkillSourceLabel(
-  scope: SkillScope,
-  locale?: Locale,
-): string {
+export function resolveSkillSourceLabel(scope: SkillScope, locale?: Locale): string {
   if (locale === "zh-CN") {
     if (scope === "workspace") return "工作区";
     if (scope === "plugin") return "插件";
@@ -216,7 +197,5 @@ function isOfficialBuiltinSkill(skill: SkillDisplayCandidate): boolean {
     return true;
   }
   const normalizedPath = skill.path.replaceAll("\\", "/");
-  return OFFICIAL_PLUGIN_PATH_MARKERS.some((marker) =>
-    normalizedPath.includes(marker),
-  );
+  return OFFICIAL_PLUGIN_PATH_MARKERS.some((marker) => normalizedPath.includes(marker));
 }

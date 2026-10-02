@@ -1,42 +1,29 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/agent.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/agent.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- * 适配注记：AgentActivitySection 追加 export（右栏子代理线程消费，手册 §4.4-2「以照搬件为准」）。
- * 适配注记：接口可选属性放宽 | undefined 以等价 zcode tsconfig 行为（exactOptionalPropertyTypes）。
- */
-
-import { MessageResponse } from "@zui/components/ai-elements/message";
-import { cn } from "@zui/components/lib/utils";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import {
-  resolveSubagentColorFromName,
-  SUBAGENT_TEXT_COLOR_CLASS,
-} from "@zui/lib/subagentColors";
-import type { AgentColor } from "@zui/lib/zcode-shared";
-import { useSubagentsContextStore } from "@zui/store/subagentsContextStore";
-import { useSubagentsStore } from "@zui/store/subagentsStore";
-import { ToolCallBlock } from "@zui/ToolCallBlocks";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
 import { BotIcon } from "lucide-react";
-import { type ReactNode, useCallback, useMemo } from "react";
+import { useCallback, useMemo, type ReactNode } from "react";
+import type { AgentColor } from "@zcode/shared";
+import { MessageResponse } from "@zui/components/ai-elements/message.js";
+import { cn } from "@zui/components/lib/utils.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { resolveSubagentColorFromName, SUBAGENT_TEXT_COLOR_CLASS } from "@zui/lib/subagentColors.js";
+import { useSubagentsContextStore } from "@zui/store/subagentsContextStore.js";
+import { useSubagentsStore } from "@zui/store/subagentsStore.js";
+import { ToolCallBlock } from "@zui/ToolCallBlocks.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { ToolLayout } from "../ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "../shared.js";
+import { getLatestExploreChildSummaryFromChildren } from "./explore.js";
+import { AgentPromptSection } from "./agentPromptSection.js";
 import {
   formatAgentMessage,
-  getAgentActivityContent,
   getAgentColor,
   getAgentKindLabel,
+  getAgentActivityContent,
   getAgentPrimaryText,
   getAgentPrompt,
   readBackgroundAgentInfo,
-} from "./agentHelpers";
-import { AgentPromptSection } from "./agentPromptSection";
-import { getLatestExploreChildSummaryFromChildren } from "./explore";
+} from "./agentHelpers.js";
 
-const AGENT_TOOL_ICON = (
-  <BotIcon className="size-4 shrink-0 text-foreground-subtle" />
-);
+const AGENT_TOOL_ICON = <BotIcon className="size-4 shrink-0 text-foreground-subtle" />;
 
 function AgentChildToolList({
   childToolCalls,
@@ -51,19 +38,13 @@ function AgentChildToolList({
 }: {
   childToolCalls: ToolCallBlockRenderContext["toolCallNode"]["childToolCalls"];
   workspacePath: string;
-  theme?: ToolCallBlockRenderContext["theme"] | undefined;
-  codePreviewSettings?:
-    | ToolCallBlockRenderContext["codePreviewSettings"]
-    | undefined;
-  onOpenCodeViewer?: ToolCallBlockRenderContext["onOpenCodeViewer"] | undefined;
-  onOpenFileLink?: ToolCallBlockRenderContext["onOpenFileLink"] | undefined;
-  onOpenBrowserUrl?: ToolCallBlockRenderContext["onOpenBrowserUrl"] | undefined;
-  onOpenAutomationsMain?:
-    | ToolCallBlockRenderContext["onOpenAutomationsMain"]
-    | undefined;
-  onLoadFullToolCallFields?:
-    | ToolCallBlockRenderContext["onLoadFullToolCallFields"]
-    | undefined;
+  theme?: ToolCallBlockRenderContext["theme"];
+  codePreviewSettings?: ToolCallBlockRenderContext["codePreviewSettings"];
+  onOpenCodeViewer?: ToolCallBlockRenderContext["onOpenCodeViewer"];
+  onOpenFileLink?: ToolCallBlockRenderContext["onOpenFileLink"];
+  onOpenBrowserUrl?: ToolCallBlockRenderContext["onOpenBrowserUrl"];
+  onOpenAutomationsMain?: ToolCallBlockRenderContext["onOpenAutomationsMain"];
+  onLoadFullToolCallFields?: ToolCallBlockRenderContext["onLoadFullToolCallFields"];
 }) {
   if (childToolCalls.length === 0) {
     return null;
@@ -85,14 +66,14 @@ function AgentChildToolList({
           onOpenBrowserUrl={onOpenBrowserUrl}
           onOpenAutomationsMain={onOpenAutomationsMain}
           onLoadFullToolCallFields={onLoadFullToolCallFields}
-          suppressSourceLabel={true}
+          suppressSourceLabel
         />
       ))}
     </div>
   );
 }
 
-export function AgentActivitySection({
+function AgentActivitySection({
   label,
   content,
   workspacePath,
@@ -105,13 +86,11 @@ export function AgentActivitySection({
   label: string;
   content: string;
   workspacePath: string;
-  theme?: ToolCallBlockRenderContext["theme"] | undefined;
-  codePreviewSettings?:
-    | ToolCallBlockRenderContext["codePreviewSettings"]
-    | undefined;
-  onOpenCodeViewer?: ToolCallBlockRenderContext["onOpenCodeViewer"] | undefined;
-  onOpenFileLink?: ToolCallBlockRenderContext["onOpenFileLink"] | undefined;
-  onOpenBrowserUrl?: ToolCallBlockRenderContext["onOpenBrowserUrl"] | undefined;
+  theme?: ToolCallBlockRenderContext["theme"];
+  codePreviewSettings?: ToolCallBlockRenderContext["codePreviewSettings"];
+  onOpenCodeViewer?: ToolCallBlockRenderContext["onOpenCodeViewer"];
+  onOpenFileLink?: ToolCallBlockRenderContext["onOpenFileLink"];
+  onOpenBrowserUrl?: ToolCallBlockRenderContext["onOpenBrowserUrl"];
 }) {
   return (
     <section className="space-y-2">
@@ -119,23 +98,16 @@ export function AgentActivitySection({
         <h4 className="p-3 text-ui-base font-medium tracking-wide text-foreground-subtlest uppercase">
           {label}
         </h4>
-        <div
-          className="overflow-auto max-h-64"
-          data-markdown-table-sticky-scrollbar="disabled"
-        >
+        <div className="overflow-auto max-h-64" data-markdown-table-sticky-scrollbar="disabled">
           {/* Agent 活动内容同样可能包含长代码/路径，允许横向滚动避免窄屏截断。*/}
           <MessageResponse
             className="px-3 py-2 min-w-0 break-words text-ui-base [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
             workspacePath={workspacePath}
-            {...(theme === undefined ? {} : { theme })}
-            {...(codePreviewSettings === undefined
-              ? {}
-              : { codePreviewSettings })}
-            {...(onOpenCodeViewer === undefined ? {} : { onOpenCodeViewer })}
-            {...(onOpenFileLink === undefined ? {} : { onOpenFileLink })}
-            {...(onOpenBrowserUrl === undefined
-              ? {}
-              : { onOpenExternalUrl: onOpenBrowserUrl })}
+            theme={theme}
+            codePreviewSettings={codePreviewSettings}
+            onOpenCodeViewer={onOpenCodeViewer}
+            onOpenFileLink={onOpenFileLink}
+            onOpenExternalUrl={onOpenBrowserUrl}
           >
             {content}
           </MessageResponse>
@@ -145,13 +117,7 @@ export function AgentActivitySection({
   );
 }
 
-function BackgroundAgentProcessRow({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
+function BackgroundAgentProcessRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="grid grid-cols-[5rem_minmax(0,1fr)] items-start gap-2">
       <div className="text-foreground-subtlest">{label}</div>
@@ -186,14 +152,13 @@ function BackgroundAgentProcessSection({
   isRunning,
   status,
 }: {
-  outputFile?: string | undefined;
+  outputFile?: string;
   hasActivity: boolean;
   isRunning: boolean;
   status: string | undefined;
 }) {
   const { intl } = useZCodeIntl();
-  const msg = (id: string, fallback: string) =>
-    formatAgentMessage(intl, id, fallback);
+  const msg = (id: string, fallback: string) => formatAgentMessage(intl, id, fallback);
   const launchStatus =
     status === "failed"
       ? msg("chat.toolCall.agent.backgroundLaunchFailed", "启动失败")
@@ -201,30 +166,14 @@ function BackgroundAgentProcessSection({
         ? msg("chat.toolCall.agent.backgroundLaunching", "启动中")
         : msg("chat.toolCall.agent.backgroundLaunched", "已启动");
   const launchStatusKind =
-    status === "failed"
-      ? "failed"
-      : status === "pending"
-        ? "pending"
-        : "launched";
+    status === "failed" ? "failed" : status === "pending" ? "pending" : "launched";
   const activityStatus = isRunning
     ? hasActivity
-      ? msg(
-          "chat.toolCall.agent.backgroundActivityStreaming",
-          "后台运行中，正在同步输出",
-        )
-      : msg(
-          "chat.toolCall.agent.backgroundActivityRunningWaiting",
-          "后台运行中，等待输出",
-        )
+      ? msg("chat.toolCall.agent.backgroundActivityStreaming", "后台运行中，正在同步输出")
+      : msg("chat.toolCall.agent.backgroundActivityRunningWaiting", "后台运行中，等待输出")
     : hasActivity
-      ? msg(
-          "chat.toolCall.agent.backgroundActivityReceived",
-          "已收到子智能体回传",
-        )
-      : msg(
-          "chat.toolCall.agent.backgroundActivityWaiting",
-          "等待子智能体回传",
-        );
+      ? msg("chat.toolCall.agent.backgroundActivityReceived", "已收到子智能体回传")
+      : msg("chat.toolCall.agent.backgroundActivityWaiting", "等待子智能体回传");
   const activityStatusKind = isRunning
     ? hasActivity
       ? "streaming"
@@ -243,20 +192,14 @@ function BackgroundAgentProcessSection({
         {msg("chat.toolCall.agent.backgroundProcess", "后台 Agent 过程")}
       </div>
       <div className="mt-2 space-y-2">
-        <BackgroundAgentProcessRow
-          label={msg("chat.toolCall.agent.backgroundLaunch", "启动")}
-        >
+        <BackgroundAgentProcessRow label={msg("chat.toolCall.agent.backgroundLaunch", "启动")}>
           {launchStatus}
         </BackgroundAgentProcessRow>
-        <BackgroundAgentProcessRow
-          label={msg("chat.toolCall.agent.backgroundActivity", "活动")}
-        >
+        <BackgroundAgentProcessRow label={msg("chat.toolCall.agent.backgroundActivity", "活动")}>
           {activityStatus}
         </BackgroundAgentProcessRow>
         {outputFile ? (
-          <BackgroundAgentProcessRow
-            label={msg("chat.toolCall.agent.outputFile", "输出文件")}
-          >
+          <BackgroundAgentProcessRow label={msg("chat.toolCall.agent.outputFile", "输出文件")}>
             <span className="block break-all rounded-md bg-background px-2 py-1 font-mono text-foreground-subtle">
               {outputFile}
             </span>
@@ -271,21 +214,12 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
   const { toolCall, childToolCalls } = context.toolCallNode;
   const prompt = getAgentPrompt(toolCall);
-  const fallbackLabel = formatAgentMessage(
-    intl,
-    "chat.toolCall.agent.fallback",
-    "SubAgent",
-  );
+  const fallbackLabel = formatAgentMessage(intl, "chat.toolCall.agent.fallback", "SubAgent");
   const primaryText = getAgentPrimaryText(toolCall, fallbackLabel);
-  const agentName = getAgentKindLabel(
-    toolCall,
-    "",
-    context.authoritativeAgentType,
-  );
+  const agentName = getAgentKindLabel(toolCall, "", context.authoritativeAgentType);
   const configuredAgentsFromContext = useSubagentsContextStore((state) => {
     const candidates = Object.values(state.contexts).filter(
-      (candidate) =>
-        candidate.workspacePath === context.workspacePath && candidate.loaded,
+      (candidate) => candidate.workspacePath === context.workspacePath && candidate.loaded,
     );
     // 同一 remote path 可能对应多个 workspaceIdentity；缺少 identity 时宁可回退默认色，
     // 也不能猜一个桶并把另一远端 workspace 的 Agent 配置串进来。
@@ -310,14 +244,10 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
     })?.color;
   }, [agentName, configuredAgents]);
   const agentColor = agentName
-    ? (configuredAgentColor ??
-      getAgentColor(toolCall) ??
-      resolveSubagentColorFromName(agentName))
+    ? (configuredAgentColor ?? getAgentColor(toolCall) ?? resolveSubagentColorFromName(agentName))
     : null;
   const agentNameDetail =
-    agentName && agentColor ? (
-      <AgentNameText color={agentColor} name={agentName} />
-    ) : null;
+    agentName && agentColor ? <AgentNameText color={agentColor} name={agentName} /> : null;
   // Agent 父块的完成/进行中边界只由父 Agent tool 决定。
   // 子 tool 是展开区明细，不能反向续住父块运行态，否则父 Agent completed 后
   // 仍会显示渐变和子工具摘要，和协议里的父工具生命周期不一致。
@@ -379,11 +309,7 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
         ) : null}
         {activityThought ? (
           <AgentActivitySection
-            label={formatAgentMessage(
-              intl,
-              "chat.toolCall.agent.thought",
-              "Agent thought",
-            )}
+            label={formatAgentMessage(intl, "chat.toolCall.agent.thought", "Agent thought")}
             content={activityThought}
             workspacePath={context.workspacePath}
             theme={context.theme}
@@ -395,11 +321,7 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
         ) : null}
         {activityContent ? (
           <AgentActivitySection
-            label={formatAgentMessage(
-              intl,
-              "chat.toolCall.agent.output",
-              "Agent output",
-            )}
+            label={formatAgentMessage(intl, "chat.toolCall.agent.output", "Agent output")}
             content={activityContent}
             workspacePath={context.workspacePath}
             theme={context.theme}
@@ -457,26 +379,21 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
         kindDetail={agentNameDetail}
         expandedKindDetail={agentNameDetail}
         sourceLabel={sourceLabel}
-        autoCollapseOnComplete={true}
+        autoCollapseOnComplete
         primaryText={
-          collapsedChildSummary
-            ? collapsedChildSummary.primaryText
-            : collapsedPrimaryText
+          collapsedChildSummary ? collapsedChildSummary.primaryText : collapsedPrimaryText
         }
         expandedPrimaryText={expandedPrimaryText}
         secondaryText={collapsedChildSummary?.secondaryText}
         expandedSecondaryText={null}
         summaryContentSeparator="·"
-        animateSummaryContent={true}
+        animateSummaryContent
         disableSummaryContentAnimation={context.disableSummaryContentAnimation}
         summaryContentKey={
-          collapsedChildSummary?.animationKey ??
-          `agent:${toolCall.toolId}:${primaryText}`
+          collapsedChildSummary?.animationKey ?? `agent:${toolCall.toolId}:${primaryText}`
         }
         statusLabel={context.statusLabel}
-        statusTooltip={
-          toolCall.status === "failed" ? context.errorText : undefined
-        }
+        statusTooltip={toolCall.status === "failed" ? context.errorText : undefined}
         showFailureStatus={toolCall.status === "failed"}
         isRunning={isAgentVisuallyRunning}
         title={collapsedChildSummary?.title ?? primaryText}

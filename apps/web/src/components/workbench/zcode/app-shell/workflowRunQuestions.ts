@@ -1,9 +1,4 @@
 /**
- * zcode 照搬：`@/app-shell/workflowRunQuestions.ts`（references/zcode/packages/ui/src/app-shell/workflowRunQuestions.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-/**
  * 待答问题（升级问答）的纯展示规则。
  *
  * 从 workflowRunPanel.ts 拆出（eslint max-lines 400 行门，与 WorkflowRunSidePaneSections.tsx
@@ -21,10 +16,7 @@ const WAITED_DAY_MS = 24 * WAITED_HOUR_MS;
  * 它是结构类型，两边各写一份不会漂移（形状由 react-intl 的 formatMessage 决定），而 import
  * 一个类型换来的是一条本不需要的模块依赖——拆文件的目的正是不要那条依赖。
  */
-type FormatMessage = (
-  descriptor: { id: string },
-  values?: Record<string, string>,
-) => string;
+type FormatMessage = (descriptor: { id: string }, values?: Record<string, string>) => string;
 
 /**
  * 「这个问题已经等了多久」——读者看到一条待答问题时问的第一件事。
@@ -48,8 +40,7 @@ export function workflowRunQuestionWaitedLabel(
 ): string | undefined {
   if (askedAt === undefined || !Number.isFinite(askedAt)) return undefined;
   const elapsed = now - askedAt;
-  if (elapsed < WAITED_MINUTE_MS)
-    return formatMessage({ id: "sidePane.time.justNow" });
+  if (elapsed < WAITED_MINUTE_MS) return formatMessage({ id: "sidePane.time.justNow" });
   if (elapsed < WAITED_HOUR_MS) {
     return formatMessage(
       { id: "sidePane.time.minutesAgo" },

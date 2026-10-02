@@ -1,81 +1,18 @@
-/**
- * zcode 照搬：`@/v4/ConversationStatusPanel.tsx`（references/zcode/packages/ui/src/v4/ConversationStatusPanel.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀；源文件自带头注保留于下。
- * P6 适配：exactOptionalPropertyTypes——文件内组件可选 props 放宽 `| undefined`（照搬调用点显式传 undefined），仅签名放宽、逻辑零改动。
- */
 /* oxlint-disable eslint(max-lines) -- 状态面板同时维护收起态摘要、展开态分区、菜单策略和宽度自适应，同文件能保证两种形态共享同一内容优先级。 */
-
-import { formatBackgroundTaskElapsedLabel } from "@zui/BackgroundTaskElapsedLabel";
-import { ControlHintTooltip } from "@zui/ControlHintTooltip";
-import { cn } from "@zui/components/lib/utils";
-import { Button } from "@zui/components/ui/button";
+import { useIsOfficeMode } from "@zui/hooks/useInterfaceMode.js";
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@zui/components/ui/collapsible";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from "@zui/components/ui/dropdown-menu";
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from "@zui/components/ui/hover-card";
-import {
-  RUN_STATUS_DOT,
-  RUN_STATUS_TEXT,
-} from "@zui/components/workflow-graph/run-status-presentation";
-import { useNowTicker } from "@zui/components/workflow-graph/use-now-ticker";
-import { GitActionMenu } from "@zui/GitActionMenu";
-import { GitBranchSwitcher } from "@zui/GitBranchSwitcher";
-import { useIsOfficeMode } from "@zui/hooks/useInterfaceMode";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type {
-  OpenPlanDetailSideTabRequest,
-  OpenSubagentDirectorySideTabRequest,
-  OpenSubagentSideTabRequest,
-  OpenWorkflowRunDirectorySideTabRequest,
-} from "@zui/lib/workspaceSidePane";
-import type {
-  GitChangeSourceId,
-  GitRepositorySummary,
-  ZCodeSessionRunningSubagent,
-  ZCodeTaskChangeSummary,
-} from "@zui/lib/zcode-shared";
-import {
-  TID_CHAT_SUMMARY_PANEL,
-  TID_V4_BACKGROUND_WORK_CANCEL,
-  TID_V4_BACKGROUND_WORK_ITEM,
-  testId,
-} from "@zui/lib/zcode-shared";
-import type {
-  BackgroundWorkSummary,
-  GoalState,
-  PlanState,
-  ToolCallRow,
-  WorkflowRunState,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import {
-  buildConversationGoalIterationSummaries,
-  getConversationGoalElapsedSeconds,
-} from "@zui/v4/conversationGoalSummaryModel";
-import { resolveConversationStatusPanelVariant } from "@zui/v4/conversationLayout";
-import type { ConversationStatusPanelWorkflowRunTarget } from "@zui/v4/conversationStatusPanelModel";
-import {
-  buildConversationStatusPanelModel,
-  type ConversationStatusPanelModel,
-  type ConversationStatusPanelRunningSubagent,
-  type ConversationStatusPanelSessionPlanItem,
-  type ConversationStatusPanelWorkflowRun,
-  workflowRunOpenTarget,
-} from "@zui/v4/conversationStatusPanelModel";
-import type { ChatViewSummaryPanelVariant } from "@zui/v4/legacyChatViewTypes";
+  forwardRef,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentPropsWithoutRef,
+  type CSSProperties,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import {
   ActivityIcon,
   ArrowRightIcon,
@@ -99,18 +36,70 @@ import {
   Workflow,
 } from "lucide-react";
 import {
-  type ComponentPropsWithoutRef,
-  type CSSProperties,
-  forwardRef,
-  type MouseEvent,
-  memo,
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+  TID_CHAT_SUMMARY_PANEL,
+  TID_V4_BACKGROUND_WORK_CANCEL,
+  TID_V4_BACKGROUND_WORK_ITEM,
+  testId,
+} from "@zcode/shared";
+import type {
+  GitChangeSourceId,
+  GitRepositorySummary,
+  ZCodeSessionRunningSubagent,
+  ZCodeTaskChangeSummary,
+} from "@zcode/shared";
+import type {
+  BackgroundWorkSummary,
+  GoalState,
+  PlanState,
+  ToolCallRow,
+  WorkflowRunState,
+} from "@zcode/shared/zcode-protocol-v4";
+import { cn } from "@zui/components/lib/utils.js";
+import { Button } from "@zui/components/ui/button.js";
+import {
+  RUN_STATUS_DOT,
+  RUN_STATUS_TEXT,
+} from "@zui/components/workflow-graph/run-status-presentation.js";
+import { useNowTicker } from "@zui/components/workflow-graph/use-now-ticker.js";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@zui/components/ui/collapsible.js";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@zui/components/ui/dropdown-menu.js";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@zui/components/ui/hover-card.js";
+import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
+import { formatBackgroundTaskElapsedLabel } from "@zui/BackgroundTaskElapsedLabel.js";
+import { GitActionMenu } from "@zui/GitActionMenu.js";
+import { GitBranchSwitcher } from "@zui/GitBranchSwitcher.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type {
+  OpenPlanDetailSideTabRequest,
+  OpenSubagentDirectorySideTabRequest,
+  OpenSubagentSideTabRequest,
+  OpenWorkflowRunDirectorySideTabRequest,
+} from "@zui/lib/workspaceSidePane.js";
+import type { ChatViewSummaryPanelVariant } from "@zui/v4/legacyChatViewTypes.js";
+import { resolveConversationStatusPanelVariant } from "@zui/v4/conversationLayout.js";
+import {
+  buildConversationStatusPanelModel,
+  type ConversationStatusPanelRunningSubagent,
+  type ConversationStatusPanelModel,
+  type ConversationStatusPanelSessionPlanItem,
+  type ConversationStatusPanelWorkflowRun,
+} from "@zui/v4/conversationStatusPanelModel.js";
+import type { ConversationStatusPanelWorkflowRunTarget } from "@zui/v4/conversationStatusPanelModel.js";
+import { workflowRunOpenTarget } from "@zui/v4/conversationStatusPanelModel.js";
+import {
+  buildConversationGoalIterationSummaries,
+  getConversationGoalElapsedSeconds,
+} from "@zui/v4/conversationGoalSummaryModel.js";
 
 interface ConversationStatusPanelProps {
   workspacePath: string;
@@ -156,15 +145,9 @@ interface ConversationStatusPanelProps {
   onOpenBackgroundBash?: (work: BackgroundWorkSummary) => void;
   onCancelBackgroundWork?: (workId: string) => void;
   onOpenSubagentSession?: (request: OpenSubagentSideTabRequest) => void;
-  onOpenSubagentDirectory?: (
-    request: OpenSubagentDirectorySideTabRequest,
-  ) => void;
-  onOpenWorkflowRun?:
-    | ((target: ConversationStatusPanelWorkflowRunTarget) => void)
-    | undefined;
-  onOpenWorkflowRunDirectory?: (
-    request: OpenWorkflowRunDirectorySideTabRequest,
-  ) => void;
+  onOpenSubagentDirectory?: (request: OpenSubagentDirectorySideTabRequest) => void;
+  onOpenWorkflowRun?: (target: ConversationStatusPanelWorkflowRunTarget) => void;
+  onOpenWorkflowRunDirectory?: (request: OpenWorkflowRunDirectorySideTabRequest) => void;
   className?: string;
 }
 
@@ -182,12 +165,8 @@ function formatDurationUnits(
   const minutes = Math.floor((seconds % 3600) / 60);
   const restSeconds = seconds % 60;
   const hourUnit = formatMessage({ id: "chat.summaryPanel.duration.hours" });
-  const minuteUnit = formatMessage({
-    id: "chat.summaryPanel.duration.minutes",
-  });
-  const secondUnit = formatMessage({
-    id: "chat.summaryPanel.duration.seconds",
-  });
+  const minuteUnit = formatMessage({ id: "chat.summaryPanel.duration.minutes" });
+  const secondUnit = formatMessage({ id: "chat.summaryPanel.duration.seconds" });
   const parts: string[] = [];
 
   if (hours > 0) {
@@ -206,13 +185,9 @@ function getBackgroundWorkElapsedMs(work: BackgroundWorkSummary, now: number) {
   return Math.max(0, now - work.startedAt);
 }
 
-function getLongestRunningWorkElapsedMs(
-  works: readonly BackgroundWorkSummary[],
-  now: number,
-) {
+function getLongestRunningWorkElapsedMs(works: readonly BackgroundWorkSummary[], now: number) {
   return works.reduce(
-    (longestElapsedMs, work) =>
-      Math.max(longestElapsedMs, getBackgroundWorkElapsedMs(work, now)),
+    (longestElapsedMs, work) => Math.max(longestElapsedMs, getBackgroundWorkElapsedMs(work, now)),
     0,
   );
 }
@@ -284,7 +259,7 @@ function StatusSectionHeader({
 }) {
   return (
     <div className="mb-0.5 flex h-8 min-w-0 shrink-0 items-center gap-1.5 px-2 pr-8">
-      <CollapsibleTrigger asChild={true}>
+      <CollapsibleTrigger asChild>
         <button
           type="button"
           aria-expanded={isOpen}
@@ -322,8 +297,8 @@ function StatusSection({
 }: {
   children: ReactNode;
   defaultOpen?: boolean;
-  onOpenChange?: ((open: boolean) => void) | undefined;
-  open?: boolean | undefined;
+  onOpenChange?: (open: boolean) => void;
+  open?: boolean;
   separated?: boolean;
   section: StatusSectionKind;
   title: string;
@@ -350,10 +325,7 @@ function StatusSection({
       open={isOpen}
       onOpenChange={handleOpenChange}
       data-status-section={section}
-      className={cn(
-        "min-w-0 flex-none",
-        separated && "border-t border-[var(--color-border)] pt-2",
-      )}
+      className={cn("min-w-0 flex-none", separated && "border-t border-[var(--color-border)] pt-2")}
     >
       <section className="min-w-0 flex-none">
         <StatusSectionHeader isOpen={isOpen} section={section} title={title}>
@@ -394,14 +366,14 @@ function GitStatusSection({
   workspacePath,
   useVerticalFloatingPanels,
 }: {
-  activeTaskChangeSummary?: ZCodeTaskChangeSummary | null | undefined;
+  activeTaskChangeSummary?: ZCodeTaskChangeSummary | null;
   gitSummary: GitRepositorySummary | null | undefined;
-  gitWorktreeReviewSourceId?: GitChangeSourceId | null | undefined;
+  gitWorktreeReviewSourceId?: GitChangeSourceId | null;
   model: ConversationStatusPanelModel;
-  onOpenGitReview?: ((sourceId?: GitChangeSourceId) => void) | undefined;
-  onRefreshGit?: (() => void) | undefined;
+  onOpenGitReview?: (sourceId?: GitChangeSourceId) => void;
+  onRefreshGit?: () => void;
   separated: boolean;
-  workspaceIdentity?: string | undefined;
+  workspaceIdentity?: string;
   workspacePath: string;
   useVerticalFloatingPanels: boolean;
 }) {
@@ -421,20 +393,10 @@ function GitStatusSection({
       trailing={(isOpen) =>
         isOpen ? null : (
           <span className="shrink-0 font-mono text-ui-sm tabular-nums">
-            <span
-              className={cn(
-                "text-[var(--color-diff-added)]",
-                !hasChanges && "opacity-50",
-              )}
-            >
+            <span className={cn("text-[var(--color-diff-added)]", !hasChanges && "opacity-50")}>
               +{git.added}
             </span>{" "}
-            <span
-              className={cn(
-                "text-[var(--color-diff-removed)]",
-                !hasChanges && "opacity-50",
-              )}
-            >
+            <span className={cn("text-[var(--color-diff-removed)]", !hasChanges && "opacity-50")}>
               -{git.removed}
             </span>
           </span>
@@ -463,9 +425,7 @@ function GitStatusSection({
           </span>
           <span className="shrink-0 font-mono tabular-nums">
             <span className="text-[var(--color-diff-added)]">+{git.added}</span>{" "}
-            <span className="text-[var(--color-diff-removed)]">
-              -{git.removed}
-            </span>
+            <span className="text-[var(--color-diff-removed)]">-{git.removed}</span>
           </span>
         </button>
         <GitBranchSwitcher
@@ -478,11 +438,11 @@ function GitStatusSection({
           popoverClassName="w-72 max-w-[calc(100vw-2rem)]"
           branchListClassName="max-h-56"
           popoverSide={useVerticalFloatingPanels ? "bottom" : "left"}
-          showFooterActions={true}
+          showFooterActions
         />
         <GitActionMenu
           workspacePath={workspacePath}
-          {...(workspaceIdentity === undefined ? {} : { workspaceIdentity })}
+          workspaceIdentity={workspaceIdentity}
           gitSummary={gitSummary}
           activeTaskChangeSummary={activeTaskChangeSummary ?? null}
           onRefreshGit={onRefreshGit}
@@ -501,16 +461,14 @@ function GoalStatusSection({
   separated,
 }: {
   model: ConversationStatusPanelModel;
-  onPauseGoal?: (() => void) | undefined;
-  onResumeGoal?: (() => void) | undefined;
+  onPauseGoal?: () => void;
+  onResumeGoal?: () => void;
   separated: boolean;
 }) {
   const { intl } = useZCodeIntl();
   const goal = model.goal;
   const isPausable =
-    goal?.status === "active" ||
-    goal?.status === "verifying" ||
-    goal?.status === "notSatisfied";
+    goal?.status === "active" || goal?.status === "verifying" || goal?.status === "notSatisfied";
   const isPaused = goal?.status === "paused";
   const isDone = goal?.status === "verified";
   const iterationRows = useMemo(
@@ -544,9 +502,7 @@ function GoalStatusSection({
       </Button>
     </ControlHintTooltip>
   ) : isPaused ? (
-    <ControlHintTooltip
-      title={intl.formatMessage({ id: "chat.target.resume" })}
-    >
+    <ControlHintTooltip title={intl.formatMessage({ id: "chat.target.resume" })}>
       <Button
         type="button"
         variant="ghost"
@@ -576,10 +532,7 @@ function GoalStatusSection({
         <>
           <span
             className="shrink-0 tabular-nums"
-            data-goal-elapsed-seconds={getConversationGoalElapsedSeconds(
-              goal,
-              now,
-            )}
+            data-goal-elapsed-seconds={getConversationGoalElapsedSeconds(goal, now)}
           >
             {elapsed}
           </span>
@@ -601,9 +554,7 @@ function GoalStatusSection({
               key={row.iteration}
               data-goal-iteration={row.iteration}
               data-goal-iteration-completed={row.completed}
-              data-goal-verification-outcome={
-                row.verificationOutcome ?? undefined
-              }
+              data-goal-verification-outcome={row.verificationOutcome ?? undefined}
               className="flex min-w-0 cursor-default items-start gap-2 rounded-lg px-2 py-2 hover:bg-[var(--color-hover)]"
               title={title}
             >
@@ -630,15 +581,11 @@ function GoalStatusSection({
   );
 }
 
-function PlanStatusIcon({
-  status,
-}: {
-  status: PlanState["items"][number]["status"];
-}) {
+function PlanStatusIcon({ status }: { status: PlanState["items"][number]["status"] }) {
   if (status === "completed") {
     return (
       <CheckCircle2Icon
-        aria-hidden={true}
+        aria-hidden
         className="mt-0.5 size-3.5 shrink-0 text-[var(--color-success)]"
       />
     );
@@ -646,14 +593,14 @@ function PlanStatusIcon({
   if (status === "inProgress") {
     return (
       <ArrowRightIcon
-        aria-hidden={true}
+        aria-hidden
         className="mt-0.5 size-3.5 shrink-0 text-[var(--color-foreground)]"
       />
     );
   }
   return (
     <CircleIcon
-      aria-hidden={true}
+      aria-hidden
       className="mt-0.5 size-3.5 shrink-0 text-[var(--color-foreground-subtlest)]"
     />
   );
@@ -669,9 +616,7 @@ interface StatusPanelTodoFocusWindow {
   followingItems: PlanState["items"];
 }
 
-function getStatusPanelTodoFocusWindow(
-  items: PlanState["items"],
-): StatusPanelTodoFocusWindow {
+function getStatusPanelTodoFocusWindow(items: PlanState["items"]): StatusPanelTodoFocusWindow {
   if (items.length <= COMPACT_TODO_THRESHOLD) {
     return {
       compact: false,
@@ -682,9 +627,7 @@ function getStatusPanelTodoFocusWindow(
   }
 
   const runningIndex = items.findIndex((item) => item.status === "inProgress");
-  const firstUnfinishedIndex = items.findIndex(
-    (item) => item.status !== "completed",
-  );
+  const firstUnfinishedIndex = items.findIndex((item) => item.status !== "completed");
   const focusIndex =
     runningIndex >= 0
       ? runningIndex
@@ -693,14 +636,8 @@ function getStatusPanelTodoFocusWindow(
         : Math.max(0, items.length - TODO_FOCUS_WINDOW_SIZE);
   // 只取“当前 + 后两条”会让靠近列表末尾的当前项只剩一两条上下文。
   // 从前面回补可以让精简窗口在项目数足够时始终保持三条，同时不改变 snapshot 原序。
-  const focusStartIndex = Math.max(
-    0,
-    Math.min(focusIndex, items.length - TODO_FOCUS_WINDOW_SIZE),
-  );
-  const focusEndIndex = Math.min(
-    items.length,
-    focusStartIndex + TODO_FOCUS_WINDOW_SIZE,
-  );
+  const focusStartIndex = Math.max(0, Math.min(focusIndex, items.length - TODO_FOCUS_WINDOW_SIZE));
+  const focusEndIndex = Math.min(items.length, focusStartIndex + TODO_FOCUS_WINDOW_SIZE);
 
   return {
     compact: true,
@@ -741,10 +678,7 @@ const TodoPreviewTrigger = forwardRef<
     open: boolean;
     onTouchOpen: () => void;
   }
->(function TodoPreviewTrigger(
-  { group, label, onClick, onTouchOpen, open, ...buttonProps },
-  ref,
-) {
+>(function TodoPreviewTrigger({ group, label, onClick, onTouchOpen, open, ...buttonProps }, ref) {
   return (
     <button
       {...buttonProps}
@@ -796,19 +730,11 @@ function TodoHiddenGroupPreview({
       : items.every((item) => item.status === "pending")
         ? "chat.statusPanel.todoWaitingFold"
         : "chat.statusPanel.todoLaterFold";
-  const label = intl.formatMessage(
-    { id: messageId },
-    { count: String(items.length) },
-  );
+  const label = intl.formatMessage({ id: messageId }, { count: String(items.length) });
 
   return (
-    <HoverCard
-      closeDelay={80}
-      open={open}
-      openDelay={120}
-      onOpenChange={onOpenChange}
-    >
-      <HoverCardTrigger asChild={true}>
+    <HoverCard closeDelay={80} open={open} openDelay={120} onOpenChange={onOpenChange}>
+      <HoverCardTrigger asChild>
         <TodoPreviewTrigger
           group={group}
           label={label}
@@ -843,13 +769,10 @@ function PlanStatusItems({
   plan: NonNullable<ConversationStatusPanelModel["plan"]>;
   popoverSide: "bottom" | "left";
 }) {
-  const [openPreviewGroup, setOpenPreviewGroup] =
-    useState<TodoPreviewGroup | null>(null);
+  const [openPreviewGroup, setOpenPreviewGroup] = useState<TodoPreviewGroup | null>(null);
   const window = getStatusPanelTodoFocusWindow(plan.displayItems);
   const handlePreviewOpenChange = (group: TodoPreviewGroup, open: boolean) => {
-    setOpenPreviewGroup((current) =>
-      open ? group : current === group ? null : current,
-    );
+    setOpenPreviewGroup((current) => (open ? group : current === group ? null : current));
   };
 
   return (
@@ -888,10 +811,8 @@ function SessionPlansStatusSection({
   separated,
 }: {
   model: ConversationStatusPanelModel;
-  onOpenPlanDetail?:
-    | ((request: OpenPlanDetailSideTabRequest) => void)
-    | undefined;
-  parentSessionId?: string | undefined;
+  onOpenPlanDetail?: (request: OpenPlanDetailSideTabRequest) => void;
+  parentSessionId?: string;
   separated: boolean;
 }) {
   const { intl } = useZCodeIntl();
@@ -906,9 +827,7 @@ function SessionPlansStatusSection({
     >
       <ul className="space-y-0">
         {sessionPlans.items.map((item) => {
-          const title =
-            item.title ??
-            intl.formatMessage({ id: "chat.statusPanel.planFallback" });
+          const title = item.title ?? intl.formatMessage({ id: "chat.statusPanel.planFallback" });
           const canOpen = Boolean(parentSessionId && onOpenPlanDetail);
           return (
             <li key={item.toolCallId}>
@@ -916,15 +835,10 @@ function SessionPlansStatusSection({
                 type="button"
                 data-plan-directory-tool-call-id={item.toolCallId}
                 disabled={!canOpen}
-                aria-label={intl.formatMessage(
-                  { id: "chat.statusPanel.openPlan" },
-                  { title },
-                )}
+                aria-label={intl.formatMessage({ id: "chat.statusPanel.openPlan" }, { title })}
                 onClick={() => {
                   if (!parentSessionId) return;
-                  onOpenPlanDetail?.(
-                    buildSessionPlanOpenRequest(parentSessionId, item),
-                  );
+                  onOpenPlanDetail?.(buildSessionPlanOpenRequest(parentSessionId, item));
                 }}
                 className={cn(
                   "flex min-h-8 w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-ui-base text-[var(--color-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-input-border-focused)]",
@@ -966,8 +880,7 @@ function PlanStatusSection({
   const { intl } = useZCodeIntl();
   const plan = model.plan;
   if (!plan) return null;
-  const isCompleted =
-    plan.totalCount > 0 && plan.completedCount >= plan.totalCount;
+  const isCompleted = plan.totalCount > 0 && plan.completedCount >= plan.totalCount;
 
   return (
     <StatusSection
@@ -978,9 +891,7 @@ function PlanStatusSection({
         <span
           className={cn(
             "tabular-nums",
-            isCompleted
-              ? "text-[var(--color-success)]"
-              : "text-[var(--color-foreground-subtle)]",
+            isCompleted ? "text-[var(--color-success)]" : "text-[var(--color-foreground-subtle)]",
           )}
         >
           {plan.completedCount}/{plan.totalCount}
@@ -1003,7 +914,7 @@ function RunningWorkCancelButton({
   onCancel,
 }: {
   workId: string;
-  onCancel?: ((workId: string) => void) | undefined;
+  onCancel?: (workId: string) => void;
 }) {
   const { intl } = useZCodeIntl();
   const handleClick = useCallback(
@@ -1028,7 +939,7 @@ function RunningWorkCancelButton({
       onClick={handleClick}
       className="pointer-events-auto relative z-[2] ml-auto h-6 shrink-0 px-1.5 text-ui-base text-[var(--color-foreground)]"
     >
-      <SquareIcon aria-hidden={true} className="size-3 fill-current" />
+      <SquareIcon aria-hidden className="size-3 fill-current" />
       {intl.formatMessage({ id: "chat.statusPanel.runningStop" })}
     </Button>
   );
@@ -1039,8 +950,8 @@ function buildRunningSubagentOpenRequest({
   rootSessionId,
   subagent,
 }: {
-  parentSessionId?: string | undefined;
-  rootSessionId?: string | undefined;
+  parentSessionId?: string;
+  rootSessionId?: string;
   subagent: ZCodeSessionRunningSubagent;
 }): OpenSubagentSideTabRequest | null {
   if (!parentSessionId) return null;
@@ -1060,8 +971,8 @@ function RunningStatusItem({
   work,
 }: {
   now: number;
-  onOpenBackgroundBash?: ((work: BackgroundWorkSummary) => void) | undefined;
-  onCancelBackgroundWork?: ((workId: string) => void) | undefined;
+  onOpenBackgroundBash?: (work: BackgroundWorkSummary) => void;
+  onCancelBackgroundWork?: (workId: string) => void;
   work: BackgroundWorkSummary;
 }) {
   const { intl } = useZCodeIntl();
@@ -1078,10 +989,7 @@ function RunningStatusItem({
         <button
           type="button"
           className="absolute inset-0 rounded-lg focus-visible:outline-ring"
-          aria-label={intl.formatMessage(
-            { id: "bashOutput.open" },
-            { title: work.title },
-          )}
+          aria-label={intl.formatMessage({ id: "bashOutput.open" }, { title: work.title })}
           data-testid="background-bash-open"
           onClick={() => onOpenBackgroundBash(work)}
         />
@@ -1098,12 +1006,9 @@ function RunningStatusItem({
               intl.formatMessage,
             )}
           </span>
-          {work.cancellable === false ? null : (
-            <RunningWorkCancelButton
-              workId={work.workId}
-              onCancel={onCancelBackgroundWork}
-            />
-          )}
+          {work.cancellable !== false ? (
+            <RunningWorkCancelButton workId={work.workId} onCancel={onCancelBackgroundWork} />
+          ) : null}
         </div>
       </div>
     </li>
@@ -1120,10 +1025,10 @@ function BackgroundWorkStatusSection({
   title,
   works,
 }: {
-  onOpenBackgroundBash?: ((work: BackgroundWorkSummary) => void) | undefined;
-  onCancelBackgroundWork?: ((workId: string) => void) | undefined;
-  onOpenChange?: ((open: boolean) => void) | undefined;
-  open?: boolean | undefined;
+  onOpenBackgroundBash?: (work: BackgroundWorkSummary) => void;
+  onCancelBackgroundWork?: (workId: string) => void;
+  onOpenChange?: (open: boolean) => void;
+  open?: boolean;
   separated: boolean;
   section: "terminal" | "agent";
   title: string;
@@ -1178,9 +1083,7 @@ function BackgroundWorkStatusSection({
           <>
             <span className="min-w-0 truncate">{collapsedElapsedLabel}</span>
             <span className="shrink-0">·</span>
-            <span className="shrink-0">
-              {formatRunningCount(intl.formatMessage, works.length)}
-            </span>
+            <span className="shrink-0">{formatRunningCount(intl.formatMessage, works.length)}</span>
           </>
         )
       }
@@ -1226,16 +1129,12 @@ function WorkflowStatusSection({
   title,
 }: {
   endedRunCount: number;
-  onCancelBackgroundWork?: ((workId: string) => void) | undefined;
-  onOpenChange?: ((open: boolean) => void) | undefined;
-  onOpenDirectory?:
-    | ((request: OpenWorkflowRunDirectorySideTabRequest) => void)
-    | undefined;
-  onOpenWorkflowRun?:
-    | ((target: ConversationStatusPanelWorkflowRunTarget) => void)
-    | undefined;
-  open?: boolean | undefined;
-  parentSessionId?: string | undefined;
+  onCancelBackgroundWork?: (workId: string) => void;
+  onOpenChange?: (open: boolean) => void;
+  onOpenDirectory?: (request: OpenWorkflowRunDirectorySideTabRequest) => void;
+  onOpenWorkflowRun?: (target: ConversationStatusPanelWorkflowRunTarget) => void;
+  open?: boolean;
+  parentSessionId?: string;
   runs: readonly ConversationStatusPanelWorkflowRun[];
   separated: boolean;
   title: string;
@@ -1243,9 +1142,7 @@ function WorkflowStatusSection({
   const { intl } = useZCodeIntl();
   const [now, setNow] = useState(() => Date.now());
   // 只有带 startedAt 的行需要秒级刷新；一行都没有时不必让面板每秒重渲染。
-  const tickingRunCount = runs.filter(
-    (run) => run.startedAt !== undefined,
-  ).length;
+  const tickingRunCount = runs.filter((run) => run.startedAt !== undefined).length;
   useEffect(() => {
     if (tickingRunCount === 0) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -1258,14 +1155,10 @@ function WorkflowStatusSection({
 
   const longestElapsedMs = runs.reduce(
     (longest, run) =>
-      run.startedAt === undefined
-        ? longest
-        : Math.max(longest, Math.max(0, now - run.startedAt)),
+      run.startedAt === undefined ? longest : Math.max(longest, Math.max(0, now - run.startedAt)),
     0,
   );
-  const openLabel = intl.formatMessage({
-    id: "chat.toolCall.workflow.openRunDetails",
-  });
+  const openLabel = intl.formatMessage({ id: "chat.toolCall.workflow.openRunDetails" });
 
   return (
     <StatusSection
@@ -1305,9 +1198,7 @@ function WorkflowStatusSection({
                 <span className="shrink-0">·</span>
               </>
             ) : null}
-            <span className="shrink-0">
-              {formatRunningCount(intl.formatMessage, runs.length)}
-            </span>
+            <span className="shrink-0">{formatRunningCount(intl.formatMessage, runs.length)}</span>
           </>
         )
       }
@@ -1315,9 +1206,7 @@ function WorkflowStatusSection({
       <ul className="space-y-0">
         {runs.map((run) => {
           // 行 → 打开意图的换算与 composer 徽标直达共用（模型层 workflowRunOpenTarget）。
-          const openTarget = onOpenWorkflowRun
-            ? workflowRunOpenTarget(run)
-            : null;
+          const openTarget = onOpenWorkflowRun ? workflowRunOpenTarget(run) : null;
           const canOpen = openTarget !== null;
           // 未命名的判定：`title ≡ workId`（≡ runId）就是 core 的 workflowTaskSubject 兜底到
           // taskId 的样子，投影会把非空 description 原样抄进 title。降级行的 runId 也 ≡ workId，
@@ -1325,17 +1214,11 @@ function WorkflowStatusSection({
           const displayName =
             run.title && run.title !== run.runId
               ? run.title
-              : intl.formatMessage({
-                  id: "chat.toolCall.workflow.fallbackName",
-                });
+              : intl.formatMessage({ id: "chat.toolCall.workflow.fallbackName" });
           return (
             <li
               key={run.runId}
-              data-testid={
-                run.workId
-                  ? testId(TID_V4_BACKGROUND_WORK_ITEM, run.workId)
-                  : undefined
-              }
+              data-testid={run.workId ? testId(TID_V4_BACKGROUND_WORK_ITEM, run.workId) : undefined}
               data-background-task-kind="workflow"
               data-workflow-run-id={run.runId}
               data-work-id={run.workId}
@@ -1369,14 +1252,9 @@ function WorkflowStatusSection({
                       <span
                         aria-hidden="true"
                         data-workflow-run-status-dot={run.status}
-                        className={cn(
-                          "size-1.5 shrink-0 rounded-full",
-                          RUN_STATUS_DOT[run.status],
-                        )}
+                        className={cn("size-1.5 shrink-0 rounded-full", RUN_STATUS_DOT[run.status])}
                       />
-                      <span
-                        className={cn("shrink-0", RUN_STATUS_TEXT[run.status])}
-                      >
+                      <span className={cn("shrink-0", RUN_STATUS_TEXT[run.status])}>
                         {intl.formatMessage({
                           id: `chat.toolCall.workflow.run.status.${run.status}`,
                         })}
@@ -1449,17 +1327,13 @@ function SubagentStatusSection({
   subagents,
 }: {
   endedSubagentCount: number;
-  onCancelBackgroundWork?: ((workId: string) => void) | undefined;
-  onOpenChange?: ((open: boolean) => void) | undefined;
-  onOpenSubagentDirectory?:
-    | ((request: OpenSubagentDirectorySideTabRequest) => void)
-    | undefined;
-  onOpenSubagentSession?:
-    | ((request: OpenSubagentSideTabRequest) => void)
-    | undefined;
-  open?: boolean | undefined;
-  parentSessionId?: string | undefined;
-  rootSessionId?: string | undefined;
+  onCancelBackgroundWork?: (workId: string) => void;
+  onOpenChange?: (open: boolean) => void;
+  onOpenSubagentDirectory?: (request: OpenSubagentDirectorySideTabRequest) => void;
+  onOpenSubagentSession?: (request: OpenSubagentSideTabRequest) => void;
+  open?: boolean;
+  parentSessionId?: string;
+  rootSessionId?: string;
   separated: boolean;
   title: string;
   subagents: readonly ConversationStatusPanelRunningSubagent[];
@@ -1467,10 +1341,7 @@ function SubagentStatusSection({
   const { intl } = useZCodeIntl();
   const [now, setNow] = useState(() => Date.now());
   const ordered = useMemo(
-    () =>
-      [...subagents].sort(
-        (left, right) => (left.startedAt ?? 0) - (right.startedAt ?? 0),
-      ),
+    () => [...subagents].sort((left, right) => (left.startedAt ?? 0) - (right.startedAt ?? 0)),
     [subagents],
   );
   useEffect(() => {
@@ -1480,8 +1351,7 @@ function SubagentStatusSection({
   }, [subagents.length]);
   if (subagents.length === 0 && endedSubagentCount <= 0) return null;
   const longestElapsedMs = subagents.reduce(
-    (longest, item) =>
-      Math.max(longest, Math.max(0, now - (item.startedAt ?? now))),
+    (longest, item) => Math.max(longest, Math.max(0, now - (item.startedAt ?? now))),
     0,
   );
 
@@ -1495,9 +1365,7 @@ function SubagentStatusSection({
       title={title}
       trailing={(isOpen) =>
         subagents.length === 0 ? null : isOpen ? (
-          <span>
-            {formatRunningSubagentCount(intl.formatMessage, subagents.length)}
-          </span>
+          <span>{formatRunningSubagentCount(intl.formatMessage, subagents.length)}</span>
         ) : (
           <>
             <span className="min-w-0 truncate">
@@ -1521,9 +1389,7 @@ function SubagentStatusSection({
             rootSessionId,
             subagent,
           });
-          const canOpenSubagentSession = Boolean(
-            request && onOpenSubagentSession,
-          );
+          const canOpenSubagentSession = Boolean(request && onOpenSubagentSession);
           return (
             <li
               key={subagent.childSessionId}
@@ -1610,15 +1476,13 @@ function EndedDirectoryRow({
   count: number;
   icon: ReactNode;
   label: string;
-  onOpen?: (() => void) | undefined;
+  onOpen?: () => void;
   separated: boolean;
-  testId?: string | undefined;
+  testId?: string;
 }) {
   if (count <= 0 || !onOpen) return null;
   return (
-    <div
-      className={cn(separated && "border-t border-[var(--color-border)] pt-2")}
-    >
+    <div className={cn(separated && "border-t border-[var(--color-border)] pt-2")}>
       <button
         type="button"
         data-testid={testId}
@@ -1627,9 +1491,7 @@ function EndedDirectoryRow({
       >
         {icon}
         <span>{label}</span>
-        <span className="ml-auto text-[var(--color-foreground-subtle)]">
-          {count}
-        </span>
+        <span className="ml-auto text-[var(--color-foreground-subtle)]">{count}</span>
         <ChevronRightIcon className="size-4 text-[var(--color-foreground-subtle)]" />
       </button>
     </div>
@@ -1644,18 +1506,16 @@ function EndedSubagentDirectoryRow({
   separated,
 }: {
   count: number;
-  onOpen?: ((request: OpenSubagentDirectorySideTabRequest) => void) | undefined;
-  parentSessionId?: string | undefined;
-  rootSessionId?: string | undefined;
+  onOpen?: (request: OpenSubagentDirectorySideTabRequest) => void;
+  parentSessionId?: string;
+  rootSessionId?: string;
   separated: boolean;
 }) {
   const { intl } = useZCodeIntl();
   return (
     <EndedDirectoryRow
       count={count}
-      icon={
-        <CheckCircle2Icon className="size-4 shrink-0 text-[var(--color-foreground-subtle)]" />
-      }
+      icon={<CheckCircle2Icon className="size-4 shrink-0 text-[var(--color-foreground-subtle)]" />}
       label={intl.formatMessage({ id: "chat.statusPanel.endedAgents" })}
       separated={separated}
       onOpen={
@@ -1671,13 +1531,7 @@ function EndedSubagentDirectoryRow({
   );
 }
 
-function StatusSummaryMetric({
-  children,
-  icon,
-}: {
-  children: ReactNode;
-  icon: ReactNode;
-}) {
+function StatusSummaryMetric({ children, icon }: { children: ReactNode; icon: ReactNode }) {
   return (
     <div className="flex h-8 w-max max-w-80 min-w-0 items-center gap-1.5 pl-2 pr-3 text-ui-base text-[var(--color-foreground)]">
       <span className="relative size-4 shrink-0">
@@ -1700,11 +1554,7 @@ function getCurrentPlanItem(plan: ConversationStatusPanelModel["plan"]) {
 }
 
 function getCompletedPlanItem(plan: ConversationStatusPanelModel["plan"]) {
-  return (
-    [...(plan?.items ?? [])]
-      .reverse()
-      .find((item) => item.status === "completed") ?? null
-  );
+  return [...(plan?.items ?? [])].reverse().find((item) => item.status === "completed") ?? null;
 }
 
 function StatusSummaryRow({
@@ -1715,14 +1565,9 @@ function StatusSummaryRow({
 }: {
   /** 已结束 run 的目录计数；宿主给 0 表示目录入口不可渲染（缺会话或缺回调）。 */
   endedWorkflowRunCount: number;
-  gitWorktreeChangeSummary?:
-    | { added: number; removed: number }
-    | null
-    | undefined;
+  gitWorktreeChangeSummary?: { added: number; removed: number } | null;
   model: ConversationStatusPanelModel;
-  onVariantChange?:
-    | ((variant: ChatViewSummaryPanelVariant | null) => void)
-    | undefined;
+  onVariantChange?: (variant: ChatViewSummaryPanelVariant | null) => void;
 }) {
   const { intl } = useZCodeIntl();
   const expandLabel = intl.formatMessage({ id: "chat.summaryPanel.showPanel" });
@@ -1730,9 +1575,7 @@ function StatusSummaryRow({
   const completedPlanItem = getCompletedPlanItem(model.plan);
   const latestSessionPlan = model.sessionPlans?.items[0] ?? null;
   const goal = model.goal;
-  const goalTitle = goal
-    ? goal.summaryTitle?.trim() || goal.objective.trim() || null
-    : null;
+  const goalTitle = goal ? goal.summaryTitle?.trim() || goal.objective.trim() || null : null;
   const goalStatus = goal?.status ?? null;
   // V4 goal 在 verifier 判定未完成后会进入 notSatisfied；mini 过去漏掉
   // 这个合法开放态并返回 null，导致只剩 2px 空 shell，也失去重新展开入口。
@@ -1756,11 +1599,9 @@ function StatusSummaryRow({
     model.runningBashWorks.length +
     model.runningSubagentWorks.length +
     model.runningWorkflowRuns.length;
-  const runningKindCount = [
-    hasRunningWorkflow,
-    hasRunningBash,
-    hasRunningSubagent,
-  ].filter(Boolean).length;
+  const runningKindCount = [hasRunningWorkflow, hasRunningBash, hasRunningSubagent].filter(
+    Boolean,
+  ).length;
   const RunningSummaryIcon =
     runningKindCount > 1
       ? ActivityIcon
@@ -1771,47 +1612,33 @@ function StatusSummaryRow({
           : BotIcon;
   const summaryMetric = currentPlanItem ? (
     <StatusSummaryMetric
-      icon={
-        <ArrowRightIcon className="size-4 text-[var(--color-foreground)]" />
-      }
+      icon={<ArrowRightIcon className="size-4 text-[var(--color-foreground)]" />}
     >
       <span className="min-w-0 truncate">{currentPlanItem.content}</span>
     </StatusSummaryMetric>
   ) : goalTitle && isActiveGoal ? (
-    <StatusSummaryMetric
-      icon={<GoalIcon className="size-4 text-[var(--color-foreground)]" />}
-    >
+    <StatusSummaryMetric icon={<GoalIcon className="size-4 text-[var(--color-foreground)]" />}>
       <span className="min-w-0 truncate">{goalTitle}</span>
     </StatusSummaryMetric>
   ) : hasGitMiniSummary ? (
-    <StatusSummaryMetric
-      icon={<FileDiffIcon className="size-4 text-[var(--color-foreground)]" />}
-    >
+    <StatusSummaryMetric icon={<FileDiffIcon className="size-4 text-[var(--color-foreground)]" />}>
       <span className="min-w-0 truncate">
         {intl.formatMessage({ id: "chat.statusPanel.changes" })}
       </span>
       <span className="shrink-0 text-[var(--color-diff-added)]">+{added}</span>
-      <span className="shrink-0 text-[var(--color-diff-removed)]">
-        -{removed}
-      </span>
+      <span className="shrink-0 text-[var(--color-diff-removed)]">-{removed}</span>
     </StatusSummaryMetric>
   ) : goalTitle && isDoneGoal ? (
-    <StatusSummaryMetric
-      icon={<GoalIcon className="size-4 text-[var(--color-foreground)]" />}
-    >
+    <StatusSummaryMetric icon={<GoalIcon className="size-4 text-[var(--color-foreground)]" />}>
       <span className="min-w-0 truncate">{goalTitle}</span>
     </StatusSummaryMetric>
   ) : completedPlanItem ? (
-    <StatusSummaryMetric
-      icon={<CheckCircle2Icon className="size-4 text-[var(--color-success)]" />}
-    >
+    <StatusSummaryMetric icon={<CheckCircle2Icon className="size-4 text-[var(--color-success)]" />}>
       <span className="min-w-0 truncate">{completedPlanItem.content}</span>
     </StatusSummaryMetric>
   ) : model.plan ? (
     <StatusSummaryMetric
-      icon={
-        <ListChecksIcon className="size-4 text-[var(--color-foreground-subtle)]" />
-      }
+      icon={<ListChecksIcon className="size-4 text-[var(--color-foreground-subtle)]" />}
     >
       <span className="min-w-0 truncate">
         {intl.formatMessage({ id: "chat.statusPanel.todo" })}
@@ -1822,20 +1649,15 @@ function StatusSummaryRow({
     </StatusSummaryMetric>
   ) : latestSessionPlan ? (
     <StatusSummaryMetric
-      icon={
-        <ListChecksIcon className="size-4 text-[var(--color-foreground)]" />
-      }
+      icon={<ListChecksIcon className="size-4 text-[var(--color-foreground)]" />}
     >
       <span className="min-w-0 truncate">
-        {latestSessionPlan.title ??
-          intl.formatMessage({ id: "chat.statusPanel.planFallback" })}
+        {latestSessionPlan.title ?? intl.formatMessage({ id: "chat.statusPanel.planFallback" })}
       </span>
     </StatusSummaryMetric>
   ) : runningCount > 0 ? (
     <StatusSummaryMetric
-      icon={
-        <RunningSummaryIcon className="size-4 text-[var(--color-foreground)]" />
-      }
+      icon={<RunningSummaryIcon className="size-4 text-[var(--color-foreground)]" />}
     >
       {/* 产品规则：实时活动只能在没有 Goal/Todo/Git 等主状态时兜底，
           避免胶囊把主状态和输入框已展示的实时计数重复拼接。 */}
@@ -1852,9 +1674,7 @@ function StatusSummaryRow({
     // 空壳线（与 goal notSatisfied 那次是同一个失效形状）。这里补上最低优先级的终态
     // 分支：图标沿用 Workflow 域，文案与 Workflows 分区页脚同 key，点开即展开面板。
     <StatusSummaryMetric
-      icon={
-        <Workflow className="size-4 text-[var(--color-foreground-subtle)]" />
-      }
+      icon={<Workflow className="size-4 text-[var(--color-foreground-subtle)]" />}
     >
       <span className="min-w-0 truncate">
         {intl.formatMessage({ id: "chat.statusPanel.endedWorkflows" })}
@@ -1983,15 +1803,13 @@ function ConversationStatusPanelImpl({
   const canRenderEndedWorkflows = Boolean(
     endedWorkflowRunCount > 0 && parentSessionId && onOpenWorkflowRunDirectory,
   );
-  const canRenderWorkflows =
-    model.runningWorkflowRuns.length > 0 || canRenderEndedWorkflows;
+  const canRenderWorkflows = model.runningWorkflowRuns.length > 0 || canRenderEndedWorkflows;
   const canRenderEndedAgents = Boolean(
     endedSubagentCount > 0 && parentSessionId && onOpenSubagentDirectory,
   );
   // 已结束目录入口过去渲染在 Agent StatusSection 之后，视觉和 DOM 都被提升成
   // 并列顶层 section。Agent 的运行态和已结束目录属于同一领域，统一由 Agent 折叠分组承载。
-  const canRenderAgents =
-    model.runningSubagentWorks.length > 0 || canRenderEndedAgents;
+  const canRenderAgents = model.runningSubagentWorks.length > 0 || canRenderEndedAgents;
   const handlePanelModeChange = useCallback(
     (value: string) => {
       if (value === "auto") {
@@ -2083,18 +1901,16 @@ function ConversationStatusPanelImpl({
               : "inline-flex max-h-8.5 w-[var(--chat-summary-panel-mini-width)] max-w-[calc(100vw-1.5rem)] flex-col @min-[1280px]/conversation:max-h-[min(64dvh,32rem)] @min-[1280px]/conversation:w-80",
         )}
       >
-        {variant === "mini" ? null : (
+        {variant !== "mini" ? (
           <div
             className={cn(
               "absolute right-3 top-3 z-10 items-center gap-1",
-              variant === "auto"
-                ? "hidden @min-[1280px]/conversation:flex"
-                : "flex",
+              variant === "auto" ? "hidden @min-[1280px]/conversation:flex" : "flex",
             )}
           >
             <DropdownMenu>
               <ControlHintTooltip title={panelMenuLabel} side="left">
-                <DropdownMenuTrigger asChild={true}>
+                <DropdownMenuTrigger asChild>
                   <Button
                     type="button"
                     variant="ghost"
@@ -2137,16 +1953,14 @@ function ConversationStatusPanelImpl({
               </Button>
             </ControlHintTooltip>
           </div>
-        )}
-        {variant === "mini" ? null : (
+        ) : null}
+        {variant !== "mini" ? (
           // 单个区块限高后，多区块同时展开仍可能超过 shell；外层必须提供
           // 第二层兜底滚动，保证后续区块标题和操作始终可达，不能继续直接裁切。
           <div
             className={cn(
               "min-h-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto p-2",
-              variant === "auto"
-                ? "hidden @min-[1280px]/conversation:flex"
-                : "flex",
+              variant === "auto" ? "hidden @min-[1280px]/conversation:flex" : "flex",
             )}
           >
             {canRenderGit ? (
@@ -2183,9 +1997,7 @@ function ConversationStatusPanelImpl({
               <PlanStatusSection
                 model={model}
                 popoverSide={useVerticalFloatingPanels ? "bottom" : "left"}
-                separated={
-                  canRenderGit || canRenderGoal || canRenderSessionPlans
-                }
+                separated={canRenderGit || canRenderGoal || canRenderSessionPlans}
               />
             ) : null}
             {canRenderTerminals ? (
@@ -2196,12 +2008,7 @@ function ConversationStatusPanelImpl({
                 works={model.runningBashWorks}
                 open={terminalSectionOpen}
                 onOpenChange={onTerminalSectionOpenChange}
-                separated={
-                  canRenderGit ||
-                  canRenderGoal ||
-                  canRenderSessionPlans ||
-                  canRenderPlan
-                }
+                separated={canRenderGit || canRenderGoal || canRenderSessionPlans || canRenderPlan}
                 onCancelBackgroundWork={onCancelBackgroundWork}
               />
             ) : null}
@@ -2209,9 +2016,7 @@ function ConversationStatusPanelImpl({
               <WorkflowStatusSection
                 title={intl.formatMessage({ id: "chat.statusPanel.workflows" })}
                 runs={model.runningWorkflowRuns}
-                endedRunCount={
-                  canRenderEndedWorkflows ? endedWorkflowRunCount : 0
-                }
+                endedRunCount={canRenderEndedWorkflows ? endedWorkflowRunCount : 0}
                 open={workflowSectionOpen}
                 onOpenChange={onWorkflowSectionOpenChange}
                 separated={
@@ -2231,9 +2036,7 @@ function ConversationStatusPanelImpl({
               <SubagentStatusSection
                 title={intl.formatMessage({ id: "chat.statusPanel.agents" })}
                 subagents={model.runningSubagentWorks}
-                endedSubagentCount={
-                  canRenderEndedAgents ? endedSubagentCount : 0
-                }
+                endedSubagentCount={canRenderEndedAgents ? endedSubagentCount : 0}
                 onCancelBackgroundWork={onCancelBackgroundWork}
                 open={agentSectionOpen}
                 onOpenChange={onAgentSectionOpenChange}
@@ -2252,7 +2055,7 @@ function ConversationStatusPanelImpl({
               />
             ) : null}
           </div>
-        )}
+        ) : null}
         <div
           ref={miniMeasureRef}
           aria-hidden={variant === "panel"}
@@ -2269,9 +2072,7 @@ function ConversationStatusPanelImpl({
             model={model}
             // 与页脚同一道门（canRenderEndedWorkflows）：缺会话或缺回调时目录打不开，
             // 胶囊也就不该报一个点了没反应的数。
-            endedWorkflowRunCount={
-              canRenderEndedWorkflows ? endedWorkflowRunCount : 0
-            }
+            endedWorkflowRunCount={canRenderEndedWorkflows ? endedWorkflowRunCount : 0}
             gitWorktreeChangeSummary={gitWorktreeChangeSummary}
             onVariantChange={onVariantChange}
           />
