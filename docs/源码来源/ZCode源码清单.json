@@ -1682,9 +1682,10 @@
       "source": "references/zcode/packages/ui/src/WorkspaceSidebarFooter.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceSidebarFooter.tsx",
       "sha256": "5f64bddab48988a8cea50ea65f615d6b1f02bb63a2a40b232f207cfea30a9a57",
-      "copiedSha256": "e3c2d1bece9864dba0fd279be3be2c3f38860e1b1ae26211a4ccdac850342a47",
+      "copiedSha256": "d629e1a425137083914bb23793ec685f07d8faee02bd1b869781caacd4acc604",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：未提供云账户的宿主隐藏原云徽标/登录/退出，保留原偏好与用量项"
       ]
     },
     {
@@ -1700,9 +1701,10 @@
       "source": "references/zcode/packages/ui/src/WorkspaceSidebarFooterUsageSummary.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceSidebarFooterUsageSummary.tsx",
       "sha256": "84ad8c496ab1648d144c5bbab916ae9edbe5167763d405d9518d4366db643834",
-      "copiedSha256": "195f3a1a5a70def4911d7b973b5c2455cbfc1cc642f8e11fa5ac3ee17e5fa5cd",
+      "copiedSha256": "8d28e70c09d8153b310d40354865d4e5b512241c15b90fa3156f5951e40258a2",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：原用量组件增加可选套餐项开关，未开启云能力时不显示套餐操作"
       ]
     },
     {
@@ -4958,9 +4960,10 @@
       "source": "references/zcode/packages/ui/src/hooks/useCodingPlanEntryPlanList.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useCodingPlanEntryPlanList.ts",
       "sha256": "20863c04d6161779607df7d374a0afc0c98df12061a7071dc02bb696035bb644",
-      "copiedSha256": "6a6feba26bdd86e205ca5e54a241d0b394184b286a196d092756b0804a2caebb",
+      "copiedSha256": "334928a70f6c079b5252667016ec2d643df6ac8816c357b1a78d126ff02716a2",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主能力：云账户禁用时不加载账户视图、不发出 OAuth 凭证与套餐查询"
       ]
     },
     {
@@ -9300,9 +9303,10 @@
       "source": "references/zcode/packages/ui/src/settings/CodingPlanUpgradeDialogProvider.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/CodingPlanUpgradeDialogProvider.tsx",
       "sha256": "5134c14439cf7e34e5c4fdfb494883b9c6fc20dd10412759a70dfd22ae02c9f8",
-      "copiedSha256": "52ddfe92d20339b533f4376b49f66f12eddc4b161202d86b8efb10ad2989625b",
+      "copiedSha256": "a76f21706f76cd188ec287cdba687ba7f550a89d7b190bd0fcdbfb49bb6dcb39",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：云账户禁用时不挂购买弹窗，不启动原套餐查询；保留原 Context/调用链"
       ]
     },
     {
@@ -14503,8 +14507,10 @@
       "source": "references/zcode/packages/shared/src/platform.ts",
       "target": "packages/zcode-shared/src/platform.ts",
       "sha256": "68a470a9917ace6d91bcad8a881b52662a8fb9486bcaa5b501f2f56811d814a4",
-      "copiedSha256": "68a470a9917ace6d91bcad8a881b52662a8fb9486bcaa5b501f2f56811d814a4",
-      "adaptations": []
+      "copiedSha256": "277f46b2f9e4fceb32cb52168b55fde61c28149ab0d2aafad51f5e006a03b0b0",
+      "adaptations": [
+        "宿主能力接口：增加可选云账户支持标记；未声明的原宿主行为不变"
+      ]
     },
     {
       "source": "references/zcode/packages/shared/src/plugin-display-name.ts",

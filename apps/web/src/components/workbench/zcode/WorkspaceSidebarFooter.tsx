@@ -125,6 +125,7 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
 }) {
   const { intl } = useZCodeIntl();
   const platform = usePlatform();
+  const supportsCloudAccounts = platform.supportsCloudAccounts !== false;
   const interfaceMode = useZCodeStore((state) => state.interfaceMode);
   const setInterfaceMode = useZCodeStore((state) => state.setInterfaceMode);
   const zoomInShortcutLabel = useShortcutCommandLabel("zoomIn");
@@ -136,7 +137,7 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
   const avatarKey = user?.avatarUrl ?? user?.id ?? "guest";
   const showAuthRestoreLoading = !user && isRestoringOAuthSession;
   const usageSummaryState = useWorkspaceSidebarFooterUsageSummaryState({
-    enabled: true,
+    enabled: supportsCloudAccounts,
     workspaceIdentity,
     workspacePath,
   });
@@ -165,7 +166,7 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
           <span className="min-w-0 truncate text-ui-base font-semibold text-foreground">
             {profileBadge}
           </span>
-          {user ? <WorkspaceSidebarFooterPlanBadge state={usageSummaryState} /> : null}
+          {user && supportsCloudAccounts ? <WorkspaceSidebarFooterPlanBadge state={usageSummaryState} /> : null}
         </div>
       </div>
     </>
@@ -348,8 +349,9 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
               state={usageSummaryState}
               onUsageClick={usageButtonClick}
               onUpgradeClick={onUpgradeClick}
+              showCodingPlan={supportsCloudAccounts}
             />
-            {onLogin && !user ? (
+            {supportsCloudAccounts && onLogin && !user ? (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onSelect={onLogin} data-testid={TID_LOGIN_MENU_ITEM}>
@@ -358,7 +360,7 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
                 </DropdownMenuItem>
               </>
             ) : null}
-            {onLogout ? (
+            {supportsCloudAccounts && onLogout ? (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onSelect={onLogout} data-testid={TID_LOGOUT_BUTTON}>

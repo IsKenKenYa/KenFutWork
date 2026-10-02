@@ -419,8 +419,10 @@ export function WorkspaceSidebarFooterUsageSummaryContent({
   state,
   onUsageClick,
   onUpgradeClick,
+  showCodingPlan = true,
 }: {
   state: WorkspaceSidebarFooterUsageSummaryState;
+  showCodingPlan?: boolean;
   onUsageClick?: () => void;
   onUpgradeClick?: (
     providerId: SidebarUsageCodingPlanProviderId,
@@ -451,7 +453,7 @@ export function WorkspaceSidebarFooterUsageSummaryContent({
         {intl.formatMessage({ id: "sidebar.usage.plan.openStats" })}
       </DropdownMenuItem>
       {/* 产品要求：升级入口始终显示；未解析出当前套餐时由当前 provider family 决定品牌。 */}
-      <DropdownMenuItem
+      {showCodingPlan ? <DropdownMenuItem
         data-testid={TID_SIDEBAR_CODING_PLAN_UPGRADE_BUTTON}
         disabled={entryGate.status === "loading"}
         aria-busy={entryGate.status === "loading"}
@@ -476,7 +478,7 @@ export function WorkspaceSidebarFooterUsageSummaryContent({
       >
         <RocketIcon className="size-4" />
         {entryGate.label ?? intl.formatMessage({ id: upgradeActionLabelId })}
-      </DropdownMenuItem>
+      </DropdownMenuItem> : null}
     </>
   );
 }

@@ -34,7 +34,7 @@ import {
   CodeHttpChannelClient,
 } from "./httpChannelClient.js";
 import { navigateToDesign, requestParentBootstrap } from "./parentBridge.js";
-import { createWebPlatform } from "./upstream/browserPlatform.js";
+import { createCodePlatform } from "./platform.js";
 import "@zui/styles.css";
 
 interface Workspace {
@@ -56,7 +56,7 @@ const config: CodeHostConfig = {
 };
 const client = new CodeHttpChannelClient(config);
 const services = client.services;
-const platform = createWebPlatform();
+const platform = createCodePlatform();
 const root = createRoot(document.getElementById("root")!);
 
 function WorkspaceHost({ workspaces }: { workspaces: Workspace[] }) {

@@ -14,9 +14,9 @@ export interface CodingPlanEntryInventory {
   retry: () => void;
 }
 
-export function useCodingPlanEntryPlanList(): CodingPlanEntryInventory {
+export function useCodingPlanEntryPlanList(enabled = true): CodingPlanEntryInventory {
   const { state, reload } = useProviderSettingsView();
-  const providerSettingsView = state.status === "ready" ? state.view : null;
+  const providerSettingsView = enabled && state.status === "ready" ? state.view : null;
   const loading = state.status === "loading";
   const { credentialService, codingPlanSubscriptionService } = useServices();
   const user = useZCodeStore((state) => state.user);
