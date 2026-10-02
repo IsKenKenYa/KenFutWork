@@ -73,7 +73,7 @@
 2. 宿主仍未接全部命令：停止、队列、编辑/分叉、权限/结构化提问恢复、文件回退、终端等必须由真实能力实现。availability 目前仍有待纠正的预设 true；不能把未实现能力宣称可用。
 3. 后端需继续：官方 LangGraph interrupt/Command.resume、waiting/checkpoint 恢复、Code PG fail loud、GraphInterrupt 穿透、精确 child 停止与后台终态；Code 不依赖名称/顺序兜底。
 4. 设置写入/原市场与插件服务、模型选项执行、Gemini 适配、真实 before/after diff 与完整长输出引用仍未完成。BYOK 表单保持原件，成功保存后只清对应未继续编辑的 key 草稿，服务端不回传 key。
-5. Code store 恒为 coding；原 office 菜单仅导航 Design。隐藏云账户/套餐和真实不可用可选能力。前端认证/模式桥接和默认路由已接通；云账户/套餐与可选能力显隐仍待真实能力服务接入，不能认定这部分已交付。
+5. Code store 恒为 coding；原 office 菜单仅导航 Design。Footer 云登录/账户/套餐及购买查询已按真实平台能力隐藏。完整页面实测仍有模型设置预置云账户/套餐导航、无模型套餐提示，以及自动化/浏览器控制等不可用入口；继续沿原组件装配按真实能力隐藏，不能认定全局显隐完成。
 6. 原版同场景截图/交互、GLM 工具链锁定回归、旧 Code 清零、Design 回归、完整 pnpm test/typecheck/lint/build/API spec 与 Apifox AI 分支仍必须完成，之后一个完整 PR。
 
 ### 供应商设置宿主的已核实前置契约
@@ -93,6 +93,8 @@ KenFutWork `modelProviders` 持有身份、workspace 隔离、加密和真实实
 后续快照/通知切片已将完整实例配置与 workspace revision 合为单一 MVCC 查询；模型目录只补该快照的元信息，不二次查询实例。原 Settings 保留停用供应商与模型，Selection 按实际启用与凭证资格过滤。create/delete 提交后向 owned SSE 广播原两服务的 `onDidChange`，数据与 mutation response 同源。两条新增公开宿主测试分别从缺失通知、误把停用模型标为可执行的 red 到 green；包含同值保存不推进修订。其他保存入口的事件、全量 overlay/CAS 与原表单仍继续实施。
 
 Provider 保存切片已接 `savePersonalProviderOverlay`，复用原 ProviderConfig parser/overlay，保留 API 格式、品牌、Key 管理地址及未编辑字段。前向 `20261002215830_provider_code_settings.sql` 只保存非敏感扩展叶子，DB 约束禁止 Key、headers、endpoint、模型成员在扩展列复制，原规范列仍唯一属主。显式 Key/null 清除与 headers/null 清除、真实 credentialConfigured、提交后原通知和删除后迟到保存 404 已通过公开接口；原 Key 组件 presence/明确 clear 与模型完整操作/CAS、模板基线仍继续。73 条空库重放、历史 SHA、二次 no-op 和实际 schema 约束检查通过，迁移执行后不可修改。
+
+原 Key 控件的宿主接线已完成：原 Input/Button、卡片/投影/稀疏保存链保留，增加可选 credentialConfigured 与原按钮的明确 clear；不返回旧 Key、不用假星号。按 Key 草稿修订和 providerId 只清成功提交且未继续编辑的字段，失败、重试、迟到应答不覆盖新草稿。原模型/Provider/View 类型从 packages/shared 直接导出；9 处允许偏差逐项登记，3051 来源校验零漂移。原组件操作 red→green 及三项回归、全量 pnpm test/typecheck、原 UI 构建通过。隔离真实数据库的完整原页面验证创建→保存→空输入/真实 presence→clear→刷新；截图见 `docs/验收/Code模式ZCode/原供应商只写凭证.jpg` 与 `原供应商凭证清除.jpg`，仅使用无外部效力的测试文本，未验证模型执行。模型原子操作/CAS、模板基线与全局能力显隐继续实施。
 
 只读审计基线仍为 `29628c9acdb81b703bbd4080c207a0e7ce5e276e`。上述缺口说明当前模型读取冒烟不证明原设置写入完成；服务接线验收必须覆盖空草稿→模型配置→写 Key→真实 executable、清 Key、删除最后模型、并发/CAS、通知和刷新恢复。
 

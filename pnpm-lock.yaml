@@ -600,6 +600,9 @@ importers:
 
   packages/shared:
     dependencies:
+      '@zcode/provider':
+        specifier: workspace:*
+        version: link:../zcode-provider
       '@zcode/shared':
         specifier: workspace:*
         version: link:../zcode-shared

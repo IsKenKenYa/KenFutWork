@@ -155,6 +155,8 @@ export interface ProviderSettingsProviderView extends Pick<
   readonly providerId: ProviderId;
   /** 当前 Effective Config 是否已经进入 Registry，可用于模型选择和创建。 */
   readonly executable: boolean;
+  /** 写入型宿主只提供真实凭证 presence，不回读 Key。缺省保留原宿主语义。 */
+  readonly credentialConfigured?: boolean;
   readonly effectiveBuiltinConfig?: ProviderConfigObject;
   readonly personalConfig?: ProviderConfigObject;
   readonly effectiveConfig: ProviderConfigObject;

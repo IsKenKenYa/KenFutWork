@@ -6,6 +6,15 @@ import {
 } from "@zcode/shared/zcode-protocol-v4";
 import { z } from "zod";
 
+export type {
+  ModelConfigObject,
+  ProviderConfigObject,
+  ProviderSettingsCreationResult,
+  ProviderSettingsModelView,
+  ProviderSettingsProviderView,
+  ProviderSettingsView,
+  SavePersonalModelDraftInput,
+} from "@zcode/provider";
 /** 界面契约沿用固定 ZCode 原协议，宿主不维护另一套 rows/snapshot。 */
 export * as zcodeUiProtocol from "@zcode/shared/zcode-protocol-v4";
 

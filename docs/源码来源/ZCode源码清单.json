@@ -5771,20 +5771,22 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "9ec12a7496d75cdc883de200b445a8cdd1d77f2f861bac1ba1781e934ee74fd2",
+      "copiedSha256": "273fde9958879efa163881f3f9269ca6bb202293e9a6fb68966513ff59f4f6fd",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "模式文案：原 coding/office 菜单显示 Code/Design"
+        "模式文案：原 coding/office 菜单显示 Code/Design",
+        "宿主 BYOK 文案：真实配置状态与明确 clear，不显示旧 Key"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "baf4bb8ce4a4636b40ec32cf32f9de70a9ed3710c878097196eedfa7f4adfe36",
+      "copiedSha256": "cf9cb7301b38a40f3f4c440bf4f769fa66780aab698180669ad2ccff8b8ee24b",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "模式文案：原 coding/office 菜单显示 Code/Design"
+        "模式文案：原 coding/office 菜单显示 Code/Design",
+        "宿主 BYOK 文案：真实配置状态与明确 clear，不显示旧 Key"
       ]
     },
     {
@@ -6872,18 +6874,20 @@
       "source": "references/zcode/packages/ui/src/lib/providerSettingsFormProjection.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/providerSettingsFormProjection.ts",
       "sha256": "2c3ec70a8b2f68e6c9d20c358656d238ce865b7e61cc582172316f04039427dc",
-      "copiedSha256": "694ec930ae089395f0d0b4b44249e57e145548c15d2f7535858a748fa375352d",
+      "copiedSha256": "175d3351b2e6ff7829b6b8cc1c9c9b398f558daf781f1f76059ff3916fecc9b2",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主 DTO 接线：原投影传递真实凭证 presence，不生成 Key 占位值"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/lib/providerSettingsFormTypes.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/providerSettingsFormTypes.ts",
       "sha256": "09ff05f29fe66e1b92208edd188397321e61b9c4e12364f3004d38b0a8cae3c8",
-      "copiedSha256": "09ff05f29fe66e1b92208edd188397321e61b9c4e12364f3004d38b0a8cae3c8",
+      "copiedSha256": "aa8601d27215ba2c84dabb5a24b20e12d91b75458fb2981f9e346ec12ae5585d",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主类型兼容：原表单传递可选 credentialConfigured"
       ]
     },
     {
@@ -10061,9 +10065,10 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ApiKeyInput.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ApiKeyInput.tsx",
       "sha256": "4bf52ea3daa2d723df5a361353d83057d79d0e4fb78ec40d2c890b4670be3c3f",
-      "copiedSha256": "14d0575fb2dd20a1ed3b4611cc83b535f66528b214dc52afedf424a610808e17",
+      "copiedSha256": "0fd9fdbe22014db4837416579a79210bda549a8272314d7c0d1d80eabfe32a12",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主 BYOK 接线：原输入/Button 保持布局，已保存且输入为空时提供明确 clear；无 Key 回读或假星号"
       ]
     },
     {
@@ -10106,9 +10111,10 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/InlineEditableProviderCard.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/InlineEditableProviderCard.tsx",
       "sha256": "2158d97081523c1423a1b4c7c0318e92d89c3e7f3610cf6001e7923588efe0d1",
-      "copiedSha256": "9734b8ee4134a517b84f3cac741c7738af4173534563ae6c63cdb22e7a567ef3",
+      "copiedSha256": "9cbdaf9d177d0e4d179223945e38242752e3bdda75f0d700006822975bfacbbd",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主 BYOK 接线：沿原保存链明确 clear，仅清成功提交且未继续编辑的对应 Key 草稿，保护迟到应答"
       ]
     },
     {
@@ -10160,9 +10166,10 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ProviderCardSections.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ProviderCardSections.tsx",
       "sha256": "d01c7b6a18b1b5c93bc176988751821f0f29f435613c399380ba8e4d8dd0ef09",
-      "copiedSha256": "886ca215586f114c6b959f7d47c6a6df58631ee79bafdbfef2a1cab1eb1dee2c",
+      "copiedSha256": "d240a97f9232a1031b9403087fef7dfefffa11bd599b1544c10f1d225777b3e6",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：原 Key 区段透传 presence 与 clear 回调"
       ]
     },
     {
@@ -10178,9 +10185,10 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ProviderDraftSave.ts",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ProviderDraftSave.ts",
       "sha256": "8b6845842d8963d1903092e6a7625049067d1474de2c6a12ead1cc631a706aee",
-      "copiedSha256": "5c02c2e81d04679e1f769b7b69e467200bc505e4d411dd16e2b7d9e4056bc80f",
+      "copiedSha256": "286aa4c3ba343b77624820480e77fe0b5b876789a8fc1976fc5a0898bb5e33ad",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主只写契约：原稀疏草稿以显式 null 表达清除 Key"
       ]
     },
     {
@@ -16049,8 +16057,10 @@
       "source": "references/zcode/packages/provider/src/facades.ts",
       "target": "packages/zcode-provider/src/facades.ts",
       "sha256": "8d03047f2cf27adce44c7ee16e8bf4378d8b455950ccdf728509162bba3f263d",
-      "copiedSha256": "8d03047f2cf27adce44c7ee16e8bf4378d8b455950ccdf728509162bba3f263d",
-      "adaptations": []
+      "copiedSha256": "e45b9ea82ba777a21a1a8099aa5ff6d467f0201555739e8d27cfc4367979c0ad",
+      "adaptations": [
+        "宿主契约：可选 credentialConfigured 传递真实凭证 presence，Key 只写不读，缺省保留原宿主语义"
+      ]
     },
     {
       "source": "references/zcode/packages/provider/src/index.ts",

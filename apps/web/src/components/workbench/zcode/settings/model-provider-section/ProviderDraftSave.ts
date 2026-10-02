@@ -35,11 +35,13 @@ export function resolvePendingProviderDraftSave({
   draft,
   readOnlyEndpoints,
   nameConfirmed = false,
+  clearApiKey = false,
 }: {
   provider: ProviderSettingsFormProvider;
   draft: ProviderDraftValues;
   readOnlyEndpoints?: boolean;
   nameConfirmed?: boolean;
+  clearApiKey?: boolean;
   now: () => number;
 }): ProviderSettingsFormProvider | null {
   const label = draft.nameValue.trim();
@@ -52,7 +54,8 @@ export function resolvePendingProviderDraftSave({
   const urlChanged = !readOnlyEndpoints && baseURL !== (provider.config.api?.baseUrl ?? "");
   const keyChanged =
     isApiKeyAccess(provider.config.access) &&
-    draft.apiKeyValue !== (provider.config.access.apiKey ?? "");
+    (clearApiKey || draft.apiKeyValue !== (provider.config.access.apiKey ?? ""));
+  const nextKey = clearApiKey ? null : draft.apiKeyValue;
   if (!labelChanged && !typeChanged && !urlChanged && !keyChanged) return null;
 
   // 表单只拥有名称、连接类型、地址和 Key；重建整个 api 会删除隐藏 headers，
@@ -65,7 +68,7 @@ export function resolvePendingProviderDraftSave({
     typeChanged || urlChanged ? { ...provider.config.api, ...apiChanges } : provider.config.api;
   const access =
     keyChanged && isApiKeyAccess(provider.config.access)
-      ? { ...provider.config.access, apiKey: draft.apiKeyValue }
+      ? { ...provider.config.access, apiKey: nextKey }
       : provider.config.access;
   const config = {
     ...provider.config,
@@ -80,7 +83,7 @@ export function resolvePendingProviderDraftSave({
           access: {
             ...provider.personalConfig.access,
             type: provider.config.access.type,
-            apiKey: draft.apiKeyValue,
+            apiKey: nextKey,
           },
         }
       : {}),
