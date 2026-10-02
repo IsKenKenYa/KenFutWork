@@ -42,6 +42,7 @@ interface PresetProviderWithConfig extends PresetProviderSpec {
 }
 
 interface UseModelProviderNavigationOptions {
+  supportsCloudAccounts?: boolean;
   presetProviders: PresetProviderWithConfig[];
   modelProviders: ProviderSettingsFormProvider[];
   /**
@@ -64,6 +65,7 @@ interface UseModelProviderNavigationOptions {
 }
 
 export function useModelProviderNavigation({
+  supportsCloudAccounts = true,
   presetProviders,
   modelProviders,
   entitledAccountProviderIds = new Set(),
@@ -92,7 +94,7 @@ export function useModelProviderNavigation({
   const codingPlanItems = useMemo(
     () =>
       CODING_PLAN_PROVIDER_SPECS.filter((spec) =>
-        shouldShowCodingPlanForProviderFamilyDomain(spec.oauthProviderId, providerFamilyDomain),
+        supportsCloudAccounts && shouldShowCodingPlanForProviderFamilyDomain(spec.oauthProviderId, providerFamilyDomain),
       ).map((spec) => {
         const provider = modelProviders.find((item) => item.providerId === spec.id) ?? null;
         const accountEntitled = entitledAccountProviderIds.has(spec.id);
@@ -148,6 +150,7 @@ export function useModelProviderNavigation({
       modelProviders,
       modelProvidersLoading,
       providerFamilyDomain,
+      supportsCloudAccounts,
     ],
   );
   const connectionModeCodingPlanItems = useMemo(
@@ -223,7 +226,7 @@ export function useModelProviderNavigation({
       },
     ];
 
-    return groups;
+    return supportsCloudAccounts ? groups : groups.filter((group) => group.id !== "preset");
   }, [
     customProviders,
     codingPlanItems,
@@ -235,6 +238,7 @@ export function useModelProviderNavigation({
     pendingConnectionSelections,
     presetProviders,
     modelProviders,
+    supportsCloudAccounts,
   ]);
 
   const navigationItems = useMemo(() => {

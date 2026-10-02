@@ -116,7 +116,7 @@ export function useCodingPlanEntryPlanList(enabled = true): CodingPlanEntryInven
   const pending = loading || !current || missing.some((item) => item?.loading);
   const failed = !usableTeams || missing.length > 0;
   const status =
-    state.status === "error" ? "error" : pending ? "loading" : failed ? "error" : "ready";
+    !enabled ? "ready" : state.status === "error" ? "error" : pending ? "loading" : failed ? "error" : "ready";
   useEffect(() => {
     logger.debug("[purchaseTelemetry] 套餐入口查询状态", {
       status,

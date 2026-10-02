@@ -2,6 +2,7 @@ import type { ComponentProps } from "react";
 import { Button } from "@zui/components/ui/button.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { useOptionalCodingPlanUpgradeDialog } from "@zui/settings/CodingPlanUpgradeDialogProvider.js";
+import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 
 export function useCodingPlanEntryGate() {
   const dialog = useOptionalCodingPlanUpgradeDialog();
@@ -25,6 +26,8 @@ export function CodingPlanEntryButton({
   ...props
 }: ComponentProps<typeof Button> & { bypassGate?: boolean }) {
   const gate = useCodingPlanEntryGate();
+  const platform = useOptionalPlatform();
+  if (platform?.supportsCloudAccounts === false) return null;
   const status = bypassGate ? "ready" : gate.status;
   return (
     <Button

@@ -124,9 +124,10 @@
       "source": "references/zcode/packages/ui/src/ChatErrorBanner.tsx",
       "target": "apps/web/src/components/workbench/zcode/ChatErrorBanner.tsx",
       "sha256": "8cc753cc95b43ce7c19e1d7dd3c9591c4dd2af4cd31a6768019639880d14a7b7",
-      "copiedSha256": "605ab00930383ff1d6e8320b08aa2f7984e27d36e1d8bf8831a04cbe5c3e8cc7",
+      "copiedSha256": "bd5dd19b0d16329588ab5de2c4ca5cc74cfecd1493f9c84cff74dfa8947c21a6",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：沿原组件/导航/Hook 装配按 supportsCloudAccounts 隐藏不可用云账户与套餐，阻止凭据/权益请求；未声明能力时保留原语义"
       ]
     },
     {
@@ -4960,10 +4961,11 @@
       "source": "references/zcode/packages/ui/src/hooks/useCodingPlanEntryPlanList.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useCodingPlanEntryPlanList.ts",
       "sha256": "20863c04d6161779607df7d374a0afc0c98df12061a7071dc02bb696035bb644",
-      "copiedSha256": "334928a70f6c079b5252667016ec2d643df6ac8816c357b1a78d126ff02716a2",
+      "copiedSha256": "b22fefe89b30c6a9e49c3f59d1f6975ce7f5272edcc305d4b0e36fff0620adef",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "宿主能力：云账户禁用时不加载账户视图、不发出 OAuth 凭证与套餐查询"
+        "宿主能力：云账户禁用时不加载账户视图、不发出 OAuth 凭证与套餐查询",
+        "能力显隐：沿原组件/导航/Hook 装配按 supportsCloudAccounts 隐藏不可用云账户与套餐，阻止凭据/权益请求；未声明能力时保留原语义"
       ]
     },
     {
@@ -5771,22 +5773,24 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "273fde9958879efa163881f3f9269ca6bb202293e9a6fb68966513ff59f4f6fd",
+      "copiedSha256": "044909e8dc6bf1ba1ce088af74b9837ac425e6267500d98d8cbf3ceacaecda30",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
-        "宿主 BYOK 文案：真实配置状态与明确 clear，不显示旧 Key"
+        "宿主 BYOK 文案：真实配置状态与明确 clear，不显示旧 Key",
+        "能力显隐：沿原组件/导航/Hook 装配按 supportsCloudAccounts 隐藏不可用云账户与套餐，阻止凭据/权益请求；未声明能力时保留原语义"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "cf9cb7301b38a40f3f4c440bf4f769fa66780aab698180669ad2ccff8b8ee24b",
+      "copiedSha256": "a8d064a8f5d673aaeed7fd85b6afc1ca5383eb4d7f894605195438830d1415ee",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
-        "宿主 BYOK 文案：真实配置状态与明确 clear，不显示旧 Key"
+        "宿主 BYOK 文案：真实配置状态与明确 clear，不显示旧 Key",
+        "能力显隐：沿原组件/导航/Hook 装配按 supportsCloudAccounts 隐藏不可用云账户与套餐，阻止凭据/权益请求；未声明能力时保留原语义"
       ]
     },
     {
@@ -9289,9 +9293,10 @@
       "source": "references/zcode/packages/ui/src/settings/CodingPlanEntryButton.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/CodingPlanEntryButton.tsx",
       "sha256": "b3f7d64b9c8a3ff58f1f2bb6fef16af01c2d859135c54a2befc9dcfb9a6bcbdc",
-      "copiedSha256": "7c203369fbf537dac5ceecb915bd823dc2fa48084d7729c4f6a88523507b7831",
+      "copiedSha256": "223a0265ad00f9bf4912dd0376d6749a88b90d703eff9d6a80c39b98c7ca3f70",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：沿原组件/导航/Hook 装配按 supportsCloudAccounts 隐藏不可用云账户与套餐，阻止凭据/权益请求；未声明能力时保留原语义"
       ]
     },
     {
@@ -9307,10 +9312,11 @@
       "source": "references/zcode/packages/ui/src/settings/CodingPlanUpgradeDialogProvider.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/CodingPlanUpgradeDialogProvider.tsx",
       "sha256": "5134c14439cf7e34e5c4fdfb494883b9c6fc20dd10412759a70dfd22ae02c9f8",
-      "copiedSha256": "a76f21706f76cd188ec287cdba687ba7f550a89d7b190bd0fcdbfb49bb6dcb39",
+      "copiedSha256": "f6af7a7786eb2cce3e970a7ce7d019862f472474e4e848135e19c96f66694ea2",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "能力显隐：云账户禁用时不挂购买弹窗，不启动原套餐查询；保留原 Context/调用链"
+        "能力显隐：云账户禁用时不挂购买弹窗，不启动原套餐查询；保留原 Context/调用链",
+        "能力显隐：沿原组件/导航/Hook 装配按 supportsCloudAccounts 隐藏不可用云账户与套餐，阻止凭据/权益请求；未声明能力时保留原语义"
       ]
     },
     {
@@ -9480,9 +9486,10 @@
       "source": "references/zcode/packages/ui/src/settings/ModelProviderSection.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/ModelProviderSection.tsx",
       "sha256": "05f5f3f95fe45c2d0c2d8454718c9f46fc052a27dfd19cda3966be74628faca7",
-      "copiedSha256": "960de137380742d0bc321f7f72f9d8b8ff12f617db802978fa269769e7b33174",
+      "copiedSha256": "8f25c623cccdb45f91cd85cee690e697319f8956d1cffe3ff77c3041d2ce3d17",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：沿原组件/导航/Hook 装配按 supportsCloudAccounts 隐藏不可用云账户与套餐，阻止凭据/权益请求；未声明能力时保留原语义"
       ]
     },
     {
@@ -10528,9 +10535,10 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/useModelProviderNavigation.ts",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/useModelProviderNavigation.ts",
       "sha256": "826b97e29666073349313d89dec5ec7912ca7a127e2e76d5288136005aea3eec",
-      "copiedSha256": "c5187e899cd8613b9ac66089c37aed699282a7657feea9e175542ec5c16bb414",
+      "copiedSha256": "7e55c1341ec8a9fdc69c9b2ad24df47ab9d2dff3bd9d2af999715d30c0f4dd9f",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：沿原组件/导航/Hook 装配按 supportsCloudAccounts 隐藏不可用云账户与套餐，阻止凭据/权益请求；未声明能力时保留原语义"
       ]
     },
     {

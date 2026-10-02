@@ -48,6 +48,7 @@ export function CodingPlanUpgradeDialogProvider({ children }: { children: ReactN
       nextTarget: CodingPlanUpgradeDialogTarget,
       observation?: { signal: AbortSignal; onResult: (opened: boolean) => void },
     ) => {
+      if (!supportsCloudAccounts) return false;
       // 所有入口统一守卫；查询完成后不自动重放之前被拦截的点击。
       const { status, entryPlanList } = inventoryRef.current;
       if (observation?.signal.aborted) return false;
@@ -83,7 +84,7 @@ export function CodingPlanUpgradeDialogProvider({ children }: { children: ReactN
       setOpenVersion((version) => version + 1);
       return true;
     },
-    [platform],
+    [platform, supportsCloudAccounts],
   );
   const value = useMemo(
     () => ({ openCodingPlanUpgrade, inventory }),
