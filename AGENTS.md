@@ -256,3 +256,17 @@ API 文档是单源链，任何一环脱节都会腐烂，纪律如下：
 - 余额/配额变更必须在同一原子事务中提交余额更新与不可变交易流水，并使用稳定的业务交付键防止重复扣减、退款或发放。
 - 每个涉及持久副作用的 Spec 和测试必须覆盖：顺序重放、并发重放、响应丢失后的重放、同键参数冲突，以及删除后的迟到请求。
 **主链路稳定优先，对账重试兜底**：人工对账、孤儿任务对账、重试策略都是兜底机制——目标是提升系统稳定性和鲁棒性，提高多用户并发能力，而不是只会对账兜底。「有剑不用」：对账、重试、人工兜底是最后的剑，主目标是主链路本身稳定、并发扛得住，让剑永远不用出鞘。
+
+## Agent skills
+
+### Issue tracker
+工单使用 IsKenKenYa/KenFutWork 的 GitHub Issues。见 docs/agents/issue-tracker.md。
+
+### Triage labels
+使用五个默认 triage 标签。见 docs/agents/triage-labels.md。
+
+### Domain docs
+使用根级 CONTEXT.md 的单一领域上下文，遵循现有文档治理。见 docs/agents/domain.md。
+
+### ZCode 源码移植授权
+Code 模式按用户确认的全量移植方案直接复制 ZCode 3.14.3 开源源码；此项是 references 通用参考限制的明确例外。保留版权和第三方 notices，所有宿主适配登记来源与偏差。禁止手写仿制 Code UI，Design 界面与行为保持不变。
