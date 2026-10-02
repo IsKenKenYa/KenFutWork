@@ -231,6 +231,7 @@ export function createZCodeStore(
   broadcastService: IBroadcastService,
   options: {
     initialIsRestoringOAuthSession?: boolean;
+    onInterfaceModeChange?: (mode: InterfaceMode) => void;
   } = {},
 ) {
   /** 标记：正在应用来自广播的更新，此时不再重复广播（防止循环） */
@@ -240,9 +241,13 @@ export function createZCodeStore(
   let syncSystemThemeListener = (_theme: Theme) => {};
 
   const useStore = create<ZCodeState>()((set, get) => ({
-    interfaceMode: normalizeInterfaceMode(readSafeLocalStorage(INTERFACE_MODE_STORAGE_KEY)),
+    interfaceMode: options.onInterfaceModeChange ? "coding" : normalizeInterfaceMode(readSafeLocalStorage(INTERFACE_MODE_STORAGE_KEY)),
     setInterfaceMode: (mode) => {
       const interfaceMode = normalizeInterfaceMode(mode);
+      if (options.onInterfaceModeChange) {
+        options.onInterfaceModeChange(interfaceMode);
+        return;
+      }
       if (get().interfaceMode !== interfaceMode) {
         logger.debug("[InterfaceMode] 切换界面模式", {
           interfaceMode,

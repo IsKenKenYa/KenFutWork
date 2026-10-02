@@ -198,8 +198,7 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
         ).toHaveLength(1);
         expect(
           snapshot.rows.window
-            .filter((row: { kind: string }) => row.kind === "assistantText")
-            .map((row: { text: string }) => row.text)
+            .flatMap((row) => (row.kind === "assistantText" ? [row.text] : []))
             .join(""),
         ).toContain("CODE_UI_SMOKE_OK");
         const restored = await request(`/api/code-ui/sessions/${sessionId}`);

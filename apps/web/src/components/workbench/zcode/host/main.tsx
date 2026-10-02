@@ -5,7 +5,7 @@ import type { UserInfo } from "@zcode/shared";
 import { TooltipProvider } from "@zui/components/ui/tooltip.js";
 import { ServiceProvider } from "@zui/hooks/useServices.js";
 import { PlatformProvider } from "@zui/hooks/usePlatform.js";
-import { StoreProvider } from "@zui/store/StoreProvider.js";
+import { StoreProvider, useZCodeStore } from "@zui/store/StoreProvider.js";
 import { TabStoreProvider, useTabStore, useTabStoreApi } from "@zui/store/TabStoreProvider.js";
 import { isSettingsTab } from "@zui/store/tabStore.js";
 import { ZCodeIntlProvider, useZCodeIntl } from "@zui/i18n/IntlProvider.js";
@@ -27,12 +27,14 @@ import { usePaneLayoutStore } from "@zui/v4/paneLayoutStore.js";
 import { isRendererReloadNavigation } from "@zui/lib/rendererNavigation.js";
 import { createWebPlatform } from "./upstream/browserPlatform.js";
 import { CodeHttpChannelClient, type CodeHostConfig } from "./httpChannelClient.js";
+import { requestParentBootstrap, navigateToDesign } from "./parentBridge.js";
 import "@zui/styles.css";
 
 interface Workspace { projectId: string; canvasId: string; name: string; path: string; }
 
 const params = new URLSearchParams(window.location.search);
-const config: CodeHostConfig = { apiBase: params.get("api") ?? window.location.origin, ...(params.get("workspace") ? { workspacePath: params.get("workspace")! } : {}) };
+const bootstrap = window.parent !== window ? await requestParentBootstrap(window.parent) : null;
+const config: CodeHostConfig = { apiBase: bootstrap?.apiBase ?? params.get("api") ?? window.location.origin, ...(bootstrap?.accessToken ? { accessToken: bootstrap.accessToken } : {}), ...(params.get("workspace") ? { workspacePath: params.get("workspace")! } : {}) };
 const client = new CodeHttpChannelClient(config);
 const services = client.services;
 const platform = createWebPlatform();
@@ -44,7 +46,9 @@ function WorkspaceHost({ workspaces }: { workspaces: Workspace[] }) {
   const activePath = useTabStore((state) => state.activeWorkspacePath);
   const settingsActive = useTabStore((state) => state.tabs.some((tab) => tab.id === state.activeTabId && isSettingsTab(tab)));
   const [directoryOpen, setDirectoryOpen] = useState(workspaces.length === 0);
-  const [user, setUser] = useState<UserInfo | null>(null);
+  const [user, setUser] = useState<UserInfo | null>(bootstrap?.user ?? null);
+  const setStoreUser = useZCodeStore((state) => state.setUser);
+  useEffect(() => setStoreUser(user), [setStoreUser, user]);
   const [, setOAuthError] = useState<string | null>(null);
   useRootProviderSettingsSnapshot(services);
   const actions = useRootWorkspaceActions({
@@ -92,7 +96,7 @@ function CodeHost({ workspaces }: { workspaces: Workspace[] }) {
   return <LucideProvider strokeWidth={1.5}><TooltipProvider>
     <ServiceProvider services={services}><PlatformProvider platform={platform}>
       <ZCodeIntlProvider initialLocale="zh-CN" settingService={services.settingService} broadcastService={services.broadcastService}>
-        <StoreProvider broadcastService={services.broadcastService}><TabStoreProvider><DiffsWorkerPoolProvider>
+        <StoreProvider broadcastService={services.broadcastService} onInterfaceModeChange={(mode) => { if (mode === "office") navigateToDesign(); }}><TabStoreProvider><DiffsWorkerPoolProvider>
           <AssistantCodeCommentFeatureProvider enabled><CodingPlanUpgradeDialogProvider>
             <ScopedErrorBoundary scope="kenfutwork-code-host"><WorkspaceHost workspaces={workspaces} /></ScopedErrorBoundary>
           </CodingPlanUpgradeDialogProvider></AssistantCodeCommentFeatureProvider>

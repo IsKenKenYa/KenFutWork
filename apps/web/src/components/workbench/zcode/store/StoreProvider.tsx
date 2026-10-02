@@ -14,6 +14,7 @@ import {
 import { useStore } from "zustand";
 import type { IBroadcastService } from "@zcode/services";
 import { createZCodeStore, type ZCodeStore, type ZCodeState } from "./index.js";
+import type { InterfaceMode } from "@zui/lib/interfaceMode.js";
 
 // 导出 Context 供测试直接注入已构造的 store 实例（如跨窗口广播抑制用例）。
 const StoreContext = createContext<ZCodeStore | null>(null);
@@ -21,10 +22,12 @@ const StoreContext = createContext<ZCodeStore | null>(null);
 export function StoreProvider({
   broadcastService,
   initialIsRestoringOAuthSession = false,
+  onInterfaceModeChange,
   children,
 }: {
   broadcastService: IBroadcastService;
   initialIsRestoringOAuthSession?: boolean;
+  onInterfaceModeChange?: (mode: InterfaceMode) => void;
   children: ReactNode;
 }) {
   // 只在首次渲染时创建 store，避免 HMR 重复订阅
@@ -32,6 +35,7 @@ export function StoreProvider({
   if (!storeRef.current) {
     storeRef.current = createZCodeStore(broadcastService, {
       initialIsRestoringOAuthSession,
+      ...(onInterfaceModeChange ? { onInterfaceModeChange } : {}),
     });
   }
 

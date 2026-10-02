@@ -6,6 +6,7 @@ export * from "./brand-kit-contracts.js";
 export * from "./capability-contracts.js";
 export * from "./checkpoints.js";
 export * from "./code-ui-contracts.js";
+export * from "./code-ui-host-bridge.js";
 export * from "./contracts.js";
 export * from "./credits.js";
 export * from "./errors.js";

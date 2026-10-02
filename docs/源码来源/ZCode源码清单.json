@@ -5768,18 +5768,20 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
+      "copiedSha256": "9ec12a7496d75cdc883de200b445a8cdd1d77f2f861bac1ba1781e934ee74fd2",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "模式文案：原 coding/office 菜单显示 Code/Design"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
+      "copiedSha256": "baf4bb8ce4a4636b40ec32cf32f9de70a9ed3710c878097196eedfa7f4adfe36",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "模式文案：原 coding/office 菜单显示 Code/Design"
       ]
     },
     {
@@ -11181,9 +11183,10 @@
       "source": "references/zcode/packages/ui/src/store/StoreProvider.tsx",
       "target": "apps/web/src/components/workbench/zcode/store/StoreProvider.tsx",
       "sha256": "399bd7e847919173439dbed255a97a4f1be9b53b1d84f5fcea22842da245756a",
-      "copiedSha256": "399bd7e847919173439dbed255a97a4f1be9b53b1d84f5fcea22842da245756a",
+      "copiedSha256": "1b63a0af66100fa0afbc697956e57140969f86ead7a4ee7a66dc64a766c85f4d",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：向原 Store 工厂传入模式导航回调"
       ]
     },
     {
@@ -11289,9 +11292,10 @@
       "source": "references/zcode/packages/ui/src/store/index.ts",
       "target": "apps/web/src/components/workbench/zcode/store/index.ts",
       "sha256": "da672aa5c8b00ae62743ce3b6dab58ed4ce642ca344acb4016fa8db5ea7959e8",
-      "copiedSha256": "d68044de35ea600880603d06ba079df7e8525d9a8d58ff2d75e0abb2d76611f0",
+      "copiedSha256": "ffb8cb6c346ac2d7c2125fcfb77f34a54ecc2a6601ae87204f7321f770e877ca",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：宿主提供模式导航时初始恒 coding，原菜单 office 请求交给父宿主而不改变 Code 树"
       ]
     },
     {
@@ -24481,6 +24485,7 @@
   "buildAdaptations": [
     "UI 使用独立 Vite 文档，保留原主题与 portal 文档语义",
     "vendor 工程 strictNullChecks=true 以正确检查 zod 合同；宿主 strict/exactOptional=true",
-    "RPC 保留原 noUncheckedIndexedAccess=false；services #src imports 映射到构建输出；CUA type-only 保留真实 .d.ts"
+    "RPC 保留原 noUncheckedIndexedAccess=false；services #src imports 映射到构建输出；CUA type-only 保留真实 .d.ts",
+    "第一方宿主消费 shared 父子文档认证/模式桥接契约，原 UI 的服务 RPC 与物理帧接口不变"
   ]
 }
