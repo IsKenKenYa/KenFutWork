@@ -76,6 +76,20 @@
 5. Code store 恒为 coding；原 office 菜单仅导航 Design。隐藏云账户/套餐和真实不可用可选能力。前端认证/模式桥接和默认路由已接通；云账户/套餐与可选能力显隐仍待真实能力服务接入，不能认定这部分已交付。
 6. 原版同场景截图/交互、GLM 工具链锁定回归、旧 Code 清零、Design 回归、完整 pnpm test/typecheck/lint/build/API spec 与 Apifox AI 分支仍必须完成，之后一个完整 PR。
 
+### 供应商设置宿主的已核实前置契约
+
+原 `IProviderSettingsService` 方法面必须完整接入，不能用现有执行模型目录代替设置候选。固定版本的原 `ProviderSettingsFacade` 在 `packages/provider/src/facades.ts`，草稿写入语义在 `config-service.ts`：
+
+- `createPersonalProvider` 立即持久化无凭证/无模型草稿并返回 `{providerId,view}`；未完整配置仍显示在 Settings，执行 Registry 只收完整可执行项。
+- 保存稀疏 provider overlay，保留未编辑叶子；omit Key 保留旧凭证，新 Key 加密替换，明确 clear 移除凭证。所有读面、通知和 mutation response 剥离 Key 与 headers 值，返回真实 presence；禁止伪 Key/星号占位。
+- 模型 add/rename/delete/reorder/enabled 和 `savePersonalModelDraft` 更新成员、顺序、精确配置必须原子化；`basedOnRevision` 作冲突检测。删除后迟到保存必须拒绝而不重建。
+- Settings View 的 revision 是整个 workspace Registry 的单调修订，持久 mutation 成功后推进，commit 后广播相同 View；没有配置变化的 refresh 不增修订。禁止 Date.now、数组长度、各实例 revision 求和。
+- 原 Key 表单依赖旧明文作脏比较，宿主不回读后必须在原组件增加最小 presence/明确 clear 接线；不重新手写供应商 UI。
+
+现有 KenFutWork `modelProviders` 已持有身份、workspace 隔离、加密和真实实例库，必须扩此聚合承接上述语义：当前 `providerInstanceCreateRequestSchema` 要求 Key 和模型齐全，update 禁止空 models；`encrypted_api_key` 非空、读面 hasCredential 恒 true；缺 workspace 修订、CAS、顺序及完整 original model overlay。后续前向迁移与域接口应补这些事实，不另建明文 ZCode 配置文件或第二套模型真相。原 `providerFacades` 的原样 serializer 会含 Key，不能直接跨网络返回。
+
+只读审计基线仍为 `29628c9acdb81b703bbd4080c207a0e7ce5e276e`。上述缺口说明当前模型读取冒烟不证明原设置写入完成；服务接线验收必须覆盖空草稿→模型配置→写 Key→真实 executable、清 Key、删除最后模型、并发/CAS、通知和刷新恢复。
+
 ### 验收进程与文件审计
 
 - 本任务临时 API 3301、生产静态 preview 3300；只连接现存开发 PG，不管理其生命周期。开发主服务监听源码变化时可能停/起 PG 并换端口；临时回环转发 3332 跟随当前 PG 端口。临时脚本位于 `/tmp/ken-code-api.mts` 与 `/tmp/ken-code-db-proxy.mjs`，不入库；先检查实时监听再使用，PID/exec handle 不作为长期事实。
