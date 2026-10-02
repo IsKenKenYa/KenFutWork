@@ -3,6 +3,7 @@ import type {
   ModelCatalogEntry,
   ModelCatalogHints,
   ProviderInstanceModel,
+  ProviderInstanceResponse,
   ProviderProtocol,
 } from "@kenfutwork/shared";
 
@@ -21,6 +22,10 @@ import {
 
 export interface ModelCatalogService {
   listCatalog(user: AuthenticatedUser): Promise<ModelCatalogEntry[]>;
+  /** 为已鉴权的完整配置快照补模型元信息；候选保留停用项，不二次查询实例。 */
+  describeInstanceModels(
+    instances: readonly ProviderInstanceResponse[],
+  ): ModelCatalogEntry[];
   /**
    * 校验「实例:模型」是否真的在这个用户的目录里（R5-2/E：模型名不在目录时 fail loud）。
    * 返回可读原因 + 可用清单摘要，供保存期与 run 起始期直接透出。
@@ -135,6 +140,13 @@ export function createModelCatalogService(options: {
 }): ModelCatalogService {
   const { modelProviders, snapshot } = options;
   return {
+    describeInstanceModels(instances) {
+      return instances.flatMap((instance) =>
+        instance.models.map((model) =>
+          toCatalogEntry(model, instance, instance.scope, snapshot),
+        ),
+      );
+    },
     async listCatalog(user) {
       const instances = await modelProviders.listInstances(user);
       const entries: ModelCatalogEntry[] = [];

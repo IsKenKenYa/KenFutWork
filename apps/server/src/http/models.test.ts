@@ -38,6 +38,7 @@ async function buildApp(catalogEntries: ModelCatalogEntry[]) {
     env: {} as ServerEnv,
     auth,
     modelCatalog: {
+      describeInstanceModels: () => catalogEntries,
       listCatalog: async () => catalogEntries,
       validateSpecifier: async () => ({ ok: true }),
     },

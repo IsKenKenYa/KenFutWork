@@ -72,7 +72,10 @@ export type NewSystemInstance = {
  *   避免与工作区实例串行。
  */
 export interface ModelProviderRepository {
-  getWorkspaceRevision(workspaceId: string): Promise<number>;
+  readWorkspaceRegistry(workspaceId: string): Promise<{
+    revision: number;
+    instances: ProviderInstanceRecord[];
+  }>;
   deleteSystemInstance(instanceId: string): Promise<number>;
   deleteWorkspaceInstance(
     workspaceId: string,
@@ -150,13 +153,22 @@ export function createModelProviderRepository(
   persistence: PersistenceService,
 ): ModelProviderRepository {
   return {
-    async getWorkspaceRevision(workspaceId) {
+    async readWorkspaceRegistry(workspaceId) {
       const row = await persistence
         .forWorkspace(workspaceId)
-        .queryOne<{ revision: string }>(
-          `select revision from public.provider_registry_revisions where workspace_id = :workspace`,
+        .queryOne<{ revision: string; instances: ProviderInstanceRecord[] }>(
+          // 同一条 SQL 的 MVCC 快照，避免配置与修订号来自两次不同读。
+          `select coalesce((select revision from public.provider_registry_revisions
+                             where workspace_id = :workspace), 0)::text as revision,
+                  (select coalesce(jsonb_agg(to_jsonb(instance) order by instance.created_at, instance.id), '[]'::jsonb)
+                     from (select ${INSTANCE_COLUMNS}, created_at
+                             from public.provider_instances
+                            where workspace_id = :workspace and scope = 'workspace') instance) as instances`,
         );
-      return Number(row?.revision ?? 0);
+      return {
+        revision: Number(row?.revision ?? 0),
+        instances: row?.instances ?? [],
+      };
     },
     async listWorkspaceInstances(workspaceId) {
       return persistence

@@ -41,7 +41,7 @@ function publicConfig(
     personalModelIds: instance.models
       .filter((model) => model.capability === "chat")
       .map((model) => model.id),
-    visibility: instance.enabled ? "visible" : "hidden",
+    visibility: "visible",
   };
 }
 
@@ -50,6 +50,8 @@ function modelView(
   entry: ModelCatalogEntry,
 ) {
   const config = publicConfig(instance);
+  const enabled = entry.model.enabled !== false;
+  const executable = instance.enabled && instance.hasCredential && enabled;
   const builtin = rules.resolve({
     providerId: instance.id,
     modelId: entry.id,
@@ -62,7 +64,7 @@ function modelView(
     entry.model.maxOutputTokens ?? entry.hints?.maxOutputTokens;
   const effective = builtin.overlay(
     ModelConfig.fromData({
-      enabled: true,
+      enabled,
       properties: {
         ...(contextWindow === undefined ? {} : { contextWindow }),
         ...(image === undefined
@@ -88,9 +90,9 @@ function modelView(
     kind: "candidate" as const,
     effectiveBuiltinConfig: builtin.toJSON(),
     effectiveConfig: serializeRegistryModelConfig(complete.config),
-    enabled: true,
-    executable: instance.enabled && instance.hasCredential,
-    selectable: instance.enabled && instance.hasCredential,
+    enabled,
+    executable,
+    selectable: executable,
     issues: [],
   };
 }

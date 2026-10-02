@@ -153,7 +153,10 @@ function toPatch(input: ProviderInstanceUpdateRequest) {
 }
 
 export interface ModelProviderService {
-  getWorkspaceRevision(user: AuthenticatedUser): Promise<number>;
+  readWorkspaceRegistry(user: AuthenticatedUser): Promise<{
+    revision: number;
+    instances: ProviderInstanceResponse[];
+  }>;
   createDraftInstance(
     user: AuthenticatedUser,
     input: { name: string; protocol: ProviderProtocol; baseUrl?: string },
@@ -293,10 +296,14 @@ export function createModelProviderService(options: {
   }
 
   return {
-    async getWorkspaceRevision(user) {
-      return repository.getWorkspaceRevision(
+    async readWorkspaceRegistry(user) {
+      const snapshot = await repository.readWorkspaceRegistry(
         await requireWorkspaceId(user, "instance_query_failed"),
       );
+      return {
+        revision: snapshot.revision,
+        instances: snapshot.instances.map(toResponse),
+      };
     },
     async createDraftInstance(user, input) {
       const workspaceId = await requireWorkspaceId(

@@ -90,6 +90,8 @@ KenFutWork `modelProviders` 持有身份、workspace 隔离、加密和真实实
 
 草稿公开 RPC red（未实现时 501）→green 已在独占临时数据库验证，含创建/删除 revision +1、读取/刷新不增修订、不可执行和凭证不回读。72 条迁移空库重放、历史 SHA、二次 no-op 和实际可空字段检查通过；server 1478 回归、server 类型检查与 25 项 workspace/API 门禁通过。该切片只证明空草稿链路。
 
+后续快照/通知切片已将完整实例配置与 workspace revision 合为单一 MVCC 查询；模型目录只补该快照的元信息，不二次查询实例。原 Settings 保留停用供应商与模型，Selection 按实际启用与凭证资格过滤。create/delete 提交后向 owned SSE 广播原两服务的 `onDidChange`，数据与 mutation response 同源。两条新增公开宿主测试分别从缺失通知、误把停用模型标为可执行的 red 到 green；包含同值保存不推进修订。其他保存入口的事件、全量 overlay/CAS 与原表单仍继续实施。
+
 只读审计基线仍为 `29628c9acdb81b703bbd4080c207a0e7ce5e276e`。上述缺口说明当前模型读取冒烟不证明原设置写入完成；服务接线验收必须覆盖空草稿→模型配置→写 Key→真实 executable、清 Key、删除最后模型、并发/CAS、通知和刷新恢复。
 
 ### 验收进程与文件审计

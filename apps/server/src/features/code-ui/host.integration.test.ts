@@ -71,6 +71,173 @@ async function openCodeStream(streams: AbortController[]) {
 }
 
 describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", () => {
+  it("原设置保留停用模型与供应商候选，执行目录遵守各级开关，同值保存不推进修订", async () => {
+    expect((await request("/api/viewer")).status).toBe(200);
+    let providerId = "";
+    const view = async (service = "providerSettingsService") =>
+      request("/api/code-ui/rpc", { service, method: "getView", args: [] });
+    try {
+      const created = await request("/api/provider-instances", {
+        name: `候选 ${randomUUID()}`,
+        protocol: "openai-compatible",
+        // 仅持久化 fixture，不发送任何真实模型请求。
+        apiKey: "integration-credential-no-network",
+        models: [
+          {
+            id: "glm-4.5-air",
+            name: "停用模型",
+            capability: "chat",
+            enabled: false,
+          },
+          { id: "glm-4.6", name: "启用模型", capability: "chat" },
+        ],
+      });
+      expect(created.status, JSON.stringify(created.body)).toBe(201);
+      providerId = created.body.id;
+      const loaded = await view();
+      expect(loaded.status, JSON.stringify(loaded.body)).toBe(200);
+      const provider = loaded.body.result.providers.find(
+        (item: { providerId: string }) => item.providerId === providerId,
+      );
+      expect(
+        provider.models.map((model: { modelId: string }) => model.modelId),
+      ).toEqual(["glm-4.5-air", "glm-4.6"]);
+      expect(provider.models[0]).toMatchObject({
+        enabled: false,
+        executable: false,
+        selectable: false,
+      });
+      expect(provider.models[1]).toMatchObject({
+        enabled: true,
+        executable: true,
+        selectable: true,
+      });
+      const selection = await view("modelSelectionService");
+      expect(
+        selection.body.result.providers
+          .find(
+            (item: { providerId: string }) => item.providerId === providerId,
+          )
+          .models.map((model: { modelId: string }) => model.modelId),
+      ).toEqual(["glm-4.6"]);
+      expect(
+        (
+          await request(
+            `/api/provider-instances/${providerId}`,
+            { enabled: false },
+            "PATCH",
+          )
+        ).status,
+      ).toBe(200);
+      const disabled = await view();
+      expect(disabled.body.result.revision).toBe(
+        loaded.body.result.revision + 1,
+      );
+      expect(
+        disabled.body.result.providers.find(
+          (item: { providerId: string }) => item.providerId === providerId,
+        ),
+      ).toMatchObject({
+        enabled: false,
+        executable: false,
+        effectiveConfig: { visibility: "visible" },
+        models: [{ modelId: "glm-4.5-air" }, { modelId: "glm-4.6" }],
+      });
+      expect(
+        (await view("modelSelectionService")).body.result.providers.some(
+          (item: { providerId: string }) => item.providerId === providerId,
+        ),
+      ).toBe(false);
+      expect(
+        (
+          await request(
+            `/api/provider-instances/${providerId}`,
+            { enabled: false },
+            "PATCH",
+          )
+        ).status,
+      ).toBe(200);
+      expect((await view()).body.result.revision).toBe(
+        disabled.body.result.revision,
+      );
+      expect(JSON.stringify(disabled.body.result)).not.toContain(
+        "integration-credential-no-network",
+      );
+    } finally {
+      if (providerId)
+        await request(
+          `/api/provider-instances/${providerId}`,
+          undefined,
+          "DELETE",
+        );
+    }
+  });
+  it("原供应商草稿提交后向已连接原服务广播与应答相同的完整 View，刷新不推进修订", async () => {
+    expect((await request("/api/viewer")).status).toBe(200);
+    const streams: AbortController[] = [];
+    let providerId = "";
+    const rpc = (method: string, args: unknown[] = []) =>
+      request("/api/code-ui/rpc", {
+        service: "providerSettingsService",
+        method,
+        args,
+      });
+    try {
+      const stream = await openCodeStream(streams);
+      const created = await rpc("createPersonalProvider", [
+        { providerName: `通知草稿 ${randomUUID()}` },
+      ]);
+      expect(created.status).toBe(200);
+      providerId = created.body.result.providerId;
+      // 仅测试通知可观察性：不改产品超时或运行治理值。
+      const notification = await Promise.race([
+        stream.next(),
+        new Promise((_, reject) => {
+          const timer = setTimeout(
+            () => reject(new Error("未收到原服务变更通知")),
+            1000,
+          );
+          timer.unref();
+        }),
+      ]);
+      expect(notification).toMatchObject({
+        event: "service",
+        service: "providerSettingsService",
+        name: "onDidChange",
+        data: created.body.result.view,
+      });
+      const selectable = await stream.next();
+      const selection = await request("/api/code-ui/rpc", {
+        service: "modelSelectionService",
+        method: "getView",
+        args: [],
+      });
+      expect(selectable).toMatchObject({
+        event: "service",
+        service: "modelSelectionService",
+        name: "onDidChange",
+        data: selection.body.result,
+      });
+      expect(selectable.data.revision).toBe(created.body.result.view.revision);
+      const fresh = await rpc("refresh", ["integration:no-config-change"]);
+      expect(fresh.body.result).toEqual(created.body.result.view);
+      const removed = await rpc("deletePersonalProvider", [providerId]);
+      expect(removed.status).toBe(200);
+      providerId = "";
+      expect(await stream.next()).toMatchObject({
+        event: "service",
+        service: "providerSettingsService",
+        name: "onDidChange",
+        data: removed.body.result,
+      });
+      expect(JSON.stringify(removed.body.result)).not.toMatch(
+        /apiKey|encrypted_api_key/,
+      );
+    } finally {
+      for (const stream of streams) stream.abort();
+      if (providerId) await rpc("deletePersonalProvider", [providerId]);
+    }
+  });
   it("原供应商创建操作保存真实无凭证无模型草稿，读取和刷新保持不可执行且不泄露凭证", async () => {
     expect((await request("/api/viewer")).status).toBe(200);
     let providerId = "";

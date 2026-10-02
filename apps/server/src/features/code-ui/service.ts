@@ -108,10 +108,11 @@ export class CodeUiService {
             protocol: "openai-compatible",
           },
         );
+        const views = await this.publishProviderViews(user);
         return {
           result: {
             providerId: provider.id,
-            view: (await this.modelViews(user)).settings,
+            view: views.settings,
           },
         };
       }
@@ -120,7 +121,7 @@ export class CodeUiService {
           user,
           z.string().uuid().parse(args[0]),
         );
-        return { result: (await this.modelViews(user)).settings };
+        return { result: (await this.publishProviderViews(user)).settings };
       }
     }
     if (service === "file" && method === "readTextFile")
@@ -634,21 +635,41 @@ export class CodeUiService {
     selection?: protocol.SessionConfigState["modelSelection"] | null,
   ) {
     const workspace = await this.deps.viewer.resolveWorkspace(user);
-    const [instances, catalog, settings, revision] = await Promise.all([
-      this.deps.modelProviders.listInstances(user),
-      this.deps.modelCatalog.listCatalog(user),
+    const [registry, settings] = await Promise.all([
+      this.deps.modelProviders.readWorkspaceRegistry(user),
       this.deps.settings.getWorkspaceSettings(user, workspace.id),
-      this.deps.modelProviders.getWorkspaceRevision(user),
     ]);
     return buildCodeUiModelViews({
-      instances,
-      catalog,
-      revision,
+      instances: registry.instances,
+      catalog: this.deps.modelCatalog.describeInstanceModels(
+        registry.instances,
+      ),
+      revision: registry.revision,
       ...(settings.defaultModel
         ? { defaultSpecifier: settings.defaultModel }
         : {}),
       ...(selection !== undefined ? { selection } : {}),
     });
+  }
+
+  private async publishProviderViews(user: AuthenticatedUser) {
+    const workspace = await this.deps.viewer.resolveWorkspace(user);
+    const views = await this.modelViews(user);
+    await this.connections.notify(
+      workspace.id,
+      "providerSettingsService",
+      "onDidChange",
+      "",
+      views.settings,
+    );
+    await this.connections.notify(
+      workspace.id,
+      "modelSelectionService",
+      "onDidChange",
+      "",
+      views.selection,
+    );
+    return views;
   }
 
   async createSession(
