@@ -1,0 +1,33 @@
+{
+  "name": "@zcode/services",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@zcode/provider": "workspace:*",
+    "@zcode/rpc": "workspace:*",
+    "@zcode/shared": "workspace:*",
+    "@zcode/zcode-cua": "workspace:*",
+    "croner": "^10.0.1",
+    "smol-toml": "^1.6.1",
+    "yaml": "^2.9.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^6.0.2"
+  },
+  "imports": {
+    "#src/*": "./dist/*"
+  }
+}
