@@ -1,245 +1,84 @@
-# Code 模式 ZCode UI 照搬执行手册（Agent 施工单）
+# Code 模式 ZCode 全量源码移植执行手册
 
-> **角色：执行手册**。本文是《Code模式ZCode-UI照搬方案.md》（差异分析与决策，下称「方案」）的配套施工单，供执行 Agent 逐阶段照单施工，**不需要重新做差异分析**。
-> 总目标（用户口径）：**完全照搬 ZCode 的 Code 模式 UI，不留自己的实现**；数据侧经适配层接 DeepAgents 事件模型，「一切皆插件」理念不变。
-> 许可证：zcode 为 Apache-2.0（`references/zcode/LICENSE`），照搬文件保留来源注释；NOTICE 登记在方案 §5.5 跟踪。
+> 状态：实施中，2026-10-02 用户确认。此稿替换旧 P0–P8 施工单及其收口结论。
+> 唯一源码基线：ZCode 3.14.3，29628c9acdb81b703bbd4080c207a0e7ce5e276e。
+> Code 全部 UI 直接搬源；Design 保持不变；DSH 仅参考插件机制。旧调试数据不兼容、不转换、不恢复。
 
-## 0. 给执行 Agent 的元说明
+## 1. 移植边界与来源
 
-1. **照单施工，不要重新分析**。方案 §2 的差异表已定案；本手册给出逐文件的 source→target 清单与适配注记。
-2. **每阶段一个 PR**：只搬本阶段清单内的文件，跑通本阶段门禁即收尾，不夹带后续阶段内容。
-3. **禁止改动的区域**：`packages/ui`（Design 模式共用）、`apps/web/src/components/chat/tool-block-view.tsx`（Design 画布助手）、`lib/workbench-tools.ts`（DeepAgents 事件归约层，适配层只读它不改它）、`lib/workbench-surface.ts`（主区不变量）。
-4. **先查已就位清单（§1）再动手**——已就位的文件直接 import，不要重复搬运。
-5. 照搬=**视觉/交互/文案逐字一致**。允许且仅允许两类偏差：① import 路径映射（§2.1）；② 宿主能力适配（§2.2 已列明的适配点）。每一处偏差必须写进文件头的「适配注记」。
+完整复制原 UI 树，保留 App、workspace shell、SessionPane、消息时间线、Markdown、全部工具 renderer、输入器、左右栏、设置和插件市场的真实装配关系。子代理详情复用只读 SessionPane。
 
-## 1. 当前进度快照（已完成，切勿重做）
+来源清单为 `docs/源码来源/ZCode源码清单.json`：源路径、目标路径、源 SHA-256、复制 SHA-256、适配记录。保留原版权及第三方 notices。
 
-### 1.1 已提交（commit `0f6e73d9`，P0.5）
+允许偏差仅限导入映射、构建/类型兼容、公共资源路径、宿主接口、品牌与模式文案、真实能力显隐。禁止手写用户气泡、工具卡、消息装配、子代理目录、动作行、分隔线等仿制组件。
 
-`@zui`（= `apps/web/src/components/workbench/zcode/`，tsconfig paths `@zui/*` → `./src/components/workbench/zcode/*`）下已就位：
+上游 UI 由独立 TypeScript/Vite 工程检查和构建，Next 消费构建产物；宿主 adapter 保持 strict/exactOptionalPropertyTypes。不扩充手写 zcode-shared stub，不搬原 Node 服务实现和 Agent CLI。
 
-- `components/ui/`：30 个视觉原语（button、button-group、card、dialog、alert-dialog、context-menu、dropdown-menu、popover、hover-card、tooltip、select、tabs、accordion、alert、avatar、badge、checkbox、collapsible、input、input-group、kbd、label、progress、scroll-area、scroll-fade-viewport、separator、spinner、switch、textarea、toast、code-viewer(891 行)、flip-metric-value、lightweight-diff-preview、highlighted-lightweight-diff-preview）
-- `components/lib/utils.ts`（cn）
-- `i18n/`：`IntlProvider.tsx`（`useZCodeIntl()`，locale 恒 zh-CN 透传）+ `zh-CN.ts`（zcode zh-CN locale **6722 行整表照搬**——照搬组件里的 `intl.formatMessage({id})` 调用**原样保留**，键已齐）
-- `lib/`：codeCommentContext、codePreviewPreferences、codePreviewSettings（含 `DEFAULT_CODE_PREVIEW_SETTINGS`）、diffsHighlighterEngine、fileDisplay（含 `FileDisplayIcon`/`FOLDER_FILE_ICON_SRC`/`resolveFileDisplayDescriptor`）、fileDisplayHelpers、keyboardShortcuts、memoryDiagnostics、mermaidLanguage、mermaidRenderBudget、patchDiffPreview、path（含 `getPathLeaf`/`getContainingDirectoryPath`）、shikiHighlighter
-- 根级：`logger.ts`（`logger`）、`useTheme.ts`（`Theme`/`ResolvedTheme`/`useTheme`/`resolveTheme`，zai 变体折叠到 light/dark）、`ControlHintTooltip.tsx`
-- `apps/web/src/app/globals.css`：zcode 语义 token 全集 + 动画集（`animated-gradient-text`、`data-zcode-stream-animate` 等）+ `text-ui-*` 字号阶 + 滚动条样式
-- `biome.json`：zcode 目录 override（a11y 三条降为 warn）
-- 依赖已装：`radix-ui`、`@pierre/diffs@1.1.22`（**精确钉版，勿升**，1.5.x API 已变）、`@streamdown/{cjk,code,math,mermaid}`、`@tanstack/react-virtual`、`use-stick-to-bottom`、`lexical`、`@lexical/react`、`shiki`、`motion`、`framer-motion`、`katex`、`next-themes`
+## 2. 宿主与模式隔离
 
-### 1.2 已落盘未提交（本轮地基，P0 收尾 + P1 前置适配层）
+`/workbench` 采用客户端 mode 导航，默认 code。Code 挂完整原界面；Design/Flow 挂保留的原界面。Code 原菜单的 office 入口仅映射为进入 Design，Code store 保持 coding，不激活原 office 功能。
 
-- 依赖新增：`remark-cjk-friendly-gfm-strikethrough`、`@radix-ui/react-use-controllable-state`（pnpm 严格隔离，直接 import 必须是直接依赖）
-- `@zui/lib/zcode-shared.ts`：`@zcode/shared` 最小等价——`EditorInfo`/`FileStat`/`FileMediaPreview`/`OpenInEditorOptions`/`OpenInEditorRemoteTarget`/`RemoteTarget`/`SSHConnectOptions`/`WSLConnectOptions`/`DockerConnectOptions`/`createOpenInEditorRemoteTarget`/artifact 图片三函数（`rewriteMarkdownArtifactImageSources`/`decodeMarkdownArtifactImageSource`/`extractMarkdownArtifactImageRefs`）/`TID_CHAT_REASONING_TRIGGER`/`TID_CHAT_REASONING_CONTENT`
-- `@zui/lib/ai-types.ts`：`UIMessage` stub（只含 `role` 联合——zcode message.tsx 仅消费 `UIMessage["role"]`）
-- `@zui/hooks/usePlatform.tsx`：`PlatformProvider`/`usePlatform`/`useOptionalPlatform`/`useSelectDirectory`/`useConnectRemote` + `ZCodePlatformSlice`（stub：`getInstalledEditors`→`[]`、`openInEditor`/`openInFileManager`→`{success:false}`、`selectDirectory`→`null`、`openExternal`→系统浏览器。UI 据此自动降级隐藏「在编辑器/文件管理器打开」入口，符合「未接通不出现」纪律；Tauri 桌面接通时**只换 stub 实现**，照搬组件零改动）
-- `@zui/hooks/useServices.tsx`：`ServiceProvider`/`useServices`/`useOptionalServices` + `ZCodeServiceSlice`（`fileService.stat` 抛「未接通」——消费方都有 optional 兜底）
-- `@zui/hooks/useFileContextActions.ts`：照搬（复制路径可用；revealInFileManager 随 platform stub 降级）
-- `@zui/hooks/useWorkspaceOpenInEditorTarget.ts`：恒 `{isRemoteWorkspace:false, remoteTarget:undefined}`（我们无远程工作区）
-- `@zui/store/StoreProvider.tsx`：`useZCodeStoreWithDefault` 恒回 `defaultValue`（theme/codePreviewSettings 由调用方 props 注入，不经 store）；`useZCodeStore` 保留同签名抛错口径
-- `@zui/embeddedBrowserHelpers.ts`：`resolveMessageLinkOpenTarget`（本机/私网启发式）+ `MessageLinkOpenTarget` + `DEFAULT_BROWSER_URL`（webview guest 生命周期等 Electron 专属逻辑**不搬**）
-- `@zui/workspace-file-tree/model.ts`：`getWorkspaceFileRelativePath`/`areWorkspaceFilePathsEqual`/`isWorkspaceFilePathInside`；`helpers.ts`：`sortInstalledEditorsForFileTree`/`isFileManagerOpenTarget`
+隔离 Code CSS、主题/字号 DOM 目标与 portal 容器。Store 初始化也不得修改 Design 的 document theme。ZCode 云账户/套餐移除；远程、CUA、定时任务等按真实插件能力隐藏。
 
-### 1.3 待替换的旧实现（9-28/29 骨架级参照，P1/P2 接线时删除）
+真实 store、services、transport、projection 必须接通。禁止以恒空租约、恒空列表、无效回调或抛“未接通”的必需服务宣称接入完成。
 
-| 旧文件 | 消费点 | 删除时机 |
-| --- | --- | --- |
-| `zcode/message-response.tsx`（102 行） | `workbench.tsx:92,321` | P1 接线 |
-| `zcode/reasoning.tsx`（110 行） | `workbench.tsx:93,331` | P1 接线 |
-| `zcode/tool-renderers.tsx`（445 行，导出 `resolveToolRenderer`/`AgentPromptSection`/`AgentActivitySection`） | `workbench.tsx:94,378`；`subagent-directory-view.tsx:8` | P2 接线 |
-| `zcode/tool-layout.tsx`（372 行） | 仅被 tool-renderers.tsx 引用 | P2 接线 |
+## 3. 后端及公开契约
 
-## 2. 照搬规则总纲
+保留 DeepAgents，新增 codeUi 插件的 Definition/Provider/Consumer，服务 key 登记《改造计划》§4.2。禁止在 app.ts/worker.ts 手工堆装配。
 
-### 2.1 import 路径映射表（机械执行）
+原 V4 ConversationTransport、SessionDataLayer、rows/snapshot/command/frame 为 UI 契约。首屏初始化原 workspace tab/draft 与模型 view；V4 subscribe 返回 ACK-only，snapshot 经所属 frame 通知发送。
 
-| zcode 源 import | 照搬后 |
-| --- | --- |
-| `@/X.js`（`@/` = zcode `packages/ui/src/`） | `@zui/X.js` |
-| `../ui/X.js`（ai-elements 内的相对引用） | `@zui/components/ui/X.js` |
-| `../lib/utils.js`（= zcode `components/lib/utils`） | `@zui/components/lib/utils.js` |
-| `@zcode/shared` | `@zui/lib/zcode-shared.js`（符号已在 §1.2 就位；**缺新符号时先补进 zcode-shared.ts 再引用**，禁止直接 import `@zcode/shared`） |
-| `ai`（仅 `UIMessage` 类型） | `@zui/lib/ai-types.js` |
-| `@zcode/services` / `@zcode/rpc` / `@zcode/provider` | **禁止出现**。platform 能力走 `@zui/hooks/usePlatform.js`，RPC 服务走 `@zui/hooks/useServices.js` |
-| `radix-ui` | 保持（zcode 源就用聚合包） |
-| `@radix-ui/react-use-controllable-state` | 保持（已装直接依赖） |
-| 其余 npm 包（react/lucide-react/streamdown/@streamdown/*/shiki/unified/remark-cjk-friendly-gfm-strikethrough/@pierre/diffs/motion/next-themes/class-variance-authority/clsx/tailwind-merge） | 保持 |
+根 session 对应 Task；运行绑定 Project 的固定工作目录。每次子派发建立稳定 childSessionId，按 parentToolCallId 关联，禁用名字/派发顺序兜底。主/子正文、思考、工具和终态独立持久化。
 
-### 2.2 宿主能力适配点（全方案仅此几处，其余逐字照搬）
+工具结果保留完整文本、结构化 output/display、真实 diff、实时输出预览及 success/error/cancelled。长输出按引用读取，不能整段丢弃。事件/命令有稳定身份、单调序号、幂等重放、终态保护与删除墓碑。
 
-1. **链接打开**（message.tsx）：`resolveMessageLinkOpenTarget` 返回 `"app-browser"` 时，调用我方 `@/lib/browser-panel` 的 `canOpenInBrowserPanel()`/`requestBrowserOpen(url)`（已有，旧 message-response.tsx 的 onClick 口径即参照）；`"external-browser"` 时走 `platform.openExternal`（stub=系统浏览器）。保留 zcode 组件结构，只替换「打开 app 内浏览器」的实现体。
-2. **文件链接打开**（message.tsx 的 `onOpenFileLink`/`onOpenCodeViewer` props）：由调用方（workbench 装配处）注入；P1 阶段 workbench 侧先传 `undefined`（zcode 组件内部有可选兜底），**接通 code viewer 侧栏属 P4 接线项**。
-3. **theme / codePreviewSettings**：workbench 装配处经 `@zui/useTheme.js` 取 theme、以 `DEFAULT_CODE_PREVIEW_SETTINGS` 默认值注入 props（zcode MessageResponse 已支持 props 注入，勿动组件内实现）。
-4. **未接通能力**（编辑器枚举、文件管理器、fileService、远程工作区）：一律经 §1.2 stub 降级，照搬文件**禁止**自行新增宿主调用。
+必须接通发送/停止、排队、编辑/分叉、文件查看/回退、终端、子代理独立停止、权限请求-应答-恢复及结构化提问。新 Schema 仅新增前向 SQL 迁移；治理值沿用 shared 的单一配置来源；BYOK key 只写不读。
 
-### 2.3 文件头注释模板（每个照搬文件必带）
+## 4. TDD 与完整验收
 
-```ts
-/**
- * zcode 照搬：`<原 zcode import 路径>`（references/zcode/packages/ui/src/<相对路径>）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：<与源文件的每一处偏差，逐条列；无偏差写「逐字照搬，仅 import 路径映射（手册 §2.1）」>
- */
-"use client";  // 源文件有则保留，首行顺序：注释 → "use client" → imports
-```
+用户已确认四个测试接口：Agent 公共运行事件；Code 宿主快照/订阅/命令/文件服务；原组件真实用户操作；Design 画布与助手不变量。
 
-### 2.4 TS / lint 陷阱（已踩过，勿重蹈）
+逐条 red→green，覆盖并发同类型子代理、父派发收尾、失败/取消、关闭侧栏后继续运行、刷新/断线、重复与迟到事件、删除后迟到请求、空/Unicode/超长输出和真实 diff。
 
-1. **`exactOptionalPropertyTypes: true`**（本仓 tsconfig.base）：可选属性不能显式赋 `undefined`；对象字面量里写 `prop: maybeUndefined` 直接报错。修法：`...(v !== undefined ? { v } : {})` 条件展开；若联合类型上展开推断不稳，显式构造（先例：`zcode-shared.ts` wsl 分支、`useFileContextActions.ts` workspaceIdentity）。
-2. **ESM `.js` 后缀**：`@zui/**` 与相对导入一律带 `.js` 后缀（含 `.tsx` 源文件，写 `.js`）。
-3. **死导入清理**：源文件 import 但未使用的符号删除并记进适配注记（已确认案例：zcode `message.tsx:92` 的 `useZCodeStore` 是死导入）。
-4. **biome**：两空格缩进、双引号、分号；收尾跑 `pnpm exec biome check --write apps/web/src/components/workbench/zcode`（仅本目录，勿全仓 `--write`）。
-5. **`data-testid`**：zcode 用 `TID_*` 常量（已在 zcode-shared.ts 就位），不要内联字面量。
-6. **导出保真**：所有 export 名称/签名与源文件逐字一致——后续阶段与其他文件按原名 import。
+真实模型冒烟使用本机公共模型目录所列 glm-4.5-air；不读取或输出 API key。确定性回归在外部模型边界使用替身。
 
-### 2.5 每阶段验收门禁（PR 收尾前必跑，顺序执行）
+在相同浏览器/视口/字体/语言/主题中，与同一 ZCode 提交使用相同数据逐场景截图及交互对照。源码来源、视觉/交互、真实后端、旧 Code 清零、Design 回归全部满足后才算完成。
 
-```bash
-# 1. 类型（web 包）
-pnpm --filter @kenfutwork/web typecheck
-# 2. web 包测试
-pnpm --filter @kenfutwork/web test
-# 3. 照搬目录 lint/格式
-pnpm exec biome check apps/web/src/components/workbench/zcode
-# 4. 全仓门禁（workspace 棘轮 + 文档门禁 + 全包测试；禁止与其他测试实例并行）
-pnpm test
-```
+## 5. 实施顺序与交付
 
-## 3. P1 施工单：markdown 全量照搬
+1. 已确认技能配置、更新方案/手册、来源清单与测试场景。
+2. 子派发→原 Agent 行→目录→子 SessionPane 的首个完整切片，再逐条接通工具和运行交互。
+3. 完整工作台、设置、右栏与真实宿主服务。
+4. 删除所有旧 Code 分支、组件、展示归约、空 stub、旧测试及无用引用；共享 Design 实现保留，不设旧界面回退开关。
+5. 顺序执行 pnpm test、pnpm typecheck、pnpm lint、pnpm build、pnpm api:spec；同步 HTTP/WS 文档。HTTP 契约变化按既有规则导入 Apifox AI 分支，合并由用户确认。
 
-**目标产物**：`@zui/components/ai-elements/` 完整 markdown 渲染栈 + 其 lib 依赖；接线替换 workbench 两处 import；删除旧 `message-response.tsx`/`reasoning.tsx`。
+交付一个完整替换 PR，按可验证切片提交；每次提交遵守显式路径暂存与门禁规则，日志同步记录实际证据及未完成项。
 
-### 3.1 文件清单（source → target；行数为源文件规模，供工作量预估）
+## 6. 实时实施记录（2026-10-03）
 
-| # | 源（`references/zcode/packages/ui/src/`） | 行数 | 目标（`@zui/`） | 适配注记 |
-| --- | --- | --- | --- | --- |
-| 1 | `lib/markdownFileLink.ts` | 316 | `lib/markdownFileLink.ts` | 纯函数；仅路径映射 |
-| 2 | `lib/assistantPathQuotes.ts` | 73 | 同名 | 纯函数 |
-| 3 | `lib/windowsFileLinkEscapeRemarkPlugin.ts` | 95 | 同名 | remark 插件 |
-| 4 | `lib/zcodeFileCitation.ts` | 154 | 同名 | 纯函数 |
-| 5 | `lib/zcodeFileCitationRemarkPlugin.ts` | 79 | 同名 | remark 插件，依赖 #4 |
-| 6 | `lib/editorPreference.ts` | 36 | 同名 | localStorage 读写，照搬 |
-| 7 | `lib/openWithEditors.ts` | 18 | 同名 | 纯函数（与 `workspace-file-tree/helpers.ts` 已就位的排序同实现，**保留同名导出**勿合并） |
-| 8 | `lib/workspaceEditorSelection.ts` | 89 | 同名 | 纯函数，依赖 #7 |
-| 9 | `lib/codeViewer.ts` | 602 | 同名 | 类型 + 语言/媒体类型推断纯函数。注意 `export { buildUnifiedDiff } from "@/lib/toolDiffPreview.js"`——**`lib/toolDiffPreview.ts` 一并搬运**（属 P2 共用件，先搬不接线） |
-| 10 | `mentions/components/scrollMask.ts` | 62 | `mentions/components/scrollMask.ts` | 纯函数（滚动渐隐 mask） |
-| 11 | `components/ai-elements/streamdown-controls.ts` | 7 | 同路径 | 常量表 |
-| 12 | `components/ai-elements/code-block.tsx` | 550 | 同路径 | 自研代码块（语言标签/复制/换行钮；流式关高亮）；依赖 shikiHighlighter（已就位） |
-| 13 | `components/ai-elements/markdown-blockquote.tsx` | 22 | 同路径 | |
-| 14 | `components/ai-elements/markdown-list.tsx` | 64 | 同路径 | |
-| 15 | `components/ai-elements/markdown-table.tsx` | 1420 | 同路径 | 大文件；消费 code-viewer、store stub、toast（均已就位） |
-| 16 | `components/ai-elements/markdown-image.tsx` | 391 | 同路径 | `services.fileService` 媒体预览在 stub 下自动降级为外链图 |
-| 17 | `components/ai-elements/mermaid-block.tsx` | 328 | 同路径 | mermaidLanguage/mermaidRenderBudget 已就位 |
-| 18 | `components/ai-elements/image-thumbnail-gallery.tsx` | 31 | 同路径 | |
-| 19 | `components/ai-elements/image-preview-dialog.tsx` | 564 | 同路径 | |
-| 20 | `components/ai-elements/diagram-preview-dialog.tsx` | 702 | 同路径 | mermaid 大图预览 |
-| 21 | `ToolCallBlocks/QueuedSummaryContent.tsx` | 254 | `ToolCallBlocks/QueuedSummaryContent.tsx` | reasoning.tsx 的依赖；只依赖 react+motion，属 P2 共用件先搬 |
-| 22 | `components/ai-elements/message.tsx` | 1670 | 同路径 | 核心。**死导入 `useZCodeStore` 删除**；链接打开走 §2.2-1 适配；platform/services/store hooks 全部已就位（§1.2） |
-| 23 | `components/ai-elements/reasoning.tsx` | 577 | 同路径 | `useControllableState`（依赖已装）；QueuedSummaryContent（#21）；TID 常量在 zcode-shared |
+- 分支：`codex/完整移植ZCode-Code界面`，目标 active。已按独立切片提交：`613ed706` 产物忽略、`dae8ee1b` 技能配置、`fca5bab9` 原契约依赖、`5c9dd46b` 运行事实、`1574d031` V4 会话宿主。尚未推送、未创建 PR。
+- 来源核对 3051 条、零漂移。334 条契约源码及原完整模型规则已随相关切片入库；其余 UI 来源将在前端切片补入。原版权/notices 保留，独立 vendor 检查与 strict/exactOptional 宿主检查通过。
+- 原 UI 整树和真实 host/main 已存在，独立 Vite 文档构建通过。使用原 RemoteServiceAccess/ProxyChannel、providers/store、RootWorkspaceContent/App/SessionPane；Code CSS/portal/主题在独立文档内。原 diff worker 构建副作用设置与 PDF CMap 插件已补齐，产物含非空 worker 和 168 个 CMap。
+- 原输入器已实际发送 GLM 4.5 Air 请求；真实子代理派发后，原 Agent 行打开右侧只读子 SessionPane，独立 Markdown/工具转录可读，原文件 chip 呈现。真实文本、幂等、主区刷新恢复已验证。完整 source-vs-host 视觉/交互对照尚未进行。
+- codeUi 插件持有真实 Task/Project 主画布绑定、固定工作目录、命令去重与事务 ACK、原快照/行、owned SSE 订阅、恢复、Task 索引、安全模型 view 与文本文件读取。原 subscribe 服务入参为 sessionId，返回 ACK-only；不传项目 UUID 作 workspaceIdentity。
+- 事件日志与主/子快照同事务持久化。已覆盖正文/思考、成功/失败/取消、重复派发、主/子分流、前台子终态、恢复与迟到保护。真实参数在事件日志保留，UI 文件工具路径适配为实际项目路径。
+- SQL `20261002133704_code_ui_projection.sql` 已执行且不可修改。前轮历史 SHA、71 条迁移临时库重放及二次 0 条验证通过。
+- 最近检查：server 1478 测试通过，shared 80 测试通过，原事件窄回归 38、会话/model view 范围另通过；server/shared、vendor/host 类型检查通过；四项公开接口 integration（含 GLM 真实文本）通过；暂存独立快照 workspace/API 文档门禁和 frozen-lockfile 通过。不能将范围检查称为最终全仓完成。
 
-### 3.2 P1 接线（workbench.tsx，逐 hunk 复核）
+### 所有权与下一步
 
-1. `workbench.tsx:92` `import { MessageResponse } from "@/components/workbench/zcode/message-response"` → `from "@zui/components/ai-elements/message.js"`。**props 形状变化**：zcode `MessageResponseProps` 用 **`children` 传 markdown**（不是 `text`），另有 `streaming`/`theme`/`codePreviewSettings`/`workspacePath`/`onOpenCodeViewer`/`onOpenFileLink`/`onOpenExternalUrl`（全可选）。调用点（:321）改为 `<MessageResponse streaming={…} theme={…} codePreviewSettings={DEFAULT_CODE_PREVIEW_SETTINGS}>{group.text}</MessageResponse>`；theme 经 `@zui/useTheme.js` 的 `useTheme()` 取。
-2. `workbench.tsx:93` `Reasoning` → `from "@zui/components/ai-elements/reasoning.js"`。props 变化：`text`→**`children`**；`streaming`→**`isStreaming`**；`durationSeconds`→**`duration`**；可选 `autoCollapseKey`（传消息 id 即可，流完自动收起）。调用点 :331 同步改写。
-3. 删除 `zcode/message-response.tsx`、`zcode/reasoning.tsx`；全仓 grep 确认零引用。
-4. **回归测试**：`apps/web/test/` 下若存在引用旧文件路径的测试一并改接；为 `MessageResponse`/`Reasoning` 各补一个渲染冒烟测试（流式/静态两态），放 `apps/web/test/zcode-message.test.tsx`。
+用户安排其他 Agent 接续后端（主要 Agent 运行时）。本 Agent 聚焦前端原件接线、宿主适配、模式隔离、Code 旧实现清零及视觉/Design 回归，不再并行改 Agent 核心。后端现有改动已经提交，后续按明确接口集成。
 
-### 3.3 P1 建议分工（可多 Agent 并行，目标路径互不重叠）
+1. `/workbench` 尚未替换，旧 Code shell/stub 引用仍导致 web 类型检查失败。先完成客户端默认 Code/Design/Flow 导航与父窗口认证/模式桥接，保留 Design/Flow 原壳，删除 Code 自有装配、归约、右栏和旧测试。
+2. 宿主仍未接全部命令：停止、队列、编辑/分叉、权限/结构化提问恢复、文件回退、终端等必须由真实能力实现。availability 目前仍有待纠正的预设 true；不能把未实现能力宣称可用。
+3. 后端需继续：官方 LangGraph interrupt/Command.resume、waiting/checkpoint 恢复、Code PG fail loud、GraphInterrupt 穿透、精确 child 停止与后台终态；Code 不依赖名称/顺序兜底。
+4. 设置写入/原市场与插件服务、模型选项执行、Gemini 适配、真实 before/after diff 与完整长输出引用仍未完成。BYOK 表单保持原件，成功保存后只清对应未继续编辑的 key 草稿，服务端不回传 key。
+5. Code store 恒为 coding；原 office 菜单仅导航 Design。隐藏云账户/套餐和真实不可用可选能力。当前前端桥接尚未完成，不能按现有 main 认定 Code/Design 路由或能力显隐已经交付。
+6. 原版同场景截图/交互、GLM 工具链锁定回归、旧 Code 清零、Design 回归、完整 pnpm test/typecheck/lint/build/API spec 与 Apifox AI 分支仍必须完成，之后一个完整 PR。
 
-- **Agent-A（lib 批）**：#1-#10（纯函数库，约 1800 行）
-- **Agent-B（叶子组件批）**：#11-#21（约 3400 行）
-- **Agent-C（核心编排批）**：#22-#23（约 2500 行；import 按本手册路径表写，B 的产物路径已固定，无需等 B 完成）
+### 验收进程与文件审计
 
-## 4. P2 施工单：工具调用全量照搬
-
-### 4.1 骨架文件（全搬）
-
-| 源 | 行数 | 目标 |
-| --- | --- | --- |
-| `ToolCallBlocks.tsx` | 393 | 同名 |
-| `ToolCallBlocks/ToolLayout.tsx` | 363 | 同名 |
-| `ToolCallBlocks/ToolSummaryRow.tsx` | 235 | 同名 |
-| `ToolCallBlocks/ToolCallBody.tsx` | 204 | 同名 |
-| `ToolCallBlocks/shared.tsx` | 17 | 同名 |
-| `ToolCallBlocks/ToolSnapshotFieldNotice.tsx` | 80 | 同名 |
-| `ToolCallBlocks/fileSummaries.ts` | 231 | 同名 |
-| `ToolCallBlocks/fileSummaryTypes.ts` | 317 | 同名 |
-| `ToolCallBlocks/renderers.tsx` | 175 | 同名（注册表；按 4.2 裁剪 case） |
-| `lib/toolCallTree.ts` | 6 | 同名 |
-| `lib/taskChatMessageTypes.ts` | 100 | 同名 |
-| `lib/toolDiffPreview.ts` | — | 同名（P1 #9 若已搬则跳过） |
-
-### 4.2 renderer 选择性照搬（对齐我方 DeepAgents 工具集）
-
-**必搬**（13+5 个配套）：`edit.tsx`(480)+`EditInlineDiffContent.tsx`(85)、`execute.tsx`(380)+`ExecuteOutput.tsx`(50)+`execute-group.tsx`(140)、`read.tsx`(316)、`search.tsx`(134)、`todo.tsx`(154)、`ask-question.tsx`(92)、`agent.tsx`(413)+`agentPromptSection.tsx`(51)、`explore.tsx`(490)、`fallback.tsx`(112)、`skill.tsx`(224)、`task-stop.tsx`(215)、`changes-group.tsx`(319)
-
-**不搬**（zcode 专有 CUA/工作流/cron 等，我方无对应工具；渲染注册表相应 case 删除）：`cua*.tsx`、`*workflow*.tsx`、`cron-create.tsx`、`offpeak-create.tsx`、`list-models.tsx`、`node-repl*.tsx`、`nodeReplImageGrid.tsx`、`read-session-context.tsx`、`send-message.tsx`、`submit-result.tsx`、`goal.tsx`、`escalate.tsx`、`respond-to-coordinator.tsx`、`switch-mode.tsx`、`task-output.tsx`、`plan-guidance.tsx`、`resolve-workflow-question.tsx`
-
-### 4.3 数据适配层（新写，非照搬）
-
-- 参照 `references/zcode/packages/ui/src/v4/toolCallRowAdapter.ts`（130 行）的 **status 映射表**与 `lib/taskChatMessageTypes.ts` 的 `TaskChatToolCallTreeNode` 形状，新写 `apps/web/src/lib/zcode-adapter.ts`：把我方 `TaskToolEntry`（`apps/web/src/lib/workbench-tools.ts`，**只读不改**）投影为 `TaskChatToolCallTreeNode`。附单测 `apps/web/test/zcode-adapter.test.ts`（覆盖：running→in_progress 等全状态映射、子代理树嵌套、diff 计数透传）。
-
-### 4.4 P2 接线
-
-1. `workbench.tsx:94,378` `resolveToolRenderer` → ToolCallBlocks 渲染路径（`<ToolCallBlocks nodes={…} />` 或按 zcode 调用形态；以照搬组件的实际导出签名为准）。
-2. `subagent-directory-view.tsx:8` 的 `AgentPromptSection`/`AgentActivitySection` 改从 `@zui/ToolCallBlocks/renderers/agent.js` 导入（若 zcode agent.tsx 导出名不同，以照搬件为准并同步改调用处）。
-3. 删除 `zcode/tool-layout.tsx`、`zcode/tool-renderers.tsx`；grep 确认零引用。
-4. `workbench-tools.test.ts` **不动**（归约层不变）；新增 adapter 单测。
-
-## 5. P3 施工单：子代理（agent renderer 已含 P2，本阶段为体验补全）
-
-1. **live ticker**：zcode 父对话子代理单行摘要在运行中滚动显示子代理最新动作——照 `ToolCallBlocks/renderers/agent.tsx` 内实现接线（数据源：我方 `SubagentEntry` 的最新工具行，`lib/subagent-directory.ts`）。
-2. **agent 名 hash 着色**：照 zcode 配色函数（在 agent.tsx / agentPromptSection.tsx 内）逐字搬。
-3. **侧栏目录面板**：`subagent-directory-view.tsx` 的 running/ended 分组 + 状态图标映射对齐 zcode 的 SessionPane 子代理视图样式（施工时先在 zcode 源定位侧栏组件：`WorkspaceSidebar`/Session 相关，按其视觉规格改 subagent-directory-view）。
-4. 回归：`apps/web/test/subagent-directory.test.ts` 保持绿并按新交互补用例。
-
-## 6. P4 施工单：用户消息行 / 时间线 marker / 操作行
-
-施工时先在 zcode 源定位（关键词：`UserInputRow`、`MarkerDivider`、`AssistantTextActions`，可能在 `v4/` 或会话行组件内）：
-
-1. **用户消息行**：`rounded-xl rounded-tr-xs border bg-surface` + 容器查询限宽 + hover 复制/编辑操作行。替换 workbench.tsx 内联的用户气泡 JSX。
-2. **MarkerDividerRow**：替换 workbench.tsx :340-366 的内联 notification 分隔线（现状已是近似仿制，换 zcode 原件）。
-3. **ConversationAssistantTextActions**：助手正文 hover 操作行（复制/重试入口）。
-4. workbench.tsx 消息渲染段（:300-395）内联 JSX 收敛进对应照搬组件。
-
-## 7. P5 施工单：composer（全方案最重，独立 PR）
-
-| 源 | 规模 | 目标 |
-| --- | --- | --- |
-| `LexicalChatInput.tsx` | 1531 行 | 同名 |
-| `prompt-editor/` 目录（ChatPromptEditor 壳等） | 施工时盘点 | 同路径 |
-| `chat-input-toolbar/` 目录 | 施工时盘点 | 同路径 |
-| `mentions/` 目录（mention 插件 + scrollMask 已在 P1 #10） | 施工时盘点 | 同路径 |
-| `SlashCommandPlugin.tsx` + `slashCommandHelpers.ts` + `slashCommandPanelSections.tsx` | — | 同名 |
-
-适配决策（方案 §3 已拍板）：mention 数据源接我方服务端文件搜索 API（无则先接工作目录文件列表）；slash 命令接现有 `slash-commands`。替换 workbench.tsx 两处内联 composer（textarea + CompactSelect 簇），视觉壳 = zcode `rounded-2xl`（focus-within/拖拽态换边色）+ 发送/停止状态机 + 附件卡。
-**可选项**：若 PR 过大，拆 P5a（视觉壳 + Lexical 纯文本输入 + 发送/停止状态机）/ P5b（mention+slash 数据源接线）两个 PR——拆分时须保证 P5a 单独可用（mention/slash 入口隐藏，不摆空壳）。
-
-## 8. P6 施工单：浮动状态面板 + 队列面板
-
-- `ConversationStatusPanel.tsx`（zcode 源定位）：todo 分区 + Git ± 分区 + 后台任务停止按钮；`rounded-2xl`。数据源我方已有（todo 条目 / git diff 统计 / 后台任务列表），经 props 注入。
-- `ConversationQueuePanel.tsx`：排队消息面板。
-- 装配进 workbench Code 模式对话区（悬浮位与 zcode 一致）。
-
-## 9. P7 施工单：虚拟滚动时间线（✅ 性能基线评估完成，正式暂缓归档——2026-10-01）
-
-> **评估结论**（真机 51 轮长对话：scrollHeight 14138px / DOM 1789 nodes）：滚动帧率 136fps 满帧、输入延迟中位 101ms——当前与可预见量级无卡顿，虚拟滚动三件复杂度（高度缓存/滚动锚定/live tail 特判）无对应收益，**暂缓归档**。触发条件：单会话消息 DOM >1 万 nodes 或实测掉帧，届时再按本节施工。
-
-`@tanstack/react-virtual` 时间线 + 高度缓存 + live tail 移出虚拟列表 + 回到底部按钮（zcode 会话主列表实现，施工时定位）。**独立 PR**，先做性能基线截图再动工；若当前消息量级无卡顿可暂缓。
-
-## 10. P8 施工单：PermissionDialog（✅ 台账确认另立项——2026-10-01）
-
-> **台账**：依赖服务端 DeepAgents interrupt/HITL 权限协议（run 事件流需先产出 permission_request 事件与 always-allow 语义），属服务端契约工作，已另立项跟踪；UI 照搬与协议适配待该立项落地后按本节施工。P1–P7 施工单至此全部收口。
-
-- `PermissionDialog.tsx`（zcode 源根目录）：序号选项 + 数字键应答 + always-allow 文案归一（无倒计时条）。
-- 协议侧：DeepAgents interrupt/HITL 事件 → PermissionDialog props 的适配属服务端契约工作，**另立项跟踪**；未接通前不渲染入口（方案 §3 纪律：不摆空壳）。
-
-## 11. 风险登记（施工前必读）
-
-1. **workbench.tsx 3887 行巨组件**：接线改动集中 :92-94（import）与 :300-395（消息渲染段）；提交前 `git diff` 逐 hunk 复核，共享文件勿夹带他人改动（AGENTS.md 提交纪律 #3）。
-2. **行为不变量**：`lib/workbench-surface.ts`（Design 主区恒画布）与 `workbench-surface.test.ts` 必须保持绿；本照搬不动该文件。
-3. **测试护栏**：全仓 `pnpm test` 不得与其他测试实例并行；确需串行用 `pnpm exec turbo run test --concurrency=1`（勿用 `--` 透传）。
-4. **导出保真**：后续阶段按符号名 import 前序产物；改名=断链。
-5. **依赖钉版**：`@pierre/diffs@1.1.22` 勿升；新增依赖先查 zcode `packages/ui/package.json` 对齐版本区间再 `pnpm --filter @kenfutwork/web add <pkg>`。
-6. **文档同步**：每阶段 PR 在 `docs/日志.md` 同提交记账（问题/方案/验证命令/遗留项）；本手册与方案已登记 `docs/README.md` 文档地图，新增文档须同步登记。
-7. **NOTICE**：首次合入照搬代码的 PR 需在仓库 NOTICE/THIRD-PARTY 登记 zcode Apache-2.0 attribution（方案 §5.5）。
+- 本任务临时 API 3301、Vite preview 3300；只连接现存开发 PG，不管理其生命周期。开发主服务监听源码变化时可能停/起 PG 并换端口；临时回环转发 3332 跟随当前 PG 端口。临时脚本位于 `/tmp/ken-code-api.mts` 与 `/tmp/ken-code-db-proxy.mjs`，不入库；先检查实时监听再使用，PID/exec handle 不作为长期事实。
+- 公开接口命令：`RUN_CODE_UI_INTEGRATION=1 RUN_CODE_UI_MODEL_SMOKE=1 CODE_UI_TEST_BASE=http://127.0.0.1:3301 CODE_UI_TEST_ORIGIN=http://localhost:3300 pnpm --filter @kenfutwork/server exec vitest run src/features/code-ui/host.integration.test.ts`。测试临时建项目/目录并归档清理。
+- 前端浏览器验收目录 `/tmp/ken-code-ui-browser-6T6wxE`（临时项目 id `f6387289-4da8-44c2-ac94-96aea078984a`）尚保留供后续交互，需要结束时清理；不恢复或迁移其他旧调试数据。
+- 本轮审计发现 121 个 `apps/server/data/checkpoints/` 影子 Git 运行文件并补忽略；约 3109 个新增/修改源文件与必要资源应入库。dist/types/host 声明、node_modules、public/code-ui 静态产物、.env.local 已被忽略，凭据模式扫描 0 匹配。不能忽略原源码、图标、许可证、契约、来源清单或前向迁移来减少文件数。
