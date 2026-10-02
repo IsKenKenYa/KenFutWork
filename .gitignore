@@ -21,6 +21,10 @@ supabase/.temp/
 # production
 /build
 **/dist
+**/dist-types
+**/dist-host
+apps/web/public/code-ui/
+apps/server/data/
 **/.turbo
 
 # misc
