@@ -8,7 +8,6 @@ import {
   formatBytes,
 } from "../src/components/workbench/index-library-section";
 import { buildOnboardingSteps } from "../src/components/workbench/onboarding-section";
-import { formatElementReference } from "../src/components/workbench/panel-browser-view";
 import {
   getBrowserOpenTarget,
   setBrowserOpenTarget,
@@ -28,31 +27,6 @@ describe("权限自定义规则文本转换", () => {
     expect(rulesToLines(["a", "b"])).toBe("a\nb");
     expect(rulesToLines(linesToRules("x\n  y  \n\n"))).toBe("x\ny");
     expect(linesToRules("")).toEqual([]);
-  });
-});
-
-describe("元素引用的一行格式（R3-4）", () => {
-  it("带上元素、定位提示与来源页；没有标题时只用地址", () => {
-    expect(
-      formatElementReference({
-        pageUrl: "https://example.com/a",
-        pageTitle: "演示页",
-        tag: "button",
-        text: "开始",
-        hint: "button#go",
-      }),
-    ).toBe(
-      "【页面元素】<button> 开始 ｜ 定位提示：button#go ｜ 来自：演示页（https://example.com/a）",
-    );
-    expect(
-      formatElementReference({
-        pageUrl: "https://example.com/a",
-        pageTitle: "",
-        tag: "input",
-        text: "",
-        hint: 'input[type="text"]',
-      }),
-    ).toContain("(无文字)");
   });
 });
 

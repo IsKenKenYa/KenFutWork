@@ -4,7 +4,7 @@ import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
-} from "@zui/components/ui/hover-card";
+} from "@zcode/ui/design-shared";
 import { Popover as RadixPopover } from "radix-ui";
 import { useEffect } from "react";
 

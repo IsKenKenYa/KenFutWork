@@ -31,7 +31,10 @@
       "!**/logs",
       "!**/runtime",
       "!**/flow",
-      "!**/docs/api/openapi.json"
+      "!**/docs/api/openapi.json",
+      "!**/dist-types",
+      "!**/dist-host",
+      "!**/dist-design"
     ]
   },
   "formatter": {
@@ -64,30 +67,5 @@
         "useSemanticElements": "warn"
       }
     }
-  },
-  "overrides": [
-    {
-      "includes": ["apps/web/src/components/workbench/zcode/**"],
-      "linter": {
-        "rules": {
-          "a11y": "warn",
-          "correctness": "warn",
-          "complexity": {
-            "noExcessiveLinesPerFunction": "warn"
-          },
-          "suspicious": "warn",
-          "security": "warn",
-          "performance": "warn",
-          "style": {
-            "noExcessiveLinesPerFile": "warn",
-            "noImplicitBoolean": "warn",
-            "noNegationElse": "warn",
-            "noTernary": "warn",
-            "useConsistentTypeDefinitions": "warn",
-            "useExportsLast": "warn"
-          }
-        }
-      }
-    }
-  ]
+  }
 }

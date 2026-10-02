@@ -23,6 +23,7 @@ supabase/.temp/
 **/dist
 **/dist-types
 **/dist-host
+**/dist-design
 apps/web/public/code-ui/
 apps/server/data/
 **/.turbo

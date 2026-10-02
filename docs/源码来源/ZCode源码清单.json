@@ -24486,6 +24486,9 @@
     "UI 使用独立 Vite 文档，保留原主题与 portal 文档语义",
     "vendor 工程 strictNullChecks=true 以正确检查 zod 合同；宿主 strict/exactOptional=true",
     "RPC 保留原 noUncheckedIndexedAccess=false；services #src imports 映射到构建输出；CUA type-only 保留真实 .d.ts",
-    "第一方宿主消费 shared 父子文档认证/模式桥接契约，原 UI 的服务 RPC 与物理帧接口不变"
+    "第一方宿主消费 shared 父子文档认证/模式桥接契约，原 UI 的服务 RPC 与物理帧接口不变",
+    "Design 既有输入器与 hover-card 从原源码编译成 design-shared ESM 入口，完整 Code App/CSS 不进入 Next React 树",
+    "Code/Design 客户端模式导航分别挂载独立 Code 文档及保留的画布工作台；Code 源 Store 的宿主模式回调保持 coding",
+    "dist-design 为编译产物，与 dist/dist-types/dist-host 同样忽略，不纳入源码棘轮"
   ]
 }

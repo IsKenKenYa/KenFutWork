@@ -36,10 +36,14 @@
     "./replay": {
       "types": "./dist-types/replay.d.ts",
       "default": "./dist/replay.js"
+    },
+    "./design-shared": {
+      "types": "./dist-types/designShared.d.ts",
+      "default": "./dist-design/designShared.js"
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.vendor.json && tsc -p tsconfig.host.json && vite build && node ../../../../../../scripts/stage-code-ui.mjs",
+    "build": "tsc -p tsconfig.vendor.json && tsc -p tsconfig.host.json && vite build && vite build --config vite.design.config.mjs && node ../../../../../../scripts/stage-code-ui.mjs",
     "typecheck": "tsc -p tsconfig.vendor.json && tsc -p tsconfig.host.json"
   },
   "dependencies": {

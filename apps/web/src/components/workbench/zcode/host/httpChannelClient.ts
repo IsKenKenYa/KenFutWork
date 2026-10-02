@@ -1,4 +1,9 @@
-import { Emitter, type Event, type IChannel, type IChannelClient } from "@zcode/rpc";
+import {
+  Emitter,
+  type Event,
+  type IChannel,
+  type IChannelClient,
+} from "@zcode/rpc";
 import { ServiceChannels } from "@zcode/shared";
 import { RemoteServiceAccess } from "./upstream/remoteServiceAccess.js";
 
@@ -7,7 +12,15 @@ export interface CodeHostConfig {
   accessToken?: string;
   workspacePath?: string;
 }
-interface Notification { event: string; service?: string; name?: string; workspacePath?: string; data?: unknown; frame?: unknown; hello?: { connectionId: string }; }
+interface Notification {
+  event: string;
+  service?: string;
+  name?: string;
+  workspacePath?: string;
+  data?: unknown;
+  frame?: unknown;
+  hello?: { connectionId: string };
+}
 
 const servicesByChannel: Record<string, string> = {
   [ServiceChannels.ZCodeAgent]: "zcodeAgentService",
@@ -24,22 +37,44 @@ export class CodeHttpChannelClient implements IChannelClient {
 
   constructor(readonly config: CodeHostConfig) {}
 
-  private headers() { return this.config.accessToken ? { authorization: `Bearer ${this.config.accessToken}` } : {}; }
+  private headers(): Record<string, string> {
+    return this.config.accessToken
+      ? { authorization: `Bearer ${this.config.accessToken}` }
+      : {};
+  }
 
   async request<T>(path: string, body?: unknown): Promise<T> {
-    const response = await fetch(`${this.config.apiBase.replace(/\/$/u, "")}${path}`, {
-      method: body === undefined ? "GET" : "POST", credentials: "omit",
-      headers: { ...this.headers(), ...(body === undefined ? {} : { "content-type": "application/json" }) },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
+    const response = await fetch(
+      `${this.config.apiBase.replace(/\/$/u, "")}${path}`,
+      {
+        method: body === undefined ? "GET" : "POST",
+        credentials: "omit",
+        headers: {
+          ...this.headers(),
+          ...(body === undefined ? {} : { "content-type": "application/json" }),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      },
+    );
     const result = await response.json();
-    if (!response.ok) throw new Error(result.error?.message ?? `Code 宿主请求失败：${response.status}`);
+    if (!response.ok)
+      throw new Error(
+        result.error?.message ?? `Code 宿主请求失败：${response.status}`,
+      );
     return result as T;
   }
 
   async connect(): Promise<void> {
-    const response = await fetch(`${this.config.apiBase.replace(/\/$/u, "")}/api/code-ui/events`, { headers: this.headers(), credentials: "omit", signal: this.controller.signal });
-    if (!response.ok || !response.body) throw new Error(`Code 通知通道不可用：${response.status}`);
+    const response = await fetch(
+      `${this.config.apiBase.replace(/\/$/u, "")}/api/code-ui/events`,
+      {
+        headers: this.headers(),
+        credentials: "omit",
+        signal: this.controller.signal,
+      },
+    );
+    if (!response.ok || !response.body)
+      throw new Error(`Code 通知通道不可用：${response.status}`);
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
@@ -55,12 +90,15 @@ export class CodeHttpChannelClient implements IChannelClient {
       return JSON.parse(record.slice("data: ".length)) as Notification;
     };
     const initial = await read();
-    if (initial.event !== "ready" || !initial.hello?.connectionId) throw new Error("Code 宿主缺少原协议 hello");
+    if (initial.event !== "ready" || !initial.hello?.connectionId)
+      throw new Error("Code 宿主缺少原协议 hello");
     this.connectionId = initial.hello.connectionId;
     void (async () => {
-      while (!this.controller.signal.aborted) this.notifications.fire(await read());
+      while (!this.controller.signal.aborted)
+        this.notifications.fire(await read());
     })().catch((error: unknown) => {
-      if (!this.controller.signal.aborted) console.error("Code 通知连接失败", error);
+      if (!this.controller.signal.aborted)
+        console.error("Code 通知连接失败", error);
     });
   }
 
@@ -68,18 +106,38 @@ export class CodeHttpChannelClient implements IChannelClient {
     const service = servicesByChannel[channelName] ?? channelName;
     const channel: IChannel = {
       call: async <T>(method: string, args?: unknown) => {
-        const response = await this.request<{ result: T }>("/api/code-ui/rpc", { connectionId: this.connectionId, service, method, args: args ?? [] });
+        const response = await this.request<{ result: T }>("/api/code-ui/rpc", {
+          ...(this.connectionId ? { connectionId: this.connectionId } : {}),
+          service,
+          method,
+          args: args ?? [],
+        });
         return response.result;
       },
-      listen: <T>(event: string, scope?: { workspacePath?: string }): Event<T> => (listener) => this.notifications.event((notification) => {
-        if (scope?.workspacePath && scope.workspacePath !== notification.workspacePath) return;
-        if (notification.event === "service") {
-          if (notification.service === service && notification.name === event) listener(notification.data as T);
-        } else if (notification.event === event) listener(notification.frame as T);
-      }),
+      listen:
+        <T>(event: string, scope?: { workspacePath?: string }): Event<T> =>
+        (listener) =>
+          this.notifications.event((notification) => {
+            if (
+              scope?.workspacePath &&
+              scope.workspacePath !== notification.workspacePath
+            )
+              return;
+            if (notification.event === "service") {
+              if (
+                notification.service === service &&
+                notification.name === event
+              )
+                listener(notification.data as T);
+            } else if (notification.event === event)
+              listener(notification.frame as T);
+          }),
     };
     return channel as T;
   }
 
-  dispose() { this.controller.abort(); this.notifications.dispose(); }
+  dispose() {
+    this.controller.abort();
+    this.notifications.dispose();
+  }
 }

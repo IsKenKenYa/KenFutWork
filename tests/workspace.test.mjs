@@ -321,6 +321,7 @@ const IGNORED_DIRS = new Set([
   "dist",
   "dist-types",
   "dist-host",
+  "dist-design",
   ".next",
   "out",
   ".turbo",

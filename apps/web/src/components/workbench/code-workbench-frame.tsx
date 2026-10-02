@@ -66,7 +66,7 @@ export function CodeWorkbenchFrame({
       ref={frame}
       src="/code-ui/index.html"
       title="Code 工作台"
-      className="h-dvh w-full border-0"
+      className="block h-dvh w-full border-0"
     />
   );
 }

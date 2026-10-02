@@ -10,11 +10,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ListLoading } from "@/components/workbench/list-state";
-import { fetchTerminalShells } from "@/lib/code-git-api";
 import {
   fetchWorkspaceSettings,
   updateWorkspaceSettings,
 } from "@/lib/server-api";
+import { fetchTerminalShells } from "@/lib/terminal-api";
 
 /**
  * 设置 → 通用 → 终端：右栏「终端」标签默认用哪个 shell（用户口径：「终端应该是直连 cmd 或者

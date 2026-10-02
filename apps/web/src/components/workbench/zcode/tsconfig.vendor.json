@@ -1,11 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2024",
-    "lib": [
-      "ES2025",
-      "DOM",
-      "DOM.Iterable"
-    ],
+    "lib": ["ES2025", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
@@ -20,27 +16,19 @@
     "noUncheckedIndexedAccess": true,
     "strict": false,
     "exactOptionalPropertyTypes": false,
-    "types": [
-      "vite/client",
-      "node"
-    ],
+    "types": ["vite/client", "node"],
     "paths": {
-      "@zui/*": [
-        "./*"
-      ]
+      "@zui/*": ["./*"]
     },
     "strictNullChecks": true
   },
-  "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    "**/*.json"
-  ],
+  "include": ["**/*.ts", "**/*.tsx", "**/*.json"],
   "exclude": [
     "host",
     "dist",
     "dist-types",
     "dist-host",
-    "node_modules"
+    "node_modules",
+    "dist-design"
   ]
 }
