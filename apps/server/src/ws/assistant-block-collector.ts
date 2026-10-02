@@ -59,6 +59,8 @@ export function createAssistantBlockCollector(): AssistantBlockCollector {
       return blocks.some((block) => block.type !== "thinking");
     },
     onEvent(event) {
+      // 主、子会话必须先分流：正文与思考也属于派发对应的独立转录。
+      if (event.agentCallId) return;
       const at = event.timestamp;
       if (event.type === "message.delta") {
         if (!event.delta) return;
@@ -75,9 +77,6 @@ export function createAssistantBlockCollector(): AssistantBlockCollector {
         textParts.push(event.delta);
         return;
       }
-      // 子代理内部事件（带 agentCallId）：不进主对话持久化——它们属于
-      // 子代理视图（zcode 右栏模型），主转录与历史还原都不该出现。
-      if (event.agentCallId) return;
       if (event.type === "thinking.delta") {
         if (!event.delta) return;
         const last = blocks[blocks.length - 1];
@@ -94,7 +93,6 @@ export function createAssistantBlockCollector(): AssistantBlockCollector {
       }
       if (event.type === "tool.started") {
         if (!event.toolCallId) return;
-        if (event.agentCallId) return;
         // 重连/重放同一次 tool.started：不重复入块
         const exists = blocks.some(
           (block) =>
@@ -114,7 +112,6 @@ export function createAssistantBlockCollector(): AssistantBlockCollector {
       }
       // tool.completed
       if (!event.toolCallId) return;
-      if (event.agentCallId) return;
       const idx = blocks.findIndex(
         (block) =>
           block.type === "tool" && block.toolCallId === event.toolCallId,

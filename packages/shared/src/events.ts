@@ -69,6 +69,10 @@ export const toolCompletedEventSchema = z.object({
   toolCallId: toolCallIdSchema,
   toolName: z.string().min(1),
   output: z.record(z.string(), z.unknown()).optional(),
+  /** 完整文本结果，与结构化 output 分开保留，不能用摘要代替正文。 */
+  outputText: z.string().optional(),
+  /** 权威工具终态；Code renderer 不得从摘要文案猜成功或失败。 */
+  status: z.enum(["success", "error", "cancelled"]).optional(),
   outputSummary: z.string().optional(),
   artifacts: z.array(toolArtifactSchema).optional(),
   /** 子代理归因，同 {@link toolStartedEventSchema.agentName}。 */

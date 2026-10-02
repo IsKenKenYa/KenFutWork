@@ -52,6 +52,8 @@ type AdaptDeepAgentStreamOptions = {
    */
   toolComposition?: readonly CompositionPart[] | undefined;
   stream: AsyncIterable<LangChainStreamEvent | unknown>;
+  /** 工具中间件提供模型 call id 的事实；SDK on_tool_* 仅是内部运行标识。 */
+  canonicalToolEvents?: boolean;
   /**
    * 空闲看门狗阈值（毫秒，见 `stream-idle-guard.ts`）：上游停滞超过该时长即
    * 有界失败。缺省用库内默认值。
@@ -93,6 +95,45 @@ function readSubagentCallId(evt: LangChainStreamEvent): string | undefined {
 }
 /** Inner tools that may be suppressed when running inside a sub-agent. */
 const INNER_SUB_AGENT_TOOLS = new Set(["generate_video"]);
+
+function canonicalToolEvent(
+  evt: LangChainStreamEvent,
+): LangChainStreamEvent | undefined {
+  if (evt.event !== "on_custom_event" || evt.name !== "kenfutwork.tool")
+    return undefined;
+  const data = evt.data;
+  const toolCallId = readString(data?.toolCallId);
+  const toolName = readString(data?.toolName);
+  if (!toolCallId || !toolName) throw new Error("工具生命周期事实缺少调用身份");
+  const phase = data?.phase;
+  if (phase !== "started" && phase !== "completed" && phase !== "failed") {
+    throw new Error("工具生命周期事实缺少有效阶段");
+  }
+  return {
+    event:
+      phase === "started"
+        ? "on_tool_start"
+        : phase === "completed"
+          ? "on_tool_end"
+          : "on_tool_error",
+    name: toolName,
+    run_id: toolCallId,
+    data:
+      phase === "started"
+        ? { input: data?.input }
+        : phase === "completed"
+          ? { output: data?.output }
+          : { error: data?.error },
+    metadata: {
+      ...(readString(data?.agentName)
+        ? { lc_agent_name: data?.agentName }
+        : {}),
+      ...(readString(data?.agentCallId)
+        ? { lc_agent_call_id: data?.agentCallId }
+        : {}),
+    },
+  };
+}
 
 export async function* adaptDeepAgentStream(
   options: AdaptDeepAgentStreamOptions,
@@ -179,7 +220,9 @@ export async function* adaptDeepAgentStream(
         continue;
       }
 
-      const evt = rawEvent;
+      if (options.canonicalToolEvents && rawEvent.event.startsWith("on_tool_"))
+        continue;
+      const evt = canonicalToolEvent(rawEvent) ?? rawEvent;
 
       // 模型输入就绪：量一次分类占比（系统提示词 / 消息 / 技能 …）
       if (evt.event === "on_chat_model_start") {
@@ -498,6 +541,11 @@ export async function* adaptDeepAgentStream(
         seenCompletedToolCalls.add(toolCallId);
 
         const output = evt.data?.output;
+        const outputText = ToolMessageClass.isInstance(output)
+          ? extractChunkText(output)
+          : typeof output === "string"
+            ? output
+            : undefined;
 
         // When an inner tool runs inside an active sub-agent parent,
         // suppress its artifacts because the parent will re-emit them.
@@ -510,12 +558,14 @@ export async function* adaptDeepAgentStream(
           output,
           (extractedArtifacts?.length ?? 0) > 0,
         );
-        const completedSubagent =
-          readSubagentName(evt, mainAgentName) ?? dispatchStack.at(-1)?.name;
-        const completedCallId =
-          readSubagentCallId(evt) ?? dispatchStack.at(-1)?.callId;
         const completedIsDispatch =
           toolName === "subagent_task" || toolName === "subagent_background";
+        const completedSubagent =
+          readSubagentName(evt, mainAgentName) ??
+          (completedIsDispatch ? undefined : dispatchStack.at(-1)?.name);
+        const completedCallId =
+          readSubagentCallId(evt) ??
+          (completedIsDispatch ? undefined : dispatchStack.at(-1)?.callId);
         if (completedIsDispatch) {
           let stackIdx = -1;
           for (let i = dispatchStack.length - 1; i >= 0; i -= 1) {
@@ -531,6 +581,11 @@ export async function* adaptDeepAgentStream(
           : dispatchStack.at(-1);
         yield {
           output: extractedOutput,
+          ...(outputText !== undefined ? { outputText } : {}),
+          status:
+            ToolMessageClass.isInstance(output) && output.status === "error"
+              ? "error"
+              : "success",
           outputSummary: summarizeOutput(output),
           artifacts: extractedArtifacts,
           runId: options.runId,
@@ -584,6 +639,7 @@ export async function* adaptDeepAgentStream(
           readSubagentCallId(evt) ?? dispatchStack.at(-1)?.callId;
         yield {
           output: { error: reason },
+          status: "error",
           outputSummary: `失败：${reason}`,
           runId: options.runId,
           timestamp: now(),
@@ -684,7 +740,6 @@ const ARTIFACT_KEYS = new Set([
   "height",
   "placement",
 ]);
-const OUTPUT_SIZE_LIMIT = 10240; // 10KB
 
 function extractOutput(
   output: unknown,
@@ -714,10 +769,6 @@ function extractOutput(
 
   // Skip if empty after stripping
   if (Object.keys(result).length === 0) return undefined;
-
-  // Size limit check
-  const serialized = JSON.stringify(result);
-  if (serialized.length > OUTPUT_SIZE_LIMIT) return undefined;
 
   return result;
 }

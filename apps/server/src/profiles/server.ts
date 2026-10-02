@@ -15,6 +15,7 @@ import { createChatPlugin } from "../features/chat/plugin.js";
 import { createCheckpointsPlugin } from "../features/checkpoints/plugin.js";
 import { createCodeGitPlugin } from "../features/code-git/plugin.js";
 import { createCodeToolsPlugin } from "../features/code-tools/plugin.js";
+import { createCodeUiAgentEventsPlugin } from "../features/code-ui/agent-events-plugin.js";
 import { createComputerUsePlugin } from "../features/computer-use/plugin.js";
 import { createCreditsPlugin } from "../features/credits/plugin.js";
 import { createFlowHostPlugin } from "../features/flow/plugin.js";
@@ -178,6 +179,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createPermissionsPlugin({ events: deps.events }),
     createAgentModesPlugin(),
     createCodeToolsPlugin(),
+    createCodeUiAgentEventsPlugin(),
     // Computer Use（CU 插件重活层）：工具面按安装态门控，非 darwin 显式 unavailable
     createComputerUsePlugin(),
     createMcpPlugin(),

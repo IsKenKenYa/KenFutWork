@@ -3,6 +3,7 @@ import {
   AIMessageChunk,
   HumanMessage,
   SystemMessage,
+  ToolMessage,
 } from "@langchain/core/messages";
 import { describe, expect, it } from "vitest";
 
@@ -36,6 +37,7 @@ async function collect(
     signal?: AbortSignal;
     idleTimeoutMs?: number;
     abortRun?: () => void;
+    canonicalToolEvents?: boolean;
   },
 ): Promise<StreamEvent[]> {
   const events: StreamEvent[] = [];
@@ -161,6 +163,41 @@ describe("工具输出透传（web_search 来源可达客户端）", () => {
       },
     };
   }
+
+  it("纯文本工具结果保留完整 outputText，供原终端与文件 renderer 使用", async () => {
+    const output = "第一行\n第二行：中文与 emoji 🌱\n";
+    const events = await collect(toolEndStream(output), {});
+    const completed = events.find((event) => event.type === "tool.completed");
+    if (completed?.type !== "tool.completed") throw new Error("缺少工具终态");
+
+    expect(completed.outputText).toBe(output);
+  });
+
+  it("大于旧 10KB 限制的结构化结果仍完整到达公共事件接口", async () => {
+    const payload = { content: "完整结果🌱".repeat(4_000) };
+    const events = await collect(toolEndStream(payload), {});
+    const completed = events.find((event) => event.type === "tool.completed");
+    if (completed?.type !== "tool.completed") throw new Error("缺少工具终态");
+
+    expect(completed.output).toEqual(payload);
+  });
+
+  it("工具返回 error ToolMessage 时，公共终态明确为 error", async () => {
+    const events = await collect(
+      toolEndStream(
+        new ToolMessage({
+          tool_call_id: "call-1",
+          content: "命令执行失败：退出码 2",
+          status: "error",
+        }),
+      ),
+      {},
+    );
+    const completed = events.find((event) => event.type === "tool.completed");
+    if (completed?.type !== "tool.completed") throw new Error("缺少工具终态");
+
+    expect(completed.status).toBe("error");
+  });
 
   it("对象形态输出：tool.completed.output 携带 query 与 results", async () => {
     const events = await collect(toolEndStream(searchPayload), {});
@@ -636,6 +673,81 @@ describe("stream-adapter 子代理归因（DEC-19）", () => {
       },
     };
   }
+
+  it("父派发完成属于主会话，不继承自己派发出的子代理身份", async () => {
+    const events = await collect(
+      eventStream([
+        {
+          event: "on_tool_start",
+          name: "subagent_task",
+          run_id: "parent-dispatch",
+          data: { input: { subagent_type: "explore" } },
+        },
+        {
+          event: "on_tool_end",
+          name: "subagent_task",
+          run_id: "parent-dispatch",
+          data: { output: "调研完成" },
+        },
+      ]),
+      {},
+    );
+    const completed = events.find((event) => event.type === "tool.completed");
+
+    expect(completed).not.toHaveProperty("agentCallId");
+  });
+
+  it("使用模型工具调用身份的公开事实，忽略 SDK 运行 id 产生的重复生命周期", async () => {
+    const events = await collect(
+      eventStream([
+        {
+          event: "on_custom_event",
+          name: "kenfutwork.tool",
+          data: {
+            phase: "started",
+            toolCallId: "model-call-1",
+            toolName: "read_file",
+            input: { path: "/a.ts" },
+          },
+        },
+        {
+          event: "on_tool_start",
+          name: "read_file",
+          run_id: "sdk-run-1",
+          data: { input: { path: "/a.ts" } },
+        },
+        {
+          event: "on_custom_event",
+          name: "kenfutwork.tool",
+          data: {
+            phase: "completed",
+            toolCallId: "model-call-1",
+            toolName: "read_file",
+            output: new ToolMessage({
+              tool_call_id: "model-call-1",
+              content: "文件正文",
+            }),
+          },
+        },
+        {
+          event: "on_tool_end",
+          name: "read_file",
+          run_id: "sdk-run-1",
+          data: { output: "文件正文" },
+        },
+      ]),
+      { canonicalToolEvents: true },
+    );
+
+    expect(
+      events
+        .filter(
+          (event) =>
+            event.type === "tool.started" || event.type === "tool.completed",
+        )
+        .map((event) => event.toolCallId),
+    ).toEqual(["model-call-1", "model-call-1"]);
+  });
 
   it("子代理模型流打标下发（agentName/agentCallId），主 agent 文本不带标——前端据此路由进子代理视图", async () => {
     const events = await collect(

@@ -46,11 +46,12 @@ import {
   type SubagentChildRunner,
 } from "./subagent-tools.js";
 import { createTaskNotificationMiddleware } from "./task-notifications.js";
+import type { AgentRunExtension } from "./run-extension.js";
 
 export type KenFutWorkAgent = Pick<
   ReturnType<typeof createDeepAgent>,
   "stream" | "streamEvents"
->;
+> & { canonicalToolEvents?: boolean };
 
 /**
  * 执行模式工具门（solo/plan 硬约束）：拦截 deepagents 内置工具
@@ -100,6 +101,7 @@ export function createToolGateMiddleware(
       return new ToolMessage({
         tool_call_id: request.toolCall.id ?? request.toolCall.name,
         content: `工具 ${request.toolCall.name} 被拒绝：${verdict.reason}`,
+        status: "error",
       });
     },
   };
@@ -257,6 +259,7 @@ function createModelResponseGuardMiddleware(): AgentMiddleware {
 }
 
 export type KenFutWorkAgentFactory = (options: {
+  runExtensions?: readonly AgentRunExtension[];
   backendResult?: AgentBackendResult;
   canvasId?: string;
   checkpointer?: BaseCheckpointSaver;
@@ -304,6 +307,7 @@ export type KenFutWorkAgentFactory = (options: {
 }) => KenFutWorkAgent;
 
 export function createKenFutWorkDeepAgent(options: {
+  runExtensions?: readonly AgentRunExtension[];
   backendResult?: AgentBackendResult;
   canvasId?: string;
   checkpointer?: BaseCheckpointSaver;
@@ -393,6 +397,7 @@ export function createKenFutWorkDeepAgent(options: {
             }) as unknown as AgentMiddleware,
           ]
         : [];
+      middleware.unshift(...(options.runExtensions ?? []).map((extension) => extension.createMiddleware({ agentCallId: callId, agentName: definition.name })));
       const child = createAgent({
         model: resolvedModel,
         name: definition.name,
@@ -542,7 +547,7 @@ export function createKenFutWorkDeepAgent(options: {
       options.llmRetry?.infinite ?? AGENT_GOVERNANCE_DEFAULTS.llmInfiniteRetry,
   });
 
-  return createDeepAgent({
+  const agent = createDeepAgent({
     backend: backendResult.factory,
     ...(options.checkpointer ? { checkpointer: options.checkpointer } : {}),
     model: resolvedModel,
@@ -563,6 +568,7 @@ export function createKenFutWorkDeepAgent(options: {
     ...(options.toolGate
       ? {
           middleware: [
+            ...(options.runExtensions ?? []).map((extension) => extension.createMiddleware({})),
             ...summarizationMiddleware,
             ...notificationMiddleware,
             llmRetryMiddleware,
@@ -575,6 +581,7 @@ export function createKenFutWorkDeepAgent(options: {
         }
       : {
           middleware: [
+            ...(options.runExtensions ?? []).map((extension) => extension.createMiddleware({})),
             ...summarizationMiddleware,
             ...notificationMiddleware,
             llmRetryMiddleware,
@@ -586,6 +593,7 @@ export function createKenFutWorkDeepAgent(options: {
         }),
     tools,
   });
+  return Object.assign(agent, { canonicalToolEvents: (options.runExtensions ?? []).some((extension) => extension.canonicalToolEvents) });
 }
 
 /**

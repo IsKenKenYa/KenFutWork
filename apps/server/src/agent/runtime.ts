@@ -79,6 +79,7 @@ import type { AgentPersistenceService } from "./persistence/index.js";
 import { measureTools } from "./prompt-composition.js";
 import { withBoundWorkDir } from "./sandbox-dir.js";
 import { adaptDeepAgentStream } from "./stream-adapter.js";
+import type { AgentRunExtension } from "./run-extension.js";
 import { formatTaskNotificationsXml } from "./task-notifications.js";
 import {
   createToolDenialTracker,
@@ -370,6 +371,7 @@ type RuntimeRunRecord = RunCreateRequest & {
 };
 
 type CreateAgentRuntimeOptions = {
+  runExtensions?: () => readonly AgentRunExtension[];
   agentPersistenceService?: AgentPersistenceService;
   agentFactory?: KenFutWorkAgentFactory;
   agentRunMetadataService?: AgentRunMetadataService;
@@ -557,6 +559,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     createRun(
       input: RunCreateRequest,
       runOptions?: {
+        /** 持久命令已铸造的运行身份；恢复/去重不得再次生成另一轮 run。 */
+        runId?: string;
         accessToken?: string;
         model?: string;
         /** 沙箱目录名用的 id（画布 UUID）；缺省回落到 canvasId。 */
@@ -565,7 +569,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         userId?: string;
       },
     ): RunCreateResponse {
-      const runId = runIdFactory();
+      const runId = runOptions?.runId ?? runIdFactory();
       const { accessToken: _ignoredAccessToken, ...runInput } = input;
 
       runs.set(runId, {
@@ -1268,7 +1272,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           // BYOK：run 的 model 携带实例 specifier 时，按用户供应商实例实例化聊天模型
           if (
             typeof resolvedModel === "string" &&
-            run.accessToken &&
             run.userId &&
             options.modelProviders
           ) {
@@ -1282,7 +1285,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 const verdict = await options.modelCatalog
                   .validateSpecifier(
                     {
-                      accessToken: run.accessToken,
+                      accessToken: run.accessToken ?? "",
                       email: "",
                       id: run.userId,
                       userMetadata: {},
@@ -1297,7 +1300,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               const credentials =
                 await options.modelProviders.resolveCredentials(
                   {
-                    accessToken: run.accessToken,
+                    accessToken: run.accessToken ?? "",
                     email: "",
                     id: run.userId,
                     userMetadata: {},
@@ -1733,6 +1736,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             : [];
 
           agent = resolvedAgentFactory({
+            ...(options.runExtensions ? { runExtensions: options.runExtensions().filter((extension) => extension.preset === preset) } : {}),
             backendResult,
             preset,
             // 系统提示经内核段注册表组装（模式段/品牌/skills/规则与插件段）；
@@ -1988,6 +1992,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           let sawTerminalEvent = false;
           try {
             for await (const event of adaptDeepAgentStream({
+              canonicalToolEvents: agent.canonicalToolEvents === true,
               conversationId: run.conversationId,
               now,
               ...(options.runUsage && usageUserId

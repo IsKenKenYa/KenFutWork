@@ -7,6 +7,7 @@ import type {
 import { createAgentPersistenceService } from "../../agent/persistence/index.js";
 import { createAgentRunService } from "../../agent/runtime.js";
 import { composeToolGate } from "../../agent/tool-gate.js";
+import type { AgentRunExtension } from "../../agent/run-extension.js";
 import { createWorkspaceSkillsLoader } from "../../agent/workspace-skills.js";
 import { registerRunRoutes } from "../../http/runs.js";
 import type { KernelEvents, PluginDefinition } from "../../kernel/types.js";
@@ -128,6 +129,7 @@ export function createAgentRunsPlugin(
           });
         };
         return createAgentRunService({
+          runExtensions: () => ctx.get("capabilities").list<AgentRunExtension>("agent-run-extension").map((registration) => registration.value),
           agentPersistenceService: d.get("agentPersistence"),
           ...(deps.agentFactory ? { agentFactory: deps.agentFactory } : {}),
           agentRunMetadataService: d.get("agentRunMetadata"),
