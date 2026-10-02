@@ -40,3 +40,9 @@
 - 契约：`packages/shared/src/ws-protocol.ts`
 - 处理器：`apps/server/src/ws/handler.ts`
 - HTTP 侧补充：运行事件亦可按 run 查询转录（见 openapi.json `runs` 域）
+
+## Code 原界面的宿主通道
+
+Code 使用 `packages/shared/src/code-ui-contracts.ts` 导出的原 V4 协议：认证 HTTP RPC `/api/code-ui/rpc` 与 SSE `/api/code-ui/events`，不经旧工作台的 TaskMessage 展示归约。连接先收 hello，以 connectionId 完成 clientHello；原 subscribe 服务参数是 sessionId，RPC 只返回 ACK，snapshot/恢复帧随后经 owned 通知下发。主/子转录与租约独立，UI 复用原 SessionDataLayer。
+
+现阶段已接创建、发送、命令查询、快照/订阅/恢复、历史行读取、Task 索引及文本文件读取。权限/提问、停止/队列、文件回退、终端等尚待接通；既有 `/api/ws` 的 Design/终端通道不因此改变。

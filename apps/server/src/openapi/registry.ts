@@ -62,6 +62,11 @@ import {
   codeShellsResponseSchema,
   codeTerminalRequestSchema,
   codeTerminalResponseSchema,
+  codeUiEventSchema,
+  codeUiRpcRequestSchema,
+  codeUiRpcResponseSchema,
+  codeUiSnapshotResponseSchema,
+  codeUiWorkspaceListSchema,
   codeWorktreeCreateRequestSchema,
   codeWorktreeListResponseSchema,
   codeWorktreeRemoveRequestSchema,
@@ -165,6 +170,51 @@ export interface OpenApiRouteEntry {
 }
 
 export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
+  {
+    method: "get",
+    path: "/api/code-ui/events",
+    tag: "code",
+    auth: "user",
+    successStatus: 200,
+    responseSchema: codeUiEventSchema,
+    summary: "订阅 Code 原协议宿主通知流",
+    description:
+      "认证 SSE 连接先发送原 V4 hello；RPC 使用其 connectionId 完成 clientHello 后订阅。每个 data 记录承载 ready 或原 physical wire frame，订阅初始帧在 RPC ACK 后发送，断线释放 owned 订阅。",
+  },
+  {
+    method: "get",
+    path: "/api/code-ui/workspaces",
+    tag: "code",
+    auth: "user",
+    successStatus: 200,
+    responseSchema: codeUiWorkspaceListSchema,
+    summary: "查询 Code 原界面工作目录",
+    description:
+      "返回当前认证工作区的 Code 项目及其固定主画布工作目录，目录与 Agent、文件和 Git 共用同一解析规则。",
+  },
+  {
+    method: "get",
+    path: "/api/code-ui/sessions/:sessionId",
+    tag: "code",
+    auth: "user",
+    successStatus: 200,
+    responseSchema: codeUiSnapshotResponseSchema,
+    summary: "读取 Code 主或子会话原协议快照",
+    description:
+      "校验会话归属后返回固定 ZCode V4 ConversationSnapshot，子会话从同一权威聚合读取独立转录。",
+  },
+  {
+    method: "post",
+    path: "/api/code-ui/rpc",
+    tag: "code",
+    auth: "user",
+    successStatus: 200,
+    requestSchema: codeUiRpcRequestSchema,
+    responseSchema: codeUiRpcResponseSchema,
+    summary: "调用 Code 原界面宿主接口",
+    description:
+      "按已接通的服务与方法白名单调用原 UI 的宿主能力。命令按 clientId 与 commandId 幂等；相同键不同参数冲突，密钥只写不读，尚未接通的方法明确拒绝。",
+  },
   // ---- admin.ts（管理后台；除 /me 外均要求管理员，403 语义见 description）----
   {
     method: "get",

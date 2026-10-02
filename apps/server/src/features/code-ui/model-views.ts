@@ -1,0 +1,186 @@
+import type {
+  ModelCatalogEntry,
+  ProviderInstanceResponse,
+} from "@kenfutwork/shared";
+import {
+  completeNewModelSelection,
+  createRegistryModelConfig,
+  ModelConfig,
+  type ModelSelection,
+  type ModelSelectionView,
+  type ProviderConfigObject,
+  type ProviderSettingsView,
+  parseZCodeBuiltinModelConfigRules,
+  serializeRegistryModelConfig,
+} from "@zcode/provider";
+import modelRules from "./zcode-model-config-rules.json" with { type: "json" };
+
+const rules = parseZCodeBuiltinModelConfigRules(modelRules);
+
+function publicConfig(
+  instance: ProviderInstanceResponse,
+): ProviderConfigObject {
+  if (
+    instance.protocol !== "openai-compatible" &&
+    instance.protocol !== "anthropic"
+  ) {
+    throw new Error(
+      `供应商协议 ${instance.protocol} 的 Code UI 配置适配尚未接通`,
+    );
+  }
+  return {
+    group: "standard-personal",
+    access: { type: "api-key" },
+    api: {
+      type:
+        instance.protocol === "anthropic"
+          ? "anthropic-messages"
+          : "openai-chat-completions",
+      ...(instance.baseUrl ? { baseUrl: instance.baseUrl } : {}),
+    },
+    personalModelIds: instance.models
+      .filter((model) => model.capability === "chat")
+      .map((model) => model.id),
+    visibility: instance.enabled ? "visible" : "hidden",
+  };
+}
+
+function modelView(
+  instance: ProviderInstanceResponse,
+  entry: ModelCatalogEntry,
+) {
+  const config = publicConfig(instance);
+  const builtin = rules.resolve({
+    providerId: instance.id,
+    modelId: entry.id,
+    ...(config.api?.type ? { apiType: config.api.type } : {}),
+    ...(instance.baseUrl ? { baseUrl: instance.baseUrl } : {}),
+  });
+  const contextWindow = entry.model.contextWindow ?? entry.hints?.contextWindow;
+  const image = entry.model.vision ?? entry.hints?.imageInput;
+  const maximumOutput =
+    entry.model.maxOutputTokens ?? entry.hints?.maxOutputTokens;
+  const effective = builtin.overlay(
+    ModelConfig.fromData({
+      enabled: true,
+      properties: {
+        ...(contextWindow === undefined ? {} : { contextWindow }),
+        ...(image === undefined
+          ? {}
+          : { inputFormat: { supportsImage: image } }),
+        ...(entry.hints?.toolCall === undefined
+          ? {}
+          : { supportsToolCall: entry.hints.toolCall }),
+      },
+      ...(maximumOutput === undefined
+        ? {}
+        : { optionSpecs: { maxOutputTokens: { max: maximumOutput } } }),
+    }),
+  );
+  const complete = createRegistryModelConfig(effective);
+  if (!complete.ok)
+    throw new Error(
+      `模型 ${entry.id} 的原推荐配置不完整：${JSON.stringify(complete.issues)}`,
+    );
+  return {
+    modelId: entry.id,
+    builtin: false as const,
+    kind: "candidate" as const,
+    effectiveBuiltinConfig: builtin.toJSON(),
+    effectiveConfig: serializeRegistryModelConfig(complete.config),
+    enabled: true,
+    executable: instance.enabled && instance.hasCredential,
+    selectable: instance.enabled && instance.hasCredential,
+    issues: [],
+  };
+}
+
+/** 安全 view：执行资格来自后端，原推荐数据负责模型元信息，凭证永不回传。 */
+export function buildCodeUiModelViews(input: {
+  instances: ProviderInstanceResponse[];
+  catalog: ModelCatalogEntry[];
+  defaultSpecifier?: string;
+  selection?: ModelSelection | null;
+  revision?: number;
+}): { settings: ProviderSettingsView; selection: ModelSelectionView } {
+  const revision = input.revision ?? 0;
+  const providers = input.instances
+    .filter((instance) =>
+      instance.models.some((model) => model.capability === "chat"),
+    )
+    .map((instance) => ({
+      providerId: instance.id,
+      providerName: instance.name,
+      enabled: instance.enabled,
+      executable: instance.enabled && instance.hasCredential,
+      effectiveConfig: publicConfig(instance),
+      personalConfig: publicConfig(instance),
+      issues: [],
+      models: input.catalog
+        .filter(
+          (entry) =>
+            entry.capability === "chat" &&
+            entry.provider.instanceId === instance.id,
+        )
+        .map((entry) => modelView(instance, entry)),
+    }));
+  const settings: ProviderSettingsView = {
+    revision,
+    providerTemplates: [],
+    providerOrder: providers.map((provider) => provider.providerId),
+    providers,
+  };
+  const selectionProviders = providers
+    .filter((provider) => provider.executable)
+    .map((provider) => ({
+      providerId: provider.providerId,
+      providerName: provider.providerName,
+      config: provider.effectiveConfig,
+      models: provider.models
+        .filter((model) => model.executable)
+        .map((model) => ({
+          modelId: model.modelId,
+          config: model.effectiveConfig,
+        })),
+    }));
+  const view = { providers: selectionProviders };
+  const separator = input.defaultSpecifier?.indexOf(":") ?? -1;
+  const configured =
+    separator > 0
+      ? {
+          providerId: input.defaultSpecifier!.slice(0, separator),
+          modelId: input.defaultSpecifier!.slice(separator + 1),
+        }
+      : undefined;
+  const first = selectionProviders[0];
+  const firstModel = first?.models[0];
+  const preferred =
+    (configured && completeNewModelSelection(view, configured)) ??
+    (first && firstModel
+      ? completeNewModelSelection(view, {
+          providerId: first.providerId,
+          modelId: firstModel.modelId,
+        })
+      : undefined);
+  const requested = input.selection ?? preferred;
+  const effective = requested
+    ? completeNewModelSelection(view, requested)
+    : undefined;
+  return {
+    settings,
+    selection: {
+      revision,
+      providers: selectionProviders,
+      ...(preferred ? { preferredSelection: preferred } : {}),
+      effectiveSelection: effective
+        ? {
+            ...effective,
+            ...(requested?.options ? { options: requested.options } : {}),
+          }
+        : null,
+      ...(!effective && requested
+        ? { selectionIssue: "model-not-found" as const }
+        : {}),
+    },
+  };
+}

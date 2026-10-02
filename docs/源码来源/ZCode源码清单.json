@@ -2342,6 +2342,16 @@
       "sha256": "183f1469a67aded7b0b87c3728ac595e0b148f6d2ef67e2a371479fb3869d0be",
       "copiedSha256": "183f1469a67aded7b0b87c3728ac595e0b148f6d2ef67e2a371479fb3869d0be",
       "adaptations": []
+    },
+    {
+      "source": "references/zcode/config/provider/zcode-builtin.json",
+      "target": "apps/server/src/features/code-ui/zcode-model-config-rules.json",
+      "sha256": "0b3d735e0c2334353eecadfa8c0756a1a19fc4f7938fc62882048d6630c5f424",
+      "copiedSha256": "bccf42011e2368b599b32269cb51521de1eb43cddc9ed2a1e0da47a468e260d8",
+      "adaptations": [
+        "数据切片：完整复制 /config/modelConfigRules，模型默认与协议/供应商覆盖全部来自原数据"
+      ],
+      "jsonPointer": "/config/modelConfigRules"
     }
   ],
   "buildAdaptations": [

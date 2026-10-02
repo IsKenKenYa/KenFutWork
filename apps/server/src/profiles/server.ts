@@ -16,6 +16,7 @@ import { createCheckpointsPlugin } from "../features/checkpoints/plugin.js";
 import { createCodeGitPlugin } from "../features/code-git/plugin.js";
 import { createCodeToolsPlugin } from "../features/code-tools/plugin.js";
 import { createCodeUiAgentEventsPlugin } from "../features/code-ui/agent-events-plugin.js";
+import { createCodeUiPlugin } from "../features/code-ui/plugin.js";
 import { createComputerUsePlugin } from "../features/computer-use/plugin.js";
 import { createCreditsPlugin } from "../features/credits/plugin.js";
 import { createFlowHostPlugin } from "../features/flow/plugin.js";
@@ -214,5 +215,6 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
         ? {}
         : { mockEventDelayMs: deps.mockEventDelayMs }),
     }),
+    createCodeUiPlugin(),
   ];
 }
