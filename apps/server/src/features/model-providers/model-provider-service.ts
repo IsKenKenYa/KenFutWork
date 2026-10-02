@@ -8,9 +8,16 @@ import type {
   ProviderProtocol,
   ProviderScope,
 } from "@kenfutwork/shared";
+import type { ProviderConfigObject } from "@zcode/provider";
 
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
+import {
+  buildProviderCodePatch,
+  type ProviderCodeMetadata,
+  type ProviderCodeSettings,
+  readProviderCodeSettings,
+} from "./code-provider-config.js";
 import { loadBundledModelsDevSnapshot } from "./models-dev-bundled.js";
 import { listProviderPresets } from "./models-dev-snapshot.js";
 import { type ProbeFetch, type ProbeTarget, probeInstance } from "./probe.js";
@@ -73,6 +80,7 @@ export interface ResolvedInstanceCredentials {
   }>;
   /** 实例配置修订号：异步任务落盘修订与当前不一致即拒（跨修订防护）。 */
   configRevision: number;
+  responsesApi?: boolean;
 }
 
 type InstanceModel = {
@@ -121,6 +129,12 @@ function toResponse(row: ProviderInstanceRecord): ProviderInstanceResponse {
 }
 
 function toCredentials(row: ProviderInstanceRecord, apiKey: string) {
+  const apiType = row.code_ui_config?.config?.api?.type;
+  const responsesApi =
+    apiType === undefined
+      ? (row.probe_result as { responsesApi?: boolean } | null)
+          ?.responsesApi === true
+      : apiType === "openai-responses";
   return {
     instanceId: row.id,
     name: row.name,
@@ -131,11 +145,8 @@ function toCredentials(row: ProviderInstanceRecord, apiKey: string) {
     ...(row.headers ? { headers: row.headers } : {}),
     models: mapModels(row.models),
     configRevision: Number(row.config_revision),
-    // 探测纠偏消费面：仅 true 带出（false/缺席=未支持或不详，默认 completions）
-    ...((row.probe_result as { responsesApi?: boolean } | null)
-      ?.responsesApi === true
-      ? { responsesApi: true }
-      : {}),
+    // 原设置的显式 API 格式优先；未选择时沿用既有探测事实。
+    ...(responsesApi ? { responsesApi: true } : {}),
   };
 }
 
@@ -153,9 +164,16 @@ function toPatch(input: ProviderInstanceUpdateRequest) {
 }
 
 export interface ModelProviderService {
+  saveCodeProviderOverlay(
+    user: AuthenticatedUser,
+    instanceId: string,
+    config: ProviderConfigObject,
+    metadata?: ProviderCodeMetadata,
+  ): Promise<void>;
   readWorkspaceRegistry(user: AuthenticatedUser): Promise<{
     revision: number;
     instances: ProviderInstanceResponse[];
+    providerSettings: Record<string, ProviderCodeSettings>;
   }>;
   createDraftInstance(
     user: AuthenticatedUser,
@@ -296,6 +314,29 @@ export function createModelProviderService(options: {
   }
 
   return {
+    async saveCodeProviderOverlay(user, instanceId, config, metadata = {}) {
+      const workspaceId = await requireWorkspaceId(
+        user,
+        "instance_update_failed",
+      );
+      const row = await repository.updateWorkspaceCodeConfig(
+        workspaceId,
+        instanceId,
+        (current) =>
+          buildProviderCodePatch(
+            current,
+            config,
+            metadata,
+            credentialEnv.credentialSecret,
+          ),
+      );
+      if (!row)
+        throw new ModelProviderServiceError(
+          "instance_not_found",
+          "Provider instance not found.",
+          404,
+        );
+    },
     async readWorkspaceRegistry(user) {
       const snapshot = await repository.readWorkspaceRegistry(
         await requireWorkspaceId(user, "instance_query_failed"),
@@ -303,6 +344,12 @@ export function createModelProviderService(options: {
       return {
         revision: snapshot.revision,
         instances: snapshot.instances.map(toResponse),
+        providerSettings: Object.fromEntries(
+          snapshot.instances.map((row) => [
+            row.id,
+            readProviderCodeSettings(row),
+          ]),
+        ),
       };
     },
     async createDraftInstance(user, input) {

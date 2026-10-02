@@ -1,4 +1,5 @@
 import type { PersistenceService } from "../persistence/types.js";
+import type { ProviderCodeConfigRecord } from "./code-provider-config.js";
 
 export type ProviderInstanceRecord = {
   id: string;
@@ -23,13 +24,16 @@ export type ProviderInstanceRecord = {
   config_revision: string;
   probe_result: Record<string, unknown> | null;
   probed_at: string | null;
+  code_ui_config?: ProviderCodeConfigRecord;
 };
 
 /** 更新补丁：`undefined` = 不改；显式 null = 清空（如移除 base_url）。 */
 export type ProviderInstancePatch = {
   name?: string | undefined;
   base_url?: string | null | undefined;
-  encrypted_api_key?: string | undefined;
+  encrypted_api_key?: string | null | undefined;
+  protocol?: string;
+  code_ui_config?: ProviderCodeConfigRecord;
   models?: unknown;
   compat?: unknown;
   headers?: unknown;
@@ -72,6 +76,11 @@ export type NewSystemInstance = {
  *   避免与工作区实例串行。
  */
 export interface ModelProviderRepository {
+  updateWorkspaceCodeConfig(
+    workspaceId: string,
+    instanceId: string,
+    update: (row: ProviderInstanceRecord) => ProviderInstancePatch,
+  ): Promise<ProviderInstanceRecord | null>;
   readWorkspaceRegistry(workspaceId: string): Promise<{
     revision: number;
     instances: ProviderInstanceRecord[];
@@ -115,7 +124,7 @@ export interface ModelProviderRepository {
 }
 
 const INSTANCE_COLUMNS =
-  "id, scope, workspace_id, name, protocol, base_url, encrypted_api_key, models, compat, headers, enabled, config_revision, probe_result, probed_at";
+  "id, scope, workspace_id, name, protocol, base_url, encrypted_api_key, models, compat, headers, enabled, config_revision, probe_result, probed_at, code_ui_config";
 
 /** 把补丁翻成 SET 片段；`$1` 固定留作目标 id，故列从 `$2` 起编号。 */
 function buildPatch(
@@ -131,6 +140,9 @@ function buildPatch(
   };
 
   if (patch.name !== undefined) push("name", patch.name);
+  if (patch.protocol !== undefined) push("protocol", patch.protocol);
+  if (patch.code_ui_config !== undefined)
+    push("code_ui_config", JSON.stringify(patch.code_ui_config), "::jsonb");
   if (patch.base_url !== undefined) push("base_url", patch.base_url);
   if (patch.encrypted_api_key !== undefined) {
     push("encrypted_api_key", patch.encrypted_api_key);
@@ -142,7 +154,11 @@ function buildPatch(
     push("compat", JSON.stringify(patch.compat), "::jsonb");
   }
   if (patch.headers !== undefined) {
-    push("headers", JSON.stringify(patch.headers), "::jsonb");
+    push(
+      "headers",
+      patch.headers === null ? null : JSON.stringify(patch.headers),
+      "::jsonb",
+    );
   }
   if (patch.enabled !== undefined) push("enabled", patch.enabled);
 
@@ -153,6 +169,22 @@ export function createModelProviderRepository(
   persistence: PersistenceService,
 ): ModelProviderRepository {
   return {
+    async updateWorkspaceCodeConfig(workspaceId, instanceId, update) {
+      return persistence.transaction(async (tx) => {
+        const scoped = tx.forWorkspace(workspaceId);
+        const row = await scoped.queryOne<ProviderInstanceRecord>(
+          `select ${INSTANCE_COLUMNS} from public.provider_instances where workspace_id=:workspace and id=$1 and scope='workspace' for update`,
+          [instanceId],
+        );
+        if (!row) return null;
+        const patch = buildPatch(update(row), instanceId);
+        if (!patch) return row;
+        return scoped.queryOne<ProviderInstanceRecord>(
+          `update public.provider_instances set config_revision=config_revision+1, ${patch.assignments.join(", ")} where workspace_id=:workspace and id=$1 and scope='workspace' returning ${INSTANCE_COLUMNS}`,
+          patch.values,
+        );
+      });
+    },
     async readWorkspaceRegistry(workspaceId) {
       const row = await persistence
         .forWorkspace(workspaceId)

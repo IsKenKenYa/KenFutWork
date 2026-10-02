@@ -92,6 +92,8 @@ KenFutWork `modelProviders` 持有身份、workspace 隔离、加密和真实实
 
 后续快照/通知切片已将完整实例配置与 workspace revision 合为单一 MVCC 查询；模型目录只补该快照的元信息，不二次查询实例。原 Settings 保留停用供应商与模型，Selection 按实际启用与凭证资格过滤。create/delete 提交后向 owned SSE 广播原两服务的 `onDidChange`，数据与 mutation response 同源。两条新增公开宿主测试分别从缺失通知、误把停用模型标为可执行的 red 到 green；包含同值保存不推进修订。其他保存入口的事件、全量 overlay/CAS 与原表单仍继续实施。
 
+Provider 保存切片已接 `savePersonalProviderOverlay`，复用原 ProviderConfig parser/overlay，保留 API 格式、品牌、Key 管理地址及未编辑字段。前向 `20261002215830_provider_code_settings.sql` 只保存非敏感扩展叶子，DB 约束禁止 Key、headers、endpoint、模型成员在扩展列复制，原规范列仍唯一属主。显式 Key/null 清除与 headers/null 清除、真实 credentialConfigured、提交后原通知和删除后迟到保存 404 已通过公开接口；原 Key 组件 presence/明确 clear 与模型完整操作/CAS、模板基线仍继续。73 条空库重放、历史 SHA、二次 no-op 和实际 schema 约束检查通过，迁移执行后不可修改。
+
 只读审计基线仍为 `29628c9acdb81b703bbd4080c207a0e7ce5e276e`。上述缺口说明当前模型读取冒烟不证明原设置写入完成；服务接线验收必须覆盖空草稿→模型配置→写 Key→真实 executable、清 Key、删除最后模型、并发/CAS、通知和刷新恢复。
 
 ### 验收进程与文件审计

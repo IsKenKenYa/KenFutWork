@@ -6,6 +6,7 @@ import {
   zcodeUiProtocol as protocol,
   type StreamEvent,
 } from "@kenfutwork/shared";
+import { parseProviderConfig } from "@zcode/provider";
 import {
   appSettingsSchema,
   zcodeWorkspacePresentationSchema,
@@ -91,6 +92,22 @@ export class CodeUiService {
     args: unknown[],
   ) {
     if (service === "providerSettingsService") {
+      if (method === "savePersonalProviderOverlay") {
+        await this.deps.modelProviders.saveCodeProviderOverlay(
+          user,
+          z.string().uuid().parse(args[0]),
+          parseProviderConfig(args[1]).toJSON(),
+          z
+            .object({
+              providerName: z.string().nullable().optional(),
+              enabled: z.boolean().optional(),
+              templateId: z.string().min(1).nullable().optional(),
+            })
+            .strict()
+            .parse(args[2] ?? {}),
+        );
+        return { result: (await this.publishProviderViews(user)).settings };
+      }
       if (method === "getView" || method === "refresh")
         return { result: (await this.modelViews(user)).settings };
       if (method === "createPersonalProvider") {
@@ -645,6 +662,7 @@ export class CodeUiService {
         registry.instances,
       ),
       revision: registry.revision,
+      providerSettings: registry.providerSettings,
       ...(settings.defaultModel
         ? { defaultSpecifier: settings.defaultModel }
         : {}),

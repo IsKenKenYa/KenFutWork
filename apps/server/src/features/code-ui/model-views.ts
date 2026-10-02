@@ -10,9 +10,12 @@ import {
   type ModelSelectionView,
   type ProviderConfigObject,
   type ProviderSettingsView,
+  parseProviderConfig,
   parseZCodeBuiltinModelConfigRules,
+  requiredFieldIssue,
   serializeRegistryModelConfig,
 } from "@zcode/provider";
+import type { ProviderCodeSettings } from "../model-providers/code-provider-config.js";
 import modelRules from "./zcode-model-config-rules.json" with { type: "json" };
 
 const rules = parseZCodeBuiltinModelConfigRules(modelRules);
@@ -48,10 +51,11 @@ function publicConfig(
 function modelView(
   instance: ProviderInstanceResponse,
   entry: ModelCatalogEntry,
+  config: ProviderConfigObject,
+  providerExecutable: boolean,
 ) {
-  const config = publicConfig(instance);
   const enabled = entry.model.enabled !== false;
-  const executable = instance.enabled && instance.hasCredential && enabled;
+  const executable = providerExecutable && enabled;
   const builtin = rules.resolve({
     providerId: instance.id,
     modelId: entry.id,
@@ -104,6 +108,7 @@ export function buildCodeUiModelViews(input: {
   defaultSpecifier?: string;
   selection?: ModelSelection | null;
   revision?: number;
+  providerSettings?: Record<string, ProviderCodeSettings>;
 }): { settings: ProviderSettingsView; selection: ModelSelectionView } {
   const revision = input.revision ?? 0;
   const providers = input.instances
@@ -113,22 +118,42 @@ export function buildCodeUiModelViews(input: {
         instance.protocol === "anthropic" ||
         instance.protocol === "gemini",
     )
-    .map((instance) => ({
-      providerId: instance.id,
-      providerName: instance.name,
-      enabled: instance.enabled,
-      executable: instance.enabled && instance.hasCredential,
-      effectiveConfig: publicConfig(instance),
-      personalConfig: publicConfig(instance),
-      issues: [],
-      models: input.catalog
-        .filter(
-          (entry) =>
-            entry.capability === "chat" &&
-            entry.provider.instanceId === instance.id,
-        )
-        .map((entry) => modelView(instance, entry)),
-    }));
+    .map((instance) => {
+      const source = input.providerSettings?.[instance.id];
+      const config = source?.config ?? publicConfig(instance);
+      const parsed = parseProviderConfig(config);
+      const issues = [
+        ...(parsed.api?.validateComplete(["provider", "api"]) ?? [
+          requiredFieldIssue(["provider"], "api"),
+        ]),
+        ...(!instance.hasCredential
+          ? [requiredFieldIssue(["provider", "access"], "apiKey")]
+          : []),
+      ];
+      const executable =
+        instance.enabled && instance.hasCredential && issues.length === 0;
+      return {
+        providerId: instance.id,
+        providerName: instance.name,
+        enabled: instance.enabled,
+        executable,
+        credentialConfigured:
+          source?.credentialConfigured ?? instance.hasCredential,
+        ...(source?.templateId == null
+          ? {}
+          : { templateId: source.templateId }),
+        effectiveConfig: config,
+        personalConfig: config,
+        issues,
+        models: input.catalog
+          .filter(
+            (entry) =>
+              entry.capability === "chat" &&
+              entry.provider.instanceId === instance.id,
+          )
+          .map((entry) => modelView(instance, entry, config, executable)),
+      };
+    });
   const settings: ProviderSettingsView = {
     revision,
     providerTemplates: [],

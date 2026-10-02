@@ -3,6 +3,7 @@ import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
+import type { ProviderSettingsView } from "@zcode/provider";
 import { describe, expect, it } from "vitest";
 
 const enabled = process.env.RUN_CODE_UI_INTEGRATION === "1";
@@ -71,6 +72,127 @@ async function openCodeStream(streams: AbortController[]) {
 }
 
 describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", () => {
+  it("原供应商稀疏配置保存原格式与品牌字段，Key 和请求头只写，省略保留而明确 null 清除", async () => {
+    expect((await request("/api/viewer")).status).toBe(200);
+    let providerId = "";
+    const rpc = (method: string, args: unknown[] = []) =>
+      request("/api/code-ui/rpc", {
+        service: "providerSettingsService",
+        method,
+        args,
+      });
+    const selected = (view: ProviderSettingsView) =>
+      view.providers.find(
+        (provider: { providerId: string }) =>
+          provider.providerId === providerId,
+      );
+    try {
+      const created = await rpc("createPersonalProvider", [
+        { providerName: `写入 ${randomUUID()}` },
+      ]);
+      expect(created.status).toBe(200);
+      providerId = created.body.result.providerId;
+      const saved = await rpc("savePersonalProviderOverlay", [
+        providerId,
+        {
+          api: {
+            type: "openai-responses",
+            baseUrl: "https://example.invalid/v1",
+            headers: { "X-Private": "integration-header-private" },
+          },
+          access: {
+            type: "api-key",
+            apiKey: "integration-credential-private",
+            apiKeyManagementUrl: "https://example.invalid/keys",
+          },
+          logo: { type: "builtin", key: "openai" },
+          visibility: "visible",
+        },
+        { providerName: "原配置供应商", enabled: true },
+      ]);
+      expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+      expect(selected(saved.body.result)).toMatchObject({
+        providerName: "原配置供应商",
+        credentialConfigured: true,
+        executable: true,
+        effectiveConfig: {
+          logo: { type: "builtin", key: "openai" },
+          api: {
+            type: "openai-responses",
+            baseUrl: "https://example.invalid/v1",
+          },
+          access: {
+            type: "api-key",
+            apiKeyManagementUrl: "https://example.invalid/keys",
+          },
+        },
+      });
+      expect(JSON.stringify(saved.body.result)).not.toMatch(
+        /integration-credential-private|integration-header-private|apiKey"|headers"/,
+      );
+      const updated = await rpc("savePersonalProviderOverlay", [
+        providerId,
+        { api: { baseUrl: "https://example.invalid/v2" } },
+      ]);
+      expect(updated.status).toBe(200);
+      expect(selected(updated.body.result)).toMatchObject({
+        credentialConfigured: true,
+        effectiveConfig: {
+          logo: { type: "builtin", key: "openai" },
+          api: {
+            type: "openai-responses",
+            baseUrl: "https://example.invalid/v2",
+          },
+          access: { apiKeyManagementUrl: "https://example.invalid/keys" },
+        },
+      });
+      const instances = await request("/api/provider-instances");
+      expect(
+        instances.body.instances.find(
+          (instance: { id: string }) => instance.id === providerId,
+        ),
+      ).toMatchObject({
+        hasCredential: true,
+        headerKeys: ["X-Private"],
+        baseUrl: "https://example.invalid/v2",
+      });
+      const cleared = await rpc("savePersonalProviderOverlay", [
+        providerId,
+        { access: { type: "api-key", apiKey: null }, api: { headers: null } },
+      ]);
+      expect(cleared.status, JSON.stringify(cleared.body)).toBe(200);
+      expect(selected(cleared.body.result)).toMatchObject({
+        credentialConfigured: false,
+        executable: false,
+        effectiveConfig: {
+          api: {
+            type: "openai-responses",
+            baseUrl: "https://example.invalid/v2",
+          },
+        },
+      });
+      expect(
+        (await rpc("refresh", ["integration:write-only"])).body.result,
+      ).toEqual(cleared.body.result);
+      const publicRead = await request("/api/provider-instances");
+      expect(
+        publicRead.body.instances.find(
+          (instance: { id: string }) => instance.id === providerId,
+        ),
+      ).toMatchObject({ hasCredential: false, headerKeys: [] });
+      const deleted = await rpc("deletePersonalProvider", [providerId]);
+      expect(deleted.status).toBe(200);
+      const late = await rpc("savePersonalProviderOverlay", [
+        providerId,
+        { access: { type: "api-key", apiKey: "late-private-credential" } },
+      ]);
+      expect(late.status).toBe(404);
+      expect((await rpc("getView")).body.result).toEqual(deleted.body.result);
+      providerId = "";
+    } finally {
+      if (providerId) await rpc("deletePersonalProvider", [providerId]);
+    }
+  });
   it("原设置保留停用模型与供应商候选，执行目录遵守各级开关，同值保存不推进修订", async () => {
     expect((await request("/api/viewer")).status).toBe(200);
     let providerId = "";
@@ -80,6 +202,7 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
       const created = await request("/api/provider-instances", {
         name: `候选 ${randomUUID()}`,
         protocol: "openai-compatible",
+        baseUrl: "https://example.invalid/v1",
         // 仅持久化 fixture，不发送任何真实模型请求。
         apiKey: "integration-credential-no-network",
         models: [
@@ -267,7 +390,9 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
         executable: false,
         models: [],
       });
-      expect(JSON.stringify(draft)).not.toMatch(/apiKey|encrypted_api_key/);
+      expect(draft.effectiveConfig.access).not.toHaveProperty("apiKey");
+      expect(draft.personalConfig.access).not.toHaveProperty("apiKey");
+      expect(draft).not.toHaveProperty("encrypted_api_key");
       const loaded = await rpc("getView");
       expect(loaded.status).toBe(200);
       expect(loaded.body.result.revision).toBe(

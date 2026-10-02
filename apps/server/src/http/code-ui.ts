@@ -9,33 +9,32 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { RequestAuthenticator } from "../features/auth/types.js";
 import { CodeUiRepositoryError } from "../features/code-ui/repository.js";
 import type { CodeUiService } from "../features/code-ui/service.js";
+import { ModelProviderServiceError } from "../features/model-providers/model-provider-service.js";
 import { isZodError } from "./zod-error.js";
 
 function sendError(reply: FastifyReply, error: unknown) {
+  if (error instanceof ModelProviderServiceError)
+    return reply
+      .code(error.statusCode)
+      .send({ error: { code: error.code, message: error.message } });
   if (isZodError(error))
-    return reply
-      .code(400)
-      .send({
-        error: {
-          code: "invalid_code_ui_request",
-          message: "Code 宿主请求不符合原协议",
-          details: error.issues,
-        },
-      });
-  if (error instanceof CodeUiRepositoryError)
-    return reply
-      .code(error.code === "not_found" ? 404 : 409)
-      .send({
-        error: { code: `code_ui_${error.code}`, message: error.message },
-      });
-  return reply
-    .code(500)
-    .send({
+    return reply.code(400).send({
       error: {
-        code: "code_ui_error",
-        message: error instanceof Error ? error.message : "Code 宿主请求失败",
+        code: "invalid_code_ui_request",
+        message: "Code 宿主请求不符合原协议",
+        details: error.issues,
       },
     });
+  if (error instanceof CodeUiRepositoryError)
+    return reply.code(error.code === "not_found" ? 404 : 409).send({
+      error: { code: `code_ui_${error.code}`, message: error.message },
+    });
+  return reply.code(500).send({
+    error: {
+      code: "code_ui_error",
+      message: error instanceof Error ? error.message : "Code 宿主请求失败",
+    },
+  });
 }
 
 export async function registerCodeUiRoutes(
