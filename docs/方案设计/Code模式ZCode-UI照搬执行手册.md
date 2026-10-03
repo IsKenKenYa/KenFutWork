@@ -98,6 +98,8 @@ Provider 保存切片已接 `savePersonalProviderOverlay`，复用原 ProviderCo
 
 完整模型设置/错误横幅的云能力显隐：沿原 ModelProviderSection、导航/权益 Hook、套餐入口和 ChatErrorBanner 判断宿主能力，未提供云账户时不展示预置账户/套餐、不查询凭据/权益、不显示“正在查询套餐”，保留原自定义供应商及配置操作。没有声明能力的原宿主仍保留原套餐入口语义。两项原组件操作 red→green，Web 374 回归/类型与原 UI 构建通过；真实完整页面截图 `docs/验收/Code模式ZCode/原设置云入口隐藏.jpg`。此证据不覆盖自动化/CUA/远程等能力。
 
+原模型解析/添加宿主切片已接 resolveModelConfig/addPersonalModel。原推荐 JSON 内容不变，移到 modelProviders 域；原 ModelConfigRules 负责精确/手动合成。配置与模式标记保存于实际 models 成员，不另存一套 UI 模型；运行侧容量由同一规则推导。公开接口覆盖原通配推荐 200000/32000、个人覆盖 256000/8192、Unicode ID、刷新恢复、并发成员不丢失、同键一次成功/409、删除后迟到添加 404。六项供应商/模型 integration、server 1478 回归/类型、25 门禁、3051 来源校验通过。此切片未证明原模型保存/CAS、启停/改名/排序/删除、指定模型测试或真实模型执行完成。
+
 只读审计基线仍为 `29628c9acdb81b703bbd4080c207a0e7ce5e276e`。上述缺口说明当前模型读取冒烟不证明原设置写入完成；服务接线验收必须覆盖空草稿→模型配置→写 Key→真实 executable、清 Key、删除最后模型、并发/CAS、通知和刷新恢复。
 
 ### 验收进程与文件审计

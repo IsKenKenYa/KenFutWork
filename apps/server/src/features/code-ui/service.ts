@@ -6,7 +6,7 @@ import {
   zcodeUiProtocol as protocol,
   type StreamEvent,
 } from "@kenfutwork/shared";
-import { parseProviderConfig } from "@zcode/provider";
+import { parseModelConfig, parseProviderConfig } from "@zcode/provider";
 import {
   appSettingsSchema,
   zcodeWorkspacePresentationSchema,
@@ -92,6 +92,42 @@ export class CodeUiService {
     args: unknown[],
   ) {
     if (service === "providerSettingsService") {
+      if (method === "resolveModelConfig") {
+        const input = z
+          .object({
+            providerId: z.string().uuid(),
+            modelId: z.string().trim().min(1),
+            originalModelId: z.string().optional(),
+            personalConfig: z.unknown().optional(),
+          })
+          .strict()
+          .parse(args[0]);
+        return {
+          result: await this.deps.modelProviders.resolveCodeModelConfig(
+            user,
+            input.personalConfig === undefined
+              ? { providerId: input.providerId, modelId: input.modelId }
+              : {
+                  providerId: input.providerId,
+                  modelId: input.modelId,
+                  originalModelId: z.string().parse(input.originalModelId),
+                  personalConfig: parseModelConfig(
+                    input.personalConfig,
+                  ).toJSON(),
+                },
+          ),
+        };
+      }
+      if (method === "addPersonalModel") {
+        await this.deps.modelProviders.addCodeModel(
+          user,
+          z.string().uuid().parse(args[0]),
+          z.string().trim().min(1).parse(args[1]),
+          parseModelConfig(args[2]).toJSON(),
+          z.boolean().parse(args[3] ?? true),
+        );
+        return { result: (await this.publishProviderViews(user)).settings };
+      }
       if (method === "savePersonalProviderOverlay") {
         await this.deps.modelProviders.saveCodeProviderOverlay(
           user,

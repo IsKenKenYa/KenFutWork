@@ -1,4 +1,5 @@
 import type { PersistenceService } from "../persistence/types.js";
+import type { ProviderInstanceStoredModel } from "./code-model-config.js";
 import type { ProviderCodeConfigRecord } from "./code-provider-config.js";
 
 export type ProviderInstanceRecord = {
@@ -9,14 +10,7 @@ export type ProviderInstanceRecord = {
   protocol: string;
   base_url: string | null;
   encrypted_api_key: string | null;
-  models: Array<{
-    id: string;
-    name: string;
-    capability: string;
-    vision?: boolean;
-    contextWindow?: number;
-    maxOutputTokens?: number;
-  }> | null;
+  models: ProviderInstanceStoredModel[] | null;
   compat: Record<string, unknown> | null;
   headers: Record<string, string> | null;
   enabled: boolean;

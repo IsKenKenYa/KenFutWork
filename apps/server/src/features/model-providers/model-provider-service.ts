@@ -1,6 +1,7 @@
 import type {
   ModelCapability,
   ProviderInstanceCreateRequest,
+  ProviderInstanceModel,
   ProviderInstanceResponse,
   ProviderInstanceUpdateRequest,
   ProviderPreset,
@@ -8,14 +9,26 @@ import type {
   ProviderProtocol,
   ProviderScope,
 } from "@kenfutwork/shared";
-import type { ProviderConfigObject } from "@zcode/provider";
+import type {
+  ModelConfigObject,
+  ModelConfigResolution,
+  ProviderConfigObject,
+  ResolveModelConfigInput,
+} from "@zcode/provider";
 
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import {
+  createProviderCodeModelConfig,
+  describeProviderCodeModel,
+  enabledProviderCodeModelConfig,
+  resolveProviderCodeModel,
+} from "./code-model-config.js";
+import {
   buildProviderCodePatch,
   type ProviderCodeMetadata,
   type ProviderCodeSettings,
+  readProviderCodeModel,
   readProviderCodeSettings,
 } from "./code-provider-config.js";
 import { loadBundledModelsDevSnapshot } from "./models-dev-bundled.js";
@@ -70,43 +83,36 @@ export interface ResolvedInstanceCredentials {
   compat?: Record<string, unknown>;
   /** 自定义请求头（原值，含占位符）：调用方按会话上下文渲染后再交给适配器。 */
   headers?: Record<string, string>;
-  models: Array<{
-    id: string;
-    name: string;
-    capability: ModelCapability;
-    enabled?: boolean;
-    reasoningEfforts?: string[];
-    extraBody?: Record<string, unknown>;
-  }>;
+  models: ProviderInstanceModel[];
   /** 实例配置修订号：异步任务落盘修订与当前不一致即拒（跨修订防护）。 */
   configRevision: number;
   responsesApi?: boolean;
 }
 
-type InstanceModel = {
-  id: string;
-  name: string;
-  capability: string;
-  enabled?: boolean;
-  vision?: boolean;
-  contextWindow?: number;
-  maxOutputTokens?: number;
-  reasoningEfforts?: string[];
-  extraBody?: Record<string, unknown>;
-};
-
-function mapModels(models: InstanceModel[] | null) {
-  return (models ?? []).map((m) => ({
-    id: m.id,
-    name: m.name,
-    capability: m.capability as ModelCapability,
-    ...(m.enabled === false ? { enabled: false } : {}),
-    ...(m.vision ? { vision: true } : {}),
-    ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
-    ...(m.maxOutputTokens ? { maxOutputTokens: m.maxOutputTokens } : {}),
-    ...(m.reasoningEfforts ? { reasoningEfforts: m.reasoningEfforts } : {}),
-    ...(m.extraBody ? { extraBody: m.extraBody } : {}),
-  }));
+function mapModels(row: ProviderInstanceRecord) {
+  const provider = readProviderCodeSettings(row);
+  return (row.models ?? []).map((m) =>
+    m.codeConfig
+      ? describeProviderCodeModel(
+          row.id,
+          provider.config,
+          m,
+          provider.templateId,
+        )
+      : {
+          id: m.id,
+          name: m.name,
+          capability: m.capability as ModelCapability,
+          ...(m.enabled === false ? { enabled: false } : {}),
+          ...(m.vision ? { vision: true } : {}),
+          ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
+          ...(m.maxOutputTokens ? { maxOutputTokens: m.maxOutputTokens } : {}),
+          ...(m.reasoningEfforts
+            ? { reasoningEfforts: m.reasoningEfforts }
+            : {}),
+          ...(m.extraBody ? { extraBody: m.extraBody } : {}),
+        },
+  );
 }
 
 function toResponse(row: ProviderInstanceRecord): ProviderInstanceResponse {
@@ -117,7 +123,7 @@ function toResponse(row: ProviderInstanceRecord): ProviderInstanceResponse {
     protocol: row.protocol as ProviderProtocol,
     ...(row.base_url ? { baseUrl: row.base_url } : {}),
     hasCredential: Boolean(row.encrypted_api_key),
-    models: mapModels(row.models),
+    models: mapModels(row),
     ...(row.compat ? { compat: row.compat } : {}),
     // 自定义头只回键名，值不回显（与 MCP env/envKeys 同口径）。
     headerKeys: Object.keys(row.headers ?? {}),
@@ -143,7 +149,7 @@ function toCredentials(row: ProviderInstanceRecord, apiKey: string) {
     apiKey,
     ...(row.compat ? { compat: row.compat } : {}),
     ...(row.headers ? { headers: row.headers } : {}),
-    models: mapModels(row.models),
+    models: mapModels(row),
     configRevision: Number(row.config_revision),
     // 原设置的显式 API 格式优先；未选择时沿用既有探测事实。
     ...(responsesApi ? { responsesApi: true } : {}),
@@ -164,6 +170,17 @@ function toPatch(input: ProviderInstanceUpdateRequest) {
 }
 
 export interface ModelProviderService {
+  resolveCodeModelConfig(
+    user: AuthenticatedUser,
+    input: ResolveModelConfigInput,
+  ): Promise<ModelConfigResolution>;
+  addCodeModel(
+    user: AuthenticatedUser,
+    providerId: string,
+    modelId: string,
+    config: ModelConfigObject,
+    useRecommendedConfig?: boolean,
+  ): Promise<void>;
   saveCodeProviderOverlay(
     user: AuthenticatedUser,
     instanceId: string,
@@ -314,6 +331,96 @@ export function createModelProviderService(options: {
   }
 
   return {
+    async resolveCodeModelConfig(user, input) {
+      const workspaceId = await requireWorkspaceId(
+        user,
+        "instance_query_failed",
+      );
+      const row = await repository.findWorkspaceInstance(
+        workspaceId,
+        input.providerId,
+      );
+      if (!row)
+        throw new ModelProviderServiceError(
+          "instance_not_found",
+          "Provider instance not found.",
+          404,
+        );
+      const provider = readProviderCodeSettings(row);
+      const personal =
+        "personalConfig" in input
+          ? createProviderCodeModelConfig(
+              input.providerId,
+              input.modelId,
+              input.personalConfig,
+              true,
+            )
+          : readProviderCodeModel(provider, input.modelId);
+      const resolved = resolveProviderCodeModel(
+        input.providerId,
+        provider.config,
+        input.modelId,
+        personal,
+        provider.templateId,
+      );
+      return {
+        inheritedConfig: ("personalConfig" in input
+          ? resolved.inherited
+          : resolved.effective
+        ).toJSON(),
+        effectiveConfig: resolved.effective.toJSON(),
+        issues: resolved.issues,
+      };
+    },
+    async addCodeModel(
+      user,
+      providerId,
+      modelId,
+      config,
+      useRecommendedConfig = true,
+    ) {
+      const workspaceId = await requireWorkspaceId(
+        user,
+        "instance_update_failed",
+      );
+      const normalized = modelId.trim();
+      const codeConfig = createProviderCodeModelConfig(
+        providerId,
+        normalized,
+        enabledProviderCodeModelConfig(config),
+        useRecommendedConfig,
+      );
+      const saved = await repository.updateWorkspaceCodeConfig(
+        workspaceId,
+        providerId,
+        (row) => {
+          const models = row.models ?? [];
+          if (models.some((model) => model.id === normalized))
+            throw new ModelProviderServiceError(
+              "instance_update_failed",
+              `Model 已存在: ${normalized}`,
+              409,
+            );
+          return {
+            models: [
+              ...models,
+              {
+                id: normalized,
+                name: normalized,
+                capability: "chat",
+                codeConfig,
+              },
+            ],
+          };
+        },
+      );
+      if (!saved)
+        throw new ModelProviderServiceError(
+          "instance_not_found",
+          "Provider instance not found.",
+          404,
+        );
+    },
     async saveCodeProviderOverlay(user, instanceId, config, metadata = {}) {
       const workspaceId = await requireWorkspaceId(
         user,

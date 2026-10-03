@@ -72,6 +72,139 @@ async function openCodeStream(streams: AbortController[]) {
 }
 
 describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", () => {
+  it("原模型添加的并发成员不丢失，同键只成功一次，删除供应商后的迟到添加不能重建", async () => {
+    expect((await request("/api/viewer")).status).toBe(200);
+    const rpc = (method: string, args: unknown[] = []) =>
+      request("/api/code-ui/rpc", {
+        service: "providerSettingsService",
+        method,
+        args,
+      });
+    let providerId = "";
+    try {
+      const created = await rpc("createPersonalProvider", [
+        { providerName: `并发模型 ${randomUUID()}` },
+      ]);
+      providerId = created.body.result.providerId;
+      const distinct = await Promise.all([
+        rpc("addPersonalModel", [providerId, "一", {}]),
+        rpc("addPersonalModel", [providerId, "二", {}]),
+      ]);
+      expect(distinct.map((result) => result.status)).toEqual([200, 200]);
+      const same = await Promise.all([
+        rpc("addPersonalModel", [providerId, "同键", {}]),
+        rpc("addPersonalModel", [providerId, "同键", {}]),
+      ]);
+      expect(same.map((result) => result.status).sort()).toEqual([200, 409]);
+      const view = await rpc("getView");
+      expect(
+        view.body.result.providers
+          .find(
+            (provider: { providerId: string }) =>
+              provider.providerId === providerId,
+          )
+          .models.map((model: { modelId: string }) => model.modelId)
+          .sort(),
+      ).toEqual(["一", "二", "同键"].sort());
+      expect(view.body.result.revision).toBe(
+        created.body.result.view.revision + 3,
+      );
+      const deleted = await rpc("deletePersonalProvider", [providerId]);
+      expect(
+        (await rpc("addPersonalModel", [providerId, "迟到", {}])).status,
+      ).toBe(404);
+      expect((await rpc("getView")).body.result).toEqual(deleted.body.result);
+      providerId = "";
+    } finally {
+      if (providerId) await rpc("deletePersonalProvider", [providerId]);
+    }
+  });
+  it("原模型编辑器解析原推荐规则并添加精确个人配置，刷新保持成员和完整配置且不产生假模型", async () => {
+    expect((await request("/api/viewer")).status).toBe(200);
+    const rpc = (method: string, args: unknown[] = []) =>
+      request("/api/code-ui/rpc", {
+        service: "providerSettingsService",
+        method,
+        args,
+      });
+    let providerId = "";
+    try {
+      const created = await rpc("createPersonalProvider", [
+        { providerName: `原模型 ${randomUUID()}` },
+      ]);
+      expect(created.status).toBe(200);
+      providerId = created.body.result.providerId;
+      const resolved = await rpc("resolveModelConfig", [
+        { providerId, modelId: "模型-α" },
+      ]);
+      expect(resolved.status, JSON.stringify(resolved.body)).toBe(200);
+      expect(resolved.body.result).toMatchObject({
+        inheritedConfig: {
+          properties: { contextWindow: 200000 },
+          optionSpecs: { maxOutputTokens: { max: 32000 } },
+        },
+        effectiveConfig: { enabled: true },
+        issues: [],
+      });
+      expect((await rpc("getView")).body.result.revision).toBe(
+        created.body.result.view.revision,
+      );
+      const added = await rpc("addPersonalModel", [
+        providerId,
+        "模型-α",
+        {
+          enabled: false,
+          properties: { contextWindow: 256000 },
+          optionSpecs: { maxOutputTokens: { max: 8192 } },
+        },
+        true,
+      ]);
+      expect(added.status, JSON.stringify(added.body)).toBe(200);
+      const provider = added.body.result.providers.find(
+        (item: { providerId: string }) => item.providerId === providerId,
+      );
+      expect(provider.models).toHaveLength(1);
+      expect(provider.models[0]).toMatchObject({
+        modelId: "模型-α",
+        enabled: true,
+        executable: false,
+        useRecommendedConfig: true,
+        personalExactConfig: {
+          enabled: true,
+          properties: { contextWindow: 256000 },
+          optionSpecs: { maxOutputTokens: { max: 8192 } },
+        },
+        effectiveBuiltinConfig: { properties: { contextWindow: 200000 } },
+        effectiveConfig: {
+          properties: { contextWindow: 256000 },
+          optionSpecs: { maxOutputTokens: { max: 8192 } },
+        },
+      });
+      const fresh = await rpc("refresh", ["integration:model-editor"]);
+      expect(fresh.body.result).toEqual(added.body.result);
+      const existing = await rpc("resolveModelConfig", [
+        { providerId, modelId: "模型-α" },
+      ]);
+      expect(
+        existing.body.result.inheritedConfig.properties.contextWindow,
+      ).toBe(256000);
+      expect(
+        existing.body.result.effectiveConfig.optionSpecs.maxOutputTokens.max,
+      ).toBe(8192);
+      const instances = await request("/api/provider-instances");
+      const descriptor = instances.body.instances.find(
+        (instance: { id: string }) => instance.id === providerId,
+      ).models[0];
+      expect(descriptor).toMatchObject({
+        id: "模型-α",
+        contextWindow: 256000,
+        maxOutputTokens: 8192,
+      });
+      expect(descriptor).not.toHaveProperty("codeConfig");
+    } finally {
+      if (providerId) await rpc("deletePersonalProvider", [providerId]);
+    }
+  });
   it("原供应商稀疏配置保存原格式与品牌字段，Key 和请求头只写，省略保留而明确 null 清除", async () => {
     expect((await request("/api/viewer")).status).toBe(200);
     let providerId = "";

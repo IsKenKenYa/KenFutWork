@@ -10,6 +10,7 @@ import {
   type ProviderConfigObject,
   parseProviderConfig,
 } from "@zcode/provider";
+import type { ProviderCodeModelConfig } from "./code-model-config.js";
 import type {
   ProviderInstancePatch,
   ProviderInstanceRecord,
@@ -25,11 +26,21 @@ export interface ProviderCodeSettings {
   config: ProviderConfigObject;
   credentialConfigured: boolean;
   templateId?: string | null;
+  models: Record<string, ProviderCodeModelConfig>;
 }
 export interface ProviderCodeMetadata {
   providerName?: string | null | undefined;
   enabled?: boolean | undefined;
   templateId?: string | null | undefined;
+}
+
+export function readProviderCodeModel(
+  settings: ProviderCodeSettings,
+  modelId: string,
+) {
+  return Object.hasOwn(settings.models, modelId)
+    ? settings.models[modelId]
+    : undefined;
 }
 
 export function readProviderCodeSettings(
@@ -65,6 +76,11 @@ export function readProviderCodeSettings(
       ...(api === undefined ? {} : { api }),
     },
     credentialConfigured: Boolean(row.encrypted_api_key),
+    models: Object.fromEntries(
+      (row.models ?? []).flatMap((model) =>
+        model.codeConfig ? [[model.id, model.codeConfig]] : [],
+      ),
+    ),
     ...(row.code_ui_config?.templateId === undefined
       ? {}
       : { templateId: row.code_ui_config.templateId }),

@@ -15,8 +15,17 @@ import {
   requiredFieldIssue,
   serializeRegistryModelConfig,
 } from "@zcode/provider";
-import type { ProviderCodeSettings } from "../model-providers/code-provider-config.js";
-import modelRules from "./zcode-model-config-rules.json" with { type: "json" };
+import {
+  type ProviderCodeModelConfig,
+  resolveProviderCodeModel,
+} from "../model-providers/code-model-config.js";
+import {
+  type ProviderCodeSettings,
+  readProviderCodeModel,
+} from "../model-providers/code-provider-config.js";
+import modelRules from "../model-providers/zcode-model-config-rules.json" with {
+  type: "json",
+};
 
 const rules = parseZCodeBuiltinModelConfigRules(modelRules);
 
@@ -53,7 +62,34 @@ function modelView(
   entry: ModelCatalogEntry,
   config: ProviderConfigObject,
   providerExecutable: boolean,
+  personal?: ProviderCodeModelConfig,
+  templateId?: string | null,
 ) {
+  if (personal) {
+    const resolved = resolveProviderCodeModel(
+      instance.id,
+      config,
+      entry.id,
+      personal,
+      templateId,
+    );
+    const enabled = resolved.effective.enabled === true;
+    const executable =
+      providerExecutable && enabled && resolved.issues.length === 0;
+    return {
+      modelId: entry.id,
+      builtin: false as const,
+      kind: "candidate" as const,
+      effectiveBuiltinConfig: resolved.inherited.toJSON(),
+      effectiveConfig: resolved.effective.toJSON(),
+      personalExactConfig: personal.personalConfig,
+      useRecommendedConfig: personal.useRecommendedConfig,
+      enabled,
+      executable,
+      selectable: executable && config.visibility !== "hidden",
+      issues: resolved.issues,
+    };
+  }
   const enabled = entry.model.enabled !== false;
   const executable = providerExecutable && enabled;
   const builtin = rules.resolve({
@@ -151,7 +187,16 @@ export function buildCodeUiModelViews(input: {
               entry.capability === "chat" &&
               entry.provider.instanceId === instance.id,
           )
-          .map((entry) => modelView(instance, entry, config, executable)),
+          .map((entry) =>
+            modelView(
+              instance,
+              entry,
+              config,
+              executable,
+              source ? readProviderCodeModel(source, entry.id) : undefined,
+              source?.templateId,
+            ),
+          ),
       };
     });
   const settings: ProviderSettingsView = {
@@ -166,12 +211,22 @@ export function buildCodeUiModelViews(input: {
       providerId: provider.providerId,
       providerName: provider.providerName,
       config: provider.effectiveConfig,
-      models: provider.models
-        .filter((model) => model.executable)
-        .map((model) => ({
-          modelId: model.modelId,
-          config: model.effectiveConfig,
-        })),
+      models: provider.models.flatMap((model) => {
+        if (!model.executable) return [];
+        const complete = createRegistryModelConfig(
+          ModelConfig.fromData(model.effectiveConfig),
+        );
+        if (!complete.ok)
+          throw new Error(
+            `可执行模型配置不完整：${provider.providerId}/${model.modelId}`,
+          );
+        return [
+          {
+            modelId: model.modelId,
+            config: serializeRegistryModelConfig(complete.config),
+          },
+        ];
+      }),
     }));
   const view = { providers: selectionProviders };
   const separator = input.defaultSpecifier?.indexOf(":") ?? -1;

@@ -48,3 +48,5 @@ Code 使用 `packages/shared/src/code-ui-contracts.ts` 导出的原 V4 协议：
 现阶段已接创建、发送、命令查询、快照/订阅/恢复、历史行读取、Task 索引及文本文件读取。权限/提问、停止/队列、文件回退、终端等尚待接通；既有 `/api/ws` 的 Design/终端通道不因此改变。
 
 供应商 Settings RPC 已接 `getView`、`refresh`、空配置的 `createPersonalProvider`、`savePersonalProviderOverlay` 和 `deletePersonalProvider`。草稿真实持久化无凭证、无模型状态，不能执行。原稀疏 Provider 配置用原 parser/overlay 处理，保留 API 格式、品牌、管理地址和未编辑叶子；省略 Key/headers 保留旧值，显式 null 清除，读面和通知只返回真实 `credentialConfigured` 与非敏感配置。原 Key 控件已接 presence/明确 clear，成功提交后仅清对应且未继续编辑的 Key 草稿。原 Provider/View/Model 配置类型从 shared 直接再导出，定义仍在固定 ZCode 源码。配置与持久 workspace revision 由同一 SQL 快照读取，Settings 保留停用候选，Selection 按供应商/模型开关及完整配置资格过滤。创建/保存/删除提交后，经 owned SSE 广播原两服务的 `onDidChange`；通知与应答来自同一 View。无变化刷新和同值配置保存保持修订；删除后迟到保存返回 404，不重建。模型操作/CAS、模板创建及其他写入口的通知仍待接通，不能将 Provider 保存链路视为设置全部完成。
+
+模型编辑器已接 `resolveModelConfig` 与 `addPersonalModel`：复用固定原推荐规则及 ModelConfigRules 的精确/手动合成，规则原件由 modelProviders 域持有。精确配置与模式标记保存于同一模型成员，标准运行容量从它推导；新增成员与配置同事务，原添加语义默认启用，新成员保留原模型 ID。重复成员返回 409，已删除供应商返回 404。保存草稿/CAS、启停、改名、排序、删除与指定模型连通性测试仍待接通。
