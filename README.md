@@ -3,6 +3,7 @@
 **插件化的 BYOK Agent 工作台**：模型、供应商、技能、插件、MCP 全由你自己接。
 
 - **双模式**：`Code`（编码 agent，对话界面 + 工作目录=项目）与 `Design`（无限画布创作）。
+- **开源基座**：Code 界面全量移植自 [ZCode](https://github.com/zai-org/ZCode)，插件内核理念源自 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)——完整鸣谢见 §13。
 - **六档执行方式**：自主 / 计划 / 对话 / 目标 / 循环 / 创造（创造模式下 agent 能造技能、造插件、造 MCP 工具）。
 - **一切皆插件**：服务端是插件内核；第三方插件可贡献**工具 / 提示段 / HTTP 路由 / UI 面板**四类能力。
 - **BYOK**：API Key 只写不读（服务端加密落库、日志脱敏、按工作区隔离），前端永不回显。
@@ -20,6 +21,8 @@
 | `supabase/migrations` | **唯一**数据库 Schema 迁移源（原生 SQL，目录名沿用历史） |
 | `plugins/` | 参考插件（`example-clock` 最小工具插件；`demo-panel` 演示四种能力） |
 | `scripts/` | 构建/打包/诊断脚本（含本地搜索代理与本地模型替身） |
+| `references/` | 外部开源参考项目（git 子模块），**只作方向参考**、不直接复制代码；上游清单与鸣谢见 §13 |
+| `flow/` | 待合并的 flow 子系统（futureFlow，协作者项目），按 [`docs/插件/flow插件集成规划.md`](docs/插件/flow插件集成规划.md) 分阶段并入 |
 | `docs/` | 技术文档；入口见 [`docs/README.md`](docs/README.md)（[`docs/日志.md`](docs/日志.md) 是历轮回执与变更台账） |
 
 ---
@@ -270,9 +273,67 @@ pnpm typecheck
 - 迁移只前向修复：已执行/共享的迁移不可改、不可重命名；Schema 校验与空库重放是发布前门禁。
 - 插件是**本机执行第三方代码**：安装要管理员、云端默认关闭、能力面封闭（四面）且拿不到内核服务。
 
+---
+
+## 13. 鸣谢
+
+KenFutWork 站在开源社区的肩膀上，特别感谢：
+
+**[ZCode](https://github.com/zai-org/ZCode)（Apache-2.0）** —— Code 模式的对话工作台、设置与插件市场界面直接采用 ZCode 3.14.3（提交 `29628c9a`）开源源码**全量移植**。上游版权与许可声明原样保留；逐文件来源、校验和与宿主适配偏差登记在 [`docs/源码来源/ZCode源码清单.json`](docs/源码来源/ZCode源码清单.json)。感谢 ZCode 提供了如此完整且高质量的 Code UI。
+
+**[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH，MIT）** —— 服务端「**一切皆插件、没有特权核心**」插件内核架构的**理念来源**。本项目只借鉴其机制思想、结合自身实际重写实现，未复制其代码。感谢 DSH 给了本项目服务端演进的北极星。
+
+### 真正用到的开源依赖
+
+下表全部是 `package.json` 里的真实依赖（许可对照包内声明逐个核实过，非凭记忆）：
+
+| 项目 | 许可 | 用在哪 |
+| --- | --- | --- |
+| [DeepAgents](https://github.com/langchain-ai/deepagents) | MIT | agent 运行时（规划 / 子代理 / 文件系统工具），Code/Design 共用 |
+| [LangChain](https://github.com/langchain-ai/langchainjs) / [LangGraph](https://github.com/langchain-ai/langgraph) | MIT | 模型接入、agent 编排与 checkpoint 持久化 |
+| [Next.js](https://github.com/vercel/next.js) / [React](https://github.com/facebook/react) | MIT | 前端框架（App Router + React 19） |
+| [Fastify](https://github.com/fastify/fastify) | MIT | 后端 HTTP 框架 |
+| [Excalidraw](https://github.com/excalidraw/excalidraw) | MIT | Design 模式无限画布 |
+| [Tailwind CSS](https://github.com/tailwindlabs/tailwindcss) | MIT | 样式系统 |
+| [Base UI](https://github.com/mui/base-ui)（`@base-ui/react`） | MIT | 无头组件库 |
+| [lucide-react](https://github.com/lucide-icons/lucide) | ISC | 图标库（随 ZCode UI 引入） |
+| [zod](https://github.com/colinhacks/zod) | MIT | 跨端契约（`packages/shared`） |
+
+工具链：[pnpm](https://github.com/pnpm/pnpm) · [Turborepo](https://github.com/vercel/turborepo) · [Biome](https://github.com/biomejs/biome) · [Vitest](https://github.com/vitest-dev/vitest)；队列用 Postgres 的 PGMQ 扩展，桌面形态内嵌 [embedded-postgres](https://github.com/leinelissen/aeonik-embedded-postgres)（MIT）。
+
+### 仅方向参考（`references/` 子模块，未复制代码与素材）
+
+以下项目**只作方向参考，未复制任何代码、schema、字段名与素材**：
+
+| 项目 | 参考了什么 |
+| --- | --- |
+| [Codex](https://github.com/openai/codex)（Apache-2.0） | 重点参考：coding agent 的执行模式、工具面与提示设计 |
+| [Cherry Studio](https://github.com/CherryHQ/cherry-studio) | 模型 Provider 管理与桌面形态 |
+| [Jaaz](https://github.com/11cafe/jaaz) | 画布式设计 agent 的产品形态 |
+| [kimi-code](https://github.com/MoonshotAI/kimi-code) | 治理可调数值（重试档位）的先例 |
+| [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk) / [MCP servers](https://github.com/modelcontextprotocol/servers) | MCP 协议与 server 实现 |
+| [Octop](https://github.com/TencentCloud/Octop) | 多用户多 Agent 平台机制 |
+| [nomifun-tauri](https://github.com/nomifun/nomifun-tauri) | Tauri 桌面形态 |
+| [Jellyfish](https://github.com/Forget-C/Jellyfish)、[system-prompts-and-models-of-ai-tools](https://github.com/x1xhlol/system-prompts-and-models-of-ai-tools)、[seedance-2.0](https://github.com/Emily2040/seedance-2.0)、[Loomic](https://github.com/fancyboi999/Loomic) | 生成 provider、系统提示词合集、视频生成技能、品牌改名前的前身项目 |
+
+根级 `flow/`（[futureFlow](https://github.com/future73807/futureFlow)，本仓协作者项目）是**待合并子系统**而非纯参考：按 [`docs/插件/flow插件集成规划.md`](docs/插件/flow插件集成规划.md) 分阶段并入，并入后即成为真正的第三方代码，届时报许可与 attribution。
+
+### ZCode 移植 UI 的素材归属（2026-10 逐文件核对）
+
+Code UI 移植携带的素材按来源分四层，归属与义务如下：
+
+- **ZCode 第一方代码与素材**：Apache-2.0，版权人 Z.AI Co., Ltd。与本项目 GPL-3.0 兼容；移植目录（`apps/web/src/components/workbench/zcode/`）内原样保留上游 `LICENSE` / `NOTICE.md` / `THIRD-PARTY-NOTICES.md`（与上游逐字节一致），根 [NOTICE.md](NOTICE.md) 声明移植范围。
+- **随上游一起移植的第三方组件**：shadcn（MIT）、ai-elements（Apache-2.0，Vercel）、Material Icon Theme 文件类型图标集（MIT，1146 个 SVG）、lucide-react（ISC）。这些组件的许可义务（版权与许可声明）由移植目录内嵌的 `THIRD-PARTY-NOTICES.md` 承接，随分发光一并分发。
+- **第三方品牌 logo**（`provider-icons/`、`channel-icons/` 等处的 OpenAI、Anthropic、Discord、微信等图标）：**无开源许可**，版权归各品牌权利人。仅以指示性方式使用——logo 紧邻其对应的供应商/渠道名称，用于标识功能入口，不暗示背书；未被代码引用的品牌图标（如支付类）不进构建产物。
+- **商标声明**：Apache-2.0 第 3 条不授予商标权。ZCode、Z.ai、GLM 及各供应商、渠道的名称与 logo 商标归其各自权利人；本项目与上述各方无隶属或背书关系。
+
+以上各项目版权归其各自权利人所有，按其原生许可授权使用；本仓库的 GPL-3.0 不改变上游组件的许可与版权归属。
+
+---
+
 ## License
 
-GPL-3.0（见 [LICENSE](LICENSE)）。
+GPL-3.0（见 [LICENSE](LICENSE)）。所引用开源组件的归属与许可见 [§13 鸣谢](#13-鸣谢)。
 
 ### 第三方素材（字体等）
 
