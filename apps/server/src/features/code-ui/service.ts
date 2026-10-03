@@ -25,7 +25,7 @@ import type { ProjectService } from "../projects/project-service.js";
 import type { SettingsService } from "../settings/settings-service.js";
 import { CodeUiConnections } from "./connections.js";
 import { createCodeUiConversation } from "./conversation.js";
-import { readCodeUiTextFile } from "./files.js";
+import { readCodeUiDirectory, readCodeUiTextFile } from "./files.js";
 import { buildCodeUiModelViews } from "./model-views.js";
 import { type CodeUiRepository, CodeUiRepositoryError } from "./repository.js";
 import { codeUiTaskMeta } from "./task-index.js";
@@ -225,6 +225,8 @@ export class CodeUiService {
         return { result: (await this.publishProviderViews(user)).settings };
       }
     }
+    if (service === "file" && method === "readdir")
+      return { result: await readCodeUiDirectory(args[0]) };
     if (service === "file" && method === "readTextFile")
       return {
         result: await readCodeUiTextFile(

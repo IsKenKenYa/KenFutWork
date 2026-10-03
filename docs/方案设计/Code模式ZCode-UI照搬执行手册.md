@@ -122,3 +122,5 @@ Provider 保存切片已接 `savePersonalProviderOverlay`，复用原 ProviderCo
 API 单源链已生成 SSE 媒体类型与完整原快照引用组件；不裁剪原契约。Apifox 批量导入曾因内联原快照过长失败，改为原 snapshot/row/toolCall 实例的复用引用后，同一 AI 分支 ai/20261003-from-main-code-ui-recovery 最终接口/schema errorCount 均为 0。该分支主线合并仍需用户确认；并不代表整个 Code UI 验收或 PR 完成。
 
 HTTP 通知恢复接线已完成：物理断线先转原 unavailable，新连接沿同一客户端握手、刷新原两种模型 view，再转原 restarted/available；原 transport 与 SessionDataLayer 自行清 ownership/重订阅。四条宿主测试含同主/子连接、独立恢复、子面板释放、认证失败和关闭取消；原组件的外部 HTTP 夹具补真实通知握手，没有改组件。全量 web 378 测试/类型、原 UI 构建、3051 来源核对通过。真实页面主动切断一条预览通知流，在离线窗口更新供应商，原设置页无需重载/刷新便追上最新 view；截图 docs/验收/Code模式ZCode/原通知断线恢复.png。此证据不代表实际 Agent 运行断线、全部命令对账、长会话或视觉全矩阵已完成。
+
+原 DirectoryBrowser 的 readdir 已接真实 FS 元信息；原组件、隐藏开关、错误显示与图标保持原件。共享接口导出原 FileEntry 和参数 schema，宿主复用既有 Project 本机路径校验；不放宽正文读取的归属边界。公开接口 501 red→green，十二项宿主 integration 通过，包含隐藏/Unicode/空目录/符号链接/损坏链接和不可用路径。真实原弹窗导航及隐藏切换已实证，截图 docs/验收/Code模式ZCode/原目录浏览.png。目录选择后的 Project/主画布绑定、最近项目写入与实际 run 工作目录继续实施。

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
@@ -75,6 +75,82 @@ async function openCodeStream(streams: AbortController[]) {
 }
 
 describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", () => {
+  it("原目录选择器读取真实目录、隐藏项和 Unicode，符号链接保持原类型且不可用路径有可读错误", async () => {
+    expect((await request("/api/viewer")).status).toBe(200);
+    const dir = await mkdtemp(join(tmpdir(), "code-ui-directory-"));
+    const rpc = (path: string, includeHidden?: boolean) =>
+      request("/api/code-ui/rpc", {
+        service: "file",
+        method: "readdir",
+        args: [
+          { path, ...(includeHidden === undefined ? {} : { includeHidden }) },
+        ],
+      });
+    try {
+      await mkdir(join(dir, "中文目录"));
+      await mkdir(join(dir, ".隐藏目录"));
+      await writeFile(join(dir, "空文件.txt"), "");
+      await symlink(join(dir, "中文目录"), join(dir, "链接目录"));
+      await symlink(join(dir, "不存在"), join(dir, "损坏链接"));
+      const visible = await rpc(dir);
+      expect(visible.status, JSON.stringify(visible.body)).toBe(200);
+      expect(visible.body.result).toEqual(
+        expect.arrayContaining([
+          {
+            name: "中文目录",
+            path: join(dir, "中文目录"),
+            type: "directory",
+            isSymbolicLink: false,
+          },
+          {
+            name: "链接目录",
+            path: join(dir, "链接目录"),
+            type: "directory",
+            isSymbolicLink: true,
+          },
+          {
+            name: "空文件.txt",
+            path: join(dir, "空文件.txt"),
+            type: "file",
+            isSymbolicLink: false,
+          },
+          {
+            name: "损坏链接",
+            path: join(dir, "损坏链接"),
+            type: "file",
+            isSymbolicLink: true,
+          },
+        ]),
+      );
+      expect(visible.body.result).toHaveLength(4);
+      expect(
+        visible.body.result
+          .slice(0, 2)
+          .map((entry: { type: string }) => entry.type),
+      ).toEqual(["directory", "directory"]);
+      expect((await rpc(dir, true)).body.result).toContainEqual({
+        name: ".隐藏目录",
+        path: join(dir, ".隐藏目录"),
+        type: "directory",
+        isSymbolicLink: false,
+      });
+      const empty = await rpc(join(dir, "中文目录"));
+      expect(empty.status).toBe(200);
+      expect(empty.body.result).toEqual([]);
+      for (const path of [
+        join(dir, "缺失"),
+        join(dir, "空文件.txt"),
+        "relative-path",
+      ]) {
+        const rejected = await rpc(path);
+        expect(rejected.status).toBe(404);
+        expect(rejected.body.error.message).toMatch(/目录|路径/);
+      }
+      expect((await rpc(" ")).status).toBe(400);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
   it("Code 宿主 ready 使用工作区持久重连间隔，刷新保留且非法限额拒绝", async () => {
     expect((await request("/api/viewer")).status).toBe(200);
     const original = await request("/api/workspace/settings");

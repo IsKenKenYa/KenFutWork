@@ -16,6 +16,7 @@ export type {
   ProviderSettingsView,
   SavePersonalModelDraftInput,
 } from "@zcode/provider";
+export type { FileEntry } from "@zcode/shared";
 /** 界面契约沿用固定 ZCode 原协议，宿主不维护另一套 rows/snapshot。 */
 export * as zcodeUiProtocol from "@zcode/shared/zcode-protocol-v4";
 
@@ -87,3 +88,11 @@ export const codeUiFileReadParamsSchema = z.object({
   offset: z.number().int().nonnegative().optional(),
   length: z.number().int().nonnegative().optional(),
 });
+
+/** 原 IFileService.readdir 参数面，不另造客户端目录条目结构。 */
+export const codeUiFileDirectoryParamsSchema = z
+  .object({
+    path: z.string().trim().min(1),
+    includeHidden: z.boolean().optional(),
+  })
+  .strict();

@@ -1,11 +1,60 @@
 import { constants } from "node:fs";
-import { open, realpath } from "node:fs/promises";
-import { isAbsolute, resolve, sep } from "node:path";
+import { open, readdir, realpath, stat } from "node:fs/promises";
+import { isAbsolute, join, resolve, sep } from "node:path";
 import {
   type CodeUiWorkspace,
+  codeUiFileDirectoryParamsSchema,
   codeUiFileReadParamsSchema,
+  type FileEntry,
 } from "@kenfutwork/shared";
+import { validateWorkDir } from "../projects/work-dir.js";
 import { CodeUiRepositoryError } from "./repository.js";
+
+/** 目录选择沿用项目 work_dir 的本机路径校验；正文读取仍走 Project 归属检查。 */
+export async function readCodeUiDirectory(
+  value: unknown,
+): Promise<FileEntry[]> {
+  const params = codeUiFileDirectoryParamsSchema.parse(value);
+  const verdict = validateWorkDir(params.path);
+  if (!verdict.ok) throw new CodeUiRepositoryError("not_found", verdict.reason);
+  try {
+    const directory = await readdir(verdict.path, { withFileTypes: true });
+    const visible = await Promise.all(
+      directory
+        .filter(
+          (entry) =>
+            params.includeHidden === true || !entry.name.startsWith("."),
+        )
+        .map(async (entry): Promise<FileEntry> => {
+          const path = join(verdict.path, entry.name);
+          const linked = entry.isSymbolicLink();
+          const isDirectory = linked
+            ? await stat(path)
+                .then((target) => target.isDirectory())
+                .catch(() => false)
+            : entry.isDirectory();
+          return {
+            name: entry.name,
+            path,
+            type: isDirectory ? "directory" : "file",
+            isSymbolicLink: linked,
+          };
+        }),
+    );
+    return visible.sort((left, right) =>
+      left.type === right.type
+        ? left.name.localeCompare(right.name)
+        : left.type === "directory"
+          ? -1
+          : 1,
+    );
+  } catch (error) {
+    throw new CodeUiRepositoryError(
+      "not_found",
+      `无法读取目录 ${verdict.path}：${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
 
 async function ownedPath(workspaces: CodeUiWorkspace[], path: string) {
   if (!isAbsolute(path))
