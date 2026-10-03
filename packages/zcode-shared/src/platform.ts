@@ -538,6 +538,8 @@ export interface IPlatformService {
   supportsUserOnboarding?: boolean;
   supportsSettingsImport?: boolean;
   supportsAppRuntimePreferences?: boolean;
+  /** 宿主的轻量元信息读面；缺省保留原 session snapshot 读取。 */
+  sessionMetadataSource?: "session" | "task-index";
 
   /** 当前平台的文件选择框是否能返回 agent 可访问的本地绝对路径 */
   canSelectFilePath?: boolean;

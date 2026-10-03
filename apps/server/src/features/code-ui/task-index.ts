@@ -1,4 +1,4 @@
-import type { ZCodeTaskMeta } from "@zcode/shared";
+import type { ZCodeTaskMeta } from "@kenfutwork/shared";
 import type { CodeUiSessionRecord } from "./repository.js";
 
 /** 仅适配原 Task 元信息；会话正文仍由原 V4 snapshots/rows 消费。 */

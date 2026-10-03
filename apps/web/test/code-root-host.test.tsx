@@ -7,52 +7,25 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { ZCodeIntlProvider } from "@zui/i18n/IntlProvider";
-import { Root } from "@zui/root";
+import { Root } from "@zui/Root";
 import { useAlertDialogStore } from "@zui/store/alertDialogStore";
 import { afterEach, expect, it, vi } from "vitest";
 import { CodeHttpChannelClient } from "../src/components/workbench/zcode/host/httpChannelClient";
 import { createCodePlatform } from "../src/components/workbench/zcode/host/platform";
+import {
+  installCodeRootBrowser,
+  restoreCodeRootBrowser,
+} from "./setup/code-root-host-browser";
 import { createCodeRootHostFetch } from "./setup/code-root-host-http";
 
 const clients: CodeHttpChannelClient[] = [];
-const scrollToDescriptor = Object.getOwnPropertyDescriptor(
-  Element.prototype,
-  "scrollTo",
-);
 afterEach(() => {
   cleanup();
   for (const client of clients.splice(0)) client.dispose();
   vi.unstubAllGlobals();
   localStorage.clear();
-  if (scrollToDescriptor)
-    Object.defineProperty(Element.prototype, "scrollTo", scrollToDescriptor);
-  else Reflect.deleteProperty(Element.prototype, "scrollTo");
+  restoreCodeRootBrowser();
 });
-
-function installBrowserLayout() {
-  vi.stubGlobal("matchMedia", (query: string) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addListener() {},
-    removeListener() {},
-    addEventListener() {},
-    removeEventListener() {},
-    dispatchEvent: () => false,
-  }));
-  Object.defineProperty(Element.prototype, "scrollTo", {
-    configurable: true,
-    value() {},
-  });
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
-}
 
 it.each([true, false])(
   "无ZCode云服务的原Root显示工作台、目录选择及全局应答（指定目录：%s）",
@@ -60,7 +33,7 @@ it.each([true, false])(
     const calls: Array<{ service: string; method: string; args: unknown[] }> =
       [];
     const selection = { rejectOpen: true };
-    installBrowserLayout();
+    installCodeRootBrowser();
     vi.stubGlobal("fetch", createCodeRootHostFetch(calls, selection));
     const client = new CodeHttpChannelClient({
       apiBase: "https://host.example",

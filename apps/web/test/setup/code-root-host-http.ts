@@ -1,5 +1,46 @@
-import { appSettingsSchema } from "@kenfutwork/shared";
+import {
+  appSettingsSchema,
+  ZCODE_PROTOCOL_NAME,
+  ZCODE_PROTOCOL_VERSION,
+  zcodeSessionStateSnapshotSchema,
+} from "@kenfutwork/shared";
 import { codeHostNotificationResponse } from "./code-host-http";
+
+/** 原协议外部服务在未声明宿主偏差时的合法空会话快照。 */
+export function codeRootNativeSessionSnapshot(taskId: string, title: string) {
+  return zcodeSessionStateSnapshotSchema.parse({
+    protocol: { name: ZCODE_PROTOCOL_NAME, version: ZCODE_PROTOCOL_VERSION },
+    session: {
+      sessionId: taskId,
+      workspace: { workspacePath: "/code", workspaceKey: "/code" },
+      sessionKind: "interactive",
+      title,
+      mode: "build",
+      status: "idle",
+      createdAt: 1,
+      updatedAt: 2,
+    },
+    settings: {
+      model: { available: [] },
+      thoughtLevel: { enabled: false, available: [] },
+      mode: { current: "build" },
+    },
+    runtime: { eventSeq: 0, stateRevision: 0, pendingRequestIds: [] },
+    projection: {
+      sessionId: taskId,
+      status: "idle",
+      mode: "build",
+      turnCount: 0,
+      totalTokenCount: 0,
+      contextUsed: 0,
+      contextWindow: 0,
+      pendingPermissions: [],
+      activeToolCalls: [],
+      backgroundJobs: [],
+    },
+    messages: [],
+  });
+}
 
 /** 原 Root 的外部 HTTP/SSE 服务夹具，不替换原组件、store 或 projection。 */
 export function createCodeRootHostFetch(

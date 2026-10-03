@@ -16,6 +16,7 @@ export function createCodePlatform(client: IChannelClient): IPlatformService {
     supportsUserOnboarding: false,
     supportsSettingsImport: false,
     supportsAppRuntimePreferences: false,
+    sessionMetadataSource: "task-index",
     async activateOrSetWorkspace(path) {
       await workspace.call("open", [{ path }]);
       return { activated: false };

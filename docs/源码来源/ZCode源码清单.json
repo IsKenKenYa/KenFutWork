@@ -4889,9 +4889,10 @@
       "source": "references/zcode/packages/ui/src/hooks/useActiveTaskSnapshotMeta.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useActiveTaskSnapshotMeta.ts",
       "sha256": "cd6c0ae51e670d16cfa726755c6092cc17d281e0de0f89285560afaad4a750cf",
-      "copiedSha256": "3879e8668c46ffccdd25e6e14f9de3a2b5b73301a4a5d230155a62f6ca829674",
+      "copiedSha256": "ffb36d0e0abd8665458a818256c56da0b3b30b4d5d1d005260e695e89cb1e8d7",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：KenFutWork原V4消息链的标题兜底消费原Task.getTaskMeta轻量读面；未声明宿主策略保留原session snapshot与原投影，取消/空/失败边界保留"
       ]
     },
     {
@@ -14546,11 +14547,12 @@
       "source": "references/zcode/packages/shared/src/platform.ts",
       "target": "packages/zcode-shared/src/platform.ts",
       "sha256": "68a470a9917ace6d91bcad8a881b52662a8fb9486bcaa5b501f2f56811d814a4",
-      "copiedSha256": "a9441821ce8fdb426c575231278a2159b5898b73e737b948d177c4f03ea3c11f",
+      "copiedSha256": "f2623badafecaf4eb3d9c23507f22017f40dc6ee6ddcf73d075fa7c0f6189c7c",
       "adaptations": [
         "宿主能力接口：增加可选云账户支持标记；未声明的原宿主行为不变",
         "宿主接口：可选自动化/嵌入浏览器/CUA/远程能力声明；未声明保持原平台语义",
-        "宿主接口：新增可选引导记录、设置导入与运行偏好支持态，缺省原语义"
+        "宿主接口：新增可选引导记录、设置导入与运行偏好支持态，缺省原语义",
+        "宿主接口：可选sessionMetadataSource声明真实轻量元信息读面，缺省原session行为；不新增消息装配或兼容旧调试数据"
       ]
     },
     {
