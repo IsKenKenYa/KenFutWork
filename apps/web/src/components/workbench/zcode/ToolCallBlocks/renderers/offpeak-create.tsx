@@ -3,6 +3,7 @@ import { TID_OFFPEAK_CREATE_CARD, TID_OFFPEAK_CREATE_OPEN } from "@zcode/shared"
 import { Button } from "@zui/components/ui/button.js";
 import { cn } from "@zui/components/lib/utils.js";
 import { useZCodeIntl, type IntlInstance } from "@zui/i18n/IntlProvider.js";
+import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
 
 // OffPeakCreate 的静态轮尾卡（cron-create 兄弟实现，样式契约一致）。
@@ -124,6 +125,7 @@ export function OffPeakCreateTaskCard({
   onOpenAutomationsMain?: (automationId?: string, automationTab?: "scheduled" | "idle") => void;
 }) {
   const { intl } = useZCodeIntl();
+  const supportsAutomations = useOptionalPlatform()?.supportsAutomations !== false;
   const title = task.title ?? intl.formatMessage({ id: "offPeak.chatCreated.defaultTitle" });
   // 会话内创建的任务绑定并运行在当前会话；位次快照后追加一句提示。
   const statusLine = `${describeOffPeakCardStatus(task, intl)} · ${intl.formatMessage({
@@ -144,20 +146,22 @@ export function OffPeakCreateTaskCard({
           <div className="truncate text-ui-base font-medium text-foreground">{title}</div>
           <div className="mt-0.5 truncate text-ui-base text-foreground-subtle">{statusLine}</div>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          data-testid={TID_OFFPEAK_CREATE_OPEN}
-          className={cn(
-            "h-auto rounded-lg border-border/70 bg-transparent px-3 py-1.5 text-ui-base text-foreground hover:bg-hover hover:text-foreground",
-            !canOpenAutomations && "opacity-50",
-          )}
-          disabled={!canOpenAutomations}
-          onClick={() => onOpenAutomationsMain?.(task.offPeakTaskId, "idle")}
-        >
-          <span>{intl.formatMessage({ id: "offPeak.chatCreated.open" })}</span>
-        </Button>
+        {supportsAutomations ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-testid={TID_OFFPEAK_CREATE_OPEN}
+            className={cn(
+              "h-auto rounded-lg border-border/70 bg-transparent px-3 py-1.5 text-ui-base text-foreground hover:bg-hover hover:text-foreground",
+              !canOpenAutomations && "opacity-50",
+            )}
+            disabled={!canOpenAutomations}
+            onClick={() => onOpenAutomationsMain?.(task.offPeakTaskId, "idle")}
+          >
+            <span>{intl.formatMessage({ id: "offPeak.chatCreated.open" })}</span>
+          </Button>
+        ) : null}
       </div>
     </div>
   );

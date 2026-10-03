@@ -530,6 +530,12 @@ export interface IPlatformService {
   /** 宿主是否提供 ZCode 云账户/套餐服务；未声明时保持原平台行为。 */
   supportsCloudAccounts?: boolean;
 
+  /** 宿主已接通的可选能力；未声明时保持原平台行为。 */
+  supportsAutomations?: boolean;
+  supportsEmbeddedBrowser?: boolean;
+  supportsComputerUse?: boolean;
+  supportsRemoteWorkspaces?: boolean;
+
   /** 当前平台的文件选择框是否能返回 agent 可访问的本地绝对路径 */
   canSelectFilePath?: boolean;
 

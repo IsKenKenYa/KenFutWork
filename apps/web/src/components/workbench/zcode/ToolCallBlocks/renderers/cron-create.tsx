@@ -4,6 +4,7 @@ import type { ZCodeAutomationScheduleRule } from "@zcode/shared";
 import { Button } from "@zui/components/ui/button.js";
 import { cn } from "@zui/components/lib/utils.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import { describeAutomationCardSchedule } from "@zui/settings/automationCardSchedule.js";
 import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
 
@@ -145,6 +146,7 @@ export function CronCreateAutomationCard({
   onOpenAutomationsMain?: (automationId?: string) => void;
 }) {
   const { intl } = useZCodeIntl();
+  const supportsAutomations = useOptionalPlatform()?.supportsAutomations !== false;
   const title =
     automation.title ?? intl.formatMessage({ id: "automations.chatCreated.defaultTitle" });
   const schedule = automation.cronExpr
@@ -174,22 +176,24 @@ export function CronCreateAutomationCard({
           <div className="truncate text-ui-base font-medium text-foreground">{title}</div>
           <div className="mt-0.5 truncate text-ui-base text-foreground-subtle">{schedule}</div>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          data-testid={TID_CRON_CREATE_OPEN}
-          className={cn(
-            // 次级文字色加尾箭头会让明确的导航操作显得像辅助说明。
-            // 固定 h-7 会压缩文字热区，导致视觉内边距无法达到上下 6px。
-            "h-auto rounded-lg border-border/70 bg-transparent px-3 py-1.5 text-ui-base text-foreground hover:bg-hover hover:text-foreground",
-            !canOpenAutomations && "opacity-50",
-          )}
-          disabled={!canOpenAutomations}
-          onClick={() => onOpenAutomationsMain?.(automation.automationId)}
-        >
-          <span>{intl.formatMessage({ id: "automations.chatCreated.open" })}</span>
-        </Button>
+        {supportsAutomations ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-testid={TID_CRON_CREATE_OPEN}
+            className={cn(
+              // 次级文字色加尾箭头会让明确的导航操作显得像辅助说明。
+              // 固定 h-7 会压缩文字热区，导致视觉内边距无法达到上下 6px。
+              "h-auto rounded-lg border-border/70 bg-transparent px-3 py-1.5 text-ui-base text-foreground hover:bg-hover hover:text-foreground",
+              !canOpenAutomations && "opacity-50",
+            )}
+            disabled={!canOpenAutomations}
+            onClick={() => onOpenAutomationsMain?.(automation.automationId)}
+          >
+            <span>{intl.formatMessage({ id: "automations.chatCreated.open" })}</span>
+          </Button>
+        ) : null}
       </div>
     </div>
   );

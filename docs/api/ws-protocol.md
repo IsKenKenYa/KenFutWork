@@ -58,3 +58,5 @@ Code HTTP 宿主已自动恢复通知连接。断线先令原 runtime lifecycle 
 原目录选择器 readdir 沿用 Project 工作目录的服务器本机路径校验，返回原 FileEntry（文件/目录、完整路径、符号链接标志），默认隐藏 dot 项、includeHidden 显式展示；目录优先并按原名称比较排序。空目录返回真实空数组，损坏 symlink 按原文件条目语义处理，缺失/非目录/相对路径给可读错误。正文读取仍校验 Project 归属及 symlink 边界。
 
 file.resolvePath 规范化真实路径，workspace.open 绑定或创建实际 Code Project 与固定主画布；目录别名和并发打开复用同一身份，不同位置的同名目录各自独立。归档后迟到打开返回 409 与可读原因，不重新创建。setting.get/update 的 recentProjects 保存工作区顺序，写入前校验所有项目归属；不存在或已归档路径返回 404 且不污染已保存顺序。原选择器等待宿主绑定，失败沿原错误区显示并保持可重试，成功才关闭。根会话已验证共用该主画布，实际 Agent/child 的运行工作目录仍需运行验收。
+
+原平台与设置类型/schema 由 packages/shared 直接再导出。当前 Code 宿主未接通自动化、嵌入浏览器、CUA 与远程工作区，原 UI 沿平台支持态隐藏相关操作并停止后台查询；不是 RPC 返回空成功。实际服务适配可用后再启用对应能力，未声明支持态的原宿主行为保持不变；本轮未改变 HTTP/WS 数据结构。

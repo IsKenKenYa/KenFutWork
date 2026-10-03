@@ -295,18 +295,24 @@ export function SettingsPage({
   user?: UserInfo | null;
 }) {
   const { intl, localePreference, setLocalePreference } = useZCodeIntl();
+  const platform = usePlatform();
   const { settingsSectionGroups, settingsSections } = useMemo(
     () =>
       createSettingsPageConfig({
         isDesktop: Boolean(isDesktop),
         isMacDesktop: Boolean(isMacDesktop),
         isWindowsDesktop: Boolean(isWindowsDesktop),
+        supportsAutomations: platform.supportsAutomations,
+        supportsEmbeddedBrowser: platform.supportsEmbeddedBrowser,
+        supportsComputerUse: platform.supportsComputerUse,
       }),
-    [isDesktop, isMacDesktop, isWindowsDesktop],
+    [
+      isDesktop, isMacDesktop, isWindowsDesktop,
+      platform.supportsAutomations, platform.supportsEmbeddedBrowser, platform.supportsComputerUse,
+    ],
   );
   const isLinuxDesktop = Boolean(isDesktop && !isMacDesktop && !isWindowsDesktop);
   const usesInlineWindowControls = Boolean(isWindowsDesktop || isLinuxDesktop);
-  const platform = usePlatform();
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(() => {
     const initialSection = consumeInitialSettingsSection("general");
     const visibleInitialSection = resolveSettingsSectionForPlatform(
@@ -593,11 +599,15 @@ export function SettingsPage({
   const requestOnboardingDialog = () => setNewUserOnboardingOpen(true);
   const setActiveSettingsSection = useCallback(
     (section: SettingsSectionId, fallbackSection: SettingsSectionId = activeSection) => {
-      const resolvedSection = resolveSettingsSection(section, fallbackSection);
+      const resolvedSection = resolveSettingsSectionForPlatform(
+        resolveSettingsSection(section, fallbackSection),
+        settingsSections,
+        fallbackSection,
+      );
       setActiveSection(resolvedSection);
       writeLastSettingsSectionPreference(resolvedSection);
     },
-    [activeSection],
+    [activeSection, settingsSections],
   );
   const handleOpenCodingPlanUpgradeSettings = useCallback(
     (

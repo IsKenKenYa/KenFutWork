@@ -519,7 +519,7 @@ export function SessionPane({
   onRefreshGit,
   onOpenGitReview,
   onOpenBrowserUrl,
-  onOpenAutomationsMain,
+  onOpenAutomationsMain: requestedOnOpenAutomationsMain,
   onOpenCodeViewer,
   onAutoOpenAssistantPptx,
   onOpenFileLink,
@@ -553,6 +553,9 @@ export function SessionPane({
     fileRewindPreview,
   } = useV4Conversation();
   const platform = useOptionalPlatform();
+  const onOpenAutomationsMain = platform?.supportsAutomations === false
+    ? undefined
+    : requestedOnOpenAutomationsMain;
   const { conversationShareService, modelSelectionService, zcodeSessionService, zcodeTaskService } =
     useServices();
   const { intl, locale } = useZCodeIntl();

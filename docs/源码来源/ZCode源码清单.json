@@ -16,9 +16,10 @@
       "source": "references/zcode/packages/ui/src/App.tsx",
       "target": "apps/web/src/components/workbench/zcode/App.tsx",
       "sha256": "ad78d4e881b8706bf708a5acd08aff900c66784a8a435603fd50cf1b8670a987",
-      "copiedSha256": "74841f7e53fa1abc2ed71e5c4a5534c1c3b5f8e3309f62fc8c2a2e327c10460a",
+      "copiedSha256": "5965100a3e79e89da85d93ea6ebb89f6c6b9800365a90274873ac3fcf514b3c0",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：未接通自动化服务时不进入原自动化主视图、不轮询闲时任务通知"
       ]
     },
     {
@@ -594,9 +595,10 @@
       "source": "references/zcode/packages/ui/src/SettingsPage.tsx",
       "target": "apps/web/src/components/workbench/zcode/SettingsPage.tsx",
       "sha256": "0f3d3b06be4fdb675f870e06dcc8bf89aeff9ad9fc880ca1f0f6338a6e76916a",
-      "copiedSha256": "34529b2a7fbb0c3b1215f0d7ea418fa245119f82338e9ac08d99a9dcffb68f95",
+      "copiedSha256": "d6faf56deabb98bb3f46380f7919f5c25b326f60ed72a0ba6a29fe137859a0bf",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：原设置导航消费宿主能力，隐藏分区的导航意图沿原平台解析回落"
       ]
     },
     {
@@ -918,9 +920,10 @@
       "source": "references/zcode/packages/ui/src/ToolCallBlocks/renderers/cron-create.tsx",
       "target": "apps/web/src/components/workbench/zcode/ToolCallBlocks/renderers/cron-create.tsx",
       "sha256": "0b4e61148c9a2ea0ef1a85fc2352c927587b3d76abbb8e2a2170d253d9b4de51",
-      "copiedSha256": "e04b6f8399aa081a463e20d21a9c40d31482bc76a5d8a356d5a1c80d9ceb7b13",
+      "copiedSha256": "8dd18b0b803f0dc8cb9eab7a387dc7432cb3877e119948a0a0722cb0f050cdae",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：未接通自动化服务时隐藏原工具卡跳转按钮，保留原结果正文与默认宿主点击语义"
       ]
     },
     {
@@ -1188,9 +1191,10 @@
       "source": "references/zcode/packages/ui/src/ToolCallBlocks/renderers/offpeak-create.tsx",
       "target": "apps/web/src/components/workbench/zcode/ToolCallBlocks/renderers/offpeak-create.tsx",
       "sha256": "ea20e5a5650ebb547fd47a5331ab348a6cd3b1584c13a83767cdee1d0b482b04",
-      "copiedSha256": "c887daf7ee9e02a23d9874f87eeefa0041b40ec558fb9173197c9b3c858bb921",
+      "copiedSha256": "584036baf8ff87e1b8dd333a0bc5043533f9c2b25f767d04dd450435ed656e7d",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：未接通自动化服务时隐藏原工具卡跳转按钮，保留原结果正文与默认宿主点击语义"
       ]
     },
     {
@@ -1630,9 +1634,10 @@
       "source": "references/zcode/packages/ui/src/WorkspaceSidebar.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceSidebar.tsx",
       "sha256": "312065bd80ff3a74b498dde96270a9f430f86808933625b02e4a1a6cbd56bf49",
-      "copiedSha256": "cc926ba293adda3af85f201dcbda19f6f4eec2f7d292f952fab830769d141b01",
+      "copiedSha256": "ba936a62ca192934c79092e0ce4d36ed2fb011bd4e2b5de5b2dede3fd2201c50",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：原自动化按钮及分组快捷入口仅在宿主服务可用时显示"
       ]
     },
     {
@@ -5315,9 +5320,10 @@
       "source": "references/zcode/packages/ui/src/hooks/useRemoteConnectionEntryVisibility.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useRemoteConnectionEntryVisibility.ts",
       "sha256": "ec99c5d0f66722ed36cc77387c167e5f955a3222ed1ee036ae4d785986c9e5b6",
-      "copiedSha256": "ec99c5d0f66722ed36cc77387c167e5f955a3222ed1ee036ae4d785986c9e5b6",
+      "copiedSha256": "9d51bdbf9b04245952b26e043c9bbce859093aa535cd65461d762c43d3f3ab0e",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：原统一远程入口门消费宿主真实支持态，未声明仍显示"
       ]
     },
     {
@@ -6285,9 +6291,10 @@
       "source": "references/zcode/packages/ui/src/lib/cuaPlatform.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/cuaPlatform.ts",
       "sha256": "1144161904d29127eb624f2d52f837bec1056cc942ffbfeb4b81918984332e5a",
-      "copiedSha256": "1144161904d29127eb624f2d52f837bec1056cc942ffbfeb4b81918984332e5a",
+      "copiedSha256": "c815992e6b47e40d361ff72530cd8d1a2db795574998f12239716bf6786e4e1c",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：原平台门先检查宿主 CUA 支持态，避免 Windows Web 降级函数被当成真实 IPC 能力"
       ]
     },
     {
@@ -10917,9 +10924,10 @@
       "source": "references/zcode/packages/ui/src/settings/settingsPageConfig.ts",
       "target": "apps/web/src/components/workbench/zcode/settings/settingsPageConfig.ts",
       "sha256": "a4959cdb8d8b4736c86325f232556ea090d043ae00655469e30f0f7d823b3be0",
-      "copiedSha256": "fa98e199a605507f2e12476d65a80b00dcb1e4033327fc82c536e1f5a96afcdb",
+      "copiedSha256": "cf9f15a59edbbe068d6510357f4645f8e3a769b5967994eb18f331d6f9ba5d55",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：原设置分区数据按宿主自动化/浏览器/CUA能力过滤，原分组和组件保留"
       ]
     },
     {
@@ -12055,9 +12063,10 @@
       "source": "references/zcode/packages/ui/src/v4/SessionPane.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/SessionPane.tsx",
       "sha256": "70542a0b03f61e3b4b4d61e29a7b69ca8cf354e3a51f71d0c21fde1d930e9629",
-      "copiedSha256": "e8b56d44c41735d30cbcbe05fcbc648a8e4975c4bf790f76fd877ec7280b94b6",
+      "copiedSha256": "231ebee6ecda8977d72bd81fafb36e357aa0aad58ef7b7837df4f58104a724c7",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：未接通自动化服务时撤下原行上下文与草稿建议的全部跳转回调；原会话装配不变"
       ]
     },
     {
@@ -14525,9 +14534,10 @@
       "source": "references/zcode/packages/shared/src/platform.ts",
       "target": "packages/zcode-shared/src/platform.ts",
       "sha256": "68a470a9917ace6d91bcad8a881b52662a8fb9486bcaa5b501f2f56811d814a4",
-      "copiedSha256": "277f46b2f9e4fceb32cb52168b55fde61c28149ab0d2aafad51f5e006a03b0b0",
+      "copiedSha256": "cce231dfeca3241f1a2ad8309fe7ab2118e54a5cf269421fa3fb976f9b158315",
       "adaptations": [
-        "宿主能力接口：增加可选云账户支持标记；未声明的原宿主行为不变"
+        "宿主能力接口：增加可选云账户支持标记；未声明的原宿主行为不变",
+        "宿主接口：可选自动化/嵌入浏览器/CUA/远程能力声明；未声明保持原平台语义"
       ]
     },
     {

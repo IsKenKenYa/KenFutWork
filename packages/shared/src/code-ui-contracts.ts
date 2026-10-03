@@ -16,7 +16,8 @@ export type {
   ProviderSettingsView,
   SavePersonalModelDraftInput,
 } from "@zcode/provider";
-export type { FileEntry } from "@zcode/shared";
+export type { AppSettings, FileEntry, IPlatformService } from "@zcode/shared";
+export { appSettingsPatchSchema, appSettingsSchema } from "@zcode/shared";
 /** 界面契约沿用固定 ZCode 原协议，宿主不维护另一套 rows/snapshot。 */
 export * as zcodeUiProtocol from "@zcode/shared/zcode-protocol-v4";
 

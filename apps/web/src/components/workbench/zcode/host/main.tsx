@@ -143,9 +143,9 @@ function WorkspaceHost({ workspaces }: { workspaces: Workspace[] }) {
           throw new Error("当前宿主尚无远程连接插件");
         }}
         remoteWorkspaceSessions={[]}
-        allowRemoteWorkspace={false}
+        allowRemoteWorkspace={platform.supportsRemoteWorkspaces === true}
         allowOpenWorkspace={true}
-        supportsEmbeddedBrowser={false}
+        supportsEmbeddedBrowser={platform.supportsEmbeddedBrowser === true}
         reconnectingRemoteWorkspaceKeys={[]}
         remoteWorkspaceErrorByWorkspaceKey={{}}
         reconnectingRemoteWorkspaceLogsByWorkspaceKey={{}}

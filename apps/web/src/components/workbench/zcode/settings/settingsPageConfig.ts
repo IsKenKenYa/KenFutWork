@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { isSettingsSectionEnabled, type SettingsSectionId } from "@zui/lib/settingsNavigation.js";
 import type { Theme } from "@zui/useTheme.js";
+import type { IPlatformService } from "@zcode/shared";
 
 export const THEME_MODES: Array<{
   mode: Theme;
@@ -164,7 +165,9 @@ export const SETTINGS_SECTIONS = BASE_SETTINGS_SECTIONS.filter(
   (section) => section.id !== "computerUse" && isSettingsSectionEnabled(section.id),
 );
 
-interface SettingsPageConfigOptions {
+interface SettingsPageConfigOptions extends Pick<
+  IPlatformService, "supportsAutomations" | "supportsEmbeddedBrowser" | "supportsComputerUse"
+> {
   isDesktop?: boolean;
   isMacDesktop?: boolean;
   isWindowsDesktop?: boolean;
@@ -174,10 +177,15 @@ export function createSettingsPageConfig({
   isDesktop = false,
   isMacDesktop = false,
   isWindowsDesktop = false,
+  supportsAutomations,
+  supportsEmbeddedBrowser,
+  supportsComputerUse,
 }: SettingsPageConfigOptions = {}) {
   const showComputerUse = isDesktop || isMacDesktop || isWindowsDesktop;
   const settingsSections = BASE_SETTINGS_SECTIONS.filter((section) => {
-    if (section.id === "computerUse" && !showComputerUse) return false;
+    if (section.id === "automations" && supportsAutomations === false) return false;
+    if (section.id === "browser" && supportsEmbeddedBrowser === false) return false;
+    if (section.id === "computerUse" && (!showComputerUse || supportsComputerUse === false)) return false;
     return isSettingsSectionEnabled(section.id);
   });
   const settingsSectionGroups = BASE_SETTINGS_SECTION_GROUPS.map((group) => ({
