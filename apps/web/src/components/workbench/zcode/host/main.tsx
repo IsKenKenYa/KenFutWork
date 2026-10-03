@@ -1,3 +1,4 @@
+import type { IServiceAccessor } from "@zcode/services";
 import type { UserInfo } from "@zcode/shared";
 import { AssistantCodeCommentFeatureProvider } from "@zui/AssistantCodeCommentFeatureProvider.js";
 import { ConfirmDialogHost } from "@zui/ConfirmDialog.js";
@@ -15,7 +16,6 @@ import { RootWorkspaceContent } from "@zui/root/RootWorkspaceContent.js";
 import { useRootProviderSettingsSnapshot } from "@zui/root/useRootProviderSettingsSnapshot.js";
 import { useRootWorkspaceActions } from "@zui/root/useRootWorkspaceActions.js";
 import { CodingPlanUpgradeDialogProvider } from "@zui/settings/CodingPlanUpgradeDialogProvider.js";
-import { registerBaseWorkspaceServices } from "@zui/store/remoteWorkspaceSessionStore.js";
 import { StoreProvider, useZCodeStore } from "@zui/store/StoreProvider.js";
 import {
   TabStoreProvider,
@@ -27,7 +27,7 @@ import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
 import { usePaneLayoutStore } from "@zui/v4/paneLayoutStore.js";
 import { useWorkbenchGroupStore } from "@zui/v4/workbenchGroupStore.js";
 import { LucideProvider } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import {
   type CodeHostConfig,
@@ -35,6 +35,7 @@ import {
 } from "./httpChannelClient.js";
 import { navigateToDesign, requestParentBootstrap } from "./parentBridge.js";
 import { createCodePlatform } from "./platform.js";
+import { bindCodeWorkspaceServices } from "./workspaceServices.js";
 import "@zui/styles.css";
 
 interface Workspace {
@@ -55,11 +56,16 @@ const config: CodeHostConfig = {
     : {}),
 };
 const client = new CodeHttpChannelClient(config);
-const services = client.services;
 const platform = createCodePlatform(client);
 const root = createRoot(document.getElementById("root")!);
 
-function WorkspaceHost({ workspaces }: { workspaces: Workspace[] }) {
+function WorkspaceHost({
+  workspaces,
+  services,
+}: {
+  workspaces: Workspace[];
+  services: IServiceAccessor;
+}) {
   const tabStore = useTabStoreApi();
   const { intl } = useZCodeIntl();
   const activePath = useTabStore((state) => state.activeWorkspacePath);
@@ -168,6 +174,10 @@ function WorkspaceHost({ workspaces }: { workspaces: Workspace[] }) {
 }
 
 function CodeHost({ workspaces }: { workspaces: Workspace[] }) {
+  const services = useSyncExternalStore(
+    client.subscribeServices,
+    () => client.services,
+  );
   return (
     <LucideProvider strokeWidth={1.5}>
       <TooltipProvider>
@@ -189,7 +199,10 @@ function CodeHost({ workspaces }: { workspaces: Workspace[] }) {
                     <AssistantCodeCommentFeatureProvider enabled>
                       <CodingPlanUpgradeDialogProvider>
                         <ScopedErrorBoundary scope="kenfutwork-code-host">
-                          <WorkspaceHost workspaces={workspaces} />
+                          <WorkspaceHost
+                            workspaces={workspaces}
+                            services={services}
+                          />
                         </ScopedErrorBoundary>
                       </CodingPlanUpgradeDialogProvider>
                     </AssistantCodeCommentFeatureProvider>
@@ -207,7 +220,7 @@ function CodeHost({ workspaces }: { workspaces: Workspace[] }) {
 root.render(<RootStartupLoading label="加载 Code 工作台" />);
 try {
   await client.connect();
-  registerBaseWorkspaceServices(services);
+  bindCodeWorkspaceServices(client);
   const { workspaces } = await client.request<{ workspaces: Workspace[] }>(
     "/api/code-ui/workspaces",
   );

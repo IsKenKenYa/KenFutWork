@@ -59,6 +59,8 @@ Window Controller 读面已接原 `listTaskList`、`subscribeControllerV4`、`re
 
 Code HTTP 宿主已自动恢复通知连接。断线先令原 runtime lifecycle unavailable；新连接就绪后以同一 clientHello/clientId 初始化，补齐原 Settings/Selection view，再发布原 restarted/available。原 transport 清 ownership/barrier/assembler，原 SessionDataLayer 按水位重订阅，不重新拼接消息，不自动重发有副作用的命令。离线 RPC 等新连接；关闭立即取消等待/计时器/请求，认证 401/403 立即拒绝。长时间运行、实际 Agent 断线与全部命令对账仍须后续真实验收。
 
+Controller 与 Task 成员缓存随 HTTP 连接恢复：握手与 Settings/Selection view 追平成功后，宿主换代真实 Controller proxy 与服务快照，更新原 base workspace services 和 ServiceProvider。原 registry 据代理身份取得新连接的两类租约；其他服务代理（含 Agent）保持稳定，原 SessionDataLayer 与 sessions-index 继续按生命周期恢复。宿主沿原 membership 版本链重读持久 Task 左表，补齐断线期间丢失的成员事件，不伪造 task_created、不重新投影列表。恢复握手或 view 读取返回 401/403 时保留状态码，立即拒绝等待调用并终止重连，不发布新快照。此处不自动重发已提交的副作用命令。
+
 原目录选择器 readdir 沿用 Project 工作目录的服务器本机路径校验，返回原 FileEntry（文件/目录、完整路径、符号链接标志），默认隐藏 dot 项、includeHidden 显式展示；目录优先并按原名称比较排序。空目录返回真实空数组，损坏 symlink 按原文件条目语义处理，缺失/非目录/相对路径给可读错误。正文读取仍校验 Project 归属及 symlink 边界。
 
 file.resolvePath 规范化真实路径，workspace.open 绑定或创建实际 Code Project 与固定主画布；目录别名和并发打开复用同一身份，不同位置的同名目录各自独立。归档后迟到打开返回 409 与可读原因，不重新创建。setting.get/update 的 recentProjects 保存工作区顺序，写入前校验所有项目归属；不存在或已归档路径返回 404 且不污染已保存顺序。原选择器等待宿主绑定，失败沿原错误区显示并保持可重试，成功才关闭。根会话已验证共用该主画布，实际 Agent/child 的运行工作目录仍需运行验收。

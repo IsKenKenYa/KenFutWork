@@ -7,7 +7,12 @@ import {
   type Event,
   type IChannel,
   type IChannelClient,
+  ProxyChannel,
 } from "@zcode/rpc";
+import {
+  type IServiceAccessor,
+  IWindowControllerService,
+} from "@zcode/services";
 import { ServiceChannels } from "@zcode/shared";
 import {
   type ClientHello,
@@ -55,9 +60,12 @@ function notificationReader(reader: ReadableStreamDefaultReader<Uint8Array>) {
   };
 }
 
-class NotificationConnectionError extends Error {
-  constructor(readonly status: number) {
-    super(`Code 通知通道不可用：${status}`);
+class CodeHostHttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
   }
 }
 
@@ -69,8 +77,16 @@ const servicesByChannel: Record<string, string> = {
 
 /** ChannelClient 只替换载体；原 RemoteServiceAccess/ProxyChannel 保留服务和事件语义。 */
 export class CodeHttpChannelClient implements IChannelClient {
-  readonly services = new RemoteServiceAccess(this);
+  private servicesSnapshot: IServiceAccessor = new RemoteServiceAccess(this);
+  get services(): IServiceAccessor {
+    return this.servicesSnapshot;
+  }
   private readonly notifications = new Emitter<Notification>();
+  private readonly servicesChanges = new Emitter<void>();
+  readonly subscribeServices = (listener: () => void) => {
+    const subscription = this.servicesChanges.event(listener);
+    return () => subscription.dispose();
+  };
   private readonly controller = new AbortController();
   private connectionId = "";
   private connected = false;
@@ -114,7 +130,8 @@ export class CodeHttpChannelClient implements IChannelClient {
     );
     const result = await response.json();
     if (!response.ok)
-      throw new Error(
+      throw new CodeHostHttpError(
+        response.status,
         result.error?.message ?? `Code 宿主请求失败：${response.status}`,
       );
     return result as T;
@@ -159,7 +176,10 @@ export class CodeHttpChannelClient implements IChannelClient {
     );
     if (!response.ok || !response.body) {
       await response.body?.cancel();
-      throw new NotificationConnectionError(response.status);
+      throw new CodeHostHttpError(
+        response.status,
+        `Code 通知通道不可用：${response.status}`,
+      );
     }
     const reader = response.body.getReader();
     return { reader, read: notificationReader(reader) };
@@ -187,6 +207,15 @@ export class CodeHttpChannelClient implements IChannelClient {
         this.ready?.resolve();
         this.ready = null;
         if (restoring) {
+          // Controller 租约随通知连接释放；原 registry 由代理身份换代触发重订阅。
+          this.servicesSnapshot = {
+            ...this.servicesSnapshot,
+            windowControllerService:
+              ProxyChannel.toService<IWindowControllerService>(
+                this.getChannel(IWindowControllerService.channelName),
+              ),
+          };
+          this.servicesChanges.fire();
           for (const key of this.workspaces.keys())
             this.notifications.fire({
               event: "service",
@@ -207,7 +236,7 @@ export class CodeHttpChannelClient implements IChannelClient {
         }
         this.connectionId = "";
         if (
-          error instanceof NotificationConnectionError &&
+          error instanceof CodeHostHttpError &&
           (error.status === 401 || error.status === 403)
         )
           throw error;
@@ -345,5 +374,6 @@ export class CodeHttpChannelClient implements IChannelClient {
     this.ready?.reject(new DOMException("Code 宿主已关闭", "AbortError"));
     this.ready = null;
     this.notifications.dispose();
+    this.servicesChanges.dispose();
   }
 }

@@ -143,3 +143,8 @@ HTTP 通知恢复接线已完成：物理断线先转原 unavailable，新连接
 
 
 原 Controller 读面切片已搬入 desktop/host 的 windowHostControllerService、Projection、SessionsIndexObserver 与许可证，原件零偏差。宿主只提供真实 Task/Agent ProxyChannel、工作区目录和 owned SSE 载体；不重新实现集合/标题/游标。首输入事务后广播 task_created，原目录无需刷新即可重读任务；空 thoughtLevel 省略符合原 schema。每个外部连接独占 Runtime/源订阅，关闭释放，非法目录和跨连接/释放后 resync 拒绝。原帧先于 ACK 的装配保留。源码清单 3055 项漂移 0，范围 Biome 与全量 test/typecheck/build 通过，api:spec 生成零差异。真实数据库 Controller + Stop 共 9 项通过（目录查询在途关闭公开接口 red→green，迟到订阅 404 且无 ACK），原完整页面在桌面验收视口（截图 1248×900）连续新建两任务后，项目侧栏立即显示任务与标题，停止后保留转录，证据为 docs/验收/Code模式ZCode/原目录任务热更新.jpg。分组视图此次仍为空，不计验收通过；Controller mutate/search、断线租约恢复、刷新自动焦点继续实施。完整 lint 的 Agent/Computer Use 既有错误未通过，整体目标 active。
+
+
+Controller/Task 目录恢复已接真实 HTTP 连接换代：原 Controller registry 不消费 Agent lifecycle，故宿主在握手与模型 view 追平后换真实 Controller proxy，更新原 ServiceProvider 与 base services；Agent 等代理保持稳定。项目视图的 Task 左表沿原 membership 版本函数重读，补断线期间丢失的成员事件，不伪造事件或另写目录投影。公开原 Hook red→green 覆盖全局目录两次断线、空 sessions-index 下项目成员恢复、恢复握手/view 的 401/403 立即拒绝与不重连；与主/子会话原恢复共 10 项通过。原完整页面暂停通知、真实命令创建独立Task、恢复后目录自动补入且正文保留，原停止按钮显示已停止；新连接两类Controller租约经200/原ACK记录对账，公共快照确认停止终态completedInterrupted，见 docs/验收/Code模式ZCode/原Controller重连租约.json 与三个原Controller截图。首次场景的静默模型停滞错误未冒充停止成功，最终场景已真实点击。源码 3055 项零漂移，未改原registry/Hook/UI装配或后端核心。分组/mutate/search、刷新自动焦点和其它运行能力仍未完整接通，整体目标 active。
+
+原 App 装配审计已确认：host/main.tsx → RootWorkspaceContent → memo(App) → WorkspaceShellLayout 保留完整消息流、主/子SessionPane、设置覆盖与两栏，不应再写一套App。下一步直接复用原Root的缺失非云生命周期：RootShell（Alert/Confirm）、useRootPlatformEffects、useTabPersistence、fileDisplay base path与初始Task定位；设置引导的可见入口需真实consumer或按宿主能力隐藏。不得扩充WorkspaceHost仿写RootInner，也不得把web-remote-replayable伪装成desktop-continuous以绕过恢复规则。
