@@ -16,6 +16,7 @@ import type {
   ResolveModelConfigInput,
   SavePersonalModelDraftInput,
 } from "@zcode/provider";
+import { ModelConfig, parseModelConfig } from "@zcode/provider";
 
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
@@ -171,6 +172,12 @@ function toPatch(input: ProviderInstanceUpdateRequest) {
 }
 
 export interface ModelProviderService {
+  setCodeModelEnabled(
+    user: AuthenticatedUser,
+    providerId: string,
+    modelId: string,
+    enabled: boolean,
+  ): Promise<void>;
   saveCodeModelDraft(
     user: AuthenticatedUser,
     input: SavePersonalModelDraftInput,
@@ -336,6 +343,49 @@ export function createModelProviderService(options: {
   }
 
   return {
+    async setCodeModelEnabled(user, providerId, modelId, enabled) {
+      const workspaceId = await requireWorkspaceId(
+        user,
+        "instance_update_failed",
+      );
+      const normalized = modelId.trim();
+      const saved = await repository.updateWorkspaceCodeConfig(
+        workspaceId,
+        providerId,
+        (row) => {
+          const models = row.models ?? [];
+          if (!models.some((model) => model.id === normalized))
+            throw new ModelProviderServiceError(
+              "instance_not_found",
+              `Model 不存在: ${normalized}`,
+              404,
+            );
+          return {
+            models: models.map((model) =>
+              model.id === normalized
+                ? {
+                    ...model,
+                    codeConfig: createProviderCodeModelConfig(
+                      providerId,
+                      normalized,
+                      parseModelConfig(model.codeConfig?.personalConfig ?? {})
+                        .overlay(new ModelConfig({ enabled }))
+                        .toJSON(),
+                      model.codeConfig?.useRecommendedConfig ?? true,
+                    ),
+                  }
+                : model,
+            ),
+          };
+        },
+      );
+      if (!saved)
+        throw new ModelProviderServiceError(
+          "instance_not_found",
+          "Provider instance not found.",
+          404,
+        );
+    },
     async saveCodeModelDraft(user, input) {
       const workspaceId = await requireWorkspaceId(
         user,

@@ -3,7 +3,10 @@ import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
-import type { ProviderSettingsView } from "@zcode/provider";
+import {
+  extractManualModelConfig,
+  type ProviderSettingsView,
+} from "@zcode/provider";
 import { describe, expect, it } from "vitest";
 
 const enabled = process.env.RUN_CODE_UI_INTEGRATION === "1";
@@ -72,6 +75,117 @@ async function openCodeStream(streams: AbortController[]) {
 }
 
 describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", () => {
+  it("原模型启停只修改最新 enabled，保留手动模式与精确配置且刷新和同值重放一致", async () => {
+    expect((await request("/api/viewer")).status).toBe(200);
+    const rpc = (method: string, args: unknown[] = []) =>
+      request("/api/code-ui/rpc", {
+        service: "providerSettingsService",
+        method,
+        args,
+      });
+    let providerId = "";
+    try {
+      const created = await rpc("createPersonalProvider", [
+        { providerName: `模型启停 ${randomUUID()}` },
+      ]);
+      providerId = created.body.result.providerId;
+      await rpc("savePersonalProviderOverlay", [
+        providerId,
+        {
+          api: {
+            type: "openai-chat-completions",
+            baseUrl: "https://example.invalid/v1",
+          },
+          access: { type: "api-key", apiKey: "integration-only-not-a-key" },
+        },
+      ]);
+      const selection = () =>
+        request("/api/code-ui/rpc", {
+          service: "modelSelectionService",
+          method: "getView",
+          args: [],
+        });
+      const added = await rpc("addPersonalModel", [
+        providerId,
+        "模型甲",
+        { properties: { contextWindow: 256000 } },
+      ]);
+      const model = added.body.result.providers.find(
+        (item: { providerId: string }) => item.providerId === providerId,
+      ).models[0];
+      const manual = await rpc("savePersonalModelDraft", [
+        {
+          providerId,
+          originalModelId: "模型甲",
+          nextModelId: "模型甲",
+          personalConfig: extractManualModelConfig(model.effectiveConfig),
+          useRecommendedConfig: false,
+          basedOnRevision: added.body.result.revision,
+        },
+      ]);
+      expect(manual.status, JSON.stringify(manual.body)).toBe(200);
+      expect((await selection()).body.result.providers).toContainEqual(
+        expect.objectContaining({
+          providerId,
+          models: [expect.objectContaining({ modelId: "模型甲" })],
+        }),
+      );
+      const disabled = await rpc("setPersonalModelEnabled", [
+        providerId,
+        "模型甲",
+        false,
+      ]);
+      expect(disabled.status, JSON.stringify(disabled.body)).toBe(200);
+      const readModel = (view: ProviderSettingsView) =>
+        view.providers.find((item) => item.providerId === providerId)!
+          .models[0]!;
+      expect(readModel(disabled.body.result)).toMatchObject({
+        enabled: false,
+        useRecommendedConfig: false,
+        personalExactConfig: {
+          enabled: false,
+          properties: { contextWindow: 256000 },
+          optionSpecs: { maxOutputTokens: { max: 32000 } },
+        },
+      });
+      expect((await rpc("refresh")).body.result).toEqual(disabled.body.result);
+      expect((await selection()).body.result.providers).toContainEqual(
+        expect.objectContaining({ providerId, models: [] }),
+      );
+      const repeated = await rpc("setPersonalModelEnabled", [
+        providerId,
+        "模型甲",
+        false,
+      ]);
+      expect(repeated.body.result).toEqual(disabled.body.result);
+      const restored = await rpc("setPersonalModelEnabled", [
+        providerId,
+        "模型甲",
+        true,
+      ]);
+      expect(restored.status).toBe(200);
+      expect(readModel(restored.body.result)).toEqual(
+        readModel(manual.body.result),
+      );
+      expect((await selection()).body.result.providers).toContainEqual(
+        expect.objectContaining({
+          providerId,
+          models: [expect.objectContaining({ modelId: "模型甲" })],
+        }),
+      );
+      expect(
+        (await rpc("setPersonalModelEnabled", [providerId, "不存在", false]))
+          .status,
+      ).toBe(404);
+      expect(
+        (await rpc("setPersonalModelEnabled", [providerId, "模型甲", "false"]))
+          .status,
+      ).toBe(400);
+      expect((await rpc("getView")).body.result).toEqual(restored.body.result);
+    } finally {
+      if (providerId) await rpc("deletePersonalProvider", [providerId]);
+    }
+  });
   it("原模型恢复智能规则删除个人精确配置，刷新保留推荐且同值保存不推进修订", async () => {
     expect((await request("/api/viewer")).status).toBe(200);
     const rpc = (method: string, args: unknown[] = []) =>

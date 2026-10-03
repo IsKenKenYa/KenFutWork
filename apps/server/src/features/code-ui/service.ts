@@ -92,6 +92,15 @@ export class CodeUiService {
     args: unknown[],
   ) {
     if (service === "providerSettingsService") {
+      if (method === "setPersonalModelEnabled") {
+        await this.deps.modelProviders.setCodeModelEnabled(
+          user,
+          z.string().uuid().parse(args[0]),
+          z.string().trim().min(1).parse(args[1]),
+          z.boolean().parse(args[2]),
+        );
+        return { result: (await this.publishProviderViews(user)).settings };
+      }
       if (method === "savePersonalModelDraft") {
         const input = z
           .object({

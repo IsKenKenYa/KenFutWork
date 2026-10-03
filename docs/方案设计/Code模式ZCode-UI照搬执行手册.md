@@ -112,3 +112,5 @@ Provider 保存切片已接 `savePersonalProviderOverlay`，复用原 ProviderCo
 - 公开接口命令：`RUN_CODE_UI_INTEGRATION=1 RUN_CODE_UI_MODEL_SMOKE=1 CODE_UI_TEST_BASE=http://127.0.0.1:3301 CODE_UI_TEST_ORIGIN=http://localhost:3300 pnpm --filter @kenfutwork/server exec vitest run src/features/code-ui/host.integration.test.ts`。测试临时建项目/目录并归档清理。
 - 前端浏览器验收目录 `/tmp/ken-code-ui-browser-6T6wxE`（临时项目 id `f6387289-4da8-44c2-ac94-96aea078984a`）尚保留供后续交互，需要结束时清理；不恢复或迁移其他旧调试数据。
 - 本轮审计发现 121 个 `apps/server/data/checkpoints/` 影子 Git 运行文件并补忽略；约 3109 个新增/修改源文件与必要资源应入库。dist/types/host/design 编译产物、node_modules、public/code-ui 静态产物、.env.local 已被忽略，凭据模式扫描 0 匹配。不能忽略原源码、图标、许可证、契约、来源清单或前向迁移来减少文件数。
+
+原模型启停已接 setPersonalModelEnabled，事务内只叠加最新 enabled，保留手动/智能模式与全部精确叶子；停用成员仍在 Settings，移出 Selection，同值保存不增修订，未知成员 404，非法布尔 400。公开接口 501 red→green 与九项真实 integration、server 1478 回归/类型通过；原开关实际停用并刷新仍未选中，截图 `docs/验收/Code模式ZCode/原模型停用.png`。改名/排序/删除、连通性与其它设置仍继续。
