@@ -7,11 +7,7 @@ import {
   type StreamEvent,
 } from "@kenfutwork/shared";
 import { parseModelConfig, parseProviderConfig } from "@zcode/provider";
-import {
-  appSettingsPatchSchema,
-  appSettingsSchema,
-  zcodeWorkspacePresentationSchema,
-} from "@zcode/shared";
+import { zcodeWorkspacePresentationSchema } from "@zcode/shared";
 import { z } from "zod";
 import type { AgentRunService } from "../../agent/runtime.js";
 import { resolveSandboxDir } from "../../agent/sandbox-dir.js";
@@ -34,6 +30,7 @@ import {
 } from "./files.js";
 import { buildCodeUiModelViews } from "./model-views.js";
 import { type CodeUiRepository, CodeUiRepositoryError } from "./repository.js";
+import { CodeUiSettingsHost } from "./settings.js";
 import { codeUiTaskMeta } from "./task-index.js";
 
 export interface CodeUiServiceDeps {
@@ -77,7 +74,14 @@ export function codeUiCommandFingerprint(
 export class CodeUiService {
   private readonly connections = new CodeUiConnections();
   private readonly controllers = new Map<string, CodeUiControllerHost>();
-  constructor(private readonly deps: CodeUiServiceDeps) {}
+  private readonly settingsHost;
+  constructor(private readonly deps: CodeUiServiceDeps) {
+    this.settingsHost = new CodeUiSettingsHost({
+      settings: deps.settings,
+      viewer: deps.viewer,
+      workspaces: (user) => this.listWorkspaces(user),
+    });
+  }
 
   async openConnection(
     user: AuthenticatedUser,
@@ -327,39 +331,8 @@ export class CodeUiService {
         ),
       };
     if (service === "zcode-task") return this.taskIndexRpc(user, method, args);
-    if (service === "setting" && method === "get") {
-      const projects = await this.listWorkspaces(user);
-      const workspace = await this.deps.viewer.resolveWorkspace(user);
-      const stored = await this.deps.settings.getCodeUiRecentProjects(
-        user,
-        workspace.id,
-      );
-      const available = new Set(projects.map((project) => project.path));
-      return {
-        result: appSettingsSchema.parse({
-          recentProjects: stored
-            ? stored.filter((path) => available.has(path))
-            : [...available],
-        }),
-      };
-    }
-    if (service === "setting" && method === "update") {
-      const input = appSettingsPatchSchema
-        .pick({ recentProjects: true })
-        .required()
-        .strict()
-        .parse(args[0]);
-      await Promise.all(
-        input.recentProjects.map((path) => this.requireWorkspace(user, path)),
-      );
-      const workspace = await this.deps.viewer.resolveWorkspace(user);
-      await this.deps.settings.updateCodeUiRecentProjects(
-        user,
-        workspace.id,
-        input.recentProjects,
-      );
-      return { result: null };
-    }
+    if (service === "setting")
+      return this.settingsHost.call(user, method, args[0]);
     if (service === "system" && method === "info")
       return { result: { homedir: homedir(), platform: process.platform } };
     if (service === "zcode-session" && method === "readWorkspacePresentation") {

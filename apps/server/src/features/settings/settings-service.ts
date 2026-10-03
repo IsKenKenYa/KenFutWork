@@ -24,7 +24,11 @@ import {
   DEFAULT_MAX_RUN_RETRIES,
 } from "../../agent/run-retry.js";
 import type { AuthenticatedUser } from "../auth/types.js";
-import type { SettingsRepository } from "./repository.js";
+import type {
+  CodeUiSettingsSnapshot,
+  CodeUiSettingsWrite,
+  SettingsRepository,
+} from "./repository.js";
 
 const FALLBACK_MODEL = "gpt-5.4-mini";
 
@@ -72,15 +76,15 @@ export type WorkspaceSettingsPatch = {
 };
 
 export type SettingsService = {
-  getCodeUiRecentProjects(
+  getCodeUiSettingsSnapshot(
     user: AuthenticatedUser,
     workspaceId: string,
-  ): Promise<string[] | null>;
-  updateCodeUiRecentProjects(
+  ): Promise<CodeUiSettingsSnapshot>;
+  updateCodeUiAppPreferences(
     user: AuthenticatedUser,
     workspaceId: string,
-    paths: string[],
-  ): Promise<void>;
+    write: CodeUiSettingsWrite,
+  ): Promise<boolean>;
   getCodeUiTransportSettings(
     user: AuthenticatedUser,
     workspaceId: string,
@@ -306,10 +310,10 @@ export function createSettingsService(options: {
   };
 
   return {
-    getCodeUiRecentProjects: (_user, workspaceId) =>
-      repository.findCodeUiRecentProjects(workspaceId),
-    updateCodeUiRecentProjects: (_user, workspaceId, paths) =>
-      repository.upsertCodeUiRecentProjects(workspaceId, paths),
+    getCodeUiSettingsSnapshot: (_user, workspaceId) =>
+      repository.findCodeUiSettingsSnapshot(workspaceId),
+    updateCodeUiAppPreferences: (_user, workspaceId, write) =>
+      repository.mergeCodeUiAppPreferences(workspaceId, write),
     getCodeUiTransportSettings,
     getWorkspaceSettings: getSettings,
 

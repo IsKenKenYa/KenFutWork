@@ -12,6 +12,15 @@ import { openCodeStream, request } from "./host-client.fixture.js";
 
 const enabled = process.env.RUN_CODE_UI_INTEGRATION === "1";
 
+/** 校验实际凭据字段，诊断路径/文案中的 apiKey 名称不是凭据。 */
+function expectNoPrivateConfigKeys(value: unknown) {
+  if (!value || typeof value !== "object") return;
+  for (const [key, child] of Object.entries(value)) {
+    expect(["apiKey", "headers", "encrypted_api_key"]).not.toContain(key);
+    expectNoPrivateConfigKeys(child);
+  }
+}
+
 describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", () => {
   it("原工作目录打开绑定真实 Code Project 与固定主画布，并发和目录别名不创建第二份项目", async () => {
     expect((await request("/api/viewer")).status).toBe(200);
@@ -833,8 +842,9 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
         },
       });
       expect(JSON.stringify(saved.body.result)).not.toMatch(
-        /integration-credential-private|integration-header-private|apiKey"|headers"/,
+        /integration-credential-private|integration-header-private/,
       );
+      expectNoPrivateConfigKeys(saved.body.result);
       const updated = await rpc("savePersonalProviderOverlay", [
         providerId,
         { api: { baseUrl: "https://example.invalid/v2" } },
@@ -1058,9 +1068,7 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
         name: "onDidChange",
         data: removed.body.result,
       });
-      expect(JSON.stringify(removed.body.result)).not.toMatch(
-        /apiKey|encrypted_api_key/,
-      );
+      expectNoPrivateConfigKeys(removed.body.result);
     } finally {
       for (const stream of streams) stream.abort();
       if (providerId) await rpc("deletePersonalProvider", [providerId]);

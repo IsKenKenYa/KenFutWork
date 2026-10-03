@@ -6,12 +6,26 @@ import type { PersistenceService } from "../persistence/types.js";
  * settings 聚合的数据访问（`workspace_settings`）。
  * 表以 `workspace_id` 为主键，故 upsert 天然是「一工作区一行」。
  */
+export interface CodeUiSettingsSnapshot {
+  preferences: unknown | null;
+  recentProjects: string[] | null;
+}
+
+export interface CodeUiSettingsWrite {
+  preferences: Record<string, unknown>;
+  recentProjects?: string[];
+  removePreferenceKeys?: string[];
+  referencedProjectIds?: string[];
+}
+
 export interface SettingsRepository {
-  findCodeUiRecentProjects(workspaceId: string): Promise<string[] | null>;
-  upsertCodeUiRecentProjects(
+  findCodeUiSettingsSnapshot(
     workspaceId: string,
-    paths: string[],
-  ): Promise<void>;
+  ): Promise<CodeUiSettingsSnapshot>;
+  mergeCodeUiAppPreferences(
+    workspaceId: string,
+    write: CodeUiSettingsWrite,
+  ): Promise<boolean>;
   findCodeUiReconnectDelayMs(workspaceId: string): Promise<number | null>;
   upsertCodeUiReconnectDelayMs(
     workspaceId: string,
@@ -97,21 +111,48 @@ export function createSettingsRepository(
   persistence: PersistenceService,
 ): SettingsRepository {
   return {
-    async findCodeUiRecentProjects(workspaceId) {
+    async findCodeUiSettingsSnapshot(workspaceId) {
+      const row = await persistence.forWorkspace(workspaceId).queryOne<{
+        code_ui_app_preferences: unknown | null;
+        code_ui_recent_projects: string[] | null;
+      }>(
+        `select code_ui_app_preferences,code_ui_recent_projects from public.workspace_settings where workspace_id=:workspace`,
+      );
+      return {
+        preferences: row?.code_ui_app_preferences ?? null,
+        recentProjects: row?.code_ui_recent_projects ?? null,
+      };
+    },
+    async mergeCodeUiAppPreferences(
+      workspaceId,
+      {
+        preferences,
+        recentProjects,
+        removePreferenceKeys = [],
+        referencedProjectIds = [],
+      },
+    ) {
       const row = await persistence
         .forWorkspace(workspaceId)
-        .queryOne<{ code_ui_recent_projects: string[] | null }>(
-          `select code_ui_recent_projects from public.workspace_settings where workspace_id=:workspace`,
+        .queryOne<{ workspace_id: string }>(
+          `with live_projects as (
+           select id from public.projects where workspace_id=:workspace and kind='code'
+             and archived_at is null and id=any($4::uuid[]) for share
+         )
+         insert into public.workspace_settings(workspace_id,code_ui_app_preferences,code_ui_recent_projects)
+         select :workspace,$1::jsonb,$2::text[] where (select count(*) from live_projects)=cardinality($4::uuid[])
+         on conflict(workspace_id) do update set
+           code_ui_app_preferences=(coalesce(workspace_settings.code_ui_app_preferences,'{}'::jsonb) || excluded.code_ui_app_preferences) - $3::text[],
+           code_ui_recent_projects=coalesce(excluded.code_ui_recent_projects,workspace_settings.code_ui_recent_projects)
+         returning workspace_id`,
+          [
+            JSON.stringify(preferences),
+            recentProjects ?? null,
+            removePreferenceKeys,
+            referencedProjectIds,
+          ],
         );
-      return row?.code_ui_recent_projects ?? null;
-    },
-    async upsertCodeUiRecentProjects(workspaceId, paths) {
-      await persistence
-        .forWorkspace(workspaceId)
-        .execute(
-          `insert into public.workspace_settings(workspace_id,code_ui_recent_projects) values(:workspace,$1::text[]) on conflict(workspace_id) do update set code_ui_recent_projects=excluded.code_ui_recent_projects`,
-          [paths],
-        );
+      return row !== null;
     },
     async findCodeUiReconnectDelayMs(workspaceId) {
       const row = await persistence
