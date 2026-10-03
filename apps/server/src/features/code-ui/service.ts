@@ -92,6 +92,30 @@ export class CodeUiService {
     args: unknown[],
   ) {
     if (service === "providerSettingsService") {
+      if (method === "savePersonalModelDraft") {
+        const input = z
+          .object({
+            providerId: z.string().uuid(),
+            originalModelId: z.string().trim().min(1),
+            nextModelId: z.string().trim().min(1),
+            personalConfig: z.unknown(),
+            useRecommendedConfig: z.boolean().optional(),
+            basedOnRevision: z.number().int().nonnegative(),
+          })
+          .strict()
+          .parse(args[0]);
+        await this.deps.modelProviders.saveCodeModelDraft(user, {
+          providerId: input.providerId,
+          originalModelId: input.originalModelId,
+          nextModelId: input.nextModelId,
+          personalConfig: parseModelConfig(input.personalConfig).toJSON(),
+          basedOnRevision: input.basedOnRevision,
+          ...(input.useRecommendedConfig === undefined
+            ? {}
+            : { useRecommendedConfig: input.useRecommendedConfig }),
+        });
+        return { result: (await this.publishProviderViews(user)).settings };
+      }
       if (method === "resolveModelConfig") {
         const input = z
           .object({

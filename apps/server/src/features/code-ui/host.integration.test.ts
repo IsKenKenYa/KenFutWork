@@ -72,6 +72,105 @@ async function openCodeStream(streams: AbortController[]) {
 }
 
 describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", () => {
+  it("原模型草稿原子改名与保存精确规则，拒绝同修订并发和跨供应商过期修订", async () => {
+    expect((await request("/api/viewer")).status).toBe(200);
+    const rpc = (method: string, args: unknown[] = []) =>
+      request("/api/code-ui/rpc", {
+        service: "providerSettingsService",
+        method,
+        args,
+      });
+    let providerId = "";
+    let otherId = "";
+    try {
+      const created = await rpc("createPersonalProvider", [
+        { providerName: `CAS ${randomUUID()}` },
+      ]);
+      providerId = created.body.result.providerId;
+      await rpc("addPersonalModel", [providerId, "原模型", {}]);
+      const initial = await rpc("addPersonalModel", [
+        providerId,
+        "保留模型",
+        {},
+      ]);
+      const input = {
+        providerId,
+        originalModelId: "原模型",
+        nextModelId: "新模型",
+        personalConfig: {
+          properties: { contextWindow: 260000 },
+          optionSpecs: { maxOutputTokens: { max: 9000 } },
+        },
+        useRecommendedConfig: true,
+        basedOnRevision: initial.body.result.revision,
+      };
+      const saved = await rpc("savePersonalModelDraft", [input]);
+      expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+      expect(
+        saved.body.result.providers.find(
+          (item: { providerId: string }) => item.providerId === providerId,
+        ).models,
+      ).toMatchObject([
+        {
+          modelId: "新模型",
+          personalExactConfig: { properties: { contextWindow: 260000 } },
+          effectiveConfig: {
+            properties: { contextWindow: 260000 },
+            optionSpecs: { maxOutputTokens: { max: 9000 } },
+          },
+        },
+        { modelId: "保留模型" },
+      ]);
+      expect((await rpc("savePersonalModelDraft", [input])).status).toBe(409);
+      expect((await rpc("getView")).body.result).toEqual(saved.body.result);
+      const concurrent = {
+        ...input,
+        originalModelId: "新模型",
+        nextModelId: "新模型",
+        basedOnRevision: saved.body.result.revision,
+      };
+      const results = await Promise.all([
+        rpc("savePersonalModelDraft", [
+          {
+            ...concurrent,
+            personalConfig: { properties: { contextWindow: 270000 } },
+          },
+        ]),
+        rpc("savePersonalModelDraft", [
+          {
+            ...concurrent,
+            personalConfig: { properties: { contextWindow: 280000 } },
+          },
+        ]),
+      ]);
+      expect(results.map((result) => result.status).sort()).toEqual([200, 409]);
+      const fresh = await rpc("getView");
+      const other = await rpc("createPersonalProvider", [
+        { providerName: `其它 ${randomUUID()}` },
+      ]);
+      otherId = other.body.result.providerId;
+      expect(
+        (
+          await rpc("savePersonalModelDraft", [
+            { ...concurrent, basedOnRevision: fresh.body.result.revision },
+          ])
+        ).status,
+      ).toBe(409);
+      const current = await rpc("getView");
+      const collision = await rpc("savePersonalModelDraft", [
+        {
+          ...concurrent,
+          nextModelId: "保留模型",
+          basedOnRevision: current.body.result.revision,
+        },
+      ]);
+      expect(collision.status).toBe(409);
+      expect((await rpc("getView")).body.result).toEqual(current.body.result);
+    } finally {
+      if (otherId) await rpc("deletePersonalProvider", [otherId]);
+      if (providerId) await rpc("deletePersonalProvider", [providerId]);
+    }
+  });
   it("原模型添加的并发成员不丢失，同键只成功一次，删除供应商后的迟到添加不能重建", async () => {
     expect((await request("/api/viewer")).status).toBe(200);
     const rpc = (method: string, args: unknown[] = []) =>

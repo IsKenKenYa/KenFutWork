@@ -102,6 +102,8 @@ Provider 保存切片已接 `savePersonalProviderOverlay`，复用原 ProviderCo
 
 只读审计基线仍为 `29628c9acdb81b703bbd4080c207a0e7ce5e276e`。上述缺口说明当前模型读取冒烟不证明原设置写入完成；服务接线验收必须覆盖空草稿→模型配置→写 Key→真实 executable、清 Key、删除最后模型、并发/CAS、通知和刷新恢复。
 
+原模型草稿保存/CAS 切片已接 `savePersonalModelDraft`：改名、精确规则和成员位置同事务写入，保留兄弟模型；所有 HTTP/原宿主配置写入口统一先锁 workspace revision，再修改实例。公开宿主从 501 red→green，验证原成员改名与 260000/9000 配置、同修订重放/并发、跨供应商过期修订及目标重名均不部分写入。七项原供应商/模型 integration、server 158 文件/1478 回归与类型检查、25 workspace/API 门禁通过。恢复智能规则的空配置语义、独立成员操作与指定模型测试仍未完成，不能认定模型设置完整。
+
 ### 验收进程与文件审计
 
 - 本任务临时 API 3301、生产静态 preview 3300；只连接现存开发 PG，不管理其生命周期。开发主服务监听源码变化时可能停/起 PG 并换端口；临时回环转发 3332 跟随当前 PG 端口。临时脚本位于 `/tmp/ken-code-api.mts` 与 `/tmp/ken-code-db-proxy.mjs`，不入库；先检查实时监听再使用，PID/exec handle 不作为长期事实。

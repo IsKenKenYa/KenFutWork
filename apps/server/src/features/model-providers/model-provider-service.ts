@@ -14,6 +14,7 @@ import type {
   ModelConfigResolution,
   ProviderConfigObject,
   ResolveModelConfigInput,
+  SavePersonalModelDraftInput,
 } from "@zcode/provider";
 
 import type { AuthenticatedUser } from "../auth/types.js";
@@ -170,6 +171,10 @@ function toPatch(input: ProviderInstanceUpdateRequest) {
 }
 
 export interface ModelProviderService {
+  saveCodeModelDraft(
+    user: AuthenticatedUser,
+    input: SavePersonalModelDraftInput,
+  ): Promise<void>;
   resolveCodeModelConfig(
     user: AuthenticatedUser,
     input: ResolveModelConfigInput,
@@ -331,6 +336,66 @@ export function createModelProviderService(options: {
   }
 
   return {
+    async saveCodeModelDraft(user, input) {
+      const workspaceId = await requireWorkspaceId(
+        user,
+        "instance_update_failed",
+      );
+      const originalId = input.originalModelId.trim();
+      const nextId = input.nextModelId.trim();
+      const saved = await repository.updateWorkspaceCodeConfig(
+        workspaceId,
+        input.providerId,
+        (row, revision) => {
+          if (revision !== input.basedOnRevision)
+            throw new ModelProviderServiceError(
+              "instance_update_failed",
+              `Provider Settings revision conflict: expected ${input.basedOnRevision}, current ${revision}`,
+              409,
+            );
+          const models = row.models ?? [];
+          const original = models.find((model) => model.id === originalId);
+          if (!original)
+            throw new ModelProviderServiceError(
+              "instance_not_found",
+              `Model 不存在: ${originalId}`,
+              404,
+            );
+          if (
+            originalId !== nextId &&
+            models.some((model) => model.id === nextId)
+          )
+            throw new ModelProviderServiceError(
+              "instance_update_failed",
+              `Model 已存在: ${nextId}`,
+              409,
+            );
+          const recommended =
+            input.useRecommendedConfig ??
+            original.codeConfig?.useRecommendedConfig ??
+            true;
+          const codeConfig = createProviderCodeModelConfig(
+            input.providerId,
+            nextId,
+            input.personalConfig,
+            recommended,
+          );
+          return {
+            models: models.map((model) =>
+              model.id === originalId
+                ? { ...model, id: nextId, name: nextId, codeConfig }
+                : model,
+            ),
+          };
+        },
+      );
+      if (!saved)
+        throw new ModelProviderServiceError(
+          "instance_not_found",
+          "Provider instance not found.",
+          404,
+        );
+    },
     async resolveCodeModelConfig(user, input) {
       const workspaceId = await requireWorkspaceId(
         user,
