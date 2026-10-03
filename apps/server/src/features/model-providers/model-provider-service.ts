@@ -172,6 +172,11 @@ function toPatch(input: ProviderInstanceUpdateRequest) {
 }
 
 export interface ModelProviderService {
+  deleteCodeModel(
+    user: AuthenticatedUser,
+    providerId: string,
+    modelId: string,
+  ): Promise<void>;
   setCodeModelEnabled(
     user: AuthenticatedUser,
     providerId: string,
@@ -343,6 +348,33 @@ export function createModelProviderService(options: {
   }
 
   return {
+    async deleteCodeModel(user, providerId, modelId) {
+      const workspaceId = await requireWorkspaceId(
+        user,
+        "instance_update_failed",
+      );
+      const normalized = modelId.trim();
+      const saved = await repository.updateWorkspaceCodeConfig(
+        workspaceId,
+        providerId,
+        (row) => {
+          const models = row.models ?? [];
+          if (!models.some((model) => model.id === normalized))
+            throw new ModelProviderServiceError(
+              "instance_not_found",
+              `Personal Model 不存在: ${normalized}`,
+              404,
+            );
+          return { models: models.filter((model) => model.id !== normalized) };
+        },
+      );
+      if (!saved)
+        throw new ModelProviderServiceError(
+          "instance_not_found",
+          "Provider instance not found.",
+          404,
+        );
+    },
     async setCodeModelEnabled(user, providerId, modelId, enabled) {
       const workspaceId = await requireWorkspaceId(
         user,

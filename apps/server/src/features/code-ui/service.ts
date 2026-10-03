@@ -92,6 +92,14 @@ export class CodeUiService {
     args: unknown[],
   ) {
     if (service === "providerSettingsService") {
+      if (method === "deletePersonalModel") {
+        await this.deps.modelProviders.deleteCodeModel(
+          user,
+          z.string().uuid().parse(args[0]),
+          z.string().trim().min(1).parse(args[1]),
+        );
+        return { result: (await this.publishProviderViews(user)).settings };
+      }
       if (method === "setPersonalModelEnabled") {
         await this.deps.modelProviders.setCodeModelEnabled(
           user,

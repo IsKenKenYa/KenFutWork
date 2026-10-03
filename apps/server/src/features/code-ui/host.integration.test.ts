@@ -75,6 +75,66 @@ async function openCodeStream(streams: AbortController[]) {
 }
 
 describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", () => {
+  it("原模型删除清理成员和精确规则，并发删除不丢失且迟到保存和启用不能复活", async () => {
+    expect((await request("/api/viewer")).status).toBe(200);
+    const rpc = (method: string, args: unknown[] = []) =>
+      request("/api/code-ui/rpc", {
+        service: "providerSettingsService",
+        method,
+        args,
+      });
+    let providerId = "";
+    try {
+      const created = await rpc("createPersonalProvider", [
+        { providerName: `模型删除 ${randomUUID()}` },
+      ]);
+      providerId = created.body.result.providerId;
+      for (const id of ["甲", "乙", "丙"])
+        expect(
+          (await rpc("addPersonalModel", [providerId, id, {}])).status,
+        ).toBe(200);
+      const deleted = await rpc("deletePersonalModel", [providerId, "甲"]);
+      expect(deleted.status, JSON.stringify(deleted.body)).toBe(200);
+      const readModels = (view: ProviderSettingsView) =>
+        view.providers.find((item) => item.providerId === providerId)!.models;
+      expect(
+        readModels(deleted.body.result).map((model) => model.modelId),
+      ).toEqual(["乙", "丙"]);
+      expect((await rpc("refresh")).body.result).toEqual(deleted.body.result);
+      expect(
+        (await rpc("setPersonalModelEnabled", [providerId, "甲", true])).status,
+      ).toBe(404);
+      expect(
+        (
+          await rpc("savePersonalModelDraft", [
+            {
+              providerId,
+              originalModelId: "甲",
+              nextModelId: "甲",
+              personalConfig: {},
+              basedOnRevision: deleted.body.result.revision,
+            },
+          ])
+        ).status,
+      ).toBe(404);
+      expect(
+        (await rpc("deletePersonalModel", [providerId, "甲"])).status,
+      ).toBe(404);
+      expect((await rpc("getView")).body.result).toEqual(deleted.body.result);
+      const concurrent = await Promise.all([
+        rpc("deletePersonalModel", [providerId, "乙"]),
+        rpc("deletePersonalModel", [providerId, "丙"]),
+      ]);
+      expect(concurrent.map((result) => result.status)).toEqual([200, 200]);
+      const empty = await rpc("refresh");
+      expect(readModels(empty.body.result)).toEqual([]);
+      const invalid = await rpc("deletePersonalModel", [providerId, " "]);
+      expect(invalid.status).toBe(400);
+      expect((await rpc("getView")).body.result).toEqual(empty.body.result);
+    } finally {
+      if (providerId) await rpc("deletePersonalProvider", [providerId]);
+    }
+  });
   it("原模型启停只修改最新 enabled，保留手动模式与精确配置且刷新和同值重放一致", async () => {
     expect((await request("/api/viewer")).status).toBe(200);
     const rpc = (method: string, args: unknown[] = []) =>

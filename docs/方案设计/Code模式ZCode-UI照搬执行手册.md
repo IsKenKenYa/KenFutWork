@@ -114,3 +114,5 @@ Provider 保存切片已接 `savePersonalProviderOverlay`，复用原 ProviderCo
 - 本轮审计发现 121 个 `apps/server/data/checkpoints/` 影子 Git 运行文件并补忽略；约 3109 个新增/修改源文件与必要资源应入库。dist/types/host/design 编译产物、node_modules、public/code-ui 静态产物、.env.local 已被忽略，凭据模式扫描 0 匹配。不能忽略原源码、图标、许可证、契约、来源清单或前向迁移来减少文件数。
 
 原模型启停已接 setPersonalModelEnabled，事务内只叠加最新 enabled，保留手动/智能模式与全部精确叶子；停用成员仍在 Settings，移出 Selection，同值保存不增修订，未知成员 404，非法布尔 400。公开接口 501 red→green 与九项真实 integration、server 1478 回归/类型通过；原开关实际停用并刷新仍未选中，截图 `docs/验收/Code模式ZCode/原模型停用.png`。改名/排序/删除、连通性与其它设置仍继续。
+
+原模型删除已接 deletePersonalModel：同事务删除成员与精确规则，保留兄弟模型；并发删不同成员不丢失，刷新不复活，迟到的保存/启用及重复删除返回 404，非法空 ID 400。十项真实宿主 integration、server 1478 回归/类型通过；原删除按钮实际删除最后成员且刷新仍为空，截图 `docs/验收/Code模式ZCode/原模型删除.png`。临时 API 重启后原 SSE 连接关闭仍需手动重载，此缺口尚未修复，不能计为断线自动恢复通过。
