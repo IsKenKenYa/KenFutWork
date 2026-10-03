@@ -16,6 +16,7 @@
   "dependencies": {
     "@zcode/provider": "workspace:*",
     "@zcode/shared": "workspace:*",
+    "@zcode/services": "workspace:*",
     "zod": "^4.6.5"
   },
   "scripts": {

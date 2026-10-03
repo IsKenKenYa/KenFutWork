@@ -24519,6 +24519,34 @@
       "sha256": "f04ca005720f19faa41f4402eb8d4f874e78da3e19f8b85577dcdfc94e38e57d",
       "copiedSha256": "f04ca005720f19faa41f4402eb8d4f874e78da3e19f8b85577dcdfc94e38e57d",
       "adaptations": []
+    },
+    {
+      "source": "references/zcode/packages/desktop/src/host/windowHostControllerService.ts",
+      "target": "packages/zcode-window-controller/src/windowHostControllerService.ts",
+      "sha256": "9ea93717f532120b1622d2fc059f72c04aa76eb75af6128b705aa4484375e9a1",
+      "copiedSha256": "9ea93717f532120b1622d2fc059f72c04aa76eb75af6128b705aa4484375e9a1",
+      "adaptations": []
+    },
+    {
+      "source": "references/zcode/packages/desktop/src/host/windowHostControllerProjection.ts",
+      "target": "packages/zcode-window-controller/src/windowHostControllerProjection.ts",
+      "sha256": "09a1c9731b957a6af21154ea684d6a533d311ee8560c3a8643ad18855881e573",
+      "copiedSha256": "09a1c9731b957a6af21154ea684d6a533d311ee8560c3a8643ad18855881e573",
+      "adaptations": []
+    },
+    {
+      "source": "references/zcode/packages/desktop/src/host/windowHostSessionsIndexObserver.ts",
+      "target": "packages/zcode-window-controller/src/windowHostSessionsIndexObserver.ts",
+      "sha256": "f2b291630d2cd0519116e4f5577a8c56deb56f565b755f987f90a6cd84084b10",
+      "copiedSha256": "f2b291630d2cd0519116e4f5577a8c56deb56f565b755f987f90a6cd84084b10",
+      "adaptations": []
+    },
+    {
+      "source": "references/zcode/LICENSE",
+      "target": "packages/zcode-window-controller/LICENSE",
+      "sha256": "606c36baf38b973227273df12a74930e4b4137280eea835c5cd623aa4553c13b",
+      "copiedSha256": "606c36baf38b973227273df12a74930e4b4137280eea835c5cd623aa4553c13b",
+      "adaptations": []
     }
   ],
   "buildAdaptations": [

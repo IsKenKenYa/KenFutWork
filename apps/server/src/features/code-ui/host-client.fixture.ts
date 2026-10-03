@@ -63,3 +63,23 @@ export async function openCodeStream(streams: AbortController[]) {
   });
   return { next, rpc, controller, ready };
 }
+
+/** 公共 SSE 多路服务帧按原 channel/事件身份选取，不能把其它服务通知当成本场景帧。 */
+export async function nextHostServiceEvent(
+  stream: Awaited<ReturnType<typeof openCodeStream>>,
+  service: string,
+  name: string,
+  scope?: { workspacePath?: string; taskId?: string },
+) {
+  for (;;) {
+    const event = await stream.next();
+    if (
+      event.event === "service" &&
+      event.service === service &&
+      event.name === name &&
+      (!scope?.workspacePath || event.workspacePath === scope.workspacePath) &&
+      (!scope?.taskId || event.data?.taskId === scope.taskId)
+    )
+      return event;
+  }
+}

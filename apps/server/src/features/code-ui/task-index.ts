@@ -29,7 +29,9 @@ export function codeUiTaskMeta(
         ? "yolo"
         : "build",
     model: snapshot.config.model,
-    thoughtLevel: snapshot.config.thought,
+    ...(snapshot.config.thought
+      ? { thoughtLevel: snapshot.config.thought }
+      : {}),
     status:
       snapshot.control.phase === "error"
         ? "error"

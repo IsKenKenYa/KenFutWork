@@ -16,6 +16,12 @@ export type {
   ProviderSettingsView,
   SavePersonalModelDraftInput,
 } from "@zcode/provider";
+export type {
+  IWindowControllerService,
+  WindowHostControllerFrame,
+  WindowHostControllerTaskListResult,
+  ZCodeTaskListQuery,
+} from "@zcode/services";
 export type { AppSettings, FileEntry, IPlatformService } from "@zcode/shared";
 export { appSettingsPatchSchema, appSettingsSchema } from "@zcode/shared";
 /** 界面契约沿用固定 ZCode 原协议，宿主不维护另一套 rows/snapshot。 */
@@ -38,6 +44,25 @@ export const codeUiRpcRequestSchema = z.object({
   connectionId: z.string().optional(),
 });
 export const codeUiRpcResponseSchema = z.object({ result: z.unknown() });
+
+/** 原 Window Controller 查询入参；服务定义与结果类型仍直接引用固定原契约。 */
+export const codeUiControllerTaskListQuerySchema = z
+  .object({
+    kind: z.enum(["pinned", "archived", "timeline", "active"]),
+    workspaceScopes: z.array(
+      z
+        .object({
+          workspacePath: z.string().trim().min(1),
+          workspaceIdentity: z.string().trim().min(1).optional(),
+          workspacePurpose: z.enum(["project", "conversation"]).optional(),
+        })
+        .strict(),
+    ),
+    sortBy: z.enum(["created", "updated"]),
+    search: z.string().optional(),
+    limit: z.number().int().nonnegative().optional(),
+  })
+  .strict();
 
 export type CodeUiWorkspace = z.infer<typeof codeUiWorkspaceSchema>;
 export type CodeUiRpcRequest = z.infer<typeof codeUiRpcRequestSchema>;

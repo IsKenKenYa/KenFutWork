@@ -6,6 +6,8 @@
   "dependencies": {
     "@zcode/provider": "workspace:*",
     "@zcode/shared": "workspace:*",
+    "@zcode/rpc": "workspace:*",
+    "@zcode/services": "workspace:*",
     "@ai-sdk/bytedance": "^2.0.46",
     "@ai-sdk/openai-compatible": "^3.0.51",
     "@ai-sdk/provider": "^4.0.17",
@@ -39,7 +41,8 @@
     "sharp": "^0.35.4",
     "tar": "^7.5.22",
     "undici": "^8.10.2",
-    "zod": "^4.6.5"
+    "zod": "^4.6.5",
+    "@zcode/window-controller": "workspace:*"
   },
   "devDependencies": {
     "@kenfutwork/config": "workspace:*",

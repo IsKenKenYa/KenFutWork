@@ -108,9 +108,18 @@ importers:
       '@zcode/provider':
         specifier: workspace:*
         version: link:../../packages/zcode-provider
+      '@zcode/rpc':
+        specifier: workspace:*
+        version: link:../../packages/zcode-rpc
+      '@zcode/services':
+        specifier: workspace:*
+        version: link:../../packages/zcode-services
       '@zcode/shared':
         specifier: workspace:*
         version: link:../../packages/zcode-shared
+      '@zcode/window-controller':
+        specifier: workspace:*
+        version: link:../../packages/zcode-window-controller
       ai:
         specifier: ^7.0.105
         version: 7.0.107(zod@4.6.5)
@@ -603,6 +612,9 @@ importers:
       '@zcode/provider':
         specifier: workspace:*
         version: link:../zcode-provider
+      '@zcode/services':
+        specifier: workspace:*
+        version: link:../zcode-services
       '@zcode/shared':
         specifier: workspace:*
         version: link:../zcode-shared
@@ -694,6 +706,25 @@ importers:
       zod:
         specifier: 4.6.5
         version: 4.6.5
+    devDependencies:
+      '@types/node':
+        specifier: ^25.5.0
+        version: 25.9.9
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.3
+
+  packages/zcode-window-controller:
+    dependencies:
+      '@zcode/rpc':
+        specifier: workspace:*
+        version: link:../zcode-rpc
+      '@zcode/services':
+        specifier: workspace:*
+        version: link:../zcode-services
+      '@zcode/shared':
+        specifier: workspace:*
+        version: link:../zcode-shared
     devDependencies:
       '@types/node':
         specifier: ^25.5.0

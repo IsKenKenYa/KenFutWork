@@ -100,6 +100,8 @@ apps/desktop/src-tauri/gen/
 # 安装包产物（默认落在仓库根，见 apps/desktop/scripts/collect-bundle.mjs）
 /KenFutWork_*-setup.exe
 /KenFutWork_*.dmg
+# appdmg 生成安装包后的临时可写镜像
+/rw.*.KenFutWork_*.dmg
 .playwright-mcp/
 .zcodeignore
 

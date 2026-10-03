@@ -25,6 +25,7 @@ import type { ModelProviderService } from "../model-providers/model-provider-ser
 import type { ProjectService } from "../projects/project-service.js";
 import type { SettingsService } from "../settings/settings-service.js";
 import { CodeUiConnections } from "./connections.js";
+import { CodeUiControllerHost } from "./controller.js";
 import { createCodeUiConversation } from "./conversation.js";
 import {
   readCodeUiDirectory,
@@ -75,6 +76,7 @@ export function codeUiCommandFingerprint(
 /** 服务定义的具体 Provider；原 GUI 仅调用该域提供的 RPC/会话消费接口。 */
 export class CodeUiService {
   private readonly connections = new CodeUiConnections();
+  private readonly controllers = new Map<string, CodeUiControllerHost>();
   constructor(private readonly deps: CodeUiServiceDeps) {}
 
   async openConnection(
@@ -87,14 +89,86 @@ export class CodeUiService {
       user,
       workspace.id,
     );
+    const connection = this.connections.open(
+      workspace.id,
+      user.id,
+      send,
+      close,
+    );
     return {
-      ...this.connections.open(workspace.id, user.id, send, close),
+      ...connection,
       ...policy,
+      dispose: () => {
+        this.controllers.get(connection.hello.connectionId)?.dispose();
+        this.controllers.delete(connection.hello.connectionId);
+        connection.dispose();
+      },
     };
   }
 
   closeConnections() {
+    for (const host of this.controllers.values()) host.dispose();
+    this.controllers.clear();
     this.connections.closeAll();
+  }
+
+  async controllerRpc(
+    user: AuthenticatedUser,
+    connectionId: string | undefined,
+    method: string,
+    args: unknown[],
+  ): Promise<{ result: unknown; publish?: () => Promise<void> } | null> {
+    const workspace = await this.deps.viewer.resolveWorkspace(user);
+    const external = this.connections.require(
+      workspace.id,
+      connectionId,
+      false,
+    );
+    const id = external.hello.connectionId;
+    let host = this.controllers.get(id);
+    if (!host) {
+      let current!: CodeUiControllerHost;
+      const source = this.connections.open(
+        workspace.id,
+        user.id,
+        async (event) => current.accept(event),
+        () => {},
+      );
+      this.connections.initialize(workspace.id, source.hello.connectionId, {
+        kind: "clientHello",
+        protocolVersion: protocol.V4_WIRE_PROTOCOL_VERSION,
+        clientId: randomUUID(),
+        appVersion: "KenFutWork-controller",
+        clientKind: "web",
+      });
+      current = new CodeUiControllerHost({
+        workspaces: () => this.listWorkspaces(user),
+        sourceCall: async (service, member, values) => {
+          const prepared =
+            service === "zcode-task"
+              ? await this.hostRpc(user, service, member, values)
+              : await this.transportRpc(
+                  user,
+                  source.hello.connectionId,
+                  member,
+                  values,
+                );
+          if (!prepared)
+            throw new Error(`Code 源接口 ${service}.${member} 尚未接通`);
+          if ("publish" in prepared) await prepared.publish();
+          return prepared.result;
+        },
+        send: (event) => external.send(event),
+        disposeSource: source.dispose,
+        deliveryFailed: (error) => {
+          console.warn("Code Controller 通知失败，关闭连接以恢复订阅", error);
+          external.close();
+        },
+      });
+      host = current;
+      this.controllers.set(id, host);
+    }
+    return host.call(method, args[0]);
   }
 
   async hostRpc(
@@ -615,6 +689,7 @@ export class CodeUiService {
       loaded.root.id,
     );
     const runId = randomUUID();
+    let firstInput = false;
     const ack = await this.deps.repository.applyCommand(
       loaded.workspaceId,
       envelope,
@@ -631,6 +706,9 @@ export class CodeUiService {
             "command_conflict",
             "当前运行尚未结束",
           );
+        firstInput = !host
+          .getSnapshot()
+          .rows.window.some((row) => row.kind === "userInput");
         host.startTurn({
           runId,
           commandId: envelope.commandId,
@@ -661,7 +739,7 @@ export class CodeUiService {
           user,
           loaded.project,
           loaded.root.id,
-          "user_message_saved",
+          firstInput ? "task_created" : "user_message_saved",
         );
         await this.runTurn(
           user,
@@ -724,7 +802,7 @@ export class CodeUiService {
     user: AuthenticatedUser,
     project: CodeUiWorkspace,
     sessionId: string,
-    reason: "user_message_saved" | "task_status_changed",
+    reason: "task_created" | "user_message_saved" | "task_status_changed",
   ) {
     const workspace = await this.deps.viewer.resolveWorkspace(user);
     const record = await this.deps.repository.find(workspace.id, sessionId);

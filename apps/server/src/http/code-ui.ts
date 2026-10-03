@@ -128,21 +128,18 @@ export async function registerCodeUiRoutes(
         args,
       );
       if (hostResult) return codeUiRpcResponseSchema.parse(hostResult);
-      if (service === "zcodeAgentService") {
-        const prepared = await deps.service.transportRpc(
-          user,
-          connectionId,
-          method,
-          args,
-        );
+      if (service === "zcodeAgentService" || service === "window-controller") {
+        const prepared =
+          service === "window-controller"
+            ? await deps.service.controllerRpc(user, connectionId, method, args)
+            : await deps.service.transportRpc(user, connectionId, method, args);
         if (prepared) {
-          if ("publish" in prepared)
+          const publish = "publish" in prepared ? prepared.publish : undefined;
+          if (publish)
             reply.raw.once("finish", () => {
-              void prepared
-                .publish()
-                .catch((error: unknown) =>
-                  request.log.warn({ error }, "Code 订阅通知失败"),
-                );
+              void publish().catch((error: unknown) =>
+                request.log.warn({ error }, "Code 订阅通知失败"),
+              );
             });
           return codeUiRpcResponseSchema.parse({ result: prepared.result });
         }
