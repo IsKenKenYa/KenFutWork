@@ -79,6 +79,16 @@ async function lockRoot(scoped: WorkspaceSqlClient, sessionId: string) {
   return root;
 }
 
+async function lockActiveProject(
+  scoped: WorkspaceSqlClient,
+  root: CodeUiSessionRecord,
+) {
+  return scoped.queryOne<SqlRow & { id: string }>(
+    "select id from public.projects where workspace_id=:workspace and id=$1 and kind='code' and archived_at is null for share",
+    [root.project_id],
+  );
+}
+
 /** 工作区隔离、事务内根会话锁；子会话索引只指向同一权威聚合状态。 */
 export function createCodeUiRepository(persistence: PersistenceService) {
   return {
@@ -218,7 +228,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
       envelope: protocol.CommandEnvelope,
       fingerprint: string,
       decide: (root: CodeUiSessionRecord) => {
-        state: CodeUiConversationState;
+        state: CodeUiConversationState | null;
         activeRunId: string | null;
         ack: protocol.CommandAck;
       },
@@ -257,9 +267,15 @@ export function createCodeUiRepository(persistence: PersistenceService) {
           });
         }
         const root = await lockRoot(scoped, envelope.sessionId!);
+        if (!(await lockActiveProject(scoped, root)))
+          throw new CodeUiRepositoryError(
+            "not_found",
+            "Code 项目已归档或不存在",
+          );
         const decision = decide(root);
         const ack = protocol.commandAckSchema.parse(decision.ack);
-        await writeState(scoped, root, decision.state, decision.activeRunId);
+        if (decision.state)
+          await writeState(scoped, root, decision.state, decision.activeRunId);
         await scoped.execute(
           `insert into public.code_ui_commands (workspace_id, client_id, command_id, session_id, parameter_fingerprint, ack, status)
            values (:workspace, $1, $2, $3, $4, $5::jsonb, 'accepted')`,
@@ -272,6 +288,28 @@ export function createCodeUiRepository(persistence: PersistenceService) {
           ],
         );
         return ack;
+      });
+    },
+    async startRunIfCurrent(
+      workspaceId: string,
+      rootSessionId: string,
+      runId: string,
+      start: () => void,
+    ): Promise<boolean> {
+      return persistence.transaction(async (tx) => {
+        const scoped = tx.forWorkspace(workspaceId);
+        const root = await lockRoot(scoped, rootSessionId);
+        if (
+          root.active_run_id !== runId ||
+          root.state?.runId !== runId ||
+          root.state.closedRuns.includes(runId)
+        )
+          return false;
+        const project = await lockActiveProject(scoped, root);
+        if (!project) return false;
+        // 只登记同步运行句柄，不执行模型 I/O；与 Stop 的同一根锁消除检查/启动窗口。
+        start();
+        return true;
       });
     },
     async appendEvent(

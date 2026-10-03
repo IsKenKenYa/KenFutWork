@@ -134,3 +134,9 @@ HTTP 通知恢复接线已完成：物理断线先转原 unavailable，新连接
 宿主能力显隐已接原平台接口：当前未接通的自动化/嵌入浏览器/CUA/远程工作区明确关闭，原组件、设置分区、统一远程门与 CUA 前置平台门消费支持态。自动化的原侧栏、分组入口、主视图、草稿/行上下文回调、Cron/OffPeak 跳转按钮和闲时通知轮询均受门控；保留工具结果正文与全部原实现供后续接通。原设置隐式跳转到隐藏分区保持当前可见页；未声明能力的原宿主语义不变。原接口/schema 从 shared 直接再导出；10 处偏差登记、3051 来源零漂移，原装配/CSS 不变。
 
 原完整 App 与原组件用户操作 red→green 覆盖额外闲时查询、Windows Web CUA 插件查询、工具卡按钮、设置跳转及默认宿主点击。pnpm test（web 381 测试）、pnpm typecheck、原 UI build 与双轴审查通过；真实页面证据见 docs/验收/Code模式ZCode/原能力显隐主界面.png、原能力显隐设置.png。完整 lint 的既有 Agent/Computer Use 错误仍未通过；插件市场/设置服务、核心运行交互、活动 Agent/child、完整视觉与 Design 验收继续，不以能力显隐代替完整接线。
+
+根停止切片已接原 stop 命令与既有 cancelRun。固定原版 expectedForegroundExecutionId 变化返回 noop/guard.stopTargetChanged，无目标空闲停止 accepted 且快照不变；命令 ACK、关闭状态和重放同事务。启动句柄登记与停止共用根锁，延迟登记期间已停止的运行不再执行模型；命令裁决在根锁后锁定活跃 Code 项目，归档先完成则拒绝迟到请求，不记录 accepted。旧事件回写用当前权威 runId，避免污染新一轮。没有修改原 UI 装配、Agent 核心、历史 SQL 或 Design。
+
+五项真实数据库/DeepAgents/本机模型替身接口测试通过，覆盖空闲/重放/对账、流式真取消、迟到停止、新 ACK 后旧取消结算、启动前取消及在途归档；延迟场景以独占 PG 作外部故障注入，行为断言仍走 HTTP/SSE/模型边界。基础命令：RUN_CODE_UI_INTEGRATION=1 CODE_UI_TEST_BASE=http://127.0.0.1:3341 CODE_UI_TEST_ORIGIN=http://localhost:3300 pnpm --filter @kenfutwork/server exec vitest run src/features/code-ui/stop.integration.test.ts；三个延迟场景还须以环境注入独占 CODE_UI_TEST_DATABASE_URL，实际验收已注入并全部通过，不输出连接凭据。
+
+最终 pnpm test、pnpm typecheck、server build、pnpm api:spec（生成零差异）、来源 3051 零漂移及范围 Biome 通过；原默认并发出现的既有 Vitest 日志 RPC teardown 未计通过。VITEST_MAX_WORKERS 被 Turbo strict 过滤，server 单一测试资源配置改默认 maxWorkers=2 后标准命令退出成功，CLI 可覆盖、不忽略错误、不改业务绕过。原页面点击停止后显示原“已停止”；刷新后从原目录重开可恢复两轮转录，证据为 docs/验收/Code模式ZCode/原停止运行中.png、原停止已取消.png、原停止刷新重开.png。静默模型替身触发既有停滞保护的错误状态另存原模型停滞错误.png，未将该次超时冒充按钮取消。新任务/标题热同步和刷新自动焦点仍待原 controller 接线；子独立停止、队列/权限/提问等其它运行面与完整视觉/Design/GLM 工具验收继续，目标 active。

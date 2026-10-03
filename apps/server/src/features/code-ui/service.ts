@@ -514,8 +514,71 @@ export class CodeUiService {
         return { result: await this.createSession(user, parsed.envelope) };
       if (parsed.envelope.type === "sendText")
         return this.sendText(user, input.workspacePath, parsed.envelope);
+      if (parsed.envelope.type === "stop")
+        return this.stop(user, input.workspacePath, parsed.envelope);
     }
     return null;
+  }
+
+  private async stop(
+    user: AuthenticatedUser,
+    workspacePath: string,
+    envelope: protocol.CommandEnvelope,
+  ) {
+    if (!envelope.sessionId)
+      throw new CodeUiRepositoryError("not_found", "停止命令缺少会话");
+    const loaded = await this.loadConversation(user, envelope.sessionId);
+    if (loaded.project.path !== workspacePath || loaded.entry.parent_session_id)
+      throw new CodeUiRepositoryError(
+        "not_found",
+        "停止命令不属于根会话工作目录",
+      );
+    const payload = protocol.commandPayloadSchemas.stop.parse(envelope.payload);
+    let stoppedRunId: string | null = null;
+    const ack = await this.deps.repository.applyCommand(
+      loaded.workspaceId,
+      envelope,
+      codeUiCommandFingerprint(envelope),
+      (root) => {
+        const host = createCodeUiConversation({
+          sessionId: root.id,
+          workspacePath,
+          config: loaded.host.getSnapshot().config,
+          state: root.state!,
+        });
+        const decision = host.stop(payload.expectedForegroundExecutionId);
+        if (decision.kind === "stopped") stoppedRunId = decision.runId;
+        return {
+          state: decision.kind === "stopped" ? host.exportState() : null,
+          activeRunId: decision.kind === "stopped" ? null : root.active_run_id,
+          ack: {
+            commandId: envelope.commandId,
+            status:
+              decision.kind === "targetChanged"
+                ? ("noop" as const)
+                : ("accepted" as const),
+            ...(decision.kind === "targetChanged"
+              ? { reasonCode: "guard.stopTargetChanged" }
+              : {}),
+            revisionAtDecision: host.getSnapshot().revision,
+          },
+        };
+      },
+    );
+    if (stoppedRunId) this.deps.agentRuns.cancelRun(stoppedRunId);
+    return {
+      result: ack,
+      publish: async () => {
+        if (!stoppedRunId) return;
+        await this.connections.refresh(loaded.workspaceId, workspacePath);
+        await this.notifyTask(
+          user,
+          loaded.project,
+          loaded.root.id,
+          "task_status_changed",
+        );
+      },
+    };
   }
 
   private async sendText(
@@ -642,10 +705,11 @@ export class CodeUiService {
           state: root.state!,
         });
         host.recordEvent(event);
+        const state = host.exportState();
         return {
-          state: host.exportState(),
+          state,
           activeRunId:
-            host.getSnapshot().control.phase === "running" ? event.runId : null,
+            host.getSnapshot().control.phase === "running" ? state.runId : null,
         };
       },
     );
@@ -698,24 +762,51 @@ export class CodeUiService {
         threadId,
         model,
       });
-      this.deps.agentRuns.createRun(
-        {
-          sessionId,
-          conversationId: sessionId,
-          canvasId: project.canvasId,
-          preset: "code",
-          prompt: text,
-          model,
-        },
-        {
-          runId,
-          threadId,
-          sandboxScopeId: project.canvasId,
-          accessToken: user.accessToken,
-          userId: user.id,
-          model,
+      const workspace = await this.deps.viewer.resolveWorkspace(user);
+      const started = await this.deps.repository.startRunIfCurrent(
+        workspace.id,
+        sessionId,
+        runId,
+        () => {
+          this.deps.agentRuns.createRun(
+            {
+              sessionId,
+              conversationId: sessionId,
+              canvasId: project.canvasId,
+              preset: "code",
+              prompt: text,
+              model,
+            },
+            {
+              runId,
+              threadId,
+              sandboxScopeId: project.canvasId,
+              accessToken: user.accessToken,
+              userId: user.id,
+              model,
+            },
+          );
         },
       );
+      if (!started) {
+        await this.deps.agentRunMetadata.updateRun({
+          runId,
+          status: "canceled",
+          completedAt: new Date().toISOString(),
+        });
+        await this.recordRunEvent(
+          user,
+          project,
+          sessionId,
+          {
+            type: "run.canceled",
+            runId,
+            timestamp: new Date().toISOString(),
+          },
+          ++ordinal,
+        );
+        return;
+      }
       for await (const event of this.deps.agentRuns.streamRun(runId))
         await this.recordRunEvent(user, project, sessionId, event, ++ordinal);
     } catch (error) {

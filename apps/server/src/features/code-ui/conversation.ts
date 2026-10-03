@@ -281,6 +281,26 @@ export function createCodeUiConversation(input: {
   });
 
   return {
+    stop(
+      expectedForegroundExecutionId?: string,
+    ): { kind: "stopped"; runId: string } | { kind: "targetChanged" | "idle" } {
+      const active = root.control.activeWorks.find(
+        (work) => work.foregroundExecutionId,
+      );
+      if (
+        expectedForegroundExecutionId !== undefined &&
+        (!root.control.canStop ||
+          expectedForegroundExecutionId !== active?.foregroundExecutionId)
+      )
+        return { kind: "targetChanged" };
+      if (!root.control.canStop) return { kind: "idle" };
+      this.recordEvent({
+        type: "run.canceled",
+        runId,
+        timestamp: new Date(clock()).toISOString(),
+      });
+      return { kind: "stopped", runId };
+    },
     exportState(): CodeUiConversationState {
       return structuredClone({
         version: 1,
