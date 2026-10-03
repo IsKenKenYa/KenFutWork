@@ -62,7 +62,7 @@ import {
   codeShellsResponseSchema,
   codeTerminalRequestSchema,
   codeTerminalResponseSchema,
-  codeUiEventSchema,
+  codeUiEventStreamSchema,
   codeUiRpcRequestSchema,
   codeUiRpcResponseSchema,
   codeUiSnapshotResponseSchema,
@@ -163,6 +163,7 @@ export interface OpenApiRouteEntry {
   requestSchema?: ZodType;
   querySchema?: ZodType;
   responseSchema?: ZodType;
+  responseMediaType?: "text/event-stream";
   /** multipart 上传：file 为二进制字段名，fields 为附加表单字段（名 → 说明）。 */
   multipart?: { fileField: string; fields?: Record<string, string> };
   /** 成功响应为二进制时的 MIME 类型。 */
@@ -176,7 +177,8 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     tag: "code",
     auth: "user",
     successStatus: 200,
-    responseSchema: codeUiEventSchema,
+    responseSchema: codeUiEventStreamSchema,
+    responseMediaType: "text/event-stream",
     summary: "订阅 Code 原协议宿主通知流",
     description:
       "认证 SSE 连接先发送原 V4 hello；RPC 使用其 connectionId 完成 clientHello 后订阅。每个 data 记录承载 ready 或原 physical wire frame，订阅初始帧在 RPC ACK 后发送，断线释放 owned 订阅。",

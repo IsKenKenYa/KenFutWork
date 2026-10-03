@@ -283,6 +283,8 @@ export const workspaceSettingsSchema = z.object({
   llmInfiniteRetry: governanceBoolSetting("llmInfiniteRetry"),
   /** Code 模式 execute 命令超时（毫秒；下限 5s 上限 30min）。 */
   executeTimeoutMs: governanceSetting("executeTimeoutMs"),
+  /** Code 通知通道断线后的重连间隔（毫秒）。 */
+  codeUiReconnectDelayMs: governanceSetting("codeUiReconnectDelayMs"),
   /** Computer Use：单个桌面动作超时（毫秒）。 */
   computerUseActionTimeoutMs: governanceSetting("computerUseActionTimeoutMs"),
   /** Computer Use：观察树文本预算（字节），超限按优先级裁剪。 */

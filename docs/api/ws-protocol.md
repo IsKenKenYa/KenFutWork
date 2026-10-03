@@ -43,10 +43,12 @@
 
 ## Code 原界面的宿主通道
 
-Code 使用 `packages/shared/src/code-ui-contracts.ts` 导出的原 V4 协议：认证 HTTP RPC `/api/code-ui/rpc` 与 SSE `/api/code-ui/events`，不经旧工作台的 TaskMessage 展示归约。连接先收 hello，以 connectionId 完成 clientHello；原 subscribe 服务参数是 sessionId，RPC 只返回 ACK，snapshot/恢复帧随后经 owned 通知下发。主/子转录与租约独立，UI 复用原 SessionDataLayer。
+Code 使用 `packages/shared/src/code-ui-contracts.ts` 导出的原 V4 协议：认证 HTTP RPC `/api/code-ui/rpc` 与 SSE `/api/code-ui/events`，不经旧工作台的 TaskMessage 展示归约。连接先收原 hello 和宿主 reconnectDelayMs（与 hello 分开，原协议不改），以 connectionId 完成 clientHello；原 subscribe 服务参数是 sessionId，RPC 只返回 ACK，snapshot/恢复帧随后经 owned 通知下发。主/子转录与租约独立，UI 复用原 SessionDataLayer。
 
 现阶段已接创建、发送、命令查询、快照/订阅/恢复、历史行读取、Task 索引及文本文件读取。权限/提问、停止/队列、文件回退、终端等尚待接通；既有 `/api/ws` 的 Design/终端通道不因此改变。
 
 供应商 Settings RPC 已接 `getView`、`refresh`、空配置的 `createPersonalProvider`、`savePersonalProviderOverlay` 和 `deletePersonalProvider`。草稿真实持久化无凭证、无模型状态，不能执行。原稀疏 Provider 配置用原 parser/overlay 处理，保留 API 格式、品牌、管理地址和未编辑叶子；省略 Key/headers 保留旧值，显式 null 清除，读面和通知只返回真实 `credentialConfigured` 与非敏感配置。原 Key 控件已接 presence/明确 clear，成功提交后仅清对应且未继续编辑的 Key 草稿。原 Provider/View/Model 配置类型从 shared 直接再导出，定义仍在固定 ZCode 源码。配置与持久 workspace revision 由同一 SQL 快照读取，Settings 保留停用候选，Selection 按供应商/模型开关及完整配置资格过滤。创建/保存/删除提交后，经 owned SSE 广播原两服务的 `onDidChange`；通知与应答来自同一 View。无变化刷新和同值配置保存保持修订；删除后迟到保存返回 404，不重建。完整模型操作、模板创建及其他写入口的通知仍待接通，不能将 Provider 保存链路视为设置全部完成。
 
 模型编辑器已接 `resolveModelConfig`、`addPersonalModel` 与 `savePersonalModelDraft`：复用固定原推荐规则及 ModelConfigRules 的精确/手动合成，规则原件由 modelProviders 域持有。精确配置与模式标记保存于同一模型成员，标准运行容量从它推导；新增成员与配置同事务，原添加语义默认启用，新成员保留原模型 ID。草稿保存把改名、原成员位置与配置同事务提交，`basedOnRevision` 对整个 workspace Registry 作 CAS；所有配置写入口先锁工作区修订再锁实例。同修订并发只有一次提交，跨供应商配置变化同样使旧草稿返回 409；重复成员返回 409，已删除供应商/成员返回 404，不部分写入。恢复智能规则复用原结构空判定，删除个人精确配置，刷新沿用原推荐；同值重复保存不增修订，手动空配置仍按原规则拒绝。原 setPersonalModelEnabled 在事务内只修改最新 enabled，保留精确配置与手动/智能模式；Settings 保留停用成员，Selection 移除执行候选，同值保存不增修订。deletePersonalModel 同事务移除成员及精确规则，未知成员 404；删除后迟到的保存/启用请求拒绝，不能重新创建成员。独立改名/排序与指定模型连通性测试仍待接通。
+
+重连间隔由 shared/governance.ts 持有默认值与护栏，按 workspace_settings 的 code_ui_reconnect_delay_ms ?? env ?? DEFAULTS 解析。现有 PUT /api/workspace/settings 接 codeUiReconnectDelayMs；读取持久真值，非法范围拒绝。新增列仅由前向迁移 20261003035733_code_ui_reconnect_setting.sql 引入，缺省 NULL 不覆盖 env。OpenAPI 将 /api/code-ui/events 正确标为 text/event-stream；逐条事件定义仍见共享原协议。HTTP 快照按原 conversationSnapshotSchema / conversationRowSchema / toolCallRowSchema 的实例引用生成复用组件，不裁剪字段、不改语义。

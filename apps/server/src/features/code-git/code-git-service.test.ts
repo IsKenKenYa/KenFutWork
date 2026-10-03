@@ -450,6 +450,7 @@ describe("终端 shell 解析", () => {
           llmRequestMaxRetries: 10,
           llmInfiniteRetry: false,
           executeTimeoutMs: 120000,
+          codeUiReconnectDelayMs: 1000,
           subagentMaxContinuations: 50,
           computerUseActionTimeoutMs: 10_000,
           computerUseObserveMaxBytes: 32_768,

@@ -6,6 +6,7 @@ import type {
 
 import {
   AGENT_GOVERNANCE_DEFAULTS,
+  clampCodeUiReconnectDelayMs,
   clampComputerUseActionTimeoutMs,
   clampComputerUseMaxActionsPerRun,
   clampComputerUseObserveMaxBytes,
@@ -51,6 +52,7 @@ export class SettingsServiceError extends Error {
  * 而项目开着 `exactOptionalPropertyTypes`，用 `Partial<WorkspaceSettings>` 接会不兼容。
  */
 export type WorkspaceSettingsPatch = {
+  codeUiReconnectDelayMs?: number | undefined;
   defaultModel?: string | undefined;
   agentMaxRetries?: number | undefined;
   terminalShell?: TerminalShellId | undefined;
@@ -70,6 +72,10 @@ export type WorkspaceSettingsPatch = {
 };
 
 export type SettingsService = {
+  getCodeUiTransportSettings(
+    user: AuthenticatedUser,
+    workspaceId: string,
+  ): Promise<{ reconnectDelayMs: number }>;
   getWorkspaceSettings(
     user: AuthenticatedUser,
     workspaceId: string,
@@ -155,6 +161,17 @@ export function createSettingsService(options: {
   const governanceEnv = options.governanceEnv ?? {};
   const { repository } = options;
 
+  const getCodeUiTransportSettings = async (
+    _user: AuthenticatedUser,
+    workspaceId: string,
+  ) => ({
+    reconnectDelayMs: clampCodeUiReconnectDelayMs(
+      (await repository.findCodeUiReconnectDelayMs(workspaceId)) ??
+        governanceEnv.codeUiReconnectDelayMs ??
+        AGENT_GOVERNANCE_DEFAULTS.codeUiReconnectDelayMs,
+    ),
+  });
+
   const getSettings = async (
     user: AuthenticatedUser,
     workspaceId: string,
@@ -206,6 +223,9 @@ export function createSettingsService(options: {
         : undefined;
 
     return {
+      codeUiReconnectDelayMs: (
+        await getCodeUiTransportSettings(user, workspaceId)
+      ).reconnectDelayMs,
       agentMaxRetries: clampMaxRunRetries(
         storedRetries ?? DEFAULT_MAX_RUN_RETRIES,
       ),
@@ -277,11 +297,19 @@ export function createSettingsService(options: {
   };
 
   return {
+    getCodeUiTransportSettings,
     getWorkspaceSettings: getSettings,
 
     async updateWorkspaceSettings(user, workspaceId, patch) {
       // 逐列 upsert（各写各的列）：没送来的字段一个字都不动
       const writes: Array<Promise<void>> = [];
+      if (patch.codeUiReconnectDelayMs !== undefined)
+        writes.push(
+          repository.upsertCodeUiReconnectDelayMs(
+            workspaceId,
+            clampCodeUiReconnectDelayMs(patch.codeUiReconnectDelayMs),
+          ),
+        );
       if (patch.defaultModel !== undefined) {
         writes.push(
           repository.upsertDefaultModel(workspaceId, patch.defaultModel),

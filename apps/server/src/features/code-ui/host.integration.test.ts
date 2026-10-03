@@ -71,10 +71,55 @@ async function openCodeStream(streams: AbortController[]) {
     clientMode: "web-remote-replayable",
     deliveryProfile: "replayable",
   });
-  return { next, rpc, controller };
+  return { next, rpc, controller, ready };
 }
 
 describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", () => {
+  it("Code 宿主 ready 使用工作区持久重连间隔，刷新保留且非法限额拒绝", async () => {
+    expect((await request("/api/viewer")).status).toBe(200);
+    const original = await request("/api/workspace/settings");
+    expect(original.status).toBe(200);
+    const value = original.body.settings.codeUiReconnectDelayMs;
+    const streams: AbortController[] = [];
+    try {
+      const saved = await request(
+        "/api/workspace/settings",
+        { codeUiReconnectDelayMs: 250 },
+        "PUT",
+      );
+      expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+      expect(saved.body.settings.codeUiReconnectDelayMs).toBe(250);
+      expect(
+        (await request("/api/workspace/settings")).body.settings
+          .codeUiReconnectDelayMs,
+      ).toBe(250);
+      const stream = await openCodeStream(streams);
+      expect(stream.ready).toMatchObject({
+        event: "ready",
+        reconnectDelayMs: 250,
+      });
+      expect(
+        (
+          await request(
+            "/api/workspace/settings",
+            { codeUiReconnectDelayMs: 0 },
+            "PUT",
+          )
+        ).status,
+      ).toBe(400);
+      expect(
+        (await request("/api/workspace/settings")).body.settings
+          .codeUiReconnectDelayMs,
+      ).toBe(250);
+    } finally {
+      for (const controller of streams) controller.abort();
+      await request(
+        "/api/workspace/settings",
+        { codeUiReconnectDelayMs: value ?? 1000 },
+        "PUT",
+      );
+    }
+  });
   it("原模型删除清理成员和精确规则，并发删除不丢失且迟到保存和启用不能复活", async () => {
     expect((await request("/api/viewer")).status).toBe(200);
     const rpc = (method: string, args: unknown[] = []) =>

@@ -7,6 +7,11 @@ import type { PersistenceService } from "../persistence/types.js";
  * 表以 `workspace_id` 为主键，故 upsert 天然是「一工作区一行」。
  */
 export interface SettingsRepository {
+  findCodeUiReconnectDelayMs(workspaceId: string): Promise<number | null>;
+  upsertCodeUiReconnectDelayMs(
+    workspaceId: string,
+    value: number,
+  ): Promise<void>;
   /** 读默认模型；无行返回 null（由服务落回退默认值）。 */
   findDefaultModel(workspaceId: string): Promise<string | null>;
   /** 读 run 重试上限；无行返回 null（由服务落缺省 10）。 */
@@ -87,6 +92,22 @@ export function createSettingsRepository(
   persistence: PersistenceService,
 ): SettingsRepository {
   return {
+    async findCodeUiReconnectDelayMs(workspaceId) {
+      const row = await persistence
+        .forWorkspace(workspaceId)
+        .queryOne<{ code_ui_reconnect_delay_ms: number | null }>(
+          `select code_ui_reconnect_delay_ms from public.workspace_settings where workspace_id = :workspace`,
+        );
+      return row?.code_ui_reconnect_delay_ms ?? null;
+    },
+    async upsertCodeUiReconnectDelayMs(workspaceId, value) {
+      await persistence
+        .forWorkspace(workspaceId)
+        .execute(
+          `insert into public.workspace_settings (workspace_id, code_ui_reconnect_delay_ms) values (:workspace, $1) on conflict (workspace_id) do update set code_ui_reconnect_delay_ms = excluded.code_ui_reconnect_delay_ms`,
+          [value],
+        );
+    },
     async findDefaultModel(workspaceId) {
       const row = await persistence
         .forWorkspace(workspaceId)

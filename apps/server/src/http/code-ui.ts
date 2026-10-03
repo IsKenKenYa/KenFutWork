@@ -77,7 +77,7 @@ export async function registerCodeUiRoutes(
       "x-accel-buffering": "no",
     });
     reply.raw.write(
-      `data: ${JSON.stringify({ event: "ready", hello: connection.hello })}\n\n`,
+      `data: ${JSON.stringify({ event: "ready", hello: connection.hello, reconnectDelayMs: connection.reconnectDelayMs })}\n\n`,
     );
   });
   app.get("/api/code-ui/workspaces", async (request, reply) => {
@@ -159,24 +159,20 @@ export async function registerCodeUiRoutes(
         const parsed = protocol.parseCommandEnvelope(target?.envelope);
         if (!parsed.ok) throw parsed.error;
         if (parsed.envelope.type !== "createSession")
-          return reply
-            .code(501)
-            .send({
-              error: {
-                code: "code_ui_command_unavailable",
-                message: `Code 命令 ${parsed.envelope.type} 尚未接通`,
-              },
-            });
-        result = await deps.service.createSession(user, parsed.envelope);
-      } else
-        return reply
-          .code(501)
-          .send({
+          return reply.code(501).send({
             error: {
-              code: "code_ui_method_unavailable",
-              message: `Code 宿主接口 ${service}.${method} 尚未接通`,
+              code: "code_ui_command_unavailable",
+              message: `Code 命令 ${parsed.envelope.type} 尚未接通`,
             },
           });
+        result = await deps.service.createSession(user, parsed.envelope);
+      } else
+        return reply.code(501).send({
+          error: {
+            code: "code_ui_method_unavailable",
+            message: `Code 宿主接口 ${service}.${method} 尚未接通`,
+          },
+        });
       return codeUiRpcResponseSchema.parse({ result });
     } catch (error) {
       return sendError(reply, error);

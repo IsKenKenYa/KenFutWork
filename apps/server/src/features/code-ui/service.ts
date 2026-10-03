@@ -78,7 +78,14 @@ export class CodeUiService {
     close: () => void,
   ) {
     const workspace = await this.deps.viewer.resolveWorkspace(user);
-    return this.connections.open(workspace.id, user.id, send, close);
+    const policy = await this.deps.settings.getCodeUiTransportSettings(
+      user,
+      workspace.id,
+    );
+    return {
+      ...this.connections.open(workspace.id, user.id, send, close),
+      ...policy,
+    };
   }
 
   closeConnections() {

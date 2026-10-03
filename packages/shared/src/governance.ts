@@ -24,6 +24,8 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   llmInfiniteRetry: false,
   /** Code 模式 execute 命令超时（毫秒）。 */
   executeTimeoutMs: 120_000,
+  /** Code 宿主通知通道断线后的重连间隔（毫秒）。 */
+  codeUiReconnectDelayMs: 1_000,
   /** Computer Use：单个桌面动作（点击/输入/截屏）超时（毫秒）。 */
   computerUseActionTimeoutMs: 10_000,
   /** Computer Use：观察树文本预算（字节），超限按优先级裁剪。 */
@@ -45,6 +47,7 @@ export type AgentGovernanceOverrides = {
   llmRequestMaxRetries?: number | undefined;
   llmInfiniteRetry?: boolean | undefined;
   executeTimeoutMs?: number | undefined;
+  codeUiReconnectDelayMs?: number | undefined;
   subagentMaxContinuations?: number | undefined;
   computerUseActionTimeoutMs?: number | undefined;
   computerUseObserveMaxBytes?: number | undefined;
@@ -73,6 +76,13 @@ export const clampLlmRequestMaxRetries = (value: number): number =>
 export const clampExecuteTimeoutMs = (value: number): number =>
   clampInt(value, 5_000, 1_800_000);
 
+export const clampCodeUiReconnectDelayMs = (value: number): number =>
+  clampInt(
+    value,
+    AGENT_GOVERNANCE_LIMITS.codeUiReconnectDelayMs.min,
+    AGENT_GOVERNANCE_LIMITS.codeUiReconnectDelayMs.max,
+  );
+
 export const clampComputerUseActionTimeoutMs = (value: number): number =>
   clampInt(value, 1_000, 120_000);
 
@@ -97,6 +107,7 @@ export const AGENT_GOVERNANCE_LIMITS = {
   subagentMaxConcurrency: { min: 1, max: 16 },
   llmRequestMaxRetries: { min: 0, max: 100 },
   executeTimeoutMs: { min: 5_000, max: 1_800_000 },
+  codeUiReconnectDelayMs: { min: 100, max: 60_000 },
   subagentMaxContinuations: { min: 1, max: 200 },
   computerUseActionTimeoutMs: { min: 1_000, max: 120_000 },
   computerUseObserveMaxBytes: { min: 4_096, max: 262_144 },
@@ -139,6 +150,9 @@ export function resolveGovernanceEnvOverrides(
     ),
     llmInfiniteRetry: parseBool(source.KENFUTWORK_LLM_INFINITE_RETRY),
     executeTimeoutMs: parseStrictInt(source.KENFUTWORK_EXECUTE_TIMEOUT_MS),
+    codeUiReconnectDelayMs: parseStrictInt(
+      source.KENFUTWORK_CODE_UI_RECONNECT_DELAY_MS,
+    ),
     subagentMaxContinuations: parseStrictInt(
       source.KENFUTWORK_SUBAGENT_MAX_CONTINUATIONS,
     ),
@@ -173,6 +187,7 @@ export function governanceSetting<
     | "subagentMaxConcurrency"
     | "llmRequestMaxRetries"
     | "executeTimeoutMs"
+    | "codeUiReconnectDelayMs"
     | "subagentMaxContinuations"
     | "computerUseActionTimeoutMs"
     | "computerUseObserveMaxBytes"

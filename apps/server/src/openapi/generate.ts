@@ -190,6 +190,32 @@ interface Ctx {
   components: { name: string; json: object }[];
 }
 
+/** 只机械分解原快照；共享契约原件不变，每份模型小于导入平台的单模型限制。 */
+function codeUiSnapshotComponents() {
+  const registry = z.registry<{ id: string }>();
+  const schemas = {
+    codeUiSnapshotResponseSchema: sharedContracts.codeUiSnapshotResponseSchema,
+    "zcodeUiProtocol.conversationSnapshotSchema":
+      sharedContracts.zcodeUiProtocol.conversationSnapshotSchema,
+    "zcodeUiProtocol.conversationRowSchema":
+      sharedContracts.zcodeUiProtocol.conversationRowSchema,
+    "zcodeUiProtocol.toolCallRowSchema":
+      sharedContracts.zcodeUiProtocol.toolCallRowSchema,
+  };
+  for (const [id, schema] of Object.entries(schemas))
+    registry.add(schema, { id });
+  const converted = z.toJSONSchema(registry, {
+    io: "output",
+    target: "draft-2020-12",
+    uri: (id) => `#/components/schemas/${id}`,
+  });
+  return Object.entries(converted.schemas).map(([name, json]) => {
+    // component $ref 以完整文档为基准；移除 converter 生成的 fragment-only $id。
+    const { $id: _id, ...schema } = json;
+    return { name, json: schema };
+  });
+}
+
 // 优先 $ref 具名组件；派生 schema（.pick / z.object 包装）内联。
 function schemaRefOrInline(
   ctx: Ctx,
@@ -198,14 +224,20 @@ function schemaRefOrInline(
 ): object {
   const name = ctx.schemaNames.get(schema);
   if (!name) return toJson(schema, io);
+  if (
+    name === "codeUiSnapshotResponseSchema" &&
+    !ctx.components.some((entry) => entry.name === name)
+  ) {
+    ctx.components.push(...codeUiSnapshotComponents());
+  }
   if (!ctx.components.some((entry) => entry.name === name)) {
     ctx.components.push({ name, json: toJson(schema, io) });
   }
   return { $ref: `#/components/schemas/${name}` };
 }
 
-function jsonContent(schema: object) {
-  return { "application/json": { schema } };
+function jsonContent(schema: object, mediaType = "application/json") {
+  return { [mediaType]: { schema } };
 }
 
 function pathParameters(openApiPath: string): object[] {
@@ -297,6 +329,7 @@ function buildOperation(ctx: Ctx, entry: OpenApiRouteEntry) {
         ? {
             content: jsonContent(
               schemaRefOrInline(ctx, entry.responseSchema, "output"),
+              entry.responseMediaType,
             ),
           }
         : {}),

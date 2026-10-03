@@ -791,6 +791,13 @@
       "inExamples": false,
       "status": "active",
       "note": "自带插件目录覆盖（缺省仓库/安装目录内置位置；目录不存在时没有自带插件，不报错）"
+    },
+    "KENFUTWORK_CODE_UI_RECONNECT_DELAY_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "Code 宿主通知通道重连间隔；库值优先，非法 env 值忽略"
     }
   },
   "legacy": {

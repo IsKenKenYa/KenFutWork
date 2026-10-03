@@ -5,6 +5,7 @@ import {
   sessionsIndexTopicWireFrameSchema,
 } from "@zcode/shared/zcode-protocol-v4";
 import { z } from "zod";
+import { governanceSetting } from "./governance.js";
 
 export type {
   ModelConfigObject,
@@ -46,9 +47,20 @@ export const codeUiSnapshotResponseSchema = z.object({
   snapshot: conversationSnapshotSchema,
 });
 
+/** HTTP 成功响应是 SSE 文本流；每条事件的原协议定义仍由 codeUiEventSchema 持有。 */
+export const codeUiEventStreamSchema = z
+  .string()
+  .describe(
+    "SSE 文本流，每条 data 记录的结构见原 Code 宿主事件契约与 ws-protocol.md",
+  );
+
 /** SSE 仅承载原 physical wire frame；原 SessionDataLayer 负责 ownership、激活与装配。 */
 export const codeUiEventSchema = z.discriminatedUnion("event", [
-  z.object({ event: z.literal("ready"), hello: helloMessageSchema }),
+  z.object({
+    event: z.literal("ready"),
+    hello: helloMessageSchema,
+    reconnectDelayMs: governanceSetting("codeUiReconnectDelayMs"),
+  }),
   z.object({
     event: z.literal("onDynamicConversationFrame"),
     workspacePath: z.string(),
