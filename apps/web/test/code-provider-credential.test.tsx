@@ -12,6 +12,7 @@ import { useCallback } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { CodeHttpChannelClient } from "../src/components/workbench/zcode/host/httpChannelClient";
 import { createCodePlatform } from "../src/components/workbench/zcode/host/platform";
+import { codeHostNotificationResponse } from "./setup/code-host-http";
 
 afterEach(() => {
   cleanup();
@@ -69,6 +70,8 @@ function renderOriginalCard(beforeSave: () => Promise<void> = async () => {}) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (_input, options) => {
+      if (String(_input).endsWith("/events"))
+        return codeHostNotificationResponse(options?.signal);
       const request = JSON.parse(options.body);
       if (request.service === "providerSettingsService") {
         if (request.method === "savePersonalProviderOverlay") {

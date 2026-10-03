@@ -11,6 +11,7 @@ import { StoreProvider } from "@zui/store/StoreProvider";
 import { afterEach, expect, it, vi } from "vitest";
 import { CodeHttpChannelClient } from "../src/components/workbench/zcode/host/httpChannelClient";
 import { createCodePlatform } from "../src/components/workbench/zcode/host/platform";
+import { codeHostNotificationResponse } from "./setup/code-host-http";
 
 afterEach(() => {
   cleanup();
@@ -49,6 +50,8 @@ it("原设置与无模型提示按 BYOK 能力保留供应商/配置操作，隐
   vi.stubGlobal(
     "fetch",
     vi.fn(async (_input, options) => {
+      if (String(_input).endsWith("/events"))
+        return codeHostNotificationResponse(options?.signal);
       const call = JSON.parse(options.body);
       calls.push(call);
       if (call.service === "providerSettingsService")

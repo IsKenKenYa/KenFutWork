@@ -10,6 +10,7 @@ import { WorkspaceSidebarFooter } from "@zui/WorkspaceSidebarFooter";
 import { afterEach, expect, it, vi } from "vitest";
 import { CodeHttpChannelClient } from "../src/components/workbench/zcode/host/httpChannelClient";
 import { createCodePlatform } from "../src/components/workbench/zcode/host/platform";
+import { codeHostNotificationResponse } from "./setup/code-host-http";
 
 afterEach(() => {
   cleanup();
@@ -22,6 +23,8 @@ it("BYOK 宿主的原账户菜单保留偏好和统计，隐藏云登录、套�
   vi.stubGlobal(
     "fetch",
     vi.fn(async (_input, options) => {
+      if (String(_input).endsWith("/events"))
+        return codeHostNotificationResponse(options?.signal);
       const call = JSON.parse(options.body);
       requests.push(call);
       // 系统边界替身：设置与个人供应商可读，云服务明确不可用。
