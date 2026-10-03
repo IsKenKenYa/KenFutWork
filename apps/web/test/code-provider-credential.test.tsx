@@ -93,7 +93,7 @@ function renderOriginalCard(beforeSave: () => Promise<void> = async () => {}) {
   });
   render(
     <ServiceProvider services={client.services}>
-      <PlatformProvider platform={createCodePlatform()}>
+      <PlatformProvider platform={createCodePlatform(client)}>
         <ZCodeIntlProvider initialLocale="zh-CN">
           <TooltipProvider>
             <ProviderDetailFeedbackBoundary>

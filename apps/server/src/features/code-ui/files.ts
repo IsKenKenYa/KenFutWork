@@ -10,6 +10,22 @@ import {
 import { validateWorkDir } from "../projects/work-dir.js";
 import { CodeUiRepositoryError } from "./repository.js";
 
+export async function resolveCodeUiPath(value: unknown): Promise<string> {
+  const { path } = codeUiFileDirectoryParamsSchema
+    .pick({ path: true })
+    .parse(value);
+  if (!isAbsolute(path))
+    throw new CodeUiRepositoryError("not_found", "Code 路径必须为绝对路径");
+  try {
+    return await realpath(path);
+  } catch (error) {
+    throw new CodeUiRepositoryError(
+      "not_found",
+      `Code 路径不可用：${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 /** 目录选择沿用项目 work_dir 的本机路径校验；正文读取仍走 Project 归属检查。 */
 export async function readCodeUiDirectory(
   value: unknown,

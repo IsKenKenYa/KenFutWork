@@ -56,7 +56,7 @@ const config: CodeHostConfig = {
 };
 const client = new CodeHttpChannelClient(config);
 const services = client.services;
-const platform = createCodePlatform();
+const platform = createCodePlatform(client);
 const root = createRoot(document.getElementById("root")!);
 
 function WorkspaceHost({ workspaces }: { workspaces: Workspace[] }) {
@@ -91,6 +91,9 @@ function WorkspaceHost({ workspaces }: { workspaces: Workspace[] }) {
     setOAuthError,
     setUser,
     workbenchGroupClientMode: "web-remote-replayable",
+    onWorkspaceSelectionError: (error) => {
+      throw error;
+    },
   });
   useEffect(() => {
     const workspace =
@@ -151,10 +154,10 @@ function WorkspaceHost({ workspaces }: { workspaces: Workspace[] }) {
       {directoryOpen && (
         <DirectoryBrowser
           services={services}
-          onSelect={(path) => {
-            void actions
-              .handleSelectProject(path)
-              .then(() => setDirectoryOpen(false));
+          onSelect={async (path) => {
+            const resolved = await services.fileService.resolvePath({ path });
+            await actions.handleSelectProject(resolved);
+            setDirectoryOpen(false);
           }}
           onCancel={() => setDirectoryOpen(false)}
         />

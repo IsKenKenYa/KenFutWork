@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { realpath } from "node:fs/promises";
+import { basename } from "node:path";
 import type {
   ProjectCreateRequest,
   ProjectKind,
@@ -31,6 +34,10 @@ type ProjectErrorCode =
   | "project_update_failed";
 
 export type ProjectService = {
+  openCodeDirectory(
+    user: AuthenticatedUser,
+    path: string,
+  ): Promise<ProjectSummary>;
   archiveProject(user: AuthenticatedUser, projectId: string): Promise<void>;
   createProject(
     user: AuthenticatedUser,
@@ -104,6 +111,54 @@ export function createProjectService(options: {
     });
 
   return {
+    async openCodeDirectory(user, path) {
+      await ensureFoundation(viewerService, user, "project_create_failed");
+      const workspace = await resolveWorkspace(user, "project_create_failed");
+      const workDir = await realpath(requireWorkDir(path)).catch((error) => {
+        throw new ProjectServiceError(
+          "invalid_work_dir",
+          `工作目录不可用：${error instanceof Error ? error.message : String(error)}`,
+          400,
+        );
+      });
+      const existing = await repository.findActiveCodeDirectory(
+        workspace.id,
+        workDir,
+      );
+      if (existing) return mapProjectSummary({ ...existing, workspace });
+      try {
+        const created = await repository.createWithCanvas({
+          canvasName: "Main Canvas",
+          description: null,
+          kind: "code",
+          name: basename(workDir) || workDir,
+          slug: `code-directory-${createHash("sha256").update(workDir).digest("hex")}`,
+          workDir,
+          userId: user.id,
+          workspaceId: workspace.id,
+        });
+        return mapProjectSummary({
+          canvas: created.canvas,
+          project: created.project,
+          workspace,
+        });
+      } catch (error) {
+        if ((error as { code?: string })?.code === SQLSTATE_UNIQUE_VIOLATION) {
+          const concurrent = await repository.findActiveCodeDirectory(
+            workspace.id,
+            workDir,
+          );
+          if (concurrent)
+            return mapProjectSummary({ ...concurrent, workspace });
+          throw new ProjectServiceError(
+            "project_slug_taken",
+            "工作目录对应的项目已归档，无法重新打开。",
+            409,
+          );
+        }
+        throw mapProjectCreateError(error);
+      }
+    },
     async archiveProject(user, projectId) {
       const workspace = await resolveWorkspace(user, "project_query_failed");
 

@@ -8,6 +8,7 @@ import {
 } from "@kenfutwork/shared";
 import { parseModelConfig, parseProviderConfig } from "@zcode/provider";
 import {
+  appSettingsPatchSchema,
   appSettingsSchema,
   zcodeWorkspacePresentationSchema,
 } from "@zcode/shared";
@@ -25,7 +26,11 @@ import type { ProjectService } from "../projects/project-service.js";
 import type { SettingsService } from "../settings/settings-service.js";
 import { CodeUiConnections } from "./connections.js";
 import { createCodeUiConversation } from "./conversation.js";
-import { readCodeUiDirectory, readCodeUiTextFile } from "./files.js";
+import {
+  readCodeUiDirectory,
+  readCodeUiTextFile,
+  resolveCodeUiPath,
+} from "./files.js";
 import { buildCodeUiModelViews } from "./model-views.js";
 import { type CodeUiRepository, CodeUiRepositoryError } from "./repository.js";
 import { codeUiTaskMeta } from "./task-index.js";
@@ -98,6 +103,17 @@ export class CodeUiService {
     method: string,
     args: unknown[],
   ) {
+    if (service === "workspace" && method === "open") {
+      const input = z
+        .object({ path: z.string().trim().min(1) })
+        .strict()
+        .parse(args[0]);
+      const project = await this.deps.projects.openCodeDirectory(
+        user,
+        input.path,
+      );
+      return { result: await this.requireWorkspace(user, project.id) };
+    }
     if (service === "providerSettingsService") {
       if (method === "deletePersonalModel") {
         await this.deps.modelProviders.deleteCodeModel(
@@ -227,6 +243,8 @@ export class CodeUiService {
     }
     if (service === "file" && method === "readdir")
       return { result: await readCodeUiDirectory(args[0]) };
+    if (service === "file" && method === "resolvePath")
+      return { result: await resolveCodeUiPath(args[0]) };
     if (service === "file" && method === "readTextFile")
       return {
         result: await readCodeUiTextFile(
@@ -237,11 +255,36 @@ export class CodeUiService {
     if (service === "zcode-task") return this.taskIndexRpc(user, method, args);
     if (service === "setting" && method === "get") {
       const projects = await this.listWorkspaces(user);
+      const workspace = await this.deps.viewer.resolveWorkspace(user);
+      const stored = await this.deps.settings.getCodeUiRecentProjects(
+        user,
+        workspace.id,
+      );
+      const available = new Set(projects.map((project) => project.path));
       return {
         result: appSettingsSchema.parse({
-          recentProjects: projects.map((project) => project.path),
+          recentProjects: stored
+            ? stored.filter((path) => available.has(path))
+            : [...available],
         }),
       };
+    }
+    if (service === "setting" && method === "update") {
+      const input = appSettingsPatchSchema
+        .pick({ recentProjects: true })
+        .required()
+        .strict()
+        .parse(args[0]);
+      await Promise.all(
+        input.recentProjects.map((path) => this.requireWorkspace(user, path)),
+      );
+      const workspace = await this.deps.viewer.resolveWorkspace(user);
+      await this.deps.settings.updateCodeUiRecentProjects(
+        user,
+        workspace.id,
+        input.recentProjects,
+      );
+      return { result: null };
     }
     if (service === "system" && method === "info")
       return { result: { homedir: homedir(), platform: process.platform } };

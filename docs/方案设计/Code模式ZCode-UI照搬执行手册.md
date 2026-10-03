@@ -124,3 +124,9 @@ API 单源链已生成 SSE 媒体类型与完整原快照引用组件；不裁�
 HTTP 通知恢复接线已完成：物理断线先转原 unavailable，新连接沿同一客户端握手、刷新原两种模型 view，再转原 restarted/available；原 transport 与 SessionDataLayer 自行清 ownership/重订阅。四条宿主测试含同主/子连接、独立恢复、子面板释放、认证失败和关闭取消；原组件的外部 HTTP 夹具补真实通知握手，没有改组件。全量 web 378 测试/类型、原 UI 构建、3051 来源核对通过。真实页面主动切断一条预览通知流，在离线窗口更新供应商，原设置页无需重载/刷新便追上最新 view；截图 docs/验收/Code模式ZCode/原通知断线恢复.png。此证据不代表实际 Agent 运行断线、全部命令对账、长会话或视觉全矩阵已完成。
 
 原 DirectoryBrowser 的 readdir 已接真实 FS 元信息；原组件、隐藏开关、错误显示与图标保持原件。共享接口导出原 FileEntry 和参数 schema，宿主复用既有 Project 本机路径校验；不放宽正文读取的归属边界。公开接口 501 red→green，十二项宿主 integration 通过，包含隐藏/Unicode/空目录/符号链接/损坏链接和不可用路径。真实原弹窗导航及隐藏切换已实证，截图 docs/验收/Code模式ZCode/原目录浏览.png。目录选择后的 Project/主画布绑定、最近项目写入与实际 run 工作目录继续实施。
+
+目录绑定切片已接原 platform.activateOrSetWorkspace → workspace.open → Project 聚合与固定主画布。真实路径规范化后按目录身份复用；冷并发、目录 symlink/.. 别名同一项目，同名不同目录各自独立。recentProjects 沿原 setting 接口持久化，过滤已归档目录，非法归属写入整条拒绝；前向迁移 20261003060836_code_ui_recent_projects.sql 已执行，禁止改写。原 DirectoryBrowser 仅拓宽异步宿主回调并沿用原 loading/error 状态，原 Root hook 可把选择错误交回宿主，失败不关闭弹窗。源码偏差登记且 3051 项零漂移。
+
+十三项公开宿主 integration、原组件失败/重试 red→green、pnpm test（15 任务；web 64 文件/379 测试）、pnpm typecheck（12 包）及原 UI build 通过；独占临时库 75 条空库重放、历史 SHA/缺失零漂移、二次 0 条与实际 text[]/NULL/default 核对通过。原完整页面中文目录选择、刷新恢复、归档错误保留弹窗实证见 docs/验收/Code模式ZCode/原目录项目绑定.png 与 原目录绑定失败.png。两根真实会话共用该主画布已通过，实际活动 Agent/child 工作目录与工具运行尚未验证；整体目标 active。
+
+当前验收使用本任务独占临时 Postgres/API 3341，经回环转发 3301 与静态 preview 3300 接浏览器，不管理共享开发 PG。临时数据和脚本不入库。工作树审计的剩余源码、测试、迁移、文档、许可证、截图及参考指针应入库；依赖/构建/本地凭据/运行数据已忽略。并行 Agent 的 README/许可证/调研与参考指针不由本切片代提交。

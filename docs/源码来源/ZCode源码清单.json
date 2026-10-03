@@ -242,9 +242,10 @@
       "source": "references/zcode/packages/ui/src/DirectoryBrowser.tsx",
       "target": "apps/web/src/components/workbench/zcode/DirectoryBrowser.tsx",
       "sha256": "a2ff0d9ab5ac81802055d1bf7a7658454e1b2e6228fb6ea4d5bd2e06c2450854",
-      "copiedSha256": "a2ff0d9ab5ac81802055d1bf7a7658454e1b2e6228fb6ea4d5bd2e06c2450854",
+      "copiedSha256": "597bc464509c2e2a4a4b2cb27385249fcc0d4adeb11e7f6cf1f20b1a56c649e3",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：选择回调支持 Promise；沿原 loading/error 状态等待绑定、失败保留选择器；原 UI 标记不变"
       ]
     },
     {
@@ -9140,9 +9141,10 @@
       "source": "references/zcode/packages/ui/src/root/useRootWorkspaceActions.ts",
       "target": "apps/web/src/components/workbench/zcode/root/useRootWorkspaceActions.ts",
       "sha256": "3c8ebfe29150dcc21e53e17feca678aa58f93c59c5d875fe5db162cda65c79cb",
-      "copiedSha256": "daf3ba45a6523027625240b66da9d2dc911de2925da8174c209d0dc2f9cbdf6a",
+      "copiedSha256": "8fbe3d73d30ca6037b2a7fccedf5b88294d3c88e004c1acc2aab68e75b315837",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：增加可选选择错误回调，Code 宿主交回原目录选择器；原 UI 装配不变"
       ]
     },
     {

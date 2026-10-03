@@ -75,6 +75,179 @@ async function openCodeStream(streams: AbortController[]) {
 }
 
 describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", () => {
+  it("原工作目录打开绑定真实 Code Project 与固定主画布，并发和目录别名不创建第二份项目", async () => {
+    expect((await request("/api/viewer")).status).toBe(200);
+    const root = await mkdtemp(join(tmpdir(), "code-ui-open-directory-"));
+    const first = join(root, "甲", "同名目录");
+    const second = join(root, "乙", "同名目录");
+    const open = (path: string) =>
+      request("/api/code-ui/rpc", {
+        service: "workspace",
+        method: "open",
+        args: [{ path }],
+      });
+    const ids = new Set<string>();
+    let providerId = "";
+    try {
+      await mkdir(first, { recursive: true });
+      await mkdir(second, { recursive: true });
+      await symlink(first, join(root, "目录别名"));
+      const initial = await Promise.all([
+        open(first),
+        open(join(root, "目录别名")),
+        open(join(first, "..", "同名目录")),
+      ]);
+      const opened = initial[0]!;
+      expect(opened.status, JSON.stringify(opened.body)).toBe(200);
+      ids.add(opened.body.result.projectId);
+      expect(opened.body.result).toMatchObject({
+        name: "同名目录",
+        path: await import("node:fs/promises").then((fs) => fs.realpath(first)),
+      });
+      for (const result of initial) {
+        expect(result.status, JSON.stringify(result.body)).toBe(200);
+        expect(result.body.result).toEqual(opened.body.result);
+      }
+      const concurrent = await Promise.all([
+        open(first),
+        open(join(root, "目录别名")),
+        open(join(first, "..", "同名目录")),
+      ]);
+      for (const result of concurrent) {
+        expect(result.status).toBe(200);
+        expect(result.body.result).toEqual(opened.body.result);
+      }
+      const other = await open(second);
+      expect(other.status).toBe(200);
+      ids.add(other.body.result.projectId);
+      expect(other.body.result.projectId).not.toBe(
+        opened.body.result.projectId,
+      );
+      expect(other.body.result.canvasId).not.toBe(opened.body.result.canvasId);
+      const projects = await request("/api/projects?kind=code");
+      expect(
+        projects.body.projects.filter((item: { id: string }) =>
+          ids.has(item.id),
+        ),
+      ).toHaveLength(2);
+      const restored = await request("/api/code-ui/workspaces");
+      expect(restored.body.workspaces).toContainEqual(opened.body.result);
+      expect(restored.body.workspaces).toContainEqual(other.body.result);
+      const providerRpc = (method: string, args: unknown[] = []) =>
+        request("/api/code-ui/rpc", {
+          service: "providerSettingsService",
+          method,
+          args,
+        });
+      const provider = await providerRpc("createPersonalProvider", [
+        { providerName: "目录会话作用域验收" },
+      ]);
+      providerId = provider.body.result.providerId;
+      await providerRpc("savePersonalProviderOverlay", [
+        providerId,
+        {
+          api: {
+            type: "openai-chat-completions",
+            baseUrl: "https://example.invalid/v1",
+          },
+          access: { type: "api-key", apiKey: "integration-only-not-a-key" },
+        },
+      ]);
+      await providerRpc("addPersonalModel", [providerId, "scope-model", {}]);
+      const createdSessions: string[] = [];
+      for (const _round of [1, 2]) {
+        const session = await request("/api/code-ui/rpc", {
+          service: "zcodeAgentService",
+          method: "sendConversationCommandV4",
+          args: [
+            {
+              workspacePath: opened.body.result.path,
+              envelope: {
+                commandId: randomUUID(),
+                clientId: randomUUID(),
+                sessionId: null,
+                type: "createSession",
+                payload: {
+                  workspaceId: opened.body.result.path,
+                  config: {
+                    modelSelection: {
+                      providerId,
+                      modelId: "scope-model",
+                      options: {},
+                    },
+                  },
+                },
+                issuedAt: Date.now(),
+              },
+            },
+          ],
+        });
+        expect(session.status, JSON.stringify(session.body)).toBe(200);
+        createdSessions.push(session.body.result.result.sessionId);
+      }
+      expect(new Set(createdSessions).size).toBe(2);
+      const sessions = await request(
+        `/api/canvases/${opened.body.result.canvasId}/sessions`,
+      );
+      expect(
+        sessions.body.sessions.map((session: { id: string }) => session.id),
+      ).toEqual(expect.arrayContaining(createdSessions));
+      const settings = (method: string, args: unknown[] = []) =>
+        request("/api/code-ui/rpc", { service: "setting", method, args });
+      const recent = [other.body.result.path, opened.body.result.path];
+      const saved = await settings("update", [{ recentProjects: recent }]);
+      expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+      expect((await settings("get")).body.result.recentProjects).toEqual(
+        recent,
+      );
+      expect(
+        (await settings("update", [{ recentProjects: [join(root, "缺失")] }]))
+          .status,
+      ).toBe(404);
+      expect((await settings("get")).body.result.recentProjects).toEqual(
+        recent,
+      );
+      expect((await open(join(root, "缺失"))).status).toBe(400);
+      expect((await open("relative-path")).status).toBe(400);
+      expect(
+        (
+          await request(
+            `/api/projects/${opened.body.result.projectId}`,
+            undefined,
+            "DELETE",
+          )
+        ).status,
+      ).toBe(204);
+      const lateOpen = await open(first);
+      expect(lateOpen.status).toBe(409);
+      expect(lateOpen.body.error.message).toBe(
+        "工作目录对应的项目已归档，无法重新打开。",
+      );
+      expect(
+        (
+          await settings("update", [
+            { recentProjects: [opened.body.result.path] },
+          ])
+        ).status,
+      ).toBe(404);
+      expect(
+        (await request("/api/code-ui/workspaces")).body.workspaces.some(
+          (item: { projectId: string }) =>
+            item.projectId === opened.body.result.projectId,
+        ),
+      ).toBe(false);
+    } finally {
+      if (providerId)
+        await request("/api/code-ui/rpc", {
+          service: "providerSettingsService",
+          method: "deletePersonalProvider",
+          args: [providerId],
+        });
+      for (const id of ids)
+        await request(`/api/projects/${id}`, undefined, "DELETE");
+      await rm(root, { recursive: true, force: true });
+    }
+  });
   it("原目录选择器读取真实目录、隐藏项和 Unicode，符号链接保持原类型且不可用路径有可读错误", async () => {
     expect((await request("/api/viewer")).status).toBe(200);
     const dir = await mkdtemp(join(tmpdir(), "code-ui-directory-"));

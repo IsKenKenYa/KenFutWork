@@ -72,6 +72,15 @@ export type WorkspaceSettingsPatch = {
 };
 
 export type SettingsService = {
+  getCodeUiRecentProjects(
+    user: AuthenticatedUser,
+    workspaceId: string,
+  ): Promise<string[] | null>;
+  updateCodeUiRecentProjects(
+    user: AuthenticatedUser,
+    workspaceId: string,
+    paths: string[],
+  ): Promise<void>;
   getCodeUiTransportSettings(
     user: AuthenticatedUser,
     workspaceId: string,
@@ -297,6 +306,10 @@ export function createSettingsService(options: {
   };
 
   return {
+    getCodeUiRecentProjects: (_user, workspaceId) =>
+      repository.findCodeUiRecentProjects(workspaceId),
+    updateCodeUiRecentProjects: (_user, workspaceId, paths) =>
+      repository.upsertCodeUiRecentProjects(workspaceId, paths),
     getCodeUiTransportSettings,
     getWorkspaceSettings: getSettings,
 

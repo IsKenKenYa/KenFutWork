@@ -87,6 +87,7 @@ export function useRootWorkspaceActions({
   onProviderFamilyDomainClearedAfterLogout,
   userId,
   onOpenRemoteConnection,
+  onWorkspaceSelectionError,
   workbenchGroupClientMode = "desktop-continuous",
 }: {
   intl: ReturnType<typeof import("@zui/i18n/IntlProvider.js").useZCodeIntl>["intl"];
@@ -107,6 +108,7 @@ export function useRootWorkspaceActions({
   onProviderFamilyDomainClearedAfterLogout?: () => void;
   userId?: string;
   onOpenRemoteConnection?: (preference?: OpenRemoteConnectionPreference) => void;
+  onWorkspaceSelectionError?: (error: unknown) => void;
   workbenchGroupClientMode?: ZCodeTaskClientMode;
 }) {
   const [workspaceActionError, setWorkspaceActionError] = useState<string | null>(null);
@@ -422,11 +424,13 @@ export function useRootWorkspaceActions({
         }
       } catch (err) {
         logger.error("[Root] handleSelectProject error:", err);
+        onWorkspaceSelectionError?.(err);
       }
     },
     [
       addTab,
       intl,
+      onWorkspaceSelectionError,
       onOpenRemoteConnection,
       platform,
       requestConfirmation,

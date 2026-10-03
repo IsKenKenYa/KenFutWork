@@ -7,6 +7,11 @@ import type { PersistenceService } from "../persistence/types.js";
  * 表以 `workspace_id` 为主键，故 upsert 天然是「一工作区一行」。
  */
 export interface SettingsRepository {
+  findCodeUiRecentProjects(workspaceId: string): Promise<string[] | null>;
+  upsertCodeUiRecentProjects(
+    workspaceId: string,
+    paths: string[],
+  ): Promise<void>;
   findCodeUiReconnectDelayMs(workspaceId: string): Promise<number | null>;
   upsertCodeUiReconnectDelayMs(
     workspaceId: string,
@@ -92,6 +97,22 @@ export function createSettingsRepository(
   persistence: PersistenceService,
 ): SettingsRepository {
   return {
+    async findCodeUiRecentProjects(workspaceId) {
+      const row = await persistence
+        .forWorkspace(workspaceId)
+        .queryOne<{ code_ui_recent_projects: string[] | null }>(
+          `select code_ui_recent_projects from public.workspace_settings where workspace_id=:workspace`,
+        );
+      return row?.code_ui_recent_projects ?? null;
+    },
+    async upsertCodeUiRecentProjects(workspaceId, paths) {
+      await persistence
+        .forWorkspace(workspaceId)
+        .execute(
+          `insert into public.workspace_settings(workspace_id,code_ui_recent_projects) values(:workspace,$1::text[]) on conflict(workspace_id) do update set code_ui_recent_projects=excluded.code_ui_recent_projects`,
+          [paths],
+        );
+    },
     async findCodeUiReconnectDelayMs(workspaceId) {
       const row = await persistence
         .forWorkspace(workspaceId)

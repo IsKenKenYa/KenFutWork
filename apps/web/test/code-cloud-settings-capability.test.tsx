@@ -67,7 +67,7 @@ it("原设置与无模型提示按 BYOK 能力保留供应商/配置操作，隐
   const openSettings = vi.fn();
   render(
     <ServiceProvider services={client.services}>
-      <PlatformProvider platform={createCodePlatform()}>
+      <PlatformProvider platform={createCodePlatform(client)}>
         <ZCodeIntlProvider initialLocale="zh-CN">
           <StoreProvider broadcastService={client.services.broadcastService}>
             <TooltipProvider>

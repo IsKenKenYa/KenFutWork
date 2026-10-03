@@ -66,6 +66,8 @@ function createRepositoryFake(
 ): SettingsRepository {
   return {
     findDefaultModel: async () => null,
+    findCodeUiRecentProjects: async () => null,
+    upsertCodeUiRecentProjects: async () => {},
     findCodeUiReconnectDelayMs: async () => null,
     upsertCodeUiReconnectDelayMs: async () => {},
     findAgentMaxRetries: async () => null,

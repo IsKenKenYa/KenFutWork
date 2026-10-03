@@ -10,9 +10,14 @@ import type { RequestAuthenticator } from "../features/auth/types.js";
 import { CodeUiRepositoryError } from "../features/code-ui/repository.js";
 import type { CodeUiService } from "../features/code-ui/service.js";
 import { ModelProviderServiceError } from "../features/model-providers/model-provider-service.js";
+import { ProjectServiceError } from "../features/projects/project-service.js";
 import { isZodError } from "./zod-error.js";
 
 function sendError(reply: FastifyReply, error: unknown) {
+  if (error instanceof ProjectServiceError)
+    return reply
+      .code(error.statusCode)
+      .send({ error: { code: error.code, message: error.message } });
   if (error instanceof ModelProviderServiceError)
     return reply
       .code(error.statusCode)

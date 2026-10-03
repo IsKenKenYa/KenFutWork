@@ -79,6 +79,10 @@ export type CreateProjectInput = {
  * JOIN `projects` 后施加谓词（`FORM-9` 单一隔离入口）。
  */
 export interface ProjectRepository {
+  findActiveCodeDirectory(
+    workspaceId: string,
+    path: string,
+  ): Promise<{ project: CreatedProjectRow; canvas: CreatedCanvasRow } | null>;
   /** 归档（软删）活跃项目；返回受影响行数（0 = 不存在或已归档）。 */
   archive(workspaceId: string, projectId: string): Promise<number>;
   /** 建项目 + 主画布，同一事务（原子性不依赖 DB 函数）。 */
@@ -156,6 +160,17 @@ export function createProjectRepository(
   persistence: PersistenceService,
 ): ProjectRepository {
   return {
+    async findActiveCodeDirectory(workspaceId, path) {
+      return persistence
+        .forWorkspace(workspaceId)
+        .queryOne<{ project: CreatedProjectRow; canvas: CreatedCanvasRow }>(
+          `select to_jsonb(p) as project, jsonb_build_object('id',c.id,'name',c.name,'is_primary',c.is_primary) as canvas
+         from public.projects p join public.canvases c on c.project_id=p.id and c.is_primary=true
+         where p.workspace_id=:workspace and p.archived_at is null and p.kind='code' and p.work_dir=$1
+         order by p.created_at asc limit 1`,
+          [path],
+        );
+    },
     async listActive(workspaceId, kind = "design") {
       return persistence.forWorkspace(workspaceId).query<ProjectListRow>(
         `select ${PROJECT_LIST_COLUMNS}

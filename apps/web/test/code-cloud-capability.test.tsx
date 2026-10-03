@@ -49,7 +49,7 @@ it("BYOK 宿主的原账户菜单保留偏好和统计，隐藏云登录、套�
   const client = new CodeHttpChannelClient({
     apiBase: "http://localhost:3001",
   });
-  const platform = createCodePlatform();
+  const platform = createCodePlatform(client);
   render(
     <ServiceProvider services={client.services}>
       <PlatformProvider platform={platform}>
