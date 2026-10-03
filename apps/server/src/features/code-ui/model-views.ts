@@ -82,7 +82,9 @@ function modelView(
       kind: "candidate" as const,
       effectiveBuiltinConfig: resolved.inherited.toJSON(),
       effectiveConfig: resolved.effective.toJSON(),
-      personalExactConfig: personal.personalConfig,
+      ...(personal.personalConfig === undefined
+        ? {}
+        : { personalExactConfig: personal.personalConfig }),
       useRecommendedConfig: personal.useRecommendedConfig,
       enabled,
       executable,

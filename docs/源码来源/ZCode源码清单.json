@@ -15988,8 +15988,10 @@
       "source": "references/zcode/packages/provider/src/config-service.ts",
       "target": "packages/zcode-provider/src/config-service.ts",
       "sha256": "0b04f9c58779c4b4c3945332d816fe5524de02acb179e0a9f68f421cf4b3b202",
-      "copiedSha256": "0b04f9c58779c4b4c3945332d816fe5524de02acb179e0a9f68f421cf4b3b202",
-      "adaptations": []
+      "copiedSha256": "c59e1253582e476351cb638c181515349b48ba450fdfdf658e9b27e162e7b217",
+      "adaptations": [
+        "宿主接口：仅导出原 isStructurallyEmpty，KenFutWork 持久化复用恢复推荐规则的原判定；函数实现不变"
+      ]
     },
     {
       "source": "references/zcode/packages/provider/src/config/ids.ts",

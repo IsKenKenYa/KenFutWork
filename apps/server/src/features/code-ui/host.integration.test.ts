@@ -72,6 +72,73 @@ async function openCodeStream(streams: AbortController[]) {
 }
 
 describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", () => {
+  it("原模型恢复智能规则删除个人精确配置，刷新保留推荐且同值保存不推进修订", async () => {
+    expect((await request("/api/viewer")).status).toBe(200);
+    const rpc = (method: string, args: unknown[] = []) =>
+      request("/api/code-ui/rpc", {
+        service: "providerSettingsService",
+        method,
+        args,
+      });
+    let providerId = "";
+    try {
+      const created = await rpc("createPersonalProvider", [
+        { providerName: `恢复推荐 ${randomUUID()}` },
+      ]);
+      providerId = created.body.result.providerId;
+      const added = await rpc("addPersonalModel", [
+        providerId,
+        "待恢复模型",
+        { properties: { contextWindow: 260000 } },
+      ]);
+      const input = {
+        providerId,
+        originalModelId: "待恢复模型",
+        nextModelId: "待恢复模型",
+        personalConfig: { properties: {} },
+        useRecommendedConfig: true,
+        basedOnRevision: added.body.result.revision,
+      };
+      const restored = await rpc("savePersonalModelDraft", [input]);
+      expect(restored.status, JSON.stringify(restored.body)).toBe(200);
+      const provider = restored.body.result.providers.find(
+        (item: { providerId: string }) => item.providerId === providerId,
+      );
+      expect(provider.models).toHaveLength(1);
+      expect(provider.models[0]).not.toHaveProperty("personalExactConfig");
+      expect(provider.models[0]).toMatchObject({
+        modelId: "待恢复模型",
+        useRecommendedConfig: true,
+        effectiveConfig: {
+          enabled: true,
+          properties: { contextWindow: 200000 },
+          optionSpecs: { maxOutputTokens: { max: 32000 } },
+        },
+      });
+      expect((await rpc("refresh")).body.result).toEqual(restored.body.result);
+      const repeated = await rpc("savePersonalModelDraft", [
+        {
+          ...input,
+          personalConfig: {},
+          basedOnRevision: restored.body.result.revision,
+        },
+      ]);
+      expect(repeated.status).toBe(200);
+      expect(repeated.body.result).toEqual(restored.body.result);
+      const manual = await rpc("savePersonalModelDraft", [
+        {
+          ...input,
+          personalConfig: {},
+          useRecommendedConfig: false,
+          basedOnRevision: restored.body.result.revision,
+        },
+      ]);
+      expect(manual.status).toBe(400);
+      expect((await rpc("getView")).body.result).toEqual(restored.body.result);
+    } finally {
+      if (providerId) await rpc("deletePersonalProvider", [providerId]);
+    }
+  });
   it("原模型草稿原子改名与保存精确规则，拒绝同修订并发和跨供应商过期修订", async () => {
     expect((await request("/api/viewer")).status).toBe(200);
     const rpc = (method: string, args: unknown[] = []) =>

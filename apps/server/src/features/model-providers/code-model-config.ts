@@ -1,5 +1,6 @@
 import type { ProviderInstanceModel } from "@kenfutwork/shared";
 import {
+  isStructurallyEmpty,
   ModelConfig,
   type ModelConfigObject,
   ModelConfigRules,
@@ -11,7 +12,7 @@ import modelRules from "./zcode-model-config-rules.json" with { type: "json" };
 
 /** 原精确规则是该模型可编辑配置的唯一存储；标准运行字段从它推导。 */
 export interface ProviderCodeModelConfig {
-  personalConfig: ModelConfigObject;
+  personalConfig?: ModelConfigObject;
   useRecommendedConfig: boolean;
 }
 export interface ProviderInstanceStoredModel {
@@ -35,10 +36,13 @@ export function createProviderCodeModelConfig(
   personalConfig: ModelConfigObject,
   useRecommendedConfig = true,
 ): ProviderCodeModelConfig {
+  const config = parseModelConfig(personalConfig);
+  if (useRecommendedConfig && isStructurallyEmpty(config.toJSON()))
+    return { useRecommendedConfig };
   const rules = ModelConfigRules.empty().setExact(
     providerId,
     modelId,
-    parseModelConfig(personalConfig),
+    config,
     useRecommendedConfig,
   );
   return {
@@ -66,14 +70,15 @@ export function resolveProviderCodeModel(
       : { baseUrl: providerConfig.api.baseUrl }),
   };
   const inherited = builtinRules.resolve(identity);
-  const personalRules = personal
-    ? ModelConfigRules.empty().setExact(
-        providerId,
-        modelId,
-        parseModelConfig(personal.personalConfig),
-        personal.useRecommendedConfig,
-      )
-    : ModelConfigRules.empty();
+  const personalRules =
+    personal?.personalConfig !== undefined
+      ? ModelConfigRules.empty().setExact(
+          providerId,
+          modelId,
+          parseModelConfig(personal.personalConfig),
+          personal.useRecommendedConfig,
+        )
+      : ModelConfigRules.empty();
   const effective = ModelConfigRules.composeEffective(
     builtinRules,
     personalRules,

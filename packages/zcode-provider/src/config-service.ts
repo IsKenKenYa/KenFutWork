@@ -586,7 +586,7 @@ export class ProviderConfigService implements ProviderSource<ProviderConfigSnaps
   }
 }
 
-function isStructurallyEmpty(value: unknown): boolean {
+export function isStructurallyEmpty(value: unknown): boolean {
   if (value === undefined) return true;
   if (value === null || typeof value !== "object") return false;
   if (Array.isArray(value)) return value.length === 0;

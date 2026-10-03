@@ -104,6 +104,8 @@ Provider 保存切片已接 `savePersonalProviderOverlay`，复用原 ProviderCo
 
 原模型草稿保存/CAS 切片已接 `savePersonalModelDraft`：改名、精确规则和成员位置同事务写入，保留兄弟模型；所有 HTTP/原宿主配置写入口统一先锁 workspace revision，再修改实例。公开宿主从 501 red→green，验证原成员改名与 260000/9000 配置、同修订重放/并发、跨供应商过期修订及目标重名均不部分写入。七项原供应商/模型 integration、server 158 文件/1478 回归与类型检查、25 workspace/API 门禁通过。恢复智能规则的空配置语义、独立成员操作与指定模型测试仍未完成，不能认定模型设置完整。
 
+恢复智能规则已补齐：仅导出原 `isStructurallyEmpty` 供宿主复用，原函数不变，偏差登记来源清单；recommended + 结构空配置不持有个人精确规则，Code 模型身份仍保留，继续从原推荐推导容量。同值重存不增修订，手动空配置仍按原 schema 拒绝。公开接口 red→green 与八项供应商/模型 integration、server 1478 回归、全量 typecheck 通过；原完整模型弹窗实际完成添加 260K→重置表单→保存 200K→刷新，截图 `docs/验收/Code模式ZCode/原模型推荐恢复.png`。此证据不代表启停/删除等剩余模型操作和真实外部模型执行完成。
+
 ### 验收进程与文件审计
 
 - 本任务临时 API 3301、生产静态 preview 3300；只连接现存开发 PG，不管理其生命周期。开发主服务监听源码变化时可能停/起 PG 并换端口；临时回环转发 3332 跟随当前 PG 端口。临时脚本位于 `/tmp/ken-code-api.mts` 与 `/tmp/ken-code-db-proxy.mjs`，不入库；先检查实时监听再使用，PID/exec handle 不作为长期事实。
