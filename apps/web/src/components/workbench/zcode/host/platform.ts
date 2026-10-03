@@ -13,6 +13,9 @@ export function createCodePlatform(client: IChannelClient): IPlatformService {
     supportsEmbeddedBrowser: false,
     supportsComputerUse: false,
     supportsRemoteWorkspaces: false,
+    supportsUserOnboarding: false,
+    supportsSettingsImport: false,
+    supportsAppRuntimePreferences: false,
     async activateOrSetWorkspace(path) {
       await workspace.call("open", [{ path }]);
       return { activated: false };

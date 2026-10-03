@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { open, readdir, realpath, stat } from "node:fs/promises";
+import { mkdir, open, readdir, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, resolve, sep } from "node:path";
 import {
   type CodeUiWorkspace,
@@ -7,8 +7,24 @@ import {
   codeUiFileReadParamsSchema,
   type FileEntry,
 } from "@kenfutwork/shared";
+import { resolveSandboxDir } from "../../agent/sandbox-dir.js";
 import { validateWorkDir } from "../projects/work-dir.js";
 import { CodeUiRepositoryError } from "./repository.js";
+
+/** 原 Root 的共享对话 cwd；由真实工作区身份隔离，随后绑定 Project/主画布。 */
+export async function ensureCodeUiConversationDirectory(
+  workspaceId: string,
+  sandboxRoot?: string,
+) {
+  const path = join(
+    resolveSandboxDir("code-conversations", sandboxRoot),
+    workspaceId,
+  );
+  const created = (await mkdir(path, { recursive: true })) !== undefined;
+  if (!(await stat(path)).isDirectory())
+    throw new Error(`Code 默认工作目录不是目录：${path}`);
+  return { path, created };
+}
 
 export async function resolveCodeUiPath(value: unknown): Promise<string> {
   const { path } = codeUiFileDirectoryParamsSchema

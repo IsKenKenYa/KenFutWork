@@ -133,6 +133,7 @@ export function OccupationOnboarding({
         closeOnboarding();
         return;
       }
+      if (platform.supportsUserOnboarding === false) return;
       if (
         !shortcutBindings.openOnboarding.some((binding) => matchesShortcutBinding(event, binding))
       )
@@ -211,6 +212,7 @@ export function OccupationOnboarding({
     applyLatestEntry();
     // eslint-disable-line react-hooks/exhaustive-deps
   }, [latestEntry]);
+  if (platform.supportsUserOnboarding === false) return <>{children}</>;
   if (!settings) return showChildrenWhileLoading ? <>{children}</> : null;
   // 判定进行中先不渲染，避免引导闪现后立即消失（判定为需引导）或先闪引导再进主界面。
   // 只有疑似首跑（settings 里也没有职业）才等待记录判定；存量用户（已有

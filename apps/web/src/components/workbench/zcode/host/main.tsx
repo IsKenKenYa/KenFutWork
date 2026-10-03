@@ -1,33 +1,12 @@
-import type { IServiceAccessor } from "@zcode/services";
+import type { ViewerResponse } from "@kenfutwork/shared";
 import type { UserInfo } from "@zcode/shared";
-import { AssistantCodeCommentFeatureProvider } from "@zui/AssistantCodeCommentFeatureProvider.js";
-import { ConfirmDialogHost } from "@zui/ConfirmDialog.js";
-import { TooltipProvider } from "@zui/components/ui/tooltip.js";
-import { DirectoryBrowser } from "@zui/DirectoryBrowser.js";
+import type { HelloMessage } from "@zcode/shared/zcode-protocol-v4";
 import { ScopedErrorBoundary } from "@zui/ErrorBoundary.js";
-import { PlatformProvider } from "@zui/hooks/usePlatform.js";
-import { ServiceProvider } from "@zui/hooks/useServices.js";
-import { useZCodeIntl, ZCodeIntlProvider } from "@zui/i18n/IntlProvider.js";
-import { reloadProviderSettingsSnapshot } from "@zui/lib/providerSettingsSnapshot.js";
-import { isRendererReloadNavigation } from "@zui/lib/rendererNavigation.js";
-import { DiffsWorkerPoolProvider } from "@zui/root/DiffsWorkerPoolProvider.js";
+import { ZCodeIntlProvider } from "@zui/i18n/IntlProvider.js";
+import { Root } from "@zui/Root.js";
 import { RootStartupLoading } from "@zui/root/RootStartupLoading.js";
-import { RootWorkspaceContent } from "@zui/root/RootWorkspaceContent.js";
-import { useRootProviderSettingsSnapshot } from "@zui/root/useRootProviderSettingsSnapshot.js";
-import { useRootWorkspaceActions } from "@zui/root/useRootWorkspaceActions.js";
-import { CodingPlanUpgradeDialogProvider } from "@zui/settings/CodingPlanUpgradeDialogProvider.js";
-import { StoreProvider, useZCodeStore } from "@zui/store/StoreProvider.js";
-import {
-  TabStoreProvider,
-  useTabStore,
-  useTabStoreApi,
-} from "@zui/store/TabStoreProvider.js";
-import { isSettingsTab } from "@zui/store/tabStore.js";
-import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
-import { usePaneLayoutStore } from "@zui/v4/paneLayoutStore.js";
-import { useWorkbenchGroupStore } from "@zui/v4/workbenchGroupStore.js";
-import { LucideProvider } from "lucide-react";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { ensureAgentV4ConnectionHandshake } from "@zui/v4/agentV4ConnectionHandshake.js";
+import { useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import {
   type CodeHostConfig,
@@ -37,13 +16,6 @@ import { navigateToDesign, requestParentBootstrap } from "./parentBridge.js";
 import { createCodePlatform } from "./platform.js";
 import { bindCodeWorkspaceServices } from "./workspaceServices.js";
 import "@zui/styles.css";
-
-interface Workspace {
-  projectId: string;
-  canvasId: string;
-  name: string;
-  path: string;
-}
 
 const params = new URLSearchParams(window.location.search);
 const bootstrap =
@@ -57,174 +29,75 @@ const config: CodeHostConfig = {
 };
 const client = new CodeHttpChannelClient(config);
 const platform = createCodePlatform(client);
-const root = createRoot(document.getElementById("root")!);
+const element = document.getElementById("root");
+if (!element) throw new Error("Code 宿主缺少 root 容器");
+const root = createRoot(element);
 
-function WorkspaceHost({
-  workspaces,
-  services,
+function CodeHost({
+  workspacePath,
+  user,
+  clientMode,
 }: {
-  workspaces: Workspace[];
-  services: IServiceAccessor;
+  workspacePath?: string;
+  user: UserInfo | null;
+  clientMode: HelloMessage["clientMode"];
 }) {
-  const tabStore = useTabStoreApi();
-  const { intl } = useZCodeIntl();
-  const activePath = useTabStore((state) => state.activeWorkspacePath);
-  const settingsActive = useTabStore((state) =>
-    state.tabs.some(
-      (tab) => tab.id === state.activeTabId && isSettingsTab(tab),
-    ),
-  );
-  const [directoryOpen, setDirectoryOpen] = useState(workspaces.length === 0);
-  const [user, setUser] = useState<UserInfo | null>(bootstrap?.user ?? null);
-  const setStoreUser = useZCodeStore((state) => state.setUser);
-  useEffect(() => setStoreUser(user), [setStoreUser, user]);
-  const [, setOAuthError] = useState<string | null>(null);
-  useRootProviderSettingsSnapshot(services);
-  const actions = useRootWorkspaceActions({
-    intl,
-    platform,
-    services,
-    tabStoreApi: tabStore,
-    addTab: tabStore.getState().addTab,
-    activeWorkspacePath: activePath,
-    activeWorkspaceIdentity: null,
-    supportsSettings: true,
-    allowOpenWorkspace: true,
-    preferDirectoryBrowser: true,
-    openDirectoryBrowser: () => setDirectoryOpen(true),
-    refreshProviderState: reloadProviderSettingsSnapshot,
-    updateAppSettings: (patch) => services.settingService.update(patch),
-    setOAuthError,
-    setUser,
-    workbenchGroupClientMode: "web-remote-replayable",
-    onWorkspaceSelectionError: (error) => {
-      throw error;
-    },
-  });
-  useEffect(() => {
-    const workspace =
-      workspaces.find((item) => item.path === config.workspacePath) ??
-      workspaces[0];
-    if (!workspace) return;
-    tabStore.getState().addTab(workspace.path);
-    if (!isRendererReloadNavigation()) {
-      useWorkbenchGroupStore.getState().deactivateActiveGroup();
-      usePaneLayoutStore.getState().resetToPrimaryPane();
-      useZCodeSessionStore.getState().startDraft(workspace.path);
-    }
-  }, [tabStore, workspaces]);
-
-  if (!activePath && workspaces.length > 0)
-    return <RootStartupLoading label="打开 Code 工作目录" />;
-
-  return (
-    <>
-      <RootWorkspaceContent
-        workspaceScopedServices={services}
-        baseFeedbackService={services.feedbackService}
-        workspaceShellPath={activePath ?? ""}
-        activeWorkspacePath={activePath}
-        isSettingsTabActive={settingsActive}
-        handleCreateTask={actions.handleCreateTask}
-        handleCreateConversationTask={actions.handleCreateConversationTask}
-        handleResolveConversationWorkspace={
-          actions.handleResolveConversationWorkspace
-        }
-        handleOpenWorkspace={actions.handleOpenWorkspace}
-        handleOpenFolderFromWorkspaceMenu={
-          actions.handleOpenFolderFromWorkspaceMenu
-        }
-        handleCreateScratchWorkspace={actions.handleCreateScratchWorkspace}
-        handleBackFromSettings={actions.handleBackFromSettings}
-        handleConnectRemote={async () => {
-          throw new Error("当前宿主尚无远程连接插件");
-        }}
-        handleSelectRemoteProject={async () => {
-          throw new Error("当前宿主尚无远程连接插件");
-        }}
-        handleCancelRemoteProject={async () => {
-          throw new Error("当前宿主尚无远程连接插件");
-        }}
-        handleReconnectRemoteWorkspace={async () => {
-          throw new Error("当前宿主尚无远程连接插件");
-        }}
-        remoteWorkspaceSessions={[]}
-        allowRemoteWorkspace={platform.supportsRemoteWorkspaces === true}
-        allowOpenWorkspace={true}
-        supportsEmbeddedBrowser={platform.supportsEmbeddedBrowser === true}
-        reconnectingRemoteWorkspaceKeys={[]}
-        remoteWorkspaceErrorByWorkspaceKey={{}}
-        reconnectingRemoteWorkspaceLogsByWorkspaceKey={{}}
-        user={user}
-      />
-      {directoryOpen && (
-        <DirectoryBrowser
-          services={services}
-          onSelect={async (path) => {
-            const resolved = await services.fileService.resolvePath({ path });
-            await actions.handleSelectProject(resolved);
-            setDirectoryOpen(false);
-          }}
-          onCancel={() => setDirectoryOpen(false)}
-        />
-      )}
-      <ConfirmDialogHost />
-    </>
-  );
-}
-
-function CodeHost({ workspaces }: { workspaces: Workspace[] }) {
   const services = useSyncExternalStore(
     client.subscribeServices,
     () => client.services,
   );
   return (
-    <LucideProvider strokeWidth={1.5}>
-      <TooltipProvider>
-        <ServiceProvider services={services}>
-          <PlatformProvider platform={platform}>
-            <ZCodeIntlProvider
-              initialLocale="zh-CN"
-              settingService={services.settingService}
-              broadcastService={services.broadcastService}
-            >
-              <StoreProvider
-                broadcastService={services.broadcastService}
-                onInterfaceModeChange={(mode) => {
-                  if (mode === "office") navigateToDesign();
-                }}
-              >
-                <TabStoreProvider>
-                  <DiffsWorkerPoolProvider>
-                    <AssistantCodeCommentFeatureProvider enabled>
-                      <CodingPlanUpgradeDialogProvider>
-                        <ScopedErrorBoundary scope="kenfutwork-code-host">
-                          <WorkspaceHost
-                            workspaces={workspaces}
-                            services={services}
-                          />
-                        </ScopedErrorBoundary>
-                      </CodingPlanUpgradeDialogProvider>
-                    </AssistantCodeCommentFeatureProvider>
-                  </DiffsWorkerPoolProvider>
-                </TabStoreProvider>
-              </StoreProvider>
-            </ZCodeIntlProvider>
-          </PlatformProvider>
-        </ServiceProvider>
-      </TooltipProvider>
-    </LucideProvider>
+    <ZCodeIntlProvider
+      initialLocale="zh-CN"
+      settingService={services.settingService}
+      broadcastService={services.broadcastService}
+    >
+      <ScopedErrorBoundary scope="kenfutwork-code-host">
+        <Root
+          services={services}
+          platform={platform}
+          initialUserInfo={user}
+          {...(workspacePath ? { initialWorkspaceAbsPath: workspacePath } : {})}
+          workbenchGroupClientMode={clientMode}
+          onInterfaceModeChange={(mode) => {
+            if (mode === "office") navigateToDesign();
+          }}
+          preferDirectoryBrowser
+          restoreSession
+          allowRemoteWorkspace={false}
+          supportsEmbeddedBrowser={false}
+          initialWorkspaceLoadingFallback={
+            <RootStartupLoading label="打开 Code 工作目录" />
+          }
+        />
+      </ScopedErrorBoundary>
+    </ZCodeIntlProvider>
   );
 }
 
 root.render(<RootStartupLoading label="加载 Code 工作台" />);
 try {
+  const user = bootstrap
+    ? bootstrap.user
+    : await client
+        .request<ViewerResponse>("/api/viewer")
+        .then(({ profile }) => ({
+          id: profile.id,
+          username: profile.email,
+          displayName: profile.displayName,
+        }));
   await client.connect();
-  bindCodeWorkspaceServices(client);
-  const { workspaces } = await client.request<{ workspaces: Workspace[] }>(
-    "/api/code-ui/workspaces",
+  const hello = await ensureAgentV4ConnectionHandshake(
+    client.services.zcodeAgentService,
   );
-  root.render(<CodeHost workspaces={workspaces} />);
+  bindCodeWorkspaceServices(client);
+  root.render(
+    <CodeHost
+      {...(config.workspacePath ? { workspacePath: config.workspacePath } : {})}
+      user={user}
+      clientMode={hello.clientMode}
+    />,
+  );
 } catch (error) {
   console.error("Code 工作台启动失败", error);
   root.render(

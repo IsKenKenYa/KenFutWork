@@ -535,6 +535,9 @@ export interface IPlatformService {
   supportsEmbeddedBrowser?: boolean;
   supportsComputerUse?: boolean;
   supportsRemoteWorkspaces?: boolean;
+  supportsUserOnboarding?: boolean;
+  supportsSettingsImport?: boolean;
+  supportsAppRuntimePreferences?: boolean;
 
   /** 当前平台的文件选择框是否能返回 agent 可访问的本地绝对路径 */
   canSelectFilePath?: boolean;

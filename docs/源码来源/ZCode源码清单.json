@@ -568,9 +568,11 @@
       "source": "references/zcode/packages/ui/src/Root.tsx",
       "target": "apps/web/src/components/workbench/zcode/Root.tsx",
       "sha256": "2fe5a5c4a94149d424591b48f6ab04226c29550227f32db986f8bffc65166c5b",
-      "copiedSha256": "24f7c774f8af62323784508025ce49f502495bfa02c6b1c9ffd2ea35619c8d61",
+      "copiedSha256": "990afced028894f2f605337d17f5dbe71dd5f0533dcdbbaf9765e4d55f5f6e90",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：真实身份、mode callback与握手clientMode透传；非云OAuth/账号迁移门及未接引导/import/运行偏好门，保留原Root生命周期",
+        "宿主接口：原目录选择等待真实resolvePath与Project绑定，成功才关闭，失败沿原错误区重试"
       ]
     },
     {
@@ -595,10 +597,11 @@
       "source": "references/zcode/packages/ui/src/SettingsPage.tsx",
       "target": "apps/web/src/components/workbench/zcode/SettingsPage.tsx",
       "sha256": "0f3d3b06be4fdb675f870e06dcc8bf89aeff9ad9fc880ca1f0f6338a6e76916a",
-      "copiedSha256": "d6faf56deabb98bb3f46380f7919f5c25b326f60ed72a0ba6a29fe137859a0bf",
+      "copiedSha256": "f2f16d2c46ad559068e77638f684975bf6b0445bd2ebd3ca26910271b6a3b1b9",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "能力显隐：原设置导航消费宿主能力，隐藏分区的导航意图沿原平台解析回落"
+        "能力显隐：原设置导航消费宿主能力，隐藏分区的导航意图沿原平台解析回落",
+        "能力显隐：未接引导记录时隐藏原引导入口和查询，缺省原行为"
       ]
     },
     {
@@ -5050,9 +5053,10 @@
       "source": "references/zcode/packages/ui/src/hooks/useDynamicWorkflowAvailability.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useDynamicWorkflowAvailability.ts",
       "sha256": "b602479b5a6673531cbf468582c4148f7e60ac8122d317bdda238768c38e6e39",
-      "copiedSha256": "0737573b7379f2e5321c74c656604dd1fb60418a0466a154c32524e617d6cc3e",
+      "copiedSha256": "e91f0c96af43247e0ad7c709c40f722b882503ab86f0f022eabe2f877236e42c",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：未接自动化/云订阅时停止套餐查询，缺省原行为"
       ]
     },
     {
@@ -5230,9 +5234,10 @@
       "source": "references/zcode/packages/ui/src/hooks/useOnboardingRecordService.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useOnboardingRecordService.ts",
       "sha256": "e4ef8ffe884ff49e5380ab8db5d1188e98e77d9575bf47710435371a05caf48d",
-      "copiedSha256": "e4ef8ffe884ff49e5380ab8db5d1188e98e77d9575bf47710435371a05caf48d",
+      "copiedSha256": "3a9f883988b3e8e69a6b0e0ce9fbac5a420fc742b84a03f4652279505d2a65a8",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：未接引导记录服务时不提供原consumer，缺省原行为"
       ]
     },
     {
@@ -7023,9 +7028,10 @@
       "source": "references/zcode/packages/ui/src/lib/rendererNavigation.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/rendererNavigation.ts",
       "sha256": "5fd7195f42abd30e31dc4c7561efebeb722c4f5f3585a0cbe75230385193380e",
-      "copiedSha256": "5fd7195f42abd30e31dc4c7561efebeb722c4f5f3585a0cbe75230385193380e",
+      "copiedSha256": "d37b918a1c6bbfa05ed7792a63878e67471c8005cb3e6109bffa57e0363a4b1e",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：iframe自身或同源父工作台reload均保留原恢复资格；独立/跨源保持当前文档，普通冷启动不恢复"
       ]
     },
     {
@@ -8220,9 +8226,10 @@
       "source": "references/zcode/packages/ui/src/onboarding/OccupationOnboarding.tsx",
       "target": "apps/web/src/components/workbench/zcode/onboarding/OccupationOnboarding.tsx",
       "sha256": "af5822a69358dae6cc68e8f7ed47ec567b30503c0a0407235863b99464d29380",
-      "copiedSha256": "c63ca4096e062b5e79137d0531255258213e212d30402f0307c0fae0e2981b9c",
+      "copiedSha256": "dd327c588b9470fc46d6aad980beb1fbd2cb61234a13c01084c3597b286b480e",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：未接引导记录时保留children与模式切换，隐藏未接快捷入口，原实现保留"
       ]
     },
     {
@@ -9031,18 +9038,20 @@
       "source": "references/zcode/packages/ui/src/root/types.ts",
       "target": "apps/web/src/components/workbench/zcode/root/types.ts",
       "sha256": "9bcfd8a70f167bf5cab7560073c8b9811b990164cd9a5d39368756019689dd13",
-      "copiedSha256": "3c65d5f465645654bf3fc97644b19a9d1f72469ce8a38d1af9e54facc8ec9880",
+      "copiedSha256": "ab7d4fd930ebfa6adcab25d927e0fa94bd0d4d67e3eea90ce579888629bdd595",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：新增initialUserInfo、onInterfaceModeChange与原握手clientMode类型透传"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/root/useAccountConnectionLossNotification.ts",
       "target": "apps/web/src/components/workbench/zcode/root/useAccountConnectionLossNotification.ts",
       "sha256": "a13f32488002eb0531ef057cd4448f10c7a7f42a8af82b14f8c1f40bcad91587",
-      "copiedSha256": "ad7d0b7558228a320c1df4872d8deb05d8fb051bce165f5f42ab3979ca3a2675",
+      "copiedSha256": "fc1e2d3e2a27ff79dba2b1cbdab59fb24674576619eec89abc0808fd458e0423",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：云连接观察可由宿主关闭，缺省原行为"
       ]
     },
     {
@@ -9112,9 +9121,10 @@
       "source": "references/zcode/packages/ui/src/root/useRootOAuthEffects.ts",
       "target": "apps/web/src/components/workbench/zcode/root/useRootOAuthEffects.ts",
       "sha256": "dd83397e20c2c5cf7790bd4670e9e85f4e62d80c78500b4a72e41b1984354be1",
-      "copiedSha256": "ca52be8a989c80f91f14486290ad67d51778135fce90cb792e6f9cc5d3354395",
+      "copiedSha256": "6a2cc6740d4b778c80d1766a76dbd1f9b7cbce412c69601b3ed8627369d40dbd",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：无云宿主停止OAuth恢复、JWT云消息和云回调，未声明时保留原行为"
       ]
     },
     {
@@ -9148,10 +9158,11 @@
       "source": "references/zcode/packages/ui/src/root/useRootWorkspaceActions.ts",
       "target": "apps/web/src/components/workbench/zcode/root/useRootWorkspaceActions.ts",
       "sha256": "3c8ebfe29150dcc21e53e17feca678aa58f93c59c5d875fe5db162cda65c79cb",
-      "copiedSha256": "8fbe3d73d30ca6037b2a7fccedf5b88294d3c88e004c1acc2aab68e75b315837",
+      "copiedSha256": "28f72f153fd9a5954bfca7bd9e6dedd287f525ce9dff128d319c160228c779f1",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "宿主接口：增加可选选择错误回调，Code 宿主交回原目录选择器；原 UI 装配不变"
+        "宿主接口：增加可选选择错误回调，Code 宿主交回原目录选择器；原 UI 装配不变",
+        "宿主接口：目录选择可逐次回传失败，缺省沿用原错误callback；原动作显示真实错误，失败保留原选择器"
       ]
     },
     {
@@ -11141,9 +11152,10 @@
       "source": "references/zcode/packages/ui/src/settingsPageHelpers.tsx",
       "target": "apps/web/src/components/workbench/zcode/settingsPageHelpers.tsx",
       "sha256": "d65c95c659bcf92416f068255bc2d0a62a7e673bf9d967a4e5e485dff0f41e83",
-      "copiedSha256": "aca213c02698f17c4c31eac105348fc2c3faa818dee4d41d6d4ffe2ef4e7a5ad",
+      "copiedSha256": "60786f18381f9a4014f126f132d6bc99e00bd65e9188a83798a164fccf962e4c",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：隐藏未接引导与运行偏好对应原控件，缺省原行为"
       ]
     },
     {
@@ -14534,10 +14546,11 @@
       "source": "references/zcode/packages/shared/src/platform.ts",
       "target": "packages/zcode-shared/src/platform.ts",
       "sha256": "68a470a9917ace6d91bcad8a881b52662a8fb9486bcaa5b501f2f56811d814a4",
-      "copiedSha256": "cce231dfeca3241f1a2ad8309fe7ab2118e54a5cf269421fa3fb976f9b158315",
+      "copiedSha256": "a9441821ce8fdb426c575231278a2159b5898b73e737b948d177c4f03ea3c11f",
       "adaptations": [
         "宿主能力接口：增加可选云账户支持标记；未声明的原宿主行为不变",
-        "宿主接口：可选自动化/嵌入浏览器/CUA/远程能力声明；未声明保持原平台语义"
+        "宿主接口：可选自动化/嵌入浏览器/CUA/远程能力声明；未声明保持原平台语义",
+        "宿主接口：新增可选引导记录、设置导入与运行偏好支持态，缺省原语义"
       ]
     },
     {

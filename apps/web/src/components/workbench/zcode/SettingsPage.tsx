@@ -671,7 +671,7 @@ export function SettingsPage({
   );
   const selectDirectory = useSelectDirectory();
   const services = useServices();
-  const onboardingRecordService = services.onboardingRecordService;
+  const onboardingRecordService = platform.supportsUserOnboarding === false ? undefined : services.onboardingRecordService;
   const localHostServices = useBaseWorkspaceServices();
   const { settings: sharedSettings, update: updateSharedSettings } = useSettings();
   const memoryWorkspaceDisplayNames = useMemo(() => {
@@ -1516,7 +1516,7 @@ export function SettingsPage({
                   })}
                 </div>
 
-                <SettingsSidebarButton
+                {platform.supportsUserOnboarding !== false && <SettingsSidebarButton
                   icon={Rocket}
                   label={intl.formatMessage({ id: "settings.onboarding" })}
                   className="mt-4 border border-dashed border-border hover:border-border-hover"
@@ -1536,7 +1536,7 @@ export function SettingsPage({
                   <span className="text-ui-base text-foreground">
                     {intl.formatMessage({ id: "settings.onboarding" })}
                   </span>
-                </SettingsSidebarButton>
+                </SettingsSidebarButton>}
               </nav>
 
               <div className="max-lg:hidden">

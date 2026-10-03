@@ -151,3 +151,9 @@ Controller/Task 目录恢复已接真实 HTTP 连接换代：原 Controller regi
 
 
 原 Root 设置前置已接完整原 AppSettings get/update：仅真实非敏感 UI 偏好保存到 workspace_settings.code_ui_app_preferences，recentProjects 原列仍为单源；原 schema 校验，单 MVCC 读取和原子稀疏 merge。Project 引用在写入中持有活跃 Code 行共享锁，归档先完成则无部分写入。归档 tab 过滤同时重映射激活索引/清焦点；最近项目沿固定原 UI 去重/前10语义。新前向迁移20261003153631已执行，不可再改；76条空库重放、历史SHA、二次no-op及实际JSONB/NULL/default/约束核对通过。6项公共设置 red→green及现有宿主/Controller/Stop合计31项通过，真实GLM一项未启用。旧recent四个死接口已删除，写参数改具名对象；原Root尚未直接挂载，云能力门/默认工作目录/onboarding及运行偏好消费者继续接线，不以设置存储代替完整设置/UI验收。
+
+原 Root 直接挂载切片已接入：host/main 删除自有 WorkspaceHost 与重复 Provider 装配，直接消费固定原 Root→RootWorkspaceContent→App→SessionPane。原 RootShell、全局提示/确认、目录/设置覆盖层、快捷键、tab 持久化与文件显示基准沿原生命周期运行。真实宿主身份与 hello.clientMode 透传；Code store 保持 coding，原 office 菜单仅导航 Design。无云宿主停止 OAuth/旧账户迁移/套餐查询；未接引导、设置导入和运行偏好服务按可选能力门关闭，保留原实现与缺省行为，后续需接真实 consumer。
+
+file.ensureConversationWorkspace 按真实 Workspace 身份在配置的 sandboxRoot 下建共享目录，经既有 Project 服务绑定单一 Code Project/固定主画布；不造空路径、不转换旧数据。全新独占库冷并发只创建一个目录/Project，warm 重放保留身份和文件；归档后的迟到 ensure 返回 409，不复活。原目录选择 await resolvePath 与绑定成功后才关闭，失败在原错误区保留重试；同源父工作台和 Code 文档自身 reload 均保留原恢复资格，普通冷启动不误判。
+
+公开组件 red→green 锁定默认/指定目录、目录失败重试与规范化、原全局提示应答；真实默认目录接口验收命令：`RUN_CODE_UI_INTEGRATION=1 CODE_UI_TEST_FRESH_DATABASE=1 CODE_UI_TEST_BASE=http://127.0.0.1:3341 CODE_UI_TEST_ORIGIN=http://localhost:3300 pnpm --filter @kenfutwork/server exec vitest run src/features/code-ui/conversation-workspace.integration.test.ts`。该用例归档自己创建的默认项目，只允许全新独占开发库，普通测试默认 skipped。真实页面经 DeepAgents 与本机外部模型替身验证默认目录运行、父工作台刷新恢复并停止、⌘N、独立文档自身刷新、原设置保存和跨文档读取、原菜单导航 Design 的 canvas iframe。不把这些证据认定为 GLM 工具链、原版全场景对照或完整 Design 画布验收。

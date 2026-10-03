@@ -69,3 +69,5 @@ file.resolvePath 规范化真实路径，workspace.open 绑定或创建实际 Co
 
 
 原 Root 的 setting.get/update 已按原 AppSettings/稀疏 patch 契约接真实工作区设置。语言、消息/工具显示、快捷键和本次运行产生的 tab/焦点等非敏感 UI 偏好存于前向 code_ui_app_preferences JSONB；recentProjects 仍由既有列持有，不复制第二份。读面同一 MVCC 行读取两者，写面按原子 JSON merge 保留未送叶子；未知字段/凭据字段拒绝。引用目录必须是当前工作区活跃 Code 项目，写入持有 FOR SHARE，归档先完成则整条拒绝。读取移除归档 tab 后按原激活条目重映射索引并清理关联焦点，最近项目按原 UI 固定规则去重保留前10项。该前置服务不转换历史调试数据，不代表原 Root 及运行偏好消费者已完成挂载。
+
+Code 宿主已直接挂原 Root。file.ensureConversationWorkspace 沿原 IFileService 返回真实 `{path, created, workspacePurpose: "conversation"}`，共享 cwd 按当前 Workspace 身份隔离，并经 Project 服务绑定固定主画布；冷并发复用身份，重开保留文件，已归档默认项目的迟到 ensure 返回 409。目录选择先 resolvePath，再 workspace.open，绑定失败交回原选择器保持重试。原 Root 只消费真实 hello.clientMode；同源父工作台与独立 Code 文档的刷新资格沿原 navigation 判定恢复，不伪造 desktop-continuous。此轮不新增 HTTP/WS schema，原 contract 继续由 shared 导出。

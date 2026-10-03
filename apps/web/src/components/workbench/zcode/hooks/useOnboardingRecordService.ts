@@ -1,3 +1,4 @@
+import { useOptionalPlatform } from "./usePlatform.js";
 import { useServices } from "./useServices.js";
 
 /**
@@ -7,9 +8,10 @@ import { useServices } from "./useServices.js";
  * useContext 在 try 内调用且每次渲染都会执行，hook 调用顺序保持稳定。
  */
 export function useOnboardingRecordService() {
+  const platform = useOptionalPlatform();
   try {
     const services = useServices();
-    return services.onboardingRecordService ?? null;
+    return platform?.supportsUserOnboarding === false ? null : services.onboardingRecordService ?? null;
   } catch {
     return null;
   }

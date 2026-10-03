@@ -24,6 +24,7 @@ import { CodeUiConnections } from "./connections.js";
 import { CodeUiControllerHost } from "./controller.js";
 import { createCodeUiConversation } from "./conversation.js";
 import {
+  ensureCodeUiConversationDirectory,
   readCodeUiDirectory,
   readCodeUiTextFile,
   resolveCodeUiPath,
@@ -318,6 +319,26 @@ export class CodeUiService {
         );
         return { result: (await this.publishProviderViews(user)).settings };
       }
+    }
+    if (service === "file" && method === "ensureConversationWorkspace") {
+      z.tuple([]).parse(args);
+      const workspace = await this.deps.viewer.ensureViewer(user);
+      const directory = await ensureCodeUiConversationDirectory(
+        workspace.workspace.id,
+        this.deps.env.sandboxRoot,
+      );
+      const project = await this.deps.projects.openCodeDirectory(
+        user,
+        directory.path,
+      );
+      const opened = await this.requireWorkspace(user, project.id);
+      return {
+        result: {
+          path: opened.path,
+          created: directory.created,
+          workspacePurpose: "conversation" as const,
+        },
+      };
     }
     if (service === "file" && method === "readdir")
       return { result: await readCodeUiDirectory(args[0]) };

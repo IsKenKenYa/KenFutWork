@@ -363,7 +363,7 @@ export function useRootWorkspaceActions({
   ]);
 
   const handleSelectProject = useCallback(
-    async (path: string) => {
+    async (path: string, onSelectionError = onWorkspaceSelectionError) => {
       logger.info("[Root] handleSelectProject called with path:", path);
       try {
         const wslUncWorkspace = parseWslUncWorkspacePath(path);
@@ -424,7 +424,8 @@ export function useRootWorkspaceActions({
         }
       } catch (err) {
         logger.error("[Root] handleSelectProject error:", err);
-        onWorkspaceSelectionError?.(err);
+        setWorkspaceActionError(err instanceof Error ? err.message : String(err));
+        onSelectionError?.(err);
       }
     },
     [
@@ -435,6 +436,7 @@ export function useRootWorkspaceActions({
       platform,
       requestConfirmation,
       services.settingService,
+      setWorkspaceActionError,
       startDraftInWorkspace,
       supportsSettings,
     ],
