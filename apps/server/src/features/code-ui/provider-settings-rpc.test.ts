@@ -21,6 +21,20 @@ const actor: AuthenticatedUser = {
   userMetadata: {},
 };
 const foreign: AuthenticatedUser = { ...actor, id: randomUUID() };
+
+it("原Root省略模型查询参数经过HTTP序列化后仍能读取默认模型view，畸形对象仍拒绝", async () => {
+  const { rpc } = fixture();
+  const omitted = await rpc.call(actor, "modelSelectionService", "getView", []);
+  // 原ServiceProxy保留方法参数位置，JSON把显式undefined编码成null。
+  const transported = JSON.parse(JSON.stringify([undefined]));
+  expect(
+    await rpc.call(actor, "modelSelectionService", "getView", transported),
+  ).toEqual(omitted);
+  await expect(
+    rpc.call(actor, "modelSelectionService", "getView", [{}]),
+  ).rejects.toThrow();
+});
+
 function fixture() {
   const rows = new Map<string, ProviderInstanceResponse[]>();
   const preferences = new Map<string, Record<string, unknown>>();

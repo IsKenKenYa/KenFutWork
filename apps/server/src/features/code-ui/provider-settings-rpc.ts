@@ -435,7 +435,8 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
       const input = z
         .object({ selection: modelSelectionSchema.nullable() })
         .optional()
-        .parse(args[0]);
+        // 原ServiceProxy调用getView(undefined)时，HTTP参数数组中的undefined编码为null。
+        .parse(args[0] ?? undefined);
       return {
         result: (await this.readViews(actor, input?.selection)).selection,
       };
