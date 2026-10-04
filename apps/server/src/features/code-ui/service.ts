@@ -74,6 +74,7 @@ import {
 } from "./file-changes.js";
 import { createCodeUiFileHistory } from "./file-history.js";
 import { CodeUiFileIndex, codeUiViewerRpc } from "./files.js";
+import { createCodeUiHistoryEdit } from "./history-edit.js";
 import { createCodeUiFileWatchers } from "./host-file-watcher.js";
 import {
   type CodeUiHostGitRpc,
@@ -187,6 +188,7 @@ export class CodeUiService {
   private initialization: Promise<void> | undefined;
   private readonly fileIndexes = new WeakMap<object, CodeUiFileIndex>();
   private readonly fileHistory: ReturnType<typeof createCodeUiFileHistory>;
+  private readonly historyEdit: ReturnType<typeof createCodeUiHistoryEdit>;
   private readonly workspaceConfig: ReturnType<
     typeof createCodeUiWorkspaceConfigHost
   >;
@@ -219,6 +221,45 @@ export class CodeUiService {
         this.finishTaskRestore(scope, actor, success),
       refresh: (workspaceId, path, projectId) =>
         this.refreshTaskProjection(workspaceId, path, projectId),
+      fingerprint: codeUiCommandFingerprint,
+    });
+    this.historyEdit = createCodeUiHistoryEdit({
+      repository: deps.repository,
+      agentRuns: deps.agentRuns,
+      agentRunMetadata: deps.agentRunMetadata,
+      threads: deps.threads,
+      inputOwner: this.inputOwner,
+      load: (actor, sessionId) => this.loadConversation(actor, sessionId),
+      model: (actor, selection) => this.prepareInputModel(actor, selection),
+      inputs: async (actor, sessionId, attachments) => {
+        if (!attachments.length) return [];
+        if (!this.attachments)
+          throw new CodeAttachmentError(
+            "fault.attachment.unavailable",
+            "Code附件存储不可用。",
+            503,
+          );
+        this.attachmentsUsed = true;
+        return this.attachments.readForInput(actor, sessionId, attachments);
+      },
+      beginRestore: (actor, taskId, generation, guard) =>
+        this.rewindTask(actor, taskId, generation, guard),
+      finishRestore: (scope, actor, success) =>
+        this.finishTaskRestore(scope, actor, success),
+      refresh: (workspaceId, path, projectId) =>
+        this.refreshTaskProjection(workspaceId, path, projectId),
+      run: (actor, project, taskId, threadId, record, inputs) =>
+        this.runTurn(
+          actor,
+          project,
+          taskId,
+          threadId,
+          record.runId,
+          record.intent.text,
+          `${record.intent.modelSelection!.providerId}:${record.intent.modelSelection!.modelId}`,
+          record.modelInvocation,
+          inputs,
+        ),
       fingerprint: codeUiCommandFingerprint,
     });
     this.workspaceConfig = createCodeUiWorkspaceConfigHost({
@@ -848,6 +889,7 @@ export class CodeUiService {
       root.id,
       identity.generation,
       root.state,
+      root.active_run_id,
     );
     // ready 的真实提交已完成，通知失败不改写完成状态或触发重复恢复。
     const notifications = await Promise.allSettled([
@@ -1642,6 +1684,7 @@ export class CodeUiService {
             "会话不属于该 Code 工作目录",
           );
         const snapshot = loaded.host.getSnapshot(sessionId);
+        await this.historyEdit.decorate(user, loaded, snapshot);
         return { snapshot, seq: snapshot.seq };
       };
       return this.connections.subscribe(workspace.id, connectionId, {
@@ -1834,6 +1877,8 @@ export class CodeUiService {
         parsed.envelope.type === "compact"
       )
         return this.sendText(user, input.workspacePath, parsed.envelope);
+      if (parsed.envelope.type === "editUserQuery")
+        return this.historyEdit.command(user, target, parsed.envelope);
       if (parsed.envelope.type === "applyFileRewind")
         return this.fileHistory.command(user, target, parsed.envelope);
       if (CODE_QUEUE_COMMANDS.has(parsed.envelope.type))
@@ -2395,19 +2440,12 @@ export class CodeUiService {
         )
       : [];
     const snapshot = loaded.host.getSnapshot();
-    const views = await this.modelViews(
+    const { selection, modelInvocation } = await this.prepareInputModel(
       user,
       payload.modelSelection !== undefined
         ? payload.modelSelection
         : snapshot.config.modelSelection,
     );
-    const selection = views.selection.effectiveSelection;
-    if (!selection)
-      throw new CodeUiRepositoryError(
-        "command_conflict",
-        "当前模型不可执行，请检查供应商配置",
-      );
-    const modelInvocation = await this.prepareModelInvocation(user, selection);
     const thread = await this.deps.threads.resolveOwnedSessionThread(
       user,
       loaded.root.id,
@@ -3306,6 +3344,23 @@ export class CodeUiService {
     return this.providerSettings.readViews(user, selection);
   }
 
+  private async prepareInputModel(
+    user: AuthenticatedUser,
+    selection: protocol.SessionConfigState["modelSelection"],
+  ) {
+    const views = await this.modelViews(user, selection);
+    const effective = views.selection.effectiveSelection;
+    if (!effective)
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "当前模型不可执行，请检查供应商配置",
+      );
+    return {
+      selection: effective,
+      modelInvocation: await this.prepareModelInvocation(user, effective),
+    };
+  }
+
   private async prepareModelInvocation(
     user: AuthenticatedUser,
     selection: NonNullable<protocol.SessionConfigState["modelSelection"]>,
@@ -3422,6 +3477,7 @@ export class CodeUiService {
       user,
     );
     const snapshot = loaded.host.getSnapshot(sessionId);
+    await this.historyEdit.decorate(user, loaded, snapshot);
     if (snapshot.backgroundWorks.some((work) => work.status !== "running")) {
       void this.deps.taskWork
         .notifyReady(loaded.workspaceId, loaded.root.id)

@@ -331,6 +331,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
       taskId: string,
       expectedGeneration: number,
       state: CodeUiConversationState,
+      activeRunId: string | null = null,
     ) {
       return persistence.transaction(async (transaction) => {
         const scoped = transaction.forWorkspace(workspaceId);
@@ -343,7 +344,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
             "revision_conflict",
             "Task 代际在恢复准备期间改变",
           );
-        await writeState(scoped, root, state, null);
+        await writeState(scoped, root, state, activeRunId);
         await scoped.execute(
           `update public.code_ui_sessions set execution_state = 'ready'
           where workspace_id = :workspace and root_session_id = $1 and execution_state = 'revoking' and scope_generation = $2 and deleted_at is null`,
@@ -635,6 +636,12 @@ export function createCodeUiRepository(persistence: PersistenceService) {
       decide: (root: CodeUiSessionRecord) => {
         state: CodeUiConversationState;
         ack: protocol.CommandAck;
+        activeRunId?: string | null;
+        threadBinding?: {
+          previousThreadId: string;
+          threadId: string;
+          expectedGeneration: number;
+        };
       },
       afterCommit?: (ack: protocol.CommandAck) => Promise<void>,
     ): Promise<protocol.CommandAck> {
@@ -652,7 +659,45 @@ export function createCodeUiRepository(persistence: PersistenceService) {
           const root = await lockRoot(scoped, envelope.sessionId!);
           const decision = decide(root);
           const ack = protocol.commandAckSchema.parse(decision.ack);
-          await writeState(scoped, root, decision.state, root.active_run_id);
+          if (decision.threadBinding) {
+            const binding = decision.threadBinding;
+            if (
+              root.execution_state !== "revoking" ||
+              Number(root.scope_generation) !== binding.expectedGeneration ||
+              !root.chat_session_id
+            )
+              throw new CodeUiRepositoryError(
+                "revision_conflict",
+                "上下文分支发布代际不匹配",
+              );
+            if (!(await lockActiveProject(scoped, root)))
+              throw new CodeUiRepositoryError(
+                "not_found",
+                "上下文分支的Project已归档",
+              );
+            const bound = await scoped.execute(
+              "update public.chat_sessions set thread_id=$2 where workspace_id=:workspace and id=$1 and project_id=$3 and mode='code' and thread_id=$4",
+              [
+                root.chat_session_id,
+                binding.threadId,
+                root.project_id,
+                binding.previousThreadId,
+              ],
+            );
+            if (bound !== 1)
+              throw new CodeUiRepositoryError(
+                "revision_conflict",
+                "原Task的上下文绑定已经改变",
+              );
+          }
+          await writeState(
+            scoped,
+            root,
+            decision.state,
+            decision.activeRunId === undefined
+              ? root.active_run_id
+              : decision.activeRunId,
+          );
           const written = await scoped.execute(
             `update public.code_ui_commands set ack = $3::jsonb, status = 'accepted'
               where workspace_id = :workspace and client_id = $1 and command_id = $2 and status = 'pending'`,

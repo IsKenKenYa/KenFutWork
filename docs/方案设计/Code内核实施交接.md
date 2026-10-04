@@ -8,6 +8,11 @@
 
 #### 合并后原UI接线进展（最新）
 
+##### 原行内编辑与上下文分支接线（2026-10-05最新）
+
+- 原editUserQuery latest-realUser/idle/preserve已真实HTTP与原行内组件验证：native分支成功再切Task，线程/state/输入/ACK原子保存，同目录、权限冻结、editRerun/rootSource来源与重放保持；绑定事务失败保旧正文/文件、清未发布target，不执行新模型。SDK普通/Delta/tool messages、完整祖先、占用与lease/部分put故障见《日志》一百一十二。系统Prompt/工具/GUI原链不仿写。
+- 仍需完整history其它分支、workspace rewind/retry/fork、guide、question broker/tool/答案消费者、子停止及全部插件/跨平台/视觉回归。原question协议/组件已在，本树resolve仅permissions，不能把unknown已处理ACK当回答成功。通用agentModes store的Canvas join是本轮源码明确的新接续点，要按Task/Project存储与新context thread hydrate修复，不能以V4权限mode保存代替。
+
 ##### 可靠持久化与释放接续（最新）
 
 - 历史控制前置持久化实际故障已修：明确配置PG却初始化失败不再Memory fallback，真实Harness模型不执行、run.failed；原服务共享单初始化promise顺序建SDK资源，部分失败清理后可重试。dispose由agent-runs插件的释放栈持有；关闭拒绝新getter、等待在途初始化、幂等释放SDK连接，CodeUI夹具不再强制get或手工end/stop。真实RED/GREEN与独占PG组合6条（本模块5/队列1）、全test16/types13/build13成功详见《日志》一百一十；来源3027项漂移0，全lint仍20个历史error。未将此前关闭延迟归因为此问题。

@@ -45,6 +45,7 @@ async function bindSession(
     type: string,
     payload: unknown,
     commandId: string = randomUUID(),
+    guard?: { baseRevision: number; baseLogEpoch: string },
   ) =>
     stream.rpc("sendConversationCommandV4", [
       {
@@ -57,6 +58,7 @@ async function bindSession(
           type,
           payload,
           issuedAt: Date.now(),
+          ...guard,
         },
       },
     ]);
@@ -65,7 +67,7 @@ async function bindSession(
     expect(result.status).toBe(200);
     return result.body.snapshot;
   };
-  return { command, snapshot, sessionId };
+  return { command, snapshot, sessionId, clientId };
 }
 
 export async function createCodeSessionFixture(

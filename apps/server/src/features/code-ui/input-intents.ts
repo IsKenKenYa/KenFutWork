@@ -11,6 +11,8 @@ export interface CodeAdmittedInput {
   status: "queued" | "reserved" | "active" | "settled" | "discarded";
   autoDrainAtAdmission?: boolean;
   previousRunId?: string;
+  /** 编辑重跑的原输入归属；不改变本次command/run幂等身份。 */
+  editOf?: { rootSourceCommandId: string; sourceRunId: string };
 }
 
 export const codeInputKey = (

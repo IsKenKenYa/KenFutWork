@@ -2,14 +2,20 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 
 export async function heldModel() {
-  const requests: Array<{ closed: boolean }> = [];
+  const requests: Array<{ closed: boolean; body: Record<string, unknown> }> =
+    [];
   let firstRequestReceived!: () => void;
   const firstRequest = new Promise<void>((resolve) => {
     firstRequestReceived = resolve;
   });
-  const server = createServer((request, response) => {
-    request.resume();
-    const entry = { closed: false };
+  const server = createServer(async (request, response) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) chunks.push(Buffer.from(chunk));
+    const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<
+      string,
+      unknown
+    >;
+    const entry = { closed: false, body };
     requests.push(entry);
     firstRequestReceived();
     response.on("close", () => {

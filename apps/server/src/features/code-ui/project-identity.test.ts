@@ -9,6 +9,8 @@ import {
 } from "@kenfutwork/shared";
 import { zcodeTaskMetaSchema } from "@zcode/shared";
 import { afterEach, expect, it, vi } from "vitest";
+import { createAgentRunService } from "../../agent/runtime.js";
+import { loadServerEnv } from "../../config/env.js";
 import { createCodeUiConversation } from "./conversation.js";
 import type { CodeUiRepository, CodeUiSessionRecord } from "./repository.js";
 import { CodeUiService, type CodeUiServiceDeps } from "./service.js";
@@ -147,7 +149,12 @@ async function fixture(
     },
     createRoot,
   };
+  const env = loadServerEnv(
+    { agentBackendMode: "filesystem", agentFilesRoot: pathA },
+    {},
+  );
   const service = new CodeUiService({
+    agentRuns: createAgentRunService({ env, blob: {} as never }),
     repository,
     beforeCloseTask: async () => {},
     viewer: { resolveWorkspace: async () => ({ id: workspaceId }) },
@@ -177,7 +184,7 @@ async function fixture(
         }),
     },
     threads: { createThreadId: randomUUID },
-    env: {},
+    env,
     taskWork: { initialize: async () => [], notifyReady: async () => {} },
   } as unknown as CodeUiServiceDeps);
   return {

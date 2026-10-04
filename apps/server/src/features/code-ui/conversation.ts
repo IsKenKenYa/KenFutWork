@@ -669,6 +669,12 @@ export function createCodeUiConversation(input: {
         this.startTurn({
           ...execution,
           clientId: record.intent.clientId,
+          ...(record.editOf
+            ? {
+                origin: "editRerun" as const,
+                rootSourceCommandId: record.editOf.rootSourceCommandId,
+              }
+            : {}),
           text: record.intent.text,
           attachments: record.intent.attachments,
         });
@@ -681,7 +687,8 @@ export function createCodeUiConversation(input: {
       clientId?: string;
       mode?: string | undefined;
       planEnabled?: boolean | undefined;
-      origin?: "userInput" | "backgroundResult";
+      origin?: "userInput" | "backgroundResult" | "editRerun";
+      rootSourceCommandId?: string;
       modelSelection?: NonNullable<
         protocol.SessionConfigState["modelSelection"]
       >;
@@ -707,7 +714,7 @@ export function createCodeUiConversation(input: {
         origin:
           turn.origin === "backgroundResult" ? "backgroundResult" : "realUser",
         sourceCommandId: turn.commandId,
-        rootSourceCommandId: turn.commandId,
+        rootSourceCommandId: turn.rootSourceCommandId ?? turn.commandId,
         ...(turn.clientId ? { clientId: turn.clientId } : {}),
         ...(turn.attachments?.length
           ? { attachments: structuredClone(turn.attachments) }
