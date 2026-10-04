@@ -25,6 +25,11 @@ import {
   DEFAULT_GOOGLE_AGENT_MODEL,
   type ServerEnv,
 } from "../config/env.js";
+import { createNativeToolExclusionMiddleware } from "../features/code-tools/native-tool-exclusion.js";
+import {
+  createTaskWorkNotificationMiddleware,
+  type TaskWorkBinding,
+} from "../features/task-work/model-mailbox.js";
 import type { ToolDefinition, ToolExecutionContext } from "../kernel/types.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import type { CompactionPlan } from "./auto-compact.js";
@@ -35,6 +40,15 @@ import {
 import { createExecuteBackgroundTool } from "./execute-background.js";
 import { bridgeKernelTools } from "./kernel-tools-bridge.js";
 import { createLlmRequestRetryMiddleware } from "./llm-retry-middleware.js";
+import { createNativeCompactionTracker } from "./native-compaction.js";
+import type { AgentContextHistory } from "./context-history.js";
+import { createNativeContextHistory } from "./native-context-history.js";
+import { resolveCompactionPlan } from "./auto-compact.js";
+import { attachNativeCheckpointDurability } from "./native-checkpoint-durability.js";
+import type {
+  AgentRunExtension,
+  AgentRunExtensionContext,
+} from "./run-extension.js";
 import {
   resolveChildToolbelt,
   resolveSubagentDefinitions,
@@ -46,12 +60,11 @@ import {
   type SubagentChildRunner,
 } from "./subagent-tools.js";
 import { createTaskNotificationMiddleware } from "./task-notifications.js";
-import type { AgentRunExtension } from "./run-extension.js";
 
 export type KenFutWorkAgent = Pick<
   ReturnType<typeof createDeepAgent>,
   "stream" | "streamEvents"
-> & { canonicalToolEvents?: boolean };
+> & { canonicalToolEvents?: boolean; contextHistory?: AgentContextHistory };
 
 /**
  * 执行模式工具门（solo/plan 硬约束）：拦截 deepagents 内置工具
@@ -260,6 +273,7 @@ function createModelResponseGuardMiddleware(): AgentMiddleware {
 
 export type KenFutWorkAgentFactory = (options: {
   runExtensions?: readonly AgentRunExtension[];
+  extensionContext?: AgentRunExtensionContext;
   backendResult?: AgentBackendResult;
   canvasId?: string;
   checkpointer?: BaseCheckpointSaver;
@@ -280,6 +294,8 @@ export type KenFutWorkAgentFactory = (options: {
    * 传了才挂中间件——设置里关掉时**一个字都不挂**，不是挂上再短路。
    */
   autoCompact?: CompactionPlan;
+  /** 手动operation沿同一保留策略；停用auto时仍可显式维护历史。 */
+  manualCompactPlan?: CompactionPlan;
   /**
    * 装配完成时回吐工具清单（R4-1 分类占比要按 schema 量「系统工具 / MCP 工具」）。
    * 用回调而不是返回值：调用方（runtime）拿的是 agent 对象，工具清单只在装配期有。
@@ -300,6 +316,7 @@ export type KenFutWorkAgentFactory = (options: {
   backgroundTasks?: {
     registry: import("./background-tasks.js").BackgroundTaskRegistry;
   };
+  taskWork?: TaskWorkBinding;
   /** Code 长命令超时（毫秒，DEC-18）：治理设置值；缺省走 governance 默认。 */
   executeTimeoutMs?: number;
   /** LLM 请求级重试（DEC-18）：治理设置值；缺省走 governance 默认（不无限）。 */
@@ -308,6 +325,7 @@ export type KenFutWorkAgentFactory = (options: {
 
 export function createKenFutWorkDeepAgent(options: {
   runExtensions?: readonly AgentRunExtension[];
+  extensionContext?: AgentRunExtensionContext;
   backendResult?: AgentBackendResult;
   canvasId?: string;
   checkpointer?: BaseCheckpointSaver;
@@ -323,6 +341,8 @@ export function createKenFutWorkDeepAgent(options: {
   toolGateHooks?: ToolGateHooks;
   /** 上下文自动压缩的口径（见 agent/auto-compact.ts）。 */
   autoCompact?: CompactionPlan;
+  /** 手动operation沿同一保留策略；停用auto时仍可显式维护历史。 */
+  manualCompactPlan?: CompactionPlan;
   /**
    * 装配完成时回吐工具清单（R4-1 分类占比要按 schema 量「系统工具 / MCP 工具」）。
    * 用回调而不是返回值：调用方（runtime）拿到的是 agent 对象，工具清单只在装配期有。
@@ -332,6 +352,7 @@ export function createKenFutWorkDeepAgent(options: {
   backgroundTasks?: {
     registry: import("./background-tasks.js").BackgroundTaskRegistry;
   };
+  taskWork?: TaskWorkBinding;
   /** Code 长命令超时（毫秒，DEC-18）。 */
   executeTimeoutMs?: number;
   /** LLM 请求级重试（DEC-18）。 */
@@ -397,7 +418,14 @@ export function createKenFutWorkDeepAgent(options: {
             }) as unknown as AgentMiddleware,
           ]
         : [];
-      middleware.unshift(...(options.runExtensions ?? []).map((extension) => extension.createMiddleware({ agentCallId: callId, agentName: definition.name })));
+      middleware.unshift(
+        ...(options.runExtensions ?? []).map((extension) =>
+          extension.createMiddleware({
+            agentCallId: callId,
+            agentName: definition.name,
+          }),
+        ),
+      );
       const child = createAgent({
         model: resolvedModel,
         name: definition.name,
@@ -522,20 +550,24 @@ export function createKenFutWorkDeepAgent(options: {
    *   （见 stream-adapter 的 `run.compacted`）；
    * - **backend**：与 agent 同一个后端工厂（offload 落到用户自己的工作目录，可追溯）。
    */
-  const summarizationMiddleware: AgentMiddleware[] = options.autoCompact
-    ? [
-        createSummarizationMiddleware({
-          backend: backendResult.factory,
-          trigger: options.autoCompact.trigger,
-          keep: options.autoCompact.keep,
-        }) as unknown as AgentMiddleware,
-      ]
-    : [];
+  const nativeSummarization = createSummarizationMiddleware({
+    backend: backendResult.factory,
+    ...(options.autoCompact ? { trigger: options.autoCompact.trigger, keep: options.autoCompact.keep } : {}),
+  }) as unknown as AgentMiddleware;
+  const compactionTracker = options.autoCompact ? createNativeCompactionTracker(nativeSummarization) : undefined;
+  // 同名覆盖DA默认auto行为，仍保留summary state schema供显式维护operation。
+  const summarizationMiddleware: AgentMiddleware[] = [compactionTracker?.middleware ?? {
+    ...nativeSummarization, wrapModelCall: (request, handler) => handler(request),
+  }];
 
   // 后台任务通知（DEC-15）：每次模型调用前注入已结算未消费的通知
-  const notificationMiddleware = options.backgroundTasks
-    ? subagentMiddleware
-    : [];
+  const notificationMiddleware: AgentMiddleware[] = [
+    ...(options.backgroundTasks ? subagentMiddleware : []),
+    ...(options.taskWork
+      ? [createTaskWorkNotificationMiddleware(options.taskWork)]
+      : []),
+    ...(preset === "code" ? [createNativeToolExclusionMiddleware()] : []),
+  ];
 
   // LLM 请求级重试（DEC-18）：maxAttempts 含首次；infinite 为用户显式开启。
   // 默认档（10 次/不无限）也挂——治上游抖动是基线行为，不是可选项。
@@ -568,7 +600,9 @@ export function createKenFutWorkDeepAgent(options: {
     ...(options.toolGate
       ? {
           middleware: [
-            ...(options.runExtensions ?? []).map((extension) => extension.createMiddleware({})),
+            ...(options.runExtensions ?? []).map((extension) =>
+              extension.createMiddleware({}, options.extensionContext),
+            ),
             ...summarizationMiddleware,
             ...notificationMiddleware,
             llmRetryMiddleware,
@@ -581,7 +615,9 @@ export function createKenFutWorkDeepAgent(options: {
         }
       : {
           middleware: [
-            ...(options.runExtensions ?? []).map((extension) => extension.createMiddleware({})),
+            ...(options.runExtensions ?? []).map((extension) =>
+              extension.createMiddleware({}, options.extensionContext),
+            ),
             ...summarizationMiddleware,
             ...notificationMiddleware,
             llmRetryMiddleware,
@@ -593,7 +629,20 @@ export function createKenFutWorkDeepAgent(options: {
         }),
     tools,
   });
-  return Object.assign(agent, { canonicalToolEvents: (options.runExtensions ?? []).some((extension) => extension.canonicalToolEvents) });
+  if (options.checkpointer) attachNativeCheckpointDurability(agent);
+  if (compactionTracker && options.checkpointer)
+    compactionTracker.attach(agent);
+  return Object.assign(agent, {
+    ...(options.checkpointer ? { contextHistory: createNativeContextHistory(agent, {
+          model: resolvedModel, backend: backendResult.factory,
+          ...(options.store ? { store: options.store } : {}),
+          plan: options.manualCompactPlan ?? options.autoCompact ?? resolveCompactionPlan({}),
+          llmRetry: options.llmRetry ?? { maxAttempts: AGENT_GOVERNANCE_DEFAULTS.llmRequestMaxRetries, infinite: AGENT_GOVERNANCE_DEFAULTS.llmInfiniteRetry },
+        }) } : {}),
+    canonicalToolEvents: (options.runExtensions ?? []).some(
+      (extension) => extension.canonicalToolEvents,
+    ),
+  });
 }
 
 /**

@@ -21,19 +21,31 @@ import {
 } from "@kenfutwork/shared";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { HumanMessage } from "@langchain/core/messages";
+import type { TrustedCodeInput } from "../features/code-ui/attachments/input-types.js";
+import { codeInputContent } from "../features/code-ui/attachments/model-input.js";
+import type { FileLimits } from "../features/code-tools/file-types.js";
 import type { ServerEnv } from "../config/env.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
+import type { AgentTurnBoundary, AgentTurnBoundaryPhase } from "../features/agent-runs/types.js";
+import type { TurnBoundaryCapture } from "../features/checkpoints/checkpoint-service.js";
+import { captureAgentTurnBoundaryFacts, type AgentTurnBoundaryFacts } from "./turn-boundaries.js";
+import { streamCompactOperation } from "./compact-operation.js";
 import type { AuthenticatedUser } from "../features/auth/types.js";
 import type { BlobStore } from "../features/blob/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { CanvasService } from "../features/canvas/canvas-service.js";
 import type { CanvasRepository } from "../features/canvas/repository.js";
 import { buildCanvasSummaryForContext } from "../features/canvas/tools/inspect-canvas.js";
+import type {
+  CodeProjectContext,
+  CodeProjectContextLimits,
+} from "../features/code-tools/project-instructions-types.js";
 import type { CreditService } from "../features/credits/credit-service.js";
 import {
   type TierGuard,
   TierGuardError,
 } from "../features/credits/tier-guard.js";
+import type { ExecutionScopeHandle } from "../features/execution/scope-service.js";
 // execute 工具由 deepagents 内置提供（LocalShellBackend 作为 sandbox backend）
 // 不需要自定义代码执行工具
 import type {
@@ -41,18 +53,29 @@ import type {
   SubmitVideoJobFn,
 } from "../features/generation/tool-types.js";
 import type { JobService } from "../features/jobs/job-service.js";
+import { resolveModelInputCapabilities } from "../features/model-providers/input-capabilities.js";
 import type { ModelCatalogService } from "../features/model-providers/model-catalog-service.js";
 import { parseInstanceSpecifier } from "../features/model-providers/model-catalog-service.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
+import type {
+  ProcessLimits,
+  ProcessSandbox,
+} from "../features/process-sandbox/types.js";
 import { hooksFor, runHooks } from "../features/settings/hooks.js";
+import { createScopedHookCommand } from "../features/settings/scoped-hook-command.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import { formatUserRulesFragment } from "../features/settings/user-rules.js";
+import type {
+  TaskWorkContext,
+  TaskWorkManager,
+} from "../features/task-work/types.js";
 import type { RunUsageAccumulator } from "../features/usage/run-usage-accumulator.js";
 import type {
   AvailableModel,
   AvailableVideoModel,
 } from "../generation/types.js";
 import type {
+  PromptCompositionContext,
   SystemPromptRegistry,
   ToolExecutionContext,
   ToolRegistry,
@@ -77,9 +100,11 @@ import {
 } from "./deep-agent.js";
 import type { AgentPersistenceService } from "./persistence/index.js";
 import { measureTools } from "./prompt-composition.js";
+import type { AgentRunExtension } from "./run-extension.js";
+import type { ModelInvocationSnapshot } from "../providers/types.js";
+import { publicToolArguments } from "../kernel/tool-arguments.js";
 import { withBoundWorkDir } from "./sandbox-dir.js";
 import { adaptDeepAgentStream } from "./stream-adapter.js";
-import type { AgentRunExtension } from "./run-extension.js";
 import { formatTaskNotificationsXml } from "./task-notifications.js";
 import {
   createToolDenialTracker,
@@ -88,6 +113,7 @@ import {
 import type {
   WorkspaceSkillEntry,
   WorkspaceSkillsLoader,
+  WorkspaceSkillsByWorkspaceLoader,
 } from "./workspace-skills.js";
 /**
  * Build the text portion of a user message, appending <input_images> XML
@@ -102,7 +128,9 @@ import type {
 export function resolvePresetForRun(run: {
   canvasId?: string | undefined;
   preset?: "design" | "code" | undefined;
+  scopeHandle?: ExecutionScopeHandle | undefined;
 }): "design" | "code" {
+  if (run.scopeHandle) return "code";
   return run.preset ?? (run.canvasId ? "design" : "code");
 }
 
@@ -161,6 +189,7 @@ export function buildUserMessage(
   mentions: MessageMention[] = [],
   videoGenerationPreference?: VideoGenerationPreference,
   canvasSummary?: string | null,
+  workspaceSkillSource?: "database",
 ): { text: string } {
   const xmlBlocks: string[] = [];
 
@@ -184,7 +213,7 @@ export function buildUserMessage(
   if (videoGenerationPreferenceXml)
     xmlBlocks.push(videoGenerationPreferenceXml);
 
-  const mentionXmlBlocks = buildMentionXmlBlocks(mentions);
+  const mentionXmlBlocks = buildMentionXmlBlocks(mentions, workspaceSkillSource);
   xmlBlocks.push(...mentionXmlBlocks);
 
   if (!xmlBlocks.length) return { text: prompt };
@@ -246,7 +275,10 @@ function buildVideoGenerationPreferenceXml(
   return `<human_video_generation_preference mode="manual" count="${videoGenerationPreference.models.length}">\n  ${modelXml}\n</human_video_generation_preference>`;
 }
 
-function buildMentionXmlBlocks(mentions: MessageMention[]): string[] {
+function buildMentionXmlBlocks(
+  mentions: MessageMention[],
+  workspaceSkillSource?: "database",
+): string[] {
   const xmlBlocks: string[] = [];
 
   const mentionedModels = mentions.filter(
@@ -302,8 +334,13 @@ function buildMentionXmlBlocks(mentions: MessageMention[]): string[] {
   if (mentionedSkills.length > 0) {
     const skillXml = mentionedSkills
       .map(
-        (mention, i) =>
-          `<skill index="${i + 1}" id="${escapeXmlAttribute(mention.id)}" name="${escapeXmlAttribute(mention.label)}" slug="${escapeXmlAttribute(mention.slug)}">\nThe user explicitly requested this skill. Read \`/workspace-skills/${mention.slug}/SKILL.md\` for full instructions and follow them.\n</skill>`,
+        (mention, i) => {
+          const readInstruction =
+            workspaceSkillSource === "database"
+              ? `Call use_skill with name ${JSON.stringify(mention.slug)} for the installed skill instructions. Attached resources use use_skill resource_path; this DB installation is not a Native Read filesystem path.`
+              : `Read \`/workspace-skills/${mention.slug}/SKILL.md\` for full instructions and follow them.`;
+          return `<skill index="${i + 1}" id="${escapeXmlAttribute(mention.id)}" name="${escapeXmlAttribute(mention.label)}" slug="${escapeXmlAttribute(mention.slug)}">\nThe user explicitly requested this skill. ${readInstruction}\n</skill>`;
+        },
       )
       .join("\n  ");
     xmlBlocks.push(
@@ -344,6 +381,21 @@ type RuntimeRunStatus =
   | "running";
 
 type RuntimeRunRecord = RunCreateRequest & {
+  acceptedCancellation?: Promise<void>;
+  branchGeneration?: number;
+  turnBoundaryWrites?: Partial<Record<AgentTurnBoundaryPhase, { boundary: AgentTurnBoundary; persisted: boolean }>>;
+  inputIdentity?: { clientId: string; sourceCommandId: string };
+  inputOrigin?: "userInput" | "backgroundResult" | "controlOperation";
+  operation?: { kind: "compact" };
+  codeInputs?: TrustedCodeInput[];
+  projectToolInput?: (name: string, args: Record<string, unknown>) => Record<string, unknown>;
+  modelInvocation?: ModelInvocationSnapshot;
+  approvalCeiling?: import("../features/permissions/approval-types.js").CodeApprovalMode;
+  delegationDepth?: number;
+  roleInstructions?: string;
+  eventSink?: (event: StreamEvent) => Promise<void>;
+  /** Code 的可信 Task 工作域；目录与角色授权由服务端解析，不能由请求伪造。 */
+  scopeHandle?: ExecutionScopeHandle;
   accessToken?: string;
   /** billing 门中止原因：流会静默结束（无终态事件），收尾须据此补 run.failed。 */
   billingFailure?: { code: string; message: string };
@@ -371,6 +423,23 @@ type RuntimeRunRecord = RunCreateRequest & {
 };
 
 type CreateAgentRuntimeOptions = {
+  codeProjectContextLoader?: (
+    scope: ExecutionScopeHandle,
+    limits: CodeProjectContextLimits,
+    signal?: AbortSignal,
+  ) => Promise<CodeProjectContext>;
+  resolveCodeApprovalMode?: (scope: ExecutionScopeHandle) => Promise<{
+    mode: import("../features/permissions/approval-types.js").CodeApprovalMode;
+    scopeGeneration: number;
+    branchGeneration: number;
+  }>;
+  processSandbox?: ProcessSandbox;
+  taskWork?: TaskWorkManager;
+  resolveTaskWorkContext?: (
+    actor: AuthenticatedUser,
+    scopeHandle: ExecutionScopeHandle,
+    runId: string,
+  ) => Promise<TaskWorkContext>;
   runExtensions?: () => readonly AgentRunExtension[];
   agentPersistenceService?: AgentPersistenceService;
   agentFactory?: KenFutWorkAgentFactory;
@@ -381,6 +450,8 @@ type CreateAgentRuntimeOptions = {
   canvasService?: CanvasService;
   /** 工作区技能加载（skills/canvas 聚合的数据访问提供）：运行时不再直连 SDK。 */
   workspaceSkillsLoader?: WorkspaceSkillsLoader;
+  /** Code技能按可信Task工作区读取，不通过Canvas或虚拟Store路径。 */
+  workspaceSkillsByWorkspaceLoader?: WorkspaceSkillsByWorkspaceLoader;
   /**
    * 画布 → 项目绑定的本机工作目录（`projects.work_dir`，判定见
    * features/projects/work-dir.ts）。命中时覆盖 `env.canvasWorkDirs`：
@@ -432,20 +503,31 @@ type CreateAgentRuntimeOptions = {
    */
   checkpointHooks?: {
     beforeTurn(ctx: {
-      canvasId: string;
-      sandboxDir: string;
+      scope: ExecutionScopeHandle;
+      actor: AuthenticatedUser;
       runId: string;
-    }): Promise<void>;
+    }): Promise<TurnBoundaryCapture | void>;
     afterTurn(ctx: {
-      canvasId: string;
-      sandboxDir: string;
+      scope: ExecutionScopeHandle;
+      actor: AuthenticatedUser;
       runId: string;
-    }): Promise<void>;
+    }): Promise<TurnBoundaryCapture | void>;
   };
   now?: () => string;
   runIdFactory?: () => string;
   tierGuard?: TierGuard;
   viewerService?: ViewerService;
+};
+
+function inputMessageIdFor(run: RuntimeRunRecord): string {
+  return run.inputIdentity
+    ? JSON.stringify(["code-input", run.scopeHandle?.describe().taskId ?? run.sessionId, run.inputOrigin ?? "userInput", run.inputIdentity.clientId, run.inputIdentity.sourceCommandId])
+    : JSON.stringify(["run-input", run.runId, run.inputOrigin ?? "userInput"]);
+}
+
+const unstartedTurnFacts: AgentTurnBoundaryFacts = {
+  context: { status: "unavailable", reason: "turn_not_started" },
+  files: { status: "unavailable", reason: "turn_not_started" },
 };
 
 export type AgentRunService = ReturnType<typeof createAgentRunService>;
@@ -457,9 +539,54 @@ export type AgentRunService = ReturnType<typeof createAgentRunService>;
 const backgroundTaskRegistries = new WeakMap<object, BackgroundTaskRegistry>();
 
 export function createAgentRunService(options: CreateAgentRuntimeOptions) {
+  const completions = new Map<
+    string,
+    { promise: Promise<void>; finish: () => void; settled: boolean }
+  >();
   const now = options.now ?? (() => new Date().toISOString());
   const runs = new Map<string, RuntimeRunRecord>();
   const runIdFactory = options.runIdFactory ?? (() => randomUUID());
+
+  const persistBoundary = async (run: RuntimeRunRecord, phase: AgentTurnBoundaryPhase, facts: AgentTurnBoundaryFacts) => {
+    if (run.scopeHandle?.role !== "main" || !run.threadId || !options.agentRunMetadataService?.recordTurnBoundary) return;
+    const writes = run.turnBoundaryWrites ??= {};
+    const scope = run.scopeHandle.describe();
+    const write = writes[phase] ??= {
+      persisted: false,
+      boundary: {
+        workspaceId: scope.workspaceId, projectId: scope.projectId, taskId: scope.taskId,
+        runId: run.runId, threadId: run.threadId, phase,
+        scopeGeneration: scope.generation, branchGeneration: run.branchGeneration ?? null,
+        inputIdentity: run.inputIdentity ? { ...run.inputIdentity } : null,
+        inputOrigin: run.inputOrigin ?? "userInput", inputMessageId: run.operation ? null : inputMessageIdFor(run),
+        ...(run.operation ? { operation: { ...run.operation } } : {}),
+        ...structuredClone(facts),
+      },
+    };
+    if (write.persisted) return;
+    try {
+      await options.agentRunMetadataService.recordTurnBoundary(write.boundary);
+      write.persisted = true;
+    } catch {
+      console.warn(`[turn-boundary] ${phase}持久边界保存失败，历史控制不可用。`);
+    }
+  };
+
+  const settleAcceptedCancellation = (run: RuntimeRunRecord): Promise<void> | undefined => {
+    if (run.consumed) return;
+    run.status = "canceled";
+    run.acceptedCancellation ??= (async () => {
+      await persistBoundary(run, "pre", unstartedTurnFacts);
+      await persistBoundary(run, "post", unstartedTurnFacts);
+      try {
+        await updatePersistedRunStatus(options.agentRunMetadataService, run, "canceled", { completedAt: now() });
+      } catch {
+        console.warn("[agent-runtime] 未启动Run的取消元数据保存失败。");
+      }
+      completions.get(run.runId)?.finish();
+    })();
+    return run.acceptedCancellation;
+  };
 
   // DEC-1 pre-step：把改写权交给事件监听器（执行模式 plan 引导等），无监听器原样返回
   const applyPreStep = async (
@@ -536,7 +663,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     }
   }
 
-  return {
+  const service = {
     cancelRun(runId: string): RunCancelResponse | null {
       const run = runs.get(runId);
       if (!run) {
@@ -550,6 +677,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       backgroundTaskRegistries.get(run)?.abortAll("用户取消了本轮 run");
 
       run.status = "canceled";
+      void settleAcceptedCancellation(run);
       return {
         runId,
         status: "canceled",
@@ -559,32 +687,72 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     createRun(
       input: RunCreateRequest,
       runOptions?: {
+        /** 已鉴权的原输入身份；retry须回指原client/sourceCommand，不能用新runId代替。 */
+        inputIdentity?: { clientId: string; sourceCommandId: string };
+        inputOrigin?: "userInput" | "backgroundResult" | "controlOperation";
+        operation?: { kind: "compact" };
         /** 持久命令已铸造的运行身份；恢复/去重不得再次生成另一轮 run。 */
         runId?: string;
         accessToken?: string;
         model?: string;
+        modelInvocation?: ModelInvocationSnapshot;
+        codeInputs?: TrustedCodeInput[];
+        scopeHandle?: ExecutionScopeHandle;
         /** 沙箱目录名用的 id（画布 UUID）；缺省回落到 canvasId。 */
         sandboxScopeId?: string;
         threadId?: string;
         userId?: string;
+        eventSink?: (event: StreamEvent) => Promise<void>;
+        delegationDepth?: number;
+        roleInstructions?: string;
+        approvalCeiling?: import("../features/permissions/approval-types.js").CodeApprovalMode;
       },
     ): RunCreateResponse {
       const runId = runOptions?.runId ?? runIdFactory();
       const { accessToken: _ignoredAccessToken, ...runInput } = input;
+      let finish!: () => void;
+      const completion = {
+        promise: new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+        finish: () => {
+          completion.settled = true;
+          finish();
+        },
+        settled: false,
+      };
+      completions.set(runId, completion);
 
       runs.set(runId, {
         ...runInput,
+        ...(runOptions?.operation ? { operation: { ...runOptions.operation } } : {}),        ...(runOptions?.inputIdentity ? { inputIdentity: { ...runOptions.inputIdentity } } : {}),
+        ...(runOptions?.inputOrigin ? { inputOrigin: runOptions.inputOrigin } : {}),
         ...(runOptions?.accessToken
           ? { accessToken: runOptions.accessToken }
           : {}),
         consumed: false,
         controller: new AbortController(),
         ...(runOptions?.model ? { modelOverride: runOptions.model } : {}),
+        ...(runOptions?.modelInvocation ? { modelInvocation: structuredClone(runOptions.modelInvocation) } : {}),
+        ...(runOptions?.codeInputs ? { codeInputs: structuredClone(runOptions.codeInputs) } : {}),
+        ...(runOptions?.scopeHandle
+          ? { scopeHandle: runOptions.scopeHandle }
+          : {}),
         ...(runOptions?.sandboxScopeId
           ? { sandboxScopeId: runOptions.sandboxScopeId }
           : {}),
         ...(runOptions?.threadId ? { threadId: runOptions.threadId } : {}),
         ...(runOptions?.userId ? { userId: runOptions.userId } : {}),
+        ...(runOptions?.eventSink ? { eventSink: runOptions.eventSink } : {}),
+        ...(runOptions?.delegationDepth !== undefined
+          ? { delegationDepth: runOptions.delegationDepth }
+          : {}),
+        ...(runOptions?.roleInstructions
+          ? { roleInstructions: runOptions.roleInstructions }
+          : {}),
+        ...(runOptions?.approvalCeiling
+          ? { approvalCeiling: runOptions.approvalCeiling }
+          : {}),
         runId,
         status: "accepted",
       });
@@ -599,6 +767,34 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
     hasRun(runId: string) {
       return runs.has(runId);
+    },
+
+    hasActiveRunForTask(taskId: string): boolean {
+      return [...runs.values()].some(
+        (run) =>
+          run.scopeHandle?.describe().taskId === taskId &&
+          !completions.get(run.runId)?.settled,
+      );
+    },
+    async cancelRunAndWait(runId: string): Promise<void> {
+      const run = runs.get(runId);
+      if (!run) return;
+      run.controller.abort("用户停止本次执行");
+      const completion = completions.get(runId);
+      await settleAcceptedCancellation(run);
+      await completion?.promise;
+    },
+    async cancelTaskRuns(taskId: string): Promise<void> {
+      const waits: Promise<void>[] = [];
+      for (const run of runs.values()) {
+        if (run.scopeHandle?.describe().taskId !== taskId) continue;
+        run.controller.abort("Task 执行资源正在关闭");
+        const completion = completions.get(run.runId);
+        const accepted = settleAcceptedCancellation(run);
+        if (accepted) waits.push(accepted);
+        if (completion) waits.push(completion.promise);
+      }
+      await Promise.all(waits);
     },
 
     /**
@@ -625,11 +821,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         throw new Error(`Run not found: ${runId}`);
       }
 
-      if (run.consumed) {
+      if (run.controller.signal.aborted) {
+        await run.acceptedCancellation;
+        run.status = "canceled";
+        yield { type: "run.canceled", runId, timestamp: now() };
         return;
       }
 
-      run.consumed = true;
       run.status = "running";
 
       const rlog = createPipelineLogger("runtime", { runId });
@@ -1187,13 +1385,17 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         };
       }
 
-      // Load workspace skills (user-installed skills from DB).
-      // Done before backend creation so we know whether to add the
-      // /workspace-skills/ Store route.
+      // Code uses the trusted Task workspace; only Design stages a Store route.
       let workspaceSkills: WorkspaceSkillEntry[] = [];
-      if (run.canvasId && options.workspaceSkillsLoader) {
+      const skillOwnerId = run.scopeHandle
+        ? run.scopeHandle.describe().workspaceId
+        : run.canvasId;
+      const skillsLoader = run.scopeHandle
+        ? options.workspaceSkillsByWorkspaceLoader
+        : options.workspaceSkillsLoader;
+      if (skillOwnerId && skillsLoader) {
         try {
-          workspaceSkills = await options.workspaceSkillsLoader(run.canvasId);
+          workspaceSkills = await skillsLoader(skillOwnerId);
           rlog.lap("workspace_skills_loaded", {
             count: workspaceSkills.length,
           });
@@ -1204,7 +1406,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       }
 
       // Create backend — production uses StateBackend (no local shell).
-      const backendCanvasId = run.sandboxScopeId ?? run.canvasId;
+      const backendCanvasId = run.scopeHandle
+        ? undefined
+        : (run.sandboxScopeId ?? run.canvasId);
       // 项目绑定的本机工作目录（Code 模式「工作目录=项目」）：覆盖环境变量映射。
       // 读不到就照旧回沙箱目录——绑定是增强，不是 run 的前置条件。
       const boundWorkDir =
@@ -1213,24 +1417,40 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               .projectWorkDirLoader(backendCanvasId)
               .catch(() => null)
           : null;
-      const backendResult = createAgentBackend(
-        withBoundWorkDir(options.env, backendCanvasId, boundWorkDir),
-        backendCanvasId,
-        { hasWorkspaceSkills: workspaceSkills.length > 0 },
-      );
+      const scopedBackend = run.scopeHandle;
+      const backendResult = scopedBackend
+        ? {
+            factory: () => scopedBackend.backend,
+            sandboxDir: scopedBackend.describe().rootDirectory,
+            ephemeral: false,
+          }
+        : createAgentBackend(
+            withBoundWorkDir(options.env, backendCanvasId, boundWorkDir),
+            backendCanvasId,
+            { hasWorkspaceSkills: workspaceSkills.length > 0 },
+          );
 
       /**
        * 自动压缩的两个运行期值，声明在**装配块之外**：触发线在装配期算（要读模型目录与设置），
        * 事件检测在流式适配期用（同一个口径）——两个块是兄弟，必须看到同一份。
        */
       let autoCompactEnabled = true;
+      let codeInputLimits: FileLimits = AGENT_GOVERNANCE_DEFAULTS;
+      let modelCapabilities = { image: false, pdf: false };
       let autoCompact: CompactionPlan | undefined;
+      let manualCompactPlan: CompactionPlan | undefined;
       /** 用户钩子（R5-2）：起点在装配前跑，终点在本轮收尾时跑；都是旁路。 */
       let hookCommands: { start: string[]; end: string[] } = {
         start: [],
         end: [],
       };
       let hookShell: WorkspaceSettings["terminalShell"] | undefined;
+      let processLimits: ProcessLimits = {
+        maxOutputBytes: AGENT_GOVERNANCE_DEFAULTS.processMaxOutputBytes,
+        previewMaxChars: AGENT_GOVERNANCE_DEFAULTS.processPreviewMaxChars,
+        yieldMs: AGENT_GOVERNANCE_DEFAULTS.processYieldMs,
+        killGraceMs: AGENT_GOVERNANCE_DEFAULTS.processKillGraceMs,
+      };
       /** 后台任务并发上限（DEC-15/18）：治理设置读侧已钳回护栏。 */
       let governanceConcurrency: number =
         AGENT_GOVERNANCE_DEFAULTS.subagentMaxConcurrency;
@@ -1247,13 +1467,27 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         AGENT_GOVERNANCE_DEFAULTS.subagentMaxContinuations;
       /** 统一后台任务注册表（DEC-15）：设置读取后创建；取消/收尾经它连带清理。 */
       let backgroundTaskRegistry: BackgroundTaskRegistry | null = null;
+      let taskWorkContext: TaskWorkContext | undefined;
+      let leaveForeground: (() => Promise<void>) | undefined;
+      let agent: KenFutWorkAgent | undefined;
+      const captureBoundary = async (phase: AgentTurnBoundaryPhase) => {
+        if (run.scopeHandle?.role !== "main") return;
+        const scope = run.scopeHandle;
+        const actor = taskWorkContext?.actor;
+        const hook = phase === "pre" ? options.checkpointHooks?.beforeTurn : options.checkpointHooks?.afterTurn;
+        const facts = await captureAgentTurnBoundaryFacts({
+          contextHistory: agent?.contextHistory,
+          threadId: run.threadId,
+          captureFiles: hook && actor ? () => hook({ scope, actor, runId }) : undefined,
+        });
+        await persistBoundary(run, phase, facts);
+      };
 
       try {
         /** 被拒工具调用的记账（含连续拒绝计数）；门存在时才有值。 */
         let denialTracker:
           | ReturnType<typeof createToolDenialTracker>
           | undefined;
-        let agent: KenFutWorkAgent;
         try {
           let resolvedModel: BaseLanguageModel | string | undefined =
             run.modelOverride
@@ -1311,11 +1545,16 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               const modelRow = credentials.models?.find(
                 (m) => m.id === instanceSpec.model,
               );
+              const modelInvocation = run.modelInvocation;
+              if (modelInvocation && (modelInvocation.providerId !== credentials.instanceId || modelInvocation.modelId !== instanceSpec.model || modelInvocation.configRevision !== credentials.configRevision)) throw new Error("本轮供应商或模型配置已改变，请重新确认模型选择后发送。");
+              modelCapabilities = modelInvocation?.inputCapabilities ?? resolveModelInputCapabilities(modelRow ?? {});
               resolvedModel = resolveInstanceChatModel(
                 credentials.protocol,
                 instanceSpec.model,
                 {
                   apiKey: credentials.apiKey,
+                  ...((modelInvocation?.useResponsesApi ?? credentials.useResponsesApi) !== undefined ? { useResponsesApi: modelInvocation?.useResponsesApi ?? credentials.useResponsesApi } : {}),
+                  ...(credentials.responsesApi !== undefined ? { responsesApi: credentials.responsesApi } : {}),
                   ...(credentials.baseUrl
                     ? { baseUrl: credentials.baseUrl }
                     : {}),
@@ -1325,7 +1564,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     threadId: run.threadId,
                   }),
                 },
-                modelRow?.extraBody,
+                // 编译结果已按RFC7386处理静态参数；不能再次合并使已删除字段复活。
+                modelInvocation?.body ?? modelRow?.extraBody,
               );
               run.usageMeta = {
                 provider: "instance",
@@ -1447,7 +1687,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           // (scripts/, references/, assets/) into the Store so the agent can
           // read_file them via the /workspace-skills/ route.
           const store = persistence?.store;
-          if (workspaceSkills.length > 0 && store && run.canvasId) {
+          if (
+            !run.scopeHandle &&
+            workspaceSkills.length > 0 &&
+            store &&
+            run.canvasId
+          ) {
             const storeNamespace = [
               "projects",
               run.canvasId,
@@ -1492,7 +1737,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
           // 执行模式工具门：solo/plan 按线程策略拦截（undefined = 全放行）
           const toolGate =
-            run.threadId && options.toolGateFor
+            !run.scopeHandle && run.threadId && options.toolGateFor
               ? options.toolGateFor(run.threadId)
               : undefined;
           // 被拒调用的可见性与有界失败：门只做判定，记账与中止由运行时负责
@@ -1527,6 +1772,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
            * （此前只写 localStorage，服务端没人读）。读失败不阻断 run（规则是增强，不是前置）。
            */
           let userRulesFragment: string[] = [];
+          let codeProjectContext: CodeProjectContext | undefined;
           if (toolWorkspaceId && options.settingsService) {
             const workspaceSettings = await options.settingsService
               .getWorkspaceSettings(
@@ -1539,10 +1785,23 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 toolWorkspaceId,
               )
               .catch(() => null);
+            if (workspaceSettings) codeInputLimits = workspaceSettings;
             userRulesFragment = formatUserRulesFragment({
               userRules: workspaceSettings?.userRules,
               ruleEntries: workspaceSettings?.ruleEntries,
             });
+            if (run.scopeHandle && options.codeProjectContextLoader) {
+              if (!workspaceSettings)
+                throw new Error("Code 项目规则加载缺少治理设置。");
+              codeProjectContext = await options.codeProjectContextLoader(
+                run.scopeHandle,
+                {
+                  maxTextBytes: workspaceSettings.codeReadMaxBytes,
+                  maxEntries: workspaceSettings.codeSearchMaxResults,
+                },
+                run.controller.signal,
+              );
+            }
             // 同一个设置对象顺带读压缩开关（少一次库往返）
             autoCompactEnabled = workspaceSettings?.autoCompactEnabled ?? true;
             // 钩子也从这个对象读（同一趟）：起点钩子在装配 agent 之前跑
@@ -1551,6 +1810,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               end: hooksFor(workspaceSettings?.hooks, "turn-end"),
             };
             hookShell = workspaceSettings?.terminalShell;
+            if (workspaceSettings)
+              processLimits = {
+                maxOutputBytes: workspaceSettings.processMaxOutputBytes,
+                previewMaxChars: workspaceSettings.processPreviewMaxChars,
+                yieldMs: workspaceSettings.processYieldMs,
+                killGraceMs: workspaceSettings.processKillGraceMs,
+              };
             // 后台任务并发上限（DEC-15/18）：治理设置读侧已钳回护栏
             governanceConcurrency =
               workspaceSettings?.subagentMaxConcurrency ??
@@ -1574,16 +1840,58 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
           // 统一后台任务注册表（DEC-15）：每 run 一个（状态随 run 生命周期，
           // 纯内存——run 结束即无意义）；并发上限来自治理设置
-          backgroundTaskRegistry = createBackgroundTaskRegistry({
-            maxConcurrent: governanceConcurrency,
-          });
-          backgroundTaskRegistries.set(run, backgroundTaskRegistry);
+          if (run.scopeHandle) {
+            if (!options.taskWork || !options.resolveTaskWorkContext)
+              throw new Error("Code Task 后台工作与前台执行协调器未装配。");
+            taskWorkContext = await options.resolveTaskWorkContext(
+              {
+                id: run.userId ?? "",
+                accessToken: run.accessToken ?? "",
+                email: "",
+                userMetadata: {},
+              },
+              run.scopeHandle,
+              runId,
+            );
+            taskWorkContext = {
+              ...taskWorkContext,
+              signal: run.controller.signal,
+            };
+            run.branchGeneration = taskWorkContext.branchGeneration;
+            if (run.scopeHandle.role === "main")
+              leaveForeground =
+                await options.taskWork.enterForeground(taskWorkContext);
+            else hookCommands = { start: [], end: [] };
+          } else {
+            backgroundTaskRegistry = createBackgroundTaskRegistry({
+              maxConcurrent: governanceConcurrency,
+            });
+            backgroundTaskRegistries.set(run, backgroundTaskRegistry);
+          }
 
           if (hookCommands.start.length > 0 && backendResult.sandboxDir) {
             for (const hook of await runHooks({
               event: "turn-start",
               commands: hookCommands.start,
               cwd: backendResult.sandboxDir,
+              timeoutMs: governanceExecuteTimeoutMs,
+              previewMaxChars: processLimits.previewMaxChars,
+              ...(run.scopeHandle
+                ? {
+                    runCommand: options.processSandbox
+                      ? createScopedHookCommand({
+                          sandbox: options.processSandbox,
+                          scope: run.scopeHandle,
+                          runId,
+                          event: "turn-start",
+                          limits: processLimits,
+                          signal: run.controller.signal,
+                        })
+                      : async () => {
+                          throw new Error("Code 钩子执行器不可用，拒绝裸跑。");
+                        },
+                  }
+                : {}),
               ...(hookShell ? { shell: hookShell } : {}),
             })) {
               yield {
@@ -1600,7 +1908,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
            * 「模型声明的窗口 / 最大输出」优先，没声明就用共享兜底表认模型族；
            * 两边都没有（认不出的 BYOK 模型）→ 中间件按框架回退值走，这里如实记来源。
            */
-          if (autoCompactEnabled) {
+          if (autoCompactEnabled || run.operation?.kind === "compact") {
             const specifier =
               typeof run.modelOverride === "string"
                 ? run.modelOverride
@@ -1643,6 +1951,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     trigger: { type: "tokens", value: Math.floor(override) },
                   }
                 : plan;
+            manualCompactPlan = autoCompact;
+            if (!autoCompactEnabled) autoCompact = undefined;
             console.log(
               `[agent] 自动压缩触发线 ${plan.trigger.value} tokens（来源 ${plan.source}，保留 ${plan.keep.value} 条）`,
             );
@@ -1662,6 +1972,21 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               };
               const entries =
                 await options.modelCatalog.listCatalog(catalogUser);
+              const selection = parseInstanceSpecifier(
+                run.modelOverride ?? run.model ?? "",
+              );
+              const selected =
+                selection &&
+                entries.find(
+                  (entry) =>
+                    entry.provider.instanceId === selection.instanceId &&
+                    entry.id === selection.model,
+                );
+              if (selected)
+                modelCapabilities = resolveModelInputCapabilities(
+                  selected.model,
+                  selected.hints,
+                );
               const toListItem = (entry: (typeof entries)[number]) => ({
                 id: `${entry.provider.instanceId}:${entry.id}`,
                 displayName: entry.name,
@@ -1706,25 +2031,55 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           // 沙箱/模型目录/job 闭包在此就绪），合并桥接进模型工具列表；execute 经
           // 注册表 guarded 路径派发（tool-pre-execute 拦截在注册表侧生效）
           const kernelToolRegistry = options.tools;
+          let codeApproval: ToolExecutionContext["codeApproval"];
+          if (run.scopeHandle) {
+            const handle = run.scopeHandle;
+            const resolver = options.resolveCodeApprovalMode;
+            if (!resolver) throw new Error("Code Task 权限模式解析器未装配。");
+            const resolve = () => resolver(handle);
+            const current = await resolve();
+            codeApproval = {
+              ceiling: run.approvalCeiling ?? current.mode,
+              resolve,
+            };
+          }
+          const runToolContext: ToolExecutionContext = {
+            sessionId: run.sessionId,
+            modelSpecifier: run.modelOverride ?? run.model,
+            delegationDepth: run.delegationDepth ?? 0,
+            ...(codeApproval ? { codeApproval } : {}),
+            runId,
+            signal: run.controller.signal,
+            ...(run.scopeHandle ? { scopeHandle: run.scopeHandle } : {}),
+            ...(taskWorkContext ? { taskWorkContext } : {}),
+            ...(run.canvasId ? { canvasId: run.canvasId } : {}),
+            ...(run.threadId ? { threadId: run.threadId } : {}),
+            ...(run.accessToken ? { accessToken: run.accessToken } : {}),
+            ...(run.userId ? { userId: run.userId } : {}),
+            ...(toolWorkspaceId ? { workspaceId: toolWorkspaceId } : {}),
+          };
+          const toolResolutionContext = {
+            sessionId: run.sessionId,
+            modelSpecifier: run.modelOverride ?? run.model,
+            delegationDepth: run.delegationDepth ?? 0,
+            preset,
+            modelCapabilities,
+            backendFactory: backendResult.factory,
+            ...(run.scopeHandle ? { scopeHandle: run.scopeHandle } : {}),
+            ...(taskWorkContext ? { taskWorkContext } : {}),
+            ...(backendResult.sandboxDir
+              ? { sandboxDir: backendResult.sandboxDir }
+              : {}),
+            ...(persistence?.store ? { store: persistence.store } : {}),
+            ...(persistImage ? { persistImage } : {}),
+            ...(submitImageJob ? { submitImageJob } : {}),
+            ...(submitVideoJob ? { submitVideoJob } : {}),
+            ...(availableImageModels.length ? { availableImageModels } : {}),
+            ...(availableVideoModels.length ? { availableVideoModels } : {}),
+          };
           const kernelToolDefinitions = kernelToolRegistry
             ? kernelToolRegistry
-                .resolveRunTools({
-                  preset,
-                  backendFactory: backendResult.factory,
-                  ...(backendResult.sandboxDir
-                    ? { sandboxDir: backendResult.sandboxDir }
-                    : {}),
-                  ...(persistence?.store ? { store: persistence.store } : {}),
-                  ...(persistImage ? { persistImage } : {}),
-                  ...(submitImageJob ? { submitImageJob } : {}),
-                  ...(submitVideoJob ? { submitVideoJob } : {}),
-                  ...(availableImageModels.length
-                    ? { availableImageModels }
-                    : {}),
-                  ...(availableVideoModels.length
-                    ? { availableVideoModels }
-                    : {}),
-                })
+                .resolveRunTools(toolResolutionContext)
                 .map((tool) => ({
                   ...tool,
                   execute: (
@@ -1734,23 +2089,78 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     kernelToolRegistry.executeDefinition(tool, args, execCtx),
                 }))
             : [];
+          // 保存已经曝光工具的公开投影，卸载后的迟到deny事件也不能泄露原参数。
+          const argumentProjectors = new Map(kernelToolDefinitions.filter((tool) => tool.projectArguments).map((tool) => [tool.name, { projectArguments: tool.projectArguments }]));
+          run.projectToolInput = (name, args) => {
+            try {
+              const current = kernelToolRegistry?.resolveRunTools(toolResolutionContext).find((tool) => tool.name === name);
+              if (current?.projectArguments) argumentProjectors.set(name, { projectArguments: current.projectArguments });
+            } catch { /* 已曝光的投影仍用于迟到公开事件；不改变真实执行结果。 */ }
+            return publicToolArguments(argumentProjectors.get(name), args);
+          };
+
+          const promptCompositionContext: PromptCompositionContext = {
+            preset,
+            ...(run.roleInstructions
+              ? { roleInstructions: run.roleInstructions }
+              : {}),
+            ...(brandKitId ? { brandKitId } : {}),
+            ...(toolWorkspaceId ? { workspaceId: toolWorkspaceId } : {}),
+            workspaceSkills: [
+              ...workspaceSkills,
+              ...(codeProjectContext?.skills ?? []),
+            ],
+            ...(codeProjectContext
+              ? {
+                  projectInstructions: codeProjectContext.instructions,
+                  projectContextIssues: codeProjectContext.issues,
+                  projectContextTruncated: codeProjectContext.truncated,
+                }
+              : {}),
+            ...(userRulesFragment.length > 0 ? { userRulesFragment } : {}),
+          };
+          const initialPolicy = await codeApproval?.resolve();
+          if (run.scopeHandle) {
+            promptCompositionContext.executionScope =
+              run.scopeHandle.describe();
+            promptCompositionContext.executionRole = run.scopeHandle.role;
+            promptCompositionContext.approvalMode = initialPolicy?.mode;
+            promptCompositionContext.approvalCeiling = codeApproval?.ceiling;
+          }
 
           agent = resolvedAgentFactory({
-            ...(options.runExtensions ? { runExtensions: options.runExtensions().filter((extension) => extension.preset === preset) } : {}),
+            ...(options.runExtensions
+              ? {
+                  runExtensions: options
+                    .runExtensions()
+                    .filter((extension) => extension.preset === preset),
+                }
+              : {}),
+            ...(kernelToolRegistry
+              ? {
+                  extensionContext: {
+                    registry: kernelToolRegistry,
+                    resolution: toolResolutionContext,
+                    execution: runToolContext,
+                    ...(options.systemPromptRegistry
+                      ? {
+                          prompt: {
+                            registry: options.systemPromptRegistry,
+                            composition: promptCompositionContext,
+                          },
+                        }
+                      : {}),
+                  },
+                }
+              : {}),
             backendResult,
             preset,
             // 系统提示经内核段注册表组装（模式段/品牌/skills/规则与插件段）；
             // registry 缺席（部分装配/测试）时为空串——生产装配恒有段注册表
             systemPrompt: options.systemPromptRegistry
-              ? await options.systemPromptRegistry.compose({
-                  preset,
-                  ...(brandKitId ? { brandKitId } : {}),
-                  ...(toolWorkspaceId ? { workspaceId: toolWorkspaceId } : {}),
-                  workspaceSkills,
-                  ...(userRulesFragment.length > 0
-                    ? { userRulesFragment }
-                    : {}),
-                })
+              ? await options.systemPromptRegistry.compose(
+                  promptCompositionContext,
+                )
               : "",
             ...(run.canvasId ? { canvasId: run.canvasId } : {}),
             ...(persistence ? { checkpointer: persistence.checkpointer } : {}),
@@ -1760,6 +2170,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             env: options.env,
             ...(resolvedModel ? { model: resolvedModel } : {}),
             ...(autoCompact ? { autoCompact } : {}),
+            ...(manualCompactPlan ? { manualCompactPlan } : {}),
             // execute 工具由 LocalShellBackend 自动提供，无需手动传递
             ...(persistence ? { store: persistence.store } : {}),
             ...(kernelToolDefinitions.length > 0
@@ -1776,16 +2187,19 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   },
                 }
               : {}),
+            ...(taskWorkContext &&
+            options.taskWork &&
+            run.scopeHandle?.role === "main"
+              ? {
+                  taskWork: {
+                    manager: options.taskWork,
+                    context: taskWorkContext,
+                  },
+                }
+              : {}),
             executeTimeoutMs: governanceExecuteTimeoutMs,
             llmRetry: governanceLlmRetry,
-            runToolContext: {
-              runId,
-              ...(run.canvasId ? { canvasId: run.canvasId } : {}),
-              ...(run.threadId ? { threadId: run.threadId } : {}),
-              ...(run.accessToken ? { accessToken: run.accessToken } : {}),
-              ...(run.userId ? { userId: run.userId } : {}),
-              ...(toolWorkspaceId ? { workspaceId: toolWorkspaceId } : {}),
-            },
+            runToolContext,
           });
           rlog.lap("agent_factory_done");
         } catch (error) {
@@ -1798,6 +2212,40 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             error,
           );
           yield failedEvent;
+          return;
+        }
+
+        if (run.operation?.kind === "compact") {
+          await captureBoundary("pre");
+          try {
+            if (!run.threadId || !agent.contextHistory || !manualCompactPlan) throw new Error("当前Harness未提供手动上下文压缩能力。");
+            for await (const event of streamCompactOperation({
+              history: agent.contextHistory, threadId: run.threadId, runId,
+              sessionId: run.sessionId, conversationId: run.conversationId,
+              plan: manualCompactPlan, signal: run.controller.signal, now,
+              onUsage: (usage) => {
+                if (!run.userId) return;
+                options.runUsage?.update(runId, {
+                  inputTokens: usage.inputTokens, outputTokens: usage.outputTokens,
+                  provider: run.usageMeta?.provider ?? "builtin", model: run.usageMeta?.model ?? "unknown",
+                  ...(run.usageMeta?.providerInstanceId ? { providerInstanceId: run.usageMeta.providerInstanceId } : {}), userId: run.userId,
+                });
+              },
+            })) {
+              if (event.type === "run.completed") {
+                run.status = "completed";
+                await syncPersistedRunFromEvent(options.agentRunMetadataService, run, event, now);
+              }
+              yield event;
+            }
+          } catch (error) {
+            const event: StreamEvent = run.controller.signal.aborted
+              ? { type: "run.canceled", runId, timestamp: now() }
+              : toFailedEvent(runId, now, error);
+            run.status = event.type === "run.canceled" ? "canceled" : "failed";
+            await syncPersistedRunFromEvent(options.agentRunMetadataService, run, event, now);
+            yield event;
+          }
           return;
         }
 
@@ -1818,10 +2266,18 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           // 附件在下载与提示词构建两处消费：收窄成局部 const（缺省空数组，分支内不再判空）
           const attachments = run.attachments ?? [];
           const hasAttachments = attachments.length > 0;
+          const userMessageId = inputMessageIdFor(run);
           let userMessage: HumanMessage;
           let attachmentDataMap: Record<string, string> = {};
 
-          if (hasAttachments) {
+          if (run.codeInputs?.length) {
+            if (!run.scopeHandle) throw new Error("Code附件输入缺少可信Task工作域。");
+            let { text: enrichedPrompt } = buildUserMessage(run.prompt, [], run.imageGenerationPreference, run.mentions, run.videoGenerationPreference, canvasSummary, "database");
+            enrichedPrompt = await applyPreStep(enrichedPrompt, run.threadId);
+            const content = await codeInputContent(run.codeInputs, codeInputLimits, modelCapabilities, run.controller.signal);
+            userMessage = new HumanMessage({ id: userMessageId, content: [{ type: "text", text: enrichedPrompt }, ...content] });
+          } else if (hasAttachments) {
+            if (run.scopeHandle) throw new Error("Code附件必须经所属Task的附件提交接口解析，不能传任意图片URL。");
             // Download images and build parallel data structures:
             // 1. imageBlocks: base64 content parts for LLM vision
             // 2. downloaded: assetId → base64 mapping for tool resolution
@@ -1886,6 +2342,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               run.mentions,
               run.videoGenerationPreference,
               canvasSummary,
+              run.scopeHandle ? "database" : undefined,
             );
             enrichedPrompt = await applyPreStep(enrichedPrompt, run.threadId);
 
@@ -1893,6 +2350,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             attachmentDataMap = buildAttachmentDataMap(downloaded);
 
             userMessage = new HumanMessage({
+              id: userMessageId,
               content: [
                 { type: "text" as const, text: enrichedPrompt },
                 ...imageBlocks,
@@ -1906,31 +2364,14 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               run.mentions,
               run.videoGenerationPreference,
               canvasSummary,
+              run.scopeHandle ? "database" : undefined,
             );
             enrichedPrompt = await applyPreStep(enrichedPrompt, run.threadId);
-            userMessage = new HumanMessage(enrichedPrompt);
+            userMessage = new HumanMessage({ id: userMessageId, content: enrichedPrompt });
           }
 
-          // 检查点（checkpoints 缝）：轮次开始的影子快照，必须在流启动前打（本轮
-          // 之前的落盘状态才是「轮次开始」）。只在有沙箱目录的**非临时**后端打——
-          // dev ephemeral 目录随 run 删除，打了也白打。hook 是旁路：抛错只告警，
-          // 绝不影响 run（与 turn-end hooks 同款兜底）。
-          if (
-            options.checkpointHooks &&
-            backendCanvasId &&
-            backendResult.sandboxDir &&
-            !backendResult.ephemeral
-          ) {
-            try {
-              await options.checkpointHooks.beforeTurn({
-                canvasId: backendCanvasId,
-                runId,
-                sandboxDir: backendResult.sandboxDir,
-              });
-            } catch (hookError) {
-              console.warn("[checkpoint] beforeTurn failed:", hookError);
-            }
-          }
+          // HumanMessage进入graph之前捕获真实context与有效文件版本，并绑定本run的pre。
+          await captureBoundary("pre");
 
           // 首轮流在这里创建（含 prestep/hooks 前置）；后台任务续轮的流在
           // 下方消费循环里重建（DEC-15 轮末闸门）
@@ -2231,7 +2672,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             // 续轮：附件映射随首轮消息已进 thread 历史，无需重带
             stream = agent.streamEvents(
               {
-                messages: [new HumanMessage(continuationInput ?? "")],
+                messages: [new HumanMessage({
+                  id: JSON.stringify(["background-continuation", runId, continuationRounds]),
+                  content: continuationInput ?? "",
+                })],
               },
               {
                 ...(run.threadId ||
@@ -2311,6 +2755,23 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               event: "turn-end",
               commands: hookCommands.end,
               cwd: backendResult.sandboxDir,
+              timeoutMs: governanceExecuteTimeoutMs,
+              previewMaxChars: processLimits.previewMaxChars,
+              ...(run.scopeHandle
+                ? {
+                    runCommand: options.processSandbox
+                      ? createScopedHookCommand({
+                          sandbox: options.processSandbox,
+                          scope: run.scopeHandle,
+                          runId,
+                          event: "turn-end",
+                          limits: processLimits,
+                        })
+                      : async () => {
+                          throw new Error("Code 钩子执行器不可用，拒绝裸跑。");
+                        },
+                  }
+                : {}),
               ...(hookShell ? { shell: hookShell } : {}),
             })) {
               yield {
@@ -2325,33 +2786,50 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             console.warn("[agent-runtime] turn-end hooks failed:", hookError);
           }
         }
-        // 检查点（checkpoints 缝）：轮次收尾的影子快照——成功/失败/取消都要走到
-        //（finally 保证），放在用户钩子之后、临时沙箱清理之前（ephemeral 不打）。
-        // 抛错只告警，绝不影响 run 的终态事件与收尾流程。
-        if (
-          options.checkpointHooks &&
-          backendCanvasId &&
-          backendResult.sandboxDir &&
-          !backendResult.ephemeral
-        ) {
-          try {
-            await options.checkpointHooks.afterTurn({
-              canvasId: backendCanvasId,
-              runId,
-              sandboxDir: backendResult.sandboxDir,
-            });
-          } catch (hookError) {
-            console.warn("[checkpoint] afterTurn failed:", hookError);
-          }
-        }
+        // 用户turn-end hooks结束后、释放前台资源前保存post；失败/取消仍走finally。
+        await captureBoundary("post");
         if (backendResult.sandboxDir && backendResult.ephemeral) {
           rm(backendResult.sandboxDir, { recursive: true, force: true }).catch(
             (err) => console.warn("[sandbox] cleanup failed:", err.message),
           );
         }
+        await leaveForeground?.();
       }
     },
   };
+  const execute = service.streamRun.bind(service);
+  service.streamRun = async function* (
+    runId: string,
+  ): AsyncGenerator<StreamEvent> {
+    const run = runs.get(runId);
+    if (run?.consumed) return;
+    // 在第一个await之前原子认领消费者；no-op重订阅不得完成活动Run或写其边界。
+    if (run) run.consumed = true;
+    try {
+      for await (const event of execute(runId)) {
+        try {
+          const run = runs.get(runId);
+          const visible = event.type === "tool.started" && event.input
+            ? { ...event, input: run?.projectToolInput?.(event.toolName, event.input) ?? event.input }
+            : event;
+          await run?.eventSink?.(visible);
+          yield visible;
+        } catch (error) {
+          // 在关闭上游iterator之前中止工具signal，禁止丢失持久投影后继续写文件。
+          runs.get(runId)?.controller.abort("持久事件投影失败");
+          throw error;
+        }
+      }
+    } finally {
+      if (run) {
+        // 启动前失败/取消也保留partial事实；不在finally把当前目录伪装为pre。
+        await persistBoundary(run, "pre", unstartedTurnFacts);
+        await persistBoundary(run, "post", unstartedTurnFacts);
+      }
+      completions.get(runId)?.finish();
+    }
+  };
+  return service;
 }
 
 /**

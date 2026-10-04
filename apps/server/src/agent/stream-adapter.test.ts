@@ -593,14 +593,7 @@ describe("stream-adapter 分类占比", () => {
   });
 });
 
-/**
- * 自动压缩的可见信号（R4-1 输出预留线的执行面）。
- *
- * 观测点是**唯一可靠又不碰私有 state 通道**的那个：中间件把被压掉的旧消息换成一条
- * `lc_source="summarization"` 的 HumanMessage，它必然出现在下一次模型调用的输入里。
- * 这条信号必须只发一次、且阈值来源如实带上——否则用户看到「模型突然忘了前面的事」
- * 却不知道发生过什么。
- */
+/** 产品压缩信号只能消费已确认checkpoint的新摘要事实，旧模型输入marker不是发生凭据。 */
 describe("stream-adapter 自动压缩信号", () => {
   const autoCompact = {
     trigger: { type: "tokens" as const, value: 872_000 },
@@ -608,29 +601,34 @@ describe("stream-adapter 自动压缩信号", () => {
     source: "reserved-output" as const,
   };
 
-  async function collectWithSummarizedHistory(
-    options: { autoCompact?: typeof autoCompact } = {},
+  async function collectCompactionFacts(
+    options: { autoCompact?: typeof autoCompact; committed?: boolean } = {},
   ) {
-    const summary = new HumanMessage("（较早对话的摘要）");
-    (
-      summary as unknown as { additional_kwargs: Record<string, unknown> }
-    ).additional_kwargs = { lc_source: "summarization" };
+    const summary = new HumanMessage({
+      content: "较早对话的摘要",
+      additional_kwargs: { lc_source: "summarization" },
+    });
     const stream: AsyncIterable<unknown> = {
       async *[Symbol.asyncIterator]() {
         yield {
           event: "on_chat_model_start",
-          data: {
-            input: {
-              messages: [[new SystemMessage("sys"), summary]],
-            },
-          },
+          data: { input: { messages: [[new SystemMessage("sys"), summary]] } },
         };
-        // 第二次调用：摘要已经在历史里（不能再报一次）
+        if (options.committed) {
+          yield {
+            event: "on_custom_event",
+            name: "kenfutwork.compaction.applied",
+            data: { output: { checkpointId: "new-checkpoint" } },
+          };
+          yield {
+            event: "on_custom_event",
+            name: "kenfutwork.compaction.applied",
+            data: { output: { checkpointId: "later-checkpoint" } },
+          };
+        }
         yield {
           event: "on_chat_model_start",
-          data: {
-            input: { messages: [[new SystemMessage("sys"), summary]] },
-          },
+          data: { input: { messages: [[new SystemMessage("sys"), summary]] } },
         };
       },
     };
@@ -640,28 +638,38 @@ describe("stream-adapter 自动压缩信号", () => {
       runId: "run-1",
       sessionId: "sess-1",
       stream,
-      ...options,
-    })) {
+      ...(options.autoCompact ? { autoCompact: options.autoCompact } : {}),
+    }))
       events.push(event);
-    }
     return events;
   }
 
-  it("检测到摘要消息：发一条 run.compacted（带阈值与来源），且每轮只发一次", async () => {
-    const events = await collectWithSummarizedHistory({ autoCompact });
-    const compacted = events.filter((event) => event.type === "run.compacted");
-    expect(compacted).toHaveLength(1);
-    expect(compacted[0]).toMatchObject({
-      runId: "run-1",
-      triggerTokens: 872_000,
-      triggerSource: "reserved-output",
-      keepMessages: 20,
+  it("已提交的新摘要事实发一次run.compacted，保留真实触发口径", async () => {
+    const events = await collectCompactionFacts({
+      autoCompact,
+      committed: true,
     });
+    expect(events.filter((event) => event.type === "run.compacted")).toEqual([
+      expect.objectContaining({
+        runId: "run-1",
+        triggerTokens: 872_000,
+        triggerSource: "reserved-output",
+        keepMessages: 20,
+      }),
+    ]);
+    expect(events.at(-1)?.type).toBe("run.completed");
   });
-
-  it("没有压缩口径（设置关着 → 中间件不挂）：连检测都不做，不发信号", async () => {
-    const events = await collectWithSummarizedHistory();
-    expect(events.some((event) => event.type === "run.compacted")).toBe(false);
+  it("重复看到既存摘要输入不会制造新压缩事件", async () => {
+    const events = await collectCompactionFacts({ autoCompact });
+    expect(events.filter((event) => event.type === "run.compacted")).toEqual(
+      [],
+    );
+  });
+  it("压缩口径未启用时，不能消费新摘要事实制造压缩提示", async () => {
+    const events = await collectCompactionFacts({ committed: true });
+    expect(events.filter((event) => event.type === "run.compacted")).toEqual(
+      [],
+    );
   });
 });
 

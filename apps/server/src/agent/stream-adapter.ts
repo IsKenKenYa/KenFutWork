@@ -62,7 +62,7 @@ type AdaptDeepAgentStreamOptions = {
   /** 空闲超时触发时调用（中止底层请求、释放上游连接）。 */
   abortRun?: () => void;
   /**
-   * 自动压缩口径（传了才检测压缩、才可能发 `run.compacted`）：
+   * 自动压缩口径（传了才消费已提交的新摘要事实并发 `run.compacted`）：
    * 与 agent 装配用的是同一份（见 agent/auto-compact.ts）。
    */
   autoCompact?: CompactionPlan | undefined;
@@ -223,6 +223,28 @@ export async function* adaptDeepAgentStream(
       if (options.canonicalToolEvents && rawEvent.event.startsWith("on_tool_"))
         continue;
       const evt = canonicalToolEvent(rawEvent) ?? rawEvent;
+      if (
+        evt.event === "on_custom_event" &&
+        evt.name === "kenfutwork.compaction.applied"
+      ) {
+        const fact = evt.data?.output as { checkpointId?: unknown } | undefined;
+        if (
+          !compactionReported &&
+          options.autoCompact &&
+          typeof fact?.checkpointId === "string"
+        ) {
+          compactionReported = true;
+          yield {
+            type: "run.compacted" as const,
+            runId: options.runId,
+            triggerTokens: options.autoCompact.trigger.value,
+            triggerSource: options.autoCompact.source,
+            keepMessages: options.autoCompact.keep.value,
+            timestamp: now(),
+          };
+        }
+        continue;
+      }
 
       // 模型输入就绪：量一次分类占比（系统提示词 / 消息 / 技能 …）
       if (evt.event === "on_chat_model_start") {
@@ -240,34 +262,6 @@ export async function* adaptDeepAgentStream(
           ...(options.toolComposition ?? []),
         ]);
 
-        /**
-         * 自动压缩发生了？中间件把被压掉的旧消息换成一条摘要消息
-         * （HumanMessage + `additional_kwargs.lc_source === "summarization"`），
-         * 它一定出现在**下一次模型调用的输入里**——这是唯一可靠、又不依赖私有 state 通道的观测点。
-         * 每轮最多报一次（用户知道「刚才压过一次」就够了）。
-         */
-        if (!compactionReported && options.autoCompact) {
-          const compacted = flat.some((message) => {
-            const kwargs = (message as { additional_kwargs?: unknown })
-              ?.additional_kwargs;
-            return (
-              typeof kwargs === "object" &&
-              kwargs !== null &&
-              (kwargs as { lc_source?: unknown }).lc_source === "summarization"
-            );
-          });
-          if (compacted) {
-            compactionReported = true;
-            yield {
-              type: "run.compacted" as const,
-              runId: options.runId,
-              triggerTokens: options.autoCompact.trigger.value,
-              triggerSource: options.autoCompact.source,
-              keepMessages: options.autoCompact.keep.value,
-              timestamp: now(),
-            };
-          }
-        }
         continue;
       }
 
@@ -747,7 +741,16 @@ function extractOutput(
 ): Record<string, unknown> | undefined {
   let text = "";
   if (ToolMessageClass.isInstance(output)) {
-    text = extractChunkText(output);
+    const canonical =
+      output.artifact && typeof output.artifact === "object"
+        ? (output.artifact as { canonicalOutput?: unknown }).canonicalOutput
+        : undefined;
+    text =
+      canonical === undefined
+        ? extractChunkText(output)
+        : typeof canonical === "string"
+          ? canonical
+          : JSON.stringify(canonical);
   } else if (typeof output === "string") {
     text = output;
   } else if (output && typeof output === "object") {

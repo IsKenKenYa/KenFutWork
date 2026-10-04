@@ -41,8 +41,9 @@ export function createAgentPersistenceService(
   return {
     async getPersistence() {
       if (!env.databaseUrl) {
-        // 未配置 Postgres：降级为进程内存实现（同进程内 thread 上下文可用）
-        return createInMemoryPersistence();
+        // 未配置 Postgres：同一服务实例共享内存持久化，保留 thread 上下文。
+        pendingPersistence ??= Promise.resolve(createInMemoryPersistence());
+        return pendingPersistence;
       }
 
       if (!pendingPersistence) {

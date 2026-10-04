@@ -1,4 +1,5 @@
 import type { PersistenceService } from "../persistence/types.js";
+import type { AgentTurnBoundaries, AgentTurnBoundary } from "./types.js";
 
 export type AgentRunRecord = {
   id: string;
@@ -25,6 +26,14 @@ export type NewAgentRun = {
  * run id 不是外部输入。若将来需要按工作区列出运行历史，应经会话链加谓词。
  */
 export interface AgentRunRepository {
+  recordTurnBoundary(input: AgentTurnBoundary): Promise<boolean>;
+  getTurnBoundaries(input: {
+    workspaceId: string;
+    projectId: string;
+    taskId: string;
+    runId: string;
+    threadId: string;
+  }): Promise<AgentTurnBoundaries>;
   insert(input: NewAgentRun): Promise<void>;
   updateById(runId: string, patch: Record<string, unknown>): Promise<number>;
   /**
@@ -61,6 +70,56 @@ export function createAgentRunRepository(
   persistence: PersistenceService,
 ): AgentRunRepository {
   return {
+    async recordTurnBoundary(input) {
+      const rows = await persistence.forWorkspace(input.workspaceId).query(
+        `insert into public.agent_turn_boundaries (run_id,phase,workspace_id,project_id,task_id,boundary)
+         select r.id,$2,:workspace,s.project_id,s.id,$5::jsonb
+           from public.agent_runs r
+           join public.code_ui_sessions s on s.chat_session_id=r.session_id
+           join public.chat_sessions c on c.id=r.session_id
+          where r.id=$1 and r.thread_id=$6 and s.id=$3
+            and s.workspace_id=:workspace and c.workspace_id=:workspace
+            and s.project_id=$4 and c.project_id=$4 and c.mode='code'
+            and s.parent_session_id is null
+         on conflict (run_id,phase) do update
+           set boundary=agent_turn_boundaries.boundary
+           where agent_turn_boundaries.workspace_id=excluded.workspace_id
+             and agent_turn_boundaries.project_id=excluded.project_id
+             and agent_turn_boundaries.task_id=excluded.task_id
+             and agent_turn_boundaries.boundary=excluded.boundary
+         returning run_id`,
+        [
+          input.runId,
+          input.phase,
+          input.taskId,
+          input.projectId,
+          JSON.stringify(input),
+          input.threadId,
+        ],
+      );
+      return rows.length === 1;
+    },
+    async getTurnBoundaries(input) {
+      const rows = await persistence
+        .forWorkspace(input.workspaceId)
+        .query<{ boundary: AgentTurnBoundary }>(
+          `select b.boundary from public.agent_turn_boundaries b
+           join public.agent_runs r on r.id=b.run_id
+           join public.code_ui_sessions s on s.id=b.task_id and s.workspace_id=b.workspace_id
+           join public.chat_sessions c on c.id=s.chat_session_id and c.id=r.session_id
+           join public.projects p on p.id=s.project_id and p.workspace_id=s.workspace_id
+          where b.workspace_id=:workspace and b.project_id=$1 and b.task_id=$2 and b.run_id=$3
+            and r.thread_id=$4 and c.thread_id=$4 and c.workspace_id=:workspace
+            and c.project_id=$1 and c.mode='code' and p.kind='code' and p.archived_at is null
+            and s.deleted_at is null and s.archived=false and s.parent_session_id is null`,
+          [input.projectId, input.taskId, input.runId, input.threadId],
+        );
+      return {
+        pre: rows.find((row) => row.boundary.phase === "pre")?.boundary ?? null,
+        post:
+          rows.find((row) => row.boundary.phase === "post")?.boundary ?? null,
+      };
+    },
     async insert(input) {
       await persistence.query(
         `insert into public.agent_runs (id, model, session_id, status, thread_id)

@@ -14,6 +14,7 @@ import {
   ToolDeniedError,
 } from "../../kernel/context.js";
 import { createAgentModesPlugin } from "../agent-modes/plugin.js";
+import { createMemoryTaskWorkManager } from "../task-work/test-store.js";
 import { createAgentRunsPlugin } from "./plugin.js";
 
 /**
@@ -181,6 +182,10 @@ function assembleSeamKernel(agentFactory: KenFutWorkAgentFactory) {
       app,
       events: bus,
       overrides: {
+        taskWork: createMemoryTaskWorkManager(),
+        processSandbox: {} as never,
+        executionScopes: {} as never,
+        codeUi: {} as never,
         auth: { authenticate: async () => null },
         blob: {} as never,
         brandKit: {} as never,
