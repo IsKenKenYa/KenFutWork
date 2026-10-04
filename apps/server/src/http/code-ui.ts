@@ -6,14 +6,28 @@ import {
   zcodeUiProtocol as protocol,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
+import { AdminServiceError } from "../features/admin/admin-service.js";
 import type { RequestAuthenticator } from "../features/auth/types.js";
 import { CodeUiRepositoryError } from "../features/code-ui/repository.js";
 import type { CodeUiService } from "../features/code-ui/service.js";
 import { ModelProviderServiceError } from "../features/model-providers/model-provider-service.js";
+import { PluginRegistryError } from "../features/plugins/plugin-registry-service.js";
 import { ProjectServiceError } from "../features/projects/project-service.js";
 import { isZodError } from "./zod-error.js";
 
 function sendError(reply: FastifyReply, error: unknown) {
+  if (error instanceof AdminServiceError)
+    return reply
+      .code(error.statusCode)
+      .send({ error: { code: error.code, message: error.message } });
+  if (error instanceof PluginRegistryError)
+    return reply
+      .code(
+        error.code === "plugin_not_found" || error.code === "not_installed"
+          ? 404
+          : 400,
+      )
+      .send({ error: { code: error.code, message: error.message } });
   if (error instanceof ProjectServiceError)
     return reply
       .code(error.statusCode)

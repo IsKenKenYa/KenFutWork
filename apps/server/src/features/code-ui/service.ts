@@ -12,6 +12,7 @@ import { z } from "zod";
 import type { AgentRunService } from "../../agent/runtime.js";
 import { resolveSandboxDir } from "../../agent/sandbox-dir.js";
 import type { ServerEnv } from "../../config/env.js";
+import type { AdminService } from "../admin/admin-service.js";
 import type { AgentRunMetadataService } from "../agent-runs/agent-run-service.js";
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
@@ -48,6 +49,7 @@ export interface CodeUiServiceDeps {
   agentRunMetadata: AgentRunMetadataService;
   env: ServerEnv;
   plugins: PluginRegistryService;
+  admin: AdminService;
 }
 
 function canonical(value: unknown): string {
@@ -83,6 +85,7 @@ export class CodeUiService {
   constructor(private readonly deps: CodeUiServiceDeps) {
     this.pluginsHost = new CodeUiPluginsHost({
       registry: deps.plugins,
+      admin: deps.admin,
       workspace: (user, path) => this.requireWorkspace(user, path),
     });
     this.settingsHost = new CodeUiSettingsHost({
@@ -168,7 +171,8 @@ export class CodeUiService {
                 );
           if (!prepared)
             throw new Error(`Code 源接口 ${service}.${member} 尚未接通`);
-          if ("publish" in prepared) await prepared.publish();
+          if ("publish" in prepared && typeof prepared.publish === "function")
+            await prepared.publish();
           return prepared.result;
         },
         send: (event) => external.send(event),
