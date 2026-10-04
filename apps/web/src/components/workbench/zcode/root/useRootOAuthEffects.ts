@@ -118,7 +118,7 @@ export function useRootOAuthEffects({
   markOAuthSuccess: (provider?: OAuthProviderId) => void;
   onReauthenticationRequired: () => void;
 }) {
-  useAccountConnectionLossNotification(services, accountIntentKey, refreshAppSettings);
+  useAccountConnectionLossNotification(services, accountIntentKey, refreshAppSettings, platform.supportsCloudAccounts !== false);
   const requestAlert = useAlertDialog();
   const { intl } = useZCodeIntl();
   const oauthLoginSucceededRef = useRef(false);
@@ -126,6 +126,10 @@ export function useRootOAuthEffects({
   const oauthLoginSuccessOwnerRef = useRef<"polling" | "deep-link" | null>(null);
 
   useEffect(() => {
+    if (platform.supportsCloudAccounts === false) {
+      setIsRestoringOAuthSession(false);
+      return;
+    }
     let disposed = false;
     async function restoreOAuthSessionInBackground() {
       logger.info("[Root] 后台启动 OAuth 本地会话恢复");
@@ -191,6 +195,7 @@ export function useRootOAuthEffects({
     };
   }, [
     intl,
+    platform.supportsCloudAccounts,
     onReauthenticationRequired,
     refreshAppSettings,
     refreshProviderState,
@@ -201,6 +206,7 @@ export function useRootOAuthEffects({
   ]);
 
   useEffect(() => {
+    if (platform.supportsCloudAccounts === false) return;
     let disposed = false;
     const disposable = services.broadcastService.onMessage((message) => {
       if (message.channel !== ZCODE_JWT_INVALID_BROADCAST_CHANNEL || disposed) {
@@ -235,7 +241,7 @@ export function useRootOAuthEffects({
   }, [intl, onReauthenticationRequired, platform, requestAlert, services.broadcastService]);
 
   useEffect(() => {
-    if (!oauthPollingActive) {
+    if (!oauthPollingActive || platform.supportsCloudAccounts === false) {
       return;
     }
     oauthLoginSucceededRef.current = false;
@@ -320,6 +326,7 @@ export function useRootOAuthEffects({
   ]);
 
   useEffect(() => {
+    if (platform.supportsCloudAccounts === false) return;
     const disposeOAuth = platform.onOAuthCallback(async (url) => {
       try {
         const result = await services.oauthService.handleCallback(url);

@@ -17,6 +17,8 @@ function projectProviderSettingsProviders(
     providerName: provider.providerName,
     templateId: provider.templateId,
     executable: provider.executable,
+    credentialConfigured: provider.credentialConfigured,
+    configRevision: provider.configRevision,
     enabled: provider.enabled,
     accountState: provider.accountState,
     hasPersonalConfig: provider.personalConfig !== undefined,

@@ -317,9 +317,10 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
     (taskId: string) => {
       // 性能优化：上层 handleSelectTask 已经会按 workspacePath 激活 tab。
       // 这里重复 activate 会额外触发一轮 tab store 更新，把整列 workspace 行都带着重渲染一次。
-      onSelectTask(tab.workspacePath, taskId, tab.workspaceIdentity);
+      const task = findCurrentTaskItem(taskId);
+      onSelectTask(task?.workspacePath ?? tab.workspacePath, taskId, task?.workspaceIdentity ?? tab.workspaceIdentity);
     },
-    [onSelectTask, tab.workspaceIdentity, tab.workspacePath],
+    [onSelectTask, tab.workspaceIdentity, tab.workspacePath, findCurrentTaskItem],
   );
 
   const handleActionMouseDown = useCallback((event: MouseEvent<HTMLElement>) => {

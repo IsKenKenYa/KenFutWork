@@ -1,5 +1,157 @@
 /* oxlint-disable eslint(max-lines) -- composer 集中收口输入区 wiring（附件/草稿/历史/mention），拆分会打散收口粒度。 */
+import type { ModelSelectionView } from "@zcode/services";
+import {
+  type PlanIdentitySnapshot,
+  TID_CHAT_ATTACHMENT_BUTTON,
+  TID_CHAT_ATTACHMENT_MENU_ITEM,
+  TID_V4_ATTACHMENT,
+  TID_V4_ATTACHMENT_UPLOAD_PROGRESS,
+  TID_V4_ATTACHMENT_UPLOAD_RETRY,
+  TID_V4_COMPOSER,
+  TID_V4_COMPOSER_CLEAR_QUEUE_SEND,
+  TID_V4_COMPOSER_INPUT,
+  TID_V4_COMPOSER_KEEP_QUEUE_SEND,
+  TID_V4_COMPOSER_SEND,
+  TID_V4_PAUSED_QUEUE_SEND_DIALOG,
+  TID_V4_STOP,
+  testId,
+  type ZCodeProvider,
+} from "@zcode/shared";
+import type {
+  AttachmentRef,
+  ConversationSnapshot,
+  SessionConfigState,
+} from "@zcode/shared/zcode-protocol-v4";
+import {
+  ChatErrorBanner,
+  resolveChatErrorBannerDisplayMessage,
+  shouldSuppressChatErrorBanner,
+} from "@zui/ChatErrorBanner.js";
+import {
+  ChatMediaAttachmentPreviewDialog,
+  type ChatMediaAttachmentPreviewTarget,
+} from "@zui/ChatMediaAttachmentPreviewDialog.js";
+import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
+import {
+  Attachment,
+  AttachmentInfo,
+  AttachmentPreview,
+  Attachments,
+} from "@zui/components/ai-elements/attachments.js";
+import { ImagePreviewDialog } from "@zui/components/ai-elements/image-preview-dialog.js";
+import { cn } from "@zui/components/lib/utils.js";
+import { Button } from "@zui/components/ui/button.js";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@zui/components/ui/dialog.js";
+import { Spinner } from "@zui/components/ui/spinner.js";
+import type { ModelSelectionState } from "@zui/hooks/useModelSelectionView.js";
+import { useOptionalServices } from "@zui/hooks/useServices.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { LexicalChatInputHandle } from "@zui/LexicalChatInput.js";
+import {
+  type ChatComposerAttachment,
+  isImageChatComposerAttachment,
+  isMediaChatComposerAttachment,
+  isPdfChatComposerAttachment,
+  isVideoChatComposerAttachment,
+} from "@zui/lib/chatAttachments.js";
+import { resolveChatPlaceholderKey } from "@zui/lib/chatPlaceholder.js";
+import type { CodeViewerSource } from "@zui/lib/codeViewer.js";
+import { resolveAttachableShareContext } from "@zui/lib/conversationShareContext.js";
+import {
+  FileDisplayIcon,
+  resolveFileDisplayDescriptor,
+} from "@zui/lib/fileDisplay.js";
+import { isAppleKeyboardPlatform } from "@zui/lib/keyboardShortcuts.js";
+import { resolveChatEnterShortcut } from "@zui/lib/mobileTextInput.js";
+import { appendPromptHistoryEntry } from "@zui/lib/promptHistory.js";
+import {
+  persistPromptHistoryEntries,
+  readPromptHistoryEntries,
+} from "@zui/lib/promptHistoryStorage.js";
+import { resolveProviderBaseURL } from "@zui/lib/registryProviderView.js";
+import {
+  runUserAction,
+  startUserAction,
+} from "@zui/lib/userActionTelemetry.js";
+import { appendWorkspaceFileMentionToComposer } from "@zui/lib/workspaceFileComposer.js";
+import {
+  isWorkspaceFileAddToChatEvent,
+  readWorkspaceFileDragPayload,
+  WORKSPACE_FILE_ADD_TO_CHAT_EVENT,
+} from "@zui/lib/workspaceFileDrag.js";
+import type { ZCodeUiError } from "@zui/lib/zcodeUiError.js";
+import { logger } from "@zui/logger.js";
+import { ChatPromptEditor } from "@zui/prompt-editor/ChatPromptEditor.js";
+import { usePromptEditorDragState } from "@zui/prompt-editor/usePromptEditorDragState.js";
+import type { AppSlashCommand } from "@zui/slashCommandHelpers.js";
+import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
+import type { ComposerMentionPrefill } from "@zui/store/zcodeSessionStoreTypes.js";
+import type { AttachmentPutFn } from "@zui/v4/composer/attachmentUpload.js";
+import { CodeCommentAttachmentChip } from "@zui/v4/composer/CodeCommentAttachmentChip.js";
+import { ConversationBackgroundWorkTrigger } from "@zui/v4/composer/ConversationBackgroundWorkTrigger.js";
+import { ConversationSelectionReferenceChip } from "@zui/v4/composer/ConversationSelectionReferenceChip.js";
+import { removeCodeCommentPreview } from "@zui/v4/composer/codeCommentPreviewSync.js";
+import {
+  type ComposerAutoFocusOptions,
+  resolveComposerAutoFocus,
+} from "@zui/v4/composer/composerAutoFocus.js";
+import { advanceComposerDraftRevision } from "@zui/v4/composer/composerDraftRevision.js";
+import {
+  V4_DRAFT_SCOPE_ROOT,
+  type V4ComposerDraft,
+} from "@zui/v4/composer/composerDraftStore.js";
+import { consumeV4ComposerDraftWorkspaceTransferRequest } from "@zui/v4/composer/composerDraftWorkspaceTransfer.js";
+import {
+  countComposerPromptContexts,
+  serializeComposerPromptContexts,
+} from "@zui/v4/composer/composerPromptContexts.js";
+import type { ComposerSubmissionConfig } from "@zui/v4/composer/composerSubmissionConfig.js";
+import {
+  resolveV4ComposerConfigPickerState,
+  type V4ComposerConfigPicker,
+} from "@zui/v4/composer/configPickerState.js";
+import type { ConversationDropTargetController } from "@zui/v4/composer/conversationDropTarget.js";
+import {
+  resolveFollowupModifierTooltip,
+  resolveOppositeFollowupDelivery,
+  shouldEnableModifiedEnterSubmit,
+  shouldReverseFollowupDeliveryForPointer,
+} from "@zui/v4/composer/followupModeSettings.js";
+import { PptxElementReferenceChip } from "@zui/v4/composer/PptxElementReferenceChip.js";
+import { useCodeCommentContexts } from "@zui/v4/composer/useCodeCommentContexts.js";
+import { useComposerAttachments } from "@zui/v4/composer/useComposerAttachments.js";
+import { useConversationSelectionReferences } from "@zui/v4/composer/useConversationSelectionReferences.js";
+import { useOpenPptxElementReference } from "@zui/v4/composer/useOpenPptxElementReference.js";
+import { usePptxElementReferences } from "@zui/v4/composer/usePptxElementReferences.js";
+import { usePrimaryFollowupModifier } from "@zui/v4/composer/usePrimaryFollowupModifier.js";
+import { useWebElementContexts } from "@zui/v4/composer/useWebElementContexts.js";
+import { V4ComposerCuaEntry } from "@zui/v4/composer/V4ComposerCuaEntry.js";
+import {
+  type ModelSelectionSource,
+  V4ComposerModelControls,
+  V4ComposerModeSwitch,
+} from "@zui/v4/composer/V4ComposerToolbar.js";
+import { WebElementContextAttachmentChip } from "@zui/v4/composer/WebElementContextAttachmentChip.js";
+import { useScopedConversationTelemetrySupervisor } from "@zui/v4/telemetry/ConversationTelemetryAttachment.js";
+import { buildV4ConversationPromptTelemetryExtraDetail } from "@zui/v4/telemetry/conversationPromptTelemetry.js";
+import type { ConversationPromptTelemetrySeed } from "@zui/v4/telemetry/conversationTelemetrySupervisor.js";
 import { getLocalTtftObserver } from "@zui/v4/telemetry/localTtftObserver.js";
+import {
+  ArrowUpIcon,
+  ClipboardPenLineIcon,
+  InfoIcon,
+  RotateCcwIcon,
+  SquareIcon,
+  XIcon,
+} from "lucide-react";
 /**
  * v4 会话 composer（composer parity）。
  *
@@ -16,161 +168,19 @@ import { getLocalTtftObserver } from "@zui/v4/telemetry/localTtftObserver.js";
  * - 工具条（模型/思考深度/模式/context usage）见 V4ComposerToolbar。
  */
 import {
+  type DragEvent,
   memo,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type DragEvent,
-  type MouseEvent as ReactMouseEvent,
-  type ReactNode,
 } from "react";
-import { cn } from "@zui/components/lib/utils.js";
-import {
-  TID_CHAT_ATTACHMENT_BUTTON,
-  TID_CHAT_ATTACHMENT_MENU_ITEM,
-  TID_V4_COMPOSER,
-  TID_V4_COMPOSER_CLEAR_QUEUE_SEND,
-  TID_V4_COMPOSER_INPUT,
-  TID_V4_COMPOSER_KEEP_QUEUE_SEND,
-  TID_V4_COMPOSER_SEND,
-  TID_V4_PAUSED_QUEUE_SEND_DIALOG,
-  TID_V4_ATTACHMENT,
-  TID_V4_ATTACHMENT_UPLOAD_PROGRESS,
-  TID_V4_ATTACHMENT_UPLOAD_RETRY,
-  TID_V4_STOP,
-  testId,
-  type PlanIdentitySnapshot,
-  type ZCodeProvider,
-} from "@zcode/shared";
-import type {
-  AttachmentRef,
-  ConversationSnapshot,
-  SessionConfigState,
-} from "@zcode/shared/zcode-protocol-v4";
-import {
-  ArrowUpIcon,
-  ClipboardPenLineIcon,
-  InfoIcon,
-  RotateCcwIcon,
-  SquareIcon,
-  XIcon,
-} from "lucide-react";
-import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
-import {
-  ChatErrorBanner,
-  resolveChatErrorBannerDisplayMessage,
-  shouldSuppressChatErrorBanner,
-} from "@zui/ChatErrorBanner.js";
-import {
-  Attachment,
-  Attachments,
-  AttachmentInfo,
-  AttachmentPreview,
-} from "@zui/components/ai-elements/attachments.js";
-import { Button } from "@zui/components/ui/button.js";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@zui/components/ui/dialog.js";
-import { Spinner } from "@zui/components/ui/spinner.js";
-import { ImagePreviewDialog } from "@zui/components/ai-elements/image-preview-dialog.js";
-import {
-  ChatMediaAttachmentPreviewDialog,
-  type ChatMediaAttachmentPreviewTarget,
-} from "@zui/ChatMediaAttachmentPreviewDialog.js";
-import type { LexicalChatInputHandle } from "@zui/LexicalChatInput.js";
-import { ChatPromptEditor } from "@zui/prompt-editor/ChatPromptEditor.js";
-import { usePromptEditorDragState } from "@zui/prompt-editor/usePromptEditorDragState.js";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
-import { advanceComposerDraftRevision } from "@zui/v4/composer/composerDraftRevision.js";
-import type { AppSlashCommand } from "@zui/slashCommandHelpers.js";
-import { useOptionalServices } from "@zui/hooks/useServices.js";
-import { logger } from "@zui/logger.js";
-import { runUserAction, startUserAction } from "@zui/lib/userActionTelemetry.js";
-import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
-import type { ComposerMentionPrefill } from "@zui/store/zcodeSessionStoreTypes.js";
-import { FileDisplayIcon, resolveFileDisplayDescriptor } from "@zui/lib/fileDisplay.js";
-import {
-  isImageChatComposerAttachment,
-  isPdfChatComposerAttachment,
-  isMediaChatComposerAttachment,
-  isVideoChatComposerAttachment,
-  type ChatComposerAttachment,
-} from "@zui/lib/chatAttachments.js";
-import { resolveChatPlaceholderKey } from "@zui/lib/chatPlaceholder.js";
-import { resolveChatEnterShortcut } from "@zui/lib/mobileTextInput.js";
-import { appendPromptHistoryEntry } from "@zui/lib/promptHistory.js";
-import {
-  persistPromptHistoryEntries,
-  readPromptHistoryEntries,
-} from "@zui/lib/promptHistoryStorage.js";
-import {
-  WORKSPACE_FILE_ADD_TO_CHAT_EVENT,
-  readWorkspaceFileDragPayload,
-  isWorkspaceFileAddToChatEvent,
-} from "@zui/lib/workspaceFileDrag.js";
-import { appendWorkspaceFileMentionToComposer } from "@zui/lib/workspaceFileComposer.js";
-import { resolveProviderBaseURL } from "@zui/lib/registryProviderView.js";
-import type { ModelSelectionView } from "@zcode/services";
-import type { ModelSelectionState } from "@zui/hooks/useModelSelectionView.js";
-import type { ZCodeUiError } from "@zui/lib/zcodeUiError.js";
-import {
-  resolveComposerAutoFocus,
-  type ComposerAutoFocusOptions,
-} from "@zui/v4/composer/composerAutoFocus.js";
-import { V4_DRAFT_SCOPE_ROOT, type V4ComposerDraft } from "@zui/v4/composer/composerDraftStore.js";
-import {
-  resolveOppositeFollowupDelivery,
-  resolveFollowupModifierTooltip,
-  shouldEnableModifiedEnterSubmit,
-  shouldReverseFollowupDeliveryForPointer,
-} from "@zui/v4/composer/followupModeSettings.js";
-import { isAppleKeyboardPlatform } from "@zui/lib/keyboardShortcuts.js";
-import { usePrimaryFollowupModifier } from "@zui/v4/composer/usePrimaryFollowupModifier.js";
-import { consumeV4ComposerDraftWorkspaceTransferRequest } from "@zui/v4/composer/composerDraftWorkspaceTransfer.js";
-import { useComposerAttachments } from "@zui/v4/composer/useComposerAttachments.js";
-import type { ConversationDropTargetController } from "@zui/v4/composer/conversationDropTarget.js";
-import { CodeCommentAttachmentChip } from "@zui/v4/composer/CodeCommentAttachmentChip.js";
-import { removeCodeCommentPreview } from "@zui/v4/composer/codeCommentPreviewSync.js";
-import {
-  countComposerPromptContexts,
-  serializeComposerPromptContexts,
-} from "@zui/v4/composer/composerPromptContexts.js";
-import { useCodeCommentContexts } from "@zui/v4/composer/useCodeCommentContexts.js";
-import { useWebElementContexts } from "@zui/v4/composer/useWebElementContexts.js";
-import { usePptxElementReferences } from "@zui/v4/composer/usePptxElementReferences.js";
-import { PptxElementReferenceChip } from "@zui/v4/composer/PptxElementReferenceChip.js";
-import { useOpenPptxElementReference } from "@zui/v4/composer/useOpenPptxElementReference.js";
-import type { CodeViewerSource } from "@zui/lib/codeViewer.js";
-import { useConversationSelectionReferences } from "@zui/v4/composer/useConversationSelectionReferences.js";
-import { ConversationBackgroundWorkTrigger } from "@zui/v4/composer/ConversationBackgroundWorkTrigger.js";
-import { V4ComposerCuaEntry } from "@zui/v4/composer/V4ComposerCuaEntry.js";
-import {
-  V4ComposerModeSwitch,
-  V4ComposerModelControls,
-  type ModelSelectionSource,
-} from "@zui/v4/composer/V4ComposerToolbar.js";
-import {
-  resolveV4ComposerConfigPickerState,
-  type V4ComposerConfigPicker,
-} from "@zui/v4/composer/configPickerState.js";
-import { WebElementContextAttachmentChip } from "@zui/v4/composer/WebElementContextAttachmentChip.js";
-import { ConversationSelectionReferenceChip } from "@zui/v4/composer/ConversationSelectionReferenceChip.js";
-import type { AttachmentPutFn } from "@zui/v4/composer/attachmentUpload.js";
-import { useScopedConversationTelemetrySupervisor } from "@zui/v4/telemetry/ConversationTelemetryAttachment.js";
-import type { ConversationPromptTelemetrySeed } from "@zui/v4/telemetry/conversationTelemetrySupervisor.js";
-import type { ComposerSubmissionConfig } from "@zui/v4/composer/composerSubmissionConfig.js";
-import { buildV4ConversationPromptTelemetryExtraDetail } from "@zui/v4/telemetry/conversationPromptTelemetry.js";
-import { resolveAttachableShareContext } from "@zui/lib/conversationShareContext.js";
 
-const MODEL_SELECTION_LOADING_STATE: ModelSelectionState = { status: "loading" };
+const MODEL_SELECTION_LOADING_STATE: ModelSelectionState = { status: "loading",
+};
 
 export interface ConversationComposerSendOptions {
   /** 点击发送时复制的配置；null 表示未完成选择，Host 不得从 Session 补齐。 */
@@ -186,11 +196,14 @@ export interface ConversationComposerSendOptions {
   telemetrySeed?: ConversationPromptTelemetrySeed;
   /** 本次 busy input 的一次性投递覆盖，不改 session 偏好。 */
   requestedDelivery?: "startNow" | "queue" | "guide";
-  sharedContextRefs?: Array<{ kind: "shared_context_import"; context_id: string }>;
+  sharedContextRefs?: Array<{ kind: "shared_context_import"; context_id: string;
+  }>;
 }
 
-export type ConversationComposerSendResult = "sent" | "blocked" | "confirmationRequired";
-function getComposerAttachmentTypeLabel(filename: string, mimeType: string): string {
+export type ConversationComposerSendResult =
+  | "sent" | "blocked" | "confirmationRequired";
+function getComposerAttachmentTypeLabel(filename: string, mimeType: string,
+): string {
   const leaf = filename.split(/[\\/]/u).at(-1) ?? filename;
   const dotIndex = leaf.lastIndexOf(".");
   if (dotIndex > 0 && dotIndex < leaf.length - 1) {
@@ -229,7 +242,8 @@ function restorePersistedComposerDraftIntoInput({
   if (draft.mention && draft.text.startsWith(draft.mention.markdown)) {
     // Workspace 插件详情会卸载聊天 Composer。结构化 mention 必须从共享草稿事实源恢复，
     // 不能只依赖一次性插入事件，否则重挂载时会退化成 canonical 普通文本。
-    inputApi.setMention(draft.mention, draft.text.slice(draft.mention.markdown.length));
+    inputApi.setMention(draft.mention, draft.text.slice(draft.mention.markdown.length),
+    );
     return draft.text;
   }
   inputApi.setText(draft.text);
@@ -278,7 +292,8 @@ function applyExternalTextInsertRequestToComposer({
   if (request.mention && request.text.startsWith(request.mention.markdown)) {
     // 根因：商店试用以前只传 canonical 文本，Lexical 无法知道开头链接是结构化 Plugin mention。
     // request 同时携带 display-only 节点数据；发送与草稿事实源仍使用 request.text 原文。
-    inputApi.setMention(request.mention, request.text.slice(request.mention.markdown.length));
+    inputApi.setMention(request.mention, request.text.slice(request.mention.markdown.length),
+    );
   } else if (request.text.includes("](plugin://")) {
     // 推荐任务可在正文中组合多个插件；按原位置构造成真实提及节点。
     inputApi.setTextWithPluginMentions(request.text);
@@ -321,8 +336,10 @@ function applyComposerRestoreRequestToComposer({
   inputApi: Pick<LexicalChatInputHandle, "setText"> | null;
   request: ComposerRestoreRequest | null | undefined;
   requestFocus: () => void;
-  restoreSessionOwnedAttachments: (attachments: readonly AttachmentRef[]) => boolean;
-  restoreDraftConfig?: (config: NonNullable<ComposerRestoreRequest["config"]>) => void;
+  restoreSessionOwnedAttachments: (attachments: readonly AttachmentRef[],
+  ) => boolean;
+  restoreDraftConfig?: (config: NonNullable<ComposerRestoreRequest["config"]>,
+  ) => void;
   scheduleDraftPersist: () => void;
   updateText: (text: string) => void;
 }): number | null {
@@ -348,8 +365,11 @@ function applyComposerRestoreRequestToComposer({
   return request.requestId;
 }
 
-function arePromptHistoryEntriesEqual(left: readonly string[], right: readonly string[]): boolean {
-  return left.length === right.length && left.every((entry, index) => entry === right[index]);
+function arePromptHistoryEntriesEqual(left: readonly string[], right: readonly string[],
+): boolean {
+  return (
+    left.length === right.length && left.every((entry, index) => entry === right[index])
+  );
 }
 
 interface ConversationComposerProps {
@@ -403,9 +423,11 @@ interface ConversationComposerProps {
   /** 草稿态使用预热 session 作附件 transaction 载体。 */
   attachmentSessionId?: string | null;
   attachmentPut: AttachmentPutFn;
+  attachmentBudget: import("@zui/v4/transport.js").ConversationTransport["attachmentBudget"];
   onRuntimeRestart?: (listener: () => void) => () => void;
   /** 承载 transport 暴露 runtime 存活态时优先用它，替代 onRuntimeRestart。 */
-  onRuntimeLifecycle?: (listener: (state: "available" | "unavailable") => void) => () => void;
+  onRuntimeLifecycle?: (listener: (state: "available" | "unavailable") => void,
+  ) => () => void;
   provider?: ZCodeProvider;
   /** 宿主 pane 与 workspace 遮罩共同裁决的真实可见性，仅用于 visible-only telemetry。 */
   telemetryVisible?: boolean;
@@ -427,7 +449,8 @@ interface ConversationComposerProps {
     sourceModel: ModelSelectionSource | null,
   ) => void;
   /** 选中思考深度；同时带上用户操作时看到的模型，避免异步回流后把 thought 归到另一模型。 */
-  onSelectThought: (thought: string, modelContext: { provider: string; model: string }) => void;
+  onSelectThought: (thought: string, modelContext: { provider: string; model: string },
+  ) => void;
   onSwitchMode: (mode: string) => void;
   /** 打开当前 session 的 Status panel，并直达 Running 明细。 */
   onOpenRunningBackgroundWorks?: () => void;
@@ -473,12 +496,15 @@ interface ConversationComposerProps {
   /** App 层本地斜杠命令（如 `/side`），由 SessionPane 按门禁组装后透传。 */
   appSlashCommands?: readonly AppSlashCommand[];
   /** 把 composer 的 drop 路由暴露给整个对话 pane / 桌面草稿标题栏。 */
-  onDropTargetControllerChange?: (controller: ConversationDropTargetController | null) => void;
+  onDropTargetControllerChange?: (controller: ConversationDropTargetController | null,
+  ) => void;
 }
 
-function formatAttachmentLineCount(attachment: ChatComposerAttachment, locale: string): string {
+function formatAttachmentLineCount(attachment: ChatComposerAttachment, locale: string,
+): string {
   const formatter = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
-  return formatter.format(typeof attachment.lineCount === "number" ? attachment.lineCount : 0);
+  return formatter.format(typeof attachment.lineCount === "number" ? attachment.lineCount : 0,
+  );
 }
 
 function ConversationComposerImpl({
@@ -506,6 +532,7 @@ function ConversationComposerImpl({
   modelSelectionReload,
   attachmentSessionId = null,
   attachmentPut,
+  attachmentBudget,
   onRuntimeRestart,
   onRuntimeLifecycle,
   provider,
@@ -578,7 +605,8 @@ function ConversationComposerImpl({
         }
         return {
           scopeKey: current.scopeKey,
-          activePicker: resolveV4ComposerConfigPickerState(current.activePicker, picker, open),
+          activePicker: resolveV4ComposerConfigPickerState(current.activePicker, picker, open,
+          ),
         };
       });
     },
@@ -599,7 +627,8 @@ function ConversationComposerImpl({
   // 这条线断过一次：composer 原本读一个平行的 sharedContextImport prop，而 SessionPane 从没
   // 传过它（全仓 `sharedContextImport=` 零命中），于是首条消息永远不带 sharedContextRefs。
   // 现在从必然拿到的 snapshot 推导，理由与边界见 resolveAttachableShareContext。
-  const activeShareContext = resolveAttachableShareContext(snapshot?.sharedContextImport);
+  const activeShareContext = resolveAttachableShareContext(snapshot?.sharedContextImport,
+  );
   const pendingShareContext = activeShareContext?.status === "pending" ? activeShareContext : null;
   const inputApiRef = useRef<LexicalChatInputHandle | null>(null);
   const reportedErrorKeysRef = useRef(new Set<string>());
@@ -626,6 +655,7 @@ function ConversationComposerImpl({
     scopeId: draftScopeId,
     attachmentSessionId,
     attachmentPut,
+    attachmentBudget,
     onRuntimeRestart,
     onRuntimeLifecycle,
     disabled,
@@ -651,7 +681,8 @@ function ConversationComposerImpl({
   );
   const handleConversationDrop = useCallback(
     (event: DragEvent<HTMLElement>) => {
-      const workspaceFilePayload = readWorkspaceFileDragPayload(event.dataTransfer);
+      const workspaceFilePayload = readWorkspaceFileDragPayload(event.dataTransfer,
+      );
       if (workspaceFilePayload) {
         // 文件树 payload 与 OS File[] 语义不同：只插入 mention，绝不能进入上传队列。
         event.preventDefault();
@@ -668,7 +699,8 @@ function ConversationComposerImpl({
       }
       attachmentsApi.handleDropComposer(event);
     },
-    [attachmentsApi.handleDropComposer, updateText, workspaceIdentity, workspacePath],
+    [attachmentsApi.handleDropComposer, updateText, workspaceIdentity, workspacePath,
+    ],
   );
   const conversationDragKind = workspaceFileDragging
     ? "workspace"
@@ -772,7 +804,8 @@ function ConversationComposerImpl({
       const editorState = inputApiRef.current?.getEditorState();
       editorStateJson = editorState ? JSON.stringify(editorState.toJSON()) : undefined;
     } catch (error) {
-      logger.warn(`[v4-composer] 草稿 editorState 序列化失败: ${String(error)}`);
+      logger.warn(`[v4-composer] 草稿 editorState 序列化失败: ${String(error)}`,
+      );
     }
     return currentText.trim()
       ? { text: currentText, ...(editorStateJson ? { editorStateJson } : {}) }
@@ -788,7 +821,8 @@ function ConversationComposerImpl({
         return;
       }
     },
-    [snapshotDraftOfEditor, updateComposerContent, workspaceIdentity, workspacePath],
+    [snapshotDraftOfEditor, updateComposerContent, workspaceIdentity, workspacePath,
+    ],
   );
 
   const scheduleDraftPersist = useCallback(() => {
@@ -955,7 +989,8 @@ function ConversationComposerImpl({
         });
       if (shouldTransferDraft) {
         // 项目解绑只改变草稿的 cwd；输入正文、mention editor state 和组件内附件继续保留。
-        replaceComposerDraft({ ...ownerDraftRef.current.draft, ...previousDraft });
+        replaceComposerDraft({ ...ownerDraftRef.current.draft, ...previousDraft,
+        });
         transferredDraft = previousDraft;
       }
     }
@@ -980,7 +1015,8 @@ function ConversationComposerImpl({
           draft,
           inputApi: api,
           onEditorStateError: (error) => {
-            logger.warn(`[v4-composer] 草稿 editorState 恢复失败，退纯文本: ${String(error)}`);
+            logger.warn(`[v4-composer] 草稿 editorState 恢复失败，退纯文本: ${String(error)}`,
+            );
           },
         }),
       );
@@ -1165,7 +1201,8 @@ function ConversationComposerImpl({
       const submittedDraft = snapshotDraftOfEditor();
       let cleanupRevision = contentRevisionRef.current;
       const submission = createSubmissionFromComposer?.() ?? null;
-      const submittedAttachmentIds = attachmentsApi.attachments.map((item) => item.id);
+      const submittedAttachmentIds = attachmentsApi.attachments.map((item) => item.id,
+      );
       if (
         (!trimmed &&
           !hasPendingAttachments &&
@@ -1202,21 +1239,22 @@ function ConversationComposerImpl({
       } else {
         const freshSeed: ConversationPromptTelemetrySeed = {
           sendTime: Date.now(),
-          localTtft: !workspaceIdentity?.trim()
-            ? getLocalTtftObserver()?.start(
+          localTtft: workspaceIdentity?.trim()
+            ? undefined
+            : getLocalTtftObserver()?.start(
                 workspacePath,
                 (snapshotRef.current !== null &&
                   snapshotRef.current.inputRouting.mode !== "startNow") ||
                   false,
                 trimmed.startsWith("/"),
-              )
-            : undefined,
+              ),
           extraDetail: buildV4ConversationPromptTelemetryExtraDetail({
             askMode: telemetryConfig?.mode,
             modelName: telemetryConfig?.model,
             configProvider: telemetryConfig?.provider,
             agentProvider: provider,
-            providerBaseURL: resolveProviderBaseURL(telemetryConfig?.provider, modelSelectionView),
+            providerBaseURL: resolveProviderBaseURL(telemetryConfig?.provider, modelSelectionView,
+            ),
             planIdentitySnapshot: readPlanIdentitySnapshot?.(),
           }),
         };
@@ -1258,7 +1296,8 @@ function ConversationComposerImpl({
         draftSubmissionClaimed = false;
         if (editorClearedOptimistically && contentRevisionRef.current === cleanupRevision) {
           if (submittedDraft.editorStateJson) {
-            inputApiRef.current?.setEditorStateJson(submittedDraft.editorStateJson);
+            inputApiRef.current?.setEditorStateJson(submittedDraft.editorStateJson,
+            );
           } else {
             inputApiRef.current?.setText(submittedDraft.text);
           }
@@ -1276,7 +1315,8 @@ function ConversationComposerImpl({
           return;
         }
         const currentPromptHistory = readPromptHistoryEntries(workspacePath);
-        if (arePromptHistoryEntriesEqual(currentPromptHistory, promptHistoryAfterAppend)) {
+        if (arePromptHistoryEntriesEqual(currentPromptHistory, promptHistoryAfterAppend,
+          )) {
           persistPromptHistoryEntries(workspacePath, promptHistoryBeforeSend);
           setPromptHistory(promptHistoryBeforeSend);
           return;
@@ -1288,7 +1328,8 @@ function ConversationComposerImpl({
         const readyAttachmentRefs = await attachmentsApi.prepareForSend();
         if (readyAttachmentRefs === null) {
           if (telemetrySeed.localTtft)
-            getLocalTtftObserver()?.exclude(telemetrySeed.localTtft, "rejected");
+            getLocalTtftObserver()?.exclude(telemetrySeed.localTtft, "rejected",
+            );
           // send_click 已上报，此处不落定会留下无配对的悬空样本，污染成功率分母。
           conversationTelemetry?.settleSendResult({
             seed: telemetrySeed,
@@ -1321,13 +1362,16 @@ function ConversationComposerImpl({
           }) + (submittedShareContext ? 1 : 0);
         if (trimmed) {
           promptHistoryBeforeSend = readPromptHistoryEntries(workspacePath);
-          promptHistoryAfterAppend = appendPromptHistoryEntry(promptHistoryBeforeSend, trimmed);
-          if (!arePromptHistoryEntriesEqual(promptHistoryBeforeSend, promptHistoryAfterAppend)) {
+          promptHistoryAfterAppend = appendPromptHistoryEntry(promptHistoryBeforeSend, trimmed,
+          );
+          if (!arePromptHistoryEntriesEqual(promptHistoryBeforeSend, promptHistoryAfterAppend,
+            )) {
             // 预热首发 accepted 后，SessionPane 会立即 promote 到新 session，
             // draft composer 可能在 await 恢复前卸载；不能把写盘藏在 React state updater 里。
             // 这里继续沿用旧 UI 的 localStorage history，不接 input_history 数据库：
             // 发起真实发送前先同步写盘，若发送失败再恢复到发送前快照。
-            persistPromptHistoryEntries(workspacePath, promptHistoryAfterAppend);
+            persistPromptHistoryEntries(workspacePath, promptHistoryAfterAppend,
+            );
             promptHistoryWasPersisted = true;
             setPromptHistory(promptHistoryAfterAppend);
           }
@@ -1363,7 +1407,8 @@ function ConversationComposerImpl({
         });
         if (sendResult === "blocked") {
           if (telemetrySeed.localTtft)
-            getLocalTtftObserver()?.exclude(telemetrySeed.localTtft, "rejected");
+            getLocalTtftObserver()?.exclude(telemetrySeed.localTtft, "rejected",
+            );
           // 产品 guard 是一次正常拒绝，不应借异常路径表达；回滚发送前暂记的 history，
           // 同时不 clear editor/draft/附件，让用户切换模式后可以直接重试。
           rollbackPromptHistory();
@@ -1374,7 +1419,8 @@ function ConversationComposerImpl({
             status: "fail",
             reasonCode: "blocked",
           });
-          sendAction.reject({ resultSource: "authority_ack", admissionResult: "rejected" });
+          sendAction.reject({ resultSource: "authority_ack", admissionResult: "rejected",
+          });
           return;
         }
         if (sendResult === "confirmationRequired") {
@@ -1406,7 +1452,8 @@ function ConversationComposerImpl({
         attachmentsApi.clearAttachments(submittedAttachmentIds);
         // 与附件相同，只移除本次冻结的引用；等待期间新加入的引用属于下一条消息。
         currentCodeCommentContexts.forEach(removeCodeCommentContext);
-        currentWebElementContexts.forEach((context) => removeWebElementContext(context.id));
+        currentWebElementContexts.forEach((context) => removeWebElementContext(context.id),
+        );
         currentPptxElementReferences.forEach((reference) =>
           removePptxElementReference(reference.id),
         );
@@ -1416,7 +1463,8 @@ function ConversationComposerImpl({
         // 发送成功：清本次提交捕获的 scope 草稿；prompt history 已在真实发送前同步写盘，
         // 避免首发 promote 丢失或误清 promotion 后的新 scope。
         finalizeSubmittedDraft();
-        sendAction.complete({ resultSource: "authority_ack", admissionResult: "accepted" });
+        sendAction.complete({ resultSource: "authority_ack", admissionResult: "accepted",
+        });
       } catch (error) {
         rollbackPromptHistory();
         restoreSubmittedDraft();
@@ -1475,7 +1523,8 @@ function ConversationComposerImpl({
       updateComposerContent({ text: value });
       scheduleDraftPersist();
     },
-    [conversationTelemetry, scheduleDraftPersist, updateComposerContent, updateText],
+    [conversationTelemetry, scheduleDraftPersist, updateComposerContent, updateText,
+    ],
   );
 
   const handleEditorFocus = useCallback(() => {
@@ -1548,7 +1597,8 @@ function ConversationComposerImpl({
 
   const handleStopClick = useCallback(() => {
     runUserAction({
-      input: { featureId: "conversation.composer.message", action: "stop", trigger: "button" },
+      input: { featureId: "conversation.composer.message", action: "stop", trigger: "button",
+      },
       operation: onStop,
       completed: { resultSource: "optimistic_projection" },
       failureStage: "stop_generation",
@@ -1589,9 +1639,11 @@ function ConversationComposerImpl({
         onTextChange: updateText,
       });
     };
-    window.addEventListener(WORKSPACE_FILE_ADD_TO_CHAT_EVENT, handleWorkspaceFileAddToChat);
+    window.addEventListener(WORKSPACE_FILE_ADD_TO_CHAT_EVENT, handleWorkspaceFileAddToChat,
+    );
     return () => {
-      window.removeEventListener(WORKSPACE_FILE_ADD_TO_CHAT_EVENT, handleWorkspaceFileAddToChat);
+      window.removeEventListener(WORKSPACE_FILE_ADD_TO_CHAT_EVENT, handleWorkspaceFileAddToChat,
+      );
     };
   }, [listenAddToChatEvents, updateText, workspaceIdentity, workspacePath]);
 
@@ -1666,7 +1718,8 @@ function ConversationComposerImpl({
     const media: (typeof composerAttachments)[number][] = [];
     const files: (typeof composerAttachments)[number][] = [];
     for (const attachment of composerAttachments) {
-      (isMediaChatComposerAttachment(attachment) ? media : files).push(attachment);
+      (isMediaChatComposerAttachment(attachment) ? media : files).push(attachment,
+      );
     }
     return [...media, ...files];
   }, [composerAttachments]);
@@ -1769,7 +1822,8 @@ function ConversationComposerImpl({
                               id: "chat.attachments.clipboardText.description",
                             },
                             {
-                              lineCount: formatAttachmentLineCount(attachment, locale),
+                              lineCount: formatAttachmentLineCount(attachment, locale,
+                              ),
                             },
                           ),
                           displayName: intl.formatMessage({
@@ -1813,7 +1867,8 @@ function ConversationComposerImpl({
                       : canPreviewImageAttachment
                         ? attachmentPreviewTitle
                         : canPreviewPdfAttachment
-                          ? intl.formatMessage({ id: "chat.attachments.preview.openPdf" })
+                          ? intl.formatMessage({ id: "chat.attachments.preview.openPdf",
+                            })
                           : undefined
                   }
                 >
@@ -1841,7 +1896,8 @@ function ConversationComposerImpl({
                     />
                     {showUploadStatus && isMediaAttachment ? (
                       <span
-                        data-testid={testId(TID_V4_ATTACHMENT_UPLOAD_PROGRESS, attachment.id)}
+                        data-testid={testId(TID_V4_ATTACHMENT_UPLOAD_PROGRESS, attachment.id,
+                        )}
                         role={attachment.uploadStatus === "failed" ? "alert" : "status"}
                         aria-label={uploadStatusLabel}
                         className="absolute inset-0 grid place-items-center rounded-lg bg-background/85 text-[7px] font-semibold text-foreground"
@@ -1884,8 +1940,7 @@ function ConversationComposerImpl({
                       </span>
                     ) : null}
                   </div>
-                  {!isMediaAttachment ? (
-                    isClipboardTextAttachment ? (
+                  {isMediaAttachment ? null : isClipboardTextAttachment ? (
                       <AttachmentInfo className="max-w-48 text-ui-base text-foreground" />
                     ) : (
                       <div className="min-w-0 max-w-40 flex-1">
@@ -1896,14 +1951,15 @@ function ConversationComposerImpl({
                           {attachment.filename}
                         </span>
                         <span className="block truncate text-ui-sm font-normal text-foreground-subtle">
-                          {getComposerAttachmentTypeLabel(attachment.filename, attachment.mimeType)}
+                          {getComposerAttachmentTypeLabel(attachment.filename, attachment.mimeType,
+                        )}
                         </span>
                       </div>
-                    )
-                  ) : null}
+                    )}
                   {showUploadStatus && !isMediaAttachment ? (
                     <span
-                      data-testid={testId(TID_V4_ATTACHMENT_UPLOAD_PROGRESS, attachment.id)}
+                      data-testid={testId(TID_V4_ATTACHMENT_UPLOAD_PROGRESS, attachment.id,
+                      )}
                       role={attachment.uploadStatus === "failed" ? "alert" : "status"}
                       title={uploadStatusLabel}
                       className={cn(
@@ -1919,7 +1975,8 @@ function ConversationComposerImpl({
                   {attachment.uploadStatus === "failed" ? (
                     <button
                       type="button"
-                      data-testid={testId(TID_V4_ATTACHMENT_UPLOAD_RETRY, attachment.id)}
+                      data-testid={testId(TID_V4_ATTACHMENT_UPLOAD_RETRY, attachment.id,
+                      )}
                       aria-label={intl.formatMessage({
                         id: "chat.attachments.upload.retry",
                       })}
@@ -2022,7 +2079,8 @@ function ConversationComposerImpl({
   const composerUsage = snapshot?.usage ?? null;
   const composerPhase = snapshot?.control.phase ?? null;
   const handleSelectModelTrace = useCallback(
-    (nextProvider: string, nextModel: string, sourceModel: ModelSelectionSource | null) =>
+    (nextProvider: string, nextModel: string, sourceModel: ModelSelectionSource | null,
+    ) =>
       runUserAction({
         input: {
           featureId: "conversation.composer.config",
@@ -2091,7 +2149,11 @@ function ConversationComposerImpl({
               aria-label={resolvedSendTooltipTitle}
               className="cursor-pointer gap-1 rounded-lg bg-brand text-ui-base text-foreground-inverse hover:bg-brand/80"
             >
-              {pending ? <Spinner className="size-4" /> : <ArrowUpIcon className="size-4" />}
+              {pending ? (
+                <Spinner className="size-4" />
+              ) : (
+                <ArrowUpIcon className="size-4" />
+              )}
               <span className="sr-only">{resolvedSendTooltipTitle}</span>
             </Button>
           </ControlHintTooltip>
@@ -2209,7 +2271,7 @@ function ConversationComposerImpl({
       <input
         ref={attachmentsApi.attachmentInputRef}
         type="file"
-        multiple
+        multiple={true}
         className="hidden"
         onChange={attachmentsApi.handleAttachmentInputChange}
       />
@@ -2267,10 +2329,10 @@ function ConversationComposerImpl({
           enterSubmits={enterSubmits}
           onModifiedSubmit={modifiedEnterSubmits ? handleModifiedEditorSubmit : undefined}
           submitLabel={sendTooltipTitle}
-          showSlashButton
+          showSlashButton={true}
           // @ 是 Plugin / 文件 / 对话 / 画板主入口；# 会话与 $ / ¥ / ￥ Skills
           // 仍由 MentionPlugin 保留兼容触发，但不在 + 菜单重复展示。
-          showMentionButton
+          showMentionButton={true}
           topContent={topContentNode}
           attachmentAction={attachmentAction}
           inputTestId={TID_V4_COMPOSER_INPUT}
@@ -2280,7 +2342,7 @@ function ConversationComposerImpl({
           // secondary pane 按产品能力隐藏 goal，不再追加任何内建命令或别名。
           excludedSlashCommandNames={suppressGoalCommands ? ["goal"] : undefined}
           appSlashCommands={appSlashCommands}
-          enableMentionPanel
+          enableMentionPanel={true}
           leadingActions={leadingActionsNode}
           submitControl={submitControlNode}
           className="p-0"
@@ -2329,7 +2391,7 @@ function ConversationComposerImpl({
           showCloseButton={false}
           className="max-w-xl gap-6 p-6 sm:p-8"
         >
-          <DialogClose asChild>
+          <DialogClose asChild={true}>
             <Button
               type="button"
               variant="ghost"
@@ -2349,7 +2411,8 @@ function ConversationComposerImpl({
               {intl.formatMessage(
                 { id: "chat.queue.sendConfirm.description" },
                 {
-                  count: String(heldQueueConfirmation?.queueItemIds.length ?? 0),
+                  count: String(heldQueueConfirmation?.queueItemIds.length ?? 0,
+                  ),
                 },
               )}
             </DialogDescription>

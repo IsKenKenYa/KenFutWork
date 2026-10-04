@@ -6,6 +6,7 @@ import {
   ReasoningContent,
   ReasoningTrigger,
 } from "@zui/components/ai-elements/reasoning.js";
+import { ZCodeIntlProvider } from "@zui/i18n/IntlProvider.js";
 import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@zui/lib/codePreviewSettings.js";
 import { describe, expect, it } from "vitest";
 
@@ -49,6 +50,13 @@ describe("Reasoning（@zui 原件）", () => {
         <ReasoningTrigger streamingText="分析目录结构" />
         <ReasoningContent>{"思考正文"}</ReasoningContent>
       </Reasoning>,
+      {
+        wrapper: ({ children }) => (
+          <ZCodeIntlProvider initialLocale="zh-CN">
+            {children}
+          </ZCodeIntlProvider>
+        ),
+      },
     );
     // zcode zh-CN 文案（zh-CN.ts:4483）
     expect(screen.getByText("正在思考")).toBeTruthy();
@@ -61,6 +69,13 @@ describe("Reasoning（@zui 原件）", () => {
         <ReasoningTrigger />
         <ReasoningContent>{"思考正文"}</ReasoningContent>
       </Reasoning>,
+      {
+        wrapper: ({ children }) => (
+          <ZCodeIntlProvider initialLocale="zh-CN">
+            {children}
+          </ZCodeIntlProvider>
+        ),
+      },
     );
     // 完成态触发器：「思考 · 持续了 N 秒」（zh-CN.ts:4484-4486）
     expect(screen.getByText("思考")).toBeTruthy();

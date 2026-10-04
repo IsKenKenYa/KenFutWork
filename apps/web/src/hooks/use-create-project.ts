@@ -113,6 +113,9 @@ export function useCreateProject() {
       try {
         // 名称统一为「未命名画布」：侧栏/画布标题同口径（此前是 Untitled，与画布页的默认名不一致）
         const result = await createProject(token, { name: "未命名画布" });
+        if (result.project.kind === "code") {
+          throw new Error("新建画布返回了工作目录项目。");
+        }
         const canvasId = result.project.primaryCanvas.id;
         // 嵌入工作台 iframe：通知宿主刷新项目列表并切到新画布
         if (embedded) {

@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import type { ZCodeTaskMeta } from "@zcode/shared";
 import { useZCodeSessionService } from "@zui/hooks/useZCodeSessionService.js";
 import { zcodeSessionSnapshotToTaskMeta } from "@zui/lib/zcodeSessionProjection.js";
+import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
+import { useZCodeTaskService } from "@zui/hooks/useZCodeTaskService.js";
 
 function resolveImmediateActiveTaskSnapshotMeta(
   previousSnapshotMeta: ZCodeTaskMeta | null,
@@ -39,6 +41,8 @@ export function useActiveTaskSnapshotMeta(
     preferredRemoteSessionId,
     workspaceIdentity,
   );
+  const zcodeTaskService = useZCodeTaskService(workspacePath, preferredRemoteSessionId, workspaceIdentity);
+  const metadataSource = useOptionalPlatform()?.sessionMetadataSource;
   const [snapshotMeta, setSnapshotMeta] = useState<ZCodeTaskMeta | null>(null);
 
   useEffect(() => {
@@ -60,7 +64,9 @@ export function useActiveTaskSnapshotMeta(
       };
     }
 
-    void zcodeSessionService
+    const read = metadataSource === "task-index"
+      ? zcodeTaskService.getTaskMeta({ workspacePath, workspaceIdentity, taskId })
+      : zcodeSessionService
       // active header 只需要 session meta/标题兜底，走 ZCode Protocol 的轻量读取，
       // 避免继续经 legacy snapshot 把大任务消息整包拉回 UI。
       .readSession({
@@ -68,12 +74,13 @@ export function useActiveTaskSnapshotMeta(
         workspaceIdentity,
         sessionId: taskId,
         messageLimit: 1,
-      })
-      .then((snapshot) => {
+      }).then(zcodeSessionSnapshotToTaskMeta);
+    void read
+      .then((meta) => {
         if (cancelled) {
           return;
         }
-        setSnapshotMeta(zcodeSessionSnapshotToTaskMeta(snapshot));
+        setSnapshotMeta(meta);
       })
       .catch(() => {
         if (cancelled) {
@@ -85,7 +92,7 @@ export function useActiveTaskSnapshotMeta(
     return () => {
       cancelled = true;
     };
-  }, [zcodeSessionService, taskId, taskMetaFromLists, workspaceIdentity, workspacePath]);
+  }, [metadataSource, zcodeTaskService, zcodeSessionService, taskId, taskMetaFromLists, workspaceIdentity, workspacePath]);
 
   return snapshotMeta;
 }

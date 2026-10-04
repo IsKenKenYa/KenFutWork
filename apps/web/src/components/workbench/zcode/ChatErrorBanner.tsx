@@ -34,6 +34,7 @@ import {
   resolveOffPeakTicketExpiredBusinessCode,
 } from "@zui/lib/providerBusinessError.js";
 import type { ZCodeUiError } from "@zui/lib/zcodeUiError.js";
+import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 
 const HISTORICAL_MODEL_UNAVAILABLE_MESSAGES = [
   "历史任务使用的模型已不可用",
@@ -121,12 +122,15 @@ export function ChatErrorBanner({
   onOpenUpgrade?: () => void;
 }) {
   const { intl } = useZCodeIntl();
+  const platform = useOptionalPlatform();
   const openFeedbackSubmit = useFeedbackStore((state) => state.openSubmit);
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
   const actionButtonClassName = "shrink-0";
   const iconButtonClassName = "shrink-0";
-  const localizedErrorMessage = resolveChatErrorBannerDisplayMessage(error, intl);
   const modelConfigMissing = isModelConfigMissingError(error);
+  const localizedErrorMessage = modelConfigMissing && platform?.supportsCloudAccounts === false
+    ? intl.formatMessage({ id: "chat.error.noAvailableByokModel" })
+    : resolveChatErrorBannerDisplayMessage(error, intl);
   const hookBlocked = error.code === "fault.runtime.hookBlocked";
   if (shouldSuppressChatErrorBanner(error)) {
     return null;

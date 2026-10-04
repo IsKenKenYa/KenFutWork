@@ -278,6 +278,8 @@ export function ProviderConnectionSection({
 export function ProviderApiKeySection({
   apiKeyValue,
   apiKeyVisible,
+  credentialConfigured,
+  onClearApiKey,
   readOnly,
   presetApiKeyUrl,
   onOpenPresetApiKey,
@@ -290,6 +292,8 @@ export function ProviderApiKeySection({
 }: {
   apiKeyValue: string;
   apiKeyVisible: boolean;
+  credentialConfigured?: boolean;
+  onClearApiKey?: () => void;
   readOnly?: boolean;
   presetApiKeyUrl?: string;
   onOpenPresetApiKey?: () => void;
@@ -316,6 +320,8 @@ export function ProviderApiKeySection({
         value={apiKeyValue}
         visible={apiKeyVisible}
         readOnly={readOnly}
+        credentialConfigured={credentialConfigured}
+        onClear={onClearApiKey}
         onChange={onApiKeyChange}
         onBlur={onApiKeyBlur}
         onKeyDown={onApiKeyKeyDown}

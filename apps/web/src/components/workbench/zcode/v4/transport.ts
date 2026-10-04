@@ -6,10 +6,12 @@ import type {
   CommandEnvelope,
   CommandsQueryParams,
   CommandsQueryResult,
+  ConversationResyncParams,
   ConversationRowTarget,
   ConversationTopicFrame,
-  TopicFrameDeliveryKind,
   SubscribeParams,
+  TopicFrameDeliveryKind,
+  V4AttachmentBudget,
   V4AttachmentPutParams,
   V4AttachmentPutResult,
   V4ConversationFileChangesParams,
@@ -18,25 +20,24 @@ import type {
   V4ConversationFileRewindPreviewResult,
   V4ConversationPlansParams,
   V4ConversationPlansResult,
+  V4ConversationResyncResult,
   V4ConversationRowsRangeParams,
   V4ConversationRowsRangeResult,
+  V4ConversationSubscribeResult,
   V4ConversationWorkflowRunArtifactDataParams,
   V4ConversationWorkflowRunArtifactDataResult,
   V4ConversationWorkflowRunArtifactReadParams,
   V4ConversationWorkflowRunArtifactReadResult,
   V4ConversationWorkflowRunArtifactsParams,
   V4ConversationWorkflowRunArtifactsResult,
+  V4ConversationWorkflowRunEventsParams,
+  V4ConversationWorkflowRunEventsResult,
   V4ConversationWorkflowRunNodeResultParams,
   V4ConversationWorkflowRunNodeResultResult,
+  V4ConversationWorkflowRunsParams,
+  V4ConversationWorkflowRunsResult,
   V4ConversationWorkflowRunWorkspaceParams,
   V4ConversationWorkflowRunWorkspaceResult,
-  V4ConversationWorkflowRunEventsParams,
-  V4ConversationWorkflowRunsParams,
-  V4ConversationWorkflowRunEventsResult,
-  V4ConversationWorkflowRunsResult,
-  ConversationResyncParams,
-  V4ConversationResyncResult,
-  V4ConversationSubscribeResult,
 } from "@zcode/shared/zcode-protocol-v4";
 import type { AttachmentUploadOptions } from "@zui/v4/attachmentUploadTransaction.js";
 
@@ -59,7 +60,8 @@ export interface ConversationTransport {
   /** v4/commands/query：重连后按 commandId 与 CLI 权威事实对账。 */
   queryCommands(params: CommandsQueryParams): Promise<CommandsQueryResult>;
   /** v4/conversation/rowsRange（loadOlder）：按游标向上取一窗历史行。 */
-  rowsRange(params: V4ConversationRowsRangeParams): Promise<V4ConversationRowsRangeResult>;
+  rowsRange(params: V4ConversationRowsRangeParams,
+  ): Promise<V4ConversationRowsRangeResult>;
   /** v4/conversation/plans：当前有效分支里的全部终态计划。 */
   plans(params: V4ConversationPlansParams): Promise<V4ConversationPlansResult>;
   /** v4/conversation/workflowRunEvents：workflow run 的事件日志分页（cursor = journal sequence）。 */
@@ -67,7 +69,8 @@ export interface ConversationTransport {
     params: V4ConversationWorkflowRunEventsParams,
   ): Promise<V4ConversationWorkflowRunEventsResult>;
   /** v4/conversation/workflowRuns：workflow run 枚举（journal-backed 的重启后发现面）。 */
-  workflowRuns(params: V4ConversationWorkflowRunsParams): Promise<V4ConversationWorkflowRunsResult>;
+  workflowRuns(params: V4ConversationWorkflowRunsParams,
+  ): Promise<V4ConversationWorkflowRunsResult>;
   /**
    * v4/conversation/workflowRunArtifacts：workflow run 的**用户面产物**清单（冷恢复的 durable 读法）。
    *
@@ -97,12 +100,14 @@ export interface ConversationTransport {
     params: V4ConversationWorkflowRunNodeResultParams,
   ): Promise<V4ConversationWorkflowRunNodeResultResult>;
   /** v4/conversation/fileChanges：按 turn row 展开文件摘要详情与只读 diff。 */
-  fileChanges(params: V4ConversationFileChangesParams): Promise<V4ConversationFileChangesResult>;
+  fileChanges(params: V4ConversationFileChangesParams,
+  ): Promise<V4ConversationFileChangesResult>;
   /** v4/conversation/fileRewindPreview：按 turn row 预览 workspace-only 文件撤销。 */
   fileRewindPreview(
     params: V4ConversationFileRewindPreviewParams,
   ): Promise<V4ConversationFileRewindPreviewResult>;
   /** UI 高层附件上传；production wire 为 begin/chunk/commit/abort。 */
+  attachmentBudget(sessionId?: string): Promise<V4AttachmentBudget>;
   attachmentPut(
     params: V4AttachmentPutParams,
     options?: AttachmentUploadOptions,
@@ -110,10 +115,12 @@ export interface ConversationTransport {
   /** 已发送 image/video 高层读取；Desktop 本地视频可返回已授权 URL，其余循环小块。 */
   attachmentRead(
     params: ConversationAttachmentReadParams,
-  ): Promise<{ bytes: Uint8Array; mediaType: string } | { url: string; mediaType: string }>;
+  ): Promise<
+    | { bytes: Uint8Array; mediaType: string } | { url: string; mediaType: string }>;
   /** 已发送 PDF 的授权 range 读取；不会把完整文件先读入 renderer。 */
   attachmentReadRange(
-    params: ConversationAttachmentReadParams & { offset: number; limit: number },
+    params: ConversationAttachmentReadParams & { offset: number; limit: number;
+    },
   ): Promise<{
     bytes: Uint8Array;
     mediaType: string;
@@ -137,7 +144,8 @@ export interface ConversationTransport {
     }) => void,
   ): () => void;
   /** CLI runtime 或承载 proxy 换代；transport 已先清 ownership/barrier/assembler。 */
-  onRuntimeRestart(listener: (reason?: "runtimeRestart" | "transportReplaced") => void): () => void;
+  onRuntimeRestart(listener: (reason?: "runtimeRestart" | "transportReplaced") => void,
+  ): () => void;
   /**
    * CLI runtime 存活态。unavailable 在 workspace-dispose 当场到达（此时新 runtime 尚不存在，
    * 不可重订阅）；available 在新进程 spawn 时到达，与 onRuntimeRestart 同刻同义。
@@ -149,7 +157,8 @@ export interface ConversationTransport {
    * 消费方按 sessionsIndexStore 的既定模式二选一订阅（有本方法就不订阅 onRuntimeRestart），
    * 避免同一次换代被两条通道各处理一次。承载方未暴露 runtime lifecycle 时本方法不存在。
    */
-  onRuntimeLifecycle?(listener: (state: "available" | "unavailable") => void): () => void;
+  onRuntimeLifecycle?(listener: (state: "available" | "unavailable") => void,
+  ): () => void;
 }
 
 export interface ConversationAttachmentReadParams {

@@ -1,11 +1,4 @@
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  type ReactNode,
-} from "react";
+import type { IServiceAccessor } from "@zcode/services";
 import type {
   CommandAck,
   CommandEnvelope,
@@ -21,31 +14,42 @@ import type {
   V4ConversationWorkflowRunArtifactReadResult,
   V4ConversationWorkflowRunArtifactsParams,
   V4ConversationWorkflowRunArtifactsResult,
+  V4ConversationWorkflowRunEventsParams,
+  V4ConversationWorkflowRunEventsResult,
   V4ConversationWorkflowRunNodeResultParams,
   V4ConversationWorkflowRunNodeResultResult,
+  V4ConversationWorkflowRunsParams,
+  V4ConversationWorkflowRunsResult,
   V4ConversationWorkflowRunWorkspaceParams,
   V4ConversationWorkflowRunWorkspaceResult,
-  V4ConversationWorkflowRunEventsParams,
-  V4ConversationWorkflowRunsParams,
-  V4ConversationWorkflowRunEventsResult,
-  V4ConversationWorkflowRunsResult,
 } from "@zcode/shared/zcode-protocol-v4";
-import type { IServiceAccessor } from "@zcode/services";
-import { ServiceProvider } from "@zui/hooks/useServices.js";
 import { usePlatform } from "@zui/hooks/usePlatform.js";
+import { ServiceProvider } from "@zui/hooks/useServices.js";
 import { useWorkspaceServicesResolution } from "@zui/hooks/useWorkspaceServices.js";
-import { createAgentConversationTransport } from "@zui/v4/agentConversationTransport.js";
-import type { ConversationAttachmentReadParams, ConversationTransport } from "@zui/v4/transport.js";
-import type { PaneWorkspaceScope } from "@zui/v4/paneLayoutStore.js";
-import { SessionDataLayer } from "@zui/v4/sessionDataLayer.js";
-import { acquireWorkspaceConnection } from "@zui/v4/workspaceConnectionRegistry.js";
 import type { AttachmentUploadOptions } from "@zui/v4/attachmentUploadTransaction.js";
+import type { PaneWorkspaceScope } from "@zui/v4/paneLayoutStore.js";
+import type { SessionDataLayer } from "@zui/v4/sessionDataLayer.js";
 import { ConversationTelemetryPaneAttachment } from "@zui/v4/telemetry/ConversationTelemetryAttachment.js";
+import type {
+  ConversationAttachmentReadParams,
+  ConversationTransport,
+} from "@zui/v4/transport.js";
+import { acquireWorkspaceConnection } from "@zui/v4/workspaceConnectionRegistry.js";
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+} from "react";
 
 export interface V4ConversationContextValue {
+  attachmentBudget: ConversationTransport["attachmentBudget"];
   layer: SessionDataLayer;
   sendCommand(envelope: CommandEnvelope): Promise<CommandAck>;
-  fileChanges(params: V4ConversationFileChangesParams): Promise<V4ConversationFileChangesResult>;
+  fileChanges(params: V4ConversationFileChangesParams,
+  ): Promise<V4ConversationFileChangesResult>;
   fileRewindPreview(
     params: V4ConversationFileRewindPreviewParams,
   ): Promise<V4ConversationFileRewindPreviewResult>;
@@ -54,7 +58,8 @@ export interface V4ConversationContextValue {
     params: V4ConversationWorkflowRunEventsParams,
   ): Promise<V4ConversationWorkflowRunEventsResult>;
   /** workflow run 枚举（journal-backed 的重启后发现面）。 */
-  workflowRuns(params: V4ConversationWorkflowRunsParams): Promise<V4ConversationWorkflowRunsResult>;
+  workflowRuns(params: V4ConversationWorkflowRunsParams,
+  ): Promise<V4ConversationWorkflowRunsResult>;
   /**
    * workflow run 的**用户面产物**清单（冷恢复的 durable 读法）。⚠ 术语：artifact = 脚本经
    * `artifact.*` 发布给用户看的产出，不是 run 的顶层返回值。
@@ -94,7 +99,8 @@ export interface V4ConversationContextValue {
    * 承载 transport 暴露 runtime 存活态时才存在（见 ConversationTransport.onRuntimeLifecycle）。
    * unavailable 在 workspace-dispose 当场到达，是草稿预热重建唯一可依赖的换代信号。
    */
-  onRuntimeLifecycle?(listener: (state: "available" | "unavailable") => void): () => void;
+  onRuntimeLifecycle?(listener: (state: "available" | "unavailable") => void,
+  ): () => void;
 }
 
 // 导出 context 本体：静态回放视图用静态 transport 自己
@@ -119,61 +125,68 @@ function ReadyV4ConversationProvider({
 }) {
   const { zcodeAgentService } = services;
   const platform = usePlatform();
-  const bundle = useMemo(() => {
-    const transport = createAgentConversationTransport(zcodeAgentService, {
+  const lease = useMemo(() => acquireWorkspaceConnection({
       workspacePath,
       workspaceIdentity,
+      ...(remoteSessionId ? { remoteSessionId } : {}),
       // 主 workspace resolver 已识别远端 endpoint，但这里曾丢弃
       // remoteSessionId，导致远端绝对路径被交给本机 zcode-media。仅本地 endpoint 注入转换器。
-      ...(remoteSessionId === null && platform.createLocalMediaPreviewUrl
-        ? { createLocalMediaPreviewUrl: platform.createLocalMediaPreviewUrl }
-        : {}),
-    });
-    const layer = new SessionDataLayer({ transport });
+    }, zcodeAgentService, remoteSessionId === null ? platform.createLocalMediaPreviewUrl : undefined),
+    [platform.createLocalMediaPreviewUrl, remoteSessionId, workspacePath, workspaceIdentity, zcodeAgentService]);
+  const bundle = useMemo(() => {
+    const transport = lease.transport;
     return {
-      layer,
+      layer: lease.layer,
       sendCommand: (envelope: CommandEnvelope) => transport.sendCommand(envelope),
       fileChanges: (params: V4ConversationFileChangesParams) => transport.fileChanges(params),
       fileRewindPreview: (params: V4ConversationFileRewindPreviewParams) =>
         transport.fileRewindPreview(params),
       workflowRunEvents: (params: V4ConversationWorkflowRunEventsParams) =>
         transport.workflowRunEvents(params),
-      workflowRunArtifacts: (params: V4ConversationWorkflowRunArtifactsParams) =>
+      workflowRunArtifacts: (params: V4ConversationWorkflowRunArtifactsParams,
+      ) =>
         transport.workflowRunArtifacts(params),
-      workflowRunArtifactData: (params: V4ConversationWorkflowRunArtifactDataParams) =>
+      workflowRunArtifactData: (params: V4ConversationWorkflowRunArtifactDataParams,
+      ) =>
         transport.workflowRunArtifactData(params),
-      workflowRunArtifactRead: (params: V4ConversationWorkflowRunArtifactReadParams) =>
+      workflowRunArtifactRead: (params: V4ConversationWorkflowRunArtifactReadParams,
+      ) =>
         transport.workflowRunArtifactRead(params),
-      workflowRunWorkspace: (params: V4ConversationWorkflowRunWorkspaceParams) =>
+      workflowRunWorkspace: (params: V4ConversationWorkflowRunWorkspaceParams,
+      ) =>
         transport.workflowRunWorkspace(params),
-      workflowRunNodeResult: (params: V4ConversationWorkflowRunNodeResultParams) =>
+      workflowRunNodeResult: (params: V4ConversationWorkflowRunNodeResultParams,
+      ) =>
         transport.workflowRunNodeResult(params),
       workflowRuns: (params: V4ConversationWorkflowRunsParams) => transport.workflowRuns(params),
-      attachmentPut: (params: V4AttachmentPutParams, options?: AttachmentUploadOptions) =>
+      attachmentPut: (params: V4AttachmentPutParams, options?: AttachmentUploadOptions,
+      ) =>
         transport.attachmentPut(params, options),
+      attachmentBudget: (sessionId?: string) =>
+        transport.attachmentBudget(sessionId),
       attachmentRead: (params) => transport.attachmentRead(params),
       attachmentReadRange: (params) => transport.attachmentReadRange(params),
       onRuntimeRestart: (listener: () => void) => transport.onRuntimeRestart(listener),
       ...(transport.onRuntimeLifecycle
         ? {
-            onRuntimeLifecycle: (listener: (state: "available" | "unavailable") => void) =>
+            onRuntimeLifecycle: (listener: (state: "available" | "unavailable") => void,
+            ) =>
               transport.onRuntimeLifecycle?.(listener) ?? (() => {}),
           }
         : {}),
     } satisfies V4ConversationContextValue;
-  }, [
-    platform.createLocalMediaPreviewUrl,
-    remoteSessionId,
-    workspacePath,
-    workspaceIdentity,
-    zcodeAgentService,
-  ]);
+  }, [lease]);
+
+  useLayoutEffect(() => {
+    lease.activateRemoteService();
+    lease.activateWorkspaceConfig();
+  }, [lease]);
 
   useEffect(() => {
     return () => {
-      bundle.layer.dispose();
+      lease.release();
     };
-  }, [bundle]);
+  }, [lease]);
 
   return (
     <ServiceProvider services={services}>
@@ -188,7 +201,8 @@ export function V4ConversationProvider({
   workspaceIdentity,
   children,
 }: V4ConversationProviderProps) {
-  const resolution = useWorkspaceServicesResolution(workspacePath, undefined, workspaceIdentity);
+  const resolution = useWorkspaceServicesResolution(workspacePath, undefined, workspaceIdentity,
+  );
   if (!resolution.rpcReady) {
     return null;
   }
@@ -238,7 +252,8 @@ interface V4PaneConversationProviderProps {
  * 另起独立 runtime（远控保护约束）。重连 ready 后 services 换新引用 → 注册表保持
  * 原 layer/transport 身份，并在 commit 阶段单向激活最新 proxy。
  */
-export function V4PaneConversationProvider({ scope, children }: V4PaneConversationProviderProps) {
+export function V4PaneConversationProvider({ scope, children,
+}: V4PaneConversationProviderProps) {
   const targetResolution = useWorkspaceServicesResolution(
     scope.workspacePath,
     scope.remoteSessionId ?? null,
@@ -252,7 +267,8 @@ export function V4PaneConversationProvider({ scope, children }: V4PaneConversati
         ? { remoteSessionId: targetResolution.remoteSessionId }
         : {}),
     }),
-    [scope.workspaceIdentity, scope.workspacePath, targetResolution.remoteSessionId],
+    [scope.workspaceIdentity, scope.workspacePath, targetResolution.remoteSessionId,
+    ],
   );
   if (!targetResolution.rpcReady) {
     return null;
@@ -302,26 +318,35 @@ function ReadyV4PaneConversationProvider({
           lease.transport.fileRewindPreview(params),
         workflowRunEvents: (params: V4ConversationWorkflowRunEventsParams) =>
           lease.transport.workflowRunEvents(params),
-        workflowRunArtifacts: (params: V4ConversationWorkflowRunArtifactsParams) =>
+        workflowRunArtifacts: (params: V4ConversationWorkflowRunArtifactsParams,
+        ) =>
           lease.transport.workflowRunArtifacts(params),
-        workflowRunArtifactData: (params: V4ConversationWorkflowRunArtifactDataParams) =>
+        workflowRunArtifactData: (params: V4ConversationWorkflowRunArtifactDataParams,
+        ) =>
           lease.transport.workflowRunArtifactData(params),
-        workflowRunArtifactRead: (params: V4ConversationWorkflowRunArtifactReadParams) =>
+        workflowRunArtifactRead: (params: V4ConversationWorkflowRunArtifactReadParams,
+        ) =>
           lease.transport.workflowRunArtifactRead(params),
-        workflowRunWorkspace: (params: V4ConversationWorkflowRunWorkspaceParams) =>
+        workflowRunWorkspace: (params: V4ConversationWorkflowRunWorkspaceParams,
+        ) =>
           lease.transport.workflowRunWorkspace(params),
-        workflowRunNodeResult: (params: V4ConversationWorkflowRunNodeResultParams) =>
+        workflowRunNodeResult: (params: V4ConversationWorkflowRunNodeResultParams,
+        ) =>
           lease.transport.workflowRunNodeResult(params),
         workflowRuns: (params: V4ConversationWorkflowRunsParams) =>
           lease.transport.workflowRuns(params),
-        attachmentPut: (params: V4AttachmentPutParams, options?: AttachmentUploadOptions) =>
+        attachmentPut: (params: V4AttachmentPutParams, options?: AttachmentUploadOptions,
+        ) =>
           lease.transport.attachmentPut(params, options),
+        attachmentBudget: (sessionId?: string) =>
+          lease.transport.attachmentBudget(sessionId),
         attachmentRead: (params) => lease.transport.attachmentRead(params),
         attachmentReadRange: (params) => lease.transport.attachmentReadRange(params),
         onRuntimeRestart: (listener: () => void) => lease.transport.onRuntimeRestart(listener),
         ...(lease.transport.onRuntimeLifecycle
           ? {
-              onRuntimeLifecycle: (listener: (state: "available" | "unavailable") => void) =>
+              onRuntimeLifecycle: (listener: (state: "available" | "unavailable") => void,
+              ) =>
                 lease.transport.onRuntimeLifecycle?.(listener) ?? (() => {}),
             }
           : {}),
@@ -339,6 +364,7 @@ function ReadyV4PaneConversationProvider({
     // acquire 发生在 render，只负责稳定租约；远端 proxy 换代引发的 store 更新和
     // 重订阅必须等到 commit，避免在渲染阶段同步更新现有 pane。
     bundle.lease.activateRemoteService();
+    bundle.lease.activateWorkspaceConfig();
   }, [bundle]);
 
   useEffect(() => {

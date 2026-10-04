@@ -17,18 +17,21 @@ const PROVIDER_CONNECTION_API_FORMATS: readonly ProviderApiType[] = [
   "anthropic-messages",
   "openai-chat-completions",
   "openai-responses",
+  "google-generative-language",
 ];
 
 const PROVIDER_CONNECTION_API_FORMAT_PATHS: Record<ProviderApiType, string> = {
   "anthropic-messages": "/v1/messages",
   "openai-chat-completions": "/chat/completions",
   "openai-responses": "/responses",
+  "google-generative-language": "/models/{model}:streamGenerateContent",
 };
 
 const PROVIDER_CONNECTION_API_FORMAT_TITLE_IDS: Record<ProviderApiType, string> = {
   "anthropic-messages": "settings.modelProvider.apiFormat.title.anthropicMessages",
   "openai-chat-completions": "settings.modelProvider.apiFormat.title.chatCompletions",
   "openai-responses": "settings.modelProvider.apiFormat.title.responses",
+  "google-generative-language": "settings.modelProvider.apiFormat.title.gemini",
 };
 
 export function resolveProviderConnectionApiFormatOptions(): ProviderApiType[] {

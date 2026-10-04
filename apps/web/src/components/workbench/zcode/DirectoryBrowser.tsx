@@ -53,7 +53,7 @@ export function DirectoryBrowser({
   embedded = false,
 }: {
   services: IServiceAccessor;
-  onSelect: (path: string) => void;
+  onSelect: (path: string) => void | Promise<void>;
   onCancel: () => void;
   onPathChange?: (path: string) => void;
   embedded?: boolean;
@@ -142,13 +142,21 @@ export function DirectoryBrowser({
     }
   };
 
-  const handleSelectCurrentPath = () => {
+  const handleSelectCurrentPath = async () => {
     const selectedPath = currentPath.trim();
     if (!selectedPath || loading) {
       return;
     }
 
-    onSelect(selectedPath);
+    setLoading(true);
+    setError("");
+    try {
+      await onSelect(selectedPath);
+    } catch (err) {
+      setError(intl.formatMessage({ id: "directoryBrowser.errorReadDir" }, { error: String(err) }));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

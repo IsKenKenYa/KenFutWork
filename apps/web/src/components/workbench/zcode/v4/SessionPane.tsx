@@ -1,267 +1,78 @@
-import { resolveSelectionSideInheritedModel } from "@zui/lib/selectionSideInheritedModel.js";
-import { useStartPlanRecommendation } from "@zui/hooks/useStartPlanRecommendation.js";
-import type { SessionCreateSource } from "@zcode/shared";
-import { reportSessionCreate } from "@zui/lib/sessionCreateTelemetry.js";
-import { getLocalTtftObserver } from "@zui/v4/telemetry/localTtftObserver.js";
-/* oxlint-disable eslint(max-lines) -- SessionPane 是单 pane 竖切的命令编排收口（订阅/发送/停止/fork/edit/retry/queue/slash 全集），与旧 ChatView 同粒度；HEAD 已超限（693 行计数），拆散命令组会打散 dispatchCommand/snapshotRef 的闭包纪律。 */
-import { useIsOfficeMode } from "@zui/hooks/useInterfaceMode.js";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type ReactNode,
-} from "react";
-import { Hand } from "lucide-react";
+import type {
+  ConversationShareAllowedArtifact,
+  ConversationShareTurnPreflightResult,
+  ImportedConversationShare,
+} from "@zcode/services";
+import type {
+  ConversationShareAccessMode,
+  GitChangeSourceId,
+  GitRepositorySummary,
+  SessionCreateSource,
+  ZCodeProvider,
+  ZCodeTaskChangeSummary,
+} from "@zcode/shared";
 import {
   BUILTIN_MODEL_PROVIDER_IDS,
   buildCustomSupplierKey,
+  localizeConversationShareUrl,
   TID_CHAT_EMPTY,
   TID_V4_SESSION_PANE,
   testId,
   ZCODE_AGENT_PROVIDER,
 } from "@zcode/shared";
 import type {
-  ConversationShareAccessMode,
-  GitChangeSourceId,
-  GitRepositorySummary,
-  ZCodeProvider,
-  ZCodeTaskChangeSummary,
-} from "@zcode/shared";
-import type {
   AttachmentRef,
   CommandAck,
   CommandEnvelope,
   CommandType,
-  ConversationSnapshot,
   ConversationRowTarget,
+  ConversationSnapshot,
   SessionErrorInfo,
   SessionModelTransition,
   V4ConversationFileChangesResult,
 } from "@zcode/shared/zcode-protocol-v4";
-import { logger } from "@zui/logger.js";
+import type { MessageFileLinkTarget } from "@zui/components/ai-elements/message.js";
+import { toast } from "@zui/components/ui/toast.js";
+import {
+  type WorkflowRunSettingsChange,
+  workflowSessionModelOf,
+} from "@zui/components/workflow-timeline/workflowRunSettings.js";
+import { useDynamicWorkflowAvailability } from "@zui/hooks/useDynamicWorkflowAvailability.js";
+/* oxlint-disable eslint(max-lines) -- SessionPane 是单 pane 竖切的命令编排收口（订阅/发送/停止/fork/edit/retry/queue/slash 全集），与旧 ChatView 同粒度；HEAD 已超限（693 行计数），拆散命令组会打散 dispatchCommand/snapshotRef 的闭包纪律。 */
+import { useIsOfficeMode } from "@zui/hooks/useInterfaceMode.js";
+import { usePlanIdentitySnapshot } from "@zui/hooks/usePlanIdentitySnapshot.js";
+import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
+import { useServices } from "@zui/hooks/useServices.js";
+import { useSettings } from "@zui/hooks/useSettingService.js";
+import { useSlashCommands } from "@zui/hooks/useSlashCommands.js";
+import { useStartPlanRecommendation } from "@zui/hooks/useStartPlanRecommendation.js";
+import { useWorkflowRunJournalSummaries } from "@zui/hooks/useWorkflowRunJournalSummaries.js";
+import { useWorkspaceHomePath } from "@zui/hooks/useWorkspaceHomePath.js";
+import { prepareWorkspaceWithZCodeSessionService } from "@zui/hooks/useWorkspacePrepare.js";
+import { useBaseWorkspaceServices, useWorkspaceServicesResolution } from "@zui/hooks/useWorkspaceServices.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { AssistantPreviewCardsAutoOpenRequest } from "@zui/lib/assistantPreviewCards.js";
+import { isProviderNotReadyError } from "@zui/lib/chatPrepareError.js";
+import { buildChatSessionScrollMemoryKey } from "@zui/lib/chatSessionScrollMemory.js";
+import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@zui/lib/codePreviewSettings.js";
+import type { CodeViewerSource } from "@zui/lib/codeViewer.js";
+import {
+  createCodingPlanFunnelContext,
+  resolveCodingPlanEntryPlanState,
+} from "@zui/lib/codingPlanFunnelTelemetry.js";
+import { captureComposerRecentSubmission } from "@zui/lib/composerRecent.js";
+import {
+  type ConversationSelectionReference,
+  clearConversationSelectionReferenceScope,
+  dispatchConversationSelectionAdd,
+} from "@zui/lib/conversationSelectionReference.js";
 import {
   getConversationShareErrorDetails,
   resolveConversationShareFallbackIssueCode,
   resolveConversationSharePublishErrorMessageId,
   sanitizeConversationShareWarnings,
 } from "@zui/lib/conversationShareError.js";
-import { localizeConversationShareUrl } from "@zcode/shared";
-import type {
-  ConversationShareAllowedArtifact,
-  ConversationShareTurnPreflightResult,
-  ImportedConversationShare,
-} from "@zcode/services";
-import { toast } from "@zui/components/ui/toast.js";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
-import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@zui/lib/codePreviewSettings.js";
-import type { CodeViewerSource } from "@zui/lib/codeViewer.js";
-import type { OpenAutomationsMain } from "@zui/lib/taskNavigationHistory.js";
-import { WORKSPACE_FILE_DRAG_MIME } from "@zui/lib/workspaceFileDrag.js";
-import { buildChatSessionScrollMemoryKey } from "@zui/lib/chatSessionScrollMemory.js";
-import type { MessageFileLinkTarget } from "@zui/components/ai-elements/message.js";
-import { useServices } from "@zui/hooks/useServices.js";
-import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
-import type { SessionOpenTrigger } from "@zui/lib/sessionOpenArmsTelemetry.js";
-import { useDynamicWorkflowAvailability } from "@zui/hooks/useDynamicWorkflowAvailability.js";
-import { resolveWorkflowResumeHandler } from "@zui/v4/workflowResumeGate.js";
-import {
-  workflowSessionModelOf,
-  type WorkflowRunSettingsChange,
-} from "@zui/components/workflow-timeline/workflowRunSettings.js";
-import { useWorkflowRunJournalSummaries } from "@zui/hooks/useWorkflowRunJournalSummaries.js";
-import { usePlanIdentitySnapshot } from "@zui/hooks/usePlanIdentitySnapshot.js";
-import { useBaseWorkspaceServices } from "@zui/hooks/useWorkspaceServices.js";
-import { useWorkspaceHomePath } from "@zui/hooks/useWorkspaceHomePath.js";
-import { prepareWorkspaceWithZCodeSessionService } from "@zui/hooks/useWorkspacePrepare.js";
-import {
-  createCodingPlanFunnelContext,
-  resolveCodingPlanEntryPlanState,
-} from "@zui/lib/codingPlanFunnelTelemetry.js";
-import { decodeCustomModelValue, encodeCustomModelValue } from "@zui/lib/zcodeCustomModelValue.js";
-import { parseModelPickerValue } from "@zui/lib/zcodeSessionProjection.js";
-import { captureComposerRecentSubmission } from "@zui/lib/composerRecent.js";
 import { resolveProviderLabel } from "@zui/lib/registryProviderView.js";
-import {
-  buildDraftCreateConfigPayload,
-  useDraftConfigControl,
-} from "@zui/v4/composer/useDraftConfigControl.js";
-import type { ModelSelectionSource } from "@zui/v4/composer/V4ComposerToolbar.js";
-import { formatModelChangeLabel } from "@zui/v4/composer/modelTriggerDisplay.js";
-import { resolveAppFollowupMode } from "@zui/v4/composer/followupModeSettings.js";
-import {
-  createComposerSubmissionConfig,
-  type ComposerSubmissionConfig,
-} from "@zui/v4/composer/composerSubmissionConfig.js";
-import { useDraftSessionPrewarm } from "@zui/v4/composer/useDraftSessionPrewarm.js";
-import { projectSessionConfigToTaskConfigOptions } from "@zui/v4/composer/sessionConfigTaskCache.js";
-import { useDraftRuntimeRebuildGate } from "@zui/v4/composer/useDraftRuntimeRebuildGate.js";
-import { useDraftModelReadinessGate } from "@zui/v4/composer/useDraftModelReadinessGate.js";
-import { useSettings } from "@zui/hooks/useSettingService.js";
-import { useZCodeStoreWithDefault } from "@zui/store/StoreProvider.js";
-import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
-import {
-  DEFAULT_CONVERSATION_SHARE_ACCESS_MODE,
-  DEFAULT_CONVERSATION_SHARE_DOCK_STATE,
-  getConversationShareDockState,
-  getConversationShareSelectedProductTurnIds,
-  getConversationShareSelectedRowIds,
-  useConversationShareSelectionStore,
-  type ConversationShareDisplayWarnings,
-} from "@zui/store/conversationShareSelectionStore.js";
-import type { GroupedDraftTaskState } from "@zui/store/zcodeSessionStoreTypes.js";
-import {
-  ConversationComposer,
-  type ComposerRestoreRequest,
-  type ConversationComposerSendOptions,
-  type ConversationComposerSendResult,
-} from "@zui/v4/ConversationComposer.js";
-import type { ConversationDropTargetController } from "@zui/v4/composer/conversationDropTarget.js";
-import { shouldIgnoreEscapeForStopGeneration } from "@zui/v4/composer/escapeStop.js";
-import { ConversationDraftEmptyState } from "@zui/v4/ConversationDraftEmptyState.js";
-import { ConversationDraftSuggestedPromptsContainer } from "@zui/v4/ConversationDraftSuggestedPromptsContainer.js";
-import { ConversationHeader, type PaneWorkspaceBadge } from "@zui/v4/ConversationHeader.js";
-import { ConversationQueuePanel } from "@zui/v4/ConversationQueuePanel.js";
-import { projectPendingGuideQueue } from "@zui/v4/pendingGuideProjection.js";
-import { ConversationQuotaBanner } from "@zui/v4/ConversationQuotaBanner.js";
-import { PendingCommandRecoveryBanner } from "@zui/v4/PendingCommandRecoveryBanner.js";
-import { WorkspaceHookPendingBanner } from "@zui/v4/WorkspaceHookPendingBanner.js";
-import { ConversationStatusPanel } from "@zui/v4/ConversationStatusPanel.js";
-import { SessionSubscriptionErrorPanel } from "@zui/v4/SessionSubscriptionErrorPanel.js";
-import { ConversationTimeline } from "@zui/v4/ConversationTimeline.js";
-import { ConversationShareImportNotice } from "@zui/v4/ConversationShareImportNotice.js";
-import { ConversationShareConfirmationDock } from "@zui/v4/ConversationShareConfirmationDock.js";
-import { ConversationShareSuccessDock } from "@zui/v4/ConversationShareSuccessDock.js";
-import {
-  ConversationShareSelectionDock,
-  type ConversationShareSelectionPreflightState,
-} from "@zui/v4/ConversationShareSelectionDock.js";
-import { ConversationShareSelectionPanel } from "@zui/v4/ConversationShareSelectionPanel.js";
-import { ConversationShareSelectionReopenTab } from "@zui/v4/ConversationShareSelectionReopenTab.js";
-import { ConversationShareSelectionScrim } from "@zui/v4/ConversationShareSelectionScrim.js";
-import {
-  buildConversationSharePreflightCacheEntries,
-  conversationSharePreflightCacheKey,
-  conversationShareTurnFingerprint,
-  dedupeConversationShareIssues,
-  getMissingConversationSharePreflightTurnIds,
-} from "@zui/v4/conversationSharePreflightCache.js";
-import { ConversationBottomDockTransition } from "@zui/v4/ConversationBottomDockTransition.js";
-import { ensureConversationShareAttempt } from "@zui/v4/conversationShareAttempt.js";
-import { useConversationShareSelectionOutsideDismiss } from "@zui/v4/useConversationShareSelectionOutsideDismiss.js";
-import {
-  resolveConversationSelectionTooltipEnabled,
-  resolveConversationShareBackgroundScrollLocked,
-  resolveConversationShareSelectionPanelVisible,
-} from "@zui/v4/conversationShareModePolicy.js";
-import { buildConversationTurnRenderUnits } from "@zui/v4/conversationTurnRenderUnits.js";
-import { buildConversationTurnNavigatorItems } from "@zui/v4/conversationTurnNavigatorHelpers.js";
-import { SessionPluginReferenceIconBoundary } from "@zui/v4/SessionPluginReferenceIconProvider.js";
-import {
-  resolveConversationStatusPanelVariant,
-  shouldUseConversationStatusPanelInlineLayout,
-} from "@zui/v4/conversationLayout.js";
-import {
-  buildConversationStatusPanelModel,
-  resolveSoleRunningWorkflowRunTarget,
-} from "@zui/v4/conversationStatusPanelModel.js";
-import type { ConversationStatusPanelWorkflowRunTarget } from "@zui/v4/conversationStatusPanelModel.js";
-import {
-  buildWorkflowRunByRunId,
-  buildWorkflowRunByToolCallId,
-  buildWorkflowRunPendingQuestionsByRunId,
-  buildWorkflowGraphByToolCallId,
-} from "@zui/v4/workflowRunCardJoin.js";
-import { buildWorkflowDraftByToolCallId } from "@zui/v4/workflowDraftJoin.js";
-import {
-  WORKFLOW_RUN_DIRECTORY_LIMIT,
-  countEndedWorkflowRuns,
-  workflowRunDirectoryRefreshKey,
-} from "@zui/v4/workflowRunDirectoryModel.js";
-import {
-  hasOlderRows,
-  shouldAutoLoadIncompleteLeadingTurn,
-} from "@zui/v4/conversationProjectionStore.js";
-import type {
-  ConversationFileChangesRequestOptions,
-  ConversationRowRenderContext,
-} from "@zui/v4/conversationRowContext.js";
-import type { AssistantPreviewCardsAutoOpenRequest } from "@zui/lib/assistantPreviewCards.js";
-import {
-  advanceAssistantPreviewPptxAutoOpenGate,
-  createAssistantPreviewPptxAutoOpenGateState,
-  resolveLatestCompletedAssistantPreviewTurn,
-  type AssistantPreviewPptxAutoOpenTarget,
-} from "@zui/v4/assistantPreviewPptxAutoOpen.js";
-import {
-  hasPluginReferenceUserRows,
-  isSessionPluginCatalogReady,
-} from "@zui/v4/pluginReferenceIconProjection.js";
-import { shouldResyncForStaleAuthority } from "@zui/v4/staleAuthorityRecovery.js";
-import { createCommandEnvelope } from "@zui/v4/commandFactory.js";
-import { createConfigCommandBarrier } from "@zui/v4/configCommandBarrier.js";
-import { recordV4CommandAck } from "@zui/v4/commandAckObservability.js";
-import { pendingCommandRegistry } from "@zui/v4/pendingCommandRegistry.js";
-import type {
-  ChatSearchResultHighlightRequest,
-  ChatViewSummaryPanelVariant,
-  ConversationFindMatchState,
-} from "@zui/v4/legacyChatViewTypes.js";
-import type { SessionLease } from "@zui/v4/sessionDataLayer.js";
-import { V4InteractionDialogs } from "@zui/v4/V4InteractionDialogs.js";
-import {
-  useScopedConversationTelemetryForegroundEnabled,
-  useScopedConversationTelemetrySupervisor,
-} from "@zui/v4/telemetry/ConversationTelemetryAttachment.js";
-import type { ConversationPromptTelemetrySeed } from "@zui/v4/telemetry/conversationTelemetrySupervisor.js";
-import { resolveSendAckSettlement } from "@zui/v4/telemetry/conversationTelemetrySupervisor.js";
-import { useSessionSubscriptionErrorTelemetry } from "@zui/v4/telemetry/useSessionSubscriptionErrorTelemetry.js";
-import { useSessionOpenArmsTelemetry } from "@zui/v4/telemetry/useSessionOpenArmsTelemetry.js";
-import {
-  parseV4VisibleSlashCommand,
-  parseSelectionSideSlashCommand,
-  v4QueuedCommandText,
-  type V4VisibleSlashCommand,
-} from "@zui/v4/slashCommands.js";
-import { useSlashCommands } from "@zui/hooks/useSlashCommands.js";
-import { useV4Conversation } from "@zui/v4/V4ConversationContext.js";
-import { useConversationProjection } from "@zui/v4/useConversationProjection.js";
-import { usePendingCommandRecovery } from "@zui/v4/usePendingCommandRecovery.js";
-import { useV4SessionQuotaBanner } from "@zui/v4/useV4SessionQuotaBanner.js";
-import { resolveMcpUnavailableNotice } from "@zui/v4/mcpUnavailableBannerNotice.js";
-import { shouldFocusTimelineAfterComposerSend } from "@zui/v4/promptScrollFocusPolicy.js";
-import {
-  hasChatLoadingBlockingActiveWork,
-  hasChatLoadingBlockingInteraction,
-} from "@zui/v4/chatLoadingVisibility.js";
-import type { ZCodeUiError } from "@zui/lib/zcodeUiError.js";
-import { isProviderNotReadyError } from "@zui/lib/chatPrepareError.js";
-import { useOptionalCodingPlanUpgradeDialog } from "@zui/settings/CodingPlanUpgradeDialogProvider.js";
-import { setPendingSettingsSectionIntent } from "@zui/lib/settingsNavigation.js";
-import { useOptionalTabStore } from "@zui/store/TabStoreProvider.js";
-import type {
-  OpenPlanDetailSideTabRequest,
-  OpenScopedPlanDetailSideTabRequest,
-  OpenWorkflowRunSideTabRequest,
-  OpenWorkflowRunDirectorySideTabRequest,
-  OpenScopedWorkflowActorSessionSideTabRequest,
-  OpenScopedWorkflowArtifactSideTabRequest,
-  OpenScopedWorkflowRunSideTabRequest,
-  OpenWorkflowActorSessionSideTabRequest,
-  OpenWorkflowArtifactSideTabRequest,
-  OpenScopedWorkflowRunDirectorySideTabRequest,
-  OpenScopedWorkflowWorkspaceSideTabRequest,
-  OpenWorkflowWorkspaceSideTabRequest,
-  OpenScopedSubagentSideTabRequest,
-  OpenBackgroundBashSideTabRequest,
-  OpenScopedSubagentDirectorySideTabRequest,
-  OpenSelectionSideChatRequest,
-  SyncSubagentSessionTabsRequest,
-  OpenSubagentSideTabRequest,
-} from "@zui/lib/workspaceSidePane.js";
 import {
   buildSelectionSideChatKey,
   clearSelectionSideChat,
@@ -271,16 +82,211 @@ import {
   setSelectionSideChatBlocked,
   subscribeSelectionSideChatRuntime,
 } from "@zui/lib/selectionSideChatRuntime.js";
+import { resolveSelectionSideInheritedModel } from "@zui/lib/selectionSideInheritedModel.js";
+import { reportSessionCreate } from "@zui/lib/sessionCreateTelemetry.js";
+import type { SessionOpenTrigger } from "@zui/lib/sessionOpenArmsTelemetry.js";
+import { setPendingSettingsSectionIntent } from "@zui/lib/settingsNavigation.js";
+import type { OpenAutomationsMain } from "@zui/lib/taskNavigationHistory.js";
+import { WORKSPACE_FILE_DRAG_MIME } from "@zui/lib/workspaceFileDrag.js";
+import type {
+  OpenBackgroundBashSideTabRequest,
+  OpenPlanDetailSideTabRequest,
+  OpenScopedPlanDetailSideTabRequest,
+  OpenScopedSubagentDirectorySideTabRequest,
+  OpenScopedSubagentSideTabRequest,
+  OpenScopedWorkflowActorSessionSideTabRequest,
+  OpenScopedWorkflowArtifactSideTabRequest,
+  OpenScopedWorkflowRunDirectorySideTabRequest,
+  OpenScopedWorkflowRunSideTabRequest,
+  OpenScopedWorkflowWorkspaceSideTabRequest,
+  OpenSelectionSideChatRequest,
+  OpenSubagentSideTabRequest,
+  OpenWorkflowActorSessionSideTabRequest,
+  OpenWorkflowArtifactSideTabRequest,
+  OpenWorkflowRunDirectorySideTabRequest,
+  OpenWorkflowRunSideTabRequest,
+  OpenWorkflowWorkspaceSideTabRequest,
+  SyncSubagentSessionTabsRequest,
+} from "@zui/lib/workspaceSidePane.js";
 import {
+  decodeCustomModelValue,
+  encodeCustomModelValue,
+} from "@zui/lib/zcodeCustomModelValue.js";
+import { parseModelPickerValue } from "@zui/lib/zcodeSessionProjection.js";
+import type { ZCodeUiError } from "@zui/lib/zcodeUiError.js";
+import { logger } from "@zui/logger.js";
+import { useOptionalCodingPlanUpgradeDialog } from "@zui/settings/CodingPlanUpgradeDialogProvider.js";
+import {
+  type AppSlashCommand,
   normalizeSlashCommandValue,
   shouldOfferSideSlashCommand,
-  type AppSlashCommand,
 } from "@zui/slashCommandHelpers.js";
 import {
-  clearConversationSelectionReferenceScope,
-  dispatchConversationSelectionAdd,
-  type ConversationSelectionReference,
-} from "@zui/lib/conversationSelectionReference.js";
+  type ConversationShareDisplayWarnings,
+  DEFAULT_CONVERSATION_SHARE_ACCESS_MODE,
+  DEFAULT_CONVERSATION_SHARE_DOCK_STATE,
+  getConversationShareDockState,
+  getConversationShareSelectedProductTurnIds,
+  getConversationShareSelectedRowIds,
+  useConversationShareSelectionStore,
+} from "@zui/store/conversationShareSelectionStore.js";
+import { useZCodeStoreWithDefault } from "@zui/store/StoreProvider.js";
+import { useOptionalTabStore } from "@zui/store/TabStoreProvider.js";
+import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
+import type { GroupedDraftTaskState } from "@zui/store/zcodeSessionStoreTypes.js";
+import {
+  type AssistantPreviewPptxAutoOpenTarget,
+  advanceAssistantPreviewPptxAutoOpenGate,
+  createAssistantPreviewPptxAutoOpenGateState,
+  resolveLatestCompletedAssistantPreviewTurn,
+} from "@zui/v4/assistantPreviewPptxAutoOpen.js";
+import { ConversationBottomDockTransition } from "@zui/v4/ConversationBottomDockTransition.js";
+import {
+  type ComposerRestoreRequest,
+  ConversationComposer,
+  type ConversationComposerSendOptions,
+  type ConversationComposerSendResult,
+} from "@zui/v4/ConversationComposer.js";
+import { ConversationDraftEmptyState } from "@zui/v4/ConversationDraftEmptyState.js";
+import { ConversationDraftSuggestedPromptsContainer } from "@zui/v4/ConversationDraftSuggestedPromptsContainer.js";
+import {
+  ConversationHeader,
+  type PaneWorkspaceBadge,
+} from "@zui/v4/ConversationHeader.js";
+import { ConversationQueuePanel } from "@zui/v4/ConversationQueuePanel.js";
+import { ConversationQuotaBanner } from "@zui/v4/ConversationQuotaBanner.js";
+import { ConversationShareConfirmationDock } from "@zui/v4/ConversationShareConfirmationDock.js";
+import { ConversationShareImportNotice } from "@zui/v4/ConversationShareImportNotice.js";
+import {
+  ConversationShareSelectionDock,
+  type ConversationShareSelectionPreflightState,
+} from "@zui/v4/ConversationShareSelectionDock.js";
+import { ConversationShareSelectionPanel } from "@zui/v4/ConversationShareSelectionPanel.js";
+import { ConversationShareSelectionReopenTab } from "@zui/v4/ConversationShareSelectionReopenTab.js";
+import { ConversationShareSelectionScrim } from "@zui/v4/ConversationShareSelectionScrim.js";
+import { ConversationShareSuccessDock } from "@zui/v4/ConversationShareSuccessDock.js";
+import { ConversationStatusPanel } from "@zui/v4/ConversationStatusPanel.js";
+import { ConversationTimeline } from "@zui/v4/ConversationTimeline.js";
+import {
+  hasChatLoadingBlockingActiveWork,
+  hasChatLoadingBlockingInteraction,
+} from "@zui/v4/chatLoadingVisibility.js";
+import { recordV4CommandAck } from "@zui/v4/commandAckObservability.js";
+import { createCommandEnvelope } from "@zui/v4/commandFactory.js";
+import {
+  type ComposerSubmissionConfig,
+  createComposerSubmissionConfig,
+} from "@zui/v4/composer/composerSubmissionConfig.js";
+import type { ConversationDropTargetController } from "@zui/v4/composer/conversationDropTarget.js";
+import { shouldIgnoreEscapeForStopGeneration } from "@zui/v4/composer/escapeStop.js";
+import { resolveAppFollowupMode } from "@zui/v4/composer/followupModeSettings.js";
+import { formatModelChangeLabel } from "@zui/v4/composer/modelTriggerDisplay.js";
+import { projectSessionConfigToTaskConfigOptions } from "@zui/v4/composer/sessionConfigTaskCache.js";
+import {
+  buildDraftCreateConfigPayload,
+  useDraftConfigControl,
+} from "@zui/v4/composer/useDraftConfigControl.js";
+import { useDraftModelReadinessGate } from "@zui/v4/composer/useDraftModelReadinessGate.js";
+import { useDraftRuntimeRebuildGate } from "@zui/v4/composer/useDraftRuntimeRebuildGate.js";
+import { useDraftSessionPrewarm } from "@zui/v4/composer/useDraftSessionPrewarm.js";
+import type { ModelSelectionSource } from "@zui/v4/composer/V4ComposerToolbar.js";
+import { createConfigCommandBarrier } from "@zui/v4/configCommandBarrier.js";
+import {
+  resolveConversationStatusPanelVariant,
+  shouldUseConversationStatusPanelInlineLayout,
+} from "@zui/v4/conversationLayout.js";
+import {
+  hasOlderRows,
+  shouldAutoLoadIncompleteLeadingTurn,
+} from "@zui/v4/conversationProjectionStore.js";
+import type {
+  ConversationFileChangesRequestOptions,
+  ConversationRowRenderContext,
+} from "@zui/v4/conversationRowContext.js";
+import { ensureConversationShareAttempt } from "@zui/v4/conversationShareAttempt.js";
+import {
+  resolveConversationSelectionTooltipEnabled,
+  resolveConversationShareBackgroundScrollLocked,
+  resolveConversationShareSelectionPanelVisible,
+} from "@zui/v4/conversationShareModePolicy.js";
+import {
+  buildConversationSharePreflightCacheEntries,
+  conversationSharePreflightCacheKey,
+  conversationShareTurnFingerprint,
+  dedupeConversationShareIssues,
+  getMissingConversationSharePreflightTurnIds,
+} from "@zui/v4/conversationSharePreflightCache.js";
+import type { ConversationStatusPanelWorkflowRunTarget } from "@zui/v4/conversationStatusPanelModel.js";
+import {
+  buildConversationStatusPanelModel,
+  resolveSoleRunningWorkflowRunTarget,
+} from "@zui/v4/conversationStatusPanelModel.js";
+import { buildConversationTurnNavigatorItems } from "@zui/v4/conversationTurnNavigatorHelpers.js";
+import { buildConversationTurnRenderUnits } from "@zui/v4/conversationTurnRenderUnits.js";
+import type {
+  ChatSearchResultHighlightRequest,
+  ChatViewSummaryPanelVariant,
+  ConversationFindMatchState,
+} from "@zui/v4/legacyChatViewTypes.js";
+import { resolveMcpUnavailableNotice } from "@zui/v4/mcpUnavailableBannerNotice.js";
+import { PendingCommandRecoveryBanner } from "@zui/v4/PendingCommandRecoveryBanner.js";
+import { pendingCommandRegistry } from "@zui/v4/pendingCommandRegistry.js";
+import { projectPendingGuideQueue } from "@zui/v4/pendingGuideProjection.js";
+import {
+  hasPluginReferenceUserRows,
+  isSessionPluginCatalogReady,
+} from "@zui/v4/pluginReferenceIconProjection.js";
+import { shouldFocusTimelineAfterComposerSend } from "@zui/v4/promptScrollFocusPolicy.js";
+import { SessionPluginReferenceIconBoundary } from "@zui/v4/SessionPluginReferenceIconProvider.js";
+import { SessionSubscriptionErrorPanel } from "@zui/v4/SessionSubscriptionErrorPanel.js";
+import type { SessionLease } from "@zui/v4/sessionDataLayer.js";
+import {
+  parseSelectionSideSlashCommand,
+  parseV4VisibleSlashCommand,
+  type V4VisibleSlashCommand,
+  v4QueuedCommandText,
+} from "@zui/v4/slashCommands.js";
+import { shouldResyncForStaleAuthority } from "@zui/v4/staleAuthorityRecovery.js";
+import {
+  useScopedConversationTelemetryForegroundEnabled,
+  useScopedConversationTelemetrySupervisor,
+} from "@zui/v4/telemetry/ConversationTelemetryAttachment.js";
+import type { ConversationPromptTelemetrySeed } from "@zui/v4/telemetry/conversationTelemetrySupervisor.js";
+import { resolveSendAckSettlement } from "@zui/v4/telemetry/conversationTelemetrySupervisor.js";
+import { getLocalTtftObserver } from "@zui/v4/telemetry/localTtftObserver.js";
+import { useSessionOpenArmsTelemetry } from "@zui/v4/telemetry/useSessionOpenArmsTelemetry.js";
+import { useSessionSubscriptionErrorTelemetry } from "@zui/v4/telemetry/useSessionSubscriptionErrorTelemetry.js";
+import { useConversationProjection } from "@zui/v4/useConversationProjection.js";
+import { useConversationShareSelectionOutsideDismiss } from "@zui/v4/useConversationShareSelectionOutsideDismiss.js";
+import { usePendingCommandRecovery } from "@zui/v4/usePendingCommandRecovery.js";
+import { useV4SessionQuotaBanner } from "@zui/v4/useV4SessionQuotaBanner.js";
+import { useV4Conversation } from "@zui/v4/V4ConversationContext.js";
+import { V4InteractionDialogs } from "@zui/v4/V4InteractionDialogs.js";
+import { WorkspaceHookPendingBanner } from "@zui/v4/WorkspaceHookPendingBanner.js";
+import { buildWorkflowDraftByToolCallId } from "@zui/v4/workflowDraftJoin.js";
+import { resolveWorkflowResumeHandler } from "@zui/v4/workflowResumeGate.js";
+import {
+  buildWorkflowGraphByToolCallId,
+  buildWorkflowRunByRunId,
+  buildWorkflowRunByToolCallId,
+  buildWorkflowRunPendingQuestionsByRunId,
+} from "@zui/v4/workflowRunCardJoin.js";
+import {
+  countEndedWorkflowRuns,
+  WORKFLOW_RUN_DIRECTORY_LIMIT,
+  workflowRunDirectoryRefreshKey,
+} from "@zui/v4/workflowRunDirectoryModel.js";
+import { Hand } from "lucide-react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 export interface SessionPaneProps {
   paneId: string;
@@ -332,39 +338,48 @@ export interface SessionPaneProps {
    */
   draftComposerHeader?: ReactNode;
   /** 主草稿把 drop controller 提给 app shell 的标题栏；其他 pane 只在自身 surface 消费。 */
-  onDropTargetControllerChange?: (controller: ConversationDropTargetController | null) => void;
+  onDropTargetControllerChange?: (controller: ConversationDropTargetController | null,
+  ) => void;
   gitSummary?: GitRepositorySummary | null;
   gitDirtyFileCount?: number;
   gitWorktreeReviewSourceId?: GitChangeSourceId | null;
   gitWorktreeChangeSummary?: { added: number; removed: number } | null;
   activeTaskChangeSummary?: ZCodeTaskChangeSummary | null;
   summaryPanelVariantOverride?: ChatViewSummaryPanelVariant | null;
-  onSummaryPanelVariantOverrideChange?: (variant: ChatViewSummaryPanelVariant | null) => void;
+  onSummaryPanelVariantOverrideChange?: (variant: ChatViewSummaryPanelVariant | null,
+  ) => void;
   onRefreshGit?: () => void;
   onOpenGitReview?: (sourceId?: GitChangeSourceId) => void;
   onOpenBrowserUrl?: (url: string) => void;
   onOpenAutomationsMain?: OpenAutomationsMain;
   onOpenCodeViewer?: (source: CodeViewerSource) => void;
-  onAutoOpenAssistantPptx?: (request: AssistantPreviewCardsAutoOpenRequest) => void;
+  onAutoOpenAssistantPptx?: (request: AssistantPreviewCardsAutoOpenRequest,
+  ) => void;
   onOpenFileLink?: (target: MessageFileLinkTarget) => void;
   onOpenBackgroundBash?: (request: OpenBackgroundBashSideTabRequest) => void;
   onOpenSubagentSession?: (request: OpenScopedSubagentSideTabRequest) => void;
-  onOpenSubagentDirectory?: (request: OpenScopedSubagentDirectorySideTabRequest) => void;
+  onOpenSubagentDirectory?: (request: OpenScopedSubagentDirectorySideTabRequest,
+  ) => void;
   onSyncSubagentSessionTabs?: (request: SyncSubagentSessionTabsRequest) => void;
   onOpenSelectionSideChat?: (request: OpenSelectionSideChatRequest) => void;
   onOpenPlanDetail?: (request: OpenScopedPlanDetailSideTabRequest) => void;
   onOpenWorkflowRun?: (request: OpenScopedWorkflowRunSideTabRequest) => void;
   /** 通知行的产物 chip → 全尺寸查看 tab。 */
-  onOpenWorkflowArtifact?: (request: OpenScopedWorkflowArtifactSideTabRequest) => void;
-  onOpenWorkflowRunDirectory?: (request: OpenScopedWorkflowRunDirectorySideTabRequest) => void;
+  onOpenWorkflowArtifact?: (request: OpenScopedWorkflowArtifactSideTabRequest,
+  ) => void;
+  onOpenWorkflowRunDirectory?: (request: OpenScopedWorkflowRunDirectorySideTabRequest,
+  ) => void;
   /** 工具卡上的子代理药丸 → transcript tab；与详情页子代理行同一个宿主处理器。 */
-  onOpenWorkflowActorSession?: (request: OpenScopedWorkflowActorSessionSideTabRequest) => void;
+  onOpenWorkflowActorSession?: (request: OpenScopedWorkflowActorSessionSideTabRequest,
+  ) => void;
   /** 工具卡上的脚本药丸 → 脚本 transcript tab；与详情页脚本行同一个宿主处理器。 */
-  onOpenWorkflowWorkspace?: (request: OpenScopedWorkflowWorkspaceSideTabRequest) => void;
+  onOpenWorkflowWorkspace?: (request: OpenScopedWorkflowWorkspaceSideTabRequest,
+  ) => void;
   conversationFindQuery?: string;
   conversationFindActiveIndex?: number;
   conversationFindNavigationRequestId?: number;
-  onConversationFindMatchStateChange?: (state: ConversationFindMatchState) => void;
+  onConversationFindMatchStateChange?: (state: ConversationFindMatchState,
+  ) => void;
   searchResultHighlightRequest?: ChatSearchResultHighlightRequest | null;
   onSearchResultHighlightDone?: (requestId: number) => void;
 }
@@ -454,7 +469,8 @@ function resolveQueuedComposerRestore(
   snapshot: ConversationSnapshot,
   queueItemId: string,
 ): QueuedComposerRestoreTarget | null {
-  const item = snapshot.queue.items.find((candidate) => candidate.queueItemId === queueItemId);
+  const item = snapshot.queue.items.find((candidate) => candidate.queueItemId === queueItemId,
+  );
   if (!item || item.kind === "compact") return null;
   const config = {
     ...(item.mode ? { mode: item.mode } : {}),
@@ -472,7 +488,8 @@ function resolveQueuedComposerRestore(
   };
 }
 
-function shouldRestoreQueuedComposerFromAck(status: CommandAck["status"]): boolean {
+function shouldRestoreQueuedComposerFromAck(status: CommandAck["status"],
+): boolean {
   return status === "accepted" || status === "duplicate";
 }
 
@@ -519,7 +536,7 @@ export function SessionPane({
   onRefreshGit,
   onOpenGitReview,
   onOpenBrowserUrl,
-  onOpenAutomationsMain,
+  onOpenAutomationsMain: requestedOnOpenAutomationsMain,
   onOpenCodeViewer,
   onAutoOpenAssistantPptx,
   onOpenFileLink,
@@ -545,6 +562,7 @@ export function SessionPane({
     layer,
     sendCommand,
     attachmentPut,
+    attachmentBudget,
     attachmentRead,
     attachmentReadRange,
     onRuntimeRestart,
@@ -553,11 +571,16 @@ export function SessionPane({
     fileRewindPreview,
   } = useV4Conversation();
   const platform = useOptionalPlatform();
-  const { conversationShareService, modelSelectionService, zcodeSessionService, zcodeTaskService } =
+  const onOpenAutomationsMain = platform?.supportsAutomations === false
+    ? undefined
+    : requestedOnOpenAutomationsMain;
+  const { conversationShareService, modelSelectionService, zcodeSessionService, zcodeTaskService, zcodeAgentService,
+  } =
     useServices();
   const { intl, locale } = useZCodeIntl();
   const slashCommands = useSlashCommands(workspacePath, workspaceIdentity);
   const baseWorkspaceServices = useBaseWorkspaceServices();
+  const configWorkspaceServices = useWorkspaceServicesResolution(workspacePath, remoteSessionId, workspaceIdentity);
   const workspaceHomePath = useWorkspaceHomePath({
     workspacePath,
     workspaceIdentity,
@@ -589,7 +612,8 @@ export function SessionPane({
       conversationTelemetryForegroundOwnerRef.current,
       sessionId,
     );
-  }, [conversationTelemetry, conversationTelemetryForegroundEnabled, sessionId, telemetryVisible]);
+  }, [conversationTelemetry, conversationTelemetryForegroundEnabled, sessionId, telemetryVisible,
+  ]);
   const [lease, setLease] = useState<SessionLease | null>(null);
   const state = useConversationProjection(lease);
   const snapshot = state.snapshot;
@@ -618,24 +642,30 @@ export function SessionPane({
     stage: shareDraft?.stage ?? "selection",
     view: shareDraft?.view,
   });
-  const finishShare = useConversationShareSelectionStore((value) => value.finishSelection);
-  const updateShareDockState = useConversationShareSelectionStore((value) => value.updateDockState);
+  const finishShare = useConversationShareSelectionStore((value) => value.finishSelection,
+  );
+  const updateShareDockState = useConversationShareSelectionStore((value) => value.updateDockState,
+  );
   const goToShareConfiguration = useConversationShareSelectionStore(
     (value) => value.goToConfiguration,
   );
-  const goToShareSelection = useConversationShareSelectionStore((value) => value.goToSelection);
+  const goToShareSelection = useConversationShareSelectionStore((value) => value.goToSelection,
+  );
   const syncAvailableTurns = useConversationShareSelectionStore(
     (value) => value.syncAvailableTurns,
   );
-  const toggleShareRow = useConversationShareSelectionStore((value) => value.toggleRow);
+  const toggleShareRow = useConversationShareSelectionStore((value) => value.toggleRow,
+  );
   const deselectShareProductTurn = useConversationShareSelectionStore(
     (value) => value.deselectProductTurn,
   );
   const setAllShareRowsSelected = useConversationShareSelectionStore(
     (value) => value.setAllRowsSelected,
   );
-  const setShareAccessMode = useConversationShareSelectionStore((value) => value.setAccessMode);
-  const showShareTimeline = useConversationShareSelectionStore((value) => value.showTimeline);
+  const setShareAccessMode = useConversationShareSelectionStore((value) => value.setAccessMode,
+  );
+  const showShareTimeline = useConversationShareSelectionStore((value) => value.showTimeline,
+  );
   const showShareSelectionPanel = useConversationShareSelectionStore(
     (value) => value.showSelectionPanel,
   );
@@ -675,7 +705,8 @@ export function SessionPane({
   );
   useEffect(() => {
     if (!sessionId || !shareActive) return;
-    const rowsById = new Map((snapshot?.rows.window ?? []).map((row) => [row.rowId, row]));
+    const rowsById = new Map((snapshot?.rows.window ?? []).map((row) => [row.rowId, row]),
+    );
     syncAvailableTurns(
       sessionId,
       eligibleShareItems.flatMap((item) => {
@@ -683,7 +714,8 @@ export function SessionPane({
         return productTurnId ? [{ rowId: item.rowId, productTurnId }] : [];
       }),
     );
-  }, [eligibleShareItems, sessionId, shareActive, snapshot?.rows.window, syncAvailableTurns]);
+  }, [eligibleShareItems, sessionId, shareActive, snapshot?.rows.window, syncAvailableTurns,
+  ]);
   const selectedShareRowIds = useMemo(
     () =>
       new Set(
@@ -751,7 +783,8 @@ export function SessionPane({
     ],
   );
   const eligibleShareProductTurnIds = useMemo(() => {
-    const rowsById = new Map((snapshot?.rows.window ?? []).map((row) => [row.rowId, row]));
+    const rowsById = new Map((snapshot?.rows.window ?? []).map((row) => [row.rowId, row]),
+    );
     const seen = new Set<string>();
     return eligibleShareItems.flatMap((item) => {
       const productTurnId = rowsById.get(item.rowId)?.productTurnId;
@@ -760,7 +793,8 @@ export function SessionPane({
       return [productTurnId];
     });
   }, [eligibleShareItems, snapshot?.rows.window]);
-  const sharePreflightCacheRef = useRef(new Map<string, ConversationShareTurnPreflightResult>());
+  const sharePreflightCacheRef = useRef(new Map<string, ConversationShareTurnPreflightResult>(),
+  );
   // 传输类失败会被按 turn 缓存成阻断项，仅靠选择变化无法再次触发 RPC；
   // 重试 token 变化时清缓存并重新发起，避免一次网络抖动把用户卡死在选择阶段。
   const [sharePreflightRetryToken, setSharePreflightRetryToken] = useState(0);
@@ -773,7 +807,8 @@ export function SessionPane({
   );
   const retrySharePreflight = useCallback(() => {
     for (const productTurnId of selectedShareProductTurnIds) {
-      sharePreflightCacheRef.current.delete(sharePreflightCacheKey(productTurnId));
+      sharePreflightCacheRef.current.delete(sharePreflightCacheKey(productTurnId),
+      );
     }
     setSharePreflightRetryToken((token) => token + 1);
     setSharePreflightVersion((version) => version + 1);
@@ -787,7 +822,8 @@ export function SessionPane({
       return { status: "idle" };
     }
     const entries = selectedShareProductTurnIds.map((productTurnId) => {
-      const entry = sharePreflightCacheRef.current.get(sharePreflightCacheKey(productTurnId));
+      const entry = sharePreflightCacheRef.current.get(sharePreflightCacheKey(productTurnId),
+        );
       return entry?.turnFingerprint === selectedShareTurnFingerprints.get(productTurnId)
         ? entry
         : undefined;
@@ -895,7 +931,8 @@ export function SessionPane({
                   revision: result.revision,
                   logEpoch: result.logEpoch,
                   capabilitiesFingerprint: result.capabilitiesFingerprint,
-                }),
+                },
+                ),
               ]),
             );
             const entries = buildConversationSharePreflightCacheEntries(
@@ -941,7 +978,8 @@ export function SessionPane({
                 blockingIssues: issues,
                 skippableWarnings: [],
                 deferredIssues: [],
-              });
+              },
+              );
             }
             setSharePreflightVersion((version) => version + 1);
           },
@@ -1028,7 +1066,8 @@ export function SessionPane({
   );
   const [dismissedErrorKeys, setDismissedErrorKeys] = useState<readonly string[]>([]);
   const [sendSubmissionError, setSendSubmissionError] = useState<ZCodeUiError | null>(null);
-  const [paneLocalSummaryPanelVariantOverride, setPaneLocalSummaryPanelVariantOverride] =
+  const [paneLocalSummaryPanelVariantOverride, setPaneLocalSummaryPanelVariantOverride,
+  ] =
     useState<ChatViewSummaryPanelVariant | null>(null);
   const [terminalSectionOpen, setTerminalSectionOpen] = useState(false);
   const [agentSectionOpen, setAgentSectionOpen] = useState(false);
@@ -1067,8 +1106,10 @@ export function SessionPane({
   // 稳定回调读取的最新值经 ref 透传，避免回调依赖高频变化的 snapshot/文本。
   const snapshotRef = useRef<ConversationSnapshot | null>(snapshot);
   const autoOpenedAssistantPptxKeysRef = useRef<Set<string>>(new Set());
-  const assistantPreviewPptxGateRef = useRef(createAssistantPreviewPptxAutoOpenGateState());
-  const [assistantPreviewPptxAutoOpenTarget, setAssistantPreviewPptxAutoOpenTarget] =
+  const assistantPreviewPptxGateRef = useRef(createAssistantPreviewPptxAutoOpenGateState(),
+  );
+  const [assistantPreviewPptxAutoOpenTarget, setAssistantPreviewPptxAutoOpenTarget,
+  ] =
     useState<AssistantPreviewPptxAutoOpenTarget | null>(null);
   const autoLoadIncompleteTurnCursorRef = useRef<string | null>(null);
   snapshotRef.current = snapshot;
@@ -1097,7 +1138,8 @@ export function SessionPane({
     ((target: { unitIndex: number; rowId: number }) => void) | null
   >(null);
   const conversationLayoutContainerRef = useRef<HTMLDivElement>(null);
-  const hasExternalSummaryPanelVariantControl = Boolean(onSummaryPanelVariantOverrideChange);
+  const hasExternalSummaryPanelVariantControl = Boolean(onSummaryPanelVariantOverrideChange,
+  );
   const effectiveSummaryPanelVariantOverride = hasExternalSummaryPanelVariantControl
     ? (summaryPanelVariantOverride ?? null)
     : paneLocalSummaryPanelVariantOverride;
@@ -1134,7 +1176,8 @@ export function SessionPane({
       .setTaskConfigOptions(
         workspacePath,
         sessionId,
-        projectSessionConfigToTaskConfigOptions(workspaceConfigOptions, snapshot.config),
+        projectSessionConfigToTaskConfigOptions(workspaceConfigOptions, snapshot.config,
+        ),
         workspaceIdentity,
       );
   }, [
@@ -1156,8 +1199,10 @@ export function SessionPane({
       scopeKey,
       logEpoch: snapshot?.logEpoch,
       phase: snapshot?.control.phase,
-      completedTurn: resolveLatestCompletedAssistantPreviewTurn(snapshot?.rows.window ?? []),
-    });
+      completedTurn: resolveLatestCompletedAssistantPreviewTurn(snapshot?.rows.window ?? [],
+        ),
+      },
+    );
     assistantPreviewPptxGateRef.current = result.state;
     if (result.target !== undefined) {
       setAssistantPreviewPptxAutoOpenTarget(result.target);
@@ -1190,7 +1235,8 @@ export function SessionPane({
     (requestId: number) => {
       useZCodeSessionStore
         .getState()
-        .clearComposerTextInsertRequest(workspacePath, requestId, workspaceIdentity);
+        .clearComposerTextInsertRequest(workspacePath, requestId, workspaceIdentity,
+        );
     },
     [workspaceIdentity, workspacePath],
   );
@@ -1282,10 +1328,12 @@ export function SessionPane({
     // Renderer 也会永久停在旧模型。未发送且无显式选择的草稿不是执行事实；View 更新时
     // 回收并按最新选择事实重建，已显式选择和正式会话仍保持冻结。
     useZCodeSessionStore.getState().invalidateDraftRuntime(workspacePath, workspaceIdentity);
-  }, [draftConfigRef, modelSelectionView?.revision, sessionId, workspaceIdentity, workspacePath]);
+  }, [draftConfigRef, modelSelectionView?.revision, sessionId, workspaceIdentity, workspacePath,
+  ]);
   const recommendStartPlan = useStartPlanRecommendation(modelSelectionView);
   const createSubmissionFromComposer = useCallback(
-    () => createComposerSubmissionConfig(draftConfigRef.current, modelSelectionView),
+    () => createComposerSubmissionConfig(draftConfigRef.current, modelSelectionView,
+      ),
     [draftConfigRef, modelSelectionView],
   );
   const composerSubmissionReady = useMemo(
@@ -1294,10 +1342,12 @@ export function SessionPane({
   );
   const codingPlanUpgradeDialog = useOptionalCodingPlanUpgradeDialog();
   const openSettingsTab = useOptionalTabStore((state) => state.openSettingsTab);
-  const promoteGroupedDraftTask = useZCodeSessionStore((state) => state.promoteGroupedDraftTask);
+  const promoteGroupedDraftTask = useZCodeSessionStore((state) => state.promoteGroupedDraftTask,
+  );
   // 首发 commandId 在 accepted 时已存在，也是 completion 的 message_id；不必等回复完成。
   const reportDraftCreated = useCallback(
-    (createdSessionId: string, source: SessionCreateSource, messageId: string) => {
+    (createdSessionId: string, source: SessionCreateSource, messageId: string,
+    ) => {
       void reportSessionCreate(platform, {
         sessionId: createdSessionId,
         messageId,
@@ -1405,7 +1455,8 @@ export function SessionPane({
     ): Promise<CommandAck> => {
       const submission = submissionConfigFromCommand(type, payload);
       const acceptRecent = submission
-        ? captureComposerRecentSubmission(workspacePath, submission, workspaceIdentity)
+        ? captureComposerRecentSubmission(workspacePath, submission, workspaceIdentity,
+          )
         : undefined;
       const acceptSelection =
         submission && (sessionId === null || targetSessionId === sessionId)
@@ -1415,7 +1466,7 @@ export function SessionPane({
         type,
         sessionId: targetSessionId,
         payload: payload as never,
-        ...(baseRevision !== undefined ? { baseRevision } : {}),
+        ...(baseRevision === undefined ? {} : { baseRevision }),
         ...(baseLogEpoch ? { baseLogEpoch } : {}),
       });
       onEnvelopeCreated?.(envelope);
@@ -1462,7 +1513,8 @@ export function SessionPane({
         if (telemetrySeed?.localTtft && ack.reasonCode === "guard.heldQueueConfirmationStale")
           getLocalTtftObserver()?.confirmationRetry(telemetrySeed.localTtft);
         else if (telemetrySeed?.localTtft)
-          getLocalTtftObserver()?.ack(telemetrySeed.localTtft, ack.status, ack.ttftExcluded);
+          getLocalTtftObserver()?.ack(telemetrySeed.localTtft, ack.status, ack.ttftExcluded,
+          );
       } catch (error) {
         if (telemetrySeed?.localTtft)
           getLocalTtftObserver()?.exclude(telemetrySeed.localTtft, "failed");
@@ -1590,7 +1642,8 @@ export function SessionPane({
   );
 
   const handleFetchFileChanges = useCallback(
-    (target: ConversationRowTarget, options: ConversationFileChangesRequestOptions) => {
+    (target: ConversationRowTarget, options: ConversationFileChangesRequestOptions,
+    ) => {
       const current = snapshotRef.current;
       if (!sessionId || !current) {
         return Promise.resolve({
@@ -1691,7 +1744,8 @@ export function SessionPane({
     (target: ConversationRowTarget) => {
       const current = snapshotRef.current;
       if (!sessionId || !current) {
-        throw new Error("Cannot apply file rewind without an active session revision");
+        throw new Error("Cannot apply file rewind without an active session revision",
+        );
       }
       return dispatchCommand(
         "applyFileRewind",
@@ -1714,10 +1768,12 @@ export function SessionPane({
         ...(remoteSessionId ? { remoteSessionId } : {}),
       });
     },
-    [onOpenSubagentSession, remoteSessionId, rootSessionId, workspaceIdentity, workspacePath],
+    [onOpenSubagentSession, remoteSessionId, rootSessionId, workspaceIdentity, workspacePath,
+    ],
   );
   const handleOpenSubagentDirectory = useCallback(
-    (request: import("@zui/lib/workspaceSidePane.js").OpenSubagentDirectorySideTabRequest) => {
+    (request: import("@zui/lib/workspaceSidePane.js").OpenSubagentDirectorySideTabRequest,
+    ) => {
       onOpenSubagentDirectory?.({
         ...request,
         rootSessionId: request.rootSessionId ?? rootSessionId ?? request.parentSessionId,
@@ -1726,7 +1782,8 @@ export function SessionPane({
         ...(remoteSessionId ? { remoteSessionId } : {}),
       });
     },
-    [onOpenSubagentDirectory, remoteSessionId, rootSessionId, workspaceIdentity, workspacePath],
+    [onOpenSubagentDirectory, remoteSessionId, rootSessionId, workspaceIdentity, workspacePath,
+    ],
   );
   const handleOpenPlanDetail = useCallback(
     (request: OpenPlanDetailSideTabRequest) => {
@@ -1762,7 +1819,8 @@ export function SessionPane({
         ...(remoteSessionId ? { remoteSessionId } : {}),
       });
     },
-    [onOpenWorkflowActorSession, remoteSessionId, workspaceIdentity, workspacePath],
+    [onOpenWorkflowActorSession, remoteSessionId, workspaceIdentity, workspacePath,
+    ],
   );
   // 脚本药丸同构：卡片交出 run + 发起行 + 阶段，scope 在这里补。
   const handleOpenWorkflowWorkspace = useCallback(
@@ -1774,7 +1832,8 @@ export function SessionPane({
         ...(remoteSessionId ? { remoteSessionId } : {}),
       });
     },
-    [onOpenWorkflowWorkspace, remoteSessionId, workspaceIdentity, workspacePath],
+    [onOpenWorkflowWorkspace, remoteSessionId, workspaceIdentity, workspacePath,
+    ],
   );
   // 产物 chip 与 run 详情同构：卡片/通知行只发意图，scope 由这里补齐。
   const handleOpenWorkflowArtifact = useCallback(
@@ -1862,7 +1921,8 @@ export function SessionPane({
         ...(remoteSessionId ? { remoteSessionId } : {}),
       });
     },
-    [onOpenWorkflowRunDirectory, remoteSessionId, workspaceIdentity, workspacePath],
+    [onOpenWorkflowRunDirectory, remoteSessionId, workspaceIdentity, workspacePath,
+    ],
   );
   const handleAddSelectionToCurrentTask = useCallback(
     (reference: ConversationSelectionReference) => {
@@ -1895,7 +1955,8 @@ export function SessionPane({
             // 来移除失效项已不成立。这里显式携带 replacesChildSessionId，让宿主原子删旧开新。
             replacesChildSessionId = targetChildSessionId;
             clearSelectionSideChat(targetChildSessionId);
-            clearConversationSelectionReferenceScope(targetChildSessionId, workspaceKey);
+            clearConversationSelectionReferenceScope(targetChildSessionId, workspaceKey,
+            );
             targetChildSessionId = null;
           }
         }
@@ -1919,15 +1980,18 @@ export function SessionPane({
         }
 
         const childSessionId = await createSelectionSideChat(selectionSideChatKey, async () => {
-          const ack = await dispatchCommand("createSelectionSideSession", {}, sessionId);
+          const ack = await dispatchCommand("createSelectionSideSession", {}, sessionId,
+            );
           if (
             (ack.status !== "accepted" && ack.status !== "duplicate") ||
             ack.result?.type !== "createSelectionSideSession"
           ) {
-            throw new Error(ack.reasonCode ?? "createSelectionSideSession 被拒绝");
+            throw new Error(ack.reasonCode ?? "createSelectionSideSession 被拒绝",
+              );
           }
           return ack.result.sessionId;
-        });
+        },
+        );
         onOpenSelectionSideChat({
           workspacePath,
           ...(workspaceIdentity ? { workspaceIdentity } : {}),
@@ -1966,7 +2030,8 @@ export function SessionPane({
   );
 
   const handleOpenSelectionSideConversationWithPrompt = useCallback(
-    async (text: string, telemetrySeed?: ConversationPromptTelemetrySeed): Promise<boolean> => {
+    async (text: string, telemetrySeed?: ConversationPromptTelemetrySeed,
+    ): Promise<boolean> => {
       if (!sessionId || !selectionSideChatKey || !onOpenSelectionSideChat) {
         throw new Error("selection side chat is unavailable");
       }
@@ -1983,7 +2048,9 @@ export function SessionPane({
       const childSessionId = await createSelectionSideChat(pendingKey, async () => {
         const ack = await dispatchCommand(
           "createSelectionSideSession",
-          { firstInput: { text, ...(modelSelection ? { modelSelection } : {}) } },
+          { firstInput: { text, ...(modelSelection ? { modelSelection } : {}),
+              },
+            },
           sessionId,
           undefined,
           undefined,
@@ -1993,10 +2060,12 @@ export function SessionPane({
           (ack.status !== "accepted" && ack.status !== "duplicate") ||
           ack.result?.type !== "createSelectionSideSession"
         ) {
-          throw new Error(ack.reasonCode ?? "createSelectionSideSession 被拒绝");
+          throw new Error(ack.reasonCode ?? "createSelectionSideSession 被拒绝",
+            );
         }
         return ack.result.sessionId;
-      });
+      },
+      );
       onOpenSelectionSideChat({
         workspacePath,
         ...(workspaceIdentity ? { workspaceIdentity } : {}),
@@ -2086,11 +2155,15 @@ export function SessionPane({
     };
     // 关键词固定同时包含中英文别名，任一 locale 下输入 side / btw / 辅助 都能搜到。
     // `/btw` 是 `/side` 的等价别名，适配不同用户输入习惯，面板中各自独立展示。
-    const sharedKeywords = ["side", "btw", "side chat", "auxiliary", "辅助对话", "辅助", "侧边"];
-    const description = intl.formatMessage({ id: "chat.slash.app.side.description" });
+    const sharedKeywords = ["side", "btw", "side chat", "auxiliary", "辅助对话", "辅助", "侧边",
+    ];
+    const description = intl.formatMessage({ id: "chat.slash.app.side.description",
+    });
     return [
-      { value: "side", description, keywords: sharedKeywords, run: openNewSelectionSideChat },
-      { value: "btw", description, keywords: sharedKeywords, run: openNewSelectionSideChat },
+      { value: "side", description, keywords: sharedKeywords, run: openNewSelectionSideChat,
+      },
+      { value: "btw", description, keywords: sharedKeywords, run: openNewSelectionSideChat,
+      },
     ].filter((command) => !cliSlashCommandNames.has(command.value));
   }, [
     cliSlashCommandNames,
@@ -2121,7 +2194,8 @@ export function SessionPane({
             `[v4-pane] cancelBackgroundWork 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`,
           );
         }
-      });
+      },
+      );
     },
     [dispatchCommand, sessionId],
   );
@@ -2141,7 +2215,8 @@ export function SessionPane({
         sessionId,
       ).then((ack) => {
         if (ack.status !== "accepted" && ack.status !== "noop") {
-          logger.warn(`[v4-pane] resumeWorkflowRun 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
+          logger.warn(`[v4-pane] resumeWorkflowRun 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`,
+          );
         }
       });
     },
@@ -2151,11 +2226,13 @@ export function SessionPane({
   // amendWorkflowRunSettings：run 卡的「配置」。回 ACK 给弹层——拒绝理由画在弹层里，不是控制台的一行 warn。门与 Resume 相同。
   const handleAmendWorkflowRunSettings = useCallback(
     (workId: string, change: WorkflowRunSettingsChange): Promise<CommandAck> =>
-      dispatchCommand("amendWorkflowRunSettings", { workId, ...change }, sessionId),
+      dispatchCommand("amendWorkflowRunSettings", { workId, ...change }, sessionId,
+      ),
     [dispatchCommand, sessionId],
   );
   const workflowSessionModel = useMemo(
-    () => workflowSessionModelOf(snapshot?.sessionId === sessionId ? snapshot?.config : undefined),
+    () => workflowSessionModelOf(snapshot?.sessionId === sessionId ? snapshot?.config : undefined,
+      ),
     [sessionId, snapshot?.config, snapshot?.sessionId],
   );
 
@@ -2304,11 +2381,11 @@ export function SessionPane({
     workspacePath,
   });
   const ensureDraftPrewarmConfigBeforeSendRef = useRef<(targetSessionId: string) => Promise<void>>(
-    async () => undefined,
-  );
+    async () => undefined);
   const effectiveSessionId = sessionId ?? prewarmSessionId;
   const showModelChangeNotice = useCallback(
-    (sourceModel: ModelSelectionSource | null, targetModel: ModelSelectionSource) => {
+    (sourceModel: ModelSelectionSource | null, targetModel: ModelSelectionSource,
+    ) => {
       // Bug 原因：草稿尚未形成实际会话，模型选择本身已经在 composer 中可见；
       // 若此时重复弹出切换结果，会把初始化或 prewarm fallback 误报成一次会话内切换。
       if (sessionId === null) {
@@ -2328,16 +2405,21 @@ export function SessionPane({
         return;
       }
 
-      const fromProvider = resolveProviderLabel(fromProviderId, modelSelectionView);
-      const toProvider = resolveProviderLabel(targetModel.provider, modelSelectionView);
-      const fromModel = formatModelChangeLabel(fromProviderId, fromProvider, fromModelId, intl);
+      const fromProvider = resolveProviderLabel(fromProviderId, modelSelectionView,
+      );
+      const toProvider = resolveProviderLabel(targetModel.provider, modelSelectionView,
+      );
+      const fromModel = formatModelChangeLabel(fromProviderId, fromProvider, fromModelId, intl,
+      );
       const toModel = formatModelChangeLabel(
         targetModel.provider,
         toProvider,
         targetModel.model,
         intl,
       );
-      toast(intl.formatMessage({ id: "chat.modelChangeNotice.changed" }, { fromModel, toModel }));
+      toast(intl.formatMessage({ id: "chat.modelChangeNotice.changed" }, { fromModel, toModel },
+        ),
+      );
     },
     [intl, modelSelectionView, sessionId],
   );
@@ -2389,8 +2471,10 @@ export function SessionPane({
     // Bug 原因：acquire 会立即启动 connect，activation 可能在下一轮 effect 前释放
     // 一次性 online 帧；必须在 acquire 返回后同步监听，不能靠 snapshot 重放补偿。
     const offOnlineModelTransition = nextLease.store.onOnlineModelTransition((transition) => {
-      onlineModelTransitionHandlerRef.current(effectiveSessionId, nextLease.store, transition);
-    });
+      onlineModelTransitionHandlerRef.current(effectiveSessionId, nextLease.store, transition,
+        );
+      },
+    );
     setLease(nextLease);
     return () => {
       offOnlineModelTransition();
@@ -2424,7 +2508,8 @@ export function SessionPane({
     }
     // 副屏是临时 UI 绑定；持久 child 丢失后清 tab，下一次框选按父会话重建。
     onSelectionSideChatUnavailable?.();
-  }, [onSelectionSideChatUnavailable, selectionSideChat, state.lastError, state.status]);
+  }, [onSelectionSideChatUnavailable, selectionSideChat, state.lastError, state.status,
+  ]);
 
   const settleCurrentQueueInputs = useCallback((targetSessionId: string) => {
     const current = snapshotRef.current;
@@ -2439,7 +2524,8 @@ export function SessionPane({
       command: V4VisibleSlashCommand,
       targetSessionId: string,
       baseRevision: number | undefined,
-      heldQueueDisposition: "clearQueueAndSend" | "keepQueueAndSend" | undefined,
+      heldQueueDisposition:
+        | "clearQueueAndSend" | "keepQueueAndSend" | undefined,
       expectedHeldQueueItemIds?: readonly string[],
       submission?: ComposerSubmissionConfig,
       onAccepted?: (messageId: string) => void,
@@ -2630,7 +2716,8 @@ export function SessionPane({
         // 屏障只保证已经入队的命令完成；若点击配置时预热 session/snapshot 尚未
         // 就绪，命令可能当时没有目标。首发绑定确定的预热 session 前再同步一次
         // 草稿权威配置，禁止 UI 新值与 runtime 旧值分叉。
-        await ensureDraftPrewarmConfigBeforeSendRef.current(prewarmTargetBeforeSend);
+        await ensureDraftPrewarmConfigBeforeSendRef.current(prewarmTargetBeforeSend,
+        );
       }
       // slash 命令优先：已有 session 直接消费；draft 首发 /goal 先建空会话再发命令。
       // 携带附件或网页元素上下文时不消费为 v4 原生命令（compact/goal 等无附件语义），随 sendText 直发。
@@ -2681,7 +2768,8 @@ export function SessionPane({
               heldQueueDisposition,
               expectedHeldQueueItemIds,
               submission,
-              (messageId) => reportDraftCreated(prewarm.sessionId, createSourceAtSend, messageId),
+              (messageId) => reportDraftCreated(prewarm.sessionId, createSourceAtSend, messageId,
+                ),
             );
             if (consumed === "confirmationRequired") return consumed;
             if (consumed) {
@@ -2705,7 +2793,8 @@ export function SessionPane({
           }
         }
         const draftConfigPayload = buildDraftCreateConfigPayload(
-          { ...draftConfigRef.current, modelSelection: submission.modelSelection },
+          { ...draftConfigRef.current, modelSelection: submission.modelSelection,
+          },
           appFollowupMode,
         );
         const createAck = await dispatchSubmissionCommand(
@@ -2721,7 +2810,8 @@ export function SessionPane({
           throw new Error("createSession 缺少 sessionId");
         }
         const newSessionId = createResult.sessionId;
-        handleDraftSessionCreated(newSessionId, groupedDraftTaskAtSend, createSourceAtSend);
+        handleDraftSessionCreated(newSessionId, groupedDraftTaskAtSend, createSourceAtSend,
+        );
         await dispatchSlashCommand(
           draftSlashCommand,
           newSessionId,
@@ -2786,7 +2876,8 @@ export function SessionPane({
         // fallback 有 prewarm 投影时必须以 Agent 当前配置为 base；只有从未拿到投影
         // 才使用冻结的初始化元组。否则 provider fallback 后会把 localStorage 旧模型重新写回。
         const draftConfigPayload = buildDraftCreateConfigPayload(
-          { ...draftConfigRef.current, modelSelection: submission.modelSelection },
+          { ...draftConfigRef.current, modelSelection: submission.modelSelection,
+          },
           appFollowupMode,
         );
         if (readyAttachments.length === 0 && !sharedContextRefs?.length) {
@@ -2932,7 +3023,8 @@ export function SessionPane({
       // 依赖“配置命令先到、sendText 后到”的跨命令时序。
       return configCommandBarrier.enqueue(async () => {
         try {
-          return await dispatchSendTextAfterConfig(text, submissionOptions, createSource);
+          return await dispatchSendTextAfterConfig(text, submissionOptions, createSource,
+          );
         } catch (error) {
           if (sessionId === null && isProviderNotReadyError(error)) {
             // UI 预检查与 Host getClient 之间 registry 仍可能失效。竞态命中时收敛成
@@ -2983,7 +3075,8 @@ export function SessionPane({
         return "sent";
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
-        const runtimeModelUnavailable = detail.includes("provider.notInRegistry");
+        const runtimeModelUnavailable = detail.includes("provider.notInRegistry",
+        );
         // 首发前 switchModelConfig 失败只会抛回 Composer；Composer 为了保留草稿
         // 仅写日志，不会生成 snapshot.control.lastError，用户看到的结果就是“点击没反应”。
         // 这里把 admission 前失败收口为 pane-local 错误横幅，不改变 desktop continuous 或
@@ -3014,7 +3107,9 @@ export function SessionPane({
   }, []);
   const handleComposerRestoreApplied = useCallback(
     (requestId: number) => {
-      setComposerRestoreRequest((current) => (current?.requestId === requestId ? null : current));
+      setComposerRestoreRequest((current) =>
+        current?.requestId === requestId ? null : current,
+      );
       clearQueueEditOperation();
     },
     [clearQueueEditOperation],
@@ -3033,7 +3128,8 @@ export function SessionPane({
         current.logEpoch,
       ).then((ack) => {
         if (ack.status !== "accepted" && ack.status !== "duplicate") {
-          logger.warn(`[v4-pane] fork 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
+          logger.warn(`[v4-pane] fork 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`,
+          );
           return;
         }
         if (ack.result?.type === "forkAssistant") {
@@ -3073,7 +3169,8 @@ export function SessionPane({
         current.logEpoch,
       );
       if (ack.status !== "accepted" && ack.status !== "duplicate") {
-        logger.warn(`[v4-pane] edit 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
+        logger.warn(`[v4-pane] edit 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`,
+        );
         return false;
       }
       // fork ACK 只做旧协议解码兼容；新 edit 永不导航 child。blocked 由行内冲突弹窗处理。
@@ -3105,7 +3202,8 @@ export function SessionPane({
       void dispatchRetryTurn(target)
         .then((ack) => {
           if (ack.status !== "accepted") {
-            logger.warn(`[v4-pane] retry 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
+            logger.warn(`[v4-pane] retry 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`,
+            );
           }
         })
         .catch((error: unknown) => {
@@ -3133,7 +3231,8 @@ export function SessionPane({
       );
       const accepted = ack.status === "accepted" || ack.status === "duplicate";
       if (!accepted) {
-        logger.warn(`[v4-pane] assistant 反馈被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
+        logger.warn(`[v4-pane] assistant 反馈被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`,
+        );
       }
       return accepted;
     },
@@ -3147,15 +3246,16 @@ export function SessionPane({
       const sourceCommandId = current.queue.items.find(
         (item) => item.queueItemId === queueItemId,
       )?.sourceCommandId;
-      void dispatchCommand("deleteQueueItem", { queueItemId }, sessionId, current.revision).then(
+      void dispatchCommand("deleteQueueItem", { queueItemId }, sessionId, current.revision,
+      ).then(
         (ack) => {
           if (ack.status !== "accepted" && ack.status !== "noop") {
-            logger.warn(`[v4-pane] deleteQueueItem 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
+            logger.warn(`[v4-pane] deleteQueueItem 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`,
+          );
             return;
           }
           if (sourceCommandId) pendingCommandRegistry.settle(sessionId, sourceCommandId);
-        },
-      );
+        });
     },
     [dispatchCommand, sessionId],
   );
@@ -3170,7 +3270,8 @@ export function SessionPane({
       }
       const restoreTarget = resolveQueuedComposerRestore(current, queueItemId);
       if (!restoreTarget) {
-        logger.warn(`[v4-pane] queue 撤回编辑跳过：queue item 不存在或不可编辑 ${queueItemId}`);
+        logger.warn(`[v4-pane] queue 撤回编辑跳过：queue item 不存在或不可编辑 ${queueItemId}`,
+        );
         return;
       }
       const operation = { queueItemId, sessionId, workspaceKey };
@@ -3184,7 +3285,8 @@ export function SessionPane({
           restoreTarget.baseRevision,
         );
         if (!shouldRestoreQueuedComposerFromAck(ack.status)) {
-          logger.warn(`[v4-pane] queue 撤回编辑被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
+          logger.warn(`[v4-pane] queue 撤回编辑被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`,
+          );
           toast(intl.formatMessage({ id: "chat.queue.editRestoreFailed" }));
           clearQueueEditOperation();
           return;
@@ -3201,7 +3303,8 @@ export function SessionPane({
             queueItemId,
             sessionId,
             workspaceKey,
-          });
+          },
+          );
           clearQueueEditOperation();
           return;
         }
@@ -3230,13 +3333,14 @@ export function SessionPane({
       // 用户明确点击“立即发送”时，视觉意图等价于点击“滚动到底部”；command 的
       // reserve/stop/promote 生命周期仍由 CLI 裁决，不把滚动状态混入协议。
       focusTimelineToLatest();
-      void dispatchCommand("sendQueuedNow", { queueItemId }, sessionId, current.revision).then(
+      void dispatchCommand("sendQueuedNow", { queueItemId }, sessionId, current.revision,
+      ).then(
         (ack) => {
           if (ack.status !== "accepted" && ack.status !== "noop") {
-            logger.warn(`[v4-pane] sendQueuedNow 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
-          }
-        },
-      );
+            logger.warn(`[v4-pane] sendQueuedNow 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`,
+          );
+        }
+      });
     },
     [dispatchCommand, focusTimelineToLatest, sessionId],
   );
@@ -3252,7 +3356,8 @@ export function SessionPane({
         current.revision,
       ).then((ack) => {
         if (ack.status !== "accepted" && ack.status !== "noop") {
-          logger.warn(`[v4-pane] reorderQueueItem 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
+          logger.warn(`[v4-pane] reorderQueueItem 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`,
+          );
         }
       });
     },
@@ -3271,7 +3376,8 @@ export function SessionPane({
       current.revision,
     );
     if (ack.status !== "accepted" && ack.status !== "noop") {
-      logger.warn(`[v4-pane] 恢复暂停队列被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
+      logger.warn(`[v4-pane] 恢复暂停队列被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`,
+      );
     }
   }, [dispatchCommand, sessionId]);
 
@@ -3307,14 +3413,16 @@ export function SessionPane({
       let lastAck: CommandAck | null = null;
       try {
         for (let attempt = 0; attempt < 3; attempt++) {
-          const ack = await dispatchCommand(type, payload, targetSessionId, baseRevision);
+          const ack = await dispatchCommand(type, payload, targetSessionId, baseRevision,
+          );
           lastAck = ack;
           if (ack.status === "stale") {
             baseRevision = ack.revisionAtDecision;
             continue;
           }
           if (ack.status !== "accepted" && ack.status !== "noop") {
-            logger.warn(`[v4-pane] ${type} 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
+            logger.warn(`[v4-pane] ${type} 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`,
+            );
           }
           return ack;
         }
@@ -3352,7 +3460,8 @@ export function SessionPane({
       const projectedConfig =
         snapshotRef.current?.sessionId === targetSessionId ? snapshotRef.current.config : null;
 
-      const requireAcceptedConfigAck = (type: CommandType, ack: CommandAck | null) => {
+      const requireAcceptedConfigAck = (type: CommandType, ack: CommandAck | null,
+      ) => {
         if (
           ack &&
           (ack.status === "accepted" || ack.status === "noop" || ack.status === "duplicate")
@@ -3412,7 +3521,8 @@ export function SessionPane({
   // Composer 选择表达“下一次提交”。点击只更新 renderer intent；Session Selection
   // 在 Submission 真正开跑（Guide 为下一次 model-step）时由 CLI/Core 更新。
   const handleSelectModel = useCallback(
-    (modelProvider: string, model: string, sourceModel: ModelSelectionSource | null) => {
+    (modelProvider: string, model: string, sourceModel: ModelSelectionSource | null,
+    ) => {
       const resolvedProvider =
         modelProvider || draftConfigRef.current.provider || sourceModel?.provider || "";
       logger.debug("[v4-pane] onSelectModel", {
@@ -3449,7 +3559,8 @@ export function SessionPane({
           logger.warn("[v4-pane] custom provider 恢复跳过：provider 没有可用模型", {
             customProviderId: decoded.providerId,
             workspacePath,
-          });
+          },
+          );
           return;
         }
         modelValue = encodeCustomModelValue(decoded.providerId, fallbackModel);
@@ -3477,7 +3588,8 @@ export function SessionPane({
         providerId: modelSelection.providerId,
         workspaceIdentity: workspaceIdentity ?? null,
         workspacePath,
-      });
+      },
+      );
 
       try {
         await zcodeTaskService.restartWorkspaceProcess({
@@ -3491,18 +3603,23 @@ export function SessionPane({
           workspacePath,
           workspaceIdentity,
           provider: displayProvider,
-          zcodeSessionService,
+          agentService: zcodeAgentService,
+          remoteSessionId: configWorkspaceServices.remoteSessionId ?? undefined,
         });
-        handleDraftSelectModel(modelSelection.providerId, modelSelection.modelId);
-        store.setConfigOptions(workspacePath, prepareResult.configOptions ?? [], workspaceIdentity);
+        handleDraftSelectModel(modelSelection.providerId, modelSelection.modelId,
+        );
+        store.setConfigOptions(workspacePath, prepareResult.configOptions ?? [], workspaceIdentity,
+        );
         store.setConfigOptionsStatus(workspacePath, "ready", workspaceIdentity);
-        store.setSlashCommands(workspacePath, prepareResult.slashCommands ?? [], workspaceIdentity);
+        store.setSlashCommands(workspacePath, prepareResult.slashCommands ?? [], workspaceIdentity,
+        );
         logger.info("[v4-pane] configOptions error custom provider recovery done", {
           configOptionsCount: prepareResult.configOptions?.length ?? 0,
           modelId: modelSelection.modelId,
           providerId: modelSelection.providerId,
           workspacePath,
-        });
+        },
+        );
       } catch (error) {
         store.setConfigOptionsStatus(workspacePath, "error", workspaceIdentity);
         logger.warn("[v4-pane] configOptions error custom provider recovery failed", {
@@ -3510,7 +3627,8 @@ export function SessionPane({
           modelId: modelSelection.modelId,
           providerId: modelSelection.providerId,
           workspacePath,
-        });
+        },
+        );
         throw error;
       }
     },
@@ -3521,8 +3639,9 @@ export function SessionPane({
       showModelChangeNotice,
       workspaceIdentity,
       workspacePath,
-      zcodeSessionService,
+      zcodeAgentService,
       zcodeTaskService,
+      configWorkspaceServices.remoteSessionId,
     ],
   );
 
@@ -3540,7 +3659,8 @@ export function SessionPane({
       if (!sessionId) return;
       const parsed = parseV4VisibleSlashCommand(command);
       if (!parsed) return;
-      void dispatchSlashCommand(parsed, sessionId, snapshotRef.current?.revision, undefined);
+      void dispatchSlashCommand(parsed, sessionId, snapshotRef.current?.revision, undefined,
+      );
     },
     [dispatchSlashCommand, sessionId],
   );
@@ -3580,9 +3700,11 @@ export function SessionPane({
     if (!sessionId || !current?.availability.pauseGoal.allowed) return;
     void dispatchCommand("pauseGoal", {}, sessionId, current.revision).then((ack) => {
       if (ack.status !== "accepted" && ack.status !== "noop") {
-        logger.warn(`[v4-pane] pauseGoal 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
-      }
-    });
+        logger.warn(`[v4-pane] pauseGoal 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`,
+          );
+        }
+      },
+    );
   }, [dispatchCommand, sessionId]);
 
   const handleResumeGoal = useCallback(() => {
@@ -3590,9 +3712,11 @@ export function SessionPane({
     if (!sessionId || !current?.availability.resumeGoal.allowed) return;
     void dispatchCommand("resumeGoal", {}, sessionId, current.revision).then((ack) => {
       if (ack.status !== "accepted" && ack.status !== "noop") {
-        logger.warn(`[v4-pane] resumeGoal 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
-      }
-    });
+        logger.warn(`[v4-pane] resumeGoal 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`,
+          );
+        }
+      },
+    );
   }, [dispatchCommand, sessionId]);
 
   // composer parity：Esc → stop（旧 useChatViewEffects「Escape 停止生成」语义保真：
@@ -3615,7 +3739,8 @@ export function SessionPane({
   // handleStop 带 source 参数（button / escape 两个调用点），但 ConversationComposer 是 memo：
   // 直接写 onStop={() => handleStop("button")} 每次 render 都换引用，memo 白做，而 composer
   // 恰好是每次输入都可能重渲染的组件。这里固定 button 版的引用，不动 handleStop 的双入口设计。
-  const handleStopFromButton = useCallback(() => handleStop("button"), [handleStop]);
+  const handleStopFromButton = useCallback(() => handleStop("button"), [handleStop],
+  );
 
   const handleRetrySubscribe = useCallback(() => {
     void lease?.store.retry();
@@ -3802,7 +3927,8 @@ export function SessionPane({
   const handleOpenImportedShareUrl = useCallback(() => {
     if (!shareHandoverContext || !onOpenBrowserUrl) return;
     // 持久化的是规范 /cn/share/ 路径；展示/打开时才按界面语言本地化。
-    onOpenBrowserUrl(localizeConversationShareUrl(shareHandoverContext.shareUrl, locale));
+    onOpenBrowserUrl(localizeConversationShareUrl(shareHandoverContext.shareUrl, locale),
+    );
   }, [locale, onOpenBrowserUrl, shareHandoverContext]);
   const initialDraftConfigForDiagnostics = isDraft ? resolveInitialDraftConfig() : undefined;
   // CLI V4 projection 是 running/count/manifest 的唯一权威；renderer 不再在 spawn
@@ -3889,7 +4015,8 @@ export function SessionPane({
   // 详情页的 workflow run 时，徽标点击直接开它的 side tab，胶囊不动。判定吃胶囊的同一份模型；
   // 宿主没给 onOpenWorkflowRun（面板行同样不可点）时不直达。
   const soleRunningWorkflowRunTarget = useMemo(
-    () => (onOpenWorkflowRun ? resolveSoleRunningWorkflowRunTarget(statusPanelModel) : null),
+    () =>
+      onOpenWorkflowRun ? resolveSoleRunningWorkflowRunTarget(statusPanelModel) : null,
     [onOpenWorkflowRun, statusPanelModel],
   );
   const handleOpenRunningBackgroundWorks = useCallback(() => {
@@ -3925,11 +4052,11 @@ export function SessionPane({
       hasContent: statusPanelModel.hasContent,
       variant: statusPanelVariant,
     });
-  const statusPanelLayout = !shouldUseStatusPanelInlineLayout
-    ? "none"
-    : statusPanelVariant === "auto"
+  const statusPanelLayout = shouldUseStatusPanelInlineLayout
+    ? statusPanelVariant === "auto"
       ? "auto"
-      : "inline";
+      : "inline"
+    : "none";
   const controlLastError = snapshot?.control.lastError ?? null;
   const controlLastErrorKey = controlLastError
     ? createSessionErrorKey(snapshot?.sessionId ?? sessionId, controlLastError)
@@ -4037,7 +4164,8 @@ export function SessionPane({
       logEpoch: snapshot?.logEpoch ?? null,
     });
     const shareAttempt = ensureConversationShareAttempt(
-      getConversationShareDockState(useConversationShareSelectionStore.getState(), sessionId)
+      getConversationShareDockState(useConversationShareSelectionStore.getState(), sessionId,
+      )
         .attempt,
       attemptKey,
       sessionId,
@@ -4047,8 +4175,7 @@ export function SessionPane({
     let activePhase = "collecting";
     let collectedWarnings: ConversationShareDisplayWarnings | null = null;
     const progressSubscription = conversationShareService.onDynamicPublishProgress(operationId)((
-      progress,
-    ) => {
+      progress) => {
       activePhase = progress.phase;
       updateShareDockState(sessionId, {
         progress: progress.phase === "complete" ? "checking" : progress.phase,
@@ -4065,7 +4192,8 @@ export function SessionPane({
             : {}),
         };
       }
-    });
+    },
+      );
     updateShareDockState(sessionId, {
       attempt: shareAttempt,
       publishing: true,
@@ -4129,7 +4257,8 @@ export function SessionPane({
                   {
                     code: resolveConversationShareFallbackIssueCode(details),
                     scope: "transport",
-                    phase: activePhase as "collecting" | "uploading" | "checking" | "complete",
+                    phase: activePhase as
+                      | "collecting" | "uploading" | "checking" | "complete",
                   },
                 ],
                 issueCount: 1,
@@ -4216,7 +4345,8 @@ export function SessionPane({
     // 避免把“分享已完成”文案提前带入尚未发布的确认阶段。
     updateShareDockState(sessionId, { error: null });
     goToShareConfiguration(sessionId);
-  }, [goToShareConfiguration, sessionId, sharePreflight, sharePublishing, updateShareDockState]);
+  }, [goToShareConfiguration, sessionId, sharePreflight, sharePublishing, updateShareDockState,
+  ]);
 
   const handleShareSelectAll = useCallback(() => {
     if (!sessionId) return;
@@ -4243,7 +4373,8 @@ export function SessionPane({
       // 按 product turn 身份整轮移除：service 的 issue 已带 productTurnId，
       // 不再用 turnOrdinal 索引 UI 的 per-query 列表（两套编号会错位）。
       deselectShareProductTurn(sessionId, productTurnId);
-      updateShareDockState(sessionId, { disclosureAccepted: false, error: null });
+      updateShareDockState(sessionId, { disclosureAccepted: false, error: null,
+      });
     },
     [deselectShareProductTurn, sessionId, updateShareDockState],
   );
@@ -4290,7 +4421,8 @@ export function SessionPane({
     if (sharePublishing || publishedShareUrl || !sessionId) return;
     updateShareDockState(sessionId, { error: null });
     goToShareSelection(sessionId);
-  }, [goToShareSelection, publishedShareUrl, sessionId, sharePublishing, updateShareDockState]);
+  }, [goToShareSelection, publishedShareUrl, sessionId, sharePublishing, updateShareDockState,
+  ]);
 
   const handleShareConfirm = useCallback(() => {
     if (!shareDisclosureAccepted) return;
@@ -4301,7 +4433,8 @@ export function SessionPane({
     (rowId: number) => {
       if (sessionId) toggleShareRow(sessionId, rowId);
       if (sessionId) {
-        updateShareDockState(sessionId, { disclosureAccepted: false, error: null });
+        updateShareDockState(sessionId, { disclosureAccepted: false, error: null,
+        });
       }
     },
     [sessionId, toggleShareRow, updateShareDockState],
@@ -4329,7 +4462,8 @@ export function SessionPane({
       commandId: recoverableCommand.commandId,
     });
     if (!replay) return;
-    void dispatchCommand(replay.type, replay.payload, replay.sessionId, replay.baseRevision)
+    void dispatchCommand(replay.type, replay.payload, replay.sessionId, replay.baseRevision,
+    )
       .then((ack) => {
         if (
           replay.type === "createSession" &&
@@ -4344,7 +4478,8 @@ export function SessionPane({
             logger.error("[v4-pending-command] 拒绝跨 workspace 提交 createSession 恢复结果", {
               originWorkspaceKey,
               workspaceKey,
-            });
+            },
+            );
             return;
           }
           handleDraftSessionCreated(
@@ -4359,7 +4494,8 @@ export function SessionPane({
         // 新 command 已先写入 registry；本次 transport 失败仍可在下次连接继续对账。
         logger.warn("[v4-pending-command] 用户确认重发失败", error);
       });
-  }, [dispatchCommand, handleDraftSessionCreated, recoverableCommand, workspaceKey]);
+  }, [dispatchCommand, handleDraftSessionCreated, recoverableCommand, workspaceKey,
+  ]);
 
   // subagent 右侧 child tab 是观察视图；复用普通 SessionPane 时
   // 若仍创建 composer，会让用户误以为可以直接向 child session 继续输入。
@@ -4400,6 +4536,7 @@ export function SessionPane({
       modelSelectionReload={modelSelectionRead.reload}
       attachmentSessionId={effectiveSessionId}
       attachmentPut={attachmentPut}
+      attachmentBudget={attachmentBudget}
       onRuntimeRestart={onRuntimeRestart}
       onRuntimeLifecycle={onRuntimeLifecycle}
       provider={provider}
@@ -4625,7 +4762,7 @@ export function SessionPane({
       >
         <ConversationShareSelectionScrim
           visible={shareSelectionPanelVisible}
-          interactive
+          interactive={true}
           onBackdropClick={dismissShareSelectionPanel}
         />
         <ConversationShareSelectionPanel
@@ -4638,7 +4775,7 @@ export function SessionPane({
         {shareActive && shareInSelectionStage && shareDraft?.view === "timeline" && sessionId ? (
           <ConversationShareSelectionReopenTab onOpen={() => showShareSelectionPanel(sessionId)} />
         ) : null}
-        {!isDraft ? (
+        {isDraft ? null : (
           <ConversationStatusPanel
             workspacePath={workspacePath}
             workspaceIdentity={workspaceIdentity}
@@ -4705,7 +4842,7 @@ export function SessionPane({
               onOpenWorkflowRunDirectory ? handleOpenWorkflowRunDirectoryFromPanel : undefined
             }
           />
-        ) : null}
+        )}
 
         {readOnly && controlLastError ? (
           <div
@@ -4760,7 +4897,8 @@ export function SessionPane({
                 partialShareActive: shareActive,
                 stage: shareDraft?.stage ?? "selection",
                 view: shareDraft?.view,
-              })}
+              },
+              )}
               headerSlot={
                 // unsupportedRowCount 也要开这个门：整份副本的行都被本 build 跳过时
                 // rows 为空，但只读块必须留下来显示「需要更新 ZCode」，不能整块消失。

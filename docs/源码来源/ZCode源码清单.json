@@ -16,10 +16,17 @@
       "source": "references/zcode/packages/ui/src/App.tsx",
       "target": "apps/web/src/components/workbench/zcode/App.tsx",
       "sha256": "ad78d4e881b8706bf708a5acd08aff900c66784a8a435603fd50cf1b8670a987",
-      "copiedSha256": "74841f7e53fa1abc2ed71e5c4a5534c1c3b5f8e3309f62fc8c2a2e327c10460a",
+      "copiedSha256": "5965100a3e79e89da85d93ea6ebb89f6c6b9800365a90274873ac3fcf514b3c0",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
+      ],
+      "syncSource": {
+        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+        "path": "apps/web/src/components/workbench/zcode/App.tsx",
+        "blobSha1": "5bd6a6b2222d9a244b44edea31fba1cdb72ae10d",
+        "sha256": "5965100a3e79e89da85d93ea6ebb89f6c6b9800365a90274873ac3fcf514b3c0"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/AssistantCodeCommentCards.tsx",
@@ -124,10 +131,17 @@
       "source": "references/zcode/packages/ui/src/ChatErrorBanner.tsx",
       "target": "apps/web/src/components/workbench/zcode/ChatErrorBanner.tsx",
       "sha256": "8cc753cc95b43ce7c19e1d7dd3c9591c4dd2af4cd31a6768019639880d14a7b7",
-      "copiedSha256": "605ab00930383ff1d6e8320b08aa2f7984e27d36e1d8bf8831a04cbe5c3e8cc7",
+      "copiedSha256": "bd5dd19b0d16329588ab5de2c4ca5cc74cfecd1493f9c84cff74dfa8947c21a6",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
+      ],
+      "syncSource": {
+        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+        "path": "apps/web/src/components/workbench/zcode/ChatErrorBanner.tsx",
+        "blobSha1": "0f782c827a992dfb27b30dda77ed2a8b49ae1254",
+        "sha256": "bd5dd19b0d16329588ab5de2c4ca5cc74cfecd1493f9c84cff74dfa8947c21a6"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/ChatMediaAttachmentPreviewDialog.tsx",
@@ -241,10 +255,17 @@
       "source": "references/zcode/packages/ui/src/DirectoryBrowser.tsx",
       "target": "apps/web/src/components/workbench/zcode/DirectoryBrowser.tsx",
       "sha256": "a2ff0d9ab5ac81802055d1bf7a7658454e1b2e6228fb6ea4d5bd2e06c2450854",
-      "copiedSha256": "a2ff0d9ab5ac81802055d1bf7a7658454e1b2e6228fb6ea4d5bd2e06c2450854",
+      "copiedSha256": "597bc464509c2e2a4a4b2cb27385249fcc0d4adeb11e7f6cf1f20b1a56c649e3",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
+      ],
+      "syncSource": {
+        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+        "path": "apps/web/src/components/workbench/zcode/DirectoryBrowser.tsx",
+        "blobSha1": "50b4a8a4adabf748dbebd96419129fa4d4f6f2fe",
+        "sha256": "597bc464509c2e2a4a4b2cb27385249fcc0d4adeb11e7f6cf1f20b1a56c649e3"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/ElicitationDialog.tsx",
@@ -565,10 +586,17 @@
       "source": "references/zcode/packages/ui/src/Root.tsx",
       "target": "apps/web/src/components/workbench/zcode/Root.tsx",
       "sha256": "2fe5a5c4a94149d424591b48f6ab04226c29550227f32db986f8bffc65166c5b",
-      "copiedSha256": "24f7c774f8af62323784508025ce49f502495bfa02c6b1c9ffd2ea35619c8d61",
+      "copiedSha256": "da92c4196d9447581cebf85a30bf798d0ec5f0c606db86c4a060582cc16c0345",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
+      ],
+      "syncSource": {
+        "commit": "92fad1ca182fcdd224d5f8f0c15ab4202d7b8754",
+        "path": "apps/web/src/components/workbench/zcode/Root.tsx",
+        "blobSha1": "3d6ba31f4cb5602181ce390b39036b1f4d68b5ab",
+        "sha256": "990afced028894f2f605337d17f5dbe71dd5f0533dcdbbaf9765e4d55f5f6e90"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/SSHDialog.tsx",
@@ -592,10 +620,18 @@
       "source": "references/zcode/packages/ui/src/SettingsPage.tsx",
       "target": "apps/web/src/components/workbench/zcode/SettingsPage.tsx",
       "sha256": "0f3d3b06be4fdb675f870e06dcc8bf89aeff9ad9fc880ca1f0f6338a6e76916a",
-      "copiedSha256": "34529b2a7fbb0c3b1215f0d7ea418fa245119f82338e9ac08d99a9dcffb68f95",
+      "copiedSha256": "f2f16d2c46ad559068e77638f684975bf6b0445bd2ebd3ca26910271b6a3b1b9",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
+        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
+      ],
+      "syncSource": {
+        "commit": "92fad1ca182fcdd224d5f8f0c15ab4202d7b8754",
+        "path": "apps/web/src/components/workbench/zcode/SettingsPage.tsx",
+        "blobSha1": "d9cdb23ae327334145c3310aa65fa7593cb1e1e3",
+        "sha256": "f2f16d2c46ad559068e77638f684975bf6b0445bd2ebd3ca26910271b6a3b1b9"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/SidePaneTerminalPane.tsx",
@@ -763,9 +799,10 @@
       "source": "references/zcode/packages/ui/src/ToolCallBlocks/fileSummaries.ts",
       "target": "apps/web/src/components/workbench/zcode/ToolCallBlocks/fileSummaries.ts",
       "sha256": "42d6a0c776c936ea2f81aa595c303f5cde18a81d1af7ef39a15584049d88541d",
-      "copiedSha256": "ee871ca98190b6ebb4392546618d9fa0c212978b439787f42ef682fd9ce04038",
+      "copiedSha256": "f674bcd8e75a94e8d242cc22396aca4d4fecd823cfd75c996767abc16df70450",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "原文件diff摘要保留native预览truncated事实，总计数继续读取真实完整提交"
       ]
     },
     {
@@ -781,9 +818,10 @@
       "source": "references/zcode/packages/ui/src/ToolCallBlocks/fileSummaryTypes.ts",
       "target": "apps/web/src/components/workbench/zcode/ToolCallBlocks/fileSummaryTypes.ts",
       "sha256": "f41ddd84e4437d3d1f1fd7eac7ff73b8ad9b9b7c0e29100e720cbd0159f98690",
-      "copiedSha256": "811abc91cfba73e36622fb8bfbaee105b761d5ba6367ed3aff732cbef394145a",
+      "copiedSha256": "ab834414aa941c6b48a2d11cdbfd851a6648e65ba431c108ba13cbb83ecb6249",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "文件摘要增加optional truncated以呈现有界补丁预览事实"
       ]
     },
     {
@@ -916,10 +954,17 @@
       "source": "references/zcode/packages/ui/src/ToolCallBlocks/renderers/cron-create.tsx",
       "target": "apps/web/src/components/workbench/zcode/ToolCallBlocks/renderers/cron-create.tsx",
       "sha256": "0b4e61148c9a2ea0ef1a85fc2352c927587b3d76abbb8e2a2170d253d9b4de51",
-      "copiedSha256": "e04b6f8399aa081a463e20d21a9c40d31482bc76a5d8a356d5a1c80d9ceb7b13",
+      "copiedSha256": "8dd18b0b803f0dc8cb9eab7a387dc7432cb3877e119948a0a0722cb0f050cdae",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
+      ],
+      "syncSource": {
+        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+        "path": "apps/web/src/components/workbench/zcode/ToolCallBlocks/renderers/cron-create.tsx",
+        "blobSha1": "f7eb278e10eae67c2e80456bcf25b5967ba85481",
+        "sha256": "8dd18b0b803f0dc8cb9eab7a387dc7432cb3877e119948a0a0722cb0f050cdae"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/ToolCallBlocks/renderers/cua-group.tsx",
@@ -1033,9 +1078,10 @@
       "source": "references/zcode/packages/ui/src/ToolCallBlocks/renderers/edit.tsx",
       "target": "apps/web/src/components/workbench/zcode/ToolCallBlocks/renderers/edit.tsx",
       "sha256": "152cb2f2e9d41cc2a85e92e3023522904e6fd89fdd76350d899f14eb28cb575e",
-      "copiedSha256": "07f3f3ad032996964296b9daed56957941392f2d889a21ee0c8401512d1b4f15",
+      "copiedSha256": "c18ced963c810a1835237c09a8e66769244df29004fa3ed61b8bf63d0c858aa5",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "原工具卡明确显示预算截断补丁提示；原文件按钮与补丁预览消费保持"
       ]
     },
     {
@@ -1186,10 +1232,17 @@
       "source": "references/zcode/packages/ui/src/ToolCallBlocks/renderers/offpeak-create.tsx",
       "target": "apps/web/src/components/workbench/zcode/ToolCallBlocks/renderers/offpeak-create.tsx",
       "sha256": "ea20e5a5650ebb547fd47a5331ab348a6cd3b1584c13a83767cdee1d0b482b04",
-      "copiedSha256": "c887daf7ee9e02a23d9874f87eeefa0041b40ec558fb9173197c9b3c858bb921",
+      "copiedSha256": "584036baf8ff87e1b8dd333a0bc5043533f9c2b25f767d04dd450435ed656e7d",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
+      ],
+      "syncSource": {
+        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+        "path": "apps/web/src/components/workbench/zcode/ToolCallBlocks/renderers/offpeak-create.tsx",
+        "blobSha1": "01d81b41e8acebf0a91373f1db8d7204819ce5f4",
+        "sha256": "584036baf8ff87e1b8dd333a0bc5043533f9c2b25f767d04dd450435ed656e7d"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/ToolCallBlocks/renderers/plan-guidance.tsx",
@@ -1628,10 +1681,17 @@
       "source": "references/zcode/packages/ui/src/WorkspaceSidebar.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceSidebar.tsx",
       "sha256": "312065bd80ff3a74b498dde96270a9f430f86808933625b02e4a1a6cbd56bf49",
-      "copiedSha256": "cc926ba293adda3af85f201dcbda19f6f4eec2f7d292f952fab830769d141b01",
+      "copiedSha256": "ba936a62ca192934c79092e0ce4d36ed2fb011bd4e2b5de5b2dede3fd2201c50",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
+      ],
+      "syncSource": {
+        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+        "path": "apps/web/src/components/workbench/zcode/WorkspaceSidebar.tsx",
+        "blobSha1": "32f8a06ee137cfd4d19123e0d1220cd26275233b",
+        "sha256": "ba936a62ca192934c79092e0ce4d36ed2fb011bd4e2b5de5b2dede3fd2201c50"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/WorkspaceSidebar/ReconnectingRemoteWorkspaceLogTooltip.tsx",
@@ -1682,10 +1742,17 @@
       "source": "references/zcode/packages/ui/src/WorkspaceSidebarFooter.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceSidebarFooter.tsx",
       "sha256": "5f64bddab48988a8cea50ea65f615d6b1f02bb63a2a40b232f207cfea30a9a57",
-      "copiedSha256": "e3c2d1bece9864dba0fd279be3be2c3f38860e1b1ae26211a4ccdac850342a47",
+      "copiedSha256": "d629e1a425137083914bb23793ec685f07d8faee02bd1b869781caacd4acc604",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
+      ],
+      "syncSource": {
+        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+        "path": "apps/web/src/components/workbench/zcode/WorkspaceSidebarFooter.tsx",
+        "blobSha1": "00d61371f7f3c8e2c8d61e3da629818b44205c03",
+        "sha256": "d629e1a425137083914bb23793ec685f07d8faee02bd1b869781caacd4acc604"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/WorkspaceSidebarFooterPlanBadgeHelpers.ts",
@@ -1700,10 +1767,17 @@
       "source": "references/zcode/packages/ui/src/WorkspaceSidebarFooterUsageSummary.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceSidebarFooterUsageSummary.tsx",
       "sha256": "84ad8c496ab1648d144c5bbab916ae9edbe5167763d405d9518d4366db643834",
-      "copiedSha256": "195f3a1a5a70def4911d7b973b5c2455cbfc1cc642f8e11fa5ac3ee17e5fa5cd",
+      "copiedSha256": "8d28e70c09d8153b310d40354865d4e5b512241c15b90fa3156f5951e40258a2",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
+      ],
+      "syncSource": {
+        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+        "path": "apps/web/src/components/workbench/zcode/WorkspaceSidebarFooterUsageSummary.tsx",
+        "blobSha1": "7b3046f9e75676f1f51e4f1a992e61754884d3cf",
+        "sha256": "8d28e70c09d8153b310d40354865d4e5b512241c15b90fa3156f5951e40258a2"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/WorkspaceSidebarItem.tsx",
@@ -2096,9 +2170,10 @@
       "source": "references/zcode/packages/ui/src/app-shell/useWorkspaceSessionReload.ts",
       "target": "apps/web/src/components/workbench/zcode/app-shell/useWorkspaceSessionReload.ts",
       "sha256": "dee0553a6f1d7ca795e661fe7f607d34c63b4010c2c250b019c4da56cb9c0dd2",
-      "copiedSha256": "091c5bf71ca4bbf31839553f0a8db53b7788cb4f56d8eefae480f669ad84ad72",
+      "copiedSha256": "cec63d9af7e5ebcac27d1b3652488406a1c0c1431722055fc91e2ad95c4c3366",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "Workspace配置消费：草稿reload目录准备复用完整配置lease与实际目标服务，不以mode-only种子覆写完整态"
       ]
     },
     {
@@ -4877,10 +4952,17 @@
       "source": "references/zcode/packages/ui/src/hooks/useActiveTaskSnapshotMeta.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useActiveTaskSnapshotMeta.ts",
       "sha256": "cd6c0ae51e670d16cfa726755c6092cc17d281e0de0f89285560afaad4a750cf",
-      "copiedSha256": "3879e8668c46ffccdd25e6e14f9de3a2b5b73301a4a5d230155a62f6ca829674",
+      "copiedSha256": "db32711575dfad9d586b647d05eb2c1f1e768685bd6c06354df36aead09912c4",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步3f5c3873: 可选sessionMetadataSource与原Root轻量真实标题；Task-index只读metainfo，未声明保持原session投影"
+      ],
+      "syncSource": {
+        "commit": "3f5c38732f151fa64e99856f456623b303dbe14e",
+        "path": "apps/web/src/components/workbench/zcode/hooks/useActiveTaskSnapshotMeta.ts",
+        "blobSha1": "73032d01fb51c51862e021232c6101fa254a28fd",
+        "sha256": "ffb36d0e0abd8665458a818256c56da0b3b30b4d5d1d005260e695e89cb1e8d7"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/hooks/useAlertDialog.ts",
@@ -4958,10 +5040,17 @@
       "source": "references/zcode/packages/ui/src/hooks/useCodingPlanEntryPlanList.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useCodingPlanEntryPlanList.ts",
       "sha256": "20863c04d6161779607df7d374a0afc0c98df12061a7071dc02bb696035bb644",
-      "copiedSha256": "6a6feba26bdd86e205ca5e54a241d0b394184b286a196d092756b0804a2caebb",
+      "copiedSha256": "b22fefe89b30c6a9e49c3f59d1f6975ce7f5272edcc305d4b0e36fff0620adef",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
+      ],
+      "syncSource": {
+        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+        "path": "apps/web/src/components/workbench/zcode/hooks/useCodingPlanEntryPlanList.ts",
+        "blobSha1": "e44961d78053e8b780bfc506d8addc5ca4d89ada",
+        "sha256": "b22fefe89b30c6a9e49c3f59d1f6975ce7f5272edcc305d4b0e36fff0620adef"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/hooks/useCodingPlanQuotaResetUi.ts",
@@ -5039,10 +5128,17 @@
       "source": "references/zcode/packages/ui/src/hooks/useDynamicWorkflowAvailability.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useDynamicWorkflowAvailability.ts",
       "sha256": "b602479b5a6673531cbf468582c4148f7e60ac8122d317bdda238768c38e6e39",
-      "copiedSha256": "0737573b7379f2e5321c74c656604dd1fb60418a0466a154c32524e617d6cc3e",
+      "copiedSha256": "e91f0c96af43247e0ad7c709c40f722b882503ab86f0f022eabe2f877236e42c",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
+      ],
+      "syncSource": {
+        "commit": "92fad1ca182fcdd224d5f8f0c15ab4202d7b8754",
+        "path": "apps/web/src/components/workbench/zcode/hooks/useDynamicWorkflowAvailability.ts",
+        "blobSha1": "68d7c810e584a0c7e2cad4b41aa9793804e71c0d",
+        "sha256": "e91f0c96af43247e0ad7c709c40f722b882503ab86f0f022eabe2f877236e42c"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/hooks/useEnsureWorkspaceMcpLoaded.ts",
@@ -5219,10 +5315,17 @@
       "source": "references/zcode/packages/ui/src/hooks/useOnboardingRecordService.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useOnboardingRecordService.ts",
       "sha256": "e4ef8ffe884ff49e5380ab8db5d1188e98e77d9575bf47710435371a05caf48d",
-      "copiedSha256": "e4ef8ffe884ff49e5380ab8db5d1188e98e77d9575bf47710435371a05caf48d",
+      "copiedSha256": "3a9f883988b3e8e69a6b0e0ce9fbac5a420fc742b84a03f4652279505d2a65a8",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
+      ],
+      "syncSource": {
+        "commit": "92fad1ca182fcdd224d5f8f0c15ab4202d7b8754",
+        "path": "apps/web/src/components/workbench/zcode/hooks/useOnboardingRecordService.ts",
+        "blobSha1": "d1a84d6185655399d84b5a7830153b966af032cb",
+        "sha256": "3a9f883988b3e8e69a6b0e0ce9fbac5a420fc742b84a03f4652279505d2a65a8"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/hooks/usePlanIdentitySnapshot.ts",
@@ -5309,10 +5412,17 @@
       "source": "references/zcode/packages/ui/src/hooks/useRemoteConnectionEntryVisibility.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useRemoteConnectionEntryVisibility.ts",
       "sha256": "ec99c5d0f66722ed36cc77387c167e5f955a3222ed1ee036ae4d785986c9e5b6",
-      "copiedSha256": "ec99c5d0f66722ed36cc77387c167e5f955a3222ed1ee036ae4d785986c9e5b6",
+      "copiedSha256": "9d51bdbf9b04245952b26e043c9bbce859093aa535cd65461d762c43d3f3ab0e",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
+      ],
+      "syncSource": {
+        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+        "path": "apps/web/src/components/workbench/zcode/hooks/useRemoteConnectionEntryVisibility.ts",
+        "blobSha1": "63a6e5b6364563cd385cdae85d2bcffc71af3070",
+        "sha256": "9d51bdbf9b04245952b26e043c9bbce859093aa535cd65461d762c43d3f3ab0e"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/hooks/useRemoteConnectionForm.ts",
@@ -5705,9 +5815,10 @@
       "source": "references/zcode/packages/ui/src/hooks/workspacePrepareRpc.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/workspacePrepareRpc.ts",
       "sha256": "f17104831998b8af6ae68b409ad88ad4d4af86a4a7f2af5ee1dde2d956a2544e",
-      "copiedSha256": "f1fc1c95d3a60508c48d6cd3045713c156b5d6b6debd3e36a87c5c103bbe967a",
+      "copiedSha256": "15d453adcae4a1a14051f31c5212f74bd3b415bdeecec6d69da5a1ef5902ba45",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "Workspace配置消费：原typed workspace-config完整态经现有连接lease准备，移除mode-only回写；不创建Task/Run/scope或第二模型目录"
       ]
     },
     {
@@ -5768,21 +5879,37 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "9ec12a7496d75cdc883de200b445a8cdd1d77f2f861bac1ba1781e934ee74fd2",
+      "copiedSha256": "52415e4cf20ed0f2db51ae351e6b9856913eecd04872e61186cf383cbe837f1c",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "模式文案：原 coding/office 菜单显示 Code/Design"
-      ]
+        "模式文案：原 coding/office 菜单显示 Code/Design",
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
+        "原Edit工具卡补丁预览预算截断提示英文本地化"
+      ],
+      "syncSource": {
+        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+        "path": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
+        "blobSha1": "8b57627e81470fac8b1e541c5778692856477386",
+        "sha256": "044909e8dc6bf1ba1ce088af74b9837ac425e6267500d98d8cbf3ceacaecda30"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "baf4bb8ce4a4636b40ec32cf32f9de70a9ed3710c878097196eedfa7f4adfe36",
+      "copiedSha256": "5967fa9eb93757f1703285129b073cb5def41a5302b93f94841b4fff2f14f7ca",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "模式文案：原 coding/office 菜单显示 Code/Design"
-      ]
+        "模式文案：原 coding/office 菜单显示 Code/Design",
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
+        "原Edit工具卡补丁预览预算截断提示中文本地化"
+      ],
+      "syncSource": {
+        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+        "path": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
+        "blobSha1": "9abada12f0b957978bdff359d6b52b8ce68ebdfc",
+        "sha256": "a8d064a8f5d673aaeed7fd85b6afc1ca5383eb4d7f894605195438830d1415ee"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/index.ts",
@@ -6275,10 +6402,17 @@
       "source": "references/zcode/packages/ui/src/lib/cuaPlatform.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/cuaPlatform.ts",
       "sha256": "1144161904d29127eb624f2d52f837bec1056cc942ffbfeb4b81918984332e5a",
-      "copiedSha256": "1144161904d29127eb624f2d52f837bec1056cc942ffbfeb4b81918984332e5a",
+      "copiedSha256": "c815992e6b47e40d361ff72530cd8d1a2db795574998f12239716bf6786e4e1c",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
+      ],
+      "syncSource": {
+        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+        "path": "apps/web/src/components/workbench/zcode/lib/cuaPlatform.ts",
+        "blobSha1": "25b982e2ec5abcd0ba0e04743493c4e56d5893db",
+        "sha256": "c815992e6b47e40d361ff72530cd8d1a2db795574998f12239716bf6786e4e1c"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/lib/desktopUpdateMenu.ts",
@@ -7004,10 +7138,17 @@
       "source": "references/zcode/packages/ui/src/lib/rendererNavigation.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/rendererNavigation.ts",
       "sha256": "5fd7195f42abd30e31dc4c7561efebeb722c4f5f3585a0cbe75230385193380e",
-      "copiedSha256": "5fd7195f42abd30e31dc4c7561efebeb722c4f5f3585a0cbe75230385193380e",
+      "copiedSha256": "d37b918a1c6bbfa05ed7792a63878e67471c8005cb3e6109bffa57e0363a4b1e",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
+      ],
+      "syncSource": {
+        "commit": "92fad1ca182fcdd224d5f8f0c15ab4202d7b8754",
+        "path": "apps/web/src/components/workbench/zcode/lib/rendererNavigation.ts",
+        "blobSha1": "80c788ab9cb5d058919bd9c52f27e7013548dac2",
+        "sha256": "d37b918a1c6bbfa05ed7792a63878e67471c8005cb3e6109bffa57e0363a4b1e"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/lib/rendererZCodeEndpoint.ts",
@@ -8201,10 +8342,17 @@
       "source": "references/zcode/packages/ui/src/onboarding/OccupationOnboarding.tsx",
       "target": "apps/web/src/components/workbench/zcode/onboarding/OccupationOnboarding.tsx",
       "sha256": "af5822a69358dae6cc68e8f7ed47ec567b30503c0a0407235863b99464d29380",
-      "copiedSha256": "c63ca4096e062b5e79137d0531255258213e212d30402f0307c0fae0e2981b9c",
+      "copiedSha256": "dd327c588b9470fc46d6aad980beb1fbd2cb61234a13c01084c3597b286b480e",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
+      ],
+      "syncSource": {
+        "commit": "92fad1ca182fcdd224d5f8f0c15ab4202d7b8754",
+        "path": "apps/web/src/components/workbench/zcode/onboarding/OccupationOnboarding.tsx",
+        "blobSha1": "32cde8adb57ef0e18ef7a7b3ea6bbb33bff2ef2b",
+        "sha256": "dd327c588b9470fc46d6aad980beb1fbd2cb61234a13c01084c3597b286b480e"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/onboarding/OccupationOnboardingVisual.tsx",
@@ -9012,19 +9160,33 @@
       "source": "references/zcode/packages/ui/src/root/types.ts",
       "target": "apps/web/src/components/workbench/zcode/root/types.ts",
       "sha256": "9bcfd8a70f167bf5cab7560073c8b9811b990164cd9a5d39368756019689dd13",
-      "copiedSha256": "3c65d5f465645654bf3fc97644b19a9d1f72469ce8a38d1af9e54facc8ec9880",
+      "copiedSha256": "c17c60075f1d106ca86e94b92bd04e3378cb93c16d512a3b63058a9a2adebcd0",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
+      ],
+      "syncSource": {
+        "commit": "92fad1ca182fcdd224d5f8f0c15ab4202d7b8754",
+        "path": "apps/web/src/components/workbench/zcode/root/types.ts",
+        "blobSha1": "4955946399e2be047ee0ea108aea77f270f7f10d",
+        "sha256": "ab7d4fd930ebfa6adcab25d927e0fa94bd0d4d67e3eea90ce579888629bdd595"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/root/useAccountConnectionLossNotification.ts",
       "target": "apps/web/src/components/workbench/zcode/root/useAccountConnectionLossNotification.ts",
       "sha256": "a13f32488002eb0531ef057cd4448f10c7a7f42a8af82b14f8c1f40bcad91587",
-      "copiedSha256": "ad7d0b7558228a320c1df4872d8deb05d8fb051bce165f5f42ab3979ca3a2675",
+      "copiedSha256": "fc1e2d3e2a27ff79dba2b1cbdab59fb24674576619eec89abc0808fd458e0423",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
+      ],
+      "syncSource": {
+        "commit": "92fad1ca182fcdd224d5f8f0c15ab4202d7b8754",
+        "path": "apps/web/src/components/workbench/zcode/root/useAccountConnectionLossNotification.ts",
+        "blobSha1": "db5f06742d63f903ee474a186cf50a45b4f08a26",
+        "sha256": "fc1e2d3e2a27ff79dba2b1cbdab59fb24674576619eec89abc0808fd458e0423"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/root/useBotBroadcastEffects.ts",
@@ -9039,10 +9201,17 @@
       "source": "references/zcode/packages/ui/src/root/useConversationWorkspaceActions.ts",
       "target": "apps/web/src/components/workbench/zcode/root/useConversationWorkspaceActions.ts",
       "sha256": "185a59739164e3226792880197043839332cfb2bb631bc979d683686f9d51504",
-      "copiedSha256": "51d45abe26e78f277f41d6e0b9515ae0fd84ae26e2b701a4fdfe3eacb84ebd5f",
+      "copiedSha256": "9ad0702bce241ac99a3e213a90fe1b03fb11269ca5c4ab3ef05c09ef90e42fc3",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
+      ],
+      "syncSource": {
+        "commit": "92fad1ca182fcdd224d5f8f0c15ab4202d7b8754",
+        "path": "apps/web/src/components/workbench/zcode/root/useConversationWorkspaceActions.ts",
+        "blobSha1": "88f7c6c983a336894c979ce07cf404ec3725b0e3",
+        "sha256": "51d45abe26e78f277f41d6e0b9515ae0fd84ae26e2b701a4fdfe3eacb84ebd5f"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/root/useDesktopNativeThemeSync.ts",
@@ -9093,10 +9262,17 @@
       "source": "references/zcode/packages/ui/src/root/useRootOAuthEffects.ts",
       "target": "apps/web/src/components/workbench/zcode/root/useRootOAuthEffects.ts",
       "sha256": "dd83397e20c2c5cf7790bd4670e9e85f4e62d80c78500b4a72e41b1984354be1",
-      "copiedSha256": "ca52be8a989c80f91f14486290ad67d51778135fce90cb792e6f9cc5d3354395",
+      "copiedSha256": "6a2cc6740d4b778c80d1766a76dbd1f9b7cbce412c69601b3ed8627369d40dbd",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
+      ],
+      "syncSource": {
+        "commit": "92fad1ca182fcdd224d5f8f0c15ab4202d7b8754",
+        "path": "apps/web/src/components/workbench/zcode/root/useRootOAuthEffects.ts",
+        "blobSha1": "40b3ace5e791cdde89841b21be8a33176b0b7705",
+        "sha256": "6a2cc6740d4b778c80d1766a76dbd1f9b7cbce412c69601b3ed8627369d40dbd"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/root/useRootPlatformEffects.ts",
@@ -9129,10 +9305,19 @@
       "source": "references/zcode/packages/ui/src/root/useRootWorkspaceActions.ts",
       "target": "apps/web/src/components/workbench/zcode/root/useRootWorkspaceActions.ts",
       "sha256": "3c8ebfe29150dcc21e53e17feca678aa58f93c59c5d875fe5db162cda65c79cb",
-      "copiedSha256": "daf3ba45a6523027625240b66da9d2dc911de2925da8174c209d0dc2f9cbdf6a",
+      "copiedSha256": "811c60aefa1856dd7fc11f8b3da2c3ed522fea37cb809bc4d545ff6cd57b6f22",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
+        "第2阶段宿主适配: 项目选择后草稿沿用新tab的qualified workspaceIdentity",
+        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
+      ],
+      "syncSource": {
+        "commit": "92fad1ca182fcdd224d5f8f0c15ab4202d7b8754",
+        "path": "apps/web/src/components/workbench/zcode/root/useRootWorkspaceActions.ts",
+        "blobSha1": "b6db1188ebb53645751af0fd77cea46f6b53f5c7",
+        "sha256": "28f72f153fd9a5954bfca7bd9e6dedd287f525ce9dff128d319c160228c779f1"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/root/zcodeJwtInvalidRestartMarker.ts",
@@ -9282,10 +9467,17 @@
       "source": "references/zcode/packages/ui/src/settings/CodingPlanEntryButton.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/CodingPlanEntryButton.tsx",
       "sha256": "b3f7d64b9c8a3ff58f1f2bb6fef16af01c2d859135c54a2befc9dcfb9a6bcbdc",
-      "copiedSha256": "7c203369fbf537dac5ceecb915bd823dc2fa48084d7729c4f6a88523507b7831",
+      "copiedSha256": "223a0265ad00f9bf4912dd0376d6749a88b90d703eff9d6a80c39b98c7ca3f70",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
+      ],
+      "syncSource": {
+        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+        "path": "apps/web/src/components/workbench/zcode/settings/CodingPlanEntryButton.tsx",
+        "blobSha1": "977ecef2f8b16c9bca9a1d7ff37fac4b172889b5",
+        "sha256": "223a0265ad00f9bf4912dd0376d6749a88b90d703eff9d6a80c39b98c7ca3f70"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/settings/CodingPlanUpgradeDialog.tsx",
@@ -9300,10 +9492,17 @@
       "source": "references/zcode/packages/ui/src/settings/CodingPlanUpgradeDialogProvider.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/CodingPlanUpgradeDialogProvider.tsx",
       "sha256": "5134c14439cf7e34e5c4fdfb494883b9c6fc20dd10412759a70dfd22ae02c9f8",
-      "copiedSha256": "52ddfe92d20339b533f4376b49f66f12eddc4b161202d86b8efb10ad2989625b",
+      "copiedSha256": "f6af7a7786eb2cce3e970a7ce7d019862f472474e4e848135e19c96f66694ea2",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
+      ],
+      "syncSource": {
+        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+        "path": "apps/web/src/components/workbench/zcode/settings/CodingPlanUpgradeDialogProvider.tsx",
+        "blobSha1": "f8d40ebe33a79a5a283e4b03691ce1e0e8ea80c1",
+        "sha256": "f6af7a7786eb2cce3e970a7ce7d019862f472474e4e848135e19c96f66694ea2"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/settings/CommandCard.tsx",
@@ -9472,10 +9671,17 @@
       "source": "references/zcode/packages/ui/src/settings/ModelProviderSection.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/ModelProviderSection.tsx",
       "sha256": "05f5f3f95fe45c2d0c2d8454718c9f46fc052a27dfd19cda3966be74628faca7",
-      "copiedSha256": "960de137380742d0bc321f7f72f9d8b8ff12f617db802978fa269769e7b33174",
+      "copiedSha256": "8f25c623cccdb45f91cd85cee690e697319f8956d1cffe3ff77c3041d2ce3d17",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
+      ],
+      "syncSource": {
+        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+        "path": "apps/web/src/components/workbench/zcode/settings/ModelProviderSection.tsx",
+        "blobSha1": "a30fb44b22c1f9ed4e872b256012a484a2fa6797",
+        "sha256": "8f25c623cccdb45f91cd85cee690e697319f8956d1cffe3ff77c3041d2ce3d17"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/settings/OffPeakEditActionsMenu.tsx",
@@ -10516,10 +10722,17 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/useModelProviderNavigation.ts",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/useModelProviderNavigation.ts",
       "sha256": "826b97e29666073349313d89dec5ec7912ca7a127e2e76d5288136005aea3eec",
-      "copiedSha256": "c5187e899cd8613b9ac66089c37aed699282a7657feea9e175542ec5c16bb414",
+      "copiedSha256": "7e55c1341ec8a9fdc69c9b2ad24df47ab9d2dff3bd9d2af999715d30c0f4dd9f",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
+      ],
+      "syncSource": {
+        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+        "path": "apps/web/src/components/workbench/zcode/settings/model-provider-section/useModelProviderNavigation.ts",
+        "blobSha1": "fcbbf927546230bc32fca487206a0002bf028e92",
+        "sha256": "7e55c1341ec8a9fdc69c9b2ad24df47ab9d2dff3bd9d2af999715d30c0f4dd9f"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/useOptimisticReorder.ts",
@@ -10895,10 +11108,17 @@
       "source": "references/zcode/packages/ui/src/settings/settingsPageConfig.ts",
       "target": "apps/web/src/components/workbench/zcode/settings/settingsPageConfig.ts",
       "sha256": "a4959cdb8d8b4736c86325f232556ea090d043ae00655469e30f0f7d823b3be0",
-      "copiedSha256": "fa98e199a605507f2e12476d65a80b00dcb1e4033327fc82c536e1f5a96afcdb",
+      "copiedSha256": "cf9f15a59edbbe068d6510357f4645f8e3a769b5967994eb18f331d6f9ba5d55",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
+      ],
+      "syncSource": {
+        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+        "path": "apps/web/src/components/workbench/zcode/settings/settingsPageConfig.ts",
+        "blobSha1": "b8343e745289597440d8bba540db03f0d25f5da8",
+        "sha256": "cf9f15a59edbbe068d6510357f4645f8e3a769b5967994eb18f331d6f9ba5d55"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/settings/settingsResourceRowInteraction.ts",
@@ -11111,10 +11331,17 @@
       "source": "references/zcode/packages/ui/src/settingsPageHelpers.tsx",
       "target": "apps/web/src/components/workbench/zcode/settingsPageHelpers.tsx",
       "sha256": "d65c95c659bcf92416f068255bc2d0a62a7e673bf9d967a4e5e485dff0f41e83",
-      "copiedSha256": "aca213c02698f17c4c31eac105348fc2c3faa818dee4d41d6d4ffe2ef4e7a5ad",
+      "copiedSha256": "60786f18381f9a4014f126f132d6bc99e00bd65e9188a83798a164fccf962e4c",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
+      ],
+      "syncSource": {
+        "commit": "92fad1ca182fcdd224d5f8f0c15ab4202d7b8754",
+        "path": "apps/web/src/components/workbench/zcode/settingsPageHelpers.tsx",
+        "blobSha1": "a58433f6bd4fce3839f4c584bbff0d7dcd706bd3",
+        "sha256": "60786f18381f9a4014f126f132d6bc99e00bd65e9188a83798a164fccf962e4c"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/shortcuts/bindings.ts",
@@ -12033,10 +12260,18 @@
       "source": "references/zcode/packages/ui/src/v4/SessionPane.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/SessionPane.tsx",
       "sha256": "70542a0b03f61e3b4b4d61e29a7b69ca8cf354e3a51f71d0c21fde1d930e9629",
-      "copiedSha256": "e8b56d44c41735d30cbcbe05fcbc648a8e4975c4bf790f76fd877ec7280b94b6",
+      "copiedSha256": "047d6ffc651bb370cb99f12b04e42c188a18bf600a2687a3299042a2ff75cb16",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
+        "Workspace配置消费：仅metadata恢复prepare传实际目标agent与resolved endpoint，保留Task附件与文件能力并行接线"
+      ],
+      "syncSource": {
+        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+        "path": "apps/web/src/components/workbench/zcode/v4/SessionPane.tsx",
+        "blobSha1": "3ce202afa3cd1e7b1cde1652f47c6e6451c6a7d6",
+        "sha256": "231ebee6ecda8977d72bd81fafb36e357aa0aad58ef7b7837df4f58104a724c7"
+      }
     },
     {
       "source": "references/zcode/packages/ui/src/v4/SessionPluginReferenceIconProvider.tsx",
@@ -12069,9 +12304,10 @@
       "source": "references/zcode/packages/ui/src/v4/V4ConversationContext.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/V4ConversationContext.tsx",
       "sha256": "ffba1b388333c331369a9716b8220bfb32a396c3a44c45c0a53fc038e736869d",
-      "copiedSha256": "ca463ffcaef724e2904643b0fc9b8ab2b88a48bb2f484a2a2510eda24dc5b533",
+      "copiedSha256": "759608115133f092be04706000cf8e791205e77bcf8188889280ebb8e264f82c",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "Workspace配置消费：main与pane共用原连接registry，commit激活配置lease；保留原附件预算及Root/file并行改动"
       ]
     },
     {
@@ -12546,9 +12782,10 @@
       "source": "references/zcode/packages/ui/src/v4/composer/useDraftConfigControl.ts",
       "target": "apps/web/src/components/workbench/zcode/v4/composer/useDraftConfigControl.ts",
       "sha256": "b15dbbec55333de143b739bdf082af6ee912f8cd603621c114909c867bc7e5e9",
-      "copiedSha256": "ffd79fee4ca8245f2a00473c9c939fba79330751ca3ee8a45a48f210c9c1e414",
+      "copiedSha256": "41d2a70bdfdb79ef80a7cafcd9bbd4068c59524eafd31d01744cb3c23ecfb254",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "Workspace配置消费：只读目录prepare传实际目标agent与resolved endpoint，保持Task选择与Composer原意图"
       ]
     },
     {
@@ -13510,9 +13747,10 @@
       "source": "references/zcode/packages/ui/src/v4/workspaceConnectionRegistry.ts",
       "target": "apps/web/src/components/workbench/zcode/v4/workspaceConnectionRegistry.ts",
       "sha256": "3b98b61155b9a7e94bc5d3916cf6d5977ba302bebb78a854a712fdc318205ed1",
-      "copiedSha256": "ffe4e547b11530e883d160421a1b84430b961298f0b36cecc2e9e612440f4bca",
+      "copiedSha256": "acc2bec90d2547304a72dd595a567390a6dd7d05510adc1f727aaefb9e31edc1",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "Workspace配置消费：现有endpoint与opaque Project lease共享配置源，commit激活、warm释放与精确退订；保留附件预算接线"
       ]
     },
     {

@@ -818,9 +818,9 @@ export interface CodeIndexStatus {
 
 export async function fetchCodeIndex(
   accessToken: string,
-  canvasId: string,
+  taskId: string,
 ): Promise<CodeIndexStatus> {
-  const query = new URLSearchParams({ canvasId });
+  const query = new URLSearchParams({ taskId });
   const response = await fetch(
     `${getServerBaseUrl()}/api/code/index?${query}`,
     {
@@ -833,12 +833,12 @@ export async function fetchCodeIndex(
 
 export async function rebuildCodeIndex(
   accessToken: string,
-  canvasId: string,
+  taskId: string,
 ): Promise<{ stats: CodeIndexStats | null }> {
   const response = await fetch(`${getServerBaseUrl()}/api/code/index/rebuild`, {
     method: "POST",
     headers: authJsonHeaders(accessToken),
-    body: JSON.stringify({ canvasId }),
+    body: JSON.stringify({ taskId }),
   });
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as { stats: CodeIndexStats | null };
@@ -846,9 +846,9 @@ export async function rebuildCodeIndex(
 
 export async function clearCodeIndex(
   accessToken: string,
-  canvasId: string,
+  taskId: string,
 ): Promise<void> {
-  const query = new URLSearchParams({ canvasId });
+  const query = new URLSearchParams({ taskId });
   const response = await fetch(
     `${getServerBaseUrl()}/api/code/index?${query}`,
     {
@@ -869,10 +869,10 @@ export interface CodeIndexSearchHit {
 
 export async function searchCodeIndex(
   accessToken: string,
-  canvasId: string,
+  taskId: string,
   query: string,
 ): Promise<{ hits: CodeIndexSearchHit[]; builtAt: string }> {
-  const params = new URLSearchParams({ canvasId, q: query });
+  const params = new URLSearchParams({ taskId, q: query });
   const response = await fetch(
     `${getServerBaseUrl()}/api/code/index/search?${params}`,
     { headers: authHeaders(accessToken) },
@@ -1181,57 +1181,6 @@ export async function fetchSubagents(
   });
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as AgentSubagentListResponse;
-}
-
-// --- 工作树（R5-2「工作树」条目）：一个仓库同时检出多份工作副本 ---
-
-export interface CodeWorktree {
-  path: string;
-  branch: string | null;
-  main: boolean;
-  detached: boolean;
-}
-
-export async function fetchWorktrees(
-  accessToken: string,
-  canvasId: string,
-): Promise<{ worktrees: CodeWorktree[] }> {
-  const query = new URLSearchParams({ canvasId });
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/code/git/worktrees?${query.toString()}`,
-    { headers: authHeaders(accessToken) },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as { worktrees: CodeWorktree[] };
-}
-
-export async function createWorktree(
-  accessToken: string,
-  input: { canvasId: string; path: string; branch: string; create: boolean },
-): Promise<{ worktrees: CodeWorktree[] }> {
-  const response = await fetch(`${getServerBaseUrl()}/api/code/git/worktrees`, {
-    method: "POST",
-    headers: authJsonHeaders(accessToken),
-    body: JSON.stringify(input),
-  });
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as { worktrees: CodeWorktree[] };
-}
-
-export async function removeWorktree(
-  accessToken: string,
-  input: { canvasId: string; path: string; force: boolean },
-): Promise<{ worktrees: CodeWorktree[] }> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/code/git/worktrees/remove`,
-    {
-      method: "POST",
-      headers: authJsonHeaders(accessToken),
-      body: JSON.stringify(input),
-    },
-  );
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as { worktrees: CodeWorktree[] };
 }
 
 // --- 外部应用访问令牌（R5-2「外部应用授权」） ---

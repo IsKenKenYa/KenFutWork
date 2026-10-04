@@ -23,7 +23,7 @@ import {
 } from "@zui/hooks/useModelSelectionView.js";
 import { submissionModeSchema } from "@zcode/shared/zcode-protocol-v4";
 import { prepareWorkspaceWithZCodeSessionService } from "@zui/hooks/useWorkspacePrepare.js";
-import { useZCodeSessionService } from "@zui/hooks/useZCodeSessionService.js";
+import { useWorkspaceServicesResolution } from "@zui/hooks/useWorkspaceServices.js";
 import { useSettings } from "@zui/hooks/useSettingService.js";
 import { parseModelPickerValue } from "@zui/lib/zcodeSessionProjection.js";
 import { initializeNewTaskDraft } from "@zui/v4/composer/newTaskDraft.js";
@@ -122,7 +122,8 @@ export function useDraftConfigControl(params: {
   } = params;
   const workspaceKey = workspaceIdentity?.trim() || workspacePath;
   const displayProvider = provider ?? ZCODE_AGENT_PROVIDER;
-  const zcodeSessionService = useZCodeSessionService(workspacePath, null, workspaceIdentity);
+  const workspaceServices = useWorkspaceServicesResolution(workspacePath, null, workspaceIdentity);
+  const agentService = workspaceServices.services.zcodeAgentService;
   const { settings: sharedSettings } = useSettings();
   const appFollowupMode = resolveAppFollowupMode(sharedSettings);
   const scopeId = sessionId ?? V4_DRAFT_SCOPE_ROOT;
@@ -364,7 +365,8 @@ export function useDraftConfigControl(params: {
       workspacePath,
       workspaceIdentity,
       provider: displayProvider,
-      zcodeSessionService,
+      agentService,
+      remoteSessionId: workspaceServices.remoteSessionId ?? undefined,
     })
       .then((prepareResult) => {
         const baseOptions = prepareResult.configOptions ?? [];
@@ -404,7 +406,8 @@ export function useDraftConfigControl(params: {
     workspaceIdentity,
     workspaceKey,
     workspacePath,
-    zcodeSessionService,
+    agentService,
+    workspaceServices.remoteSessionId,
   ]);
 
   const handleDraftSelectModel = useCallback(

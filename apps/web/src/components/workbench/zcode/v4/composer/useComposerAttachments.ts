@@ -1,59 +1,60 @@
 /* oxlint-disable eslint(max-lines) -- 附件采集、分 scope 上传调度和生命周期必须在同一 hook 中原子收口。 */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import type { IPromptAttachmentTransferService } from "@zcode/services";
+import type { IPlatformService } from "@zcode/shared";
+import type {
+  AttachmentRef,
+  V4AttachmentBudget,
+} from "@zcode/shared/zcode-protocol-v4";
 import { toast } from "@zui/components/ui/toast.js";
-import { nanoid } from "nanoid";
-import type { AttachmentRef } from "@zcode/shared/zcode-protocol-v4";
-import { WORKSPACE_FILE_DRAG_MIME } from "@zui/lib/workspaceFileDrag.js";
+import { usePlatform } from "@zui/hooks/usePlatform.js";
+import { useServices } from "@zui/hooks/useServices.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { ChatComposerPasteEvent } from "@zui/LexicalChatInput.js";
 import {
-  MAX_CHAT_ATTACHMENTS,
-  MissingInlinePdfContentError,
-  OversizedInlinePdfAttachmentError,
-  OversizedInlineVideoAttachmentError,
+  type ChatComposerAttachment,
   createChatComposerAttachment,
   createChatComposerPathAttachment,
   createClipboardTextAttachmentFilenameForDate,
   createClipboardTextPathComposerAttachment,
   formatAttachmentSize,
+  MissingInlinePdfContentError,
+  OversizedInlinePdfAttachmentError,
+  OversizedInlineVideoAttachmentError,
   revokeChatComposerAttachment,
   serializeChatComposerAttachment,
   shouldCreateClipboardTextAttachment,
   shouldPreferSpreadsheetClipboardText,
-  type ChatComposerAttachment,
 } from "@zui/lib/chatAttachments.js";
 import {
-  WHITEBOARD_ADD_TO_CHAT_EVENT,
   buildWhiteboardWorkspaceKey,
   createWhiteboardPngFile,
   isWhiteboardAddToChatEvent,
+  WHITEBOARD_ADD_TO_CHAT_EVENT,
 } from "@zui/lib/whiteboard.js";
-import { useWhiteboardStore } from "@zui/store/whiteboardStore.js";
-import type { ChatComposerPasteEvent } from "@zui/LexicalChatInput.js";
-import type { IPromptAttachmentTransferService } from "@zcode/services";
-import type { IPlatformService } from "@zcode/shared";
-import { usePlatform } from "@zui/hooks/usePlatform.js";
-import { useServices } from "@zui/hooks/useServices.js";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { WORKSPACE_FILE_DRAG_MIME } from "@zui/lib/workspaceFileDrag.js";
 import { logger } from "@zui/logger.js";
 import {
+  type ComposerAttachmentUploadItem,
+  type ComposerAttachmentUploadStatus,
   exposeComposerAttachmentScopeKeyForE2E,
   readComposerAttachmentScope,
   updateComposerAttachmentScope,
   useComposerAttachmentUploadStore,
-  type ComposerAttachmentUploadItem,
-  type ComposerAttachmentUploadStatus,
 } from "@zui/store/composerAttachmentUploadStore.js";
-import { uploadComposerAttachment, type AttachmentPutFn } from "@zui/v4/composer/attachmentUpload.js";
+import { useWhiteboardStore } from "@zui/store/whiteboardStore.js";
+import {
+  type AttachmentPutFn,
+  uploadComposerAttachment,
+} from "@zui/v4/composer/attachmentUpload.js";
+import { nanoid } from "nanoid";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-const COMPOSER_ATTACHMENT_UPLOAD_CONCURRENCY = 2;
-const COMPOSER_ATTACHMENT_AUTO_RETRY_DELAY_MS = 500;
+// 仅完成态视觉过渡，不是执行 deadline、重试间隔或容量预算。
 const COMPOSER_ATTACHMENT_COMPLETE_VISIBLE_MS = 300;
-/**
- * 换代重传的兜底上限。dev 实测同一 workspace 可达 runtimeGeneration=4（3 次换代），
- * 取 5 留余量；它只防 Helper 反复崩溃时的无限重传，正常使用不该触达。
- */
-const COMPOSER_ATTACHMENT_REBUILD_RETRY_LIMIT = 5;
 const EMPTY_COMPOSER_ATTACHMENTS: ComposerAttachmentUploadItem[] = [];
 const REMOTE_ATTACHMENT_NOT_STAGED_ERROR_CODE = "remoteAttachmentNotStaged";
+
 export type {
   ComposerAttachmentUploadItem,
   ComposerAttachmentUploadStatus,
@@ -65,6 +66,7 @@ interface UploadTarget {
   workspaceIdentity?: string;
   remoteSessionId?: string;
   attachmentPut: AttachmentPutFn;
+  budget: () => Promise<V4AttachmentBudget>;
   transferService: IPromptAttachmentTransferService;
 }
 
@@ -82,7 +84,9 @@ interface ComposerAttachmentsApi {
   isDraggingOverComposer: boolean;
   attachmentInputRef: React.RefObject<HTMLInputElement | null>;
   openAttachmentPicker: () => void;
-  handleAttachmentInputChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  handleAttachmentInputChange: (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => void;
   handlePaste: (event: ChatComposerPasteEvent) => void;
   handleDragOverComposer: (event: React.DragEvent<HTMLElement>) => void;
   handleDragLeaveComposer: (event: React.DragEvent<HTMLElement>) => void;
@@ -93,7 +97,9 @@ interface ComposerAttachmentsApi {
   /** 发送成功只清冻结的附件 id；不传表示用户主动清空整个附件区。 */
   clearAttachments: (attachmentIds?: readonly string[]) => void;
   /** 把已由 session 接管的 queue refs 原样恢复为 ready chips；不触发 upload/adopt。 */
-  restoreSessionOwnedAttachments: (attachments: readonly AttachmentRef[]) => boolean;
+  restoreSessionOwnedAttachments: (
+    attachments: readonly AttachmentRef[],
+  ) => boolean;
   /** 只返回已 ready ref；任一附件未就绪时返回 null 作 submit 二次门禁。 */
   prepareForSend: () => Promise<AttachmentRef[] | null>;
   /** sendText accepted 后才移交远端暂存内容，发送失败时仍由草稿持有。 */
@@ -108,12 +114,15 @@ interface UseComposerAttachmentsOptions {
   scopeId: string;
   attachmentSessionId?: string | null;
   attachmentPut: AttachmentPutFn;
+  attachmentBudget: (sessionId?: string) => Promise<V4AttachmentBudget>;
   onRuntimeRestart?: (listener: () => void) => () => void;
   /**
    * 承载 transport 暴露 runtime 存活态时优先用它，替代 onRuntimeRestart。
    * unavailable 在 workspace-dispose 当场到达，把作废与唤醒拆到两个真实时点。
    */
-  onRuntimeLifecycle?: (listener: (state: "available" | "unavailable") => void) => () => void;
+  onRuntimeLifecycle?: (
+    listener: (state: "available" | "unavailable") => void,
+  ) => () => void;
   disabled?: boolean;
   /**
    * 是否消费全局 add-to-chat 事件（whiteboard 引用）。
@@ -130,7 +139,9 @@ async function selectAttachmentLocalPaths(
 ): Promise<string[]> {
   const selectedPaths = platform.selectFiles
     ? await platform.selectFiles()
-    : await platform.selectFile().then((selectedPath) => (selectedPath ? [selectedPath] : []));
+    : await platform
+        .selectFile()
+        .then((selectedPath) => (selectedPath ? [selectedPath] : []));
   return selectedPaths.filter((path) => path.trim().length > 0);
 }
 
@@ -144,7 +155,9 @@ function buildScopeKey(
 
 function isAbortError(error: unknown): boolean {
   if (error instanceof Error && error.name === "AbortError") return true;
-  return error instanceof Error && error.cause !== undefined ? isAbortError(error.cause) : false;
+  return error instanceof Error && error.cause !== undefined
+    ? isAbortError(error.cause)
+    : false;
 }
 
 class RemoteAttachmentNotStagedError extends Error {
@@ -166,14 +179,17 @@ function isTransientAttachmentUploadError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   // video 超限错误必须在黑名单里，否则会触发一次无意义重试；按错误类型精确拦截，
   // 避免扩大 message 正则后改变 image 超限的既有判定。
-  return !/(?:payloadTooLarge|invalidBase64|invalidServerProgress|frameTooLarge|permission|EACCES|ENOENT|not found|unsupported|附件缺少|缺少可读取内容|远端附件未完成物化)/iu.test(
+  return !/(?:payloadTooLarge|invalidBase64|invalidServerProgress|frameTooLarge|interrupted|cancelled|fault.connection.closed|permission|EACCES|ENOENT|not found|unsupported|上传已中断|附件缺少|缺少可读取内容|远端附件未完成物化|本地文件导入尚不可用)/iu.test(
     message,
   );
 }
 
 function progressPercent(uploadedBytes: number, totalBytes: number): number {
   if (totalBytes <= 0) return 0;
-  return Math.min(99, Math.max(0, Math.floor((uploadedBytes / totalBytes) * 99)));
+  return Math.min(
+    99,
+    Math.max(0, Math.floor((uploadedBytes / totalBytes) * 99)),
+  );
 }
 
 function isRemoteAttachmentTarget(
@@ -182,7 +198,9 @@ function isRemoteAttachmentTarget(
   // 这里曾要求 workspaceIdentity 能被当前解析器识别。远端 identity 新增格式或
   // 暂时非规范时，在 remoteSessionId 注入前会被误判为本地 workspace，使 host localPath
   // 直接走零复制交给远端 Agent。identity 只承担隔离语义；任意非空值都必须按远端 fail closed。
-  return Boolean(target.remoteSessionId?.trim() || target.workspaceIdentity?.trim());
+  return Boolean(
+    target.remoteSessionId?.trim() || target.workspaceIdentity?.trim(),
+  );
 }
 
 export function useComposerAttachments(
@@ -195,6 +213,7 @@ export function useComposerAttachments(
     scopeId,
     attachmentSessionId = null,
     attachmentPut,
+    attachmentBudget,
     onRuntimeRestart,
     onRuntimeLifecycle,
     disabled = false,
@@ -217,12 +236,44 @@ export function useComposerAttachments(
     (state) => state.scopes[scopeKey] ?? EMPTY_COMPOSER_ATTACHMENTS,
   );
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const currentScopeRef = useRef(scopeKey);
+  currentScopeRef.current = scopeKey;
+  const budgetRef = useRef<V4AttachmentBudget | null>(null);
+  const readBudget = useCallback(async (): Promise<V4AttachmentBudget> => {
+    const value = await attachmentBudget(attachmentSessionId ?? undefined);
+    if (
+      currentScopeRef.current !== scopeKey ||
+      targetsRef.current.get(scopeKey)?.budget !== readBudget
+    )
+      throw new Error("附件工作域已切换，请重新选择。");
+    budgetRef.current = value;
+    return value;
+  }, [attachmentBudget, attachmentSessionId, scopeKey]);
+  useEffect(() => {
+    let active = true;
+    budgetRef.current = null;
+    void readBudget()
+      .then(() => {
+        if (active) pumpQueueRef.current();
+      })
+      .catch((error: unknown) => {
+        if (active)
+          setAttachmentError(
+            error instanceof Error ? error.message : String(error),
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, [readBudget, scopeKey]);
   /**
    * runtime 换代计数。换代后 attachmentSessionId 可能原地不变（正式会话由 cold-resume 恢复），
    * 只靠它做依赖会漏掉唤醒，附件将永久停在 waitingSession。
    */
   const [restartEpoch, setRestartEpoch] = useState(0);
-  const [composerDragKind, setComposerDragKind] = useState<"attachment" | "workspace" | null>(null);
+  const [composerDragKind, setComposerDragKind] = useState<
+    "attachment" | "workspace" | null
+  >(null);
   const isDraggingOverComposer = composerDragKind !== null;
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const dragFeedbackTimerRef = useRef<number | null>(null);
@@ -233,13 +284,16 @@ export function useComposerAttachments(
     workspaceIdentity,
     remoteSessionId,
     attachmentPut,
+    budget: readBudget,
     transferService: promptAttachmentTransferService,
   });
 
   const commitScope = useCallback(
     (
       targetScopeKey: string,
-      update: (current: ComposerAttachmentUploadItem[]) => ComposerAttachmentUploadItem[],
+      update: (
+        current: ComposerAttachmentUploadItem[],
+      ) => ComposerAttachmentUploadItem[],
     ) => {
       updateComposerAttachmentScope(targetScopeKey, update);
     },
@@ -250,7 +304,9 @@ export function useComposerAttachments(
     (
       targetScopeKey: string,
       attachmentId: string,
-      update: (item: ComposerAttachmentUploadItem) => ComposerAttachmentUploadItem,
+      update: (
+        item: ComposerAttachmentUploadItem,
+      ) => ComposerAttachmentUploadItem,
     ) => {
       commitScope(targetScopeKey, (current) =>
         current.map((item) => (item.id === attachmentId ? update(item) : item)),
@@ -259,16 +315,27 @@ export function useComposerAttachments(
     [commitScope],
   );
 
-  const enqueueUpload = useCallback((targetScopeKey: string, attachmentId: string) => {
-    const exists = uploadQueueRef.current.some(
-      (entry) => entry.scopeKey === targetScopeKey && entry.attachmentId === attachmentId,
-    );
-    if (!exists) uploadQueueRef.current.push({ scopeKey: targetScopeKey, attachmentId });
-    queueMicrotask(() => pumpQueueRef.current());
-  }, []);
+  const enqueueUpload = useCallback(
+    (targetScopeKey: string, attachmentId: string) => {
+      const exists = uploadQueueRef.current.some(
+        (entry) =>
+          entry.scopeKey === targetScopeKey &&
+          entry.attachmentId === attachmentId,
+      );
+      if (!exists)
+        uploadQueueRef.current.push({ scopeKey: targetScopeKey, attachmentId });
+      queueMicrotask(() => pumpQueueRef.current());
+    },
+    [],
+  );
 
   const finishWithReady = useCallback(
-    (targetScopeKey: string, attachmentId: string, ref: AttachmentRef, staged: boolean) => {
+    (
+      targetScopeKey: string,
+      attachmentId: string,
+      ref: AttachmentRef,
+      staged: boolean,
+    ) => {
       updateItem(targetScopeKey, attachmentId, (item) => ({
         ...item,
         uploadStatus: "ready",
@@ -295,7 +362,11 @@ export function useComposerAttachments(
   );
 
   const runUpload = useCallback(
-    async (targetScopeKey: string, attachmentId: string, target: UploadTarget) => {
+    async (
+      targetScopeKey: string,
+      attachmentId: string,
+      target: UploadTarget,
+    ) => {
       const controllerKey = `${targetScopeKey}\u0000${attachmentId}`;
       const controller = new AbortController();
       controllersRef.current.set(controllerKey, controller);
@@ -307,11 +378,14 @@ export function useComposerAttachments(
         uploadErrorKind: undefined,
       }));
       let progressSubscription: { dispose(): void } | null = null;
+      let effectiveBudget: V4AttachmentBudget | undefined;
       try {
         const item = readComposerAttachmentScope(targetScopeKey).find(
           (candidate) => candidate.id === attachmentId,
         );
         if (!item || !target.sessionId) return;
+        effectiveBudget = await target.budget();
+        if (controllersRef.current.get(controllerKey) !== controller) return;
         if (item.localPath && isRemoteAttachmentTarget(target)) {
           if (!target.remoteSessionId) {
             updateItem(targetScopeKey, attachmentId, (current) => ({
@@ -320,24 +394,30 @@ export function useComposerAttachments(
             }));
             return;
           }
-          progressSubscription = target.transferService.onDynamicProgress(item.operationId)(
-            (progress) => {
-              if (controllersRef.current.get(controllerKey) !== controller) return;
-              updateItem(targetScopeKey, attachmentId, (current) => ({
-                ...current,
-                uploadStatus: progress.phase === "committing" ? "committing" : current.uploadStatus,
-                uploadProgress: Math.max(
-                  current.uploadProgress,
-                  progressPercent(progress.uploadedBytes, progress.totalBytes),
-                ),
-              }));
-            },
-          );
+          progressSubscription = target.transferService.onDynamicProgress(
+            item.operationId,
+          )((progress) => {
+            if (controllersRef.current.get(controllerKey) !== controller)
+              return;
+            updateItem(targetScopeKey, attachmentId, (current) => ({
+              ...current,
+              uploadStatus:
+                progress.phase === "committing"
+                  ? "committing"
+                  : current.uploadStatus,
+              uploadProgress: Math.max(
+                current.uploadProgress,
+                progressPercent(progress.uploadedBytes, progress.totalBytes),
+              ),
+            }));
+          });
           const result = await target.transferService.stage({
             operationId: item.operationId,
             sessionId: target.sessionId,
             workspacePath: target.workspacePath,
-            ...(target.workspaceIdentity ? { workspaceIdentity: target.workspaceIdentity } : {}),
+            ...(target.workspaceIdentity
+              ? { workspaceIdentity: target.workspaceIdentity }
+              : {}),
             remoteSessionId: target.remoteSessionId,
             localPath: item.localPath,
             fileName: item.filename,
@@ -368,18 +448,24 @@ export function useComposerAttachments(
           return;
         }
 
-        const serialized = await serializeChatComposerAttachment(item);
+        const serialized = await serializeChatComposerAttachment(
+          item,
+          effectiveBudget,
+        );
         const ref = await uploadComposerAttachment(
           target.attachmentPut,
           target.sessionId,
           serialized,
           {
             signal: controller.signal,
+            uploadId: item.uploadId ?? item.operationId,
             onProgress(progress) {
-              if (controllersRef.current.get(controllerKey) !== controller) return;
+              if (controllersRef.current.get(controllerKey) !== controller)
+                return;
               updateItem(targetScopeKey, attachmentId, (current) => ({
                 ...current,
-                uploadStatus: progress.phase === "committing" ? "committing" : "uploading",
+                uploadStatus:
+                  progress.phase === "committing" ? "committing" : "uploading",
                 uploadProgress: Math.max(
                   current.uploadProgress,
                   progressPercent(progress.uploadedBytes, progress.totalBytes),
@@ -392,7 +478,10 @@ export function useComposerAttachments(
         if (controllersRef.current.get(controllerKey) !== controller) return;
         finishWithReady(targetScopeKey, attachmentId, ref, false);
       } catch (error) {
-        if (controllersRef.current.get(controllerKey) !== controller || controller.signal.aborted) {
+        if (
+          controllersRef.current.get(controllerKey) !== controller ||
+          controller.signal.aborted
+        ) {
           return;
         }
         const current = readComposerAttachmentScope(targetScopeKey).find(
@@ -428,7 +517,11 @@ export function useComposerAttachments(
                   ? error.message
                   : String(error);
         const transient = isTransientAttachmentUploadError(error);
-        if (transient && current.autoRetryCount < 1) {
+        if (
+          transient &&
+          effectiveBudget &&
+          current.autoRetryCount < effectiveBudget.maxRetries
+        ) {
           updateItem(targetScopeKey, attachmentId, (item) => ({
             ...item,
             uploadStatus: "queued",
@@ -441,7 +534,7 @@ export function useComposerAttachments(
           const timer = window.setTimeout(() => {
             retryTimersRef.current.delete(timerKey);
             enqueueUpload(targetScopeKey, attachmentId);
-          }, COMPOSER_ATTACHMENT_AUTO_RETRY_DELAY_MS);
+          }, effectiveBudget.retryDelayMs);
           retryTimersRef.current.set(timerKey, timer);
         } else {
           updateItem(targetScopeKey, attachmentId, (item) => ({
@@ -471,7 +564,7 @@ export function useComposerAttachments(
 
   const pumpQueue = useCallback(() => {
     while (
-      activeUploadsRef.current < COMPOSER_ATTACHMENT_UPLOAD_CONCURRENCY &&
+      activeUploadsRef.current < (budgetRef.current?.maxConcurrent ?? 0) &&
       uploadQueueRef.current.length > 0
     ) {
       const entry = uploadQueueRef.current.shift();
@@ -479,12 +572,19 @@ export function useComposerAttachments(
       const item = readComposerAttachmentScope(entry.scopeKey).find(
         (candidate) => candidate.id === entry.attachmentId,
       );
-      if (!item || (item.uploadStatus !== "queued" && item.uploadStatus !== "waitingSession")) {
+      if (
+        !item ||
+        (item.uploadStatus !== "queued" &&
+          item.uploadStatus !== "waitingSession")
+      ) {
         continue;
       }
       const target = targetsRef.current.get(entry.scopeKey);
       const waitingForRemoteSession = Boolean(
-        target && item.localPath && isRemoteAttachmentTarget(target) && !target.remoteSessionId,
+        target &&
+          item.localPath &&
+          isRemoteAttachmentTarget(target) &&
+          !target.remoteSessionId,
       );
       if (!target?.sessionId || waitingForRemoteSession) {
         updateItem(entry.scopeKey, entry.attachmentId, (current) => ({
@@ -502,7 +602,8 @@ export function useComposerAttachments(
   useEffect(() => {
     const current = readComposerAttachmentScope(scopeKey);
     const remoteTargetReady =
-      !isRemoteAttachmentTarget({ remoteSessionId, workspaceIdentity }) || Boolean(remoteSessionId);
+      !isRemoteAttachmentTarget({ remoteSessionId, workspaceIdentity }) ||
+      Boolean(remoteSessionId);
     if (attachmentSessionId && remoteTargetReady) {
       for (const item of current) {
         if (item.uploadStatus === "waitingSession") {
@@ -524,13 +625,9 @@ export function useComposerAttachments(
     workspaceIdentity,
   ]);
 
-  /**
-   * 换代作废：撤掉 in-flight 上传与远端暂存，把附件降回 waitingSession 等新会话。
-   * silent=true 时不写错误文案——那是一次全自动恢复（作废 → 预热重建 → 重传，1-2s 内完成），
-   * 报错只会让用户以为出了问题；waitingSession 本身已渲染成「正在等待会话」。
-   */
+  /** A restarted host interrupts unfinished uploads; committed refs remain durable and readable. */
   const invalidateAttachmentsForRuntimeChange = useCallback(
-    ({ silent }: { silent: boolean }) => {
+    (_state: { silent: boolean }) => {
       for (const [targetScopeKey, items] of Object.entries(
         useComposerAttachmentUploadStore.getState().scopes,
       )) {
@@ -540,51 +637,32 @@ export function useComposerAttachments(
           if (
             item.referenceOwnership === "session" ||
             item.localZeroCopy ||
+            item.uploadStatus === "ready" ||
             item.uploadStatus === "failed"
-          ) {
+          )
             continue;
-          }
           const key = `${targetScopeKey}\u0000${item.id}`;
           controllersRef.current.get(key)?.abort();
           controllersRef.current.delete(key);
-          if (item.staged) void target?.transferService.cleanup(item.operationId).catch(() => {});
-          if (item.runtimeRebuildRetryCount >= COMPOSER_ATTACHMENT_REBUILD_RETRY_LIMIT) {
-            // 重传配额用尽是真失败，无论静默与否都必须让用户看见。
-            updateItem(targetScopeKey, item.id, (current) => ({
-              ...current,
-              uploadStatus: "failed",
-              uploadProgress: 0,
-              uploadError: intl.formatMessage({
-                id: "chat.attachments.upload.runtimeRestarted",
-              }),
-              uploadErrorKind: "runtimeRestarted",
-              attachmentRef: undefined,
-              staged: false,
-              adopted: false,
-              showComplete: false,
-            }));
-            continue;
-          }
-          // 换代后 targetsRef 里的 sessionId 必然陈旧（它在渲染期写入，而换代事件先于
-          // 下一次渲染到达），拿它入队会直撞 sessionNotFound。一律降到 waitingSession，
-          // 由 restartEpoch / 新 attachmentSessionId 驱动的唤醒 effect 在会话可用后统一入队。
+          const timer = retryTimersRef.current.get(key);
+          if (timer !== undefined) window.clearTimeout(timer);
+          retryTimersRef.current.delete(key);
+          if (item.staged)
+            void target.transferService
+              .cleanup(item.operationId)
+              .catch(() => {});
           updateItem(targetScopeKey, item.id, (current) => ({
             ...current,
-            uploadStatus: "waitingSession",
+            uploadStatus: "failed",
             uploadProgress: 0,
-            ...(silent
-              ? { uploadError: undefined, uploadErrorKind: undefined }
-              : {
-                  uploadError: intl.formatMessage({
-                    id: "chat.attachments.upload.runtimeRestarted",
-                  }),
-                  uploadErrorKind: "runtimeRestarted" as const,
-                }),
+            uploadError: intl.formatMessage({
+              id: "chat.attachments.upload.runtimeRestarted",
+            }),
+            uploadErrorKind: "runtimeRestarted",
             attachmentRef: undefined,
             staged: false,
             adopted: false,
             showComplete: false,
-            runtimeRebuildRetryCount: current.runtimeRebuildRetryCount + 1,
           }));
         }
       }
@@ -612,16 +690,24 @@ export function useComposerAttachments(
       // 作废与唤醒解耦：这里只负责作废，入队交给依赖 restartEpoch 的唤醒 effect。
       setRestartEpoch((current) => current + 1);
     });
-  }, [invalidateAttachmentsForRuntimeChange, onRuntimeLifecycle, onRuntimeRestart]);
+  }, [
+    invalidateAttachmentsForRuntimeChange,
+    onRuntimeLifecycle,
+    onRuntimeRestart,
+  ]);
 
   const showAttachmentLimitWarning = useCallback(() => {
     // 只更新输入框底部文字时，重复超限缺少明显反馈；每次添加都弹提示，同一输入框不堆叠。
     toast(
       intl.formatMessage(
         { id: "chat.attachments.maxFiles" },
-        { count: String(MAX_CHAT_ATTACHMENTS) },
+        { count: String(budgetRef.current?.maxPerInput ?? 0) },
       ),
-      { variant: "warning", position: "bottom-center", dedupeKey: `attachment-limit:${scopeKey}` },
+      {
+        variant: "warning",
+        position: "bottom-center",
+        dedupeKey: `attachment-limit:${scopeKey}`,
+      },
     );
   }, [intl, scopeKey]);
 
@@ -629,47 +715,54 @@ export function useComposerAttachments(
     (selectedAttachments: ChatComposerAttachment[]) => {
       if (selectedAttachments.length === 0) return;
       const current = readComposerAttachmentScope(scopeKey);
-      const remainingSlots = MAX_CHAT_ATTACHMENTS - current.length;
+      const budget = budgetRef.current;
+      if (!budget) {
+        selectedAttachments.forEach(revokeChatComposerAttachment);
+        setAttachmentError("附件预算尚未读取，请稍后重试。");
+        return;
+      }
+      const remainingSlots = budget.maxPerInput - current.length;
       if (remainingSlots <= 0) {
         selectedAttachments.forEach(revokeChatComposerAttachment);
         showAttachmentLimitWarning();
         return;
       }
       const accepted = selectedAttachments.slice(0, remainingSlots);
-      selectedAttachments.slice(remainingSlots).forEach(revokeChatComposerAttachment);
+      selectedAttachments
+        .slice(remainingSlots)
+        .forEach(revokeChatComposerAttachment);
+      if (
+        accepted.some((item) => item.sizeBytes > budget.maxBytes) ||
+        current.reduce((bytes, item) => bytes + item.sizeBytes, 0) +
+          accepted.reduce((bytes, item) => bytes + item.sizeBytes, 0) >
+          budget.stagedMaxBytes
+      ) {
+        accepted.forEach(revokeChatComposerAttachment);
+        setAttachmentError("选择的附件超过工作区容量预算。");
+        return;
+      }
       const target = targetsRef.current.get(scopeKey);
-      const items: ComposerAttachmentUploadItem[] = accepted.map((attachment) => {
-        // 远端 identity 往往早于 remoteSessionId 注入；这段窗口不能退化为本地路径直读。
-        const localZeroCopy = Boolean(
-          attachment.localPath && target && !isRemoteAttachmentTarget(target),
-        );
-        return {
-          ...attachment,
-          referenceOwnership: "composer",
-          operationId: `prompt-attachment-${attachment.id}`,
-          uploadStatus: localZeroCopy ? "ready" : target?.sessionId ? "queued" : "waitingSession",
-          uploadProgress: localZeroCopy ? 100 : 0,
-          ...(localZeroCopy && attachment.localPath
-            ? {
-                attachmentRef: {
-                  ref: attachment.localPath,
-                  fileName: attachment.filename,
-                  mime: attachment.mimeType,
-                  bytes: attachment.sizeBytes,
-                },
-              }
-            : {}),
-          autoRetryCount: 0,
-          runtimeRebuildRetryCount: 0,
-          staged: false,
-          adopted: false,
-          showComplete: false,
-          localZeroCopy,
-        };
-      });
+      const items: ComposerAttachmentUploadItem[] = accepted.map(
+        (attachment) => {
+          return {
+            ...attachment,
+            referenceOwnership: "composer",
+            operationId: `prompt-attachment-${attachment.id}`,
+            uploadId: `prompt-attachment-${attachment.id}`,
+            uploadStatus: target?.sessionId ? "queued" : "waitingSession",
+            uploadProgress: 0,
+            autoRetryCount: 0,
+            staged: false,
+            adopted: false,
+            showComplete: false,
+            localZeroCopy: false,
+          };
+        },
+      );
       commitScope(scopeKey, (existing) => [...existing, ...items]);
       setAttachmentError(null);
-      if (selectedAttachments.length > remainingSlots) showAttachmentLimitWarning();
+      if (selectedAttachments.length > remainingSlots)
+        showAttachmentLimitWarning();
       for (const item of items) {
         if (item.uploadStatus === "queued") enqueueUpload(scopeKey, item.id);
       }
@@ -687,7 +780,10 @@ export function useComposerAttachments(
             localPath = resolvedPath?.trim() ? resolvedPath : undefined;
           } catch (error) {
             // Electron 32+ 的 File 需要经 preload webUtils 解析；失败时仍可走 Web bytes。
-            logger.warn("[v4-composer-attachments] 解析附件本地路径失败", error);
+            logger.warn(
+              "[v4-composer-attachments] 解析附件本地路径失败",
+              error,
+            );
           }
           return createChatComposerAttachment(file, localPath);
         }),
@@ -698,13 +794,22 @@ export function useComposerAttachments(
 
   const addAttachmentLocalPaths = useCallback(
     (selectedPaths: string[]) => {
-      addPreparedAttachments(selectedPaths.map(createChatComposerPathAttachment));
+      addPreparedAttachments(
+        selectedPaths.map(createChatComposerPathAttachment),
+      );
     },
     [addPreparedAttachments],
   );
 
   const openAttachmentPicker = useCallback(() => {
-    if (readComposerAttachmentScope(scopeKey).length >= MAX_CHAT_ATTACHMENTS) {
+    if (!budgetRef.current) {
+      setAttachmentError("附件预算尚未读取，请稍后重试。");
+      return;
+    }
+    if (
+      readComposerAttachmentScope(scopeKey).length >=
+      budgetRef.current.maxPerInput
+    ) {
       showAttachmentLimitWarning();
       return;
     }
@@ -723,7 +828,13 @@ export function useComposerAttachments(
           ),
         );
       });
-  }, [addAttachmentLocalPaths, intl, platform, scopeKey, showAttachmentLimitWarning]);
+  }, [
+    addAttachmentLocalPaths,
+    intl,
+    platform,
+    scopeKey,
+    showAttachmentLimitWarning,
+  ]);
 
   const handleAttachmentInputChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -766,13 +877,20 @@ export function useComposerAttachments(
             filename: createClipboardTextAttachmentFilenameForDate(),
           });
           if (!attachment) throw new Error("当前平台不支持临时文本附件");
-          addPreparedAttachments([createClipboardTextPathComposerAttachment(text, attachment)]);
+          addPreparedAttachments([
+            createClipboardTextPathComposerAttachment(text, attachment),
+          ]);
         } catch (error) {
-          logger.warn("[v4-composer-attachments] 创建粘贴文本临时附件失败", error);
+          logger.warn(
+            "[v4-composer-attachments] 创建粘贴文本临时附件失败",
+            error,
+          );
           setAttachmentError(
             intl.formatMessage(
               { id: "chat.attachments.readFailed" },
-              { message: error instanceof Error ? error.message : String(error) },
+              {
+                message: error instanceof Error ? error.message : String(error),
+              },
             ),
           );
         }
@@ -793,7 +911,10 @@ export function useComposerAttachments(
   }, [clearDragFeedbackTimer]);
   const scheduleComposerDragFeedbackReset = useCallback(() => {
     clearDragFeedbackTimer();
-    dragFeedbackTimerRef.current = window.setTimeout(resetComposerDragFeedback, 300);
+    dragFeedbackTimerRef.current = window.setTimeout(
+      resetComposerDragFeedback,
+      300,
+    );
   }, [clearDragFeedbackTimer, resetComposerDragFeedback]);
 
   useEffect(() => {
@@ -819,12 +940,18 @@ export function useComposerAttachments(
       const hasFiles = Array.from(event.dataTransfer.items ?? []).some(
         (item) => item.kind === "file",
       );
-      if (!hasFiles && !types.includes("Files") && !types.includes(WORKSPACE_FILE_DRAG_MIME)) {
+      if (
+        !hasFiles &&
+        !types.includes("Files") &&
+        !types.includes(WORKSPACE_FILE_DRAG_MIME)
+      ) {
         return;
       }
       event.preventDefault();
       event.dataTransfer.dropEffect = "copy";
-      setComposerDragKind(types.includes(WORKSPACE_FILE_DRAG_MIME) ? "workspace" : "attachment");
+      setComposerDragKind(
+        types.includes(WORKSPACE_FILE_DRAG_MIME) ? "workspace" : "attachment",
+      );
       scheduleComposerDragFeedbackReset();
     },
     [scheduleComposerDragFeedbackReset],
@@ -832,7 +959,11 @@ export function useComposerAttachments(
   const handleDragLeaveComposer = useCallback(
     (event: React.DragEvent<HTMLElement>) => {
       const nextTarget = event.relatedTarget;
-      if (!(nextTarget instanceof Node && event.currentTarget.contains(nextTarget))) {
+      if (
+        !(
+          nextTarget instanceof Node && event.currentTarget.contains(nextTarget)
+        )
+      ) {
         resetComposerDragFeedback();
       }
     },
@@ -840,7 +971,9 @@ export function useComposerAttachments(
   );
   const handleDropComposer = useCallback(
     (event: React.DragEvent<HTMLElement>) => {
-      if (Array.from(event.dataTransfer.types).includes(WORKSPACE_FILE_DRAG_MIME)) {
+      if (
+        Array.from(event.dataTransfer.types).includes(WORKSPACE_FILE_DRAG_MIME)
+      ) {
         event.preventDefault();
         resetComposerDragFeedback();
         return;
@@ -863,7 +996,9 @@ export function useComposerAttachments(
         workspacePath,
       });
       if (!board) {
-        setAttachmentError(intl.formatMessage({ id: "whiteboard.exportMissing" }));
+        setAttachmentError(
+          intl.formatMessage({ id: "whiteboard.exportMissing" }),
+        );
         return;
       }
       try {
@@ -900,8 +1035,14 @@ export function useComposerAttachments(
       void addWhiteboardToChat(event.detail.boardId);
     };
     window.addEventListener(WHITEBOARD_ADD_TO_CHAT_EVENT, handle);
-    return () => window.removeEventListener(WHITEBOARD_ADD_TO_CHAT_EVENT, handle);
-  }, [addWhiteboardToChat, listenAddToChatEvents, workspaceIdentity, workspacePath]);
+    return () =>
+      window.removeEventListener(WHITEBOARD_ADD_TO_CHAT_EVENT, handle);
+  }, [
+    addWhiteboardToChat,
+    listenAddToChatEvents,
+    workspaceIdentity,
+    workspacePath,
+  ]);
 
   const removeAttachment = useCallback(
     (id: string) => {
@@ -922,12 +1063,18 @@ export function useComposerAttachments(
       retryTimersRef.current.delete(key);
       revokeChatComposerAttachment(item);
       const target = targetsRef.current.get(scopeKey);
-      if (item.staged || item.uploadStatus === "uploading" || item.uploadStatus === "committing") {
+      if (
+        item.staged ||
+        item.uploadStatus === "uploading" ||
+        item.uploadStatus === "committing"
+      ) {
         void target?.transferService.cancel(item.operationId).catch((error) => {
           logger.warn("[v4-composer-attachments] 取消远程附件失败", error);
         });
       }
-      commitScope(scopeKey, (items) => items.filter((candidate) => candidate.id !== id));
+      commitScope(scopeKey, (items) =>
+        items.filter((candidate) => candidate.id !== id),
+      );
       setAttachmentError(null);
     },
     [commitScope, scopeKey],
@@ -941,6 +1088,7 @@ export function useComposerAttachments(
       if (!current || current.uploadStatus !== "failed") return;
       const target = targetsRef.current.get(scopeKey);
       void target?.transferService.cleanup(current.operationId).catch(() => {});
+      const attemptId = `prompt-attachment-${id}-${nanoid()}`;
       updateItem(scopeKey, id, (item) => ({
         ...item,
         uploadStatus: target?.sessionId ? "queued" : "waitingSession",
@@ -949,7 +1097,8 @@ export function useComposerAttachments(
         uploadErrorKind: undefined,
         attachmentRef: undefined,
         autoRetryCount: 0,
-        runtimeRebuildRetryCount: 0,
+        uploadId: attemptId,
+        operationId: attemptId,
         staged: false,
         adopted: false,
         showComplete: false,
@@ -979,18 +1128,29 @@ export function useComposerAttachments(
         revokeChatComposerAttachment(item);
         if (
           !item.adopted &&
-          (item.staged || item.uploadStatus === "uploading" || item.uploadStatus === "committing")
+          (item.staged ||
+            item.uploadStatus === "uploading" ||
+            item.uploadStatus === "committing")
         ) {
-          void target?.transferService.cleanup(item.operationId).catch((error) => {
-            logger.warn("[v4-composer-attachments] 清理未发送附件失败", error);
-          });
+          void target?.transferService
+            .cleanup(item.operationId)
+            .catch((error) => {
+              logger.warn(
+                "[v4-composer-attachments] 清理未发送附件失败",
+                error,
+              );
+            });
         }
       }
       // ACK 到达后清空整个 scope，会顺手删除等待期间新加入的附件。
       uploadQueueRef.current = uploadQueueRef.current.filter(
-        (entry) => entry.scopeKey !== scopeKey || (ids !== null && !ids.has(entry.attachmentId)),
+        (entry) =>
+          entry.scopeKey !== scopeKey ||
+          (ids !== null && !ids.has(entry.attachmentId)),
       );
-      commitScope(scopeKey, (items) => (ids ? items.filter((item) => !ids.has(item.id)) : []));
+      commitScope(scopeKey, (items) =>
+        ids ? items.filter((item) => !ids.has(item.id)) : [],
+      );
       setAttachmentError(null);
     },
     [commitScope, scopeKey],
@@ -1000,26 +1160,27 @@ export function useComposerAttachments(
     (attachmentRefs: readonly AttachmentRef[]): boolean => {
       if (attachmentRefs.length === 0) return true;
       if (readComposerAttachmentScope(scopeKey).length > 0) return false;
-      const restored: ComposerAttachmentUploadItem[] = attachmentRefs.map((attachmentRef) => {
-        const id = nanoid();
-        return {
-          id,
-          filename: attachmentRef.fileName,
-          mimeType: attachmentRef.mime,
-          sizeBytes: attachmentRef.bytes,
-          referenceOwnership: "session",
-          uploadStatus: "ready",
-          uploadProgress: 100,
-          attachmentRef: { ...attachmentRef },
-          operationId: `session-owned-${id}`,
-          autoRetryCount: 0,
-          runtimeRebuildRetryCount: 0,
-          staged: false,
-          adopted: true,
-          showComplete: false,
-          localZeroCopy: false,
-        };
-      });
+      const restored: ComposerAttachmentUploadItem[] = attachmentRefs.map(
+        (attachmentRef) => {
+          const id = nanoid();
+          return {
+            id,
+            filename: attachmentRef.fileName,
+            mimeType: attachmentRef.mime,
+            sizeBytes: attachmentRef.bytes,
+            referenceOwnership: "session",
+            uploadStatus: "ready",
+            uploadProgress: 100,
+            attachmentRef: { ...attachmentRef },
+            operationId: `session-owned-${id}`,
+            autoRetryCount: 0,
+            staged: false,
+            adopted: true,
+            showComplete: false,
+            localZeroCopy: false,
+          };
+        },
+      );
       // queue 中的 AttachmentRef 已在首次发送时由 session 接管；若按普通
       // composer 文件重建，会在撤回后重复 upload/adopt，并在 runtime restart 时误清引用。
       commitScope(scopeKey, () => restored);
@@ -1029,19 +1190,39 @@ export function useComposerAttachments(
     [commitScope, scopeKey],
   );
 
-  const prepareForSend = useCallback(async (): Promise<AttachmentRef[] | null> => {
+  const prepareForSend = useCallback(async (): Promise<
+    AttachmentRef[] | null
+  > => {
     const current = readComposerAttachmentScope(scopeKey);
-    if (current.some((item) => item.uploadStatus !== "ready" || !item.attachmentRef)) {
+    const budget = await readBudget();
+    if (
+      current.length > budget.maxPerInput ||
+      current.reduce((bytes, item) => bytes + item.sizeBytes, 0) >
+        budget.stagedMaxBytes ||
+      current.some((item) => item.sizeBytes > budget.maxBytes)
+    ) {
+      setAttachmentError("本次输入的附件超过工作区预算。");
       return null;
     }
-    return current.flatMap((item) => (item.attachmentRef ? [item.attachmentRef] : []));
-  }, [scopeKey]);
+    if (
+      current.some(
+        (item) => item.uploadStatus !== "ready" || !item.attachmentRef,
+      )
+    ) {
+      return null;
+    }
+    return current.flatMap((item) =>
+      item.attachmentRef ? [item.attachmentRef] : [],
+    );
+  }, [scopeKey, readBudget]);
 
   const adoptSentAttachments = useCallback(
     async (attachmentIds: readonly string[]): Promise<void> => {
       const ids = new Set(attachmentIds);
       // 移交边界必须与本次 Submission 一致，不把下一条消息的附件提前交给 Session。
-      const current = readComposerAttachmentScope(scopeKey).filter((item) => ids.has(item.id));
+      const current = readComposerAttachmentScope(scopeKey).filter((item) =>
+        ids.has(item.id),
+      );
       const target = targetsRef.current.get(scopeKey);
       for (const item of current) {
         if (item.staged && !item.adopted) {
@@ -1049,7 +1230,10 @@ export function useComposerAttachments(
             await target?.transferService.adopt(item.operationId);
           } catch (error) {
             // sendText 已成功，不能因 adopt 回执失败把同一条消息重新留在 composer。
-            logger.warn("[v4-composer-attachments] 附件发送后 adopt 失败", error);
+            logger.warn(
+              "[v4-composer-attachments] 附件发送后 adopt 失败",
+              error,
+            );
           }
           updateItem(scopeKey, item.id, (candidate) => ({
             ...candidate,
@@ -1067,7 +1251,9 @@ export function useComposerAttachments(
       attachmentError,
       composerDragKind,
       hasAttachments: attachments.length > 0,
-      hasUnreadyAttachments: attachments.some((item) => item.uploadStatus !== "ready"),
+      hasUnreadyAttachments: attachments.some(
+        (item) => item.uploadStatus !== "ready",
+      ),
       isDraggingOverComposer,
       attachmentInputRef,
       openAttachmentPicker,

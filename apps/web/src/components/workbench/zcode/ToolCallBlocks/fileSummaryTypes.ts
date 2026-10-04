@@ -141,6 +141,7 @@ export interface RawToolCallFileSummary {
   fileIconSrc: string;
   changeStat?: { added: number; removed: number };
   patch?: string | null;
+  truncated?: boolean;
 }
 
 /**

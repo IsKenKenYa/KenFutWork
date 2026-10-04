@@ -34,7 +34,8 @@ const CodingPlanUpgradeDialogContext = createContext<CodingPlanUpgradeDialogCont
 
 export function CodingPlanUpgradeDialogProvider({ children }: { children: ReactNode }) {
   const platform = usePlatform();
-  const inventory = useCodingPlanEntryPlanList();
+  const supportsCloudAccounts = platform.supportsCloudAccounts !== false;
+  const inventory = useCodingPlanEntryPlanList(supportsCloudAccounts);
   const inventoryRef = useRef(inventory);
   inventoryRef.current = inventory;
   const [target, setTarget] = useState<CodingPlanUpgradeDialogTarget | undefined>(undefined);
@@ -47,6 +48,7 @@ export function CodingPlanUpgradeDialogProvider({ children }: { children: ReactN
       nextTarget: CodingPlanUpgradeDialogTarget,
       observation?: { signal: AbortSignal; onResult: (opened: boolean) => void },
     ) => {
+      if (!supportsCloudAccounts) return false;
       // 所有入口统一守卫；查询完成后不自动重放之前被拦截的点击。
       const { status, entryPlanList } = inventoryRef.current;
       if (observation?.signal.aborted) return false;
@@ -82,7 +84,7 @@ export function CodingPlanUpgradeDialogProvider({ children }: { children: ReactN
       setOpenVersion((version) => version + 1);
       return true;
     },
-    [platform],
+    [platform, supportsCloudAccounts],
   );
   const value = useMemo(
     () => ({ openCodingPlanUpgrade, inventory }),
@@ -92,7 +94,7 @@ export function CodingPlanUpgradeDialogProvider({ children }: { children: ReactN
   return (
     <CodingPlanUpgradeDialogContext.Provider value={value}>
       {children}
-      <CodingPlanUpgradeDialog
+      {supportsCloudAccounts ? <CodingPlanUpgradeDialog
         key={openVersion}
         target={target}
         onClose={() => {
@@ -101,7 +103,7 @@ export function CodingPlanUpgradeDialogProvider({ children }: { children: ReactN
         }}
         onOpenResult={opening.current ?? undefined}
         onReopen={setTarget}
-      />
+      /> : null}
     </CodingPlanUpgradeDialogContext.Provider>
   );
 }

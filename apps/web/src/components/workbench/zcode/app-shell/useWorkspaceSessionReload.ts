@@ -12,6 +12,7 @@ import { logger } from "@zui/logger.js";
 import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
 import { useTabStore } from "@zui/store/TabStoreProvider.js";
 import { isWorkspaceTab } from "@zui/store/tabStore.js";
+import { useWorkspaceServicesResolution } from "@zui/hooks/useWorkspaceServices.js";
 
 export function useWorkspaceSessionReload({
   intl,
@@ -37,6 +38,7 @@ export function useWorkspaceSessionReload({
 
     return activeTab.workspaceIdentity;
   });
+  const workspaceServices = useWorkspaceServicesResolution(workspaceAbsPath, undefined, workspaceIdentity);
   const lastReloadSessionTriggeredAtRef = useRef<number | null>(null);
 
   const handleReloadSession = useCallback(
@@ -96,7 +98,8 @@ export function useWorkspaceSessionReload({
             workspacePath: workspaceAbsPath,
             workspaceIdentity,
             provider,
-            zcodeSessionService: services.zcodeSessionService,
+            agentService: workspaceServices.services.zcodeAgentService,
+            remoteSessionId: workspaceServices.remoteSessionId ?? undefined,
           });
 
           const latestAfterPrepare = zcodeSessionStore.getWorkspaceState(
@@ -171,7 +174,8 @@ export function useWorkspaceSessionReload({
       reloadSessionDisabled,
       reloadSessionPending,
       services.zcodeTaskService,
-      services.zcodeSessionService,
+      workspaceServices.services.zcodeAgentService,
+      workspaceServices.remoteSessionId,
       workspaceAbsPath,
       workspaceIdentity,
     ],

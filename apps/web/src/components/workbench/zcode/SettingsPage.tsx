@@ -295,18 +295,24 @@ export function SettingsPage({
   user?: UserInfo | null;
 }) {
   const { intl, localePreference, setLocalePreference } = useZCodeIntl();
+  const platform = usePlatform();
   const { settingsSectionGroups, settingsSections } = useMemo(
     () =>
       createSettingsPageConfig({
         isDesktop: Boolean(isDesktop),
         isMacDesktop: Boolean(isMacDesktop),
         isWindowsDesktop: Boolean(isWindowsDesktop),
+        supportsAutomations: platform.supportsAutomations,
+        supportsEmbeddedBrowser: platform.supportsEmbeddedBrowser,
+        supportsComputerUse: platform.supportsComputerUse,
       }),
-    [isDesktop, isMacDesktop, isWindowsDesktop],
+    [
+      isDesktop, isMacDesktop, isWindowsDesktop,
+      platform.supportsAutomations, platform.supportsEmbeddedBrowser, platform.supportsComputerUse,
+    ],
   );
   const isLinuxDesktop = Boolean(isDesktop && !isMacDesktop && !isWindowsDesktop);
   const usesInlineWindowControls = Boolean(isWindowsDesktop || isLinuxDesktop);
-  const platform = usePlatform();
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(() => {
     const initialSection = consumeInitialSettingsSection("general");
     const visibleInitialSection = resolveSettingsSectionForPlatform(
@@ -593,11 +599,15 @@ export function SettingsPage({
   const requestOnboardingDialog = () => setNewUserOnboardingOpen(true);
   const setActiveSettingsSection = useCallback(
     (section: SettingsSectionId, fallbackSection: SettingsSectionId = activeSection) => {
-      const resolvedSection = resolveSettingsSection(section, fallbackSection);
+      const resolvedSection = resolveSettingsSectionForPlatform(
+        resolveSettingsSection(section, fallbackSection),
+        settingsSections,
+        fallbackSection,
+      );
       setActiveSection(resolvedSection);
       writeLastSettingsSectionPreference(resolvedSection);
     },
-    [activeSection],
+    [activeSection, settingsSections],
   );
   const handleOpenCodingPlanUpgradeSettings = useCallback(
     (
@@ -661,7 +671,7 @@ export function SettingsPage({
   );
   const selectDirectory = useSelectDirectory();
   const services = useServices();
-  const onboardingRecordService = services.onboardingRecordService;
+  const onboardingRecordService = platform.supportsUserOnboarding === false ? undefined : services.onboardingRecordService;
   const localHostServices = useBaseWorkspaceServices();
   const { settings: sharedSettings, update: updateSharedSettings } = useSettings();
   const memoryWorkspaceDisplayNames = useMemo(() => {
@@ -1506,7 +1516,7 @@ export function SettingsPage({
                   })}
                 </div>
 
-                <SettingsSidebarButton
+                {platform.supportsUserOnboarding !== false && <SettingsSidebarButton
                   icon={Rocket}
                   label={intl.formatMessage({ id: "settings.onboarding" })}
                   className="mt-4 border border-dashed border-border hover:border-border-hover"
@@ -1526,7 +1536,7 @@ export function SettingsPage({
                   <span className="text-ui-base text-foreground">
                     {intl.formatMessage({ id: "settings.onboarding" })}
                   </span>
-                </SettingsSidebarButton>
+                </SettingsSidebarButton>}
               </nav>
 
               <div className="max-lg:hidden">

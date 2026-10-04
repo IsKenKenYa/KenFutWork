@@ -29,6 +29,7 @@ import { Button } from "@zui/components/ui/button.js";
 import { SettingsBadge, SettingsGroupCard, SettingsRow } from "@zui/settings/SettingsPageParts.js";
 import { DataBaseDirControl } from "@zui/settings/DataBaseDirControl.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import { useOptionalServices } from "@zui/hooks/useServices.js";
 import { ProactiveSuggestionsSetting } from "@zui/settings/ProactiveSuggestionsSetting.js";
 import { normalizeInterfaceMode, type InterfaceMode } from "@zui/lib/interfaceMode.js";
@@ -171,6 +172,7 @@ export function GeneralSectionContent({
   onModelIoFullRetentionEnabledChange?: (enabled: boolean) => Promise<void>;
   onOpenOnboardingDialog: () => void;
 }) {
+  const platform = useOptionalPlatform();
   const { intl } = useZCodeIntl();
   const hasServices = Boolean(useOptionalServices());
   // 部分 SSR 单测会用精简 props 直接渲染本组件，新增终端设置项后旧 helper 未必同步传值。
@@ -697,7 +699,7 @@ export function GeneralSectionContent({
             </Select>
           }
         />
-        <SettingsRow
+        {platform?.supportsAppRuntimePreferences !== false && <SettingsRow
           label={intl.formatMessage({
             id: "settings.askUserQuestionAutoResolution",
           })}
@@ -716,8 +718,8 @@ export function GeneralSectionContent({
               }}
             />
           }
-        />
-        <SettingsRow
+        />}
+        {platform?.supportsAppRuntimePreferences !== false && <SettingsRow
           label={intl.formatMessage({ id: "settings.modelIoFullRetention" })}
           description={intl.formatMessage({
             id: "settings.modelIoFullRetentionDescription",
@@ -731,7 +733,7 @@ export function GeneralSectionContent({
               }}
             />
           }
-        />
+        />}
         <SettingsRow
           label={intl.formatMessage({ id: "settings.messageStreamShowReasoning" })}
           description={intl.formatMessage({
@@ -871,7 +873,7 @@ export function GeneralSectionContent({
         />
       </SettingsGroupCard>
 
-      <SettingsGroupCard>
+      {platform?.supportsUserOnboarding !== false && <SettingsGroupCard>
         <SettingsRow
           label={intl.formatMessage({ id: "settings.onboarding" })}
           description={intl.formatMessage({
@@ -883,7 +885,7 @@ export function GeneralSectionContent({
             </Button>
           }
         />
-      </SettingsGroupCard>
+      </SettingsGroupCard>}
     </div>
   );
 }

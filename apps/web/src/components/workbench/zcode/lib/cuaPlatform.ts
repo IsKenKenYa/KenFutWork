@@ -27,9 +27,13 @@ function isWindowsDesktopUserAgent(): boolean {
  * desktop preload 只在具备该能力时注入 onboarding 方法，因此 UA + capability 必须同时满足。
  */
 export function supportsLocalMacCuaPermissionOnboarding(
-  platform: Pick<IPlatformService, "openCuaPermissionOnboarding"> | null | undefined,
+  platform: Pick<IPlatformService, "openCuaPermissionOnboarding" | "supportsComputerUse"> | null | undefined,
 ): boolean {
-  return isMacOsDesktopUserAgent() && typeof platform?.openCuaPermissionOnboarding === "function";
+  return (
+    platform?.supportsComputerUse !== false &&
+    isMacOsDesktopUserAgent() &&
+    typeof platform?.openCuaPermissionOnboarding === "function"
+  );
 }
 
 /**
@@ -39,7 +43,11 @@ export function supportsLocalMacCuaPermissionOnboarding(
  * 改用 executeDesktopCommand——它只在 desktop preload 注入，能把 Windows 上的普通浏览器排除掉。
  */
 export function supportsLocalWindowsCuaEntry(
-  platform: Pick<IPlatformService, "executeDesktopCommand"> | null | undefined,
+  platform: Pick<IPlatformService, "executeDesktopCommand" | "supportsComputerUse"> | null | undefined,
 ): boolean {
-  return isWindowsDesktopUserAgent() && typeof platform?.executeDesktopCommand === "function";
+  return (
+    platform?.supportsComputerUse !== false &&
+    isWindowsDesktopUserAgent() &&
+    typeof platform?.executeDesktopCommand === "function"
+  );
 }

@@ -32,7 +32,7 @@ function renderSection(
   render(
     <IndexLibrarySection
       accessToken="tok"
-      canvasId="c1"
+      taskId="c1"
       enabled={false}
       autoNewFolder={true}
       onToggle={onToggle}
@@ -99,7 +99,7 @@ describe("索引库设置：两个开关", () => {
   });
 
   it("没绑工作目录：空态说明 + 不给「清空」（重建仍可点，服务端会如实拒绝无目录）", () => {
-    renderSection({ canvasId: null });
+    renderSection({ taskId: null });
     expect(screen.getByText(/没有绑定工作目录/)).toBeVisible();
     expect(screen.getByRole("button", { name: "清空" })).toBeDisabled();
   });

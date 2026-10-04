@@ -13,6 +13,7 @@ import { ReplaceableConversationTransport } from "@zui/v4/replaceableConversatio
 import { SessionDataLayer } from "@zui/v4/sessionDataLayer.js";
 import type { ConversationTransport } from "@zui/v4/transport.js";
 import { logger } from "@zui/logger.js";
+import { createWorkspaceConfigConsumer, type WorkspaceConfigAgentService, type WorkspaceConfigConsumer } from "@zui/v4/workspaceConfigConsumer.js";
 
 /** 注册表需要的 agentService 窄面（= conversation transport 的依赖面，便于测试注入）。 */
 export type WorkspaceConnectionAgentService = Pick<
@@ -39,12 +40,13 @@ export type WorkspaceConnectionAgentService = Pick<
   | "attachmentChunkV4"
   | "attachmentCommitV4"
   | "attachmentAbortV4"
+  | "attachmentBudgetV4"
   | "attachmentPreviewSourceV4"
   | "attachmentReadV4"
   | "onDynamicConversationFrame"
   | "onDynamicLocalTtftFacts"
   | "onAgentRuntimeRestarted"
->;
+> & WorkspaceConfigAgentService;
 
 interface WorkspaceConnectionScope {
   /** = pane 绑定的 primary workspace（连接路由键）。 */
@@ -64,6 +66,8 @@ export interface WorkspaceConnectionLease {
   readonly transport: ConversationTransport;
   /** React commit 后激活本租约携带的远程 service；本地租约为 no-op。 */
   activateRemoteService(): void;
+  activateWorkspaceConfig(): void;
+  readWorkspaceConfig(): ReturnType<WorkspaceConfigConsumer["read"]>;
   release(): void;
 }
 
@@ -74,6 +78,7 @@ interface RegistryEntry {
   transport: ConversationTransport;
   replaceableTransport: ReplaceableConversationTransport | null;
   layer: SessionDataLayer;
+  config: WorkspaceConfigConsumer;
   refCount: number;
   keepWarmTimer: ReturnType<typeof setTimeout> | null;
   /** 本地 service 换代后被移出注册表的旧条目：末位 lease release 时立即 dispose。 */
@@ -100,6 +105,7 @@ function disposeEntry(entry: RegistryEntry): void {
     entry.keepWarmTimer = null;
   }
   entry.layer.dispose();
+  entry.config.dispose();
 }
 
 function releaseEntry(entry: RegistryEntry): void {
@@ -132,6 +138,7 @@ function releaseEntry(entry: RegistryEntry): void {
       registry.delete(entry.key);
     }
     entry.layer.dispose();
+    entry.config.dispose();
     logger.lifecycle.info("v4 workspace connection keep-warm expired", {
       event: "v4.workspace_connection.keep_warm_expired",
       key: entry.key,
@@ -210,6 +217,7 @@ export function acquireWorkspaceConnection(
       transport,
       replaceableTransport,
       layer: new SessionDataLayer({ transport }),
+      config: createWorkspaceConfigConsumer(agentService, scope),
       refCount: 1,
       keepWarmTimer: null,
       stale: false,
@@ -230,6 +238,13 @@ export function acquireWorkspaceConnection(
   return {
     layer: entry.layer,
     transport: entry.transport,
+    activateWorkspaceConfig: () => {
+      if (!released && !entry.stale) entry.config.activate();
+    },
+    readWorkspaceConfig: () => {
+      if (released || entry.stale) return Promise.reject(new Error("配置Workspace连接租约已失效。"));
+      return entry.config.read();
+    },
     activateRemoteService: () => {
       if (
         released ||
@@ -248,6 +263,8 @@ export function acquireWorkspaceConnection(
       }
       entry.agentService = agentService;
       entry.agentServiceGeneration = incomingServiceGeneration;
+      entry.config.dispose();
+      entry.config = createWorkspaceConfigConsumer(agentService, scope);
       entry.replaceableTransport.replace(
         createAgentConversationTransport(agentService, {
           workspacePath: scope.workspacePath,

@@ -2,8 +2,7 @@
 // （v4 sendText/createSession attachments 引用模型）。
 //
 // 分派规则（与 CLI attachment-refs.ts 的映射对偶）：
-// - localPath（desktop 主流：native picker / 拖拽 getPathForFile / 长粘贴临时文件 /
-//   oversized 大图路径降级）→ ref 直接携带绝对路径，零上传；
+// - localPath-only 需要另经可信宿主导入；本命令面不把 renderer 路径冒充 ref；
 // - dataBase64（粘贴截图等内联图）→ 高层 put（内部 begin/chunk/commit）→ artifact ref；
 // - textContent（无路径文本，web 回退面）→ 编码后同走 put；
 // - 三者皆无（元信息-only）→ 丢弃并告警（无内容可发，不伪造引用）。
@@ -50,14 +49,6 @@ export async function uploadComposerAttachment(
     "sizeBytes" in attachment && typeof attachment.sizeBytes === "number"
       ? attachment.sizeBytes
       : undefined;
-  if (attachment.localPath) {
-    return {
-      ref: attachment.localPath,
-      fileName,
-      mime,
-      bytes: sizeBytes ?? 0,
-    };
-  }
   const dataBase64 =
     "dataBase64" in attachment && attachment.dataBase64
       ? attachment.dataBase64
@@ -65,6 +56,9 @@ export async function uploadComposerAttachment(
         ? encodeTextToBase64(attachment.textContent)
         : null;
   if (dataBase64 === null) {
+    if (attachment.localPath) {
+      throw new Error("本地文件导入尚不可用，请使用文件上传。");
+    }
     logger.warn(
       `[v4-composer] 附件无内容可发（无 localPath/dataBase64/textContent），已丢弃: ${fileName}`,
     );

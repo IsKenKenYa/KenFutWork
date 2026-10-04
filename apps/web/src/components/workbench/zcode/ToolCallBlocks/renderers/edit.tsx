@@ -333,6 +333,11 @@ export function EditToolCallBlock(context: ToolCallBlockRenderContext) {
         title={toolCall.title}
         renderContent={renderContent}
       />
+      {rawFileSummaries.some((summary) => summary.truncated) ? (
+        <div className="mt-2 rounded-xl border border-border/70 bg-muted/40 px-3 py-2 text-ui-base text-foreground-subtle">
+          {intl.formatMessage({ id: "chat.toolCall.edit.truncatedPatch" })}
+        </div>
+      ) : null}
       {/* <pre className="text-[8px]">{JSON.stringify(toolCall, null, 2)}</pre> */}
     </>
   );

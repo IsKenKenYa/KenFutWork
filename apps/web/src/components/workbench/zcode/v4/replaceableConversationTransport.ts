@@ -45,7 +45,8 @@ export class ReplaceableConversationTransport implements ConversationTransport {
    * 能力按构造时的 current 判定：同一 workspace 的后续 transport 均由
    * createAgentConversationTransport 产出，支持性只取决于 agentService，换代不会翻转。
    */
-  onRuntimeLifecycle?: (listener: RuntimeLifecycleListener) => () => void = (listener) => {
+  onRuntimeLifecycle?: (listener: RuntimeLifecycleListener) => () => void = (listener,
+  ) => {
     this.runtimeLifecycleListeners.add(listener);
     this.bindRuntimeLifecycleListener();
     return () => {
@@ -105,11 +106,11 @@ export class ReplaceableConversationTransport implements ConversationTransport {
     params: Parameters<ConversationTransport["resync"]>[0],
   ): ReturnType<ConversationTransport["resync"]> {
     return (this.transportBySubscriptionId.get(params.subscriptionId) ?? this.current).resync(
-      params,
-    );
+      params);
   }
 
-  unsubscribe(subscriptionId: string): ReturnType<ConversationTransport["unsubscribe"]> {
+  unsubscribe(subscriptionId: string,
+  ): ReturnType<ConversationTransport["unsubscribe"]> {
     const owner = this.transportBySubscriptionId.get(subscriptionId) ?? this.current;
     this.transportBySubscriptionId.delete(subscriptionId);
     return owner.unsubscribe(subscriptionId);
@@ -206,6 +207,11 @@ export class ReplaceableConversationTransport implements ConversationTransport {
     options?: Parameters<ConversationTransport["attachmentPut"]>[1],
   ): ReturnType<ConversationTransport["attachmentPut"]> {
     return this.current.attachmentPut(params, options);
+  }
+  attachmentBudget(
+    sessionId?: string,
+  ): ReturnType<ConversationTransport["attachmentBudget"]> {
+    return this.current.attachmentBudget(sessionId);
   }
 
   attachmentRead(

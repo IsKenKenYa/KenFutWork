@@ -1,7 +1,7 @@
-import { create } from "zustand";
 import type { AttachmentRef } from "@zcode/shared/zcode-protocol-v4";
-import { shouldExposeE2EStoreBridge } from "@zui/lib/e2eStoreBridge.js";
 import type { ChatComposerAttachment } from "@zui/lib/chatAttachments.js";
+import { shouldExposeE2EStoreBridge } from "@zui/lib/e2eStoreBridge.js";
+import { create } from "zustand";
 
 export type ComposerAttachmentUploadStatus =
   | "waitingSession"
@@ -23,12 +23,8 @@ export interface ComposerAttachmentUploadItem extends ChatComposerAttachment {
   uploadErrorKind?: "transient" | "permanent" | "runtimeRestarted";
   attachmentRef?: AttachmentRef;
   operationId: string;
+  uploadId?: string;
   autoRetryCount: number;
-  /**
-   * 因 runtime 换代触发的重传次数，与上传失败重试分开计。
-   * 换代不是「上传失败」，共用计数器会让一次换代就烧掉用户可见的重试配额。
-   */
-  runtimeRebuildRetryCount: number;
   staged: boolean;
   adopted: boolean;
   showComplete: boolean;
@@ -43,9 +39,8 @@ interface ComposerAttachmentUploadStoreState {
  * renderer 内存态：File/object URL 不落盘，但 task/composer 切换或局部卸载不会丢失。
  * 上传控制器仍由发起该 operation 的 hook 闭包持有，relay/main 不保存业务状态。
  */
-export const useComposerAttachmentUploadStore = create<ComposerAttachmentUploadStoreState>()(
-  () => ({ scopes: {} }),
-);
+export const useComposerAttachmentUploadStore =
+  create<ComposerAttachmentUploadStoreState>()(() => ({ scopes: {} }));
 
 declare global {
   interface Window {
@@ -56,7 +51,8 @@ declare global {
 
 if (shouldExposeE2EStoreBridge()) {
   // E2E 只暴露当前唯一附件 owner，供 scope 切换用例准备状态；不再把附件塞回旧 Session Store。
-  window.__zcodeComposerAttachmentUploadStoreE2E = useComposerAttachmentUploadStore;
+  window.__zcodeComposerAttachmentUploadStoreE2E =
+    useComposerAttachmentUploadStore;
 }
 
 export function exposeComposerAttachmentScopeKeyForE2E(scopeKey: string): void {
@@ -65,13 +61,17 @@ export function exposeComposerAttachmentScopeKeyForE2E(scopeKey: string): void {
   }
 }
 
-export function readComposerAttachmentScope(scopeKey: string): ComposerAttachmentUploadItem[] {
+export function readComposerAttachmentScope(
+  scopeKey: string,
+): ComposerAttachmentUploadItem[] {
   return useComposerAttachmentUploadStore.getState().scopes[scopeKey] ?? [];
 }
 
 export function updateComposerAttachmentScope(
   scopeKey: string,
-  update: (current: ComposerAttachmentUploadItem[]) => ComposerAttachmentUploadItem[],
+  update: (
+    current: ComposerAttachmentUploadItem[],
+  ) => ComposerAttachmentUploadItem[],
 ): void {
   useComposerAttachmentUploadStore.setState((state) => {
     const next = update(state.scopes[scopeKey] ?? []);

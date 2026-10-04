@@ -6,6 +6,14 @@ import type { CreateTaskRequest } from "@zui/app-shell/types.js";
 export interface RootProps {
   services: IServiceAccessor;
   platform: IPlatformService;
+  /** 宿主目录选择专用metadata服务；不消费当前Task文件读取scope。 */
+  directoryServices?: IServiceAccessor;
+  /** 工作区切换时在layout阶段安装宿主读取上下文。 */
+  onWorkspaceContextChange?: (target: { workspacePath: string | null; workspaceIdentity: string | null }) => void;
+  /** 外部宿主已验证的身份，不走 ZCode 云账户恢复。 */
+  initialUserInfo?: UserInfo | null;
+  onInterfaceModeChange?: (mode: import("@zui/lib/interfaceMode.js").InterfaceMode) => void;
+  workbenchGroupClientMode?: import("@zcode/shared/zcode-protocol-v4").HelloMessage["clientMode"];
   /** 如果从 main 进程传入则跳过项目选择页 */
   initialWorkspaceAbsPath?: string;
   /** app-owned workspace 展示分类；缺省为真实项目。 */

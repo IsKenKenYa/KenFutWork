@@ -16,21 +16,20 @@ export function useConversationWorkspaceActions({
   setWorkspaceActionError: (error: string | null) => void;
 }) {
   const handleSelectConversationWorkspace = useCallback(
-    (path: string) => {
-      // 对话工作区是 app 管理的共享 cwd，不属于用户项目：不走跨窗口项目激活，
-      // 也不写 recentProjects，只用 purpose 让展示层把它归到“对话”。
+    (path: string, workspaceIdentity?: string) => {
+      // 对话入口独立于当前项目焦点，不走跨窗口激活，也不写recentProjects。
       logger.info("[Root] select conversation workspace", { path });
-      addTab(path, { workspacePurpose: "conversation" });
+      addTab(path, { workspacePurpose: "conversation", ...(workspaceIdentity ? { workspaceIdentity } : {}) });
       setWorkspaceActionError(null);
     },
     [addTab, setWorkspaceActionError],
   );
 
-  const handleResolveConversationWorkspace = useCallback(async () => {
+  const handleResolveConversationWorkspaceTarget = useCallback(async () => {
     try {
       const result = await services.fileService.ensureConversationWorkspace();
       setWorkspaceActionError(null);
-      return result.path;
+      return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.error("[Root] ensure conversation workspace failed", { error });
@@ -39,24 +38,28 @@ export function useConversationWorkspaceActions({
     }
   }, [services.fileService, setWorkspaceActionError]);
 
+  const handleResolveConversationWorkspace = useCallback(async () => {
+    return (await handleResolveConversationWorkspaceTarget()).path;
+  }, [handleResolveConversationWorkspaceTarget]);
+
   const handleEnsureConversationWorkspace = useCallback(async () => {
-    const path = await handleResolveConversationWorkspace();
-    handleSelectConversationWorkspace(path);
-    return path;
-  }, [handleResolveConversationWorkspace, handleSelectConversationWorkspace]);
+    const target = await handleResolveConversationWorkspaceTarget();
+    handleSelectConversationWorkspace(target.path, target.workspaceIdentity);
+    return target.path;
+  }, [handleResolveConversationWorkspaceTarget, handleSelectConversationWorkspace]);
 
   const handleCreateConversationTask = useCallback(async () => {
     try {
-      const path = await handleResolveConversationWorkspace();
-      handleSelectConversationWorkspace(path);
+      const target = await handleResolveConversationWorkspaceTarget();
+      handleSelectConversationWorkspace(target.path, target.workspaceIdentity);
       // “对话 +”是显式目标，不应被当前 split pane / workbench group 的项目绑定覆盖。
       useWorkbenchGroupStore.getState().deactivateActiveGroup();
       usePaneLayoutStore.getState().resetToPrimaryPane();
-      useZCodeSessionStore.getState().startDraft(path);
+      useZCodeSessionStore.getState().startDraft(target.path, undefined, target.workspaceIdentity);
     } catch {
       // handleResolveConversationWorkspace 已记录错误并保留当前 workspace。
     }
-  }, [handleResolveConversationWorkspace, handleSelectConversationWorkspace]);
+  }, [handleResolveConversationWorkspaceTarget, handleSelectConversationWorkspace]);
 
   return {
     handleSelectConversationWorkspace,

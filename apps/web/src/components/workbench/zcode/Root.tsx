@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- Root 当前集中编排启动和 workspace shell wiring，先保持入口收口避免跨层状态拆散。 */
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { LucideProvider, RefreshCw } from "lucide-react";
 import {
   APP_RUNTIME_PREFERENCES_CHANGED_BROADCAST_CHANNEL,
@@ -120,7 +120,8 @@ export function Root(props: RootProps) {
           <PlatformProvider platform={props.platform}>
             <StoreProvider
               broadcastService={props.services.broadcastService}
-              initialIsRestoringOAuthSession
+              initialIsRestoringOAuthSession={props.platform.supportsCloudAccounts !== false}
+              onInterfaceModeChange={props.onInterfaceModeChange}
             >
               <TabStoreProvider>
                 <DiffsWorkerPoolProvider>
@@ -144,6 +145,10 @@ export function Root(props: RootProps) {
 function RootInner({
   services,
   platform,
+  directoryServices,
+  onWorkspaceContextChange,
+  initialUserInfo,
+  workbenchGroupClientMode,
   initialWorkspaceAbsPath,
   unavailableWorkspacePath,
   initialWorkspaceIdentity,
@@ -185,13 +190,16 @@ function RootInner({
   // 动态工作流灰度快照的唯一取数点：
   // 放在 app 级 ServiceProvider 这一层取一次，自动化页与 run 面板只读。消费方可能位于
   // 工作区级 ServiceProvider 内（远程 Host 的 accessor），由它们取数会拿到另一台 Host 的答案。
-  useDynamicWorkflowAvailabilityLoader(services.codingPlanSubscriptionService);
+  useDynamicWorkflowAvailabilityLoader(services.codingPlanSubscriptionService, platform.supportsAutomations !== false && platform.supportsCloudAccounts !== false);
 
   const { intl, locale } = useZCodeIntl();
   const theme = useZCodeStore((state) => state.theme);
   const user = useZCodeStore((state) => state.user);
   const isRestoringOAuthSession = useZCodeStore((state) => state.isRestoringOAuthSession);
   const setUser = useZCodeStore((state) => state.setUser);
+  useEffect(() => {
+    if (platform.supportsCloudAccounts === false) setUser(initialUserInfo ?? null);
+  }, [initialUserInfo, platform.supportsCloudAccounts, setUser]);
   const setIsRestoringOAuthSession = useZCodeStore((state) => state.setIsRestoringOAuthSession);
   const setOAuthError = useZCodeStore((state) => state.setOAuthError);
   const oauthPollingActive = useZCodeStore((state) => state.oauthPollingActive);
@@ -204,10 +212,10 @@ function RootInner({
   } = useSettings();
   const [welcomeScreenOpenReason, setWelcomeScreenOpenReason] =
     useState<WelcomeScreenOpenReason | null>(() =>
-      consumeZcodeJwtInvalidRestartMarker() ? "session-expired" : null,
+      platform.supportsCloudAccounts !== false && consumeZcodeJwtInvalidRestartMarker() ? "session-expired" : null,
     );
   const [providerFamilyDomainMigrationComplete, setProviderFamilyDomainMigrationComplete] =
-    useState(false);
+    useState(platform.supportsCloudAccounts === false);
   const loginEntryRequest = useZCodeStore((state) => state.loginEntryRequest);
   const rootModelSelectionRead = useModelSelectionServiceView(services.modelSelectionService);
   const rootModelSelectionView =
@@ -265,6 +273,7 @@ function RootInner({
           return;
         }
         void refreshAppSettings();
+        if (platform.supportsAppRuntimePreferences === false) return;
         void services.zcodeAgentService.syncAppRuntimePreferences(parsed.data).catch((error) => {
           logger.warn("[settings] 同步跨窗口运行时偏好失败", error);
         });
@@ -304,13 +313,14 @@ function RootInner({
     };
   }, [
     refreshAppSettings,
+    platform.supportsAppRuntimePreferences,
     services.botsService,
     services.broadcastService,
     services.zcodeAgentService,
   ]);
 
   useEffect(() => {
-    if (!appSettings) {
+    if (!appSettings || platform.supportsAppRuntimePreferences === false) {
       return;
     }
     void services.zcodeAgentService
@@ -334,6 +344,7 @@ function RootInner({
   }, [
     appSettings?.askUserQuestionAutoResolutionEnabled,
     appSettings?.modelIoFullRetentionEnabled,
+    platform.supportsAppRuntimePreferences,
     services.botsService,
     services.zcodeAgentService,
   ]);
@@ -357,6 +368,10 @@ function RootInner({
     // Settings 覆盖时仍使用被覆盖 tab 的完整远程身份，避免通知与侧栏建立重复订阅。
     workspaceTabs: windowWorkspaceTabs,
   });
+  useLayoutEffect(() => {
+    onWorkspaceContextChange?.({ workspacePath: workspaceShellPath, workspaceIdentity: workspaceShellIdentity ?? null });
+    return () => onWorkspaceContextChange?.({ workspacePath: null, workspaceIdentity: null });
+  }, [onWorkspaceContextChange, workspaceShellPath, workspaceShellIdentity]);
   const workspaceScopedServices = useWorkspaceServices(
     workspaceShellPath,
     workspaceShellRemoteSessionId,
@@ -388,6 +403,10 @@ function RootInner({
   const refreshProviderState = useRootProviderStateRefresh(services);
   useRootProviderSettingsSnapshot(services);
   useEffect(() => {
+    if (platform.supportsCloudAccounts === false) {
+      setProviderFamilyDomainMigrationComplete(true);
+      return;
+    }
     let disposed = false;
 
     void (async () => {
@@ -415,7 +434,7 @@ function RootInner({
     return () => {
       disposed = true;
     };
-  }, [refreshAppSettings, refreshProviderState, services]);
+  }, [platform.supportsCloudAccounts, refreshAppSettings, refreshProviderState, services]);
 
   const shouldPreferDirectoryBrowser = Boolean(preferDirectoryBrowser);
   const supportsEmbeddedBrowser = explicitSupportsEmbeddedBrowser ?? Boolean(isDesktop);
@@ -429,7 +448,7 @@ function RootInner({
       rootProviderAvailability.hydrated || rootModelSelectionRead.state.status === "error",
   });
   const providerAvailabilityLoginEntryGuardEnabled =
-    shouldEnableProviderAvailabilityLoginEntryGuard();
+    platform.supportsCloudAccounts !== false && shouldEnableProviderAvailabilityLoginEntryGuard();
   const { startupCheckCompleted: providerAvailabilityStartupCheckCompleted } =
     useProviderAvailabilityLoginEntryGuard({
       enabled: providerAvailabilityLoginEntryGuardEnabled,
@@ -517,6 +536,7 @@ function RootInner({
     updateAppSettings,
     setOAuthError,
     setUser,
+    workbenchGroupClientMode,
     onProviderFamilyDomainClearedAfterLogout: () => {
       setWelcomeScreenOpenReason("logout-provider-required");
     },
@@ -819,7 +839,7 @@ function RootInner({
         ) {
           return;
         }
-        handleSelectConversationWorkspace(result.path);
+        handleSelectConversationWorkspace(result.path, result.workspaceIdentity);
       })
       .catch((error) => {
         if (!rootInnerMountedRef.current) {
@@ -932,11 +952,11 @@ function RootInner({
       variant="silent"
     >
       <DirectoryBrowser
-        services={services}
+        services={directoryServices ?? services}
         onCancel={() => setDirectoryBrowserOpen(false)}
-        onSelect={(path) => {
+        onSelect={async (path) => {
+          await handleSelectProject(path, (error) => { throw error; });
           setDirectoryBrowserOpen(false);
-          void handleSelectProject(path);
         }}
       />
     </ScopedErrorBoundary>
@@ -1077,11 +1097,11 @@ function RootInner({
           resetKeys={[workspaceShellIdentity?.trim() || workspaceShellPath]}
           variant="silent"
         >
-          <OnboardingDialog
+          {platform.supportsSettingsImport !== false && <OnboardingDialog
             workspacePath={workspaceShellPath || undefined}
             workspaceIdentity={workspaceShellIdentity}
             isDesktop={isDesktop}
-          />
+          />}
         </ScopedErrorBoundary>
       </OccupationOnboarding>
     </RootShell>

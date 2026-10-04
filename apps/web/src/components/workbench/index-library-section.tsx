@@ -16,7 +16,7 @@ import {
  * 1. **索引新文件夹**：搜到还没有索引的工作目录时自动建一份（文件数 < 50,000 才建）；
  * 2. **索引存储库以实现即时搜索（测试版）**：右栏「文件目录」的搜索走索引。
  *
- * 索引是**本机缓存**（`<cwd>/.kenfutwork/index/<canvasId>.json`），进库表的东西一件没有：
+ * 索引是**本机缓存**（`<cwd>/.kenfutwork/index/<taskId>.json`），进库表的东西一件没有：
  * 开关记在工作区设置里，索引文件在磁盘上。「所有数据均存储在本地」这句是承诺，所以
  * 界面上照写并说明落点。
  */
@@ -43,15 +43,15 @@ export function formatBuiltAt(iso: string): string {
 
 export function IndexLibrarySection({
   accessToken,
-  canvasId,
+  taskId,
   enabled,
   autoNewFolder,
   onToggle,
   onToggleAuto,
 }: {
   accessToken: string;
-  /** 当前会话/项目的主画布（索引按画布即工作目录建）。 */
-  canvasId: string | null;
+  /** 当前 Code Task（目录取该 Task 创建时的快照）。 */
+  taskId: string | null;
   /** ② 「索引存储库以实现即时搜索」：搜索走索引。 */
   enabled: boolean;
   /** ① 「索引新文件夹」：自动为尚无索引的工作目录建索引。 */
@@ -65,32 +65,32 @@ export function IndexLibrarySection({
   const [message, setMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!canvasId) return;
+    if (!taskId) return;
     try {
-      const status = await fetchCodeIndex(accessToken, canvasId);
+      const status = await fetchCodeIndex(accessToken, taskId);
       setStats(status.stats);
     } catch {
       setStats(null);
     }
-  }, [accessToken, canvasId]);
+  }, [accessToken, taskId]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   const run = async (action: "rebuild" | "clear") => {
-    if (!canvasId) return;
+    if (!taskId) return;
     setBusy(true);
     setMessage(null);
     try {
       if (action === "rebuild") {
-        const result = await rebuildCodeIndex(accessToken, canvasId);
+        const result = await rebuildCodeIndex(accessToken, taskId);
         setStats(result.stats);
         setMessage(
           `已重建：${result.stats?.files ?? 0} 个文件、${formatBytes(result.stats?.bytes ?? 0)}`,
         );
       } else {
-        await clearCodeIndex(accessToken, canvasId);
+        await clearCodeIndex(accessToken, taskId);
         setStats(null);
         setMessage("已清空索引（下次搜索会按需重建）");
       }
@@ -128,7 +128,7 @@ export function IndexLibrarySection({
       </p>
 
       <div className="mt-3 rounded-lg border p-3 text-sm">
-        {canvasId === null ? (
+        {taskId === null ? (
           <p className="text-muted-foreground">
             当前会话没有绑定工作目录——绑定后这里会显示索引统计。
           </p>
@@ -158,7 +158,7 @@ export function IndexLibrarySection({
         <div className="mt-3 flex items-center gap-2">
           <button
             type="button"
-            disabled={busy || !canvasId}
+            disabled={busy || !taskId}
             onClick={() => void run("rebuild")}
             className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
           >
@@ -166,7 +166,7 @@ export function IndexLibrarySection({
           </button>
           <button
             type="button"
-            disabled={busy || !canvasId || !stats}
+            disabled={busy || !taskId || !stats}
             onClick={() => void run("clear")}
             className="rounded-md border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive disabled:opacity-40"
           >

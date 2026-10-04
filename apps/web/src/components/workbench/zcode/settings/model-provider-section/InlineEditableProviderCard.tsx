@@ -211,6 +211,7 @@ export function InlineEditableProviderCard({
   const providerIdRef = useRef(provider.providerId);
   const dirtyProviderFieldsRef = useRef(new Set<keyof ProviderDraftValues>());
   const draftRevisionRef = useRef(0);
+  const apiKeyDraftRevisionRef = useRef(0);
   const lastSubmittedDraftSignatureRef = useRef<string | null>(null);
   const providerDisplayName = resolveModelProviderDisplayName(provider);
   const saveNotificationRef = useRef({
@@ -385,8 +386,25 @@ export function InlineEditableProviderCard({
 
   const saveProviderWithCleanupGuard = useCallback(
     async (nextProvider: ProviderSettingsFormProvider, onFailure?: () => void): Promise<void> => {
+      const keyRevision = apiKeyDraftRevisionRef.current;
+      const submittedProviderId = nextProvider.providerId;
+      const submittedKey = isApiKeyAccess(nextProvider.personalConfig.access)
+        ? nextProvider.personalConfig.access.apiKey
+        : undefined;
       const operation = async () => {
         await onSave(nextProvider);
+        // 只清除已成功写入且未继续编辑的 Key；不覆盖其它字段或新供应商草稿。
+        if (
+          provider.credentialConfigured !== undefined &&
+          submittedKey !== undefined &&
+          providerIdRef.current === submittedProviderId &&
+          apiKeyDraftRevisionRef.current === keyRevision
+        ) {
+          dirtyProviderFieldsRef.current.delete("apiKeyValue");
+          draftRef.current.apiKeyValue = "";
+          setApiKeyValue("");
+          lastSubmittedDraftSignatureRef.current = null;
+        }
       };
       await runSaveOperation(operation).catch((error) => {
         logger.warn("[ModelProviderSection] 自动保存 Provider 草稿失败", {
@@ -397,25 +415,27 @@ export function InlineEditableProviderCard({
         throw error;
       });
     },
-    [onSave, provider.providerId, runSaveOperation],
+    [onSave, provider.providerId, provider.credentialConfigured, runSaveOperation],
   );
 
   const cancelIdleDraftSaveRef = useRef<() => void>(() => undefined);
 
   const commitPendingDraft = useCallback(
-    async (reason: string, nameConfirmed = false): Promise<void> => {
+    async (reason: string, nameConfirmed = false, clearApiKey = false): Promise<void> => {
       cancelIdleDraftSaveRef.current();
       const nextProvider = resolvePendingProviderDraftSave({
         provider,
         draft: draftRef.current,
         readOnlyEndpoints,
         nameConfirmed,
+        clearApiKey,
         now: Date.now,
       });
       if (!nextProvider) {
         return;
       }
       const signature = JSON.stringify({
+        clearApiKey,
         ...draftRef.current,
         nameValue: nameConfirmed ? draftRef.current.nameValue : getProviderFormLabel(provider),
       });
@@ -514,6 +534,7 @@ export function InlineEditableProviderCard({
 
   const handleApiKeyValueChange = useCallback(
     (value: string) => {
+      apiKeyDraftRevisionRef.current += 1;
       markDraftDirty("apiKeyValue");
       draftRef.current.apiKeyValue = value;
       setApiKeyValue(value);
@@ -828,6 +849,10 @@ export function InlineEditableProviderCard({
           <ProviderApiKeySection
             apiKeyValue={apiKeyValue}
             apiKeyVisible={apiKeyVisible}
+            credentialConfigured={provider.credentialConfigured}
+            onClearApiKey={() => {
+              void commitPendingDraft("clear-key", false, true).catch(() => undefined);
+            }}
             presetApiKeyUrl={presetApiKeyUrl}
             onOpenPresetApiKey={onOpenPresetApiKey}
             onApiKeyChange={handleApiKeyValueChange}

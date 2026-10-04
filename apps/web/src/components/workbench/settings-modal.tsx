@@ -118,7 +118,7 @@ export function SettingsModal({
   initialTab,
   onClose,
   accessToken = null,
-  activeCanvasId = null,
+  activeTaskId = null,
   hasWorkDir = false,
   conversationCount = 0,
   isAdmin = false,
@@ -129,8 +129,8 @@ export function SettingsModal({
   initialTab?: SettingsTab | undefined;
   /** 插件面板需要它取 `/api/plugins`（未登录时为空 → 面板列表为空）。 */
   accessToken?: string | null;
-  /** 当前项目主画布（索引库按画布=工作目录建；没有项目时为 null）。 */
-  activeCanvasId?: string | null;
+  /** 当前 Code Task（索引取 Task 固定目录；视觉模式或未创建 Task 时为 null）。 */
+  activeTaskId?: string | null;
   /** 「引导」页用：是否已有工作目录项目、已有多少会话。 */
   hasWorkDir?: boolean;
   conversationCount?: number;
@@ -420,7 +420,7 @@ export function SettingsModal({
               token ? (
                 <IndexLibrarySection
                   accessToken={token}
-                  canvasId={activeCanvasId}
+                  taskId={activeTaskId}
                   enabled={codeIndexEnabled}
                   autoNewFolder={codeIndexAutoNewFolder}
                   onToggle={handleIndexToggle}

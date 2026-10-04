@@ -71,6 +71,7 @@ import {
   DropdownMenuTrigger,
 } from "@zui/components/ui/dropdown-menu.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import { logger } from "@zui/logger.js";
 import { NewTaskButtonGroup } from "@zui/NewTaskButtonGroup.js";
 import { selectWorkspaceZCodeState, useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
@@ -316,6 +317,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   onFileTreeOpenChange?: (open: boolean) => void;
 }) {
   const { intl, localePreference, setLocalePreference } = useZCodeIntl();
+  const supportsAutomations = useOptionalPlatform()?.supportsAutomations !== false;
   const handleTaskRowSelect = useCallback(
     (
       targetWorkspacePath: string,
@@ -753,8 +755,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     onOpenPluginStore?.();
   }, [onOpenPluginStore]);
   const handleOpenAutomationsMain = useCallback(() => {
+    if (!supportsAutomations) return;
     onOpenAutomations?.();
-  }, [onOpenAutomations]);
+  }, [onOpenAutomations, supportsAutomations]);
   const handleOpenCodingPlanUpgrade = useCallback(
     (
       providerId: string,
@@ -1316,21 +1319,23 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                 }
               />
             ) : null} */}
-            <Button
-              variant="ghost"
-              onClick={handleOpenAutomationsMain}
-              data-icon="inline-start"
-              data-testid={TID_AUTOMATIONS_OPEN}
-              size="lg"
-              aria-pressed={automationsActive}
-              className={cn(
-                "w-full justify-start gap-2 text-foreground hover:bg-surface-hover hover:text-foreground",
-                automationsActive && "bg-selected text-foreground",
-              )}
-            >
-              <CalendarClock className="size-4" />
-              {intl.formatMessage({ id: "workspace.openScheduledSettings" })}
-            </Button>
+            {supportsAutomations ? (
+              <Button
+                variant="ghost"
+                onClick={handleOpenAutomationsMain}
+                data-icon="inline-start"
+                data-testid={TID_AUTOMATIONS_OPEN}
+                size="lg"
+                aria-pressed={automationsActive}
+                className={cn(
+                  "w-full justify-start gap-2 text-foreground hover:bg-surface-hover hover:text-foreground",
+                  automationsActive && "bg-selected text-foreground",
+                )}
+              >
+                <CalendarClock className="size-4" />
+                {intl.formatMessage({ id: "workspace.openScheduledSettings" })}
+              </Button>
+            ) : null}
             <Button
               variant="ghost"
               onClick={handleOpenPluginStoreMain}
@@ -1404,7 +1409,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                     onGroupedTaskGroupIdsChange={handleGroupedTaskGroupIdsChange}
                     onCollapsedGroupIdsChange={handleCollapsedGroupedTaskGroupIdsChange}
                     onStickyGroupHeaderChange={setGroupedStickyHeader}
-                    onOpenAutomations={handleOpenAutomationsMain}
+                    onOpenAutomations={supportsAutomations ? handleOpenAutomationsMain : undefined}
                   />
                 ) : taskViewMode === "timeline" ? (
                   <WorkspaceTimelineTasksSection

@@ -20,6 +20,8 @@ export interface ProviderSettingsFormProvider extends Pick<
   enabled: boolean;
   /** Registry 根据当前 Official、Personal 与 Account Facts 得出的状态。 */
   executable: boolean;
+  credentialConfigured?: boolean;
+  configRevision?: number;
   accountState?: AccountProviderState;
   issues?: readonly ConfigValidationIssue[];
   hasPersonalConfig: boolean;

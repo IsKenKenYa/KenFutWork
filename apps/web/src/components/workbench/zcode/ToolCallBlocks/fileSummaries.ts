@@ -93,6 +93,7 @@ function readDisplayFileDiffSummaries(...values: unknown[]): RawToolCallFileSumm
             typeof display.deletions === "number" ? Math.max(0, Math.round(display.deletions)) : 0,
         },
         patch: readDisplayStructuredPatch(display, getPathLeaf(path)),
+        ...(display.truncated === true ? { truncated: true } : {}),
       });
     }
   }

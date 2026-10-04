@@ -247,6 +247,7 @@ export function ModelProviderSection({
   const { intl, locale } = useZCodeIntl();
   const confirmDialog = useConfirmDialog();
   const platform = usePlatform();
+  const supportsCloudAccounts = platform.supportsCloudAccounts !== false;
   const { modelSelectionService, oauthService, credentialService } = useServices();
   const {
     modelProviders,
@@ -395,6 +396,7 @@ export function ModelProviderSection({
   } = useSettings();
   const authenticatedEnterpriseProducts = useEnterpriseCodingPlanProducts({
     enabled:
+      supportsCloudAccounts &&
       codingPlanPurchaseTokenAuthenticatedByProviderId[
         BUILTIN_MODEL_PROVIDER_IDS.bigmodelTeamCodingPlan
       ] === true,
@@ -406,6 +408,7 @@ export function ModelProviderSection({
   // zai 独立调 hook（zai family 走 zai provider），下游合并两 family 的订阅产品。
   const authenticatedZaiEnterpriseProducts = useEnterpriseCodingPlanProducts({
     enabled:
+      supportsCloudAccounts &&
       codingPlanPurchaseTokenAuthenticatedByProviderId[
         BUILTIN_MODEL_PROVIDER_IDS.zaiTeamCodingPlan
       ] === true,
@@ -452,7 +455,7 @@ export function ModelProviderSection({
     resolveProviderFamilyDomainFromOAuthProvider(activeOAuthProvider);
   const { entitlements: codingPlanEntitlements, refresh: refreshCodingPlanEntitlements } =
     useCodingPlanEntitlements({
-      providerSettingsView,
+      providerSettingsView: supportsCloudAccounts ? providerSettingsView : null,
       connectionSelections: effectiveConnectionSelections,
       suppressProviderFingerprintAutoRefresh: codingPlanStatusSyncProviderId !== null,
     });
@@ -484,6 +487,7 @@ export function ModelProviderSection({
         shouldApply?: () => boolean;
       } = {},
     ) => {
+      if (!supportsCloudAccounts) return null;
       const [activeProvider, zaiToken, bigmodelToken] = await Promise.all([
         credentialService.load("oauth:active_provider"),
         credentialService.load(`oauth:${ZAI_PROVIDER_ID}:access_token`),
@@ -522,7 +526,7 @@ export function ModelProviderSection({
       }
       return normalizedActiveProvider;
     },
-    [credentialService, setOAuthError, setUser],
+    [credentialService, setOAuthError, setUser, supportsCloudAccounts],
   );
 
   const refreshProviderPanelAfterAuthChange = useCallback(
@@ -608,12 +612,12 @@ export function ModelProviderSection({
   const presetProviders = useMemo(
     () =>
       PRESET_PROVIDER_SPECS.filter((preset) =>
-        shouldShowPresetProviderForActiveOAuth(preset.id, effectiveProviderFamilyDomain),
+        supportsCloudAccounts && shouldShowPresetProviderForActiveOAuth(preset.id, effectiveProviderFamilyDomain),
       ).map((preset) => ({
         ...preset,
         provider: modelProviders.find((provider) => provider.providerId === preset.id) ?? null,
       })),
-    [effectiveProviderFamilyDomain, modelProviders],
+    [effectiveProviderFamilyDomain, modelProviders, supportsCloudAccounts],
   );
 
   useEffect(() => {
@@ -681,6 +685,7 @@ export function ModelProviderSection({
 
   const { navigationGroups, navigationItems, selectedNavItem, navigationUnavailable } =
     useModelProviderNavigation({
+      supportsCloudAccounts,
       presetProviders,
       modelProviders,
       entitledAccountProviderIds,

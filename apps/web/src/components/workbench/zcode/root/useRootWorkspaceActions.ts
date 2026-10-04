@@ -68,6 +68,56 @@ function resolveNewTaskTargetFromRequest(
   };
 }
 
+function startTaskDraft(source: string, newTaskTarget: NewTaskTargetResolution, request?: CreateTaskRequest) {
+  const provider = typeof request === "string" ? request : request?.provider;
+  const groupedDraftPlacement =
+    typeof request === "string" ? undefined : request?.groupedDraftPlacement;
+  const rawInitialPrompt = typeof request === "string" ? undefined : request?.initialPrompt;
+  // Skill mention 后的尾空格决定光标落在 chip 之后；直接 trim 后再保存
+  // 会把结构化 mention 的可编辑间隔吞掉。这里只用 trim 判空，非空草稿保留调用方原文。
+  const initialPrompt = rawInitialPrompt?.trim() ? rawInitialPrompt : undefined;
+  const initialPromptMention =
+    typeof request === "string" ? undefined : request?.initialPromptMention;
+  logger.info(`[Root] ${source}:`, newTaskTarget.workspacePath, provider ?? "default-provider");
+  // Cmd/Ctrl+N 是创建新的单 panel 草稿，不是在当前 workbench
+  // group / paneLayout 中继续拆一个 draft；目标 workspace 取 focused pane。
+  useWorkbenchGroupStore.getState().deactivateActiveGroup();
+  usePaneLayoutStore.getState().resetToPrimaryPane();
+  useZCodeSessionStore
+    .getState()
+    .startDraft(
+      newTaskTarget.workspacePath,
+      provider,
+      newTaskTarget.workspaceIdentity ?? undefined,
+      {
+        groupedDraftPlacement,
+        createSource: typeof request === "string" ? undefined : request?.createSource,
+      },
+    );
+  if (initialPrompt) {
+    // insert request 被首个 composer 消费后会清空；如果随后因 pane/config
+    // 切换 remount，新 composer 会从空的 __draft__ 恢复并覆盖预填。先写草稿事实源，
+    // 再发即时插入请求：当前 composer 立即可见，后续 remount 也恢复同一文本。
+    persistV4ComposerDraft(
+      newTaskTarget.workspacePath,
+      newTaskTarget.workspaceIdentity ?? undefined,
+      V4_DRAFT_SCOPE_ROOT,
+      {
+        text: initialPrompt,
+        ...(initialPromptMention ? { mention: initialPromptMention } : {}),
+      },
+    );
+    useZCodeSessionStore
+      .getState()
+      .requestComposerTextInsert(
+        newTaskTarget.workspacePath,
+        initialPrompt,
+        newTaskTarget.workspaceIdentity ?? undefined,
+        initialPromptMention,
+      );
+  }
+}
+
 export function useRootWorkspaceActions({
   intl,
   platform,
@@ -87,6 +137,7 @@ export function useRootWorkspaceActions({
   onProviderFamilyDomainClearedAfterLogout,
   userId,
   onOpenRemoteConnection,
+  onWorkspaceSelectionError,
   workbenchGroupClientMode = "desktop-continuous",
 }: {
   intl: ReturnType<typeof import("@zui/i18n/IntlProvider.js").useZCodeIntl>["intl"];
@@ -107,6 +158,7 @@ export function useRootWorkspaceActions({
   onProviderFamilyDomainClearedAfterLogout?: () => void;
   userId?: string;
   onOpenRemoteConnection?: (preference?: OpenRemoteConnectionPreference) => void;
+  onWorkspaceSelectionError?: (error: unknown) => void;
   workbenchGroupClientMode?: ZCodeTaskClientMode;
 }) {
   const [workspaceActionError, setWorkspaceActionError] = useState<string | null>(null);
@@ -159,7 +211,7 @@ export function useRootWorkspaceActions({
   );
 
   const startNewTaskFromActiveWorkspace = useCallback(
-    (source: string, request?: CreateTaskRequest) => {
+    async (source: string, request?: CreateTaskRequest) => {
       const state = tabStoreApi.getState();
       const {
         activeWorkspacePath: currentActiveWorkspacePath,
@@ -174,7 +226,7 @@ export function useRootWorkspaceActions({
       // 跨项目发起已保存工作流时，新任务必须落在工作流归属项目，而非活动项目
       // request 显式带 targetWorkspace 时采用它，
       // 否则惰性回退到 workbench 焦点解析，无 target 时行为与旧版逐字节一致。
-      const newTaskTarget = resolveNewTaskTargetFromRequest(request, () =>
+      let newTaskTarget = resolveNewTaskTargetFromRequest(request, () =>
         resolveWorkbenchNewTaskTarget({
           activeWorkspacePath: currentActiveWorkspacePath,
           activeWorkspaceIdentity: currentActiveWorkspaceIdentity,
@@ -196,10 +248,26 @@ export function useRootWorkspaceActions({
       ) {
         return;
       }
+
       if (!newTaskTarget) {
         logger.error(`[Root] ${source} failed: no active workspace`);
         setWorkspaceActionError(intl.formatMessage({ id: "workspace.noActiveForNewTask" }));
         return;
+      }
+
+      if (platform.resolveNewTaskWorkspace) {
+        try {
+          const taskId = useZCodeSessionStore.getState().getWorkspaceState(newTaskTarget.workspacePath, newTaskTarget.workspaceIdentity ?? undefined).activeTaskId;
+          const resolved = await platform.resolveNewTaskWorkspace({
+            workspacePath: newTaskTarget.workspacePath,
+            ...(newTaskTarget.workspaceIdentity ? { workspaceIdentity: newTaskTarget.workspaceIdentity } : {}),
+            ...(taskId ? { taskId } : {}),
+          });
+          newTaskTarget = { workspacePath: resolved.workspacePath, workspaceIdentity: resolved.workspaceIdentity ?? null };
+        } catch (error) {
+          setWorkspaceActionError(error instanceof Error ? error.message : String(error));
+          return;
+        }
       }
 
       // 仅禁用按钮无法覆盖桌面菜单和快捷键；启动期失效 workspace
@@ -231,55 +299,9 @@ export function useRootWorkspaceActions({
       }
 
       setWorkspaceActionError(null);
-      const provider = typeof request === "string" ? request : request?.provider;
-      const groupedDraftPlacement =
-        typeof request === "string" ? undefined : request?.groupedDraftPlacement;
-      const rawInitialPrompt = typeof request === "string" ? undefined : request?.initialPrompt;
-      // Skill mention 后的尾空格决定光标落在 chip 之后；直接 trim 后再保存
-      // 会把结构化 mention 的可编辑间隔吞掉。这里只用 trim 判空，非空草稿保留调用方原文。
-      const initialPrompt = rawInitialPrompt?.trim() ? rawInitialPrompt : undefined;
-      const initialPromptMention =
-        typeof request === "string" ? undefined : request?.initialPromptMention;
-      logger.info(`[Root] ${source}:`, newTaskTarget.workspacePath, provider ?? "default-provider");
-      // Cmd/Ctrl+N 是创建新的单 panel 草稿，不是在当前 workbench
-      // group / paneLayout 中继续拆一个 draft；目标 workspace 取 focused pane。
-      useWorkbenchGroupStore.getState().deactivateActiveGroup();
-      usePaneLayoutStore.getState().resetToPrimaryPane();
-      useZCodeSessionStore
-        .getState()
-        .startDraft(
-          newTaskTarget.workspacePath,
-          provider,
-          newTaskTarget.workspaceIdentity ?? undefined,
-          {
-            groupedDraftPlacement,
-            createSource: typeof request === "string" ? undefined : request?.createSource,
-          },
-        );
-      if (initialPrompt) {
-        // insert request 被首个 composer 消费后会清空；如果随后因 pane/config
-        // 切换 remount，新 composer 会从空的 __draft__ 恢复并覆盖预填。先写草稿事实源，
-        // 再发即时插入请求：当前 composer 立即可见，后续 remount 也恢复同一文本。
-        persistV4ComposerDraft(
-          newTaskTarget.workspacePath,
-          newTaskTarget.workspaceIdentity ?? undefined,
-          V4_DRAFT_SCOPE_ROOT,
-          {
-            text: initialPrompt,
-            ...(initialPromptMention ? { mention: initialPromptMention } : {}),
-          },
-        );
-        useZCodeSessionStore
-          .getState()
-          .requestComposerTextInsert(
-            newTaskTarget.workspacePath,
-            initialPrompt,
-            newTaskTarget.workspaceIdentity ?? undefined,
-            initialPromptMention,
-          );
-      }
+      startTaskDraft(source, newTaskTarget, request);
     },
-    [addTab, intl, tabStoreApi, workbenchGroupClientMode],
+    [addTab, intl, platform, tabStoreApi, workbenchGroupClientMode],
   );
 
   const handleLogout = useCallback(async () => {
@@ -361,7 +383,7 @@ export function useRootWorkspaceActions({
   ]);
 
   const handleSelectProject = useCallback(
-    async (path: string) => {
+    async (path: string, onSelectionError = onWorkspaceSelectionError) => {
       logger.info("[Root] handleSelectProject called with path:", path);
       try {
         const wslUncWorkspace = parseWslUncWorkspacePath(path);
@@ -398,10 +420,11 @@ export function useRootWorkspaceActions({
         }
 
         // 新增 tab（如果已在本窗口打开则激活它）
-        addTab(path);
+        const workspacePath = result.workspacePath ?? path;
+        addTab(workspacePath, result.workspaceIdentity ? { workspaceIdentity: result.workspaceIdentity } : undefined);
         // 打开 workspace 是 workspace-only 意图，不是“继续上次会话”。
         // 即使命中已存在 tab，也必须清掉该 workspace 的 activeTaskId 并回到单 pane 草稿。
-        startDraftInWorkspace(path);
+        startDraftInWorkspace(workspacePath, result.workspaceIdentity ?? tabStoreApi.getState().activeWorkspaceIdentity ?? undefined);
         setWorkspaceActionError(null);
 
         // 更新最近项目列表
@@ -412,8 +435,8 @@ export function useRootWorkspaceActions({
           logger.info("[Root] calling settingService.get()...");
           const settings = await services.settingService.get();
           const updated = [
-            path,
-            ...settings.recentProjects.filter((projectPath) => projectPath !== path),
+            workspacePath,
+            ...settings.recentProjects.filter((projectPath) => projectPath !== workspacePath),
           ].slice(0, 10);
           await services.settingService.update({ recentProjects: updated });
           // Dock/Jump List 的系统最近文档入口已经下线，这里只保留应用内 recentProjects，
@@ -422,17 +445,21 @@ export function useRootWorkspaceActions({
         }
       } catch (err) {
         logger.error("[Root] handleSelectProject error:", err);
+        setWorkspaceActionError(err instanceof Error ? err.message : String(err));
+        onSelectionError?.(err);
       }
     },
     [
       addTab,
       intl,
+      onWorkspaceSelectionError,
       onOpenRemoteConnection,
       platform,
       requestConfirmation,
       services.settingService,
       startDraftInWorkspace,
       supportsSettings,
+      tabStoreApi,
     ],
   );
 

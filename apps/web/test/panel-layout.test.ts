@@ -10,7 +10,7 @@ import {
 
 /**
  * 三栏宽度口径：面板上限由视口与左栏现算（给中间的对话列留最小宽度），
- * 拖过上限时左栏自动收起来腾地方（`workbench-side-panel.test.tsx` 锁拖动行为）。
+ * 拖过上限时按视口护栏限制面板宽度。
  * 窄列下 composer 收成图标是 CSS 容器查询的事，见 `composer-compact-select.test.tsx`。
  */
 describe("panelWidthLimits", () => {
