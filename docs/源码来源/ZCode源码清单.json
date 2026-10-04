@@ -16,10 +16,11 @@
       "source": "references/zcode/packages/ui/src/App.tsx",
       "target": "apps/web/src/components/workbench/zcode/App.tsx",
       "sha256": "ad78d4e881b8706bf708a5acd08aff900c66784a8a435603fd50cf1b8670a987",
-      "copiedSha256": "5965100a3e79e89da85d93ea6ebb89f6c6b9800365a90274873ac3fcf514b3c0",
+      "copiedSha256": "9e5ce923820818868f13d4c668c74bd61231371cdaf955d7298b60cae83b9132",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "能力显隐：未接通自动化服务时不进入原自动化主视图、不轮询闲时任务通知"
+        "能力显隐：未接通自动化服务时不进入原自动化主视图、不轮询闲时任务通知",
+        "品牌适配：应用 chrome 标识换 KenFutWork 自有标，ZCode 归属保留于 About 与 NOTICE"
       ]
     },
     {
@@ -198,9 +199,10 @@
       "source": "references/zcode/packages/ui/src/DesktopTopOverlay.tsx",
       "target": "apps/web/src/components/workbench/zcode/DesktopTopOverlay.tsx",
       "sha256": "5d7ea8687a3e2a31762685664ffcf90ec9b277594cfcb483346590972bccee40",
-      "copiedSha256": "d9e13fb26277858e2547bb6ece363a87c7bdc120f93c81ccbbe63173b0238acf",
+      "copiedSha256": "1dcb90614cddbf0e730039a9b904cb6c80c4c5aaf6489cc1ab8de40ce32b4c82",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "品牌适配：应用 chrome 标识换 KenFutWork 自有标"
       ]
     },
     {
@@ -1466,9 +1468,10 @@
       "source": "references/zcode/packages/ui/src/WelcomeScreen.tsx",
       "target": "apps/web/src/components/workbench/zcode/WelcomeScreen.tsx",
       "sha256": "24c6c75f90b087c86772a3854b6d793c1d8b713697e918203f99f3fc901883b9",
-      "copiedSha256": "8db3188f10901dad2debe9ade2f82fcd524f7aa17bf7f259a7b76a4a239e3618",
+      "copiedSha256": "53ad79de69c91dfa984ff81132f5e86aa01aa5de22dad156b6fbd0b4a26c4fac",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "品牌适配：登录面板 aria 标签改 KenFutWork"
       ]
     },
     {
@@ -1484,9 +1487,10 @@
       "source": "references/zcode/packages/ui/src/WindowsTopLeftLogo.tsx",
       "target": "apps/web/src/components/workbench/zcode/WindowsTopLeftLogo.tsx",
       "sha256": "722cc7365745adcdc13d400ae6ddc9ef81ad90c76b12cc126918d8616cdfa776",
-      "copiedSha256": "4eef1407189a144b67e97e8e33924c07715f07505202f9f8d5947f2f79097ebe",
+      "copiedSha256": "205ea4b90c9c57cdc2fe9487ce8eb6b61506bb19afe68af9cc4ef56ac17f91c4",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "品牌适配：窗口左上标识换 KenFutWork 自有标"
       ]
     },
     {
@@ -1665,9 +1669,10 @@
       "source": "references/zcode/packages/ui/src/WorkspaceSidebar/WorkspaceSidebarCollapsedRail.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceSidebar/WorkspaceSidebarCollapsedRail.tsx",
       "sha256": "66145c7f50a4911b03a3a5444379ca0f8effaf7f01ee4a806b9dc54380f1d56a",
-      "copiedSha256": "fe54b8c8ad9d8d9bd404fe1e69537e20220b5121fe51eda252a0db29441bd126",
+      "copiedSha256": "e4e3709d3dc12ec1e7b0df7f855da7daa944850b7781f35acc261df11ddd5334",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "品牌适配：应用 chrome 标识换 KenFutWork 自有标"
       ]
     },
     {
@@ -1692,10 +1697,11 @@
       "source": "references/zcode/packages/ui/src/WorkspaceSidebarFooter.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceSidebarFooter.tsx",
       "sha256": "5f64bddab48988a8cea50ea65f615d6b1f02bb63a2a40b232f207cfea30a9a57",
-      "copiedSha256": "d629e1a425137083914bb23793ec685f07d8faee02bd1b869781caacd4acc604",
+      "copiedSha256": "01c8c58217394b1bc4f56aea845744b7eeef7230054c6575cee8ed60024ffb66",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "能力显隐：未提供云账户的宿主隐藏原云徽标/登录/退出，保留原偏好与用量项"
+        "能力显隐：未提供云账户的宿主隐藏原云徽标/登录/退出，保留原偏好与用量项",
+        "品牌适配：无用户名时的回退显示名改 KenFutWork"
       ]
     },
     {
@@ -2447,15 +2453,6 @@
       ]
     },
     {
-      "source": "references/zcode/packages/ui/src/assets/chevron-down-md.svg",
-      "target": "apps/web/src/components/workbench/zcode/assets/chevron-down-md.svg",
-      "sha256": "4533cf8a824ccc76701f0b3ad41ce2b4466ac38a4b0b626a80ea2f69d0d252b7",
-      "copiedSha256": "4533cf8a824ccc76701f0b3ad41ce2b4466ac38a4b0b626a80ea2f69d0d252b7",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
       "source": "references/zcode/packages/ui/src/assets/cli-icons/icon-glm-for-dark.png",
       "target": "apps/web/src/components/workbench/zcode/assets/cli-icons/icon-glm-for-dark.png",
       "sha256": "9de2d32f869150af875174e7c91137dd66ca4ef10b68687fd0f28c781f669a5f",
@@ -2469,15 +2466,6 @@
       "target": "apps/web/src/components/workbench/zcode/assets/cli-icons/icon-glm-for-light.png",
       "sha256": "8159019313f25aad9862e959e86bbc66838e7926faead3ca099b9d254c056252",
       "copiedSha256": "8159019313f25aad9862e959e86bbc66838e7926faead3ca099b9d254c056252",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/cli-icons/icon-glm.png",
-      "target": "apps/web/src/components/workbench/zcode/assets/cli-icons/icon-glm.png",
-      "sha256": "0f7b3d57763e17d541cca7e3b983f67b4d08ba75ca3d364be9569874fa8d4652",
-      "copiedSha256": "0f7b3d57763e17d541cca7e3b983f67b4d08ba75ca3d364be9569874fa8d4652",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -2514,87 +2502,6 @@
       "target": "apps/web/src/components/workbench/zcode/assets/notification-sounds/task-notification-pop.mp3",
       "sha256": "bd95332236b7435be42002aed75335dbaac6e896a1650d16b8e2f49183d5cfce",
       "copiedSha256": "bd95332236b7435be42002aed75335dbaac6e896a1650d16b8e2f49183d5cfce",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/payment-icons/american-express.webp",
-      "target": "apps/web/src/components/workbench/zcode/assets/payment-icons/american-express.webp",
-      "sha256": "a0c3a9a138053e6acf494ea391eb075d45507d31f260492cdd3f8714ab6e3dbb",
-      "copiedSha256": "a0c3a9a138053e6acf494ea391eb075d45507d31f260492cdd3f8714ab6e3dbb",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/payment-icons/icon-alipay@2x.png",
-      "target": "apps/web/src/components/workbench/zcode/assets/payment-icons/icon-alipay@2x.png",
-      "sha256": "c0decdb18921491c3d0c475a9cd74c562d3f225207ca6f7f815c91ba2dcaa081",
-      "copiedSha256": "c0decdb18921491c3d0c475a9cd74c562d3f225207ca6f7f815c91ba2dcaa081",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/payment-icons/jcb.webp",
-      "target": "apps/web/src/components/workbench/zcode/assets/payment-icons/jcb.webp",
-      "sha256": "a93a80adda4bab54904c4b3f4245b9dd0fb72b81ff85b8edcdfcc3f3f0391706",
-      "copiedSha256": "a93a80adda4bab54904c4b3f4245b9dd0fb72b81ff85b8edcdfcc3f3f0391706",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/payment-icons/master.webp",
-      "target": "apps/web/src/components/workbench/zcode/assets/payment-icons/master.webp",
-      "sha256": "fc1c84410526d95e5ff737bcaf1ec70b2612f6e526c3b3bf51c623540089cc5c",
-      "copiedSha256": "fc1c84410526d95e5ff737bcaf1ec70b2612f6e526c3b3bf51c623540089cc5c",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/payment-icons/paypal-text.svg",
-      "target": "apps/web/src/components/workbench/zcode/assets/payment-icons/paypal-text.svg",
-      "sha256": "7518ed5debc95a0d617798d9430d1ae6671f3f8a7b4f298da763d01438252441",
-      "copiedSha256": "7518ed5debc95a0d617798d9430d1ae6671f3f8a7b4f298da763d01438252441",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/payment-icons/paypal.webp",
-      "target": "apps/web/src/components/workbench/zcode/assets/payment-icons/paypal.webp",
-      "sha256": "b1ac19857a8b155caae226fad0eb420edc65e301b907b6cfdc4485006d05be3b",
-      "copiedSha256": "b1ac19857a8b155caae226fad0eb420edc65e301b907b6cfdc4485006d05be3b",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/payment-icons/stripe-text.svg",
-      "target": "apps/web/src/components/workbench/zcode/assets/payment-icons/stripe-text.svg",
-      "sha256": "50ca6a5c875a4b163a1eebbde737491fb49b044e6181664f4082749f3a69a509",
-      "copiedSha256": "50ca6a5c875a4b163a1eebbde737491fb49b044e6181664f4082749f3a69a509",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/payment-icons/unionpay.webp",
-      "target": "apps/web/src/components/workbench/zcode/assets/payment-icons/unionpay.webp",
-      "sha256": "7e96ab9557a02607ab5e437e1621140fa538db567b75b5d3bd0b33c71c120b6f",
-      "copiedSha256": "7e96ab9557a02607ab5e437e1621140fa538db567b75b5d3bd0b33c71c120b6f",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/payment-icons/visa.webp",
-      "target": "apps/web/src/components/workbench/zcode/assets/payment-icons/visa.webp",
-      "sha256": "8500f60371dff9b4b55998b87df56ed7f63cd10675c1ea993f0cd7c702a31845",
-      "copiedSha256": "8500f60371dff9b4b55998b87df56ed7f63cd10675c1ea993f0cd7c702a31845",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -2654,46 +2561,10 @@
       ]
     },
     {
-      "source": "references/zcode/packages/ui/src/assets/provider-icons/logo-anthropic.svg",
-      "target": "apps/web/src/components/workbench/zcode/assets/provider-icons/logo-anthropic.svg",
-      "sha256": "99f07c2361e3c3875765cfd0568e75e3cdd0c016e0e5094509a2e96c28bdb2fe",
-      "copiedSha256": "99f07c2361e3c3875765cfd0568e75e3cdd0c016e0e5094509a2e96c28bdb2fe",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
       "source": "references/zcode/packages/ui/src/assets/provider-icons/logo-bigmodel.svg",
       "target": "apps/web/src/components/workbench/zcode/assets/provider-icons/logo-bigmodel.svg",
       "sha256": "63d72de1b988ab15000f8e5c495d9a9da39272748c8fef103a4b39fda6605847",
       "copiedSha256": "63d72de1b988ab15000f8e5c495d9a9da39272748c8fef103a4b39fda6605847",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/provider-icons/logo-moonshoot.svg",
-      "target": "apps/web/src/components/workbench/zcode/assets/provider-icons/logo-moonshoot.svg",
-      "sha256": "0f44e74d497f6d5d9921af67417ba6788435bc6bd503f6164f0b0c3398cfe4cd",
-      "copiedSha256": "0f44e74d497f6d5d9921af67417ba6788435bc6bd503f6164f0b0c3398cfe4cd",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/provider-icons/logo-openrouter.svg",
-      "target": "apps/web/src/components/workbench/zcode/assets/provider-icons/logo-openrouter.svg",
-      "sha256": "aa422921888a886727dde29a010769afd4c6922140974d9aebdccfb4296364e9",
-      "copiedSha256": "aa422921888a886727dde29a010769afd4c6922140974d9aebdccfb4296364e9",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/provider-icons/logo-zai-square.svg",
-      "target": "apps/web/src/components/workbench/zcode/assets/provider-icons/logo-zai-square.svg",
-      "sha256": "07a45e8e35b0b631ed2c68cd1cb041f9721b1ceeb0bd0e34f1459b0304a741c7",
-      "copiedSha256": "07a45e8e35b0b631ed2c68cd1cb041f9721b1ceeb0bd0e34f1459b0304a741c7",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -2838,15 +2709,6 @@
       "target": "apps/web/src/components/workbench/zcode/assets/provider-icons/model-provider-zai-app.png",
       "sha256": "1ec553f7eaeae4492c673e9d636692a3898d11800d912628d8c1e667222d6d19",
       "copiedSha256": "1ec553f7eaeae4492c673e9d636692a3898d11800d912628d8c1e667222d6d19",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/provider-icons/model-provider-zai.png",
-      "target": "apps/web/src/components/workbench/zcode/assets/provider-icons/model-provider-zai.png",
-      "sha256": "9fd3cb324dcace295da0069949065c3d2919eb76140d2c20201583de47c8eb8d",
-      "copiedSha256": "9fd3cb324dcace295da0069949065c3d2919eb76140d2c20201583de47c8eb8d",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -5786,24 +5648,26 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "044909e8dc6bf1ba1ce088af74b9837ac425e6267500d98d8cbf3ceacaecda30",
+      "copiedSha256": "ebf03f4258e90f529b20fc644b9c602af81e090ecd444af707dace09166b2a5c",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
         "宿主 BYOK 文案：真实配置状态与明确 clear，不显示旧 Key",
-        "能力显隐：沿原组件/导航/Hook 装配按 supportsCloudAccounts 隐藏不可用云账户与套餐，阻止凭据/权益请求；未声明能力时保留原语义"
+        "能力显隐：沿原组件/导航/Hook 装配按 supportsCloudAccounts 隐藏不可用云账户与套餐，阻止凭据/权益请求；未声明能力时保留原语义",
+        "品牌适配：用户可见文案 ZCode→KenFutWork（不做产品品牌呈现，归属保留）"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "a8d064a8f5d673aaeed7fd85b6afc1ca5383eb4d7f894605195438830d1415ee",
+      "copiedSha256": "f609858904c69b5c49dec36406f99ed47dfd418a60a196f18ea4b48d2277dda5",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
         "宿主 BYOK 文案：真实配置状态与明确 clear，不显示旧 Key",
-        "能力显隐：沿原组件/导航/Hook 装配按 supportsCloudAccounts 隐藏不可用云账户与套餐，阻止凭据/权益请求；未声明能力时保留原语义"
+        "能力显隐：沿原组件/导航/Hook 装配按 supportsCloudAccounts 隐藏不可用云账户与套餐，阻止凭据/权益请求；未声明能力时保留原语义",
+        "品牌适配：用户可见文案 ZCode→KenFutWork（不做产品品牌呈现，归属保留）"
       ]
     },
     {
@@ -8327,9 +8191,10 @@
       "source": "references/zcode/packages/ui/src/onboarding/OnboardingWelcomeView.tsx",
       "target": "apps/web/src/components/workbench/zcode/onboarding/OnboardingWelcomeView.tsx",
       "sha256": "3e6932ce5ded13eaadfc4e0e6f246a5d0a3d5d82c524a486b7fabb6e1ee2f10a",
-      "copiedSha256": "d41e73ada9c3cb0b86c74230fc5c330a7f3e5f8078b46432660d60a0b215768c",
+      "copiedSha256": "9b3a53e78025f0df253aeaa649a76bd7d4212246ae8300c4cd96affb9c2f3eb5",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "品牌适配：引导页 aria 标签改 KenFutWork"
       ]
     },
     {
@@ -16362,92 +16227,10 @@
       "source": "references/zcode/public/icon_512@2x.png",
       "target": "apps/web/src/components/workbench/zcode/public/icon_512@2x.png",
       "sha256": "edd87a182097389b0f59c07f8de283dbe433c9d37cd6e9a2a372611516ab81eb",
-      "copiedSha256": "edd87a182097389b0f59c07f8de283dbe433c9d37cd6e9a2a372611516ab81eb",
-      "adaptations": []
-    },
-    {
-      "source": "references/zcode/public/logo/icons/icon.icns",
-      "target": "apps/web/src/components/workbench/zcode/public/logo/icons/icon.icns",
-      "sha256": "9c286aeaf42ea1026877869dfade0f44ebce4c335c7b7ae347ba007ba0e16aa1",
-      "copiedSha256": "9c286aeaf42ea1026877869dfade0f44ebce4c335c7b7ae347ba007ba0e16aa1",
-      "adaptations": []
-    },
-    {
-      "source": "references/zcode/public/logo/icons/16x16.png",
-      "target": "apps/web/src/components/workbench/zcode/public/logo/icons/16x16.png",
-      "sha256": "9e84a5ce676da8646d7bc59b91869c89480a4a6f014e925d8da22c48cd6ec2be",
-      "copiedSha256": "9e84a5ce676da8646d7bc59b91869c89480a4a6f014e925d8da22c48cd6ec2be",
-      "adaptations": []
-    },
-    {
-      "source": "references/zcode/public/logo/icons/1024x1024.png",
-      "target": "apps/web/src/components/workbench/zcode/public/logo/icons/1024x1024.png",
-      "sha256": "ae8cc4ca59180441ce3ba60a572ee9a5ee802f9ab9e7de1177ae5e0027c36a7a",
-      "copiedSha256": "ae8cc4ca59180441ce3ba60a572ee9a5ee802f9ab9e7de1177ae5e0027c36a7a",
-      "adaptations": []
-    },
-    {
-      "source": "references/zcode/public/logo/icons/256x256.png",
-      "target": "apps/web/src/components/workbench/zcode/public/logo/icons/256x256.png",
-      "sha256": "ad0e1d32febb23d42942ab6faa32254d5647ddce38b18c276523bc7baab0e7aa",
-      "copiedSha256": "ad0e1d32febb23d42942ab6faa32254d5647ddce38b18c276523bc7baab0e7aa",
-      "adaptations": []
-    },
-    {
-      "source": "references/zcode/public/logo/icons/icon.ico",
-      "target": "apps/web/src/components/workbench/zcode/public/logo/icons/icon.ico",
-      "sha256": "d2f81c9fd6d51e7bcff886a275b43c71f9214bcfd4d443ff5d2c9878414de093",
-      "copiedSha256": "d2f81c9fd6d51e7bcff886a275b43c71f9214bcfd4d443ff5d2c9878414de093",
-      "adaptations": []
-    },
-    {
-      "source": "references/zcode/public/logo/icons/128x128.png",
-      "target": "apps/web/src/components/workbench/zcode/public/logo/icons/128x128.png",
-      "sha256": "1ec553f7eaeae4492c673e9d636692a3898d11800d912628d8c1e667222d6d19",
-      "copiedSha256": "1ec553f7eaeae4492c673e9d636692a3898d11800d912628d8c1e667222d6d19",
-      "adaptations": []
-    },
-    {
-      "source": "references/zcode/public/logo/icons/48x48.png",
-      "target": "apps/web/src/components/workbench/zcode/public/logo/icons/48x48.png",
-      "sha256": "175d22b10030197817da1233ad4d132a561f9a17240eb3854cca320987b557e4",
-      "copiedSha256": "175d22b10030197817da1233ad4d132a561f9a17240eb3854cca320987b557e4",
-      "adaptations": []
-    },
-    {
-      "source": "references/zcode/public/logo/icons/24x24.png",
-      "target": "apps/web/src/components/workbench/zcode/public/logo/icons/24x24.png",
-      "sha256": "1cd2e69ff44786fad06b2ceb7586d9b1cfd97c17cfa27f60e6c4416603b58ff9",
-      "copiedSha256": "1cd2e69ff44786fad06b2ceb7586d9b1cfd97c17cfa27f60e6c4416603b58ff9",
-      "adaptations": []
-    },
-    {
-      "source": "references/zcode/public/logo/icons/32x32.png",
-      "target": "apps/web/src/components/workbench/zcode/public/logo/icons/32x32.png",
-      "sha256": "bec6e3e9a172e9fe15fda9cf7205eb60d8c5ea59aaa981145ae7ea4b5797deea",
-      "copiedSha256": "bec6e3e9a172e9fe15fda9cf7205eb60d8c5ea59aaa981145ae7ea4b5797deea",
-      "adaptations": []
-    },
-    {
-      "source": "references/zcode/public/logo/icons/512x512.png",
-      "target": "apps/web/src/components/workbench/zcode/public/logo/icons/512x512.png",
-      "sha256": "8b3453fe890576be4fb593ed378a08c3882cdf2aab928f924eb1dc3e8e354e46",
-      "copiedSha256": "8b3453fe890576be4fb593ed378a08c3882cdf2aab928f924eb1dc3e8e354e46",
-      "adaptations": []
-    },
-    {
-      "source": "references/zcode/public/logo/icons/64x64.png",
-      "target": "apps/web/src/components/workbench/zcode/public/logo/icons/64x64.png",
-      "sha256": "769f896dfa661599edafe46e41a560edde5d9c05f773bcf8709758a62bb35aab",
-      "copiedSha256": "769f896dfa661599edafe46e41a560edde5d9c05f773bcf8709758a62bb35aab",
-      "adaptations": []
-    },
-    {
-      "source": "references/zcode/packages/web/public/favicon.ico",
-      "target": "apps/web/src/components/workbench/zcode/public/favicon.ico",
-      "sha256": "d2f81c9fd6d51e7bcff886a275b43c71f9214bcfd4d443ff5d2c9878414de093",
-      "copiedSha256": "d2f81c9fd6d51e7bcff886a275b43c71f9214bcfd4d443ff5d2c9878414de093",
-      "adaptations": []
+      "copiedSha256": "b4bc6fed8a35245e4ca125025f2588317700383ce453ee6f5f50dde0c0619f0c",
+      "adaptations": [
+        "品牌适配：更新弹窗 dock 图标换 KenFutWork 标识（原 user-provided 素材权利链不明，一并移除）"
+      ]
     },
     {
       "source": "references/zcode/packages/web/public/material-icons/folder-vue-directives-open.svg",
@@ -24523,9 +24306,10 @@
       "source": "references/zcode/packages/web/index.html",
       "target": "apps/web/src/components/workbench/zcode/index.html",
       "sha256": "9401ec7985ad7011dcca0714d88b8a5f9b9a7167183dc944bb05ee0152408785",
-      "copiedSha256": "3168737ee9e015233f18ce8194884d5fa94a526ed55b8827f0214505976bb677",
+      "copiedSha256": "c684297f63015665899b2921deca9bd4d7998e03fb95b4159b89aaf9e24d2bf7",
       "adaptations": [
-        "保留原 Web 启动主题、字体及标志；改入口、标题与语言"
+        "保留原 Web 启动主题、字体及标志；改入口、标题与语言",
+        "品牌适配：favicon 与启动闪屏换 KenFutWork 标识"
       ]
     },
     {

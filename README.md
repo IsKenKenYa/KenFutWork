@@ -1,6 +1,25 @@
-# KenFutWork
+<p align="center">
+  <img src="apps/web/public/logo-mark.png" width="120" alt="KenFutWork Logo">
+</p>
 
-**插件化的 BYOK Agent 工作台**：模型、供应商、技能、插件、MCP 全由你自己接。
+<h1 align="center">KenFutWork</h1>
+
+<p align="center">
+  <strong>插件化的 BYOK Agent 工作台</strong>——模型、供应商、技能、插件、MCP 全由你自己接。
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License: GPL-3.0"></a>
+  <img src="https://img.shields.io/badge/Node.js-%E2%89%A522-339933?logo=node.js&logoColor=white" alt="Node.js >= 22">
+  <img src="https://img.shields.io/badge/pnpm-10-F9AD00?logo=pnpm&logoColor=black" alt="pnpm 10">
+  <img src="https://img.shields.io/badge/Next.js-16-000000?logo=next.js&logoColor=white" alt="Next.js 16">
+  <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" alt="React 19">
+  <img src="https://img.shields.io/badge/Fastify-5-000000?logo=fastify&logoColor=white" alt="Fastify 5">
+  <img src="https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white" alt="TypeScript strict">
+  <img src="https://img.shields.io/badge/code%20style-Biome%202-60A5FA" alt="Code style: Biome 2">
+</p>
+
+---
 
 - **双模式**：`Code`（编码 agent，对话界面 + 工作目录=项目）与 `Design`（无限画布创作）。
 - **开源基座**：Code 界面全量移植自 [ZCode](https://github.com/zai-org/ZCode)，插件内核理念源自 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)——完整鸣谢见 §13。
@@ -279,6 +298,15 @@ pnpm typecheck
 
 KenFutWork 站在开源社区的肩膀上，特别感谢：
 
+<p align="center">
+  &nbsp;
+  <a href="https://github.com/zai-org/ZCode"><img src="https://github.com/zai-org.png" width="52" alt="ZCode" title="ZCode"></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://github.com/deepseek-ai.png" width="52" alt="DeepSeek Harness" title="DeepSeek Harness"></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://github.com/langchain-ai/deepagents"><img src="https://github.com/langchain-ai.png" width="52" alt="DeepAgents" title="DeepAgents"></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://github.com/openai/codex"><img src="https://github.com/openai.png" width="52" alt="Codex" title="Codex"></a>
+  &nbsp;
+</p>
+
 **[ZCode](https://github.com/zai-org/ZCode)（Apache-2.0）** —— Code 模式的对话工作台、设置与插件市场界面直接采用 ZCode 3.14.3（提交 `29628c9a`）开源源码**全量移植**。上游版权与许可声明原样保留；逐文件来源、校验和与宿主适配偏差登记在 [`docs/源码来源/ZCode源码清单.json`](docs/源码来源/ZCode源码清单.json)。感谢 ZCode 提供了如此完整且高质量的 Code UI。
 
 **[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH，MIT）** —— 服务端「**一切皆插件、没有特权核心**」插件内核架构的**理念来源**。本项目只借鉴其机制思想、结合自身实际重写实现，未复制其代码。感谢 DSH 给了本项目服务端演进的北极星。
@@ -324,7 +352,7 @@ Code UI 移植携带的素材按来源分四层，归属与义务如下：
 
 - **ZCode 第一方代码与素材**：Apache-2.0，版权人 Z.AI Co., Ltd。与本项目 GPL-3.0 兼容；移植目录（`apps/web/src/components/workbench/zcode/`）内原样保留上游 `LICENSE` / `NOTICE.md` / `THIRD-PARTY-NOTICES.md`（与上游逐字节一致），根 [NOTICE.md](NOTICE.md) 声明移植范围。
 - **随上游一起移植的第三方组件**：shadcn（MIT）、ai-elements（Apache-2.0，Vercel）、Material Icon Theme 文件类型图标集（MIT，1146 个 SVG）、lucide-react（ISC）。这些组件的许可义务（版权与许可声明）由移植目录内嵌的 `THIRD-PARTY-NOTICES.md` 承接，随分发光一并分发。
-- **第三方品牌 logo**（`provider-icons/`、`channel-icons/` 等处的 OpenAI、Anthropic、Discord、微信等图标）：**无开源许可**，版权归各品牌权利人。仅以指示性方式使用——logo 紧邻其对应的供应商/渠道名称，用于标识功能入口，不暗示背书；未被代码引用的品牌图标（如支付类）不进构建产物。
+- **第三方品牌 logo**（`provider-icons/`、`channel-icons/` 等处的 OpenAI、Anthropic、Discord、微信等图标）：**无开源许可**，版权归各品牌权利人。仅以指示性方式使用——logo 紧邻其对应的供应商/渠道名称，用于标识功能入口，不暗示背书；未被代码引用的品牌图标（支付类等 28 个文件）已从仓库移除。
 - **商标声明**：Apache-2.0 第 3 条不授予商标权。ZCode、Z.ai、GLM 及各供应商、渠道的名称与 logo 商标归其各自权利人；本项目与上述各方无隶属或背书关系。
 
 以上各项目版权归其各自权利人所有，按其原生许可授权使用；本仓库的 GPL-3.0 不改变上游组件的许可与版权归属。
