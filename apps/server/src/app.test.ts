@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-
 import { buildApp } from "./app.js";
+import { createMemoryTaskWorkManager } from "./features/task-work/test-store.js";
+import { createStartupPersistenceFixture } from "./test-startup-persistence.js";
 
 /**
  * buildApp 装配完整性回归：所有 feature 插件的认证门路由必须真实注册。
@@ -40,7 +41,11 @@ function buildProbeApp() {
       blobDir: "D:/Desktop/KenFutWork/data/blobs-test",
       credentialSecret: "test-secret",
     },
-    overrides: { auth: { authenticate: async () => null } },
+    overrides: {
+      taskWork: createMemoryTaskWorkManager(),
+      persistence: createStartupPersistenceFixture(),
+      auth: { authenticate: async () => null },
+    },
   });
 }
 
@@ -73,7 +78,10 @@ describe("buildApp 装配完整性（插件清单防漏挂）", () => {
             blobDir: "D:/Desktop/KenFutWork/data/blobs-test",
             credentialSecret: "test-secret",
           },
-          overrides: { auth: { authenticate: async () => null } },
+          overrides: {
+            taskWork: createMemoryTaskWorkManager(),
+            auth: { authenticate: async () => null },
+          },
         }),
       ).toThrow(/persistence/);
     } finally {

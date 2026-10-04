@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-
 import { buildApp } from "../app.js";
+import { createMemoryTaskWorkManager } from "../features/task-work/test-store.js";
+import { createStartupPersistenceFixture } from "../test-startup-persistence.js";
 
 /**
  * 直连生成路由的**会话上下文**回归（§4.8 自定义头占位符）。
@@ -48,6 +49,8 @@ function buildGenerateApp() {
       credentialSecret: "test-secret",
     },
     overrides: {
+      taskWork: createMemoryTaskWorkManager(),
+      persistence: createStartupPersistenceFixture(),
       auth: {
         authenticate: async () => USER,
         resolveUser: async () => USER,

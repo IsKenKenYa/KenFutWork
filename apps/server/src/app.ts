@@ -1,5 +1,4 @@
 import multipart from "@fastify/multipart";
-import websocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { KenFutWorkAgentFactory } from "./agent/deep-agent.js";
 import { loadServerEnv, type ServerEnv } from "./config/env.js";
@@ -12,7 +11,6 @@ import type { KernelHandle, ServiceMap } from "./kernel/types.js";
 import { serverProfile } from "./profiles/server.js";
 import { ConnectionManager } from "./ws/connection-manager.js";
 import { CanvasEventBuffer } from "./ws/event-buffer.js";
-import { registerWsRoute } from "./ws/handler.js";
 
 /** app.ts（P8 退役形态）：选 profile → composePlugins；清单属主 profiles/server.ts。 */
 export type AppOptions = {
@@ -76,23 +74,6 @@ export function buildApp(
       },
     },
   );
-
-  void app.register(async (instance) => {
-    await instance.register(websocket);
-    await registerWsRoute(instance, {
-      agentRuns: kernel.get("agentRuns"),
-      agentModes: kernel.get("agentModes"),
-      agentRunMetadataService: kernel.get("agentRunMetadata"),
-      auth: kernel.get("auth"),
-      chatService: kernel.get("chat"),
-      codeGitService: kernel.get("codeGit"),
-      connectionManager,
-      eventBuffer,
-      settingsService: kernel.get("settings"),
-      threadService: kernel.get("threads"),
-      viewerService: kernel.get("viewer"),
-    });
-  });
 
   registerInfraRoutes(app, env);
   // 静态 UI 托管（自托管/桌面包）：配置 KENFUTWORK_WEB_DIST 后 server 直接托管前端

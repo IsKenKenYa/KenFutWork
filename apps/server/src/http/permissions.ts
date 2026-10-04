@@ -175,10 +175,13 @@ export async function registerPermissionRoutes(
         ...(body.threadId ? { threadId: body.threadId } : {}),
       });
       return reply.code(204).send();
-    } catch {
+    } catch (error) {
       return reply.code(400).send(
         applicationErrorResponseSchema.parse({
-          error: { code: "invalid_request", message: "Invalid body." },
+          error: {
+            code: "invalid_request",
+            message: error instanceof Error ? error.message : "Invalid body.",
+          },
         }),
       );
     }

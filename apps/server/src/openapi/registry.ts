@@ -39,9 +39,11 @@ import {
   chatMessageCreateRequestSchema,
   checkpointDiffResponseSchema,
   checkpointFilesResponseSchema,
+  checkpointListQuerySchema,
   checkpointListResponseSchema,
   checkpointPreviewResponseSchema,
   checkpointRestoreFileRequestSchema,
+  checkpointRestoreRequestSchema,
   checkpointRestoreResponseSchema,
   claimDailyResponseSchema,
   codeFilesResponseSchema,
@@ -62,14 +64,13 @@ import {
   codeShellsResponseSchema,
   codeTerminalRequestSchema,
   codeTerminalResponseSchema,
+  codeTaskScopeResponseSchema,
+  codeTaskScopeUpdateRequestSchema,
   codeUiEventSchema,
   codeUiRpcRequestSchema,
   codeUiRpcResponseSchema,
   codeUiSnapshotResponseSchema,
   codeUiWorkspaceListSchema,
-  codeWorktreeCreateRequestSchema,
-  codeWorktreeListResponseSchema,
-  codeWorktreeRemoveRequestSchema,
   createImageJobRequestSchema,
   createVideoJobRequestSchema,
   creditBalanceResponseSchema,
@@ -190,7 +191,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: codeUiWorkspaceListSchema,
     summary: "查询 Code 原界面工作目录",
     description:
-      "返回当前认证工作区的 Code 项目及其固定主画布工作目录，目录与 Agent、文件和 Git 共用同一解析规则。",
+      "返回当前认证工作区的 Code 项目主目录与附加授权目录；Agent、文件、Git 和终端消费同一执行作用域，Code 不创建或依赖画布。",
   },
   {
     method: "get",
@@ -216,6 +217,18 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
       "按已接通的服务与方法白名单调用原 UI 的宿主能力。命令按 clientId 与 commandId 幂等；相同键不同参数冲突，密钥只写不读，尚未接通的方法明确拒绝。",
   },
   // ---- admin.ts（管理后台；除 /me 外均要求管理员，403 语义见 description）----
+  {
+    method: "get", path: "/api/code-ui/tasks/:taskId/scope", tag: "code", auth: "user", successStatus: 200,
+    responseSchema: codeTaskScopeResponseSchema,
+    summary: "查询 Code Task 的执行目录授权",
+    description: "按认证工作区和 Task 身份读取固定主目录、附加目录及沙箱授权代际，不返回密钥或审批凭据。",
+  },
+  {
+    method: "patch", path: "/api/code-ui/tasks/:taskId/scope", tag: "code", auth: "user", successStatus: 200,
+    requestSchema: codeTaskScopeUpdateRequestSchema, responseSchema: codeTaskScopeResponseSchema,
+    summary: "调整 Code Task 的附加目录与执行授权",
+    description: "主目录不可更换；收紧授权先拒绝旧操作并终止受影响的执行资源，确认真实退出后才恢复可执行状态；失败保留撤销失败事实。",
+  },
   {
     method: "get",
     path: "/api/admin/me",
@@ -621,11 +634,11 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     tag: "code",
     auth: "user",
     successStatus: 200,
-    querySchema: z.object({ canvasId: z.string().describe("画布 ID（必填）") }),
+    querySchema: z.object({ taskId: z.string().describe("Task ID（必填）") }),
     responseSchema: checkpointListResponseSchema,
-    summary: "列出画布检查点",
+    summary: "列出Task 检查点",
     description:
-      "按 canvasId 返回画布的检查点时间线（升序）。canvasId 为必填查询参数，缺失返回 400。",
+      "按 taskId 返回Task 的检查点时间线（升序）。taskId 为必填查询参数，缺失返回 400。",
   },
   {
     method: "get",
@@ -633,39 +646,40 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     tag: "code",
     auth: "user",
     successStatus: 200,
-    querySchema: z.object({
-      path: z.string().optional().describe("限定单文件的相对路径（可选）"),
-    }),
+    querySchema: checkpointListQuerySchema.extend({ path: z.string().optional(), rootDirectory: z.string().optional() }),
     responseSchema: checkpointDiffResponseSchema,
     summary: "查询检查点差异",
     description:
-      "返回该检查点相对上一检查点的统一 diff，可用 path 限定单文件。",
+      "返回当前 Task 检查点相对上一检查点的统一 diff；taskId 必填，可用 path/rootDirectory 限定目录内文件。",
   },
   {
     method: "post",
     path: "/api/code/checkpoints/:checkpointId/preview",
+    querySchema: checkpointListQuerySchema.extend({ path: z.string().optional(), rootDirectory: z.string().optional() }),
     tag: "code",
     auth: "user",
     successStatus: 200,
     responseSchema: checkpointPreviewResponseSchema,
     summary: "预览恢复影响",
-    description: "返回回滚到该检查点将受影响的文件清单，供二次确认。无请求体。",
+    description: "返回 Task 恢复影响及 expectedVersion；taskId 必填，可选 path/rootDirectory。恢复提交必须携带该预览版本。",
   },
   {
     method: "post",
     path: "/api/code/checkpoints/:checkpointId/restore",
+    requestSchema: checkpointRestoreRequestSchema,
     tag: "code",
     auth: "user",
     successStatus: 200,
-    querySchema: z.object({ canvasId: z.string().describe("画布 ID（必填）") }),
+    querySchema: z.object({ taskId: z.string().describe("Task ID（必填）") }),
     responseSchema: checkpointRestoreResponseSchema,
     summary: "回滚到检查点",
     description:
-      "将画布工作目录回滚到指定检查点（丢内容操作）。存在在途 run 时返回 409 run_in_progress。",
+      "凭 expectedVersion 恢复 Task 授权目录；停止该 Task 的执行资源，核对文件版本和跨 Task 写进程屏障后提交。预览过期或文件冲突返回 409。",
   },
   {
     method: "get",
     path: "/api/code/checkpoints/:checkpointId/files",
+    querySchema: checkpointListQuerySchema,
     tag: "code",
     auth: "user",
     successStatus: 200,
@@ -680,11 +694,11 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     auth: "user",
     successStatus: 200,
     requestSchema: checkpointRestoreFileRequestSchema,
-    querySchema: z.object({ canvasId: z.string().describe("画布 ID（必填）") }),
+    querySchema: z.object({ taskId: z.string().describe("Task ID（必填）") }),
     responseSchema: checkpointRestoreResponseSchema,
     summary: "撤销单文件变更",
     description:
-      "将单个文件恢复到检查点状态；body 需 path，canvasId 为必填查询参数，存在在途 run 时返回 409。",
+      "将单个文件恢复到检查点状态；taskId 必填，body 需 path/expectedVersion，可用 rootDirectory 指定授权附加目录。过期预览或写入冲突返回 409。",
   },
   // ---- code-git.ts（代码模式：git 与工作目录）----
   {
@@ -693,11 +707,11 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     tag: "code",
     auth: "user",
     successStatus: 200,
-    querySchema: z.object({ canvasId: z.string().describe("画布 ID（必填）") }),
+    querySchema: z.object({ taskId: z.string().describe("Task ID（必填）") }),
     responseSchema: codeGitStatusResponseSchema,
     summary: "查询 git 状态",
     description:
-      "按 canvasId 返回项目工作目录的 git 状态（分支、暂存、变更等）。canvasId 必填，缺失返回 400。",
+      "按 taskId 返回项目工作目录的 git 状态（分支、暂存、变更等）。taskId 必填，缺失返回 400。",
   },
   {
     method: "post",
@@ -716,10 +730,10 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     tag: "code",
     auth: "user",
     successStatus: 200,
-    querySchema: z.object({ canvasId: z.string().describe("画布 ID（必填）") }),
+    querySchema: z.object({ taskId: z.string().describe("Task ID（必填）") }),
     responseSchema: codeGitDiffStatResponseSchema,
     summary: "查询变更统计",
-    description: "返回工作目录相对 HEAD 的增删行数统计。canvasId 必填。",
+    description: "返回工作目录相对 HEAD 的增删行数统计。taskId 必填。",
   },
   {
     method: "get",
@@ -728,7 +742,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     auth: "user",
     successStatus: 200,
     querySchema: z.object({
-      canvasId: z.string().describe("画布 ID（必填）"),
+      taskId: z.string().describe("Task ID（必填）"),
       limit: z
         .string()
         .optional()
@@ -736,7 +750,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     }),
     responseSchema: codeGitGraphResponseSchema,
     summary: "查询 git 图谱",
-    description: "返回提交图谱。canvasId 必填；limit 由服务端夹取到 1..200。",
+    description: "返回提交图谱。taskId 必填；limit 由服务端夹取到 1..200。",
   },
   {
     method: "get",
@@ -744,11 +758,11 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     tag: "code",
     auth: "user",
     successStatus: 200,
-    querySchema: z.object({ canvasId: z.string().describe("画布 ID（必填）") }),
+    querySchema: z.object({ taskId: z.string().describe("Task ID（必填）") }),
     responseSchema: codeGitChangesResponseSchema,
     summary: "列出变更文件清单",
     description:
-      "逐文件返回变更状态与增删行数，最多 200 个（超出截断并标注）。canvasId 必填。",
+      "逐文件返回变更状态与增删行数，最多 200 个（超出截断并标注）。taskId 必填。",
   },
   {
     method: "get",
@@ -757,13 +771,13 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     auth: "user",
     successStatus: 200,
     querySchema: z.object({
-      canvasId: z.string().describe("画布 ID（必填）"),
+      taskId: z.string().describe("Task ID（必填）"),
       path: z.string().describe("工作目录内文件相对路径（必填）"),
     }),
     responseSchema: codeGitDiffResponseSchema,
     summary: "查询单文件差异",
     description:
-      "返回指定工作目录文件的统一 diff。canvasId 与 path 均必填，缺失返回 400。",
+      "返回指定工作目录文件的统一 diff。taskId 与 path 均必填，缺失返回 400。",
   },
   {
     method: "get",
@@ -772,7 +786,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     auth: "user",
     successStatus: 200,
     querySchema: z.object({
-      canvasId: z.string().describe("画布 ID（必填）"),
+      taskId: z.string().describe("Task ID（必填）"),
       path: z.string().describe("工作目录内文件相对路径（必填）"),
     }),
     responseSchema: codeGitFileResponseSchema,
@@ -787,13 +801,13 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     auth: "user",
     successStatus: 200,
     querySchema: z.object({
-      canvasId: z.string().describe("画布 ID（必填）"),
+      taskId: z.string().describe("Task ID（必填）"),
       path: z.string().optional().describe("目录相对路径（可选，默认根目录）"),
     }),
     responseSchema: codeFilesResponseSchema,
     summary: "列出工作目录文件",
     description:
-      "列出工作目录指定层级的文件与子目录（只列一层）。canvasId 必填。",
+      "列出工作目录指定层级的文件与子目录（只列一层）。taskId 必填。",
   },
   {
     method: "post",
@@ -805,7 +819,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: codeTerminalResponseSchema,
     summary: "执行终端命令",
     description:
-      "在画布工作目录里执行一条用户命令（固定 cwd、有超时与输出上限），返回执行结果。",
+      "在Task 授权工作目录里执行一条用户命令（固定 cwd、有超时与输出上限），返回执行结果。",
   },
   {
     method: "post",
@@ -859,7 +873,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     tag: "code",
     auth: "user",
     successStatus: 200,
-    requestSchema: codeGitCheckoutRequestSchema.pick({ canvasId: true }),
+    requestSchema: codeGitCheckoutRequestSchema.pick({ taskId: true }),
     responseSchema: codeGitStatusResponseSchema,
     summary: "初始化 git 仓库",
     description: "在非仓库的工作目录上幂等初始化 git 仓库，返回最新状态。",
@@ -881,43 +895,10 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     tag: "code",
     auth: "user",
     successStatus: 200,
-    requestSchema: codeGitCheckoutRequestSchema.pick({ canvasId: true }),
+    requestSchema: codeGitCheckoutRequestSchema.pick({ taskId: true }),
     responseSchema: codeGitStatusResponseSchema,
     summary: "推送提交到远端",
     description: "将当前分支推送到远端仓库，返回最新 git 状态。",
-  },
-  {
-    method: "get",
-    path: "/api/code/git/worktrees",
-    tag: "code",
-    auth: "user",
-    successStatus: 200,
-    querySchema: z.object({ canvasId: z.string().describe("画布 ID（必填）") }),
-    responseSchema: codeWorktreeListResponseSchema,
-    summary: "列出 git 工作树",
-    description: "返回项目关联的 git 工作树清单。canvasId 必填。",
-  },
-  {
-    method: "post",
-    path: "/api/code/git/worktrees",
-    tag: "code",
-    auth: "user",
-    successStatus: 200,
-    requestSchema: codeWorktreeCreateRequestSchema,
-    responseSchema: codeWorktreeListResponseSchema,
-    summary: "新建 git 工作树",
-    description: "按 path/branch/create 参数新建工作树，返回最新工作树清单。",
-  },
-  {
-    method: "post",
-    path: "/api/code/git/worktrees/remove",
-    tag: "code",
-    auth: "user",
-    successStatus: 200,
-    requestSchema: codeWorktreeRemoveRequestSchema,
-    responseSchema: codeWorktreeListResponseSchema,
-    summary: "删除 git 工作树",
-    description: "按 path 删除工作树（可 force 强制），返回最新工作树清单。",
   },
   {
     method: "post",
@@ -937,10 +918,10 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     tag: "code",
     auth: "user",
     successStatus: 200,
-    querySchema: z.object({ canvasId: z.string().describe("画布 ID（必填）") }),
+    querySchema: z.object({ taskId: z.string().describe("Task ID（必填）") }),
     summary: "查询索引状态",
     description:
-      "返回画布工作目录的索引统计及该工作区的两个开关（codeIndexEnabled、codeIndexAutoNewFolder）。canvasId 必填。",
+      "返回Task 授权工作目录的索引统计及该工作区的两个开关（codeIndexEnabled、codeIndexAutoNewFolder）。taskId 必填。",
   },
   {
     method: "post",
@@ -950,7 +931,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     successStatus: 200,
     summary: "重建代码索引",
     description:
-      "重新扫描工作目录并重建索引，返回新统计。body 中 canvasId 必填。",
+      "重新扫描工作目录并重建索引，返回新统计。body 中 taskId 必填。",
   },
   {
     method: "delete",
@@ -958,10 +939,10 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     tag: "code",
     auth: "user",
     successStatus: 200,
-    querySchema: z.object({ canvasId: z.string().describe("画布 ID（必填）") }),
+    querySchema: z.object({ taskId: z.string().describe("Task ID（必填）") }),
     summary: "清空代码索引",
     description:
-      "删除该画布的索引缓存文件（本机 <cwd>/.kenfutwork/index/ 下的 JSON），返回 { ok: true }。canvasId 必填。",
+      "删除该 Task 的索引缓存文件（本机 <cwd>/.kenfutwork/index/ 下的 JSON），返回 { ok: true }。taskId 必填。",
   },
   {
     method: "get",
@@ -970,7 +951,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     auth: "user",
     successStatus: 200,
     querySchema: z.object({
-      canvasId: z.string().describe("画布 ID（必填）"),
+      taskId: z.string().describe("Task ID（必填）"),
       q: z.string().describe("搜索关键词（必填）"),
     }),
     summary: "搜索代码索引",
@@ -1441,9 +1422,9 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     tag: "permissions",
     auth: "user",
     successStatus: 204,
-    summary: "人审放行工具调用",
+    summary: "设置旧线程工具放行记忆",
     description:
-      "对指定工具（body.toolName）按 scope（once/thread/forever）做人工放行授权，成功无响应体；缺 toolName 返回 400。agent 无自我授权路径，此端点是唯一人审入口。",
+      "为旧线程策略设置 thread/forever 放行记忆，成功无响应体；缺 toolName 或未绑定调用的 scope=once 返回 400。Code 逐调用审批经原 V4 resolveInteraction 回执，绑定用户、Task、Run、参数和有效授权代际。",
   },
   // ---- plugins.ts（插件；变更类操作需管理员）----
   {

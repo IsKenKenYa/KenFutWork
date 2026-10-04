@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import websocket from "@fastify/websocket";
@@ -6,18 +6,15 @@ import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 
+import { workspaceSettingsSchema } from "@kenfutwork/shared";
+import { createExecutionScopes } from "../features/execution/scope-service.js";
+import { createProcessSandbox } from "../features/process-sandbox/service.js";
+import { createCodeTerminalService } from "../features/code-terminal/service.js";
+
 import { registerWsRoute } from "./handler.js";
 
-// 环境预检：node-pty 在沙箱/部分 CI 里无法创建 pty（posix_spawnp failed）——
-// 不可用即跳过终端会话用例（真机/正常终端不受影响）。
-let ptyAvailable = true;
-try {
-  const { spawn } = await import("node-pty");
-  const probe = spawn("/bin/true", [], { name: "xterm-256color" });
-  probe.kill();
-} catch {
-  ptyAvailable = false;
-}
+// 真实受控PTY目前已在macOS验收。
+const ptyAvailable = process.platform === "darwin";
 
 /**
  * WS 早期消息回归测试。
@@ -77,23 +74,26 @@ function makeStubs() {
   const auth = {
     authenticate: async () => ({ id: "user-1", accessToken: "token" }),
   };
-  /**
-   * 终端会话的 cwd 解析替身。默认落到调用方给的临时目录；
-   * `deny: true` 时抛错（模拟「画布不属于这个工作区」的 404）。
-   */
-  const workDirState = { dir: "", deny: false };
-  const codeGitService = {
-    terminalWorkDir: async () => {
-      if (workDirState.deny) throw new Error("画布不存在。");
-      return workDirState.dir;
-    },
-  };
+  const workDirState = { dir: mkdtempSync(join(tmpdir(), "kfw-ws-domain-")), deny: false };
+  const captureRoot = workDirState.dir;
+  const workspaceId = "00000000-0000-4000-8000-000000000001";
+  const taskId = "00000000-0000-4000-8000-000000000003";
+  const viewer = { resolveWorkspace: async () => ({ id: workspaceId }) };
+  const sandbox = createProcessSandbox({ captureRoot: join(workDirState.dir, "capture"), network: { allowedDomains: [], deniedDomains: [] } });
+  const terminals = createCodeTerminalService({
+    scopes: createExecutionScopes({ viewerService: viewer as never, repository: { load: async () => {
+      if (workDirState.deny) throw new Error("Task不属于当前工作区。");
+      return { scope: { workspaceId, projectId: "00000000-0000-4000-8000-000000000002", taskId, generation: 1, rootDirectory: realpathSync(workDirState.dir), additionalDirectories: [], sandboxMode: "workspace-write" as const }, state: "ready", branchGeneration: 1 };
+    } } }),
+    sandbox, viewer: viewer as never,
+    settings: { getWorkspaceSettings: async () => workspaceSettingsSchema.parse({ defaultModel: "fixture", terminalShell: "sh" }) } as never,
+  });
   return {
     connectionManager,
     agentRuns,
     auth,
     sockets,
-    codeGitService,
+    terminals, sandbox, viewer, taskId, captureRoot,
     workDirState,
   };
 }
@@ -108,8 +108,9 @@ async function startServer(overrides?: {
     connectionManager: stubs.connectionManager as never,
     agentRuns: stubs.agentRuns as never,
     auth: (overrides?.auth ?? stubs.auth) as never,
-    codeGitService: stubs.codeGitService as never,
+    codeTerminal: stubs.terminals, viewerService: stubs.viewer as never,
   });
+  app.addHook("onClose", async () => { await stubs.terminals.close("test_cleanup"); await stubs.sandbox.close("test_cleanup"); rmSync(stubs.workDirState.dir, { recursive: true, force: true }); rmSync(stubs.captureRoot, { recursive: true, force: true }); });
   await app.listen({ port: 0, host: "127.0.0.1" });
   const address = app.server.address();
   const port =
@@ -343,23 +344,13 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
     }
   });
 
-  it("不带 canvasId 也能起会话：cwd 落到服务端启动目录（终端不被工作目录限制）", async () => {
+  it("未带Task身份的终端拒绝，不能借用服务端启动目录", async () => {
     const { app, port } = await startServer();
-    void app;
     const session = await connect(port);
     try {
-      const ack = await session.sendAndWait(
-        {
-          type: "command",
-          action: "terminal.start",
-          payload: { sessionId: "t-no-dir" },
-        },
-        isAck,
-      );
-      expect((ack.payload as { sessionId: string }).sessionId).toBe("t-no-dir");
-    } finally {
-      session.client.close();
-    }
+      const rejected = await session.sendAndWait({ type: "command", action: "terminal.start", payload: { sessionId: "t-no-task", cols: 80, rows: 24 } }, (message) => message.type === "error");
+      expect(rejected.message).toBe("Invalid command format");
+    } finally { session.client.close(); await app.close(); }
   });
 
   it("起会话拿到 ack；输入的命令原样回到输出；stop 后回 exit", async () => {
@@ -372,7 +363,7 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
         {
           type: "command",
           action: "terminal.start",
-          payload: { sessionId: "t1", canvasId: "canvas-1" },
+          payload: { sessionId: "t1", taskId: stubs.taskId, cols: 80, rows: 24 },
         },
         isAck,
       );
@@ -383,7 +374,7 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
         {
           type: "command",
           action: "terminal.input",
-          payload: { sessionId: "t1", data: "echo WS_TERM_OK" },
+          payload: { sessionId: "t1", data: "printf '\\127\\123\\137\\124\\105\\122\\115\\137\\117\\113\\n'\r" },
         },
         (msg) =>
           msg.type === "terminal.output" &&
@@ -422,7 +413,7 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
         {
           type: "command",
           action: "terminal.start",
-          payload: { sessionId: "t1", canvasId: "canvas-1" },
+          payload: { sessionId: "t1", taskId: stubs.taskId, cols: 80, rows: 24 },
         },
         isAck,
       );
@@ -430,7 +421,7 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
         {
           type: "command",
           action: "terminal.start",
-          payload: { sessionId: "t1", canvasId: "canvas-1" },
+          payload: { sessionId: "t1", taskId: stubs.taskId, cols: 80, rows: 24 },
         },
         isAck,
       );
@@ -439,7 +430,7 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
       session.client.close();
       await app.close();
       // 断开后服务端异步收会话：等进程退干净再删目录（否则 EBUSY）
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await app.close();
       rmSync(dir, {
         recursive: true,
         force: true,
@@ -449,7 +440,7 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
     }
   }, 45_000);
 
-  it("画布不属于这个工作区：起会话被拒并给出可读原因（不摆一个空终端）", async () => {
+  it("Task不属于这个工作区：起会话被拒并给出可读原因", async () => {
     const { app, port, stubs } = await startServer();
     stubs.workDirState.deny = true;
     const session = await connect(port);
@@ -458,11 +449,11 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
         {
           type: "command",
           action: "terminal.start",
-          payload: { sessionId: "t1", canvasId: "别人的画布" },
+          payload: { sessionId: "t1", taskId: stubs.taskId, cols: 80, rows: 24 },
         },
         (msg) => msg.type === "terminal.exit",
       );
-      expect(String(exit.reason)).toContain("画布不存在");
+      expect(String(exit.reason)).toContain("Task不属于当前工作区");
     } finally {
       session.client.close();
       await app.close();
@@ -479,13 +470,13 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
         {
           type: "command",
           action: "terminal.start",
-          payload: { sessionId: "t1", canvasId: "canvas-1" },
+          payload: { sessionId: "t1", taskId: stubs.taskId, cols: 80, rows: 24 },
         },
         isAck,
       );
       session.client.close();
       // 断开后服务端收会话：等一小会儿再删目录，删得掉即说明进程退了
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await app.close();
       rmSync(dir, {
         recursive: true,
         force: true,

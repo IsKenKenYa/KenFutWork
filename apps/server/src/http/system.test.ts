@@ -1,8 +1,9 @@
 import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
-
 import { buildApp } from "../app.js";
 import type { NativeDirectoryPicker } from "../features/system/directory-picker.js";
+import { createMemoryTaskWorkManager } from "../features/task-work/test-store.js";
+import { createStartupPersistenceFixture } from "../test-startup-persistence.js";
 import { registerSystemRoutes } from "./system.js";
 
 /**
@@ -196,6 +197,8 @@ describe("system 插件接线", () => {
         ...env,
       },
       overrides: {
+        taskWork: createMemoryTaskWorkManager(),
+        persistence: createStartupPersistenceFixture(),
         auth: {
           authenticate: async () => USER,
           resolveUser: async () => USER,

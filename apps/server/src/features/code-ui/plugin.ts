@@ -1,5 +1,12 @@
+import { resolve } from "node:path";
 import { registerCodeUiRoutes } from "../../http/code-ui.js";
 import type { PluginDefinition } from "../../kernel/types.js";
+import {
+  createSkillCatalogRepository,
+  createWorkspaceSkillSettingsRepository,
+} from "../skills/repository.js";
+import { createTaskResourceCloser } from "../task-work/close-resources.js";
+import { createCodeAttachmentRepository } from "./attachments/repository.js";
 import { createCodeUiRepository } from "./repository.js";
 import { createCodeUiService } from "./service.js";
 
@@ -8,6 +15,7 @@ export function createCodeUiPlugin(): PluginDefinition {
     name: "code-ui",
     inject: [
       "auth",
+      "admin",
       "viewer",
       "persistence",
       "projects",
@@ -17,11 +25,44 @@ export function createCodeUiPlugin(): PluginDefinition {
       "threads",
       "agentRuns",
       "agentRunMetadata",
+      "checkpoints",
+      "executionScopes",
+      "taskWork",
+      "permissions",
+      "codeTerminal",
+      "blob",
+      "processSandbox",
+      "plugins",
     ],
     apply(ctx) {
       ctx.register("codeUi", () =>
         createCodeUiService({
           repository: createCodeUiRepository(ctx.get("persistence")),
+          executionScopes: ctx.get("executionScopes"),
+          taskWork: ctx.get("taskWork"),
+          permissions: ctx.get("permissions"),
+          terminals: ctx.get("codeTerminal"),
+          processSandbox: ctx.get("processSandbox"),
+          plugins: ctx.get("plugins"),
+          admin: ctx.get("admin"),
+          blob: ctx.get("blob"),
+          attachmentRepository: createCodeAttachmentRepository(
+            ctx.get("persistence"),
+            resolve(ctx.env.checkpointRoot ?? "data/checkpoints"),
+          ),
+          skillRepository: createSkillCatalogRepository(ctx.get("persistence")),
+          skillSettingsRepository: createWorkspaceSkillSettingsRepository(
+            ctx.get("persistence"),
+          ),
+          beforeCloseTask: createTaskResourceCloser({
+            viewer: ctx.get("viewer"),
+            resources: () => ({
+              runs: ctx.get("agentRuns"),
+              work: ctx.get("taskWork"),
+              sandbox: ctx.get("processSandbox"),
+              capabilities: ctx.get("capabilities"),
+            }),
+          }),
           viewer: ctx.get("viewer"),
           projects: ctx.get("projects"),
           modelProviders: ctx.get("modelProviders"),
@@ -30,11 +71,64 @@ export function createCodeUiPlugin(): PluginDefinition {
           threads: ctx.get("threads"),
           agentRuns: ctx.get("agentRuns"),
           agentRunMetadata: ctx.get("agentRunMetadata"),
+          checkpoints: ctx.get("checkpoints"),
           env: ctx.env,
         }),
       );
     },
     mounted(ctx) {
+      ctx.effect(() =>
+        ctx.get("settings").onUpdated(({ workspaceId, changedKeys }) => {
+          if (
+            changedKeys.includes("defaultModel") ||
+            changedKeys.includes("commands")
+          )
+            return ctx.get("codeUi").refreshWorkspaceConfiguration(workspaceId);
+        }),
+      );
+      ctx.app.addHook("onReady", async () => {
+        await ctx.get("codeUi").initialize();
+      });
+      const permissions = ctx.get("permissions");
+      ctx.effect(() =>
+        permissions.onEvent((event) =>
+          ctx.get("codeUi").onApprovalEvent(event),
+        ),
+      );
+      ctx.effect(() =>
+        ctx
+          .get("executionScopes")
+          .onRevoke(({ previous }) =>
+            permissions.cancel(
+              { workspaceId: previous.workspaceId, taskId: previous.taskId },
+              "Task 授权发生变更",
+            ),
+          ),
+      );
+      ctx.effect(() =>
+        ctx
+          .get("executionScopes")
+          .onRevoke(({ previous }) =>
+            ctx
+              .get("codeUi")
+              .closeTaskWatchers(previous.workspaceId, previous.taskId),
+          ),
+      );
+      ctx.effect(() => () => ctx.get("codeUi").closeConnections());
+      ctx.get("capabilities").register("task-close", {
+        id: "code-ui:file-watchers",
+        value: {
+          close: (workspaceId: string, taskId: string) =>
+            ctx.get("codeUi").closeTaskWatchers(workspaceId, taskId),
+        },
+      });
+      ctx.get("capabilities").register("task-close", {
+        id: "permissions:code-calls",
+        value: {
+          close: (workspaceId: string, taskId: string) =>
+            permissions.cancel({ workspaceId, taskId }, "Task 已关闭"),
+        },
+      });
       void registerCodeUiRoutes(ctx.app, {
         auth: ctx.get("auth"),
         service: ctx.get("codeUi"),

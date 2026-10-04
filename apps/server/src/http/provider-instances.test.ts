@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-
 import { buildApp } from "../app.js";
+import { createMemoryTaskWorkManager } from "../features/task-work/test-store.js";
+import { createStartupPersistenceFixture } from "../test-startup-persistence.js";
 
 /**
  * 供应商实例自定义请求头的 **HTTP 边界**回归（§4.8）：
@@ -22,6 +23,7 @@ function buildHttpApp() {
     name: (input as { name: string }).name,
     protocol: (input as { protocol: string }).protocol,
     hasCredential: true,
+    configRevision: 1,
     models: [{ id: "m1", name: "M1", capability: "chat" as const }],
     headerKeys: Object.keys((input as { headers?: object }).headers ?? {}),
     enabled: true,
@@ -34,6 +36,8 @@ function buildHttpApp() {
       credentialSecret: "test-secret",
     },
     overrides: {
+      taskWork: createMemoryTaskWorkManager(),
+      persistence: createStartupPersistenceFixture(),
       auth: {
         authenticate: async () => USER,
         resolveUser: async () => USER,
@@ -64,7 +68,7 @@ describe("POST /api/provider-instances 自定义请求头（HTTP 边界）", () 
         },
       });
 
-      expect(response.statusCode).toBe(201);
+      expect(response.statusCode, response.body).toBe(201);
       expect(createInstance).toHaveBeenCalledWith(
         USER,
         expect.objectContaining({

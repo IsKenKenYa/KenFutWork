@@ -7,6 +7,7 @@ import {
   runCreateResponseSchema,
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
+import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { AgentRunService } from "../agent/runtime.js";
 import { resolveSandboxScopeId } from "../agent/sandbox-dir.js";
@@ -22,8 +23,6 @@ import {
 } from "../features/agent-runs/agent-run-service.js";
 import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
-import type { ChatService } from "../features/chat/chat-service.js";
-import { deriveSessionTitle } from "../features/chat/session-title.js";
 import {
   type ThreadService,
   ThreadServiceError,
@@ -33,6 +32,8 @@ import { parseInstanceSpecifier } from "../features/model-providers/model-catalo
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import { isZodError } from "./zod-error.js";
+import { ExecutionScopeError, type ExecutionScopes } from "../features/execution/scope-service.js";
+import type { CodeUiService } from "../features/code-ui/service.js";
 
 export async function registerRunRoutes(
   app: FastifyInstance,
@@ -46,13 +47,13 @@ export async function registerRunRoutes(
     agentRunMetadataService?: AgentRunMetadataService;
     auth?: RequestAuthenticator;
     settingsService?: SettingsService;
-    /** Code 模式会话供给（方案 A）：客户端自造 sessionId 时补真实会话行。 */
-    chatService?: Pick<ChatService, "ensureCodeSession">;
     threadService?: ThreadService;
     viewerService?: ViewerService;
     /** 平台池额度前置拦截（FORM-10）：只有走系统供应商的运行需要余额。 */
     creditService?: CreditService;
     modelProviders?: ModelProviderService;
+    executionScopes?: ExecutionScopes;
+    codeUi?: Pick<CodeUiService, "admitExternalRun">;
   } = {},
 ) {
   /**
@@ -144,22 +145,6 @@ export async function registerRunRoutes(
       // Code 模式会话供给（方案 A，与 WS 路径同口径）：客户端自造的 sessionId 在库里没有
       // 会话行 → 线程解析失败且助手消息无处落库。此处先按该 id 供给真实会话与线程。
       // Design 模式不供给：其会话由画布页经 API 先建行，缺行属真错误，不该被掩盖。
-      if (
-        authenticatedUser &&
-        options?.chatService &&
-        payload.preset !== "design"
-      ) {
-        try {
-          await options.chatService.ensureCodeSession(authenticatedUser, {
-            sessionId: payload.sessionId,
-            // 与 WS 路径同口径：先剥 prompt 首部指令块再派生标题
-            title: deriveSessionTitle(payload.prompt),
-          });
-        } catch {
-          // 供给失败不阻断启动：下面仍按原路径解析（拿不到就照旧不带线程）
-        }
-      }
-
       const sessionThread =
         authenticatedUser && options?.threadService
           ? await options.threadService.resolveOwnedSessionThread(
@@ -167,6 +152,15 @@ export async function registerRunRoutes(
               payload.sessionId,
             )
           : null;
+      const codeMode = sessionThread?.mode === "code" || payload.preset === "code";
+      if (sessionThread && payload.preset && payload.preset !== sessionThread.mode) throw new ExecutionScopeError("mode_mismatch", "Run 不能改变会话所属模式。", 409);
+      if (payload.projectId && sessionThread?.projectId !== payload.projectId) throw new ExecutionScopeError("scope_mismatch", "Run 的项目与持久 Task 不一致。", 409);
+      if (codeMode && (payload.canvasId || (payload.taskId && payload.taskId !== payload.sessionId))) throw new ExecutionScopeError("scope_mismatch", "Code Run 只能使用所属 Task 工作域，不能传 Canvas 或另一 Task。", 400);
+      const scopeHandle = codeMode
+        ? authenticatedUser && options.executionScopes
+          ? await options.executionScopes.openTask(authenticatedUser, payload.sessionId)
+          : (() => { throw new ExecutionScopeError("scope_unavailable", "Code 执行需要已认证的持久 Task 工作域。", 503); })()
+        : undefined;
 
       // Resolve per-workspace model if auth context is available
       let model: string | undefined;
@@ -259,8 +253,17 @@ export async function registerRunRoutes(
         }
       }
 
+      const runId = randomUUID();
+      const eventSink = scopeHandle
+        ? authenticatedUser && options.codeUi
+          ? await options.codeUi.admitExternalRun(authenticatedUser, scopeHandle, runId, payload.prompt)
+          : (() => { throw new ExecutionScopeError("admission_unavailable", "Code Task 前台 admission 未装配，不能绕过 Task 并发控制。", 503); })()
+        : undefined;
       const response = runCreateResponseSchema.parse(
         agentRuns.createRun(payload, {
+          runId,
+          ...(eventSink ? { eventSink } : {}),
+          ...(scopeHandle ? { scopeHandle } : {}),
           ...(authenticatedUser
             ? {
                 accessToken: authenticatedUser.accessToken,
@@ -270,7 +273,7 @@ export async function registerRunRoutes(
           ...(model ? { model } : {}),
           // 与 WS 路径同口径：客户端只能给会话 UUID 时，沙箱目录名改用会话的真实画布
           ...(() => {
-            const sandboxScopeId = resolveSandboxScopeId({
+            const sandboxScopeId = scopeHandle ? undefined : resolveSandboxScopeId({
               conversationId: payload.conversationId,
               requestedCanvasId: payload.canvasId ?? payload.conversationId,
               sessionCanvasId: sessionThread?.canvasId,
@@ -292,6 +295,7 @@ export async function registerRunRoutes(
 
       return reply.code(202).send(response);
     } catch (error) {
+      if (error instanceof ExecutionScopeError) return reply.code(error.statusCode).send(applicationErrorResponseSchema.parse({ error: { code: error.code, message: error.message } }));
       if (error instanceof ThreadServiceError) {
         return reply.code(error.statusCode).send(
           applicationErrorResponseSchema.parse({

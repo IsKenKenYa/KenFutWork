@@ -12,11 +12,18 @@ import { brandKitPlugin } from "../features/brand-kit/plugin.js";
 import { createBrowserPlugin } from "../features/browser/plugin.js";
 import { createCanvasPlugin } from "../features/canvas/plugin.js";
 import { createChatPlugin } from "../features/chat/plugin.js";
+import { createRealtimePlugin } from "../features/chat/realtime-plugin.js";
 import { createCheckpointsPlugin } from "../features/checkpoints/plugin.js";
 import { createCodeGitPlugin } from "../features/code-git/plugin.js";
 import { createCodeToolsPlugin } from "../features/code-tools/plugin.js";
 import { createCodeUiAgentEventsPlugin } from "../features/code-ui/agent-events-plugin.js";
 import { createCodeUiPlugin } from "../features/code-ui/plugin.js";
+import { createCodeTerminalPlugin } from "../features/code-terminal/plugin.js";
+import { createExecutionScopesPlugin } from "../features/execution/plugin.js";
+import { createProcessSandboxPlugin } from "../features/process-sandbox/plugin.js";
+import { createTaskWorkPlugin } from "../features/task-work/plugin.js";
+import { createCodeSubagentsPlugin } from "../features/code-subagents/plugin.js";
+import { createToolCatalogPlugin } from "../features/tool-catalog/plugin.js";
 import { createComputerUsePlugin } from "../features/computer-use/plugin.js";
 import { createCreditsPlugin } from "../features/credits/plugin.js";
 import { createFlowHostPlugin } from "../features/flow/plugin.js";
@@ -167,6 +174,12 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createCheckpointsPlugin(),
     createChatPlugin(),
     createSettingsPlugin(),
+    createExecutionScopesPlugin(),
+    createProcessSandboxPlugin(),
+    createCodeTerminalPlugin(),
+    createTaskWorkPlugin(),
+    createCodeSubagentsPlugin(),
+    createToolCatalogPlugin(),
     createUploadsPlugin(),
     createProjectsPlugin(),
     createJobsPlugin({
@@ -216,5 +229,6 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
         : { mockEventDelayMs: deps.mockEventDelayMs }),
     }),
     createCodeUiPlugin(),
+    createRealtimePlugin(),
   ];
 }

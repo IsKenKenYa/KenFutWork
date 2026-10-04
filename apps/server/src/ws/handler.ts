@@ -23,22 +23,16 @@ import type {
 } from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { ChatService } from "../features/chat/chat-service.js";
-import { deriveSessionTitle } from "../features/chat/session-title.js";
-import type { ThreadService } from "../features/chat/thread-service.js";
-import type { CodeGitService } from "../features/code-git/code-git-service.js";
-import {
-  chunkForFrames,
-  startTerminalSession,
-  type TerminalSession,
-} from "../features/code-git/terminal-session.js";
+import type { ThreadService, SessionThreadBinding } from "../features/chat/thread-service.js";
+import { ExecutionScopeError, type ExecutionScopes } from "../features/execution/scope-service.js";
+import type { CodeUiService } from "../features/code-ui/service.js";
+import { chunkForFrames } from "../features/code-git/terminal-session.js";
+import type { CodeTerminalService } from "../features/code-terminal/types.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import { createAssistantBlockCollector } from "./assistant-block-collector.js";
 import type { ConnectionManager } from "./connection-manager.js";
 import type { CanvasEventBuffer } from "./event-buffer.js";
 import { createPipelineLogger } from "./logger.js";
-
-/** 一条 WS 连接上最多几个终端会话（终端标签一个就够，给一点余量）。 */
-const MAX_TERMINAL_SESSIONS = 4;
 
 type RegisterWsOptions = {
   agentRuns: AgentRunService;
@@ -46,13 +40,14 @@ type RegisterWsOptions = {
   agentRunMetadataService?: AgentRunMetadataService;
   auth?: RequestAuthenticator;
   chatService?: ChatService;
-  /** 交互式终端会话：取已校验归属的工作目录（`terminalWorkDir`）。 */
-  codeGitService?: CodeGitService;
+  codeTerminal?: CodeTerminalService;
   connectionManager: ConnectionManager;
   eventBuffer?: CanvasEventBuffer;
   settingsService?: SettingsService;
   threadService?: ThreadService;
   viewerService?: ViewerService;
+  executionScopes?: ExecutionScopes;
+  codeUi?: Pick<CodeUiService, "admitExternalRun">;
 };
 
 export async function registerWsRoute(
@@ -178,114 +173,39 @@ async function authenticateAndBind(
     }
   }, 30_000);
 
-  /**
-   * 这个 WS 连接上的终端会话（key = 客户端给的 sessionId）。
-   *
-   * 会话绑在**连接**上：连接断了就没人能再给它输入输出，留着只会漏进程——close 时一律收掉。
-   * 上限 {@link MAX_TERMINAL_SESSIONS}：一条连接不该能无限堆 shell 进程。
-   */
-  const terminalSessions = new Map<string, TerminalSession>();
-
+  // terminal owner采用本次socket独立身份；重连复用的transport ID不能接管旧PTY。
+  const terminalConnectionId = randomUUID();
+  const terminalOwner = options.viewerService?.resolveWorkspace(authenticatedUser);
   const sendToClient = (message: Record<string, unknown>) => {
     if (socket.readyState === 1) socket.send(JSON.stringify(message));
   };
-
-  /**
-   * 起一个常驻 shell。同一个 sessionId 重复 start（客户端重连后重放）时**复用**已有会话，
-   * 而不是再起一个——否则界面上一个终端标签会对应两条 shell，输出还会串台。
-   */
+  const sendTerminal = (message: Record<string, unknown>): Promise<void> => new Promise((resolve, reject) => {
+    if (socket.readyState !== 1) { resolve(); return; }
+    socket.send(JSON.stringify(message), (error) => error ? reject(error) : resolve());
+  });
+  const terminalFailure = (id: string, error: unknown) => sendToClient({
+    type: "terminal.exit", sessionId: id, exitCode: null,
+    reason: error instanceof Error ? error.message : String(error),
+  });
   const startTerminal = async (payload: WsTerminalStartCommand["payload"]) => {
-    const existing = terminalSessions.get(payload.sessionId);
-    if (existing && !existing.exited) {
-      sendToClient({
-        type: "command.ack",
-        action: "terminal.start",
-        payload: {
-          sessionId: payload.sessionId,
-          shell: existing.shell,
-          executable: existing.executable,
-          tty: existing.tty,
-          reused: true,
-        },
-      });
-      return;
-    }
-    if (terminalSessions.size >= MAX_TERMINAL_SESSIONS) {
-      sendToClient({
-        type: "terminal.exit",
-        sessionId: payload.sessionId,
-        exitCode: null,
-        reason: `同时最多 ${MAX_TERMINAL_SESSIONS} 个终端会话，先关掉一个再开。`,
-      });
-      return;
-    }
-    const codeGit = options.codeGitService;
-    if (!codeGit) {
-      sendToClient({
-        type: "terminal.exit",
-        sessionId: payload.sessionId,
-        exitCode: null,
-        reason: "服务端没有装配终端能力。",
-      });
-      return;
-    }
-    let cwd: string;
-    try {
-      /**
-       * 带 canvasId 就按画布解析工作目录（与其它端点同一处校验：登录 + 画布归属，
-       * 越权即 404，不给枚举信号）；**不带就落到服务端自己的启动目录**——终端不该被
-       * 工作目录限制住（用户口径「终端不应该限制绑定文件目录」），开着就能用。
-       */
-      cwd = payload.canvasId
-        ? await codeGit.terminalWorkDir(authenticatedUser, payload.canvasId)
-        : process.cwd();
-    } catch (error) {
-      sendToClient({
-        type: "terminal.exit",
-        sessionId: payload.sessionId,
-        exitCode: null,
-        reason: error instanceof Error ? error.message : "打不开工作目录。",
-      });
-      return;
-    }
-
-    const session = startTerminalSession({
-      id: payload.sessionId,
-      cwd,
-      ...(payload.shell ? { shell: payload.shell } : {}),
-      ...(payload.cols ? { cols: payload.cols } : {}),
-      ...(payload.rows ? { rows: payload.rows } : {}),
-      onData: (chunk) => {
-        for (const frame of chunkForFrames(chunk)) {
-          sendToClient({
-            type: "terminal.output",
-            sessionId: payload.sessionId,
-            data: frame,
-          });
-        }
+    const terminals = options.codeTerminal;
+    if (!terminals || !terminalOwner) throw new Error("服务端没有装配Task终端能力。");
+    await terminalOwner;
+    if (socket.readyState !== 1) throw new Error("终端连接已经关闭。");
+    const opened = await terminals.create(authenticatedUser, terminalConnectionId, payload);
+    await sendTerminal({ type: "command.ack", action: "terminal.start", payload: {
+      sessionId: opened.id, shell: opened.shell, executable: opened.executable, tty: opened.tty, ...(opened.reused ? { reused: true } : {}),
+    } });
+    await terminals.subscribe(authenticatedUser, terminalConnectionId, opened.id, {
+      output: async (chunk) => {
+        for (const data of chunkForFrames(chunk)) await sendTerminal({ type: "terminal.output", sessionId: opened.id, data });
       },
-      onExit: (exitCode, reason) => {
-        terminalSessions.delete(payload.sessionId);
-        sendToClient({
-          type: "terminal.exit",
-          sessionId: payload.sessionId,
-          exitCode,
-          ...(reason ? { reason } : {}),
-        });
-      },
+      exit: (exit) => sendTerminal({ type: "terminal.exit", sessionId: opened.id, exitCode: exit.exitCode, ...(exit.reason ? { reason: exit.reason } : {}) }),
     });
-    terminalSessions.set(payload.sessionId, session);
-    sendToClient({
-      type: "command.ack",
-      action: "terminal.start",
-      payload: {
-        sessionId: payload.sessionId,
-        shell: session.shell,
-        executable: session.executable,
-        /** 真终端（PTY）= true：客户端据此上终端模拟器（行编辑/颜色由 shell 出）。 */
-        tty: session.tty,
-      },
-    });
+  };
+  const closeTerminals = async () => {
+    const workspace = await terminalOwner;
+    if (workspace) await options.codeTerminal?.closeConnection(workspace.id, terminalConnectionId, "终端连接断开");
   };
 
   const onMessage = (raw: Buffer | string) => {
@@ -343,6 +263,8 @@ async function authenticateAndBind(
           {
             sessionId: p.sessionId,
             conversationId: p.conversationId,
+            ...(p.projectId !== undefined ? { projectId: p.projectId } : {}),
+            ...(p.taskId !== undefined ? { taskId: p.taskId } : {}),
             prompt: p.prompt,
             ...(p.canvasId !== undefined ? { canvasId: p.canvasId } : {}),
             ...(p.attachments !== undefined
@@ -364,7 +286,9 @@ async function authenticateAndBind(
           agentRuns,
           connectionManager,
           options,
-        );
+        ).catch((error: unknown) => {
+          socket.send(JSON.stringify({ type: "error", message: error instanceof Error ? error.message : String(error) }));
+        });
       } else if (msg.action === "agent.cancel") {
         log.info("run_cancel", {
           userId: authenticatedUser.id,
@@ -415,19 +339,13 @@ async function authenticateAndBind(
           });
         }
       } else if (msg.action === "terminal.start") {
-        void startTerminal(msg.payload);
+        void startTerminal(msg.payload).catch((error: unknown) => terminalFailure(msg.payload.sessionId, error));
       } else if (msg.action === "terminal.input") {
-        terminalSessions.get(msg.payload.sessionId)?.write(msg.payload.data);
+        void options.codeTerminal?.write(authenticatedUser, terminalConnectionId, msg.payload.sessionId, msg.payload.data).catch((error: unknown) => terminalFailure(msg.payload.sessionId, error));
       } else if (msg.action === "terminal.resize") {
-        terminalSessions
-          .get(msg.payload.sessionId)
-          ?.resize(msg.payload.cols, msg.payload.rows);
+        void options.codeTerminal?.resize(authenticatedUser, terminalConnectionId, msg.payload.sessionId, msg.payload.cols, msg.payload.rows).catch((error: unknown) => terminalFailure(msg.payload.sessionId, error));
       } else if (msg.action === "terminal.stop") {
-        const session = terminalSessions.get(msg.payload.sessionId);
-        if (session) {
-          terminalSessions.delete(msg.payload.sessionId);
-          session.stop("客户端关闭了终端。");
-        }
+        void options.codeTerminal?.stop(authenticatedUser, terminalConnectionId, msg.payload.sessionId, "客户端关闭终端").catch((error: unknown) => terminalFailure(msg.payload.sessionId, error));
       }
     }
   };
@@ -449,11 +367,7 @@ async function authenticateAndBind(
   socket.on("close", () => {
     log.info("disconnected", { userId: authenticatedUser.id, connectionId });
     clearInterval(pingInterval);
-    // 终端会话绑在连接上：连接没了就没人能再读写它，收掉免得漏进程
-    for (const session of terminalSessions.values()) {
-      session.stop("连接已断开。");
-    }
-    terminalSessions.clear();
+    void closeTerminals().catch((error: unknown) => log.warn("terminal_cleanup_unconfirmed", { error: error instanceof Error ? error.message : String(error) }));
     // 带 socket 身份：客户端重连复用 connectionId，迟到的旧 socket close 不得删掉新注册
     connectionManager.remove(connectionId, socket);
   });
@@ -498,25 +412,6 @@ async function handleRunCommand(
   // 这里按该 id 供给真实会话与线程（载体是工作区隐藏的「Code 工作台」项目/画布），
   // 供给成功则下面的解析直接命中；失败不阻断 run（解析处仍有兜底），只记一条 warn。
   // Design 模式不供给：其会话由画布页经 API 先建行，缺行属真错误，不该被掩盖。
-  if (services.chatService && payload.preset !== "design") {
-    try {
-      const provisioned = await services.chatService.ensureCodeSession(
-        authenticatedUser,
-        {
-          sessionId: payload.sessionId,
-          // 标题派生先剥 prompt 首部的【…】指令块（目录提示/思考强度），
-          // 否则侧栏会出现「【目录名称：test（仅用户标注的命名提示…」泄漏。
-          title: deriveSessionTitle(payload.prompt),
-        },
-      );
-      log.info("code_session_ensured", { sessionId: provisioned.sessionId });
-    } catch (error) {
-      log.warn("code_session_ensure_failed", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
   // viewer 解析（工作区作用域）：模型默认值、执行模式持久化共用，只解析一次
   const viewerPromise = (async () => {
     if (!services.viewerService) return undefined;
@@ -532,7 +427,7 @@ async function handleRunCommand(
 
   // Resolve thread + model in parallel
   const [sessionBinding, viewer, model] = await Promise.all([
-    (async (): Promise<{ canvasId: string; threadId: string } | undefined> => {
+    (async (): Promise<SessionThreadBinding | undefined> => {
       if (!services.threadService) return undefined;
       try {
         const sessionThread =
@@ -540,10 +435,7 @@ async function handleRunCommand(
             authenticatedUser,
             payload.sessionId,
           );
-        return {
-          canvasId: sessionThread.canvasId,
-          threadId: sessionThread.threadId,
-        };
+        return sessionThread;
       } catch (error) {
         log.warn("thread_resolve_failed", {
           error: error instanceof Error ? error.message : String(error),
@@ -571,6 +463,15 @@ async function handleRunCommand(
     })(),
   ]);
   const threadId = sessionBinding?.threadId;
+  const codeMode = sessionBinding?.mode === "code" || payload.preset === "code";
+  if (sessionBinding && payload.preset && payload.preset !== sessionBinding.mode) throw new ExecutionScopeError("mode_mismatch", "Run 不能改变会话所属模式。", 409);
+  if (payload.projectId && sessionBinding?.projectId !== payload.projectId) throw new ExecutionScopeError("scope_mismatch", "Run 的项目与持久 Task 不一致。", 409);
+  if (codeMode && (payload.canvasId || (payload.taskId && payload.taskId !== payload.sessionId))) throw new ExecutionScopeError("scope_mismatch", "Code Run 只能使用所属 Task 工作域，不能传 Canvas 或另一 Task。", 400);
+  const scopeHandle = codeMode
+    ? services.executionScopes
+      ? await services.executionScopes.openTask(authenticatedUser, payload.sessionId)
+      : (() => { throw new ExecutionScopeError("scope_unavailable", "Code 执行工作域未装配。", 503); })()
+    : undefined;
 
   /**
    * 沙箱目录名必须是**画布 UUID**（用户要求 `tmp/sandbox/<画布UUID>`）。
@@ -579,7 +480,7 @@ async function handleRunCommand(
    * 直接落盘就是 `tmp/sandbox/<会话UUID>`，与服务端懒供给的「Code 工作台」画布对不上。
    * 这里只在「客户端发的就是会话作用域」时改用会话的真实画布；正常项目作用域不动。
    */
-  const sandboxScopeId = resolveSandboxScopeId({
+  const sandboxScopeId = scopeHandle ? undefined : resolveSandboxScopeId({
     conversationId: payload.conversationId,
     requestedCanvasId: payload.canvasId ?? payload.conversationId,
     sessionCanvasId: sessionBinding?.canvasId,
@@ -646,14 +547,24 @@ async function handleRunCommand(
     });
   }
 
-  const canvasId = payload.canvasId ?? payload.conversationId;
+  // 共享传输的 Map key：Code 显式 Task 前缀，不是 Canvas UUID，也不创建隐藏画布。
+  const canvasId = scopeHandle ? `task:${scopeHandle.describe().taskId}` : payload.canvasId ?? sessionBinding?.canvasId ?? payload.conversationId;
 
   /**
    * 起一次尝试：建 run + 落元数据 + 绑定画布 + 发 ack + 标活跃。
    * 重试必须整段重来：**新 runId 要重新 ack 给客户端**，否则事件因 runId 不匹配被丢。
    */
   const startAttempt = async (): Promise<string> => {
+    const acceptedRunId = randomUUID();
+    const eventSink = scopeHandle
+      ? services.codeUi
+        ? await services.codeUi.admitExternalRun(authenticatedUser, scopeHandle, acceptedRunId, payload.prompt)
+        : (() => { throw new ExecutionScopeError("admission_unavailable", "Code Task 前台 admission 未装配，不能绕过 Task 并发控制。", 503); })()
+      : undefined;
     const response = agentRuns.createRun(payload, {
+      runId: acceptedRunId,
+      ...(eventSink ? { eventSink } : {}),
+      ...(scopeHandle ? { scopeHandle } : {}),
       accessToken: authenticatedUser.accessToken,
       userId: authenticatedUser.id,
       ...(resolvedModel ? { model: resolvedModel } : {}),
@@ -809,7 +720,7 @@ async function handleRunCommand(
       });
       if (!decision.retry) {
         // ── Server-side assistant message persistence ──
-        if (services.chatService && blockCollector.hasVisibleContent) {
+        if (!scopeHandle && services.chatService && blockCollector.hasVisibleContent) {
           try {
             await services.chatService.createMessage(
               authenticatedUser,

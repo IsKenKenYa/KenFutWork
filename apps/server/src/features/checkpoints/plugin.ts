@@ -46,6 +46,8 @@ export function createCheckpointsPlugin(): PluginDefinition {
             } };
           } catch (error) { await processLease.release(); throw error; }
         },
+        onBeforeRestore: (scope, actor) => ctx.get("codeUi").rewindTask(actor, scope.describe().taskId, scope.describe().generation),
+        onAfterRestore: (scope, actor, success) => ctx.get("codeUi").finishTaskRestore(scope, actor, success),
       }));
     },
     mounted(ctx) {

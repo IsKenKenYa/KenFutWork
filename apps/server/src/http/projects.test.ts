@@ -1,11 +1,11 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-
 import { describe, expect, it } from "vitest";
-
 import { buildApp } from "../app.js";
 import { createProjectService } from "../features/projects/project-service.js";
+import { createMemoryTaskWorkManager } from "../features/task-work/test-store.js";
+import { createStartupPersistenceFixture } from "../test-startup-persistence.js";
 
 /**
  * 工作目录（`projects.work_dir`，web 形态「填本机路径」）的 **HTTP 边界**回归。
@@ -45,17 +45,18 @@ function buildHttpApp(
     } as never,
     repository: {
       archive: async () => 1,
-      createWithCanvas: async (input: never) => {
+      createProject: async (input: never) => {
         const typed = input as unknown as {
+          id: string;
           name: string;
           slug: string;
           workDir?: string;
         };
         overrides.createdWorkDir?.(typed.workDir);
         return {
-          canvas: { id: "canvas-1", name: "Main Canvas", is_primary: true },
+          canvas: null,
           project: {
-            id: "project-1",
+            id: typed.id,
             kind: "code" as const,
             name: typed.name,
             slug: typed.slug,
@@ -64,6 +65,7 @@ function buildHttpApp(
             updated_at: "2026-09-17T00:00:00+00:00",
             workspace_id: WORKSPACE.id,
             work_dir: typed.workDir ?? null,
+            additional_directories: [],
           },
         };
       },
@@ -87,6 +89,8 @@ function buildHttpApp(
       credentialSecret: "test-secret",
     },
     overrides: {
+      taskWork: createMemoryTaskWorkManager(),
+      persistence: createStartupPersistenceFixture(),
       auth: {
         authenticate: async () => USER,
         resolveUser: async () => USER,
@@ -157,11 +161,17 @@ describe("POST /api/projects 绑定本机工作目录（HTTP 边界）", () => {
         payload: { kind: "code", name: "test", work_dir: `${dir}/` },
       });
 
-      expect(response.statusCode).toBe(201);
-      expect(stored).toBe(resolve(dir));
-      expect(response.json().project.workDir).toBe(resolve(dir));
+      expect(response.statusCode, response.body).toBe(201);
+      expect(stored).toBe(realpathSync(dir));
+      expect(response.json().project.workDir).toBe(realpathSync(dir));
+      expect(response.json().project).toMatchObject({
+        kind: "code",
+        additionalDirectories: [],
+      });
+      expect(response.json().project).not.toHaveProperty("primaryCanvas");
     } finally {
       await app.close();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

@@ -61,16 +61,14 @@ export const wsTerminalStartCommandSchema = z.object({
   action: z.literal("terminal.start"),
   payload: z.object({
     sessionId: z.string().min(1).max(64),
-    /**
-     * 绑定的画布（= 工作目录）。**可选**：终端不该被工作目录限制住
-     * （用户口径「终端不应该限制绑定文件目录」）——不带时服务端把 cwd 落到自己的启动目录。
-     */
-    canvasId: z.string().min(1).optional(),
+    /** 真实Task身份决定持久目录和权限；cwd只选择该授权域中的目录。 */
+    taskId: z.string().uuid(),
+    cwd: z.string().optional(),
     /** 省略即用服务端解析的**系统默认** shell（用户口径「不要选择，自动进入系统默认配置的终端」）。 */
     shell: terminalShellSchema.optional(),
     /** 终端尺寸（列 × 行）：PTY 的窗口大小，交互程序（PSReadLine / 全屏 TUI）靠它排版。 */
-    cols: z.number().int().min(2).max(1000).optional(),
-    rows: z.number().int().min(1).max(1000).optional(),
+    cols: z.number().int().min(2).max(1000),
+    rows: z.number().int().min(1).max(1000),
   }),
 });
 
