@@ -34,6 +34,8 @@ export {
   appSettingsSchema,
   ZCODE_PROTOCOL_NAME,
   ZCODE_PROTOCOL_VERSION,
+  zcodePluginsListResultSchema,
+  zcodePluginsOverviewResultSchema,
   zcodeSessionStateSnapshotSchema,
 } from "@zcode/shared";
 /** 界面契约沿用固定 ZCode 原协议，宿主不维护另一套 rows/snapshot。 */

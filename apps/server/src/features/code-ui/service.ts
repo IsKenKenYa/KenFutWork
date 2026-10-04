@@ -18,6 +18,7 @@ import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import type { ThreadService } from "../chat/thread-service.js";
 import type { ModelCatalogService } from "../model-providers/model-catalog-service.js";
 import type { ModelProviderService } from "../model-providers/model-provider-service.js";
+import type { PluginRegistryService } from "../plugins/plugin-registry-service.js";
 import type { ProjectService } from "../projects/project-service.js";
 import type { SettingsService } from "../settings/settings-service.js";
 import { CodeUiConnections } from "./connections.js";
@@ -30,6 +31,7 @@ import {
   resolveCodeUiPath,
 } from "./files.js";
 import { buildCodeUiModelViews } from "./model-views.js";
+import { CodeUiPluginsHost } from "./plugins.js";
 import { type CodeUiRepository, CodeUiRepositoryError } from "./repository.js";
 import { CodeUiSettingsHost } from "./settings.js";
 import { codeUiTaskMeta } from "./task-index.js";
@@ -45,6 +47,7 @@ export interface CodeUiServiceDeps {
   agentRuns: AgentRunService;
   agentRunMetadata: AgentRunMetadataService;
   env: ServerEnv;
+  plugins: PluginRegistryService;
 }
 
 function canonical(value: unknown): string {
@@ -76,7 +79,12 @@ export class CodeUiService {
   private readonly connections = new CodeUiConnections();
   private readonly controllers = new Map<string, CodeUiControllerHost>();
   private readonly settingsHost;
+  private readonly pluginsHost;
   constructor(private readonly deps: CodeUiServiceDeps) {
+    this.pluginsHost = new CodeUiPluginsHost({
+      registry: deps.plugins,
+      workspace: (user, path) => this.requireWorkspace(user, path),
+    });
     this.settingsHost = new CodeUiSettingsHost({
       settings: deps.settings,
       viewer: deps.viewer,
@@ -182,6 +190,8 @@ export class CodeUiService {
     method: string,
     args: unknown[],
   ) {
+    if (service === "plugin-management")
+      return this.pluginsHost.call(user, method, args[0]);
     if (service === "workspace" && method === "open") {
       const input = z
         .object({ path: z.string().trim().min(1) })

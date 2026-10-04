@@ -5,12 +5,15 @@ import { pathToFileURL } from "node:url";
 import {
   type CompatReport,
   type InstalledPlugin,
+  installedPluginSchema,
   PLUGIN_UI_SLOTS,
   type PluginBundleManifest,
   type PluginExportArtifact,
   type PluginMarketEntry,
   type PluginUiSlot,
 } from "@kenfutwork/shared";
+
+import { z } from "zod";
 
 import type { ToolRegistry } from "../../kernel/types.js";
 import { type BundleFiles, buildBundleManifest } from "./bundle-manifest.js";
@@ -156,6 +159,12 @@ export interface PluginRouteDispatchResult {
 
 export interface PluginRegistryService {
   list(): Promise<PluginMarketEntry[]>;
+  /** 真实可安装包与机器安装态；不把内核 feature 清单混为可卸载插件包。 */
+  readPackageInventory(): Promise<{
+    rootPath: string;
+    bundled: Array<Pick<BundledBundle, "id" | "name" | "manifest" | "report">>;
+    installed: Array<{ record: InstalledPlugin; rootPath: string }>;
+  }>;
   inspect(input: { url: string; ref?: string | undefined }): Promise<{
     manifest: PluginBundleManifest;
     report: CompatReport;
@@ -250,8 +259,6 @@ interface RegistryState {
   installed: InstalledPlugin[];
 }
 
-const EMPTY_STATE: RegistryState = { version: 1, installed: [] };
-
 function sanitizeId(raw: string): string {
   return (
     raw
@@ -321,13 +328,24 @@ export function createPluginRegistryService(
   const records = new Map<string, InstalledPlugin>();
 
   async function readState(): Promise<RegistryState> {
+    let raw: string;
     try {
-      const raw = await readFile(statePath, "utf8");
-      const parsed = JSON.parse(raw) as RegistryState;
-      if (!Array.isArray(parsed.installed)) return { ...EMPTY_STATE };
-      return { version: 1, installed: parsed.installed };
+      raw = await readFile(statePath, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT")
+        return { version: 1, installed: [] };
+      throw error;
+    }
+    try {
+      return z
+        .object({
+          version: z.literal(1),
+          installed: z.array(installedPluginSchema),
+        })
+        .parse(JSON.parse(raw));
     } catch {
-      return { ...EMPTY_STATE };
+      // 库存损坏属于宿主存储错误，不能伪装为空清单或原RPC请求的400。
+      throw new Error("本机插件库存损坏，请修复 installed.json 后重试");
     }
   }
 
@@ -573,6 +591,19 @@ export function createPluginRegistryService(
   }
 
   return {
+    async readPackageInventory() {
+      const state = await readState();
+      return {
+        rootPath: deps.pluginsDir,
+        bundled: (deps.bundledBundles ?? []).map(
+          ({ id, name, manifest, report }) => ({ id, name, manifest, report }),
+        ),
+        installed: state.installed.map((record) => ({
+          record,
+          rootPath: bundleDirOf(record.id),
+        })),
+      };
+    },
     async list() {
       const state = await readState();
       const entries: PluginMarketEntry[] = deps.builtinCatalog.map((entry) => ({

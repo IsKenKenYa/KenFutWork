@@ -73,3 +73,5 @@ file.resolvePath 规范化真实路径，workspace.open 绑定或创建实际 Co
 Code 宿主已直接挂原 Root。file.ensureConversationWorkspace 沿原 IFileService 返回真实 `{path, created, workspacePurpose: "conversation"}`，共享 cwd 按当前 Workspace 身份隔离，并经 Project 服务绑定固定主画布；冷并发复用身份，重开保留文件，已归档默认项目的迟到 ensure 返回 409。目录选择先 resolvePath，再 workspace.open，绑定失败交回原选择器保持重试。原 Root 只消费真实 hello.clientMode；同源父工作台与独立 Code 文档的刷新资格沿原 navigation 判定恢复，不伪造 desktop-continuous。此轮不新增 HTTP/WS schema，原 contract 继续由 shared 导出。
 
 Code主标题的轻量元信息由宿主明确选择原Task.getTaskMeta读面，返回来自真实原V4快照的Task元信息；主/子消息流继续走原SessionDataLayer，不增加session/read旧消息展示链。未声明宿主策略的原平台仍消费原session snapshot/converter。此选择仅涉及宿主接口，HTTP/SSE帧结构未变化，原契约与Schema仍从shared再导出。
+
+Code 的原 `plugin-management` 通道现已将 `listPlugins` 与 `getPluginsOverview` 接到本机真实包库存。返回结构直接使用固定原 ZCode schema，由 `packages/shared/src/code-ui-contracts.ts` 再导出；原 store、市场卡片与详情负责展示。内核 feature 不属于可卸载包，已停用包仍属于 installed；自带 bundle 与本机包各有真实来源。读取先验证活跃 Code Project 归属，损坏库存明确失败而不返回假空清单。当前只有读取，安装、卸载、启停、describe、市场源写入和项目覆盖尚待消费真实服务；其它方法保持 501，不能以目录可见认定市场完成。

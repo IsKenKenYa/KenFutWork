@@ -17,6 +17,7 @@ export function createCodeUiPlugin(): PluginDefinition {
       "threads",
       "agentRuns",
       "agentRunMetadata",
+      "plugins",
     ],
     apply(ctx) {
       ctx.register("codeUi", () =>
@@ -30,6 +31,7 @@ export function createCodeUiPlugin(): PluginDefinition {
           threads: ctx.get("threads"),
           agentRuns: ctx.get("agentRuns"),
           agentRunMetadata: ctx.get("agentRunMetadata"),
+          plugins: ctx.get("plugins"),
           env: ctx.env,
         }),
       );
