@@ -7,6 +7,8 @@ import type { PersistenceService } from "../persistence/types.js";
  * 表以 `workspace_id` 为主键，故 upsert 天然是「一工作区一行」。
  */
 export interface SettingsRepository {
+  findRuntimeGovernance(workspaceId: string): Promise<unknown>;
+  upsertRuntimeGovernance(workspaceId: string, patch: Record<string, number>): Promise<void>;
   /** 读默认模型；无行返回 null（由服务落回退默认值）。 */
   findDefaultModel(workspaceId: string): Promise<string | null>;
   /** 读 run 重试上限；无行返回 null（由服务落缺省 10）。 */
@@ -87,6 +89,21 @@ export function createSettingsRepository(
   persistence: PersistenceService,
 ): SettingsRepository {
   return {
+    async findRuntimeGovernance(workspaceId) {
+      const row = await persistence.forWorkspace(workspaceId).queryOne<{ runtime_governance: unknown }>(
+        "select runtime_governance from public.workspace_settings where workspace_id = :workspace",
+      );
+      return row?.runtime_governance ?? {};
+    },
+    async upsertRuntimeGovernance(workspaceId, patch) {
+      await persistence.forWorkspace(workspaceId).execute(
+        `insert into public.workspace_settings (workspace_id, runtime_governance)
+         values (:workspace, $1::jsonb)
+         on conflict (workspace_id) do update
+         set runtime_governance = public.workspace_settings.runtime_governance || excluded.runtime_governance`,
+        [JSON.stringify(patch)],
+      );
+    },
     async findDefaultModel(workspaceId) {
       const row = await persistence
         .forWorkspace(workspaceId)

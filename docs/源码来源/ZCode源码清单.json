@@ -14503,8 +14503,18 @@
       "source": "references/zcode/packages/shared/src/platform.ts",
       "target": "packages/zcode-shared/src/platform.ts",
       "sha256": "68a470a9917ace6d91bcad8a881b52662a8fb9486bcaa5b501f2f56811d814a4",
-      "copiedSha256": "68a470a9917ace6d91bcad8a881b52662a8fb9486bcaa5b501f2f56811d814a4",
-      "adaptations": []
+      "copiedSha256": "013721beb5c3f5e7fc103ab6539634fdbba9fae9db9114b33350c5c2071ea81f",
+      "adaptations": [
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
+        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链",
+        "阶段同步3f5c3873: 可选sessionMetadataSource与原Root轻量真实标题；Task-index只读metainfo，未声明保持原session投影"
+      ],
+      "syncSource": {
+        "commit": "3f5c38732f151fa64e99856f456623b303dbe14e",
+        "path": "packages/zcode-shared/src/platform.ts",
+        "blobSha1": "168c98a39a54362457a0c9572445c957def593b8",
+        "sha256": "f2623badafecaf4eb3d9c23507f22017f40dc6ee6ddcf73d075fa7c0f6189c7c"
+      }
     },
     {
       "source": "references/zcode/packages/shared/src/plugin-display-name.ts",
@@ -14888,8 +14898,10 @@
       "source": "references/zcode/packages/shared/src/validation.ts",
       "target": "packages/zcode-shared/src/validation.ts",
       "sha256": "49d7fccf518195c1ab4eb89ee816c878bfa4e0227108e207ec3cf5a1ddb2b84c",
-      "copiedSha256": "49d7fccf518195c1ab4eb89ee816c878bfa4e0227108e207ec3cf5a1ddb2b84c",
-      "adaptations": []
+      "copiedSha256": "5a3a232e53b186c2b49563cc39838cc6fb77ffaa4502c05950e9f918952c7d11",
+      "adaptations": [
+        "Code宿主必要适配: zcodeTaskMetaSchema保留optional真实Project UUID，qualified workspaceIdentity只作source键，不解码执行权限；公开parsed Controller frame回归RED后修复"
+      ]
     },
     {
       "source": "references/zcode/packages/shared/src/validationAppSettings.ts",
@@ -15182,8 +15194,10 @@
       "source": "references/zcode/packages/shared/src/zcode-protocol-v4/toolDisplay.ts",
       "target": "packages/zcode-shared/src/zcode-protocol-v4/toolDisplay.ts",
       "sha256": "a0400e1c7e37e757a2187b70c6f281eb0f4cefd3cc657d17feda163c82c023ed",
-      "copiedSha256": "a0400e1c7e37e757a2187b70c6f281eb0f4cefd3cc657d17feda163c82c023ed",
-      "adaptations": []
+      "copiedSha256": "1cde06dc7ffb2d14d4806012d133fba802a3b8da9ebb06c6e46a7089f7402bfc",
+      "adaptations": [
+        "原ToolOutput结果展示联合增加真实ApplyPatch的file_diffs复用file_diff schema；row顶层display联合保持原契约"
+      ]
     },
     {
       "source": "references/zcode/packages/shared/src/zcode-protocol-v4/transport.ts",
@@ -15602,8 +15616,17 @@
       "source": "references/zcode/packages/services/src/file/file.ts",
       "target": "packages/zcode-services/src/file/file.ts",
       "sha256": "9cd8de18048a2834cbba5da953a568012f58cc47191b9bad85e7b292ac07a0a9",
-      "copiedSha256": "9cd8de18048a2834cbba5da953a568012f58cc47191b9bad85e7b292ac07a0a9",
-      "adaptations": []
+      "copiedSha256": "e3e1388dc1a7ce9430d00da13ddee34073b0aecb668ece2b38d8ae4f11da25d6",
+      "adaptations": [
+        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链",
+        "原3创建入口消费完整: ensure/default/scratch均验证真实CodeUiWorkspace DTO并返回opaque identity，Project登记不创建Task/Scope"
+      ],
+      "syncSource": {
+        "commit": "3f5c38732f151fa64e99856f456623b303dbe14e",
+        "path": "packages/zcode-services/src/file/file.ts",
+        "blobSha1": "ea5f6c67753c63a30249d4ed9fcca244ae7e9f6b",
+        "sha256": "9cd8de18048a2834cbba5da953a568012f58cc47191b9bad85e7b292ac07a0a9"
+      }
     },
     {
       "source": "references/zcode/packages/services/src/fileWatcher/fileWatcher.ts",

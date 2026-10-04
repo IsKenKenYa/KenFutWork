@@ -1,5 +1,6 @@
 import type {
   AgentGovernanceOverrides,
+  RuntimeGovernanceKey,
   TerminalShellId,
   WorkspaceSettings,
 } from "@kenfutwork/shared";
@@ -17,6 +18,8 @@ import {
   clampSubagentMaxContinuations,
   clampSubagentMaxDepth,
   coerceLlmInfiniteRetry,
+  RUNTIME_GOVERNANCE_KEYS,
+  resolveGovernanceNumber,
 } from "@kenfutwork/shared";
 import {
   clampMaxRunRetries,
@@ -50,7 +53,9 @@ export class SettingsServiceError extends Error {
  * 每个字段显式写 `| undefined`：zod 的 `.partial()` 产出就是「键可缺、值可为 undefined」，
  * 而项目开着 `exactOptionalPropertyTypes`，用 `Partial<WorkspaceSettings>` 接会不兼容。
  */
-export type WorkspaceSettingsPatch = {
+export type WorkspaceSettingsPatch = Partial<
+  Record<RuntimeGovernanceKey, number | undefined>
+> & {
   defaultModel?: string | undefined;
   agentMaxRetries?: number | undefined;
   terminalShell?: TerminalShellId | undefined;
@@ -70,6 +75,12 @@ export type WorkspaceSettingsPatch = {
 };
 
 export type SettingsService = {
+  onUpdated(
+    listener: (event: {
+      workspaceId: string;
+      changedKeys: readonly (keyof WorkspaceSettingsPatch)[];
+    }) => void | Promise<void>,
+  ): () => void;
   getWorkspaceSettings(
     user: AuthenticatedUser,
     workspaceId: string,
@@ -154,6 +165,7 @@ export function createSettingsService(options: {
   const defaultModel = options.defaultModel ?? FALLBACK_MODEL;
   const governanceEnv = options.governanceEnv ?? {};
   const { repository } = options;
+  const listeners = new Set<Parameters<SettingsService["onUpdated"]>[0]>();
 
   const getSettings = async (
     user: AuthenticatedUser,
@@ -175,6 +187,7 @@ export function createSettingsService(options: {
       storedLlmRequestMaxRetries,
       storedLlmInfiniteRetry,
       storedExecuteTimeoutMs,
+      storedRuntimeGovernance,
     ] = await Promise.all([
       repository.findDefaultModel(workspaceId),
       repository.findAgentMaxRetries(workspaceId),
@@ -191,6 +204,7 @@ export function createSettingsService(options: {
       repository.findLlmRequestMaxRetries(workspaceId),
       repository.findLlmInfiniteRetry(workspaceId),
       repository.findExecuteTimeoutMs(workspaceId),
+      repository.findRuntimeGovernance(workspaceId),
     ]).catch(() => {
       throw new SettingsServiceError(
         "settings_read_failed",
@@ -205,7 +219,26 @@ export function createSettingsService(options: {
         ? await options.resolveFallbackModel?.(user)
         : undefined;
 
+    const runtimeValues =
+      typeof storedRuntimeGovernance === "object" &&
+      storedRuntimeGovernance !== null
+        ? (storedRuntimeGovernance as Record<string, unknown>)
+        : {};
+    const runtimeGovernance = Object.fromEntries(
+      RUNTIME_GOVERNANCE_KEYS.map((key) => [
+        key,
+        resolveGovernanceNumber(
+          key,
+          typeof runtimeValues[key] === "number"
+            ? runtimeValues[key]
+            : undefined,
+          governanceEnv,
+        ),
+      ]),
+    ) as Pick<WorkspaceSettings, RuntimeGovernanceKey>;
+
     return {
+      ...runtimeGovernance,
       agentMaxRetries: clampMaxRunRetries(
         storedRetries ?? DEFAULT_MAX_RUN_RETRIES,
       ),
@@ -277,6 +310,12 @@ export function createSettingsService(options: {
   };
 
   return {
+    onUpdated(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
     getWorkspaceSettings: getSettings,
 
     async updateWorkspaceSettings(user, workspaceId, patch) {
@@ -386,6 +425,18 @@ export function createSettingsService(options: {
           ),
         );
       }
+      const runtimePatch = Object.fromEntries(
+        RUNTIME_GOVERNANCE_KEYS.flatMap((key) =>
+          patch[key] === undefined
+            ? []
+            : [[key, resolveGovernanceNumber(key, patch[key])]],
+        ),
+      );
+      if (Object.keys(runtimePatch).length > 0) {
+        writes.push(
+          repository.upsertRuntimeGovernance(workspaceId, runtimePatch),
+        );
+      }
       await Promise.all(writes).catch(() => {
         throw new SettingsServiceError(
           "settings_update_failed",
@@ -395,7 +446,26 @@ export function createSettingsService(options: {
       });
 
       // 回读真值：客户端拿到的是库里现在的事实，不是「我以为写成了什么」
-      return getSettings(user, workspaceId);
+      const result = await getSettings(user, workspaceId);
+      const changedKeys = (
+        Object.keys(patch) as Array<keyof WorkspaceSettingsPatch>
+      ).filter((key) => patch[key] !== undefined);
+      if (changedKeys.length) {
+        const notified = await Promise.allSettled(
+          [...listeners].map((listener) =>
+            Promise.resolve().then(() =>
+              listener({ workspaceId, changedKeys: [...changedKeys] }),
+            ),
+          ),
+        );
+        for (const outcome of notified)
+          if (outcome.status === "rejected")
+            console.warn(
+              "[settings] 设置事实已保存，配置消费者刷新失败：",
+              outcome.reason,
+            );
+      }
+      return result;
     },
   };
 }

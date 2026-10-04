@@ -527,6 +527,20 @@ export type CuaOsSupport =
  * 业务服务（文件、终端、凭据等）走 IServiceAccessor 的 RPC 通道。
  */
 export interface IPlatformService {
+  /** 宿主是否提供 ZCode 云账户/套餐服务；未声明时保持原平台行为。 */
+  supportsCloudAccounts?: boolean;
+
+  /** 宿主已接通的可选能力；未声明时保持原平台行为。 */
+  supportsAutomations?: boolean;
+  supportsEmbeddedBrowser?: boolean;
+  supportsComputerUse?: boolean;
+  supportsRemoteWorkspaces?: boolean;
+  supportsUserOnboarding?: boolean;
+  supportsSettingsImport?: boolean;
+  supportsAppRuntimePreferences?: boolean;
+  /** 宿主的轻量元信息读面；缺省保留原 session snapshot 读取。 */
+  sessionMetadataSource?: "session" | "task-index";
+
   /** 当前平台的文件选择框是否能返回 agent 可访问的本地绝对路径 */
   canSelectFilePath?: boolean;
 
@@ -577,7 +591,9 @@ export interface IPlatformService {
   ): () => void;
 
   /** 检查目录是否已在其他窗口打开；如果是则激活该窗口并切到对应 tab */
-  activateOrSetWorkspace(path: string): Promise<{ activated: boolean }>;
+  activateOrSetWorkspace(path: string): Promise<{ activated: boolean; workspacePath?: string; workspaceIdentity?: string }>;
+  /** 宿主在新建Task前解析当前默认目录；既有Task身份不参与重绑。 */
+  resolveNewTaskWorkspace?(target: { workspacePath: string; workspaceIdentity?: string; taskId?: string }): Promise<{ workspacePath: string; workspaceIdentity?: string }>;
 
   /** 建立远程连接（Desktop: 在当前窗口创建远程 session；Web: HTTP API） */
   connectRemote(

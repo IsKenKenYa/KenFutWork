@@ -3,6 +3,7 @@ import { z } from "zod";
 import { toolArtifactSchema } from "./artifacts.js";
 import { brandKitAssetTypeSchema } from "./brand-kit-contracts.js";
 import { executionModeSchema } from "./capability-contracts.js";
+import { additionalDirectorySchema } from "./execution-contracts.js";
 import { governanceBoolSetting, governanceSetting } from "./governance.js";
 
 export const identifierSchema = z.string().min(1);
@@ -76,6 +77,9 @@ export const videoGenerationPreferenceSchema = z.object({
 export const runCreateRequestSchema = z.object({
   sessionId: sessionIdSchema,
   conversationId: conversationIdSchema,
+  /** Code 的持久 Task/Project 声明；服务端核对归属，不从 Canvas 推导工作目录。 */
+  projectId: projectIdSchema.optional(),
+  taskId: sessionIdSchema.optional(),
   prompt: z.string(),
   canvasId: canvasIdSchema.optional(),
   attachments: z.array(imageAttachmentSchema).optional(),
@@ -86,7 +90,7 @@ export const runCreateRequestSchema = z.object({
   model: z.string().optional(),
   /**
    * agent preset（DEC-2，会话级）：design=画布工具集，code=编码工具集；
-   * 缺省由服务端推断（有 canvasId → design，否则 code）。
+   * 会话模式由服务端持久 Task 持有；preset 仅是声明，不能改变模式或授权。
    */
   preset: z.enum(["design", "code"]).optional(),
   /**
@@ -283,6 +287,30 @@ export const workspaceSettingsSchema = z.object({
   llmInfiniteRetry: governanceBoolSetting("llmInfiniteRetry"),
   /** Code 模式 execute 命令超时（毫秒；下限 5s 上限 30min）。 */
   executeTimeoutMs: governanceSetting("executeTimeoutMs"),
+  /** Code 宿主通知通道重连间隔；与执行超时分别治理。 */
+  codeUiReconnectDelayMs: governanceSetting("codeUiReconnectDelayMs"),
+  codeReadMaxBytes: governanceSetting("codeReadMaxBytes"),
+  codeReadPageCharacters: governanceSetting("codeReadPageCharacters"),
+  codeSearchMaxResults: governanceSetting("codeSearchMaxResults"),
+  codeSearchMaxBytes: governanceSetting("codeSearchMaxBytes"),
+  codePatchMaxBytes: governanceSetting("codePatchMaxBytes"),
+  codePdfMaxPages: governanceSetting("codePdfMaxPages"),
+  codePdfRenderScale: governanceSetting("codePdfRenderScale"),
+  codeAttachmentMaxBytes: governanceSetting("codeAttachmentMaxBytes"),
+  codeAttachmentChunkMaxBytes: governanceSetting("codeAttachmentChunkMaxBytes"),
+  codeAttachmentMaxChunks: governanceSetting("codeAttachmentMaxChunks"),
+  codeAttachmentMaxConcurrent: governanceSetting("codeAttachmentMaxConcurrent"),
+  codeAttachmentStagedMaxBytes: governanceSetting("codeAttachmentStagedMaxBytes"),
+  codeAttachmentUploadTtlMs: governanceSetting("codeAttachmentUploadTtlMs"),
+  codeAttachmentMaxPerInput: governanceSetting("codeAttachmentMaxPerInput"),
+  codeAttachmentMaxRetries: governanceSetting("codeAttachmentMaxRetries"),
+  codeAttachmentRetryDelayMs: governanceSetting("codeAttachmentRetryDelayMs"),
+  processMaxOutputBytes: governanceSetting("processMaxOutputBytes"),
+  processPreviewMaxChars: governanceSetting("processPreviewMaxChars"),
+  processYieldMs: governanceSetting("processYieldMs"),
+  processKillGraceMs: governanceSetting("processKillGraceMs"),
+  terminalMaxSessions: governanceSetting("terminalMaxSessions"),
+  sandboxProbeTimeoutMs: governanceSetting("sandboxProbeTimeoutMs"),
   /** Computer Use：单个桌面动作超时（毫秒）。 */
   computerUseActionTimeoutMs: governanceSetting("computerUseActionTimeoutMs"),
   /** Computer Use：观察树文本预算（字节），超限按优先级裁剪。 */

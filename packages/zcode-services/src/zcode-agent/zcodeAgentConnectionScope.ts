@@ -773,6 +773,10 @@ export function createZCodeAgentConnectionScope(
       }
       return result;
     },
+    async attachmentBudgetV4(params) {
+      assertReady();
+      return base.attachmentBudgetV4(withTrustedConnection(params, forwardedConnection(params)));
+    },
     async attachmentReadV4(params) {
       assertReady();
       return base.attachmentReadV4(withTrustedConnection(params, forwardedConnection(params)));

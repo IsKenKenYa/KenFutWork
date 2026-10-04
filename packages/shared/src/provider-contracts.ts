@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { modelConfigDataSchema } from "@zcode/shared/model-config";
 
 /**
  * BYOK 供应商缝契约（《改造计划》§4.8 / §5）。
@@ -69,8 +70,24 @@ export const videoGenerationCapsSchema = z.object({
 });
 export type VideoGenerationCaps = z.infer<typeof videoGenerationCapsSchema>;
 
+/** 原 Code 设置的安全元数据；连接与凭证仍由供应商实例持有。 */
+export const codeUiProviderMetadataSchema = z.object({
+  templateId: z.string().min(1).optional(),
+  group: z.enum(["standard-personal", "zai-family", "bigmodel-family"]).optional(),
+  logo: z.object({ type: z.literal("builtin"), key: z.string().min(1) }).strict().optional(),
+  modelOrder: z.array(z.string().min(1)).optional(),
+  models: z.record(z.string().min(1), z.object({
+    config: modelConfigDataSchema,
+    useRecommendedConfig: z.boolean(),
+  }).strict()).optional(),
+}).strict();
+export type CodeUiProviderMetadata = z.infer<typeof codeUiProviderMetadataSchema>;
+
 /** OpenAI 兼容网关的兼容性开关（按实例覆盖默认行为）。 */
 export const providerCompatSchema = z.object({
+  /** 显式线协议优先于探测结果；缺省才使用自动纠偏。 */
+  chatApi: z.enum(["completions", "responses"]).optional(),
+  codeUi: codeUiProviderMetadataSchema.optional(),
   supportsToolCalling: z.boolean().optional(),
   supportsJsonResponseFormat: z.boolean().optional(),
   supportsJsonSchemaResponseFormat: z.boolean().optional(),
@@ -252,7 +269,7 @@ export const providerInstanceCreateRequestSchema = z
     protocol: providerProtocolSchema,
     baseUrl: z.string().optional(),
     /** 只写不读：创建时提交明文 Key，服务端加密落库后仅存 ref。 */
-    apiKey: z.string().min(1),
+    apiKey: z.string().min(1).optional(),
     /** 缺省视为空列表：模型型实例会被 superRefine 拒（见下），dify-engine 合法省略。 */
     models: z.array(providerInstanceModelSchema).default([]),
     compat: providerCompatSchema.optional(),
@@ -262,21 +279,6 @@ export const providerInstanceCreateRequestSchema = z
      */
     headers: providerInstanceHeadersSchema.optional(),
     enabled: z.boolean().optional(),
-  })
-  /**
-   * models 的最低数量按协议收口：模型型实例（聊天/图视频）至少声明一个模型才可用；
-   * `dify-engine` 是引擎凭证（宿主不消费其模型，见 providerProtocolSchema 注释），
-   * 允许空列表——不为它编造占位模型。
-   */
-  .superRefine((value, ctx) => {
-    if (value.protocol === "dify-engine") return;
-    if (value.models.length === 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["models"],
-        message: "模型型实例至少声明一个模型",
-      });
-    }
   });
 export type ProviderInstanceCreateRequest = z.infer<
   typeof providerInstanceCreateRequestSchema
@@ -284,10 +286,13 @@ export type ProviderInstanceCreateRequest = z.infer<
 
 export const providerInstanceUpdateRequestSchema = z.object({
   name: z.string().min(1).optional(),
+  protocol: providerProtocolSchema.optional(),
   baseUrl: z.string().optional(),
-  /** 只写不读：更新即覆盖，永不回显旧值。 */
-  apiKey: z.string().min(1).optional(),
-  models: z.array(providerInstanceModelSchema).min(1).optional(),
+  /** 只写不读：undefined保留旧值，null真实清除，字符串更新即覆盖。 */
+  apiKey: z.string().min(1).nullable().optional(),
+  models: z.array(providerInstanceModelSchema).optional(),
+  /** 可选CAS；由响应configRevision取得，冲突返回409。 */
+  expectedRevision: z.number().int().positive().safe().optional(),
   compat: providerCompatSchema.optional(),
   /** 只写不读：更新即整体覆盖（`{}` = 清空）。 */
   headers: providerInstanceHeadersSchema.optional(),
@@ -362,6 +367,8 @@ export const providerInstanceResponseSchema = z.object({
   protocol: providerProtocolSchema,
   baseUrl: z.string().optional(),
   hasCredential: z.boolean(),
+  /** 服务端生成的只读修订号，更新时可作为 expectedRevision。 */
+  configRevision: z.number().int().positive().safe(),
   models: z.array(providerInstanceModelSchema),
   compat: providerCompatSchema.optional(),
   headerKeys: z.array(z.string()),

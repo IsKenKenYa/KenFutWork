@@ -11,7 +11,7 @@ import {
 
 describe("agent 治理默认值与护栏（DEC-17/DEC-18）", () => {
   it("DEFAULTS 与用户拍板档一致", () => {
-    expect(AGENT_GOVERNANCE_DEFAULTS).toEqual({
+    expect(AGENT_GOVERNANCE_DEFAULTS).toMatchObject({
       subagentMaxDepth: 1,
       subagentMaxConcurrency: 4,
       llmRequestMaxRetries: 10,

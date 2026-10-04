@@ -11,6 +11,7 @@ export * from "./contracts.js";
 export * from "./credits.js";
 export * from "./errors.js";
 export * from "./events.js";
+export * from "./execution-contracts.js";
 export * from "./flow-host.js";
 export * from "./governance.js";
 export * from "./http.js";

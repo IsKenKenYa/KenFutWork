@@ -20,9 +20,7 @@ import {
 // errorCode/suggestedAction/media(screenshot) 等结构化内容带到 renderer）。consume-main 之前
 // 缺这个 union + toolOutputSchema.display 字段——协议层 zod 校验会把 agent 下发的 display 整个
 // strip 掉，导致 UI 永远拿不到 display?.kind==="cua"，CUA 工具调用退化成 fallback 渲染。
-const toolResultDisplaySchema = z.discriminatedUnion("kind", [
-  bashOutputDisplaySchema,
-  z.object({
+export const fileDiffToolResultDisplaySchema = z.object({
     kind: z.literal("file_diff"),
     filePath: z.string().min(1),
     additions: z.number().int().nonnegative(),
@@ -36,6 +34,15 @@ const toolResultDisplaySchema = z.discriminatedUnion("kind", [
         lines: z.array(z.string()),
       }),
     ),
+    truncated: z.boolean().optional(),
+  });
+
+const toolResultDisplaySchema = z.discriminatedUnion("kind", [
+  bashOutputDisplaySchema,
+  fileDiffToolResultDisplaySchema,
+  z.object({
+    kind: z.literal("file_diffs"),
+    files: z.array(fileDiffToolResultDisplaySchema),
     truncated: z.boolean().optional(),
   }),
   z.object({

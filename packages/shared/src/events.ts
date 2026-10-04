@@ -10,6 +10,7 @@ import {
   toolCallIdSchema,
 } from "./contracts.js";
 import { kenfutworkErrorSchema } from "./errors.js";
+import { taskWorkStateSchema } from "./execution-contracts.js";
 
 export type {
   ImageArtifact,
@@ -108,8 +109,23 @@ export const taskNotificationEventSchema = z.object({
   timestamp: timestampSchema,
 });
 
+export const taskWorkUpdatedEventSchema = z.object({
+  type: z.literal("task.work"),
+  runId: runIdSchema,
+  work: taskWorkStateSchema,
+  timestamp: timestampSchema,
+});
+
 export const runCompletedEventSchema = z.object({
   type: z.literal("run.completed"),
+  operationResult: z
+    .object({
+      kind: z.literal("compact"),
+      origin: z.literal("manual"),
+      status: z.enum(["applied", "unchanged"]),
+      reason: z.literal("insufficient_history").optional(),
+    })
+    .optional(),
   runId: runIdSchema,
   timestamp: timestampSchema,
 });
@@ -163,16 +179,30 @@ export const runUsageEventSchema = z.object({
  * 两者本来就会不一致。不给信号的话，用户只会觉得「模型突然忘了前面的事」。事件每轮最多发一次，
  * 客户端据此在转录里插一行说明（被压掉的消息原文在 `historyPath`）。
  */
-export const runCompactedEventSchema = z.object({
-  type: z.literal("run.compacted"),
-  runId: runIdSchema,
-  /** 触发线（token）与它的来源：reserved-output / fraction / fallback。 */
-  triggerTokens: z.number().int().positive(),
-  triggerSource: z.enum(["reserved-output", "fraction", "fallback"]),
-  /** 保留下来的最近消息条数。 */
-  keepMessages: z.number().int().positive(),
-  timestamp: timestampSchema,
-});
+export const runCompactedEventSchema = z
+  .object({
+    type: z.literal("run.compacted"),
+    origin: z.enum(["auto", "manual"]).optional(),
+    runId: runIdSchema,
+    /** 触发线（token）与它的来源：reserved-output / fraction / fallback。 */
+    triggerTokens: z.number().int().positive().optional(),
+    triggerSource: z
+      .enum(["reserved-output", "fraction", "fallback"])
+      .optional(),
+    /** 保留下来的最近消息条数。 */
+    keepMessages: z.number().int().positive(),
+    timestamp: timestampSchema,
+  })
+  .superRefine((event, ctx) => {
+    if (
+      event.origin !== "manual" &&
+      (event.triggerTokens === undefined || event.triggerSource === undefined)
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "自动压缩必须携带实际触发策略。",
+      });
+  });
 
 /**
  * 用户钩子跑过了（R5-2「钩子」）。事件在每个钩子点**逐条**发，退出码与输出摘要如实带上。
@@ -295,6 +325,7 @@ export const streamEventSchema = z.discriminatedUnion("type", [
   toolStartedEventSchema,
   toolCompletedEventSchema,
   taskNotificationEventSchema,
+  taskWorkUpdatedEventSchema,
   runCanceledEventSchema,
   runCompletedEventSchema,
   runUsageEventSchema,

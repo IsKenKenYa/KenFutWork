@@ -1204,6 +1204,8 @@ export const zcodeTaskTargetChangedPatchSchema = zcodeTaskGoalChangedPatchSchema
 
 export const zcodeTaskMetaSchema = z.object({
   taskId: nonEmptyStringSchema,
+  // KenFutWork宿主的真实Project归属；qualified identity仅作source键。
+  projectId: z.uuid().optional(),
   traceId: nonEmptyStringSchema,
   title: z.string(),
   titleOverridden: z.boolean().optional(),

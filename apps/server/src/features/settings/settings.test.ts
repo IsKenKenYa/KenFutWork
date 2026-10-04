@@ -1,4 +1,7 @@
-import type { WorkspaceSettings } from "@kenfutwork/shared";
+import {
+  type WorkspaceSettings,
+  workspaceSettingsSchema,
+} from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
 
 import type { AuthenticatedUser } from "../auth/types.js";
@@ -50,6 +53,9 @@ function createRunner(
         release: () => {},
       };
     },
+    async acquireSession() {
+      throw new Error("此查询夹具不提供真实执行宿主会话。");
+    },
     async end() {},
   };
 
@@ -65,6 +71,8 @@ function createRepositoryFake(
   overrides: Partial<SettingsRepository> = {},
 ): SettingsRepository {
   return {
+    findRuntimeGovernance: async () => ({}),
+    upsertRuntimeGovernance: async () => {},
     findDefaultModel: async () => null,
     findAgentMaxRetries: async () => null,
     findTerminalShell: async () => null,
@@ -99,6 +107,43 @@ function createRepositoryFake(
     ...overrides,
   };
 }
+
+it("设置事实保存并回读后通知workspace配置消费者，释放租约后不再推送且不暴露完整设置", async () => {
+  let commands: WorkspaceSettings["commands"] = [];
+  const service = createSettingsService({
+    defaultModel: "fixture",
+    repository: createRepositoryFake({
+      findCommands: async () => structuredClone(commands),
+      upsertCommands: async (_workspaceId, value) => {
+        commands = workspaceSettingsSchema.shape.commands.parse(value);
+      },
+    }),
+  });
+  const facts: unknown[] = [];
+  const dispose = service.onUpdated(async (event) => {
+    facts.push({
+      event,
+      commands: (await service.getWorkspaceSettings(USER, event.workspaceId))
+        .commands,
+    });
+  });
+  const value = [
+    { name: "inspect", description: "检查项目", prompt: "检查{{args}}" },
+  ];
+  await service.updateWorkspaceSettings(USER, WORKSPACE_ID, {
+    commands: value,
+    defaultModel: undefined,
+  });
+  expect(facts).toEqual([
+    {
+      event: { workspaceId: WORKSPACE_ID, changedKeys: ["commands"] },
+      commands: value,
+    },
+  ]);
+  dispose();
+  await service.updateWorkspaceSettings(USER, WORKSPACE_ID, { commands: [] });
+  expect(facts).toHaveLength(1);
+});
 
 describe("settings repository", () => {
   it("读默认模型限定工作区，无行返回 null", async () => {
@@ -145,29 +190,31 @@ describe("settings service", () => {
     });
     await expect(
       fallback.getWorkspaceSettings(USER, WORKSPACE_ID),
-    ).resolves.toEqual({
-      agentMaxRetries: 10,
-      defaultModel: "fallback-model",
-      terminalShell: "auto",
-      codeIndexEnabled: false,
-      codeIndexAutoNewFolder: true,
-      autoCompactEnabled: true,
-      commands: [],
-      hooks: [],
-      ruleEntries: [],
-      userRules: "",
-      subagentMaxDepth: 1,
-      subagentMaxConcurrency: 4,
-      llmRequestMaxRetries: 10,
-      llmInfiniteRetry: false,
-      executeTimeoutMs: 120000,
-      subagentMaxContinuations: 50,
-      computerUseActionTimeoutMs: 10000,
-      computerUseObserveMaxBytes: 32768,
-      computerUseScreenshotMaxBytes: 262144,
-      computerUseMaxActionsPerRun: 200,
-      computerUseSessionMaxMs: 1800000,
-    });
+    ).resolves.toEqual(
+      workspaceSettingsSchema.parse({
+        agentMaxRetries: 10,
+        defaultModel: "fallback-model",
+        terminalShell: "auto",
+        codeIndexEnabled: false,
+        codeIndexAutoNewFolder: true,
+        autoCompactEnabled: true,
+        commands: [],
+        hooks: [],
+        ruleEntries: [],
+        userRules: "",
+        subagentMaxDepth: 1,
+        subagentMaxConcurrency: 4,
+        llmRequestMaxRetries: 10,
+        llmInfiniteRetry: false,
+        executeTimeoutMs: 120000,
+        subagentMaxContinuations: 50,
+        computerUseActionTimeoutMs: 10000,
+        computerUseObserveMaxBytes: 32768,
+        computerUseScreenshotMaxBytes: 262144,
+        computerUseMaxActionsPerRun: 200,
+        computerUseSessionMaxMs: 1800000,
+      }),
+    );
 
     const stored = createSettingsService({
       repository: createRepositoryFake({
@@ -177,29 +224,31 @@ describe("settings service", () => {
     });
     await expect(
       stored.getWorkspaceSettings(USER, WORKSPACE_ID),
-    ).resolves.toEqual({
-      agentMaxRetries: 10,
-      defaultModel: "stored-model",
-      terminalShell: "auto",
-      codeIndexEnabled: false,
-      codeIndexAutoNewFolder: true,
-      autoCompactEnabled: true,
-      commands: [],
-      hooks: [],
-      ruleEntries: [],
-      userRules: "",
-      subagentMaxDepth: 1,
-      subagentMaxConcurrency: 4,
-      llmRequestMaxRetries: 10,
-      llmInfiniteRetry: false,
-      executeTimeoutMs: 120000,
-      subagentMaxContinuations: 50,
-      computerUseActionTimeoutMs: 10000,
-      computerUseObserveMaxBytes: 32768,
-      computerUseScreenshotMaxBytes: 262144,
-      computerUseMaxActionsPerRun: 200,
-      computerUseSessionMaxMs: 1800000,
-    });
+    ).resolves.toEqual(
+      workspaceSettingsSchema.parse({
+        agentMaxRetries: 10,
+        defaultModel: "stored-model",
+        terminalShell: "auto",
+        codeIndexEnabled: false,
+        codeIndexAutoNewFolder: true,
+        autoCompactEnabled: true,
+        commands: [],
+        hooks: [],
+        ruleEntries: [],
+        userRules: "",
+        subagentMaxDepth: 1,
+        subagentMaxConcurrency: 4,
+        llmRequestMaxRetries: 10,
+        llmInfiniteRetry: false,
+        executeTimeoutMs: 120000,
+        subagentMaxContinuations: 50,
+        computerUseActionTimeoutMs: 10000,
+        computerUseObserveMaxBytes: 32768,
+        computerUseScreenshotMaxBytes: 262144,
+        computerUseMaxActionsPerRun: 200,
+        computerUseSessionMaxMs: 1800000,
+      }),
+    );
   });
 
   /**
@@ -218,29 +267,31 @@ describe("settings service", () => {
     });
     await expect(
       withCatalog.getWorkspaceSettings(USER, WORKSPACE_ID),
-    ).resolves.toEqual({
-      agentMaxRetries: 10,
-      defaultModel: "inst-1:glm-5.3-flash",
-      terminalShell: "auto",
-      codeIndexEnabled: false,
-      codeIndexAutoNewFolder: true,
-      autoCompactEnabled: true,
-      commands: [],
-      hooks: [],
-      ruleEntries: [],
-      userRules: "",
-      subagentMaxDepth: 1,
-      subagentMaxConcurrency: 4,
-      llmRequestMaxRetries: 10,
-      llmInfiniteRetry: false,
-      executeTimeoutMs: 120000,
-      subagentMaxContinuations: 50,
-      computerUseActionTimeoutMs: 10000,
-      computerUseObserveMaxBytes: 32768,
-      computerUseScreenshotMaxBytes: 262144,
-      computerUseMaxActionsPerRun: 200,
-      computerUseSessionMaxMs: 1800000,
-    });
+    ).resolves.toEqual(
+      workspaceSettingsSchema.parse({
+        agentMaxRetries: 10,
+        defaultModel: "inst-1:glm-5.3-flash",
+        terminalShell: "auto",
+        codeIndexEnabled: false,
+        codeIndexAutoNewFolder: true,
+        autoCompactEnabled: true,
+        commands: [],
+        hooks: [],
+        ruleEntries: [],
+        userRules: "",
+        subagentMaxDepth: 1,
+        subagentMaxConcurrency: 4,
+        llmRequestMaxRetries: 10,
+        llmInfiniteRetry: false,
+        executeTimeoutMs: 120000,
+        subagentMaxContinuations: 50,
+        computerUseActionTimeoutMs: 10000,
+        computerUseObserveMaxBytes: 32768,
+        computerUseScreenshotMaxBytes: 262144,
+        computerUseMaxActionsPerRun: 200,
+        computerUseSessionMaxMs: 1800000,
+      }),
+    );
 
     const emptyCatalog = createSettingsService({
       repository: noStore,
@@ -249,29 +300,31 @@ describe("settings service", () => {
     });
     await expect(
       emptyCatalog.getWorkspaceSettings(USER, WORKSPACE_ID),
-    ).resolves.toEqual({
-      agentMaxRetries: 10,
-      defaultModel: "gpt-4.1",
-      terminalShell: "auto",
-      codeIndexEnabled: false,
-      codeIndexAutoNewFolder: true,
-      autoCompactEnabled: true,
-      commands: [],
-      hooks: [],
-      ruleEntries: [],
-      userRules: "",
-      subagentMaxDepth: 1,
-      subagentMaxConcurrency: 4,
-      llmRequestMaxRetries: 10,
-      llmInfiniteRetry: false,
-      executeTimeoutMs: 120000,
-      subagentMaxContinuations: 50,
-      computerUseActionTimeoutMs: 10000,
-      computerUseObserveMaxBytes: 32768,
-      computerUseScreenshotMaxBytes: 262144,
-      computerUseMaxActionsPerRun: 200,
-      computerUseSessionMaxMs: 1800000,
-    });
+    ).resolves.toEqual(
+      workspaceSettingsSchema.parse({
+        agentMaxRetries: 10,
+        defaultModel: "gpt-4.1",
+        terminalShell: "auto",
+        codeIndexEnabled: false,
+        codeIndexAutoNewFolder: true,
+        autoCompactEnabled: true,
+        commands: [],
+        hooks: [],
+        ruleEntries: [],
+        userRules: "",
+        subagentMaxDepth: 1,
+        subagentMaxConcurrency: 4,
+        llmRequestMaxRetries: 10,
+        llmInfiniteRetry: false,
+        executeTimeoutMs: 120000,
+        subagentMaxContinuations: 50,
+        computerUseActionTimeoutMs: 10000,
+        computerUseObserveMaxBytes: 32768,
+        computerUseScreenshotMaxBytes: 262144,
+        computerUseMaxActionsPerRun: 200,
+        computerUseSessionMaxMs: 1800000,
+      }),
+    );
 
     let catalogCalls = 0;
     const stored = createSettingsService({
@@ -284,29 +337,31 @@ describe("settings service", () => {
     });
     await expect(
       stored.getWorkspaceSettings(USER, WORKSPACE_ID),
-    ).resolves.toEqual({
-      agentMaxRetries: 10,
-      defaultModel: "stored-model",
-      terminalShell: "auto",
-      codeIndexEnabled: false,
-      codeIndexAutoNewFolder: true,
-      autoCompactEnabled: true,
-      commands: [],
-      hooks: [],
-      ruleEntries: [],
-      userRules: "",
-      subagentMaxDepth: 1,
-      subagentMaxConcurrency: 4,
-      llmRequestMaxRetries: 10,
-      llmInfiniteRetry: false,
-      executeTimeoutMs: 120000,
-      subagentMaxContinuations: 50,
-      computerUseActionTimeoutMs: 10000,
-      computerUseObserveMaxBytes: 32768,
-      computerUseScreenshotMaxBytes: 262144,
-      computerUseMaxActionsPerRun: 200,
-      computerUseSessionMaxMs: 1800000,
-    });
+    ).resolves.toEqual(
+      workspaceSettingsSchema.parse({
+        agentMaxRetries: 10,
+        defaultModel: "stored-model",
+        terminalShell: "auto",
+        codeIndexEnabled: false,
+        codeIndexAutoNewFolder: true,
+        autoCompactEnabled: true,
+        commands: [],
+        hooks: [],
+        ruleEntries: [],
+        userRules: "",
+        subagentMaxDepth: 1,
+        subagentMaxConcurrency: 4,
+        llmRequestMaxRetries: 10,
+        llmInfiniteRetry: false,
+        executeTimeoutMs: 120000,
+        subagentMaxContinuations: 50,
+        computerUseActionTimeoutMs: 10000,
+        computerUseObserveMaxBytes: 32768,
+        computerUseScreenshotMaxBytes: 262144,
+        computerUseMaxActionsPerRun: 200,
+        computerUseSessionMaxMs: 1800000,
+      }),
+    );
     expect(catalogCalls).toBe(0);
   });
 
@@ -422,58 +477,62 @@ describe("settings service", () => {
       service.updateWorkspaceSettings(USER, WORKSPACE_ID, {
         defaultModel: "gemini-2.5-flash",
       }),
-    ).resolves.toEqual({
-      agentMaxRetries: 3,
-      defaultModel: "gemini-2.5-flash",
-      terminalShell: "git-bash",
-      codeIndexEnabled: false,
-      codeIndexAutoNewFolder: true,
-      autoCompactEnabled: true,
-      commands: [],
-      hooks: [],
-      ruleEntries: [],
-      userRules: "",
-      subagentMaxDepth: 1,
-      subagentMaxConcurrency: 4,
-      llmRequestMaxRetries: 10,
-      llmInfiniteRetry: false,
-      executeTimeoutMs: 120000,
-      subagentMaxContinuations: 50,
-      computerUseActionTimeoutMs: 10000,
-      computerUseObserveMaxBytes: 32768,
-      computerUseScreenshotMaxBytes: 262144,
-      computerUseMaxActionsPerRun: 200,
-      computerUseSessionMaxMs: 1800000,
-    });
+    ).resolves.toEqual(
+      workspaceSettingsSchema.parse({
+        agentMaxRetries: 3,
+        defaultModel: "gemini-2.5-flash",
+        terminalShell: "git-bash",
+        codeIndexEnabled: false,
+        codeIndexAutoNewFolder: true,
+        autoCompactEnabled: true,
+        commands: [],
+        hooks: [],
+        ruleEntries: [],
+        userRules: "",
+        subagentMaxDepth: 1,
+        subagentMaxConcurrency: 4,
+        llmRequestMaxRetries: 10,
+        llmInfiniteRetry: false,
+        executeTimeoutMs: 120000,
+        subagentMaxContinuations: 50,
+        computerUseActionTimeoutMs: 10000,
+        computerUseObserveMaxBytes: 32768,
+        computerUseScreenshotMaxBytes: 262144,
+        computerUseMaxActionsPerRun: 200,
+        computerUseSessionMaxMs: 1800000,
+      }),
+    );
 
     // 只改终端 shell：模型与重试上限不动
     await expect(
       service.updateWorkspaceSettings(USER, WORKSPACE_ID, {
         terminalShell: "powershell",
       }),
-    ).resolves.toEqual({
-      agentMaxRetries: 3,
-      codeIndexEnabled: false,
-      codeIndexAutoNewFolder: true,
-      autoCompactEnabled: true,
-      commands: [],
-      hooks: [],
-      ruleEntries: [],
-      userRules: "",
-      subagentMaxDepth: 1,
-      subagentMaxConcurrency: 4,
-      subagentMaxContinuations: 50,
-      computerUseActionTimeoutMs: 10000,
-      computerUseObserveMaxBytes: 32768,
-      computerUseScreenshotMaxBytes: 262144,
-      computerUseMaxActionsPerRun: 200,
-      computerUseSessionMaxMs: 1800000,
-      llmRequestMaxRetries: 10,
-      llmInfiniteRetry: false,
-      executeTimeoutMs: 120000,
-      defaultModel: "gemini-2.5-flash",
-      terminalShell: "powershell",
-    });
+    ).resolves.toEqual(
+      workspaceSettingsSchema.parse({
+        agentMaxRetries: 3,
+        codeIndexEnabled: false,
+        codeIndexAutoNewFolder: true,
+        autoCompactEnabled: true,
+        commands: [],
+        hooks: [],
+        ruleEntries: [],
+        userRules: "",
+        subagentMaxDepth: 1,
+        subagentMaxConcurrency: 4,
+        subagentMaxContinuations: 50,
+        computerUseActionTimeoutMs: 10000,
+        computerUseObserveMaxBytes: 32768,
+        computerUseScreenshotMaxBytes: 262144,
+        computerUseMaxActionsPerRun: 200,
+        computerUseSessionMaxMs: 1800000,
+        llmRequestMaxRetries: 10,
+        llmInfiniteRetry: false,
+        executeTimeoutMs: 120000,
+        defaultModel: "gemini-2.5-flash",
+        terminalShell: "powershell",
+      }),
+    );
   });
 });
 

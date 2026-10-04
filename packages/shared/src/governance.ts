@@ -24,6 +24,34 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   llmInfiniteRetry: false,
   /** Code 模式 execute 命令超时（毫秒）。 */
   executeTimeoutMs: 120_000,
+  /** Code 宿主通知通道断线后的重连间隔（毫秒）。 */
+  codeUiReconnectDelayMs: 1_000,
+  /** 文件读取/编辑的单文件预算；分页展示不改变观察版本。 */
+  codeReadMaxBytes: 1_048_576,
+  codeReadPageCharacters: 8_000,
+  codeSearchMaxResults: 1_000,
+  codeSearchMaxBytes: 1_048_576,
+  codePatchMaxBytes: 1_048_576,
+  codePdfMaxPages: 10,
+  codePdfRenderScale: 1,
+  /** Code 附件：宿主协商分块预算，已提交私有内容随 Task 生命周期保留。 */
+  codeAttachmentMaxBytes: 20_971_520,
+  codeAttachmentChunkMaxBytes: 524_288,
+  codeAttachmentMaxChunks: 64,
+  codeAttachmentMaxConcurrent: 16,
+  codeAttachmentStagedMaxBytes: 67_108_864,
+  codeAttachmentUploadTtlMs: 300_000,
+  codeAttachmentMaxPerInput: 8,
+  codeAttachmentMaxRetries: 1,
+  codeAttachmentRetryDelayMs: 500,
+  /** 进程采集与模型预览独立；yield 不是进程 deadline。 */
+  processMaxOutputBytes: 67_108_864,
+  processPreviewMaxChars: 8_000,
+  processYieldMs: 1_000,
+  processKillGraceMs: 2_000,
+  /** 每个人类连接同时打开的真实终端上限。 */
+  terminalMaxSessions: 4,
+  sandboxProbeTimeoutMs: 5_000,
   /** Computer Use：单个桌面动作（点击/输入/截屏）超时（毫秒）。 */
   computerUseActionTimeoutMs: 10_000,
   /** Computer Use：观察树文本预算（字节），超限按优先级裁剪。 */
@@ -38,6 +66,20 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
 
 export type AgentGovernanceValue = keyof typeof AGENT_GOVERNANCE_DEFAULTS;
 
+/** 新工作域数值落同一设置表 JSON 对象，避免每项重复增加列与存取分支。 */
+export const RUNTIME_GOVERNANCE_KEYS = [
+  "codeUiReconnectDelayMs",
+  "codeReadMaxBytes", "codeReadPageCharacters", "codeSearchMaxResults",
+  "codeSearchMaxBytes", "codePatchMaxBytes", "processMaxOutputBytes",
+  "processPreviewMaxChars", "processYieldMs", "processKillGraceMs", "sandboxProbeTimeoutMs",
+  "codePdfMaxPages", "codePdfRenderScale",
+  "codeAttachmentMaxBytes", "codeAttachmentChunkMaxBytes", "codeAttachmentMaxChunks",
+  "codeAttachmentMaxConcurrent", "codeAttachmentStagedMaxBytes", "codeAttachmentUploadTtlMs",
+  "codeAttachmentMaxPerInput", "codeAttachmentMaxRetries", "codeAttachmentRetryDelayMs",
+  "terminalMaxSessions",
+] as const;
+export type RuntimeGovernanceKey = (typeof RUNTIME_GOVERNANCE_KEYS)[number];
+
 /** 覆盖值形态（env / 调用方传参）：键可缺、值可显式 undefined（exactOptionalPropertyTypes）。 */
 export type AgentGovernanceOverrides = {
   subagentMaxDepth?: number | undefined;
@@ -45,6 +87,29 @@ export type AgentGovernanceOverrides = {
   llmRequestMaxRetries?: number | undefined;
   llmInfiniteRetry?: boolean | undefined;
   executeTimeoutMs?: number | undefined;
+  codeUiReconnectDelayMs?: number | undefined;
+  codeReadMaxBytes?: number | undefined;
+  codeReadPageCharacters?: number | undefined;
+  codeSearchMaxResults?: number | undefined;
+  codeSearchMaxBytes?: number | undefined;
+  codePatchMaxBytes?: number | undefined;
+  codePdfMaxPages?: number | undefined;
+  codePdfRenderScale?: number | undefined;
+  codeAttachmentMaxBytes?: number | undefined;
+  codeAttachmentChunkMaxBytes?: number | undefined;
+  codeAttachmentMaxChunks?: number | undefined;
+  codeAttachmentMaxConcurrent?: number | undefined;
+  codeAttachmentStagedMaxBytes?: number | undefined;
+  codeAttachmentUploadTtlMs?: number | undefined;
+  codeAttachmentMaxPerInput?: number | undefined;
+  codeAttachmentMaxRetries?: number | undefined;
+  codeAttachmentRetryDelayMs?: number | undefined;
+  processMaxOutputBytes?: number | undefined;
+  processPreviewMaxChars?: number | undefined;
+  processYieldMs?: number | undefined;
+  processKillGraceMs?: number | undefined;
+  terminalMaxSessions?: number | undefined;
+  sandboxProbeTimeoutMs?: number | undefined;
   subagentMaxContinuations?: number | undefined;
   computerUseActionTimeoutMs?: number | undefined;
   computerUseObserveMaxBytes?: number | undefined;
@@ -73,6 +138,13 @@ export const clampLlmRequestMaxRetries = (value: number): number =>
 export const clampExecuteTimeoutMs = (value: number): number =>
   clampInt(value, 5_000, 1_800_000);
 
+export const clampCodeUiReconnectDelayMs = (value: number): number =>
+  clampInt(
+    value,
+    AGENT_GOVERNANCE_LIMITS.codeUiReconnectDelayMs.min,
+    AGENT_GOVERNANCE_LIMITS.codeUiReconnectDelayMs.max,
+  );
+
 export const clampComputerUseActionTimeoutMs = (value: number): number =>
   clampInt(value, 1_000, 120_000);
 
@@ -97,6 +169,30 @@ export const AGENT_GOVERNANCE_LIMITS = {
   subagentMaxConcurrency: { min: 1, max: 16 },
   llmRequestMaxRetries: { min: 0, max: 100 },
   executeTimeoutMs: { min: 5_000, max: 1_800_000 },
+  codeUiReconnectDelayMs: { min: 100, max: 60_000 },
+  codeReadMaxBytes: { min: 1_024, max: 67_108_864 },
+  codeReadPageCharacters: { min: 128, max: 1_048_576 },
+  codeSearchMaxResults: { min: 1, max: 100_000 },
+  codeSearchMaxBytes: { min: 1_024, max: 67_108_864 },
+  codePatchMaxBytes: { min: 1_024, max: 67_108_864 },
+  codePdfMaxPages: { min: 1, max: 1_000 },
+  codePdfRenderScale: { min: 0.25, max: 4 },
+  // 私有附件驻内存 staging 最多 1GiB；单块还受固定 1MiB wire frame 物理护栏约束。
+  codeAttachmentMaxBytes: { min: 0, max: 1_073_741_824 },
+  codeAttachmentChunkMaxBytes: { min: 1, max: 1_048_576 },
+  codeAttachmentMaxChunks: { min: 1, max: 4_096 },
+  codeAttachmentMaxConcurrent: { min: 1, max: 64 },
+  codeAttachmentStagedMaxBytes: { min: 0, max: 1_073_741_824 },
+  codeAttachmentUploadTtlMs: { min: 1_000, max: 86_400_000 },
+  codeAttachmentMaxPerInput: { min: 0, max: 128 },
+  codeAttachmentMaxRetries: { min: 0, max: 100 },
+  codeAttachmentRetryDelayMs: { min: 0, max: 60_000 },
+  processMaxOutputBytes: { min: 1_024, max: 1_073_741_824 },
+  processPreviewMaxChars: { min: 128, max: 1_048_576 },
+  processYieldMs: { min: 1, max: 60_000 },
+  processKillGraceMs: { min: 100, max: 30_000 },
+  terminalMaxSessions: { min: 1, max: 100 },
+  sandboxProbeTimeoutMs: { min: 100, max: 60_000 },
   subagentMaxContinuations: { min: 1, max: 200 },
   computerUseActionTimeoutMs: { min: 1_000, max: 120_000 },
   computerUseObserveMaxBytes: { min: 4_096, max: 262_144 },
@@ -139,6 +235,36 @@ export function resolveGovernanceEnvOverrides(
     ),
     llmInfiniteRetry: parseBool(source.KENFUTWORK_LLM_INFINITE_RETRY),
     executeTimeoutMs: parseStrictInt(source.KENFUTWORK_EXECUTE_TIMEOUT_MS),
+    codeUiReconnectDelayMs:
+      /^[+-]?\d+$/u.test(
+        source.KENFUTWORK_CODE_UI_RECONNECT_DELAY_MS?.trim() ?? "",
+      ) &&
+      Number.isSafeInteger(Number(source.KENFUTWORK_CODE_UI_RECONNECT_DELAY_MS))
+        ? Number(source.KENFUTWORK_CODE_UI_RECONNECT_DELAY_MS)
+        : undefined,
+    codeReadMaxBytes: parseStrictInt(source.KENFUTWORK_CODE_READ_MAX_BYTES),
+    codeReadPageCharacters: parseStrictInt(source.KENFUTWORK_CODE_READ_PAGE_CHARACTERS),
+    codeSearchMaxResults: parseStrictInt(source.KENFUTWORK_CODE_SEARCH_MAX_RESULTS),
+    codeSearchMaxBytes: parseStrictInt(source.KENFUTWORK_CODE_SEARCH_MAX_BYTES),
+    codePatchMaxBytes: parseStrictInt(source.KENFUTWORK_CODE_PATCH_MAX_BYTES),
+    codePdfMaxPages: parseStrictInt(source.KENFUTWORK_CODE_PDF_MAX_PAGES),
+    codePdfRenderScale: source.KENFUTWORK_CODE_PDF_RENDER_SCALE?.trim() && Number.isFinite(Number(source.KENFUTWORK_CODE_PDF_RENDER_SCALE))
+      ? Number(source.KENFUTWORK_CODE_PDF_RENDER_SCALE) : undefined,
+    codeAttachmentMaxBytes: parseStrictInt(source.KENFUTWORK_CODE_ATTACHMENT_MAX_BYTES),
+    codeAttachmentChunkMaxBytes: parseStrictInt(source.KENFUTWORK_CODE_ATTACHMENT_CHUNK_MAX_BYTES),
+    codeAttachmentMaxChunks: parseStrictInt(source.KENFUTWORK_CODE_ATTACHMENT_MAX_CHUNKS),
+    codeAttachmentMaxConcurrent: parseStrictInt(source.KENFUTWORK_CODE_ATTACHMENT_MAX_CONCURRENT),
+    codeAttachmentStagedMaxBytes: parseStrictInt(source.KENFUTWORK_CODE_ATTACHMENT_STAGED_MAX_BYTES),
+    codeAttachmentUploadTtlMs: parseStrictInt(source.KENFUTWORK_CODE_ATTACHMENT_UPLOAD_TTL_MS),
+    codeAttachmentMaxPerInput: parseStrictInt(source.KENFUTWORK_CODE_ATTACHMENT_MAX_PER_INPUT),
+    codeAttachmentMaxRetries: parseStrictInt(source.KENFUTWORK_CODE_ATTACHMENT_MAX_RETRIES),
+    codeAttachmentRetryDelayMs: parseStrictInt(source.KENFUTWORK_CODE_ATTACHMENT_RETRY_DELAY_MS),
+    processMaxOutputBytes: parseStrictInt(source.KENFUTWORK_PROCESS_MAX_OUTPUT_BYTES),
+    processPreviewMaxChars: parseStrictInt(source.KENFUTWORK_PROCESS_PREVIEW_MAX_CHARS),
+    processYieldMs: parseStrictInt(source.KENFUTWORK_PROCESS_YIELD_MS),
+    processKillGraceMs: parseStrictInt(source.KENFUTWORK_PROCESS_KILL_GRACE_MS),
+    terminalMaxSessions: parseStrictInt(source.KENFUTWORK_TERMINAL_MAX_SESSIONS),
+    sandboxProbeTimeoutMs: parseStrictInt(source.KENFUTWORK_SANDBOX_PROBE_TIMEOUT_MS),
     subagentMaxContinuations: parseStrictInt(
       source.KENFUTWORK_SUBAGENT_MAX_CONTINUATIONS,
     ),
@@ -168,22 +294,11 @@ export function resolveGovernanceEnvOverrides(
  * `workspaceSettingsSchema` 的五个字段全部经此构造，禁止手写第二份字面量。
  */
 export function governanceSetting<
-  K extends
-    | "subagentMaxDepth"
-    | "subagentMaxConcurrency"
-    | "llmRequestMaxRetries"
-    | "executeTimeoutMs"
-    | "subagentMaxContinuations"
-    | "computerUseActionTimeoutMs"
-    | "computerUseObserveMaxBytes"
-    | "computerUseScreenshotMaxBytes"
-    | "computerUseMaxActionsPerRun"
-    | "computerUseSessionMaxMs",
+  K extends keyof typeof AGENT_GOVERNANCE_LIMITS,
 >(key: K) {
   const limits = AGENT_GOVERNANCE_LIMITS[key];
-  return z
-    .number()
-    .int()
+  const value = key === "codePdfRenderScale" ? z.number() : z.number().int();
+  return value
     .min(limits.min)
     .max(limits.max)
     .default(AGENT_GOVERNANCE_DEFAULTS[key]);
@@ -191,4 +306,16 @@ export function governanceSetting<
 
 export function governanceBoolSetting<K extends "llmInfiniteRetry">(key: K) {
   return z.boolean().default(AGENT_GOVERNANCE_DEFAULTS[key]);
+}
+
+/** 运行时读取档：库 ?? env ?? 默认，只在本属主统一钳回护栏。 */
+export function resolveGovernanceNumber<K extends keyof typeof AGENT_GOVERNANCE_LIMITS>(
+  key: K,
+  stored: number | null | undefined,
+  overrides: AgentGovernanceOverrides = {},
+): number {
+  const { min, max } = AGENT_GOVERNANCE_LIMITS[key];
+  const value = stored ?? overrides[key] ?? AGENT_GOVERNANCE_DEFAULTS[key];
+  if (key === "codePdfRenderScale") return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : AGENT_GOVERNANCE_DEFAULTS[key];
+  return clampInt(value, min, max);
 }

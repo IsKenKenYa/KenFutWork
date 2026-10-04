@@ -805,6 +805,19 @@ export const v4ConversationUsageResultSchema = z
 export type V4ConversationUsageResult = z.infer<typeof v4ConversationUsageResultSchema>;
 
 // ── 附件上行事务 ──
+/** KenFutWork: metadata-only runtime budget; the owning host supplies every value. */
+export const v4AttachmentBudgetSchema = z.object({
+  maxBytes: z.number().int().nonnegative().safe(),
+  chunkMaxBytes: z.number().int().positive().safe(),
+  maxChunks: z.number().int().positive().safe(),
+  maxConcurrent: z.number().int().positive().safe(),
+  stagedMaxBytes: z.number().int().nonnegative().safe(),
+  uploadTtlMs: z.number().int().positive().safe(),
+  maxPerInput: z.number().int().nonnegative().safe(),
+  maxRetries: z.number().int().nonnegative().safe(),
+  retryDelayMs: z.number().int().nonnegative().safe(),
+}).strict();
+export type V4AttachmentBudget = z.infer<typeof v4AttachmentBudgetSchema>;
 // UI 高层仍用 put(input)->ref；这份 full-data schema 只描述 renderer 内部调用，绝不作为
 // production RPC method。wire 只能用 begin/chunk/commit/abort。
 export const v4AttachmentPutParamsSchema = z
@@ -812,7 +825,7 @@ export const v4AttachmentPutParamsSchema = z
     sessionId: z.string().min(1),
     fileName: z.string().min(1),
     mime: z.string().min(1),
-    // base64（不带 data: 前缀）；解码后字节数 ≤ PROTOCOL_V4_LIMITS.attachmentMaxBytes。
+    // 容量由宿主治理决定；完整内容只在 renderer 内部，不作为 wire frame。
     dataBase64: z.string().min(1),
   })
   .strict();
@@ -844,13 +857,14 @@ export const v4AttachmentBeginParamsSchema = z
       .min(3)
       .max(255)
       .regex(/^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$/),
-    totalBytes: z.number().int().min(0).max(PROTOCOL_V4_LIMITS.attachmentMaxBytes),
-    totalChunks: z.number().int().min(0).max(PROTOCOL_V4_LIMITS.attachmentUploadMaxChunks),
+    totalBytes: z.number().int().nonnegative().safe(),
+    // KenFutWork：省略时由宿主协商 chunkMaxBytes 后计算，不再由 renderer 写死分块大小。
+    totalChunks: z.number().int().nonnegative().safe().optional(),
     checksum: v4AttachmentChecksumSchema,
   })
   .strict()
   .superRefine((value, context) => {
-    if ((value.totalBytes === 0) !== (value.totalChunks === 0)) {
+    if (value.totalChunks !== undefined && (value.totalBytes === 0) !== (value.totalChunks === 0)) {
       context.addIssue({
         code: "custom",
         message: "zero-byte upload must declare zero chunks",
@@ -866,6 +880,8 @@ export const v4AttachmentBeginResultSchema = z.discriminatedUnion("state", [
       uploadId: v4AttachmentUploadIdSchema,
       state: z.literal("staging"),
       nextChunkIndex: z.number().int().nonnegative(),
+      chunkMaxBytes: z.number().int().positive().safe().optional(),
+      totalChunks: z.number().int().nonnegative().safe().optional(),
     })
     .strict(),
   z
@@ -915,13 +931,14 @@ export const v4AttachmentChunkParamsSchema = z
       context.addIssue({ code: "custom", message: "invalid base64", path: ["dataBase64"] });
       return;
     }
-    if (decodedBytes > PROTOCOL_V4_LIMITS.attachmentChunkMaxBytes) {
+    // 固定物理 frame 是协议护栏；实际 decoded 容量由宿主治理在分配前校验。
+    if (value.dataBase64.length > PROTOCOL_V4_LIMITS.maxFrameBytes) {
       context.addIssue({
         code: "too_big",
-        maximum: PROTOCOL_V4_LIMITS.attachmentChunkMaxBytes,
+        maximum: PROTOCOL_V4_LIMITS.maxFrameBytes,
         origin: "string",
         inclusive: true,
-        message: "attachment chunk exceeds decoded byte limit",
+        message: "attachment chunk exceeds physical frame limit",
         path: ["dataBase64"],
       });
     }
@@ -960,7 +977,7 @@ export const v4AttachmentReadParamsSchema = z
     target: conversationRowTargetSchema.optional(),
     attachmentIndex: z.number().int().nonnegative().optional(),
     offset: z.number().int().nonnegative(),
-    limit: z.number().int().positive().max(PROTOCOL_V4_LIMITS.attachmentChunkMaxBytes),
+    limit: z.number().int().positive().safe(),
   })
   .strict()
   .superRefine((value, context) => {
@@ -1019,36 +1036,23 @@ export const v4AttachmentReadResultSchema = z
           value.split(";", 1)[0]?.trim().toLowerCase() === "application/pdf",
         "attachment preview only supports image/video/pdf media types",
       ),
-    totalBytes: z.number().int().nonnegative().max(PROTOCOL_V4_LIMITS.attachmentPreviewMaxBytes),
+    totalBytes: z.number().int().nonnegative().safe(),
     nextOffset: z.number().int().positive().nullable(),
   })
   .strict()
   .superRefine((value, context) => {
-    if (
-      value.mediaType.startsWith("image/") &&
-      value.totalBytes > PROTOCOL_V4_LIMITS.attachmentMaxBytes
-    ) {
-      context.addIssue({
-        code: "too_big",
-        maximum: PROTOCOL_V4_LIMITS.attachmentMaxBytes,
-        origin: "number",
-        inclusive: true,
-        message: "image preview exceeds total byte limit",
-        path: ["totalBytes"],
-      });
-    }
     const decodedBytes = decodedBase64ByteLength(value.dataBase64);
     if (decodedBytes === null) {
       context.addIssue({ code: "custom", message: "invalid base64", path: ["dataBase64"] });
       return;
     }
-    if (decodedBytes > PROTOCOL_V4_LIMITS.attachmentChunkMaxBytes) {
+    if (value.dataBase64.length > PROTOCOL_V4_LIMITS.maxFrameBytes) {
       context.addIssue({
         code: "too_big",
-        maximum: PROTOCOL_V4_LIMITS.attachmentChunkMaxBytes,
+        maximum: PROTOCOL_V4_LIMITS.maxFrameBytes,
         origin: "string",
         inclusive: true,
-        message: "attachment read chunk exceeds decoded byte limit",
+        message: "attachment read chunk exceeds physical frame limit",
         path: ["dataBase64"],
       });
     }
@@ -1070,7 +1074,7 @@ export const v4ConversationAttachmentReadParamsSchema = z
     target: conversationRowTargetSchema,
     attachmentIndex: z.number().int().nonnegative(),
     offset: z.number().int().nonnegative(),
-    limit: z.number().int().positive().max(PROTOCOL_V4_LIMITS.attachmentChunkMaxBytes),
+    limit: z.number().int().positive().safe(),
   })
   .strict();
 export type V4ConversationAttachmentReadParams = z.infer<
@@ -1081,7 +1085,7 @@ export const v4ConversationAttachmentReadResultSchema = z
   .object({
     dataBase64: z.string(),
     mediaType: z.string().min(1),
-    totalBytes: z.number().int().nonnegative().max(PROTOCOL_V4_LIMITS.attachmentPreviewMaxBytes),
+    totalBytes: z.number().int().nonnegative().safe(),
     nextOffset: z.number().int().positive().nullable(),
   })
   .strict()
@@ -1091,13 +1095,13 @@ export const v4ConversationAttachmentReadResultSchema = z
       context.addIssue({ code: "custom", message: "invalid base64", path: ["dataBase64"] });
       return;
     }
-    if (decodedBytes > PROTOCOL_V4_LIMITS.attachmentChunkMaxBytes) {
+    if (value.dataBase64.length > PROTOCOL_V4_LIMITS.maxFrameBytes) {
       context.addIssue({
         code: "too_big",
-        maximum: PROTOCOL_V4_LIMITS.attachmentChunkMaxBytes,
+        maximum: PROTOCOL_V4_LIMITS.maxFrameBytes,
         origin: "string",
         inclusive: true,
-        message: "attachment read chunk exceeds decoded byte limit",
+        message: "attachment read chunk exceeds physical frame limit",
         path: ["dataBase64"],
       });
     }

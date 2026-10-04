@@ -78,6 +78,7 @@ import type {
   HelloMessage,
   SessionsIndexTopicWireCandidate,
   V4AttachmentBeginResult,
+  V4AttachmentBudget,
   V4AttachmentChunkResult,
   V4AttachmentCommitResult,
   V4AttachmentPreviewSourceResult,
@@ -464,7 +465,7 @@ export interface ZCodeAgentAttachmentBeginParams extends ZCodeAgentSessionTarget
   fileName: string;
   mime: string;
   totalBytes: number;
-  totalChunks: number;
+  totalChunks?: number;
   checksum: string;
 }
 
@@ -788,6 +789,7 @@ export interface IZCodeAgentService {
   sendConversationCommandV4(params: ZCodeAgentConversationCommandParams): Promise<CommandAck>;
   queryConversationCommandsV4(params: ZCodeAgentCommandsQueryParams): Promise<CommandsQueryResult>;
   attachmentBeginV4(params: ZCodeAgentAttachmentBeginParams): Promise<V4AttachmentBeginResult>;
+  attachmentBudgetV4(params: ZCodeAgentWorkspaceTarget & { sessionId?: string }): Promise<V4AttachmentBudget>;
   attachmentChunkV4(params: ZCodeAgentAttachmentChunkParams): Promise<V4AttachmentChunkResult>;
   attachmentCommitV4(params: ZCodeAgentAttachmentTerminalParams): Promise<V4AttachmentCommitResult>;
   attachmentAbortV4(params: ZCodeAgentAttachmentTerminalParams): Promise<void>;

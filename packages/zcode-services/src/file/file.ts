@@ -29,9 +29,10 @@ export interface IFileService {
     path: string;
     created: boolean;
     workspacePurpose: "conversation";
+    workspaceIdentity?: string;
   }>;
-  createDefaultWorkspace(): Promise<{ path: string }>;
-  createScratchWorkspace(params: { name: string }): Promise<{ path: string }>;
+  createDefaultWorkspace(): Promise<{ path: string; workspaceIdentity?: string }>;
+  createScratchWorkspace(params: { name: string }): Promise<{ path: string; workspaceIdentity?: string }>;
   readTextFile(params: { path: string; offset?: number; length?: number }): Promise<FileTextSlice>;
   readMediaPreview(params: { path: string; maxBytes?: number }): Promise<FileMediaPreview>;
   /**

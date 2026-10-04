@@ -68,6 +68,9 @@
     "tailwindcss": "^4.3.3"
   },
   "scripts": {
+    "build:code-ui": "pnpm --filter '@zcode/ui...' build",
+    "prebuild": "pnpm run build:code-ui",
+    "predev": "pnpm run build:code-ui",
     "build": "next build",
     "dev": "next dev -p 3000",
     "test": "vitest run test",

@@ -155,6 +155,10 @@ export interface ProviderSettingsProviderView extends Pick<
   readonly providerId: ProviderId;
   /** 当前 Effective Config 是否已经进入 Registry，可用于模型选择和创建。 */
   readonly executable: boolean;
+  /** 写入型宿主只提供真实凭证 presence，不回读 Key。缺省保留原宿主语义。 */
+  readonly credentialConfigured?: boolean;
+  /** 写入宿主的原实例修订号；编辑时供持久化层防止旧表单覆盖新配置。 */
+  readonly configRevision?: number;
   readonly effectiveBuiltinConfig?: ProviderConfigObject;
   readonly personalConfig?: ProviderConfigObject;
   readonly effectiveConfig: ProviderConfigObject;
@@ -322,7 +326,7 @@ export class ProviderSettingsFacade {
   savePersonalProviderOverlay(
     providerId: ProviderId,
     config: ProviderConfigObject,
-    metadata?: Pick<ProviderConfigRule, "providerName" | "templateId" | "enabled">,
+    metadata?: Pick<ProviderConfigRule, "providerName" | "templateId" | "enabled"> & { expectedRevision?: number },
   ): Promise<ProviderSettingsView> {
     return this.#mutateProvider(providerId, "save-provider", (target) =>
       target.savePersonalProviderOverlay(

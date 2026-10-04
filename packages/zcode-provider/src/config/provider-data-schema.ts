@@ -5,6 +5,7 @@ export const providerApiTypeDataSchema = z.enum([
   "anthropic-messages",
   "openai-chat-completions",
   "openai-responses",
+  "google-generative-language",
 ]);
 export const providerGroupDataSchema = z.enum([
   "standard-personal",

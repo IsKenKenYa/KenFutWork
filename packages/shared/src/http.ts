@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { additionalDirectorySchema } from "./execution-contracts.js";
 
 import {
   assetObjectSchema,
@@ -69,6 +70,7 @@ export const projectCreateRequestSchema = z.object({
    * 不合格返回 400 `invalid_work_dir` 并给出可读原因。
    */
   work_dir: z.string().trim().min(1).optional(),
+  additional_directories: z.array(additionalDirectorySchema).optional(),
 });
 
 export const projectCreateResponseSchema = z.object({
@@ -496,6 +498,7 @@ export const applicationErrorCodeSchema = z.enum([
    */
   "invalid_work_dir",
   "session_not_found",
+  "session_unavailable",
   "settings_not_found",
   "settings_update_failed",
   /** 默认模型不在目录里（保存设置时 fail loud，400；见 modelCatalog.validateSpecifier）。 */
@@ -707,5 +710,6 @@ export const projectUpdateRequestSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   /** 本机工作目录绝对路径；显式 `null` = 解绑（回落到沙箱目录）。 */
   work_dir: z.string().trim().min(1).nullable().optional(),
+  additional_directories: z.array(additionalDirectorySchema).optional(),
 });
 export type ProjectUpdateRequest = z.infer<typeof projectUpdateRequestSchema>;

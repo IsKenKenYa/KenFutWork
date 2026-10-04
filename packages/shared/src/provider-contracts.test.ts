@@ -67,7 +67,7 @@ describe("provider-contracts（BYOK 供应商缝）", () => {
     ).toBe(false);
   });
 
-  it("创建请求必须携带明文 apiKey（只写通道）", () => {
+  it("创建可保存无凭证草稿，提供的apiKey仍为非空只写字段", () => {
     const base = {
       name: "网关",
       protocol: "anthropic",
@@ -78,8 +78,9 @@ describe("provider-contracts（BYOK 供应商缝）", () => {
         .success,
     ).toBe(true);
     expect(providerInstanceCreateRequestSchema.safeParse(base).success).toBe(
-      false,
+      true,
     );
+    expect(providerInstanceCreateRequestSchema.safeParse({ ...base, apiKey: "" }).success).toBe(false);
   });
 
   it("凭证红线：响应 schema 不含 apiKey/apiKeyRef 字段（多余的 key 会被剥掉）", () => {
@@ -90,6 +91,7 @@ describe("provider-contracts（BYOK 供应商缝）", () => {
       // scope 是契约必填（6a3155c 平台管理后台引入：workspace=BYOK / system=平台池）
       scope: "workspace",
       hasCredential: true,
+      configRevision: 1,
       models: [{ id: "m1", name: "M1", capability: "image" }],
       headerKeys: [],
       enabled: true,
@@ -109,6 +111,7 @@ describe("provider-contracts（BYOK 供应商缝）", () => {
           protocol: "volces",
           scope: "system",
           hasCredential: false,
+          configRevision: 1,
           models: [{ id: "m", name: "M", capability: "video" }],
           headerKeys: ["x-opencode-session"],
           enabled: false,
@@ -214,6 +217,7 @@ describe("provider-contracts 自定义请求头（§4.8，R6-1）", () => {
       name: "opencode",
       protocol: "openai-compatible",
       hasCredential: true,
+      configRevision: 1,
       models: [{ id: "m1", name: "M1", capability: "chat" }],
       headerKeys: ["x-opencode-session"],
       enabled: true,
