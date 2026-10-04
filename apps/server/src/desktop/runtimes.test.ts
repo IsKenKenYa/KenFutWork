@@ -1,5 +1,6 @@
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
 import {
   hasSystemGit,
@@ -8,6 +9,8 @@ import {
   resolveRuntimes,
   runtimeEnvAdditions,
 } from "./runtimes.js";
+
+vi.mock("node:child_process", () => ({ execFileSync: vi.fn() }));
 
 /**
  * 回归背景：桌面包是 Node SEA 单 exe，agent 的 execute 跑在宿主机上——用户机器
@@ -320,6 +323,35 @@ describe("git 运行时的优先级（本地优先，打包兜底；Windows 桌�
         exists: fakeFs([join("C:/Git", "git.exe")]),
       }),
     ).toBe(true);
+  });
+});
+
+describe("Darwin 系统 Git 选择", () => {
+  // 提交冻结时仅完成规格，resolver实现留待合并UI分支后的接续；不计为GREEN。
+  it.skip("待接线：PATH 选中 Apple shim 时通过固定 xcrun 返回真实系统 Git 目录", () => {
+    const actualGit = "/Library/Developer/CommandLineTools/usr/bin/git";
+    const finder = vi.mocked(execFileSync);
+    finder.mockReturnValue(`${actualGit}\n`);
+    try {
+      const resolved = resolveRuntimes({
+        env: {},
+        exeDir: "/Applications/KenFutWork.app/Contents/Resources/app",
+        platform: "darwin",
+        systemPath: "/usr/bin:/bin",
+        exists: fakeFs(["/usr/bin/git", actualGit]),
+      });
+
+      expect(resolved).toMatchObject({
+        gitSource: "system",
+        gitBinDir: "/Library/Developer/CommandLineTools/usr/bin",
+      });
+      expect(resolved.bundled).not.toContain("git");
+      expect(finder.mock.calls.map((call) => call.slice(0, 2))).toEqual([
+        ["/usr/bin/xcrun", ["--find", "git"]],
+      ]);
+    } finally {
+      finder.mockReset();
+    }
   });
 });
 
