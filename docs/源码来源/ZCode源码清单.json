@@ -1783,9 +1783,10 @@
       "source": "references/zcode/packages/ui/src/WorkspaceSidebarItem.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceSidebarItem.tsx",
       "sha256": "382139da34c2d102191ba939869b6f0b1fd1833a4eb726a590d6b46fb5423b67",
-      "copiedSha256": "a94fe0d6dc65f46c070b2e34e8923304af106c199064ab7e6e543f4578f16ac5",
+      "copiedSha256": "e676ea48fce9c7636dbdf896d21acac31861c3f43ed5295a784e3793ee5bf56e",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KenFutWork宿主接线：原侧栏条目保留真实Project UUID与Task元信息，不按目录名/显示文本猜所属项目。"
       ]
     },
     {
@@ -6077,9 +6078,10 @@
       "source": "references/zcode/packages/ui/src/lib/chatAttachments.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/chatAttachments.ts",
       "sha256": "e0bf3aee8aadb38763f884120d514c01875c2ef9ee7e1941ec4de5858e8ca429",
-      "copiedSha256": "51fd8f0fdf327b83e1f387fd65c5f05643fb23a59285654706121185ac61f2a6",
+      "copiedSha256": "675c9ffdcee293853e9a7ec89c2f01daf9bc7c6dac96422f785bc7fb47e4b354",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。"
       ]
     },
     {
@@ -6994,27 +6996,30 @@
       "source": "references/zcode/packages/ui/src/lib/providerPersonalSave.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/providerPersonalSave.ts",
       "sha256": "c0831ac2105a5401630047bd042c445784fc475f4ef9c725cc343fadcada2ca6",
-      "copiedSha256": "4a69b1910331eed60205cf848139827069b2a0e20d7249a76614bc91ac2b5612",
+      "copiedSha256": "d516a276a2b4f93ceb4f12c37b7bb36f879fc0c7d40807714e895ebbf1af3261",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/lib/providerSettingsFormProjection.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/providerSettingsFormProjection.ts",
       "sha256": "2c3ec70a8b2f68e6c9d20c358656d238ce865b7e61cc582172316f04039427dc",
-      "copiedSha256": "694ec930ae089395f0d0b4b44249e57e145548c15d2f7535858a748fa375352d",
+      "copiedSha256": "f4256ddaac7db1fbfdf34d49f174725a8e7f9bf0930aaabd87aee672ba309cd7",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/lib/providerSettingsFormTypes.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/providerSettingsFormTypes.ts",
       "sha256": "09ff05f29fe66e1b92208edd188397321e61b9c4e12364f3004d38b0a8cae3c8",
-      "copiedSha256": "09ff05f29fe66e1b92208edd188397321e61b9c4e12364f3004d38b0a8cae3c8",
+      "copiedSha256": "158e86070f31e4248b65d21ef1c976de233af0d06ae657941b896252f8ad4b91",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。"
       ]
     },
     {
@@ -10263,9 +10268,10 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ApiKeyInput.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ApiKeyInput.tsx",
       "sha256": "4bf52ea3daa2d723df5a361353d83057d79d0e4fb78ec40d2c890b4670be3c3f",
-      "copiedSha256": "14d0575fb2dd20a1ed3b4611cc83b535f66528b214dc52afedf424a610808e17",
+      "copiedSha256": "0fd9fdbe22014db4837416579a79210bda549a8272314d7c0d1d80eabfe32a12",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。"
       ]
     },
     {
@@ -10308,9 +10314,10 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/InlineEditableProviderCard.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/InlineEditableProviderCard.tsx",
       "sha256": "2158d97081523c1423a1b4c7c0318e92d89c3e7f3610cf6001e7923588efe0d1",
-      "copiedSha256": "9734b8ee4134a517b84f3cac741c7738af4173534563ae6c63cdb22e7a567ef3",
+      "copiedSha256": "9cbdaf9d177d0e4d179223945e38242752e3bdda75f0d700006822975bfacbbd",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。"
       ]
     },
     {
@@ -10353,18 +10360,20 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ProviderApiFormatSelect.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ProviderApiFormatSelect.tsx",
       "sha256": "ea0f7234753f8300a2f70b190bc878ddf711a73a05f9fcd93810349715eda81f",
-      "copiedSha256": "cdfe66dc87c169482ae8188544b13376466ca4fd61b8002f8f0ece2c78b870a6",
+      "copiedSha256": "752f50bee630c5e817fd62bf45d0064994e2298c2fa0ef36ebd96586cc59375c",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ProviderCardSections.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ProviderCardSections.tsx",
       "sha256": "d01c7b6a18b1b5c93bc176988751821f0f29f435613c399380ba8e4d8dd0ef09",
-      "copiedSha256": "886ca215586f114c6b959f7d47c6a6df58631ee79bafdbfef2a1cab1eb1dee2c",
+      "copiedSha256": "d240a97f9232a1031b9403087fef7dfefffa11bd599b1544c10f1d225777b3e6",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。"
       ]
     },
     {
@@ -10380,9 +10389,10 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ProviderDraftSave.ts",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ProviderDraftSave.ts",
       "sha256": "8b6845842d8963d1903092e6a7625049067d1474de2c6a12ead1cc631a706aee",
-      "copiedSha256": "5c02c2e81d04679e1f769b7b69e467200bc505e4d411dd16e2b7d9e4056bc80f",
+      "copiedSha256": "286aa4c3ba343b77624820480e77fe0b5b876789a8fc1976fc5a0898bb5e33ad",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。"
       ]
     },
     {
@@ -11474,9 +11484,10 @@
       "source": "references/zcode/packages/ui/src/store/composerAttachmentUploadStore.ts",
       "target": "apps/web/src/components/workbench/zcode/store/composerAttachmentUploadStore.ts",
       "sha256": "824004c2f21f5419c5176ea747175ddf532edb9bade66f2bb5ea8f9a5c20ab77",
-      "copiedSha256": "ce69226f3bd348cf8ae826da1950d21523a133abc7466462d28c2ace82d51057",
+      "copiedSha256": "413d1986d5086a60d9016345f535a6ed4223c8d6003c3fe81bb0f9f7a427a4ff",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。"
       ]
     },
     {
@@ -11945,9 +11956,10 @@
       "source": "references/zcode/packages/ui/src/v4/ConversationComposer.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/ConversationComposer.tsx",
       "sha256": "9bfa3d1365cfa7bf10e45d521a3d7201381aa27697c79b4f33b356cd2f4a3c2d",
-      "copiedSha256": "718c5f42a1b3c37b00389c6400a9b6cc6d37620ed7b7e0084d82134646cf6183",
+      "copiedSha256": "2c9a6d1a17a45c698d00320d939ea6a562b3b33140e119492ddce475f3436787",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。"
       ]
     },
     {
@@ -12413,9 +12425,10 @@
       "source": "references/zcode/packages/ui/src/v4/agentConversationTransport.ts",
       "target": "apps/web/src/components/workbench/zcode/v4/agentConversationTransport.ts",
       "sha256": "f4f9dac7d0df4a8303fe5a5eddec1e4d3bd5ad3eee3b9218916d2beafdb6e351",
-      "copiedSha256": "90461026ca74c18be1b5328fabe9145070b4870e0d7a962c1e446834e382268c",
+      "copiedSha256": "20697496a7e85fc971a41f7dcc173753dab2770dd049b94e6549db53cb06aa98",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。"
       ]
     },
     {
@@ -12458,9 +12471,10 @@
       "source": "references/zcode/packages/ui/src/v4/attachmentUploadTransaction.ts",
       "target": "apps/web/src/components/workbench/zcode/v4/attachmentUploadTransaction.ts",
       "sha256": "b8ba2e9223c2d767f6c7137171c1021968c969cf543058c8a7847efc90ffa9a0",
-      "copiedSha256": "6b766cbf9d4aa876008211749b13fb243dc04881969f201a636808b80a6586d8",
+      "copiedSha256": "3632b15d57fae6fa717044ca6a3790d507cd9a2a1113de0e05dd1c74fc4db6c0",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。"
       ]
     },
     {
@@ -12584,9 +12598,10 @@
       "source": "references/zcode/packages/ui/src/v4/composer/attachmentUpload.ts",
       "target": "apps/web/src/components/workbench/zcode/v4/composer/attachmentUpload.ts",
       "sha256": "2b6575494b6279441a6fbe7bdc2b3c12fe433d90c05e9b7edec649a248c94b8c",
-      "copiedSha256": "2b172faa8b698d9d21126054226c837cb55aabbcc92e236c6d472b066dcc232c",
+      "copiedSha256": "5dc5d175902b3f823008077165d85a1f5e356e05af0bc27c749b32d4bbb585c5",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。"
       ]
     },
     {
@@ -12764,9 +12779,10 @@
       "source": "references/zcode/packages/ui/src/v4/composer/useComposerAttachments.ts",
       "target": "apps/web/src/components/workbench/zcode/v4/composer/useComposerAttachments.ts",
       "sha256": "6d490d5f91461c5ce8e79748fd79eacbab7f71309b5666c456bfe7f535eea8bf",
-      "copiedSha256": "b4f336514dd8488750649c563a4466e595c51b0eab7aa409317c5564120f4c05",
+      "copiedSha256": "3c8f0784f8a2bad2ee3356c419447e6fc61bb29070b96b6c5a2e8cf40668ae89",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。"
       ]
     },
     {
@@ -13252,9 +13268,10 @@
       "source": "references/zcode/packages/ui/src/v4/replaceableConversationTransport.ts",
       "target": "apps/web/src/components/workbench/zcode/v4/replaceableConversationTransport.ts",
       "sha256": "da556ed823c30f9eeb6b0f0faa386d28e7f3eacedec648461233e14b7235e7fa",
-      "copiedSha256": "5186ddfe48657271b0ce6ecfe4e9615392ae6870bcf58dd288c1c1afa436e117",
+      "copiedSha256": "ffc8108372f6f0498a0157bdbf63aff0ffe970b5bd130ed7843bdbd0e68751d1",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KenFutWork宿主接线：typed动态配置与原通信作用域换代/注册清理；保留完整命令和Task身份，重连不重放写命令。"
       ]
     },
     {
@@ -13486,9 +13503,10 @@
       "source": "references/zcode/packages/ui/src/v4/transport.ts",
       "target": "apps/web/src/components/workbench/zcode/v4/transport.ts",
       "sha256": "3d2533a9f0c53b65e40ffa991d0be1f59a6eebd501a418517eb3828fd3361d53",
-      "copiedSha256": "b19dee3ea1a13e8d863cb158d85995992fa78657740637a73440d54027475559",
+      "copiedSha256": "97fe652bd849128796a0181ce1d87f98fe38d02de2cfc1f2ad7fd503bb575f42",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。"
       ]
     },
     {
@@ -15441,8 +15459,10 @@
       "source": "references/zcode/packages/shared/src/zcode-protocol-v4/transport.ts",
       "target": "packages/zcode-shared/src/zcode-protocol-v4/transport.ts",
       "sha256": "49f7a41a30b3aec9787af1f4c6b53f81d90340585f8c0ccec5ecf70ba5da4484",
-      "copiedSha256": "49f7a41a30b3aec9787af1f4c6b53f81d90340585f8c0ccec5ecf70ba5da4484",
-      "adaptations": []
+      "copiedSha256": "9c5f0e0dac7a8a4966b645508690b7ec9d8562c76344161692d9c40f416fb4a2",
+      "adaptations": [
+        "KenFutWork宿主接线：原physical wire新增workspace-config topic及其typed订阅/恢复帧；命令/附件身份和schema保留，consumer共用精确lease与epoch/seq fence。"
+      ]
     },
     {
       "source": "references/zcode/packages/shared/src/zcode-protocol-v4/wire-assembler.ts",
@@ -16157,15 +16177,19 @@
       "source": "references/zcode/packages/services/src/zcode-agent/zcodeAgent.ts",
       "target": "packages/zcode-services/src/zcode-agent/zcodeAgent.ts",
       "sha256": "4d265ff9ff3f0dd6c717ed1cbb9ab0ef7ebc541f49ee676d9fee5cd2789738ad",
-      "copiedSha256": "4d265ff9ff3f0dd6c717ed1cbb9ab0ef7ebc541f49ee676d9fee5cd2789738ad",
-      "adaptations": []
+      "copiedSha256": "fd385f02ed6d7b63b6eeab461c485339eb172f0375700bc91636e242fbf315ac",
+      "adaptations": [
+        "KenFutWork宿主接线：typed动态配置与原通信作用域换代/注册清理；保留完整命令和Task身份，重连不重放写命令。"
+      ]
     },
     {
       "source": "references/zcode/packages/services/src/zcode-agent/zcodeAgentConnectionScope.ts",
       "target": "packages/zcode-services/src/zcode-agent/zcodeAgentConnectionScope.ts",
       "sha256": "e73c70604dd43863e73b0bdd4baa444e2ac7c1556517a331eaa2a79009627027",
-      "copiedSha256": "e73c70604dd43863e73b0bdd4baa444e2ac7c1556517a331eaa2a79009627027",
-      "adaptations": []
+      "copiedSha256": "b38d3b789190cbc5adb345b521f4d536d28bd7b0ed52197d6ad8668231e8ee28",
+      "adaptations": [
+        "KenFutWork宿主接线：typed动态配置与原通信作用域换代/注册清理；保留完整命令和Task身份，重连不重放写命令。"
+      ]
     },
     {
       "source": "references/zcode/packages/services/src/zcode-agent/zcodeAgentErrors.ts",
@@ -16269,8 +16293,10 @@
       "source": "references/zcode/packages/provider/src/config/provider-data-schema.ts",
       "target": "packages/zcode-provider/src/config/provider-data-schema.ts",
       "sha256": "8ac274c760272d953fc61792905fe92648b56eae98caa3d480f2106075030dc5",
-      "copiedSha256": "8ac274c760272d953fc61792905fe92648b56eae98caa3d480f2106075030dc5",
-      "adaptations": []
+      "copiedSha256": "4c4ffedfa6311200e2f6793f2bbc0dbd22e0f2cf66d992a08b3b915999bc1ddd",
+      "adaptations": [
+        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。"
+      ]
     },
     {
       "source": "references/zcode/packages/provider/src/config/rule-data-schema.ts",
@@ -16304,8 +16330,10 @@
       "source": "references/zcode/packages/provider/src/facades.ts",
       "target": "packages/zcode-provider/src/facades.ts",
       "sha256": "8d03047f2cf27adce44c7ee16e8bf4378d8b455950ccdf728509162bba3f263d",
-      "copiedSha256": "8d03047f2cf27adce44c7ee16e8bf4378d8b455950ccdf728509162bba3f263d",
-      "adaptations": []
+      "copiedSha256": "a3948893afb9eebb50408c6c90d9b1c43b8e013946180f90ab0813d61ee164ad",
+      "adaptations": [
+        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。"
+      ]
     },
     {
       "source": "references/zcode/packages/provider/src/index.ts",
@@ -24704,9 +24732,10 @@
       "source": "references/zcode/config/provider/zcode-builtin.json",
       "target": "apps/server/src/features/code-ui/zcode-model-config-rules.json",
       "sha256": "0b3d735e0c2334353eecadfa8c0756a1a19fc4f7938fc62882048d6630c5f424",
-      "copiedSha256": "bccf42011e2368b599b32269cb51521de1eb43cddc9ed2a1e0da47a468e260d8",
+      "copiedSha256": "8fb6c00c5771f22fa8a261588e0b1b736a9962c8e667e375e4c79e835604f66a",
       "adaptations": [
-        "数据切片：完整复制 /config/modelConfigRules，模型默认与协议/供应商覆盖全部来自原数据"
+        "数据切片：复制 /config/modelConfigRules，保留原模型默认与协议/供应商覆盖",
+        "KenFutWork 本地 Gemini 原生协议适配：新增 google-generative-language 基础 map；思考 default 保留模型默认，maxOutputTokens 映射 generationConfig.maxOutputTokens。此规则不来自 ZCode upstream。字段与版本边界依据 https://ai.google.dev/api/generate-content；声明的 Gemini 3+ thinkingLevel 与显式个人映射由本地 model-views.ts 校验"
       ],
       "jsonPointer": "/config/modelConfigRules"
     },

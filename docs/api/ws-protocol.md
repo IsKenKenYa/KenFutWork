@@ -17,7 +17,7 @@
 | `agent.run` | `runCreateRequestSchema`（同 `POST /api/agent/runs`） | 启动一次智能体运行 |
 | `agent.cancel` | `{ runId }` | 取消进行中的运行 |
 | `canvas.resume` | `{ canvasId, lastSeq }` | 断线续传：从 `lastSeq` 起重放画布事件流 |
-| `terminal.start` | `{ canvasId, shell, cols, rows }` 等 | 在工作目录拉起 PTY 终端会话 |
+| `terminal.start` | `{ taskId, sessionId, cols, rows, cwd?, shell? }` | 显式Task目录与授权中的真实PTY终端，断线等待管理范围退出 |
 | `terminal.input` | `{ sessionId, data }` | 向终端会话写入输入 |
 | `terminal.resize` | `{ sessionId, cols, rows }` | 调整终端尺寸 |
 | `terminal.stop` | `{ sessionId }` | 结束终端会话 |
