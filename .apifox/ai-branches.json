@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-03T04:25:21.566Z",
+  "updatedAt": "2026-10-04T18:04:59.038Z",
   "projects": {
     "8892388": {
       "branches": {
@@ -14,7 +14,7 @@
           "isAiWritableBranch": false,
           "automationLifecycleStatus": null,
           "isArchived": false,
-          "fetchedAt": "2026-10-03T04:19:12.347Z"
+          "fetchedAt": "2026-10-04T18:03:00.827Z"
         },
         "8691400": {
           "projectId": 8892388,
@@ -27,7 +27,7 @@
           "isAiWritableBranch": false,
           "automationLifecycleStatus": "ARCHIVED",
           "isArchived": true,
-          "fetchedAt": "2026-10-03T04:19:12.348Z",
+          "fetchedAt": "2026-10-04T18:03:00.828Z",
           "lastKnownStatus": "ARCHIVED"
         },
         "8695594": {
@@ -38,10 +38,24 @@
           "branchType": "SPRINT",
           "sourceBranchId": 8691397,
           "isAiBranch": true,
+          "isAiWritableBranch": false,
+          "automationLifecycleStatus": "ARCHIVED",
+          "isArchived": true,
+          "fetchedAt": "2026-10-04T18:03:00.828Z",
+          "lastKnownStatus": "ARCHIVED"
+        },
+        "8696874": {
+          "projectId": 8892388,
+          "branchId": 8696874,
+          "name": "ai/20261005-from-main-code-mode-start",
+          "branchKind": "ai",
+          "branchType": "SPRINT",
+          "sourceBranchId": 8691397,
+          "isAiBranch": true,
           "isAiWritableBranch": true,
           "automationLifecycleStatus": "ACTIVE",
           "isArchived": false,
-          "fetchedAt": "2026-10-03T04:25:21.566Z",
+          "fetchedAt": "2026-10-04T18:04:59.038Z",
           "lastKnownStatus": "ACTIVE"
         }
       },
@@ -52,25 +66,6 @@
         "createdAt": "2026-09-29T18:06:50.340Z"
       },
       "recentEvents": [
-        {
-          "type": "guard_error",
-          "projectId": 8892388,
-          "message": "Automation caller branch required",
-          "createdAt": "2026-09-29T17:52:48.100Z"
-        },
-        {
-          "type": "guard_error",
-          "projectId": 8892388,
-          "message": "Automation caller branch required",
-          "createdAt": "2026-09-29T17:52:57.496Z"
-        },
-        {
-          "type": "branch_recorded",
-          "projectId": 8892388,
-          "branchId": 8691400,
-          "sourceBranchId": 8691397,
-          "createdAt": "2026-09-29T17:53:46.641Z"
-        },
         {
           "type": "guard_error",
           "projectId": 8892388,
@@ -107,6 +102,31 @@
           "branchId": 8695594,
           "sourceBranchId": 8691397,
           "createdAt": "2026-10-03T04:25:21.566Z"
+        },
+        {
+          "type": "branch_recorded",
+          "projectId": 8892388,
+          "branchId": 8691397,
+          "createdAt": "2026-10-04T18:03:00.827Z"
+        },
+        {
+          "type": "branch_recorded",
+          "projectId": 8892388,
+          "branchId": 8691400,
+          "createdAt": "2026-10-04T18:03:00.828Z"
+        },
+        {
+          "type": "branch_recorded",
+          "projectId": 8892388,
+          "branchId": 8695594,
+          "createdAt": "2026-10-04T18:03:00.828Z"
+        },
+        {
+          "type": "branch_recorded",
+          "projectId": 8892388,
+          "branchId": 8696874,
+          "sourceBranchId": 8691397,
+          "createdAt": "2026-10-04T18:04:59.038Z"
         }
       ]
     }
@@ -167,6 +187,31 @@
       "branchId": 8695594,
       "sourceBranchId": 8691397,
       "createdAt": "2026-10-03T04:25:21.566Z"
+    },
+    {
+      "type": "branch_recorded",
+      "projectId": 8892388,
+      "branchId": 8691397,
+      "createdAt": "2026-10-04T18:03:00.827Z"
+    },
+    {
+      "type": "branch_recorded",
+      "projectId": 8892388,
+      "branchId": 8691400,
+      "createdAt": "2026-10-04T18:03:00.828Z"
+    },
+    {
+      "type": "branch_recorded",
+      "projectId": 8892388,
+      "branchId": 8695594,
+      "createdAt": "2026-10-04T18:03:00.828Z"
+    },
+    {
+      "type": "branch_recorded",
+      "projectId": 8892388,
+      "branchId": 8696874,
+      "sourceBranchId": 8691397,
+      "createdAt": "2026-10-04T18:04:59.038Z"
     }
   ]
 }

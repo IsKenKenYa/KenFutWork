@@ -2,6 +2,13 @@
 
 > 2026-10-04，Goal active，按用户要求分模块提交并准备合并UI。此文件是施工交接，不取代实施规格或服务key权威表。下方较早状态与“未commit”均为历史取样；最新状态以本节为准。现存数据库未执行新迁移。
 
+## 2026-10-05 主工作区并行施工（当前唯一入口）
+
+- 用户要求停止独立worktree施工，现已将内核分支快进整合到主checkout：`/Users/shigaoyu/Develop/KenKenDev/KenFutWork`，分支`codex/完整移植ZCode-Code界面`，功能合并点`6f5fd45b`。提交树与旧内核分支完全一致，无冲突；包含先前双亲UI合并`b234f8f8`，双方正确修改和删除均保留。旧`code-harness`工作树保持干净、停止编辑，不再作为施工入口；`main`及`啃啃在开发`未切换或修改。
+- 已通知“重新设计用户系统”线程（`01a107eb-b461-7eb2-958a-9ebc564bc28d`）共用上述目录与分支：本线程负责Code/Harness与原UI能力接线，另一线程负责用户系统。涉及auth、viewer/bootstrap、persistence、shared、profiles或内核类型的共享hunk先协调；显式路径暂存，不替对方提交，测试单实例。
+- question首RED测试已原字节搬入主checkout，初始SHA-256一致；随后仅修正它的协议导入到现有shared公开入口，主区类型检查通过。broker/tool/答案消费者尚未实现，不把该测试草稿当能力完成；当前不由冻结的旧Agent继续编辑。
+- 主checkout依赖已用`CI=true pnpm install --frozen-lockfile --offline`同步；初次类型检查读到旧shared声明，强制`pnpm exec turbo run build --force`后13任务成功，再`pnpm typecheck`13成功。来源3027项零漂移；合并前全test16成功、模式拒读拒写真实HTTP4GREEN。收据`/private/tmp/kfw-main-checkout-{install-final,build,types-final,source}.log`与《日志》一百一十六。未push/PR/运行库迁移，完整Goal active。
+
 ## 2026-10-04 提交冻结与UI合并入口（最新）
 
 ### 合并验证收口（优先于下方冻结取样）
