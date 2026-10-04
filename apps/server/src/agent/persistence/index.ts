@@ -3,8 +3,8 @@ import type {
   BaseCheckpointSaver,
   BaseStore,
 } from "@langchain/langgraph-checkpoint";
-
 import type { ServerEnv } from "../../config/env.js";
+import { createResourceDisposer } from "../../kernel/disposal.js";
 import { createSupabaseCheckpointer } from "./supabase-checkpointer.js";
 import { createSupabaseStore } from "./supabase-store.js";
 
@@ -15,17 +15,19 @@ export type AgentPersistence = {
 
 export type AgentPersistenceService = {
   getPersistence(): Promise<AgentPersistence | null>;
+  dispose(): Promise<void>;
 };
 
-/**
- * 进程内共享的内存持久化（无 Postgres 时的 fallback）：
- * 单进程内多轮上下文/checkpoint 完整生效，进程重启即失。
- */
-function createInMemoryPersistence(): AgentPersistence {
-  // 惰性 require 避免 ESM/工具链差异；包在 server 依赖树内必然存在
+type ManagedPersistence = {
+  value: AgentPersistence;
+  dispose(): Promise<void>;
+};
+
+/** 仅未配置Postgres时使用；同一服务共享上下文，进程重启即失。 */
+function createInMemoryPersistence(): ManagedPersistence {
   return {
-    checkpointer: new MemorySaver(),
-    store: new InMemoryStore(),
+    value: { checkpointer: new MemorySaver(), store: new InMemoryStore() },
+    dispose: async () => {},
   };
 }
 
@@ -36,34 +38,57 @@ export function createAgentPersistenceService(
     createStore?: typeof createSupabaseStore;
   },
 ): AgentPersistenceService {
-  let pendingPersistence: Promise<AgentPersistence> | null = null;
+  let pendingPersistence: Promise<ManagedPersistence> | null = null;
+  let closing = false;
+  let disposal: Promise<void> | undefined;
+
+  async function initialize(): Promise<ManagedPersistence> {
+    const connectionString = env.databaseUrl;
+    if (!connectionString) return createInMemoryPersistence();
+    // 两个SDK共享schema；顺序初始化，同时明确持有部分成功的资源。
+    const checkpointer = await (
+      overrides?.createCheckpointer ?? createSupabaseCheckpointer
+    )({ connectionString });
+    try {
+      const store = await (overrides?.createStore ?? createSupabaseStore)({
+        connectionString,
+      });
+      return {
+        value: { checkpointer, store },
+        dispose: createResourceDisposer([
+          () => checkpointer.end(),
+          () => store.stop(),
+        ]),
+      };
+    } catch (error) {
+      await checkpointer.end();
+      throw error;
+    }
+  }
 
   return {
     async getPersistence() {
-      if (!env.databaseUrl) {
-        // 未配置 Postgres：同一服务实例共享内存持久化，保留 thread 上下文。
-        pendingPersistence ??= Promise.resolve(createInMemoryPersistence());
-        return pendingPersistence;
-      }
-
-      if (!pendingPersistence) {
-        pendingPersistence = Promise.all([
-          (overrides?.createCheckpointer ?? createSupabaseCheckpointer)({
-            connectionString: env.databaseUrl,
-          }),
-          (overrides?.createStore ?? createSupabaseStore)({
-            connectionString: env.databaseUrl,
-          }),
-        ])
-          .then(([checkpointer, store]) => ({ checkpointer, store }))
-          .catch(() => {
-            // Postgres 不可达：降级为内存实现，保证多轮对话在本机可用
-            pendingPersistence = null;
-            return createInMemoryPersistence();
-          });
-      }
-
-      return pendingPersistence;
+      if (closing) throw new Error("Agent持久化服务已关闭");
+      pendingPersistence ??= initialize().catch((error: unknown) => {
+        // 已承诺数据库持久化时必须显式失败；待资源释放后下一次读取可以重试。
+        pendingPersistence = null;
+        throw error;
+      });
+      const persistence = await pendingPersistence;
+      if (closing) throw new Error("Agent持久化服务已关闭");
+      return persistence.value;
+    },
+    dispose() {
+      closing = true;
+      // 未使用的服务关闭时不初始化；已失败的初始化由各Provider完成部分清理。
+      disposal ??= (async () => {
+        const persistence = await pendingPersistence?.catch(() => null);
+        await persistence?.dispose();
+      })().catch((error: unknown) => {
+        disposal = undefined;
+        throw error;
+      });
+      return disposal;
     },
   };
 }

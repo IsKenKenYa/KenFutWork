@@ -8,6 +8,11 @@
 
 #### 合并后原UI接线进展（最新）
 
+##### 可靠持久化与释放接续（最新）
+
+- 历史控制前置持久化实际故障已修：明确配置PG却初始化失败不再Memory fallback，真实Harness模型不执行、run.failed；原服务共享单初始化promise顺序建SDK资源，部分失败清理后可重试。dispose由agent-runs插件的释放栈持有；关闭拒绝新getter、等待在途初始化、幂等释放SDK连接，CodeUI夹具不再强制get或手工end/stop。真实RED/GREEN与独占PG组合6条（本模块5/队列1）、全test16/types13/build13成功详见《日志》一百一十；来源3027项漂移0，全lint仍20个历史error。未将此前关闭延迟归因为此问题。
+- 原Goal仍active；当前修复不等于history consumer已完成。下一独立模块沿最新realUser的idle preserve编辑，先接原生context恢复与真实durable ACK，再打开原canEdit，不从UI DTO或隐藏subagent凑分叉。
+
 ##### 原队列公开与实际页面收口（最新）
 
 - 合并后原UI队列编辑撤回、指定项立即抢占、Stop暂停、刷新恢复、继续真实消费与最终停止均有实际页面证据。独占HTTP/SSE/PG与真实Harness新1条通过，另锁重排、输入身份、stale revision与duplicate无二次效果；测试脚本与截图见《日志》一百零九。未把拖拽鼠标操作/guide当成完成。

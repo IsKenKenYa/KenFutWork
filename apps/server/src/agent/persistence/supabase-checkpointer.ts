@@ -34,6 +34,11 @@ export async function createSupabaseCheckpointer(options: {
   const checkpointer = new PostgresSaver(pool, undefined, {
     schema: LANGGRAPH_PERSISTENCE_SCHEMA,
   });
-  await checkpointer.setup();
-  return checkpointer;
+  try {
+    await checkpointer.setup();
+    return checkpointer;
+  } catch (error) {
+    await checkpointer.end();
+    throw error;
+  }
 }

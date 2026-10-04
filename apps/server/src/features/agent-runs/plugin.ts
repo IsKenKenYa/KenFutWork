@@ -7,7 +7,10 @@ import type {
   KenFutWorkAgentFactory,
   ToolGate,
 } from "../../agent/deep-agent.js";
-import { createAgentPersistenceService } from "../../agent/persistence/index.js";
+import {
+  type AgentPersistenceService,
+  createAgentPersistenceService,
+} from "../../agent/persistence/index.js";
 import type { AgentRunExtension } from "../../agent/run-extension.js";
 import { createAgentRunService } from "../../agent/runtime.js";
 import { composeToolGate } from "../../agent/tool-gate.js";
@@ -71,9 +74,11 @@ export function createAgentRunsPlugin(
       "taskWork",
     ],
     apply(ctx) {
-      ctx.register("agentPersistence", () =>
-        createAgentPersistenceService(ctx.env),
-      );
+      let persistence: AgentPersistenceService | undefined;
+      ctx.register("agentPersistence", () => {
+        persistence = createAgentPersistenceService(ctx.env);
+        return persistence;
+      });
       const agentRunRepository = createAgentRunRepository(
         ctx.get("persistence"),
       );
@@ -271,6 +276,9 @@ export function createAgentRunsPlugin(
           viewerService: d.get("viewer"),
         });
       });
+      return async () => {
+        await persistence?.dispose();
+      };
     },
     mounted(ctx) {
       void registerRunRoutes(ctx.app, ctx.get("agentRuns"), {

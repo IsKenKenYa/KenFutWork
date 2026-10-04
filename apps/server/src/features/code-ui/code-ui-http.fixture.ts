@@ -1,8 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
-import { PostgresStore } from "@langchain/langgraph-checkpoint-postgres/store";
 import { buildApp } from "../../app.js";
 import type { ServerEnv } from "../../config/env.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
@@ -74,16 +72,7 @@ export async function createCodeUiHttpFixture(
       close() {
         closing ??= (async () => {
           await client.close();
-          const native = await host.kernel
-            .get("agentPersistence")
-            .getPersistence();
           await host.close();
-          if (native?.checkpointer instanceof PostgresSaver) {
-            await native.checkpointer.end();
-          }
-          if (native?.store instanceof PostgresStore) {
-            await native.store.stop();
-          }
           await database.close();
         })().catch((error: unknown) => {
           closing = undefined;

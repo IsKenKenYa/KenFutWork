@@ -102,7 +102,7 @@ export async function createHarness(
   singleAttempt = false,
   runtimeOptions?: Pick<
     Parameters<typeof createAgentRunService>[0],
-    "agentFactory" | "settingsService"
+    "agentFactory" | "settingsService" | "agentPersistenceService"
   >,
 ) {
   const { scope, actor, threadId, viewer, threads, metadata } =

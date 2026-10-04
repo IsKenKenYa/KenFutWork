@@ -456,7 +456,7 @@ type CreateAgentRuntimeOptions = {
     runId: string,
   ) => Promise<TaskWorkContext>;
   runExtensions?: () => readonly AgentRunExtension[];
-  agentPersistenceService?: AgentPersistenceService;
+  agentPersistenceService?: Pick<AgentPersistenceService, "getPersistence">;
   agentFactory?: KenFutWorkAgentFactory;
   agentRunMetadataService?: AgentRunMetadataService;
   /** 画布数据访问（工作区作用域）：run 启动时读画布摘要、解析 brandKitId。 */
