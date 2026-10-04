@@ -320,9 +320,21 @@ export function createPluginRegistryService(
     warn: (message: string, ...rest: unknown[]) =>
       console.warn(message, ...rest),
   };
+  // 目录、安装、恢复和资产寻址使用安装器的同一ID规则，不保留调试数据别名。
+  const bundledBundles = (deps.bundledBundles ?? []).map((bundle) => ({
+    ...bundle,
+    id: sanitizeId(bundle.id),
+  }));
   const statePath = path.join(deps.pluginsDir, "installed.json");
   /** 已装载插件的卸载句柄（id → dispose） */
   const loaded = new Map<string, CompatLoadResult>();
+  const bundledIds = new Set(bundledBundles.map((bundle) => bundle.id));
+  function canLoadInstalledPackage(record: InstalledPlugin): boolean {
+    return (
+      deps.allowThirdParty !== false ||
+      (record.source === "builtin" && bundledIds.has(record.id))
+    );
+  }
   /**
    * 已安装记录的进程内索引（id → 记录）。
    * 存在的理由：导出是同步 API（HTTP 侧不该为拿清单再读一次盘），
@@ -627,9 +639,12 @@ export function createPluginRegistryService(
       const state = await readState();
       return {
         rootPath: deps.pluginsDir,
-        bundled: (deps.bundledBundles ?? []).map(
-          ({ id, name, manifest, report }) => ({ id, name, manifest, report }),
-        ),
+        bundled: bundledBundles.map(({ id, name, manifest, report }) => ({
+          id,
+          name,
+          manifest,
+          report,
+        })),
         installed: state.installed.map((record) => ({
           record,
           rootPath: bundleDirOf(record.id),
@@ -674,7 +689,7 @@ export function createPluginRegistryService(
 
       // 自带而未装的 bundle：市场里直接可装（点「安装」，无需找来源链接）
       const installedIds = new Set(state.installed.map((item) => item.id));
-      for (const bundle of deps.bundledBundles ?? []) {
+      for (const bundle of bundledBundles) {
         if (installedIds.has(bundle.id)) continue;
         entries.push({
           id: bundle.id,
@@ -713,7 +728,7 @@ export function createPluginRegistryService(
     async install(input) {
       // 自带 bundle：与应用同发行的第一方代码，不走第三方开关
       if (input.builtin) {
-        const bundled = (deps.bundledBundles ?? []).find(
+        const bundled = bundledBundles.find(
           (item) => item.name === input.builtin,
         );
         if (!bundled) {
@@ -776,9 +791,7 @@ export function createPluginRegistryService(
       }
       // 未安装的自带 bundle：资产从内存出（市场卡片图标在安装前也要能显示）
       if (!record) {
-        const bundled = (deps.bundledBundles ?? []).find(
-          (item) => item.id === pluginId,
-        );
+        const bundled = bundledBundles.find((item) => item.id === pluginId);
         if (bundled?.manifest.assets !== true) return undefined;
         const content = bundled.files[normalized];
         if (
@@ -912,6 +925,11 @@ export function createPluginRegistryService(
         throw new PluginRegistryError("插件未安装。", "not_installed");
       }
       if (enabled) {
+        if (!canLoadInstalledPackage(record))
+          throw new PluginRegistryError(
+            "当前部署不允许启用第三方插件",
+            "install_failed",
+          );
         const handle = await loadInstalledPlugin(record);
         if (!handle) {
           throw new PluginRegistryError(
@@ -982,14 +1000,16 @@ export function createPluginRegistryService(
       return exportPluginBundle(spec, format);
     },
     async restore() {
-      if (deps.allowThirdParty === false) {
-        log.info("[plugins] 当前部署形态禁止第三方插件：跳过重启恢复。");
-        return;
-      }
       const state = await readState();
       for (const record of state.installed) {
         records.set(record.id, record);
         if (!record.enabled) continue;
+        if (!canLoadInstalledPackage(record)) {
+          log.info(
+            `[plugins] 当前部署禁止第三方插件：跳过 ${record.id} 重启装载。`,
+          );
+          continue;
+        }
         const handle = await loadInstalledPlugin(record);
         if (!handle) {
           log.warn(

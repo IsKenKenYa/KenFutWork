@@ -169,3 +169,7 @@ file.ensureConversationWorkspace 按真实 Workspace 身份在配置的 sandboxR
 浏览器在独占临时PG/API通过原安装按钮、原User开关与原确认弹窗验证安装→停用（数量仍1）→卸载（数量0/安装按钮恢复）；证据为原插件按钮真实安装.jpg、原插件开关真实停用.jpg、原插件确认真实卸载.jpg。数据库重启前的旧目录上下文未作兼容，使用原选择器重建当前临时库的真实绑定后验收。仍未计为完整来源/describe/项目覆盖/更新/取消操作或完整市场验收。完整调用：`RUN_CODE_UI_INTEGRATION=1 CODE_UI_TEST_ISOLATED_PLUGINS=1 CODE_UI_TEST_BASE=http://127.0.0.1:3341 CODE_UI_TEST_ORIGIN=http://localhost:3300 pnpm --filter @kenfutwork/server exec vitest run src/features/code-ui/plugins-actions.integration.test.ts src/features/code-ui/plugins.integration.test.ts --no-file-parallelism`；多个真实库存文件故障场景禁止并行，以免测试互相覆盖。managed权限用例另需注入独占CODE_UI_TEST_DATABASE_URL，令牌/连接地址不输出；该用例创建独立插件目录、真实注册用户和完整managed app，不mock内部权限服务。
 
 原安装重放沿用用户停用选择，Definition的activation明确区分ensure-package与原HTTP安装启用意图，Code选择preserve，Design入口原默认启用不变。原removeCache=false卸载保留缓存/数据，移除安装/贡献并返回enabled:false，默认彻底卸载行为不变。宿主真实ready等待原插件恢复；preClose等待全部恢复/写队列和卸载释放，关闭后拒绝新变更。完整app/真实TCP断开/外部阻塞包夹具公开关闭回归已red→green，不再使用void shutdown冒充释放完成；命令 `RUN_CODE_UI_INTEGRATION=1 pnpm --filter @kenfutwork/server exec vitest run src/features/code-ui/plugins-lifecycle.integration.test.ts --no-file-parallelism`，需另以环境安全注入独占CODE_UI_TEST_DATABASE_URL。
+
+自带包的真实重启恢复已锁定：禁止第三方的宿主仍装载原命令安装的可信自带包；可信性必须同时符合安装source与本次自带目录id，不能只按名称/id。公开完整app关闭重建后，自带路由200及实际注册工具导出可读；同名URL包不恢复，原启用接口也明确失败，不绕过实际策略。原目录的enabled配置不作为运行恢复的充分证据。本项未改原GUI或引入自有卡片，详情与完整插件发现仍继续。
+
+自带目录统一采用原安装器的ID规范化，包括scoped npm名称。原overview与安装记录按同一稳定id关联，资产、恢复与启用不另猜身份；公开scoped包目录installed:true、重启路由和启用均通过。与自带同名同id的URL来源包仍被策略阻止，不以目录命中替代真实source。
