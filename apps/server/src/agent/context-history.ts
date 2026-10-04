@@ -3,6 +3,25 @@ export interface AgentContextHistoryReference {
   adapter: string;
   key: string;
 }
+export interface AgentContextBranchCloneInput {
+  sourceThreadId: string;
+  targetThreadId: string;
+  reference: AgentContextHistoryReference | null;
+}
+export interface AgentContextBranchTargetInput {
+  targetThreadId: string;
+  reference: AgentContextHistoryReference | null;
+}
+/** 可信消费者提供owned轮次引用；adapter保留完整原生状态，产品不解码opaque key。 */
+export interface AgentContextBranchService {
+  clone(
+    input: AgentContextBranchCloneInput,
+  ): Promise<AgentContextHistoryReference | null>;
+  /** 只能清理本provider本次创建、尚未发布且引用匹配的目标。 */
+  discard(input: AgentContextBranchTargetInput): Promise<void>;
+  /** 产品事务发布成功后撤销该目标的清理所有权。 */
+  release(input: AgentContextBranchTargetInput): void;
+}
 export interface AgentContextMessage {
   id: string | null;
   type: string;

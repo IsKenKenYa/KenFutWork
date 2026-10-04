@@ -3,10 +3,12 @@ import {
   zcodeUiProtocol as protocol,
 } from "@kenfutwork/shared";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
+import type { AgentContextBranchService } from "../../agent/context-history.js";
 import type {
   KenFutWorkAgentFactory,
   ToolGate,
 } from "../../agent/deep-agent.js";
+import { createNativeContextBranchService } from "../../agent/native-context-branch.js";
 import {
   type AgentPersistenceService,
   createAgentPersistenceService,
@@ -50,6 +52,7 @@ export interface AgentRunsPluginDeps {
     threadId?: string | undefined;
   }) => Promise<{ input: unknown }>;
   agentFactory?: KenFutWorkAgentFactory;
+  contextBranchProvider?: AgentContextBranchService;
   agentModel?: BaseLanguageModel | string;
   mockEventDelayMs?: number;
 }
@@ -106,6 +109,7 @@ export function createAgentRunsPlugin(
       );
 
       ctx.register("agentRuns", (d) => {
+        const agentPersistence = d.get("agentPersistence");
         const jobService = ctx.tryGet("jobs");
         // 检查点缝（可选依赖）：有 checkpoints 服务时把轮次快照钩子接进 runtime；
         // 缺席（部分装配/未启用）则不打检查点，run 照常
@@ -214,7 +218,12 @@ export function createAgentRunsPlugin(
               .get("capabilities")
               .list<AgentRunExtension>("agent-run-extension")
               .map((registration) => registration.value),
-          agentPersistenceService: d.get("agentPersistence"),
+          agentPersistenceService: agentPersistence,
+          contextBranchProvider:
+            deps.contextBranchProvider ??
+            createNativeContextBranchService({
+              agentPersistenceService: agentPersistence,
+            }),
           ...(deps.agentFactory ? { agentFactory: deps.agentFactory } : {}),
           agentRunMetadataService: d.get("agentRunMetadata"),
           canvasRepository,

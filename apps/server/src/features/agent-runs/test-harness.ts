@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { workspaceSettingsSchema } from "@kenfutwork/shared";
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { AIMessage, type BaseMessage } from "@langchain/core/messages";
+import { createNativeContextBranchService } from "../../agent/native-context-branch.js";
 import { createAgentPersistenceService } from "../../agent/persistence/index.js";
 import { createAgentRunService } from "../../agent/runtime.js";
 import { loadServerEnv } from "../../config/env.js";
@@ -102,7 +103,10 @@ export async function createHarness(
   singleAttempt = false,
   runtimeOptions?: Pick<
     Parameters<typeof createAgentRunService>[0],
-    "agentFactory" | "settingsService" | "agentPersistenceService"
+    | "agentFactory"
+    | "settingsService"
+    | "agentPersistenceService"
+    | "contextBranchProvider"
   >,
 ) {
   const { scope, actor, threadId, viewer, threads, metadata } =
@@ -124,7 +128,9 @@ export async function createHarness(
   });
   const model = controlledModel ?? new BoundaryModel();
   const service = metadata();
-  const persistence = createAgentPersistenceService({});
+  const persistence =
+    runtimeOptions?.agentPersistenceService ??
+    createAgentPersistenceService({});
   const env = loadServerEnv({
     agentBackendMode: "filesystem",
     agentFilesRoot: database.directory,
@@ -134,6 +140,9 @@ export async function createHarness(
     env,
     model,
     agentPersistenceService: persistence,
+    contextBranchProvider: createNativeContextBranchService({
+      agentPersistenceService: persistence,
+    }),
     agentRunMetadataService: service,
     ...(checkpointHooks ? { checkpointHooks } : {}),
     ...(singleAttempt

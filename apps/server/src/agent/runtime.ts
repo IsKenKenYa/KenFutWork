@@ -95,6 +95,11 @@ import {
   createBackgroundTaskRegistry,
 } from "./background-tasks.js";
 import { streamCompactOperation } from "./compact-operation.js";
+import type {
+  AgentContextBranchCloneInput,
+  AgentContextBranchService,
+  AgentContextBranchTargetInput,
+} from "./context-history.js";
 import type { ToolGate, ToolGateHooks } from "./deep-agent.js";
 import {
   createDefaultModelSpecifier,
@@ -457,6 +462,7 @@ type CreateAgentRuntimeOptions = {
   ) => Promise<TaskWorkContext>;
   runExtensions?: () => readonly AgentRunExtension[];
   agentPersistenceService?: Pick<AgentPersistenceService, "getPersistence">;
+  contextBranchProvider?: AgentContextBranchService;
   agentFactory?: KenFutWorkAgentFactory;
   agentRunMetadataService?: AgentRunMetadataService;
   /** 画布数据访问（工作区作用域）：run 启动时读画布摘要、解析 brandKitId。 */
@@ -711,6 +717,24 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
   }
 
   const service = {
+    canCloneContextBranches(): boolean {
+      return options.contextBranchProvider !== undefined;
+    },
+    async cloneContextBranch(input: AgentContextBranchCloneInput) {
+      if (!options.contextBranchProvider)
+        throw new Error("当前Agent未装配上下文分支能力。");
+      return options.contextBranchProvider.clone(input);
+    },
+    async discardContextBranch(input: AgentContextBranchTargetInput) {
+      if (!options.contextBranchProvider)
+        throw new Error("当前Agent未装配上下文分支能力。");
+      await options.contextBranchProvider.discard(input);
+    },
+    releaseContextBranch(input: AgentContextBranchTargetInput): void {
+      if (!options.contextBranchProvider)
+        throw new Error("当前Agent未装配上下文分支能力。");
+      options.contextBranchProvider.release(input);
+    },
     cancelRun(runId: string): RunCancelResponse | null {
       const run = runs.get(runId);
       if (!run) {
