@@ -22,6 +22,7 @@ import type { CheckpointService } from "../features/checkpoints/checkpoint-servi
 import type { CodeGitService } from "../features/code-git/code-git-service.js";
 import type { CodeUiService } from "../features/code-ui/service.js";
 import type { CodeTerminalService } from "../features/code-terminal/types.js";
+import type { ResourceDisposer } from "./disposal.js";
 import type { CreditService } from "../features/credits/credit-service.js";
 import type { TierGuard } from "../features/credits/tier-guard.js";
 import type {
@@ -471,7 +472,7 @@ export interface PluginDefinition {
   name: string;
   inject: readonly ServiceKey[];
   enabled?: (env: ServerEnv) => boolean;
-  apply(ctx: PluginContext): undefined | (() => void);
+  apply(ctx: PluginContext): undefined | ResourceDisposer;
   /**
    * 全部插件 apply 完成、服务定例化就绪后按声明顺序调用。
    * 路由注册等「消费其他插件服务」的跨服务接线放这里，apply 只注册自己的服务。
@@ -490,7 +491,7 @@ export interface PluginContext {
   /** 可选解析：key 无人提供时返回 undefined（jobs 等条件装配服务用）。 */
   tryGet<K extends ServiceKey>(key: K): ServiceMap[K] | undefined;
   /** 登记可逆副作用，kernel dispose 时 LIFO 执行。 */
-  effect(fn: () => undefined | (() => void)): void;
+  effect(fn: () => undefined | ResourceDisposer): void;
   /** 订阅 agent-run 事件，返回取消订阅函数。 */
   on<E extends AgentRunEvent>(event: E, listener: ListenerOf<E>): () => void;
   /** Fastify 实例；worker 进程 compose 时不可用（访问即抛错）。 */
@@ -509,7 +510,7 @@ export interface KernelEvents {
 
 export interface KernelHandle {
   /** 逆序执行全部 disposer（apply 返回值 + effect + 工具/事件注销）。 */
-  dispose(): void;
+  dispose(): Promise<void>;
   get<K extends ServiceKey>(key: K): ServiceMap[K];
   tryGet<K extends ServiceKey>(key: K): ServiceMap[K] | undefined;
   readonly events: KernelEvents;

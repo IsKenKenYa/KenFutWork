@@ -117,6 +117,30 @@ export interface SkillCatalogRepository {
   uninstall(workspaceId: string, skillId: string): Promise<number>;
 }
 
+/** 工作区安装态更新口径：只更新已有安装，卸载后的迟到启停不得重新安装。 */
+export interface WorkspaceSkillSettingsRepository {
+  setEnabled(
+    workspaceId: string,
+    skillId: string,
+    enabled: boolean,
+  ): Promise<boolean>;
+}
+
+export function createWorkspaceSkillSettingsRepository(
+  persistence: PersistenceService,
+): WorkspaceSkillSettingsRepository {
+  return {
+    async setEnabled(workspaceId, skillId, enabled) {
+      const changed = await persistence.forWorkspace(workspaceId).execute(
+        `update public.workspace_skills set enabled = $2
+        where workspace_id = :workspace and skill_id = $1`,
+        [skillId, enabled],
+      );
+      return changed > 0;
+    },
+  };
+}
+
 type JoinedSkillRow = {
   enabled: boolean;
   id: string;

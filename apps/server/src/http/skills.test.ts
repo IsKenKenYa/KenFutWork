@@ -1,10 +1,19 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import Fastify, { type FastifyInstance } from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
+import {
+  createExecutionScopes,
+  type ExecutionScopes,
+} from "../features/execution/scope-service.js";
 import { SqlError } from "../features/persistence/errors.js";
 import type { SkillCatalogRepository } from "../features/skills/repository.js";
 import { registerSkillRoutes } from "./skills.js";
@@ -37,7 +46,7 @@ const USER = {
   id: "user-1",
   userMetadata: {},
 };
-const WORKSPACE_ID = "ws-1";
+const WORKSPACE_ID = "1b18ef1f-1d78-4469-bbfe-9a245e73636b";
 const SKILL_ID = "skill-1";
 
 /** 目录行按 repository 的裸行形状（snake_case + ISO 字符串时间戳）。 */
@@ -98,8 +107,10 @@ async function buildApp(
   options: {
     unauthenticated?: boolean;
     /** 工作目录导入相关：假画布仓库 + 沙箱根（默认「画布找不到」）。 */
-    canvas?: { id: string } | null;
+    canvas?: { id: string; project_id?: string } | null;
     sandboxRoot?: string;
+    executionScopes?: Pick<ExecutionScopes, "openTask">;
+    projectKind?: "design" | "code";
   } = {},
 ): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
@@ -117,8 +128,19 @@ async function buildApp(
       findById: async () =>
         options.canvas === undefined || options.canvas === null
           ? null
-          : options.canvas,
+          : {
+              ...options.canvas,
+              project_id: options.canvas.project_id ?? "visual-project",
+            },
     } as never,
+    projects: {
+      getProject: async () => ({ kind: options.projectKind ?? "design" }),
+    } as never,
+    executionScopes: options.executionScopes ?? {
+      openTask: async () => {
+        throw new Error("测试未配置 Code Task。");
+      },
+    },
     ...(options.sandboxRoot ? { sandboxRoot: options.sandboxRoot } : {}),
   };
   await registerSkillRoutes(app, deps);
@@ -848,5 +870,98 @@ describe("工作目录里的技能包（从工作目录导入）", () => {
       payload: { canvasId: "someone-else", path: "en-zh-translate" },
     });
     expect(denied.statusCode).toBe(404);
+  });
+
+  it("Code候选与导入绑定明确Task真实目录，旧Canvas与双身份请求拒绝", async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "kfw-task-skill-")));
+    const taskId = "fb6d510a-5bf0-4870-8ec4-f4ce4e2d37e2";
+    const scopeIdentity = {
+      workspaceId: WORKSPACE_ID,
+      projectId: "993e015e-0ee1-40e9-9d91-f5327556cdde",
+      taskId,
+      generation: 0,
+      rootDirectory: root,
+      additionalDirectories: [],
+      sandboxMode: "read-only" as const,
+    };
+    const scopes = createExecutionScopes({
+      repository: {
+        load: async (_workspaceId, id) =>
+          id === taskId
+            ? { scope: scopeIdentity, state: "ready", branchGeneration: 1 }
+            : null,
+      },
+      viewerService: {
+        resolveWorkspace: async () => ({ id: WORKSPACE_ID }) as never,
+      },
+    });
+    try {
+      mkdirSync(join(root, "from-task"));
+      writeFileSync(
+        join(root, "from-task", "SKILL.md"),
+        "---\nname: from-task\ndescription: Task目录\n---\n正文",
+      );
+      const inserts = vi.fn(async () => ({ ...SKILL_ROW, id: SKILL_ID }));
+      const app = await buildApp(
+        { insertOwned: inserts, insertFilesForOwnedSkill: async () => 0 },
+        {
+          executionScopes: scopes,
+          canvas: { id: CANVAS_ID },
+          projectKind: "code",
+        },
+      );
+      const candidates = await app.inject({
+        method: "GET",
+        url: `/api/skills/sandbox-packages?taskId=${taskId}`,
+      });
+      expect(candidates.statusCode).toBe(200);
+      expect(candidates.json().packages).toEqual([
+        expect.objectContaining({
+          path: join(root, "from-task"),
+          name: "from-task",
+        }),
+      ]);
+      const imported = await app.inject({
+        method: "POST",
+        url: "/api/skills/sandbox-import",
+        payload: { taskId, path: "from-task" },
+      });
+      expect(imported.statusCode).toBe(201);
+      expect(inserts).toHaveBeenCalledWith(
+        USER.id,
+        expect.objectContaining({
+          name: "from-task",
+          skillContent: expect.stringContaining("Task目录"),
+        }),
+      );
+      const canvas = await app.inject({
+        method: "GET",
+        url: `/api/skills/sandbox-packages?canvasId=${CANVAS_ID}`,
+      });
+      expect(canvas.statusCode).toBe(400);
+      expect(canvas.json().error.message).toContain("不能用 Canvas");
+      const ambiguous = await app.inject({
+        method: "POST",
+        url: "/api/skills/sandbox-import",
+        payload: { canvasId: CANVAS_ID, taskId, path: "from-task" },
+      });
+      expect(ambiguous.statusCode).toBe(400);
+      const foreign = await app.inject({
+        method: "GET",
+        url: "/api/skills/sandbox-packages?taskId=948839a7-a8cc-4390-9e24-4dd0ae1902d5",
+      });
+      expect(foreign.statusCode).toBe(404);
+      const escaped = await app.inject({
+        method: "POST",
+        url: "/api/skills/sandbox-import",
+        payload: { taskId, path: "/etc" },
+      });
+      expect(escaped.statusCode).toBe(403);
+      expect(escaped.json().error.message).toContain("授权目录");
+      expect(inserts).toHaveBeenCalledTimes(1);
+      await app.close();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

@@ -1,3 +1,4 @@
+import { createResourceDisposer, type ResourceDisposer } from "../../kernel/disposal.js";
 import type { PluginUiSlot } from "@kenfutwork/shared";
 
 import type {
@@ -97,7 +98,7 @@ export interface CompatContext {
     remove(workspaceId: string, key: string): Promise<boolean>;
     keys(workspaceId: string): Promise<string[]>;
   };
-  effect(fn: () => undefined | (() => void)): void;
+  effect(fn: () => undefined | ResourceDisposer): void;
   on(
     event: string,
     listener: (payload: unknown, next?: unknown) => unknown,
@@ -160,7 +161,7 @@ export interface CompatLoadResult {
   pluginName: string;
   /** 本插件注册的工具名（卸载与展示用）。 */
   toolNames: string[];
-  dispose(): void;
+  dispose(): Promise<void>;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -251,6 +252,9 @@ function normalizeToolDefinition(raw: unknown, label: string): ToolDefinition {
     name,
     description,
     scope: "shared",
+    exposure: "deferred",
+    // 兼容bundle没有可信只读证明，不能进入explore/review。
+    access: "execute",
     parameters,
     execute: async (args, execCtx) =>
       normalizeToolResult(
@@ -297,7 +301,7 @@ export async function loadCompatPlugin(
   }
 
   const toolDisposers: Array<() => void> = [];
-  const effectDisposers: Array<() => void> = [];
+  const effectDisposers: ResourceDisposer[] = [];
   const contributionDisposers: Array<() => void> = [];
   const toolNames: string[] = [];
 
@@ -410,28 +414,16 @@ export async function loadCompatPlugin(
     },
   };
 
-  const rollback = () => {
-    for (const dispose of toolDisposers.reverse()) {
-      try {
-        dispose();
-      } catch (error) {
-        console.warn(`[plugin:${deps.label}] 回滚工具注册失败：`, error);
-      }
+  // 保留组间注销次序；失败时真实资源仍可重试，不把异步close丢到后台。
+  const disposeStack: ResourceDisposer[] = [];
+  const drain = createResourceDisposer(disposeStack);
+  let prepared = false;
+  const rollback = (): Promise<void> => {
+    if (!prepared) {
+      prepared = true;
+      disposeStack.push(...contributionDisposers, ...effectDisposers, ...toolDisposers);
     }
-    for (const dispose of effectDisposers.reverse()) {
-      try {
-        dispose();
-      } catch (error) {
-        console.warn(`[plugin:${deps.label}] 回滚副作用失败：`, error);
-      }
-    }
-    for (const dispose of contributionDisposers.reverse()) {
-      try {
-        dispose();
-      } catch (error) {
-        console.warn(`[plugin:${deps.label}] 回滚贡献物失败：`, error);
-      }
-    }
+    return drain();
   };
 
   try {
@@ -439,7 +431,7 @@ export async function loadCompatPlugin(
   } catch (error) {
     // 装载失败必须整体回滚：否则实例只装了一半，注册表里留下孤儿工具，
     // 而插件又不在「已安装」列表里，无人能卸载它。
-    rollback();
+    await rollback();
     toolNames.length = 0;
     if (error instanceof CompatLoadError) throw error;
     throw new CompatLoadError(

@@ -8,6 +8,7 @@ import { resolveInsideRoot } from "../../utils/inside-root.js";
 import type { AdminService } from "../admin/admin-service.js";
 import type { RequestAuthenticator } from "../auth/types.js";
 import type { McpService } from "./mcp-service.js";
+import { projectMcpArguments } from "./mcp-tools.js";
 
 /**
  * `create_mcp_server` 工具：把**工作目录里的 MCP server 脚本**注册成本实例的 MCP 工具源
@@ -38,7 +39,10 @@ export function createCreateMcpServerTool(options: {
     name: "create_mcp_server",
     description:
       "把工作目录里的 MCP server 脚本注册成本实例的 MCP 工具源（需要管理员权限）。用于「创造」模式：先用 write_file 在工作目录写好 server 脚本（stdio 协议），再用本工具注册；注册成功后其工具以 mcp__<name>__<tool> 进入统一注册表，后续会话可直接调用。",
-    scope: "shared",
+    scope: "design",
+    exposure: "deferred",
+    access: "write",
+    projectArguments: projectMcpArguments,
     parameters: {
       type: "object",
       properties: {
@@ -110,7 +114,7 @@ export function createCreateMcpServerTool(options: {
         typeof args.command === "string" && args.command.trim()
           ? args.command.trim()
           : null;
-      const command = explicitCommand ?? inferCommand(scriptPath);
+      const command = explicitCommand ?? inferMcpCommand(scriptPath);
       const extraArgs = Array.isArray(args.args)
         ? (args.args as unknown[]).map((item) => String(item))
         : [];
@@ -144,7 +148,7 @@ export function createCreateMcpServerTool(options: {
 }
 
 /** 按扩展名推断启动命令（显式 command 优先）。 */
-function inferCommand(scriptPath: string): string {
+export function inferMcpCommand(scriptPath: string): string {
   const extension = extname(scriptPath).toLowerCase();
   if (extension === ".py") return "python";
   if (extension === ".js" || extension === ".mjs" || extension === ".cjs") {

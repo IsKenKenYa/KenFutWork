@@ -16,6 +16,7 @@ import {
   createSkillCatalogService,
   type SkillCatalogService,
 } from "./skill-catalog-service.js";
+import { createWorkspaceSkillResourceReader } from "./skill-resource-service.js";
 
 /**
  * skills 插件：技能导入 + 市场路由（HTTP 面）+ **skill 工具缝**（P5）。
@@ -29,15 +30,20 @@ export function createSkillsPlugin(): PluginDefinition {
   let skillsRepository: SkillCatalogRepository;
   return {
     name: "skills",
-    inject: ["auth", "persistence", "viewer"],
+    inject: ["auth", "persistence", "viewer", "projects", "executionScopes"],
     apply(ctx) {
       skillsRepository = createSkillCatalogRepository(ctx.get("persistence"));
       const catalog: SkillCatalogService = createSkillCatalogService({
         repository: skillsRepository,
       });
+      const resources = createWorkspaceSkillResourceReader({
+        repository: skillsRepository,
+      });
 
       const listSkillsTool: ToolDefinition = {
         name: "list_skills",
+        access: "read",
+        exposure: "deferred",
         description: "列出当前工作区已安装并启用的 skill（名称与描述）。",
         scope: "shared",
         parameters: { type: "object", properties: {} },
@@ -60,13 +66,20 @@ export function createSkillsPlugin(): PluginDefinition {
 
       const useSkillTool: ToolDefinition = {
         name: "use_skill",
+        access: "read",
+        exposure: "deferred",
         description:
-          "读取指定 skill 的 SKILL.md 全文，按其指引完成任务。先用 list_skills 查看可用项。",
+          "读取工作区已安装并启用的skill正文，或resource_path指定的包内只读附属资源。先list_skills；安装包不是本机路径，脚本须在Task授权目录审阅副本后通过受控Bash执行。",
         scope: "shared",
         parameters: {
           type: "object",
           properties: {
             name: { type: "string", description: "skill slug" },
+            resource_path: {
+              type: "string",
+              description:
+                "可选，技能包内canonical相对路径，如scripts/check.ts；不接受绝对路径或../",
+            },
           },
           required: ["name"],
         },
@@ -77,6 +90,23 @@ export function createSkillsPlugin(): PluginDefinition {
           }
           if (!execCtx.workspaceId) {
             throw new Error("当前执行上下文缺少工作区，无法读取 skill。");
+          }
+          if (
+            execCtx.scopeHandle &&
+            execCtx.scopeHandle.describe().workspaceId !== execCtx.workspaceId
+          )
+            throw new Error("技能工作区与可信Task工作域不匹配。");
+          if (args.resource_path !== undefined) {
+            if (typeof args.resource_path !== "string")
+              throw new Error("resource_path需要包内相对路径字符串。");
+            const resource = await resources.read(
+              execCtx.workspaceId,
+              name,
+              args.resource_path,
+            );
+            if (!resource)
+              throw new Error(`skill ${name} 的资源未安装、已停用或不存在`);
+            return resource;
           }
           const detail = await catalog.getSkill(execCtx.workspaceId, name);
           if (!detail) {
@@ -102,6 +132,8 @@ export function createSkillsPlugin(): PluginDefinition {
         skillsRepository,
         viewerService: ctx.get("viewer"),
         canvasRepository: createCanvasRepository(ctx.get("persistence")),
+        projects: ctx.get("projects"),
+        executionScopes: ctx.get("executionScopes"),
         sandboxRoot: ctx.env.sandboxRoot,
         canvasWorkDirs: ctx.env.canvasWorkDirs,
         projectWorkDirLoader: projectWorkDirLoaderFor(ctx.get("persistence")),

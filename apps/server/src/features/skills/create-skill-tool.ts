@@ -22,6 +22,8 @@ export function createCreateSkillTool(options: {
 }): ToolDefinition {
   return {
     name: "create_skill",
+    access: "write",
+    exposure: "deferred",
     description:
       "把刚写好的技能包**发布到当前工作区技能库**（写入 SKILL.md 全文与可选附带文件），发布即启用、下一次会话即可用。用于「创造」模式：先在沙箱里写出 SKILL.md，再用本工具发布；名称重复会失败，需换名。",
     scope: "shared",

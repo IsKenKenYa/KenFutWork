@@ -1,4 +1,8 @@
-import type { ToolDefinition, ToolRegistry } from "../../kernel/types.js";
+import type {
+  ToolDefinition,
+  ToolRegistry,
+  ToolScope,
+} from "../../kernel/types.js";
 
 /**
  * MCP 工具注册逻辑（P4d，纯函数可测）：
@@ -25,13 +29,41 @@ export function toKernelTool(
   tool: McpServerToolLike,
   client: McpClientLike,
 ): ToolDefinition {
+  return createMcpToolDefinition(serverName, tool, "design", async (args) =>
+    client.callTool({ name: tool.name, arguments: args }),
+  );
+}
+
+/** MCP配置参数的公共事件投影；重复投影保留envKeys，不修改真实执行参数。 */
+export function projectMcpArguments(
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!args.env || typeof args.env !== "object" || Array.isArray(args.env))
+    return { ...args };
+  const output: Record<string, unknown> = {
+    ...args,
+    envKeys: Object.keys(args.env),
+  };
+  delete output.env;
+  return output;
+}
+
+export function createMcpToolDefinition(
+  serverName: string,
+  tool: McpServerToolLike,
+  scope: ToolScope,
+  execute: ToolDefinition["execute"],
+): ToolDefinition {
   return {
     name: `mcp__${serverName}__${tool.name}`,
     description: tool.description ?? `MCP tool ${tool.name}`,
-    scope: "shared",
+    scope,
+    exposure: "deferred",
+    // 外部readOnlyHint不是本机权限证明；未知效果按执行策略做人审。
+    access: "execute",
+    projectArguments: projectMcpArguments,
     parameters: tool.inputSchema ?? { type: "object" },
-    execute: async (args) =>
-      client.callTool({ name: tool.name, arguments: args }),
+    execute,
   };
 }
 

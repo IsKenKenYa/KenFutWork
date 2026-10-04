@@ -38,7 +38,7 @@ describe.skipIf(!DATABASE_URL)("workspace-skills 真实库集成", () => {
 
       const created = await createProjectRepository(
         persistence,
-      ).createWithCanvas({
+      ).createProject({
         canvasName: "技能集成画布",
         description: null,
         name: "技能集成项目",
@@ -46,6 +46,7 @@ describe.skipIf(!DATABASE_URL)("workspace-skills 真实库集成", () => {
         userId,
         workspaceId,
       });
+      if (!created.canvas) throw new Error("Design 夹具缺少主画布");
 
       const marker = `integration-skill-${Date.now().toString(36)}`;
       const disabledMarker = `${marker}-off`;

@@ -5,16 +5,18 @@ import { pathToFileURL } from "node:url";
 import {
   type CompatReport,
   type InstalledPlugin,
+  installedPluginSchema,
   PLUGIN_UI_SLOTS,
   type PluginBundleManifest,
   type PluginExportArtifact,
   type PluginMarketEntry,
   type PluginUiSlot,
 } from "@kenfutwork/shared";
+import { z } from "zod";
 
 import type { ToolRegistry } from "../../kernel/types.js";
 import { type BundleFiles, buildBundleManifest } from "./bundle-manifest.js";
-import { fetchBundleFiles } from "./bundle-source.js";
+import { fetchBundleFiles, type ScopedBundleSource } from "./bundle-source.js";
 import {
   CompatLoadError,
   type CompatLoadResult,
@@ -156,6 +158,12 @@ export interface PluginRouteDispatchResult {
 
 export interface PluginRegistryService {
   list(): Promise<PluginMarketEntry[]>;
+  /** 机器包库存读面；可安装bundle与profile feature分开，安装态仍由本registry持有。 */
+  readPackageInventory(): Promise<{
+    rootPath: string;
+    bundled: Array<Pick<BundledBundle, "id" | "name" | "manifest" | "report">>;
+    installed: Array<{ record: InstalledPlugin; rootPath: string }>;
+  }>;
   inspect(input: { url: string; ref?: string | undefined }): Promise<{
     manifest: PluginBundleManifest;
     report: CompatReport;
@@ -167,6 +175,9 @@ export interface PluginRegistryService {
     /** 自带 bundle 的包名（与 `url` 二选一） */
     builtin?: string | undefined;
     allowLifecycleScripts: boolean;
+    localSource?: ScopedBundleSource;
+    /** 重装时保留已停用状态；默认安装直接启用。 */
+    activation?: "enable" | "preserve";
   }): Promise<{ installed: InstalledPlugin; report: CompatReport }>;
   uninstall(id: string): Promise<void>;
   /** 已启用插件贡献的提示段（按装载顺序）。 */
@@ -250,8 +261,6 @@ interface RegistryState {
   installed: InstalledPlugin[];
 }
 
-const EMPTY_STATE: RegistryState = { version: 1, installed: [] };
-
 function sanitizeId(raw: string): string {
   return (
     raw
@@ -321,13 +330,19 @@ export function createPluginRegistryService(
   const records = new Map<string, InstalledPlugin>();
 
   async function readState(): Promise<RegistryState> {
+    let raw: string;
     try {
-      const raw = await readFile(statePath, "utf8");
-      const parsed = JSON.parse(raw) as RegistryState;
-      if (!Array.isArray(parsed.installed)) return { ...EMPTY_STATE };
-      return { version: 1, installed: parsed.installed };
+      raw = await readFile(statePath, "utf8");
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT")
+        return { version: 1, installed: [] };
+      throw error;
+    }
+    try {
+      return z.object({ version: z.literal(1), installed: z.array(installedPluginSchema) }).parse(JSON.parse(raw));
     } catch {
-      return { ...EMPTY_STATE };
+      // 库存损坏属于宿主存储错误，不能伪装为空列表或400请求错误，也不覆盖原磁盘。
+      throw new Error("本机插件库存损坏，请修复 installed.json 后重试");
     }
   }
 
@@ -483,15 +498,16 @@ export function createPluginRegistryService(
     );
   }
 
-  function unloadPlugin(id: string): void {
-    dropContributions(id);
+  async function unloadPlugin(id: string): Promise<void> {
     const handle = loaded.get(id);
     if (!handle) return;
     try {
-      handle.dispose();
+      await handle.dispose();
     } catch (error) {
       log.warn(`[plugins] ${id} 卸载清理失败：`, error);
+      throw error;
     }
+    dropContributions(id);
     loaded.delete(id);
   }
 
@@ -505,6 +521,7 @@ export function createPluginRegistryService(
       repositoryUrl?: string | null;
       headSha?: string | null;
       allowLifecycleScripts: boolean;
+      activation?: "enable" | "preserve";
     },
   ): Promise<{ installed: InstalledPlugin; report: CompatReport }> {
     const report = validateBundleFiles(files, {
@@ -530,9 +547,10 @@ export function createPluginRegistryService(
     const id = sanitizeId(options.idOverride ?? `local__${manifest.name}`);
 
     const state = await readState();
-    if (state.installed.some((record) => record.id === id)) {
+    const previous = state.installed.find((record) => record.id === id);
+    if (previous) {
       // 重装：先卸载旧实例，避免工具重名冲突
-      unloadPlugin(id);
+      await unloadPlugin(id);
     }
 
     await writeBundleFiles(id, files);
@@ -544,14 +562,14 @@ export function createPluginRegistryService(
       source: options.source,
       repositoryUrl: options.repositoryUrl ?? null,
       headSha: options.headSha ?? null,
-      enabled: true,
+      enabled: options.activation === "preserve" ? previous?.enabled ?? true : true,
       manifest,
       report,
       installedAt: new Date().toISOString(),
     };
 
-    const loadResult = await loadInstalledPlugin(record);
-    if (!loadResult) {
+    const loadResult = record.enabled ? await loadInstalledPlugin(record) : undefined;
+    if (record.enabled && !loadResult) {
       // 装载失败：回滚落盘，保持「装了的都能用」
       await rm(bundleDirOf(id), { recursive: true, force: true });
       records.delete(id);
@@ -573,6 +591,14 @@ export function createPluginRegistryService(
   }
 
   return {
+    async readPackageInventory() {
+      const state = await readState();
+      return {
+        rootPath: deps.pluginsDir,
+        bundled: (deps.bundledBundles ?? []).map(({ id, name, manifest, report }) => ({ id, name, manifest, report })),
+        installed: state.installed.map((record) => ({ record, rootPath: bundleDirOf(record.id) })),
+      };
+    },
     async list() {
       const state = await readState();
       const entries: PluginMarketEntry[] = deps.builtinCatalog.map((entry) => ({
@@ -664,6 +690,7 @@ export function createPluginRegistryService(
           idOverride: bundled.id,
           source: "builtin",
           allowLifecycleScripts: input.allowLifecycleScripts,
+          ...(input.activation ? { activation: input.activation } : {}),
         });
       }
 
@@ -678,13 +705,16 @@ export function createPluginRegistryService(
       const { files, origin } = await fetchBundleFiles(input.url ?? "", {
         ...(input.ref ? { ref: input.ref } : {}),
         ...(deps.githubToken ? { token: deps.githubToken } : {}),
+        ...(input.localSource ? { localSource: input.localSource } : {}),
       });
+      if (input.localSource) await input.localSource.resolvePath(input.url ?? "");
       return installFromFiles(files, {
         fallbackLabel: origin.label,
         source: "url",
         repositoryUrl: origin.repositoryUrl,
         headSha: origin.headSha,
         allowLifecycleScripts: input.allowLifecycleScripts,
+        ...(input.activation ? { activation: input.activation } : {}),
       });
     },
 
@@ -827,7 +857,7 @@ export function createPluginRegistryService(
       if (!state.installed.some((record) => record.id === id)) {
         throw new PluginRegistryError("插件未安装。", "not_installed");
       }
-      unloadPlugin(id);
+      await unloadPlugin(id);
       await rm(bundleDirOf(id), { recursive: true, force: true });
       records.delete(id);
       await writeState({
@@ -854,7 +884,7 @@ export function createPluginRegistryService(
           );
         }
       } else {
-        unloadPlugin(id);
+        await unloadPlugin(id);
       }
       const updated: InstalledPlugin = { ...record, enabled };
       records.set(id, updated);
@@ -935,7 +965,7 @@ export function createPluginRegistryService(
 
     async shutdown() {
       for (const id of [...loaded.keys()]) {
-        unloadPlugin(id);
+        await unloadPlugin(id);
       }
     },
   };

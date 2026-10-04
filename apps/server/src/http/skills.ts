@@ -8,24 +8,29 @@ import {
   skillListResponseSchema,
   skillUpdateRequestSchema,
   unauthenticatedErrorResponseSchema,
+  workDirectoryTargetSchema,
   workspaceSkillListResponseSchema,
   workspaceSkillToggleRequestSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
-import type {
-  AuthenticatedUser,
-  RequestAuthenticator,
-} from "../features/auth/types.js";
+import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { CanvasRepository } from "../features/canvas/repository.js";
+import {
+  ExecutionScopeError,
+  type ExecutionScopes,
+} from "../features/execution/scope-service.js";
 import {
   SQLSTATE_UNIQUE_VIOLATION,
   SqlError,
 } from "../features/persistence/errors.js";
+import type { ProjectService } from "../features/projects/project-service.js";
 import type { SkillCatalogRepository } from "../features/skills/repository.js";
 import {
   listSandboxSkillPackages,
+  listScopedSkillPackages,
   readSandboxSkillPackage,
+  readScopedSkillPackage,
 } from "../features/skills/sandbox-skill-packages.js";
 import {
   buildSkillFromFiles,
@@ -34,7 +39,7 @@ import {
   SkillImportError,
 } from "../features/skills/skill-import-service.js";
 import { generateSlug } from "../features/skills/slug.js";
-import { resolveSandboxForCanvas } from "./sandbox-scope.js";
+import { resolveWorkDirectoryTarget } from "./sandbox-scope.js";
 import { isZodError } from "./zod-error.js";
 
 type SkillErrorCode =
@@ -58,6 +63,8 @@ export async function registerSkillRoutes(
     viewerService: ViewerService;
     /** 「从工作目录导入」需要：画布归属校验 + 沙箱目录解析（与 agent/git 同一处）。 */
     canvasRepository: CanvasRepository;
+    projects: Pick<ProjectService, "getProject">;
+    executionScopes: Pick<ExecutionScopes, "openTask">;
     sandboxRoot?: string | undefined;
     canvasWorkDirs?: Record<string, string> | undefined;
     /** 项目绑定的本机工作目录（`projects.work_dir`）；界面绑定优先于环境变量映射。 */
@@ -127,20 +134,6 @@ export async function registerSkillRoutes(
     );
     return { skillRow, skillId, files: fileData.map(mapSkillFileRow) };
   };
-
-  /** canvasId → 已校验归属的沙箱目录（与插件安装共用同一判定）。 */
-  const sandboxDirFor = (user: AuthenticatedUser, canvasId: string) =>
-    resolveSandboxForCanvas(
-      {
-        viewerService: options.viewerService,
-        canvasRepository: options.canvasRepository,
-        sandboxRoot: options.sandboxRoot,
-        canvasWorkDirs: options.canvasWorkDirs,
-        projectWorkDirLoader: options.projectWorkDirLoader,
-      },
-      user,
-      canvasId,
-    );
 
   // =========================================================================
   // Skills Registry (public catalog)
@@ -418,41 +411,38 @@ export async function registerSkillRoutes(
 
   // GET /api/skills/sandbox-packages?canvasId=… — 列出工作目录里的技能包候选
   // （「从工作目录导入」用：agent 在沙箱里造出来的技能包就在这儿被发现）
-  app.get<{ Querystring: { canvasId?: string } }>(
+  app.get<{ Querystring: { canvasId?: string; taskId?: string } }>(
     "/api/skills/sandbox-packages",
     async (request, reply) => {
       try {
         const user = await options.auth.authenticate(request);
         if (!user) return sendUnauthenticated(reply);
-        const canvasId = request.query.canvasId ?? "";
-        if (!canvasId) {
+        const target = workDirectoryTargetSchema.safeParse(request.query);
+        if (!target.success)
           return sendSkillError(
             reply,
             "skill_query_failed",
-            "缺少 canvasId。",
+            "请明确提供 Task 或可视化 Canvas 身份。",
             400,
           );
-        }
-        const sandboxDir = await sandboxDirFor(user, canvasId);
-        if (!sandboxDir) {
-          return sendSkillError(
-            reply,
-            "skill_not_found",
-            "画布不存在或不属于当前工作区。",
-            404,
-          );
-        }
-        return reply.code(200).send(
-          sandboxSkillPackageListResponseSchema.parse({
-            packages: listSandboxSkillPackages(sandboxDir),
-          }),
+        const directory = await resolveWorkDirectoryTarget(
+          options,
+          user,
+          target.data,
         );
+        const packages = directory.scope
+          ? await listScopedSkillPackages(directory.scope)
+          : listSandboxSkillPackages(directory.rootDirectory);
+        return reply
+          .code(200)
+          .send(sandboxSkillPackageListResponseSchema.parse({ packages }));
       } catch (error) {
         request.log.error({ err: error }, "sandbox skill package scan failed");
         return sendSkillError(
           reply,
           "skill_query_failed",
-          "扫描工作目录失败。",
+          error instanceof Error ? error.message : "扫描工作目录失败。",
+          error instanceof ExecutionScopeError ? error.statusCode : 400,
         );
       }
     },
@@ -468,26 +458,24 @@ export async function registerSkillRoutes(
       const viewer = await options.viewerService.ensureViewer(user);
       const workspaceId = viewer.workspace.id;
 
-      const sandboxDir = await sandboxDirFor(user, payload.canvasId);
-      if (!sandboxDir) {
-        return sendSkillError(
-          reply,
-          "skill_not_found",
-          "画布不存在或不属于当前工作区。",
-          404,
-        );
-      }
+      const target =
+        "taskId" in payload
+          ? { taskId: payload.taskId }
+          : { canvasId: payload.canvasId };
+      const directory = await resolveWorkDirectoryTarget(options, user, target);
 
       // 服务端自己读盘（不信任前端传内容）；越界/缺 SKILL.md 在这里报错
       let files: Array<{ path: string; content: string }>;
       try {
-        files = readSandboxSkillPackage(sandboxDir, payload.path);
+        files = directory.scope
+          ? await readScopedSkillPackage(directory.scope, payload.path)
+          : readSandboxSkillPackage(directory.rootDirectory, payload.path);
       } catch (error) {
         return sendSkillError(
           reply,
           "skill_import_failed",
           error instanceof Error ? error.message : "读取技能包失败。",
-          400,
+          error instanceof ExecutionScopeError ? error.statusCode : 400,
         );
       }
 
@@ -526,6 +514,14 @@ export async function registerSkillRoutes(
       }
       if (error instanceof SkillImportError) {
         return sendSkillError(reply, "skill_import_failed", error.message, 400);
+      }
+      if (error instanceof ExecutionScopeError) {
+        return sendSkillError(
+          reply,
+          "skill_import_failed",
+          error.message,
+          error.statusCode,
+        );
       }
       request.log.error({ err: error }, "sandbox skill import failed");
       return sendSkillError(

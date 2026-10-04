@@ -1,3 +1,4 @@
+import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
 import { resolveSandboxDir } from "../../agent/sandbox-dir.js";
 import type {
   ToolDefinition,
@@ -6,6 +7,7 @@ import type {
 import { resolveInsideRoot } from "../../utils/inside-root.js";
 import type { AdminService } from "../admin/admin-service.js";
 import type { RequestAuthenticator } from "../auth/types.js";
+import { createScopedBundleSource } from "./bundle-source.js";
 import type { PluginRegistryService } from "./plugin-registry-service.js";
 
 /**
@@ -35,8 +37,10 @@ export function createInstallPluginTool(options: {
 }): ToolDefinition {
   return {
     name: "install_plugin",
+    access: "execute",
+    exposure: "deferred",
     description:
-      "把**工作目录里的插件 bundle 目录**安装到本实例（需要管理员权限）。用于「创造」模式产出的插件产物：先用 write_file 在工作目录写好 bundle（package.json 里声明 kenfutwork.bundle 或 dsh.bundle），再调用本工具安装。安装前会跑兼容性门禁，不通过会返回原因。",
+      "把工作目录里的插件 bundle 安装到本实例（需要管理员权限）。生成并检查 bundle 文件后调用；package.json 需声明 kenfutwork.bundle 或 dsh.bundle。安装前会校验兼容性。",
     scope: "shared",
     parameters: {
       type: "object",
@@ -49,17 +53,27 @@ export function createInstallPluginTool(options: {
       required: ["path"],
     },
     execute: async (args, execCtx: ToolExecutionContext) => {
+      const scope = execCtx.scopeHandle;
       const relativePath = String(args.path ?? "").trim();
       if (!relativePath) {
         throw new Error(
           "install_plugin 需要 path（相对工作目录的 bundle 目录）。",
         );
       }
-      if (!execCtx.canvasId) {
+      if (!scope && (execCtx.codeApproval || execCtx.taskWorkContext))
+        throw new Error("Code 安装插件必须有明确的 Task 工作域。");
+      if (!scope && !execCtx.canvasId) {
         throw new Error(
           "当前执行上下文缺少画布，无法定位工作目录（install_plugin 需要 run 绑定项目）。",
         );
       }
+      if (
+        scope &&
+        (scope.describe().sandboxMode === "read-only" ||
+          scope.role === "explore" ||
+          scope.role === "review")
+      )
+        throw new Error("只读 Code 工作域不能安装插件。");
       const user = execCtx.accessToken
         ? await options.auth
             .authenticate({
@@ -78,20 +92,45 @@ export function createInstallPluginTool(options: {
         );
       }
 
-      const boundWorkDir = options.projectWorkDirLoader
-        ? await options.projectWorkDirLoader(execCtx.canvasId).catch(() => null)
-        : null;
-      const sandboxDir = resolveSandboxDir(
-        execCtx.canvasId,
-        options.sandboxRoot,
-        boundWorkDir ?? options.canvasWorkDirs?.[execCtx.canvasId],
-      );
-      const bundleDir = resolveInsideRoot(sandboxDir, relativePath);
+      let bundleDir: string;
+      if (scope) {
+        bundleDir = await scope.resolvePath(relativePath, "read");
+        if (scope.describe().sandboxMode === "read-only")
+          throw new Error("只读 Code 工作域不能安装插件。");
+      } else {
+        const canvasId = execCtx.canvasId;
+        if (!canvasId) throw new Error("当前执行上下文缺少可视化 Canvas。");
+        const boundWorkDir = options.projectWorkDirLoader
+          ? await options.projectWorkDirLoader(canvasId)
+          : null;
+        const sandboxDir = resolveSandboxDir(
+          canvasId,
+          options.sandboxRoot,
+          boundWorkDir ?? options.canvasWorkDirs?.[canvasId],
+        );
+        bundleDir = resolveInsideRoot(sandboxDir, relativePath);
+      }
 
       try {
+        const source = scope
+          ? createScopedBundleSource(scope, execCtx.signal)
+          : null;
+        const localSource =
+          source && scope
+            ? {
+                ...source,
+                resolvePath: async (path: string) => {
+                  const resolved = await source.resolvePath(path);
+                  if (scope.describe().sandboxMode === "read-only")
+                    throw new Error("Code 工作域已收紧为只读，安装被拒绝。");
+                  return resolved;
+                },
+              }
+            : null;
         const result = await options.registry.install({
           allowLifecycleScripts: options.allowLifecycleScripts ?? false,
           url: bundleDir,
+          ...(localSource ? { localSource } : {}),
         });
         return {
           installed: true,
@@ -106,7 +145,7 @@ export function createInstallPluginTool(options: {
         throw new Error(
           `安装失败：${error instanceof Error ? error.message : String(error)}${
             report
-              ? `（门禁报告：${JSON.stringify(report).slice(0, 500)}）`
+              ? `（门禁报告：${JSON.stringify(report).slice(0, scope?.backend.limits.codeReadPageCharacters ?? AGENT_GOVERNANCE_DEFAULTS.codeReadPageCharacters)}）`
               : ""
           }`,
         );

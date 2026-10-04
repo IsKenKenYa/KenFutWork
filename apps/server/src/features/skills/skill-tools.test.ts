@@ -79,16 +79,27 @@ const rawSkillRows = [
 ];
 
 /** 记录型假 persistence：断言工具把 execCtx.workspaceId 透传到了数据访问。 */
-function fakePersistence() {
+function fakePersistence(
+  options: {
+    listRows?: () => typeof rawSkillRows;
+    readFiles?: () => Array<{
+      skill_id: string;
+      file_path: string;
+      content: string;
+    }>;
+  } = {},
+) {
   const scopes: string[] = [];
 
   const makeClient = (workspaceId?: string) => ({
     ...(workspaceId === undefined ? {} : { workspaceId }),
-    async query() {
+    async query(sql: string) {
       if (workspaceId !== undefined) {
         scopes.push(workspaceId);
       }
-      return rawSkillRows;
+      if (sql.includes("from public.skill_files"))
+        return options.readFiles?.() ?? [];
+      return options.listRows?.() ?? rawSkillRows;
     },
     async queryOne() {
       return null;
@@ -162,9 +173,11 @@ describe("skill 目录服务（SKILL.md 发现缝）", () => {
 });
 
 describe("skills 插件向 ctx.tools 贡献工具（P5 缝）", () => {
-  function kernelWithSkillsPlugin() {
+  function kernelWithSkillsPlugin(
+    options: Parameters<typeof fakePersistence>[0] = {},
+  ) {
     const app = Fastify({ logger: false });
-    const persistence = fakePersistence();
+    const persistence = fakePersistence(options);
     const kernel = composePlugins(
       {
         agentBackendMode: "state" as const,
@@ -180,6 +193,16 @@ describe("skills 插件向 ctx.tools 贡献工具（P5 缝）", () => {
           auth: { authenticate: async () => null },
           persistence: persistence.service,
           viewer: {} as never,
+          projects: {
+            getProject: async () => {
+              throw new Error("未配置项目");
+            },
+          } as never,
+          executionScopes: {
+            openTask: async () => {
+              throw new Error("未配置 Task");
+            },
+          } as never,
         },
       },
     );
@@ -234,5 +257,110 @@ describe("skills 插件向 ctx.tools 贡献工具（P5 缝）", () => {
       kernel.get("tools").execute("use_skill", {}, { workspaceId: "ws-1" }),
     ).rejects.toThrow(/name/);
     kernel.dispose();
+  });
+
+  it("原use_skill消费真实DB附属资源，路径与可信Task工作区均核对", async () => {
+    const { kernel, persistence } = kernelWithSkillsPlugin({
+      readFiles: () => [
+        {
+          skill_id: "s1",
+          file_path: "scripts/check.ts",
+          content: "真实只读脚本",
+        },
+      ],
+    });
+    const tools = kernel.get("tools");
+    try {
+      expect(
+        await tools.execute(
+          "use_skill",
+          { name: "canvas-design", resource_path: "scripts/check.ts" },
+          { workspaceId: "ws-7" },
+        ),
+      ).toEqual({
+        name: "canvas-design",
+        resourceRef: "kenfutwork-skill:s1",
+        resourcePath: "scripts/check.ts",
+        content: "真实只读脚本",
+      });
+      expect(
+        await tools.execute(
+          "use_skill",
+          { name: "canvas-design", resource_path: "SKILL.md" },
+          { workspaceId: "ws-7" },
+        ),
+      ).toMatchObject({ content: expect.stringContaining("步骤") });
+      const before = persistence.scopes.length;
+      const useSkill = tools.get("use_skill");
+      if (!useSkill) throw new Error("use_skill工具未注册。");
+      await expect(
+        useSkill.execute(
+          { name: "canvas-design", resource_path: "scripts/check.ts" },
+          {
+            workspaceId: "ws-7",
+            scopeHandle: {
+              describe: () => ({ workspaceId: "foreign" }),
+            } as never,
+          },
+        ),
+      ).rejects.toThrow(/工作区|工作域/);
+      for (const path of [
+        "../outside",
+        "/absolute",
+        "C:/outside",
+        "scripts//check.ts",
+        "scripts/./check.ts",
+        "scripts/check.ts\0",
+      ]) {
+        await expect(
+          tools.execute(
+            "use_skill",
+            { name: "canvas-design", resource_path: path },
+            { workspaceId: "ws-7" },
+          ),
+        ).rejects.toThrow(/路径|资源/);
+      }
+      expect(persistence.scopes.length).toBe(before);
+    } finally {
+      await kernel.dispose();
+    }
+  });
+
+  it("资源查询完成前卸载或停用技能，迟到use_skill不能返回已撤回正文", async () => {
+    for (const uninstall of [false, true]) {
+      let installed = true;
+      let enabled = true;
+      const { kernel } = kernelWithSkillsPlugin({
+        listRows: () => {
+          const row = rawSkillRows[0];
+          if (!row) throw new Error("技能fixture缺少启用行。");
+          return installed ? [{ ...row, enabled }] : [];
+        },
+        readFiles: () => {
+          if (uninstall) installed = false;
+          else enabled = false;
+          return [
+            {
+              skill_id: "s1",
+              file_path: "scripts/check.ts",
+              content: "不得返回的迟到资源",
+            },
+          ];
+        },
+      });
+      try {
+        await expect(
+          kernel
+            .get("tools")
+            .execute(
+              "use_skill",
+              { name: "canvas-design", resource_path: "scripts/check.ts" },
+              { workspaceId: "ws-7" },
+            ),
+        ).rejects.toThrow(/安装|停用|存在/);
+      } finally {
+        await kernel.dispose();
+      }
+    }
   });
 });

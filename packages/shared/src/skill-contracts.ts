@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { codeWorkDirectoryTargetSchema, visualWorkDirectoryTargetSchema } from "./execution-contracts.js";
 
 // === Enums ===
 
@@ -108,10 +109,10 @@ export type SkillImportRequest = z.infer<typeof skillImportRequestSchema>;
  * `<沙箱根>/<画布UUID>`）；`path` 是**相对沙箱根**的技能包目录（内含 SKILL.md）。
  * 服务端校验画布归属与路径不越界——不信任前端传来的路径。
  */
-export const sandboxSkillImportRequestSchema = z.object({
-  canvasId: z.string().min(1),
-  path: z.string().min(1),
-});
+export const sandboxSkillImportRequestSchema = z.union([
+  codeWorkDirectoryTargetSchema.extend({ path: z.string().min(1) }),
+  visualWorkDirectoryTargetSchema.extend({ path: z.string().min(1) }),
+]);
 export type SandboxSkillImportRequest = z.infer<
   typeof sandboxSkillImportRequestSchema
 >;

@@ -10,6 +10,7 @@ import {
   sandboxPluginBundleListResponseSchema,
   sandboxPluginInstallRequestSchema,
   unauthenticatedErrorResponseSchema,
+  workDirectoryTargetSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
@@ -20,11 +21,17 @@ import type {
 } from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { CanvasRepository } from "../features/canvas/repository.js";
+import type { ExecutionScopes } from "../features/execution/scope-service.js";
+import { createScopedBundleSource } from "../features/plugins/bundle-source.js";
 import type { PluginRegistryService } from "../features/plugins/plugin-registry-service.js";
 import { PluginRegistryError } from "../features/plugins/plugin-registry-service.js";
-import { listSandboxPluginBundles } from "../features/plugins/sandbox-plugin-bundles.js";
+import {
+  listSandboxPluginBundles,
+  listScopedPluginBundles,
+} from "../features/plugins/sandbox-plugin-bundles.js";
+import type { ProjectService } from "../features/projects/project-service.js";
 import { resolveInsideRoot } from "../utils/inside-root.js";
-import { resolveSandboxForCanvas } from "./sandbox-scope.js";
+import { resolveWorkDirectoryTarget } from "./sandbox-scope.js";
 
 /**
  * 插件市场与安装路由。
@@ -40,6 +47,8 @@ export interface PluginRoutesDeps {
   registry: PluginRegistryService;
   /** 「从工作目录安装」需要：画布归属校验 + 沙箱目录解析（与技能/agent 同一处）。 */
   canvasRepository: CanvasRepository;
+  projects: Pick<ProjectService, "getProject">;
+  executionScopes: Pick<ExecutionScopes, "openTask">;
   viewerService: ViewerService;
   sandboxRoot?: string | undefined;
   canvasWorkDirs?: Record<string, string> | undefined;
@@ -176,39 +185,41 @@ export async function registerPluginRoutes(
 
   // GET /api/plugins/sandbox-bundles?canvasId=… — 列出工作目录里的插件 bundle 候选
   // （「从工作目录安装」用：agent/创造模式在工作目录里写出来的 bundle 在这里被发现）
-  app.get<{ Querystring: { canvasId?: string } }>(
+  app.get<{ Querystring: { canvasId?: string; taskId?: string } }>(
     "/api/plugins/sandbox-bundles",
     async (request, reply) => {
       const user = await options.auth.authenticate(request);
       if (!user) return sendUnauthenticated(reply);
-      const canvasId = request.query.canvasId ?? "";
-      if (!canvasId) {
-        return sendError(reply, "invalid_request", "缺少 canvasId。", 400);
-      }
-      const sandboxDir = await resolveSandboxForCanvas(
-        {
-          viewerService: options.viewerService,
-          canvasRepository: options.canvasRepository,
-          sandboxRoot: options.sandboxRoot,
-          canvasWorkDirs: options.canvasWorkDirs,
-          projectWorkDirLoader: options.projectWorkDirLoader,
-        },
-        user,
-        canvasId,
-      );
-      if (!sandboxDir) {
+      const target = workDirectoryTargetSchema.safeParse(request.query);
+      if (!target.success)
         return sendError(
           reply,
-          "canvas_not_found",
-          "画布不存在或不属于当前工作区。",
-          404,
+          "invalid_request",
+          "请明确提供 Task 或可视化 Canvas 身份。",
+          400,
+        );
+      try {
+        const directory = await resolveWorkDirectoryTarget(
+          options,
+          user,
+          target.data,
+        );
+        const bundles = directory.scope
+          ? await listScopedPluginBundles(directory.scope)
+          : listSandboxPluginBundles(directory.rootDirectory);
+        return reply
+          .code(200)
+          .send(sandboxPluginBundleListResponseSchema.parse({ bundles }));
+      } catch (error) {
+        return sendError(
+          reply,
+          "invalid_request",
+          error instanceof Error ? error.message : "目录读取失败。",
+          error && typeof error === "object" && "statusCode" in error
+            ? Number(error.statusCode)
+            : 400,
         );
       }
-      return reply.code(200).send(
-        sandboxPluginBundleListResponseSchema.parse({
-          bundles: listSandboxPluginBundles(sandboxDir),
-        }),
-      );
     },
   );
 
@@ -224,34 +235,25 @@ export async function registerPluginRoutes(
     const user = await options.auth.authenticate(request);
     if (!user) return sendUnauthenticated(reply);
 
-    const sandboxDir = await resolveSandboxForCanvas(
-      {
-        viewerService: options.viewerService,
-        canvasRepository: options.canvasRepository,
-        sandboxRoot: options.sandboxRoot,
-        canvasWorkDirs: options.canvasWorkDirs,
-      },
-      user as AuthenticatedUser,
-      parsed.data.canvasId,
-    );
-    if (!sandboxDir) {
-      return sendError(
-        reply,
-        "canvas_not_found",
-        "画布不存在或不属于当前工作区。",
-        404,
-      );
-    }
-
+    let directory: Awaited<ReturnType<typeof resolveWorkDirectoryTarget>>;
     let bundleDir: string;
     try {
-      bundleDir = resolveInsideRoot(sandboxDir, parsed.data.path);
+      const target =
+        "taskId" in parsed.data
+          ? { taskId: parsed.data.taskId }
+          : { canvasId: parsed.data.canvasId };
+      directory = await resolveWorkDirectoryTarget(options, user, target);
+      bundleDir = directory.scope
+        ? await directory.scope.resolvePath(parsed.data.path, "read")
+        : resolveInsideRoot(directory.rootDirectory, parsed.data.path);
     } catch (error) {
       return sendError(
         reply,
         "invalid_request",
-        error instanceof Error ? error.message : "路径不合法。",
-        400,
+        error instanceof Error ? error.message : "目录授权不可用。",
+        error && typeof error === "object" && "statusCode" in error
+          ? Number(error.statusCode)
+          : 400,
       );
     }
 
@@ -260,6 +262,9 @@ export async function registerPluginRoutes(
       const result = await options.registry.install({
         allowLifecycleScripts: false,
         url: bundleDir,
+        ...(directory.scope
+          ? { localSource: createScopedBundleSource(directory.scope) }
+          : {}),
       });
       // 响应形状与 /api/plugins/install 一致：{installed, report}
       return reply.code(201).send(pluginInstallResponseSchema.parse(result));

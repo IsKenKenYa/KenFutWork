@@ -102,7 +102,7 @@ export function buildApp(
 
   // HTTP 关闭即释放内核资源（连接池等 effect disposer）——否则停库时连接池还握着连接
   app.addHook("onClose", async () => {
-    kernel.dispose();
+    await kernel.dispose();
   });
 
   // 内核句柄随 app 一起返回：桌面单进程形态要在同一内核上起任务消费循环

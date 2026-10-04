@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { codeWorkDirectoryTargetSchema, visualWorkDirectoryTargetSchema } from "./execution-contracts.js";
 
 /**
  * 插件互操作契约（HTTP + bundle 产物）。
@@ -286,10 +287,10 @@ export type PluginInstallBuiltinRequest = z.infer<
  * loomic.bundle 仍被接受）。服务端校验
  * 画布归属与路径不越界，不信任前端传来的路径。
  */
-export const sandboxPluginInstallRequestSchema = z.object({
-  canvasId: z.string().min(1),
-  path: z.string().min(1),
-});
+export const sandboxPluginInstallRequestSchema = z.union([
+  codeWorkDirectoryTargetSchema.extend({ path: z.string().min(1) }),
+  visualWorkDirectoryTargetSchema.extend({ path: z.string().min(1) }),
+]);
 export type SandboxPluginInstallRequest = z.infer<
   typeof sandboxPluginInstallRequestSchema
 >;

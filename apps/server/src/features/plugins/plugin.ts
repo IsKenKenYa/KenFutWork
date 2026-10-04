@@ -202,7 +202,7 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
 
   return {
     name: "plugin-registry",
-    inject: ["auth", "admin", "persistence", "viewer"],
+    inject: ["auth", "admin", "persistence", "viewer", "projects", "executionScopes"],
     apply(ctx) {
       const pluginsDir = resolvePluginsDir(deps.pluginsDir);
       const hostNodeMajor = resolveHostNodeMajor(deps.hostNodeMajor);
@@ -246,9 +246,7 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
       });
       console.log(`[plugins] 插件目录：${pluginsDir}`);
       // kernel dispose 时卸载已装载的第三方插件，释放其注册的工具与副作用
-      ctx.effect(() => () => {
-        void service?.shutdown();
-      });
+      ctx.effect(() => () => service?.shutdown());
     },
     mounted(ctx) {
       const registry = ctx.get("plugins");
@@ -269,6 +267,8 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
         admin: ctx.get("admin"),
         registry,
         canvasRepository: createCanvasRepository(ctx.get("persistence")),
+        projects: ctx.get("projects"),
+        executionScopes: ctx.get("executionScopes"),
         viewerService: ctx.get("viewer"),
         sandboxRoot: ctx.env.sandboxRoot,
         canvasWorkDirs: ctx.env.canvasWorkDirs,

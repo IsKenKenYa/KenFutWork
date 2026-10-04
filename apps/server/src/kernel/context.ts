@@ -396,7 +396,7 @@ export interface KernelContextOptions {
   tryGet: <K extends ServiceKey>(key: K) => ServiceMap[K] | undefined;
   events: AgentRunEventBus;
   /** kernel dispose 时 LIFO 执行的 disposer 收集器（ctx.effect 落点）。 */
-  addDisposer: (disposer: () => void) => void;
+  addDisposer: (disposer: () => void | Promise<void>) => void;
 }
 
 export function createPluginContext(

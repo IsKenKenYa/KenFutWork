@@ -31,7 +31,7 @@ describe("MCP 工具注册（P4d）", () => {
     }
     const tool = toKernelTool("fs", readFileTool, client);
     expect(tool.name).toBe("mcp__fs__read_file");
-    expect(tool.scope).toBe("shared");
+    expect(tool.scope).toBe("design");
     const result = await tool.execute({ path: "/tmp/a" }, {});
     expect(callTool).toHaveBeenCalledWith({
       name: "read_file",
