@@ -194,6 +194,11 @@ export interface PreStepPayload {
   input: unknown;
   runId: string | undefined;
   threadId?: string | undefined;
+  /** Runtime已接受的run/Task事实，仅供指导hydrate；不作为工具执行授权。 */
+  preset?: "design" | "code" | undefined;
+  workspaceId?: string | undefined;
+  taskId?: string | undefined;
+  sessionId?: string | undefined;
 }
 
 export interface ToolPreExecutePayload {

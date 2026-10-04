@@ -107,6 +107,7 @@ export async function createHarness(
     | "settingsService"
     | "agentPersistenceService"
     | "contextBranchProvider"
+    | "emitPreStep"
   >,
 ) {
   const { scope, actor, threadId, viewer, threads, metadata } =

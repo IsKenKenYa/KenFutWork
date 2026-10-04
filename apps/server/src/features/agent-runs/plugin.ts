@@ -21,7 +21,11 @@ import {
   createWorkspaceSkillsLoader,
 } from "../../agent/workspace-skills.js";
 import { registerRunRoutes } from "../../http/runs.js";
-import type { KernelEvents, PluginDefinition } from "../../kernel/types.js";
+import type {
+  KernelEvents,
+  PluginDefinition,
+  PreStepPayload,
+} from "../../kernel/types.js";
 import type { ConnectionManager } from "../../ws/connection-manager.js";
 import { evaluateToolPolicy } from "../agent-modes/execution-mode-service.js";
 import { createCanvasRepository } from "../canvas/repository.js";
@@ -46,11 +50,12 @@ export interface AgentRunsPluginDeps {
   /** 内核事件缝：turn 收尾发射 turn-stopping（用量结算挂钩点）。 */
   events: KernelEvents;
   /** 事件缝（DEC-1）：pre-step waterfall，执行模式/权限插件改写模型输入。 */
-  emitPreStep?: (payload: {
-    input: string;
-    runId: string;
-    threadId?: string | undefined;
-  }) => Promise<{ input: unknown }>;
+  emitPreStep?: (
+    payload: PreStepPayload & {
+      input: string;
+      runId: string;
+    },
+  ) => Promise<{ input: unknown }>;
   agentFactory?: KenFutWorkAgentFactory;
   contextBranchProvider?: AgentContextBranchService;
   agentModel?: BaseLanguageModel | string;

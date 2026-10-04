@@ -77,6 +77,7 @@ import type {
 } from "../generation/types.js";
 import { publicToolArguments } from "../kernel/tool-arguments.js";
 import type {
+  PreStepPayload,
   PromptCompositionContext,
   SystemPromptRegistry,
   ToolExecutionContext,
@@ -507,11 +508,12 @@ type CreateAgentRuntimeOptions = {
    * 事件缝（DEC-1）：turn 开始时发射 pre-step（waterfall），插件可改写/拒绝模型输入。
    * 返回改写后的 input（无监听器时原样返回）。
    */
-  emitPreStep?: (payload: {
-    input: string;
-    runId: string;
-    threadId?: string | undefined;
-  }) => Promise<{ input: unknown }>;
+  emitPreStep?: (
+    payload: PreStepPayload & {
+      input: string;
+      runId: string;
+    },
+  ) => Promise<{ input: unknown }>;
   /**
    * 执行模式工具门（agent-modes 缝经 agent-runs 插件注入）：按线程返回
    * solo/plan 的工具拦截判定；返回 undefined 表示全放行（agent 等模式）。
@@ -644,15 +646,21 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
   // DEC-1 pre-step：把改写权交给事件监听器（执行模式 plan 引导等），无监听器原样返回
   const applyPreStep = async (
     input: string,
-    threadId: string | undefined,
+    run: RuntimeRunRecord,
   ): Promise<string> => {
     if (!options.emitPreStep) {
       return input;
     }
+    const scope = run.scopeHandle?.describe();
     const result = await options.emitPreStep({
       input,
-      runId: "",
-      ...(threadId ? { threadId } : {}),
+      runId: run.runId,
+      preset: resolvePresetForRun(run),
+      ...(run.threadId ? { threadId: run.threadId } : {}),
+      ...(run.sessionId ? { sessionId: run.sessionId } : {}),
+      ...(scope
+        ? { workspaceId: scope.workspaceId, taskId: scope.taskId }
+        : {}),
     });
     return typeof result.input === "string" ? result.input : input;
   };
@@ -2422,7 +2430,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               canvasSummary,
               "database",
             );
-            enrichedPrompt = await applyPreStep(enrichedPrompt, run.threadId);
+            enrichedPrompt = await applyPreStep(enrichedPrompt, run);
             const content = await codeInputContent(
               run.codeInputs,
               codeInputLimits,
@@ -2504,7 +2512,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               canvasSummary,
               run.scopeHandle ? "database" : undefined,
             );
-            enrichedPrompt = await applyPreStep(enrichedPrompt, run.threadId);
+            enrichedPrompt = await applyPreStep(enrichedPrompt, run);
 
             // Build assetId → data URI map for tool-level resolution
             attachmentDataMap = buildAttachmentDataMap(downloaded);
@@ -2526,7 +2534,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               canvasSummary,
               run.scopeHandle ? "database" : undefined,
             );
-            enrichedPrompt = await applyPreStep(enrichedPrompt, run.threadId);
+            enrichedPrompt = await applyPreStep(enrichedPrompt, run);
             userMessage = new HumanMessage({
               id: userMessageId,
               content: enrichedPrompt,

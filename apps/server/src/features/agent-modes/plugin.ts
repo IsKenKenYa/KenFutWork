@@ -35,9 +35,13 @@ export function createAgentModesPlugin(): PluginDefinition {
 
       // pre-step：按模式给模型输入注入引导（plan 规划、solo 禁工具提示等）
       ctx.on("pre-step", async (payload, next) => {
-        const mode = payload.threadId
-          ? service.getMode(payload.threadId)
-          : "agent";
+        const mode = !payload.threadId
+          ? "agent"
+          : payload.preset === "code" && payload.workspaceId && payload.taskId
+            ? await service.hydrate(payload.threadId, {
+                workspaceId: payload.workspaceId,
+              })
+            : service.getMode(payload.threadId);
         const directive = BUILTIN_EXECUTION_MODES.find(
           (m) => m.id === mode,
         )?.inputDirective;
