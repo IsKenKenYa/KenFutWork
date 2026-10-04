@@ -21,8 +21,13 @@ import type { ThreadService } from "../features/chat/thread-service.js";
 import type { CheckpointService } from "../features/checkpoints/checkpoint-service.js";
 import type { CodeGitService } from "../features/code-git/code-git-service.js";
 import type { CodeUiService } from "../features/code-ui/service.js";
+import type { CodeTerminalService } from "../features/code-terminal/types.js";
 import type { CreditService } from "../features/credits/credit-service.js";
 import type { TierGuard } from "../features/credits/tier-guard.js";
+import type {
+  ExecutionScopeHandle,
+  ExecutionScopes,
+} from "../features/execution/scope-service.js";
 import type {
   PersistImageFn,
   SubmitImageJobFn,
@@ -32,12 +37,21 @@ import type { JobService } from "../features/jobs/job-service.js";
 import type { ModelCatalogService } from "../features/model-providers/model-catalog-service.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type { PaymentService } from "../features/payments/payment-service.js";
+import type {
+  CodeApprovalMode,
+  PermissionInvocation,
+} from "../features/permissions/approval-types.js";
 import type { PermissionService } from "../features/permissions/permission-service.js";
 import type { PersistenceService } from "../features/persistence/types.js";
 import type { PluginRegistryService } from "../features/plugins/plugin-registry-service.js";
+import type { ProcessSandbox } from "../features/process-sandbox/types.js";
 import type { ProjectService } from "../features/projects/project-service.js";
 import type { QueueClient } from "../features/queue/types.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
+import type {
+  TaskWorkContext,
+  TaskWorkManager,
+} from "../features/task-work/types.js";
 import type { AssetWriter } from "../features/uploads/asset-writer.js";
 import type { UploadService } from "../features/uploads/upload-service.js";
 import type { RunUsageAccumulator } from "../features/usage/run-usage-accumulator.js";
@@ -78,6 +92,10 @@ export interface ServiceMap {
    */
   codeGit: CodeGitService;
   codeUi: CodeUiService;
+  codeTerminal: CodeTerminalService;
+  executionScopes: ExecutionScopes;
+  processSandbox: ProcessSandbox;
+  taskWork: TaskWorkManager;
   /**
    * Code 模式检查点（影子 git 快照/预览/恢复）：runtime 轮次钩子与恢复路由消费。
    * 影子仓库在服务端数据目录（GIT_DIR），work-tree 指向沙箱工作目录
@@ -178,6 +196,7 @@ export interface PreStepPayload {
 }
 
 export interface ToolPreExecutePayload {
+  permissionInvocation?: PermissionInvocation | undefined;
   args: Record<string, unknown>;
   decision: "allow" | "deny";
   denyReason?: string | undefined;
@@ -226,6 +245,22 @@ export type PromptSectionScope = "always" | "design" | "code";
  * 持有服务引用，按 ctx 定位——ctx 不装「已取好的数据」，只装定位键。
  */
 export interface PromptCompositionContext {
+  executionScope?: import("@kenfutwork/shared").CodeExecutionScope | undefined;
+  executionRole?:
+    | import("../features/execution/scope-service.js").ExecutionRole
+    | undefined;
+  approvalMode?: CodeApprovalMode | undefined;
+  approvalCeiling?: CodeApprovalMode | undefined;
+  roleInstructions?: string | undefined;
+  projectInstructions?:
+    | ReadonlyArray<
+        import("../features/code-tools/project-instructions-types.js").CodeProjectInstruction
+      >
+    | undefined;
+  projectContextIssues?:
+    | ReadonlyArray<{ path: string; message: string }>
+    | undefined;
+  projectContextTruncated?: boolean | undefined;
   preset: "design" | "code";
   /** 工作区 id：规则段等按工作区读取设置的定位键。 */
   workspaceId?: string | undefined;
@@ -269,7 +304,29 @@ export interface SystemPromptRegistry {
 }
 
 export interface ToolExecutionContext {
+  /** 完成绑定审批的原调用事实；属主按原始效果收窄执行，不能把旧只读批准扩大。 */
+  permissionInvocation?: PermissionInvocation | undefined;
+  /** 最终claim固定的执行效果档；原plan或最终plan始终夹到只读。 */
+  approvedExecutionMode?: CodeApprovalMode | undefined;
+  /** 私有宿主事实：每次执行重新读 Task policy，worker ceiling 在派发时冻结。 */
+  codeApproval?:
+    | {
+        ceiling: CodeApprovalMode;
+        resolve(): Promise<{
+          mode: CodeApprovalMode;
+          scopeGeneration: number;
+          branchGeneration: number;
+        }>;
+      }
+    | undefined;
+  sessionId?: string | undefined;
+  modelSpecifier?: string | undefined;
+  delegationDepth?: number | undefined;
+  taskWorkContext?: TaskWorkContext | undefined;
   runId?: string | undefined;
+  /** 实际模型工具调用身份：幂等、真实 diff 与 UI 事件共用。 */
+  toolCallId?: string | undefined;
+  scopeHandle?: ExecutionScopeHandle | undefined;
   signal?: AbortSignal | undefined;
   /** 会话线程：tool-pre-execute 监听器（执行模式拦截）据此定位线程策略。 */
   threadId?: string | undefined;
@@ -303,7 +360,14 @@ export interface ToolDefinition {
   name: string;
   description: string;
   scope: ToolScope;
+  exposure?: "core" | "deferred" | undefined;
+  /** 执行效果由可信属主声明；未知外部工具不能进入只读角色。 */
+  access?: "read" | "write" | "execute" | undefined;
+  /** 仅可信执行属主签发：只读文件域且网络禁用，不来自模型参数。 */
+  readonlyExecution?: boolean | undefined;
   parameters: Record<string, unknown>;
+  /** 仅用于公开事件/显示/日志；执行与审批仍使用原始参数。 */
+  projectArguments?: ((args: Record<string, unknown>) => Record<string, unknown>) | undefined;
   /**
    * 原生 zod schema（内置工具专用逃生口）：桥接层优先用它构造 StructuredTool，
    * 避免 zod → JSON Schema → zod 往返丢精度（default/union/enum）。
@@ -350,6 +414,12 @@ export interface ToolRegistry {
 
 /** per-run 工具解析上下文：runtime 在 run 起始期构建，动态工具据此实例化。 */
 export interface RunToolResolutionContext {
+  sessionId?: string | undefined;
+  modelSpecifier?: string | undefined;
+  delegationDepth?: number | undefined;
+  taskWorkContext?: TaskWorkContext | undefined;
+  scopeHandle?: ExecutionScopeHandle | undefined;
+  modelCapabilities?: { image: boolean; pdf: boolean } | undefined;
   preset: "design" | "code";
   /** deepagents backend 工厂（project_search 的 grep 虚拟工作区经它）。 */
   backendFactory: AgentBackendFactory;
