@@ -6,6 +6,15 @@
 
 ### 合并验证收口（优先于下方冻结取样）
 
+#### 合并后原UI接线进展（最新）
+
+- 双亲merge已完成`b234f8f8`；原Root可选模型参数HTTP还原独立提交`151d8669`（实际浏览器横幅RED→消失，provider12GREEN）；独占HTTP/client/ProjectUUID/思考档位与真实根停止已独立提交`3f3b2a77`。后续源码继续按模块提交，未push/PR/运行库迁移，原checkout仍干净。
+- 插件本轮只实现真实技能与版本描述，Registry→原list/describe→原DetailView同一读面。首候选/安装列表分别实际RED→GREEN，公开unknown/remote/symlink4GREEN；UI3GREEN仅为真实组件+外部HTTP/SSE契约补证，实际私有HTTP候选与根stop2GREEN另有证据，不能混称全插件组件已实现。其它agent/command/hook/MCP、author及技能运行消费者继续。
+- 最终全量`pnpm test`16成功（shared90/web451/server1871、server171默认skip、Unhandled零），`pnpm typecheck`13成功；server build与owned10路径Biome无error，来源清单保真。全lint20个common-base错误仍在。收据`/private/tmp/kfw-code-ui-wiring-{full-test,types-final,server-build,owned-lint}.log`、`/private/tmp/kfw-code-isolated-http-green.log`、`/private/tmp/kfw-plugin-detail-ui-final.log`。
+- 新独占HTTP夹具真实viewer→SSE/hello→ProjectUUID→preferredSelection→run/stop，客户端退出明确await reader.cancel/releaseLock与app/native/PG关闭；没有force-close/放大timeout。此前79s关闭和首次候选超时不计GREEN，阶段trace无证据，不能声称确定根因。旧stop5例/其它外部DSN矩阵尚未迁移。
+- 浏览器独占预览：原Root真实输入/Task建立/流式文本/原按钮停止到“已停止”通过；Design创建项目、canvas iframe与真实两层Excalidraw及助手侧板仍装配，未被Code对话替代。矩形绘制尝试未观察到图形，未计绘制/持久化GREEN，也未据自动化坐标单独判产品故障。全视觉/完整Design回归仍待完成。
+- 关闭审计另发现历史AgentPersistence首次读并发建SDK schema、失败静默退Memory且部分pool无清理。这是源码事实、尚无本轮故障归因；后续按公共Harness+数据库边界验证真实durability/生命周期，不把本次描述或fixture切片扩成混合重写。
+
 - 已先完成17批提交，冻结ours `6e746f55`，再以双亲merge整合UI固定提交 `29fb8c09`。保留原Root/主子SessionPane/renderer、品牌与资源删除；保留Task UUID/Project UUID、固定根、权限代际、配置租约、附件/终端和Code无Canvas。原checkout未编辑/切支；尚未push/PR，Goal仍active。
 - 偏好只保留`code_ui_preferences`/workspace-rpc，模型只保留`compat.codeUi`与实例CAS；删掉无consumer的第二settings/config helper，双方历史SQL原字节保留。根锁内登记Run同时检查ready/activeRun/授权与分支代际及canonical输入；插件串行变更、等待restore/disposal/shutdown与失败贡献物保留同时生效。
 - 合并首全量4失败及1未处理异常均已修复：显式清空API后原SDK端点校验同时约束选择器与运行快照；旧SQL夹具识别实际insert/update而非事务begin；畸形卸载拒绝且库存无副作用；搜索授权复验期间撤销的真实取消窗口actualRED→GREEN，在创建流前拒绝已中止signal并等待文件/子进程收尾。窄回归77+21通过，未skip/吞异常。

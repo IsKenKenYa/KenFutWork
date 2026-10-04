@@ -11,6 +11,10 @@ import {
   zcodePluginsUninstallParamsSchema,
   zcodePluginsUninstallResultSchema,
 } from "@kenfutwork/shared";
+import {
+  zcodePluginsDescribeParamsSchema,
+  zcodePluginsDescribeResultSchema,
+} from "@zcode/shared";
 import { z } from "zod";
 import type { AdminService } from "../admin/admin-service.js";
 import type { AuthenticatedUser } from "../auth/types.js";
@@ -131,28 +135,46 @@ function marketplaceResolver(inventory: Inventory) {
     bundled.has(id) ? BUNDLED_MARKETPLACE : LOCAL_MARKETPLACE;
 }
 
-function listResult(
+function packageComponents(
+  description: Awaited<
+    ReturnType<PluginRegistryService["readPackageDescription"]>
+  >,
+) {
+  return description.skills.length
+    ? [{ kind: "skill" as const, items: description.skills }]
+    : [];
+}
+
+async function listResult(
   inventory: Inventory,
   marketplace: (id: string) => string,
   diagnostics: z.infer<typeof zcodePluginsListResultSchema>["diagnostics"],
+  registry: PluginRegistryService,
 ) {
   return zcodePluginsListResultSchema.parse({
-    plugins: inventory.installed.map(({ record, rootPath }) => ({
-      id: record.id,
-      name: record.name,
-      description: record.manifest.description,
-      version: record.version,
-      enabled: record.enabled,
-      source: record.repositoryUrl ?? record.source,
-      marketplace: marketplace(record.id),
-      rootPath,
-      // KWF包没有原ZCode roots声明；tools贡献不能冒充MCP实例。
-      skillRootCount: 0,
-      commandRootCount: 0,
-      mcpServerNames: [],
-      rootSource: "user",
-      enabledSource: "user",
-    })),
+    plugins: await Promise.all(
+      inventory.installed.map(async ({ record, rootPath }) => {
+        const description = await registry.readPackageDescription(record.id);
+        return {
+          id: record.id,
+          name: record.name,
+          description: record.manifest.description,
+          version: record.version,
+          enabled: record.enabled,
+          source: record.repositoryUrl ?? record.source,
+          marketplace: marketplace(record.id),
+          rootPath,
+          skillRootCount: description.skills.length ? 1 : 0,
+          skillCount: description.skills.length,
+          components: packageComponents(description),
+          // 声明组件来自包文本；KWF tools贡献不能冒充MCP实例。
+          commandRootCount: 0,
+          mcpServerNames: [],
+          rootSource: "user",
+          enabledSource: "user",
+        };
+      }),
+    ),
     diagnostics,
   });
 }
@@ -291,21 +313,51 @@ export function createCodeUiPluginsHost(deps: CodeUiPluginsHostDeps) {
       input.enabled,
     );
     const inventory = await deps.registry.readPackageInventory();
+    const listed = await listResult(
+      {
+        ...inventory,
+        installed: [
+          {
+            record: installed,
+            rootPath: join(inventory.rootPath, installed.id),
+          },
+        ],
+      },
+      marketplaceResolver(inventory),
+      [],
+      deps.registry,
+    );
     return zcodePluginsSetEnabledResultSchema.parse({
       enabled: installed.enabled,
-      plugin: listResult(
-        {
-          ...inventory,
-          installed: [
-            {
-              record: installed,
-              rootPath: join(inventory.rootPath, installed.id),
-            },
-          ],
-        },
-        marketplaceResolver(inventory),
-        [],
-      ).plugins[0],
+      plugin: listed.plugins[0],
+    });
+  }
+
+  async function describe(actor: AuthenticatedUser, value: unknown) {
+    const { target, input } = nativePluginInput(
+      zcodePluginsDescribeParamsSchema,
+      value,
+    );
+    await deps.readWorkspaceId(actor);
+    await validateTarget(deps, actor, target);
+    const inventory = await deps.registry.readPackageInventory();
+    const marketplace = marketplaceResolver(inventory);
+    const installed = inventory.installed.find(
+      ({ record }) =>
+        record.name === input.pluginName &&
+        marketplace(record.id) === input.marketplace,
+    );
+    const bundled =
+      input.marketplace === BUNDLED_MARKETPLACE
+        ? inventory.bundled.find((entry) => entry.name === input.pluginName)
+        : undefined;
+    const id = installed?.record.id ?? bundled?.id;
+    if (!id)
+      throw new PluginRegistryError("插件来源或包不存在。", "plugin_not_found");
+    const details = await deps.registry.readPackageDescription(id);
+    return zcodePluginsDescribeResultSchema.parse({
+      components: packageComponents(details),
+      metadata: details.metadata,
     });
   }
 
@@ -349,6 +401,8 @@ export function createCodeUiPluginsHost(deps: CodeUiPluginsHostDeps) {
       method: string,
       value: unknown,
     ): Promise<{ result: unknown } | null> {
+      if (method === "describePlugin")
+        return { result: await describe(actor, value) };
       if (method === "installPlugin")
         return { result: await install(actor, value) };
       if (method === "setPluginEnabled")
@@ -377,7 +431,12 @@ export function createCodeUiPluginsHost(deps: CodeUiPluginsHostDeps) {
       return {
         result:
           method === "listPlugins"
-            ? listResult(inventory, marketplace, diagnostics)
+            ? await listResult(
+                inventory,
+                marketplace,
+                diagnostics,
+                deps.registry,
+              )
             : overviewResult(inventory, marketplace, diagnostics),
       };
     },

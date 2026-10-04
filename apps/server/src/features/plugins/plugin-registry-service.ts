@@ -1,5 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -24,6 +32,7 @@ import {
   loadCompatPlugin,
 } from "./compat-context.js";
 import { validateBundleFiles } from "./compat-validator.js";
+import { describeBundleFiles } from "./package-description.js";
 import {
   exportPluginBundle,
   type PluginExportSpec,
@@ -165,6 +174,10 @@ export interface PluginRegistryService {
     bundled: Array<Pick<BundledBundle, "id" | "name" | "manifest" | "report">>;
     installed: Array<{ record: InstalledPlugin; rootPath: string }>;
   }>;
+  /** 与库存同一来源的包内容描述；只读本机包文本，不解析远程来源或执行模块。 */
+  readPackageDescription(
+    id: string,
+  ): Promise<ReturnType<typeof describeBundleFiles>>;
   inspect(input: { url: string; ref?: string | undefined }): Promise<{
     manifest: PluginBundleManifest;
     report: CompatReport;
@@ -656,6 +669,26 @@ export function createPluginRegistryService(
           rootPath: bundleDirOf(record.id),
         })),
       };
+    },
+    async readPackageDescription(id) {
+      const state = await readState();
+      const installed = state.installed.find((entry) => entry.id === id);
+      if (installed) {
+        const directory = bundleDirOf(id);
+        const relative = path.relative(deps.pluginsDir, directory);
+        if (
+          relative.startsWith("..") ||
+          path.isAbsolute(relative) ||
+          !(await lstat(directory)).isDirectory()
+        )
+          throw new PluginRegistryError("插件包目录无效。", "invalid_request");
+        const { files } = await fetchBundleFiles(directory);
+        return describeBundleFiles(files, installed.manifest);
+      }
+      const bundled = bundledBundles.find((entry) => entry.id === id);
+      if (!bundled)
+        throw new PluginRegistryError("插件包不存在。", "plugin_not_found");
+      return describeBundleFiles(bundled.files, bundled.manifest);
     },
     async list() {
       const state = await readState();
