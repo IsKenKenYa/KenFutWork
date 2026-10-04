@@ -15,6 +15,7 @@ export * from "./execution-contracts.js";
 export * from "./flow-host.js";
 export * from "./governance.js";
 export * from "./http.js";
+export * from "./instance-contracts.js";
 export * from "./job-contracts.js";
 export * from "./json.js";
 export * from "./mcp-contracts.js";
