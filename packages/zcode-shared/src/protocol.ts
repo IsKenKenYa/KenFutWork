@@ -181,6 +181,8 @@ export interface RemoteWorkspaceSessionSnapshot {
 export interface LocalWorkspaceSessionEntry {
   kind: "local";
   workspacePath: string;
+  /** 本机 Project UUID 与固定目录的 qualified identity；不是远端连接身份。 */
+  workspaceIdentity?: string;
   /** 项目展示分类；旧数据缺省为 project，conversation 仍使用真实 workspacePath 作为 cwd/key。 */
   workspacePurpose?: WorkspacePurpose;
 }

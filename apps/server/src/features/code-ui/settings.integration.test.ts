@@ -384,13 +384,15 @@ describe.skipIf(!enabled)("原 Root 设置公开宿主 integration", () => {
         ],
         lastActiveTabIndex: 0,
         lastActiveTaskByWorkspace: {
-          [active.workspacePath]: active.sessionId,
-          [last.workspacePath]: last.sessionId,
+          [JSON.stringify([active.projectId, active.workspacePath])]:
+            active.sessionId,
+          [JSON.stringify([last.projectId, last.workspacePath])]:
+            last.sessionId,
         },
       });
       expect(
         (await setting("get")).body.result.lastActiveTaskByWorkspace[
-          first.workspacePath
+          JSON.stringify([first.projectId, first.workspacePath])
         ],
       ).toBeUndefined();
     } finally {

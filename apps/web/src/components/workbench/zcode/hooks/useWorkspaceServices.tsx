@@ -4,21 +4,13 @@ import { useMemo } from "react";
 import { useOptionalServices, useServices } from "@zui/hooks/useServices.js";
 import {
   useRemoteWorkspaceSessionStore,
-  type RemoteWorkspaceSession,
 } from "@zui/store/remoteWorkspaceSessionStore.js";
-import { useResolvedRemoteWorkspaceSessionId } from "@zui/hooks/useResolvedRemoteWorkspaceSessionId.js";
+import { isRemoteWorkspaceTarget, resolveWorkspaceServices } from "@zui/lib/workspaceServiceResolver.js";
 import { useTabStore } from "@zui/store/TabStoreProvider.js";
-import { isWorkspaceTab } from "@zui/store/tabStore.js";
+import { isWorkspaceTab, type WorkspaceTabState } from "@zui/store/tabStore.js";
 import { REMOTE_WORKSPACE_DISCONNECTED_ERROR_CODE } from "@zui/lib/remoteWorkspaceServiceError.js";
 
 let disconnectedRemoteServices: IServiceAccessor | null = null;
-
-interface WorkspaceServiceTargetTab {
-  workspacePath: string;
-  workspaceIdentity?: string | null;
-  remoteSessionId?: string | null;
-  remoteTarget?: unknown;
-}
 
 function createDisconnectedRemoteServices(): IServiceAccessor {
   const createDisconnectedError = () => {
@@ -51,77 +43,11 @@ function getDisconnectedRemoteServices(): IServiceAccessor {
   return disconnectedRemoteServices;
 }
 
-function resolveWorkspaceServicesForTarget(params: {
-  currentContextServices: IServiceAccessor;
-  resolvedRemoteSessionId: string | null;
-  baseServices: IServiceAccessor | null;
-  sessionsById: Record<string, Pick<RemoteWorkspaceSession, "services">>;
-  isRemoteTarget: boolean;
-}): IServiceAccessor {
-  const resolvedServices = params.resolvedRemoteSessionId
-    ? (params.sessionsById[params.resolvedRemoteSessionId]?.services ?? null)
-    : params.isRemoteTarget
-      ? getDisconnectedRemoteServices()
-      : params.baseServices;
-
-  if (params.isRemoteTarget && !resolvedServices) {
-    return getDisconnectedRemoteServices();
-  }
-
-  return resolvedServices ?? params.currentContextServices;
-}
-
 function resolveBaseWorkspaceServices(
   contextServices: IServiceAccessor,
   registeredBaseServices: IServiceAccessor | null,
 ): IServiceAccessor {
   return registeredBaseServices ?? contextServices;
-}
-
-function hasRemoteWorkspaceMetadata(tab: WorkspaceServiceTargetTab | null | undefined): boolean {
-  return Boolean(
-    tab?.workspaceIdentity?.trim() || tab?.remoteSessionId?.trim() || tab?.remoteTarget,
-  );
-}
-
-function resolveWorkspaceServiceIsRemoteTarget(params: {
-  workspacePath: string | null | undefined;
-  workspaceIdentity?: string | null;
-  preferredRemoteSessionId?: string | null;
-  activeWorkspacePath?: string | null;
-  activeWorkspaceIdentity?: string | null;
-  activeTab?: WorkspaceServiceTargetTab | null;
-  workspaceTabs?: readonly WorkspaceServiceTargetTab[];
-}): boolean {
-  if (params.workspaceIdentity?.trim() || params.preferredRemoteSessionId?.trim()) {
-    return true;
-  }
-
-  const workspacePath = params.workspacePath?.trim();
-  if (!workspacePath) {
-    return false;
-  }
-
-  if (params.activeWorkspacePath === params.workspacePath) {
-    if (params.activeWorkspaceIdentity?.trim()) {
-      return true;
-    }
-
-    // 日志里远程 SSH workspace 已经恢复成 tab，但草稿预热入口一度只拿到
-    // workspacePath，导致 /mnt/... 被当成本地 workspace 走 base services 并在 Windows 上 spawn 本地 agent。
-    // 这里用当前 tab 的远程元数据兜住这类 path-only 调用，避免远程目标误回落到本机 host。
-    if (
-      params.activeTab?.workspacePath === params.workspacePath &&
-      hasRemoteWorkspaceMetadata(params.activeTab)
-    ) {
-      return true;
-    }
-  }
-
-  const matchingTabs = (params.workspaceTabs ?? []).filter(
-    (tab) => tab.workspacePath === params.workspacePath,
-  );
-  return matchingTabs.length === 1 && hasRemoteWorkspaceMetadata(matchingTabs[0]);
 }
 
 export function useBaseWorkspaceServices(): IServiceAccessor {
@@ -149,7 +75,7 @@ interface WorkspaceServicesResolution {
   services: IServiceAccessor;
   remoteSessionId: string | null;
   isRemoteTarget: boolean;
-  connectionKind: "local-ready" | "remote-waiting" | "remote-ready";
+  connectionKind: "local-ready" | "local-waiting" | "remote-waiting" | "remote-ready";
   rpcReady: boolean;
 }
 
@@ -160,42 +86,40 @@ export function useWorkspaceServicesResolution(
   remoteTarget?: unknown,
 ): WorkspaceServicesResolution {
   const currentContextServices = useServices();
-  const resolvedRemoteSessionId = useResolvedRemoteWorkspaceSessionId(
-    workspacePath,
-    preferredRemoteSessionId,
-    workspaceIdentity,
-    remoteTarget,
-  );
-  const isRemoteTarget = useTabStore((state) =>
-    resolveWorkspaceServiceIsRemoteTarget({
+  const targetTab = useTabStore((state) => {
+    if (!workspacePath) return null;
+    const identity = workspaceIdentity?.trim();
+    const matches = state.tabs.filter((tab): tab is WorkspaceTabState =>
+      isWorkspaceTab(tab) && tab.workspacePath === workspacePath &&
+      (!identity || tab.workspaceIdentity?.trim() === identity),
+    );
+    const active = matches.find((tab) => tab.id === state.activeTabId);
+    return active ?? (matches.length === 1 ? matches[0] ?? null : null);
+  });
+  const target = useMemo(() => {
+    if (!workspacePath) return null;
+    const identity = workspaceIdentity?.trim() || targetTab?.workspaceIdentity?.trim();
+    const sessionId = preferredRemoteSessionId?.trim() || targetTab?.remoteSessionId?.trim();
+    const destination = remoteTarget ?? targetTab?.remoteTarget;
+    return {
       workspacePath,
-      workspaceIdentity,
-      preferredRemoteSessionId,
-      activeWorkspacePath: state.activeWorkspacePath,
-      activeWorkspaceIdentity: state.activeWorkspaceIdentity,
-      activeTab: (() => {
-        const activeTab = state.activeTabId
-          ? state.tabs.find((tab) => tab.id === state.activeTabId)
-          : null;
-        return activeTab && isWorkspaceTab(activeTab) ? activeTab : null;
-      })(),
-      workspaceTabs: state.tabs.filter(isWorkspaceTab),
-    }),
-  );
-  const resolvedServices = useRemoteWorkspaceSessionStore((state) =>
-    resolveWorkspaceServicesForTarget({
-      currentContextServices,
-      resolvedRemoteSessionId,
-      baseServices: state.baseServices,
-      sessionsById: state.sessionsById,
-      isRemoteTarget,
-    }),
-  );
+      ...(identity ? { workspaceIdentity: identity } : {}),
+      ...(sessionId ? { remoteSessionId: sessionId } : {}),
+      ...(destination ? { remoteTarget: destination } : {}),
+    };
+  }, [workspacePath, workspaceIdentity, preferredRemoteSessionId, remoteTarget, targetTab]);
+  const state = useRemoteWorkspaceSessionStore();
+  const baseServices = resolveBaseWorkspaceServices(currentContextServices, state.baseServices);
+  const resolved = useMemo(() => target ? resolveWorkspaceServices(target, baseServices, state) : null, [target, baseServices, state]);
+  const isRemoteTarget = target ? isRemoteWorkspaceTarget(target) : false;
+  const rpcReady = !target || resolved !== null;
+  const resolvedServices = resolved?.services ?? (target ? getDisconnectedRemoteServices() : baseServices);
+  const resolvedRemoteSessionId = resolved?.remoteSessionId ?? null;
   const connectionKind = isRemoteTarget
     ? resolvedRemoteSessionId
       ? "remote-ready"
       : "remote-waiting"
-    : "local-ready";
+    : rpcReady ? "local-ready" : "local-waiting";
 
   // 远程 SSH host 断开后，若在 resolvedRemoteSessionId 为空时回退到 baseServices，
   // /root 这类远程 task 会被本机 host 查询并报“task 不存在”。远程目标缺少 session 时必须保持断连态，
@@ -208,9 +132,9 @@ export function useWorkspaceServicesResolution(
       remoteSessionId: resolvedRemoteSessionId,
       isRemoteTarget,
       connectionKind,
-      rpcReady: connectionKind !== "remote-waiting",
+      rpcReady,
     }),
-    [connectionKind, isRemoteTarget, resolvedRemoteSessionId, resolvedServices],
+    [connectionKind, isRemoteTarget, resolvedRemoteSessionId, resolvedServices, rpcReady],
   );
 }
 

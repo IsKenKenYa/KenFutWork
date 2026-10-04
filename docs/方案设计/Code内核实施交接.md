@@ -8,6 +8,13 @@
 
 #### 合并后原UI接线进展（最新）
 
+##### 默认Task真实恢复收口（优先于下方较早样本）
+
+- 真正跨模式试验暴露local qualified身份被原远程启发式漏存tab、共享迁移丢Q、后端Q焦点当path、侧栏强制remote折叠及本机精确services绑定回退base。统一parser与原pure resolver修复，Q只取自身绑定并local；缺绑定等待，旧无identity才base，不削弱remote或同路径Project隔离。后端由真实Project/Task规范化唯一Q，legacy有证据才升级；Task固定A/Project新B、recent归属与invalid/archived原子保护均保持。
+- 公开Root 4与metadata/config/lease 19、偏好16均GREEN；独占PG3GREEN；最后串行全test16成功（shared90/web453/server1871、174默认skip、Unhandled零）、types13、build13通过，来源3027漂移零，当前10登记source copiedSHA已刷新。全lint20个历史error未代改。源码/测试/文档为单一恢复bug切片，原checkout/UI分支未改、未push/PR/运行库迁移。
+- 实际新预览重演：默认Task发送/真实流/停止，Design→Code之后Task侧栏仍可见，原Task转录与已停止可读，第二次刷新自动恢复。截图在《日志》一百零八。Design矩形实际绘制与刷新保存、助手真实发送/取消/转录恢复亦通过；此前未观察图形是坐标落在属性面板/未到桌面布局，不再作为未验收结论。两图视口不同，不代表全视觉1:1或Design全场景已经完成。
+- 原Goal仍active。下一步沿已授权原协议逐条queue/guide/history edit-retry-fork/权限与提问/子停止真实UI，剩余插件agent-command-hook-MCP与技能执行消费者、默认SDK持久化silent fallback/partial pool、Project-before-Task readonly lease、附件lineage、真实外部模型与Windows实机、全部视觉/旧UI零残留/Design矩阵、Apifox与可审阅交付。不得用本轮真实停止或默认skip代替这些能力。
+
 - 双亲merge已完成`b234f8f8`；原Root可选模型参数HTTP还原独立提交`151d8669`（实际浏览器横幅RED→消失，provider12GREEN）；独占HTTP/client/ProjectUUID/思考档位与真实根停止已独立提交`3f3b2a77`。后续源码继续按模块提交，未push/PR/运行库迁移，原checkout仍干净。
 - 插件本轮只实现真实技能与版本描述，Registry→原list/describe→原DetailView同一读面。首候选/安装列表分别实际RED→GREEN，公开unknown/remote/symlink4GREEN；UI3GREEN仅为真实组件+外部HTTP/SSE契约补证，实际私有HTTP候选与根stop2GREEN另有证据，不能混称全插件组件已实现。其它agent/command/hook/MCP、author及技能运行消费者继续。
 - 最终全量`pnpm test`16成功（shared90/web451/server1871、server171默认skip、Unhandled零），`pnpm typecheck`13成功；server build与owned10路径Biome无error，来源清单保真。全lint20个common-base错误仍在。收据`/private/tmp/kfw-code-ui-wiring-{full-test,types-final,server-build,owned-lint}.log`、`/private/tmp/kfw-code-isolated-http-green.log`、`/private/tmp/kfw-plugin-detail-ui-final.log`。

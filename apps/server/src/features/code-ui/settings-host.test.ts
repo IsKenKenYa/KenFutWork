@@ -216,6 +216,7 @@ it("公开setting宿主稀疏保存语言和显示偏好，空recent真实保留
 
 it("Task固定A与Project默认B的tab归属精准，Task关闭不能借同路径另一Project复活焦点", async () => {
   const f = await fixture();
+  const identity = JSON.stringify([f.projectId, f.rootA]);
   try {
     await f.call("update", {
       recentProjects: [f.rootA],
@@ -226,10 +227,25 @@ it("Task固定A与Project默认B的tab归属精准，Task关闭不能借同路�
     expect(await f.call("get")).toMatchObject({
       result: {
         recentProjects: [f.rootA],
-        lastWorkspaceSession: [{ kind: "local", workspacePath: f.rootA }],
-        lastActiveTaskByWorkspace: { [f.rootA]: f.taskId },
+        lastWorkspaceSession: [
+          {
+            kind: "local",
+            workspacePath: f.rootA,
+            workspaceIdentity: identity,
+          },
+        ],
+        lastActiveTaskByWorkspace: { [identity]: f.taskId },
       },
     });
+    const restored = await f.call("get");
+    if (!restored) throw new Error("设置RPC没有返回结果。");
+    expect(
+      (
+        restored.result as {
+          lastActiveTaskByWorkspace: Record<string, string>;
+        }
+      ).lastActiveTaskByWorkspace,
+    ).toEqual({ [identity]: f.taskId });
     f.projects.push({
       id: f.otherProjectId,
       kind: "code",

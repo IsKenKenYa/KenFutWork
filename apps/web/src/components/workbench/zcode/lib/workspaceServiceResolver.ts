@@ -1,4 +1,5 @@
 import type { IServiceAccessor } from "@zcode/services";
+import { isLocalWorkspaceTarget } from "@zcode/shared";
 import { buildTaskWorkspaceKey } from "@zui/lib/taskQueryCache.js";
 
 interface WorkspaceServiceTarget {
@@ -24,6 +25,7 @@ export function resolveWorkspaceRemoteSessionId<TServices>(
   target: WorkspaceServiceTarget,
   state: WorkspaceServiceResolverState<TServices>,
 ): string | undefined {
+  if (isLocalWorkspaceTarget(target)) return undefined;
   const workspaceIdentity = target.workspaceIdentity?.trim();
   const candidateSessionIds = [
     target.remoteSessionId,
@@ -46,7 +48,7 @@ export function isRemoteWorkspaceTarget(
   target: WorkspaceServiceTarget,
   resolvedRemoteSessionId?: string,
 ): boolean {
-  return Boolean(target.workspaceIdentity || target.remoteTarget || resolvedRemoteSessionId);
+  return !isLocalWorkspaceTarget({ ...target, remoteSessionId: target.remoteSessionId ?? resolvedRemoteSessionId });
 }
 
 export function resolveWorkspaceServices(
@@ -54,6 +56,12 @@ export function resolveWorkspaceServices(
   baseServices: IServiceAccessor,
   state: WorkspaceServiceResolverState,
 ): ResolvedWorkspaceServices | null {
+  const localIdentity = target.workspaceIdentity?.trim();
+  if (isLocalWorkspaceTarget(target) && localIdentity) {
+    const bindingId = state.sessionIdByWorkspaceIdentity[localIdentity];
+    const services = bindingId ? state.sessionsById[bindingId]?.services : undefined;
+    return services ? { services, isRemoteWorkspace: false } : null;
+  }
   const remoteSessionId = resolveWorkspaceRemoteSessionId(target, state);
   const isRemoteWorkspace = isRemoteWorkspaceTarget(target, remoteSessionId);
 

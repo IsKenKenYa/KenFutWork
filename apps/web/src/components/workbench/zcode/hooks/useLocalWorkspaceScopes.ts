@@ -1,8 +1,9 @@
 import { useMemo } from "react";
+import { isLocalWorkspaceTarget } from "@zcode/shared";
 import { isWorkspaceTab, type WorkspaceTabState } from "@zui/store/tabStore.js";
 
 function isLocalWorkspaceTab(tab: WorkspaceTabState): boolean {
-  return !tab.remoteSessionId && !tab.remoteTarget && !tab.workspaceIdentity;
+  return isLocalWorkspaceTarget(tab);
 }
 
 export function useLocalWorkspaceScopes({

@@ -75,7 +75,7 @@ export function restorePersistedRemoteWorkspaceSessions({
   }
 
   const restoredTabs: Array<string | RestorableWorkspaceTab> = [];
-  const seenLocalWorkspacePaths = new Set<string>();
+  const seenLocalWorkspaceKeys = new Set<string>();
   const seenRemoteWorkspaceKeys = new Set<string>();
   const activeSessionIndex = resolveStartupLocalWorkspaceSessionIndex(
     persistedSessions,
@@ -109,7 +109,8 @@ export function restorePersistedRemoteWorkspaceSessions({
         continue;
       }
 
-      if (seenLocalWorkspacePaths.has(persistedEntry.workspacePath)) {
+      const localWorkspaceKey = persistedEntry.workspaceIdentity?.trim() || persistedEntry.workspacePath;
+      if (seenLocalWorkspaceKeys.has(localWorkspaceKey)) {
         logger.warn("[Root] 跳过重复的本地 workspace 恢复", {
           workspacePath: persistedEntry.workspacePath,
         });
@@ -125,15 +126,16 @@ export function restorePersistedRemoteWorkspaceSessions({
           ? "unavailable-local-directory"
           : undefined;
       restoredTabs.push(
-        workspacePurpose || availability
+        workspacePurpose || availability || persistedEntry.workspaceIdentity
           ? {
               workspacePath: persistedEntry.workspacePath,
+              ...(persistedEntry.workspaceIdentity ? { workspaceIdentity: persistedEntry.workspaceIdentity } : {}),
               workspacePurpose,
               availability,
             }
           : persistedEntry.workspacePath,
       );
-      seenLocalWorkspacePaths.add(persistedEntry.workspacePath);
+      seenLocalWorkspaceKeys.add(localWorkspaceKey);
       const restoredIndex = restoredTabs.length - 1;
       if (isConversationWorkspace) {
         canonicalConversationRestoredIndex = restoredIndex;
@@ -174,7 +176,7 @@ export function restorePersistedRemoteWorkspaceSessions({
     seenRemoteWorkspaceKeys.add(workspaceKey);
   }
 
-  if (conversationWorkspacePath && !seenLocalWorkspacePaths.has(conversationWorkspacePath)) {
+  if (conversationWorkspacePath && !restoredTabs.some((tab) => typeof tab === "string" ? tab === conversationWorkspacePath : tab.workspacePath === conversationWorkspacePath)) {
     // conversation backing workspace 是 app-owned cwd，旧设置里缺少它时，
     // 侧栏就不会订阅该 scope；若 purpose 丢失又会被当成项目。恢复阶段以 service
     // 解析出的 canonical path 为权威，非激活补建并强制标记 conversation。

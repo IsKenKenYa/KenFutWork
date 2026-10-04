@@ -186,7 +186,7 @@ export function useModelSelectionView(
     workspaceIdentity,
     remoteTarget,
   );
-  const remoteWaiting = resolution.connectionKind === "remote-waiting";
+  const remoteWaiting = !resolution.rpcReady;
   return useModelSelectionServiceView(
     resolution.services.modelSelectionService,
     hasTarget && !remoteWaiting,

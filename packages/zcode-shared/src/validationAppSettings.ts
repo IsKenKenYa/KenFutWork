@@ -10,6 +10,7 @@ import {
   embeddedBrowserViewportPreferenceSchema,
 } from "./browser-use/command-metadata.js";
 import { providerFamilyConnectionSelectionSettingsSchema } from "./provider-family-connection-selection.js";
+import { parseLocalWorkspaceIdentity } from "./workspace-identity.js";
 
 /** 引导职业枚举；单独导出供 onboarding 记录回填 settings 时做窄化校验。 */
 const appSettingsOccupationSchema = z.enum([
@@ -107,6 +108,11 @@ const appWorkspaceSessionEntrySchema = z.discriminatedUnion("kind", [
     kind: z.literal("local"),
     workspacePath: nonEmptyStringSchema,
     workspacePurpose: z.enum(["project", "conversation"]).default("project"),
+    workspaceIdentity: nonEmptyStringSchema.optional(),
+  }).superRefine((entry, context) => {
+    if (entry.workspaceIdentity && !parseLocalWorkspaceIdentity(entry.workspaceIdentity, entry.workspacePath)) {
+      context.addIssue({ code: "custom", path: ["workspaceIdentity"], message: "Local workspace identity must match its Project and absolute directory" });
+    }
   }),
   z.object({
     kind: z.literal("remote"),
@@ -328,8 +334,9 @@ function migrateLegacyWorkspaceSession(value: unknown): unknown {
           if (rawEntry.kind === "local" && typeof rawEntry.workspacePath === "string") {
             return [
               {
-                kind: "local",
-                workspacePath: rawEntry.workspacePath,
+            kind: "local",
+            workspacePath: rawEntry.workspacePath,
+            ...("workspaceIdentity" in rawEntry ? { workspaceIdentity: rawEntry.workspaceIdentity } : {}),
                 workspacePurpose:
                   rawEntry.workspacePurpose === "conversation" ? "conversation" : "project",
               },

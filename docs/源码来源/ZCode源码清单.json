@@ -1742,10 +1742,12 @@
       "source": "references/zcode/packages/ui/src/WorkspaceSidebarItem.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceSidebarItem.tsx",
       "sha256": "382139da34c2d102191ba939869b6f0b1fd1833a4eb726a590d6b46fb5423b67",
-      "copiedSha256": "e676ea48fce9c7636dbdf896d21acac31861c3f43ed5295a784e3793ee5bf56e",
+      "copiedSha256": "5555ebc66fd5dbd99a98a5db91231ba1ede7610f88e6d4dba7aeee0a418f6d2d",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "KenFutWork宿主接线：原侧栏条目保留真实Project UUID与Task元信息，不按目录名/显示文本猜所属项目。"
+        "KenFutWork宿主接线：原侧栏条目保留真实Project UUID与Task元信息，不按目录名/显示文本猜所属项目。",
+        "本机Project与固定Task目录的qualified身份按local路由、持久化和恢复；保留原远程身份及权限校验。",
+        "本机Project与固定Task目录的qualified身份按local路由、精确服务绑定、持久化和恢复；保留原远程身份及权限校验。"
       ]
     },
     {
@@ -5045,9 +5047,11 @@
       "source": "references/zcode/packages/ui/src/hooks/useLocalWorkspaceScopes.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useLocalWorkspaceScopes.ts",
       "sha256": "e9ab239567eee7a6af6c68f27cd91a5e03ce50cb35522d9f91c560e79aab3258",
-      "copiedSha256": "59b37d1cea101a0273451e47660ace3da1b0c452d3c1484d14177ac52cc65c7f",
+      "copiedSha256": "fde5c15c118831a22604137a0f13fbae3eedcfb12954429bf510e589330e7c04",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "本机Project与固定Task目录的qualified身份按local路由、持久化和恢复；保留原远程身份及权限校验。",
+        "本机Project与固定Task目录的qualified身份按local路由、精确服务绑定、持久化和恢复；保留原远程身份及权限校验。"
       ]
     },
     {
@@ -5063,9 +5067,10 @@
       "source": "references/zcode/packages/ui/src/hooks/useModelSelectionView.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useModelSelectionView.ts",
       "sha256": "602ec380a37f1adb231677963fd684906ca5a26291c3779676e1d8b376ee8561",
-      "copiedSha256": "5d4d36b1c3ec765d9e247ae759e3630c4d07cafa6b9caac9916d6beebf7666fd",
+      "copiedSha256": "de47f4845a446e38680bc51c3b0a99c3fc4e57a128c335f9771cbad8fe96a62f",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "本机Project与固定Task目录的qualified身份按local路由、精确服务绑定、持久化和恢复；保留原远程身份及权限校验。"
       ]
     },
     {
@@ -5553,9 +5558,10 @@
       "source": "references/zcode/packages/ui/src/hooks/useWorkspaceServices.tsx",
       "target": "apps/web/src/components/workbench/zcode/hooks/useWorkspaceServices.tsx",
       "sha256": "046a37e4e869895ec32328cf78d21e5f9bf076909447519cc9c88045c34f0de4",
-      "copiedSha256": "535e7aa7e62c1d74935f2d9adb09bb6f47b7505389a019db39108a9ea83455e6",
+      "copiedSha256": "55dd2f04535eeb003be4bc95609a6fac2ad0a55c47634d93fbf43bd8c7ccef8a",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "本机Project与固定Task目录的qualified身份按local路由、精确服务绑定、持久化和恢复；保留原远程身份及权限校验。"
       ]
     },
     {
@@ -6902,9 +6908,11 @@
       "source": "references/zcode/packages/ui/src/lib/remoteWorkspaceHistory.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/remoteWorkspaceHistory.ts",
       "sha256": "f8b1e00dea42624c3c4ea76d5865384c7c4b7991f42807791c803570b6a6e255",
-      "copiedSha256": "999d537ba923d05ef38325b0687d75c2074e55ea68b54071a60cd85a926e6054",
+      "copiedSha256": "1ea5c01299cbef9a1cb290a5a9ee886355e68d8d1076a0af2f9dfae67e1eb25c",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "本机Project与固定Task目录的qualified身份按local路由、持久化和恢复；保留原远程身份及权限校验。",
+        "本机Project与固定Task目录的qualified身份按local路由、精确服务绑定、持久化和恢复；保留原远程身份及权限校验。"
       ]
     },
     {
@@ -7723,9 +7731,11 @@
       "source": "references/zcode/packages/ui/src/lib/workspaceServiceResolver.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/workspaceServiceResolver.ts",
       "sha256": "7fd0646b96f06a84b9ea989a6eb2194540ed241966ea2b85503339280daf9be0",
-      "copiedSha256": "086deab460b3f97512b23c0236b91dcbf5fae36f32282fda2c7636ae096e74bd",
+      "copiedSha256": "e497159e05fbce679892da64048b8c5397908e796650ae1ba469a07a26139867",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "本机Project与固定Task目录的qualified身份按local路由、持久化和恢复；保留原远程身份及权限校验。",
+        "本机Project与固定Task目录的qualified身份按local路由、精确服务绑定、持久化和恢复；保留原远程身份及权限校验。"
       ]
     },
     {
@@ -8906,9 +8916,11 @@
       "source": "references/zcode/packages/ui/src/root/remoteWorkspaceSessionPersistence.ts",
       "target": "apps/web/src/components/workbench/zcode/root/remoteWorkspaceSessionPersistence.ts",
       "sha256": "e355ed75f1fbfdf91a05378a5395cef1703f3e3924579e7f88878155795c1b73",
-      "copiedSha256": "2d91d0ba94d1505ea2038434c1094233b80d9695e57cce9ff7d12347abd1fdc4",
+      "copiedSha256": "385cbf9eeb7b864ed6994a382e9d17e0340256f0854cef5b6a43c7149487c360",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "本机Project与固定Task目录的qualified身份按local路由、持久化和恢复；保留原远程身份及权限校验。",
+        "本机Project与固定Task目录的qualified身份按local路由、精确服务绑定、持久化和恢复；保留原远程身份及权限校验。"
       ]
     },
     {
@@ -14287,8 +14299,11 @@
       "source": "references/zcode/packages/shared/src/index.ts",
       "target": "packages/zcode-shared/src/index.ts",
       "sha256": "6fe33b1fdc42af4449155a13c540d137731d723bde3fa639e47bbca0f403a725",
-      "copiedSha256": "6fe33b1fdc42af4449155a13c540d137731d723bde3fa639e47bbca0f403a725",
-      "adaptations": []
+      "copiedSha256": "8119cbe7d685e926e6ae700765e22346d5e27ac211797b40e8e80862aa1b3d31",
+      "adaptations": [
+        "本机Project与固定Task目录的qualified身份按local路由、持久化和恢复；保留原远程身份及权限校验。",
+        "本机Project与固定Task目录的qualified身份按local路由、精确服务绑定、持久化和恢复；保留原远程身份及权限校验。"
+      ]
     },
     {
       "source": "references/zcode/packages/shared/src/intranetDefaults.ts",
@@ -14569,8 +14584,11 @@
       "source": "references/zcode/packages/shared/src/protocol.ts",
       "target": "packages/zcode-shared/src/protocol.ts",
       "sha256": "8ca196294184cb0f41961bbc57360fbdccfe4ae41b95987286a47516411a6f9e",
-      "copiedSha256": "8ca196294184cb0f41961bbc57360fbdccfe4ae41b95987286a47516411a6f9e",
-      "adaptations": []
+      "copiedSha256": "7544bf3456bc86d374287aff0a1f09bc378a25939ee71655376ea4c50ebb0b33",
+      "adaptations": [
+        "本机Project与固定Task目录的qualified身份按local路由、持久化和恢复；保留原远程身份及权限校验。",
+        "本机Project与固定Task目录的qualified身份按local路由、精确服务绑定、持久化和恢复；保留原远程身份及权限校验。"
+      ]
     },
     {
       "source": "references/zcode/packages/shared/src/provider-family-connection-selection.ts",
@@ -14893,8 +14911,11 @@
       "source": "references/zcode/packages/shared/src/validationAppSettings.ts",
       "target": "packages/zcode-shared/src/validationAppSettings.ts",
       "sha256": "5f5cb7f634e9b21063e27dfdd4b17995140ec26214794ff09c25b4241ac3bbdb",
-      "copiedSha256": "5f5cb7f634e9b21063e27dfdd4b17995140ec26214794ff09c25b4241ac3bbdb",
-      "adaptations": []
+      "copiedSha256": "8a6a83a60ffbf6933a36996af770035e4d4661427188a728cd57e372fccd97d4",
+      "adaptations": [
+        "本机Project与固定Task目录的qualified身份按local路由、持久化和恢复；保留原远程身份及权限校验。",
+        "本机Project与固定Task目录的qualified身份按local路由、精确服务绑定、持久化和恢复；保留原远程身份及权限校验。"
+      ]
     },
     {
       "source": "references/zcode/packages/shared/src/version.ts",

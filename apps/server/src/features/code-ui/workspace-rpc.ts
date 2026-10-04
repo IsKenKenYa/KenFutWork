@@ -4,7 +4,12 @@ import {
   type CodeUiWorkspace,
   codeUiWorkspaceSchema,
 } from "@kenfutwork/shared";
-import { appSettingsSchema, type FileEntry } from "@zcode/shared";
+import {
+  appSettingsSchema,
+  canonicalLocalWorkspaceIdentity,
+  type FileEntry,
+  parseLocalWorkspaceIdentity,
+} from "@zcode/shared";
 import { z } from "zod";
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { ProjectService } from "../projects/project-service.js";
@@ -58,6 +63,120 @@ const preferenceKeys = new Set([
   "terminalFontFamily",
   "terminalInheritSystemProfile",
 ]);
+type WorkspacePreferenceEntry = z.infer<
+  typeof appSettingsSchema
+>["lastWorkspaceSession"][number];
+type PreferenceOwner = {
+  projectId: string;
+  rootDirectory: string;
+  taskId?: string;
+};
+
+function normalizePreferenceTab(
+  entry: WorkspacePreferenceEntry,
+  owners: Map<string, PreferenceOwner>,
+) {
+  if (entry.kind !== "local") return null;
+  const identity = entry.workspaceIdentity
+    ? parseLocalWorkspaceIdentity(entry.workspaceIdentity, entry.workspacePath)
+    : null;
+  if (entry.workspaceIdentity && !identity) return null;
+  const key = identity
+    ? canonicalLocalWorkspaceIdentity(
+        identity.projectId,
+        identity.rootDirectory,
+      )
+    : entry.workspacePath;
+  const owner = owners.get(key);
+  if (!owner || owner.rootDirectory !== entry.workspacePath) return null;
+  return {
+    ...entry,
+    workspaceIdentity: canonicalLocalWorkspaceIdentity(
+      owner.projectId,
+      owner.rootDirectory,
+    ),
+  };
+}
+
+function normalizePreferenceFocus(
+  focus: Record<string, string>,
+  owners: Map<string, PreferenceOwner>,
+) {
+  const normalized: Record<string, string> = {};
+  for (const [key, taskId] of Object.entries(focus)) {
+    const owner = owners.get(key);
+    if (!owner || owner.taskId !== taskId) continue;
+    normalized[
+      canonicalLocalWorkspaceIdentity(owner.projectId, owner.rootDirectory)
+    ] = taskId;
+  }
+  return normalized;
+}
+
+type TaskPreference = {
+  key: string;
+  taskId: string;
+  owner:
+    | Pick<PreferenceOwner, "projectId" | "rootDirectory">
+    | null
+    | undefined;
+};
+
+function applyPreferenceFocus(
+  owners: Map<string, PreferenceOwner>,
+  tasks: readonly TaskPreference[],
+  projectIds: ReadonlySet<string>,
+) {
+  const focusedPaths = new Map<string, Map<string, PreferenceOwner>>();
+  const invalidPaths = new Set<string>();
+  const legacyFocus = new Map<string, PreferenceOwner>();
+  for (const { key, taskId, owner } of tasks) {
+    const identity = parseLocalWorkspaceIdentity(key);
+    const rootDirectory = identity?.rootDirectory ?? key;
+    if (
+      !owner ||
+      owner.rootDirectory !== rootDirectory ||
+      (identity && owner.projectId !== identity.projectId) ||
+      !projectIds.has(owner.projectId)
+    ) {
+      // 显式Task焦点失效不能悄悄转给碰巧拥有同路径的另一Project。
+      owners.delete(key);
+      owners.delete(rootDirectory);
+      invalidPaths.add(rootDirectory);
+      if (identity)
+        owners.delete(
+          canonicalLocalWorkspaceIdentity(
+            identity.projectId,
+            identity.rootDirectory,
+          ),
+        );
+    } else {
+      const focused = { ...owner, taskId };
+      const qualified = canonicalLocalWorkspaceIdentity(
+        owner.projectId,
+        owner.rootDirectory,
+      );
+      owners.set(key, focused);
+      owners.set(qualified, focused);
+      const scopes =
+        focusedPaths.get(rootDirectory) ?? new Map<string, PreferenceOwner>();
+      scopes.set(qualified, focused);
+      focusedPaths.set(rootDirectory, scopes);
+      if (!identity) legacyFocus.set(rootDirectory, focused);
+    }
+  }
+  for (const [path, scopes] of focusedPaths) {
+    const explicit = legacyFocus.get(path);
+    if (explicit) {
+      owners.set(path, explicit);
+    } else if (invalidPaths.has(path) || scopes.size !== 1) {
+      owners.delete(path);
+    } else {
+      for (const owner of scopes.values()) owners.set(path, owner);
+    }
+  }
+}
+
 export interface HumanWorkspaceRpc {
   call(
     actor: AuthenticatedUser,
@@ -141,38 +260,35 @@ export function createHumanWorkspaceRpc(options: {
     workspaces: CodeUiWorkspace[],
     focus: Record<string, string> | undefined,
   ) => {
-    const owners = new Map<string, { projectId: string; taskId?: string }>();
+    const owners = new Map<string, PreferenceOwner>();
     const ambiguous = new Set<string>();
     const projectIds = new Set(workspaces.map((project) => project.projectId));
     for (const project of workspaces) {
+      const owner = {
+        projectId: project.projectId,
+        rootDirectory: project.path,
+      };
+      owners.set(
+        canonicalLocalWorkspaceIdentity(project.projectId, project.path),
+        owner,
+      );
       if (owners.has(project.path)) {
         owners.delete(project.path);
         ambiguous.add(project.path);
       } else if (!ambiguous.has(project.path)) {
-        owners.set(project.path, { projectId: project.projectId });
+        owners.set(project.path, owner);
       }
     }
     const tasks = await Promise.all(
-      Object.entries(focus ?? {}).map(async ([path, taskId]) => ({
-        path,
+      Object.entries(focus ?? {}).map(async ([key, taskId]) => ({
+        key,
         taskId,
         owner: z.uuid().safeParse(taskId).success
           ? await options.resolveTaskPreference?.(actor, taskId)
           : null,
       })),
     );
-    for (const { path, taskId, owner } of tasks) {
-      if (
-        !owner ||
-        owner.rootDirectory !== path ||
-        !projectIds.has(owner.projectId)
-      ) {
-        // 显式Task焦点失效不能悄悄转给碰巧拥有同路径的另一Project。
-        owners.delete(path);
-      } else {
-        owners.set(path, { projectId: owner.projectId, taskId });
-      }
-    }
+    applyPreferenceFocus(owners, tasks, projectIds);
     return owners;
   };
   const openProject = async (
@@ -252,23 +368,23 @@ export function createHumanWorkspaceRpc(options: {
       (stored.recentProjects === undefined
         ? workspaces.map((project) => project.path)
         : settings.recentProjects
-      ).filter((path) => owners.has(path)),
+      ).filter((path) => owners.get(path)?.rootDirectory === path),
     );
-    const active = settings.lastWorkspaceSession[settings.lastActiveTabIndex];
-    settings.lastWorkspaceSession = settings.lastWorkspaceSession.filter(
-      (entry) => entry.kind === "local" && owners.has(entry.workspacePath),
-    );
+    const activeIndex = settings.lastActiveTabIndex;
+    const tabs = settings.lastWorkspaceSession.flatMap((entry, index) => {
+      const normalized = normalizePreferenceTab(entry, owners);
+      return normalized ? [{ entry: normalized, index }] : [];
+    });
+    settings.lastWorkspaceSession = tabs.map((tab) => tab.entry);
     settings.lastActiveTabIndex = Math.max(
-      active ? settings.lastWorkspaceSession.indexOf(active) : -1,
+      tabs.findIndex((tab) => tab.index === activeIndex),
       0,
     );
-    if (settings.lastActiveTaskByWorkspace) {
-      settings.lastActiveTaskByWorkspace = Object.fromEntries(
-        Object.entries(settings.lastActiveTaskByWorkspace).filter(
-          ([path, taskId]) => owners.get(path)?.taskId === taskId,
-        ),
+    if (settings.lastActiveTaskByWorkspace)
+      settings.lastActiveTaskByWorkspace = normalizePreferenceFocus(
+        settings.lastActiveTaskByWorkspace,
+        owners,
       );
-    }
     return settings;
   };
   return {
@@ -379,35 +495,57 @@ export function createHumanWorkspaceRpc(options: {
             parsed.messageStreamShowReasoningMigrationInitialized;
         if ("locale" in patch && !("localePreference" in patch))
           normalized.localePreference = parsed.locale;
-        const referencedPaths = [
-          ...("recentProjects" in normalized ? parsed.recentProjects : []),
-          ...("lastWorkspaceSession" in normalized
-            ? parsed.lastWorkspaceSession.map((entry) => {
-                if (entry.kind !== "local")
-                  throw new CodeUiRepositoryError(
-                    "not_found",
-                    "当前 Code 宿主尚未接通远程工作区。",
-                  );
-                return entry.workspacePath;
-              })
-            : []),
-          ...Object.keys(
-            "lastActiveTaskByWorkspace" in normalized
-              ? (parsed.lastActiveTaskByWorkspace ?? {})
-              : {},
-          ),
-        ];
         const workspaces = await options.listWorkspaces(actor);
         const owners = await preferenceOwners(
           actor,
           workspaces,
           parsed.lastActiveTaskByWorkspace,
         );
-        if (referencedPaths.some((path) => !owners.has(path)))
-          throw new CodeUiRepositoryError(
-            "not_found",
-            "设置中的工作目录不属于当前工作区或已归档。",
+        const referencedKeys: string[] = [];
+        if ("recentProjects" in normalized) {
+          for (const path of parsed.recentProjects) {
+            if (owners.get(path)?.rootDirectory !== path)
+              throw new CodeUiRepositoryError(
+                "not_found",
+                "设置中的工作目录不属于当前工作区或已归档。",
+              );
+            referencedKeys.push(path);
+          }
+        }
+        if ("lastWorkspaceSession" in normalized) {
+          normalized.lastWorkspaceSession = parsed.lastWorkspaceSession.map(
+            (entry) => {
+              if (entry.kind !== "local")
+                throw new CodeUiRepositoryError(
+                  "not_found",
+                  "当前 Code 宿主尚未接通远程工作区。",
+                );
+              const tab = normalizePreferenceTab(entry, owners);
+              if (!tab)
+                throw new CodeUiRepositoryError(
+                  "not_found",
+                  "设置中的工作目录不属于当前工作区或已归档。",
+                );
+              referencedKeys.push(tab.workspaceIdentity);
+              return tab;
+            },
           );
+        }
+        if ("lastActiveTaskByWorkspace" in normalized) {
+          const focus = parsed.lastActiveTaskByWorkspace ?? {};
+          for (const [key, taskId] of Object.entries(focus)) {
+            if (owners.get(key)?.taskId !== taskId)
+              throw new CodeUiRepositoryError(
+                "not_found",
+                "设置中的工作目录不属于当前工作区或已归档。",
+              );
+            referencedKeys.push(key);
+          }
+          normalized.lastActiveTaskByWorkspace = normalizePreferenceFocus(
+            focus,
+            owners,
+          );
+        }
         if ("recentProjects" in normalized)
           normalized.recentProjects = normalizeRecentProjects(
             parsed.recentProjects,
@@ -416,8 +554,8 @@ export function createHumanWorkspaceRpc(options: {
           await options.workspaceId(actor),
           normalized,
           {
-            referencedProjectIds: referencedPaths.flatMap((path) => {
-              const owner = owners.get(path);
+            referencedProjectIds: referencedKeys.flatMap((key) => {
+              const owner = owners.get(key);
               return owner ? [owner.projectId] : [];
             }),
           },

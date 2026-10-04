@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import type { useSortable } from "@dnd-kit/sortable";
 import { BorderBeam } from "border-beam";
+import { isLocalWorkspaceTarget } from "@zcode/shared";
 import { STATUS_DOT } from "@zui/components/workflow-graph/run-status-presentation.js";
 import { Button, buttonVariants } from "@zui/components/ui/button.js";
 import {
@@ -224,9 +225,7 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
       ? intl.formatMessage({ id: "workspaceSidebar.unavailableLocalDirectory" })
       : undefined;
   const remoteWorkspaceKey = buildWorkspaceSessionKey(tab);
-  const isRemoteWorkspace = Boolean(
-    tab.remoteSessionId || tab.remoteTarget || tab.workspaceIdentity,
-  );
+  const isRemoteWorkspace = !isLocalWorkspaceTarget(tab);
   const isDisconnectedRemoteWorkspace = Boolean(isRemoteWorkspace && !tab.remoteSessionId);
   const isReconnectPending = Boolean(
     isDisconnectedRemoteWorkspace && reconnectingRemoteWorkspaceKeys.includes(remoteWorkspaceKey),

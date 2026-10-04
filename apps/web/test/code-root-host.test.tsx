@@ -1,3 +1,4 @@
+import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import {
   act,
   cleanup,
@@ -11,6 +12,7 @@ import { Root } from "@zui/index";
 import { useAlertDialogStore } from "@zui/store/alertDialogStore";
 import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore";
 import { afterEach, expect, it, vi } from "vitest";
+import { appSettingsSchema } from "../../../packages/zcode-shared/dist/index.js";
 import { CodeHttpChannelClient } from "../src/components/workbench/zcode/host/httpChannelClient";
 import { createCodePlatform } from "../src/components/workbench/zcode/host/platform";
 import { createCodeWorkspaceContextResolver } from "../src/components/workbench/zcode/host/workspaceServiceController";
@@ -358,4 +360,342 @@ it("两个原Root在同根使用各自qualified Project桶，读取失败不会�
       .getState()
       .getWorkspaceState("/shared", secondIdentity),
   );
+});
+
+it("无选项目的原Root通过公开服务创建停止默认Task，重新挂载仍恢复本机qualified目录与Task", async () => {
+  installBrowserLayout();
+  const calls: Array<{ service: string; method: string; args: unknown[] }> = [];
+  const fallback = createCodeRootHostFetch(calls, { rejectOpen: false });
+  const identity = JSON.stringify([rootProjectId, rootWorkspace.path]);
+  const taskId = "51000000-0000-4000-8000-000000000051";
+  const taskTitle = "默认恢复Task";
+  let preferences: Record<string, unknown> = {};
+  let created = false;
+  let stopped = false;
+  const task = () => ({
+    taskId,
+    traceId: taskId,
+    title: taskTitle,
+    workspacePath: rootWorkspace.path,
+    workspaceIdentity: identity,
+    projectId: rootProjectId,
+    mode: "build",
+    createdAt: 1,
+    updatedAt: 2,
+    status: stopped ? "completed" : "running",
+    sourceAvailability: "online",
+    liveStatus: stopped ? "idle" : "running",
+  });
+  vi.stubGlobal("fetch", async (url: string, options?: RequestInit) => {
+    if (url.endsWith("/events") || url.endsWith("/workspaces"))
+      return fallback(url, options);
+    const call: { service: string; method: string; args: unknown[] } =
+      JSON.parse(String(options?.body));
+    if (call.service === "setting") {
+      calls.push(call);
+      if (call.method === "update")
+        preferences = {
+          ...preferences,
+          ...(call.args[0] as Record<string, unknown>),
+        };
+      return Response.json({ result: appSettingsSchema.parse(preferences) });
+    }
+    if (call.method === "sendConversationCommandV4") {
+      calls.push(call);
+      const target = call.args[0] as { envelope: unknown };
+      const parsed = protocol.parseCommandEnvelope(target.envelope);
+      if (!parsed.ok) throw parsed.error;
+      const envelope = parsed.envelope;
+      if (envelope.type === "createSession") created = true;
+      if (envelope.type === "stop") stopped = true;
+      return Response.json({
+        result: protocol.commandAckSchema.parse({
+          commandId: envelope.commandId,
+          status: "accepted",
+          revisionAtDecision: 1,
+          ...(envelope.type === "createSession"
+            ? { result: { type: "createSession", sessionId: taskId } }
+            : {}),
+        }),
+      });
+    }
+    if (call.method === "listTaskList") {
+      calls.push(call);
+      const query = call.args[0] as {
+        kind: protocol.TaskListMembershipKind;
+        workspaceScopes?: Array<{
+          workspacePath: string;
+          workspaceIdentity?: string;
+        }>;
+      };
+      const ownsScope = query.workspaceScopes?.some(
+        (scope) =>
+          scope.workspacePath === rootWorkspace.path &&
+          scope.workspaceIdentity === identity,
+      );
+      const inList = protocol.matchesTaskListMembershipKind(
+        { pinned: false, archived: false },
+        query.kind,
+      );
+      const items = created && ownsScope && inList ? [task()] : [];
+      return Response.json({
+        result: { items, total: items.length, hasMore: false },
+      });
+    }
+    return fallback(url, options);
+  });
+  const mountRoot = async () => {
+    const current = new CodeHttpChannelClient({
+      apiBase: "https://host.example",
+    });
+    clients.push(current);
+    await current.connect();
+    current.registerWorkspaces([rootWorkspace]);
+    const release = bindCodeWorkspaceServices(current);
+    releases.push(release);
+    const onWorkspaceContextChange = vi.fn(
+      createCodeWorkspaceContextResolver(current),
+    );
+    const view = render(
+      <ZCodeIntlProvider initialLocale="zh-CN">
+        <Root
+          services={current.services}
+          platform={createCodePlatform(current)}
+          initialUserInfo={{
+            id: "restore-actor",
+            username: "restore",
+            displayName: "恢复验收",
+          }}
+          directoryServices={current.directoryServices()}
+          onWorkspaceContextChange={onWorkspaceContextChange}
+          workbenchGroupClientMode="web-remote-replayable"
+          restoreSession
+          allowRemoteWorkspace={false}
+          preferDirectoryBrowser
+        />
+      </ZCodeIntlProvider>,
+    );
+    await waitFor(() =>
+      expect(onWorkspaceContextChange).toHaveBeenCalledWith({
+        workspacePath: rootWorkspace.path,
+        workspaceIdentity: identity,
+      }),
+    );
+    expect(await screen.findByTestId("sidebar")).not.toBeNull();
+    return { current, release, view };
+  };
+  const first = await mountRoot();
+  const create =
+    await first.current.services.zcodeAgentService.sendConversationCommandV4({
+      workspacePath: rootWorkspace.path,
+      workspaceIdentity: identity,
+      envelope: {
+        clientId: "root-restoration-tracer",
+        commandId: "create-default-restoration-task",
+        sessionId: null,
+        type: "createSession",
+        payload: {
+          workspaceId: rootProjectId,
+          firstInput: { text: taskTitle },
+          config: {
+            modelSelection: {
+              providerId: "fixture-provider",
+              modelId: "fixture-model",
+              options: {},
+            },
+          },
+        },
+        issuedAt: 1,
+      },
+    });
+  expect(create.result).toEqual({ type: "createSession", sessionId: taskId });
+  const stop =
+    await first.current.services.zcodeAgentService.sendConversationCommandV4({
+      workspacePath: rootWorkspace.path,
+      workspaceIdentity: identity,
+      envelope: {
+        clientId: "root-restoration-tracer",
+        commandId: "stop-default-restoration-task",
+        sessionId: taskId,
+        type: "stop",
+        payload: {},
+        issuedAt: 2,
+      },
+    });
+  expect(stop.status).toBe("accepted");
+  await waitFor(async () => {
+    const persisted = await first.current.services.settingService.get();
+    expect(persisted.lastWorkspaceSession).toEqual([
+      {
+        kind: "local",
+        workspacePath: rootWorkspace.path,
+        workspacePurpose: "conversation",
+        workspaceIdentity: identity,
+      },
+    ]);
+  });
+  first.view.unmount();
+  first.release();
+  first.current.dispose();
+  const beforeRemount = calls.length;
+  await mountRoot();
+  expect(await screen.findByText(taskTitle, { exact: true })).not.toBeNull();
+  expect(
+    calls
+      .slice(beforeRemount)
+      .some(
+        (call) =>
+          call.service === "window-controller" &&
+          call.method === "listTaskList",
+      ),
+  ).toBe(true);
+  expect(
+    calls.filter((call) => call.method === "sendConversationCommandV4"),
+  ).toHaveLength(2);
+});
+
+it("原Root冷恢复同目录两个本机Project的qualified tab，各自Task可见且不误显示远端重连", async () => {
+  installBrowserLayout();
+  const path = "/same-root";
+  const otherProjectId = "32000000-0000-4000-8000-000000000032";
+  const projects = [rootProjectId, otherProjectId];
+  const identities = projects.map((projectId) =>
+    JSON.stringify([projectId, path]),
+  );
+  const tasks = projects.map((projectId, index) => ({
+    taskId: `52000000-0000-4000-8000-00000000000${index + 1}`,
+    traceId: `52000000-0000-4000-8000-00000000000${index + 1}`,
+    projectId,
+    workspacePath: path,
+    workspaceIdentity: identities[index],
+    title: index === 0 ? "同根项目A独立Task" : "同根项目B独立Task",
+    createdAt: 1,
+    updatedAt: 2,
+    mode: "build",
+    status: "completed",
+    sourceAvailability: "online",
+    liveStatus: "idle",
+  }));
+  let preferences: Record<string, unknown> = {
+    lastWorkspaceSession: projects.map((_projectId, index) => ({
+      kind: "local",
+      workspacePath: path,
+      workspaceIdentity: identities[index],
+      workspacePurpose: "project",
+    })),
+    lastActiveTabIndex: 1,
+  };
+  const calls: Array<{ service: string; method: string; args: unknown[] }> = [];
+  const fallback = createCodeRootHostFetch(calls, { rejectOpen: false });
+  vi.stubGlobal("fetch", async (url: string, options?: RequestInit) => {
+    if (url.endsWith("/events")) return fallback(url, options);
+    const call: { service: string; method: string; args: unknown[] } =
+      JSON.parse(String(options?.body));
+    if (call.service === "setting") {
+      calls.push(call);
+      if (call.method === "update")
+        preferences = {
+          ...preferences,
+          ...(call.args[0] as Record<string, unknown>),
+        };
+      return Response.json({ result: appSettingsSchema.parse(preferences) });
+    }
+    if (call.service === "zcode-task" && call.method === "listTasks") {
+      calls.push(call);
+      const scope = call.args[0] as {
+        workspacePath: string;
+        workspaceIdentity?: string;
+      };
+      return Response.json({
+        result: tasks.filter(
+          (task) =>
+            task.workspacePath === scope.workspacePath &&
+            task.workspaceIdentity === scope.workspaceIdentity,
+        ),
+      });
+    }
+    if (call.method === "listTaskList") {
+      calls.push(call);
+      const query = call.args[0] as {
+        kind: protocol.TaskListMembershipKind;
+        workspaceScopes: Array<{
+          workspacePath: string;
+          workspaceIdentity?: string;
+        }>;
+      };
+      const items = protocol.matchesTaskListMembershipKind(
+        { pinned: false, archived: false },
+        query.kind,
+      )
+        ? tasks.filter((task) =>
+            query.workspaceScopes.some(
+              (scope) =>
+                scope.workspacePath === task.workspacePath &&
+                scope.workspaceIdentity === task.workspaceIdentity,
+            ),
+          )
+        : [];
+      return Response.json({
+        result: { items, total: items.length, hasMore: false },
+      });
+    }
+    return fallback(url, options);
+  });
+  const current = new CodeHttpChannelClient({
+    apiBase: "https://host.example",
+  });
+  clients.push(current);
+  await current.connect();
+  current.registerWorkspaces(
+    projects.map((projectId) => ({ ...rootWorkspace, projectId, path })),
+  );
+  releases.push(bindCodeWorkspaceServices(current));
+  const context = vi.fn(createCodeWorkspaceContextResolver(current));
+  render(
+    <ZCodeIntlProvider initialLocale="zh-CN">
+      <Root
+        services={current.services}
+        platform={createCodePlatform(current)}
+        directoryServices={current.directoryServices()}
+        onWorkspaceContextChange={context}
+        workbenchGroupClientMode="web-remote-replayable"
+        restoreSession
+        allowRemoteWorkspace={false}
+        preferDirectoryBrowser
+      />
+    </ZCodeIntlProvider>,
+  );
+  await waitFor(() =>
+    expect(context).toHaveBeenCalledWith({
+      workspacePath: path,
+      workspaceIdentity: identities[1],
+    }),
+  );
+  expect(
+    await screen.findByText("同根项目A独立Task", { exact: true }),
+  ).not.toBeNull();
+  expect(
+    await screen.findByText("同根项目B独立Task", { exact: true }),
+  ).not.toBeNull();
+  expect(screen.queryByText("重连", { exact: true })).toBeNull();
+  const persisted = await current.services.settingService.get();
+  expect(persisted.lastWorkspaceSession).toEqual(
+    projects.map((_projectId, index) => ({
+      kind: "local",
+      workspacePath: path,
+      workspaceIdentity: identities[index],
+      workspacePurpose: "project",
+    })),
+  );
+  for (const identity of identities) {
+    expect(
+      calls.some(
+        (call) =>
+          call.service === "zcode-task" &&
+          call.method === "listTasks" &&
+          (call.args[0] as { workspaceIdentity?: string }).workspaceIdentity ===
+            identity,
+      ),
+    ).toBe(true);
+  }
 });

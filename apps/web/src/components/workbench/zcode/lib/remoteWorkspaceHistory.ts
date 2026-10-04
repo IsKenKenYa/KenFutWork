@@ -6,6 +6,7 @@ import type {
   RemoteTargetSnapshot,
   RemoteWorkspaceSessionEntry,
 } from "@zcode/shared";
+import { isLocalWorkspaceTarget } from "@zcode/shared";
 import type { WindowTabState } from "@zui/store/tabStore.js";
 import { isWorkspaceTab } from "@zui/store/tabStore.js";
 
@@ -45,11 +46,12 @@ function collectRemoteWorkspaceCredentialKeys(snapshot: RemoteTargetSnapshot): s
 }
 
 export function hasRemoteWorkspaceIdentity(entry: {
+  workspacePath?: string;
   remoteSessionId?: string;
   remoteTarget?: RemoteTarget;
   workspaceIdentity?: string;
 }): boolean {
-  return Boolean(entry.remoteSessionId || entry.remoteTarget || entry.workspaceIdentity);
+  return !isLocalWorkspaceTarget(entry);
 }
 
 type WslRemoteTargetLike = Extract<RemoteTarget | RemoteTargetSnapshot, { kind: "wsl" }>;
@@ -424,6 +426,7 @@ export function buildPersistedWorkspaceSessionEntries(
     entries.push({
       kind: "local",
       workspacePath: tab.workspacePath,
+      ...(tab.workspaceIdentity ? { workspaceIdentity: tab.workspaceIdentity } : {}),
       ...(tab.workspacePurpose ? { workspacePurpose: tab.workspacePurpose } : {}),
     });
     return entries;

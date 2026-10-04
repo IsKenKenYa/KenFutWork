@@ -356,6 +356,7 @@ describe("Human-only Code workspace RPC", () => {
         lastWorkspaceSession: projects.slice(1).map((project) => ({
           kind: "local",
           workspacePath: project.path,
+          workspaceIdentity: JSON.stringify([project.projectId, project.path]),
         })),
         lastActiveTabIndex: 0,
       },
