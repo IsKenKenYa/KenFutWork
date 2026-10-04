@@ -1,73 +1,68 @@
 import type {
   ModelCatalogEntry,
+  ProviderInstanceModel,
   ProviderInstanceResponse,
 } from "@kenfutwork/shared";
 import {
+  clearManualModelConfig,
   completeNewModelSelection,
   createRegistryModelConfig,
   ModelConfig,
+  type ModelConfigObject,
   type ModelSelection,
   type ModelSelectionView,
-  type ProviderConfigObject,
+  normalizeModelSelection,
+  type ProviderSettingsModelView,
   type ProviderSettingsView,
   parseZCodeBuiltinModelConfigRules,
   serializeRegistryModelConfig,
 } from "@zcode/provider";
+import {
+  codeUiProviderMetadata,
+  codeUiPublicProviderConfig,
+  isCodeChatProtocol,
+} from "./provider-settings-rpc-config.js";
 import modelRules from "./zcode-model-config-rules.json" with { type: "json" };
 
 const rules = parseZCodeBuiltinModelConfigRules(modelRules);
 
-function publicConfig(
-  instance: ProviderInstanceResponse,
-): ProviderConfigObject {
-  if (
-    instance.protocol !== "openai-compatible" &&
-    instance.protocol !== "anthropic"
-  ) {
-    throw new Error(
-      `供应商协议 ${instance.protocol} 的 Code UI 配置适配尚未接通`,
-    );
-  }
-  return {
-    group: "standard-personal",
-    access: { type: "api-key" },
-    api: {
-      type:
-        instance.protocol === "anthropic"
-          ? "anthropic-messages"
-          : "openai-chat-completions",
-      ...(instance.baseUrl ? { baseUrl: instance.baseUrl } : {}),
-    },
-    personalModelIds: instance.models
-      .filter((model) => model.capability === "chat")
-      .map((model) => model.id),
-    visibility: instance.enabled ? "visible" : "hidden",
-  };
-}
-
-function modelView(
+function inheritedModelConfig(
   instance: ProviderInstanceResponse,
   entry: ModelCatalogEntry,
 ) {
-  const config = publicConfig(instance);
+  const config = codeUiPublicProviderConfig(instance);
+  const metadata = codeUiProviderMetadata(instance);
   const builtin = rules.resolve({
     providerId: instance.id,
+    ...(metadata.templateId ? { templateId: metadata.templateId } : {}),
     modelId: entry.id,
     ...(config.api?.type ? { apiType: config.api.type } : {}),
     ...(instance.baseUrl ? { baseUrl: instance.baseUrl } : {}),
   });
   const contextWindow = entry.model.contextWindow ?? entry.hints?.contextWindow;
-  const image = entry.model.vision ?? entry.hints?.imageInput;
+  const image =
+    entry.model.vision ??
+    (entry.model.inputModalities
+      ? entry.model.inputModalities.includes("image")
+      : entry.hints?.imageInput);
+  const pdf = entry.model.inputModalities
+    ? entry.model.inputModalities.includes("pdf")
+    : undefined;
   const maximumOutput =
     entry.model.maxOutputTokens ?? entry.hints?.maxOutputTokens;
-  const effective = builtin.overlay(
+  return builtin.overlay(
     ModelConfig.fromData({
-      enabled: true,
+      enabled: entry.model.enabled !== false,
       properties: {
         ...(contextWindow === undefined ? {} : { contextWindow }),
-        ...(image === undefined
+        ...(image === undefined && pdf === undefined
           ? {}
-          : { inputFormat: { supportsImage: image } }),
+          : {
+              inputFormat: {
+                ...(image !== undefined ? { supportsImage: image } : {}),
+                ...(pdf !== undefined ? { supportsPdf: pdf } : {}),
+              },
+            }),
         ...(entry.hints?.toolCall === undefined
           ? {}
           : { supportsToolCall: entry.hints.toolCall }),
@@ -77,21 +72,177 @@ function modelView(
         : { optionSpecs: { maxOutputTokens: { max: maximumOutput } } }),
     }),
   );
-  const complete = createRegistryModelConfig(effective);
-  if (!complete.ok)
-    throw new Error(
-      `模型 ${entry.id} 的原推荐配置不完整：${JSON.stringify(complete.issues)}`,
-    );
+}
+
+export function resolveCodeUiModelConfig(
+  instance: ProviderInstanceResponse,
+  entry: ModelCatalogEntry,
+  override?: { config: ModelConfigObject; useRecommendedConfig: boolean },
+) {
+  const inherited = inheritedModelConfig(instance, entry);
+  const metadata = codeUiProviderMetadata(instance);
+  const saved =
+    metadata.models && Object.hasOwn(metadata.models, entry.id)
+      ? metadata.models[entry.id]
+      : undefined;
+  const personal = override ?? saved;
+  let effective =
+    personal?.useRecommendedConfig === false
+      ? ModelConfig.fromData(
+          clearManualModelConfig(inherited.toJSON()),
+        ).overlay(ModelConfig.fromData(personal.config))
+      : inherited.overlay(ModelConfig.fromData(personal?.config ?? {}));
+  if (!override)
+    effective = effective.overlay(nativeModelDeclarations(entry.model));
+  const google = resolveGeminiReasoning(
+    instance,
+    entry,
+    effective,
+    personal?.config,
+  );
+  effective = google.config;
+  const complete = google.issue
+    ? { ok: false as const, issues: [google.issue] }
+    : createRegistryModelConfig(effective);
+  return { inherited, effective, complete, personal };
+}
+
+function resolveGeminiReasoning(
+  instance: ProviderInstanceResponse,
+  entry: ModelCatalogEntry,
+  config: ModelConfig,
+  personal?: ModelConfigObject,
+) {
+  if (
+    instance.protocol !== "gemini" ||
+    personal?.optionSpecs?.reasoningLevel?.map
+  )
+    return { config };
+  const levels = config.optionSpecs?.reasoningLevel?.values;
+  if (!levels || levels.every((level) => level === "default"))
+    return { config };
+  // Google documents thinkingLevel for Gemini 3+, not earlier budget-based models.
+  const supportsLevels =
+    /^gemini-(?:[3-9](?:[.\-/]|$)|[1-9]\d(?:[.\-/]|$))/i.test(entry.id);
+  const publicLevels = new Set(["minimal", "low", "medium", "high"]);
+  if (
+    entry.model.reasoningEfforts?.length &&
+    supportsLevels &&
+    levels.every((level) => publicLevels.has(level))
+  ) {
+    return {
+      config: config.overlay(
+        ModelConfig.fromData({
+          optionSpecs: {
+            reasoningLevel: {
+              map: '{"generationConfig": {"thinkingConfig": {"thinkingLevel": reasoningLevel}}}',
+            },
+          },
+        }),
+      ),
+    };
+  }
+  return {
+    config,
+    issue: {
+      code: "required-field-missing" as const,
+      path: ["model", "optionSpecs", "reasoningLevel", "map"],
+      message:
+        "此 Gemini 模型的思考档位需要明确的原生参数映射；不能由通用规则推测预算。",
+    },
+  };
+}
+
+/** Explicit native declarations take precedence when another client changes the same instance. */
+function nativeModelDeclarations(model: ProviderInstanceModel): ModelConfig {
+  const modalities = model.inputModalities;
+  const image =
+    model.vision ?? (modalities ? modalities.includes("image") : undefined);
+  return ModelConfig.fromData({
+    enabled: model.enabled !== false,
+    properties: {
+      ...(model.contextWindow === undefined
+        ? {}
+        : { contextWindow: model.contextWindow }),
+      ...(image === undefined && modalities === undefined
+        ? {}
+        : {
+            inputFormat: {
+              ...(image === undefined ? {} : { supportsImage: image }),
+              ...(modalities
+                ? {
+                    supportsVideo: modalities.includes("video"),
+                    supportsPdf: modalities.includes("pdf"),
+                    supportsAudio: modalities.includes("audio"),
+                    supportsText: modalities.includes("text"),
+                  }
+                : {}),
+            },
+          }),
+      ...(model.structuredOutput === undefined
+        ? {}
+        : { supportsJsonSchemaOutput: model.structuredOutput }),
+      ...(model.nativeWebSearch === undefined
+        ? {}
+        : { supportsNativeWebSearch: model.nativeWebSearch }),
+      ...(model.systemMessage === undefined
+        ? {}
+        : { supportsMidConversationSystem: model.systemMessage }),
+    },
+    optionSpecs: {
+      ...(model.maxOutputTokens === undefined
+        ? {}
+        : { maxOutputTokens: { max: model.maxOutputTokens } }),
+      ...(model.reasoningEfforts?.length
+        ? { reasoningLevel: { values: model.reasoningEfforts } }
+        : {}),
+    },
+  });
+}
+
+function modelView(
+  instance: ProviderInstanceResponse,
+  entry: ModelCatalogEntry,
+): ProviderSettingsModelView {
+  const { inherited, effective, complete, personal } = resolveCodeUiModelConfig(
+    instance,
+    entry,
+  );
+  const enabled = entry.model.enabled !== false && effective.enabled === true;
+  const executable =
+    instance.enabled && instance.hasCredential && enabled && complete.ok;
   return {
     modelId: entry.id,
     builtin: false as const,
     kind: "candidate" as const,
-    effectiveBuiltinConfig: builtin.toJSON(),
-    effectiveConfig: serializeRegistryModelConfig(complete.config),
-    enabled: true,
-    executable: instance.enabled && instance.hasCredential,
-    selectable: instance.enabled && instance.hasCredential,
-    issues: [],
+    effectiveBuiltinConfig: inherited.toJSON(),
+    ...(personal ? { personalExactConfig: personal.config } : {}),
+    useRecommendedConfig: personal?.useRecommendedConfig ?? true,
+    effectiveConfig: complete.ok
+      ? serializeRegistryModelConfig(complete.config)
+      : effective.toJSON(),
+    enabled,
+    executable,
+    selectable: executable,
+    issues: complete.ok ? [] : complete.issues,
+  };
+}
+
+export function codeUiModelEntry(
+  instance: ProviderInstanceResponse,
+  model: ProviderInstanceModel,
+): ModelCatalogEntry {
+  return {
+    id: model.id,
+    name: model.name,
+    capability: model.capability,
+    model,
+    provider: {
+      instanceId: instance.id,
+      name: instance.name,
+      protocol: instance.protocol,
+      scope: instance.scope,
+    },
   };
 }
 
@@ -102,31 +253,51 @@ export function buildCodeUiModelViews(input: {
   defaultSpecifier?: string;
   selection?: ModelSelection | null;
   revision?: number;
+  providerOrder?: readonly string[];
+  providerTemplates?: ProviderSettingsView["providerTemplates"];
 }): { settings: ProviderSettingsView; selection: ModelSelectionView } {
   const revision = input.revision ?? 0;
   const providers = input.instances
-    .filter((instance) =>
-      instance.models.some((model) => model.capability === "chat"),
-    )
+    .filter((instance) => isCodeChatProtocol(instance.protocol))
     .map((instance) => ({
       providerId: instance.id,
       providerName: instance.name,
       enabled: instance.enabled,
       executable: instance.enabled && instance.hasCredential,
-      effectiveConfig: publicConfig(instance),
-      personalConfig: publicConfig(instance),
+      credentialConfigured: instance.hasCredential,
+      configRevision: instance.configRevision,
+      ...(codeUiProviderMetadata(instance).templateId
+        ? { templateId: codeUiProviderMetadata(instance).templateId }
+        : {}),
+      effectiveConfig: codeUiPublicProviderConfig(instance),
+      personalConfig: codeUiPublicProviderConfig(instance),
       issues: [],
-      models: input.catalog
-        .filter(
-          (entry) =>
-            entry.capability === "chat" &&
-            entry.provider.instanceId === instance.id,
-        )
-        .map((entry) => modelView(instance, entry)),
+      models: instance.models
+        .filter((model) => model.capability === "chat")
+        .map((model) =>
+          modelView(
+            instance,
+            input.catalog.find(
+              (entry) =>
+                entry.provider.instanceId === instance.id &&
+                entry.id === model.id,
+            ) ?? codeUiModelEntry(instance, model),
+          ),
+        ),
     }));
+  const order = new Map(
+    (
+      input.providerOrder ?? providers.map((provider) => provider.providerId)
+    ).map((id, index) => [id, index]),
+  );
+  providers.sort(
+    (left, right) =>
+      (order.get(left.providerId) ?? order.size) -
+      (order.get(right.providerId) ?? order.size),
+  );
   const settings: ProviderSettingsView = {
     revision,
-    providerTemplates: [],
+    providerTemplates: input.providerTemplates ?? [],
     providerOrder: providers.map((provider) => provider.providerId),
     providers,
   };
@@ -138,18 +309,25 @@ export function buildCodeUiModelViews(input: {
       config: provider.effectiveConfig,
       models: provider.models
         .filter((model) => model.executable)
-        .map((model) => ({
-          modelId: model.modelId,
-          config: model.effectiveConfig,
-        })),
+        .map((model) => {
+          const complete = createRegistryModelConfig(
+            ModelConfig.fromData(model.effectiveConfig),
+          );
+          if (!complete.ok) throw new Error("已发布模型的配置不完整。");
+          return {
+            modelId: model.modelId,
+            config: serializeRegistryModelConfig(complete.config),
+          };
+        }),
     }));
   const view = { providers: selectionProviders };
-  const separator = input.defaultSpecifier?.indexOf(":") ?? -1;
+  const defaultSpecifier = input.defaultSpecifier;
+  const separator = defaultSpecifier?.indexOf(":") ?? -1;
   const configured =
-    separator > 0
+    defaultSpecifier !== undefined && separator > 0
       ? {
-          providerId: input.defaultSpecifier!.slice(0, separator),
-          modelId: input.defaultSpecifier!.slice(separator + 1),
+          providerId: defaultSpecifier.slice(0, separator),
+          modelId: defaultSpecifier.slice(separator + 1),
         }
       : undefined;
   const first = selectionProviders[0];
@@ -162,9 +340,9 @@ export function buildCodeUiModelViews(input: {
           modelId: firstModel.modelId,
         })
       : undefined);
-  const requested = input.selection ?? preferred;
+  const requested = input.selection === undefined ? preferred : input.selection;
   const effective = requested
-    ? completeNewModelSelection(view, requested)
+    ? normalizeModelSelection(view, requested)
     : undefined;
   return {
     settings,
@@ -172,14 +350,20 @@ export function buildCodeUiModelViews(input: {
       revision,
       providers: selectionProviders,
       ...(preferred ? { preferredSelection: preferred } : {}),
-      effectiveSelection: effective
-        ? {
-            ...effective,
-            ...(requested?.options ? { options: requested.options } : {}),
-          }
-        : null,
+      effectiveSelection: effective ?? null,
       ...(!effective && requested
         ? { selectionIssue: "model-not-found" as const }
+        : {}),
+      ...(requested === null
+        ? { selectionIssue: "selection-missing" as const }
+        : {}),
+      ...(effective && effective.options?.reasoningLevel === undefined
+        ? {
+            selectionIssue:
+              requested?.options?.reasoningLevel === undefined
+                ? ("reasoning-level-missing" as const)
+                : ("reasoning-level-not-supported" as const),
+          }
         : {}),
     },
   };

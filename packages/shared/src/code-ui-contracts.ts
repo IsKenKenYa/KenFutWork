@@ -6,6 +6,7 @@ import {
   workspaceConfigTopicWireFrameSchema,
 } from "@zcode/shared/zcode-protocol-v4";
 import { z } from "zod";
+import { additionalDirectorySchema } from "./execution-contracts.js";
 import { governanceSetting } from "./governance.js";
 
 export type {
@@ -31,9 +32,9 @@ export * as zcodeUiProtocol from "@zcode/shared/zcode-protocol-v4";
 
 export const codeUiWorkspaceSchema = z.object({
   projectId: z.string().uuid(),
-  canvasId: z.string().uuid(),
   name: z.string(),
   path: z.string().min(1),
+  additionalDirectories: z.array(additionalDirectorySchema).default([]),
 });
 export const codeUiWorkspaceListSchema = z.object({
   workspaces: z.array(codeUiWorkspaceSchema),
@@ -124,6 +125,7 @@ export const codeUiViewerScopeSchema = z.discriminatedUnion("kind", [
 export type CodeUiViewerScope = z.infer<typeof codeUiViewerScopeSchema>;
 
 export const codeUiFileReadParamsSchema = z.object({
+  viewerScope: codeUiViewerScopeSchema,
   path: z.string().min(1),
   offset: z.number().int().nonnegative().optional(),
   length: z.number().int().nonnegative().optional(),

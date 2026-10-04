@@ -1812,6 +1812,21 @@
   ],
   "modelApiRules": [
     {
+      "modelMatch": ".*",
+      "apiTypeMatch": "google-generative-language",
+      "config": {
+        "optionSpecs": {
+          "reasoningLevel": {
+            "values": ["default"],
+            "map": "{}"
+          },
+          "maxOutputTokens": {
+            "map": "{\"generationConfig\": {\"maxOutputTokens\": maxOutputTokens}}"
+          }
+        }
+      }
+    },
+    {
       "modelMatch": ".*claude-(?:opus-(?:4[.-]8|5)|(?:fable|mythos)-5(?:[.-]1)?)(?:[.\\-:/\\[].*)?",
       "apiTypeMatch": "anthropic-messages",
       "config": {

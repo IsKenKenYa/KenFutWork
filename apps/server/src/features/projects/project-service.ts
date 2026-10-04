@@ -1,4 +1,7 @@
+import { randomUUID } from "node:crypto";
+import { resolve } from "node:path";
 import type {
+  AdditionalDirectory,
   ProjectCreateRequest,
   ProjectKind,
   ProjectSummary,
@@ -9,8 +12,9 @@ import type { BlobStore } from "../blob/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import { BootstrapError } from "../bootstrap/errors.js";
 import { SQLSTATE_UNIQUE_VIOLATION } from "../persistence/errors.js";
-import type { ProjectRepository, ProjectUpdatePatch } from "./repository.js";
-import { validateWorkDir } from "./work-dir.js";
+import { DEFAULT_SANDBOX_ROOT } from "../../agent/sandbox-dir.js";
+import type { ProjectDetailRow, ProjectRepository, ProjectUpdatePatch } from "./repository.js";
+import { normalizeAdditionalDirectories, resolveProjectWorkDirectory, validateWorkDir } from "./work-dir.js";
 
 const THUMBNAIL_BUCKET = "project-assets";
 const PROJECT_QUERY_FAILED_MESSAGE = "Unable to load projects.";
@@ -39,17 +43,7 @@ export type ProjectService = {
   getProject(
     user: AuthenticatedUser,
     projectId: string,
-  ): Promise<{
-    id: string;
-    name: string;
-    slug: string;
-    description: string | null;
-    workspace_id: string;
-    brand_kit_id: string | null;
-    created_at: string;
-    updated_at: string;
-    work_dir: string | null;
-  }>;
+  ): Promise<ProjectDetailRow>;
   listProjects(
     user: AuthenticatedUser,
     kind?: ProjectKind,
@@ -85,6 +79,8 @@ export function createProjectService(options: {
   blob: BlobStore;
   repository: ProjectRepository;
   viewerService: ViewerService;
+  sandboxRoot?: string | undefined;
+  beforeArchiveCodeProject?: (actor: AuthenticatedUser, projectId: string) => Promise<void>;
 }): ProjectService {
   const { repository, viewerService } = options;
 
@@ -106,6 +102,17 @@ export function createProjectService(options: {
   return {
     async archiveProject(user, projectId) {
       const workspace = await resolveWorkspace(user, "project_query_failed");
+      const project = await repository.findActiveById(workspace.id, projectId);
+      if (!project) throw new ProjectServiceError("project_not_found", PROJECT_NOT_FOUND_MESSAGE, 404);
+      if (project.kind === "code") {
+        if (!options.beforeArchiveCodeProject) throw new ProjectServiceError("project_delete_failed", "Code 执行资源关闭器不可用，项目未归档。", 503);
+        await repository.beginCloseProject(workspace.id, projectId);
+        try { await options.beforeArchiveCodeProject(user, projectId); }
+        catch (error) {
+          await repository.failCloseProject(workspace.id, projectId);
+          throw new ProjectServiceError("project_delete_failed", error instanceof Error ? error.message : "Code 执行资源尚未确认关闭。", 503);
+        }
+      }
 
       const archived = await repository
         .archive(workspace.id, projectId)
@@ -156,16 +163,21 @@ export function createProjectService(options: {
       const normalizedName = input.name.trim();
       // 手填的本机工作目录先校验（绝对路径 + 存在 + 是目录）：不合格直接 400，
       // 不留到 run 时才发现「目录不存在」——那时用户已经等了一轮。
-      const workDir = input.work_dir
-        ? requireWorkDir(input.work_dir)
-        : undefined;
+      const projectId = randomUUID();
+      const kind = input.kind ?? "design";
+      const workDir = kind === "code"
+        ? await resolveProjectWorkDirectory({ workspaceId: workspace.id, projectId, sandboxRoot: options.sandboxRoot ?? DEFAULT_SANDBOX_ROOT, workDir: input.work_dir ? requireWorkDir(input.work_dir) : undefined })
+        : input.work_dir ? requireWorkDir(input.work_dir) : undefined;
+      const additionalDirectories = requireAdditionalDirectories(input.additional_directories ?? []);
 
       const created = await repository
-        .createWithCanvas({
+        .createProject({
+          id: projectId,
+          additionalDirectories,
           canvasName: "Main Canvas",
           description: normalizeDescription(input.description),
           // 缺省 design：存量调用方（Design 建项目）语义不变
-          kind: input.kind ?? "design",
+          kind,
           name: normalizedName,
           slug: slugify(normalizedName),
           userId: user.id,
@@ -199,6 +211,13 @@ export function createProjectService(options: {
 
       if (projects.length === 0) {
         return [];
+      }
+
+      if (kind === "code") {
+        return Promise.all(projects.map(async (project) => mapProjectSummary({
+          project: { ...project, work_dir: project.work_dir ?? resolve(options.sandboxRoot ?? DEFAULT_SANDBOX_ROOT, workspace.id, project.id) },
+          workspace,
+        })));
       }
 
       const canvases = await repository
@@ -311,11 +330,15 @@ export function createProjectService(options: {
         patch.workDir =
           input.work_dir === null ? null : requireWorkDir(input.work_dir);
       }
+      if (input.additional_directories !== undefined) {
+        patch.additionalDirectories = requireAdditionalDirectories(input.additional_directories);
+      }
 
       if (
         patch.name === undefined &&
         patch.brandKitId === undefined &&
-        patch.workDir === undefined
+        patch.workDir === undefined &&
+        patch.additionalDirectories === undefined
       ) {
         return;
       }
@@ -363,6 +386,11 @@ function requireWorkDir(raw: string): string {
   return verdict.path;
 }
 
+function requireAdditionalDirectories(directories: AdditionalDirectory[]): AdditionalDirectory[] {
+  try { return normalizeAdditionalDirectories(directories); }
+  catch (error) { throw new ProjectServiceError("invalid_work_dir", error instanceof Error ? error.message : "附加目录不可用。", 400); }
+}
+
 async function ensureFoundation(
   viewerService: ViewerService,
   user: AuthenticatedUser,
@@ -403,11 +431,11 @@ function mapProjectCreateError(error: unknown) {
 }
 
 function mapProjectSummary(options: {
-  canvas: {
+  canvas?: {
     id: string;
     is_primary: boolean;
     name: string;
-  };
+  } | null;
   project: {
     created_at: string;
     description: string | null;
@@ -417,6 +445,7 @@ function mapProjectSummary(options: {
     slug: string;
     updated_at: string;
     work_dir?: string | null;
+    additional_directories?: AdditionalDirectory[];
   };
   thumbnailUrl?: string | null;
   workspace: {
@@ -426,20 +455,15 @@ function mapProjectSummary(options: {
     type: "personal" | "team";
   };
 }): ProjectSummary {
-  return {
+  const base = {
     createdAt: options.project.created_at,
     description: options.project.description,
     id: options.project.id,
-    kind: options.project.kind,
     name: options.project.name,
-    primaryCanvas: {
-      id: options.canvas.id,
-      isPrimary: options.canvas.is_primary,
-      name: options.canvas.name,
-    },
     slug: options.project.slug,
     // 显式 null 也回传：界面要能区分「未绑定」与「字段缺省」（列表里显示绑定状态）
     workDir: options.project.work_dir ?? null,
+    additionalDirectories: options.project.additional_directories ?? [],
     ...(options.thumbnailUrl ? { thumbnailUrl: options.thumbnailUrl } : {}),
     updatedAt: options.project.updated_at,
     workspace: {
@@ -449,6 +473,12 @@ function mapProjectSummary(options: {
       type: options.workspace.type,
     },
   };
+  if (options.project.kind === "code") {
+    if (!options.project.work_dir) throw new ProjectServiceError("invalid_work_dir", "Code 项目缺少主工作目录。", 500);
+    return { ...base, kind: "code", workDir: options.project.work_dir };
+  }
+  if (!options.canvas) throw new ProjectServiceError("project_query_failed", "画布项目缺少主画布。", 500);
+  return { ...base, kind: options.project.kind, primaryCanvas: { id: options.canvas.id, isPrimary: options.canvas.is_primary, name: options.canvas.name } };
 }
 
 /**

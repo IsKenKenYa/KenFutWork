@@ -1,37 +1,44 @@
 import { randomUUID } from "node:crypto";
-import { sep } from "node:path";
 import {
   zcodeUiProtocol as protocol,
   type StreamEvent,
 } from "@kenfutwork/shared";
 import type { z } from "zod";
-import { resolveInsideRoot } from "../../utils/inside-root.js";
 import { deriveSessionTitle } from "../chat/session-title.js";
+import type { ApprovalEvent } from "../permissions/approval-types.js";
+import { updateTurnFileSummary } from "./file-changes.js";
+import type { CodeAdmittedInput } from "./input-intents.js";
+import { codeInputRouting, resolveHeldQueue } from "./queue-control.js";
 
 type Snapshot = protocol.ConversationSnapshot;
 type Row = protocol.ConversationRow;
 type Config = protocol.SessionConfigState;
+type ExecutionStart = {
+  runId: string;
+  commandId: string;
+  modelSelection?: NonNullable<Config["modelSelection"]>;
+  mode?: string | undefined;
+  planEnabled?: boolean | undefined;
+};
 
-function fileToolInput(
-  workspacePath: string,
-  event: Extract<StreamEvent, { type: "tool.started" }>,
+function setManualCompactStatus(
+  snapshot: Snapshot,
+  runId: string,
+  status: Extract<
+    protocol.TimelineMarkerPayload,
+    { type: "compact" }
+  >["status"],
 ) {
+  const row = snapshot.rows.window.find(
+    (entry) => entry.entityId === `compact:${runId}`,
+  );
   if (
-    !["read_file", "write_file", "edit_file"].includes(event.toolName) ||
-    !event.input
+    row?.kind !== "timelineMarker" ||
+    row.marker.type !== "compact" ||
+    row.marker.origin !== "manual"
   )
-    return event.input;
-  const input = { ...event.input };
-  const path = input.file_path;
-  if (
-    typeof path !== "string" ||
-    path === workspacePath ||
-    path.startsWith(workspacePath + sep)
-  )
-    return input;
-  // DeepAgents 的绝对路径属于沙箱虚拟根；原 viewer 的 path 属于宿主文件系统。
-  input.file_path = resolveInsideRoot(workspacePath, path.replace(/^\/+/, ""));
-  return input;
+    throw new Error("手动压缩缺少已登记的维护操作标记");
+  row.marker.status = status;
 }
 
 export interface CodeUiConversationState {
@@ -40,9 +47,16 @@ export interface CodeUiConversationState {
   snapshots: Snapshot[];
   dispatches: Array<[string, string]>;
   closedRuns: string[];
+  detachedChildSessionIds?: string[];
+  inputs?: CodeAdmittedInput[];
+  inputOwner?: { hostId: string; runtimeId: string };
 }
 
-function cancelSnapshot(snapshot: Snapshot, at: number) {
+function cancelSnapshot(
+  snapshot: Snapshot,
+  at: number,
+  retained = new Set<string>(),
+) {
   snapshot.control = {
     ...snapshot.control,
     phase: "completedInterrupted",
@@ -51,7 +65,8 @@ function cancelSnapshot(snapshot: Snapshot, at: number) {
     stopState: "idle",
     activeWorks: [],
   };
-  snapshot.inputRouting = { mode: "startNow" };
+  snapshot.inputRouting = codeInputRouting(snapshot);
+  snapshot.pendingInteractions = [];
   for (const row of snapshot.rows.window) {
     if (
       (row.kind === "assistantText" || row.kind === "reasoning") &&
@@ -69,14 +84,22 @@ function cancelSnapshot(snapshot: Snapshot, at: number) {
       row.status = "cancelled";
       row.endedAt = at;
     }
-    if (row.kind === "subagent" && row.status === "running") {
+    if (
+      row.kind === "subagent" &&
+      row.status === "running" &&
+      (!row.childSessionId || !retained.has(row.childSessionId))
+    ) {
       row.status = "cancelled";
       row.endedAt = at;
     }
   }
   if (snapshot.subagents) {
-    snapshot.subagents.endedTotal += snapshot.subagents.running.length;
-    snapshot.subagents.running = [];
+    const running = snapshot.subagents.running.filter((child) =>
+      retained.has(child.childSessionId),
+    );
+    snapshot.subagents.endedTotal +=
+      snapshot.subagents.running.length - running.length;
+    snapshot.subagents.running = running;
     snapshot.subagents.revision += 1;
   }
 }
@@ -90,7 +113,7 @@ function completeSnapshot(snapshot: Snapshot, at: number) {
     stopState: "idle",
     activeWorks: [],
   };
-  snapshot.inputRouting = { mode: "startNow" };
+  snapshot.inputRouting = codeInputRouting(snapshot);
   for (const row of snapshot.rows.window) {
     if (
       (row.kind === "assistantText" || row.kind === "reasoning") &&
@@ -114,25 +137,31 @@ function completeTool(
       row.kind === "toolCall" &&
       row.toolCallId === `${event.runId}/${event.toolCallId}`,
   );
-  if (row?.kind !== "toolCall" || row.status !== "running") return;
+  if (
+    row?.kind !== "toolCall" ||
+    !["running", "pendingApproval"].includes(row.status)
+  )
+    return;
   const text =
     event.outputText ??
     (event.output ? JSON.stringify(event.output) : (event.outputSummary ?? ""));
-  const display = protocol.toolCallDisplaySchema.safeParse(
-    event.output?.display,
-  );
+  const output = protocol.toolOutputSchema.safeParse({
+    text,
+    ...(event.output?.display ? { display: event.output.display } : {}),
+  });
   Object.assign(
     row,
     protocol.toolCallRowSchema.parse({
       ...row,
       status: event.status ?? "success",
-      output: { text, ...(display.success ? { display: display.data } : {}) },
+      output: output.success ? output.data : { text },
       ...(event.status === "error"
         ? { error: { code: "tool_failed", message: text || "工具执行失败" } }
         : {}),
       endedAt: at,
     }),
   );
+  updateTurnFileSummary(snapshot, row.turnId);
 }
 
 function finishChild(
@@ -245,6 +274,9 @@ export function createCodeUiConversation(input: {
   const snapshots = new Map<string, Snapshot>();
   const childByDispatch = new Map<string, string>();
   const closedRuns = new Set(input.state?.closedRuns ?? []);
+  const detachedChildren = new Set(input.state?.detachedChildSessionIds ?? []);
+  const inputs = structuredClone(input.state?.inputs ?? []);
+  let inputOwner = input.state?.inputOwner;
   const config = protocol.sessionConfigStateSchema.parse(input.config);
   if (input.state) {
     if (input.state.version !== 1) throw new Error("Code 会话状态版本不匹配");
@@ -279,6 +311,40 @@ export function createCodeUiConversation(input: {
     createdAt: at,
     createdAtSeq: snapshot.seq,
   });
+  const beginExecution = (turn: ExecutionStart) => {
+    runId = turn.runId;
+    root.config = protocol.sessionConfigStateSchema.parse({
+      ...root.config,
+      ...(turn.modelSelection !== undefined
+        ? { modelSelection: turn.modelSelection }
+        : {}),
+      ...(turn.mode !== undefined ? { mode: turn.mode } : {}),
+      ...(turn.planEnabled !== undefined
+        ? { planEnabled: turn.planEnabled }
+        : {}),
+    });
+    const at = clock();
+    root.seq += 1;
+    root.revision += 1;
+    root.control = {
+      ...root.control,
+      phase: "running",
+      sessionEnded: false,
+      lastError: null,
+      canStop: true,
+      stopState: "stoppable",
+      stopTargetKind: "assistant",
+      activeWorks: [
+        {
+          kind: "primaryTurn",
+          foregroundExecutionId: turn.runId,
+          startedAt: at,
+        },
+      ],
+    };
+    root.inputRouting = { mode: "enqueue" };
+    return at;
+  };
 
   return {
     exportState(): CodeUiConversationState {
@@ -288,39 +354,328 @@ export function createCodeUiConversation(input: {
         snapshots: [...snapshots.values()],
         dispatches: [...childByDispatch.entries()],
         closedRuns: [...closedRuns],
+        detachedChildSessionIds: [...detachedChildren],
+        inputs,
+        ...(inputOwner ? { inputOwner } : {}),
       });
     },
-    startTurn(turn: { runId: string; commandId: string; text: string }) {
-      runId = turn.runId;
-      const at = clock();
-      if (!root.meta.title)
+    setInputOwner(owner: { hostId: string; runtimeId: string }) {
+      inputOwner = { ...owner };
+    },
+    resolveHeldQueue(payload: Parameters<typeof resolveHeldQueue>[2]) {
+      return resolveHeldQueue(root, inputs, payload);
+    },
+    admitInput(
+      record: CodeAdmittedInput,
+      owner?: { hostId: string; runtimeId: string },
+    ) {
+      if (owner) inputOwner = { ...owner };
+      inputs.push(structuredClone(record));
+      if (record.status === "queued") {
+        root.queue.items.push(protocol.queueItemSchema.parse(record.intent));
+        root.seq += 1;
+        root.revision += 1;
+      } else if (record.status === "reserved") {
+        root.pendingCommands.push({
+          commandId: record.intent.sourceCommandId,
+          clientId: record.intent.clientId,
+          type: record.intent.kind,
+          state: "executing",
+          at: record.intent.admittedAt,
+        });
+        root.seq += 1;
+        root.revision += 1;
+      }
+    },
+    promoteReservedInput(runId: string): CodeAdmittedInput | undefined {
+      if (root.control.phase === "running") return;
+      const record = inputs.find(
+        (entry) => entry.status === "reserved" && entry.runId === runId,
+      );
+      if (!record) return;
+      record.status = "active";
+      root.pendingCommands = root.pendingCommands.filter(
+        (entry) =>
+          entry.commandId !== record.intent.sourceCommandId ||
+          entry.clientId !== record.intent.clientId,
+      );
+      if (root.queue.pauseReason !== "manual") {
+        root.queue.autoDrain =
+          record.autoDrainAtAdmission ?? root.queue.autoDrain;
+        if (root.queue.autoDrain) delete root.queue.pauseReason;
+      }
+      this.startInput(record);
+      return structuredClone(record);
+    },
+    promoteQueuedInput(
+      scopeGeneration: number,
+      branchGeneration: number,
+      reservationId: string,
+    ): CodeAdmittedInput | undefined {
+      if (
+        root.control.phase === "running" ||
+        !root.queue.autoDrain ||
+        !root.queue.items.length
+      )
+        return;
+      const item = root.queue.items[0]!;
+      const record = inputs.find(
+        (entry) =>
+          entry.status === "queued" &&
+          entry.intent.queueItemId === item.queueItemId,
+      );
+      if (
+        !record ||
+        record.scopeGeneration !== scopeGeneration ||
+        record.branchGeneration !== branchGeneration
+      ) {
+        root.queue.autoDrain = false;
+        root.queue.pauseReason = "error";
+        root.seq += 1;
+        root.revision += 1;
+        return;
+      }
+      root.queue.items.shift();
+      record.status = "active";
+      record.intent.dispatch = { state: "promoting", reservationId };
+      this.startInput(record);
+      return structuredClone(record);
+    },
+    recordApprovalEvent(event: ApprovalEvent) {
+      const target = requireSnapshot(
+        event.identity.agentId === "main"
+          ? event.identity.taskId
+          : event.identity.agentId,
+      );
+      const toolCallId = `${event.identity.runId}/${event.identity.toolCallId}`;
+      const row = target.rows.window.find(
+        (entry) => entry.kind === "toolCall" && entry.toolCallId === toolCallId,
+      );
+      target.pendingInteractions = target.pendingInteractions.filter(
+        (entry) => entry.interactionId !== event.interaction.interactionId,
+      );
+      if (event.type === "requested") {
+        const interaction = structuredClone(event.interaction);
+        interaction.anchorRowId = row?.rowId ?? null;
+        if (interaction.payload.kind === "permission")
+          interaction.payload.toolCallId = toolCallId;
+        target.pendingInteractions.push(interaction);
+      }
+      if (
+        row?.kind === "toolCall" &&
+        ["running", "pendingApproval"].includes(row.status)
+      ) {
+        row.status =
+          event.type === "requested"
+            ? "pendingApproval"
+            : event.type === "resolved" && event.decision === "allow"
+              ? "running"
+              : "error";
+        if (row.status === "error")
+          row.error = {
+            code: "tool_denied",
+            message:
+              event.type === "cancelled" ? event.reason : "用户拒绝此工具调用",
+          };
+      }
+      target.seq += 1;
+      target.revision += 1;
+    },
+    registerChildDispatch(fact: {
+      parentSessionId: string;
+      parentRunId: string;
+      toolCallId: string;
+      childSessionId: string;
+      role: string;
+      title: string;
+      at: number;
+      detached?: boolean;
+    }) {
+      const key = `${fact.parentRunId}/${fact.toolCallId}`;
+      const existing = childByDispatch.get(key);
+      if (existing) return existing;
+      const parent = requireSnapshot(fact.parentSessionId);
+      const child = emptySnapshot(fact.childSessionId, parent.config);
+      child.meta = { title: fact.title, titleSource: "generated" };
+      child.control = {
+        ...child.control,
+        phase: "running",
+        canStop: true,
+        stopState: "stoppable",
+        stopTargetKind: "assistant",
+      };
+      snapshots.set(child.sessionId, child);
+      if (fact.detached) detachedChildren.add(child.sessionId);
+      childByDispatch.set(key, child.sessionId);
+      parent.seq += 1;
+      parent.revision += 1;
+      appendRow(parent, {
+        ...base(parent, `subagent:${child.sessionId}`, fact.at),
+        turnId: fact.parentRunId,
+        productTurnId: fact.parentRunId,
+        kind: "subagent",
+        parentToolCallId: key,
+        childSessionId: child.sessionId,
+        subagentType: fact.role,
+        status: "running",
+        summaryText: fact.title,
+        startedAt: fact.at,
+      });
+      parent.subagents = {
+        revision: (parent.subagents?.revision ?? 0) + 1,
+        childSessionIds: [
+          ...(parent.subagents?.childSessionIds ?? []),
+          child.sessionId,
+        ],
+        running: [
+          ...(parent.subagents?.running ?? []),
+          {
+            childSessionId: child.sessionId,
+            toolCallId: key,
+            subagentType: fact.role,
+            title: fact.title,
+            status: "running",
+            startedAt: fact.at,
+          },
+        ],
+        endedTotal: parent.subagents?.endedTotal ?? 0,
+      };
+      return child.sessionId;
+    },
+    recordChildRunEvent(childSessionId: string, event: StreamEvent) {
+      if (childSessionId === input.sessionId)
+        throw new Error("子运行不能写入主转录目标");
+      const child = requireSnapshot(childSessionId);
+      if (child.control.phase !== "running") return;
+      if (closedRuns.has(event.runId)) return;
+      const descendants = new Set([childSessionId]);
+      for (let changed = true; changed; ) {
+        changed = false;
+        for (const snapshot of snapshots.values())
+          if (descendants.has(snapshot.sessionId))
+            for (const row of snapshot.rows.window)
+              if (
+                row.kind === "subagent" &&
+                row.childSessionId &&
+                !descendants.has(row.childSessionId)
+              ) {
+                descendants.add(row.childSessionId);
+                changed = true;
+              }
+      }
+      const host = createCodeUiConversation({
+        sessionId: childSessionId,
+        workspacePath: input.workspacePath,
+        config: child.config,
+        state: {
+          version: 1,
+          runId: event.runId,
+          snapshots: [...snapshots.values()].filter((snapshot) =>
+            descendants.has(snapshot.sessionId),
+          ),
+          dispatches: [...childByDispatch],
+          closedRuns: [...closedRuns],
+          detachedChildSessionIds: [...detachedChildren].filter((id) =>
+            descendants.has(id),
+          ),
+        },
+      });
+      if (!child.rows.window.some((row) => row.kind === "turnHeader"))
+        host.startTurn({
+          runId: event.runId,
+          commandId: `child:${childSessionId}`,
+          text: child.meta.title ?? "子任务",
+        });
+      host.recordEvent(event);
+      for (const snapshot of host.exportState().snapshots)
+        snapshots.set(snapshot.sessionId, snapshot);
+      if (!["run.completed", "run.failed", "run.canceled"].includes(event.type))
+        return;
+      closedRuns.add(event.runId);
+      const updated = requireSnapshot(childSessionId);
+      for (const parent of snapshots.values()) {
+        const row = parent.rows.window.find(
+          (entry) =>
+            entry.kind === "subagent" &&
+            entry.childSessionId === childSessionId,
+        );
+        if (row?.kind !== "subagent" || !row.parentToolCallId) continue;
+        const text = updated.rows.window
+          .filter((entry) => entry.kind === "assistantText")
+          .map((entry) => entry.text)
+          .join("\n");
+        finishChild(
+          parent,
+          updated,
+          row.parentToolCallId,
+          {
+            type: "tool.completed",
+            runId: event.runId,
+            toolCallId: row.parentToolCallId,
+            toolName: "Task",
+            timestamp: event.timestamp,
+            status:
+              event.type === "run.failed"
+                ? "error"
+                : event.type === "run.canceled"
+                  ? "cancelled"
+                  : "success",
+            outputSummary: text,
+          },
+          Date.parse(event.timestamp),
+        );
+        parent.seq += 1;
+        parent.revision += 1;
+      }
+    },
+    startInput(record: CodeAdmittedInput) {
+      const execution = {
+        runId: record.runId,
+        commandId: record.intent.sourceCommandId,
+        modelSelection: record.intent.modelSelection!,
+        mode: record.intent.planEnabled ? "plan" : record.intent.mode,
+        planEnabled: record.intent.planEnabled,
+      };
+      if (record.intent.kind === "compact") {
+        const at = beginExecution(execution);
+        appendRow(root, {
+          ...base(root, `compact:${record.runId}`, at),
+          kind: "timelineMarker",
+          sourceCommandId: record.intent.sourceCommandId,
+          lane: "assistantWork",
+          marker: { type: "compact", origin: "manual", status: "running" },
+        });
+      } else
+        this.startTurn({
+          ...execution,
+          clientId: record.intent.clientId,
+          text: record.intent.text,
+          attachments: record.intent.attachments,
+        });
+    },
+    startTurn(turn: {
+      runId: string;
+      commandId: string;
+      text: string;
+      attachments?: protocol.AttachmentRef[];
+      clientId?: string;
+      mode?: string | undefined;
+      planEnabled?: boolean | undefined;
+      origin?: "userInput" | "backgroundResult";
+      modelSelection?: NonNullable<
+        protocol.SessionConfigState["modelSelection"]
+      >;
+    }) {
+      const at = beginExecution(turn);
+      if (!root.meta.title && turn.origin !== "backgroundResult")
         root.meta = {
           title: deriveSessionTitle(turn.text),
           titleSource: "generated",
         };
-      root.seq += 1;
-      root.revision += 1;
-      root.control = {
-        ...root.control,
-        phase: "running",
-        sessionEnded: false,
-        lastError: null,
-        canStop: true,
-        stopState: "stoppable",
-        stopTargetKind: "assistant",
-        activeWorks: [
-          {
-            kind: "primaryTurn",
-            foregroundExecutionId: turn.runId,
-            startedAt: at,
-          },
-        ],
-      };
-      root.inputRouting = { mode: "enqueue" };
       appendRow(root, {
         ...base(root, `turn:${runId}`, at),
         kind: "turnHeader",
-        origin: "userInput",
+        origin: turn.origin ?? "userInput",
         executionKind: "agent",
         sourceCommandId: turn.commandId,
         state: "running",
@@ -329,22 +684,171 @@ export function createCodeUiConversation(input: {
       appendRow(root, {
         ...base(root, `input:${turn.commandId}`, at),
         kind: "userInput",
-        origin: "realUser",
+        origin:
+          turn.origin === "backgroundResult" ? "backgroundResult" : "realUser",
         sourceCommandId: turn.commandId,
         rootSourceCommandId: turn.commandId,
+        ...(turn.clientId ? { clientId: turn.clientId } : {}),
+        ...(turn.attachments?.length
+          ? { attachments: structuredClone(turn.attachments) }
+          : {}),
         text: turn.text,
       });
     },
     recordEvent(event: StreamEvent) {
+      if (event.type === "task.work") {
+        if (event.work.taskId !== input.sessionId) return;
+        const work = event.work;
+        root.seq += 1;
+        root.revision += 1;
+        root.backgroundWorks = root.backgroundWorks.filter(
+          (entry) => entry.workId !== work.workId,
+        );
+        if (
+          work.kind === "subagent" &&
+          work.childSessionId &&
+          work.status !== "running"
+        ) {
+          const child = snapshots.get(work.childSessionId);
+          if (child)
+            for (const parent of snapshots.values()) {
+              const dispatch = parent.rows.window.find(
+                (row) =>
+                  row.kind === "subagent" &&
+                  row.childSessionId === work.childSessionId,
+              );
+              if (dispatch?.kind !== "subagent" || !dispatch.parentToolCallId)
+                continue;
+              finishChild(
+                parent,
+                child,
+                dispatch.parentToolCallId,
+                {
+                  type: "tool.completed",
+                  runId: work.originRunId,
+                  toolCallId: work.toolCallId,
+                  toolName: "Task",
+                  timestamp: event.timestamp,
+                  status:
+                    work.status === "failed"
+                      ? "error"
+                      : work.status === "canceled" ||
+                          work.status === "interrupted"
+                        ? "cancelled"
+                        : "success",
+                  outputSummary: work.summary ?? work.status,
+                },
+                Date.parse(event.timestamp),
+              );
+              if (parent !== root) {
+                parent.seq += 1;
+                parent.revision += 1;
+              }
+            }
+        }
+        if (work.detached === false) return;
+        if (!work.consumed) {
+          const anchor = root.rows.window.find(
+            (row) =>
+              row.kind === "toolCall" &&
+              row.toolCallId === `${work.originRunId}/${work.toolCallId}`,
+          );
+          root.backgroundWorks.push({
+            workId: work.workId,
+            kind: work.kind === "command" ? "bash" : "subagent",
+            title: work.label,
+            status:
+              work.status === "running"
+                ? "running"
+                : work.status === "failed"
+                  ? "failed"
+                  : work.status === "canceled" || work.status === "interrupted"
+                    ? "cancelled"
+                    : "resultPending",
+            startedAt: Date.parse(work.startedAt),
+            ...(work.endedAt ? { endedAt: Date.parse(work.endedAt) } : {}),
+            cancellable: work.status === "running",
+            anchorRowId: anchor?.rowId ?? null,
+            ...(work.childSessionId
+              ? { childSessionId: work.childSessionId }
+              : {}),
+          });
+        } else if (
+          work.status !== "running" &&
+          !root.rows.window.some(
+            (row) => row.entityId === `work-result:${work.workId}`,
+          )
+        ) {
+          appendRow(root, {
+            ...base(
+              root,
+              `work-result:${work.workId}`,
+              Date.parse(event.timestamp),
+            ),
+            kind: "userInput",
+            origin: "backgroundResult",
+            text: `${work.label}\n${work.summary ?? work.status}`,
+            originMeta: {
+              backgroundSource: work.kind === "command" ? "bash" : "subagent",
+              workId: work.workId,
+            },
+          });
+        }
+        return;
+      }
       if (event.runId !== runId || closedRuns.has(event.runId)) return;
+      if (
+        ["run.completed", "run.failed", "run.canceled"].includes(event.type)
+      ) {
+        const active = inputs.find(
+          (entry) => entry.runId === event.runId && entry.status === "active",
+        );
+        if (active) {
+          active.status = "settled";
+          active.intent.dispatch = { state: "drained" };
+        }
+        if (event.type !== "run.completed") {
+          root.queue.autoDrain = false;
+          root.queue.pauseReason =
+            event.type === "run.canceled" ? "stopped" : "error";
+        }
+      }
       const at = Date.parse(event.timestamp);
       if (event.type === "run.canceled" || event.type === "run.failed") {
+        if (
+          inputs.some(
+            (input) =>
+              input.runId === event.runId && input.intent.kind === "compact",
+          )
+        )
+          setManualCompactStatus(
+            root,
+            event.runId,
+            event.type === "run.failed" ? "failed" : "cancelled",
+          );
         closedRuns.add(event.runId);
+        const retained = new Set(detachedChildren);
+        // 保留 detached 的整个后代树，包括其前台子任务。
+        for (let changed = true; changed; ) {
+          changed = false;
+          for (const snapshot of snapshots.values())
+            if (retained.has(snapshot.sessionId))
+              for (const row of snapshot.rows.window)
+                if (
+                  row.kind === "subagent" &&
+                  row.childSessionId &&
+                  !retained.has(row.childSessionId)
+                ) {
+                  retained.add(row.childSessionId);
+                  changed = true;
+                }
+        }
         for (const snapshot of snapshots.values()) {
+          if (retained.has(snapshot.sessionId)) continue;
           if (snapshot.control.phase !== "running") continue;
           snapshot.seq += 1;
           snapshot.revision += 1;
-          cancelSnapshot(snapshot, at);
+          cancelSnapshot(snapshot, at, retained);
           if (event.type === "run.failed")
             snapshot.control = {
               ...snapshot.control,
@@ -362,6 +866,12 @@ export function createCodeUiConversation(input: {
         return;
       }
       if (event.type === "run.completed") {
+        if (event.operationResult?.kind === "compact")
+          setManualCompactStatus(
+            root,
+            event.runId,
+            event.operationResult.status === "applied" ? "success" : "noop",
+          );
         closedRuns.add(event.runId);
         root.seq += 1;
         root.revision += 1;
@@ -394,7 +904,7 @@ export function createCodeUiConversation(input: {
           "subagent_background",
           "task_background",
         ].includes(event.toolName);
-        const toolInput = fileToolInput(input.workspacePath, event);
+        const toolInput = event.input;
         appendRow(snapshot, {
           ...base(snapshot, `tool:${toolCallId}`, at),
           kind: "toolCall",
@@ -405,6 +915,16 @@ export function createCodeUiConversation(input: {
           input: toolInput,
           startedAt: at,
         });
+        const pending = snapshot.pendingInteractions.find(
+          (interaction) =>
+            interaction.payload.kind === "permission" &&
+            interaction.payload.toolCallId === toolCallId,
+        );
+        const toolRow = snapshot.rows.window.at(-1);
+        if (pending && toolRow?.kind === "toolCall") {
+          pending.anchorRowId = toolRow.rowId;
+          toolRow.status = "pendingApproval";
+        }
         if (!isDispatch) return;
         const childId = randomUUID();
         childByDispatch.set(toolCallId, childId);
@@ -452,6 +972,18 @@ export function createCodeUiConversation(input: {
           endedTotal: snapshot.subagents?.endedTotal ?? 0,
         };
         return;
+      }
+      if (event.type === "run.compacted") {
+        if (event.origin === "manual") {
+          setManualCompactStatus(snapshot, event.runId, "success");
+          return;
+        }
+        appendRow(snapshot, {
+          ...base(snapshot, `compact:${event.runId}/${snapshot.seq}`, at),
+          kind: "timelineMarker",
+          lane: "assistantWork",
+          marker: { type: "compact", origin: "auto", status: "success" },
+        });
       }
       if (event.type === "message.delta" || event.type === "thinking.delta") {
         const kind =

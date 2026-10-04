@@ -1,16 +1,21 @@
+import type { ProjectKind } from "@kenfutwork/shared";
 import type { PersistenceService } from "../persistence/types.js";
 
 export type ChatSessionRow = {
   id: string;
   title: string;
   updated_at: string;
+  project_id: string;
+  mode: ProjectKind;
 };
 
 export type ChatSessionThreadRow = {
   id: string;
   thread_id: string | null;
   /** 会话所属画布（沙箱目录名就用它，见 resolveSandboxDir 的调用方）。 */
-  canvas_id: string;
+  canvas_id: string | null;
+  project_id: string;
+  mode: ProjectKind;
 };
 
 export type ChatMessageRow = {
@@ -41,8 +46,8 @@ export type NewChatSession = {
 
 /**
  * chat 聚合的数据访问（`chat_sessions`/`chat_messages`）。
- * 两张表都没有 `workspace_id` 列，故一律经
- * `chat_sessions → canvases → projects` 链施加工作区谓词（`FORM-9`）。
+ * 会话以 workspace/project 身份定权，消息经
+ * `chat_messages → chat_sessions → projects` 施加工作区谓词（`FORM-9`）。
  */
 export interface ChatRepository {
   createSession(
@@ -50,7 +55,7 @@ export interface ChatRepository {
     input: NewChatSession,
   ): Promise<ChatSessionRow | null>;
   /**
-   * 以**指定 id** 供给会话（Code 模式：客户端先造 id 再发起 run，此处补真实会话行）。
+   * 以指定 id 供给 Design/Flow 会话；Code Task 只由 CodeUi.createRoot 原子创建。
    *
    * 语义：不存在则插入（挂给定画布 + 线程）；已存在则回读并**复用其 `thread_id`**
    * （多轮必须同一 thread），仅当既有行没有线程时才绑定传入线程。幂等与并发安全靠
@@ -92,7 +97,7 @@ export interface ChatRepository {
   ): Promise<number>;
 }
 
-const SESSION_COLUMNS = "s.id, s.title, s.updated_at";
+const SESSION_COLUMNS = "s.id, s.title, s.updated_at, s.project_id, s.mode";
 const MESSAGE_COLUMNS =
   "m.id, m.role, m.content, m.tool_activities, m.content_blocks, m.created_at";
 
@@ -104,8 +109,7 @@ export function createChatRepository(
       return persistence.forWorkspace(workspaceId).query<ChatSessionRow>(
         `select ${SESSION_COLUMNS}
            from public.chat_sessions s
-           join public.canvases c on c.id = s.canvas_id
-           join public.projects p on p.id = c.project_id
+           join public.projects p on p.id = s.project_id and p.workspace_id = s.workspace_id
           where s.canvas_id = $1
             and p.workspace_id = :workspace
           order by s.updated_at desc`,
@@ -117,8 +121,8 @@ export function createChatRepository(
       // title 为 NOT NULL 带默认值：缺省时必须省略该列而不是写 NULL。
       const withTitle = input.title !== undefined;
       const columns = withTitle
-        ? "(canvas_id, created_by, thread_id, title)"
-        : "(canvas_id, created_by, thread_id)";
+        ? "(workspace_id, project_id, mode, canvas_id, created_by, thread_id, title)"
+        : "(workspace_id, project_id, mode, canvas_id, created_by, thread_id)";
       const selectList = withTitle ? "$2, $3, $4" : "$2, $3";
       const params = withTitle
         ? [input.canvasId, input.userId, input.threadId, input.title]
@@ -126,12 +130,12 @@ export function createChatRepository(
 
       return persistence.forWorkspace(workspaceId).queryOne<ChatSessionRow>(
         `insert into public.chat_sessions ${columns}
-         select c.id, ${selectList}
+         select :workspace, p.id, p.kind, c.id, ${selectList}
            from public.canvases c
            join public.projects p on p.id = c.project_id
           where c.id = $1
-            and p.workspace_id = :workspace
-         returning id, title, updated_at`,
+            and p.workspace_id = :workspace and p.kind <> 'code'
+         returning id, title, updated_at, project_id, mode`,
         params,
       );
     },
@@ -149,18 +153,18 @@ export function createChatRepository(
 
         // 画布必须属本工作区（经 projects 父链校验）；不属则查不到，插不进去
         const inserted = await scoped.queryOne<ChatSessionThreadRow>(
-          `insert into public.chat_sessions (id, canvas_id, created_by, thread_id${
+          `insert into public.chat_sessions (id, workspace_id, project_id, mode, canvas_id, created_by, thread_id${
             withTitle ? ", title" : ""
           })
-           select $1::uuid, c.id, $2::uuid, $3::text${
+           select $1::uuid, :workspace, p.id, p.kind, c.id, $2::uuid, $3::text${
              withTitle ? ", $4::text" : ""
            }
              from public.canvases c
              join public.projects p on p.id = c.project_id
             where c.id = ${canvasParam}::uuid
-              and p.workspace_id = :workspace
+              and p.workspace_id = :workspace and p.kind <> 'code'
            on conflict (id) do nothing
-           returning id, thread_id, canvas_id`,
+           returning id, thread_id, canvas_id, project_id, mode`,
           [
             input.sessionId,
             input.userId,
@@ -174,15 +178,14 @@ export function createChatRepository(
         }
 
         const existing = await scoped.queryOne<ChatSessionThreadRow>(
-          `select s.id, s.thread_id, s.canvas_id
+          `select s.id, s.thread_id, s.canvas_id, s.project_id, s.mode
              from public.chat_sessions s
-             join public.canvases c on c.id = s.canvas_id
-             join public.projects p on p.id = c.project_id
+             join public.projects p on p.id = s.project_id and p.workspace_id = s.workspace_id
             where s.id = $1
               and p.workspace_id = :workspace`,
           [input.sessionId],
         );
-        if (!existing) {
+        if (!existing || existing.mode === "code" || existing.canvas_id !== input.canvasId) {
           return null;
         }
 
@@ -193,13 +196,12 @@ export function createChatRepository(
         const bound = await scoped.queryOne<ChatSessionThreadRow>(
           `update public.chat_sessions s
               set thread_id = $1::text
-             from public.canvases c
-             join public.projects p on p.id = c.project_id
-            where c.id = s.canvas_id
+             from public.projects p
+            where p.id = s.project_id and s.workspace_id = :workspace
               and s.id = $2
               and s.thread_id is null
               and p.workspace_id = :workspace
-           returning s.id, s.thread_id`,
+           returning s.id, s.thread_id, s.canvas_id, s.project_id, s.mode`,
           [input.threadId, input.sessionId],
         );
         return bound ?? existing;
@@ -210,10 +212,9 @@ export function createChatRepository(
       return persistence.forWorkspace(workspaceId).execute(
         `update public.chat_sessions s
             set title = $1
-           from public.canvases c
-           join public.projects p on p.id = c.project_id
-          where c.id = s.canvas_id
-            and s.id = $2
+           from public.projects p
+          where p.id = s.project_id and s.workspace_id = :workspace
+            and s.id = $2 and s.mode <> 'code'
             and p.workspace_id = :workspace`,
         [title, sessionId],
       );
@@ -222,10 +223,9 @@ export function createChatRepository(
     async deleteSession(workspaceId, sessionId) {
       return persistence.forWorkspace(workspaceId).execute(
         `delete from public.chat_sessions s
-          using public.canvases c, public.projects p
-          where c.id = s.canvas_id
-            and p.id = c.project_id
-            and s.id = $1
+          using public.projects p
+          where p.id = s.project_id and s.workspace_id = :workspace
+            and s.id = $1 and s.mode <> 'code'
             and p.workspace_id = :workspace`,
         [sessionId],
       );
@@ -235,10 +235,9 @@ export function createChatRepository(
       const row = await persistence
         .forWorkspace(workspaceId)
         .queryOne<ChatSessionThreadRow>(
-          `select s.id, s.thread_id, s.canvas_id
+          `select s.id, s.thread_id, s.canvas_id, s.project_id, s.mode
              from public.chat_sessions s
-             join public.canvases c on c.id = s.canvas_id
-             join public.projects p on p.id = c.project_id
+             join public.projects p on p.id = s.project_id and p.workspace_id = s.workspace_id
             where s.id = $1
               and p.workspace_id = :workspace`,
           [sessionId],
@@ -251,9 +250,8 @@ export function createChatRepository(
         `select ${MESSAGE_COLUMNS}
            from public.chat_messages m
            join public.chat_sessions s on s.id = m.session_id
-           join public.canvases c on c.id = s.canvas_id
-           join public.projects p on p.id = c.project_id
-          where m.session_id = $1
+           join public.projects p on p.id = s.project_id and p.workspace_id = s.workspace_id
+          where m.session_id = $1 and s.mode <> 'code'
             and p.workspace_id = :workspace
           order by m.created_at asc`,
         [sessionId],
@@ -275,9 +273,8 @@ export function createChatRepository(
                 (session_id, role, content, tool_activities, content_blocks)
          select s.id, $2, $3, $4::jsonb, $5::jsonb
            from public.chat_sessions s
-           join public.canvases c on c.id = s.canvas_id
-           join public.projects p on p.id = c.project_id
-          where s.id = $1
+           join public.projects p on p.id = s.project_id and p.workspace_id = s.workspace_id
+          where s.id = $1 and s.mode <> 'code'
             and p.workspace_id = :workspace
          returning ${MESSAGE_COLUMNS.replaceAll("m.", "")}`,
         [
@@ -294,9 +291,8 @@ export function createChatRepository(
       return persistence.forWorkspace(workspaceId).execute(
         `update public.chat_sessions s
             set updated_at = now()
-           from public.canvases c
-           join public.projects p on p.id = c.project_id
-          where c.id = s.canvas_id
+           from public.projects p
+          where p.id = s.project_id and s.workspace_id = :workspace
             and s.id = $1
             and p.workspace_id = :workspace`,
         [sessionId],

@@ -1,6 +1,6 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -18,7 +18,6 @@ import {
   ProjectServiceError,
 } from "./project-service.js";
 import {
-  CODE_WORKBENCH_SLUG,
   type CreateProjectInput,
   createProjectRepository,
   type ProjectUpdatePatch,
@@ -65,6 +64,13 @@ function createRunner(
       return {
         query: async (text, values) => run(text, values),
         release: () => {},
+      };
+    },
+    async acquireSession() {
+      return {
+        query: async (text, values) => run(text, values),
+        onLost: () => () => {},
+        release: async () => {},
       };
     },
     async end() {},
@@ -126,13 +132,11 @@ describe("projects repository（SQL 与隔离谓词）", () => {
     expect(call?.sql).toContain("from public.projects");
     // kind 决定取哪一类项目（design=画布 / code=工作目录）
     expect(call?.sql).toContain("kind = $1");
-    // Code 工作台载体是内部容器（保留 slug），不得出现在用户的项目列表里
-    expect(call?.sql).toContain("and slug <> $2");
     // :workspace 由缝追加为末位参数
-    expect(call?.sql).toContain("where workspace_id = $3");
+    expect(call?.sql).toContain("where workspace_id = $2");
     expect(call?.sql).toContain("and archived_at is null");
     expect(call?.sql).toContain("order by updated_at desc");
-    expect(call?.values).toEqual(["design", CODE_WORKBENCH_SLUG, WORKSPACE_ID]);
+    expect(call?.values).toEqual(["design", WORKSPACE_ID]);
   });
 
   /**
@@ -147,7 +151,7 @@ describe("projects repository（SQL 与隔离谓词）", () => {
     ).listActive(WORKSPACE_ID, "code");
 
     const [call] = dataCalls(calls);
-    expect(call?.values).toEqual(["code", CODE_WORKBENCH_SLUG, WORKSPACE_ID]);
+    expect(call?.values).toEqual(["code", WORKSPACE_ID]);
     expect(call?.sql).toContain("kind = $1");
   });
 
@@ -181,7 +185,7 @@ describe("projects repository（SQL 与隔离谓词）", () => {
 
     const created = await createProjectRepository(
       createPersistenceFromRunner(runner),
-    ).createWithCanvas({
+    ).createProject({
       canvasName: "Main Canvas",
       description: null,
       kind: "code",
@@ -199,6 +203,8 @@ describe("projects repository（SQL 与隔离谓词）", () => {
       null,
       null,
       USER_ID,
+      null,
+      "[]",
       WORKSPACE_ID,
     ]);
     expect(created.project.kind).toBe("code");
@@ -317,7 +323,7 @@ describe("projects repository（SQL 与隔离谓词）", () => {
 
     const created = await createProjectRepository(
       createPersistenceFromRunner(runner),
-    ).createWithCanvas({
+    ).createProject({
       canvasName: "Main Canvas",
       description: null,
       name: "新项目",
@@ -328,13 +334,15 @@ describe("projects repository（SQL 与隔离谓词）", () => {
 
     expect(calls[0]?.text).toBe("begin");
     expect(calls.at(-1)?.text).toBe("commit");
-    expect(created.canvas.is_primary).toBe(true);
-    expect(created.canvas.name).toBe("Main Canvas");
+    expect(created.canvas!.is_primary).toBe(true);
+    expect(created.canvas!.name).toBe("Main Canvas");
 
     const [projectInsert, canvasInsert] = dataCalls(calls);
     expect(projectInsert?.sql).toContain("insert into public.projects");
     // :workspace 由缝追加为末位参数，故列位序里工作区落在 $6
-    expect(projectInsert?.sql).toContain("values ($7, $1, $2, $3, $4, $5, $6)");
+    expect(projectInsert?.sql).toContain(
+      "coalesce($7::uuid, gen_random_uuid())",
+    );
     // 缺省 kind 落 design：存量调用方（Design 建项目）语义不变
     expect(projectInsert?.values).toEqual([
       "新项目",
@@ -343,6 +351,8 @@ describe("projects repository（SQL 与隔离谓词）", () => {
       null,
       null,
       USER_ID,
+      null,
+      "[]",
       WORKSPACE_ID,
     ]);
     expect(canvasInsert?.sql).toContain("insert into public.canvases");
@@ -362,7 +372,7 @@ describe("projects repository（SQL 与隔离谓词）", () => {
     await expect(
       createProjectRepository(
         createPersistenceFromRunner(runner),
-      ).createWithCanvas({
+      ).createProject({
         canvasName: "Main Canvas",
         description: null,
         name: "x",
@@ -401,7 +411,7 @@ describe("project service（错误映射与行为保持不变）", () => {
       } as never,
       repository: {
         archive: async () => 1,
-        createWithCanvas: async () => {
+        createProject: async () => {
           throw new Error("not used");
         },
         findActiveById: async () => null,
@@ -429,6 +439,7 @@ describe("project service（错误映射与行为保持不变）", () => {
             workspace_id: WORKSPACE_ID,
             thumbnail_path: null,
             work_dir: null,
+            additional_directories: [],
           },
         ],
         listPrimaryCanvases: async () => [
@@ -457,6 +468,7 @@ describe("project service（错误映射与行为保持不变）", () => {
         slug: "xiangmu",
         updatedAt: "2026-09-13T01:00:00+00:00",
         workDir: null,
+        additionalDirectories: [],
         workspace: {
           id: WORKSPACE_ID,
           name: "Personal Workspace",
@@ -482,6 +494,7 @@ describe("project service（错误映射与行为保持不变）", () => {
             workspace_id: WORKSPACE_ID,
             thumbnail_path: null,
             work_dir: null,
+            additional_directories: [],
           },
         ],
         listPrimaryCanvases: async () => [],
@@ -499,7 +512,7 @@ describe("project service（错误映射与行为保持不变）", () => {
   it("slug 唯一冲突映射为 409 project_slug_taken", async () => {
     const service = buildService({
       repository: {
-        createWithCanvas: async () => {
+        createProject: async () => {
           throw new SqlError("duplicate key", {
             code: SQLSTATE_UNIQUE_VIOLATION,
           });
@@ -519,7 +532,7 @@ describe("project service（错误映射与行为保持不变）", () => {
   it("其它建项目失败映射为 500 project_create_failed（不泄露驱动细节）", async () => {
     const service = buildService({
       repository: {
-        createWithCanvas: async () => {
+        createProject: async () => {
           throw new SqlError("connection reset", { code: "08006" });
         },
       },
@@ -606,8 +619,10 @@ describe("project service（错误映射与行为保持不变）", () => {
           slug: "xiangmu",
           description: null,
           workspace_id: WORKSPACE_ID,
+          kind: "design",
           brand_kit_id: null,
           work_dir: null,
+          additional_directories: [],
           created_at: "2026-09-13T00:00:00+00:00",
           updated_at: "2026-09-13T00:00:00+00:00",
         }),
@@ -635,8 +650,10 @@ describe("project service（错误映射与行为保持不变）", () => {
           slug: "xiangmu",
           description: null,
           workspace_id: WORKSPACE_ID,
+          kind: "design",
           brand_kit_id: null,
           work_dir: null,
+          additional_directories: [],
           created_at: "2026-09-13T00:00:00+00:00",
           updated_at: "2026-09-13T00:00:00+00:00",
         }),
@@ -664,7 +681,7 @@ describe("project service（错误映射与行为保持不变）", () => {
     let captured: CreateProjectInput | undefined;
     const service = buildService({
       repository: {
-        createWithCanvas: async (input) => {
+        createProject: async (input) => {
           captured = input;
           return {
             canvas: { id: "canvas-1", name: "Main Canvas", is_primary: true },
@@ -678,6 +695,7 @@ describe("project service（错误映射与行为保持不变）", () => {
               updated_at: "2026-09-17T00:00:00+00:00",
               workspace_id: WORKSPACE_ID,
               work_dir: input.workDir ?? null,
+              additional_directories: input.additionalDirectories ?? [],
             },
           };
         },
@@ -690,15 +708,16 @@ describe("project service（错误映射与行为保持不变）", () => {
       work_dir: dir,
     });
 
-    expect(captured?.workDir).toBe(resolve(dir));
-    expect(summary.workDir).toBe(resolve(dir));
+    expect(captured?.workDir).toBe(realpathSync(dir));
+    expect(summary.workDir).toBe(realpathSync(dir));
+    expect(summary).not.toHaveProperty("primaryCanvas");
   });
 
   it("建项目带工作目录：不合格路径 400 invalid_work_dir，且不落库", async () => {
     let created = 0;
     const service = buildService({
       repository: {
-        createWithCanvas: async () => {
+        createProject: async () => {
           created += 1;
           throw new Error("not used");
         },
@@ -740,7 +759,7 @@ describe("project service（错误映射与行为保持不变）", () => {
 
     const dir = mkdtempSync(join(tmpdir(), "kfw-projdir2-"));
     await service.updateProject(USER, PROJECT_ID, { work_dir: dir });
-    expect(patches[1]?.workDir).toBe(resolve(dir));
+    expect(patches[1]?.workDir).toBe(realpathSync(dir));
 
     await expect(
       service.updateProject(USER, PROJECT_ID, { work_dir: "nope/relative" }),

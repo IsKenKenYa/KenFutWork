@@ -67,7 +67,7 @@ async function openCodeStream(streams: AbortController[]) {
     clientMode: "web-remote-replayable",
     deliveryProfile: "replayable",
   });
-  return { next, rpc, controller };
+  return { next, rpc, controller, hello: ready.hello };
 }
 
 describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", () => {
@@ -75,6 +75,7 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
     const dir = await mkdtemp(join(tmpdir(), "ken-code-ui-files-"));
     const outside = await mkdtemp(join(tmpdir(), "ken-code-ui-outside-"));
     let projectId = "";
+    const streams: AbortController[] = [];
     try {
       await writeFile(join(dir, "空.txt"), "");
       await writeFile(
@@ -90,11 +91,13 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
       });
       expect(created.status, JSON.stringify(created.body)).toBe(201);
       projectId = created.body.project.id;
+      const stream = await openCodeStream(streams);
       const read = (path: string) =>
         request("/api/code-ui/rpc", {
           service: "file",
           method: "readTextFile",
-          args: [{ path }],
+          connectionId: stream.hello.connectionId,
+          args: [{ path, viewerScope: { kind: "project", projectId } }],
         });
       const empty = await read(join(dir, "空.txt"));
       expect(empty.status).toBe(200);
@@ -113,6 +116,7 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
       expect((await read(join(outside, "private.txt"))).status).toBe(404);
       expect((await read(join(dir, "escape.txt"))).status).toBe(404);
     } finally {
+      for (const controller of streams) controller.abort();
       if (projectId)
         await request(`/api/projects/${projectId}`, undefined, "DELETE");
       await rm(dir, { recursive: true, force: true });
@@ -157,7 +161,10 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
           clientId,
           sessionId: null,
           type: "createSession",
-          payload: { workspaceId: dir, config: { modelSelection: selection } },
+          payload: {
+            workspaceId: projectId,
+            config: { modelSelection: selection },
+          },
           issuedAt: Date.now(),
         });
         const sessionId = createdSession.body.result.result.sessionId;
@@ -272,7 +279,7 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
             clientId,
             sessionId: null,
             type: "createSession",
-            payload: { workspaceId: dir },
+            payload: { workspaceId: projectId },
             issuedAt: Date.now(),
           },
         },
@@ -331,7 +338,7 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
       await rm(dir, { recursive: true, force: true });
     }
   });
-  it("createSession 绑定真实项目主画布；同键重放同身份、异参冲突", async () => {
+  it("createSession 绑定真实Code项目/Task工作域；同键重放同身份、异参冲突", async () => {
     const dir = await mkdtemp(join(tmpdir(), "ken-code-ui-host-"));
     let projectId = "";
     try {
@@ -348,7 +355,7 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
         clientId: randomUUID(),
         sessionId: null,
         type: "createSession",
-        payload: { workspaceId: dir },
+        payload: { workspaceId: projectId },
         issuedAt: Date.now(),
       };
       const call = (value: unknown) =>
@@ -365,12 +372,15 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
         status: "duplicate",
         result: { type: "createSession", sessionId },
       });
-      const sessions = await request(
-        `/api/canvases/${project.primaryCanvas.id}/sessions`,
-      );
-      expect(
-        sessions.body.sessions.map((session: { id: string }) => session.id),
-      ).toContain(sessionId);
+      expect(project).not.toHaveProperty("primaryCanvas");
+      const scope = await request(`/api/code-ui/tasks/${sessionId}/scope`);
+      expect(scope.status).toBe(200);
+      expect(scope.body.scope).toMatchObject({
+        taskId: sessionId,
+        projectId,
+        additionalDirectories: [],
+      });
+      expect(scope.body.scope).not.toHaveProperty("canvasId");
       const snapshot = await request(`/api/code-ui/sessions/${sessionId}`);
       expect(snapshot.body.snapshot).toMatchObject({
         sessionId,
@@ -378,7 +388,7 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
       });
       const conflict = await call({
         ...envelope,
-        payload: { workspaceId: dir, config: { planEnabled: true } },
+        payload: { workspaceId: projectId, config: { planEnabled: true } },
       });
       expect(conflict.status).toBe(409);
     } finally {

@@ -49,6 +49,9 @@ function createRecordingRunner(handler: (text: string) => FakeResult) {
       }
       return result;
     },
+    async acquireSession() {
+      throw new Error("此查询夹具不提供真实执行宿主会话。");
+    },
     async end() {},
   };
 
@@ -125,7 +128,15 @@ describe("chat repository：按 id 供给会话（SQL 形状）", () => {
       if (text.includes("select s.id, s.thread_id")) {
         return {
           rowCount: 1,
-          rows: [{ id: SESSION_ID, thread_id: "thread_existing" }],
+          rows: [
+            {
+              id: SESSION_ID,
+              thread_id: "thread_existing",
+              canvas_id: CANVAS_ID,
+              project_id: "visual-project",
+              mode: "design",
+            },
+          ],
         };
       }
       return { rowCount: 1, rows: [] };
@@ -159,12 +170,31 @@ describe("chat repository：按 id 供给会话（SQL 形状）", () => {
         return { rowCount: 0, rows: [] };
       }
       if (text.includes("select s.id, s.thread_id")) {
-        return { rowCount: 1, rows: [{ id: SESSION_ID, thread_id: null }] };
+        return {
+          rowCount: 1,
+          rows: [
+            {
+              id: SESSION_ID,
+              thread_id: null,
+              canvas_id: CANVAS_ID,
+              project_id: "visual-project",
+              mode: "design",
+            },
+          ],
+        };
       }
       if (text.includes("set thread_id = $1::text")) {
         return {
           rowCount: 1,
-          rows: [{ id: SESSION_ID, thread_id: "thread_new" }],
+          rows: [
+            {
+              id: SESSION_ID,
+              thread_id: "thread_new",
+              canvas_id: CANVAS_ID,
+              project_id: "visual-project",
+              mode: "design",
+            },
+          ],
         };
       }
       return { rowCount: 1, rows: [] };

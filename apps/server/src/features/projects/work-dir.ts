@@ -1,5 +1,7 @@
-import { statSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
+import { mkdir, realpath } from "node:fs/promises";
 import { resolve } from "node:path";
+import type { AdditionalDirectory } from "@kenfutwork/shared";
 import type { CanvasRepository } from "../canvas/repository.js";
 import { createCanvasRepository } from "../canvas/repository.js";
 import type { PersistenceService } from "../persistence/types.js";
@@ -89,7 +91,32 @@ export function validateWorkDir(raw: string): WorkDirValidation {
     };
   }
 
-  return { ok: true, path: normalized };
+  return { ok: true, path: realpathSync(normalized) };
+}
+
+/** Code 项目默认目录由服务端身份稳定生成；显式目录不可吞错换落点。 */
+export async function resolveProjectWorkDirectory(input: {
+  workspaceId: string;
+  projectId: string;
+  sandboxRoot: string;
+  workDir?: string | null | undefined;
+}): Promise<string> {
+  if (input.workDir) {
+    const verdict = validateWorkDir(input.workDir);
+    if (!verdict.ok) throw new Error(verdict.reason);
+    return verdict.path;
+  }
+  const directory = resolve(input.sandboxRoot, input.workspaceId, input.projectId);
+  await mkdir(directory, { recursive: true });
+  return realpath(directory);
+}
+
+export function normalizeAdditionalDirectories(directories: AdditionalDirectory[]): AdditionalDirectory[] {
+  return directories.map((directory) => {
+    const verdict = validateWorkDir(directory.path);
+    if (!verdict.ok) throw new Error(verdict.reason);
+    return { path: verdict.path, access: directory.access };
+  });
 }
 
 /** 归一化（仅用于已通过 `isAbsoluteWorkDir` 的值）。 */

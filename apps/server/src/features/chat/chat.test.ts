@@ -54,6 +54,9 @@ function createRunner(
         release: () => {},
       };
     },
+    async acquireSession() {
+      return { query: async (text, values) => run(text, values), onLost: () => () => {}, release: async () => {} };
+    },
     async end() {},
   };
 
@@ -83,6 +86,8 @@ const SESSION_ROW = {
   id: SESSION_ID,
   title: "New Chat",
   updated_at: "2026-09-13T00:00:00+00:00",
+  project_id: PROJECT_ID,
+  mode: "design" as const,
 };
 
 const MESSAGE_ROW = {
@@ -107,8 +112,8 @@ describe("chat repository（会话与消息经画布→项目链限定）", () =
 
     const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
     expect(sql).toContain("from public.chat_sessions s");
-    expect(sql).toContain("join public.canvases c on c.id = s.canvas_id");
-    expect(sql).toContain("join public.projects p on p.id = c.project_id");
+    expect(sql).not.toContain("join public.canvases");
+    expect(sql).toContain("join public.projects p on p.id = s.project_id and p.workspace_id = s.workspace_id");
     expect(sql).toContain("where s.canvas_id = $1 and p.workspace_id = $2");
     expect(sql).toContain("order by s.updated_at desc");
     expect(calls[0]?.values).toEqual([CANVAS_ID, WORKSPACE_ID]);
@@ -130,7 +135,7 @@ describe("chat repository（会话与消息经画布→项目链限定）", () =
     const bareSql =
       withoutTitle.calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
     expect(bareSql).toContain(
-      "insert into public.chat_sessions (canvas_id, created_by, thread_id)",
+      "insert into public.chat_sessions (workspace_id, project_id, mode, canvas_id, created_by, thread_id)",
     );
     expect(bareSql).not.toMatch(
       /insert into public\.chat_sessions \([^)]*title/,
@@ -158,7 +163,7 @@ describe("chat repository（会话与消息经画布→项目链限定）", () =
     const titledSql =
       withTitle.calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
     expect(titledSql).toContain(
-      "insert into public.chat_sessions (canvas_id, created_by, thread_id, title)",
+      "insert into public.chat_sessions (workspace_id, project_id, mode, canvas_id, created_by, thread_id, title)",
     );
     expect(withTitle.calls[0]?.values).toEqual([
       CANVAS_ID,
@@ -176,7 +181,7 @@ describe("chat repository（会话与消息经画布→项目链限定）", () =
     ).updateSessionTitle(WORKSPACE_ID, SESSION_ID, "新标题");
 
     expect(rename.sqls()[0]).toContain(
-      "update public.chat_sessions s set title = $1 from public.canvases c join public.projects p on p.id = c.project_id where c.id = s.canvas_id and s.id = $2 and p.workspace_id = $3",
+      "update public.chat_sessions s set title = $1 from public.projects p where p.id = s.project_id and s.workspace_id = $3 and s.id = $2 and s.mode <> 'code' and p.workspace_id = $3",
     );
     expect(rename.calls[0]?.values).toEqual([
       "新标题",
@@ -202,7 +207,7 @@ describe("chat repository（会话与消息经画布→项目链限定）", () =
     expect(touch.calls[0]?.values).toEqual([SESSION_ID, WORKSPACE_ID]);
   });
 
-  it("消息读取经三层链限定（消息→会话→画布→项目）", async () => {
+  it("消息读取经会话→项目工作区身份限定，Code无需Canvas", async () => {
     const { calls, runner } = createRunner(() => ({
       rowCount: 1,
       rows: [MESSAGE_ROW],
@@ -215,8 +220,8 @@ describe("chat repository（会话与消息经画布→项目链限定）", () =
     const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
     expect(sql).toContain("from public.chat_messages m");
     expect(sql).toContain("join public.chat_sessions s on s.id = m.session_id");
-    expect(sql).toContain("join public.canvases c on c.id = s.canvas_id");
-    expect(sql).toContain("join public.projects p on p.id = c.project_id");
+    expect(sql).not.toContain("join public.canvases");
+    expect(sql).toContain("join public.projects p on p.id = s.project_id and p.workspace_id = s.workspace_id");
     expect(sql).toContain("order by m.created_at asc");
     expect(calls[0]?.values).toEqual([SESSION_ID, WORKSPACE_ID]);
   });
@@ -278,11 +283,15 @@ function createFakeRepository(
     ensureSessionWithId: async (_workspaceId, input) => ({
       id: input.sessionId,
       thread_id: input.threadId,
-      canvas_id: input.canvasId,
+      canvas_id: input.canvasId ?? null,
+      project_id: PROJECT_ID,
+      mode: "design",
     }),
     deleteSession: async () => 1,
     findSessionThread: async () => ({
       canvas_id: CANVAS_ID,
+      project_id: PROJECT_ID,
+      mode: "design",
       id: SESSION_ID,
       thread_id: "thread_1",
     }),
@@ -309,12 +318,6 @@ function buildService(
 
   return {
     chat: createChatService({
-      codeWorkbench: {
-        ensureCodeWorkbench: async () => ({
-          canvasId: CANVAS_ID,
-          projectId: PROJECT_ID,
-        }),
-      },
       repository,
       threadService,
       viewerService: options.viewerService ?? VIEWER_STUB,
@@ -324,13 +327,26 @@ function buildService(
 }
 
 describe("chat service", () => {
+  it("generic视觉聊天入口拒绝CodeTask写/删/改名/读取，V4是唯一聚合", async () => {
+    let writes = 0;
+    const { chat } = buildService({ repository: {
+      findSessionThread: async () => ({ id: SESSION_ID, canvas_id: null, project_id: PROJECT_ID, mode: "code", thread_id: "code-thread" }),
+      deleteSession: async () => { writes++; return 1; },
+      updateSessionTitle: async () => { writes++; return 1; },
+      insertMessage: async () => { writes++; return MESSAGE_ROW; },
+    } });
+    for (const action of [() => chat.deleteSession(USER, SESSION_ID), () => chat.updateSessionTitle(USER, SESSION_ID, "标题"), () => chat.createMessage(USER, SESSION_ID, { role: "user", content: "消息" }), () => chat.listMessages(USER, SESSION_ID)])
+      await expect(action()).rejects.toMatchObject({ code: "session_not_found", statusCode: 404 });
+    expect(writes).toBe(0);
+  });
+
   it("会话列表映射为契约形状", async () => {
     const { chat } = buildService({
       repository: { listSessions: async () => [SESSION_ROW] },
     });
 
     await expect(chat.listSessions(USER, CANVAS_ID)).resolves.toEqual([
-      { id: SESSION_ID, title: "New Chat", updatedAt: SESSION_ROW.updated_at },
+      { id: SESSION_ID, title: "New Chat", updatedAt: SESSION_ROW.updated_at, projectId: PROJECT_ID, mode: "design" },
     ]);
   });
 
@@ -482,6 +498,8 @@ describe("thread service（会话线程绑定）", () => {
       threadService.resolveOwnedSessionThread(USER, SESSION_ID),
     ).resolves.toEqual({
       canvasId: CANVAS_ID,
+      projectId: PROJECT_ID,
+      mode: "design",
       sessionId: SESSION_ID,
       threadId: "thread_1",
     });
@@ -504,6 +522,8 @@ describe("thread service（会话线程绑定）", () => {
       repository: {
         findSessionThread: async () => ({
           canvas_id: CANVAS_ID,
+          project_id: PROJECT_ID,
+          mode: "design",
           id: SESSION_ID,
           thread_id: null,
         }),
@@ -517,7 +537,7 @@ describe("thread service（会话线程绑定）", () => {
     expect(error).toMatchObject({ code: "session_not_found", statusCode: 409 });
   });
 
-  it("工作区解析失败返回 404 而非泄露内部错误", async () => {
+  it("工作区解析失败明确返回503，不伪装成会话不存在", async () => {
     const { threadService } = buildService({
       viewerService: {
         ...VIEWER_STUB,
@@ -529,6 +549,6 @@ describe("thread service（会话线程绑定）", () => {
 
     await expect(
       threadService.resolveOwnedSessionThread(USER, SESSION_ID),
-    ).rejects.toMatchObject({ statusCode: 404 });
+    ).rejects.toMatchObject({ statusCode: 503, code: "session_unavailable" });
   });
 });

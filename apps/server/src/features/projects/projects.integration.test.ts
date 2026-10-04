@@ -43,7 +43,7 @@ describe.skipIf(!DATABASE_URL)("projects 真实库集成", () => {
 
       const projects = createProjectRepository(persistence);
       const slug = `integration-${Date.now().toString(36)}`;
-      const created = await projects.createWithCanvas({
+      const created = await projects.createProject({
         canvasName: "集成画布",
         description: "集成测试",
         name: "集成项目",

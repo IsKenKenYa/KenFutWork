@@ -145,23 +145,33 @@ export const canvasSummarySchema = z.object({
 export const projectKindSchema = z.enum(["design", "code", "flow"]);
 export type ProjectKind = z.infer<typeof projectKindSchema>;
 
-export const projectSummarySchema = z.object({
+const projectSummaryFields = {
   id: projectIdSchema,
   name: z.string().min(1),
   slug: z.string().min(1),
-  kind: projectKindSchema,
   description: z.string().nullable(),
-  /**
-   * 绑定的本机工作目录绝对路径（Code 项目）。桌面端由系统文件夹选择器给出，
-   * Web 端由「填本机路径」手填；为空表示走沙箱目录 `<sandboxRoot>/<canvasId>`。
-   */
+  /** Code 项目主目录；现有 Task 固定创建时的目录快照。 */
   workDir: z.string().min(1).nullable().optional(),
+  additionalDirectories: z.array(additionalDirectorySchema).default([]),
   thumbnailUrl: z.string().nullable().optional(),
   workspace: workspaceSummarySchema,
-  primaryCanvas: canvasSummarySchema,
   createdAt: timestampSchema,
   updatedAt: timestampSchema,
-});
+};
+
+export const projectSummarySchema = z.discriminatedUnion("kind", [
+  z.object({
+    ...projectSummaryFields,
+    kind: z.literal("code"),
+    workDir: z.string().min(1),
+    primaryCanvas: z.never().optional(),
+  }),
+  z.object({
+    ...projectSummaryFields,
+    kind: z.enum(["design", "flow"]),
+    primaryCanvas: canvasSummarySchema,
+  }),
+]);
 
 export const canvasContentSchema = z.object({
   elements: z.array(z.record(z.string(), z.unknown())).default([]),
@@ -359,6 +369,8 @@ export const chatSessionSummarySchema = z.object({
   id: chatSessionIdSchema,
   title: z.string(),
   updatedAt: timestampSchema,
+  projectId: projectIdSchema,
+  mode: projectKindSchema,
 });
 
 export const textBlockSchema = z.object({

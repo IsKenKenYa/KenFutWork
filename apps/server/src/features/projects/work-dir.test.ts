@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -39,7 +39,7 @@ describe("validateWorkDir", () => {
     const verdict = validateWorkDir(
       `${dir}${process.platform === "win32" ? "\\" : "/"}`,
     );
-    expect(verdict).toEqual({ ok: true, path: resolve(dir) });
+    expect(verdict).toEqual({ ok: true, path: realpathSync(dir) });
   });
 
   it("相对路径给出可读原因（提示填完整路径）", () => {
@@ -77,7 +77,7 @@ describe("validateWorkDir", () => {
     mkdirSync(join(dir, "sub"));
     const messy = join(dir, "sub", "..", "sub");
     const verdict = validateWorkDir(messy);
-    expect(verdict).toEqual({ ok: true, path: resolve(join(dir, "sub")) });
+    expect(verdict).toEqual({ ok: true, path: realpathSync(join(dir, "sub")) });
     expect(normalizeWorkDir(messy)).toBe(resolve(join(dir, "sub")));
   });
 });
