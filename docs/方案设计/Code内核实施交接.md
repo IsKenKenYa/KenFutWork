@@ -8,6 +8,11 @@
 
 #### 合并后原UI接线进展（最新）
 
+##### 原队列公开与实际页面收口（最新）
+
+- 合并后原UI队列编辑撤回、指定项立即抢占、Stop暂停、刷新恢复、继续真实消费与最终停止均有实际页面证据。独占HTTP/SSE/PG与真实Harness新1条通过，另锁重排、输入身份、stale revision与duplicate无二次效果；测试脚本与截图见《日志》一百零九。未把拖拽鼠标操作/guide当成完成。
+- 历史控制只读核验：原三命令/回调保留，服务尚无consumer，行action未开启；fork总availability仍需随真实实现修正。下一最小切片先可靠持久化，再idle最新realUser的preserve编辑，原生上下文restore与文件/branch/ACK逐步接通，不用flat DTO或subagent替代。
+
 ##### 默认Task真实恢复收口（优先于下方较早样本）
 
 - 真正跨模式试验暴露local qualified身份被原远程启发式漏存tab、共享迁移丢Q、后端Q焦点当path、侧栏强制remote折叠及本机精确services绑定回退base。统一parser与原pure resolver修复，Q只取自身绑定并local；缺绑定等待，旧无identity才base，不削弱remote或同路径Project隔离。后端由真实Project/Task规范化唯一Q，legacy有证据才升级；Task固定A/Project新B、recent归属与invalid/archived原子保护均保持。
